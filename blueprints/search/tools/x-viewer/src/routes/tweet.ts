@@ -10,15 +10,17 @@ const app = new Hono<HonoEnv>()
 
 app.get('/:username/status/:id', async (c) => {
   const tweetID = c.req.param('id')
+  const username = c.req.param('username')
+  const cursor = c.req.query('cursor') || ''
   const gql = new GraphQLClient(c.env.X_AUTH_TOKEN, c.env.X_CT0, c.env.X_BEARER_TOKEN)
   const cache = new Cache(c.env.KV)
 
   try {
-    const cacheKey = `tweet:${tweetID}`
-    let cached = await cache.get<{ mainTweet: unknown; replies: unknown[] }>(cacheKey)
+    const cacheKey = cursor ? `tweet:${tweetID}:${cursor}` : `tweet:${tweetID}`
+    let cached = await cache.get<{ mainTweet: unknown; replies: unknown[]; cursor: string }>(cacheKey)
 
     if (!cached) {
-      const data = await gql.doGraphQL(gqlConversationTimeline, {
+      const vars: Record<string, unknown> = {
         focalTweetId: tweetID,
         referrer: 'tweet',
         with_rux_injections: false,
@@ -29,11 +31,27 @@ app.get('/:username/status/:id', async (c) => {
         withBirdwatchNotes: true,
         withVoice: true,
         withV2Timeline: true,
-      }, tweetDetailFieldToggles)
+      }
+      if (cursor) vars.cursor = cursor
 
+      const data = await gql.doGraphQL(gqlConversationTimeline, vars, tweetDetailFieldToggles)
       const result = parseConversation(data, tweetID)
-      if (result.mainTweet) {
-        cached = { mainTweet: result.mainTweet, replies: result.replies }
+
+      // If paginated and mainTweet missing, try first-page cache
+      if (cursor && !result.mainTweet) {
+        const firstPage = await cache.get<{ mainTweet: unknown }>(
+          `tweet:${tweetID}`
+        )
+        if (firstPage?.mainTweet) {
+          cached = { mainTweet: firstPage.mainTweet, replies: result.replies, cursor: result.cursor }
+        }
+      }
+
+      if (!cached && result.mainTweet) {
+        cached = { mainTweet: result.mainTweet, replies: result.replies, cursor: result.cursor }
+      }
+
+      if (cached) {
         await cache.set(cacheKey, cached, CACHE_TWEET)
       }
     }
@@ -44,8 +62,10 @@ app.get('/:username/status/:id', async (c) => {
 
     const tweet = cached.mainTweet as Parameters<typeof renderTweetDetail>[0]
     const replies = (cached.replies || []) as Parameters<typeof renderTweetDetail>[1]
+    const nextCursor = (cached.cursor || '') as string
+    const tweetPath = `/${username}/status/${tweetID}`
 
-    const content = `<div class="sh"><h2>Post</h2></div>` + renderTweetDetail(tweet, replies)
+    const content = `<div class="sh"><h2>Post</h2></div>` + renderTweetDetail(tweet, replies, nextCursor, tweetPath)
     return c.html(renderLayout(`${tweet.name} (@${tweet.username})`, content))
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)

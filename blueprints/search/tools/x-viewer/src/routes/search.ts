@@ -8,6 +8,14 @@ import { gqlSearchTimeline, SearchTop, CACHE_SEARCH } from '../config'
 
 const app = new Hono<HonoEnv>()
 
+// Permanent search path: /search/golang -> search for "golang"
+app.get('/:keyword', async (c) => {
+  const keyword = c.req.param('keyword')
+  const mode = c.req.query('mode') || SearchTop
+  const cursor = c.req.query('cursor') || ''
+  return handleSearch(c, keyword, mode, cursor)
+})
+
 app.get('/', async (c) => {
   const query = c.req.query('q') || ''
   const mode = c.req.query('mode') || SearchTop
@@ -20,6 +28,15 @@ app.get('/', async (c) => {
 
   if (!query) {
     return c.html(renderLayout('Search', `<div class="sh"><h2>Search</h2></div><div class="err"><p>Enter a query in the search bar above.</p></div>`))
+  }
+
+  return handleSearch(c, query, mode, cursor)
+})
+
+async function handleSearch(c: any, query: string, mode: string, cursor: string) {
+  if (query.startsWith('@')) {
+    const username = query.slice(1).trim()
+    if (username) return c.redirect(`/${username}`)
   }
 
   const gql = new GraphQLClient(c.env.X_AUTH_TOKEN, c.env.X_CT0, c.env.X_BEARER_TOKEN)
@@ -47,7 +64,7 @@ app.get('/', async (c) => {
     const nextCursor = searchData.cursor as string
     const baseQ = encodeURIComponent(query)
 
-    let content = `<div class="tabs"><a href="/search?q=${baseQ}&mode=Top" class="${mode === 'Top' ? 'active' : ''}">Top</a><a href="/search?q=${baseQ}&mode=Latest" class="${mode === 'Latest' ? 'active' : ''}">Latest</a><a href="/search?q=${baseQ}&mode=Photos" class="${mode === 'Photos' ? 'active' : ''}">Photos</a><a href="/search?q=${baseQ}&mode=Videos" class="${mode === 'Videos' ? 'active' : ''}">Videos</a></div>`
+    let content = `<div class="tabs"><a href="/search/${baseQ}?mode=Top" class="${mode === 'Top' ? 'active' : ''}">Top</a><a href="/search/${baseQ}?mode=Latest" class="${mode === 'Latest' ? 'active' : ''}">Latest</a><a href="/search/${baseQ}?mode=Photos" class="${mode === 'Photos' ? 'active' : ''}">Photos</a><a href="/search/${baseQ}?mode=Videos" class="${mode === 'Videos' ? 'active' : ''}">Videos</a></div>`
 
     if (tweets.length === 0) {
       content += `<div class="err"><h2>No results</h2><p>Try searching for something else.</p></div>`
@@ -55,13 +72,13 @@ app.get('/', async (c) => {
       for (const tweet of tweets) content += renderTweetCard(tweet)
     }
 
-    content += renderPagination(nextCursor, `/search?q=${baseQ}&mode=${mode}`)
+    content += renderPagination(nextCursor, `/search/${baseQ}?mode=${mode}`)
     return c.html(renderLayout(`${query} - Search`, content, { query }))
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     if (msg.includes('rate limited')) return c.html(renderError('Rate Limited', 'Too many requests. Please try again later.'), 429)
     return c.html(renderError('Error', msg), 500)
   }
-})
+}
 
 export default app

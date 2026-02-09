@@ -279,7 +279,11 @@ function parseMediaFromLegacy(legacy: Record<string, unknown>, t: Tweet): void {
         const variants = asSlice(dig(mm, 'video_info', 'variants'))
         if (variants) {
           const best = bestVideoVariant(variants)
-          if (best) t.videos.push(best)
+          if (best) {
+            t.videos.push(best)
+            const thumb = asStr(mm['media_url_https'])
+            t.videoThumbnails.push(thumb || '')
+          }
         }
         break
       }
@@ -317,7 +321,11 @@ function parseMediaFromEntities(node: Record<string, unknown>, t: Tweet): void {
         const variants = asSlice(mediaInfo['variants'])
         if (variants) {
           const best = bestVideoVariant(variants)
-          if (best) t.videos.push(best)
+          if (best) {
+            t.videos.push(best)
+            const thumb = asStr(mediaInfo['original_img_url']) || asStr(dig(mem, 'media_url_https') as unknown as string)
+            t.videoThumbnails.push(thumb || '')
+          }
         }
         break
       }
@@ -382,6 +390,7 @@ export function parseGraphTweet(node: Record<string, unknown>): Tweet | null {
     quotes: asInt(legacy['quote_count']),
     photos: [],
     videos: [],
+    videoThumbnails: [],
     gifs: [],
     hashtags: [],
     mentions: [],
@@ -799,6 +808,39 @@ export function parseGraphList(data: Record<string, unknown>): XList | null {
   }
 
   return l
+}
+
+// Follow list parsing
+
+export function parseFollowList(data: Record<string, unknown>): { users: Profile[]; cursor: string } {
+  const result: { users: Profile[]; cursor: string } = { users: [], cursor: '' }
+  const instructions = findInstructions(data)
+  if (!instructions) return result
+
+  for (const inst of instructions) {
+    const im = asMap(inst)
+    if (!im) continue
+    const entries = asSlice(im['entries'])
+    if (!entries) continue
+
+    for (const e of entries) {
+      const em = asMap(e)
+      if (!em) continue
+      const entryID = getEntryID(em)
+
+      if (entryID.startsWith('user')) {
+        const itemContent = asMap(dig(em, 'content', 'itemContent'))
+        if (itemContent) {
+          const user = parseGraphUser(itemContent)
+          if (user) result.users.push(user)
+        }
+      } else if (entryID.startsWith('cursor-bottom')) {
+        result.cursor = asStr(dig(em, 'content', 'value') as unknown as string)
+      }
+    }
+  }
+
+  return result
 }
 
 // Trends parsing

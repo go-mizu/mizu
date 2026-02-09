@@ -5,7 +5,7 @@ import { Cache } from '../cache'
 import { parseUserResult, parseTimeline } from '../parse'
 import { renderLayout, renderProfileHeader, renderTweetCard, renderPagination, renderError } from '../html'
 import {
-  gqlUserByScreenName, gqlUserTweetsV2, gqlUserMedia,
+  gqlUserByScreenName, gqlUserTweetsV2, gqlUserTweetsAndRepliesV2, gqlUserMedia,
   userFieldToggles, userTweetsFieldToggles,
   CACHE_PROFILE, CACHE_TIMELINE,
 } from '../config'
@@ -38,8 +38,17 @@ app.get('/:username', async (c) => {
       return c.html(renderError('User not found', `@${username} doesn't exist or may have been suspended.`), 404)
     }
 
-    const endpoint = tab === 'media' ? gqlUserMedia : gqlUserTweetsV2
-    const toggles = tab === 'media' ? '' : userTweetsFieldToggles
+    // Choose endpoint based on tab
+    let endpoint = gqlUserTweetsV2
+    let toggles = userTweetsFieldToggles
+    if (tab === 'media') {
+      endpoint = gqlUserMedia
+      toggles = ''
+    } else if (tab === 'replies') {
+      endpoint = gqlUserTweetsAndRepliesV2
+      toggles = userTweetsFieldToggles
+    }
+
     const cacheKey = `tweets:${username.toLowerCase()}:${tab}:${cursor}`
     let timelineData = await cache.get<{ tweets: unknown[]; cursor: string }>(cacheKey)
 
@@ -61,7 +70,17 @@ app.get('/:username', async (c) => {
     const tweets = (timelineData.tweets || []) as Parameters<typeof renderTweetCard>[0][]
     const nextCursor = timelineData.cursor as string
 
-    let content = `<div class="sh"><h2>${profile.name}</h2><div class="sh-sub">${profile.tweetsCount.toLocaleString()} posts</div></div>`
+    // Mark pinned tweets on the Posts tab (first page only)
+    if (tab === 'tweets' && !cursor && profile.pinnedTweetIDs.length > 0) {
+      const pinnedSet = new Set(profile.pinnedTweetIDs)
+      for (const tweet of tweets) {
+        if (pinnedSet.has(tweet.id)) tweet.isPin = true
+      }
+      // Sort pinned tweets to the top
+      tweets.sort((a, b) => (a.isPin === b.isPin ? 0 : a.isPin ? -1 : 1))
+    }
+
+    let content = `<div class="sh"><h2>${profile.name}</h2></div>`
     content += renderProfileHeader(profile)
 
     const base = `/${profile.username}`
