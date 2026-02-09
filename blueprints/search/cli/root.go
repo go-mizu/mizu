@@ -76,6 +76,7 @@ Get started:
 	root.AddCommand(NewCrawlDomain())
 	root.AddCommand(NewReddit())
 	root.AddCommand(NewInsta())
+	root.AddCommand(NewX())
 
 	if err := fang.Execute(ctx, root,
 		fang.WithVersion(Version),
