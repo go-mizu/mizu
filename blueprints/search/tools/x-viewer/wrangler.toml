@@ -1,0 +1,16 @@
+name = "x-viewer"
+main = "src/index.ts"
+compatibility_date = "2026-02-09"
+compatibility_flags = ["nodejs_compat"]
+
+[[kv_namespaces]]
+binding = "KV"
+id = "2ddba76decc84c75b20fbf1748d25f49"
+
+[[rules]]
+type = "Text"
+globs = ["**/*.css"]
+fallthrough = true
+
+[vars]
+ENVIRONMENT = "production"
