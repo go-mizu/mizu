@@ -7,6 +7,7 @@ import searchRoutes from './routes/search'
 import hashtagRoutes from './routes/hashtag'
 import listRoutes from './routes/list'
 import tweetRoutes from './routes/tweet'
+import followRoutes from './routes/follow'
 import profileRoutes from './routes/profile'
 
 const app = new Hono<HonoEnv>()
@@ -33,6 +34,9 @@ app.route('/i/lists', listRoutes)
 
 // Tweet detail: /:username/status/:id  (must be before profile catch-all)
 app.route('/', tweetRoutes)
+
+// Follow: /:username/followers, /:username/following (must be before profile catch-all)
+app.route('/', followRoutes)
 
 // Profile: /:username (catch-all, must be last)
 app.route('/', profileRoutes)

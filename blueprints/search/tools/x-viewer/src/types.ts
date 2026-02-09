@@ -63,6 +63,7 @@ export interface Tweet {
   quotes: number
   photos: string[]
   videos: string[]
+  videoThumbnails: string[]
   gifs: string[]
   hashtags: string[]
   mentions: string[]
