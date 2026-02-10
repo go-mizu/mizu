@@ -3,6 +3,7 @@ import type { HonoEnv } from './types'
 import { cssURL, cssText } from './asset'
 import { renderLayout, renderHomePage, renderError } from './html'
 
+import apiRoutes from './routes/api'
 import searchRoutes from './routes/search'
 import hashtagRoutes from './routes/hashtag'
 import listRoutes from './routes/list'
@@ -26,6 +27,9 @@ app.get('/api/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISO
 app.get('/', (c) => {
   return c.html(renderLayout('Z - the X/Twitter Viewer', renderHomePage(), { isHome: true }))
 })
+
+// JSON API for mobile app
+app.route('/api', apiRoutes)
 
 // Routes (order matters — more specific first)
 app.route('/search', searchRoutes)
