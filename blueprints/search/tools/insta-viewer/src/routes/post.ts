@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types'
-import { InstagramClient } from '../instagram'
+import { SessionManager } from '../session'
 import { Cache } from '../cache'
 import { parsePostDetail, parseComments } from '../parse'
 import { renderLayout, renderPostDetail, renderPagination, renderError } from '../html'
@@ -10,7 +10,7 @@ const app = new Hono<HonoEnv>()
 
 app.get('/:shortcode', async (c) => {
   const shortcode = c.req.param('shortcode')
-  const client = new InstagramClient(c.env.INSTA_SESSION_ID, c.env.INSTA_CSRF_TOKEN, c.env.INSTA_DS_USER_ID, c.env.INSTA_MID, c.env.INSTA_IG_DID)
+  const client = await new SessionManager(c.env).getClient()
   const cache = new Cache(c.env.KV)
 
   try {
@@ -44,13 +44,13 @@ app.get('/:shortcode', async (c) => {
       }
     }
 
-    const content = renderPostDetail(post, commentsData.comments || [])
+    const content = renderPostDetail(post, commentsData.comments || [], commentsData.cursor || '')
     const hasCarousel = (post.children?.length || 0) > 1
 
     return c.html(renderLayout(
       `${post.ownerUsername} on Instagram`,
       content,
-      { hasCarousel }
+      { hasCarousel, hasComments: true }
     ))
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)

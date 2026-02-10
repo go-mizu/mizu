@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types'
-import { InstagramClient } from '../instagram'
+import { SessionManager } from '../session'
 import { Cache } from '../cache'
 import { parseProfileResponse, parseFollowList } from '../parse'
 import { renderLayout, renderFollowPage, renderPagination, renderError } from '../html'
@@ -19,7 +19,7 @@ app.get('/:username/following', async (c) => {
 async function handleFollow(c: any, type: 'followers' | 'following') {
   const username = c.req.param('username')
   const cursor = c.req.query('cursor') || ''
-  const client = new InstagramClient(c.env.INSTA_SESSION_ID, c.env.INSTA_CSRF_TOKEN, c.env.INSTA_DS_USER_ID, c.env.INSTA_MID, c.env.INSTA_IG_DID)
+  const client = await new SessionManager(c.env).getClient()
   const cache = new Cache(c.env.KV)
 
   try {

@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { trimTrailingSlash } from 'hono/trailing-slash'
 import type { HonoEnv } from './types'
 import { cssURL, cssText } from './asset'
 import { renderLayout, renderHomePage, renderError } from './html'
@@ -14,6 +15,7 @@ import followRoutes from './routes/follow'
 import profileRoutes from './routes/profile'
 
 const app = new Hono<HonoEnv>()
+app.use(trimTrailingSlash())
 
 // Cacheable CSS with content hash
 app.get(cssURL, (c) => {
@@ -55,10 +57,22 @@ app.get('/api/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISO
 
 // Session status check
 app.get('/api/status', async (c) => {
-  const { InstagramClient } = await import('./instagram')
-  const client = new InstagramClient(c.env.INSTA_SESSION_ID, c.env.INSTA_CSRF_TOKEN, c.env.INSTA_DS_USER_ID, c.env.INSTA_MID, c.env.INSTA_IG_DID)
-  const result = await client.checkSession()
-  return c.json({ session: result, timestamp: new Date().toISOString() })
+  const { SessionManager } = await import('./session')
+  const status = await new SessionManager(c.env).getStatus()
+  return c.json(status)
+})
+
+// Force session refresh (manual trigger)
+app.post('/api/session/refresh', async (c) => {
+  const { SessionManager } = await import('./session')
+  try {
+    const client = await new SessionManager(c.env).refreshSession()
+    const health = await client.checkSession()
+    return c.json({ ok: true, health, timestamp: new Date().toISOString() })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return c.json({ ok: false, error: msg, timestamp: new Date().toISOString() }, 500)
+  }
 })
 
 // Home page

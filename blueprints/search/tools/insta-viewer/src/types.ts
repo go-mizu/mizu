@@ -5,7 +5,26 @@ export interface Env {
   INSTA_DS_USER_ID: string
   INSTA_MID: string
   INSTA_IG_DID: string
+  INSTA_EMAIL: string
+  INSTA_PWD: string
   ENVIRONMENT: string
+}
+
+export interface StoredSession {
+  sessionId: string
+  csrfToken: string
+  dsUserId: string
+  mid: string
+  igDid: string
+  loginAt: string
+  source: 'login' | 'secrets'
+}
+
+export interface LoginError {
+  error: string
+  errorType: 'challenge_required' | '2fa_required' | 'wrong_password' | 'unknown'
+  timestamp: number
+  attempts: number
 }
 
 export type HonoEnv = { Bindings: Env }

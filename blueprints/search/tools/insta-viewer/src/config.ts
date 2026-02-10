@@ -26,15 +26,16 @@ export const docIdProfilePostsAnon = '7950326061742207'
 export const docIdReels = '7845543455542541'
 export const docIdPostDetail = '8845758582119845'
 
-// Cache TTLs in seconds
-export const CACHE_PROFILE = 300      // 5 min
-export const CACHE_POSTS = 120        // 2 min
-export const CACHE_POST = 3600        // 1 hour
-export const CACHE_COMMENTS = 120     // 2 min
-export const CACHE_SEARCH = 120       // 2 min
-export const CACHE_HASHTAG = 120      // 2 min
-export const CACHE_LOCATION = 120     // 2 min
-export const CACHE_STORIES = 60       // 1 min
-export const CACHE_REELS = 120        // 2 min
-export const CACHE_FOLLOW = 300       // 5 min
-export const CACHE_HIGHLIGHTS = 300   // 5 min
+// Cache TTLs in seconds — 0 = permanent (no expiration)
+// Only stories expire (they disappear after 24h on Instagram)
+export const CACHE_PROFILE = 0           // permanent
+export const CACHE_POSTS = 0             // permanent
+export const CACHE_POST = 0              // permanent (post content doesn't change)
+export const CACHE_COMMENTS = 0          // permanent
+export const CACHE_SEARCH = 0            // permanent
+export const CACHE_HASHTAG = 0           // permanent
+export const CACHE_LOCATION = 0          // permanent
+export const CACHE_STORIES = 300         // 5 min (stories expire after 24h on Instagram)
+export const CACHE_REELS = 0             // permanent
+export const CACHE_FOLLOW = 0            // permanent
+export const CACHE_HIGHLIGHTS = 0        // permanent

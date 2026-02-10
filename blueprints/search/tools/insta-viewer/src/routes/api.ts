@@ -2,31 +2,31 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import type { HonoEnv } from '../types'
 import { InstagramClient } from '../instagram'
+import { SessionManager } from '../session'
 import { Cache } from '../cache'
 import {
-  parseProfileResponse, parsePostsResult, parsePostDetail, parseComments,
+  parseProfileResponse, parsePostsResult, parsePostDetail, parseComments, parseCommentReplies,
   parseSearchResults, parseHashtagPosts, parseLocationPosts, parseStories,
   parseReels, parseFollowList, parseHighlights,
 } from '../parse'
 import {
   CACHE_PROFILE, CACHE_POSTS, CACHE_POST, CACHE_COMMENTS, CACHE_SEARCH,
   CACHE_HASHTAG, CACHE_LOCATION, CACHE_STORIES, CACHE_REELS, CACHE_FOLLOW, CACHE_HIGHLIGHTS,
-  docIdProfilePosts, docIdReels, qhComments, qhHashtag, qhLocation,
+  docIdProfilePosts, docIdReels, qhComments, qhCommentReplies, qhHashtag, qhLocation,
   qhFollowers, qhFollowing, qhHighlights,
 } from '../config'
 
 const app = new Hono<HonoEnv>()
 app.use('*', cors())
 
-function ig(c: any) {
-  return new InstagramClient(c.env.INSTA_SESSION_ID, c.env.INSTA_CSRF_TOKEN, c.env.INSTA_DS_USER_ID, c.env.INSTA_MID, c.env.INSTA_IG_DID)
-}
+function sm(c: any) { return new SessionManager(c.env) }
+async function ig(c: any) { return new SessionManager(c.env).getClient() }
 function kv(c: any) { return new Cache(c.env.KV) }
 
 // GET /api/profile/:username
 app.get('/profile/:username', async (c) => {
   const username = c.req.param('username')
-  const client = ig(c)
+  const client = await ig(c)
   const cache = kv(c)
 
   const key = `profile:${username.toLowerCase()}`
@@ -44,7 +44,7 @@ app.get('/profile/:username', async (c) => {
 app.get('/posts/:username', async (c) => {
   const username = c.req.param('username')
   const cursor = c.req.query('cursor') || ''
-  const client = ig(c)
+  const client = await ig(c)
   const cache = kv(c)
 
   // Get profile for ID
@@ -76,7 +76,7 @@ app.get('/posts/:username', async (c) => {
 // GET /api/post/:shortcode
 app.get('/post/:shortcode', async (c) => {
   const shortcode = c.req.param('shortcode')
-  const client = ig(c)
+  const client = await ig(c)
   const cache = kv(c)
 
   const key = `post:${shortcode}`
@@ -94,7 +94,7 @@ app.get('/post/:shortcode', async (c) => {
 app.get('/comments/:shortcode', async (c) => {
   const shortcode = c.req.param('shortcode')
   const cursor = c.req.query('cursor') || ''
-  const client = ig(c)
+  const client = await ig(c)
   const cache = kv(c)
 
   const key = `comments:${shortcode}:${cursor}`
@@ -109,12 +109,31 @@ app.get('/comments/:shortcode', async (c) => {
   return c.json(data)
 })
 
+// GET /api/comments/:shortcode/replies/:commentId
+app.get('/comments/:shortcode/replies/:commentId', async (c) => {
+  const commentId = c.req.param('commentId')
+  const cursor = c.req.query('cursor') || ''
+  const client = await ig(c)
+  const cache = kv(c)
+
+  const key = `replies:${commentId}:${cursor}`
+  let data = await cache.get<any>(key)
+  if (!data) {
+    const vars: Record<string, unknown> = { comment_id: commentId, first: 12 }
+    if (cursor) vars.after = cursor
+    const resp = await client.graphqlQuery(qhCommentReplies, vars)
+    data = parseCommentReplies(resp)
+    await cache.set(key, data, CACHE_COMMENTS)
+  }
+  return c.json(data)
+})
+
 // GET /api/search?q=
 app.get('/search', async (c) => {
   const query = c.req.query('q') || ''
   if (!query) return c.json({ error: 'Query required' }, 400)
 
-  const client = ig(c)
+  const client = await ig(c)
   const cache = kv(c)
 
   const key = `search:${query.toLowerCase()}`
@@ -131,7 +150,7 @@ app.get('/search', async (c) => {
 app.get('/hashtag/:tag', async (c) => {
   const tag = c.req.param('tag')
   const cursor = c.req.query('cursor') || ''
-  const client = ig(c)
+  const client = await ig(c)
   const cache = kv(c)
 
   const key = `hashtag:${tag.toLowerCase()}:${cursor}`
@@ -150,7 +169,7 @@ app.get('/hashtag/:tag', async (c) => {
 app.get('/location/:id', async (c) => {
   const locationId = c.req.param('id')
   const cursor = c.req.query('cursor') || ''
-  const client = ig(c)
+  const client = await ig(c)
   const cache = kv(c)
 
   const key = `location:${locationId}:${cursor}`
@@ -168,7 +187,7 @@ app.get('/location/:id', async (c) => {
 // GET /api/stories/:username
 app.get('/stories/:username', async (c) => {
   const username = c.req.param('username')
-  const client = ig(c)
+  const client = await ig(c)
   const cache = kv(c)
 
   // Get profile for user ID
@@ -195,7 +214,7 @@ app.get('/stories/:username', async (c) => {
 app.get('/reels/:username', async (c) => {
   const username = c.req.param('username')
   const cursor = c.req.query('cursor') || ''
-  const client = ig(c)
+  const client = await ig(c)
   const cache = kv(c)
 
   const profileKey = `profile:${username.toLowerCase()}`
@@ -232,7 +251,7 @@ app.get('/following/:username', async (c) => {
 async function handleFollow(c: any, type: 'followers' | 'following') {
   const username = c.req.param('username')
   const cursor = c.req.query('cursor') || ''
-  const client = ig(c)
+  const client = await ig(c)
   const cache = kv(c)
 
   const profileKey = `profile:${username.toLowerCase()}`
@@ -260,7 +279,7 @@ async function handleFollow(c: any, type: 'followers' | 'following') {
 // GET /api/highlights/:username
 app.get('/highlights/:username', async (c) => {
   const username = c.req.param('username')
-  const client = ig(c)
+  const client = await ig(c)
   const cache = kv(c)
 
   const profileKey = `profile:${username.toLowerCase()}`
@@ -283,10 +302,14 @@ app.get('/highlights/:username', async (c) => {
 })
 
 // JSON error handler for all API routes
-app.onError((err, c) => {
+app.onError(async (err, c) => {
   const msg = err.message || String(err)
   if (msg.includes('rate limited')) return c.json({ error: 'Rate limited' }, 429)
-  if (msg.includes('Session locked') || msg.includes('Session expired')) return c.json({ error: msg }, 503)
+  if (InstagramClient.isSessionError(err)) {
+    // Try to refresh session for next request
+    try { await sm(c).refreshSession() } catch { /* best effort */ }
+    return c.json({ error: msg, sessionRefreshed: true }, 503)
+  }
   if (msg.includes('not found')) return c.json({ error: msg }, 404)
   return c.json({ error: msg }, 500)
 })

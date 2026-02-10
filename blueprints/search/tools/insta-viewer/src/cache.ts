@@ -11,7 +11,10 @@ export class Cache {
     return JSON.parse(val) as T
   }
 
-  async set<T>(key: string, value: T, ttlSeconds: number): Promise<void> {
-    await this.kv.put(key, JSON.stringify(value), { expirationTtl: ttlSeconds })
+  // Set with optional TTL. If ttlSeconds is 0 or not provided, data persists indefinitely.
+  async set<T>(key: string, value: T, ttlSeconds?: number): Promise<void> {
+    const opts: KVNamespacePutOptions = {}
+    if (ttlSeconds && ttlSeconds > 0) opts.expirationTtl = ttlSeconds
+    await this.kv.put(key, JSON.stringify(value), opts)
   }
 }

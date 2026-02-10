@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types'
 import { InstagramClient } from '../instagram'
+import { SessionManager } from '../session'
 import { Cache } from '../cache'
 import { parseProfileResponse, parsePostsResult, parseHighlights, parseTaggedPosts } from '../parse'
 import { renderLayout, renderProfileHeader, renderPostGrid, renderHighlights, renderPagination, renderPrivateMessage, renderError } from '../html'
@@ -9,15 +10,15 @@ import type { Profile, ProfileWithPosts } from '../types'
 
 const app = new Hono<HonoEnv>()
 
-function ig(c: { env: { INSTA_SESSION_ID: string; INSTA_CSRF_TOKEN: string; INSTA_DS_USER_ID: string; INSTA_MID: string; INSTA_IG_DID: string } }) {
-  return new InstagramClient(c.env.INSTA_SESSION_ID, c.env.INSTA_CSRF_TOKEN, c.env.INSTA_DS_USER_ID, c.env.INSTA_MID, c.env.INSTA_IG_DID)
+async function ig(c: any) {
+  return new SessionManager(c.env).getClient()
 }
 
 // Reels tab
 app.get('/:username/reels', async (c) => {
   const username = c.req.param('username')
   const cursor = c.req.query('cursor') || ''
-  const client = ig(c)
+  const client = await ig(c)
   const cache = new Cache(c.env.KV)
 
   try {
@@ -43,7 +44,7 @@ app.get('/:username/reels', async (c) => {
     const grid = renderReelsGrid(reelsData.reels as any)
     const pagination = renderPagination(reelsData.cursor as string, `/${username}/reels`)
 
-    let content = renderProfileHeader(profile) + tabs + grid + pagination
+    let content = renderProfileHeader(profile, false) + tabs + grid + pagination
     return c.html(renderLayout(`@${profile.username}`, content))
   } catch (e) {
     return handleError(c, e)
@@ -54,7 +55,7 @@ app.get('/:username/reels', async (c) => {
 app.get('/:username/tagged', async (c) => {
   const username = c.req.param('username')
   const cursor = c.req.query('cursor') || ''
-  const client = ig(c)
+  const client = await ig(c)
   const cache = new Cache(c.env.KV)
 
   try {
@@ -76,7 +77,7 @@ app.get('/:username/tagged', async (c) => {
     const grid = renderPostGrid(taggedData.posts as any)
     const pagination = renderPagination(taggedData.cursor as string, `/${username}/tagged`)
 
-    let content = renderProfileHeader(profile) + tabs + grid + pagination
+    let content = renderProfileHeader(profile, false) + tabs + grid + pagination
     return c.html(renderLayout(`@${profile.username}`, content))
   } catch (e) {
     return handleError(c, e)
@@ -89,7 +90,7 @@ app.get('/:username', async (c) => {
   if (username === 'favicon.ico' || username === 'robots.txt' || username === 's' || username === 'api' || username === 'search' || username === 'explore' || username === 'p' || username === 'stories' || username === 'reels') return c.notFound()
 
   const cursor = c.req.query('cursor') || ''
-  const client = ig(c)
+  const client = await ig(c)
   const cache = new Cache(c.env.KV)
 
   try {
@@ -97,7 +98,7 @@ app.get('/:username', async (c) => {
     if (!profile) return c.html(renderError('User not found', `@${username} doesn't exist or may have been suspended.`), 404)
 
     if (profile.isPrivate) {
-      const content = renderProfileHeader(profile) + renderPrivateMessage()
+      const content = renderProfileHeader(profile, false) + renderPrivateMessage()
       return c.html(renderLayout(`@${profile.username}`, content))
     }
 
@@ -143,7 +144,7 @@ app.get('/:username', async (c) => {
 
     let content = ''
     if (!cursor) {
-      content = renderProfileHeader(profile) + renderHighlights(highlights) + tabs + grid + pagination
+      content = renderProfileHeader(profile, true) + renderHighlights(highlights) + tabs + grid + pagination
     } else {
       content = grid + pagination
     }
