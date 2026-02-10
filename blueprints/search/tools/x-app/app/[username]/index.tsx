@@ -8,6 +8,7 @@ import { useTimeline } from '../../src/hooks/useTimeline'
 import { ProfileHeader } from '../../src/components/ProfileHeader'
 import { TweetCard } from '../../src/components/TweetCard'
 import { TabBar } from '../../src/components/TabBar'
+import { OfflineBanner } from '../../src/components/OfflineBanner'
 import type { Tweet } from '../../src/api/types'
 
 const tabs = [
@@ -78,6 +79,7 @@ export default function ProfileScreen() {
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
       <Stack.Screen options={{ title: `@${username}` }} />
+      <OfflineBanner />
       {isMedia ? (
         <FlatList
           data={mediaTweets}

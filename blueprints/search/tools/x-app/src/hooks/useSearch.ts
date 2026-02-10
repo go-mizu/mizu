@@ -1,8 +1,9 @@
 import { useState, useCallback, useRef } from 'react'
 import type { Tweet, Profile } from '../api/types'
 import { fetchSearch } from '../api/client'
-import { cacheGet, cacheSet } from '../cache/store'
+import { cacheGet, cacheSet, cacheGetStale } from '../cache/store'
 import { SearchPeople, CACHE_SEARCH } from '../api/config'
+import { useNetwork } from './useNetwork'
 
 export function useSearch(query: string, mode: string) {
   const [tweets, setTweets] = useState<Tweet[]>([])
@@ -11,6 +12,7 @@ export function useSearch(query: string, mode: string) {
   const [error, setError] = useState<string | null>(null)
   const cursorRef = useRef('')
   const hasMoreRef = useRef(true)
+  const { isOnline } = useNetwork()
 
   const fetchPage = useCallback(async (cursor: string, isRefresh = false) => {
     if (!query) return
@@ -38,6 +40,23 @@ export function useSearch(query: string, mode: string) {
         }
       }
 
+      // When offline, try stale
+      if (!isOnline) {
+        const stale = await cacheGetStale<any>(cacheKey)
+        if (stale && !cursor) {
+          if (isPeople) {
+            setUsers(stale.users || [])
+          } else {
+            setTweets(stale.tweets || [])
+          }
+          hasMoreRef.current = false
+        } else if (!cursor) {
+          setError('Offline — no cached results')
+        }
+        setLoading(false)
+        return
+      }
+
       const result = await fetchSearch(query, mode, cursor || undefined)
 
       if (isPeople) {
@@ -62,10 +81,19 @@ export function useSearch(query: string, mode: string) {
         await cacheSet(cacheKey, result, CACHE_SEARCH)
       }
     } catch (e: any) {
-      setError(e.message || 'Search failed')
+      const stale = await cacheGetStale<any>(cacheKey)
+      if (stale && !cursor) {
+        if (isPeople) {
+          setUsers(stale.users || [])
+        } else {
+          setTweets(stale.tweets || [])
+        }
+      } else {
+        setError(e.message || 'Search failed')
+      }
     }
     setLoading(false)
-  }, [query, mode])
+  }, [query, mode, isOnline])
 
   const loadMore = useCallback(() => {
     if (!loading && hasMoreRef.current && cursorRef.current) {

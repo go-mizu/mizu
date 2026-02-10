@@ -4,6 +4,7 @@ import { useLocalSearchParams, Stack } from 'expo-router'
 import { useTheme } from '../../src/theme'
 import { useFollows } from '../../src/hooks/useFollows'
 import { UserCard } from '../../src/components/UserCard'
+import { OfflineBanner } from '../../src/components/OfflineBanner'
 
 export default function FollowingScreen() {
   const { username } = useLocalSearchParams<{ username: string }>()
@@ -17,6 +18,7 @@ export default function FollowingScreen() {
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
       <Stack.Screen options={{ title: `@${username} - Following` }} />
+      <OfflineBanner />
       <FlatList
         data={users}
         keyExtractor={(item) => item.id}

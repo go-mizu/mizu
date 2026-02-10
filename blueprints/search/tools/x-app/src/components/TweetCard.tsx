@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native'
 import { Image } from 'expo-image'
 import { useRouter } from 'expo-router'
@@ -8,19 +8,36 @@ import { RichText } from './RichText'
 import { MediaGrid } from './MediaGrid'
 import { QuotedTweet } from './QuotedTweet'
 import { fmtNum, relTime } from '../utils'
+import { addBookmark, removeBookmark, isBookmarked } from '../cache/bookmarks'
 import type { Tweet } from '../api/types'
 
 interface TweetCardProps {
   tweet: Tweet
+  showBookmarkAction?: boolean
 }
 
-export function TweetCard({ tweet: rawTweet }: TweetCardProps) {
+export function TweetCard({ tweet: rawTweet, showBookmarkAction = true }: TweetCardProps) {
   const theme = useTheme()
   const router = useRouter()
+  const [bookmarked, setBookmarked] = useState(false)
 
   // If retweet, show inner tweet with retweet label
   const isRT = rawTweet.isRetweet && rawTweet.retweetedTweet
   const tweet = isRT ? rawTweet.retweetedTweet! : rawTweet
+
+  useEffect(() => {
+    isBookmarked(tweet.id).then(setBookmarked)
+  }, [tweet.id])
+
+  const toggleBookmark = async () => {
+    if (bookmarked) {
+      await removeBookmark(tweet.id)
+      setBookmarked(false)
+    } else {
+      await addBookmark(tweet)
+      setBookmarked(true)
+    }
+  }
 
   return (
     <TouchableOpacity
@@ -95,6 +112,13 @@ export function TweetCard({ tweet: rawTweet }: TweetCardProps) {
             <ActionButton icon="↻" count={tweet.retweets} color={theme.retweet} />
             <ActionButton icon="♡" count={tweet.likes} color={theme.like} />
             <ActionButton icon="👁" count={tweet.views} color={theme.secondary} />
+            {showBookmarkAction && (
+              <TouchableOpacity onPress={toggleBookmark} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={[actionStyles.icon, { color: bookmarked ? theme.blue : theme.secondary }]}>
+                  {bookmarked ? '🔖' : '🏷'}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </View>
@@ -173,6 +197,6 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     marginTop: 10,
-    paddingRight: 40,
+    alignItems: 'center',
   },
 })

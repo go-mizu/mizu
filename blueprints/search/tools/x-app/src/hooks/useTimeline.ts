@@ -3,6 +3,7 @@ import type { Tweet } from '../api/types'
 import { fetchTweets } from '../api/client'
 import { cacheGet, cacheSet, cacheGetStale } from '../cache/store'
 import { CACHE_TIMELINE } from '../api/config'
+import { useNetwork } from './useNetwork'
 
 export function useTimeline(username: string, tab: string) {
   const [tweets, setTweets] = useState<Tweet[]>([])
@@ -11,6 +12,7 @@ export function useTimeline(username: string, tab: string) {
   const [error, setError] = useState<string | null>(null)
   const cursorRef = useRef('')
   const hasMoreRef = useRef(true)
+  const { isOnline } = useNetwork()
 
   const fetchPage = useCallback(async (cursor: string, isRefresh = false) => {
     if (!username) return
@@ -43,6 +45,21 @@ export function useTimeline(username: string, tab: string) {
         }
       }
 
+      // When offline, serve stale
+      if (!isOnline) {
+        const stale = await cacheGetStale<{ tweets: Tweet[]; cursor: string }>(cacheKey)
+        if (stale && !cursor) {
+          setTweets(stale.tweets)
+          cursorRef.current = stale.cursor
+          hasMoreRef.current = false // don't paginate offline
+        } else if (!cursor) {
+          setError('Offline — no cached data available')
+        }
+        setLoading(false)
+        setRefreshing(false)
+        return
+      }
+
       const result = await fetchTweets(username, tab, cursor || undefined)
 
       if (cursor && !isRefresh) {
@@ -66,7 +83,7 @@ export function useTimeline(username: string, tab: string) {
 
     setLoading(false)
     setRefreshing(false)
-  }, [username, tab])
+  }, [username, tab, isOnline])
 
   const loadMore = useCallback(() => {
     if (!loading && hasMoreRef.current && cursorRef.current) {

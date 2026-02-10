@@ -8,6 +8,7 @@ import { TweetCard } from '../src/components/TweetCard'
 import { UserCard } from '../src/components/UserCard'
 import { TabBar } from '../src/components/TabBar'
 import { addSearchHistory } from '../src/cache/store'
+import { OfflineBanner } from '../src/components/OfflineBanner'
 import { SearchTop, SearchLatest, SearchPeople, SearchPhotos } from '../src/api/config'
 
 const searchTabs = [
@@ -46,6 +47,7 @@ export default function SearchScreen() {
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
       <Stack.Screen options={{ title: 'Search', headerShown: false }} />
+      <OfflineBanner />
 
       <View style={[styles.searchHeader, { backgroundColor: theme.barBg, borderBottomColor: theme.border }]}>
         <View style={styles.searchBarWrapper}>

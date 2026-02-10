@@ -1,8 +1,9 @@
 import { useState, useCallback, useRef } from 'react'
 import type { Profile } from '../api/types'
 import { fetchFollowers, fetchFollowing } from '../api/client'
-import { cacheGet, cacheSet } from '../cache/store'
+import { cacheGet, cacheSet, cacheGetStale } from '../cache/store'
 import { CACHE_FOLLOW } from '../api/config'
+import { useNetwork } from './useNetwork'
 
 export function useFollows(username: string, type: 'followers' | 'following') {
   const [users, setUsers] = useState<Profile[]>([])
@@ -10,6 +11,7 @@ export function useFollows(username: string, type: 'followers' | 'following') {
   const [error, setError] = useState<string | null>(null)
   const cursorRef = useRef('')
   const hasMoreRef = useRef(true)
+  const { isOnline } = useNetwork()
 
   const fetcher = type === 'followers' ? fetchFollowers : fetchFollowing
 
@@ -32,6 +34,19 @@ export function useFollows(username: string, type: 'followers' | 'following') {
         }
       }
 
+      // When offline, try stale
+      if (!isOnline) {
+        const stale = await cacheGetStale<{ users: Profile[]; cursor: string }>(cacheKey)
+        if (stale && !cursor) {
+          setUsers(stale.users)
+          hasMoreRef.current = false
+        } else if (!cursor) {
+          setError('Offline — no cached data available')
+        }
+        setLoading(false)
+        return
+      }
+
       const result = await fetcher(username, cursor || undefined)
 
       if (cursor && !isRefresh) {
@@ -44,10 +59,15 @@ export function useFollows(username: string, type: 'followers' | 'following') {
 
       await cacheSet(cacheKey, result, CACHE_FOLLOW)
     } catch (e: any) {
-      setError(e.message || `Failed to load ${type}`)
+      const stale = await cacheGetStale<{ users: Profile[]; cursor: string }>(cacheKey)
+      if (stale && !cursor) {
+        setUsers(stale.users)
+      } else {
+        setError(e.message || `Failed to load ${type}`)
+      }
     }
     setLoading(false)
-  }, [username, type, fetcher])
+  }, [username, type, fetcher, isOnline])
 
   const loadMore = useCallback(() => {
     if (!loading && hasMoreRef.current && cursorRef.current) {
