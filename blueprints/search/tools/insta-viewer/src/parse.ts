@@ -250,6 +250,35 @@ export function parseComments(data: Record<string, unknown>): CommentsResult {
   }
 }
 
+// ── Comment Replies ──
+
+export function parseCommentReplies(data: Record<string, unknown>): CommentsResult {
+  const conn = dig(data, 'data', 'comment', 'edge_threaded_comments')
+  if (!conn) return { comments: [], cursor: '', hasMore: false }
+
+  const c = asMap(conn)
+  const edges = asArr(c.edges)
+  const comments: Comment[] = edges.map(e => {
+    const n = asMap(asMap(e).node)
+    return {
+      id: asStr(n.id),
+      text: asStr(n.text),
+      authorName: asStr(dig(n, 'owner', 'username')),
+      authorPic: asStr(dig(n, 'owner', 'profile_pic_url')),
+      likeCount: asNum(dig(n, 'edge_liked_by', 'count')),
+      createdAt: tsToISO(n.created_at),
+      replyCount: 0,
+    }
+  })
+
+  const pageInfo = asMap(c.page_info)
+  return {
+    comments,
+    cursor: asStr(pageInfo.end_cursor),
+    hasMore: asBool(pageInfo.has_next_page),
+  }
+}
+
 // ── Stories ──
 
 export function parseStories(data: Record<string, unknown>): StoryItem[] {

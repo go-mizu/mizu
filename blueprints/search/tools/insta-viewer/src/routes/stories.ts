@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types'
-import { InstagramClient } from '../instagram'
+import { SessionManager } from '../session'
 import { Cache } from '../cache'
 import { parseProfileResponse, parseStories, parseHighlights } from '../parse'
 import { renderLayout, renderStoriesViewer, renderError } from '../html'
@@ -12,7 +12,7 @@ const app = new Hono<HonoEnv>()
 app.get('/:username', async (c) => {
   const username = c.req.param('username')
   if (username === 'highlights') return c.notFound()
-  const client = new InstagramClient(c.env.INSTA_SESSION_ID, c.env.INSTA_CSRF_TOKEN, c.env.INSTA_DS_USER_ID, c.env.INSTA_MID, c.env.INSTA_IG_DID)
+  const client = await new SessionManager(c.env).getClient()
   const cache = new Cache(c.env.KV)
 
   try {
@@ -42,14 +42,17 @@ app.get('/:username', async (c) => {
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     if (msg.includes('rate limited')) return c.html(renderError('Rate Limited', 'Too many requests.'), 429)
-    return c.html(renderError('Error', msg), 500)
+    if (msg.includes('Session') || msg.includes('checkpoint') || msg.includes('login')) {
+      return c.html(renderError('Stories Unavailable', 'Stories require an active session. The current session needs re-authentication.'), 503)
+    }
+    return c.html(renderError('Stories Unavailable', 'Unable to load stories. This may be a temporary issue.'), 500)
   }
 })
 
 // Highlight stories
 app.get('/highlights/:id', async (c) => {
   const highlightId = c.req.param('id')
-  const client = new InstagramClient(c.env.INSTA_SESSION_ID, c.env.INSTA_CSRF_TOKEN, c.env.INSTA_DS_USER_ID, c.env.INSTA_MID, c.env.INSTA_IG_DID)
+  const client = await new SessionManager(c.env).getClient()
   const cache = new Cache(c.env.KV)
 
   try {
