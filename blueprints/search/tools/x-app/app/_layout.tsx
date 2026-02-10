@@ -2,13 +2,14 @@ import React from 'react'
 import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { useColorScheme } from 'react-native'
+import { NetworkProvider } from '../src/hooks/useNetwork'
 
 export default function RootLayout() {
   const scheme = useColorScheme()
   const isDark = scheme === 'dark'
 
   return (
-    <>
+    <NetworkProvider>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <Stack
         screenOptions={{
@@ -18,6 +19,6 @@ export default function RootLayout() {
           headerTintColor: isDark ? '#e7e9ea' : '#0f1419',
         }}
       />
-    </>
+    </NetworkProvider>
   )
 }

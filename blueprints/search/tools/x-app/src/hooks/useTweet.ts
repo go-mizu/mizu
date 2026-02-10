@@ -3,6 +3,7 @@ import type { Tweet } from '../api/types'
 import { fetchTweet } from '../api/client'
 import { cacheGet, cacheSet, cacheGetStale } from '../cache/store'
 import { CACHE_TWEET } from '../api/config'
+import { useNetwork } from './useNetwork'
 
 export function useTweet(tweetID: string) {
   const [tweet, setTweet] = useState<Tweet | null>(null)
@@ -10,6 +11,7 @@ export function useTweet(tweetID: string) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [cursor, setCursor] = useState('')
+  const { isOnline } = useNetwork()
 
   const load = useCallback(async (loadCursor?: string) => {
     if (!tweetID) return
@@ -25,6 +27,23 @@ export function useTweet(tweetID: string) {
         setReplies(cached.replies)
         setCursor(cached.cursor)
         setLoading(false)
+        if (!isOnline) return // offline: stop with cached data
+      }
+
+      // When offline, try stale
+      if (!isOnline) {
+        if (!cached) {
+          const stale = await cacheGetStale<{ tweet: Tweet; replies: Tweet[]; cursor: string }>(cacheKey)
+          if (stale) {
+            setTweet(stale.tweet)
+            setReplies(stale.replies)
+            setCursor('')
+          } else {
+            setError('Offline — no cached data available')
+          }
+        }
+        setLoading(false)
+        return
       }
 
       const result = await fetchTweet(tweetID, loadCursor)
@@ -51,7 +70,7 @@ export function useTweet(tweetID: string) {
       }
     }
     setLoading(false)
-  }, [tweetID])
+  }, [tweetID, isOnline])
 
   useEffect(() => { load() }, [load])
 

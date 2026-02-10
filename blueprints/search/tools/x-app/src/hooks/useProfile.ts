@@ -3,11 +3,13 @@ import type { Profile } from '../api/types'
 import { fetchProfile } from '../api/client'
 import { cacheGet, cacheSet, cacheGetStale } from '../cache/store'
 import { CACHE_PROFILE } from '../api/config'
+import { useNetwork } from './useNetwork'
 
 export function useProfile(username: string) {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const { isOnline } = useNetwork()
 
   const load = useCallback(async () => {
     if (!username) return
@@ -21,6 +23,21 @@ export function useProfile(username: string) {
     if (cached) {
       setProfile(cached)
       setLoading(false)
+      if (!isOnline) return // offline: stop here with cached data
+    }
+
+    // When offline, try stale cache if no fresh cache
+    if (!isOnline) {
+      if (!cached) {
+        const stale = await cacheGetStale<Profile>(cacheKey)
+        if (stale) {
+          setProfile(stale)
+        } else {
+          setError('Offline — no cached data available')
+        }
+      }
+      setLoading(false)
+      return
     }
 
     // Fetch fresh data
@@ -39,7 +56,7 @@ export function useProfile(username: string) {
       }
     }
     setLoading(false)
-  }, [username])
+  }, [username, isOnline])
 
   useEffect(() => { load() }, [load])
 

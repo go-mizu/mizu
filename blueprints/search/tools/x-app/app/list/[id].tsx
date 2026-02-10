@@ -6,6 +6,7 @@ import { fetchList } from '../../src/api/client'
 import { TweetCard } from '../../src/components/TweetCard'
 import { UserCard } from '../../src/components/UserCard'
 import { TabBar } from '../../src/components/TabBar'
+import { OfflineBanner } from '../../src/components/OfflineBanner'
 import type { XList, Tweet, Profile } from '../../src/api/types'
 
 const listTabs = [
@@ -77,6 +78,7 @@ export default function ListScreen() {
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
       <Stack.Screen options={{ title: list?.name || 'List' }} />
+      <OfflineBanner />
       {activeTab === 'tweets' ? (
         <FlatList
           data={tweets}

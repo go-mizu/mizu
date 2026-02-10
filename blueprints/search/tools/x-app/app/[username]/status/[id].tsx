@@ -5,6 +5,7 @@ import { useTheme } from '../../../src/theme'
 import { useTweet } from '../../../src/hooks/useTweet'
 import { TweetDetail } from '../../../src/components/TweetDetail'
 import { TweetCard } from '../../../src/components/TweetCard'
+import { OfflineBanner } from '../../../src/components/OfflineBanner'
 
 export default function TweetDetailScreen() {
   const { id, username } = useLocalSearchParams<{ id: string; username: string }>()
@@ -32,6 +33,7 @@ export default function TweetDetailScreen() {
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
       <Stack.Screen options={{ title: 'Post' }} />
+      <OfflineBanner />
       <FlatList
         data={replies}
         keyExtractor={(item) => item.id}

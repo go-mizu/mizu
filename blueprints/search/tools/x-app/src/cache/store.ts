@@ -81,6 +81,34 @@ export async function clearSearchHistory(): Promise<void> {
   await d.execAsync('DELETE FROM search_history')
 }
 
+// Cache statistics
+export interface CacheStats {
+  entryCount: number
+  approximateSizeKB: number
+}
+
+export async function getCacheStats(): Promise<CacheStats> {
+  const d = await getDB()
+  const countRow = await d.getFirstAsync<{ count: number }>(
+    'SELECT COUNT(*) as count FROM cache'
+  )
+  const sizeRow = await d.getFirstAsync<{ total: number }>(
+    'SELECT COALESCE(SUM(LENGTH(data)), 0) as total FROM cache'
+  )
+  return {
+    entryCount: countRow?.count ?? 0,
+    approximateSizeKB: Math.round((sizeRow?.total ?? 0) / 1024),
+  }
+}
+
+// Prune expired entries
+export async function pruneExpiredCache(): Promise<number> {
+  const d = await getDB()
+  const now = Math.floor(Date.now() / 1000)
+  const result = await d.runAsync('DELETE FROM cache WHERE expires_at <= ?', [now])
+  return result.changes
+}
+
 // Credentials
 export interface Credentials {
   authToken: string

@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native'
 import { Image } from 'expo-image'
 import { useRouter } from 'expo-router'
@@ -7,6 +7,7 @@ import { useTheme } from '../theme'
 import { Badge } from './Badge'
 import { RichText } from './RichText'
 import { fmtNum, joinDate } from '../utils'
+import { pinProfile, unpinProfile, isPinned } from '../cache/pins'
 import type { Profile } from '../api/types'
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
@@ -18,6 +19,21 @@ interface ProfileHeaderProps {
 export function ProfileHeader({ profile }: ProfileHeaderProps) {
   const theme = useTheme()
   const router = useRouter()
+  const [pinned, setPinned] = useState(false)
+
+  useEffect(() => {
+    isPinned(profile.username).then(setPinned)
+  }, [profile.username])
+
+  const togglePin = async () => {
+    if (pinned) {
+      await unpinProfile(profile.username)
+      setPinned(false)
+    } else {
+      await pinProfile(profile)
+      setPinned(true)
+    }
+  }
 
   return (
     <View>
@@ -31,6 +47,21 @@ export function ProfileHeader({ profile }: ProfileHeaderProps) {
       {/* Avatar */}
       <View style={[styles.avatarContainer, { borderColor: theme.bg }]}>
         <Image source={{ uri: profile.avatar }} style={styles.avatar} />
+      </View>
+
+      {/* Pin button */}
+      <View style={styles.pinRow}>
+        <TouchableOpacity
+          style={[styles.pinButton, {
+            backgroundColor: pinned ? theme.blue : 'transparent',
+            borderColor: pinned ? theme.blue : theme.border,
+          }]}
+          onPress={togglePin}
+        >
+          <Text style={[styles.pinText, { color: pinned ? '#fff' : theme.text }]}>
+            {pinned ? 'Pinned' : 'Pin offline'}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.info}>
@@ -113,9 +144,24 @@ const styles = StyleSheet.create({
     height: 80,
     borderRadius: 40,
   },
+  pinRow: {
+    alignItems: 'flex-end',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  pinButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  pinText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
   info: {
     paddingHorizontal: 16,
-    paddingTop: 52,
+    paddingTop: 28,
   },
   nameRow: {
     flexDirection: 'row',
