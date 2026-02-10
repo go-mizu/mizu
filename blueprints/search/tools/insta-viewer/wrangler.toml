@@ -1,0 +1,16 @@
+name = "insta-viewer"
+main = "src/index.ts"
+compatibility_date = "2026-02-09"
+compatibility_flags = ["nodejs_compat"]
+
+[[kv_namespaces]]
+binding = "KV"
+id = "792dde75c5dc4818af5718f7d63da323"
+
+[[rules]]
+type = "Text"
+globs = ["**/*.css"]
+fallthrough = true
+
+[vars]
+ENVIRONMENT = "production"
