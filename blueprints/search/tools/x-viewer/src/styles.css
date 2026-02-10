@@ -189,14 +189,17 @@ button { font: inherit; border: 0; background: none; cursor: pointer; color: inh
 }
 .tweet-link:hover { text-decoration: none; }
 
+.tweet-avi-link {
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
+  flex-shrink: 0;
+}
+.tweet-avi-link:hover { text-decoration: none; }
 .tweet-avi {
   width: 40px; height: 40px;
   border-radius: 50%;
   object-fit: cover;
-  flex-shrink: 0;
-  position: relative;
-  z-index: 1;
-  pointer-events: none;
 }
 
 .tweet-body {
@@ -228,7 +231,9 @@ button { font: inherit; border: 0; background: none; cursor: pointer; color: inh
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 0 1 auto;
+  color: var(--text);
 }
+.tweet-hd-name:hover { text-decoration: underline; }
 .tweet-hd-badge {
   flex: 0 0 auto;
   display: inline-flex;
@@ -484,6 +489,52 @@ button { font: inherit; border: 0; background: none; cursor: pointer; color: inh
 .err { padding: 48px 16px; text-align: center; }
 .err h2 { font-size: 23px; font-weight: 800; margin-bottom: 8px; }
 .err p { color: var(--text-secondary); font-size: 15px; }
+
+/* === Text truncation ("Show more") === */
+.tweet-txt-long {
+  max-height: 120px;
+  overflow: hidden;
+  position: relative;
+}
+.tweet-show-more {
+  display: block;
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  padding: 30px 0 2px;
+  background: linear-gradient(transparent, var(--bg) 70%);
+  color: var(--link);
+  font-size: 14px;
+  pointer-events: auto;
+  z-index: 2;
+}
+.tweet-show-more:hover { text-decoration: underline; }
+
+/* === Media grid === */
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+}
+.media-grid-item {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  display: block;
+}
+.media-grid-item:hover { opacity: .85; }
+.media-grid-item img, .media-grid-item video {
+  width: 100%; height: 100%; object-fit: cover;
+}
+.mg-vid, .mg-gif, .mg-multi {
+  position: absolute; bottom: 6px; left: 6px;
+  background: rgba(0,0,0,.7); color: #fff;
+  padding: 2px 6px; border-radius: 4px; font-size: 12px;
+}
+.mg-multi::after { content: '⊞'; }
+.mg-vid-placeholder {
+  width: 100%; height: 100%;
+  background: var(--bg-placeholder);
+}
 
 /* === Responsive === */
 @media (max-width: 620px) {

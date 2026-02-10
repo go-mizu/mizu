@@ -31,6 +31,7 @@ export interface Profile {
   isPrivate: boolean
   isVerified: boolean
   isBlueVerified: boolean
+  verifiedType: string
   pinnedTweetIDs: string[]
   professionalType: string
   professionalCategory: string
@@ -74,6 +75,7 @@ export interface Tweet {
   place: string
   isEdited: boolean
   isBlueVerified: boolean
+  verifiedType: string
   postedAt: string
 }
 

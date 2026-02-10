@@ -63,8 +63,8 @@ function parseCreatedAt(legacy: Record<string, unknown>): string {
 
 // User parsing
 
-function parseGraphUserFromCore(core: Record<string, unknown> | undefined): { username: string; userID: string; name: string; avatar: string; isBlueVerified: boolean } {
-  const empty = { username: '', userID: '', name: '', avatar: '', isBlueVerified: false }
+function parseGraphUserFromCore(core: Record<string, unknown> | undefined): { username: string; userID: string; name: string; avatar: string; isBlueVerified: boolean; verifiedType: string } {
+  const empty = { username: '', userID: '', name: '', avatar: '', isBlueVerified: false, verifiedType: '' }
   if (!core) return empty
 
   let user = asMap(dig(core, 'user_results', 'result'))
@@ -76,12 +76,14 @@ function parseGraphUserFromCore(core: Record<string, unknown> | undefined): { us
       name: asStr(core['name']),
       avatar: '',
       isBlueVerified: false,
+      verifiedType: '',
     }
   }
 
   const userID = asStr(user['rest_id'])
   const isBlueVerified = asBool(user['is_blue_verified'])
   const legacy = asMap(user['legacy'])
+  const verifiedType = legacy ? asStr(legacy['verified_type']) : ''
 
   let username = ''
   let name = ''
@@ -99,7 +101,7 @@ function parseGraphUserFromCore(core: Record<string, unknown> | undefined): { us
     avatar = pic.replace('_normal', '')
   }
 
-  return { username, userID, name, avatar, isBlueVerified }
+  return { username, userID, name, avatar, isBlueVerified, verifiedType }
 }
 
 export function parseUserResult(data: Record<string, unknown>): Profile | null {
@@ -143,6 +145,7 @@ function parseGraphUser(node: Record<string, unknown>): Profile | null {
       isPrivate: false,
       isVerified: false,
       isBlueVerified: asBool(user['is_blue_verified']),
+      verifiedType: '',
       pinnedTweetIDs: [],
       professionalType: '',
       professionalCategory: '',
@@ -184,6 +187,7 @@ function parseGraphUser(node: Record<string, unknown>): Profile | null {
   let isBlueVerified = asBool(user['is_blue_verified'])
   let isVerified = asBool(dig(user, 'verification', 'verified'))
   if (asStr(legacy['verified_type']) || asBool(legacy['verified'])) isVerified = true
+  const verifiedType = asStr(legacy['verified_type'])
 
   const pinnedTweetIDs: string[] = []
   const pins = asSlice(legacy['pinned_tweet_ids_str'])
@@ -227,6 +231,7 @@ function parseGraphUser(node: Record<string, unknown>): Profile | null {
     isPrivate,
     isVerified,
     isBlueVerified,
+    verifiedType,
     pinnedTweetIDs,
     professionalType,
     professionalCategory,
@@ -363,7 +368,7 @@ export function parseGraphTweet(node: Record<string, unknown>): Tweet | null {
   if (!legacy) return null
 
   const restID = asStr(node['rest_id'])
-  const { username, userID, name, avatar, isBlueVerified } = parseGraphUserFromCore(asMap(node['core']))
+  const { username, userID, name, avatar, isBlueVerified, verifiedType } = parseGraphUserFromCore(asMap(node['core']))
 
   const t: Tweet = {
     id: restID,
@@ -401,6 +406,7 @@ export function parseGraphTweet(node: Record<string, unknown>): Tweet | null {
     place: '',
     isEdited: false,
     isBlueVerified,
+    verifiedType,
     postedAt: parseCreatedAt(legacy),
   }
 
@@ -691,6 +697,26 @@ export function parseConversation(data: Record<string, unknown>, tweetID: string
     if (!im) continue
     let typeName = asStr(im['type'])
     if (!typeName) typeName = asStr(im['__typename'])
+    if (typeName === 'TimelineAddToModule') {
+      const moduleItems = asSlice(im['moduleItems'])
+      if (moduleItems) {
+        for (const item of moduleItems) {
+          const itemMap = asMap(item)
+          if (!itemMap) continue
+          const itemEntryID = getEntryID(itemMap)
+          if (itemEntryID.includes('cursor')) {
+            let val = asStr(dig(itemMap, 'item', 'itemContent', 'value') as unknown as string)
+            if (!val) val = asStr(dig(itemMap, 'item', 'content', 'value') as unknown as string)
+            if (val) cursor = val
+          } else {
+            const tr = extractTweetFromItem(itemMap, 'item')
+            if (tr) replies.push(tr)
+          }
+        }
+      }
+      continue
+    }
+
     if (typeName !== 'TimelineAddEntries') continue
 
     const entries = asSlice(im['entries'])
@@ -829,6 +855,73 @@ export function parseFollowList(data: Record<string, unknown>): { users: Profile
       const entryID = getEntryID(em)
 
       if (entryID.startsWith('user')) {
+        const itemContent = asMap(dig(em, 'content', 'itemContent'))
+        if (itemContent) {
+          const user = parseGraphUser(itemContent)
+          if (user) result.users.push(user)
+        }
+      } else if (entryID.startsWith('cursor-bottom')) {
+        result.cursor = asStr(dig(em, 'content', 'value') as unknown as string)
+      }
+    }
+  }
+
+  return result
+}
+
+// Search users parsing
+
+export function parseSearchUsers(data: Record<string, unknown>): { users: Profile[]; cursor: string } {
+  const result: { users: Profile[]; cursor: string } = { users: [], cursor: '' }
+  const instructions = findSearchInstructions(data)
+  if (!instructions) return result
+
+  for (const inst of instructions) {
+    const im = asMap(inst)
+    if (!im) continue
+    const entries = asSlice(im['entries'])
+    if (!entries) continue
+
+    for (const e of entries) {
+      const em = asMap(e)
+      if (!em) continue
+      const entryID = getEntryID(em)
+
+      if (entryID.startsWith('user')) {
+        const itemContent = asMap(dig(em, 'content', 'itemContent'))
+        if (itemContent) {
+          const user = parseGraphUser(itemContent)
+          if (user) result.users.push(user)
+        }
+      } else if (entryID.startsWith('cursor-bottom')) {
+        result.cursor = asStr(dig(em, 'content', 'value') as unknown as string)
+      }
+    }
+  }
+
+  return result
+}
+
+// List members parsing
+
+export function parseListMembers(data: Record<string, unknown>): { users: Profile[]; cursor: string } {
+  const result: { users: Profile[]; cursor: string } = { users: [], cursor: '' }
+  let instructions = asSlice(dig(data, 'data', 'list', 'members_timeline', 'timeline', 'instructions'))
+  if (!instructions) instructions = findInstructions(data)
+  if (!instructions) return result
+
+  for (const inst of instructions) {
+    const im = asMap(inst)
+    if (!im) continue
+    const entries = asSlice(im['entries'])
+    if (!entries) continue
+
+    for (const e of entries) {
+      const em = asMap(e)
+      if (!em) continue
+      const entryID = getEntryID(em)
+
+      if (entryID.startsWith('user') || entryID.startsWith('list-user')) {
         const itemContent = asMap(dig(em, 'content', 'itemContent'))
         if (itemContent) {
           const user = parseGraphUser(itemContent)
