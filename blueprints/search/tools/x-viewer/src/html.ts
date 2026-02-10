@@ -77,8 +77,13 @@ function linkify(text: string, urls?: string[]): string {
   return s
 }
 
-function badge(show: boolean): string {
-  return show ? `<span class="tweet-hd-badge">${svg.verified}</span>` : ''
+function badge(isVerified: boolean, verifiedType?: string): string {
+  if (!isVerified) return ''
+  let fill = '#1d9bf0'
+  if (verifiedType === 'Business') fill = '#e2b719'
+  else if (verifiedType === 'Government') fill = '#829aab'
+  const icon = `<svg width="18" height="18" viewBox="0 0 22 22" fill="${fill}"><path d="M20.396 11c-.018-.646-.215-1.275-.57-1.816-.354-.54-.852-.972-1.438-1.246.223-.607.27-1.264.14-1.897-.131-.634-.437-1.218-.882-1.687-.47-.445-1.053-.75-1.687-.882-.633-.13-1.29-.083-1.897.14-.273-.587-.704-1.086-1.245-1.44S11.647 1.62 11 1.604c-.646.017-1.273.213-1.813.568s-.969.855-1.24 1.44c-.608-.223-1.267-.272-1.902-.14-.635.13-1.22.436-1.69.882-.445.47-.749 1.055-.878 1.69-.13.633-.08 1.29.144 1.896-.587.274-1.087.705-1.443 1.245-.356.54-.555 1.17-.574 1.817.02.647.218 1.276.574 1.817.356.54.856.972 1.443 1.245-.224.606-.274 1.263-.144 1.896.13.636.433 1.221.878 1.69.47.446 1.055.752 1.69.883.635.13 1.294.083 1.902-.144.271.586.702 1.084 1.24 1.438.54.354 1.167.551 1.813.568.647-.016 1.276-.213 1.817-.567s.972-.854 1.245-1.44c.604.224 1.26.272 1.894.141.636-.13 1.22-.435 1.69-.88.445-.47.75-1.054.88-1.69.132-.635.084-1.292-.139-1.899.584-.272 1.084-.705 1.439-1.246.354-.54.551-1.17.569-1.816zM9.662 14.85l-3.429-3.428 1.293-1.302 2.072 2.072 4.4-4.794 1.347 1.246z"/></svg>`
+  return `<span class="tweet-hd-badge">${icon}</span>`
 }
 
 const defaultAvi = 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'
@@ -107,7 +112,7 @@ function renderMedia(t: Tweet): string {
 // ---- Quote tweet ----
 
 function renderQt(qt: Tweet): string {
-  return `<a href="/${esc(qt.username)}/status/${esc(qt.id)}" class="qt"><div class="qt-hd">${qt.avatar ? `<img class="qt-avi" src="${esc(qt.avatar)}" alt="">` : ''}<span class="qt-name">${esc(qt.name)}</span>${badge(qt.isBlueVerified)}<span class="qt-user">@${esc(qt.username)}</span><span class="tweet-hd-dot">&middot;</span><span class="tweet-hd-time">${relTime(qt.postedAt)}</span></div><div class="qt-txt">${linkify(qt.text, qt.urls)}</div>${qt.photos.length > 0 ? `<div class="qt-media"><img src="${esc(qt.photos[0])}" alt="" loading="lazy"></div>` : ''}</a>`
+  return `<a href="/${esc(qt.username)}/status/${esc(qt.id)}" class="qt"><div class="qt-hd">${qt.avatar ? `<img class="qt-avi" src="${esc(qt.avatar)}" alt="">` : ''}<span class="qt-name">${esc(qt.name)}</span>${badge(qt.isBlueVerified, qt.verifiedType)}<span class="qt-user">@${esc(qt.username)}</span><span class="tweet-hd-dot">&middot;</span><span class="tweet-hd-time">${relTime(qt.postedAt)}</span></div><div class="qt-txt">${linkify(qt.text, qt.urls)}</div>${qt.photos.length > 0 ? `<div class="qt-media"><img src="${esc(qt.photos[0])}" alt="" loading="lazy"></div>` : ''}</a>`
 }
 
 // ---- Tweet card (timeline) ----
@@ -116,7 +121,10 @@ function renderQt(qt: Tweet): string {
 function renderOneTweet(t: Tweet): string {
   const avi = t.avatar || defaultAvi
   const url = `/${esc(t.username)}/status/${esc(t.id)}`
-  return `<div class="tweet"><a href="${url}" class="tweet-link" aria-label="View tweet"></a><img class="tweet-avi" src="${esc(avi)}" alt="" loading="lazy"><div class="tweet-body"><div class="tweet-hd"><span class="tweet-hd-name">${esc(t.name)}</span>${badge(t.isBlueVerified)}<span class="tweet-hd-user">@${esc(t.username)}</span><span class="tweet-hd-dot">&middot;</span><span class="tweet-hd-time">${relTime(t.postedAt)}</span></div>${t.isReply && t.replyToUser ? `<div class="tweet-reply">Replying to <a href="/${esc(t.replyToUser)}">@${esc(t.replyToUser)}</a></div>` : ''}<div class="tweet-txt">${linkify(t.text, t.urls)}</div>${renderMedia(t)}${t.isQuote && t.quotedTweet ? renderQt(t.quotedTweet) : ''}<div class="tweet-acts"><span class="tweet-act">${svg.reply} ${t.replies > 0 ? fmtNum(t.replies) : ''}</span><span class="tweet-act">${svg.rt} ${t.retweets > 0 ? fmtNum(t.retweets) : ''}</span><span class="tweet-act">${svg.like} ${t.likes > 0 ? fmtNum(t.likes) : ''}</span><span class="tweet-act">${svg.views} ${t.views > 0 ? fmtNum(t.views) : ''}</span></div></div></div>`
+  const isLong = t.text.length > 280 || (t.text.match(/\n/g)?.length || 0) > 5
+  const txtClass = isLong ? 'tweet-txt tweet-txt-long' : 'tweet-txt'
+  const showMore = isLong ? `<a href="${url}" class="tweet-show-more">Show more</a>` : ''
+  return `<div class="tweet"><a href="${url}" class="tweet-link" aria-label="View tweet"></a><a href="/${esc(t.username)}" class="tweet-avi-link"><img class="tweet-avi" src="${esc(avi)}" alt="" loading="lazy"></a><div class="tweet-body"><div class="tweet-hd"><a href="/${esc(t.username)}" class="tweet-hd-name">${esc(t.name)}</a>${badge(t.isBlueVerified, t.verifiedType)}<span class="tweet-hd-user">@${esc(t.username)}</span><span class="tweet-hd-dot">&middot;</span><span class="tweet-hd-time">${relTime(t.postedAt)}</span></div>${t.isReply && t.replyToUser ? `<div class="tweet-reply">Replying to <a href="/${esc(t.replyToUser)}">@${esc(t.replyToUser)}</a></div>` : ''}<div class="${txtClass}">${linkify(t.text, t.urls)}${showMore}</div>${renderMedia(t)}${t.isQuote && t.quotedTweet ? renderQt(t.quotedTweet) : ''}<div class="tweet-acts"><span class="tweet-act">${svg.reply} ${t.replies > 0 ? fmtNum(t.replies) : ''}</span><span class="tweet-act">${svg.rt} ${t.retweets > 0 ? fmtNum(t.retweets) : ''}</span><span class="tweet-act">${svg.like} ${t.likes > 0 ? fmtNum(t.likes) : ''}</span><span class="tweet-act">${svg.views} ${t.views > 0 ? fmtNum(t.views) : ''}</span></div></div></div>`
 }
 
 export function renderTweetCard(tweet: Tweet): string {
@@ -129,12 +137,31 @@ export function renderTweetCard(tweet: Tweet): string {
   return renderOneTweet(tweet)
 }
 
+// ---- Media grid ----
+
+export function renderMediaGrid(tweets: Tweet[]): string {
+  let h = '<div class="media-grid">'
+  for (const t of tweets) {
+    const url = `/${esc(t.username)}/status/${esc(t.id)}`
+    if (t.photos.length > 0) {
+      h += `<a href="${url}" class="media-grid-item"><img src="${esc(t.photos[0])}" alt="" loading="lazy">${t.photos.length > 1 ? '<span class="mg-multi"></span>' : ''}</a>`
+    } else if (t.videos.length > 0) {
+      const thumb = (t.videoThumbnails || [])[0] || ''
+      h += `<a href="${url}" class="media-grid-item">${thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy">` : '<div class="mg-vid-placeholder"></div>'}<span class="mg-vid">&#9654;</span></a>`
+    } else if (t.gifs.length > 0) {
+      h += `<a href="${url}" class="media-grid-item"><video src="${esc(t.gifs[0])}" autoplay loop muted playsinline></video><span class="mg-gif">GIF</span></a>`
+    }
+  }
+  h += '</div>'
+  return h
+}
+
 // ---- Tweet detail (full page) ----
 
 export function renderTweetDetail(tweet: Tweet, replies: Tweet[], cursor?: string, tweetPath?: string): string {
   const avi = tweet.avatar || defaultAvi
   const xURL = `https://x.com/${esc(tweet.username)}/status/${esc(tweet.id)}`
-  let h = `<div class="td"><div class="td-top"><a href="/${esc(tweet.username)}"><img src="${esc(avi)}" alt="" loading="lazy"></a><div class="td-info"><a href="/${esc(tweet.username)}" class="td-name">${esc(tweet.name)} ${badge(tweet.isBlueVerified)}</a><span class="td-user">@${esc(tweet.username)}</span></div><a href="${xURL}" class="td-xlink" target="_blank" rel="noopener" title="View on X">${svg.xLogo}</a></div>${tweet.isReply && tweet.replyToUser ? `<div class="tweet-reply" style="margin-top:12px">Replying to <a href="/${esc(tweet.replyToUser)}">@${esc(tweet.replyToUser)}</a></div>` : ''}<div class="td-text">${linkify(tweet.text, tweet.urls)}</div>${renderMedia(tweet)}${tweet.isQuote && tweet.quotedTweet ? renderQt(tweet.quotedTweet) : ''}<div class="td-time">${fullDate(tweet.postedAt)}</div><div class="td-stats"><span><strong>${fmtNum(tweet.retweets)}</strong> Reposts</span><span><strong>${fmtNum(tweet.quotes)}</strong> Quotes</span><span><strong>${fmtNum(tweet.likes)}</strong> Likes</span><span><strong>${fmtNum(tweet.bookmarks)}</strong> Bookmarks</span>${tweet.views > 0 ? `<span><strong>${fmtNum(tweet.views)}</strong> Views</span>` : ''}</div></div>`
+  let h = `<div class="td"><div class="td-top"><a href="/${esc(tweet.username)}"><img src="${esc(avi)}" alt="" loading="lazy"></a><div class="td-info"><a href="/${esc(tweet.username)}" class="td-name">${esc(tweet.name)} ${badge(tweet.isBlueVerified, tweet.verifiedType)}</a><span class="td-user">@${esc(tweet.username)}</span></div><a href="${xURL}" class="td-xlink" target="_blank" rel="noopener" title="View on X">${svg.xLogo}</a></div>${tweet.isReply && tweet.replyToUser ? `<div class="tweet-reply" style="margin-top:12px">Replying to <a href="/${esc(tweet.replyToUser)}">@${esc(tweet.replyToUser)}</a></div>` : ''}<div class="td-text">${linkify(tweet.text, tweet.urls)}</div>${renderMedia(tweet)}${tweet.isQuote && tweet.quotedTweet ? renderQt(tweet.quotedTweet) : ''}<div class="td-time">${fullDate(tweet.postedAt)}</div><div class="td-stats"><span><strong>${fmtNum(tweet.retweets)}</strong> Reposts</span><span><strong>${fmtNum(tweet.quotes)}</strong> Quotes</span><span><strong>${fmtNum(tweet.likes)}</strong> Likes</span><span><strong>${fmtNum(tweet.bookmarks)}</strong> Bookmarks</span>${tweet.views > 0 ? `<span><strong>${fmtNum(tweet.views)}</strong> Views</span>` : ''}</div></div>`
   for (const r of replies) h += renderTweetCard(r)
   if (cursor && tweetPath) h += renderPagination(cursor, tweetPath)
   return h
@@ -144,7 +171,7 @@ export function renderTweetDetail(tweet: Tweet, replies: Tweet[], cursor?: strin
 
 export function renderProfileHeader(profile: Profile): string {
   const avi = profile.avatar || defaultAvi
-  const v = (profile.isBlueVerified || profile.isVerified) ? svg.verified : ''
+  const v = badge(profile.isBlueVerified || profile.isVerified, profile.verifiedType)
   const joined = profile.joined ? (() => {
     const d = new Date(profile.joined)
     const mo = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -157,7 +184,7 @@ export function renderProfileHeader(profile: Profile): string {
 
 export function renderUserCard(u: Profile): string {
   const avi = u.avatar || defaultAvi
-  return `<div class="user-card"><a href="/${esc(u.username)}" class="user-card-link" aria-label="View profile"></a><img class="user-card-avi" src="${esc(avi)}" alt="" loading="lazy"><div class="user-card-body"><div class="user-card-hd"><span class="user-card-name">${esc(u.name)}</span>${badge(u.isBlueVerified || u.isVerified)}</div><div class="user-card-user">@${esc(u.username)}</div>${u.biography ? `<div class="user-card-bio">${esc(u.biography)}</div>` : ''}</div></div>`
+  return `<div class="user-card"><a href="/${esc(u.username)}" class="user-card-link" aria-label="View profile"></a><img class="user-card-avi" src="${esc(avi)}" alt="" loading="lazy"><div class="user-card-body"><div class="user-card-hd"><span class="user-card-name">${esc(u.name)}</span>${badge(u.isBlueVerified || u.isVerified, u.verifiedType)}</div><div class="user-card-user">@${esc(u.username)}</div>${u.biography ? `<div class="user-card-bio">${esc(u.biography)}</div>` : ''}</div></div>`
 }
 
 // ---- Follow page ----

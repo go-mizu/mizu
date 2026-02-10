@@ -3,7 +3,7 @@ import type { HonoEnv } from '../types'
 import { GraphQLClient } from '../graphql'
 import { Cache } from '../cache'
 import { parseUserResult, parseTimeline } from '../parse'
-import { renderLayout, renderProfileHeader, renderTweetCard, renderPagination, renderError } from '../html'
+import { renderLayout, renderProfileHeader, renderTweetCard, renderMediaGrid, renderPagination, renderError } from '../html'
 import {
   gqlUserByScreenName, gqlUserTweetsV2, gqlUserTweetsAndRepliesV2, gqlUserMedia,
   userFieldToggles, userTweetsFieldToggles,
@@ -86,7 +86,11 @@ app.get('/:username', async (c) => {
     const base = `/${profile.username}`
     content += `<div class="tabs"><a href="${base}" class="${tab === 'tweets' ? 'active' : ''}">Posts</a><a href="${base}?tab=replies" class="${tab === 'replies' ? 'active' : ''}">Replies</a><a href="${base}?tab=media" class="${tab === 'media' ? 'active' : ''}">Media</a></div>`
 
-    for (const tweet of tweets) content += renderTweetCard(tweet)
+    if (tab === 'media') {
+      content += renderMediaGrid(tweets)
+    } else {
+      for (const tweet of tweets) content += renderTweetCard(tweet)
+    }
     content += renderPagination(nextCursor, `/${username}?tab=${tab}`)
 
     return c.html(renderLayout(`@${profile.username}`, content))
