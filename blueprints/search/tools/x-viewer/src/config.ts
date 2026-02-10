@@ -27,7 +27,6 @@ export const SearchPhotos = 'Photos'
 export const SearchVideos = 'Videos'
 export const SearchPeople = 'People'
 export const SearchMedia = 'Media'
-export const SearchLists = 'Lists'
 
 // Cache TTLs in seconds
 export const CACHE_PROFILE = 300      // 5 min

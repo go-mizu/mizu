@@ -184,7 +184,7 @@ export function renderProfileHeader(profile: Profile): string {
 
 export function renderUserCard(u: Profile): string {
   const avi = u.avatar || defaultAvi
-  return `<div class="user-card"><a href="/${esc(u.username)}" class="user-card-link" aria-label="View profile"></a><img class="user-card-avi" src="${esc(avi)}" alt="" loading="lazy"><div class="user-card-body"><div class="user-card-hd"><span class="user-card-name">${esc(u.name)}</span>${badge(u.isBlueVerified || u.isVerified, u.verifiedType)}</div><div class="user-card-user">@${esc(u.username)}</div>${u.biography ? `<div class="user-card-bio">${esc(u.biography)}</div>` : ''}</div></div>`
+  return `<div class="user-card"><a href="/${esc(u.username)}" class="user-card-link" aria-label="View profile"></a><img class="user-card-avi" src="${esc(avi)}" alt="" loading="lazy"><div class="user-card-body"><div class="user-card-hd"><span class="user-card-name">${esc(u.name)}</span>${badge(u.isBlueVerified || u.isVerified, u.verifiedType)}</div><div class="user-card-user">@${esc(u.username)}</div>${u.biography ? `<div class="user-card-bio">${linkify(u.biography)}</div>` : ''}</div></div>`
 }
 
 // ---- Follow page ----
@@ -205,20 +205,23 @@ export function renderFollowPage(profile: Profile, users: Profile[], tab: 'follo
 // ---- Home page ----
 
 export function renderHomePage(): string {
-  return `<div class="home"><div class="home-logo">${svg.logoBig}</div><div class="home-sub">the X/Twitter Viewer</div><div class="home-box"><form action="/search" method="get"><input class="home-input" type="text" name="q" placeholder="Search posts or @username" autocomplete="off" autofocus></form><div class="home-hint">Type @username to view a profile</div><div class="home-links"><a href="/karpathy">@karpathy</a><a href="/elonmusk">@elonmusk</a><a href="/search/ai">#ai</a><a href="/search/golang">#golang</a><a href="/openai">@openai</a><a href="/search/typescript">#typescript</a></div></div><div class="home-theme"><button class="theme-toggle" onclick="T()" title="Toggle theme">${svg.moon}${svg.sun}</button></div></div>`
+  return `<div class="home"><div class="home-logo">${svg.logoBig}</div><div class="home-sub">the X/Twitter Viewer</div><div class="home-box"><form action="/search" method="get"><input class="home-input" type="text" name="q" placeholder="Search posts or @username" autocomplete="off" autofocus></form><div class="home-hint">Type @username to view a profile</div><div class="home-links"><a href="/karpathy">@karpathy</a><a href="/mitchellh">@mitchellh</a><a href="/search/ai">#ai</a><a href="/search/golang">#golang</a><a href="/openai">@openai</a><a href="/search/typescript">#typescript</a></div></div><div class="home-theme"><button class="theme-toggle" onclick="T()" title="Toggle theme">${svg.moon}${svg.sun}</button></div></div>`
 }
 
-// ---- Pagination ----
+// ---- Pagination (auto-scroll) ----
 
 export function renderPagination(cursor: string, currentPath: string): string {
   if (!cursor) return ''
   const sep = currentPath.includes('?') ? '&' : '?'
-  return `<a href="${currentPath}${sep}cursor=${encodeURIComponent(cursor)}" class="more">Show more</a>`
+  const href = `${currentPath}${sep}cursor=${encodeURIComponent(cursor)}`
+  return `<div class="more" data-href="${esc(href)}"><span class="more-spinner"></span></div>`
 }
 
 // ---- Layout ----
 
 const themeScript = `<script>(function(){var t=localStorage.getItem('t');if(!t)t=matchMedia('(prefers-color-scheme:dark)').matches?'d':'l';document.documentElement.dataset.t=t})();function T(){var h=document.documentElement,n=h.dataset.t==='d'?'l':'d';h.dataset.t=n;localStorage.setItem('t',n)}</script>`
+
+const scrollScript = `<script>(function(){var loading=false;function observe(){var el=document.querySelector('.more[data-href]');if(!el)return;var io=new IntersectionObserver(function(entries){if(!entries[0].isIntersecting||loading)return;loading=true;var href=el.getAttribute('data-href');fetch(href).then(function(r){return r.text()}).then(function(html){var doc=new DOMParser().parseFromString(html,'text/html');var wrap=doc.querySelector('.wrap');if(!wrap)return;var items=wrap.querySelectorAll('.tweet,.user-card,.rt-label,.pin-label,.media-grid');var parent=el.parentNode;items.forEach(function(n){parent.insertBefore(n.cloneNode(true),el)});var next=wrap.querySelector('.more[data-href]');if(next){el.setAttribute('data-href',next.getAttribute('data-href'))}else{el.remove()}loading=false}).catch(function(){el.innerHTML='<a href="'+href+'" class="more-fallback">Show more</a>';el.removeAttribute('data-href');loading=false})},{rootMargin:'600px'});io.observe(el)}observe();new MutationObserver(observe).observe(document.querySelector('.wrap'),{childList:true,subtree:true})})()</script>`
 
 function renderTopBar(query?: string): string {
   return `<div class="topbar"><a href="/" class="topbar-logo">${svg.logo}</a><form action="/search" method="get"><input class="topbar-input" type="text" name="q" placeholder="Search or @username" value="${query ? esc(query) : ''}" autocomplete="off"></form><button class="theme-toggle" onclick="T()" title="Toggle theme">${svg.moon}${svg.sun}</button></div>`
@@ -239,6 +242,7 @@ ${themeScript}
 </head>
 <body>
 <div class="wrap">${opts.isHome ? '' : renderTopBar(opts.query)}${content}</div>
+${opts.isHome ? '' : scrollScript}
 </body>
 </html>`
 }

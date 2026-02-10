@@ -4,11 +4,11 @@ import { GraphQLClient } from '../graphql'
 import { Cache } from '../cache'
 import { parseSearchTweets, parseSearchUsers } from '../parse'
 import { renderLayout, renderTweetCard, renderMediaGrid, renderUserCard, renderPagination, renderError } from '../html'
-import { gqlSearchTimeline, SearchTop, SearchPeople, SearchMedia, SearchLists, CACHE_SEARCH } from '../config'
+import { gqlSearchTimeline, SearchTop, SearchPeople, SearchMedia, CACHE_SEARCH } from '../config'
 
 const app = new Hono<HonoEnv>()
 
-const tabs = ['Top', 'Latest', 'People', 'Media', 'Lists'] as const
+const tabs = ['Top', 'Latest', 'People', 'Media'] as const
 
 // Permanent search path: /search/golang -> search for "golang"
 app.get('/:keyword', async (c) => {
@@ -51,12 +51,6 @@ async function handleSearch(c: any, query: string, mode: string, cursor: string)
     content += `<a href="/search/${baseQ}?mode=${t}" class="${mode === t ? 'active' : ''}">${t}</a>`
   }
   content += '</div>'
-
-  // Lists tab — no API product available
-  if (mode === SearchLists) {
-    content += `<div class="err"><p>List search is not yet available.</p></div>`
-    return c.html(renderLayout(`${query} - Search`, content, { query }))
-  }
 
   try {
     const cacheKey = `search:${query}:${mode}:${cursor}`

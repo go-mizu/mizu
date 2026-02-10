@@ -423,6 +423,7 @@ button { font: inherit; border: 0; background: none; cursor: pointer; color: inh
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.user-card-bio a { color: var(--link); pointer-events: auto; position: relative; z-index: 2; }
 
 /* === Home page === */
 .home {
@@ -473,17 +474,27 @@ button { font: inherit; border: 0; background: none; cursor: pointer; color: inh
   color: var(--text-secondary);
 }
 
-/* === Pagination === */
+/* === Pagination (auto-scroll) === */
 .more {
-  display: block;
-  padding: 16px;
-  text-align: center;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 24px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.more-spinner {
+  width: 24px; height: 24px;
+  border: 3px solid var(--border);
+  border-top-color: var(--link);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.more-fallback {
   color: var(--link);
   font-size: 15px;
-  border-bottom: 1px solid var(--border);
-  transition: background .2s;
 }
-.more:hover { background: var(--link-hover-bg); text-decoration: none; }
+.more-fallback:hover { text-decoration: underline; }
 
 /* === Error === */
 .err { padding: 48px 16px; text-align: center; }
@@ -539,4 +550,5 @@ button { font: inherit; border: 0; background: none; cursor: pointer; color: inh
 /* === Responsive === */
 @media (max-width: 620px) {
   .wrap { border: 0; }
+  .media-grid { grid-template-columns: repeat(2, 1fr); }
 }
