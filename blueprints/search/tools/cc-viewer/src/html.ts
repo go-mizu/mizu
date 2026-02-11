@@ -2,7 +2,7 @@ import { cssURL } from './asset'
 import type { CDXEntry, Crawl, WARCRecord, DomainStats, URLGroup, CrawlStats, DomainSummary, ClusterEntry } from './types'
 import { formatTimestamp, crawlToDate, statusClass } from './cc'
 
-// ---- Icons (inline SVG, Lucide-style) ----
+// ---- Icons (Lucide-style inline SVG) ----
 
 const svg = {
   logo: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
@@ -21,8 +21,8 @@ const svg = {
   sun: `<svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>`,
   hash: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><line x1="10" x2="8" y1="3" y2="21"/><line x1="16" x2="14" y1="3" y2="21"/></svg>`,
   hardDrive: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/></svg>`,
-  chevDown: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>`,
-  chevRight: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>`,
+  download: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>`,
+  clock: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
 }
 
 // ---- Helpers ----
@@ -35,7 +35,7 @@ function fmtNum(n: number): string {
   if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(1).replace(/\.0$/, '') + 'B'
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M'
   if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, '') + 'K'
-  return n.toString()
+  return n.toLocaleString('en-US')
 }
 
 function fmtBytes(n: number): string {
@@ -51,6 +51,19 @@ function truncURL(url: string, maxLen = 80): string {
   return url.substring(0, maxLen - 3) + '...'
 }
 
+/** Format CDX timestamp (20260115123456) to human-friendly relative or absolute */
+function fmtDate(ts: string): string {
+  if (!ts || ts.length < 8) return ts
+  const y = ts.substring(0, 4)
+  const m = ts.substring(4, 6)
+  const d = ts.substring(6, 8)
+  return `${monthName(parseInt(m))} ${parseInt(d)}, ${y}`
+}
+
+function monthName(m: number): string {
+  return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1] || ''
+}
+
 function statusBadge(status: string): string {
   return `<span class="badge ${statusClass(status)}">${esc(status)}</span>`
 }
@@ -60,23 +73,37 @@ function mimeBadge(mime: string): string {
   return `<span class="badge st-mime">${esc(short)}</span>`
 }
 
+function simpleHash(s: string): string {
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0
+  return (h >>> 0).toString(36)
+}
+
+function fmtCrawlDate(iso: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  return `${months[d.getMonth()]} ${d.getDate()}`
+}
+
 // ---- Home Page ----
 
 export function renderHomePage(): string {
   return `<div class="home">
 <div class="home-logo">${svg.logoBig}</div>
 <h1 class="home-title">Common Crawl Viewer</h1>
-<p class="home-sub">Browse billions of web pages from the open Common Crawl archive. Search by URL or domain.</p>
+<p class="home-sub">Browse billions of web pages from the open Common Crawl archive</p>
 <div class="home-search">
 <form action="/search" method="get" class="search-form">
 <div class="search-box">
 ${svg.search}
-<input class="search-input" type="text" name="q" placeholder="Enter a URL or domain..." autocomplete="off" autofocus>
+<input class="search-input" type="text" name="q" placeholder="Search by URL or domain..." autocomplete="off" autofocus>
 </div>
 </form>
 </div>
 <div class="home-chips">
 <a href="/crawls" class="chip">${svg.layers} Browse Crawls</a>
+<a href="/domains" class="chip">${svg.globe} Top Domains</a>
 </div>
 <div class="home-examples">
 <span class="home-examples-label">Try:</span>
@@ -99,39 +126,31 @@ export function renderURLPage(url: string, entries: CDXEntry[], crawl: string): 
 <h1 class="page-title">${svg.globe} ${esc(truncURL(url, 60))}</h1>
 <div class="page-meta">
 <span class="meta-item">${svg.database} ${crawl}</span>
-<span class="meta-item">${svg.file} ${entries.length} capture${entries.length !== 1 ? 's' : ''}</span>
+<span class="meta-item">${svg.file} ${fmtNum(entries.length)} capture${entries.length !== 1 ? 's' : ''}</span>
 </div>
 </div>`
 
   if (entries.length === 0) {
-    h += `<div class="empty-state"><h2>No captures found</h2><p>This URL wasn't found in ${esc(crawl)}.</p><p>Try a different crawl or check the URL.</p></div>`
+    h += `<div class="empty-state"><h2>No captures found</h2><p>This URL wasn't found in ${esc(crawl)}. Try a different crawl or check the URL.</p></div>`
     return h
   }
 
-  h += `<div class="table-wrap"><table class="data-table">
-<thead><tr>
-<th>Timestamp</th>
-<th>Status</th>
-<th>MIME Type</th>
-<th>Size</th>
-<th>Digest</th>
-<th></th>
-</tr></thead>
-<tbody>`
-
+  // Card list layout
+  h += `<div class="card-list">`
   for (const e of entries) {
     const viewURL = `/view?file=${encodeURIComponent(e.filename)}&offset=${e.offset}&length=${e.length}&url=${encodeURIComponent(e.url)}`
-    h += `<tr>
-<td class="mono">${esc(formatTimestamp(e.timestamp))}</td>
-<td>${statusBadge(e.status)}</td>
-<td>${mimeBadge(e.mime)}</td>
-<td class="num">${fmtBytes(parseInt(e.length) || 0)}</td>
-<td class="mono digest">${esc((e.digest || '').substring(0, 12))}</td>
-<td><a href="${viewURL}" class="btn-view">${svg.eye} View</a></td>
-</tr>`
+    h += `<a href="${viewURL}" class="card-item card-item-link">
+<div class="card-item-icon">${svg.file}</div>
+<div class="card-item-body">
+<div class="card-item-title">${fmtDate(e.timestamp)}</div>
+<div class="card-item-sub">${statusBadge(e.status)} <span class="sep">&middot;</span> ${mimeBadge(e.mime)} <span class="sep">&middot;</span> ${fmtBytes(parseInt(e.length) || 0)}</div>
+</div>
+<div class="card-item-stats">
+<span class="card-item-stat">${svg.eye} View</span>
+</div>
+</a>`
   }
-
-  h += `</tbody></table></div>`
+  h += `</div>`
   return h
 }
 
@@ -156,7 +175,7 @@ export function renderDomainPage(domain: string, groups: URLGroup[], crawl: stri
 <div class="kpi-icon kpi-icon-blue">${svg.file}</div>
 <div class="kpi-body">
 <div class="kpi-value">${fmtNum(stats.totalPages)}</div>
-<div class="kpi-label">Total Captures</div>
+<div class="kpi-label">Captures</div>
 <div class="kpi-sub">${fmtNum(stats.uniquePaths)} unique URLs</div>
 </div>
 </div>
@@ -173,7 +192,7 @@ export function renderDomainPage(domain: string, groups: URLGroup[], crawl: stri
 <div class="kpi-body">
 <div class="kpi-value">${fmtNum(ok)}</div>
 <div class="kpi-label">Success (2xx)</div>
-<div class="kpi-sub">${stats.totalPages > 0 ? Math.round(ok / stats.totalPages * 100) : 0}% of total</div>
+<div class="kpi-sub">${stats.totalPages > 0 ? Math.round(ok / stats.totalPages * 100) : 0}%</div>
 </div>
 </div>
 <div class="kpi-card">
@@ -181,7 +200,7 @@ export function renderDomainPage(domain: string, groups: URLGroup[], crawl: stri
 <div class="kpi-body">
 <div class="kpi-value">${fmtNum(redirects + errors)}</div>
 <div class="kpi-label">Redirects + Errors</div>
-<div class="kpi-sub">${fmtNum(redirects)} 3xx · ${fmtNum(errors)} 4xx/5xx</div>
+<div class="kpi-sub">${fmtNum(redirects)} 3xx, ${fmtNum(errors)} 4xx/5xx</div>
 </div>
 </div>
 </div>`
@@ -202,7 +221,7 @@ export function renderDomainPage(domain: string, groups: URLGroup[], crawl: stri
 <div class="breakdown-title">Content Types</div>`
   for (const [mime, count] of topMimes) {
     const pct = stats.totalPages > 0 ? Math.round(count / stats.totalPages * 100) : 0
-    h += `<div class="breakdown-item"><span>${mimeBadge(mime)}</span><span class="breakdown-bar-wrap"><span class="breakdown-bar" style="width:${Math.max(pct, 1)}%"></span></span><span class="breakdown-val">${fmtNum(count)}</span></div>`
+    h += `<div class="breakdown-item"><span>${mimeBadge(mime)}</span><span class="breakdown-bar-wrap"><span class="breakdown-bar" style="width:${Math.max(pct, 1)}%;background:var(--accent)"></span></span><span class="breakdown-val">${fmtNum(count)}</span></div>`
   }
   h += `</div>
 </div>`
@@ -212,11 +231,13 @@ export function renderDomainPage(domain: string, groups: URLGroup[], crawl: stri
     return h
   }
 
+  // URL groups as card list
+  h += `<div class="section-header">Pages</div>`
   h += `<div class="table-wrap"><table class="data-table">
 <thead><tr>
 <th>URL</th>
 <th>Captures</th>
-<th>Latest</th>
+<th>Last Captured</th>
 <th>Status</th>
 <th>Type</th>
 <th>Size</th>
@@ -231,9 +252,9 @@ export function renderDomainPage(domain: string, groups: URLGroup[], crawl: stri
     const toggleAttr = hasMultiple ? ` class="group-row expandable" onclick="toggleGroup('${rowId}')"` : ''
 
     h += `<tr${toggleAttr}>
-<td class="mono url-cell">${hasMultiple ? `<span class="expand-icon" id="icon-${rowId}">+</span>` : '<span class="expand-spacer"></span>'}<a href="${latestViewURL}" title="${esc(g.url)}" onclick="event.stopPropagation()">${esc(truncURL(g.path, 60))}</a></td>
+<td class="url-cell">${hasMultiple ? `<span class="expand-icon" id="icon-${rowId}">+</span>` : '<span class="expand-spacer"></span>'}<a href="${latestViewURL}" title="${esc(g.url)}" onclick="event.stopPropagation()">${esc(truncURL(g.path, 55))}</a></td>
 <td class="num">${hasMultiple ? `<span class="capture-count">${g.count}</span>` : '1'}</td>
-<td class="mono">${esc(formatTimestamp(g.latestTimestamp))}</td>
+<td>${fmtDate(g.latestTimestamp)}</td>
 <td>${statusBadge(g.latestStatus)}</td>
 <td>${mimeBadge(g.latestMime)}</td>
 <td class="num">${fmtBytes(parseInt(g.latestLength) || 0)}</td>
@@ -243,9 +264,9 @@ export function renderDomainPage(domain: string, groups: URLGroup[], crawl: stri
       for (const e of g.entries) {
         const viewURL = `/view?file=${encodeURIComponent(e.filename)}&offset=${e.offset}&length=${e.length}&url=${encodeURIComponent(e.url)}`
         h += `<tr class="sub-row sub-${rowId}" style="display:none">
-<td class="mono url-cell sub-indent"><a href="${viewURL}">${esc(formatTimestamp(e.timestamp))}</a></td>
+<td class="url-cell sub-indent"><a href="${viewURL}">${fmtDate(e.timestamp)}</a></td>
 <td></td>
-<td class="mono">${esc(formatTimestamp(e.timestamp))}</td>
+<td>${fmtDate(e.timestamp)}</td>
 <td>${statusBadge(e.status)}</td>
 <td>${mimeBadge(e.mime)}</td>
 <td class="num">${fmtBytes(parseInt(e.length) || 0)}</td>
@@ -268,7 +289,7 @@ export function renderDomainPage(domain: string, groups: URLGroup[], crawl: stri
 export function renderDomainsPage(crawlID: string, domains: DomainSummary[], page: number, totalPages: number, totalDomains: number, totalEntries: number): string {
   let h = `<div class="page-header">
 <div class="breadcrumb"><a href="/">Home</a> ${svg.arrow} <span>Domains</span></div>
-<h1 class="page-title">${svg.globe} Domains</h1>
+<h1 class="page-title">${svg.globe} Top Domains</h1>
 <div class="page-meta">
 <span class="meta-item">${svg.database} ${esc(crawlID)}</span>
 <span class="meta-item">${svg.layers} Page ${page + 1} of ${fmtNum(totalPages)}</span>
@@ -289,7 +310,7 @@ export function renderDomainsPage(crawlID: string, domains: DomainSummary[], pag
 <div class="kpi-icon kpi-icon-green">${svg.file}</div>
 <div class="kpi-body">
 <div class="kpi-value">${fmtNum(totalEntries)}</div>
-<div class="kpi-label">CDX Page Boundaries</div>
+<div class="kpi-label">Index Pages</div>
 <div class="kpi-sub">~${fmtNum(totalEntries * 3000)} est. captures</div>
 </div>
 </div>
@@ -301,36 +322,28 @@ export function renderDomainsPage(crawlID: string, domains: DomainSummary[], pag
     return h
   }
 
-  h += `<div class="table-wrap"><table class="data-table">
-<thead><tr>
-<th>Domain</th>
-<th>CDX Pages</th>
-<th>Est. Captures</th>
-</tr></thead>
-<tbody>`
-
+  // Kaggle-style card list for domains
+  h += `<div class="card-list">`
   for (const d of domains) {
     const estCaptures = d.pages * 3000
-    h += `<tr>
-<td class="mono"><a href="/domain/${esc(d.domain)}?crawl=${esc(crawlID)}" class="url-cell" style="display:inline">${esc(d.domain)}</a></td>
-<td class="num">${fmtNum(d.pages)}</td>
-<td class="num">${fmtNum(estCaptures)}</td>
-</tr>`
+    h += `<a href="/domain/${esc(d.domain)}?crawl=${esc(crawlID)}" class="card-item card-item-link">
+<div class="card-item-icon">${svg.globe}</div>
+<div class="card-item-body">
+<div class="card-item-title">${esc(d.domain)}</div>
+<div class="card-item-sub">${fmtNum(d.pages)} index pages <span class="sep">&middot;</span> ~${fmtNum(estCaptures)} captures</div>
+</div>
+<div class="card-item-stats">
+<span class="card-item-stat">${svg.file} <strong>${fmtNum(d.pages)}</strong></span>
+</div>
+</a>`
   }
-
-  h += `</tbody></table></div>`
+  h += `</div>`
 
   if (totalPages > 1) {
     h += renderPagination(`/domains?crawl=${encodeURIComponent(crawlID)}`, page, totalPages, true)
   }
 
   return h
-}
-
-function simpleHash(s: string): string {
-  let h = 0
-  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0
-  return (h >>> 0).toString(36)
 }
 
 // ---- WARC Content Viewer ----
@@ -381,7 +394,7 @@ export function renderViewPage(record: WARCRecord, url: string, filename: string
 
   let headersHTML = ''
   for (const [k, v] of Object.entries(record.httpHeaders)) {
-    headersHTML += `<tr><td class="mono">${esc(k)}</td><td class="mono">${esc(v)}</td></tr>`
+    headersHTML += `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`
   }
   h += `<div class="tab-content hidden" id="tab-headers"><table class="data-table headers-table"><thead><tr><th>Header</th><th>Value</th></tr></thead><tbody>${headersHTML}</tbody></table></div>`
 
@@ -394,14 +407,14 @@ export function renderCrawlsPage(crawls: (Crawl & { stats?: CrawlStats })[]): st
   let h = `<div class="page-header">
 <div class="breadcrumb"><a href="/">Home</a> ${svg.arrow} <span>Crawls</span></div>
 <h1 class="page-title">${svg.layers} Available Crawls</h1>
-<div class="page-meta"><span class="meta-item">${svg.database} ${crawls.length} crawls available</span></div>
+<div class="page-meta"><span class="meta-item">${svg.database} ${crawls.length} crawls</span></div>
 </div>
 <div class="crawl-grid">`
 
   for (const c of crawls) {
     const s = c.stats
     const dateRange = c.from && c.to
-      ? `${fmtDate(c.from)} – ${fmtDate(c.to)}`
+      ? `${fmtCrawlDate(c.from)} – ${fmtCrawlDate(c.to)}`
       : crawlToDate(c.id)
 
     h += `<a href="/crawl/${esc(c.id)}" class="crawl-card">
@@ -431,7 +444,7 @@ ${s ? `<span class="crawl-stat-size">${fmtBytes(s.estimatedSizeBytes)}</span>` :
 
 export function renderCrawlDetailPage(crawl: Crawl, stats: CrawlStats): string {
   const dateRange = crawl.from && crawl.to
-    ? `${fmtDate(crawl.from)} – ${fmtDate(crawl.to)}`
+    ? `${fmtCrawlDate(crawl.from)} – ${fmtCrawlDate(crawl.to)}`
     : crawlToDate(crawl.id)
 
   let h = `<div class="page-header">
@@ -443,7 +456,6 @@ export function renderCrawlDetailPage(crawl: Crawl, stats: CrawlStats): string {
 </div>
 </div>`
 
-  // Modern stat cards with icons
   h += `<div class="kpi-grid">
 <div class="kpi-card">
 <div class="kpi-icon kpi-icon-blue">${svg.hardDrive}</div>
@@ -479,7 +491,6 @@ export function renderCrawlDetailPage(crawl: Crawl, stats: CrawlStats): string {
 </div>
 </div>`
 
-  // Navigation cards
   h += `<div class="nav-grid">
 <a href="/crawl/${esc(crawl.id)}/files" class="nav-card">
 <div class="nav-card-icon">${svg.hardDrive}</div>
@@ -499,13 +510,12 @@ ${svg.arrow}
 </a>
 </div>`
 
-  // Domain search
   h += `<div class="section-header">Search this crawl</div>
 <form action="/search" method="get">
 <input type="hidden" name="crawl" value="${esc(crawl.id)}">
 <div class="search-box" style="max-width:520px">
 ${svg.search}
-<input class="search-input" type="text" name="q" placeholder="Enter a URL or domain..." autocomplete="off">
+<input class="search-input" type="text" name="q" placeholder="Search by URL or domain..." autocomplete="off">
 </div>
 </form>`
 
@@ -519,19 +529,12 @@ export function renderCrawlFilesPage(crawlID: string, files: string[], page: num
 <div class="breadcrumb"><a href="/">Home</a> ${svg.arrow} <a href="/crawls">Crawls</a> ${svg.arrow} <a href="/crawl/${esc(crawlID)}">${esc(crawlID)}</a> ${svg.arrow} <span>Files</span></div>
 <h1 class="page-title">${svg.hardDrive} WARC Files</h1>
 <div class="page-meta">
-<span class="meta-item">${svg.file} ${fmtNum(totalFiles)} files total</span>
+<span class="meta-item">${svg.file} ${fmtNum(totalFiles)} files</span>
 <span class="meta-item">${svg.layers} Page ${page + 1} of ${totalPages}</span>
 </div>
 </div>`
 
-  h += `<div class="table-wrap"><table class="data-table">
-<thead><tr>
-<th>#</th>
-<th>Filename</th>
-<th>Segment</th>
-</tr></thead>
-<tbody>`
-
+  h += `<div class="card-list">`
   for (let i = 0; i < files.length; i++) {
     const f = files[i]
     const idx = page * 100 + i + 1
@@ -539,14 +542,18 @@ export function renderCrawlFilesPage(crawlID: string, files: string[], page: num
     const fname = parts[parts.length - 1]
     const segPart = parts.length >= 4 ? parts[3] : ''
 
-    h += `<tr>
-<td class="num">${idx}</td>
-<td class="mono" title="${esc(f)}">${esc(fname)}</td>
-<td class="mono digest">${esc(segPart)}</td>
-</tr>`
+    h += `<div class="card-item">
+<div class="card-item-icon">${svg.hardDrive}</div>
+<div class="card-item-body">
+<div class="card-item-title" title="${esc(f)}">${esc(fname)}</div>
+<div class="card-item-sub">Segment ${esc(segPart)}</div>
+</div>
+<div class="card-item-stats">
+<span class="card-item-stat">#${idx}</span>
+</div>
+</div>`
   }
-
-  h += `</tbody></table></div>`
+  h += `</div>`
 
   if (totalPages > 1) {
     h += renderPagination(`/crawl/${crawlID}/files`, page, totalPages)
@@ -567,40 +574,36 @@ ${prefix ? `<span class="meta-item">${svg.search} ${fmtNum(entries.length)} resu
 </div>
 </div>`
 
-  // Search form
-  h += `<form action="/crawl/${esc(crawlID)}/cdx" method="get" style="margin-bottom:24px">
+  h += `<form action="/crawl/${esc(crawlID)}/cdx" method="get" style="margin-bottom:28px">
 <div class="search-box" style="max-width:520px">
 ${svg.search}
-<input class="search-input" type="text" name="prefix" value="${esc(prefix)}" placeholder="Enter URL prefix (e.g. github.com/torvalds)..." autocomplete="off" autofocus>
+<input class="search-input" type="text" name="prefix" value="${esc(prefix)}" placeholder="Search by URL prefix (e.g. github.com)..." autocomplete="off" autofocus>
 </div>
 </form>`
 
   if (!prefix) {
     if (clusterEntries.length > 0) {
-      h += `<div class="section-header">CDX Page Directory (cluster.idx)</div>`
-      h += `<div class="table-wrap"><table class="data-table">
-<thead><tr>
-<th>Page #</th>
-<th>SURT Key</th>
-<th>Domain</th>
-<th>CDX File</th>
-</tr></thead>
-<tbody>`
+      h += `<div class="section-header">Index Page Directory</div>`
+      h += `<div class="card-list">`
       for (const e of clusterEntries) {
-        h += `<tr>
-<td class="num">${fmtNum(e.pageNum)}</td>
-<td class="mono url-cell" title="${esc(e.surtKey)}">${esc(truncURL(e.surtKey, 50))}</td>
-<td class="mono"><a href="/domain/${esc(e.domain)}?crawl=${esc(crawlID)}">${esc(e.domain)}</a></td>
-<td class="mono digest">${esc(e.cdxFile)}</td>
-</tr>`
+        h += `<a href="/domain/${esc(e.domain)}?crawl=${esc(crawlID)}" class="card-item card-item-link">
+<div class="card-item-icon">${svg.code}</div>
+<div class="card-item-body">
+<div class="card-item-title">${esc(e.domain)}</div>
+<div class="card-item-sub">${esc(truncURL(e.surtKey, 50))} <span class="sep">&middot;</span> ${esc(e.cdxFile)}</div>
+</div>
+<div class="card-item-stats">
+<span class="card-item-stat">${svg.hash} <strong>${fmtNum(e.pageNum)}</strong></span>
+</div>
+</a>`
       }
-      h += `</tbody></table></div>`
+      h += `</div>`
       if (clusterTotalPages > 1) {
         h += renderPagination(`/crawl/${crawlID}/cdx`, clusterPage, clusterTotalPages)
       }
     } else {
       h += `<div class="empty-state"><h2>Browse the CDX Index</h2><p>Enter a URL prefix to search through the CDX index entries for this crawl.</p>
-<p style="font-size:13px;margin-top:16px">Try: <a href="/crawl/${esc(crawlID)}/cdx?prefix=github.com" style="text-decoration:underline">github.com</a> · <a href="/crawl/${esc(crawlID)}/cdx?prefix=wikipedia.org" style="text-decoration:underline">wikipedia.org</a> · <a href="/crawl/${esc(crawlID)}/cdx?prefix=example.com" style="text-decoration:underline">example.com</a></p></div>`
+<p style="font-size:13px;margin-top:16px">Try: <a href="/crawl/${esc(crawlID)}/cdx?prefix=github.com" style="color:var(--accent-fg)">github.com</a> · <a href="/crawl/${esc(crawlID)}/cdx?prefix=wikipedia.org" style="color:var(--accent-fg)">wikipedia.org</a> · <a href="/crawl/${esc(crawlID)}/cdx?prefix=example.com" style="color:var(--accent-fg)">example.com</a></p></div>`
     }
     return h
   }
@@ -610,17 +613,8 @@ ${svg.search}
     return h
   }
 
-  h += `<div class="table-wrap"><table class="data-table">
-<thead><tr>
-<th>URL</th>
-<th>Timestamp</th>
-<th>Status</th>
-<th>MIME</th>
-<th>Size</th>
-<th></th>
-</tr></thead>
-<tbody>`
-
+  // CDX results as card list
+  h += `<div class="card-list">`
   for (const e of entries) {
     const viewURL = `/view?file=${encodeURIComponent(e.filename)}&offset=${e.offset}&length=${e.length}&url=${encodeURIComponent(e.url)}`
     let shortURL = e.url
@@ -629,17 +623,17 @@ ${svg.search}
       shortURL = u.host + u.pathname + (u.search || '')
     } catch { /* keep full */ }
 
-    h += `<tr>
-<td class="mono url-cell"><a href="${viewURL}" title="${esc(e.url)}">${esc(truncURL(shortURL, 55))}</a></td>
-<td class="mono">${esc(formatTimestamp(e.timestamp))}</td>
-<td>${statusBadge(e.status)}</td>
-<td>${mimeBadge(e.mime)}</td>
-<td class="num">${fmtBytes(parseInt(e.length) || 0)}</td>
-<td><a href="${viewURL}" class="btn-view">${svg.eye} View</a></td>
-</tr>`
+    h += `<a href="${viewURL}" class="card-item card-item-link">
+<div class="card-item-body">
+<div class="card-item-title" title="${esc(e.url)}">${esc(truncURL(shortURL, 65))}</div>
+<div class="card-item-sub">${statusBadge(e.status)} <span class="sep">&middot;</span> ${mimeBadge(e.mime)} <span class="sep">&middot;</span> ${fmtDate(e.timestamp)} <span class="sep">&middot;</span> ${fmtBytes(parseInt(e.length) || 0)}</div>
+</div>
+<div class="card-item-stats">
+<span class="card-item-stat">${svg.eye} View</span>
+</div>
+</a>`
   }
-
-  h += `</tbody></table></div>`
+  h += `</div>`
 
   if (totalPages > 1) {
     h += renderPagination(`/crawl/${crawlID}/cdx?prefix=${encodeURIComponent(prefix)}`, page, totalPages, true)
@@ -656,19 +650,12 @@ function renderPagination(basePath: string, page: number, totalPages: number, ha
   if (page > 0) {
     h += `<a href="${basePath}${sep}page=${page - 1}" class="pag-btn">Previous</a>`
   }
-  h += `<span class="pag-info">Page ${page + 1} of ${totalPages}</span>`
+  h += `<span class="pag-info">Page ${page + 1} of ${fmtNum(totalPages)}</span>`
   if (page < totalPages - 1) {
     h += `<a href="${basePath}${sep}page=${page + 1}" class="pag-btn">Next</a>`
   }
   h += `</div>`
   return h
-}
-
-function fmtDate(iso: string): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-  return `${months[d.getMonth()]} ${d.getDate()}`
 }
 
 // ---- Layout ----
@@ -704,7 +691,7 @@ export function renderLayout(title: string, content: string, opts: { isHome?: bo
 <title>${esc(title)}</title>
 <meta name="description" content="Browse billions of web pages from Common Crawl archives">
 <link rel="stylesheet" href="${cssURL}">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2'><circle cx='12' cy='12' r='10'/><path d='M2 12h20'/><path d='M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231a73e8' stroke-width='2'><circle cx='12' cy='12' r='10'/><path d='M2 12h20'/><path d='M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z'/></svg>">
 ${themeScript}
 </head>
 <body>
