@@ -1,10 +1,18 @@
 import { Link } from 'react-router-dom'
 import type { FeedItem as FeedItemType } from '../types'
-import BookCover from './BookCover'
 import StarRating from './StarRating'
 
 interface FeedItemProps {
   item: FeedItemType
+}
+
+interface FeedData {
+  rating?: number
+  text?: string
+  shelf_name?: string
+  page?: number
+  percent?: number
+  goal?: number
 }
 
 function timeAgo(dateStr?: string): string {
@@ -21,51 +29,55 @@ function timeAgo(dateStr?: string): string {
   return `${months}mo ago`
 }
 
-function actionLabel(action: string): string {
-  switch (action) {
-    case 'rated': return 'rated'
-    case 'shelved': return 'wants to read'
-    case 'reviewed': return 'reviewed'
-    case 'finished': return 'finished reading'
-    case 'started': return 'started reading'
-    default: return action
+function actionLabel(type: string): string {
+  switch (type) {
+    case 'rating': return 'rated'
+    case 'shelve': return 'shelved'
+    case 'review': return 'reviewed'
+    case 'progress': return 'is reading'
+    case 'challenge': return 'set a reading challenge'
+    default: return type
   }
 }
 
 export default function FeedItemComponent({ item }: FeedItemProps) {
+  let data: FeedData = {}
+  try {
+    data = JSON.parse(item.data || '{}')
+  } catch {
+    // ignore parse errors
+  }
+
   return (
     <div className="feed-item">
-      <Link to={`/book/${item.book_id}`}>
-        <BookCover
-          src={item.book_cover}
-          title={item.book_title}
-          className="book-cover-sm"
-        />
-      </Link>
-
       <div style={{ flex: 1 }}>
         <div className="action-text">
-          <span>{actionLabel(item.action)} </span>
-          <Link to={`/book/${item.book_id}`}>{item.book_title}</Link>
-          {item.author_name && (
-            <span> by {item.author_name}</span>
+          <span>{actionLabel(item.type)} </span>
+          {item.book_id ? (
+            <Link to={`/book/${item.book_id}`}>{item.book_title}</Link>
+          ) : (
+            <span>{item.book_title}</span>
           )}
-          {item.shelf_name && item.action === 'shelved' && (
-            <span> ({item.shelf_name})</span>
+          {data.shelf_name && item.type === 'shelve' && (
+            <span> ({data.shelf_name})</span>
           )}
         </div>
 
-        {item.rating > 0 && (
+        {data.rating && data.rating > 0 && (
           <div style={{ marginTop: 4 }}>
-            <StarRating rating={item.rating} size={14} />
+            <StarRating rating={data.rating} size={14} />
           </div>
         )}
 
-        {item.review_text && (
+        {data.text && (
           <div style={{ fontSize: 13, color: 'var(--gr-text)', marginTop: 4, lineHeight: 1.5 }}>
-            {item.review_text.length > 200
-              ? item.review_text.slice(0, 200) + '...'
-              : item.review_text}
+            {data.text.length > 200 ? data.text.slice(0, 200) + '...' : data.text}
+          </div>
+        )}
+
+        {item.type === 'progress' && data.percent !== undefined && (
+          <div style={{ fontSize: 13, color: 'var(--gr-light)', marginTop: 4 }}>
+            {data.page ? `Page ${data.page} · ` : ''}{Math.round(data.percent)}% complete
           </div>
         )}
 

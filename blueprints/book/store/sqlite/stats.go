@@ -3,7 +3,6 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -40,80 +39,7 @@ func (s *StatsStore) GetStats(ctx context.Context, year int) (*types.ReadingStat
 	}
 	defer rows.Close()
 
-	var totalRating float64
-	var ratedCount int
-
-	for rows.Next() {
-		var b types.Book
-		var rating int
-		var finishedAt sql.NullTime
-		err := rows.Scan(&b.ID, &b.OLKey, &b.GoogleID, &b.Title, &b.Subtitle, &b.Description,
-			&b.AuthorNames, &b.CoverURL, &b.CoverID, &b.ISBN10, &b.ISBN13, &b.Publisher,
-			&b.PublishDate, &b.PublishYear, &b.PageCount, &b.Language, &b.Format,
-			&b.SubjectsJSON, &b.AverageRating, &b.RatingsCount, &b.CreatedAt, &b.UpdatedAt,
-			&rating, &finishedAt)
-		if err != nil {
-			continue
-		}
-		json.Unmarshal([]byte(b.SubjectsJSON), &b.Subjects)
-
-		stats.TotalBooks++
-		stats.TotalPages += b.PageCount
-
-		if rating > 0 {
-			totalRating += float64(rating)
-			ratedCount++
-			stats.RatingDist[rating]++
-		}
-
-		// Per-month breakdown
-		if finishedAt.Valid {
-			month := finishedAt.Time.Format("2006-01")
-			stats.BooksPerMonth[month]++
-			stats.PagesPerMonth[month] += b.PageCount
-		}
-
-		// Genre breakdown
-		for _, subj := range b.Subjects {
-			stats.GenreBreakdown[subj]++
-		}
-
-		// Track extremes
-		if b.PageCount > 0 {
-			if stats.ShortestBook == nil || b.PageCount < stats.ShortestBook.PageCount {
-				copy := b
-				stats.ShortestBook = &copy
-			}
-			if stats.LongestBook == nil || b.PageCount > stats.LongestBook.PageCount {
-				copy := b
-				stats.LongestBook = &copy
-			}
-		}
-		if rating > 0 && (stats.HighestRated == nil || float64(rating) > stats.HighestRated.AverageRating) {
-			copy := b
-			copy.AverageRating = float64(rating)
-			stats.HighestRated = &copy
-		}
-		if stats.MostPopular == nil || b.RatingsCount > stats.MostPopular.RatingsCount {
-			copy := b
-			stats.MostPopular = &copy
-		}
-	}
-
-	if ratedCount > 0 {
-		stats.AverageRating = totalRating / float64(ratedCount)
-	}
-
-	// Populate authors for extreme books
-	for _, bp := range []*types.Book{stats.ShortestBook, stats.LongestBook, stats.HighestRated, stats.MostPopular} {
-		if bp != nil && bp.AuthorNames != "" {
-			for _, name := range strings.Split(bp.AuthorNames, ", ") {
-				bp.Authors = append(bp.Authors, types.Author{Name: name})
-			}
-		}
-	}
-
-	return stats, nil
+	return s.processStatsRows(rows, stats)
 }
 
 // GetOverallStats returns all-time reading statistics across all years.
@@ -136,6 +62,10 @@ func (s *StatsStore) GetOverallStats(ctx context.Context) (*types.ReadingStats, 
 	}
 	defer rows.Close()
 
+	return s.processStatsRows(rows, stats)
+}
+
+func (s *StatsStore) processStatsRows(rows *sql.Rows, stats *types.ReadingStats) (*types.ReadingStats, error) {
 	var totalRating float64
 	var ratedCount int
 
@@ -143,15 +73,11 @@ func (s *StatsStore) GetOverallStats(ctx context.Context) (*types.ReadingStats, 
 		var b types.Book
 		var rating int
 		var finishedAt sql.NullTime
-		err := rows.Scan(&b.ID, &b.OLKey, &b.GoogleID, &b.Title, &b.Subtitle, &b.Description,
-			&b.AuthorNames, &b.CoverURL, &b.CoverID, &b.ISBN10, &b.ISBN13, &b.Publisher,
-			&b.PublishDate, &b.PublishYear, &b.PageCount, &b.Language, &b.Format,
-			&b.SubjectsJSON, &b.AverageRating, &b.RatingsCount, &b.CreatedAt, &b.UpdatedAt,
-			&rating, &finishedAt)
-		if err != nil {
+		fields := append(scanFields(&b), &rating, &finishedAt)
+		if err := rows.Scan(fields...); err != nil {
 			continue
 		}
-		json.Unmarshal([]byte(b.SubjectsJSON), &b.Subjects)
+		hydrateBook(&b)
 
 		stats.TotalBooks++
 		stats.TotalPages += b.PageCount
@@ -174,22 +100,22 @@ func (s *StatsStore) GetOverallStats(ctx context.Context) (*types.ReadingStats, 
 
 		if b.PageCount > 0 {
 			if stats.ShortestBook == nil || b.PageCount < stats.ShortestBook.PageCount {
-				copy := b
-				stats.ShortestBook = &copy
+				c := b
+				stats.ShortestBook = &c
 			}
 			if stats.LongestBook == nil || b.PageCount > stats.LongestBook.PageCount {
-				copy := b
-				stats.LongestBook = &copy
+				c := b
+				stats.LongestBook = &c
 			}
 		}
 		if rating > 0 && (stats.HighestRated == nil || float64(rating) > stats.HighestRated.AverageRating) {
-			copy := b
-			copy.AverageRating = float64(rating)
-			stats.HighestRated = &copy
+			c := b
+			c.AverageRating = float64(rating)
+			stats.HighestRated = &c
 		}
 		if stats.MostPopular == nil || b.RatingsCount > stats.MostPopular.RatingsCount {
-			copy := b
-			stats.MostPopular = &copy
+			c := b
+			stats.MostPopular = &c
 		}
 	}
 

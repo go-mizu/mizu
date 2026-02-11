@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { Upload, Download, FileText, Check } from 'lucide-react'
+import { Upload, Download, FileText, Check, BookOpen, Loader2 } from 'lucide-react'
 import Header from '../components/Header'
 import { booksApi } from '../api/books'
 
@@ -9,6 +9,10 @@ export default function ImportExportPage() {
   const [error, setError] = useState<string | null>(null)
   const [dragActive, setDragActive] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const [grUrl, setGrUrl] = useState('')
+  const [grImporting, setGrImporting] = useState(false)
+  const [grResult, setGrResult] = useState<{ title: string } | null>(null)
+  const [grError, setGrError] = useState<string | null>(null)
 
   const handleFile = async (file: File) => {
     if (!file.name.endsWith('.csv')) {
@@ -40,6 +44,22 @@ export default function ImportExportPage() {
     if (file) handleFile(file)
   }
 
+  const handleGoodreadsImport = async () => {
+    if (!grUrl.trim()) return
+    setGrImporting(true)
+    setGrError(null)
+    setGrResult(null)
+    try {
+      const book = await booksApi.importGoodreads(grUrl.trim())
+      setGrResult({ title: book.title })
+      setGrUrl('')
+    } catch {
+      setGrError('Failed to import from Goodreads. Check the URL and try again.')
+    } finally {
+      setGrImporting(false)
+    }
+  }
+
   return (
     <>
       <Header />
@@ -50,11 +70,11 @@ export default function ImportExportPage() {
         <div className="mb-10">
           <h2 className="section-title mb-4">
             <Upload size={20} className="inline mr-2" />
-            Import from Goodreads
+            Import Library
           </h2>
           <p className="text-sm text-gr-light mb-4">
-            Upload your Goodreads library export CSV file. Go to Goodreads &rarr; My Books &rarr;
-            Import and Export &rarr; Export Library to download it.
+            Upload a CSV file containing your book library. The CSV should include columns like
+            Title, Author, ISBN, Rating, and Shelf.
           </p>
 
           <div
@@ -70,7 +90,7 @@ export default function ImportExportPage() {
             <p className="text-sm text-gr-text mb-1">
               Drop your CSV file here, or <span className="text-gr-teal font-bold">click to browse</span>
             </p>
-            <p className="text-xs text-gr-light">Supports Goodreads export CSV format</p>
+            <p className="text-xs text-gr-light">Supports standard book library CSV format</p>
             <input
               ref={fileRef}
               type="file"
@@ -97,6 +117,47 @@ export default function ImportExportPage() {
           )}
         </div>
 
+        {/* Goodreads Import */}
+        <div className="mb-10">
+          <h2 className="section-title mb-4">
+            <BookOpen size={20} className="inline mr-2" />
+            Import from Goodreads
+          </h2>
+          <p className="text-sm text-gr-light mb-4">
+            Paste a Goodreads book URL to import all book details including ratings,
+            description, genres, and reviews.
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={grUrl}
+              onChange={e => setGrUrl(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleGoodreadsImport()}
+              placeholder="https://www.goodreads.com/book/show/..."
+              className="flex-1 px-3 py-2 border border-gr-border rounded-md text-sm focus:outline-none focus:border-gr-teal"
+              disabled={grImporting}
+            />
+            <button
+              className="btn btn-primary"
+              onClick={handleGoodreadsImport}
+              disabled={grImporting || !grUrl.trim()}
+            >
+              {grImporting ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+              {grImporting ? 'Importing...' : 'Import'}
+            </button>
+          </div>
+
+          {grResult && (
+            <div className="mt-4 flex items-center gap-2 text-sm text-gr-green">
+              <Check size={16} /> Imported "{grResult.title}" successfully
+            </div>
+          )}
+
+          {grError && (
+            <div className="mt-4 text-sm text-red-600">{grError}</div>
+          )}
+        </div>
+
         {/* Export Section */}
         <div>
           <h2 className="section-title mb-4">
@@ -104,7 +165,7 @@ export default function ImportExportPage() {
             Export Library
           </h2>
           <p className="text-sm text-gr-light mb-4">
-            Download your library as a Goodreads-compatible CSV file. Includes all books,
+            Download your library as a CSV file. Includes all books,
             ratings, reviews, shelves, and reading dates.
           </p>
           <button className="btn btn-primary" onClick={() => booksApi.exportCSV()}>

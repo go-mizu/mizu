@@ -26,7 +26,7 @@ export default function BookCard({ book, showShelf = true }: BookCardProps) {
 
         <p className="book-author">
           by{' '}
-          <Link to={`/author/${book.author_id}`}>{book.author_names}</Link>
+          <span>{book.author_names}</span>
         </p>
 
         <div className="book-meta">

@@ -18,12 +18,16 @@ func (s *ReviewStore) Create(ctx context.Context, review *types.Review) error {
 	now := time.Now()
 	review.CreatedAt = now
 	review.UpdatedAt = now
+	if review.Source == "" {
+		review.Source = "user"
+	}
 
 	result, err := s.db.ExecContext(ctx, `
-		INSERT INTO reviews (book_id, rating, text, is_spoiler, likes_count, started_at, finished_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO reviews (book_id, rating, text, is_spoiler, likes_count, started_at, finished_at, created_at, updated_at, reviewer_name, source)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		review.BookID, review.Rating, review.Text, boolToInt(review.IsSpoiler),
-		review.LikesCount, review.StartedAt, review.FinishedAt, now, now)
+		review.LikesCount, review.StartedAt, review.FinishedAt, now, now,
+		review.ReviewerName, review.Source)
 	if err != nil {
 		return err
 	}
@@ -38,7 +42,7 @@ func (s *ReviewStore) Create(ctx context.Context, review *types.Review) error {
 
 func (s *ReviewStore) Get(ctx context.Context, id int64) (*types.Review, error) {
 	return s.scanReview(s.db.QueryRowContext(ctx, `
-		SELECT id, book_id, rating, text, is_spoiler, likes_count, started_at, finished_at, created_at, updated_at
+		SELECT id, book_id, rating, text, is_spoiler, likes_count, started_at, finished_at, created_at, updated_at, reviewer_name, source
 		FROM reviews WHERE id = ?`, id))
 }
 
@@ -55,8 +59,8 @@ func (s *ReviewStore) GetByBook(ctx context.Context, bookID int64, page, limit i
 	s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM reviews WHERE book_id = ?`, bookID).Scan(&total)
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, book_id, rating, text, is_spoiler, likes_count, started_at, finished_at, created_at, updated_at
-		FROM reviews WHERE book_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+		SELECT id, book_id, rating, text, is_spoiler, likes_count, started_at, finished_at, created_at, updated_at, reviewer_name, source
+		FROM reviews WHERE book_id = ? ORDER BY likes_count DESC, created_at DESC LIMIT ? OFFSET ?`,
 		bookID, limit, offset)
 	if err != nil {
 		return nil, 0, err
@@ -97,11 +101,11 @@ func (s *ReviewStore) Delete(ctx context.Context, id int64) error {
 	return s.updateBookRating(ctx, bookID)
 }
 
-// GetUserReview returns the single review for a book (single-user app).
+// GetUserReview returns the single user review for a book (single-user app).
 func (s *ReviewStore) GetUserReview(ctx context.Context, bookID int64) (*types.Review, error) {
 	return s.scanReview(s.db.QueryRowContext(ctx, `
-		SELECT id, book_id, rating, text, is_spoiler, likes_count, started_at, finished_at, created_at, updated_at
-		FROM reviews WHERE book_id = ? ORDER BY created_at DESC LIMIT 1`, bookID))
+		SELECT id, book_id, rating, text, is_spoiler, likes_count, started_at, finished_at, created_at, updated_at, reviewer_name, source
+		FROM reviews WHERE book_id = ? AND source = 'user' ORDER BY created_at DESC LIMIT 1`, bookID))
 }
 
 // updateBookRating recalculates the average rating and ratings count for a book.
@@ -118,7 +122,8 @@ func (s *ReviewStore) scanReview(row *sql.Row) (*types.Review, error) {
 	var r types.Review
 	var isSpoiler int
 	err := row.Scan(&r.ID, &r.BookID, &r.Rating, &r.Text, &isSpoiler,
-		&r.LikesCount, &r.StartedAt, &r.FinishedAt, &r.CreatedAt, &r.UpdatedAt)
+		&r.LikesCount, &r.StartedAt, &r.FinishedAt, &r.CreatedAt, &r.UpdatedAt,
+		&r.ReviewerName, &r.Source)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -135,7 +140,8 @@ func (s *ReviewStore) scanReviews(rows *sql.Rows) ([]types.Review, error) {
 		var r types.Review
 		var isSpoiler int
 		err := rows.Scan(&r.ID, &r.BookID, &r.Rating, &r.Text, &isSpoiler,
-			&r.LikesCount, &r.StartedAt, &r.FinishedAt, &r.CreatedAt, &r.UpdatedAt)
+			&r.LikesCount, &r.StartedAt, &r.FinishedAt, &r.CreatedAt, &r.UpdatedAt,
+			&r.ReviewerName, &r.Source)
 		if err != nil {
 			return nil, fmt.Errorf("scan review: %w", err)
 		}

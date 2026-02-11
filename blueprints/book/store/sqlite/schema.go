@@ -23,7 +23,15 @@ CREATE TABLE IF NOT EXISTS books (
     average_rating REAL DEFAULT 0,
     ratings_count INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    goodreads_id TEXT DEFAULT '',
+    asin TEXT DEFAULT '',
+    series TEXT DEFAULT '',
+    reviews_count INTEGER DEFAULT 0,
+    currently_reading INTEGER DEFAULT 0,
+    want_to_read INTEGER DEFAULT 0,
+    rating_dist TEXT DEFAULT '[]',
+    first_published TEXT DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_books_title ON books(title);
@@ -43,10 +51,15 @@ CREATE TABLE IF NOT EXISTS authors (
     birth_date TEXT DEFAULT '',
     death_date TEXT DEFAULT '',
     works_count INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    goodreads_id TEXT DEFAULT '',
+    followers INTEGER DEFAULT 0,
+    genres TEXT DEFAULT '',
+    influences TEXT DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_authors_name ON authors(name);
+CREATE INDEX IF NOT EXISTS idx_authors_goodreads_id ON authors(goodreads_id);
 
 CREATE TABLE IF NOT EXISTS shelves (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -80,7 +93,9 @@ CREATE TABLE IF NOT EXISTS reviews (
     started_at DATETIME,
     finished_at DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    reviewer_name TEXT DEFAULT '',
+    source TEXT DEFAULT 'user'
 );
 
 CREATE INDEX IF NOT EXISTS idx_reviews_book ON reviews(book_id);
@@ -107,7 +122,9 @@ CREATE TABLE IF NOT EXISTS book_lists (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
     description TEXT DEFAULT '',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    goodreads_url TEXT DEFAULT '',
+    voter_count INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS book_list_items (
@@ -140,4 +157,26 @@ CREATE TABLE IF NOT EXISTS feed (
 );
 
 CREATE INDEX IF NOT EXISTS idx_feed_created ON feed(created_at DESC);
+`
+
+// migration adds columns to existing databases that lack them.
+const migration = `
+ALTER TABLE books ADD COLUMN goodreads_id TEXT DEFAULT '';
+ALTER TABLE books ADD COLUMN asin TEXT DEFAULT '';
+ALTER TABLE books ADD COLUMN series TEXT DEFAULT '';
+ALTER TABLE books ADD COLUMN reviews_count INTEGER DEFAULT 0;
+ALTER TABLE books ADD COLUMN currently_reading INTEGER DEFAULT 0;
+ALTER TABLE books ADD COLUMN want_to_read INTEGER DEFAULT 0;
+ALTER TABLE books ADD COLUMN rating_dist TEXT DEFAULT '[]';
+ALTER TABLE books ADD COLUMN first_published TEXT DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_books_goodreads_id ON books(goodreads_id);
+ALTER TABLE reviews ADD COLUMN reviewer_name TEXT DEFAULT '';
+ALTER TABLE reviews ADD COLUMN source TEXT DEFAULT 'user';
+ALTER TABLE authors ADD COLUMN goodreads_id TEXT DEFAULT '';
+ALTER TABLE authors ADD COLUMN followers INTEGER DEFAULT 0;
+ALTER TABLE authors ADD COLUMN genres TEXT DEFAULT '';
+ALTER TABLE authors ADD COLUMN influences TEXT DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_authors_goodreads_id ON authors(goodreads_id);
+ALTER TABLE book_lists ADD COLUMN goodreads_url TEXT DEFAULT '';
+ALTER TABLE book_lists ADD COLUMN voter_count INTEGER DEFAULT 0;
 `

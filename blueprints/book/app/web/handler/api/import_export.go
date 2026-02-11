@@ -67,6 +67,9 @@ func (h *ImportExportHandler) ImportCSV(c *mizu.Ctx) error {
 		if i, ok := cols["Average Rating"]; ok && i < len(row) {
 			book.AverageRating, _ = strconv.ParseFloat(row[i], 64)
 		}
+		if i, ok := cols["Book Id"]; ok && i < len(row) {
+			book.GoodreadsID = strings.TrimSpace(row[i])
+		}
 
 		if book.Title == "" {
 			continue
@@ -105,7 +108,7 @@ func (h *ImportExportHandler) ImportCSV(c *mizu.Ctx) error {
 
 func (h *ImportExportHandler) ExportCSV(c *mizu.Ctx) error {
 	c.Header().Set("Content-Type", "text/csv")
-	c.Header().Set("Content-Disposition", "attachment; filename=goodreads_export.csv")
+	c.Header().Set("Content-Disposition", "attachment; filename=book_export.csv")
 
 	w := csv.NewWriter(c.Writer())
 	defer w.Flush()

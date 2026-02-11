@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 
@@ -65,8 +66,18 @@ func New(dbPath string) (*Store, error) {
 
 // Ensure creates all tables and indexes if they do not exist.
 func (s *Store) Ensure(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, schema)
-	return err
+	if _, err := s.db.ExecContext(ctx, schema); err != nil {
+		return err
+	}
+	// Run migrations for existing databases (ignore errors for already-existing columns).
+	for _, stmt := range strings.Split(migration, ";") {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
+		}
+		s.db.ExecContext(ctx, stmt) //nolint:errcheck
+	}
+	return nil
 }
 
 // Close closes the underlying database connection.

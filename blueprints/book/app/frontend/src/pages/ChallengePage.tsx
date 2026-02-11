@@ -35,7 +35,7 @@ export default function ChallengePage() {
   }
 
   const pct = challenge && challenge.goal > 0
-    ? Math.min(100, Math.round((challenge.books_read / challenge.goal) * 100))
+    ? Math.min(100, Math.round((challenge.progress / challenge.goal) * 100))
     : 0
 
   return (
@@ -75,7 +75,7 @@ export default function ChallengePage() {
                 Reading Challenge
               </h2>
               <div className="challenge-progress">
-                {challenge.books_read} <span className="text-2xl text-gr-light">/ {challenge.goal}</span>
+                {challenge.progress} <span className="text-2xl text-gr-light">/ {challenge.goal}</span>
               </div>
               <div className="challenge-goal">books read</div>
 

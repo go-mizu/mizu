@@ -27,13 +27,17 @@ func NewChallenge() *cobra.Command {
 
 			year := time.Now().Year()
 			if len(args) >= 1 {
-				year, _ = strconv.Atoi(args[0])
+				y, err := strconv.Atoi(args[0])
+				if err != nil {
+					return fmt.Errorf("invalid year: %q (usage: book challenge <year> <goal>)", args[0])
+				}
+				year = y
 			}
 
 			if len(args) >= 2 {
-				goal, _ := strconv.Atoi(args[1])
-				if goal <= 0 {
-					return fmt.Errorf("goal must be positive")
+				goal, err := strconv.Atoi(args[1])
+				if err != nil || goal <= 0 {
+					return fmt.Errorf("goal must be a positive number")
 				}
 				ch := &types.ReadingChallenge{Year: year, Goal: goal}
 				if err := store.Challenge().Set(ctx, ch); err != nil {

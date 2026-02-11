@@ -23,8 +23,8 @@ export default function StatsPage() {
   }, [year])
 
   const years = Array.from({ length: 5 }, (_, i) => currentYear - i)
-  const maxBooks = stats?.books_by_month
-    ? Math.max(1, ...Object.values(stats.books_by_month))
+  const maxBooks = stats?.books_per_month
+    ? Math.max(1, ...Object.values(stats.books_per_month))
     : 1
 
   return (
@@ -70,11 +70,11 @@ export default function StatsPage() {
                 <div className="stat-label">Pages Read</div>
               </div>
               <div className="stat-box">
-                <div className="stat-number">{stats.avg_rating.toFixed(1)}</div>
+                <div className="stat-number">{stats.average_rating.toFixed(1)}</div>
                 <div className="stat-label">Avg Rating</div>
               </div>
               <div className="stat-box">
-                <div className="stat-number">{Math.round(stats.avg_pages)}</div>
+                <div className="stat-number">{stats.total_books > 0 ? Math.round(stats.total_pages / stats.total_books) : 0}</div>
                 <div className="stat-label">Avg Pages</div>
               </div>
             </div>
@@ -85,7 +85,7 @@ export default function StatsPage() {
               <div className="bar-chart" style={{ paddingBottom: 24 }}>
                 {MONTHS.map((m, i) => {
                   const key = String(i + 1)
-                  const count = stats.books_by_month?.[key] || 0
+                  const count = stats.books_per_month?.[key] || 0
                   const height = maxBooks > 0 ? (count / maxBooks) * 100 : 0
                   return (
                     <div key={m} className="bar" style={{ height: `${Math.max(height, 2)}%` }}>
@@ -127,27 +127,12 @@ export default function StatsPage() {
               </div>
             </div>
 
-            {/* Top authors */}
-            {stats.top_authors && stats.top_authors.length > 0 && (
-              <div className="mb-8">
-                <h2 className="section-title mb-4">Top Authors</h2>
-                <div className="space-y-2">
-                  {stats.top_authors.map((a, i) => (
-                    <div key={i} className="flex items-center justify-between py-2 border-b border-gray-100">
-                      <span className="text-sm">{a.name}</span>
-                      <span className="text-sm text-gr-light">{a.count} books</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* Genres */}
-            {stats.genres && Object.keys(stats.genres).length > 0 && (
+            {stats.genre_breakdown && Object.keys(stats.genre_breakdown).length > 0 && (
               <div className="mb-8">
                 <h2 className="section-title mb-4">Genres</h2>
                 <div className="flex flex-wrap gap-2">
-                  {Object.entries(stats.genres)
+                  {Object.entries(stats.genre_breakdown)
                     .sort(([, a], [, b]) => b - a)
                     .slice(0, 20)
                     .map(([genre, count]) => (

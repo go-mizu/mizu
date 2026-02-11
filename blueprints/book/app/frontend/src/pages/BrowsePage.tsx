@@ -108,7 +108,7 @@ export default function BrowsePage() {
                   style={{ fontSize: 14, padding: '8px 16px' }}
                 >
                   {genre.name}
-                  {genre.count > 0 && (
+                  {genre.book_count > 0 && (
                     <span
                       style={{
                         marginLeft: 6,
@@ -116,7 +116,7 @@ export default function BrowsePage() {
                         color: 'var(--gr-light)',
                       }}
                     >
-                      ({genre.count})
+                      ({genre.book_count})
                     </span>
                   )}
                 </Link>

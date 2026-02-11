@@ -28,6 +28,16 @@ type Book struct {
 	RatingsCount  int       `json:"ratings_count"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
+	// Goodreads fields
+	GoodreadsID      string `json:"goodreads_id,omitempty"`
+	ASIN             string `json:"asin,omitempty"`
+	Series           string `json:"series,omitempty"`
+	ReviewsCount     int    `json:"reviews_count"`
+	CurrentlyReading int    `json:"currently_reading"`
+	WantToRead       int    `json:"want_to_read"`
+	RatingDist       [5]int `json:"rating_dist"`   // [0]=5star .. [4]=1star
+	RatingDistJSON   string `json:"-"`             // DB storage
+	FirstPublished   string `json:"first_published,omitempty"`
 	// Computed fields (not stored)
 	UserRating int    `json:"user_rating,omitempty"`
 	UserShelf  string `json:"user_shelf,omitempty"`
@@ -35,15 +45,19 @@ type Book struct {
 
 // Author represents a book author.
 type Author struct {
-	ID         int64     `json:"id"`
-	OLKey      string    `json:"ol_key"`
-	Name       string    `json:"name"`
-	Bio        string    `json:"bio,omitempty"`
-	PhotoURL   string    `json:"photo_url,omitempty"`
-	BirthDate  string    `json:"birth_date,omitempty"`
-	DeathDate  string    `json:"death_date,omitempty"`
-	WorksCount int       `json:"works_count"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID           int64     `json:"id"`
+	OLKey        string    `json:"ol_key"`
+	Name         string    `json:"name"`
+	Bio          string    `json:"bio,omitempty"`
+	PhotoURL     string    `json:"photo_url,omitempty"`
+	BirthDate    string    `json:"birth_date,omitempty"`
+	DeathDate    string    `json:"death_date,omitempty"`
+	WorksCount   int       `json:"works_count"`
+	CreatedAt    time.Time `json:"created_at"`
+	GoodreadsID  string    `json:"goodreads_id,omitempty"`
+	Followers    int       `json:"followers,omitempty"`
+	Genres       string    `json:"genres,omitempty"`       // Comma-separated
+	Influences   string    `json:"influences,omitempty"`   // Comma-separated
 }
 
 // Shelf represents a bookshelf (e.g. "Read", "Want to Read").
@@ -70,17 +84,19 @@ type ShelfBook struct {
 
 // Review represents a user's review of a book.
 type Review struct {
-	ID         int64      `json:"id"`
-	BookID     int64      `json:"book_id"`
-	Rating     int        `json:"rating"` // 1-5, 0 = no rating
-	Text       string     `json:"text,omitempty"`
-	IsSpoiler  bool       `json:"is_spoiler"`
-	LikesCount int        `json:"likes_count"`
-	StartedAt  *time.Time `json:"started_at,omitempty"`
-	FinishedAt *time.Time `json:"finished_at,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
-	UpdatedAt  time.Time  `json:"updated_at"`
-	Book       *Book      `json:"book,omitempty"` // Joined
+	ID           int64      `json:"id"`
+	BookID       int64      `json:"book_id"`
+	Rating       int        `json:"rating"` // 1-5, 0 = no rating
+	Text         string     `json:"text,omitempty"`
+	IsSpoiler    bool       `json:"is_spoiler"`
+	LikesCount   int        `json:"likes_count"`
+	StartedAt    *time.Time `json:"started_at,omitempty"`
+	FinishedAt   *time.Time `json:"finished_at,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+	ReviewerName string     `json:"reviewer_name,omitempty"`
+	Source       string     `json:"source,omitempty"` // "user", "goodreads"
+	Book         *Book      `json:"book,omitempty"`   // Joined
 }
 
 // ReadingProgress tracks page-by-page progress through a book.
@@ -104,12 +120,14 @@ type ReadingChallenge struct {
 
 // BookList represents a curated list of books.
 type BookList struct {
-	ID          int64          `json:"id"`
-	Title       string         `json:"title"`
-	Description string         `json:"description,omitempty"`
-	ItemCount   int            `json:"item_count"` // Computed
-	CreatedAt   time.Time      `json:"created_at"`
-	Items       []BookListItem `json:"items,omitempty"`
+	ID           int64          `json:"id"`
+	Title        string         `json:"title"`
+	Description  string         `json:"description,omitempty"`
+	ItemCount    int            `json:"item_count"` // Computed
+	CreatedAt    time.Time      `json:"created_at"`
+	Items        []BookListItem `json:"items,omitempty"`
+	GoodreadsURL string         `json:"goodreads_url,omitempty"`
+	VoterCount   int            `json:"voter_count,omitempty"`
 }
 
 // BookListItem represents a book entry within a list.

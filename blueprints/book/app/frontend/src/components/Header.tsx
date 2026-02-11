@@ -19,14 +19,14 @@ export default function Header() {
     { to: '/', label: 'Home' },
     { to: '/my-books', label: 'My Books' },
     { to: '/browse', label: 'Browse' },
-    { to: '/community', label: 'Community' },
+    { to: '/lists', label: 'Lists' },
   ]
 
   return (
     <header className="header">
       <div className="header-inner">
         <Link to="/" className="header-logo">
-          goodreads
+          book
         </Link>
 
         <nav className="header-nav">

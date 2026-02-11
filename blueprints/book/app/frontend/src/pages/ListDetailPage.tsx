@@ -4,11 +4,11 @@ import { ArrowLeft, ThumbsUp } from 'lucide-react'
 import Header from '../components/Header'
 import BookCard from '../components/BookCard'
 import { booksApi } from '../api/books'
-import type { Book, BookList } from '../types'
+import type { BookList } from '../types'
 
 export default function ListDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const [list, setList] = useState<(BookList & { items: Book[] }) | null>(null)
+  const [list, setList] = useState<BookList | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -19,11 +19,9 @@ export default function ListDetailPage() {
       .finally(() => setLoading(false))
   }, [id])
 
-  const handleVote = () => {
+  const handleVote = (bookId: number) => {
     if (!list) return
-    booksApi.voteList(list.id)
-      .then(() => setList(prev => prev ? { ...prev, vote_count: prev.vote_count + 1 } : null))
-      .catch(() => {})
+    booksApi.voteList(list.id, bookId).catch(() => {})
   }
 
   if (loading) {
@@ -44,6 +42,8 @@ export default function ListDetailPage() {
     )
   }
 
+  const items = list.items || []
+
   return (
     <>
       <Header />
@@ -52,21 +52,27 @@ export default function ListDetailPage() {
           <ArrowLeft size={14} /> Back to Lists
         </Link>
 
-        <div className="flex items-start justify-between mb-6">
-          <div>
-            <h1 className="font-serif text-2xl font-bold text-gr-brown">{list.title}</h1>
-            {list.description && <p className="text-gr-light mt-2">{list.description}</p>}
-            <p className="text-sm text-gr-light mt-2">{list.book_count} books</p>
-          </div>
-          <button className="btn btn-secondary" onClick={handleVote}>
-            <ThumbsUp size={16} /> {list.vote_count}
-          </button>
+        <div className="mb-6">
+          <h1 className="font-serif text-2xl font-bold text-gr-brown">{list.title}</h1>
+          {list.description && <p className="text-gr-light mt-2">{list.description}</p>}
+          <p className="text-sm text-gr-light mt-2">{list.item_count} books</p>
         </div>
 
-        {list.items && list.items.length > 0 ? (
+        {items.length > 0 ? (
           <div>
-            {list.items.map(book => (
-              <BookCard key={book.id} book={book} />
+            {items.map(item => item.book && (
+              <div key={item.id} style={{ display: 'flex', alignItems: 'start', gap: 8, marginBottom: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <BookCard book={item.book} />
+                </div>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => handleVote(item.book_id)}
+                  style={{ flexShrink: 0, marginTop: 8 }}
+                >
+                  <ThumbsUp size={14} /> {item.votes > 0 ? item.votes : ''}
+                </button>
+              </div>
             ))}
           </div>
         ) : (

@@ -40,7 +40,7 @@ func (h *BookHandler) Search(c *mizu.Ctx) error {
 		olBooks, err := h.ol.Search(c.Context(), q, limit-result.TotalCount)
 		if err == nil {
 			for _, ob := range olBooks {
-				// Skip if already in results
+				// Skip if already in results (by OL key or ISBN)
 				found := false
 				for _, rb := range result.Books {
 					if rb.OLKey == ob.OLKey || (rb.ISBN13 != "" && rb.ISBN13 == ob.ISBN13) {
@@ -48,7 +48,19 @@ func (h *BookHandler) Search(c *mizu.Ctx) error {
 						break
 					}
 				}
-				if !found {
+				if found {
+					continue
+				}
+
+				// Check if already in DB by OL key
+				if existing, _ := h.st.Book().GetByOLKey(c.Context(), ob.OLKey); existing != nil {
+					result.Books = append(result.Books, *existing)
+					result.TotalCount++
+					continue
+				}
+
+				// Persist to DB so it gets a real ID
+				if err := h.st.Book().Create(c.Context(), &ob); err == nil {
 					result.Books = append(result.Books, ob)
 					result.TotalCount++
 				}
