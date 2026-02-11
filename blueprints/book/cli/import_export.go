@@ -1,0 +1,222 @@
+package cli
+
+import (
+	"encoding/csv"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/go-mizu/mizu/blueprints/book/store/sqlite"
+	"github.com/go-mizu/mizu/blueprints/book/types"
+	"github.com/spf13/cobra"
+)
+
+func NewImportExport() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "import",
+		Short: "Import/export books",
+	}
+	cmd.AddCommand(newImportCSV())
+	cmd.AddCommand(newExportCSV())
+	return cmd
+}
+
+func newImportCSV() *cobra.Command {
+	return &cobra.Command{
+		Use:   "csv <file>",
+		Short: "Import books from Goodreads CSV export",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			store, err := sqlite.New(GetDatabasePath())
+			if err != nil {
+				return err
+			}
+			defer store.Close()
+			if err := store.Ensure(ctx); err != nil {
+				return err
+			}
+			if err := store.Shelf().SeedDefaults(ctx); err != nil {
+				return err
+			}
+
+			f, err := os.Open(args[0])
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+
+			reader := csv.NewReader(f)
+			records, err := reader.ReadAll()
+			if err != nil {
+				return err
+			}
+			if len(records) < 2 {
+				return fmt.Errorf("CSV is empty")
+			}
+
+			// Find column indices from header
+			header := records[0]
+			cols := make(map[string]int)
+			for i, h := range header {
+				cols[strings.TrimSpace(h)] = i
+			}
+
+			imported := 0
+			for _, row := range records[1:] {
+				book := &types.Book{}
+				if i, ok := cols["Title"]; ok && i < len(row) {
+					book.Title = row[i]
+				}
+				if i, ok := cols["Author"]; ok && i < len(row) {
+					book.AuthorNames = row[i]
+				}
+				if i, ok := cols["ISBN13"]; ok && i < len(row) {
+					isbn := strings.Trim(row[i], "=\"")
+					book.ISBN13 = isbn
+				}
+				if i, ok := cols["ISBN"]; ok && i < len(row) {
+					isbn := strings.Trim(row[i], "=\"")
+					book.ISBN10 = isbn
+				}
+				if i, ok := cols["Number of Pages"]; ok && i < len(row) {
+					book.PageCount, _ = strconv.Atoi(row[i])
+				}
+				if i, ok := cols["Publisher"]; ok && i < len(row) {
+					book.Publisher = row[i]
+				}
+				if i, ok := cols["Year Published"]; ok && i < len(row) {
+					book.PublishYear, _ = strconv.Atoi(row[i])
+				}
+				if i, ok := cols["Average Rating"]; ok && i < len(row) {
+					book.AverageRating, _ = strconv.ParseFloat(row[i], 64)
+				}
+
+				if book.Title == "" {
+					continue
+				}
+
+				if err := store.Book().Create(ctx, book); err != nil {
+					continue
+				}
+
+				// Handle shelf
+				if i, ok := cols["Exclusive Shelf"]; ok && i < len(row) {
+					shelf, _ := store.Shelf().GetBySlug(ctx, row[i])
+					if shelf != nil {
+						store.Shelf().AddBook(ctx, shelf.ID, book.ID)
+					}
+				}
+
+				// Handle rating
+				if i, ok := cols["My Rating"]; ok && i < len(row) {
+					rating, _ := strconv.Atoi(row[i])
+					if rating > 0 {
+						review := &types.Review{BookID: book.ID, Rating: rating}
+						if j, ok := cols["My Review"]; ok && j < len(row) && row[j] != "" {
+							review.Text = row[j]
+						}
+						if j, ok := cols["Date Read"]; ok && j < len(row) && row[j] != "" {
+							if t, err := time.Parse("2006/01/02", row[j]); err == nil {
+								review.FinishedAt = &t
+							}
+						}
+						store.Review().Create(ctx, review)
+					}
+				}
+
+				imported++
+				if imported%10 == 0 {
+					fmt.Printf("  Imported %d books...\n", imported)
+				}
+			}
+
+			fmt.Println(successStyle.Render(fmt.Sprintf("Imported %d books", imported)))
+			return nil
+		},
+	}
+}
+
+func newExportCSV() *cobra.Command {
+	var outFile string
+	cmd := &cobra.Command{
+		Use:   "export",
+		Short: "Export library as Goodreads-compatible CSV",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			store, err := sqlite.New(GetDatabasePath())
+			if err != nil {
+				return err
+			}
+			defer store.Close()
+			if err := store.Ensure(ctx); err != nil {
+				return err
+			}
+
+			if outFile == "" {
+				outFile = "goodreads_export.csv"
+			}
+
+			f, err := os.Create(outFile)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+
+			w := csv.NewWriter(f)
+			defer w.Flush()
+
+			// Write Goodreads-compatible header
+			w.Write([]string{
+				"Title", "Author", "ISBN", "ISBN13", "My Rating", "Average Rating",
+				"Publisher", "Number of Pages", "Year Published", "Date Read",
+				"Exclusive Shelf", "My Review",
+			})
+
+			// Get all books
+			result, err := store.Book().Search(ctx, "", 1, 10000)
+			if err != nil {
+				return err
+			}
+
+			for _, book := range result.Books {
+				rating := ""
+				shelf := ""
+				reviewText := ""
+				dateRead := ""
+
+				if review, _ := store.Review().GetUserReview(ctx, book.ID); review != nil {
+					if review.Rating > 0 {
+						rating = strconv.Itoa(review.Rating)
+					}
+					reviewText = review.Text
+					if review.FinishedAt != nil {
+						dateRead = review.FinishedAt.Format("2006/01/02")
+					}
+				}
+
+				shelves, _ := store.Shelf().GetBookShelves(ctx, book.ID)
+				for _, sh := range shelves {
+					if sh.IsExclusive {
+						shelf = sh.Slug
+						break
+					}
+				}
+
+				w.Write([]string{
+					book.Title, book.AuthorNames, book.ISBN10, book.ISBN13,
+					rating, fmt.Sprintf("%.2f", book.AverageRating),
+					book.Publisher, strconv.Itoa(book.PageCount),
+					strconv.Itoa(book.PublishYear), dateRead, shelf, reviewText,
+				})
+			}
+
+			fmt.Println(successStyle.Render(fmt.Sprintf("Exported to %s", outFile)))
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&outFile, "file", "f", "", "Output file path")
+	return cmd
+}
