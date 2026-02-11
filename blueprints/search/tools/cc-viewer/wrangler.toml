@@ -1,0 +1,16 @@
+name = "cc-viewer"
+main = "src/index.ts"
+compatibility_date = "2026-02-09"
+compatibility_flags = ["nodejs_compat"]
+
+[[kv_namespaces]]
+binding = "KV"
+id = "a412dc6f75e245e09c90944e156c5cf6"
+
+[[rules]]
+type = "Text"
+globs = ["**/*.css"]
+fallthrough = true
+
+[vars]
+ENVIRONMENT = "production"
