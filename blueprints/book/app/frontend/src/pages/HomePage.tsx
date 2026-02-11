@@ -77,7 +77,7 @@ export default function HomePage() {
   }
 
   const challengePercent = challenge
-    ? Math.min(100, Math.round((challenge.books_read / challenge.goal) * 100))
+    ? Math.min(100, Math.round((challenge.progress / challenge.goal) * 100))
     : 0
 
   return (
@@ -145,7 +145,7 @@ export default function HomePage() {
             <div className="section-header">
               <span className="section-title">
                 <TrendingUp size={18} style={{ marginRight: 8, verticalAlign: 'text-bottom' }} />
-                Trending on Goodreads
+                Trending Books
               </span>
               <Link to="/browse" className="section-link">
                 Browse all
@@ -222,7 +222,7 @@ export default function HomePage() {
                   Reading Challenge
                 </div>
                 <div className="challenge-progress">
-                  {challenge.books_read}
+                  {challenge.progress}
                   <span style={{ fontSize: 20, color: 'var(--gr-light)' }}>
                     /{challenge.goal}
                   </span>

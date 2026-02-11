@@ -26,7 +26,7 @@ func NewImportExport() *cobra.Command {
 func newImportCSV() *cobra.Command {
 	return &cobra.Command{
 		Use:   "csv <file>",
-		Short: "Import books from Goodreads CSV export",
+		Short: "Import books from CSV export",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -143,7 +143,7 @@ func newExportCSV() *cobra.Command {
 	var outFile string
 	cmd := &cobra.Command{
 		Use:   "export",
-		Short: "Export library as Goodreads-compatible CSV",
+		Short: "Export library as CSV",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			store, err := sqlite.New(GetDatabasePath())
@@ -156,7 +156,7 @@ func newExportCSV() *cobra.Command {
 			}
 
 			if outFile == "" {
-				outFile = "goodreads_export.csv"
+				outFile = "book_export.csv"
 			}
 
 			f, err := os.Create(outFile)
@@ -168,7 +168,7 @@ func newExportCSV() *cobra.Command {
 			w := csv.NewWriter(f)
 			defer w.Flush()
 
-			// Write Goodreads-compatible header
+			// Write CSV header
 			w.Write([]string{
 				"Title", "Author", "ISBN", "ISBN13", "My Rating", "Average Rating",
 				"Publisher", "Number of Pages", "Year Published", "Date Read",

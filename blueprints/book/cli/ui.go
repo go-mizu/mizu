@@ -19,7 +19,7 @@ func Banner() string {
 	return titleStyle.Render(`
   ╔══════════════════════════╗
   ║   📚  Book Manager  📚   ║
-  ║   Goodreads-compatible   ║
+  ║   Personal Library       ║
   ╚══════════════════════════╝`)
 }
 

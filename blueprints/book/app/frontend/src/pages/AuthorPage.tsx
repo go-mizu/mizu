@@ -161,7 +161,7 @@ export default function AuthorPage() {
                 color: 'var(--gr-light)',
               }}
             >
-              {author.book_count} book{author.book_count !== 1 ? 's' : ''}
+              {author.works_count} book{author.works_count !== 1 ? 's' : ''}
             </div>
           </div>
         </div>

@@ -12,7 +12,7 @@ function formatDate(dateStr?: string): string {
 }
 
 export default function ReviewCard({ review }: ReviewCardProps) {
-  const initial = review.book_title ? review.book_title.charAt(0).toUpperCase() : 'R'
+  const initial = review.book?.title ? review.book.title.charAt(0).toUpperCase() : 'R'
 
   return (
     <div className="review-card">

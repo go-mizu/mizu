@@ -28,6 +28,7 @@ func NewServer(st store.Store, devMode bool) (http.Handler, error) {
 	statsHandler := api.NewStatsHandler(st)
 	importHandler := api.NewImportExportHandler(st)
 	feedHandler := api.NewFeedHandler(st)
+	goodreadsHandler := api.NewGoodreadsHandler(st)
 
 	// Health check
 	app.Get("/health", func(c *mizu.Ctx) error {
@@ -96,6 +97,10 @@ func NewServer(st store.Store, devMode bool) (http.Handler, error) {
 		// Import/Export
 		r.Post("/import/csv", importHandler.ImportCSV)
 		r.Get("/export/csv", importHandler.ExportCSV)
+
+		// Goodreads
+		r.Get("/goodreads/{id}", goodreadsHandler.GetByGoodreadsID)
+		r.Post("/import-goodreads", goodreadsHandler.ImportFromURL)
 
 		// Feed
 		r.Get("/feed", feedHandler.Recent)

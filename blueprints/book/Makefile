@@ -82,7 +82,7 @@ tidy: ## Run go mod tidy
 .PHONY: dev
 dev: ## Show development mode instructions
 	@echo ""
-	@echo "Book - Goodreads Clone (SQLite + Open Library)"
+	@echo "Book - Personal Library Manager (SQLite + Open Library)"
 	@echo ""
 	@echo "Development mode:"
 	@echo ""
@@ -123,7 +123,7 @@ quickstart: ## Quick start: initialize, seed, and run
 .PHONY: help
 help: ## Show available commands
 	@echo ""
-	@echo "Book - Goodreads Clone"
+	@echo "Book - Personal Library Manager"
 	@echo ""
 	@grep -E '^[a-zA-Z0-9_\-]+:.*?## ' $(MAKEFILE_LIST) | \
 	  sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'

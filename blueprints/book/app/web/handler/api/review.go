@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"strconv"
 
 	"github.com/go-mizu/mizu"
@@ -39,6 +40,27 @@ func (h *ReviewHandler) Create(c *mizu.Ctx) error {
 	if err := h.st.Review().Create(c.Context(), &review); err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
+
+	// Add feed entry
+	go func() {
+		book, _ := h.st.Book().Get(c.Context(), bookID)
+		title := ""
+		if book != nil {
+			title = book.Title
+		}
+		feedType := "rating"
+		if review.Text != "" {
+			feedType = "review"
+		}
+		data, _ := json.Marshal(map[string]any{"rating": review.Rating, "text": review.Text})
+		h.st.Feed().Add(c.Context(), &types.FeedItem{
+			Type:      feedType,
+			BookID:    bookID,
+			BookTitle: title,
+			Data:      string(data),
+		})
+	}()
+
 	return c.JSON(201, review)
 }
 
@@ -82,5 +104,22 @@ func (h *ReviewHandler) UpdateProgress(c *mizu.Ctx) error {
 	if err := h.st.Progress().Create(c.Context(), &p); err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
+
+	// Add feed entry
+	go func() {
+		book, _ := h.st.Book().Get(c.Context(), bookID)
+		title := ""
+		if book != nil {
+			title = book.Title
+		}
+		data, _ := json.Marshal(map[string]any{"page": p.Page, "percent": p.Percent})
+		h.st.Feed().Add(c.Context(), &types.FeedItem{
+			Type:      "progress",
+			BookID:    bookID,
+			BookTitle: title,
+			Data:      string(data),
+		})
+	}()
+
 	return c.JSON(201, p)
 }

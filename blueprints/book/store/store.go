@@ -29,6 +29,7 @@ type BookStore interface {
 	Get(ctx context.Context, id int64) (*types.Book, error)
 	GetByISBN(ctx context.Context, isbn string) (*types.Book, error)
 	GetByOLKey(ctx context.Context, olKey string) (*types.Book, error)
+	GetByGoodreadsID(ctx context.Context, grID string) (*types.Book, error)
 	Search(ctx context.Context, query string, page, limit int) (*types.SearchResult, error)
 	Update(ctx context.Context, book *types.Book) error
 	Delete(ctx context.Context, id int64) error
@@ -46,8 +47,10 @@ type AuthorStore interface {
 	Create(ctx context.Context, author *types.Author) error
 	Get(ctx context.Context, id int64) (*types.Author, error)
 	GetByOLKey(ctx context.Context, olKey string) (*types.Author, error)
+	GetByGoodreadsID(ctx context.Context, grID string) (*types.Author, error)
 	Search(ctx context.Context, query string, limit int) ([]types.Author, error)
 	GetBooks(ctx context.Context, authorID int64, page, limit int) (*types.SearchResult, error)
+	Update(ctx context.Context, author *types.Author) error
 }
 
 // ShelfStore manages bookshelves and their contents.

@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* ===== Goodreads Design System ===== */
+/* ===== Book Design System ===== */
 :root {
   --gr-brown: #382110;
   --gr-tan: #F4F1EA;
@@ -365,7 +365,7 @@ body {
   font-size: 16px;
 }
 
-/* Goodreads-style "Want to Read" button */
+/* "Want to Read" shelf button */
 .shelf-btn {
   display: inline-flex;
   align-items: center;

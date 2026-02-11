@@ -19,6 +19,8 @@ type BookStore struct {
 func (s *BookStore) Create(ctx context.Context, book *types.Book) error {
 	subj, _ := json.Marshal(book.Subjects)
 	book.SubjectsJSON = string(subj)
+	rdist, _ := json.Marshal(book.RatingDist)
+	book.RatingDistJSON = string(rdist)
 	now := time.Now()
 	book.CreatedAt = now
 	book.UpdatedAt = now
@@ -27,12 +29,16 @@ func (s *BookStore) Create(ctx context.Context, book *types.Book) error {
 		INSERT INTO books (ol_key, google_id, title, subtitle, description, author_names,
 			cover_url, cover_id, isbn10, isbn13, publisher, publish_date, publish_year,
 			page_count, language, format, subjects_json, average_rating, ratings_count,
-			created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			created_at, updated_at, goodreads_id, asin, series, reviews_count,
+			currently_reading, want_to_read, rating_dist, first_published)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+			?, ?, ?, ?, ?, ?, ?, ?)`,
 		book.OLKey, book.GoogleID, book.Title, book.Subtitle, book.Description, book.AuthorNames,
 		book.CoverURL, book.CoverID, book.ISBN10, book.ISBN13, book.Publisher, book.PublishDate,
 		book.PublishYear, book.PageCount, book.Language, book.Format, book.SubjectsJSON,
-		book.AverageRating, book.RatingsCount, now, now)
+		book.AverageRating, book.RatingsCount, now, now,
+		book.GoodreadsID, book.ASIN, book.Series, book.ReviewsCount,
+		book.CurrentlyReading, book.WantToRead, book.RatingDistJSON, book.FirstPublished)
 	if err != nil {
 		return err
 	}
@@ -74,6 +80,23 @@ func (s *BookStore) Search(ctx context.Context, query string, page, limit int) (
 		page = 1
 	}
 	offset := (page - 1) * limit
+
+	// Empty query: return all books
+	if strings.TrimSpace(query) == "" {
+		var total int
+		s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM books`).Scan(&total)
+		rows, err := s.db.QueryContext(ctx,
+			`SELECT * FROM books ORDER BY ratings_count DESC LIMIT ? OFFSET ?`, limit, offset)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		books, err := s.scanBooks(rows)
+		if err != nil {
+			return nil, err
+		}
+		return &types.SearchResult{Books: books, TotalCount: total, Page: page, PageSize: limit}, nil
+	}
 
 	// Try FTS search first
 	var total int
@@ -123,19 +146,26 @@ func (s *BookStore) Search(ctx context.Context, query string, page, limit int) (
 func (s *BookStore) Update(ctx context.Context, book *types.Book) error {
 	subj, _ := json.Marshal(book.Subjects)
 	book.SubjectsJSON = string(subj)
+	rdist, _ := json.Marshal(book.RatingDist)
+	book.RatingDistJSON = string(rdist)
 	book.UpdatedAt = time.Now()
 
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE books SET ol_key=?, google_id=?, title=?, subtitle=?, description=?,
 			author_names=?, cover_url=?, cover_id=?, isbn10=?, isbn13=?, publisher=?,
 			publish_date=?, publish_year=?, page_count=?, language=?, format=?,
-			subjects_json=?, average_rating=?, ratings_count=?, updated_at=?
+			subjects_json=?, average_rating=?, ratings_count=?, updated_at=?,
+			goodreads_id=?, asin=?, series=?, reviews_count=?,
+			currently_reading=?, want_to_read=?, rating_dist=?, first_published=?
 		WHERE id=?`,
 		book.OLKey, book.GoogleID, book.Title, book.Subtitle, book.Description,
 		book.AuthorNames, book.CoverURL, book.CoverID, book.ISBN10, book.ISBN13,
 		book.Publisher, book.PublishDate, book.PublishYear, book.PageCount, book.Language,
 		book.Format, book.SubjectsJSON, book.AverageRating, book.RatingsCount,
-		book.UpdatedAt, book.ID)
+		book.UpdatedAt,
+		book.GoodreadsID, book.ASIN, book.Series, book.ReviewsCount,
+		book.CurrentlyReading, book.WantToRead, book.RatingDistJSON, book.FirstPublished,
+		book.ID)
 	if err != nil {
 		return err
 	}
@@ -233,13 +263,25 @@ func (s *BookStore) GetSimilar(ctx context.Context, bookID int64, limit int) ([]
 		return nil, err
 	}
 	if book == nil || len(book.Subjects) == 0 {
-		return nil, nil
+		return []types.Book{}, nil
 	}
 
-	likeG := "%" + book.Subjects[0] + "%"
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT * FROM books WHERE subjects_json LIKE ? AND id != ? ORDER BY ratings_count DESC LIMIT ?`,
-		likeG, bookID, limit)
+	// Try matching on multiple subjects for better results
+	var conditions []string
+	var args []any
+	for i, subj := range book.Subjects {
+		if i >= 3 {
+			break
+		}
+		conditions = append(conditions, "subjects_json LIKE ?")
+		args = append(args, "%"+subj+"%")
+	}
+	args = append(args, bookID, limit)
+
+	query := fmt.Sprintf(
+		`SELECT * FROM books WHERE (%s) AND id != ? ORDER BY ratings_count DESC LIMIT ?`,
+		strings.Join(conditions, " OR "))
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -283,24 +325,41 @@ func (s *BookStore) Count(ctx context.Context) (int, error) {
 	return count, err
 }
 
-func (s *BookStore) scanBook(row *sql.Row) (*types.Book, error) {
-	var b types.Book
-	err := row.Scan(&b.ID, &b.OLKey, &b.GoogleID, &b.Title, &b.Subtitle, &b.Description,
+func (s *BookStore) GetByGoodreadsID(ctx context.Context, grID string) (*types.Book, error) {
+	return s.scanBook(s.db.QueryRowContext(ctx, `SELECT * FROM books WHERE goodreads_id = ?`, grID))
+}
+
+func scanFields(b *types.Book) []any {
+	return []any{
+		&b.ID, &b.OLKey, &b.GoogleID, &b.Title, &b.Subtitle, &b.Description,
 		&b.AuthorNames, &b.CoverURL, &b.CoverID, &b.ISBN10, &b.ISBN13, &b.Publisher,
 		&b.PublishDate, &b.PublishYear, &b.PageCount, &b.Language, &b.Format,
-		&b.SubjectsJSON, &b.AverageRating, &b.RatingsCount, &b.CreatedAt, &b.UpdatedAt)
+		&b.SubjectsJSON, &b.AverageRating, &b.RatingsCount, &b.CreatedAt, &b.UpdatedAt,
+		&b.GoodreadsID, &b.ASIN, &b.Series, &b.ReviewsCount,
+		&b.CurrentlyReading, &b.WantToRead, &b.RatingDistJSON, &b.FirstPublished,
+	}
+}
+
+func hydrateBook(b *types.Book) {
+	json.Unmarshal([]byte(b.SubjectsJSON), &b.Subjects)
+	json.Unmarshal([]byte(b.RatingDistJSON), &b.RatingDist)
+	if b.AuthorNames != "" {
+		for _, name := range strings.Split(b.AuthorNames, ", ") {
+			b.Authors = append(b.Authors, types.Author{Name: name})
+		}
+	}
+}
+
+func (s *BookStore) scanBook(row *sql.Row) (*types.Book, error) {
+	var b types.Book
+	err := row.Scan(scanFields(&b)...)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
 		return nil, err
 	}
-	json.Unmarshal([]byte(b.SubjectsJSON), &b.Subjects)
-	if b.AuthorNames != "" {
-		for _, name := range strings.Split(b.AuthorNames, ", ") {
-			b.Authors = append(b.Authors, types.Author{Name: name})
-		}
-	}
+	hydrateBook(&b)
 	return &b, nil
 }
 
@@ -308,19 +367,11 @@ func (s *BookStore) scanBooks(rows *sql.Rows) ([]types.Book, error) {
 	var books []types.Book
 	for rows.Next() {
 		var b types.Book
-		err := rows.Scan(&b.ID, &b.OLKey, &b.GoogleID, &b.Title, &b.Subtitle, &b.Description,
-			&b.AuthorNames, &b.CoverURL, &b.CoverID, &b.ISBN10, &b.ISBN13, &b.Publisher,
-			&b.PublishDate, &b.PublishYear, &b.PageCount, &b.Language, &b.Format,
-			&b.SubjectsJSON, &b.AverageRating, &b.RatingsCount, &b.CreatedAt, &b.UpdatedAt)
+		err := rows.Scan(scanFields(&b)...)
 		if err != nil {
 			return nil, fmt.Errorf("scan book: %w", err)
 		}
-		json.Unmarshal([]byte(b.SubjectsJSON), &b.Subjects)
-		if b.AuthorNames != "" {
-			for _, name := range strings.Split(b.AuthorNames, ", ") {
-				b.Authors = append(b.Authors, types.Author{Name: name})
-			}
-		}
+		hydrateBook(&b)
 		books = append(books, b)
 	}
 	if books == nil {

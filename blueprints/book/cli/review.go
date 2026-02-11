@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/go-mizu/mizu/blueprints/book/store/sqlite"
 	"github.com/go-mizu/mizu/blueprints/book/types"
@@ -40,15 +41,19 @@ func NewReview() *cobra.Command {
 			}
 
 			// Check for existing review
+			now := time.Now()
 			existing, _ := store.Review().GetUserReview(ctx, bookID)
 			if existing != nil {
 				existing.Rating = rating
+				if existing.FinishedAt == nil {
+					existing.FinishedAt = &now
+				}
 				if err := store.Review().Update(ctx, existing); err != nil {
 					return err
 				}
 				fmt.Printf("Updated rating for %q: %s\n", book.Title, Stars(rating))
 			} else {
-				review := &types.Review{BookID: bookID, Rating: rating}
+				review := &types.Review{BookID: bookID, Rating: rating, FinishedAt: &now}
 				if err := store.Review().Create(ctx, review); err != nil {
 					return err
 				}

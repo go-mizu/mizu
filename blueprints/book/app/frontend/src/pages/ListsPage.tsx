@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, ThumbsUp, BookOpen } from 'lucide-react'
+import { Plus, BookOpen } from 'lucide-react'
 import Header from '../components/Header'
 import { booksApi } from '../api/books'
 import type { BookList } from '../types'
@@ -65,8 +65,7 @@ export default function ListsPage() {
                   <p className="text-sm text-gr-light mb-3 line-clamp-2">{list.description}</p>
                 )}
                 <div className="flex items-center gap-4 text-xs text-gr-light">
-                  <span className="flex items-center gap-1"><BookOpen size={12} /> {list.book_count} books</span>
-                  <span className="flex items-center gap-1"><ThumbsUp size={12} /> {list.vote_count} votes</span>
+                  <span className="flex items-center gap-1"><BookOpen size={12} /> {list.item_count} books</span>
                 </div>
               </Link>
             ))}

@@ -59,7 +59,7 @@ export default function MyBooksPage() {
           setResults(data)
         }
       } catch {
-        setResults({ books: [], total_count: 0 })
+        setResults({ books: [], total_count: 0, page: 1, page_size: limit })
       } finally {
         setBooksLoading(false)
       }
@@ -325,12 +325,9 @@ export default function MyBooksPage() {
                       </Link>
                     </td>
                     <td>
-                      <Link
-                        to={`/author/${book.author_id}`}
-                        style={{ color: 'var(--gr-text)', textDecoration: 'none' }}
-                      >
+                      <span style={{ color: 'var(--gr-text)' }}>
                         {book.author_names}
-                      </Link>
+                      </span>
                     </td>
                     <td>
                       {book.user_rating != null && book.user_rating > 0 ? (

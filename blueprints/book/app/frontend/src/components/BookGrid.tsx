@@ -20,9 +20,7 @@ export default function BookGrid({ books }: BookGridProps) {
             </Link>
           </div>
           <div className="author">
-            <Link to={`/author/${book.author_id}`} style={{ color: 'inherit', textDecoration: 'none' }}>
-              {book.author_names}
-            </Link>
+            <span>{book.author_names}</span>
           </div>
         </div>
       ))}

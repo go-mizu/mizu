@@ -11,8 +11,10 @@ export const booksApi = {
     api.get<SearchResult>(`/api/books/search?q=${encodeURIComponent(q)}&page=${page}&limit=${limit}`),
   getBook: (id: number) => api.get<Book>(`/api/books/${id}`),
   createBook: (book: Partial<Book>) => api.post<Book>('/api/books', book),
-  getSimilar: (id: number, limit = 10) =>
-    api.get<Book[]>(`/api/books/${id}/similar?limit=${limit}`),
+  getSimilar: async (id: number, limit = 10) => {
+    const data = await api.get<Book[] | null>(`/api/books/${id}/similar?limit=${limit}`)
+    return data || []
+  },
   getTrending: (limit = 20) => api.get<Book[]>(`/api/books/trending?limit=${limit}`),
 
   // Authors
@@ -26,16 +28,22 @@ export const booksApi = {
   createShelf: (shelf: Partial<Shelf>) => api.post<Shelf>('/api/shelves', shelf),
   updateShelf: (id: number, shelf: Partial<Shelf>) => api.put<Shelf>(`/api/shelves/${id}`, shelf),
   deleteShelf: (id: number) => api.del<void>(`/api/shelves/${id}`),
-  getShelfBooks: (id: number, page = 1, limit = 20) =>
-    api.get<SearchResult>(`/api/shelves/${id}/books?page=${page}&limit=${limit}`),
+  getShelfBooks: async (id: number, page = 1, limit = 20) => {
+    const data = await api.get<{ books: Book[]; total: number; page: number }>(`/api/shelves/${id}/books?page=${page}&limit=${limit}`)
+    return { books: data.books || [], total_count: data.total, page: data.page, page_size: limit } as SearchResult
+  },
   addToShelf: (shelfId: number, bookId: number) =>
     api.post<void>(`/api/shelves/${shelfId}/books`, { book_id: bookId }),
   removeFromShelf: (shelfId: number, bookId: number) =>
     api.del<void>(`/api/shelves/${shelfId}/books/${bookId}`),
 
   // Reviews
-  getReviews: (bookId: number) => api.get<Review[]>(`/api/books/${bookId}/reviews`),
-  createReview: (review: Partial<Review>) => api.post<Review>('/api/reviews', review),
+  getReviews: async (bookId: number) => {
+    const data = await api.get<{ reviews: Review[]; total: number }>(`/api/books/${bookId}/reviews`)
+    return data.reviews || []
+  },
+  createReview: (bookId: number, review: Partial<Review>) =>
+    api.post<Review>(`/api/books/${bookId}/reviews`, review),
   updateReview: (id: number, review: Partial<Review>) =>
     api.put<Review>(`/api/reviews/${id}`, review),
   deleteReview: (id: number) => api.del<void>(`/api/reviews/${id}`),
@@ -43,14 +51,14 @@ export const booksApi = {
   // Reading Progress
   getProgress: (bookId: number) =>
     api.get<ReadingProgress[]>(`/api/books/${bookId}/progress`),
-  updateProgress: (progress: Partial<ReadingProgress>) =>
-    api.post<ReadingProgress>('/api/progress', progress),
+  updateProgress: (bookId: number, progress: Partial<ReadingProgress>) =>
+    api.post<ReadingProgress>(`/api/books/${bookId}/progress`, progress),
 
   // Browse
-  getGenres: () => api.get<Genre[]>('/api/browse/genres'),
+  getGenres: () => api.get<Genre[]>('/api/genres'),
   getBooksByGenre: (genre: string, page = 1) =>
-    api.get<SearchResult>(`/api/browse/genre/${encodeURIComponent(genre)}?page=${page}`),
-  getNewReleases: (limit = 20) => api.get<Book[]>(`/api/browse/new?limit=${limit}`),
+    api.get<SearchResult>(`/api/genres/${encodeURIComponent(genre)}/books?page=${page}`),
+  getNewReleases: (limit = 20) => api.get<Book[]>(`/api/browse/new-releases?limit=${limit}`),
   getPopular: (limit = 20) => api.get<Book[]>(`/api/browse/popular?limit=${limit}`),
 
   // Challenge
@@ -62,12 +70,16 @@ export const booksApi = {
     api.post<ReadingChallenge>('/api/challenge', { year, goal }),
 
   // Lists
-  getLists: () => api.get<BookList[]>('/api/lists'),
+  getLists: async () => {
+    const data = await api.get<{ lists: BookList[]; total: number }>('/api/lists')
+    return data.lists || []
+  },
   createList: (list: Partial<BookList>) => api.post<BookList>('/api/lists', list),
-  getList: (id: number) => api.get<BookList & { items: Book[] }>(`/api/lists/${id}`),
+  getList: (id: number) => api.get<BookList>(`/api/lists/${id}`),
   addToList: (listId: number, bookId: number) =>
     api.post<void>(`/api/lists/${listId}/books`, { book_id: bookId }),
-  voteList: (id: number) => api.post<void>(`/api/lists/${id}/vote`),
+  voteList: (listId: number, bookId: number) =>
+    api.post<void>(`/api/lists/${listId}/vote/${bookId}`),
 
   // Quotes
   getQuotes: (page = 1) => api.get<Quote[]>(`/api/quotes?page=${page}`),
@@ -81,13 +93,17 @@ export const booksApi = {
   // Feed
   getFeed: (limit = 20) => api.get<FeedItem[]>(`/api/feed?limit=${limit}`),
 
+  // Goodreads
+  importGoodreads: (url: string) => api.post<Book>('/api/import-goodreads', { url }),
+  getGoodreadsBook: (id: string) => api.get<Book>(`/api/goodreads/${id}`),
+
   // Import/Export
   importCSV: (file: File) => {
     const form = new FormData()
     form.append('file', file)
-    return fetch('/api/import', { method: 'POST', body: form }).then(r => r.json())
+    return fetch('/api/import/csv', { method: 'POST', body: form }).then(r => r.json())
   },
   exportCSV: () => {
-    window.location.href = '/api/export'
+    window.location.href = '/api/export/csv'
   },
 }

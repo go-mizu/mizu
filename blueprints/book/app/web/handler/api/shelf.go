@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"strconv"
 
 	"github.com/go-mizu/mizu"
@@ -81,6 +82,28 @@ func (h *ShelfHandler) AddBook(c *mizu.Ctx) error {
 	if err := h.st.Shelf().AddBook(c.Context(), shelfID, body.BookID); err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
+
+	// Add feed entry
+	go func() {
+		book, _ := h.st.Book().Get(c.Context(), body.BookID)
+		shelf, _ := h.st.Shelf().Get(c.Context(), shelfID)
+		title := ""
+		if book != nil {
+			title = book.Title
+		}
+		shelfName := ""
+		if shelf != nil {
+			shelfName = shelf.Name
+		}
+		data, _ := json.Marshal(map[string]any{"shelf_name": shelfName})
+		h.st.Feed().Add(c.Context(), &types.FeedItem{
+			Type:      "shelve",
+			BookID:    body.BookID,
+			BookTitle: title,
+			Data:      string(data),
+		})
+	}()
+
 	return c.JSON(200, map[string]string{"status": "added"})
 }
 

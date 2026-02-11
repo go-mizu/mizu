@@ -21,9 +21,9 @@ func (s *ListStore) Create(ctx context.Context, list *types.BookList) error {
 		list.CreatedAt = time.Now()
 	}
 	result, err := s.db.ExecContext(ctx, `
-		INSERT INTO book_lists (title, description, created_at)
-		VALUES (?, ?, ?)`,
-		list.Title, list.Description, list.CreatedAt)
+		INSERT INTO book_lists (title, description, created_at, goodreads_url, voter_count)
+		VALUES (?, ?, ?, ?, ?)`,
+		list.Title, list.Description, list.CreatedAt, list.GoodreadsURL, list.VoterCount)
 	if err != nil {
 		return err
 	}
@@ -38,11 +38,12 @@ func (s *ListStore) Create(ctx context.Context, list *types.BookList) error {
 func (s *ListStore) Get(ctx context.Context, id int64) (*types.BookList, error) {
 	var list types.BookList
 	err := s.db.QueryRowContext(ctx, `
-		SELECT l.id, l.title, l.description, l.created_at, COALESCE(c.cnt, 0)
+		SELECT l.id, l.title, l.description, l.created_at, COALESCE(c.cnt, 0), l.goodreads_url, l.voter_count
 		FROM book_lists l
 		LEFT JOIN (SELECT list_id, COUNT(*) as cnt FROM book_list_items GROUP BY list_id) c ON c.list_id = l.id
 		WHERE l.id = ?`, id).
-		Scan(&list.ID, &list.Title, &list.Description, &list.CreatedAt, &list.ItemCount)
+		Scan(&list.ID, &list.Title, &list.Description, &list.CreatedAt, &list.ItemCount,
+			&list.GoodreadsURL, &list.VoterCount)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -105,7 +106,7 @@ func (s *ListStore) GetAll(ctx context.Context, page, limit int) ([]types.BookLi
 	s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM book_lists`).Scan(&total)
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT l.id, l.title, l.description, l.created_at, COALESCE(c.cnt, 0)
+		SELECT l.id, l.title, l.description, l.created_at, COALESCE(c.cnt, 0), l.goodreads_url, l.voter_count
 		FROM book_lists l
 		LEFT JOIN (SELECT list_id, COUNT(*) as cnt FROM book_list_items GROUP BY list_id) c ON c.list_id = l.id
 		ORDER BY l.created_at DESC
@@ -118,7 +119,8 @@ func (s *ListStore) GetAll(ctx context.Context, page, limit int) ([]types.BookLi
 	var lists []types.BookList
 	for rows.Next() {
 		var l types.BookList
-		err := rows.Scan(&l.ID, &l.Title, &l.Description, &l.CreatedAt, &l.ItemCount)
+		err := rows.Scan(&l.ID, &l.Title, &l.Description, &l.CreatedAt, &l.ItemCount,
+			&l.GoodreadsURL, &l.VoterCount)
 		if err != nil {
 			return nil, 0, fmt.Errorf("scan list: %w", err)
 		}
