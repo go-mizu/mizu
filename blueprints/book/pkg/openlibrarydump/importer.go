@@ -326,3 +326,69 @@ func latestMatch(dir, pattern string) (string, error) {
 func sqlString(v string) string {
 	return strings.ReplaceAll(v, "'", "''")
 }
+
+// ExportParquet writes imported Open Library records into parquet files.
+func ExportParquet(ctx context.Context, dbPath, outDir string) ([]string, error) {
+	if outDir == "" {
+		outDir = filepath.Join(filepath.Dir(dbPath), "parquet")
+	}
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create parquet dir: %w", err)
+	}
+
+	db, err := sql.Open("duckdb", dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("open duckdb: %w", err)
+	}
+	defer db.Close()
+
+	booksPath := filepath.Join(outDir, "openlibrary_books.parquet")
+	authorsPath := filepath.Join(outDir, "openlibrary_authors.parquet")
+
+	booksSQL := fmt.Sprintf(`
+COPY (
+  SELECT
+    id, ol_key, title, description, author_names, cover_url, cover_id,
+    isbn10, isbn13, publisher, publish_date, publish_year, page_count,
+    language, subjects_json, created_at, updated_at
+  FROM books
+  WHERE ol_key LIKE '/works/%%'
+) TO '%s' (FORMAT PARQUET, COMPRESSION ZSTD);
+`, sqlString(booksPath))
+	if _, err := db.ExecContext(ctx, booksSQL); err != nil {
+		return nil, fmt.Errorf("export books parquet: %w", err)
+	}
+
+	authorsSQL := fmt.Sprintf(`
+COPY (
+  SELECT
+    id, ol_key, name, bio, birth_date, death_date, works_count, created_at
+  FROM authors
+  WHERE ol_key LIKE '/authors/%%'
+) TO '%s' (FORMAT PARQUET, COMPRESSION ZSTD);
+`, sqlString(authorsPath))
+	if _, err := db.ExecContext(ctx, authorsSQL); err != nil {
+		return nil, fmt.Errorf("export authors parquet: %w", err)
+	}
+
+	return []string{booksPath, authorsPath}, nil
+}
+
+// DeleteSourceFiles removes source dump files after successful import/export.
+func DeleteSourceFiles(paths ...string) error {
+	seen := make(map[string]struct{}, len(paths))
+	for _, p := range paths {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove %s: %w", p, err)
+		}
+	}
+	return nil
+}
