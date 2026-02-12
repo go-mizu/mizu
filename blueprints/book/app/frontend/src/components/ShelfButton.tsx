@@ -44,8 +44,9 @@ export default function ShelfButton({ book, shelves: shelvesProp }: ShelfButtonP
   const isShelved = !!currentShelf
 
   return (
-    <div ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
+    <div ref={ref} className="shelf-dropdown">
       <button
+        type="button"
         className={`shelf-btn${isShelved ? ' shelved' : ''}`}
         onClick={() => setOpen(!open)}
         disabled={loading}
@@ -58,42 +59,15 @@ export default function ShelfButton({ book, shelves: shelvesProp }: ShelfButtonP
       </button>
 
       {open && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            marginTop: 4,
-            background: '#fff',
-            border: '1px solid var(--gr-border)',
-            borderRadius: 4,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
-            minWidth: 180,
-            zIndex: 20,
-          }}
-        >
+        <div className="shelf-menu">
           {shelves.map((shelf) => (
             <button
+              type="button"
               key={shelf.id}
               onClick={() => handleSelect(shelf)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                width: '100%',
-                padding: '8px 12px',
-                border: 'none',
-                background: 'none',
-                cursor: 'pointer',
-                fontSize: 14,
-                fontFamily: 'inherit',
-                color: 'var(--gr-text)',
-                textAlign: 'left',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gr-hover)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
+              className="shelf-menu-item"
             >
-              {currentShelf === shelf.name && <Check size={14} style={{ color: 'var(--gr-green)' }} />}
+              {currentShelf === shelf.name && <Check size={14} className="shelf-menu-check" />}
               <span>{shelf.name}</span>
             </button>
           ))}

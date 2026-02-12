@@ -50,7 +50,7 @@ export default function FeedItemComponent({ item }: FeedItemProps) {
 
   return (
     <div className="feed-item">
-      <div style={{ flex: 1 }}>
+      <div className="feed-item-body">
         <div className="action-text">
           <span>{actionLabel(item.type)} </span>
           {item.book_id ? (
@@ -64,19 +64,19 @@ export default function FeedItemComponent({ item }: FeedItemProps) {
         </div>
 
         {data.rating && data.rating > 0 && (
-          <div style={{ marginTop: 4 }}>
+          <div className="feed-rating-row">
             <StarRating rating={data.rating} size={14} />
           </div>
         )}
 
         {data.text && (
-          <div style={{ fontSize: 13, color: 'var(--gr-text)', marginTop: 4, lineHeight: 1.5 }}>
+          <div className="feed-snippet">
             {data.text.length > 200 ? data.text.slice(0, 200) + '...' : data.text}
           </div>
         )}
 
         {item.type === 'progress' && data.percent !== undefined && (
-          <div style={{ fontSize: 13, color: 'var(--gr-light)', marginTop: 4 }}>
+          <div className="feed-progress-text">
             {data.page ? `Page ${data.page} · ` : ''}{Math.round(data.percent)}% complete
           </div>
         )}

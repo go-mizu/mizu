@@ -28,7 +28,6 @@ export default function MyBooksPage() {
   const limit = 20
   const totalPages = results ? Math.ceil(results.total_count / limit) : 0
 
-  // Load shelves on mount
   useEffect(() => {
     const fetchShelves = async () => {
       setLoading(true)
@@ -45,13 +44,11 @@ export default function MyBooksPage() {
     fetchShelves()
   }, [setStoreShelves])
 
-  // Load books when shelf or page changes
   useEffect(() => {
     const fetchBooks = async () => {
       setBooksLoading(true)
       try {
         if (selectedShelf === null) {
-          // "All" view: search with empty query
           const data = await booksApi.search('', page, limit)
           setResults(data)
         } else {
@@ -115,62 +112,41 @@ export default function MyBooksPage() {
     <>
       <Header />
       <div className="page-with-sidebar fade-in">
-        {/* Sidebar */}
         <Sidebar>
           <h3>Bookshelves</h3>
-          <a
+          <button
+            type="button"
             className={`sidebar-link ${selectedShelf === null ? 'active' : ''}`}
             onClick={() => handleShelfSelect(null)}
-            style={{ cursor: 'pointer' }}
           >
             <span>All</span>
             <span className="sidebar-count">
               {shelves.reduce((sum, s) => sum + s.book_count, 0)}
             </span>
-          </a>
+          </button>
           {shelves.map((shelf) => (
-            <a
+            <button
+              type="button"
               key={shelf.id}
               className={`sidebar-link ${selectedShelf === shelf.id ? 'active' : ''}`}
               onClick={() => handleShelfSelect(shelf.id)}
-              style={{ cursor: 'pointer' }}
             >
               <span>{shelf.name}</span>
               <span className="sidebar-count">{shelf.book_count}</span>
-            </a>
+            </button>
           ))}
         </Sidebar>
 
-        {/* Main Content */}
         <main>
-          {/* Header Area */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: 20,
-            }}
-          >
-            <h1
-              style={{
-                fontFamily: "'Merriweather', Georgia, serif",
-                fontSize: 20,
-                fontWeight: 700,
-                color: 'var(--gr-brown)',
-                margin: 0,
-              }}
-            >
+          <div className="mybooks-header">
+            <h1 className="page-title mybooks-title">
               {selectedShelfName}
               {results && (
-                <span style={{ fontWeight: 400, fontSize: 14, color: 'var(--gr-light)', marginLeft: 8 }}>
-                  ({results.total_count})
-                </span>
+                <span className="page-count">({results.total_count})</span>
               )}
             </h1>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {/* Import/Export */}
+            <div className="mybooks-controls">
               <button
                 className="btn btn-secondary btn-sm"
                 onClick={handleImport}
@@ -188,51 +164,27 @@ export default function MyBooksPage() {
                 Export
               </button>
 
-              {/* View Toggle */}
-              <div
-                style={{
-                  display: 'flex',
-                  border: '1px solid var(--gr-border)',
-                  borderRadius: 4,
-                  overflow: 'hidden',
-                  marginLeft: 8,
-                }}
-              >
+              <div className="view-toggle" role="group" aria-label="View mode">
                 <button
+                  type="button"
                   onClick={() => setShelfView('grid')}
-                  style={{
-                    padding: '4px 8px',
-                    background: shelfView === 'grid' ? 'var(--gr-hover)' : 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: 'var(--gr-text)',
-                  }}
+                  className={shelfView === 'grid' ? 'active' : ''}
                   title="Grid view"
                 >
                   <Grid3X3 size={16} />
                 </button>
                 <button
+                  type="button"
                   onClick={() => setShelfView('list')}
-                  style={{
-                    padding: '4px 8px',
-                    background: shelfView === 'list' ? 'var(--gr-hover)' : 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: 'var(--gr-text)',
-                  }}
+                  className={shelfView === 'list' ? 'active' : ''}
                   title="List view"
                 >
                   <List size={16} />
                 </button>
                 <button
+                  type="button"
                   onClick={() => setShelfView('table')}
-                  style={{
-                    padding: '4px 8px',
-                    background: shelfView === 'table' ? 'var(--gr-hover)' : 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: 'var(--gr-text)',
-                  }}
+                  className={shelfView === 'table' ? 'active' : ''}
                   title="Table view"
                 >
                   <Table size={16} />
@@ -263,27 +215,25 @@ export default function MyBooksPage() {
             </div>
           )}
 
-          {/* Grid View */}
           {!booksLoading && books.length > 0 && shelfView === 'grid' && (
             <BookGrid books={books} />
           )}
 
-          {/* List View */}
           {!booksLoading && books.length > 0 && shelfView === 'list' && (
             <div>
               {books.map((book) => (
-                <div key={book.id} style={{ display: 'flex', alignItems: 'start' }}>
-                  <div style={{ flex: 1 }}>
+                <div key={book.id} className="mybooks-list-row">
+                  <div className="mybooks-list-main">
                     <BookCard book={book} />
                   </div>
-                  <div style={{ textAlign: 'right', flexShrink: 0, paddingTop: 16 }}>
+                  <div className="mybooks-list-meta">
                     {book.user_shelf && (
-                      <span className="genre-tag" style={{ marginBottom: 4, display: 'inline-block' }}>
+                      <span className="genre-tag mybooks-shelf-tag">
                         {book.user_shelf}
                       </span>
                     )}
                     {book.user_rating != null && book.user_rating > 0 && (
-                      <div style={{ marginTop: 4 }}>
+                      <div className="mybooks-list-rating">
                         <StarRating rating={book.user_rating} size={14} />
                       </div>
                     )}
@@ -293,7 +243,6 @@ export default function MyBooksPage() {
             </div>
           )}
 
-          {/* Table View */}
           {!booksLoading && books.length > 0 && shelfView === 'table' && (
             <table className="book-table">
               <thead>
@@ -313,27 +262,18 @@ export default function MyBooksPage() {
                       <BookCover book={book} size="sm" />
                     </td>
                     <td>
-                      <Link
-                        to={`/book/${book.id}`}
-                        style={{
-                          fontWeight: 700,
-                          color: 'var(--gr-brown)',
-                          textDecoration: 'none',
-                        }}
-                      >
+                      <Link to={`/book/${book.id}`} className="table-book-link">
                         {book.title}
                       </Link>
                     </td>
                     <td>
-                      <span style={{ color: 'var(--gr-text)' }}>
-                        {book.author_names}
-                      </span>
+                      <span>{book.author_names}</span>
                     </td>
                     <td>
                       {book.user_rating != null && book.user_rating > 0 ? (
                         <StarRating rating={book.user_rating} size={12} />
                       ) : (
-                        <span style={{ color: 'var(--gr-light)', fontSize: 12 }}>--</span>
+                        <span className="table-muted">--</span>
                       )}
                     </td>
                     <td>
@@ -341,26 +281,15 @@ export default function MyBooksPage() {
                         <span className="genre-tag">{book.user_shelf}</span>
                       )}
                     </td>
-                    <td style={{ color: 'var(--gr-light)' }}>
-                      {book.page_count || '--'}
-                    </td>
+                    <td className="table-muted">{book.page_count || '--'}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
 
-          {/* Pagination */}
           {!booksLoading && totalPages > 1 && (
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                gap: 16,
-                marginTop: 32,
-              }}
-            >
+            <div className="pagination-row">
               <button
                 className="btn btn-secondary btn-sm"
                 disabled={page <= 1}
@@ -368,7 +297,7 @@ export default function MyBooksPage() {
               >
                 Previous
               </button>
-              <span style={{ fontSize: 14, color: 'var(--gr-light)' }}>
+              <span className="pagination-text">
                 Page {page} of {totalPages}
               </span>
               <button

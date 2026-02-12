@@ -44,7 +44,7 @@ export default function AuthorPage() {
     setImporting(true)
     try {
       const imported = await booksApi.importSourceAuthor(grId.trim())
-      setAuthor(prev => prev ? { ...prev, ...imported } : imported)
+      setAuthor((prev) => (prev ? { ...prev, ...imported } : imported))
       setGrId('')
     } catch {
       // Silently fail
@@ -85,7 +85,7 @@ export default function AuthorPage() {
     const parts: string[] = []
     if (author.birth_date) parts.push(`Born ${author.birth_date}`)
     if (author.death_date) parts.push(`Died ${author.death_date}`)
-    return parts.join(' \u2022 ')
+    return parts.join(' • ')
   }
 
   const genres = author.genres ? author.genres.split(', ').filter(Boolean) : []
@@ -95,109 +95,44 @@ export default function AuthorPage() {
     <>
       <Header />
       <div className="page-container fade-in">
-        {/* Author Profile */}
-        <div style={{ display: 'flex', gap: 24, marginBottom: 40 }}>
-          {/* Photo */}
-          <div style={{ flexShrink: 0 }}>
+        <div className="author-layout">
+          <div className="author-photo-wrap">
             {author.photo_url ? (
-              <img
-                src={author.photo_url}
-                alt={author.name}
-                style={{
-                  width: 150,
-                  height: 200,
-                  objectFit: 'cover',
-                  borderRadius: 8,
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
-                }}
-              />
+              <img src={author.photo_url} alt={author.name} className="author-photo" />
             ) : (
-              <div
-                style={{
-                  width: 150,
-                  height: 200,
-                  background: 'var(--gr-tan)',
-                  borderRadius: 8,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 48,
-                  color: 'var(--gr-light)',
-                }}
-              >
-                {author.name.charAt(0)}
-              </div>
+              <div className="author-photo-placeholder">{author.name.charAt(0)}</div>
             )}
           </div>
 
-          {/* Info */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h1
-              style={{
-                fontFamily: "'Merriweather', Georgia, serif",
-                fontSize: 28,
-                fontWeight: 900,
-                color: 'var(--gr-brown)',
-                margin: '0 0 8px',
-              }}
-            >
-              {author.name}
-            </h1>
+          <div className="author-content">
+            <h1 className="author-name">{author.name}</h1>
 
             {(author.birth_date || author.death_date) && (
-              <p
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  fontSize: 14,
-                  color: 'var(--gr-light)',
-                  marginBottom: 12,
-                }}
-              >
+              <p className="author-date-row">
                 <Calendar size={14} />
                 {formatDates()}
               </p>
             )}
 
             {author.bio && (
-              <div
-                style={{
-                  fontSize: 15,
-                  lineHeight: 1.7,
-                  color: 'var(--gr-text)',
-                  maxWidth: 700,
-                }}
-              >
-                {author.bio}
-              </div>
+              <div className="author-bio">{author.bio}</div>
             )}
 
-            {/* Stats row */}
-            <div
-              style={{
-                display: 'flex',
-                gap: 20,
-                marginTop: 16,
-                fontSize: 14,
-                color: 'var(--gr-light)',
-              }}
-            >
-              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div className="author-stats-row">
+              <span className="meta-with-icon">
                 <BookOpen size={14} />
                 {author.works_count} book{author.works_count !== 1 ? 's' : ''}
               </span>
               {author.followers > 0 && (
-                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span className="meta-with-icon">
                   <Users size={14} />
                   {author.followers.toLocaleString()} followers
                 </span>
               )}
             </div>
 
-            {/* Genres */}
             {genres.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
+              <div className="genre-list">
                 {genres.map((genre) => (
                   <Link key={genre} to={`/genre/${encodeURIComponent(genre)}`} className="genre-tag">
                     {genre}
@@ -207,18 +142,18 @@ export default function AuthorPage() {
             )}
 
             {influences.length > 0 && (
-              <div style={{ marginTop: 10, fontSize: 13, color: 'var(--gr-light)' }}>
-                <strong style={{ color: 'var(--gr-text)' }}>Influences:</strong> {influences.join(', ')}
+              <div className="author-note">
+                <strong>Influences:</strong> {influences.join(', ')}
               </div>
             )}
 
             {author.website && (
-              <div style={{ marginTop: 10, fontSize: 13 }}>
+              <div className="author-link-row">
                 <a
                   href={author.website}
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{ color: 'var(--gr-teal)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                  className="meta-link"
                 >
                   <Globe size={13} />
                   Author website
@@ -226,30 +161,27 @@ export default function AuthorPage() {
               </div>
             )}
 
-            {/* External profile link */}
             {author.source_id && (
-              <div style={{ marginTop: 12, fontSize: 13 }}>
+              <div className="author-link-row">
                 <a
                   href={`https://www.goodreads.com/author/show/${author.source_id}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{ color: 'var(--gr-teal)', textDecoration: 'none' }}
+                  className="meta-link"
                 >
                   View source profile
                 </a>
               </div>
             )}
 
-            {/* Import from external source */}
             {!author.source_id && (
-              <div style={{ marginTop: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div className="author-import-row">
                 <input
                   type="text"
                   value={grId}
                   onChange={(e) => setGrId(e.target.value)}
                   placeholder="Source author ID"
-                  className="form-input"
-                  style={{ width: 200, fontSize: 13, padding: '6px 10px' }}
+                  className="form-input author-import-input"
                 />
                 <button
                   className="btn btn-secondary btn-sm"
@@ -264,7 +196,6 @@ export default function AuthorPage() {
           </div>
         </div>
 
-        {/* Books by Author */}
         <section>
           <div className="section-header">
             <span className="section-title">Books by {author.name}</span>

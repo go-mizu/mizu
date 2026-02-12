@@ -20,6 +20,7 @@ export default function Sidebar({ shelves, activeShelf, onSelect, children }: Si
       <h3>Bookshelves</h3>
 
       <button
+        type="button"
         className={`sidebar-link${activeShelf === undefined ? ' active' : ''}`}
         onClick={() => onSelect?.(0)}
       >
@@ -29,6 +30,7 @@ export default function Sidebar({ shelves, activeShelf, onSelect, children }: Si
 
       {(shelves || []).map((shelf) => (
         <button
+          type="button"
           key={shelf.id}
           className={`sidebar-link${activeShelf === shelf.id ? ' active' : ''}`}
           onClick={() => onSelect?.(shelf.id)}
@@ -39,8 +41,8 @@ export default function Sidebar({ shelves, activeShelf, onSelect, children }: Si
       ))}
 
       <button
-        className="sidebar-link"
-        style={{ color: 'var(--gr-teal)', marginTop: 8, fontWeight: 700, fontSize: 13 }}
+        type="button"
+        className="sidebar-link sidebar-link-add"
         onClick={() => onSelect?.(-1)}
       >
         <span>+ Add shelf</span>

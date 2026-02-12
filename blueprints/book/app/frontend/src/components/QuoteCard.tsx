@@ -19,7 +19,7 @@ export default function QuoteCard({ quote }: QuoteCardProps) {
             ,{' '}
             <Link
               to={`/book/${quote.book_id}`}
-              style={{ color: 'inherit', textDecoration: 'underline' }}
+              className="quote-book-link"
             >
               {quote.book.title}
             </Link>
@@ -27,7 +27,7 @@ export default function QuoteCard({ quote }: QuoteCardProps) {
         )}
       </div>
       {quote.likes_count > 0 && (
-        <div style={{ marginTop: 8, fontSize: 12, color: 'var(--gr-light)', display: 'flex', alignItems: 'center', gap: 4 }}>
+        <div className="quote-likes">
           <Heart size={12} />
           {quote.likes_count.toLocaleString()} likes
         </div>

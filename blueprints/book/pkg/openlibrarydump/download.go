@@ -99,6 +99,10 @@ func DownloadSpec(ctx context.Context, spec DumpSpec, targetDir string) (string,
 
 	stallCount := 0
 	for {
+		if err := resetOversizedTarget(spec, target); err != nil {
+			return "", err
+		}
+
 		done, currentSize, err := isComplete(target, spec.SizeBytes)
 		if err != nil {
 			return "", err
@@ -130,6 +134,16 @@ func DownloadSpec(ctx context.Context, spec DumpSpec, targetDir string) (string,
 			continue
 		}
 
+		if spec.SizeBytes == 0 {
+			info, statErr := os.Stat(target)
+			if statErr == nil && info.Size() > 0 {
+				return target, nil
+			}
+		}
+
+		if err := resetOversizedTarget(spec, target); err != nil {
+			return "", err
+		}
 		done, _, err = isComplete(target, spec.SizeBytes)
 		if err != nil {
 			return "", err
@@ -149,7 +163,7 @@ func isComplete(path string, expected int64) (bool, int64, error) {
 		return false, 0, err
 	}
 	size := info.Size()
-	if expected > 0 && size >= expected {
+	if expected > 0 && size == expected {
 		return true, size, nil
 	}
 	return false, size, nil
@@ -206,18 +220,28 @@ func ensureReusableTarget(targetDir string, spec DumpSpec, target string) (bool,
 	if info, err := os.Stat(target); err == nil {
 		targetSize = info.Size()
 	}
-	if targetSize >= 0 && (spec.SizeBytes == 0 || targetSize >= spec.SizeBytes) {
+	if targetSize >= 0 && (spec.SizeBytes == 0 || targetSize == spec.SizeBytes) {
 		return true, nil
+	}
+	if spec.SizeBytes > 0 && targetSize > spec.SizeBytes {
+		if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
+			return false, fmt.Errorf("remove oversized target for %s: %w", spec.Name, err)
+		}
+		targetSize = -1
 	}
 
 	if info, err := os.Stat(alias); err == nil {
 		aliasSize := info.Size()
-		if spec.SizeBytes == 0 || aliasSize >= spec.SizeBytes || aliasSize > targetSize {
+		if spec.SizeBytes > 0 && aliasSize > spec.SizeBytes {
+			if err := os.Remove(alias); err != nil && !os.IsNotExist(err) {
+				return false, fmt.Errorf("remove oversized alias for %s: %w", spec.Name, err)
+			}
+		} else if spec.SizeBytes == 0 || aliasSize == spec.SizeBytes || aliasSize > targetSize {
 			_ = os.Remove(target)
 			if err := os.Rename(alias, target); err != nil {
 				return false, fmt.Errorf("reuse latest alias for %s: %w", spec.Name, err)
 			}
-			if spec.SizeBytes == 0 || aliasSize >= spec.SizeBytes {
+			if spec.SizeBytes == 0 || aliasSize == spec.SizeBytes {
 				return true, nil
 			}
 			return false, nil
@@ -225,7 +249,7 @@ func ensureReusableTarget(targetDir string, spec DumpSpec, target string) (bool,
 	}
 
 	if targetSize >= 0 {
-		if spec.SizeBytes == 0 || targetSize >= spec.SizeBytes {
+		if spec.SizeBytes == 0 || targetSize == spec.SizeBytes {
 			return true, nil
 		}
 		return false, nil
@@ -243,6 +267,27 @@ func validateDownloadedSize(spec DumpSpec, path string) error {
 	}
 	if info.Size() != spec.SizeBytes {
 		return fmt.Errorf("%s size mismatch: got %d want %d", spec.Name, info.Size(), spec.SizeBytes)
+	}
+	return nil
+}
+
+func resetOversizedTarget(spec DumpSpec, path string) error {
+	if spec.SizeBytes <= 0 {
+		return nil
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if info.Size() <= spec.SizeBytes {
+		return nil
+	}
+	fmt.Fprintf(os.Stderr, "[WARN] %s dump is larger than expected (%s > %s), restarting download from scratch\n", spec.Name, FormatBytes(info.Size()), FormatBytes(spec.SizeBytes))
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove oversized dump file %s: %w", path, err)
 	}
 	return nil
 }

@@ -51,19 +51,10 @@ export default function SearchPage() {
       <Header />
       <div className="page-container fade-in">
         {q && (
-          <div style={{ marginBottom: 20 }}>
-            <h1
-              style={{
-                fontFamily: "'Merriweather', Georgia, serif",
-                fontSize: 20,
-                fontWeight: 700,
-                color: 'var(--gr-brown)',
-              }}
-            >
-              Search results for "{q}"
-            </h1>
+          <div className="page-title-block">
+            <h1 className="page-title">Search results for "{q}"</h1>
             {results && !loading && (
-              <p style={{ fontSize: 14, color: 'var(--gr-light)', marginTop: 4 }}>
+              <p className="page-subtitle">
                 {results.total_count} result{results.total_count !== 1 ? 's' : ''} found
               </p>
             )}
@@ -72,7 +63,7 @@ export default function SearchPage() {
 
         {!q && (
           <div className="empty-state">
-            <Search size={48} style={{ color: 'var(--gr-border)', marginBottom: 16 }} />
+            <Search size={48} className="empty-state-icon" />
             <h3>Search for books</h3>
             <p>Use the search bar above to find books by title, author, or ISBN.</p>
           </div>
@@ -109,18 +100,8 @@ export default function SearchPage() {
               ))}
             </div>
 
-            {/* Pagination */}
             {totalPages > 1 && (
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  gap: 16,
-                  marginTop: 32,
-                  paddingBottom: 20,
-                }}
-              >
+              <div className="pagination-row">
                 <button
                   className="btn btn-secondary btn-sm"
                   disabled={page <= 1}
@@ -128,7 +109,7 @@ export default function SearchPage() {
                 >
                   Previous
                 </button>
-                <span style={{ fontSize: 14, color: 'var(--gr-light)' }}>
+                <span className="pagination-text">
                   Page {page} of {totalPages}
                 </span>
                 <button

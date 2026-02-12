@@ -63,34 +63,31 @@ export default function ImportExportPage() {
   return (
     <>
       <Header />
-      <div className="page-container" style={{ maxWidth: 700, margin: '0 auto' }}>
-        <h1 className="font-serif text-2xl font-bold text-gr-brown mb-8">Import & Export</h1>
+      <div className="page-container page-narrow-wide">
+        <h1 className="page-title page-title-lg">Import & Export</h1>
 
-        {/* Import Section */}
-        <div className="mb-10">
-          <h2 className="section-title mb-4">
-            <Upload size={20} className="inline mr-2" />
+        <section className="import-section">
+          <h2 className="section-title section-title-with-icon">
+            <Upload size={20} />
             Import Library
           </h2>
-          <p className="text-sm text-gr-light mb-4">
+          <p className="page-subtitle">
             Upload a CSV file containing your book library. The CSV should include columns like
             Title, Author, ISBN, Rating, and Shelf.
           </p>
 
           <div
-            className={`border-2 border-dashed rounded-lg p-10 text-center transition-colors cursor-pointer ${
-              dragActive ? 'border-gr-teal bg-gr-cream' : 'border-gr-border hover:border-gr-teal'
-            }`}
-            onDragOver={e => { e.preventDefault(); setDragActive(true) }}
+            className={`dropzone${dragActive ? ' active' : ''}`}
+            onDragOver={(e) => { e.preventDefault(); setDragActive(true) }}
             onDragLeave={() => setDragActive(false)}
             onDrop={handleDrop}
             onClick={() => fileRef.current?.click()}
           >
-            <FileText size={36} className="mx-auto text-gr-light mb-3" />
-            <p className="text-sm text-gr-text mb-1">
-              Drop your CSV file here, or <span className="text-gr-teal font-bold">click to browse</span>
+            <FileText size={36} className="dropzone-icon" />
+            <p className="dropzone-title">
+              Drop your CSV file here, or <span className="dropzone-link">click to browse</span>
             </p>
-            <p className="text-xs text-gr-light">Supports standard book library CSV format</p>
+            <p className="dropzone-subtitle">Supports standard book library CSV format</p>
             <input
               ref={fileRef}
               type="file"
@@ -101,40 +98,37 @@ export default function ImportExportPage() {
           </div>
 
           {importing && (
-            <div className="mt-4 flex items-center gap-2 text-sm text-gr-light">
-              <div className="spinner" style={{ width: 16, height: 16 }} /> Importing...
+            <div className="import-status-row">
+              <div className="spinner spinner-sm" /> Importing...
             </div>
           )}
 
           {importResult && (
-            <div className="mt-4 flex items-center gap-2 text-sm text-gr-green">
+            <div className="import-status-row success">
               <Check size={16} /> Successfully imported {importResult.imported} books
             </div>
           )}
 
-          {error && (
-            <div className="mt-4 text-sm text-red-600">{error}</div>
-          )}
-        </div>
+          {error && <div className="import-status-row error">{error}</div>}
+        </section>
 
-        {/* External Catalog Import */}
-        <div className="mb-10">
-          <h2 className="section-title mb-4">
-            <BookOpen size={20} className="inline mr-2" />
+        <section className="import-section">
+          <h2 className="section-title section-title-with-icon">
+            <BookOpen size={20} />
             Import from Catalog URL
           </h2>
-          <p className="text-sm text-gr-light mb-4">
+          <p className="page-subtitle">
             Paste a supported book URL to import all book details including ratings,
             description, genres, and reviews.
           </p>
-          <div className="flex gap-2">
+          <div className="catalog-import-row">
             <input
               type="text"
               value={grUrl}
-              onChange={e => setGrUrl(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleCatalogImport()}
+              onChange={(e) => setGrUrl(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleCatalogImport()}
               placeholder="https://example.com/book/..."
-              className="flex-1 px-3 py-2 border border-gr-border rounded-md text-sm focus:outline-none focus:border-gr-teal"
+              className="form-input"
               disabled={grImporting}
             />
             <button
@@ -142,36 +136,33 @@ export default function ImportExportPage() {
               onClick={handleCatalogImport}
               disabled={grImporting || !grUrl.trim()}
             >
-              {grImporting ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+              {grImporting ? <Loader2 size={16} className="spin" /> : <Upload size={16} />}
               {grImporting ? 'Importing...' : 'Import'}
             </button>
           </div>
 
           {grResult && (
-            <div className="mt-4 flex items-center gap-2 text-sm text-gr-green">
+            <div className="import-status-row success">
               <Check size={16} /> Imported "{grResult.title}" successfully
             </div>
           )}
 
-          {grError && (
-            <div className="mt-4 text-sm text-red-600">{grError}</div>
-          )}
-        </div>
+          {grError && <div className="import-status-row error">{grError}</div>}
+        </section>
 
-        {/* Export Section */}
-        <div>
-          <h2 className="section-title mb-4">
-            <Download size={20} className="inline mr-2" />
+        <section className="import-section">
+          <h2 className="section-title section-title-with-icon">
+            <Download size={20} />
             Export Library
           </h2>
-          <p className="text-sm text-gr-light mb-4">
+          <p className="page-subtitle">
             Download your library as a CSV file. Includes all books,
             ratings, reviews, shelves, and reading dates.
           </p>
           <button className="btn btn-primary" onClick={() => booksApi.exportCSV()}>
             <Download size={16} /> Export as CSV
           </button>
-        </div>
+        </section>
       </div>
     </>
   )

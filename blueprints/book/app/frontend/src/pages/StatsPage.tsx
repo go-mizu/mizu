@@ -32,14 +32,14 @@ export default function StatsPage() {
       <Header />
       <div className="page-container">
         <div className="section-header">
-          <h1 className="section-title">
-            <BarChart3 size={24} className="inline mr-2" />
+          <h1 className="section-title section-title-with-icon">
+            <BarChart3 size={24} />
             Year in Books
           </h1>
         </div>
 
-        <div className="tabs mb-6">
-          {years.map(y => (
+        <div className="tabs tabs-spaced">
+          {years.map((y) => (
             <button
               key={y}
               className={`tab ${y === year ? 'active' : ''}`}
@@ -59,8 +59,7 @@ export default function StatsPage() {
           </div>
         ) : (
           <div className="fade-in">
-            {/* Summary boxes */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div className="stats-summary-grid">
               <div className="stat-box">
                 <div className="stat-number">{stats.total_books}</div>
                 <div className="stat-label">Books Read</div>
@@ -79,10 +78,9 @@ export default function StatsPage() {
               </div>
             </div>
 
-            {/* Books by month chart */}
-            <div className="mb-8">
-              <h2 className="section-title mb-4">Books by Month</h2>
-              <div className="bar-chart" style={{ paddingBottom: 24 }}>
+            <div className="stats-section">
+              <h2 className="section-title">Books by Month</h2>
+              <div className="bar-chart bar-chart-spaced">
                 {MONTHS.map((m, i) => {
                   const key = String(i + 1)
                   const count = stats.books_per_month?.[key] || 0
@@ -91,7 +89,7 @@ export default function StatsPage() {
                     <div key={m} className="bar" style={{ height: `${Math.max(height, 2)}%` }}>
                       <span className="bar-label">{m}</span>
                       {count > 0 && (
-                        <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-xs font-bold text-gr-brown">
+                        <span className="bar-value">
                           {count}
                         </span>
                       )}
@@ -101,37 +99,35 @@ export default function StatsPage() {
               </div>
             </div>
 
-            {/* Rating distribution */}
-            <div className="mb-8">
-              <h2 className="section-title mb-4">Rating Distribution</h2>
-              <div className="space-y-2">
-                {[5, 4, 3, 2, 1].map(r => {
+            <div className="stats-section">
+              <h2 className="section-title">Rating Distribution</h2>
+              <div className="stats-rating-list">
+                {[5, 4, 3, 2, 1].map((r) => {
                   const count = stats.rating_distribution?.[String(r)] || 0
                   const maxRating = Math.max(1, ...Object.values(stats.rating_distribution || {}))
                   const width = maxRating > 0 ? (count / maxRating) * 100 : 0
                   return (
-                    <div key={r} className="flex items-center gap-3">
-                      <div className="flex items-center gap-1 w-24">
+                    <div key={r} className="stats-rating-row">
+                      <div className="stats-rating-stars">
                         <StarRating rating={r} size={14} />
                       </div>
-                      <div className="flex-1 h-5 bg-gray-100 rounded">
+                      <div className="stats-rating-track">
                         <div
-                          className="h-full bg-gr-orange rounded"
+                          className="stats-rating-fill"
                           style={{ width: `${width}%` }}
                         />
                       </div>
-                      <span className="text-sm text-gr-light w-8 text-right">{count}</span>
+                      <span className="stats-rating-count">{count}</span>
                     </div>
                   )
                 })}
               </div>
             </div>
 
-            {/* Genres */}
             {stats.genre_breakdown && Object.keys(stats.genre_breakdown).length > 0 && (
-              <div className="mb-8">
-                <h2 className="section-title mb-4">Genres</h2>
-                <div className="flex flex-wrap gap-2">
+              <div className="stats-section">
+                <h2 className="section-title">Genres</h2>
+                <div className="genre-list">
                   {Object.entries(stats.genre_breakdown)
                     .sort(([, a], [, b]) => b - a)
                     .slice(0, 20)
@@ -144,23 +140,22 @@ export default function StatsPage() {
               </div>
             )}
 
-            {/* Notable books */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div className="stats-notable-grid">
               {stats.shortest_book && (
                 <div>
-                  <h3 className="text-sm font-bold text-gr-light uppercase mb-2">Shortest Book</h3>
+                  <h3 className="stats-notable-label">Shortest Book</h3>
                   <BookCard book={stats.shortest_book} />
                 </div>
               )}
               {stats.longest_book && (
                 <div>
-                  <h3 className="text-sm font-bold text-gr-light uppercase mb-2">Longest Book</h3>
+                  <h3 className="stats-notable-label">Longest Book</h3>
                   <BookCard book={stats.longest_book} />
                 </div>
               )}
               {stats.highest_rated && (
                 <div>
-                  <h3 className="text-sm font-bold text-gr-light uppercase mb-2">Highest Rated</h3>
+                  <h3 className="stats-notable-label">Highest Rated</h3>
                   <BookCard book={stats.highest_rated} />
                 </div>
               )}

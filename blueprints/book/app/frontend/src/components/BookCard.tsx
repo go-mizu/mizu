@@ -25,8 +25,7 @@ export default function BookCard({ book, showShelf = true }: BookCardProps) {
         </h3>
 
         <p className="book-author">
-          by{' '}
-          <span>{book.author_names}</span>
+          by <span>{book.author_names}</span>
         </p>
 
         <div className="book-meta">
@@ -44,7 +43,7 @@ export default function BookCard({ book, showShelf = true }: BookCardProps) {
         )}
 
         {showShelf && shelves.length > 0 && (
-          <div style={{ marginTop: 8 }}>
+          <div className="book-card-actions">
             <ShelfButton book={book} shelves={shelves} />
           </div>
         )}

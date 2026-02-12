@@ -11,11 +11,11 @@ export default function BookGrid({ books }: BookGridProps) {
     <div className="book-grid">
       {books.map((book) => (
         <div key={book.id} className="book-grid-item">
-          <Link to={`/book/${book.id}`}>
+          <Link to={`/book/${book.id}`} className="book-grid-link">
             <BookCover src={book.cover_url} title={book.title} />
           </Link>
           <div className="title">
-            <Link to={`/book/${book.id}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+            <Link to={`/book/${book.id}`} className="book-grid-title-link">
               {book.title}
             </Link>
           </div>

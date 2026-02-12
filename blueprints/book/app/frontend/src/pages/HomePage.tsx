@@ -84,54 +84,22 @@ export default function HomePage() {
     <>
       <Header />
       <div className="page-container fade-in">
-        {/* Hero Section */}
-        <section style={{ textAlign: 'center', padding: '48px 0 40px' }}>
-          <h1
-            style={{
-              fontFamily: "'Merriweather', Georgia, serif",
-              fontSize: 32,
-              fontWeight: 900,
-              color: 'var(--gr-brown)',
-              marginBottom: 8,
-            }}
-          >
-            What are you reading?
-          </h1>
-          <p style={{ color: 'var(--gr-light)', fontSize: 16, marginBottom: 24 }}>
+        <section className="home-hero">
+          <h1 className="home-hero-title">What are you reading?</h1>
+          <p className="home-hero-subtitle">
             Discover your next favorite book, track your reading, and connect with other readers.
           </p>
-          <form
-            onSubmit={handleHeroSearch}
-            style={{
-              maxWidth: 540,
-              margin: '0 auto',
-              position: 'relative',
-            }}
-          >
+          <form onSubmit={handleHeroSearch} className="home-hero-search">
             <input
               type="text"
               placeholder="Search by title, author, or ISBN..."
               value={heroQuery}
               onChange={(e) => setHeroQuery(e.target.value)}
-              className="form-input"
-              style={{
-                padding: '12px 48px 12px 16px',
-                fontSize: 16,
-                borderRadius: 8,
-              }}
+              className="form-input home-hero-search-input"
             />
             <button
               type="submit"
-              style={{
-                position: 'absolute',
-                right: 12,
-                top: '50%',
-                transform: 'translateY(-50%)',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                color: 'var(--gr-light)',
-              }}
+              className="home-hero-search-button"
               aria-label="Search"
             >
               <Search size={20} />
@@ -139,12 +107,11 @@ export default function HomePage() {
           </form>
         </section>
 
-        {/* Trending Section */}
         {trending.length > 0 && (
-          <section style={{ marginBottom: 40 }}>
+          <section className="page-section">
             <div className="section-header">
-              <span className="section-title">
-                <TrendingUp size={18} style={{ marginRight: 8, verticalAlign: 'text-bottom' }} />
+              <span className="section-title section-title-with-icon">
+                <TrendingUp size={18} />
                 Trending Books
               </span>
               <Link to="/browse" className="section-link">
@@ -156,46 +123,22 @@ export default function HomePage() {
                 <Link
                   key={book.id}
                   to={`/book/${book.id}`}
-                  style={{ textDecoration: 'none', width: 120, textAlign: 'center' }}
+                  className="book-scroll-item"
                 >
                   <BookCover book={book} />
-                  <div
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 700,
-                      color: 'var(--gr-brown)',
-                      marginTop: 8,
-                      lineHeight: 1.3,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {book.title}
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--gr-light)' }}>
-                    {book.author_names}
-                  </div>
+                  <div className="book-scroll-title">{book.title}</div>
+                  <div className="book-scroll-author">{book.author_names}</div>
                 </Link>
               ))}
             </div>
           </section>
         )}
 
-        {/* Content grid: Feed + Challenge */}
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: challenge ? '1fr 300px' : '1fr',
-            gap: 30,
-            alignItems: 'start',
-          }}
-        >
-          {/* Recent Updates Feed */}
+        <div className={`home-content-grid${challenge ? ' has-challenge' : ''}`}>
           <section>
             <div className="section-header">
-              <span className="section-title">
-                <BookOpen size={18} style={{ marginRight: 8, verticalAlign: 'text-bottom' }} />
+              <span className="section-title section-title-with-icon">
+                <BookOpen size={18} />
                 Recent Updates
               </span>
             </div>
@@ -212,23 +155,20 @@ export default function HomePage() {
             )}
           </section>
 
-          {/* Reading Challenge Widget */}
           {challenge && (
             <aside>
               <div className="challenge-card">
                 <div className="challenge-year">{challenge.year} Reading Challenge</div>
-                <div className="challenge-title">
-                  <Target size={20} style={{ marginRight: 6, verticalAlign: 'text-bottom' }} />
+                <div className="challenge-title challenge-title-with-icon">
+                  <Target size={20} />
                   Reading Challenge
                 </div>
                 <div className="challenge-progress">
                   {challenge.progress}
-                  <span style={{ fontSize: 20, color: 'var(--gr-light)' }}>
-                    /{challenge.goal}
-                  </span>
+                  <span className="challenge-progress-total">/{challenge.goal}</span>
                 </div>
                 <div className="challenge-goal">books read</div>
-                <div style={{ marginTop: 16 }}>
+                <div className="challenge-progress-wrap">
                   <div className="progress-bar">
                     <div
                       className="progress-fill"
@@ -239,8 +179,7 @@ export default function HomePage() {
                 </div>
                 <Link
                   to="/challenge"
-                  className="btn btn-secondary btn-sm"
-                  style={{ marginTop: 16 }}
+                  className="btn btn-secondary btn-sm challenge-link"
                 >
                   View Challenge
                 </Link>

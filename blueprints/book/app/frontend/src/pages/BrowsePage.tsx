@@ -64,12 +64,11 @@ export default function BrowsePage() {
     <>
       <Header />
       <div className="page-container fade-in">
-        {/* Popular Section */}
         {popular.length > 0 && (
-          <section style={{ marginBottom: 40 }}>
+          <section className="page-section">
             <div className="section-header">
-              <span className="section-title">
-                <Flame size={18} style={{ marginRight: 8, verticalAlign: 'text-bottom' }} />
+              <span className="section-title section-title-with-icon">
+                <Flame size={18} />
                 Popular
               </span>
             </div>
@@ -77,12 +76,11 @@ export default function BrowsePage() {
           </section>
         )}
 
-        {/* New Releases Section */}
         {newReleases.length > 0 && (
-          <section style={{ marginBottom: 40 }}>
+          <section className="page-section">
             <div className="section-header">
-              <span className="section-title">
-                <Sparkles size={18} style={{ marginRight: 8, verticalAlign: 'text-bottom' }} />
+              <span className="section-title section-title-with-icon">
+                <Sparkles size={18} />
                 New Releases
               </span>
             </div>
@@ -90,34 +88,24 @@ export default function BrowsePage() {
           </section>
         )}
 
-        {/* Genres Section */}
         {genres.length > 0 && (
-          <section style={{ marginBottom: 40 }}>
+          <section className="page-section">
             <div className="section-header">
-              <span className="section-title">
-                <BookMarked size={18} style={{ marginRight: 8, verticalAlign: 'text-bottom' }} />
+              <span className="section-title section-title-with-icon">
+                <BookMarked size={18} />
                 Genres
               </span>
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <div className="genre-list">
               {genres.map((genre) => (
                 <Link
                   key={genre.name}
                   to={`/genre/${encodeURIComponent(genre.name)}`}
-                  className="genre-tag"
-                  style={{ fontSize: 14, padding: '8px 16px' }}
+                  className="genre-tag genre-pill"
                 >
                   {genre.name}
                   {genre.book_count > 0 && (
-                    <span
-                      style={{
-                        marginLeft: 6,
-                        fontSize: 12,
-                        color: 'var(--gr-light)',
-                      }}
-                    >
-                      ({genre.book_count})
-                    </span>
+                    <span className="genre-count">({genre.book_count})</span>
                   )}
                 </Link>
               ))}
@@ -128,7 +116,7 @@ export default function BrowsePage() {
         {popular.length === 0 && newReleases.length === 0 && genres.length === 0 && (
           <div className="empty-state">
             <h3>Nothing to browse yet</h3>
-            <p>Add some books to get started!</p>
+            <p>Add some books to get started.</p>
           </div>
         )}
       </div>

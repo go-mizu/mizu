@@ -12,7 +12,7 @@ export default function ChallengePage() {
 
   useEffect(() => {
     booksApi.getChallenge(year)
-      .then(c => setChallenge(c))
+      .then((c) => setChallenge(c))
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [year])
@@ -21,7 +21,7 @@ export default function ChallengePage() {
     const g = parseInt(goal)
     if (g <= 0) return
     booksApi.setChallenge(year, g)
-      .then(c => setChallenge(c))
+      .then((c) => setChallenge(c))
       .catch(() => {})
   }
 
@@ -41,28 +41,27 @@ export default function ChallengePage() {
   return (
     <>
       <Header />
-      <div className="page-container" style={{ maxWidth: 600, margin: '0 auto', padding: 40 }}>
+      <div className="page-container page-narrow challenge-page">
         <div className="challenge-card">
           <div className="challenge-year">{year} Reading Challenge</div>
 
           {!challenge || challenge.goal === 0 ? (
             <>
-              <div className="my-6">
-                <Trophy size={48} className="mx-auto text-gr-orange mb-4" />
+              <div className="challenge-empty-head">
+                <Trophy size={48} className="challenge-icon" />
                 <h2 className="challenge-title">Set Your Reading Goal</h2>
-                <p className="text-gr-light mt-2 mb-6">How many books do you want to read this year?</p>
+                <p className="challenge-hint">How many books do you want to read this year?</p>
               </div>
-              <div className="flex items-center justify-center gap-3 mb-4">
+              <div className="challenge-goal-input-row">
                 <input
                   type="number"
                   min="1"
                   value={goal}
-                  onChange={e => setGoal(e.target.value)}
+                  onChange={(e) => setGoal(e.target.value)}
                   placeholder="e.g. 24"
-                  className="form-input text-center text-2xl font-bold"
-                  style={{ width: 120 }}
+                  className="form-input challenge-goal-input"
                 />
-                <span className="text-gr-light text-lg">books</span>
+                <span className="challenge-goal-unit">books</span>
               </div>
               <button className="btn btn-primary btn-lg" onClick={handleSet}>
                 Start Challenge
@@ -70,39 +69,38 @@ export default function ChallengePage() {
             </>
           ) : (
             <>
-              <h2 className="challenge-title">
-                <Trophy size={28} className="inline text-gr-orange mr-2" />
+              <h2 className="challenge-title challenge-title-with-icon">
+                <Trophy size={28} className="challenge-icon" />
                 Reading Challenge
               </h2>
               <div className="challenge-progress">
-                {challenge.progress} <span className="text-2xl text-gr-light">/ {challenge.goal}</span>
+                {challenge.progress} <span className="challenge-progress-total">/ {challenge.goal}</span>
               </div>
               <div className="challenge-goal">books read</div>
 
-              <div className="mt-6 mx-auto" style={{ maxWidth: 300 }}>
-                <div className="progress-bar" style={{ height: 12 }}>
+              <div className="challenge-progress-wrap challenge-progress-wrap-wide">
+                <div className="progress-bar progress-bar-lg">
                   <div className="progress-fill" style={{ width: `${pct}%` }} />
                 </div>
-                <div className="progress-label mt-2">{pct}% complete</div>
+                <div className="progress-label">{pct}% complete</div>
               </div>
 
               {pct >= 100 && (
-                <p className="mt-6 text-gr-green font-bold text-lg">
+                <p className="challenge-success">
                   Congratulations! You've reached your goal!
                 </p>
               )}
 
-              <div className="mt-8">
-                <p className="text-sm text-gr-light mb-2">Update your goal</p>
-                <div className="flex items-center justify-center gap-3">
+              <div className="challenge-update">
+                <p className="challenge-update-label">Update your goal</p>
+                <div className="challenge-goal-input-row">
                   <input
                     type="number"
                     min="1"
                     value={goal}
-                    onChange={e => setGoal(e.target.value)}
+                    onChange={(e) => setGoal(e.target.value)}
                     placeholder={String(challenge.goal)}
-                    className="form-input text-center"
-                    style={{ width: 100 }}
+                    className="form-input challenge-goal-input challenge-goal-input-sm"
                   />
                   <button className="btn btn-secondary btn-sm" onClick={handleSet}>
                     Update

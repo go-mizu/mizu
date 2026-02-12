@@ -85,7 +85,7 @@ export default function ReviewCard({ review, onEdit, onDelete }: ReviewCardProps
   const handleDeleteComment = async (commentId: number) => {
     try {
       await booksApi.deleteReviewComment(current.id, commentId)
-      setComments(comments.filter(c => c.id !== commentId))
+      setComments(comments.filter((c) => c.id !== commentId))
       setCurrent({ ...current, comments_count: Math.max(0, (current.comments_count || 0) - 1) })
     } catch {
       // ignore
@@ -98,28 +98,19 @@ export default function ReviewCard({ review, onEdit, onDelete }: ReviewCardProps
         <div className="review-avatar">
           {initial}
         </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--gr-brown)' }}>
+        <div className="review-main">
+          <div className="review-name-row">
+            <span className="review-name">
               {displayName}
             </span>
             {isImported && (
-              <span style={{
-                fontSize: 10,
-                padding: '2px 6px',
-                background: 'var(--gr-tan)',
-                borderRadius: 3,
-                color: 'var(--gr-light)',
-                fontWeight: 700,
-                textTransform: 'uppercase',
-                letterSpacing: 0.5,
-              }}>
+              <span className="review-badge">
                 Imported
               </span>
             )}
           </div>
           <StarRating rating={current.rating} />
-          <div style={{ fontSize: 12, color: 'var(--gr-light)', marginTop: 2 }}>
+          <div className="review-meta">
             {formatDate(current.created_at)}
             {current.likes_count ? ` · ${current.likes_count} likes` : ''}
             {current.comments_count ? ` · ${current.comments_count} comments` : ''}
@@ -158,7 +149,7 @@ export default function ReviewCard({ review, onEdit, onDelete }: ReviewCardProps
       </div>
 
       {(current.started_at || current.finished_at) && (
-        <div style={{ fontSize: 12, color: 'var(--gr-light)', marginTop: 8 }}>
+        <div className="review-read-dates">
           {current.started_at && <>Started {formatDate(current.started_at)}</>}
           {current.started_at && current.finished_at && <> &middot; </>}
           {current.finished_at && <>Finished {formatDate(current.finished_at)}</>}

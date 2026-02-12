@@ -50,3 +50,43 @@ func TestEnsureReusableTargetFromLatestAlias(t *testing.T) {
 		t.Fatalf("target missing: %v", err)
 	}
 }
+
+func TestIsCompleteRequiresExactSize(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dump.txt.gz")
+	if err := os.WriteFile(path, []byte("12345"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	done, size, err := isComplete(path, 4)
+	if err != nil {
+		t.Fatalf("isComplete: %v", err)
+	}
+	if done {
+		t.Fatal("expected oversized file to be incomplete")
+	}
+	if size != 5 {
+		t.Fatalf("size mismatch: got %d want 5", size)
+	}
+}
+
+func TestEnsureReusableTargetRemovesOversizedTarget(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	target := filepath.Join(dir, "ol_dump_works_2026-01-31.txt.gz")
+	if err := os.WriteFile(target, []byte("12345"), 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+
+	done, err := ensureReusableTarget(dir, DumpSpec{Name: "works", SizeBytes: 4}, target)
+	if err != nil {
+		t.Fatalf("ensure reusable: %v", err)
+	}
+	if done {
+		t.Fatal("expected oversized target to be rejected")
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("expected oversized target removed, stat err=%v", err)
+	}
+}
