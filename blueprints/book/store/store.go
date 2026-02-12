@@ -22,6 +22,7 @@ type Store interface {
 	Quote() QuoteStore
 	Stats() StatsStore
 	Feed() FeedStore
+	Note() NoteStore
 }
 
 // BookStore manages books.
@@ -66,6 +67,7 @@ type ShelfStore interface {
 	RemoveBook(ctx context.Context, shelfID, bookID int64) error
 	GetBooks(ctx context.Context, shelfID int64, sort string, page, limit int) ([]types.ShelfBook, int, error)
 	GetBookShelves(ctx context.Context, bookID int64) ([]types.Shelf, error)
+	UpdateShelfBook(ctx context.Context, shelfID, bookID int64, dateStarted, dateRead *string, readCount *int) error
 	SeedDefaults(ctx context.Context) error
 }
 
@@ -132,4 +134,11 @@ type StatsStore interface {
 type FeedStore interface {
 	Add(ctx context.Context, item *types.FeedItem) error
 	GetRecent(ctx context.Context, limit int) ([]types.FeedItem, error)
+}
+
+// NoteStore manages private book notes.
+type NoteStore interface {
+	Upsert(ctx context.Context, note *types.BookNote) error
+	Get(ctx context.Context, bookID int64) (*types.BookNote, error)
+	Delete(ctx context.Context, bookID int64) error
 }

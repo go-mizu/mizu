@@ -85,12 +85,15 @@ type Shelf struct {
 
 // ShelfBook represents a book placed on a shelf.
 type ShelfBook struct {
-	ID        int64     `json:"id"`
-	ShelfID   int64     `json:"shelf_id"`
-	BookID    int64     `json:"book_id"`
-	DateAdded time.Time `json:"date_added"`
-	Position  int       `json:"position"`
-	Book      *Book     `json:"book,omitempty"` // Joined
+	ID          int64      `json:"id"`
+	ShelfID     int64      `json:"shelf_id"`
+	BookID      int64      `json:"book_id"`
+	DateAdded   time.Time  `json:"date_added"`
+	Position    int        `json:"position"`
+	DateStarted *time.Time `json:"date_started,omitempty"`
+	DateRead    *time.Time `json:"date_read,omitempty"`
+	ReadCount   int        `json:"read_count"`
+	Book        *Book      `json:"book,omitempty"` // Joined
 }
 
 // Review represents a user's review of a book.
@@ -182,6 +185,15 @@ type Quote struct {
 	LikesCount int       `json:"likes_count"`
 	CreatedAt  time.Time `json:"created_at"`
 	Book       *Book     `json:"book,omitempty"` // Joined
+}
+
+// BookNote represents a user's private notes on a book.
+type BookNote struct {
+	ID        int64     `json:"id"`
+	BookID    int64     `json:"book_id"`
+	Text      string    `json:"text"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // FeedItem represents an activity in the user's reading feed.

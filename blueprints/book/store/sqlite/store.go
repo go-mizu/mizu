@@ -27,6 +27,7 @@ type Store struct {
 	quote     *QuoteStore
 	stats     *StatsStore
 	feed      *FeedStore
+	note      *NoteStore
 }
 
 // New opens (or creates) a SQLite database at dbPath and returns a Store.
@@ -62,6 +63,7 @@ func New(dbPath string) (*Store, error) {
 	s.quote = &QuoteStore{db: db}
 	s.stats = &StatsStore{db: db}
 	s.feed = &FeedStore{db: db}
+	s.note = &NoteStore{db: db}
 
 	return s, nil
 }
@@ -96,6 +98,7 @@ func (s *Store) List() store.ListStore         { return s.list }
 func (s *Store) Quote() store.QuoteStore       { return s.quote }
 func (s *Store) Stats() store.StatsStore       { return s.stats }
 func (s *Store) Feed() store.FeedStore         { return s.feed }
+func (s *Store) Note() store.NoteStore         { return s.note }
 
 // Ensure interface compliance.
 var _ store.Store = (*Store)(nil)

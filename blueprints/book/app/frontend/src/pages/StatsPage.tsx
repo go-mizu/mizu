@@ -99,6 +99,30 @@ export default function StatsPage() {
               </div>
             </div>
 
+            {stats.pages_per_month && Object.values(stats.pages_per_month).some(v => v > 0) && (
+              <div className="stats-section">
+                <h2 className="section-title">Pages by Month</h2>
+                <div className="bar-chart bar-chart-spaced">
+                  {MONTHS.map((m, i) => {
+                    const key = String(i + 1)
+                    const count = stats.pages_per_month?.[key] || 0
+                    const maxPages = Math.max(1, ...Object.values(stats.pages_per_month))
+                    const height = maxPages > 0 ? (count / maxPages) * 100 : 0
+                    return (
+                      <div key={m} className="bar" style={{ height: `${Math.max(height, 2)}%` }}>
+                        <span className="bar-label">{m}</span>
+                        {count > 0 && (
+                          <span className="bar-value">
+                            {count.toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="stats-section">
               <h2 className="section-title">Rating Distribution</h2>
               <div className="stats-rating-list">

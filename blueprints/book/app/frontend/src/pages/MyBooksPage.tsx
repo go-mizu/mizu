@@ -10,12 +10,12 @@ import BookCover from '../components/BookCover'
 import { booksApi } from '../api/books'
 import { useBookStore } from '../stores/bookStore'
 import { useUIStore } from '../stores/uiStore'
-import type { Shelf, SearchResult } from '../types'
+import type { Shelf, ShelfBook } from '../types'
 
 export default function MyBooksPage() {
   const [shelves, setShelves] = useState<Shelf[]>([])
   const [selectedShelf, setSelectedShelf] = useState<number | null>(null)
-  const [results, setResults] = useState<SearchResult | null>(null)
+  const [results, setResults] = useState<{ books: import('../types').Book[]; shelfBooks?: ShelfBook[]; total_count: number; page: number; page_size: number } | null>(null)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [booksLoading, setBooksLoading] = useState(false)
@@ -50,7 +50,7 @@ export default function MyBooksPage() {
       try {
         if (selectedShelf === null) {
           const data = await booksApi.search('', page, limit)
-          setResults(data)
+          setResults({ ...data, shelfBooks: undefined })
         } else {
           const data = await booksApi.getShelfBooks(selectedShelf, page, limit)
           setResults(data)
@@ -252,38 +252,47 @@ export default function MyBooksPage() {
                   <th>Author</th>
                   <th>Rating</th>
                   <th>Shelf</th>
+                  <th>Date Read</th>
                   <th>Pages</th>
                 </tr>
               </thead>
               <tbody>
-                {books.map((book) => (
-                  <tr key={book.id}>
-                    <td>
-                      <BookCover book={book} size="sm" />
-                    </td>
-                    <td>
-                      <Link to={`/book/${book.id}`} className="table-book-link">
-                        {book.title}
-                      </Link>
-                    </td>
-                    <td>
-                      <span>{book.author_names}</span>
-                    </td>
-                    <td>
-                      {book.user_rating != null && book.user_rating > 0 ? (
-                        <StarRating rating={book.user_rating} size={12} />
-                      ) : (
-                        <span className="table-muted">--</span>
-                      )}
-                    </td>
-                    <td>
-                      {book.user_shelf && (
-                        <span className="genre-tag">{book.user_shelf}</span>
-                      )}
-                    </td>
-                    <td className="table-muted">{book.page_count || '--'}</td>
-                  </tr>
-                ))}
+                {books.map((book) => {
+                  const sb = results?.shelfBooks?.find(s => s.book_id === book.id)
+                  return (
+                    <tr key={book.id}>
+                      <td>
+                        <BookCover book={book} size="sm" />
+                      </td>
+                      <td>
+                        <Link to={`/book/${book.id}`} className="table-book-link">
+                          {book.title}
+                        </Link>
+                      </td>
+                      <td>
+                        <span>{book.author_names}</span>
+                      </td>
+                      <td>
+                        {book.user_rating != null && book.user_rating > 0 ? (
+                          <StarRating rating={book.user_rating} size={12} />
+                        ) : (
+                          <span className="table-muted">--</span>
+                        )}
+                      </td>
+                      <td>
+                        {book.user_shelf && (
+                          <span className="genre-tag">{book.user_shelf}</span>
+                        )}
+                      </td>
+                      <td className="table-muted">
+                        {sb?.date_read
+                          ? new Date(sb.date_read).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                          : '--'}
+                      </td>
+                      <td className="table-muted">{book.page_count || '--'}</td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           )}
