@@ -80,9 +80,9 @@ export default function ListDetailPage() {
                 <Users size={13} /> {list.voter_count.toLocaleString()} voters
               </span>
             )}
-            {list.goodreads_url && (
+            {list.source_url && (
               <a
-                href={list.goodreads_url}
+                href={list.source_url}
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{

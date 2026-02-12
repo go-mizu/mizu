@@ -159,7 +159,7 @@ export default function BookDetailPage() {
   const [editingReviewId, setEditingReviewId] = useState<number | null>(null)
   const [reviewSort, setReviewSort] = useState<ReviewQuery['sort']>('popular')
   const [reviewRatingFilter, setReviewRatingFilter] = useState(0)
-  const [reviewSourceFilter, setReviewSourceFilter] = useState<'all' | 'user' | 'goodreads'>('all')
+  const [reviewSourceFilter, setReviewSourceFilter] = useState<'all' | 'user' | 'imported'>('all')
   const [reviewTextFilter, setReviewTextFilter] = useState<'all' | 'with' | 'without'>('all')
   const [reviewSearch, setReviewSearch] = useState('')
   const [includeSpoilers, setIncludeSpoilers] = useState(false)
@@ -661,11 +661,11 @@ export default function BookDetailPage() {
                     <span>ASIN {book.asin}</span>
                   </div>
                 )}
-                {book.goodreads_id && (
+                {book.source_id && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--gr-light)' }}>
                     <Users size={14} />
                     <a
-                      href={book.goodreads_url || `https://www.goodreads.com/book/show/${book.goodreads_id}`}
+                      href={book.source_url}
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{ color: 'var(--gr-teal)', textDecoration: 'none' }}
@@ -674,7 +674,7 @@ export default function BookDetailPage() {
                     </a>
                   </div>
                 )}
-                {book.ol_key && !book.goodreads_id && (
+                {book.ol_key && !book.source_id && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--gr-light)' }}>
                     <FileText size={14} />
                     <span>{book.ol_key}</span>
@@ -734,9 +734,9 @@ export default function BookDetailPage() {
                 <option value={2}>2 stars</option>
                 <option value={1}>1 star</option>
               </select>
-              <select className="form-input" value={reviewSourceFilter} onChange={(e) => setReviewSourceFilter(e.target.value as 'all' | 'user' | 'goodreads')}>
+              <select className="form-input" value={reviewSourceFilter} onChange={(e) => setReviewSourceFilter(e.target.value as 'all' | 'user' | 'imported')}>
                 <option value="all">All sources</option>
-                <option value="goodreads">Imported</option>
+                <option value="imported">Imported</option>
                 <option value="user">My reviews</option>
               </select>
               <select className="form-input" value={reviewTextFilter} onChange={(e) => setReviewTextFilter(e.target.value as 'all' | 'with' | 'without')}>

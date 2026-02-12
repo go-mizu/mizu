@@ -31,7 +31,7 @@ export default function ReviewCard({ review, onEdit, onDelete }: ReviewCardProps
     setLiked(false)
   }, [review])
 
-  const isImported = current.source === 'goodreads'
+  const isImported = current.source === 'imported'
   const displayName = current.reviewer_name || (current.source === 'user' ? 'You' : (current.book?.title ? current.book.title.charAt(0).toUpperCase() : 'R'))
   const initial = displayName.charAt(0).toUpperCase()
 

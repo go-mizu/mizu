@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/go-mizu/mizu/blueprints/book/pkg/goodreads"
-	"github.com/go-mizu/mizu/blueprints/book/store/sqlite"
+	"github.com/go-mizu/mizu/blueprints/book/store/factory"
 	"github.com/go-mizu/mizu/blueprints/book/types"
 	"github.com/spf13/cobra"
 )
@@ -26,7 +26,7 @@ Accepts:
 				return fmt.Errorf("invalid Goodreads URL or ID: %s", args[0])
 			}
 
-			store, err := sqlite.New(GetDatabasePath())
+			store, err := factory.Open(ctx, GetDatabasePath())
 			if err != nil {
 				return err
 			}

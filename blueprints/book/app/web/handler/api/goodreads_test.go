@@ -7,7 +7,7 @@ import (
 	"github.com/go-mizu/mizu/blueprints/book/pkg/goodreads"
 )
 
-func TestParseGoodreadsDate(t *testing.T) {
+func TestParseSourceDate(t *testing.T) {
 	tests := []struct {
 		in   string
 		want string
@@ -21,7 +21,7 @@ func TestParseGoodreadsDate(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		got := parseGoodreadsDate(tc.in)
+		got := parseSourceDate(tc.in)
 		if tc.want == "" {
 			if got != nil {
 				t.Fatalf("expected nil for %q, got %v", tc.in, got)
@@ -76,7 +76,7 @@ func TestGoodreadsToBookMapsExpandedFields(t *testing.T) {
 	}
 }
 
-func TestMergeGoodreadsDataPreservesExistingAndAddsExpandedFields(t *testing.T) {
+func TestMergeSourceDataPreservesExistingAndAddsExpandedFields(t *testing.T) {
 	now := time.Now()
 	dst := goodreadsToBook(&goodreads.GoodreadsBook{
 		GoodreadsID:   "1",
@@ -102,7 +102,7 @@ func TestMergeGoodreadsDataPreservesExistingAndAddsExpandedFields(t *testing.T) 
 		RatingsCount:    2000,
 	}
 
-	mergeGoodreadsData(&dst, src)
+	mergeSourceData(&dst, src)
 	if dst.Description != "existing-desc" {
 		t.Fatalf("expected existing description preserved, got %q", dst.Description)
 	}

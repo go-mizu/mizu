@@ -46,9 +46,17 @@ func (h *ReviewHandler) GetByBook(c *mizu.Ctx) error {
 		HasText:         hasText,
 		IncludeSpoilers: includeSpoilers,
 	}
+	if query.Source == "goodreads" {
+		query.Source = "imported"
+	}
 	reviews, total, err := h.st.Review().GetByBookFiltered(c.Context(), bookID, query)
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	for i := range reviews {
+		if reviews[i].Source == "goodreads" {
+			reviews[i].Source = "imported"
+		}
 	}
 	return c.JSON(200, map[string]any{
 		"reviews": reviews,

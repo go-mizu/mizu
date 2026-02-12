@@ -28,7 +28,7 @@ func NewServer(st store.Store, devMode bool) (http.Handler, error) {
 	statsHandler := api.NewStatsHandler(st)
 	importHandler := api.NewImportExportHandler(st)
 	feedHandler := api.NewFeedHandler(st)
-	goodreadsHandler := api.NewGoodreadsHandler(st)
+	sourceHandler := api.NewSourceHandler(st)
 
 	// Health check
 	app.Get("/health", func(c *mizu.Ctx) error {
@@ -38,6 +38,7 @@ func NewServer(st store.Store, devMode bool) (http.Handler, error) {
 	// API routes
 	app.Group("/api", func(r *mizu.Router) {
 		// Books
+		r.Get("/books", bookHandler.Search)
 		r.Get("/books/search", bookHandler.Search)
 		r.Get("/books/trending", bookHandler.Trending)
 		r.Get("/books/{id}", bookHandler.Get)
@@ -102,13 +103,13 @@ func NewServer(st store.Store, devMode bool) (http.Handler, error) {
 		r.Post("/import/csv", importHandler.ImportCSV)
 		r.Get("/export/csv", importHandler.ExportCSV)
 
-		// Goodreads
-		r.Get("/goodreads/{id}", goodreadsHandler.GetByGoodreadsID)
-		r.Post("/books/{id}/enrich", goodreadsHandler.EnrichBook)
-		r.Post("/import-goodreads", goodreadsHandler.ImportFromURL)
-		r.Get("/goodreads/author/{id}", goodreadsHandler.ImportAuthor)
-		r.Post("/import-goodreads-list", goodreadsHandler.ImportList)
-		r.Get("/goodreads/lists", goodreadsHandler.BrowseLists)
+		// External source sync
+		r.Get("/source/{id}", sourceHandler.GetBySourceID)
+		r.Post("/books/{id}/enrich", sourceHandler.EnrichBook)
+		r.Post("/import-source", sourceHandler.ImportFromURL)
+		r.Get("/source/author/{id}", sourceHandler.ImportAuthor)
+		r.Post("/import-source-list", sourceHandler.ImportList)
+		r.Get("/source/lists", sourceHandler.BrowseLists)
 
 		// Feed
 		r.Get("/feed", feedHandler.Recent)

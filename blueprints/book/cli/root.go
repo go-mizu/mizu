@@ -42,11 +42,11 @@ Get started:
 
 	home, _ := os.UserHomeDir()
 	dataDir = filepath.Join(home, "data", "blueprints", "book")
-	databasePath = filepath.Join(dataDir, "book.db")
+	databasePath = filepath.Join(dataDir, "book.duckdb")
 
 	root.Version = Version
 	root.PersistentFlags().StringVar(&dataDir, "data", dataDir, "Data directory")
-	root.PersistentFlags().StringVar(&databasePath, "database", databasePath, "SQLite database path")
+	root.PersistentFlags().StringVar(&databasePath, "database", databasePath, "Database path")
 
 	root.AddCommand(NewServe())
 	root.AddCommand(NewInit())

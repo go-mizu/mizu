@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/book/app/web"
-	"github.com/go-mizu/mizu/blueprints/book/store/sqlite"
+	"github.com/go-mizu/mizu/blueprints/book/store/factory"
 	"github.com/spf13/cobra"
 )
 
@@ -34,8 +34,8 @@ func NewServe() *cobra.Command {
 func runServe(ctx context.Context, port int, devMode bool) error {
 	fmt.Println(Banner())
 
-	fmt.Println(infoStyle.Render("Opening SQLite database..."))
-	store, err := sqlite.New(GetDatabasePath())
+	fmt.Println(infoStyle.Render("Opening database..."))
+	store, err := factory.Open(ctx, GetDatabasePath())
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}

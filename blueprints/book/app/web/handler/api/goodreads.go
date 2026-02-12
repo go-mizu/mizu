@@ -17,12 +17,12 @@ type GoodreadsHandler struct {
 	gr *goodreads.Client
 }
 
-func NewGoodreadsHandler(st store.Store) *GoodreadsHandler {
+func NewSourceHandler(st store.Store) *GoodreadsHandler {
 	return &GoodreadsHandler{st: st, gr: goodreads.NewClient()}
 }
 
-// GetByGoodreadsID fetches a book from Goodreads by its ID, imports it, and returns it.
-func (h *GoodreadsHandler) GetByGoodreadsID(c *mizu.Ctx) error {
+// GetBySourceID fetches a book from the external source by ID, imports it, and returns it.
+func (h *GoodreadsHandler) GetBySourceID(c *mizu.Ctx) error {
 	rawID := c.Param("id")
 	grID := goodreads.ParseGoodreadsURL(rawID)
 
@@ -31,7 +31,7 @@ func (h *GoodreadsHandler) GetByGoodreadsID(c *mizu.Ctx) error {
 		return c.JSON(200, existing)
 	}
 
-	// Fetch from Goodreads
+	// Fetch from source
 	grBook, err := h.gr.GetBook(c.Context(), grID)
 	if err != nil {
 		return c.JSON(502, map[string]string{"error": err.Error()})
@@ -42,9 +42,9 @@ func (h *GoodreadsHandler) GetByGoodreadsID(c *mizu.Ctx) error {
 	// Check by ISBN too
 	if book.ISBN13 != "" {
 		if existing, _ := h.st.Book().GetByISBN(c.Context(), book.ISBN13); existing != nil {
-			mergeGoodreadsData(existing, grBook)
+			mergeSourceData(existing, grBook)
 			h.st.Book().Update(c.Context(), existing)
-			h.importGoodreadsContent(c, existing.ID, grBook)
+			h.importSourceContent(c, existing.ID, grBook)
 			return c.JSON(200, existing)
 		}
 	}
@@ -53,11 +53,11 @@ func (h *GoodreadsHandler) GetByGoodreadsID(c *mizu.Ctx) error {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 
-	h.importGoodreadsContent(c, book.ID, grBook)
+	h.importSourceContent(c, book.ID, grBook)
 	return c.JSON(200, book)
 }
 
-// ImportFromURL imports a book from a Goodreads URL.
+// ImportFromURL imports a book from a source URL.
 func (h *GoodreadsHandler) ImportFromURL(c *mizu.Ctx) error {
 	var req struct {
 		URL string `json:"url"`
@@ -68,7 +68,7 @@ func (h *GoodreadsHandler) ImportFromURL(c *mizu.Ctx) error {
 
 	grID := goodreads.ParseGoodreadsURL(req.URL)
 	if grID == "" {
-		return c.JSON(400, map[string]string{"error": "invalid Goodreads URL"})
+		return c.JSON(400, map[string]string{"error": "invalid source URL"})
 	}
 
 	// Check if already imported
@@ -86,16 +86,16 @@ func (h *GoodreadsHandler) ImportFromURL(c *mizu.Ctx) error {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 
-	h.importGoodreadsContent(c, book.ID, grBook)
+	h.importSourceContent(c, book.ID, grBook)
 	return c.JSON(201, book)
 }
 
-// ImportAuthor fetches an author from Goodreads and imports them.
+// ImportAuthor fetches an author from source and imports them.
 func (h *GoodreadsHandler) ImportAuthor(c *mizu.Ctx) error {
 	rawID := c.Param("id")
 	grID := goodreads.ParseGoodreadsAuthorURL(rawID)
 	if grID == "" {
-		return c.JSON(400, map[string]string{"error": "invalid Goodreads author ID"})
+		return c.JSON(400, map[string]string{"error": "invalid source author ID"})
 	}
 
 	// Check if already imported
@@ -116,7 +116,7 @@ func (h *GoodreadsHandler) ImportAuthor(c *mizu.Ctx) error {
 	return c.JSON(200, author)
 }
 
-// ImportList fetches a Goodreads list by URL and imports it.
+// ImportList fetches a source list by URL and imports it.
 func (h *GoodreadsHandler) ImportList(c *mizu.Ctx) error {
 	var req struct {
 		URL string `json:"url"`
@@ -181,7 +181,7 @@ func (h *GoodreadsHandler) ImportList(c *mizu.Ctx) error {
 	return c.JSON(201, list)
 }
 
-// EnrichBook enriches an existing book with Goodreads data (reviews, quotes, metadata).
+// EnrichBook enriches an existing book with source data (reviews, quotes, metadata).
 func (h *GoodreadsHandler) EnrichBook(c *mizu.Ctx) error {
 	rawID := c.Param("id")
 	var bookID int64
@@ -194,7 +194,7 @@ func (h *GoodreadsHandler) EnrichBook(c *mizu.Ctx) error {
 		return c.JSON(404, map[string]string{"error": "book not found"})
 	}
 
-	// Find on Goodreads: by goodreads_id, ISBN, or title search
+	// Find on source: by source id, ISBN, or title search
 	var grID string
 	if book.GoodreadsID != "" {
 		grID = book.GoodreadsID
@@ -209,7 +209,7 @@ func (h *GoodreadsHandler) EnrichBook(c *mizu.Ctx) error {
 		}
 	}
 	if grID == "" {
-		return c.JSON(404, map[string]string{"error": "book not found on Goodreads"})
+		return c.JSON(404, map[string]string{"error": "book not found on source"})
 	}
 
 	grBook, err := h.gr.GetBook(c.Context(), grID)
@@ -218,16 +218,16 @@ func (h *GoodreadsHandler) EnrichBook(c *mizu.Ctx) error {
 	}
 
 	// Update book metadata
-	mergeGoodreadsData(book, grBook)
+	mergeSourceData(book, grBook)
 	h.st.Book().Update(c.Context(), book)
 
 	// Import reviews and quotes
-	h.importGoodreadsContent(c, book.ID, grBook)
+	h.importSourceContent(c, book.ID, grBook)
 
 	return c.JSON(200, book)
 }
 
-// BrowseLists fetches popular lists from Goodreads.
+// BrowseLists fetches popular lists from source.
 func (h *GoodreadsHandler) BrowseLists(c *mizu.Ctx) error {
 	tag := strings.TrimSpace(c.Query("tag"))
 	lists, err := h.gr.GetPopularLists(c.Context(), tag)
@@ -240,8 +240,8 @@ func (h *GoodreadsHandler) BrowseLists(c *mizu.Ctx) error {
 	return c.JSON(200, lists)
 }
 
-// importGoodreadsContent imports reviews and quotes from a scraped Goodreads book.
-func (h *GoodreadsHandler) importGoodreadsContent(c *mizu.Ctx, bookID int64, gr *goodreads.GoodreadsBook) {
+// importSourceContent imports reviews and quotes from a scraped source book.
+func (h *GoodreadsHandler) importSourceContent(c *mizu.Ctx, bookID int64, gr *goodreads.GoodreadsBook) {
 	// Import reviews
 	for _, r := range gr.Reviews {
 		review := types.Review{
@@ -251,9 +251,9 @@ func (h *GoodreadsHandler) importGoodreadsContent(c *mizu.Ctx, bookID int64, gr 
 			IsSpoiler:    r.IsSpoiler,
 			LikesCount:   r.LikesCount,
 			ReviewerName: r.ReviewerName,
-			Source:       "goodreads",
+			Source:       "imported",
 		}
-		if t := parseGoodreadsDate(r.Date); t != nil {
+		if t := parseSourceDate(r.Date); t != nil {
 			review.CreatedAt = *t
 			review.UpdatedAt = *t
 		}
@@ -272,7 +272,7 @@ func (h *GoodreadsHandler) importGoodreadsContent(c *mizu.Ctx, bookID int64, gr 
 	}
 }
 
-func parseGoodreadsDate(raw string) *time.Time {
+func parseSourceDate(raw string) *time.Time {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil
@@ -330,7 +330,7 @@ func goodreadsToBook(gr *goodreads.GoodreadsBook) types.Book {
 	}
 }
 
-func mergeGoodreadsData(book *types.Book, gr *goodreads.GoodreadsBook) {
+func mergeSourceData(book *types.Book, gr *goodreads.GoodreadsBook) {
 	book.GoodreadsID = gr.GoodreadsID
 	if book.GoodreadsURL == "" {
 		book.GoodreadsURL = gr.URL

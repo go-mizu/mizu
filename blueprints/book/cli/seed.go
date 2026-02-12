@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/go-mizu/mizu/blueprints/book/pkg/openlibrary"
-	"github.com/go-mizu/mizu/blueprints/book/store/sqlite"
+	"github.com/go-mizu/mizu/blueprints/book/store/factory"
 	"github.com/spf13/cobra"
 )
 
@@ -16,7 +16,7 @@ func NewSeed() *cobra.Command {
 			fmt.Println(Banner())
 			ctx := cmd.Context()
 
-			store, err := sqlite.New(GetDatabasePath())
+			store, err := factory.Open(ctx, GetDatabasePath())
 			if err != nil {
 				return err
 			}

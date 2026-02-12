@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-mizu/mizu/blueprints/book/store/sqlite"
+	"github.com/go-mizu/mizu/blueprints/book/store/factory"
 	"github.com/spf13/cobra"
 )
 
@@ -15,7 +15,7 @@ func NewStats() *cobra.Command {
 		Short: "Show reading statistics",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			store, err := sqlite.New(GetDatabasePath())
+			store, err := factory.Open(ctx, GetDatabasePath())
 			if err != nil {
 				return err
 			}

@@ -4,11 +4,13 @@ import (
 	"encoding/csv"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/go-mizu/mizu/blueprints/book/store/sqlite"
+	"github.com/go-mizu/mizu/blueprints/book/pkg/openlibrarydump"
+	"github.com/go-mizu/mizu/blueprints/book/store/factory"
 	"github.com/go-mizu/mizu/blueprints/book/types"
 	"github.com/spf13/cobra"
 )
@@ -19,7 +21,56 @@ func NewImportExport() *cobra.Command {
 		Short: "Import/export books",
 	}
 	cmd.AddCommand(newImportCSV())
+	cmd.AddCommand(newImportOpenLibrary())
 	cmd.AddCommand(newExportCSV())
+	return cmd
+}
+
+func newImportOpenLibrary() *cobra.Command {
+	var (
+		dir          string
+		authorsPath  string
+		worksPath    string
+		editionsPath string
+		limitWorks   int
+		replaceBooks bool
+	)
+
+	home, _ := os.UserHomeDir()
+	defaultDir := filepath.Join(home, "data", "openlibrary")
+
+	cmd := &cobra.Command{
+		Use:   "openlibrary",
+		Short: "Import Open Library dumps into DuckDB",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			stats, err := openlibrarydump.ImportToDuckDB(ctx, GetDatabasePath(), openlibrarydump.Options{
+				Dir:          dir,
+				AuthorsPath:  authorsPath,
+				WorksPath:    worksPath,
+				EditionsPath: editionsPath,
+				LimitWorks:   limitWorks,
+				ReplaceBooks: replaceBooks,
+			})
+			if err != nil {
+				return err
+			}
+
+			fmt.Println(successStyle.Render("Open Library import complete"))
+			fmt.Printf("  Works staged:     %d\n", stats.WorksStaged)
+			fmt.Printf("  Authors staged:   %d\n", stats.AuthorsStaged)
+			fmt.Printf("  Editions matched: %d\n", stats.EditionsStaged)
+			fmt.Printf("  Books available:  %d\n", stats.BooksInserted)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&dir, "dir", defaultDir, "Directory containing Open Library dumps")
+	cmd.Flags().StringVar(&authorsPath, "authors", "", "Path to authors dump .txt.gz")
+	cmd.Flags().StringVar(&worksPath, "works", "", "Path to works dump .txt.gz")
+	cmd.Flags().StringVar(&editionsPath, "editions", "", "Path to editions dump .txt.gz")
+	cmd.Flags().IntVar(&limitWorks, "limit", 0, "Limit number of works to import (0 = no limit)")
+	cmd.Flags().BoolVar(&replaceBooks, "replace", true, "Replace existing books with same Open Library key")
 	return cmd
 }
 
@@ -30,7 +81,7 @@ func newImportCSV() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			store, err := sqlite.New(GetDatabasePath())
+			store, err := factory.Open(ctx, GetDatabasePath())
 			if err != nil {
 				return err
 			}
@@ -146,7 +197,7 @@ func newExportCSV() *cobra.Command {
 		Short: "Export library as CSV",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			store, err := sqlite.New(GetDatabasePath())
+			store, err := factory.Open(ctx, GetDatabasePath())
 			if err != nil {
 				return err
 			}

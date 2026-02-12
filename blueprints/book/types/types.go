@@ -37,9 +37,9 @@ type Book struct {
 	RatingsCount       int       `json:"ratings_count"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
-	// Goodreads fields
-	GoodreadsID      string `json:"goodreads_id,omitempty"`
-	GoodreadsURL     string `json:"goodreads_url,omitempty"`
+	// External source fields
+	GoodreadsID      string `json:"source_id,omitempty"`
+	GoodreadsURL     string `json:"source_url,omitempty"`
 	ASIN             string `json:"asin,omitempty"`
 	Series           string `json:"series,omitempty"`
 	ReviewsCount     int    `json:"reviews_count"`
@@ -64,7 +64,7 @@ type Author struct {
 	DeathDate   string    `json:"death_date,omitempty"`
 	WorksCount  int       `json:"works_count"`
 	CreatedAt   time.Time `json:"created_at"`
-	GoodreadsID string    `json:"goodreads_id,omitempty"`
+	GoodreadsID string    `json:"source_id,omitempty"`
 	Followers   int       `json:"followers,omitempty"`
 	Genres      string    `json:"genres,omitempty"`     // Comma-separated
 	Influences  string    `json:"influences,omitempty"` // Comma-separated
@@ -107,7 +107,7 @@ type Review struct {
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 	ReviewerName  string     `json:"reviewer_name,omitempty"`
-	Source        string     `json:"source,omitempty"` // "user", "goodreads"
+	Source        string     `json:"source,omitempty"` // "user", "imported"
 	Book          *Book      `json:"book,omitempty"`   // Joined
 }
 
@@ -126,7 +126,7 @@ type ReviewQuery struct {
 	Limit           int    `json:"limit"`
 	Sort            string `json:"sort"` // popular|newest|oldest|rating_desc|rating_asc
 	Rating          int    `json:"rating,omitempty"`
-	Source          string `json:"source,omitempty"` // user|goodreads
+	Source          string `json:"source,omitempty"` // user|imported
 	Query           string `json:"q,omitempty"`
 	HasText         *bool  `json:"has_text,omitempty"`
 	IncludeSpoilers bool   `json:"include_spoilers,omitempty"`
@@ -159,7 +159,7 @@ type BookList struct {
 	ItemCount    int            `json:"item_count"` // Computed
 	CreatedAt    time.Time      `json:"created_at"`
 	Items        []BookListItem `json:"items,omitempty"`
-	GoodreadsURL string         `json:"goodreads_url,omitempty"`
+	GoodreadsURL string         `json:"source_url,omitempty"`
 	VoterCount   int            `json:"voter_count,omitempty"`
 }
 

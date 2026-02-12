@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/go-mizu/mizu/blueprints/book/store/sqlite"
+	"github.com/go-mizu/mizu/blueprints/book/store/factory"
 	"github.com/go-mizu/mizu/blueprints/book/types"
 	"github.com/spf13/cobra"
 )
@@ -28,7 +28,7 @@ func newShelfList() *cobra.Command {
 		Short: "List all shelves",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			store, err := sqlite.New(GetDatabasePath())
+			store, err := factory.Open(ctx, GetDatabasePath())
 			if err != nil {
 				return err
 			}
@@ -66,7 +66,7 @@ func newShelfAdd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			store, err := sqlite.New(GetDatabasePath())
+			store, err := factory.Open(ctx, GetDatabasePath())
 			if err != nil {
 				return err
 			}
@@ -94,7 +94,7 @@ func newShelfBooks() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			store, err := sqlite.New(GetDatabasePath())
+			store, err := factory.Open(ctx, GetDatabasePath())
 			if err != nil {
 				return err
 			}
@@ -139,7 +139,7 @@ func newShelve() *cobra.Command {
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			store, err := sqlite.New(GetDatabasePath())
+			store, err := factory.Open(ctx, GetDatabasePath())
 			if err != nil {
 				return err
 			}

@@ -111,14 +111,14 @@ export const booksApi = {
   getFeed: (limit = 20) => api.get<FeedItem[]>(`/api/feed?limit=${limit}`),
 
   // External source sync
-  importSourceBook: (url: string) => api.post<Book>('/api/import-goodreads', { url }),
-  getSourceBook: (id: string) => api.get<Book>(`/api/goodreads/${id}`),
-  importSourceAuthor: (id: string) => api.get<Author>(`/api/goodreads/author/${id}`),
+  importSourceBook: (url: string) => api.post<Book>('/api/import-source', { url }),
+  getSourceBook: (id: string) => api.get<Book>(`/api/source/${id}`),
+  importSourceAuthor: (id: string) => api.get<Author>(`/api/source/author/${id}`),
   browseSourceLists: (tag?: string) => {
     const q = tag?.trim() ? `?tag=${encodeURIComponent(tag.trim())}` : ''
-    return api.get<SourceListSummary[]>(`/api/goodreads/lists${q}`)
+    return api.get<SourceListSummary[]>(`/api/source/lists${q}`)
   },
-  importSourceList: (url: string) => api.post<BookList>('/api/import-goodreads-list', { url }),
+  importSourceList: (url: string) => api.post<BookList>('/api/import-source-list', { url }),
   enrichBook: (id: number) => api.post<Book>(`/api/books/${id}/enrich`, {}),
 
   // Import/Export

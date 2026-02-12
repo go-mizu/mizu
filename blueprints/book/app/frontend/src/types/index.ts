@@ -30,8 +30,8 @@ export interface Book {
   user_shelf?: string
   created_at?: string
   updated_at?: string
-  goodreads_id?: string
-  goodreads_url?: string
+  source_id?: string
+  source_url?: string
   asin?: string
   series?: string
   reviews_count: number
@@ -50,7 +50,7 @@ export interface Author {
   birth_date?: string
   death_date?: string
   works_count: number
-  goodreads_id?: string
+  source_id?: string
   followers: number
   genres?: string
   influences?: string
@@ -99,7 +99,7 @@ export interface ReviewQuery {
   limit: number
   sort: 'popular' | 'newest' | 'oldest' | 'rating_desc' | 'rating_asc'
   rating?: number
-  source?: 'user' | 'goodreads'
+  source?: 'user' | 'imported'
   q?: string
   has_text?: boolean
   include_spoilers?: boolean
@@ -127,14 +127,14 @@ export interface BookList {
   title: string
   description?: string
   item_count: number
-  goodreads_url?: string
+  source_url?: string
   voter_count: number
   items?: BookListItem[]
   created_at?: string
 }
 
 export interface SourceListSummary {
-  goodreads_id?: string
+  source_id?: string
   title: string
   url: string
   book_count: number

@@ -227,10 +227,10 @@ export default function AuthorPage() {
             )}
 
             {/* External profile link */}
-            {author.goodreads_id && (
+            {author.source_id && (
               <div style={{ marginTop: 12, fontSize: 13 }}>
                 <a
-                  href={`https://www.goodreads.com/author/show/${author.goodreads_id}`}
+                  href={`https://www.goodreads.com/author/show/${author.source_id}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{ color: 'var(--gr-teal)', textDecoration: 'none' }}
@@ -241,7 +241,7 @@ export default function AuthorPage() {
             )}
 
             {/* Import from external source */}
-            {!author.goodreads_id && (
+            {!author.source_id && (
               <div style={{ marginTop: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
                 <input
                   type="text"

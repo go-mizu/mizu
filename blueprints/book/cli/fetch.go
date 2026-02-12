@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/go-mizu/mizu/blueprints/book/pkg/openlibrary"
-	"github.com/go-mizu/mizu/blueprints/book/store/sqlite"
+	"github.com/go-mizu/mizu/blueprints/book/store/factory"
 	"github.com/spf13/cobra"
 )
 
@@ -17,7 +17,7 @@ func NewFetch() *cobra.Command {
 			ctx := cmd.Context()
 			key := args[0]
 
-			store, err := sqlite.New(GetDatabasePath())
+			store, err := factory.Open(ctx, GetDatabasePath())
 			if err != nil {
 				return err
 			}
