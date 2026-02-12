@@ -84,6 +84,9 @@ CREATE TABLE IF NOT EXISTS shelf_books (
     book_id BIGINT NOT NULL REFERENCES books(id),
     date_added DATETIME DEFAULT CURRENT_TIMESTAMP,
     position INTEGER DEFAULT 0,
+    date_started DATETIME,
+    date_read DATETIME,
+    read_count INTEGER DEFAULT 0,
     UNIQUE(shelf_id, book_id)
 );
 
@@ -175,6 +178,15 @@ CREATE TABLE IF NOT EXISTS feed (
 );
 
 CREATE INDEX IF NOT EXISTS idx_feed_created ON feed(created_at);
+
+CREATE TABLE IF NOT EXISTS book_notes (
+    id BIGINT PRIMARY KEY DEFAULT nextval('global_id_seq'),
+    book_id BIGINT NOT NULL UNIQUE REFERENCES books(id),
+    text TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_book_notes_book ON book_notes(book_id);
 `
 
 // migration adds columns to existing databases that lack them.
@@ -219,4 +231,15 @@ CREATE TABLE IF NOT EXISTS review_comments (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_review_comments_review ON review_comments(review_id);
+CREATE TABLE IF NOT EXISTS book_notes (
+    id BIGINT PRIMARY KEY DEFAULT nextval('global_id_seq'),
+    book_id BIGINT NOT NULL UNIQUE REFERENCES books(id),
+    text TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_book_notes_book ON book_notes(book_id);
+ALTER TABLE shelf_books ADD COLUMN date_started DATETIME;
+ALTER TABLE shelf_books ADD COLUMN date_read DATETIME;
+ALTER TABLE shelf_books ADD COLUMN read_count INTEGER DEFAULT 0;
 `

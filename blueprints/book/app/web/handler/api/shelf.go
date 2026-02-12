@@ -115,3 +115,20 @@ func (h *ShelfHandler) RemoveBook(c *mizu.Ctx) error {
 	}
 	return c.JSON(200, map[string]string{"status": "removed"})
 }
+
+func (h *ShelfHandler) UpdateShelfBook(c *mizu.Ctx) error {
+	shelfID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	bookID, _ := strconv.ParseInt(c.Param("bookId"), 10, 64)
+	var body struct {
+		DateStarted *string `json:"date_started"`
+		DateRead    *string `json:"date_read"`
+		ReadCount   *int    `json:"read_count"`
+	}
+	if err := c.BindJSON(&body, 1<<20); err != nil {
+		return c.JSON(400, map[string]string{"error": "invalid JSON"})
+	}
+	if err := h.st.Shelf().UpdateShelfBook(c.Context(), shelfID, bookID, body.DateStarted, body.DateRead, body.ReadCount); err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(200, map[string]string{"status": "updated"})
+}

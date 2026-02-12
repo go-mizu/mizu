@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { BookOpen, Calendar, Hash, Globe, Building2, FileText, Quote as QuoteIcon, Users, Eye, BookMarked } from 'lucide-react'
+import { BookOpen, Calendar, Hash, Globe, Building2, FileText, Quote as QuoteIcon, Users, Eye, BookMarked, StickyNote, ChevronRight } from 'lucide-react'
 import Header from '../components/Header'
 import BookCover from '../components/BookCover'
 import ShelfButton from '../components/ShelfButton'
@@ -9,7 +9,7 @@ import ReviewCard from '../components/ReviewCard'
 import BookGrid from '../components/BookGrid'
 import { booksApi } from '../api/books'
 import { useBookStore } from '../stores/bookStore'
-import type { Book, Review, Quote, ReadingProgress, ReviewQuery, Shelf } from '../types'
+import type { Book, Author, Review, Quote, ReadingProgress, ReviewQuery, Shelf, BookNote } from '../types'
 
 function RatingDistribution({ book }: { book: Book }) {
   const dist = book.rating_dist || [0, 0, 0, 0, 0]
@@ -146,9 +146,15 @@ export default function BookDetailPage() {
   const [similar, setSimilar] = useState<Book[]>([])
   const [quotes, setQuotes] = useState<Quote[]>([])
   const [progress, setProgress] = useState<ReadingProgress[]>([])
+  const [authorInfo, setAuthorInfo] = useState<Author | null>(null)
+  const [authorBooks, setAuthorBooks] = useState<Book[]>([])
+  const [note, setNote] = useState<BookNote | null>(null)
+  const [noteText, setNoteText] = useState('')
+  const [noteEditing, setNoteEditing] = useState(false)
+  const [noteSaving, setNoteSaving] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'reviews' | 'similar' | 'quotes'>('reviews')
+  const [activeTab, setActiveTab] = useState<'reviews' | 'quotes'>('reviews')
   const [showReviewForm, setShowReviewForm] = useState(false)
   const [reviewText, setReviewText] = useState('')
   const [reviewRating, setReviewRating] = useState(0)
@@ -224,9 +230,29 @@ export default function BookDetailPage() {
         addRecentBook(bookData)
         setCurrentBook(bookData)
 
-        // Fetch quotes and progress separately (non-blocking)
+        // Fetch quotes, progress, notes, and author info (non-blocking)
         booksApi.getBookQuotes(bookId).then(setQuotes).catch(() => {})
         booksApi.getProgress(bookId).then(setProgress).catch(() => {})
+        booksApi.getNote(bookId).then((n) => { setNote(n); setNoteText(n?.text || '') }).catch(() => {})
+
+        // Load author info and their other books
+        if (bookData.authors && bookData.authors.length > 0 && bookData.authors[0].id) {
+          const firstAuthor = bookData.authors[0]
+          booksApi.getAuthor(firstAuthor.id).then(setAuthorInfo).catch(() => {})
+          booksApi.getAuthorBooks(firstAuthor.id).then((books) => {
+            setAuthorBooks(books.filter((b: Book) => b.id !== bookId).slice(0, 8))
+          }).catch(() => {})
+        } else if (bookData.author_names) {
+          // Try to find author by searching
+          booksApi.searchAuthors(bookData.author_names.split(',')[0].trim()).then((authors) => {
+            if (authors && authors.length > 0) {
+              setAuthorInfo(authors[0])
+              booksApi.getAuthorBooks(authors[0].id).then((books) => {
+                setAuthorBooks(books.filter((b: Book) => b.id !== bookId).slice(0, 8))
+              }).catch(() => {})
+            }
+          }).catch(() => {})
+        }
 
         // Auto-enrich from external source if no community reviews
         if (reviewsData.length === 0) {
@@ -321,6 +347,25 @@ export default function BookDetailPage() {
       // Handle error silently
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleSaveNote = async () => {
+    if (!book) return
+    setNoteSaving(true)
+    try {
+      if (noteText.trim()) {
+        const saved = await booksApi.saveNote(book.id, noteText.trim())
+        setNote(saved)
+      } else if (note?.id) {
+        await booksApi.deleteNote(book.id)
+        setNote(null)
+      }
+      setNoteEditing(false)
+    } catch {
+      // Handle error silently
+    } finally {
+      setNoteSaving(false)
     }
   }
 
@@ -506,9 +551,15 @@ export default function BookDetailPage() {
 
             <p className="book-author" style={{ fontSize: 16, marginBottom: 12 }}>
               by{' '}
-              <span style={{ color: 'var(--gr-text)' }}>
-                {book.author_names}
-              </span>
+              {authorInfo ? (
+                <Link to={`/author/${authorInfo.id}`} style={{ color: 'var(--gr-teal)', textDecoration: 'none', fontWeight: 600 }}>
+                  {book.author_names}
+                </Link>
+              ) : (
+                <span style={{ color: 'var(--gr-text)' }}>
+                  {book.author_names}
+                </span>
+              )}
             </p>
 
             {/* Average rating */}
@@ -685,19 +736,169 @@ export default function BookDetailPage() {
           </div>
         </div>
 
-        {/* Tabs: Reviews / Similar / Quotes */}
+        {/* Private Notes */}
+        <div style={{
+          padding: 16,
+          background: 'var(--gr-cream)',
+          borderRadius: 8,
+          marginBottom: 24,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: noteEditing ? 12 : 0 }}>
+            <h3 style={{
+              fontFamily: "'Merriweather', Georgia, serif",
+              fontSize: 14,
+              fontWeight: 700,
+              color: 'var(--gr-brown)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              margin: 0,
+            }}>
+              <StickyNote size={14} />
+              Private Notes
+            </h3>
+            {!noteEditing && (
+              <button
+                className="link-button"
+                onClick={() => setNoteEditing(true)}
+                style={{ fontSize: 13 }}
+              >
+                {note?.text ? 'Edit' : 'Add note'}
+              </button>
+            )}
+          </div>
+          {!noteEditing && note?.text && (
+            <p style={{ fontSize: 14, color: 'var(--gr-text)', lineHeight: 1.6, margin: '8px 0 0' }}>
+              {note.text}
+            </p>
+          )}
+          {noteEditing && (
+            <div>
+              <textarea
+                className="form-input"
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value)}
+                placeholder="Add your private notes about this book..."
+                rows={3}
+                style={{ marginBottom: 8, fontSize: 14 }}
+              />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-primary btn-sm" onClick={handleSaveNote} disabled={noteSaving}>
+                  {noteSaving ? 'Saving...' : 'Save'}
+                </button>
+                <button className="btn btn-secondary btn-sm" onClick={() => { setNoteEditing(false); setNoteText(note?.text || '') }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* About the Author */}
+        {authorInfo && (
+          <div style={{
+            padding: 20,
+            background: 'var(--gr-cream)',
+            borderRadius: 8,
+            marginBottom: 24,
+          }}>
+            <h3 style={{
+              fontFamily: "'Merriweather', Georgia, serif",
+              fontSize: 14,
+              fontWeight: 700,
+              color: 'var(--gr-brown)',
+              marginBottom: 12,
+            }}>
+              About the author
+            </h3>
+            <div style={{ display: 'flex', gap: 16 }}>
+              <Link to={`/author/${authorInfo.id}`} style={{ flexShrink: 0 }}>
+                {authorInfo.photo_url ? (
+                  <img
+                    src={authorInfo.photo_url}
+                    alt={authorInfo.name}
+                    style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover' }}
+                  />
+                ) : (
+                  <div style={{
+                    width: 64, height: 64, borderRadius: '50%',
+                    background: 'var(--gr-teal)', color: 'white',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 24, fontWeight: 700,
+                  }}>
+                    {authorInfo.name.charAt(0)}
+                  </div>
+                )}
+              </Link>
+              <div style={{ flex: 1 }}>
+                <Link to={`/author/${authorInfo.id}`} style={{ fontWeight: 700, color: 'var(--gr-text)', textDecoration: 'none', fontSize: 15 }}>
+                  {authorInfo.name}
+                </Link>
+                <div style={{ fontSize: 13, color: 'var(--gr-light)', marginTop: 2 }}>
+                  {authorInfo.works_count > 0 && <span>{authorInfo.works_count} books</span>}
+                  {authorInfo.followers > 0 && <span> &middot; {authorInfo.followers.toLocaleString()} followers</span>}
+                </div>
+                {authorInfo.bio && (
+                  <p style={{ fontSize: 13, color: 'var(--gr-text)', lineHeight: 1.6, margin: '8px 0 0' }}>
+                    {authorInfo.bio.length > 200 ? authorInfo.bio.slice(0, 200) + '...' : authorInfo.bio}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* More by this author */}
+        {authorBooks.length > 0 && (
+          <section style={{ marginBottom: 32 }}>
+            <div className="section-header">
+              <span className="section-title" style={{ fontSize: 14, fontFamily: "'Merriweather', Georgia, serif" }}>
+                More by {authorInfo?.name || book.author_names}
+              </span>
+              {authorInfo && (
+                <Link to={`/author/${authorInfo.id}`} className="section-link" style={{ fontSize: 13 }}>
+                  View all <ChevronRight size={14} />
+                </Link>
+              )}
+            </div>
+            <div className="book-scroll">
+              {authorBooks.map((ab) => (
+                <Link key={ab.id} to={`/book/${ab.id}`} className="book-scroll-item">
+                  <BookCover book={ab} />
+                  <div className="book-scroll-title">{ab.title}</div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Readers Also Enjoyed */}
+        {similar.length > 0 && (
+          <section style={{ marginBottom: 32 }}>
+            <div className="section-header">
+              <span className="section-title" style={{ fontSize: 14, fontFamily: "'Merriweather', Georgia, serif" }}>
+                Readers also enjoyed
+              </span>
+            </div>
+            <div className="book-scroll">
+              {similar.map((sb) => (
+                <Link key={sb.id} to={`/book/${sb.id}`} className="book-scroll-item">
+                  <BookCover book={sb} />
+                  <div className="book-scroll-title">{sb.title}</div>
+                  <div className="book-scroll-author">{sb.author_names}</div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Tabs: Reviews / Quotes */}
         <div className="tabs">
           <button
             className={`tab ${activeTab === 'reviews' ? 'active' : ''}`}
             onClick={() => setActiveTab('reviews')}
           >
             Community Reviews ({reviewCount})
-          </button>
-          <button
-            className={`tab ${activeTab === 'similar' ? 'active' : ''}`}
-            onClick={() => setActiveTab('similar')}
-          >
-            Similar Books ({similar.length})
           </button>
           <button
             className={`tab ${activeTab === 'quotes' ? 'active' : ''}`}
@@ -920,20 +1121,6 @@ export default function BookDetailPage() {
                 <p>Be the first to review this book!</p>
               </div>
             ) : null}
-          </div>
-        )}
-
-        {/* Similar Books Tab */}
-        {activeTab === 'similar' && (
-          <div>
-            {similar.length > 0 ? (
-              <BookGrid books={similar} />
-            ) : (
-              <div className="empty-state">
-                <h3>No similar books found</h3>
-                <p>Check back later for recommendations.</p>
-              </div>
-            )}
           </div>
         )}
 

@@ -69,6 +69,18 @@ export interface Shelf {
   created_at?: string
 }
 
+export interface ShelfBook {
+  id: number
+  shelf_id: number
+  book_id: number
+  date_added: string
+  position: number
+  date_started?: string
+  date_read?: string
+  read_count: number
+  book?: Book
+}
+
 export interface Review {
   id: number
   book_id: number
@@ -195,4 +207,12 @@ export interface Genre {
   name: string
   slug: string
   book_count: number
+}
+
+export interface BookNote {
+  id: number
+  book_id: number
+  text: string
+  created_at?: string
+  updated_at?: string
 }

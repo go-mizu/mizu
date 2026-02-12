@@ -28,6 +28,7 @@ func NewServer(st store.Store, devMode bool) (http.Handler, error) {
 	statsHandler := api.NewStatsHandler(st)
 	importHandler := api.NewImportExportHandler(st)
 	feedHandler := api.NewFeedHandler(st)
+	noteHandler := api.NewNoteHandler(st)
 	sourceHandler := api.NewSourceHandler(st)
 
 	// Health check
@@ -58,6 +59,7 @@ func NewServer(st store.Store, devMode bool) (http.Handler, error) {
 		r.Get("/shelves/{id}/books", shelfHandler.GetBooks)
 		r.Post("/shelves/{id}/books", shelfHandler.AddBook)
 		r.Delete("/shelves/{id}/books/{bookId}", shelfHandler.RemoveBook)
+		r.Put("/shelves/{id}/books/{bookId}", shelfHandler.UpdateShelfBook)
 
 		// Reviews
 		r.Get("/books/{id}/reviews", reviewHandler.GetByBook)
@@ -110,6 +112,11 @@ func NewServer(st store.Store, devMode bool) (http.Handler, error) {
 		r.Get("/source/author/{id}", sourceHandler.ImportAuthor)
 		r.Post("/import-source-list", sourceHandler.ImportList)
 		r.Get("/source/lists", sourceHandler.BrowseLists)
+
+		// Notes
+		r.Get("/books/{id}/notes", noteHandler.Get)
+		r.Post("/books/{id}/notes", noteHandler.Upsert)
+		r.Delete("/books/{id}/notes", noteHandler.Delete)
 
 		// Feed
 		r.Get("/feed", feedHandler.Recent)

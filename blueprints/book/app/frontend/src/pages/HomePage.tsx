@@ -1,11 +1,16 @@
 import { useState, useEffect, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Search, TrendingUp, BookOpen, Target } from 'lucide-react'
+import { Search, TrendingUp, BookOpen, Target, Eye } from 'lucide-react'
 import Header from '../components/Header'
 import BookCover from '../components/BookCover'
 import FeedItem from '../components/FeedItem'
 import { booksApi } from '../api/books'
-import type { Book, FeedItem as FeedItemType, ReadingChallenge } from '../types'
+import type { Book, Shelf, FeedItem as FeedItemType, ReadingChallenge, ReadingProgress } from '../types'
+
+interface CurrentlyReadingBook {
+  book: Book
+  progress?: ReadingProgress
+}
 
 export default function HomePage() {
   const navigate = useNavigate()
@@ -13,6 +18,7 @@ export default function HomePage() {
   const [trending, setTrending] = useState<Book[]>([])
   const [feed, setFeed] = useState<FeedItemType[]>([])
   const [challenge, setChallenge] = useState<ReadingChallenge | null>(null)
+  const [currentlyReading, setCurrentlyReading] = useState<CurrentlyReadingBook[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -21,12 +27,30 @@ export default function HomePage() {
       setLoading(true)
       setError(null)
       try {
-        const [trendingData, feedData] = await Promise.all([
+        const [trendingData, feedData, shelvesData] = await Promise.all([
           booksApi.getTrending(12),
           booksApi.getFeed(10),
+          booksApi.getShelves(),
         ])
         setTrending(trendingData)
         setFeed(feedData)
+
+        // Load currently reading books
+        const crShelf = shelvesData.find((s: Shelf) => s.slug === 'currently-reading')
+        if (crShelf && crShelf.book_count > 0) {
+          const crBooks = await booksApi.getShelfBooks(crShelf.id, 1, 10)
+          const withProgress: CurrentlyReadingBook[] = await Promise.all(
+            (crBooks.books || []).map(async (book: Book) => {
+              try {
+                const progressList = await booksApi.getProgress(book.id)
+                return { book, progress: progressList?.[0] }
+              } catch {
+                return { book }
+              }
+            })
+          )
+          setCurrentlyReading(withProgress)
+        }
 
         try {
           const challengeData = await booksApi.getChallenge()
@@ -106,6 +130,75 @@ export default function HomePage() {
             </button>
           </form>
         </section>
+
+        {currentlyReading.length > 0 && (
+          <section className="page-section">
+            <div className="section-header">
+              <span className="section-title section-title-with-icon">
+                <Eye size={18} />
+                Currently Reading
+              </span>
+              <Link to="/my-books" className="section-link">
+                My Books
+              </Link>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+              {currentlyReading.map(({ book, progress }) => (
+                <Link
+                  key={book.id}
+                  to={`/book/${book.id}`}
+                  style={{
+                    display: 'flex',
+                    gap: 12,
+                    padding: 12,
+                    background: 'var(--gr-cream)',
+                    borderRadius: 8,
+                    textDecoration: 'none',
+                    color: 'inherit',
+                    transition: 'box-shadow 0.2s',
+                  }}
+                >
+                  <div style={{ flexShrink: 0, width: 50 }}>
+                    <BookCover book={book} size="sm" />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontFamily: "'Merriweather', Georgia, serif",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: 'var(--gr-brown)',
+                      marginBottom: 2,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {book.title}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--gr-light)', marginBottom: 8 }}>
+                      {book.author_names}
+                    </div>
+                    {progress && (
+                      <div>
+                        <div className="progress-bar" style={{ height: 5, marginBottom: 4 }}>
+                          <div className="progress-fill" style={{ width: `${Math.min(100, progress.percent)}%` }} />
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--gr-light)' }}>
+                          {Math.round(progress.percent)}% done
+                          {book.page_count > 0 && ` (p. ${progress.page}/${book.page_count})`}
+                        </div>
+                      </div>
+                    )}
+                    {!progress && book.page_count > 0 && (
+                      <div style={{ fontSize: 11, color: 'var(--gr-light)' }}>
+                        {book.page_count} pages
+                      </div>
+                    )}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
 
         {trending.length > 0 && (
           <section className="page-section">

@@ -1,8 +1,9 @@
 import { api } from './client'
 import type {
-  Book, Author, Shelf, Review, ReadingProgress,
+  Book, Author, Shelf, ShelfBook, Review, ReadingProgress,
   ReadingChallenge, BookList, Quote, FeedItem,
   ReadingStats, SearchResult, Genre, SourceListSummary, ReviewQuery, ReviewComment,
+  BookNote,
 } from '../types'
 
 export const booksApi = {
@@ -35,13 +36,22 @@ export const booksApi = {
   updateShelf: (id: number, shelf: Partial<Shelf>) => api.put<Shelf>(`/api/shelves/${id}`, shelf),
   deleteShelf: (id: number) => api.del<void>(`/api/shelves/${id}`),
   getShelfBooks: async (id: number, page = 1, limit = 20) => {
-    const data = await api.get<{ books: Book[]; total: number; page: number }>(`/api/shelves/${id}/books?page=${page}&limit=${limit}`)
-    return { books: data.books || [], total_count: data.total, page: data.page, page_size: limit } as SearchResult
+    const data = await api.get<{ books: ShelfBook[]; total: number; page: number }>(`/api/shelves/${id}/books?page=${page}&limit=${limit}`)
+    const shelfBooks = data.books || []
+    return {
+      books: shelfBooks.map(sb => sb.book!),
+      shelfBooks,
+      total_count: data.total,
+      page: data.page,
+      page_size: limit,
+    }
   },
   addToShelf: (shelfId: number, bookId: number) =>
     api.post<void>(`/api/shelves/${shelfId}/books`, { book_id: bookId }),
   removeFromShelf: (shelfId: number, bookId: number) =>
     api.del<void>(`/api/shelves/${shelfId}/books/${bookId}`),
+  updateShelfBook: (shelfId: number, bookId: number, data: { date_started?: string; date_read?: string; read_count?: number }) =>
+    api.put<void>(`/api/shelves/${shelfId}/books/${bookId}`, data),
 
   // Reviews
   getReviews: async (bookId: number, query?: Partial<ReviewQuery>) => {
@@ -144,6 +154,16 @@ export const booksApi = {
   },
   importSourceList: (url: string) => api.post<BookList>('/api/import-source-list', { url }),
   enrichBook: (id: number) => api.post<Book>(`/api/books/${id}/enrich`, {}),
+
+  // Notes
+  getNote: async (bookId: number) => {
+    const data = await api.get<BookNote>(`/api/books/${bookId}/notes`)
+    return data
+  },
+  saveNote: (bookId: number, text: string) =>
+    api.post<BookNote>(`/api/books/${bookId}/notes`, { text }),
+  deleteNote: (bookId: number) =>
+    api.del<void>(`/api/books/${bookId}/notes`),
 
   // Import/Export
   importCSV: (file: File) => {

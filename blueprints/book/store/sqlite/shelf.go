@@ -152,10 +152,13 @@ func (s *ShelfStore) GetBooks(ctx context.Context, shelfID int64, sort string, p
 		orderBy = "sb.date_added DESC"
 	case "position":
 		orderBy = "sb.position ASC"
+	case "date_read":
+		orderBy = "CASE WHEN sb.date_read IS NULL THEN 1 ELSE 0 END, sb.date_read DESC"
 	}
 
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT sb.id, sb.shelf_id, sb.book_id, sb.date_added, sb.position,
+			sb.date_started, sb.date_read, sb.read_count,
 			%s
 		FROM shelf_books sb
 		JOIN books b ON b.id = sb.book_id
@@ -171,7 +174,8 @@ func (s *ShelfStore) GetBooks(ctx context.Context, shelfID int64, sort string, p
 	for rows.Next() {
 		var sb types.ShelfBook
 		var b types.Book
-		fields := append([]any{&sb.ID, &sb.ShelfID, &sb.BookID, &sb.DateAdded, &sb.Position}, scanFields(&b)...)
+		fields := append([]any{&sb.ID, &sb.ShelfID, &sb.BookID, &sb.DateAdded, &sb.Position,
+			&sb.DateStarted, &sb.DateRead, &sb.ReadCount}, scanFields(&b)...)
 		err := rows.Scan(fields...)
 		if err != nil {
 			return nil, 0, fmt.Errorf("scan shelf book: %w", err)
@@ -184,6 +188,50 @@ func (s *ShelfStore) GetBooks(ctx context.Context, shelfID int64, sort string, p
 		items = []types.ShelfBook{}
 	}
 	return items, total, nil
+}
+
+func (s *ShelfStore) UpdateShelfBook(ctx context.Context, shelfID, bookID int64, dateStarted, dateRead *string, readCount *int) error {
+	sets := []string{}
+	args := []any{}
+	if dateStarted != nil {
+		if *dateStarted == "" {
+			sets = append(sets, "date_started = NULL")
+		} else {
+			sets = append(sets, "date_started = ?")
+			args = append(args, *dateStarted)
+		}
+	}
+	if dateRead != nil {
+		if *dateRead == "" {
+			sets = append(sets, "date_read = NULL")
+		} else {
+			sets = append(sets, "date_read = ?")
+			args = append(args, *dateRead)
+		}
+	}
+	if readCount != nil {
+		sets = append(sets, "read_count = ?")
+		args = append(args, *readCount)
+	}
+	if len(sets) == 0 {
+		return nil
+	}
+	query := fmt.Sprintf("UPDATE shelf_books SET %s WHERE shelf_id = ? AND book_id = ?",
+		joinStrings(sets, ", "))
+	args = append(args, shelfID, bookID)
+	_, err := s.db.ExecContext(ctx, query, args...)
+	return err
+}
+
+func joinStrings(s []string, sep string) string {
+	result := ""
+	for i, v := range s {
+		if i > 0 {
+			result += sep
+		}
+		result += v
+	}
+	return result
 }
 
 func (s *ShelfStore) GetBookShelves(ctx context.Context, bookID int64) ([]types.Shelf, error) {
