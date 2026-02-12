@@ -22,7 +22,7 @@ var (
 	reASIN           = regexp.MustCompile(`(?i)ASIN[:\s]+([A-Z0-9]{10})`)
 	reCoverImg       = regexp.MustCompile(`<img[^>]*class="[^"]*ResponsiveImage[^"]*"[^>]*src="([^"]+)"`)
 	reReviewBlock    = regexp.MustCompile(`(?s)<article[^>]*class="[^"]*ReviewCard[^"]*"[^>]*>([\s\S]*?)</article>`)
-	reReviewerName   = regexp.MustCompile(`<a[^>]*class="[^"]*ReviewerProfile[^"]*"[^>]*>[\s\S]*?<span[^>]*>([^<]+)</span>`)
+	reReviewerName   = regexp.MustCompile(`class="ReviewerProfile__name"[^>]*><a[^>]*>([^<]+)</a>`)
 	reReviewDate     = regexp.MustCompile(`<span[^>]*class="[^"]*Text__body3[^"]*"[^>]*>([A-Z][a-z]+\s+\d{1,2},?\s+\d{4})</span>`)
 	reReviewText     = regexp.MustCompile(`<span[^>]*class="[^"]*Formatted[^"]*"[^>]*>([\s\S]*?)</span>`)
 	reReviewLikes    = regexp.MustCompile(`(\d+)\s*like`)
@@ -33,6 +33,14 @@ var (
 	reRatingDist2    = regexp.MustCompile(`(?i)2\s*(?:star|Stars)\s*[^0-9]*([\d,]+)`)
 	reRatingDist1    = regexp.MustCompile(`(?i)1\s*(?:star|Stars)\s*[^0-9]*([\d,]+)`)
 	reStripTags      = regexp.MustCompile(`<[^>]*>`)
+	reWorkID         = regexp.MustCompile(`/work/(?:quotes/)?(\d+)`)
+
+	// Quote page patterns
+	reQuoteBlock     = regexp.MustCompile(`(?s)<div[^>]*class="quoteText"[^>]*>([\s\S]*?)</div>`)
+	reQuoteText      = regexp.MustCompile(`&ldquo;([\s\S]*?)&rdquo;`)
+	reQuoteAuthor    = regexp.MustCompile(`class="authorOrTitle"[^>]*>\s*([^<,]+)`)
+	reQuoteLikes     = regexp.MustCompile(`(\d+)\s*likes`)
+	reSearchBookID   = regexp.MustCompile(`/book/show/(\d+)`)
 )
 
 func parseBookPage(body string) (*GoodreadsBook, error) {
@@ -64,6 +72,9 @@ func parseBookPage(body string) (*GoodreadsBook, error) {
 
 	// 9. Parse reviews
 	parseReviews(body, book)
+
+	// 10. Extract work ID for quotes
+	book.WorkID = parseWorkID(body)
 
 	return book, nil
 }
@@ -233,6 +244,49 @@ func parseReviews(body string, book *GoodreadsBook) {
 			book.Reviews = append(book.Reviews, review)
 		}
 	}
+}
+
+func parseWorkID(body string) string {
+	if m := reWorkID.FindStringSubmatch(body); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+func parseQuotesPage(body string) []GoodreadsQuote {
+	var quotes []GoodreadsQuote
+
+	blockIdxs := reQuoteBlock.FindAllStringSubmatchIndex(body, 30)
+	for _, idx := range blockIdxs {
+		content := body[idx[2]:idx[3]]
+
+		qt := ""
+		if m := reQuoteText.FindStringSubmatch(content); m != nil {
+			qt = strings.TrimSpace(html.UnescapeString(stripTags(m[1])))
+		}
+		if qt == "" {
+			continue
+		}
+
+		author := ""
+		if m := reQuoteAuthor.FindStringSubmatch(content); m != nil {
+			author = strings.TrimSpace(m[1])
+		}
+
+		likes := 0
+		end := min(idx[1]+500, len(body))
+		after := body[idx[1]:end]
+		if m := reQuoteLikes.FindStringSubmatch(after); m != nil {
+			likes = parseCommaInt(m[1])
+		}
+
+		quotes = append(quotes, GoodreadsQuote{
+			Text:       qt,
+			AuthorName: author,
+			LikesCount: likes,
+		})
+	}
+	return quotes
 }
 
 func stripTags(s string) string {

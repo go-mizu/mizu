@@ -15,6 +15,7 @@ type Store interface {
 	Author() AuthorStore
 	Shelf() ShelfStore
 	Review() ReviewStore
+	ReviewComment() ReviewCommentStore
 	Progress() ProgressStore
 	Challenge() ChallengeStore
 	List() ListStore
@@ -73,9 +74,18 @@ type ReviewStore interface {
 	Create(ctx context.Context, review *types.Review) error
 	Get(ctx context.Context, id int64) (*types.Review, error)
 	GetByBook(ctx context.Context, bookID int64, page, limit int) ([]types.Review, int, error)
+	GetByBookFiltered(ctx context.Context, bookID int64, q types.ReviewQuery) ([]types.Review, int, error)
 	Update(ctx context.Context, review *types.Review) error
 	Delete(ctx context.Context, id int64) error
 	GetUserReview(ctx context.Context, bookID int64) (*types.Review, error)
+	AddLike(ctx context.Context, reviewID int64) (int, error)
+}
+
+// ReviewCommentStore manages comments on reviews.
+type ReviewCommentStore interface {
+	Create(ctx context.Context, comment *types.ReviewComment) error
+	GetByReview(ctx context.Context, reviewID int64, page, limit int) ([]types.ReviewComment, int, error)
+	Delete(ctx context.Context, id int64) error
 }
 
 // ProgressStore tracks reading progress.

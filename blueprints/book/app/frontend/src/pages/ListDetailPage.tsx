@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, ThumbsUp } from 'lucide-react'
+import { ArrowLeft, ThumbsUp, Users, ExternalLink } from 'lucide-react'
 import Header from '../components/Header'
 import BookCard from '../components/BookCard'
 import { booksApi } from '../api/books'
@@ -48,14 +48,55 @@ export default function ListDetailPage() {
     <>
       <Header />
       <div className="page-container">
-        <Link to="/lists" className="inline-flex items-center gap-1 text-sm text-gr-teal mb-4 hover:underline">
+        <Link to="/lists" style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          fontSize: 13,
+          color: 'var(--gr-teal)',
+          textDecoration: 'none',
+          marginBottom: 16,
+        }}>
           <ArrowLeft size={14} /> Back to Lists
         </Link>
 
-        <div className="mb-6">
-          <h1 className="font-serif text-2xl font-bold text-gr-brown">{list.title}</h1>
-          {list.description && <p className="text-gr-light mt-2">{list.description}</p>}
-          <p className="text-sm text-gr-light mt-2">{list.item_count} books</p>
+        <div style={{ marginBottom: 24 }}>
+          <h1 style={{
+            fontFamily: "'Merriweather', Georgia, serif",
+            fontSize: 24,
+            fontWeight: 900,
+            color: 'var(--gr-brown)',
+            margin: '0 0 8px',
+          }}>
+            {list.title}
+          </h1>
+          {list.description && (
+            <p style={{ color: 'var(--gr-light)', fontSize: 14, marginBottom: 8 }}>{list.description}</p>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, fontSize: 13, color: 'var(--gr-light)' }}>
+            <span>{list.item_count} books</span>
+            {list.voter_count > 0 && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Users size={13} /> {list.voter_count.toLocaleString()} voters
+              </span>
+            )}
+            {list.goodreads_url && (
+              <a
+                href={list.goodreads_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  color: 'var(--gr-teal)',
+                  textDecoration: 'none',
+                }}
+              >
+                <ExternalLink size={13} /> View on Goodreads
+              </a>
+            )}
+          </div>
         </div>
 
         {items.length > 0 ? (

@@ -20,6 +20,7 @@ type Store struct {
 	author    *AuthorStore
 	shelf     *ShelfStore
 	review    *ReviewStore
+	reviewComment *ReviewCommentStore
 	progress  *ProgressStore
 	challenge *ChallengeStore
 	list      *ListStore
@@ -54,6 +55,7 @@ func New(dbPath string) (*Store, error) {
 	s.author = &AuthorStore{db: db}
 	s.shelf = &ShelfStore{db: db}
 	s.review = &ReviewStore{db: db}
+	s.reviewComment = &ReviewCommentStore{db: db}
 	s.progress = &ProgressStore{db: db}
 	s.challenge = &ChallengeStore{db: db}
 	s.list = &ListStore{db: db}
@@ -87,6 +89,7 @@ func (s *Store) Book() store.BookStore         { return s.book }
 func (s *Store) Author() store.AuthorStore     { return s.author }
 func (s *Store) Shelf() store.ShelfStore       { return s.shelf }
 func (s *Store) Review() store.ReviewStore     { return s.review }
+func (s *Store) ReviewComment() store.ReviewCommentStore { return s.reviewComment }
 func (s *Store) Progress() store.ProgressStore { return s.progress }
 func (s *Store) Challenge() store.ChallengeStore { return s.challenge }
 func (s *Store) List() store.ListStore         { return s.list }

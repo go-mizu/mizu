@@ -59,7 +59,6 @@ CREATE TABLE IF NOT EXISTS authors (
 );
 
 CREATE INDEX IF NOT EXISTS idx_authors_name ON authors(name);
-CREATE INDEX IF NOT EXISTS idx_authors_goodreads_id ON authors(goodreads_id);
 
 CREATE TABLE IF NOT EXISTS shelves (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -90,6 +89,7 @@ CREATE TABLE IF NOT EXISTS reviews (
     text TEXT DEFAULT '',
     is_spoiler INTEGER DEFAULT 0,
     likes_count INTEGER DEFAULT 0,
+    comments_count INTEGER DEFAULT 0,
     started_at DATETIME,
     finished_at DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -99,6 +99,19 @@ CREATE TABLE IF NOT EXISTS reviews (
 );
 
 CREATE INDEX IF NOT EXISTS idx_reviews_book ON reviews(book_id);
+
+CREATE TABLE IF NOT EXISTS review_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    review_id INTEGER NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+    author_name TEXT DEFAULT '',
+    text TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_review_comments_review ON review_comments(review_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_goodreads_dedupe
+ON reviews(book_id, source, reviewer_name, text)
+WHERE source = 'goodreads';
 
 CREATE TABLE IF NOT EXISTS reading_progress (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -172,6 +185,10 @@ ALTER TABLE books ADD COLUMN first_published TEXT DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_books_goodreads_id ON books(goodreads_id);
 ALTER TABLE reviews ADD COLUMN reviewer_name TEXT DEFAULT '';
 ALTER TABLE reviews ADD COLUMN source TEXT DEFAULT 'user';
+ALTER TABLE reviews ADD COLUMN comments_count INTEGER DEFAULT 0;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_goodreads_dedupe
+ON reviews(book_id, source, reviewer_name, text)
+WHERE source = 'goodreads';
 ALTER TABLE authors ADD COLUMN goodreads_id TEXT DEFAULT '';
 ALTER TABLE authors ADD COLUMN followers INTEGER DEFAULT 0;
 ALTER TABLE authors ADD COLUMN genres TEXT DEFAULT '';
@@ -179,4 +196,12 @@ ALTER TABLE authors ADD COLUMN influences TEXT DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_authors_goodreads_id ON authors(goodreads_id);
 ALTER TABLE book_lists ADD COLUMN goodreads_url TEXT DEFAULT '';
 ALTER TABLE book_lists ADD COLUMN voter_count INTEGER DEFAULT 0;
+CREATE TABLE IF NOT EXISTS review_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    review_id INTEGER NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+    author_name TEXT DEFAULT '',
+    text TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_review_comments_review ON review_comments(review_id);
 `

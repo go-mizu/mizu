@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { Calendar } from 'lucide-react'
+import { Calendar, Users, BookOpen, Download } from 'lucide-react'
 import Header from '../components/Header'
 import BookCard from '../components/BookCard'
 import { booksApi } from '../api/books'
@@ -12,6 +12,8 @@ export default function AuthorPage() {
   const [books, setBooks] = useState<Book[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [grId, setGrId] = useState('')
+  const [importing, setImporting] = useState(false)
 
   const authorId = Number(id)
 
@@ -36,6 +38,20 @@ export default function AuthorPage() {
     }
     fetchData()
   }, [id, authorId])
+
+  const handleImportGoodreads = async () => {
+    if (!grId.trim()) return
+    setImporting(true)
+    try {
+      const imported = await booksApi.importGoodreadsAuthor(grId.trim())
+      setAuthor(prev => prev ? { ...prev, ...imported } : imported)
+      setGrId('')
+    } catch {
+      // Silently fail
+    } finally {
+      setImporting(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -71,6 +87,8 @@ export default function AuthorPage() {
     if (author.death_date) parts.push(`Died ${author.death_date}`)
     return parts.join(' \u2022 ')
   }
+
+  const genres = author.genres ? author.genres.split(', ').filter(Boolean) : []
 
   return (
     <>
@@ -154,15 +172,74 @@ export default function AuthorPage() {
               </div>
             )}
 
+            {/* Stats row */}
             <div
               style={{
+                display: 'flex',
+                gap: 20,
                 marginTop: 16,
                 fontSize: 14,
                 color: 'var(--gr-light)',
               }}
             >
-              {author.works_count} book{author.works_count !== 1 ? 's' : ''}
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <BookOpen size={14} />
+                {author.works_count} book{author.works_count !== 1 ? 's' : ''}
+              </span>
+              {author.followers > 0 && (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Users size={14} />
+                  {author.followers.toLocaleString()} followers
+                </span>
+              )}
             </div>
+
+            {/* Genres */}
+            {genres.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
+                {genres.map((genre) => (
+                  <Link key={genre} to={`/genre/${encodeURIComponent(genre)}`} className="genre-tag">
+                    {genre}
+                  </Link>
+                ))}
+              </div>
+            )}
+
+            {/* Goodreads link */}
+            {author.goodreads_id && (
+              <div style={{ marginTop: 12, fontSize: 13 }}>
+                <a
+                  href={`https://www.goodreads.com/author/show/${author.goodreads_id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: 'var(--gr-teal)', textDecoration: 'none' }}
+                >
+                  View on Goodreads
+                </a>
+              </div>
+            )}
+
+            {/* Import from Goodreads */}
+            {!author.goodreads_id && (
+              <div style={{ marginTop: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  type="text"
+                  value={grId}
+                  onChange={(e) => setGrId(e.target.value)}
+                  placeholder="Goodreads author ID"
+                  className="form-input"
+                  style={{ width: 200, fontSize: 13, padding: '6px 10px' }}
+                />
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleImportGoodreads}
+                  disabled={importing || !grId.trim()}
+                >
+                  <Download size={14} />
+                  {importing ? 'Importing...' : 'Import'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
 

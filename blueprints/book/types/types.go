@@ -5,15 +5,15 @@ import "time"
 // Book represents a book in the library.
 type Book struct {
 	ID            int64     `json:"id"`
-	OLKey         string    `json:"ol_key"`                // Open Library work key e.g. /works/OL12345W
-	GoogleID      string    `json:"google_id"`             // Google Books ID
+	OLKey         string    `json:"ol_key"`    // Open Library work key e.g. /works/OL12345W
+	GoogleID      string    `json:"google_id"` // Google Books ID
 	Title         string    `json:"title"`
 	Subtitle      string    `json:"subtitle,omitempty"`
 	Description   string    `json:"description,omitempty"`
-	Authors       []Author  `json:"authors"`               // Denormalized for display
-	AuthorNames   string    `json:"author_names"`          // Comma-separated, for DB storage
+	Authors       []Author  `json:"authors"`      // Denormalized for display
+	AuthorNames   string    `json:"author_names"` // Comma-separated, for DB storage
 	CoverURL      string    `json:"cover_url,omitempty"`
-	CoverID       int       `json:"cover_id,omitempty"`    // Open Library cover ID
+	CoverID       int       `json:"cover_id,omitempty"` // Open Library cover ID
 	ISBN10        string    `json:"isbn10,omitempty"`
 	ISBN13        string    `json:"isbn13,omitempty"`
 	Publisher     string    `json:"publisher,omitempty"`
@@ -35,8 +35,8 @@ type Book struct {
 	ReviewsCount     int    `json:"reviews_count"`
 	CurrentlyReading int    `json:"currently_reading"`
 	WantToRead       int    `json:"want_to_read"`
-	RatingDist       [5]int `json:"rating_dist"`   // [0]=5star .. [4]=1star
-	RatingDistJSON   string `json:"-"`             // DB storage
+	RatingDist       [5]int `json:"rating_dist"` // [0]=5star .. [4]=1star
+	RatingDistJSON   string `json:"-"`           // DB storage
 	FirstPublished   string `json:"first_published,omitempty"`
 	// Computed fields (not stored)
 	UserRating int    `json:"user_rating,omitempty"`
@@ -45,19 +45,19 @@ type Book struct {
 
 // Author represents a book author.
 type Author struct {
-	ID           int64     `json:"id"`
-	OLKey        string    `json:"ol_key"`
-	Name         string    `json:"name"`
-	Bio          string    `json:"bio,omitempty"`
-	PhotoURL     string    `json:"photo_url,omitempty"`
-	BirthDate    string    `json:"birth_date,omitempty"`
-	DeathDate    string    `json:"death_date,omitempty"`
-	WorksCount   int       `json:"works_count"`
-	CreatedAt    time.Time `json:"created_at"`
-	GoodreadsID  string    `json:"goodreads_id,omitempty"`
-	Followers    int       `json:"followers,omitempty"`
-	Genres       string    `json:"genres,omitempty"`       // Comma-separated
-	Influences   string    `json:"influences,omitempty"`   // Comma-separated
+	ID          int64     `json:"id"`
+	OLKey       string    `json:"ol_key"`
+	Name        string    `json:"name"`
+	Bio         string    `json:"bio,omitempty"`
+	PhotoURL    string    `json:"photo_url,omitempty"`
+	BirthDate   string    `json:"birth_date,omitempty"`
+	DeathDate   string    `json:"death_date,omitempty"`
+	WorksCount  int       `json:"works_count"`
+	CreatedAt   time.Time `json:"created_at"`
+	GoodreadsID string    `json:"goodreads_id,omitempty"`
+	Followers   int       `json:"followers,omitempty"`
+	Genres      string    `json:"genres,omitempty"`     // Comma-separated
+	Influences  string    `json:"influences,omitempty"` // Comma-separated
 }
 
 // Shelf represents a bookshelf (e.g. "Read", "Want to Read").
@@ -90,6 +90,7 @@ type Review struct {
 	Text         string     `json:"text,omitempty"`
 	IsSpoiler    bool       `json:"is_spoiler"`
 	LikesCount   int        `json:"likes_count"`
+	CommentsCount int       `json:"comments_count"`
 	StartedAt    *time.Time `json:"started_at,omitempty"`
 	FinishedAt   *time.Time `json:"finished_at,omitempty"`
 	CreatedAt    time.Time  `json:"created_at"`
@@ -97,6 +98,27 @@ type Review struct {
 	ReviewerName string     `json:"reviewer_name,omitempty"`
 	Source       string     `json:"source,omitempty"` // "user", "goodreads"
 	Book         *Book      `json:"book,omitempty"`   // Joined
+}
+
+// ReviewComment represents a comment on a review.
+type ReviewComment struct {
+	ID         int64     `json:"id"`
+	ReviewID   int64     `json:"review_id"`
+	AuthorName string    `json:"author_name"`
+	Text       string    `json:"text"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// ReviewQuery controls filtering and sorting for review list endpoints.
+type ReviewQuery struct {
+	Page            int    `json:"page"`
+	Limit           int    `json:"limit"`
+	Sort            string `json:"sort"` // popular|newest|oldest|rating_desc|rating_asc
+	Rating          int    `json:"rating,omitempty"`
+	Source          string `json:"source,omitempty"` // user|goodreads
+	Query           string `json:"q,omitempty"`
+	HasText         *bool  `json:"has_text,omitempty"`
+	IncludeSpoilers bool   `json:"include_spoilers,omitempty"`
 }
 
 // ReadingProgress tracks page-by-page progress through a book.

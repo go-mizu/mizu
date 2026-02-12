@@ -43,6 +43,10 @@ export interface Author {
   birth_date?: string
   death_date?: string
   works_count: number
+  goodreads_id?: string
+  followers: number
+  genres?: string
+  influences?: string
   created_at?: string
 }
 
@@ -64,11 +68,33 @@ export interface Review {
   text?: string
   is_spoiler?: boolean
   likes_count?: number
+  comments_count?: number
+  reviewer_name?: string
+  source?: string
   started_at?: string
   finished_at?: string
   created_at?: string
   updated_at?: string
   book?: Book
+}
+
+export interface ReviewComment {
+  id: number
+  review_id: number
+  author_name: string
+  text: string
+  created_at?: string
+}
+
+export interface ReviewQuery {
+  page: number
+  limit: number
+  sort: 'popular' | 'newest' | 'oldest' | 'rating_desc' | 'rating_asc'
+  rating?: number
+  source?: 'user' | 'goodreads'
+  q?: string
+  has_text?: boolean
+  include_spoilers?: boolean
 }
 
 export interface ReadingProgress {
@@ -93,8 +119,17 @@ export interface BookList {
   title: string
   description?: string
   item_count: number
+  goodreads_url?: string
+  voter_count: number
   items?: BookListItem[]
   created_at?: string
+}
+
+export interface GoodreadsListSummary {
+  title: string
+  url: string
+  book_count: number
+  voter_count: number
 }
 
 export interface BookListItem {

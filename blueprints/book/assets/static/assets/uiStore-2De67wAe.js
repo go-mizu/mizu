@@ -1,1 +1,0 @@
-import{p as t}from"./middleware-WYGlAF-S.js";import{m as i}from"./ui-RIRksdBL.js";const a=i()(t(r=>({sidebarOpen:!0,shelfView:"grid",sortBy:"date_added",theme:"light",toggleSidebar:()=>r(e=>({sidebarOpen:!e.sidebarOpen})),setShelfView:e=>r({shelfView:e}),setSortBy:e=>r({sortBy:e}),setTheme:e=>r({theme:e})}),{name:"book-ui"}));export{a as u};

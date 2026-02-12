@@ -9,7 +9,7 @@ import ReviewCard from '../components/ReviewCard'
 import BookGrid from '../components/BookGrid'
 import { booksApi } from '../api/books'
 import { useBookStore } from '../stores/bookStore'
-import type { Book, Review, Quote, ReadingProgress } from '../types'
+import type { Book, Review, Quote, ReadingProgress, ReviewQuery, Shelf } from '../types'
 
 function RatingDistribution({ book }: { book: Book }) {
   const dist = book.rating_dist || [0, 0, 0, 0, 0]
@@ -142,6 +142,7 @@ export default function BookDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [book, setBook] = useState<Book | null>(null)
   const [reviews, setReviews] = useState<Review[]>([])
+  const [reviewsTotal, setReviewsTotal] = useState(0)
   const [similar, setSimilar] = useState<Book[]>([])
   const [quotes, setQuotes] = useState<Quote[]>([])
   const [progress, setProgress] = useState<ReadingProgress[]>([])
@@ -151,14 +152,57 @@ export default function BookDetailPage() {
   const [showReviewForm, setShowReviewForm] = useState(false)
   const [reviewText, setReviewText] = useState('')
   const [reviewRating, setReviewRating] = useState(0)
+  const [reviewSpoiler, setReviewSpoiler] = useState(false)
+  const [reviewStartedAt, setReviewStartedAt] = useState('')
+  const [reviewFinishedAt, setReviewFinishedAt] = useState('')
+  const [reviewShelfId, setReviewShelfId] = useState<number | null>(null)
+  const [editingReviewId, setEditingReviewId] = useState<number | null>(null)
+  const [reviewSort, setReviewSort] = useState<ReviewQuery['sort']>('popular')
+  const [reviewRatingFilter, setReviewRatingFilter] = useState(0)
+  const [reviewSourceFilter, setReviewSourceFilter] = useState<'all' | 'user' | 'goodreads'>('all')
+  const [reviewTextFilter, setReviewTextFilter] = useState<'all' | 'with' | 'without'>('all')
+  const [reviewSearch, setReviewSearch] = useState('')
+  const [includeSpoilers, setIncludeSpoilers] = useState(false)
+  const [loadingReviews, setLoadingReviews] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [progressPage, setProgressPage] = useState('')
   const [progressNote, setProgressNote] = useState('')
   const [updatingProgress, setUpdatingProgress] = useState(false)
+  const [enriching, setEnriching] = useState(false)
+  const [shelves, setShelves] = useState<Shelf[]>([])
   const addRecentBook = useBookStore((s) => s.addRecentBook)
   const setCurrentBook = useBookStore((s) => s.setCurrentBook)
+  const setStoreShelves = useBookStore((s) => s.setShelves)
 
   const bookId = Number(id)
+
+  const toDateInput = (value?: string) => {
+    if (!value) return ''
+    const d = new Date(value)
+    if (Number.isNaN(d.getTime())) return ''
+    return d.toISOString().slice(0, 10)
+  }
+
+  const buildReviewQuery = (): Partial<ReviewQuery> => ({
+    sort: reviewSort,
+    rating: reviewRatingFilter > 0 ? reviewRatingFilter : undefined,
+    source: reviewSourceFilter === 'all' ? undefined : reviewSourceFilter,
+    has_text: reviewTextFilter === 'all' ? undefined : reviewTextFilter === 'with',
+    q: reviewSearch.trim() || undefined,
+    include_spoilers: includeSpoilers,
+  })
+
+  const loadReviews = async (targetBookID: number): Promise<Review[]> => {
+    setLoadingReviews(true)
+    try {
+      const data = await booksApi.getReviews(targetBookID, buildReviewQuery())
+      setReviews(data.reviews)
+      setReviewsTotal(data.total)
+      return data.reviews
+    } finally {
+      setLoadingReviews(false)
+    }
+  }
 
   useEffect(() => {
     if (!id) return
@@ -167,20 +211,36 @@ export default function BookDetailPage() {
       setLoading(true)
       setError(null)
       try {
-        const [bookData, reviewsData, similarData] = await Promise.all([
+        const [bookData, similarData, shelvesData] = await Promise.all([
           booksApi.getBook(bookId),
-          booksApi.getReviews(bookId),
           booksApi.getSimilar(bookId),
+          booksApi.getShelves(),
         ])
+        const reviewsData = await loadReviews(bookId)
         setBook(bookData)
-        setReviews(reviewsData)
         setSimilar(similarData)
+        setShelves(shelvesData)
+        setStoreShelves(shelvesData)
         addRecentBook(bookData)
         setCurrentBook(bookData)
 
         // Fetch quotes and progress separately (non-blocking)
         booksApi.getBookQuotes(bookId).then(setQuotes).catch(() => {})
         booksApi.getProgress(bookId).then(setProgress).catch(() => {})
+
+        // Auto-enrich from Goodreads if no community reviews
+        if (reviewsData.length === 0) {
+          setEnriching(true)
+          booksApi.enrichBook(bookId)
+            .then((enriched) => {
+              setBook(enriched)
+              // Re-fetch reviews and quotes after enrichment
+              loadReviews(bookId).catch(() => {})
+              booksApi.getBookQuotes(bookId).then(setQuotes).catch(() => {})
+            })
+            .catch(() => {})
+            .finally(() => setEnriching(false))
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load book')
       } finally {
@@ -192,11 +252,21 @@ export default function BookDetailPage() {
     return () => setCurrentBook(null)
   }, [id, bookId, addRecentBook, setCurrentBook])
 
+  useEffect(() => {
+    if (!reviewShelfId && book?.user_shelf && shelves.length > 0) {
+      const match = shelves.find((s) => s.slug === book.user_shelf)
+      if (match) {
+        setReviewShelfId(match.id)
+      }
+    }
+  }, [book?.user_shelf, shelves, reviewShelfId])
+
   const handleRating = async (rating: number) => {
     if (!book) return
     try {
       await booksApi.createReview(book.id, { rating })
       setBook({ ...book, user_rating: rating })
+      loadReviews(book.id).catch(() => {})
     } catch {
       // Silently fail rating
     }
@@ -206,14 +276,46 @@ export default function BookDetailPage() {
     if (!book || reviewRating === 0) return
     setSubmitting(true)
     try {
-      const review = await booksApi.createReview(book.id, {
+      const payload = {
         rating: reviewRating,
         text: reviewText,
+        is_spoiler: reviewSpoiler,
+        started_at: reviewStartedAt || undefined,
+        finished_at: reviewFinishedAt || undefined,
+      }
+      const review = editingReviewId
+        ? await booksApi.updateReview(editingReviewId, payload)
+        : await booksApi.createReview(book.id, payload)
+      setReviews((prev) => {
+        const existingIndex = prev.findIndex((r) => r.id === review.id)
+        if (existingIndex >= 0) {
+          const copy = [...prev]
+          copy[existingIndex] = review
+          return copy
+        }
+        return [review, ...prev]
       })
-      setReviews([review, ...reviews])
+      if (!editingReviewId) {
+        setReviewsTotal((prev) => prev + 1)
+      }
+      const fallbackReadShelf = shelves.find((s) => s.slug === 'read')
+      const targetShelfId = reviewShelfId || (reviewFinishedAt && fallbackReadShelf ? fallbackReadShelf.id : null)
+      if (targetShelfId) {
+        await booksApi.addToShelf(targetShelfId, book.id)
+        const shelfSlug = shelves.find((s) => s.id === targetShelfId)?.slug
+        if (shelfSlug) {
+          setBook({ ...book, user_shelf: shelfSlug })
+        }
+      }
+      loadReviews(book.id).catch(() => {})
       setShowReviewForm(false)
       setReviewText('')
       setReviewRating(0)
+      setReviewSpoiler(false)
+      setReviewStartedAt('')
+      setReviewFinishedAt('')
+      setReviewShelfId(null)
+      setEditingReviewId(null)
       setBook({ ...book, user_rating: reviewRating })
     } catch {
       // Handle error silently
@@ -241,6 +343,32 @@ export default function BookDetailPage() {
       // Handle error silently
     } finally {
       setUpdatingProgress(false)
+    }
+  }
+
+  const handleEditReview = (review: Review) => {
+    setEditingReviewId(review.id)
+    setReviewRating(review.rating)
+    setReviewText(review.text || '')
+    setReviewSpoiler(!!review.is_spoiler)
+    setReviewStartedAt(toDateInput(review.started_at))
+    setReviewFinishedAt(toDateInput(review.finished_at))
+    if (book?.user_shelf) {
+      const match = shelves.find((s) => s.slug === book.user_shelf)
+      setReviewShelfId(match ? match.id : null)
+    }
+    setShowReviewForm(true)
+  }
+
+  const handleDeleteReview = async (review: Review) => {
+    if (!book) return
+    try {
+      await booksApi.deleteReview(review.id)
+      setReviews((prev) => prev.filter((r) => r.id !== review.id))
+      setReviewsTotal((prev) => Math.max(0, prev - 1))
+      setBook({ ...book, user_rating: 0 })
+    } catch {
+      // ignore
     }
   }
 
@@ -275,6 +403,9 @@ export default function BookDetailPage() {
   const genres = book.subjects || []
   const latestProgress = progress.length > 0 ? progress[0] : null
   const hasRatingDist = book.rating_dist && book.rating_dist.some(n => n > 0)
+  const reviewCount = reviewsTotal || book.reviews_count || reviews.length
+  const userReview = reviews.find((r) => r.source === 'user')
+  const exclusiveShelves = shelves.filter((s) => s.is_exclusive)
 
   return (
     <>
@@ -510,7 +641,7 @@ export default function BookDetailPage() {
             className={`tab ${activeTab === 'reviews' ? 'active' : ''}`}
             onClick={() => setActiveTab('reviews')}
           >
-            Community Reviews ({book.reviews_count || reviews.length})
+            Community Reviews ({reviewCount})
           </button>
           <button
             className={`tab ${activeTab === 'similar' ? 'active' : ''}`}
@@ -529,13 +660,72 @@ export default function BookDetailPage() {
         {/* Reviews Tab */}
         {activeTab === 'reviews' && (
           <div>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+              gap: 8,
+              marginBottom: 14,
+              padding: 12,
+              background: 'var(--gr-cream)',
+              borderRadius: 8,
+            }}>
+              <select className="form-input" value={reviewSort} onChange={(e) => setReviewSort(e.target.value as ReviewQuery['sort'])}>
+                <option value="popular">Popular</option>
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="rating_desc">Highest rating</option>
+                <option value="rating_asc">Lowest rating</option>
+              </select>
+              <select className="form-input" value={reviewRatingFilter} onChange={(e) => setReviewRatingFilter(Number(e.target.value))}>
+                <option value={0}>All ratings</option>
+                <option value={5}>5 stars</option>
+                <option value={4}>4 stars</option>
+                <option value={3}>3 stars</option>
+                <option value={2}>2 stars</option>
+                <option value={1}>1 star</option>
+              </select>
+              <select className="form-input" value={reviewSourceFilter} onChange={(e) => setReviewSourceFilter(e.target.value as 'all' | 'user' | 'goodreads')}>
+                <option value="all">All sources</option>
+                <option value="goodreads">Goodreads</option>
+                <option value="user">My reviews</option>
+              </select>
+              <select className="form-input" value={reviewTextFilter} onChange={(e) => setReviewTextFilter(e.target.value as 'all' | 'with' | 'without')}>
+                <option value="all">Any text</option>
+                <option value="with">With text</option>
+                <option value="without">Ratings only</option>
+              </select>
+              <input
+                type="search"
+                className="form-input"
+                placeholder="Search review text"
+                value={reviewSearch}
+                onChange={(e) => setReviewSearch(e.target.value)}
+              />
+              <button className="btn btn-secondary" onClick={() => loadReviews(book.id)}>
+                Apply filters
+              </button>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                <input
+                  type="checkbox"
+                  checked={includeSpoilers}
+                  onChange={(e) => setIncludeSpoilers(e.target.checked)}
+                />
+                Show spoilers
+              </label>
+            </div>
             {!showReviewForm && (
               <button
                 className="btn btn-primary"
                 style={{ marginBottom: 20 }}
-                onClick={() => setShowReviewForm(true)}
+                onClick={() => {
+                  if (userReview) {
+                    handleEditReview(userReview)
+                  } else {
+                    setShowReviewForm(true)
+                  }
+                }}
               >
-                Write a review
+                {userReview ? 'Edit your review' : 'Write a review'}
               </button>
             )}
 
@@ -556,7 +746,7 @@ export default function BookDetailPage() {
                     marginBottom: 12,
                   }}
                 >
-                  Write your review
+                  {editingReviewId ? 'Edit your review' : 'Write your review'}
                 </h3>
                 <div className="form-group">
                   <label className="form-label">Your rating</label>
@@ -576,13 +766,58 @@ export default function BookDetailPage() {
                     onChange={(e) => setReviewText(e.target.value)}
                   />
                 </div>
+                <div className="form-group">
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
+                    <input
+                      type="checkbox"
+                      checked={reviewSpoiler}
+                      onChange={(e) => setReviewSpoiler(e.target.checked)}
+                    />
+                    Contains spoilers
+                  </label>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+                  <div>
+                    <label className="form-label">Started reading</label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      value={reviewStartedAt}
+                      onChange={(e) => setReviewStartedAt(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">Finished reading</label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      value={reviewFinishedAt}
+                      onChange={(e) => setReviewFinishedAt(e.target.value)}
+                    />
+                  </div>
+                </div>
+                {exclusiveShelves.length > 0 && (
+                  <div className="form-group">
+                    <label className="form-label">Reading status</label>
+                    <select
+                      className="form-input"
+                      value={reviewShelfId ?? ''}
+                      onChange={(e) => setReviewShelfId(e.target.value ? Number(e.target.value) : null)}
+                    >
+                      <option value="">No status</option>
+                      {exclusiveShelves.map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button
                     className="btn btn-primary"
                     onClick={handleSubmitReview}
                     disabled={submitting || reviewRating === 0}
                   >
-                    {submitting ? 'Posting...' : 'Post review'}
+                    {submitting ? 'Saving...' : (editingReviewId ? 'Save review' : 'Post review')}
                   </button>
                   <button
                     className="btn btn-secondary"
@@ -590,6 +825,11 @@ export default function BookDetailPage() {
                       setShowReviewForm(false)
                       setReviewText('')
                       setReviewRating(0)
+                      setReviewSpoiler(false)
+                      setReviewStartedAt('')
+                      setReviewFinishedAt('')
+                      setReviewShelfId(null)
+                      setEditingReviewId(null)
                     }}
                   >
                     Cancel
@@ -598,16 +838,33 @@ export default function BookDetailPage() {
               </div>
             )}
 
+            {enriching && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, fontSize: 14, color: 'var(--gr-light)' }}>
+                <div className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
+                Fetching community reviews from Goodreads...
+              </div>
+            )}
+            {loadingReviews && (
+              <div style={{ marginBottom: 12, fontSize: 13, color: 'var(--gr-light)' }}>
+                Loading reviews...
+              </div>
+            )}
+
             {reviews.length > 0 ? (
               reviews.map((review) => (
-                <ReviewCard key={review.id} review={review} />
+                <ReviewCard
+                  key={review.id}
+                  review={review}
+                  onEdit={review.source === 'user' ? handleEditReview : undefined}
+                  onDelete={review.source === 'user' ? handleDeleteReview : undefined}
+                />
               ))
-            ) : (
+            ) : !enriching ? (
               <div className="empty-state">
                 <h3>No reviews yet</h3>
                 <p>Be the first to review this book!</p>
               </div>
-            )}
+            ) : null}
           </div>
         )}
 

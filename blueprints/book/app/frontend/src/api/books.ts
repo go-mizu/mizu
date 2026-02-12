@@ -2,7 +2,7 @@ import { api } from './client'
 import type {
   Book, Author, Shelf, Review, ReadingProgress,
   ReadingChallenge, BookList, Quote, FeedItem,
-  ReadingStats, SearchResult, Genre,
+  ReadingStats, SearchResult, Genre, GoodreadsListSummary, ReviewQuery, ReviewComment,
 } from '../types'
 
 export const booksApi = {
@@ -38,8 +38,18 @@ export const booksApi = {
     api.del<void>(`/api/shelves/${shelfId}/books/${bookId}`),
 
   // Reviews
-  getReviews: async (bookId: number) => {
-    const data = await api.get<{ reviews: Review[]; total: number }>(`/api/books/${bookId}/reviews`)
+  getReviews: async (bookId: number, query?: Partial<ReviewQuery>) => {
+    const params = new URLSearchParams()
+    if (query?.page) params.set('page', String(query.page))
+    if (query?.limit) params.set('limit', String(query.limit))
+    if (query?.sort) params.set('sort', query.sort)
+    if (query?.rating) params.set('rating', String(query.rating))
+    if (query?.source) params.set('source', query.source)
+    if (typeof query?.has_text === 'boolean') params.set('has_text', String(query.has_text))
+    if (query?.q) params.set('q', query.q)
+    if (query?.include_spoilers) params.set('include_spoilers', String(query.include_spoilers))
+    const qs = params.toString()
+    const data = await api.get<{ reviews: Review[]; total: number }>(`/api/books/${bookId}/reviews${qs ? `?${qs}` : ''}`)
     return data.reviews || []
   },
   createReview: (bookId: number, review: Partial<Review>) =>
@@ -47,6 +57,14 @@ export const booksApi = {
   updateReview: (id: number, review: Partial<Review>) =>
     api.put<Review>(`/api/reviews/${id}`, review),
   deleteReview: (id: number) => api.del<void>(`/api/reviews/${id}`),
+  likeReview: (id: number) =>
+    api.post<{ likes_count: number }>(`/api/reviews/${id}/like`, {}),
+  getReviewComments: (reviewId: number, page = 1, limit = 20) =>
+    api.get<{ comments: ReviewComment[]; total: number }>(`/api/reviews/${reviewId}/comments?page=${page}&limit=${limit}`),
+  createReviewComment: (reviewId: number, comment: Partial<ReviewComment>) =>
+    api.post<ReviewComment>(`/api/reviews/${reviewId}/comments`, comment),
+  deleteReviewComment: (reviewId: number, commentId: number) =>
+    api.del<void>(`/api/reviews/${reviewId}/comments/${commentId}`),
 
   // Reading Progress
   getProgress: (bookId: number) =>
@@ -96,6 +114,10 @@ export const booksApi = {
   // Goodreads
   importGoodreads: (url: string) => api.post<Book>('/api/import-goodreads', { url }),
   getGoodreadsBook: (id: string) => api.get<Book>(`/api/goodreads/${id}`),
+  importGoodreadsAuthor: (id: string) => api.get<Author>(`/api/goodreads/author/${id}`),
+  browseGoodreadsLists: () => api.get<GoodreadsListSummary[]>('/api/goodreads/lists'),
+  importGoodreadsList: (url: string) => api.post<BookList>('/api/import-goodreads-list', { url }),
+  enrichBook: (id: number) => api.post<Book>(`/api/books/${id}/enrich`, {}),
 
   // Import/Export
   importCSV: (file: File) => {

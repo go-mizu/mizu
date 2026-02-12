@@ -433,6 +433,86 @@ body {
   color: var(--gr-text);
 }
 
+.review-owner-actions {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.review-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: var(--gr-teal);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0;
+}
+
+.link-button:disabled {
+  color: var(--gr-light);
+  cursor: default;
+}
+
+.review-spoiler {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #fff6e6;
+  border: 1px solid #f2d1a1;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--gr-brown);
+}
+
+.review-comments {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--gr-cream);
+  border-radius: 8px;
+}
+
+.comment-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.comment-item {
+  padding: 8px 0;
+  border-top: 1px solid #eee;
+  font-size: 13px;
+  color: var(--gr-text);
+}
+
+.comment-item:first-of-type {
+  border-top: none;
+}
+
+.comment-meta {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--gr-light);
+}
+
+.comment-loading,
+.comment-empty {
+  font-size: 12px;
+  color: var(--gr-light);
+  padding: 4px 0;
+}
+
 /* ===== Progress Bar ===== */
 .progress-bar {
   width: 100%;

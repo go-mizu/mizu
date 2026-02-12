@@ -63,6 +63,10 @@ func NewServer(st store.Store, devMode bool) (http.Handler, error) {
 		r.Post("/books/{id}/reviews", reviewHandler.Create)
 		r.Put("/reviews/{id}", reviewHandler.Update)
 		r.Delete("/reviews/{id}", reviewHandler.Delete)
+		r.Post("/reviews/{id}/like", reviewHandler.Like)
+		r.Get("/reviews/{id}/comments", reviewHandler.GetComments)
+		r.Post("/reviews/{id}/comments", reviewHandler.CreateComment)
+		r.Delete("/reviews/{id}/comments/{commentId}", reviewHandler.DeleteComment)
 
 		// Reading Progress
 		r.Get("/books/{id}/progress", reviewHandler.GetProgress)
@@ -100,7 +104,11 @@ func NewServer(st store.Store, devMode bool) (http.Handler, error) {
 
 		// Goodreads
 		r.Get("/goodreads/{id}", goodreadsHandler.GetByGoodreadsID)
+		r.Post("/books/{id}/enrich", goodreadsHandler.EnrichBook)
 		r.Post("/import-goodreads", goodreadsHandler.ImportFromURL)
+		r.Get("/goodreads/author/{id}", goodreadsHandler.ImportAuthor)
+		r.Post("/import-goodreads-list", goodreadsHandler.ImportList)
+		r.Get("/goodreads/lists", goodreadsHandler.BrowseLists)
 
 		// Feed
 		r.Get("/feed", feedHandler.Recent)

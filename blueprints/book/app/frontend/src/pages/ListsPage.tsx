@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, BookOpen } from 'lucide-react'
+import { Plus, BookOpen, Download, Users } from 'lucide-react'
 import Header from '../components/Header'
 import { booksApi } from '../api/books'
-import type { BookList } from '../types'
+import type { BookList, GoodreadsListSummary } from '../types'
 
 export default function ListsPage() {
   const [lists, setLists] = useState<BookList[]>([])
@@ -11,6 +11,10 @@ export default function ListsPage() {
   const [showModal, setShowModal] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [grLists, setGrLists] = useState<GoodreadsListSummary[]>([])
+  const [loadingGr, setLoadingGr] = useState(false)
+  const [showGr, setShowGr] = useState(false)
+  const [importingUrl, setImportingUrl] = useState<string | null>(null)
 
   useEffect(() => {
     booksApi.getLists()
@@ -31,41 +35,185 @@ export default function ListsPage() {
       .catch(() => {})
   }
 
+  const handleBrowseGoodreads = () => {
+    if (grLists.length > 0) {
+      setShowGr(!showGr)
+      return
+    }
+    setLoadingGr(true)
+    setShowGr(true)
+    booksApi.browseGoodreadsLists()
+      .then(setGrLists)
+      .catch(() => {})
+      .finally(() => setLoadingGr(false))
+  }
+
+  const handleImportList = async (url: string) => {
+    setImportingUrl(url)
+    try {
+      const list = await booksApi.importGoodreadsList(url)
+      setLists(prev => [...prev, list])
+    } catch {
+      // Silently fail
+    } finally {
+      setImportingUrl(null)
+    }
+  }
+
   return (
     <>
       <Header />
       <div className="page-container">
         <div className="section-header">
           <h1 className="section-title">Listopia</h1>
-          <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-            <Plus size={16} /> Create List
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-secondary" onClick={handleBrowseGoodreads}>
+              <Download size={16} /> {showGr ? 'Hide' : 'Browse'} Goodreads
+            </button>
+            <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+              <Plus size={16} /> Create List
+            </button>
+          </div>
         </div>
 
+        {/* Goodreads Browse Section */}
+        {showGr && (
+          <div style={{ marginBottom: 24 }}>
+            <h2 style={{
+              fontFamily: "'Merriweather', Georgia, serif",
+              fontSize: 16,
+              color: 'var(--gr-brown)',
+              marginBottom: 12,
+            }}>
+              Popular Goodreads Lists
+            </h2>
+            {loadingGr ? (
+              <div className="loading-spinner"><div className="spinner" /></div>
+            ) : grLists.length === 0 ? (
+              <p style={{ color: 'var(--gr-light)', fontSize: 14 }}>No lists found.</p>
+            ) : (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+                gap: 12,
+              }}>
+                {grLists.map((gl, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      padding: 16,
+                      border: '1px solid var(--gr-border)',
+                      borderRadius: 8,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 12,
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{
+                        fontWeight: 700,
+                        fontSize: 14,
+                        color: 'var(--gr-brown)',
+                        marginBottom: 4,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {gl.title}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--gr-light)', display: 'flex', gap: 12 }}>
+                        {gl.book_count > 0 && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                            <BookOpen size={11} /> {gl.book_count.toLocaleString()} books
+                          </span>
+                        )}
+                        {gl.voter_count > 0 && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                            <Users size={11} /> {gl.voter_count.toLocaleString()} voters
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => handleImportList(gl.url)}
+                      disabled={importingUrl === gl.url}
+                      style={{ flexShrink: 0 }}
+                    >
+                      {importingUrl === gl.url ? '...' : 'Import'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Local Lists */}
         {loading ? (
           <div className="loading-spinner"><div className="spinner" /></div>
         ) : lists.length === 0 ? (
           <div className="empty-state">
             <h3>No lists yet</h3>
-            <p>Create your first book list to get started.</p>
+            <p>Create your first book list or import from Goodreads.</p>
             <button className="btn btn-primary" onClick={() => setShowModal(true)}>
               Create List
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+            gap: 12,
+          }}>
             {lists.map(list => (
               <Link
                 key={list.id}
                 to={`/list/${list.id}`}
-                className="block p-4 border border-gr-border rounded-lg hover:bg-gr-cream transition-colors no-underline"
+                style={{
+                  display: 'block',
+                  padding: 16,
+                  border: '1px solid var(--gr-border)',
+                  borderRadius: 8,
+                  textDecoration: 'none',
+                  color: 'inherit',
+                  transition: 'background 0.15s',
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'var(--gr-cream)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = ''}
               >
-                <h3 className="font-serif font-bold text-gr-brown mb-1">{list.title}</h3>
+                <h3 style={{
+                  fontFamily: "'Merriweather', Georgia, serif",
+                  fontWeight: 700,
+                  fontSize: 15,
+                  color: 'var(--gr-brown)',
+                  margin: '0 0 4px',
+                }}>
+                  {list.title}
+                </h3>
                 {list.description && (
-                  <p className="text-sm text-gr-light mb-3 line-clamp-2">{list.description}</p>
+                  <p style={{
+                    fontSize: 13,
+                    color: 'var(--gr-light)',
+                    marginBottom: 8,
+                    overflow: 'hidden',
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                  }}>
+                    {list.description}
+                  </p>
                 )}
-                <div className="flex items-center gap-4 text-xs text-gr-light">
-                  <span className="flex items-center gap-1"><BookOpen size={12} /> {list.item_count} books</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 12, color: 'var(--gr-light)' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                    <BookOpen size={12} /> {list.item_count} books
+                  </span>
+                  {list.voter_count > 0 && (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                      <Users size={12} /> {list.voter_count.toLocaleString()} voters
+                    </span>
+                  )}
                 </div>
               </Link>
             ))}
@@ -94,7 +242,7 @@ export default function ListsPage() {
                   placeholder="A curated list of..."
                 />
               </div>
-              <div className="flex gap-3 justify-end">
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
                 <button className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
                 <button className="btn btn-primary" onClick={handleCreate}>Create</button>
               </div>

@@ -3,6 +3,7 @@ package goodreads
 // GoodreadsBook holds all data scraped from a Goodreads book page.
 type GoodreadsBook struct {
 	GoodreadsID      string            `json:"goodreads_id"`
+	WorkID           string            `json:"work_id"`
 	Title            string            `json:"title"`
 	AuthorName       string            `json:"author_name"`
 	AuthorURL        string            `json:"author_url"`
@@ -44,6 +45,45 @@ type GoodreadsQuote struct {
 	Text       string `json:"text"`
 	AuthorName string `json:"author_name"`
 	LikesCount int    `json:"likes_count"`
+}
+
+// GoodreadsAuthor holds data scraped from a Goodreads author page.
+type GoodreadsAuthor struct {
+	GoodreadsID string `json:"goodreads_id"`
+	Name        string `json:"name"`
+	Bio         string `json:"bio"`
+	PhotoURL    string `json:"photo_url"`
+	BornDate    string `json:"born_date"`
+	DiedDate    string `json:"died_date"`
+	WorksCount  int    `json:"works_count"`
+	Followers   int    `json:"followers"`
+	Genres      string `json:"genres"`      // Comma-separated
+	Influences  string `json:"influences"`  // Comma-separated
+}
+
+// GoodreadsList holds data scraped from a Goodreads list page.
+type GoodreadsList struct {
+	Title       string              `json:"title"`
+	Description string              `json:"description"`
+	VoterCount  int                 `json:"voter_count"`
+	Books       []GoodreadsListItem `json:"books"`
+}
+
+// GoodreadsListItem represents a book entry in a Goodreads list.
+type GoodreadsListItem struct {
+	Title         string  `json:"title"`
+	AuthorName    string  `json:"author_name"`
+	CoverURL      string  `json:"cover_url"`
+	AverageRating float64 `json:"average_rating"`
+	RatingsCount  int     `json:"ratings_count"`
+}
+
+// GoodreadsListSummary is a brief list entry from the browse page.
+type GoodreadsListSummary struct {
+	Title      string `json:"title"`
+	URL        string `json:"url"`
+	BookCount  int    `json:"book_count"`
+	VoterCount int    `json:"voter_count"`
 }
 
 // jsonLD is the Schema.org Book JSON-LD embedded in Goodreads pages.
