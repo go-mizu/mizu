@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/csv"
 	"fmt"
 	"os"
@@ -26,17 +27,54 @@ func NewImportExport() *cobra.Command {
 	return cmd
 }
 
+func runOpenLibraryImport(ctx context.Context, opts openlibrarydump.Options, dbPath, parquetDir string, exportParquet, cleanupSource bool) error {
+	resolved, err := openlibrarydump.ResolvePaths(opts)
+	if err != nil {
+		return err
+	}
+	stats, err := openlibrarydump.ImportToDuckDB(ctx, dbPath, resolved)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(successStyle.Render("Open Library import complete"))
+	fmt.Printf("  Works staged:     %d\n", stats.WorksStaged)
+	fmt.Printf("  Authors staged:   %d\n", stats.AuthorsStaged)
+	fmt.Printf("  Editions matched: %d\n", stats.EditionsStaged)
+	fmt.Printf("  Books available:  %d\n", stats.BooksInserted)
+
+	if exportParquet {
+		paths, err := openlibrarydump.ExportParquet(ctx, dbPath, parquetDir)
+		if err != nil {
+			return err
+		}
+		fmt.Println(successStyle.Render("Parquet export complete"))
+		for _, p := range paths {
+			fmt.Printf("  %s\n", p)
+		}
+	}
+
+	if cleanupSource {
+		if err := openlibrarydump.DeleteSourceFiles(resolved.AuthorsPath, resolved.WorksPath, resolved.EditionsPath); err != nil {
+			return err
+		}
+		fmt.Println(successStyle.Render("Removed source dump files"))
+	}
+	return nil
+}
+
 func newImportOpenLibrary() *cobra.Command {
 	var (
-		dir           string
-		authorsPath   string
-		worksPath     string
-		editionsPath  string
-		parquetDir    string
-		limitWorks    int
-		replaceBooks  bool
-		exportParquet bool
-		cleanupSource bool
+		dir            string
+		authorsPath    string
+		worksPath      string
+		editionsPath   string
+		parquetDir     string
+		limitWorks     int
+		replaceBooks   bool
+		exportParquet  bool
+		cleanupSource  bool
+		downloadLatest bool
 	)
 
 	home, _ := os.UserHomeDir()
@@ -44,49 +82,43 @@ func newImportOpenLibrary() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "openlibrary",
-		Short: "Import Open Library dumps into DuckDB",
+		Short: "Download latest Open Library dumps and import into DuckDB",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			resolved, err := openlibrarydump.ResolvePaths(openlibrarydump.Options{
+			if downloadLatest {
+				specs, err := openlibrarydump.ResolveLatestDumpSpecs(ctx)
+				if err != nil {
+					return err
+				}
+
+				fmt.Println(infoStyle.Render("Resolved latest dump files"))
+				for i, spec := range specs {
+					fmt.Printf("  [%d/3] %s: %s (%s)\n", i+1, strings.Title(spec.Name), spec.ResolvedURL, openlibrarydump.FormatBytes(spec.SizeBytes))
+				}
+
+				paths := make(map[string]string, 3)
+				for i, spec := range specs {
+					fmt.Printf("\n[%d/3] Downloading %s dump\n", i+1, spec.Name)
+					path, err := openlibrarydump.DownloadSpec(ctx, spec, dir)
+					if err != nil {
+						return err
+					}
+					paths[spec.Name] = path
+				}
+
+				authorsPath = paths["authors"]
+				worksPath = paths["works"]
+				editionsPath = paths["editions"]
+			}
+
+			return runOpenLibraryImport(ctx, openlibrarydump.Options{
 				Dir:          dir,
 				AuthorsPath:  authorsPath,
 				WorksPath:    worksPath,
 				EditionsPath: editionsPath,
 				LimitWorks:   limitWorks,
 				ReplaceBooks: replaceBooks,
-			})
-			if err != nil {
-				return err
-			}
-			stats, err := openlibrarydump.ImportToDuckDB(ctx, GetDatabasePath(), resolved)
-			if err != nil {
-				return err
-			}
-
-			fmt.Println(successStyle.Render("Open Library import complete"))
-			fmt.Printf("  Works staged:     %d\n", stats.WorksStaged)
-			fmt.Printf("  Authors staged:   %d\n", stats.AuthorsStaged)
-			fmt.Printf("  Editions matched: %d\n", stats.EditionsStaged)
-			fmt.Printf("  Books available:  %d\n", stats.BooksInserted)
-
-			if exportParquet {
-				paths, err := openlibrarydump.ExportParquet(ctx, GetDatabasePath(), parquetDir)
-				if err != nil {
-					return err
-				}
-				fmt.Println(successStyle.Render("Parquet export complete"))
-				for _, p := range paths {
-					fmt.Printf("  %s\n", p)
-				}
-			}
-
-			if cleanupSource {
-				if err := openlibrarydump.DeleteSourceFiles(resolved.AuthorsPath, resolved.WorksPath, resolved.EditionsPath); err != nil {
-					return err
-				}
-				fmt.Println(successStyle.Render("Removed source dump files"))
-			}
-			return nil
+			}, GetDatabasePath(), parquetDir, exportParquet, cleanupSource)
 		},
 	}
 
@@ -99,6 +131,7 @@ func newImportOpenLibrary() *cobra.Command {
 	cmd.Flags().BoolVar(&replaceBooks, "replace", true, "Replace existing books with same Open Library key")
 	cmd.Flags().BoolVar(&exportParquet, "export-parquet", true, "Export imported Open Library records to parquet files")
 	cmd.Flags().BoolVar(&cleanupSource, "cleanup-source", true, "Delete source dump files after successful import and parquet export")
+	cmd.Flags().BoolVar(&downloadLatest, "download-latest", true, "Download latest dump files before importing")
 	return cmd
 }
 
