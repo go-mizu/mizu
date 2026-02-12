@@ -3,16 +3,19 @@ import { cors } from 'hono/cors'
 import type { HonoEnv } from '../types'
 import { GraphQLClient } from '../graphql'
 import { Cache } from '../cache'
+import { fetchTweetConversation } from '../tweet-fetch'
 import {
-  parseUserResult, parseTimeline, parseConversation, parseSearchTweets,
-  parseSearchUsers, parseFollowList, parseGraphList, parseListTimeline,
+  fetchProfileWithFallback, fetchUserTimelineWithFallback,
+  fetchSearchTweetsWithFallback, fetchSearchUsersWithFallback,
+} from '../fallback-fetch'
+import {
+  parseUserResult, parseFollowList, parseGraphList, parseListTimeline,
   parseListMembers,
 } from '../parse'
 import {
-  gqlUserByScreenName, gqlUserTweetsV2, gqlUserTweetsAndRepliesV2, gqlUserMedia,
-  gqlConversationTimeline, gqlSearchTimeline, gqlFollowers, gqlFollowing,
+  gqlUserByScreenName, gqlFollowers, gqlFollowing,
   gqlListById, gqlListTweets, gqlListMembers,
-  userFieldToggles, userTweetsFieldToggles, tweetDetailFieldToggles,
+  userFieldToggles,
   CACHE_PROFILE, CACHE_TIMELINE, CACHE_TWEET, CACHE_SEARCH, CACHE_FOLLOW, CACHE_LIST,
   SearchPeople,
 } from '../config'
@@ -31,18 +34,12 @@ function kv(c: any) {
 // GET /api/profile/:username
 app.get('/profile/:username', async (c) => {
   const username = c.req.param('username')
-  const client = gql(c)
   const cache = kv(c)
 
   const profileKey = `profile:${username.toLowerCase()}`
   let profile = await cache.get<any>(profileKey)
   if (!profile) {
-    const data = await client.doGraphQL(gqlUserByScreenName, {
-      screen_name: username,
-      withSafetyModeUserFields: true,
-      withSuperFollowsUserFields: true,
-    }, userFieldToggles)
-    profile = parseUserResult(data)
+    profile = await fetchProfileWithFallback(c.env, username)
     if (profile) await cache.set(profileKey, profile, CACHE_PROFILE)
   }
 
@@ -55,40 +52,21 @@ app.get('/tweets/:username', async (c) => {
   const username = c.req.param('username')
   const tab = c.req.query('tab') || 'tweets'
   const cursor = c.req.query('cursor') || ''
-  const client = gql(c)
   const cache = kv(c)
 
   // Get profile for user ID
   const profileKey = `profile:${username.toLowerCase()}`
   let profile = await cache.get<any>(profileKey)
   if (!profile) {
-    const data = await client.doGraphQL(gqlUserByScreenName, {
-      screen_name: username,
-      withSafetyModeUserFields: true,
-    }, userFieldToggles)
-    profile = parseUserResult(data)
+    profile = await fetchProfileWithFallback(c.env, username)
     if (profile) await cache.set(profileKey, profile, CACHE_PROFILE)
   }
   if (!profile) return c.json({ error: 'User not found' }, 404)
 
-  let endpoint = gqlUserTweetsV2
-  let toggles = userTweetsFieldToggles
-  if (tab === 'media') { endpoint = gqlUserMedia; toggles = '' }
-  else if (tab === 'replies') { endpoint = gqlUserTweetsAndRepliesV2 }
-
   const cacheKey = `tweets:${username.toLowerCase()}:${tab}:${cursor}`
   let timelineData = await cache.get<any>(cacheKey)
   if (!timelineData) {
-    const vars: Record<string, unknown> = {
-      userId: profile.id,
-      count: 40,
-      includePromotedContent: false,
-      withQuickPromoteEligibilityTweetFields: true,
-      withVoice: true,
-    }
-    if (cursor) vars.cursor = cursor
-    const data = await client.doGraphQL(endpoint, vars, toggles)
-    const result = parseTimeline(data)
+    const result = await fetchUserTimelineWithFallback(c.env, username, tab, cursor, profile.id || '')
     timelineData = { tweets: result.tweets, cursor: result.cursor }
     await cache.set(cacheKey, timelineData, CACHE_TIMELINE)
   }
@@ -100,27 +78,12 @@ app.get('/tweets/:username', async (c) => {
 app.get('/tweet/:id', async (c) => {
   const tweetID = c.req.param('id')
   const cursor = c.req.query('cursor') || ''
-  const client = gql(c)
   const cache = kv(c)
 
   const cacheKey = cursor ? `tweet:${tweetID}:${cursor}` : `tweet:${tweetID}`
   let cached = await cache.get<any>(cacheKey)
   if (!cached) {
-    const vars: Record<string, unknown> = {
-      focalTweetId: tweetID,
-      referrer: 'tweet',
-      with_rux_injections: false,
-      rankingMode: 'Relevance',
-      includePromotedContent: false,
-      withCommunity: true,
-      withQuickPromoteEligibilityTweetFields: true,
-      withBirdwatchNotes: true,
-      withVoice: true,
-      withV2Timeline: true,
-    }
-    if (cursor) vars.cursor = cursor
-    const data = await client.doGraphQL(gqlConversationTimeline, vars, tweetDetailFieldToggles)
-    const result = parseConversation(data, tweetID)
+    const result = await fetchTweetConversation(c.env, tweetID, cursor, false)
 
     if (cursor && !result.mainTweet) {
       const firstPage = await cache.get<any>(`tweet:${tweetID}`)
@@ -145,33 +108,21 @@ app.get('/search', async (c) => {
   const cursor = c.req.query('cursor') || ''
   if (!query) return c.json({ error: 'Query required' }, 400)
 
-  const client = gql(c)
   const cache = kv(c)
   const cacheKey = `search:${query}:${mode}:${cursor}`
 
   if (mode === SearchPeople) {
     let usersData = await cache.get<any>(cacheKey)
     if (!usersData) {
-      const vars: Record<string, unknown> = {
-        rawQuery: query, count: 40, querySource: 'typed_query', product: 'People',
-      }
-      if (cursor) vars.cursor = cursor
-      const data = await client.doGraphQL(gqlSearchTimeline, vars, '')
-      const result = parseSearchUsers(data)
+      const result = await fetchSearchUsersWithFallback(c.env, query, cursor)
       usersData = { users: result.users, cursor: result.cursor }
       await cache.set(cacheKey, usersData, CACHE_SEARCH)
     }
     return c.json(usersData)
   } else {
-    const apiProduct = mode === 'Media' ? 'Photos' : mode
     let searchData = await cache.get<any>(cacheKey)
     if (!searchData) {
-      const vars: Record<string, unknown> = {
-        rawQuery: query, count: 40, querySource: 'typed_query', product: apiProduct,
-      }
-      if (cursor) vars.cursor = cursor
-      const data = await client.doGraphQL(gqlSearchTimeline, vars, '')
-      const result = parseSearchTweets(data)
+      const result = await fetchSearchTweetsWithFallback(c.env, query, mode, cursor)
       searchData = { tweets: result.tweets, cursor: result.cursor }
       await cache.set(cacheKey, searchData, CACHE_SEARCH)
     }

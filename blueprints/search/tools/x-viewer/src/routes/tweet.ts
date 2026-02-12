@@ -1,10 +1,10 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types'
-import { GraphQLClient } from '../graphql'
 import { Cache } from '../cache'
-import { parseConversation } from '../parse'
 import { renderLayout, renderTweetDetail, renderError } from '../html'
-import { gqlConversationTimeline, tweetDetailFieldToggles, CACHE_TWEET } from '../config'
+import { CACHE_TWEET } from '../config'
+import { fetchTweetConversation } from '../tweet-fetch'
+import { isRateLimitedError } from '../rate-limit'
 
 const app = new Hono<HonoEnv>()
 
@@ -12,7 +12,6 @@ app.get('/:username/status/:id', async (c) => {
   const tweetID = c.req.param('id')
   const username = c.req.param('username')
   const cursor = c.req.query('cursor') || ''
-  const gql = new GraphQLClient(c.env.X_AUTH_TOKEN, c.env.X_CT0, c.env.X_BEARER_TOKEN)
   const cache = new Cache(c.env.KV)
 
   try {
@@ -20,22 +19,7 @@ app.get('/:username/status/:id', async (c) => {
     let cached = await cache.get<{ mainTweet: unknown; replies: unknown[]; cursor: string }>(cacheKey)
 
     if (!cached) {
-      const vars: Record<string, unknown> = {
-        focalTweetId: tweetID,
-        referrer: 'tweet',
-        with_rux_injections: false,
-        rankingMode: 'Relevance',
-        includePromotedContent: true,
-        withCommunity: true,
-        withQuickPromoteEligibilityTweetFields: true,
-        withBirdwatchNotes: true,
-        withVoice: true,
-        withV2Timeline: true,
-      }
-      if (cursor) vars.cursor = cursor
-
-      const data = await gql.doGraphQL(gqlConversationTimeline, vars, tweetDetailFieldToggles)
-      const result = parseConversation(data, tweetID)
+      const result = await fetchTweetConversation(c.env, tweetID, cursor, true)
 
       // If paginated and mainTweet missing, try first-page cache
       if (cursor && !result.mainTweet) {
@@ -69,7 +53,7 @@ app.get('/:username/status/:id', async (c) => {
     return c.html(renderLayout(`${tweet.name} (@${tweet.username})`, content))
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    if (msg.includes('rate limited')) return c.html(renderError('Rate Limited', 'Too many requests. Please try again later.'), 429)
+    if (isRateLimitedError(e)) return c.html(renderError('Rate Limited', 'Too many requests. Please try again later.'), 429)
     return c.html(renderError('Error', msg), 500)
   }
 })

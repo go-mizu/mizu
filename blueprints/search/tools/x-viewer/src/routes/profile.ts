@@ -1,14 +1,13 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types'
-import { GraphQLClient } from '../graphql'
 import { Cache } from '../cache'
-import { parseUserResult, parseTimeline } from '../parse'
+import { parseUserResult } from '../parse'
 import { renderLayout, renderProfileHeader, renderTweetCard, renderMediaGrid, renderPagination, renderError } from '../html'
 import {
-  gqlUserByScreenName, gqlUserTweetsV2, gqlUserTweetsAndRepliesV2, gqlUserMedia,
-  userFieldToggles, userTweetsFieldToggles,
   CACHE_PROFILE, CACHE_TIMELINE,
 } from '../config'
+import { fetchProfileWithFallback, fetchUserTimelineWithFallback } from '../fallback-fetch'
+import { isRateLimitedError } from '../rate-limit'
 
 const app = new Hono<HonoEnv>()
 
@@ -18,19 +17,13 @@ app.get('/:username', async (c) => {
 
   const cursor = c.req.query('cursor') || ''
   const tab = c.req.query('tab') || 'tweets'
-  const gql = new GraphQLClient(c.env.X_AUTH_TOKEN, c.env.X_CT0, c.env.X_BEARER_TOKEN)
   const cache = new Cache(c.env.KV)
 
   try {
     const profileKey = `profile:${username.toLowerCase()}`
     let profile = await cache.get<ReturnType<typeof parseUserResult>>(profileKey)
     if (!profile) {
-      const data = await gql.doGraphQL(gqlUserByScreenName, {
-        screen_name: username,
-        withSafetyModeUserFields: true,
-        withSuperFollowsUserFields: true,
-      }, userFieldToggles)
-      profile = parseUserResult(data)
+      profile = await fetchProfileWithFallback(c.env, username)
       if (profile) await cache.set(profileKey, profile, CACHE_PROFILE)
     }
 
@@ -38,31 +31,11 @@ app.get('/:username', async (c) => {
       return c.html(renderError('User not found', `@${username} doesn't exist or may have been suspended.`), 404)
     }
 
-    // Choose endpoint based on tab
-    let endpoint = gqlUserTweetsV2
-    let toggles = userTweetsFieldToggles
-    if (tab === 'media') {
-      endpoint = gqlUserMedia
-      toggles = ''
-    } else if (tab === 'replies') {
-      endpoint = gqlUserTweetsAndRepliesV2
-      toggles = userTweetsFieldToggles
-    }
-
     const cacheKey = `tweets:${username.toLowerCase()}:${tab}:${cursor}`
     let timelineData = await cache.get<{ tweets: unknown[]; cursor: string }>(cacheKey)
 
     if (!timelineData) {
-      const vars: Record<string, unknown> = {
-        userId: profile.id,
-        count: 40,
-        includePromotedContent: false,
-        withQuickPromoteEligibilityTweetFields: true,
-        withVoice: true,
-      }
-      if (cursor) vars.cursor = cursor
-      const data = await gql.doGraphQL(endpoint, vars, toggles)
-      const result = parseTimeline(data)
+      const result = await fetchUserTimelineWithFallback(c.env, username, tab, cursor, profile.id || '')
       timelineData = { tweets: result.tweets, cursor: result.cursor }
       await cache.set(cacheKey, timelineData, CACHE_TIMELINE)
     }
@@ -96,7 +69,7 @@ app.get('/:username', async (c) => {
     return c.html(renderLayout(`@${profile.username}`, content))
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    if (msg.includes('rate limited')) return c.html(renderError('Rate Limited', 'Too many requests. Please try again later.'), 429)
+    if (isRateLimitedError(e)) return c.html(renderError('Rate Limited', 'Too many requests. Please try again later.'), 429)
     return c.html(renderError('Error', msg), 500)
   }
 })
