@@ -13,13 +13,15 @@ const baseURL = "https://www.goodreads.com"
 
 // Client scrapes book data from Goodreads HTML pages.
 type Client struct {
-	http *http.Client
+	http    *http.Client
+	baseURL string
 }
 
 // NewClient creates a new Goodreads scraper client.
 func NewClient() *Client {
 	return &Client{
-		http: &http.Client{Timeout: 30 * time.Second},
+		http:    &http.Client{Timeout: 30 * time.Second},
+		baseURL: baseURL,
 	}
 }
 
@@ -30,7 +32,7 @@ func (c *Client) GetBook(ctx context.Context, goodreadsID string) (*GoodreadsBoo
 		return nil, fmt.Errorf("empty goodreads ID")
 	}
 
-	u := fmt.Sprintf("%s/book/show/%s", baseURL, goodreadsID)
+	u := fmt.Sprintf("%s/book/show/%s", c.baseURL, goodreadsID)
 	body, err := c.fetch(ctx, u)
 	if err != nil {
 		return nil, err
@@ -41,6 +43,9 @@ func (c *Client) GetBook(ctx context.Context, goodreadsID string) (*GoodreadsBoo
 		return nil, fmt.Errorf("parse page: %w", err)
 	}
 	book.GoodreadsID = goodreadsID
+	if book.URL == "" {
+		book.URL = u
+	}
 
 	// Fetch quotes from the work quotes page
 	if book.WorkID != "" {
@@ -59,7 +64,7 @@ func (c *Client) GetAuthor(ctx context.Context, goodreadsID string) (*GoodreadsA
 		return nil, fmt.Errorf("empty goodreads author ID")
 	}
 
-	u := fmt.Sprintf("%s/author/show/%s", baseURL, goodreadsID)
+	u := fmt.Sprintf("%s/author/show/%s", c.baseURL, goodreadsID)
 	body, err := c.fetch(ctx, u)
 	if err != nil {
 		return nil, err
@@ -67,6 +72,7 @@ func (c *Client) GetAuthor(ctx context.Context, goodreadsID string) (*GoodreadsA
 
 	author := parseAuthorPage(body)
 	author.GoodreadsID = goodreadsID
+	author.URL = u
 	return author, nil
 }
 
@@ -74,7 +80,7 @@ func (c *Client) GetAuthor(ctx context.Context, goodreadsID string) (*GoodreadsA
 func (c *Client) GetList(ctx context.Context, urlOrID string) (*GoodreadsList, error) {
 	u := urlOrID
 	if !strings.Contains(u, "/") {
-		u = fmt.Sprintf("%s/list/show/%s", baseURL, u)
+		u = fmt.Sprintf("%s/list/show/%s", c.baseURL, u)
 	}
 
 	body, err := c.fetch(ctx, u)
@@ -91,7 +97,7 @@ func (c *Client) GetQuotes(ctx context.Context, workID string) ([]GoodreadsQuote
 	if workID == "" {
 		return nil, fmt.Errorf("empty work ID")
 	}
-	u := fmt.Sprintf("%s/work/quotes/%s", baseURL, workID)
+	u := fmt.Sprintf("%s/work/quotes/%s", c.baseURL, workID)
 	body, err := c.fetch(ctx, u)
 	if err != nil {
 		return nil, err
@@ -105,7 +111,7 @@ func (c *Client) SearchBook(ctx context.Context, title string) (string, error) {
 	if title == "" {
 		return "", fmt.Errorf("empty title")
 	}
-	u := fmt.Sprintf("%s/search?q=%s", baseURL, strings.ReplaceAll(title, " ", "+"))
+	u := fmt.Sprintf("%s/search?q=%s", c.baseURL, strings.ReplaceAll(title, " ", "+"))
 	body, err := c.fetch(ctx, u)
 	if err != nil {
 		return "", err
@@ -117,14 +123,43 @@ func (c *Client) SearchBook(ctx context.Context, title string) (string, error) {
 	return "", fmt.Errorf("no results found")
 }
 
-// GetPopularLists fetches the Goodreads lists browse page.
-func (c *Client) GetPopularLists(ctx context.Context) ([]GoodreadsListSummary, error) {
-	u := baseURL + "/list?ref=nav_brws_lists"
-	body, err := c.fetch(ctx, u)
-	if err != nil {
-		return nil, err
+// GetPopularLists fetches Goodreads lists from a stable server-rendered source.
+// Optional tag narrows discovery to `/list/tag/{tag}`.
+func (c *Client) GetPopularLists(ctx context.Context, tag string) ([]GoodreadsListSummary, error) {
+	tag = strings.TrimSpace(strings.ToLower(tag))
+	urls := make([]string, 0, 3)
+	if tag != "" {
+		safeTag := strings.ReplaceAll(tag, " ", "-")
+		urls = append(urls, fmt.Sprintf("%s/list/tag/%s", c.baseURL, safeTag))
 	}
-	return parseListsBrowse(body), nil
+	// `/list` is a Next.js shell in many contexts; keep it as best-effort fallback.
+	urls = append(urls,
+		c.baseURL+"/list/popular_lists",
+		c.baseURL+"/list?ref=nav_brws_lists",
+	)
+
+	var lastErr error
+	for _, u := range urls {
+		body, err := c.fetch(ctx, u)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		lists := parseListsBrowse(body)
+		if len(lists) > 0 {
+			if tag != "" {
+				for i := range lists {
+					lists[i].Tag = tag
+				}
+			}
+			return lists, nil
+		}
+	}
+
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return []GoodreadsListSummary{}, nil
 }
 
 // fetch retrieves a Goodreads page and returns the body as a string.

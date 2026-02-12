@@ -31,7 +31,7 @@ export default function ReviewCard({ review, onEdit, onDelete }: ReviewCardProps
     setLiked(false)
   }, [review])
 
-  const isGoodreads = current.source === 'goodreads'
+  const isImported = current.source === 'goodreads'
   const displayName = current.reviewer_name || (current.source === 'user' ? 'You' : (current.book?.title ? current.book.title.charAt(0).toUpperCase() : 'R'))
   const initial = displayName.charAt(0).toUpperCase()
 
@@ -103,7 +103,7 @@ export default function ReviewCard({ review, onEdit, onDelete }: ReviewCardProps
             <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--gr-brown)' }}>
               {displayName}
             </span>
-            {isGoodreads && (
+            {isImported && (
               <span style={{
                 fontSize: 10,
                 padding: '2px 6px',
@@ -114,7 +114,7 @@ export default function ReviewCard({ review, onEdit, onDelete }: ReviewCardProps
                 textTransform: 'uppercase',
                 letterSpacing: 0.5,
               }}>
-                Goodreads
+                Imported
               </span>
             )}
           </div>

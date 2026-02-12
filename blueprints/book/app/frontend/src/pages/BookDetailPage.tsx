@@ -228,7 +228,7 @@ export default function BookDetailPage() {
         booksApi.getBookQuotes(bookId).then(setQuotes).catch(() => {})
         booksApi.getProgress(bookId).then(setProgress).catch(() => {})
 
-        // Auto-enrich from Goodreads if no community reviews
+        // Auto-enrich from external source if no community reviews
         if (reviewsData.length === 0) {
           setEnriching(true)
           booksApi.enrichBook(bookId)
@@ -401,11 +401,15 @@ export default function BookDetailPage() {
   }
 
   const genres = book.subjects || []
+  const characters = book.characters || []
+  const settings = book.settings || []
+  const awards = book.literary_awards || []
   const latestProgress = progress.length > 0 ? progress[0] : null
   const hasRatingDist = book.rating_dist && book.rating_dist.some(n => n > 0)
   const reviewCount = reviewsTotal || book.reviews_count || reviews.length
   const userReview = reviews.find((r) => r.source === 'user')
   const exclusiveShelves = shelves.filter((s) => s.is_exclusive)
+  const editionsCount = book.editions_count ?? 0
 
   return (
     <>
@@ -536,6 +540,34 @@ export default function BookDetailPage() {
               </div>
             )}
 
+            {characters.length > 0 && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 13, color: 'var(--gr-light)', marginBottom: 6 }}>Characters</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {characters.map((character) => (
+                    <span key={character} className="genre-tag">{character}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {settings.length > 0 && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 13, color: 'var(--gr-light)', marginBottom: 6 }}>Setting</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {settings.map((setting) => (
+                    <span key={setting} className="genre-tag">{setting}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {awards.length > 0 && (
+              <div style={{ marginBottom: 14, fontSize: 13, color: 'var(--gr-light)' }}>
+                <strong style={{ color: 'var(--gr-text)' }}>Literary awards:</strong> {awards.join(', ')}
+              </div>
+            )}
+
             {/* Rating Distribution */}
             {hasRatingDist && <RatingDistribution book={book} />}
 
@@ -581,6 +613,12 @@ export default function BookDetailPage() {
                     <span>{book.publisher}</span>
                   </div>
                 )}
+                {book.original_title && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--gr-light)' }}>
+                    <BookOpen size={14} />
+                    <span>Original title: {book.original_title}</span>
+                  </div>
+                )}
                 {book.first_published && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--gr-light)' }}>
                     <Calendar size={14} />
@@ -605,6 +643,18 @@ export default function BookDetailPage() {
                     <span>{book.language}</span>
                   </div>
                 )}
+                {book.edition_language && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--gr-light)' }}>
+                    <Globe size={14} />
+                    <span>Edition language: {book.edition_language}</span>
+                  </div>
+                )}
+                {editionsCount > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--gr-light)' }}>
+                    <BookOpen size={14} />
+                    <span>{editionsCount.toLocaleString()} editions</span>
+                  </div>
+                )}
                 {book.asin && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--gr-light)' }}>
                     <FileText size={14} />
@@ -615,12 +665,12 @@ export default function BookDetailPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--gr-light)' }}>
                     <Users size={14} />
                     <a
-                      href={`https://www.goodreads.com/book/show/${book.goodreads_id}`}
+                      href={book.goodreads_url || `https://www.goodreads.com/book/show/${book.goodreads_id}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{ color: 'var(--gr-teal)', textDecoration: 'none' }}
                     >
-                      View on Goodreads
+                      View source page
                     </a>
                   </div>
                 )}
@@ -686,7 +736,7 @@ export default function BookDetailPage() {
               </select>
               <select className="form-input" value={reviewSourceFilter} onChange={(e) => setReviewSourceFilter(e.target.value as 'all' | 'user' | 'goodreads')}>
                 <option value="all">All sources</option>
-                <option value="goodreads">Goodreads</option>
+                <option value="goodreads">Imported</option>
                 <option value="user">My reviews</option>
               </select>
               <select className="form-input" value={reviewTextFilter} onChange={(e) => setReviewTextFilter(e.target.value as 'all' | 'with' | 'without')}>
@@ -713,6 +763,11 @@ export default function BookDetailPage() {
                 Show spoilers
               </label>
             </div>
+            {reviewsTotal > 0 && (
+              <div style={{ fontSize: 12, color: 'var(--gr-light)', marginBottom: 12 }}>
+                Showing {reviews.length} of {reviewsTotal} reviews
+              </div>
+            )}
             {!showReviewForm && (
               <button
                 className="btn btn-primary"
@@ -841,7 +896,7 @@ export default function BookDetailPage() {
             {enriching && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, fontSize: 14, color: 'var(--gr-light)' }}>
                 <div className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
-                Fetching community reviews from Goodreads...
+                Fetching imported community reviews...
               </div>
             )}
             {loadingReviews && (

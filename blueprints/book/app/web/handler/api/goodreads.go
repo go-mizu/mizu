@@ -142,17 +142,40 @@ func (h *GoodreadsHandler) ImportList(c *mizu.Ctx) error {
 
 	// Import books from the list
 	for i, grItem := range grList.Books {
-		book := types.Book{
-			Title:         grItem.Title,
-			AuthorNames:   grItem.AuthorName,
-			CoverURL:      grItem.CoverURL,
-			AverageRating: grItem.AverageRating,
-			RatingsCount:  grItem.RatingsCount,
+		position := grItem.Position
+		if position <= 0 {
+			position = i + 1
 		}
-		if err := h.st.Book().Create(c.Context(), &book); err != nil {
+
+		var bookID int64
+		if grItem.GoodreadsID != "" {
+			if existing, _ := h.st.Book().GetByGoodreadsID(c.Context(), grItem.GoodreadsID); existing != nil {
+				bookID = existing.ID
+			}
+		}
+
+		if bookID == 0 {
+			book := types.Book{
+				GoodreadsID:   grItem.GoodreadsID,
+				GoodreadsURL:  grItem.URL,
+				Title:         grItem.Title,
+				AuthorNames:   grItem.AuthorName,
+				CoverURL:      grItem.CoverURL,
+				AverageRating: grItem.AverageRating,
+				RatingsCount:  grItem.RatingsCount,
+			}
+			if err := h.st.Book().Create(c.Context(), &book); err != nil {
+				continue
+			}
+			bookID = book.ID
+		}
+
+		if err := h.st.List().AddBook(c.Context(), list.ID, bookID, position); err != nil {
 			continue
 		}
-		h.st.List().AddBook(c.Context(), list.ID, book.ID, i+1)
+		if grItem.Score > 0 {
+			_ = h.st.List().SetVotes(c.Context(), list.ID, bookID, grItem.Score)
+		}
 	}
 
 	return c.JSON(201, list)
@@ -206,9 +229,13 @@ func (h *GoodreadsHandler) EnrichBook(c *mizu.Ctx) error {
 
 // BrowseLists fetches popular lists from Goodreads.
 func (h *GoodreadsHandler) BrowseLists(c *mizu.Ctx) error {
-	lists, err := h.gr.GetPopularLists(c.Context())
+	tag := strings.TrimSpace(c.Query("tag"))
+	lists, err := h.gr.GetPopularLists(c.Context(), tag)
 	if err != nil {
 		return c.JSON(502, map[string]string{"error": err.Error()})
+	}
+	if lists == nil {
+		lists = []goodreads.GoodreadsListSummary{}
 	}
 	return c.JSON(200, lists)
 }
@@ -221,6 +248,7 @@ func (h *GoodreadsHandler) importGoodreadsContent(c *mizu.Ctx, bookID int64, gr 
 			BookID:       bookID,
 			Rating:       r.Rating,
 			Text:         r.Text,
+			IsSpoiler:    r.IsSpoiler,
 			LikesCount:   r.LikesCount,
 			ReviewerName: r.ReviewerName,
 			Source:       "goodreads",
@@ -269,7 +297,9 @@ func goodreadsToBook(gr *goodreads.GoodreadsBook) types.Book {
 
 	return types.Book{
 		GoodreadsID:      gr.GoodreadsID,
+		GoodreadsURL:     gr.URL,
 		Title:            gr.Title,
+		OriginalTitle:    gr.OriginalTitle,
 		AuthorNames:      gr.AuthorName,
 		Description:      gr.Description,
 		ISBN10:           gr.ISBN,
@@ -277,12 +307,17 @@ func goodreadsToBook(gr *goodreads.GoodreadsBook) types.Book {
 		ASIN:             gr.ASIN,
 		PageCount:        gr.PageCount,
 		Format:           gr.Format,
+		EditionLanguage:  gr.EditionLanguage,
 		Publisher:        gr.Publisher,
 		PublishDate:      gr.PublishDate,
 		FirstPublished:   gr.FirstPublished,
 		Language:         gr.Language,
 		CoverURL:         gr.CoverURL,
 		Series:           gr.Series,
+		EditionsCount:    gr.EditionCount,
+		Characters:       gr.Characters,
+		Settings:         gr.Settings,
+		LiteraryAwards:   gr.LiteraryAwards,
 		AverageRating:    gr.AverageRating,
 		RatingsCount:     gr.RatingsCount,
 		ReviewsCount:     gr.ReviewsCount,
@@ -297,14 +332,38 @@ func goodreadsToBook(gr *goodreads.GoodreadsBook) types.Book {
 
 func mergeGoodreadsData(book *types.Book, gr *goodreads.GoodreadsBook) {
 	book.GoodreadsID = gr.GoodreadsID
+	if book.GoodreadsURL == "" {
+		book.GoodreadsURL = gr.URL
+	}
+	if book.OriginalTitle == "" {
+		book.OriginalTitle = gr.OriginalTitle
+	}
 	if book.Description == "" {
 		book.Description = gr.Description
 	}
 	if book.CoverURL == "" {
 		book.CoverURL = gr.CoverURL
 	}
+	if book.PublishDate == "" {
+		book.PublishDate = gr.PublishDate
+	}
+	if book.EditionLanguage == "" {
+		book.EditionLanguage = gr.EditionLanguage
+	}
 	book.ASIN = gr.ASIN
 	book.Series = gr.Series
+	if gr.EditionCount > 0 {
+		book.EditionsCount = gr.EditionCount
+	}
+	if len(gr.Characters) > 0 {
+		book.Characters = gr.Characters
+	}
+	if len(gr.Settings) > 0 {
+		book.Settings = gr.Settings
+	}
+	if len(gr.LiteraryAwards) > 0 {
+		book.LiteraryAwards = gr.LiteraryAwards
+	}
 	book.AverageRating = gr.AverageRating
 	book.RatingsCount = gr.RatingsCount
 	book.ReviewsCount = gr.ReviewsCount
@@ -329,5 +388,6 @@ func goodreadsToAuthor(gr *goodreads.GoodreadsAuthor) types.Author {
 		Followers:   gr.Followers,
 		Genres:      gr.Genres,
 		Influences:  gr.Influences,
+		Website:     gr.Website,
 	}
 }

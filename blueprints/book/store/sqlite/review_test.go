@@ -51,7 +51,10 @@ func TestReviewFiltersAndCounts(t *testing.T) {
 		t.Fatalf("expected 1 rating-5 review, got total=%d len=%d", total, len(list))
 	}
 
-	list, total, err = st.Review().GetByBookFiltered(ctx, book.ID, types.ReviewQuery{HasText: ptrBool(true)})
+	list, total, err = st.Review().GetByBookFiltered(ctx, book.ID, types.ReviewQuery{
+		HasText:         ptrBool(true),
+		IncludeSpoilers: true,
+	})
 	if err != nil {
 		t.Fatalf("filter has_text: %v", err)
 	}

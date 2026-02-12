@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { Calendar, Users, BookOpen, Download } from 'lucide-react'
+import { Calendar, Users, BookOpen, Download, Globe } from 'lucide-react'
 import Header from '../components/Header'
 import BookCard from '../components/BookCard'
 import { booksApi } from '../api/books'
@@ -39,11 +39,11 @@ export default function AuthorPage() {
     fetchData()
   }, [id, authorId])
 
-  const handleImportGoodreads = async () => {
+  const handleImportAuthorData = async () => {
     if (!grId.trim()) return
     setImporting(true)
     try {
-      const imported = await booksApi.importGoodreadsAuthor(grId.trim())
+      const imported = await booksApi.importSourceAuthor(grId.trim())
       setAuthor(prev => prev ? { ...prev, ...imported } : imported)
       setGrId('')
     } catch {
@@ -89,6 +89,7 @@ export default function AuthorPage() {
   }
 
   const genres = author.genres ? author.genres.split(', ').filter(Boolean) : []
+  const influences = author.influences ? author.influences.split(', ').filter(Boolean) : []
 
   return (
     <>
@@ -205,7 +206,27 @@ export default function AuthorPage() {
               </div>
             )}
 
-            {/* Goodreads link */}
+            {influences.length > 0 && (
+              <div style={{ marginTop: 10, fontSize: 13, color: 'var(--gr-light)' }}>
+                <strong style={{ color: 'var(--gr-text)' }}>Influences:</strong> {influences.join(', ')}
+              </div>
+            )}
+
+            {author.website && (
+              <div style={{ marginTop: 10, fontSize: 13 }}>
+                <a
+                  href={author.website}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: 'var(--gr-teal)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  <Globe size={13} />
+                  Author website
+                </a>
+              </div>
+            )}
+
+            {/* External profile link */}
             {author.goodreads_id && (
               <div style={{ marginTop: 12, fontSize: 13 }}>
                 <a
@@ -214,25 +235,25 @@ export default function AuthorPage() {
                   rel="noopener noreferrer"
                   style={{ color: 'var(--gr-teal)', textDecoration: 'none' }}
                 >
-                  View on Goodreads
+                  View source profile
                 </a>
               </div>
             )}
 
-            {/* Import from Goodreads */}
+            {/* Import from external source */}
             {!author.goodreads_id && (
               <div style={{ marginTop: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
                 <input
                   type="text"
                   value={grId}
                   onChange={(e) => setGrId(e.target.value)}
-                  placeholder="Goodreads author ID"
+                  placeholder="Source author ID"
                   className="form-input"
                   style={{ width: 200, fontSize: 13, padding: '6px 10px' }}
                 />
                 <button
                   className="btn btn-secondary btn-sm"
-                  onClick={handleImportGoodreads}
+                  onClick={handleImportAuthorData}
                   disabled={importing || !grId.trim()}
                 >
                   <Download size={14} />

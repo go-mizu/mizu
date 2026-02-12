@@ -4,7 +4,9 @@ package goodreads
 type GoodreadsBook struct {
 	GoodreadsID      string            `json:"goodreads_id"`
 	WorkID           string            `json:"work_id"`
+	URL              string            `json:"url"`
 	Title            string            `json:"title"`
+	OriginalTitle    string            `json:"original_title"`
 	AuthorName       string            `json:"author_name"`
 	AuthorURL        string            `json:"author_url"`
 	Description      string            `json:"description"`
@@ -17,8 +19,13 @@ type GoodreadsBook struct {
 	PublishDate      string            `json:"publish_date"`
 	FirstPublished   string            `json:"first_published"`
 	Language         string            `json:"language"`
+	EditionLanguage  string            `json:"edition_language"`
 	CoverURL         string            `json:"cover_url"`
 	Series           string            `json:"series"`
+	EditionCount     int               `json:"edition_count"`
+	Characters       []string          `json:"characters"`
+	Settings         []string          `json:"settings"`
+	LiteraryAwards   []string          `json:"literary_awards"`
 	AverageRating    float64           `json:"average_rating"`
 	RatingsCount     int               `json:"ratings_count"`
 	ReviewsCount     int               `json:"reviews_count"`
@@ -38,6 +45,7 @@ type GoodreadsReview struct {
 	Text         string `json:"text"`
 	LikesCount   int    `json:"likes_count"`
 	Shelves      string `json:"shelves"`
+	IsSpoiler    bool   `json:"is_spoiler"`
 }
 
 // GoodreadsQuote is a quote from a Goodreads book page.
@@ -50,6 +58,7 @@ type GoodreadsQuote struct {
 // GoodreadsAuthor holds data scraped from a Goodreads author page.
 type GoodreadsAuthor struct {
 	GoodreadsID string `json:"goodreads_id"`
+	URL         string `json:"url"`
 	Name        string `json:"name"`
 	Bio         string `json:"bio"`
 	PhotoURL    string `json:"photo_url"`
@@ -57,8 +66,9 @@ type GoodreadsAuthor struct {
 	DiedDate    string `json:"died_date"`
 	WorksCount  int    `json:"works_count"`
 	Followers   int    `json:"followers"`
-	Genres      string `json:"genres"`      // Comma-separated
-	Influences  string `json:"influences"`  // Comma-separated
+	Genres      string `json:"genres"`     // Comma-separated
+	Influences  string `json:"influences"` // Comma-separated
+	Website     string `json:"website"`
 }
 
 // GoodreadsList holds data scraped from a Goodreads list page.
@@ -71,32 +81,40 @@ type GoodreadsList struct {
 
 // GoodreadsListItem represents a book entry in a Goodreads list.
 type GoodreadsListItem struct {
+	GoodreadsID   string  `json:"goodreads_id"`
+	URL           string  `json:"url"`
+	Position      int     `json:"position"`
 	Title         string  `json:"title"`
 	AuthorName    string  `json:"author_name"`
 	CoverURL      string  `json:"cover_url"`
 	AverageRating float64 `json:"average_rating"`
 	RatingsCount  int     `json:"ratings_count"`
+	Score         int     `json:"score"`
+	Voters        int     `json:"voters"`
 }
 
 // GoodreadsListSummary is a brief list entry from the browse page.
 type GoodreadsListSummary struct {
+	GoodreadsID string `json:"goodreads_id"`
 	Title      string `json:"title"`
 	URL        string `json:"url"`
 	BookCount  int    `json:"book_count"`
 	VoterCount int    `json:"voter_count"`
+	Tag        string `json:"tag,omitempty"`
 }
 
 // jsonLD is the Schema.org Book JSON-LD embedded in Goodreads pages.
 type jsonLD struct {
-	Type            string `json:"@type"`
-	Name            string `json:"name"`
-	Image           string `json:"image"`
-	BookFormat      string `json:"bookFormat"`
-	NumberOfPages   int    `json:"numberOfPages"`
-	InLanguage      string `json:"inLanguage"`
-	ISBN            string `json:"isbn"`
-	Author          []struct {
+	Type          string `json:"@type"`
+	Name          string `json:"name"`
+	Image         string `json:"image"`
+	BookFormat    string `json:"bookFormat"`
+	NumberOfPages int    `json:"numberOfPages"`
+	InLanguage    string `json:"inLanguage"`
+	ISBN          string `json:"isbn"`
+	Author        []struct {
 		Name string `json:"name"`
+		URL  string `json:"url"`
 	} `json:"author"`
 	AggregateRating struct {
 		RatingValue float64 `json:"ratingValue"`

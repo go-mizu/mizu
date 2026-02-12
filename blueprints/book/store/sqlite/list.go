@@ -3,9 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/book/types"
@@ -52,16 +50,12 @@ func (s *ListStore) Get(ctx context.Context, id int64) (*types.BookList, error) 
 	}
 
 	// Load items with books
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT li.id, li.list_id, li.book_id, li.position, li.votes,
-			b.id, b.ol_key, b.google_id, b.title, b.subtitle, b.description,
-			b.author_names, b.cover_url, b.cover_id, b.isbn10, b.isbn13, b.publisher,
-			b.publish_date, b.publish_year, b.page_count, b.language, b.format,
-			b.subjects_json, b.average_rating, b.ratings_count, b.created_at, b.updated_at
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
+		SELECT li.id, li.list_id, li.book_id, li.position, li.votes, %s
 		FROM book_list_items li
 		JOIN books b ON b.id = li.book_id
 		WHERE li.list_id = ?
-		ORDER BY li.position ASC, li.votes DESC`, id)
+		ORDER BY li.position ASC, li.votes DESC`, bookColumns("b")), id)
 	if err != nil {
 		return &list, nil
 	}
@@ -70,20 +64,12 @@ func (s *ListStore) Get(ctx context.Context, id int64) (*types.BookList, error) 
 	for rows.Next() {
 		var item types.BookListItem
 		var b types.Book
-		err := rows.Scan(&item.ID, &item.ListID, &item.BookID, &item.Position, &item.Votes,
-			&b.ID, &b.OLKey, &b.GoogleID, &b.Title, &b.Subtitle, &b.Description,
-			&b.AuthorNames, &b.CoverURL, &b.CoverID, &b.ISBN10, &b.ISBN13, &b.Publisher,
-			&b.PublishDate, &b.PublishYear, &b.PageCount, &b.Language, &b.Format,
-			&b.SubjectsJSON, &b.AverageRating, &b.RatingsCount, &b.CreatedAt, &b.UpdatedAt)
+		fields := append([]any{&item.ID, &item.ListID, &item.BookID, &item.Position, &item.Votes}, scanFields(&b)...)
+		err := rows.Scan(fields...)
 		if err != nil {
 			return nil, fmt.Errorf("scan list item: %w", err)
 		}
-		json.Unmarshal([]byte(b.SubjectsJSON), &b.Subjects)
-		if b.AuthorNames != "" {
-			for _, name := range strings.Split(b.AuthorNames, ", ") {
-				b.Authors = append(b.Authors, types.Author{Name: name})
-			}
-		}
+		hydrateBook(&b)
 		item.Book = &b
 		list.Items = append(list.Items, item)
 	}
@@ -137,6 +123,13 @@ func (s *ListStore) AddBook(ctx context.Context, listID, bookID int64, position 
 		INSERT OR IGNORE INTO book_list_items (list_id, book_id, position, votes)
 		VALUES (?, ?, ?, 0)`,
 		listID, bookID, position)
+	return err
+}
+
+func (s *ListStore) SetVotes(ctx context.Context, listID, bookID int64, votes int) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE book_list_items SET votes = ? WHERE list_id = ? AND book_id = ?`,
+		votes, listID, bookID)
 	return err
 }
 

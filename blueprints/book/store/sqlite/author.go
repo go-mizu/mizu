@@ -20,11 +20,11 @@ func (s *AuthorStore) Create(ctx context.Context, author *types.Author) error {
 	}
 	result, err := s.db.ExecContext(ctx, `
 		INSERT INTO authors (ol_key, name, bio, photo_url, birth_date, death_date, works_count, created_at,
-			goodreads_id, followers, genres, influences)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			goodreads_id, followers, genres, influences, website)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		author.OLKey, author.Name, author.Bio, author.PhotoURL,
 		author.BirthDate, author.DeathDate, author.WorksCount, author.CreatedAt,
-		author.GoodreadsID, author.Followers, author.Genres, author.Influences)
+		author.GoodreadsID, author.Followers, author.Genres, author.Influences, author.Website)
 	if err != nil {
 		return err
 	}
@@ -82,7 +82,7 @@ func (s *AuthorStore) GetBooks(ctx context.Context, authorID int64, page, limit 
 	s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM books WHERE author_names LIKE ?`, likeA).Scan(&total)
 
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT * FROM books WHERE author_names LIKE ? ORDER BY publish_year DESC LIMIT ? OFFSET ?`,
+		fmt.Sprintf(`SELECT %s FROM books WHERE author_names LIKE ? ORDER BY publish_year DESC LIMIT ? OFFSET ?`, bookColumns("")),
 		likeA, limit, offset)
 	if err != nil {
 		return nil, err
@@ -104,10 +104,10 @@ func (s *AuthorStore) GetByGoodreadsID(ctx context.Context, grID string) (*types
 func (s *AuthorStore) Update(ctx context.Context, author *types.Author) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE authors SET name=?, bio=?, photo_url=?, birth_date=?, death_date=?,
-			works_count=?, goodreads_id=?, followers=?, genres=?, influences=?
+			works_count=?, goodreads_id=?, followers=?, genres=?, influences=?, website=?
 		WHERE id=?`,
 		author.Name, author.Bio, author.PhotoURL, author.BirthDate, author.DeathDate,
-		author.WorksCount, author.GoodreadsID, author.Followers, author.Genres, author.Influences,
+		author.WorksCount, author.GoodreadsID, author.Followers, author.Genres, author.Influences, author.Website,
 		author.ID)
 	return err
 }
@@ -116,7 +116,7 @@ func (s *AuthorStore) scanAuthor(row *sql.Row) (*types.Author, error) {
 	var a types.Author
 	err := row.Scan(&a.ID, &a.OLKey, &a.Name, &a.Bio, &a.PhotoURL,
 		&a.BirthDate, &a.DeathDate, &a.WorksCount, &a.CreatedAt,
-		&a.GoodreadsID, &a.Followers, &a.Genres, &a.Influences)
+		&a.GoodreadsID, &a.Followers, &a.Genres, &a.Influences, &a.Website)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -132,7 +132,7 @@ func (s *AuthorStore) scanAuthors(rows *sql.Rows) ([]types.Author, error) {
 		var a types.Author
 		err := rows.Scan(&a.ID, &a.OLKey, &a.Name, &a.Bio, &a.PhotoURL,
 			&a.BirthDate, &a.DeathDate, &a.WorksCount, &a.CreatedAt,
-			&a.GoodreadsID, &a.Followers, &a.Genres, &a.Influences)
+			&a.GoodreadsID, &a.Followers, &a.Genres, &a.Influences, &a.Website)
 		if err != nil {
 			return nil, fmt.Errorf("scan author: %w", err)
 		}

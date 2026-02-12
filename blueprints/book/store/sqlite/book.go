@@ -16,9 +16,32 @@ type BookStore struct {
 	db *sql.DB
 }
 
+var orderedBookColumns = []string{
+	"id", "ol_key", "google_id", "title", "original_title", "subtitle", "description",
+	"author_names", "cover_url", "cover_id", "isbn10", "isbn13", "publisher",
+	"publish_date", "publish_year", "page_count", "language", "edition_language", "format",
+	"subjects_json", "characters_json", "settings_json", "literary_awards_json", "editions_count",
+	"average_rating", "ratings_count", "created_at", "updated_at",
+	"goodreads_id", "goodreads_url", "asin", "series", "reviews_count",
+	"currently_reading", "want_to_read", "rating_dist", "first_published",
+}
+
+func bookColumns(alias string) string {
+	if alias == "" {
+		return strings.Join(orderedBookColumns, ", ")
+	}
+	parts := make([]string, 0, len(orderedBookColumns))
+	for _, c := range orderedBookColumns {
+		parts = append(parts, alias+"."+c)
+	}
+	return strings.Join(parts, ", ")
+}
+
 func (s *BookStore) Create(ctx context.Context, book *types.Book) error {
-	subj, _ := json.Marshal(book.Subjects)
-	book.SubjectsJSON = string(subj)
+	book.SubjectsJSON = marshalStringSlice(book.Subjects)
+	book.CharactersJSON = marshalStringSlice(book.Characters)
+	book.SettingsJSON = marshalStringSlice(book.Settings)
+	book.LiteraryAwardsJSON = marshalStringSlice(book.LiteraryAwards)
 	rdist, _ := json.Marshal(book.RatingDist)
 	book.RatingDistJSON = string(rdist)
 	now := time.Now()
@@ -26,18 +49,19 @@ func (s *BookStore) Create(ctx context.Context, book *types.Book) error {
 	book.UpdatedAt = now
 
 	result, err := s.db.ExecContext(ctx, `
-		INSERT INTO books (ol_key, google_id, title, subtitle, description, author_names,
+		INSERT INTO books (ol_key, google_id, title, original_title, subtitle, description, author_names,
 			cover_url, cover_id, isbn10, isbn13, publisher, publish_date, publish_year,
-			page_count, language, format, subjects_json, average_rating, ratings_count,
-			created_at, updated_at, goodreads_id, asin, series, reviews_count,
+			page_count, language, edition_language, format, subjects_json, characters_json, settings_json,
+			literary_awards_json, editions_count, average_rating, ratings_count,
+			created_at, updated_at, goodreads_id, goodreads_url, asin, series, reviews_count,
 			currently_reading, want_to_read, rating_dist, first_published)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-			?, ?, ?, ?, ?, ?, ?, ?)`,
-		book.OLKey, book.GoogleID, book.Title, book.Subtitle, book.Description, book.AuthorNames,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		book.OLKey, book.GoogleID, book.Title, book.OriginalTitle, book.Subtitle, book.Description, book.AuthorNames,
 		book.CoverURL, book.CoverID, book.ISBN10, book.ISBN13, book.Publisher, book.PublishDate,
-		book.PublishYear, book.PageCount, book.Language, book.Format, book.SubjectsJSON,
+		book.PublishYear, book.PageCount, book.Language, book.EditionLanguage, book.Format, book.SubjectsJSON,
+		book.CharactersJSON, book.SettingsJSON, book.LiteraryAwardsJSON, book.EditionsCount,
 		book.AverageRating, book.RatingsCount, now, now,
-		book.GoodreadsID, book.ASIN, book.Series, book.ReviewsCount,
+		book.GoodreadsID, book.GoodreadsURL, book.ASIN, book.Series, book.ReviewsCount,
 		book.CurrentlyReading, book.WantToRead, book.RatingDistJSON, book.FirstPublished)
 	if err != nil {
 		return err
@@ -57,19 +81,23 @@ func (s *BookStore) Create(ctx context.Context, book *types.Book) error {
 }
 
 func (s *BookStore) Get(ctx context.Context, id int64) (*types.Book, error) {
-	return s.scanBook(s.db.QueryRowContext(ctx, `SELECT * FROM books WHERE id = ?`, id))
+	return s.scanBook(s.db.QueryRowContext(ctx,
+		fmt.Sprintf(`SELECT %s FROM books WHERE id = ?`, bookColumns("")), id))
 }
 
 func (s *BookStore) GetByISBN(ctx context.Context, isbn string) (*types.Book, error) {
 	isbn = strings.ReplaceAll(isbn, "-", "")
 	if len(isbn) == 13 {
-		return s.scanBook(s.db.QueryRowContext(ctx, `SELECT * FROM books WHERE isbn13 = ?`, isbn))
+		return s.scanBook(s.db.QueryRowContext(ctx,
+			fmt.Sprintf(`SELECT %s FROM books WHERE isbn13 = ?`, bookColumns("")), isbn))
 	}
-	return s.scanBook(s.db.QueryRowContext(ctx, `SELECT * FROM books WHERE isbn10 = ?`, isbn))
+	return s.scanBook(s.db.QueryRowContext(ctx,
+		fmt.Sprintf(`SELECT %s FROM books WHERE isbn10 = ?`, bookColumns("")), isbn))
 }
 
 func (s *BookStore) GetByOLKey(ctx context.Context, olKey string) (*types.Book, error) {
-	return s.scanBook(s.db.QueryRowContext(ctx, `SELECT * FROM books WHERE ol_key = ?`, olKey))
+	return s.scanBook(s.db.QueryRowContext(ctx,
+		fmt.Sprintf(`SELECT %s FROM books WHERE ol_key = ?`, bookColumns("")), olKey))
 }
 
 func (s *BookStore) Search(ctx context.Context, query string, page, limit int) (*types.SearchResult, error) {
@@ -86,7 +114,7 @@ func (s *BookStore) Search(ctx context.Context, query string, page, limit int) (
 		var total int
 		s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM books`).Scan(&total)
 		rows, err := s.db.QueryContext(ctx,
-			`SELECT * FROM books ORDER BY ratings_count DESC LIMIT ? OFFSET ?`, limit, offset)
+			fmt.Sprintf(`SELECT %s FROM books ORDER BY ratings_count DESC LIMIT ? OFFSET ?`, bookColumns("")), limit, offset)
 		if err != nil {
 			return nil, err
 		}
@@ -111,7 +139,7 @@ func (s *BookStore) Search(ctx context.Context, query string, page, limit int) (
 		}
 
 		rows, err := s.db.QueryContext(ctx,
-			`SELECT * FROM books WHERE title LIKE ? OR author_names LIKE ? ORDER BY ratings_count DESC LIMIT ? OFFSET ?`,
+			fmt.Sprintf(`SELECT %s FROM books WHERE title LIKE ? OR author_names LIKE ? ORDER BY ratings_count DESC LIMIT ? OFFSET ?`, bookColumns("")),
 			likeQ, likeQ, limit, offset)
 		if err != nil {
 			return nil, err
@@ -125,12 +153,12 @@ func (s *BookStore) Search(ctx context.Context, query string, page, limit int) (
 		return &types.SearchResult{Books: books, TotalCount: total, Page: page, PageSize: limit}, nil
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT b.* FROM books b
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
+		SELECT %s FROM books b
 		JOIN books_fts f ON b.id = f.rowid
 		WHERE books_fts MATCH ?
 		ORDER BY rank
-		LIMIT ? OFFSET ?`, query, limit, offset)
+		LIMIT ? OFFSET ?`, bookColumns("b")), query, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -144,26 +172,30 @@ func (s *BookStore) Search(ctx context.Context, query string, page, limit int) (
 }
 
 func (s *BookStore) Update(ctx context.Context, book *types.Book) error {
-	subj, _ := json.Marshal(book.Subjects)
-	book.SubjectsJSON = string(subj)
+	book.SubjectsJSON = marshalStringSlice(book.Subjects)
+	book.CharactersJSON = marshalStringSlice(book.Characters)
+	book.SettingsJSON = marshalStringSlice(book.Settings)
+	book.LiteraryAwardsJSON = marshalStringSlice(book.LiteraryAwards)
 	rdist, _ := json.Marshal(book.RatingDist)
 	book.RatingDistJSON = string(rdist)
 	book.UpdatedAt = time.Now()
 
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE books SET ol_key=?, google_id=?, title=?, subtitle=?, description=?,
+		UPDATE books SET ol_key=?, google_id=?, title=?, original_title=?, subtitle=?, description=?,
 			author_names=?, cover_url=?, cover_id=?, isbn10=?, isbn13=?, publisher=?,
-			publish_date=?, publish_year=?, page_count=?, language=?, format=?,
-			subjects_json=?, average_rating=?, ratings_count=?, updated_at=?,
-			goodreads_id=?, asin=?, series=?, reviews_count=?,
+			publish_date=?, publish_year=?, page_count=?, language=?, edition_language=?, format=?,
+			subjects_json=?, characters_json=?, settings_json=?, literary_awards_json=?, editions_count=?,
+			average_rating=?, ratings_count=?, updated_at=?,
+			goodreads_id=?, goodreads_url=?, asin=?, series=?, reviews_count=?,
 			currently_reading=?, want_to_read=?, rating_dist=?, first_published=?
 		WHERE id=?`,
-		book.OLKey, book.GoogleID, book.Title, book.Subtitle, book.Description,
+		book.OLKey, book.GoogleID, book.Title, book.OriginalTitle, book.Subtitle, book.Description,
 		book.AuthorNames, book.CoverURL, book.CoverID, book.ISBN10, book.ISBN13,
 		book.Publisher, book.PublishDate, book.PublishYear, book.PageCount, book.Language,
-		book.Format, book.SubjectsJSON, book.AverageRating, book.RatingsCount,
+		book.EditionLanguage, book.Format, book.SubjectsJSON, book.CharactersJSON, book.SettingsJSON,
+		book.LiteraryAwardsJSON, book.EditionsCount, book.AverageRating, book.RatingsCount,
 		book.UpdatedAt,
-		book.GoodreadsID, book.ASIN, book.Series, book.ReviewsCount,
+		book.GoodreadsID, book.GoodreadsURL, book.ASIN, book.Series, book.ReviewsCount,
 		book.CurrentlyReading, book.WantToRead, book.RatingDistJSON, book.FirstPublished,
 		book.ID)
 	if err != nil {
@@ -201,7 +233,7 @@ func (s *BookStore) GetByGenre(ctx context.Context, genre string, page, limit in
 	s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM books WHERE subjects_json LIKE ?`, likeG).Scan(&total)
 
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT * FROM books WHERE subjects_json LIKE ? ORDER BY ratings_count DESC LIMIT ? OFFSET ?`,
+		fmt.Sprintf(`SELECT %s FROM books WHERE subjects_json LIKE ? ORDER BY ratings_count DESC LIMIT ? OFFSET ?`, bookColumns("")),
 		likeG, limit, offset)
 	if err != nil {
 		return nil, err
@@ -220,7 +252,7 @@ func (s *BookStore) GetTrending(ctx context.Context, limit int) ([]types.Book, e
 		limit = 20
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT * FROM books ORDER BY updated_at DESC, ratings_count DESC LIMIT ?`, limit)
+		fmt.Sprintf(`SELECT %s FROM books ORDER BY updated_at DESC, ratings_count DESC LIMIT ?`, bookColumns("")), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +265,7 @@ func (s *BookStore) GetNewReleases(ctx context.Context, limit int) ([]types.Book
 		limit = 20
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT * FROM books ORDER BY publish_year DESC, created_at DESC LIMIT ?`, limit)
+		fmt.Sprintf(`SELECT %s FROM books ORDER BY publish_year DESC, created_at DESC LIMIT ?`, bookColumns("")), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +278,7 @@ func (s *BookStore) GetPopular(ctx context.Context, limit int) ([]types.Book, er
 		limit = 20
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT * FROM books ORDER BY ratings_count DESC, average_rating DESC LIMIT ?`, limit)
+		fmt.Sprintf(`SELECT %s FROM books ORDER BY ratings_count DESC, average_rating DESC LIMIT ?`, bookColumns("")), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -262,11 +294,11 @@ func (s *BookStore) GetSimilar(ctx context.Context, bookID int64, limit int) ([]
 	if err != nil {
 		return nil, err
 	}
-	if book == nil || len(book.Subjects) == 0 {
+	if book == nil {
 		return []types.Book{}, nil
 	}
 
-	// Try matching on multiple subjects for better results
+	// Try matching on multiple subjects for best recommendations.
 	var conditions []string
 	var args []any
 	for i, subj := range book.Subjects {
@@ -276,17 +308,29 @@ func (s *BookStore) GetSimilar(ctx context.Context, bookID int64, limit int) ([]
 		conditions = append(conditions, "subjects_json LIKE ?")
 		args = append(args, "%"+subj+"%")
 	}
-	args = append(args, bookID, limit)
-
-	query := fmt.Sprintf(
-		`SELECT * FROM books WHERE (%s) AND id != ? ORDER BY ratings_count DESC LIMIT ?`,
-		strings.Join(conditions, " OR "))
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, err
+	if len(conditions) > 0 {
+		args = append(args, bookID, limit)
+		query := fmt.Sprintf(
+			`SELECT %s FROM books WHERE (%s) AND id != ? ORDER BY ratings_count DESC LIMIT ?`,
+			bookColumns(""),
+			strings.Join(conditions, " OR "))
+		rows, err := s.db.QueryContext(ctx, query, args...)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		books, err := s.scanBooks(rows)
+		if err != nil {
+			return nil, err
+		}
+		if len(books) >= 3 || len(books) == limit {
+			return books, nil
+		}
+		// Keep partial subject matches and top-up with fallback logic.
+		return s.fillSimilarFallback(ctx, bookID, book, books, limit)
 	}
-	defer rows.Close()
-	return s.scanBooks(rows)
+
+	return s.fillSimilarFallback(ctx, bookID, book, nil, limit)
 }
 
 func (s *BookStore) ListGenres(ctx context.Context) ([]types.Genre, error) {
@@ -326,28 +370,106 @@ func (s *BookStore) Count(ctx context.Context) (int, error) {
 }
 
 func (s *BookStore) GetByGoodreadsID(ctx context.Context, grID string) (*types.Book, error) {
-	return s.scanBook(s.db.QueryRowContext(ctx, `SELECT * FROM books WHERE goodreads_id = ?`, grID))
+	return s.scanBook(s.db.QueryRowContext(ctx,
+		fmt.Sprintf(`SELECT %s FROM books WHERE goodreads_id = ?`, bookColumns("")), grID))
 }
 
 func scanFields(b *types.Book) []any {
 	return []any{
-		&b.ID, &b.OLKey, &b.GoogleID, &b.Title, &b.Subtitle, &b.Description,
+		&b.ID, &b.OLKey, &b.GoogleID, &b.Title, &b.OriginalTitle, &b.Subtitle, &b.Description,
 		&b.AuthorNames, &b.CoverURL, &b.CoverID, &b.ISBN10, &b.ISBN13, &b.Publisher,
-		&b.PublishDate, &b.PublishYear, &b.PageCount, &b.Language, &b.Format,
-		&b.SubjectsJSON, &b.AverageRating, &b.RatingsCount, &b.CreatedAt, &b.UpdatedAt,
-		&b.GoodreadsID, &b.ASIN, &b.Series, &b.ReviewsCount,
+		&b.PublishDate, &b.PublishYear, &b.PageCount, &b.Language, &b.EditionLanguage, &b.Format,
+		&b.SubjectsJSON, &b.CharactersJSON, &b.SettingsJSON, &b.LiteraryAwardsJSON, &b.EditionsCount,
+		&b.AverageRating, &b.RatingsCount, &b.CreatedAt, &b.UpdatedAt,
+		&b.GoodreadsID, &b.GoodreadsURL, &b.ASIN, &b.Series, &b.ReviewsCount,
 		&b.CurrentlyReading, &b.WantToRead, &b.RatingDistJSON, &b.FirstPublished,
 	}
 }
 
 func hydrateBook(b *types.Book) {
+	normalizeArrayJSON(&b.SubjectsJSON)
+	normalizeArrayJSON(&b.CharactersJSON)
+	normalizeArrayJSON(&b.SettingsJSON)
+	normalizeArrayJSON(&b.LiteraryAwardsJSON)
+	normalizeArrayJSON(&b.RatingDistJSON)
 	json.Unmarshal([]byte(b.SubjectsJSON), &b.Subjects)
+	json.Unmarshal([]byte(b.CharactersJSON), &b.Characters)
+	json.Unmarshal([]byte(b.SettingsJSON), &b.Settings)
+	json.Unmarshal([]byte(b.LiteraryAwardsJSON), &b.LiteraryAwards)
 	json.Unmarshal([]byte(b.RatingDistJSON), &b.RatingDist)
 	if b.AuthorNames != "" {
 		for _, name := range strings.Split(b.AuthorNames, ", ") {
 			b.Authors = append(b.Authors, types.Author{Name: name})
 		}
 	}
+}
+
+func marshalStringSlice(v []string) string {
+	if len(v) == 0 {
+		return "[]"
+	}
+	b, _ := json.Marshal(v)
+	return string(b)
+}
+
+func normalizeArrayJSON(s *string) {
+	t := strings.TrimSpace(*s)
+	if t == "" || t == "null" {
+		*s = "[]"
+	}
+}
+
+func (s *BookStore) fillSimilarFallback(ctx context.Context, bookID int64, base *types.Book, current []types.Book, limit int) ([]types.Book, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	seen := make(map[int64]bool, len(current)+1)
+	seen[bookID] = true
+	for _, b := range current {
+		seen[b.ID] = true
+	}
+
+	appendUnique := func(candidates []types.Book) {
+		for _, b := range candidates {
+			if len(current) >= limit {
+				return
+			}
+			if seen[b.ID] {
+				continue
+			}
+			seen[b.ID] = true
+			current = append(current, b)
+		}
+	}
+
+	// Fallback 1: same series when available.
+	if strings.TrimSpace(base.Series) != "" && len(current) < limit {
+		rows, err := s.db.QueryContext(ctx,
+			fmt.Sprintf(`SELECT %s FROM books WHERE series = ? AND id != ? ORDER BY ratings_count DESC LIMIT ?`, bookColumns("")),
+			base.Series, bookID, limit)
+		if err == nil {
+			cands, _ := s.scanBooks(rows)
+			rows.Close()
+			appendUnique(cands)
+		}
+	}
+
+	// Fallback 2: same primary author token.
+	if len(current) < limit {
+		author := strings.TrimSpace(strings.Split(base.AuthorNames, ",")[0])
+		if author != "" {
+			rows, err := s.db.QueryContext(ctx,
+				fmt.Sprintf(`SELECT %s FROM books WHERE author_names LIKE ? AND id != ? ORDER BY ratings_count DESC LIMIT ?`, bookColumns("")),
+				"%"+author+"%", bookID, limit)
+			if err == nil {
+				cands, _ := s.scanBooks(rows)
+				rows.Close()
+				appendUnique(cands)
+			}
+		}
+	}
+
+	return current, nil
 }
 
 func (s *BookStore) scanBook(row *sql.Row) (*types.Book, error) {

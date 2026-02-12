@@ -28,12 +28,12 @@ func (s *StatsStore) GetStats(ctx context.Context, year int) (*types.ReadingStat
 	}
 
 	// Books read this year (have finished_at in year range)
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT b.*, r.rating, r.finished_at
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
+		SELECT %s, r.rating, r.finished_at
 		FROM books b
 		JOIN reviews r ON r.book_id = b.id
 		WHERE r.finished_at >= ? AND r.finished_at < ?
-		ORDER BY r.finished_at ASC`, startDate, endDate)
+		ORDER BY r.finished_at ASC`, bookColumns("b")), startDate, endDate)
 	if err != nil {
 		return stats, nil
 	}
@@ -52,11 +52,11 @@ func (s *StatsStore) GetOverallStats(ctx context.Context) (*types.ReadingStats, 
 	}
 
 	// All reviewed books
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT b.*, r.rating, r.finished_at
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
+		SELECT %s, r.rating, r.finished_at
 		FROM books b
 		JOIN reviews r ON r.book_id = b.id
-		ORDER BY r.finished_at ASC`)
+		ORDER BY r.finished_at ASC`, bookColumns("b")))
 	if err != nil {
 		return stats, nil
 	}

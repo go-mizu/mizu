@@ -156,15 +156,12 @@ func (s *ShelfStore) GetBooks(ctx context.Context, shelfID int64, sort string, p
 
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT sb.id, sb.shelf_id, sb.book_id, sb.date_added, sb.position,
-			b.id, b.ol_key, b.google_id, b.title, b.subtitle, b.description,
-			b.author_names, b.cover_url, b.cover_id, b.isbn10, b.isbn13, b.publisher,
-			b.publish_date, b.publish_year, b.page_count, b.language, b.format,
-			b.subjects_json, b.average_rating, b.ratings_count, b.created_at, b.updated_at
+			%s
 		FROM shelf_books sb
 		JOIN books b ON b.id = sb.book_id
 		WHERE sb.shelf_id = ?
 		ORDER BY %s
-		LIMIT ? OFFSET ?`, orderBy), shelfID, limit, offset)
+		LIMIT ? OFFSET ?`, bookColumns("b"), orderBy), shelfID, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -174,14 +171,12 @@ func (s *ShelfStore) GetBooks(ctx context.Context, shelfID int64, sort string, p
 	for rows.Next() {
 		var sb types.ShelfBook
 		var b types.Book
-		err := rows.Scan(&sb.ID, &sb.ShelfID, &sb.BookID, &sb.DateAdded, &sb.Position,
-			&b.ID, &b.OLKey, &b.GoogleID, &b.Title, &b.Subtitle, &b.Description,
-			&b.AuthorNames, &b.CoverURL, &b.CoverID, &b.ISBN10, &b.ISBN13, &b.Publisher,
-			&b.PublishDate, &b.PublishYear, &b.PageCount, &b.Language, &b.Format,
-			&b.SubjectsJSON, &b.AverageRating, &b.RatingsCount, &b.CreatedAt, &b.UpdatedAt)
+		fields := append([]any{&sb.ID, &sb.ShelfID, &sb.BookID, &sb.DateAdded, &sb.Position}, scanFields(&b)...)
+		err := rows.Scan(fields...)
 		if err != nil {
 			return nil, 0, fmt.Errorf("scan shelf book: %w", err)
 		}
+		hydrateBook(&b)
 		sb.Book = &b
 		items = append(items, sb)
 	}

@@ -2,7 +2,7 @@ import { api } from './client'
 import type {
   Book, Author, Shelf, Review, ReadingProgress,
   ReadingChallenge, BookList, Quote, FeedItem,
-  ReadingStats, SearchResult, Genre, GoodreadsListSummary, ReviewQuery, ReviewComment,
+  ReadingStats, SearchResult, Genre, SourceListSummary, ReviewQuery, ReviewComment,
 } from '../types'
 
 export const booksApi = {
@@ -49,8 +49,7 @@ export const booksApi = {
     if (query?.q) params.set('q', query.q)
     if (query?.include_spoilers) params.set('include_spoilers', String(query.include_spoilers))
     const qs = params.toString()
-    const data = await api.get<{ reviews: Review[]; total: number }>(`/api/books/${bookId}/reviews${qs ? `?${qs}` : ''}`)
-    return data.reviews || []
+    return api.get<{ reviews: Review[]; total: number }>(`/api/books/${bookId}/reviews${qs ? `?${qs}` : ''}`)
   },
   createReview: (bookId: number, review: Partial<Review>) =>
     api.post<Review>(`/api/books/${bookId}/reviews`, review),
@@ -111,12 +110,15 @@ export const booksApi = {
   // Feed
   getFeed: (limit = 20) => api.get<FeedItem[]>(`/api/feed?limit=${limit}`),
 
-  // Goodreads
-  importGoodreads: (url: string) => api.post<Book>('/api/import-goodreads', { url }),
-  getGoodreadsBook: (id: string) => api.get<Book>(`/api/goodreads/${id}`),
-  importGoodreadsAuthor: (id: string) => api.get<Author>(`/api/goodreads/author/${id}`),
-  browseGoodreadsLists: () => api.get<GoodreadsListSummary[]>('/api/goodreads/lists'),
-  importGoodreadsList: (url: string) => api.post<BookList>('/api/import-goodreads-list', { url }),
+  // External source sync
+  importSourceBook: (url: string) => api.post<Book>('/api/import-goodreads', { url }),
+  getSourceBook: (id: string) => api.get<Book>(`/api/goodreads/${id}`),
+  importSourceAuthor: (id: string) => api.get<Author>(`/api/goodreads/author/${id}`),
+  browseSourceLists: (tag?: string) => {
+    const q = tag?.trim() ? `?tag=${encodeURIComponent(tag.trim())}` : ''
+    return api.get<SourceListSummary[]>(`/api/goodreads/lists${q}`)
+  },
+  importSourceList: (url: string) => api.post<BookList>('/api/import-goodreads-list', { url }),
   enrichBook: (id: number) => api.post<Book>(`/api/books/${id}/enrich`, {}),
 
   // Import/Export

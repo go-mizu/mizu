@@ -15,9 +15,13 @@ var (
 	reAuthorBorn      = regexp.MustCompile(`(?i)(?:born|Born)\s*(?:in\s+)?([A-Z][a-z]+\s+\d{1,2},\s+\d{4})`)
 	reAuthorBornData  = regexp.MustCompile(`(?i)Born\s*</dt>\s*<dd[^>]*>([^<]+)`)
 	reAuthorDied      = regexp.MustCompile(`(?i)(?:died|Died)\s*(?:in\s+)?([A-Z][a-z]+\s+\d{1,2},\s+\d{4})`)
+	reAuthorDiedData  = regexp.MustCompile(`(?i)Died\s*</dt>\s*<dd[^>]*>([^<]+)`)
 	reAuthorWorks     = regexp.MustCompile(`(\d[\d,]*)\s*(?:distinct\s+)?works?`)
 	reAuthorFollowers = regexp.MustCompile(`(\d[\d,]*)\s*followers?`)
 	reAuthorGenre     = regexp.MustCompile(`<a[^>]*href="/genres/[^"]*"[^>]*>([^<]+)</a>`)
+	reAuthorWebsite   = regexp.MustCompile(`(?is)Website\s*</dt>\s*<dd[^>]*>[\s\S]*?href="([^"]+)"`)
+	reAuthorInfluence = regexp.MustCompile(`(?is)Influences?\s*</dt>\s*<dd[^>]*>([\s\S]*?)</dd>`)
+	reAuthorLinkName  = regexp.MustCompile(`>([^<]+)</a>`)
 )
 
 func parseAuthorPage(body string) *GoodreadsAuthor {
@@ -61,7 +65,9 @@ func parseAuthorPage(body string) *GoodreadsAuthor {
 	}
 
 	// Died date
-	if m := reAuthorDied.FindStringSubmatch(body); m != nil {
+	if m := reAuthorDiedData.FindStringSubmatch(body); m != nil {
+		a.DiedDate = strings.TrimSpace(m[1])
+	} else if m := reAuthorDied.FindStringSubmatch(body); m != nil {
 		a.DiedDate = strings.TrimSpace(m[1])
 	}
 
@@ -88,6 +94,26 @@ func parseAuthorPage(body string) *GoodreadsAuthor {
 		genres = append(genres, genre)
 	}
 	a.Genres = strings.Join(genres, ", ")
+
+	// Website
+	if m := reAuthorWebsite.FindStringSubmatch(body); m != nil {
+		a.Website = strings.TrimSpace(m[1])
+	}
+
+	// Influences
+	if m := reAuthorInfluence.FindStringSubmatch(body); m != nil {
+		var influences []string
+		seenInfluence := make(map[string]bool)
+		for _, link := range reAuthorLinkName.FindAllStringSubmatch(m[1], -1) {
+			name := strings.TrimSpace(html.UnescapeString(link[1]))
+			if name == "" || seenInfluence[name] {
+				continue
+			}
+			seenInfluence[name] = true
+			influences = append(influences, name)
+		}
+		a.Influences = strings.Join(influences, ", ")
+	}
 
 	return a
 }

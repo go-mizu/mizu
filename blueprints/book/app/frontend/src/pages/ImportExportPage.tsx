@@ -44,17 +44,17 @@ export default function ImportExportPage() {
     if (file) handleFile(file)
   }
 
-  const handleGoodreadsImport = async () => {
+  const handleCatalogImport = async () => {
     if (!grUrl.trim()) return
     setGrImporting(true)
     setGrError(null)
     setGrResult(null)
     try {
-      const book = await booksApi.importGoodreads(grUrl.trim())
+      const book = await booksApi.importSourceBook(grUrl.trim())
       setGrResult({ title: book.title })
       setGrUrl('')
     } catch {
-      setGrError('Failed to import from Goodreads. Check the URL and try again.')
+      setGrError('Failed to import from the catalog source. Check the URL and try again.')
     } finally {
       setGrImporting(false)
     }
@@ -117,14 +117,14 @@ export default function ImportExportPage() {
           )}
         </div>
 
-        {/* Goodreads Import */}
+        {/* External Catalog Import */}
         <div className="mb-10">
           <h2 className="section-title mb-4">
             <BookOpen size={20} className="inline mr-2" />
-            Import from Goodreads
+            Import from Catalog URL
           </h2>
           <p className="text-sm text-gr-light mb-4">
-            Paste a Goodreads book URL to import all book details including ratings,
+            Paste a supported book URL to import all book details including ratings,
             description, genres, and reviews.
           </p>
           <div className="flex gap-2">
@@ -132,14 +132,14 @@ export default function ImportExportPage() {
               type="text"
               value={grUrl}
               onChange={e => setGrUrl(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleGoodreadsImport()}
-              placeholder="https://www.goodreads.com/book/show/..."
+              onKeyDown={e => e.key === 'Enter' && handleCatalogImport()}
+              placeholder="https://example.com/book/..."
               className="flex-1 px-3 py-2 border border-gr-border rounded-md text-sm focus:outline-none focus:border-gr-teal"
               disabled={grImporting}
             />
             <button
               className="btn btn-primary"
-              onClick={handleGoodreadsImport}
+              onClick={handleCatalogImport}
               disabled={grImporting || !grUrl.trim()}
             >
               {grImporting ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}

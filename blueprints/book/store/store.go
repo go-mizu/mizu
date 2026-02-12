@@ -108,6 +108,7 @@ type ListStore interface {
 	Get(ctx context.Context, id int64) (*types.BookList, error)
 	GetAll(ctx context.Context, page, limit int) ([]types.BookList, int, error)
 	AddBook(ctx context.Context, listID, bookID int64, position int) error
+	SetVotes(ctx context.Context, listID, bookID int64, votes int) error
 	RemoveBook(ctx context.Context, listID, bookID int64) error
 	Vote(ctx context.Context, listID, bookID int64) error
 	Delete(ctx context.Context, id int64) error

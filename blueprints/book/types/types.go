@@ -4,32 +4,42 @@ import "time"
 
 // Book represents a book in the library.
 type Book struct {
-	ID            int64     `json:"id"`
-	OLKey         string    `json:"ol_key"`    // Open Library work key e.g. /works/OL12345W
-	GoogleID      string    `json:"google_id"` // Google Books ID
-	Title         string    `json:"title"`
-	Subtitle      string    `json:"subtitle,omitempty"`
-	Description   string    `json:"description,omitempty"`
-	Authors       []Author  `json:"authors"`      // Denormalized for display
-	AuthorNames   string    `json:"author_names"` // Comma-separated, for DB storage
-	CoverURL      string    `json:"cover_url,omitempty"`
-	CoverID       int       `json:"cover_id,omitempty"` // Open Library cover ID
-	ISBN10        string    `json:"isbn10,omitempty"`
-	ISBN13        string    `json:"isbn13,omitempty"`
-	Publisher     string    `json:"publisher,omitempty"`
-	PublishDate   string    `json:"publish_date,omitempty"`
-	PublishYear   int       `json:"publish_year,omitempty"`
-	PageCount     int       `json:"page_count,omitempty"`
-	Language      string    `json:"language,omitempty"`
-	Format        string    `json:"format,omitempty"` // hardcover, paperback, ebook, audiobook
-	Subjects      []string  `json:"subjects,omitempty"`
-	SubjectsJSON  string    `json:"-"` // JSON stored in DB
-	AverageRating float64   `json:"average_rating"`
-	RatingsCount  int       `json:"ratings_count"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID                 int64     `json:"id"`
+	OLKey              string    `json:"ol_key"`    // Open Library work key e.g. /works/OL12345W
+	GoogleID           string    `json:"google_id"` // Google Books ID
+	Title              string    `json:"title"`
+	OriginalTitle      string    `json:"original_title,omitempty"`
+	Subtitle           string    `json:"subtitle,omitempty"`
+	Description        string    `json:"description,omitempty"`
+	Authors            []Author  `json:"authors"`      // Denormalized for display
+	AuthorNames        string    `json:"author_names"` // Comma-separated, for DB storage
+	CoverURL           string    `json:"cover_url,omitempty"`
+	CoverID            int       `json:"cover_id,omitempty"` // Open Library cover ID
+	ISBN10             string    `json:"isbn10,omitempty"`
+	ISBN13             string    `json:"isbn13,omitempty"`
+	Publisher          string    `json:"publisher,omitempty"`
+	PublishDate        string    `json:"publish_date,omitempty"`
+	PublishYear        int       `json:"publish_year,omitempty"`
+	PageCount          int       `json:"page_count,omitempty"`
+	Language           string    `json:"language,omitempty"`
+	EditionLanguage    string    `json:"edition_language,omitempty"`
+	Format             string    `json:"format,omitempty"` // hardcover, paperback, ebook, audiobook
+	Subjects           []string  `json:"subjects,omitempty"`
+	SubjectsJSON       string    `json:"-"` // JSON stored in DB
+	Characters         []string  `json:"characters,omitempty"`
+	CharactersJSON     string    `json:"-"`
+	Settings           []string  `json:"settings,omitempty"`
+	SettingsJSON       string    `json:"-"`
+	LiteraryAwards     []string  `json:"literary_awards,omitempty"`
+	LiteraryAwardsJSON string    `json:"-"`
+	EditionsCount      int       `json:"editions_count,omitempty"`
+	AverageRating      float64   `json:"average_rating"`
+	RatingsCount       int       `json:"ratings_count"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 	// Goodreads fields
 	GoodreadsID      string `json:"goodreads_id,omitempty"`
+	GoodreadsURL     string `json:"goodreads_url,omitempty"`
 	ASIN             string `json:"asin,omitempty"`
 	Series           string `json:"series,omitempty"`
 	ReviewsCount     int    `json:"reviews_count"`
@@ -58,6 +68,7 @@ type Author struct {
 	Followers   int       `json:"followers,omitempty"`
 	Genres      string    `json:"genres,omitempty"`     // Comma-separated
 	Influences  string    `json:"influences,omitempty"` // Comma-separated
+	Website     string    `json:"website,omitempty"`
 }
 
 // Shelf represents a bookshelf (e.g. "Read", "Want to Read").
@@ -84,20 +95,20 @@ type ShelfBook struct {
 
 // Review represents a user's review of a book.
 type Review struct {
-	ID           int64      `json:"id"`
-	BookID       int64      `json:"book_id"`
-	Rating       int        `json:"rating"` // 1-5, 0 = no rating
-	Text         string     `json:"text,omitempty"`
-	IsSpoiler    bool       `json:"is_spoiler"`
-	LikesCount   int        `json:"likes_count"`
-	CommentsCount int       `json:"comments_count"`
-	StartedAt    *time.Time `json:"started_at,omitempty"`
-	FinishedAt   *time.Time `json:"finished_at,omitempty"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-	ReviewerName string     `json:"reviewer_name,omitempty"`
-	Source       string     `json:"source,omitempty"` // "user", "goodreads"
-	Book         *Book      `json:"book,omitempty"`   // Joined
+	ID            int64      `json:"id"`
+	BookID        int64      `json:"book_id"`
+	Rating        int        `json:"rating"` // 1-5, 0 = no rating
+	Text          string     `json:"text,omitempty"`
+	IsSpoiler     bool       `json:"is_spoiler"`
+	LikesCount    int        `json:"likes_count"`
+	CommentsCount int        `json:"comments_count"`
+	StartedAt     *time.Time `json:"started_at,omitempty"`
+	FinishedAt    *time.Time `json:"finished_at,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+	ReviewerName  string     `json:"reviewer_name,omitempty"`
+	Source        string     `json:"source,omitempty"` // "user", "goodreads"
+	Book          *Book      `json:"book,omitempty"`   // Joined
 }
 
 // ReviewComment represents a comment on a review.

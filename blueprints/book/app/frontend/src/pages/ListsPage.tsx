@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom'
 import { Plus, BookOpen, Download, Users } from 'lucide-react'
 import Header from '../components/Header'
 import { booksApi } from '../api/books'
-import type { BookList, GoodreadsListSummary } from '../types'
+import type { BookList, SourceListSummary } from '../types'
+import { ApiError } from '../api/client'
 
 export default function ListsPage() {
   const [lists, setLists] = useState<BookList[]>([])
@@ -11,10 +12,14 @@ export default function ListsPage() {
   const [showModal, setShowModal] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-  const [grLists, setGrLists] = useState<GoodreadsListSummary[]>([])
-  const [loadingGr, setLoadingGr] = useState(false)
-  const [showGr, setShowGr] = useState(false)
+  const [sourceLists, setSourceLists] = useState<SourceListSummary[]>([])
+  const [loadingSource, setLoadingSource] = useState(false)
+  const [showSource, setShowSource] = useState(false)
   const [importingUrl, setImportingUrl] = useState<string | null>(null)
+  const [sourceError, setSourceError] = useState('')
+  const [importError, setImportError] = useState('')
+  const [tag, setTag] = useState('')
+  const [manualURL, setManualURL] = useState('')
 
   useEffect(() => {
     booksApi.getLists()
@@ -35,26 +40,48 @@ export default function ListsPage() {
       .catch(() => {})
   }
 
-  const handleBrowseGoodreads = () => {
-    if (grLists.length > 0) {
-      setShowGr(!showGr)
+  const handleBrowseSource = () => {
+    setSourceError('')
+    if (sourceLists.length > 0) {
+      setShowSource(!showSource)
       return
     }
-    setLoadingGr(true)
-    setShowGr(true)
-    booksApi.browseGoodreadsLists()
-      .then(setGrLists)
-      .catch(() => {})
-      .finally(() => setLoadingGr(false))
+    setLoadingSource(true)
+    setShowSource(true)
+    booksApi.browseSourceLists(tag)
+      .then(setSourceLists)
+      .catch((err: unknown) => {
+        if (err instanceof ApiError) {
+          setSourceError(err.message)
+        } else {
+          setSourceError('Failed to browse source lists')
+        }
+      })
+      .finally(() => setLoadingSource(false))
+  }
+
+  const refreshSource = () => {
+    setSourceLists([])
+    handleBrowseSource()
   }
 
   const handleImportList = async (url: string) => {
-    setImportingUrl(url)
+    const normalizedURL = url.trim()
+    if (!normalizedURL) return
+    setImportError('')
+    setImportingUrl(normalizedURL)
     try {
-      const list = await booksApi.importGoodreadsList(url)
+      const list = await booksApi.importSourceList(normalizedURL)
       setLists(prev => [...prev, list])
-    } catch {
-      // Silently fail
+      if (manualURL.trim() === normalizedURL) {
+        setManualURL('')
+      }
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        setImportError(err.message)
+      } else {
+        setImportError('Failed to import source list')
+      }
     } finally {
       setImportingUrl(null)
     }
@@ -67,8 +94,8 @@ export default function ListsPage() {
         <div className="section-header">
           <h1 className="section-title">Listopia</h1>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-secondary" onClick={handleBrowseGoodreads}>
-              <Download size={16} /> {showGr ? 'Hide' : 'Browse'} Goodreads
+            <button className="btn btn-secondary" onClick={handleBrowseSource}>
+              <Download size={16} /> {showSource ? 'Hide' : 'Browse'} Source Lists
             </button>
             <button className="btn btn-primary" onClick={() => setShowModal(true)}>
               <Plus size={16} /> Create List
@@ -76,20 +103,54 @@ export default function ListsPage() {
           </div>
         </div>
 
-        {/* Goodreads Browse Section */}
-        {showGr && (
+        {/* Source List Browse Section */}
+        {showSource && (
           <div style={{ marginBottom: 24 }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+              <input
+                className="form-input"
+                value={tag}
+                onChange={e => setTag(e.target.value)}
+                placeholder="Optional tag (e.g. fantasy)"
+                style={{ maxWidth: 260 }}
+              />
+              <button className="btn btn-secondary btn-sm" onClick={refreshSource} disabled={loadingSource}>
+                Refresh
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+              <input
+                className="form-input"
+                value={manualURL}
+                onChange={e => setManualURL(e.target.value)}
+                placeholder="Paste source list URL"
+                style={{ minWidth: 320, flex: 1 }}
+              />
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => handleImportList(manualURL)}
+                disabled={!manualURL.trim() || !!importingUrl}
+              >
+                Import URL
+              </button>
+            </div>
             <h2 style={{
               fontFamily: "'Merriweather', Georgia, serif",
               fontSize: 16,
               color: 'var(--gr-brown)',
               marginBottom: 12,
             }}>
-              Popular Goodreads Lists
+              Popular Source Lists
             </h2>
-            {loadingGr ? (
+            {sourceError && (
+              <p style={{ color: '#9b1c1c', fontSize: 13, marginBottom: 10 }}>{sourceError}</p>
+            )}
+            {importError && (
+              <p style={{ color: '#9b1c1c', fontSize: 13, marginBottom: 10 }}>{importError}</p>
+            )}
+            {loadingSource ? (
               <div className="loading-spinner"><div className="spinner" /></div>
-            ) : grLists.length === 0 ? (
+            ) : sourceLists.length === 0 ? (
               <p style={{ color: 'var(--gr-light)', fontSize: 14 }}>No lists found.</p>
             ) : (
               <div style={{
@@ -97,7 +158,7 @@ export default function ListsPage() {
                 gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
                 gap: 12,
               }}>
-                {grLists.map((gl, i) => (
+                {sourceLists.map((gl, i) => (
                   <div
                     key={i}
                     style={{
@@ -123,6 +184,9 @@ export default function ListsPage() {
                         {gl.title}
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--gr-light)', display: 'flex', gap: 12 }}>
+                        {gl.tag && (
+                          <span>#{gl.tag}</span>
+                        )}
                         {gl.book_count > 0 && (
                           <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                             <BookOpen size={11} /> {gl.book_count.toLocaleString()} books
@@ -156,7 +220,7 @@ export default function ListsPage() {
         ) : lists.length === 0 ? (
           <div className="empty-state">
             <h3>No lists yet</h3>
-            <p>Create your first book list or import from Goodreads.</p>
+            <p>Create your first book list or import from a source list URL.</p>
             <button className="btn btn-primary" onClick={() => setShowModal(true)}>
               Create List
             </button>

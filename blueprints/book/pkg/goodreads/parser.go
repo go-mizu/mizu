@@ -10,6 +10,7 @@ import (
 
 var (
 	reJSONLD         = regexp.MustCompile(`<script\s+type="application/ld\+json"[^>]*>([\s\S]*?)</script>`)
+	reCanonicalURL   = regexp.MustCompile(`<link[^>]*rel="canonical"[^>]*href="([^"]+)"`)
 	reDescription    = regexp.MustCompile(`<div[^>]*data-testid="description"[^>]*>([\s\S]*?)</div>`)
 	reDescSpan       = regexp.MustCompile(`<span[^>]*>([\s\S]*?)</span>`)
 	reGenre          = regexp.MustCompile(`<a[^>]*href="/genres/[^"]*"[^>]*>([^<]+)</a>`)
@@ -17,9 +18,13 @@ var (
 	reWantToRead     = regexp.MustCompile(`([\d,]+)\s*people?\s*want\s+to\s+read`)
 	reRatingBar      = regexp.MustCompile(`(?i)(\d)\s*(?:star|Stars)[^<]*?([\d,]+)`)
 	reSeries         = regexp.MustCompile(`<a[^>]*href="/series/[^"]*"[^>]*>([^<]+)</a>`)
-	rePublisher      = regexp.MustCompile(`(?i)(?:published|publisher)[^<]*?(?:by\s+)?([A-Z][^<,\n]{2,40})`)
+	reAuthorURL      = regexp.MustCompile(`<a[^>]*href="(/author/show/[^"]+)"[^>]*>`)
+	reDetailRow      = regexp.MustCompile(`(?is)<dt[^>]*>\s*([^<]+?)\s*</dt>\s*<dd[^>]*>([\s\S]*?)</dd>`)
+	reDetailSplit    = regexp.MustCompile(`\s*(?:·|;|,|\|)\s*`)
+	rePublisher      = regexp.MustCompile(`(?i)(?:published|publisher)[^<]*?(?:by\s+)?([A-Z][^<\n]{2,80})`)
 	reFirstPub       = regexp.MustCompile(`(?i)first\s+published?\s+([^<\n]+?)(?:\)|<)`)
 	reASIN           = regexp.MustCompile(`(?i)ASIN[:\s]+([A-Z0-9]{10})`)
+	reEditionCount   = regexp.MustCompile(`(?i)([\d,]+)\s+editions?`)
 	reCoverImg       = regexp.MustCompile(`<img[^>]*class="[^"]*ResponsiveImage[^"]*"[^>]*src="([^"]+)"`)
 	reReviewBlock    = regexp.MustCompile(`(?s)<article[^>]*class="[^"]*ReviewCard[^"]*"[^>]*>([\s\S]*?)</article>`)
 	reReviewerName   = regexp.MustCompile(`class="ReviewerProfile__name"[^>]*><a[^>]*>([^<]+)</a>`)
@@ -27,6 +32,8 @@ var (
 	reReviewText     = regexp.MustCompile(`<span[^>]*class="[^"]*Formatted[^"]*"[^>]*>([\s\S]*?)</span>`)
 	reReviewLikes    = regexp.MustCompile(`(\d+)\s*like`)
 	reReviewStars    = regexp.MustCompile(`Rating\s+(\d)\s+out\s+of\s+5`)
+	reReviewShelf    = regexp.MustCompile(`(?i)shelves?\s*[:\-]\s*([^<]+)`)
+	reReviewSpoiler  = regexp.MustCompile(`(?i)contains spoilers|hidden because of spoilers`)
 	reRatingDist5    = regexp.MustCompile(`(?i)5\s*(?:star|Stars)\s*[^0-9]*([\d,]+)`)
 	reRatingDist4    = regexp.MustCompile(`(?i)4\s*(?:star|Stars)\s*[^0-9]*([\d,]+)`)
 	reRatingDist3    = regexp.MustCompile(`(?i)3\s*(?:star|Stars)\s*[^0-9]*([\d,]+)`)
@@ -36,15 +43,16 @@ var (
 	reWorkID         = regexp.MustCompile(`/work/(?:quotes/)?(\d+)`)
 
 	// Quote page patterns
-	reQuoteBlock     = regexp.MustCompile(`(?s)<div[^>]*class="quoteText"[^>]*>([\s\S]*?)</div>`)
-	reQuoteText      = regexp.MustCompile(`&ldquo;([\s\S]*?)&rdquo;`)
-	reQuoteAuthor    = regexp.MustCompile(`class="authorOrTitle"[^>]*>\s*([^<,]+)`)
-	reQuoteLikes     = regexp.MustCompile(`(\d+)\s*likes`)
-	reSearchBookID   = regexp.MustCompile(`/book/show/(\d+)`)
+	reQuoteBlock   = regexp.MustCompile(`(?s)<div[^>]*class="quoteText"[^>]*>([\s\S]*?)</div>`)
+	reQuoteText    = regexp.MustCompile(`&ldquo;([\s\S]*?)&rdquo;`)
+	reQuoteAuthor  = regexp.MustCompile(`class="authorOrTitle"[^>]*>\s*([^<,]+)`)
+	reQuoteLikes   = regexp.MustCompile(`(\d+)\s*likes`)
+	reSearchBookID = regexp.MustCompile(`/book/show/(\d+)`)
 )
 
 func parseBookPage(body string) (*GoodreadsBook, error) {
 	book := &GoodreadsBook{}
+	parseCanonicalURL(body, book)
 
 	// 1. Parse JSON-LD structured data
 	parseJSONLD(body, book)
@@ -70,13 +78,25 @@ func parseBookPage(body string) (*GoodreadsBook, error) {
 	// 8. Parse cover image
 	parseCover(body, book)
 
-	// 9. Parse reviews
+	// 9. Parse author URL
+	parseAuthorURL(body, book)
+
+	// 10. Parse edition count
+	parseEditionCount(body, book)
+
+	// 11. Parse reviews
 	parseReviews(body, book)
 
-	// 10. Extract work ID for quotes
+	// 12. Extract work ID for quotes
 	book.WorkID = parseWorkID(body)
 
 	return book, nil
+}
+
+func parseCanonicalURL(body string, book *GoodreadsBook) {
+	if m := reCanonicalURL.FindStringSubmatch(body); m != nil {
+		book.URL = strings.TrimSpace(m[1])
+	}
 }
 
 func parseJSONLD(body string, book *GoodreadsBook) {
@@ -106,6 +126,9 @@ func parseJSONLD(body string, book *GoodreadsBook) {
 			names := make([]string, len(ld.Author))
 			for i, a := range ld.Author {
 				names[i] = a.Name
+				if book.AuthorURL == "" && strings.TrimSpace(a.URL) != "" {
+					book.AuthorURL = strings.TrimSpace(a.URL)
+				}
 			}
 			book.AuthorName = strings.Join(names, ", ")
 		}
@@ -197,7 +220,58 @@ func parseSeries(body string, book *GoodreadsBook) {
 	}
 }
 
+func parseAuthorURL(body string, book *GoodreadsBook) {
+	if book.AuthorURL != "" {
+		return
+	}
+	if m := reAuthorURL.FindStringSubmatch(body); m != nil {
+		if strings.HasPrefix(m[1], "http") {
+			book.AuthorURL = strings.TrimSpace(m[1])
+			return
+		}
+		book.AuthorURL = baseURL + strings.TrimSpace(m[1])
+	}
+}
+
 func parseMetadata(body string, book *GoodreadsBook) {
+	details := parseDetailRows(body)
+	if v := detailValue(details, "original title"); v != "" {
+		book.OriginalTitle = v
+	}
+	if v := detailValue(details, "edition language"); v != "" {
+		book.EditionLanguage = v
+	}
+	if v := detailValue(details, "published"); v != "" && book.PublishDate == "" {
+		book.PublishDate = v
+	}
+	if v := detailValue(details, "first published"); v != "" && book.FirstPublished == "" {
+		book.FirstPublished = v
+	}
+	if v := detailValue(details, "publisher"); v != "" && book.Publisher == "" {
+		book.Publisher = v
+	}
+	if v := detailValue(details, "isbn"); v != "" {
+		if isbn10, isbn13 := parseISBNValues(v); book.ISBN == "" && isbn10 != "" {
+			book.ISBN = isbn10
+			if book.ISBN13 == "" {
+				book.ISBN13 = isbn13
+			}
+		} else if book.ISBN13 == "" {
+			book.ISBN13 = isbn13
+		}
+	}
+	if v := detailValue(details, "asin"); v != "" && book.ASIN == "" {
+		book.ASIN = parseASIN(v)
+	}
+	if v := detailValue(details, "setting"); v != "" {
+		book.Settings = splitDetailList(v)
+	}
+	if v := detailValue(details, "characters"); v != "" {
+		book.Characters = splitDetailList(v)
+	}
+	if v := detailValue(details, "literary awards"); v != "" {
+		book.LiteraryAwards = splitDetailList(v)
+	}
 	if m := reFirstPub.FindStringSubmatch(body); m != nil {
 		book.FirstPublished = strings.TrimSpace(m[1])
 	}
@@ -206,6 +280,12 @@ func parseMetadata(body string, book *GoodreadsBook) {
 	}
 	if m := rePublisher.FindStringSubmatch(body); m != nil && book.Publisher == "" {
 		book.Publisher = strings.TrimSpace(m[1])
+	}
+}
+
+func parseEditionCount(body string, book *GoodreadsBook) {
+	if m := reEditionCount.FindStringSubmatch(body); m != nil {
+		book.EditionCount = parseCommaInt(m[1])
 	}
 }
 
@@ -239,8 +319,12 @@ func parseReviews(body string, book *GoodreadsBook) {
 		if m := reReviewLikes.FindStringSubmatch(content); m != nil {
 			review.LikesCount, _ = strconv.Atoi(m[1])
 		}
+		if m := reReviewShelf.FindStringSubmatch(content); m != nil {
+			review.Shelves = strings.TrimSpace(html.UnescapeString(stripTags(m[1])))
+		}
+		review.IsSpoiler = reReviewSpoiler.MatchString(content)
 
-		if review.ReviewerName != "" || review.Text != "" {
+		if review.ReviewerName != "" || review.Text != "" || review.Rating > 0 {
 			book.Reviews = append(book.Reviews, review)
 		}
 	}
@@ -298,4 +382,91 @@ func parseCommaInt(s string) int {
 	s = strings.TrimSpace(s)
 	n, _ := strconv.Atoi(s)
 	return n
+}
+
+func parseDetailRows(body string) map[string]string {
+	matches := reDetailRow.FindAllStringSubmatch(body, -1)
+	out := make(map[string]string, len(matches))
+	for _, m := range matches {
+		label := strings.ToLower(normalizeSpace(stripTags(m[1])))
+		value := normalizeSpace(html.UnescapeString(stripTags(m[2])))
+		if label == "" || value == "" {
+			continue
+		}
+		out[label] = value
+	}
+	return out
+}
+
+func detailValue(details map[string]string, label string) string {
+	return strings.TrimSpace(details[strings.ToLower(label)])
+}
+
+func normalizeSpace(s string) string {
+	fields := strings.Fields(strings.TrimSpace(s))
+	return strings.Join(fields, " ")
+}
+
+func splitDetailList(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := reDetailSplit.Split(raw, -1)
+	seen := make(map[string]bool)
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func parseISBNValues(raw string) (string, string) {
+	raw = strings.ToUpper(raw)
+	var digits strings.Builder
+	for _, r := range raw {
+		if r >= '0' && r <= '9' {
+			digits.WriteRune(r)
+		}
+		if r == 'X' {
+			digits.WriteRune(r)
+		}
+	}
+	s := digits.String()
+	switch {
+	case len(s) >= 23:
+		// Common case: ISBN10 + ISBN13 shown together.
+		isbn10 := s[:10]
+		isbn13 := s[len(s)-13:]
+		return isbn10, isbn13
+	case len(s) >= 13:
+		return "", s[:13]
+	case len(s) >= 10:
+		return s[:10], ""
+	default:
+		return "", ""
+	}
+}
+
+func parseASIN(raw string) string {
+	raw = strings.ToUpper(strings.TrimSpace(raw))
+	var out strings.Builder
+	for _, r := range raw {
+		if (r >= '0' && r <= '9') || (r >= 'A' && r <= 'Z') {
+			out.WriteRune(r)
+		}
+	}
+	v := out.String()
+	if len(v) >= 10 {
+		return v[:10]
+	}
+	return v
 }

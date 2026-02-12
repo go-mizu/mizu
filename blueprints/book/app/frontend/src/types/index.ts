@@ -1,6 +1,7 @@
 export interface Book {
   id: number
   title: string
+  original_title?: string
   subtitle?: string
   description?: string
   authors?: Author[]
@@ -16,8 +17,13 @@ export interface Book {
   publish_year: number
   page_count: number
   language?: string
+  edition_language?: string
   format?: string
   subjects?: string[]
+  characters?: string[]
+  settings?: string[]
+  literary_awards?: string[]
+  editions_count?: number
   average_rating: number
   ratings_count: number
   user_rating?: number
@@ -25,6 +31,7 @@ export interface Book {
   created_at?: string
   updated_at?: string
   goodreads_id?: string
+  goodreads_url?: string
   asin?: string
   series?: string
   reviews_count: number
@@ -47,6 +54,7 @@ export interface Author {
   followers: number
   genres?: string
   influences?: string
+  website?: string
   created_at?: string
 }
 
@@ -125,11 +133,13 @@ export interface BookList {
   created_at?: string
 }
 
-export interface GoodreadsListSummary {
+export interface SourceListSummary {
+  goodreads_id?: string
   title: string
   url: string
   book_count: number
   voter_count: number
+  tag?: string
 }
 
 export interface BookListItem {

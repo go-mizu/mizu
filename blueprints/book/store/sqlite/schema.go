@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS books (
     ol_key TEXT DEFAULT '',
     google_id TEXT DEFAULT '',
     title TEXT NOT NULL,
+    original_title TEXT DEFAULT '',
     subtitle TEXT DEFAULT '',
     description TEXT DEFAULT '',
     author_names TEXT DEFAULT '',
@@ -18,13 +19,19 @@ CREATE TABLE IF NOT EXISTS books (
     publish_year INTEGER DEFAULT 0,
     page_count INTEGER DEFAULT 0,
     language TEXT DEFAULT 'en',
+    edition_language TEXT DEFAULT '',
     format TEXT DEFAULT '',
     subjects_json TEXT DEFAULT '[]',
+    characters_json TEXT DEFAULT '[]',
+    settings_json TEXT DEFAULT '[]',
+    literary_awards_json TEXT DEFAULT '[]',
+    editions_count INTEGER DEFAULT 0,
     average_rating REAL DEFAULT 0,
     ratings_count INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     goodreads_id TEXT DEFAULT '',
+    goodreads_url TEXT DEFAULT '',
     asin TEXT DEFAULT '',
     series TEXT DEFAULT '',
     reviews_count INTEGER DEFAULT 0,
@@ -55,7 +62,8 @@ CREATE TABLE IF NOT EXISTS authors (
     goodreads_id TEXT DEFAULT '',
     followers INTEGER DEFAULT 0,
     genres TEXT DEFAULT '',
-    influences TEXT DEFAULT ''
+    influences TEXT DEFAULT '',
+    website TEXT DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_authors_name ON authors(name);
@@ -175,6 +183,7 @@ CREATE INDEX IF NOT EXISTS idx_feed_created ON feed(created_at DESC);
 // migration adds columns to existing databases that lack them.
 const migration = `
 ALTER TABLE books ADD COLUMN goodreads_id TEXT DEFAULT '';
+ALTER TABLE books ADD COLUMN goodreads_url TEXT DEFAULT '';
 ALTER TABLE books ADD COLUMN asin TEXT DEFAULT '';
 ALTER TABLE books ADD COLUMN series TEXT DEFAULT '';
 ALTER TABLE books ADD COLUMN reviews_count INTEGER DEFAULT 0;
@@ -182,6 +191,17 @@ ALTER TABLE books ADD COLUMN currently_reading INTEGER DEFAULT 0;
 ALTER TABLE books ADD COLUMN want_to_read INTEGER DEFAULT 0;
 ALTER TABLE books ADD COLUMN rating_dist TEXT DEFAULT '[]';
 ALTER TABLE books ADD COLUMN first_published TEXT DEFAULT '';
+ALTER TABLE books ADD COLUMN original_title TEXT DEFAULT '';
+ALTER TABLE books ADD COLUMN edition_language TEXT DEFAULT '';
+ALTER TABLE books ADD COLUMN characters_json TEXT DEFAULT '[]';
+ALTER TABLE books ADD COLUMN settings_json TEXT DEFAULT '[]';
+ALTER TABLE books ADD COLUMN literary_awards_json TEXT DEFAULT '[]';
+ALTER TABLE books ADD COLUMN editions_count INTEGER DEFAULT 0;
+UPDATE books SET subjects_json = '[]' WHERE subjects_json IS NULL OR TRIM(subjects_json) = '' OR subjects_json = 'null';
+UPDATE books SET characters_json = '[]' WHERE characters_json IS NULL OR TRIM(characters_json) = '' OR characters_json = 'null';
+UPDATE books SET settings_json = '[]' WHERE settings_json IS NULL OR TRIM(settings_json) = '' OR settings_json = 'null';
+UPDATE books SET literary_awards_json = '[]' WHERE literary_awards_json IS NULL OR TRIM(literary_awards_json) = '' OR literary_awards_json = 'null';
+UPDATE books SET rating_dist = '[]' WHERE rating_dist IS NULL OR TRIM(rating_dist) = '' OR rating_dist = 'null';
 CREATE INDEX IF NOT EXISTS idx_books_goodreads_id ON books(goodreads_id);
 ALTER TABLE reviews ADD COLUMN reviewer_name TEXT DEFAULT '';
 ALTER TABLE reviews ADD COLUMN source TEXT DEFAULT 'user';
@@ -193,6 +213,7 @@ ALTER TABLE authors ADD COLUMN goodreads_id TEXT DEFAULT '';
 ALTER TABLE authors ADD COLUMN followers INTEGER DEFAULT 0;
 ALTER TABLE authors ADD COLUMN genres TEXT DEFAULT '';
 ALTER TABLE authors ADD COLUMN influences TEXT DEFAULT '';
+ALTER TABLE authors ADD COLUMN website TEXT DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_authors_goodreads_id ON authors(goodreads_id);
 ALTER TABLE book_lists ADD COLUMN goodreads_url TEXT DEFAULT '';
 ALTER TABLE book_lists ADD COLUMN voter_count INTEGER DEFAULT 0;

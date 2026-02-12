@@ -93,7 +93,7 @@ export default function ListDetailPage() {
                   textDecoration: 'none',
                 }}
               >
-                <ExternalLink size={13} /> View on Goodreads
+                <ExternalLink size={13} /> View source list
               </a>
             )}
           </div>
@@ -103,8 +103,30 @@ export default function ListDetailPage() {
           <div>
             {items.map(item => item.book && (
               <div key={item.id} style={{ display: 'flex', alignItems: 'start', gap: 8, marginBottom: 12 }}>
+                <div style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: '999px',
+                  background: 'var(--gr-cream)',
+                  border: '1px solid var(--gr-border)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: 'var(--gr-brown)',
+                  marginTop: 8,
+                  flexShrink: 0,
+                }}>
+                  {item.position}
+                </div>
                 <div style={{ flex: 1 }}>
                   <BookCard book={item.book} />
+                  {item.votes > 0 && (
+                    <div style={{ marginTop: -4, marginBottom: 10, fontSize: 12, color: 'var(--gr-light)' }}>
+                      Source score: {item.votes.toLocaleString()}
+                    </div>
+                  )}
                 </div>
                 <button
                   className="btn btn-secondary btn-sm"
