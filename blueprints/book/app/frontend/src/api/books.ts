@@ -15,13 +15,19 @@ export const booksApi = {
     const data = await api.get<Book[] | null>(`/api/books/${id}/similar?limit=${limit}`)
     return data || []
   },
-  getTrending: (limit = 20) => api.get<Book[]>(`/api/books/trending?limit=${limit}`),
+  getTrending: async (limit = 20) => {
+    const data = await api.get<Book[] | null>(`/api/books/trending?limit=${limit}`)
+    return data || []
+  },
 
   // Authors
   searchAuthors: (q: string) =>
     api.get<Author[]>(`/api/authors/search?q=${encodeURIComponent(q)}`),
   getAuthor: (id: number) => api.get<Author>(`/api/authors/${id}`),
-  getAuthorBooks: (id: number) => api.get<Book[]>(`/api/authors/${id}/books`),
+  getAuthorBooks: async (id: number) => {
+    const data = await api.get<Book[] | null>(`/api/authors/${id}/books`)
+    return data || []
+  },
 
   // Shelves
   getShelves: () => api.get<Shelf[]>('/api/shelves'),
@@ -72,11 +78,20 @@ export const booksApi = {
     api.post<ReadingProgress>(`/api/books/${bookId}/progress`, progress),
 
   // Browse
-  getGenres: () => api.get<Genre[]>('/api/genres'),
+  getGenres: async () => {
+    const data = await api.get<Genre[] | null>('/api/genres')
+    return data || []
+  },
   getBooksByGenre: (genre: string, page = 1) =>
     api.get<SearchResult>(`/api/genres/${encodeURIComponent(genre)}/books?page=${page}`),
-  getNewReleases: (limit = 20) => api.get<Book[]>(`/api/browse/new-releases?limit=${limit}`),
-  getPopular: (limit = 20) => api.get<Book[]>(`/api/browse/popular?limit=${limit}`),
+  getNewReleases: async (limit = 20) => {
+    const data = await api.get<Book[] | null>(`/api/browse/new-releases?limit=${limit}`)
+    return data || []
+  },
+  getPopular: async (limit = 20) => {
+    const data = await api.get<Book[] | null>(`/api/browse/popular?limit=${limit}`)
+    return data || []
+  },
 
   // Challenge
   getChallenge: (year?: number) => {
@@ -99,16 +114,25 @@ export const booksApi = {
     api.post<void>(`/api/lists/${listId}/vote/${bookId}`),
 
   // Quotes
-  getQuotes: (page = 1) => api.get<Quote[]>(`/api/quotes?page=${page}`),
+  getQuotes: async (page = 1) => {
+    const data = await api.get<Quote[] | null>(`/api/quotes?page=${page}`)
+    return data || []
+  },
   createQuote: (quote: Partial<Quote>) => api.post<Quote>('/api/quotes', quote),
-  getBookQuotes: (bookId: number) => api.get<Quote[]>(`/api/books/${bookId}/quotes`),
+  getBookQuotes: async (bookId: number) => {
+    const data = await api.get<Quote[] | null>(`/api/books/${bookId}/quotes`)
+    return data || []
+  },
 
   // Stats
   getStats: () => api.get<ReadingStats>('/api/stats'),
   getStatsByYear: (year: number) => api.get<ReadingStats>(`/api/stats/${year}`),
 
   // Feed
-  getFeed: (limit = 20) => api.get<FeedItem[]>(`/api/feed?limit=${limit}`),
+  getFeed: async (limit = 20) => {
+    const data = await api.get<FeedItem[] | null>(`/api/feed?limit=${limit}`)
+    return data || []
+  },
 
   // External source sync
   importSourceBook: (url: string) => api.post<Book>('/api/import-source', { url }),

@@ -42,6 +42,9 @@ func runOpenLibraryImport(ctx context.Context, opts openlibrarydump.Options, dbP
 	fmt.Printf("  Authors staged:   %d\n", stats.AuthorsStaged)
 	fmt.Printf("  Editions matched: %d\n", stats.EditionsStaged)
 	fmt.Printf("  Books available:  %d\n", stats.BooksInserted)
+	if resolved.SkipEditions {
+		fmt.Println(infoStyle.Render("Editions import skipped: ISBN/publisher/page metadata may be missing for some books"))
+	}
 
 	if exportParquet {
 		paths, err := openlibrarydump.ExportParquet(ctx, dbPath, parquetDir)
@@ -72,6 +75,7 @@ func newImportOpenLibrary() *cobra.Command {
 		parquetDir     string
 		limitWorks     int
 		replaceBooks   bool
+		skipEditions   bool
 		exportParquet  bool
 		cleanupSource  bool
 		downloadLatest bool
@@ -118,6 +122,7 @@ func newImportOpenLibrary() *cobra.Command {
 				EditionsPath: editionsPath,
 				LimitWorks:   limitWorks,
 				ReplaceBooks: replaceBooks,
+				SkipEditions: skipEditions,
 			}, GetDatabasePath(), parquetDir, exportParquet, cleanupSource)
 		},
 	}
@@ -129,6 +134,7 @@ func newImportOpenLibrary() *cobra.Command {
 	cmd.Flags().StringVar(&parquetDir, "parquet-dir", filepath.Join(defaultDir, "parquet"), "Output directory for parquet exports")
 	cmd.Flags().IntVar(&limitWorks, "limit", 0, "Limit number of works to import (0 = no limit)")
 	cmd.Flags().BoolVar(&replaceBooks, "replace", true, "Replace existing books with same Open Library key")
+	cmd.Flags().BoolVar(&skipEditions, "skip-editions", false, "Skip editions metadata import (faster, less memory/disk usage)")
 	cmd.Flags().BoolVar(&exportParquet, "export-parquet", true, "Export imported Open Library records to parquet files")
 	cmd.Flags().BoolVar(&cleanupSource, "cleanup-source", true, "Delete source dump files after successful import and parquet export")
 	cmd.Flags().BoolVar(&downloadLatest, "download-latest", true, "Download latest dump files before importing")

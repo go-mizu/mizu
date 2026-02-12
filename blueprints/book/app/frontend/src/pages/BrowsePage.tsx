@@ -23,9 +23,9 @@ export default function BrowsePage() {
           booksApi.getNewReleases(12),
           booksApi.getGenres(),
         ])
-        setPopular(popularData)
-        setNewReleases(newData)
-        setGenres(genresData)
+        setPopular(Array.isArray(popularData) ? popularData : [])
+        setNewReleases(Array.isArray(newData) ? newData : [])
+        setGenres(Array.isArray(genresData) ? genresData : [])
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load browse data')
       } finally {
@@ -60,11 +60,15 @@ export default function BrowsePage() {
     )
   }
 
+  const safePopular = Array.isArray(popular) ? popular : []
+  const safeNewReleases = Array.isArray(newReleases) ? newReleases : []
+  const safeGenres = Array.isArray(genres) ? genres : []
+
   return (
     <>
       <Header />
       <div className="page-container fade-in">
-        {popular.length > 0 && (
+        {safePopular.length > 0 && (
           <section className="page-section">
             <div className="section-header">
               <span className="section-title section-title-with-icon">
@@ -72,11 +76,11 @@ export default function BrowsePage() {
                 Popular
               </span>
             </div>
-            <BookGrid books={popular} />
+            <BookGrid books={safePopular} />
           </section>
         )}
 
-        {newReleases.length > 0 && (
+        {safeNewReleases.length > 0 && (
           <section className="page-section">
             <div className="section-header">
               <span className="section-title section-title-with-icon">
@@ -84,11 +88,11 @@ export default function BrowsePage() {
                 New Releases
               </span>
             </div>
-            <BookGrid books={newReleases} />
+            <BookGrid books={safeNewReleases} />
           </section>
         )}
 
-        {genres.length > 0 && (
+        {safeGenres.length > 0 && (
           <section className="page-section">
             <div className="section-header">
               <span className="section-title section-title-with-icon">
@@ -97,7 +101,7 @@ export default function BrowsePage() {
               </span>
             </div>
             <div className="genre-list">
-              {genres.map((genre) => (
+              {safeGenres.map((genre) => (
                 <Link
                   key={genre.name}
                   to={`/genre/${encodeURIComponent(genre.name)}`}
@@ -113,7 +117,7 @@ export default function BrowsePage() {
           </section>
         )}
 
-        {popular.length === 0 && newReleases.length === 0 && genres.length === 0 && (
+        {safePopular.length === 0 && safeNewReleases.length === 0 && safeGenres.length === 0 && (
           <div className="empty-state">
             <h3>Nothing to browse yet</h3>
             <p>Add some books to get started.</p>
