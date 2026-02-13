@@ -831,6 +831,42 @@ export async function searchBook(kv: KVNamespace, title: string): Promise<string
   return bookID
 }
 
+export async function searchLists(kv: KVNamespace, query: string): Promise<GoodreadsListSummary[]> {
+  query = query.trim().toLowerCase()
+  if (!query) return []
+
+  const key = `gr:search-lists:${query}`
+  const cached = await kvGet<GoodreadsListSummary[]>(kv, key)
+  if (cached) return cached
+
+  // Try Goodreads list tag page (works well for genre/topic searches)
+  const tagURL = `${BASE_URL}/list/tag/${query.replace(/\s+/g, '-')}`
+  try {
+    const body = await fetchPage(tagURL)
+    const lists = parseListsBrowse(body)
+    if (lists.length > 0) {
+      for (const l of lists) l.tag = query
+      await kvPut(kv, key, lists)
+      return lists
+    }
+  } catch { /* try next */ }
+
+  // Fallback: Goodreads search with search_type=lists
+  const searchURL = `${BASE_URL}/search?q=${encodeURIComponent(query)}&search_type=lists`
+  try {
+    const body = await fetchPage(searchURL)
+    const lists = parseListsBrowse(body)
+    if (lists.length > 0) {
+      await kvPut(kv, key, lists)
+      return lists
+    }
+  } catch { /* fall through */ }
+
+  // Cache empty result to avoid re-searching
+  await kvPut(kv, key, [])
+  return []
+}
+
 export async function getPopularLists(kv: KVNamespace, tag: string = ''): Promise<GoodreadsListSummary[]> {
   tag = tag.trim().toLowerCase()
   const key = `gr:popular-lists:${tag || 'all'}`

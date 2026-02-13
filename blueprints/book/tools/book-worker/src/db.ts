@@ -129,6 +129,7 @@ CREATE TABLE IF NOT EXISTS book_lists (
   item_count INTEGER DEFAULT 0,
   source_url TEXT DEFAULT '',
   voter_count INTEGER DEFAULT 0,
+  tag TEXT DEFAULT '',
   enriched INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now'))
 );
@@ -236,6 +237,7 @@ export async function initDB(db: D1Database): Promise<void> {
     'ALTER TABLE books ADD COLUMN enriched INTEGER DEFAULT 0',
     'ALTER TABLE authors ADD COLUMN enriched INTEGER DEFAULT 0',
     'ALTER TABLE book_lists ADD COLUMN enriched INTEGER DEFAULT 0',
+    'ALTER TABLE book_lists ADD COLUMN tag TEXT DEFAULT \'\'',
   ]
   for (const stmt of migrations) {
     try { await db.exec(stmt) } catch { /* column may already exist */ }
@@ -696,9 +698,18 @@ export async function createOrUpdateChallenge(db: D1Database, year: number, goal
 
 // ---- Lists ----
 
-export async function getLists(db: D1Database) {
-  const rows = await db.prepare('SELECT * FROM book_lists ORDER BY created_at DESC').all()
+export async function getLists(db: D1Database, tag?: string) {
+  if (tag) {
+    const rows = await db.prepare('SELECT * FROM book_lists WHERE tag = ? ORDER BY voter_count DESC, created_at DESC').bind(tag).all()
+    return { lists: rows.results || [], total: rows.results?.length || 0 }
+  }
+  const rows = await db.prepare('SELECT * FROM book_lists ORDER BY voter_count DESC, created_at DESC').all()
   return { lists: rows.results || [], total: rows.results?.length || 0 }
+}
+
+export async function getListTags(db: D1Database): Promise<string[]> {
+  const rows = await db.prepare("SELECT DISTINCT tag FROM book_lists WHERE tag != '' ORDER BY tag").all()
+  return (rows.results || []).map((r: Record<string, unknown>) => r.tag as string)
 }
 
 export async function getListBySourceURL(db: D1Database, sourceUrl: string): Promise<Record<string, unknown> | null> {
@@ -709,7 +720,7 @@ export async function getList(db: D1Database, id: number): Promise<Record<string
   const list = await db.prepare('SELECT * FROM book_lists WHERE id = ?').bind(id).first()
   if (!list) return null
   const items = await db.prepare(
-    `SELECT bli.*, b.title, b.author_names, b.cover_url, b.average_rating, b.ratings_count, b.source_id
+    `SELECT bli.*, b.title, b.author_names, b.cover_url, b.average_rating, b.ratings_count, b.source_id, b.series, b.publish_year, b.page_count
      FROM book_list_items bli JOIN books b ON b.id = bli.book_id
      WHERE bli.list_id = ? ORDER BY bli.position`
   ).bind(id).all()
@@ -725,6 +736,7 @@ export async function getList(db: D1Database, id: number): Promise<Record<string
         id: row.book_id, title: row.title, author_names: row.author_names,
         cover_url: row.cover_url, average_rating: row.average_rating,
         ratings_count: row.ratings_count, source_id: row.source_id,
+        series: row.series, publish_year: row.publish_year, page_count: row.page_count,
       },
     })),
   }
@@ -732,9 +744,14 @@ export async function getList(db: D1Database, id: number): Promise<Record<string
 
 export async function createList(db: D1Database, data: Record<string, unknown>): Promise<Record<string, unknown>> {
   const result = await db.prepare(
-    'INSERT INTO book_lists (title, description, source_url, voter_count, created_at) VALUES (?,?,?,?,?)'
-  ).bind(data.title || '', data.description || '', data.source_url || '', data.voter_count || 0, now()).run()
+    'INSERT INTO book_lists (title, description, source_url, voter_count, tag, created_at) VALUES (?,?,?,?,?,?)'
+  ).bind(data.title || '', data.description || '', data.source_url || '', data.voter_count || 0, data.tag || '', now()).run()
   return (await db.prepare('SELECT * FROM book_lists WHERE id = ?').bind(result.meta?.last_row_id).first())!
+}
+
+export async function deleteList(db: D1Database, id: number): Promise<void> {
+  await db.prepare('DELETE FROM book_list_items WHERE list_id = ?').bind(id).run()
+  await db.prepare('DELETE FROM book_lists WHERE id = ?').bind(id).run()
 }
 
 export async function addBookToList(db: D1Database, listId: number, bookId: number): Promise<void> {

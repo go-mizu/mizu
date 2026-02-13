@@ -141,6 +141,7 @@ export interface BookList {
   item_count: number
   source_url?: string
   voter_count: number
+  tag?: string
   items?: BookListItem[]
   created_at?: string
 }

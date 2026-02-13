@@ -112,12 +112,18 @@ export const booksApi = {
     api.post<ReadingChallenge>('/api/challenge', { year, goal }),
 
   // Lists
-  getLists: async () => {
-    const data = await api.get<{ lists: BookList[]; total: number }>('/api/lists')
-    return data.lists || []
+  getLists: async (tag?: string) => {
+    const q = tag?.trim() ? `?tag=${encodeURIComponent(tag.trim())}` : ''
+    const data = await api.get<{ lists: BookList[]; total: number; tags: string[] }>(`/api/lists${q}`)
+    return { lists: data.lists || [], tags: data.tags || [] }
   },
   createList: (list: Partial<BookList>) => api.post<BookList>('/api/lists', list),
   getList: (id: number) => api.get<BookList>(`/api/lists/${id}`),
+  deleteList: (id: number) => api.del<void>(`/api/lists/${id}`),
+  searchLists: async (q: string) => {
+    const data = await api.get<BookList[] | null>(`/api/lists/search?q=${encodeURIComponent(q)}`)
+    return data || []
+  },
   addToList: (listId: number, bookId: number) =>
     api.post<void>(`/api/lists/${listId}/books`, { book_id: bookId }),
   voteList: (listId: number, bookId: number) =>

@@ -4,7 +4,7 @@ import type { HonoEnv } from '../types'
 import type { OLSearchResult } from '../types'
 import {
   getBook as grGetBook, getAuthor as grGetAuthor, getList as grGetList,
-  getPopularLists, parseGoodreadsURL, parseGoodreadsAuthorURL, parseGoodreadsListURL,
+  getPopularLists, searchLists as grSearchLists, parseGoodreadsURL, parseGoodreadsAuthorURL, parseGoodreadsListURL,
   type GoodreadsBook, type GoodreadsAuthor,
 } from '../goodreads'
 import { searchOL } from '../openlibrary'
@@ -13,7 +13,7 @@ import * as db from '../db'
 import {
   ENRICH, enrichAuthor, importAuthorWorks, enrichBook, enrichGenre,
   discoverLists, importListBooks, importSeriesBooks, importEditions,
-  importSimilarBooks, normalizeGenre,
+  importSimilarBooks, normalizeGenre, seedPopularLists,
 } from '../enrich'
 
 const app = new Hono<HonoEnv>()
@@ -545,17 +545,19 @@ app.get('/browse/popular', async (c) => {
 // ---- Lists ----
 
 app.get('/lists', async (c) => {
-  const result = await db.getLists(c.env.DB)
-  // Auto-discover popular GR lists (KV flag, idempotent)
   const tag = c.req.query('tag') || ''
-  const discoverKey = `enriched:lists:${tag || 'all'}`
-  const alreadyDiscovered = await c.env.KV.get(discoverKey)
-  if (!alreadyDiscovered) {
-    await discoverLists(c.env.DB, c.env.KV, tag).catch(() => [])
-    await c.env.KV.put(discoverKey, '1')
-    if (result.total === 0) return c.json(await db.getLists(c.env.DB))
+
+  // Auto-seed popular lists on first access (KV flag, idempotent)
+  const seedKey = 'seeded:popular-lists'
+  const alreadySeeded = await c.env.KV.get(seedKey)
+  if (!alreadySeeded) {
+    const seeded = await seedPopularLists(c.env.DB).catch(() => 0)
+    await c.env.KV.put(seedKey, String(seeded))
   }
-  return c.json(result)
+
+  const result = await db.getLists(c.env.DB, tag || undefined)
+  const tags = await db.getListTags(c.env.DB)
+  return c.json({ ...result, tags })
 })
 
 app.post('/lists', async (c) => {
@@ -570,6 +572,52 @@ app.get('/lists/discover', async (c) => {
   return c.json({ lists, total: lists.length })
 })
 
+app.get('/lists/search', async (c) => {
+  const q = (c.req.query('q') || '').trim()
+  if (!q) return c.json([])
+
+  // Search local DB first
+  const local = await db.getLists(c.env.DB)
+  const localMatches = (local.lists || []).filter((l: Record<string, unknown>) => {
+    const title = ((l.title as string) || '').toLowerCase()
+    const desc = ((l.description as string) || '').toLowerCase()
+    const tag = ((l.tag as string) || '').toLowerCase()
+    const query = q.toLowerCase()
+    return title.includes(query) || desc.includes(query) || tag.includes(query)
+  })
+  if (localMatches.length >= 3) return c.json(localMatches)
+
+  // Search Goodreads for more lists
+  const grLists = await grSearchLists(c.env.KV, q).catch(() => [])
+
+  // Auto-import found lists into D1
+  for (const grSummary of grLists.slice(0, 10)) {
+    const existing = await db.getListBySourceURL(c.env.DB, grSummary.url)
+    if (existing) continue
+    await db.createList(c.env.DB, {
+      title: grSummary.title,
+      source_url: grSummary.url,
+      voter_count: grSummary.voter_count,
+      tag: grSummary.tag || q,
+    })
+  }
+
+  // Re-fetch local lists to include newly imported
+  if (grLists.length > 0) {
+    const updated = await db.getLists(c.env.DB)
+    const updatedMatches = (updated.lists || []).filter((l: Record<string, unknown>) => {
+      const title = ((l.title as string) || '').toLowerCase()
+      const desc = ((l.description as string) || '').toLowerCase()
+      const tag = ((l.tag as string) || '').toLowerCase()
+      const query = q.toLowerCase()
+      return title.includes(query) || desc.includes(query) || tag.includes(query)
+    })
+    return c.json(updatedMatches)
+  }
+
+  return c.json(localMatches)
+})
+
 app.get('/lists/:id', async (c) => {
   const id = parseInt(c.req.param('id'), 10)
   let list = await db.getList(c.env.DB, id)
@@ -580,6 +628,12 @@ app.get('/lists/:id', async (c) => {
     list = (await db.getList(c.env.DB, id)) || list
   }
   return c.json(list)
+})
+
+app.delete('/lists/:id', async (c) => {
+  const id = parseInt(c.req.param('id'), 10)
+  await db.deleteList(c.env.DB, id)
+  return c.json({ ok: true })
 })
 
 app.post('/lists/:id/books', async (c) => {

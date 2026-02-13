@@ -135,6 +135,7 @@ CREATE TABLE IF NOT EXISTS book_lists (
   item_count INTEGER DEFAULT 0,
   source_url TEXT DEFAULT '',
   voter_count INTEGER DEFAULT 0,
+  tag TEXT DEFAULT '',
   enriched INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now'))
 );

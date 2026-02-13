@@ -658,6 +658,53 @@ export async function enrichGenre(d1: D1Database, kv: KVNamespace, genre: string
   return imported
 }
 
+// ---- Seed Popular Lists ----
+
+/** Curated popular Goodreads lists to pre-import on first access */
+const SEED_LISTS: { title: string; url: string; voter_count: number; tag: string; description: string }[] = [
+  // Fiction
+  { title: 'Best Books Ever', url: 'https://www.goodreads.com/list/show/1', voter_count: 250000, tag: 'fiction', description: 'The best books of all time, as voted by Goodreads members.' },
+  { title: 'Best Books of the 21st Century', url: 'https://www.goodreads.com/list/show/5', voter_count: 80000, tag: 'fiction', description: 'The best books published since 2000.' },
+  { title: 'Books That Everyone Should Read at Least Once', url: 'https://www.goodreads.com/list/show/264', voter_count: 120000, tag: 'fiction', description: 'Essential reading for every book lover.' },
+  { title: '1001 Books You Must Read Before You Die', url: 'https://www.goodreads.com/list/show/952', voter_count: 30000, tag: 'fiction', description: 'The classic literary bucket list.' },
+  // Genre
+  { title: 'Best Science Fiction & Fantasy Books', url: 'https://www.goodreads.com/list/show/3', voter_count: 90000, tag: 'sci-fi & fantasy', description: 'Top-rated science fiction and fantasy.' },
+  { title: 'Best Mystery & Thriller Books', url: 'https://www.goodreads.com/list/show/11', voter_count: 40000, tag: 'mystery & thriller', description: 'The most gripping mysteries and thrillers.' },
+  { title: 'Best Romance Novels', url: 'https://www.goodreads.com/list/show/30', voter_count: 50000, tag: 'romance', description: 'The best love stories ever written.' },
+  { title: 'Best Historical Fiction', url: 'https://www.goodreads.com/list/show/15', voter_count: 35000, tag: 'historical fiction', description: 'Fiction that brings history alive.' },
+  { title: 'Best Horror Novels', url: 'https://www.goodreads.com/list/show/32', voter_count: 25000, tag: 'horror', description: 'The scariest books ever written.' },
+  // Nonfiction
+  { title: 'Best Nonfiction Books', url: 'https://www.goodreads.com/list/show/10', voter_count: 30000, tag: 'nonfiction', description: 'The best nonfiction across all subjects.' },
+  { title: 'Best Memoirs and Autobiographies', url: 'https://www.goodreads.com/list/show/24', voter_count: 20000, tag: 'nonfiction', description: 'The most compelling life stories.' },
+  { title: 'Best Science Books', url: 'https://www.goodreads.com/list/show/38', voter_count: 15000, tag: 'nonfiction', description: 'Popular science books that enlighten and inspire.' },
+  // Classics & Literary
+  { title: 'Best Classics', url: 'https://www.goodreads.com/list/show/6', voter_count: 40000, tag: 'classics', description: 'The greatest classic literature.' },
+  { title: 'Best Dystopian and Post-Apocalyptic Fiction', url: 'https://www.goodreads.com/list/show/47', voter_count: 60000, tag: 'sci-fi & fantasy', description: 'Dark visions of the future.' },
+  // Young Adult
+  { title: 'Best Young Adult Books', url: 'https://www.goodreads.com/list/show/7', voter_count: 55000, tag: 'young adult', description: 'The best books for young adult readers.' },
+  // Contemporary
+  { title: 'Best Literary Fiction', url: 'https://www.goodreads.com/list/show/44', voter_count: 15000, tag: 'literary fiction', description: 'Beautifully written, thought-provoking literary works.' },
+  { title: 'Best Books of the 2020s', url: 'https://www.goodreads.com/list/show/171084', voter_count: 10000, tag: 'fiction', description: 'The best books published in the 2020s.' },
+]
+
+/** Seed popular lists into D1 on first access. Skips duplicates by source_url. */
+export async function seedPopularLists(d1: D1Database): Promise<number> {
+  let seeded = 0
+  for (const seed of SEED_LISTS) {
+    const existing = await db.getListBySourceURL(d1, seed.url)
+    if (existing) continue
+    await db.createList(d1, {
+      title: seed.title,
+      description: seed.description,
+      source_url: seed.url,
+      voter_count: seed.voter_count,
+      tag: seed.tag,
+    })
+    seeded++
+  }
+  return seeded
+}
+
 // ---- List Auto-Import ----
 
 /** Auto-discover and import popular GR lists. Returns count of lists imported. */
