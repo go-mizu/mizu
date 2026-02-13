@@ -81,18 +81,20 @@ export async function fetchOLAuthor(kv: KVNamespace, olKey: string): Promise<{
   return result
 }
 
-export async function fetchOLAuthorWorks(kv: KVNamespace, olKey: string, limit: number = 50): Promise<{ key: string; title: string }[]> {
+export async function fetchOLAuthorWorks(kv: KVNamespace, olKey: string, limit: number = 50, offset: number = 0): Promise<{ key: string; title: string; size: number }[]> {
   const cleanKey = olKey.replace('/authors/', '')
-  const cacheKey = `ol:author-works:${cleanKey}:${limit}`
-  const cached = await kvGet<{ key: string; title: string }[]>(kv, cacheKey)
+  const cacheKey = `ol:author-works:${cleanKey}:${limit}:${offset}`
+  const cached = await kvGet<{ key: string; title: string; size: number }[]>(kv, cacheKey)
   if (cached) return cached
 
-  const resp = await fetch(`${OL_WORKS_URL}/authors/${cleanKey}/works.json?limit=${limit}`, { headers: { 'User-Agent': 'BookWorker/1.0' } })
+  const resp = await fetch(`${OL_WORKS_URL}/authors/${cleanKey}/works.json?limit=${limit}&offset=${offset}`, { headers: { 'User-Agent': 'BookWorker/1.0' } })
   if (!resp.ok) return []
   const data = await resp.json() as any
+  const totalSize = data.size || 0
   const entries = (data.entries || []).map((e: any) => ({
     key: e.key || '',
     title: e.title || '',
+    size: totalSize,
   }))
 
   await kvPut(kv, cacheKey, entries)

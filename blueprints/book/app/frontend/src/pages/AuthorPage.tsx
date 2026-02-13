@@ -14,6 +14,8 @@ export default function AuthorPage() {
   const [error, setError] = useState<string | null>(null)
   const [grId, setGrId] = useState('')
   const [importing, setImporting] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [totalWorks, setTotalWorks] = useState(0)
 
   const authorId = Number(id)
 
@@ -24,12 +26,14 @@ export default function AuthorPage() {
       setLoading(true)
       setError(null)
       try {
-        const [authorData, booksData] = await Promise.all([
+        const [authorData, booksResult] = await Promise.all([
           booksApi.getAuthor(authorId),
           booksApi.getAuthorBooks(authorId),
         ])
         setAuthor(authorData)
-        setBooks(booksData)
+        setBooks(booksResult.books)
+        setHasMore(booksResult.has_more)
+        setTotalWorks(booksResult.total)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load author')
       } finally {
@@ -38,6 +42,21 @@ export default function AuthorPage() {
     }
     fetchData()
   }, [id, authorId])
+
+  // Auto-poll for more books when background import is running
+  useEffect(() => {
+    if (!hasMore || loading) return
+    const timer = setInterval(async () => {
+      try {
+        const result = await booksApi.getAuthorBooks(authorId)
+        setBooks(result.books)
+        setHasMore(result.has_more)
+        setTotalWorks(result.total)
+        if (!result.has_more) clearInterval(timer)
+      } catch { /* ignore */ }
+    }, 8000) // Poll every 8s
+    return () => clearInterval(timer)
+  }, [hasMore, loading, authorId])
 
   const handleImportAuthorData = async () => {
     if (!grId.trim()) return
@@ -198,7 +217,14 @@ export default function AuthorPage() {
 
         <section>
           <div className="section-header">
-            <span className="section-title">Books by {author.name}</span>
+            <span className="section-title">
+              Books by {author.name}
+              {books.length > 0 && (
+                <span className="section-count">
+                  {books.length}{totalWorks > books.length ? ` of ${totalWorks}` : ''}
+                </span>
+              )}
+            </span>
           </div>
 
           {books.length > 0 ? (
@@ -206,6 +232,12 @@ export default function AuthorPage() {
               {books.map((book) => (
                 <BookCard key={book.id} book={book} />
               ))}
+              {hasMore && (
+                <div className="loading-more-bar">
+                  <div className="spinner spinner-sm" />
+                  <span>Loading more books ({books.length} of {totalWorks})...</span>
+                </div>
+              )}
             </div>
           ) : (
             <div className="empty-state">

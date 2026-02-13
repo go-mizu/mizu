@@ -58,9 +58,6 @@ export default function ListsPage() {
     return () => clearTimeout(timer)
   }, [searchQuery, doSearch])
 
-  // Use search results when searching, otherwise use regular list
-  const displayLists = searchResults ?? lists
-
   // Client-side filter by search query for instant feedback
   const filteredLists = useMemo(() => {
     if (searchResults) return searchResults
@@ -232,8 +229,17 @@ export default function ListsPage() {
 }
 
 function ListCard({ list }: { list: BookList }) {
+  const covers = list.cover_urls ? list.cover_urls.split('||').filter(Boolean).slice(0, 5) : []
+
   return (
     <Link to={`/list/${list.id}`} className="local-list-card">
+      {covers.length > 0 && (
+        <div className="list-cover-strip">
+          {covers.map((url, i) => (
+            <img key={i} src={url} alt="" className="list-cover-thumb" loading="lazy" />
+          ))}
+        </div>
+      )}
       <h3 className="local-list-title">{list.title}</h3>
       {list.description && (
         <p className="local-list-description">{list.description}</p>

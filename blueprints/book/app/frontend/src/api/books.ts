@@ -26,8 +26,10 @@ export const booksApi = {
     api.get<Author[]>(`/api/authors/search?q=${encodeURIComponent(q)}`),
   getAuthor: (id: number) => api.get<Author>(`/api/authors/${id}`),
   getAuthorBooks: async (id: number) => {
-    const data = await api.get<Book[] | null>(`/api/authors/${id}/books`)
-    return data || []
+    const data = await api.get<{ books: Book[]; has_more: boolean; total: number } | Book[] | null>(`/api/authors/${id}/books`)
+    if (!data) return { books: [], has_more: false, total: 0 }
+    if (Array.isArray(data)) return { books: data, has_more: false, total: data.length }
+    return { books: data.books || [], has_more: data.has_more || false, total: data.total || 0 }
   },
 
   // Shelves

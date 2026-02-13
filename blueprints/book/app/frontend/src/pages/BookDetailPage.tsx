@@ -6,7 +6,6 @@ import BookCover from '../components/BookCover'
 import ShelfButton from '../components/ShelfButton'
 import StarRating from '../components/StarRating'
 import ReviewCard from '../components/ReviewCard'
-import BookGrid from '../components/BookGrid'
 import { booksApi } from '../api/books'
 import { useBookStore } from '../stores/bookStore'
 import type { Book, Author, Review, Quote, ReadingProgress, ReviewQuery, Shelf, BookNote } from '../types'
@@ -239,16 +238,16 @@ export default function BookDetailPage() {
         if (bookData.authors && bookData.authors.length > 0 && bookData.authors[0].id) {
           const firstAuthor = bookData.authors[0]
           booksApi.getAuthor(firstAuthor.id).then(setAuthorInfo).catch(() => {})
-          booksApi.getAuthorBooks(firstAuthor.id).then((books) => {
-            setAuthorBooks(books.filter((b: Book) => b.id !== bookId).slice(0, 8))
+          booksApi.getAuthorBooks(firstAuthor.id).then((result) => {
+            setAuthorBooks(result.books.filter((b: Book) => b.id !== bookId).slice(0, 8))
           }).catch(() => {})
         } else if (bookData.author_names) {
           // Try to find author by searching
           booksApi.searchAuthors(bookData.author_names.split(',')[0].trim()).then((authors) => {
             if (authors && authors.length > 0) {
               setAuthorInfo(authors[0])
-              booksApi.getAuthorBooks(authors[0].id).then((books) => {
-                setAuthorBooks(books.filter((b: Book) => b.id !== bookId).slice(0, 8))
+              booksApi.getAuthorBooks(authors[0].id).then((result) => {
+                setAuthorBooks(result.books.filter((b: Book) => b.id !== bookId).slice(0, 8))
               }).catch(() => {})
             }
           }).catch(() => {})

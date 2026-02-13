@@ -1267,6 +1267,22 @@ textarea.form-input {
   gap: 3px;
 }
 
+.list-cover-strip {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+
+.list-cover-thumb {
+  width: 48px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid var(--gr-border);
+  flex-shrink: 0;
+}
+
 .local-list-card {
   display: block;
   padding: 16px;
@@ -1999,6 +2015,23 @@ textarea.form-input {
 .spinner-sm {
   width: 16px;
   height: 16px;
+}
+
+.section-count {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--gr-light);
+  margin-left: 8px;
+}
+
+.loading-more-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  font-size: 13px;
+  color: var(--gr-light);
+  border-top: 1px solid var(--gr-border);
 }
 
 /* ===== Settings ===== */

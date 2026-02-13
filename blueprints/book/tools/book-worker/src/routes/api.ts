@@ -11,7 +11,7 @@ import { searchOL } from '../openlibrary'
 import { DEFAULT_LIMIT, MAX_LIMIT, coverURL } from '../config'
 import * as db from '../db'
 import {
-  ENRICH, enrichAuthor, importAuthorWorks, enrichBook, enrichGenre,
+  ENRICH, enrichAuthor, importAuthorWorks, importAuthorWorksBackground, enrichBook, enrichGenre,
   discoverLists, importListBooks, importSeriesBooks, importEditions,
   importSimilarBooks, normalizeGenre, seedPopularLists,
 } from '../enrich'
@@ -394,17 +394,34 @@ app.get('/authors/:id', async (c) => {
 app.get('/authors/:id/books', async (c) => {
   const id = parseInt(c.req.param('id'), 10)
   // Ensure author is enriched first (for ol_key)
-  const author = await db.getAuthor(c.env.DB, id)
+  let author = await db.getAuthor(c.env.DB, id)
   if (author && !db.hasEnriched(author.enriched as number, ENRICH.AUTHOR_CORE)) {
     await enrichAuthor(c.env.DB, c.env.KV, id).catch(() => null)
+    author = await db.getAuthor(c.env.DB, id)
   }
-  // Auto-import works (flag-based, idempotent)
-  const authorRefresh = await db.getAuthor(c.env.DB, id)
-  if (authorRefresh && !db.hasEnriched(authorRefresh.enriched as number, ENRICH.AUTHOR_WORKS)) {
+  // Initial import (first 50 works) — blocking on first request only
+  if (author && !db.hasEnriched(author.enriched as number, ENRICH.AUTHOR_WORKS)) {
     await importAuthorWorks(c.env.DB, c.env.KV, id).catch(() => 0)
   }
+
+  // Return existing books immediately
   const books = await db.getBooksByAuthor(c.env.DB, id)
-  return c.json(books)
+
+  // Check if background import is still needed
+  const worksCount = (author?.works_count as number) || 0
+  const hasMore = worksCount > 50 && books.length < worksCount
+  if (hasMore) {
+    // Trigger background import of next batch (non-blocking)
+    const progressKey = `author-works-progress:${id}`
+    const progress = await c.env.KV.get(progressKey).then(v => v ? JSON.parse(v) : null).catch(() => null)
+    if (!progress?.done) {
+      c.executionCtx.waitUntil(
+        importAuthorWorksBackground(c.env.DB, c.env.KV, id).catch(() => {})
+      )
+    }
+  }
+
+  return c.json({ books, has_more: hasMore, total: worksCount })
 })
 
 // ---- Reviews ----

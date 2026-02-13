@@ -142,6 +142,7 @@ export interface BookList {
   source_url?: string
   voter_count: number
   tag?: string
+  cover_urls?: string
   items?: BookListItem[]
   created_at?: string
 }

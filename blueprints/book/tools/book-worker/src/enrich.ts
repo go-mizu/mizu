@@ -317,43 +317,89 @@ export async function importAuthorWorks(d1: D1Database, kv: KVNamespace, authorI
 
   for (const work of works) {
     if (Date.now() > deadline) break
-
-    const workOLKey = work.key || ''
-    if (!workOLKey || !work.title) continue
-
-    // Dedup: check if already in D1
-    const existing = await db.getBookByOLKey(d1, workOLKey)
-    if (existing) continue
-
-    // Fetch OL work detail for description/covers
-    const olWork = await fetchOLWork(kv, workOLKey).catch(() => null)
-
-    let description = ''
-    if (olWork?.description) {
-      description = typeof olWork.description === 'string' ? olWork.description : olWork.description?.value || ''
-    }
-
-    let coverUrl = ''
-    if (olWork?.covers?.length > 0) {
-      coverUrl = coverURL(olWork.covers[0])
-    }
-
-    const book = await db.createBook(d1, {
-      ol_key: workOLKey,
-      title: work.title,
-      description,
-      cover_url: coverUrl,
-      author_names: author.name as string,
-      subjects: olWork?.subjects?.slice(0, 10) || [],
-      first_published: olWork?.first_publish_date || '',
-    })
-
-    await db.linkBookAuthor(d1, book.id as number, authorId)
-    imported++
+    imported += await importOLWork(d1, kv, work, author.name as string, authorId)
   }
 
   await db.setEnriched(d1, 'authors', authorId, ENRICH.AUTHOR_WORKS)
   return imported
+}
+
+/** Import a single OL work entry into D1. Returns 1 if imported, 0 if skipped. */
+async function importOLWork(d1: D1Database, kv: KVNamespace, work: { key: string; title: string }, authorName: string, authorId: number): Promise<number> {
+  const workOLKey = work.key || ''
+  if (!workOLKey || !work.title) return 0
+
+  // Dedup: check if already in D1
+  const existing = await db.getBookByOLKey(d1, workOLKey)
+  if (existing) return 0
+
+  // Fetch OL work detail for description/covers
+  const olWork = await fetchOLWork(kv, workOLKey).catch(() => null)
+
+  let description = ''
+  if (olWork?.description) {
+    description = typeof olWork.description === 'string' ? olWork.description : olWork.description?.value || ''
+  }
+
+  let coverUrl = ''
+  if (olWork?.covers?.length > 0) {
+    coverUrl = coverURL(olWork.covers[0])
+  }
+
+  const book = await db.createBook(d1, {
+    ol_key: workOLKey,
+    title: work.title,
+    description,
+    cover_url: coverUrl,
+    author_names: authorName,
+    subjects: olWork?.subjects?.slice(0, 10) || [],
+    first_published: olWork?.first_publish_date || '',
+  })
+
+  await db.linkBookAuthor(d1, book.id as number, authorId)
+  return 1
+}
+
+/** Background-friendly paginated import of author works. Imports one batch per call.
+ *  Uses KV to track offset progress. Safe to call multiple times (idempotent per batch). */
+export async function importAuthorWorksBackground(d1: D1Database, kv: KVNamespace, authorId: number, batchSize: number = 50): Promise<{ imported: number; done: boolean; total: number }> {
+  const author = await db.getAuthor(d1, authorId)
+  if (!author) return { imported: 0, done: true, total: 0 }
+
+  const olKey = author.ol_key as string
+  if (!olKey) return { imported: 0, done: true, total: 0 }
+
+  // Get current offset from KV
+  const progressKey = `author-works-progress:${authorId}`
+  const progress = await kv.get(progressKey).then(v => v ? JSON.parse(v) : null) as { offset: number; total: number } | null
+  const offset = progress?.offset || 0
+
+  // If first batch is not done yet, skip background (let initial import finish)
+  if (!db.hasEnriched(author.enriched as number, ENRICH.AUTHOR_WORKS)) {
+    return { imported: 0, done: false, total: (author.works_count as number) || 0 }
+  }
+
+  const works = await fetchOLAuthorWorks(kv, olKey, batchSize, offset).catch(() => [])
+  const totalWorks = works.length > 0 ? (works[0].size || 0) : (progress?.total || 0)
+
+  if (works.length === 0) {
+    // No more works — mark as fully done
+    await kv.put(progressKey, JSON.stringify({ offset, total: totalWorks, done: true }))
+    return { imported: 0, done: true, total: totalWorks }
+  }
+
+  const deadline = Date.now() + 25_000 // 25s budget for background
+  let imported = 0
+  for (const work of works) {
+    if (Date.now() > deadline) break
+    imported += await importOLWork(d1, kv, work, author.name as string, authorId)
+  }
+
+  const newOffset = offset + works.length
+  const done = works.length < batchSize || newOffset >= totalWorks
+  await kv.put(progressKey, JSON.stringify({ offset: newOffset, total: totalWorks, done }))
+
+  return { imported, done, total: totalWorks }
 }
 
 // ---- Book Enrichment ----

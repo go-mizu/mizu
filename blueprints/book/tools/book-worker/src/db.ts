@@ -699,11 +699,12 @@ export async function createOrUpdateChallenge(db: D1Database, year: number, goal
 // ---- Lists ----
 
 export async function getLists(db: D1Database, tag?: string) {
+  const coverSubquery = `(SELECT GROUP_CONCAT(cover_url, '||') FROM (SELECT b.cover_url FROM book_list_items bli JOIN books b ON b.id = bli.book_id WHERE bli.list_id = bl.id AND b.cover_url != '' AND b.cover_url IS NOT NULL ORDER BY bli.position LIMIT 6)) as cover_urls`
   if (tag) {
-    const rows = await db.prepare('SELECT * FROM book_lists WHERE tag = ? ORDER BY voter_count DESC, created_at DESC').bind(tag).all()
+    const rows = await db.prepare(`SELECT bl.*, ${coverSubquery} FROM book_lists bl WHERE bl.tag = ? ORDER BY bl.voter_count DESC, bl.created_at DESC`).bind(tag).all()
     return { lists: rows.results || [], total: rows.results?.length || 0 }
   }
-  const rows = await db.prepare('SELECT * FROM book_lists ORDER BY voter_count DESC, created_at DESC').all()
+  const rows = await db.prepare(`SELECT bl.*, ${coverSubquery} FROM book_lists bl ORDER BY bl.voter_count DESC, bl.created_at DESC`).all()
   return { lists: rows.results || [], total: rows.results?.length || 0 }
 }
 
