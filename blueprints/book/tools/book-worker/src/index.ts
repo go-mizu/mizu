@@ -1,5 +1,7 @@
 import { Hono } from 'hono'
-import type { HonoEnv } from './types'
+import type { Env, HonoEnv } from './types'
+import type { QueueJob } from './queue'
+import { handleQueue } from './queue'
 import apiRoutes from './routes/api'
 
 const app = new Hono<HonoEnv>()
@@ -31,4 +33,10 @@ app.onError((err, c) => {
   return c.json({ error: err.message }, 500)
 })
 
-export default app
+// Export both fetch (HTTP) and queue (consumer) handlers
+export default {
+  fetch: app.fetch,
+  async queue(batch: MessageBatch<QueueJob>, env: Env): Promise<void> {
+    await handleQueue(batch, env)
+  },
+}

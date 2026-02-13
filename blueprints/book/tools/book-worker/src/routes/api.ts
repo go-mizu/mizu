@@ -11,10 +11,10 @@ import { searchOL } from '../openlibrary'
 import { DEFAULT_LIMIT, MAX_LIMIT, coverURL } from '../config'
 import * as db from '../db'
 import {
-  ENRICH, enrichAuthor, importAuthorWorks, importAuthorWorksBackground, enrichBook, enrichGenre,
-  discoverLists, importListBooks, importSeriesBooks, importEditions,
-  importSimilarBooks, normalizeGenre, seedPopularLists,
+  ENRICH, enrichBook,
+  discoverLists, normalizeGenre, seedPopularLists,
 } from '../enrich'
+import { sendJob } from '../queue'
 
 const app = new Hono<HonoEnv>()
 app.use('*', cors())
@@ -228,17 +228,18 @@ app.get('/books/:id', async (c) => {
     book = await db.getBook(c.env.DB, id)
     if (!book) return c.json({ error: 'Book not found' }, 404)
   }
-  // Auto-enrich: core data, editions, series (flag-based, idempotent)
-  if (!db.hasEnriched(book.enriched as number, ENRICH.BOOK_CORE)) {
-    const enriched = await enrichBook(c.env.DB, c.env.KV, id).catch(() => null)
-    if (enriched) book = enriched
-  }
-  if (!db.hasEnriched(book.enriched as number, ENRICH.BOOK_EDITIONS)) {
-    await importEditions(c.env.DB, c.env.KV, id).catch(() => 0)
-    book = (await db.getBook(c.env.DB, id)) || book
-  }
-  if (!db.hasEnriched(book.enriched as number, ENRICH.BOOK_SERIES)) {
-    await importSeriesBooks(c.env.DB, c.env.KV, id).catch(() => 0)
+  // Enqueue enrichment if not done (non-blocking — queue consumer handles it)
+  const enriched = (book.enriched as number) || 0
+  if (!db.hasEnriched(enriched, ENRICH.BOOK_CORE)) {
+    await sendJob(c.env.ENRICH_QUEUE, { type: 'enrich-book', bookId: id })
+  } else {
+    // Core done — check if editions/series still needed
+    if (!db.hasEnriched(enriched, ENRICH.BOOK_EDITIONS)) {
+      await sendJob(c.env.ENRICH_QUEUE, { type: 'import-editions', bookId: id })
+    }
+    if (!db.hasEnriched(enriched, ENRICH.BOOK_SERIES)) {
+      await sendJob(c.env.ENRICH_QUEUE, { type: 'import-series', bookId: id })
+    }
   }
   return c.json(book)
 })
@@ -262,10 +263,10 @@ app.post('/books', async (c) => {
 app.get('/books/:id/similar', async (c) => {
   const id = parseInt(c.req.param('id'), 10)
   const limit = parseInt(c.req.query('limit') || '10', 10) || 10
-  // Auto-import similar books if not already done
+  // Enqueue similar books import if not done
   const book = await db.getBook(c.env.DB, id)
   if (book && !db.hasEnriched(book.enriched as number, ENRICH.BOOK_SIMILAR)) {
-    await importSimilarBooks(c.env.DB, c.env.KV, id).catch(() => 0)
+    await sendJob(c.env.ENRICH_QUEUE, { type: 'import-similar', bookId: id })
   }
   return c.json(await db.getSimilarBooks(c.env.DB, id, limit))
 })
@@ -381,45 +382,40 @@ app.get('/authors/search', async (c) => {
 
 app.get('/authors/:id', async (c) => {
   const id = parseInt(c.req.param('id'), 10)
-  let author = await db.getAuthor(c.env.DB, id)
+  const author = await db.getAuthor(c.env.DB, id)
   if (!author) return c.json({ error: 'Author not found' }, 404)
-  // Auto-enrich author (flag-based, idempotent)
+  // Enqueue author enrichment if not done (non-blocking)
   if (!db.hasEnriched(author.enriched as number, ENRICH.AUTHOR_CORE)) {
-    const enriched = await enrichAuthor(c.env.DB, c.env.KV, id).catch(() => null)
-    if (enriched) author = enriched
+    await sendJob(c.env.ENRICH_QUEUE, { type: 'enrich-author', authorId: id })
   }
   return c.json(author)
 })
 
 app.get('/authors/:id/books', async (c) => {
   const id = parseInt(c.req.param('id'), 10)
-  // Ensure author is enriched first (for ol_key)
-  let author = await db.getAuthor(c.env.DB, id)
+  const author = await db.getAuthor(c.env.DB, id)
+
+  // Enqueue author enrichment + works import if not done
   if (author && !db.hasEnriched(author.enriched as number, ENRICH.AUTHOR_CORE)) {
-    await enrichAuthor(c.env.DB, c.env.KV, id).catch(() => null)
-    author = await db.getAuthor(c.env.DB, id)
-  }
-  // Initial import (first 50 works) — blocking on first request only
-  if (author && !db.hasEnriched(author.enriched as number, ENRICH.AUTHOR_WORKS)) {
-    await importAuthorWorks(c.env.DB, c.env.KV, id).catch(() => 0)
+    // enrich-author will chain import-author-works automatically
+    await sendJob(c.env.ENRICH_QUEUE, { type: 'enrich-author', authorId: id })
+  } else if (author && !db.hasEnriched(author.enriched as number, ENRICH.AUTHOR_WORKS)) {
+    await sendJob(c.env.ENRICH_QUEUE, { type: 'import-author-works', authorId: id, offset: 0, batchSize: 200 })
+  } else {
+    // Check if background pagination is still needed
+    const worksCount = (author?.works_count as number) || 0
+    const progressKey = `author-works-progress:${id}`
+    const progress = await c.env.KV.get(progressKey).then(v => v ? JSON.parse(v) : null).catch(() => null)
+    if (worksCount > 50 && !progress?.done) {
+      const offset = progress?.offset || 50
+      await sendJob(c.env.ENRICH_QUEUE, { type: 'import-author-works', authorId: id, offset, batchSize: 200 })
+    }
   }
 
   // Return existing books immediately
   const books = await db.getBooksByAuthor(c.env.DB, id)
-
-  // Check if background import is still needed
   const worksCount = (author?.works_count as number) || 0
-  const hasMore = worksCount > 50 && books.length < worksCount
-  if (hasMore) {
-    // Trigger background import of next batch (non-blocking)
-    const progressKey = `author-works-progress:${id}`
-    const progress = await c.env.KV.get(progressKey).then(v => v ? JSON.parse(v) : null).catch(() => null)
-    if (!progress?.done) {
-      c.executionCtx.waitUntil(
-        importAuthorWorksBackground(c.env.DB, c.env.KV, id).catch(() => {})
-      )
-    }
-  }
+  const hasMore = worksCount > 0 && books.length < worksCount
 
   return c.json({ books, has_more: hasMore, total: worksCount })
 })
@@ -533,17 +529,13 @@ app.get('/genres', async (c) => {
 app.get('/genres/:genre/books', async (c) => {
   const genre = decodeURIComponent(c.req.param('genre')).replace(/-/g, ' ')
   const { page, limit } = parsePageLimit(c)
-  let result = await db.getBooksByGenre(c.env.DB, genre, page, limit)
-  // Auto-import from OL if genre not yet enriched (KV flag, idempotent)
+  const result = await db.getBooksByGenre(c.env.DB, genre, page, limit)
+  // Enqueue genre enrichment if not done (non-blocking)
   if (page === 1) {
     const genreKey = `enriched:genre:${genre.toLowerCase().replace(/\s+/g, '_')}`
     const alreadyEnriched = await c.env.KV.get(genreKey)
     if (!alreadyEnriched) {
-      const imported = await enrichGenre(c.env.DB, c.env.KV, genre).catch(() => 0)
-      await c.env.KV.put(genreKey, String(imported))
-      if (imported > 0) {
-        result = await db.getBooksByGenre(c.env.DB, genre, page, limit)
-      }
+      await sendJob(c.env.ENRICH_QUEUE, { type: 'enrich-genre', genre })
     }
   }
   return c.json(result)
@@ -637,12 +629,11 @@ app.get('/lists/search', async (c) => {
 
 app.get('/lists/:id', async (c) => {
   const id = parseInt(c.req.param('id'), 10)
-  let list = await db.getList(c.env.DB, id)
+  const list = await db.getList(c.env.DB, id)
   if (!list) return c.json({ error: 'List not found' }, 404)
-  // Auto-import books from GR source (flag-based, idempotent)
+  // Enqueue list books import if not done (non-blocking)
   if (!db.hasEnriched(list.enriched as number, ENRICH.LIST_BOOKS)) {
-    await importListBooks(c.env.DB, c.env.KV, id).catch(() => 0)
-    list = (await db.getList(c.env.DB, id)) || list
+    await sendJob(c.env.ENRICH_QUEUE, { type: 'import-list-books', listId: id })
   }
   return c.json(list)
 })
@@ -815,6 +806,30 @@ app.get('/ol/search', async (c) => {
 })
 
 // ---- Init DB ----
+
+// ---- Enrichment Progress ----
+
+app.get('/enrich/progress/:type/:targetId', async (c) => {
+  const type = c.req.param('type')
+  const targetId = c.req.param('targetId')
+
+  if (type === 'author-works') {
+    const progressKey = `author-works-progress:${targetId}`
+    const progress = await c.env.KV.get(progressKey).then(v => v ? JSON.parse(v) : null).catch(() => null)
+    const author = await db.getAuthor(c.env.DB, parseInt(targetId, 10))
+    const books = author ? await db.getBooksByAuthor(c.env.DB, parseInt(targetId, 10)) : []
+    return c.json({
+      type,
+      target_id: targetId,
+      status: progress?.done ? 'completed' : 'processing',
+      imported: books.length,
+      total: (author?.works_count as number) || progress?.total || 0,
+      progress,
+    })
+  }
+
+  return c.json({ type, target_id: targetId, status: 'unknown' })
+})
 
 app.post('/init', async (c) => {
   await db.initDB(c.env.DB)
