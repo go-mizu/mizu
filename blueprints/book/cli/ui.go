@@ -1,6 +1,11 @@
 package cli
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 var (
 	titleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#382110"))
@@ -32,4 +37,45 @@ func Stars(n int) string {
 		s += "☆"
 	}
 	return starStyle.Render(s)
+}
+
+// Bar renders a block-character progress bar like ████████░░░░.
+func Bar(filled, total, width int) string {
+	if total <= 0 || width <= 0 {
+		return strings.Repeat("░", width)
+	}
+	n := filled * width / total
+	if n > width {
+		n = width
+	}
+	return strings.Repeat("█", n) + strings.Repeat("░", width-n)
+}
+
+func printStep(step, total int, name string) {
+	header := fmt.Sprintf("Step %d/%d · %s", step, total, name)
+	fmt.Printf("\n  %s\n  %s\n", header, strings.Repeat("─", len(header)+2))
+}
+
+func printBar(label string, count, total int, width int) {
+	pct := float64(0)
+	if total > 0 {
+		pct = float64(count) * 100.0 / float64(total)
+	}
+	fmt.Printf("    %-11s%12s  %5.1f%%  %s\n", label, formatNumberCompact(count), pct, Bar(count, total, width))
+}
+
+func printSummaryBox(lines ...string) {
+	rule := strings.Repeat("═", 60)
+	fmt.Printf("\n  %s\n", rule)
+	for _, l := range lines {
+		fmt.Printf("  %s\n", l)
+	}
+	fmt.Printf("  %s\n", rule)
+}
+
+func formatNumberCompact(n int) string {
+	if n < 1_000_000 {
+		return fmt.Sprintf("%d", n)
+	}
+	return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
 }

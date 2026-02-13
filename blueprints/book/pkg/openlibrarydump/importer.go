@@ -42,6 +42,8 @@ type Stats struct {
 	EditionsStaged int
 	BooksInserted  int
 	Duration       time.Duration
+	MemoryLimit    string
+	Threads        int
 }
 
 // progress tracks import phase state for clean output.
@@ -51,24 +53,23 @@ type progress struct {
 	start time.Time
 }
 
-func (p *progress) section(title string) {
-	fmt.Fprintf(os.Stdout, "\n  %s\n  %s\n", title, strings.Repeat("─", len(title)+2))
-}
+const dotLeaderWidth = 40
 
-func (p *progress) kv(key, value string) {
-	fmt.Fprintf(os.Stdout, "  %-14s%s\n", key, value)
-}
-
-func (p *progress) exec(ctx context.Context, tx *sql.Tx, name, query string) error {
+func (p *progress) exec(ctx context.Context, tx *sql.Tx, name, query string) (time.Duration, error) {
 	p.phase++
-	tag := fmt.Sprintf("[%d/%d]", p.phase, p.total)
-	fmt.Fprintf(os.Stdout, "  %s  %s...\n", tag, name)
+	tag := fmt.Sprintf("[%2d/%d]", p.phase, p.total)
+	dots := dotLeaderWidth - len(name)
+	if dots < 3 {
+		dots = 3
+	}
+	leader := " " + strings.Repeat("·", dots) + " "
+	fmt.Fprintf(os.Stdout, "  %s %s%s", tag, name, leader)
 	phaseStart := time.Now()
 
 	done := make(chan struct{})
 	defer close(done)
 	go func() {
-		ticker := time.NewTicker(15 * time.Second)
+		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
@@ -78,21 +79,25 @@ func (p *progress) exec(ctx context.Context, tx *sql.Tx, name, query string) err
 				return
 			case <-ticker.C:
 				elapsed := time.Since(phaseStart).Round(time.Second)
-				fmt.Fprintf(os.Stdout, "  %s  %s still running... (%s)\n", tag, name, elapsed)
+				fmt.Fprintf(os.Stderr, "\r  %s %s%sstill running... (%s)", tag, name, leader, elapsed)
 			}
 		}
 	}()
 
 	if _, err := tx.ExecContext(ctx, query); err != nil {
-		return fmt.Errorf("%s: %s", name, shortErr(err))
+		fmt.Fprintln(os.Stdout, "FAILED")
+		return 0, fmt.Errorf("%s: %s", name, shortErr(err))
 	}
 	elapsed := time.Since(phaseStart)
-	fmt.Fprintf(os.Stdout, "  %s  %s ✓ %s\n", tag, name, formatDuration(elapsed))
-	return nil
+	return elapsed, nil
 }
 
-func (p *progress) count(n int, label string) {
-	fmt.Fprintf(os.Stdout, "         → %s %s\n", formatNumber(n), label)
+func (p *progress) finish(count int, label string, elapsed time.Duration) {
+	if count > 0 {
+		fmt.Fprintf(os.Stdout, "%-24s %s\n", FormatNumber(count)+" "+label, FormatDuration(elapsed))
+	} else {
+		fmt.Fprintf(os.Stdout, "%24s %s\n", "", FormatDuration(elapsed))
+	}
 }
 
 func ImportToDuckDB(ctx context.Context, dbPath string, opts Options) (*Stats, error) {
@@ -100,10 +105,8 @@ func ImportToDuckDB(ctx context.Context, dbPath string, opts Options) (*Stats, e
 
 	// Auto-skip editions when using --limit: scanning the full editions dump
 	// (12GB+) for a small number of works is extremely slow and wasteful.
-	autoSkipped := false
 	if opts.LimitWorks > 0 && !opts.SkipEditions {
 		opts.SkipEditions = true
-		autoSkipped = true
 	}
 
 	// Ensure schema exists with default backend wiring.
@@ -170,29 +173,6 @@ func ImportToDuckDB(ctx context.Context, dbPath string, opts Options) (*Stats, e
 	}
 	prog := &progress{total: totalPhases, start: importStart}
 
-	// ── Configuration ──
-	prog.section("Configuration")
-	prog.kv("Database", dbPath)
-	sysGB := detectSystemMemoryGB()
-	prog.kv("Memory", fmt.Sprintf("%s (of %d GB) · %d threads", memoryLimit, sysGB, importThreads))
-	prog.kv("Authors", fmt.Sprintf("%s  %s", filepath.Base(opts.AuthorsPath), fileSizeStr(opts.AuthorsPath)))
-	prog.kv("Works", fmt.Sprintf("%s  %s", filepath.Base(opts.WorksPath), fileSizeStr(opts.WorksPath)))
-	if opts.SkipEditions {
-		reason := "skipped"
-		if autoSkipped {
-			reason = fmt.Sprintf("auto-skipped, --limit=%d", opts.LimitWorks)
-		}
-		prog.kv("Editions", fmt.Sprintf("(%s)", reason))
-	} else {
-		prog.kv("Editions", fmt.Sprintf("%s  %s", filepath.Base(opts.EditionsPath), fileSizeStr(opts.EditionsPath)))
-	}
-	if opts.LimitWorks > 0 {
-		prog.kv("Limit", fmt.Sprintf("%s works", formatNumber(opts.LimitWorks)))
-	}
-
-	// ── Progress ──
-	prog.section("Progress")
-
 	worksLimit := ""
 	if opts.LimitWorks > 0 {
 		worksLimit = fmt.Sprintf(" LIMIT %d", opts.LimitWorks)
@@ -212,7 +192,9 @@ SELECT
   COALESCE(CAST(json_extract(t.raw_json, '$.subjects') AS VARCHAR), '[]') AS subjects_json,
   TRY_CAST(json_extract_string(t.raw_json, '$.covers[0]') AS INTEGER) AS cover_id,
   COALESCE(NULLIF(TRIM(json_extract_string(t.raw_json, '$.first_publish_date')), ''), '') AS first_publish_date,
-  TRY_CAST(regexp_extract(json_extract_string(t.raw_json, '$.first_publish_date'), '(\\d{4})', 1) AS INTEGER) AS publish_year,
+  TRY_CAST(regexp_extract(json_extract_string(t.raw_json, '$.first_publish_date'), '(\d{4})', 1) AS INTEGER) AS publish_year,
+  COALESCE(TRY_CAST(json_extract_string(t.raw_json, '$.ratings_average') AS REAL), 0) AS average_rating,
+  COALESCE(TRY_CAST(json_extract_string(t.raw_json, '$.ratings_count') AS INTEGER), 0) AS ratings_count,
   COALESCE(json_extract(t.raw_json, '$.authors'), '[]') AS authors_json
 FROM (
   SELECT
@@ -231,24 +213,22 @@ FROM (
 ) t
 WHERE t.col2 IS NOT NULL;
 `, sqlString(opts.WorksPath), csvMaxLineSizeBytes, csvBufferSizeBytes, worksLimit)
-	if err := prog.exec(ctx, tx, "Stage works", worksSQL); err != nil {
+	if d, err := prog.exec(ctx, tx, "Stage works", worksSQL); err != nil {
 		return nil, err
-	}
-	if n, err := queryCount(ctx, tx, "SELECT COUNT(*) FROM ol_works_stage"); err == nil {
-		prog.count(n, "works")
+	} else if n, err := queryCount(ctx, tx, "SELECT COUNT(*) FROM ol_works_stage"); err == nil {
+		prog.finish(n, "works", d)
 	}
 
-	// Phase 2: Stage author refs
-	if err := prog.exec(ctx, tx, "Extract author refs", `
+	// Phase 2: Extract author refs
+	if d, err := prog.exec(ctx, tx, "Extract author refs", `
 CREATE OR REPLACE TEMP TABLE ol_author_refs AS
 SELECT DISTINCT json_extract_string(a.value, '$.author.key') AS author_key
 FROM ol_works_stage w, json_each(w.authors_json) a
 WHERE json_extract_string(a.value, '$.author.key') IS NOT NULL;
 `); err != nil {
 		return nil, err
-	}
-	if n, err := queryCount(ctx, tx, "SELECT COUNT(*) FROM ol_author_refs"); err == nil {
-		prog.count(n, "unique authors referenced")
+	} else if n, err := queryCount(ctx, tx, "SELECT COUNT(*) FROM ol_author_refs"); err == nil {
+		prog.finish(n, "refs", d)
 	}
 
 	// Phase 3: Stage authors
@@ -276,15 +256,14 @@ JOIN ol_author_refs refs ON refs.author_key = r.column2
 WHERE r.column1 = '/type/author'
   AND NULLIF(TRIM(json_extract_string(r.column5, '$.name')), '') IS NOT NULL;
 `, sqlString(opts.AuthorsPath), csvMaxLineSizeBytes, csvBufferSizeBytes)
-	if err := prog.exec(ctx, tx, "Stage authors", authorsSQL); err != nil {
+	if d, err := prog.exec(ctx, tx, "Stage authors", authorsSQL); err != nil {
 		return nil, err
-	}
-	if n, err := queryCount(ctx, tx, "SELECT COUNT(*) FROM ol_authors_stage"); err == nil {
-		prog.count(n, "authors matched")
+	} else if n, err := queryCount(ctx, tx, "SELECT COUNT(*) FROM ol_authors_stage"); err == nil {
+		prog.finish(n, "authors", d)
 	}
 
 	// Phase 4: Build work-author names
-	if err := prog.exec(ctx, tx, "Build work-author names", `
+	if d, err := prog.exec(ctx, tx, "Build work-author names", `
 CREATE OR REPLACE TEMP TABLE ol_work_author_names AS
 SELECT
   w.ol_key,
@@ -295,19 +274,23 @@ LEFT JOIN ol_authors_stage a ON a.ol_key = json_extract_string(j.value, '$.autho
 GROUP BY w.ol_key;
 `); err != nil {
 		return nil, err
+	} else {
+		prog.finish(0, "", d)
 	}
 
 	// Phase 5: Stage work refs (helper table)
-	if err := prog.exec(ctx, tx, "Stage work refs", `
+	if d, err := prog.exec(ctx, tx, "Stage work refs", `
 CREATE OR REPLACE TEMP TABLE ol_work_refs AS
 SELECT ol_key FROM ol_works_stage;
 `); err != nil {
 		return nil, err
+	} else {
+		prog.finish(0, "", d)
 	}
 
 	// Phase 6: Stage or skip editions
 	if opts.SkipEditions {
-		if err := prog.exec(ctx, tx, "Skip editions (empty table)", `
+		if d, err := prog.exec(ctx, tx, "Skip editions (empty table)", `
 CREATE OR REPLACE TEMP TABLE ol_editions_stage (
   ol_key VARCHAR,
   isbn13 VARCHAR,
@@ -320,6 +303,8 @@ CREATE OR REPLACE TEMP TABLE ol_editions_stage (
 );
 `); err != nil {
 			return nil, err
+		} else {
+			prog.finish(0, "", d)
 		}
 	} else {
 		editionsSQL := fmt.Sprintf(`
@@ -340,7 +325,7 @@ FROM (
     NULLIF(regexp_replace(json_extract_string(r.column5, '$.isbn_10[0]'), '[^0-9Xx]', '', 'g'), '') AS isbn10,
     NULLIF(TRIM(json_extract_string(r.column5, '$.publishers[0]')), '') AS publisher,
     NULLIF(TRIM(json_extract_string(r.column5, '$.publish_date')), '') AS publish_date,
-    TRY_CAST(regexp_extract(json_extract_string(r.column5, '$.publish_date'), '(\\d{4})', 1) AS INTEGER) AS publish_year,
+    TRY_CAST(regexp_extract(json_extract_string(r.column5, '$.publish_date'), '(\d{4})', 1) AS INTEGER) AS publish_year,
     COALESCE(TRY_CAST(json_extract_string(r.column5, '$.number_of_pages') AS INTEGER), 0) AS page_count,
     CASE
       WHEN split_part(json_extract_string(r.column5, '$.languages[0].key'), '/', 3) = 'eng' THEN 'en'
@@ -362,40 +347,46 @@ FROM (
 )
 GROUP BY ol_key;
 `, sqlString(opts.EditionsPath), csvMaxLineSizeBytes, csvBufferSizeBytes)
-		if err := prog.exec(ctx, tx, "Stage editions", editionsSQL); err != nil {
+		if d, err := prog.exec(ctx, tx, "Stage editions", editionsSQL); err != nil {
 			return nil, err
-		}
-		if n, err := queryCount(ctx, tx, "SELECT COUNT(*) FROM ol_editions_stage"); err == nil {
-			prog.count(n, "editions matched")
+		} else if n, err := queryCount(ctx, tx, "SELECT COUNT(*) FROM ol_editions_stage"); err == nil {
+			prog.finish(n, "editions", d)
 		}
 	}
 
 	// Phase 7 (conditional): Delete existing books
 	if opts.ReplaceBooks {
-		if err := prog.exec(ctx, tx, "Delete existing books", "DELETE FROM books WHERE ol_key IN (SELECT ol_key FROM ol_works_stage)"); err != nil {
+		if d, err := prog.exec(ctx, tx, "Delete existing books", "DELETE FROM books WHERE ol_key IN (SELECT ol_key FROM ol_works_stage)"); err != nil {
 			return nil, err
+		} else {
+			prog.finish(0, "", d)
 		}
 	}
 
 	// Phase 7/8: Delete existing authors
-	if err := prog.exec(ctx, tx, "Delete existing authors", "DELETE FROM authors WHERE ol_key IN (SELECT ol_key FROM ol_authors_stage)"); err != nil {
+	if d, err := prog.exec(ctx, tx, "Delete existing authors", "DELETE FROM authors WHERE ol_key IN (SELECT ol_key FROM ol_authors_stage)"); err != nil {
 		return nil, err
+	} else {
+		prog.finish(0, "", d)
 	}
 
 	// Phase 8/9: Insert authors
-	if err := prog.exec(ctx, tx, "Insert authors", `
+	if d, err := prog.exec(ctx, tx, "Insert authors", `
 INSERT INTO authors (ol_key, name, bio, birth_date, death_date, works_count)
 SELECT ol_key, name, bio, birth_date, death_date, works_count
 FROM ol_authors_stage
 `); err != nil {
 		return nil, err
+	} else if n, err := queryCount(ctx, tx, "SELECT COUNT(*) FROM authors WHERE ol_key IN (SELECT ol_key FROM ol_authors_stage)"); err == nil {
+		prog.finish(n, "inserted", d)
 	}
 
 	// Phase 9/10: Insert books
-	if err := prog.exec(ctx, tx, "Insert books", `
+	if d, err := prog.exec(ctx, tx, "Insert books", `
 INSERT INTO books (
   ol_key, title, description, author_names, cover_url, cover_id,
-  isbn10, isbn13, publisher, publish_date, publish_year, page_count, language, subjects_json
+  isbn10, isbn13, publisher, publish_date, publish_year, page_count, language, subjects_json,
+  average_rating, ratings_count
 )
 SELECT
   w.ol_key,
@@ -413,7 +404,9 @@ SELECT
   COALESCE(e.publish_year, w.publish_year, 0),
   COALESCE(e.page_count, 0),
   COALESCE(e.language, 'en'),
-  COALESCE(w.subjects_json, '[]')
+  COALESCE(w.subjects_json, '[]'),
+  COALESCE(w.average_rating, 0),
+  COALESCE(w.ratings_count, 0)
 FROM ol_works_stage w
 LEFT JOIN ol_work_author_names wa ON wa.ol_key = w.ol_key
 LEFT JOIN ol_editions_stage e ON e.ol_key = w.ol_key
@@ -424,10 +417,12 @@ WHERE w.title IS NOT NULL
   );
 `); err != nil {
 		return nil, err
+	} else if n, err := queryCount(ctx, tx, "SELECT COUNT(*) FROM books WHERE ol_key IN (SELECT ol_key FROM ol_works_stage)"); err == nil {
+		prog.finish(n, "inserted", d)
 	}
 
 	// Collect final counts.
-	stats := &Stats{}
+	stats := &Stats{MemoryLimit: memoryLimit, Threads: importThreads}
 	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM ol_works_stage").Scan(&stats.WorksStaged); err != nil {
 		return nil, fmt.Errorf("count works stage: %w", err)
 	}
@@ -596,8 +591,8 @@ func sqlString(v string) string {
 	return strings.ReplaceAll(v, "'", "''")
 }
 
-// formatNumber formats an integer with comma separators (e.g. 1234567 → "1,234,567").
-func formatNumber(n int) string {
+// FormatNumber formats an integer with comma separators (e.g. 1234567 → "1,234,567").
+func FormatNumber(n int) string {
 	s := strconv.Itoa(n)
 	if len(s) <= 3 {
 		return s
@@ -625,8 +620,8 @@ func fileSizeStr(path string) string {
 	return fmt.Sprintf("(%s)", FormatBytes(info.Size()))
 }
 
-// formatDuration formats a duration for display.
-func formatDuration(d time.Duration) string {
+// FormatDuration formats a duration for display.
+func FormatDuration(d time.Duration) string {
 	if d < time.Second {
 		return fmt.Sprintf("%dms", d.Milliseconds())
 	}
@@ -638,18 +633,24 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%dm%ds", m, s)
 }
 
+// ExportStats holds row counts from a parquet export.
+type ExportStats struct {
+	BooksExported   int
+	AuthorsExported int
+}
+
 // ExportParquet writes imported Open Library records into parquet files.
-func ExportParquet(ctx context.Context, dbPath, outDir string) ([]string, error) {
+func ExportParquet(ctx context.Context, dbPath, outDir string) ([]string, *ExportStats, error) {
 	if outDir == "" {
 		outDir = filepath.Join(filepath.Dir(dbPath), "parquet")
 	}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		return nil, fmt.Errorf("create parquet dir: %w", err)
+		return nil, nil, fmt.Errorf("create parquet dir: %w", err)
 	}
 
 	db, err := sql.Open("duckdb", dbPath)
 	if err != nil {
-		return nil, fmt.Errorf("open duckdb: %w", err)
+		return nil, nil, fmt.Errorf("open duckdb: %w", err)
 	}
 	defer db.Close()
 
@@ -661,13 +662,14 @@ COPY (
   SELECT
     id, ol_key, title, description, author_names, cover_url, cover_id,
     isbn10, isbn13, publisher, publish_date, publish_year, page_count,
-    language, subjects_json, created_at, updated_at
+    language, subjects_json, average_rating, ratings_count,
+    created_at, updated_at
   FROM books
   WHERE ol_key LIKE '/works/%%'
 ) TO '%s' (FORMAT PARQUET, COMPRESSION ZSTD);
 `, sqlString(booksPath))
 	if _, err := db.ExecContext(ctx, booksSQL); err != nil {
-		return nil, fmt.Errorf("export books parquet: %w", err)
+		return nil, nil, fmt.Errorf("export books parquet: %w", err)
 	}
 
 	authorsSQL := fmt.Sprintf(`
@@ -679,10 +681,75 @@ COPY (
 ) TO '%s' (FORMAT PARQUET, COMPRESSION ZSTD);
 `, sqlString(authorsPath))
 	if _, err := db.ExecContext(ctx, authorsSQL); err != nil {
-		return nil, fmt.Errorf("export authors parquet: %w", err)
+		return nil, nil, fmt.Errorf("export authors parquet: %w", err)
 	}
 
-	return []string{booksPath, authorsPath}, nil
+	stats := &ExportStats{}
+	_ = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM read_parquet(?)", booksPath).Scan(&stats.BooksExported)
+	_ = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM read_parquet(?)", authorsPath).Scan(&stats.AuthorsExported)
+
+	return []string{booksPath, authorsPath}, stats, nil
+}
+
+// VerifyStats holds data quality metrics from parquet verification.
+type VerifyStats struct {
+	BookRows       int
+	WithTitle      int
+	WithISBN       int
+	WithCover      int
+	WithRating     int
+	AvgRating      float64
+	BookFileSize   int64
+	AuthorRows     int
+	WithName       int
+	WithBio        int
+	AuthorFileSize int64
+}
+
+// VerifyParquet reads exported parquet files and computes data quality stats.
+func VerifyParquet(ctx context.Context, booksPath, authorsPath string) (*VerifyStats, error) {
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return nil, fmt.Errorf("open in-memory duckdb: %w", err)
+	}
+	defer db.Close()
+
+	vs := &VerifyStats{}
+
+	// Books stats
+	err = db.QueryRowContext(ctx, `
+SELECT
+  COUNT(*) AS total,
+  COUNT(*) FILTER (WHERE title IS NOT NULL AND title != '') AS with_title,
+  COUNT(*) FILTER (WHERE isbn13 IS NOT NULL AND isbn13 != '') AS with_isbn,
+  COUNT(*) FILTER (WHERE cover_url IS NOT NULL AND cover_url != '') AS with_cover,
+  COUNT(*) FILTER (WHERE average_rating > 0) AS with_rating,
+  COALESCE(AVG(average_rating) FILTER (WHERE average_rating > 0), 0) AS avg_rating
+FROM read_parquet(?)
+`, booksPath).Scan(&vs.BookRows, &vs.WithTitle, &vs.WithISBN, &vs.WithCover, &vs.WithRating, &vs.AvgRating)
+	if err != nil {
+		return nil, fmt.Errorf("verify books parquet: %w", err)
+	}
+	if info, err := os.Stat(booksPath); err == nil {
+		vs.BookFileSize = info.Size()
+	}
+
+	// Authors stats
+	err = db.QueryRowContext(ctx, `
+SELECT
+  COUNT(*) AS total,
+  COUNT(*) FILTER (WHERE name IS NOT NULL AND name != '') AS with_name,
+  COUNT(*) FILTER (WHERE bio IS NOT NULL AND bio != '') AS with_bio
+FROM read_parquet(?)
+`, authorsPath).Scan(&vs.AuthorRows, &vs.WithName, &vs.WithBio)
+	if err != nil {
+		return nil, fmt.Errorf("verify authors parquet: %w", err)
+	}
+	if info, err := os.Stat(authorsPath); err == nil {
+		vs.AuthorFileSize = info.Size()
+	}
+
+	return vs, nil
 }
 
 // DeleteSourceFiles removes source dump files after successful import/export.
