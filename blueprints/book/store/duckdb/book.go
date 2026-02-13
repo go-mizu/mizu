@@ -73,11 +73,11 @@ func (s *BookStore) Create(ctx context.Context, book *types.Book) error {
 	}
 	book.ID = id
 
-	// Update FTS index
-	_, err = s.db.ExecContext(ctx,
+	// Best-effort FTS index update (table may not exist in DuckDB).
+	s.db.ExecContext(ctx,
 		`INSERT INTO books_fts(rowid, title, author_names, description, subjects_json) VALUES (?, ?, ?, ?, ?)`,
-		id, book.Title, book.AuthorNames, book.Description, book.SubjectsJSON)
-	return err
+		id, book.Title, book.AuthorNames, book.Description, book.SubjectsJSON) //nolint:errcheck
+	return nil
 }
 
 func (s *BookStore) Get(ctx context.Context, id int64) (*types.Book, error) {
@@ -126,39 +126,18 @@ func (s *BookStore) Search(ctx context.Context, query string, page, limit int) (
 		return &types.SearchResult{Books: books, TotalCount: total, Page: page, PageSize: limit}, nil
 	}
 
-	// Try FTS search first
+	// DuckDB: use ILIKE for case-insensitive search (no FTS table in DuckDB schema).
 	var total int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM books_fts WHERE books_fts MATCH ?`, query).Scan(&total)
+	likeQ := "%" + query + "%"
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM books WHERE title ILIKE ? OR author_names ILIKE ?`, likeQ, likeQ).Scan(&total)
 	if err != nil {
-		// Fallback to LIKE search
-		likeQ := "%" + query + "%"
-		err = s.db.QueryRowContext(ctx,
-			`SELECT COUNT(*) FROM books WHERE title LIKE ? OR author_names LIKE ?`, likeQ, likeQ).Scan(&total)
-		if err != nil {
-			return nil, err
-		}
-
-		rows, err := s.db.QueryContext(ctx,
-			fmt.Sprintf(`SELECT %s FROM books WHERE title LIKE ? OR author_names LIKE ? ORDER BY ratings_count DESC LIMIT ? OFFSET ?`, bookColumns("")),
-			likeQ, likeQ, limit, offset)
-		if err != nil {
-			return nil, err
-		}
-		defer rows.Close()
-
-		books, err := s.scanBooks(rows)
-		if err != nil {
-			return nil, err
-		}
-		return &types.SearchResult{Books: books, TotalCount: total, Page: page, PageSize: limit}, nil
+		return nil, err
 	}
 
-	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
-		SELECT %s FROM books b
-		JOIN books_fts f ON b.id = f.rowid
-		WHERE books_fts MATCH ?
-		ORDER BY rank
-		LIMIT ? OFFSET ?`, bookColumns("b")), query, limit, offset)
+	rows, err := s.db.QueryContext(ctx,
+		fmt.Sprintf(`SELECT %s FROM books WHERE title ILIKE ? OR author_names ILIKE ? ORDER BY ratings_count DESC LIMIT ? OFFSET ?`, bookColumns("")),
+		likeQ, likeQ, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -202,12 +181,10 @@ func (s *BookStore) Update(ctx context.Context, book *types.Book) error {
 		return err
 	}
 
-	// Update FTS
-	_, _ = s.db.ExecContext(ctx, `DELETE FROM books_fts WHERE rowid = ?`, book.ID)
-	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO books_fts(rowid, title, author_names, description, subjects_json) VALUES (?, ?, ?, ?, ?)`,
-		book.ID, book.Title, book.AuthorNames, book.Description, book.SubjectsJSON)
-	return err
+	// Best-effort FTS update (table may not exist in DuckDB).
+	s.db.ExecContext(ctx, `DELETE FROM books_fts WHERE rowid = ?`, book.ID)                                                                  //nolint:errcheck
+	s.db.ExecContext(ctx, `INSERT INTO books_fts(rowid, title, author_names, description, subjects_json) VALUES (?, ?, ?, ?, ?)`, book.ID, book.Title, book.AuthorNames, book.Description, book.SubjectsJSON) //nolint:errcheck
+	return nil
 }
 
 func (s *BookStore) Delete(ctx context.Context, id int64) error {
@@ -230,10 +207,10 @@ func (s *BookStore) GetByGenre(ctx context.Context, genre string, page, limit in
 	likeG := "%" + genre + "%"
 
 	var total int
-	s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM books WHERE subjects_json LIKE ?`, likeG).Scan(&total)
+	s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM books WHERE subjects_json ILIKE ?`, likeG).Scan(&total)
 
 	rows, err := s.db.QueryContext(ctx,
-		fmt.Sprintf(`SELECT %s FROM books WHERE subjects_json LIKE ? ORDER BY ratings_count DESC LIMIT ? OFFSET ?`, bookColumns("")),
+		fmt.Sprintf(`SELECT %s FROM books WHERE subjects_json ILIKE ? ORDER BY ratings_count DESC LIMIT ? OFFSET ?`, bookColumns("")),
 		likeG, limit, offset)
 	if err != nil {
 		return nil, err

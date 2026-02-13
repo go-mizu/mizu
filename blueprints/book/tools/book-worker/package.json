@@ -6,9 +6,7 @@
     "dev": "npx wrangler dev",
     "deploy": "npx wrangler deploy",
     "typecheck": "npx tsc --noEmit",
-    "test": "npx vitest run",
-    "db:init": "npx wrangler d1 execute book-db --file=src/schema.sql",
-    "db:init:local": "npx wrangler d1 execute book-db --local --file=src/schema.sql"
+    "test": "npx vitest run"
   },
   "dependencies": {
     "hono": "^4.11.9"

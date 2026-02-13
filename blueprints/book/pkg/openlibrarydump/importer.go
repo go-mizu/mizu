@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -23,7 +24,6 @@ const (
 	csvMaxLineSizeBytes    = 6_000_000
 	csvBufferSizeBytes     = 24_000_000
 	defaultImportThreads   = 2
-	defaultMemoryLimit     = "2GB"
 )
 
 type Options struct {
@@ -41,12 +41,69 @@ type Stats struct {
 	AuthorsStaged  int
 	EditionsStaged int
 	BooksInserted  int
+	Duration       time.Duration
+}
+
+// progress tracks import phase state for clean output.
+type progress struct {
+	phase int
+	total int
+	start time.Time
+}
+
+func (p *progress) section(title string) {
+	fmt.Fprintf(os.Stdout, "\n  %s\n  %s\n", title, strings.Repeat("─", len(title)+2))
+}
+
+func (p *progress) kv(key, value string) {
+	fmt.Fprintf(os.Stdout, "  %-14s%s\n", key, value)
+}
+
+func (p *progress) exec(ctx context.Context, tx *sql.Tx, name, query string) error {
+	p.phase++
+	tag := fmt.Sprintf("[%d/%d]", p.phase, p.total)
+	fmt.Fprintf(os.Stdout, "  %s  %s...\n", tag, name)
+	phaseStart := time.Now()
+
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				elapsed := time.Since(phaseStart).Round(time.Second)
+				fmt.Fprintf(os.Stdout, "  %s  %s still running... (%s)\n", tag, name, elapsed)
+			}
+		}
+	}()
+
+	if _, err := tx.ExecContext(ctx, query); err != nil {
+		return fmt.Errorf("%s: %s", name, shortErr(err))
+	}
+	elapsed := time.Since(phaseStart)
+	fmt.Fprintf(os.Stdout, "  %s  %s ✓ %s\n", tag, name, formatDuration(elapsed))
+	return nil
+}
+
+func (p *progress) count(n int, label string) {
+	fmt.Fprintf(os.Stdout, "         → %s %s\n", formatNumber(n), label)
 }
 
 func ImportToDuckDB(ctx context.Context, dbPath string, opts Options) (*Stats, error) {
-	resolved, err := ResolvePaths(opts)
-	if err != nil {
-		return nil, err
+	importStart := time.Now()
+
+	// Auto-skip editions when using --limit: scanning the full editions dump
+	// (12GB+) for a small number of works is extremely slow and wasteful.
+	autoSkipped := false
+	if opts.LimitWorks > 0 && !opts.SkipEditions {
+		opts.SkipEditions = true
+		autoSkipped = true
 	}
 
 	// Ensure schema exists with default backend wiring.
@@ -70,45 +127,78 @@ func ImportToDuckDB(ctx context.Context, dbPath string, opts Options) (*Stats, e
 	}
 	defer tx.Rollback() //nolint:errcheck
 
+	// Configure DuckDB memory and threading.
 	importThreads := envInt("BOOK_OL_IMPORT_THREADS", defaultImportThreads)
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA threads=%d", importThreads)); err != nil {
 		return nil, fmt.Errorf("set threads pragma: %w", err)
 	}
-	memoryLimit := envString("BOOK_OL_IMPORT_MEMORY_LIMIT", defaultMemoryLimit)
+	memoryLimit := envString("BOOK_OL_IMPORT_MEMORY_LIMIT", autoMemoryLimit())
 	memoryLimitSQL := strings.ReplaceAll(memoryLimit, "'", "''")
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf("SET memory_limit = '%s'", memoryLimitSQL)); err != nil {
-		fmt.Fprintf(os.Stderr, "[WARN] could not set memory_limit=%s: %v\n", memoryLimit, err)
+		fmt.Fprintf(os.Stderr, "  [warn] could not set memory_limit=%s: %v\n", memoryLimit, err)
 	}
-	// Best-effort memory tuning for very large CSV imports.
 	if _, err := tx.ExecContext(ctx, "SET preserve_insertion_order = false"); err != nil {
-		fmt.Fprintf(os.Stderr, "[WARN] could not set preserve_insertion_order=false: %v\n", err)
+		fmt.Fprintf(os.Stderr, "  [warn] could not set preserve_insertion_order=false: %v\n", err)
 	}
-	tempDir := envString("BOOK_OL_IMPORT_TEMP_DIR", filepath.Join(resolved.Dir, "duckdb_tmp"))
+	tempDir := envString("BOOK_OL_IMPORT_TEMP_DIR", filepath.Join(opts.Dir, "duckdb_tmp"))
 	if err := os.MkdirAll(tempDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create duckdb temp dir: %w", err)
 	}
 	tempDirSQL := strings.ReplaceAll(tempDir, "'", "''")
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf("SET temp_directory = '%s'", tempDirSQL)); err != nil {
-		fmt.Fprintf(os.Stderr, "[WARN] could not set temp_directory: %v\n", err)
+		fmt.Fprintf(os.Stderr, "  [warn] could not set temp_directory: %v\n", err)
 	}
 	if maxTempSize := envString("BOOK_OL_IMPORT_MAX_TEMP_SIZE", ""); maxTempSize != "" {
 		maxTempSizeSQL := strings.ReplaceAll(maxTempSize, "'", "''")
 		if _, err := tx.ExecContext(ctx, fmt.Sprintf("SET max_temp_directory_size = '%s'", maxTempSizeSQL)); err != nil {
-			fmt.Fprintf(os.Stderr, "[WARN] could not set max_temp_directory_size=%s: %v\n", maxTempSize, err)
+			fmt.Fprintf(os.Stderr, "  [warn] could not set max_temp_directory_size=%s: %v\n", maxTempSize, err)
 		}
 	}
 
-	fmt.Fprintf(os.Stdout, "[import] started (db=%s)\n", dbPath)
-	fmt.Fprintf(os.Stdout, "[import] authors=%s\n", resolved.AuthorsPath)
-	fmt.Fprintf(os.Stdout, "[import] works=%s\n", resolved.WorksPath)
-	fmt.Fprintf(os.Stdout, "[import] editions=%s\n", resolved.EditionsPath)
-	fmt.Fprintf(os.Stdout, "[import] settings: threads=%d memory_limit=%s temp_dir=%s\n", importThreads, memoryLimit, tempDir)
-
-	worksLimit := ""
-	if resolved.LimitWorks > 0 {
-		worksLimit = fmt.Sprintf(" LIMIT %d", resolved.LimitWorks)
+	// Pre-flight disk space check for full imports.
+	if opts.LimitWorks == 0 {
+		if avail := availableDiskGB(tempDir); avail > 0 && avail < 20 {
+			fmt.Fprintf(os.Stderr, "\n  [warn] Only %.1f GB free on %s\n", avail, tempDir)
+			fmt.Fprintf(os.Stderr, "  [warn] Full import needs ~20-50 GB. Use --limit=N or free disk space.\n")
+		}
 	}
 
+	// Compute total phases.
+	totalPhases := 9
+	if opts.ReplaceBooks {
+		totalPhases = 10
+	}
+	prog := &progress{total: totalPhases, start: importStart}
+
+	// ── Configuration ──
+	prog.section("Configuration")
+	prog.kv("Database", dbPath)
+	sysGB := detectSystemMemoryGB()
+	prog.kv("Memory", fmt.Sprintf("%s (of %d GB) · %d threads", memoryLimit, sysGB, importThreads))
+	prog.kv("Authors", fmt.Sprintf("%s  %s", filepath.Base(opts.AuthorsPath), fileSizeStr(opts.AuthorsPath)))
+	prog.kv("Works", fmt.Sprintf("%s  %s", filepath.Base(opts.WorksPath), fileSizeStr(opts.WorksPath)))
+	if opts.SkipEditions {
+		reason := "skipped"
+		if autoSkipped {
+			reason = fmt.Sprintf("auto-skipped, --limit=%d", opts.LimitWorks)
+		}
+		prog.kv("Editions", fmt.Sprintf("(%s)", reason))
+	} else {
+		prog.kv("Editions", fmt.Sprintf("%s  %s", filepath.Base(opts.EditionsPath), fileSizeStr(opts.EditionsPath)))
+	}
+	if opts.LimitWorks > 0 {
+		prog.kv("Limit", fmt.Sprintf("%s works", formatNumber(opts.LimitWorks)))
+	}
+
+	// ── Progress ──
+	prog.section("Progress")
+
+	worksLimit := ""
+	if opts.LimitWorks > 0 {
+		worksLimit = fmt.Sprintf(" LIMIT %d", opts.LimitWorks)
+	}
+
+	// Phase 1: Stage works
 	worksSQL := fmt.Sprintf(`
 CREATE OR REPLACE TEMP TABLE ol_works_stage AS
 SELECT
@@ -140,15 +230,16 @@ FROM (
 %s
 ) t
 WHERE t.col2 IS NOT NULL;
-`, sqlString(resolved.WorksPath), csvMaxLineSizeBytes, csvBufferSizeBytes, worksLimit)
-	if err := execStage(ctx, tx, "stage works", worksSQL); err != nil {
+`, sqlString(opts.WorksPath), csvMaxLineSizeBytes, csvBufferSizeBytes, worksLimit)
+	if err := prog.exec(ctx, tx, "Stage works", worksSQL); err != nil {
 		return nil, err
 	}
 	if n, err := queryCount(ctx, tx, "SELECT COUNT(*) FROM ol_works_stage"); err == nil {
-		fmt.Fprintf(os.Stdout, "[import] stage works rows=%d\n", n)
+		prog.count(n, "works")
 	}
 
-	if err := execStage(ctx, tx, "stage author refs", `
+	// Phase 2: Stage author refs
+	if err := prog.exec(ctx, tx, "Extract author refs", `
 CREATE OR REPLACE TEMP TABLE ol_author_refs AS
 SELECT DISTINCT json_extract_string(a.value, '$.author.key') AS author_key
 FROM ol_works_stage w, json_each(w.authors_json) a
@@ -157,9 +248,10 @@ WHERE json_extract_string(a.value, '$.author.key') IS NOT NULL;
 		return nil, err
 	}
 	if n, err := queryCount(ctx, tx, "SELECT COUNT(*) FROM ol_author_refs"); err == nil {
-		fmt.Fprintf(os.Stdout, "[import] stage author refs rows=%d\n", n)
+		prog.count(n, "unique authors referenced")
 	}
 
+	// Phase 3: Stage authors
 	authorsSQL := fmt.Sprintf(`
 CREATE OR REPLACE TEMP TABLE ol_authors_stage AS
 SELECT
@@ -183,15 +275,16 @@ FROM read_csv('%s',
 JOIN ol_author_refs refs ON refs.author_key = r.column2
 WHERE r.column1 = '/type/author'
   AND NULLIF(TRIM(json_extract_string(r.column5, '$.name')), '') IS NOT NULL;
-`, sqlString(resolved.AuthorsPath), csvMaxLineSizeBytes, csvBufferSizeBytes)
-	if err := execStage(ctx, tx, "stage authors", authorsSQL); err != nil {
+`, sqlString(opts.AuthorsPath), csvMaxLineSizeBytes, csvBufferSizeBytes)
+	if err := prog.exec(ctx, tx, "Stage authors", authorsSQL); err != nil {
 		return nil, err
 	}
 	if n, err := queryCount(ctx, tx, "SELECT COUNT(*) FROM ol_authors_stage"); err == nil {
-		fmt.Fprintf(os.Stdout, "[import] stage authors rows=%d\n", n)
+		prog.count(n, "authors matched")
 	}
 
-	if err := execStage(ctx, tx, "build work author names", `
+	// Phase 4: Build work-author names
+	if err := prog.exec(ctx, tx, "Build work-author names", `
 CREATE OR REPLACE TEMP TABLE ol_work_author_names AS
 SELECT
   w.ol_key,
@@ -204,15 +297,17 @@ GROUP BY w.ol_key;
 		return nil, err
 	}
 
-	if err := execStage(ctx, tx, "stage work refs", `
+	// Phase 5: Stage work refs (helper table)
+	if err := prog.exec(ctx, tx, "Stage work refs", `
 CREATE OR REPLACE TEMP TABLE ol_work_refs AS
 SELECT ol_key FROM ol_works_stage;
 `); err != nil {
 		return nil, err
 	}
 
-	if resolved.SkipEditions {
-		if err := execStage(ctx, tx, "skip editions metadata", `
+	// Phase 6: Stage or skip editions
+	if opts.SkipEditions {
+		if err := prog.exec(ctx, tx, "Skip editions (empty table)", `
 CREATE OR REPLACE TEMP TABLE ol_editions_stage (
   ol_key VARCHAR,
   isbn13 VARCHAR,
@@ -229,36 +324,6 @@ CREATE OR REPLACE TEMP TABLE ol_editions_stage (
 	} else {
 		editionsSQL := fmt.Sprintf(`
 CREATE OR REPLACE TEMP TABLE ol_editions_stage AS
-WITH src AS (
-  SELECT column5 AS raw_json
-  FROM read_csv('%s',
-      delim='\t',
-      header=false,
-      compression='gzip',
-      max_line_size=%d,
-      buffer_size=%d,
-      columns={'column1':'VARCHAR','column2':'VARCHAR','column3':'VARCHAR','column4':'VARCHAR','column5':'VARCHAR'})
-  WHERE column1 = '/type/edition'
-),
-flat AS (
-  SELECT
-    json_extract_string(w.value, '$.key') AS ol_key,
-    NULLIF(regexp_replace(json_extract_string(src.raw_json, '$.isbn_13[0]'), '[^0-9Xx]', '', 'g'), '') AS isbn13,
-    NULLIF(regexp_replace(json_extract_string(src.raw_json, '$.isbn_10[0]'), '[^0-9Xx]', '', 'g'), '') AS isbn10,
-    NULLIF(TRIM(json_extract_string(src.raw_json, '$.publishers[0]')), '') AS publisher,
-    NULLIF(TRIM(json_extract_string(src.raw_json, '$.publish_date')), '') AS publish_date,
-    TRY_CAST(regexp_extract(json_extract_string(src.raw_json, '$.publish_date'), '(\\d{4})', 1) AS INTEGER) AS publish_year,
-    COALESCE(TRY_CAST(json_extract_string(src.raw_json, '$.number_of_pages') AS INTEGER), 0) AS page_count,
-    CASE
-      WHEN split_part(json_extract_string(src.raw_json, '$.languages[0].key'), '/', 3) = 'eng' THEN 'en'
-      WHEN split_part(json_extract_string(src.raw_json, '$.languages[0].key'), '/', 3) = 'fre' THEN 'fr'
-      WHEN split_part(json_extract_string(src.raw_json, '$.languages[0].key'), '/', 3) = 'ger' THEN 'de'
-      WHEN split_part(json_extract_string(src.raw_json, '$.languages[0].key'), '/', 3) = 'spa' THEN 'es'
-      ELSE COALESCE(NULLIF(split_part(json_extract_string(src.raw_json, '$.languages[0].key'), '/', 3), ''), 'en')
-    END AS language
-  FROM src, json_each(COALESCE(json_extract(src.raw_json, '$.works'), '[]')) w
-  JOIN ol_work_refs refs ON refs.ol_key = json_extract_string(w.value, '$.key')
-)
 SELECT
   ol_key,
   first(isbn13) FILTER (WHERE isbn13 IS NOT NULL) AS isbn13,
@@ -268,27 +333,57 @@ SELECT
   first(publish_year) FILTER (WHERE publish_year IS NOT NULL) AS publish_year,
   first(page_count) FILTER (WHERE page_count > 0) AS page_count,
   first(language) FILTER (WHERE language IS NOT NULL) AS language
-FROM flat
+FROM (
+  SELECT
+    json_extract_string(w.value, '$.key') AS ol_key,
+    NULLIF(regexp_replace(json_extract_string(r.column5, '$.isbn_13[0]'), '[^0-9Xx]', '', 'g'), '') AS isbn13,
+    NULLIF(regexp_replace(json_extract_string(r.column5, '$.isbn_10[0]'), '[^0-9Xx]', '', 'g'), '') AS isbn10,
+    NULLIF(TRIM(json_extract_string(r.column5, '$.publishers[0]')), '') AS publisher,
+    NULLIF(TRIM(json_extract_string(r.column5, '$.publish_date')), '') AS publish_date,
+    TRY_CAST(regexp_extract(json_extract_string(r.column5, '$.publish_date'), '(\\d{4})', 1) AS INTEGER) AS publish_year,
+    COALESCE(TRY_CAST(json_extract_string(r.column5, '$.number_of_pages') AS INTEGER), 0) AS page_count,
+    CASE
+      WHEN split_part(json_extract_string(r.column5, '$.languages[0].key'), '/', 3) = 'eng' THEN 'en'
+      WHEN split_part(json_extract_string(r.column5, '$.languages[0].key'), '/', 3) = 'fre' THEN 'fr'
+      WHEN split_part(json_extract_string(r.column5, '$.languages[0].key'), '/', 3) = 'ger' THEN 'de'
+      WHEN split_part(json_extract_string(r.column5, '$.languages[0].key'), '/', 3) = 'spa' THEN 'es'
+      ELSE COALESCE(NULLIF(split_part(json_extract_string(r.column5, '$.languages[0].key'), '/', 3), ''), 'en')
+    END AS language
+  FROM read_csv('%s',
+      delim='\t',
+      header=false,
+      compression='gzip',
+      max_line_size=%d,
+      buffer_size=%d,
+      columns={'column1':'VARCHAR','column2':'VARCHAR','column3':'VARCHAR','column4':'VARCHAR','column5':'VARCHAR'}) r,
+    json_each(COALESCE(json_extract(r.column5, '$.works'), '[]')) w
+  WHERE r.column1 = '/type/edition'
+    AND json_extract_string(w.value, '$.key') IN (SELECT ol_key FROM ol_work_refs)
+)
 GROUP BY ol_key;
-`, sqlString(resolved.EditionsPath), csvMaxLineSizeBytes, csvBufferSizeBytes)
-		if err := execStage(ctx, tx, "stage+aggregate editions", editionsSQL); err != nil {
+`, sqlString(opts.EditionsPath), csvMaxLineSizeBytes, csvBufferSizeBytes)
+		if err := prog.exec(ctx, tx, "Stage editions", editionsSQL); err != nil {
 			return nil, err
 		}
 		if n, err := queryCount(ctx, tx, "SELECT COUNT(*) FROM ol_editions_stage"); err == nil {
-			fmt.Fprintf(os.Stdout, "[import] editions rows=%d\n", n)
+			prog.count(n, "editions matched")
 		}
 	}
 
-	if resolved.ReplaceBooks {
-		if err := execStage(ctx, tx, "delete existing books by ol_key", "DELETE FROM books WHERE ol_key IN (SELECT ol_key FROM ol_works_stage)"); err != nil {
+	// Phase 7 (conditional): Delete existing books
+	if opts.ReplaceBooks {
+		if err := prog.exec(ctx, tx, "Delete existing books", "DELETE FROM books WHERE ol_key IN (SELECT ol_key FROM ol_works_stage)"); err != nil {
 			return nil, err
 		}
 	}
 
-	if err := execStage(ctx, tx, "delete existing authors by ol_key", "DELETE FROM authors WHERE ol_key IN (SELECT ol_key FROM ol_authors_stage)"); err != nil {
+	// Phase 7/8: Delete existing authors
+	if err := prog.exec(ctx, tx, "Delete existing authors", "DELETE FROM authors WHERE ol_key IN (SELECT ol_key FROM ol_authors_stage)"); err != nil {
 		return nil, err
 	}
-	if err := execStage(ctx, tx, "insert authors", `
+
+	// Phase 8/9: Insert authors
+	if err := prog.exec(ctx, tx, "Insert authors", `
 INSERT INTO authors (ol_key, name, bio, birth_date, death_date, works_count)
 SELECT ol_key, name, bio, birth_date, death_date, works_count
 FROM ol_authors_stage
@@ -296,7 +391,8 @@ FROM ol_authors_stage
 		return nil, err
 	}
 
-	if err := execStage(ctx, tx, "insert books", `
+	// Phase 9/10: Insert books
+	if err := prog.exec(ctx, tx, "Insert books", `
 INSERT INTO books (
   ol_key, title, description, author_names, cover_url, cover_id,
   isbn10, isbn13, publisher, publish_date, publish_year, page_count, language, subjects_json
@@ -330,6 +426,7 @@ WHERE w.title IS NOT NULL
 		return nil, err
 	}
 
+	// Collect final counts.
 	stats := &Stats{}
 	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM ol_works_stage").Scan(&stats.WorksStaged); err != nil {
 		return nil, fmt.Errorf("count works stage: %w", err)
@@ -347,36 +444,11 @@ WHERE w.title IS NOT NULL
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit tx: %w", err)
 	}
-	fmt.Fprintln(os.Stdout, "[import] committed transaction")
+	stats.Duration = time.Since(importStart)
+
+	// Best-effort cleanup of DuckDB temp directory.
+	_ = os.RemoveAll(tempDir)
 	return stats, nil
-}
-
-func execStage(ctx context.Context, tx *sql.Tx, name, query string) error {
-	fmt.Fprintf(os.Stdout, "[import] %s...\n", name)
-	start := time.Now()
-
-	done := make(chan struct{})
-	defer close(done)
-	go func() {
-		ticker := time.NewTicker(15 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				fmt.Fprintf(os.Stdout, "[import] %s still running (%s)\n", name, time.Since(start).Round(time.Second))
-			}
-		}
-	}()
-
-	if _, err := tx.ExecContext(ctx, query); err != nil {
-		return fmt.Errorf("%s: %s", name, shortErr(err))
-	}
-	fmt.Fprintf(os.Stdout, "[import] %s done (%s)\n", name, time.Since(start).Round(time.Second))
-	return nil
 }
 
 func queryCount(ctx context.Context, tx *sql.Tx, query string) (int, error) {
@@ -414,6 +486,69 @@ func envString(name, fallback string) string {
 		return fallback
 	}
 	return raw
+}
+
+// autoMemoryLimit returns a DuckDB memory_limit based on system RAM.
+// Detects total physical memory and uses 50% (clamped 2-16 GB).
+func autoMemoryLimit() string {
+	totalGB := detectSystemMemoryGB()
+	halfGB := totalGB / 2
+	if halfGB < 2 {
+		halfGB = 2
+	}
+	if halfGB > 16 {
+		halfGB = 16
+	}
+	return fmt.Sprintf("%dGB", halfGB)
+}
+
+func detectSystemMemoryGB() int64 {
+	// macOS: sysctl hw.memsize
+	out, err := execOutput("sysctl", "-n", "hw.memsize")
+	if err == nil {
+		if bytes, e := strconv.ParseInt(strings.TrimSpace(out), 10, 64); e == nil && bytes > 0 {
+			return bytes / (1024 * 1024 * 1024)
+		}
+	}
+	// Linux: /proc/meminfo
+	if data, err := os.ReadFile("/proc/meminfo"); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.HasPrefix(line, "MemTotal:") {
+				fields := strings.Fields(line)
+				if len(fields) >= 2 {
+					if kb, e := strconv.ParseInt(fields[1], 10, 64); e == nil {
+						return kb / (1024 * 1024)
+					}
+				}
+			}
+		}
+	}
+	return 8 // safe default
+}
+
+func execOutput(name string, args ...string) (string, error) {
+	out, err := exec.Command(name, args...).Output()
+	return string(out), err
+}
+
+func availableDiskGB(path string) float64 {
+	out, err := execOutput("df", "-k", path)
+	if err != nil {
+		return -1
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) < 2 {
+		return -1
+	}
+	fields := strings.Fields(lines[len(lines)-1])
+	if len(fields) < 4 {
+		return -1
+	}
+	kb, err := strconv.ParseInt(fields[3], 10, 64)
+	if err != nil {
+		return -1
+	}
+	return float64(kb) / (1024 * 1024)
 }
 
 func ResolvePaths(opts Options) (Options, error) {
@@ -459,6 +594,48 @@ func latestMatch(dir, pattern string) (string, error) {
 
 func sqlString(v string) string {
 	return strings.ReplaceAll(v, "'", "''")
+}
+
+// formatNumber formats an integer with comma separators (e.g. 1234567 → "1,234,567").
+func formatNumber(n int) string {
+	s := strconv.Itoa(n)
+	if len(s) <= 3 {
+		return s
+	}
+	var b strings.Builder
+	offset := len(s) % 3
+	if offset > 0 {
+		b.WriteString(s[:offset])
+	}
+	for i := offset; i < len(s); i += 3 {
+		if b.Len() > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(s[i : i+3])
+	}
+	return b.String()
+}
+
+// fileSizeStr returns a human-readable file size string, or empty if the file can't be stat'd.
+func fileSizeStr(path string) string {
+	info, err := os.Stat(path)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("(%s)", FormatBytes(info.Size()))
+}
+
+// formatDuration formats a duration for display.
+func formatDuration(d time.Duration) string {
+	if d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	}
+	if d < time.Minute {
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	}
+	m := int(d.Minutes())
+	s := int(d.Seconds()) % 60
+	return fmt.Sprintf("%dm%ds", m, s)
 }
 
 // ExportParquet writes imported Open Library records into parquet files.

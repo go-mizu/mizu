@@ -37,23 +37,30 @@ func runOpenLibraryImport(ctx context.Context, opts openlibrarydump.Options, dbP
 		return err
 	}
 
-	fmt.Println(successStyle.Render("Open Library import complete"))
-	fmt.Printf("  Works staged:     %d\n", stats.WorksStaged)
-	fmt.Printf("  Authors staged:   %d\n", stats.AuthorsStaged)
-	fmt.Printf("  Editions matched: %d\n", stats.EditionsStaged)
-	fmt.Printf("  Books available:  %d\n", stats.BooksInserted)
+	fmt.Println()
+	fmt.Println(successStyle.Render("  Import complete ✓"))
+	fmt.Printf("  %-20s%s\n", "Works staged", formatCount(stats.WorksStaged))
+	fmt.Printf("  %-20s%s\n", "Authors staged", formatCount(stats.AuthorsStaged))
 	if resolved.SkipEditions {
-		fmt.Println(infoStyle.Render("Editions import skipped: ISBN/publisher/page metadata may be missing for some books"))
+		fmt.Printf("  %-20s%s\n", "Editions", dimStyle.Render("skipped"))
+	} else {
+		fmt.Printf("  %-20s%s\n", "Editions matched", formatCount(stats.EditionsStaged))
+	}
+	fmt.Printf("  %-20s%s\n", "Books imported", formatCount(stats.BooksInserted))
+	fmt.Printf("  %-20s%s\n", "Total time", stats.Duration.Round(100*time.Millisecond).String())
+	if resolved.SkipEditions {
+		fmt.Println(dimStyle.Render("  (editions skipped: ISBN/publisher/page metadata may be missing)"))
 	}
 
 	if exportParquet {
+		fmt.Println()
 		paths, err := openlibrarydump.ExportParquet(ctx, dbPath, parquetDir)
 		if err != nil {
 			return err
 		}
-		fmt.Println(successStyle.Render("Parquet export complete"))
+		fmt.Println(successStyle.Render("  Parquet export complete"))
 		for _, p := range paths {
-			fmt.Printf("  %s\n", p)
+			fmt.Printf("    %s\n", p)
 		}
 	}
 
@@ -61,9 +68,29 @@ func runOpenLibraryImport(ctx context.Context, opts openlibrarydump.Options, dbP
 		if err := openlibrarydump.DeleteSourceFiles(resolved.AuthorsPath, resolved.WorksPath, resolved.EditionsPath); err != nil {
 			return err
 		}
-		fmt.Println(successStyle.Render("Removed source dump files"))
+		fmt.Println(successStyle.Render("  Removed source dump files"))
 	}
+	fmt.Println()
 	return nil
+}
+
+func formatCount(n int) string {
+	s := strconv.Itoa(n)
+	if len(s) <= 3 {
+		return s
+	}
+	var b strings.Builder
+	offset := len(s) % 3
+	if offset > 0 {
+		b.WriteString(s[:offset])
+	}
+	for i := offset; i < len(s); i += 3 {
+		if b.Len() > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(s[i : i+3])
+	}
+	return b.String()
 }
 
 func newImportOpenLibrary() *cobra.Command {
@@ -90,19 +117,25 @@ func newImportOpenLibrary() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			if downloadLatest {
+				fmt.Println(infoStyle.Render("  Resolving latest Open Library dumps..."))
 				specs, err := openlibrarydump.ResolveLatestDumpSpecs(ctx)
 				if err != nil {
 					return err
 				}
 
-				fmt.Println(infoStyle.Render("Resolved latest dump files"))
-				for i, spec := range specs {
-					fmt.Printf("  [%d/3] %s: %s (%s)\n", i+1, strings.Title(spec.Name), spec.ResolvedURL, openlibrarydump.FormatBytes(spec.SizeBytes))
+				var totalSize int64
+				for _, spec := range specs {
+					totalSize += spec.SizeBytes
 				}
+				fmt.Println(successStyle.Render("  Found latest dumps"))
+				for i, spec := range specs {
+					fmt.Printf("  [%d/3] %-10s %s\n", i+1, titleCase(spec.Name), dimStyle.Render(openlibrarydump.FormatBytes(spec.SizeBytes)))
+				}
+				fmt.Printf("  %-14s%s\n", "Total", dimStyle.Render(openlibrarydump.FormatBytes(totalSize)))
 
 				paths := make(map[string]string, 3)
 				for i, spec := range specs {
-					fmt.Printf("\n[%d/3] Downloading %s dump\n", i+1, spec.Name)
+					fmt.Printf("\n  Downloading [%d/3] %s (%s)\n", i+1, titleCase(spec.Name), openlibrarydump.FormatBytes(spec.SizeBytes))
 					path, err := openlibrarydump.DownloadSpec(ctx, spec, dir)
 					if err != nil {
 						return err
@@ -337,4 +370,11 @@ func newExportCSV() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&outFile, "file", "f", "", "Output file path")
 	return cmd
+}
+
+func titleCase(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }

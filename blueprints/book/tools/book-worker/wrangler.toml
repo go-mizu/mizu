@@ -3,19 +3,18 @@ main = "src/index.ts"
 compatibility_date = "2026-02-09"
 compatibility_flags = ["nodejs_compat"]
 
+[[kv_namespaces]]
+binding = "KV"
+id = "792dde75c5dc4818af5718f7d63da323"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "book-db"
 database_id = "1e71453e-8a20-4a53-88a1-9bff2e0703a3"
 
-[[kv_namespaces]]
-binding = "KV"
-id = "792dde75c5dc4818af5718f7d63da323"
-
-[[rules]]
-type = "Text"
-globs = ["**/*.css", "**/*.sql"]
-fallthrough = true
+[assets]
+directory = "./public"
+binding = "ASSETS"
 
 [vars]
 ENVIRONMENT = "production"
