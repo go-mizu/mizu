@@ -16,5 +16,16 @@ database_id = "1e71453e-8a20-4a53-88a1-9bff2e0703a3"
 directory = "./public"
 binding = "ASSETS"
 
+[[queues.producers]]
+queue = "book-enrich-queue"
+binding = "ENRICH_QUEUE"
+
+[[queues.consumers]]
+queue = "book-enrich-queue"
+max_batch_size = 5
+max_batch_timeout = 10
+max_retries = 3
+dead_letter_queue = "book-enrich-dlq"
+
 [vars]
 ENVIRONMENT = "production"
