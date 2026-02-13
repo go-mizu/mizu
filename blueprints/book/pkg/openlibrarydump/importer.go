@@ -24,6 +24,7 @@ const (
 	csvMaxLineSizeBytes    = 6_000_000
 	csvBufferSizeBytes     = 24_000_000
 	defaultImportThreads   = 2
+	defaultBatchSize       = 200_000
 )
 
 type Options struct {
@@ -69,7 +70,7 @@ func (p *progress) exec(ctx context.Context, tx *sql.Tx, name, query string) (ti
 	done := make(chan struct{})
 	defer close(done)
 	go func() {
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
@@ -89,6 +90,86 @@ func (p *progress) exec(ctx context.Context, tx *sql.Tx, name, query string) (ti
 		return 0, fmt.Errorf("%s: %s", name, shortErr(err))
 	}
 	elapsed := time.Since(phaseStart)
+	return elapsed, nil
+}
+
+// execBatched runs a phase in rowid-range batches with live progress.
+// setupSQL creates the target table. batchSQL returns the INSERT query for a [start,end) range.
+// finalSQL runs after all batches (e.g., dedup).
+func (p *progress) execBatched(ctx context.Context, tx *sql.Tx, name string,
+	sourceTable string, batchSize int64,
+	setupSQL string, batchSQL func(start, end int64) string,
+	finalSQL []string,
+) (time.Duration, error) {
+	p.phase++
+	tag := fmt.Sprintf("[%2d/%d]", p.phase, p.total)
+	phaseStart := time.Now()
+
+	// Print phase header.
+	fmt.Fprintf(os.Stdout, "  %s %s\n", tag, name)
+
+	// Execute setup SQL.
+	if _, err := tx.ExecContext(ctx, setupSQL); err != nil {
+		return 0, fmt.Errorf("%s setup: %s", name, shortErr(err))
+	}
+
+	// Get rowid range and row count.
+	var minRowID, maxRowID, rowCount int64
+	if err := tx.QueryRowContext(ctx, fmt.Sprintf(
+		"SELECT COALESCE(MIN(rowid), 0), COALESCE(MAX(rowid), 0), COUNT(*) FROM %s", sourceTable),
+	).Scan(&minRowID, &maxRowID, &rowCount); err != nil {
+		return 0, fmt.Errorf("%s rowid range: %w", name, err)
+	}
+	totalRange := maxRowID - minRowID + 1
+	if totalRange <= 0 {
+		totalRange = 1
+	}
+
+	// Process batches.
+	for start := minRowID; rowCount > 0 && start <= maxRowID; start += batchSize {
+		end := start + batchSize
+		if end > maxRowID+1 {
+			end = maxRowID + 1
+		}
+		if _, err := tx.ExecContext(ctx, batchSQL(start, end)); err != nil {
+			fmt.Fprintln(os.Stdout)
+			return 0, fmt.Errorf("%s batch [%d, %d): %s", name, start, end, shortErr(err))
+		}
+
+		processed := end - minRowID
+		pct := float64(processed) / float64(totalRange) * 100
+		elapsed := time.Since(phaseStart)
+		var eta string
+		if pct > 0 && pct < 100 {
+			remaining := time.Duration(float64(elapsed) * (100 - pct) / pct)
+			eta = "ETA " + FormatDuration(remaining)
+		}
+		fmt.Fprintf(os.Stdout, "\r         %s / %s   %.1f%%  %s   ",
+			FormatNumber(int(processed)), FormatNumber(int(totalRange)), pct, eta)
+	}
+
+	// Execute final SQL statements.
+	for _, q := range finalSQL {
+		if _, err := tx.ExecContext(ctx, q); err != nil {
+			fmt.Fprintln(os.Stdout)
+			return 0, fmt.Errorf("%s final: %s", name, shortErr(err))
+		}
+	}
+
+	elapsed := time.Since(phaseStart)
+
+	// Clear progress line, move cursor up, reprint header with dot-leader for finish().
+	if rowCount > 0 {
+		fmt.Fprintf(os.Stdout, "\r%s", strings.Repeat(" ", 80))
+	}
+	fmt.Fprintf(os.Stdout, "\r\033[1A\r")
+	dots := dotLeaderWidth - len(name)
+	if dots < 3 {
+		dots = 3
+	}
+	leader := " " + strings.Repeat("·", dots) + " "
+	fmt.Fprintf(os.Stdout, "  %s %s%s", tag, name, leader)
+
 	return elapsed, nil
 }
 
@@ -167,11 +248,12 @@ func ImportToDuckDB(ctx context.Context, dbPath string, opts Options) (*Stats, e
 	}
 
 	// Compute total phases.
-	totalPhases := 9
+	totalPhases := 8
 	if opts.ReplaceBooks {
-		totalPhases = 10
+		totalPhases = 9
 	}
 	prog := &progress{total: totalPhases, start: importStart}
+	batchSize := int64(envInt("BOOK_OL_IMPORT_BATCH_SIZE", defaultBatchSize))
 
 	worksLimit := ""
 	if opts.LimitWorks > 0 {
@@ -195,7 +277,7 @@ SELECT
   TRY_CAST(regexp_extract(json_extract_string(t.raw_json, '$.first_publish_date'), '(\d{4})', 1) AS INTEGER) AS publish_year,
   COALESCE(TRY_CAST(json_extract_string(t.raw_json, '$.ratings_average') AS REAL), 0) AS average_rating,
   COALESCE(TRY_CAST(json_extract_string(t.raw_json, '$.ratings_count') AS INTEGER), 0) AS ratings_count,
-  COALESCE(json_extract(t.raw_json, '$.authors'), '[]') AS authors_json
+  CAST(COALESCE(json_extract(t.raw_json, '$.authors'), '[]') AS VARCHAR) AS authors_json
 FROM (
   SELECT
     column1 AS col1,
@@ -219,13 +301,31 @@ WHERE t.col2 IS NOT NULL;
 		prog.finish(n, "works", d)
 	}
 
-	// Phase 2: Extract author refs
-	if d, err := prog.exec(ctx, tx, "Extract author refs", `
-CREATE OR REPLACE TEMP TABLE ol_author_refs AS
-SELECT DISTINCT json_extract_string(a.value, '$.author.key') AS author_key
-FROM ol_works_stage w, json_each(w.authors_json) a
-WHERE json_extract_string(a.value, '$.author.key') IS NOT NULL;
-`); err != nil {
+	// Phase 2: Extract work-author pairs (batched, no DISTINCT — dedup at the end).
+	// Intermediate ol_work_author_pairs avoids running regex twice (reused in Phase 4).
+	// pos column preserves original author order from JSON for string_agg ORDER BY.
+	if d, err := prog.execBatched(ctx, tx, "Extract author pairs",
+		"ol_works_stage", batchSize,
+		`CREATE TEMP TABLE ol_work_author_pairs (ol_key VARCHAR, author_key VARCHAR, pos INTEGER)`,
+		func(start, end int64) string {
+			return fmt.Sprintf(`INSERT INTO ol_work_author_pairs
+SELECT ol_key,
+  unnest(keys) AS author_key,
+  unnest(range(1, len(keys) + 1)) AS pos
+FROM (
+  SELECT ol_key, regexp_extract_all(authors_json, '"key"\s*:\s*"(/authors/[^"]+)"', 1) AS keys
+  FROM ol_works_stage
+  WHERE rowid >= %d AND rowid < %d
+    AND authors_json IS NOT NULL AND authors_json != '[]'
+) t`, start, end)
+		},
+		[]string{
+			// Derive distinct author refs for Phase 3 (simple DISTINCT on existing table).
+			`CREATE TEMP TABLE ol_author_refs AS SELECT DISTINCT author_key FROM ol_work_author_pairs`,
+			// Free authors_json early — no longer needed since pairs are extracted.
+			`ALTER TABLE ol_works_stage DROP COLUMN authors_json`,
+		},
+	); err != nil {
 		return nil, err
 	} else if n, err := queryCount(ctx, tx, "SELECT COUNT(*) FROM ol_author_refs"); err == nil {
 		prog.finish(n, "refs", d)
@@ -262,33 +362,29 @@ WHERE r.column1 = '/type/author'
 		prog.finish(n, "authors", d)
 	}
 
-	// Phase 4: Build work-author names
-	if d, err := prog.exec(ctx, tx, "Build work-author names", `
-CREATE OR REPLACE TEMP TABLE ol_work_author_names AS
-SELECT
-  w.ol_key,
-  COALESCE(string_agg(a.name, ', ' ORDER BY TRY_CAST(j.key AS INTEGER)), '') AS author_names
-FROM ol_works_stage w
-LEFT JOIN json_each(w.authors_json) j ON true
-LEFT JOIN ol_authors_stage a ON a.ol_key = json_extract_string(j.value, '$.author.key')
-GROUP BY w.ol_key;
-`); err != nil {
+	// Phase 4: Build work-author names (batched join on pre-extracted pairs — no regex/unnest).
+	if d, err := prog.execBatched(ctx, tx, "Build work-author names",
+		"ol_works_stage", batchSize,
+		`CREATE TEMP TABLE ol_work_author_names (ol_key VARCHAR, author_names VARCHAR)`,
+		func(start, end int64) string {
+			return fmt.Sprintf(`INSERT INTO ol_work_author_names
+SELECT w.ol_key, COALESCE(string_agg(a.name, ', ' ORDER BY p.pos), '') AS author_names
+FROM (SELECT ol_key FROM ol_works_stage WHERE rowid >= %d AND rowid < %d) w
+LEFT JOIN ol_work_author_pairs p ON p.ol_key = w.ol_key
+LEFT JOIN ol_authors_stage a ON a.ol_key = p.author_key
+GROUP BY w.ol_key`, start, end)
+		},
+		[]string{
+			`DROP TABLE IF EXISTS ol_work_author_pairs`,
+			`DROP TABLE IF EXISTS ol_author_refs`,
+		},
+	); err != nil {
 		return nil, err
 	} else {
 		prog.finish(0, "", d)
 	}
 
-	// Phase 5: Stage work refs (helper table)
-	if d, err := prog.exec(ctx, tx, "Stage work refs", `
-CREATE OR REPLACE TEMP TABLE ol_work_refs AS
-SELECT ol_key FROM ol_works_stage;
-`); err != nil {
-		return nil, err
-	} else {
-		prog.finish(0, "", d)
-	}
-
-	// Phase 6: Stage or skip editions
+	// Phase 5: Stage or skip editions
 	if opts.SkipEditions {
 		if d, err := prog.exec(ctx, tx, "Skip editions (empty table)", `
 CREATE OR REPLACE TEMP TABLE ol_editions_stage (
@@ -343,7 +439,7 @@ FROM (
       columns={'column1':'VARCHAR','column2':'VARCHAR','column3':'VARCHAR','column4':'VARCHAR','column5':'VARCHAR'}) r,
     json_each(COALESCE(json_extract(r.column5, '$.works'), '[]')) w
   WHERE r.column1 = '/type/edition'
-    AND json_extract_string(w.value, '$.key') IN (SELECT ol_key FROM ol_work_refs)
+    AND json_extract_string(w.value, '$.key') IN (SELECT ol_key FROM ol_works_stage)
 )
 GROUP BY ol_key;
 `, sqlString(opts.EditionsPath), csvMaxLineSizeBytes, csvBufferSizeBytes)
@@ -354,7 +450,7 @@ GROUP BY ol_key;
 		}
 	}
 
-	// Phase 7 (conditional): Delete existing books
+	// Phase 6 (conditional): Delete existing books
 	if opts.ReplaceBooks {
 		if d, err := prog.exec(ctx, tx, "Delete existing books", "DELETE FROM books WHERE ol_key IN (SELECT ol_key FROM ol_works_stage)"); err != nil {
 			return nil, err
@@ -363,14 +459,14 @@ GROUP BY ol_key;
 		}
 	}
 
-	// Phase 7/8: Delete existing authors
+	// Phase 6/7: Delete existing authors
 	if d, err := prog.exec(ctx, tx, "Delete existing authors", "DELETE FROM authors WHERE ol_key IN (SELECT ol_key FROM ol_authors_stage)"); err != nil {
 		return nil, err
 	} else {
 		prog.finish(0, "", d)
 	}
 
-	// Phase 8/9: Insert authors
+	// Phase 7/8: Insert authors
 	if d, err := prog.exec(ctx, tx, "Insert authors", `
 INSERT INTO authors (ol_key, name, bio, birth_date, death_date, works_count)
 SELECT ol_key, name, bio, birth_date, death_date, works_count
@@ -381,7 +477,7 @@ FROM ol_authors_stage
 		prog.finish(n, "inserted", d)
 	}
 
-	// Phase 9/10: Insert books
+	// Phase 8/9: Insert books
 	if d, err := prog.exec(ctx, tx, "Insert books", `
 INSERT INTO books (
   ol_key, title, description, author_names, cover_url, cover_id,
