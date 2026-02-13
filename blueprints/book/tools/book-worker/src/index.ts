@@ -2,9 +2,13 @@ import { Hono } from 'hono'
 import type { Env, HonoEnv } from './types'
 import type { QueueJob } from './queue'
 import { handleQueue } from './queue'
+import { analyticsMiddleware } from './analytics'
 import apiRoutes from './routes/api'
 
 const app = new Hono<HonoEnv>()
+
+// Analytics: track all API requests
+app.use('/api/*', analyticsMiddleware)
 
 // Health check
 app.get('/api/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }))

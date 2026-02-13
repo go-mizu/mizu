@@ -2,6 +2,7 @@
 // Replaces inline/waitUntil enrichment with durable Cloudflare Queue jobs
 
 import type { Env } from './types'
+import { writeQueueMetric } from './analytics'
 import {
   ENRICH, enrichAuthor, enrichBook,
   importEditions, importSeriesBooks, importSimilarBooks,
@@ -38,11 +39,14 @@ export async function sendJobs(queue: Queue, jobs: QueueJob[]): Promise<void> {
 
 export async function handleQueue(batch: MessageBatch<QueueJob>, env: Env): Promise<void> {
   for (const msg of batch.messages) {
+    const start = Date.now()
     try {
       await processJob(msg.body, env)
       msg.ack()
+      writeQueueMetric(env.ANALYTICS, msg.body.type, Date.now() - start, true)
     } catch (err) {
       console.error(`[Queue] Job failed: ${msg.body.type}`, err)
+      writeQueueMetric(env.ANALYTICS, msg.body.type, Date.now() - start, false, (err as Error).message)
       msg.retry()
     }
   }

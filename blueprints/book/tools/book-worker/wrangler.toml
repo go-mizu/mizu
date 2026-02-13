@@ -27,5 +27,13 @@ max_batch_timeout = 10
 max_retries = 3
 dead_letter_queue = "book-enrich-dlq"
 
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "book_api_metrics"
+
+[observability.traces]
+enabled = true
+head_sampling_rate = 1
+
 [vars]
 ENVIRONMENT = "production"

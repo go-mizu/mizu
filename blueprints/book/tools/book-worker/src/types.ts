@@ -3,6 +3,7 @@ export interface Env {
   KV: KVNamespace
   ASSETS: Fetcher
   ENRICH_QUEUE: Queue
+  ANALYTICS: AnalyticsEngineDataset
   ENVIRONMENT: string
 }
 

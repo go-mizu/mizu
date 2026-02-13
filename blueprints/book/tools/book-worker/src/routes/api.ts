@@ -836,4 +836,76 @@ app.post('/init', async (c) => {
   return c.json({ ok: true, message: 'Database initialized' })
 })
 
+// ---- Analytics ----
+
+// In-worker analytics summary using Analytics Engine SQL API
+// Requires CF_ACCOUNT_ID and CF_API_TOKEN secrets
+app.get('/analytics/overview', async (c) => {
+  const accountId = await c.env.KV.get('CF_ACCOUNT_ID')
+  const apiToken = await c.env.KV.get('CF_API_TOKEN')
+  if (!accountId || !apiToken) {
+    return c.json({ error: 'Analytics not configured. Set CF_ACCOUNT_ID and CF_API_TOKEN in KV.' }, 503)
+  }
+
+  const period = c.req.query('period') || '1'
+  const interval = `${parseInt(period, 10) || 1}`
+
+  const queries = {
+    topEndpoints: `SELECT blob2 AS path, blob1 AS method, SUM(_sample_interval) AS requests, SUM(_sample_interval * double1) / SUM(_sample_interval) AS avg_ms FROM book_api_metrics WHERE timestamp >= NOW() - INTERVAL '${interval}' DAY AND index1 != 'queue' GROUP BY path, method ORDER BY requests DESC LIMIT 20`,
+    statusCodes: `SELECT blob3 AS status, SUM(_sample_interval) AS count FROM book_api_metrics WHERE timestamp >= NOW() - INTERVAL '${interval}' DAY AND index1 != 'queue' GROUP BY status ORDER BY count DESC`,
+    errorEndpoints: `SELECT blob2 AS path, blob3 AS status, blob6 AS error, SUM(_sample_interval) AS count FROM book_api_metrics WHERE timestamp >= NOW() - INTERVAL '${interval}' DAY AND blob3 >= '400' AND index1 != 'queue' GROUP BY path, status, error ORDER BY count DESC LIMIT 20`,
+    geoDistribution: `SELECT blob4 AS colo, SUM(_sample_interval) AS requests FROM book_api_metrics WHERE timestamp >= NOW() - INTERVAL '${interval}' DAY AND index1 != 'queue' GROUP BY colo ORDER BY requests DESC LIMIT 20`,
+    queueJobs: `SELECT blob1 AS job_type, blob2 AS status, SUM(_sample_interval) AS count, SUM(_sample_interval * double1) / SUM(_sample_interval) AS avg_ms FROM book_api_metrics WHERE timestamp >= NOW() - INTERVAL '${interval}' DAY AND index1 = 'queue' GROUP BY job_type, status ORDER BY count DESC`,
+    hourlyTraffic: `SELECT intDiv(toUInt32(timestamp), 3600) * 3600 AS hour, SUM(_sample_interval) AS requests FROM book_api_metrics WHERE timestamp >= NOW() - INTERVAL '${interval}' DAY AND index1 != 'queue' GROUP BY hour ORDER BY hour`,
+  }
+
+  const results: Record<string, unknown> = {}
+  const sqlEndpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/analytics_engine/sql`
+
+  for (const [key, sql] of Object.entries(queries)) {
+    try {
+      const resp = await fetch(sqlEndpoint, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiToken}` },
+        body: sql,
+      })
+      if (resp.ok) {
+        results[key] = await resp.json()
+      } else {
+        results[key] = { error: `HTTP ${resp.status}`, text: await resp.text() }
+      }
+    } catch (err) {
+      results[key] = { error: (err as Error).message }
+    }
+  }
+
+  return c.json({ period: `${interval}d`, data: results })
+})
+
+// Quick stats: total requests + avg latency for the last N days
+app.get('/analytics/stats', async (c) => {
+  const accountId = await c.env.KV.get('CF_ACCOUNT_ID')
+  const apiToken = await c.env.KV.get('CF_API_TOKEN')
+  if (!accountId || !apiToken) {
+    return c.json({ error: 'Analytics not configured' }, 503)
+  }
+
+  const period = c.req.query('period') || '1'
+  const interval = `${parseInt(period, 10) || 1}`
+
+  const sql = `SELECT SUM(_sample_interval) AS total_requests, SUM(IF(index1='queue', _sample_interval, 0)) AS queue_jobs, SUM(IF(blob3 >= '400' AND index1 != 'queue', _sample_interval, 0)) AS errors, SUM(IF(index1 != 'queue', _sample_interval * double1, 0.0)) / SUM(IF(index1 != 'queue', _sample_interval, 1)) AS avg_latency_ms FROM book_api_metrics WHERE timestamp >= NOW() - INTERVAL '${interval}' DAY`
+
+  try {
+    const resp = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/analytics_engine/sql`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiToken}` },
+      body: sql,
+    })
+    if (!resp.ok) return c.json({ error: `HTTP ${resp.status}` }, 502)
+    return c.json({ period: `${interval}d`, data: await resp.json() })
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 500)
+  }
+})
+
 export default app
