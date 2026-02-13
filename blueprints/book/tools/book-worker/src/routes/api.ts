@@ -10,7 +10,11 @@ import {
 import { searchOL } from '../openlibrary'
 import { DEFAULT_LIMIT, MAX_LIMIT, coverURL } from '../config'
 import * as db from '../db'
-import { enrichAuthor, importAuthorWorks, enrichBook } from '../enrich'
+import {
+  ENRICH, enrichAuthor, importAuthorWorks, enrichBook, enrichGenre,
+  discoverLists, importListBooks, importSeriesBooks, importEditions,
+  importSimilarBooks, normalizeGenre,
+} from '../enrich'
 
 const app = new Hono<HonoEnv>()
 app.use('*', cors())
@@ -166,6 +170,13 @@ app.get('/books/search', async (c) => {
   const local = await db.searchBooks(c.env.DB, q, page, limit)
   if (local.total_count > 0) return c.json(local)
 
+  // Check KV flag: have we already imported this search query?
+  const searchKey = `enriched:search:${q.toLowerCase().trim()}`
+  const alreadyImported = await c.env.KV.get(searchKey)
+  if (alreadyImported) {
+    return c.json({ books: [], total_count: 0, page, page_size: limit })
+  }
+
   // Fallback to OpenLibrary — auto-import results so they have real IDs
   const ol = await searchOL(c.env.KV, q, limit, (page - 1) * limit).catch(() => ({ docs: [], numFound: 0 }))
   const books: Record<string, unknown>[] = []
@@ -191,6 +202,8 @@ app.get('/books/search', async (c) => {
     const full = await db.getBook(c.env.DB, bookId)
     books.push(full || created)
   }
+  // Mark this search as imported
+  await c.env.KV.put(searchKey, String(books.length))
   return c.json({ books, total_count: ol.numFound, page, page_size: limit })
 })
 
@@ -215,10 +228,17 @@ app.get('/books/:id', async (c) => {
     book = await db.getBook(c.env.DB, id)
     if (!book) return c.json({ error: 'Book not found' }, 404)
   }
-  // Auto-enrich sparse books (no description or no source_id)
-  if (!book.description || !book.source_id) {
+  // Auto-enrich: core data, editions, series (flag-based, idempotent)
+  if (!db.hasEnriched(book.enriched as number, ENRICH.BOOK_CORE)) {
     const enriched = await enrichBook(c.env.DB, c.env.KV, id).catch(() => null)
     if (enriched) book = enriched
+  }
+  if (!db.hasEnriched(book.enriched as number, ENRICH.BOOK_EDITIONS)) {
+    await importEditions(c.env.DB, c.env.KV, id).catch(() => 0)
+    book = (await db.getBook(c.env.DB, id)) || book
+  }
+  if (!db.hasEnriched(book.enriched as number, ENRICH.BOOK_SERIES)) {
+    await importSeriesBooks(c.env.DB, c.env.KV, id).catch(() => 0)
   }
   return c.json(book)
 })
@@ -242,6 +262,11 @@ app.post('/books', async (c) => {
 app.get('/books/:id/similar', async (c) => {
   const id = parseInt(c.req.param('id'), 10)
   const limit = parseInt(c.req.query('limit') || '10', 10) || 10
+  // Auto-import similar books if not already done
+  const book = await db.getBook(c.env.DB, id)
+  if (book && !db.hasEnriched(book.enriched as number, ENRICH.BOOK_SIMILAR)) {
+    await importSimilarBooks(c.env.DB, c.env.KV, id).catch(() => 0)
+  }
   return c.json(await db.getSimilarBooks(c.env.DB, id, limit))
 })
 
@@ -358,8 +383,8 @@ app.get('/authors/:id', async (c) => {
   const id = parseInt(c.req.param('id'), 10)
   let author = await db.getAuthor(c.env.DB, id)
   if (!author) return c.json({ error: 'Author not found' }, 404)
-  // Auto-enrich sparse authors (no bio or no photo)
-  if (!author.bio || !author.photo_url) {
+  // Auto-enrich author (flag-based, idempotent)
+  if (!db.hasEnriched(author.enriched as number, ENRICH.AUTHOR_CORE)) {
     const enriched = await enrichAuthor(c.env.DB, c.env.KV, id).catch(() => null)
     if (enriched) author = enriched
   }
@@ -368,14 +393,17 @@ app.get('/authors/:id', async (c) => {
 
 app.get('/authors/:id/books', async (c) => {
   const id = parseInt(c.req.param('id'), 10)
-  let books = await db.getBooksByAuthor(c.env.DB, id)
-  // Auto-import works if author has few linked books
-  if (books.length < 2) {
-    // Ensure author is enriched first (for ol_key)
+  // Ensure author is enriched first (for ol_key)
+  const author = await db.getAuthor(c.env.DB, id)
+  if (author && !db.hasEnriched(author.enriched as number, ENRICH.AUTHOR_CORE)) {
     await enrichAuthor(c.env.DB, c.env.KV, id).catch(() => null)
-    await importAuthorWorks(c.env.DB, c.env.KV, id).catch(() => 0)
-    books = await db.getBooksByAuthor(c.env.DB, id)
   }
+  // Auto-import works (flag-based, idempotent)
+  const authorRefresh = await db.getAuthor(c.env.DB, id)
+  if (authorRefresh && !db.hasEnriched(authorRefresh.enriched as number, ENRICH.AUTHOR_WORKS)) {
+    await importAuthorWorks(c.env.DB, c.env.KV, id).catch(() => 0)
+  }
+  const books = await db.getBooksByAuthor(c.env.DB, id)
   return c.json(books)
 })
 
@@ -482,13 +510,26 @@ app.put('/shelves/:id/books/:bookId', async (c) => {
 // ---- Browse ----
 
 app.get('/genres', async (c) => {
-  return c.json(await db.getGenres(c.env.DB))
+  return c.json(await db.getGenres(c.env.DB, normalizeGenre))
 })
 
 app.get('/genres/:genre/books', async (c) => {
   const genre = decodeURIComponent(c.req.param('genre')).replace(/-/g, ' ')
   const { page, limit } = parsePageLimit(c)
-  return c.json(await db.getBooksByGenre(c.env.DB, genre, page, limit))
+  let result = await db.getBooksByGenre(c.env.DB, genre, page, limit)
+  // Auto-import from OL if genre not yet enriched (KV flag, idempotent)
+  if (page === 1) {
+    const genreKey = `enriched:genre:${genre.toLowerCase().replace(/\s+/g, '_')}`
+    const alreadyEnriched = await c.env.KV.get(genreKey)
+    if (!alreadyEnriched) {
+      const imported = await enrichGenre(c.env.DB, c.env.KV, genre).catch(() => 0)
+      await c.env.KV.put(genreKey, String(imported))
+      if (imported > 0) {
+        result = await db.getBooksByGenre(c.env.DB, genre, page, limit)
+      }
+    }
+  }
+  return c.json(result)
 })
 
 app.get('/browse/new-releases', async (c) => {
@@ -504,7 +545,17 @@ app.get('/browse/popular', async (c) => {
 // ---- Lists ----
 
 app.get('/lists', async (c) => {
-  return c.json(await db.getLists(c.env.DB))
+  const result = await db.getLists(c.env.DB)
+  // Auto-discover popular GR lists (KV flag, idempotent)
+  const tag = c.req.query('tag') || ''
+  const discoverKey = `enriched:lists:${tag || 'all'}`
+  const alreadyDiscovered = await c.env.KV.get(discoverKey)
+  if (!alreadyDiscovered) {
+    await discoverLists(c.env.DB, c.env.KV, tag).catch(() => [])
+    await c.env.KV.put(discoverKey, '1')
+    if (result.total === 0) return c.json(await db.getLists(c.env.DB))
+  }
+  return c.json(result)
 })
 
 app.post('/lists', async (c) => {
@@ -513,10 +564,21 @@ app.post('/lists', async (c) => {
   return c.json(await db.createList(c.env.DB, data), 201)
 })
 
+app.get('/lists/discover', async (c) => {
+  const tag = c.req.query('tag') || ''
+  const lists = await discoverLists(c.env.DB, c.env.KV, tag).catch(() => [])
+  return c.json({ lists, total: lists.length })
+})
+
 app.get('/lists/:id', async (c) => {
   const id = parseInt(c.req.param('id'), 10)
-  const list = await db.getList(c.env.DB, id)
+  let list = await db.getList(c.env.DB, id)
   if (!list) return c.json({ error: 'List not found' }, 404)
+  // Auto-import books from GR source (flag-based, idempotent)
+  if (!db.hasEnriched(list.enriched as number, ENRICH.LIST_BOOKS)) {
+    await importListBooks(c.env.DB, c.env.KV, id).catch(() => 0)
+    list = (await db.getList(c.env.DB, id)) || list
+  }
   return c.json(list)
 })
 

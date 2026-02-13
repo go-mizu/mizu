@@ -1,14 +1,31 @@
 // Auto-enrichment module for authors and books
 // On-demand: fetch from OL + GR, update D1, return enriched data
+// Uses bit flags to track what enrichment has been done (idempotent)
 
-import { searchOLAuthors, fetchOLAuthor, fetchOLAuthorWorks, fetchOLWork, fetchOLSubjects } from './openlibrary'
+import { searchOLAuthors, fetchOLAuthor, fetchOLAuthorWorks, fetchOLWork, fetchOLSubjects, fetchOLEditions } from './openlibrary'
 import { authorPhotoURL, coverURL } from './config'
 import {
   getAuthor as grGetAuthor, searchBook as grSearchBook, getBook as grGetBook,
-  getPopularLists, getList as grGetList, parseGoodreadsURL,
+  getPopularLists, getList as grGetList,
   type GoodreadsAuthor, type GoodreadsBook,
 } from './goodreads'
 import * as db from './db'
+
+// ---- Enrichment Bit Flags ----
+
+export const ENRICH = {
+  // Book flags
+  BOOK_CORE: 1,       // GR data, description, reviews, quotes
+  BOOK_GENRES: 2,     // Genre merge from OL + GR
+  BOOK_EDITIONS: 4,   // Edition data from OL
+  BOOK_SIMILAR: 8,    // Similar books imported
+  BOOK_SERIES: 16,    // Series books imported
+  // Author flags
+  AUTHOR_CORE: 1,     // Bio, photo, dates, GR enrichment
+  AUTHOR_WORKS: 2,    // OL works imported
+  // List flags
+  LIST_BOOKS: 1,      // Books imported from GR source
+} as const
 
 // ---- Genre Normalization ----
 
@@ -210,8 +227,8 @@ export async function enrichAuthor(d1: D1Database, kv: KVNamespace, authorId: nu
   const author = await db.getAuthor(d1, authorId)
   if (!author) return null
 
-  // Already enriched? (has bio AND photo)
-  if (author.bio && author.photo_url) return author
+  // Already enriched? Check flag
+  if (db.hasEnriched(author.enriched as number, ENRICH.AUTHOR_CORE)) return author
 
   const name = author.name as string
   if (!name) return author
@@ -269,11 +286,12 @@ export async function enrichAuthor(d1: D1Database, kv: KVNamespace, authorId: nu
     }
   }
 
-  // Step 4: Persist
+  // Step 4: Persist + set flag
   if (Object.keys(updates).length > 0) {
-    return db.updateAuthor(d1, authorId, updates)
+    await db.updateAuthor(d1, authorId, updates)
   }
-  return author
+  await db.setEnriched(d1, 'authors', authorId, ENRICH.AUTHOR_CORE)
+  return db.getAuthor(d1, authorId)
 }
 
 // ---- Author Works Import ----
@@ -282,8 +300,15 @@ export async function importAuthorWorks(d1: D1Database, kv: KVNamespace, authorI
   const author = await db.getAuthor(d1, authorId)
   if (!author) return 0
 
+  // Already imported? Check flag
+  if (db.hasEnriched(author.enriched as number, ENRICH.AUTHOR_WORKS)) return 0
+
   const olKey = author.ol_key as string
-  if (!olKey) return 0
+  if (!olKey) {
+    // Mark as done even if no ol_key — avoid retrying
+    await db.setEnriched(d1, 'authors', authorId, ENRICH.AUTHOR_WORKS)
+    return 0
+  }
 
   const deadline = Date.now() + 15_000 // 15s time budget
 
@@ -327,6 +352,7 @@ export async function importAuthorWorks(d1: D1Database, kv: KVNamespace, authorI
     imported++
   }
 
+  await db.setEnriched(d1, 'authors', authorId, ENRICH.AUTHOR_WORKS)
   return imported
 }
 
@@ -336,52 +362,389 @@ export async function enrichBook(d1: D1Database, kv: KVNamespace, bookId: number
   let book = await db.getBook(d1, bookId)
   if (!book) return null
 
-  // Already enriched? (has description AND source_id)
-  if (!force && book.description && book.source_id) return book
+  const enriched = (book.enriched as number) || 0
+  const needsCore = force || !db.hasEnriched(enriched, ENRICH.BOOK_CORE)
+  const needsGenres = force || !db.hasEnriched(enriched, ENRICH.BOOK_GENRES)
 
-  // Step 1: Find on Goodreads by title
-  let sourceId = book.source_id as string
-  if (!sourceId) {
-    sourceId = await grSearchBook(kv, book.title as string).catch(() => '')
-    if (!sourceId) return book // Can't find on GR, return as-is
-  }
+  if (!needsCore && !needsGenres) return book
 
-  // Step 2: Fetch GR book
-  const gr = await grGetBook(kv, sourceId).catch(() => null)
-  if (!gr) return book
+  const currentSubjects = (book.subjects as string[]) || []
 
-  // Step 3: Update book with full GR data
-  const enrichData = grBookToData(gr)
-  book = await db.updateBook(d1, bookId, enrichData)
-
-  // Step 4: Create and link authors from GR data
-  if (gr.author_name) {
-    const names = gr.author_name.split(',').map((n: string) => n.trim()).filter(Boolean)
-    const authorSourceId = extractAuthorID(gr.author_url)
-    for (const name of names) {
-      const author = await db.getOrCreateAuthor(d1, name, authorSourceId)
-      await db.linkBookAuthor(d1, bookId, author.id as number)
+  // Collect OL subjects if book has ol_key
+  let olSubjects: string[] = []
+  const olKey = book.ol_key as string
+  if (olKey && needsGenres) {
+    const olWork = await fetchOLWork(kv, olKey).catch(() => null)
+    if (olWork?.subjects) {
+      olSubjects = (olWork.subjects as string[]).slice(0, 20)
     }
   }
 
-  // Step 5: Import reviews if none exist
-  const reviews = await db.getBookReviews(d1, bookId, { page: 1, limit: 1 })
-  if (reviews.total === 0) {
-    for (const r of gr.reviews.slice(0, 20)) {
-      await db.createReview(d1, bookId, {
-        rating: r.rating, text: r.text, reviewer_name: r.reviewer_name,
-        is_spoiler: r.is_spoiler, likes_count: r.likes_count, source: 'imported',
-      })
+  // Try GR enrichment for core data + genres
+  let gr: GoodreadsBook | null = null
+  if (needsCore) {
+    let sourceId = book.source_id as string
+    if (!sourceId) {
+      sourceId = await grSearchBook(kv, book.title as string).catch(() => '')
+    }
+    if (sourceId) {
+      gr = await grGetBook(kv, sourceId).catch(() => null)
     }
   }
 
-  // Step 6: Import quotes if none exist
-  const quotes = await db.getBookQuotes(d1, bookId)
-  if (quotes.length === 0) {
-    for (const q of gr.quotes.slice(0, 20)) {
-      await db.createQuote(d1, { book_id: bookId, author_name: q.author_name, text: q.text, likes_count: q.likes_count })
+  if (gr) {
+    // Full GR enrichment
+    const enrichData = grBookToData(gr)
+    // Merge genres: existing + OL subjects + GR genres (normalized, deduped)
+    enrichData.subjects = mergeGenres(currentSubjects, olSubjects, gr.genres)
+    book = await db.updateBook(d1, bookId, enrichData)
+
+    // Create and link authors from GR data
+    if (gr.author_name) {
+      const names = gr.author_name.split(',').map((n: string) => n.trim()).filter(Boolean)
+      const authorSourceId = extractAuthorID(gr.author_url)
+      for (const name of names) {
+        const author = await db.getOrCreateAuthor(d1, name, authorSourceId)
+        await db.linkBookAuthor(d1, bookId, author.id as number)
+      }
     }
+
+    // Import reviews if none exist
+    const reviews = await db.getBookReviews(d1, bookId, { page: 1, limit: 1 })
+    if (reviews.total === 0) {
+      for (const r of gr.reviews.slice(0, 20)) {
+        await db.createReview(d1, bookId, {
+          rating: r.rating, text: r.text, reviewer_name: r.reviewer_name,
+          is_spoiler: r.is_spoiler, likes_count: r.likes_count, source: 'imported',
+        })
+      }
+    }
+
+    // Import quotes if none exist
+    const quotes = await db.getBookQuotes(d1, bookId)
+    if (quotes.length === 0) {
+      for (const q of gr.quotes.slice(0, 20)) {
+        await db.createQuote(d1, { book_id: bookId, author_name: q.author_name, text: q.text, likes_count: q.likes_count })
+      }
+    }
+
+    // Set both core and genres flags
+    await db.setEnriched(d1, 'books', bookId, ENRICH.BOOK_CORE | ENRICH.BOOK_GENRES)
+  } else if (olSubjects.length > 0) {
+    // No GR data but have OL subjects — merge with existing
+    const merged = mergeGenres(currentSubjects, olSubjects)
+    if (merged.length > currentSubjects.length) {
+      await db.updateBook(d1, bookId, { subjects: merged })
+    }
+    await db.setEnriched(d1, 'books', bookId, ENRICH.BOOK_GENRES)
+    // Mark core as attempted even with no GR data
+    await db.setEnriched(d1, 'books', bookId, ENRICH.BOOK_CORE)
+  } else {
+    // No data found, still mark as attempted
+    await db.setEnriched(d1, 'books', bookId, ENRICH.BOOK_CORE | ENRICH.BOOK_GENRES)
   }
 
   return db.getBook(d1, bookId)
+}
+
+// ---- Series Import ----
+
+/** Import other books in the same series from OL/GR */
+export async function importSeriesBooks(d1: D1Database, kv: KVNamespace, bookId: number): Promise<number> {
+  const book = await db.getBook(d1, bookId)
+  if (!book) return 0
+
+  // Already imported?
+  if (db.hasEnriched(book.enriched as number, ENRICH.BOOK_SERIES)) return 0
+
+  const series = book.series as string
+  if (!series) {
+    await db.setEnriched(d1, 'books', bookId, ENRICH.BOOK_SERIES)
+    return 0
+  }
+
+  // Check if we already have other books in this series
+  const existing = await db.getBooksBySeries(d1, series, bookId)
+  if (existing.length >= 3) {
+    await db.setEnriched(d1, 'books', bookId, ENRICH.BOOK_SERIES)
+    return 0
+  }
+
+  // Search OL for the series name to find related works
+  const olData = await fetchOLSubjects(kv, series, 20).catch(() => null)
+  let imported = 0
+  const deadline = Date.now() + 10_000
+
+  if (olData?.works) {
+    for (const work of olData.works) {
+      if (Date.now() > deadline) break
+      if (!work.key || !work.title) continue
+
+      const exists = await db.getBookByOLKey(d1, work.key)
+      if (exists) continue
+
+      const authorNames = work.authors?.map(a => a.name).join(', ') || ''
+      const newBook = await db.createBook(d1, {
+        ol_key: work.key,
+        title: work.title,
+        cover_url: work.cover_id ? coverURL(work.cover_id) : '',
+        author_names: authorNames,
+        series,
+        subjects: mergeGenres(work.subject?.slice(0, 10)),
+      })
+
+      for (const a of (work.authors || [])) {
+        if (!a.name) continue
+        const author = await db.getOrCreateAuthor(d1, a.name)
+        await db.linkBookAuthor(d1, newBook.id as number, author.id as number)
+      }
+      imported++
+    }
+  }
+
+  await db.setEnriched(d1, 'books', bookId, ENRICH.BOOK_SERIES)
+  return imported
+}
+
+// ---- Editions Import ----
+
+/** Import edition data from OL (ISBNs, page counts, publishers) */
+export async function importEditions(d1: D1Database, kv: KVNamespace, bookId: number): Promise<number> {
+  const book = await db.getBook(d1, bookId)
+  if (!book) return 0
+
+  // Already imported?
+  if (db.hasEnriched(book.enriched as number, ENRICH.BOOK_EDITIONS)) return 0
+
+  const olKey = book.ol_key as string
+  if (!olKey) {
+    await db.setEnriched(d1, 'books', bookId, ENRICH.BOOK_EDITIONS)
+    return 0
+  }
+
+  const editions = await fetchOLEditions(kv, olKey, 20).catch(() => [])
+  if (editions.length === 0) {
+    await db.setEnriched(d1, 'books', bookId, ENRICH.BOOK_EDITIONS)
+    return 0
+  }
+
+  // Use first edition with data to fill missing fields on the book
+  const updates: Record<string, unknown> = {}
+  if (!book.isbn10) {
+    for (const ed of editions) {
+      if (ed.isbn_10?.length) { updates.isbn10 = ed.isbn_10[0]; break }
+    }
+  }
+  if (!book.isbn13) {
+    for (const ed of editions) {
+      if (ed.isbn_13?.length) { updates.isbn13 = ed.isbn_13[0]; break }
+    }
+  }
+  if (!book.page_count) {
+    for (const ed of editions) {
+      if (ed.number_of_pages) { updates.page_count = ed.number_of_pages; break }
+    }
+  }
+  if (!book.publisher) {
+    for (const ed of editions) {
+      if (ed.publishers?.length) { updates.publisher = ed.publishers[0]; break }
+    }
+  }
+  if (!book.cover_url) {
+    for (const ed of editions) {
+      if (ed.covers?.length) { updates.cover_url = coverURL(ed.covers[0]); break }
+    }
+  }
+  if (!book.editions_count || (book.editions_count as number) < editions.length) {
+    updates.editions_count = editions.length
+  }
+
+  if (Object.keys(updates).length > 0) {
+    await db.updateBook(d1, bookId, updates)
+  }
+
+  await db.setEnriched(d1, 'books', bookId, ENRICH.BOOK_EDITIONS)
+  return editions.length
+}
+
+// ---- Similar Books Import ----
+
+/** Auto-import similar books based on overlapping subjects */
+export async function importSimilarBooks(d1: D1Database, kv: KVNamespace, bookId: number): Promise<number> {
+  const book = await db.getBook(d1, bookId)
+  if (!book) return 0
+
+  // Already imported?
+  if (db.hasEnriched(book.enriched as number, ENRICH.BOOK_SIMILAR)) return 0
+
+  const subjects = (book.subjects as string[]) || []
+  if (subjects.length === 0) {
+    await db.setEnriched(d1, 'books', bookId, ENRICH.BOOK_SIMILAR)
+    return 0
+  }
+
+  // Pick top 2 subjects to search OL
+  const topSubjects = subjects.slice(0, 2)
+  let imported = 0
+  const deadline = Date.now() + 10_000
+
+  for (const subject of topSubjects) {
+    if (Date.now() > deadline) break
+
+    const olData = await fetchOLSubjects(kv, subject, 10).catch(() => null)
+    if (!olData?.works) continue
+
+    for (const work of olData.works) {
+      if (Date.now() > deadline) break
+      if (!work.key || !work.title) continue
+
+      const exists = await db.getBookByOLKey(d1, work.key)
+      if (exists) continue
+
+      const authorNames = work.authors?.map(a => a.name).join(', ') || ''
+      const newBook = await db.createBook(d1, {
+        ol_key: work.key,
+        title: work.title,
+        cover_url: work.cover_id ? coverURL(work.cover_id) : '',
+        author_names: authorNames,
+        subjects: mergeGenres(work.subject?.slice(0, 10), [subject]),
+      })
+
+      for (const a of (work.authors || [])) {
+        if (!a.name) continue
+        const author = await db.getOrCreateAuthor(d1, a.name)
+        await db.linkBookAuthor(d1, newBook.id as number, author.id as number)
+      }
+      imported++
+      if (imported >= 10) break
+    }
+    if (imported >= 10) break
+  }
+
+  await db.setEnriched(d1, 'books', bookId, ENRICH.BOOK_SIMILAR)
+  return imported
+}
+
+// ---- Genre Page Enrichment ----
+
+/** Auto-import books for a genre from OL subjects API when genre page is sparse */
+export async function enrichGenre(d1: D1Database, kv: KVNamespace, genre: string, limit: number = 20): Promise<number> {
+  const olData = await fetchOLSubjects(kv, genre, limit).catch(() => null)
+  if (!olData || olData.works.length === 0) return 0
+
+  let imported = 0
+  for (const work of olData.works) {
+    if (!work.key || !work.title) continue
+    const existing = await db.getBookByOLKey(d1, work.key)
+    if (existing) continue
+
+    const authorNames = work.authors?.map(a => a.name).join(', ') || ''
+    const book = await db.createBook(d1, {
+      ol_key: work.key,
+      title: work.title,
+      cover_url: work.cover_id ? coverURL(work.cover_id) : '',
+      author_names: authorNames,
+      subjects: mergeGenres(work.subject?.slice(0, 10), [genre]),
+    })
+
+    // Link authors
+    for (const a of (work.authors || [])) {
+      if (!a.name) continue
+      const author = await db.getOrCreateAuthor(d1, a.name)
+      await db.linkBookAuthor(d1, book.id as number, author.id as number)
+    }
+    imported++
+  }
+  return imported
+}
+
+// ---- List Auto-Import ----
+
+/** Auto-discover and import popular GR lists. Returns count of lists imported. */
+export async function discoverLists(d1: D1Database, kv: KVNamespace, tag: string = ''): Promise<Record<string, unknown>[]> {
+  const grLists = await getPopularLists(kv, tag).catch(() => [])
+  if (grLists.length === 0) return []
+
+  const imported: Record<string, unknown>[] = []
+  for (const grSummary of grLists.slice(0, 10)) {
+    // Dedup: check if already imported by source_url
+    const sourceUrl = grSummary.url
+    const existing = await db.getListBySourceURL(d1, sourceUrl)
+    if (existing) {
+      imported.push(existing)
+      continue
+    }
+
+    const list = await db.createList(d1, {
+      title: grSummary.title,
+      source_url: sourceUrl,
+      voter_count: grSummary.voter_count,
+    })
+    imported.push(list)
+  }
+  return imported
+}
+
+/** Import books into a list from its GR source. Time-bounded (15s). */
+export async function importListBooks(d1: D1Database, kv: KVNamespace, listId: number): Promise<number> {
+  const list = await db.getList(d1, listId)
+  if (!list) return 0
+
+  // Already imported? Check flag
+  if (db.hasEnriched(list.enriched as number, ENRICH.LIST_BOOKS)) return 0
+
+  const sourceUrl = list.source_url as string
+  if (!sourceUrl || !sourceUrl.includes('goodreads.com')) {
+    await db.setEnriched(d1, 'book_lists', listId, ENRICH.LIST_BOOKS)
+    return 0
+  }
+
+  const grListId = extractGRListId(sourceUrl)
+  if (!grListId) {
+    await db.setEnriched(d1, 'book_lists', listId, ENRICH.LIST_BOOKS)
+    return 0
+  }
+
+  const deadline = Date.now() + 15_000
+  const grList = await grGetList(kv, grListId).catch(() => null)
+  if (!grList) {
+    await db.setEnriched(d1, 'book_lists', listId, ENRICH.LIST_BOOKS)
+    return 0
+  }
+
+  let imported = 0
+  for (const item of grList.books.slice(0, 50)) {
+    if (Date.now() > deadline) break
+    if (!item.goodreads_id) continue
+
+    // Check if book exists by source_id
+    let book = await db.getBookBySourceId(d1, item.goodreads_id)
+    if (!book) {
+      // Create a lightweight entry from list data
+      book = await db.createBook(d1, {
+        title: item.title,
+        author_names: item.author_name,
+        cover_url: item.cover_url,
+        average_rating: item.average_rating,
+        ratings_count: item.ratings_count,
+        source_id: item.goodreads_id,
+        source_url: item.url,
+      })
+      // Link author
+      if (item.author_name) {
+        const author = await db.getOrCreateAuthor(d1, item.author_name)
+        await db.linkBookAuthor(d1, book.id as number, author.id as number)
+      }
+    }
+    await db.addBookToList(d1, listId, book.id as number)
+    imported++
+  }
+
+  await db.setEnriched(d1, 'book_lists', listId, ENRICH.LIST_BOOKS)
+  return imported
+}
+
+function extractGRListId(url: string): string {
+  const m = url.match(/\/list\/show\/(\d+)/)
+  return m ? m[1] : ''
 }

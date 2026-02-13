@@ -129,6 +129,33 @@ export async function fetchOLSubjects(kv: KVNamespace, subject: string, limit: n
   return result
 }
 
+export async function fetchOLEditions(kv: KVNamespace, olKey: string, limit: number = 20): Promise<{
+  key: string; title: string; isbn_10?: string[]; isbn_13?: string[];
+  number_of_pages?: number; covers?: number[]; publishers?: string[]; publish_date?: string;
+}[]> {
+  const cleanKey = olKey.replace('/works/', '')
+  const cacheKey = `ol:editions:${cleanKey}:${limit}`
+  const cached = await kvGet<any[]>(kv, cacheKey)
+  if (cached) return cached
+
+  const resp = await fetch(`${OL_WORKS_URL}/works/${cleanKey}/editions.json?limit=${limit}`, { headers: { 'User-Agent': 'BookWorker/1.0' } })
+  if (!resp.ok) return []
+  const data = await resp.json() as any
+  const entries = (data.entries || []).map((e: any) => ({
+    key: e.key || '',
+    title: e.title || '',
+    isbn_10: e.isbn_10 || [],
+    isbn_13: e.isbn_13 || [],
+    number_of_pages: e.number_of_pages || 0,
+    covers: e.covers || [],
+    publishers: e.publishers || [],
+    publish_date: e.publish_date || '',
+  }))
+
+  await kvPut(kv, cacheKey, entries)
+  return entries
+}
+
 export async function fetchOLWork(kv: KVNamespace, olKey: string): Promise<any> {
   const key = `ol:work:${olKey}`
   const cached = await kvGet<any>(kv, key)
