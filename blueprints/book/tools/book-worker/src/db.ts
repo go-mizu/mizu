@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS books (
   source_id TEXT DEFAULT '',
   source_url TEXT DEFAULT '',
   asin TEXT DEFAULT '',
+  enriched INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -56,6 +57,7 @@ CREATE TABLE IF NOT EXISTS authors (
   influences TEXT DEFAULT '',
   website TEXT DEFAULT '',
   source_id TEXT DEFAULT '',
+  enriched INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS book_authors (
@@ -127,6 +129,7 @@ CREATE TABLE IF NOT EXISTS book_lists (
   item_count INTEGER DEFAULT 0,
   source_url TEXT DEFAULT '',
   voter_count INTEGER DEFAULT 0,
+  enriched INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS book_list_items (
@@ -228,6 +231,25 @@ export async function initDB(db: D1Database): Promise<void> {
   for (const stmt of stmts) {
     await db.exec(stmt + ';')
   }
+  // Migration: add enriched columns to existing tables
+  const migrations = [
+    'ALTER TABLE books ADD COLUMN enriched INTEGER DEFAULT 0',
+    'ALTER TABLE authors ADD COLUMN enriched INTEGER DEFAULT 0',
+    'ALTER TABLE book_lists ADD COLUMN enriched INTEGER DEFAULT 0',
+  ]
+  for (const stmt of migrations) {
+    try { await db.exec(stmt) } catch { /* column may already exist */ }
+  }
+}
+
+// ---- Enrichment Flag Helpers ----
+
+export function hasEnriched(enriched: number | undefined | null, flag: number): boolean {
+  return ((enriched || 0) & flag) === flag
+}
+
+export async function setEnriched(db: D1Database, table: 'books' | 'authors' | 'book_lists', id: number, flag: number): Promise<void> {
+  await db.prepare(`UPDATE ${table} SET enriched = enriched | ? WHERE id = ?`).bind(flag, id).run()
 }
 
 // ---- Books ----
@@ -295,7 +317,7 @@ export async function updateBook(db: D1Database, id: number, data: Record<string
     'author_names', 'cover_url', 'isbn10', 'isbn13', 'publisher', 'publish_date',
     'language', 'edition_language', 'first_published', 'format', 'series', 'source_id', 'source_url', 'asin']
   const numFields = ['cover_id', 'publish_year', 'page_count', 'editions_count',
-    'average_rating', 'ratings_count', 'reviews_count', 'currently_reading', 'want_to_read']
+    'average_rating', 'ratings_count', 'reviews_count', 'currently_reading', 'want_to_read', 'enriched']
   const jsonFields = ['subjects', 'characters', 'settings', 'literary_awards', 'rating_dist']
 
   for (const f of strFields) {
@@ -358,6 +380,14 @@ export async function getSimilarBooks(db: D1Database, bookId: number, limit: num
   const pattern = `%${subjects[0]}%`
   const rows = await db.prepare(`${BOOK_SELECT} WHERE b.id != ? AND b.subjects LIKE ? LIMIT ?`)
     .bind(bookId, pattern, limit).all()
+  return (rows.results || []).map(rowToBook)
+}
+
+export async function getBooksBySeries(db: D1Database, series: string, excludeId?: number): Promise<Record<string, unknown>[]> {
+  if (!series) return []
+  const rows = excludeId
+    ? await db.prepare(`${BOOK_SELECT} WHERE b.series = ? AND b.id != ? ORDER BY b.publish_year`).bind(series, excludeId).all()
+    : await db.prepare(`${BOOK_SELECT} WHERE b.series = ? ORDER BY b.publish_year`).bind(series).all()
   return (rows.results || []).map(rowToBook)
 }
 
@@ -671,7 +701,11 @@ export async function getLists(db: D1Database) {
   return { lists: rows.results || [], total: rows.results?.length || 0 }
 }
 
-export async function getList(db: D1Database, id: number) {
+export async function getListBySourceURL(db: D1Database, sourceUrl: string): Promise<Record<string, unknown> | null> {
+  return await db.prepare('SELECT * FROM book_lists WHERE source_url = ?').bind(sourceUrl).first()
+}
+
+export async function getList(db: D1Database, id: number): Promise<Record<string, unknown> & { items: Record<string, unknown>[] } | null> {
   const list = await db.prepare('SELECT * FROM book_lists WHERE id = ?').bind(id).first()
   if (!list) return null
   const items = await db.prepare(
@@ -897,20 +931,25 @@ export async function getStats(db: D1Database, year: number) {
 
 // ---- Genres ----
 
-export async function getGenres(db: D1Database) {
+export async function getGenres(db: D1Database, normalizer?: (genre: string) => string) {
   const rows = await db.prepare('SELECT subjects FROM books WHERE subjects != \'[]\' ').all()
   const counts: Record<string, number> = {}
+  // Track canonical → display name (first occurrence wins)
+  const displayNames: Record<string, string> = {}
   for (const row of (rows.results || []) as Record<string, unknown>[]) {
     const subjects = parseJSON(row.subjects as string) as string[]
     for (const s of subjects) {
-      counts[s] = (counts[s] || 0) + 1
+      const normalized = normalizer ? normalizer(s) : s
+      const key = normalized.toLowerCase()
+      counts[key] = (counts[key] || 0) + 1
+      if (!displayNames[key]) displayNames[key] = normalized
     }
   }
   return Object.entries(counts)
     .sort((a, b) => b[1] - a[1])
-    .map(([name, count]) => ({
-      name,
-      slug: name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
+    .map(([key, count]) => ({
+      name: displayNames[key],
+      slug: key.replace(/\s+/g, '-').replace(/[^a-z0-9-+]/g, ''),
       book_count: count,
     }))
 }

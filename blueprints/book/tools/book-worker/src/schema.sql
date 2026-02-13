@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS books (
   source_id TEXT DEFAULT '',
   source_url TEXT DEFAULT '',
   asin TEXT DEFAULT '',
+  enriched INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -54,6 +55,7 @@ CREATE TABLE IF NOT EXISTS authors (
   influences TEXT DEFAULT '',
   website TEXT DEFAULT '',
   source_id TEXT DEFAULT '',
+  enriched INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -133,6 +135,7 @@ CREATE TABLE IF NOT EXISTS book_lists (
   item_count INTEGER DEFAULT 0,
   source_url TEXT DEFAULT '',
   voter_count INTEGER DEFAULT 0,
+  enriched INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now'))
 );
 
