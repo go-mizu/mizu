@@ -5,6 +5,7 @@ import translateRoute from './routes/translate'
 import languagesRoute from './routes/languages'
 import detectRoute from './routes/detect'
 import ttsRoute from './routes/tts'
+import pageRoute from './routes/page'
 
 const app = new Hono<HonoEnv>()
 
@@ -19,11 +20,12 @@ app.route('/api', translateRoute)
 app.route('/api', languagesRoute)
 app.route('/api', detectRoute)
 app.route('/api', ttsRoute)
+app.route('', pageRoute)
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url)
-    if (url.pathname.startsWith('/api/')) {
+    if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/page/')) {
       return app.fetch(request, env, ctx)
     }
     if (env.ASSETS) {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Languages, ArrowLeftRight, Copy, Check, Moon, Sun, AlertCircle } from "lucide-react"
+import { Languages, ArrowLeftRight, Copy, Check, Moon, Sun, AlertCircle, Type, Globe } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -8,8 +8,10 @@ import { LanguageSelect } from "@/components/language-select"
 import { AudioButton } from "@/components/audio-button"
 import { RichPanel } from "@/components/rich-panel"
 import { HistoryPanel } from "@/components/history-panel"
+import { PageTranslator } from "@/components/page-translator"
 import { translateText, fetchLanguages } from "@/api/client"
 import { useTranslateStore } from "@/stores/translate"
+import { cn } from "@/lib/utils"
 
 // --- Theme hook ---
 function useTheme() {
@@ -242,29 +244,65 @@ function Translator() {
   )
 }
 
+// --- Tab types ---
+type Mode = "text" | "page"
+
+const tabs: { id: Mode; label: string; icon: React.ReactNode }[] = [
+  { id: "text", label: "Text", icon: <Type className="h-4 w-4" /> },
+  { id: "page", label: "Page", icon: <Globe className="h-4 w-4" /> },
+]
+
 // --- App ---
 export default function App() {
   const { dark, toggle } = useTheme()
+  const [mode, setMode] = useState<Mode>("text")
 
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
       <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-sm">
-        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
-          <div className="flex items-center gap-2">
-            <Languages className="h-5 w-5 text-primary" />
-            <h1 className="text-lg font-semibold">Translate</h1>
+        <div className="mx-auto max-w-5xl px-4">
+          <div className="flex h-14 items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Languages className="h-5 w-5 text-primary" />
+              <h1 className="text-lg font-semibold">Translate</h1>
+            </div>
+            <Button variant="ghost" size="icon" onClick={toggle} title="Toggle theme">
+              {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </Button>
           </div>
-          <Button variant="ghost" size="icon" onClick={toggle} title="Toggle theme">
-            {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          </Button>
+          {/* Tabs */}
+          <div className="flex gap-1 -mb-px">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setMode(tab.id)}
+                className={cn(
+                  "flex items-center gap-1.5 px-4 py-2 text-sm transition-colors",
+                  mode === tab.id
+                    ? "border-b-2 border-primary text-foreground font-medium"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {tab.icon}
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
       </header>
 
       {/* Main */}
       <main className="mx-auto max-w-5xl px-4 py-6">
-        <Translator />
-        <HistoryPanel />
+        {mode === "text" ? (
+          <>
+            <Translator />
+            <HistoryPanel />
+          </>
+        ) : (
+          <PageTranslator />
+        )}
       </main>
     </div>
   )
