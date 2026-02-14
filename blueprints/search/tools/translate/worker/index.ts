@@ -14,6 +14,11 @@ app.use('/api/*', cors({
   allowMethods: ['GET', 'POST', 'OPTIONS'],
   allowHeaders: ['Content-Type'],
 }))
+app.use('/page/*', cors({
+  origin: '*',
+  allowMethods: ['GET', 'POST', 'OPTIONS'],
+  allowHeaders: ['Content-Type'],
+}))
 
 app.get('/api/health', (c) => c.json({ status: 'ok' }))
 app.route('/api', translateRoute)

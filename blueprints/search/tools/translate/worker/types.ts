@@ -1,5 +1,6 @@
 export interface Env {
   ASSETS?: { fetch: typeof fetch }
+  TRANSLATE_CACHE: KVNamespace
   ENVIRONMENT: string
 }
 

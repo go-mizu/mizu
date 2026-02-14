@@ -4,6 +4,10 @@ import { makePageRewriter } from '../page-rewriter'
 
 const route = new Hono<HonoEnv>()
 
+function cacheKey(tl: string, url: string): string {
+  return `page:${tl}:${url}`
+}
+
 // GET /page/:tl?url=...  — fetch, translate, and proxy an HTML page
 route.get('/page/:tl{[a-zA-Z]{2,3}(-[a-zA-Z]{2})?}', async (c) => {
   const tl = c.req.param('tl')
@@ -20,7 +24,22 @@ route.get('/page/:tl{[a-zA-Z]{2,3}(-[a-zA-Z]{2})?}', async (c) => {
     return c.json({ error: 'Invalid URL format' }, 400)
   }
 
-  // Fetch the original page
+  const kv = c.env.TRANSLATE_CACHE
+
+  // 1. Check KV cache
+  const cached = await kv.get(cacheKey(tl, targetUrl), 'text')
+  if (cached) {
+    return new Response(cached, {
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'public, max-age=3600',
+        'X-Translate-Cache': 'HIT',
+        'X-Robots-Tag': 'noindex',
+      },
+    })
+  }
+
+  // 2. Fetch the original page
   let response: Response
   try {
     response = await fetch(originUrl.toString(), {
@@ -37,7 +56,7 @@ route.get('/page/:tl{[a-zA-Z]{2,3}(-[a-zA-Z]{2})?}', async (c) => {
 
   const contentType = response.headers.get('content-type') || ''
 
-  // Non-HTML content: proxy through directly (images, CSS, JS, etc.)
+  // Non-HTML content: proxy through directly
   if (!contentType.includes('text/html')) {
     return new Response(response.body, {
       status: response.status,
@@ -48,19 +67,31 @@ route.get('/page/:tl{[a-zA-Z]{2,3}(-[a-zA-Z]{2})?}', async (c) => {
     })
   }
 
+  // 3. Stream translated response — no buffering, no timeout risk
   const proxyBase = new URL(c.req.url).origin
   const rewriter = makePageRewriter(originUrl, proxyBase, tl, 'auto')
 
-  const translated = rewriter.transform(response)
-  // Return with clean headers — strip origin's cache/security headers
-  return new Response(translated.body, {
-    status: translated.status,
+  return new Response(rewriter.transform(response).body, {
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'public, max-age=300',
+      'Cache-Control': 'no-cache',
+      'X-Translate-Cache': 'MISS',
       'X-Robots-Tag': 'noindex',
     },
   })
+})
+
+// POST /page/cache  — client pushes fully translated HTML for KV storage
+route.post('/page/cache', async (c) => {
+  const body = await c.req.json<{ url: string; tl: string; html: string }>()
+  if (!body.url || !body.tl || !body.html) {
+    return c.json({ error: 'Missing url, tl, or html' }, 400)
+  }
+
+  const kv = c.env.TRANSLATE_CACHE
+  await kv.put(cacheKey(body.tl, body.url), body.html, { expirationTtl: 86400 })
+
+  return c.json({ ok: true })
 })
 
 export default route
