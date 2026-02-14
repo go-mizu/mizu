@@ -1,16 +1,33 @@
 name = "cc-viewer"
-main = "src/index.ts"
+main = "worker/index.ts"
 compatibility_date = "2026-02-09"
 compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
 
 [[kv_namespaces]]
 binding = "KV"
 id = "a412dc6f75e245e09c90944e156c5cf6"
 
-[[rules]]
-type = "Text"
-globs = ["**/*.css"]
-fallthrough = true
+# Queue and Analytics bindings — uncomment when enabled on the account
+# [[queues.producers]]
+# queue = "cc-viewer-jobs"
+# binding = "QUEUE"
+#
+# [[queues.consumers]]
+# queue = "cc-viewer-jobs"
+# max_batch_size = 10
+# max_batch_timeout = 30
+#
+# [[analytics_engine_datasets]]
+# binding = "ANALYTICS"
+# dataset = "cc_viewer"
+#
+# [triggers]
+# crons = ["0 0 * * *", "0 */6 * * *"]
 
 [vars]
 ENVIRONMENT = "production"
