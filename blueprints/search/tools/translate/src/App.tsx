@@ -43,27 +43,35 @@ function Translator() {
 
   const [copied, setCopied] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   const { data: languages = [] } = useQuery({
     queryKey: ["languages"],
     queryFn: fetchLanguages,
   })
 
-  // Debounced auto-translate
+  // Debounced auto-translate (800ms debounce, abort in-flight requests)
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current)
 
     if (!sourceText.trim()) {
       setResult(null)
       setError(null)
+      setLoading(false)
       return
     }
 
     timerRef.current = setTimeout(async () => {
+      // Abort any previous in-flight request
+      if (abortRef.current) abortRef.current.abort()
+      const controller = new AbortController()
+      abortRef.current = controller
+
       setLoading(true)
       setError(null)
       try {
-        const res = await translateText(sourceText, sourceLang, targetLang)
+        const res = await translateText(sourceText, sourceLang, targetLang, controller.signal)
+        if (controller.signal.aborted) return
         setResult(res)
         addToHistory({
           id: crypto.randomUUID(),
@@ -74,12 +82,12 @@ function Translator() {
           timestamp: Date.now(),
         })
       } catch (err) {
+        if (controller.signal.aborted) return
         setError(err instanceof Error ? err.message : "Translation failed")
-        setResult(null)
       } finally {
-        setLoading(false)
+        if (!controller.signal.aborted) setLoading(false)
       }
-    }, 500)
+    }, 800)
 
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current)

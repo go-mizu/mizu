@@ -40,9 +40,10 @@ export function LanguageSelect({
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [open, handleClickOutside])
 
+  // Source panel: show auto (already in list from API). Target panel: filter it out.
   const allOptions: Language[] = showAutoDetect
-    ? [{ code: "auto", name: "Auto-detect" }, ...languages]
-    : languages
+    ? languages
+    : languages.filter((l) => l.code !== "auto")
 
   const filtered = search
     ? allOptions.filter(

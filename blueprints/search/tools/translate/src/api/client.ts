@@ -27,11 +27,12 @@ export interface TranslateResult {
 
 const API_BASE = '/api'
 
-export async function translateText(text: string, from: string, to: string): Promise<TranslateResult> {
+export async function translateText(text: string, from: string, to: string, signal?: AbortSignal): Promise<TranslateResult> {
   const res = await fetch(`${API_BASE}/translate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text, from, to }),
+    signal,
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Translation failed' })) as { error?: string }
