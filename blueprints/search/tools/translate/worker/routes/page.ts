@@ -8,10 +8,21 @@ const route = new Hono<HonoEnv>()
 route.get('/page/:tl{[a-zA-Z]{2,3}(-[a-zA-Z]{2})?}/*', async (c) => {
   const tl = c.req.param('tl')
 
-  // Extract the target URL from the wildcard portion of the path
-  const urlPath = c.req.path.replace(`/page/${tl}/`, '')
-  const queryString = new URL(c.req.url).search
-  const targetUrl = urlPath + queryString
+  // Extract the target URL from the path after /page/<tl>/
+  // Browsers may encode ":" as "%3A" and collapse "//" to "/" in the path,
+  // so we decode percent-encoding and fix the scheme separator.
+  const reqUrl = new URL(c.req.url)
+  const prefix = `/page/${tl}/`
+  const prefixIdx = reqUrl.pathname.indexOf(prefix)
+  if (prefixIdx === -1) {
+    return c.json({ error: 'Invalid URL. Use /page/<lang>/https://example.com' }, 400)
+  }
+
+  let targetUrl = decodeURIComponent(reqUrl.pathname.substring(prefixIdx + prefix.length))
+  // Fix single-slash after scheme: "https:/example.com" → "https://example.com"
+  targetUrl = targetUrl.replace(/^(https?):\/(?!\/)/, '$1://')
+  // Append query string
+  targetUrl += reqUrl.search
 
   if (!targetUrl || !targetUrl.startsWith('http')) {
     return c.json({ error: 'Invalid URL. Use /page/<lang>/https://example.com' }, 400)
