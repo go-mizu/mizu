@@ -45,6 +45,7 @@ type Stats struct {
 	bloomCount  func() uint32
 	linksFound  atomic.Int64
 	reseeds    atomic.Int64
+	retries    atomic.Int64
 	continuous bool
 
 	// Freeze
@@ -296,10 +297,15 @@ func (s *Stats) Render() string {
 	b.WriteString("\n")
 
 	// === Results breakdown ===
-	b.WriteString(fmt.Sprintf("  \u2713 %s ok (%4.1f%%)  \u2717 %s fail (%4.1f%%)  \u23f1 %s timeout (%4.1f%%)\n",
+	retryCount := s.retries.Load()
+	resultLine := fmt.Sprintf("  \u2713 %s ok (%4.1f%%)  \u2717 %s fail (%4.1f%%)  \u23f1 %s timeout (%4.1f%%)",
 		fmtInt64(succ), safePct(succ, done),
 		fmtInt64(fail), safePct(fail, done),
-		fmtInt64(tout), safePct(tout, done)))
+		fmtInt64(tout), safePct(tout, done))
+	if retryCount > 0 {
+		resultLine += fmt.Sprintf("  \u21bb %s retried", fmtInt64(retryCount))
+	}
+	b.WriteString(resultLine + "\n")
 
 	// === Frontier ===
 	frontierLine := fmt.Sprintf("  Frontier  %s queued  \u2502  %s seen  \u2502  %s links found",

@@ -114,7 +114,7 @@ Pinterest (auto-detected, uses internal API - no browser needed):
 	cmd.Flags().StringVar(&crawlerDataDir, "crawler-data", "", "Crawler data directory (default $HOME/data/crawler/)")
 	cmd.Flags().StringVar(&userAgent, "user-agent", "", "User-Agent header")
 	cmd.Flags().BoolVar(&useRod, "browser", false, "Use headless Chrome for JS-rendered pages (bypasses Cloudflare)")
-	cmd.Flags().IntVar(&rodWorkers, "browser-pages", 8, "Number of browser pages when using --browser")
+	cmd.Flags().IntVar(&rodWorkers, "browser-pages", 20, "Number of browser pages when using --browser")
 	cmd.Flags().IntVar(&scrollCount, "scroll", 0, "Scroll N times in browser mode for infinite scroll pages (Pinterest, etc.)")
 	cmd.Flags().BoolVar(&extractImages, "extract-images", false, "Extract <img> URLs and store in links table")
 	cmd.Flags().BoolVar(&downloadImages, "download-images", false, "Download discovered images after crawl (implies --extract-images)")
@@ -150,7 +150,7 @@ func runCrawlDomain(cmd *cobra.Command, cfg dcrawler.Config, downloadImages bool
 	if cfg.UseRod {
 		rodW := cfg.RodWorkers
 		if rodW <= 0 {
-			rodW = 8
+			rodW = 20
 		}
 		fmt.Println(infoStyle.Render(fmt.Sprintf("  Mode:     headless Chrome (rod)  |  Pages: %d", rodW)))
 	} else {

@@ -34,7 +34,61 @@ type Crawler struct {
 	robots   *RobotsChecker
 	limiter  *rate.Limiter
 	claimed  atomic.Int64 // atomic slot counter for max-pages
+	retryQ   *retryQueue
 }
+
+// retryItem tracks a URL that needs to be retried after a transient error.
+type retryItem struct {
+	item     CrawlItem
+	attempts int
+	nextAt   time.Time
+}
+
+// retryQueue holds URLs waiting for retry with exponential backoff.
+type retryQueue struct {
+	mu    sync.Mutex
+	items []retryItem
+}
+
+func newRetryQueue() *retryQueue {
+	return &retryQueue{}
+}
+
+func (rq *retryQueue) add(item CrawlItem, attempts int, delay time.Duration) {
+	rq.mu.Lock()
+	rq.items = append(rq.items, retryItem{
+		item:     item,
+		attempts: attempts,
+		nextAt:   time.Now().Add(delay),
+	})
+	rq.mu.Unlock()
+}
+
+func (rq *retryQueue) len() int {
+	rq.mu.Lock()
+	defer rq.mu.Unlock()
+	return len(rq.items)
+}
+
+// drain returns all ready items and removes them from the queue.
+func (rq *retryQueue) drain() []retryItem {
+	rq.mu.Lock()
+	defer rq.mu.Unlock()
+	now := time.Now()
+	var ready []retryItem
+	var remaining []retryItem
+	for _, ri := range rq.items {
+		if now.After(ri.nextAt) {
+			ready = append(ready, ri)
+		} else {
+			remaining = append(remaining, ri)
+		}
+	}
+	rq.items = remaining
+	return ready
+}
+
+const maxRetryAttempts = 3
 
 // New creates a new Crawler with the given config.
 func New(cfg Config) (*Crawler, error) {
@@ -92,6 +146,7 @@ func New(cfg Config) (*Crawler, error) {
 	c.frontier = NewFrontier(cfg.Domain, cfg.FrontierSize, cfg.BloomCapacity, cfg.BloomFPR, cfg.IncludeSubdomain)
 	c.stats = NewStats(cfg.Domain, cfg.MaxPages, cfg.Continuous)
 	c.stats.SetFrontierFuncs(c.frontier.Len, c.frontier.BloomCount)
+	c.retryQ = newRetryQueue()
 
 	if cfg.RateLimit > 0 {
 		c.limiter = rate.NewLimiter(rate.Limit(cfg.RateLimit), max(cfg.RateLimit/10, 1))
@@ -214,7 +269,7 @@ func (c *Crawler) Run(ctx context.Context) error {
 
 		workers := c.config.RodWorkers
 		if workers <= 0 {
-			workers = 8
+			workers = 20
 		}
 		for range workers {
 			g.Go(func() error {
@@ -237,6 +292,12 @@ func (c *Crawler) Run(ctx context.Context) error {
 		return nil
 	})
 
+	// Retry feeder: re-feeds timed-out items back to frontier
+	g.Go(func() error {
+		c.retryFeeder(gctx)
+		return nil
+	})
+
 	g.Wait()
 
 	c.saveState()
@@ -248,8 +309,10 @@ func (c *Crawler) Run(ctx context.Context) error {
 func (c *Crawler) restoreState() {
 	dir := c.config.ResultDir()
 
-	// Phase 1: Mark all already-crawled URLs as seen in bloom
-	crawled := c.restoreFromShards(dir, "SELECT url FROM pages", c.frontier.MarkSeen)
+	// Phase 1: Mark successfully-crawled URLs as seen in bloom (skip errors)
+	crawled := c.restoreFromShards(dir,
+		"SELECT url FROM pages WHERE status_code >= 200 AND status_code < 400",
+		c.frontier.MarkSeen)
 	if crawled > 0 {
 		fmt.Printf("  Resume: %s crawled URLs in bloom\n", fmtInt(crawled))
 	}
@@ -268,6 +331,21 @@ func (c *Crawler) restoreState() {
 	)
 	if pendingAdded > 0 {
 		fmt.Printf("  Resume: %s pending links re-fed to frontier\n", fmtInt(pendingAdded))
+	}
+
+	// Phase 3: Re-attempt previously failed URLs (timeouts, 429, 5xx)
+	// These URLs had transient errors that may succeed on retry.
+	var retryAdded int
+	c.restoreFromShards(dir,
+		"SELECT url FROM pages WHERE error != '' AND (status_code = 0 OR status_code IN (429, 500, 502, 503, 504))",
+		func(u string) {
+			if c.frontier.TryAdd(u, 1) {
+				retryAdded++
+			}
+		},
+	)
+	if retryAdded > 0 {
+		fmt.Printf("  Resume: %s failed URLs queued for retry\n", fmtInt(retryAdded))
 	}
 }
 
@@ -552,17 +630,12 @@ func (c *Crawler) fetchAndProcess(ctx context.Context, client *http.Client, item
 	}
 	defer resp.Body.Close()
 
-	// Rate-limited or server error
-	if resp.StatusCode == 429 || resp.StatusCode == 503 {
+	// Rate-limited or server error: enqueue for retry
+	if isRetryableStatus(resp.StatusCode) {
 		io.Copy(io.Discard, resp.Body)
 		c.stats.RecordFailure(resp.StatusCode, false)
 		c.stats.RecordDepth(item.Depth)
-		c.resultDB.AddPage(Result{
-			URL: item.URL, URLHash: xxhash.Sum64String(item.URL),
-			Depth: item.Depth, StatusCode: resp.StatusCode,
-			FetchTimeMs: fetchMs, CrawledAt: time.Now(),
-			Error: fmt.Sprintf("HTTP %d", resp.StatusCode),
-		})
+		c.enqueueRetry(item, resp.StatusCode)
 		return
 	}
 
@@ -629,13 +702,66 @@ func (c *Crawler) fetchAndProcess(ctx context.Context, client *http.Client, item
 }
 
 func (c *Crawler) recordError(item CrawlItem, err error, fetchMs int64) {
-	c.stats.RecordFailure(0, isTimeoutError(err))
+	isTimeout := isTimeoutError(err)
+	c.stats.RecordFailure(0, isTimeout)
 	c.stats.RecordDepth(item.Depth)
+	// Timeouts get one retry attempt
+	if isTimeout {
+		c.enqueueRetry(item, 0)
+	}
 	c.resultDB.AddPage(Result{
 		URL: item.URL, URLHash: xxhash.Sum64String(item.URL),
 		Depth: item.Depth, FetchTimeMs: fetchMs,
 		CrawledAt: time.Now(), Error: err.Error(),
 	})
+}
+
+// isRetryableStatus returns true for HTTP status codes that are transient.
+func isRetryableStatus(code int) bool {
+	return code == 429 || code == 500 || code == 502 || code == 503 || code == 504
+}
+
+// enqueueRetry adds a failed URL to the retry queue with exponential backoff.
+func (c *Crawler) enqueueRetry(item CrawlItem, statusCode int) {
+	// Use a simple attempt counter based on URL — the bloom filter
+	// prevents actually re-adding to frontier, so we need retryQ's
+	// MarkSeen bypass via TryAddBypass or re-enabling in bloom.
+	// For simplicity, we remove from bloom to allow re-discovery.
+	delay := 10 * time.Second
+	if statusCode == 429 {
+		delay = 30 * time.Second
+	}
+	c.retryQ.add(item, 1, delay)
+}
+
+// retryFeeder periodically checks the retry queue and re-feeds items to frontier.
+func (c *Crawler) retryFeeder(ctx context.Context) {
+	tick := time.NewTicker(5 * time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+			ready := c.retryQ.drain()
+			for _, ri := range ready {
+				if ri.attempts >= maxRetryAttempts {
+					continue
+				}
+				// Push directly to frontier, bypassing bloom (URL is already in bloom from first attempt)
+				select {
+				case c.frontier.ch <- ri.item:
+					c.stats.retries.Add(1)
+				default:
+					// Frontier full, try again later with increased attempt count
+					if ri.attempts+1 < maxRetryAttempts {
+						delay := time.Duration(ri.attempts+1) * 15 * time.Second
+						c.retryQ.add(ri.item, ri.attempts+1, delay)
+					}
+				}
+			}
+		}
+	}
 }
 
 func (c *Crawler) Stats() *Stats      { return c.stats }

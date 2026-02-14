@@ -13,5 +13,8 @@ run_worker_first = true
 binding = "TRANSLATE_CACHE"
 id = "3ad770f50e95400d94b5bddf6fd5ab11"
 
+[browser]
+binding = "BROWSER"
+
 [vars]
 ENVIRONMENT = "production"
