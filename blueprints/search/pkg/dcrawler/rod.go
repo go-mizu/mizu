@@ -36,7 +36,7 @@ func newRodPool(cfg Config) (*rodPool, error) {
 
 	workers := cfg.RodWorkers
 	if workers <= 0 {
-		workers = 8
+		workers = 20
 	}
 	pool := rod.NewPagePool(workers)
 
@@ -155,8 +155,8 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 	})`)
 
 	// Wait for Cloudflare challenge to resolve (title changes from "Just a moment...")
-	// Poll title for up to 15 seconds
-	cfDeadline := time.Now().Add(15 * time.Second)
+	// Poll title for up to 8 seconds (CF challenges resolve in 2-5s)
+	cfDeadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(cfDeadline) {
 		info, ie := page.Info()
 		if ie != nil {
@@ -168,12 +168,12 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(200 * time.Millisecond):
 		}
 	}
 
 	// Brief wait for JS rendering after challenge resolves
-	page.Timeout(3 * time.Second).WaitRequestIdle(300*time.Millisecond, nil, nil, nil)()
+	page.Timeout(5 * time.Second).WaitRequestIdle(500*time.Millisecond, nil, nil, nil)()
 
 	// Scroll for infinite scroll pages (Pinterest, etc.)
 	if c.config.ScrollCount > 0 {
@@ -234,7 +234,13 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		baseURL, _ = url.Parse(item.URL)
 	}
 
+	// HTML tokenizer extraction (catches __NEXT_DATA__, JSON-LD, meta tags, inline JS)
 	meta := ExtractLinksAndMeta(body, baseURL, c.config.Domain, c.config.ExtractImages)
+
+	// DOM-based JS extraction (catches dynamically-rendered links, data-href, prefetch)
+	domLinks := c.extractDOMLinks(page, baseURL)
+	meta.Links = append(meta.Links, domLinks...)
+
 	if meta.Description != "" {
 		result.Description = meta.Description
 	}
@@ -261,4 +267,69 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 	c.resultDB.AddPage(result)
 	c.stats.RecordSuccess(result.StatusCode, int64(len(body)), fetchMs)
 	c.stats.RecordDepth(item.Depth)
+}
+
+// domLinkResult is the JSON structure returned by the DOM link extraction script.
+type domLinkResult struct {
+	URL  string `json:"url"`
+	Text string `json:"text"`
+	Rel  string `json:"rel"`
+}
+
+// extractDOMLinks runs JavaScript in the browser to extract links from the rendered DOM.
+// This catches dynamically-generated links that don't exist in the raw HTML source.
+func (c *Crawler) extractDOMLinks(page *rod.Page, baseURL *url.URL) []Link {
+	result, err := page.Timeout(5 * time.Second).Eval(`() => {
+		const links = [];
+		const seen = new Set();
+		// All anchor hrefs from rendered DOM
+		document.querySelectorAll('a[href]').forEach(a => {
+			if (a.href && !seen.has(a.href)) {
+				seen.add(a.href);
+				links.push({url: a.href, text: (a.textContent || '').trim().slice(0, 200), rel: a.rel || ''});
+			}
+		});
+		// data-href / data-url attributes (React/Vue/Angular patterns)
+		document.querySelectorAll('[data-href],[data-url],[data-link]').forEach(el => {
+			const u = el.dataset.href || el.dataset.url || el.dataset.link;
+			if (u && !seen.has(u)) {
+				seen.add(u);
+				links.push({url: u, text: '', rel: 'data-attr'});
+			}
+		});
+		// Next.js client-side navigation links
+		document.querySelectorAll('link[rel="prefetch"][href],link[rel="preload"][href][as="fetch"]').forEach(l => {
+			if (l.href && !seen.has(l.href)) {
+				seen.add(l.href);
+				links.push({url: l.href, text: '', rel: l.rel});
+			}
+		});
+		return links;
+	}`)
+	if err != nil {
+		return nil
+	}
+
+	var domLinks []domLinkResult
+	if err := result.Value.Unmarshal(&domLinks); err != nil {
+		return nil
+	}
+
+	var links []Link
+	for _, dl := range domLinks {
+		if dl.URL == "" {
+			continue
+		}
+		resolved := resolveURL(dl.URL, baseURL)
+		if resolved == "" {
+			continue
+		}
+		links = append(links, Link{
+			TargetURL:  resolved,
+			AnchorText: truncate(normalizeText(dl.Text), 200),
+			Rel:        "dom-" + dl.Rel,
+			IsInternal: isInternalURL(resolved, c.config.Domain),
+		})
+	}
+	return links
 }

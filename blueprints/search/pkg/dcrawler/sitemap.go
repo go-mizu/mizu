@@ -1,6 +1,7 @@
 package dcrawler
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/xml"
 	"fmt"
@@ -44,8 +45,8 @@ func DiscoverSitemapURLs(ctx context.Context, client *http.Client, domain string
 			candidates = append(candidates, s)
 		}
 	}
-	// Add well-known locations
-	for _, suffix := range []string{"/sitemap.xml", "/sitemap_index.xml"} {
+	// Add well-known locations (including gzipped variants)
+	for _, suffix := range []string{"/sitemap.xml", "/sitemap.xml.gz", "/sitemap_index.xml", "/sitemap_index.xml.gz"} {
 		u := fmt.Sprintf("https://%s%s", domain, suffix)
 		if !seen[u] {
 			seen[u] = true
@@ -108,6 +109,7 @@ func fetchSitemap(ctx context.Context, client *http.Client, sitemapURL string) (
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/xml, text/xml, */*")
+	req.Header.Set("Accept-Encoding", "gzip")
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -116,7 +118,17 @@ func fetchSitemap(ctx context.Context, client *http.Client, sitemapURL string) (
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("status %d", resp.StatusCode)
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, 50*1024*1024)) // 50MB max
+
+	var reader io.Reader = resp.Body
+	if strings.HasSuffix(sitemapURL, ".gz") || resp.Header.Get("Content-Encoding") == "gzip" {
+		gr, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("gzip: %w", err)
+		}
+		defer gr.Close()
+		reader = gr
+	}
+	return io.ReadAll(io.LimitReader(reader, 50*1024*1024)) // 50MB max
 }
 
 func isSitemapIndexXML(body []byte) bool {

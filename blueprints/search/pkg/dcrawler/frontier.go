@@ -136,6 +136,17 @@ func (f *Frontier) PushDirect(item CrawlItem) bool {
 	}
 }
 
+// trackingParams are URL parameters that serve only for analytics tracking.
+// Stripping them prevents duplicate crawl entries for the same page.
+var trackingParams = map[string]bool{
+	"utm_source": true, "utm_medium": true, "utm_campaign": true,
+	"utm_term": true, "utm_content": true, "utm_id": true,
+	"fbclid": true, "gclid": true, "gclsrc": true,
+	"msclkid": true, "twclid": true, "igshid": true,
+	"mc_cid": true, "mc_eid": true,
+	"_ga": true, "_gl": true, "_hsenc": true, "_hsmi": true,
+}
+
 func (f *Frontier) isSameDomain(u *url.URL) bool {
 	host := strings.ToLower(u.Hostname())
 	host = strings.TrimPrefix(host, "www.")
@@ -184,12 +195,14 @@ func NormalizeURL(rawURL string) string {
 	if u.Path == "" {
 		u.Path = "/"
 	}
-	// Sort query parameters
+	// Sort query parameters and strip tracking params
 	if u.RawQuery != "" {
 		params := u.Query()
 		keys := make([]string, 0, len(params))
 		for k := range params {
-			keys = append(keys, k)
+			if !trackingParams[strings.ToLower(k)] {
+				keys = append(keys, k)
+			}
 		}
 		sort.Strings(keys)
 		var b strings.Builder

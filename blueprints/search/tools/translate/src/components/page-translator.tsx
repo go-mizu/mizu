@@ -1,12 +1,13 @@
 import { useState, useCallback } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { ArrowRight, Copy, Check, ExternalLink, AlertCircle, Globe } from "lucide-react"
+import { ArrowRight, Copy, Check, ExternalLink, AlertCircle, Globe, Monitor } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { LanguageSelect } from "@/components/language-select"
 import { fetchLanguages } from "@/api/client"
 
 const LS_KEY = "page-translator-lang"
+const LS_RENDER_KEY = "page-translator-render"
 
 function getStoredLang(): string {
   try {
@@ -24,13 +25,31 @@ function storeLang(code: string) {
   }
 }
 
+function getStoredRender(): boolean {
+  try {
+    return localStorage.getItem(LS_RENDER_KEY) === "1"
+  } catch {
+    return false
+  }
+}
+
+function storeRender(v: boolean) {
+  try {
+    localStorage.setItem(LS_RENDER_KEY, v ? "1" : "0")
+  } catch {
+    // ignore
+  }
+}
+
 export function PageTranslator() {
   const [url, setUrl] = useState("")
   const [targetLang, setTargetLang] = useState(getStoredLang)
+  const [renderJS, setRenderJS] = useState(getStoredRender)
   const [translatedUrl, setTranslatedUrl] = useState<string | null>(null)
   const [iframeLoading, setIframeLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [usedBrowser, setUsedBrowser] = useState(false)
 
   const { data: languages = [] } = useQuery({
     queryKey: ["languages"],
@@ -45,10 +64,19 @@ export function PageTranslator() {
     storeLang(code)
   }, [])
 
+  const handleRenderToggle = useCallback(() => {
+    setRenderJS((prev) => {
+      const next = !prev
+      storeRender(next)
+      return next
+    })
+  }, [])
+
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault()
       setError(null)
+      setUsedBrowser(false)
 
       const trimmed = url.trim()
       if (!trimmed) {
@@ -67,11 +95,14 @@ export function PageTranslator() {
         return
       }
 
-      const path = `/page/${targetLang}?url=${encodeURIComponent(trimmed)}`
+      let path = `/page/${targetLang}?url=${encodeURIComponent(trimmed)}`
+      if (renderJS) {
+        path += "&render=1"
+      }
       setTranslatedUrl(path)
       setIframeLoading(true)
     },
-    [url, targetLang]
+    [url, targetLang, renderJS]
   )
 
   const displayUrl = translatedUrl
@@ -87,6 +118,20 @@ export function PageTranslator() {
   const handleOpenNewTab = useCallback(() => {
     if (!translatedUrl) return
     window.open(translatedUrl, "_blank")
+  }, [translatedUrl])
+
+  const handleIframeLoad = useCallback(() => {
+    setIframeLoading(false)
+    // Check response header for render method
+    if (translatedUrl) {
+      fetch(translatedUrl, { method: "HEAD" })
+        .then((r) => {
+          if (r.headers.get("X-Translate-Render") === "browser") {
+            setUsedBrowser(true)
+          }
+        })
+        .catch(() => {})
+    }
   }, [translatedUrl])
 
   return (
@@ -118,6 +163,32 @@ export function PageTranslator() {
             <ArrowRight className="h-4 w-4" />
           </Button>
         </div>
+
+        {/* Render JS toggle */}
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={renderJS}
+            onClick={handleRenderToggle}
+            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border-2 border-transparent transition-colors ${
+              renderJS ? "bg-primary" : "bg-muted"
+            }`}
+          >
+            <span
+              className={`pointer-events-none block h-3.5 w-3.5 rounded-full bg-background shadow-sm transition-transform ${
+                renderJS ? "translate-x-4" : "translate-x-0.5"
+              }`}
+            />
+          </button>
+          <Monitor className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">
+            Render JavaScript
+          </span>
+          <span className="text-xs text-muted-foreground/60">
+            (for Cloudflare-protected or SPA sites)
+          </span>
+        </label>
       </form>
 
       {/* Error */}
@@ -133,7 +204,12 @@ export function PageTranslator() {
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 rounded-lg border border-border bg-secondary/30 px-4 py-3">
           <span className="text-sm text-muted-foreground shrink-0">Translated URL:</span>
           <code className="flex-1 text-sm break-all">{displayUrl}</code>
-          <div className="flex gap-1">
+          <div className="flex gap-1 items-center">
+            {usedBrowser && (
+              <span className="text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-2 py-0.5 rounded-full">
+                Browser rendered
+              </span>
+            )}
             <Button variant="outline" size="sm" onClick={handleOpenNewTab}>
               <ExternalLink className="h-3.5 w-3.5 mr-1" />
               Open
@@ -162,7 +238,7 @@ export function PageTranslator() {
             <div className="absolute inset-0 z-10 bg-background/80 p-6 space-y-4">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Globe className="h-4 w-4 animate-spin" />
-                Translating page...
+                {renderJS ? "Rendering & translating page (may take 10-20s)..." : "Translating page..."}
               </div>
               <Skeleton className="h-6 w-2/3" />
               <Skeleton className="h-4 w-full" />
@@ -178,7 +254,7 @@ export function PageTranslator() {
             title="Translated page"
             className="w-full border-0"
             style={{ minHeight: "500px", height: "70vh" }}
-            onLoad={() => setIframeLoading(false)}
+            onLoad={handleIframeLoad}
           />
         </div>
       )}

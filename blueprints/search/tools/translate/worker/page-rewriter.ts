@@ -1,54 +1,7 @@
-const TRANSLATE_BASE = 'https://translate.googleapis.com/translate_a/single'
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function translateChunk(text: string, sl: string, tl: string): Promise<{ text: string; ok: boolean; src?: string }> {
-  const trimmed = text.trim()
-  if (!trimmed) return { text, ok: true }
-  if (/^[\s\d\p{P}\p{S}]+$/u.test(trimmed)) return { text, ok: true }
-
-  const params = new URLSearchParams()
-  params.set('client', 'gtx')
-  params.set('sl', sl)
-  params.set('tl', tl)
-  params.set('dj', '1')
-  params.append('dt', 't')
-
-  try {
-    let resp: Response
-    if (text.length <= 2000) {
-      params.set('q', text)
-      resp = await fetch(`${TRANSLATE_BASE}?${params.toString()}`, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-      })
-    } else {
-      const body = new URLSearchParams()
-      body.set('q', text)
-      resp = await fetch(`${TRANSLATE_BASE}?${params.toString()}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        },
-        body: body.toString(),
-      })
-    }
-
-    if (!resp.ok) return { text, ok: false }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data: any = await resp.json()
-    if (!data.sentences) return { text, ok: false }
-
-    const result = data.sentences
-      .filter((s: { trans?: string }) => s.trans != null)
-      .map((s: { trans: string }) => s.trans)
-      .join('')
-
-    return result ? { text: result, ok: true, src: data.src } : { text, ok: false }
-  } catch {
-    return { text, ok: false }
-  }
-}
+const TRANSLATE_APIS = [
+  { name: 'google', base: 'https://translate.googleapis.com/translate_a/single', maxChars: 4000 },
+  { name: 'mymemory', base: 'https://api.mymemory.translated.net/get', maxChars: 450 },
+] as const
 
 const SKIP_SELECTORS = [
   'script', 'style', 'code', 'pre', 'kbd', 'samp', 'var',
@@ -62,6 +15,264 @@ const TRANSLATABLE_SELECTORS = [
 ] as const
 
 const SKIP_HREF_PREFIXES = ['#', 'javascript:', 'mailto:', 'tel:', 'data:']
+
+/* ── Batch Translation ── */
+
+// Separator used to join multiple texts into a single API call.
+// Google Translate preserves this delimiter across most language pairs.
+const BATCH_SEP = '\n\u2016\u2016\u2016\n'
+
+/**
+ * Extract all translatable text from HTML using HTMLRewriter (first pass).
+ * Returns texts in document order — same order as makePageRewriter will encounter them.
+ */
+export async function extractTexts(html: string): Promise<string[]> {
+  const texts: string[] = []
+  let skipDepth = 0
+  const textBuffer: string[] = []
+
+  let rewriter = new HTMLRewriter()
+
+  // Skip scripts entirely via remove (same as second pass)
+  rewriter = rewriter.on('script', { element(el) { el.remove() } })
+
+  for (const tag of SKIP_SELECTORS) {
+    if (tag === 'script') continue
+    rewriter = rewriter.on(tag, {
+      element(el) {
+        skipDepth++
+        el.onEndTag(() => { skipDepth-- })
+      },
+    })
+  }
+
+  for (const tag of TRANSLATABLE_SELECTORS) {
+    rewriter = rewriter.on(tag, {
+      element(el) {
+        if (skipDepth > 0) return
+        if (el.getAttribute('translate') === 'no') {
+          skipDepth++
+          el.onEndTag(() => { skipDepth-- })
+          return
+        }
+        const cls = el.getAttribute('class') || ''
+        if (cls.split(/\s+/).includes('notranslate')) {
+          skipDepth++
+          el.onEndTag(() => { skipDepth-- })
+          return
+        }
+      },
+      text(text) {
+        if (skipDepth > 0) return
+        textBuffer.push(text.text)
+        if (text.lastInTextNode) {
+          const full = textBuffer.splice(0).join('')
+          if (full.trim() && !/^[\s\d\p{P}\p{S}]+$/u.test(full.trim())) {
+            texts.push(full)
+          }
+        }
+      },
+    })
+  }
+
+  const resp = rewriter.transform(new Response(html, {
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
+  }))
+  await resp.text() // consume stream
+  return texts
+}
+
+/**
+ * Translate all texts in batches using Google Translate with MyMemory fallback.
+ * Groups texts into batches by char limit, joins with separator, translates as one API call.
+ * Uses only 3-20 subrequests instead of 179 (one per text).
+ *
+ * Fallback chain: Google (4000 char batches) → MyMemory (450 char batches)
+ */
+export async function batchTranslate(
+  texts: string[],
+  sl: string,
+  tl: string,
+): Promise<{ translations: Map<string, string>; detectedSl: string }> {
+  const translations = new Map<string, string>()
+  let detectedSl = ''
+
+  if (texts.length === 0) return { translations, detectedSl }
+
+  // Try Google first (large batches, fewer subrequests)
+  const untranslated = await translateWithGoogle(texts, sl, tl, translations, detectedSl)
+  if (untranslated.sl) detectedSl = untranslated.sl
+
+  // If Google failed (429), fall back to MyMemory with smaller batches
+  if (untranslated.texts.length > 0) {
+    console.log(`[batch] FALLBACK mymemory remaining=${untranslated.texts.length}`)
+    const mmResult = await translateWithMyMemory(untranslated.texts, sl, tl, translations)
+    if (mmResult.sl && !detectedSl) detectedSl = mmResult.sl
+  }
+
+  console.log(`[batch] DONE translated=${translations.size}/${texts.length} sl=${detectedSl}`)
+  return { translations, detectedSl }
+}
+
+async function translateWithGoogle(
+  texts: string[],
+  sl: string,
+  tl: string,
+  translations: Map<string, string>,
+  detectedSl: string,
+): Promise<{ texts: string[]; sl: string }> {
+  const api = TRANSLATE_APIS[0] // google
+  const batches = makeBatches(texts, api.maxChars)
+  const failed: string[] = []
+
+  console.log(`[batch] google ${texts.length} texts → ${batches.length} batches`)
+
+  for (let i = 0; i < batches.length; i++) {
+    const batch = batches[i]
+    const joined = batch.join(BATCH_SEP)
+
+    try {
+      const params = new URLSearchParams()
+      params.set('client', 'gtx')
+      params.set('sl', sl)
+      params.set('tl', tl)
+      params.set('dj', '1')
+      params.append('dt', 't')
+
+      let resp: Response
+      if (joined.length <= 2000) {
+        params.set('q', joined)
+        resp = await fetch(`${api.base}?${params.toString()}`, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        })
+      } else {
+        const body = new URLSearchParams()
+        body.set('q', joined)
+        resp = await fetch(`${api.base}?${params.toString()}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          },
+          body: body.toString(),
+        })
+      }
+
+      if (!resp.ok) {
+        console.log(`[batch] google FAIL batch=${i} status=${resp.status} texts=${batch.length}`)
+        failed.push(...batch)
+        continue
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data: any = await resp.json()
+      if (!data.sentences) { failed.push(...batch); continue }
+      if (data.src && !detectedSl) detectedSl = data.src
+
+      const translatedJoined = data.sentences
+        .filter((s: { trans?: string }) => s.trans != null)
+        .map((s: { trans: string }) => s.trans)
+        .join('')
+
+      const sepPattern = /\s*\u2016\u2016\u2016\s*/
+      const parts = translatedJoined.split(sepPattern)
+      const matched = Math.min(parts.length, batch.length)
+
+      for (let j = 0; j < matched; j++) {
+        if (parts[j] && parts[j].trim()) translations.set(batch[j], parts[j])
+        else failed.push(batch[j])
+      }
+      // Any batch items beyond matched count
+      for (let j = matched; j < batch.length; j++) failed.push(batch[j])
+
+      console.log(`[batch] google OK batch=${i} texts=${batch.length} matched=${matched}`)
+    } catch (e) {
+      console.log(`[batch] google ERROR batch=${i} err=${e instanceof Error ? e.message : e}`)
+      failed.push(...batch)
+    }
+  }
+
+  return { texts: failed, sl: detectedSl }
+}
+
+async function translateWithMyMemory(
+  texts: string[],
+  sl: string,
+  tl: string,
+  translations: Map<string, string>,
+): Promise<{ sl: string }> {
+  const api = TRANSLATE_APIS[1] // mymemory
+  // MyMemory uses langpair format (e.g., "en|zh")
+  const langSl = sl === 'auto' ? 'en' : sl
+  const batches = makeBatches(texts, api.maxChars)
+  let detectedSl = ''
+
+  console.log(`[batch] mymemory ${texts.length} texts → ${batches.length} batches`)
+
+  for (let i = 0; i < batches.length; i++) {
+    const batch = batches[i]
+    const joined = batch.join(BATCH_SEP)
+
+    try {
+      const params = new URLSearchParams()
+      params.set('q', joined)
+      params.set('langpair', `${langSl}|${tl}`)
+
+      const resp = await fetch(`${api.base}?${params.toString()}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      })
+
+      if (!resp.ok) {
+        console.log(`[batch] mymemory FAIL batch=${i} status=${resp.status}`)
+        continue
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data: any = await resp.json()
+      if (!data.responseData?.translatedText) continue
+
+      if (data.responseData.detectedLanguage && !detectedSl) {
+        detectedSl = data.responseData.detectedLanguage
+      }
+
+      const translatedJoined = data.responseData.translatedText as string
+      const sepPattern = /\s*\u2016\u2016\u2016\s*/
+      const parts = translatedJoined.split(sepPattern)
+      const matched = Math.min(parts.length, batch.length)
+
+      for (let j = 0; j < matched; j++) {
+        if (parts[j] && parts[j].trim()) translations.set(batch[j], parts[j])
+      }
+
+      console.log(`[batch] mymemory OK batch=${i} texts=${batch.length} matched=${matched}`)
+    } catch (e) {
+      console.log(`[batch] mymemory ERROR batch=${i} err=${e instanceof Error ? e.message : e}`)
+    }
+  }
+
+  return { sl: detectedSl }
+}
+
+function makeBatches(texts: string[], maxChars: number): string[][] {
+  const batches: string[][] = []
+  let current: string[] = []
+  let len = 0
+
+  for (const text of texts) {
+    const addLen = text.length + BATCH_SEP.length
+    if (len + addLen > maxChars && current.length > 0) {
+      batches.push(current)
+      current = []
+      len = 0
+    }
+    current.push(text)
+    len += addLen
+  }
+  if (current.length > 0) batches.push(current)
+  return batches
+}
+
+/* ── URL rewriting ── */
 
 function rewriteUrl(href: string, originUrl: URL, proxyBase: string, tl: string): string {
   if (SKIP_HREF_PREFIXES.some((p) => href.startsWith(p))) return href
@@ -144,7 +355,7 @@ function buildLearnerCSS(): string {
 
 /* ── Learner Script — stays in cached HTML ── */
 
-function buildLearnerScript(proxyBase: string, tl: string, defaultSl: string): string {
+function buildLearnerScript(proxyBase: string, tl: string, defaultSl: string, nonce: string): string {
   // Variables injected via JSON.stringify for safe escaping
   const cfgTL = JSON.stringify(tl)
   const cfgBase = JSON.stringify(proxyBase)
@@ -153,7 +364,7 @@ function buildLearnerScript(proxyBase: string, tl: string, defaultSl: string): s
   // SVG speaker icon (no escaping issues — no </ sequences)
   const spkSVG = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0014 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/><\/svg>'
 
-  return `<script id="tl-learner">(function(){
+  return `<script id="tl-learner" nonce="${nonce}">(function(){
 var TL=${cfgTL},BASE=${cfgBase},SL=${cfgSL};
 var GT='https://translate.googleapis.com/translate_a/single';
 var SPK='${spkSVG}';
@@ -373,12 +584,12 @@ document.getElementById('tl-x').onclick=function(e){e.stopPropagation();closePop
 
 /* ── Translate fallback script — removed after execution, NOT in cached HTML ── */
 
-function buildTranslateScript(originUrl: string, proxyBase: string, tl: string): string {
+function buildTranslateScript(originUrl: string, proxyBase: string, tl: string, nonce: string): string {
   const cfgTL = JSON.stringify(tl)
   const cfgUrl = JSON.stringify(originUrl)
   const cfgBase = JSON.stringify(proxyBase)
 
-  return `<script id="translate-cs">(async function(){
+  return `<script id="translate-cs" nonce="${nonce}">(async function(){
 var tl=${cfgTL},pageUrl=${cfgUrl},base=${cfgBase};
 var GT='https://translate.googleapis.com/translate_a/single';
 var els=document.querySelectorAll('[data-tp]');
@@ -405,18 +616,24 @@ try{
 })()</script>`
 }
 
-/* ── Main HTMLRewriter factory ── */
+/* ── Main HTMLRewriter factory (second pass — applies pre-translated text) ── */
 
 export function makePageRewriter(
   originUrl: URL,
   proxyBase: string,
   tl: string,
   sl: string,
+  nonce = 'tl',
+  translations?: Map<string, string>,
+  detectedSl?: string,
 ): HTMLRewriter {
   const textBuffer: string[] = []
   let skipDepth = 0
-  let hasFailed = false
-  let detectedSl = ''
+  let scriptCount = 0
+  let linkCount = 0
+  let translateCount = 0
+  let missCount = 0
+  const resolvedSl = detectedSl || ''
 
   let rewriter = new HTMLRewriter()
     .on('html', {
@@ -424,9 +641,18 @@ export function makePageRewriter(
     })
     .on('head', {
       element(el) {
+        // <base> must be in <head> for relative URL resolution (CSS, images, fonts)
         el.prepend(`<base href="${originUrl.origin}/">`, { html: true })
-        el.prepend(buildBanner(originUrl, tl, sl), { html: true })
         el.append(buildLearnerCSS(), { html: true })
+        // Force visibility: modern sites (Next.js, etc.) use CSS animations that start
+        // content at opacity:0/visibility:hidden, expecting JS to reveal. We strip JS,
+        // so inject overrides to make content visible.
+        el.append(`<style id="tl-force-visible">
+*:not(.tl-overlay):not(.tl-popup):not(.tl-wtip) {
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+</style>`, { html: true })
       },
     })
     .on('a[href]', {
@@ -443,18 +669,39 @@ export function makePageRewriter(
     })
     .on('body', {
       element(el) {
+        // Banner goes in <body> — <div> in <head> is invalid HTML and breaks parser
+        el.prepend(buildBanner(originUrl, tl, sl === 'auto' && resolvedSl ? resolvedSl : sl), { html: true })
         el.onEndTag((end) => {
+          console.log(`[rewriter] STATS scripts=${scriptCount} links=${linkCount} translated=${translateCount} missed=${missCount} sl=${resolvedSl || 'auto'}`)
+          const finalSl = resolvedSl || 'en'
           // Inject detected source language
-          end.before(`<script>window._tlSL=${JSON.stringify(detectedSl || 'en')}</script>`, { html: true })
+          end.before(`<script nonce="${nonce}">window._tlSL=${JSON.stringify(finalSl)}</script>`, { html: true })
           // Learner script (stays in cached HTML)
-          end.before(buildLearnerScript(proxyBase, tl, detectedSl || 'en'), { html: true })
-          // Translate fallback (removes itself)
-          end.before(buildTranslateScript(originUrl.toString(), proxyBase, tl), { html: true })
+          end.before(buildLearnerScript(proxyBase, tl, finalSl, nonce), { html: true })
+          // Translate fallback (removes itself) — handles any segments the batch missed
+          end.before(buildTranslateScript(originUrl.toString(), proxyBase, tl, nonce), { html: true })
         })
       },
     })
 
+  // Strip all original scripts
+  rewriter = rewriter.on('script', {
+    element(el) {
+      scriptCount++
+      el.remove()
+    },
+  })
+
+  // Strip script preloads
+  rewriter = rewriter.on('link[rel="modulepreload"]', {
+    element(el) { linkCount++; el.remove() },
+  })
+  rewriter = rewriter.on('link[rel="preload"][as="script"]', {
+    element(el) { linkCount++; el.remove() },
+  })
+
   for (const tag of SKIP_SELECTORS) {
+    if (tag === 'script') continue
     rewriter = rewriter.on(tag, {
       element(el) {
         skipDepth++
@@ -478,11 +725,10 @@ export function makePageRewriter(
           el.onEndTag(() => { skipDepth-- })
           return
         }
-        // Mark as translatable block for learner popup
         el.setAttribute('class', cls ? cls + ' tl-block' : 'tl-block')
       },
 
-      async text(text) {
+      text(text) {
         if (skipDepth > 0) return
 
         textBuffer.push(text.text)
@@ -497,18 +743,14 @@ export function makePageRewriter(
 
         const escaped = escapeAttr(fullText)
 
-        // Once rate-limited, skip remaining API calls
-        if (hasFailed) {
-          text.replace(`<span class="tl-seg" data-tp="1" data-orig="${escaped}">${fullText}</span>`, { html: true })
-          return
-        }
-
-        const result = await translateChunk(fullText, sl, tl)
-        if (result.ok) {
-          if (result.src && !detectedSl) detectedSl = result.src
-          text.replace(`<span class="tl-seg" data-orig="${escaped}">${result.text}</span>`, { html: true })
+        // Look up pre-translated text from the batch map
+        const translated = translations?.get(fullText)
+        if (translated) {
+          translateCount++
+          text.replace(`<span class="tl-seg" data-orig="${escaped}">${translated}</span>`, { html: true })
         } else {
-          hasFailed = true
+          // Not in map — mark for client-side fallback script
+          missCount++
           text.replace(`<span class="tl-seg" data-tp="1" data-orig="${escaped}">${fullText}</span>`, { html: true })
         }
       },
