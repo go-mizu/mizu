@@ -2,7 +2,9 @@ package dcrawler
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -40,6 +42,11 @@ func ExtractLinksAndMeta(body []byte, baseURL *url.URL, domain string, extractIm
 	var currentLink Link
 	var currentTitle string // <a title="..."> fallback
 
+	// Script content tracking for __NEXT_DATA__, JSON-LD, inline JS
+	var inScript bool
+	var scriptBuf strings.Builder
+	var scriptType string // "next-data", "json-ld", "inline"
+
 	// <base href> can override URL resolution base
 	effectiveBase := baseURL
 
@@ -63,8 +70,13 @@ func ExtractLinksAndMeta(body []byte, baseURL *url.URL, domain string, extractIm
 			tn, hasAttr := tokenizer.TagName()
 
 			if !hasAttr {
-				if len(tn) == 5 && string(tn) == "title" {
+				switch {
+				case len(tn) == 5 && string(tn) == "title":
 					inTitle = true
+				case len(tn) == 6 && string(tn) == "script":
+					scriptType = "inline"
+					inScript = true
+					scriptBuf.Reset()
 				}
 				continue
 			}
@@ -138,7 +150,7 @@ func ExtractLinksAndMeta(body []byte, baseURL *url.URL, domain string, extractIm
 				switch rel {
 				case "canonical":
 					meta.Canonical = resolveURL(href, effectiveBase)
-				case "next", "prev", "alternate":
+				case "next", "prev", "alternate", "prefetch", "preload", "prerender":
 					resolved := resolveURL(href, effectiveBase)
 					if resolved != "" {
 						meta.Links = append(meta.Links, Link{
@@ -222,6 +234,22 @@ func ExtractLinksAndMeta(body []byte, baseURL *url.URL, domain string, extractIm
 						})
 					}
 				}
+
+			case len(tn) == 6 && string(tn) == "script":
+				sType, sID := extractScriptAttrs(tokenizer)
+				if sID == "__NEXT_DATA__" {
+					scriptType = "next-data"
+					inScript = true
+					scriptBuf.Reset()
+				} else if strings.EqualFold(sType, "application/ld+json") {
+					scriptType = "json-ld"
+					inScript = true
+					scriptBuf.Reset()
+				} else {
+					scriptType = "inline"
+					inScript = true
+					scriptBuf.Reset()
+				}
 			}
 
 		case html.TextToken:
@@ -231,6 +259,9 @@ func ExtractLinksAndMeta(body []byte, baseURL *url.URL, domain string, extractIm
 			}
 			if inAnchor {
 				anchorBuf.Write(text)
+			}
+			if inScript {
+				scriptBuf.Write(text)
 			}
 
 		case html.EndTagToken:
@@ -252,6 +283,26 @@ func ExtractLinksAndMeta(body []byte, baseURL *url.URL, domain string, extractIm
 					currentLink = Link{}
 					currentTitle = ""
 					anchorBuf.Reset()
+				}
+			case len(tn) == 6 && string(tn) == "script":
+				if inScript {
+					content := scriptBuf.String()
+					switch scriptType {
+					case "next-data":
+						for _, link := range extractNextDataLinks(content, effectiveBase, domain) {
+							meta.Links = append(meta.Links, link)
+						}
+					case "json-ld":
+						for _, link := range extractJSONLDLinks(content, effectiveBase, domain) {
+							meta.Links = append(meta.Links, link)
+						}
+					case "inline":
+						for _, link := range extractInlineJSLinks(content, effectiveBase, domain) {
+							meta.Links = append(meta.Links, link)
+						}
+					}
+					inScript = false
+					scriptBuf.Reset()
 				}
 			}
 		}
@@ -452,4 +503,211 @@ func parseMetaRefreshURL(content string) string {
 		}
 	}
 	return u
+}
+
+// extractScriptAttrs extracts type and id from a <script> tag.
+func extractScriptAttrs(z *html.Tokenizer) (sType, sID string) {
+	for {
+		key, val, more := z.TagAttr()
+		switch string(key) {
+		case "type":
+			sType = string(val)
+		case "id":
+			sID = string(val)
+		}
+		if !more {
+			break
+		}
+	}
+	return
+}
+
+// extractNextDataLinks extracts internal URL paths from Next.js __NEXT_DATA__ JSON.
+// The JSON contains route info, page props, and pre-fetched data with internal paths.
+func extractNextDataLinks(content string, base *url.URL, domain string) []Link {
+	var data map[string]any
+	if json.Unmarshal([]byte(content), &data) != nil {
+		return nil
+	}
+	seen := make(map[string]bool)
+	var links []Link
+	extractURLsFromJSON(data, base, domain, seen, &links, 0)
+	return links
+}
+
+// extractJSONLDLinks extracts URLs from JSON-LD structured data.
+func extractJSONLDLinks(content string, base *url.URL, domain string) []Link {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil
+	}
+	seen := make(map[string]bool)
+	var links []Link
+
+	// JSON-LD can be a single object or array
+	if content[0] == '[' {
+		var arr []map[string]any
+		if json.Unmarshal([]byte(content), &arr) == nil {
+			for _, obj := range arr {
+				extractJSONLDURLs(obj, base, domain, seen, &links)
+			}
+		}
+	} else {
+		var obj map[string]any
+		if json.Unmarshal([]byte(content), &obj) == nil {
+			extractJSONLDURLs(obj, base, domain, seen, &links)
+		}
+	}
+	return links
+}
+
+// jsonLDURLFields are JSON-LD fields that contain URLs.
+var jsonLDURLFields = map[string]bool{
+	"url": true, "@id": true, "mainentityofpage": true,
+	"sameas": true, "image": true, "logo": true,
+	"thumbnailurl": true, "contenturl": true,
+}
+
+func extractJSONLDURLs(obj map[string]any, base *url.URL, domain string, seen map[string]bool, links *[]Link) {
+	for k, v := range obj {
+		key := strings.ToLower(k)
+		switch val := v.(type) {
+		case string:
+			if jsonLDURLFields[key] && looksLikeURL(val) {
+				resolved := resolveURL(val, base)
+				if resolved != "" && !seen[resolved] {
+					seen[resolved] = true
+					*links = append(*links, Link{
+						TargetURL:  resolved,
+						Rel:        "json-ld",
+						IsInternal: isInternalURL(resolved, domain),
+					})
+				}
+			}
+		case map[string]any:
+			extractJSONLDURLs(val, base, domain, seen, links)
+		case []any:
+			for _, item := range val {
+				switch inner := item.(type) {
+				case string:
+					if jsonLDURLFields[key] && looksLikeURL(inner) {
+						resolved := resolveURL(inner, base)
+						if resolved != "" && !seen[resolved] {
+							seen[resolved] = true
+							*links = append(*links, Link{
+								TargetURL:  resolved,
+								Rel:        "json-ld",
+								IsInternal: isInternalURL(resolved, domain),
+							})
+						}
+					}
+				case map[string]any:
+					extractJSONLDURLs(inner, base, domain, seen, links)
+				}
+			}
+		}
+	}
+}
+
+// extractURLsFromJSON recursively walks a JSON structure and extracts URL-like strings.
+func extractURLsFromJSON(v any, base *url.URL, domain string, seen map[string]bool, links *[]Link, depth int) {
+	if depth > 10 {
+		return
+	}
+	switch val := v.(type) {
+	case string:
+		if isInternalPath(val) {
+			resolved := resolveURL(val, base)
+			if resolved != "" && !seen[resolved] && isInternalURL(resolved, domain) {
+				seen[resolved] = true
+				*links = append(*links, Link{
+					TargetURL:  resolved,
+					Rel:        "next-data",
+					IsInternal: true,
+				})
+			}
+		}
+	case map[string]any:
+		for _, child := range val {
+			extractURLsFromJSON(child, base, domain, seen, links, depth+1)
+		}
+	case []any:
+		for _, child := range val {
+			extractURLsFromJSON(child, base, domain, seen, links, depth+1)
+		}
+	}
+}
+
+// inlineJSPathRe matches quoted internal paths in JavaScript: "/blog/some-post"
+var inlineJSPathRe = regexp.MustCompile(`["'](/[a-zA-Z][^"'\\]{1,200})["']`)
+
+// extractInlineJSLinks extracts internal URL paths from inline JavaScript.
+func extractInlineJSLinks(content string, base *url.URL, domain string) []Link {
+	// Only process scripts that look like they contain paths
+	if !strings.Contains(content, `"/`) && !strings.Contains(content, `'/`) {
+		return nil
+	}
+	// Skip very large scripts (minified bundles) — they're unlikely to have useful paths
+	if len(content) > 100_000 {
+		return nil
+	}
+
+	seen := make(map[string]bool)
+	var links []Link
+	for _, match := range inlineJSPathRe.FindAllStringSubmatch(content, 200) {
+		path := match[1]
+		if isJunkPath(path) {
+			continue
+		}
+		resolved := resolveURL(path, base)
+		if resolved != "" && !seen[resolved] && isInternalURL(resolved, domain) {
+			seen[resolved] = true
+			links = append(links, Link{
+				TargetURL:  resolved,
+				Rel:        "inline-js",
+				IsInternal: true,
+			})
+		}
+	}
+	return links
+}
+
+// isInternalPath checks if a string looks like an internal URL path.
+func isInternalPath(s string) bool {
+	if len(s) < 2 || len(s) > 300 {
+		return false
+	}
+	if s[0] != '/' || s[1] == '/' { // skip "//cdn.example.com"
+		return false
+	}
+	// Must start with a letter after /
+	c := s[1]
+	if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+		return false
+	}
+	// Skip asset paths
+	if isJunkPath(s) {
+		return false
+	}
+	return true
+}
+
+// isJunkPath returns true for paths that are clearly not crawlable pages.
+func isJunkPath(s string) bool {
+	lower := strings.ToLower(s)
+	for _, ext := range []string{".js", ".css", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2", ".ttf", ".eot", ".map"} {
+		if strings.HasSuffix(lower, ext) {
+			return true
+		}
+	}
+	for _, prefix := range []string{"/_next/", "/_nuxt/", "/static/", "/assets/", "/webpack/", "/chunks/"} {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func looksLikeURL(s string) bool {
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") || strings.HasPrefix(s, "/")
 }

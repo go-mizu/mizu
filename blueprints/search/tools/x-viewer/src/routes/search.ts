@@ -1,10 +1,10 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types'
-import { GraphQLClient } from '../graphql'
 import { Cache } from '../cache'
-import { parseSearchTweets, parseSearchUsers } from '../parse'
 import { renderLayout, renderTweetCard, renderMediaGrid, renderUserCard, renderPagination, renderError } from '../html'
-import { gqlSearchTimeline, SearchTop, SearchPeople, SearchMedia, CACHE_SEARCH } from '../config'
+import { SearchTop, SearchPeople, SearchMedia, CACHE_SEARCH } from '../config'
+import { fetchSearchTweetsWithFallback, fetchSearchUsersWithFallback } from '../fallback-fetch'
+import { isRateLimitedError } from '../rate-limit'
 
 const app = new Hono<HonoEnv>()
 
@@ -41,7 +41,6 @@ async function handleSearch(c: any, query: string, mode: string, cursor: string)
     if (username) return c.redirect(`/${username}`)
   }
 
-  const gql = new GraphQLClient(c.env.X_AUTH_TOKEN, c.env.X_CT0, c.env.X_BEARER_TOKEN)
   const cache = new Cache(c.env.KV)
   const baseQ = encodeURIComponent(query)
 
@@ -61,15 +60,7 @@ async function handleSearch(c: any, query: string, mode: string, cursor: string)
     if (mode === SearchPeople) {
       let usersData = await cache.get<{ users: unknown[]; cursor: string }>(cacheKey)
       if (!usersData) {
-        const vars: Record<string, unknown> = {
-          rawQuery: query,
-          count: 40,
-          querySource: 'typed_query',
-          product: 'People',
-        }
-        if (cursor) vars.cursor = cursor
-        const data = await gql.doGraphQL(gqlSearchTimeline, vars, '')
-        const result = parseSearchUsers(data)
+        const result = await fetchSearchUsersWithFallback(c.env, query, cursor)
         usersData = { users: result.users, cursor: result.cursor }
         await cache.set(cacheKey, usersData, CACHE_SEARCH)
       }
@@ -86,15 +77,7 @@ async function handleSearch(c: any, query: string, mode: string, cursor: string)
     } else {
       let searchData = await cache.get<{ tweets: unknown[]; cursor: string }>(cacheKey)
       if (!searchData) {
-        const vars: Record<string, unknown> = {
-          rawQuery: query,
-          count: 40,
-          querySource: 'typed_query',
-          product: apiProduct,
-        }
-        if (cursor) vars.cursor = cursor
-        const data = await gql.doGraphQL(gqlSearchTimeline, vars, '')
-        const result = parseSearchTweets(data)
+        const result = await fetchSearchTweetsWithFallback(c.env, query, apiProduct, cursor)
         searchData = { tweets: result.tweets, cursor: result.cursor }
         await cache.set(cacheKey, searchData, CACHE_SEARCH)
       }
@@ -115,7 +98,7 @@ async function handleSearch(c: any, query: string, mode: string, cursor: string)
     return c.html(renderLayout(`${query} - Search`, content, { query }))
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    if (msg.includes('rate limited')) return c.html(renderError('Rate Limited', 'Too many requests. Please try again later.'), 429)
+    if (isRateLimitedError(e)) return c.html(renderError('Rate Limited', 'Too many requests. Please try again later.'), 429)
     return c.html(renderError('Error', msg), 500)
   }
 }

@@ -543,6 +543,166 @@ func TestOGImageExtraction(t *testing.T) {
 	}
 }
 
+func TestNextDataExtraction(t *testing.T) {
+	html := `<html><head>
+		<script id="__NEXT_DATA__" type="application/json">{"props":{"pageProps":{"posts":[{"slug":"/blog/openai-o3"},{"slug":"/blog/chatgpt"}]}},"page":"/blog","query":{}}</script>
+	</head><body></body></html>`
+
+	meta := ExtractLinksAndMeta([]byte(html), mustParseURL("https://openai.com/"), "openai.com", false)
+
+	foundPaths := map[string]bool{}
+	for _, l := range meta.Links {
+		if l.Rel == "next-data" {
+			foundPaths[l.TargetURL] = true
+		}
+	}
+	if !foundPaths["https://openai.com/blog/openai-o3"] {
+		t.Error("expected /blog/openai-o3 from __NEXT_DATA__")
+	}
+	if !foundPaths["https://openai.com/blog/chatgpt"] {
+		t.Error("expected /blog/chatgpt from __NEXT_DATA__")
+	}
+	if !foundPaths["https://openai.com/blog"] {
+		t.Error("expected /blog from __NEXT_DATA__")
+	}
+}
+
+func TestJSONLDExtraction(t *testing.T) {
+	html := `<html><head>
+		<script type="application/ld+json">{"@type":"Article","url":"https://openai.com/blog/post","mainEntityOfPage":"https://openai.com/blog","sameAs":["https://twitter.com/openai"]}</script>
+	</head><body></body></html>`
+
+	meta := ExtractLinksAndMeta([]byte(html), mustParseURL("https://openai.com/"), "openai.com", false)
+
+	foundURLs := map[string]bool{}
+	for _, l := range meta.Links {
+		if l.Rel == "json-ld" {
+			foundURLs[l.TargetURL] = true
+		}
+	}
+	if !foundURLs["https://openai.com/blog/post"] {
+		t.Error("expected blog/post from JSON-LD url field")
+	}
+	if !foundURLs["https://openai.com/blog"] {
+		t.Error("expected blog from JSON-LD mainEntityOfPage field")
+	}
+	if !foundURLs["https://twitter.com/openai"] {
+		t.Error("expected twitter from JSON-LD sameAs field")
+	}
+}
+
+func TestInlineJSExtraction(t *testing.T) {
+	html := `<html><body>
+		<script>
+			var routes = ["/blog", "/research/papers", "/api"];
+			window.location = "/about";
+		</script>
+	</body></html>`
+
+	meta := ExtractLinksAndMeta([]byte(html), mustParseURL("https://openai.com/"), "openai.com", false)
+
+	foundPaths := map[string]bool{}
+	for _, l := range meta.Links {
+		if l.Rel == "inline-js" {
+			foundPaths[l.TargetURL] = true
+		}
+	}
+	if !foundPaths["https://openai.com/blog"] {
+		t.Error("expected /blog from inline JS")
+	}
+	if !foundPaths["https://openai.com/research/papers"] {
+		t.Error("expected /research/papers from inline JS")
+	}
+	if !foundPaths["https://openai.com/api"] {
+		t.Error("expected /api from inline JS")
+	}
+	if !foundPaths["https://openai.com/about"] {
+		t.Error("expected /about from inline JS")
+	}
+}
+
+func TestInlineJSSkipsAssets(t *testing.T) {
+	html := `<html><body>
+		<script>
+			var assets = ["/_next/static/chunk.js", "/assets/logo.png", "/static/style.css"];
+			var page = "/real-page";
+		</script>
+	</body></html>`
+
+	meta := ExtractLinksAndMeta([]byte(html), mustParseURL("https://example.com/"), "example.com", false)
+
+	for _, l := range meta.Links {
+		if l.Rel == "inline-js" {
+			for _, junk := range []string{"_next", "assets", "static"} {
+				if contains(l.TargetURL, junk) {
+					t.Errorf("should skip asset path: %s", l.TargetURL)
+				}
+			}
+		}
+	}
+}
+
+func contains(s, sub string) bool {
+	return len(s) > 0 && len(sub) > 0 && len(s) >= len(sub) && (s == sub || len(s) > len(sub) && containsStr(s, sub))
+}
+
+func containsStr(s, sub string) bool {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
+
+func TestPrefetchPreloadLinks(t *testing.T) {
+	html := `<html><head>
+		<link rel="prefetch" href="/next-page">
+		<link rel="preload" href="/critical-resource" as="document">
+		<link rel="prerender" href="/upcoming-page">
+		<link rel="stylesheet" href="/style.css">
+	</head><body></body></html>`
+
+	meta := ExtractLinksAndMeta([]byte(html), mustParseURL("https://example.com/"), "example.com", false)
+
+	rels := map[string]bool{}
+	for _, l := range meta.Links {
+		rels[l.Rel] = true
+	}
+	if !rels["prefetch"] {
+		t.Error("expected prefetch link")
+	}
+	if !rels["preload"] {
+		t.Error("expected preload link")
+	}
+	if !rels["prerender"] {
+		t.Error("expected prerender link")
+	}
+	// stylesheet should NOT be extracted
+	if rels["stylesheet"] {
+		t.Error("stylesheet should not be extracted")
+	}
+}
+
+func TestTrackingParamStripping(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"https://example.com/page?utm_source=twitter&utm_medium=social", "https://example.com/page"},
+		{"https://example.com/page?q=search&utm_source=google", "https://example.com/page?q=search"},
+		{"https://example.com/page?fbclid=abc123", "https://example.com/page"},
+		{"https://example.com/page?key=val", "https://example.com/page?key=val"},
+		{"https://example.com/page", "https://example.com/page"},
+	}
+	for _, tt := range tests {
+		got := NormalizeURL(tt.input)
+		if got != tt.want {
+			t.Errorf("NormalizeURL(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
 func TestParseSrcset(t *testing.T) {
 	tests := []struct {
 		input string

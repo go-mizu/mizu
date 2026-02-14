@@ -1,0 +1,20 @@
+name = "translate"
+main = "worker/index.ts"
+compatibility_date = "2026-02-09"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = true
+
+[[kv_namespaces]]
+binding = "TRANSLATE_CACHE"
+id = "3ad770f50e95400d94b5bddf6fd5ab11"
+
+[browser]
+binding = "BROWSER"
+
+[vars]
+ENVIRONMENT = "production"

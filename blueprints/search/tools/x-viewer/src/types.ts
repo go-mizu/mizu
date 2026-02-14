@@ -3,6 +3,7 @@ export interface Env {
   X_AUTH_TOKEN: string
   X_CT0: string
   X_BEARER_TOKEN: string
+  NITTER_INSTANCES?: string
   ENVIRONMENT: string
 }
 
