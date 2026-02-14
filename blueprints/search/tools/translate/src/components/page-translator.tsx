@@ -67,12 +67,14 @@ export function PageTranslator() {
         return
       }
 
-      const path = `/page/${targetLang}/${trimmed}`
+      const path = `/page/${targetLang}?url=${encodeURIComponent(trimmed)}`
       setTranslatedUrl(path)
       setIframeLoading(true)
     },
     [url, targetLang]
   )
+
+  const displayUrl = translatedUrl
 
   const handleCopy = useCallback(async () => {
     if (!translatedUrl) return
@@ -130,7 +132,7 @@ export function PageTranslator() {
       {translatedUrl && (
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 rounded-lg border border-border bg-secondary/30 px-4 py-3">
           <span className="text-sm text-muted-foreground shrink-0">Translated URL:</span>
-          <code className="flex-1 text-sm break-all">{translatedUrl}</code>
+          <code className="flex-1 text-sm break-all">{displayUrl}</code>
           <div className="flex gap-1">
             <Button variant="outline" size="sm" onClick={handleOpenNewTab}>
               <ExternalLink className="h-3.5 w-3.5 mr-1" />

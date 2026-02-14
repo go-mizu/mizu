@@ -4,28 +4,13 @@ import { makePageRewriter } from '../page-rewriter'
 
 const route = new Hono<HonoEnv>()
 
-// GET /page/:tl/*  — fetch, translate, and proxy an HTML page
-route.get('/page/:tl{[a-zA-Z]{2,3}(-[a-zA-Z]{2})?}/*', async (c) => {
+// GET /page/:tl?url=...  — fetch, translate, and proxy an HTML page
+route.get('/page/:tl{[a-zA-Z]{2,3}(-[a-zA-Z]{2})?}', async (c) => {
   const tl = c.req.param('tl')
-
-  // Extract the target URL from the path after /page/<tl>/
-  // Browsers may encode ":" as "%3A" and collapse "//" to "/" in the path,
-  // so we decode percent-encoding and fix the scheme separator.
-  const reqUrl = new URL(c.req.url)
-  const prefix = `/page/${tl}/`
-  const prefixIdx = reqUrl.pathname.indexOf(prefix)
-  if (prefixIdx === -1) {
-    return c.json({ error: 'Invalid URL. Use /page/<lang>/https://example.com' }, 400)
-  }
-
-  let targetUrl = decodeURIComponent(reqUrl.pathname.substring(prefixIdx + prefix.length))
-  // Fix single-slash after scheme: "https:/example.com" → "https://example.com"
-  targetUrl = targetUrl.replace(/^(https?):\/(?!\/)/, '$1://')
-  // Append query string
-  targetUrl += reqUrl.search
+  const targetUrl = c.req.query('url')
 
   if (!targetUrl || !targetUrl.startsWith('http')) {
-    return c.json({ error: 'Invalid URL. Use /page/<lang>/https://example.com' }, 400)
+    return c.json({ error: 'Invalid URL. Use /page/<lang>?url=https://example.com' }, 400)
   }
 
   let originUrl: URL
@@ -66,7 +51,16 @@ route.get('/page/:tl{[a-zA-Z]{2,3}(-[a-zA-Z]{2})?}/*', async (c) => {
   const proxyBase = new URL(c.req.url).origin
   const rewriter = makePageRewriter(originUrl, proxyBase, tl, 'auto')
 
-  return rewriter.transform(response)
+  const translated = rewriter.transform(response)
+  // Return with clean headers — strip origin's cache/security headers
+  return new Response(translated.body, {
+    status: translated.status,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'public, max-age=300',
+      'X-Robots-Tag': 'noindex',
+    },
+  })
 })
 
 export default route

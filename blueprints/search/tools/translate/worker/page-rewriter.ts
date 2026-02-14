@@ -93,7 +93,7 @@ function rewriteUrl(href: string, originUrl: URL, proxyBase: string, tl: string)
     }
   }
 
-  return `${proxyBase}/page/${tl}/${absolute}`
+  return `${proxyBase}/page/${tl}?url=${encodeURIComponent(absolute)}`
 }
 
 /**
