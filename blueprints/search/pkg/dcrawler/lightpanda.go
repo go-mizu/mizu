@@ -31,6 +31,7 @@ type lightpandaPool struct {
 	mu        sync.Mutex
 	processes []*lightpandaProcess
 	config    Config
+	proxy     *stealthProxy
 }
 
 func newLightpandaPool(cfg Config) (*lightpandaPool, error) {
@@ -39,7 +40,13 @@ func newLightpandaPool(cfg Config) (*lightpandaPool, error) {
 		workers = 8
 	}
 
-	pool := &lightpandaPool{config: cfg}
+	// Start stealth proxy for Chrome header emulation + polyfill injection
+	proxy, err := newStealthProxy()
+	if err != nil {
+		return nil, fmt.Errorf("stealth proxy: %w", err)
+	}
+
+	pool := &lightpandaPool{config: cfg, proxy: proxy}
 
 	// Launch one process per worker
 	for i := range workers {
@@ -145,10 +152,14 @@ func (lp *lightpandaPool) close() {
 		}
 		if proc.cmd != nil && proc.cmd.Process != nil {
 			proc.cmd.Process.Kill()
-			proc.cmd.Wait()
+			cmd := proc.cmd
+			go cmd.Wait()
 		}
 	}
 	lp.processes = nil
+	if lp.proxy != nil {
+		lp.proxy.close()
+	}
 }
 
 // restart kills and relaunches a single Lightpanda process.
@@ -224,7 +235,6 @@ func isLightpandaDead(err error) bool {
 // lightpandaWorker fetches pages using Lightpanda browser.
 // Each worker owns a dedicated Lightpanda process (1:1 mapping).
 func (c *Crawler) lightpandaWorker(ctx context.Context, lp *lightpandaPool, workerID int) {
-	consecutiveErrors := 0
 	for {
 		select {
 		case <-ctx.Done():
@@ -241,17 +251,13 @@ func (c *Crawler) lightpandaWorker(ctx context.Context, lp *lightpandaPool, work
 			}
 			dead := c.lightpandaFetchAndProcess(ctx, lp, item, workerID)
 			if dead {
-				consecutiveErrors++
-				if consecutiveErrors >= 3 {
-					c.stats.SetRodPhase(workerID, "restart")
-					if err := lp.restart(workerID); err == nil {
-						c.stats.rodRestarts.Add(1)
-					}
-					consecutiveErrors = 0
-					time.Sleep(time.Second)
+				// Restart immediately on process death — don't wait for
+				// 3 consecutive errors, as each wasted attempt loses a page.
+				c.stats.SetRodPhase(workerID, "restart")
+				if err := lp.restart(workerID); err == nil {
+					c.stats.rodRestarts.Add(1)
 				}
-			} else {
-				consecutiveErrors = 0
+				time.Sleep(500 * time.Millisecond)
 			}
 		}
 	}
@@ -313,11 +319,16 @@ func (c *Crawler) lightpandaFetchAndProcess(ctx context.Context, lp *lightpandaP
 		}
 	}()
 
-	navRes, navErr := proto.PageNavigate{URL: item.URL}.Call(p)
+	// Route through stealth proxy for Chrome header emulation + polyfill injection
+	navigateURL := item.URL
+	if lp.proxy != nil {
+		navigateURL = lp.proxy.rewriteURL(item.URL)
+	}
+
+	navRes, navErr := proto.PageNavigate{URL: navigateURL}.Call(p)
 	if navErr != nil {
 		if isLightpandaDead(navErr) {
 			processDead = true
-			return
 		}
 		if ctx.Err() != nil {
 			return
@@ -376,6 +387,10 @@ func (c *Crawler) lightpandaFetchAndProcess(ctx context.Context, lp *lightpandaP
 	if pageInfo, err := ep.Info(); err == nil && pageInfo != nil {
 		pageTitle = pageInfo.Title
 		pageURL = pageInfo.URL
+		// Extract real URL from proxy URL
+		if lp.proxy != nil && pageURL != "" {
+			pageURL = lp.proxy.extractRealURL(pageURL)
+		}
 	}
 
 	htmlContent, err := ep.HTML()

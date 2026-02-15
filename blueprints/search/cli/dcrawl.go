@@ -166,7 +166,7 @@ func runCrawlDomain(cmd *cobra.Command, cfg dcrawler.Config, downloadImages bool
 		if lpW <= 0 {
 			lpW = 8
 		}
-		fmt.Println(infoStyle.Render(fmt.Sprintf("  Mode:     lightpanda (%d processes)", lpW)))
+		fmt.Println(infoStyle.Render(fmt.Sprintf("  Mode:     lightpanda (%d processes, stealth proxy)", lpW)))
 	} else if cfg.UseRod {
 		rodW := cfg.RodWorkers
 		if rodW <= 0 {
