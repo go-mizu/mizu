@@ -54,6 +54,8 @@ Examples:
 	cmd.AddCommand(newPerplexityAccounts())
 	cmd.AddCommand(newPerplexityErrors())
 	cmd.AddCommand(newPerplexityInfo())
+	cmd.AddCommand(newPerplexityThread())
+	cmd.AddCommand(newPerplexityThreads())
 
 	return cmd
 }
@@ -229,7 +231,11 @@ No account required. Available models:
   sonar-pro
   sonar
   sonar-reasoning-pro
-  sonar-reasoning`,
+  sonar-reasoning
+
+NOTE: Labs uses WebSocket which may be blocked by Cloudflare.
+If it fails, use 'search perplexity search' (SSE, always works)
+or 'search perplexity api' (official API, requires key).`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			query := strings.Join(args, " ")
@@ -273,6 +279,10 @@ No account required. Available models:
 						ErrorType: classifyError(err),
 						ErrorMsg: err.Error(),
 					})
+				}
+				if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "Cloudflare") {
+					fmt.Fprintf(os.Stderr, "\nHint: Labs WebSocket may be blocked by Cloudflare.\n")
+					fmt.Fprintf(os.Stderr, "Try: search perplexity search \"%s\"  (SSE, always works)\n", query)
 				}
 				return fmt.Errorf("labs query: %w", err)
 			}
@@ -597,26 +607,19 @@ func doSearchOnly(ctx context.Context, client *perplexity.APIClient, db *perplex
 }
 
 func newPerplexityRegister() *cobra.Command {
-	var (
-		xsrf    string
-		laravel string
-		count   int
-	)
+	var count int
 
 	cmd := &cobra.Command{
 		Use:   "register",
-		Short: "Register new Perplexity account(s) via emailnator",
+		Short: "Register new Perplexity account(s) via disposable email",
 		Long: `Register new Perplexity account(s) using a disposable email.
 
-Fully automated by default - fetches emailnator cookies automatically.
-Optionally provide cookies manually with --xsrf and --laravel.
-
+Fully automated — uses mail.tm or Guerrilla Mail for temp email.
 Use --count N to register multiple accounts.
 
 Example:
   search perplexity register
-  search perplexity register --count 3
-  search perplexity register --xsrf "TOKEN" --laravel "SESSION"`,
+  search perplexity register --count 3`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := perplexity.DefaultConfig()
 			db, err := perplexity.OpenDB(cfg.DBPath())
@@ -624,8 +627,6 @@ Example:
 				return fmt.Errorf("open DB: %w", err)
 			}
 			defer db.Close()
-
-			manualCookies := xsrf != "" && laravel != ""
 
 			for i := 0; i < count; i++ {
 				if count > 1 {
@@ -639,16 +640,7 @@ Example:
 				}
 
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-
-				if manualCookies {
-					cookies := perplexity.EmailnatorCookies{
-						XSRFToken:      xsrf,
-						LaravelSession: laravel,
-					}
-					err = client.RegisterWithDB(ctx, cookies, db)
-				} else {
-					err = client.AutoRegister(ctx, db)
-				}
+				err = client.AutoRegister(ctx, db)
 				cancel()
 
 				if err != nil {
@@ -671,8 +663,6 @@ Example:
 		},
 	}
 
-	cmd.Flags().StringVar(&xsrf, "xsrf", "", "Emailnator XSRF-TOKEN cookie (optional, auto-fetched if omitted)")
-	cmd.Flags().StringVar(&laravel, "laravel", "", "Emailnator laravel_session cookie (optional, auto-fetched if omitted)")
 	cmd.Flags().IntVar(&count, "count", 1, "Number of accounts to register")
 
 	return cmd
@@ -983,6 +973,234 @@ func newPerplexityInfo() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func newPerplexityThread() *cobra.Command {
+	var (
+		continueID int
+		showID     int
+		deleteID   int
+		followUps  int
+		pro        bool
+		reasoning  bool
+		model      string
+		jsonOut    bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "thread [query]",
+		Short: "Start or continue a conversation thread",
+		Long: `Start a new conversation thread or continue an existing one.
+
+Threads maintain context across multiple queries using Perplexity's
+backend_uuid for follow-up linking. All messages are stored in DB.
+
+Examples:
+  search perplexity thread "what is rust"
+  search perplexity thread "what is rust" --follow-ups 2
+  search perplexity thread --continue 1 "how does it compare to Go"
+  search perplexity thread --show 1
+  search perplexity thread --delete 1`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := perplexity.DefaultConfig()
+			db, err := perplexity.OpenDB(cfg.DBPath())
+			if err != nil {
+				return fmt.Errorf("open DB: %w", err)
+			}
+			defer db.Close()
+
+			// Handle --show
+			if showID > 0 {
+				return showThread(db, showID)
+			}
+
+			// Handle --delete
+			if deleteID > 0 {
+				if err := db.DeleteThread(deleteID); err != nil {
+					return fmt.Errorf("delete thread: %w", err)
+				}
+				fmt.Printf("Thread #%d deleted\n", deleteID)
+				return nil
+			}
+
+			// Need a query for start/continue
+			if len(args) == 0 {
+				return cmd.Help()
+			}
+			query := strings.Join(args, " ")
+
+			client, err := perplexity.NewClient(cfg)
+			if err != nil {
+				return fmt.Errorf("create client: %w", err)
+			}
+
+			// Load session for pro modes
+			if pro || reasoning {
+				am := perplexity.NewAccountManager(db)
+				account, accErr := am.NextAccount()
+				if accErr != nil {
+					if loadErr := client.LoadSession(); loadErr != nil {
+						return fmt.Errorf("pro mode requires a session; run 'search perplexity register' first: %w", loadErr)
+					}
+				} else {
+					if loadErr := am.LoadAccountSession(client, account); loadErr != nil {
+						if loadErr2 := client.LoadSession(); loadErr2 != nil {
+							return fmt.Errorf("could not load account %d or session: %w", account.ID, loadErr2)
+						}
+					}
+				}
+			}
+
+			opts := perplexity.DefaultSearchOptions()
+			if pro {
+				opts.Mode = perplexity.ModePro
+			} else if reasoning {
+				opts.Mode = perplexity.ModeReasoning
+			}
+			if model != "" {
+				opts.Model = model
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+
+			// Continue existing thread
+			if continueID > 0 {
+				runner, err := perplexity.ResumeThread(client, db, continueID, opts)
+				if err != nil {
+					return fmt.Errorf("resume thread: %w", err)
+				}
+
+				fmt.Printf("Thread #%d: %s\n", runner.Thread().ID, runner.Thread().Title)
+				fmt.Printf(">> %s\n\n", query)
+
+				result, err := runner.FollowUp(ctx, query)
+				if err != nil {
+					return fmt.Errorf("follow-up: %w", err)
+				}
+
+				if jsonOut {
+					enc := json.NewEncoder(os.Stdout)
+					enc.SetIndent("", "  ")
+					return enc.Encode(result)
+				}
+
+				fmt.Print(perplexity.FormatAnswer(result))
+				fmt.Printf("\nThread #%d (%d messages)\n", runner.Thread().ID, runner.Thread().MessageCount+2)
+				return nil
+			}
+
+			// Start new thread
+			runner := perplexity.NewThreadRunner(client, db, opts)
+
+			if followUps > 0 {
+				fmt.Printf("Starting thread with %d follow-ups: %s\n\n", followUps, query)
+
+				results, err := runner.RunWithFollowUps(ctx, query, followUps)
+				if err != nil {
+					return fmt.Errorf("thread: %w", err)
+				}
+
+				for i, r := range results {
+					if i == 0 {
+						fmt.Printf("=== Initial Query ===\n")
+					} else {
+						fmt.Printf("\n=== Follow-up %d ===\n", i)
+					}
+					fmt.Print(perplexity.FormatAnswer(r))
+				}
+
+				fmt.Printf("\nThread #%d created (%d messages)\n", runner.Thread().ID, len(results)*2)
+			} else {
+				fmt.Printf(">> %s\n\n", query)
+
+				result, err := runner.Start(ctx, query)
+				if err != nil {
+					return fmt.Errorf("thread: %w", err)
+				}
+
+				if jsonOut {
+					enc := json.NewEncoder(os.Stdout)
+					enc.SetIndent("", "  ")
+					return enc.Encode(result)
+				}
+
+				fmt.Print(perplexity.FormatAnswer(result))
+				fmt.Printf("\nThread #%d created (use --continue %d to follow up)\n",
+					runner.Thread().ID, runner.Thread().ID)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().IntVar(&continueID, "continue", 0, "Continue thread by ID")
+	cmd.Flags().IntVar(&showID, "show", 0, "Show thread by ID")
+	cmd.Flags().IntVar(&deleteID, "delete", 0, "Delete thread by ID")
+	cmd.Flags().IntVar(&followUps, "follow-ups", 0, "Number of automatic follow-up queries")
+	cmd.Flags().BoolVar(&pro, "pro", false, "Use pro search mode")
+	cmd.Flags().BoolVar(&reasoning, "reasoning", false, "Use reasoning mode")
+	cmd.Flags().StringVar(&model, "model", "", "Specific model to use")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output raw JSON")
+
+	return cmd
+}
+
+func showThread(db *perplexity.DB, threadID int) error {
+	thread, err := db.GetThread(threadID)
+	if err != nil {
+		return fmt.Errorf("get thread: %w", err)
+	}
+
+	messages, err := db.GetThreadMessages(threadID)
+	if err != nil {
+		return fmt.Errorf("get messages: %w", err)
+	}
+
+	fmt.Print(perplexity.FormatThread(thread, messages))
+	return nil
+}
+
+func newPerplexityThreads() *cobra.Command {
+	var limit int
+
+	cmd := &cobra.Command{
+		Use:   "threads",
+		Short: "List conversation threads",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := perplexity.DefaultConfig()
+			db, err := perplexity.OpenDB(cfg.DBPath())
+			if err != nil {
+				return fmt.Errorf("open DB: %w", err)
+			}
+			defer db.Close()
+
+			threads, err := db.ListThreads(limit)
+			if err != nil {
+				return fmt.Errorf("list threads: %w", err)
+			}
+
+			total, _ := db.CountThreads()
+			fmt.Printf("Threads: %d total (showing %d)\n\n", total, min(limit, total))
+
+			if len(threads) == 0 {
+				fmt.Println("  No threads yet. Start one with: search perplexity thread \"your query\"")
+				return nil
+			}
+
+			for _, t := range threads {
+				fmt.Printf("  #%d  %s\n", t.ID, t.Title)
+				fmt.Printf("      mode=%s  msgs=%d  updated=%s\n",
+					t.Mode, t.MessageCount, t.UpdatedAt.Format("2006-01-02 15:04"))
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().IntVar(&limit, "limit", 20, "Number of threads to show")
+
+	return cmd
 }
 
 // classifyError determines the error type from an error.

@@ -319,3 +319,34 @@ type SearchAPIResponse struct {
 	ID      string            `json:"id"`
 	Results []APISearchResult `json:"results"`
 }
+
+// --- Thread/Conversation Types ---
+
+// Thread represents a multi-turn conversation.
+type Thread struct {
+	ID           int       `json:"id"`
+	Title        string    `json:"title"`
+	Mode         string    `json:"mode"`
+	Model        string    `json:"model"`
+	Source       string    `json:"source"`
+	AccountID    int       `json:"account_id,omitempty"`
+	APIKeyID     int       `json:"api_key_id,omitempty"`
+	MessageCount int       `json:"message_count"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// ThreadMessage is a single message in a conversation thread.
+type ThreadMessage struct {
+	ID          int         `json:"id"`
+	ThreadID    int         `json:"thread_id"`
+	Role        string      `json:"role"` // "user" or "assistant"
+	Content     string      `json:"content"`
+	BackendUUID string      `json:"backend_uuid,omitempty"`
+	Citations   []Citation  `json:"citations,omitempty"`
+	WebResults  []WebResult `json:"web_results,omitempty"`
+	RelatedQ    []string    `json:"related_queries,omitempty"`
+	TokensUsed  int         `json:"tokens_used,omitempty"`
+	DurationMs  int64       `json:"duration_ms,omitempty"`
+	CreatedAt   time.Time   `json:"created_at"`
+}

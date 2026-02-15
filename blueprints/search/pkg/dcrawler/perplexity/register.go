@@ -12,28 +12,10 @@ import (
 
 var magicLinkRegex = regexp.MustCompile(`"(https://www\.perplexity\.ai/api/auth/callback/email\?callbackUrl=.*?)"`)
 
-// Register creates a new Perplexity account using emailnator.
-// Requires emailnator cookies (XSRF-TOKEN and laravel_session from emailnator.com).
-// After successful registration, the client will have 5 pro queries and 10 file uploads.
-// If a DB is provided, the account is saved to the database.
-func (c *Client) Register(ctx context.Context, emailCookies EmailnatorCookies) error {
-	return c.RegisterWithDB(ctx, emailCookies, nil)
-}
-
-// AutoRegister automatically fetches emailnator cookies and registers a new account.
-// Fully automated - no manual cookie input required.
+// AutoRegister creates a new Perplexity account using a disposable email.
+// Uses mail.tm (primary) or Guerrilla Mail (fallback) for the temp email.
+// If db is non-nil, the account is saved to the database.
 func (c *Client) AutoRegister(ctx context.Context, db *DB) error {
-	fmt.Println("Fetching emailnator cookies...")
-	cookies, err := FetchEmailnatorCookies(ctx)
-	if err != nil {
-		return fmt.Errorf("auto-fetch emailnator cookies: %w", err)
-	}
-	fmt.Println("Cookies obtained, proceeding with registration...")
-	return c.RegisterWithDB(ctx, *cookies, db)
-}
-
-// RegisterWithDB creates a new account and stores it in the database.
-func (c *Client) RegisterWithDB(ctx context.Context, emailCookies EmailnatorCookies, db *DB) error {
 	// Initialize session if not already done
 	if c.csrfToken == "" {
 		if err := c.InitSession(ctx); err != nil {
@@ -41,10 +23,11 @@ func (c *Client) RegisterWithDB(ctx context.Context, emailCookies EmailnatorCook
 		}
 	}
 
-	// Generate disposable email
-	emailClient, err := NewEmailnatorClient(ctx, emailCookies)
+	// Create disposable email
+	fmt.Println("Creating disposable email...")
+	emailClient, err := NewTempEmailClient(ctx)
 	if err != nil {
-		return fmt.Errorf("create emailnator client: %w", err)
+		return fmt.Errorf("create temp email: %w", err)
 	}
 
 	email := emailClient.Email()
@@ -73,16 +56,10 @@ func (c *Client) RegisterWithDB(ctx context.Context, emailCookies EmailnatorCook
 
 	fmt.Println("Sign-in email requested, waiting for magic link...")
 
-	// Wait for the sign-in email
-	msg, err := emailClient.WaitForMessage(ctx, signinSubject, accountTimeout)
+	// Wait for the sign-in email — new interface returns body directly
+	content, err := emailClient.WaitForMessage(ctx, signinSubject, accountTimeout)
 	if err != nil {
 		return fmt.Errorf("wait for email: %w", err)
-	}
-
-	// Open the email and extract the magic link
-	content, err := emailClient.OpenMessage(ctx, msg.MessageID)
-	if err != nil {
-		return fmt.Errorf("open email: %w", err)
 	}
 
 	matches := magicLinkRegex.FindStringSubmatch(content)
@@ -117,7 +94,7 @@ func (c *Client) RegisterWithDB(ctx context.Context, emailCookies EmailnatorCook
 		sessionJSON, _ := json.Marshal(sess)
 		account := &Account{
 			Email:       email,
-			Source:      "emailnator",
+			Source:      "temp_email",
 			SessionData: string(sessionJSON),
 			ProQueries:  defaultCopilotQueries,
 			FileUploads: defaultFileUploads,

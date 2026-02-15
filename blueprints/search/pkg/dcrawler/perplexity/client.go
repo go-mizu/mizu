@@ -2,7 +2,6 @@ package perplexity
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -108,9 +107,10 @@ func dialTLSChrome(ctx context.Context, network, addr string) (net.Conn, error) 
 	return tlsConn, nil
 }
 
-// InitSession establishes a session with Perplexity by fetching /api/auth/session.
-// This sets the CSRF token and Cloudflare cookies.
+// InitSession establishes a session with Perplexity.
+// Fetches /api/auth/session for Cloudflare cookies, then /api/auth/csrf for the CSRF token.
 func (c *Client) InitSession(ctx context.Context) error {
+	// Step 1: Hit session endpoint to establish Cloudflare cookies
 	req, err := http.NewRequestWithContext(ctx, "GET", endpointAuthSession, nil)
 	if err != nil {
 		return err
@@ -124,7 +124,28 @@ func (c *Client) InitSession(ctx context.Context) error {
 	defer resp.Body.Close()
 	io.Copy(io.Discard, resp.Body)
 
-	// Extract CSRF token from cookies
+	// Step 2: Fetch CSRF token from dedicated endpoint
+	csrfReq, err := http.NewRequestWithContext(ctx, "GET", baseURL+"/api/auth/csrf", nil)
+	if err != nil {
+		return err
+	}
+	setHeaders(csrfReq, defaultHeaders())
+
+	csrfResp, err := c.http.Do(csrfReq)
+	if err != nil {
+		return fmt.Errorf("get csrf: %w", err)
+	}
+	defer csrfResp.Body.Close()
+
+	var csrfData struct {
+		CsrfToken string `json:"csrfToken"`
+	}
+	if err := json.NewDecoder(csrfResp.Body).Decode(&csrfData); err == nil && csrfData.CsrfToken != "" {
+		c.csrfToken = csrfData.CsrfToken
+		return nil
+	}
+
+	// Fallback: extract CSRF token from cookies (older behavior)
 	u, _ := url.Parse(baseURL)
 	for _, cookie := range c.cookies.Cookies(u) {
 		if cookie.Name == "next-auth.csrf-token" {
@@ -135,7 +156,6 @@ func (c *Client) InitSession(ctx context.Context) error {
 	}
 
 	if c.csrfToken == "" {
-		// Try URL-decoded split
 		for _, cookie := range c.cookies.Cookies(u) {
 			if cookie.Name == "next-auth.csrf-token" {
 				decoded, _ := url.QueryUnescape(cookie.Value)
@@ -280,25 +300,4 @@ func (c *Client) loadSessionCookies(cookies []*cookieData) {
 // parseBaseURL returns the parsed base URL.
 func parseBaseURL() (*url.URL, error) {
 	return url.Parse(baseURL)
-}
-
-// dialTLSForWebSocket creates a raw TLS connection for WebSocket upgrade.
-// Uses standard crypto/tls with TLS 1.3 minimum (matching the Python reference).
-func dialTLSForWebSocket(host string) (net.Conn, error) {
-	rawConn, err := net.DialTimeout("tcp", host+":443", 15*time.Second)
-	if err != nil {
-		return nil, err
-	}
-
-	tlsConn := tls.Client(rawConn, &tls.Config{
-		ServerName: host,
-		MinVersion: tls.VersionTLS13,
-	})
-
-	if err := tlsConn.Handshake(); err != nil {
-		rawConn.Close()
-		return nil, err
-	}
-
-	return tlsConn, nil
 }

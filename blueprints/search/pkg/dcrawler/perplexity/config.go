@@ -24,16 +24,11 @@ const (
 	apiChatCompletions     = apiBaseURL + "/chat/completions"
 	apiSearch              = apiBaseURL + "/search"
 
-	// Emailnator
-	emailnatorBase        = "https://www.emailnator.com"
-	emailnatorGenerate    = emailnatorBase + "/generate-email"
-	emailnatorMessages = emailnatorBase + "/message-list"
-
 	// Timeouts
 	defaultTimeout    = 30 * time.Second
 	sseReadTimeout    = 120 * time.Second // SSE streams can be slow
 	apiTimeout        = 60 * time.Second  // API can be slow for deep research
-	accountTimeout    = 20 * time.Second
+	accountTimeout    = 120 * time.Second
 	emailRetryDelay   = 5 * time.Second
 	rateLimitMinDelay = 1 * time.Second
 	rateLimitMaxDelay = 3 * time.Second
@@ -147,34 +142,6 @@ func defaultHeaders() http.Header {
 		"Sec-Fetch-User":              {"?1"},
 		"Upgrade-Insecure-Requests":   {"1"},
 		"User-Agent":                  {chromeUA},
-	}
-}
-
-// emailnatorHeaders returns headers for emailnator.com requests.
-func emailnatorHeaders(xsrfToken string) http.Header {
-	return http.Header{
-		"Accept":                      {"application/json, text/plain, */*"},
-		"Accept-Language":             {"en-US,en;q=0.9"},
-		"Content-Type":                {"application/json"},
-		"Dnt":                         {"1"},
-		"Origin":                      {emailnatorBase},
-		"Priority":                    {"u=1, i"},
-		"Referer":                     {emailnatorBase + "/"},
-		"Sec-Ch-Ua":                   {`"Not;A=Brand";v="24", "Chromium";v="128"`},
-		"Sec-Ch-Ua-Arch":              {`"x86"`},
-		"Sec-Ch-Ua-Bitness":           {`"64"`},
-		"Sec-Ch-Ua-Full-Version":      {`"128.0.6613.120"`},
-		"Sec-Ch-Ua-Full-Version-List": {`"Not;A=Brand";v="24.0.0.0", "Chromium";v="128.0.6613.120"`},
-		"Sec-Ch-Ua-Mobile":            {"?0"},
-		"Sec-Ch-Ua-Model":             {`""`},
-		"Sec-Ch-Ua-Platform":          {`"Windows"`},
-		"Sec-Ch-Ua-Platform-Version":  {`"19.0.0"`},
-		"Sec-Fetch-Dest":              {"empty"},
-		"Sec-Fetch-Mode":              {"cors"},
-		"Sec-Fetch-Site":              {"same-origin"},
-		"User-Agent":                  {chromeUA},
-		"X-Requested-With":            {"XMLHttpRequest"},
-		"X-Xsrf-Token":               {xsrfToken},
 	}
 }
 

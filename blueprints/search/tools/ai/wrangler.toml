@@ -1,0 +1,16 @@
+name = "ai"
+main = "src/index.ts"
+compatibility_date = "2026-02-09"
+compatibility_flags = ["nodejs_compat"]
+
+[[kv_namespaces]]
+binding = "KV"
+id = "050071ec241c49a6852bcd6fc6ce790e"
+
+[[rules]]
+type = "Text"
+globs = ["**/*.css"]
+fallthrough = true
+
+[vars]
+ENVIRONMENT = "production"

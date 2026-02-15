@@ -44,6 +44,8 @@ func (d *DB) initSchema() error {
 		`CREATE SEQUENCE IF NOT EXISTS account_seq START 1`,
 		`CREATE SEQUENCE IF NOT EXISTS apikey_seq START 1`,
 		`CREATE SEQUENCE IF NOT EXISTS error_seq START 1`,
+		`CREATE SEQUENCE IF NOT EXISTS thread_seq START 1`,
+		`CREATE SEQUENCE IF NOT EXISTS thread_msg_seq START 1`,
 
 		`CREATE TABLE IF NOT EXISTS searches (
 			id           INTEGER PRIMARY KEY DEFAULT nextval('search_seq'),
@@ -104,6 +106,33 @@ func (d *DB) initSchema() error {
 			error_msg     TEXT NOT NULL,
 			http_status   INTEGER,
 			response_body TEXT,
+			created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+
+		`CREATE TABLE IF NOT EXISTS threads (
+			id            INTEGER PRIMARY KEY DEFAULT nextval('thread_seq'),
+			title         TEXT NOT NULL,
+			mode          TEXT DEFAULT 'auto',
+			model         TEXT,
+			source        TEXT DEFAULT 'sse',
+			account_id    INTEGER,
+			api_key_id    INTEGER,
+			message_count INTEGER DEFAULT 0,
+			created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+
+		`CREATE TABLE IF NOT EXISTS thread_messages (
+			id            INTEGER PRIMARY KEY DEFAULT nextval('thread_msg_seq'),
+			thread_id     INTEGER NOT NULL,
+			role          TEXT NOT NULL,
+			content       TEXT NOT NULL,
+			backend_uuid  TEXT,
+			citations     TEXT,
+			web_results   TEXT,
+			related       TEXT,
+			tokens_used   INTEGER DEFAULT 0,
+			duration_ms   INTEGER DEFAULT 0,
 			created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
 	}
@@ -425,6 +454,155 @@ func (d *DB) CountErrors() (int, error) {
 	var count int
 	err := d.db.QueryRow(`SELECT COUNT(*) FROM errors`).Scan(&count)
 	return count, err
+}
+
+// --- Thread Operations ---
+
+// CreateThread creates a new conversation thread.
+func (d *DB) CreateThread(t *Thread) error {
+	now := time.Now()
+	return d.db.QueryRow(`
+		INSERT INTO threads (title, mode, model, source, account_id, api_key_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		RETURNING id
+	`, t.Title, t.Mode, t.Model, t.Source,
+		nilIfZero(t.AccountID), nilIfZero(t.APIKeyID), now, now,
+	).Scan(&t.ID)
+}
+
+// GetThread returns a thread by ID.
+func (d *DB) GetThread(id int) (*Thread, error) {
+	var t Thread
+	err := d.db.QueryRow(`
+		SELECT id, title, mode, COALESCE(model, ''), source,
+			COALESCE(account_id, 0), COALESCE(api_key_id, 0),
+			message_count, created_at, updated_at
+		FROM threads WHERE id = ?
+	`, id).Scan(&t.ID, &t.Title, &t.Mode, &t.Model, &t.Source,
+		&t.AccountID, &t.APIKeyID, &t.MessageCount, &t.CreatedAt, &t.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+// ListThreads returns recent threads ordered by last activity.
+func (d *DB) ListThreads(limit int) ([]Thread, error) {
+	rows, err := d.db.Query(`
+		SELECT id, title, mode, COALESCE(model, ''), source,
+			COALESCE(account_id, 0), COALESCE(api_key_id, 0),
+			message_count, created_at, updated_at
+		FROM threads
+		ORDER BY updated_at DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var threads []Thread
+	for rows.Next() {
+		var t Thread
+		err := rows.Scan(&t.ID, &t.Title, &t.Mode, &t.Model, &t.Source,
+			&t.AccountID, &t.APIKeyID, &t.MessageCount, &t.CreatedAt, &t.UpdatedAt)
+		if err != nil {
+			continue
+		}
+		threads = append(threads, t)
+	}
+	return threads, nil
+}
+
+// DeleteThread removes a thread and its messages.
+func (d *DB) DeleteThread(id int) error {
+	if _, err := d.db.Exec(`DELETE FROM thread_messages WHERE thread_id = ?`, id); err != nil {
+		return err
+	}
+	_, err := d.db.Exec(`DELETE FROM threads WHERE id = ?`, id)
+	return err
+}
+
+// CountThreads returns the total number of threads.
+func (d *DB) CountThreads() (int, error) {
+	var count int
+	err := d.db.QueryRow(`SELECT COUNT(*) FROM threads`).Scan(&count)
+	return count, err
+}
+
+// AddThreadMessage saves a message to a thread and updates the thread.
+func (d *DB) AddThreadMessage(msg *ThreadMessage) error {
+	citationsJSON, _ := json.Marshal(msg.Citations)
+	webResultsJSON, _ := json.Marshal(msg.WebResults)
+	relatedJSON, _ := json.Marshal(msg.RelatedQ)
+
+	err := d.db.QueryRow(`
+		INSERT INTO thread_messages (thread_id, role, content, backend_uuid,
+			citations, web_results, related, tokens_used, duration_ms, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		RETURNING id
+	`,
+		msg.ThreadID, msg.Role, msg.Content, msg.BackendUUID,
+		string(citationsJSON), string(webResultsJSON), string(relatedJSON),
+		msg.TokensUsed, msg.DurationMs, time.Now(),
+	).Scan(&msg.ID)
+	if err != nil {
+		return err
+	}
+
+	// Update thread metadata
+	_, err = d.db.Exec(`
+		UPDATE threads SET message_count = message_count + 1, updated_at = ? WHERE id = ?
+	`, time.Now(), msg.ThreadID)
+	return err
+}
+
+// GetThreadMessages returns all messages in a thread ordered by creation time.
+func (d *DB) GetThreadMessages(threadID int) ([]ThreadMessage, error) {
+	rows, err := d.db.Query(`
+		SELECT id, thread_id, role, content, COALESCE(backend_uuid, ''),
+			COALESCE(citations, '[]'), COALESCE(web_results, '[]'), COALESCE(related, '[]'),
+			tokens_used, duration_ms, created_at
+		FROM thread_messages
+		WHERE thread_id = ?
+		ORDER BY created_at ASC
+	`, threadID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []ThreadMessage
+	for rows.Next() {
+		var m ThreadMessage
+		var citationsStr, webResultsStr, relatedStr string
+		err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.BackendUUID,
+			&citationsStr, &webResultsStr, &relatedStr,
+			&m.TokensUsed, &m.DurationMs, &m.CreatedAt)
+		if err != nil {
+			continue
+		}
+		json.Unmarshal([]byte(citationsStr), &m.Citations)
+		json.Unmarshal([]byte(webResultsStr), &m.WebResults)
+		json.Unmarshal([]byte(relatedStr), &m.RelatedQ)
+		messages = append(messages, m)
+	}
+	return messages, nil
+}
+
+// GetLastBackendUUID returns the most recent backend_uuid from a thread's assistant messages.
+func (d *DB) GetLastBackendUUID(threadID int) (string, error) {
+	var uuid sql.NullString
+	err := d.db.QueryRow(`
+		SELECT backend_uuid FROM thread_messages
+		WHERE thread_id = ? AND role = 'assistant' AND backend_uuid IS NOT NULL AND backend_uuid != ''
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, threadID).Scan(&uuid)
+	if err != nil {
+		return "", err
+	}
+	return uuid.String, nil
 }
 
 // Close closes the database.

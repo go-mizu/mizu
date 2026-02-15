@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -1239,6 +1240,245 @@ func TestFullWorkflowSimulation(t *testing.T) {
 	}
 }
 
+// --- Thread Tests ---
+
+func TestThreadCRUD(t *testing.T) {
+	db := tempDB(t)
+
+	// Create thread
+	thread := &Thread{
+		Title:  "Test conversation",
+		Mode:   ModeAuto,
+		Model:  "",
+		Source: "sse",
+	}
+	if err := db.CreateThread(thread); err != nil {
+		t.Fatalf("create thread: %v", err)
+	}
+	if thread.ID == 0 {
+		t.Error("expected non-zero thread ID")
+	}
+
+	// Get thread
+	got, err := db.GetThread(thread.ID)
+	if err != nil {
+		t.Fatalf("get thread: %v", err)
+	}
+	if got.Title != "Test conversation" {
+		t.Errorf("expected title 'Test conversation', got %q", got.Title)
+	}
+	if got.MessageCount != 0 {
+		t.Errorf("expected 0 messages, got %d", got.MessageCount)
+	}
+
+	// List threads
+	threads, err := db.ListThreads(10)
+	if err != nil {
+		t.Fatalf("list threads: %v", err)
+	}
+	if len(threads) != 1 {
+		t.Fatalf("expected 1 thread, got %d", len(threads))
+	}
+
+	// Count
+	count, err := db.CountThreads()
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected 1, got %d", count)
+	}
+
+	// Delete
+	if err := db.DeleteThread(thread.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	count, _ = db.CountThreads()
+	if count != 0 {
+		t.Errorf("expected 0 after delete, got %d", count)
+	}
+}
+
+func TestThreadMessages(t *testing.T) {
+	db := tempDB(t)
+
+	thread := &Thread{Title: "Message test", Mode: ModeAuto, Source: "sse"}
+	db.CreateThread(thread)
+
+	// Add user message
+	userMsg := &ThreadMessage{
+		ThreadID: thread.ID,
+		Role:     "user",
+		Content:  "What is Go?",
+	}
+	if err := db.AddThreadMessage(userMsg); err != nil {
+		t.Fatalf("add user msg: %v", err)
+	}
+	if userMsg.ID == 0 {
+		t.Error("expected non-zero message ID")
+	}
+
+	// Add assistant message
+	assistantMsg := &ThreadMessage{
+		ThreadID:    thread.ID,
+		Role:        "assistant",
+		Content:     "Go is a programming language...",
+		BackendUUID: "uuid-123",
+		Citations:   []Citation{{URL: "https://go.dev", Title: "Go Dev"}},
+		WebResults:  []WebResult{{Name: "Go", URL: "https://go.dev", Snippet: "Go programming"}},
+		RelatedQ:    []string{"What is goroutine?", "Go vs Rust"},
+		DurationMs:  500,
+	}
+	if err := db.AddThreadMessage(assistantMsg); err != nil {
+		t.Fatalf("add assistant msg: %v", err)
+	}
+
+	// Verify thread message count updated
+	got, _ := db.GetThread(thread.ID)
+	if got.MessageCount != 2 {
+		t.Errorf("expected 2 messages, got %d", got.MessageCount)
+	}
+
+	// Get messages
+	messages, err := db.GetThreadMessages(thread.ID)
+	if err != nil {
+		t.Fatalf("get messages: %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(messages))
+	}
+	if messages[0].Role != "user" {
+		t.Errorf("expected user first, got %s", messages[0].Role)
+	}
+	if messages[1].Role != "assistant" {
+		t.Errorf("expected assistant second, got %s", messages[1].Role)
+	}
+	if messages[1].BackendUUID != "uuid-123" {
+		t.Errorf("expected uuid-123, got %s", messages[1].BackendUUID)
+	}
+	if len(messages[1].Citations) != 1 {
+		t.Errorf("expected 1 citation, got %d", len(messages[1].Citations))
+	}
+	if len(messages[1].RelatedQ) != 2 {
+		t.Errorf("expected 2 related, got %d", len(messages[1].RelatedQ))
+	}
+
+	// Get last backend UUID
+	uuid, err := db.GetLastBackendUUID(thread.ID)
+	if err != nil {
+		t.Fatalf("get last uuid: %v", err)
+	}
+	if uuid != "uuid-123" {
+		t.Errorf("expected uuid-123, got %s", uuid)
+	}
+}
+
+func TestThreadDeleteCascade(t *testing.T) {
+	db := tempDB(t)
+
+	thread := &Thread{Title: "Delete test", Mode: ModeAuto, Source: "sse"}
+	db.CreateThread(thread)
+
+	// Add messages
+	for i := 0; i < 3; i++ {
+		db.AddThreadMessage(&ThreadMessage{
+			ThreadID: thread.ID,
+			Role:     "user",
+			Content:  fmt.Sprintf("message %d", i),
+		})
+	}
+
+	// Verify messages exist
+	msgs, _ := db.GetThreadMessages(thread.ID)
+	if len(msgs) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(msgs))
+	}
+
+	// Delete thread should cascade to messages
+	if err := db.DeleteThread(thread.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	msgs, _ = db.GetThreadMessages(thread.ID)
+	if len(msgs) != 0 {
+		t.Errorf("expected 0 messages after delete, got %d", len(msgs))
+	}
+}
+
+func TestGetLastBackendUUIDEmpty(t *testing.T) {
+	db := tempDB(t)
+
+	thread := &Thread{Title: "Empty UUID test", Mode: ModeAuto, Source: "sse"}
+	db.CreateThread(thread)
+
+	// No messages — should return empty
+	uuid, err := db.GetLastBackendUUID(thread.ID)
+	if err == nil && uuid != "" {
+		t.Errorf("expected empty uuid for thread with no messages, got %q", uuid)
+	}
+}
+
+func TestMultipleThreads(t *testing.T) {
+	db := tempDB(t)
+
+	for i := 0; i < 5; i++ {
+		thread := &Thread{Title: fmt.Sprintf("Thread %d", i), Mode: ModeAuto, Source: "sse"}
+		db.CreateThread(thread)
+		db.AddThreadMessage(&ThreadMessage{
+			ThreadID: thread.ID,
+			Role:     "user",
+			Content:  fmt.Sprintf("Query %d", i),
+		})
+	}
+
+	count, _ := db.CountThreads()
+	if count != 5 {
+		t.Errorf("expected 5, got %d", count)
+	}
+
+	threads, _ := db.ListThreads(3)
+	if len(threads) != 3 {
+		t.Errorf("expected 3 (limited), got %d", len(threads))
+	}
+}
+
+func TestFormatThread(t *testing.T) {
+	thread := &Thread{
+		ID:           1,
+		Title:        "Test thread",
+		Mode:         ModeAuto,
+		Model:        "turbo",
+		Source:       "sse",
+		MessageCount: 2,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+
+	messages := []ThreadMessage{
+		{Role: "user", Content: "What is Go?"},
+		{
+			Role:       "assistant",
+			Content:    "Go is a programming language.",
+			DurationMs: 1500,
+			Citations:  []Citation{{URL: "https://go.dev", Title: "Go Dev"}},
+		},
+	}
+
+	output := FormatThread(thread, messages)
+	if output == "" {
+		t.Error("expected non-empty output")
+	}
+	if !strings.Contains(output, "Thread #1") {
+		t.Error("expected thread ID in output")
+	}
+	if !strings.Contains(output, "What is Go?") {
+		t.Error("expected user message in output")
+	}
+	if !strings.Contains(output, "Go is a programming language") {
+		t.Error("expected assistant message in output")
+	}
+}
+
 // --- Live: Perplexity SSE search ---
 
 func TestLiveSSESearch(t *testing.T) {
@@ -1307,9 +1547,9 @@ func TestLiveLabsSearch(t *testing.T) {
 	t.Logf("Output preview: %.100s", result.Output)
 }
 
-// --- Live: Auto-register emailnator cookies fetch ---
+// --- Live: Temp email provider ---
 
-func TestLiveFetchEmailnatorCookies(t *testing.T) {
+func TestLiveTempEmail(t *testing.T) {
 	if os.Getenv("LIVE_TEST") == "" {
 		t.Skip("set LIVE_TEST=1 to run live tests")
 	}
@@ -1317,19 +1557,16 @@ func TestLiveFetchEmailnatorCookies(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	cookies, err := FetchEmailnatorCookies(ctx)
+	client, err := NewTempEmailClient(ctx)
 	if err != nil {
-		t.Fatalf("fetch cookies: %v", err)
+		t.Fatalf("create temp email: %v", err)
 	}
 
-	if cookies.XSRFToken == "" {
-		t.Error("expected non-empty XSRF token")
+	email := client.Email()
+	if email == "" {
+		t.Error("expected non-empty email address")
 	}
-	if cookies.LaravelSession == "" {
-		t.Error("expected non-empty laravel session")
-	}
-	t.Logf("XSRF token length: %d", len(cookies.XSRFToken))
-	t.Logf("Laravel session length: %d", len(cookies.LaravelSession))
+	t.Logf("Generated email: %s", email)
 }
 
 // --- Live: Full register workflow ---
