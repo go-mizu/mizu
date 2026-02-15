@@ -1,6 +1,22 @@
+/**
+ * Page translation route — Queue-based architecture.
+ *
+ * Flow:
+ *   1. Page-level KV cache → HIT → return instantly
+ *   2. MISS → Fetch HTML (normal or browser rendering)
+ *   3. Extract translatable text segments
+ *   4. Batch KV lookup for text-level translations (t:{tl}:{hash})
+ *   5. Cached texts → server-translated, uncached → Queue + client-side fallback
+ *   6. Queue consumer translates and writes to KV asynchronously
+ *   7. Next visit: all texts cached → instant fully-translated page
+ *
+ * Zero inline translation API calls. Page handler only does KV reads + Queue sends.
+ */
+
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types'
-import { extractTexts, batchTranslate, makePageRewriter } from '../page-rewriter'
+import { extractTexts, makePageRewriter, fixTitle, debugTitle } from '../page-rewriter'
+import { lookupTranslations } from '../translate'
 import { needsBrowserRender, renderWithBrowser } from '../renderer'
 
 const route = new Hono<HonoEnv>()
@@ -11,8 +27,6 @@ const CSP_NONCE = 'tl'
 const CSP_HEADER = `script-src 'nonce-${CSP_NONCE}'`
 
 function cacheKey(tl: string, url: string): string {
-  // v2: invalidates old cache entries poisoned by Next.js hydration
-  // (old translate-cs cached DOM after async scripts reverted translations)
   return `page:v2:${tl}:${url}`
 }
 
@@ -38,11 +52,7 @@ route.get('/page/:tl{[a-zA-Z]{2,3}(-[a-zA-Z]{2})?}', async (c) => {
   const t0 = Date.now()
   console.log(`[page] START tl=${tl} url=${targetUrl} render=${forceRender} nocache=${noCache}`)
 
-  // Purge old v1 cache key on every request (idempotent, ensures migration)
-  const v1Key = `page:${tl}:${targetUrl}`
-  c.executionCtx.waitUntil(kv.delete(v1Key))
-
-  // 1. Check KV cache
+  // 1. Check page-level KV cache
   const ck = cacheKey(tl, targetUrl)
   if (!noCache) {
     const cached = await kv.get(ck, 'text')
@@ -61,7 +71,7 @@ route.get('/page/:tl{[a-zA-Z]{2,3}(-[a-zA-Z]{2})?}', async (c) => {
   }
   console.log(`[page] CACHE MISS key=${ck} nocache=${noCache} ms=${Date.now() - t0}`)
 
-  // 2. Try normal fetch first (fast path)
+  // 2. Fetch HTML (normal fetch or browser rendering)
   let html: string | null = null
   let usedBrowser = false
 
@@ -92,7 +102,6 @@ route.get('/page/:tl{[a-zA-Z]{2,3}(-[a-zA-Z]{2})?}', async (c) => {
       const body = await response.text()
       console.log(`[page] FETCH status=${response.status} size=${body.length} ct=${contentType} ms=${Date.now() - t0}`)
 
-      // 3. Check if we need browser rendering
       if (needsBrowserRender(response.status, body)) {
         console.log(`[page] NEEDS_BROWSER_RENDER status=${response.status} size=${body.length}`)
         html = null
@@ -105,7 +114,7 @@ route.get('/page/:tl{[a-zA-Z]{2,3}(-[a-zA-Z]{2})?}', async (c) => {
     }
   }
 
-  // 4. Browser rendering fallback
+  // 3. Browser rendering fallback
   if (html === null) {
     console.log(`[page] BROWSER_RENDER_START url=${targetUrl}`)
     try {
@@ -141,31 +150,38 @@ a.btn:hover{background:#1557b0}.hint{font-size:13px;color:#80868b;margin-top:12p
     }
   }
 
-  // 5. Two-pass translation: extract → batch translate → apply
+  // 4. Extract translatable text segments
   console.log(`[page] EXTRACT_START htmlSize=${html!.length} usedBrowser=${usedBrowser} ms=${Date.now() - t0}`)
   const proxyBase = new URL(c.req.url).origin
-
-  // Pass 1: Extract all translatable text (no API calls, no subrequests)
   const texts = await extractTexts(html!)
   console.log(`[page] EXTRACT_DONE texts=${texts.length} ms=${Date.now() - t0}`)
 
-  // Batch translate all texts in 2-5 API calls instead of N
-  const { translations, detectedSl } = await batchTranslate(texts, 'auto', tl)
-  console.log(`[page] BATCH_DONE translated=${translations.size}/${texts.length} sl=${detectedSl} ms=${Date.now() - t0}`)
+  // 5. Batch KV lookup for text-level translations
+  const { cached, uncached, detectedSl } = await lookupTranslations(kv, texts, tl)
+  console.log(`[page] KV_LOOKUP cached=${cached.size} uncached=${uncached.length} sl=${detectedSl} ms=${Date.now() - t0}`)
 
-  // Pass 2: Apply translations via HTMLRewriter with Map lookup (no API calls)
-  const rewriter = makePageRewriter(originUrl, proxyBase, tl, 'auto', CSP_NONCE, translations, detectedSl)
+  // 6. Queue uncached texts for background translation
+  if (uncached.length > 0) {
+    console.log(`[page] QUEUE_SEND texts=${uncached.length} tl=${tl}`)
+    c.executionCtx.waitUntil(
+      c.env.TRANSLATE_QUEUE.send({ texts: uncached, tl })
+    )
+  }
+
+  // 7. Build page — cached texts get real translations, uncached get data-tp="1"
+  const rewriter = makePageRewriter(originUrl, proxyBase, tl, 'auto', CSP_NONCE, cached, detectedSl)
   const translated = rewriter.transform(new Response(html, {
     headers: { 'Content-Type': 'text/html; charset=utf-8' },
   }))
+  let translatedHtml = await translated.text()
+  const beforeLen = translatedHtml.length
+  const titleDbg = debugTitle(translatedHtml)
+  translatedHtml = fixTitle(translatedHtml, cached)
+  console.log(`[page] TRANSLATED size=${translatedHtml.length} beforeFix=${beforeLen} titleFixed=${beforeLen !== translatedHtml.length} titleDbg=${titleDbg} render=${usedBrowser ? 'browser' : 'fetch'} ms=${Date.now() - t0}`)
 
-  // Always buffer the result for caching (batch approach is already non-streaming)
-  const translatedHtml = await translated.text()
-  console.log(`[page] TRANSLATED size=${translatedHtml.length} render=${usedBrowser ? 'browser' : 'fetch'} ms=${Date.now() - t0}`)
-
-  // Cache the translated HTML
+  // 8. Cache the page HTML (translate-cs will re-cache with full translations if needed)
   c.executionCtx.waitUntil(
-    kv.put(cacheKey(tl, targetUrl), translatedHtml, { expirationTtl: 86400 })
+    kv.put(ck, translatedHtml, { expirationTtl: 86400 })
   )
 
   return new Response(translatedHtml, {
@@ -175,6 +191,8 @@ a.btn:hover{background:#1557b0}.hint{font-size:13px;color:#80868b;margin-top:12p
       'Cache-Control': 'public, max-age=3600',
       'X-Translate-Cache': 'MISS',
       'X-Translate-Render': usedBrowser ? 'browser' : 'fetch',
+      'X-Translate-Texts': `${cached.size}/${texts.length}`,
+      'X-Translate-Title-Fixed': `${beforeLen !== translatedHtml.length}`,
       'X-Robots-Tag': 'noindex',
     },
   })
@@ -200,7 +218,6 @@ route.delete('/page/cache', async (c) => {
   if (!url || !tl) return c.json({ error: 'Missing url or tl query param' }, 400)
 
   const kv = c.env.TRANSLATE_CACHE
-  // Delete both v1 and v2 cache keys
   await Promise.all([
     kv.delete(`page:${tl}:${url}`),
     kv.delete(cacheKey(tl, url)),
@@ -208,7 +225,7 @@ route.delete('/page/cache', async (c) => {
   return c.json({ ok: true, deleted: [`page:${tl}:${url}`, cacheKey(tl, url)] })
 })
 
-// GET /page/inspect/:tl?url=...  — fetch, translate, return JSON metadata for debugging
+// GET /page/inspect/:tl?url=...  — fetch, extract, show KV cache status (no translation)
 route.get('/page/inspect/:tl{[a-zA-Z]{2,3}(-[a-zA-Z]{2})?}', async (c) => {
   const tl = c.req.param('tl')
   const targetUrl = c.req.query('url')
@@ -228,7 +245,7 @@ route.get('/page/inspect/:tl{[a-zA-Z]{2,3}(-[a-zA-Z]{2})?}', async (c) => {
   const kv = c.env.TRANSLATE_CACHE
   const t0 = Date.now()
 
-  // Check both v1 and v2 cache
+  // Check page cache
   const v1Key = `page:${tl}:${targetUrl}`
   const v2Key = cacheKey(tl, targetUrl)
   const [v1Cached, v2Cached] = await Promise.all([
@@ -286,17 +303,18 @@ route.get('/page/inspect/:tl{[a-zA-Z]{2,3}(-[a-zA-Z]{2})?}', async (c) => {
     })
   }
 
-  // Two-pass: extract → batch translate → apply
-  const proxyBase = new URL(c.req.url).origin
+  // Extract texts and check KV cache (no translation, just analysis)
   const texts = await extractTexts(html)
-  const { translations, detectedSl } = await batchTranslate(texts, 'auto', tl)
-  const rewriter = makePageRewriter(originUrl, proxyBase, tl, 'auto', CSP_NONCE, translations, detectedSl)
+  const { cached: kvCached, uncached, detectedSl } = await lookupTranslations(kv, texts, tl)
+
+  // Build page to analyze output
+  const proxyBase = new URL(c.req.url).origin
+  const rewriter = makePageRewriter(originUrl, proxyBase, tl, 'auto', CSP_NONCE, kvCached, detectedSl)
   const translated = rewriter.transform(new Response(html, {
     headers: { 'Content-Type': 'text/html; charset=utf-8' },
   }))
-  const translatedHtml = await translated.text()
+  const translatedHtml = fixTitle(await translated.text(), kvCached)
 
-  // Analyze the output
   const scriptMatches = translatedHtml.match(/<script[\s>]/gi)
   const tlSegMatches = translatedHtml.match(/class="tl-seg"/g)
   const tlBlockMatches = translatedHtml.match(/class="[^"]*tl-block/g)
@@ -310,7 +328,13 @@ route.get('/page/inspect/:tl{[a-zA-Z]{2,3}(-[a-zA-Z]{2})?}', async (c) => {
     cache,
     fetch: { status: fetchStatus, size: fetchSize, needsBrowser: fetchNeedsBrowser },
     render: { usedBrowser, error: renderError },
-    input: { size: html.length },
+    input: { size: html.length, texts: texts.length },
+    translation: {
+      kvCached: kvCached.size,
+      uncached: uncached.length,
+      detectedSl,
+      sampleUncached: uncached.slice(0, 5),
+    },
     output: {
       size: translatedHtml.length,
       lang: langMatch ? langMatch[1] : 'not found',

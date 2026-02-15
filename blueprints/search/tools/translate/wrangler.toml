@@ -16,5 +16,14 @@ id = "3ad770f50e95400d94b5bddf6fd5ab11"
 [browser]
 binding = "BROWSER"
 
+[[queues.producers]]
+queue = "translate-tasks"
+binding = "TRANSLATE_QUEUE"
+
+[[queues.consumers]]
+queue = "translate-tasks"
+max_batch_size = 10
+max_batch_timeout = 5
+
 [vars]
 ENVIRONMENT = "production"

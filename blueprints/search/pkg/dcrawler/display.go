@@ -44,9 +44,21 @@ type Stats struct {
 	frontierLen func() int
 	bloomCount  func() uint32
 	linksFound  atomic.Int64
-	reseeds    atomic.Int64
-	retries    atomic.Int64
-	continuous bool
+	reseeds     atomic.Int64
+	retries     atomic.Int64
+	continuous  bool
+
+	// Retry tracking
+	retryExhausted atomic.Int64 // URLs that exhausted max retry attempts
+	retryQLen      func() int   // function to query retry queue length
+
+	// Rod worker phase tracking
+	rodPhases       sync.Map // int -> string (worker ID -> phase name)
+	rodPhaseStart   sync.Map // int -> time.Time (worker ID -> phase start time)
+	rodWorkerURL    sync.Map // int -> string (worker ID -> current URL)
+	rodWorkerStart  sync.Map // int -> time.Time (worker ID -> item start time)
+	rodTotalWorkers int      // total rod workers
+	useRod          bool     // whether rod mode is active
 
 	// Freeze
 	frozen   bool
@@ -75,6 +87,40 @@ func NewStats(label string, maxPages int, continuous bool) *Stats {
 func (s *Stats) SetFrontierFuncs(lenFn func() int, bloomFn func() uint32) {
 	s.frontierLen = lenFn
 	s.bloomCount = bloomFn
+}
+
+// SetRetryQLen sets the function to query retry queue length.
+func (s *Stats) SetRetryQLen(fn func() int) {
+	s.retryQLen = fn
+}
+
+// SetRodPhase sets the current phase for a rod worker. Empty string clears it.
+func (s *Stats) SetRodPhase(workerID int, phase string) {
+	if phase == "" {
+		s.rodPhases.Delete(workerID)
+		s.rodPhaseStart.Delete(workerID)
+		s.rodWorkerURL.Delete(workerID)
+		s.rodWorkerStart.Delete(workerID)
+	} else {
+		s.rodPhases.Store(workerID, phase)
+		s.rodPhaseStart.Store(workerID, time.Now())
+	}
+}
+
+// SetRodWorkerItem sets the current URL being processed by a rod worker.
+func (s *Stats) SetRodWorkerItem(workerID int, url string) {
+	s.rodWorkerURL.Store(workerID, url)
+	s.rodWorkerStart.Store(workerID, time.Now())
+}
+
+// SetRodTotalWorkers sets the total number of rod workers for display.
+func (s *Stats) SetRodTotalWorkers(n int) {
+	s.rodTotalWorkers = n
+}
+
+// SetUseRod marks that rod mode is active for display purposes.
+func (s *Stats) SetUseRod(v bool) {
+	s.useRod = v
 }
 
 // RecordSuccess records a successful fetch.
@@ -288,8 +334,8 @@ func (s *Stats) Render() string {
 		fmtInt64(int64(speed)), fmtInt64(int64(s.peakSpeed)), fmtBytes(int64(bw))))
 
 	// === TOTALS ===
-	b.WriteString(fmt.Sprintf("  Pages     %s downloaded  \u2502  %s total size  \u2502  avg %s/page\n",
-		fmtInt64(succ), fmtBytes(bytesTotal), fmtBytes(avgPage)))
+	b.WriteString(fmt.Sprintf("  Pages     %s done  \u2502  %s ok (%4.1f%%)  \u2502  %s total  \u2502  avg %s/page\n",
+		fmtInt64(done), fmtInt64(succ), safePct(succ, done), fmtBytes(bytesTotal), fmtBytes(avgPage)))
 
 	// === TIMING ===
 	b.WriteString(fmt.Sprintf("  Elapsed   %s  \u2502  ETA %s  \u2502  Avg %dms/req  \u2502  In-flight %s\n",
@@ -298,6 +344,7 @@ func (s *Stats) Render() string {
 
 	// === Results breakdown ===
 	retryCount := s.retries.Load()
+	exhausted := s.retryExhausted.Load()
 	resultLine := fmt.Sprintf("  \u2713 %s ok (%4.1f%%)  \u2717 %s fail (%4.1f%%)  \u23f1 %s timeout (%4.1f%%)",
 		fmtInt64(succ), safePct(succ, done),
 		fmtInt64(fail), safePct(fail, done),
@@ -305,7 +352,19 @@ func (s *Stats) Render() string {
 	if retryCount > 0 {
 		resultLine += fmt.Sprintf("  \u21bb %s retried", fmtInt64(retryCount))
 	}
+	if exhausted > 0 {
+		resultLine += fmt.Sprintf("  \u2718 %s gave up", fmtInt64(exhausted))
+	}
 	b.WriteString(resultLine + "\n")
+
+	// === Retry queue ===
+	if s.retryQLen != nil {
+		rqLen := s.retryQLen()
+		if rqLen > 0 || retryCount > 0 {
+			b.WriteString(fmt.Sprintf("  RetryQ    %s pending  \u2502  max %d attempts\n",
+				fmtInt(rqLen), maxRetryAttempts))
+		}
+	}
 
 	// === Frontier ===
 	frontierLine := fmt.Sprintf("  Frontier  %s queued  \u2502  %s seen  \u2502  %s links found",
@@ -315,6 +374,14 @@ func (s *Stats) Render() string {
 	}
 	b.WriteString(frontierLine + "\n")
 	b.WriteString("\n")
+
+	// === Rod worker phases (browser mode only) ===
+	if s.useRod {
+		b.WriteString(fmt.Sprintf("  Workers   %s\n", s.rodPhaseLine()))
+		if details := s.rodWorkerDetails(); details != "" {
+			b.WriteString(details)
+		}
+	}
 
 	// === HTTP + Depth ===
 	b.WriteString(fmt.Sprintf("  HTTP      %s\n", statusLine))
@@ -385,6 +452,113 @@ func (s *Stats) depthLine() string {
 		parts = append(parts, fmt.Sprintf("%d:%s", p.depth, fmtInt(p.count)))
 	}
 	return strings.Join(parts, "  ")
+}
+
+// rodPhaseLine returns a summary of what rod workers are doing.
+func (s *Stats) rodPhaseLine() string {
+	phases := make(map[string]int)
+	total := 0
+	stuckCount := 0
+	now := time.Now()
+
+	s.rodPhases.Range(func(key, value any) bool {
+		phase := value.(string)
+		phases[phase]++
+		total++
+
+		if startVal, ok := s.rodPhaseStart.Load(key); ok {
+			if now.Sub(startVal.(time.Time)) > 15*time.Second {
+				stuckCount++
+			}
+		}
+		return true
+	})
+
+	totalWorkers := s.rodTotalWorkers
+	if totalWorkers <= 0 {
+		totalWorkers = total
+	}
+	if total == 0 {
+		return fmt.Sprintf("0/%d  all idle", totalWorkers)
+	}
+
+	phaseOrder := []string{"pool", "nav", "dom", "cf-check", "idle", "scroll", "extract", "rate-limit"}
+	var parts []string
+	for _, p := range phaseOrder {
+		if n, ok := phases[p]; ok {
+			parts = append(parts, fmt.Sprintf("%s:%d", p, n))
+		}
+	}
+	if len(parts) == 0 {
+		for p, n := range phases {
+			parts = append(parts, fmt.Sprintf("%s:%d", p, n))
+		}
+	}
+
+	result := fmt.Sprintf("%d/%d  %s", total, totalWorkers, strings.Join(parts, "  "))
+	if stuckCount > 0 {
+		result += fmt.Sprintf("  \u2502  \u26a0 %d stuck >15s", stuckCount)
+	}
+	return result
+}
+
+// rodWorkerDetails returns detail lines for stuck workers (>15s in same phase).
+func (s *Stats) rodWorkerDetails() string {
+	type workerInfo struct {
+		id       int
+		phase    string
+		phaseDur time.Duration
+		url      string
+		itemDur  time.Duration
+	}
+
+	var stuck []workerInfo
+	now := time.Now()
+
+	s.rodPhases.Range(func(key, value any) bool {
+		wid := key.(int)
+		phase := value.(string)
+
+		var phaseDur time.Duration
+		if startVal, ok := s.rodPhaseStart.Load(key); ok {
+			phaseDur = now.Sub(startVal.(time.Time))
+		}
+		if phaseDur <= 15*time.Second {
+			return true
+		}
+
+		var u string
+		if urlVal, ok := s.rodWorkerURL.Load(wid); ok {
+			u = urlVal.(string)
+		}
+		var itemDur time.Duration
+		if startVal, ok := s.rodWorkerStart.Load(wid); ok {
+			itemDur = now.Sub(startVal.(time.Time))
+		}
+
+		stuck = append(stuck, workerInfo{id: wid, phase: phase, phaseDur: phaseDur, url: u, itemDur: itemDur})
+		return true
+	})
+
+	if len(stuck) == 0 {
+		return ""
+	}
+
+	sort.Slice(stuck, func(i, j int) bool {
+		return stuck[i].phaseDur > stuck[j].phaseDur
+	})
+
+	var b strings.Builder
+	show := min(5, len(stuck))
+	for i := range show {
+		w := stuck[i]
+		u := w.url
+		if len(u) > 60 {
+			u = u[:57] + "..."
+		}
+		b.WriteString(fmt.Sprintf("    W%02d  %-10s %3ds  %s\n", w.id, w.phase, int(w.phaseDur.Seconds()), u))
+	}
+	return b.String()
 }
 
 // --- Formatting helpers ---

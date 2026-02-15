@@ -72,93 +72,129 @@ func (rp *rodPool) close() {
 	rp.browser.Close()
 }
 
+// getPageCtx gets a page from the pool, respecting the context deadline.
+// If ctx expires before a page is available (e.g. Chrome is unresponsive),
+// returns ctx.Err() instead of blocking forever.
+func (rp *rodPool) getPageCtx(ctx context.Context) (*rod.Page, error) {
+	type result struct {
+		page *rod.Page
+		err  error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		p, err := rp.getPage()
+		ch <- result{p, err}
+	}()
+	select {
+	case <-ctx.Done():
+		// Clean up if the goroutine eventually completes
+		go func() {
+			if r := <-ch; r.page != nil {
+				r.page.Close()
+			}
+		}()
+		return nil, ctx.Err()
+	case r := <-ch:
+		return r.page, r.err
+	}
+}
+
 // rodWorker fetches pages using headless Chrome.
-func (c *Crawler) rodWorker(ctx context.Context, rp *rodPool) {
+func (c *Crawler) rodWorker(ctx context.Context, rp *rodPool, workerID int) {
 	for {
 		select {
 		case <-ctx.Done():
+			c.stats.SetRodPhase(workerID, "")
 			return
 		case item := <-c.frontier.ch:
+			c.stats.SetRodWorkerItem(workerID, item.URL)
 			if c.limiter != nil {
+				c.stats.SetRodPhase(workerID, "rate-limit")
 				if err := c.limiter.Wait(ctx); err != nil {
+					c.stats.SetRodPhase(workerID, "")
 					return
 				}
 			}
-			c.rodFetchAndProcess(ctx, rp, item)
+			c.rodFetchAndProcess(ctx, rp, item, workerID)
 		}
 	}
 }
 
-func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item CrawlItem) {
+func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item CrawlItem, workerID int) {
 	if c.config.MaxPages > 0 && c.claimed.Add(1) > int64(c.config.MaxPages) {
 		return
 	}
 	c.stats.inFlight.Add(1)
 	defer c.stats.inFlight.Add(-1)
+	defer c.stats.SetRodPhase(workerID, "")
 
 	start := time.Now()
-
 	timeout := c.config.Timeout
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
 
-	// Retry navigation on transient Chrome errors (ERR_NETWORK_CHANGED, etc.)
-	const maxRetries = 3
-	var page *rod.Page
-	var navErr error
-	for attempt := range maxRetries {
-		if ctx.Err() != nil {
-			return
-		}
-		var err error
-		page, err = rp.getPage()
-		if err != nil {
-			if ctx.Err() != nil {
-				return
-			}
-			c.recordError(item, err, 0)
-			return
-		}
+	// Hard deadline: 30s context for the ENTIRE fetch cycle.
+	// All rod operations on `p` (context-bound page) will be cancelled when this expires.
+	// This is the KEY fix: page.Info() and page.HTML() previously had NO timeout.
+	fetchCtx, fetchCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer fetchCancel()
 
-		err = page.Timeout(timeout).Navigate(item.URL)
-		if err == nil {
-			navErr = nil
-			break
-		}
-		navErr = err
-		rp.putPage(page)
-		page = nil
+	// Phase: get page from pool (with context — won't block if Chrome is unresponsive)
+	c.stats.SetRodPhase(workerID, "pool")
+	page, err := rp.getPageCtx(fetchCtx)
+	if err != nil {
 		if ctx.Err() != nil {
 			return
 		}
-		if attempt < maxRetries-1 {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(time.Duration(attempt+1) * time.Second):
-			}
-		}
-	}
-	if navErr != nil {
-		fetchMs := time.Since(start).Milliseconds()
-		c.recordError(item, fmt.Errorf("navigate (after %d retries): %w", maxRetries, navErr), fetchMs)
+		c.recordError(item, fmt.Errorf("rod pool: %w", err), 0)
 		return
 	}
-	defer rp.putPage(page)
 
-	// Wait for DOM to be ready (DOMContentLoaded), NOT window.load which waits for
-	// all resources (ads, trackers, images). Ad-heavy sites never fire load in time.
-	_, _ = page.Timeout(timeout).Eval(`() => new Promise(r => {
+	// Context-bound page: ALL operations respect the 30s deadline.
+	// This prevents page.Info(), page.HTML(), WaitRequestIdle from blocking forever.
+	p := page.Context(fetchCtx)
+	var pageFailed bool
+	defer func() {
+		if pageFailed || fetchCtx.Err() != nil {
+			page.Close() // broken/timed-out page — close, let pool create fresh
+		} else {
+			rp.putPage(page) // healthy page — return to pool for reuse
+		}
+	}()
+
+	// Phase: navigate
+	c.stats.SetRodPhase(workerID, "nav")
+	if err := p.Timeout(timeout).Navigate(item.URL); err != nil {
+		pageFailed = true
+		if ctx.Err() != nil {
+			return
+		}
+		c.recordError(item, fmt.Errorf("navigate: %w", err), time.Since(start).Milliseconds())
+		return
+	}
+
+	// Phase: wait for DOMContentLoaded (NOT window.load — ads never fire load)
+	c.stats.SetRodPhase(workerID, "dom")
+	_, _ = p.Timeout(timeout).Eval(`() => new Promise(r => {
 		if (document.readyState !== 'loading') r();
 		else document.addEventListener('DOMContentLoaded', r);
 	})`)
 
-	// Wait for Cloudflare challenge to resolve (title changes from "Just a moment...")
-	// Poll title for up to 8 seconds (CF challenges resolve in 2-5s)
-	cfDeadline := time.Now().Add(8 * time.Second)
-	for time.Now().Before(cfDeadline) {
-		info, ie := page.Info()
+	if fetchCtx.Err() != nil {
+		if ctx.Err() != nil {
+			return
+		}
+		pageFailed = true
+		c.recordError(item, fmt.Errorf("rod: deadline exceeded after DOM wait"), time.Since(start).Milliseconds())
+		return
+	}
+
+	// Phase: Cloudflare challenge check (poll title for up to 5s)
+	c.stats.SetRodPhase(workerID, "cf-check")
+	cfEnd := time.Now().Add(5 * time.Second)
+	for time.Now().Before(cfEnd) && fetchCtx.Err() == nil {
+		info, ie := p.Info()
 		if ie != nil {
 			break
 		}
@@ -166,31 +202,44 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 			break
 		}
 		select {
-		case <-ctx.Done():
-			return
+		case <-fetchCtx.Done():
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
 
-	// Brief wait for JS rendering after challenge resolves
-	page.Timeout(5 * time.Second).WaitRequestIdle(500*time.Millisecond, nil, nil, nil)()
+	if fetchCtx.Err() != nil {
+		if ctx.Err() != nil {
+			return
+		}
+		pageFailed = true
+		c.recordError(item, fmt.Errorf("rod: deadline exceeded after CF check"), time.Since(start).Milliseconds())
+		return
+	}
+
+	// Phase: wait for JS rendering (short idle wait, max 3s)
+	c.stats.SetRodPhase(workerID, "idle")
+	p.Timeout(3 * time.Second).WaitRequestIdle(300*time.Millisecond, nil, nil, nil)()
 
 	// Scroll for infinite scroll pages (Pinterest, etc.)
-	if c.config.ScrollCount > 0 {
+	if c.config.ScrollCount > 0 && fetchCtx.Err() == nil {
+		c.stats.SetRodPhase(workerID, "scroll")
 		for range c.config.ScrollCount {
-			if ctx.Err() != nil {
-				return
+			if fetchCtx.Err() != nil {
+				break
 			}
-			_, _ = page.Eval(`() => window.scrollTo(0, document.body.scrollHeight)`)
-			page.Timeout(5 * time.Second).WaitRequestIdle(500*time.Millisecond, nil, nil, nil)()
-			time.Sleep(300 * time.Millisecond)
+			_, _ = p.Eval(`() => window.scrollTo(0, document.body.scrollHeight)`)
+			p.Timeout(3 * time.Second).WaitRequestIdle(300*time.Millisecond, nil, nil, nil)()
+			time.Sleep(200 * time.Millisecond)
 		}
 	}
 
+	// Phase: extract page content (now protected by fetchCtx — can't block forever)
+	c.stats.SetRodPhase(workerID, "extract")
 	fetchMs := time.Since(start).Milliseconds()
 
-	pageInfo, err := page.Info()
+	pageInfo, err := p.Info()
 	if err != nil {
+		pageFailed = true
 		if ctx.Err() != nil {
 			return
 		}
@@ -198,8 +247,9 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		return
 	}
 
-	htmlContent, err := page.HTML()
+	htmlContent, err := p.HTML()
 	if err != nil {
+		pageFailed = true
 		if ctx.Err() != nil {
 			return
 		}
@@ -238,8 +288,10 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 	meta := ExtractLinksAndMeta(body, baseURL, c.config.Domain, c.config.ExtractImages)
 
 	// DOM-based JS extraction (catches dynamically-rendered links, data-href, prefetch)
-	domLinks := c.extractDOMLinks(page, baseURL)
-	meta.Links = append(meta.Links, domLinks...)
+	if fetchCtx.Err() == nil {
+		domLinks := c.extractDOMLinks(p, baseURL)
+		meta.Links = append(meta.Links, domLinks...)
+	}
 
 	if meta.Description != "" {
 		result.Description = meta.Description
