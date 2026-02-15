@@ -1,7 +1,13 @@
+export interface TranslateMessage {
+  texts: string[]
+  tl: string
+}
+
 export interface Env {
   ASSETS?: { fetch: typeof fetch }
   BROWSER: Fetcher
   TRANSLATE_CACHE: KVNamespace
+  TRANSLATE_QUEUE: Queue<TranslateMessage>
   ENVIRONMENT: string
 }
 

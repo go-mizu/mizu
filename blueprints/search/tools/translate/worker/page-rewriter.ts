@@ -1,7 +1,12 @@
-const TRANSLATE_APIS = [
-  { name: 'google', base: 'https://translate.googleapis.com/translate_a/single', maxChars: 4000 },
-  { name: 'mymemory', base: 'https://api.mymemory.translated.net/get', maxChars: 450 },
-] as const
+/**
+ * HTML text extraction and page rewriting for translation.
+ *
+ * Two-pass architecture:
+ *   Pass 1 (extractTexts): Collect all translatable text from HTML.
+ *   Pass 2 (makePageRewriter): Apply translations from Map, strip scripts, rewrite URLs.
+ *
+ * Translation logic lives in translate.ts (KV cache + Queue).
+ */
 
 const SKIP_SELECTORS = [
   'script', 'style', 'code', 'pre', 'kbd', 'samp', 'var',
@@ -11,16 +16,10 @@ const SKIP_SELECTORS = [
 const TRANSLATABLE_SELECTORS = [
   'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
   'li', 'td', 'th', 'dt', 'dd', 'figcaption', 'blockquote',
-  'title', 'label', 'button', 'caption', 'summary', 'legend', 'option',
+  'label', 'button', 'caption', 'summary', 'legend', 'option',
 ] as const
 
 const SKIP_HREF_PREFIXES = ['#', 'javascript:', 'mailto:', 'tel:', 'data:']
-
-/* ── Batch Translation ── */
-
-// Separator used to join multiple texts into a single API call.
-// Google Translate preserves this delimiter across most language pairs.
-const BATCH_SEP = '\n\u2016\u2016\u2016\n'
 
 /**
  * Extract all translatable text from HTML using HTMLRewriter (first pass).
@@ -45,6 +44,37 @@ export async function extractTexts(html: string): Promise<string[]> {
       },
     })
   }
+
+  // <title> handled separately: collect only the first text node as the title
+  const titleBuffer: string[] = []
+  let inTitle = false
+  rewriter = rewriter.on('title', {
+    element(el) {
+      if (skipDepth > 0) return
+      inTitle = true
+      el.onEndTag(() => {
+        if (inTitle) {
+          const full = titleBuffer.splice(0).join('')
+          if (full.trim() && !/^[\s\d\p{P}\p{S}]+$/u.test(full.trim())) {
+            texts.push(full)
+          }
+        }
+        inTitle = false
+      })
+    },
+    text(text) {
+      if (skipDepth > 0 || !inTitle) return
+      titleBuffer.push(text.text)
+      if (text.lastInTextNode) {
+        // Only take the FIRST text node as the title, ignore the rest
+        const full = titleBuffer.splice(0).join('')
+        if (full.trim() && !/^[\s\d\p{P}\p{S}]+$/u.test(full.trim())) {
+          texts.push(full)
+          inTitle = false // stop collecting after first text node
+        }
+      }
+    },
+  })
 
   for (const tag of TRANSLATABLE_SELECTORS) {
     rewriter = rewriter.on(tag, {
@@ -80,196 +110,6 @@ export async function extractTexts(html: string): Promise<string[]> {
   }))
   await resp.text() // consume stream
   return texts
-}
-
-/**
- * Translate all texts in batches using Google Translate with MyMemory fallback.
- * Groups texts into batches by char limit, joins with separator, translates as one API call.
- * Uses only 3-20 subrequests instead of 179 (one per text).
- *
- * Fallback chain: Google (4000 char batches) → MyMemory (450 char batches)
- */
-export async function batchTranslate(
-  texts: string[],
-  sl: string,
-  tl: string,
-): Promise<{ translations: Map<string, string>; detectedSl: string }> {
-  const translations = new Map<string, string>()
-  let detectedSl = ''
-
-  if (texts.length === 0) return { translations, detectedSl }
-
-  // Try Google first (large batches, fewer subrequests)
-  const untranslated = await translateWithGoogle(texts, sl, tl, translations, detectedSl)
-  if (untranslated.sl) detectedSl = untranslated.sl
-
-  // If Google failed (429), fall back to MyMemory with smaller batches
-  if (untranslated.texts.length > 0) {
-    console.log(`[batch] FALLBACK mymemory remaining=${untranslated.texts.length}`)
-    const mmResult = await translateWithMyMemory(untranslated.texts, sl, tl, translations)
-    if (mmResult.sl && !detectedSl) detectedSl = mmResult.sl
-  }
-
-  console.log(`[batch] DONE translated=${translations.size}/${texts.length} sl=${detectedSl}`)
-  return { translations, detectedSl }
-}
-
-async function translateWithGoogle(
-  texts: string[],
-  sl: string,
-  tl: string,
-  translations: Map<string, string>,
-  detectedSl: string,
-): Promise<{ texts: string[]; sl: string }> {
-  const api = TRANSLATE_APIS[0] // google
-  const batches = makeBatches(texts, api.maxChars)
-  const failed: string[] = []
-
-  console.log(`[batch] google ${texts.length} texts → ${batches.length} batches`)
-
-  for (let i = 0; i < batches.length; i++) {
-    const batch = batches[i]
-    const joined = batch.join(BATCH_SEP)
-
-    try {
-      const params = new URLSearchParams()
-      params.set('client', 'gtx')
-      params.set('sl', sl)
-      params.set('tl', tl)
-      params.set('dj', '1')
-      params.append('dt', 't')
-
-      let resp: Response
-      if (joined.length <= 2000) {
-        params.set('q', joined)
-        resp = await fetch(`${api.base}?${params.toString()}`, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-        })
-      } else {
-        const body = new URLSearchParams()
-        body.set('q', joined)
-        resp = await fetch(`${api.base}?${params.toString()}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          },
-          body: body.toString(),
-        })
-      }
-
-      if (!resp.ok) {
-        console.log(`[batch] google FAIL batch=${i} status=${resp.status} texts=${batch.length}`)
-        failed.push(...batch)
-        continue
-      }
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const data: any = await resp.json()
-      if (!data.sentences) { failed.push(...batch); continue }
-      if (data.src && !detectedSl) detectedSl = data.src
-
-      const translatedJoined = data.sentences
-        .filter((s: { trans?: string }) => s.trans != null)
-        .map((s: { trans: string }) => s.trans)
-        .join('')
-
-      const sepPattern = /\s*\u2016\u2016\u2016\s*/
-      const parts = translatedJoined.split(sepPattern)
-      const matched = Math.min(parts.length, batch.length)
-
-      for (let j = 0; j < matched; j++) {
-        if (parts[j] && parts[j].trim()) translations.set(batch[j], parts[j])
-        else failed.push(batch[j])
-      }
-      // Any batch items beyond matched count
-      for (let j = matched; j < batch.length; j++) failed.push(batch[j])
-
-      console.log(`[batch] google OK batch=${i} texts=${batch.length} matched=${matched}`)
-    } catch (e) {
-      console.log(`[batch] google ERROR batch=${i} err=${e instanceof Error ? e.message : e}`)
-      failed.push(...batch)
-    }
-  }
-
-  return { texts: failed, sl: detectedSl }
-}
-
-async function translateWithMyMemory(
-  texts: string[],
-  sl: string,
-  tl: string,
-  translations: Map<string, string>,
-): Promise<{ sl: string }> {
-  const api = TRANSLATE_APIS[1] // mymemory
-  // MyMemory uses langpair format (e.g., "en|zh")
-  const langSl = sl === 'auto' ? 'en' : sl
-  const batches = makeBatches(texts, api.maxChars)
-  let detectedSl = ''
-
-  console.log(`[batch] mymemory ${texts.length} texts → ${batches.length} batches`)
-
-  for (let i = 0; i < batches.length; i++) {
-    const batch = batches[i]
-    const joined = batch.join(BATCH_SEP)
-
-    try {
-      const params = new URLSearchParams()
-      params.set('q', joined)
-      params.set('langpair', `${langSl}|${tl}`)
-
-      const resp = await fetch(`${api.base}?${params.toString()}`, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-      })
-
-      if (!resp.ok) {
-        console.log(`[batch] mymemory FAIL batch=${i} status=${resp.status}`)
-        continue
-      }
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const data: any = await resp.json()
-      if (!data.responseData?.translatedText) continue
-
-      if (data.responseData.detectedLanguage && !detectedSl) {
-        detectedSl = data.responseData.detectedLanguage
-      }
-
-      const translatedJoined = data.responseData.translatedText as string
-      const sepPattern = /\s*\u2016\u2016\u2016\s*/
-      const parts = translatedJoined.split(sepPattern)
-      const matched = Math.min(parts.length, batch.length)
-
-      for (let j = 0; j < matched; j++) {
-        if (parts[j] && parts[j].trim()) translations.set(batch[j], parts[j])
-      }
-
-      console.log(`[batch] mymemory OK batch=${i} texts=${batch.length} matched=${matched}`)
-    } catch (e) {
-      console.log(`[batch] mymemory ERROR batch=${i} err=${e instanceof Error ? e.message : e}`)
-    }
-  }
-
-  return { sl: detectedSl }
-}
-
-function makeBatches(texts: string[], maxChars: number): string[][] {
-  const batches: string[][] = []
-  let current: string[] = []
-  let len = 0
-
-  for (const text of texts) {
-    const addLen = text.length + BATCH_SEP.length
-    if (len + addLen > maxChars && current.length > 0) {
-      batches.push(current)
-      current = []
-      len = 0
-    }
-    current.push(text)
-    len += addLen
-  }
-  if (current.length > 0) batches.push(current)
-  return batches
 }
 
 /* ── URL rewriting ── */
@@ -629,6 +469,7 @@ export function makePageRewriter(
 ): HTMLRewriter {
   const textBuffer: string[] = []
   let skipDepth = 0
+  let inTitle = false
   let scriptCount = 0
   let linkCount = 0
   let translateCount = 0
@@ -710,6 +551,20 @@ export function makePageRewriter(
     })
   }
 
+  // <title> is a raw text element — HTMLRewriter can't modify its text content.
+  // We skip it here; post-processing in fixTitle() handles it after rewriting.
+  rewriter = rewriter.on('title', {
+    element(el) {
+      if (skipDepth > 0) return
+      inTitle = true
+      el.onEndTag(() => { inTitle = false })
+    },
+    text(text) {
+      // Suppress text inside <title> from being processed by translatable handlers
+      if (inTitle) return
+    },
+  })
+
   for (const tag of TRANSLATABLE_SELECTORS) {
     rewriter = rewriter.on(tag, {
       element(el) {
@@ -743,7 +598,7 @@ export function makePageRewriter(
 
         const escaped = escapeAttr(fullText)
 
-        // Look up pre-translated text from the batch map
+        // Look up pre-translated text from the Map (populated by KV cache or batch translate)
         const translated = translations?.get(fullText)
         if (translated) {
           translateCount++
@@ -758,4 +613,35 @@ export function makePageRewriter(
   }
 
   return rewriter
+}
+
+/**
+ * Fix <title> content after HTMLRewriter processing.
+ *
+ * HTMLRewriter treats <title> as a raw text element — text.remove() and
+ * text.replace() don't work inside it. We post-process the HTML to replace
+ * the title with its translated version.
+ */
+export function fixTitle(html: string, translations?: Map<string, string>): string {
+  const m = html.match(/<title[^>]*>([\s\S]*?)<\/title>/)
+  if (!m) return html
+
+  // The original title is the first text node — take the first line
+  const rawContent = m[1]
+  const firstLine = rawContent.split('\n')[0].trim()
+  if (!firstLine) return html
+
+  // Look up translation
+  const translated = translations?.get(firstLine)
+  const cleanTitle = translated || firstLine
+
+  const result = html.replace(/<title[^>]*>[\s\S]*?<\/title>/, `<title>${cleanTitle}</title>`)
+  console.log(`[fixTitle] matched=${m[0].length} firstLine=${firstLine.slice(0, 40)} cleanTitle=${cleanTitle.slice(0, 40)} beforeLen=${html.length} afterLen=${result.length}`)
+  return result
+}
+
+export function debugTitle(html: string): string {
+  const m = html.match(/<title[^>]*>([\s\S]*?)<\/title>/)
+  if (!m) return 'no-match'
+  return `matchLen=${m[0].length}_contentLen=${m[1].length}_firstLine=${m[1].split('\n')[0].slice(0, 30)}`
 }

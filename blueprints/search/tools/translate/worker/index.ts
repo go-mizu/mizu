@@ -1,11 +1,12 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import type { Env, HonoEnv } from './types'
+import type { Env, HonoEnv, TranslateMessage } from './types'
 import translateRoute from './routes/translate'
 import languagesRoute from './routes/languages'
 import detectRoute from './routes/detect'
 import ttsRoute from './routes/tts'
 import pageRoute from './routes/page'
+import { handleQueue } from './queue'
 
 const app = new Hono<HonoEnv>()
 
@@ -41,5 +42,9 @@ export default {
       detail: 'Run "npm run build" to generate the SPA, or use /api/ endpoints directly.',
       api: { health: '/api/health', translate: 'POST /api/translate', languages: 'GET /api/languages', detect: 'POST /api/detect', tts: 'GET /api/tts?tl=LANG&q=TEXT' },
     }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  },
+
+  async queue(batch: MessageBatch<TranslateMessage>, env: Env): Promise<void> {
+    return handleQueue(batch, env)
   },
 }

@@ -25,16 +25,17 @@ import (
 
 // Crawler is a high-throughput single-domain web crawler.
 type Crawler struct {
-	config   Config
-	clients  []*http.Client
-	frontier *Frontier
-	resultDB *ResultDB
-	stateDB  *StateDB
-	stats    *Stats
-	robots   *RobotsChecker
-	limiter  *rate.Limiter
-	claimed  atomic.Int64 // atomic slot counter for max-pages
-	retryQ   *retryQueue
+	config        Config
+	clients       []*http.Client
+	frontier      *Frontier
+	resultDB      *ResultDB
+	stateDB       *StateDB
+	stats         *Stats
+	robots        *RobotsChecker
+	limiter       *rate.Limiter
+	claimed       atomic.Int64 // atomic slot counter for max-pages
+	retryQ        *retryQueue
+	retryAttempts sync.Map // URL -> int: per-URL retry attempt counter
 }
 
 // retryItem tracks a URL that needs to be retried after a transient error.
@@ -146,7 +147,9 @@ func New(cfg Config) (*Crawler, error) {
 	c.frontier = NewFrontier(cfg.Domain, cfg.FrontierSize, cfg.BloomCapacity, cfg.BloomFPR, cfg.IncludeSubdomain)
 	c.stats = NewStats(cfg.Domain, cfg.MaxPages, cfg.Continuous)
 	c.stats.SetFrontierFuncs(c.frontier.Len, c.frontier.BloomCount)
+	c.stats.SetUseRod(cfg.UseRod)
 	c.retryQ = newRetryQueue()
+	c.stats.SetRetryQLen(c.retryQ.len)
 
 	if cfg.RateLimit > 0 {
 		c.limiter = rate.NewLimiter(rate.Limit(cfg.RateLimit), max(cfg.RateLimit/10, 1))
@@ -271,9 +274,11 @@ func (c *Crawler) Run(ctx context.Context) error {
 		if workers <= 0 {
 			workers = 20
 		}
-		for range workers {
+		c.stats.SetRodTotalWorkers(workers)
+		for i := range workers {
+			workerID := i
 			g.Go(func() error {
-				c.rodWorker(gctx, rp)
+				c.rodWorker(gctx, rp, workerID)
 				return nil
 			})
 		}
@@ -475,7 +480,7 @@ func (c *Crawler) coordinator(ctx context.Context, cancel context.CancelFunc) {
 			cancel()
 			return
 		}
-		if c.frontier.Len() == 0 && c.stats.inFlight.Load() == 0 {
+		if c.frontier.Len() == 0 && c.stats.inFlight.Load() == 0 && c.retryQ.len() == 0 {
 			empty++
 			if c.config.Continuous && empty >= 15 {
 				// Re-seed: fetch new URLs from sitemap + homepage
@@ -722,16 +727,21 @@ func isRetryableStatus(code int) bool {
 }
 
 // enqueueRetry adds a failed URL to the retry queue with exponential backoff.
+// Uses a per-URL attempt counter (sync.Map) to prevent infinite retry loops.
 func (c *Crawler) enqueueRetry(item CrawlItem, statusCode int) {
-	// Use a simple attempt counter based on URL — the bloom filter
-	// prevents actually re-adding to frontier, so we need retryQ's
-	// MarkSeen bypass via TryAddBypass or re-enabling in bloom.
-	// For simplicity, we remove from bloom to allow re-discovery.
-	delay := 10 * time.Second
-	if statusCode == 429 {
-		delay = 30 * time.Second
+	// Increment per-URL attempt counter
+	val, _ := c.retryAttempts.LoadOrStore(item.URL, 0)
+	attempts := val.(int) + 1
+	c.retryAttempts.Store(item.URL, attempts)
+	if attempts >= maxRetryAttempts {
+		c.stats.retryExhausted.Add(1)
+		return // give up after max attempts
 	}
-	c.retryQ.add(item, 1, delay)
+	delay := time.Duration(attempts) * 10 * time.Second // exponential: 10s, 20s
+	if statusCode == 429 {
+		delay = time.Duration(attempts) * 30 * time.Second // 30s, 60s
+	}
+	c.retryQ.add(item, attempts, delay)
 }
 
 // retryFeeder periodically checks the retry queue and re-feeds items to frontier.
@@ -745,19 +755,13 @@ func (c *Crawler) retryFeeder(ctx context.Context) {
 		case <-tick.C:
 			ready := c.retryQ.drain()
 			for _, ri := range ready {
-				if ri.attempts >= maxRetryAttempts {
-					continue
-				}
 				// Push directly to frontier, bypassing bloom (URL is already in bloom from first attempt)
 				select {
 				case c.frontier.ch <- ri.item:
 					c.stats.retries.Add(1)
 				default:
-					// Frontier full, try again later with increased attempt count
-					if ri.attempts+1 < maxRetryAttempts {
-						delay := time.Duration(ri.attempts+1) * 15 * time.Second
-						c.retryQ.add(ri.item, ri.attempts+1, delay)
-					}
+					// Frontier full, re-enqueue (per-URL attempts tracked in retryAttempts map)
+					c.retryQ.add(ri.item, ri.attempts, 15*time.Second)
 				}
 			}
 		}
