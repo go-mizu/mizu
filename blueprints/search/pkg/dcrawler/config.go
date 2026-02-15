@@ -43,6 +43,8 @@ type Config struct {
 	RodHeadless      bool          // Run rod in headless mode (default true)
 	ScrollCount      int           // Browser mode: scroll N times for infinite scroll (0=no scroll)
 	ExtractImages    bool          // Extract <img> URLs and store in links table
+	RodBlockResources bool         // Block images/fonts/CSS in browser mode for faster loads
+	StaleHours        int          // Resume: re-crawl pages older than N hours (0=disabled)
 }
 
 // DefaultConfig returns optimal defaults for high-throughput single-domain crawling.

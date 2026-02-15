@@ -34,6 +34,7 @@ func NewCrawlDomain() *cobra.Command {
 		scrollCount      int
 		extractImages    bool
 		downloadImages   bool
+		staleHours       int
 	)
 
 	cmd := &cobra.Command{
@@ -88,8 +89,15 @@ Pinterest (auto-detected, uses internal API - no browser needed):
 			cfg.UseRod = useRod
 			cfg.RodWorkers = rodWorkers
 			cfg.RodHeadless = true
+			cfg.RodBlockResources = useRod // block images/fonts/CSS by default in browser mode
+			// Browser mode: auto-bump timeout for heavy JS sites — 10s is too tight
+			// when 20 tabs hammer the same domain with concurrent navigations.
+			if useRod && cfg.Timeout < 20*time.Second {
+				cfg.Timeout = 20 * time.Second
+			}
 			cfg.ScrollCount = scrollCount
 			cfg.ExtractImages = extractImages || downloadImages
+			cfg.StaleHours = staleHours
 
 			return runCrawlDomain(cmd, cfg, downloadImages)
 		},
@@ -118,6 +126,7 @@ Pinterest (auto-detected, uses internal API - no browser needed):
 	cmd.Flags().IntVar(&scrollCount, "scroll", 0, "Scroll N times in browser mode for infinite scroll pages (Pinterest, etc.)")
 	cmd.Flags().BoolVar(&extractImages, "extract-images", false, "Extract <img> URLs and store in links table")
 	cmd.Flags().BoolVar(&downloadImages, "download-images", false, "Download discovered images after crawl (implies --extract-images)")
+	cmd.Flags().IntVar(&staleHours, "stale", 0, "Re-crawl pages older than N hours on --resume (0=disabled)")
 
 	return cmd
 }
