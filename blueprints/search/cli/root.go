@@ -77,6 +77,7 @@ Get started:
 	root.AddCommand(NewReddit())
 	root.AddCommand(NewInsta())
 	root.AddCommand(NewX())
+	root.AddCommand(NewPerplexity())
 
 	if err := fang.Execute(ctx, root,
 		fang.WithVersion(Version),
