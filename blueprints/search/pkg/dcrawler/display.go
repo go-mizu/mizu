@@ -494,7 +494,7 @@ func (s *Stats) rodPhaseLine() string {
 		return fmt.Sprintf("0/%d  all idle", totalWorkers)
 	}
 
-	phaseOrder := []string{"pool", "nav", "dom", "cf-check", "idle", "scroll", "extract", "rate-limit"}
+	phaseOrder := []string{"pool", "nav", "render", "cf-check", "scroll", "extract", "rate-limit", "restart"}
 	var parts []string
 	for _, p := range phaseOrder {
 		if n, ok := phases[p]; ok {

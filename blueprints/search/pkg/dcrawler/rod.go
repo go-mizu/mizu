@@ -68,6 +68,9 @@ func (rp *rodPool) getPage() (*rod.Page, error) {
 				UserAgent: rp.config.UserAgent,
 			})
 		}
+		if rp.config.RodBlockResources {
+			setupResourceBlocking(p)
+		}
 		return p, nil
 	})
 	return p, err
@@ -121,6 +124,23 @@ func (rp *rodPool) tryRestart() error {
 	rp.lastRestart = time.Now()
 	rp.restarts++
 	return nil
+}
+
+// setupResourceBlocking configures Chrome to block heavy resources (images, fonts, CSS, etc.)
+// for faster page loads. Only documents, scripts, and data requests are allowed through.
+// This dramatically reduces page load time and Chrome resource usage.
+func setupResourceBlocking(page *rod.Page) {
+	router := page.HijackRequests()
+	block := func(ctx *rod.Hijack) {
+		ctx.Response.Fail(proto.NetworkErrorReasonBlockedByClient)
+	}
+	_ = router.Add("*", proto.NetworkResourceTypeImage, block)
+	_ = router.Add("*", proto.NetworkResourceTypeFont, block)
+	_ = router.Add("*", proto.NetworkResourceTypeStylesheet, block)
+	_ = router.Add("*", proto.NetworkResourceTypeMedia, block)
+	_ = router.Add("*", proto.NetworkResourceTypeWebSocket, block)
+	_ = router.Add("*", proto.NetworkResourceTypePrefetch, block)
+	go router.Run()
 }
 
 // isBrowserDead returns true if the error indicates the Chrome CDP connection is broken.
@@ -210,11 +230,11 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 	start := time.Now()
 	timeout := c.config.Timeout
 	if timeout <= 0 {
-		timeout = 15 * time.Second
+		timeout = 20 * time.Second
 	}
 
-	// Hard deadline: 30s context for the ENTIRE fetch cycle.
-	fetchCtx, fetchCancel := context.WithTimeout(ctx, 30*time.Second)
+	// Global deadline: navigate timeout + buffer for render wait + extraction.
+	fetchCtx, fetchCancel := context.WithTimeout(ctx, timeout+20*time.Second)
 	defer fetchCancel()
 
 	// Phase: get page from pool
@@ -231,12 +251,12 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		return
 	}
 
-	// Context-bound page: ALL operations respect the 30s deadline.
+	// Context-bound page: ALL operations respect the global deadline.
 	p := page.Context(fetchCtx)
 	defer func() {
 		// Reset page to about:blank to free JS memory (critical for heavy SPA sites).
 		// This is both a cleanup step AND a browser health check.
-		if err := page.Timeout(3 * time.Second).Navigate("about:blank"); err != nil {
+		if err := page.Timeout(2 * time.Second).Navigate("about:blank"); err != nil {
 			page.Close()
 			if isBrowserDead(err) {
 				browserDead = true
@@ -247,62 +267,118 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		}
 	}()
 
-	// Phase: navigate
+	// Phase: navigate (non-blocking).
+	// rod's Navigate() blocks until Chrome fires the "load" event — on Next.js sites this
+	// means ALL script bundles must download + execute (10-25s with 20 concurrent tabs).
+	// Instead, we send the raw CDP PageNavigate command (returns immediately) and poll
+	// for readyState >= "interactive" (HTML parsed). This fires 5-15s before "load".
 	c.stats.SetRodPhase(workerID, "nav")
-	if err := p.Timeout(timeout).Navigate(item.URL); err != nil {
-		if isBrowserDead(err) {
+
+	// Send the navigate command — Chrome starts loading immediately, we don't block.
+	navRes, navErr := proto.PageNavigate{URL: item.URL}.Call(p)
+	if navErr != nil {
+		if isBrowserDead(navErr) {
 			browserDead = true
+			return
 		}
 		if ctx.Err() != nil {
 			return
 		}
-		c.recordError(item, fmt.Errorf("navigate: %w", err), time.Since(start).Milliseconds())
+		c.recordError(item, fmt.Errorf("navigate: %w", navErr), time.Since(start).Milliseconds())
+		return
+	}
+	if navRes.ErrorText != "" {
+		c.recordError(item, fmt.Errorf("navigate: %s", navRes.ErrorText), time.Since(start).Milliseconds())
 		return
 	}
 
-	// Phase: wait for DOMContentLoaded (NOT window.load — ads never fire load)
-	c.stats.SetRodPhase(workerID, "dom")
-	_, _ = p.Timeout(timeout).Eval(`() => new Promise(r => {
-		if (document.readyState !== 'loading') r();
-		else document.addEventListener('DOMContentLoaded', r);
+	// Poll for readyState >= "interactive" on the target page (not stale about:blank).
+	// "interactive" = HTML parsed + DOM tree ready — React can hydrate from this point.
+	// Much faster than waiting for "load" which requires ALL scripts to finish.
+	time.Sleep(200 * time.Millisecond) // let Chrome begin the navigation
+	navDeadline := time.Now().Add(timeout)
+	domReady := false
+	for time.Now().Before(navDeadline) && fetchCtx.Err() == nil {
+		rs, err := p.Timeout(2 * time.Second).Eval(
+			`() => ({s: document.readyState, u: location.href})`)
+		if err == nil && rs != nil {
+			var st struct {
+				S string `json:"s"`
+				U string `json:"u"`
+			}
+			if rs.Value.Unmarshal(&st) == nil && st.U != "" && st.U != "about:blank" {
+				if st.S == "interactive" || st.S == "complete" {
+					domReady = true
+					break
+				}
+			}
+		}
+		select {
+		case <-fetchCtx.Done():
+		case <-time.After(300 * time.Millisecond):
+		}
+	}
+
+	if !domReady {
+		if ctx.Err() != nil {
+			return
+		}
+		// Even on timeout, try to extract partial server-rendered HTML.
+		// Next.js SSR pages contain links in the initial HTML before JS executes.
+		partialHTML, htmlErr := p.Timeout(2 * time.Second).HTML()
+		if htmlErr != nil || len(partialHTML) < 500 {
+			c.recordError(item, fmt.Errorf("navigate: timeout waiting for DOM ready"), time.Since(start).Milliseconds())
+			return
+		}
+		// Substantial server-rendered content — proceed with partial extraction.
+	}
+
+	// Phase: wait for DOM to stabilize (React/Next.js hydration + render).
+	// Polls document.body.innerHTML.length: stable for 600ms = hydration complete.
+	c.stats.SetRodPhase(workerID, "render")
+	_, _ = p.Timeout(5 * time.Second).Eval(`() => new Promise((resolve) => {
+		const afterDOM = () => {
+			let lastLen = document.body ? document.body.innerHTML.length : 0;
+			let stable = 0;
+			const check = () => {
+				const len = document.body ? document.body.innerHTML.length : 0;
+				if (len === lastLen) {
+					stable++;
+					if (stable >= 3) { resolve(); return; }
+				} else {
+					stable = 0;
+					lastLen = len;
+				}
+				setTimeout(check, 200);
+			};
+			setTimeout(check, 300);
+		};
+		if (document.readyState !== 'loading') afterDOM();
+		else document.addEventListener('DOMContentLoaded', afterDOM);
 	})`)
 
 	if fetchCtx.Err() != nil {
 		if ctx.Err() != nil {
 			return
 		}
-		c.recordError(item, fmt.Errorf("rod: deadline exceeded after DOM wait"), time.Since(start).Milliseconds())
+		c.recordError(item, fmt.Errorf("rod: deadline exceeded after render wait"), time.Since(start).Milliseconds())
 		return
 	}
 
-	// Phase: Cloudflare challenge check (poll title for up to 5s)
-	c.stats.SetRodPhase(workerID, "cf-check")
-	cfEnd := time.Now().Add(5 * time.Second)
-	for time.Now().Before(cfEnd) && fetchCtx.Err() == nil {
-		info, ie := p.Info()
-		if ie != nil {
-			break
-		}
-		if info.Title != "Just a moment..." {
-			break
-		}
-		select {
-		case <-fetchCtx.Done():
-		case <-time.After(200 * time.Millisecond):
+	// Cloudflare challenge check — only poll if CF challenge detected.
+	if info, ie := p.Info(); ie == nil && info.Title == "Just a moment..." {
+		c.stats.SetRodPhase(workerID, "cf-check")
+		cfEnd := time.Now().Add(3 * time.Second)
+		for time.Now().Before(cfEnd) && fetchCtx.Err() == nil {
+			select {
+			case <-fetchCtx.Done():
+			case <-time.After(200 * time.Millisecond):
+			}
+			if info, ie := p.Info(); ie != nil || info.Title != "Just a moment..." {
+				break
+			}
 		}
 	}
-
-	if fetchCtx.Err() != nil {
-		if ctx.Err() != nil {
-			return
-		}
-		c.recordError(item, fmt.Errorf("rod: deadline exceeded after CF check"), time.Since(start).Milliseconds())
-		return
-	}
-
-	// Phase: wait for JS rendering (short idle wait, max 3s)
-	c.stats.SetRodPhase(workerID, "idle")
-	p.Timeout(3 * time.Second).WaitRequestIdle(300*time.Millisecond, nil, nil, nil)()
 
 	// Scroll for infinite scroll pages (Pinterest, etc.)
 	if c.config.ScrollCount > 0 && fetchCtx.Err() == nil {
@@ -413,32 +489,76 @@ type domLinkResult struct {
 
 // extractDOMLinks runs JavaScript in the browser to extract links from the rendered DOM.
 // This catches dynamically-generated links that don't exist in the raw HTML source.
+// Enhanced for Next.js/React SPAs: extracts from rendered anchors, ARIA roles, data attrs,
+// Next.js __NEXT_DATA__ props, form actions, and link preloads.
 func (c *Crawler) extractDOMLinks(page *rod.Page, baseURL *url.URL) []Link {
-	result, err := page.Timeout(5 * time.Second).Eval(`() => {
+	result, err := page.Timeout(3 * time.Second).Eval(`() => {
 		const links = [];
 		const seen = new Set();
-		// All anchor hrefs from rendered DOM
-		document.querySelectorAll('a[href]').forEach(a => {
-			if (a.href && !seen.has(a.href)) {
-				seen.add(a.href);
-				links.push({url: a.href, text: (a.textContent || '').trim().slice(0, 200), rel: a.rel || ''});
+		const add = (url, text, rel) => {
+			if (url && !seen.has(url)) {
+				seen.add(url);
+				links.push({url, text: (text || '').trim().slice(0, 200), rel: rel || ''});
 			}
+		};
+
+		// All anchor hrefs from rendered DOM (covers Next.js <Link>, React Router <Link>, etc.)
+		document.querySelectorAll('a[href]').forEach(a => {
+			add(a.href, a.textContent, a.rel);
 		});
+
 		// data-href / data-url attributes (React/Vue/Angular patterns)
 		document.querySelectorAll('[data-href],[data-url],[data-link]').forEach(el => {
-			const u = el.dataset.href || el.dataset.url || el.dataset.link;
-			if (u && !seen.has(u)) {
-				seen.add(u);
-				links.push({url: u, text: '', rel: 'data-attr'});
-			}
+			add(el.dataset.href || el.dataset.url || el.dataset.link, '', 'data-attr');
 		});
-		// Next.js client-side navigation links
+
+		// ARIA role=link elements (React sometimes uses these for navigable non-anchor elements)
+		document.querySelectorAll('[role="link"]').forEach(el => {
+			const u = el.getAttribute('href') || el.dataset.href || el.dataset.url;
+			if (u) add(u, el.textContent, 'role-link');
+		});
+
+		// Next.js prefetch/preload hints (client-side navigation)
 		document.querySelectorAll('link[rel="prefetch"][href],link[rel="preload"][href][as="fetch"]').forEach(l => {
-			if (l.href && !seen.has(l.href)) {
-				seen.add(l.href);
-				links.push({url: l.href, text: '', rel: l.rel});
-			}
+			add(l.href, '', l.rel);
 		});
+
+		// Alternate/hreflang links (localization)
+		document.querySelectorAll('link[rel="alternate"][href]').forEach(l => {
+			add(l.href, '', 'alternate');
+		});
+
+		// Form actions
+		document.querySelectorAll('form[action]').forEach(f => {
+			if (f.action && f.action !== location.href) add(f.action, '', 'form');
+		});
+
+		// Next.js __NEXT_DATA__: walk props for internal URL paths
+		const nd = document.getElementById('__NEXT_DATA__');
+		if (nd) {
+			try {
+				const data = JSON.parse(nd.textContent);
+				const walk = (obj, depth) => {
+					if (depth > 8 || !obj) return;
+					if (typeof obj === 'string') {
+						if (obj.length > 1 && obj.length < 300 && obj.startsWith('/') &&
+							/^\/[a-zA-Z]/.test(obj) &&
+							!/\.(js|css|png|jpg|svg|woff|map)$/i.test(obj) &&
+							!obj.startsWith('/_next/') && !obj.startsWith('/_nuxt/')) {
+							add(location.origin + obj, '', 'next-data');
+						}
+					} else if (Array.isArray(obj)) {
+						for (const item of obj) walk(item, depth + 1);
+					} else if (typeof obj === 'object') {
+						for (const val of Object.values(obj)) walk(val, depth + 1);
+					}
+				};
+				walk(data.props, 0);
+				// Extract page route itself
+				if (data.page && data.page !== '/') add(location.origin + data.page, '', 'next-page');
+			} catch(e) {}
+		}
+
 		return links;
 	}`)
 	if err != nil {

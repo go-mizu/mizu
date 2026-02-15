@@ -89,7 +89,7 @@ func (rq *retryQueue) drain() []retryItem {
 	return ready
 }
 
-const maxRetryAttempts = 3
+const maxRetryAttempts = 5
 
 // New creates a new Crawler with the given config.
 func New(cfg Config) (*Crawler, error) {
@@ -338,11 +338,13 @@ func (c *Crawler) restoreState() {
 		fmt.Printf("  Resume: %s pending links re-fed to frontier\n", fmtInt(pendingAdded))
 	}
 
-	// Phase 3: Re-attempt previously failed URLs (timeouts, 429, 5xx)
-	// These URLs had transient errors that may succeed on retry.
+	// Phase 3: Re-attempt ALL previously failed URLs.
+	// Browser errors (rod pool, page info, get html, deadline exceeded) are almost always
+	// transient — Chrome tab state, timing, resource pressure. Retry them all.
+	// Permanent errors (DNS, SSL) will fail again quickly and won't waste much time.
 	var retryAdded int
 	c.restoreFromShards(dir,
-		"SELECT url FROM pages WHERE error != '' AND (status_code = 0 OR status_code IN (429, 500, 502, 503, 504))",
+		"SELECT url FROM pages WHERE error != ''",
 		func(u string) {
 			if c.frontier.TryAdd(u, 1) {
 				retryAdded++
@@ -352,6 +354,58 @@ func (c *Crawler) restoreState() {
 	if retryAdded > 0 {
 		fmt.Printf("  Resume: %s failed URLs queued for retry\n", fmtInt(retryAdded))
 	}
+
+	// Phase 4: Delete error-only rows for URLs being retried.
+	// This prevents stale error entries from accumulating across resume runs.
+	// When the URL is re-fetched, INSERT OR REPLACE will write a fresh result.
+	if retryAdded > 0 {
+		deleted := c.deleteErrorRows(dir)
+		if deleted > 0 {
+			fmt.Printf("  Resume: %s stale error rows cleaned\n", fmtInt(deleted))
+		}
+	}
+
+	// Phase 5: Re-crawl stale pages (incremental crawling).
+	// If StaleHours > 0, pages older than N hours are re-fed to the frontier.
+	if c.config.StaleHours > 0 {
+		cutoff := time.Now().Add(-time.Duration(c.config.StaleHours) * time.Hour).UTC().Format(time.RFC3339)
+		var staleAdded int
+		c.restoreFromShards(dir,
+			fmt.Sprintf("SELECT url FROM pages WHERE status_code >= 200 AND status_code < 400 AND crawled_at < '%s'", cutoff),
+			func(u string) {
+				if c.frontier.TryAdd(u, 1) {
+					staleAdded++
+				}
+			},
+		)
+		if staleAdded > 0 {
+			fmt.Printf("  Resume: %s stale pages queued for re-crawl (>%dh old)\n", fmtInt(staleAdded), c.config.StaleHours)
+		}
+	}
+}
+
+// deleteErrorRows removes error-only rows from result shards so they don't accumulate.
+// Only deletes rows that have error != '' — successful rows are preserved.
+func (c *Crawler) deleteErrorRows(dir string) int {
+	count := 0
+	for i := range c.config.ShardCount {
+		path := fmt.Sprintf("%s/results_%03d.duckdb", dir, i)
+		if _, err := os.Stat(path); err != nil {
+			continue
+		}
+		db, err := sql.Open("duckdb", path)
+		if err != nil {
+			continue
+		}
+		result, err := db.Exec("DELETE FROM pages WHERE error != ''")
+		if err == nil {
+			if n, _ := result.RowsAffected(); n > 0 {
+				count += int(n)
+			}
+		}
+		db.Close()
+	}
+	return count
 }
 
 // restoreFromShards opens each result shard read-only and runs a query,
@@ -712,8 +766,9 @@ func (c *Crawler) recordError(item CrawlItem, err error, fetchMs int64) {
 	c.stats.RecordFailure(0, isTimeout)
 	c.stats.RecordDepth(item.Depth)
 	c.stats.fetchMs.Add(fetchMs)
-	// Timeouts get one retry attempt
-	if isTimeout {
+	// Retry transient errors (timeouts, browser glitches, render deadline).
+	// Permanent errors (DNS, SSL, connection refused) are NOT retried.
+	if isTimeout || isRetryableError(err) {
 		c.enqueueRetry(item, 0)
 	}
 	c.resultDB.AddPage(Result{
@@ -721,6 +776,42 @@ func (c *Crawler) recordError(item CrawlItem, err error, fetchMs int64) {
 		Depth: item.Depth, FetchTimeMs: fetchMs,
 		CrawledAt: time.Now(), Error: err.Error(),
 	})
+}
+
+// isRetryableError returns true for transient browser/network errors that may
+// succeed on retry. Permanent errors (DNS, SSL, connection refused) return false.
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+
+	// Permanent navigation errors — never retry these
+	permanentPrefixes := []string{
+		"net::ERR_NAME_NOT_RESOLVED",       // DNS failure
+		"net::ERR_CONNECTION_REFUSED",      // server not listening
+		"net::ERR_CERT_",                   // any SSL cert error
+		"net::ERR_SSL_",                    // SSL protocol errors
+		"net::ERR_BLOCKED_BY_RESPONSE",     // CORS/CSP blocked
+		"net::ERR_ABORTED",                 // intentionally cancelled
+		"net::ERR_INVALID_URL",             // malformed URL
+		"net::ERR_TOO_MANY_REDIRECTS",      // redirect loop
+	}
+	for _, prefix := range permanentPrefixes {
+		if strings.Contains(s, prefix) {
+			return false
+		}
+	}
+
+	// Transient errors — retry these
+	return strings.Contains(s, "rod pool:") ||
+		strings.Contains(s, "page info:") ||
+		strings.Contains(s, "get html:") ||
+		strings.Contains(s, "deadline exceeded") ||
+		strings.Contains(s, "timeout waiting for DOM") ||
+		strings.Contains(s, "navigate:") || // net::ERR_CONNECTION_RESET, etc.
+		strings.Contains(s, "context deadline exceeded") ||
+		strings.Contains(s, "connection reset")
 }
 
 // isRetryableStatus returns true for HTTP status codes that are transient.
@@ -739,16 +830,16 @@ func (c *Crawler) enqueueRetry(item CrawlItem, statusCode int) {
 		c.stats.retryExhausted.Add(1)
 		return // give up after max attempts
 	}
-	delay := time.Duration(attempts) * 10 * time.Second // exponential: 10s, 20s
+	delay := time.Duration(attempts) * 5 * time.Second // 5s, 10s, 15s, 20s
 	if statusCode == 429 {
-		delay = time.Duration(attempts) * 30 * time.Second // 30s, 60s
+		delay = time.Duration(attempts) * 30 * time.Second // 30s, 60s, 90s, 120s
 	}
 	c.retryQ.add(item, attempts, delay)
 }
 
 // retryFeeder periodically checks the retry queue and re-feeds items to frontier.
 func (c *Crawler) retryFeeder(ctx context.Context) {
-	tick := time.NewTicker(5 * time.Second)
+	tick := time.NewTicker(2 * time.Second)
 	defer tick.Stop()
 	for {
 		select {
