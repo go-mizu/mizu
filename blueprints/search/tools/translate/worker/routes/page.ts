@@ -18,6 +18,7 @@ import type { HonoEnv } from '../types'
 import { extractTexts, makePageRewriter, fixTitle, debugTitle } from '../page-rewriter'
 import { lookupTranslations } from '../translate'
 import { needsBrowserRender, renderWithBrowser } from '../renderer'
+import { track } from '../analytics'
 
 const route = new Hono<HonoEnv>()
 
@@ -58,6 +59,15 @@ route.get('/page/:tl{[a-zA-Z]{2,3}(-[a-zA-Z]{2})?}', async (c) => {
     const cached = await kv.get(ck, 'text')
     if (cached) {
       console.log(`[page] CACHE HIT key=${ck} size=${cached.length} ms=${Date.now() - t0}`)
+      track(c.env, {
+        event: 'page',
+        sl: targetUrl,
+        tl,
+        cache: 'HIT',
+        latencyMs: Date.now() - t0,
+        chars: cached.length,
+        success: true,
+      })
       return new Response(cached, {
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
@@ -139,6 +149,15 @@ a.btn:hover{background:#1557b0}.hint{font-size:13px;color:#80868b;margin-top:12p
 <a class="btn" href="${originUrl.toString()}">View original page</a>
 <p class="hint">${message}</p>
 </div></body></html>`
+      track(c.env, {
+        event: 'page',
+        sl: targetUrl,
+        tl,
+        extra: message,
+        cache: 'MISS',
+        latencyMs: Date.now() - t0,
+        success: false,
+      })
       return new Response(errorHtml, {
         status: 502,
         headers: {
@@ -183,6 +202,19 @@ a.btn:hover{background:#1557b0}.hint{font-size:13px;color:#80868b;margin-top:12p
   c.executionCtx.waitUntil(
     kv.put(ck, translatedHtml, { expirationTtl: 86400 })
   )
+
+  track(c.env, {
+    event: 'page',
+    sl: targetUrl,
+    tl,
+    extra: usedBrowser ? 'browser' : 'fetch',
+    cache: 'MISS',
+    latencyMs: Date.now() - t0,
+    chars: translatedHtml.length,
+    success: true,
+    cacheHits: cached.size,
+    total: texts.length,
+  })
 
   return new Response(translatedHtml, {
     headers: {
