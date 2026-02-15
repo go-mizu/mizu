@@ -8,9 +8,14 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
+
+// maxProxyBodySize is the maximum HTML body size the proxy will serve to Lightpanda.
+// Pages larger than this overwhelm Lightpanda's parser and cause crashes.
+const maxProxyBodySize = 2 * 1024 * 1024 // 2 MB
 
 const chromeUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
@@ -179,18 +184,29 @@ func (sp *stealthProxy) handleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read and decompress body
+	// Read and decompress body (with size limit)
+	reader := io.LimitReader(resp.Body, maxProxyBodySize+1)
 	var body []byte
 	if resp.Header.Get("Content-Encoding") == "gzip" {
-		gr, gerr := gzip.NewReader(resp.Body)
+		gr, gerr := gzip.NewReader(reader)
 		if gerr != nil {
-			body, _ = io.ReadAll(resp.Body)
+			body, _ = io.ReadAll(reader)
 		} else {
-			body, _ = io.ReadAll(gr)
+			body, _ = io.ReadAll(io.LimitReader(gr, maxProxyBodySize+1))
 			gr.Close()
 		}
 	} else {
-		body, _ = io.ReadAll(resp.Body)
+		body, _ = io.ReadAll(reader)
+	}
+
+	// Oversized pages: return a minimal HTML page instead of truncated HTML.
+	// Truncated HTML has unclosed <script> tags that cause Lightpanda to hang.
+	if len(body) > maxProxyBodySize {
+		body = []byte(fmt.Sprintf(`<html><head><title>Large Page</title></head><body>Page size %d exceeds limit</body></html>`, len(body)))
+	} else {
+		// Strip third-party analytics/tracking scripts to reduce Lightpanda memory pressure.
+		// Keep first-party scripts intact (needed for SPA rendering on sites like openai.com).
+		body = stripTrackingScripts(body)
 	}
 
 	// Inject polyfills into HTML
@@ -230,6 +246,61 @@ func injectPolyfills(body []byte) []byte {
 	}
 	// Fallback: prepend
 	return append([]byte(polyfillScript), body...)
+}
+
+// trackingDomains are third-party analytics/tracking script sources that
+// add memory pressure without contributing crawlable content.
+var trackingDomains = []string{
+	"googletagmanager.com",
+	"google-analytics.com",
+	"googleads.",
+	"googlesyndication.com",
+	"facebook.net",
+	"fbevents.js",
+	"connect.facebook",
+	"analytics.",
+	"hotjar.com",
+	"hubspot.com",
+	"hsforms.net",
+	"hs-scripts.com",
+	"hs-analytics.net",
+	"intellimize.co",
+	"datadome.",
+	"sentry.io",
+	"segment.com",
+	"segment.io",
+	"cdn.mxpnl.com",
+	"mixpanel.com",
+	"amplitude.com",
+	"clarity.ms",
+	"cloudflareinsights.com",
+	"newrelic.com",
+	"nr-data.net",
+	"intercom.io",
+	"intercomcdn.com",
+	"crisp.chat",
+	"zendesk.com",
+	"drift.com",
+	"tawk.to",
+	"doubleclick.net",
+}
+
+// scriptTagRe matches <script ...>...</script> tags.
+var scriptTagRe = regexp.MustCompile(`(?is)<script\b[^>]*>.*?</script>`)
+
+// stripTrackingScripts removes only third-party analytics/tracking <script> tags.
+// First-party scripts are preserved for SPA rendering (e.g., openai.com needs
+// React/Next.js to render content and links).
+func stripTrackingScripts(body []byte) []byte {
+	return scriptTagRe.ReplaceAllFunc(body, func(match []byte) []byte {
+		lower := strings.ToLower(string(match))
+		for _, domain := range trackingDomains {
+			if strings.Contains(lower, domain) {
+				return nil // Remove this script tag
+			}
+		}
+		return match // Keep non-tracking scripts
+	})
 }
 
 // setChromeHeaders sets HTTP headers that match a real Chrome 131 browser.

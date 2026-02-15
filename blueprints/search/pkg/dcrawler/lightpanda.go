@@ -18,12 +18,17 @@ import (
 	"github.com/go-rod/rod/lib/proto"
 )
 
+// recycleInterval is the number of pages after which a Lightpanda process
+// is proactively recycled to prevent memory leaks from causing crashes.
+const recycleInterval = 50
+
 // lightpandaProcess manages a single Lightpanda browser process and its rod connection.
 type lightpandaProcess struct {
-	cmd     *exec.Cmd
-	browser *rod.Browser
-	ws      *cdp.WebSocket
-	port    int
+	cmd        *exec.Cmd
+	browser    *rod.Browser
+	ws         *cdp.WebSocket
+	port       int
+	pageCount  int // pages processed since last restart
 }
 
 // lightpandaPool manages multiple Lightpanda processes (one per worker).
@@ -219,6 +224,26 @@ func (lp *lightpandaPool) getPage(idx int) (*rod.Page, error) {
 	return page, nil
 }
 
+// shouldRecycle returns true if the process at idx has served enough pages
+// and should be proactively recycled to prevent memory leaks.
+func (lp *lightpandaPool) shouldRecycle(idx int) bool {
+	lp.mu.Lock()
+	defer lp.mu.Unlock()
+	if idx >= len(lp.processes) {
+		return false
+	}
+	return lp.processes[idx].pageCount >= recycleInterval
+}
+
+// incrementPageCount increments the page counter for a process.
+func (lp *lightpandaPool) incrementPageCount(idx int) {
+	lp.mu.Lock()
+	defer lp.mu.Unlock()
+	if idx < len(lp.processes) {
+		lp.processes[idx].pageCount++
+	}
+}
+
 // isLightpandaDead returns true if the error indicates the Lightpanda process crashed.
 func isLightpandaDead(err error) bool {
 	if err == nil {
@@ -258,6 +283,13 @@ func (c *Crawler) lightpandaWorker(ctx context.Context, lp *lightpandaPool, work
 					c.stats.rodRestarts.Add(1)
 				}
 				time.Sleep(500 * time.Millisecond)
+			} else if lp.shouldRecycle(workerID) {
+				// Proactive recycling: restart process after N pages to prevent
+				// memory leaks from accumulating and causing crashes.
+				c.stats.SetRodPhase(workerID, "recycle")
+				if err := lp.restart(workerID); err == nil {
+					c.stats.rodRestarts.Add(1)
+				}
 			}
 		}
 	}
@@ -471,5 +503,6 @@ func (c *Crawler) lightpandaFetchAndProcess(ctx context.Context, lp *lightpandaP
 	c.resultDB.AddPage(result)
 	c.stats.RecordSuccess(result.StatusCode, int64(len(body)), fetchMs)
 	c.stats.RecordDepth(item.Depth)
+	lp.incrementPageCount(workerID)
 	return
 }
