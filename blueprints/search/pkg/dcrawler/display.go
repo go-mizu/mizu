@@ -57,8 +57,9 @@ type Stats struct {
 	rodPhaseStart   sync.Map // int -> time.Time (worker ID -> phase start time)
 	rodWorkerURL    sync.Map // int -> string (worker ID -> current URL)
 	rodWorkerStart  sync.Map // int -> time.Time (worker ID -> item start time)
-	rodTotalWorkers int      // total rod workers
-	useRod          bool     // whether rod mode is active
+	rodTotalWorkers int          // total rod workers
+	rodRestarts     atomic.Int64 // browser restart count
+	useRod          bool         // whether rod mode is active
 
 	// Freeze
 	frozen   bool
@@ -124,11 +125,13 @@ func (s *Stats) SetUseRod(v bool) {
 }
 
 // RecordSuccess records a successful fetch.
+// bytes/fetchMs are added BEFORE success count so readers always see
+// bytes >= what success accounts for (prevents avg from being wrong).
 func (s *Stats) RecordSuccess(statusCode int, bytesRecv int64, fetchMs int64) {
-	s.success.Add(1)
 	s.bytes.Add(bytesRecv)
 	s.fetchMs.Add(fetchMs)
 	s.recordStatus(statusCode)
+	s.success.Add(1) // last: readers see consistent bytes/success ratio
 }
 
 // RecordFailure records a failed fetch.
@@ -233,26 +236,31 @@ func (s *Stats) ByteSpeed() float64 {
 	return v
 }
 
-// AvgFetchMs returns average fetch time in milliseconds.
+// AvgFetchMs returns average fetch time across ALL completed requests (success + fail + timeout).
 func (s *Stats) AvgFetchMs() float64 {
-	succ := s.success.Load()
-	if succ == 0 {
+	done := s.Done()
+	if done == 0 {
 		return 0
 	}
-	return float64(s.fetchMs.Load()) / float64(succ)
+	return float64(s.fetchMs.Load()) / float64(done)
 }
 
 // Render returns a formatted stats display string.
 func (s *Stats) Render() string {
-	done := s.Done()
+	// Snapshot all counters together FIRST to keep them consistent.
+	// success is incremented AFTER bytes in RecordSuccess, so reading
+	// success first then bytes guarantees bytes >= what success accounts for.
 	succ := s.success.Load()
+	bytesTotal := s.bytes.Load()
 	fail := s.failed.Load()
 	tout := s.timeout.Load()
+	inflight := s.inFlight.Load()
+	done := succ + fail + tout
+
+	// Heavy operations after snapshot (Speed acquires mutex, does slice work)
 	speed := s.Speed()
 	elapsed := s.Elapsed()
-	bytesTotal := s.bytes.Load()
 	bw := s.ByteSpeed()
-	inflight := s.inFlight.Load()
 
 	// Progress bar or open-ended counter
 	var progressLine string
@@ -377,7 +385,11 @@ func (s *Stats) Render() string {
 
 	// === Rod worker phases (browser mode only) ===
 	if s.useRod {
-		b.WriteString(fmt.Sprintf("  Workers   %s\n", s.rodPhaseLine()))
+		workerLine := s.rodPhaseLine()
+		if restarts := s.rodRestarts.Load(); restarts > 0 {
+			workerLine += fmt.Sprintf("  \u2502  \u21bb %s restarts", fmtInt64(restarts))
+		}
+		b.WriteString(fmt.Sprintf("  Workers   %s\n", workerLine))
 		if details := s.rodWorkerDetails(); details != "" {
 			b.WriteString(details)
 		}

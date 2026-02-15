@@ -39,7 +39,7 @@ type Config struct {
 	Continuous       bool          // Run non-stop, re-seed when frontier drains
 	ReseedInterval   time.Duration // Min interval between re-seeds (default 30s)
 	UseRod           bool          // Use headless Chrome via rod for JS-rendered pages
-	RodWorkers       int           // Number of browser pages (default 8)
+	RodWorkers       int           // Number of browser pages (default 40)
 	RodHeadless      bool          // Run rod in headless mode (default true)
 	ScrollCount      int           // Browser mode: scroll N times for infinite scroll (0=no scroll)
 	ExtractImages    bool          // Extract <img> URLs and store in links table

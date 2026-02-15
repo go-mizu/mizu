@@ -272,7 +272,7 @@ func (c *Crawler) Run(ctx context.Context) error {
 
 		workers := c.config.RodWorkers
 		if workers <= 0 {
-			workers = 20
+			workers = 40
 		}
 		c.stats.SetRodTotalWorkers(workers)
 		for i := range workers {
@@ -640,6 +640,7 @@ func (c *Crawler) fetchAndProcess(ctx context.Context, client *http.Client, item
 		io.Copy(io.Discard, resp.Body)
 		c.stats.RecordFailure(resp.StatusCode, false)
 		c.stats.RecordDepth(item.Depth)
+		c.stats.fetchMs.Add(fetchMs)
 		c.enqueueRetry(item, resp.StatusCode)
 		return
 	}
@@ -710,6 +711,7 @@ func (c *Crawler) recordError(item CrawlItem, err error, fetchMs int64) {
 	isTimeout := isTimeoutError(err)
 	c.stats.RecordFailure(0, isTimeout)
 	c.stats.RecordDepth(item.Depth)
+	c.stats.fetchMs.Add(fetchMs)
 	// Timeouts get one retry attempt
 	if isTimeout {
 		c.enqueueRetry(item, 0)
