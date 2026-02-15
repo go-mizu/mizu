@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types'
+import { track } from '../analytics'
 
 const TTS_BASE = 'https://translate.google.com/translate_tts'
 
@@ -31,6 +32,8 @@ route.get('/tts', async (c) => {
     textlen: String(q.length),
   })
 
+  const t0 = Date.now()
+
   try {
     const resp = await fetch(`${TTS_BASE}?${params.toString()}`, {
       headers: {
@@ -39,10 +42,25 @@ route.get('/tts', async (c) => {
     })
 
     if (!resp.ok) {
+      track(c.env, {
+        event: 'tts',
+        tl,
+        extra: `upstream ${resp.status}`,
+        latencyMs: Date.now() - t0,
+        chars: q.length,
+        success: false,
+      })
       return c.json({ error: `TTS upstream returned ${resp.status}` }, 502)
     }
 
     const audio = await resp.arrayBuffer()
+    track(c.env, {
+      event: 'tts',
+      tl,
+      latencyMs: Date.now() - t0,
+      chars: q.length,
+      success: true,
+    })
     return new Response(audio, {
       headers: {
         'Content-Type': 'audio/mpeg',
@@ -51,6 +69,14 @@ route.get('/tts', async (c) => {
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'TTS request failed'
+    track(c.env, {
+      event: 'tts',
+      tl,
+      extra: message,
+      latencyMs: Date.now() - t0,
+      chars: q.length,
+      success: false,
+    })
     return c.json({ error: message }, 502)
   }
 })
