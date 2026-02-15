@@ -147,7 +147,7 @@ func New(cfg Config) (*Crawler, error) {
 	c.frontier = NewFrontier(cfg.Domain, cfg.FrontierSize, cfg.BloomCapacity, cfg.BloomFPR, cfg.IncludeSubdomain)
 	c.stats = NewStats(cfg.Domain, cfg.MaxPages, cfg.Continuous)
 	c.stats.SetFrontierFuncs(c.frontier.Len, c.frontier.BloomCount)
-	c.stats.SetUseRod(cfg.UseRod)
+	c.stats.SetUseRod(cfg.UseRod || cfg.UseLightpanda)
 	c.retryQ = newRetryQueue()
 	c.stats.SetRetryQLen(c.retryQ.len)
 
@@ -218,7 +218,7 @@ func (c *Crawler) Run(ctx context.Context) error {
 	defer cancel()
 
 	// robots.txt (browser mode ignores robots.txt, like real browsers)
-	if c.config.RespectRobots && !c.config.UseRod {
+	if c.config.RespectRobots && !c.config.UseRod && !c.config.UseLightpanda {
 		rctx, rc := context.WithTimeout(ctx, 10*time.Second)
 		if r, _ := FetchRobots(rctx, c.clients[0], c.config.Domain); r != nil {
 			c.robots = r
@@ -263,7 +263,26 @@ func (c *Crawler) Run(ctx context.Context) error {
 	// errgroup: workers + coordinator
 	g, gctx := errgroup.WithContext(ctx)
 
-	if c.config.UseRod {
+	if c.config.UseLightpanda {
+		lp, err := newLightpandaPool(c.config)
+		if err != nil {
+			return fmt.Errorf("lightpanda: %w", err)
+		}
+		defer lp.close()
+
+		workers := c.config.RodWorkers
+		if workers <= 0 {
+			workers = 8
+		}
+		c.stats.SetRodTotalWorkers(workers)
+		for i := range workers {
+			workerID := i
+			g.Go(func() error {
+				c.lightpandaWorker(gctx, lp, workerID)
+				return nil
+			})
+		}
+	} else if c.config.UseRod {
 		rp, err := newRodPool(c.config)
 		if err != nil {
 			return fmt.Errorf("rod: %w", err)

@@ -30,6 +30,7 @@ func NewCrawlDomain() *cobra.Command {
 		userAgent        string
 		seedFile         string
 		useRod           bool
+		useLightpanda    bool
 		rodWorkers       int
 		scrollCount      int
 		extractImages    bool
@@ -58,6 +59,9 @@ Pinterest (auto-detected, uses internal API - no browser needed):
   search crawl-domain 'https://www.pinterest.com/search/pins/?q=watercolor' --max-pages 200`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if useRod && useLightpanda {
+				return fmt.Errorf("--browser and --lightpanda are mutually exclusive")
+			}
 			cfg := dcrawler.DefaultConfig()
 			// If user passed a full URL, use it as seed
 			if seedURL := dcrawler.ExtractSeedURL(args[0]); seedURL != "" {
@@ -87,13 +91,13 @@ Pinterest (auto-detected, uses internal API - no browser needed):
 				cfg.UserAgent = userAgent
 			}
 			cfg.UseRod = useRod
+			cfg.UseLightpanda = useLightpanda
 			cfg.RodWorkers = rodWorkers
 			cfg.RodHeadless = true
-			cfg.RodBlockResources = useRod // block images/fonts/CSS by default in browser mode
-			// Browser mode: auto-bump timeout for heavy JS sites — 10s is too tight
-			// when 20 tabs hammer the same domain with concurrent navigations.
-			if useRod && cfg.Timeout < 20*time.Second {
-				cfg.Timeout = 20 * time.Second
+			cfg.RodBlockResources = useRod // block images/fonts/CSS by default in browser mode (not needed for lightpanda)
+			// Browser mode: auto-bump timeout for heavy JS sites.
+			if (useRod || useLightpanda) && cfg.Timeout < 30*time.Second {
+				cfg.Timeout = 30 * time.Second
 			}
 			cfg.ScrollCount = scrollCount
 			cfg.ExtractImages = extractImages || downloadImages
@@ -122,7 +126,8 @@ Pinterest (auto-detected, uses internal API - no browser needed):
 	cmd.Flags().StringVar(&crawlerDataDir, "crawler-data", "", "Crawler data directory (default $HOME/data/crawler/)")
 	cmd.Flags().StringVar(&userAgent, "user-agent", "", "User-Agent header")
 	cmd.Flags().BoolVar(&useRod, "browser", false, "Use headless Chrome for JS-rendered pages (bypasses Cloudflare)")
-	cmd.Flags().IntVar(&rodWorkers, "browser-pages", 20, "Number of browser pages when using --browser")
+	cmd.Flags().BoolVar(&useLightpanda, "lightpanda", false, "Use Lightpanda browser (faster, less RAM, but less stable than Chrome)")
+	cmd.Flags().IntVar(&rodWorkers, "browser-pages", 8, "Number of browser pages when using --browser")
 	cmd.Flags().IntVar(&scrollCount, "scroll", 0, "Scroll N times in browser mode for infinite scroll pages (Pinterest, etc.)")
 	cmd.Flags().BoolVar(&extractImages, "extract-images", false, "Extract <img> URLs and store in links table")
 	cmd.Flags().BoolVar(&downloadImages, "download-images", false, "Download discovered images after crawl (implies --extract-images)")
@@ -156,7 +161,13 @@ func runCrawlDomain(cmd *cobra.Command, cfg dcrawler.Config, downloadImages bool
 	}
 
 	fmt.Println(infoStyle.Render(fmt.Sprintf("  Target:   %s", dcrawler.NormalizeDomain(cfg.Domain))))
-	if cfg.UseRod {
+	if cfg.UseLightpanda {
+		lpW := cfg.RodWorkers
+		if lpW <= 0 {
+			lpW = 8
+		}
+		fmt.Println(infoStyle.Render(fmt.Sprintf("  Mode:     lightpanda (%d processes)", lpW)))
+	} else if cfg.UseRod {
 		rodW := cfg.RodWorkers
 		if rodW <= 0 {
 			rodW = 20

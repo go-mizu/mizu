@@ -45,6 +45,7 @@ type Config struct {
 	ExtractImages    bool          // Extract <img> URLs and store in links table
 	RodBlockResources bool         // Block images/fonts/CSS in browser mode for faster loads
 	StaleHours        int          // Resume: re-crawl pages older than N hours (0=disabled)
+	UseLightpanda     bool         // Use Lightpanda browser via CDP (alternative to Chrome/rod)
 }
 
 // DefaultConfig returns optimal defaults for high-throughput single-domain crawling.
