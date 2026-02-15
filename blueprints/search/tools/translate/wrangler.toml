@@ -27,3 +27,7 @@ max_batch_timeout = 5
 
 [vars]
 ENVIRONMENT = "production"
+
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "translate_events"

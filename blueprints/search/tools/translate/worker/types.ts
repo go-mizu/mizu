@@ -8,6 +8,7 @@ export interface Env {
   BROWSER: Fetcher
   TRANSLATE_CACHE: KVNamespace
   TRANSLATE_QUEUE: Queue<TranslateMessage>
+  ANALYTICS: AnalyticsEngineDataset
   ENVIRONMENT: string
 }
 
