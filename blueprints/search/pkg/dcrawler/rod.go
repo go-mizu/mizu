@@ -143,6 +143,17 @@ func setupResourceBlocking(page *rod.Page) {
 	go router.Run()
 }
 
+// isPermanentNavError returns true for Chrome navigation errors that will never succeed on retry.
+func isPermanentNavError(errorText string) bool {
+	return strings.Contains(errorText, "ERR_NAME_NOT_RESOLVED") ||
+		strings.Contains(errorText, "ERR_CONNECTION_REFUSED") ||
+		strings.Contains(errorText, "ERR_CERT_") ||
+		strings.Contains(errorText, "ERR_SSL_") ||
+		strings.Contains(errorText, "ERR_INVALID_URL") ||
+		strings.Contains(errorText, "ERR_TOO_MANY_REDIRECTS") ||
+		strings.Contains(errorText, "ERR_BLOCKED_BY_RESPONSE")
+}
+
 // isBrowserDead returns true if the error indicates the Chrome CDP connection is broken.
 func isBrowserDead(err error) bool {
 	if err == nil {
@@ -230,11 +241,11 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 	start := time.Now()
 	timeout := c.config.Timeout
 	if timeout <= 0 {
-		timeout = 20 * time.Second
+		timeout = 30 * time.Second
 	}
 
 	// Global deadline: navigate timeout + buffer for render wait + extraction.
-	fetchCtx, fetchCancel := context.WithTimeout(ctx, timeout+20*time.Second)
+	fetchCtx, fetchCancel := context.WithTimeout(ctx, timeout+30*time.Second)
 	defer fetchCancel()
 
 	// Phase: get page from pool
@@ -267,14 +278,29 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		}
 	}()
 
-	// Phase: navigate (non-blocking).
-	// rod's Navigate() blocks until Chrome fires the "load" event — on Next.js sites this
-	// means ALL script bundles must download + execute (10-25s with 20 concurrent tabs).
-	// Instead, we send the raw CDP PageNavigate command (returns immediately) and poll
-	// for readyState >= "interactive" (HTML parsed). This fires 5-15s before "load".
+	// Phase: navigate using Chrome's native DOMContentLoaded event.
+	// Previous approach: polling readyState with Eval every 150ms.
+	// Problem: each Eval forces Chrome to context-switch, stealing CPU from page rendering
+	// and actually CAUSING timeouts (8 tabs × Eval every 150ms = 53 Eval/s overhead).
+	// New approach: listen for DOMContentLoaded event (zero CPU overhead, Chrome notifies us).
 	c.stats.SetRodPhase(workerID, "nav")
 
-	// Send the navigate command — Chrome starts loading immediately, we don't block.
+	// Set up DOMContentLoaded listener BEFORE sending navigate command.
+	// This ensures we never miss the event even if the page loads instantly.
+	domReady := false
+	dclCh := make(chan struct{}, 1)
+	go func() {
+		defer func() { recover() }() // safety: don't crash if Chrome disconnects
+		p.EachEvent(func(e *proto.PageDomContentEventFired) (stop bool) {
+			return true
+		})()
+		select {
+		case dclCh <- struct{}{}:
+		default:
+		}
+	}()
+
+	// Send the navigate command — Chrome starts loading immediately.
 	navRes, navErr := proto.PageNavigate{URL: item.URL}.Call(p)
 	if navErr != nil {
 		if isBrowserDead(navErr) {
@@ -287,47 +313,45 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		c.recordError(item, fmt.Errorf("navigate: %w", navErr), time.Since(start).Milliseconds())
 		return
 	}
+	navErrorText := ""
 	if navRes.ErrorText != "" {
-		c.recordError(item, fmt.Errorf("navigate: %s", navRes.ErrorText), time.Since(start).Milliseconds())
-		return
+		navErrorText = navRes.ErrorText
+		if isPermanentNavError(navErrorText) {
+			c.recordError(item, fmt.Errorf("navigate: %s", navErrorText), time.Since(start).Milliseconds())
+			return
+		}
 	}
 
-	// Poll for readyState >= "interactive" on the target page (not stale about:blank).
-	// "interactive" = HTML parsed + DOM tree ready — React can hydrate from this point.
-	// Much faster than waiting for "load" which requires ALL scripts to finish.
-	time.Sleep(200 * time.Millisecond) // let Chrome begin the navigation
-	navDeadline := time.Now().Add(timeout)
-	domReady := false
-	for time.Now().Before(navDeadline) && fetchCtx.Err() == nil {
-		rs, err := p.Timeout(2 * time.Second).Eval(
-			`() => ({s: document.readyState, u: location.href})`)
-		if err == nil && rs != nil {
-			var st struct {
-				S string `json:"s"`
-				U string `json:"u"`
-			}
-			if rs.Value.Unmarshal(&st) == nil && st.U != "" && st.U != "about:blank" {
-				if st.S == "interactive" || st.S == "complete" {
-					domReady = true
-					break
-				}
+	// Wait for DOMContentLoaded event — zero CPU overhead, Chrome does all the work.
+	select {
+	case <-dclCh:
+		domReady = true
+	case <-time.After(timeout):
+		// Event didn't fire within timeout. Do one final readyState check —
+		// maybe we missed the event or Chrome is being slow.
+		if rs, evalErr := p.Timeout(2 * time.Second).Eval(
+			`() => document.readyState`); evalErr == nil && rs != nil {
+			state := rs.Value.Str()
+			if state == "interactive" || state == "complete" || state == "loading" {
+				// Page has navigated (even if still loading) — accept it.
+				domReady = true
 			}
 		}
-		select {
-		case <-fetchCtx.Done():
-		case <-time.After(300 * time.Millisecond):
-		}
+	case <-fetchCtx.Done():
 	}
 
 	if !domReady {
 		if ctx.Err() != nil {
 			return
 		}
-		// Even on timeout, try to extract partial server-rendered HTML.
-		// Next.js SSR pages contain links in the initial HTML before JS executes.
-		partialHTML, htmlErr := p.Timeout(2 * time.Second).HTML()
-		if htmlErr != nil || len(partialHTML) < 500 {
-			c.recordError(item, fmt.Errorf("navigate: timeout waiting for DOM ready"), time.Since(start).Milliseconds())
+		// Last resort: try to extract whatever HTML Chrome has.
+		partialHTML, htmlErr := p.Timeout(5 * time.Second).HTML()
+		if htmlErr != nil || len(partialHTML) < 100 {
+			errMsg := "navigate: timeout waiting for DOM ready"
+			if navErrorText != "" {
+				errMsg = "navigate: " + navErrorText
+			}
+			c.recordError(item, fmt.Errorf("%s", errMsg), time.Since(start).Milliseconds())
 			return
 		}
 		// Substantial server-rendered content — proceed with partial extraction.
@@ -357,25 +381,22 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		else document.addEventListener('DOMContentLoaded', afterDOM);
 	})`)
 
-	if fetchCtx.Err() != nil {
-		if ctx.Err() != nil {
-			return
-		}
-		c.recordError(item, fmt.Errorf("rod: deadline exceeded after render wait"), time.Since(start).Milliseconds())
-		return
-	}
+	// Render wait timeout is NOT fatal — the DOM is already "interactive".
+	// Just skip optional post-render steps (CF check, scroll) if deadline expired.
 
-	// Cloudflare challenge check — only poll if CF challenge detected.
-	if info, ie := p.Info(); ie == nil && info.Title == "Just a moment..." {
-		c.stats.SetRodPhase(workerID, "cf-check")
-		cfEnd := time.Now().Add(3 * time.Second)
-		for time.Now().Before(cfEnd) && fetchCtx.Err() == nil {
-			select {
-			case <-fetchCtx.Done():
-			case <-time.After(200 * time.Millisecond):
-			}
-			if info, ie := p.Info(); ie != nil || info.Title != "Just a moment..." {
-				break
+	// Cloudflare challenge check — only poll if CF challenge detected and deadline not expired.
+	if fetchCtx.Err() == nil {
+		if info, ie := p.Info(); ie == nil && info.Title == "Just a moment..." {
+			c.stats.SetRodPhase(workerID, "cf-check")
+			cfEnd := time.Now().Add(3 * time.Second)
+			for time.Now().Before(cfEnd) && fetchCtx.Err() == nil {
+				select {
+				case <-fetchCtx.Done():
+				case <-time.After(200 * time.Millisecond):
+				}
+				if info, ie := p.Info(); ie != nil || info.Title != "Just a moment..." {
+					break
+				}
 			}
 		}
 	}
@@ -393,32 +414,44 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		}
 	}
 
-	// Phase: extract page content
+	// Phase: extract page content.
+	// Use a fresh 10s context for extraction — the global fetchCtx may have expired
+	// during render wait, but the page content is still in Chrome's memory.
 	c.stats.SetRodPhase(workerID, "extract")
 	fetchMs := time.Since(start).Milliseconds()
 
-	pageInfo, err := p.Info()
-	if err != nil {
-		if ctx.Err() != nil {
-			return
-		}
-		c.recordError(item, fmt.Errorf("page info: %w", err), fetchMs)
-		return
+	extractCtx, extractCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer extractCancel()
+	ep := page.Context(extractCtx)
+
+	// Page info: fallback to empty title if it fails (don't abandon the page).
+	var pageTitle, pageURL string
+	if pageInfo, err := ep.Info(); err == nil && pageInfo != nil {
+		pageTitle = pageInfo.Title
+		pageURL = pageInfo.URL
 	}
 
-	htmlContent, err := p.HTML()
+	// HTML extraction with fallback: try p.HTML() first, then Eval as backup.
+	htmlContent, err := ep.HTML()
 	if err != nil {
+		// Fallback: extract via JavaScript evaluation
+		if rs, evalErr := ep.Timeout(5 * time.Second).Eval(
+			`() => document.documentElement.outerHTML`); evalErr == nil && rs != nil {
+			htmlContent = rs.Value.Str()
+		}
+	}
+	if htmlContent == "" {
 		if ctx.Err() != nil {
 			return
 		}
-		c.recordError(item, fmt.Errorf("get html: %w", err), fetchMs)
+		c.recordError(item, fmt.Errorf("get html: empty content"), fetchMs)
 		return
 	}
 	body := []byte(htmlContent)
 
 	finalURL := item.URL
-	if pageInfo != nil && pageInfo.URL != "" {
-		finalURL = pageInfo.URL
+	if pageURL != "" {
+		finalURL = pageURL
 	}
 
 	result := Result{
@@ -429,7 +462,7 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		ContentType:   "text/html",
 		ContentLength: int64(len(body)),
 		BodyHash:      xxhash.Sum64(body),
-		Title:         pageInfo.Title,
+		Title:         pageTitle,
 		FetchTimeMs:   fetchMs,
 		CrawledAt:     time.Now(),
 	}
@@ -446,8 +479,9 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 	meta := ExtractLinksAndMeta(body, baseURL, c.config.Domain, c.config.ExtractImages)
 
 	// DOM-based JS extraction (catches dynamically-rendered links, data-href, prefetch)
-	if fetchCtx.Err() == nil {
-		domLinks := c.extractDOMLinks(p, baseURL)
+	// Uses extractCtx (fresh 10s deadline) — fetchCtx may have expired during render wait.
+	if extractCtx.Err() == nil {
+		domLinks := c.extractDOMLinks(ep, baseURL)
 		meta.Links = append(meta.Links, domLinks...)
 	}
 
