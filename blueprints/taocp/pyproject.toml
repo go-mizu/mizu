@@ -1,0 +1,34 @@
+[project]
+name = "taocp-converter"
+version = "0.1.0"
+description = "Convert TAOCP PDF pages to per-page images, Markdown, and LaTeX"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "pymupdf>=1.24.10",
+  "ocrmac>=1.0.0; platform_system == 'Darwin'",
+]
+
+[project.optional-dependencies]
+hq = [
+  "marker-pdf>=1.10.0",
+  "surya-ocr>=0.18.0",
+]
+
+[project.scripts]
+taocp-convert = "taocp_converter.cli:main"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0.0",
+]
+
+[build-system]
+requires = ["hatchling>=1.24.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/taocp_converter"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
