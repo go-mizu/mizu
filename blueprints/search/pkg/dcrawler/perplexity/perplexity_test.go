@@ -1547,6 +1547,80 @@ func TestLiveLabsSearch(t *testing.T) {
 	t.Logf("Output preview: %.100s", result.Output)
 }
 
+// --- Email Provider Registry Tests ---
+
+func TestEmailProviderRegistry(t *testing.T) {
+	if len(allProviders) != 7 {
+		t.Fatalf("expected 7 providers, got %d", len(allProviders))
+	}
+
+	expectedTiers := map[string]ProviderTier{
+		"mail.tm":      TierPrivate,
+		"mail.gw":      TierPrivate,
+		"tempmail.lol": TierPrivate,
+		"guerrillamail": TierSession,
+		"dropmail":      TierSession,
+		"tempmail.plus": TierPublic,
+		"inboxkitten":   TierPublic,
+	}
+
+	for _, p := range allProviders {
+		expected, ok := expectedTiers[p.Name]
+		if !ok {
+			t.Errorf("unexpected provider %q", p.Name)
+			continue
+		}
+		if p.Tier != expected {
+			t.Errorf("provider %q: expected tier %d, got %d", p.Name, expected, p.Tier)
+		}
+		if p.NewFunc == nil {
+			t.Errorf("provider %q has nil NewFunc", p.Name)
+		}
+	}
+}
+
+func TestShuffledByTier(t *testing.T) {
+	ordered := shuffledByTier(allProviders)
+	if len(ordered) != 7 {
+		t.Fatalf("expected 7 providers, got %d", len(ordered))
+	}
+
+	// Verify tier ordering is maintained: all Private before Session before Public
+	lastTier := TierPrivate
+	for _, p := range ordered {
+		if p.Tier < lastTier {
+			t.Errorf("provider %q (tier %d) appeared after tier %d — tier ordering violated", p.Name, p.Tier, lastTier)
+		}
+		lastTier = p.Tier
+	}
+
+	// Verify correct counts per tier
+	tierCounts := map[ProviderTier]int{}
+	for _, p := range ordered {
+		tierCounts[p.Tier]++
+	}
+	if tierCounts[TierPrivate] != 3 {
+		t.Errorf("expected 3 private, got %d", tierCounts[TierPrivate])
+	}
+	if tierCounts[TierSession] != 2 {
+		t.Errorf("expected 2 session, got %d", tierCounts[TierSession])
+	}
+	if tierCounts[TierPublic] != 2 {
+		t.Errorf("expected 2 public, got %d", tierCounts[TierPublic])
+	}
+}
+
+func TestRandomString(t *testing.T) {
+	s1 := randomString(10)
+	s2 := randomString(10)
+	if len(s1) != 10 {
+		t.Errorf("expected length 10, got %d", len(s1))
+	}
+	if s1 == s2 {
+		t.Error("expected different random strings")
+	}
+}
+
 // --- Live: Temp email provider ---
 
 func TestLiveTempEmail(t *testing.T) {
@@ -1567,6 +1641,106 @@ func TestLiveTempEmail(t *testing.T) {
 		t.Error("expected non-empty email address")
 	}
 	t.Logf("Generated email: %s", email)
+}
+
+// --- Live: Individual provider tests ---
+
+func TestLiveMailTM(t *testing.T) {
+	if os.Getenv("LIVE_TEST") == "" {
+		t.Skip("set LIVE_TEST=1 to run live tests")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	client, err := NewMailTMClient(ctx)
+	if err != nil {
+		t.Fatalf("mail.tm: %v", err)
+	}
+	t.Logf("mail.tm email: %s", client.Email())
+}
+
+func TestLiveMailGW(t *testing.T) {
+	if os.Getenv("LIVE_TEST") == "" {
+		t.Skip("set LIVE_TEST=1 to run live tests")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	client, err := NewMailGWClient(ctx)
+	if err != nil {
+		t.Fatalf("mail.gw: %v", err)
+	}
+	t.Logf("mail.gw email: %s", client.Email())
+}
+
+func TestLiveTempMailLol(t *testing.T) {
+	if os.Getenv("LIVE_TEST") == "" {
+		t.Skip("set LIVE_TEST=1 to run live tests")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	client, err := NewTempMailLolClient(ctx)
+	if err != nil {
+		t.Fatalf("tempmail.lol: %v", err)
+	}
+	t.Logf("tempmail.lol email: %s", client.Email())
+}
+
+func TestLiveGuerrillaMail(t *testing.T) {
+	if os.Getenv("LIVE_TEST") == "" {
+		t.Skip("set LIVE_TEST=1 to run live tests")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	client, err := NewGuerrillaClient(ctx)
+	if err != nil {
+		t.Fatalf("guerrillamail: %v", err)
+	}
+	t.Logf("guerrillamail email: %s", client.Email())
+}
+
+func TestLiveDropMail(t *testing.T) {
+	if os.Getenv("LIVE_TEST") == "" {
+		t.Skip("set LIVE_TEST=1 to run live tests")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	client, err := NewDropMailClient(ctx)
+	if err != nil {
+		t.Fatalf("dropmail: %v", err)
+	}
+	t.Logf("dropmail email: %s", client.Email())
+}
+
+func TestLiveTempMailPlus(t *testing.T) {
+	if os.Getenv("LIVE_TEST") == "" {
+		t.Skip("set LIVE_TEST=1 to run live tests")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	client, err := NewTempMailPlusClient(ctx)
+	if err != nil {
+		t.Fatalf("tempmail.plus: %v", err)
+	}
+	t.Logf("tempmail.plus email: %s", client.Email())
+}
+
+func TestLiveInboxKitten(t *testing.T) {
+	if os.Getenv("LIVE_TEST") == "" {
+		t.Skip("set LIVE_TEST=1 to run live tests")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	client, err := NewInboxKittenClient(ctx)
+	if err != nil {
+		t.Fatalf("inboxkitten: %v", err)
+	}
+	t.Logf("inboxkitten email: %s", client.Email())
 }
 
 // --- Live: Full register workflow ---

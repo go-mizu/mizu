@@ -35,12 +35,25 @@ export interface SessionState {
 
 // --- App Types ---
 
+export interface MediaItem {
+  type: 'image' | 'video'
+  url: string
+  thumbnail?: string
+  title?: string
+  sourceUrl?: string
+  duration?: string
+  width?: number
+  height?: number
+}
+
 export interface SearchResult {
   query: string
   answer: string
   citations: Citation[]
   webResults: WebResult[]
   relatedQueries: string[]
+  images: MediaItem[]
+  videos: MediaItem[]
   backendUUID: string
   mode: string
   model: string
@@ -70,6 +83,8 @@ export interface ThreadMessage {
   citations?: Citation[]
   webResults?: WebResult[]
   relatedQueries?: string[]
+  images?: MediaItem[]
+  videos?: MediaItem[]
   backendUUID?: string
   model?: string
   durationMs?: number
