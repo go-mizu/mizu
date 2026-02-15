@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/cespare/xxhash/v2"
@@ -15,9 +17,12 @@ import (
 
 // rodPool manages a headless Chrome browser and a pool of pages.
 type rodPool struct {
-	browser *rod.Browser
-	pool    rod.Pool[rod.Page]
-	config  Config
+	mu          sync.Mutex
+	browser     *rod.Browser
+	pool        rod.Pool[rod.Page]
+	config      Config
+	lastRestart time.Time
+	restarts    int
 }
 
 func newRodPool(cfg Config) (*rodPool, error) {
@@ -36,7 +41,7 @@ func newRodPool(cfg Config) (*rodPool, error) {
 
 	workers := cfg.RodWorkers
 	if workers <= 0 {
-		workers = 20
+		workers = 40
 	}
 	pool := rod.NewPagePool(workers)
 
@@ -49,7 +54,12 @@ func newRodPool(cfg Config) (*rodPool, error) {
 
 func (rp *rodPool) getPage() (*rod.Page, error) {
 	p, err := rp.pool.Get(func() (*rod.Page, error) {
-		p, err := stealth.Page(rp.browser)
+		// Mutex-protect browser access: tryRestart may replace rp.browser concurrently
+		rp.mu.Lock()
+		b := rp.browser
+		rp.mu.Unlock()
+
+		p, err := stealth.Page(b)
 		if err != nil {
 			return nil, err
 		}
@@ -68,8 +78,61 @@ func (rp *rodPool) putPage(p *rod.Page) {
 }
 
 func (rp *rodPool) close() {
+	rp.mu.Lock()
+	defer rp.mu.Unlock()
 	rp.pool.Cleanup(func(p *rod.Page) { p.Close() })
 	rp.browser.Close()
+}
+
+// tryRestart kills Chrome and relaunches it. Safe for concurrent calls:
+// uses a mutex and skips if already restarted within 5s.
+func (rp *rodPool) tryRestart() error {
+	rp.mu.Lock()
+	defer rp.mu.Unlock()
+
+	if time.Since(rp.lastRestart) < 5*time.Second {
+		return nil // another worker already restarted
+	}
+
+	// Close old browser + pool
+	rp.pool.Cleanup(func(p *rod.Page) { p.Close() })
+	rp.browser.Close()
+
+	// Launch new Chrome
+	l := launcher.New().
+		Headless(rp.config.RodHeadless).
+		Set("disable-blink-features", "AutomationControlled").
+		Set("disable-features", "IsolateOrigins,site-per-process")
+	controlURL, err := l.Launch()
+	if err != nil {
+		return fmt.Errorf("rod launcher: %w", err)
+	}
+	browser := rod.New().ControlURL(controlURL)
+	if err := browser.Connect(); err != nil {
+		return fmt.Errorf("rod connect: %w", err)
+	}
+
+	workers := rp.config.RodWorkers
+	if workers <= 0 {
+		workers = 40
+	}
+	rp.browser = browser
+	rp.pool = rod.NewPagePool(workers)
+	rp.lastRestart = time.Now()
+	rp.restarts++
+	return nil
+}
+
+// isBrowserDead returns true if the error indicates the Chrome CDP connection is broken.
+func isBrowserDead(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "use of closed network connection") ||
+		strings.Contains(s, "connection reset by peer") ||
+		strings.Contains(s, "broken pipe") ||
+		strings.Contains(s, "ERR_INTERNET_DISCONNECTED")
 }
 
 // getPageCtx gets a page from the pool, respecting the context deadline.
@@ -101,6 +164,7 @@ func (rp *rodPool) getPageCtx(ctx context.Context) (*rod.Page, error) {
 
 // rodWorker fetches pages using headless Chrome.
 func (c *Crawler) rodWorker(ctx context.Context, rp *rodPool, workerID int) {
+	consecutiveErrors := 0
 	for {
 		select {
 		case <-ctx.Done():
@@ -115,12 +179,27 @@ func (c *Crawler) rodWorker(ctx context.Context, rp *rodPool, workerID int) {
 					return
 				}
 			}
-			c.rodFetchAndProcess(ctx, rp, item, workerID)
+			dead := c.rodFetchAndProcess(ctx, rp, item, workerID)
+			if dead {
+				consecutiveErrors++
+				if consecutiveErrors >= 3 {
+					c.stats.SetRodPhase(workerID, "restart")
+					if err := rp.tryRestart(); err == nil {
+						c.stats.rodRestarts.Add(1)
+					}
+					consecutiveErrors = 0
+					time.Sleep(time.Second) // let new browser settle
+				}
+			} else {
+				consecutiveErrors = 0
+			}
 		}
 	}
 }
 
-func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item CrawlItem, workerID int) {
+// rodFetchAndProcess fetches a page using headless Chrome.
+// Returns true if the browser appears dead (CDP connection broken) — caller should restart.
+func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item CrawlItem, workerID int) (browserDead bool) {
 	if c.config.MaxPages > 0 && c.claimed.Add(1) > int64(c.config.MaxPages) {
 		return
 	}
@@ -135,15 +214,16 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 	}
 
 	// Hard deadline: 30s context for the ENTIRE fetch cycle.
-	// All rod operations on `p` (context-bound page) will be cancelled when this expires.
-	// This is the KEY fix: page.Info() and page.HTML() previously had NO timeout.
 	fetchCtx, fetchCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer fetchCancel()
 
-	// Phase: get page from pool (with context — won't block if Chrome is unresponsive)
+	// Phase: get page from pool
 	c.stats.SetRodPhase(workerID, "pool")
 	page, err := rp.getPageCtx(fetchCtx)
 	if err != nil {
+		if isBrowserDead(err) {
+			browserDead = true
+		}
 		if ctx.Err() != nil {
 			return
 		}
@@ -152,21 +232,27 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 	}
 
 	// Context-bound page: ALL operations respect the 30s deadline.
-	// This prevents page.Info(), page.HTML(), WaitRequestIdle from blocking forever.
 	p := page.Context(fetchCtx)
-	var pageFailed bool
 	defer func() {
-		if pageFailed || fetchCtx.Err() != nil {
-			page.Close() // broken/timed-out page — close, let pool create fresh
+		// Reset page to about:blank to free JS memory (critical for heavy SPA sites).
+		// This is both a cleanup step AND a browser health check.
+		if err := page.Timeout(3 * time.Second).Navigate("about:blank"); err != nil {
+			page.Close()
+			if isBrowserDead(err) {
+				browserDead = true
+			}
 		} else {
-			rp.putPage(page) // healthy page — return to pool for reuse
+			rp.putPage(page) // page is healthy, recycle it
+			browserDead = false
 		}
 	}()
 
 	// Phase: navigate
 	c.stats.SetRodPhase(workerID, "nav")
 	if err := p.Timeout(timeout).Navigate(item.URL); err != nil {
-		pageFailed = true
+		if isBrowserDead(err) {
+			browserDead = true
+		}
 		if ctx.Err() != nil {
 			return
 		}
@@ -185,7 +271,6 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		if ctx.Err() != nil {
 			return
 		}
-		pageFailed = true
 		c.recordError(item, fmt.Errorf("rod: deadline exceeded after DOM wait"), time.Since(start).Milliseconds())
 		return
 	}
@@ -211,7 +296,6 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		if ctx.Err() != nil {
 			return
 		}
-		pageFailed = true
 		c.recordError(item, fmt.Errorf("rod: deadline exceeded after CF check"), time.Since(start).Milliseconds())
 		return
 	}
@@ -233,13 +317,12 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		}
 	}
 
-	// Phase: extract page content (now protected by fetchCtx — can't block forever)
+	// Phase: extract page content
 	c.stats.SetRodPhase(workerID, "extract")
 	fetchMs := time.Since(start).Milliseconds()
 
 	pageInfo, err := p.Info()
 	if err != nil {
-		pageFailed = true
 		if ctx.Err() != nil {
 			return
 		}
@@ -249,7 +332,6 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 
 	htmlContent, err := p.HTML()
 	if err != nil {
-		pageFailed = true
 		if ctx.Err() != nil {
 			return
 		}
@@ -319,6 +401,7 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 	c.resultDB.AddPage(result)
 	c.stats.RecordSuccess(result.StatusCode, int64(len(body)), fetchMs)
 	c.stats.RecordDepth(item.Depth)
+	return
 }
 
 // domLinkResult is the JSON structure returned by the DOM link extraction script.
