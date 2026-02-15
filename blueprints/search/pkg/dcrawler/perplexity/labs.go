@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"math/rand/v2"
+	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"sync"
@@ -28,13 +30,29 @@ type LabsClient struct {
 	lastAnswer *LabsResult
 	answerMu   sync.Mutex
 	answerCh   chan struct{}
+
+	// Connection ready signal (Socket.IO namespace connected)
+	readyCh chan struct{}
+
+	// Socket.IO message counter for ACK
+	msgID int
 }
 
 // NewLabsClient creates a new Labs client with Socket.IO handshake.
 func NewLabsClient(ctx context.Context) (*LabsClient, error) {
+	jar, _ := cookiejar.New(nil)
+	transport := &http.Transport{
+		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return dialTLSChrome(ctx, network, addr)
+		},
+		MaxIdleConns:       10,
+		IdleConnTimeout:    30 * time.Second,
+		DisableCompression: false,
+	}
 	lc := &LabsClient{
-		httpClient: &http.Client{Timeout: defaultTimeout},
+		httpClient: &http.Client{Timeout: defaultTimeout, Jar: jar, Transport: transport},
 		answerCh:   make(chan struct{}, 1),
+		readyCh:    make(chan struct{}),
 	}
 
 	if err := lc.connect(ctx); err != nil {
@@ -47,6 +65,19 @@ func NewLabsClient(ctx context.Context) (*LabsClient, error) {
 // connect performs the Engine.IO v4 handshake and WebSocket upgrade.
 func (lc *LabsClient) connect(ctx context.Context) error {
 	timestamp := fmt.Sprintf("%08x", rand.Uint32())
+
+	// Step 0: Visit main page to get Cloudflare cookies
+	initReq, err := http.NewRequestWithContext(ctx, "GET", baseURL, nil)
+	if err != nil {
+		return err
+	}
+	setHeaders(initReq, defaultHeaders())
+	initResp, err := lc.httpClient.Do(initReq)
+	if err != nil {
+		return fmt.Errorf("init page: %w", err)
+	}
+	io.Copy(io.Discard, initResp.Body)
+	initResp.Body.Close()
 
 	// Step 1: HTTP polling — get SID
 	pollURL := fmt.Sprintf("%s?EIO=4&transport=polling&t=%s", endpointSocketIO, timestamp)
@@ -66,6 +97,14 @@ func (lc *LabsClient) connect(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	// Debug: print cookies
+	cookieURL, _ := url.Parse(baseURL)
+	fmt.Printf("[COOKIES] After polling: ")
+	for _, c := range lc.httpClient.Jar.Cookies(cookieURL) {
+		fmt.Printf("%s=%s... ", c.Name, truncate(c.Value, 20))
+	}
+	fmt.Println()
 
 	// Response starts with a length-prefix character, skip it
 	bodyStr := string(body)
@@ -111,15 +150,37 @@ func (lc *LabsClient) connect(ctx context.Context) error {
 	wsURL := fmt.Sprintf("wss://www.perplexity.ai/socket.io/?EIO=4&transport=websocket&sid=%s", lc.sid)
 
 	wsHeaders := http.Header{
-		"User-Agent": {chromeUA},
+		"User-Agent":      {chromeUA},
+		"Origin":          {"https://www.perplexity.ai"},
+		"Accept-Language": {"en-US,en;q=0.9"},
+		"Cache-Control":   {"no-cache"},
+		"Pragma":          {"no-cache"},
+	}
+	// Forward cookies from polling session
+	reqURL, _ = url.Parse("https://www.perplexity.ai/")
+	for _, cookie := range lc.httpClient.Jar.Cookies(reqURL) {
+		if wsHeaders.Get("Cookie") == "" {
+			wsHeaders.Set("Cookie", cookie.Name+"="+cookie.Value)
+		} else {
+			wsHeaders.Set("Cookie", wsHeaders.Get("Cookie")+"; "+cookie.Name+"="+cookie.Value)
+		}
 	}
 
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 15 * time.Second,
+		Jar:              lc.httpClient.Jar,
+		NetDialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return dialTLSChrome(ctx, network, addr)
+		},
 	}
 
-	conn, _, err := dialer.DialContext(ctx, wsURL, wsHeaders)
+	conn, wsResp, err := dialer.DialContext(ctx, wsURL, wsHeaders)
 	if err != nil {
+		if wsResp != nil {
+			body, _ := io.ReadAll(wsResp.Body)
+			wsResp.Body.Close()
+			return fmt.Errorf("websocket dial: %w (HTTP %d, body: %s)", err, wsResp.StatusCode, string(body))
+		}
 		return fmt.Errorf("websocket dial: %w", err)
 	}
 	lc.ws = conn
@@ -135,6 +196,15 @@ func (lc *LabsClient) connect(ctx context.Context) error {
 	// Start message reader
 	go lc.readLoop()
 
+	// Wait for Socket.IO namespace connect (40 message)
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-lc.readyCh:
+	case <-time.After(10 * time.Second):
+		return fmt.Errorf("timeout waiting for Socket.IO connect")
+	}
+
 	return nil
 }
 
@@ -143,10 +213,17 @@ func (lc *LabsClient) readLoop() {
 	for {
 		_, message, err := lc.ws.ReadMessage()
 		if err != nil {
+			fmt.Fprintf(io.Discard, "ws read error: %v\n", err) // debug
 			return // connection closed
 		}
 
 		msg := string(message)
+		// Debug: print first 200 chars of each message
+		preview := msg
+		if len(preview) > 200 {
+			preview = preview[:200] + "..."
+		}
+		fmt.Printf("[WS] %s\n", preview)
 
 		// Heartbeat: respond to PING with PONG
 		if msg == "2" {
@@ -154,9 +231,26 @@ func (lc *LabsClient) readLoop() {
 			continue
 		}
 
-		// Socket.IO EVENT message
-		if strings.HasPrefix(msg, "42") {
-			lc.handleEvent(msg[2:])
+		// Socket.IO CONNECT acknowledgment
+		if strings.HasPrefix(msg, "40") {
+			select {
+			case <-lc.readyCh:
+			default:
+				close(lc.readyCh)
+			}
+			continue
+		}
+
+		// Socket.IO EVENT message (42) or ACK response (43)
+		if strings.HasPrefix(msg, "42") || strings.HasPrefix(msg, "43") {
+			// Strip the prefix (42 or 43) and any ACK ID digits
+			payload := msg[2:]
+			for len(payload) > 0 && payload[0] >= '0' && payload[0] <= '9' {
+				payload = payload[1:]
+			}
+			if len(payload) > 0 {
+				lc.handleEvent(payload)
+			}
 		}
 	}
 }
@@ -165,16 +259,26 @@ func (lc *LabsClient) readLoop() {
 func (lc *LabsClient) handleEvent(payload string) {
 	var arr []json.RawMessage
 	if err := json.Unmarshal([]byte(payload), &arr); err != nil {
+		fmt.Printf("[EVENT] parse error: %v\n", err)
 		return
 	}
 	if len(arr) < 2 {
+		fmt.Printf("[EVENT] too few elements: %d\n", len(arr))
 		return
 	}
 
 	var response map[string]any
 	if err := json.Unmarshal(arr[1], &response); err != nil {
+		fmt.Printf("[EVENT] response parse error: %v\n", err)
 		return
 	}
+
+	// Debug: print response keys
+	keys := make([]string, 0, len(response))
+	for k := range response {
+		keys = append(keys, k)
+	}
+	fmt.Printf("[EVENT] keys: %v\n", keys)
 
 	// Check if this is a final response
 	if _, hasFinal := response["final"]; hasFinal {
@@ -232,7 +336,7 @@ func (lc *LabsClient) Ask(ctx context.Context, query, model string) (*LabsResult
 		Version:  apiVersion,
 	}
 
-	data, err := json.Marshal([]any{"perplexity_labs", payload})
+	data, err := json.Marshal([]any{"perplexity_playground", payload})
 	if err != nil {
 		lc.mu.Unlock()
 		return nil, err
@@ -240,6 +344,7 @@ func (lc *LabsClient) Ask(ctx context.Context, query, model string) (*LabsResult
 
 	// Send via WebSocket: "42" + JSON
 	msg := "42" + string(data)
+	fmt.Printf("[WS SEND] %s\n", msg)
 	if err := lc.ws.WriteMessage(websocket.TextMessage, []byte(msg)); err != nil {
 		lc.mu.Unlock()
 		return nil, fmt.Errorf("send query: %w", err)

@@ -14,8 +14,12 @@ type SearchResult struct {
 	BackendUUID string      `json:"backend_uuid"`     // For follow-up queries
 	Mode        string      `json:"mode"`
 	Model       string      `json:"model"`
-	Source      string      `json:"source"`           // "sse" or "labs"
+	Source      string      `json:"source"`           // "sse", "labs", or "api"
 	SearchedAt  time.Time   `json:"searched_at"`
+	AccountID   int         `json:"account_id,omitempty"`
+	APIKeyID    int         `json:"api_key_id,omitempty"`
+	TokensUsed  int         `json:"tokens_used,omitempty"`
+	DurationMs  int64       `json:"duration_ms,omitempty"`
 }
 
 // Citation is a source referenced in the answer.
@@ -159,4 +163,159 @@ type cookieData struct {
 	Value  string `json:"value"`
 	Domain string `json:"domain"`
 	Path   string `json:"path"`
+}
+
+// --- Account Management Types ---
+
+// Account represents a registered Perplexity account (scraped access).
+type Account struct {
+	ID          int       `json:"id"`
+	Email       string    `json:"email"`
+	Source      string    `json:"source"`       // emailnator, manual
+	SessionData string    `json:"session_data"` // JSON blob
+	ProQueries  int       `json:"pro_queries"`
+	FileUploads int       `json:"file_uploads"`
+	Status      string    `json:"status"`       // active, exhausted, failed, banned
+	ErrorMsg    string    `json:"error_msg,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	LastUsedAt  time.Time `json:"last_used_at"`
+	UseCount    int       `json:"use_count"`
+}
+
+// Account status constants.
+const (
+	AccountActive    = "active"
+	AccountExhausted = "exhausted"
+	AccountFailed    = "failed"
+	AccountBanned    = "banned"
+)
+
+// APIKey represents a Perplexity API key.
+type APIKey struct {
+	ID          int       `json:"id"`
+	Key         string    `json:"api_key"`
+	Name        string    `json:"name"`
+	Status      string    `json:"status"` // active, exhausted, invalid, rate_limited
+	ErrorMsg    string    `json:"error_msg,omitempty"`
+	Tier        string    `json:"tier"`
+	CreatedAt   time.Time `json:"created_at"`
+	LastUsedAt  time.Time `json:"last_used_at"`
+	UseCount    int       `json:"use_count"`
+	TotalTokens int       `json:"total_tokens"`
+}
+
+// API key status constants.
+const (
+	KeyActive      = "active"
+	KeyExhausted   = "exhausted"
+	KeyInvalid     = "invalid"
+	KeyRateLimited = "rate_limited"
+)
+
+// ErrorLog represents a logged error.
+type ErrorLog struct {
+	ID           int       `json:"id"`
+	AccountID    int       `json:"account_id,omitempty"`
+	APIKeyID     int       `json:"api_key_id,omitempty"`
+	Source       string    `json:"source"`    // sse, labs, api, register
+	Operation    string    `json:"operation"` // search, labs_query, register, api_chat, api_search
+	Query        string    `json:"query,omitempty"`
+	ErrorType    string    `json:"error_type"` // http_error, parse_error, auth_error, rate_limit, timeout, cloudflare_block
+	ErrorMsg     string    `json:"error_msg"`
+	HTTPStatus   int       `json:"http_status,omitempty"`
+	ResponseBody string    `json:"response_body,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// Error type constants.
+const (
+	ErrHTTP       = "http_error"
+	ErrParse      = "parse_error"
+	ErrAuth       = "auth_error"
+	ErrRateLimit  = "rate_limit"
+	ErrTimeout    = "timeout"
+	ErrCloudflare = "cloudflare_block"
+)
+
+// --- Official API Types ---
+
+// ChatRequest is the request body for the Chat Completions API.
+type ChatRequest struct {
+	Model                string            `json:"model"`
+	Messages             []ChatMessage     `json:"messages"`
+	MaxTokens            int               `json:"max_tokens,omitempty"`
+	Stream               bool              `json:"stream,omitempty"`
+	SearchMode           string            `json:"search_mode,omitempty"`           // web, academic, sec
+	SearchDomainFilter   []string          `json:"search_domain_filter,omitempty"`
+	SearchRecencyFilter  string            `json:"search_recency_filter,omitempty"` // hour, day, week, month, year
+	ReturnImages         bool              `json:"return_images,omitempty"`
+	ReturnRelated        bool              `json:"return_related_questions,omitempty"`
+	DisableSearch        bool              `json:"disable_search,omitempty"`
+	WebSearchOptions     *WebSearchOptions `json:"web_search_options,omitempty"`
+}
+
+// ChatMessage is a message in the chat history.
+type ChatMessage struct {
+	Role    string `json:"role"`    // system, user, assistant
+	Content string `json:"content"`
+}
+
+// WebSearchOptions configures web search behavior.
+type WebSearchOptions struct {
+	SearchContextSize string `json:"search_context_size,omitempty"` // low, medium, high
+}
+
+// ChatResponse is the response from the Chat Completions API.
+type ChatResponse struct {
+	ID       string       `json:"id"`
+	Model    string       `json:"model"`
+	Created  int64        `json:"created"`
+	Choices  []ChatChoice `json:"choices"`
+	Citations []string    `json:"citations,omitempty"`
+	SearchResults []APISearchResult `json:"search_results,omitempty"`
+	Usage    *ChatUsage   `json:"usage,omitempty"`
+}
+
+// ChatChoice is a completion choice.
+type ChatChoice struct {
+	Index        int          `json:"index"`
+	FinishReason string       `json:"finish_reason"`
+	Message      *ChatMessage `json:"message,omitempty"`
+	Delta        *ChatMessage `json:"delta,omitempty"`
+}
+
+// APISearchResult is a search result from the API.
+type APISearchResult struct {
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Snippet string `json:"snippet"`
+	Date    string `json:"date,omitempty"`
+}
+
+// ChatUsage contains token usage info.
+type ChatUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
+// ChatStreamChunk is a single chunk in a streaming response.
+type ChatStreamChunk struct {
+	ID      string       `json:"id"`
+	Model   string       `json:"model"`
+	Choices []ChatChoice `json:"choices"`
+}
+
+// SearchAPIRequest is the request body for the Search API.
+type SearchAPIRequest struct {
+	Query               string   `json:"query"`
+	SearchDomainFilter  []string `json:"search_domain_filter,omitempty"`
+	SearchRecencyFilter string   `json:"search_recency_filter,omitempty"`
+	SearchMode          string   `json:"search_mode,omitempty"`
+}
+
+// SearchAPIResponse is the response from the Search API.
+type SearchAPIResponse struct {
+	ID      string            `json:"id"`
+	Results []APISearchResult `json:"results"`
 }

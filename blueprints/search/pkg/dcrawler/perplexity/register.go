@@ -2,10 +2,12 @@ package perplexity
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"regexp"
 	"strings"
+	"time"
 )
 
 var magicLinkRegex = regexp.MustCompile(`"(https://www\.perplexity\.ai/api/auth/callback/email\?callbackUrl=.*?)"`)
@@ -13,7 +15,25 @@ var magicLinkRegex = regexp.MustCompile(`"(https://www\.perplexity\.ai/api/auth/
 // Register creates a new Perplexity account using emailnator.
 // Requires emailnator cookies (XSRF-TOKEN and laravel_session from emailnator.com).
 // After successful registration, the client will have 5 pro queries and 10 file uploads.
+// If a DB is provided, the account is saved to the database.
 func (c *Client) Register(ctx context.Context, emailCookies EmailnatorCookies) error {
+	return c.RegisterWithDB(ctx, emailCookies, nil)
+}
+
+// AutoRegister automatically fetches emailnator cookies and registers a new account.
+// Fully automated - no manual cookie input required.
+func (c *Client) AutoRegister(ctx context.Context, db *DB) error {
+	fmt.Println("Fetching emailnator cookies...")
+	cookies, err := FetchEmailnatorCookies(ctx)
+	if err != nil {
+		return fmt.Errorf("auto-fetch emailnator cookies: %w", err)
+	}
+	fmt.Println("Cookies obtained, proceeding with registration...")
+	return c.RegisterWithDB(ctx, *cookies, db)
+}
+
+// RegisterWithDB creates a new account and stores it in the database.
+func (c *Client) RegisterWithDB(ctx context.Context, emailCookies EmailnatorCookies, db *DB) error {
 	// Initialize session if not already done
 	if c.csrfToken == "" {
 		if err := c.InitSession(ctx); err != nil {
@@ -86,13 +106,55 @@ func (c *Client) Register(ctx context.Context, emailCookies EmailnatorCookies) e
 	c.authenticated = true
 	c.mu.Unlock()
 
-	// Save session
+	// Save session file (backward compat)
 	if err := c.SaveSession(); err != nil {
-		return fmt.Errorf("save session: %w", err)
+		fmt.Printf("Warning: could not save session file: %v\n", err)
+	}
+
+	// Save to database if available
+	if db != nil {
+		sess := c.exportSession()
+		sessionJSON, _ := json.Marshal(sess)
+		account := &Account{
+			Email:       email,
+			Source:      "emailnator",
+			SessionData: string(sessionJSON),
+			ProQueries:  defaultCopilotQueries,
+			FileUploads: defaultFileUploads,
+			Status:      AccountActive,
+			CreatedAt:   time.Now(),
+		}
+		if err := db.SaveAccount(account); err != nil {
+			fmt.Printf("Warning: could not save account to DB: %v\n", err)
+		} else {
+			fmt.Printf("Account saved to DB with ID %d\n", account.ID)
+		}
 	}
 
 	fmt.Printf("Account created! Pro queries: %d, File uploads: %d\n",
 		defaultCopilotQueries, defaultFileUploads)
 
 	return nil
+}
+
+// exportSession exports the current session as a sessionData.
+func (c *Client) exportSession() *sessionData {
+	sess := &sessionData{
+		CopilotQueries: c.copilotQueries,
+		FileUploads:    c.fileUploads,
+		CreatedAt:      time.Now(),
+	}
+
+	// Export cookies
+	u, _ := parseBaseURL()
+	for _, cookie := range c.cookies.Cookies(u) {
+		sess.Cookies = append(sess.Cookies, &cookieData{
+			Name:   cookie.Name,
+			Value:  cookie.Value,
+			Domain: cookie.Domain,
+			Path:   cookie.Path,
+		})
+	}
+
+	return sess
 }

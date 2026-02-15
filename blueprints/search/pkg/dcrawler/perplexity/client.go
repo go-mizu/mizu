@@ -253,6 +253,35 @@ func setHeaders(req *http.Request, headers http.Header) {
 	}
 }
 
+// loadSessionCookies applies cookie data to the client jar.
+func (c *Client) loadSessionCookies(cookies []*cookieData) {
+	u, _ := url.Parse(baseURL)
+	var httpCookies []*http.Cookie
+	for _, cd := range cookies {
+		httpCookies = append(httpCookies, &http.Cookie{
+			Name:   cd.Name,
+			Value:  cd.Value,
+			Domain: cd.Domain,
+			Path:   cd.Path,
+		})
+	}
+	c.cookies.SetCookies(u, httpCookies)
+
+	// Re-extract CSRF token
+	for _, cookie := range c.cookies.Cookies(u) {
+		if cookie.Name == "next-auth.csrf-token" {
+			parts := strings.SplitN(cookie.Value, "%", 2)
+			c.csrfToken = parts[0]
+			break
+		}
+	}
+}
+
+// parseBaseURL returns the parsed base URL.
+func parseBaseURL() (*url.URL, error) {
+	return url.Parse(baseURL)
+}
+
 // dialTLSForWebSocket creates a raw TLS connection for WebSocket upgrade.
 // Uses standard crypto/tls with TLS 1.3 minimum (matching the Python reference).
 func dialTLSForWebSocket(host string) (net.Conn, error) {

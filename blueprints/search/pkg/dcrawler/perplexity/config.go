@@ -13,11 +13,16 @@ const (
 	baseURL    = "https://www.perplexity.ai"
 	apiVersion = "2.18"
 
-	// Endpoints
+	// Scraping endpoints
 	endpointAuthSession = baseURL + "/api/auth/session"
 	endpointAuthSignin  = baseURL + "/api/auth/signin/email"
 	endpointSSEAsk      = baseURL + "/rest/sse/perplexity_ask"
 	endpointSocketIO    = baseURL + "/socket.io/"
+
+	// Official API endpoints
+	apiBaseURL             = "https://api.perplexity.ai"
+	apiChatCompletions     = apiBaseURL + "/chat/completions"
+	apiSearch              = apiBaseURL + "/search"
 
 	// Emailnator
 	emailnatorBase        = "https://www.emailnator.com"
@@ -27,6 +32,7 @@ const (
 	// Timeouts
 	defaultTimeout    = 30 * time.Second
 	sseReadTimeout    = 120 * time.Second // SSE streams can be slow
+	apiTimeout        = 60 * time.Second  // API can be slow for deep research
 	accountTimeout    = 20 * time.Second
 	emailRetryDelay   = 5 * time.Second
 	rateLimitMinDelay = 1 * time.Second
@@ -46,6 +52,9 @@ const (
 
 	// User agent
 	chromeUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+
+	// Response body truncation for error logging
+	maxErrorBodyLen = 4096
 )
 
 // Search modes
@@ -74,6 +83,17 @@ const (
 
 // LabsModels lists all available Labs models.
 var LabsModels = []string{ModelR1, ModelSonarPro, ModelSonar, ModelSonarReason, ModelSonarReasonBase}
+
+// Official API models
+const (
+	APISonar         = "sonar"
+	APISonarPro      = "sonar-pro"
+	APISonarReasoning = "sonar-reasoning-pro"
+	APISonarDeep     = "sonar-deep-research"
+)
+
+// APIModels lists all available official API models.
+var APIModels = []string{APISonar, APISonarPro, APISonarReasoning, APISonarDeep}
 
 // modePayload maps user mode to the API mode field.
 var modePayload = map[string]string{
