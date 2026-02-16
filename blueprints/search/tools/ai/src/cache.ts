@@ -16,8 +16,8 @@ export class Cache {
       const opts: KVNamespacePutOptions = {}
       if (ttlSeconds && ttlSeconds > 0) opts.expirationTtl = ttlSeconds
       await this.kv.put(key, JSON.stringify(value), opts)
-    } catch {
-      // KV write quota exceeded — continue without caching
+    } catch (e) {
+      console.error(`[KV] set "${key}" failed:`, e instanceof Error ? e.message : String(e))
     }
   }
 
