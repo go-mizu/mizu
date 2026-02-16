@@ -1,6 +1,7 @@
 export interface Env {
   KV: KVNamespace
   AUTH_TOKEN?: string
+  PERPLEXITY_API_KEY?: string
   ENVIRONMENT: string
 }
 
@@ -33,6 +34,15 @@ export interface SessionState {
   createdAt: string
 }
 
+// --- Thinking Steps ---
+
+export interface ThinkingStep {
+  stepType: string       // e.g. 'INITIAL', 'THINKING', 'SEARCH', 'ANSWER', 'FINAL', etc.
+  content: string        // text content of the step
+  status?: string        // optional status like 'pending', 'complete'
+  timestamp?: number     // ms since stream start
+}
+
 // --- App Types ---
 
 export interface MediaItem {
@@ -54,6 +64,7 @@ export interface SearchResult {
   relatedQueries: string[]
   images: MediaItem[]
   videos: MediaItem[]
+  thinkingSteps: ThinkingStep[]
   backendUUID: string
   mode: string
   model: string
@@ -68,6 +79,7 @@ export interface Citation {
   date?: string
   domain: string
   favicon: string
+  thumbnail?: string
 }
 
 export interface WebResult {
@@ -75,6 +87,7 @@ export interface WebResult {
   url: string
   snippet: string
   date?: string
+  thumbnail?: string
 }
 
 export interface ThreadMessage {
@@ -85,6 +98,7 @@ export interface ThreadMessage {
   relatedQueries?: string[]
   images?: MediaItem[]
   videos?: MediaItem[]
+  thinkingSteps?: ThinkingStep[]
   backendUUID?: string
   model?: string
   durationMs?: number
