@@ -4,6 +4,7 @@ import type { HonoEnv } from './types'
 import { cssURL, cssText } from './asset'
 import { renderLayout, renderHomePage, renderError } from './html'
 import { ThreadManager } from './threads'
+import { getThreadStore } from './storage'
 
 import searchRoutes from './routes/search'
 import threadRoutes from './routes/thread'
@@ -25,7 +26,8 @@ app.get('/api/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISO
 
 // Home page
 app.get('/', async (c) => {
-  const tm = new ThreadManager(c.env.KV)
+  const threadStore = getThreadStore(c.env)
+  const tm = new ThreadManager(threadStore)
   const threads = await tm.listThreads()
   return c.html(renderLayout('AI Search', renderHomePage(threads), { isHome: true, threads }))
 })

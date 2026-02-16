@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import type { HonoEnv } from '../types'
 import { search } from '../perplexity'
 import { ThreadManager } from '../threads'
+import { getSessionStore, getThreadStore } from '../storage'
 import { renderLayout, renderThreadPage, renderError } from '../html'
 
 const app = new Hono<HonoEnv>()
@@ -9,7 +10,8 @@ const app = new Hono<HonoEnv>()
 // GET /thread/:id — view thread
 app.get('/:id', async (c) => {
   const id = c.req.param('id')
-  const tm = new ThreadManager(c.env.KV)
+  const threadStore = getThreadStore(c.env)
+  const tm = new ThreadManager(threadStore)
   const thread = await tm.getThread(id)
 
   if (!thread) {
@@ -31,7 +33,9 @@ app.get('/:id/follow-up', async (c) => {
   const query = c.req.query('q')?.trim()
   if (!query) return c.redirect(`/thread/${id}`)
 
-  const tm = new ThreadManager(c.env.KV)
+  const sessionStore = getSessionStore(c.env)
+  const threadStore = getThreadStore(c.env)
+  const tm = new ThreadManager(threadStore)
   const thread = await tm.getThread(id)
   if (!thread) {
     return c.html(renderLayout('Not Found', renderError('Thread Not Found', 'This thread does not exist or has expired.'), {}), 404)
@@ -41,7 +45,7 @@ app.get('/:id/follow-up', async (c) => {
 
   try {
     const followUpUUID = tm.getLastBackendUUID(thread)
-    const result = await search(c.env.KV, query, mode, '', followUpUUID)
+    const result = await search(sessionStore, query, mode, '', followUpUUID)
     await tm.addFollowUp(id, query, result)
 
     return c.redirect(`/thread/${id}`)

@@ -1,6 +1,6 @@
-import { Cache } from './cache'
-import { CACHE_TTL, MAX_THREADS, THREAD_ID_LEN } from './config'
-import type { Thread, ThreadIndex, ThreadSummary, SearchResult } from './types'
+import type { ThreadStore } from './storage'
+import { THREAD_ID_LEN } from './config'
+import type { Thread, ThreadMessage, ThreadSummary, SearchResult } from './types'
 
 function nanoid(len: number): string {
   const chars = '0123456789abcdefghijklmnopqrstuvwxyz'
@@ -13,10 +13,10 @@ function truncate(s: string, max: number): string {
 }
 
 export class ThreadManager {
-  private cache: Cache
+  private store: ThreadStore
 
-  constructor(kv: KVNamespace) {
-    this.cache = new Cache(kv)
+  constructor(store: ThreadStore) {
+    this.store = store
   }
 
   async createThread(query: string, mode: string, model: string, result: SearchResult): Promise<Thread> {
@@ -49,58 +49,42 @@ export class ThreadManager {
       updatedAt: now,
     }
 
-    await this.cache.set(`thread:${id}`, thread, CACHE_TTL.thread)
-    await this.addToIndex(thread)
+    await this.store.createThread(thread)
     return thread
   }
 
   async getThread(id: string): Promise<Thread | null> {
-    return this.cache.get<Thread>(`thread:${id}`)
+    return this.store.getThread(id)
   }
 
   async addFollowUp(id: string, query: string, result: SearchResult): Promise<Thread | null> {
-    const thread = await this.getThread(id)
-    if (!thread) return null
-
     const now = new Date().toISOString()
-    thread.messages.push(
-      { role: 'user', content: query, createdAt: now },
-      {
-        role: 'assistant',
-        content: result.answer,
-        citations: result.citations,
-        webResults: result.webResults,
-        relatedQueries: result.relatedQueries,
-        images: result.images,
-        videos: result.videos,
-        thinkingSteps: result.thinkingSteps?.length ? result.thinkingSteps : undefined,
-        backendUUID: result.backendUUID,
-        model: result.model,
-        durationMs: result.durationMs,
-        createdAt: result.createdAt,
-      },
-    )
-    thread.updatedAt = now
-
-    await this.cache.set(`thread:${id}`, thread, CACHE_TTL.thread)
-    await this.updateIndex(thread)
-    return thread
+    const userMsg: ThreadMessage = { role: 'user', content: query, createdAt: now }
+    const assistantMsg: ThreadMessage = {
+      role: 'assistant',
+      content: result.answer,
+      citations: result.citations,
+      webResults: result.webResults,
+      relatedQueries: result.relatedQueries,
+      images: result.images,
+      videos: result.videos,
+      thinkingSteps: result.thinkingSteps?.length ? result.thinkingSteps : undefined,
+      backendUUID: result.backendUUID,
+      model: result.model,
+      durationMs: result.durationMs,
+      createdAt: result.createdAt,
+    }
+    return this.store.addFollowUp(id, userMsg, assistantMsg)
   }
 
   async deleteThread(id: string): Promise<boolean> {
-    const thread = await this.getThread(id)
-    if (!thread) return false
-    await this.cache.delete(`thread:${id}`)
-    await this.removeFromIndex(id)
-    return true
+    return this.store.deleteThread(id)
   }
 
   async listThreads(): Promise<ThreadSummary[]> {
-    const index = await this.cache.get<ThreadIndex>('threads:recent')
-    return index?.threads || []
+    return this.store.listThreads()
   }
 
-  /** Get the last backend_uuid from a thread for follow-up queries. */
   getLastBackendUUID(thread: Thread): string | null {
     for (let i = thread.messages.length - 1; i >= 0; i--) {
       if (thread.messages[i].role === 'assistant' && thread.messages[i].backendUUID) {
@@ -108,31 +92,5 @@ export class ThreadManager {
       }
     }
     return null
-  }
-
-  private async addToIndex(thread: Thread): Promise<void> {
-    const index = (await this.cache.get<ThreadIndex>('threads:recent')) || { threads: [] }
-    index.threads.unshift({
-      id: thread.id, title: thread.title, mode: thread.mode, model: thread.model,
-      messageCount: thread.messages.length, createdAt: thread.createdAt, updatedAt: thread.updatedAt,
-    })
-    if (index.threads.length > MAX_THREADS) index.threads = index.threads.slice(0, MAX_THREADS)
-    await this.cache.set('threads:recent', index, CACHE_TTL.threadIndex)
-  }
-
-  private async updateIndex(thread: Thread): Promise<void> {
-    const index = (await this.cache.get<ThreadIndex>('threads:recent')) || { threads: [] }
-    index.threads = index.threads.filter(t => t.id !== thread.id)
-    index.threads.unshift({
-      id: thread.id, title: thread.title, mode: thread.mode, model: thread.model,
-      messageCount: thread.messages.length, createdAt: thread.createdAt, updatedAt: thread.updatedAt,
-    })
-    await this.cache.set('threads:recent', index, CACHE_TTL.threadIndex)
-  }
-
-  private async removeFromIndex(id: string): Promise<void> {
-    const index = (await this.cache.get<ThreadIndex>('threads:recent')) || { threads: [] }
-    index.threads = index.threads.filter(t => t.id !== id)
-    await this.cache.set('threads:recent', index, CACHE_TTL.threadIndex)
   }
 }

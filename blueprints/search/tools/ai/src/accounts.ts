@@ -1,37 +1,18 @@
 /**
- * Account manager — KV-based account storage with round-robin rotation + debug logging.
- * Ported from pkg/dcrawler/perplexity/accounts.go
+ * Account manager — business logic layer over AccountStore.
  *
- * Everything is internal — no public APIs. Registration happens in background via waitUntil().
- * Full debug logs stored in KV for inspection via wrangler kv:key get.
- *
- * Storage keys:
- *   account:{id}       → Account JSON (with session)
- *   accounts:index     → AccountSummary[]
- *   accounts:robin     → number (round-robin pointer)
- *   accounts:log       → RegistrationLog[] (last 50 entries)
- *   accounts:lock      → string (ISO timestamp, prevents concurrent registration)
+ * Handles encryption, round-robin rotation, orchestration of store calls + logging.
+ * The actual data access is delegated to AccountStore implementations
+ * (D1AccountStore for SQL, GenericAccountStore for memory/KV).
  */
 
-import { Cache } from './cache'
-import { CACHE_TTL } from './config'
-import type { Account, AccountSummary, SessionState } from './types'
+import type { AccountStore } from './storage'
+import { encrypt, decrypt } from './crypto'
+import type { Account, AccountSummary, SessionState, RegistrationLog } from './types'
 
 const DEFAULT_PRO_QUERIES = 5
-const MAX_LOG_ENTRIES = 50
-const REGISTRATION_LOCK_TTL = 60 // seconds — prevent overlapping registrations
-const MIN_ACTIVE_ACCOUNTS = 1 // trigger background registration when below this
-
-export interface RegistrationLog {
-  timestamp: string
-  event: 'start' | 'email_created' | 'signin_sent' | 'email_received' | 'auth_complete' | 'account_saved' | 'error'
-  message: string
-  provider?: string
-  email?: string
-  accountId?: string
-  durationMs?: number
-  error?: string
-}
+const REGISTRATION_LOCK_TTL = 60
+const MIN_ACTIVE_ACCOUNTS = 1
 
 function nanoid(len: number = 8): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
@@ -42,120 +23,82 @@ function nanoid(len: number = 8): string {
 }
 
 export class AccountManager {
-  private cache: Cache
+  private store: AccountStore
+  private secret: string
 
-  constructor(kv: KVNamespace) {
-    this.cache = new Cache(kv)
+  constructor(store: AccountStore, secret: string = 'default-dev-secret') {
+    this.store = store
+    this.secret = secret
   }
+
+  get backend(): string { return this.store.name }
 
   // --- Logging ---
 
-  /** Append a log entry. Keeps last 50 entries. */
   async log(entry: RegistrationLog): Promise<void> {
-    const logs = (await this.cache.get<RegistrationLog[]>('accounts:log')) || []
-    logs.push(entry)
-    // Trim to last MAX_LOG_ENTRIES
-    const trimmed = logs.slice(-MAX_LOG_ENTRIES)
-    await this.cache.set('accounts:log', trimmed)
+    await this.store.appendLog(entry)
   }
 
-  /** Get all registration logs. */
   async getLogs(): Promise<RegistrationLog[]> {
-    return (await this.cache.get<RegistrationLog[]>('accounts:log')) || []
+    return this.store.getLogs()
   }
 
-  // --- Registration lock ---
+  // --- Lock ---
 
-  /** Try to acquire registration lock. Returns true if acquired. */
   async tryLock(): Promise<boolean> {
-    const existing = await this.cache.get<string>('accounts:lock')
-    if (existing) {
-      // Check if lock is stale (older than LOCK_TTL)
-      const lockTime = new Date(existing).getTime()
-      if (Date.now() - lockTime < REGISTRATION_LOCK_TTL * 1000) {
-        return false // lock is still active
-      }
-    }
-    await this.cache.set('accounts:lock', new Date().toISOString(), REGISTRATION_LOCK_TTL)
-    return true
+    return this.store.tryLock(REGISTRATION_LOCK_TTL)
   }
 
-  /** Release registration lock. */
   async unlock(): Promise<void> {
-    await this.cache.delete('accounts:lock')
+    await this.store.unlock()
   }
 
   // --- Account CRUD ---
 
-  /** Add a new account. Returns account ID. */
-  async addAccount(email: string, session: SessionState, proQueries: number = DEFAULT_PRO_QUERIES): Promise<string> {
+  async addAccount(
+    email: string,
+    emailProvider: string,
+    emailPassword: string,
+    session: SessionState,
+    proQueries: number = DEFAULT_PRO_QUERIES,
+  ): Promise<string> {
     const id = nanoid()
     const now = new Date().toISOString()
+    const emailPasswordEnc = emailPassword ? await encrypt(emailPassword, this.secret) : ''
 
     const account: Account = {
       id,
       email,
+      emailProvider,
+      emailPasswordEnc,
       session,
       proQueries,
       status: 'active',
       createdAt: now,
       lastUsedAt: now,
+      totalQueriesUsed: 0,
     }
 
-    await this.cache.set(`account:${id}`, account, CACHE_TTL.account)
-
-    // Update index
-    const index = await this.getIndex()
-    index.push({
-      id,
-      email,
-      proQueries,
-      status: 'active',
-      createdAt: now,
-    })
-    await this.cache.set('accounts:index', index)
-
+    await this.store.addAccount(account)
     return id
   }
 
-  /** Get the next active account via round-robin. Returns null if none available. */
   async nextAccount(): Promise<Account | null> {
-    const index = await this.getIndex()
-    const active = index.filter(a => a.status === 'active')
+    const all = await this.store.listAccounts()
+    const active = all.filter(a => a.status === 'active')
     if (active.length === 0) return null
 
-    let robin = (await this.cache.get<number>('accounts:robin')) || 0
-    robin = robin % active.length
-    const summary = active[robin]
-    await this.cache.set('accounts:robin', robin + 1)
-
-    return this.cache.get<Account>(`account:${summary.id}`)
+    const robin = await this.store.getAndIncrementRobin()
+    const summary = active[robin % active.length]
+    return this.store.getAccount(summary.id)
   }
 
-  /** Record usage after a successful pro query. Decrements proQueries. */
   async recordUsage(accountId: string): Promise<void> {
-    const account = await this.cache.get<Account>(`account:${accountId}`)
-    if (!account) return
-
-    account.proQueries = Math.max(0, account.proQueries - 1)
-    account.lastUsedAt = new Date().toISOString()
-
-    if (account.proQueries <= 0) {
-      account.status = 'exhausted'
-    }
-
-    await this.cache.set(`account:${accountId}`, account, CACHE_TTL.account)
-    await this.updateIndex(accountId, { proQueries: account.proQueries, status: account.status })
+    await this.store.recordUsage(accountId)
   }
 
-  /** Mark account as failed. */
   async markFailed(accountId: string, reason: string): Promise<void> {
-    const account = await this.cache.get<Account>(`account:${accountId}`)
-    if (!account) return
-
-    account.status = 'failed'
-    await this.cache.set(`account:${accountId}`, account, CACHE_TTL.account)
-    await this.updateIndex(accountId, { status: 'failed' })
+    await this.store.markFailed(accountId, reason)
     await this.log({
       timestamp: new Date().toISOString(),
       event: 'error',
@@ -165,42 +108,61 @@ export class AccountManager {
     })
   }
 
-  /** Check if we need more accounts. */
-  async needsRegistration(): Promise<boolean> {
-    const index = await this.getIndex()
-    const active = index.filter(a => a.status === 'active')
-    return active.length < MIN_ACTIVE_ACCOUNTS
+  async disable(accountId: string, reason: string): Promise<void> {
+    await this.store.disable(accountId, reason)
+    await this.log({
+      timestamp: new Date().toISOString(),
+      event: 'disabled',
+      message: `Account ${accountId} disabled: ${reason}`,
+      accountId,
+    })
   }
 
-  /** List all accounts (summary, no session data). */
-  async listAccounts(): Promise<{ accounts: AccountSummary[]; active: number; total: number }> {
-    const index = await this.getIndex()
-    const active = index.filter(a => a.status === 'active').length
-    return { accounts: index, active, total: index.length }
+  async restore(accountId: string, session: SessionState, proQueries: number = DEFAULT_PRO_QUERIES): Promise<void> {
+    await this.store.restore(accountId, session, proQueries)
+    const account = await this.store.getAccount(accountId)
+    await this.log({
+      timestamp: new Date().toISOString(),
+      event: 'relogin',
+      message: `Account ${accountId} restored via re-login (${proQueries} pro queries)`,
+      accountId,
+      email: account?.email,
+    })
   }
 
-  /** Delete an account. */
-  async deleteAccount(accountId: string): Promise<boolean> {
-    const account = await this.cache.get<Account>(`account:${accountId}`)
-    if (!account) return false
-
-    await this.cache.delete(`account:${accountId}`)
-    const index = await this.getIndex()
-    const filtered = index.filter(a => a.id !== accountId)
-    await this.cache.set('accounts:index', filtered)
-    return true
-  }
-
-  private async getIndex(): Promise<AccountSummary[]> {
-    return (await this.cache.get<AccountSummary[]>('accounts:index')) || []
-  }
-
-  private async updateIndex(accountId: string, updates: Partial<AccountSummary>): Promise<void> {
-    const index = await this.getIndex()
-    const entry = index.find(a => a.id === accountId)
-    if (entry) {
-      Object.assign(entry, updates)
-      await this.cache.set('accounts:index', index)
+  async decryptPassword(accountId: string): Promise<string | null> {
+    const account = await this.store.getAccount(accountId)
+    if (!account?.emailPasswordEnc) return null
+    try {
+      return await decrypt(account.emailPasswordEnc, this.secret)
+    } catch {
+      return null
     }
+  }
+
+  async getFailedAccounts(): Promise<Account[]> {
+    return this.store.getFailedAccounts()
+  }
+
+  async needsRegistration(): Promise<boolean> {
+    return (await this.store.countActive()) < MIN_ACTIVE_ACCOUNTS
+  }
+
+  async listAccounts(): Promise<{ accounts: AccountSummary[]; active: number; total: number }> {
+    const accounts = await this.store.listAccounts()
+    const active = accounts.filter(a => a.status === 'active').length
+    return { accounts, active, total: accounts.length }
+  }
+
+  async getAccount(accountId: string): Promise<Account | null> {
+    return this.store.getAccount(accountId)
+  }
+
+  async deleteAccount(accountId: string): Promise<boolean> {
+    return this.store.deleteAccount(accountId)
+  }
+
+  async deleteAll(): Promise<number> {
+    return this.store.deleteAll()
   }
 }

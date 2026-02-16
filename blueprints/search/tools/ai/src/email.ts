@@ -8,6 +8,7 @@
 
 export interface TempEmailClient {
   email(): string
+  password(): string  // stored password (empty for no-auth providers)
   waitForMessage(matchSubject: string, timeoutMs: number): Promise<string>
 }
 
@@ -35,6 +36,7 @@ function sleep(ms: number): Promise<void> {
 class MailTMClient implements TempEmailClient {
   private baseURL: string
   private _email = ''
+  private _password = ''
   private token = ''
 
   constructor(baseURL: string) {
@@ -53,6 +55,7 @@ class MailTMClient implements TempEmailClient {
     const user = `pplx${Date.now() % 100000}${randomString(5)}`
     this._email = `${user}@${domain}`
     const password = randomString(16)
+    this._password = password
 
     const acctResp = await fetch(`${this.baseURL}/accounts`, {
       method: 'POST',
@@ -78,6 +81,7 @@ class MailTMClient implements TempEmailClient {
   }
 
   email(): string { return this._email }
+  password(): string { return this._password }
 
   async waitForMessage(matchSubject: string, timeoutMs: number): Promise<string> {
     const deadline = Date.now() + timeoutMs
@@ -135,6 +139,7 @@ class GuerrillaClient implements TempEmailClient {
   }
 
   email(): string { return this._email }
+  password(): string { return '' }
 
   async waitForMessage(matchSubject: string, timeoutMs: number): Promise<string> {
     const deadline = Date.now() + timeoutMs
@@ -191,6 +196,7 @@ class DropMailClient implements TempEmailClient {
   }
 
   email(): string { return this._email }
+  password(): string { return '' }
 
   async waitForMessage(matchSubject: string, timeoutMs: number): Promise<string> {
     const deadline = Date.now() + timeoutMs
@@ -238,6 +244,7 @@ class TempMailLolClient implements TempEmailClient {
   }
 
   email(): string { return this._email }
+  password(): string { return '' }
 
   async waitForMessage(matchSubject: string, timeoutMs: number): Promise<string> {
     const deadline = Date.now() + timeoutMs
@@ -275,6 +282,7 @@ class TempMailPlusClient implements TempEmailClient {
   }
 
   email(): string { return this._email }
+  password(): string { return '' }
 
   async waitForMessage(matchSubject: string, timeoutMs: number): Promise<string> {
     const deadline = Date.now() + timeoutMs

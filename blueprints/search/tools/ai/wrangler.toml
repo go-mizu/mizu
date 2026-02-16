@@ -7,6 +7,11 @@ compatibility_flags = ["nodejs_compat"]
 binding = "KV"
 id = "050071ec241c49a6852bcd6fc6ce790e"
 
+[[d1_databases]]
+binding = "DB"
+database_name = "ai-accounts"
+database_id = "9d325641-3330-4763-be90-5b4b65df403a"
+
 [[rules]]
 type = "Text"
 globs = ["**/*.css"]

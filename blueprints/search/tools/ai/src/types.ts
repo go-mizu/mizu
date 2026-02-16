@@ -1,7 +1,9 @@
 export interface Env {
   KV: KVNamespace
+  DB: D1Database
   AUTH_TOKEN?: string
   PERPLEXITY_API_KEY?: string
+  ACCOUNT_SECRET?: string
   ENVIRONMENT: string
 }
 
@@ -129,16 +131,43 @@ export interface ThreadSummary {
   updatedAt: string
 }
 
+// --- Registration Log ---
+
+export interface RegistrationLog {
+  timestamp: string
+  event: 'start' | 'email_created' | 'signin_sent' | 'email_received' | 'auth_complete' | 'account_saved' | 'relogin' | 'disabled' | 'error'
+  message: string
+  provider?: string
+  email?: string
+  accountId?: string
+  durationMs?: number
+  error?: string
+}
+
+// --- OG Cache ---
+
+export interface OGData {
+  title: string
+  description: string
+  image: string
+  siteName: string
+}
+
 // --- Account Types ---
 
 export interface Account {
   id: string
   email: string
+  emailProvider: string            // 'mail.tm', 'mail.gw', etc.
+  emailPasswordEnc: string         // AES-256-GCM encrypted (iv_hex:ct_base64)
   session: SessionState
   proQueries: number
-  status: 'active' | 'exhausted' | 'failed'
+  status: 'active' | 'exhausted' | 'failed' | 'disabled'
   createdAt: string
   lastUsedAt: string
+  disabledAt?: string
+  disableReason?: string
+  totalQueriesUsed: number         // lifetime counter
 }
 
 export interface AccountIndex {

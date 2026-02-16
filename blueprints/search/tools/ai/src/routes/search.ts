@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import type { HonoEnv } from '../types'
 import { search } from '../perplexity'
 import { ThreadManager } from '../threads'
+import { getSessionStore, getThreadStore } from '../storage'
 import { DEFAULT_MODE } from '../config'
 import { renderLayout, renderSearchResults, renderError } from '../html'
 
@@ -13,10 +14,12 @@ app.get('/', async (c) => {
   if (!query) return c.redirect('/')
 
   const mode = c.req.query('mode') || DEFAULT_MODE
-  const tm = new ThreadManager(c.env.KV)
+  const sessionStore = getSessionStore(c.env)
+  const threadStore = getThreadStore(c.env)
+  const tm = new ThreadManager(threadStore)
 
   try {
-    const result = await search(c.env.KV, query, mode)
+    const result = await search(sessionStore, query, mode)
     const thread = await tm.createThread(query, mode, result.model, result)
     const threads = await tm.listThreads()
 

@@ -19,6 +19,7 @@
 import { createTempEmail } from './email'
 import { AccountManager } from './accounts'
 import { ENDPOINTS, CHROME_HEADERS, MAGIC_LINK_REGEX, SIGNIN_SUBJECT } from './config'
+import type { AccountStore } from './storage'
 import type { SessionState } from './types'
 
 const EMAIL_TIMEOUT_MS = 25000
@@ -69,8 +70,8 @@ function extractCSRF(cookies: string, responseBody?: string): string {
  * Call this via ctx.waitUntil(backgroundRegister(kv)).
  * Logs every step to KV. Does nothing if lock is held or accounts are sufficient.
  */
-export async function backgroundRegister(kv: KVNamespace): Promise<void> {
-  const am = new AccountManager(kv)
+export async function backgroundRegister(store: AccountStore, accountSecret: string = 'default-dev-secret'): Promise<void> {
+  const am = new AccountManager(store, accountSecret)
   const t0 = Date.now()
 
   // Check if we actually need registration
@@ -215,7 +216,7 @@ export async function backgroundRegister(kv: KVNamespace): Promise<void> {
       createdAt: new Date().toISOString(),
     }
 
-    const accountId = await am.addAccount(email, authSession, 5)
+    const accountId = await am.addAccount(email, provider, emailClient.password(), authSession, 5)
 
     await am.log({
       timestamp: new Date().toISOString(),

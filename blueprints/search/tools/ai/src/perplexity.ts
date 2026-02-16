@@ -1,5 +1,5 @@
-import { ENDPOINTS, CHROME_HEADERS, API_VERSION, MODE_PAYLOAD, MODEL_PREFERENCE, CACHE_TTL } from './config'
-import { Cache } from './cache'
+import { ENDPOINTS, CHROME_HEADERS, API_VERSION, MODE_PAYLOAD, MODEL_PREFERENCE } from './config'
+import type { SessionStore } from './storage'
 import type { SSEPayload, SessionState, SearchResult, Citation, WebResult, MediaItem, ThinkingStep } from './types'
 
 function uuid(): string {
@@ -17,54 +17,46 @@ function favicon(url: string): string {
 // --- Session Pool: in-memory + KV with 429 rotation ---
 
 const MAX_RETRIES = 3
-const SESSION_POOL_KEY = 'sessions:pool'
 
 /** In-memory session pool — survives across requests within a single worker instance. */
 let memPool: SessionState[] = []
 const rateLimited = new Set<string>() // csrfTokens that got 429'd
 
 /** Get a non-rate-limited session from pool, or create fresh. */
-export async function getPooledSession(kv: KVNamespace): Promise<SessionState> {
+export async function getPooledSession(store: SessionStore): Promise<SessionState> {
   // 1. Check in-memory pool
   for (const s of memPool) {
     if (!rateLimited.has(s.csrfToken)) return s
   }
 
-  // 2. Check KV pool
-  const cache = new Cache(kv)
-  const kvPool = await cache.get<SessionState[]>(SESSION_POOL_KEY)
-  if (kvPool?.length) {
-    for (const s of kvPool) {
-      if (s.csrfToken && !rateLimited.has(s.csrfToken)) {
-        memPool.push(s)
-        return s
-      }
+  // 2. Check stored pool
+  const pool = await store.getPool()
+  for (const s of pool) {
+    if (s.csrfToken && !rateLimited.has(s.csrfToken)) {
+      memPool.push(s)
+      return s
     }
   }
 
   // 3. Try legacy single-session cache
-  const legacy = await cache.get<SessionState>('session:anon')
+  const legacy = await store.getLegacy()
   if (legacy?.csrfToken && !rateLimited.has(legacy.csrfToken)) {
     memPool.push(legacy)
     return legacy
   }
 
   // 4. Create fresh session
-  return createFreshSession(kv)
+  return createFreshSession(store)
 }
 
 /** Create a brand new anonymous session, add to pool. */
-export async function createFreshSession(kv: KVNamespace): Promise<SessionState> {
+export async function createFreshSession(store: SessionStore): Promise<SessionState> {
   const session = await _rawInitSession()
   memPool.push(session)
 
-  // Persist pool to KV (best effort)
-  const cache = new Cache(kv)
-  // Keep only last 5 sessions
-  const poolToSave = memPool.slice(-5)
-  await cache.set(SESSION_POOL_KEY, poolToSave, CACHE_TTL.session)
-  // Also update legacy key for backward compat
-  await cache.set('session:anon', session, CACHE_TTL.session)
+  // Persist to store (best effort)
+  await store.addToPool(session)
+  await store.saveLegacy(session)
 
   return session
 }
@@ -144,9 +136,9 @@ function extractCSRF(cookies: string, responseBody?: string): string {
   return ''
 }
 
-/** Initialize a session: uses pool (memory → KV → fresh). */
-export async function initSession(kv: KVNamespace): Promise<SessionState> {
-  return getPooledSession(kv)
+/** Initialize a session: uses pool (memory → storage → fresh). */
+export async function initSession(store: SessionStore): Promise<SessionState> {
+  return getPooledSession(store)
 }
 
 function buildPayload(
@@ -194,7 +186,7 @@ function buildHeaders(session: SessionState): Record<string, string> {
 
 /** Execute a search against Perplexity (non-streaming, reads full response). */
 export async function search(
-  kv: KVNamespace,
+  store: SessionStore,
   query: string,
   mode: string = 'auto',
   model: string = '',
@@ -202,7 +194,7 @@ export async function search(
   sessionOverride?: SessionState,
 ): Promise<SearchResult> {
   const payload = buildPayload(query, mode, model, followUpUUID)
-  let session = sessionOverride || await initSession(kv)
+  let session = sessionOverride || await initSession(store)
   const start = Date.now()
 
   let resp: Response | null = null
@@ -214,7 +206,7 @@ export async function search(
     })
     if (resp.status === 429) {
       markSessionRateLimited(session)
-      session = await createFreshSession(kv)
+      session = await createFreshSession(store)
       continue
     }
     break
@@ -270,7 +262,7 @@ const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 
 /** Stream search: returns a ReadableStream of SSE events for client consumption. */
 export function streamSearch(
-  kv: KVNamespace,
+  store: SessionStore,
   query: string,
   mode: string = 'auto',
   model: string = '',
@@ -295,7 +287,7 @@ export function streamSearch(
         // Emit progress BEFORE session init so the user sees immediate feedback
         sendEvent(controller, 'progress', { status: 'searching', message: 'Searching the web...' })
 
-        let session = sessionOverride || await initSession(kv)
+        let session = sessionOverride || await initSession(store)
         const tSession = Date.now()
 
         // Fetch with 429 retry + session rotation
@@ -312,7 +304,7 @@ export function streamSearch(
           if (resp.status === 429) {
             markSessionRateLimited(session)
             sendEvent(controller, 'progress', { status: 'rotating', message: `Rate limited, creating fresh session (attempt ${attempt + 2})...` })
-            session = await createFreshSession(kv)
+            session = await createFreshSession(store)
             continue
           }
           break
