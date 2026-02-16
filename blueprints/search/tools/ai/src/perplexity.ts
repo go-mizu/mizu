@@ -192,6 +192,9 @@ export function streamSearch(
         const session = await initSession(kv)
         const start = Date.now()
 
+        // Emit progress immediately so the client shows a searching indicator
+        sendEvent(controller, 'progress', { status: 'searching', message: 'Searching the web...' })
+
         const resp = await fetch(ENDPOINTS.sseAsk, {
           method: 'POST',
           headers: buildHeaders(session),
@@ -205,61 +208,78 @@ export function streamSearch(
           return
         }
 
-        // Read the full body then parse (CF Workers don't support streaming body reads well)
-        const body = await resp.text()
-        const chunks = body.split('\r\n\r\n')
+        if (!resp.body) {
+          sendEvent(controller, 'error', { message: 'No response body from upstream' })
+          controller.close()
+          return
+        }
 
+        // TRUE STREAMING: read Perplexity response body incrementally
+        const reader = resp.body.getReader()
+        const decoder = new TextDecoder()
+        let sseBuffer = ''
         let lastData: Record<string, unknown> | null = null
         let sentSources = false
         let lastAnswerLen = 0
 
-        for (const chunk of chunks) {
-          if (!chunk.trim()) continue
-          if (chunk.startsWith('event: end_of_stream')) break
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
 
-          let dataStr = ''
-          if (chunk.includes('event: message')) {
-            const dataIdx = chunk.indexOf('data: ')
-            if (dataIdx >= 0) dataStr = chunk.slice(dataIdx + 6)
-          } else if (chunk.startsWith('data: ')) {
-            dataStr = chunk.slice(6)
-          } else {
-            continue
-          }
+          sseBuffer += decoder.decode(value, { stream: true })
 
-          dataStr = dataStr.replace(/\r?\n$/g, '').trim()
-          if (!dataStr) continue
+          // Perplexity SSE chunks are delimited by \r\n\r\n
+          const parts = sseBuffer.split('\r\n\r\n')
+          sseBuffer = parts.pop() || '' // Keep incomplete chunk in buffer
 
-          let data: Record<string, unknown>
-          try {
-            data = JSON.parse(dataStr)
-          } catch { continue }
+          for (const chunk of parts) {
+            if (!chunk.trim()) continue
+            if (chunk.startsWith('event: end_of_stream')) continue
 
-          lastData = data
-
-          // Emit sources on first chunk that has web_results
-          if (!sentSources) {
-            const webResults = extractWebResultsFromData(data)
-            if (webResults.length > 0) {
-              const citations = webResults.map(w => ({
-                url: w.url,
-                title: w.name || extractDomain(w.url),
-                snippet: w.snippet || '',
-                date: w.date,
-                domain: extractDomain(w.url),
-                favicon: favicon(w.url),
-              }))
-              sendEvent(controller, 'sources', { citations, webResults })
-              sentSources = true
+            let dataStr = ''
+            if (chunk.includes('event: message')) {
+              const dataIdx = chunk.indexOf('data: ')
+              if (dataIdx >= 0) dataStr = chunk.slice(dataIdx + 6)
+            } else if (chunk.startsWith('data: ')) {
+              dataStr = chunk.slice(6)
+            } else {
+              continue
             }
-          }
 
-          // Emit answer chunks (deltas)
-          const answer = extractAnswerText(data)
-          if (answer && answer.length > lastAnswerLen) {
-            const delta = answer.slice(lastAnswerLen)
-            sendEvent(controller, 'chunk', { delta, full: answer })
-            lastAnswerLen = answer.length
+            dataStr = dataStr.replace(/\r?\n$/g, '').trim()
+            if (!dataStr) continue
+
+            let data: Record<string, unknown>
+            try {
+              data = JSON.parse(dataStr)
+            } catch { continue }
+
+            lastData = data
+
+            // Emit sources on first chunk that has web_results
+            if (!sentSources) {
+              const webResults = extractWebResultsFromData(data)
+              if (webResults.length > 0) {
+                const citations = webResults.map(w => ({
+                  url: w.url,
+                  title: w.name || extractDomain(w.url),
+                  snippet: w.snippet || '',
+                  date: w.date,
+                  domain: extractDomain(w.url),
+                  favicon: favicon(w.url),
+                }))
+                sendEvent(controller, 'sources', { citations, webResults })
+                sentSources = true
+              }
+            }
+
+            // Emit answer chunk deltas
+            const answer = extractAnswerText(data)
+            if (answer && answer.length > lastAnswerLen) {
+              const delta = answer.slice(lastAnswerLen)
+              sendEvent(controller, 'chunk', { delta, full: answer })
+              lastAnswerLen = answer.length
+            }
           }
         }
 

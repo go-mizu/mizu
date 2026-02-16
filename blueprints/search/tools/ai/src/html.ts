@@ -143,7 +143,7 @@ function renderSourceCards(citations: Citation[]): string {
   return `
     <div class="src-row">
       ${citations.map((c, i) => `
-        <a href="${esc(c.url)}" target="_blank" rel="noopener" class="src-card" data-idx="${i + 1}">
+        <a href="${esc(c.url)}" target="_blank" rel="noopener" class="src-card" data-idx="${i + 1}" data-snippet="${esc(c.snippet || '')}">
           <div class="src-card-num">${i + 1}</div>
           <img src="${esc(c.favicon)}" alt="" loading="lazy" class="src-card-ico">
           <div class="src-card-info">
@@ -406,11 +406,16 @@ function renderClientScript(): string {
   const jsTrash = ic.trash.replace(/'/g, "\\'").replace(/\n/g, '')
   const jsSend = ic.send.replace(/'/g, "\\'").replace(/\n/g, '')
   const jsChev = ic.chevDown.replace(/'/g, "\\'").replace(/\n/g, '')
+  const jsAnswer = ic.answer.replace(/'/g, "\\'").replace(/\n/g, '')
+  const jsLink = ic.link.replace(/'/g, "\\'").replace(/\n/g, '')
+  const jsImage = ic.image.replace(/'/g, "\\'").replace(/\n/g, '')
+  const jsVideo = ic.video.replace(/'/g, "\\'").replace(/\n/g, '')
+  const jsPlay = ic.play.replace(/'/g, "\\'").replace(/\n/g, '')
   const jsModels = JSON.stringify(MODELS)
 
   return `<script>
 // --- SVG icons ---
-var _ic={copy:'${jsCopy}',spark:'${jsSpark}',trash:'${jsTrash}',send:'${jsSend}',chev:'${jsChev}'};
+var _ic={copy:'${jsCopy}',spark:'${jsSpark}',trash:'${jsTrash}',send:'${jsSend}',chev:'${jsChev}',answer:'${jsAnswer}',link:'${jsLink}',image:'${jsImage}',video:'${jsVideo}',play:'${jsPlay}'};
 var _models=${jsModels};
 
 // --- Sidebar ---
@@ -470,10 +475,12 @@ document.querySelectorAll('.mc input').forEach(function(r){
   });
 });
 
-// --- Citation hover preview ---
+// --- Citation hover preview (enhanced with snippet + image) ---
+var _citeTimer=null;
 document.addEventListener('mouseover',function(e){
   var cr=e.target.closest('.cr');
   if(!cr)return;
+  if(_citeTimer){clearTimeout(_citeTimer);_citeTimer=null;}
   var num=parseInt(cr.textContent);
   var msg=cr.closest('.msg-ai');
   if(!msg)return;
@@ -484,38 +491,56 @@ document.addEventListener('mouseover',function(e){
   var t=card.querySelector('.src-card-title');
   var d=card.querySelector('.src-card-domain');
   var ico=card.querySelector('img');
+  var snippet=card.getAttribute('data-snippet')||'';
   hc.textContent='';
+  // Domain + favicon row
   var dd=document.createElement('div');dd.className='cp-domain';
   if(ico){var im=document.createElement('img');im.src=ico.src;im.alt='';dd.appendChild(im);}
   dd.appendChild(document.createTextNode(d?d.textContent:''));
   hc.appendChild(dd);
+  // Title
   var tt=document.createElement('div');tt.className='cp-title';tt.textContent=t?t.textContent:'';hc.appendChild(tt);
+  // Snippet
+  if(snippet){
+    var ss=document.createElement('div');ss.className='cp-snippet';ss.textContent=snippet.length>150?snippet.slice(0,150)+'...':snippet;hc.appendChild(ss);
+  }
+  // URL
   var uu=document.createElement('div');uu.className='cp-url';uu.textContent=card.href||'';hc.appendChild(uu);
   hc.style.display='block';
+  // Position centered on citation, clamped to viewport
   var rect=cr.getBoundingClientRect();
-  hc.style.left=Math.min(rect.left,window.innerWidth-300)+'px';
+  var pw=Math.min(340,window.innerWidth-24);
+  var left=rect.left+rect.width/2-pw/2;
+  left=Math.max(12,Math.min(left,window.innerWidth-pw-12));
+  hc.style.width=pw+'px';
+  hc.style.left=left+'px';
   hc.style.top=(rect.top-hc.offsetHeight-8+window.scrollY)+'px';
-  if(rect.top-hc.offsetHeight-8<0)hc.style.top=(rect.bottom+8+window.scrollY)+'px';
+  if(rect.top-hc.offsetHeight-8<window.scrollY)hc.style.top=(rect.bottom+8+window.scrollY)+'px';
 });
 document.addEventListener('mouseout',function(e){
   if(!e.target.closest('.cr'))return;
-  var hc=document.getElementById('citePreview');
-  if(hc)hc.style.display='none';
+  _citeTimer=setTimeout(function(){
+    var hc=document.getElementById('citePreview');
+    if(hc)hc.style.display='none';
+  },100);
 });
 function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 
 // --- Markdown renderer (client-side for streaming) ---
 function clientRenderMd(md,citeCount){
+  if(!md)return '';
   var s=md.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   // Code blocks FIRST (before inline code)
-  s=s.replace(/\`\`\`([\\s\\S]*?)\`\`\`/g,'<div class="cb"><pre><code>$1</code></pre></div>');
+  s=s.replace(/\`\`\`([\\s\\S]*?)\`\`\`/g,function(_,code){
+    return '<div class="cb"><pre><code>'+code+'</code></pre></div>';
+  });
   // Inline code
   s=s.replace(/\`([^\`]+)\`/g,'<code>$1</code>');
   // Citation refs
   if(citeCount>0){
     s=s.replace(/\\[(\\d+)\\]/g,function(_,n){
       var num=parseInt(n);
-      if(num>=1&&num<=citeCount)return '<a href="#cite-'+num+'" class="cr" title="Source '+num+'">'+num+'</a>';
+      if(num>=1&&num<=citeCount)return '<a class="cr" title="Source '+num+'">'+num+'</a>';
       return '['+n+']';
     });
   }
@@ -527,25 +552,94 @@ function clientRenderMd(md,citeCount){
   s=s.replace(/^### (.+)$/gm,'<h3>$1</h3>');
   s=s.replace(/^## (.+)$/gm,'<h2>$1</h2>');
   s=s.replace(/^# (.+)$/gm,'<h1>$1</h1>');
-  // Lists
-  s=s.replace(/^[-*] (.+)$/gm,'<li>$1</li>');
+  // Ordered lists: wrap consecutive <li> from numbered items
+  s=s.replace(/^\\d+[.)\\s] (.+)$/gm,'<oli>$1</oli>');
+  // Unordered lists
+  s=s.replace(/^[-*] (.+)$/gm,'<uli>$1</uli>');
+  // Wrap consecutive <oli> in <ol> and <uli> in <ul>
+  s=s.replace(/(<oli>.*?<\\/oli>\\n?)+/g,function(m){return '<ol>'+m.replace(/<\\/?oli>/g,function(t){return t==='<oli>'?'<li>':'</li>';})+'</ol>';});
+  s=s.replace(/(<uli>.*?<\\/uli>\\n?)+/g,function(m){return '<ul>'+m.replace(/<\\/?uli>/g,function(t){return t==='<uli>'?'<li>':'</li>';})+'</ul>';});
   // Links
   s=s.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // Blockquotes
+  s=s.replace(/^&gt; (.+)$/gm,'<blockquote><p>$1</p></blockquote>');
   // Paragraphs
   s=s.split('\\n\\n').map(function(p){
     p=p.trim();
     if(!p)return '';
-    if(p.startsWith('<h')||p.startsWith('<div')||p.startsWith('<li'))return p;
+    if(p.startsWith('<h')||p.startsWith('<div')||p.startsWith('<ol')||p.startsWith('<ul')||p.startsWith('<block')||p.startsWith('<li'))return p;
     return '<p>'+p.replace(/\\n/g,'<br>')+'</p>';
   }).join('');
   return s;
 }
 
+// --- Build full tabbed message (used after streaming completes) ---
+function buildTabbedMessage(answer,citations,images,videos,mode,msgIdx,citeCount){
+  var hasLinks=citations.length>0;
+  var hasImages=images.length>0;
+  var hasVideos=videos.length>0;
+  var hasTabs=hasLinks||hasImages||hasVideos;
+
+  // Source cards row
+  var srcHtml=renderSourceCardsClient(citations);
+
+  // Answer inner
+  var ansInner=srcHtml+'<div class="ans-header"><span class="ans-icon">'+_ic.spark+'</span><span class="ans-label">Answer</span><span class="badge">'+escHtml(mode)+'</span></div><div class="ans-body">'+clientRenderMd(answer,citeCount)+'</div>';
+
+  if(!hasTabs){
+    return '<div class="msg-ai-inner">'+ansInner+'</div>';
+  }
+
+  // Build tabs
+  var tabBar='<div class="tab-bar"><button class="tab active" data-tab="answer-'+msgIdx+'">'+_ic.answer+' Answer</button>';
+  if(hasLinks)tabBar+='<button class="tab" data-tab="links-'+msgIdx+'">'+_ic.link+' Links <span class="tab-count">'+citations.length+'</span></button>';
+  if(hasImages)tabBar+='<button class="tab" data-tab="images-'+msgIdx+'">'+_ic.image+' Images <span class="tab-count">'+images.length+'</span></button>';
+  if(hasVideos)tabBar+='<button class="tab" data-tab="videos-'+msgIdx+'">'+_ic.video+' Videos <span class="tab-count">'+videos.length+'</span></button>';
+  tabBar+='</div>';
+
+  // Answer panel
+  var ansPanel='<div class="tab-content active" id="answer-'+msgIdx+'"><div class="msg-ai-inner">'+ansInner+'</div></div>';
+
+  // Links panel
+  var linksPanel='';
+  if(hasLinks){
+    linksPanel='<div class="tab-content" id="links-'+msgIdx+'"><div class="links-grid">';
+    citations.forEach(function(c,i){
+      linksPanel+='<a href="'+escHtml(c.url)+'" target="_blank" rel="noopener" class="link-card"><div class="link-card-head"><img src="'+escHtml(c.favicon)+'" alt="" loading="lazy"><span class="link-card-num">'+(i+1)+'</span></div><div class="link-card-title">'+escHtml(c.title)+'</div><div class="link-card-domain">'+escHtml(c.domain)+'</div>'+(c.snippet?'<div class="link-card-snippet">'+escHtml(c.snippet)+'</div>':'')+'</a>';
+    });
+    linksPanel+='</div></div>';
+  }
+
+  // Images panel
+  var imagesPanel='';
+  if(hasImages){
+    imagesPanel='<div class="tab-content" id="images-'+msgIdx+'"><div class="images-grid">';
+    images.forEach(function(img){
+      imagesPanel+='<a href="'+escHtml(img.sourceUrl||img.url)+'" target="_blank" rel="noopener" class="img-card"><img src="'+escHtml(img.url)+'" alt="'+escHtml(img.title||'')+'" loading="lazy">'+(img.title?'<div class="img-card-title">'+escHtml(img.title)+'</div>':'')+'</a>';
+    });
+    imagesPanel+='</div></div>';
+  }
+
+  // Videos panel
+  var videosPanel='';
+  if(hasVideos){
+    videosPanel='<div class="tab-content" id="videos-'+msgIdx+'"><div class="videos-grid">';
+    videos.forEach(function(vid){
+      videosPanel+='<a href="'+escHtml(vid.url)+'" target="_blank" rel="noopener" class="vid-card"><div class="vid-thumb">'+(vid.thumbnail?'<img src="'+escHtml(vid.thumbnail)+'" alt="" loading="lazy">':'<div class="vid-thumb-ph"></div>')+'<div class="vid-play">'+_ic.play+'</div>'+(vid.duration?'<span class="vid-dur">'+escHtml(vid.duration)+'</span>':'')+'</div>'+(vid.title?'<div class="vid-title">'+escHtml(vid.title)+'</div>':'')+'</a>';
+    });
+    videosPanel+='</div></div>';
+  }
+
+  return '<div class="tabs" data-msg="'+msgIdx+'">'+tabBar+ansPanel+linksPanel+imagesPanel+videosPanel+'</div>';
+}
+
 // --- Streaming search ---
 var streamingAbort=null;
+var _streamMsgIdx=100; // Start high to avoid collision with server-rendered indexes
 async function doStreamSearch(query,mode,threadId){
   if(streamingAbort)streamingAbort.abort();
   streamingAbort=new AbortController();
+  var msgIdx=_streamMsgIdx++;
 
   var messagesEl=document.getElementById('messages');
   if(!messagesEl)return;
@@ -562,8 +656,17 @@ async function doStreamSearch(query,mode,threadId){
   userDiv.appendChild(utDiv);
   messagesEl.appendChild(userDiv);
 
-  // Add streaming AI message placeholder
-  var aiHtml='<div class="msg msg-ai" id="streaming-msg"><div class="msg-ai-inner" id="streaming-inner"><div class="ans-header"><span class="ans-icon">'+_ic.spark+'</span><span class="ans-label">Answer</span><span class="badge">'+escHtml(mode)+'</span></div><div class="ans-body streaming" id="streaming-body"><span class="cursor"></span></div></div></div>';
+  // Add streaming AI message with progress indicator
+  var aiHtml='<div class="msg msg-ai" id="streaming-msg">'
+    +'<div class="search-progress" id="streaming-progress">'
+    +'<div class="progress-dots"><span></span><span></span><span></span></div>'
+    +'<span class="progress-text">Searching the web...</span>'
+    +'</div>'
+    +'<div class="msg-ai-inner" id="streaming-inner" style="display:none">'
+    +'<div class="ans-header"><span class="ans-icon">'+_ic.spark+'</span><span class="ans-label">Answer</span><span class="badge">'+escHtml(mode)+'</span></div>'
+    +'<div class="ans-body streaming" id="streaming-body"><span class="cursor"></span></div>'
+    +'</div>'
+    +'</div>';
   messagesEl.insertAdjacentHTML('beforeend',aiHtml);
   scrollToBottom();
 
@@ -580,6 +683,10 @@ async function doStreamSearch(query,mode,threadId){
 
   try{
     var resp=await fetch('/api/stream?'+params.toString(),{signal:streamingAbort.signal});
+    if(!resp.ok){
+      var errText=await resp.text();
+      throw new Error('HTTP '+resp.status+': '+(errText||'').slice(0,200));
+    }
     var reader=resp.body.getReader();
     var decoder=new TextDecoder();
     var buffer='';
@@ -601,15 +708,36 @@ async function doStreamSearch(query,mode,threadId){
         var data;
         try{data=JSON.parse(dataMatch[1]);}catch(ex){continue;}
 
-        if(evt==='sources'){
+        if(evt==='progress'){
+          // Update progress text
+          var pt=document.getElementById('streaming-progress');
+          if(pt){
+            var ptx=pt.querySelector('.progress-text');
+            if(ptx)ptx.textContent=data.message||'Searching...';
+          }
+        }
+        else if(evt==='sources'){
           citations=data.citations||[];
           webResults=data.webResults||[];
-          var srcHtml=renderSourceCardsClient(citations);
+          // Hide progress, show answer area with sources
+          var prog=document.getElementById('streaming-progress');
+          if(prog)prog.style.display='none';
           var inner=document.getElementById('streaming-inner');
-          if(inner)inner.insertAdjacentHTML('afterbegin',srcHtml);
+          if(inner){
+            inner.style.display='';
+            inner.insertAdjacentHTML('afterbegin',renderSourceCardsClient(citations));
+          }
+          scrollToBottom();
         }
         else if(evt==='chunk'){
           fullAnswer=data.full||'';
+          // If progress still showing (no sources), hide it
+          var prog2=document.getElementById('streaming-progress');
+          if(prog2&&prog2.style.display!=='none'){
+            prog2.style.display='none';
+            var inner2=document.getElementById('streaming-inner');
+            if(inner2)inner2.style.display='';
+          }
           var body=document.getElementById('streaming-body');
           if(body){
             body.innerHTML=clientRenderMd(fullAnswer,citations.length)+'<span class="cursor"></span>';
@@ -621,26 +749,39 @@ async function doStreamSearch(query,mode,threadId){
           videos=data.videos||[];
         }
         else if(evt==='related'){
-          var queries=data.queries||[];
-          if(queries.length>0){
-            var relHtml='<div class="related">'+queries.map(function(q){return '<button class="related-btn" onclick="askFollowUp(this.textContent)">'+escHtml(q)+'</button>';}).join('')+'</div>';
-            var sm=document.getElementById('streaming-msg');
-            if(sm)sm.insertAdjacentHTML('beforeend',relHtml);
-          }
+          // Will be rendered after finalize
         }
         else if(evt==='done'){
           finalResult=data.result;
         }
         else if(evt==='error'){
+          var prog3=document.getElementById('streaming-progress');
+          if(prog3)prog3.style.display='none';
+          var inner3=document.getElementById('streaming-inner');
+          if(inner3)inner3.style.display='';
           var eb=document.getElementById('streaming-body');
           if(eb){eb.innerHTML='<div class="stream-error">'+escHtml(data.message||'Search failed')+'</div>';eb.classList.remove('streaming');}
         }
       }
     }
 
-    // Finalize
-    var fb=document.getElementById('streaming-body');
-    if(fb){fb.classList.remove('streaming');fb.innerHTML=clientRenderMd(fullAnswer,citations.length);}
+    // Finalize: rebuild the full message with tabs
+    var sm=document.getElementById('streaming-msg');
+    if(sm&&fullAnswer){
+      var tabbedHtml=buildTabbedMessage(fullAnswer,citations,images,videos,mode,msgIdx,citations.length);
+      sm.innerHTML=tabbedHtml;
+
+      // Add related queries
+      if(finalResult&&finalResult.relatedQueries&&finalResult.relatedQueries.length>0){
+        var relHtml='<div class="related">'+finalResult.relatedQueries.map(function(q){return '<button class="related-btn" onclick="askFollowUp(this.textContent)">'+escHtml(q)+'</button>';}).join('')+'</div>';
+        sm.insertAdjacentHTML('beforeend',relHtml);
+      }
+      scrollToBottom();
+    } else {
+      // No answer — just remove streaming class
+      var fb=document.getElementById('streaming-body');
+      if(fb)fb.classList.remove('streaming');
+    }
 
     // Save thread
     if(finalResult){
@@ -661,6 +802,10 @@ async function doStreamSearch(query,mode,threadId){
     }
   }catch(e){
     if(e.name!=='AbortError'){
+      var prog4=document.getElementById('streaming-progress');
+      if(prog4)prog4.style.display='none';
+      var inner4=document.getElementById('streaming-inner');
+      if(inner4)inner4.style.display='';
       var errb=document.getElementById('streaming-body');
       if(errb){errb.innerHTML='<div class="stream-error">'+escHtml(e.message||'Search failed')+'</div>';errb.classList.remove('streaming');}
     }
@@ -674,7 +819,7 @@ async function doStreamSearch(query,mode,threadId){
 function renderSourceCardsClient(cites){
   if(!cites.length)return '';
   return '<div class="src-row">'+cites.map(function(c,i){
-    return '<a href="'+escHtml(c.url)+'" target="_blank" rel="noopener" class="src-card" data-idx="'+(i+1)+'"><div class="src-card-num">'+(i+1)+'</div><img src="'+escHtml(c.favicon)+'" alt="" loading="lazy" class="src-card-ico"><div class="src-card-info"><div class="src-card-title">'+escHtml(c.title)+'</div><div class="src-card-domain">'+escHtml(c.domain)+'</div></div></a>';
+    return '<a href="'+escHtml(c.url)+'" target="_blank" rel="noopener" class="src-card" data-idx="'+(i+1)+'" data-snippet="'+escHtml(c.snippet||'')+'"><div class="src-card-num">'+(i+1)+'</div><img src="'+escHtml(c.favicon)+'" alt="" loading="lazy" class="src-card-ico"><div class="src-card-info"><div class="src-card-title">'+escHtml(c.title)+'</div><div class="src-card-domain">'+escHtml(c.domain)+'</div></div></a>';
   }).join('')+'</div>';
 }
 
