@@ -16,7 +16,13 @@ app.get('/:id', async (c) => {
     return c.html(renderLayout('Not Found', renderError('Thread Not Found', 'This thread does not exist or has expired.'), {}), 404)
   }
 
-  return c.html(renderLayout(thread.title + ' - AI Search', renderThreadPage(thread), { query: thread.title }))
+  const threads = await tm.listThreads()
+
+  return c.html(renderLayout(thread.title + ' - AI Search', renderThreadPage(thread), {
+    query: thread.title,
+    threads,
+    currentThreadId: thread.id,
+  }))
 })
 
 // GET /thread/:id/follow-up?q=query&mode=auto — add follow-up (server handles everything)
@@ -34,7 +40,6 @@ app.get('/:id/follow-up', async (c) => {
   const mode = c.req.query('mode') || thread.mode || 'auto'
 
   try {
-    // Use backend_uuid from last assistant message for follow-up context
     const followUpUUID = tm.getLastBackendUUID(thread)
     const result = await search(c.env.KV, query, mode, '', followUpUUID)
     await tm.addFollowUp(id, query, result)
@@ -43,7 +48,8 @@ app.get('/:id/follow-up', async (c) => {
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     console.error('[Follow-up Error]', msg)
-    return c.html(renderLayout('Error', renderError('Follow-up Failed', msg), { query }), 500)
+    const threads = await tm.listThreads()
+    return c.html(renderLayout('Error', renderError('Follow-up Failed', msg), { query, threads }), 500)
   }
 })
 

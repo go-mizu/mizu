@@ -27,7 +27,7 @@ app.get('/api/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISO
 app.get('/', async (c) => {
   const tm = new ThreadManager(c.env.KV)
   const threads = await tm.listThreads()
-  return c.html(renderLayout('AI Search', renderHomePage(threads), { isHome: true }))
+  return c.html(renderLayout('AI Search', renderHomePage(threads), { isHome: true, threads }))
 })
 
 // JSON API

@@ -8,8 +8,11 @@ from taocp_converter.converter import (
     ConversionConfig,
     PdfBookConverter,
     compact_page_range,
+    normalize_markdown_math,
+    normalize_text,
     parse_marker_paginated_markdown,
     parse_surya_results,
+    should_retry_marker_on_cpu,
     text_to_latex,
 )
 
@@ -28,7 +31,7 @@ def _make_text_pdf(path: Path) -> None:
     page1 = doc.new_page()
     page1.insert_text(
         (72, 72),
-        "Page 1 line A\\nPage 1 line B with symbols: & % $ # _ { } ~ ^ \\\",
+        "Page 1 line A\\nPage 1 line B with symbols: & % $ # _ { } ~ ^ \\\\",
     )
 
     page2 = doc.new_page()
@@ -53,14 +56,26 @@ def test_compact_page_range() -> None:
 
 def test_parse_marker_paginated_markdown() -> None:
     markdown = (
-        "\\n\\n{0}------------------------------------------------\\n\\n"
-        "First page text.\\n\\n"
-        "{1}------------------------------------------------\\n\\n"
-        "Second page text.\\n"
+        "\n\n{0}------------------------------------------------\n\n"
+        "First page text.\n\n"
+        "{1}------------------------------------------------\n\n"
+        "Second page text.\n"
     )
     parsed = parse_marker_paginated_markdown(markdown)
     assert parsed[1] == "First page text."
     assert parsed[2] == "Second page text."
+
+
+def test_parse_marker_paginated_markdown_nonzero_page_ids() -> None:
+    markdown = (
+        "\n\n{20}------------------------------------------------\n\n"
+        "Page twenty-one text.\n\n"
+        "{21}------------------------------------------------\n\n"
+        "Page twenty-two text.\n"
+    )
+    parsed = parse_marker_paginated_markdown(markdown)
+    assert parsed[21] == "Page twenty-one text."
+    assert parsed[22] == "Page twenty-two text."
 
 
 def test_parse_surya_results() -> None:
@@ -71,12 +86,12 @@ def test_parse_surya_results() -> None:
         ]
     }
     parsed = parse_surya_results(results, requested_pages=[4, 5])
-    assert parsed[4] == "A\\nB"
+    assert parsed[4] == "A\nB"
     assert parsed[5] == "C"
 
 
 def test_text_to_latex_escapes_special_characters() -> None:
-    rendered = text_to_latex(r"& % $ # _ { } ~ ^ ")
+    rendered = text_to_latex(r"& % $ # _ { } ~ ^ \\")
     assert r"\&" in rendered
     assert r"\%" in rendered
     assert r"\$" in rendered
@@ -87,6 +102,25 @@ def test_text_to_latex_escapes_special_characters() -> None:
     assert r"\textasciitilde{}" in rendered
     assert r"\textasciicircum{}" in rendered
     assert r"\textbackslash{}" in rendered
+
+
+def test_normalize_text_strips_control_chars() -> None:
+    raw = "A\x00B\x07C\nD\x1fE\n\n\nF"
+    normalized = normalize_text(raw)
+    assert normalized == "ABC\nDE\n\nF"
+
+
+def test_should_retry_marker_on_cpu_detects_accelerator_failures() -> None:
+    assert should_retry_marker_on_cpu("torch.AcceleratorError: index 4096 is out of bounds")
+    assert should_retry_marker_on_cpu("MPS backend unavailable")
+    assert not should_retry_marker_on_cpu("marker_single failed with exit code 1")
+
+
+def test_normalize_markdown_math_converts_html_math_tags() -> None:
+    source = "Value <math>n \\mod 4 = 2</math> and T<sub>E</sub>X<sup>2</sup>."
+    rendered = normalize_markdown_math(source)
+    assert "$n \\mod 4 = 2$" in rendered
+    assert "T_{E}X^{2}" in rendered
 
 
 def test_converter_writes_markdown_latex_and_images(tmp_path: Path) -> None:

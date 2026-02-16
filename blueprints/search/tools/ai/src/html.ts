@@ -1,7 +1,7 @@
 import { cssURL } from './asset'
 import { renderMarkdown } from './markdown'
 import { MODELS } from './config'
-import type { Thread, ThreadSummary, SearchResult, Citation } from './types'
+import type { Thread, ThreadSummary, SearchResult, Citation, MediaItem } from './types'
 
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
@@ -16,33 +16,79 @@ function relTime(iso: string): string {
   return new Date(iso).toLocaleDateString()
 }
 
+function dateGroup(iso: string): string {
+  const d = Date.now() - new Date(iso).getTime()
+  if (d < 86400000) return 'Today'
+  if (d < 172800000) return 'Yesterday'
+  if (d < 604800000) return 'Previous 7 Days'
+  if (d < 2592000000) return 'Previous 30 Days'
+  return 'Older'
+}
+
 const ic = {
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>',
-  arrow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>',
   spark: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61z"/></svg>',
   globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
   chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
   clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
   empty: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>',
-  send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
+  send: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+  menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>',
+  close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+  edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
+  copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+  link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
+  image: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
+  video: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>',
+  answer: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>',
+  play: '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>',
+  chevDown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>',
 }
 
-export function renderLayout(title: string, content: string, opts: { isHome?: boolean; query?: string } = {}): string {
-  const nav = opts.isHome ? '' : `
-    <header class="hd">
-      <div class="hd-in">
-        <a href="/" class="hd-logo">${ic.spark} AI Search</a>
-        <div class="hd-q">
-          <form action="/search" method="get">
-            <input type="text" name="q" placeholder="Ask anything..." value="${esc(opts.query || '')}" autocomplete="off">
-          </form>
-        </div>
-        <nav class="hd-nav">
-          <a href="/history">${ic.clock} History</a>
-        </nav>
+function renderSidebar(threads: ThreadSummary[], currentThreadId?: string): string {
+  // Group threads by date
+  const groups = new Map<string, ThreadSummary[]>()
+  for (const t of threads) {
+    const group = dateGroup(t.updatedAt)
+    if (!groups.has(group)) groups.set(group, [])
+    groups.get(group)!.push(t)
+  }
+
+  const groupsHtml = Array.from(groups.entries()).map(([label, items]) => `
+    <div class="sb-group">
+      <div class="sb-group-label">${esc(label)}</div>
+      ${items.map(t => `
+        <a href="/thread/${esc(t.id)}" class="sb-thread${t.id === currentThreadId ? ' active' : ''}" data-id="${esc(t.id)}">
+          <span class="sb-thread-title">${esc(t.title)}</span>
+          <button class="sb-thread-del" data-del-id="${esc(t.id)}" title="Delete">${ic.trash}</button>
+        </a>
+      `).join('')}
+    </div>
+  `).join('')
+
+  return `
+    <aside class="sidebar" id="sidebar">
+      <div class="sb-header">
+        <a href="/" class="sb-logo">${ic.spark} AI Search</a>
+        <button class="sb-close" onclick="toggleSidebar()" title="Close">${ic.close}</button>
       </div>
-    </header>`
+      <a href="/" class="sb-new">${ic.plus} New Thread</a>
+      <div class="sb-threads" id="sidebarThreads">
+        ${groupsHtml || '<div class="sb-empty">No threads yet</div>'}
+      </div>
+    </aside>`
+}
+
+export function renderLayout(title: string, content: string, opts: {
+  isHome?: boolean
+  query?: string
+  threads?: ThreadSummary[]
+  currentThreadId?: string
+} = {}): string {
+  const threads = opts.threads || []
+  const sidebar = renderSidebar(threads, opts.currentThreadId)
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -56,254 +102,693 @@ export function renderLayout(title: string, content: string, opts: { isHome?: bo
 <link rel="stylesheet" href="${cssURL}">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✦</text></svg>">
 </head>
-<body>
-${nav}
-${content}
+<body${opts.isHome ? ' class="home-page"' : ''}>
+${sidebar}
+<div class="overlay" id="overlay" onclick="toggleSidebar()"></div>
+<main class="main" id="main">
+  <button class="menu-btn" onclick="toggleSidebar()" title="Menu">${ic.menu}</button>
+  ${content}
+</main>
+${renderClientScript()}
 </body>
 </html>`
 }
 
 export function renderHomePage(threads: ThreadSummary[] = []): string {
-  const threadsHtml = threads.length > 0 ? `
-    <div class="rec">
-      <h3>Recent</h3>
-      ${threads.slice(0, 8).map(t => `
-        <a href="/thread/${esc(t.id)}" class="ti">
-          <div class="ti-ic">${ic.chat}</div>
-          <div class="ti-body">
-            <div class="ti-t">${esc(t.title)}</div>
-            <div class="ti-m">
-              <span class="badge">${esc(t.mode)}</span>
-              <span>${relTime(t.updatedAt)}</span>
-            </div>
+  return `
+    <div class="home">
+      <div class="home-center">
+        <div class="home-h">${ic.spark}</div>
+        <h1 class="home-title">What do you want to know?</h1>
+        <div class="sb-box">
+          <div class="sb-row" id="homeSearchBox">
+            <input type="text" id="homeInput" class="sb-input" placeholder="Ask anything..." autofocus autocomplete="off">
+            <button type="button" class="sb-btn" id="homeSubmit">${ic.send}</button>
+          </div>
+          <div class="mt">
+            ${MODELS.map(m => `
+              <label class="mc${m.id === 'auto' ? ' on' : ''}" title="${esc(m.desc)}">
+                <input type="radio" name="m" value="${esc(m.id)}" ${m.id === 'auto' ? 'checked' : ''}>
+                ${esc(m.name)}
+              </label>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    </div>`
+}
+
+function renderSourceCards(citations: Citation[]): string {
+  if (!citations.length) return ''
+  return `
+    <div class="src-row">
+      ${citations.map((c, i) => `
+        <a href="${esc(c.url)}" target="_blank" rel="noopener" class="src-card" data-idx="${i + 1}">
+          <div class="src-card-num">${i + 1}</div>
+          <img src="${esc(c.favicon)}" alt="" loading="lazy" class="src-card-ico">
+          <div class="src-card-info">
+            <div class="src-card-title">${esc(c.title)}</div>
+            <div class="src-card-domain">${esc(c.domain)}</div>
           </div>
         </a>
       `).join('')}
-    </div>` : ''
-
-  return `
-    <div class="home">
-      <div class="home-h">${ic.spark} AI Search</div>
-      <div class="home-sub">Ask anything, get answers with sources</div>
-      <div class="sb">
-        <form action="/search" method="get" id="sf">
-          <div class="sb-row">
-            <input type="text" name="q" class="sb-input" placeholder="Ask anything..." autofocus autocomplete="off">
-            <input type="hidden" name="mode" id="mi" value="auto">
-            <button type="submit" class="sb-btn">${ic.send}</button>
-          </div>
-        </form>
-      </div>
-      <div class="mt">
-        ${MODELS.map(m => `
-          <label class="mc${m.id === 'auto' ? ' on' : ''}" title="${esc(m.desc)}">
-            <input type="radio" name="m" value="${esc(m.id)}" ${m.id === 'auto' ? 'checked' : ''}>
-            ${esc(m.name)}
-          </label>
-        `).join('')}
-      </div>
-      ${threadsHtml}
-    </div>
-    <script>
-      document.querySelectorAll('.mc input').forEach(r=>{
-        r.addEventListener('change',()=>{
-          document.getElementById('mi').value=r.value;
-          document.querySelectorAll('.mc').forEach(c=>c.classList.remove('on'));
-          r.parentElement.classList.add('on');
-        });
-      });
-    </script>`
+    </div>`
 }
 
-export function renderSearchResults(result: SearchResult, threadId: string): string {
-  const n = result.citations.length
+function renderAssistantMessage(
+  content: string,
+  citations: Citation[],
+  images: MediaItem[],
+  videos: MediaItem[],
+  mode: string,
+  msgIdx: number,
+  relatedQueries?: string[],
+  threadId?: string,
+  isLast?: boolean,
+): string {
+  const n = citations.length
+  const hasLinks = citations.length > 0
+  const hasImages = images.length > 0
+  const hasVideos = videos.length > 0
+  const hasTabs = hasLinks || hasImages || hasVideos
+  const sources = renderSourceCards(citations)
 
-  const sources = n > 0 ? `
-    <div class="src-s">
-      <div class="lbl">${ic.globe} Sources</div>
-      <div class="src-r">
-        ${result.citations.map(c => `
-          <a href="${esc(c.url)}" target="_blank" rel="noopener" class="src-c">
-            <img src="${esc(c.favicon)}" alt="" loading="lazy">
-            <div>
-              <div class="src-c-t">${esc(c.title)}</div>
-              <div class="src-c-d">${esc(c.domain)}</div>
+  const answerInner = `
+    ${sources}
+    <div class="ans-header">
+      <span class="ans-icon">${ic.spark}</span>
+      <span class="ans-label">Answer</span>
+      <span class="badge">${esc(mode)}</span>
+    </div>
+    <div class="ans-body">${renderMarkdown(content, n)}</div>`
+
+  const related = (isLast && relatedQueries && relatedQueries.length > 0 && threadId) ? `
+    <div class="related">
+      ${relatedQueries.map(q => `
+        <button class="related-btn" onclick="askFollowUp(this.textContent)">${esc(q)}</button>
+      `).join('')}
+    </div>` : ''
+
+  if (!hasTabs) {
+    return `
+      <div class="msg msg-ai">
+        <div class="msg-ai-inner">${answerInner}</div>
+        ${related}
+      </div>`
+  }
+
+  const linksPanel = hasLinks ? `
+    <div class="tab-content" id="links-${msgIdx}">
+      <div class="links-grid">
+        ${citations.map((c, i) => `
+          <a href="${esc(c.url)}" target="_blank" rel="noopener" class="link-card">
+            <div class="link-card-head">
+              <img src="${esc(c.favicon)}" alt="" loading="lazy">
+              <span class="link-card-num">${i + 1}</span>
             </div>
+            <div class="link-card-title">${esc(c.title)}</div>
+            <div class="link-card-domain">${esc(c.domain)}</div>
+            ${c.snippet ? `<div class="link-card-snippet">${esc(c.snippet)}</div>` : ''}
           </a>
         `).join('')}
       </div>
     </div>` : ''
 
-  const answer = `
-    <div class="ans-s">
-      <div class="lbl">${ic.spark} Answer <span class="badge">${esc(result.mode)}</span></div>
-      <div class="ans">${renderMarkdown(result.answer, n)}</div>
-    </div>`
-
-  const citations = n > 0 ? `
-    <div class="cite-s">
-      <div class="lbl">Citations</div>
-      ${result.citations.map((c, i) => `
-        <div class="ci" id="cite-${i + 1}">
-          <div class="ci-n">${i + 1}</div>
-          <div class="ci-b">
-            <a href="${esc(c.url)}" target="_blank" rel="noopener" class="ci-t">
-              <img src="${esc(c.favicon)}" alt="" loading="lazy">
-              ${esc(c.title)}
-            </a>
-            <div class="ci-u">${esc(c.url)}</div>
-            ${c.snippet ? `<div class="ci-sn">${esc(c.snippet)}</div>` : ''}
-          </div>
-        </div>
-      `).join('')}
-    </div>` : ''
-
-  const related = result.relatedQueries.length > 0 ? `
-    <div class="rel-s">
-      <div class="lbl">Related</div>
-      <div class="rel-ch">
-        ${result.relatedQueries.map(q => `
-          <a href="/search?q=${encodeURIComponent(q)}&mode=${encodeURIComponent(result.mode)}" class="rc">${esc(q)}</a>
+  const imagesPanel = hasImages ? `
+    <div class="tab-content" id="images-${msgIdx}">
+      <div class="images-grid">
+        ${images.map(img => `
+          <a href="${esc(img.sourceUrl || img.url)}" target="_blank" rel="noopener" class="img-card">
+            <img src="${esc(img.url)}" alt="${esc(img.title || '')}" loading="lazy">
+            ${img.title ? `<div class="img-card-title">${esc(img.title)}</div>` : ''}
+          </a>
         `).join('')}
       </div>
     </div>` : ''
 
-  const followup = `
-    <div class="fu">
-      <form class="fu-f" action="/thread/${esc(threadId)}/follow-up" method="get">
-        <input type="text" name="q" class="fu-i" placeholder="Ask a follow-up..." autocomplete="off">
-        <input type="hidden" name="mode" value="${esc(result.mode)}">
-        <button type="submit" class="fu-b">${ic.send}</button>
-      </form>
-    </div>`
+  const videosPanel = hasVideos ? `
+    <div class="tab-content" id="videos-${msgIdx}">
+      <div class="videos-grid">
+        ${videos.map(vid => `
+          <a href="${esc(vid.url)}" target="_blank" rel="noopener" class="vid-card">
+            <div class="vid-thumb">
+              ${vid.thumbnail ? `<img src="${esc(vid.thumbnail)}" alt="" loading="lazy">` : '<div class="vid-thumb-ph"></div>'}
+              <div class="vid-play">${ic.play}</div>
+              ${vid.duration ? `<span class="vid-dur">${esc(vid.duration)}</span>` : ''}
+            </div>
+            ${vid.title ? `<div class="vid-title">${esc(vid.title)}</div>` : ''}
+          </a>
+        `).join('')}
+      </div>
+    </div>` : ''
 
   return `
-    <div class="res">
-      ${sources}
-      ${answer}
-      ${citations}
+    <div class="msg msg-ai">
+      <div class="tabs" data-msg="${msgIdx}">
+        <div class="tab-bar">
+          <button class="tab active" data-tab="answer-${msgIdx}">${ic.answer} Answer</button>
+          ${hasLinks ? `<button class="tab" data-tab="links-${msgIdx}">${ic.link} Links</button>` : ''}
+          ${hasImages ? `<button class="tab" data-tab="images-${msgIdx}">${ic.image} Images</button>` : ''}
+          ${hasVideos ? `<button class="tab" data-tab="videos-${msgIdx}">${ic.video} Videos</button>` : ''}
+        </div>
+        <div class="tab-content active" id="answer-${msgIdx}">
+          <div class="msg-ai-inner">${answerInner}</div>
+        </div>
+        ${linksPanel}
+        ${imagesPanel}
+        ${videosPanel}
+      </div>
       ${related}
-      ${followup}
-      <div class="ft">Powered by AI</div>
+    </div>`
+}
+
+export function renderSearchResults(result: SearchResult, threadId: string): string {
+  const userMsg = `
+    <div class="msg msg-user">
+      <div class="msg-user-actions">
+        <button class="msg-action" onclick="navigator.clipboard.writeText(this.closest('.msg').querySelector('.msg-user-text').textContent)" title="Copy">${ic.copy}</button>
+      </div>
+      <div class="msg-user-text">${esc(result.query)}</div>
+    </div>`
+
+  const aiMsg = renderAssistantMessage(
+    result.answer,
+    result.citations,
+    result.images || [],
+    result.videos || [],
+    result.mode,
+    0,
+    result.relatedQueries,
+    threadId,
+    true,
+  )
+
+  return `
+    <div class="thread-view" id="threadView" data-thread-id="${esc(threadId)}" data-mode="${esc(result.mode)}">
+      <div class="messages" id="messages">
+        ${userMsg}
+        ${aiMsg}
+      </div>
+      ${renderFollowUp(threadId, result.mode)}
     </div>`
 }
 
 export function renderThreadPage(thread: Thread): string {
   const msgs = thread.messages.map((msg, i) => {
     if (msg.role === 'user') {
-      return `<div class="msg"><div class="msg-u">${esc(msg.content)}</div></div>`
+      return `
+        <div class="msg msg-user">
+          <div class="msg-user-actions">
+            <button class="msg-action" onclick="navigator.clipboard.writeText(this.closest('.msg').querySelector('.msg-user-text').textContent)" title="Copy">${ic.copy}</button>
+          </div>
+          <div class="msg-user-text">${esc(msg.content)}</div>
+        </div>`
     }
 
     const cites = msg.citations || []
-    const n = cites.length
+    const images = msg.images || []
+    const videos = msg.videos || []
     const isLast = i === thread.messages.length - 1
+    const msgIdx = Math.floor(i / 2)
 
-    const sources = n > 0 ? `
-      <div class="src-s">
-        <div class="lbl">${ic.globe} Sources</div>
-        <div class="src-r">
-          ${cites.map(c => `
-            <a href="${esc(c.url)}" target="_blank" rel="noopener" class="src-c">
-              <img src="${esc(c.favicon)}" alt="" loading="lazy">
-              <div>
-                <div class="src-c-t">${esc(c.title)}</div>
-                <div class="src-c-d">${esc(c.domain)}</div>
-              </div>
-            </a>
-          `).join('')}
-        </div>
-      </div>` : ''
-
-    const answer = `
-      <div class="ans-s">
-        <div class="lbl">${ic.spark} Answer <span class="badge">${esc(msg.model || thread.mode)}</span></div>
-        <div class="ans">${renderMarkdown(msg.content, n)}</div>
-      </div>`
-
-    const related = (isLast && msg.relatedQueries && msg.relatedQueries.length > 0) ? `
-      <div class="rel-s">
-        <div class="lbl">Related</div>
-        <div class="rel-ch">
-          ${msg.relatedQueries.map(q => `
-            <a href="/thread/${esc(thread.id)}/follow-up?q=${encodeURIComponent(q)}&mode=${encodeURIComponent(thread.mode)}" class="rc">${esc(q)}</a>
-          `).join('')}
-      </div>
-    </div>` : ''
-
-    return `<div class="msg msg-a">${sources}${answer}${related}</div>`
+    return renderAssistantMessage(
+      msg.content,
+      cites,
+      images,
+      videos,
+      msg.model || thread.mode,
+      msgIdx,
+      msg.relatedQueries,
+      thread.id,
+      isLast,
+    )
   }).join('')
 
   return `
-    <div class="th">
-      <div class="th-hd">
-        <div class="th-t">${esc(thread.title)}</div>
-        <div class="th-m">
-          <span class="badge">${esc(thread.mode)}</span>
-          <span>${thread.messages.length} messages</span>
-          <span>${relTime(thread.createdAt)}</span>
+    <div class="thread-view" id="threadView" data-thread-id="${esc(thread.id)}" data-mode="${esc(thread.mode)}">
+      <div class="messages" id="messages">
+        ${msgs}
+      </div>
+      ${renderFollowUp(thread.id, thread.mode)}
+    </div>`
+}
+
+function renderFollowUp(threadId: string, mode: string): string {
+  return `
+    <div class="followup" id="followup">
+      <div class="followup-box">
+        <input type="text" id="followupInput" class="followup-input" placeholder="Ask a follow-up..." autocomplete="off">
+        <div class="followup-actions">
+          <div class="followup-mode">
+            <button class="followup-mode-btn" id="modeBtn" onclick="toggleModeMenu()">
+              <span id="modeBtnText">${esc(mode === 'auto' ? 'Auto' : mode.charAt(0).toUpperCase() + mode.slice(1))}</span>
+              ${ic.chevDown}
+            </button>
+            <div class="mode-menu" id="modeMenu">
+              ${MODELS.map(m => `
+                <button class="mode-option${m.id === mode ? ' active' : ''}" data-mode="${esc(m.id)}" onclick="selectMode('${esc(m.id)}','${esc(m.name)}')">${esc(m.name)}</button>
+              `).join('')}
+            </div>
+          </div>
+          <button type="button" class="followup-send" id="followupSend">${ic.send}</button>
         </div>
       </div>
-      ${msgs}
-      <div class="fu">
-        <form class="fu-f" action="/thread/${esc(thread.id)}/follow-up" method="get">
-          <input type="text" name="q" class="fu-i" placeholder="Ask a follow-up..." autocomplete="off">
-          <input type="hidden" name="mode" value="${esc(thread.mode)}">
-          <button type="submit" class="fu-b">${ic.send}</button>
-        </form>
-      </div>
-      <div class="ft">Powered by AI</div>
     </div>`
 }
 
 export function renderHistoryPage(threads: ThreadSummary[]): string {
   if (threads.length === 0) {
     return `
-      <div class="hist">
+      <div class="history">
         <h1>History</h1>
-        <div class="hist-e">
+        <div class="history-empty">
           ${ic.empty}
           <p>No search history yet</p>
-          <p><a href="/">Start searching</a></p>
+          <a href="/" class="btn-primary">Start searching</a>
         </div>
       </div>`
   }
 
   return `
-    <div class="hist">
+    <div class="history">
       <h1>History</h1>
-      <ul>
+      <div class="history-list">
         ${threads.map(t => `
-          <li>
-            <a href="/thread/${esc(t.id)}" class="ti">
-              <div class="ti-ic">${ic.chat}</div>
-              <div class="ti-body">
-                <div class="ti-t">${esc(t.title)}</div>
-                <div class="ti-m">
-                  <span class="badge">${esc(t.mode)}</span>
-                  <span>${relTime(t.updatedAt)}</span>
-                  <span>${t.messageCount} messages</span>
-                </div>
+          <a href="/thread/${esc(t.id)}" class="history-item">
+            <div class="history-item-body">
+              <div class="history-item-title">${esc(t.title)}</div>
+              <div class="history-item-meta">
+                <span class="badge">${esc(t.mode)}</span>
+                <span>${relTime(t.updatedAt)}</span>
+                <span>${t.messageCount} messages</span>
               </div>
-              <button class="ti-del" onclick="event.preventDefault();event.stopPropagation();delTh('${esc(t.id)}',this)" title="Delete">${ic.trash}</button>
-            </a>
-          </li>
+            </div>
+            <button class="history-item-del" data-del-id="${esc(t.id)}" title="Delete">${ic.trash}</button>
+          </a>
         `).join('')}
-      </ul>
-    </div>
-    <script>
-      async function delTh(id,btn){
-        if(!confirm('Delete this thread?'))return;
-        const r=await fetch('/api/thread/'+id,{method:'DELETE'});
-        if(r.ok)btn.closest('li').remove();
-      }
-    </script>`
+      </div>
+    </div>`
 }
 
 export function renderError(title: string, message: string): string {
   return `
-    <div class="err">
+    <div class="error-page">
       <h1>${esc(title)}</h1>
       <p>${esc(message)}</p>
-      <a href="/" class="btn">Back to home</a>
+      <a href="/" class="btn-primary">Back to home</a>
     </div>`
+}
+
+function renderClientScript(): string {
+  // SVG icons for client-side use (pre-escaped for JS strings)
+  const jsCopy = ic.copy.replace(/'/g, "\\'").replace(/\n/g, '')
+  const jsSpark = ic.spark.replace(/'/g, "\\'").replace(/\n/g, '')
+  const jsTrash = ic.trash.replace(/'/g, "\\'").replace(/\n/g, '')
+  const jsSend = ic.send.replace(/'/g, "\\'").replace(/\n/g, '')
+  const jsChev = ic.chevDown.replace(/'/g, "\\'").replace(/\n/g, '')
+  const jsModels = JSON.stringify(MODELS)
+
+  return `<script>
+// --- SVG icons ---
+var _ic={copy:'${jsCopy}',spark:'${jsSpark}',trash:'${jsTrash}',send:'${jsSend}',chev:'${jsChev}'};
+var _models=${jsModels};
+
+// --- Sidebar ---
+function toggleSidebar(){
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('overlay').classList.toggle('open');
+}
+
+// --- Thread deletion ---
+async function delThread(id,btn){
+  if(!confirm('Delete this thread?'))return;
+  var r=await fetch('/api/thread/'+id,{method:'DELETE'});
+  if(r.ok){
+    var el=btn.closest('.sb-thread')||btn.closest('.history-item')||btn.closest('li');
+    if(el)el.remove();
+  }
+}
+
+// --- Tabs (event delegation) ---
+document.addEventListener('click',function(e){
+  var tab=e.target.closest('.tab');
+  if(!tab)return;
+  var bar=tab.closest('.tab-bar');
+  var tabs=tab.closest('.tabs');
+  if(!bar||!tabs)return;
+  bar.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});
+  tab.classList.add('active');
+  tabs.querySelectorAll(':scope > .tab-content').forEach(function(c){c.classList.remove('active');});
+  var target=document.getElementById(tab.dataset.tab);
+  if(target)target.classList.add('active');
+});
+
+// --- Mode selector ---
+var currentMode='${MODELS[0].id}';
+function toggleModeMenu(){
+  var m=document.getElementById('modeMenu');
+  if(m)m.classList.toggle('open');
+}
+function selectMode(mode,name){
+  currentMode=mode;
+  var btn=document.getElementById('modeBtnText');
+  if(btn)btn.textContent=name;
+  var m=document.getElementById('modeMenu');
+  if(m)m.classList.remove('open');
+  document.querySelectorAll('.mode-option').forEach(function(o){o.classList.toggle('active',o.dataset.mode===mode);});
+}
+document.addEventListener('click',function(e){
+  if(!e.target.closest('.followup-mode')){var m=document.getElementById('modeMenu');if(m)m.classList.remove('open');}
+});
+
+// --- Model toggle (home) ---
+document.querySelectorAll('.mc input').forEach(function(r){
+  r.addEventListener('change',function(){
+    currentMode=r.value;
+    document.querySelectorAll('.mc').forEach(function(c){c.classList.remove('on');});
+    r.parentElement.classList.add('on');
+  });
+});
+
+// --- Citation hover preview ---
+document.addEventListener('mouseover',function(e){
+  var cr=e.target.closest('.cr');
+  if(!cr)return;
+  var num=parseInt(cr.textContent);
+  var msg=cr.closest('.msg-ai');
+  if(!msg)return;
+  var card=msg.querySelector('.src-card[data-idx="'+num+'"]');
+  if(!card)return;
+  var hc=document.getElementById('citePreview');
+  if(!hc){hc=document.createElement('div');hc.id='citePreview';hc.className='cite-preview';document.body.appendChild(hc);}
+  var t=card.querySelector('.src-card-title');
+  var d=card.querySelector('.src-card-domain');
+  var ico=card.querySelector('img');
+  hc.textContent='';
+  var dd=document.createElement('div');dd.className='cp-domain';
+  if(ico){var im=document.createElement('img');im.src=ico.src;im.alt='';dd.appendChild(im);}
+  dd.appendChild(document.createTextNode(d?d.textContent:''));
+  hc.appendChild(dd);
+  var tt=document.createElement('div');tt.className='cp-title';tt.textContent=t?t.textContent:'';hc.appendChild(tt);
+  var uu=document.createElement('div');uu.className='cp-url';uu.textContent=card.href||'';hc.appendChild(uu);
+  hc.style.display='block';
+  var rect=cr.getBoundingClientRect();
+  hc.style.left=Math.min(rect.left,window.innerWidth-300)+'px';
+  hc.style.top=(rect.top-hc.offsetHeight-8+window.scrollY)+'px';
+  if(rect.top-hc.offsetHeight-8<0)hc.style.top=(rect.bottom+8+window.scrollY)+'px';
+});
+document.addEventListener('mouseout',function(e){
+  if(!e.target.closest('.cr'))return;
+  var hc=document.getElementById('citePreview');
+  if(hc)hc.style.display='none';
+});
+function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+
+// --- Markdown renderer (client-side for streaming) ---
+function clientRenderMd(md,citeCount){
+  var s=md.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  // Code blocks FIRST (before inline code)
+  s=s.replace(/\`\`\`([\\s\\S]*?)\`\`\`/g,'<div class="cb"><pre><code>$1</code></pre></div>');
+  // Inline code
+  s=s.replace(/\`([^\`]+)\`/g,'<code>$1</code>');
+  // Citation refs
+  if(citeCount>0){
+    s=s.replace(/\\[(\\d+)\\]/g,function(_,n){
+      var num=parseInt(n);
+      if(num>=1&&num<=citeCount)return '<a href="#cite-'+num+'" class="cr" title="Source '+num+'">'+num+'</a>';
+      return '['+n+']';
+    });
+  }
+  // Bold
+  s=s.replace(/\\*\\*(.+?)\\*\\*/g,'<strong>$1</strong>');
+  // Italic
+  s=s.replace(/\\*(.+?)\\*/g,'<em>$1</em>');
+  // Headers
+  s=s.replace(/^### (.+)$/gm,'<h3>$1</h3>');
+  s=s.replace(/^## (.+)$/gm,'<h2>$1</h2>');
+  s=s.replace(/^# (.+)$/gm,'<h1>$1</h1>');
+  // Lists
+  s=s.replace(/^[-*] (.+)$/gm,'<li>$1</li>');
+  // Links
+  s=s.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // Paragraphs
+  s=s.split('\\n\\n').map(function(p){
+    p=p.trim();
+    if(!p)return '';
+    if(p.startsWith('<h')||p.startsWith('<div')||p.startsWith('<li'))return p;
+    return '<p>'+p.replace(/\\n/g,'<br>')+'</p>';
+  }).join('');
+  return s;
+}
+
+// --- Streaming search ---
+var streamingAbort=null;
+async function doStreamSearch(query,mode,threadId){
+  if(streamingAbort)streamingAbort.abort();
+  streamingAbort=new AbortController();
+
+  var messagesEl=document.getElementById('messages');
+  if(!messagesEl)return;
+
+  // Add user message (using DOM instead of innerHTML to avoid escaping issues)
+  var userDiv=document.createElement('div');
+  userDiv.className='msg msg-user';
+  var actDiv=document.createElement('div');actDiv.className='msg-user-actions';
+  var cpBtn=document.createElement('button');cpBtn.className='msg-action';cpBtn.title='Copy';cpBtn.innerHTML=_ic.copy;
+  cpBtn.onclick=function(){navigator.clipboard.writeText(this.closest('.msg').querySelector('.msg-user-text').textContent);};
+  actDiv.appendChild(cpBtn);
+  userDiv.appendChild(actDiv);
+  var utDiv=document.createElement('div');utDiv.className='msg-user-text';utDiv.textContent=query;
+  userDiv.appendChild(utDiv);
+  messagesEl.appendChild(userDiv);
+
+  // Add streaming AI message placeholder
+  var aiHtml='<div class="msg msg-ai" id="streaming-msg"><div class="msg-ai-inner" id="streaming-inner"><div class="ans-header"><span class="ans-icon">'+_ic.spark+'</span><span class="ans-label">Answer</span><span class="badge">'+escHtml(mode)+'</span></div><div class="ans-body streaming" id="streaming-body"><span class="cursor"></span></div></div></div>';
+  messagesEl.insertAdjacentHTML('beforeend',aiHtml);
+  scrollToBottom();
+
+  var fuI=document.getElementById('followupInput');
+  var fuS=document.getElementById('followupSend');
+  if(fuI)fuI.disabled=true;
+  if(fuS)fuS.disabled=true;
+
+  var citations=[],webResults=[],images=[],videos=[];
+  var fullAnswer='',finalResult=null;
+
+  var params=new URLSearchParams({q:query,mode:mode});
+  if(threadId)params.set('threadId',threadId);
+
+  try{
+    var resp=await fetch('/api/stream?'+params.toString(),{signal:streamingAbort.signal});
+    var reader=resp.body.getReader();
+    var decoder=new TextDecoder();
+    var buffer='';
+
+    while(true){
+      var chunk=await reader.read();
+      if(chunk.done)break;
+      buffer+=decoder.decode(chunk.value,{stream:true});
+      var parts=buffer.split('\\n\\n');
+      buffer=parts.pop()||'';
+
+      for(var pi=0;pi<parts.length;pi++){
+        var part=parts[pi];
+        if(!part.trim())continue;
+        var eventMatch=part.match(/^event: (\\w+)/);
+        var dataMatch=part.match(/^data: (.+)$/m);
+        if(!eventMatch||!dataMatch)continue;
+        var evt=eventMatch[1];
+        var data;
+        try{data=JSON.parse(dataMatch[1]);}catch(ex){continue;}
+
+        if(evt==='sources'){
+          citations=data.citations||[];
+          webResults=data.webResults||[];
+          var srcHtml=renderSourceCardsClient(citations);
+          var inner=document.getElementById('streaming-inner');
+          if(inner)inner.insertAdjacentHTML('afterbegin',srcHtml);
+        }
+        else if(evt==='chunk'){
+          fullAnswer=data.full||'';
+          var body=document.getElementById('streaming-body');
+          if(body){
+            body.innerHTML=clientRenderMd(fullAnswer,citations.length)+'<span class="cursor"></span>';
+            scrollToBottom();
+          }
+        }
+        else if(evt==='media'){
+          images=data.images||[];
+          videos=data.videos||[];
+        }
+        else if(evt==='related'){
+          var queries=data.queries||[];
+          if(queries.length>0){
+            var relHtml='<div class="related">'+queries.map(function(q){return '<button class="related-btn" onclick="askFollowUp(this.textContent)">'+escHtml(q)+'</button>';}).join('')+'</div>';
+            var sm=document.getElementById('streaming-msg');
+            if(sm)sm.insertAdjacentHTML('beforeend',relHtml);
+          }
+        }
+        else if(evt==='done'){
+          finalResult=data.result;
+        }
+        else if(evt==='error'){
+          var eb=document.getElementById('streaming-body');
+          if(eb){eb.innerHTML='<div class="stream-error">'+escHtml(data.message||'Search failed')+'</div>';eb.classList.remove('streaming');}
+        }
+      }
+    }
+
+    // Finalize
+    var fb=document.getElementById('streaming-body');
+    if(fb){fb.classList.remove('streaming');fb.innerHTML=clientRenderMd(fullAnswer,citations.length);}
+
+    // Save thread
+    if(finalResult){
+      var saveResp=await fetch('/api/thread/save',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({query:query,mode:mode,threadId:threadId||undefined,result:finalResult})
+      });
+      var saveData=await saveResp.json();
+      if(saveData.thread){
+        var tv=document.getElementById('threadView');
+        if(tv){
+          tv.dataset.threadId=saveData.thread.id;
+          if(!threadId)history.pushState(null,'','/thread/'+saveData.thread.id);
+        }
+        refreshSidebar(saveData.thread.id);
+      }
+    }
+  }catch(e){
+    if(e.name!=='AbortError'){
+      var errb=document.getElementById('streaming-body');
+      if(errb){errb.innerHTML='<div class="stream-error">'+escHtml(e.message||'Search failed')+'</div>';errb.classList.remove('streaming');}
+    }
+  }finally{
+    if(fuI){fuI.disabled=false;fuI.focus();}
+    if(fuS)fuS.disabled=false;
+    streamingAbort=null;
+  }
+}
+
+function renderSourceCardsClient(cites){
+  if(!cites.length)return '';
+  return '<div class="src-row">'+cites.map(function(c,i){
+    return '<a href="'+escHtml(c.url)+'" target="_blank" rel="noopener" class="src-card" data-idx="'+(i+1)+'"><div class="src-card-num">'+(i+1)+'</div><img src="'+escHtml(c.favicon)+'" alt="" loading="lazy" class="src-card-ico"><div class="src-card-info"><div class="src-card-title">'+escHtml(c.title)+'</div><div class="src-card-domain">'+escHtml(c.domain)+'</div></div></a>';
+  }).join('')+'</div>';
+}
+
+function scrollToBottom(){
+  var main=document.getElementById('main');
+  if(main)main.scrollTop=main.scrollHeight;
+}
+
+async function refreshSidebar(currentId){
+  try{
+    var r=await fetch('/api/threads');
+    var d=await r.json();
+    var threads=d.threads||[];
+    var container=document.getElementById('sidebarThreads');
+    if(!container)return;
+    if(!threads.length){container.innerHTML='<div class="sb-empty">No threads yet</div>';return;}
+    var groups=new Map();
+    var now=Date.now();
+    threads.forEach(function(t){
+      var diff=now-new Date(t.updatedAt).getTime();
+      var g='Older';
+      if(diff<86400000)g='Today';else if(diff<172800000)g='Yesterday';else if(diff<604800000)g='Previous 7 Days';else if(diff<2592000000)g='Previous 30 Days';
+      if(!groups.has(g))groups.set(g,[]);
+      groups.get(g).push(t);
+    });
+    var html='';
+    groups.forEach(function(items,label){
+      html+='<div class="sb-group"><div class="sb-group-label">'+escHtml(label)+'</div>';
+      items.forEach(function(t){
+        var active=t.id===currentId?' active':'';
+        html+='<a href="/thread/'+escHtml(t.id)+'" class="sb-thread'+active+'" data-id="'+escHtml(t.id)+'">';
+        html+='<span class="sb-thread-title">'+escHtml(t.title)+'</span>';
+        html+='<button class="sb-thread-del" data-del-id="'+escHtml(t.id)+'" title="Delete">'+_ic.trash+'</button></a>';
+      });
+      html+='</div>';
+    });
+    container.innerHTML=html;
+  }catch(ex){}
+}
+
+// --- Delete via event delegation (sidebar + history) ---
+document.addEventListener('click',function(e){
+  var delBtn=e.target.closest('[data-del-id]');
+  if(!delBtn)return;
+  e.preventDefault();e.stopPropagation();
+  delThread(delBtn.dataset.delId,delBtn);
+});
+
+// --- Home page search (streaming, no page reload) ---
+var homeInput=document.getElementById('homeInput');
+var homeSubmit=document.getElementById('homeSubmit');
+if(homeInput&&homeSubmit){
+  function doHomeSearch(){
+    var q=homeInput.value.trim();
+    if(!q)return;
+    document.body.classList.remove('home-page');
+    var main=document.getElementById('main');
+    var home=main.querySelector('.home');
+    if(!home)return;
+    // Build follow-up HTML
+    var modeLabel=currentMode==='auto'?'Auto':currentMode.charAt(0).toUpperCase()+currentMode.slice(1);
+    var modeOpts=_models.map(function(m){
+      return '<button class="mode-option'+(m.id===currentMode?' active':'')+'" data-mode="'+escHtml(m.id)+'" onclick="selectMode(\\x27'+escHtml(m.id)+'\\x27,\\x27'+escHtml(m.name)+'\\x27)">'+escHtml(m.name)+'</button>';
+    }).join('');
+    home.outerHTML='<div class="thread-view" id="threadView" data-mode="'+escHtml(currentMode)+'">'
+      +'<div class="messages" id="messages"></div>'
+      +'<div class="followup" id="followup"><div class="followup-box">'
+      +'<input type="text" id="followupInput" class="followup-input" placeholder="Ask a follow-up..." autocomplete="off">'
+      +'<div class="followup-actions">'
+      +'<div class="followup-mode"><button class="followup-mode-btn" id="modeBtn" onclick="toggleModeMenu()"><span id="modeBtnText">'+escHtml(modeLabel)+'</span>'+_ic.chev+'</button>'
+      +'<div class="mode-menu" id="modeMenu">'+modeOpts+'</div></div>'
+      +'<button type="button" class="followup-send" id="followupSend">'+_ic.send+'</button>'
+      +'</div></div></div></div>';
+    // Rebind follow-up events
+    bindFollowUp();
+    doStreamSearch(q,currentMode,'');
+  }
+  homeSubmit.addEventListener('click',doHomeSearch);
+  homeInput.addEventListener('keydown',function(e){if(e.key==='Enter')doHomeSearch();});
+}
+
+// --- Follow-up ---
+function askFollowUp(query){
+  var input=document.getElementById('followupInput');
+  if(input){input.value=query;submitFollowUp();}
+}
+function submitFollowUp(){
+  var input=document.getElementById('followupInput');
+  if(!input)return;
+  var query=input.value.trim();
+  if(!query)return;
+  input.value='';
+  var tv=document.getElementById('threadView');
+  var threadId=tv?tv.dataset.threadId:'';
+  var mode=currentMode||(tv?tv.dataset.mode:'')||'auto';
+  doStreamSearch(query,mode,threadId);
+}
+function bindFollowUp(){
+  var fi=document.getElementById('followupInput');
+  var fs=document.getElementById('followupSend');
+  if(fi)fi.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();submitFollowUp();}});
+  if(fs)fs.addEventListener('click',submitFollowUp);
+}
+bindFollowUp();
+
+// --- Init mode from thread view ---
+(function(){
+  var tv=document.getElementById('threadView');
+  if(tv&&tv.dataset.mode){
+    currentMode=tv.dataset.mode;
+    var name=currentMode==='auto'?'Auto':currentMode.charAt(0).toUpperCase()+currentMode.slice(1);
+    var btn=document.getElementById('modeBtnText');
+    if(btn)btn.textContent=name;
+  }
+})();
+</script>`
 }

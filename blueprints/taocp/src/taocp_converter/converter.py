@@ -2,19 +2,25 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
 from os.path import relpath
 from pathlib import Path
 import platform
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
+import time
 from typing import Protocol, Sequence
 
 import fitz
 
 
 MARKER_PAGE_BREAK_RE = re.compile(r"\{(?P<page>\d+)\}\s*-{20,}\s*")
+MATH_TAG_RE = re.compile(r"<math>(.*?)</math>", re.S | re.I)
+SUB_TAG_RE = re.compile(r"<sub>(.*?)</sub>", re.S | re.I)
+SUP_TAG_RE = re.compile(r"<sup>(.*?)</sup>", re.S | re.I)
 
 
 class OCRBackend(Protocol):
@@ -56,10 +62,11 @@ class ConversionConfig:
     dpi: int = 220
     start_page: int = 1
     end_page: int | None = None
-    engine: str = "auto"  # auto | marker | surya | text
+    engine: str = "surya"  # surya (default) | marker | auto | text
     force_ocr: bool = False
     marker_force_ocr: bool = True
     surya_disable_math: bool = False
+    verbose: bool = True
 
 
 @dataclass(slots=True)
@@ -97,6 +104,9 @@ def build_default_ocr_backend(
 
 def normalize_text(text: str) -> str:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
+    # Drop non-printable control characters that can leak from malformed
+    # PDF text layers and break markdown/LaTeX consumers.
+    text = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", text)
     lines = [line.rstrip() for line in text.split("\n")]
     compact = "\n".join(lines)
     compact = re.sub(r"\n{3,}", "\n\n", compact)
@@ -167,15 +177,13 @@ def parse_marker_paginated_markdown(markdown: str) -> dict[int, str]:
     if not matches:
         return {}
 
-    page_ids = [int(match.group("page")) for match in matches]
-    # Marker currently emits 0-based page IDs.
-    page_offset = 1 if min(page_ids) == 0 else 0
-
     by_page: dict[int, str] = {}
     for index, match in enumerate(matches):
         start = match.end()
         end = matches[index + 1].start() if index + 1 < len(matches) else len(markdown)
-        page_number = int(match.group("page")) + page_offset
+        # marker emits 0-based page IDs (global page index), so convert to 1-based
+        # page numbers for converter outputs.
+        page_number = int(match.group("page")) + 1
         text = normalize_text(markdown[start:end])
         by_page[page_number] = text
 
@@ -205,24 +213,135 @@ def parse_surya_results(results: dict, requested_pages: Sequence[int]) -> dict[i
     return by_page
 
 
+def should_retry_marker_on_cpu(error_output: str) -> bool:
+    text = error_output.lower()
+    return (
+        "torch.acceleratorerror" in text
+        or "mps" in text
+        or "index 4096 is out of bounds" in text
+    )
+
+
+def normalize_markdown_math(text: str) -> str:
+    """Convert common HTML math markup into markdown-friendly LaTeX delimiters."""
+
+    def _inline_math(match: re.Match[str]) -> str:
+        payload = normalize_text(match.group(1))
+        return f"${payload}$" if payload else ""
+
+    def _subscript(match: re.Match[str]) -> str:
+        payload = normalize_text(match.group(1))
+        return f"_{{{payload}}}" if payload else ""
+
+    def _superscript(match: re.Match[str]) -> str:
+        payload = normalize_text(match.group(1))
+        return f"^{{{payload}}}" if payload else ""
+
+    text = MATH_TAG_RE.sub(_inline_math, text)
+    text = SUB_TAG_RE.sub(_subscript, text)
+    text = SUP_TAG_RE.sub(_superscript, text)
+    return text
+
+
 class PdfBookConverter:
     def __init__(self, config: ConversionConfig, ocr_backend: OCRBackend | None = None) -> None:
         self.config = config
         self.ocr_backend = ocr_backend
 
+    def _log(self, message: str) -> None:
+        if self.config.verbose:
+            print(f"[taocp-convert] {message}", flush=True)
+
+    @staticmethod
+    def _format_command(command: Sequence[str]) -> str:
+        return " ".join(shlex.quote(part) for part in command)
+
+    def _run_external_command(
+        self,
+        command: Sequence[str],
+        label: str,
+        env_overrides: dict[str, str] | None = None,
+    ) -> str:
+        command_str = self._format_command(command)
+        if env_overrides:
+            env_display = ", ".join(f"{key}={value}" for key, value in env_overrides.items())
+            command_str = f"{env_display} {command_str}"
+        self._log(f"RUN[{label}] {command_str}")
+        start = time.time()
+        run_env = os.environ.copy()
+        if env_overrides:
+            run_env.update(env_overrides)
+
+        if self.config.verbose:
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                env=run_env,
+            )
+            output_lines: list[str] = []
+            assert process.stdout is not None
+            for line in process.stdout:
+                output_lines.append(line)
+                text = line.rstrip()
+                if text:
+                    self._log(f"[{label}] {text}")
+            process.wait()
+            output = "".join(output_lines)
+            duration = time.time() - start
+            self._log(f"DONE[{label}] exit={process.returncode} duration={duration:.2f}s")
+            if process.returncode != 0:
+                raise RuntimeError(
+                    f"{label} failed with exit code {process.returncode}. "
+                    f"Last output:\n{output[-2000:]}"
+                )
+            return output
+
+        completed = subprocess.run(
+            command, capture_output=True, text=True, check=False, env=run_env
+        )
+        duration = time.time() - start
+        self._log(f"DONE[{label}] exit={completed.returncode} duration={duration:.2f}s")
+        output = completed.stdout + completed.stderr
+        if completed.returncode != 0:
+            raise RuntimeError(
+                f"{label} failed with exit code {completed.returncode}. "
+                f"Last output:\n{output[-2000:]}"
+            )
+        return output
+
     def convert(self) -> ConversionResult:
         self._validate_config()
         self._ensure_dirs()
+        start_time = time.time()
+        self._log(f"Input PDF: {self.config.input_pdf}")
+        self._log(
+            "Output dirs: "
+            f"images={self.config.images_dir}, "
+            f"markdown={self.config.markdown_dir}, "
+            f"latex={self.config.latex_dir}"
+        )
+        self._log(
+            f"Options: engine={self.config.engine}, dpi={self.config.dpi}, "
+            f"force_ocr={self.config.force_ocr}, marker_force_ocr={self.config.marker_force_ocr}"
+        )
 
         with fitz.open(self.config.input_pdf) as document:
             total_pages = len(document)
             start_page, end_page = self._resolve_page_bounds(total_pages)
             requested_pages = list(range(start_page, end_page + 1))
+            self._log(
+                f"Processing pages {start_page}-{end_page} "
+                f"(count={len(requested_pages)}, total_pdf_pages={total_pages})"
+            )
 
             hq_texts, hq_methods = self._extract_high_quality_text(requested_pages)
 
             pages: list[PageResult] = []
-            for page_number in requested_pages:
+            for index, page_number in enumerate(requested_pages, start=1):
+                self._log(f"[{index}/{len(requested_pages)}] Converting page {page_number}")
                 page = document.load_page(page_number - 1)
                 image_path = self._write_page_image(page, page_number)
 
@@ -235,6 +354,7 @@ class PdfBookConverter:
 
                 should_try_local_ocr = self.config.force_ocr or (not text)
                 if should_try_local_ocr and self.ocr_backend is not None:
+                    self._log(f"Running local OCR fallback on page {page_number}")
                     ocr_text = normalize_text(self.ocr_backend.extract_text(image_path))
                     if ocr_text:
                         text = ocr_text
@@ -242,6 +362,10 @@ class PdfBookConverter:
 
                 markdown_path = self._write_markdown_page(page_number, image_path, text, extraction_method)
                 latex_path = self._write_latex_page(page_number, image_path, text, extraction_method)
+                self._log(
+                    f"Finished page {page_number}: method={extraction_method}, chars={len(text)}, "
+                    f"image={image_path.name}, markdown={markdown_path.name}, latex={latex_path.name}"
+                )
 
                 pages.append(
                     PageResult(
@@ -256,6 +380,9 @@ class PdfBookConverter:
 
         main_markdown = self._write_markdown_main(pages)
         main_latex = self._write_latex_main(pages)
+        self._log(f"Wrote {main_markdown}")
+        self._log(f"Wrote {main_latex}")
+        self._log(f"Completed in {time.time() - start_time:.2f}s")
 
         return ConversionResult(
             total_pdf_pages=total_pages,
@@ -289,19 +416,8 @@ class PdfBookConverter:
         methods: dict[int, str] = {}
         remaining = set(page_numbers)
 
-        if self.config.engine in {"auto", "marker"}:
-            try:
-                marker_texts = self._extract_with_marker(sorted(remaining))
-                for page, text in marker_texts.items():
-                    if text:
-                        texts[page] = text
-                        methods[page] = "marker"
-                        remaining.discard(page)
-            except RuntimeError:
-                if self.config.engine == "marker":
-                    raise
-
-        if self.config.engine in {"auto", "surya"} and remaining:
+        if self.config.engine in {"auto", "surya"}:
+            self._log(f"High-quality step: trying surya on {len(remaining)} pages")
             try:
                 surya_texts = self._extract_with_surya(sorted(remaining))
                 for page, text in surya_texts.items():
@@ -309,9 +425,28 @@ class PdfBookConverter:
                         texts[page] = text
                         methods[page] = "surya"
                         remaining.discard(page)
-            except RuntimeError:
+                self._log(f"Surya filled {len(surya_texts)} pages")
+            except RuntimeError as error:
                 if self.config.engine == "surya":
                     raise
+                self._log(f"Surya unavailable/failed: {error}")
+                self._log("Continuing to next engine")
+
+        if self.config.engine in {"auto", "marker"} and remaining:
+            self._log(f"High-quality step: trying marker on {len(remaining)} pages")
+            try:
+                marker_texts = self._extract_with_marker(sorted(remaining))
+                for page, text in marker_texts.items():
+                    if text:
+                        texts[page] = text
+                        methods[page] = "marker"
+                        remaining.discard(page)
+                self._log(f"Marker filled {len(marker_texts)} pages")
+            except RuntimeError as error:
+                if self.config.engine == "marker":
+                    raise
+                self._log(f"Marker unavailable/failed: {error}")
+                self._log("Falling back to local extraction")
 
         return texts, methods
 
@@ -323,6 +458,10 @@ class PdfBookConverter:
             )
 
         page_range = compact_page_range([page - 1 for page in page_numbers])
+        self._log(
+            f"Marker config: page_range={page_range or 'all'}, "
+            f"force_ocr={self.config.marker_force_ocr}"
+        )
         with tempfile.TemporaryDirectory(prefix="marker_run_") as temp_dir:
             command = [
                 marker_cmd,
@@ -338,18 +477,29 @@ class PdfBookConverter:
                 command.extend(["--page_range", page_range])
             if self.config.marker_force_ocr:
                 command.append("--force_ocr")
+            if self.config.verbose:
+                command.append("--debug")
 
-            completed = subprocess.run(command, capture_output=True, text=True, check=False)
-            if completed.returncode != 0:
-                raise RuntimeError(
-                    "marker_single failed with exit code "
-                    f"{completed.returncode}: {completed.stderr.strip() or completed.stdout.strip()}"
+            try:
+                self._run_external_command(command, "marker_single")
+            except RuntimeError as error:
+                current_device = os.environ.get("TORCH_DEVICE", "").lower()
+                if current_device == "cpu" or not should_retry_marker_on_cpu(str(error)):
+                    raise
+                self._log(
+                    "Marker failed on accelerator backend; retrying marker_single with TORCH_DEVICE=cpu"
+                )
+                self._run_external_command(
+                    command,
+                    "marker_single",
+                    env_overrides={"TORCH_DEVICE": "cpu"},
                 )
 
             stem = self.config.input_pdf.stem
             markdown_path = Path(temp_dir) / stem / f"{stem}.md"
             if not markdown_path.exists():
                 raise RuntimeError(f"marker output markdown not found at {markdown_path}")
+            self._log(f"Marker output markdown: {markdown_path}")
 
             markdown = markdown_path.read_text(encoding="utf-8")
 
@@ -371,6 +521,10 @@ class PdfBookConverter:
             raise RuntimeError("surya_ocr is not available. Install with: uv add surya-ocr")
 
         page_range = compact_page_range([page - 1 for page in page_numbers])
+        self._log(
+            f"Surya config: page_range={page_range or 'all'}, "
+            f"disable_math={self.config.surya_disable_math}"
+        )
         with tempfile.TemporaryDirectory(prefix="surya_run_") as temp_dir:
             command = [
                 surya_cmd,
@@ -382,17 +536,15 @@ class PdfBookConverter:
                 command.extend(["--page_range", page_range])
             if self.config.surya_disable_math:
                 command.append("--disable_math")
+            if self.config.verbose:
+                command.append("--debug")
 
-            completed = subprocess.run(command, capture_output=True, text=True, check=False)
-            if completed.returncode != 0:
-                raise RuntimeError(
-                    "surya_ocr failed with exit code "
-                    f"{completed.returncode}: {completed.stderr.strip() or completed.stdout.strip()}"
-                )
+            self._run_external_command(command, "surya_ocr")
 
             results_path = Path(temp_dir) / self.config.input_pdf.stem / "results.json"
             if not results_path.exists():
                 raise RuntimeError(f"surya results not found at {results_path}")
+            self._log(f"Surya results JSON: {results_path}")
 
             results = json.loads(results_path.read_text(encoding="utf-8"))
 
@@ -422,7 +574,7 @@ class PdfBookConverter:
     ) -> Path:
         markdown_path = self.config.markdown_dir / f"page_{page_number:04d}.md"
         image_ref = Path(relpath(image_path, start=markdown_path.parent)).as_posix()
-        body = text if text else "_No text extracted for this page._"
+        body = normalize_markdown_math(text) if text else "_No text extracted for this page._"
         content = (
             f"# Page {page_number}\n\n"
             f"![Page {page_number}]({image_ref})\n\n"
