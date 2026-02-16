@@ -1,6 +1,6 @@
 import { ENDPOINTS, CHROME_HEADERS, API_VERSION, MODE_PAYLOAD, MODEL_PREFERENCE, CACHE_TTL } from './config'
 import { Cache } from './cache'
-import type { SSEPayload, SessionState, SearchResult, Citation, WebResult } from './types'
+import type { SSEPayload, SessionState, SearchResult, Citation, WebResult, MediaItem } from './types'
 
 function uuid(): string {
   return crypto.randomUUID()
@@ -17,14 +17,12 @@ function favicon(url: string): string {
 /** Extract cookies from Set-Cookie headers into a single Cookie header string. */
 function extractCookies(resp: Response, existing: string = ''): string {
   const cookies = new Map<string, string>()
-  // Parse existing cookies
   if (existing) {
     for (const part of existing.split('; ')) {
       const eq = part.indexOf('=')
       if (eq > 0) cookies.set(part.slice(0, eq), part.slice(eq + 1))
     }
   }
-  // Parse Set-Cookie headers
   const setCookies = resp.headers.getAll?.('set-cookie') ?? []
   for (const sc of setCookies) {
     const nameVal = sc.split(';')[0]
@@ -36,21 +34,17 @@ function extractCookies(resp: Response, existing: string = ''): string {
 
 /** Extract CSRF token from cookies or response. */
 function extractCSRF(cookies: string, responseBody?: string): string {
-  // Try response body JSON first
   if (responseBody) {
     try {
       const json = JSON.parse(responseBody)
       if (json.csrfToken) return json.csrfToken
     } catch { /* not JSON */ }
   }
-  // Fallback: cookie "next-auth.csrf-token"
   const match = cookies.match(/next-auth\.csrf-token=([^;]+)/)
   if (match) {
     const val = match[1]
-    // Split on %7C (URL-encoded pipe) or percent
     const parts = val.split('%')
     if (parts.length > 1) return parts[0]
-    // Try URL-decode then split on |
     try {
       const decoded = decodeURIComponent(val)
       const pipeParts = decoded.split('|')
@@ -64,21 +58,17 @@ function extractCSRF(cookies: string, responseBody?: string): string {
 /** Initialize a session: get cookies + CSRF token. */
 export async function initSession(kv: KVNamespace): Promise<SessionState> {
   const cache = new Cache(kv)
-
-  // Check cached session
   const cached = await cache.get<SessionState>('session:anon')
   if (cached?.csrfToken) return cached
 
   let cookies = ''
 
-  // Step 1: GET /api/auth/session → establish cookies
   const sessionResp = await fetch(ENDPOINTS.session, {
     headers: { ...CHROME_HEADERS },
     redirect: 'manual',
   })
   cookies = extractCookies(sessionResp, cookies)
 
-  // Step 2: GET /api/auth/csrf → get CSRF token
   const csrfResp = await fetch(ENDPOINTS.csrf, {
     headers: { ...CHROME_HEADERS, Cookie: cookies },
     redirect: 'manual',
@@ -101,26 +91,18 @@ export async function initSession(kv: KVNamespace): Promise<SessionState> {
   return session
 }
 
-/** Execute an SSE search against Perplexity. */
-export async function search(
-  kv: KVNamespace,
+function buildPayload(
   query: string,
-  mode: string = 'auto',
-  model: string = '',
-  followUpUUID: string | null = null,
-  sessionOverride?: SessionState,
-): Promise<SearchResult> {
-  // Validate mode/model
+  mode: string,
+  model: string,
+  followUpUUID: string | null,
+): SSEPayload {
   const modeMap = MODEL_PREFERENCE[mode]
   if (!modeMap) throw new Error(`Invalid mode: ${mode}`)
   const modelPref = modeMap[model]
   if (modelPref === undefined) throw new Error(`Invalid model "${model}" for mode "${mode}"`)
 
-  // Get session
-  const session = sessionOverride || await initSession(kv)
-
-  // Build payload
-  const payload: SSEPayload = {
+  return {
     query_str: query,
     params: {
       attachments: [],
@@ -136,22 +118,38 @@ export async function search(
       version: API_VERSION,
     },
   }
+}
 
+function buildHeaders(session: SessionState): Record<string, string> {
+  return {
+    ...CHROME_HEADERS,
+    'Content-Type': 'application/json',
+    'Cookie': session.cookies,
+    'Accept': '*/*',
+    'Sec-Fetch-Dest': 'empty',
+    'Sec-Fetch-Mode': 'cors',
+    'Sec-Fetch-Site': 'same-origin',
+    'Origin': 'https://www.perplexity.ai',
+    'Referer': 'https://www.perplexity.ai/',
+  }
+}
+
+/** Execute a search against Perplexity (non-streaming, reads full response). */
+export async function search(
+  kv: KVNamespace,
+  query: string,
+  mode: string = 'auto',
+  model: string = '',
+  followUpUUID: string | null = null,
+  sessionOverride?: SessionState,
+): Promise<SearchResult> {
+  const payload = buildPayload(query, mode, model, followUpUUID)
+  const session = sessionOverride || await initSession(kv)
   const start = Date.now()
 
   const resp = await fetch(ENDPOINTS.sseAsk, {
     method: 'POST',
-    headers: {
-      ...CHROME_HEADERS,
-      'Content-Type': 'application/json',
-      'Cookie': session.cookies,
-      'Accept': '*/*',
-      'Sec-Fetch-Dest': 'empty',
-      'Sec-Fetch-Mode': 'cors',
-      'Sec-Fetch-Site': 'same-origin',
-      'Origin': 'https://www.perplexity.ai',
-      'Referer': 'https://www.perplexity.ai/',
-    },
+    headers: buildHeaders(session),
     body: JSON.stringify(payload),
   })
 
@@ -160,7 +158,6 @@ export async function search(
     throw new Error(`SSE request failed: HTTP ${resp.status} — ${text.slice(0, 300)}`)
   }
 
-  // Parse SSE stream
   const body = await resp.text()
   const lastChunk = parseSSEStream(body)
 
@@ -173,6 +170,205 @@ export async function search(
   return result
 }
 
+/** Stream search: returns a ReadableStream of SSE events for client consumption. */
+export function streamSearch(
+  kv: KVNamespace,
+  query: string,
+  mode: string = 'auto',
+  model: string = '',
+  followUpUUID: string | null = null,
+): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder()
+
+  function sendEvent(controller: ReadableStreamDefaultController, event: string, data: unknown): void {
+    const json = JSON.stringify(data)
+    controller.enqueue(encoder.encode(`event: ${event}\ndata: ${json}\n\n`))
+  }
+
+  return new ReadableStream({
+    async start(controller) {
+      try {
+        const payload = buildPayload(query, mode, model, followUpUUID)
+        const session = await initSession(kv)
+        const start = Date.now()
+
+        const resp = await fetch(ENDPOINTS.sseAsk, {
+          method: 'POST',
+          headers: buildHeaders(session),
+          body: JSON.stringify(payload),
+        })
+
+        if (!resp.ok) {
+          const text = await resp.text()
+          sendEvent(controller, 'error', { message: `HTTP ${resp.status}: ${text.slice(0, 300)}` })
+          controller.close()
+          return
+        }
+
+        // Read the full body then parse (CF Workers don't support streaming body reads well)
+        const body = await resp.text()
+        const chunks = body.split('\r\n\r\n')
+
+        let lastData: Record<string, unknown> | null = null
+        let sentSources = false
+        let lastAnswerLen = 0
+
+        for (const chunk of chunks) {
+          if (!chunk.trim()) continue
+          if (chunk.startsWith('event: end_of_stream')) break
+
+          let dataStr = ''
+          if (chunk.includes('event: message')) {
+            const dataIdx = chunk.indexOf('data: ')
+            if (dataIdx >= 0) dataStr = chunk.slice(dataIdx + 6)
+          } else if (chunk.startsWith('data: ')) {
+            dataStr = chunk.slice(6)
+          } else {
+            continue
+          }
+
+          dataStr = dataStr.replace(/\r?\n$/g, '').trim()
+          if (!dataStr) continue
+
+          let data: Record<string, unknown>
+          try {
+            data = JSON.parse(dataStr)
+          } catch { continue }
+
+          lastData = data
+
+          // Emit sources on first chunk that has web_results
+          if (!sentSources) {
+            const webResults = extractWebResultsFromData(data)
+            if (webResults.length > 0) {
+              const citations = webResults.map(w => ({
+                url: w.url,
+                title: w.name || extractDomain(w.url),
+                snippet: w.snippet || '',
+                date: w.date,
+                domain: extractDomain(w.url),
+                favicon: favicon(w.url),
+              }))
+              sendEvent(controller, 'sources', { citations, webResults })
+              sentSources = true
+            }
+          }
+
+          // Emit answer chunks (deltas)
+          const answer = extractAnswerText(data)
+          if (answer && answer.length > lastAnswerLen) {
+            const delta = answer.slice(lastAnswerLen)
+            sendEvent(controller, 'chunk', { delta, full: answer })
+            lastAnswerLen = answer.length
+          }
+        }
+
+        // Final result
+        if (lastData) {
+          const result = extractSearchResult(lastData, query, mode, model)
+          result.durationMs = Date.now() - start
+          result.createdAt = new Date().toISOString()
+
+          // Emit media
+          if (result.images.length > 0 || result.videos.length > 0) {
+            sendEvent(controller, 'media', { images: result.images, videos: result.videos })
+          }
+
+          // Emit related
+          if (result.relatedQueries.length > 0) {
+            sendEvent(controller, 'related', { queries: result.relatedQueries })
+          }
+
+          // Emit done
+          sendEvent(controller, 'done', { result })
+        } else {
+          sendEvent(controller, 'error', { message: 'Empty SSE response' })
+        }
+
+        controller.close()
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        sendEvent(controller, 'error', { message: msg })
+        controller.close()
+      }
+    },
+  })
+}
+
+/** Extract just the answer text from a data chunk (for streaming deltas). */
+function extractAnswerText(data: Record<string, unknown>): string {
+  const textField = data.text
+  if (typeof textField === 'string') {
+    try {
+      const parsed = JSON.parse(textField)
+      if (Array.isArray(parsed)) {
+        for (const step of parsed) {
+          if (typeof step === 'object' && step !== null) {
+            const s = step as Record<string, unknown>
+            if (s.step_type === 'FINAL') {
+              const content = s.content as Record<string, unknown> | undefined
+              if (content) {
+                const a = content.answer
+                if (typeof a === 'string') return a
+              }
+            }
+          }
+        }
+        return ''
+      }
+      if (typeof parsed === 'object' && parsed !== null) {
+        const obj = parsed as Record<string, unknown>
+        if (typeof obj.answer === 'string') return obj.answer
+        if (Array.isArray(obj.structured_answer) && obj.structured_answer.length > 0) {
+          const first = obj.structured_answer[0] as Record<string, unknown>
+          if (typeof first?.text === 'string') return first.text
+        }
+      }
+      return ''
+    } catch {
+      return textField
+    }
+  }
+  // Fallback: check answer field directly
+  if (typeof data.answer === 'string') {
+    try {
+      const parsed = JSON.parse(data.answer)
+      if (typeof parsed === 'object' && parsed !== null && typeof parsed.answer === 'string') return parsed.answer
+    } catch {
+      return data.answer as string
+    }
+  }
+  if (typeof data.answer === 'object' && data.answer !== null) {
+    const a = data.answer as Record<string, unknown>
+    if (typeof a.answer === 'string') return a.answer
+  }
+  return ''
+}
+
+/** Extract web results from any level of a data chunk. */
+function extractWebResultsFromData(data: Record<string, unknown>): WebResult[] {
+  if (Array.isArray(data.web_results)) {
+    return parseWebResults(data.web_results as unknown[])
+  }
+  // Check nested answer object
+  if (typeof data.answer === 'object' && data.answer !== null) {
+    const a = data.answer as Record<string, unknown>
+    if (Array.isArray(a.web_results)) {
+      return parseWebResults(a.web_results as unknown[])
+    }
+  }
+  // Check text field parsed as JSON
+  if (typeof data.text === 'string') {
+    try {
+      const parsed = JSON.parse(data.text)
+      if (typeof parsed === 'object' && parsed !== null && Array.isArray(parsed.web_results)) {
+        return parseWebResults(parsed.web_results)
+      }
+    } catch { /* not JSON */ }
+  }
+  return []
+}
+
 /** Parse SSE stream text, return the last data chunk. */
 function parseSSEStream(text: string): Record<string, unknown> | null {
   const chunks = text.split('\r\n\r\n')
@@ -182,7 +378,6 @@ function parseSSEStream(text: string): Record<string, unknown> | null {
     if (!chunk.trim()) continue
     if (chunk.startsWith('event: end_of_stream')) break
 
-    // Handle "event: message\r\ndata: <json>" or just "data: <json>"
     let dataStr = ''
     if (chunk.includes('event: message')) {
       const dataIdx = chunk.indexOf('data: ')
@@ -217,6 +412,8 @@ function extractSearchResult(
     citations: [],
     webResults: [],
     relatedQueries: [],
+    images: [],
+    videos: [],
     backendUUID: (data.backend_uuid as string) || '',
     mode,
     model,
@@ -224,7 +421,7 @@ function extractSearchResult(
     createdAt: '',
   }
 
-  // Parse the `text` field — can be string (JSON), object, or boolean
+  // Parse the `text` field
   const textField = data.text
   if (typeof textField === 'string') {
     parseTextContent(textField, result)
@@ -259,11 +456,66 @@ function extractSearchResult(
     }))
   }
 
+  // Extract media
+  extractMedia(data, result)
+
   return result
 }
 
+/** Extract images and videos from the SSE data. */
+function extractMedia(data: Record<string, unknown>, result: SearchResult): void {
+  // Images from media_items or image_results
+  const imageArrays = [data.media_items, data.image_results, data.images]
+  for (const arr of imageArrays) {
+    if (Array.isArray(arr) && arr.length > 0) {
+      for (const item of arr) {
+        if (typeof item !== 'object' || item === null) continue
+        const m = item as Record<string, unknown>
+        const url = (m.url as string) || (m.image_url as string) || (m.src as string) || ''
+        if (!url) continue
+        result.images.push({
+          type: 'image',
+          url,
+          title: (m.title as string) || (m.alt as string) || '',
+          sourceUrl: (m.source_url as string) || (m.page_url as string) || '',
+          width: (m.width as number) || undefined,
+          height: (m.height as number) || undefined,
+        })
+      }
+      break
+    }
+  }
+
+  // Videos from video_results
+  const videoArrays = [data.video_results, data.videos]
+  for (const arr of videoArrays) {
+    if (Array.isArray(arr) && arr.length > 0) {
+      for (const item of arr) {
+        if (typeof item !== 'object' || item === null) continue
+        const m = item as Record<string, unknown>
+        const url = (m.url as string) || (m.video_url as string) || ''
+        if (!url) continue
+        result.videos.push({
+          type: 'video',
+          url,
+          thumbnail: (m.thumbnail as string) || (m.thumbnail_url as string) || '',
+          title: (m.title as string) || '',
+          sourceUrl: (m.source_url as string) || '',
+          duration: (m.duration as string) || '',
+        })
+      }
+      break
+    }
+  }
+
+  // Also check nested answer object
+  if (typeof data.answer === 'object' && data.answer !== null) {
+    const a = data.answer as Record<string, unknown>
+    if (!result.images.length) extractMedia(a, result)
+  }
+}
+
 function parseTextContent(textStr: string, result: SearchResult): void {
-  // Try parsing as JSON
   let parsed: unknown
   try {
     parsed = JSON.parse(textStr)
@@ -273,7 +525,6 @@ function parseTextContent(textStr: string, result: SearchResult): void {
   }
 
   if (Array.isArray(parsed)) {
-    // Step array format
     parseSteps(parsed, result)
   } else if (typeof parsed === 'object' && parsed !== null) {
     extractFromObject(parsed as Record<string, unknown>, result)
@@ -320,7 +571,6 @@ function extractFromObject(data: Record<string, unknown>, result: SearchResult):
 }
 
 function extractAnswer(data: Record<string, unknown>, result: SearchResult): void {
-  // Priority 1: structured_answer[0].text
   if (Array.isArray(data.structured_answer) && data.structured_answer.length > 0) {
     const first = data.structured_answer[0] as Record<string, unknown> | undefined
     if (first && typeof first.text === 'string' && first.text) {
@@ -329,7 +579,6 @@ function extractAnswer(data: Record<string, unknown>, result: SearchResult): voi
     }
   }
 
-  // Priority 2: answer as object
   if (typeof data.answer === 'object' && data.answer !== null && !Array.isArray(data.answer)) {
     const answerMap = data.answer as Record<string, unknown>
     if (typeof answerMap.answer === 'string' && answerMap.answer) {
@@ -341,7 +590,6 @@ function extractAnswer(data: Record<string, unknown>, result: SearchResult): voi
     if (Array.isArray(answerMap.related_queries) && !result.relatedQueries.length) {
       result.relatedQueries = (answerMap.related_queries as unknown[]).filter(q => typeof q === 'string') as string[]
     }
-    // Nested structured_answer
     if (Array.isArray(answerMap.structured_answer) && answerMap.structured_answer.length > 0) {
       const first = answerMap.structured_answer[0] as Record<string, unknown> | undefined
       if (first && typeof first.text === 'string' && first.text) {
@@ -351,7 +599,6 @@ function extractAnswer(data: Record<string, unknown>, result: SearchResult): voi
     return
   }
 
-  // Priority 3: answer as JSON string
   if (typeof data.answer === 'string' && data.answer) {
     try {
       const parsed = JSON.parse(data.answer)
@@ -363,7 +610,6 @@ function extractAnswer(data: Record<string, unknown>, result: SearchResult): voi
         return
       }
     } catch {
-      // Not JSON — use as plain text
       if (!result.answer) result.answer = data.answer as string
     }
   }

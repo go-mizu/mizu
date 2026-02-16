@@ -9,7 +9,7 @@ const app = new Hono<HonoEnv>()
 app.get('/', async (c) => {
   const tm = new ThreadManager(c.env.KV)
   const threads = await tm.listThreads()
-  return c.html(renderLayout('History - AI Search', renderHistoryPage(threads)))
+  return c.html(renderLayout('History - AI Search', renderHistoryPage(threads), { threads }))
 })
 
 export default app

@@ -28,10 +28,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--engine",
         choices=["auto", "marker", "surya", "text"],
-        default="auto",
+        default="surya",
         help=(
-            "Text extraction engine: auto=marker->surya->text fallback, "
-            "marker=marker only, surya=surya only, text=built-in text layer only"
+            "Text extraction engine: surya (default), marker, "
+            "auto=surya->marker->text fallback, text=built-in text layer only"
         ),
     )
     parser.add_argument(
@@ -59,6 +59,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable Surya math OCR mode (can reduce false positives)",
     )
+    parser.add_argument(
+        "--silent",
+        action="store_true",
+        help="Reduce output; suppress detailed progress and streamed external logs",
+    )
     return parser
 
 
@@ -83,6 +88,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         force_ocr=args.force_ocr,
         marker_force_ocr=args.marker_force_ocr,
         surya_disable_math=args.surya_disable_math,
+        verbose=not args.silent,
     )
 
     converter = PdfBookConverter(config=config, ocr_backend=ocr_backend)
