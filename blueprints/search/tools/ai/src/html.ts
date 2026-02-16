@@ -1,7 +1,7 @@
 import { cssURL } from './asset'
 import { renderMarkdown } from './markdown'
 import { MODELS } from './config'
-import type { Thread, ThreadSummary, SearchResult, Citation, MediaItem } from './types'
+import type { Thread, ThreadSummary, SearchResult, Citation, MediaItem, ThinkingStep } from './types'
 
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
@@ -45,6 +45,7 @@ const ic = {
   answer: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>',
   play: '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>',
   chevDown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>',
+  brain: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2a7 7 0 0 0-7 7c0 3.5 2.5 6.5 6 7v6h2v-6c3.5-.5 6-3.5 6-7a7 7 0 0 0-7-7z"/><path d="M9 10a3 3 0 0 1 6 0"/></svg>',
 }
 
 function renderSidebar(threads: ThreadSummary[], currentThreadId?: string): string {
@@ -143,16 +144,69 @@ function renderSourceCards(citations: Citation[]): string {
   return `
     <div class="src-row">
       ${citations.map((c, i) => `
-        <a href="${esc(c.url)}" target="_blank" rel="noopener" class="src-card" data-idx="${i + 1}" data-snippet="${esc(c.snippet || '')}">
-          <div class="src-card-num">${i + 1}</div>
-          <img src="${esc(c.favicon)}" alt="" loading="lazy" class="src-card-ico">
-          <div class="src-card-info">
-            <div class="src-card-title">${esc(c.title)}</div>
-            <div class="src-card-domain">${esc(c.domain)}</div>
-          </div>
+        <a href="${esc(c.url)}" target="_blank" rel="noopener" class="src-card" data-idx="${i + 1}" data-snippet="${esc(c.snippet || '')}" data-thumb="${esc(c.thumbnail || '')}" data-url="${esc(c.url)}" style="animation-delay:${i * 50}ms">
+          ${c.thumbnail ? `
+            <div class="src-card-img">
+              <div class="src-card-num">${i + 1}</div>
+              <img src="${esc(c.thumbnail)}" alt="" loading="lazy">
+            </div>
+            <div class="src-card-body">
+              <div class="src-card-head">
+                <img src="${esc(c.favicon)}" alt="" loading="lazy" class="src-card-ico">
+              </div>
+              <div class="src-card-title">${esc(c.title)}</div>
+              <div class="src-card-domain">${esc(c.domain)}</div>
+            </div>
+          ` : `
+            <div class="src-card-body">
+              <div class="src-card-head">
+                <div class="src-card-num">${i + 1}</div>
+                <img src="${esc(c.favicon)}" alt="" loading="lazy" class="src-card-ico">
+              </div>
+              <div class="src-card-title">${esc(c.title)}</div>
+              <div class="src-card-domain">${esc(c.domain)}</div>
+            </div>
+          `}
         </a>
       `).join('')}
     </div>`
+}
+
+function renderThinkingSteps(steps: ThinkingStep[]): string {
+  if (!steps.length) return ''
+  return `
+    <div class="thinking-section">
+      <button class="thinking-toggle" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
+        ${ic.brain}
+        <span class="thinking-label">Thinking <span class="thinking-count">${steps.length} step${steps.length > 1 ? 's' : ''}</span></span>
+        ${ic.chevDown}
+      </button>
+      <div class="thinking-steps">
+        ${steps.map(s => `
+          <div class="thinking-step">
+            <span class="thinking-step-type" data-type="${esc(s.stepType)}">${esc(formatStepType(s.stepType))}</span>
+            <span class="thinking-step-content">${esc(s.content.length > 400 ? s.content.slice(0, 400) + '...' : s.content)}</span>
+            ${s.timestamp ? `<span class="thinking-step-time">${(s.timestamp / 1000).toFixed(1)}s</span>` : ''}
+          </div>
+        `).join('')}
+      </div>
+    </div>`
+}
+
+function formatStepType(stepType: string): string {
+  const labels: Record<string, string> = {
+    'INITIAL_QUERY': 'Query',
+    'INITIAL': 'Query',
+    'SEARCH_WEB': 'Search',
+    'SEARCH_RESULTS': 'Sources',
+    'READING': 'Reading',
+    'READ_RESULTS': 'Reading',
+    'THINKING': 'Thinking',
+    'REASONING': 'Reasoning',
+    'ANALYZE': 'Analysis',
+    'REWRITE_QUERY': 'Refine',
+  }
+  return labels[stepType] || stepType.toLowerCase().replace(/_/g, ' ')
 }
 
 function renderAssistantMessage(
@@ -165,6 +219,7 @@ function renderAssistantMessage(
   relatedQueries?: string[],
   threadId?: string,
   isLast?: boolean,
+  thinkingSteps?: ThinkingStep[],
 ): string {
   const n = citations.length
   const hasLinks = citations.length > 0
@@ -172,8 +227,10 @@ function renderAssistantMessage(
   const hasVideos = videos.length > 0
   const hasTabs = hasLinks || hasImages || hasVideos
   const sources = renderSourceCards(citations)
+  const thinking = thinkingSteps?.length ? renderThinkingSteps(thinkingSteps) : ''
 
   const answerInner = `
+    ${thinking}
     ${sources}
     <div class="ans-header">
       <span class="ans-icon">${ic.spark}</span>
@@ -201,14 +258,17 @@ function renderAssistantMessage(
     <div class="tab-content" id="links-${msgIdx}">
       <div class="links-grid">
         ${citations.map((c, i) => `
-          <a href="${esc(c.url)}" target="_blank" rel="noopener" class="link-card">
-            <div class="link-card-head">
-              <img src="${esc(c.favicon)}" alt="" loading="lazy">
-              <span class="link-card-num">${i + 1}</span>
+          <a href="${esc(c.url)}" target="_blank" rel="noopener" class="link-card" data-og-url="${esc(c.url)}">
+            ${c.thumbnail ? `<div class="link-card-img"><img src="${esc(c.thumbnail)}" alt="" loading="lazy"></div>` : `<div class="link-card-img" data-needs-og="true"></div>`}
+            <div class="link-card-body">
+              <div class="link-card-head">
+                <img src="${esc(c.favicon)}" alt="" loading="lazy">
+                <span class="link-card-num">${i + 1}</span>
+              </div>
+              <div class="link-card-title">${esc(c.title)}</div>
+              <div class="link-card-domain">${esc(c.domain)}</div>
+              ${c.snippet ? `<div class="link-card-snippet">${esc(c.snippet)}</div>` : ''}
             </div>
-            <div class="link-card-title">${esc(c.title)}</div>
-            <div class="link-card-domain">${esc(c.domain)}</div>
-            ${c.snippet ? `<div class="link-card-snippet">${esc(c.snippet)}</div>` : ''}
           </a>
         `).join('')}
       </div>
@@ -281,6 +341,7 @@ export function renderSearchResults(result: SearchResult, threadId: string): str
     result.relatedQueries,
     threadId,
     true,
+    result.thinkingSteps || [],
   )
 
   return `
@@ -321,6 +382,7 @@ export function renderThreadPage(thread: Thread): string {
       msg.relatedQueries,
       thread.id,
       isLast,
+      msg.thinkingSteps || [],
     )
   }).join('')
 
@@ -411,11 +473,12 @@ function renderClientScript(): string {
   const jsImage = ic.image.replace(/'/g, "\\'").replace(/\n/g, '')
   const jsVideo = ic.video.replace(/'/g, "\\'").replace(/\n/g, '')
   const jsPlay = ic.play.replace(/'/g, "\\'").replace(/\n/g, '')
+  const jsBrain = ic.brain.replace(/'/g, "\\'").replace(/\n/g, '')
   const jsModels = JSON.stringify(MODELS)
 
   return `<script>
 // --- SVG icons ---
-var _ic={copy:'${jsCopy}',spark:'${jsSpark}',trash:'${jsTrash}',send:'${jsSend}',chev:'${jsChev}',answer:'${jsAnswer}',link:'${jsLink}',image:'${jsImage}',video:'${jsVideo}',play:'${jsPlay}'};
+var _ic={copy:'${jsCopy}',spark:'${jsSpark}',trash:'${jsTrash}',send:'${jsSend}',chev:'${jsChev}',answer:'${jsAnswer}',link:'${jsLink}',image:'${jsImage}',video:'${jsVideo}',play:'${jsPlay}',brain:'${jsBrain}'};
 var _models=${jsModels};
 
 // --- Sidebar ---
@@ -475,7 +538,7 @@ document.querySelectorAll('.mc input').forEach(function(r){
   });
 });
 
-// --- Citation hover preview (enhanced with snippet + image) ---
+// --- Citation hover preview (enhanced with snippet + thumbnail) ---
 var _citeTimer=null;
 document.addEventListener('mouseover',function(e){
   var cr=e.target.closest('.cr');
@@ -490,26 +553,37 @@ document.addEventListener('mouseover',function(e){
   if(!hc){hc=document.createElement('div');hc.id='citePreview';hc.className='cite-preview';document.body.appendChild(hc);}
   var t=card.querySelector('.src-card-title');
   var d=card.querySelector('.src-card-domain');
-  var ico=card.querySelector('img');
+  var ico=card.querySelector('.src-card-ico');
   var snippet=card.getAttribute('data-snippet')||'';
+  var thumb=card.getAttribute('data-thumb')||'';
   hc.textContent='';
+  // Thumbnail image at top
+  if(thumb){
+    var ti=document.createElement('div');ti.className='cp-thumb';
+    var timg=document.createElement('img');timg.src=thumb;timg.alt='';timg.loading='lazy';
+    timg.onerror=function(){ti.style.display='none';};
+    ti.appendChild(timg);hc.appendChild(ti);
+  }
+  // Body wrapper
+  var bodyWrap=document.createElement('div');bodyWrap.className='cp-body';
   // Domain + favicon row
   var dd=document.createElement('div');dd.className='cp-domain';
   if(ico){var im=document.createElement('img');im.src=ico.src;im.alt='';dd.appendChild(im);}
   dd.appendChild(document.createTextNode(d?d.textContent:''));
-  hc.appendChild(dd);
+  bodyWrap.appendChild(dd);
   // Title
-  var tt=document.createElement('div');tt.className='cp-title';tt.textContent=t?t.textContent:'';hc.appendChild(tt);
+  var tt=document.createElement('div');tt.className='cp-title';tt.textContent=t?t.textContent:'';bodyWrap.appendChild(tt);
   // Snippet
   if(snippet){
-    var ss=document.createElement('div');ss.className='cp-snippet';ss.textContent=snippet.length>150?snippet.slice(0,150)+'...':snippet;hc.appendChild(ss);
+    var ss=document.createElement('div');ss.className='cp-snippet';ss.textContent=snippet.length>180?snippet.slice(0,180)+'...':snippet;bodyWrap.appendChild(ss);
   }
   // URL
-  var uu=document.createElement('div');uu.className='cp-url';uu.textContent=card.href||'';hc.appendChild(uu);
+  var uu=document.createElement('div');uu.className='cp-url';uu.textContent=card.href||'';bodyWrap.appendChild(uu);
+  hc.appendChild(bodyWrap);
   hc.style.display='block';
   // Position centered on citation, clamped to viewport
   var rect=cr.getBoundingClientRect();
-  var pw=Math.min(340,window.innerWidth-24);
+  var pw=Math.min(360,window.innerWidth-24);
   var left=rect.left+rect.width/2-pw/2;
   left=Math.max(12,Math.min(left,window.innerWidth-pw-12));
   hc.style.width=pw+'px';
@@ -522,69 +596,116 @@ document.addEventListener('mouseout',function(e){
   _citeTimer=setTimeout(function(){
     var hc=document.getElementById('citePreview');
     if(hc)hc.style.display='none';
-  },100);
+  },150);
+});
+// Keep preview open when hovering over it
+document.addEventListener('mouseover',function(e){
+  if(e.target.closest('#citePreview')&&_citeTimer){clearTimeout(_citeTimer);_citeTimer=null;}
+});
+document.addEventListener('mouseout',function(e){
+  if(e.target.closest('#citePreview')){
+    _citeTimer=setTimeout(function(){
+      var hc=document.getElementById('citePreview');
+      if(hc)hc.style.display='none';
+    },150);
+  }
 });
 function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 
-// --- Markdown renderer (client-side for streaming) ---
+// --- Markdown renderer (client-side for streaming, line-based with table support) ---
 function clientRenderMd(md,citeCount){
   if(!md)return '';
-  var s=md.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  // Code blocks FIRST (before inline code)
-  s=s.replace(/\`\`\`([\\s\\S]*?)\`\`\`/g,function(_,code){
-    return '<div class="cb"><pre><code>'+code+'</code></pre></div>';
-  });
-  // Inline code
-  s=s.replace(/\`([^\`]+)\`/g,'<code>$1</code>');
-  // Citation refs
-  if(citeCount>0){
-    s=s.replace(/\\[(\\d+)\\]/g,function(_,n){
-      var num=parseInt(n);
-      if(num>=1&&num<=citeCount)return '<a class="cr" title="Source '+num+'">'+num+'</a>';
-      return '['+n+']';
-    });
+  var lines=md.split('\\n');
+  var out=[];
+  var inCode=false,codeBuf=[],codeLang='',inList='',inBQ=false;
+  function closeList(){if(inList){out.push(inList==='ul'?'</ul>':'</ol>');inList='';}}
+  function closeBQ(){if(inBQ){out.push('</blockquote>');inBQ=false;}}
+  function inl(s){
+    s=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    s=s.replace(/\`([^\`]+)\`/g,'<code>$1</code>');
+    if(citeCount>0){s=s.replace(/\\[(\\d+)\\]/g,function(_,n){var num=parseInt(n);if(num>=1&&num<=citeCount)return '<a class="cr" title="Source '+num+'">'+num+'</a>';return '['+n+']';});}
+    s=s.replace(/\\*\\*(.+?)\\*\\*/g,'<strong>$1</strong>');
+    s=s.replace(/\\*(.+?)\\*/g,'<em>$1</em>');
+    s=s.replace(/_(.+?)_/g,'<em>$1</em>');
+    s=s.replace(/~~(.+?)~~/g,'<del>$1</del>');
+    s=s.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+    return s;
   }
-  // Bold
-  s=s.replace(/\\*\\*(.+?)\\*\\*/g,'<strong>$1</strong>');
-  // Italic
-  s=s.replace(/\\*(.+?)\\*/g,'<em>$1</em>');
-  // Headers
-  s=s.replace(/^### (.+)$/gm,'<h3>$1</h3>');
-  s=s.replace(/^## (.+)$/gm,'<h2>$1</h2>');
-  s=s.replace(/^# (.+)$/gm,'<h1>$1</h1>');
-  // Ordered lists: wrap consecutive <li> from numbered items
-  s=s.replace(/^\\d+[.)\\s] (.+)$/gm,'<oli>$1</oli>');
-  // Unordered lists
-  s=s.replace(/^[-*] (.+)$/gm,'<uli>$1</uli>');
-  // Wrap consecutive <oli> in <ol> and <uli> in <ul>
-  s=s.replace(/(<oli>.*?<\\/oli>\\n?)+/g,function(m){return '<ol>'+m.replace(/<\\/?oli>/g,function(t){return t==='<oli>'?'<li>':'</li>';})+'</ol>';});
-  s=s.replace(/(<uli>.*?<\\/uli>\\n?)+/g,function(m){return '<ul>'+m.replace(/<\\/?uli>/g,function(t){return t==='<uli>'?'<li>':'</li>';})+'</ul>';});
-  // Links
-  s=s.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
-  // Blockquotes
-  s=s.replace(/^&gt; (.+)$/gm,'<blockquote><p>$1</p></blockquote>');
-  // Paragraphs
-  s=s.split('\\n\\n').map(function(p){
-    p=p.trim();
-    if(!p)return '';
-    if(p.startsWith('<h')||p.startsWith('<div')||p.startsWith('<ol')||p.startsWith('<ul')||p.startsWith('<block')||p.startsWith('<li'))return p;
-    return '<p>'+p.replace(/\\n/g,'<br>')+'</p>';
-  }).join('');
-  return s;
+  for(var i=0;i<lines.length;i++){
+    var line=lines[i];
+    // Code blocks
+    if(line.indexOf('\`\`\`')===0){
+      if(inCode){var esc3=codeBuf.join('\\n').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');out.push('<div class="cb"><div class="cb-h"><span>'+escHtml(codeLang||'code')+'</span></div><pre><code>'+esc3+'</code></pre></div>');inCode=false;codeBuf=[];codeLang='';}
+      else{closeList();closeBQ();inCode=true;codeLang=line.slice(3).trim();}
+      continue;
+    }
+    if(inCode){codeBuf.push(line);continue;}
+    // Blank line
+    if(!line.trim()){closeList();closeBQ();continue;}
+    // Blockquote
+    if(line.indexOf('> ')===0){closeList();if(!inBQ){out.push('<blockquote>');inBQ=true;}out.push('<p>'+inl(line.slice(2))+'</p>');continue;}
+    closeBQ();
+    // Headers
+    var hm=line.match(/^(#{1,6})\\s+(.+)/);
+    if(hm){closeList();out.push('<h'+hm[1].length+'>'+inl(hm[2])+'</h'+hm[1].length+'>');continue;}
+    // HR
+    if(/^[-*_]{3,}\\s*$/.test(line)){closeList();out.push('<hr>');continue;}
+    // Unordered list
+    var ulm=line.match(/^\\s*[-*+]\\s+(.+)/);
+    if(ulm){if(inList!=='ul'){closeList();out.push('<ul>');inList='ul';}out.push('<li>'+inl(ulm[1])+'</li>');continue;}
+    // Ordered list
+    var olm=line.match(/^\\s*\\d+[.)]\\s+(.+)/);
+    if(olm){if(inList!=='ol'){closeList();out.push('<ol>');inList='ol';}out.push('<li>'+inl(olm[1])+'</li>');continue;}
+    // Table
+    if(line.indexOf('|')>=0&&line.trim().indexOf('|')===0){
+      closeList();
+      var rows=[];var j=i;
+      while(j<lines.length&&lines[j].trim().indexOf('|')===0){
+        var cells=lines[j].trim().replace(/^\\||\\|$/g,'').split('|').map(function(c){return c.trim();});
+        if(!/^[-:\\s|]+$/.test(lines[j]))rows.push(cells);
+        j++;
+      }
+      if(rows.length>0){
+        out.push('<div class="table-wrap"><table>');
+        out.push('<thead><tr>'+rows[0].map(function(c){return '<th>'+inl(c)+'</th>';}).join('')+'</tr></thead>');
+        if(rows.length>1){out.push('<tbody>');for(var k=1;k<rows.length;k++){out.push('<tr>'+rows[k].map(function(c){return '<td>'+inl(c)+'</td>';}).join('')+'</tr>');}out.push('</tbody>');}
+        out.push('</table></div>');
+      }
+      i=j-1;continue;
+    }
+    // Paragraph
+    closeList();
+    out.push('<p>'+inl(line)+'</p>');
+  }
+  closeList();closeBQ();
+  if(inCode&&codeBuf.length){var esc4=codeBuf.join('\\n').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');out.push('<div class="cb"><pre><code>'+esc4+'</code></pre></div>');}
+  return out.join('');
 }
 
 // --- Build full tabbed message (used after streaming completes) ---
-function buildTabbedMessage(answer,citations,images,videos,mode,msgIdx,citeCount){
+function buildTabbedMessage(answer,citations,images,videos,mode,msgIdx,citeCount,steps){
   var hasLinks=citations.length>0;
   var hasImages=images.length>0;
   var hasVideos=videos.length>0;
   var hasTabs=hasLinks||hasImages||hasVideos;
 
+  // Thinking steps
+  var _stepLabels={INITIAL_QUERY:'Query',INITIAL:'Query',SEARCH_WEB:'Search',SEARCH_RESULTS:'Sources',READING:'Reading',READ_RESULTS:'Reading',THINKING:'Thinking',REASONING:'Reasoning',ANALYZE:'Analysis',REWRITE_QUERY:'Refine'};
+  function fmtStep(t){return _stepLabels[t]||t.toLowerCase().replace(/_/g,' ');}
+  var thinkHtml='';
+  if(steps&&steps.length>0){
+    thinkHtml='<div class="thinking-section"><button class="thinking-toggle" onclick="this.classList.toggle(\\x27open\\x27);this.nextElementSibling.classList.toggle(\\x27open\\x27)">'+_ic.brain+'<span class="thinking-label">Thinking <span class="thinking-count">'+steps.length+' step'+(steps.length>1?'s':'')+'</span></span>'+_ic.chev+'</button><div class="thinking-steps">';
+    steps.forEach(function(s){
+      thinkHtml+='<div class="thinking-step"><span class="thinking-step-type" data-type="'+escHtml(s.stepType)+'">'+escHtml(fmtStep(s.stepType))+'</span><span class="thinking-step-content">'+escHtml(s.content.length>400?s.content.slice(0,400)+'...':s.content)+'</span>'+(s.timestamp?'<span class="thinking-step-time">'+(s.timestamp/1000).toFixed(1)+'s</span>':'')+'</div>';
+    });
+    thinkHtml+='</div></div>';
+  }
+
   // Source cards row
   var srcHtml=renderSourceCardsClient(citations);
 
   // Answer inner
-  var ansInner=srcHtml+'<div class="ans-header"><span class="ans-icon">'+_ic.spark+'</span><span class="ans-label">Answer</span><span class="badge">'+escHtml(mode)+'</span></div><div class="ans-body">'+clientRenderMd(answer,citeCount)+'</div>';
+  var ansInner=thinkHtml+srcHtml+'<div class="ans-header"><span class="ans-icon">'+_ic.spark+'</span><span class="ans-label">Answer</span><span class="badge">'+escHtml(mode)+'</span></div><div class="ans-body">'+clientRenderMd(answer,citeCount)+'</div>';
 
   if(!hasTabs){
     return '<div class="msg-ai-inner">'+ansInner+'</div>';
@@ -605,7 +726,8 @@ function buildTabbedMessage(answer,citations,images,videos,mode,msgIdx,citeCount
   if(hasLinks){
     linksPanel='<div class="tab-content" id="links-'+msgIdx+'"><div class="links-grid">';
     citations.forEach(function(c,i){
-      linksPanel+='<a href="'+escHtml(c.url)+'" target="_blank" rel="noopener" class="link-card"><div class="link-card-head"><img src="'+escHtml(c.favicon)+'" alt="" loading="lazy"><span class="link-card-num">'+(i+1)+'</span></div><div class="link-card-title">'+escHtml(c.title)+'</div><div class="link-card-domain">'+escHtml(c.domain)+'</div>'+(c.snippet?'<div class="link-card-snippet">'+escHtml(c.snippet)+'</div>':'')+'</a>';
+      var thumbHtml=c.thumbnail?'<div class="link-card-img"><img src="'+escHtml(c.thumbnail)+'" alt="" loading="lazy"></div>':'<div class="link-card-img" data-needs-og="true"></div>';
+      linksPanel+='<a href="'+escHtml(c.url)+'" target="_blank" rel="noopener" class="link-card" data-og-url="'+escHtml(c.url)+'">'+thumbHtml+'<div class="link-card-body"><div class="link-card-head"><img src="'+escHtml(c.favicon)+'" alt="" loading="lazy"><span class="link-card-num">'+(i+1)+'</span></div><div class="link-card-title">'+escHtml(c.title)+'</div><div class="link-card-domain">'+escHtml(c.domain)+'</div>'+(c.snippet?'<div class="link-card-snippet">'+escHtml(c.snippet)+'</div>':'')+'</div></a>';
     });
     linksPanel+='</div></div>';
   }
@@ -633,6 +755,9 @@ function buildTabbedMessage(answer,citations,images,videos,mode,msgIdx,citeCount
   return '<div class="tabs" data-msg="'+msgIdx+'">'+tabBar+ansPanel+linksPanel+imagesPanel+videosPanel+'</div>';
 }
 
+// --- Session pre-warm (reduces TTFB by ~400ms on first search) ---
+fetch('/api/warm').catch(function(){});
+
 // --- Streaming search ---
 var streamingAbort=null;
 var _streamMsgIdx=100; // Start high to avoid collision with server-rendered indexes
@@ -640,6 +765,7 @@ async function doStreamSearch(query,mode,threadId){
   if(streamingAbort)streamingAbort.abort();
   streamingAbort=new AbortController();
   var msgIdx=_streamMsgIdx++;
+  var searchT0=Date.now();
 
   var messagesEl=document.getElementById('messages');
   if(!messagesEl)return;
@@ -656,11 +782,15 @@ async function doStreamSearch(query,mode,threadId){
   userDiv.appendChild(utDiv);
   messagesEl.appendChild(userDiv);
 
-  // Add streaming AI message with progress indicator
+  // Add streaming AI message with progress indicator + live timer
   var aiHtml='<div class="msg msg-ai" id="streaming-msg">'
     +'<div class="search-progress" id="streaming-progress">'
+    +'<div class="progress-shimmer"></div>'
+    +'<div class="progress-inner">'
     +'<div class="progress-dots"><span></span><span></span><span></span></div>'
     +'<span class="progress-text">Searching the web...</span>'
+    +'<span class="progress-timer" id="streaming-timer">0.0s</span>'
+    +'</div>'
     +'</div>'
     +'<div class="msg-ai-inner" id="streaming-inner" style="display:none">'
     +'<div class="ans-header"><span class="ans-icon">'+_ic.spark+'</span><span class="ans-label">Answer</span><span class="badge">'+escHtml(mode)+'</span></div>'
@@ -670,13 +800,19 @@ async function doStreamSearch(query,mode,threadId){
   messagesEl.insertAdjacentHTML('beforeend',aiHtml);
   scrollToBottom();
 
+  // Live timer that counts up every 100ms
+  var timerEl=document.getElementById('streaming-timer');
+  var timerInterval=setInterval(function(){
+    if(timerEl){var elapsed=((Date.now()-searchT0)/1000).toFixed(1);timerEl.textContent=elapsed+'s';}
+  },100);
+
   var fuI=document.getElementById('followupInput');
   var fuS=document.getElementById('followupSend');
   if(fuI)fuI.disabled=true;
   if(fuS)fuS.disabled=true;
 
-  var citations=[],webResults=[],images=[],videos=[];
-  var fullAnswer='',finalResult=null;
+  var citations=[],webResults=[],images=[],videos=[],thinkingSteps=[];
+  var fullAnswer='',finalResult=null,serverTiming=null;
 
   var params=new URLSearchParams({q:query,mode:mode});
   if(threadId)params.set('threadId',threadId);
@@ -716,16 +852,52 @@ async function doStreamSearch(query,mode,threadId){
             if(ptx)ptx.textContent=data.message||'Searching...';
           }
         }
+        else if(evt==='thinking'){
+          var step=data.step;
+          if(step){
+            thinkingSteps.push(step);
+            // Create or update thinking section in the streaming message
+            var thinkEl=document.getElementById('streaming-thinking');
+            if(!thinkEl){
+              thinkEl=document.createElement('div');thinkEl.id='streaming-thinking';thinkEl.className='thinking-section';
+              thinkEl.innerHTML='<button class="thinking-toggle open" onclick="this.classList.toggle(\\x27open\\x27);this.nextElementSibling.classList.toggle(\\x27open\\x27)">'+_ic.brain+'<span class="thinking-label">Thinking <span class="thinking-count" id="thinking-count">1 step</span></span>'+_ic.chev+'</button><div class="thinking-steps open thinking-streaming" id="thinking-steps-list"></div>';
+              // Insert at top of streaming-inner, or before progress if inner not visible yet
+              var inner=document.getElementById('streaming-inner');
+              if(inner&&inner.style.display!=='none'){
+                inner.insertBefore(thinkEl,inner.firstChild);
+              }else{
+                var prog=document.getElementById('streaming-progress');
+                if(prog)prog.parentNode.insertBefore(thinkEl,prog);
+              }
+            }
+            // Update count
+            var countEl=document.getElementById('thinking-count');
+            if(countEl)countEl.textContent=thinkingSteps.length+' step'+(thinkingSteps.length>1?'s':'');
+            // Add step
+            var list=document.getElementById('thinking-steps-list');
+            if(list){
+              var sd=document.createElement('div');sd.className='thinking-step';
+              var _sl={INITIAL_QUERY:'Query',INITIAL:'Query',SEARCH_WEB:'Search',SEARCH_RESULTS:'Sources',READING:'Reading',READ_RESULTS:'Reading',THINKING:'Thinking',REASONING:'Reasoning',ANALYZE:'Analysis',REWRITE_QUERY:'Refine'};
+              var stLabel=_sl[step.stepType]||step.stepType.toLowerCase().replace(/_/g,' ');
+              sd.innerHTML='<span class="thinking-step-type" data-type="'+escHtml(step.stepType)+'">'+escHtml(stLabel)+'</span><span class="thinking-step-content">'+escHtml(step.content.length>400?step.content.slice(0,400)+'...':step.content)+'</span>'+(step.timestamp?'<span class="thinking-step-time">'+(step.timestamp/1000).toFixed(1)+'s</span>':'');
+              list.appendChild(sd);
+            }
+            scrollToBottom();
+          }
+        }
         else if(evt==='sources'){
           citations=data.citations||[];
           webResults=data.webResults||[];
-          // Hide progress, show answer area with sources
+          // Fade out progress, show answer area with sources
           var prog=document.getElementById('streaming-progress');
-          if(prog)prog.style.display='none';
+          if(prog){prog.classList.add('fade-out');setTimeout(function(){prog.style.display='none';},300);}
           var inner=document.getElementById('streaming-inner');
           if(inner){
-            inner.style.display='';
-            inner.insertAdjacentHTML('afterbegin',renderSourceCardsClient(citations));
+            setTimeout(function(){
+              inner.style.display='';
+              inner.classList.add('fade-in');
+              inner.insertAdjacentHTML('afterbegin',renderSourceCardsClient(citations));
+            },200);
           }
           scrollToBottom();
         }
@@ -753,6 +925,7 @@ async function doStreamSearch(query,mode,threadId){
         }
         else if(evt==='done'){
           finalResult=data.result;
+          serverTiming=data.timing||null;
         }
         else if(evt==='error'){
           var prog3=document.getElementById('streaming-progress');
@@ -765,11 +938,31 @@ async function doStreamSearch(query,mode,threadId){
       }
     }
 
+    // Stop timer
+    clearInterval(timerInterval);timerInterval=null;
+
     // Finalize: rebuild the full message with tabs
+    // Prefer finalResult.answer (server-extracted clean text) over fullAnswer (may be raw JSON)
     var sm=document.getElementById('streaming-msg');
-    if(sm&&fullAnswer){
-      var tabbedHtml=buildTabbedMessage(fullAnswer,citations,images,videos,mode,msgIdx,citations.length);
+    var displayAnswer=(finalResult&&finalResult.answer)?finalResult.answer:fullAnswer;
+    if(sm&&displayAnswer){
+      var tabbedHtml=buildTabbedMessage(displayAnswer,citations,images,videos,mode,msgIdx,citations.length,thinkingSteps);
       sm.innerHTML=tabbedHtml;
+
+      // Add timing badge
+      var clientTotal=((Date.now()-searchT0)/1000).toFixed(1);
+      var timingHtml='<div class="timing-bar">';
+      timingHtml+='<span class="timing-total">'+'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'+'Completed in '+clientTotal+'s</span>';
+      if(serverTiming){
+        timingHtml+='<span class="timing-detail" title="Session: '+serverTiming.sessionMs+'ms | Fetch: '+serverTiming.fetchMs+'ms | First byte: '+serverTiming.firstByteMs+'ms | First answer: '+serverTiming.firstAnswerMs+'ms | Total: '+serverTiming.totalMs+'ms">';
+        timingHtml+='TTFB '+((serverTiming.firstAnswerMs||0)/1000).toFixed(1)+'s';
+        timingHtml+='</span>';
+      }
+      timingHtml+='</div>';
+      sm.insertAdjacentHTML('afterbegin',timingHtml);
+
+      // Lazy OG image enrichment for source cards and link cards
+      enrichWithOGImages();
 
       // Add related queries
       if(finalResult&&finalResult.relatedQueries&&finalResult.relatedQueries.length>0){
@@ -782,9 +975,14 @@ async function doStreamSearch(query,mode,threadId){
       var fb=document.getElementById('streaming-body');
       if(fb)fb.classList.remove('streaming');
     }
+    // Stop thinking animation
+    var tsList=document.querySelector('.thinking-streaming');
+    if(tsList)tsList.classList.remove('thinking-streaming');
 
     // Save thread
     if(finalResult){
+      // Ensure thinking steps are included in saved result
+      if(thinkingSteps.length>0&&!finalResult.thinkingSteps){finalResult.thinkingSteps=thinkingSteps;}
       var saveResp=await fetch('/api/thread/save',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
@@ -810,6 +1008,7 @@ async function doStreamSearch(query,mode,threadId){
       if(errb){errb.innerHTML='<div class="stream-error">'+escHtml(e.message||'Search failed')+'</div>';errb.classList.remove('streaming');}
     }
   }finally{
+    if(timerInterval)clearInterval(timerInterval);
     if(fuI){fuI.disabled=false;fuI.focus();}
     if(fuS)fuS.disabled=false;
     streamingAbort=null;
@@ -819,13 +1018,52 @@ async function doStreamSearch(query,mode,threadId){
 function renderSourceCardsClient(cites){
   if(!cites.length)return '';
   return '<div class="src-row">'+cites.map(function(c,i){
-    return '<a href="'+escHtml(c.url)+'" target="_blank" rel="noopener" class="src-card" data-idx="'+(i+1)+'" data-snippet="'+escHtml(c.snippet||'')+'"><div class="src-card-num">'+(i+1)+'</div><img src="'+escHtml(c.favicon)+'" alt="" loading="lazy" class="src-card-ico"><div class="src-card-info"><div class="src-card-title">'+escHtml(c.title)+'</div><div class="src-card-domain">'+escHtml(c.domain)+'</div></div></a>';
+    if(c.thumbnail){
+      return '<a href="'+escHtml(c.url)+'" target="_blank" rel="noopener" class="src-card" data-idx="'+(i+1)+'" data-snippet="'+escHtml(c.snippet||'')+'" data-thumb="'+escHtml(c.thumbnail||'')+'" data-url="'+escHtml(c.url)+'" style="animation-delay:'+(i*50)+'ms"><div class="src-card-img"><div class="src-card-num">'+(i+1)+'</div><img src="'+escHtml(c.thumbnail)+'" alt="" loading="lazy"></div><div class="src-card-body"><div class="src-card-head"><img src="'+escHtml(c.favicon)+'" alt="" loading="lazy" class="src-card-ico"></div><div class="src-card-title">'+escHtml(c.title)+'</div><div class="src-card-domain">'+escHtml(c.domain)+'</div></div></a>';
+    }
+    return '<a href="'+escHtml(c.url)+'" target="_blank" rel="noopener" class="src-card" data-idx="'+(i+1)+'" data-snippet="'+escHtml(c.snippet||'')+'" data-thumb="'+escHtml(c.thumbnail||'')+'" data-url="'+escHtml(c.url)+'" style="animation-delay:'+(i*50)+'ms"><div class="src-card-body"><div class="src-card-head"><div class="src-card-num">'+(i+1)+'</div><img src="'+escHtml(c.favicon)+'" alt="" loading="lazy" class="src-card-ico"></div><div class="src-card-title">'+escHtml(c.title)+'</div><div class="src-card-domain">'+escHtml(c.domain)+'</div></div></a>';
   }).join('')+'</div>';
 }
 
 function scrollToBottom(){
   var main=document.getElementById('main');
   if(main)main.scrollTop=main.scrollHeight;
+}
+
+// Lazy OG image enrichment: fetch og:image for source/link cards missing thumbnails
+function enrichWithOGImages(){
+  // Enrich source cards
+  document.querySelectorAll('.src-card[data-url]').forEach(function(card){
+    if(card.querySelector('.src-card-img img'))return; // already has image
+    var url=card.getAttribute('data-url');
+    if(!url)return;
+    fetch('/api/og?url='+encodeURIComponent(url)).then(function(r){return r.json();}).then(function(og){
+      if(!og.image)return;
+      card.setAttribute('data-thumb',og.image);
+      // Insert image section at top of card
+      var imgDiv=document.createElement('div');imgDiv.className='src-card-img';
+      var numEl=card.querySelector('.src-card-num');
+      if(numEl){var numClone=numEl.cloneNode(true);imgDiv.appendChild(numClone);numEl.style.display='none';}
+      var img=document.createElement('img');img.src=og.image;img.alt='';img.loading='lazy';
+      img.onerror=function(){imgDiv.remove();if(numEl)numEl.style.display='';};
+      imgDiv.appendChild(img);
+      card.insertBefore(imgDiv,card.firstChild);
+    }).catch(function(){});
+  });
+  // Enrich link cards missing images
+  document.querySelectorAll('.link-card[data-og-url]').forEach(function(card){
+    var imgDiv=card.querySelector('.link-card-img[data-needs-og]');
+    if(!imgDiv)return;
+    var url=card.getAttribute('data-og-url');
+    if(!url)return;
+    fetch('/api/og?url='+encodeURIComponent(url)).then(function(r){return r.json();}).then(function(og){
+      if(!og.image){imgDiv.remove();return;}
+      var img=document.createElement('img');img.src=og.image;img.alt='';img.loading='lazy';
+      img.onerror=function(){imgDiv.remove();};
+      imgDiv.removeAttribute('data-needs-og');
+      imgDiv.appendChild(img);
+    }).catch(function(){imgDiv.remove();});
+  });
 }
 
 async function refreshSidebar(currentId){
@@ -924,6 +1162,9 @@ function bindFollowUp(){
   if(fs)fs.addEventListener('click',submitFollowUp);
 }
 bindFollowUp();
+
+// Enrich OG images on page load (for server-rendered results)
+if(document.querySelector('.src-card[data-url]'))enrichWithOGImages();
 
 // --- Init mode from thread view ---
 (function(){

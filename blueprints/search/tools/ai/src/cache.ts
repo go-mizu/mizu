@@ -12,9 +12,13 @@ export class Cache {
   }
 
   async set<T>(key: string, value: T, ttlSeconds?: number): Promise<void> {
-    const opts: KVNamespacePutOptions = {}
-    if (ttlSeconds && ttlSeconds > 0) opts.expirationTtl = ttlSeconds
-    await this.kv.put(key, JSON.stringify(value), opts)
+    try {
+      const opts: KVNamespacePutOptions = {}
+      if (ttlSeconds && ttlSeconds > 0) opts.expirationTtl = ttlSeconds
+      await this.kv.put(key, JSON.stringify(value), opts)
+    } catch {
+      // KV write quota exceeded — continue without caching
+    }
   }
 
   async delete(key: string): Promise<void> {
