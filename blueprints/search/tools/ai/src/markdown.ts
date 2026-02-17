@@ -23,7 +23,8 @@ export function renderMarkdown(md: string, citationCount: number = 0): string {
     // Code blocks
     if (line.startsWith('```')) {
       if (inCode) {
-        out.push(`<div class="cb"><div class="cb-h"><span>${esc(codeLang || 'code')}</span><button onclick="navigator.clipboard.writeText(this.closest('.cb').querySelector('code').textContent)" class="cb-cp">Copy</button></div><pre><code>${esc(codeLines.join('\n'))}</code></pre></div>`)
+        const langClass = codeLang ? ` class="language-${esc(codeLang)}"` : ''
+        out.push(`<div class="cb"><div class="cb-h"><span>${esc(codeLang || 'code')}</span><button onclick="navigator.clipboard.writeText(this.closest('.cb').querySelector('code').textContent)" class="cb-cp">Copy</button></div><pre><code${langClass}>${esc(codeLines.join('\n'))}</code></pre></div>`)
         inCode = false
         codeLines = []
         codeLang = ''
@@ -35,6 +36,26 @@ export function renderMarkdown(md: string, citationCount: number = 0): string {
       continue
     }
     if (inCode) { codeLines.push(line); continue }
+
+    // Display math block $$...$$
+    if (line.trim().startsWith('$$')) {
+      closeList(); closeBlockquote()
+      // Collect lines until closing $$
+      if (line.trim() === '$$') {
+        const mathLines: string[] = []
+        let j = i + 1
+        while (j < lines.length && lines[j].trim() !== '$$') { mathLines.push(lines[j]); j++ }
+        out.push(`<div class="math-display">$$${mathLines.join('\n')}$$</div>`)
+        i = j
+        continue
+      }
+      // Single-line display math: $$...$$ on one line
+      const dm = line.trim().match(/^\$\$(.+)\$\$$/)
+      if (dm) {
+        out.push(`<div class="math-display">$$${dm[1]}$$</div>`)
+        continue
+      }
+    }
 
     // Blank line
     if (!line.trim()) { closeList(); closeBlockquote(); continue }
@@ -109,14 +130,31 @@ export function renderMarkdown(md: string, citationCount: number = 0): string {
 
   closeList(); closeBlockquote()
   if (inCode && codeLines.length > 0) {
-    out.push(`<div class="cb"><pre><code>${esc(codeLines.join('\n'))}</code></pre></div>`)
+    const langClass = codeLang ? ` class="language-${esc(codeLang)}"` : ''
+    out.push(`<div class="cb"><pre><code${langClass}>${esc(codeLines.join('\n'))}</code></pre></div>`)
   }
 
   return out.join('\n')
 }
 
 function inline(text: string, citationCount: number): string {
-  let s = esc(text)
+  // Extract math expressions before escaping to protect them.
+  // inline() is called for text within paragraphs/lists/etc — any $$...$$ here is inline math,
+  // not display math. True display math (standalone $$..$$) is handled at block level.
+  const mathSlots: string[] = []
+  let t = text
+  // $$...$$ within text → inline math (use single $ so KaTeX renders inline)
+  t = t.replace(/\$\$([^$]+?)\$\$/g, (_, m) => {
+    mathSlots.push(`<span class="math-inline">$${m}$</span>`)
+    return `\x00M${mathSlots.length - 1}\x00`
+  })
+  // $...$ inline math
+  t = t.replace(/(?<!\$)\$(?!\$)([^\n$]+?)\$(?!\$)/g, (_, m) => {
+    mathSlots.push(`<span class="math-inline">$${m}$</span>`)
+    return `\x00M${mathSlots.length - 1}\x00`
+  })
+
+  let s = esc(t)
 
   // Citation references [1], [2] etc → clickable superscripts
   if (citationCount > 0) {
@@ -142,6 +180,9 @@ function inline(text: string, citationCount: number): string {
   s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
   // Auto-link URLs
   s = s.replace(/(^|[\s(])(https?:\/\/[^\s)<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>')
+
+  // Restore math expressions (unescaped)
+  s = s.replace(/\x00M(\d+)\x00/g, (_, i) => mathSlots[parseInt(i)])
 
   return s
 }

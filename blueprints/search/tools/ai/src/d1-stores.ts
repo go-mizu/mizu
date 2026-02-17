@@ -238,7 +238,6 @@ export class D1ThreadStore implements ThreadStore {
     return true
   }
 
-  /** SELECT ORDER BY — replaces reading entire index blob. */
   async listThreads(limit: number = 100): Promise<ThreadSummary[]> {
     const rows = await this.db.prepare(
       'SELECT id, title, mode, model, message_count, created_at, updated_at FROM threads ORDER BY updated_at DESC LIMIT ?',

@@ -100,6 +100,10 @@ Pinterest (auto-detected, uses internal API - no browser needed):
 				cfg.Timeout = 30 * time.Second
 			}
 			cfg.ScrollCount = scrollCount
+			// Browser mode: auto-scroll to discover lazy-loaded content (infinite scroll, AJAX feeds)
+			if (useRod || useLightpanda) && !cmd.Flags().Changed("scroll") {
+				cfg.ScrollCount = 3
+			}
 			cfg.ExtractImages = extractImages || downloadImages
 			cfg.StaleHours = staleHours
 

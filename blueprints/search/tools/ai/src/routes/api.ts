@@ -375,7 +375,7 @@ function extractOGMeta(html: string): { title: string; description: string; imag
 
 // ============================================================
 // TEMPORARY DEBUG/TEST ENDPOINTS
-// All support ?storage=memory|kv|d1 query parameter
+// All support ?storage=memory query parameter for testing
 // ============================================================
 
 // GET /api/storage/test — test read/write on selected backend

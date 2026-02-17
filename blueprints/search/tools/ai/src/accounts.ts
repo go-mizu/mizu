@@ -3,7 +3,7 @@
  *
  * Handles encryption, round-robin rotation, orchestration of store calls + logging.
  * The actual data access is delegated to AccountStore implementations
- * (D1AccountStore for SQL, GenericAccountStore for memory/KV).
+ * (D1AccountStore for SQL, GenericAccountStore for memory fallback).
  */
 
 import type { AccountStore } from './storage'

@@ -100,6 +100,8 @@ export function renderLayout(title: string, content: string, opts: {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism.min.css">
 <link rel="stylesheet" href="${cssURL}">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✦</text></svg>">
 </head>
@@ -111,6 +113,10 @@ ${sidebar}
   ${content}
 </main>
 ${renderClientScript()}
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/auto-render.min.js" onload="renderMathAll()"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js" onload="Prism.highlightAll()"></script>
 </body>
 </html>`
 }
@@ -612,6 +618,24 @@ document.addEventListener('mouseout',function(e){
 });
 function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 
+// --- KaTeX math rendering ---
+var _katexDelimiters=[
+  {left:'$$',right:'$$',display:true},
+  {left:'\\\\(',right:'\\\\)',display:false},
+  {left:'\\\\[',right:'\\\\]',display:true},
+  {left:'$',right:'$',display:false}
+];
+function renderMathAll(){
+  if(typeof renderMathInElement!=='function')return;
+  document.querySelectorAll('.ans-body').forEach(function(el){
+    renderMathInElement(el,{delimiters:_katexDelimiters,throwOnError:false});
+  });
+}
+function renderMathEl(el){
+  if(!el||typeof renderMathInElement!=='function')return;
+  renderMathInElement(el,{delimiters:_katexDelimiters,throwOnError:false});
+}
+
 // --- Markdown renderer (client-side for streaming, line-based with table support) ---
 function clientRenderMd(md,citeCount){
   if(!md)return '';
@@ -621,6 +645,10 @@ function clientRenderMd(md,citeCount){
   function closeList(){if(inList){out.push(inList==='ul'?'</ul>':'</ol>');inList='';}}
   function closeBQ(){if(inBQ){out.push('</blockquote>');inBQ=false;}}
   function inl(s){
+    // Protect math from escaping: extract $...$ and $$...$$ first
+    var _ms=[];
+    s=s.replace(/\\$\\$([^$]+?)\\$\\$/g,function(_,m){_ms.push('<span class="math-inline">$'+m+'$</span>');return '\\x00M'+(_ms.length-1)+'\\x00';});
+    s=s.replace(/(?<!\\$)\\$(?!\\$)([^\\n$]+?)\\$(?!\\$)/g,function(_,m){_ms.push('<span class="math-inline">$'+m+'$</span>');return '\\x00M'+(_ms.length-1)+'\\x00';});
     s=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     s=s.replace(/\`([^\`]+)\`/g,'<code>$1</code>');
     if(citeCount>0){s=s.replace(/\\[(\\d+)\\]/g,function(_,n){var num=parseInt(n);if(num>=1&&num<=citeCount)return '<a class="cr" title="Source '+num+'">'+num+'</a>';return '['+n+']';});}
@@ -629,17 +657,26 @@ function clientRenderMd(md,citeCount){
     s=s.replace(/_(.+?)_/g,'<em>$1</em>');
     s=s.replace(/~~(.+?)~~/g,'<del>$1</del>');
     s=s.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+    // Restore math
+    s=s.replace(/\\x00M(\\d+)\\x00/g,function(_,i){return _ms[parseInt(i)];});
     return s;
   }
   for(var i=0;i<lines.length;i++){
     var line=lines[i];
     // Code blocks
     if(line.indexOf('\`\`\`')===0){
-      if(inCode){var esc3=codeBuf.join('\\n').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');out.push('<div class="cb"><div class="cb-h"><span>'+escHtml(codeLang||'code')+'</span></div><pre><code>'+esc3+'</code></pre></div>');inCode=false;codeBuf=[];codeLang='';}
+      if(inCode){var esc3=codeBuf.join('\\n').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');var lc=codeLang?' class="language-'+escHtml(codeLang)+'"':'';out.push('<div class="cb"><div class="cb-h"><span>'+escHtml(codeLang||'code')+'</span></div><pre><code'+lc+'>'+esc3+'</code></pre></div>');inCode=false;codeBuf=[];codeLang='';}
       else{closeList();closeBQ();inCode=true;codeLang=line.slice(3).trim();}
       continue;
     }
     if(inCode){codeBuf.push(line);continue;}
+    // Display math block $$...$$
+    if(line.trim().indexOf('$$')===0){
+      closeList();closeBQ();
+      if(line.trim()==='$$'){var ml=[];var mj=i+1;while(mj<lines.length&&lines[mj].trim()!=='$$'){ml.push(lines[mj]);mj++;}out.push('<div class="math-display">$$'+ml.join('\\n')+'$$</div>');i=mj;continue;}
+      var dmm=line.trim().match(/^\\$\\$(.+)\\$\\$$/);
+      if(dmm){out.push('<div class="math-display">$$'+dmm[1]+'$$</div>');continue;}
+    }
     // Blank line
     if(!line.trim()){closeList();closeBQ();continue;}
     // Blockquote
@@ -678,7 +715,7 @@ function clientRenderMd(md,citeCount){
     out.push('<p>'+inl(line)+'</p>');
   }
   closeList();closeBQ();
-  if(inCode&&codeBuf.length){var esc4=codeBuf.join('\\n').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');out.push('<div class="cb"><pre><code>'+esc4+'</code></pre></div>');}
+  if(inCode&&codeBuf.length){var esc4=codeBuf.join('\\n').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');var lc2=codeLang?' class="language-'+escHtml(codeLang)+'"':'';out.push('<div class="cb"><pre><code'+lc2+'>'+esc4+'</code></pre></div>');}
   return out.join('');
 }
 
@@ -960,6 +997,12 @@ async function doStreamSearch(query,mode,threadId){
       }
       timingHtml+='</div>';
       sm.insertAdjacentHTML('afterbegin',timingHtml);
+
+      // Syntax highlight code blocks
+      if(typeof Prism!=='undefined'){Prism.highlightAllUnder(sm);}
+
+      // Render math formulas with KaTeX
+      sm.querySelectorAll('.ans-body').forEach(function(el){renderMathEl(el);});
 
       // Lazy OG image enrichment for source cards and link cards
       enrichWithOGImages();
