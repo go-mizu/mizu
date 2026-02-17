@@ -14,7 +14,7 @@ function favicon(url: string): string {
   return `https://www.google.com/s2/favicons?domain=${extractDomain(url)}&sz=32`
 }
 
-// --- Session Pool: in-memory + KV with 429 rotation ---
+// --- Session Pool: in-memory + D1 with 429 rotation ---
 
 const MAX_RETRIES = 3
 

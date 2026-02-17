@@ -3,7 +3,7 @@
  * Ported from pkg/dcrawler/perplexity/register.go
  *
  * Runs via ctx.waitUntil() — no public API exposure.
- * Full step-by-step logging to KV (accounts:log) for debugging.
+ * Full step-by-step logging to D1 (account_logs) for debugging.
  *
  * Flow:
  *   1. Acquire lock (prevent concurrent registration)
@@ -12,7 +12,7 @@
  *   4. POST signin request (sends magic link to email)
  *   5. Poll email inbox for magic link (25s timeout)
  *   6. GET magic link callback (complete auth + follow redirects)
- *   7. Save authenticated session to KV as account
+ *   7. Save authenticated session to D1 as account
  *   8. Release lock
  */
 

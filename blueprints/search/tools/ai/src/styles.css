@@ -156,13 +156,19 @@ img{display:block;max-width:100%}
 .ans-body th,.ans-body td{border-bottom:1px solid var(--border-l);padding:8px 12px;text-align:left}
 .ans-body th{background:var(--bg-s);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-s)}
 
+/* Math blocks */
+.math-display{display:block;text-align:center;margin:16px 0;overflow-x:auto;padding:8px 0}
+.math-inline{display:inline}
+.ans-body .katex-display{margin:16px 0;overflow-x:auto;overflow-y:hidden}
+.ans-body .katex{font-size:1.05em}
+
 /* Code blocks */
 .cb{margin:12px 0;border-radius:var(--r);overflow:hidden;border:1px solid var(--border);background:#fafaf8}
 .cb-h{display:flex;justify-content:space-between;align-items:center;padding:6px 12px;background:var(--bg-s);border-bottom:1px solid var(--border-l);font-size:11.5px;color:var(--text-t)}
 .cb-cp{background:none;border:1px solid var(--border);border-radius:5px;padding:1px 8px;font:11px var(--font);color:var(--text-s);cursor:pointer;transition:all var(--transition)}
 .cb-cp:hover{background:var(--bg-h);color:var(--text)}
-.cb pre{padding:12px;margin:0;overflow-x:auto}
-.cb code{font:12.5px/1.6 var(--mono);background:none;padding:0}
+.cb pre{padding:0;margin:0;overflow-x:auto}
+.cb pre>code{font:12.5px/1.6 var(--mono);display:block;padding:12px !important;background:#fafaf8 !important;text-shadow:none !important}
 
 /* Citation refs */
 .cr{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;font-size:10px;font-weight:700;background:var(--blue-bg);color:var(--blue);border-radius:4px;vertical-align:super;text-decoration:none;margin:0 1px;transition:all var(--transition);cursor:pointer}

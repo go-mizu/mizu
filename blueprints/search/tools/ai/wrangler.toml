@@ -3,10 +3,6 @@ main = "src/index.ts"
 compatibility_date = "2026-02-09"
 compatibility_flags = ["nodejs_compat"]
 
-[[kv_namespaces]]
-binding = "KV"
-id = "050071ec241c49a6852bcd6fc6ce790e"
-
 [[d1_databases]]
 binding = "DB"
 database_name = "ai-accounts"

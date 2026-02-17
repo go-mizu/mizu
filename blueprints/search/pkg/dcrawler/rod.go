@@ -15,6 +15,17 @@ import (
 	"github.com/go-rod/stealth"
 )
 
+// networkInterceptJS is injected before page scripts to capture URLs from XHR/fetch responses.
+// Catches article URLs loaded via API calls (news feeds, infinite scroll, AJAX pagination).
+// URLs are stored in window.__xhrURLs Set for later retrieval.
+const networkInterceptJS = `(function(){
+var S=new Set();window.__xhrURLs=S;
+var R=/https?:\/\/[^\s"'<>]+/g;
+function X(t){if(!t||t.length>500000)return;t=t.replace(/\\\//g,'/');R.lastIndex=0;for(var m;(m=R.exec(t))!==null;){var u=m[0].replace(/[),;.:!?'"]+$/,'');if(u.length>10&&u.length<2000)S.add(u)}}
+var F=window.fetch;if(F){window.fetch=function(){return F.apply(this,arguments).then(function(r){try{var c=r.headers.get('content-type')||'';if(c.includes('json')||c.includes('html')||c.includes('text'))r.clone().text().then(X).catch(function(){})}catch(e){}return r})}}
+var P=XMLHttpRequest.prototype,O=P.send;P.send=function(){this.addEventListener('load',function(){try{var c=this.getResponseHeader('content-type')||'';if(c.includes('json')||c.includes('html')||c.includes('text'))X(this.responseText)}catch(e){}});return O.apply(this,arguments)}
+})()`
+
 // rodPool manages a headless Chrome browser and a pool of pages.
 type rodPool struct {
 	mu          sync.Mutex
@@ -278,6 +289,9 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		}
 	}()
 
+	// Inject XHR/fetch interceptor to capture URLs from API responses (news feeds, AJAX pagination).
+	scriptRes, _ := proto.PageAddScriptToEvaluateOnNewDocument{Source: networkInterceptJS}.Call(p)
+
 	// Phase: navigate using Chrome's native DOMContentLoaded event.
 	// Previous approach: polling readyState with Eval every 150ms.
 	// Problem: each Eval forces Chrome to context-switch, stealing CPU from page rendering
@@ -485,6 +499,30 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		meta.Links = append(meta.Links, domLinks...)
 	}
 
+	// Collect URLs discovered from XHR/fetch response bodies (injected interceptor).
+	if extractCtx.Err() == nil {
+		if xhrRes, xhrErr := ep.Timeout(2 * time.Second).Eval(`() => Array.from(window.__xhrURLs || [])`); xhrErr == nil {
+			var xhrURLs []string
+			if xhrRes.Value.Unmarshal(&xhrURLs) == nil {
+				for _, rawURL := range xhrURLs {
+					resolved := resolveURL(rawURL, baseURL)
+					if resolved != "" {
+						meta.Links = append(meta.Links, Link{
+							TargetURL:  resolved,
+							Rel:        "xhr",
+							IsInternal: isInternalURL(resolved, c.config.Domain),
+						})
+					}
+				}
+			}
+		}
+	}
+
+	// Remove injected script to prevent accumulation across page reuses.
+	if scriptRes != nil {
+		proto.PageRemoveScriptToEvaluateOnNewDocument{Identifier: scriptRes.Identifier}.Call(page)
+	}
+
 	if meta.Description != "" {
 		result.Description = meta.Description
 	}
@@ -592,6 +630,22 @@ func (c *Crawler) extractDOMLinks(page *rod.Page, baseURL *url.URL) []Link {
 				if (data.page && data.page !== '/') add(location.origin + data.page, '', 'next-page');
 			} catch(e) {}
 		}
+
+		// Performance resource entries: discover URLs from XHR/fetch API calls
+		try {
+			performance.getEntriesByType('resource').forEach(e => {
+				if (e.initiatorType === 'xmlhttprequest' || e.initiatorType === 'fetch') {
+					add(e.name, '', 'perf-' + e.initiatorType);
+				}
+			});
+		} catch(ex) {}
+
+		// onclick handlers with URL patterns (common in Chinese news sites)
+		document.querySelectorAll('[onclick]').forEach(el => {
+			const oc = el.getAttribute('onclick') || '';
+			const m = oc.match(/(?:location\.href|window\.open|location\.replace)\s*[=(]\s*['"]([^'"]+)['"]/);
+			if (m && m[1]) add(m[1], el.textContent, 'onclick');
+		});
 
 		return links;
 	}`)

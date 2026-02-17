@@ -1,5 +1,4 @@
 export interface Env {
-  KV: KVNamespace
   DB: D1Database
   AUTH_TOKEN?: string
   PERPLEXITY_API_KEY?: string

@@ -1,12 +1,12 @@
 /**
- * Storage abstraction layer — three backends: memory, KV, D1.
+ * Storage abstraction layer — D1 (primary) with memory fallback for testing.
  *
  * Two levels:
- * 1. StorageBackend — generic key-value interface (memory, KV, D1-kv)
+ * 1. StorageBackend — generic key-value interface (memory only, for testing)
  * 2. Domain stores — typed interfaces (AccountStore, ThreadStore, etc.)
  *
- * Domain stores have D1-optimized implementations (direct SQL) and
- * generic fallbacks that wrap StorageBackend (for memory/KV).
+ * Domain stores use D1-optimized implementations (direct SQL) by default,
+ * with generic memory fallback for testing via ?storage=memory.
  */
 
 import { CACHE_TTL, MAX_THREADS } from './config'
@@ -16,7 +16,7 @@ import type {
 } from './types'
 
 // ============================================================
-// StorageBackend — generic key-value (kept for backward compat)
+// StorageBackend — generic key-value (memory only, for testing)
 // ============================================================
 
 export interface StorageBackend {
@@ -69,99 +69,7 @@ export class MemoryStorage implements StorageBackend {
   }
 }
 
-// --- KV Storage ---
-
-export class KVStorage implements StorageBackend {
-  readonly name = 'kv'
-  private kv: KVNamespace
-
-  constructor(kv: KVNamespace) {
-    this.kv = kv
-  }
-
-  async get<T>(key: string): Promise<T | null> {
-    const val = await this.kv.get(key, 'text')
-    if (!val) return null
-    return JSON.parse(val) as T
-  }
-
-  async set<T>(key: string, value: T, ttlSeconds?: number): Promise<void> {
-    try {
-      const opts: KVNamespacePutOptions = {}
-      if (ttlSeconds && ttlSeconds > 0) opts.expirationTtl = ttlSeconds
-      await this.kv.put(key, JSON.stringify(value), opts)
-    } catch (e) {
-      console.error(`[KV] set "${key}" failed:`, e instanceof Error ? e.message : String(e))
-    }
-  }
-
-  async delete(key: string): Promise<void> {
-    await this.kv.delete(key)
-  }
-
-  async list(prefix: string): Promise<string[]> {
-    const result = await this.kv.list({ prefix })
-    return result.keys.map(k => k.name)
-  }
-}
-
-// --- D1 Storage (legacy kv table) ---
-
-export class D1Storage implements StorageBackend {
-  readonly name = 'd1'
-  private db: D1Database
-
-  constructor(db: D1Database) {
-    this.db = db
-  }
-
-  async get<T>(key: string): Promise<T | null> {
-    const row = await this.db
-      .prepare('SELECT value, expires_at FROM kv WHERE key = ?')
-      .bind(key)
-      .first<{ value: string; expires_at: number | null }>()
-    if (!row) return null
-    if (row.expires_at && Date.now() > row.expires_at) {
-      await this.db.prepare('DELETE FROM kv WHERE key = ?').bind(key).run()
-      return null
-    }
-    return JSON.parse(row.value) as T
-  }
-
-  async set<T>(key: string, value: T, ttlSeconds?: number): Promise<void> {
-    const expiresAt = ttlSeconds && ttlSeconds > 0 ? Date.now() + ttlSeconds * 1000 : null
-    await this.db
-      .prepare('INSERT OR REPLACE INTO kv (key, value, expires_at) VALUES (?, ?, ?)')
-      .bind(key, JSON.stringify(value), expiresAt)
-      .run()
-  }
-
-  async delete(key: string): Promise<void> {
-    await this.db.prepare('DELETE FROM kv WHERE key = ?').bind(key).run()
-  }
-
-  async list(prefix: string): Promise<string[]> {
-    const now = Date.now()
-    const rows = await this.db
-      .prepare('SELECT key FROM kv WHERE key LIKE ? AND (expires_at IS NULL OR expires_at > ?)')
-      .bind(prefix + '%', now)
-      .all<{ key: string }>()
-    return rows.results.map(r => r.key)
-  }
-}
-
-// --- Factory (legacy) ---
-
 const memoryStorage = new MemoryStorage()
-
-export function getStorage(env: { KV?: KVNamespace; DB?: D1Database }, override?: string): StorageBackend {
-  if (override === 'memory') return memoryStorage
-  if (override === 'kv' && env.KV) return new KVStorage(env.KV)
-  if (override === 'd1' && env.DB) return new D1Storage(env.DB)
-  if (env.DB) return new D1Storage(env.DB)
-  if (env.KV) return new KVStorage(env.KV)
-  return memoryStorage
-}
 
 // ============================================================
 // Domain Store Interfaces
@@ -465,34 +373,26 @@ export class GenericOGStore implements OGStore {
 
 import { D1AccountStore, D1ThreadStore, D1SessionStore, D1OGStore } from './d1-stores'
 
-export function getAccountStore(env: { DB?: D1Database; KV?: KVNamespace }, override?: string): AccountStore {
+export function getAccountStore(env: { DB?: D1Database }, override?: string): AccountStore {
   if (override === 'memory') return new GenericAccountStore(memoryStorage)
-  if (override === 'kv' && env.KV) return new GenericAccountStore(new KVStorage(env.KV))
   if (env.DB) return new D1AccountStore(env.DB)
-  if (env.KV) return new GenericAccountStore(new KVStorage(env.KV))
   return new GenericAccountStore(memoryStorage)
 }
 
-export function getThreadStore(env: { DB?: D1Database; KV?: KVNamespace }, override?: string): ThreadStore {
+export function getThreadStore(env: { DB?: D1Database }, override?: string): ThreadStore {
   if (override === 'memory') return new GenericThreadStore(memoryStorage)
-  if (override === 'kv' && env.KV) return new GenericThreadStore(new KVStorage(env.KV))
   if (env.DB) return new D1ThreadStore(env.DB)
-  if (env.KV) return new GenericThreadStore(new KVStorage(env.KV))
   return new GenericThreadStore(memoryStorage)
 }
 
-export function getSessionStore(env: { DB?: D1Database; KV?: KVNamespace }, override?: string): SessionStore {
+export function getSessionStore(env: { DB?: D1Database }, override?: string): SessionStore {
   if (override === 'memory') return new GenericSessionStore(memoryStorage)
-  if (override === 'kv' && env.KV) return new GenericSessionStore(new KVStorage(env.KV))
   if (env.DB) return new D1SessionStore(env.DB)
-  if (env.KV) return new GenericSessionStore(new KVStorage(env.KV))
   return new GenericSessionStore(memoryStorage)
 }
 
-export function getOGStore(env: { DB?: D1Database; KV?: KVNamespace }, override?: string): OGStore {
+export function getOGStore(env: { DB?: D1Database }, override?: string): OGStore {
   if (override === 'memory') return new GenericOGStore(memoryStorage)
-  if (override === 'kv' && env.KV) return new GenericOGStore(new KVStorage(env.KV))
   if (env.DB) return new D1OGStore(env.DB)
-  if (env.KV) return new GenericOGStore(new KVStorage(env.KV))
   return new GenericOGStore(memoryStorage)
 }
