@@ -24,6 +24,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -110,6 +111,10 @@ type Config struct {
 	// SkipAuth disables all S3 signature verification for maximum performance.
 	// Use only for benchmarks and trusted environments.
 	SkipAuth bool
+
+	// NoLog disables the default per-request Logger middleware for maximum performance.
+	// Startup/shutdown log messages are still emitted. Use for benchmarks.
+	NoLog bool
 }
 
 // DefaultConfig returns a Config with default values.
@@ -220,6 +225,15 @@ func New(cfg *Config) (*Server, error) {
 	// Create mizu app
 	app := mizu.New()
 	app.SetLogger(cfg.Logger)
+
+	// NoLog: use a high-level discard logger to minimize per-request logging overhead.
+	// The Logger middleware still runs but slog.LogAttrs returns early (Enabled() = false).
+	if cfg.NoLog {
+		discardHandler := slog.NewTextHandler(io.Discard, &slog.HandlerOptions{
+			Level: slog.Level(100), // higher than any real level
+		})
+		app.SetLogger(slog.New(discardHandler))
+	}
 
 	// Configure S3 transport
 	s3Config := &s3.Config{

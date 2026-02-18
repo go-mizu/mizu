@@ -112,6 +112,7 @@ Environment variables:
 	flags.BoolVar(&cfg.EnableREST, "rest", cfg.EnableREST, "Enable Supabase Storage-compatible REST API at /storage/v1")
 	flags.StringVar(&cfg.JWTSecret, "jwt-secret", "", "JWT secret for REST API authentication")
 	flags.BoolVar(&cfg.SkipAuth, "no-auth", cfg.SkipAuth, "Disable S3 auth verification (benchmark mode)")
+	flags.BoolVar(&cfg.NoLog, "no-log", cfg.NoLog, "Disable per-request Logger middleware (benchmark mode)")
 
 
 	// Environment variable bindings
@@ -144,6 +145,9 @@ Environment variables:
 	}
 	if os.Getenv("LITEIO_NO_AUTH") == "true" || os.Getenv("LITEIO_NO_AUTH") == "1" {
 		cfg.SkipAuth = true
+	}
+	if os.Getenv("LITEIO_NO_LOG") == "true" || os.Getenv("LITEIO_NO_LOG") == "1" {
+		cfg.NoLog = true
 	}
 
 	// Add healthcheck subcommand
@@ -200,6 +204,10 @@ func runServer(cfg *server.Config) error {
 	if os.Getenv("LITEIO_NO_FSYNC") == "true" || os.Getenv("LITEIO_NO_FSYNC") == "1" {
 		local.NoFsync = true
 		fmt.Println("NoFsync mode: ENABLED (maximum performance, data may be lost on crash)")
+	}
+
+	if cfg.NoLog {
+		fmt.Println("NoLog mode: ENABLED (per-request logging disabled)")
 	}
 
 	// Handle data-dir flag (convert to local:// DSN)
