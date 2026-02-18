@@ -21,10 +21,20 @@ type RobotsChecker struct {
 // FetchRobots downloads and parses robots.txt for the given domain.
 // Returns an allow-all checker if robots.txt is unavailable.
 func FetchRobots(ctx context.Context, client *http.Client, domain string) (*RobotsChecker, error) {
+	body := FetchRobotsRaw(ctx, client, domain)
+	if body == nil {
+		return &RobotsChecker{}, nil
+	}
+	return ParseRobotsBody(body), nil
+}
+
+// FetchRobotsRaw downloads robots.txt and returns the raw body.
+// Returns nil if robots.txt is unavailable.
+func FetchRobotsRaw(ctx context.Context, client *http.Client, domain string) []byte {
 	robotsURL := fmt.Sprintf("https://%s/robots.txt", domain)
 	req, err := http.NewRequestWithContext(ctx, "GET", robotsURL, nil)
 	if err != nil {
-		return &RobotsChecker{}, nil
+		return nil
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
 	resp, err := client.Do(req)
@@ -32,18 +42,22 @@ func FetchRobots(ctx context.Context, client *http.Client, domain string) (*Robo
 		if resp != nil {
 			resp.Body.Close()
 		}
-		return &RobotsChecker{}, nil
+		return nil
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
 	if err != nil {
-		return &RobotsChecker{}, nil
+		return nil
 	}
+	return body
+}
 
+// ParseRobotsBody parses a robots.txt body into a RobotsChecker.
+func ParseRobotsBody(body []byte) *RobotsChecker {
 	robots, err := robotstxt.FromBytes(body)
 	if err != nil {
-		return &RobotsChecker{}, nil
+		return &RobotsChecker{}
 	}
 
 	group := robots.FindGroup("MizuCrawler")
@@ -60,7 +74,7 @@ func FetchRobots(ctx context.Context, client *http.Client, domain string) (*Robo
 	if group != nil {
 		rc.crawlDelay = group.CrawlDelay
 	}
-	return rc, nil
+	return rc
 }
 
 // IsAllowed checks if a path is allowed by robots.txt.

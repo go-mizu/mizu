@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -303,19 +304,36 @@ func (c *Crawler) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// robots.txt: always fetch for Sitemap directives (URL discovery).
+	// robots.txt: load from file cache (24h TTL) or fetch fresh.
+	// Always needed for Sitemap directives (URL discovery).
 	// In browser mode, skip path-blocking rules (Disallow) but still use Sitemap: directives.
-	// Many sites (e.g., news.qq.com) have sitemaps at non-standard paths only listed in robots.txt.
 	{
-		rctx, rc := context.WithTimeout(ctx, 10*time.Second)
-		if r, _ := FetchRobots(rctx, c.clients[0], c.config.Domain); r != nil {
+		cacheDir := c.config.DomainDir()
+		os.MkdirAll(cacheDir, 0o755)
+		cachePath := filepath.Join(cacheDir, "robots.txt")
+
+		var body []byte
+		if info, err := os.Stat(cachePath); err == nil && time.Since(info.ModTime()) < 24*time.Hour {
+			body, _ = os.ReadFile(cachePath)
+			if body != nil {
+				c.logInit("Robots: loaded from cache")
+			}
+		}
+		if body == nil {
+			rctx, rc := context.WithTimeout(ctx, 10*time.Second)
+			body = FetchRobotsRaw(rctx, c.clients[0], c.config.Domain)
+			rc()
+			if body != nil {
+				os.WriteFile(cachePath, body, 0o644)
+			}
+		}
+		if body != nil {
+			r := ParseRobotsBody(body)
 			c.robots = r
-			// Only enforce path-blocking rules for non-browser mode
 			if c.config.RespectRobots && !c.config.UseRod && !c.config.UseLightpanda {
 				c.frontier.SetRobots(r)
 			}
 		}
-		rc()
 	}
 
 	// State DB
@@ -364,18 +382,37 @@ func (c *Crawler) Run(ctx context.Context) error {
 
 	// Sitemap discovery runs in background: workers start immediately with seed URLs,
 	// and sitemap URLs are added to the frontier as they're discovered.
-	// Previous behavior blocked initialization for up to 2 minutes on sites with
-	// massive sitemaps (e.g., music.apple.com with 7 sitemap indexes).
+	// Uses file cache (24h TTL) to avoid re-fetching massive sitemaps on every run.
 	if c.config.FollowSitemap {
 		g.Go(func() error {
 			defer close(c.sitemapDone)
-			var robotsSitemaps []string
-			if c.robots != nil {
-				robotsSitemaps = c.robots.Sitemaps()
+
+			cachePath := filepath.Join(c.config.DomainDir(), "sitemap_urls.txt")
+			var sitemapURLs []string
+
+			// Try cache (24h TTL)
+			if info, err := os.Stat(cachePath); err == nil && time.Since(info.ModTime()) < 24*time.Hour {
+				if data, err := os.ReadFile(cachePath); err == nil && len(data) > 0 {
+					sitemapURLs = strings.Split(strings.TrimSpace(string(data)), "\n")
+					c.logInit("Sitemap: loaded %s URLs from cache", fmtInt(len(sitemapURLs)))
+				}
 			}
-			sctx, sc := context.WithTimeout(gctx, 2*time.Minute)
-			sitemapURLs, _ := DiscoverSitemapURLs(sctx, c.clients[0], c.config.Domain, robotsSitemaps, 100_000)
-			sc()
+
+			// Fetch fresh if no cache
+			if sitemapURLs == nil {
+				var robotsSitemaps []string
+				if c.robots != nil {
+					robotsSitemaps = c.robots.Sitemaps()
+				}
+				sctx, sc := context.WithTimeout(gctx, 2*time.Minute)
+				sitemapURLs, _ = DiscoverSitemapURLs(sctx, c.clients[0], c.config.Domain, robotsSitemaps, 100_000)
+				sc()
+				// Save to cache
+				if len(sitemapURLs) > 0 {
+					os.WriteFile(cachePath, []byte(strings.Join(sitemapURLs, "\n")), 0o644)
+				}
+			}
+
 			if len(sitemapURLs) > 0 {
 				added := 0
 				for _, u := range sitemapURLs {
