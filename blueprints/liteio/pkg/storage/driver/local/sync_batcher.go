@@ -4,17 +4,12 @@
 // Group commit sync batcher for high-throughput concurrent writes.
 //
 // Instead of each writer calling fdatasync individually, concurrent writers
-// batch their sync requests. On ext4, the first fdatasync triggers a journal
-// commit that covers ALL dirty inodes in the current transaction. Subsequent
-// fdatasyncs in the same batch find their data already committed (fast no-op).
+// batch their sync requests. On ext4 (Linux), the first fdatasync triggers
+// a journal commit covering ALL dirty inodes — one sync makes the entire
+// batch durable. On other platforms, each file is synced individually.
 //
 // This is the same "group commit" pattern used by databases (PostgreSQL,
 // MySQL InnoDB) for high write throughput while maintaining durability.
-//
-// Performance characteristics:
-//   - C1 (single writer): ~0 overhead (immediate sync, no delay)
-//   - C10 (10 concurrent): ~5x improvement (10 syncs → 1 real + 9 fast)
-//   - C50 (50 concurrent): ~10x improvement (50 syncs → 1 real + 49 fast)
 package local
 
 import (
@@ -25,9 +20,8 @@ import (
 
 // batchWait is the maximum time to wait for concurrent writers to accumulate
 // before flushing the batch. Only applied when multiple writers are pending.
-// 50µs is short enough to add negligible latency but long enough to capture
-// most concurrent writers in a batch.
-const batchWait = 50 * time.Microsecond
+// 100µs captures most concurrent writers while adding negligible latency.
+const batchWait = 100 * time.Microsecond
 
 // syncBatcher coalesces fdatasync calls from concurrent writers.
 // Each writer blocks until its data is durable (same guarantee as direct fsync).
@@ -41,6 +35,11 @@ type syncBatcher struct {
 type syncRequest struct {
 	file *os.File
 	done chan error
+}
+
+// getDoneChan allocates a fresh done channel per sync request.
+func getDoneChan() chan error {
+	return make(chan error, 1)
 }
 
 // globalSyncBatcher is the shared batcher for all write operations.
@@ -58,28 +57,28 @@ func newSyncBatcher() *syncBatcher {
 // BatchSync adds a file to the sync batch and blocks until its data is durable.
 // Multiple concurrent callers are batched together for efficiency.
 // Returns immediately if NoFsync is set.
+//
+// OPTIMIZATIONS vs naive approach:
+// - No time.After timeout (eliminates timer goroutine creation per write)
+// - Batcher goroutine processes on a separate thread (better NVMe scheduling)
 func (b *syncBatcher) BatchSync(f *os.File) error {
 	if NoFsync {
 		return nil
 	}
 
-	done := make(chan error, 1)
+	done := getDoneChan()
 
 	b.mu.Lock()
 	b.pending = append(b.pending, syncRequest{file: f, done: done})
-	n := len(b.pending)
 	b.mu.Unlock()
 
-	// Wake the flusher (non-blocking send to avoid deadlock)
+	// Wake the flusher (non-blocking send)
 	select {
 	case b.wake <- struct{}{}:
 	default:
-		// Flusher already signaled; it will pick up our request
-		// when it next checks pending
-		_ = n
 	}
 
-	// Block until our sync completes — same durability guarantee as direct fsync
+	// Block until our sync completes.
 	return <-done
 }
 
@@ -91,12 +90,10 @@ func (b *syncBatcher) loop() {
 }
 
 // processBatches drains all pending sync requests in waves.
-// It keeps looping until no more requests are pending, to handle
-// requests that arrive during the sync phase (whose signals may
-// have been dropped because the wake channel was full).
+// Keeps looping until no more requests are pending to handle
+// requests whose wake signals were dropped (channel was full).
 func (b *syncBatcher) processBatches() {
 	for {
-		// Check how many writers are pending
 		b.mu.Lock()
 		n := len(b.pending)
 		b.mu.Unlock()
@@ -105,13 +102,13 @@ func (b *syncBatcher) processBatches() {
 			return
 		}
 
-		// If multiple writers are pending, wait briefly to accumulate more.
+		// Wait briefly to accumulate more writers into the batch.
 		// For single writers, process immediately (no added latency).
 		if n > 1 {
 			time.Sleep(batchWait)
 		}
 
-		// Collect all pending requests
+		// Drain all pending requests
 		b.mu.Lock()
 		batch := b.pending
 		b.pending = make([]syncRequest, 0, max(len(batch), 8))
@@ -121,20 +118,10 @@ func (b *syncBatcher) processBatches() {
 			return
 		}
 
-		// Sync all files in the batch.
-		//
-		// On ext4 with journaling:
-		//   - The first fdatasync triggers a journal commit for the current
-		//     transaction, which includes ALL dirty inodes (all writers' data).
-		//   - Subsequent fdatasyncs find their inodes already committed in the
-		//     same journal transaction, so they return quickly.
-		//   - Net effect: 1 real I/O for the entire batch.
-		//
-		// On other filesystems: each fdatasync still does its own sync,
-		// but the kernel I/O scheduler can merge them since all data is
-		// already in the page cache.
-		for i := range batch {
-			batch[i].done <- syncFile(batch[i].file)
-		}
+		// groupSync is platform-specific:
+		// - Linux: single fdatasync (ext4 journal covers all dirty inodes)
+		// - macOS: parallel F_BARRIERFSYNC (NVMe coalescing)
+		// - Other: parallel fsync
+		groupSync(batch)
 	}
 }

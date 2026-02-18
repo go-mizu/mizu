@@ -4,7 +4,6 @@
 package local
 
 import (
-	"hash/fnv"
 	"io"
 	"os"
 	"path/filepath"
@@ -117,9 +116,13 @@ func init() {
 }
 
 func (c *lockFreeDirCache) shardIndex(path string) uint32 {
-	h := fnv.New32a()
-	h.Write([]byte(path))
-	return h.Sum32() % numDirCacheShards
+	// Inline FNV-1a: zero allocations (no hasher object, no string→[]byte copy)
+	var h uint32 = 2166136261 // FNV-1a offset basis
+	for i := 0; i < len(path); i++ {
+		h ^= uint32(path[i])
+		h *= 16777619 // FNV-1a prime
+	}
+	return h % numDirCacheShards
 }
 
 func (c *lockFreeDirCache) ensureDir(path string) error {
