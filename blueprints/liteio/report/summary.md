@@ -1,75 +1,68 @@
 # Storage Benchmark Summary
 
-**Generated:** 2026-02-18T23:05:36+07:00
+**Generated:** 2026-02-18T23:29:57+07:00
 
 ## Overall Winner
 
-**liteio** won 38/40 categories (95%)
-
-### Win Counts
-
-| Driver | Wins | Percentage |
-|--------|------|------------|
-| liteio | 38 | 95% |
-| minio | 2 | 5% |
+**liteio** won 40/40 categories (100%)
 
 ## Best Driver by Category
 
 | Category | Winner | Performance | Runner-up | Runner-up Perf | Margin |
 |----------|--------|-------------|-----------|----------------|--------|
-| Copy/1KB | **liteio** | 0.3 MB/s | minio | 0.3 MB/s | +32% |
-| Delete | **liteio** | 1.2K ops/s | minio | 569 ops/s | 2.1x faster |
-| EdgeCase/DeepNested | **liteio** | 0.0 MB/s | minio | 0.0 MB/s | 2.2x faster |
-| EdgeCase/EmptyObject | **liteio** | 463 ops/s | minio | 197 ops/s | 2.3x faster |
-| EdgeCase/LongKey256 | **liteio** | 0.0 MB/s | minio | 0.0 MB/s | 2.1x faster |
-| List/100 | **liteio** | 368 ops/s | minio | 184 ops/s | 2.0x faster |
-| MixedWorkload/Balanced_50_50 | **liteio** | 0.2 MB/s | minio | 0.1 MB/s | 3.1x faster |
-| MixedWorkload/ReadHeavy_90_10 | **liteio** | 0.5 MB/s | minio | 0.2 MB/s | 3.0x faster |
-| MixedWorkload/WriteHeavy_10_90 | **liteio** | 0.1 MB/s | minio | 0.1 MB/s | +34% |
-| Multipart/15MB_3Parts | **liteio** | 46.9 MB/s | minio | 43.9 MB/s | ~equal |
-| ParallelRead/1KB/C1 | **liteio** | 0.8 MB/s | minio | 0.6 MB/s | +37% |
-| ParallelRead/1KB/C10 | **liteio** | 0.6 MB/s | minio | 0.4 MB/s | +73% |
-| ParallelRead/1KB/C50 | **liteio** | 0.2 MB/s | minio | 0.1 MB/s | 2.4x faster |
-| ParallelWrite/1KB/C1 | **liteio** | 0.4 MB/s | minio | 0.2 MB/s | +53% |
-| ParallelWrite/1KB/C10 | **liteio** | 0.2 MB/s | minio | 0.1 MB/s | 2.2x faster |
-| ParallelWrite/1KB/C50 | **liteio** | 0.0 MB/s | minio | 0.0 MB/s | 2.8x faster |
-| RangeRead/End_256KB | **liteio** | 58.9 MB/s | minio | 46.1 MB/s | +28% |
-| RangeRead/Middle_256KB | **liteio** | 59.5 MB/s | minio | 39.5 MB/s | +51% |
-| RangeRead/Start_256KB | **liteio** | 64.9 MB/s | minio | 35.4 MB/s | +83% |
-| Read/10MB | **liteio** | 104.4 MB/s | minio | 103.7 MB/s | ~equal |
-| Read/1KB | **liteio** | 1.1 MB/s | minio | 0.6 MB/s | +77% |
-| Read/1MB | **liteio** | 84.0 MB/s | minio | 72.0 MB/s | +17% |
-| Read/64KB | **liteio** | 39.5 MB/s | minio | 22.0 MB/s | +79% |
-| Scale/Delete/1 | **liteio** | 1.4K ops/s | minio | 398 ops/s | 3.4x faster |
-| Scale/Delete/10 | **liteio** | 108 ops/s | minio | 58 ops/s | +87% |
-| Scale/Delete/100 | **liteio** | 8 ops/s | minio | 6 ops/s | +39% |
+| Copy/1KB | **liteio** | 0.9 MB/s | minio | 0.2 MB/s | 4.1x faster |
+| Delete | **liteio** | 1.1K ops/s | minio | 579 ops/s | +97% |
+| EdgeCase/DeepNested | **liteio** | 0.1 MB/s | minio | 0.0 MB/s | 7.0x faster |
+| EdgeCase/EmptyObject | **liteio** | 1.0K ops/s | minio | 224 ops/s | 4.5x faster |
+| EdgeCase/LongKey256 | **liteio** | 0.1 MB/s | minio | 0.0 MB/s | 5.2x faster |
+| List/100 | **liteio** | 384 ops/s | minio | 196 ops/s | +96% |
+| MixedWorkload/Balanced_50_50 | **liteio** | 0.5 MB/s | minio | 0.1 MB/s | 4.2x faster |
+| MixedWorkload/ReadHeavy_90_10 | **liteio** | 0.5 MB/s | minio | 0.2 MB/s | 2.3x faster |
+| MixedWorkload/WriteHeavy_10_90 | **liteio** | 0.3 MB/s | minio | 0.1 MB/s | 4.3x faster |
+| Multipart/15MB_3Parts | **liteio** | 58.1 MB/s | minio | 52.3 MB/s | +11% |
+| ParallelRead/1KB/C1 | **liteio** | 1.2 MB/s | minio | 0.6 MB/s | 2.1x faster |
+| ParallelRead/1KB/C10 | **liteio** | 0.9 MB/s | minio | 0.4 MB/s | 2.4x faster |
+| ParallelRead/1KB/C50 | **liteio** | 0.2 MB/s | minio | 0.1 MB/s | 3.3x faster |
+| ParallelWrite/1KB/C1 | **liteio** | 0.9 MB/s | minio | 0.2 MB/s | 4.9x faster |
+| ParallelWrite/1KB/C10 | **liteio** | 0.7 MB/s | minio | 0.1 MB/s | 10.2x faster |
+| ParallelWrite/1KB/C50 | **liteio** | 0.2 MB/s | minio | 0.0 MB/s | 29.0x faster |
+| RangeRead/End_256KB | **liteio** | 59.5 MB/s | minio | 38.0 MB/s | +57% |
+| RangeRead/Middle_256KB | **liteio** | 60.2 MB/s | minio | 40.8 MB/s | +48% |
+| RangeRead/Start_256KB | **liteio** | 73.4 MB/s | minio | 41.7 MB/s | +76% |
+| Read/10MB | **liteio** | 114.5 MB/s | minio | 97.3 MB/s | +18% |
+| Read/1KB | **liteio** | 1.3 MB/s | minio | 0.6 MB/s | +96% |
+| Read/1MB | **liteio** | 76.4 MB/s | minio | 75.0 MB/s | ~equal |
+| Read/64KB | **liteio** | 39.7 MB/s | minio | 25.6 MB/s | +55% |
+| Scale/Delete/1 | **liteio** | 461 ops/s | minio | 322 ops/s | +43% |
+| Scale/Delete/10 | **liteio** | 140 ops/s | minio | 45 ops/s | 3.1x faster |
+| Scale/Delete/100 | **liteio** | 6 ops/s | minio | 6 ops/s | +15% |
 | Scale/Delete/1000 | **liteio** | 1 ops/s | minio | 1 ops/s | 2.2x faster |
-| Scale/List/1 | **liteio** | 1.3K ops/s | minio | 344 ops/s | 3.7x faster |
-| Scale/List/10 | **liteio** | 448 ops/s | minio | 439 ops/s | ~equal |
-| Scale/List/100 | **liteio** | 366 ops/s | minio | 205 ops/s | +79% |
-| Scale/List/1000 | **liteio** | 53 ops/s | minio | 19 ops/s | 2.8x faster |
-| Scale/Write/1 | **liteio** | 0.1 MB/s | minio | 0.1 MB/s | +51% |
-| Scale/Write/10 | **minio** | 0.1 MB/s | liteio | 0.1 MB/s | +20% |
-| Scale/Write/100 | **liteio** | 0.1 MB/s | minio | 0.1 MB/s | ~equal |
-| Scale/Write/1000 | **liteio** | 0.1 MB/s | minio | 0.1 MB/s | +56% |
-| Stat | **liteio** | 1.1K ops/s | minio | 823 ops/s | +38% |
-| Write/10MB | **minio** | 53.7 MB/s | liteio | 53.5 MB/s | ~equal |
-| Write/1KB | **liteio** | 0.4 MB/s | minio | 0.2 MB/s | +81% |
-| Write/1MB | **liteio** | 46.6 MB/s | minio | 36.7 MB/s | +27% |
-| Write/64KB | **liteio** | 15.5 MB/s | minio | 9.6 MB/s | +62% |
+| Scale/List/1 | **liteio** | 577 ops/s | minio | 161 ops/s | 3.6x faster |
+| Scale/List/10 | **liteio** | 1.1K ops/s | minio | 263 ops/s | 4.3x faster |
+| Scale/List/100 | **liteio** | 438 ops/s | minio | 125 ops/s | 3.5x faster |
+| Scale/List/1000 | **liteio** | 77 ops/s | minio | 30 ops/s | 2.5x faster |
+| Scale/Write/1 | **liteio** | 0.1 MB/s | minio | 0.0 MB/s | 2.7x faster |
+| Scale/Write/10 | **liteio** | 0.3 MB/s | minio | 0.0 MB/s | 7.6x faster |
+| Scale/Write/100 | **liteio** | 0.3 MB/s | minio | 0.1 MB/s | 4.4x faster |
+| Scale/Write/1000 | **liteio** | 0.3 MB/s | minio | 0.1 MB/s | 5.0x faster |
+| Stat | **liteio** | 1.5K ops/s | minio | 850 ops/s | +71% |
+| Write/10MB | **liteio** | 63.3 MB/s | minio | 58.1 MB/s | ~equal |
+| Write/1KB | **liteio** | 1.4 MB/s | minio | 0.2 MB/s | 8.7x faster |
+| Write/1MB | **liteio** | 56.7 MB/s | minio | 32.9 MB/s | +72% |
+| Write/64KB | **liteio** | 30.0 MB/s | minio | 8.2 MB/s | 3.7x faster |
 
 ## Category Summaries
 
 ### Write Operations
 
-**Best for Write:** liteio (won 3/4)
+**Best for Write:** liteio (won 4/4)
 
 | Operation | Winner | Performance | vs Runner-up |
 |-----------|--------|-------------|-------------|
-| Write/10MB | minio | 53.7 MB/s | ~equal |
-| Write/1KB | liteio | 0.4 MB/s | +81% |
-| Write/1MB | liteio | 46.6 MB/s | +27% |
-| Write/64KB | liteio | 15.5 MB/s | +62% |
+| Write/10MB | liteio | 63.3 MB/s | ~equal |
+| Write/1KB | liteio | 1.4 MB/s | 8.7x faster |
+| Write/1MB | liteio | 56.7 MB/s | +72% |
+| Write/64KB | liteio | 30.0 MB/s | 3.7x faster |
 
 ### Read Operations
 
@@ -77,10 +70,10 @@
 
 | Operation | Winner | Performance | vs Runner-up |
 |-----------|--------|-------------|-------------|
-| Read/10MB | liteio | 104.4 MB/s | ~equal |
-| Read/1KB | liteio | 1.1 MB/s | +77% |
-| Read/1MB | liteio | 84.0 MB/s | +17% |
-| Read/64KB | liteio | 39.5 MB/s | +79% |
+| Read/10MB | liteio | 114.5 MB/s | +18% |
+| Read/1KB | liteio | 1.3 MB/s | +96% |
+| Read/1MB | liteio | 76.4 MB/s | ~equal |
+| Read/64KB | liteio | 39.7 MB/s | +55% |
 
 ### ParallelWrite Operations
 
@@ -88,9 +81,9 @@
 
 | Operation | Winner | Performance | vs Runner-up |
 |-----------|--------|-------------|-------------|
-| ParallelWrite/1KB/C1 | liteio | 0.4 MB/s | +53% |
-| ParallelWrite/1KB/C10 | liteio | 0.2 MB/s | 2.2x faster |
-| ParallelWrite/1KB/C50 | liteio | 0.0 MB/s | 2.8x faster |
+| ParallelWrite/1KB/C1 | liteio | 0.9 MB/s | 4.9x faster |
+| ParallelWrite/1KB/C10 | liteio | 0.7 MB/s | 10.2x faster |
+| ParallelWrite/1KB/C50 | liteio | 0.2 MB/s | 29.0x faster |
 
 ### ParallelRead Operations
 
@@ -98,9 +91,9 @@
 
 | Operation | Winner | Performance | vs Runner-up |
 |-----------|--------|-------------|-------------|
-| ParallelRead/1KB/C1 | liteio | 0.8 MB/s | +37% |
-| ParallelRead/1KB/C10 | liteio | 0.6 MB/s | +73% |
-| ParallelRead/1KB/C50 | liteio | 0.2 MB/s | 2.4x faster |
+| ParallelRead/1KB/C1 | liteio | 1.2 MB/s | 2.1x faster |
+| ParallelRead/1KB/C10 | liteio | 0.9 MB/s | 2.4x faster |
+| ParallelRead/1KB/C50 | liteio | 0.2 MB/s | 3.3x faster |
 
 ### Delete Operations
 
@@ -108,7 +101,7 @@
 
 | Operation | Winner | Performance | vs Runner-up |
 |-----------|--------|-------------|-------------|
-| Delete | liteio | 1.2K ops/s | 2.1x faster |
+| Delete | liteio | 1.1K ops/s | +97% |
 
 ### Stat Operations
 
@@ -116,7 +109,7 @@
 
 | Operation | Winner | Performance | vs Runner-up |
 |-----------|--------|-------------|-------------|
-| Stat | liteio | 1.1K ops/s | +38% |
+| Stat | liteio | 1.5K ops/s | +71% |
 
 ### List Operations
 
@@ -124,7 +117,7 @@
 
 | Operation | Winner | Performance | vs Runner-up |
 |-----------|--------|-------------|-------------|
-| List/100 | liteio | 368 ops/s | 2.0x faster |
+| List/100 | liteio | 384 ops/s | +96% |
 
 ### Copy Operations
 
@@ -132,26 +125,26 @@
 
 | Operation | Winner | Performance | vs Runner-up |
 |-----------|--------|-------------|-------------|
-| Copy/1KB | liteio | 0.3 MB/s | +32% |
+| Copy/1KB | liteio | 0.9 MB/s | 4.1x faster |
 
 ### Scale Operations
 
-**Best for Scale:** liteio (won 11/12)
+**Best for Scale:** liteio (won 12/12)
 
 | Operation | Winner | Performance | vs Runner-up |
 |-----------|--------|-------------|-------------|
-| Scale/Delete/1 | liteio | 1.4K ops/s | 3.4x faster |
-| Scale/Delete/10 | liteio | 108 ops/s | +87% |
-| Scale/Delete/100 | liteio | 8 ops/s | +39% |
+| Scale/Delete/1 | liteio | 461 ops/s | +43% |
+| Scale/Delete/10 | liteio | 140 ops/s | 3.1x faster |
+| Scale/Delete/100 | liteio | 6 ops/s | +15% |
 | Scale/Delete/1000 | liteio | 1 ops/s | 2.2x faster |
-| Scale/List/1 | liteio | 1.3K ops/s | 3.7x faster |
-| Scale/List/10 | liteio | 448 ops/s | ~equal |
-| Scale/List/100 | liteio | 366 ops/s | +79% |
-| Scale/List/1000 | liteio | 53 ops/s | 2.8x faster |
-| Scale/Write/1 | liteio | 0.1 MB/s | +51% |
-| Scale/Write/10 | minio | 0.1 MB/s | +20% |
-| Scale/Write/100 | liteio | 0.1 MB/s | ~equal |
-| Scale/Write/1000 | liteio | 0.1 MB/s | +56% |
+| Scale/List/1 | liteio | 577 ops/s | 3.6x faster |
+| Scale/List/10 | liteio | 1.1K ops/s | 4.3x faster |
+| Scale/List/100 | liteio | 438 ops/s | 3.5x faster |
+| Scale/List/1000 | liteio | 77 ops/s | 2.5x faster |
+| Scale/Write/1 | liteio | 0.1 MB/s | 2.7x faster |
+| Scale/Write/10 | liteio | 0.3 MB/s | 7.6x faster |
+| Scale/Write/100 | liteio | 0.3 MB/s | 4.4x faster |
+| Scale/Write/1000 | liteio | 0.3 MB/s | 5.0x faster |
 
 ---
 
