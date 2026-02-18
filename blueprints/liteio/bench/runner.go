@@ -15,6 +15,7 @@ import (
 
 	"github.com/liteio-dev/liteio/pkg/storage"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/devnull"
+	_ "github.com/liteio-dev/liteio/pkg/storage/driver/exp/s3"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/rabbit"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/usagi"
 )
