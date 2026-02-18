@@ -48,7 +48,7 @@ func New(templates map[string]*template.Template, cfg Config) *Handler {
 }
 
 // render renders a template with the given data.
-func (h *Handler) render(c *mizu.Ctx, name string, data interface{}) error {
+func (h *Handler) render(c *mizu.Ctx, name string, data any) error {
 	tmpl, ok := h.templates[name]
 	if !ok {
 		return c.Text(http.StatusInternalServerError, "Template not found: "+name)
@@ -1340,12 +1340,12 @@ func (h *Handler) Export(c *mizu.Ctx) error {
 	allTags, _, _ := h.cfg.Tags.List(ctx, &tags.ListIn{Limit: 10000})
 	allUsers, _, _ := h.cfg.Users.List(ctx, &users.ListIn{Limit: 10000})
 
-	export := map[string]interface{}{
-		"meta": map[string]interface{}{
+	export := map[string]any{
+		"meta": map[string]any{
 			"exported_on": time.Now().Unix(),
 			"version":     "5.0.0",
 		},
-		"data": map[string]interface{}{
+		"data": map[string]any{
 			"posts": allPosts,
 			"pages": allPages,
 			"tags":  allTags,

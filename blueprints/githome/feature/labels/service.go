@@ -391,6 +391,6 @@ func (s *Service) ListForMilestone(ctx context.Context, owner, repo string, numb
 
 // populateURLs fills in the URL fields for a label
 func (s *Service) populateURLs(label *Label, owner, repo string) {
-	label.NodeID = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Label:%d", label.ID)))
+	label.NodeID = base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Label:%d", label.ID))
 	label.URL = fmt.Sprintf("%s/api/v3/repos/%s/%s/labels/%s", s.baseURL, owner, repo, label.Name)
 }

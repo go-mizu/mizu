@@ -164,13 +164,14 @@ func (s *ThreadsStore) UpdateHotScores(ctx context.Context) error {
 }
 
 func (s *ThreadsStore) buildListQuery(where string, opts threads.ListOpts) string {
-	query := `
+	var query strings.Builder
+	query.WriteString(`
 		SELECT id, board_id, author_id, title, content, content_html,
 			url, domain, thumbnail_url, type, score, upvote_count, downvote_count,
 			comment_count, view_count, hot_score, is_pinned, is_locked, is_removed,
 			is_nsfw, is_spoiler, is_oc, remove_reason, created_at, updated_at, edited_at
 		FROM threads
-	`
+	`)
 
 	conditions := []string{"NOT is_removed"}
 	if where != "" {
@@ -197,30 +198,30 @@ func (s *ThreadsStore) buildListQuery(where string, opts threads.ListOpts) strin
 	}
 
 	if len(conditions) > 0 {
-		query += " WHERE " + conditions[0]
+		query.WriteString(" WHERE " + conditions[0])
 		for _, c := range conditions[1:] {
-			query += " AND " + c
+			query.WriteString(" AND " + c)
 		}
 	}
 
 	// Sorting
 	switch opts.SortBy {
 	case threads.SortHot:
-		query += " ORDER BY is_pinned DESC, hot_score DESC"
+		query.WriteString(" ORDER BY is_pinned DESC, hot_score DESC")
 	case threads.SortNew:
-		query += " ORDER BY is_pinned DESC, created_at DESC"
+		query.WriteString(" ORDER BY is_pinned DESC, created_at DESC")
 	case threads.SortTop:
-		query += " ORDER BY is_pinned DESC, score DESC"
+		query.WriteString(" ORDER BY is_pinned DESC, score DESC")
 	case threads.SortRising:
-		query += " ORDER BY is_pinned DESC, (score / GREATEST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at)) / 3600, 1)) DESC"
+		query.WriteString(" ORDER BY is_pinned DESC, (score / GREATEST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at)) / 3600, 1)) DESC")
 	case threads.SortControversial:
-		query += " ORDER BY is_pinned DESC, (upvote_count + downvote_count) * LEAST(upvote_count, downvote_count)::float / GREATEST(upvote_count, downvote_count, 1) DESC"
+		query.WriteString(" ORDER BY is_pinned DESC, (upvote_count + downvote_count) * LEAST(upvote_count, downvote_count)::float / GREATEST(upvote_count, downvote_count, 1) DESC")
 	default:
-		query += " ORDER BY is_pinned DESC, hot_score DESC"
+		query.WriteString(" ORDER BY is_pinned DESC, hot_score DESC")
 	}
 
-	query += " LIMIT $1"
-	return query
+	query.WriteString(" LIMIT $1")
+	return query.String()
 }
 
 func (s *ThreadsStore) scanThread(row *sql.Row) (*threads.Thread, error) {

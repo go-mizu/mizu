@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -232,11 +233,8 @@ func validateClaims(claims map[string]any, opts Options) error {
 
 		found := false
 		for _, required := range opts.Audience {
-			for _, actual := range audiences {
-				if required == actual {
-					found = true
-					break
-				}
+			if slices.Contains(audiences, required) {
+				found = true
 			}
 		}
 		if !found {

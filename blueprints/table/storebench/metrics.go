@@ -2,7 +2,7 @@ package storebench
 
 import (
 	"math"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 )
@@ -62,21 +62,21 @@ func (m *Metrics) RecordError() {
 
 // Stats returns computed statistics.
 type Stats struct {
-	Count        int           `json:"count"`
-	Errors       int           `json:"errors"`
-	ErrorRate    float64       `json:"error_rate"`
-	Min          time.Duration `json:"min"`
-	Max          time.Duration `json:"max"`
-	Avg          time.Duration `json:"avg"`
-	P50          time.Duration `json:"p50"`
-	P90          time.Duration `json:"p90"`
-	P95          time.Duration `json:"p95"`
-	P99          time.Duration `json:"p99"`
-	StdDev       time.Duration `json:"std_dev"`
-	TotalTime    time.Duration `json:"total_time"`
-	OpsPerSec    float64       `json:"ops_per_sec"`
-	RecordsOps   int64         `json:"records_ops,omitempty"`
-	RecordsPerSec float64      `json:"records_per_sec,omitempty"`
+	Count         int           `json:"count"`
+	Errors        int           `json:"errors"`
+	ErrorRate     float64       `json:"error_rate"`
+	Min           time.Duration `json:"min"`
+	Max           time.Duration `json:"max"`
+	Avg           time.Duration `json:"avg"`
+	P50           time.Duration `json:"p50"`
+	P90           time.Duration `json:"p90"`
+	P95           time.Duration `json:"p95"`
+	P99           time.Duration `json:"p99"`
+	StdDev        time.Duration `json:"std_dev"`
+	TotalTime     time.Duration `json:"total_time"`
+	OpsPerSec     float64       `json:"ops_per_sec"`
+	RecordsOps    int64         `json:"records_ops,omitempty"`
+	RecordsPerSec float64       `json:"records_per_sec,omitempty"`
 }
 
 // Stats computes statistics from the collected metrics.
@@ -91,7 +91,7 @@ func (m *Metrics) Stats() Stats {
 	// Sort for percentile calculations
 	sorted := make([]time.Duration, len(m.latencies))
 	copy(sorted, m.latencies)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+	slices.Sort(sorted)
 
 	var sum time.Duration
 	for _, d := range sorted {
@@ -146,9 +146,9 @@ func percentile(sorted []time.Duration, p int) time.Duration {
 
 // Result holds the result of a single benchmark scenario.
 type Result struct {
-	Scenario  string `json:"scenario"`
-	Backend   string `json:"backend"`
-	Stats     Stats  `json:"stats"`
+	Scenario  string    `json:"scenario"`
+	Backend   string    `json:"backend"`
+	Stats     Stats     `json:"stats"`
 	Timestamp time.Time `json:"timestamp"`
 }
 

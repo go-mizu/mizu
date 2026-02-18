@@ -446,12 +446,12 @@ func basePyType(typeByName map[string]*contract.Type, r string) string {
 		return "object"
 	}
 
-	if strings.HasPrefix(r, "[]") {
-		elem := strings.TrimSpace(strings.TrimPrefix(r, "[]"))
+	if after, ok := strings.CutPrefix(r, "[]"); ok {
+		elem := strings.TrimSpace(after)
 		return "List[" + basePyType(typeByName, elem) + "]"
 	}
-	if strings.HasPrefix(r, "map[string]") {
-		elem := strings.TrimSpace(strings.TrimPrefix(r, "map[string]"))
+	if after, ok := strings.CutPrefix(r, "map[string]"); ok {
+		elem := strings.TrimSpace(after)
 		return "Dict[str, " + basePyType(typeByName, elem) + "]"
 	}
 

@@ -318,7 +318,7 @@ func TestExportImportRoundTrip(t *testing.T) {
 	}
 
 	// Create records
-	_, err = recordsSvc.CreateBatch(ctx, table.ID, []map[string]interface{}{
+	_, err = recordsSvc.CreateBatch(ctx, table.ID, []map[string]any{
 		{nameField.ID: "Task 1", statusField.ID: todoChoiceID},
 		{nameField.ID: "Task 2", statusField.ID: doneChoiceID},
 		{nameField.ID: "Task 3", statusField.ID: todoChoiceID},
@@ -509,7 +509,7 @@ func TestFormatAndParseCellValues(t *testing.T) {
 			"Backend":  "new-tag-2",
 		}
 
-		formatted := svc.formatCellValue([]interface{}{"tag-1", "tag-2"}, fld, choiceNames)
+		formatted := svc.formatCellValue([]any{"tag-1", "tag-2"}, fld, choiceNames)
 		if formatted != "Frontend,Backend" {
 			t.Errorf("format multi_select = %q, want Frontend,Backend", formatted)
 		}

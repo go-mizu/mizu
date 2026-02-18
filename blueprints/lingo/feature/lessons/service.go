@@ -428,7 +428,7 @@ func (sel *AdaptiveExerciseSelector) buildLessonStructure(scored []ExerciseScore
 	copy(sortedByScore, scored)
 
 	// Bubble sort for simplicity (small lists)
-	for i := 0; i < len(sortedByScore); i++ {
+	for i := range sortedByScore {
 		for j := i + 1; j < len(sortedByScore); j++ {
 			if sortedByScore[j].Score > sortedByScore[i].Score {
 				sortedByScore[i], sortedByScore[j] = sortedByScore[j], sortedByScore[i]

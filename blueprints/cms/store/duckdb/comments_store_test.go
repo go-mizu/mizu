@@ -136,7 +136,7 @@ func TestCommentsStore_List(t *testing.T) {
 	store := NewCommentsStore(db)
 	ctx := context.Background()
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		comment := &comments.Comment{
 			ID:        "comment-list-" + string(rune('a'+i)),
 			PostID:    "post-001",
@@ -195,7 +195,7 @@ func TestCommentsStore_List_FilterByParent(t *testing.T) {
 	assertNoError(t, store.Create(ctx, parent))
 
 	// Create replies
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		reply := &comments.Comment{
 			ID:        "comment-reply-" + string(rune('a'+i)),
 			PostID:    "post-001",
@@ -285,7 +285,7 @@ func TestCommentsStore_ListByPost(t *testing.T) {
 	store := NewCommentsStore(db)
 	ctx := context.Background()
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		comment := &comments.Comment{
 			ID:        "comment-bypost-" + string(rune('a'+i)),
 			PostID:    "post-target",

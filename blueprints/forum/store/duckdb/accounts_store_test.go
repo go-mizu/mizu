@@ -380,7 +380,7 @@ func TestAccountsStore_Session_DeleteByAccount(t *testing.T) {
 	}
 
 	// Create multiple sessions
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		session := &accounts.Session{
 			ID:        newTestID(),
 			AccountID: account.ID,
@@ -406,7 +406,7 @@ func TestAccountsStore_List(t *testing.T) {
 	ctx := context.Background()
 
 	// Create multiple accounts
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		account := &accounts.Account{
 			ID:           newTestID(),
 			Username:     "user" + string(rune('a'+i)),

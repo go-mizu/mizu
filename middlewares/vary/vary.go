@@ -50,7 +50,7 @@ func add(c *mizu.Ctx, headers ...string) {
 	existingSet := make(map[string]bool)
 
 	if existing != "" {
-		for _, h := range strings.Split(existing, ",") {
+		for h := range strings.SplitSeq(existing, ",") {
 			existingSet[strings.TrimSpace(strings.ToLower(h))] = true
 		}
 	}

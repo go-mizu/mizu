@@ -129,9 +129,7 @@ func VerifyFailedDomains(ctx context.Context, failedDBPath, outputPath string, c
 	// Verification workers
 	var wg sync.WaitGroup
 	for range cfg.Workers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for d := range ch {
 				select {
 				case <-ctx.Done():
@@ -148,14 +146,12 @@ func VerifyFailedDomains(ctx context.Context, failedDBPath, outputPath string, c
 					deadCount.Add(1)
 				}
 			}
-		}()
+		})
 	}
 
 	// Result writer
 	var writerWg sync.WaitGroup
-	writerWg.Add(1)
-	go func() {
-		defer writerWg.Done()
+	writerWg.Go(func() {
 		batch := make([]VerifyResult, 0, 100)
 		for r := range resultCh {
 			batch = append(batch, r)
@@ -167,7 +163,7 @@ func VerifyFailedDomains(ctx context.Context, failedDBPath, outputPath string, c
 		if len(batch) > 0 {
 			writeVerifyBatch(outDB, batch)
 		}
-	}()
+	})
 
 	// Progress reporter
 	progressDone := make(chan struct{})

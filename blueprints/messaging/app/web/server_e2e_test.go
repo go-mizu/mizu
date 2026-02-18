@@ -599,7 +599,7 @@ func TestChat_CRUD(t *testing.T) {
 		}
 
 		var resp struct {
-			Data []interface{} `json:"data"`
+			Data []any `json:"data"`
 		}
 		json.NewDecoder(rec.Body).Decode(&resp)
 
@@ -804,7 +804,7 @@ func TestMessage_CRUD(t *testing.T) {
 		}
 
 		var resp struct {
-			Data []interface{} `json:"data"`
+			Data []any `json:"data"`
 		}
 		json.NewDecoder(rec.Body).Decode(&resp)
 

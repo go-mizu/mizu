@@ -10,8 +10,8 @@ import (
 
 // CellGetter retrieves cell values.
 type CellGetter interface {
-	GetCellValue(ctx context.Context, sheetID string, row, col int) (interface{}, error)
-	GetRangeValues(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) ([][]interface{}, error)
+	GetCellValue(ctx context.Context, sheetID string, row, col int) (any, error)
+	GetRangeValues(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) ([][]any, error)
 	GetNamedRange(ctx context.Context, name string) (sheetID string, startRow, startCol, endRow, endCol int, err error)
 	// ResolveSheetName resolves a sheet name to a sheet ID within a workbook.
 	// If the name is already a valid ID, it returns it unchanged.
@@ -20,12 +20,12 @@ type CellGetter interface {
 
 // EvalContext holds context for formula evaluation.
 type EvalContext struct {
-	SheetID     string
-	WorkbookID  string
-	CurrentRow  int
-	CurrentCol  int
-	CellGetter  CellGetter
-	Circular    map[string]bool
+	SheetID    string
+	WorkbookID string
+	CurrentRow int
+	CurrentCol int
+	CellGetter CellGetter
+	Circular   map[string]bool
 }
 
 // Evaluator evaluates formula AST nodes.
@@ -39,7 +39,7 @@ func NewEvaluator(ctx *EvalContext) *Evaluator {
 }
 
 // Evaluate evaluates an AST node and returns the result.
-func (e *Evaluator) Evaluate(ctx context.Context, node *ASTNode) (interface{}, error) {
+func (e *Evaluator) Evaluate(ctx context.Context, node *ASTNode) (any, error) {
 	if node == nil {
 		return nil, nil
 	}
@@ -83,7 +83,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, node *ASTNode) (interface{}, e
 	}
 }
 
-func (e *Evaluator) evaluateReference(ctx context.Context, node *ASTNode) (interface{}, error) {
+func (e *Evaluator) evaluateReference(ctx context.Context, node *ASTNode) (any, error) {
 	ref := node.Value.(string)
 	sheetID := e.ctx.SheetID
 
@@ -121,7 +121,7 @@ func (e *Evaluator) evaluateReference(ctx context.Context, node *ASTNode) (inter
 	return e.ctx.CellGetter.GetCellValue(ctx, sheetID, row, col)
 }
 
-func (e *Evaluator) evaluateRange(ctx context.Context, node *ASTNode) (interface{}, error) {
+func (e *Evaluator) evaluateRange(ctx context.Context, node *ASTNode) (any, error) {
 	rangeStr := node.Value.(string)
 	sheetID := e.ctx.SheetID
 
@@ -159,7 +159,7 @@ func (e *Evaluator) evaluateRange(ctx context.Context, node *ASTNode) (interface
 	return e.ctx.CellGetter.GetRangeValues(ctx, sheetID, startRow, startCol, endRow, endCol)
 }
 
-func (e *Evaluator) evaluateNamedRange(ctx context.Context, node *ASTNode) (interface{}, error) {
+func (e *Evaluator) evaluateNamedRange(ctx context.Context, node *ASTNode) (any, error) {
 	name := node.Value.(string)
 
 	if e.ctx.CellGetter == nil {
@@ -178,7 +178,7 @@ func (e *Evaluator) evaluateNamedRange(ctx context.Context, node *ASTNode) (inte
 	return e.ctx.CellGetter.GetRangeValues(ctx, sheetID, startRow, startCol, endRow, endCol)
 }
 
-func (e *Evaluator) evaluateFunction(ctx context.Context, node *ASTNode) (interface{}, error) {
+func (e *Evaluator) evaluateFunction(ctx context.Context, node *ASTNode) (any, error) {
 	funcName := strings.ToUpper(node.Value.(string))
 	args := node.Children
 
@@ -189,7 +189,7 @@ func (e *Evaluator) evaluateFunction(ctx context.Context, node *ASTNode) (interf
 	}
 
 	// Evaluate arguments
-	evaluatedArgs := make([]interface{}, len(args))
+	evaluatedArgs := make([]any, len(args))
 	for i, arg := range args {
 		val, err := e.Evaluate(ctx, arg)
 		if err != nil {
@@ -201,7 +201,7 @@ func (e *Evaluator) evaluateFunction(ctx context.Context, node *ASTNode) (interf
 	return fn(evaluatedArgs...)
 }
 
-func (e *Evaluator) evaluateBinaryOp(ctx context.Context, node *ASTNode) (interface{}, error) {
+func (e *Evaluator) evaluateBinaryOp(ctx context.Context, node *ASTNode) (any, error) {
 	if len(node.Children) != 2 {
 		return nil, fmt.Errorf("binary operator requires 2 operands")
 	}
@@ -252,7 +252,7 @@ func (e *Evaluator) evaluateBinaryOp(ctx context.Context, node *ASTNode) (interf
 	}
 }
 
-func (e *Evaluator) evaluateUnaryOp(ctx context.Context, node *ASTNode) (interface{}, error) {
+func (e *Evaluator) evaluateUnaryOp(ctx context.Context, node *ASTNode) (any, error) {
 	if len(node.Children) != 1 {
 		return nil, fmt.Errorf("unary operator requires 1 operand")
 	}
@@ -276,12 +276,12 @@ func (e *Evaluator) evaluateUnaryOp(ctx context.Context, node *ASTNode) (interfa
 	}
 }
 
-func (e *Evaluator) evaluateArray(ctx context.Context, node *ASTNode) (interface{}, error) {
-	result := make([][]interface{}, len(node.Children))
+func (e *Evaluator) evaluateArray(ctx context.Context, node *ASTNode) (any, error) {
+	result := make([][]any, len(node.Children))
 
 	for i, row := range node.Children {
 		if row.Type == NodeArray {
-			result[i] = make([]interface{}, len(row.Children))
+			result[i] = make([]any, len(row.Children))
 			for j, elem := range row.Children {
 				val, err := e.Evaluate(ctx, elem)
 				if err != nil {
@@ -294,7 +294,7 @@ func (e *Evaluator) evaluateArray(ctx context.Context, node *ASTNode) (interface
 			if err != nil {
 				return nil, err
 			}
-			result[i] = []interface{}{val}
+			result[i] = []any{val}
 		}
 	}
 
@@ -303,7 +303,7 @@ func (e *Evaluator) evaluateArray(ctx context.Context, node *ASTNode) (interface
 
 // Helper functions
 
-func toFloat(v interface{}) float64 {
+func toFloat(v any) float64 {
 	if v == nil {
 		return 0
 	}
@@ -327,7 +327,7 @@ func toFloat(v interface{}) float64 {
 	}
 }
 
-func toString(v interface{}) string {
+func toString(v any) string {
 	if v == nil {
 		return ""
 	}
@@ -351,7 +351,7 @@ func toString(v interface{}) string {
 	}
 }
 
-func toBool(v interface{}) bool {
+func toBool(v any) bool {
 	if v == nil {
 		return false
 	}
@@ -370,7 +370,7 @@ func toBool(v interface{}) bool {
 	}
 }
 
-func compareValues(a, b interface{}) int {
+func compareValues(a, b any) int {
 	// Handle nil
 	if a == nil && b == nil {
 		return 0
@@ -401,7 +401,7 @@ func compareValues(a, b interface{}) int {
 	return strings.Compare(strings.ToLower(aStr), strings.ToLower(bStr))
 }
 
-func toNumber(v interface{}) (float64, bool) {
+func toNumber(v any) (float64, bool) {
 	switch val := v.(type) {
 	case float64:
 		return val, true

@@ -14,13 +14,13 @@ import (
 // Stage 2: Tokenization (CPU bound)
 // Stage 3: Shard accumulation (memory bound)
 type PipelinedImporter struct {
-	config     PipelinedConfig
-	outDir     string
-	shards     [256]*pipelinedShard
-	docLens    []uint16
-	docCount   atomic.Uint64
-	totalLen   atomic.Uint64
-	docLensMu  sync.Mutex
+	config    PipelinedConfig
+	outDir    string
+	shards    [256]*pipelinedShard
+	docLens   []uint16
+	docCount  atomic.Uint64
+	totalLen  atomic.Uint64
+	docLensMu sync.Mutex
 
 	// Pipeline channels
 	tokenizeCh chan pipelinedBatch
@@ -56,10 +56,10 @@ type pipelinedBatch struct {
 
 // pipelinedTokenized is a tokenized document.
 type pipelinedTokenized struct {
-	docID   uint32
-	docLen  uint16
-	hashes  []uint64
-	freqs   []uint16
+	docID  uint32
+	docLen uint16
+	hashes []uint64
+	freqs  []uint16
 }
 
 // NewPipelinedImporter creates a pipelined importer.
@@ -82,7 +82,7 @@ func NewPipelinedImporter(outDir string, cfg PipelinedConfig) *PipelinedImporter
 		indexCh:    make(chan pipelinedTokenized, cfg.BufferSize*10),
 	}
 
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		pi.shards[i] = &pipelinedShard{
 			terms: make(map[uint64]*pipelinedPostings, 10000),
 		}
@@ -205,7 +205,7 @@ func (pi *PipelinedImporter) indexWorker() {
 
 	// Per-worker shard buffers to reduce lock contention
 	shardBuffers := make([]map[uint64][]indexPostingEntry, 256)
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		shardBuffers[i] = make(map[uint64][]indexPostingEntry, 100)
 	}
 
@@ -235,7 +235,7 @@ func (pi *PipelinedImporter) indexWorker() {
 		if flushCounter >= flushInterval {
 			// Flush buffers to shards
 			pi.flushBuffers(shardBuffers)
-			for i := 0; i < 256; i++ {
+			for i := range 256 {
 				shardBuffers[i] = make(map[uint64][]indexPostingEntry, 100)
 			}
 			flushCounter = 0
@@ -248,7 +248,7 @@ func (pi *PipelinedImporter) indexWorker() {
 
 // flushBuffers merges buffered postings into shards.
 func (pi *PipelinedImporter) flushBuffers(buffers []map[uint64][]indexPostingEntry) {
-	for shardID := 0; shardID < 256; shardID++ {
+	for shardID := range 256 {
 		if len(buffers[shardID]) == 0 {
 			continue
 		}
@@ -302,7 +302,7 @@ func (pi *PipelinedImporter) Finish() (*SegmentedIndex, error) {
 	avgDocLen := float64(pi.totalLen.Load()) / float64(numDocs)
 	terms := make(map[string]*SegmentPostings)
 
-	for shardID := 0; shardID < 256; shardID++ {
+	for shardID := range 256 {
 		shard := pi.shards[shardID]
 		for hash, pl := range shard.terms {
 			hashKey := hashToKey(hash)
@@ -347,10 +347,7 @@ func (pi *PipelinedImporter) ImportParallel(ctx context.Context, texts []string,
 		default:
 		}
 
-		end := i + batchSize
-		if end > len(texts) {
-			end = len(texts)
-		}
+		end := min(i+batchSize, len(texts))
 
 		pi.AddBatch(docID, texts[i:end])
 		docID += uint32(end - i)
@@ -384,7 +381,7 @@ func NewFastBatchImporter() *FastBatchImporter {
 		docLens: make([]uint16, 0, 4000000),
 	}
 
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		fbi.shards[i] = &fastShard{
 			terms: make(map[uint64]*fastPostings, 10000),
 		}
@@ -400,10 +397,7 @@ func (fbi *FastBatchImporter) AddBatch(docIDs []uint32, texts []string) {
 	}
 
 	numDocs := len(texts)
-	numWorkers := runtime.NumCPU() * 4
-	if numWorkers > numDocs {
-		numWorkers = numDocs
-	}
+	numWorkers := min(runtime.NumCPU()*4, numDocs)
 
 	// Worker-local shard postings
 	type posting struct {
@@ -412,9 +406,9 @@ func (fbi *FastBatchImporter) AddBatch(docIDs []uint32, texts []string) {
 		freq  uint16
 	}
 	workerShards := make([][][]posting, numWorkers)
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		workerShards[w] = make([][]posting, 256)
-		for s := 0; s < 256; s++ {
+		for s := range 256 {
 			workerShards[w][s] = make([]posting, 0, 64)
 		}
 	}
@@ -424,12 +418,9 @@ func (fbi *FastBatchImporter) AddBatch(docIDs []uint32, texts []string) {
 	batchSize := (numDocs + numWorkers - 1) / numWorkers
 
 	// Phase 1: Parallel tokenization
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		start := w * batchSize
-		end := start + batchSize
-		if end > numDocs {
-			end = numDocs
-		}
+		end := min(start+batchSize, numDocs)
 		if start >= end {
 			break
 		}
@@ -445,10 +436,7 @@ func (fbi *FastBatchImporter) AddBatch(docIDs []uint32, texts []string) {
 				clear(freqs)
 
 				// Fast tokenization
-				docLen := tokenizePipelined(texts[i], freqs)
-				if docLen > 65535 {
-					docLen = 65535
-				}
+				docLen := min(tokenizePipelined(texts[i], freqs), 65535)
 				docLensLocal[i] = uint16(docLen)
 
 				// Distribute to shards
@@ -477,12 +465,9 @@ func (fbi *FastBatchImporter) AddBatch(docIDs []uint32, texts []string) {
 	// Phase 2: Parallel shard merging
 	shardsPerWorker := (256 + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startShard := w * shardsPerWorker
-		endShard := startShard + shardsPerWorker
-		if endShard > 256 {
-			endShard = 256
-		}
+		endShard := min(startShard+shardsPerWorker, 256)
 		if startShard >= endShard {
 			break
 		}
@@ -533,7 +518,7 @@ func (fbi *FastBatchImporter) Finish() (*SegmentedIndex, error) {
 	avgDocLen := float64(fbi.totalLen.Load()) / float64(numDocs)
 	terms := make(map[string]*SegmentPostings)
 
-	for shardID := 0; shardID < 256; shardID++ {
+	for shardID := range 256 {
 		shard := fbi.shards[shardID]
 		for hash, pl := range shard.terms {
 			hashKey := hashToKey(hash)

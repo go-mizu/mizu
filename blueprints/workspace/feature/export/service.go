@@ -378,7 +378,7 @@ func sortBlocksRecursive(block *blocks.Block) {
 }
 
 // convertRequestBlocks converts JSON block data from the request into Block structures.
-func (s *Service) convertRequestBlocks(reqBlocks []map[string]interface{}) []*blocks.Block {
+func (s *Service) convertRequestBlocks(reqBlocks []map[string]any) []*blocks.Block {
 	var result []*blocks.Block
 	for i, rb := range reqBlocks {
 		block := &blocks.Block{
@@ -389,9 +389,9 @@ func (s *Service) convertRequestBlocks(reqBlocks []map[string]interface{}) []*bl
 		}
 
 		// Handle children recursively
-		if children, ok := rb["children"].([]interface{}); ok {
+		if children, ok := rb["children"].([]any); ok {
 			for j, child := range children {
-				if childMap, ok := child.(map[string]interface{}); ok {
+				if childMap, ok := child.(map[string]any); ok {
 					childBlock := &blocks.Block{
 						ID:       getString(childMap, "id"),
 						Type:     blocks.BlockType(getString(childMap, "type")),
@@ -400,7 +400,7 @@ func (s *Service) convertRequestBlocks(reqBlocks []map[string]interface{}) []*bl
 						Position: j,
 					}
 					// Handle nested children
-					if nestedChildren, ok := childMap["children"].([]interface{}); ok {
+					if nestedChildren, ok := childMap["children"].([]any); ok {
 						childBlock.Children = s.convertChildBlocks(nestedChildren, childBlock.ID)
 					}
 					block.Children = append(block.Children, childBlock)
@@ -413,10 +413,10 @@ func (s *Service) convertRequestBlocks(reqBlocks []map[string]interface{}) []*bl
 }
 
 // convertChildBlocks recursively converts child blocks.
-func (s *Service) convertChildBlocks(children []interface{}, parentID string) []*blocks.Block {
+func (s *Service) convertChildBlocks(children []any, parentID string) []*blocks.Block {
 	var result []*blocks.Block
 	for i, child := range children {
-		if childMap, ok := child.(map[string]interface{}); ok {
+		if childMap, ok := child.(map[string]any); ok {
 			block := &blocks.Block{
 				ID:       getString(childMap, "id"),
 				Type:     blocks.BlockType(getString(childMap, "type")),
@@ -424,7 +424,7 @@ func (s *Service) convertChildBlocks(children []interface{}, parentID string) []
 				ParentID: parentID,
 				Position: i,
 			}
-			if nestedChildren, ok := childMap["children"].([]interface{}); ok {
+			if nestedChildren, ok := childMap["children"].([]any); ok {
 				block.Children = s.convertChildBlocks(nestedChildren, block.ID)
 			}
 			result = append(result, block)
@@ -434,7 +434,7 @@ func (s *Service) convertChildBlocks(children []interface{}, parentID string) []
 }
 
 // getString safely gets a string from a map.
-func getString(m map[string]interface{}, key string) string {
+func getString(m map[string]any, key string) string {
 	if v, ok := m[key].(string); ok {
 		return v
 	}
@@ -442,7 +442,7 @@ func getString(m map[string]interface{}, key string) string {
 }
 
 // getBool safely gets a bool from a map.
-func getBool(m map[string]interface{}, key string) *bool {
+func getBool(m map[string]any, key string) *bool {
 	if v, ok := m[key].(bool); ok {
 		return &v
 	}
@@ -450,15 +450,15 @@ func getBool(m map[string]interface{}, key string) *bool {
 }
 
 // getMap safely gets a map from a map.
-func getMap(m map[string]interface{}, key string) map[string]interface{} {
-	if v, ok := m[key].(map[string]interface{}); ok {
+func getMap(m map[string]any, key string) map[string]any {
+	if v, ok := m[key].(map[string]any); ok {
 		return v
 	}
 	return nil
 }
 
 // convertContent converts a map to blocks.Content.
-func convertContent(m map[string]interface{}) blocks.Content {
+func convertContent(m map[string]any) blocks.Content {
 	if m == nil {
 		return blocks.Content{}
 	}
@@ -478,16 +478,16 @@ func convertContent(m map[string]interface{}) blocks.Content {
 	}
 
 	// Convert rich_text array
-	if richText, ok := m["rich_text"].([]interface{}); ok {
+	if richText, ok := m["rich_text"].([]any); ok {
 		for _, rt := range richText {
-			if rtMap, ok := rt.(map[string]interface{}); ok {
+			if rtMap, ok := rt.(map[string]any); ok {
 				richTextItem := blocks.RichText{
 					Type: getString(rtMap, "type"),
 					Text: getString(rtMap, "text"),
 					Link: getString(rtMap, "link"),
 				}
 				// Convert annotations
-				if ann, ok := rtMap["annotations"].(map[string]interface{}); ok {
+				if ann, ok := rtMap["annotations"].(map[string]any); ok {
 					richTextItem.Annotations = blocks.Annotations{
 						Bold:          ann["bold"] == true,
 						Italic:        ann["italic"] == true,

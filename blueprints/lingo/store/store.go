@@ -203,14 +203,14 @@ type Course struct {
 
 // UserCourse represents a user's enrollment in a course
 type UserCourse struct {
-	UserID           uuid.UUID  `json:"user_id"`
-	CourseID         uuid.UUID  `json:"course_id"`
-	CurrentUnitID    *uuid.UUID `json:"current_unit_id,omitempty"`
-	CurrentLessonID  *uuid.UUID `json:"current_lesson_id,omitempty"`
-	XPEarned         int64      `json:"xp_earned"`
-	CrownsEarned     int        `json:"crowns_earned"`
-	StartedAt        time.Time  `json:"started_at"`
-	LastPracticedAt  *time.Time `json:"last_practiced_at,omitempty"`
+	UserID          uuid.UUID  `json:"user_id"`
+	CourseID        uuid.UUID  `json:"course_id"`
+	CurrentUnitID   *uuid.UUID `json:"current_unit_id,omitempty"`
+	CurrentLessonID *uuid.UUID `json:"current_lesson_id,omitempty"`
+	XPEarned        int64      `json:"xp_earned"`
+	CrownsEarned    int        `json:"crowns_earned"`
+	StartedAt       time.Time  `json:"started_at"`
+	LastPracticedAt *time.Time `json:"last_practiced_at,omitempty"`
 }
 
 // Unit represents a unit in a course
@@ -384,14 +384,14 @@ type LeagueSeason struct {
 
 // UserLeague represents a user's participation in a league
 type UserLeague struct {
-	ID        uuid.UUID  `json:"id"`
-	UserID    uuid.UUID  `json:"user_id"`
-	SeasonID  uuid.UUID  `json:"season_id"`
-	XPEarned  int        `json:"xp_earned"`
-	Rank      int        `json:"rank"`
-	Promoted  bool       `json:"promoted"`
-	Demoted   bool       `json:"demoted"`
-	User      *User      `json:"user,omitempty"`
+	ID       uuid.UUID `json:"id"`
+	UserID   uuid.UUID `json:"user_id"`
+	SeasonID uuid.UUID `json:"season_id"`
+	XPEarned int       `json:"xp_earned"`
+	Rank     int       `json:"rank"`
+	Promoted bool      `json:"promoted"`
+	Demoted  bool      `json:"demoted"`
+	User     *User     `json:"user,omitempty"`
 }
 
 // FriendQuest represents a friend quest
@@ -421,14 +421,14 @@ type FriendStreak struct {
 
 // Notification represents a user notification
 type Notification struct {
-	ID        uuid.UUID              `json:"id"`
-	UserID    uuid.UUID              `json:"user_id"`
-	Type      string                 `json:"type"`
-	Title     string                 `json:"title"`
-	Body      string                 `json:"body"`
-	Data      map[string]interface{} `json:"data,omitempty"`
-	Read      bool                   `json:"read"`
-	CreatedAt time.Time              `json:"created_at"`
+	ID        uuid.UUID      `json:"id"`
+	UserID    uuid.UUID      `json:"user_id"`
+	Type      string         `json:"type"`
+	Title     string         `json:"title"`
+	Body      string         `json:"body"`
+	Data      map[string]any `json:"data,omitempty"`
+	Read      bool           `json:"read"`
+	CreatedAt time.Time      `json:"created_at"`
 }
 
 // StoryElementType defines the type of story element
@@ -437,11 +437,11 @@ type StoryElementType string
 const (
 	ElementTypeHeader       StoryElementType = "header"
 	ElementTypeLine         StoryElementType = "line"
-	ElementTypeNarration    StoryElementType = "narration"    // Narrator text without speaker
+	ElementTypeNarration    StoryElementType = "narration" // Narrator text without speaker
 	ElementTypeMultiChoice  StoryElementType = "multiple_choice"
 	ElementTypeSelectPhrase StoryElementType = "select_phrase"
-	ElementTypeSelectWord   StoryElementType = "select_word"   // New: tap word that means X
-	ElementTypeWhatNext     StoryElementType = "what_next"     // New: What comes next?
+	ElementTypeSelectWord   StoryElementType = "select_word" // New: tap word that means X
+	ElementTypeWhatNext     StoryElementType = "what_next"   // New: What comes next?
 	ElementTypeArrange      StoryElementType = "arrange"
 	ElementTypeMatch        StoryElementType = "match"
 	ElementTypePointPhrase  StoryElementType = "point_to_phrase"
@@ -512,9 +512,9 @@ type AudioTiming struct {
 type ChallengeData struct {
 	// Common
 	Prompt        string   `json:"prompt,omitempty"`
-	Question      string   `json:"question,omitempty"`       // Question text (e.g., "Vikram says his day was")
+	Question      string   `json:"question,omitempty"` // Question text (e.g., "Vikram says his day was")
 	CorrectAnswer string   `json:"correct_answer,omitempty"`
-	CorrectIndex  int      `json:"correct_index,omitempty"`  // Index of correct option
+	CorrectIndex  int      `json:"correct_index,omitempty"` // Index of correct option
 	Options       []string `json:"options,omitempty"`
 
 	// Feedback
@@ -526,7 +526,7 @@ type ChallengeData struct {
 	PhraseEnd   int `json:"phrase_end,omitempty"`
 
 	// SelectWord: word tokens for tap-to-select challenges
-	SentenceWords   []WordToken `json:"sentence_words,omitempty"`   // Tokenized sentence for word selection
+	SentenceWords   []WordToken `json:"sentence_words,omitempty"`    // Tokenized sentence for word selection
 	TargetWordIndex int         `json:"target_word_index,omitempty"` // Which word is correct
 	TargetMeaning   string      `json:"target_meaning,omitempty"`    // The meaning hint (e.g., "thin" in "choose word meaning thin")
 

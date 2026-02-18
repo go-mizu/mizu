@@ -132,7 +132,7 @@ func (s *Service) List(ctx context.Context, owner, repo string, opts *ListOpts) 
 
 		commit := &Commit{
 			SHA:    gc.SHA,
-			NodeID: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Commit:%s", gc.SHA))),
+			NodeID: base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Commit:%s", gc.SHA)),
 			Commit: &CommitData{
 				Message:      gc.Message,
 				CommentCount: 0,
@@ -227,7 +227,7 @@ func (s *Service) Get(ctx context.Context, owner, repo, ref string) (*Commit, er
 
 	commit := &Commit{
 		SHA:    gc.SHA,
-		NodeID: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Commit:%s", gc.SHA))),
+		NodeID: base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Commit:%s", gc.SHA)),
 		Commit: &CommitData{
 			Message:      gc.Message,
 			CommentCount: 0,
@@ -380,7 +380,7 @@ func (s *Service) Compare(ctx context.Context, owner, repo, base, head string) (
 
 		commit := &Commit{
 			SHA:    gc.SHA,
-			NodeID: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Commit:%s", gc.SHA))),
+			NodeID: base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Commit:%s", gc.SHA)),
 			Commit: &CommitData{
 				Message: gc.Message,
 				Author: &CommitAuthor{
@@ -574,7 +574,7 @@ func (s *Service) GetCombinedStatus(ctx context.Context, owner, repo, ref string
 			TotalCount: 0,
 			Repository: &Repository{
 				ID:       r.ID,
-				NodeID:   base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Repository:%d", r.ID))),
+				NodeID:   base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Repository:%d", r.ID)),
 				Name:     r.Name,
 				FullName: r.FullName,
 			},
@@ -685,6 +685,6 @@ func (s *Service) populateFileURLs(f *CommitFile, owner, repo, sha string) {
 
 // populateStatusURLs fills in the URL fields for a status
 func (s *Service) populateStatusURLs(status *Status, owner, repo string) {
-	status.NodeID = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Status:%d", status.ID)))
+	status.NodeID = base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Status:%d", status.ID))
 	status.URL = fmt.Sprintf("%s/api/v3/repos/%s/%s/statuses/%d", s.baseURL, owner, repo, status.ID)
 }

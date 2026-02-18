@@ -190,7 +190,7 @@ func (s *Seeder) syncTables(ctx context.Context, dsID, dbPath string) error {
 			var cid int
 			var name, colType string
 			var notNull, pk int
-			var dflt interface{}
+			var dflt any
 			colRows.Scan(&cid, &name, &colType, &notNull, &dflt, &pk)
 
 			col := &store.Column{
@@ -264,8 +264,8 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 		desc       string
 		collection string
 		queryType  string
-		query      map[string]interface{}
-		viz        map[string]interface{}
+		query      map[string]any
+		viz        map[string]any
 	}{
 		// =====================================================================
 		// EXECUTIVE QUESTIONS - KPIs and Overview
@@ -275,14 +275,14 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Sum of all order revenue",
 			collection: "Executive",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					printf("$%,.0f", SUM(od.unit_price * od.quantity * (1 - od.discount))) as total_revenue
 				FROM order_details od`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "number",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"prefix": "",
 				},
 			},
@@ -292,10 +292,10 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Count of all orders",
 			collection: "Executive",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT COUNT(*) as total_orders FROM orders`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "number",
 			},
 		},
@@ -304,7 +304,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Average revenue per order",
 			collection: "Executive",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					printf("$%.2f", AVG(order_total)) as avg_order_value
 				FROM (
@@ -314,7 +314,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 					GROUP BY o.id
 				)`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "number",
 			},
 		},
@@ -323,12 +323,12 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Customers with orders in the last 90 days",
 			collection: "Executive",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT COUNT(DISTINCT customer_id) as active_customers
 				FROM orders
 				WHERE order_date >= date('now', '-90 days')`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "number",
 			},
 		},
@@ -337,7 +337,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Monthly revenue trend over time",
 			collection: "Executive",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					strftime('%Y-%m', o.order_date) as month,
 					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue
@@ -346,9 +346,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY month
 				ORDER BY month`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "line",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis":   "month",
 					"y_axis":   "revenue",
 					"showArea": true,
@@ -360,7 +360,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Monthly order count trend",
 			collection: "Executive",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					strftime('%Y-%m', order_date) as month,
 					COUNT(*) as orders
@@ -368,9 +368,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY month
 				ORDER BY month`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "bar",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis": "month",
 					"y_axis": "orders",
 				},
@@ -381,7 +381,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Month-over-month revenue growth percentage",
 			collection: "Executive",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `WITH monthly_revenue AS (
 					SELECT
 						strftime('%Y-%m', o.order_date) as month,
@@ -401,7 +401,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				FROM monthly_revenue
 				ORDER BY month`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "table",
 			},
 		},
@@ -413,7 +413,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Revenue breakdown by product category",
 			collection: "Sales",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					c.name as category,
 					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue
@@ -423,9 +423,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY c.id
 				ORDER BY revenue DESC`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "bar",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis": "category",
 					"y_axis": "revenue",
 				},
@@ -436,7 +436,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Best selling products by total revenue",
 			collection: "Sales",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					p.name as product,
 					SUM(od.quantity) as units_sold,
@@ -447,9 +447,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				ORDER BY revenue DESC
 				LIMIT 10`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "bar",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis": "product",
 					"y_axis": "revenue",
 				},
@@ -460,7 +460,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Revenue distribution by customer region",
 			collection: "Sales",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					c.region,
 					COUNT(DISTINCT o.id) as orders,
@@ -472,9 +472,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY c.region
 				ORDER BY revenue DESC`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "pie",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"dimension": "region",
 					"metric":    "revenue",
 				},
@@ -485,7 +485,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Revenue by sales representative",
 			collection: "Sales",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					e.first_name || ' ' || e.last_name as employee,
 					COUNT(DISTINCT o.id) as orders,
@@ -496,9 +496,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY e.id
 				ORDER BY revenue DESC`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "bar",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis": "employee",
 					"y_axis": "revenue",
 				},
@@ -509,7 +509,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Revenue percentage by product category",
 			collection: "Sales",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					c.name as category,
 					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue,
@@ -521,9 +521,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY c.id
 				ORDER BY revenue DESC`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "pie",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"dimension": "category",
 					"metric":    "revenue",
 				},
@@ -534,7 +534,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Revenue impact of discounts",
 			collection: "Sales",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					CASE
 						WHEN discount = 0 THEN 'No Discount'
@@ -550,9 +550,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY discount_tier
 				ORDER BY net_revenue DESC`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "bar",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis": "discount_tier",
 					"y_axis": "net_revenue",
 				},
@@ -566,7 +566,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Current stock levels by product",
 			collection: "Products",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					p.name as product,
 					c.name as category,
@@ -582,7 +582,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				WHERE p.discontinued = 0
 				ORDER BY p.units_in_stock ASC`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "table",
 			},
 		},
@@ -591,7 +591,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Product count and average price by category",
 			collection: "Products",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					c.name as category,
 					COUNT(*) as product_count,
@@ -603,9 +603,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY c.id
 				ORDER BY product_count DESC`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "bar",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis": "category",
 					"y_axis": "product_count",
 				},
@@ -616,7 +616,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Products with stock below 10 units",
 			collection: "Products",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					p.name as product,
 					c.name as category,
@@ -629,7 +629,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				WHERE p.units_in_stock < 10 AND p.discontinued = 0
 				ORDER BY p.units_in_stock ASC`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "table",
 			},
 		},
@@ -638,7 +638,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Total inventory value breakdown",
 			collection: "Products",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					c.name as category,
 					SUM(p.units_in_stock) as total_units,
@@ -649,9 +649,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY c.id
 				ORDER BY inventory_value DESC`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "pie",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"dimension": "category",
 					"metric":    "inventory_value",
 				},
@@ -662,7 +662,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Number of products by supplier",
 			collection: "Products",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					s.company_name as supplier,
 					s.country,
@@ -673,9 +673,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY s.id
 				ORDER BY products DESC`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "bar",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis": "supplier",
 					"y_axis": "products",
 				},
@@ -689,7 +689,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Highest revenue customers",
 			collection: "Customers",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					c.company_name as customer,
 					c.country,
@@ -702,7 +702,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				ORDER BY revenue DESC
 				LIMIT 10`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "table",
 			},
 		},
@@ -711,7 +711,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Customer distribution by country",
 			collection: "Customers",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					country,
 					COUNT(*) as customers
@@ -719,9 +719,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY country
 				ORDER BY customers DESC`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "pie",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"dimension": "country",
 					"metric":    "customers",
 				},
@@ -732,7 +732,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Distribution of orders per customer",
 			collection: "Customers",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					CASE
 						WHEN order_count = 1 THEN '1 order'
@@ -750,9 +750,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY frequency
 				ORDER BY MIN(order_count)`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "bar",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis": "frequency",
 					"y_axis": "customers",
 				},
@@ -763,7 +763,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Average order value and frequency by customer",
 			collection: "Customers",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					c.company_name as customer,
 					c.country,
@@ -783,7 +783,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				ORDER BY SUM(order_total) DESC
 				LIMIT 20`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "table",
 			},
 		},
@@ -792,7 +792,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Total revenue by customer country",
 			collection: "Customers",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					c.country,
 					COUNT(DISTINCT c.id) as customers,
@@ -804,9 +804,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY c.country
 				ORDER BY revenue DESC`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "bar",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis": "country",
 					"y_axis": "revenue",
 				},
@@ -820,7 +820,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Latest 100 orders with details",
 			collection: "Operations",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					o.id as order_id,
 					c.company_name as customer,
@@ -839,7 +839,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				ORDER BY o.order_date DESC
 				LIMIT 100`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "table",
 			},
 		},
@@ -848,7 +848,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "On-time delivery rate by shipper",
 			collection: "Operations",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					s.company_name as shipper,
 					COUNT(*) as total_shipments,
@@ -860,9 +860,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY s.id
 				ORDER BY on_time_rate DESC`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "bar",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis": "shipper",
 					"y_axis": "total_shipments",
 				},
@@ -873,7 +873,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Order volume by day of week",
 			collection: "Operations",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					CASE strftime('%w', order_date)
 						WHEN '0' THEN 'Sunday'
@@ -889,9 +889,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY strftime('%w', order_date)
 				ORDER BY strftime('%w', order_date)`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "bar",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis": "day_of_week",
 					"y_axis": "orders",
 				},
@@ -902,7 +902,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Orders not yet shipped",
 			collection: "Operations",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					o.id as order_id,
 					c.company_name as customer,
@@ -917,7 +917,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY o.id
 				ORDER BY o.required_date ASC`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "table",
 			},
 		},
@@ -926,7 +926,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Days between order and shipment by shipper",
 			collection: "Operations",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					s.company_name as shipper,
 					COUNT(*) as shipments,
@@ -939,7 +939,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY s.id
 				ORDER BY avg_ship_time`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "table",
 			},
 		},
@@ -948,7 +948,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Average freight by destination country",
 			collection: "Operations",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					ship_country as country,
 					COUNT(*) as orders,
@@ -960,9 +960,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				ORDER BY SUM(freight) DESC
 				LIMIT 15`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "bar",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis": "country",
 					"y_axis": "orders",
 				},
@@ -976,12 +976,12 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Overall profit margin percentage",
 			collection: "Finance",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					printf("%.1f%%", 100.0 * (SUM(od.unit_price * od.quantity * (1 - od.discount)) - SUM(od.unit_price * od.quantity * 0.6)) / SUM(od.unit_price * od.quantity * (1 - od.discount))) as gross_margin
 				FROM order_details od`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "number",
 			},
 		},
@@ -990,7 +990,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Estimated profit margin by product category",
 			collection: "Finance",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					c.name as category,
 					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue,
@@ -1002,9 +1002,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY c.id
 				ORDER BY revenue DESC`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "bar",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis": "category",
 					"y_axis": "estimated_profit",
 				},
@@ -1015,7 +1015,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Estimated profit over time",
 			collection: "Finance",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					strftime('%Y-%m', o.order_date) as month,
 					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue,
@@ -1025,9 +1025,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY month
 				ORDER BY month`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "area",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis":   "month",
 					"y_axis":   "profit",
 					"showArea": true,
@@ -1039,7 +1039,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Compare revenue to shipping costs",
 			collection: "Finance",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					strftime('%Y-%m', o.order_date) as month,
 					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue,
@@ -1050,9 +1050,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY month
 				ORDER BY month`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "combo",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis": "month",
 					"y_axis": "revenue",
 				},
@@ -1063,7 +1063,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Revenue lost to discounts",
 			collection: "Finance",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					strftime('%Y-%m', o.order_date) as month,
 					SUM(od.unit_price * od.quantity) as gross_revenue,
@@ -1074,9 +1074,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY month
 				ORDER BY month`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "line",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis": "month",
 					"y_axis": "discount_amount",
 				},
@@ -1090,7 +1090,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Geographic distribution of revenue",
 			collection: "Geographic",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					c.country,
 					COUNT(DISTINCT o.id) as orders,
@@ -1101,9 +1101,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY c.country
 				ORDER BY revenue DESC`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "bar",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis": "country",
 					"y_axis": "revenue",
 				},
@@ -1114,7 +1114,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Revenue growth by region",
 			collection: "Geographic",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					c.region,
 					COUNT(DISTINCT c.id) as customers,
@@ -1128,9 +1128,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY c.region
 				ORDER BY revenue DESC`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "bar",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis": "region",
 					"y_axis": "revenue",
 				},
@@ -1141,7 +1141,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Top performing cities by revenue",
 			collection: "Geographic",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					c.city,
 					c.country,
@@ -1154,7 +1154,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				ORDER BY revenue DESC
 				LIMIT 15`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "table",
 			},
 		},
@@ -1163,7 +1163,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Supplier distribution by country",
 			collection: "Geographic",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					s.country,
 					COUNT(*) as suppliers,
@@ -1173,9 +1173,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY s.country
 				ORDER BY suppliers DESC`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "pie",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"dimension": "country",
 					"metric":    "suppliers",
 				},
@@ -1186,7 +1186,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Where orders are shipped to",
 			collection: "Geographic",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					ship_country as country,
 					ship_city as city,
@@ -1198,7 +1198,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				ORDER BY shipments DESC
 				LIMIT 20`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "table",
 			},
 		},
@@ -1210,7 +1210,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Orders per day over time",
 			collection: "Trends",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					order_date as date,
 					COUNT(*) as orders
@@ -1219,9 +1219,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				ORDER BY order_date
 				LIMIT 90`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "line",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis": "date",
 					"y_axis": "orders",
 				},
@@ -1232,7 +1232,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Revenue aggregated by week",
 			collection: "Trends",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					strftime('%Y-W%W', o.order_date) as week,
 					COUNT(DISTINCT o.id) as orders,
@@ -1242,9 +1242,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY week
 				ORDER BY week`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "area",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis": "week",
 					"y_axis": "revenue",
 				},
@@ -1255,7 +1255,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Revenue by quarter",
 			collection: "Trends",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					strftime('%Y', o.order_date) || '-Q' || ((CAST(strftime('%m', o.order_date) AS INTEGER) - 1) / 3 + 1) as quarter,
 					COUNT(DISTINCT o.id) as orders,
@@ -1265,9 +1265,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY quarter
 				ORDER BY quarter`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "bar",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis": "quarter",
 					"y_axis": "revenue",
 				},
@@ -1278,7 +1278,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Units sold per product over time",
 			collection: "Trends",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					p.name as product,
 					SUM(od.quantity) as total_units,
@@ -1291,9 +1291,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				ORDER BY total_units DESC
 				LIMIT 15`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "bar",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis": "product",
 					"y_axis": "total_units",
 				},
@@ -1304,7 +1304,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Revenue by month of year (seasonality)",
 			collection: "Trends",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					CASE strftime('%m', o.order_date)
 						WHEN '01' THEN 'January'
@@ -1327,9 +1327,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY strftime('%m', o.order_date)
 				ORDER BY strftime('%m', o.order_date)`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "bar",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis": "month_name",
 					"y_axis": "revenue",
 				},
@@ -1340,7 +1340,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "New customers over time",
 			collection: "Trends",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					strftime('%Y-%m', first_order) as month,
 					COUNT(*) as new_customers
@@ -1352,9 +1352,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY month
 				ORDER BY month`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "area",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis": "month",
 					"y_axis": "new_customers",
 				},
@@ -1365,7 +1365,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Revenue by category per month",
 			collection: "Trends",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					strftime('%Y-%m', o.order_date) as month,
 					c.name as category,
@@ -1377,9 +1377,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY month, c.id
 				ORDER BY month, revenue DESC`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "line",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"x_axis": "month",
 					"y_axis": "revenue",
 				},
@@ -1393,7 +1393,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Revenue changes month over month shown as waterfall",
 			collection: "Executive",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `WITH monthly AS (
 					SELECT
 						strftime('%Y-%m', o.order_date) as month,
@@ -1414,7 +1414,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				UNION ALL
 				SELECT 'Total', SUM(change) FROM changes`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "waterfall",
 			},
 		},
@@ -1423,7 +1423,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Product analysis with price, quantity, and revenue as bubble size",
 			collection: "Products",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					AVG(p.unit_price) as avg_price,
 					SUM(od.quantity) as total_quantity,
@@ -1435,7 +1435,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				ORDER BY total_revenue DESC
 				LIMIT 20`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "bubble",
 			},
 		},
@@ -1444,14 +1444,14 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Progress toward annual revenue goal",
 			collection: "Executive",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					SUM(od.unit_price * od.quantity * (1 - od.discount)) as current_revenue
 				FROM order_details od`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "progress",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"goal": 2000000,
 				},
 			},
@@ -1461,15 +1461,15 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Percentage of orders shipped on time",
 			collection: "Operations",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					CAST(100.0 * SUM(CASE WHEN shipped_date <= required_date THEN 1 ELSE 0 END) / COUNT(*) AS INTEGER) as on_time_rate
 				FROM orders
 				WHERE shipped_date IS NOT NULL`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "gauge",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"min": 0,
 					"max": 100,
 				},
@@ -1480,7 +1480,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Order stages from placed to delivered",
 			collection: "Operations",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					'Total Orders' as stage, COUNT(*) as count FROM orders
 				UNION ALL
@@ -1488,7 +1488,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				UNION ALL
 				SELECT 'On Time', COUNT(*) FROM orders WHERE shipped_date IS NOT NULL AND shipped_date <= required_date`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "funnel",
 			},
 		},
@@ -1497,7 +1497,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Geographic distribution of revenue by country",
 			collection: "Geographic",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					c.country,
 					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue
@@ -1507,7 +1507,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY c.country
 				ORDER BY revenue DESC`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "map-region",
 			},
 		},
@@ -1516,7 +1516,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Revenue share by product category as donut chart",
 			collection: "Sales",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					c.name as category,
 					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue
@@ -1526,7 +1526,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY c.id
 				ORDER BY revenue DESC`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "donut",
 			},
 		},
@@ -1535,7 +1535,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Revenue over time as filled area chart",
 			collection: "Trends",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					strftime('%Y-%m', o.order_date) as month,
 					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue
@@ -1544,9 +1544,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				GROUP BY month
 				ORDER BY month`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "area",
-				"settings": map[string]interface{}{
+				"settings": map[string]any{
 					"stacked": false,
 				},
 			},
@@ -1556,7 +1556,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Best selling products as horizontal bars",
 			collection: "Products",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					p.name as product,
 					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue
@@ -1566,7 +1566,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				ORDER BY revenue DESC
 				LIMIT 10`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "row",
 			},
 		},
@@ -1575,7 +1575,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			desc:       "Product price vs quantity sold scatter plot",
 			collection: "Products",
 			queryType:  "native",
-			query: map[string]interface{}{
+			query: map[string]any{
 				"sql": `SELECT
 					p.unit_price as price,
 					SUM(od.quantity) as quantity_sold
@@ -1583,7 +1583,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				JOIN order_details od ON p.id = od.product_id
 				GROUP BY p.id`,
 			},
-			viz: map[string]interface{}{
+			viz: map[string]any{
 				"type": "scatter",
 			},
 		},

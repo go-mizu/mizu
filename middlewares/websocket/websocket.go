@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 
@@ -97,13 +98,10 @@ func WithOptions(handler Handler, opts Options) mizu.Middleware {
 			if len(opts.Subprotocols) > 0 {
 				requested := r.Header.Get("Sec-WebSocket-Protocol")
 				if requested != "" {
-					for _, req := range strings.Split(requested, ",") {
+					for req := range strings.SplitSeq(requested, ",") {
 						req = strings.TrimSpace(req)
-						for _, supported := range opts.Subprotocols {
-							if req == supported {
-								protocol = req
-								break
-							}
+						if slices.Contains(opts.Subprotocols, req) {
+							protocol = req
 						}
 						if protocol != "" {
 							break

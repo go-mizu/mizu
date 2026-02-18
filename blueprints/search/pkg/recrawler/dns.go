@@ -366,9 +366,7 @@ func (d *DNSResolver) ResolveBatch(ctx context.Context, domains []string, worker
 	stdResolver := makeResolver("", batchTimeout)
 
 	for range maxWorkers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for domain := range ch {
 				var resolved bool
 				var lastErr error
@@ -436,7 +434,7 @@ func (d *DNSResolver) ResolveBatch(ctx context.Context, domains []string, worker
 					d.failed.Add(1)
 				}
 			}
-		}()
+		})
 	}
 
 	for _, domain := range toResolve {
@@ -541,10 +539,7 @@ func (d *DNSResolver) ResolveOne(ctx context.Context, domain string) (ips []stri
 	s.mu.RUnlock()
 
 	// Try each resolver sequentially with per-resolver timeout
-	perTimeout := d.lookupTimeout / time.Duration(len(d.resolvers))
-	if perTimeout < 300*time.Millisecond {
-		perTimeout = 300 * time.Millisecond
-	}
+	perTimeout := max(d.lookupTimeout/time.Duration(len(d.resolvers)), 300*time.Millisecond)
 
 	var lastErr error
 	for _, resolver := range d.resolvers {
@@ -693,9 +688,7 @@ func (d *DNSResolver) DeadDomainsWithErrors() map[string]string {
 	for i := range d.shards {
 		s := &d.shards[i]
 		s.mu.RLock()
-		for domain, errMsg := range s.dead {
-			result[domain] = errMsg
-		}
+		maps.Copy(result, s.dead)
 		s.mu.RUnlock()
 	}
 	return result
@@ -707,9 +700,7 @@ func (d *DNSResolver) TimeoutDomainsWithErrors() map[string]string {
 	for i := range d.shards {
 		s := &d.shards[i]
 		s.mu.RLock()
-		for domain, errMsg := range s.timeout {
-			result[domain] = errMsg
-		}
+		maps.Copy(result, s.timeout)
 		s.mu.RUnlock()
 	}
 	return result

@@ -110,7 +110,7 @@ func TestLog_Since_WithCursor(t *testing.T) {
 	l := memory.NewLog()
 
 	// Add 5 changes
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		l.Append(ctx, "scope", []sync.Change{{Data: []byte(`{}`)}})
 	}
 
@@ -132,7 +132,7 @@ func TestLog_Since_Limit(t *testing.T) {
 	l := memory.NewLog()
 
 	// Add 10 changes
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		l.Append(ctx, "scope", []sync.Change{{Data: []byte(`{}`)}})
 	}
 
@@ -173,7 +173,7 @@ func TestLog_Trim(t *testing.T) {
 	l := memory.NewLog()
 
 	// Add 5 changes
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		l.Append(ctx, "scope", []sync.Change{{Data: []byte(`{}`)}})
 	}
 
@@ -239,7 +239,7 @@ func TestLog_Concurrency(t *testing.T) {
 	l := memory.NewLog()
 
 	var wg gosync.WaitGroup
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -263,7 +263,7 @@ func TestLog_CursorTooOld(t *testing.T) {
 	l := memory.NewLog()
 
 	// Add changes and trim
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		l.Append(ctx, "scope", []sync.Change{{Data: []byte(`{}`)}})
 	}
 	l.Trim(ctx, "scope", 3)
@@ -360,7 +360,7 @@ func TestDedupe_Concurrency(t *testing.T) {
 	d := memory.NewDedupe()
 
 	var wg gosync.WaitGroup
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()

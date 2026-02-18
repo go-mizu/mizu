@@ -78,8 +78,8 @@ var (
 // Handles common WikiText patterns:
 // - [[Page]] → [Page](/page?wiki=xxx&title=Page)
 // - [[Page|Display]] → [Display](/page?wiki=xxx&title=Page)
-// - '''bold''' → **bold**
-// - ''italic'' → *italic*
+// - ”'bold”' → **bold**
+// - ”italic” → *italic*
 // - == Heading == → ## Heading
 // - {{templates}} → stripped
 // - <ref>...</ref> → stripped
@@ -103,7 +103,7 @@ func ConvertWikiTextToMarkdown(wikitext, wikiname string) string {
 	text = infoboxRe.ReplaceAllString(text, "")
 
 	// Remove templates (may need multiple passes for nested)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		newText := templateRe.ReplaceAllString(text, "")
 		if newText == text {
 			break

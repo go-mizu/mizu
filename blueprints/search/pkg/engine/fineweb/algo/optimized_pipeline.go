@@ -60,7 +60,7 @@ func NewOptimizedIndexer(numWorkers int) *OptimizedIndexer {
 	}
 
 	// Initialize shards
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		idx.shards[i] = &optimizedShard{
 			terms: make(map[uint64]*optimizedPostings, 10000),
 		}
@@ -72,7 +72,7 @@ func NewOptimizedIndexer(numWorkers int) *OptimizedIndexer {
 	for w := 0; w < numWorkers; w++ {
 		idx.workerTables[w] = NewFixedHashTable(4096)
 		idx.workerShards[w] = make([][]optimizedPosting, 256)
-		for s := 0; s < 256; s++ {
+		for s := range 256 {
 			idx.workerShards[w][s] = make([]optimizedPosting, 0, 1024)
 		}
 	}
@@ -87,14 +87,11 @@ func (idx *OptimizedIndexer) IndexBatch(texts []string, startDocID int) {
 	}
 
 	numDocs := len(texts)
-	numWorkers := idx.numWorkers
-	if numWorkers > numDocs {
-		numWorkers = numDocs
-	}
+	numWorkers := min(idx.numWorkers, numDocs)
 
 	// Clear worker buffers
-	for w := 0; w < numWorkers; w++ {
-		for s := 0; s < 256; s++ {
+	for w := range numWorkers {
+		for s := range 256 {
 			idx.workerShards[w][s] = idx.workerShards[w][s][:0]
 		}
 	}
@@ -104,12 +101,9 @@ func (idx *OptimizedIndexer) IndexBatch(texts []string, startDocID int) {
 	batchSize := (numDocs + numWorkers - 1) / numWorkers
 
 	// Phase 1: Parallel tokenization
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		start := w * batchSize
-		end := start + batchSize
-		if end > numDocs {
-			end = numDocs
-		}
+		end := min(start+batchSize, numDocs)
 		if start >= end {
 			break
 		}
@@ -124,10 +118,7 @@ func (idx *OptimizedIndexer) IndexBatch(texts []string, startDocID int) {
 				docID := uint32(startDocID + i)
 
 				// Tokenize with zero-allocation in hot path
-				docLen := optimizedTokenize(texts[i], table)
-				if docLen > 65535 {
-					docLen = 65535
-				}
+				docLen := min(optimizedTokenize(texts[i], table), 65535)
 				docLensLocal[i] = uint16(docLen)
 
 				// Distribute to local shards
@@ -163,12 +154,9 @@ func (idx *OptimizedIndexer) IndexBatch(texts []string, startDocID int) {
 	// Phase 2: Parallel shard updates
 	shardsPerWorker := (256 + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startShard := w * shardsPerWorker
-		endShard := startShard + shardsPerWorker
-		if endShard > 256 {
-			endShard = 256
-		}
+		endShard := min(startShard+shardsPerWorker, 256)
 		if startShard >= endShard {
 			break
 		}
@@ -317,7 +305,7 @@ func (idx *OptimizedIndexer) Finish() (*SegmentedIndex, error) {
 	avgDocLen := float64(idx.totalLen.Load()) / float64(numDocs)
 	terms := make(map[string]*SegmentPostings)
 
-	for shardID := 0; shardID < 256; shardID++ {
+	for shardID := range 256 {
 		shard := idx.shards[shardID]
 		for hash, pl := range shard.terms {
 			hashKey := hashToKey(hash)

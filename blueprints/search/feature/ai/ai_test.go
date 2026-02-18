@@ -106,10 +106,10 @@ func (m *mockProvider) Ping(ctx context.Context) error {
 // mockSearchService implements a minimal search interface
 type mockSearchService struct{}
 
-func (m *mockSearchService) Search(ctx context.Context, query string, opts interface{}) (interface{}, error) {
+func (m *mockSearchService) Search(ctx context.Context, query string, opts any) (any, error) {
 	// Return mock search results
-	return map[string]interface{}{
-		"results": []map[string]interface{}{
+	return map[string]any{
+		"results": []map[string]any{
 			{"url": "https://example.com/1", "title": "Result 1", "snippet": "This is result 1"},
 			{"url": "https://example.com/2", "title": "Result 2", "snippet": "This is result 2"},
 		},
@@ -609,9 +609,9 @@ func TestStreamResponseWithUsage(t *testing.T) {
 		SessionID:   "test-session",
 		SourcesUsed: 1,
 		Usage: &ai.TokenUsage{
-			InputTokens:    100,
-			OutputTokens:   50,
-			TotalTokens:    150,
+			InputTokens:     100,
+			OutputTokens:    50,
+			TotalTokens:     150,
 			TokensPerSecond: 30.0,
 		},
 	}
@@ -647,8 +647,8 @@ func TestRelatedQuestionStruct(t *testing.T) {
 
 func TestResponseWithFollowUps(t *testing.T) {
 	resp := ai.Response{
-		Answer:   "Test answer",
-		Mode:     ai.ModeQuick,
+		Answer:    "Test answer",
+		Mode:      ai.ModeQuick,
 		FollowUps: []string{"Follow up 1", "Follow up 2", "Follow up 3"},
 		RelatedQuestions: []ai.RelatedQuestion{
 			{Text: "Related question 1", Category: "related"},

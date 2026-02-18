@@ -19,13 +19,13 @@ func TestDatabaseRowsIntegration(t *testing.T) {
 
 	// Create a database with properties
 	var db databases.Database
-	resp := ts.Request("POST", "/api/v1/databases", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/databases", map[string]any{
 		"workspace_id": ws.ID,
 		"page_id":      "page123",
 		"title":        "Task Database",
-		"properties": []map[string]interface{}{
+		"properties": []map[string]any{
 			{"name": "Title", "type": "title"},
-			{"name": "Status", "type": "select", "config": map[string]interface{}{
+			{"name": "Status", "type": "select", "config": map[string]any{
 				"options": []map[string]string{
 					{"name": "Todo", "color": "gray"},
 					{"name": "In Progress", "color": "blue"},
@@ -47,7 +47,7 @@ func TestDatabaseRowsIntegration(t *testing.T) {
 	}
 
 	t.Run("create rows", func(t *testing.T) {
-		testRows := []map[string]interface{}{
+		testRows := []map[string]any{
 			{"title": "Task 1", "status": "Todo", "priority": 1},
 			{"title": "Task 2", "status": "In Progress", "priority": 2},
 			{"title": "Task 3", "status": "Done", "priority": 3},
@@ -56,7 +56,7 @@ func TestDatabaseRowsIntegration(t *testing.T) {
 		}
 
 		for _, props := range testRows {
-			resp := ts.Request("POST", "/api/v1/databases/"+db.ID+"/rows", map[string]interface{}{
+			resp := ts.Request("POST", "/api/v1/databases/"+db.ID+"/rows", map[string]any{
 				"properties": props,
 			}, cookie)
 			ts.ExpectStatus(resp, http.StatusCreated)
@@ -144,8 +144,8 @@ func TestDatabaseRowsIntegration(t *testing.T) {
 			t.Skip("no row to update")
 		}
 
-		resp := ts.Request("PATCH", "/api/v1/rows/"+firstRowID, map[string]interface{}{
-			"properties": map[string]interface{}{
+		resp := ts.Request("PATCH", "/api/v1/rows/"+firstRowID, map[string]any{
+			"properties": map[string]any{
 				"status":   "Done",
 				"priority": 10,
 			},
@@ -194,7 +194,7 @@ func TestDatabaseRowsIntegration(t *testing.T) {
 
 	t.Run("create view for database", func(t *testing.T) {
 		// Test creating view via /databases/{id}/views path
-		resp := ts.Request("POST", "/api/v1/databases/"+db.ID+"/views", map[string]interface{}{
+		resp := ts.Request("POST", "/api/v1/databases/"+db.ID+"/views", map[string]any{
 			"name": "Kanban Board",
 			"type": "board",
 		}, cookie)

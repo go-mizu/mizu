@@ -117,7 +117,7 @@ func TestHighThroughput(t *testing.T) {
 	successCount := 0
 	var mu sync.Mutex
 
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -251,7 +251,7 @@ func TestLimiter_AdjustHighErrorRate(t *testing.T) {
 	})
 
 	// Simulate high error rate
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		limiter.requestCount++
 		if i < 50 { // 50% error rate
 			limiter.errorCount++
@@ -278,7 +278,7 @@ func TestLimiter_AdjustHighLatency(t *testing.T) {
 	})
 
 	// Simulate high latency
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		limiter.requestCount++
 		limiter.totalLatency += int64(200 * time.Millisecond) // High latency
 	}
@@ -302,7 +302,7 @@ func TestLimiter_AdjustLowLatencyAndErrors(t *testing.T) {
 	})
 
 	// Simulate low latency and no errors
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		limiter.requestCount++
 		limiter.totalLatency += int64(20 * time.Millisecond) // Very low latency
 	}
@@ -326,14 +326,14 @@ func TestLimiter_AdjustClampToMin(t *testing.T) {
 	})
 
 	// Simulate high error rate to force decrease
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		limiter.requestCount++
 		limiter.errorCount++ // 100% error rate
 		limiter.totalLatency += int64(50 * time.Millisecond)
 	}
 
 	// Force multiple adjustments to hit min
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		// Simulate high error rate each time
 		limiter.requestCount = 100
 		limiter.errorCount = 100
@@ -358,7 +358,7 @@ func TestLimiter_AdjustClampToMax(t *testing.T) {
 	})
 
 	// Simulate excellent performance to force increase
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		limiter.requestCount = 100
 		limiter.errorCount = 0
 		limiter.totalLatency = int64(100 * 10 * time.Millisecond) // Very low latency
@@ -378,7 +378,7 @@ func TestLimiter_AllowTokenRefill(t *testing.T) {
 	})
 
 	// Exhaust all tokens
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		limiter.allow()
 	}
 
@@ -407,7 +407,7 @@ func TestLimiter_AllowTokenCap(t *testing.T) {
 
 	// Tokens should be capped at rate
 	// We can verify this indirectly by consuming tokens
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if !limiter.allow() {
 			t.Errorf("should have token %d", i)
 		}

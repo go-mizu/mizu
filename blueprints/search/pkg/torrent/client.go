@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -109,12 +110,13 @@ func (c *Client) addTorrent(ctx context.Context) error {
 	}
 
 	// Build magnet URI with trackers
-	magnetURI := fmt.Sprintf("magnet:?xt=urn:btih:%s", c.cfg.InfoHash)
+	var magnetURI strings.Builder
+	magnetURI.WriteString(fmt.Sprintf("magnet:?xt=urn:btih:%s", c.cfg.InfoHash))
 	for _, tr := range c.cfg.Trackers {
-		magnetURI += "&tr=" + url.QueryEscape(tr)
+		magnetURI.WriteString("&tr=" + url.QueryEscape(tr))
 	}
 
-	t, err := c.cl.AddMagnet(magnetURI)
+	t, err := c.cl.AddMagnet(magnetURI.String())
 	if err != nil {
 		return fmt.Errorf("add torrent: %w", err)
 	}

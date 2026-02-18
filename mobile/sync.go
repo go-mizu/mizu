@@ -115,10 +115,9 @@ func ParseSyncRequest(c *mizu.Ctx) SyncRequest {
 	// Parse limit
 	if limit := c.Query("limit"); limit != "" {
 		if n, err := strconv.Atoi(limit); err == nil && n > 0 {
-			req.Limit = n
-			if req.Limit > 1000 {
-				req.Limit = 1000 // Cap at 1000
-			}
+			req.Limit = min(n,
+				// Cap at 1000
+				1000)
 		}
 	}
 

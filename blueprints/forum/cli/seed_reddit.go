@@ -208,7 +208,7 @@ func runSeedReddit(cmd *cobra.Command, args []string) error {
 
 func parseSubreddits(s string) []string {
 	var result []string
-	for _, sub := range strings.Split(s, ",") {
+	for sub := range strings.SplitSeq(s, ",") {
 		sub = strings.TrimSpace(sub)
 		sub = strings.TrimPrefix(sub, "r/")
 		sub = strings.TrimPrefix(sub, "/r/")

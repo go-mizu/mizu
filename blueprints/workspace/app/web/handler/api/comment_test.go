@@ -18,16 +18,16 @@ func TestCommentCreate(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		body       map[string]interface{}
+		body       map[string]any
 		wantStatus int
 	}{
 		{
 			name: "page comment",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"workspace_id": ws.ID,
 				"target_type":  "page",
 				"target_id":    page.ID,
-				"content": []map[string]interface{}{
+				"content": []map[string]any{
 					{"type": "text", "text": "This is a comment"},
 				},
 			},
@@ -35,15 +35,15 @@ func TestCommentCreate(t *testing.T) {
 		},
 		{
 			name: "comment with formatting",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"workspace_id": ws.ID,
 				"target_type":  "page",
 				"target_id":    page.ID,
-				"content": []map[string]interface{}{
+				"content": []map[string]any{
 					{
 						"type": "text",
 						"text": "Bold comment",
-						"annotations": map[string]interface{}{
+						"annotations": map[string]any{
 							"bold": true,
 						},
 					},
@@ -53,8 +53,8 @@ func TestCommentCreate(t *testing.T) {
 		},
 		{
 			name: "missing target",
-			body: map[string]interface{}{
-				"content": []map[string]interface{}{
+			body: map[string]any{
+				"content": []map[string]any{
 					{"type": "text", "text": "No target"},
 				},
 			},
@@ -94,11 +94,11 @@ func TestCommentCreateReply(t *testing.T) {
 	page := createTestPage(ts, cookie, ws.ID, "Reply Test Page")
 
 	// Create parent comment
-	resp := ts.Request("POST", "/api/v1/comments", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/comments", map[string]any{
 		"workspace_id": ws.ID,
 		"target_type":  "page",
 		"target_id":    page.ID,
-		"content": []map[string]interface{}{
+		"content": []map[string]any{
 			{"type": "text", "text": "Parent comment"},
 		},
 	}, cookie)
@@ -108,12 +108,12 @@ func TestCommentCreateReply(t *testing.T) {
 	ts.ParseJSON(resp, &parent)
 
 	// Create reply
-	resp = ts.Request("POST", "/api/v1/comments", map[string]interface{}{
+	resp = ts.Request("POST", "/api/v1/comments", map[string]any{
 		"workspace_id": ws.ID,
 		"target_type":  "page",
 		"target_id":    page.ID,
 		"parent_id":    parent.ID,
-		"content": []map[string]interface{}{
+		"content": []map[string]any{
 			{"type": "text", "text": "Reply comment"},
 		},
 	}, cookie)
@@ -137,11 +137,11 @@ func TestCommentUpdate(t *testing.T) {
 	page := createTestPage(ts, cookie, ws.ID, "Update Test Page")
 
 	// Create comment
-	resp := ts.Request("POST", "/api/v1/comments", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/comments", map[string]any{
 		"workspace_id": ws.ID,
 		"target_type":  "page",
 		"target_id":    page.ID,
-		"content": []map[string]interface{}{
+		"content": []map[string]any{
 			{"type": "text", "text": "Original comment"},
 		},
 	}, cookie)
@@ -151,8 +151,8 @@ func TestCommentUpdate(t *testing.T) {
 	ts.ParseJSON(resp, &created)
 
 	t.Run("update content", func(t *testing.T) {
-		resp := ts.Request("PATCH", "/api/v1/comments/"+created.ID, map[string]interface{}{
-			"content": []map[string]interface{}{
+		resp := ts.Request("PATCH", "/api/v1/comments/"+created.ID, map[string]any{
+			"content": []map[string]any{
 				{"type": "text", "text": "Updated comment"},
 			},
 		}, cookie)
@@ -167,8 +167,8 @@ func TestCommentUpdate(t *testing.T) {
 	})
 
 	t.Run("non-existent comment", func(t *testing.T) {
-		resp := ts.Request("PATCH", "/api/v1/comments/non-existent-id", map[string]interface{}{
-			"content": []map[string]interface{}{
+		resp := ts.Request("PATCH", "/api/v1/comments/non-existent-id", map[string]any{
+			"content": []map[string]any{
 				{"type": "text", "text": "Update"},
 			},
 		}, cookie)
@@ -187,11 +187,11 @@ func TestCommentDelete(t *testing.T) {
 	page := createTestPage(ts, cookie, ws.ID, "Delete Test Page")
 
 	// Create comment
-	resp := ts.Request("POST", "/api/v1/comments", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/comments", map[string]any{
 		"workspace_id": ws.ID,
 		"target_type":  "page",
 		"target_id":    page.ID,
-		"content": []map[string]interface{}{
+		"content": []map[string]any{
 			{"type": "text", "text": "To delete"},
 		},
 	}, cookie)
@@ -217,12 +217,12 @@ func TestCommentList(t *testing.T) {
 	page := createTestPage(ts, cookie, ws.ID, "List Test Page")
 
 	// Create comments
-	for i := 0; i < 3; i++ {
-		resp := ts.Request("POST", "/api/v1/comments", map[string]interface{}{
+	for i := range 3 {
+		resp := ts.Request("POST", "/api/v1/comments", map[string]any{
 			"workspace_id": ws.ID,
 			"target_type":  "page",
 			"target_id":    page.ID,
-			"content": []map[string]interface{}{
+			"content": []map[string]any{
 				{"type": "text", "text": "Comment " + string(rune('A'+i))},
 			},
 		}, cookie)
@@ -253,11 +253,11 @@ func TestCommentResolve(t *testing.T) {
 	page := createTestPage(ts, cookie, ws.ID, "Resolve Test Page")
 
 	// Create comment
-	resp := ts.Request("POST", "/api/v1/comments", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/comments", map[string]any{
 		"workspace_id": ws.ID,
 		"target_type":  "page",
 		"target_id":    page.ID,
-		"content": []map[string]interface{}{
+		"content": []map[string]any{
 			{"type": "text", "text": "To resolve"},
 		},
 	}, cookie)
@@ -287,11 +287,11 @@ func TestCommentThreaded(t *testing.T) {
 	page := createTestPage(ts, cookie, ws.ID, "Thread Test Page")
 
 	// Create parent comment
-	resp := ts.Request("POST", "/api/v1/comments", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/comments", map[string]any{
 		"workspace_id": ws.ID,
 		"target_type":  "page",
 		"target_id":    page.ID,
-		"content": []map[string]interface{}{
+		"content": []map[string]any{
 			{"type": "text", "text": "Thread starter"},
 		},
 	}, cookie)
@@ -301,13 +301,13 @@ func TestCommentThreaded(t *testing.T) {
 	ts.ParseJSON(resp, &parent)
 
 	// Create multiple replies
-	for i := 0; i < 3; i++ {
-		resp := ts.Request("POST", "/api/v1/comments", map[string]interface{}{
+	for i := range 3 {
+		resp := ts.Request("POST", "/api/v1/comments", map[string]any{
 			"workspace_id": ws.ID,
 			"target_type":  "page",
 			"target_id":    page.ID,
 			"parent_id":    parent.ID,
-			"content": []map[string]interface{}{
+			"content": []map[string]any{
 				{"type": "text", "text": "Reply " + string(rune('1'+i))},
 			},
 		}, cookie)
@@ -343,16 +343,16 @@ func TestCommentWithMention(t *testing.T) {
 	page := createTestPage(ts, cookie1, ws.ID, "Mention Test Page")
 
 	// Create comment with mention
-	resp := ts.Request("POST", "/api/v1/comments", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/comments", map[string]any{
 		"workspace_id": ws.ID,
 		"target_type":  "page",
 		"target_id":    page.ID,
-		"content": []map[string]interface{}{
+		"content": []map[string]any{
 			{"type": "text", "text": "Hey "},
 			{
 				"type": "text",
 				"text": "@Mentioned",
-				"mention": map[string]interface{}{
+				"mention": map[string]any{
 					"type":    "user",
 					"user_id": user2.ID,
 				},
@@ -380,11 +380,11 @@ func TestCommentUnauthenticated(t *testing.T) {
 	page := createTestPage(ts, cookie, ws.ID, "Auth Test Page")
 
 	// Create comment
-	resp := ts.Request("POST", "/api/v1/comments", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/comments", map[string]any{
 		"workspace_id": ws.ID,
 		"target_type":  "page",
 		"target_id":    page.ID,
-		"content": []map[string]interface{}{
+		"content": []map[string]any{
 			{"type": "text", "text": "Auth test"},
 		},
 	}, cookie)

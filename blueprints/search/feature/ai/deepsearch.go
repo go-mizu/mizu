@@ -27,10 +27,10 @@ type DeepSearchConfig struct {
 
 // DeepSearchProgress represents the progress of a deep search operation.
 type DeepSearchProgress struct {
-	Phase       string `json:"phase"`        // searching, fetching, analyzing, writing
-	Current     int    `json:"current"`      // Current item number
-	Total       int    `json:"total"`        // Total items
-	Message     string `json:"message"`      // Human-readable status
+	Phase       string `json:"phase"`             // searching, fetching, analyzing, writing
+	Current     int    `json:"current"`           // Current item number
+	Total       int    `json:"total"`             // Total items
+	Message     string `json:"message"`           // Human-readable status
 	SectionName string `json:"section,omitempty"` // Current section being written
 }
 
@@ -56,17 +56,17 @@ type ReportSection struct {
 
 // DeepSearchResponse represents the full deep search response.
 type DeepSearchResponse struct {
-	Query      string              `json:"query"`
-	Overview   string              `json:"overview"`
+	Query       string             `json:"query"`
+	Overview    string             `json:"overview"`
 	KeyFindings []string           `json:"key_findings"`
-	Sections   []ReportSection     `json:"sections"`
-	Methodology string              `json:"methodology"`
-	Citations  []session.Citation  `json:"citations"`
-	Sources    []Source            `json:"sources"`
-	FollowUps  []string            `json:"follow_ups"`
-	SessionID  string              `json:"session_id"`
-	Mode       Mode                `json:"mode"`
-	Duration   time.Duration       `json:"duration"`
+	Sections    []ReportSection    `json:"sections"`
+	Methodology string             `json:"methodology"`
+	Citations   []session.Citation `json:"citations"`
+	Sources     []Source           `json:"sources"`
+	FollowUps   []string           `json:"follow_ups"`
+	SessionID   string             `json:"session_id"`
+	Mode        Mode               `json:"mode"`
+	Duration    time.Duration      `json:"duration"`
 }
 
 // ProcessDeepSearch performs a comprehensive deep search.
@@ -401,9 +401,7 @@ func (s *Service) fetchSourcesParallel(ctx context.Context, urls []string, cfg D
 	// Start workers
 	var wg sync.WaitGroup
 	for i := 0; i < cfg.WorkerPool; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for url := range urlCh {
 				fetchCtx, cancel := context.WithTimeout(ctx, cfg.FetchTimeout)
 				doc, err := s.chunker.Fetch(fetchCtx, url)
@@ -423,7 +421,7 @@ func (s *Service) fetchSourcesParallel(ctx context.Context, urls []string, cfg D
 					chunks: doc.Chunks,
 				}
 			}
-		}()
+		})
 	}
 
 	// Send URLs to workers
@@ -468,9 +466,7 @@ func (s *Service) fetchSourcesParallelWithProgress(ctx context.Context, urls []s
 	// Start workers
 	var wg sync.WaitGroup
 	for i := 0; i < cfg.WorkerPool; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for url := range urlCh {
 				fetchCtx, cancel := context.WithTimeout(ctx, cfg.FetchTimeout)
 				doc, err := s.chunker.Fetch(fetchCtx, url)
@@ -509,7 +505,7 @@ func (s *Service) fetchSourcesParallelWithProgress(ctx context.Context, urls []s
 
 				resultCh <- result{source: src, chunks: doc.Chunks}
 			}
-		}()
+		})
 	}
 
 	// Send URLs
@@ -717,10 +713,10 @@ Use inline citations [1], [2] etc. Be comprehensive and accurate.`, len(sources)
 
 			// Track section changes
 			if strings.Contains(event.Delta, "## ") {
-				lines := strings.Split(fullText.String(), "\n")
-				for _, line := range lines {
-					if strings.HasPrefix(line, "## ") {
-						newSection := strings.TrimPrefix(line, "## ")
+				lines := strings.SplitSeq(fullText.String(), "\n")
+				for line := range lines {
+					if after, ok := strings.CutPrefix(line, "## "); ok {
+						newSection := after
 						if newSection != currentSection {
 							currentSection = newSection
 							ch <- DeepSearchStreamEvent{
@@ -765,7 +761,7 @@ func (s *Service) parseDeepReport(content string) *deepReport {
 				report.Overview = strings.TrimSpace(currentContent.String())
 			} else if currentSection == "Key Findings" {
 				// Parse key findings
-				for _, l := range strings.Split(currentContent.String(), "\n") {
+				for l := range strings.SplitSeq(currentContent.String(), "\n") {
 					l = strings.TrimSpace(l)
 					if strings.HasPrefix(l, "- ") || strings.HasPrefix(l, "* ") {
 						report.KeyFindings = append(report.KeyFindings, strings.TrimLeft(l, "- *"))

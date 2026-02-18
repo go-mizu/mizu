@@ -122,7 +122,7 @@ func TestMemoryCacheClear(t *testing.T) {
 	ctx := context.Background()
 
 	// Add entries for two data sources
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		result := &CachedResult{
 			DataSourceID: "ds-1",
 			QueryHash:    "key-" + string(rune('a'+i)),
@@ -131,7 +131,7 @@ func TestMemoryCacheClear(t *testing.T) {
 		cache.Set(ctx, result.QueryHash, result, time.Hour)
 	}
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		result := &CachedResult{
 			DataSourceID: "ds-2",
 			QueryHash:    "key-" + string(rune('f'+i)),
@@ -145,13 +145,13 @@ func TestMemoryCacheClear(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify ds-1 entries are gone
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		got, _ := cache.Get(ctx, "key-"+string(rune('a'+i)))
 		assert.Nil(t, got)
 	}
 
 	// Verify ds-2 entries still exist
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		got, _ := cache.Get(ctx, "key-"+string(rune('f'+i)))
 		assert.NotNil(t, got)
 	}
@@ -164,7 +164,7 @@ func TestMemoryCacheStats(t *testing.T) {
 	ctx := context.Background()
 
 	// Add entries
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		result := &CachedResult{
 			DataSourceID: "ds-123",
 			QueryHash:    "key-" + string(rune('a'+i)),
@@ -234,7 +234,7 @@ func TestMemoryCacheEviction(t *testing.T) {
 	ctx := context.Background()
 
 	// Fill cache to max
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		result := &CachedResult{
 			DataSourceID: "ds-123",
 			QueryHash:    "key-" + string(rune('a'+i)),
@@ -280,7 +280,7 @@ func TestMemoryCacheHitCount(t *testing.T) {
 	cache.Set(ctx, key, result, time.Hour)
 
 	// Get multiple times
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		got, _ := cache.Get(ctx, key)
 		assert.Equal(t, int64(i+1), got.HitCount)
 	}
@@ -343,12 +343,12 @@ type MockDriver struct {
 	executeFunc func(ctx context.Context, query string, params ...any) (*drivers.QueryResult, error)
 }
 
-func (m *MockDriver) Name() string                            { return "mock" }
+func (m *MockDriver) Name() string                                          { return "mock" }
 func (m *MockDriver) Open(ctx context.Context, config drivers.Config) error { return nil }
-func (m *MockDriver) Close() error                            { return nil }
-func (m *MockDriver) Ping(ctx context.Context) error          { return nil }
-func (m *MockDriver) DB() *sql.DB                             { return m.db }
-func (m *MockDriver) QuoteIdentifier(s string) string         { return `"` + s + `"` }
+func (m *MockDriver) Close() error                                          { return nil }
+func (m *MockDriver) Ping(ctx context.Context) error                        { return nil }
+func (m *MockDriver) DB() *sql.DB                                           { return m.db }
+func (m *MockDriver) QuoteIdentifier(s string) string                       { return `"` + s + `"` }
 func (m *MockDriver) ListSchemas(ctx context.Context) ([]string, error) {
 	return nil, nil
 }

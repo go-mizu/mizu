@@ -2,9 +2,9 @@
 //
 // Profiling shows tokenization takes 41.4% of time, with map operations being expensive.
 // New approach:
-//   1. Collect hashes into a slice (no map lookup)
-//   2. Sort the slice
-//   3. Count duplicates in sorted order (linear scan)
+//  1. Collect hashes into a slice (no map lookup)
+//  2. Sort the slice
+//  3. Count duplicates in sorted order (linear scan)
 //
 // This eliminates:
 //   - Map allocation
@@ -13,7 +13,7 @@
 package algo
 
 import (
-	"sort"
+	"slices"
 	"unsafe"
 )
 
@@ -69,7 +69,7 @@ func FastTokenize(text string) ([]uint64, []uint16, int) {
 	}
 
 	// Sort hashes
-	sort.Slice(hashes, func(i, j int) bool { return hashes[i] < hashes[j] })
+	slices.Sort(hashes)
 
 	// Deduplicate and count
 	uniqueHashes := make([]uint64, 0, len(hashes)/2)
@@ -321,7 +321,7 @@ func (h *FixedHashTable) Insert(hash uint64) bool {
 	idx := hash & h.mask
 	size := int(h.mask) + 1
 	// Limit probing to prevent infinite loop if table is full
-	for i := 0; i < size; i++ {
+	for range size {
 		if h.keys[idx] == 0 {
 			// Empty slot - insert new
 			h.keys[idx] = hash

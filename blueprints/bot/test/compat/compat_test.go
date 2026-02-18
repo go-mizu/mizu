@@ -394,7 +394,7 @@ func TestConfigBackupRotation(t *testing.T) {
 	// Import and call SaveRawConfig multiple times.
 	// Since we can't import the config package in this test package easily,
 	// simulate the backup rotation logic.
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		// Simulate rotation.
 		rotateBackups(cfgPath, 5)
 

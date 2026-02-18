@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -179,13 +180,7 @@ func applyRule(field, value, rule, customMessage string) *ValidationError {
 
 	case "in":
 		options := strings.Split(ruleParam, ",")
-		valid = false
-		for _, opt := range options {
-			if value == opt {
-				valid = true
-				break
-			}
-		}
+		valid = slices.Contains(options, value)
 		message = "must be one of: " + ruleParam
 
 	case "url":

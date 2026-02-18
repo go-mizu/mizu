@@ -73,10 +73,7 @@ func (s *RecordsStore) CreateBatch(ctx context.Context, recs []*records.Record) 
 	// PostgreSQL can handle larger batches than DuckDB
 	batchSize := 1000
 	for i := 0; i < len(recs); i += batchSize {
-		end := i + batchSize
-		if end > len(recs) {
-			end = len(recs)
-		}
+		end := min(i+batchSize, len(recs))
 		batch := recs[i:end]
 
 		// Build batch insert query with strings.Builder for efficient string construction
@@ -240,10 +237,7 @@ func (s *RecordsStore) List(ctx context.Context, tableID string, opts records.Li
 	defer rows.Close()
 
 	// Pre-allocate slice with expected capacity to avoid multiple allocations
-	expectedSize := opts.Limit
-	if total-opts.Offset < expectedSize {
-		expectedSize = total - opts.Offset
-	}
+	expectedSize := min(total-opts.Offset, opts.Limit)
 	if expectedSize < 0 {
 		expectedSize = 0
 	}

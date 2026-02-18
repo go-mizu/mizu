@@ -106,13 +106,10 @@ func BenchmarkIndexerComparison(b *testing.B) {
 			start := time.Now()
 
 			for i := 0; i < len(allTexts); i += batchSize {
-				end := i + batchSize
-				if end > len(allTexts) {
-					end = len(allTexts)
-				}
+				end := min(i+batchSize, len(allTexts))
 
 				n := end - i
-				for j := 0; j < n; j++ {
+				for j := range n {
 					docIDs[j] = uint32(i + j)
 					texts[j] = allTexts[i+j]
 				}
@@ -183,13 +180,10 @@ func TestWorkerScalingTurbo(t *testing.T) {
 
 			start := time.Now()
 			for i := 0; i < len(allTexts); i += batchSize {
-				end := i + batchSize
-				if end > len(allTexts) {
-					end = len(allTexts)
-				}
+				end := min(i+batchSize, len(allTexts))
 
 				n := end - i
-				for j := 0; j < n; j++ {
+				for j := range n {
 					docIDs[j] = uint32(i + j)
 					texts[j] = allTexts[i+j]
 				}

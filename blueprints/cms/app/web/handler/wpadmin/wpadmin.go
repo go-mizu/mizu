@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -452,12 +453,12 @@ func (h *Handler) Dashboard(c *mizu.Ctx) error {
 			postTitle = post.Title
 		}
 		recentComments = append(recentComments, &CommentRow{
-			Comment:     cm,
-			AuthorName:  cm.AuthorName,
-			AuthorEmail: cm.AuthorEmail,
+			Comment:      cm,
+			AuthorName:   cm.AuthorName,
+			AuthorEmail:  cm.AuthorEmail,
 			AuthorAvatar: gravatarURL(cm.AuthorEmail, 32),
-			PostTitle:   postTitle,
-			PostEditURL: fmt.Sprintf("/wp-admin/post.php?post=%s&action=edit", cm.PostID),
+			PostTitle:    postTitle,
+			PostEditURL:  fmt.Sprintf("/wp-admin/post.php?post=%s&action=edit", cm.PostID),
 		})
 	}
 
@@ -474,15 +475,15 @@ func (h *Handler) Dashboard(c *mizu.Ctx) error {
 	}
 
 	return render(h, c, "dashboard", DashboardData{
-		Title:       "Dashboard",
-		User:        user,
-		Menu:        h.buildMenu(c, "dashboard"),
-		Breadcrumbs: []Breadcrumb{{Label: "Dashboard", URL: "/wp-admin/"}},
-		SiteTitle:   siteTitle,
-		SiteURL:     h.baseURL,
-		AtAGlance:   atAGlance,
-		Activity:    activity,
-		QuickDraft:  QuickDraftData{Enabled: true},
+		Title:          "Dashboard",
+		User:           user,
+		Menu:           h.buildMenu(c, "dashboard"),
+		Breadcrumbs:    []Breadcrumb{{Label: "Dashboard", URL: "/wp-admin/"}},
+		SiteTitle:      siteTitle,
+		SiteURL:        h.baseURL,
+		AtAGlance:      atAGlance,
+		Activity:       activity,
+		QuickDraft:     QuickDraftData{Enabled: true},
 		RecentDrafts:   recentDrafts,
 		RecentComments: recentComments,
 		WelcomePanel:   true,
@@ -795,13 +796,7 @@ func buildCategoryTree(cats []*categories.Category, selected []string) []*Catego
 	buildTree = func(cats []*categories.Category, depth int) []*CategoryOption {
 		var result []*CategoryOption
 		for _, cat := range cats {
-			isSelected := false
-			for _, s := range selected {
-				if s == cat.ID {
-					isSelected = true
-					break
-				}
-			}
+			isSelected := slices.Contains(selected, cat.ID)
 			opt := &CategoryOption{
 				Category: cat,
 				Depth:    depth,
@@ -2271,7 +2266,7 @@ func (h *Handler) PostSave(c *mizu.Ctx) error {
 	tagsInput := c.Request().FormValue("tax_input[post_tag]")
 	var tagNames []string
 	if tagsInput != "" {
-		for _, name := range strings.Split(tagsInput, ",") {
+		for name := range strings.SplitSeq(tagsInput, ",") {
 			name = strings.TrimSpace(name)
 			if name != "" {
 				tagNames = append(tagNames, name)

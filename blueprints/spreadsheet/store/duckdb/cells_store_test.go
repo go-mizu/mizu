@@ -296,8 +296,8 @@ func TestCellsStore_GetRange(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a 3x3 grid of cells
-	for row := 0; row < 3; row++ {
-		for col := 0; col < 3; col++ {
+	for row := range 3 {
+		for col := range 3 {
 			CreateTestCell(t, f.DB, f.Sheet.ID, row, col)
 		}
 	}
@@ -386,8 +386,8 @@ func TestCellsStore_DeleteRange(t *testing.T) {
 	ctx := context.Background()
 
 	// Create cells
-	for row := 0; row < 5; row++ {
-		for col := 0; col < 5; col++ {
+	for row := range 5 {
+		for col := range 5 {
 			CreateTestCell(t, f.DB, f.Sheet.ID, row, col)
 		}
 	}
@@ -429,7 +429,7 @@ func TestCellsStore_BatchSet(t *testing.T) {
 
 	now := FixedTime()
 	cellList := make([]*cells.Cell, 10)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		cellList[i] = &cells.Cell{
 			ID:        NewTestID(),
 			SheetID:   f.Sheet.ID,
@@ -518,7 +518,7 @@ func TestCellsStore_BatchSet_Large(t *testing.T) {
 	now := FixedTime()
 	const count = 1000
 	cellList := make([]*cells.Cell, count)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		cellList[i] = &cells.Cell{
 			ID:        NewTestID(),
 			SheetID:   f.Sheet.ID,
@@ -981,7 +981,7 @@ func TestCellsStore_CellTypes(t *testing.T) {
 	tests := []struct {
 		name     string
 		cellType cells.CellType
-		value    interface{}
+		value    any
 	}{
 		{"text", cells.CellTypeText, "Hello"},
 		{"number", cells.CellTypeNumber, 42.5},
@@ -1213,16 +1213,16 @@ func TestCellsStore_GetByPositions_Dense(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a dense 5x5 grid
-	for row := 0; row < 5; row++ {
-		for col := 0; col < 5; col++ {
+	for row := range 5 {
+		for col := range 5 {
 			CreateTestCell(t, f.DB, f.Sheet.ID, row, col)
 		}
 	}
 
 	// Request all 25 positions (dense query should use bounding box)
 	positions := make([]cells.CellPosition, 0, 25)
-	for row := 0; row < 5; row++ {
-		for col := 0; col < 5; col++ {
+	for row := range 5 {
+		for col := range 5 {
 			positions = append(positions, cells.CellPosition{Row: row, Col: col})
 		}
 	}
@@ -1278,7 +1278,7 @@ func TestCellsStore_DeleteRowsRange(t *testing.T) {
 	ctx := context.Background()
 
 	// Create 10 rows of cells
-	for row := 0; row < 10; row++ {
+	for row := range 10 {
 		CreateTestCell(t, f.DB, f.Sheet.ID, row, 0)
 	}
 
@@ -1288,7 +1288,7 @@ func TestCellsStore_DeleteRowsRange(t *testing.T) {
 	}
 
 	// Rows 0-2 should be unchanged
-	for row := 0; row < 3; row++ {
+	for row := range 3 {
 		cell, err := store.Get(ctx, f.Sheet.ID, row, 0)
 		if err != nil {
 			t.Fatalf("Get(%d,0) error = %v", row, err)
@@ -1299,7 +1299,7 @@ func TestCellsStore_DeleteRowsRange(t *testing.T) {
 	}
 
 	// Former rows 6-9 should now be at rows 3-6
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		cell, err := store.Get(ctx, f.Sheet.ID, 3+i, 0)
 		if err != nil {
 			t.Fatalf("Get(%d,0) error = %v", 3+i, err)
@@ -1325,7 +1325,7 @@ func TestCellsStore_DeleteColsRange(t *testing.T) {
 	ctx := context.Background()
 
 	// Create 10 columns of cells
-	for col := 0; col < 10; col++ {
+	for col := range 10 {
 		CreateTestCell(t, f.DB, f.Sheet.ID, 0, col)
 	}
 
@@ -1335,7 +1335,7 @@ func TestCellsStore_DeleteColsRange(t *testing.T) {
 	}
 
 	// Columns 0-1 should be unchanged
-	for col := 0; col < 2; col++ {
+	for col := range 2 {
 		cell, err := store.Get(ctx, f.Sheet.ID, 0, col)
 		if err != nil {
 			t.Fatalf("Get(0,%d) error = %v", col, err)
@@ -1346,7 +1346,7 @@ func TestCellsStore_DeleteColsRange(t *testing.T) {
 	}
 
 	// Former columns 5-9 should now be at columns 2-6
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		cell, err := store.Get(ctx, f.Sheet.ID, 0, 2+i)
 		if err != nil {
 			t.Fatalf("Get(0,%d) error = %v", 2+i, err)

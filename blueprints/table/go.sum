@@ -55,8 +55,8 @@ github.com/duckdb/duckdb-go/v2 v2.5.5 h1:TlK8ipnzoKW2aNrjGqRkFWLCDpJDxR/VwH8ezEc
 github.com/duckdb/duckdb-go/v2 v2.5.5/go.mod h1:6uIbC3gz36NCEygECzboygOo/Z9TeVwox/puG+ohWV0=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
-github.com/go-mizu/mizu v0.5.21 h1:sM92o88IAboxHMxiXujfad9WjB5I3qclKa7iPm7rGpk=
-github.com/go-mizu/mizu v0.5.21/go.mod h1:uAB/VeZxmEhPueqTi4THbitXEHRi3kTIYXwYbXivsIc=
+github.com/go-mizu/mizu v0.5.23 h1:QNfNGqbKhb9Hgp40zharI383mwRIImljWBwB0NvKcnE=
+github.com/go-mizu/mizu v0.5.23/go.mod h1:uAB/VeZxmEhPueqTi4THbitXEHRi3kTIYXwYbXivsIc=
 github.com/go-viper/mapstructure/v2 v2.5.0 h1:vM5IJoUAy3d7zRSVtIwQgBj7BiWtMPfmPEgAXnvj1Ro=
 github.com/go-viper/mapstructure/v2 v2.5.0/go.mod h1:oJDH3BJKyqBA2TXFhDsKDGDTlndYOZ6rGS0BRZIxGhM=
 github.com/goccy/go-json v0.10.5 h1:Fq85nIqj+gXn/S5ahsiTlK3TmC85qgirsdTP/+DeaC4=

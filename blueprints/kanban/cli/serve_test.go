@@ -51,7 +51,7 @@ func TestServe_CommandStructure(t *testing.T) {
 	cmd := NewServe()
 
 	// Verify it's a valid cobra command
-	if _, ok := interface{}(cmd).(*cobra.Command); !ok {
+	if _, ok := any(cmd).(*cobra.Command); !ok {
 		t.Error("NewServe() did not return a *cobra.Command")
 	}
 

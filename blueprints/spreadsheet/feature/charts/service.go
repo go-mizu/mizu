@@ -218,7 +218,7 @@ func (s *Service) GetData(ctx context.Context, id string) (*ChartData, error) {
 }
 
 // parseChartData parses cell values into chart data format.
-func parseChartData(chart *Chart, values [][]interface{}, hasHeader bool) (*ChartData, error) {
+func parseChartData(chart *Chart, values [][]any, hasHeader bool) (*ChartData, error) {
 	if len(values) == 0 || len(values[0]) == 0 {
 		return &ChartData{Labels: []string{}, Datasets: []Dataset{}}, nil
 	}
@@ -327,7 +327,7 @@ func parseChartData(chart *Chart, values [][]interface{}, hasHeader bool) (*Char
 }
 
 // toString converts a value to string.
-func toString(v interface{}) string {
+func toString(v any) string {
 	if v == nil {
 		return ""
 	}
@@ -351,7 +351,7 @@ func toString(v interface{}) string {
 }
 
 // toFloat64 converts a value to float64.
-func toFloat64(v interface{}) float64 {
+func toFloat64(v any) float64 {
 	if v == nil {
 		return 0
 	}

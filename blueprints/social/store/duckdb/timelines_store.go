@@ -30,7 +30,7 @@ func (s *TimelinesStore) GetHomeFeed(ctx context.Context, accountID string, limi
 		)
 		AND p.visibility IN ('public', 'followers')
 	`
-	args := []interface{}{accountID}
+	args := []any{accountID}
 	argNum := 2
 
 	if maxID != "" {
@@ -57,7 +57,7 @@ func (s *TimelinesStore) GetPublicFeed(ctx context.Context, limit int, maxID, mi
 		FROM posts p
 		WHERE p.visibility = 'public' AND p.reply_to_id IS NULL
 	`
-	args := []interface{}{}
+	args := []any{}
 	argNum := 1
 
 	if onlyMedia {
@@ -88,7 +88,7 @@ func (s *TimelinesStore) GetUserFeed(ctx context.Context, userID string, limit i
 		FROM posts p
 		WHERE p.account_id = $1 AND p.visibility = 'public'
 	`
-	args := []interface{}{userID}
+	args := []any{userID}
 	argNum := 2
 
 	if !includeReplies {
@@ -125,7 +125,7 @@ func (s *TimelinesStore) GetHashtagFeed(ctx context.Context, tag string, limit i
 		JOIN hashtags h ON ph.hashtag_id = h.id
 		WHERE h.name = $1 AND p.visibility = 'public'
 	`
-	args := []interface{}{tag}
+	args := []any{tag}
 	argNum := 2
 
 	if maxID != "" {
@@ -153,7 +153,7 @@ func (s *TimelinesStore) GetListFeed(ctx context.Context, listID string, limit i
 		WHERE p.account_id IN (SELECT account_id FROM list_members WHERE list_id = $1)
 		AND p.visibility IN ('public', 'followers')
 	`
-	args := []interface{}{listID}
+	args := []any{listID}
 	argNum := 2
 
 	if maxID != "" {
@@ -181,7 +181,7 @@ func (s *TimelinesStore) GetBookmarksFeed(ctx context.Context, accountID string,
 		JOIN bookmarks b ON p.id = b.post_id
 		WHERE b.account_id = $1
 	`
-	args := []interface{}{accountID}
+	args := []any{accountID}
 	argNum := 2
 
 	if maxID != "" {
@@ -209,7 +209,7 @@ func (s *TimelinesStore) GetLikesFeed(ctx context.Context, accountID string, lim
 		JOIN likes l ON p.id = l.post_id
 		WHERE l.account_id = $1
 	`
-	args := []interface{}{accountID}
+	args := []any{accountID}
 	argNum := 2
 
 	if maxID != "" {
@@ -229,7 +229,7 @@ func (s *TimelinesStore) GetLikesFeed(ctx context.Context, accountID string, lim
 	return s.queryPosts(ctx, query, args...)
 }
 
-func (s *TimelinesStore) queryPosts(ctx context.Context, query string, args ...interface{}) ([]*posts.Post, error) {
+func (s *TimelinesStore) queryPosts(ctx context.Context, query string, args ...any) ([]*posts.Post, error) {
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err

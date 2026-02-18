@@ -71,7 +71,7 @@ func Generate(svc *contract.Service, cfg *Config) ([]*sdk.File, error) {
 			"isOption":         isOptionType,
 			"add":              func(a, b int) int { return a + b },
 			"sub":              func(a, b int) int { return a - b },
-			"len":              func(s interface{}) int { return lenHelper(s) },
+			"len":              func(s any) int { return lenHelper(s) },
 		}).
 		ParseFS(templateFS, "templates/*.fs.tmpl", "templates/*.fsproj.tmpl")
 	if err != nil {
@@ -612,14 +612,14 @@ func baseFSharpType(typeByName map[string]*contract.Type, r string) string {
 	}
 
 	// Handle slice types
-	if strings.HasPrefix(r, "[]") {
-		elem := strings.TrimSpace(strings.TrimPrefix(r, "[]"))
+	if after, ok := strings.CutPrefix(r, "[]"); ok {
+		elem := strings.TrimSpace(after)
 		return baseFSharpType(typeByName, elem) + " list"
 	}
 
 	// Handle map types
-	if strings.HasPrefix(r, "map[string]") {
-		elem := strings.TrimSpace(strings.TrimPrefix(r, "map[string]"))
+	if after, ok := strings.CutPrefix(r, "map[string]"); ok {
+		elem := strings.TrimSpace(after)
 		return "Map<string, " + baseFSharpType(typeByName, elem) + ">"
 	}
 
@@ -824,8 +824,8 @@ func indent(n int, s string) string {
 
 // listElem extracts the element type from a list type string.
 func listElem(s string) string {
-	if strings.HasSuffix(s, " list") {
-		return strings.TrimSuffix(s, " list")
+	if before, ok := strings.CutSuffix(s, " list"); ok {
+		return before
 	}
 	return s
 }
@@ -858,7 +858,7 @@ func isOptionType(s string) bool {
 }
 
 // lenHelper returns the length of a slice or array.
-func lenHelper(s interface{}) int {
+func lenHelper(s any) int {
 	switch v := s.(type) {
 	case []fieldModel:
 		return len(v)

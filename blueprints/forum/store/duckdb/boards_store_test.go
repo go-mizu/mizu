@@ -424,7 +424,7 @@ func TestBoardsStore_ListJoinedBoards(t *testing.T) {
 	member := createTestAccount(t, store, "member")
 
 	// Create multiple boards
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		board := &boards.Board{
 			ID:        newTestID(),
 			Name:      "board" + string(rune('a'+i)),
@@ -469,7 +469,7 @@ func TestBoardsStore_ListModeratedBoards(t *testing.T) {
 	mod := createTestAccount(t, store, "mod")
 
 	// Create multiple boards
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		board := &boards.Board{
 			ID:        newTestID(),
 			Name:      "board" + string(rune('a'+i)),
@@ -515,7 +515,7 @@ func TestBoardsStore_List(t *testing.T) {
 	creator := createTestAccount(t, store, "creator")
 
 	// Create boards with different member counts
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		board := &boards.Board{
 			ID:          newTestID(),
 			Name:        "board" + string(rune('a'+i)),
@@ -606,7 +606,7 @@ func TestBoardsStore_ListPopular(t *testing.T) {
 	creator := createTestAccount(t, store, "creator")
 
 	// Create boards with different member counts
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		board := &boards.Board{
 			ID:          newTestID(),
 			Name:        "board" + string(rune('a'+i)),
@@ -643,7 +643,7 @@ func TestBoardsStore_ListNew(t *testing.T) {
 	creator := createTestAccount(t, store, "creator")
 
 	// Create boards at different times
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		board := &boards.Board{
 			ID:        newTestID(),
 			Name:      "board" + string(rune('a'+i)),

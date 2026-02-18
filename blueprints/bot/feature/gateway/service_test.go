@@ -244,8 +244,8 @@ func (m *mockStore) ResolveAgent(_ context.Context, _, _, _ string) (*types.Agen
 // --- Store-level ---
 
 func (m *mockStore) Ensure(_ context.Context) error   { return nil }
-func (m *mockStore) SeedData(_ context.Context) error  { return nil }
-func (m *mockStore) Close() error                      { return nil }
+func (m *mockStore) SeedData(_ context.Context) error { return nil }
+func (m *mockStore) Close() error                     { return nil }
 func (m *mockStore) Stats(_ context.Context) (*store.Stats, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -259,13 +259,13 @@ func (m *mockStore) Stats(_ context.Context) (*store.Stats, error) {
 
 // --- CronStore ---
 
-func (m *mockStore) ListCronJobs(_ context.Context) ([]types.CronJob, error)          { return nil, nil }
-func (m *mockStore) GetCronJob(_ context.Context, _ string) (*types.CronJob, error)    { return nil, nil }
-func (m *mockStore) CreateCronJob(_ context.Context, _ *types.CronJob) error           { return nil }
-func (m *mockStore) UpdateCronJob(_ context.Context, _ *types.CronJob) error           { return nil }
-func (m *mockStore) DeleteCronJob(_ context.Context, _ string) error                   { return nil }
-func (m *mockStore) CreateCronRun(_ context.Context, _ *types.CronRun) error           { return nil }
-func (m *mockStore) UpdateCronRun(_ context.Context, _ *types.CronRun) error           { return nil }
+func (m *mockStore) ListCronJobs(_ context.Context) ([]types.CronJob, error)        { return nil, nil }
+func (m *mockStore) GetCronJob(_ context.Context, _ string) (*types.CronJob, error) { return nil, nil }
+func (m *mockStore) CreateCronJob(_ context.Context, _ *types.CronJob) error        { return nil }
+func (m *mockStore) UpdateCronJob(_ context.Context, _ *types.CronJob) error        { return nil }
+func (m *mockStore) DeleteCronJob(_ context.Context, _ string) error                { return nil }
+func (m *mockStore) CreateCronRun(_ context.Context, _ *types.CronRun) error        { return nil }
+func (m *mockStore) UpdateCronRun(_ context.Context, _ *types.CronRun) error        { return nil }
 func (m *mockStore) ListCronRuns(_ context.Context, _ string, _ int) ([]types.CronRun, error) {
 	return nil, nil
 }
@@ -781,10 +781,10 @@ func TestProcessMessage_BasicFlow(t *testing.T) {
 	}
 
 	// Echo provider returns "[Echo] You said: <last message>".
-	if !strings.Contains(resp.Content,"[Echo]") {
+	if !strings.Contains(resp.Content, "[Echo]") {
 		t.Errorf("expected echo response, got: %s", resp.Content)
 	}
-	if !strings.Contains(resp.Content,"Hello, bot!") {
+	if !strings.Contains(resp.Content, "Hello, bot!") {
 		t.Errorf("expected echo of user message, got: %s", resp.Content)
 	}
 
@@ -942,7 +942,7 @@ func TestProcessMessage_MultiTurnConversation(t *testing.T) {
 	ctx := context.Background()
 
 	// Send multiple messages to build up conversation history.
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		content := fmt.Sprintf("Message %d", i+1)
 		_, err := svc.ProcessMessage(ctx, testMessage(content))
 		if err != nil {
@@ -980,13 +980,13 @@ func TestCommand_Context(t *testing.T) {
 	}
 
 	// /context should return the enriched system prompt.
-	if !strings.HasPrefix(resp.Content,"System prompt:") {
+	if !strings.HasPrefix(resp.Content, "System prompt:") {
 		t.Errorf("expected system prompt response, got: %s", resp.Content)
 	}
-	if !strings.Contains(resp.Content,"You are a helpful test assistant.") {
+	if !strings.Contains(resp.Content, "You are a helpful test assistant.") {
 		t.Error("/context response should contain base system prompt")
 	}
-	if !strings.Contains(resp.Content,"# Project Context") {
+	if !strings.Contains(resp.Content, "# Project Context") {
 		t.Error("/context response should contain workspace context")
 	}
 }
@@ -1012,7 +1012,7 @@ func TestCommand_New(t *testing.T) {
 		t.Fatalf("/new: %v", err)
 	}
 
-	if !strings.Contains(resp.Content,"New session started") {
+	if !strings.Contains(resp.Content, "New session started") {
 		t.Errorf("expected new session response, got: %s", resp.Content)
 	}
 
@@ -1052,7 +1052,7 @@ func TestCommand_Reset(t *testing.T) {
 		t.Fatalf("/reset: %v", err)
 	}
 
-	if !strings.Contains(resp.Content,"Session reset") {
+	if !strings.Contains(resp.Content, "Session reset") {
 		t.Errorf("expected reset response, got: %s", resp.Content)
 	}
 
@@ -1084,13 +1084,13 @@ func TestCommand_Help(t *testing.T) {
 		t.Fatalf("/help: %v", err)
 	}
 
-	if !strings.Contains(resp.Content,"Available commands") {
+	if !strings.Contains(resp.Content, "Available commands") {
 		t.Errorf("expected help listing, got: %s", resp.Content)
 	}
-	if !strings.Contains(resp.Content,"/new") {
+	if !strings.Contains(resp.Content, "/new") {
 		t.Error("help should list /new command")
 	}
-	if !strings.Contains(resp.Content,"/context") {
+	if !strings.Contains(resp.Content, "/context") {
 		t.Error("help should list /context command")
 	}
 }

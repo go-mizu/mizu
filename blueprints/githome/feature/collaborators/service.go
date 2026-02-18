@@ -325,7 +325,7 @@ func (s *Service) DeclineInvitation(ctx context.Context, userID int64, invitatio
 
 // populateInvitationURLs fills in the URL fields for an invitation
 func (s *Service) populateInvitationURLs(inv *Invitation, owner, repo string) {
-	inv.NodeID = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("RepositoryInvitation:%d", inv.ID)))
+	inv.NodeID = base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "RepositoryInvitation:%d", inv.ID))
 	inv.URL = fmt.Sprintf("%s/api/v3/repos/%s/%s/invitations/%d", s.baseURL, owner, repo, inv.ID)
 	inv.HTMLURL = fmt.Sprintf("%s/%s/%s/invitations", s.baseURL, owner, repo)
 	if inv.Repository == nil {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/go-mizu/mizu/blueprints/search/store"
@@ -33,14 +34,14 @@ func (s *Service) Parse(ctx context.Context, query string) (*types.BangResult, e
 	}
 
 	// Check for "feeling lucky" pattern: "! query" or "query !"
-	if strings.HasPrefix(query, "! ") {
-		result.Query = strings.TrimPrefix(query, "! ")
+	if after, ok := strings.CutPrefix(query, "! "); ok {
+		result.Query = after
 		result.Internal = true
 		result.Category = "lucky"
 		return result, nil
 	}
-	if strings.HasSuffix(query, " !") {
-		result.Query = strings.TrimSuffix(query, " !")
+	if before, ok := strings.CutSuffix(query, " !"); ok {
+		result.Query = before
 		result.Internal = true
 		result.Category = "lucky"
 		return result, nil
@@ -63,21 +64,17 @@ func (s *Service) Parse(ctx context.Context, query string) (*types.BangResult, e
 	}
 
 	// Check for AI bangs
-	for _, aiBang := range types.AIBangs {
-		if trigger == aiBang {
-			result.Internal = true
-			result.Category = "ai"
-			return result, nil
-		}
+	if slices.Contains(types.AIBangs, trigger) {
+		result.Internal = true
+		result.Category = "ai"
+		return result, nil
 	}
 
 	// Check for summarizer bangs
-	for _, sumBang := range types.SummarizerBangs {
-		if trigger == sumBang {
-			result.Internal = true
-			result.Category = "summarize"
-			return result, nil
-		}
+	if slices.Contains(types.SummarizerBangs, trigger) {
+		result.Internal = true
+		result.Category = "summarize"
+		return result, nil
 	}
 
 	// Check for time filter bangs
@@ -148,8 +145,8 @@ func extractBang(query string) string {
 	if strings.HasSuffix(query, "!") {
 		parts := strings.Split(query, " ")
 		last := parts[len(parts)-1]
-		if strings.HasSuffix(last, "!") {
-			return strings.TrimSuffix(last, "!")
+		if before, ok := strings.CutSuffix(last, "!"); ok {
+			return before
 		}
 	}
 

@@ -28,7 +28,7 @@ type ThemeContext struct {
 	Name       string
 	Slug       string
 	Version    string
-	Config     map[string]interface{}
+	Config     map[string]any
 	Colors     map[string]string
 	DarkColors map[string]string
 	Fonts      map[string]string
@@ -122,13 +122,13 @@ type CommentView struct {
 
 // BaseData holds common template data.
 type BaseData struct {
-	Site       SiteContext
-	Theme      ThemeContext
-	Request    RequestContext
-	Menus      map[string]*MenuContext
-	User       *users.User
-	Categories []*categories.Category
-	Tags       []*tags.Tag
+	Site        SiteContext
+	Theme       ThemeContext
+	Request     RequestContext
+	Menus       map[string]*MenuContext
+	User        *users.User
+	Categories  []*categories.Category
+	Tags        []*tags.Tag
 	RecentPosts []*PostView
 }
 

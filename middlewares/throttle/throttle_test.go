@@ -34,7 +34,7 @@ func TestNew(t *testing.T) {
 
 	// Send concurrent requests
 	var wg sync.WaitGroup
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -68,7 +68,7 @@ func TestWithOptions_Backlog(t *testing.T) {
 	var resultsMu sync.Mutex
 
 	// Send 3 concurrent requests (1 processing, 1 backlog, 1 rejected)
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

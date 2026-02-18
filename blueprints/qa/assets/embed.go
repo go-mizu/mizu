@@ -186,9 +186,9 @@ func StaticURL(path string) string {
 	}
 	base := path
 	query := ""
-	if idx := strings.Index(path, "?"); idx != -1 {
-		base = path[:idx]
-		query = path[idx+1:]
+	if before, after, ok := strings.Cut(path, "?"); ok {
+		base = before
+		query = after
 		if strings.Contains(query, "v=") {
 			return path
 		}
@@ -475,7 +475,7 @@ func formatFloat(f float64, decimals int) string {
 		return formatInt(int(f))
 	}
 	factor := 1.0
-	for i := 0; i < decimals; i++ {
+	for range decimals {
 		factor *= 10
 	}
 	val := float64(int(f*factor+0.5)) / factor

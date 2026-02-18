@@ -35,21 +35,21 @@ func TestThreadsStore_Create(t *testing.T) {
 	board := createTestBoard(t, store, author)
 
 	thread := &threads.Thread{
-		ID:           newTestID(),
-		BoardID:      board.ID,
-		AuthorID:     author.ID,
-		Title:        "Test Thread Title",
-		Content:      "This is the thread content",
-		ContentHTML:  "<p>This is the thread content</p>",
-		Type:         threads.ThreadTypeText,
-		Score:        0,
-		UpvoteCount:  0,
+		ID:            newTestID(),
+		BoardID:       board.ID,
+		AuthorID:      author.ID,
+		Title:         "Test Thread Title",
+		Content:       "This is the thread content",
+		ContentHTML:   "<p>This is the thread content</p>",
+		Type:          threads.ThreadTypeText,
+		Score:         0,
+		UpvoteCount:   0,
 		DownvoteCount: 0,
-		CommentCount: 0,
-		ViewCount:    0,
-		HotScore:     0,
-		CreatedAt:    testTime(),
-		UpdatedAt:    testTime(),
+		CommentCount:  0,
+		ViewCount:     0,
+		HotScore:      0,
+		CreatedAt:     testTime(),
+		UpdatedAt:     testTime(),
 	}
 
 	if err := store.Threads().Create(ctx, thread); err != nil {
@@ -210,7 +210,7 @@ func TestThreadsStore_List_Hot(t *testing.T) {
 	board := createTestBoard(t, store, author)
 
 	// Create threads with different hot scores
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		thread := &threads.Thread{
 			ID:        newTestID(),
 			BoardID:   board.ID,
@@ -252,7 +252,7 @@ func TestThreadsStore_List_New(t *testing.T) {
 	board := createTestBoard(t, store, author)
 
 	// Create threads at different times
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		thread := &threads.Thread{
 			ID:        newTestID(),
 			BoardID:   board.ID,
@@ -293,7 +293,7 @@ func TestThreadsStore_List_Top(t *testing.T) {
 	board := createTestBoard(t, store, author)
 
 	// Create threads with different scores
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		thread := &threads.Thread{
 			ID:        newTestID(),
 			BoardID:   board.ID,
@@ -342,9 +342,9 @@ func TestThreadsStore_List_TimeRange(t *testing.T) {
 
 	// Create threads at different times
 	times := []time.Duration{
-		-30 * time.Minute,   // 30 mins ago
-		-2 * time.Hour,      // 2 hours ago
-		-2 * 24 * time.Hour, // 2 days ago
+		-30 * time.Minute,    // 30 mins ago
+		-2 * time.Hour,       // 2 hours ago
+		-2 * 24 * time.Hour,  // 2 days ago
 		-10 * 24 * time.Hour, // 10 days ago
 	}
 
@@ -417,7 +417,7 @@ func TestThreadsStore_ListByBoard(t *testing.T) {
 	board2 := createTestBoard(t, store, author)
 
 	// Create threads in different boards
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		thread := &threads.Thread{
 			ID:        newTestID(),
 			BoardID:   board1.ID,
@@ -432,7 +432,7 @@ func TestThreadsStore_ListByBoard(t *testing.T) {
 		}
 	}
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		thread := &threads.Thread{
 			ID:        newTestID(),
 			BoardID:   board2.ID,
@@ -477,7 +477,7 @@ func TestThreadsStore_ListByAuthor(t *testing.T) {
 	board := createTestBoard(t, store, author1)
 
 	// Create threads by different authors
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		thread := &threads.Thread{
 			ID:        newTestID(),
 			BoardID:   board.ID,
@@ -492,7 +492,7 @@ func TestThreadsStore_ListByAuthor(t *testing.T) {
 		}
 	}
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		thread := &threads.Thread{
 			ID:        newTestID(),
 			BoardID:   board.ID,

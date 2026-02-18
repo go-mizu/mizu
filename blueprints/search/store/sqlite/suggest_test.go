@@ -52,7 +52,7 @@ func TestSuggestStore_RecordQuery_IncrementFrequency(t *testing.T) {
 	suggest := s.Suggest()
 
 	// Record same query multiple times
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		if err := suggest.RecordQuery(ctx, "popular query"); err != nil {
 			t.Fatalf("RecordQuery() error = %v", err)
 		}
@@ -136,7 +136,7 @@ func TestSuggestStore_GetSuggestions_Limit(t *testing.T) {
 	suggest := s.Suggest()
 
 	// Record many queries
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		if err := suggest.RecordQuery(ctx, "test"+string(rune('a'+i))); err != nil {
 			t.Fatalf("RecordQuery() error = %v", err)
 		}
@@ -183,13 +183,13 @@ func TestSuggestStore_GetSuggestions_OrderByFrequency(t *testing.T) {
 	suggest := s.Suggest()
 
 	// Record queries with different frequencies - prefix search so query must start with prefix
-	for i := 0; i < 1; i++ {
+	for range 1 {
 		suggest.RecordQuery(ctx, "test rare")
 	}
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		suggest.RecordQuery(ctx, "test common")
 	}
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		suggest.RecordQuery(ctx, "test popular")
 	}
 
@@ -216,13 +216,13 @@ func TestSuggestStore_GetTrendingQueries(t *testing.T) {
 	suggest := s.Suggest()
 
 	// Record queries with different frequencies
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		suggest.RecordQuery(ctx, "trending topic")
 	}
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		suggest.RecordQuery(ctx, "somewhat popular")
 	}
-	for i := 0; i < 1; i++ {
+	for range 1 {
 		suggest.RecordQuery(ctx, "not popular")
 	}
 
@@ -247,7 +247,7 @@ func TestSuggestStore_GetTrendingQueries_Limit(t *testing.T) {
 	ctx := context.Background()
 	suggest := s.Suggest()
 
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		suggest.RecordQuery(ctx, "trending"+string(rune('a'+i)))
 	}
 
@@ -268,7 +268,7 @@ func TestSuggestStore_GetTrendingQueries_DefaultLimit(t *testing.T) {
 	ctx := context.Background()
 	suggest := s.Suggest()
 
-	for i := 0; i < 15; i++ {
+	for i := range 15 {
 		suggest.RecordQuery(ctx, "topic"+string(rune('a'+i)))
 	}
 

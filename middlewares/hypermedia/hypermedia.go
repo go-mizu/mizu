@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"strings"
 
@@ -297,9 +298,7 @@ func (h HAL) MarshalJSON() ([]byte, error) {
 	result := make(map[string]any)
 
 	// Add properties
-	for k, v := range h.Properties {
-		result[k] = v
-	}
+	maps.Copy(result, h.Properties)
 
 	// Add links
 	if len(h.Links) > 0 {

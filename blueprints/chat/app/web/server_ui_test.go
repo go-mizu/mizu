@@ -17,7 +17,7 @@ func TestUI_AllPages(t *testing.T) {
 	token := registerAndGetToken(t, srv.app, "uitestuser")
 
 	// Create a server for testing server-specific pages
-	serverBody := map[string]interface{}{
+	serverBody := map[string]any{
 		"name":        "UI Test Server",
 		"description": "Server for UI testing",
 		"is_public":   true,
@@ -27,13 +27,13 @@ func TestUI_AllPages(t *testing.T) {
 		t.Fatalf("create server failed: %s", serverRec.Body.String())
 	}
 
-	var serverResp map[string]interface{}
+	var serverResp map[string]any
 	parseResponse(t, serverRec, &serverResp)
-	serverData := serverResp["data"].(map[string]interface{})
+	serverData := serverResp["data"].(map[string]any)
 	serverID := serverData["id"].(string)
 
 	// Create a channel
-	channelBody := map[string]interface{}{
+	channelBody := map[string]any{
 		"name":  "ui-test-channel",
 		"type":  "text",
 		"topic": "Channel for UI testing",
@@ -43,14 +43,14 @@ func TestUI_AllPages(t *testing.T) {
 		t.Fatalf("create channel failed: %s", channelRec.Body.String())
 	}
 
-	var channelResp map[string]interface{}
+	var channelResp map[string]any
 	parseResponse(t, channelRec, &channelResp)
-	channelData := channelResp["data"].(map[string]interface{})
+	channelData := channelResp["data"].(map[string]any)
 	channelID := channelData["id"].(string)
 
 	// Create some messages to test message rendering
-	for i := 0; i < 3; i++ {
-		msgBody := map[string]interface{}{
+	for i := range 3 {
+		msgBody := map[string]any{
 			"content": "Test message " + string(rune('A'+i)),
 		}
 		doRequest(t, srv.app, "POST", "/api/v1/channels/"+channelID+"/messages", msgBody, token)
@@ -66,9 +66,9 @@ func TestUI_AllPages(t *testing.T) {
 	}{
 		// Public pages (no auth required)
 		{
-			name:         "home redirects to login when unauthenticated",
-			path:         "/",
-			wantStatus:   http.StatusFound,
+			name:       "home redirects to login when unauthenticated",
+			path:       "/",
+			wantStatus: http.StatusFound,
 		},
 		{
 			name:         "login page",
@@ -83,9 +83,9 @@ func TestUI_AllPages(t *testing.T) {
 			wantContains: []string{"<!DOCTYPE html>", "</html>", "Register"},
 		},
 		{
-			name:         "explore redirects to home when unauthenticated",
-			path:         "/explore",
-			wantStatus:   http.StatusFound,
+			name:       "explore redirects to home when unauthenticated",
+			path:       "/explore",
+			wantStatus: http.StatusFound,
 		},
 
 		// Authenticated pages
@@ -175,38 +175,38 @@ func TestUI_ServerViewWithData(t *testing.T) {
 	bobToken := registerAndGetToken(t, srv.app, "uibob")
 
 	// Alice creates a server
-	serverBody := map[string]interface{}{
+	serverBody := map[string]any{
 		"name":        "Data Test Server",
 		"description": "Testing with real data",
 		"is_public":   true,
 	}
 	serverRec := doRequest(t, srv.app, "POST", "/api/v1/servers", serverBody, aliceToken)
-	var serverResp map[string]interface{}
+	var serverResp map[string]any
 	parseResponse(t, serverRec, &serverResp)
-	serverID := serverResp["data"].(map[string]interface{})["id"].(string)
+	serverID := serverResp["data"].(map[string]any)["id"].(string)
 
 	// Alice creates multiple channels
 	channelIDs := make([]string, 0)
 	for _, name := range []string{"general", "random", "help"} {
-		channelBody := map[string]interface{}{
+		channelBody := map[string]any{
 			"name":  name,
 			"type":  "text",
 			"topic": "Topic for " + name,
 		}
 		channelRec := doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/channels", channelBody, aliceToken)
-		var channelResp map[string]interface{}
+		var channelResp map[string]any
 		parseResponse(t, channelRec, &channelResp)
-		channelIDs = append(channelIDs, channelResp["data"].(map[string]interface{})["id"].(string))
+		channelIDs = append(channelIDs, channelResp["data"].(map[string]any)["id"].(string))
 	}
 
 	// Bob joins the server
 	doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/join", nil, bobToken)
 
 	// Both users send messages
-	msgBody := map[string]interface{}{"content": "Hello from Alice!"}
+	msgBody := map[string]any{"content": "Hello from Alice!"}
 	doRequest(t, srv.app, "POST", "/api/v1/channels/"+channelIDs[0]+"/messages", msgBody, aliceToken)
 
-	msgBody = map[string]interface{}{"content": "Hello from Bob!"}
+	msgBody = map[string]any{"content": "Hello from Bob!"}
 	doRequest(t, srv.app, "POST", "/api/v1/channels/"+channelIDs[0]+"/messages", msgBody, bobToken)
 
 	// Test rendering the page with all this data
@@ -270,22 +270,22 @@ func TestUI_EmptyStates(t *testing.T) {
 	})
 
 	// Create a server with no channels (besides default)
-	serverBody := map[string]interface{}{
+	serverBody := map[string]any{
 		"name": "Empty Server",
 	}
 	serverRec := doRequest(t, srv.app, "POST", "/api/v1/servers", serverBody, token)
-	var serverResp map[string]interface{}
+	var serverResp map[string]any
 	parseResponse(t, serverRec, &serverResp)
-	serverID := serverResp["data"].(map[string]interface{})["id"].(string)
+	serverID := serverResp["data"].(map[string]any)["id"].(string)
 
 	// Get default channel
 	channelsRec := doRequest(t, srv.app, "GET", "/api/v1/servers/"+serverID+"/channels", nil, token)
-	var channelsResp map[string]interface{}
+	var channelsResp map[string]any
 	parseResponse(t, channelsRec, &channelsResp)
-	channels := channelsResp["data"].([]interface{})
+	channels := channelsResp["data"].([]any)
 
 	if len(channels) > 0 {
-		channelID := channels[0].(map[string]interface{})["id"].(string)
+		channelID := channels[0].(map[string]any)["id"].(string)
 
 		t.Run("channel with no messages", func(t *testing.T) {
 			rec := doHTMLRequest(t, srv.app, "GET", "/channels/"+serverID+"/"+channelID, token)
@@ -307,17 +307,17 @@ func TestUI_TemplateErrorDetection(t *testing.T) {
 	token := registerAndGetToken(t, srv.app, "templateuser")
 
 	// Create server and channel
-	serverBody := map[string]interface{}{"name": "Template Test"}
+	serverBody := map[string]any{"name": "Template Test"}
 	serverRec := doRequest(t, srv.app, "POST", "/api/v1/servers", serverBody, token)
-	var serverResp map[string]interface{}
+	var serverResp map[string]any
 	parseResponse(t, serverRec, &serverResp)
-	serverID := serverResp["data"].(map[string]interface{})["id"].(string)
+	serverID := serverResp["data"].(map[string]any)["id"].(string)
 
-	channelBody := map[string]interface{}{"name": "test", "type": "text"}
+	channelBody := map[string]any{"name": "test", "type": "text"}
 	channelRec := doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/channels", channelBody, token)
-	var channelResp map[string]interface{}
+	var channelResp map[string]any
 	parseResponse(t, channelRec, &channelResp)
-	channelID := channelResp["data"].(map[string]interface{})["id"].(string)
+	channelID := channelResp["data"].(map[string]any)["id"].(string)
 
 	// Render the page and check for any template-related errors
 	rec := doHTMLRequest(t, srv.app, "GET", "/channels/"+serverID+"/"+channelID, token)
@@ -348,15 +348,15 @@ func TestUI_ComponentsWithData(t *testing.T) {
 	bobToken := registerAndGetToken(t, srv.app, "compBob")
 
 	// Alice creates a server
-	serverBody := map[string]interface{}{
+	serverBody := map[string]any{
 		"name":        "Component Test Server",
 		"description": "Testing all components",
 		"is_public":   true,
 	}
 	serverRec := doRequest(t, srv.app, "POST", "/api/v1/servers", serverBody, aliceToken)
-	var serverResp map[string]interface{}
+	var serverResp map[string]any
 	parseResponse(t, serverRec, &serverResp)
-	serverID := serverResp["data"].(map[string]interface{})["id"].(string)
+	serverID := serverResp["data"].(map[string]any)["id"].(string)
 
 	// Create multiple channels (tests channel_list.html with multiple items)
 	var channelIDs []string
@@ -365,15 +365,15 @@ func TestUI_ComponentsWithData(t *testing.T) {
 		{"announcements", "Important updates"},
 		{"random", "Off-topic chat"},
 	} {
-		channelBody := map[string]interface{}{
+		channelBody := map[string]any{
 			"name":  ch.name,
 			"type":  "text",
 			"topic": ch.topic,
 		}
 		channelRec := doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/channels", channelBody, aliceToken)
-		var channelResp map[string]interface{}
+		var channelResp map[string]any
 		parseResponse(t, channelRec, &channelResp)
-		channelIDs = append(channelIDs, channelResp["data"].(map[string]interface{})["id"].(string))
+		channelIDs = append(channelIDs, channelResp["data"].(map[string]any)["id"].(string))
 	}
 
 	// Bob joins (tests multiple members scenario)
@@ -389,7 +389,7 @@ func TestUI_ComponentsWithData(t *testing.T) {
 		{aliceToken, "Welcome to the server!"},
 	}
 	for _, msg := range messages {
-		msgBody := map[string]interface{}{"content": msg.content}
+		msgBody := map[string]any{"content": msg.content}
 		doRequest(t, srv.app, "POST", "/api/v1/channels/"+channelIDs[0]+"/messages", msgBody, msg.token)
 	}
 
@@ -497,12 +497,4 @@ func truncateBody(body string, maxLen int) string {
 		return body
 	}
 	return body[:maxLen] + "...(truncated)"
-}
-
-// max returns the larger of two ints
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

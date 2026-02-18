@@ -111,7 +111,7 @@ func (s *Service) RestoreRevision(ctx context.Context, pageID, revisionID, userI
 	// TODO: Restore blocks - this would require deleting current blocks and recreating from revision
 
 	// Record activity
-	s.RecordActivity(ctx, "", pageID, "", userID, ActionRestore, map[string]interface{}{
+	s.RecordActivity(ctx, "", pageID, "", userID, ActionRestore, map[string]any{
 		"revision_id": revisionID,
 		"version":     rev.Version,
 	})
@@ -162,7 +162,7 @@ func (s *Service) CompareRevisions(ctx context.Context, revID1, revID2 string) (
 }
 
 // RecordActivity records an activity.
-func (s *Service) RecordActivity(ctx context.Context, workspaceID, pageID, blockID, actorID string, action ActionType, details interface{}) error {
+func (s *Service) RecordActivity(ctx context.Context, workspaceID, pageID, blockID, actorID string, action ActionType, details any) error {
 	activity := &Activity{
 		ID:          ulid.New(),
 		WorkspaceID: workspaceID,

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -22,36 +23,36 @@ func NewWikipedia() *Wikipedia {
 	w := &Wikipedia{
 		BaseEngine: NewBaseEngine("wikipedia", "w", []Category{CategoryGeneral}),
 		languageMap: map[string]string{
-			"en":    "en",
-			"de":    "de",
-			"fr":    "fr",
-			"es":    "es",
-			"it":    "it",
-			"pt":    "pt",
-			"ja":    "ja",
-			"ko":    "ko",
-			"zh":    "zh",
-			"ru":    "ru",
-			"ar":    "ar",
-			"hi":    "hi",
-			"nl":    "nl",
-			"pl":    "pl",
-			"sv":    "sv",
-			"vi":    "vi",
-			"uk":    "uk",
-			"he":    "he",
-			"id":    "id",
-			"cs":    "cs",
-			"fi":    "fi",
-			"da":    "da",
-			"no":    "no",
-			"hu":    "hu",
-			"ro":    "ro",
-			"tr":    "tr",
-			"th":    "th",
-			"el":    "el",
-			"fa":    "fa",
-			"ca":    "ca",
+			"en": "en",
+			"de": "de",
+			"fr": "fr",
+			"es": "es",
+			"it": "it",
+			"pt": "pt",
+			"ja": "ja",
+			"ko": "ko",
+			"zh": "zh",
+			"ru": "ru",
+			"ar": "ar",
+			"hi": "hi",
+			"nl": "nl",
+			"pl": "pl",
+			"sv": "sv",
+			"vi": "vi",
+			"uk": "uk",
+			"he": "he",
+			"id": "id",
+			"cs": "cs",
+			"fi": "fi",
+			"da": "da",
+			"no": "no",
+			"hu": "hu",
+			"ro": "ro",
+			"tr": "tr",
+			"th": "th",
+			"el": "el",
+			"fa": "fa",
+			"ca": "ca",
 		},
 	}
 
@@ -66,9 +67,7 @@ func NewWikipedia() *Wikipedia {
 		})
 
 	// Set up language mappings
-	for lang, wikiLang := range w.languageMap {
-		w.traits.Languages[lang] = wikiLang
-	}
+	maps.Copy(w.traits.Languages, w.languageMap)
 
 	return w
 }

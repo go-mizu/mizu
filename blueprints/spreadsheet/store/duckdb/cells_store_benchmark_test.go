@@ -84,7 +84,7 @@ func benchmarkGetByPositionsSparse(b *testing.B, count int) {
 
 	// Create sparse cells (far apart)
 	positions := make([]cells.CellPosition, count)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		row := i * 100
 		col := i * 100
 		createBenchCell(b, f.DB, f.Sheet.ID, row, col)
@@ -121,8 +121,8 @@ func benchmarkGetByPositionsDense(b *testing.B, rows, cols int) {
 
 	// Create dense grid
 	positions := make([]cells.CellPosition, 0, rows*cols)
-	for row := 0; row < rows; row++ {
-		for col := 0; col < cols; col++ {
+	for row := range rows {
+		for col := range cols {
 			createBenchCell(b, f.DB, f.Sheet.ID, row, col)
 			positions = append(positions, cells.CellPosition{Row: row, Col: col})
 		}
@@ -167,7 +167,7 @@ func benchmarkCreateMergeIndividual(b *testing.B, count int) {
 		// Create new sheet for each iteration
 		sheet := createBenchSheet(b, f.DB, f.Workbook.ID, i)
 
-		for j := 0; j < count; j++ {
+		for j := range count {
 			region := &cells.MergedRegion{
 				ID:       NewTestID(),
 				SheetID:  sheet.ID,
@@ -215,7 +215,7 @@ func benchmarkBatchCreateMerge(b *testing.B, count int) {
 
 		// Create all regions in a batch
 		regions := make([]*cells.MergedRegion, count)
-		for j := 0; j < count; j++ {
+		for j := range count {
 			regions[j] = &cells.MergedRegion{
 				ID:       NewTestID(),
 				SheetID:  sheet.ID,
@@ -258,8 +258,8 @@ func benchmarkGetRange(b *testing.B, rows, cols int) {
 	// Create cells
 	cellList := make([]*cells.Cell, 0, rows*cols)
 	now := FixedTime()
-	for row := 0; row < rows; row++ {
-		for col := 0; col < cols; col++ {
+	for row := range rows {
+		for col := range cols {
 			cellList = append(cellList, &cells.Cell{
 				ID:        NewTestID(),
 				SheetID:   f.Sheet.ID,
@@ -309,7 +309,7 @@ func BenchmarkBatchSet_WithFormat(b *testing.B) {
 		now := FixedTime()
 		cellList := make([]*cells.Cell, count)
 
-		for j := 0; j < count; j++ {
+		for j := range count {
 			cellList[j] = &cells.Cell{
 				ID:      NewTestID(),
 				SheetID: sheet.ID,
@@ -357,7 +357,7 @@ func BenchmarkBatchSet_NoFormat(b *testing.B) {
 		now := FixedTime()
 		cellList := make([]*cells.Cell, count)
 
-		for j := 0; j < count; j++ {
+		for j := range count {
 			cellList[j] = &cells.Cell{
 				ID:        NewTestID(),
 				SheetID:   sheet.ID,
@@ -486,7 +486,7 @@ func generateCells(sheetID string, count int) []*cells.Cell {
 	now := time.Now()
 	cols := 100
 
-	for i := 0; i < count; i++ {
+	for i := range count {
 		cellList[i] = &cells.Cell{
 			ID:        NewTestID(),
 			SheetID:   sheetID,

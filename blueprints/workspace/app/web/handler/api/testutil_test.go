@@ -64,7 +64,7 @@ func (ts *TestServer) Close() {
 }
 
 // Request makes an HTTP request and returns the response.
-func (ts *TestServer) Request(method, path string, body interface{}, cookies ...*http.Cookie) *http.Response {
+func (ts *TestServer) Request(method, path string, body any, cookies ...*http.Cookie) *http.Response {
 	ts.t.Helper()
 
 	var bodyReader io.Reader
@@ -104,7 +104,7 @@ func (ts *TestServer) Request(method, path string, body interface{}, cookies ...
 }
 
 // ParseJSON parses the response body as JSON.
-func (ts *TestServer) ParseJSON(resp *http.Response, v interface{}) {
+func (ts *TestServer) ParseJSON(resp *http.Response, v any) {
 	ts.t.Helper()
 	defer resp.Body.Close()
 
@@ -204,12 +204,14 @@ func setupTestDB(t *testing.T) (*sql.DB, func()) {
 }
 
 // ptr returns a pointer to the value.
+//
+//go:fix inline
 func ptr[T any](v T) *T {
-	return &v
+	return new(v)
 }
 
 // mustMarshal marshals the value to JSON or panics.
-func mustMarshal(v interface{}) []byte {
+func mustMarshal(v any) []byte {
 	data, err := json.Marshal(v)
 	if err != nil {
 		panic(err)

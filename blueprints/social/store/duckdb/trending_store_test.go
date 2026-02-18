@@ -17,7 +17,7 @@ func TestTrendingStore_GetTrendingTags(t *testing.T) {
 	trendingStore := NewTrendingStore(db)
 
 	// Create recent posts with hashtags
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		post := &posts.Post{
 			ID:         newTestID(),
 			AccountID:  account.ID,
@@ -154,7 +154,7 @@ func TestTrendingStore_GetTrendingTags_OrderByCount(t *testing.T) {
 	lessPopularHashtagID, _ := postsStore.UpsertHashtag(ctx, "lesspopulartag")
 
 	// 5 posts with popular tag
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		post := &posts.Post{
 			ID:         newTestID(),
 			AccountID:  account.ID,
@@ -167,7 +167,7 @@ func TestTrendingStore_GetTrendingTags_OrderByCount(t *testing.T) {
 	}
 
 	// 2 posts with less popular tag
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		post := &posts.Post{
 			ID:         newTestID(),
 			AccountID:  account.ID,
@@ -204,7 +204,7 @@ func TestTrendingStore_GetTrendingTags_Pagination(t *testing.T) {
 	trendingStore := NewTrendingStore(db)
 
 	// Create multiple hashtags with posts
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		hashtagID, _ := postsStore.UpsertHashtag(ctx, "pagetag"+string(rune('a'+i)))
 		post := &posts.Post{
 			ID:         newTestID(),
@@ -258,7 +258,7 @@ func TestTrendingStore_GetTrendingPosts(t *testing.T) {
 	postsStore.Insert(ctx, post)
 
 	// Add likes
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		interactionsStore.IncrementLikesCount(ctx, post.ID)
 	}
 
@@ -387,7 +387,7 @@ func TestTrendingStore_GetTrendingPosts_OrderByEngagement(t *testing.T) {
 		CreatedAt:  time.Now().Add(-time.Hour),
 	}
 	postsStore.Insert(ctx, morePopular)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		interactionsStore.IncrementLikesCount(ctx, morePopular.ID)
 	}
 

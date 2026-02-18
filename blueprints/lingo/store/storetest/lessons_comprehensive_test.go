@@ -2,6 +2,7 @@ package storetest
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/go-mizu/mizu/blueprints/lingo/store"
@@ -180,13 +181,7 @@ func TestExerciseChoices(t *testing.T) {
 								"Exercise type %s should have at least 3 choices", ex.Type)
 
 							// Verify correct answer is in choices
-							found := false
-							for _, c := range ex.Choices {
-								if c == ex.CorrectAnswer {
-									found = true
-									break
-								}
-							}
+							found := slices.Contains(ex.Choices, ex.CorrectAnswer)
 							require.True(t, found,
 								"Correct answer '%s' should be in choices for exercise %s",
 								ex.CorrectAnswer, ex.ID)

@@ -16,7 +16,7 @@ require (
 	github.com/duckdb/duckdb-go/v2 v2.5.5
 	github.com/elastic/go-elasticsearch/v8 v8.19.3
 	github.com/expectedsh/go-sonic v0.0.0-20210827144320-d31eb03ae288
-	github.com/go-mizu/mizu v0.5.21
+	github.com/go-mizu/mizu v0.5.23
 	github.com/go-rod/rod v0.116.2
 	github.com/go-rod/stealth v0.4.9
 	github.com/go-sql-driver/mysql v1.9.3
@@ -193,7 +193,7 @@ require (
 	github.com/twpayne/go-geom v1.6.1 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	github.com/ysmood/fetchup v0.5.3 // indirect
+	github.com/ysmood/fetchup v0.2.4 // indirect
 	github.com/ysmood/goob v0.4.0 // indirect
 	github.com/ysmood/got v0.42.3 // indirect
 	github.com/ysmood/gson v0.7.3 // indirect

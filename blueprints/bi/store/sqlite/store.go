@@ -407,7 +407,7 @@ func (s *Store) columnExists(ctx context.Context, table, column string) bool {
 		var cid int
 		var name, colType string
 		var notNull, pk int
-		var dfltValue interface{}
+		var dfltValue any
 		if err := rows.Scan(&cid, &name, &colType, &notNull, &dfltValue, &pk); err != nil {
 			continue
 		}

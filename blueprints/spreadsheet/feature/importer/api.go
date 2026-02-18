@@ -81,7 +81,7 @@ type API interface {
 type CellImport struct {
 	Row     int
 	Col     int
-	Value   interface{}
+	Value   any
 	Formula string
 	Format  *CellFormat
 }

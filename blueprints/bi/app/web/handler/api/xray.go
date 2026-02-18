@@ -25,29 +25,29 @@ func NewXRay(store *sqlite.Store) *XRay {
 
 // XRayResult represents the generated X-ray dashboard.
 type XRayResult struct {
-	Title       string          `json:"title"`
-	Description string          `json:"description"`
-	TableID     string          `json:"table_id"`
-	TableName   string          `json:"table_name"`
-	GeneratedAt time.Time       `json:"generated_at"`
-	Cards       []XRayCard      `json:"cards"`
-	Navigation  []XRayNavLink   `json:"navigation"`
-	Stats       XRayTableStats  `json:"stats"`
+	Title       string         `json:"title"`
+	Description string         `json:"description"`
+	TableID     string         `json:"table_id"`
+	TableName   string         `json:"table_name"`
+	GeneratedAt time.Time      `json:"generated_at"`
+	Cards       []XRayCard     `json:"cards"`
+	Navigation  []XRayNavLink  `json:"navigation"`
+	Stats       XRayTableStats `json:"stats"`
 }
 
 // XRayCard represents a single insight card.
 type XRayCard struct {
-	ID            string                 `json:"id"`
-	Title         string                 `json:"title"`
-	Description   string                 `json:"description"`
-	Visualization string                 `json:"visualization"`
-	Query         string                 `json:"query"`
-	Data          *store.QueryResult     `json:"data,omitempty"`
-	Width         int                    `json:"width"`
-	Height        int                    `json:"height"`
-	Row           int                    `json:"row"`
-	Col           int                    `json:"col"`
-	Settings      map[string]interface{} `json:"settings,omitempty"`
+	ID            string             `json:"id"`
+	Title         string             `json:"title"`
+	Description   string             `json:"description"`
+	Visualization string             `json:"visualization"`
+	Query         string             `json:"query"`
+	Data          *store.QueryResult `json:"data,omitempty"`
+	Width         int                `json:"width"`
+	Height        int                `json:"height"`
+	Row           int                `json:"row"`
+	Col           int                `json:"col"`
+	Settings      map[string]any     `json:"settings,omitempty"`
 }
 
 // XRayNavLink represents a navigation link to related X-rays.
@@ -194,7 +194,7 @@ func (h *XRay) generateTableXRay(
 		Height:        2,
 		Row:           row,
 		Col:           0,
-		Settings: map[string]interface{}{
+		Settings: map[string]any{
 			"compact": true,
 		},
 	}
@@ -220,7 +220,7 @@ func (h *XRay) generateTableXRay(
 		Col:           4,
 		Data: &store.QueryResult{
 			Columns:  []store.ResultColumn{{Name: "count", DisplayName: "Columns", Type: "number"}},
-			Rows:     []map[string]interface{}{{"count": len(columns)}},
+			Rows:     []map[string]any{{"count": len(columns)}},
 			RowCount: 1,
 		},
 	}
@@ -239,7 +239,7 @@ func (h *XRay) generateTableXRay(
 			Height:        2,
 			Row:           row,
 			Col:           8,
-			Settings: map[string]interface{}{
+			Settings: map[string]any{
 				"compact":  true,
 				"decimals": 2,
 			},
@@ -267,7 +267,7 @@ func (h *XRay) generateTableXRay(
 			Height:        2,
 			Row:           row,
 			Col:           12,
-			Settings: map[string]interface{}{
+			Settings: map[string]any{
 				"compact":  true,
 				"decimals": 2,
 			},
@@ -299,7 +299,7 @@ func (h *XRay) generateTableXRay(
 			Height:        4,
 			Row:           row,
 			Col:           0,
-			Settings: map[string]interface{}{
+			Settings: map[string]any{
 				"showPoints": false,
 				"showTrend":  true,
 			},
@@ -877,7 +877,7 @@ func (h *XRay) SaveXRay(c *mizu.Ctx) error {
 			Col:         card.Col,
 			Width:       card.Width,
 			Height:      card.Height,
-			Settings: map[string]interface{}{
+			Settings: map[string]any{
 				"title":         card.Title,
 				"description":   card.Description,
 				"visualization": card.Visualization,
@@ -888,7 +888,7 @@ func (h *XRay) SaveXRay(c *mizu.Ctx) error {
 		h.store.Dashboards().CreateCard(c.Request().Context(), dashCard)
 	}
 
-	return c.JSON(201, map[string]interface{}{
+	return c.JSON(201, map[string]any{
 		"dashboard_id": dashboard.ID,
 		"name":         dashboard.Name,
 		"message":      "X-ray saved as dashboard",
@@ -923,10 +923,10 @@ func (h *XRay) XRayCompare(c *mizu.Ctx) error {
 	tableID := c.Param("tableId")
 
 	var req struct {
-		Column       string `json:"column"`
-		Value1       string `json:"value1"`
-		Value2       string `json:"value2"`
-		IncludeData  bool   `json:"include_data"`
+		Column      string `json:"column"`
+		Value1      string `json:"value1"`
+		Value2      string `json:"value2"`
+		IncludeData bool   `json:"include_data"`
 	}
 	if err := c.BindJSON(&req, 1<<20); err != nil {
 		return c.JSON(400, map[string]string{"error": "Invalid request body"})

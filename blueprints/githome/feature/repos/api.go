@@ -16,90 +16,90 @@ var (
 
 // Repository represents a GitHub repository
 type Repository struct {
-	ID                  int64             `json:"id"`
-	NodeID              string            `json:"node_id"`
-	Name                string            `json:"name"`
-	FullName            string            `json:"full_name"`
-	Owner               *users.SimpleUser `json:"owner"`
-	Private             bool              `json:"private"`
-	HTMLURL             string            `json:"html_url"`
-	Description         string            `json:"description,omitempty"`
-	Fork                bool              `json:"fork"`
-	URL                 string            `json:"url"`
-	ForksURL            string            `json:"forks_url"`
-	KeysURL             string            `json:"keys_url"`
-	CollaboratorsURL    string            `json:"collaborators_url"`
-	TeamsURL            string            `json:"teams_url"`
-	HooksURL            string            `json:"hooks_url"`
-	IssueEventsURL      string            `json:"issue_events_url"`
-	EventsURL           string            `json:"events_url"`
-	AssigneesURL        string            `json:"assignees_url"`
-	BranchesURL         string            `json:"branches_url"`
-	TagsURL             string            `json:"tags_url"`
-	BlobsURL            string            `json:"blobs_url"`
-	GitTagsURL          string            `json:"git_tags_url"`
-	GitRefsURL          string            `json:"git_refs_url"`
-	TreesURL            string            `json:"trees_url"`
-	StatusesURL         string            `json:"statuses_url"`
-	LanguagesURL        string            `json:"languages_url"`
-	StargazersURL       string            `json:"stargazers_url"`
-	ContributorsURL     string            `json:"contributors_url"`
-	SubscribersURL      string            `json:"subscribers_url"`
-	SubscriptionURL     string            `json:"subscription_url"`
-	CommitsURL          string            `json:"commits_url"`
-	GitCommitsURL       string            `json:"git_commits_url"`
-	CommentsURL         string            `json:"comments_url"`
-	IssueCommentURL     string            `json:"issue_comment_url"`
-	ContentsURL         string            `json:"contents_url"`
-	CompareURL          string            `json:"compare_url"`
-	MergesURL           string            `json:"merges_url"`
-	ArchiveURL          string            `json:"archive_url"`
-	DownloadsURL        string            `json:"downloads_url"`
-	IssuesURL           string            `json:"issues_url"`
-	PullsURL            string            `json:"pulls_url"`
-	MilestonesURL       string            `json:"milestones_url"`
-	NotificationsURL    string            `json:"notifications_url"`
-	LabelsURL           string            `json:"labels_url"`
-	ReleasesURL         string            `json:"releases_url"`
-	DeploymentsURL      string            `json:"deployments_url"`
-	GitURL              string            `json:"git_url"`
-	SSHURL              string            `json:"ssh_url"`
-	CloneURL            string            `json:"clone_url"`
-	SVNURL              string            `json:"svn_url"`
-	Homepage            string            `json:"homepage,omitempty"`
-	Language            string            `json:"language,omitempty"`
-	ForksCount          int               `json:"forks_count"`
-	Forks               int               `json:"forks"`
-	StargazersCount     int               `json:"stargazers_count"`
-	WatchersCount       int               `json:"watchers_count"`
-	Watchers            int               `json:"watchers"`
-	Size                int               `json:"size"`
-	DefaultBranch       string            `json:"default_branch"`
-	OpenIssuesCount     int               `json:"open_issues_count"`
-	OpenIssues          int               `json:"open_issues"`
-	IsTemplate          bool              `json:"is_template"`
-	Topics              []string          `json:"topics"`
-	HasIssues           bool              `json:"has_issues"`
-	HasProjects         bool              `json:"has_projects"`
-	HasWiki             bool              `json:"has_wiki"`
-	HasPages            bool              `json:"has_pages"`
-	HasDownloads        bool              `json:"has_downloads"`
-	HasDiscussions      bool              `json:"has_discussions"`
-	Archived            bool              `json:"archived"`
-	Disabled            bool              `json:"disabled"`
-	Visibility          string            `json:"visibility"` // public, private, internal
-	PushedAt            *time.Time        `json:"pushed_at"`
-	CreatedAt           time.Time         `json:"created_at"`
-	UpdatedAt           time.Time         `json:"updated_at"`
-	Permissions         *Permissions      `json:"permissions,omitempty"`
-	License             *License          `json:"license,omitempty"`
-	AllowRebaseMerge    bool              `json:"allow_rebase_merge"`
-	AllowSquashMerge    bool              `json:"allow_squash_merge"`
-	AllowMergeCommit    bool              `json:"allow_merge_commit"`
-	AllowAutoMerge      bool              `json:"allow_auto_merge"`
-	DeleteBranchOnMerge bool              `json:"delete_branch_on_merge"`
-	AllowForking        bool              `json:"allow_forking"`
-	WebCommitSignoffRequired bool         `json:"web_commit_signoff_required"`
+	ID                       int64             `json:"id"`
+	NodeID                   string            `json:"node_id"`
+	Name                     string            `json:"name"`
+	FullName                 string            `json:"full_name"`
+	Owner                    *users.SimpleUser `json:"owner"`
+	Private                  bool              `json:"private"`
+	HTMLURL                  string            `json:"html_url"`
+	Description              string            `json:"description,omitempty"`
+	Fork                     bool              `json:"fork"`
+	URL                      string            `json:"url"`
+	ForksURL                 string            `json:"forks_url"`
+	KeysURL                  string            `json:"keys_url"`
+	CollaboratorsURL         string            `json:"collaborators_url"`
+	TeamsURL                 string            `json:"teams_url"`
+	HooksURL                 string            `json:"hooks_url"`
+	IssueEventsURL           string            `json:"issue_events_url"`
+	EventsURL                string            `json:"events_url"`
+	AssigneesURL             string            `json:"assignees_url"`
+	BranchesURL              string            `json:"branches_url"`
+	TagsURL                  string            `json:"tags_url"`
+	BlobsURL                 string            `json:"blobs_url"`
+	GitTagsURL               string            `json:"git_tags_url"`
+	GitRefsURL               string            `json:"git_refs_url"`
+	TreesURL                 string            `json:"trees_url"`
+	StatusesURL              string            `json:"statuses_url"`
+	LanguagesURL             string            `json:"languages_url"`
+	StargazersURL            string            `json:"stargazers_url"`
+	ContributorsURL          string            `json:"contributors_url"`
+	SubscribersURL           string            `json:"subscribers_url"`
+	SubscriptionURL          string            `json:"subscription_url"`
+	CommitsURL               string            `json:"commits_url"`
+	GitCommitsURL            string            `json:"git_commits_url"`
+	CommentsURL              string            `json:"comments_url"`
+	IssueCommentURL          string            `json:"issue_comment_url"`
+	ContentsURL              string            `json:"contents_url"`
+	CompareURL               string            `json:"compare_url"`
+	MergesURL                string            `json:"merges_url"`
+	ArchiveURL               string            `json:"archive_url"`
+	DownloadsURL             string            `json:"downloads_url"`
+	IssuesURL                string            `json:"issues_url"`
+	PullsURL                 string            `json:"pulls_url"`
+	MilestonesURL            string            `json:"milestones_url"`
+	NotificationsURL         string            `json:"notifications_url"`
+	LabelsURL                string            `json:"labels_url"`
+	ReleasesURL              string            `json:"releases_url"`
+	DeploymentsURL           string            `json:"deployments_url"`
+	GitURL                   string            `json:"git_url"`
+	SSHURL                   string            `json:"ssh_url"`
+	CloneURL                 string            `json:"clone_url"`
+	SVNURL                   string            `json:"svn_url"`
+	Homepage                 string            `json:"homepage,omitempty"`
+	Language                 string            `json:"language,omitempty"`
+	ForksCount               int               `json:"forks_count"`
+	Forks                    int               `json:"forks"`
+	StargazersCount          int               `json:"stargazers_count"`
+	WatchersCount            int               `json:"watchers_count"`
+	Watchers                 int               `json:"watchers"`
+	Size                     int               `json:"size"`
+	DefaultBranch            string            `json:"default_branch"`
+	OpenIssuesCount          int               `json:"open_issues_count"`
+	OpenIssues               int               `json:"open_issues"`
+	IsTemplate               bool              `json:"is_template"`
+	Topics                   []string          `json:"topics"`
+	HasIssues                bool              `json:"has_issues"`
+	HasProjects              bool              `json:"has_projects"`
+	HasWiki                  bool              `json:"has_wiki"`
+	HasPages                 bool              `json:"has_pages"`
+	HasDownloads             bool              `json:"has_downloads"`
+	HasDiscussions           bool              `json:"has_discussions"`
+	Archived                 bool              `json:"archived"`
+	Disabled                 bool              `json:"disabled"`
+	Visibility               string            `json:"visibility"` // public, private, internal
+	PushedAt                 *time.Time        `json:"pushed_at"`
+	CreatedAt                time.Time         `json:"created_at"`
+	UpdatedAt                time.Time         `json:"updated_at"`
+	Permissions              *Permissions      `json:"permissions,omitempty"`
+	License                  *License          `json:"license,omitempty"`
+	AllowRebaseMerge         bool              `json:"allow_rebase_merge"`
+	AllowSquashMerge         bool              `json:"allow_squash_merge"`
+	AllowMergeCommit         bool              `json:"allow_merge_commit"`
+	AllowAutoMerge           bool              `json:"allow_auto_merge"`
+	DeleteBranchOnMerge      bool              `json:"delete_branch_on_merge"`
+	AllowForking             bool              `json:"allow_forking"`
+	WebCommitSignoffRequired bool              `json:"web_commit_signoff_required"`
 	// Internal fields
 	OwnerID   int64  `json:"-"`
 	OwnerType string `json:"-"` // User, Organization
@@ -147,57 +147,57 @@ type CreateIn struct {
 
 // UpdateIn represents the input for updating a repository
 type UpdateIn struct {
-	Name                  *string `json:"name,omitempty"`
-	Description           *string `json:"description,omitempty"`
-	Homepage              *string `json:"homepage,omitempty"`
-	Private               *bool   `json:"private,omitempty"`
-	Visibility            *string `json:"visibility,omitempty"`
-	HasIssues             *bool   `json:"has_issues,omitempty"`
-	HasProjects           *bool   `json:"has_projects,omitempty"`
-	HasWiki               *bool   `json:"has_wiki,omitempty"`
-	HasDiscussions        *bool   `json:"has_discussions,omitempty"`
-	IsTemplate            *bool   `json:"is_template,omitempty"`
-	DefaultBranch         *string `json:"default_branch,omitempty"`
-	AllowSquashMerge      *bool   `json:"allow_squash_merge,omitempty"`
-	AllowMergeCommit      *bool   `json:"allow_merge_commit,omitempty"`
-	AllowRebaseMerge      *bool   `json:"allow_rebase_merge,omitempty"`
-	AllowAutoMerge        *bool   `json:"allow_auto_merge,omitempty"`
-	DeleteBranchOnMerge   *bool   `json:"delete_branch_on_merge,omitempty"`
-	AllowForking          *bool   `json:"allow_forking,omitempty"`
-	Archived              *bool   `json:"archived,omitempty"`
-	WebCommitSignoffRequired *bool `json:"web_commit_signoff_required,omitempty"`
+	Name                     *string `json:"name,omitempty"`
+	Description              *string `json:"description,omitempty"`
+	Homepage                 *string `json:"homepage,omitempty"`
+	Private                  *bool   `json:"private,omitempty"`
+	Visibility               *string `json:"visibility,omitempty"`
+	HasIssues                *bool   `json:"has_issues,omitempty"`
+	HasProjects              *bool   `json:"has_projects,omitempty"`
+	HasWiki                  *bool   `json:"has_wiki,omitempty"`
+	HasDiscussions           *bool   `json:"has_discussions,omitempty"`
+	IsTemplate               *bool   `json:"is_template,omitempty"`
+	DefaultBranch            *string `json:"default_branch,omitempty"`
+	AllowSquashMerge         *bool   `json:"allow_squash_merge,omitempty"`
+	AllowMergeCommit         *bool   `json:"allow_merge_commit,omitempty"`
+	AllowRebaseMerge         *bool   `json:"allow_rebase_merge,omitempty"`
+	AllowAutoMerge           *bool   `json:"allow_auto_merge,omitempty"`
+	DeleteBranchOnMerge      *bool   `json:"delete_branch_on_merge,omitempty"`
+	AllowForking             *bool   `json:"allow_forking,omitempty"`
+	Archived                 *bool   `json:"archived,omitempty"`
+	WebCommitSignoffRequired *bool   `json:"web_commit_signoff_required,omitempty"`
 }
 
 // TransferIn represents the input for transferring a repository
 type TransferIn struct {
-	NewOwner  string  `json:"new_owner"`
-	NewName   *string `json:"new_name,omitempty"`
-	TeamIDs   []int64 `json:"team_ids,omitempty"`
+	NewOwner string  `json:"new_owner"`
+	NewName  *string `json:"new_name,omitempty"`
+	TeamIDs  []int64 `json:"team_ids,omitempty"`
 }
 
 // ListOpts contains options for listing repositories
 type ListOpts struct {
 	Page      int    `json:"page,omitempty"`
 	PerPage   int    `json:"per_page,omitempty"`
-	Type      string `json:"type,omitempty"`       // all, public, private, forks, sources, member
-	Sort      string `json:"sort,omitempty"`       // created, updated, pushed, full_name
+	Type      string `json:"type,omitempty"`      // all, public, private, forks, sources, member
+	Sort      string `json:"sort,omitempty"`      // created, updated, pushed, full_name
 	Direction string `json:"direction,omitempty"` // asc, desc
 }
 
 // Content represents file/directory content
 type Content struct {
-	Type        string `json:"type"` // file, dir, symlink, submodule
-	Encoding    string `json:"encoding,omitempty"`
-	Size        int    `json:"size"`
-	Name        string `json:"name"`
-	Path        string `json:"path"`
-	Content     string `json:"content,omitempty"`
-	SHA         string `json:"sha"`
-	URL         string `json:"url"`
-	GitURL      string `json:"git_url"`
-	HTMLURL     string `json:"html_url"`
-	DownloadURL string `json:"download_url,omitempty"`
-	Target      string `json:"target,omitempty"` // for symlinks
+	Type            string `json:"type"` // file, dir, symlink, submodule
+	Encoding        string `json:"encoding,omitempty"`
+	Size            int    `json:"size"`
+	Name            string `json:"name"`
+	Path            string `json:"path"`
+	Content         string `json:"content,omitempty"`
+	SHA             string `json:"sha"`
+	URL             string `json:"url"`
+	GitURL          string `json:"git_url"`
+	HTMLURL         string `json:"html_url"`
+	DownloadURL     string `json:"download_url,omitempty"`
+	Target          string `json:"target,omitempty"` // for symlinks
 	SubmoduleGitURL string `json:"submodule_git_url,omitempty"`
 }
 
@@ -216,7 +216,7 @@ type TreeEntry struct {
 	LastCommitSHA     string    `json:"last_commit_sha,omitempty"`
 	LastCommitMessage string    `json:"last_commit_message,omitempty"`
 	LastCommitAuthor  string    `json:"last_commit_author,omitempty"`
-	LastCommitDate    time.Time `json:"last_commit_date,omitempty"`
+	LastCommitDate    time.Time `json:"last_commit_date"`
 }
 
 // BlameLine represents a line with blame information

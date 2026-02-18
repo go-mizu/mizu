@@ -155,14 +155,8 @@ func ExtractPageInfo(body []byte) (title, description string) {
 // extractMetaContent finds the content="" value near a meta tag attribute position.
 func extractMetaContent(s string, attrPos int) string {
 	// Search backward and forward for the <meta tag boundary
-	start := attrPos - 200
-	if start < 0 {
-		start = 0
-	}
-	end := attrPos + 500
-	if end > len(s) {
-		end = len(s)
-	}
+	start := max(attrPos-200, 0)
+	end := min(attrPos+500, len(s))
 	region := s[start:end]
 	lower := strings.ToLower(region)
 

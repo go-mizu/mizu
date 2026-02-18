@@ -61,7 +61,7 @@ func TestWithOptions_NoKey(t *testing.T) {
 	})
 
 	// Request without idempotency key
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		req := httptest.NewRequest(http.MethodPost, "/create", nil)
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
@@ -140,7 +140,7 @@ func TestWithOptions_Methods(t *testing.T) {
 	})
 
 	// POST should be idempotent
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		req := httptest.NewRequest(http.MethodPost, "/create", nil)
 		req.Header.Set("Idempotency-Key", "key")
 		rec := httptest.NewRecorder()
@@ -151,7 +151,7 @@ func TestWithOptions_Methods(t *testing.T) {
 	}
 
 	// PUT should NOT be idempotent (not in Methods list)
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		req := httptest.NewRequest(http.MethodPut, "/update", nil)
 		req.Header.Set("Idempotency-Key", "key")
 		rec := httptest.NewRecorder()
@@ -173,7 +173,7 @@ func TestWithOptions_GET(t *testing.T) {
 	})
 
 	// GET requests should not be cached
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		req := httptest.NewRequest(http.MethodGet, "/resource", nil)
 		req.Header.Set("Idempotency-Key", "key")
 		rec := httptest.NewRecorder()

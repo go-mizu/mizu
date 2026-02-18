@@ -63,7 +63,7 @@ func (h *NotificationHandler) MarkAllAsRead(c *mizu.Ctx) error {
 	}
 
 	var in struct {
-		LastReadAt time.Time `json:"last_read_at,omitempty"`
+		LastReadAt time.Time `json:"last_read_at"`
 		Read       bool      `json:"read,omitempty"`
 	}
 	c.BindJSON(&in, 1<<20) // optional
@@ -256,7 +256,7 @@ func (h *NotificationHandler) MarkRepoNotificationsAsRead(c *mizu.Ctx) error {
 	}
 
 	var in struct {
-		LastReadAt time.Time `json:"last_read_at,omitempty"`
+		LastReadAt time.Time `json:"last_read_at"`
 	}
 	c.BindJSON(&in, 1<<20) // optional
 

@@ -222,7 +222,7 @@ func benchmarkBatchProcessing(b *testing.B, totalCells, batchSize int) {
 
 	// Generate cells
 	cellsToImport := make([]*cells.Cell, totalCells)
-	for i := 0; i < totalCells; i++ {
+	for i := range totalCells {
 		cellsToImport[i] = &cells.Cell{
 			SheetID: "sheet1",
 			Row:     i / 100,
@@ -237,10 +237,7 @@ func benchmarkBatchProcessing(b *testing.B, totalCells, batchSize int) {
 	for i := 0; i < b.N; i++ {
 		// Simulate batch processing with different batch sizes
 		for j := 0; j < len(cellsToImport); j += batchSize {
-			end := j + batchSize
-			if end > len(cellsToImport) {
-				end = len(cellsToImport)
-			}
+			end := min(j+batchSize, len(cellsToImport))
 
 			batch := cellsToImport[j:end]
 			updates := make([]cells.CellUpdate, len(batch))
@@ -291,7 +288,7 @@ func benchmarkMergeRegions(b *testing.B, count int) {
 
 	// Generate merge regions
 	mergeRegions := make([]MergedRegionImport, count)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		mergeRegions[i] = MergedRegionImport{
 			StartRow: i * 3,
 			StartCol: 0,
@@ -363,8 +360,8 @@ func generateCSVData(rows, cols int) string {
 	var b strings.Builder
 	b.Grow(rows * cols * 10) // Preallocate
 
-	for row := 0; row < rows; row++ {
-		for col := 0; col < cols; col++ {
+	for row := range rows {
+		for col := range cols {
 			if col > 0 {
 				b.WriteByte(',')
 			}
@@ -380,8 +377,8 @@ func generateMixedTypeCSV(rows, cols int) string {
 	var b strings.Builder
 	b.Grow(rows * cols * 15)
 
-	for row := 0; row < rows; row++ {
-		for col := 0; col < cols; col++ {
+	for row := range rows {
+		for col := range cols {
 			if col > 0 {
 				b.WriteByte(',')
 			}
@@ -412,9 +409,9 @@ func generateCSVWithEmptyRows(rows, cols, emptyPercent int) string {
 	var b strings.Builder
 	b.Grow(rows * cols * 10)
 
-	for row := 0; row < rows; row++ {
+	for row := range rows {
 		isEmpty := (row*100/rows < emptyPercent)
-		for col := 0; col < cols; col++ {
+		for col := range cols {
 			if col > 0 {
 				b.WriteByte(',')
 			}
@@ -429,10 +426,10 @@ func generateCSVWithEmptyRows(rows, cols, emptyPercent int) string {
 }
 
 func generateJSONData(rows, cols, merges int) []byte {
-	cellsData := make([]map[string]interface{}, 0, rows*cols)
-	for row := 0; row < rows; row++ {
-		for col := 0; col < cols; col++ {
-			cellsData = append(cellsData, map[string]interface{}{
+	cellsData := make([]map[string]any, 0, rows*cols)
+	for row := range rows {
+		for col := range cols {
+			cellsData = append(cellsData, map[string]any{
 				"row":   row,
 				"col":   col,
 				"value": fmt.Sprintf("cell-%d-%d", row, col),
@@ -440,9 +437,9 @@ func generateJSONData(rows, cols, merges int) []byte {
 		}
 	}
 
-	mergesData := make([]map[string]interface{}, merges)
-	for i := 0; i < merges; i++ {
-		mergesData[i] = map[string]interface{}{
+	mergesData := make([]map[string]any, merges)
+	for i := range merges {
+		mergesData[i] = map[string]any{
 			"startRow": i * 3,
 			"startCol": 0,
 			"endRow":   i*3 + 1,
@@ -450,9 +447,9 @@ func generateJSONData(rows, cols, merges int) []byte {
 		}
 	}
 
-	jsonData := map[string]interface{}{
+	jsonData := map[string]any{
 		"version": "1.0",
-		"sheets": []map[string]interface{}{
+		"sheets": []map[string]any{
 			{
 				"name":          "Sheet1",
 				"cells":         cellsData,
@@ -636,6 +633,6 @@ func (m *benchCellsAPI) DeleteCols(ctx context.Context, sheetID string, startCol
 	return nil
 }
 
-func (m *benchCellsAPI) EvaluateFormula(ctx context.Context, sheetID, formula string) (interface{}, error) {
+func (m *benchCellsAPI) EvaluateFormula(ctx context.Context, sheetID, formula string) (any, error) {
 	return nil, nil
 }

@@ -23,15 +23,15 @@ import (
 //   - It does not depend on any third-party router.
 //   - It uses the contract descriptor as the routing table.
 //   - It fills inputs from:
-//       - Path params (from "{name}" segments)
-//       - Query params (for GET)
-//       - JSON body (for non-GET when present)
+//   - Path params (from "{name}" segments)
+//   - Query params (for GET)
+//   - JSON body (for non-GET when present)
 //   - It returns JSON for outputs and standard error JSON for failures.
 type Server struct {
 	inv contract.Invoker
 	svc *contract.Service
 
-	mux   *http.ServeMux
+	mux    *http.ServeMux
 	routes []route
 }
 
@@ -199,8 +199,8 @@ func parsePathTemplate(tpl string) (segments []string, params []string, err erro
 	if tpl == "" || tpl[0] != '/' {
 		return nil, nil, fmt.Errorf("path must start with '/'")
 	}
-	parts := strings.Split(strings.Trim(tpl, "/"), "/")
-	for _, p := range parts {
+	parts := strings.SplitSeq(strings.Trim(tpl, "/"), "/")
+	for p := range parts {
 		if p == "" {
 			continue
 		}

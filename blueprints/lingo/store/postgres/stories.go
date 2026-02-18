@@ -84,7 +84,7 @@ func (s *StoryStore) GetStoriesBySet(ctx context.Context, courseID uuid.UUID, se
 
 type storyRows interface {
 	Next() bool
-	Scan(dest ...interface{}) error
+	Scan(dest ...any) error
 }
 
 func (s *StoryStore) scanStories(rows storyRows) ([]store.Story, error) {

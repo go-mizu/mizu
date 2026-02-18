@@ -43,19 +43,19 @@ func (s *Service) Create(ctx context.Context, creatorID int64, in *CreateIn) (*O
 
 	now := time.Now()
 	org := &Organization{
-		Login:                        in.Login,
-		Name:                         in.Name,
-		Description:                  in.Description,
-		Email:                        in.Email,
-		Type:                         "Organization",
-		HasOrganizationProjects:      true,
-		HasRepositoryProjects:        true,
-		MembersCanCreateRepositories: true,
-		MembersCanCreatePublicRepositories: true,
+		Login:                               in.Login,
+		Name:                                in.Name,
+		Description:                         in.Description,
+		Email:                               in.Email,
+		Type:                                "Organization",
+		HasOrganizationProjects:             true,
+		HasRepositoryProjects:               true,
+		MembersCanCreateRepositories:        true,
+		MembersCanCreatePublicRepositories:  true,
 		MembersCanCreatePrivateRepositories: true,
-		DefaultRepositoryPermission:  "read",
-		CreatedAt:                    now,
-		UpdatedAt:                    now,
+		DefaultRepositoryPermission:         "read",
+		CreatedAt:                           now,
+		UpdatedAt:                           now,
 	}
 
 	if err := s.store.Create(ctx, org); err != nil {
@@ -389,7 +389,7 @@ func (s *Service) ConcealMembership(ctx context.Context, org, username string) e
 
 // populateURLs fills in the URL fields for an organization
 func (s *Service) populateURLs(o *Organization) {
-	o.NodeID = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Organization:%d", o.ID)))
+	o.NodeID = base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Organization:%d", o.ID))
 	o.URL = fmt.Sprintf("%s/api/v3/orgs/%s", s.baseURL, o.Login)
 	o.HTMLURL = fmt.Sprintf("%s/%s", s.baseURL, o.Login)
 	o.ReposURL = fmt.Sprintf("%s/api/v3/orgs/%s/repos", s.baseURL, o.Login)

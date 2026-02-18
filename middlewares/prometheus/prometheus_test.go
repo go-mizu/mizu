@@ -38,7 +38,7 @@ func TestMetricsEndpoint(t *testing.T) {
 	app.Get("/metrics", metrics.Handler())
 
 	// Make some requests
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
@@ -75,7 +75,7 @@ func TestRequestCounter(t *testing.T) {
 	})
 
 	// Make requests
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)

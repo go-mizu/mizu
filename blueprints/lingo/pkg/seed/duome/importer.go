@@ -252,10 +252,7 @@ func (i *Importer) importCourseContent(ctx context.Context, courseID string, dat
 	skillIndex := 0
 	for unitPos := 1; unitPos <= unitCount; unitPos++ {
 		// Determine skills for this unit
-		endIndex := skillIndex + SkillsPerUnit
-		if endIndex > len(data.Skills) {
-			endIndex = len(data.Skills)
-		}
+		endIndex := min(skillIndex+SkillsPerUnit, len(data.Skills))
 		unitSkills := data.Skills[skillIndex:endIndex]
 
 		// Create unit
@@ -394,7 +391,7 @@ func (i *Importer) generateExercises(ctx context.Context, lessonID string, vocab
 	exercises := make([]store.Exercise, 0, ExercisesPerLesson)
 
 	// Generate diverse exercise types
-	for j := 0; j < ExercisesPerLesson; j++ {
+	for j := range ExercisesPerLesson {
 		vocab := vocabulary[j%len(vocabulary)]
 		exType := getExerciseType(j, level)
 

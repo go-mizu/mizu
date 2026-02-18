@@ -9,8 +9,8 @@ import (
 )
 
 // createTestRow creates a row in a database and returns it.
-func createTestRow(ts *TestServer, cookie *http.Cookie, dbID string, props map[string]interface{}) *rows.Row {
-	resp := ts.Request("POST", "/api/v1/databases/"+dbID+"/rows", map[string]interface{}{
+func createTestRow(ts *TestServer, cookie *http.Cookie, dbID string, props map[string]any) *rows.Row {
+	resp := ts.Request("POST", "/api/v1/databases/"+dbID+"/rows", map[string]any{
 		"properties": props,
 	}, cookie)
 	ts.ExpectStatus(resp, http.StatusCreated)
@@ -31,29 +31,29 @@ func TestRowHandler_Create(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		props      map[string]interface{}
+		props      map[string]any
 		wantStatus int
 	}{
 		{
 			name:       "basic row",
-			props:      map[string]interface{}{"title": "Test Row", "status": "active"},
+			props:      map[string]any{"title": "Test Row", "status": "active"},
 			wantStatus: http.StatusCreated,
 		},
 		{
 			name:       "row with multiple properties",
-			props:      map[string]interface{}{"title": "Multi Prop", "count": 42, "done": true},
+			props:      map[string]any{"title": "Multi Prop", "count": 42, "done": true},
 			wantStatus: http.StatusCreated,
 		},
 		{
 			name:       "empty properties",
-			props:      map[string]interface{}{},
+			props:      map[string]any{},
 			wantStatus: http.StatusCreated,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := ts.Request("POST", "/api/v1/databases/"+db.ID+"/rows", map[string]interface{}{
+			resp := ts.Request("POST", "/api/v1/databases/"+db.ID+"/rows", map[string]any{
 				"properties": tt.props,
 			}, cookie)
 			ts.ExpectStatus(resp, tt.wantStatus)
@@ -83,7 +83,7 @@ func TestRowHandler_Get(t *testing.T) {
 	_, cookie := ts.Register("rowget@example.com", "Row Get", "password123")
 	ws := createTestWorkspace(ts, cookie, "Row Get Workspace", "row-get-ws")
 	db := createTestDatabase(ts, cookie, ws.ID, "Row Get Database")
-	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{"title": "Test Row"})
+	row := createTestRow(ts, cookie, db.ID, map[string]any{"title": "Test Row"})
 
 	t.Run("get existing row", func(t *testing.T) {
 		resp := ts.Request("GET", "/api/v1/rows/"+row.ID, nil, cookie)
@@ -112,11 +112,11 @@ func TestRowHandler_Update(t *testing.T) {
 	_, cookie := ts.Register("rowupdate@example.com", "Row Update", "password123")
 	ws := createTestWorkspace(ts, cookie, "Row Update Workspace", "row-update-ws")
 	db := createTestDatabase(ts, cookie, ws.ID, "Row Update Database")
-	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{"title": "Original", "status": "todo"})
+	row := createTestRow(ts, cookie, db.ID, map[string]any{"title": "Original", "status": "todo"})
 
 	t.Run("update properties", func(t *testing.T) {
-		resp := ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]interface{}{
-			"properties": map[string]interface{}{"title": "Updated", "status": "done"},
+		resp := ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]any{
+			"properties": map[string]any{"title": "Updated", "status": "done"},
 		}, cookie)
 		ts.ExpectStatus(resp, http.StatusOK)
 
@@ -132,8 +132,8 @@ func TestRowHandler_Update(t *testing.T) {
 	})
 
 	t.Run("update non-existent row", func(t *testing.T) {
-		resp := ts.Request("PATCH", "/api/v1/rows/non-existent-id", map[string]interface{}{
-			"properties": map[string]interface{}{"title": "Updated"},
+		resp := ts.Request("PATCH", "/api/v1/rows/non-existent-id", map[string]any{
+			"properties": map[string]any{"title": "Updated"},
 		}, cookie)
 		ts.ExpectStatus(resp, http.StatusInternalServerError)
 		resp.Body.Close()
@@ -148,7 +148,7 @@ func TestRowHandler_Delete(t *testing.T) {
 	_, cookie := ts.Register("rowdelete@example.com", "Row Delete", "password123")
 	ws := createTestWorkspace(ts, cookie, "Row Delete Workspace", "row-delete-ws")
 	db := createTestDatabase(ts, cookie, ws.ID, "Row Delete Database")
-	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{"title": "To Delete"})
+	row := createTestRow(ts, cookie, db.ID, map[string]any{"title": "To Delete"})
 
 	t.Run("delete row", func(t *testing.T) {
 		resp := ts.Request("DELETE", "/api/v1/rows/"+row.ID, nil, cookie)
@@ -172,8 +172,8 @@ func TestRowHandler_List(t *testing.T) {
 	db := createTestDatabase(ts, cookie, ws.ID, "Row List Database")
 
 	// Create multiple rows
-	for i := 0; i < 5; i++ {
-		createTestRow(ts, cookie, db.ID, map[string]interface{}{"title": "Row " + string(rune('A'+i))})
+	for i := range 5 {
+		createTestRow(ts, cookie, db.ID, map[string]any{"title": "Row " + string(rune('A'+i))})
 	}
 
 	t.Run("list all rows", func(t *testing.T) {
@@ -199,9 +199,9 @@ func TestRowHandler_ListWithFilters(t *testing.T) {
 	db := createTestDatabase(ts, cookie, ws.ID, "Row Filter Database")
 
 	// Create rows with different statuses
-	createTestRow(ts, cookie, db.ID, map[string]interface{}{"title": "Row 1", "status": "active"})
-	createTestRow(ts, cookie, db.ID, map[string]interface{}{"title": "Row 2", "status": "done"})
-	createTestRow(ts, cookie, db.ID, map[string]interface{}{"title": "Row 3", "status": "active"})
+	createTestRow(ts, cookie, db.ID, map[string]any{"title": "Row 1", "status": "active"})
+	createTestRow(ts, cookie, db.ID, map[string]any{"title": "Row 2", "status": "done"})
+	createTestRow(ts, cookie, db.ID, map[string]any{"title": "Row 3", "status": "active"})
 
 	t.Run("filter by status", func(t *testing.T) {
 		filters := `[{"property":"status","operator":"is","value":"active"}]`
@@ -225,7 +225,7 @@ func TestRowHandler_Duplicate(t *testing.T) {
 	_, cookie := ts.Register("rowdup@example.com", "Row Dup", "password123")
 	ws := createTestWorkspace(ts, cookie, "Row Dup Workspace", "row-dup-ws")
 	db := createTestDatabase(ts, cookie, ws.ID, "Row Dup Database")
-	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{"title": "Original", "count": 42})
+	row := createTestRow(ts, cookie, db.ID, map[string]any{"title": "Original", "count": 42})
 
 	t.Run("duplicate row", func(t *testing.T) {
 		resp := ts.Request("POST", "/api/v1/rows/"+row.ID+"/duplicate", nil, cookie)
@@ -255,7 +255,7 @@ func TestRowHandler_PropertyTypes_Text(t *testing.T) {
 	db := createTestDatabase(ts, cookie, ws.ID, "Row Text Database")
 
 	// Create with text properties
-	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{
+	row := createTestRow(ts, cookie, db.ID, map[string]any{
 		"name":        "John Doe",
 		"description": "A long text description",
 	})
@@ -265,8 +265,8 @@ func TestRowHandler_PropertyTypes_Text(t *testing.T) {
 	}
 
 	// Update text property
-	resp := ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]interface{}{
-		"properties": map[string]interface{}{"name": "Jane Doe"},
+	resp := ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]any{
+		"properties": map[string]any{"name": "Jane Doe"},
 	}, cookie)
 	ts.ExpectStatus(resp, http.StatusOK)
 
@@ -288,7 +288,7 @@ func TestRowHandler_PropertyTypes_Number(t *testing.T) {
 	db := createTestDatabase(ts, cookie, ws.ID, "Row Num Database")
 
 	// Create with number properties
-	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{
+	row := createTestRow(ts, cookie, db.ID, map[string]any{
 		"age":   25,
 		"price": 99.99,
 		"count": 100,
@@ -302,8 +302,8 @@ func TestRowHandler_PropertyTypes_Number(t *testing.T) {
 	}
 
 	// Update number property
-	resp := ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]interface{}{
-		"properties": map[string]interface{}{"age": 30},
+	resp := ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]any{
+		"properties": map[string]any{"age": 30},
 	}, cookie)
 	ts.ExpectStatus(resp, http.StatusOK)
 	resp.Body.Close()
@@ -319,7 +319,7 @@ func TestRowHandler_PropertyTypes_Checkbox(t *testing.T) {
 	db := createTestDatabase(ts, cookie, ws.ID, "Row Check Database")
 
 	// Create with checkbox property
-	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{
+	row := createTestRow(ts, cookie, db.ID, map[string]any{
 		"completed": true,
 		"archived":  false,
 	})
@@ -332,8 +332,8 @@ func TestRowHandler_PropertyTypes_Checkbox(t *testing.T) {
 	}
 
 	// Toggle checkbox
-	resp := ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]interface{}{
-		"properties": map[string]interface{}{"completed": false},
+	resp := ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]any{
+		"properties": map[string]any{"completed": false},
 	}, cookie)
 	ts.ExpectStatus(resp, http.StatusOK)
 
@@ -355,7 +355,7 @@ func TestRowHandler_PropertyTypes_Date(t *testing.T) {
 	db := createTestDatabase(ts, cookie, ws.ID, "Row Date Database")
 
 	// Create with date property
-	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{
+	row := createTestRow(ts, cookie, db.ID, map[string]any{
 		"due_date":   "2025-12-31T23:59:59Z",
 		"created_at": "2025-01-01T00:00:00Z",
 	})
@@ -365,8 +365,8 @@ func TestRowHandler_PropertyTypes_Date(t *testing.T) {
 	}
 
 	// Update date
-	resp := ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]interface{}{
-		"properties": map[string]interface{}{"due_date": "2026-01-15T12:00:00Z"},
+	resp := ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]any{
+		"properties": map[string]any{"due_date": "2026-01-15T12:00:00Z"},
 	}, cookie)
 	ts.ExpectStatus(resp, http.StatusOK)
 	resp.Body.Close()
@@ -382,7 +382,7 @@ func TestRowHandler_PropertyTypes_Select(t *testing.T) {
 	db := createTestDatabase(ts, cookie, ws.ID, "Row Select Database")
 
 	// Create with select property
-	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{
+	row := createTestRow(ts, cookie, db.ID, map[string]any{
 		"status":   "opt_active",
 		"priority": "opt_high",
 	})
@@ -392,8 +392,8 @@ func TestRowHandler_PropertyTypes_Select(t *testing.T) {
 	}
 
 	// Change select value
-	resp := ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]interface{}{
-		"properties": map[string]interface{}{"status": "opt_done"},
+	resp := ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]any{
+		"properties": map[string]any{"status": "opt_done"},
 	}, cookie)
 	ts.ExpectStatus(resp, http.StatusOK)
 
@@ -415,11 +415,11 @@ func TestRowHandler_PropertyTypes_MultiSelect(t *testing.T) {
 	db := createTestDatabase(ts, cookie, ws.ID, "Row Multi Database")
 
 	// Create with multi-select property
-	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{
+	row := createTestRow(ts, cookie, db.ID, map[string]any{
 		"tags": []string{"tag_work", "tag_urgent"},
 	})
 
-	tags, ok := row.Properties["tags"].([]interface{})
+	tags, ok := row.Properties["tags"].([]any)
 	if !ok {
 		t.Fatalf("expected tags to be array, got %T", row.Properties["tags"])
 	}
@@ -428,15 +428,15 @@ func TestRowHandler_PropertyTypes_MultiSelect(t *testing.T) {
 	}
 
 	// Update multi-select
-	resp := ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]interface{}{
-		"properties": map[string]interface{}{"tags": []string{"tag_work", "tag_personal", "tag_important"}},
+	resp := ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]any{
+		"properties": map[string]any{"tags": []string{"tag_work", "tag_personal", "tag_important"}},
 	}, cookie)
 	ts.ExpectStatus(resp, http.StatusOK)
 
 	var updated rows.Row
 	ts.ParseJSON(resp, &updated)
 
-	updatedTags, _ := updated.Properties["tags"].([]interface{})
+	updatedTags, _ := updated.Properties["tags"].([]any)
 	if len(updatedTags) != 3 {
 		t.Errorf("expected 3 tags after update, got %d", len(updatedTags))
 	}
@@ -452,7 +452,7 @@ func TestRowHandler_PropertyTypes_URL(t *testing.T) {
 	db := createTestDatabase(ts, cookie, ws.ID, "Row URL Database")
 
 	// Create with URL property
-	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{
+	row := createTestRow(ts, cookie, db.ID, map[string]any{
 		"website": "https://example.com",
 		"docs":    "https://docs.example.com/api",
 	})
@@ -462,8 +462,8 @@ func TestRowHandler_PropertyTypes_URL(t *testing.T) {
 	}
 
 	// Update URL
-	resp := ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]interface{}{
-		"properties": map[string]interface{}{"website": "https://new-example.com"},
+	resp := ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]any{
+		"properties": map[string]any{"website": "https://new-example.com"},
 	}, cookie)
 	ts.ExpectStatus(resp, http.StatusOK)
 	resp.Body.Close()
@@ -479,7 +479,7 @@ func TestRowHandler_PropertyTypes_Email(t *testing.T) {
 	db := createTestDatabase(ts, cookie, ws.ID, "Row Email Database")
 
 	// Create with email property
-	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{
+	row := createTestRow(ts, cookie, db.ID, map[string]any{
 		"email":   "user@example.com",
 		"contact": "support@company.com",
 	})
@@ -499,7 +499,7 @@ func TestRowHandler_PropertyTypes_Phone(t *testing.T) {
 	db := createTestDatabase(ts, cookie, ws.ID, "Row Phone Database")
 
 	// Create with phone property
-	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{
+	row := createTestRow(ts, cookie, db.ID, map[string]any{
 		"phone": "+1-555-123-4567",
 		"fax":   "+1-555-987-6543",
 	})
@@ -519,7 +519,7 @@ func TestRowHandler_PropertyTypes_AllTypesIntegration(t *testing.T) {
 	db := createTestDatabase(ts, cookie, ws.ID, "Row All Database")
 
 	// Create row with all property types
-	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{
+	row := createTestRow(ts, cookie, db.ID, map[string]any{
 		"title":     "Test Item",
 		"count":     42,
 		"completed": true,
@@ -552,8 +552,8 @@ func TestRowHandler_PropertyTypes_AllTypesIntegration(t *testing.T) {
 	}
 
 	// Update multiple properties at once
-	resp = ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]interface{}{
-		"properties": map[string]interface{}{
+	resp = ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]any{
+		"properties": map[string]any{
 			"title":     "Updated Item",
 			"count":     100,
 			"completed": false,
@@ -583,7 +583,7 @@ func TestRowHandler_Unauthenticated(t *testing.T) {
 	_, cookie := ts.Register("rowauth@example.com", "Row Auth", "password123")
 	ws := createTestWorkspace(ts, cookie, "Row Auth Workspace", "row-auth-ws")
 	db := createTestDatabase(ts, cookie, ws.ID, "Row Auth Database")
-	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{"title": "Test"})
+	row := createTestRow(ts, cookie, db.ID, map[string]any{"title": "Test"})
 
 	tests := []struct {
 		name   string
@@ -617,11 +617,11 @@ func TestRowHandler_Comments(t *testing.T) {
 	_, cookie := ts.Register("rowcomment@example.com", "Row Comment", "password123")
 	ws := createTestWorkspace(ts, cookie, "Row Comment Workspace", "row-comment-ws")
 	db := createTestDatabase(ts, cookie, ws.ID, "Row Comment Database")
-	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{"title": "Commentable Row"})
+	row := createTestRow(ts, cookie, db.ID, map[string]any{"title": "Commentable Row"})
 
 	t.Run("create comment on row", func(t *testing.T) {
-		resp := ts.Request("POST", "/api/v1/rows/"+row.ID+"/comments", map[string]interface{}{
-			"content": []map[string]interface{}{
+		resp := ts.Request("POST", "/api/v1/rows/"+row.ID+"/comments", map[string]any{
+			"content": []map[string]any{
 				{"type": "text", "text": "This is a comment on a row"},
 			},
 		}, cookie)
@@ -646,13 +646,13 @@ func TestRowHandler_Blocks(t *testing.T) {
 	_, cookie := ts.Register("rowblock@example.com", "Row Block", "password123")
 	ws := createTestWorkspace(ts, cookie, "Row Block Workspace", "row-block-ws")
 	db := createTestDatabase(ts, cookie, ws.ID, "Row Block Database")
-	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{"title": "Row with Blocks"})
+	row := createTestRow(ts, cookie, db.ID, map[string]any{"title": "Row with Blocks"})
 
 	t.Run("create block in row", func(t *testing.T) {
-		resp := ts.Request("POST", "/api/v1/rows/"+row.ID+"/blocks", map[string]interface{}{
+		resp := ts.Request("POST", "/api/v1/rows/"+row.ID+"/blocks", map[string]any{
 			"type": "paragraph",
-			"content": map[string]interface{}{
-				"rich_text": []map[string]interface{}{
+			"content": map[string]any{
+				"rich_text": []map[string]any{
 					{"type": "text", "text": "Block content"},
 				},
 			},
@@ -670,10 +670,10 @@ func TestRowHandler_Blocks(t *testing.T) {
 
 // Helper to create database with properties for filter tests
 func createDatabaseWithProperties(ts *TestServer, cookie *http.Cookie, wsID, title string) *databases.Database {
-	resp := ts.Request("POST", "/api/v1/databases", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/databases", map[string]any{
 		"workspace_id": wsID,
 		"title":        title,
-		"properties": []map[string]interface{}{
+		"properties": []map[string]any{
 			{"id": "title", "name": "Title", "type": "title"},
 			{"id": "status", "name": "Status", "type": "select"},
 			{"id": "priority", "name": "Priority", "type": "number"},

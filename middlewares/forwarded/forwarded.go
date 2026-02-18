@@ -181,8 +181,8 @@ func isTrusted(ip net.IP, trustedNets []*net.IPNet) bool {
 func parseForwardedHeader(header string, info *Info) {
 	// Parse RFC 7239 Forwarded header
 	// Example: for=192.0.2.60;proto=http;by=203.0.113.43
-	parts := strings.Split(header, ";")
-	for _, part := range parts {
+	parts := strings.SplitSeq(header, ";")
+	for part := range parts {
 		part = strings.TrimSpace(part)
 		kv := strings.SplitN(part, "=", 2)
 		if len(kv) != 2 {

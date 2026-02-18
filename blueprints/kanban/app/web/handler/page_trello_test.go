@@ -596,7 +596,7 @@ func TestTrelloBoardWithManyLists(t *testing.T) {
 
 		cards := []*TrelloCard{}
 		// Add some cards to each list
-		for j := 0; j < 3; j++ {
+		for j := range 3 {
 			card := &TrelloCard{
 				Issue: &issues.Issue{
 					ID:       "issue-" + string(rune('1'+i)) + string(rune('1'+j)),

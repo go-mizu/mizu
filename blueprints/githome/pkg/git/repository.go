@@ -1298,8 +1298,8 @@ func (r *Repository) DiffStats(fromSHA, toSHA string) (*DiffStat, error) {
 	}
 
 	stat := &DiffStat{}
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(strings.TrimSpace(string(output)), "\n")
+	for line := range lines {
 		if line == "" {
 			continue
 		}
@@ -1352,7 +1352,7 @@ func (r *Repository) DiffFiles(fromSHA, toSHA string) ([]*DiffFile, error) {
 
 	// Parse numstat into map
 	numstatMap := make(map[string][2]int) // filename -> [additions, deletions]
-	for _, line := range strings.Split(strings.TrimSpace(string(numstatOutput)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(numstatOutput)), "\n") {
 		if line == "" {
 			continue
 		}
@@ -1374,7 +1374,7 @@ func (r *Repository) DiffFiles(fromSHA, toSHA string) ([]*DiffFile, error) {
 
 	// Parse status output
 	var files []*DiffFile
-	for _, line := range strings.Split(strings.TrimSpace(string(statusOutput)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(statusOutput)), "\n") {
 		if line == "" {
 			continue
 		}

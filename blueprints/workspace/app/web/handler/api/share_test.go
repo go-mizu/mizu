@@ -21,12 +21,12 @@ func TestShareCreate(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		body       map[string]interface{}
+		body       map[string]any
 		wantStatus int
 	}{
 		{
 			name: "share with user - read",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"type":       "user",
 				"user_id":    targetUser.ID,
 				"permission": "read",
@@ -35,7 +35,7 @@ func TestShareCreate(t *testing.T) {
 		},
 		{
 			name: "create share link",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"type":       "link",
 				"permission": "read",
 			},
@@ -43,7 +43,7 @@ func TestShareCreate(t *testing.T) {
 		},
 		{
 			name: "enable public",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"type":       "public",
 				"permission": "read",
 			},
@@ -97,7 +97,7 @@ func TestShareWithUserPermissions(t *testing.T) {
 			targetUser, _ := ts.Register(tt.permission+"user@example.com", "User", "password123")
 			page := createTestPage(ts, ownerCookie, ws.ID, "Page for "+tt.permission)
 
-			resp := ts.Request("POST", "/api/v1/pages/"+page.ID+"/shares", map[string]interface{}{
+			resp := ts.Request("POST", "/api/v1/pages/"+page.ID+"/shares", map[string]any{
 				"type":       "user",
 				"user_id":    targetUser.ID,
 				"permission": tt.permission,
@@ -133,7 +133,7 @@ func TestShareList(t *testing.T) {
 		{user1.ID},
 		{user2.ID},
 	} {
-		resp := ts.Request("POST", "/api/v1/pages/"+page.ID+"/shares", map[string]interface{}{
+		resp := ts.Request("POST", "/api/v1/pages/"+page.ID+"/shares", map[string]any{
 			"type":       "user",
 			"user_id":    user.ID,
 			"permission": "read",
@@ -143,7 +143,7 @@ func TestShareList(t *testing.T) {
 	}
 
 	// Create a link share
-	resp := ts.Request("POST", "/api/v1/pages/"+page.ID+"/shares", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/pages/"+page.ID+"/shares", map[string]any{
 		"type":       "link",
 		"permission": "read",
 	}, ownerCookie)
@@ -175,7 +175,7 @@ func TestShareDelete(t *testing.T) {
 	page := createTestPage(ts, ownerCookie, ws.ID, "Delete Test Page")
 
 	// Create share
-	resp := ts.Request("POST", "/api/v1/pages/"+page.ID+"/shares", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/pages/"+page.ID+"/shares", map[string]any{
 		"type":       "user",
 		"user_id":    targetUser.ID,
 		"permission": "read",
@@ -217,7 +217,7 @@ func TestShareLink(t *testing.T) {
 	page := createTestPage(ts, ownerCookie, ws.ID, "Link Test Page")
 
 	t.Run("create share link", func(t *testing.T) {
-		resp := ts.Request("POST", "/api/v1/pages/"+page.ID+"/shares", map[string]interface{}{
+		resp := ts.Request("POST", "/api/v1/pages/"+page.ID+"/shares", map[string]any{
 			"type":       "link",
 			"permission": "read",
 		}, ownerCookie)
@@ -246,7 +246,7 @@ func TestSharePublic(t *testing.T) {
 	page := createTestPage(ts, ownerCookie, ws.ID, "Public Test Page")
 
 	t.Run("enable public", func(t *testing.T) {
-		resp := ts.Request("POST", "/api/v1/pages/"+page.ID+"/shares", map[string]interface{}{
+		resp := ts.Request("POST", "/api/v1/pages/"+page.ID+"/shares", map[string]any{
 			"type":       "public",
 			"permission": "read",
 		}, ownerCookie)
@@ -272,14 +272,14 @@ func TestShareMultipleUsers(t *testing.T) {
 	page := createTestPage(ts, ownerCookie, ws.ID, "Multi Test Page")
 
 	// Create multiple users and share with each
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		user, _ := ts.Register(
 			"multiuser"+string(rune('1'+i))+"@example.com",
 			"User "+string(rune('1'+i)),
 			"password123",
 		)
 
-		resp := ts.Request("POST", "/api/v1/pages/"+page.ID+"/shares", map[string]interface{}{
+		resp := ts.Request("POST", "/api/v1/pages/"+page.ID+"/shares", map[string]any{
 			"type":       "user",
 			"user_id":    user.ID,
 			"permission": "read",
@@ -319,7 +319,7 @@ func TestShareUnauthenticated(t *testing.T) {
 	page := createTestPage(ts, ownerCookie, ws.ID, "Auth Test Page")
 
 	// Create share
-	resp := ts.Request("POST", "/api/v1/pages/"+page.ID+"/shares", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/pages/"+page.ID+"/shares", map[string]any{
 		"type":       "user",
 		"user_id":    targetUser.ID,
 		"permission": "read",

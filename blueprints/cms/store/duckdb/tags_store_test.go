@@ -116,7 +116,7 @@ func TestTagsStore_GetByIDs(t *testing.T) {
 	ctx := context.Background()
 
 	// Create multiple tags
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		tag := &tags.Tag{
 			ID:        "tag-multi-" + string(rune('a'+i)),
 			Name:      "Multi Tag " + string(rune('A'+i)),
@@ -149,7 +149,7 @@ func TestTagsStore_List(t *testing.T) {
 	store := NewTagsStore(db)
 	ctx := context.Background()
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		tag := &tags.Tag{
 			ID:        "tag-list-" + string(rune('a'+i)),
 			Name:      "List Tag " + string(rune('A'+i)),

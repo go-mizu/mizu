@@ -23,7 +23,7 @@ import (
 var ultraCharLUT [256]byte
 
 func init() {
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		if i >= 'a' && i <= 'z' {
 			ultraCharLUT[i] = byte(i)
 		} else if i >= 'A' && i <= 'Z' {
@@ -56,8 +56,8 @@ type UltraConfig struct {
 
 // UltraIndexer is a high-performance indexer using hash-as-key approach.
 type UltraIndexer struct {
-	config  UltraConfig
-	outDir  string
+	config UltraConfig
+	outDir string
 
 	// Sharded index - uses hash as key, not string
 	shards [ultraNumShards]*ultraShard
@@ -71,8 +71,8 @@ type UltraIndexer struct {
 
 // ultraShard holds term postings for a hash range.
 type ultraShard struct {
-	mu       sync.Mutex
-	terms    map[uint64]*ultraPostings // hash -> postings
+	mu    sync.Mutex
+	terms map[uint64]*ultraPostings // hash -> postings
 }
 
 // ultraPostings stores doc IDs and frequencies.
@@ -116,7 +116,7 @@ func NewUltraIndexer(outDir string, cfg UltraConfig) *UltraIndexer {
 	}
 
 	// Initialize shards with smaller initial capacity to reduce memory
-	for i := 0; i < ultraNumShards; i++ {
+	for i := range ultraNumShards {
 		ui.shards[i] = &ultraShard{
 			terms: make(map[uint64]*ultraPostings, 20000),
 		}
@@ -124,7 +124,6 @@ func NewUltraIndexer(outDir string, cfg UltraConfig) *UltraIndexer {
 
 	return ui
 }
-
 
 // TokenizeToHashReuse tokenizes text into a reusable map.
 // Returns the total token count for doc length calculation.
@@ -322,10 +321,7 @@ func (ui *UltraIndexer) AddBatch(docIDs []uint32, texts []string) {
 	}
 
 	numDocs := len(texts)
-	numWorkers := ui.config.NumWorkers
-	if numWorkers > numDocs {
-		numWorkers = numDocs
-	}
+	numWorkers := min(ui.config.NumWorkers, numDocs)
 
 	// Pre-allocate per-worker shard postings to avoid Phase 3 contention
 	type posting struct {
@@ -334,9 +330,9 @@ func (ui *UltraIndexer) AddBatch(docIDs []uint32, texts []string) {
 		freq  uint16
 	}
 	workerShardPostings := make([][][]posting, numWorkers)
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		workerShardPostings[w] = make([][]posting, ultraNumShards)
-		for s := 0; s < ultraNumShards; s++ {
+		for s := range ultraNumShards {
 			workerShardPostings[w][s] = make([]posting, 0, (numDocs/numWorkers)*2)
 		}
 	}
@@ -346,12 +342,9 @@ func (ui *UltraIndexer) AddBatch(docIDs []uint32, texts []string) {
 	var wg sync.WaitGroup
 	batchSize := (numDocs + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		start := w * batchSize
-		end := start + batchSize
-		if end > numDocs {
-			end = numDocs
-		}
+		end := min(start+batchSize, numDocs)
 		if start >= end {
 			break
 		}
@@ -366,10 +359,7 @@ func (ui *UltraIndexer) AddBatch(docIDs []uint32, texts []string) {
 
 			for i := start; i < end; i++ {
 				docID := docIDs[i]
-				docLen := TokenizeToHashReuse(texts[i], freqs)
-				if docLen > 65535 {
-					docLen = 65535
-				}
+				docLen := min(TokenizeToHashReuse(texts[i], freqs), 65535)
 				docLensLocal[i] = uint16(docLen)
 
 				// Distribute postings to per-worker shard slices
@@ -404,12 +394,9 @@ func (ui *UltraIndexer) AddBatch(docIDs []uint32, texts []string) {
 	// Phase 3: Parallel shard updates - each worker handles a range of shards
 	shardsPerWorker := (ultraNumShards + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startShard := w * shardsPerWorker
-		endShard := startShard + shardsPerWorker
-		if endShard > ultraNumShards {
-			endShard = ultraNumShards
-		}
+		endShard := min(startShard+shardsPerWorker, ultraNumShards)
 		if startShard >= endShard {
 			break
 		}
@@ -464,10 +451,7 @@ func (ui *UltraIndexer) AddBatchFast(docIDs []uint32, texts []string) {
 	}
 
 	numDocs := len(texts)
-	numWorkers := ui.config.NumWorkers
-	if numWorkers > numDocs {
-		numWorkers = numDocs
-	}
+	numWorkers := min(ui.config.NumWorkers, numDocs)
 
 	// Per-worker data - each worker processes independently then merges
 	type workerResult struct {
@@ -487,12 +471,9 @@ func (ui *UltraIndexer) AddBatchFast(docIDs []uint32, texts []string) {
 	batchSize := (numDocs + numWorkers - 1) / numWorkers
 
 	// Single phase: parallel tokenization with no synchronization
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		start := w * batchSize
-		end := start + batchSize
-		if end > numDocs {
-			end = numDocs
-		}
+		end := min(start+batchSize, numDocs)
 		if start >= end {
 			break
 		}
@@ -595,12 +576,9 @@ func (ui *UltraIndexer) AddBatchFast(docIDs []uint32, texts []string) {
 	// Parallel shard updates
 	shardsPerWorker := (ultraNumShards + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startShard := w * shardsPerWorker
-		endShard := startShard + shardsPerWorker
-		if endShard > ultraNumShards {
-			endShard = ultraNumShards
-		}
+		endShard := min(startShard+shardsPerWorker, ultraNumShards)
 		if startShard >= endShard {
 			break
 		}
@@ -671,7 +649,7 @@ func (ui *UltraIndexer) Finish() (*SegmentedIndex, error) {
 	terms := make(map[string]*SegmentPostings)
 
 	// Collect all terms from all shards
-	for shardID := 0; shardID < ultraNumShards; shardID++ {
+	for shardID := range ultraNumShards {
 		shard := ui.shards[shardID]
 		shard.mu.Lock()
 		for hash, pl := range shard.terms {
@@ -727,7 +705,7 @@ func (ui *UltraIndexer) FinishToFile(outputPath string) error {
 	binary.Write(w, binary.LittleEndian, uint64(ultraNumShards))
 
 	// Write each shard
-	for shardID := 0; shardID < ultraNumShards; shardID++ {
+	for shardID := range ultraNumShards {
 		shard := ui.shards[shardID]
 		binary.Write(w, binary.LittleEndian, uint64(len(shard.terms)))
 

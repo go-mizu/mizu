@@ -34,7 +34,7 @@ func TestInit_CommandStructure(t *testing.T) {
 	cmd := NewInit()
 
 	// Verify it's a valid cobra command
-	if _, ok := interface{}(cmd).(*cobra.Command); !ok {
+	if _, ok := any(cmd).(*cobra.Command); !ok {
 		t.Error("NewInit() did not return a *cobra.Command")
 	}
 }

@@ -239,8 +239,8 @@ func (s *Server) setupRoutes() {
 func (s *Server) getAccountID(c *mizu.Ctx) string {
 	// Check Authorization header
 	auth := c.Header().Get("Authorization")
-	if strings.HasPrefix(auth, "Bearer ") {
-		token := strings.TrimPrefix(auth, "Bearer ")
+	if after, ok := strings.CutPrefix(auth, "Bearer "); ok {
+		token := after
 		session, err := s.accounts.GetSession(c.Request().Context(), token)
 		if err == nil && session != nil {
 			return session.AccountID

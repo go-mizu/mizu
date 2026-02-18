@@ -137,10 +137,7 @@ func (c *Crawler) run(ctx context.Context) (CrawlStats, error) {
 	g, ctx := errgroup.WithContext(ctx)
 
 	// Limit concurrency
-	workers := c.config.Workers
-	if workers < 1 {
-		workers = 1
-	}
+	workers := max(c.config.Workers, 1)
 
 	// Track active workers for clean shutdown
 	var active atomic.Int64

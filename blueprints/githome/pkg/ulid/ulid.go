@@ -132,8 +132,8 @@ func decode(s string) [16]byte {
 	var buf [16]byte
 	// Reverse the encoding process
 	dec := make([]byte, 26)
-	for i := 0; i < 26; i++ {
-		for j := 0; j < 32; j++ {
+	for i := range 26 {
+		for j := range 32 {
 			if encoding[j] == s[i] {
 				dec[i] = byte(j)
 				break

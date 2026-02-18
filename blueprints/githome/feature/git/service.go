@@ -82,7 +82,7 @@ func (s *Service) GetBlob(ctx context.Context, owner, repo, sha string) (*Blob, 
 
 	blob = &Blob{
 		SHA:      gitBlob.SHA,
-		NodeID:   base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Blob:%s", sha))),
+		NodeID:   base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Blob:%s", sha)),
 		Size:     int(gitBlob.Size),
 		Content:  string(gitBlob.Content),
 		Encoding: "utf-8",
@@ -137,7 +137,7 @@ func (s *Service) CreateBlob(ctx context.Context, owner, repo string, in *Create
 
 	blob := &Blob{
 		SHA:      sha,
-		NodeID:   base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Blob:%s", sha))),
+		NodeID:   base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Blob:%s", sha)),
 		Size:     len(content),
 		Content:  in.Content,
 		Encoding: encoding,
@@ -189,7 +189,7 @@ func (s *Service) GetGitCommit(ctx context.Context, owner, repo, sha string) (*G
 
 	commit := &GitCommit{
 		SHA:     sha,
-		NodeID:  base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("GitCommit:%s", sha))),
+		NodeID:  base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "GitCommit:%s", sha)),
 		Message: gitCommit.Message,
 		Author: &CommitAuthor{
 			Name:  gitCommit.Author.Name,
@@ -277,7 +277,7 @@ func (s *Service) CreateGitCommit(ctx context.Context, owner, repo string, in *C
 
 	commit := &GitCommit{
 		SHA:       sha,
-		NodeID:    base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("GitCommit:%s", sha))),
+		NodeID:    base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "GitCommit:%s", sha)),
 		Message:   in.Message,
 		Author:    author,
 		Committer: committer,
@@ -318,7 +318,7 @@ func (s *Service) GetRef(ctx context.Context, owner, repo, ref string) (*Referen
 
 	reference := &Reference{
 		Ref:    gitRef.Name,
-		NodeID: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Ref:%s", ref))),
+		NodeID: base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Ref:%s", ref)),
 		Object: &GitObject{
 			Type: string(gitRef.ObjectType),
 			SHA:  gitRef.SHA,
@@ -357,7 +357,7 @@ func (s *Service) ListMatchingRefs(ctx context.Context, owner, repo, ref string)
 	for _, gitRef := range gitRefs {
 		reference := &Reference{
 			Ref:    gitRef.Name,
-			NodeID: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Ref:%s", gitRef.Name))),
+			NodeID: base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Ref:%s", gitRef.Name)),
 			Object: &GitObject{
 				Type: string(gitRef.ObjectType),
 				SHA:  gitRef.SHA,
@@ -404,7 +404,7 @@ func (s *Service) CreateRef(ctx context.Context, owner, repo string, in *CreateR
 
 	reference := &Reference{
 		Ref:    gitRef.Name,
-		NodeID: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Ref:%s", in.Ref))),
+		NodeID: base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Ref:%s", in.Ref)),
 		Object: &GitObject{
 			Type: string(gitRef.ObjectType),
 			SHA:  gitRef.SHA,
@@ -449,7 +449,7 @@ func (s *Service) UpdateRef(ctx context.Context, owner, repo, ref, sha string, f
 
 	reference := &Reference{
 		Ref:    gitRef.Name,
-		NodeID: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Ref:%s", ref))),
+		NodeID: base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Ref:%s", ref)),
 		Object: &GitObject{
 			Type: string(gitRef.ObjectType),
 			SHA:  gitRef.SHA,
@@ -634,7 +634,7 @@ func (s *Service) GetTag(ctx context.Context, owner, repo, sha string) (*Tag, er
 	}
 
 	tag := &Tag{
-		NodeID:  base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Tag:%s", sha))),
+		NodeID:  base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Tag:%s", sha)),
 		SHA:     sha,
 		Tag:     gitTag.Name,
 		Message: gitTag.Message,
@@ -715,7 +715,7 @@ func (s *Service) CreateTag(ctx context.Context, owner, repo string, in *CreateT
 	}
 
 	tag := &Tag{
-		NodeID:  base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Tag:%s", sha))),
+		NodeID:  base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Tag:%s", sha)),
 		SHA:     sha,
 		Tag:     in.Tag,
 		Message: in.Message,
@@ -784,7 +784,7 @@ func (s *Service) ListTags(ctx context.Context, owner, repo string, opts *ListOp
 	for _, t := range gitTags[start:end] {
 		tag := &LightweightTag{
 			Name:       t.Name,
-			NodeID:     base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Tag:%s", t.Name))),
+			NodeID:     base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Tag:%s", t.Name)),
 			ZipballURL: fmt.Sprintf("%s/%s/%s/archive/refs/tags/%s.zip", s.baseURL, owner, repo, t.Name),
 			TarballURL: fmt.Sprintf("%s/%s/%s/archive/refs/tags/%s.tar.gz", s.baseURL, owner, repo, t.Name),
 			Commit: &CommitRef{

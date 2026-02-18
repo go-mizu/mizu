@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -71,13 +72,7 @@ func (s *Service) GetDashboardData(ctx context.Context, in *GetDataIn) (*GetData
 	for _, widget := range config.Widgets {
 		// Filter by widget IDs if specified
 		if len(in.WidgetIDs) > 0 {
-			found := false
-			for _, id := range in.WidgetIDs {
-				if id == widget.ID {
-					found = true
-					break
-				}
-			}
+			found := slices.Contains(in.WidgetIDs, widget.ID)
 			if !found {
 				continue
 			}
@@ -754,10 +749,10 @@ func (s *Service) AddWidget(ctx context.Context, in *AddWidgetIn) (*Widget, erro
 }
 
 // configToMap converts DashboardConfig to map for SetConfig
-func configToMap(config DashboardConfig) map[string]interface{} {
+func configToMap(config DashboardConfig) map[string]any {
 	// Convert through JSON to get a proper map
 	data, _ := json.Marshal(config)
-	var result map[string]interface{}
+	var result map[string]any
 	json.Unmarshal(data, &result)
 	return result
 }

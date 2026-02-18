@@ -42,7 +42,7 @@ type SearchOptions struct {
 	Category   Category `json:"category"`
 	Page       int      `json:"page"`
 	PerPage    int      `json:"per_page"`
-	TimeRange  string   `json:"time_range,omitempty"`  // day, week, month, year
+	TimeRange  string   `json:"time_range,omitempty"` // day, week, month, year
 	Language   string   `json:"language,omitempty"`
 	Region     string   `json:"region,omitempty"`
 	SafeSearch int      `json:"safe_search,omitempty"` // 0=off, 1=moderate, 2=strict
@@ -50,15 +50,15 @@ type SearchOptions struct {
 
 // SearchResponse represents the complete search response.
 type SearchResponse struct {
-	Query           string   `json:"query"`
-	CorrectedQuery  string   `json:"corrected_query,omitempty"`
-	TotalResults    int64    `json:"total_results"`
-	Results         []Result `json:"results"`
-	Suggestions     []string `json:"suggestions,omitempty"`
-	Infoboxes       []Infobox `json:"infoboxes,omitempty"`
-	SearchTimeMs    float64  `json:"search_time_ms"`
-	Page            int      `json:"page"`
-	PerPage         int      `json:"per_page"`
+	Query          string    `json:"query"`
+	CorrectedQuery string    `json:"corrected_query,omitempty"`
+	TotalResults   int64     `json:"total_results"`
+	Results        []Result  `json:"results"`
+	Suggestions    []string  `json:"suggestions,omitempty"`
+	Infoboxes      []Infobox `json:"infoboxes,omitempty"`
+	SearchTimeMs   float64   `json:"search_time_ms"`
+	Page           int       `json:"page"`
+	PerPage        int       `json:"per_page"`
 }
 
 // Result represents a generic search result.
@@ -73,7 +73,7 @@ type Result struct {
 	Engines     []string  `json:"engines,omitempty"`
 	Score       float64   `json:"score"`
 	ParsedURL   []string  `json:"parsed_url,omitempty"`
-	PublishedAt time.Time `json:"published_at,omitempty"`
+	PublishedAt time.Time `json:"published_at"`
 
 	// Image-specific fields
 	ThumbnailURL string `json:"thumbnail_url,omitempty"`
@@ -83,21 +83,21 @@ type Result struct {
 	Resolution   string `json:"resolution,omitempty"`
 
 	// Video-specific fields
-	Duration    string `json:"duration,omitempty"`
-	EmbedURL    string `json:"embed_url,omitempty"`
-	IFrameSrc   string `json:"iframe_src,omitempty"`
-	Length      string `json:"length,omitempty"`
+	Duration  string `json:"duration,omitempty"`
+	EmbedURL  string `json:"embed_url,omitempty"`
+	IFrameSrc string `json:"iframe_src,omitempty"`
+	Length    string `json:"length,omitempty"`
 
 	// Music-specific fields
-	Artist      string `json:"artist,omitempty"`
-	Album       string `json:"album,omitempty"`
-	Track       string `json:"track,omitempty"`
+	Artist string `json:"artist,omitempty"`
+	Album  string `json:"album,omitempty"`
+	Track  string `json:"track,omitempty"`
 
 	// File-specific fields
-	FileSize    string `json:"filesize,omitempty"`
-	MagnetLink  string `json:"magnetlink,omitempty"`
-	Seed        int    `json:"seed,omitempty"`
-	Leech       int    `json:"leech,omitempty"`
+	FileSize   string `json:"filesize,omitempty"`
+	MagnetLink string `json:"magnetlink,omitempty"`
+	Seed       int    `json:"seed,omitempty"`
+	Leech      int    `json:"leech,omitempty"`
 
 	// Science/IT-specific fields
 	DOI         string   `json:"doi,omitempty"`
@@ -132,13 +132,13 @@ type Address struct {
 
 // Infobox represents a knowledge panel/infobox from SearXNG.
 type Infobox struct {
-	ID          string      `json:"id,omitempty"`
-	Infobox     string      `json:"infobox"`
-	Content     string      `json:"content,omitempty"`
-	ImageURL    string      `json:"img_src,omitempty"`
-	URLs        []InfoboxURL `json:"urls,omitempty"`
-	Attributes  []InfoboxAttribute `json:"attributes,omitempty"`
-	Engine      string      `json:"engine"`
+	ID         string             `json:"id,omitempty"`
+	Infobox    string             `json:"infobox"`
+	Content    string             `json:"content,omitempty"`
+	ImageURL   string             `json:"img_src,omitempty"`
+	URLs       []InfoboxURL       `json:"urls,omitempty"`
+	Attributes []InfoboxAttribute `json:"attributes,omitempty"`
+	Engine     string             `json:"engine"`
 }
 
 // InfoboxURL represents a link in an infobox.
@@ -155,15 +155,15 @@ type InfoboxAttribute struct {
 
 // ImageResult is a convenience type for image search results.
 type ImageResult struct {
-	URL          string `json:"url"`
-	Title        string `json:"title"`
-	ThumbnailURL string `json:"thumbnail_url"`
-	ImageURL     string `json:"img_src"`
-	Source       string `json:"source"`
-	SourceDomain string `json:"source_domain"`
-	Resolution   string `json:"resolution"`
-	Format       string `json:"format"`
-	Engine       string `json:"engine"`
+	URL          string  `json:"url"`
+	Title        string  `json:"title"`
+	ThumbnailURL string  `json:"thumbnail_url"`
+	ImageURL     string  `json:"img_src"`
+	Source       string  `json:"source"`
+	SourceDomain string  `json:"source_domain"`
+	Resolution   string  `json:"resolution"`
+	Format       string  `json:"format"`
+	Engine       string  `json:"engine"`
 	Score        float64 `json:"score"`
 }
 
@@ -175,72 +175,72 @@ type VideoResult struct {
 	ThumbnailURL string    `json:"thumbnail_url"`
 	Duration     string    `json:"duration"`
 	EmbedURL     string    `json:"embed_url"`
-	PublishedAt  time.Time `json:"published_at,omitempty"`
+	PublishedAt  time.Time `json:"published_at"`
 	Engine       string    `json:"engine"`
 	Score        float64   `json:"score"`
 }
 
 // NewsResult is a convenience type for news search results.
 type NewsResult struct {
-	URL          string    `json:"url"`
-	Title        string    `json:"title"`
-	Content      string    `json:"content"`
-	Source       string    `json:"source"`
-	ImageURL     string    `json:"image_url,omitempty"`
-	PublishedAt  time.Time `json:"published_at"`
-	Engine       string    `json:"engine"`
-	Score        float64   `json:"score"`
+	URL         string    `json:"url"`
+	Title       string    `json:"title"`
+	Content     string    `json:"content"`
+	Source      string    `json:"source"`
+	ImageURL    string    `json:"image_url,omitempty"`
+	PublishedAt time.Time `json:"published_at"`
+	Engine      string    `json:"engine"`
+	Score       float64   `json:"score"`
 }
 
 // MusicResult is a convenience type for music search results.
 type MusicResult struct {
-	URL          string `json:"url"`
-	Title        string `json:"title"`
-	Artist       string `json:"artist,omitempty"`
-	Album        string `json:"album,omitempty"`
-	Track        string `json:"track,omitempty"`
-	ThumbnailURL string `json:"thumbnail_url,omitempty"`
-	EmbedURL     string `json:"embed_url,omitempty"`
-	Engine       string `json:"engine"`
+	URL          string  `json:"url"`
+	Title        string  `json:"title"`
+	Artist       string  `json:"artist,omitempty"`
+	Album        string  `json:"album,omitempty"`
+	Track        string  `json:"track,omitempty"`
+	ThumbnailURL string  `json:"thumbnail_url,omitempty"`
+	EmbedURL     string  `json:"embed_url,omitempty"`
+	Engine       string  `json:"engine"`
 	Score        float64 `json:"score"`
 }
 
 // FileResult is a convenience type for file search results.
 type FileResult struct {
-	URL        string `json:"url"`
-	Title      string `json:"title"`
-	Content    string `json:"content,omitempty"`
-	FileSize   string `json:"filesize,omitempty"`
-	MagnetLink string `json:"magnetlink,omitempty"`
-	Seed       int    `json:"seed,omitempty"`
-	Leech      int    `json:"leech,omitempty"`
-	Engine     string `json:"engine"`
+	URL        string  `json:"url"`
+	Title      string  `json:"title"`
+	Content    string  `json:"content,omitempty"`
+	FileSize   string  `json:"filesize,omitempty"`
+	MagnetLink string  `json:"magnetlink,omitempty"`
+	Seed       int     `json:"seed,omitempty"`
+	Leech      int     `json:"leech,omitempty"`
+	Engine     string  `json:"engine"`
 	Score      float64 `json:"score"`
 }
 
 // ITResult is a convenience type for IT/developer search results.
 type ITResult struct {
-	URL       string   `json:"url"`
-	Title     string   `json:"title"`
-	Content   string   `json:"content,omitempty"`
-	Type      string   `json:"type,omitempty"` // repository, package, question, etc.
-	Engine    string   `json:"engine"`
-	Score     float64  `json:"score"`
+	URL     string  `json:"url"`
+	Title   string  `json:"title"`
+	Content string  `json:"content,omitempty"`
+	Type    string  `json:"type,omitempty"` // repository, package, question, etc.
+	Engine  string  `json:"engine"`
+	Score   float64 `json:"score"`
 }
 
 // ScienceResult is a convenience type for science/academic search results.
 type ScienceResult struct {
-	URL         string   `json:"url"`
-	Title       string   `json:"title"`
-	Content     string   `json:"content,omitempty"`
-	Authors     []string `json:"authors,omitempty"`
-	DOI         string   `json:"doi,omitempty"`
-	Journal     string   `json:"journal,omitempty"`
-	Publisher   string   `json:"publisher,omitempty"`
-	PublishedAt time.Time `json:"published_at,omitempty"`
-	AccessRight string   `json:"access_right,omitempty"`
-	Engine      string   `json:"engine"`
-	Score       float64  `json:"score"`
+	URL         string    `json:"url"`
+	Title       string    `json:"title"`
+	Content     string    `json:"content,omitempty"`
+	Authors     []string  `json:"authors,omitempty"`
+	DOI         string    `json:"doi,omitempty"`
+	Journal     string    `json:"journal,omitempty"`
+	Publisher   string    `json:"publisher,omitempty"`
+	PublishedAt time.Time `json:"published_at"`
+	AccessRight string    `json:"access_right,omitempty"`
+	Engine      string    `json:"engine"`
+	Score       float64   `json:"score"`
 }
 
 // SocialResult is a convenience type for social media search results.
@@ -250,7 +250,7 @@ type SocialResult struct {
 	Content      string    `json:"content,omitempty"`
 	Author       string    `json:"author,omitempty"`
 	ThumbnailURL string    `json:"thumbnail_url,omitempty"`
-	PublishedAt  time.Time `json:"published_at,omitempty"`
+	PublishedAt  time.Time `json:"published_at"`
 	Engine       string    `json:"engine"`
 	Score        float64   `json:"score"`
 }

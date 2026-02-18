@@ -432,7 +432,7 @@ func TestCommentsStore_CountByIssue(t *testing.T) {
 	issuesStore.Create(context.Background(), i)
 
 	// Add 3 comments
-	for n := 0; n < 3; n++ {
+	for range 3 {
 		c := &comments.Comment{
 			ID:        ulid.Make().String(),
 			IssueID:   i.ID,

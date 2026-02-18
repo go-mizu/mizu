@@ -456,7 +456,7 @@ func TestAccountsStore_List(t *testing.T) {
 	ctx := context.Background()
 
 	// Create multiple accounts
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		createTestAccount(t, db, "user"+string(rune('a'+i)))
 	}
 
@@ -704,7 +704,7 @@ func TestAccountsStore_GetPostsCount(t *testing.T) {
 	postsStore := NewPostsStore(db)
 
 	// Create posts
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		createTestPost(t, postsStore, user.ID)
 	}
 

@@ -4,6 +4,7 @@ package jsonrpc
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 
@@ -216,9 +217,7 @@ func anyOfNull(s map[string]any) map[string]any {
 
 func cloneWithDescription(s map[string]any, desc string) map[string]any {
 	out := make(map[string]any, len(s)+1)
-	for k, v := range s {
-		out[k] = v
-	}
+	maps.Copy(out, s)
 	if desc != "" {
 		out["description"] = desc
 	}

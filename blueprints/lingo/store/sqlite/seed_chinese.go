@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/google/uuid"
 )
@@ -174,13 +175,7 @@ func createChineseExercise(exType string, word ChineseVocab, allVocab []ChineseV
 			if len(choices) >= 4 {
 				break
 			}
-			found := false
-			for _, c := range choices {
-				if c == w {
-					found = true
-					break
-				}
-			}
+			found := slices.Contains(choices, w)
 			if !found {
 				choices = append(choices, w)
 			}

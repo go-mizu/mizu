@@ -256,7 +256,7 @@ func TestService_ListPublic_Pagination(t *testing.T) {
 	repo := createTestRepo(t, store, user.ID, "testrepo")
 
 	// Create 5 public events
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		service.Create(context.Background(), activities.EventPush, user.ID, repo.ID, nil, nil, true)
 	}
 
@@ -695,10 +695,10 @@ func TestService_Create_WithPayload(t *testing.T) {
 	user := createTestUser(t, store, "testuser")
 	repo := createTestRepo(t, store, user.ID, "testrepo")
 
-	payload := map[string]interface{}{
-		"action":      "opened",
-		"issue":       map[string]interface{}{"number": 1, "title": "Test issue"},
-		"repository":  map[string]interface{}{"full_name": "testuser/testrepo"},
+	payload := map[string]any{
+		"action":     "opened",
+		"issue":      map[string]any{"number": 1, "title": "Test issue"},
+		"repository": map[string]any{"full_name": "testuser/testrepo"},
 	}
 
 	e, err := service.Create(context.Background(), activities.EventIssues, user.ID, repo.ID, nil, payload, true)

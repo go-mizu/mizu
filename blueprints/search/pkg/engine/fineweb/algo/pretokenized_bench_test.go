@@ -152,11 +152,11 @@ func TestPreTokenizedFileIO(t *testing.T) {
 
 	// Create test data
 	testDocs := make([]algo.PreTokenizedDoc, 10000)
-	for i := 0; i < 10000; i++ {
+	for i := range 10000 {
 		numTokens := 50 + i%100 // 50-149 tokens per doc
 		tokens := make([]uint64, numTokens)
 		freqs := make([]uint16, numTokens)
-		for j := 0; j < numTokens; j++ {
+		for j := range numTokens {
 			tokens[j] = uint64(i*1000 + j)
 			freqs[j] = uint16(1 + j%10)
 		}

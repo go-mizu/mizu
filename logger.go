@@ -150,7 +150,7 @@ func defaultRequestID() string {
 	// Very unlikely fallback if crypto/rand fails.
 	now := time.Now().UnixNano()
 	buf := make([]byte, 8)
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		buf[i] = byte(now >> (8 * i))
 	}
 	return hex.EncodeToString(buf)

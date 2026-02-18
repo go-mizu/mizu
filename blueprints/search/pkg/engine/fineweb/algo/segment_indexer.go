@@ -2,6 +2,7 @@
 package algo
 
 import (
+	"maps"
 	"runtime"
 	"sort"
 	"sync"
@@ -12,14 +13,14 @@ import (
 var (
 	// Pool for term frequency maps
 	termMapPool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return make(map[string]int, 512)
 		},
 	}
 
 	// Pool for posting slices
 	postingSlicePool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			s := make([]IndexPosting, 0, 2048)
 			return &s
 		},
@@ -27,14 +28,14 @@ var (
 
 	// Pool for segment term posting maps
 	segmentMapPool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return make(map[string][]IndexPosting, 30000)
 		},
 	}
 
 	// Pool for doc length maps
 	docLenMapPool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return make(map[uint32]int, 50000)
 		},
 	}
@@ -43,14 +44,14 @@ var (
 // SegmentIndexer implements lock-free segment-based parallel indexing.
 // Each worker builds independent segments that are merged in the background.
 type SegmentIndexer struct {
-	NumWorkers   int
-	SegmentSize  int // Documents per segment before flush
-	Tokenizer    TokenizerFunc
+	NumWorkers  int
+	SegmentSize int // Documents per segment before flush
+	Tokenizer   TokenizerFunc
 
 	// Channels
-	docCh      chan segmentDoc
-	segmentCh  chan *Segment
-	doneCh     chan struct{}
+	docCh     chan segmentDoc
+	segmentCh chan *Segment
+	doneCh    chan struct{}
 
 	// Final merged results
 	termPostings map[string][]IndexPosting
@@ -58,9 +59,9 @@ type SegmentIndexer struct {
 	docCount     atomic.Int64
 
 	// Synchronization
-	wg         sync.WaitGroup
-	mergeWg    sync.WaitGroup
-	mu         sync.Mutex
+	wg      sync.WaitGroup
+	mergeWg sync.WaitGroup
+	mu      sync.Mutex
 }
 
 type segmentDoc struct {
@@ -79,13 +80,9 @@ type Segment struct {
 
 // NewSegmentIndexer creates a high-performance segment-based indexer.
 func NewSegmentIndexer(tokenizer TokenizerFunc) *SegmentIndexer {
-	numWorkers := runtime.NumCPU()
-	if numWorkers < 2 {
-		numWorkers = 2
-	}
-	if numWorkers > 32 {
-		numWorkers = 32 // Allow more workers for segment-based approach
-	}
+	numWorkers := min(max(runtime.NumCPU(), 2),
+		// Allow more workers for segment-based approach
+		32)
 
 	si := &SegmentIndexer{
 		NumWorkers:   numWorkers,
@@ -236,9 +233,7 @@ func (si *SegmentIndexer) mergeBatch(segments []*Segment) {
 
 	// Merge doc lengths
 	for _, seg := range segments {
-		for docID, length := range seg.docLens {
-			mergedDocLens[docID] = length
-		}
+		maps.Copy(mergedDocLens, seg.docLens)
 	}
 
 	// Merge into global state (single lock for entire batch)
@@ -292,27 +287,21 @@ func (si *SegmentIndexer) DocCount() int64 {
 
 // SegmentIndexerV2 is an enhanced version with parallel merge and buffer pooling.
 type SegmentIndexerV2 struct {
-	NumWorkers   int
-	SegmentSize  int
-	Tokenizer    TokenizerFunc
+	NumWorkers  int
+	SegmentSize int
+	Tokenizer   TokenizerFunc
 
-	docCh        chan segmentDoc
-	segments     []*Segment  // Collected segments
-	segmentMu    sync.Mutex
+	docCh     chan segmentDoc
+	segments  []*Segment // Collected segments
+	segmentMu sync.Mutex
 
-	docCount     atomic.Int64
-	wg           sync.WaitGroup
+	docCount atomic.Int64
+	wg       sync.WaitGroup
 }
 
 // NewSegmentIndexerV2 creates a V2 indexer with parallel merge and optimizations.
 func NewSegmentIndexerV2(tokenizer TokenizerFunc) *SegmentIndexerV2 {
-	numWorkers := runtime.NumCPU()
-	if numWorkers < 2 {
-		numWorkers = 2
-	}
-	if numWorkers > 32 {
-		numWorkers = 32
-	}
+	numWorkers := min(max(runtime.NumCPU(), 2), 32)
 
 	// Segment size tuned for optimal parallelism
 	// Smaller segments = more parallel work, but more merge overhead
@@ -440,10 +429,7 @@ func (si *SegmentIndexerV2) parallelMerge() (map[string][]IndexPosting, []int) {
 	}
 
 	// Parallel term merging with more workers
-	numWorkers := runtime.NumCPU()
-	if numWorkers > 16 {
-		numWorkers = 16
-	}
+	numWorkers := min(runtime.NumCPU(), 16)
 
 	termCh := make(chan string, len(terms))
 	type mergeResult struct {
@@ -453,10 +439,8 @@ func (si *SegmentIndexerV2) parallelMerge() (map[string][]IndexPosting, []int) {
 	resultCh := make(chan mergeResult, len(terms))
 
 	var wg sync.WaitGroup
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range numWorkers {
+		wg.Go(func() {
 			for term := range termCh {
 				// Count total postings for this term
 				total := 0
@@ -473,7 +457,7 @@ func (si *SegmentIndexerV2) parallelMerge() (map[string][]IndexPosting, []int) {
 				// Skip sorting here - buildBlocksDirect will sort
 				resultCh <- mergeResult{term: term, postings: merged}
 			}
-		}()
+		})
 	}
 
 	// Feed terms
@@ -498,12 +482,9 @@ func (si *SegmentIndexerV2) parallelMerge() (map[string][]IndexPosting, []int) {
 	var docWg sync.WaitGroup
 	chunkSize := (len(si.segments) + numWorkers - 1) / numWorkers
 
-	for i := 0; i < numWorkers; i++ {
+	for i := range numWorkers {
 		start := i * chunkSize
-		end := start + chunkSize
-		if end > len(si.segments) {
-			end = len(si.segments)
-		}
+		end := min(start+chunkSize, len(si.segments))
 		if start >= len(si.segments) {
 			break
 		}
@@ -549,30 +530,24 @@ func (si *SegmentIndexerV2) DocCount() int64 {
 // - Two-level merge tree
 // - Buffer pooling with sync.Pool
 type SegmentIndexerV3 struct {
-	NumWorkers   int
-	SegmentSize  int
-	Tokenizer    TokenizerFunc
+	NumWorkers  int
+	SegmentSize int
+	Tokenizer   TokenizerFunc
 
 	// Lock-free document queue using channels with large buffers
-	docCh        chan []segmentDoc  // Batch channel for efficiency
+	docCh chan []segmentDoc // Batch channel for efficiency
 
 	// Atomic segment collection
-	segments     []*Segment
-	segmentMu    sync.Mutex
+	segments  []*Segment
+	segmentMu sync.Mutex
 
-	docCount     atomic.Int64
-	wg           sync.WaitGroup
+	docCount atomic.Int64
+	wg       sync.WaitGroup
 }
 
 // NewSegmentIndexerV3 creates a V3 high-performance indexer.
 func NewSegmentIndexerV3(tokenizer TokenizerFunc) *SegmentIndexerV3 {
-	numWorkers := runtime.NumCPU()
-	if numWorkers < 2 {
-		numWorkers = 2
-	}
-	if numWorkers > 32 {
-		numWorkers = 32
-	}
+	numWorkers := min(max(runtime.NumCPU(), 2), 32)
 
 	si := &SegmentIndexerV3{
 		NumWorkers:  numWorkers,
@@ -683,10 +658,7 @@ func (si *SegmentIndexerV3) Finish() (map[string][]IndexPosting, []int) {
 }
 
 func (si *SegmentIndexerV3) twoLevelMerge() (map[string][]IndexPosting, []int) {
-	numWorkers := runtime.NumCPU()
-	if numWorkers > 16 {
-		numWorkers = 16
-	}
+	numWorkers := min(runtime.NumCPU(), 16)
 
 	// Level 1: Parallel segment merging (groups of 4)
 	groupSize := 4
@@ -695,12 +667,9 @@ func (si *SegmentIndexerV3) twoLevelMerge() (map[string][]IndexPosting, []int) {
 	mergedSegments := make([]*Segment, numGroups)
 	var level1Wg sync.WaitGroup
 
-	for g := 0; g < numGroups; g++ {
+	for g := range numGroups {
 		start := g * groupSize
-		end := start + groupSize
-		if end > len(si.segments) {
-			end = len(si.segments)
-		}
+		end := min(start+groupSize, len(si.segments))
 
 		level1Wg.Add(1)
 		go func(groupIdx int, segs []*Segment) {
@@ -735,9 +704,7 @@ func mergeSegmentGroup(segs []*Segment) *Segment {
 		}
 
 		// Merge doc lengths
-		for docID, length := range seg.docLens {
-			result.docLens[docID] = length
-		}
+		maps.Copy(result.docLens, seg.docLens)
 
 		// Update bounds
 		if seg.minDocID < result.minDocID {
@@ -785,10 +752,8 @@ func finalMerge(segments []*Segment, numWorkers int) (map[string][]IndexPosting,
 	resultCh := make(chan mergeResult, len(terms))
 
 	var wg sync.WaitGroup
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range numWorkers {
+		wg.Go(func() {
 			for term := range termCh {
 				total := 0
 				for _, seg := range segments {
@@ -811,7 +776,7 @@ func finalMerge(segments []*Segment, numWorkers int) (map[string][]IndexPosting,
 
 				resultCh <- mergeResult{term: term, postings: merged}
 			}
-		}()
+		})
 	}
 
 	for _, term := range terms {

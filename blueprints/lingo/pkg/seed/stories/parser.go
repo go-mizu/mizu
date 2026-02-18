@@ -244,8 +244,8 @@ func (p *Parser) parseAudioLine(line string, elem *ElementData) {
 	if len(parts) >= 2 {
 		// Parse timing data
 		timingStr := parts[1]
-		timingParts := strings.Split(timingStr, ";")
-		for _, tp := range timingParts {
+		timingParts := strings.SplitSeq(timingStr, ";")
+		for tp := range timingParts {
 			if tp == "" {
 				continue
 			}

@@ -193,10 +193,7 @@ func (c *Client) FetchItemsSince(ctx context.Context, startID int, limit int) ([
 		return nil, maxID, nil
 	}
 
-	endID := startID + limit
-	if endID > maxID {
-		endID = maxID
-	}
+	endID := min(startID+limit, maxID)
 
 	ids := make([]int, 0, endID-startID)
 	for id := startID; id <= endID; id++ {

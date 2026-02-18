@@ -52,7 +52,7 @@ func init() {
 }
 
 // XLOOKUP - Searches a range or an array, and returns an item corresponding to the first match.
-func fnXlookup(args ...interface{}) (interface{}, error) {
+func fnXlookup(args ...any) (any, error) {
 	if len(args) < 3 {
 		return nil, fmt.Errorf("XLOOKUP requires at least 3 arguments")
 	}
@@ -62,9 +62,9 @@ func fnXlookup(args ...interface{}) (interface{}, error) {
 	returnRange := toArray2D(args[2])
 
 	// Default values for optional arguments
-	missingValue := interface{}(nil)
-	matchMode := 0    // 0 = exact match, -1 = exact or smaller, 1 = exact or larger, 2 = wildcard
-	searchMode := 1   // 1 = first to last, -1 = last to first, 2 = binary ascending, -2 = binary descending
+	missingValue := any(nil)
+	matchMode := 0  // 0 = exact match, -1 = exact or smaller, 1 = exact or larger, 2 = wildcard
+	searchMode := 1 // 1 = first to last, -1 = last to first, 2 = binary ascending, -2 = binary descending
 
 	if len(args) > 3 && args[3] != nil {
 		missingValue = args[3]
@@ -83,7 +83,7 @@ func fnXlookup(args ...interface{}) (interface{}, error) {
 
 	if isVertical {
 		// Vertical lookup
-		for i := 0; i < len(lookupRange); i++ {
+		for i := range lookupRange {
 			if len(lookupRange[i]) == 0 {
 				continue
 			}
@@ -136,7 +136,7 @@ func fnXlookup(args ...interface{}) (interface{}, error) {
 }
 
 // XMATCH - Returns the relative position of an item in an array or range of cells.
-func fnXmatch(args ...interface{}) (interface{}, error) {
+func fnXmatch(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("XMATCH requires at least 2 arguments")
 	}
@@ -155,7 +155,7 @@ func fnXmatch(args ...interface{}) (interface{}, error) {
 	}
 
 	// Flatten the lookup range
-	var values []interface{}
+	var values []any
 	for _, row := range lookupRange {
 		values = append(values, row...)
 	}
@@ -180,7 +180,7 @@ func fnXmatch(args ...interface{}) (interface{}, error) {
 }
 
 // HYPERLINK - Creates a hyperlink
-func fnHyperlink(args ...interface{}) (interface{}, error) {
+func fnHyperlink(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("HYPERLINK requires at least 1 argument")
 	}
@@ -199,13 +199,13 @@ func fnHyperlink(args ...interface{}) (interface{}, error) {
 }
 
 // HSTACK - Appends arrays horizontally
-func fnHstack(args ...interface{}) (interface{}, error) {
+func fnHstack(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("HSTACK requires at least 1 argument")
 	}
 
 	var maxRows int
-	var arrays [][][]interface{}
+	var arrays [][][]any
 
 	for _, arg := range args {
 		arr := toArray2D(arg)
@@ -215,14 +215,14 @@ func fnHstack(args ...interface{}) (interface{}, error) {
 		}
 	}
 
-	result := make([][]interface{}, maxRows)
+	result := make([][]any, maxRows)
 	for i := range result {
 		for _, arr := range arrays {
 			if i < len(arr) {
 				result[i] = append(result[i], arr[i]...)
 			} else if len(arr) > 0 {
 				// Pad with nil for shorter arrays
-				result[i] = append(result[i], make([]interface{}, len(arr[0]))...)
+				result[i] = append(result[i], make([]any, len(arr[0]))...)
 			}
 		}
 	}
@@ -231,12 +231,12 @@ func fnHstack(args ...interface{}) (interface{}, error) {
 }
 
 // VSTACK - Appends arrays vertically
-func fnVstack(args ...interface{}) (interface{}, error) {
+func fnVstack(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("VSTACK requires at least 1 argument")
 	}
 
-	var result [][]interface{}
+	var result [][]any
 
 	for _, arg := range args {
 		arr := toArray2D(arg)
@@ -247,7 +247,7 @@ func fnVstack(args ...interface{}) (interface{}, error) {
 }
 
 // TAKE - Returns the first or last rows/columns from an array
-func fnTake(args ...interface{}) (interface{}, error) {
+func fnTake(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("TAKE requires at least 2 arguments")
 	}
@@ -264,17 +264,14 @@ func fnTake(args ...interface{}) (interface{}, error) {
 	}
 
 	// Handle rows
-	var result [][]interface{}
+	var result [][]any
 	if rows >= 0 {
 		if rows > len(arr) {
 			rows = len(arr)
 		}
 		result = arr[:rows]
 	} else {
-		rows = -rows
-		if rows > len(arr) {
-			rows = len(arr)
-		}
+		rows = min(-rows, len(arr))
 		result = arr[len(arr)-rows:]
 	}
 
@@ -287,10 +284,7 @@ func fnTake(args ...interface{}) (interface{}, error) {
 				}
 				result[i] = result[i][:cols]
 			} else {
-				c := -cols
-				if c > len(result[i]) {
-					c = len(result[i])
-				}
+				c := min(-cols, len(result[i]))
 				result[i] = result[i][len(result[i])-c:]
 			}
 		}
@@ -300,7 +294,7 @@ func fnTake(args ...interface{}) (interface{}, error) {
 }
 
 // DROP - Removes the first or last rows/columns from an array
-func fnDrop(args ...interface{}) (interface{}, error) {
+func fnDrop(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("DROP requires at least 2 arguments")
 	}
@@ -317,16 +311,16 @@ func fnDrop(args ...interface{}) (interface{}, error) {
 	}
 
 	// Handle rows
-	var result [][]interface{}
+	var result [][]any
 	if rows >= 0 {
 		if rows >= len(arr) {
-			return [][]interface{}{}, nil
+			return [][]any{}, nil
 		}
 		result = arr[rows:]
 	} else {
 		rows = -rows
 		if rows >= len(arr) {
-			return [][]interface{}{}, nil
+			return [][]any{}, nil
 		}
 		result = arr[:len(arr)-rows]
 	}
@@ -336,14 +330,14 @@ func fnDrop(args ...interface{}) (interface{}, error) {
 		for i := range result {
 			if cols >= 0 {
 				if cols >= len(result[i]) {
-					result[i] = []interface{}{}
+					result[i] = []any{}
 				} else {
 					result[i] = result[i][cols:]
 				}
 			} else {
 				c := -cols
 				if c >= len(result[i]) {
-					result[i] = []interface{}{}
+					result[i] = []any{}
 				} else {
 					result[i] = result[i][:len(result[i])-c]
 				}
@@ -355,7 +349,7 @@ func fnDrop(args ...interface{}) (interface{}, error) {
 }
 
 // EXPAND - Expands an array to specified dimensions
-func fnExpand(args ...interface{}) (interface{}, error) {
+func fnExpand(args ...any) (any, error) {
 	if len(args) < 3 {
 		return nil, fmt.Errorf("EXPAND requires at least 3 arguments")
 	}
@@ -363,15 +357,15 @@ func fnExpand(args ...interface{}) (interface{}, error) {
 	arr := toArray2D(args[0])
 	targetRows := int(toFloat(args[1]))
 	targetCols := int(toFloat(args[2]))
-	padWith := interface{}(nil)
+	padWith := any(nil)
 	if len(args) > 3 {
 		padWith = args[3]
 	}
 
-	result := make([][]interface{}, targetRows)
-	for i := 0; i < targetRows; i++ {
-		result[i] = make([]interface{}, targetCols)
-		for j := 0; j < targetCols; j++ {
+	result := make([][]any, targetRows)
+	for i := range targetRows {
+		result[i] = make([]any, targetCols)
+		for j := range targetCols {
 			if i < len(arr) && j < len(arr[i]) {
 				result[i][j] = arr[i][j]
 			} else {
@@ -384,7 +378,7 @@ func fnExpand(args ...interface{}) (interface{}, error) {
 }
 
 // CHOOSECOLS - Returns specified columns from an array
-func fnChooseCols(args ...interface{}) (interface{}, error) {
+func fnChooseCols(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("CHOOSECOLS requires at least 2 arguments")
 	}
@@ -394,9 +388,9 @@ func fnChooseCols(args ...interface{}) (interface{}, error) {
 		return arr, nil
 	}
 
-	result := make([][]interface{}, len(arr))
+	result := make([][]any, len(arr))
 	for i := range result {
-		result[i] = []interface{}{}
+		result[i] = []any{}
 	}
 
 	for _, colArg := range args[1:] {
@@ -417,7 +411,7 @@ func fnChooseCols(args ...interface{}) (interface{}, error) {
 }
 
 // CHOOSEROWS - Returns specified rows from an array
-func fnChooseRows(args ...interface{}) (interface{}, error) {
+func fnChooseRows(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("CHOOSEROWS requires at least 2 arguments")
 	}
@@ -427,7 +421,7 @@ func fnChooseRows(args ...interface{}) (interface{}, error) {
 		return arr, nil
 	}
 
-	var result [][]interface{}
+	var result [][]any
 
 	for _, rowArg := range args[1:] {
 		row := int(toFloat(rowArg)) - 1 // 1-indexed
@@ -443,7 +437,7 @@ func fnChooseRows(args ...interface{}) (interface{}, error) {
 }
 
 // TOCOL - Converts an array to a single column
-func fnToCol(args ...interface{}) (interface{}, error) {
+func fnToCol(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("TOCOL requires at least 1 argument")
 	}
@@ -459,17 +453,17 @@ func fnToCol(args ...interface{}) (interface{}, error) {
 		scanByCol = toBool(args[2])
 	}
 
-	var result [][]interface{}
+	var result [][]any
 
 	if scanByCol {
 		// Scan by column first
 		if len(arr) > 0 {
 			for col := 0; col < len(arr[0]); col++ {
-				for row := 0; row < len(arr); row++ {
+				for row := range arr {
 					if col < len(arr[row]) {
 						val := arr[row][col]
 						if shouldIncludeValue(val, ignore) {
-							result = append(result, []interface{}{val})
+							result = append(result, []any{val})
 						}
 					}
 				}
@@ -480,7 +474,7 @@ func fnToCol(args ...interface{}) (interface{}, error) {
 		for _, row := range arr {
 			for _, val := range row {
 				if shouldIncludeValue(val, ignore) {
-					result = append(result, []interface{}{val})
+					result = append(result, []any{val})
 				}
 			}
 		}
@@ -490,7 +484,7 @@ func fnToCol(args ...interface{}) (interface{}, error) {
 }
 
 // TOROW - Converts an array to a single row
-func fnToRow(args ...interface{}) (interface{}, error) {
+func fnToRow(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("TOROW requires at least 1 argument")
 	}
@@ -506,12 +500,12 @@ func fnToRow(args ...interface{}) (interface{}, error) {
 		scanByCol = toBool(args[2])
 	}
 
-	var result []interface{}
+	var result []any
 
 	if scanByCol {
 		if len(arr) > 0 {
 			for col := 0; col < len(arr[0]); col++ {
-				for row := 0; row < len(arr); row++ {
+				for row := range arr {
 					if col < len(arr[row]) {
 						val := arr[row][col]
 						if shouldIncludeValue(val, ignore) {
@@ -531,18 +525,18 @@ func fnToRow(args ...interface{}) (interface{}, error) {
 		}
 	}
 
-	return [][]interface{}{result}, nil
+	return [][]any{result}, nil
 }
 
 // WRAPCOLS - Wraps values into columns
-func fnWrapCols(args ...interface{}) (interface{}, error) {
+func fnWrapCols(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("WRAPCOLS requires at least 2 arguments")
 	}
 
 	arr := toArray2D(args[0])
 	wrapCount := int(toFloat(args[1]))
-	padWith := interface{}(nil)
+	padWith := any(nil)
 	if len(args) > 2 {
 		padWith = args[2]
 	}
@@ -552,18 +546,18 @@ func fnWrapCols(args ...interface{}) (interface{}, error) {
 	}
 
 	// Flatten the array
-	var flat []interface{}
+	var flat []any
 	for _, row := range arr {
 		flat = append(flat, row...)
 	}
 
 	// Calculate dimensions
 	numCols := (len(flat) + wrapCount - 1) / wrapCount
-	result := make([][]interface{}, wrapCount)
+	result := make([][]any, wrapCount)
 
-	for i := 0; i < wrapCount; i++ {
-		result[i] = make([]interface{}, numCols)
-		for j := 0; j < numCols; j++ {
+	for i := range wrapCount {
+		result[i] = make([]any, numCols)
+		for j := range numCols {
 			idx := j*wrapCount + i
 			if idx < len(flat) {
 				result[i][j] = flat[idx]
@@ -577,14 +571,14 @@ func fnWrapCols(args ...interface{}) (interface{}, error) {
 }
 
 // WRAPROWS - Wraps values into rows
-func fnWrapRows(args ...interface{}) (interface{}, error) {
+func fnWrapRows(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("WRAPROWS requires at least 2 arguments")
 	}
 
 	arr := toArray2D(args[0])
 	wrapCount := int(toFloat(args[1]))
-	padWith := interface{}(nil)
+	padWith := any(nil)
 	if len(args) > 2 {
 		padWith = args[2]
 	}
@@ -594,18 +588,18 @@ func fnWrapRows(args ...interface{}) (interface{}, error) {
 	}
 
 	// Flatten the array
-	var flat []interface{}
+	var flat []any
 	for _, row := range arr {
 		flat = append(flat, row...)
 	}
 
 	// Calculate dimensions
 	numRows := (len(flat) + wrapCount - 1) / wrapCount
-	result := make([][]interface{}, numRows)
+	result := make([][]any, numRows)
 
-	for i := 0; i < numRows; i++ {
-		result[i] = make([]interface{}, wrapCount)
-		for j := 0; j < wrapCount; j++ {
+	for i := range numRows {
+		result[i] = make([]any, wrapCount)
+		for j := range wrapCount {
 			idx := i*wrapCount + j
 			if idx < len(flat) {
 				result[i][j] = flat[idx]
@@ -619,7 +613,7 @@ func fnWrapRows(args ...interface{}) (interface{}, error) {
 }
 
 // TEXTSPLIT - Splits text into array
-func fnTextSplit(args ...interface{}) (interface{}, error) {
+func fnTextSplit(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("TEXTSPLIT requires at least 2 arguments")
 	}
@@ -633,10 +627,10 @@ func fnTextSplit(args ...interface{}) (interface{}, error) {
 
 	if rowDelim != "" {
 		rows := strings.Split(text, rowDelim)
-		result := make([][]interface{}, len(rows))
+		result := make([][]any, len(rows))
 		for i, row := range rows {
 			cols := strings.Split(row, colDelim)
-			result[i] = make([]interface{}, len(cols))
+			result[i] = make([]any, len(cols))
 			for j, col := range cols {
 				result[i][j] = col
 			}
@@ -646,15 +640,15 @@ func fnTextSplit(args ...interface{}) (interface{}, error) {
 
 	// Single row
 	cols := strings.Split(text, colDelim)
-	result := make([]interface{}, len(cols))
+	result := make([]any, len(cols))
 	for i, col := range cols {
 		result[i] = col
 	}
-	return [][]interface{}{result}, nil
+	return [][]any{result}, nil
 }
 
 // ARRAYTOTEXT - Converts array to text
-func fnArrayToText(args ...interface{}) (interface{}, error) {
+func fnArrayToText(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("ARRAYTOTEXT requires at least 1 argument")
 	}
@@ -706,7 +700,7 @@ func fnArrayToText(args ...interface{}) (interface{}, error) {
 }
 
 // VALUETOTEXT - Converts a value to text
-func fnValueToText(args ...interface{}) (interface{}, error) {
+func fnValueToText(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("VALUETOTEXT requires at least 1 argument")
 	}
@@ -728,7 +722,7 @@ func fnValueToText(args ...interface{}) (interface{}, error) {
 
 // Statistical functions
 
-func fnGeoMean(args ...interface{}) (interface{}, error) {
+func fnGeoMean(args ...any) (any, error) {
 	values := flattenToNumbers(args)
 	if len(values) == 0 {
 		return nil, fmt.Errorf("#NUM!")
@@ -745,7 +739,7 @@ func fnGeoMean(args ...interface{}) (interface{}, error) {
 	return math.Pow(product, 1.0/float64(len(values))), nil
 }
 
-func fnHarMean(args ...interface{}) (interface{}, error) {
+func fnHarMean(args ...any) (any, error) {
 	values := flattenToNumbers(args)
 	if len(values) == 0 {
 		return nil, fmt.Errorf("#NUM!")
@@ -762,12 +756,12 @@ func fnHarMean(args ...interface{}) (interface{}, error) {
 	return float64(len(values)) / sum, nil
 }
 
-func fnTrimMean(args ...interface{}) (interface{}, error) {
+func fnTrimMean(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("TRIMMEAN requires 2 arguments")
 	}
 
-	values := flattenToNumbers([]interface{}{args[0]})
+	values := flattenToNumbers([]any{args[0]})
 	percent := toFloat(args[1])
 
 	if percent < 0 || percent >= 1 {
@@ -794,7 +788,7 @@ func fnTrimMean(args ...interface{}) (interface{}, error) {
 	return sum / float64(n-2*exclude), nil
 }
 
-func fnAveDev(args ...interface{}) (interface{}, error) {
+func fnAveDev(args ...any) (any, error) {
 	values := flattenToNumbers(args)
 	if len(values) == 0 {
 		return 0.0, nil
@@ -816,7 +810,7 @@ func fnAveDev(args ...interface{}) (interface{}, error) {
 	return devSum / float64(len(values)), nil
 }
 
-func fnDevSq(args ...interface{}) (interface{}, error) {
+func fnDevSq(args ...any) (any, error) {
 	values := flattenToNumbers(args)
 	if len(values) == 0 {
 		return 0.0, nil
@@ -838,7 +832,7 @@ func fnDevSq(args ...interface{}) (interface{}, error) {
 	return devSqSum, nil
 }
 
-func fnSkew(args ...interface{}) (interface{}, error) {
+func fnSkew(args ...any) (any, error) {
 	values := flattenToNumbers(args)
 	n := len(values)
 	if n < 3 {
@@ -872,7 +866,7 @@ func fnSkew(args ...interface{}) (interface{}, error) {
 	return float64(n) / float64((n-1)*(n-2)) * skewSum, nil
 }
 
-func fnKurt(args ...interface{}) (interface{}, error) {
+func fnKurt(args ...any) (any, error) {
 	values := flattenToNumbers(args)
 	n := len(values)
 	if n < 4 {
@@ -909,7 +903,7 @@ func fnKurt(args ...interface{}) (interface{}, error) {
 
 // Engineering functions (base conversion)
 
-func fnDec2Bin(args ...interface{}) (interface{}, error) {
+func fnDec2Bin(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("DEC2BIN requires at least 1 argument")
 	}
@@ -934,7 +928,7 @@ func fnDec2Bin(args ...interface{}) (interface{}, error) {
 	return result, nil
 }
 
-func fnDec2Hex(args ...interface{}) (interface{}, error) {
+func fnDec2Hex(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("DEC2HEX requires at least 1 argument")
 	}
@@ -955,7 +949,7 @@ func fnDec2Hex(args ...interface{}) (interface{}, error) {
 	return result, nil
 }
 
-func fnDec2Oct(args ...interface{}) (interface{}, error) {
+func fnDec2Oct(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("DEC2OCT requires at least 1 argument")
 	}
@@ -979,7 +973,7 @@ func fnDec2Oct(args ...interface{}) (interface{}, error) {
 	return result, nil
 }
 
-func fnBin2Dec(args ...interface{}) (interface{}, error) {
+func fnBin2Dec(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("BIN2DEC requires 1 argument")
 	}
@@ -1008,31 +1002,31 @@ func fnBin2Dec(args ...interface{}) (interface{}, error) {
 	return float64(num), nil
 }
 
-func fnBin2Hex(args ...interface{}) (interface{}, error) {
+func fnBin2Hex(args ...any) (any, error) {
 	dec, err := fnBin2Dec(args[:1]...)
 	if err != nil {
 		return nil, err
 	}
-	newArgs := []interface{}{dec}
+	newArgs := []any{dec}
 	if len(args) > 1 {
 		newArgs = append(newArgs, args[1])
 	}
 	return fnDec2Hex(newArgs...)
 }
 
-func fnBin2Oct(args ...interface{}) (interface{}, error) {
+func fnBin2Oct(args ...any) (any, error) {
 	dec, err := fnBin2Dec(args[:1]...)
 	if err != nil {
 		return nil, err
 	}
-	newArgs := []interface{}{dec}
+	newArgs := []any{dec}
 	if len(args) > 1 {
 		newArgs = append(newArgs, args[1])
 	}
 	return fnDec2Oct(newArgs...)
 }
 
-func fnHex2Dec(args ...interface{}) (interface{}, error) {
+func fnHex2Dec(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("HEX2DEC requires 1 argument")
 	}
@@ -1056,31 +1050,31 @@ func fnHex2Dec(args ...interface{}) (interface{}, error) {
 	return float64(num), nil
 }
 
-func fnHex2Bin(args ...interface{}) (interface{}, error) {
+func fnHex2Bin(args ...any) (any, error) {
 	dec, err := fnHex2Dec(args[:1]...)
 	if err != nil {
 		return nil, err
 	}
-	newArgs := []interface{}{dec}
+	newArgs := []any{dec}
 	if len(args) > 1 {
 		newArgs = append(newArgs, args[1])
 	}
 	return fnDec2Bin(newArgs...)
 }
 
-func fnHex2Oct(args ...interface{}) (interface{}, error) {
+func fnHex2Oct(args ...any) (any, error) {
 	dec, err := fnHex2Dec(args[:1]...)
 	if err != nil {
 		return nil, err
 	}
-	newArgs := []interface{}{dec}
+	newArgs := []any{dec}
 	if len(args) > 1 {
 		newArgs = append(newArgs, args[1])
 	}
 	return fnDec2Oct(newArgs...)
 }
 
-func fnOct2Dec(args ...interface{}) (interface{}, error) {
+func fnOct2Dec(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("OCT2DEC requires 1 argument")
 	}
@@ -1104,24 +1098,24 @@ func fnOct2Dec(args ...interface{}) (interface{}, error) {
 	return float64(num), nil
 }
 
-func fnOct2Bin(args ...interface{}) (interface{}, error) {
+func fnOct2Bin(args ...any) (any, error) {
 	dec, err := fnOct2Dec(args[:1]...)
 	if err != nil {
 		return nil, err
 	}
-	newArgs := []interface{}{dec}
+	newArgs := []any{dec}
 	if len(args) > 1 {
 		newArgs = append(newArgs, args[1])
 	}
 	return fnDec2Bin(newArgs...)
 }
 
-func fnOct2Hex(args ...interface{}) (interface{}, error) {
+func fnOct2Hex(args ...any) (any, error) {
 	dec, err := fnOct2Dec(args[:1]...)
 	if err != nil {
 		return nil, err
 	}
-	newArgs := []interface{}{dec}
+	newArgs := []any{dec}
 	if len(args) > 1 {
 		newArgs = append(newArgs, args[1])
 	}
@@ -1130,22 +1124,22 @@ func fnOct2Hex(args ...interface{}) (interface{}, error) {
 
 // Helper functions
 
-func toArray2D(v interface{}) [][]interface{} {
+func toArray2D(v any) [][]any {
 	if v == nil {
-		return [][]interface{}{}
+		return [][]any{}
 	}
 
 	switch val := v.(type) {
-	case [][]interface{}:
+	case [][]any:
 		return val
-	case []interface{}:
-		return [][]interface{}{val}
+	case []any:
+		return [][]any{val}
 	default:
-		return [][]interface{}{{v}}
+		return [][]any{{v}}
 	}
 }
 
-func matchesValue(search, lookup interface{}, matchMode int) bool {
+func matchesValue(search, lookup any, matchMode int) bool {
 	switch matchMode {
 	case 0: // Exact match
 		return compareValues(search, lookup) == 0
@@ -1199,7 +1193,7 @@ func matchPattern(pattern, s string) (bool, error) {
 	return pi == len(pattern), nil
 }
 
-func shouldIncludeValue(val interface{}, ignore int) bool {
+func shouldIncludeValue(val any, ignore int) bool {
 	isBlank := val == nil || val == ""
 	isError := false
 	if s, ok := val.(string); ok {
@@ -1218,7 +1212,7 @@ func shouldIncludeValue(val interface{}, ignore int) bool {
 	}
 }
 
-func flattenToNumbers(args []interface{}) []float64 {
+func flattenToNumbers(args []any) []float64 {
 	var result []float64
 	for _, arg := range args {
 		for _, val := range flattenValues(arg) {

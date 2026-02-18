@@ -260,7 +260,7 @@ func TestIndexStore_ListDocuments(t *testing.T) {
 	idx := s.Index()
 
 	// Create multiple documents
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		doc := &store.Document{
 			URL:    "https://example.com/list" + string(rune('0'+i)),
 			Title:  "List Test " + string(rune('0'+i)),

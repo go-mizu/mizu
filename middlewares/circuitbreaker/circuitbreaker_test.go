@@ -24,7 +24,7 @@ func TestNew(t *testing.T) {
 	})
 
 	// First 5 requests fail, circuit should open
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
@@ -53,7 +53,7 @@ func TestWithOptions_Threshold(t *testing.T) {
 	})
 
 	// 3 failures should open circuit
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
@@ -85,7 +85,7 @@ func TestWithOptions_Timeout(t *testing.T) {
 	})
 
 	// 2 failures open circuit
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
@@ -132,7 +132,7 @@ func TestWithOptions_OnStateChange(t *testing.T) {
 	})
 
 	// 2 failures -> open
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
@@ -203,14 +203,14 @@ func TestWithOptions_IsFailure(t *testing.T) {
 	})
 
 	// 3 non-critical errors - circuit stays closed
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
 	}
 
 	// 2 critical errors - circuit opens
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)

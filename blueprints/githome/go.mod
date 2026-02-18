@@ -5,8 +5,8 @@ go 1.25.5
 require (
 	github.com/charmbracelet/fang v0.4.4
 	github.com/duckdb/duckdb-go/v2 v2.5.5
-	github.com/go-git/go-git/v5 v5.16.4
-	github.com/go-mizu/mizu v0.5.21
+	github.com/go-git/go-git/v5 v5.16.5
+	github.com/go-mizu/mizu v0.5.23
 	github.com/spf13/cobra v1.10.2
 	github.com/yuin/goldmark v1.7.16
 	golang.org/x/crypto v0.48.0
@@ -27,7 +27,7 @@ require (
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
 	github.com/clipperhouse/displaywidth v0.10.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
-	github.com/cloudflare/circl v1.6.2 // indirect
+	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
 	github.com/duckdb/duckdb-go-bindings v0.3.4 // indirect
 	github.com/duckdb/duckdb-go-bindings/lib/darwin-amd64 v0.3.3 // indirect
@@ -45,7 +45,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
-	github.com/kevinburke/ssh_config v1.4.0 // indirect
+	github.com/kevinburke/ssh_config v1.6.0 // indirect
 	github.com/klauspost/compress v1.18.4 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect

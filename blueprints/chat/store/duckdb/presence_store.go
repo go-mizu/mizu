@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/go-mizu/blueprints/chat/feature/presence"
@@ -184,9 +185,10 @@ func stringJoin(s []string, sep string) string {
 	if len(s) == 0 {
 		return ""
 	}
-	result := s[0]
+	var result strings.Builder
+	result.WriteString(s[0])
 	for i := 1; i < len(s); i++ {
-		result += sep + s[i]
+		result.WriteString(sep + s[i])
 	}
-	return result
+	return result.String()
 }

@@ -75,7 +75,7 @@ func TestSessionStore_List(t *testing.T) {
 	store := s.Session()
 
 	// Create multiple sessions
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		sess := &session.Session{
 			ID:        "session-" + string(rune('a'+i)),
 			Title:     "Session " + string(rune('A'+i)),
@@ -451,7 +451,7 @@ func TestChunkerStore_SearchChunks(t *testing.T) {
 	store := s.Chunker()
 
 	// Create documents with chunks
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		doc := &chunker.Document{
 			ID:        "doc-" + string(rune('a'+i)),
 			URL:       "https://example.com/page" + string(rune('a'+i)),

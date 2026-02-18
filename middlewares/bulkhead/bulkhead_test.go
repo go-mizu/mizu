@@ -29,7 +29,7 @@ func TestNew(t *testing.T) {
 	var wg sync.WaitGroup
 	results := make([]int, 5)
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -103,7 +103,7 @@ func TestNewBulkhead_ErrorHandler(t *testing.T) {
 	// Fill the slot and the wait queue
 	var wg sync.WaitGroup
 	wg.Add(2)
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		go func() {
 			defer wg.Done()
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -177,7 +177,7 @@ func TestForPath(t *testing.T) {
 
 	// Make requests to different paths
 	var wg sync.WaitGroup
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

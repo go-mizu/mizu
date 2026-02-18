@@ -49,7 +49,7 @@ func (c *WSClient) readLoop() {
 			return
 		}
 		// Handle multiple messages in one frame (newline separated)
-		for _, line := range strings.Split(string(data), "\n") {
+		for line := range strings.SplitSeq(string(data), "\n") {
 			if line == "" {
 				continue
 			}
@@ -215,17 +215,17 @@ func TestWS_MessageCreate(t *testing.T) {
 	token := registerAndGetToken(t, srv.app, "msgcreateuser")
 
 	// Create server and channel
-	serverBody := map[string]interface{}{"name": "WS Test Server"}
+	serverBody := map[string]any{"name": "WS Test Server"}
 	serverRec := doRequest(t, srv.app, "POST", "/api/v1/servers", serverBody, token)
-	var serverResp map[string]interface{}
+	var serverResp map[string]any
 	parseResponse(t, serverRec, &serverResp)
-	serverID := serverResp["data"].(map[string]interface{})["id"].(string)
+	serverID := serverResp["data"].(map[string]any)["id"].(string)
 
-	channelBody := map[string]interface{}{"name": "ws-test", "type": "text"}
+	channelBody := map[string]any{"name": "ws-test", "type": "text"}
 	channelRec := doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/channels", channelBody, token)
-	var channelResp map[string]interface{}
+	var channelResp map[string]any
 	parseResponse(t, channelRec, &channelResp)
-	channelID := channelResp["data"].(map[string]interface{})["id"].(string)
+	channelID := channelResp["data"].(map[string]any)["id"].(string)
 
 	// Connect WebSocket
 	client := connectWebSocket(t, ts, token)
@@ -235,7 +235,7 @@ func TestWS_MessageCreate(t *testing.T) {
 	client.DrainMessages(2 * time.Second)
 
 	// Send a message via HTTP API
-	msgBody := map[string]interface{}{"content": "Hello via WebSocket!"}
+	msgBody := map[string]any{"content": "Hello via WebSocket!"}
 	msgRec := doRequest(t, srv.app, "POST", "/api/v1/channels/"+channelID+"/messages", msgBody, token)
 	if msgRec.Code != http.StatusOK && msgRec.Code != http.StatusCreated {
 		t.Fatalf("send message failed: %s", msgRec.Body.String())
@@ -248,7 +248,7 @@ func TestWS_MessageCreate(t *testing.T) {
 	}
 
 	// Verify message content
-	var msgData map[string]interface{}
+	var msgData map[string]any
 	if err := json.Unmarshal(msg.D, &msgData); err != nil {
 		t.Fatalf("failed to parse message data: %v", err)
 	}
@@ -274,18 +274,18 @@ func TestWS_MultiUserMessaging(t *testing.T) {
 	bobToken := registerAndGetToken(t, srv.app, "wsbob")
 
 	// Alice creates a server
-	serverBody := map[string]interface{}{"name": "Multi User Server", "is_public": true}
+	serverBody := map[string]any{"name": "Multi User Server", "is_public": true}
 	serverRec := doRequest(t, srv.app, "POST", "/api/v1/servers", serverBody, aliceToken)
-	var serverResp map[string]interface{}
+	var serverResp map[string]any
 	parseResponse(t, serverRec, &serverResp)
-	serverID := serverResp["data"].(map[string]interface{})["id"].(string)
+	serverID := serverResp["data"].(map[string]any)["id"].(string)
 
 	// Create channel
-	channelBody := map[string]interface{}{"name": "multi-chat", "type": "text"}
+	channelBody := map[string]any{"name": "multi-chat", "type": "text"}
 	channelRec := doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/channels", channelBody, aliceToken)
-	var channelResp map[string]interface{}
+	var channelResp map[string]any
 	parseResponse(t, channelRec, &channelResp)
-	channelID := channelResp["data"].(map[string]interface{})["id"].(string)
+	channelID := channelResp["data"].(map[string]any)["id"].(string)
 
 	// Bob joins the server
 	doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/join", nil, bobToken)
@@ -302,7 +302,7 @@ func TestWS_MultiUserMessaging(t *testing.T) {
 	bobClient.DrainMessages(2 * time.Second)
 
 	// Alice sends a message
-	msgBody := map[string]interface{}{"content": "Hello Bob!"}
+	msgBody := map[string]any{"content": "Hello Bob!"}
 	doRequest(t, srv.app, "POST", "/api/v1/channels/"+channelID+"/messages", msgBody, aliceToken)
 
 	// Both should receive the message
@@ -316,7 +316,7 @@ func TestWS_MultiUserMessaging(t *testing.T) {
 		defer wg.Done()
 		msg := aliceClient.WaitForMessage("MESSAGE_CREATE", 5*time.Second)
 		if msg != nil {
-			var data map[string]interface{}
+			var data map[string]any
 			json.Unmarshal(msg.D, &data)
 			if data["content"] == "Hello Bob!" {
 				mu.Lock()
@@ -330,7 +330,7 @@ func TestWS_MultiUserMessaging(t *testing.T) {
 		defer wg.Done()
 		msg := bobClient.WaitForMessage("MESSAGE_CREATE", 5*time.Second)
 		if msg != nil {
-			var data map[string]interface{}
+			var data map[string]any
 			json.Unmarshal(msg.D, &data)
 			if data["content"] == "Hello Bob!" {
 				mu.Lock()
@@ -361,24 +361,24 @@ func TestWS_MessageUpdate(t *testing.T) {
 	token := registerAndGetToken(t, srv.app, "updateuser")
 
 	// Create server and channel
-	serverBody := map[string]interface{}{"name": "Update Test Server"}
+	serverBody := map[string]any{"name": "Update Test Server"}
 	serverRec := doRequest(t, srv.app, "POST", "/api/v1/servers", serverBody, token)
-	var serverResp map[string]interface{}
+	var serverResp map[string]any
 	parseResponse(t, serverRec, &serverResp)
-	serverID := serverResp["data"].(map[string]interface{})["id"].(string)
+	serverID := serverResp["data"].(map[string]any)["id"].(string)
 
-	channelBody := map[string]interface{}{"name": "update-test", "type": "text"}
+	channelBody := map[string]any{"name": "update-test", "type": "text"}
 	channelRec := doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/channels", channelBody, token)
-	var channelResp map[string]interface{}
+	var channelResp map[string]any
 	parseResponse(t, channelRec, &channelResp)
-	channelID := channelResp["data"].(map[string]interface{})["id"].(string)
+	channelID := channelResp["data"].(map[string]any)["id"].(string)
 
 	// Create a message first
-	msgBody := map[string]interface{}{"content": "Original message"}
+	msgBody := map[string]any{"content": "Original message"}
 	msgRec := doRequest(t, srv.app, "POST", "/api/v1/channels/"+channelID+"/messages", msgBody, token)
-	var msgResp map[string]interface{}
+	var msgResp map[string]any
 	parseResponse(t, msgRec, &msgResp)
-	messageID := msgResp["data"].(map[string]interface{})["id"].(string)
+	messageID := msgResp["data"].(map[string]any)["id"].(string)
 
 	// Connect WebSocket
 	client := connectWebSocket(t, ts, token)
@@ -388,7 +388,7 @@ func TestWS_MessageUpdate(t *testing.T) {
 	client.DrainMessages(2 * time.Second)
 
 	// Update the message
-	updateBody := map[string]interface{}{"content": "Updated message"}
+	updateBody := map[string]any{"content": "Updated message"}
 	doRequest(t, srv.app, "PATCH", "/api/v1/channels/"+channelID+"/messages/"+messageID, updateBody, token)
 
 	// Should receive MESSAGE_UPDATE
@@ -397,7 +397,7 @@ func TestWS_MessageUpdate(t *testing.T) {
 		t.Fatal("did not receive MESSAGE_UPDATE")
 	}
 
-	var msgData map[string]interface{}
+	var msgData map[string]any
 	json.Unmarshal(msg.D, &msgData)
 
 	if msgData["content"] != "Updated message" {
@@ -416,24 +416,24 @@ func TestWS_MessageDelete(t *testing.T) {
 	token := registerAndGetToken(t, srv.app, "deleteuser")
 
 	// Create server and channel
-	serverBody := map[string]interface{}{"name": "Delete Test Server"}
+	serverBody := map[string]any{"name": "Delete Test Server"}
 	serverRec := doRequest(t, srv.app, "POST", "/api/v1/servers", serverBody, token)
-	var serverResp map[string]interface{}
+	var serverResp map[string]any
 	parseResponse(t, serverRec, &serverResp)
-	serverID := serverResp["data"].(map[string]interface{})["id"].(string)
+	serverID := serverResp["data"].(map[string]any)["id"].(string)
 
-	channelBody := map[string]interface{}{"name": "delete-test", "type": "text"}
+	channelBody := map[string]any{"name": "delete-test", "type": "text"}
 	channelRec := doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/channels", channelBody, token)
-	var channelResp map[string]interface{}
+	var channelResp map[string]any
 	parseResponse(t, channelRec, &channelResp)
-	channelID := channelResp["data"].(map[string]interface{})["id"].(string)
+	channelID := channelResp["data"].(map[string]any)["id"].(string)
 
 	// Create a message
-	msgBody := map[string]interface{}{"content": "Message to delete"}
+	msgBody := map[string]any{"content": "Message to delete"}
 	msgRec := doRequest(t, srv.app, "POST", "/api/v1/channels/"+channelID+"/messages", msgBody, token)
-	var msgResp map[string]interface{}
+	var msgResp map[string]any
 	parseResponse(t, msgRec, &msgResp)
-	messageID := msgResp["data"].(map[string]interface{})["id"].(string)
+	messageID := msgResp["data"].(map[string]any)["id"].(string)
 
 	// Connect WebSocket
 	client := connectWebSocket(t, ts, token)
@@ -451,7 +451,7 @@ func TestWS_MessageDelete(t *testing.T) {
 		t.Fatal("did not receive MESSAGE_DELETE")
 	}
 
-	var msgData map[string]interface{}
+	var msgData map[string]any
 	json.Unmarshal(msg.D, &msgData)
 
 	if msgData["id"] != messageID {
@@ -508,17 +508,17 @@ func TestWS_RealTimeFlow(t *testing.T) {
 	bobToken := registerAndGetToken(t, srv.app, "flowbob2")
 
 	// Alice creates server and channel
-	serverBody := map[string]interface{}{"name": "Flow Server", "is_public": true}
+	serverBody := map[string]any{"name": "Flow Server", "is_public": true}
 	serverRec := doRequest(t, srv.app, "POST", "/api/v1/servers", serverBody, aliceToken)
-	var serverResp map[string]interface{}
+	var serverResp map[string]any
 	parseResponse(t, serverRec, &serverResp)
-	serverID := serverResp["data"].(map[string]interface{})["id"].(string)
+	serverID := serverResp["data"].(map[string]any)["id"].(string)
 
-	channelBody := map[string]interface{}{"name": "flow-chat", "type": "text"}
+	channelBody := map[string]any{"name": "flow-chat", "type": "text"}
 	channelRec := doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/channels", channelBody, aliceToken)
-	var channelResp map[string]interface{}
+	var channelResp map[string]any
 	parseResponse(t, channelRec, &channelResp)
-	channelID := channelResp["data"].(map[string]interface{})["id"].(string)
+	channelID := channelResp["data"].(map[string]any)["id"].(string)
 
 	// Bob joins
 	doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/join", nil, bobToken)
@@ -547,7 +547,7 @@ func TestWS_RealTimeFlow(t *testing.T) {
 
 	for _, m := range messages {
 		// Send message
-		body := map[string]interface{}{"content": m.content}
+		body := map[string]any{"content": m.content}
 		rec := doRequest(t, srv.app, "POST", "/api/v1/channels/"+channelID+"/messages", body, m.token)
 		if rec.Code != http.StatusOK && rec.Code != http.StatusCreated {
 			t.Fatalf("failed to send message from %s: %s", m.sender, rec.Body.String())
@@ -562,7 +562,7 @@ func TestWS_RealTimeFlow(t *testing.T) {
 		}
 
 		// Verify content
-		var aliceData, bobData map[string]interface{}
+		var aliceData, bobData map[string]any
 		json.Unmarshal(aliceMsg.D, &aliceData)
 		json.Unmarshal(bobMsg.D, &bobData)
 
@@ -576,10 +576,10 @@ func TestWS_RealTimeFlow(t *testing.T) {
 
 	// Verify all messages are persisted
 	listRec := doRequest(t, srv.app, "GET", "/api/v1/channels/"+channelID+"/messages?limit=10", nil, aliceToken)
-	var listResp map[string]interface{}
+	var listResp map[string]any
 	parseResponse(t, listRec, &listResp)
 
-	msgs := listResp["data"].([]interface{})
+	msgs := listResp["data"].([]any)
 	if len(msgs) != 4 {
 		t.Errorf("expected 4 messages, got %d", len(msgs))
 	}
@@ -599,11 +599,11 @@ func TestWS_OnlineUsers(t *testing.T) {
 	charlieToken := registerAndGetToken(t, srv.app, "onlinecharlie")
 
 	// Alice creates a server
-	serverBody := map[string]interface{}{"name": "Online Test Server", "is_public": true}
+	serverBody := map[string]any{"name": "Online Test Server", "is_public": true}
 	serverRec := doRequest(t, srv.app, "POST", "/api/v1/servers", serverBody, aliceToken)
-	var serverResp map[string]interface{}
+	var serverResp map[string]any
 	parseResponse(t, serverRec, &serverResp)
-	serverID := serverResp["data"].(map[string]interface{})["id"].(string)
+	serverID := serverResp["data"].(map[string]any)["id"].(string)
 
 	// Bob and Charlie join the server
 	doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/join", nil, bobToken)
@@ -615,12 +615,12 @@ func TestWS_OnlineUsers(t *testing.T) {
 		t.Fatalf("get online users failed: %s", rec.Body.String())
 	}
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	parseResponse(t, rec, &resp)
-	data := resp["data"].(map[string]interface{})
+	data := resp["data"].(map[string]any)
 
 	// All users should be offline initially
-	offline := data["offline"].([]interface{})
+	offline := data["offline"].([]any)
 	if len(offline) != 3 {
 		t.Errorf("expected 3 offline users, got %d", len(offline))
 	}
@@ -636,10 +636,10 @@ func TestWS_OnlineUsers(t *testing.T) {
 	// Check online users - Alice should be online
 	rec = doRequest(t, srv.app, "GET", "/api/v1/servers/"+serverID+"/online", nil, aliceToken)
 	parseResponse(t, rec, &resp)
-	data = resp["data"].(map[string]interface{})
+	data = resp["data"].(map[string]any)
 
-	online := data["online"].([]interface{})
-	offline = data["offline"].([]interface{})
+	online := data["online"].([]any)
+	offline = data["offline"].([]any)
 
 	if len(online) != 1 {
 		t.Errorf("expected 1 online user, got %d", len(online))
@@ -658,10 +658,10 @@ func TestWS_OnlineUsers(t *testing.T) {
 	// Check again - Alice and Bob should be online
 	rec = doRequest(t, srv.app, "GET", "/api/v1/servers/"+serverID+"/online", nil, aliceToken)
 	parseResponse(t, rec, &resp)
-	data = resp["data"].(map[string]interface{})
+	data = resp["data"].(map[string]any)
 
-	online = data["online"].([]interface{})
-	offline = data["offline"].([]interface{})
+	online = data["online"].([]any)
+	offline = data["offline"].([]any)
 
 	if len(online) != 2 {
 		t.Errorf("expected 2 online users, got %d", len(online))
@@ -684,11 +684,11 @@ func TestWS_PresenceUpdate(t *testing.T) {
 	bobToken := registerAndGetToken(t, srv.app, "presencebob")
 
 	// Alice creates a server
-	serverBody := map[string]interface{}{"name": "Presence Test Server", "is_public": true}
+	serverBody := map[string]any{"name": "Presence Test Server", "is_public": true}
 	serverRec := doRequest(t, srv.app, "POST", "/api/v1/servers", serverBody, aliceToken)
-	var serverResp map[string]interface{}
+	var serverResp map[string]any
 	parseResponse(t, serverRec, &serverResp)
-	serverID := serverResp["data"].(map[string]interface{})["id"].(string)
+	serverID := serverResp["data"].(map[string]any)["id"].(string)
 
 	// Bob joins the server
 	doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/join", nil, bobToken)
@@ -709,7 +709,7 @@ func TestWS_PresenceUpdate(t *testing.T) {
 		t.Fatal("Alice did not receive PRESENCE_UPDATE when Bob connected")
 	}
 
-	var presenceData map[string]interface{}
+	var presenceData map[string]any
 	if err := json.Unmarshal(msg.D, &presenceData); err != nil {
 		t.Fatalf("failed to parse presence data: %v", err)
 	}
@@ -752,11 +752,11 @@ func TestWS_MultiUserPresence(t *testing.T) {
 	charlieToken := registerAndGetToken(t, srv.app, "multicharlie")
 
 	// Alice creates a server
-	serverBody := map[string]interface{}{"name": "Multi Presence Server", "is_public": true}
+	serverBody := map[string]any{"name": "Multi Presence Server", "is_public": true}
 	serverRec := doRequest(t, srv.app, "POST", "/api/v1/servers", serverBody, aliceToken)
-	var serverResp map[string]interface{}
+	var serverResp map[string]any
 	parseResponse(t, serverRec, &serverResp)
-	serverID := serverResp["data"].(map[string]interface{})["id"].(string)
+	serverID := serverResp["data"].(map[string]any)["id"].(string)
 
 	// Bob and Charlie join the server
 	doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/join", nil, bobToken)
@@ -780,11 +780,11 @@ func TestWS_MultiUserPresence(t *testing.T) {
 
 	// Verify all users are online
 	rec := doRequest(t, srv.app, "GET", "/api/v1/servers/"+serverID+"/online", nil, aliceToken)
-	var resp map[string]interface{}
+	var resp map[string]any
 	parseResponse(t, rec, &resp)
-	data := resp["data"].(map[string]interface{})
+	data := resp["data"].(map[string]any)
 
-	online := data["online"].([]interface{})
+	online := data["online"].([]any)
 	if len(online) != 3 {
 		t.Errorf("expected 3 online users, got %d", len(online))
 	}
@@ -792,7 +792,7 @@ func TestWS_MultiUserPresence(t *testing.T) {
 	// Verify the offline list is empty or nil
 	offlineRaw := data["offline"]
 	if offlineRaw != nil {
-		offline := offlineRaw.([]interface{})
+		offline := offlineRaw.([]any)
 		if len(offline) != 0 {
 			t.Errorf("expected 0 offline users, got %d", len(offline))
 		}
@@ -809,10 +809,10 @@ func TestWS_MultiUserPresence(t *testing.T) {
 	// Verify Charlie is now offline
 	rec = doRequest(t, srv.app, "GET", "/api/v1/servers/"+serverID+"/online", nil, aliceToken)
 	parseResponse(t, rec, &resp)
-	data = resp["data"].(map[string]interface{})
+	data = resp["data"].(map[string]any)
 
-	online = data["online"].([]interface{})
-	offline := data["offline"].([]interface{})
+	online = data["online"].([]any)
+	offline := data["offline"].([]any)
 
 	if len(online) != 2 {
 		t.Errorf("expected 2 online users, got %d", len(online))

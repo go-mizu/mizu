@@ -112,8 +112,8 @@ func (h *SearchHandler) Search(c *mizu.Ctx) error {
 				query = bangResult.Query
 			default:
 				// Check for time filter
-				if strings.HasPrefix(bangResult.Category, "time:") {
-					timeRange := strings.TrimPrefix(bangResult.Category, "time:")
+				if after, ok := strings.CutPrefix(bangResult.Category, "time:"); ok {
+					timeRange := after
 					query = bangResult.Query
 					// Set time range in query params for parseSearchOptions to pick up
 					c.Request().URL.RawQuery += "&time=" + timeRange

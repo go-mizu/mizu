@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/llm"
@@ -55,13 +56,7 @@ func TestProviderRegistration(t *testing.T) {
 	defer os.Unsetenv("ANTHROPIC_API_KEY")
 
 	providers := llm.Providers()
-	found := false
-	for _, p := range providers {
-		if p == "claude" {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(providers, "claude")
 	if !found {
 		t.Error("claude provider not registered")
 	}

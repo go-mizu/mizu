@@ -85,11 +85,11 @@ type SubagentsConfig struct {
 // AgentDefaults holds default settings for all agents.
 type AgentDefaults struct {
 	Workspace      string               `json:"workspace,omitempty"`
-	ContextPruning ContextPruningConfig `json:"contextPruning,omitempty"`
-	Compaction     CompactionConfig     `json:"compaction,omitempty"`
-	Heartbeat      HeartbeatConfig      `json:"heartbeat,omitempty"`
+	ContextPruning ContextPruningConfig `json:"contextPruning"`
+	Compaction     CompactionConfig     `json:"compaction"`
+	Heartbeat      HeartbeatConfig      `json:"heartbeat"`
 	MaxConcurrent  int                  `json:"maxConcurrent,omitempty"`
-	Subagents      SubagentsConfig      `json:"subagents,omitempty"`
+	Subagents      SubagentsConfig      `json:"subagents"`
 }
 
 // AgentsConfig holds agent configuration.
@@ -110,7 +110,7 @@ type CommandsConfig struct {
 
 // GatewayAuthConfig holds gateway authentication settings.
 type GatewayAuthConfig struct {
-	Mode           string `json:"mode,omitempty"`     // token, password
+	Mode           string `json:"mode,omitempty"` // token, password
 	Token          string `json:"token,omitempty"`
 	Password       string `json:"password,omitempty"`
 	AllowTailscale bool   `json:"allowTailscale,omitempty"`
@@ -127,8 +127,8 @@ type GatewayConfig struct {
 	Port      int               `json:"port,omitempty"`
 	Mode      string            `json:"mode,omitempty"` // local
 	Bind      string            `json:"bind,omitempty"` // loopback, lan, tailnet, auto
-	Auth      GatewayAuthConfig `json:"auth,omitempty"`
-	Tailscale TailscaleConfig   `json:"tailscale,omitempty"`
+	Auth      GatewayAuthConfig `json:"auth"`
+	Tailscale TailscaleConfig   `json:"tailscale"`
 }
 
 // PluginEntry represents a single plugin configuration.

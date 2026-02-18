@@ -216,18 +216,12 @@ func (s *Service) GetRelevantChunks(ctx context.Context, docs []*Document, query
 	if s.embedder == nil {
 		// Fallback: return first N chunks from each doc
 		var chunks []Chunk
-		perDoc := limit / len(docs)
-		if perDoc < 1 {
-			perDoc = 1
-		}
+		perDoc := max(limit/len(docs), 1)
 		for _, doc := range docs {
 			if doc == nil {
 				continue
 			}
-			end := perDoc
-			if end > len(doc.Chunks) {
-				end = len(doc.Chunks)
-			}
+			end := min(perDoc, len(doc.Chunks))
 			chunks = append(chunks, doc.Chunks[:end]...)
 		}
 		if len(chunks) > limit {
@@ -369,10 +363,7 @@ func (s *Service) chunkText(docID, url, text string) []Chunk {
 	pos := 0
 
 	for pos < len(text) && len(chunks) < s.config.MaxChunks {
-		end := pos + s.config.ChunkSize
-		if end > len(text) {
-			end = len(text)
-		}
+		end := min(pos+s.config.ChunkSize, len(text))
 
 		// Try to break at sentence boundary
 		if end < len(text) {
@@ -397,10 +388,7 @@ func (s *Service) chunkText(docID, url, text string) []Chunk {
 		}
 
 		// Move position with overlap
-		pos = end - s.config.ChunkOverlap
-		if pos < 0 {
-			pos = 0
-		}
+		pos = max(end-s.config.ChunkOverlap, 0)
 		if pos <= chunks[len(chunks)-1].StartPos {
 			pos = end // Prevent infinite loop
 		}
@@ -457,7 +445,7 @@ func sqrt(x float32) float32 {
 		return 0
 	}
 	z := x
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		z = (z + x/z) / 2
 	}
 	return z

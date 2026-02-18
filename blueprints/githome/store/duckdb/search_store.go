@@ -337,5 +337,5 @@ func (s *SearchStore) SearchUsers(ctx context.Context, query string, opts *searc
 
 // generateNodeID creates a GitHub-compatible node ID.
 func generateSearchNodeID(prefix string, id int64) string {
-	return base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s_%d", prefix, id)))
+	return base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "%s_%d", prefix, id))
 }

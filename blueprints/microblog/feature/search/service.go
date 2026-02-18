@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"slices"
 	"strings"
 )
 
@@ -89,10 +90,5 @@ func (s *Service) SearchAccounts(ctx context.Context, query string, limit int) (
 }
 
 func contains(slice []ResultType, item ResultType) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, item)
 }

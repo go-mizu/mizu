@@ -298,7 +298,7 @@ func TestService_ListForUser_Pagination(t *testing.T) {
 	defer cleanup()
 
 	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		createTestRepo(t, service, user.ID, "repo"+string(rune('a'+i)))
 	}
 

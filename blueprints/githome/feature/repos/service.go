@@ -876,8 +876,8 @@ func (s *Service) ListTreeEntries(ctx context.Context, owner, repoName, path, re
 	// Navigate to target path if not root
 	path = strings.TrimPrefix(path, "/")
 	if path != "" {
-		parts := strings.Split(path, "/")
-		for _, part := range parts {
+		parts := strings.SplitSeq(path, "/")
+		for part := range parts {
 			found := false
 			for _, entry := range tree.Entries {
 				if entry.Name == part {
@@ -1006,8 +1006,8 @@ func (s *Service) ListTreeEntriesWithCommits(ctx context.Context, owner, repoNam
 		if err != nil {
 			return nil, ErrNotFound
 		}
-		parts := strings.Split(path, "/")
-		for _, part := range parts {
+		parts := strings.SplitSeq(path, "/")
+		for part := range parts {
 			found := false
 			for _, entry := range tree.Entries {
 				if entry.Name == part {
@@ -1216,9 +1216,9 @@ func (s *Service) GetLatestCommit(ctx context.Context, owner, repoName, ref stri
 	}
 
 	return &Commit{
-		SHA:    c.SHA,
-		NodeID: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Commit:%s", c.SHA))),
-		URL:    fmt.Sprintf("%s/api/v3/repos/%s/%s/git/commits/%s", s.baseURL, owner, repoName, c.SHA),
+		SHA:     c.SHA,
+		NodeID:  base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Commit:%s", c.SHA)),
+		URL:     fmt.Sprintf("%s/api/v3/repos/%s/%s/git/commits/%s", s.baseURL, owner, repoName, c.SHA),
 		HTMLURL: fmt.Sprintf("%s/%s/%s/commit/%s", s.baseURL, owner, repoName, c.SHA),
 		Author: &CommitAuthor{
 			Name:  c.Author.Name,
@@ -1292,10 +1292,10 @@ func (s *Service) CreateOrUpdateFile(ctx context.Context, owner, repoName, path,
 		BaseSHA: currentCommit.TreeSHA,
 		Entries: []pkggit.TreeEntryInput{
 			{
-				Path:    path,
-				Mode:    pkggit.ModeFile,
-				Type:    pkggit.ObjectBlob,
-				SHA:     blobSHA,
+				Path: path,
+				Mode: pkggit.ModeFile,
+				Type: pkggit.ObjectBlob,
+				SHA:  blobSHA,
 			},
 		},
 	}
@@ -1339,14 +1339,14 @@ func (s *Service) CreateOrUpdateFile(ctx context.Context, owner, repoName, path,
 
 	// Build response
 	fileContent := &Content{
-		Name:     filepath.Base(path),
-		Path:     path,
-		SHA:      blobSHA,
-		Size:     len(contentBytes),
-		Type:     "file",
-		URL:      fmt.Sprintf("%s/api/v3/repos/%s/%s/contents/%s", s.baseURL, owner, repoName, path),
-		HTMLURL:  fmt.Sprintf("%s/%s/%s/blob/%s/%s", s.baseURL, owner, repoName, branch, path),
-		GitURL:   fmt.Sprintf("%s/api/v3/repos/%s/%s/git/blobs/%s", s.baseURL, owner, repoName, blobSHA),
+		Name:    filepath.Base(path),
+		Path:    path,
+		SHA:     blobSHA,
+		Size:    len(contentBytes),
+		Type:    "file",
+		URL:     fmt.Sprintf("%s/api/v3/repos/%s/%s/contents/%s", s.baseURL, owner, repoName, path),
+		HTMLURL: fmt.Sprintf("%s/%s/%s/blob/%s/%s", s.baseURL, owner, repoName, branch, path),
+		GitURL:  fmt.Sprintf("%s/api/v3/repos/%s/%s/git/blobs/%s", s.baseURL, owner, repoName, blobSHA),
 	}
 
 	commitInfo := &Commit{
@@ -1485,7 +1485,7 @@ func (s *Service) IncrementForks(ctx context.Context, id int64, delta int) error
 
 // populateURLs fills in the URL fields for a repository
 func (s *Service) populateURLs(r *Repository, ownerLogin string) {
-	r.NodeID = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Repository:%d", r.ID)))
+	r.NodeID = base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Repository:%d", r.ID))
 	r.URL = fmt.Sprintf("%s/api/v3/repos/%s/%s", s.baseURL, ownerLogin, r.Name)
 	r.HTMLURL = fmt.Sprintf("%s/%s/%s", s.baseURL, ownerLogin, r.Name)
 	r.ForksURL = fmt.Sprintf("%s/api/v3/repos/%s/%s/forks", s.baseURL, ownerLogin, r.Name)

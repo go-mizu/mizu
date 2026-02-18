@@ -19,7 +19,7 @@ import (
 // testCharLUT is pre-computed lookup table (same as megaToLower in algo package)
 var testCharLUT = func() [256]byte {
 	var lut [256]byte
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		if (i >= 'a' && i <= 'z') || (i >= '0' && i <= '9') {
 			lut[i] = byte(i)
 		} else if i >= 'A' && i <= 'Z' {
@@ -36,12 +36,12 @@ var testCharLUT = func() [256]byte {
 
 // PhaseMetrics holds detailed metrics for each phase
 type PhaseMetrics struct {
-	Name         string
-	Duration     time.Duration
-	DocsPerSec   float64
-	BytesPerSec  float64
-	Bottleneck   string
-	Improvement  string
+	Name        string
+	Duration    time.Duration
+	DocsPerSec  float64
+	BytesPerSec float64
+	Bottleneck  string
+	Improvement string
 }
 
 func (m PhaseMetrics) String() string {
@@ -117,12 +117,9 @@ func TestIsolatedPhaseAnalysis(t *testing.T) {
 	var wg sync.WaitGroup
 	batchSize := (len(allTexts) + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -166,12 +163,9 @@ func TestIsolatedPhaseAnalysis(t *testing.T) {
 	tokenResults := make([]tokenResult, len(allTexts))
 
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -231,12 +225,9 @@ func TestIsolatedPhaseAnalysis(t *testing.T) {
 	var shardMu [256]sync.Mutex
 
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -299,12 +290,9 @@ func TestIsolatedPhaseAnalysis(t *testing.T) {
 	start = time.Now()
 	shardsPerWorker := (256 + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startShard := w * shardsPerWorker
-		endShard := startShard + shardsPerWorker
-		if endShard > 256 {
-			endShard = 256
-		}
+		endShard := min(startShard+shardsPerWorker, 256)
 		if startShard >= endShard {
 			break
 		}
@@ -360,10 +348,7 @@ func TestIsolatedPhaseAnalysis(t *testing.T) {
 	t.Logf("\n%-25s: %8.0f docs/sec", "Combined (sequential)", combinedRate)
 
 	// Theoretical max if phases were perfectly parallelized
-	slowestPhase := phase1Duration
-	if phase2bDuration > slowestPhase {
-		slowestPhase = phase2bDuration
-	}
+	slowestPhase := max(phase2bDuration, phase1Duration)
 	theoreticalMax := float64(len(allTexts)) / slowestPhase.Seconds()
 	t.Logf("%-25s: %8.0f docs/sec", "Theoretical max (parallel)", theoreticalMax)
 
@@ -512,12 +497,9 @@ func TestProfileCriticalPath(t *testing.T) {
 	var wg sync.WaitGroup
 	start := time.Now()
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(texts) {
-			endIdx = len(texts)
-		}
+		endIdx := min(startIdx+batchSize, len(texts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -544,7 +526,7 @@ func TestProfileCriticalPath(t *testing.T) {
 
 // freqMapPool is a sync.Pool for reusing frequency maps
 var freqMapPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return make(map[uint64]uint16, 256)
 	},
 }
@@ -588,12 +570,9 @@ func TestFixedHashTableVsMap(t *testing.T) {
 
 	start := time.Now()
 	var wg sync.WaitGroup
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(texts) {
-			endIdx = len(texts)
-		}
+		endIdx := min(startIdx+batchSize, len(texts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -618,12 +597,9 @@ func TestFixedHashTableVsMap(t *testing.T) {
 	runtime.GC()
 
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(texts) {
-			endIdx = len(texts)
-		}
+		endIdx := min(startIdx+batchSize, len(texts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -647,12 +623,9 @@ func TestFixedHashTableVsMap(t *testing.T) {
 	runtime.GC()
 
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(texts) {
-			endIdx = len(texts)
-		}
+		endIdx := min(startIdx+batchSize, len(texts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -676,12 +649,9 @@ func TestFixedHashTableVsMap(t *testing.T) {
 	runtime.GC()
 
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(texts) {
-			endIdx = len(texts)
-		}
+		endIdx := min(startIdx+batchSize, len(texts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -707,12 +677,9 @@ func TestFixedHashTableVsMap(t *testing.T) {
 	runtime.GC()
 
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(texts) {
-			endIdx = len(texts)
-		}
+		endIdx := min(startIdx+batchSize, len(texts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -780,7 +747,7 @@ func (h *fixedHashTable) insert(hash uint64) bool {
 	idx := hash & h.mask
 	size := int(h.mask) + 1
 	// Limit probing to prevent infinite loop
-	for i := 0; i < size; i++ {
+	for range size {
 		if h.keys[idx] == 0 {
 			h.keys[idx] = hash
 			h.counts[idx] = 1
@@ -991,12 +958,9 @@ func TestFusedTokenizeAndShard(t *testing.T) {
 
 	var wg sync.WaitGroup
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -1053,12 +1017,9 @@ func TestFusedTokenizeAndShard(t *testing.T) {
 	start = time.Now()
 	shardsPerWorker := (256 + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startShard := w * shardsPerWorker
-		endShard := startShard + shardsPerWorker
-		if endShard > 256 {
-			endShard = 256
-		}
+		endShard := min(startShard+shardsPerWorker, 256)
 		if startShard >= endShard {
 			break
 		}
@@ -1105,10 +1066,7 @@ func TestFusedTokenizeAndShard(t *testing.T) {
 	t.Logf("\n%-30s: %8.0f docs/sec", "Combined (sequential)", combinedRate)
 
 	// Theoretical max
-	slowest := fusedDuration
-	if loadDuration > slowest {
-		slowest = loadDuration
-	}
+	slowest := max(loadDuration, fusedDuration)
 	theoreticalMax := float64(len(allTexts)) / slowest.Seconds()
 	t.Logf("%-30s: %8.0f docs/sec", "Theoretical max (parallel)", theoreticalMax)
 
@@ -1170,12 +1128,9 @@ func TestFullPipelineWithFixedTokenize(t *testing.T) {
 
 	var wg sync.WaitGroup
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -1220,12 +1175,9 @@ func TestFullPipelineWithFixedTokenize(t *testing.T) {
 	var shardMu [256]sync.Mutex
 
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -1277,12 +1229,9 @@ func TestFullPipelineWithFixedTokenize(t *testing.T) {
 	start = time.Now()
 	shardsPerWorker := (256 + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startShard := w * shardsPerWorker
-		endShard := startShard + shardsPerWorker
-		if endShard > 256 {
-			endShard = 256
-		}
+		endShard := min(startShard+shardsPerWorker, 256)
 		if startShard >= endShard {
 			break
 		}
@@ -1331,10 +1280,7 @@ func TestFullPipelineWithFixedTokenize(t *testing.T) {
 	t.Logf("\n%-25s: %8.0f docs/sec", "Combined (sequential)", combinedRate)
 
 	// Theoretical max
-	slowest := tokenizeDuration
-	if loadDuration > slowest {
-		slowest = loadDuration
-	}
+	slowest := max(loadDuration, tokenizeDuration)
 	theoreticalMax := float64(len(allTexts)) / slowest.Seconds()
 	t.Logf("%-25s: %8.0f docs/sec", "Theoretical max (parallel)", theoreticalMax)
 
@@ -1380,12 +1326,9 @@ func BenchmarkTokenizationVariants(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			var wg sync.WaitGroup
-			for w := 0; w < numWorkers; w++ {
+			for w := range numWorkers {
 				startIdx := w * batchSize
-				endIdx := startIdx + batchSize
-				if endIdx > len(texts) {
-					endIdx = len(texts)
-				}
+				endIdx := min(startIdx+batchSize, len(texts))
 				if startIdx >= endIdx {
 					break
 				}
@@ -1407,12 +1350,9 @@ func BenchmarkTokenizationVariants(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			var wg sync.WaitGroup
-			for w := 0; w < numWorkers; w++ {
+			for w := range numWorkers {
 				startIdx := w * batchSize
-				endIdx := startIdx + batchSize
-				if endIdx > len(texts) {
-					endIdx = len(texts)
-				}
+				endIdx := min(startIdx+batchSize, len(texts))
 				if startIdx >= endIdx {
 					break
 				}

@@ -16,10 +16,10 @@ import (
 
 // MediaItem represents a downloadable media item from a tweet.
 type MediaItem struct {
-	TweetID  string
-	URL      string
-	Type     string // "photo", "video", "gif"
-	Index    int    // position within tweet (for multi-photo)
+	TweetID string
+	URL     string
+	Type    string // "photo", "video", "gif"
+	Index   int    // position within tweet (for multi-photo)
 }
 
 // DownloadProgress reports download progress.
@@ -107,9 +107,7 @@ func DownloadMedia(ctx context.Context, items []MediaItem, dir string, workers i
 
 	var wg sync.WaitGroup
 	for range workers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for {
 				select {
 				case <-ctx.Done():
@@ -156,7 +154,7 @@ func DownloadMedia(ctx context.Context, items []MediaItem, dir string, workers i
 					}
 				}
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

@@ -54,9 +54,9 @@ func ChunkMarkdown(content string, cfg ChunkConfig) []Chunk {
 	lines := strings.Split(content, "\n")
 
 	var chunks []Chunk
-	var buf []string   // accumulated lines for the current chunk
-	var bufChars int   // character count in buf (including newlines between lines)
-	startLine := 1     // 1-based start line of current chunk
+	var buf []string // accumulated lines for the current chunk
+	var bufChars int // character count in buf (including newlines between lines)
+	startLine := 1   // 1-based start line of current chunk
 
 	flush := func(endLine int) {
 		if len(buf) == 0 {
@@ -90,10 +90,7 @@ func ChunkMarkdown(content string, cfg ChunkConfig) []Chunk {
 			buf = make([]string, len(overlapLines))
 			copy(buf, overlapLines)
 			bufChars = joinedLen(buf)
-			startLine = lineNum - len(overlapLines)
-			if startLine < 1 {
-				startLine = 1
-			}
+			startLine = max(lineNum-len(overlapLines), 1)
 		}
 
 		buf = append(buf, line)

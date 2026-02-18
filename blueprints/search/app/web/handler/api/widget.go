@@ -103,7 +103,7 @@ func (h *WidgetHandler) GetRelated(c *mizu.Ctx) error {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 
-	return c.JSON(200, map[string]interface{}{
+	return c.JSON(200, map[string]any{
 		"query":   query,
 		"related": related,
 	})

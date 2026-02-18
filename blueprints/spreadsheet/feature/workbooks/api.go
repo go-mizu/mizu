@@ -30,14 +30,14 @@ type Settings struct {
 type CreateIn struct {
 	Name      string   `json:"name"`
 	OwnerID   string   `json:"ownerId"`
-	Settings  Settings `json:"settings,omitempty"`
+	Settings  Settings `json:"settings"`
 	CreatedBy string   `json:"createdBy"`
 }
 
 // UpdateIn contains workbook update input.
 type UpdateIn struct {
 	Name     string   `json:"name,omitempty"`
-	Settings Settings `json:"settings,omitempty"`
+	Settings Settings `json:"settings"`
 }
 
 // API defines the workbooks service interface.

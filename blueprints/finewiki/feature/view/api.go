@@ -27,9 +27,9 @@ type Infobox struct {
 // This is a projection of dataset fields, kept as plain strings/ints for speed.
 // DateModified remains a string to avoid parse cost and timezone ambiguity.
 type Page struct {
-	ID           string `json:"id,omitempty"`           // dataset id, for example "enwiki/32552979"
-	WikiName     string `json:"wikiname,omitempty"`     // for example "enwiki"
-	PageID       int64  `json:"page_id,omitempty"`      // original MediaWiki page id
+	ID           string `json:"id,omitempty"`       // dataset id, for example "enwiki/32552979"
+	WikiName     string `json:"wikiname,omitempty"` // for example "enwiki"
+	PageID       int64  `json:"page_id,omitempty"`  // original MediaWiki page id
 	Title        string `json:"title,omitempty"`
 	URL          string `json:"url,omitempty"`
 	DateModified string `json:"date_modified,omitempty"` // dataset-provided timestamp string
@@ -48,7 +48,7 @@ type Page struct {
 
 	// Parsed fields (computed, not serialized by default)
 	Infoboxes       []Infobox `json:"infoboxes_parsed,omitempty"`
-	DateModifiedRel string    `json:"date_modified_relative,omitempty"` // "3 days ago"
+	DateModifiedRel string    `json:"date_modified_relative,omitempty"`  // "3 days ago"
 	DateModifiedFmt string    `json:"date_modified_formatted,omitempty"` // "Dec 18, 2024"
 
 	// Reading stats (computed)
@@ -176,10 +176,9 @@ func (p *Page) ComputeReadStats() {
 	}
 
 	minutes := float64(count) / 225.0
-	p.ReadTimeMin = int(minutes + 0.5) // Round to nearest
-	if p.ReadTimeMin < 1 {
-		p.ReadTimeMin = 1
-	}
+	p.ReadTimeMin = max(
+		// Round to nearest
+		int(minutes+0.5), 1)
 
 	if p.ReadTimeMin == 1 {
 		p.ReadTimeStr = "1 min read"

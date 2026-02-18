@@ -142,15 +142,15 @@ func (c *CSVConverter) formatPropertyValue(prop databases.Property, properties p
 }
 
 // formatTextValue formats a text/rich text value.
-func (c *CSVConverter) formatTextValue(value interface{}) string {
+func (c *CSVConverter) formatTextValue(value any) string {
 	switch v := value.(type) {
 	case string:
 		return v
-	case []interface{}:
+	case []any:
 		// Rich text array
 		var parts []string
 		for _, item := range v {
-			if m, ok := item.(map[string]interface{}); ok {
+			if m, ok := item.(map[string]any); ok {
 				if text, ok := m["text"].(string); ok {
 					parts = append(parts, text)
 				}
@@ -163,7 +163,7 @@ func (c *CSVConverter) formatTextValue(value interface{}) string {
 }
 
 // formatNumberValue formats a number value.
-func (c *CSVConverter) formatNumberValue(value interface{}) string {
+func (c *CSVConverter) formatNumberValue(value any) string {
 	switch v := value.(type) {
 	case float64:
 		// Check if it's a whole number
@@ -181,11 +181,11 @@ func (c *CSVConverter) formatNumberValue(value interface{}) string {
 }
 
 // formatSelectValue formats a select value.
-func (c *CSVConverter) formatSelectValue(value interface{}) string {
+func (c *CSVConverter) formatSelectValue(value any) string {
 	switch v := value.(type) {
 	case string:
 		return v
-	case map[string]interface{}:
+	case map[string]any:
 		if name, ok := v["name"].(string); ok {
 			return name
 		}
@@ -194,14 +194,14 @@ func (c *CSVConverter) formatSelectValue(value interface{}) string {
 }
 
 // formatMultiSelectValue formats a multi-select value.
-func (c *CSVConverter) formatMultiSelectValue(value interface{}) string {
+func (c *CSVConverter) formatMultiSelectValue(value any) string {
 	switch v := value.(type) {
-	case []interface{}:
+	case []any:
 		var names []string
 		for _, item := range v {
 			if s, ok := item.(string); ok {
 				names = append(names, s)
-			} else if m, ok := item.(map[string]interface{}); ok {
+			} else if m, ok := item.(map[string]any); ok {
 				if name, ok := m["name"].(string); ok {
 					names = append(names, name)
 				}
@@ -215,13 +215,13 @@ func (c *CSVConverter) formatMultiSelectValue(value interface{}) string {
 }
 
 // formatDateValue formats a date value.
-func (c *CSVConverter) formatDateValue(value interface{}) string {
+func (c *CSVConverter) formatDateValue(value any) string {
 	switch v := value.(type) {
 	case string:
 		return v
 	case time.Time:
 		return v.Format("2006-01-02")
-	case map[string]interface{}:
+	case map[string]any:
 		var parts []string
 		if start, ok := v["start"].(string); ok {
 			parts = append(parts, start)
@@ -235,7 +235,7 @@ func (c *CSVConverter) formatDateValue(value interface{}) string {
 }
 
 // formatCheckboxValue formats a checkbox value.
-func (c *CSVConverter) formatCheckboxValue(value interface{}) string {
+func (c *CSVConverter) formatCheckboxValue(value any) string {
 	switch v := value.(type) {
 	case bool:
 		if v {
@@ -247,7 +247,7 @@ func (c *CSVConverter) formatCheckboxValue(value interface{}) string {
 }
 
 // formatStringValue formats a simple string value.
-func (c *CSVConverter) formatStringValue(value interface{}) string {
+func (c *CSVConverter) formatStringValue(value any) string {
 	if s, ok := value.(string); ok {
 		return s
 	}
@@ -255,16 +255,16 @@ func (c *CSVConverter) formatStringValue(value interface{}) string {
 }
 
 // formatPersonValue formats a person/user value.
-func (c *CSVConverter) formatPersonValue(value interface{}) string {
+func (c *CSVConverter) formatPersonValue(value any) string {
 	switch v := value.(type) {
 	case string:
 		return v
-	case []interface{}:
+	case []any:
 		var names []string
 		for _, item := range v {
 			if s, ok := item.(string); ok {
 				names = append(names, s)
-			} else if m, ok := item.(map[string]interface{}); ok {
+			} else if m, ok := item.(map[string]any); ok {
 				if name, ok := m["name"].(string); ok {
 					names = append(names, name)
 				} else if email, ok := m["email"].(string); ok {
@@ -273,7 +273,7 @@ func (c *CSVConverter) formatPersonValue(value interface{}) string {
 			}
 		}
 		return strings.Join(names, ", ")
-	case map[string]interface{}:
+	case map[string]any:
 		if name, ok := v["name"].(string); ok {
 			return name
 		}
@@ -285,14 +285,14 @@ func (c *CSVConverter) formatPersonValue(value interface{}) string {
 }
 
 // formatFilesValue formats a files value.
-func (c *CSVConverter) formatFilesValue(value interface{}) string {
+func (c *CSVConverter) formatFilesValue(value any) string {
 	switch v := value.(type) {
-	case []interface{}:
+	case []any:
 		var urls []string
 		for _, item := range v {
 			if s, ok := item.(string); ok {
 				urls = append(urls, s)
-			} else if m, ok := item.(map[string]interface{}); ok {
+			} else if m, ok := item.(map[string]any); ok {
 				if url, ok := m["url"].(string); ok {
 					urls = append(urls, url)
 				} else if name, ok := m["name"].(string); ok {
@@ -308,7 +308,7 @@ func (c *CSVConverter) formatFilesValue(value interface{}) string {
 }
 
 // formatTimestampValue formats a timestamp value.
-func (c *CSVConverter) formatTimestampValue(value interface{}) string {
+func (c *CSVConverter) formatTimestampValue(value any) string {
 	switch v := value.(type) {
 	case string:
 		return v
@@ -323,9 +323,9 @@ func (c *CSVConverter) formatTimestampValue(value interface{}) string {
 }
 
 // formatFormulaValue formats a formula result value.
-func (c *CSVConverter) formatFormulaValue(value interface{}) string {
+func (c *CSVConverter) formatFormulaValue(value any) string {
 	switch v := value.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		if result, ok := v["result"]; ok {
 			return fmt.Sprintf("%v", result)
 		}
@@ -334,14 +334,14 @@ func (c *CSVConverter) formatFormulaValue(value interface{}) string {
 }
 
 // formatRelationValue formats a relation value.
-func (c *CSVConverter) formatRelationValue(value interface{}) string {
+func (c *CSVConverter) formatRelationValue(value any) string {
 	switch v := value.(type) {
-	case []interface{}:
+	case []any:
 		var titles []string
 		for _, item := range v {
 			if s, ok := item.(string); ok {
 				titles = append(titles, s)
-			} else if m, ok := item.(map[string]interface{}); ok {
+			} else if m, ok := item.(map[string]any); ok {
 				if title, ok := m["title"].(string); ok {
 					titles = append(titles, title)
 				} else if id, ok := m["id"].(string); ok {
@@ -355,9 +355,9 @@ func (c *CSVConverter) formatRelationValue(value interface{}) string {
 }
 
 // formatRollupValue formats a rollup value.
-func (c *CSVConverter) formatRollupValue(value interface{}) string {
+func (c *CSVConverter) formatRollupValue(value any) string {
 	switch v := value.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		if result, ok := v["result"]; ok {
 			return fmt.Sprintf("%v", result)
 		}
@@ -366,11 +366,11 @@ func (c *CSVConverter) formatRollupValue(value interface{}) string {
 }
 
 // formatStatusValue formats a status value.
-func (c *CSVConverter) formatStatusValue(value interface{}) string {
+func (c *CSVConverter) formatStatusValue(value any) string {
 	switch v := value.(type) {
 	case string:
 		return v
-	case map[string]interface{}:
+	case map[string]any:
 		if name, ok := v["name"].(string); ok {
 			return name
 		}

@@ -191,7 +191,7 @@ func TestPostsStore_List(t *testing.T) {
 	store := NewPostsStore(db)
 	ctx := context.Background()
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		post := &posts.Post{
 			ID:            "post-list-" + string(rune('a'+i)),
 			AuthorID:      "author-001",
@@ -448,7 +448,7 @@ func TestPostsStore_List_OrderBy(t *testing.T) {
 	store := NewPostsStore(db)
 	ctx := context.Background()
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		post := &posts.Post{
 			ID:            "post-order-" + string(rune('a'+i)),
 			AuthorID:      "author-001",

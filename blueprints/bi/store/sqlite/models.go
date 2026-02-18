@@ -21,7 +21,7 @@ func (s *ModelStore) Create(ctx context.Context, m *store.Model) error {
 	m.CreatedAt = now
 	m.UpdatedAt = now
 
-	var collID interface{}
+	var collID any
 	if m.CollectionID != "" {
 		collID = m.CollectionID
 	}
@@ -80,7 +80,7 @@ func (s *ModelStore) List(ctx context.Context) ([]*store.Model, error) {
 func (s *ModelStore) Update(ctx context.Context, m *store.Model) error {
 	m.UpdatedAt = time.Now()
 
-	var collID interface{}
+	var collID any
 	if m.CollectionID != "" {
 		collID = m.CollectionID
 	}

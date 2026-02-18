@@ -26,8 +26,8 @@ func Require(types ...string) mizu.Middleware {
 
 			// Extract media type without parameters
 			mediaType := ct
-			if idx := strings.Index(ct, ";"); idx != -1 {
-				mediaType = strings.TrimSpace(ct[:idx])
+			if before, _, ok := strings.Cut(ct, ";"); ok {
+				mediaType = strings.TrimSpace(before)
 			}
 
 			for _, t := range types {

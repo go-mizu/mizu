@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -30,8 +31,8 @@ import (
 // markdown renderer for converting markdown to HTML
 var md = goldmark.New(
 	goldmark.WithExtensions(
-		extension.GFM,            // GitHub Flavored Markdown
-		extension.Typographer,    // Smart quotes, dashes, etc.
+		extension.GFM,         // GitHub Flavored Markdown
+		extension.Typographer, // Smart quotes, dashes, etc.
 	),
 	goldmark.WithParserOptions(
 		parser.WithAutoHeadingID(), // Auto-generate heading IDs
@@ -111,12 +112,12 @@ func (h *Handler) getTemplates(c *mizu.Ctx) (map[string]*template.Template, erro
 }
 
 // render renders a template with the given data.
-func (h *Handler) render(c *mizu.Ctx, name string, data interface{}) error {
+func (h *Handler) render(c *mizu.Ctx, name string, data any) error {
 	return h.renderWithStatus(c, name, data, http.StatusOK)
 }
 
 // renderWithStatus renders a template with the given data and status code.
-func (h *Handler) renderWithStatus(c *mizu.Ctx, name string, data interface{}, status int) error {
+func (h *Handler) renderWithStatus(c *mizu.Ctx, name string, data any, status int) error {
 	templates, err := h.getTemplates(c)
 	if err != nil {
 		return c.Text(http.StatusInternalServerError, "Failed to load templates: "+err.Error())
@@ -180,10 +181,8 @@ func (h *Handler) getThemeContext(c *mizu.Ctx) ThemeContext {
 	}
 
 	// Build config map from theme.json config
-	config := make(map[string]interface{})
-	for k, v := range themeJSON.Config {
-		config[k] = v
-	}
+	config := make(map[string]any)
+	maps.Copy(config, themeJSON.Config)
 
 	return ThemeContext{
 		Name:       themeJSON.Name,
@@ -203,7 +202,7 @@ func (h *Handler) getDefaultThemeContext() ThemeContext {
 		Name:    "Default Theme",
 		Slug:    "default",
 		Version: "1.0.0",
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"posts_per_page":       10,
 			"sidebar_position":     "right",
 			"show_author_bio":      true,
@@ -486,10 +485,7 @@ func (h *Handler) pageToView(c *mizu.Ctx, p *pages.Page) *PageView {
 
 // buildPagination creates pagination data.
 func (h *Handler) buildPagination(currentPage, total, perPage int, baseURL string) Pagination {
-	totalPages := (total + perPage - 1) / perPage
-	if totalPages < 1 {
-		totalPages = 1
-	}
+	totalPages := max((total+perPage-1)/perPage, 1)
 
 	pag := Pagination{
 		CurrentPage: currentPage,
@@ -946,7 +942,8 @@ func (h *Handler) Feed(c *mizu.Ctx) error {
 	c.Writer().Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
 
 	// Build RSS feed
-	rss := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+	var rss strings.Builder
+	rss.WriteString(fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
 <channel>
 <title>%s</title>
@@ -954,28 +951,28 @@ func (h *Handler) Feed(c *mizu.Ctx) error {
 <description>%s</description>
 <language>%s</language>
 <atom:link href="%s/feed" rel="self" type="application/rss+xml"/>`,
-		site.Name, site.URL, site.Description, site.Language, site.URL)
+		site.Name, site.URL, site.Description, site.Language, site.URL))
 
 	for _, p := range ps {
 		pubDate := ""
 		if p.PublishedAt != nil {
 			pubDate = p.PublishedAt.Format("Mon, 02 Jan 2006 15:04:05 -0700")
 		}
-		rss += fmt.Sprintf(`
+		rss.WriteString(fmt.Sprintf(`
 <item>
 <title>%s</title>
 <link>%s/%s</link>
 <guid>%s/%s</guid>
 <pubDate>%s</pubDate>
 <description><![CDATA[%s]]></description>
-</item>`, p.Title, site.URL, p.Slug, site.URL, p.Slug, pubDate, p.Excerpt)
+</item>`, p.Title, site.URL, p.Slug, site.URL, p.Slug, pubDate, p.Excerpt))
 	}
 
-	rss += `
+	rss.WriteString(`
 </channel>
-</rss>`
+</rss>`)
 
-	return c.Text(http.StatusOK, rss)
+	return c.Text(http.StatusOK, rss.String())
 }
 
 func boolPtr(b bool) *bool {

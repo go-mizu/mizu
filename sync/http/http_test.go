@@ -178,7 +178,7 @@ func TestHTTP_Push_MaxBatch(t *testing.T) {
 
 	// Try to push more than limit
 	mutations := make([]sync.Mutation, 5)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		mutations[i] = sync.Mutation{
 			Name:  "create",
 			Scope: "test",
@@ -241,7 +241,7 @@ func TestHTTP_Pull_WithCursor(t *testing.T) {
 	ctx := context.Background()
 
 	// Create some data
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		e.Push(ctx, []sync.Mutation{
 			{Name: "create", Scope: "test", Args: makeArgs("e", string(rune('a'+i)), "{}")},
 		})
@@ -263,7 +263,7 @@ func TestHTTP_Pull_Pagination(t *testing.T) {
 	ctx := context.Background()
 
 	// Create 10 items
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		e.Push(ctx, []sync.Mutation{
 			{Name: "create", Scope: "test", Args: makeArgs("e", string(rune('a'+i)), "{}")},
 		})
@@ -312,7 +312,7 @@ func TestHTTP_Pull_CursorTooOld(t *testing.T) {
 	ctx := context.Background()
 
 	// Create some data and trim
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		e.Push(ctx, []sync.Mutation{
 			{Name: "create", Scope: "test", Args: makeArgs("e", string(rune('a'+i)), "{}")},
 		})
@@ -348,7 +348,7 @@ func TestHTTP_Pull_MaxLimit(t *testing.T) {
 	ctx := context.Background()
 
 	// Create 10 items
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		e.Push(ctx, []sync.Mutation{
 			{Name: "create", Scope: "test", Args: makeArgs("e", string(rune('a'+i)), "{}")},
 		})

@@ -64,7 +64,7 @@ func (h *Auth) Register(c *mizu.Ctx) error {
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	return Created(c, map[string]interface{}{
+	return Created(c, map[string]any{
 		"account": account,
 		"token":   session.Token,
 	})
@@ -111,7 +111,7 @@ func (h *Auth) Login(c *mizu.Ctx) error {
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	return Success(c, map[string]interface{}{
+	return Success(c, map[string]any{
 		"account": account,
 		"token":   session.Token,
 	})

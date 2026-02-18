@@ -523,7 +523,7 @@ func TestWPAdminPagination(t *testing.T) {
 	})
 
 	// Create 25 posts to trigger pagination
-	for i := 0; i < 25; i++ {
+	for i := range 25 {
 		_, err := server.posts.Create(ctx, user.ID, &posts.CreateIn{
 			Title:   fmt.Sprintf("Pagination Test Post %d", i+1),
 			Content: "Test content",

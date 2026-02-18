@@ -242,7 +242,7 @@ func CheckETag(c *mizu.Ctx, etag string) bool {
 	}
 
 	// Check for match (handles multiple ETags and weak comparison)
-	for _, e := range strings.Split(ifNoneMatch, ",") {
+	for e := range strings.SplitSeq(ifNoneMatch, ",") {
 		e = strings.TrimSpace(e)
 		// Remove weak indicator for comparison
 		e = strings.TrimPrefix(e, "W/")

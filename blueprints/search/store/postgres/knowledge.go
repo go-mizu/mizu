@@ -165,7 +165,7 @@ func (s *KnowledgeStore) ListEntities(ctx context.Context, entityType string, li
 		SELECT id, name, type, description, image, facts, links, created_at, updated_at
 		FROM search.entities
 	`
-	var args []interface{}
+	var args []any
 	argIdx := 1
 
 	if entityType != "" {

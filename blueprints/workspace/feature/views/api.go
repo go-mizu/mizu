@@ -42,23 +42,23 @@ type View struct {
 // ViewConfig holds view-specific configuration.
 type ViewConfig struct {
 	// Table view
-	FrozenColumns  int               `json:"frozen_columns,omitempty"`
-	RowHeight      string            `json:"row_height,omitempty"` // small, medium, tall, extra_tall
-	WrapCells      bool              `json:"wrap_cells,omitempty"`
-	WrapColumns    map[string]bool   `json:"wrap_columns,omitempty"`
-	Calculations   []Calculation     `json:"calculations,omitempty"`
-	PropertyWidths map[string]int    `json:"property_widths,omitempty"`
-	PropertyOrder  []string          `json:"property_order,omitempty"`
+	FrozenColumns  int             `json:"frozen_columns,omitempty"`
+	RowHeight      string          `json:"row_height,omitempty"` // small, medium, tall, extra_tall
+	WrapCells      bool            `json:"wrap_cells,omitempty"`
+	WrapColumns    map[string]bool `json:"wrap_columns,omitempty"`
+	Calculations   []Calculation   `json:"calculations,omitempty"`
+	PropertyWidths map[string]int  `json:"property_widths,omitempty"`
+	PropertyOrder  []string        `json:"property_order,omitempty"`
 
 	// Board view
-	CardSize         string   `json:"card_size,omitempty"` // small, medium, large
-	CardPreview      string   `json:"card_preview,omitempty"`
-	CardPreviewProp  string   `json:"card_preview_property,omitempty"`
-	FitCardImage     bool     `json:"fit_card_image,omitempty"`
-	ColorColumns     bool     `json:"color_columns,omitempty"`
-	HideEmptyGroups  bool     `json:"hide_empty_groups,omitempty"`
-	CardProperties   []string `json:"card_properties,omitempty"`
-	ColumnOrder      []string `json:"column_order,omitempty"`
+	CardSize        string   `json:"card_size,omitempty"` // small, medium, large
+	CardPreview     string   `json:"card_preview,omitempty"`
+	CardPreviewProp string   `json:"card_preview_property,omitempty"`
+	FitCardImage    bool     `json:"fit_card_image,omitempty"`
+	ColorColumns    bool     `json:"color_columns,omitempty"`
+	HideEmptyGroups bool     `json:"hide_empty_groups,omitempty"`
+	CardProperties  []string `json:"card_properties,omitempty"`
+	ColumnOrder     []string `json:"column_order,omitempty"`
 
 	// Timeline view
 	TimeScale         string       `json:"time_scale,omitempty"` // hours, days, weeks, months, quarters, years
@@ -86,12 +86,12 @@ type ViewConfig struct {
 	HideCardNames   bool   `json:"hide_card_names,omitempty"`
 
 	// Chart view
-	ChartType       string       `json:"chart_type,omitempty"` // vertical_bar, horizontal_bar, line, donut
-	ChartXAxis      *AxisConfig  `json:"chart_x_axis,omitempty"`
-	ChartYAxis      *AxisConfig  `json:"chart_y_axis,omitempty"`
-	ChartGroupBy    string       `json:"chart_group_by,omitempty"`
-	ChartStyle      *StyleConfig `json:"chart_style,omitempty"`
-	ChartAggregation string      `json:"chart_aggregation,omitempty"` // count, sum, average, min, max
+	ChartType        string       `json:"chart_type,omitempty"` // vertical_bar, horizontal_bar, line, donut
+	ChartXAxis       *AxisConfig  `json:"chart_x_axis,omitempty"`
+	ChartYAxis       *AxisConfig  `json:"chart_y_axis,omitempty"`
+	ChartGroupBy     string       `json:"chart_group_by,omitempty"`
+	ChartStyle       *StyleConfig `json:"chart_style,omitempty"`
+	ChartAggregation string       `json:"chart_aggregation,omitempty"` // count, sum, average, min, max
 
 	// List view
 	ListShowProperties []string `json:"list_show_properties,omitempty"`
@@ -165,9 +165,9 @@ type Filter struct {
 	And []Filter `json:"and,omitempty"`
 	Or  []Filter `json:"or,omitempty"`
 
-	PropertyID string      `json:"property_id,omitempty"`
-	Operator   string      `json:"operator,omitempty"`
-	Value      interface{} `json:"value,omitempty"`
+	PropertyID string `json:"property_id,omitempty"`
+	Operator   string `json:"operator,omitempty"`
+	Value      any    `json:"value,omitempty"`
 }
 
 // Sort represents a sort configuration.

@@ -82,7 +82,7 @@ type DataSource struct {
 	// Connection Pool Configuration
 	MaxOpenConns    int `json:"max_open_conns,omitempty"`
 	MaxIdleConns    int `json:"max_idle_conns,omitempty"`
-	ConnMaxLifetime int `json:"conn_max_lifetime,omitempty"` // seconds
+	ConnMaxLifetime int `json:"conn_max_lifetime,omitempty"`  // seconds
 	ConnMaxIdleTime int `json:"conn_max_idle_time,omitempty"` // seconds
 
 	// Additional driver-specific options
@@ -101,7 +101,7 @@ type Table struct {
 	Name         string    `json:"name"`
 	DisplayName  string    `json:"display_name"`
 	Description  string    `json:"description,omitempty"`
-	Visible      bool      `json:"visible"`           // Whether table is visible in query builder
+	Visible      bool      `json:"visible"`               // Whether table is visible in query builder
 	FieldOrder   string    `json:"field_order,omitempty"` // database, alphabetical, custom, smart
 	RowCount     int64     `json:"row_count"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -114,7 +114,7 @@ type Column struct {
 	TableID     string `json:"table_id"`
 	Name        string `json:"name"`
 	DisplayName string `json:"display_name"`
-	Type        string `json:"type"`       // Database type
+	Type        string `json:"type"`        // Database type
 	MappedType  string `json:"mapped_type"` // Normalized: string, number, boolean, datetime
 	Semantic    string `json:"semantic,omitempty"`
 	Description string `json:"description,omitempty"`
@@ -193,17 +193,17 @@ func ValidSemanticTypes() []string {
 
 // Question represents a saved query.
 type Question struct {
-	ID            string                 `json:"id"`
-	Name          string                 `json:"name"`
-	Description   string                 `json:"description,omitempty"`
-	CollectionID  string                 `json:"collection_id,omitempty"`
-	DataSourceID  string                 `json:"datasource_id"`
-	QueryType     string                 `json:"query_type"` // native, query
-	Query         map[string]interface{} `json:"query"`
-	Visualization map[string]interface{} `json:"visualization"`
-	CreatedBy     string                 `json:"created_by"`
-	CreatedAt     time.Time              `json:"created_at"`
-	UpdatedAt     time.Time              `json:"updated_at"`
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	Description   string         `json:"description,omitempty"`
+	CollectionID  string         `json:"collection_id,omitempty"`
+	DataSourceID  string         `json:"datasource_id"`
+	QueryType     string         `json:"query_type"` // native, query
+	Query         map[string]any `json:"query"`
+	Visualization map[string]any `json:"visualization"`
+	CreatedBy     string         `json:"created_by"`
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
 }
 
 // Dashboard represents a dashboard.
@@ -220,16 +220,16 @@ type Dashboard struct {
 
 // DashboardCard represents a card on a dashboard.
 type DashboardCard struct {
-	ID          string                 `json:"id"`
-	DashboardID string                 `json:"dashboard_id"`
-	QuestionID  string                 `json:"question_id,omitempty"`
-	CardType    string                 `json:"card_type"` // question, text, filter
-	TabID       string                 `json:"tab_id,omitempty"`
-	Row         int                    `json:"row"`
-	Col         int                    `json:"col"`
-	Width       int                    `json:"width"`
-	Height      int                    `json:"height"`
-	Settings    map[string]interface{} `json:"settings,omitempty"`
+	ID          string         `json:"id"`
+	DashboardID string         `json:"dashboard_id"`
+	QuestionID  string         `json:"question_id,omitempty"`
+	CardType    string         `json:"card_type"` // question, text, filter
+	TabID       string         `json:"tab_id,omitempty"`
+	Row         int            `json:"row"`
+	Col         int            `json:"col"`
+	Width       int            `json:"width"`
+	Height      int            `json:"height"`
+	Settings    map[string]any `json:"settings,omitempty"`
 }
 
 // DashboardTab represents a tab on a dashboard.
@@ -280,15 +280,15 @@ type Collection struct {
 
 // Model represents a curated dataset.
 type Model struct {
-	ID           string                 `json:"id"`
-	Name         string                 `json:"name"`
-	Description  string                 `json:"description,omitempty"`
-	CollectionID string                 `json:"collection_id,omitempty"`
-	DataSourceID string                 `json:"datasource_id"`
-	Query        map[string]interface{} `json:"query"`
-	CreatedBy    string                 `json:"created_by"`
-	CreatedAt    time.Time              `json:"created_at"`
-	UpdatedAt    time.Time              `json:"updated_at"`
+	ID           string         `json:"id"`
+	Name         string         `json:"name"`
+	Description  string         `json:"description,omitempty"`
+	CollectionID string         `json:"collection_id,omitempty"`
+	DataSourceID string         `json:"datasource_id"`
+	Query        map[string]any `json:"query"`
+	CreatedBy    string         `json:"created_by"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
 }
 
 // ModelColumn represents a column in a model.
@@ -304,14 +304,14 @@ type ModelColumn struct {
 
 // Metric represents a canonical calculation.
 type Metric struct {
-	ID          string                 `json:"id"`
-	Name        string                 `json:"name"`
-	Description string                 `json:"description,omitempty"`
-	TableID     string                 `json:"table_id"`
-	Definition  map[string]interface{} `json:"definition"`
-	CreatedBy   string                 `json:"created_by"`
-	CreatedAt   time.Time              `json:"created_at"`
-	UpdatedAt   time.Time              `json:"updated_at"`
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	TableID     string         `json:"table_id"`
+	Definition  map[string]any `json:"definition"`
+	CreatedBy   string         `json:"created_by"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
 }
 
 // Alert represents an alert configuration.
@@ -360,7 +360,7 @@ type User struct {
 	Role         string    `json:"role"`   // admin, user, viewer
 	Active       bool      `json:"active"` // whether user account is active
 	CreatedAt    time.Time `json:"created_at"`
-	LastLogin    time.Time `json:"last_login,omitempty"`
+	LastLogin    time.Time `json:"last_login"`
 }
 
 // Session represents a user session.
@@ -386,15 +386,15 @@ type QueryHistory struct {
 
 // QueryResult represents query execution results.
 type QueryResult struct {
-	Columns    []ResultColumn           `json:"columns"`
-	Rows       []map[string]interface{} `json:"rows"`
-	RowCount   int64                    `json:"row_count"`
-	TotalRows  int64                    `json:"total_rows,omitempty"`  // Total rows before pagination
-	Page       int                      `json:"page,omitempty"`        // Current page (1-indexed)
-	PageSize   int                      `json:"page_size,omitempty"`   // Page size
-	TotalPages int                      `json:"total_pages,omitempty"` // Total pages
-	Duration   float64                  `json:"duration_ms"`
-	Cached     bool                     `json:"cached"`
+	Columns    []ResultColumn   `json:"columns"`
+	Rows       []map[string]any `json:"rows"`
+	RowCount   int64            `json:"row_count"`
+	TotalRows  int64            `json:"total_rows,omitempty"`  // Total rows before pagination
+	Page       int              `json:"page,omitempty"`        // Current page (1-indexed)
+	PageSize   int              `json:"page_size,omitempty"`   // Page size
+	TotalPages int              `json:"total_pages,omitempty"` // Total pages
+	Duration   float64          `json:"duration_ms"`
+	Cached     bool             `json:"cached"`
 }
 
 // ResultColumn represents a column in query results.

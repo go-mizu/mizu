@@ -94,7 +94,7 @@ func TestNotificationsStore_List(t *testing.T) {
 	recipient := createTestAccount(t, store, "recipient")
 
 	// Create multiple notifications
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		notification := &notifications.Notification{
 			ID:        newTestID(),
 			AccountID: recipient.ID,
@@ -132,7 +132,7 @@ func TestNotificationsStore_List_Unread(t *testing.T) {
 	recipient := createTestAccount(t, store, "recipient")
 
 	// Create mix of read and unread
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		notification := &notifications.Notification{
 			ID:        newTestID(),
 			AccountID: recipient.ID,
@@ -175,7 +175,7 @@ func TestNotificationsStore_MarkAllRead(t *testing.T) {
 	recipient := createTestAccount(t, store, "recipient")
 
 	// Create unread notifications
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		notification := &notifications.Notification{
 			ID:        newTestID(),
 			AccountID: recipient.ID,
@@ -247,7 +247,7 @@ func TestNotificationsStore_DeleteBefore(t *testing.T) {
 	now := time.Now()
 
 	// Create old notifications
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		notification := &notifications.Notification{
 			ID:        newTestID(),
 			AccountID: recipient.ID,
@@ -263,7 +263,7 @@ func TestNotificationsStore_DeleteBefore(t *testing.T) {
 	}
 
 	// Create recent notifications
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		notification := &notifications.Notification{
 			ID:        newTestID(),
 			AccountID: recipient.ID,
@@ -301,7 +301,7 @@ func TestNotificationsStore_CountUnread(t *testing.T) {
 	recipient := createTestAccount(t, store, "recipient")
 
 	// Create mix of read and unread
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		notification := &notifications.Notification{
 			ID:        newTestID(),
 			AccountID: recipient.ID,
@@ -421,7 +421,7 @@ func TestNotificationsStore_DifferentUsers(t *testing.T) {
 	user2 := createTestAccount(t, store, "user2")
 
 	// Create notifications for user1
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		notification := &notifications.Notification{
 			ID:        newTestID(),
 			AccountID: user1.ID,
@@ -437,7 +437,7 @@ func TestNotificationsStore_DifferentUsers(t *testing.T) {
 	}
 
 	// Create notifications for user2
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		notification := &notifications.Notification{
 			ID:        newTestID(),
 			AccountID: user2.ID,

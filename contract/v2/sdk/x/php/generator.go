@@ -551,8 +551,8 @@ func phpTypeInfo(typeByName map[string]*contract.Type, ref contract.TypeRef, opt
 	}
 
 	// Handle slice types
-	if strings.HasPrefix(r, "[]") {
-		elem := strings.TrimSpace(strings.TrimPrefix(r, "[]"))
+	if after, ok := strings.CutPrefix(r, "[]"); ok {
+		elem := strings.TrimSpace(after)
 		elemType := basePHPType(typeByName, elem)
 		phpType = "array"
 		phpDocType = "array<" + elemType + ">"
@@ -566,8 +566,8 @@ func phpTypeInfo(typeByName map[string]*contract.Type, ref contract.TypeRef, opt
 	}
 
 	// Handle map types
-	if strings.HasPrefix(r, "map[string]") {
-		elem := strings.TrimSpace(strings.TrimPrefix(r, "map[string]"))
+	if after, ok := strings.CutPrefix(r, "map[string]"); ok {
+		elem := strings.TrimSpace(after)
 		elemType := basePHPType(typeByName, elem)
 		phpType = "array"
 		phpDocType = "array<string, " + elemType + ">"
@@ -861,7 +861,7 @@ func indent(n int, s string) string {
 }
 
 // lenHelper returns the length of a slice or array.
-func lenHelper(s interface{}) int {
+func lenHelper(s any) int {
 	switch v := s.(type) {
 	case []fieldModel:
 		return len(v)

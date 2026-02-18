@@ -12,7 +12,7 @@ func generateID() string {
 }
 
 // toJSON marshals a value to a JSON string. Returns "{}" for nil values.
-func toJSON(v interface{}) string {
+func toJSON(v any) string {
 	if v == nil {
 		return "{}"
 	}
@@ -21,7 +21,7 @@ func toJSON(v interface{}) string {
 }
 
 // fromJSON unmarshals a JSON string into a value.
-func fromJSON(s string, v interface{}) error {
+func fromJSON(s string, v any) error {
 	if s == "" {
 		return nil
 	}

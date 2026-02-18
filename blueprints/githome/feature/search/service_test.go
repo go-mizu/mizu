@@ -293,7 +293,7 @@ func TestService_Users_Pagination_Works(t *testing.T) {
 	defer cleanup()
 
 	// Create 5 users
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		createTestUser(t, usersStore, "searchuser"+string(rune('a'+i)), "searchuser"+string(rune('a'+i))+"@example.com")
 	}
 

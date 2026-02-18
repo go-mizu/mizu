@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -436,10 +437,8 @@ func validateIdentifier(s string) error {
 
 	upper := strings.ToUpper(s)
 	forbidden := []string{"SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "TRUNCATE", "EXEC", "EXECUTE", "UNION"}
-	for _, keyword := range forbidden {
-		if upper == keyword {
-			return fmt.Errorf("identifier cannot be a SQL keyword")
-		}
+	if slices.Contains(forbidden, upper) {
+		return fmt.Errorf("identifier cannot be a SQL keyword")
 	}
 	return nil
 }

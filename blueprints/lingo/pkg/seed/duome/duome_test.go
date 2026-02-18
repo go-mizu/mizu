@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -564,7 +565,7 @@ func TestDownloaderPaths(t *testing.T) {
 func TestExerciseTypeDistribution(t *testing.T) {
 	types := make(map[string]int)
 
-	for i := 0; i < 15; i++ {
+	for i := range 15 {
 		for level := 1; level <= 5; level++ {
 			exType := getExerciseType(i, level)
 			types[exType]++
@@ -614,13 +615,7 @@ func TestGenerateDistractors(t *testing.T) {
 	}
 
 	// Correct answer should be in choices
-	hasCorrect := false
-	for _, c := range choices {
-		if c == "trans1" {
-			hasCorrect = true
-			break
-		}
-	}
+	hasCorrect := slices.Contains(choices, "trans1")
 	if !hasCorrect {
 		t.Error("expected correct answer to be in choices")
 	}

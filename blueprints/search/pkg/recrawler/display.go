@@ -12,13 +12,13 @@ import (
 // Stats tracks live statistics for the recrawl.
 type Stats struct {
 	// Counters (atomic for lock-free reads)
-	success     atomic.Int64
-	failed      atomic.Int64
-	timeout     atomic.Int64
-	skipped     atomic.Int64
-	domainSkip  atomic.Int64 // URLs skipped due to dead domain
-	bytes       atomic.Int64
-	fetchMs     atomic.Int64 // sum of fetch times for avg calculation
+	success    atomic.Int64
+	failed     atomic.Int64
+	timeout    atomic.Int64
+	skipped    atomic.Int64
+	domainSkip atomic.Int64 // URLs skipped due to dead domain
+	bytes      atomic.Int64
+	fetchMs    atomic.Int64 // sum of fetch times for avg calculation
 
 	// DNS pipeline counters (domain-level, not URL-level)
 	dnsLive    atomic.Int64
@@ -55,8 +55,8 @@ type Stats struct {
 	rollingByteSpeed  float64
 
 	// Frozen state for final display
-	frozen      bool
-	frozenAt    time.Duration
+	frozen   bool
+	frozenAt time.Duration
 }
 
 type speedTick struct {
@@ -310,10 +310,7 @@ func (s *Stats) Render() string {
 
 	// Progress bar
 	barWidth := 40
-	filled := int(pct / 100 * float64(barWidth))
-	if filled > barWidth {
-		filled = barWidth
-	}
+	filled := min(int(pct/100*float64(barWidth)), barWidth)
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
 
 	// Domain stats

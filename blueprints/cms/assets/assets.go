@@ -9,6 +9,7 @@ import (
 	"html/template"
 	"io/fs"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 )
@@ -124,7 +125,7 @@ func Static() fs.FS {
 }
 
 // toFloat64 converts various numeric types to float64.
-func toFloat64(v interface{}) float64 {
+func toFloat64(v any) float64 {
 	switch n := v.(type) {
 	case int:
 		return float64(n)
@@ -169,7 +170,7 @@ func WPAdminTemplates() (map[string]*template.Template, error) {
 			}
 			return s[start:end]
 		},
-		"div": func(a, b interface{}) float64 {
+		"div": func(a, b any) float64 {
 			af := toFloat64(a)
 			bf := toFloat64(b)
 			if bf == 0 {
@@ -177,7 +178,7 @@ func WPAdminTemplates() (map[string]*template.Template, error) {
 			}
 			return af / bf
 		},
-		"mul": func(a, b interface{}) float64 {
+		"mul": func(a, b any) float64 {
 			return toFloat64(a) * toFloat64(b)
 		},
 		"add": func(a, b int) int {
@@ -189,7 +190,7 @@ func WPAdminTemplates() (map[string]*template.Template, error) {
 		"mod": func(a, b int) int {
 			return a % b
 		},
-		"float64": func(i interface{}) float64 {
+		"float64": func(i any) float64 {
 			return toFloat64(i)
 		},
 		"formatDate": func(t time.Time) string {
@@ -228,12 +229,7 @@ func WPAdminTemplates() (map[string]*template.Template, error) {
 			return template.URL(s)
 		},
 		"contains": func(slice []string, item string) bool {
-			for _, s := range slice {
-				if s == item {
-					return true
-				}
-			}
-			return false
+			return slices.Contains(slice, item)
 		},
 		"join": func(slice []string, sep string) string {
 			return strings.Join(slice, sep)
@@ -245,16 +241,16 @@ func WPAdminTemplates() (map[string]*template.Template, error) {
 			}
 			return result
 		},
-		"default": func(def, val interface{}) interface{} {
+		"default": func(def, val any) any {
 			if val == nil || val == "" {
 				return def
 			}
 			return val
 		},
-		"eq": func(a, b interface{}) bool {
+		"eq": func(a, b any) bool {
 			return a == b
 		},
-		"ne": func(a, b interface{}) bool {
+		"ne": func(a, b any) bool {
 			return a != b
 		},
 		"gt": func(a, b int) bool {
@@ -397,7 +393,7 @@ func ObakeTemplates() (map[string]*template.Template, error) {
 			}
 			return s[start:end]
 		},
-		"div": func(a, b interface{}) float64 {
+		"div": func(a, b any) float64 {
 			af := toFloat64(a)
 			bf := toFloat64(b)
 			if bf == 0 {
@@ -405,7 +401,7 @@ func ObakeTemplates() (map[string]*template.Template, error) {
 			}
 			return af / bf
 		},
-		"mul": func(a, b interface{}) float64 {
+		"mul": func(a, b any) float64 {
 			return toFloat64(a) * toFloat64(b)
 		},
 		"add": func(a, b int) int {
@@ -417,7 +413,7 @@ func ObakeTemplates() (map[string]*template.Template, error) {
 		"mod": func(a, b int) int {
 			return a % b
 		},
-		"float64": func(i interface{}) float64 {
+		"float64": func(i any) float64 {
 			return toFloat64(i)
 		},
 		"formatDate": func(t time.Time) string {
@@ -460,12 +456,7 @@ func ObakeTemplates() (map[string]*template.Template, error) {
 			return template.URL(s)
 		},
 		"contains": func(slice []string, item string) bool {
-			for _, s := range slice {
-				if s == item {
-					return true
-				}
-			}
-			return false
+			return slices.Contains(slice, item)
 		},
 		"join": func(slice []string, sep string) string {
 			return strings.Join(slice, sep)
@@ -477,16 +468,16 @@ func ObakeTemplates() (map[string]*template.Template, error) {
 			}
 			return result
 		},
-		"default": func(def, val interface{}) interface{} {
+		"default": func(def, val any) any {
 			if val == nil || val == "" {
 				return def
 			}
 			return val
 		},
-		"eq": func(a, b interface{}) bool {
+		"eq": func(a, b any) bool {
 			return a == b
 		},
-		"ne": func(a, b interface{}) bool {
+		"ne": func(a, b any) bool {
 			return a != b
 		},
 		"gt": func(a, b int) bool {
@@ -680,10 +671,10 @@ func SiteTemplates() (map[string]*template.Template, error) {
 		"mod": func(a, b int) int {
 			return a % b
 		},
-		"eq": func(a, b interface{}) bool {
+		"eq": func(a, b any) bool {
 			return a == b
 		},
-		"ne": func(a, b interface{}) bool {
+		"ne": func(a, b any) bool {
 			return a != b
 		},
 		"gt": func(a, b int) bool {
@@ -698,7 +689,7 @@ func SiteTemplates() (map[string]*template.Template, error) {
 		"lte": func(a, b int) bool {
 			return a <= b
 		},
-		"default": func(def, val interface{}) interface{} {
+		"default": func(def, val any) any {
 			if val == nil || val == "" {
 				return def
 			}
@@ -828,7 +819,7 @@ func SiteTemplatesBySlug(slug string) (map[string]*template.Template, error) {
 
 	funcMap := template.FuncMap{
 		"safe": func(s string) template.HTML { return template.HTML(s) },
-		"date": func(format string, t interface{}) string {
+		"date": func(format string, t any) string {
 			// When used with pipe: {{ .Date | date "format" }}
 			// format is the first arg, t (piped value) is the last
 			if t == nil {
@@ -900,7 +891,7 @@ func SiteTemplatesBySlug(slug string) (map[string]*template.Template, error) {
 			return a / b
 		},
 		"mod": func(a, b int) int { return a % b },
-		"first": func(n int, items interface{}) interface{} {
+		"first": func(n int, items any) any {
 			// Return first n items from a slice
 			if items == nil {
 				return nil
@@ -914,7 +905,7 @@ func SiteTemplatesBySlug(slug string) (map[string]*template.Template, error) {
 			}
 			return v.Slice(0, n).Interface()
 		},
-		"last": func(n int, items interface{}) interface{} {
+		"last": func(n int, items any) any {
 			// Return last n items from a slice
 			if items == nil {
 				return nil
@@ -929,13 +920,18 @@ func SiteTemplatesBySlug(slug string) (map[string]*template.Template, error) {
 			}
 			return v.Slice(length-n, length).Interface()
 		},
-		"eq": func(a, b interface{}) bool { return a == b },
-		"ne":       func(a, b interface{}) bool { return a != b },
-		"gt":       func(a, b int) bool { return a > b },
-		"lt":       func(a, b int) bool { return a < b },
-		"gte":      func(a, b int) bool { return a >= b },
-		"lte":      func(a, b int) bool { return a <= b },
-		"default":  func(def, val interface{}) interface{} { if val == nil || val == "" { return def }; return val },
+		"eq":  func(a, b any) bool { return a == b },
+		"ne":  func(a, b any) bool { return a != b },
+		"gt":  func(a, b int) bool { return a > b },
+		"lt":  func(a, b int) bool { return a < b },
+		"gte": func(a, b int) bool { return a >= b },
+		"lte": func(a, b int) bool { return a <= b },
+		"default": func(def, val any) any {
+			if val == nil || val == "" {
+				return def
+			}
+			return val
+		},
 		"lower":    func(s string) string { return strings.ToLower(s) },
 		"upper":    func(s string) string { return strings.ToUpper(s) },
 		"title":    func(s string) string { return strings.Title(s) },

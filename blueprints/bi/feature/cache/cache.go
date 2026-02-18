@@ -349,7 +349,7 @@ func GenerateCacheKey(datasourceID, query string, params []any) string {
 	h.Write([]byte(query))
 
 	for _, p := range params {
-		h.Write([]byte(fmt.Sprintf("%v", p)))
+		h.Write(fmt.Appendf(nil, "%v", p))
 	}
 
 	return hex.EncodeToString(h.Sum(nil))

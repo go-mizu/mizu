@@ -111,7 +111,6 @@ func (c *ArcticClient) ParallelDownload(ctx context.Context, target ArcticTarget
 	g.SetLimit(workers)
 
 	for _, chunk := range chunks {
-		chunk := chunk
 		g.Go(func() error {
 			hc := makeClient()
 

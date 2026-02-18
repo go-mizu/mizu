@@ -197,9 +197,9 @@ func (r *Runner) benchBatchCreate(store Store, fixtures *TestFixtures, metrics *
 	ctx := context.Background()
 	baseOffset := 50000
 
-	for i := 0; i < iters; i++ {
+	for i := range iters {
 		batch := make([]*records.Record, batchSize)
-		for j := 0; j < batchSize; j++ {
+		for j := range batchSize {
 			batch[j] = generateRecord(fixtures.Table.ID, fixtures.Fields, fixtures.User.ID, baseOffset+i*batchSize+j)
 		}
 
@@ -219,10 +219,10 @@ func (r *Runner) benchBatchGetByIDs(store Store, fixtures *TestFixtures, metrics
 
 	// Pre-create all records needed
 	allIDs := make([][]string, iters)
-	for i := 0; i < iters; i++ {
+	for i := range iters {
 		batch := make([]*records.Record, batchSize)
 		ids := make([]string, batchSize)
-		for j := 0; j < batchSize; j++ {
+		for j := range batchSize {
 			batch[j] = generateRecord(fixtures.Table.ID, fixtures.Fields, fixtures.User.ID, baseOffset+i*batchSize+j)
 			ids[j] = batch[j].ID
 		}
@@ -248,10 +248,10 @@ func (r *Runner) benchBatchDelete(store Store, fixtures *TestFixtures, metrics *
 
 	// Pre-create all records needed
 	allIDs := make([][]string, iters)
-	for i := 0; i < iters; i++ {
+	for i := range iters {
 		batch := make([]*records.Record, batchSize)
 		ids := make([]string, batchSize)
-		for j := 0; j < batchSize; j++ {
+		for j := range batchSize {
 			batch[j] = generateRecord(fixtures.Table.ID, fixtures.Fields, fixtures.User.ID, baseOffset+i*batchSize+j)
 			ids[j] = batch[j].ID
 		}
@@ -315,7 +315,7 @@ func (r *Runner) runQueryScenarios(backend string, store Store, fixtures *TestFi
 	batchSize := 100
 	for i := 0; i < recordCount/batchSize; i++ {
 		batch := make([]*records.Record, batchSize)
-		for j := 0; j < batchSize; j++ {
+		for j := range batchSize {
 			batch[j] = generateRecord(queryTable.ID, queryFields, fixtures.User.ID, 200000+i*batchSize+j)
 		}
 		store.Records().CreateBatch(ctx, batch)
@@ -632,7 +632,7 @@ func (r *Runner) benchSelectChoiceList(store Store, fixtures *TestFixtures, metr
 	store.Fields().Create(ctx, selectField)
 
 	// Add some choices
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		choice := &fields.SelectChoice{
 			ID:       newID(),
 			FieldID:  selectField.ID,
@@ -696,7 +696,7 @@ func (r *Runner) benchConcurrentReads(store Store, fixtures *TestFixtures, metri
 	// Pre-create records
 	var recordIDs []string
 	batch := make([]*records.Record, 100)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		batch[i] = generateRecord(fixtures.Table.ID, fixtures.Fields, fixtures.User.ID, 300000+i)
 		recordIDs = append(recordIDs, batch[i].ID)
 	}
@@ -706,10 +706,10 @@ func (r *Runner) benchConcurrentReads(store Store, fixtures *TestFixtures, metri
 	var wg sync.WaitGroup
 	wg.Add(concurrency)
 
-	for w := 0; w < concurrency; w++ {
+	for range concurrency {
 		go func() {
 			defer wg.Done()
-			for i := 0; i < opsPerWorker; i++ {
+			for range opsPerWorker {
 				id := recordIDs[rand.Intn(len(recordIDs))]
 				start := time.Now()
 				_, err := store.Records().GetByID(ctx, id)
@@ -732,11 +732,11 @@ func (r *Runner) benchConcurrentWrites(store Store, fixtures *TestFixtures, metr
 	var wg sync.WaitGroup
 	wg.Add(concurrency)
 
-	for w := 0; w < concurrency; w++ {
+	for w := range concurrency {
 		workerID := w
 		go func() {
 			defer wg.Done()
-			for i := 0; i < opsPerWorker; i++ {
+			for i := range opsPerWorker {
 				rec := generateRecord(fixtures.Table.ID, fixtures.Fields, fixtures.User.ID, 400000+workerID*10000+i)
 				start := time.Now()
 				err := store.Records().Create(ctx, rec)
@@ -758,7 +758,7 @@ func (r *Runner) benchConcurrentMixed(store Store, fixtures *TestFixtures, metri
 	// Pre-create records for reads
 	var recordIDs []string
 	batch := make([]*records.Record, 100)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		batch[i] = generateRecord(fixtures.Table.ID, fixtures.Fields, fixtures.User.ID, 500000+i)
 		recordIDs = append(recordIDs, batch[i].ID)
 	}
@@ -768,11 +768,11 @@ func (r *Runner) benchConcurrentMixed(store Store, fixtures *TestFixtures, metri
 	var wg sync.WaitGroup
 	wg.Add(concurrency)
 
-	for w := 0; w < concurrency; w++ {
+	for w := range concurrency {
 		workerID := w
 		go func() {
 			defer wg.Done()
-			for i := 0; i < opsPerWorker; i++ {
+			for i := range opsPerWorker {
 				start := time.Now()
 				var err error
 
@@ -799,7 +799,7 @@ func (r *Runner) benchConcurrentMixed(store Store, fixtures *TestFixtures, metri
 // Helper functions
 
 func generateRecord(tableID string, fieldDefs []*fields.Field, userID string, seed int) *records.Record {
-	cells := make(map[string]interface{})
+	cells := make(map[string]any)
 
 	for _, f := range fieldDefs {
 		switch f.Type {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"maps"
 	"net/http"
 	"sync"
 	"time"
@@ -251,9 +252,7 @@ func (s *MemoryStore) Get(id string) (*SessionData, error) {
 			CreatedAt: data.CreatedAt,
 			UpdatedAt: data.UpdatedAt,
 		}
-		for k, v := range data.Values {
-			copy.Values[k] = v
-		}
+		maps.Copy(copy.Values, data.Values)
 		return copy, nil
 	}
 	return nil, nil

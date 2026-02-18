@@ -10,7 +10,7 @@ import (
 
 // createTestWorkspace creates a workspace for testing pages.
 func createTestWorkspace(ts *TestServer, cookie *http.Cookie, name, slug string) *workspaces.Workspace {
-	resp := ts.Request("POST", "/api/v1/workspaces", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/workspaces", map[string]any{
 		"name": name,
 		"slug": slug,
 	}, cookie)
@@ -31,12 +31,12 @@ func TestPageCreate(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		body       map[string]interface{}
+		body       map[string]any
 		wantStatus int
 	}{
 		{
 			name: "root page",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"workspace_id": ws.ID,
 				"title":        "Root Page",
 				"parent_type":  "workspace",
@@ -45,7 +45,7 @@ func TestPageCreate(t *testing.T) {
 		},
 		{
 			name: "page with icon",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"workspace_id": ws.ID,
 				"title":        "Page with Icon",
 				"icon":         "star",
@@ -55,7 +55,7 @@ func TestPageCreate(t *testing.T) {
 		},
 		{
 			name: "page with cover",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"workspace_id": ws.ID,
 				"title":        "Page with Cover",
 				"cover":        "https://example.com/cover.jpg",
@@ -65,7 +65,7 @@ func TestPageCreate(t *testing.T) {
 		},
 		{
 			name: "template page",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"workspace_id": ws.ID,
 				"title":        "Template Page",
 				"is_template":  true,
@@ -75,7 +75,7 @@ func TestPageCreate(t *testing.T) {
 		},
 		{
 			name: "missing workspace_id",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"title":       "No Workspace",
 				"parent_type": "workspace",
 			},
@@ -117,7 +117,7 @@ func TestPageCreateNested(t *testing.T) {
 	ws := createTestWorkspace(ts, cookie, "Nested Workspace", "nested-ws")
 
 	// Create parent page
-	resp := ts.Request("POST", "/api/v1/pages", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/pages", map[string]any{
 		"workspace_id": ws.ID,
 		"title":        "Parent Page",
 		"parent_type":  "workspace",
@@ -128,7 +128,7 @@ func TestPageCreateNested(t *testing.T) {
 	ts.ParseJSON(resp, &parent)
 
 	// Create child page
-	resp = ts.Request("POST", "/api/v1/pages", map[string]interface{}{
+	resp = ts.Request("POST", "/api/v1/pages", map[string]any{
 		"workspace_id": ws.ID,
 		"parent_id":    parent.ID,
 		"parent_type":  "page",
@@ -156,7 +156,7 @@ func TestPageGet(t *testing.T) {
 	ws := createTestWorkspace(ts, cookie, "Get Workspace", "get-ws")
 
 	// Create page
-	resp := ts.Request("POST", "/api/v1/pages", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/pages", map[string]any{
 		"workspace_id": ws.ID,
 		"title":        "Test Page",
 		"icon":         "book",
@@ -201,7 +201,7 @@ func TestPageUpdate(t *testing.T) {
 	ws := createTestWorkspace(ts, cookie, "Update Workspace", "update-ws")
 
 	// Create page
-	resp := ts.Request("POST", "/api/v1/pages", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/pages", map[string]any{
 		"workspace_id": ws.ID,
 		"title":        "Original Title",
 		"icon":         "star",
@@ -213,7 +213,7 @@ func TestPageUpdate(t *testing.T) {
 	ts.ParseJSON(resp, &created)
 
 	t.Run("update title", func(t *testing.T) {
-		resp := ts.Request("PATCH", "/api/v1/pages/"+created.ID, map[string]interface{}{
+		resp := ts.Request("PATCH", "/api/v1/pages/"+created.ID, map[string]any{
 			"title": "Updated Title",
 		}, cookie)
 		ts.ExpectStatus(resp, http.StatusOK)
@@ -227,7 +227,7 @@ func TestPageUpdate(t *testing.T) {
 	})
 
 	t.Run("update icon", func(t *testing.T) {
-		resp := ts.Request("PATCH", "/api/v1/pages/"+created.ID, map[string]interface{}{
+		resp := ts.Request("PATCH", "/api/v1/pages/"+created.ID, map[string]any{
 			"icon": "moon",
 		}, cookie)
 		ts.ExpectStatus(resp, http.StatusOK)
@@ -241,7 +241,7 @@ func TestPageUpdate(t *testing.T) {
 	})
 
 	t.Run("update cover", func(t *testing.T) {
-		resp := ts.Request("PATCH", "/api/v1/pages/"+created.ID, map[string]interface{}{
+		resp := ts.Request("PATCH", "/api/v1/pages/"+created.ID, map[string]any{
 			"cover":   "https://example.com/new-cover.jpg",
 			"cover_y": 0.5,
 		}, cookie)
@@ -265,7 +265,7 @@ func TestPageDelete(t *testing.T) {
 	ws := createTestWorkspace(ts, cookie, "Delete Workspace", "delete-ws")
 
 	// Create page
-	resp := ts.Request("POST", "/api/v1/pages", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/pages", map[string]any{
 		"workspace_id": ws.ID,
 		"title":        "To Delete",
 		"parent_type":  "workspace",
@@ -297,8 +297,8 @@ func TestPageList(t *testing.T) {
 	ws := createTestWorkspace(ts, cookie, "List Workspace", "list-ws")
 
 	// Create pages
-	for i := 0; i < 3; i++ {
-		resp := ts.Request("POST", "/api/v1/pages", map[string]interface{}{
+	for i := range 3 {
+		resp := ts.Request("POST", "/api/v1/pages", map[string]any{
 			"workspace_id": ws.ID,
 			"title":        "Page " + string(rune('A'+i)),
 			"parent_type":  "workspace",
@@ -329,7 +329,7 @@ func TestPageArchiveRestore(t *testing.T) {
 	ws := createTestWorkspace(ts, cookie, "Archive Workspace", "archive-ws")
 
 	// Create page
-	resp := ts.Request("POST", "/api/v1/pages", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/pages", map[string]any{
 		"workspace_id": ws.ID,
 		"title":        "To Archive",
 		"parent_type":  "workspace",
@@ -383,7 +383,7 @@ func TestPageDuplicate(t *testing.T) {
 	ws := createTestWorkspace(ts, cookie, "Duplicate Workspace", "duplicate-ws")
 
 	// Create page with title and icon
-	resp := ts.Request("POST", "/api/v1/pages", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/pages", map[string]any{
 		"workspace_id": ws.ID,
 		"title":        "Original Page",
 		"icon":         "star",
@@ -395,7 +395,7 @@ func TestPageDuplicate(t *testing.T) {
 	ts.ParseJSON(resp, &original)
 
 	t.Run("duplicate page", func(t *testing.T) {
-		resp := ts.Request("POST", "/api/v1/pages/"+original.ID+"/duplicate", map[string]interface{}{}, cookie)
+		resp := ts.Request("POST", "/api/v1/pages/"+original.ID+"/duplicate", map[string]any{}, cookie)
 		ts.ExpectStatus(resp, http.StatusCreated)
 
 		var duplicated pages.Page
@@ -419,7 +419,7 @@ func TestPageGetBlocks(t *testing.T) {
 	ws := createTestWorkspace(ts, cookie, "Blocks Workspace", "blocks-ws")
 
 	// Create page
-	resp := ts.Request("POST", "/api/v1/pages", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/pages", map[string]any{
 		"workspace_id": ws.ID,
 		"title":        "Page with Blocks",
 		"parent_type":  "workspace",
@@ -433,7 +433,7 @@ func TestPageGetBlocks(t *testing.T) {
 		resp := ts.Request("GET", "/api/v1/pages/"+page.ID+"/blocks", nil, cookie)
 		ts.ExpectStatus(resp, http.StatusOK)
 
-		var blockList []interface{}
+		var blockList []any
 		ts.ParseJSON(resp, &blockList)
 
 		// Empty page should have empty block list or null
@@ -448,7 +448,7 @@ func TestPageUnauthenticated(t *testing.T) {
 	_, cookie := ts.Register("authcheck@example.com", "Auth Check", "password123")
 	ws := createTestWorkspace(ts, cookie, "Auth Workspace", "auth-ws")
 
-	resp := ts.Request("POST", "/api/v1/pages", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/pages", map[string]any{
 		"workspace_id": ws.ID,
 		"title":        "Auth Page",
 		"parent_type":  "workspace",

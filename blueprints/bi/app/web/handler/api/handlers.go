@@ -196,7 +196,7 @@ func (h *Collections) ListItems(c *mizu.Ctx) error {
 	dashboards, _ := h.store.Dashboards().ListByCollection(ctx, id)
 	subcollections, _ := h.store.Collections().ListByParent(ctx, id)
 
-	return c.JSON(200, map[string]interface{}{
+	return c.JSON(200, map[string]any{
 		"questions":      questions,
 		"dashboards":     dashboards,
 		"subcollections": subcollections,
@@ -269,7 +269,7 @@ func (h *Collections) GetPersonalItems(c *mizu.Ctx) error {
 	dashboards, _ := h.store.Dashboards().ListByCollection(ctx, col.ID)
 	subcollections, _ := h.store.Collections().ListByParent(ctx, col.ID)
 
-	return c.JSON(200, map[string]interface{}{
+	return c.JSON(200, map[string]any{
 		"questions":      questions,
 		"dashboards":     dashboards,
 		"subcollections": subcollections,
@@ -578,7 +578,7 @@ func (h *Users) Login(c *mizu.Ctx) error {
 	h.store.Users().CreateSession(c.Request().Context(), session)
 	h.store.Users().UpdateLastLogin(c.Request().Context(), user.ID)
 
-	return c.JSON(200, map[string]interface{}{
+	return c.JSON(200, map[string]any{
 		"token": tokenStr,
 		"user":  user,
 	})
@@ -872,7 +872,7 @@ func (h *Settings) ActivityLog(c *mizu.Ctx) error {
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
-	return c.JSON(200, map[string]interface{}{
+	return c.JSON(200, map[string]any{
 		"activities": logs,
 	})
 }

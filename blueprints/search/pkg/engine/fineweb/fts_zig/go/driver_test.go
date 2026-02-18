@@ -87,7 +87,7 @@ func TestDriverStats(t *testing.T) {
 	}
 	defer driver.Close()
 
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		_, err := driver.AddDocument("test document")
 		if err != nil {
 			t.Fatalf("failed to add document: %v", err)

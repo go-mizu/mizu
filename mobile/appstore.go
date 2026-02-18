@@ -23,7 +23,7 @@ type AppInfo struct {
 	ReleaseNotes string `json:"release_notes,omitempty"`
 
 	// ReleasedAt is when the current version was released
-	ReleasedAt time.Time `json:"released_at,omitempty"`
+	ReleasedAt time.Time `json:"released_at"`
 
 	// ForceUpdate indicates if update is mandatory
 	ForceUpdate bool `json:"force_update"`
@@ -126,9 +126,9 @@ func AppInfoHandler(provider AppInfoProvider) mizu.Handler {
 		// Check for maintenance mode
 		if info.MaintenanceMode {
 			return c.JSON(http.StatusServiceUnavailable, map[string]any{
-				"maintenance":    true,
-				"message":        info.MaintenanceMessage,
-				"end_time":       info.MaintenanceEndTime,
+				"maintenance":     true,
+				"message":         info.MaintenanceMessage,
+				"end_time":        info.MaintenanceEndTime,
 				"minimum_version": info.MinimumVersion,
 			})
 		}

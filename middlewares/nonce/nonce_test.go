@@ -232,7 +232,7 @@ func TestUniqueNonce(t *testing.T) {
 	})
 
 	// Make multiple requests
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)

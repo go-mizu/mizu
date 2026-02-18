@@ -151,7 +151,7 @@ func (s *Service) parseXLSXSheet(f *excelize.File, sheetName string, opts *Optio
 }
 
 // parseXLSXValue parses a cell value with type detection.
-func (s *Service) parseXLSXValue(value string, opts *Options) interface{} {
+func (s *Service) parseXLSXValue(value string, opts *Options) any {
 	if !opts.AutoDetectTypes {
 		return value
 	}

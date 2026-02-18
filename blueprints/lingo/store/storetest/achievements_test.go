@@ -158,7 +158,7 @@ func TestAchievementStore_MultipleAchievements(t *testing.T) {
 		}
 
 		// Track progress on multiple achievements
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			_, err := achievementStore.CheckAndUnlock(ctx, user.ID, allAchievements[i].ID, (i+1)*10)
 			assertNoError(t, err, "check and unlock achievement")
 		}

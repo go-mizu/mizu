@@ -23,7 +23,7 @@ type Presence struct {
 	Status       Status       `json:"status"`
 	CustomStatus string       `json:"custom_status,omitempty"`
 	Activities   []Activity   `json:"activities,omitempty"`
-	ClientStatus ClientStatus `json:"client_status,omitempty"`
+	ClientStatus ClientStatus `json:"client_status"`
 	LastSeenAt   time.Time    `json:"last_seen_at"`
 }
 

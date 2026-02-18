@@ -115,7 +115,7 @@ func isH2CUpgrade(r *http.Request) bool {
 
 // containsToken checks if a comma-separated header contains a token.
 func containsToken(header, token string) bool {
-	for _, t := range strings.Split(header, ",") {
+	for t := range strings.SplitSeq(header, ",") {
 		if strings.EqualFold(strings.TrimSpace(t), token) {
 			return true
 		}

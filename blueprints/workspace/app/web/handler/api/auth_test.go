@@ -266,7 +266,7 @@ func TestAuthSessionPersistence(t *testing.T) {
 	_, cookie := ts.Register("session@example.com", "Session Test", "password123")
 
 	// Make multiple authenticated requests
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		resp := ts.Request("GET", "/api/v1/auth/me", nil, cookie)
 		ts.ExpectStatus(resp, http.StatusOK)
 		resp.Body.Close()

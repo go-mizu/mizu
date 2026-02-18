@@ -119,7 +119,7 @@ func TestService_SearchWeb(t *testing.T) {
 func TestService_SearchWeb_LimitResults(t *testing.T) {
 	st := newMockSmallWebStore()
 	now := time.Now()
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		st.webEntries = append(st.webEntries, &types.SmallWebEntry{
 			URL:         "https://example.com/" + string(rune('a'+i)),
 			Title:       "Post",
@@ -146,7 +146,7 @@ func TestService_SearchWeb_LimitResults(t *testing.T) {
 func TestService_SearchWeb_DefaultLimit(t *testing.T) {
 	st := newMockSmallWebStore()
 	now := time.Now()
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		st.webEntries = append(st.webEntries, &types.SmallWebEntry{
 			URL:         "https://example.com/" + string(rune('a'+i)),
 			Title:       "Post",

@@ -265,12 +265,12 @@ func formatBytes(b int64) string {
 func formatNumber(n int64) string {
 	str := fmt.Sprintf("%d", n)
 	// Add commas for thousands
-	result := ""
+	var result strings.Builder
 	for i, c := range str {
 		if i > 0 && (len(str)-i)%3 == 0 {
-			result += ","
+			result.WriteString(",")
 		}
-		result += string(c)
+		result.WriteString(string(c))
 	}
-	return result
+	return result.String()
 }

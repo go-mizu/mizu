@@ -24,8 +24,8 @@ type StreamlineConfig struct {
 // Architecture: Single thread → Memory segment → Disk flush → Repeat
 // No channels, no locks, no goroutines during indexing.
 type StreamlineIndexer struct {
-	config  StreamlineConfig
-	outDir  string
+	config StreamlineConfig
+	outDir string
 
 	// Current segment state
 	terms       map[string]*compactPostings
@@ -49,8 +49,8 @@ type compactPostings struct {
 
 // streamDiskSeg represents a segment written to disk.
 type streamDiskSeg struct {
-	path    string
-	numDocs int
+	path     string
+	numDocs  int
 	numTerms int
 }
 
@@ -66,11 +66,11 @@ func NewStreamlineIndexer(outDir string, cfg StreamlineConfig) *StreamlineIndexe
 	os.MkdirAll(outDir, 0755)
 
 	return &StreamlineIndexer{
-		config:      cfg,
-		outDir:      outDir,
-		terms:       make(map[string]*compactPostings, 200000),
-		docLens:     make([]uint16, 0, cfg.SegmentDocs),
-		allSegments: make([]*streamDiskSeg, 0, 16),
+		config:        cfg,
+		outDir:        outDir,
+		terms:         make(map[string]*compactPostings, 200000),
+		docLens:       make([]uint16, 0, cfg.SegmentDocs),
+		allSegments:   make([]*streamDiskSeg, 0, 16),
 		globalDocLens: make([]uint16, 0, 4000000),
 	}
 }
@@ -100,7 +100,7 @@ func (si *StreamlineIndexer) tokenizeAndIndex(docID uint32, text string) {
 	// Temporary freq map for this document
 	freqs := make(map[string]uint16, 64)
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		c := data[i]
 		isDelim := c <= ' ' || (c >= '!' && c <= '/') || (c >= ':' && c <= '@') ||
 			(c >= '[' && c <= '`') || (c >= '{' && c <= '~')
@@ -305,7 +305,7 @@ func loadSegmentFile(path string) (*SearchSegment, error) {
 	offset := 12
 	terms := make(map[string]*SegmentPostings, numTerms)
 
-	for i := uint32(0); i < numTerms; i++ {
+	for range numTerms {
 		if offset+2 > len(data) {
 			break
 		}
@@ -333,7 +333,7 @@ func loadSegmentFile(path string) (*SearchSegment, error) {
 		docIDs := make([]uint32, numPostings)
 		freqs := make([]uint16, numPostings)
 
-		for j := 0; j < numPostings; j++ {
+		for j := range numPostings {
 			docIDs[j] = binary.LittleEndian.Uint32(data[offset : offset+4])
 			freqs[j] = binary.LittleEndian.Uint16(data[offset+4 : offset+6])
 			offset += 6
@@ -347,7 +347,7 @@ func loadSegmentFile(path string) (*SearchSegment, error) {
 
 	// Parse doc lengths
 	docLens := make(map[uint32]uint16, numDocs)
-	for i := uint32(0); i < numDocs; i++ {
+	for i := range numDocs {
 		if offset+2 > len(data) {
 			break
 		}
@@ -365,12 +365,12 @@ func loadSegmentFile(path string) (*SearchSegment, error) {
 
 // ParallelStreamlineIndexer uses multiple StreamlineIndexers in parallel.
 type ParallelStreamlineIndexer struct {
-	outDir    string
+	outDir     string
 	numWorkers int
 
-	workers   []*StreamlineIndexer
-	docCh     chan indexDoc
-	wg        sync.WaitGroup
+	workers []*StreamlineIndexer
+	docCh   chan indexDoc
+	wg      sync.WaitGroup
 
 	mu        sync.Mutex
 	nextDocID uint32

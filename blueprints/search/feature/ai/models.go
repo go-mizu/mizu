@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"slices"
 	"sync"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/llm"
@@ -117,11 +118,8 @@ func (r *ModelRegistry) ListModels() []ModelInfo {
 		// Mark defaults
 		for cap, defaultID := range r.defaults {
 			if defaultID == m.ID {
-				for _, c := range m.Capabilities {
-					if c == cap {
-						m.IsDefault = true
-						break
-					}
+				if slices.Contains(m.Capabilities, cap) {
+					m.IsDefault = true
 				}
 			}
 		}
@@ -137,15 +135,12 @@ func (r *ModelRegistry) ListModelsByCapability(cap Capability) []ModelInfo {
 
 	var models []ModelInfo
 	for _, info := range r.models {
-		for _, c := range info.Capabilities {
-			if c == cap {
-				m := *info
-				if r.defaults[cap] == m.ID {
-					m.IsDefault = true
-				}
-				models = append(models, m)
-				break
+		if slices.Contains(info.Capabilities, cap) {
+			m := *info
+			if r.defaults[cap] == m.ID {
+				m.IsDefault = true
 			}
+			models = append(models, m)
 		}
 	}
 	return models

@@ -304,7 +304,7 @@ func (s *Service) UpdatePassword(ctx context.Context, id int64, oldPassword, new
 
 // populateURLs fills in the URL fields for a user
 func (s *Service) populateURLs(u *User) {
-	u.NodeID = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("User:%d", u.ID)))
+	u.NodeID = base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "User:%d", u.ID))
 	u.URL = fmt.Sprintf("%s/api/v3/users/%s", s.baseURL, u.Login)
 	u.HTMLURL = fmt.Sprintf("%s/%s", s.baseURL, u.Login)
 	u.FollowersURL = fmt.Sprintf("%s/api/v3/users/%s/followers", s.baseURL, u.Login)

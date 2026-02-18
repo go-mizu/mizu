@@ -21,10 +21,10 @@ var (
 // FormulaCache provides LRU caching for parsed formula ASTs to avoid re-parsing identical formulas.
 // This improves performance when the same formula is evaluated multiple times.
 type FormulaCache struct {
-	mu       sync.RWMutex
-	cache    map[string]*formula.ASTNode
-	order    []string // LRU order tracking
-	maxSize  int
+	mu      sync.RWMutex
+	cache   map[string]*formula.ASTNode
+	order   []string // LRU order tracking
+	maxSize int
 }
 
 // NewFormulaCache creates a new formula cache with the specified max size.
@@ -507,14 +507,14 @@ func (s *Service) DeleteCols(ctx context.Context, sheetID string, startCol, coun
 }
 
 // EvaluateFormula evaluates a formula and returns the result.
-func (s *Service) EvaluateFormula(ctx context.Context, sheetID, formulaStr string) (interface{}, error) {
+func (s *Service) EvaluateFormula(ctx context.Context, sheetID, formulaStr string) (any, error) {
 	value, _, err := s.evaluateFormula(ctx, sheetID, formulaStr, 0, 0)
 	return value, err
 }
 
 // evaluateFormula evaluates a formula string and returns value, display string, and error.
 // Uses formula caching to avoid re-parsing identical formulas.
-func (s *Service) evaluateFormula(ctx context.Context, sheetID, formulaStr string, row, col int) (interface{}, string, error) {
+func (s *Service) evaluateFormula(ctx context.Context, sheetID, formulaStr string, row, col int) (any, string, error) {
 	// Skip leading = if present
 	normalizedFormula := formulaStr
 	if strings.HasPrefix(normalizedFormula, "=") {
@@ -597,7 +597,7 @@ type cellGetterAdapter struct {
 	sheetResolver SheetResolver
 }
 
-func (a *cellGetterAdapter) GetCellValue(ctx context.Context, sheetID string, row, col int) (interface{}, error) {
+func (a *cellGetterAdapter) GetCellValue(ctx context.Context, sheetID string, row, col int) (any, error) {
 	cell, err := a.store.Get(ctx, sheetID, row, col)
 	if err == ErrNotFound {
 		return nil, nil
@@ -608,7 +608,7 @@ func (a *cellGetterAdapter) GetCellValue(ctx context.Context, sheetID string, ro
 	return cell.Value, nil
 }
 
-func (a *cellGetterAdapter) GetRangeValues(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) ([][]interface{}, error) {
+func (a *cellGetterAdapter) GetRangeValues(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) ([][]any, error) {
 	cells, err := a.store.GetRange(ctx, sheetID, startRow, startCol, endRow, endCol)
 	if err != nil {
 		return nil, err
@@ -617,9 +617,9 @@ func (a *cellGetterAdapter) GetRangeValues(ctx context.Context, sheetID string, 
 	// Create 2D array
 	rows := endRow - startRow + 1
 	cols := endCol - startCol + 1
-	result := make([][]interface{}, rows)
+	result := make([][]any, rows)
 	for i := range result {
-		result[i] = make([]interface{}, cols)
+		result[i] = make([]any, cols)
 	}
 
 	// Fill in values
@@ -647,7 +647,7 @@ func (a *cellGetterAdapter) ResolveSheetName(ctx context.Context, workbookID, sh
 }
 
 // detectCellType detects the type of a cell value.
-func detectCellType(value interface{}) CellType {
+func detectCellType(value any) CellType {
 	if value == nil {
 		return CellTypeText
 	}
@@ -668,7 +668,7 @@ func detectCellType(value interface{}) CellType {
 }
 
 // formatDisplay formats the display value based on format settings.
-func formatDisplay(value interface{}, format Format) string {
+func formatDisplay(value any, format Format) string {
 	if value == nil {
 		return ""
 	}

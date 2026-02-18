@@ -149,7 +149,7 @@ func TestGamificationStore_GetLeaderboard(t *testing.T) {
 		}
 
 		// Create users and add to league with different XP
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			user := createTestUser(t, s)
 			_ = gamification.JoinLeague(ctx, user.ID, season.ID)
 			_ = gamification.UpdateLeagueXP(ctx, user.ID, season.ID, (5-i)*100)

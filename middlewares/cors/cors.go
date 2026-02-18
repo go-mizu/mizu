@@ -3,6 +3,7 @@ package cors
 
 import (
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -82,11 +83,8 @@ func New(opts Options) mizu.Middleware {
 			} else if allowAllOrigins {
 				allowed = true
 			} else {
-				for _, o := range opts.AllowOrigins {
-					if o == origin {
-						allowed = true
-						break
-					}
+				if slices.Contains(opts.AllowOrigins, origin) {
+					allowed = true
 				}
 			}
 

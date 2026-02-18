@@ -684,7 +684,7 @@ func (s *Store) seedExercises(ctx context.Context, lessonID uuid.UUID, skillName
 		words = vocab["Greetings"] // Default to greetings
 	}
 
-	for i := 0; i < 15; i++ {
+	for i := range 15 {
 		word := words[i%len(words)]
 		exType := exerciseTypes[i%len(exerciseTypes)]
 

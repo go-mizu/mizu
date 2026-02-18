@@ -156,7 +156,7 @@ func TestMergeHybridResults_MinScoreFilter(t *testing.T) {
 func TestMergeHybridResults_MaxResults(t *testing.T) {
 	cfg := DefaultHybridConfig() // MaxResults = 6
 	var vector []VectorResult
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		vector = append(vector, VectorResult{
 			Path: "file.go", StartLine: i * 10, EndLine: i*10 + 9,
 			Score: 0.9, Snippet: "chunk",

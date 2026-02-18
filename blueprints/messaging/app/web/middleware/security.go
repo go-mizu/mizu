@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"slices"
+
 	"github.com/go-mizu/mizu"
 )
 
@@ -144,13 +146,7 @@ func CORS(allowedOrigins []string, dev bool) mizu.Middleware {
 				return next(c)
 			}
 
-			allowed := false
-			for _, o := range allowedOrigins {
-				if origin == o {
-					allowed = true
-					break
-				}
-			}
+			allowed := slices.Contains(allowedOrigins, origin)
 
 			// In dev mode, allow localhost
 			if dev && !allowed {
@@ -160,11 +156,8 @@ func CORS(allowedOrigins []string, dev bool) mizu.Middleware {
 					"http://127.0.0.1",
 					"http://127.0.0.1:8080",
 				}
-				for _, o := range devOrigins {
-					if origin == o {
-						allowed = true
-						break
-					}
+				if slices.Contains(devOrigins, origin) {
+					allowed = true
 				}
 			}
 

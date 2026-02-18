@@ -46,10 +46,8 @@ func TestPreTokenizedLargeScale(t *testing.T) {
 	start := time.Now()
 
 	// Tokenization workers
-	for w := 0; w < numWorkers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range numWorkers {
+		wg.Go(func() {
 			table := algo.NewFixedHashTable(4096)
 
 			for batch := range docChan {
@@ -77,14 +75,12 @@ func TestPreTokenizedLargeScale(t *testing.T) {
 				}
 				resultChan <- results
 			}
-		}()
+		})
 	}
 
 	// Collector
 	var collectWg sync.WaitGroup
-	collectWg.Add(1)
-	go func() {
-		defer collectWg.Done()
+	collectWg.Go(func() {
 		docID := uint32(0)
 		for batch := range resultChan {
 			for i := range batch {
@@ -95,7 +91,7 @@ func TestPreTokenizedLargeScale(t *testing.T) {
 			preDocs = append(preDocs, batch...)
 			mu.Unlock()
 		}
-	}()
+	})
 
 	// Read parquet and send to workers
 	var docCount int
@@ -132,7 +128,7 @@ func TestPreTokenizedLargeScale(t *testing.T) {
 	t.Log("\n=== Step 2: Index from pre-tokenized (no tokenization) ===")
 
 	var bestIndexRate float64
-	for run := 0; run < 3; run++ {
+	for run := range 3 {
 		runtime.GC()
 		indexer := algo.NewPreTokenizedIndexer(numWorkers)
 		start = time.Now()

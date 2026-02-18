@@ -79,11 +79,11 @@ func (c *ArcticClient) GetMinDate(ctx context.Context, target ArcticTarget) (tim
 // ArcticProgress reports download progress.
 type ArcticProgress struct {
 	Kind      FileKind
-	Items     int64         // total items downloaded so far
-	Bytes     int64         // total bytes written
-	Oldest    time.Time     // oldest item timestamp
-	Newest    time.Time     // newest item timestamp
-	BatchSize int           // last batch size
+	Items     int64     // total items downloaded so far
+	Bytes     int64     // total bytes written
+	Oldest    time.Time // oldest item timestamp
+	Newest    time.Time // newest item timestamp
+	BatchSize int       // last batch size
 	Done      bool
 	Elapsed   time.Duration
 
@@ -142,12 +142,12 @@ func (c *ArcticClient) Download(ctx context.Context, target ArcticTarget, kind F
 	var totalItems int64
 	var totalBytes int64
 	var oldest, newest time.Time
-	currentAfter := afterEpoch
-	// Arctic Shift API requires epoch >= 1000000000 (2001-09-09).
-	// Use a date before Reddit existed (2005-01-01) as the minimum.
-	if currentAfter < 1104537600 {
-		currentAfter = 1104537600 // 2005-01-01 00:00:00 UTC
-	}
+	currentAfter := max(
+		// Arctic Shift API requires epoch >= 1000000000 (2001-09-09).
+		// Use a date before Reddit existed (2005-01-01) as the minimum.
+		afterEpoch,
+		// 2005-01-01 00:00:00 UTC
+		1104537600)
 	retries := 0
 	maxRetries := 10
 
@@ -179,10 +179,7 @@ func (c *ArcticClient) Download(ctx context.Context, target ArcticTarget, kind F
 				saveProgress(target, kind, currentAfter)
 				return fmt.Errorf("max retries exceeded: %w", err)
 			}
-			backoff := time.Duration(1<<uint(retries-1)) * time.Second
-			if backoff > 60*time.Second {
-				backoff = 60 * time.Second
-			}
+			backoff := min(time.Duration(1<<uint(retries-1))*time.Second, 60*time.Second)
 			time.Sleep(backoff)
 			continue
 		}
@@ -194,10 +191,7 @@ func (c *ArcticClient) Download(ctx context.Context, target ArcticTarget, kind F
 			wait := 30 * time.Second
 			if resetStr != "" {
 				if resetEpoch, err := strconv.ParseInt(resetStr, 10, 64); err == nil {
-					wait = time.Until(time.Unix(resetEpoch, 0))
-					if wait < time.Second {
-						wait = time.Second
-					}
+					wait = max(time.Until(time.Unix(resetEpoch, 0)), time.Second)
 				}
 			}
 			time.Sleep(wait)
@@ -211,10 +205,7 @@ func (c *ArcticClient) Download(ctx context.Context, target ArcticTarget, kind F
 				saveProgress(target, kind, currentAfter)
 				return fmt.Errorf("API returned %d after %d retries", resp.StatusCode, retries)
 			}
-			backoff := time.Duration(1<<uint(retries-1)) * time.Second
-			if backoff > 60*time.Second {
-				backoff = 60 * time.Second
-			}
+			backoff := min(time.Duration(1<<uint(retries-1))*time.Second, 60*time.Second)
 			time.Sleep(backoff)
 			continue
 		}

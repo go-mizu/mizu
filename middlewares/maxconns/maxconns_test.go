@@ -26,7 +26,7 @@ func TestNew(t *testing.T) {
 	var wg sync.WaitGroup
 	results := make([]int, 5)
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -72,7 +72,7 @@ func TestWithOptions_PerIP(t *testing.T) {
 	results := make([]int, 3)
 
 	// All from same IP
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()

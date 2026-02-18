@@ -82,7 +82,7 @@ func TestDataSourceStore_GetByID(t *testing.T) {
 
 	t.Run("not found returns nil without error", func(t *testing.T) {
 		retrieved, err := s.DataSources().GetByID(ctx, "nonexistent")
-		require.NoError(t, err) // Should NOT return error
+		require.NoError(t, err)  // Should NOT return error
 		assert.Nil(t, retrieved) // Should return nil
 	})
 }
@@ -219,7 +219,7 @@ func TestDataSourceStore_Concurrent(t *testing.T) {
 		var wg sync.WaitGroup
 		errors := make(chan error, 10)
 
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			wg.Add(1)
 			go func(n int) {
 				defer wg.Done()

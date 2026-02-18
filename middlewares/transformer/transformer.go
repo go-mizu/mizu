@@ -4,6 +4,7 @@ package transformer
 import (
 	"bytes"
 	"io"
+	"maps"
 	"net/http"
 	"strings"
 
@@ -56,9 +57,7 @@ func WithOptions(opts Options) mizu.Middleware {
 			}
 
 			// Copy existing headers
-			for k, v := range c.Header() {
-				rec.headers[k] = v
-			}
+			maps.Copy(rec.headers, c.Header())
 
 			// Replace response writer
 			originalWriter := c.Writer()
@@ -160,8 +159,8 @@ func RemoveHeader(key string) RequestTransformer {
 // RewritePath rewrites the request path.
 func RewritePath(from, to string) RequestTransformer {
 	return func(r *http.Request) error {
-		if strings.HasPrefix(r.URL.Path, from) {
-			r.URL.Path = to + strings.TrimPrefix(r.URL.Path, from)
+		if after, ok := strings.CutPrefix(r.URL.Path, from); ok {
+			r.URL.Path = to + after
 		}
 		return nil
 	}

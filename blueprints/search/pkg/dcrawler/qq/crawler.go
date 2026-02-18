@@ -203,7 +203,7 @@ func (c *Crawler) discoverFromSitemaps(ctx context.Context) ([]string, error) {
 			// Retry sitemap fetch up to 3 times with backoff (skip 404s)
 			var urlSet *URLSet
 			var fetchErr error
-			for attempt := 0; attempt < 3; attempt++ {
+			for attempt := range 3 {
 				if ctx.Err() != nil {
 					c.sitemapsDone.Add(1)
 					sitemapFails.Add(1)
@@ -611,9 +611,7 @@ func (c *Crawler) fetchArticles(ctx context.Context, articleIDs []string) {
 	}
 
 	for i := 0; i < c.config.Workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 
 			for id := range ch {
 				if ctx.Err() != nil {
@@ -642,7 +640,7 @@ func (c *Crawler) fetchArticles(ctx context.Context, articleIDs []string) {
 					c.printProgress()
 				}
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

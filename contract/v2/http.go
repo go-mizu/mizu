@@ -81,7 +81,7 @@ func extractIDParam(t reflect.Type) string {
 	}
 
 	// Handle pointer types
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 
@@ -114,4 +114,3 @@ func extractIDParam(t reflect.Type) string {
 	// Default to "id"
 	return "id"
 }
-

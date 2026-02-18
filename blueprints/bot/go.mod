@@ -5,7 +5,7 @@ go 1.26
 require (
 	github.com/charmbracelet/fang v0.4.4
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
-	github.com/go-mizu/mizu v0.5.21
+	github.com/go-mizu/mizu v0.5.23
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.10.2
 	modernc.org/sqlite v1.46.0

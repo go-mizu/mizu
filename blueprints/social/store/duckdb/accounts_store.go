@@ -48,7 +48,7 @@ func (s *AccountsStore) GetByIDs(ctx context.Context, ids []string) ([]*accounts
 	}
 
 	placeholders := make([]string, len(ids))
-	args := make([]interface{}, len(ids))
+	args := make([]any, len(ids))
 	for i, id := range ids {
 		placeholders[i] = fmt.Sprintf("$%d", i+1)
 		args[i] = id
@@ -97,7 +97,7 @@ func (s *AccountsStore) GetByEmail(ctx context.Context, email string) (*accounts
 // Update updates an account.
 func (s *AccountsStore) Update(ctx context.Context, id string, in *accounts.UpdateIn) error {
 	sets := []string{"updated_at = $1"}
-	args := []interface{}{time.Now()}
+	args := []any{time.Now()}
 	argNum := 2
 
 	if in.DisplayName != nil {

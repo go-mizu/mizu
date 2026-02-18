@@ -1,10 +1,10 @@
 package api
 
 import (
-	"net/http"
 	"github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/lingo/store"
 	"github.com/google/uuid"
+	"net/http"
 )
 
 // SocialHandler handles social endpoints
@@ -36,7 +36,7 @@ func (h *SocialHandler) GetFriends(c *mizu.Ctx) error {
 
 	followers, _ := h.store.Social().GetFollowers(c.Context(), uid)
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]any{
 		"following": following,
 		"followers": followers,
 	})

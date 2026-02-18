@@ -47,11 +47,11 @@ var (
 
 	// Products with pricing
 	products = []struct {
-		name        string
-		categoryIdx int
-		supplierIdx int
-		unitPrice   float64
-		unitsStock  int
+		name         string
+		categoryIdx  int
+		supplierIdx  int
+		unitPrice    float64
+		unitsStock   int
 		discontinued bool
 	}{
 		{"Chai", 0, 0, 18.00, 39, false},
@@ -366,7 +366,7 @@ func seedNorthwindData(db *sql.DB) error {
 
 	// Seed employees
 	for i, e := range employees {
-		reportsTo := interface{}(nil)
+		reportsTo := any(nil)
 		if i > 0 {
 			// Most employees report to Andrew Fuller (id=2)
 			if i != 1 {
@@ -407,7 +407,7 @@ func seedNorthwindData(db *sql.DB) error {
 	startDate := now.AddDate(-2, 0, 0) // 2 years ago
 
 	// Generate ~2500 orders over 2 years
-	for i := 0; i < 2500; i++ {
+	for range 2500 {
 		// Random date within the range
 		daysOffset := rand.Intn(730) // 2 years in days
 		orderDate := startDate.AddDate(0, 0, daysOffset)
@@ -420,7 +420,7 @@ func seedNorthwindData(db *sql.DB) error {
 		requiredDate := orderDate.AddDate(0, 0, rand.Intn(7)+7)
 
 		// 90% of orders are shipped
-		var shippedDate interface{}
+		var shippedDate any
 		if rand.Float32() < 0.90 {
 			// Shipped 1-5 days after order
 			shippedDate = orderDate.AddDate(0, 0, rand.Intn(5)+1).Format("2006-01-02")
@@ -447,7 +447,7 @@ func seedNorthwindData(db *sql.DB) error {
 		numLineItems := rand.Intn(5) + 1
 		usedProducts := make(map[int]bool)
 
-		for j := 0; j < numLineItems; j++ {
+		for range numLineItems {
 			// Pick a random product that hasn't been used in this order
 			productID := rand.Intn(numProducts) + 1
 			for usedProducts[productID] {

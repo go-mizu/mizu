@@ -151,7 +151,7 @@ func SWARTokenize(text string, freqs map[uint64]uint16) int {
 				// All 8 bytes are alphanumeric - hash them
 				lower := chunk | caseFlip
 				// Hash each byte
-				for j := 0; j < 8; j++ {
+				for j := range 8 {
 					c := byte(lower >> (j * 8))
 					// Only lowercase if it's a letter (not digit)
 					orig := byte(chunk >> (j * 8))
@@ -170,7 +170,7 @@ func SWARTokenize(text string, freqs map[uint64]uint16) int {
 			} else {
 				// Mixed - count leading alphanumeric bytes
 				alphaCount := countLeadingAlphanumericBytes(chunk)
-				for j := 0; j < alphaCount; j++ {
+				for j := range alphaCount {
 					c := megaToLower[data[i+j]]
 					hash ^= uint64(c)
 					hash *= fnvPrime

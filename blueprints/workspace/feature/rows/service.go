@@ -3,6 +3,7 @@ package rows
 import (
 	"context"
 	"errors"
+	"maps"
 
 	"github.com/go-mizu/blueprints/workspace/feature/pages"
 )
@@ -29,7 +30,7 @@ func NewService(store Store, pages pages.API) *Service {
 func (s *Service) Create(ctx context.Context, in *CreateIn) (*Row, error) {
 	props := in.Properties
 	if props == nil {
-		props = make(map[string]interface{})
+		props = make(map[string]any)
 	}
 
 	// Convert row properties to page properties
@@ -81,9 +82,7 @@ func (s *Service) Update(ctx context.Context, id string, in *UpdateIn) (*Row, er
 	}
 
 	// Merge properties
-	for k, v := range in.Properties {
-		existing.Properties[k] = v
-	}
+	maps.Copy(existing.Properties, in.Properties)
 
 	updateIn := &UpdateIn{
 		Properties: existing.Properties,
@@ -153,10 +152,8 @@ func (s *Service) DuplicateRow(ctx context.Context, id string, userID string) (*
 	}
 
 	// Copy properties
-	newProps := make(map[string]interface{})
-	for k, v := range original.Properties {
-		newProps[k] = v
-	}
+	newProps := make(map[string]any)
+	maps.Copy(newProps, original.Properties)
 
 	// Append "(copy)" to title if it exists
 	if title, ok := newProps["title"].(string); ok {

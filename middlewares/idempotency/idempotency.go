@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -98,11 +99,8 @@ func WithOptions(opts Options) mizu.Middleware {
 			// Check if method should be handled
 			method := c.Request().Method
 			var shouldHandle bool
-			for _, m := range opts.Methods {
-				if m == method {
-					shouldHandle = true
-					break
-				}
+			if slices.Contains(opts.Methods, method) {
+				shouldHandle = true
 			}
 			if !shouldHandle {
 				return next(c)

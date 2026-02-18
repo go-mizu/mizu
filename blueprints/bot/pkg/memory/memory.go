@@ -574,10 +574,7 @@ func (m *MemoryManager) embedChunks(chunks []Chunk) ([][]float64, error) {
 	// API limits.
 	const batchSize = 100
 	for start := 0; start < len(uncachedTexts); start += batchSize {
-		end := start + batchSize
-		if end > len(uncachedTexts) {
-			end = len(uncachedTexts)
-		}
+		end := min(start+batchSize, len(uncachedTexts))
 
 		batch := uncachedTexts[start:end]
 		embeddings, err := m.embedder.Embed(context.Background(), batch)
@@ -662,14 +659,14 @@ func isIndexableFile(name string) bool {
 	if ext == "" {
 		lower := strings.ToLower(name)
 		noExtIndexable := map[string]bool{
-			"makefile":    true,
-			"dockerfile":  true,
-			"rakefile":    true,
-			"gemfile":     true,
-			"procfile":    true,
-			"readme":      true,
-			"license":     true,
-			"changelog":   true,
+			"makefile":     true,
+			"dockerfile":   true,
+			"rakefile":     true,
+			"gemfile":      true,
+			"procfile":     true,
+			"readme":       true,
+			"license":      true,
+			"changelog":    true,
 			"contributing": true,
 		}
 		return noExtIndexable[lower]

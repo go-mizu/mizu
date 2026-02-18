@@ -3,6 +3,7 @@ package llamacpp
 import (
 	"context"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -278,13 +279,7 @@ func TestClient_Embedding_Multiple(t *testing.T) {
 func TestRegistry(t *testing.T) {
 	// Test that llamacpp is registered in the provider registry
 	providers := llm.Providers()
-	found := false
-	for _, p := range providers {
-		if p == "llamacpp" {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(providers, "llamacpp")
 	if !found {
 		t.Fatal("llamacpp provider not registered")
 	}

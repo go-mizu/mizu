@@ -24,7 +24,7 @@ const (
 // ASTNode represents a node in the abstract syntax tree.
 type ASTNode struct {
 	Type     NodeType
-	Value    interface{}
+	Value    any
 	Children []*ASTNode
 	Token    Token
 }

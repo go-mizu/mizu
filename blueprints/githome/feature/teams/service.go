@@ -525,7 +525,7 @@ func (s *Service) ListChildren(ctx context.Context, org, slug string, opts *List
 
 // populateURLs fills in the URL fields for a team
 func (s *Service) populateURLs(t *Team, org string) {
-	t.NodeID = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Team:%d", t.ID)))
+	t.NodeID = base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Team:%d", t.ID))
 	t.URL = fmt.Sprintf("%s/api/v3/orgs/%s/teams/%s", s.baseURL, org, t.Slug)
 	t.HTMLURL = fmt.Sprintf("%s/orgs/%s/teams/%s", s.baseURL, org, t.Slug)
 	t.MembersURL = fmt.Sprintf("%s/api/v3/orgs/%s/teams/%s/members{/member}", s.baseURL, org, t.Slug)

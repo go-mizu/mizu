@@ -108,33 +108,33 @@ type Comparison struct {
 
 // Branch represents a branch containing a commit
 type Branch struct {
-	Name      string `json:"name"`
+	Name      string     `json:"name"`
 	Commit    *CommitRef `json:"commit"`
-	Protected bool   `json:"protected"`
+	Protected bool       `json:"protected"`
 }
 
 // CombinedStatus represents combined status for a ref
 type CombinedStatus struct {
-	State      string            `json:"state"` // pending, success, failure, error
-	Statuses   []*Status         `json:"statuses"`
-	SHA        string            `json:"sha"`
-	TotalCount int               `json:"total_count"`
-	Repository *Repository       `json:"repository"`
-	CommitURL  string            `json:"commit_url"`
-	URL        string            `json:"url"`
+	State      string      `json:"state"` // pending, success, failure, error
+	Statuses   []*Status   `json:"statuses"`
+	SHA        string      `json:"sha"`
+	TotalCount int         `json:"total_count"`
+	Repository *Repository `json:"repository"`
+	CommitURL  string      `json:"commit_url"`
+	URL        string      `json:"url"`
 }
 
 // Status represents a commit status
 type Status struct {
-	ID          int64     `json:"id"`
-	NodeID      string    `json:"node_id"`
-	URL         string    `json:"url"`
-	State       string    `json:"state"` // pending, success, failure, error
-	Description string    `json:"description,omitempty"`
-	TargetURL   string    `json:"target_url,omitempty"`
-	Context     string    `json:"context"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          int64             `json:"id"`
+	NodeID      string            `json:"node_id"`
+	URL         string            `json:"url"`
+	State       string            `json:"state"` // pending, success, failure, error
+	Description string            `json:"description,omitempty"`
+	TargetURL   string            `json:"target_url,omitempty"`
+	Context     string            `json:"context"`
+	CreatedAt   time.Time         `json:"created_at"`
+	UpdatedAt   time.Time         `json:"updated_at"`
 	Creator     *users.SimpleUser `json:"creator"`
 }
 
@@ -164,8 +164,8 @@ type ListOpts struct {
 	Path      string    `json:"path,omitempty"`
 	Author    string    `json:"author,omitempty"`
 	Committer string    `json:"committer,omitempty"`
-	Since     time.Time `json:"since,omitempty"`
-	Until     time.Time `json:"until,omitempty"`
+	Since     time.Time `json:"since"`
+	Until     time.Time `json:"until"`
 }
 
 // API defines the commits service interface

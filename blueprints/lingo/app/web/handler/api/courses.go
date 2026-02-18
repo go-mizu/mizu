@@ -1,10 +1,10 @@
 package api
 
 import (
-	"net/http"
 	"github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/lingo/store"
 	"github.com/google/uuid"
+	"net/http"
 )
 
 // CourseHandler handles course endpoints
@@ -166,7 +166,7 @@ func (h *CourseHandler) CompleteStory(c *mizu.Ctx) error {
 	}
 
 	// In a real implementation, record story completion and award XP
-	return c.JSON(http.StatusOK, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]any{
 		"message":   "story completed",
 		"xp_earned": 14,
 	})

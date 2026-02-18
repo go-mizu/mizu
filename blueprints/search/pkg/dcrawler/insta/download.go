@@ -72,9 +72,7 @@ func DownloadMedia(ctx context.Context, items []MediaItem, dir string, workers i
 
 	var wg sync.WaitGroup
 	for range workers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for {
 				select {
 				case <-ctx.Done():
@@ -121,7 +119,7 @@ func DownloadMedia(ctx context.Context, items []MediaItem, dir string, workers i
 					}
 				}
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

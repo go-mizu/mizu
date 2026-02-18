@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -125,7 +126,7 @@ func New(cfg Config) (*Server, error) {
 	contactsSvc := contacts.NewService(nil) // TODO: implement contacts store
 	chatsSvc := chats.NewService(chatsStore)
 	messagesSvc := messages.NewService(messagesStore)
-	storiesSvc := stories.NewService(nil) // TODO: implement stories store
+	storiesSvc := stories.NewService(nil)   // TODO: implement stories store
 	presenceSvc := presence.NewService(nil) // TODO: implement presence store
 	friendcodeSvc := friendcode.NewService(friendCodesStore, friendCodeUserStore, friendCodeContactStore, "")
 	mediaSvc := media.NewService(mediaStore, fileStore)
@@ -141,12 +142,12 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	s := &Server{
-		app:       mizu.New(),
-		cfg:       cfg,
-		db:        db,
-		templates: allTemplates["default"],
-		hub:       hub,
-		accounts:  accountsSvc,
+		app:        mizu.New(),
+		cfg:        cfg,
+		db:         db,
+		templates:  allTemplates["default"],
+		hub:        hub,
+		accounts:   accountsSvc,
 		contacts:   contactsSvc,
 		chats:      chatsSvc,
 		messages:   messagesSvc,
@@ -412,10 +413,8 @@ func (s *Server) checkWebSocketOrigin(r *http.Request) bool {
 	}
 
 	// Check against configured allowed origins
-	for _, allowed := range s.cfg.AllowedOrigins {
-		if origin == allowed {
-			return true
-		}
+	if slices.Contains(s.cfg.AllowedOrigins, origin) {
+		return true
 	}
 
 	// Allow localhost origins when server is bound to localhost or in dev mode
@@ -608,8 +607,8 @@ func (s *Server) unblockContact(c *mizu.Ctx) error {
 
 func (s *Server) getUserID(c *mizu.Ctx) string {
 	auth := c.Request().Header.Get("Authorization")
-	if strings.HasPrefix(auth, "Bearer ") {
-		token := strings.TrimPrefix(auth, "Bearer ")
+	if after, ok := strings.CutPrefix(auth, "Bearer "); ok {
+		token := after
 		session, err := s.accounts.GetSession(c.Request().Context(), token)
 		if err == nil {
 			return session.UserID

@@ -2,6 +2,7 @@ package roles
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"github.com/go-mizu/blueprints/chat/pkg/ulid"
@@ -136,17 +137,14 @@ func (s *Service) ComputePermissions(ctx context.Context, serverID, userID, chan
 			// Check if this override applies to user or their roles
 			applies := override.TargetID == userID
 			if !applies {
-				for _, roleID := range roleIDs {
-					if override.TargetID == roleID {
-						applies = true
-						break
-					}
+				if slices.Contains(roleIDs, override.TargetID) {
+					applies = true
 				}
 			}
 
 			if applies {
-				perms &= ^override.Deny  // Remove denied permissions
-				perms |= override.Allow   // Add allowed permissions
+				perms &= ^override.Deny // Remove denied permissions
+				perms |= override.Allow // Add allowed permissions
 			}
 		}
 	}

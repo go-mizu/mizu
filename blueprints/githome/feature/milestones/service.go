@@ -212,7 +212,7 @@ func (s *Service) IncrementClosedIssues(ctx context.Context, id int64, delta int
 
 // populateURLs fills in the URL fields for a milestone
 func (s *Service) populateURLs(m *Milestone, owner, repo string) {
-	m.NodeID = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Milestone:%d", m.ID)))
+	m.NodeID = base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Milestone:%d", m.ID))
 	m.URL = fmt.Sprintf("%s/api/v3/repos/%s/%s/milestones/%d", s.baseURL, owner, repo, m.Number)
 	m.HTMLURL = fmt.Sprintf("%s/%s/%s/milestone/%d", s.baseURL, owner, repo, m.Number)
 	m.LabelsURL = fmt.Sprintf("%s/api/v3/repos/%s/%s/milestones/%d/labels", s.baseURL, owner, repo, m.Number)

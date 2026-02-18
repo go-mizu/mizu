@@ -209,7 +209,7 @@ func TestService_List_Pagination(t *testing.T) {
 	defer cleanup()
 
 	creator := createTestUser(t, usersStore, "creator", "creator@example.com")
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		createTestOrg(t, service, creator.ID, "org"+string(rune('a'+i)))
 	}
 
@@ -477,7 +477,7 @@ func TestService_ListMembers_Pagination(t *testing.T) {
 	org := createTestOrg(t, service, creator.ID, "testorg")
 
 	// Add multiple members
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		member := createTestUser(t, usersStore, "member"+string(rune('a'+i)), "member"+string(rune('a'+i))+"@example.com")
 		_, _ = service.SetMembership(context.Background(), org.Login, member.Login, "member")
 	}

@@ -293,7 +293,7 @@ func TestService_ListForRepo_Pagination(t *testing.T) {
 	owner := createTestUser(t, stores, "owner", "owner@example.com")
 	createTestRepo(t, stores, owner, "testrepo")
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		createTestWebhookForRepo(t, service, "owner", "testrepo")
 	}
 

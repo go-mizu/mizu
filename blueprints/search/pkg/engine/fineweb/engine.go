@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -17,10 +18,10 @@ import (
 type Engine struct {
 	*engines.BaseEngine
 
-	config    Config
-	stores    map[string]*Store
-	mu        sync.RWMutex
-	ftsReady  map[string]bool
+	config   Config
+	stores   map[string]*Store
+	mu       sync.RWMutex
+	ftsReady map[string]bool
 }
 
 // NewEngine creates a new FineWeb search engine.
@@ -91,13 +92,7 @@ func (e *Engine) initStores() error {
 
 		// Skip if language filter is set and doesn't include this language
 		if len(e.config.Languages) > 0 {
-			found := false
-			for _, l := range e.config.Languages {
-				if l == lang {
-					found = true
-					break
-				}
-			}
+			found := slices.Contains(e.config.Languages, lang)
 			if !found {
 				continue
 			}

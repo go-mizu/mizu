@@ -723,7 +723,7 @@ func TestUsersStore_Sessions(t *testing.T) {
 
 	t.Run("delete all sessions", func(t *testing.T) {
 		// Create multiple sessions
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			s.CreateSession(ctx, &accounts.Session{
 				ID:           "sess_all_" + string(rune('a'+i)),
 				UserID:       u.ID,
@@ -740,7 +740,7 @@ func TestUsersStore_Sessions(t *testing.T) {
 		}
 
 		// Verify all sessions are deleted
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			_, err := s.GetSession(ctx, "token_all_"+string(rune('a'+i)))
 			if err != accounts.ErrInvalidSession {
 				t.Errorf("session %d should be deleted", i)

@@ -1,5 +1,7 @@
 package types
 
+import "strings"
+
 import "time"
 
 // Agent represents an AI agent with its own workspace and configuration.
@@ -41,9 +43,9 @@ type Channel struct {
 type DMScope string
 
 const (
-	DMScopeMain               DMScope = "main"                 // unified across channels
-	DMScopePerPeer            DMScope = "per-peer"             // per sender
-	DMScopePerChannelPeer     DMScope = "per-channel-peer"     // per channel + sender
+	DMScopeMain               DMScope = "main"                  // unified across channels
+	DMScopePerPeer            DMScope = "per-peer"              // per sender
+	DMScopePerChannelPeer     DMScope = "per-channel-peer"      // per channel + sender
 	DMScopePerAccountChanPeer DMScope = "per-account-chan-peer" // per account + channel + sender
 )
 
@@ -135,8 +137,8 @@ type InboundMessage struct {
 	MediaCaption string `json:"-"` // caption text (separate from Content)
 
 	// Threading context (populated by drivers with thread/topic support).
-	ThreadID    string `json:"-"` // forum topic or thread ID
-	IsForum     bool   `json:"-"` // true if message is from a forum topic
+	ThreadID string `json:"-"` // forum topic or thread ID
+	IsForum  bool   `json:"-"` // true if message is from a forum topic
 
 	// Reply/forward context (serialized JSON for structured data).
 	ReplyContext   string `json:"-"` // JSON: {"id","sender","body","kind"}
@@ -228,7 +230,7 @@ type CronJob struct {
 	Schedule      string    `json:"schedule"`      // JSON: {kind, interval, unit, at, cron, tz}
 	SessionTarget string    `json:"sessionTarget"` // main, isolated
 	WakeMode      string    `json:"wakeMode"`      // next-heartbeat, now
-	Payload       string    `json:"payload"`        // JSON: {kind, text, message, ...}
+	Payload       string    `json:"payload"`       // JSON: {kind, text, message, ...}
 	LastRunAt     time.Time `json:"lastRunAt"`
 	LastStatus    string    `json:"lastStatus"`
 	CreatedAt     time.Time `json:"createdAt"`
@@ -394,11 +396,11 @@ type HealthSnapshot struct {
 
 // LLMRequest is a request to the LLM provider.
 type LLMRequest struct {
-	Model        string    `json:"model"`
-	SystemPrompt string    `json:"systemPrompt"`
-	Messages     []LLMMsg  `json:"messages"`
-	MaxTokens    int       `json:"maxTokens"`
-	Temperature  float64   `json:"temperature"`
+	Model        string   `json:"model"`
+	SystemPrompt string   `json:"systemPrompt"`
+	Messages     []LLMMsg `json:"messages"`
+	MaxTokens    int      `json:"maxTokens"`
+	Temperature  float64  `json:"temperature"`
 }
 
 // LLMMsg is a single message in an LLM conversation.
@@ -424,7 +426,7 @@ type ToolDefinition struct {
 
 // ContentBlock is a content block in an Anthropic API response.
 type ContentBlock struct {
-	Type     string         `json:"type"`               // "text", "tool_use", or "thinking"
+	Type     string         `json:"type"` // "text", "tool_use", or "thinking"
 	Text     string         `json:"text,omitempty"`
 	Thinking string         `json:"thinking,omitempty"` // thinking block content
 	ID       string         `json:"id,omitempty"`       // tool_use block ID
@@ -434,7 +436,7 @@ type ContentBlock struct {
 
 // ToolResultBlock is a tool result sent back to the API as user message content.
 type ToolResultBlock struct {
-	Type      string `json:"type"`        // always "tool_result"
+	Type      string `json:"type"` // always "tool_result"
 	ToolUseID string `json:"tool_use_id"`
 	Content   string `json:"content"`
 	IsError   bool   `json:"is_error,omitempty"`
@@ -444,7 +446,7 @@ type ToolResultBlock struct {
 type LLMToolRequest struct {
 	Model         string           `json:"model"`
 	SystemPrompt  string           `json:"systemPrompt"`
-	Messages      []any            `json:"messages"`    // mix of LLMMsg and tool result messages
+	Messages      []any            `json:"messages"` // mix of LLMMsg and tool result messages
 	MaxTokens     int              `json:"maxTokens"`
 	Temperature   float64          `json:"temperature"`
 	Tools         []ToolDefinition `json:"tools,omitempty"`
@@ -462,13 +464,13 @@ type LLMToolResponse struct {
 
 // TextContent extracts all text from the content blocks.
 func (r *LLMToolResponse) TextContent() string {
-	var text string
+	var text strings.Builder
 	for _, block := range r.Content {
 		if block.Type == "text" {
-			text += block.Text
+			text.WriteString(block.Text)
 		}
 	}
-	return text
+	return text.String()
 }
 
 // ToolUses extracts all tool_use blocks from the response.

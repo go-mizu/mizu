@@ -53,7 +53,7 @@ func escapeHTML(s string) string {
 }
 
 const (
-	codeBlockPlaceholder = "\x00CB"
+	codeBlockPlaceholder  = "\x00CB"
 	inlineCodePlaceholder = "\x00IC"
 )
 
@@ -93,32 +93,32 @@ func extractCodeBlocks(s string, blocks *[]string) string {
 			rest = rest[nl+1:]
 		} else {
 			// No newline after opening ```, look for closing ``` in remainder.
-			end := strings.Index(rest, "```")
-			if end == -1 {
+			before, after, ok := strings.Cut(rest, "```")
+			if !ok {
 				// Unclosed code block: output remainder as-is.
 				b.WriteString("```")
 				b.WriteString(rest)
 				break
 			}
-			content := rest[:end]
+			content := before
 			idx := len(*blocks)
 			*blocks = append(*blocks, content)
 			b.WriteString(codeBlockPlaceholder)
 			b.WriteString(intToStr(idx))
 			b.WriteString(codeBlockPlaceholder)
-			s = rest[end+3:]
+			s = after
 			continue
 		}
 
-		end := strings.Index(rest, "```")
-		if end == -1 {
+		before, after, ok := strings.Cut(rest, "```")
+		if !ok {
 			// Unclosed code block: output remainder as-is.
 			b.WriteString("```")
 			b.WriteString(s[start+3:])
 			break
 		}
 
-		content := rest[:end]
+		content := before
 		// Trim a single trailing newline from the code content for cleaner output.
 		content = strings.TrimSuffix(content, "\n")
 
@@ -128,7 +128,7 @@ func extractCodeBlocks(s string, blocks *[]string) string {
 		b.WriteString(intToStr(idx))
 		b.WriteString(codeBlockPlaceholder)
 
-		s = rest[end+3:]
+		s = after
 	}
 
 	return b.String()
@@ -150,22 +150,22 @@ func extractInlineCode(s string, codes *[]string) string {
 		b.WriteString(s[:start])
 
 		rest := s[start+1:]
-		end := strings.IndexByte(rest, '`')
-		if end == -1 {
+		before, after, ok := strings.Cut(rest, "`")
+		if !ok {
 			// Unclosed backtick: output remainder as-is.
 			b.WriteByte('`')
 			b.WriteString(rest)
 			break
 		}
 
-		content := rest[:end]
+		content := before
 		idx := len(*codes)
 		*codes = append(*codes, content)
 		b.WriteString(inlineCodePlaceholder)
 		b.WriteString(intToStr(idx))
 		b.WriteString(inlineCodePlaceholder)
 
-		s = rest[end+1:]
+		s = after
 	}
 
 	return b.String()
@@ -189,15 +189,15 @@ func convertLinks(s string) string {
 		rest := s[openBracket+1:]
 
 		// Find closing bracket.
-		closeBracket := strings.IndexByte(rest, ']')
-		if closeBracket == -1 {
+		before, after, ok := strings.Cut(rest, "]")
+		if !ok {
 			b.WriteByte('[')
 			s = rest
 			continue
 		}
 
-		text := rest[:closeBracket]
-		afterBracket := rest[closeBracket+1:]
+		text := before
+		afterBracket := after
 
 		// Expect ( immediately after ].
 		if len(afterBracket) == 0 || afterBracket[0] != '(' {
@@ -243,8 +243,8 @@ func convertBold(s string) string {
 		b.WriteString(s[:start])
 
 		rest := s[start+2:]
-		end := strings.Index(rest, "**")
-		if end == -1 {
+		before, after, ok := strings.Cut(rest, "**")
+		if !ok {
 			// Unclosed bold marker: output as-is.
 			b.WriteString("**")
 			s = rest
@@ -252,10 +252,10 @@ func convertBold(s string) string {
 		}
 
 		b.WriteString("<b>")
-		b.WriteString(rest[:end])
+		b.WriteString(before)
 		b.WriteString("</b>")
 
-		s = rest[end+2:]
+		s = after
 	}
 
 	return b.String()
@@ -277,8 +277,8 @@ func convertItalic(s string) string {
 		b.WriteString(s[:start])
 
 		rest := s[start+1:]
-		end := strings.IndexByte(rest, '*')
-		if end == -1 {
+		before, after, ok := strings.Cut(rest, "*")
+		if !ok {
 			// Unclosed italic marker: output as-is.
 			b.WriteByte('*')
 			s = rest
@@ -286,10 +286,10 @@ func convertItalic(s string) string {
 		}
 
 		b.WriteString("<i>")
-		b.WriteString(rest[:end])
+		b.WriteString(before)
 		b.WriteString("</i>")
 
-		s = rest[end+1:]
+		s = after
 	}
 
 	return b.String()

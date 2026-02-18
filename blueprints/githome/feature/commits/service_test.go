@@ -274,7 +274,7 @@ func TestService_ListStatuses_Pagination(t *testing.T) {
 	createTestRepo(t, reposStore, user, "testrepo")
 
 	// Create 5 statuses
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		_, _ = service.CreateStatus(context.Background(), "testowner", "testrepo", "abc123", user.ID, &commits.CreateStatusIn{
 			State:   "success",
 			Context: "ci/job" + string(rune('a'+i)),

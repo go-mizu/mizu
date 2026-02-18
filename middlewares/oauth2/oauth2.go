@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -134,8 +135,8 @@ func extractToken(c *mizu.Ctx, lookup string) string {
 	switch source {
 	case "header":
 		auth := c.Request().Header.Get(key)
-		if strings.HasPrefix(auth, "Bearer ") {
-			return strings.TrimPrefix(auth, "Bearer ")
+		if after, ok := strings.CutPrefix(auth, "Bearer "); ok {
+			return after
 		}
 		return auth
 	case "query":
@@ -246,12 +247,7 @@ func Scopes(c *mizu.Ctx) []string {
 
 // HasScope checks if token has a scope.
 func HasScope(c *mizu.Ctx, scope string) bool {
-	for _, s := range Scopes(c) {
-		if s == scope {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(Scopes(c), scope)
 }
 
 // RequireScopes creates middleware requiring specific scopes.

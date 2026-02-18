@@ -10,7 +10,7 @@ import (
 
 // createTestDatabase creates a database for testing views.
 func createTestDatabase(ts *TestServer, cookie *http.Cookie, workspaceID, title string) *databases.Database {
-	resp := ts.Request("POST", "/api/v1/databases", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/databases", map[string]any{
 		"workspace_id": workspaceID,
 		"title":        title,
 	}, cookie)
@@ -32,13 +32,13 @@ func TestViewCreate(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		body       map[string]interface{}
+		body       map[string]any
 		wantStatus int
 		wantType   views.ViewType
 	}{
 		{
 			name: "table view",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"database_id": db.ID,
 				"name":        "Table View",
 				"type":        "table",
@@ -48,7 +48,7 @@ func TestViewCreate(t *testing.T) {
 		},
 		{
 			name: "board view",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"database_id": db.ID,
 				"name":        "Board View",
 				"type":        "board",
@@ -59,7 +59,7 @@ func TestViewCreate(t *testing.T) {
 		},
 		{
 			name: "list view",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"database_id": db.ID,
 				"name":        "List View",
 				"type":        "list",
@@ -69,7 +69,7 @@ func TestViewCreate(t *testing.T) {
 		},
 		{
 			name: "calendar view",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"database_id": db.ID,
 				"name":        "Calendar View",
 				"type":        "calendar",
@@ -80,7 +80,7 @@ func TestViewCreate(t *testing.T) {
 		},
 		{
 			name: "gallery view",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"database_id": db.ID,
 				"name":        "Gallery View",
 				"type":        "gallery",
@@ -90,7 +90,7 @@ func TestViewCreate(t *testing.T) {
 		},
 		{
 			name: "timeline view",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"database_id": db.ID,
 				"name":        "Timeline View",
 				"type":        "timeline",
@@ -100,11 +100,11 @@ func TestViewCreate(t *testing.T) {
 		},
 		{
 			name: "view with filter",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"database_id": db.ID,
 				"name":        "Filtered View",
 				"type":        "table",
-				"filter": map[string]interface{}{
+				"filter": map[string]any{
 					"property_id": "status",
 					"operator":    "equals",
 					"value":       "Done",
@@ -115,11 +115,11 @@ func TestViewCreate(t *testing.T) {
 		},
 		{
 			name: "view with sorts",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"database_id": db.ID,
 				"name":        "Sorted View",
 				"type":        "table",
-				"sorts": []map[string]interface{}{
+				"sorts": []map[string]any{
 					{
 						"property_id": "created_at",
 						"direction":   "desc",
@@ -131,7 +131,7 @@ func TestViewCreate(t *testing.T) {
 		},
 		{
 			name: "missing database_id",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"name": "No Database",
 				"type": "table",
 			},
@@ -174,7 +174,7 @@ func TestViewGet(t *testing.T) {
 	db := createTestDatabase(ts, cookie, ws.ID, "View Get Database")
 
 	// Create view
-	resp := ts.Request("POST", "/api/v1/views", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/views", map[string]any{
 		"database_id": db.ID,
 		"name":        "Get Test View",
 		"type":        "table",
@@ -216,7 +216,7 @@ func TestViewUpdate(t *testing.T) {
 	db := createTestDatabase(ts, cookie, ws.ID, "View Update Database")
 
 	// Create view
-	resp := ts.Request("POST", "/api/v1/views", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/views", map[string]any{
 		"database_id": db.ID,
 		"name":        "Original View",
 		"type":        "table",
@@ -227,7 +227,7 @@ func TestViewUpdate(t *testing.T) {
 	ts.ParseJSON(resp, &created)
 
 	t.Run("update name", func(t *testing.T) {
-		resp := ts.Request("PATCH", "/api/v1/views/"+created.ID, map[string]interface{}{
+		resp := ts.Request("PATCH", "/api/v1/views/"+created.ID, map[string]any{
 			"name": "Updated View",
 		}, cookie)
 		ts.ExpectStatus(resp, http.StatusOK)
@@ -241,8 +241,8 @@ func TestViewUpdate(t *testing.T) {
 	})
 
 	t.Run("update filter", func(t *testing.T) {
-		resp := ts.Request("PATCH", "/api/v1/views/"+created.ID, map[string]interface{}{
-			"filter": map[string]interface{}{
+		resp := ts.Request("PATCH", "/api/v1/views/"+created.ID, map[string]any{
+			"filter": map[string]any{
 				"property_id": "status",
 				"operator":    "equals",
 				"value":       "Active",
@@ -259,8 +259,8 @@ func TestViewUpdate(t *testing.T) {
 	})
 
 	t.Run("update sorts", func(t *testing.T) {
-		resp := ts.Request("PATCH", "/api/v1/views/"+created.ID, map[string]interface{}{
-			"sorts": []map[string]interface{}{
+		resp := ts.Request("PATCH", "/api/v1/views/"+created.ID, map[string]any{
+			"sorts": []map[string]any{
 				{
 					"property_id": "name",
 					"direction":   "asc",
@@ -288,7 +288,7 @@ func TestViewDelete(t *testing.T) {
 	db := createTestDatabase(ts, cookie, ws.ID, "View Delete Database")
 
 	// Create view
-	resp := ts.Request("POST", "/api/v1/views", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/views", map[string]any{
 		"database_id": db.ID,
 		"name":        "To Delete",
 		"type":        "table",
@@ -323,7 +323,7 @@ func TestViewList(t *testing.T) {
 	// Create views
 	viewTypes := []string{"table", "board", "list"}
 	for i, vt := range viewTypes {
-		resp := ts.Request("POST", "/api/v1/views", map[string]interface{}{
+		resp := ts.Request("POST", "/api/v1/views", map[string]any{
 			"database_id": db.ID,
 			"name":        "View " + string(rune('A'+i)),
 			"type":        vt,
@@ -357,7 +357,7 @@ func TestViewQuery(t *testing.T) {
 	db := createTestDatabase(ts, cookie, ws.ID, "View Query Database")
 
 	// Create view
-	resp := ts.Request("POST", "/api/v1/views", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/views", map[string]any{
 		"database_id": db.ID,
 		"name":        "Query View",
 		"type":        "table",
@@ -368,7 +368,7 @@ func TestViewQuery(t *testing.T) {
 	ts.ParseJSON(resp, &view)
 
 	t.Run("basic query", func(t *testing.T) {
-		resp := ts.Request("POST", "/api/v1/views/"+view.ID+"/query", map[string]interface{}{}, cookie)
+		resp := ts.Request("POST", "/api/v1/views/"+view.ID+"/query", map[string]any{}, cookie)
 		ts.ExpectStatus(resp, http.StatusOK)
 
 		var result views.QueryResult
@@ -381,7 +381,7 @@ func TestViewQuery(t *testing.T) {
 	})
 
 	t.Run("query with pagination", func(t *testing.T) {
-		resp := ts.Request("POST", "/api/v1/views/"+view.ID+"/query", map[string]interface{}{
+		resp := ts.Request("POST", "/api/v1/views/"+view.ID+"/query", map[string]any{
 			"limit": 10,
 		}, cookie)
 		ts.ExpectStatus(resp, http.StatusOK)
@@ -402,12 +402,12 @@ func TestViewComplexFilter(t *testing.T) {
 	db := createTestDatabase(ts, cookie, ws.ID, "View Filter Database")
 
 	t.Run("AND filter", func(t *testing.T) {
-		resp := ts.Request("POST", "/api/v1/views", map[string]interface{}{
+		resp := ts.Request("POST", "/api/v1/views", map[string]any{
 			"database_id": db.ID,
 			"name":        "AND Filter View",
 			"type":        "table",
-			"filter": map[string]interface{}{
-				"and": []map[string]interface{}{
+			"filter": map[string]any{
+				"and": []map[string]any{
 					{
 						"property_id": "status",
 						"operator":    "equals",
@@ -432,12 +432,12 @@ func TestViewComplexFilter(t *testing.T) {
 	})
 
 	t.Run("OR filter", func(t *testing.T) {
-		resp := ts.Request("POST", "/api/v1/views", map[string]interface{}{
+		resp := ts.Request("POST", "/api/v1/views", map[string]any{
 			"database_id": db.ID,
 			"name":        "OR Filter View",
 			"type":        "table",
-			"filter": map[string]interface{}{
-				"or": []map[string]interface{}{
+			"filter": map[string]any{
+				"or": []map[string]any{
 					{
 						"property_id": "status",
 						"operator":    "equals",
@@ -472,7 +472,7 @@ func TestViewUnauthenticated(t *testing.T) {
 	db := createTestDatabase(ts, cookie, ws.ID, "View Auth Database")
 
 	// Create view
-	resp := ts.Request("POST", "/api/v1/views", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/views", map[string]any{
 		"database_id": db.ID,
 		"name":        "Auth Test View",
 		"type":        "table",

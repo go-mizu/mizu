@@ -45,30 +45,30 @@ func Generate(svc *contract.Service, cfg *Config) ([]*sdk.File, error) {
 
 	tpl, err := template.New("sdkc").
 		Funcs(template.FuncMap{
-			"cQuote":         cQuote,
-			"cName":          toCName,
-			"cTypeName":      toCTypeName,
-			"cConstant":      toCConstant,
-			"cFieldName":     toCFieldName,
-			"snake":          toSnake,
-			"upper":          strings.ToUpper,
-			"lower":          strings.ToLower,
-			"join":           strings.Join,
-			"trim":           strings.TrimSpace,
-			"indent":         indent,
-			"hasPrefix":      strings.HasPrefix,
-			"hasSuffix":      strings.HasSuffix,
-			"listElem":       listElem,
-			"mapElem":        mapElem,
-			"isPrimitive":    isPrimitive,
-			"isPointerType":  isPointerType,
-			"isStruct":       func(k contract.TypeKind) bool { return k == contract.KindStruct },
-			"isSlice":        func(k contract.TypeKind) bool { return k == contract.KindSlice },
-			"isMap":          func(k contract.TypeKind) bool { return k == contract.KindMap },
-			"isUnion":        func(k contract.TypeKind) bool { return k == contract.KindUnion },
-			"add":            func(a, b int) int { return a + b },
-			"sub":            func(a, b int) int { return a - b },
-			"len":            lenHelper,
+			"cQuote":        cQuote,
+			"cName":         toCName,
+			"cTypeName":     toCTypeName,
+			"cConstant":     toCConstant,
+			"cFieldName":    toCFieldName,
+			"snake":         toSnake,
+			"upper":         strings.ToUpper,
+			"lower":         strings.ToLower,
+			"join":          strings.Join,
+			"trim":          strings.TrimSpace,
+			"indent":        indent,
+			"hasPrefix":     strings.HasPrefix,
+			"hasSuffix":     strings.HasSuffix,
+			"listElem":      listElem,
+			"mapElem":       mapElem,
+			"isPrimitive":   isPrimitive,
+			"isPointerType": isPointerType,
+			"isStruct":      func(k contract.TypeKind) bool { return k == contract.KindStruct },
+			"isSlice":       func(k contract.TypeKind) bool { return k == contract.KindSlice },
+			"isMap":         func(k contract.TypeKind) bool { return k == contract.KindMap },
+			"isUnion":       func(k contract.TypeKind) bool { return k == contract.KindUnion },
+			"add":           func(a, b int) int { return a + b },
+			"sub":           func(a, b int) int { return a - b },
+			"len":           lenHelper,
 		}).
 		ParseFS(templateFS, "templates/*.tmpl")
 	if err != nil {
@@ -580,16 +580,16 @@ func cTypeBase(pkg string, typeByName map[string]*contract.Type, ref contract.Ty
 	}
 
 	// Handle slice types
-	if strings.HasPrefix(r, "[]") {
-		elem := strings.TrimSpace(strings.TrimPrefix(r, "[]"))
+	if after, ok := strings.CutPrefix(r, "[]"); ok {
+		elem := strings.TrimSpace(after)
 		// For slices, we use array types
 		elemName := toSnake(sanitizeIdent(elem))
 		return pkg + "_" + elemName + "_array_t *"
 	}
 
 	// Handle map types
-	if strings.HasPrefix(r, "map[string]") {
-		elem := strings.TrimSpace(strings.TrimPrefix(r, "map[string]"))
+	if after, ok := strings.CutPrefix(r, "map[string]"); ok {
+		elem := strings.TrimSpace(after)
 		elemName := toSnake(sanitizeIdent(elem))
 		return pkg + "_string_" + elemName + "_map_t *"
 	}
@@ -770,9 +770,9 @@ func indent(n int, s string) string {
 
 // listElem extracts the element type from an array type string.
 func listElem(s string) string {
-	if strings.HasSuffix(s, "_array_t *") {
+	if before, ok := strings.CutSuffix(s, "_array_t *"); ok {
 		// Extract element name from {pkg}_{elem}_array_t *
-		s = strings.TrimSuffix(s, "_array_t *")
+		s = before
 		parts := strings.Split(s, "_")
 		if len(parts) > 1 {
 			return strings.Join(parts[1:], "_")
@@ -783,9 +783,9 @@ func listElem(s string) string {
 
 // mapElem extracts the value type from a map type string.
 func mapElem(s string) string {
-	if strings.HasSuffix(s, "_map_t *") {
+	if before, ok := strings.CutSuffix(s, "_map_t *"); ok {
 		// Extract element name from {pkg}_string_{elem}_map_t *
-		s = strings.TrimSuffix(s, "_map_t *")
+		s = before
 		parts := strings.Split(s, "_string_")
 		if len(parts) > 1 {
 			return parts[1]
@@ -813,7 +813,7 @@ func isPointerType(s string) bool {
 }
 
 // lenHelper returns the length of a slice or array.
-func lenHelper(s interface{}) int {
+func lenHelper(s any) int {
 	switch v := s.(type) {
 	case []fieldModel:
 		return len(v)

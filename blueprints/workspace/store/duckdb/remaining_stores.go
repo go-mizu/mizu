@@ -24,7 +24,7 @@ func NewSharesStore(db *sql.DB) *SharesStore { return &SharesStore{db: db} }
 
 func (s *SharesStore) Create(ctx context.Context, sh *sharing.Share) error {
 	// Convert empty strings to nil for token/password to avoid unique constraint violations
-	var token, password interface{}
+	var token, password any
 	if sh.Token != "" {
 		token = sh.Token
 	}
@@ -347,7 +347,7 @@ func (s *TemplatesStore) ListSystem(ctx context.Context, category string) ([]*te
 
 func (s *TemplatesStore) ListByWorkspace(ctx context.Context, workspaceID, category string) ([]*templates.Template, error) {
 	query := "SELECT id, name, description, category, preview, page_id, is_system, workspace_id, created_at FROM templates WHERE workspace_id = ?"
-	args := []interface{}{workspaceID}
+	args := []any{workspaceID}
 	if category != "" {
 		query += " AND category = ?"
 		args = append(args, category)

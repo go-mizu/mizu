@@ -18,7 +18,7 @@ func TestNew(t *testing.T) {
 	})
 
 	// First 3 requests should succeed
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		req.RemoteAddr = "192.168.1.1:1234"
 		rec := httptest.NewRecorder()
@@ -123,7 +123,7 @@ func TestWithOptions_KeyFunc(t *testing.T) {
 	})
 
 	// API key 1 - 2 requests allowed
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		req := httptest.NewRequest(http.MethodGet, "/test?api_key=key1", nil)
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
@@ -233,7 +233,7 @@ func TestMemoryStore_Allow(t *testing.T) {
 	store := NewMemoryStore()
 
 	// Allow up to 3 requests
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		allowed, info := store.Allow("test-key", 3, time.Minute, 3)
 		if !allowed {
 			t.Errorf("request %d should be allowed", i+1)
@@ -254,7 +254,7 @@ func TestMemoryStore_TokenRefill(t *testing.T) {
 	store := NewMemoryStore()
 
 	// Use all tokens
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		store.Allow("refill-test", 10, 100*time.Millisecond, 10)
 	}
 
@@ -278,7 +278,7 @@ func TestMemoryStore_DifferentKeys(t *testing.T) {
 	store := NewMemoryStore()
 
 	// Exhaust key1
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		store.Allow("key1", 5, time.Hour, 5)
 	}
 

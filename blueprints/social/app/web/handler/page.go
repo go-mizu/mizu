@@ -44,9 +44,9 @@ func NewPage(tmpl *template.Template, accountsSvc accounts.API, postsSvc posts.A
 	}
 }
 
-func (h *Page) render(c *mizu.Ctx, name string, data map[string]interface{}) error {
+func (h *Page) render(c *mizu.Ctx, name string, data map[string]any) error {
 	if data == nil {
-		data = make(map[string]interface{})
+		data = make(map[string]any)
 	}
 	data["Dev"] = h.dev
 
@@ -82,7 +82,7 @@ func (h *Page) Explore(c *mizu.Ctx) error {
 	tags, _ := h.trending.GetTrendingTags(c.Request().Context(), opts)
 	trendingPosts, _ := h.trending.GetTrendingPosts(c.Request().Context(), opts)
 
-	return h.render(c, "explore.html", map[string]interface{}{
+	return h.render(c, "explore.html", map[string]any{
 		"TrendingTags":  tags,
 		"TrendingPosts": trendingPosts,
 	})
@@ -91,7 +91,7 @@ func (h *Page) Explore(c *mizu.Ctx) error {
 // Search handles GET /search
 func (h *Page) Search(c *mizu.Ctx) error {
 	query := c.Query("q")
-	return h.render(c, "search.html", map[string]interface{}{
+	return h.render(c, "search.html", map[string]any{
 		"Query": query,
 	})
 }
@@ -114,7 +114,7 @@ func (h *Page) Lists(c *mizu.Ctx) error {
 // ListView handles GET /lists/:id
 func (h *Page) ListView(c *mizu.Ctx) error {
 	id := c.Param("id")
-	return h.render(c, "list.html", map[string]interface{}{
+	return h.render(c, "list.html", map[string]any{
 		"ListID": id,
 	})
 }
@@ -125,7 +125,7 @@ func (h *Page) Settings(c *mizu.Ctx) error {
 	if page == "" {
 		page = "profile"
 	}
-	return h.render(c, "settings.html", map[string]interface{}{
+	return h.render(c, "settings.html", map[string]any{
 		"Page": page,
 	})
 }
@@ -141,7 +141,7 @@ func (h *Page) Profile(c *mizu.Ctx) error {
 
 	_ = h.accounts.PopulateStats(c.Request().Context(), account)
 
-	return h.render(c, "profile.html", map[string]interface{}{
+	return h.render(c, "profile.html", map[string]any{
 		"Account": account,
 	})
 }
@@ -163,7 +163,7 @@ func (h *Page) Post(c *mizu.Ctx) error {
 		_ = h.posts.PopulateAccounts(c.Request().Context(), ctx.Descendants)
 	}
 
-	return h.render(c, "post.html", map[string]interface{}{
+	return h.render(c, "post.html", map[string]any{
 		"Post":    post,
 		"Context": ctx,
 	})
@@ -184,7 +184,7 @@ func (h *Page) FollowList(c *mizu.Ctx) error {
 		listType = "following"
 	}
 
-	return h.render(c, "follow_list.html", map[string]interface{}{
+	return h.render(c, "follow_list.html", map[string]any{
 		"Account":  account,
 		"ListType": listType,
 	})
@@ -193,7 +193,7 @@ func (h *Page) FollowList(c *mizu.Ctx) error {
 // Tag handles GET /tags/:tag
 func (h *Page) Tag(c *mizu.Ctx) error {
 	tag := c.Param("tag")
-	return h.render(c, "tag.html", map[string]interface{}{
+	return h.render(c, "tag.html", map[string]any{
 		"Tag": tag,
 	})
 }

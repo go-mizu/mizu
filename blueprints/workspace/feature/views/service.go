@@ -153,10 +153,7 @@ func (s *Service) Query(ctx context.Context, viewID string, cursor string, limit
 		}
 	}
 
-	end := start + limit
-	if end > len(items) {
-		end = len(items)
-	}
+	end := min(start+limit, len(items))
 
 	result := &QueryResult{
 		Items:   items[start:end],
@@ -233,7 +230,7 @@ func (s *Service) evaluateEmpty(operator string) bool {
 }
 
 // evaluateCondition evaluates a condition against a value.
-func (s *Service) evaluateCondition(value interface{}, operator string, target interface{}) bool {
+func (s *Service) evaluateCondition(value any, operator string, target any) bool {
 	valueStr := toString(value)
 	targetStr := toString(target)
 
@@ -346,7 +343,7 @@ func (s *Service) compareProperty(a, b *pages.Page, propertyID string) int {
 
 // Helper functions
 
-func toString(v interface{}) string {
+func toString(v any) string {
 	if v == nil {
 		return ""
 	}
@@ -362,7 +359,7 @@ func toString(v interface{}) string {
 	}
 }
 
-func toFloat(v interface{}) float64 {
+func toFloat(v any) float64 {
 	if v == nil {
 		return 0
 	}
@@ -381,7 +378,7 @@ func toFloat(v interface{}) float64 {
 	}
 }
 
-func toTime(v interface{}) time.Time {
+func toTime(v any) time.Time {
 	if v == nil {
 		return time.Time{}
 	}

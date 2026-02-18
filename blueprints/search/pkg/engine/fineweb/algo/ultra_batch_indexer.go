@@ -55,7 +55,7 @@ func NewUltraBatchIndexer(outDir string, cfg UltraBatchConfig) *UltraBatchIndexe
 		docLens: make([]uint16, 0, 4000000),
 	}
 
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		ubi.shards[i] = &ultraBatchShard{
 			terms: make(map[uint64]*ultraBatchPostings, 10000),
 		}
@@ -130,10 +130,7 @@ func (ubi *UltraBatchIndexer) AddBatch(docIDs []uint32, texts []string) {
 	}
 
 	numDocs := len(texts)
-	numWorkers := ubi.config.NumWorkers
-	if numWorkers > numDocs {
-		numWorkers = numDocs
-	}
+	numWorkers := min(ubi.config.NumWorkers, numDocs)
 
 	// Per-worker accumulated postings
 	type workerResult struct {
@@ -147,8 +144,8 @@ func (ubi *UltraBatchIndexer) AddBatch(docIDs []uint32, texts []string) {
 	}
 
 	results := make([]workerResult, numWorkers)
-	for w := 0; w < numWorkers; w++ {
-		for s := 0; s < 256; s++ {
+	for w := range numWorkers {
+		for s := range 256 {
 			results[w].postings[s] = make([]struct {
 				hash  uint64
 				docID uint32
@@ -162,12 +159,9 @@ func (ubi *UltraBatchIndexer) AddBatch(docIDs []uint32, texts []string) {
 	batchSize := (numDocs + numWorkers - 1) / numWorkers
 
 	// Phase 1: Parallel tokenization - each worker accumulates independently
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		start := w * batchSize
-		end := start + batchSize
-		if end > numDocs {
-			end = numDocs
-		}
+		end := min(start+batchSize, numDocs)
 		if start >= end {
 			break
 		}
@@ -182,11 +176,7 @@ func (ubi *UltraBatchIndexer) AddBatch(docIDs []uint32, texts []string) {
 
 			for i := start; i < end; i++ {
 				docID := docIDs[i]
-				docLen := TokenizeUltraBatch(texts[i], &hashBuf, &freqBuf)
-
-				if docLen > 65535 {
-					docLen = 65535
-				}
+				docLen := min(TokenizeUltraBatch(texts[i], &hashBuf, &freqBuf), 65535)
 				result.docLens = append(result.docLens, uint16(docLen))
 				result.totalLen += uint64(docLen)
 
@@ -207,7 +197,7 @@ func (ubi *UltraBatchIndexer) AddBatch(docIDs []uint32, texts []string) {
 	// Collect doc lengths
 	var allDocLens []uint16
 	var totalLen uint64
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		allDocLens = append(allDocLens, results[w].docLens...)
 		totalLen += results[w].totalLen
 	}
@@ -222,12 +212,9 @@ func (ubi *UltraBatchIndexer) AddBatch(docIDs []uint32, texts []string) {
 	// Phase 2: Parallel shard updates
 	shardsPerWorker := (256 + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startShard := w * shardsPerWorker
-		endShard := startShard + shardsPerWorker
-		if endShard > 256 {
-			endShard = 256
-		}
+		endShard := min(startShard+shardsPerWorker, 256)
 		if startShard >= endShard {
 			break
 		}
@@ -279,7 +266,7 @@ func (ubi *UltraBatchIndexer) Finish() (*SegmentedIndex, error) {
 	avgDocLen := float64(ubi.totalLen.Load()) / float64(numDocs)
 	terms := make(map[string]*SegmentPostings)
 
-	for shardID := 0; shardID < 256; shardID++ {
+	for shardID := range 256 {
 		shard := ubi.shards[shardID]
 		for hash, pl := range shard.terms {
 			hashKey := hashToKey(hash)
@@ -344,7 +331,7 @@ func NewStreamingBatchIndexer(outDir string, cfg UltraBatchConfig) *StreamingBat
 		docLens: make([]uint16, 0, 4000000),
 	}
 
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		sbi.shards[i] = &streamBatchShard{
 			terms: make(map[uint64]*streamBatchPostings, 10000),
 		}
@@ -409,10 +396,7 @@ func (sbi *StreamingBatchIndexer) AddBatch(docIDs []uint32, texts []string) {
 	}
 
 	numDocs := len(texts)
-	numWorkers := sbi.config.NumWorkers
-	if numWorkers > numDocs {
-		numWorkers = numDocs
-	}
+	numWorkers := min(sbi.config.NumWorkers, numDocs)
 
 	// Per-worker shard buffers
 	type posting struct {
@@ -421,9 +405,9 @@ func (sbi *StreamingBatchIndexer) AddBatch(docIDs []uint32, texts []string) {
 		freq  uint16
 	}
 	workerShards := make([][][]posting, numWorkers)
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		workerShards[w] = make([][]posting, 256)
-		for s := 0; s < 256; s++ {
+		for s := range 256 {
 			workerShards[w][s] = make([]posting, 0, 32)
 		}
 	}
@@ -433,12 +417,9 @@ func (sbi *StreamingBatchIndexer) AddBatch(docIDs []uint32, texts []string) {
 	batchSize := (numDocs + numWorkers - 1) / numWorkers
 
 	// Phase 1: Parallel tokenization with streaming emit
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		start := w * batchSize
-		end := start + batchSize
-		if end > numDocs {
-			end = numDocs
-		}
+		end := min(start+batchSize, numDocs)
 		if start >= end {
 			break
 		}
@@ -456,10 +437,7 @@ func (sbi *StreamingBatchIndexer) AddBatch(docIDs []uint32, texts []string) {
 					myShards[shardID] = append(myShards[shardID], posting{hash, docID, freq})
 				}
 
-				docLen := TokenizeStreaming(texts[i], emit)
-				if docLen > 65535 {
-					docLen = 65535
-				}
+				docLen := min(TokenizeStreaming(texts[i], emit), 65535)
 				docLensLocal[i] = uint16(docLen)
 			}
 		}(w, start, end)
@@ -481,12 +459,9 @@ func (sbi *StreamingBatchIndexer) AddBatch(docIDs []uint32, texts []string) {
 	// Phase 2: Merge to shards
 	shardsPerWorker := (256 + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startShard := w * shardsPerWorker
-		endShard := startShard + shardsPerWorker
-		if endShard > 256 {
-			endShard = 256
-		}
+		endShard := min(startShard+shardsPerWorker, 256)
 		if startShard >= endShard {
 			break
 		}
@@ -537,7 +512,7 @@ func (sbi *StreamingBatchIndexer) Finish() (*SegmentedIndex, error) {
 	avgDocLen := float64(sbi.totalLen.Load()) / float64(numDocs)
 	terms := make(map[string]*SegmentPostings)
 
-	for shardID := 0; shardID < 256; shardID++ {
+	for shardID := range 256 {
 		shard := sbi.shards[shardID]
 		for hash, pl := range shard.terms {
 			hashKey := hashToKey(hash)

@@ -33,7 +33,7 @@ func (h *SyncedBlocks) Get(c *mizu.Ctx) error {
 	}
 
 	// Map to frontend expected format
-	response := map[string]interface{}{
+	response := map[string]any{
 		"id":          sb.ID,
 		"pageId":      sb.PageID,
 		"pageName":    sb.PageName,
@@ -98,7 +98,7 @@ func (h *SyncedBlocks) ListByPage(c *mizu.Ctx) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{"synced_blocks": sbs})
+	return c.JSON(http.StatusOK, map[string]any{"synced_blocks": sbs})
 }
 
 // ListByWorkspace returns all synced blocks in a workspace.
@@ -110,28 +110,28 @@ func (h *SyncedBlocks) ListByWorkspace(c *mizu.Ctx) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{"synced_blocks": sbs})
+	return c.JSON(http.StatusOK, map[string]any{"synced_blocks": sbs})
 }
 
 // mapBlocksToContent converts blocks to frontend content format.
-func mapBlocksToContent(blks []blocks.Block) []map[string]interface{} {
-	var result []map[string]interface{}
+func mapBlocksToContent(blks []blocks.Block) []map[string]any {
+	var result []map[string]any
 	for _, b := range blks {
-		content := map[string]interface{}{
+		content := map[string]any{
 			"id":   b.ID,
 			"type": string(b.Type),
 		}
 
 		// Map content fields
 		if b.Content.RichText != nil {
-			richText := make([]map[string]interface{}, len(b.Content.RichText))
+			richText := make([]map[string]any, len(b.Content.RichText))
 			for i, rt := range b.Content.RichText {
-				richText[i] = map[string]interface{}{
+				richText[i] = map[string]any{
 					"text":        rt.Text,
 					"annotations": rt.Annotations,
 				}
 			}
-			content["content"] = map[string]interface{}{
+			content["content"] = map[string]any{
 				"rich_text": richText,
 				"checked":   b.Content.Checked,
 				"icon":      b.Content.Icon,

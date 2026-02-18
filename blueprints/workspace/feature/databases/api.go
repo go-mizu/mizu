@@ -36,19 +36,19 @@ const (
 
 // Database represents a structured collection.
 type Database struct {
-	ID          string          `json:"id"`
-	WorkspaceID string          `json:"workspace_id"`
-	PageID      string          `json:"page_id"`
-	Title       string          `json:"title"`
+	ID          string            `json:"id"`
+	WorkspaceID string            `json:"workspace_id"`
+	PageID      string            `json:"page_id"`
+	Title       string            `json:"title"`
 	Description []blocks.RichText `json:"description,omitempty"`
-	Icon        string          `json:"icon,omitempty"`
-	Cover       string          `json:"cover,omitempty"`
-	IsInline    bool            `json:"is_inline"`
-	Properties  []Property      `json:"properties"`
-	CreatedBy   string          `json:"created_by"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedBy   string          `json:"updated_by"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	Icon        string            `json:"icon,omitempty"`
+	Cover       string            `json:"cover,omitempty"`
+	IsInline    bool              `json:"is_inline"`
+	Properties  []Property        `json:"properties"`
+	CreatedBy   string            `json:"created_by"`
+	CreatedAt   time.Time         `json:"created_at"`
+	UpdatedBy   string            `json:"updated_by"`
+	UpdatedAt   time.Time         `json:"updated_at"`
 }
 
 // Property represents a database column/field.
@@ -56,7 +56,7 @@ type Property struct {
 	ID     string       `json:"id"`
 	Name   string       `json:"name"`
 	Type   PropertyType `json:"type"`
-	Config interface{}  `json:"config,omitempty"`
+	Config any          `json:"config,omitempty"`
 }
 
 // SelectConfig holds configuration for select properties.

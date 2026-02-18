@@ -235,18 +235,19 @@ func (d *Driver) fetchDocuments(ctx context.Context, ids []string) ([]fineweb.Do
 	}
 
 	// Build query with placeholders
-	query := "SELECT id, url, text, dump, date, language, language_score FROM documents WHERE id IN ("
+	var query strings.Builder
+	query.WriteString("SELECT id, url, text, dump, date, language, language_score FROM documents WHERE id IN (")
 	args := make([]any, len(ids))
 	for i, id := range ids {
 		if i > 0 {
-			query += ","
+			query.WriteString(",")
 		}
-		query += "?"
+		query.WriteString("?")
 		args[i] = id
 	}
-	query += ")"
+	query.WriteString(")")
 
-	rows, err := d.db.QueryContext(ctx, query, args...)
+	rows, err := d.db.QueryContext(ctx, query.String(), args...)
 	if err != nil {
 		return nil, fmt.Errorf("querying documents: %w", err)
 	}

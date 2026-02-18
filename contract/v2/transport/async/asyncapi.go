@@ -3,6 +3,7 @@ package async
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 
@@ -31,14 +32,14 @@ func sanitizeTopic(s string) string {
 //
 // v1 mapping:
 //
-// - For each method: two channels
+//   - For each method: two channels
 //     <svc>.<resource>.<method>.request
 //     <svc>.<resource>.<method>.response
 //
-// - Request message schema:
+//   - Request message schema:
 //     Envelope with params pointing to the method input schema
 //
-// - Response message schema:
+//   - Response message schema:
 //     Envelope with result pointing to the method output schema and optional error
 func AsyncAPIDocument(svc *contract.Service) ([]byte, error) {
 	doc, err := buildAsyncAPI(svc)
@@ -151,7 +152,7 @@ func messageForRequest(resource, method string, input contract.TypeRef, declared
 	}
 
 	return map[string]any{
-		"name": resource + "_" + method + "_request",
+		"name":    resource + "_" + method + "_request",
 		"payload": s,
 	}
 }
@@ -178,7 +179,7 @@ func messageForResponse(resource, method string, output contract.TypeRef, declar
 	}
 
 	return map[string]any{
-		"name": resource + "_" + method + "_response",
+		"name":    resource + "_" + method + "_response",
 		"payload": s,
 	}
 }
@@ -306,9 +307,7 @@ func anyOfNull(s map[string]any) map[string]any {
 
 func cloneWithDescription(s map[string]any, desc string) map[string]any {
 	out := make(map[string]any, len(s)+1)
-	for k, v := range s {
-		out[k] = v
-	}
+	maps.Copy(out, s)
 	if desc != "" {
 		out["description"] = desc
 	}

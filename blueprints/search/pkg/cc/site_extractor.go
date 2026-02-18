@@ -52,10 +52,10 @@ func DefaultSiteConfig(domain string) SiteConfig {
 type SiteStats struct {
 	TotalPages int
 
-	fetched  atomic.Int64
-	success  atomic.Int64
-	failed   atomic.Int64
-	skipped  atomic.Int64
+	fetched        atomic.Int64
+	success        atomic.Int64
+	failed         atomic.Int64
+	skipped        atomic.Int64
 	bytesFetched   atomic.Int64
 	bytesExtracted atomic.Int64
 	linksFound     atomic.Int64
@@ -185,10 +185,7 @@ func (s *SiteStats) Render() string {
 	}
 
 	barWidth := 40
-	filled := int(pct / 100 * float64(barWidth))
-	if filled > barWidth {
-		filled = barWidth
-	}
+	filled := min(int(pct/100*float64(barWidth)), barWidth)
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
 
 	var b strings.Builder
@@ -422,9 +419,7 @@ func (se *SiteExtractor) worker(ctx context.Context, id int, ptrCh <-chan WARCPo
 func RunSiteWithDisplay(ctx context.Context, se *SiteExtractor, pointers []WARCPointer, skip map[string]bool, stats *SiteStats) error {
 	displayCtx, displayCancel := context.WithCancel(ctx)
 	var displayWg sync.WaitGroup
-	displayWg.Add(1)
-	go func() {
-		defer displayWg.Done()
+	displayWg.Go(func() {
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 
@@ -442,7 +437,7 @@ func RunSiteWithDisplay(ctx context.Context, se *SiteExtractor, pointers []WARCP
 				return
 			}
 		}
-	}()
+	})
 
 	err := se.ExtractWithWARC(ctx, pointers, skip)
 

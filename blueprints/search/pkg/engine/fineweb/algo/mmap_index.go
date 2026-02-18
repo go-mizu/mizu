@@ -17,11 +17,11 @@ import (
 // Memory usage is controlled by OS page cache, not Go heap.
 type MmapIndex struct {
 	// Memory-mapped data
-	data     []byte
-	file     *os.File
+	data []byte
+	file *os.File
 
 	// Parsed header
-	header   *MmapHeader
+	header *MmapHeader
 
 	// Index into term dictionary (loaded into small amount of memory)
 	termIndex map[string]uint64 // term -> offset in posting section
@@ -34,23 +34,23 @@ type MmapIndex struct {
 
 // MmapHeader is the index file header.
 type MmapHeader struct {
-	Magic       [8]byte  // "MMAPIDX1"
-	Version     uint32
-	NumDocs     uint32
-	NumTerms    uint32
-	AvgDocLen   float64
+	Magic     [8]byte // "MMAPIDX1"
+	Version   uint32
+	NumDocs   uint32
+	NumTerms  uint32
+	AvgDocLen float64
 
 	// Section offsets
-	TermDictOffset   uint64
-	PostingsOffset   uint64
-	DocLensOffset    uint64
-	DocMetaOffset    uint64
+	TermDictOffset uint64
+	PostingsOffset uint64
+	DocLensOffset  uint64
+	DocMetaOffset  uint64
 
 	// Section sizes
-	TermDictSize     uint64
-	PostingsSize     uint64
-	DocLensSize      uint64
-	DocMetaSize      uint64
+	TermDictSize uint64
+	PostingsSize uint64
+	DocLensSize  uint64
+	DocMetaSize  uint64
 }
 
 const (
@@ -69,20 +69,20 @@ type MmapIndexWriter struct {
 	postingsPath   string
 
 	// Buffered writes (small: just term metadata, not postings)
-	termDict     []termEntry
-	docLens      []uint16
+	termDict []termEntry
+	docLens  []uint16
 
 	// Stats
-	numDocs      int
-	avgDocLen    float64
-	postingOff   uint64
+	numDocs    int
+	avgDocLen  float64
+	postingOff uint64
 }
 
 type termEntry struct {
-	term       string
-	offset     uint64 // Offset in postings section
-	docFreq    uint32
-	idf        float32
+	term    string
+	offset  uint64 // Offset in postings section
+	docFreq uint32
+	idf     float32
 }
 
 // NewMmapIndexWriter creates a new index writer with streaming postings.
@@ -415,7 +415,7 @@ func (idx *MmapIndex) GetPostings(term string) ([]uint32, []uint16, float32, boo
 	docIDs := make([]uint32, count)
 	freqs := make([]uint16, count)
 
-	for i := uint32(0); i < count; i++ {
+	for i := range count {
 		docIDs[i] = binary.LittleEndian.Uint32(idx.data[baseOffset : baseOffset+4])
 		freqs[i] = binary.LittleEndian.Uint16(idx.data[baseOffset+4 : baseOffset+6])
 		baseOffset += 6
@@ -678,7 +678,7 @@ func (s *streamingSegment) finishReadingPostings() {
 	buf := make([]byte, bulkSize)
 	io.ReadFull(s.reader, buf)
 
-	for i := uint32(0); i < docLenCount; i++ {
+	for i := range docLenCount {
 		offset := int(i) * 6
 		docID := uint32(buf[offset]) | uint32(buf[offset+1])<<8 | uint32(buf[offset+2])<<16 | uint32(buf[offset+3])<<24
 		length := uint16(buf[offset+4]) | uint16(buf[offset+5])<<8
@@ -702,7 +702,7 @@ func (m *TrueStreamingMerger) Merge() error {
 		seg, err := openStreamingSegment(path)
 		if err != nil {
 			// Clean up already opened segments
-			for j := 0; j < i; j++ {
+			for j := range i {
 				segments[j].close()
 			}
 			return fmt.Errorf("opening segment %s: %w", path, err)

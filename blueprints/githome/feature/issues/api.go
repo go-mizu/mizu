@@ -16,37 +16,37 @@ var (
 
 // Issue represents a GitHub issue
 type Issue struct {
-	ID                int64             `json:"id"`
-	NodeID            string            `json:"node_id"`
-	URL               string            `json:"url"`
-	RepositoryURL     string            `json:"repository_url"`
-	LabelsURL         string            `json:"labels_url"`
-	CommentsURL       string            `json:"comments_url"`
-	EventsURL         string            `json:"events_url"`
-	HTMLURL           string            `json:"html_url"`
-	Number            int               `json:"number"`
-	State             string            `json:"state"` // open, closed
-	StateReason       string            `json:"state_reason,omitempty"` // completed, reopened, not_planned
-	Title             string            `json:"title"`
-	Body              string            `json:"body,omitempty"`
-	User              *users.SimpleUser `json:"user"`
-	Labels            []*Label          `json:"labels"`
-	Assignee          *users.SimpleUser `json:"assignee,omitempty"`
+	ID                int64               `json:"id"`
+	NodeID            string              `json:"node_id"`
+	URL               string              `json:"url"`
+	RepositoryURL     string              `json:"repository_url"`
+	LabelsURL         string              `json:"labels_url"`
+	CommentsURL       string              `json:"comments_url"`
+	EventsURL         string              `json:"events_url"`
+	HTMLURL           string              `json:"html_url"`
+	Number            int                 `json:"number"`
+	State             string              `json:"state"`                  // open, closed
+	StateReason       string              `json:"state_reason,omitempty"` // completed, reopened, not_planned
+	Title             string              `json:"title"`
+	Body              string              `json:"body,omitempty"`
+	User              *users.SimpleUser   `json:"user"`
+	Labels            []*Label            `json:"labels"`
+	Assignee          *users.SimpleUser   `json:"assignee,omitempty"`
 	Assignees         []*users.SimpleUser `json:"assignees"`
-	Milestone         *Milestone        `json:"milestone,omitempty"`
-	Locked            bool              `json:"locked"`
-	ActiveLockReason  string            `json:"active_lock_reason,omitempty"`
-	Comments          int               `json:"comments"`
-	PullRequest       *IssuePR          `json:"pull_request,omitempty"`
-	ClosedAt          *time.Time        `json:"closed_at"`
-	CreatedAt         time.Time         `json:"created_at"`
-	UpdatedAt         time.Time         `json:"updated_at"`
-	ClosedBy          *users.SimpleUser `json:"closed_by,omitempty"`
-	AuthorAssociation string            `json:"author_association"`
-	Reactions         *Reactions        `json:"reactions,omitempty"`
+	Milestone         *Milestone          `json:"milestone,omitempty"`
+	Locked            bool                `json:"locked"`
+	ActiveLockReason  string              `json:"active_lock_reason,omitempty"`
+	Comments          int                 `json:"comments"`
+	PullRequest       *IssuePR            `json:"pull_request,omitempty"`
+	ClosedAt          *time.Time          `json:"closed_at"`
+	CreatedAt         time.Time           `json:"created_at"`
+	UpdatedAt         time.Time           `json:"updated_at"`
+	ClosedBy          *users.SimpleUser   `json:"closed_by,omitempty"`
+	AuthorAssociation string              `json:"author_association"`
+	Reactions         *Reactions          `json:"reactions,omitempty"`
 	// Internal fields
-	RepoID    int64  `json:"-"`
-	CreatorID int64  `json:"-"`
+	RepoID    int64 `json:"-"`
+	CreatorID int64 `json:"-"`
 }
 
 // Label represents a GitHub label (lightweight for issues)
@@ -105,19 +105,19 @@ type Reactions struct {
 
 // IssueEvent represents an issue event
 type IssueEvent struct {
-	ID             int64             `json:"id"`
-	NodeID         string            `json:"node_id"`
-	URL            string            `json:"url"`
-	Actor          *users.SimpleUser `json:"actor"`
-	Event          string            `json:"event"`
-	CommitID       string            `json:"commit_id,omitempty"`
-	CommitURL      string            `json:"commit_url,omitempty"`
-	CreatedAt      time.Time         `json:"created_at"`
-	Label          *Label            `json:"label,omitempty"`
-	Assignee       *users.SimpleUser `json:"assignee,omitempty"`
-	Assigner       *users.SimpleUser `json:"assigner,omitempty"`
-	Milestone      *Milestone        `json:"milestone,omitempty"`
-	Rename         *Rename           `json:"rename,omitempty"`
+	ID        int64             `json:"id"`
+	NodeID    string            `json:"node_id"`
+	URL       string            `json:"url"`
+	Actor     *users.SimpleUser `json:"actor"`
+	Event     string            `json:"event"`
+	CommitID  string            `json:"commit_id,omitempty"`
+	CommitURL string            `json:"commit_url,omitempty"`
+	CreatedAt time.Time         `json:"created_at"`
+	Label     *Label            `json:"label,omitempty"`
+	Assignee  *users.SimpleUser `json:"assignee,omitempty"`
+	Assigner  *users.SimpleUser `json:"assigner,omitempty"`
+	Milestone *Milestone        `json:"milestone,omitempty"`
+	Rename    *Rename           `json:"rename,omitempty"`
 }
 
 // Rename represents a rename event
@@ -155,7 +155,7 @@ type ListOpts struct {
 	State     string    `json:"state,omitempty"`     // open, closed, all
 	Sort      string    `json:"sort,omitempty"`      // created, updated, comments
 	Direction string    `json:"direction,omitempty"` // asc, desc
-	Since     time.Time `json:"since,omitempty"`
+	Since     time.Time `json:"since"`
 	Labels    string    `json:"labels,omitempty"`
 	Milestone string    `json:"milestone,omitempty"` // number, none, *
 	Assignee  string    `json:"assignee,omitempty"`
@@ -208,7 +208,7 @@ type API interface {
 	ListEvents(ctx context.Context, owner, repo string, number int, opts *ListOpts) ([]*IssueEvent, error)
 
 	// CreateEvent creates an event (internal use)
-	CreateEvent(ctx context.Context, issueID, actorID int64, eventType string, data map[string]interface{}) (*IssueEvent, error)
+	CreateEvent(ctx context.Context, issueID, actorID int64, eventType string, data map[string]any) (*IssueEvent, error)
 
 	// CountByState returns the count of issues for a given state
 	CountByState(ctx context.Context, owner, repo, state string) (int, error)

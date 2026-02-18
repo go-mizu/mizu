@@ -429,7 +429,7 @@ func TestService_List_Pagination(t *testing.T) {
 	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
 	createTestRepo(t, reposStore, owner, "testrepo", false)
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		collab := createTestUser(t, usersStore, "collab"+string(rune('a'+i)), "collab"+string(rune('a'+i))+"@example.com")
 		_ = duckdb.NewCollaboratorsStore(db).Add(context.Background(), 1, collab.ID, "push")
 	}

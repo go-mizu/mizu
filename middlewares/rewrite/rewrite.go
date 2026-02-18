@@ -59,8 +59,8 @@ func WithOptions(opts Options) mizu.Middleware {
 						matched = true
 					}
 				} else {
-					if strings.HasPrefix(path, rule.Match) {
-						newPath = rule.Rewrite + strings.TrimPrefix(path, rule.Match)
+					if after, ok := strings.CutPrefix(path, rule.Match); ok {
+						newPath = rule.Rewrite + after
 						matched = true
 					}
 				}

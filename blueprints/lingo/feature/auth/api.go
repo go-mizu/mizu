@@ -41,9 +41,9 @@ type LoginRequest struct {
 
 // AuthResponse represents an authentication response
 type AuthResponse struct {
-	User        interface{} `json:"user"`
-	AccessToken string      `json:"access_token"`
-	ExpiresAt   string      `json:"expires_at"`
+	User        any    `json:"user"`
+	AccessToken string `json:"access_token"`
+	ExpiresAt   string `json:"expires_at"`
 }
 
 // Signup handles POST /auth/signup

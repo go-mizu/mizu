@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -17,7 +18,8 @@ import (
 // Each worker maintains its own segment, avoiding lock contention entirely.
 //
 // Architecture:
-//   [Batch Input] → [Parallel Sharded Workers] → [Local Segments] → [Merge]
+//
+//	[Batch Input] → [Parallel Sharded Workers] → [Local Segments] → [Merge]
 //
 // Each worker:
 // - Receives batches of documents
@@ -25,10 +27,10 @@ import (
 // - Flushes to its own segment files
 type ShardedIndexer struct {
 	// Configuration
-	NumShards    int           // Number of parallel shards (= workers)
-	SegmentSize  int           // Docs per segment before flush
-	OutputDir    string        // Segment output directory
-	Tokenizer    TokenizerFunc // text → term frequencies
+	NumShards   int           // Number of parallel shards (= workers)
+	SegmentSize int           // Docs per segment before flush
+	OutputDir   string        // Segment output directory
+	Tokenizer   TokenizerFunc // text → term frequencies
 
 	// Sharded state
 	shards []*indexShard
@@ -44,11 +46,11 @@ type ShardedIndexer struct {
 
 // indexShard is an independent indexing unit with no shared state.
 type indexShard struct {
-	id        int
-	indexer   *ShardedIndexer
-	docCh     chan shardDoc       // Input channel for this shard
-	segment   *shardSegmentBuilder
-	wg        sync.WaitGroup
+	id      int
+	indexer *ShardedIndexer
+	docCh   chan shardDoc // Input channel for this shard
+	segment *shardSegmentBuilder
+	wg      sync.WaitGroup
 }
 
 type shardDoc struct {
@@ -66,13 +68,7 @@ type shardSegmentBuilder struct {
 
 // NewShardedIndexer creates a high-throughput sharded indexer.
 func NewShardedIndexer(outputDir string, tokenizer TokenizerFunc) *ShardedIndexer {
-	numShards := runtime.NumCPU()
-	if numShards < 4 {
-		numShards = 4
-	}
-	if numShards > 16 {
-		numShards = 16
-	}
+	numShards := min(max(runtime.NumCPU(), 4), 16)
 
 	si := &ShardedIndexer{
 		NumShards:   numShards,
@@ -111,9 +107,7 @@ func (s *indexShard) newSegment() *shardSegmentBuilder {
 }
 
 func (s *indexShard) start() {
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
+	s.wg.Go(func() {
 
 		for doc := range s.docCh {
 			// Tokenize
@@ -144,7 +138,7 @@ func (s *indexShard) start() {
 		if s.segment.numDocs > 0 {
 			s.flushSegment()
 		}
-	}()
+	})
 }
 
 func (s *indexShard) flushSegment() {
@@ -226,7 +220,7 @@ func (s *indexShard) writeSegment(seg *shardSegmentBuilder) *SegmentMeta {
 	for docID := range seg.docLens {
 		docIDs = append(docIDs, docID)
 	}
-	sort.Slice(docIDs, func(i, j int) bool { return docIDs[i] < docIDs[j] })
+	slices.Sort(docIDs)
 
 	fw.WriteUint32(uint32(len(docIDs)))
 	for _, docID := range docIDs {

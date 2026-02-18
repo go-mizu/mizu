@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -20,10 +21,10 @@ import (
 // InstallSpec represents a dependency install option parsed from metadata.
 type InstallSpec struct {
 	ID              string   `json:"id"`
-	Kind            string   `json:"kind"`  // "brew", "node", "go", "uv", "download"
-	Label           string   `json:"label"` // human-readable label
-	Bins            []string `json:"bins"`  // binaries this installs
-	OS              []string `json:"os"`    // platform filter
+	Kind            string   `json:"kind"`            // "brew", "node", "go", "uv", "download"
+	Label           string   `json:"label"`           // human-readable label
+	Bins            []string `json:"bins"`            // binaries this installs
+	OS              []string `json:"os"`              // platform filter
 	Formula         string   `json:"formula"`         // brew formula
 	Package         string   `json:"package"`         // node/uv package
 	Module          string   `json:"module"`          // go module
@@ -82,13 +83,7 @@ func ToInstallOpts(specs []InstallSpec) []types.SkillInstallOpt {
 	for _, spec := range specs {
 		// Filter by OS if specified.
 		if len(spec.OS) > 0 {
-			match := false
-			for _, o := range spec.OS {
-				if o == currentOS {
-					match = true
-					break
-				}
-			}
+			match := slices.Contains(spec.OS, currentOS)
 			if !match {
 				continue
 			}

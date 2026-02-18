@@ -58,7 +58,7 @@ func (s *SearchStore) SearchPosts(ctx context.Context, query string, limit, offs
 		FROM posts
 		WHERE visibility = 'public' AND LOWER(content) LIKE $1
 	`
-	args := []interface{}{pattern}
+	args := []any{pattern}
 	argNum := 2
 
 	if minLikes > 0 {

@@ -21,7 +21,7 @@ func (s *QuestionStore) Create(ctx context.Context, q *store.Question) error {
 	q.CreatedAt = now
 	q.UpdatedAt = now
 
-	var collID interface{}
+	var collID any
 	if q.CollectionID != "" {
 		collID = q.CollectionID
 	}
@@ -108,7 +108,7 @@ func (s *QuestionStore) ListByCollection(ctx context.Context, collectionID strin
 func (s *QuestionStore) Update(ctx context.Context, q *store.Question) error {
 	q.UpdatedAt = time.Now()
 
-	var collID interface{}
+	var collID any
 	if q.CollectionID != "" {
 		collID = q.CollectionID
 	}

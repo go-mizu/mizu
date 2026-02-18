@@ -62,10 +62,7 @@ func (s *StreamIndexer) IndexBatch(texts []string, startDocID int) {
 	var wg sync.WaitGroup
 	for w := 0; w < s.numWorkers; w++ {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(texts) {
-			endIdx = len(texts)
-		}
+		endIdx := min(startIdx+batchSize, len(texts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -154,10 +151,7 @@ func (s *StreamIndexer) BuildIndex() map[uint64]*PostingListBuilder {
 
 	for w := 0; w < s.numWorkers; w++ {
 		startShard := w * shardsPerWorker
-		endShard := startShard + shardsPerWorker
-		if endShard > s.numShards {
-			endShard = s.numShards
-		}
+		endShard := min(startShard+shardsPerWorker, s.numShards)
 		if startShard >= endShard {
 			break
 		}

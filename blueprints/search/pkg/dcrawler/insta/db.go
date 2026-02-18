@@ -108,10 +108,7 @@ func (d *DB) InsertPosts(posts []Post) error {
 	// Build batch INSERT using VALUES
 	const batchSize = 500
 	for i := 0; i < len(posts); i += batchSize {
-		end := i + batchSize
-		if end > len(posts) {
-			end = len(posts)
-		}
+		end := min(i+batchSize, len(posts))
 		batch := posts[i:end]
 
 		var sb strings.Builder
@@ -156,10 +153,7 @@ func (d *DB) InsertComments(comments []Comment) error {
 
 	const batchSize = 500
 	for i := 0; i < len(comments); i += batchSize {
-		end := i + batchSize
-		if end > len(comments) {
-			end = len(comments)
-		}
+		end := min(i+batchSize, len(comments))
 		batch := comments[i:end]
 
 		var sb strings.Builder
@@ -196,10 +190,7 @@ func (d *DB) InsertMedia(items []MediaItem) error {
 
 	const batchSize = 500
 	for i := 0; i < len(items); i += batchSize {
-		end := i + batchSize
-		if end > len(items) {
-			end = len(items)
-		}
+		end := min(i+batchSize, len(items))
 		batch := items[i:end]
 
 		var sb strings.Builder
@@ -227,7 +218,7 @@ type DBStats struct {
 	Posts    int64
 	Comments int64
 	Media    int64
-	DBSize  int64
+	DBSize   int64
 }
 
 // GetStats returns database statistics.

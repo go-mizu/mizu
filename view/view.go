@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -89,9 +90,7 @@ func New(cfg Config) *Engine {
 		cache: make(map[string]*template.Template),
 		funcs: baseFuncs(),
 	}
-	for k, v := range cfg.Funcs {
-		e.funcs[k] = v
-	}
+	maps.Copy(e.funcs, cfg.Funcs)
 	if cfg.FS != nil {
 		e.fs = cfg.FS
 	} else {
@@ -358,4 +357,3 @@ func dictFunc(pairs ...any) (map[string]any, error) {
 }
 
 func listFunc(items ...any) []any { return items }
-

@@ -184,7 +184,7 @@ func (p *devProxy) proxyWebSocket_(c *mizu.Ctx) error {
 
 // devErrorPage generates an error page for dev server connection failures.
 func devErrorPage(err error, target string) []byte {
-	return []byte(fmt.Sprintf(`<!DOCTYPE html>
+	return fmt.Appendf(nil, `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -294,5 +294,5 @@ func devErrorPage(err error, target string) []byte {
         setTimeout(() => location.reload(), 2000);
     </script>
 </body>
-</html>`, target, err.Error()))
+</html>`, target, err.Error())
 }

@@ -54,12 +54,9 @@ func TestHashFunctionComparison(t *testing.T) {
 	// ═══════════════════════════════════════════════════════════════
 	runtime.GC()
 	start := time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -81,12 +78,9 @@ func TestHashFunctionComparison(t *testing.T) {
 	// ═══════════════════════════════════════════════════════════════
 	runtime.GC()
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -108,12 +102,9 @@ func TestHashFunctionComparison(t *testing.T) {
 	// ═══════════════════════════════════════════════════════════════
 	runtime.GC()
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -135,12 +126,9 @@ func TestHashFunctionComparison(t *testing.T) {
 	// ═══════════════════════════════════════════════════════════════
 	runtime.GC()
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -162,12 +150,9 @@ func TestHashFunctionComparison(t *testing.T) {
 	// ═══════════════════════════════════════════════════════════════
 	runtime.GC()
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -189,12 +174,9 @@ func TestHashFunctionComparison(t *testing.T) {
 	// ═══════════════════════════════════════════════════════════════
 	runtime.GC()
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -515,12 +497,9 @@ func TestWorkerScalingHash(t *testing.T) {
 
 		runtime.GC()
 		start := time.Now()
-		for w := 0; w < numWorkers; w++ {
+		for w := range numWorkers {
 			startIdx := w * batchSize
-			endIdx := startIdx + batchSize
-			if endIdx > len(allTexts) {
-				endIdx = len(allTexts)
-			}
+			endIdx := min(startIdx+batchSize, len(allTexts))
 			if startIdx >= endIdx {
 				break
 			}

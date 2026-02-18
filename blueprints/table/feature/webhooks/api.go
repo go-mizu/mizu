@@ -79,7 +79,7 @@ type API interface {
 	ListByBase(ctx context.Context, baseID string) ([]*Webhook, error)
 
 	// Delivery
-	Trigger(ctx context.Context, tableID string, event string, payload interface{}) error
+	Trigger(ctx context.Context, tableID string, event string, payload any) error
 	ListDeliveries(ctx context.Context, webhookID string, opts ListOpts) ([]*Delivery, error)
 	RetryDelivery(ctx context.Context, deliveryID string) error
 }

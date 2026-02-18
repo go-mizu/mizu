@@ -114,7 +114,7 @@ func (h *UI) Workspace(c *mizu.Ctx) error {
 	favs, _ := h.favorites.List(c.Request().Context(), userID, ws.ID)
 	wsList, _ := h.workspaces.ListByUser(c.Request().Context(), userID)
 
-	data := map[string]interface{}{
+	data := map[string]any{
 		"User":       user,
 		"Workspace":  ws,
 		"Workspaces": wsList,
@@ -154,7 +154,7 @@ func (h *UI) Page(c *mizu.Ctx) error {
 	}
 	blocksJSON, _ := json.Marshal(blocksList)
 
-	data := map[string]interface{}{
+	data := map[string]any{
 		"User":       user,
 		"Workspace":  ws,
 		"Workspaces": wsList,
@@ -211,7 +211,7 @@ func (h *UI) Database(c *mizu.Ctx) error {
 		}
 	}
 
-	databaseData := map[string]interface{}{
+	databaseData := map[string]any{
 		"database":   db,
 		"rows":       rowsList,
 		"properties": db.Properties,
@@ -219,7 +219,7 @@ func (h *UI) Database(c *mizu.Ctx) error {
 	}
 	databaseDataJSON, _ := json.Marshal(databaseData)
 
-	data := map[string]interface{}{
+	data := map[string]any{
 		"User":             user,
 		"Workspace":        ws,
 		"Workspaces":       wsList,
@@ -248,7 +248,7 @@ func (h *UI) Search(c *mizu.Ctx) error {
 	pagesList, _ := h.pages.ListByWorkspace(c.Request().Context(), ws.ID, pages.ListOpts{})
 	wsList, _ := h.workspaces.ListByUser(c.Request().Context(), userID)
 
-	data := map[string]interface{}{
+	data := map[string]any{
 		"User":       user,
 		"Workspace":  ws,
 		"Workspaces": wsList,
@@ -273,7 +273,7 @@ func (h *UI) Settings(c *mizu.Ctx) error {
 	membersList, _ := h.members.List(c.Request().Context(), ws.ID)
 	wsList, _ := h.workspaces.ListByUser(c.Request().Context(), userID)
 
-	data := map[string]interface{}{
+	data := map[string]any{
 		"User":       user,
 		"Workspace":  ws,
 		"Workspaces": wsList,
@@ -283,7 +283,7 @@ func (h *UI) Settings(c *mizu.Ctx) error {
 	return h.render(c, "settings", data)
 }
 
-func (h *UI) render(c *mizu.Ctx, name string, data interface{}) error {
+func (h *UI) render(c *mizu.Ctx, name string, data any) error {
 	tmpl, ok := h.templates[name]
 	if !ok {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "template not found"})
@@ -300,7 +300,7 @@ func (h *UI) renderError(c *mizu.Ctx, code int, title, message string) error {
 		return c.JSON(code, map[string]string{"error": message})
 	}
 
-	data := map[string]interface{}{
+	data := map[string]any{
 		"Code":    code,
 		"Title":   title,
 		"Message": message,

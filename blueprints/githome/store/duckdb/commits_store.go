@@ -43,7 +43,7 @@ func (s *CommitsStore) CreateStatus(ctx context.Context, repoID int64, sha strin
 		return err
 	}
 
-	status.NodeID = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Status:%d", status.ID)))
+	status.NodeID = base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Status:%d", status.ID))
 	_, err = s.db.ExecContext(ctx, `UPDATE commit_statuses SET node_id = $1 WHERE id = $2`, status.NodeID, status.ID)
 	return err
 }

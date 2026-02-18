@@ -47,6 +47,6 @@ type SmallWebEntry struct {
 	Snippet     string    `json:"snippet,omitempty"`
 	SourceType  string    `json:"source_type"` // blog, forum, discussion
 	Domain      string    `json:"domain"`
-	PublishedAt time.Time `json:"published_at,omitempty"`
+	PublishedAt time.Time `json:"published_at"`
 	IndexedAt   time.Time `json:"indexed_at"`
 }

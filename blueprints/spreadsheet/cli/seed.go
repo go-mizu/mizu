@@ -163,7 +163,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 	})
 
 	// Create sample data in Sheet1 - Sales Data
-	salesData := [][]interface{}{
+	salesData := [][]any{
 		{"Product", "Q1 Sales", "Q2 Sales", "Q3 Sales", "Q4 Sales", "Total", "% of Total"},
 		{"Laptops", 15000, 18000, 22000, 25000, "=SUM(B2:E2)", "=F2/$F$8"},
 		{"Smartphones", 25000, 28000, 32000, 35000, "=SUM(B3:E3)", "=F3/$F$8"},
@@ -177,7 +177,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 	for row, rowData := range salesData {
 		for col, value := range rowData {
 			var formula string
-			var cellValue interface{}
+			var cellValue any
 
 			if strVal, ok := value.(string); ok && len(strVal) > 0 && strVal[0] == '=' {
 				formula = strVal
@@ -193,7 +193,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 	}
 
 	// Apply formatting to header row
-	for col := 0; col < 7; col++ {
+	for col := range 7 {
 		srv.CellService().SetFormat(ctx, &cells.SetFormatIn{
 			SheetID: sheet1.ID,
 			Row:     0,
@@ -237,7 +237,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 
 	// Create summary sheet data
 	if sheet2 != nil {
-		summaryData := [][]interface{}{
+		summaryData := [][]any{
 			{"Key Metrics", "Value"},
 			{"Total Revenue", "='Sales Data'!F8"},
 			{"Best Product", "Smartphones"},
@@ -254,7 +254,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		for row, rowData := range summaryData {
 			for col, value := range rowData {
 				var formula string
-				var cellValue interface{}
+				var cellValue any
 
 				if strVal, ok := value.(string); ok && len(strVal) > 0 && strVal[0] == '=' {
 					formula = strVal
@@ -272,7 +272,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 
 	// Create Formulas Demo sheet data - Comprehensive showcase of all 209+ functions
 	if sheet3 != nil {
-		formulasData := [][]interface{}{
+		formulasData := [][]any{
 			// Header
 			{"FORMULAS DEMO", "Example Formula", "Result", "Description"},
 			{"209+ Google Sheets Compatible Functions", "", "", ""},
@@ -496,7 +496,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		for row, rowData := range formulasData {
 			for col, value := range rowData {
 				var formula string
-				var cellValue interface{}
+				var cellValue any
 
 				if strVal, ok := value.(string); ok && len(strVal) > 0 && strVal[0] == '=' {
 					formula = strVal
@@ -512,7 +512,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		}
 
 		// Apply formatting to main header
-		for col := 0; col < 4; col++ {
+		for col := range 4 {
 			srv.CellService().SetFormat(ctx, &cells.SetFormatIn{
 				SheetID: sheet3.ID,
 				Row:     0,
@@ -533,7 +533,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			if row >= len(formulasData) {
 				continue
 			}
-			for col := 0; col < 4; col++ {
+			for col := range 4 {
 				srv.CellService().SetFormat(ctx, &cells.SetFormatIn{
 					SheetID: sheet3.ID,
 					Row:     row,
@@ -556,7 +556,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 
 	// Create Inventory sheet with lookup data
 	if sheet4 != nil {
-		inventoryData := [][]interface{}{
+		inventoryData := [][]any{
 			{"SKU", "Product Name", "Category", "Price", "Stock", "Status", "Value"},
 			{"SKU001", "Laptop Pro 15", "Electronics", 1299.99, 45, "=IF(E2<10,\"Low Stock\",IF(E2<25,\"Medium\",\"In Stock\"))", "=D2*E2"},
 			{"SKU002", "Wireless Mouse", "Accessories", 29.99, 150, "=IF(E3<10,\"Low Stock\",IF(E3<25,\"Medium\",\"In Stock\"))", "=D3*E3"},
@@ -579,7 +579,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		for row, rowData := range inventoryData {
 			for col, value := range rowData {
 				var formula string
-				var cellValue interface{}
+				var cellValue any
 
 				if strVal, ok := value.(string); ok && len(strVal) > 0 && strVal[0] == '=' {
 					formula = strVal
@@ -595,7 +595,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		}
 
 		// Apply formatting to header
-		for col := 0; col < 7; col++ {
+		for col := range 7 {
 			srv.CellService().SetFormat(ctx, &cells.SetFormatIn{
 				SheetID: sheet4.ID,
 				Row:     0,
@@ -658,7 +658,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		// All formats are 100% compatible with Google Spreadsheets
 		// ============================================================
 
-		formatsData := [][]interface{}{
+		formatsData := [][]any{
 			// Section 1: Font Styles (Rows 0-11)
 			{"FONT STYLES", "", "", "", "", ""},
 			{"Style", "Example Text", "", "", "", ""},
@@ -790,7 +790,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		// --- Section Headers Formatting ---
 		sectionHeaders := []int{0, 9, 13, 19, 25, 30, 35, 40, 45, 49, 59, 81, 92}
 		for _, row := range sectionHeaders {
-			for col := 0; col < 6; col++ {
+			for col := range 6 {
 				srv.CellService().SetFormat(ctx, &cells.SetFormatIn{
 					SheetID: sheet5.ID,
 					Row:     row,
@@ -851,7 +851,10 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		}
 
 		// --- Font Colors (Rows 14-17) ---
-		fontColors := []struct{ row, col int; color string }{
+		fontColors := []struct {
+			row, col int
+			color    string
+		}{
 			{14, 0, "#000000"}, {14, 1, "#FF0000"}, {14, 2, "#00AA00"}, {14, 3, "#0000FF"}, {14, 4, "#FF9900"}, {14, 5, "#9900FF"},
 			{15, 0, "#000000"}, {15, 1, "#FF0000"}, {15, 2, "#00AA00"}, {15, 3, "#0000FF"}, {15, 4, "#FF9900"}, {15, 5, "#9900FF"},
 			{16, 0, "#666666"}, {16, 1, "#990000"}, {16, 2, "#006600"}, {16, 3, "#000099"}, {16, 4, "#996633"}, {16, 5, "#FF00FF"},
@@ -865,7 +868,10 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		}
 
 		// --- Background Colors (Rows 20-23) ---
-		bgColors := []struct{ row, col int; bg, fg string }{
+		bgColors := []struct {
+			row, col int
+			bg, fg   string
+		}{
 			// Light colors
 			{20, 0, "#FFCDD2", "#000000"}, {20, 1, "#C8E6C9", "#000000"}, {20, 2, "#BBDEFB", "#000000"},
 			{20, 3, "#FFF9C4", "#000000"}, {20, 4, "#FFE0B2", "#000000"}, {20, 5, "#E1BEE7", "#000000"},
@@ -951,11 +957,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			srv.CellService().SetFormat(ctx, &cells.SetFormatIn{
 				SheetID: sheet5.ID, Row: 50, Col: col,
 				Format: cells.Format{
-					BorderTop:    cells.Border{Style: style, Color: "#000000"},
-					BorderRight:  cells.Border{Style: style, Color: "#000000"},
-					BorderBottom: cells.Border{Style: style, Color: "#000000"},
-					BorderLeft:   cells.Border{Style: style, Color: "#000000"},
-					HAlign:       "center",
+					BorderTop:       cells.Border{Style: style, Color: "#000000"},
+					BorderRight:     cells.Border{Style: style, Color: "#000000"},
+					BorderBottom:    cells.Border{Style: style, Color: "#000000"},
+					BorderLeft:      cells.Border{Style: style, Color: "#000000"},
+					HAlign:          "center",
 					BackgroundColor: "#FAFAFA",
 				},
 			})
@@ -981,20 +987,20 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		srv.CellService().SetFormat(ctx, &cells.SetFormatIn{
 			SheetID: sheet5.ID, Row: 57, Col: 0,
 			Format: cells.Format{
-				BorderTop: cells.Border{Style: "thick", Color: "#1976D2"},
-				BorderRight: cells.Border{Style: "thick", Color: "#1976D2"},
+				BorderTop:    cells.Border{Style: "thick", Color: "#1976D2"},
+				BorderRight:  cells.Border{Style: "thick", Color: "#1976D2"},
 				BorderBottom: cells.Border{Style: "thick", Color: "#1976D2"},
-				BorderLeft: cells.Border{Style: "thick", Color: "#1976D2"},
-				HAlign: "center", BackgroundColor: "#E3F2FD",
+				BorderLeft:   cells.Border{Style: "thick", Color: "#1976D2"},
+				HAlign:       "center", BackgroundColor: "#E3F2FD",
 			},
 		})
 		// Top+Bottom only
 		srv.CellService().SetFormat(ctx, &cells.SetFormatIn{
 			SheetID: sheet5.ID, Row: 57, Col: 1,
 			Format: cells.Format{
-				BorderTop: cells.Border{Style: "thick", Color: "#388E3C"},
+				BorderTop:    cells.Border{Style: "thick", Color: "#388E3C"},
 				BorderBottom: cells.Border{Style: "thick", Color: "#388E3C"},
-				HAlign: "center", BackgroundColor: "#E8F5E9",
+				HAlign:       "center", BackgroundColor: "#E8F5E9",
 			},
 		})
 		// Left+Right only
@@ -1002,8 +1008,8 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			SheetID: sheet5.ID, Row: 57, Col: 2,
 			Format: cells.Format{
 				BorderRight: cells.Border{Style: "thick", Color: "#F57C00"},
-				BorderLeft: cells.Border{Style: "thick", Color: "#F57C00"},
-				HAlign: "center", BackgroundColor: "#FFF3E0",
+				BorderLeft:  cells.Border{Style: "thick", Color: "#F57C00"},
+				HAlign:      "center", BackgroundColor: "#FFF3E0",
 			},
 		})
 		// Top only
@@ -1011,23 +1017,26 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			SheetID: sheet5.ID, Row: 57, Col: 3,
 			Format: cells.Format{
 				BorderTop: cells.Border{Style: "thick", Color: "#7B1FA2"},
-				HAlign: "center", BackgroundColor: "#F3E5F5",
+				HAlign:    "center", BackgroundColor: "#F3E5F5",
 			},
 		})
 		// Custom mixed
 		srv.CellService().SetFormat(ctx, &cells.SetFormatIn{
 			SheetID: sheet5.ID, Row: 57, Col: 4,
 			Format: cells.Format{
-				BorderTop: cells.Border{Style: "double", Color: "#D32F2F"},
+				BorderTop:    cells.Border{Style: "double", Color: "#D32F2F"},
 				BorderBottom: cells.Border{Style: "dashed", Color: "#1976D2"},
-				BorderLeft: cells.Border{Style: "thin", Color: "#388E3C"},
-				BorderRight: cells.Border{Style: "dotted", Color: "#F57C00"},
-				HAlign: "center", BackgroundColor: "#FFF8E1",
+				BorderLeft:   cells.Border{Style: "thin", Color: "#388E3C"},
+				BorderRight:  cells.Border{Style: "dotted", Color: "#F57C00"},
+				HAlign:       "center", BackgroundColor: "#FFF8E1",
 			},
 		})
 
 		// --- Number Formats (Rows 61-79) ---
-		numberFormats := []struct{ row int; format string }{
+		numberFormats := []struct {
+			row    int
+			format string
+		}{
 			{61, "#,##0"},
 			{62, "#,##0.00"},
 			{63, "#,##0.0000"},
@@ -1054,7 +1063,10 @@ func runSeed(cmd *cobra.Command, args []string) error {
 
 		// --- Combined Formatting Examples (Rows 82-90) ---
 		// Header row styles
-		headerStyles := []struct{ col int; bg, fg string }{
+		headerStyles := []struct {
+			col    int
+			bg, fg string
+		}{
 			{0, "#1F2937", "#FFFFFF"},
 			{1, "#DC2626", "#FFFFFF"},
 			{2, "#F59E0B", "#000000"},
@@ -1067,7 +1079,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 				SheetID: sheet5.ID, Row: 82, Col: hs.col,
 				Format: cells.Format{
 					Bold: true, FontSize: 12, BackgroundColor: hs.bg, FontColor: hs.fg, HAlign: "center",
-					BorderTop: cells.Border{Style: "thin", Color: "#000000"},
+					BorderTop:    cells.Border{Style: "thin", Color: "#000000"},
 					BorderBottom: cells.Border{Style: "thin", Color: "#000000"},
 				},
 			})
@@ -1079,7 +1091,10 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Format: cells.Format{Bold: true, FontSize: 14, BackgroundColor: "#1F2937", FontColor: "#FFFFFF"},
 		})
 		// Financial data cells
-		finCells := []struct{ row, col int; format string }{
+		finCells := []struct {
+			row, col int
+			format   string
+		}{
 			{85, 1, "$#,##0"}, {85, 4, "$#,##0"},
 			{86, 1, "$#,##0"}, {86, 4, "0.0%"},
 		}
@@ -1091,7 +1106,10 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		}
 
 		// Status indicators
-		statusStyles := []struct{ col int; bg, fg string }{
+		statusStyles := []struct {
+			col    int
+			bg, fg string
+		}{
 			{0, "#10B981", "#FFFFFF"}, // Active - Green
 			{1, "#F59E0B", "#000000"}, // Pending - Amber
 			{2, "#3B82F6", "#FFFFFF"}, // Completed - Blue
@@ -1103,10 +1121,10 @@ func runSeed(cmd *cobra.Command, args []string) error {
 				SheetID: sheet5.ID, Row: 89, Col: ss.col,
 				Format: cells.Format{
 					BackgroundColor: ss.bg, FontColor: ss.fg, Bold: true, HAlign: "center",
-					BorderTop: cells.Border{Style: "thin", Color: "#000000"},
-					BorderRight: cells.Border{Style: "thin", Color: "#000000"},
+					BorderTop:    cells.Border{Style: "thin", Color: "#000000"},
+					BorderRight:  cells.Border{Style: "thin", Color: "#000000"},
 					BorderBottom: cells.Border{Style: "thin", Color: "#000000"},
-					BorderLeft: cells.Border{Style: "thin", Color: "#000000"},
+					BorderLeft:   cells.Border{Style: "thin", Color: "#000000"},
 				},
 			})
 		}
@@ -1148,7 +1166,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		// Section 10: Hierarchy Data (A85:C92) - For Treemap charts
 		// Section 11: Gauge Data (A94:B97) - For Gauge charts
 
-		chartsData := [][]interface{}{
+		chartsData := [][]any{
 			// Section 1: Monthly Sales Data (Rows 0-6)
 			{"Month", "Sales", "Expenses", "Profit", "Growth %"},
 			{"Jan", 45000, 32000, 13000, 0},
@@ -1257,7 +1275,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 					continue
 				}
 				var formula string
-				var cellValue interface{}
+				var cellValue any
 
 				if strVal, ok := value.(string); ok && len(strVal) > 0 && strVal[0] == '=' {
 					formula = strVal
@@ -1690,8 +1708,8 @@ func runSeed(cmd *cobra.Command, args []string) error {
 				StartRow: 84, StartCol: 0, EndRow: 91, EndCol: 2,
 				HasHeader: true,
 			}},
-			Title:  &charts.ChartTitle{Text: "Revenue by Category (Treemap)", FontSize: 16, Bold: true},
-			Legend: &charts.LegendConfig{Enabled: true, Position: "bottom"},
+			Title:   &charts.ChartTitle{Text: "Revenue by Category (Treemap)", FontSize: 16, Bold: true},
+			Legend:  &charts.LegendConfig{Enabled: true, Position: "bottom"},
 			Options: &charts.ChartOptions{Animated: true, TooltipEnabled: true, Interactive: true},
 		})
 
@@ -1706,8 +1724,8 @@ func runSeed(cmd *cobra.Command, args []string) error {
 				StartRow: 93, StartCol: 0, EndRow: 96, EndCol: 2,
 				HasHeader: true,
 			}},
-			Title:  &charts.ChartTitle{Text: "KPI Dashboard", FontSize: 16, Bold: true},
-			Legend: &charts.LegendConfig{Enabled: true, Position: "bottom"},
+			Title:   &charts.ChartTitle{Text: "KPI Dashboard", FontSize: 16, Bold: true},
+			Legend:  &charts.LegendConfig{Enabled: true, Position: "bottom"},
 			Options: &charts.ChartOptions{Animated: true, TooltipEnabled: true, Interactive: true},
 		})
 	}

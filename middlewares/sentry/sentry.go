@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"os"
 	"runtime"
@@ -210,9 +211,7 @@ func newEvent(opts Options) *Event {
 	}
 
 	// Add default tags
-	for k, v := range opts.Tags {
-		event.Tags[k] = v
-	}
+	maps.Copy(event.Tags, opts.Tags)
 
 	// Add runtime context
 	event.Contexts["runtime"] = map[string]any{

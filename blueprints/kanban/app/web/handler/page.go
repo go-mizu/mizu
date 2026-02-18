@@ -1764,9 +1764,9 @@ func buildCalendarGrid(year int, month time.Month, allIssues []*issues.Issue, co
 	weeks := make([][]CalendarDay, 6)
 	today := time.Now().Truncate(24 * time.Hour)
 
-	for w := 0; w < 6; w++ {
+	for w := range 6 {
 		weeks[w] = make([]CalendarDay, 7)
-		for d := 0; d < 7; d++ {
+		for d := range 7 {
 			date := gridStart.AddDate(0, 0, w*7+d)
 			dateKey := date.Format("2006-01-02")
 

@@ -523,14 +523,14 @@ func (s *Store) SearchLike(ctx context.Context, query string, limit, offset int)
 
 // SearchComparison contains results from both search methods for comparison.
 type SearchComparison struct {
-	Query       string
-	FTS         *SearchResult
-	LIKE        *SearchResult
-	FTSError    error
-	LIKEError   error
-	Overlap     int     // Number of common documents in results
-	OverlapPct  float64 // Percentage overlap (based on smaller result set)
-	SpeedupPct  float64 // How much faster FTS is vs LIKE (negative means LIKE is faster)
+	Query      string
+	FTS        *SearchResult
+	LIKE       *SearchResult
+	FTSError   error
+	LIKEError  error
+	Overlap    int     // Number of common documents in results
+	OverlapPct float64 // Percentage overlap (based on smaller result set)
+	SpeedupPct float64 // How much faster FTS is vs LIKE (negative means LIKE is faster)
 }
 
 // CompareSearch runs both FTS and LIKE search and compares results.
@@ -550,10 +550,7 @@ func (s *Store) CompareSearch(ctx context.Context, query string, limit int) (*Se
 		comp.Overlap = calculateOverlap(comp.FTS.Documents, comp.LIKE.Documents)
 
 		// Calculate overlap percentage based on smaller result set
-		minLen := len(comp.FTS.Documents)
-		if len(comp.LIKE.Documents) < minLen {
-			minLen = len(comp.LIKE.Documents)
-		}
+		minLen := min(len(comp.LIKE.Documents), len(comp.FTS.Documents))
 		if minLen > 0 {
 			comp.OverlapPct = float64(comp.Overlap) / float64(minLen) * 100
 		}

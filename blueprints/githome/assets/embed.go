@@ -116,7 +116,7 @@ func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 		"subtract": func(a, b int) int {
 			return a - b
 		},
-		"mul": func(a, b interface{}) interface{} {
+		"mul": func(a, b any) any {
 			// Support both int and float multiplication
 			switch av := a.(type) {
 			case int:
@@ -136,7 +136,7 @@ func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 			}
 			return 0
 		},
-		"div": func(a, b interface{}) interface{} {
+		"div": func(a, b any) any {
 			// Support both int and float division
 			switch av := a.(type) {
 			case int:
@@ -171,13 +171,13 @@ func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 		"mod": func(a, b int) int {
 			return a % b
 		},
-		"eq": func(a, b interface{}) bool {
+		"eq": func(a, b any) bool {
 			return a == b
 		},
-		"ne": func(a, b interface{}) bool {
+		"ne": func(a, b any) bool {
 			return a != b
 		},
-		"default": func(def, val interface{}) interface{} {
+		"default": func(def, val any) any {
 			if val == nil || val == "" {
 				return def
 			}
@@ -268,7 +268,7 @@ func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 		"toFloat": func(n int) float64 {
 			return float64(n)
 		},
-		"iterate": func(count interface{}) []int {
+		"iterate": func(count any) []int {
 			var n int
 			switch v := count.(type) {
 			case int:
@@ -287,7 +287,7 @@ func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 			}
 			return result
 		},
-		"formatTimeAgo": func(t interface{}) string {
+		"formatTimeAgo": func(t any) string {
 			var when time.Time
 			switch v := t.(type) {
 			case time.Time:

@@ -2,6 +2,7 @@ package local
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/engine/local/engines"
@@ -140,34 +141,32 @@ func (qp *QueryParser) Parse(query string) *ParsedQuery {
 }
 
 func appendIfNotExists(slice []engines.Category, item engines.Category) []engines.Category {
-	for _, s := range slice {
-		if s == item {
-			return slice
-		}
+	if slices.Contains(slice, item) {
+		return slice
 	}
 	return append(slice, item)
 }
 
 // ExternalBangs contains known external bangs (search on other sites).
 var ExternalBangs = map[string]string{
-	"yt":       "https://www.youtube.com/results?search_query=%s",
-	"youtube":  "https://www.youtube.com/results?search_query=%s",
-	"tw":       "https://twitter.com/search?q=%s",
-	"twitter":  "https://twitter.com/search?q=%s",
-	"reddit":   "https://www.reddit.com/search/?q=%s",
-	"re":       "https://www.reddit.com/search/?q=%s",
-	"amazon":   "https://www.amazon.com/s?k=%s",
-	"amz":      "https://www.amazon.com/s?k=%s",
-	"ebay":     "https://www.ebay.com/sch/i.html?_nkw=%s",
-	"maps":     "https://www.openstreetmap.org/search?query=%s",
-	"osm":      "https://www.openstreetmap.org/search?query=%s",
-	"gmaps":    "https://www.google.com/maps/search/%s",
-	"imdb":     "https://www.imdb.com/find?q=%s",
-	"wiki":     "https://en.wikipedia.org/wiki/Special:Search?search=%s",
-	"wolfram":  "https://www.wolframalpha.com/input/?i=%s",
-	"wa":       "https://www.wolframalpha.com/input/?i=%s",
-	"wayback":  "https://web.archive.org/web/*/%s",
-	"archive":  "https://web.archive.org/web/*/%s",
+	"yt":      "https://www.youtube.com/results?search_query=%s",
+	"youtube": "https://www.youtube.com/results?search_query=%s",
+	"tw":      "https://twitter.com/search?q=%s",
+	"twitter": "https://twitter.com/search?q=%s",
+	"reddit":  "https://www.reddit.com/search/?q=%s",
+	"re":      "https://www.reddit.com/search/?q=%s",
+	"amazon":  "https://www.amazon.com/s?k=%s",
+	"amz":     "https://www.amazon.com/s?k=%s",
+	"ebay":    "https://www.ebay.com/sch/i.html?_nkw=%s",
+	"maps":    "https://www.openstreetmap.org/search?query=%s",
+	"osm":     "https://www.openstreetmap.org/search?query=%s",
+	"gmaps":   "https://www.google.com/maps/search/%s",
+	"imdb":    "https://www.imdb.com/find?q=%s",
+	"wiki":    "https://en.wikipedia.org/wiki/Special:Search?search=%s",
+	"wolfram": "https://www.wolframalpha.com/input/?i=%s",
+	"wa":      "https://www.wolframalpha.com/input/?i=%s",
+	"wayback": "https://web.archive.org/web/*/%s",
+	"archive": "https://web.archive.org/web/*/%s",
 }
 
 // GetExternalBangURL returns the URL for an external bang, or empty string if not found.

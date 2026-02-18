@@ -246,7 +246,7 @@ func TestFromContext(t *testing.T) {
 
 func TestGenerateSessionID(t *testing.T) {
 	ids := make(map[string]bool)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		id := generateSessionID()
 		if len(id) != 64 { // 32 bytes = 64 hex chars
 			t.Errorf("expected 64 char ID, got %d", len(id))

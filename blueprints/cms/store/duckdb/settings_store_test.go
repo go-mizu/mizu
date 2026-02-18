@@ -192,7 +192,7 @@ func TestSettingsStore_GetAll(t *testing.T) {
 	store := NewSettingsStore(db)
 	ctx := context.Background()
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		setting := &settings.Setting{
 			ID:        "setting-all-" + string(rune('a'+i)),
 			Key:       "all_key_" + string(rune('a'+i)),

@@ -257,7 +257,7 @@ func TestCollector(t *testing.T) {
 	})
 
 	// Make 3 requests
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)

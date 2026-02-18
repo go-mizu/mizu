@@ -30,7 +30,7 @@ func (s *SearchStore) Search(ctx context.Context, query string, opts store.Searc
 
 	// Build the search query
 	var conditions []string
-	var args []interface{}
+	var args []any
 	argIdx := 1
 
 	// Main full-text search condition

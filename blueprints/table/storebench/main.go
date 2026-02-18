@@ -11,7 +11,7 @@ func Main(args []string) {
 	cfg := DefaultConfig()
 
 	// Parse arguments
-	for i := 0; i < len(args); i++ {
+	for i := range args {
 		arg := args[i]
 		switch {
 		case arg == "--help" || arg == "-h":

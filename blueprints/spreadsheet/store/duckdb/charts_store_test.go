@@ -291,7 +291,7 @@ func TestChartsStore_ListBySheet(t *testing.T) {
 	now := FixedTime()
 
 	// Create multiple charts
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		chart := &charts.Chart{
 			ID:        NewTestID(),
 			SheetID:   f.Sheet.ID,

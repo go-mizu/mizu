@@ -186,7 +186,7 @@ func TestMessagesStore_List(t *testing.T) {
 	ch := createTestChannel(t, channelsStore, srv.ID, "general")
 
 	// Create multiple messages
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		msg := &messages.Message{
 			ID:        "msg-" + string(rune('A'+i)),
 			ChannelID: ch.ID,
@@ -230,7 +230,7 @@ func TestMessagesStore_ListWithPagination(t *testing.T) {
 	ch := createTestChannel(t, channelsStore, srv.ID, "general")
 
 	// Create messages with sequential IDs
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		msg := &messages.Message{
 			ID:        "msg-" + string(rune('A'+i)),
 			ChannelID: ch.ID,

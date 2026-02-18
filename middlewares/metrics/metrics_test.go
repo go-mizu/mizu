@@ -80,7 +80,7 @@ func TestMetrics_PathCounts(t *testing.T) {
 	})
 
 	// Multiple requests to users
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		req := httptest.NewRequest(http.MethodGet, "/api/users", nil)
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
@@ -164,7 +164,7 @@ func TestMetrics_Reset(t *testing.T) {
 	})
 
 	// Make requests
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
@@ -189,7 +189,7 @@ func TestMetrics_Concurrent(t *testing.T) {
 	})
 
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -218,7 +218,7 @@ func TestMetrics_AverageDuration(t *testing.T) {
 		return c.Text(http.StatusOK, "ok")
 	})
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)

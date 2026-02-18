@@ -1,5 +1,7 @@
 package contract
 
+import "maps"
+
 // registerOptions holds configuration for service registration.
 type registerOptions struct {
 	name            string
@@ -24,9 +26,9 @@ type HTTPBinding struct {
 type StreamMode string
 
 const (
-	StreamSSE  StreamMode = "sse"
-	StreamWS   StreamMode = "ws"
-	StreamGRPC StreamMode = "grpc"
+	StreamSSE   StreamMode = "sse"
+	StreamWS    StreamMode = "ws"
+	StreamGRPC  StreamMode = "grpc"
 	StreamAsync StreamMode = "async"
 )
 
@@ -70,9 +72,7 @@ func WithDefaults(client Client) Option {
 // WithHTTP provides explicit HTTP bindings for methods.
 func WithHTTP(bindings map[string]HTTPBinding) Option {
 	return func(o *registerOptions) {
-		for k, v := range bindings {
-			o.http[k] = v
-		}
+		maps.Copy(o.http, bindings)
 	}
 }
 
