@@ -1,6 +1,6 @@
 module github.com/go-mizu/mizu/blueprints/book
 
-go 1.25
+go 1.26
 
 require (
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834

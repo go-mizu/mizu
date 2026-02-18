@@ -1,6 +1,6 @@
 module github.com/go-mizu/mizu/cmd
 
-go 1.25
+go 1.26
 
 // Workspace replace directive (active for local development)
 // When installing via `go install`, this is ignored and Go fetches

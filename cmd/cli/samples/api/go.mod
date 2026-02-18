@@ -1,6 +1,6 @@
 module example.com/api
 
-go 1.25
+go 1.26
 
 require github.com/go-mizu/mizu v0.3.9
 
