@@ -178,6 +178,7 @@ func (c *Crawler) discoverFromSitemaps(ctx context.Context) ([]string, error) {
 
 	var allIDs []string
 	var mu sync.Mutex
+	var sitemapFails atomic.Int64
 
 	sem := make(chan struct{}, 10)
 	var wg sync.WaitGroup
@@ -199,8 +200,45 @@ func (c *Crawler) discoverFromSitemaps(ctx context.Context) ([]string, error) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			urlSet, err := c.client.FetchSitemap(ctx, url)
-			if err != nil {
+			// Retry sitemap fetch up to 3 times with backoff (skip 404s)
+			var urlSet *URLSet
+			var fetchErr error
+			for attempt := 0; attempt < 3; attempt++ {
+				if ctx.Err() != nil {
+					c.sitemapsDone.Add(1)
+					sitemapFails.Add(1)
+					return
+				}
+				if attempt > 0 {
+					time.Sleep(time.Duration(attempt) * 2 * time.Second)
+				}
+				// Rate limit sitemap fetches to avoid WAF
+				if c.limiter != nil {
+					c.limiter.Wait(ctx)
+				}
+				urlSet, fetchErr = c.client.FetchSitemap(ctx, url)
+				if fetchErr == nil {
+					break
+				}
+				// Don't retry 404s — sitemap genuinely doesn't exist
+				if strings.Contains(fetchErr.Error(), "HTTP 404") {
+					break
+				}
+			}
+
+			c.sitemapsDone.Add(1)
+
+			if fetchErr != nil {
+				sitemapFails.Add(1)
+				done := c.sitemapsDone.Load()
+				total := c.sitemapsTotal.Load()
+				if done%50 == 0 || done == total {
+					mu.Lock()
+					n := len(allIDs)
+					mu.Unlock()
+					fmt.Printf("    Sitemaps: %d/%d processed (%d failed), %d articles found\n",
+						done, total, sitemapFails.Load(), n)
+				}
 				return
 			}
 
@@ -216,20 +254,96 @@ func (c *Crawler) discoverFromSitemaps(ctx context.Context) ([]string, error) {
 			mu.Unlock()
 
 			c.db.MarkSitemap(url, len(ids))
-			c.sitemapsDone.Add(1)
 
 			done := c.sitemapsDone.Load()
 			total := c.sitemapsTotal.Load()
 			if done%50 == 0 || done == total {
+				fails := sitemapFails.Load()
 				mu.Lock()
 				n := len(allIDs)
 				mu.Unlock()
-				fmt.Printf("    Sitemaps: %d/%d processed, %d articles found\n", done, total, n)
+				if fails > 0 {
+					fmt.Printf("    Sitemaps: %d/%d processed (%d failed), %d articles found\n",
+						done, total, fails, n)
+				} else {
+					fmt.Printf("    Sitemaps: %d/%d processed, %d articles found\n",
+						done, total, n)
+				}
 			}
 		}(sitemapURL)
 	}
 
 	wg.Wait()
+
+	// Retry failed sitemaps: collect those not yet in DB
+	fails := sitemapFails.Load()
+	if fails > 0 {
+		fmt.Printf("    Retrying %d failed sitemaps...\n", fails)
+		sitemapFails.Store(0)
+		var retryURLs []string
+		dbSitemaps, _ := c.db.FetchedSitemaps()
+		for _, url := range sitemapURLs {
+			if dbSitemaps != nil && dbSitemaps[url] {
+				continue
+			}
+			if fetchedSitemaps != nil && fetchedSitemaps[url] {
+				continue
+			}
+			retryURLs = append(retryURLs, url)
+		}
+
+		// Retry with lower concurrency and longer backoff
+		retrySem := make(chan struct{}, 5)
+		var retryWg sync.WaitGroup
+
+		for _, sitemapURL := range retryURLs {
+			if ctx.Err() != nil {
+				break
+			}
+
+			retryWg.Add(1)
+			retrySem <- struct{}{}
+
+			go func(url string) {
+				defer retryWg.Done()
+				defer func() { <-retrySem }()
+
+				// Rate limit + extra delay for retry round
+				if c.limiter != nil {
+					c.limiter.Wait(ctx)
+				}
+				time.Sleep(500 * time.Millisecond)
+
+				urlSet, err := c.client.FetchSitemap(ctx, url)
+				if err != nil {
+					sitemapFails.Add(1)
+					return
+				}
+
+				var ids []string
+				for _, u := range urlSet.URLs {
+					if id := ExtractArticleID(u.Loc); id != "" {
+						ids = append(ids, id)
+					}
+				}
+
+				mu.Lock()
+				allIDs = append(allIDs, ids...)
+				mu.Unlock()
+
+				c.db.MarkSitemap(url, len(ids))
+			}(sitemapURL)
+		}
+
+		retryWg.Wait()
+		retryFails := sitemapFails.Load()
+		if retryFails > 0 {
+			fmt.Printf("    Retry complete: %d sitemaps still failed\n", retryFails)
+		} else {
+			fmt.Printf("    Retry complete: all sitemaps succeeded\n")
+		}
+	}
+
 	return allIDs, nil
 }
 

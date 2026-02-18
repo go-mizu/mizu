@@ -15,6 +15,7 @@ type Stats struct {
 	failed   atomic.Int64
 	timeout  atomic.Int64
 	blocked  atomic.Int64 // pages detected as soft 404 / anti-bot
+	skipped  atomic.Int64 // URLs skipped by adaptive URL class filter
 	bytes    atomic.Int64
 	fetchMs  atomic.Int64
 	inFlight atomic.Int64
@@ -65,6 +66,9 @@ type Stats struct {
 	// Freeze
 	frozen   bool
 	frozenAt time.Duration
+
+	// TUI init log channel (non-nil when RunWithDisplay is used)
+	initLog chan string
 }
 
 type speedTick struct {
@@ -157,6 +161,16 @@ func (s *Stats) Blocked() int64 {
 	return s.blocked.Load()
 }
 
+// RecordSkipped increments the skipped counter (adaptive URL class filter).
+func (s *Stats) RecordSkipped() {
+	s.skipped.Add(1)
+}
+
+// Skipped returns the count of URLs skipped by adaptive filtering.
+func (s *Stats) Skipped() int64 {
+	return s.skipped.Load()
+}
+
 // RecordDepth records a page crawled at a given depth.
 func (s *Stats) RecordDepth(depth int) {
 	s.depthMu.Lock()
@@ -194,7 +208,7 @@ func (s *Stats) Elapsed() time.Duration {
 
 // Done returns the total processed count.
 func (s *Stats) Done() int64 {
-	return s.success.Load() + s.failed.Load() + s.timeout.Load() + s.blocked.Load()
+	return s.success.Load() + s.failed.Load() + s.timeout.Load() + s.blocked.Load() + s.skipped.Load()
 }
 
 // Speed returns the current pages/sec (rolling 10-second window).
@@ -256,168 +270,6 @@ func (s *Stats) AvgFetchMs() float64 {
 	return float64(s.fetchMs.Load()) / float64(done)
 }
 
-// Render returns a formatted stats display string.
-func (s *Stats) Render() string {
-	// Snapshot all counters together FIRST to keep them consistent.
-	// success is incremented AFTER bytes in RecordSuccess, so reading
-	// success first then bytes guarantees bytes >= what success accounts for.
-	succ := s.success.Load()
-	bytesTotal := s.bytes.Load()
-	fail := s.failed.Load()
-	tout := s.timeout.Load()
-	blk := s.blocked.Load()
-	inflight := s.inFlight.Load()
-	done := succ + fail + tout + blk
-
-	// Heavy operations after snapshot (Speed acquires mutex, does slice work)
-	speed := s.Speed()
-	elapsed := s.Elapsed()
-	bw := s.ByteSpeed()
-
-	// Progress bar or open-ended counter
-	var progressLine string
-	if s.MaxPages > 0 {
-		pct := float64(succ) / float64(s.MaxPages) * 100
-		if pct > 100 {
-			pct = 100
-		}
-		barWidth := 40
-		filled := int(pct / 100 * float64(barWidth))
-		if filled > barWidth {
-			filled = barWidth
-		}
-		bar := strings.Repeat("\u2588", filled) + strings.Repeat("\u2591", barWidth-filled)
-		progressLine = fmt.Sprintf("  %s  %5.1f%%  %s ok / %s target  (%s total)", bar, pct, fmtInt64(succ), fmtInt(s.MaxPages), fmtInt64(done))
-	} else {
-		barWidth := 40
-		// Pulsing bar for open-ended crawl
-		pos := int(elapsed.Seconds()*2) % (barWidth * 2)
-		if pos >= barWidth {
-			pos = barWidth*2 - pos - 1
-		}
-		var bar strings.Builder
-		for i := range barWidth {
-			if i >= pos-1 && i <= pos+1 {
-				bar.WriteString("\u2588")
-			} else {
-				bar.WriteString("\u2591")
-			}
-		}
-		mode := ""
-		if s.continuous {
-			mode = " [continuous]"
-		}
-		progressLine = fmt.Sprintf("  %s  %s pages%s", bar.String(), fmtInt64(done), mode)
-	}
-
-	// ETA
-	eta := "---"
-	if s.continuous {
-		eta = "continuous"
-	} else if s.MaxPages > 0 && elapsed.Seconds() > 2 && succ > 0 && speed > 0 {
-		successRate := float64(succ) / float64(done)
-		effectiveSpeed := speed * successRate // pages/sec that are actually successful
-		remaining := int64(s.MaxPages) - succ
-		if remaining > 0 && effectiveSpeed > 0 {
-			etaDur := time.Duration(float64(remaining)/effectiveSpeed) * time.Second
-			eta = formatDuration(etaDur)
-		} else {
-			eta = "done"
-		}
-	}
-
-	// Frontier stats
-	frontierQ := "---"
-	bloomN := "---"
-	if s.frontierLen != nil {
-		frontierQ = fmtInt(s.frontierLen())
-	}
-	if s.bloomCount != nil {
-		bloomN = fmtInt(int(s.bloomCount()))
-	}
-
-	statusLine := s.statusLine()
-	depthLine := s.depthLine()
-
-	avgPage := int64(0)
-	if succ > 0 {
-		avgPage = bytesTotal / succ
-	}
-
-	var b strings.Builder
-
-	// === Header: domain + key metrics ===
-	b.WriteString(fmt.Sprintf("  Crawl: %s\n", s.Label))
-	b.WriteString(progressLine + "\n")
-	b.WriteString("\n")
-
-	// === SPEED (the important line) ===
-	b.WriteString(fmt.Sprintf("  Speed     %s pages/s  \u2502  Peak %s/s  \u2502  Bandwidth %s/s\n",
-		fmtInt64(int64(speed)), fmtInt64(int64(s.peakSpeed)), fmtBytes(int64(bw))))
-
-	// === TOTALS ===
-	b.WriteString(fmt.Sprintf("  Pages     %s done  \u2502  %s ok (%4.1f%%)  \u2502  %s total  \u2502  avg %s/page\n",
-		fmtInt64(done), fmtInt64(succ), safePct(succ, done), fmtBytes(bytesTotal), fmtBytes(avgPage)))
-
-	// === TIMING ===
-	b.WriteString(fmt.Sprintf("  Elapsed   %s  \u2502  ETA %s  \u2502  Avg %dms/req  \u2502  In-flight %s\n",
-		formatDuration(elapsed), eta, int(s.AvgFetchMs()), fmtInt64(inflight)))
-	b.WriteString("\n")
-
-	// === Results breakdown ===
-	retryCount := s.retries.Load()
-	exhausted := s.retryExhausted.Load()
-	resultLine := fmt.Sprintf("  \u2713 %s ok (%4.1f%%)  \u2717 %s fail (%4.1f%%)  \u23f1 %s timeout (%4.1f%%)",
-		fmtInt64(succ), safePct(succ, done),
-		fmtInt64(fail), safePct(fail, done),
-		fmtInt64(tout), safePct(tout, done))
-	if blk > 0 {
-		resultLine += fmt.Sprintf("  \U0001f6ab %s blocked (%4.1f%%)", fmtInt64(blk), safePct(blk, done))
-	}
-	if retryCount > 0 {
-		resultLine += fmt.Sprintf("  \u21bb %s retried", fmtInt64(retryCount))
-	}
-	if exhausted > 0 {
-		resultLine += fmt.Sprintf("  \u2718 %s gave up", fmtInt64(exhausted))
-	}
-	b.WriteString(resultLine + "\n")
-
-	// === Retry queue ===
-	if s.retryQLen != nil {
-		rqLen := s.retryQLen()
-		if rqLen > 0 || retryCount > 0 {
-			b.WriteString(fmt.Sprintf("  RetryQ    %s pending  \u2502  max %d attempts\n",
-				fmtInt(rqLen), maxRetryAttempts))
-		}
-	}
-
-	// === Frontier ===
-	frontierLine := fmt.Sprintf("  Frontier  %s queued  \u2502  %s seen  \u2502  %s links found",
-		frontierQ, bloomN, fmtInt64(s.linksFound.Load()))
-	if reseeds := s.reseeds.Load(); reseeds > 0 {
-		frontierLine += fmt.Sprintf("  \u2502  %s reseeds", fmtInt64(reseeds))
-	}
-	b.WriteString(frontierLine + "\n")
-	b.WriteString("\n")
-
-	// === Rod worker phases (browser mode only) ===
-	if s.useRod {
-		workerLine := s.rodPhaseLine()
-		if restarts := s.rodRestarts.Load(); restarts > 0 {
-			workerLine += fmt.Sprintf("  \u2502  \u21bb %s restarts", fmtInt64(restarts))
-		}
-		b.WriteString(fmt.Sprintf("  Workers   %s\n", workerLine))
-		if details := s.rodWorkerDetails(); details != "" {
-			b.WriteString(details)
-		}
-	}
-
-	// === HTTP + Depth ===
-	b.WriteString(fmt.Sprintf("  HTTP      %s\n", statusLine))
-	b.WriteString(fmt.Sprintf("  Depth     %s\n", depthLine))
-
-	return b.String()
-}
 
 func (s *Stats) statusLine() string {
 	s.statusMu.Lock()

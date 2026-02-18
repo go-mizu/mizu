@@ -301,6 +301,11 @@ func (c *Crawler) lightpandaFetchAndProcess(ctx context.Context, lp *lightpandaP
 	if c.config.MaxPages > 0 && c.stats.success.Load() >= int64(c.config.MaxPages) {
 		return
 	}
+	// Adaptive filter: skip URLs from classes with >85% block rate
+	if c.isURLClassBlocked(item.URL) {
+		c.stats.RecordSkipped()
+		return
+	}
 	c.stats.inFlight.Add(1)
 	defer c.stats.inFlight.Add(-1)
 	defer c.stats.SetRodPhase(workerID, "")
@@ -503,6 +508,7 @@ func (c *Crawler) lightpandaFetchAndProcess(ctx context.Context, lp *lightpandaP
 	c.resultDB.AddPage(result)
 	c.stats.RecordSuccess(result.StatusCode, int64(len(body)), fetchMs)
 	c.stats.RecordDepth(item.Depth)
+	c.recordURLClass(item.URL, false)
 	lp.incrementPageCount(workerID)
 	return
 }

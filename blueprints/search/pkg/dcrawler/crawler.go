@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/DataDog/zstd"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/cespare/xxhash/v2"
 	_ "github.com/duckdb/duckdb-go/v2"
 	"golang.org/x/sync/errgroup"
@@ -36,6 +37,75 @@ type Crawler struct {
 	retryQ        *retryQueue
 	retryAttempts sync.Map // URL -> int: per-URL retry attempt counter
 	rodPool       *rodPool // browser page pool (nil if not in rod mode)
+	urlClasses    sync.Map // string → *urlClassStats: adaptive block rate per URL class
+}
+
+// urlClassStats tracks blocked vs total counts for a URL "class"
+// (e.g., all URLs with the same path prefix + type character).
+type urlClassStats struct {
+	blocked atomic.Int64
+	total   atomic.Int64
+}
+
+// urlClass extracts a classification key from a URL path for adaptive filtering.
+// Groups URLs by their structural pattern: path prefix + the first letter after
+// a date-like digit run (8+ consecutive digits). This captures patterns like
+// QQ's `/rain/a/YYYYMMDDV...` (video, usually blocked) vs `/rain/a/YYYYMMDDA...`
+// (article, usually works).
+//
+// Returns empty string if no classifiable pattern is found.
+func urlClass(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	path := u.Path
+	// Find runs of 8+ consecutive digits followed by a letter
+	digits := 0
+	for i := 0; i < len(path); i++ {
+		if path[i] >= '0' && path[i] <= '9' {
+			digits++
+		} else {
+			if digits >= 8 && path[i] >= 'A' && path[i] <= 'Z' {
+				// Found: e.g., "/rain/a/20260218V..." → key = "/rain/a/V"
+				return path[:i-digits] + string(path[i])
+			}
+			digits = 0
+		}
+	}
+	return ""
+}
+
+// isURLClassBlocked checks if a URL belongs to a class with high block rate.
+// Returns true if the class has >85% block rate with >20 samples.
+func (c *Crawler) isURLClassBlocked(rawURL string) bool {
+	key := urlClass(rawURL)
+	if key == "" {
+		return false
+	}
+	if v, ok := c.urlClasses.Load(key); ok {
+		stats := v.(*urlClassStats)
+		total := stats.total.Load()
+		blocked := stats.blocked.Load()
+		if total >= 20 && float64(blocked)/float64(total) > 0.85 {
+			return true
+		}
+	}
+	return false
+}
+
+// recordURLClass updates the URL class stats for adaptive filtering.
+func (c *Crawler) recordURLClass(rawURL string, wasBlocked bool) {
+	key := urlClass(rawURL)
+	if key == "" {
+		return
+	}
+	v, _ := c.urlClasses.LoadOrStore(key, &urlClassStats{})
+	stats := v.(*urlClassStats)
+	stats.total.Add(1)
+	if wasBlocked {
+		stats.blocked.Add(1)
+	}
 }
 
 // retryItem tracks a URL that needs to be retried after a transient error.
@@ -295,12 +365,12 @@ func (c *Crawler) Run(ctx context.Context) error {
 				}
 			}
 			if added > 0 {
-				fmt.Printf("  Sitemap: %s URLs added to frontier\n", fmtInt(added))
+				c.logInit("Sitemap: %s URLs added to frontier", fmtInt(added))
 			}
 		}
 	}
 
-	fmt.Printf("  Frontier: %s seed URLs\n\n", fmtInt(c.frontier.Len()))
+	c.logInit("Frontier: %s seed URLs", fmtInt(c.frontier.Len()))
 
 	// errgroup: workers + coordinator
 	g, gctx := errgroup.WithContext(ctx)
@@ -381,7 +451,7 @@ func (c *Crawler) restoreState() {
 		"SELECT url FROM pages WHERE status_code >= 200 AND status_code < 400",
 		c.frontier.MarkSeen)
 	if crawled > 0 {
-		fmt.Printf("  Resume: %s crawled URLs in bloom\n", fmtInt(crawled))
+		c.logInit("Resume: %s crawled URLs in bloom", fmtInt(crawled))
 	}
 
 	// Phase 2: Re-feed discovered-but-uncrawled internal links into frontier.
@@ -397,7 +467,7 @@ func (c *Crawler) restoreState() {
 		},
 	)
 	if pendingAdded > 0 {
-		fmt.Printf("  Resume: %s pending links re-fed to frontier\n", fmtInt(pendingAdded))
+		c.logInit("Resume: %s pending links re-fed to frontier", fmtInt(pendingAdded))
 	}
 
 	// Phase 3: Re-attempt ALL previously failed URLs.
@@ -414,7 +484,7 @@ func (c *Crawler) restoreState() {
 		},
 	)
 	if retryAdded > 0 {
-		fmt.Printf("  Resume: %s failed URLs queued for retry\n", fmtInt(retryAdded))
+		c.logInit("Resume: %s failed URLs queued for retry", fmtInt(retryAdded))
 	}
 
 	// Phase 4: Delete error-only rows for URLs being retried.
@@ -423,7 +493,7 @@ func (c *Crawler) restoreState() {
 	if retryAdded > 0 {
 		deleted := c.deleteErrorRows(dir)
 		if deleted > 0 {
-			fmt.Printf("  Resume: %s stale error rows cleaned\n", fmtInt(deleted))
+			c.logInit("Resume: %s stale error rows cleaned", fmtInt(deleted))
 		}
 	}
 
@@ -441,7 +511,7 @@ func (c *Crawler) restoreState() {
 			},
 		)
 		if staleAdded > 0 {
-			fmt.Printf("  Resume: %s stale pages queued for re-crawl (>%dh old)\n", fmtInt(staleAdded), c.config.StaleHours)
+			c.logInit("Resume: %s stale pages queued for re-crawl (>%dh old)", fmtInt(staleAdded), c.config.StaleHours)
 		}
 	}
 }
@@ -510,7 +580,7 @@ func (c *Crawler) loadSeeds() {
 	if c.config.SeedFile != "" {
 		n := c.loadSeedFile(c.config.SeedFile)
 		if n > 0 {
-			fmt.Printf("  Seeds: %s URLs from file %s\n", fmtInt(n), c.config.SeedFile)
+			c.logInit("Seeds: %s URLs from file %s", fmtInt(n), c.config.SeedFile)
 			return
 		}
 	}
@@ -526,7 +596,7 @@ func (c *Crawler) loadSeeds() {
 				}
 			}
 			if n > 0 {
-				fmt.Printf("  Seeds: %s URLs from state DB frontier\n", fmtInt(n))
+				c.logInit("Seeds: %s URLs from state DB frontier", fmtInt(n))
 				return
 			}
 		}
@@ -541,7 +611,7 @@ func (c *Crawler) loadSeeds() {
 func (c *Crawler) loadSeedFile(path string) int {
 	f, err := os.Open(path)
 	if err != nil {
-		fmt.Printf("  Warning: cannot open seed file: %v\n", err)
+		c.logInit("Warning: cannot open seed file: %v", err)
 		return 0
 	}
 	defer f.Close()
@@ -566,7 +636,6 @@ func (c *Crawler) saveState() {
 	items := c.frontier.Drain()
 	if len(items) > 0 {
 		c.stateDB.SaveFrontier(items)
-		fmt.Printf("\n  State: saved %s frontier URLs for restart\n", fmtInt(len(items)))
 	}
 	c.stateDB.SetMeta("status", "stopped")
 	c.stateDB.SetMeta("end_time", time.Now().UTC().Format(time.RFC3339))
@@ -590,6 +659,7 @@ func (c *Crawler) coordinator(ctx context.Context, cancel context.CancelFunc) {
 	if reseedInterval <= 0 {
 		reseedInterval = 30 * time.Second
 	}
+	var geoBlockWarned bool // only warn once about potential geo-blocking
 
 	// Browser watchdog state
 	lastDone := c.stats.Done()
@@ -632,6 +702,16 @@ func (c *Crawler) coordinator(ctx context.Context, cancel context.CancelFunc) {
 				lastRestartDone = done
 				lastDone = done
 				lastDoneAt = time.Now()
+			}
+		}
+
+		// Geo-blocking / total WAF detection: if ALL pages so far are blocked
+		// and no links were found, the site is likely geo-blocked from this IP.
+		// Warn the user early instead of silently exiting with 0 ok pages.
+		if !geoBlockWarned && done > 0 && c.stats.success.Load() == 0 && c.stats.linksFound.Load() == 0 {
+			blk := c.stats.Blocked()
+			if blk > 0 && blk == done {
+				geoBlockWarned = true
 			}
 		}
 
@@ -776,6 +856,11 @@ func (c *Crawler) fetchAndProcess(ctx context.Context, client *http.Client, item
 	if c.config.MaxPages > 0 && c.stats.success.Load() >= int64(c.config.MaxPages) {
 		return
 	}
+	// Adaptive filter: skip URLs from classes with >85% block rate
+	if c.isURLClassBlocked(item.URL) {
+		c.stats.RecordSkipped()
+		return
+	}
 	c.stats.inFlight.Add(1)
 	defer c.stats.inFlight.Add(-1)
 
@@ -809,6 +894,17 @@ func (c *Crawler) fetchAndProcess(ctx context.Context, client *http.Client, item
 		c.stats.fetchMs.Add(fetchMs)
 		c.enqueueRetry(item, resp.StatusCode)
 		return
+	}
+
+	// HTTP 403 from CDN/WAF (CloudFront, Akamai) — record as blocked, not error.
+	// Check for WAF signatures in the response to distinguish from app-level 403.
+	if resp.StatusCode == 403 {
+		server := strings.ToLower(resp.Header.Get("Server"))
+		if server == "cloudfront" || server == "akamaighost" || strings.Contains(server, "awselb") {
+			io.Copy(io.Discard, resp.Body)
+			c.recordBlocked(item, fmt.Sprintf("HTTP 403 from %s (WAF/geo-block)", resp.Header.Get("Server")), fetchMs)
+			return
+		}
 	}
 
 	var reader io.Reader = resp.Body
@@ -875,6 +971,7 @@ func (c *Crawler) fetchAndProcess(ctx context.Context, client *http.Client, item
 	c.resultDB.AddPage(result)
 	if resp.StatusCode >= 200 && resp.StatusCode < 400 {
 		c.stats.RecordSuccess(result.StatusCode, int64(len(body)), fetchMs)
+		c.recordURLClass(item.URL, false)
 	} else {
 		c.stats.RecordFailure(result.StatusCode, false)
 	}
@@ -884,6 +981,7 @@ func (c *Crawler) fetchAndProcess(ctx context.Context, client *http.Client, item
 func (c *Crawler) recordBlocked(item CrawlItem, reason string, fetchMs int64) {
 	c.stats.RecordBlocked()
 	c.stats.RecordDepth(item.Depth)
+	c.recordURLClass(item.URL, true)
 	c.stats.fetchMs.Add(fetchMs)
 	c.resultDB.AddPage(Result{
 		URL: item.URL, URLHash: xxhash.Sum64String(item.URL),
@@ -996,46 +1094,43 @@ func (c *Crawler) Stats() *Stats      { return c.stats }
 func (c *Crawler) ResultDB() *ResultDB { return c.resultDB }
 func (c *Crawler) DataDir() string     { return c.config.DomainDir() }
 
-// RunWithDisplay runs the crawler with live terminal progress display.
-func RunWithDisplay(ctx context.Context, c *Crawler) error {
-	var lines int
-	var mu sync.Mutex
-
-	dctx, dcancel := context.WithCancel(ctx)
-	defer dcancel()
-
-	go func() {
-		tick := time.NewTicker(500 * time.Millisecond)
-		defer tick.Stop()
-		for {
-			select {
-			case <-dctx.Done():
-				return
-			case <-tick.C:
-				mu.Lock()
-				if lines > 0 {
-					fmt.Printf("\033[%dA\033[J", lines)
-				}
-				out := c.stats.Render()
-				fmt.Print(out)
-				lines = strings.Count(out, "\n")
-				mu.Unlock()
-			}
+// logInit sends an initialization message to the TUI (if running) or prints to stdout.
+func (c *Crawler) logInit(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	if c.stats.initLog != nil {
+		select {
+		case c.stats.initLog <- msg:
+		default:
 		}
+	} else {
+		fmt.Printf("  %s\n", msg)
+	}
+}
+
+// RunWithDisplay runs the crawler with a bubbletea TUI dashboard.
+func RunWithDisplay(ctx context.Context, c *Crawler) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	m := newTUIModel(c.stats, c.config, cancel)
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithContext(ctx))
+
+	// Capture init messages from Run() via channel
+	c.stats.initLog = make(chan string, 32)
+
+	var crawlErr error
+	go func() {
+		crawlErr = c.Run(ctx)
+		p.Send(phaseMsg("done"))
 	}()
 
-	err := c.Run(ctx)
-	dcancel()
-	time.Sleep(50 * time.Millisecond)
-
-	c.stats.Freeze()
-	mu.Lock()
-	if lines > 0 {
-		fmt.Printf("\033[%dA\033[J", lines)
+	if _, err := p.Run(); err != nil {
+		cancel()
+		return err
 	}
-	fmt.Print(c.stats.Render())
-	mu.Unlock()
-	return err
+	cancel()
+
+	return crawlErr
 }
 
 func isTimeoutError(err error) bool {

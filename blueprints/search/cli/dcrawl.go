@@ -145,10 +145,6 @@ Pinterest (auto-detected, uses internal API - no browser needed):
 }
 
 func runCrawlDomain(cmd *cobra.Command, cfg dcrawler.Config, downloadImages bool) error {
-	fmt.Println(Banner())
-	fmt.Println(subtitleStyle.Render("Domain Crawler"))
-	fmt.Println()
-
 	c, err := dcrawler.New(cfg)
 	if err != nil {
 		return err
@@ -168,47 +164,9 @@ func runCrawlDomain(cmd *cobra.Command, cfg dcrawler.Config, downloadImages bool
 		}
 	}
 
-	fmt.Println(infoStyle.Render(fmt.Sprintf("  Target:   %s", dcrawler.NormalizeDomain(cfg.Domain))))
-	if cfg.UseLightpanda {
-		lpW := cfg.RodWorkers
-		if lpW <= 0 {
-			lpW = 8
-		}
-		fmt.Println(infoStyle.Render(fmt.Sprintf("  Mode:     lightpanda (%d processes, stealth proxy)", lpW)))
-	} else if cfg.UseRod {
-		rodW := cfg.RodWorkers
-		if rodW <= 0 {
-			rodW = 20
-		}
-		fmt.Println(infoStyle.Render(fmt.Sprintf("  Mode:     headless Chrome (rod)  |  Pages: %d", rodW)))
-	} else {
-		h2 := "enabled"
-		if cfg.ForceHTTP1 {
-			h2 = "disabled"
-		}
-		fmt.Println(infoStyle.Render(fmt.Sprintf("  Workers:  %d  |  Max Conns: %d  |  Shards: %d  |  HTTP/2: %s",
-			cfg.Workers, cfg.MaxConns, cfg.TransportShards, h2)))
-	}
-
-	maxDepthStr := "unlimited"
-	if cfg.MaxDepth > 0 {
-		maxDepthStr = fmt.Sprintf("%d", cfg.MaxDepth)
-	}
-	maxPagesStr := "unlimited"
-	if cfg.MaxPages > 0 {
-		maxPagesStr = fmt.Sprintf("%d", cfg.MaxPages)
-	}
-	modeStr := ""
-	if cfg.Continuous {
-		modeStr = "  |  Mode: continuous"
-	}
-	fmt.Println(infoStyle.Render(fmt.Sprintf("  Depth:    %s  |  Max Pages: %s%s",
-		maxDepthStr, maxPagesStr, modeStr)))
-	fmt.Println(infoStyle.Render(fmt.Sprintf("  Data:     %s", c.DataDir())))
-	fmt.Println()
-
 	err = dcrawler.RunWithDisplay(cmd.Context(), c)
 
+	// After TUI exits (alt screen restored), print final summary
 	fmt.Println()
 	if err != nil {
 		fmt.Println(errorStyle.Render(fmt.Sprintf("  Crawl failed: %v", err)))
@@ -232,6 +190,9 @@ func runCrawlDomain(cmd *cobra.Command, cfg dcrawler.Config, downloadImages bool
 }
 
 func runPinterestSearch(cmd *cobra.Command, c *dcrawler.Crawler, cfg dcrawler.Config, query string, downloadImages bool) error {
+	fmt.Println(Banner())
+	fmt.Println(subtitleStyle.Render("Domain Crawler"))
+	fmt.Println()
 	fmt.Println(infoStyle.Render("  Target:   pinterest.com"))
 	fmt.Println(infoStyle.Render("  Mode:     Pinterest API (no browser)"))
 	fmt.Println(infoStyle.Render(fmt.Sprintf("  Data:     %s", c.DataDir())))
