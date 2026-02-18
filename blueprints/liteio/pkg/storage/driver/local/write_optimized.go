@@ -515,12 +515,9 @@ func (w *parallelWriter) writeParallel(src io.Reader) (int64, error) {
 	return totalRead, nil
 }
 
-// Sync flushes data to disk.
+// Sync flushes data to disk using batched sync (group commit).
 func (w *parallelWriter) Sync() error {
-	if NoFsync {
-		return nil
-	}
-	return w.file.Sync()
+	return globalSyncBatcher.BatchSync(w.file)
 }
 
 // Close closes the file.

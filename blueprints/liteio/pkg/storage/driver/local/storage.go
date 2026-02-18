@@ -661,7 +661,8 @@ func (b *bucket) writeEmptyFile(full, relKey, contentType string) (*storage.Obje
 			return nil, fmt.Errorf("local: create empty %q: %w", relKey, err)
 		}
 		// No need to write anything - file is already empty
-		if err := f.Sync(); err != nil {
+		// Use batched sync (group commit) for concurrent write throughput
+		if err := globalSyncBatcher.BatchSync(f); err != nil {
 			f.Close()
 			return nil, fmt.Errorf("local: fsync empty %q: %w", relKey, err)
 		}
@@ -703,7 +704,7 @@ func (b *bucket) writeTinyFile(full, relKey string, src io.Reader, size int64, c
 			return nil, fmt.Errorf("local: write %q: %w", relKey, err)
 		}
 	} else {
-		// Write directly to destination with fsync
+		// Write directly to destination with batched sync (group commit)
 		// #nosec G304 -- path is validated by cleanKey and joinUnderRoot
 		f, err := os.OpenFile(full, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, FilePermissions)
 		if err != nil {
@@ -715,7 +716,8 @@ func (b *bucket) writeTinyFile(full, relKey string, src io.Reader, size int64, c
 			return nil, fmt.Errorf("local: write %q: %w", relKey, err)
 		}
 
-		if err := f.Sync(); err != nil {
+		// Use batched sync (group commit) for concurrent write throughput
+		if err := globalSyncBatcher.BatchSync(f); err != nil {
 			f.Close()
 			return nil, fmt.Errorf("local: fsync %q: %w", relKey, err)
 		}
@@ -778,7 +780,7 @@ func (b *bucket) writeSmallFile(full, relKey string, src io.Reader, size int64, 
 			return nil, fmt.Errorf("local: write %q: %w", relKey, err)
 		}
 	} else {
-		// Write directly to destination with fsync
+		// Write directly to destination with batched sync (group commit)
 		// #nosec G304 -- path is validated by cleanKey and joinUnderRoot
 		f, err := os.OpenFile(full, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, FilePermissions)
 		if err != nil {
@@ -790,7 +792,8 @@ func (b *bucket) writeSmallFile(full, relKey string, src io.Reader, size int64, 
 			return nil, fmt.Errorf("local: write %q: %w", relKey, err)
 		}
 
-		if err := f.Sync(); err != nil {
+		// Use batched sync (group commit) for concurrent write throughput
+		if err := globalSyncBatcher.BatchSync(f); err != nil {
 			f.Close()
 			return nil, fmt.Errorf("local: fsync %q: %w", relKey, err)
 		}
@@ -865,11 +868,9 @@ func (b *bucket) writeLargeFile(full, dir, relKey, key string, src io.Reader, co
 		}
 	}
 
-	// Optional fsync for durability (skip for benchmarks)
-	if !NoFsync {
-		if err := tmp.Sync(); err != nil {
-			return nil, fmt.Errorf("local: fsync %q: %w", key, err)
-		}
+	// Use batched sync (group commit) for durability with concurrent throughput
+	if err := globalSyncBatcher.BatchSync(tmp); err != nil {
+		return nil, fmt.Errorf("local: fsync %q: %w", key, err)
 	}
 	if err := tmp.Close(); err != nil {
 		return nil, fmt.Errorf("local: close temp for %q: %w", key, err)
@@ -1594,9 +1595,6 @@ func copyFile(src, dst string) (err error) {
 	if _, err = io.CopyBuffer(out, in, buf); err != nil {
 		return err
 	}
-	// Optional fsync for durability (skip for benchmarks)
-	if NoFsync {
-		return nil
-	}
-	return out.Sync()
+	// Use batched sync for durability (fdatasync on Linux, fsync on others)
+	return globalSyncBatcher.BatchSync(out)
 }
