@@ -21,7 +21,10 @@ import (
 const networkInterceptJS = `(function(){
 var S=new Set();window.__xhrURLs=S;
 var R=/https?:\/\/[^\s"'<>]+/g;
-function X(t){if(!t||t.length>500000)return;t=t.replace(/\\\//g,'/');R.lastIndex=0;for(var m;(m=R.exec(t))!==null;){var u=m[0].replace(/[),;.:!?'"]+$/,'');if(u.length>10&&u.length<2000)S.add(u)}}
+var Q=/["'](\/[a-zA-Z][^"'\s<>]{3,300})["']/g;
+var skip=/\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|eot|map|webp|avif|mp[34]|wav)$/i;
+var skipP=/^\/_|^\/static\/|^\/assets\/|^\/webpack\/|^\/chunks\//;
+function X(t){if(!t||t.length>1000000)return;t=t.replace(/\\\//g,'/');R.lastIndex=0;for(var m;(m=R.exec(t))!==null;){var u=m[0].replace(/[),;.:!?'"]+$/,'');if(u.length>10&&u.length<2000)S.add(u)}Q.lastIndex=0;for(var m2;(m2=Q.exec(t))!==null;){var p=m2[1];if(!skip.test(p)&&!skipP.test(p))S.add(location.origin+p)}}
 var F=window.fetch;if(F){window.fetch=function(){return F.apply(this,arguments).then(function(r){try{var c=r.headers.get('content-type')||'';if(c.includes('json')||c.includes('html')||c.includes('text'))r.clone().text().then(X).catch(function(){})}catch(e){}return r})}}
 var P=XMLHttpRequest.prototype,O=P.send;P.send=function(){this.addEventListener('load',function(){try{var c=this.getResponseHeader('content-type')||'';if(c.includes('json')||c.includes('html')||c.includes('text'))X(this.responseText)}catch(e){}});return O.apply(this,arguments)}
 })()`
@@ -398,33 +401,78 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 	// Render wait timeout is NOT fatal — the DOM is already "interactive".
 	// Just skip optional post-render steps (CF check, scroll) if deadline expired.
 
-	// Cloudflare challenge check — only poll if CF challenge detected and deadline not expired.
+	// WAF/bot challenge detection — Cloudflare and Tencent Edge One.
+	// Chrome can solve these automatically if given time to execute the challenge JS.
 	if fetchCtx.Err() == nil {
+		isChallenge := false
 		if info, ie := p.Info(); ie == nil && info.Title == "Just a moment..." {
+			isChallenge = true // Cloudflare
+		}
+		// Tencent WAF: page contains "EO_Bot_Ssid" (cookie challenge) or redirects to waf.tencent.com.
+		if !isChallenge {
+			if wafCheck, wErr := p.Timeout(1 * time.Second).Eval(
+				`() => document.documentElement.innerHTML.includes('EO_Bot_Ssid') || document.documentElement.innerHTML.includes('waf.tencent.com')`); wErr == nil && wafCheck != nil && wafCheck.Value.Bool() {
+				isChallenge = true
+			}
+		}
+		if isChallenge {
 			c.stats.SetRodPhase(workerID, "cf-check")
-			cfEnd := time.Now().Add(3 * time.Second)
-			for time.Now().Before(cfEnd) && fetchCtx.Err() == nil {
+			challengeEnd := time.Now().Add(8 * time.Second)
+			for time.Now().Before(challengeEnd) && fetchCtx.Err() == nil {
 				select {
 				case <-fetchCtx.Done():
-				case <-time.After(200 * time.Millisecond):
+				case <-time.After(500 * time.Millisecond):
 				}
-				if info, ie := p.Info(); ie != nil || info.Title != "Just a moment..." {
-					break
+				// Check if challenge resolved: page grew beyond challenge size.
+				if htmlLen, hErr := p.Timeout(1 * time.Second).Eval(`() => document.documentElement.outerHTML.length`); hErr == nil && htmlLen != nil {
+					if htmlLen.Value.Int() > 5000 {
+						time.Sleep(500 * time.Millisecond)
+						break
+					}
 				}
 			}
 		}
 	}
 
-	// Scroll for infinite scroll pages (Pinterest, etc.)
+	// Scroll for infinite scroll pages (Pinterest, news feeds, etc.)
+	// Uses early termination: stops when BOTH page height AND XHR URL count
+	// stop growing. Checking XHR count is critical for sites like news.qq.com
+	// where API responses load article URLs without changing visible page height.
 	if c.config.ScrollCount > 0 && fetchCtx.Err() == nil {
 		c.stats.SetRodPhase(workerID, "scroll")
+		var lastHeight, lastXHRCount int
+		noGrowth := 0
 		for range c.config.ScrollCount {
 			if fetchCtx.Err() != nil {
 				break
 			}
 			_, _ = p.Eval(`() => window.scrollTo(0, document.body.scrollHeight)`)
-			p.Timeout(3 * time.Second).WaitRequestIdle(300*time.Millisecond, nil, nil, nil)()
-			time.Sleep(200 * time.Millisecond)
+			p.Timeout(1500 * time.Millisecond).WaitRequestIdle(200*time.Millisecond, nil, nil, nil)()
+			time.Sleep(100 * time.Millisecond)
+			// Check if scroll produced new content (height) or new URLs (XHR interceptor)
+			heightGrew, xhrGrew := false, false
+			if heightRes, hErr := p.Timeout(1 * time.Second).Eval(`() => document.body.scrollHeight`); hErr == nil && heightRes != nil {
+				h := heightRes.Value.Int()
+				if h > 0 && h != lastHeight {
+					heightGrew = true
+				}
+				lastHeight = h
+			}
+			if xhrRes, xErr := p.Timeout(1 * time.Second).Eval(`() => (window.__xhrURLs || {size:0}).size`); xErr == nil && xhrRes != nil {
+				xc := xhrRes.Value.Int()
+				if xc > lastXHRCount {
+					xhrGrew = true
+				}
+				lastXHRCount = xc
+			}
+			if heightGrew || xhrGrew {
+				noGrowth = 0
+			} else {
+				noGrowth++
+				if noGrowth >= 3 {
+					break // Neither height nor XHR URLs growing — done
+				}
+			}
 		}
 	}
 
@@ -462,6 +510,14 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		return
 	}
 	body := []byte(htmlContent)
+
+	// Detect blocked/anti-bot responses that return HTTP 200 but no real content.
+	// Common patterns: very small pages (<500 bytes), "Access Restricted" pages,
+	// pages whose title is just the URL path (QQ anti-bot placeholder).
+	if blocked, reason := isBlockedPage(body, pageTitle, item.URL); blocked {
+		c.recordError(item, fmt.Errorf("blocked: %s", reason), fetchMs)
+		return
+	}
 
 	finalURL := item.URL
 	if pageURL != "" {
@@ -535,9 +591,12 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 	result.LinkCount = len(meta.Links)
 	c.stats.RecordLinks(len(meta.Links))
 
+	hasAliases := len(c.config.DomainAliases) > 0
 	if c.config.MaxDepth == 0 || item.Depth < c.config.MaxDepth {
 		for _, link := range meta.Links {
-			if link.IsInternal {
+			// With domain aliases, also try non-internal links — the frontier's
+			// isSameDomain check handles alias matching correctly.
+			if link.IsInternal || hasAliases {
 				c.frontier.TryAdd(link.TargetURL, item.Depth+1)
 			}
 		}
@@ -557,6 +616,46 @@ type domLinkResult struct {
 	URL  string `json:"url"`
 	Text string `json:"text"`
 	Rel  string `json:"rel"`
+}
+
+// isBlockedPage detects anti-bot responses that return HTTP 200 but contain no real content.
+// Returns true and the reason if the page appears to be blocked.
+func isBlockedPage(body []byte, title, requestURL string) (bool, string) {
+	bodyLen := len(body)
+
+	// Very small pages (< 500 bytes) with HTTP 200 are almost certainly anti-bot placeholders.
+	// Real pages are at least a few KB.
+	if bodyLen < 500 {
+		return true, fmt.Sprintf("empty response (%d bytes)", bodyLen)
+	}
+
+	// QQ/Tencent anti-bot: page title is just the URL path (e.g., "/rain/a/20260218A0xxxx").
+	// Normal pages have descriptive titles.
+	if title != "" && strings.HasPrefix(title, "/") && strings.Contains(requestURL, title) {
+		return true, "title matches URL path (anti-bot placeholder)"
+	}
+
+	// Check for known WAF/anti-bot signatures in small pages (< 10KB).
+	// Don't scan large pages — they're likely real content.
+	if bodyLen < 10_000 {
+		content := strings.ToLower(string(body))
+		wafSignatures := []string{
+			"access restricted",      // Generic access block
+			"限制访问",                   // Chinese: access restricted
+			"访问受限",                   // Chinese: access limited
+			"eo_bot_ssid",            // Tencent Edge One WAF
+			"waf.tencent.com",        // Tencent WAF redirect
+			"captcha-delivery",       // Generic CAPTCHA
+			"cf-browser-verification", // Cloudflare
+		}
+		for _, sig := range wafSignatures {
+			if strings.Contains(content, sig) {
+				return true, fmt.Sprintf("WAF signature: %s", sig)
+			}
+		}
+	}
+
+	return false, ""
 }
 
 // extractDOMLinks runs JavaScript in the browser to extract links from the rendered DOM.

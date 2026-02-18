@@ -78,6 +78,7 @@ Get started:
 	root.AddCommand(NewInsta())
 	root.AddCommand(NewX())
 	root.AddCommand(NewPerplexity())
+	root.AddCommand(NewQQ())
 
 	if err := fang.Execute(ctx, root,
 		fang.WithVersion(Version),

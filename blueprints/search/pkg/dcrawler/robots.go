@@ -26,6 +26,7 @@ func FetchRobots(ctx context.Context, client *http.Client, domain string) (*Robo
 	if err != nil {
 		return &RobotsChecker{}, nil
 	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
 	resp, err := client.Do(req)
 	if err != nil || resp.StatusCode != 200 {
 		if resp != nil {

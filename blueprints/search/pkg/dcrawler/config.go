@@ -46,6 +46,7 @@ type Config struct {
 	RodBlockResources bool         // Block images/fonts/CSS in browser mode for faster loads
 	StaleHours        int          // Resume: re-crawl pages older than N hours (0=disabled)
 	UseLightpanda     bool         // Use Lightpanda browser via CDP (alternative to Chrome/rod)
+	DomainAliases     []string     // Additional domains to treat as same-domain (e.g., "new.qq.com" for "news.qq.com")
 }
 
 // DefaultConfig returns optimal defaults for high-throughput single-domain crawling.
