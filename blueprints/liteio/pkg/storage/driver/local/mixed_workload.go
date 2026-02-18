@@ -49,6 +49,7 @@ func (c *hotObjectCache) GetHot(bucketKey string) ([]byte, time.Time, bool) {
 
 // PutHot stores an object in the hot cache.
 // Data is copied to ensure safety.
+// Uses Swap to correctly update existing entries (LoadOrStore would skip updates).
 func (c *hotObjectCache) PutHot(bucketKey string, data []byte, modTime time.Time) {
 	// Simple eviction: if too full, skip (rely on regular cache)
 	if c.count.Load() >= c.maxSize {
@@ -65,8 +66,10 @@ func (c *hotObjectCache) PutHot(bucketKey string, data []byte, modTime time.Time
 		size:    int64(len(data)),
 	}
 
-	// Store and increment count
-	if _, loaded := c.objects.LoadOrStore(bucketKey, entry); !loaded {
+	// Store and increment count (Swap updates existing entries correctly)
+	if prev, loaded := c.objects.Swap(bucketKey, entry); loaded {
+		_ = prev // previous entry will be GC'd
+	} else {
 		c.count.Add(1)
 	}
 }
