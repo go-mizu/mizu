@@ -16,13 +16,16 @@ Lightweight, S3-compatible object storage server. Single binary, zero config, dr
 ## Features
 
 - **100% S3 API compatible** — works with AWS CLI, AWS SDK, boto3, mc, s3cmd, any S3 client
+- **Supabase Storage REST API** — optional JSON-based REST API with JWT auth, signed URLs, TUS uploads
 - **Single static binary** — zero external dependencies, no database, no config files
 - **5 storage drivers** — local filesystem, in-memory, rabbit (high-perf), usagi (append-log), devnull (benchmark)
 - **AWS Signature V4** — full authentication with signing key cache
-- **Multipart uploads** — create, upload parts, complete, abort, list parts
+- **JWT authentication** — HS256 JWT for REST API (zero external deps)
+- **Multipart uploads** — S3 multipart + TUS 1.0.0 resumable uploads
 - **Range reads** — `bytes=start-end`, `bytes=start-`, `bytes=-suffix`
 - **Batch deletes** — up to 1000 keys per request
-- **Docker ready** — 10MB scratch-based image
+- **OpenAPI docs** — interactive API documentation (Scalar, Redoc, Swagger)
+- **Docker ready** — 11MB scratch-based image
 
 ## Quick Start
 
@@ -219,6 +222,8 @@ console.log(await Body.transformToString());
 | `--secret-key` | `liteio123` | S3 secret access key |
 | `--region` | `us-east-1` | S3 region |
 | `--pprof` | `true` | Enable pprof profiling endpoints |
+| `--rest` | `false` | Enable Supabase Storage REST API at `/storage/v1` |
+| `--jwt-secret` | — | JWT secret for REST API authentication |
 
 ### Environment Variables
 
@@ -233,6 +238,8 @@ console.log(await Body.transformToString());
 | `LITEIO_REGION` | S3 region |
 | `LITEIO_IN_MEMORY` | `true` to enable in-memory mode for local driver |
 | `LITEIO_NO_FSYNC` | `true` to skip fsync (benchmark mode, data may be lost on crash) |
+| `LITEIO_REST` | `true` to enable Supabase Storage REST API |
+| `LITEIO_JWT_SECRET` | JWT secret for REST API authentication |
 
 ## Storage Drivers
 
@@ -336,6 +343,80 @@ Presigned URLs are also supported:
 GET /my-bucket/file.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=liteio/20260218/us-east-1/s3/aws4_request&X-Amz-Date=20260218T000000Z&X-Amz-Expires=3600&X-Amz-Signature=...
 ```
 
+## Supabase Storage REST API
+
+When started with `--rest`, LiteIO exposes a Supabase Storage-compatible REST API at `/storage/v1`.
+
+```bash
+# Enable REST API
+liteio --rest
+
+# With JWT authentication
+liteio --rest --jwt-secret "your-secret-key"
+```
+
+### REST Bucket Operations
+
+| Operation | Method | Path |
+|-----------|--------|------|
+| CreateBucket | `POST /storage/v1/bucket` | JSON body: `{name, public}` |
+| ListBuckets | `GET /storage/v1/bucket` | Query: `limit`, `offset` |
+| GetBucket | `GET /storage/v1/bucket/{id}` | |
+| UpdateBucket | `PUT /storage/v1/bucket/{id}` | JSON body: `{public}` |
+| DeleteBucket | `DELETE /storage/v1/bucket/{id}` | |
+| EmptyBucket | `POST /storage/v1/bucket/{id}/empty` | |
+
+### REST Object Operations
+
+| Operation | Method | Path |
+|-----------|--------|------|
+| Upload | `POST /storage/v1/object/{bucket}/{path}` | `x-upsert: true` to overwrite |
+| Download | `GET /storage/v1/object/{bucket}/{path}` | Range header supported |
+| Update | `PUT /storage/v1/object/{bucket}/{path}` | Object must exist |
+| Delete | `DELETE /storage/v1/object/{bucket}/{path}` | |
+| BulkDelete | `DELETE /storage/v1/object/{bucket}` | JSON body: `{prefixes: [...]}` |
+| List | `POST /storage/v1/object/list/{bucket}` | JSON body: `{prefix, limit}` |
+| Move | `POST /storage/v1/object/move` | JSON body: `{bucketId, sourceKey, destinationKey}` |
+| Copy | `POST /storage/v1/object/copy` | JSON body: `{bucketId, sourceKey, destinationKey}` |
+| SignedURL | `POST /storage/v1/object/sign/{bucket}/{path}` | JSON body: `{expiresIn}` |
+| PublicAccess | `GET /storage/v1/object/public/{bucket}/{path}` | No auth required |
+| ObjectInfo | `GET /storage/v1/object/info/{bucket}/{path}` | |
+
+### TUS Resumable Uploads
+
+| Operation | Method | Path |
+|-----------|--------|------|
+| Discovery | `OPTIONS /storage/v1/upload/resumable/` | |
+| Create | `POST /storage/v1/upload/resumable/{bucket}/{path}` | `Upload-Length` header |
+| UploadChunk | `PATCH /storage/v1/upload/resumable/{bucket}/{path}` | `Upload-Offset` header |
+| Status | `HEAD /storage/v1/upload/resumable/{bucket}/{path}` | |
+| Cancel | `DELETE /storage/v1/upload/resumable/{bucket}/{path}` | |
+
+### API Documentation
+
+When REST API is enabled, interactive OpenAPI docs are available:
+
+- `GET /docs` — OpenAPI 3.1 JSON
+- `GET /docs/` — Interactive UI (Scalar, Redoc, Swagger, etc.)
+
+### Usage with Supabase JS Client
+
+```javascript
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient('http://localhost:9000', 'your-jwt-token')
+
+// Upload
+await supabase.storage.from('my-bucket').upload('file.txt', fileBody)
+
+// Download
+const { data } = await supabase.storage.from('my-bucket').download('file.txt')
+
+// Signed URL
+const { data: { signedUrl } } = await supabase.storage
+  .from('my-bucket').createSignedUrl('file.txt', 3600)
+```
+
 ## Health Check
 
 ```bash
@@ -400,7 +481,8 @@ liteio/
 │   ├── storage.go                   # Core interfaces
 │   ├── driver.go                    # Driver registry
 │   ├── multipart.go                 # Multipart interfaces
-│   ├── server/server.go             # HTTP server
+│   ├── watch.go                     # Event/Watcher interfaces
+│   ├── server/server.go             # HTTP server (S3 + REST)
 │   ├── transport/s3/                # S3 protocol layer
 │   │   ├── server.go                # Routes + SigV4 auth
 │   │   ├── handle_bucket.go         # Bucket operations
@@ -408,12 +490,25 @@ liteio/
 │   │   ├── handle_multipart.go      # Multipart operations
 │   │   ├── response.go              # XML response helpers
 │   │   └── response_cache.go        # Response cache
+│   ├── transport/rest/              # Supabase Storage REST API
+│   │   ├── rest.go                  # Routes + error handling
+│   │   ├── auth.go                  # JWT authentication
+│   │   ├── jwt.go                   # HS256 JWT implementation
+│   │   ├── handle_bucket.go         # Bucket CRUD
+│   │   ├── handle_object.go         # Object operations
+│   │   ├── handle_upload.go         # TUS resumable uploads
+│   │   ├── signed_url.go            # HMAC signed URLs
+│   │   └── openapi.go               # OpenAPI 3.1 spec
 │   └── driver/
 │       ├── local/                   # Filesystem driver
 │       ├── memory/                  # In-memory driver
 │       ├── rabbit/                  # High-perf driver
 │       ├── usagi/                   # Append-log driver
 │       └── devnull/                 # No-op driver
+├── pkg/openapi/                     # OpenAPI documentation
+│   ├── openapi.go                   # OpenAPI 3.1 model
+│   ├── handle_docs.go               # Interactive API docs UI
+│   └── docs/*.html                  # Scalar, Redoc, Swagger, etc.
 ├── go.mod
 ├── Makefile
 ├── Dockerfile

@@ -109,6 +109,8 @@ Environment variables:
 	flags.StringVar(&cfg.SecretAccessKey, "secret-key", cfg.SecretAccessKey, "Secret access key")
 	flags.StringVar(&cfg.Region, "region", cfg.Region, "S3 region")
 	flags.BoolVar(&cfg.EnablePprof, "pprof", cfg.EnablePprof, "Enable pprof profiling endpoints at /debug/pprof/")
+	flags.BoolVar(&cfg.EnableREST, "rest", cfg.EnableREST, "Enable Supabase Storage-compatible REST API at /storage/v1")
+	flags.StringVar(&cfg.JWTSecret, "jwt-secret", "", "JWT secret for REST API authentication")
 
 	// Environment variable bindings
 	if v := os.Getenv("LITEIO_PORT"); v != "" {
@@ -131,6 +133,12 @@ Environment variables:
 	}
 	if v := os.Getenv("LITEIO_REGION"); v != "" {
 		cfg.Region = v
+	}
+	if v := os.Getenv("LITEIO_JWT_SECRET"); v != "" {
+		cfg.JWTSecret = v
+	}
+	if os.Getenv("LITEIO_REST") == "true" || os.Getenv("LITEIO_REST") == "1" {
+		cfg.EnableREST = true
 	}
 
 	// Add healthcheck subcommand
@@ -194,6 +202,9 @@ func runServer(cfg *server.Config) error {
 		cfg.DSN = "local://" + cfg.DSN
 	}
 
+	// Set version for API docs
+	server.Version = Version
+
 	srv, err := server.New(cfg)
 	if err != nil {
 		return fmt.Errorf("create server: %w", err)
@@ -216,7 +227,21 @@ func runServer(cfg *server.Config) error {
 │  Endpoint:     http://%s                             │
 │  Region:       %-45s│
 │  Access Key:   %-45s│
-│  Secret Key:   %-45s│
+│  Secret Key:   %-45s│`,
+		padRight(srv.Addr(), 18),
+		cfg.Region,
+		cfg.AccessKeyID,
+		maskSecret(cfg.SecretAccessKey),
+	)
+	if cfg.EnableREST {
+		fmt.Printf(`
+│  REST API:     %-45s│
+│  API Docs:     %-45s│`,
+			"http://"+srv.Addr()+"/storage/v1",
+			"http://"+srv.Addr()+"/docs/",
+		)
+	}
+	fmt.Printf(`
 ╰─────────────────────────────────────────────────────────────╯
 
 AWS CLI example:
@@ -226,10 +251,6 @@ AWS CLI example:
 
 Press Ctrl+C to stop the server
 `,
-		padRight(srv.Addr(), 18),
-		cfg.Region,
-		cfg.AccessKeyID,
-		maskSecret(cfg.SecretAccessKey),
 		cfg.AccessKeyID,
 		cfg.SecretAccessKey,
 		srv.Addr(),

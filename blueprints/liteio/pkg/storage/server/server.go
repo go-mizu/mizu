@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/liteio-dev/liteio/pkg/storage"
+	"github.com/liteio-dev/liteio/pkg/storage/transport/rest"
 	"github.com/liteio-dev/liteio/pkg/storage/transport/s3"
 	"github.com/go-mizu/mizu"
 
@@ -43,6 +44,9 @@ import (
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/rabbit"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/usagi"
 )
+
+// Version can be set by the caller to embed version information in API docs.
+var Version = "dev"
 
 // Config configures the S3-compatible server.
 type Config struct {
@@ -93,6 +97,15 @@ type Config struct {
 	//   /debug/pprof/block
 	//   /debug/pprof/mutex
 	EnablePprof bool
+
+	// EnableREST enables the Supabase Storage-compatible REST API at /storage/v1.
+	// Default false. When enabled, provides bucket/object CRUD, signed URLs,
+	// TUS resumable uploads, and OpenAPI docs.
+	EnableREST bool
+
+	// JWTSecret is the secret key for JWT authentication on the REST API.
+	// If empty and EnableREST is true, the REST API runs without authentication.
+	JWTSecret string
 }
 
 // DefaultConfig returns a Config with default values.
@@ -221,6 +234,21 @@ func New(cfg *Config) (*Server, error) {
 
 	// Register S3 API routes at root
 	s3.Register(app, "/", stor, s3Config)
+
+	// Register Supabase Storage REST API if enabled
+	if cfg.EnableREST {
+		if cfg.JWTSecret != "" {
+			authConfig := rest.AuthConfig{
+				JWTSecret:            cfg.JWTSecret,
+				AllowAnonymousPublic: true,
+			}
+			rest.RegisterWithAuth(app, "/storage/v1", stor, authConfig)
+		} else {
+			rest.Register(app, "/storage/v1", stor)
+		}
+		rest.RegisterDocs(app, "/storage/v1", "/docs", "LiteIO Storage API", Version)
+		rest.StartUploadCleanup()
+	}
 
 	return &Server{
 		config:  cfg,

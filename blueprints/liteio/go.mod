@@ -8,7 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.7
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.95.1
 	github.com/edsrzf/mmap-go v1.2.0
-	github.com/go-mizu/mizu v0.5.21
+	github.com/go-mizu/mizu v0.5.23
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/sys v0.41.0
 )
