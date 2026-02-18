@@ -1,0 +1,27 @@
+services:
+  ceph:
+    image: quay.io/ceph/demo:latest
+    ports:
+      - "8080:8080"   # Ceph RGW (S3 API)
+      - "5000:5000"   # Dashboard (optional)
+    environment:
+      MON_IP: 127.0.0.1
+      CEPH_PUBLIC_NETWORK: 0.0.0.0/0
+      CEPH_DEMO_UID: demo
+      CEPH_DEMO_ACCESS_KEY: demo
+      CEPH_DEMO_SECRET_KEY: demosecret
+      CEPH_DEMO_BUCKET: test-bucket
+      RGW_NAME: localhost
+    volumes:
+      - ceph_data:/var/lib/ceph
+      - ceph_etc:/etc/ceph
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
+volumes:
+  ceph_data:
+  ceph_etc:

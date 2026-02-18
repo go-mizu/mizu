@@ -1,0 +1,406 @@
+# Production-grade S3-compatible storage services for comprehensive testing
+# Use with: docker compose up -d
+# Individual services: docker compose up -d minio rustfs seaweedfs-s3 localstack liteio
+#
+# Port Summary:
+# - MinIO:      9000 (S3), 9001 (Console)
+# - RustFS:     9100 (S3), 9101 (Console)
+# - SeaweedFS:  8333 (S3), 9333 (Master), 8888 (Filer)
+# - LocalStack: 4566 (S3)
+# - LiteIO:     9200 (S3)
+
+services:
+  # ============================================================================
+  # MinIO - Industry reference for S3 compatibility (Go)
+  # https://github.com/minio/minio
+  # Credentials: minioadmin / minioadmin
+  # ============================================================================
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Console UI
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: public.ecr.aws/aws-cli/aws-cli:latest
+    pull_policy: if_not_present
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://minio:9000 s3 mb s3://test-bucket || true;
+      exit 0;
+      "
+    environment:
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_DEFAULT_REGION: us-east-1
+
+  # ============================================================================
+  # RustFS - High-performance S3 storage (Rust) - 2.3x faster than MinIO
+  # https://github.com/rustfs/rustfs
+  # Credentials: rustfsadmin / rustfsadmin
+  # ============================================================================
+  rustfs:
+    image: rustfs/rustfs:latest
+    ports:
+      - "9100:9000"   # S3 API (mapped to 9100 to avoid conflict)
+      - "9101:9001"   # Console UI
+    environment:
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ACCESS_KEY: rustfsadmin
+      RUSTFS_SECRET_KEY: rustfsadmin
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+    volumes:
+      - rustfs_data:/data
+    user: "10001:10001"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/ || exit 0"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  rustfs-init:
+    image: public.ecr.aws/aws-cli/aws-cli:latest
+    pull_policy: if_not_present
+    depends_on:
+      rustfs:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: rustfsadmin
+      AWS_SECRET_ACCESS_KEY: rustfsadmin
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://rustfs:9000 s3 mb s3://test-bucket || true;
+      exit 0;
+      "
+
+  # ============================================================================
+  # SeaweedFS - High-performance distributed object storage (Go)
+  # https://github.com/seaweedfs/seaweedfs
+  # Credentials: admin / adminpassword
+  # ============================================================================
+  seaweedfs-master:
+    image: chrislusf/seaweedfs:latest
+    command: master -ip=seaweedfs-master -ip.bind=0.0.0.0 -volumeSizeLimitMB=100
+    ports:
+      - "9333:9333"   # Master HTTP
+    volumes:
+      - seaweedfs_master:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9333/cluster/status"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  seaweedfs-volume:
+    image: chrislusf/seaweedfs:latest
+    command: volume -mserver="seaweedfs-master:9333" -port=8080 -ip=seaweedfs-volume -ip.bind=0.0.0.0
+    depends_on:
+      seaweedfs-master:
+        condition: service_healthy
+    volumes:
+      - seaweedfs_volume:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/status"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  seaweedfs-filer:
+    image: chrislusf/seaweedfs:latest
+    command: filer -master="seaweedfs-master:9333" -ip=seaweedfs-filer -ip.bind=0.0.0.0
+    depends_on:
+      seaweedfs-master:
+        condition: service_healthy
+      seaweedfs-volume:
+        condition: service_healthy
+    ports:
+      - "8888:8888"   # Filer HTTP
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8888/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  seaweedfs-s3:
+    image: chrislusf/seaweedfs:latest
+    command: s3 -filer="seaweedfs-filer:8888" -ip.bind=0.0.0.0 -port=8333 -config=/etc/seaweedfs/s3.json
+    depends_on:
+      seaweedfs-filer:
+        condition: service_healthy
+    ports:
+      - "8333:8333"   # S3 API
+    volumes:
+      - ./seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro
+    healthcheck:
+      # S3 root path returns 403/405 without auth; treat those as healthy.
+      test: ["CMD-SHELL", "code=0; wget --timeout=3 -q http://localhost:8333/ -O /dev/null 2>&1 || code=$$?; test \"$$code\" -eq 0 -o \"$$code\" -eq 1 -o \"$$code\" -eq 8"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  seaweedfs-init:
+    image: public.ecr.aws/aws-cli/aws-cli:latest
+    pull_policy: if_not_present
+    depends_on:
+      seaweedfs-s3:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: adminpassword
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://seaweedfs-s3:8333 s3 mb s3://test-bucket || true;
+      exit 0;
+      "
+
+  # ============================================================================
+  # LocalStack - AWS Local Testing (Python)
+  # https://github.com/localstack/localstack
+  # Credentials: test / test
+  # ============================================================================
+  localstack:
+    image: localstack/localstack:latest
+    ports:
+      - "4566:4566"   # S3 API
+    environment:
+      SERVICES: s3
+      DEBUG: 0
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    volumes:
+      - localstack_data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  localstack-init:
+    image: public.ecr.aws/aws-cli/aws-cli:latest
+    pull_policy: if_not_present
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://localstack:4566 s3 mb s3://test-bucket || true;
+      exit 0;
+      "
+
+  # ============================================================================
+  # LiteIO - Lightweight S3-compatible local storage (Go)
+  # Built from this project's cmd/liteio
+  # Credentials: liteio / liteio123
+  # ============================================================================
+  liteio:
+    build:
+      context: ../../..
+      dockerfile: docker/s3/liteio/Dockerfile
+    image: liteio-s3:latest
+    ports:
+      - "9200:9000"   # S3 API (mapped to 9200, pprof at /debug/pprof/)
+    environment:
+      LITEIO_ACCESS_KEY: liteio
+      LITEIO_SECRET_KEY: liteio123
+    volumes:
+      - liteio_data:/data
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/liteio", "healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # LiteIO in-memory mode (ephemeral, no persistence)
+  liteio_mem:
+    image: liteio-s3:latest
+    ports:
+      - "9201:9000"   # S3 API (mapped to 9201 for memory mode)
+    environment:
+      LITEIO_ACCESS_KEY: liteio
+      LITEIO_SECRET_KEY: liteio123
+      LITEIO_IN_MEMORY: "true"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/liteio", "healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  liteio-init:
+    image: public.ecr.aws/aws-cli/aws-cli:latest
+    pull_policy: if_not_present
+    depends_on:
+      liteio:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: liteio
+      AWS_SECRET_ACCESS_KEY: liteio123
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://liteio:9000 s3 mb s3://test-bucket || true;
+      exit 0;
+      "
+
+  liteio_mem-init:
+    image: public.ecr.aws/aws-cli/aws-cli:latest
+    pull_policy: if_not_present
+    depends_on:
+      liteio_mem:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: liteio
+      AWS_SECRET_ACCESS_KEY: liteio123
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://liteio_mem:9000 s3 mb s3://test-bucket || true;
+      exit 0;
+      "
+
+  # ============================================================================
+  # Rabbit S3 - S3-compatible server backed by rabbit driver
+  # Credentials: rabbit / rabbit123
+  # ============================================================================
+  rabbit_s3:
+    image: liteio-s3:latest
+    ports:
+      - "9300:9000"
+    environment:
+      LITEIO_ACCESS_KEY: rabbit
+      LITEIO_SECRET_KEY: rabbit123
+      LITEIO_DRIVER: "rabbit:///data?nofsync=true"
+    volumes:
+      - rabbit_s3_data:/data
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/liteio", "healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  rabbit_s3-init:
+    image: public.ecr.aws/aws-cli/aws-cli:latest
+    pull_policy: if_not_present
+    depends_on:
+      rabbit_s3:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: rabbit
+      AWS_SECRET_ACCESS_KEY: rabbit123
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://rabbit_s3:9000 s3 mb s3://test-bucket || true;
+      exit 0;
+      "
+
+  # ============================================================================
+  # Usagi S3 - S3-compatible server backed by usagi driver
+  # Credentials: usagi / usagi123
+  # ============================================================================
+  usagi_s3:
+    image: liteio-s3:latest
+    ports:
+      - "9301:9000"
+    environment:
+      LITEIO_ACCESS_KEY: usagi
+      LITEIO_SECRET_KEY: usagi123
+      LITEIO_DRIVER: "usagi:///data?nofsync=true"
+    volumes:
+      - usagi_s3_data:/data
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/liteio", "healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  usagi_s3-init:
+    image: public.ecr.aws/aws-cli/aws-cli:latest
+    pull_policy: if_not_present
+    depends_on:
+      usagi_s3:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: usagi
+      AWS_SECRET_ACCESS_KEY: usagi123
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://usagi_s3:9000 s3 mb s3://test-bucket || true;
+      exit 0;
+      "
+
+  # ============================================================================
+  # Devnull S3 - S3-compatible server backed by devnull driver
+  # Credentials: devnull / devnull123
+  # ============================================================================
+  devnull_s3:
+    image: liteio-s3:latest
+    ports:
+      - "9302:9000"
+    environment:
+      LITEIO_ACCESS_KEY: devnull
+      LITEIO_SECRET_KEY: devnull123
+      LITEIO_DRIVER: "devnull://test-bucket"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/liteio", "healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  devnull_s3-init:
+    image: public.ecr.aws/aws-cli/aws-cli:latest
+    pull_policy: if_not_present
+    depends_on:
+      devnull_s3:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: devnull
+      AWS_SECRET_ACCESS_KEY: devnull123
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://devnull_s3:9000 s3 mb s3://test-bucket || true;
+      exit 0;
+      "
+
+volumes:
+  minio_data:
+  rustfs_data:
+  seaweedfs_master:
+  seaweedfs_volume:
+  localstack_data:
+  liteio_data:
+  rabbit_s3_data:
+  usagi_s3_data:

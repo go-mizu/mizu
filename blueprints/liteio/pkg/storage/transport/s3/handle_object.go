@@ -19,6 +19,24 @@ import (
 // Using 8MB for optimal throughput on large files (increased from 2MB).
 const s3ResponseBufferSize = 8 * 1024 * 1024
 
+// contentLengthCache pre-computes string representations of small integers
+// to avoid strconv.FormatInt allocations for common Content-Length values.
+var contentLengthCache [8192]string
+
+func init() {
+	for i := range contentLengthCache {
+		contentLengthCache[i] = strconv.FormatInt(int64(i), 10)
+	}
+}
+
+// formatContentLength returns a string for Content-Length without allocation for small values.
+func formatContentLength(n int64) string {
+	if n >= 0 && n < int64(len(contentLengthCache)) {
+		return contentLengthCache[n]
+	}
+	return strconv.FormatInt(n, 10)
+}
+
 // s3BufferPool provides pooled buffers for HTTP response streaming.
 var s3BufferPool = sync.Pool{
 	New: func() interface{} {
@@ -52,6 +70,7 @@ func (s *Server) handleObject(c *mizu.Ctx) error {
 	if err != nil {
 		return writeError(c, err)
 	}
+	defer putRequest(req)
 
 	switch req.Op {
 	case OpGetObject:
@@ -105,30 +124,28 @@ func (s *Server) handleGetObject(c *mizu.Ctx, req *Request) error {
 		return writeError(c, ErrNoSuchBucket)
 	}
 
-	// First fetch object metadata to know size / type / etag.
-	meta, err := b.Stat(ctx, req.Key, storage.Options{})
+	// OPTIMIZATION: Open the object directly instead of Stat() + Open() (saves 1 syscall).
+	// For non-range requests, open full object and get size from returned metadata.
+	// For range requests, we still need the full size for Content-Range header,
+	// so we open with offset=0,limit=0 first to get size, then the range is applied.
+	rc, obj, err := b.Open(ctx, req.Key, 0, 0, storage.Options{})
 	if err != nil {
 		return writeError(c, mapError(err))
 	}
 
-	size := meta.Size
+	size := obj.Size
 	if size < 0 {
-		// For safety, treat unknown size as full-body only.
 		size = 0
 	}
 
 	w := c.Writer()
-
-	// Always advertise byte range support.
 	w.Header().Set("Accept-Ranges", "bytes")
 
 	var (
-		start      int64
-		end        int64
-		length     int64
-		isPartial  bool
-		openOffset int64
-		openLimit  int64
+		start     int64
+		end       int64
+		length    int64
+		isPartial bool
 	)
 
 	if rangeHeader != "" && strings.HasPrefix(rangeHeader, "bytes=") && size > 0 {
@@ -139,7 +156,6 @@ func (s *Server) handleGetObject(c *mizu.Ctx, req *Request) error {
 			var parseErr error
 
 			switch {
-			// Suffix range: bytes=-N
 			case parts[0] == "" && parts[1] != "":
 				suffixLen, errParse := strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
 				if errParse == nil && suffixLen > 0 {
@@ -150,16 +166,12 @@ func (s *Server) handleGetObject(c *mizu.Ctx, req *Request) error {
 					end = size - 1
 					isPartial = true
 				}
-
-			// Open-ended range: bytes=start-
 			case parts[0] != "" && parts[1] == "":
 				start, parseErr = strconv.ParseInt(strings.TrimSpace(parts[0]), 10, 64)
 				if parseErr == nil && start >= 0 && start < size {
 					end = size - 1
 					isPartial = true
 				}
-
-			// Explicit range: bytes=start-end
 			case parts[0] != "" && parts[1] != "":
 				start, parseErr = strconv.ParseInt(strings.TrimSpace(parts[0]), 10, 64)
 				if parseErr == nil && start >= 0 && start < size {
@@ -175,27 +187,22 @@ func (s *Server) handleGetObject(c *mizu.Ctx, req *Request) error {
 		}
 	}
 
+	// For range requests, close the full reader and re-open with offset/limit
 	if isPartial {
+		_ = rc.Close()
 		length = end - start + 1
-		openOffset = start
-		openLimit = length
+		rc, obj, err = b.Open(ctx, req.Key, start, length, storage.Options{})
+		if err != nil {
+			return writeError(c, mapError(err))
+		}
 	} else {
-		// Full object.
-		openOffset = 0
-		openLimit = 0
 		length = size
 	}
 
-	// Use storage backend range support if available via Open(offset, limit).
-	rc, obj, err := b.Open(ctx, req.Key, openOffset, openLimit, storage.Options{})
-	if err != nil {
-		return writeError(c, mapError(err))
-	}
 	defer func() {
 		_ = rc.Close()
 	}()
 
-	// Base headers from object metadata.
 	contentType := obj.ContentType
 	if contentType == "" {
 		contentType = "binary/octet-stream"
@@ -209,7 +216,7 @@ func (s *Server) handleGetObject(c *mizu.Ctx, req *Request) error {
 		w.Header().Set("Last-Modified", obj.Updated.UTC().Format(http.TimeFormat))
 	}
 	if length > 0 {
-		w.Header().Set("Content-Length", strconv.FormatInt(length, 10))
+		w.Header().Set("Content-Length", formatContentLength(length))
 	}
 
 	if isPartial {
@@ -221,20 +228,15 @@ func (s *Server) handleGetObject(c *mizu.Ctx, req *Request) error {
 		w.WriteHeader(http.StatusOK)
 	}
 
-	// For GET we stream the body; for HEAD the router dispatches to handleHeadObject
-	// so we do not send a body here when Method == HEAD.
 	if r.Method != http.MethodHead {
 		// OPTIMIZATION: For small non-partial objects, cache the response for future requests
 		if !isPartial && length > 0 && length <= ResponseCacheMaxItemSize {
-			// Read entire object into memory for caching
 			data := make([]byte, length)
 			n, _ := io.ReadFull(rc, data)
 			data = data[:n]
 
-			// Write to response
 			w.Write(data)
 
-			// Cache the response
 			responseCache.Put(req.Bucket, req.Key, &ResponseCacheEntry{
 				ContentType:  contentType,
 				ETag:         obj.ETag,
@@ -243,7 +245,6 @@ func (s *Server) handleGetObject(c *mizu.Ctx, req *Request) error {
 				Size:         int64(n),
 			})
 		} else {
-			// Use pooled buffer for optimal streaming performance.
 			buf := getS3Buffer()
 			defer putS3Buffer(buf)
 			_, _ = io.CopyBuffer(w, rc, buf)
@@ -461,7 +462,7 @@ func (s *Server) handleHeadObject(c *mizu.Ctx, req *Request) error {
 		w.Header().Set("Last-Modified", obj.Updated.UTC().Format(http.TimeFormat))
 	}
 	if obj.Size >= 0 {
-		w.Header().Set("Content-Length", strconv.FormatInt(obj.Size, 10))
+		w.Header().Set("Content-Length", formatContentLength(obj.Size))
 	}
 	// S3 returns 200 for a successful HEAD Object.
 	w.Header().Set("Accept-Ranges", "bytes")

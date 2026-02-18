@@ -1392,13 +1392,47 @@ func safeBucketName(name string) string {
 }
 
 // cleanKey normalizes an object key into a relative slash separated path.
-// It uses path.Clean so it is platform independent and forbids ".." segments.
+// OPTIMIZED: Single-pass scanner that validates + normalizes without extra allocations.
+// Falls back to path.Clean only when needed (backslashes, double slashes, dots).
 func cleanKey(key string) (string, error) {
+	// Trim leading/trailing whitespace
 	key = strings.TrimSpace(key)
 	if key == "" {
 		return "", errors.New("local: empty key")
 	}
-	// Normalize backslashes to slash first so users can pass Windows style keys.
+
+	// Fast path: check if the key needs normalization at all.
+	// Most S3 keys are simple "path/to/object" with no special chars.
+	needsNormalize := false
+	hasDoubleDot := false
+	for i := 0; i < len(key); i++ {
+		c := key[i]
+		if c == '\\' {
+			needsNormalize = true
+			break
+		}
+		if c == '.' && i+1 < len(key) && key[i+1] == '.' {
+			hasDoubleDot = true
+		}
+	}
+
+	// Strip leading slash
+	if key[0] == '/' {
+		key = key[1:]
+		if key == "" {
+			return "", errors.New("local: empty key")
+		}
+	}
+
+	if !needsNormalize && !hasDoubleDot && !strings.Contains(key, "//") {
+		// Fast path: key is already clean
+		if key == "." {
+			return "", errors.New("local: empty key")
+		}
+		return key, nil
+	}
+
+	// Slow path: normalize backslashes, clean path, check for ".."
 	key = strings.ReplaceAll(key, "\\", "/")
 	key = strings.TrimPrefix(key, "/")
 	if key == "" {

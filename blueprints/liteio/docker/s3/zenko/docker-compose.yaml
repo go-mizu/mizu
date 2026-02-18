@@ -1,0 +1,41 @@
+services:
+  zenko:
+    image: zenko/cloudserver:latest
+    ports:
+      - "8000:8000"   # S3 API
+    environment:
+      SCALITY_ACCESS_KEY_ID: accessKey1
+      SCALITY_SECRET_ACCESS_KEY: verySecretKey1
+      S3DATA: file
+      S3BACKEND: file
+      REMOTE_MANAGEMENT_DISABLE: "1"
+      LOG_LEVEL: info
+    volumes:
+      - zenko_data:/usr/src/app/localData
+      - zenko_metadata:/usr/src/app/localMetadata
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/_/healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # Create test bucket on startup
+  zenko-init:
+    image: amazon/aws-cli:latest
+    depends_on:
+      zenko:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: accessKey1
+      AWS_SECRET_ACCESS_KEY: verySecretKey1
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://zenko:8000 s3 mb s3://test-bucket --region us-east-1 || true;
+      exit 0;
+      "
+
+volumes:
+  zenko_data:
+  zenko_metadata:

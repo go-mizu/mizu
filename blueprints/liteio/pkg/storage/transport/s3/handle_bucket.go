@@ -25,6 +25,7 @@ func (s *Server) handleService(c *mizu.Ctx) error {
 	if err != nil {
 		return writeError(c, err)
 	}
+	defer putRequest(req)
 
 	switch req.Op {
 	case OpListBuckets:
@@ -50,9 +51,8 @@ func (s *Server) handleBucket(c *mizu.Ctx) error {
 	if err != nil {
 		return writeError(c, err)
 	}
+	defer putRequest(req)
 
-	// Debug logging disabled for performance
-	// Enable with build tag: -tags=s3debug
 	debugLogRequest(c, req)
 
 	switch req.Op {
@@ -102,7 +102,7 @@ func (s *Server) handleListBuckets(c *mizu.Ctx, req *Request) error {
 		})
 	}
 
-	resp := ListBucketsResult{
+	resp := &ListBucketsResult{
 		Xmlns: s3XMLNS,
 		Owner: Owner{
 			ID:          "local",
@@ -112,7 +112,7 @@ func (s *Server) handleListBuckets(c *mizu.Ctx, req *Request) error {
 			Buckets: buckets,
 		},
 	}
-	return writeXML(c, http.StatusOK, resp)
+	return writeListBucketsResultFast(c, resp)
 }
 
 // handleCreateBucket implements:
@@ -340,7 +340,7 @@ func (s *Server) handleListObjects(c *mizu.Ctx, req *Request) error {
 		})
 	}
 
-	resp := ListBucketResultV2{
+	resp := &ListBucketResultV2{
 		Xmlns:    s3XMLNS,
 		Name:     req.Bucket,
 		Prefix:   encodeKeyForResponse(prefix, encodingType),
@@ -353,7 +353,7 @@ func (s *Server) handleListObjects(c *mizu.Ctx, req *Request) error {
 
 		Contents: entries,
 	}
-	return writeXML(c, http.StatusOK, resp)
+	return writeListBucketResultFast(c, resp)
 }
 
 // encodeKeyForResponse applies S3 ListObjectsV2 encoding type semantics.

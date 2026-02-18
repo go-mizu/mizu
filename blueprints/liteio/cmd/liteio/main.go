@@ -111,6 +111,8 @@ Environment variables:
 	flags.BoolVar(&cfg.EnablePprof, "pprof", cfg.EnablePprof, "Enable pprof profiling endpoints at /debug/pprof/")
 	flags.BoolVar(&cfg.EnableREST, "rest", cfg.EnableREST, "Enable Supabase Storage-compatible REST API at /storage/v1")
 	flags.StringVar(&cfg.JWTSecret, "jwt-secret", "", "JWT secret for REST API authentication")
+	flags.BoolVar(&cfg.SkipAuth, "no-auth", cfg.SkipAuth, "Disable S3 auth verification (benchmark mode)")
+
 
 	// Environment variable bindings
 	if v := os.Getenv("LITEIO_PORT"); v != "" {
@@ -139,6 +141,9 @@ Environment variables:
 	}
 	if os.Getenv("LITEIO_REST") == "true" || os.Getenv("LITEIO_REST") == "1" {
 		cfg.EnableREST = true
+	}
+	if os.Getenv("LITEIO_NO_AUTH") == "true" || os.Getenv("LITEIO_NO_AUTH") == "1" {
+		cfg.SkipAuth = true
 	}
 
 	// Add healthcheck subcommand

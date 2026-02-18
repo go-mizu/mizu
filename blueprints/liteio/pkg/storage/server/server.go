@@ -106,6 +106,10 @@ type Config struct {
 	// JWTSecret is the secret key for JWT authentication on the REST API.
 	// If empty and EnableREST is true, the REST API runs without authentication.
 	JWTSecret string
+
+	// SkipAuth disables all S3 signature verification for maximum performance.
+	// Use only for benchmarks and trusted environments.
+	SkipAuth bool
 }
 
 // DefaultConfig returns a Config with default values.
@@ -221,10 +225,11 @@ func New(cfg *Config) (*Server, error) {
 	s3Config := &s3.Config{
 		Region:        cfg.Region,
 		MaxObjectSize: cfg.MaxObjectSize,
+		SkipAuth:      cfg.SkipAuth,
 	}
 
-	// Set up authentication if credentials are provided
-	if cfg.AccessKeyID != "" && cfg.SecretAccessKey != "" {
+	// Set up authentication if credentials are provided (skipped in benchmark mode)
+	if !cfg.SkipAuth && cfg.AccessKeyID != "" && cfg.SecretAccessKey != "" {
 		s3Config.Credentials = &staticCredentialProvider{
 			accessKey: cfg.AccessKeyID,
 			secretKey: cfg.SecretAccessKey,
@@ -298,14 +303,7 @@ func (s *Server) Start() error {
 	s.addr = listener.Addr().String()
 	s.running = true
 
-	s.server = &http.Server{
-		Handler:           s.handler(),
-		ReadTimeout:       s.config.ReadTimeout,
-		WriteTimeout:      s.config.WriteTimeout,
-		IdleTimeout:       120 * time.Second, // Keep connections open for reuse
-		MaxHeaderBytes:    1 << 16,           // 64KB max header size
-		ReadHeaderTimeout: 10 * time.Second,  // Fast header parsing timeout
-	}
+	s.server = s.newHTTPServer()
 
 	s.mu.Unlock()
 
@@ -314,7 +312,7 @@ func (s *Server) Start() error {
 		"region", s.config.Region,
 	)
 
-	err = s.server.Serve(listener)
+	err = s.server.Serve(tcpKeepAliveListener{listener.(*net.TCPListener)})
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("serve: %w", err)
 	}
@@ -343,14 +341,7 @@ func (s *Server) StartBackground() error {
 	s.addr = listener.Addr().String()
 	s.running = true
 
-	s.server = &http.Server{
-		Handler:           s.handler(),
-		ReadTimeout:       s.config.ReadTimeout,
-		WriteTimeout:      s.config.WriteTimeout,
-		IdleTimeout:       120 * time.Second, // Keep connections open for reuse
-		MaxHeaderBytes:    1 << 16,           // 64KB max header size
-		ReadHeaderTimeout: 10 * time.Second,  // Fast header parsing timeout
-	}
+	s.server = s.newHTTPServer()
 
 	s.mu.Unlock()
 
@@ -360,7 +351,7 @@ func (s *Server) StartBackground() error {
 	)
 
 	go func() {
-		if err := s.server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := s.server.Serve(tcpKeepAliveListener{listener.(*net.TCPListener)}); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.config.Logger.Error("server error", "error", err)
 		}
 	}()
@@ -494,4 +485,38 @@ func (s *Server) Running() bool {
 // Storage returns the underlying storage backend.
 func (s *Server) Storage() storage.Storage {
 	return s.storage
+}
+
+// newHTTPServer creates a tuned http.Server with optimized settings.
+func (s *Server) newHTTPServer() *http.Server {
+	return &http.Server{
+		Handler:           s.handler(),
+		ReadTimeout:       s.config.ReadTimeout,
+		WriteTimeout:      s.config.WriteTimeout,
+		IdleTimeout:       120 * time.Second, // Keep connections open for reuse
+		MaxHeaderBytes:    1 << 16,           // 64KB max header size
+		ReadHeaderTimeout: 10 * time.Second,  // Fast header parsing timeout
+	}
+}
+
+// tcpKeepAliveListener wraps a TCPListener to set TCP_NODELAY and
+// optimized buffer sizes on accepted connections.
+type tcpKeepAliveListener struct {
+	*net.TCPListener
+}
+
+func (ln tcpKeepAliveListener) Accept() (net.Conn, error) {
+	tc, err := ln.AcceptTCP()
+	if err != nil {
+		return nil, err
+	}
+	// Disable Nagle's algorithm for lower latency on small responses
+	tc.SetNoDelay(true)
+	// Keep connections alive for connection reuse
+	tc.SetKeepAlive(true)
+	tc.SetKeepAlivePeriod(60 * time.Second)
+	// Increase socket buffers for throughput
+	tc.SetReadBuffer(256 * 1024)  // 256KB
+	tc.SetWriteBuffer(256 * 1024) // 256KB
+	return tc, nil
 }

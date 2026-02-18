@@ -1,0 +1,40 @@
+services:
+  rustfs:
+    image: rustfs/rustfs:latest
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Console UI
+    environment:
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ACCESS_KEY: rustfsadmin
+      RUSTFS_SECRET_KEY: rustfsadmin
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+      RUSTFS_BROWSER: "on"
+    volumes:
+      - rustfs_data:/data
+    user: "10001:10001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # Create test bucket on startup
+  rustfs-init:
+    image: amazon/aws-cli:latest
+    depends_on:
+      rustfs:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: rustfsadmin
+      AWS_SECRET_ACCESS_KEY: rustfsadmin
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://rustfs:9000 s3 mb s3://test-bucket || true;
+      exit 0;
+      "
+
+volumes:
+  rustfs_data:
