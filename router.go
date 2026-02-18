@@ -227,6 +227,16 @@ func (r *Router) Use(mw ...Middleware) {
 	r.mu.Unlock()
 }
 
+// ClearMiddleware removes all global middleware from the router.
+// Use this to strip the default Logger middleware for maximum performance.
+func (r *Router) ClearMiddleware() {
+	r.globalChain = nil
+
+	r.mu.Lock()
+	r.entryDirty = true
+	r.mu.Unlock()
+}
+
 // Group creates a prefixed child router and runs fn with it.
 func (r *Router) Group(prefix string, fn func(g *Router)) {
 	g := r.Prefix(prefix)
