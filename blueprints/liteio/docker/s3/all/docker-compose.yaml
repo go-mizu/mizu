@@ -229,6 +229,7 @@ services:
     environment:
       LITEIO_ACCESS_KEY: liteio
       LITEIO_SECRET_KEY: liteio123
+      LITEIO_NO_LOG: "true"   # Disable per-request Logger middleware (saves crypto/rand overhead)
     volumes:
       - liteio_data:/data
     healthcheck:
