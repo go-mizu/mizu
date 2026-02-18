@@ -16,7 +16,7 @@ require (
 	github.com/duckdb/duckdb-go/v2 v2.5.5
 	github.com/elastic/go-elasticsearch/v8 v8.19.3
 	github.com/expectedsh/go-sonic v0.0.0-20210827144320-d31eb03ae288
-	github.com/go-mizu/mizu v0.5.22
+	github.com/go-mizu/mizu v0.5.21
 	github.com/go-rod/rod v0.116.2
 	github.com/go-rod/stealth v0.4.9
 	github.com/go-sql-driver/mysql v1.9.3

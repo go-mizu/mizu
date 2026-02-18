@@ -4,15 +4,15 @@ go 1.25.5
 
 require (
 	github.com/duckdb/duckdb-go/v2 v2.5.5
-	github.com/go-mizu/mizu v0.5.7
+	github.com/go-mizu/mizu v0.5.21
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/spf13/cobra v1.10.2
-	golang.org/x/crypto v0.47.0
+	golang.org/x/crypto v0.48.0
 )
 
 require (
 	github.com/apache/arrow-go/v18 v18.5.1 // indirect
-	github.com/duckdb/duckdb-go-bindings v0.3.3 // indirect
+	github.com/duckdb/duckdb-go-bindings v0.3.4 // indirect
 	github.com/duckdb/duckdb-go-bindings/lib/darwin-amd64 v0.3.3 // indirect
 	github.com/duckdb/duckdb-go-bindings/lib/darwin-arm64 v0.3.3 // indirect
 	github.com/duckdb/duckdb-go-bindings/lib/linux-amd64 v0.3.3 // indirect
@@ -24,16 +24,16 @@ require (
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/klauspost/compress v1.18.3 // indirect
+	github.com/klauspost/compress v1.18.4 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.25 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
-	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
-	golang.org/x/mod v0.32.0 // indirect
+	golang.org/x/exp v0.0.0-20260212183809-81e46e3db34a // indirect
+	golang.org/x/mod v0.33.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/sys v0.40.0 // indirect
-	golang.org/x/telemetry v0.0.0-20260205145544-86a5c4bf3c8d // indirect
-	golang.org/x/tools v0.41.0 // indirect
+	golang.org/x/sys v0.41.0 // indirect
+	golang.org/x/telemetry v0.0.0-20260213145524-e0ab670178e1 // indirect
+	golang.org/x/tools v0.42.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 )
