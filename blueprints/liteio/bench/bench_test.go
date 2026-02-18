@@ -23,6 +23,7 @@ import (
 
 	"github.com/liteio-dev/liteio/pkg/storage"
 	"github.com/liteio-dev/liteio/pkg/storage/driver/local"
+	_ "github.com/liteio-dev/liteio/pkg/storage/driver/exp/s3"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/memory"
 )
 

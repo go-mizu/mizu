@@ -104,6 +104,41 @@ const (
 // Useful for benchmarks and temporary data.
 var NoFsync = false
 
+// fastETag generates a fast pseudo-ETag from file modification time and size.
+// This avoids expensive content hashing while still providing meaningful ETags
+// for S3 caching and conditional requests (If-None-Match / If-Match).
+// Format: hex(unixNano)-hex(size), e.g. "17a1b2c3d4e5f600-400"
+func fastETag(modTime time.Time, size int64) string {
+	// Use a stack-allocated buffer to avoid heap allocation.
+	// Max: 16 hex digits + '-' + 16 hex digits = 33 bytes.
+	var buf [33]byte
+	n := appendHex(buf[:], 0, uint64(modTime.UnixNano()))
+	buf[n] = '-'
+	n++
+	n = appendHex(buf[:], n, uint64(size))
+	return string(buf[:n])
+}
+
+// appendHex writes v in lowercase hex to buf starting at pos, returns new pos.
+func appendHex(buf []byte, pos int, v uint64) int {
+	const digits = "0123456789abcdef"
+	if v == 0 {
+		buf[pos] = '0'
+		return pos + 1
+	}
+	// Find number of hex digits needed.
+	start := pos
+	for tmp := v; tmp > 0; tmp >>= 4 {
+		pos++
+	}
+	end := pos
+	for i := end - 1; i >= start; i-- {
+		buf[i] = digits[v&0xf]
+		v >>= 4
+	}
+	return end
+}
+
 // =============================================================================
 // TIERED BUFFER POOLS
 // =============================================================================
@@ -641,6 +676,7 @@ func (b *bucket) writeEmptyFile(full, relKey, contentType string) (*storage.Obje
 		Key:         relToKey(relKey),
 		Size:        0,
 		ContentType: contentType,
+		ETag:        fastETag(now, 0),
 		Created:     now,
 		Updated:     now,
 	}, nil
@@ -706,6 +742,7 @@ func (b *bucket) writeTinyFile(full, relKey string, src io.Reader, size int64, c
 		Key:         relToKey(relKey),
 		Size:        int64(n),
 		ContentType: contentType,
+		ETag:        fastETag(now, int64(n)),
 		Created:     now,
 		Updated:     now,
 	}, nil
@@ -779,6 +816,7 @@ func (b *bucket) writeSmallFile(full, relKey string, src io.Reader, size int64, 
 		Key:         relToKey(relKey),
 		Size:        int64(n),
 		ContentType: contentType,
+		ETag:        fastETag(now, int64(n)),
 		Created:     now,
 		Updated:     now,
 	}, nil
@@ -848,6 +886,7 @@ func (b *bucket) writeLargeFile(full, dir, relKey, key string, src io.Reader, co
 		Key:         relToKey(relKey),
 		Size:        written,
 		ContentType: contentType,
+		ETag:        fastETag(now, written),
 		Created:     now,
 		Updated:     now,
 	}, nil
@@ -883,6 +922,7 @@ func (b *bucket) writeVeryLargeFile(full, _, relKey, key string, src io.Reader, 
 		Key:         relToKey(relKey),
 		Size:        written,
 		ContentType: contentType,
+		ETag:        fastETag(now, written),
 		Created:     now,
 		Updated:     now,
 	}, nil
@@ -910,10 +950,12 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 		if data, modTime, ok := hotCache.GetHot(ck); ok {
 			mixedCacheHits.Add(1)
 			mixedReadOps.Add(1)
+			sz := int64(len(data))
 			obj := &storage.Object{
 				Bucket:  b.name,
 				Key:     relToKey(relKey),
-				Size:    int64(len(data)),
+				Size:    sz,
+				ETag:    fastETag(modTime, sz),
 				Created: modTime,
 				Updated: modTime,
 			}
@@ -925,10 +967,12 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 		if data, modTime, ok := globalObjectCache.Get(ck); ok {
 			mixedCacheHits.Add(1)
 			mixedReadOps.Add(1)
+			sz := int64(len(data))
 			obj := &storage.Object{
 				Bucket:  b.name,
 				Key:     relToKey(relKey),
-				Size:    int64(len(data)),
+				Size:    sz,
+				ETag:    fastETag(modTime, sz),
 				Created: modTime,
 				Updated: modTime,
 			}
@@ -962,6 +1006,7 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 		Bucket:  b.name,
 		Key:     relToKey(relKey),
 		Size:    fileSize,
+		ETag:    fastETag(modTime, fileSize),
 		Created: modTime,
 		Updated: modTime,
 	}
@@ -1078,10 +1123,12 @@ func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*s
 	// OPTIMIZATION: Check hot object cache first to avoid disk I/O
 	ck := cacheKey(b.name, relKey)
 	if data, modTime, ok := globalObjectCache.Get(ck); ok {
+		sz := int64(len(data))
 		return &storage.Object{
 			Bucket:  b.name,
 			Key:     relToKey(relKey),
-			Size:    int64(len(data)),
+			Size:    sz,
+			ETag:    fastETag(modTime, sz),
 			IsDir:   false,
 			Created: modTime,
 			Updated: modTime,
@@ -1099,14 +1146,20 @@ func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*s
 		}
 		return nil, fmt.Errorf("local: stat %q: %w", key, err)
 	}
-	return &storage.Object{
+	modTime := info.ModTime()
+	sz := info.Size()
+	obj := &storage.Object{
 		Bucket:  b.name,
 		Key:     relToKey(relKey),
-		Size:    info.Size(),
+		Size:    sz,
 		IsDir:   info.IsDir(),
-		Created: info.ModTime(),
-		Updated: info.ModTime(),
-	}, nil
+		Created: modTime,
+		Updated: modTime,
+	}
+	if !info.IsDir() {
+		obj.ETag = fastETag(modTime, sz)
+	}
+	return obj, nil
 }
 
 func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) error {
