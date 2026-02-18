@@ -14,6 +14,7 @@ type Stats struct {
 	success  atomic.Int64
 	failed   atomic.Int64
 	timeout  atomic.Int64
+	blocked  atomic.Int64 // pages detected as soft 404 / anti-bot
 	bytes    atomic.Int64
 	fetchMs  atomic.Int64
 	inFlight atomic.Int64
@@ -146,6 +147,16 @@ func (s *Stats) RecordFailure(statusCode int, isTimeout bool) {
 	}
 }
 
+// RecordBlocked records a page detected as soft 404 / anti-bot.
+func (s *Stats) RecordBlocked() {
+	s.blocked.Add(1)
+}
+
+// Blocked returns the count of blocked pages.
+func (s *Stats) Blocked() int64 {
+	return s.blocked.Load()
+}
+
 // RecordDepth records a page crawled at a given depth.
 func (s *Stats) RecordDepth(depth int) {
 	s.depthMu.Lock()
@@ -183,7 +194,7 @@ func (s *Stats) Elapsed() time.Duration {
 
 // Done returns the total processed count.
 func (s *Stats) Done() int64 {
-	return s.success.Load() + s.failed.Load() + s.timeout.Load()
+	return s.success.Load() + s.failed.Load() + s.timeout.Load() + s.blocked.Load()
 }
 
 // Speed returns the current pages/sec (rolling 10-second window).
@@ -254,8 +265,9 @@ func (s *Stats) Render() string {
 	bytesTotal := s.bytes.Load()
 	fail := s.failed.Load()
 	tout := s.timeout.Load()
+	blk := s.blocked.Load()
 	inflight := s.inFlight.Load()
-	done := succ + fail + tout
+	done := succ + fail + tout + blk
 
 	// Heavy operations after snapshot (Speed acquires mutex, does slice work)
 	speed := s.Speed()
@@ -265,7 +277,7 @@ func (s *Stats) Render() string {
 	// Progress bar or open-ended counter
 	var progressLine string
 	if s.MaxPages > 0 {
-		pct := float64(done) / float64(s.MaxPages) * 100
+		pct := float64(succ) / float64(s.MaxPages) * 100
 		if pct > 100 {
 			pct = 100
 		}
@@ -275,7 +287,7 @@ func (s *Stats) Render() string {
 			filled = barWidth
 		}
 		bar := strings.Repeat("\u2588", filled) + strings.Repeat("\u2591", barWidth-filled)
-		progressLine = fmt.Sprintf("  %s  %5.1f%%  %s/%s", bar, pct, fmtInt64(done), fmtInt(s.MaxPages))
+		progressLine = fmt.Sprintf("  %s  %5.1f%%  %s ok / %s target  (%s total)", bar, pct, fmtInt64(succ), fmtInt(s.MaxPages), fmtInt64(done))
 	} else {
 		barWidth := 40
 		// Pulsing bar for open-ended crawl
@@ -302,10 +314,12 @@ func (s *Stats) Render() string {
 	eta := "---"
 	if s.continuous {
 		eta = "continuous"
-	} else if s.MaxPages > 0 && elapsed.Seconds() > 2 && done > 0 && speed > 0 {
-		remaining := int64(s.MaxPages) - done
-		if remaining > 0 {
-			etaDur := time.Duration(float64(remaining)/speed) * time.Second
+	} else if s.MaxPages > 0 && elapsed.Seconds() > 2 && succ > 0 && speed > 0 {
+		successRate := float64(succ) / float64(done)
+		effectiveSpeed := speed * successRate // pages/sec that are actually successful
+		remaining := int64(s.MaxPages) - succ
+		if remaining > 0 && effectiveSpeed > 0 {
+			etaDur := time.Duration(float64(remaining)/effectiveSpeed) * time.Second
 			eta = formatDuration(etaDur)
 		} else {
 			eta = "done"
@@ -357,6 +371,9 @@ func (s *Stats) Render() string {
 		fmtInt64(succ), safePct(succ, done),
 		fmtInt64(fail), safePct(fail, done),
 		fmtInt64(tout), safePct(tout, done))
+	if blk > 0 {
+		resultLine += fmt.Sprintf("  \U0001f6ab %s blocked (%4.1f%%)", fmtInt64(blk), safePct(blk, done))
+	}
 	if retryCount > 0 {
 		resultLine += fmt.Sprintf("  \u21bb %s retried", fmtInt64(retryCount))
 	}

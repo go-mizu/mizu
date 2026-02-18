@@ -33,9 +33,9 @@ type Crawler struct {
 	stats         *Stats
 	robots        *RobotsChecker
 	limiter       *rate.Limiter
-	claimed       atomic.Int64 // atomic slot counter for max-pages
 	retryQ        *retryQueue
 	retryAttempts sync.Map // URL -> int: per-URL retry attempt counter
+	rodPool       *rodPool // browser page pool (nil if not in rod mode)
 }
 
 // retryItem tracks a URL that needs to be retried after a transient error.
@@ -290,7 +290,7 @@ func (c *Crawler) Run(ctx context.Context) error {
 		if len(sitemapURLs) > 0 {
 			added := 0
 			for _, u := range sitemapURLs {
-				if c.frontier.TryAdd(u, 0) {
+				if c.frontier.TryAdd(u, 1) {
 					added++
 				}
 			}
@@ -330,6 +330,7 @@ func (c *Crawler) Run(ctx context.Context) error {
 			return fmt.Errorf("rod: %w", err)
 		}
 		defer rp.close()
+		c.rodPool = rp
 
 		workers := c.config.RodWorkers
 		if workers <= 0 {
@@ -576,6 +577,10 @@ func (c *Crawler) saveState() {
 
 // coordinator watches for crawl completion: max-pages or frontier drained.
 // Calls cancel() to signal all workers to stop, then returns.
+//
+// Browser watchdog: detects throughput stalls (0 pages/s for >60s with
+// in-flight workers) and force-restarts Chrome. Also restarts Chrome
+// every 2000 pages to prevent memory bloat.
 func (c *Crawler) coordinator(ctx context.Context, cancel context.CancelFunc) {
 	tick := time.NewTicker(200 * time.Millisecond)
 	defer tick.Stop()
@@ -585,16 +590,51 @@ func (c *Crawler) coordinator(ctx context.Context, cancel context.CancelFunc) {
 	if reseedInterval <= 0 {
 		reseedInterval = 30 * time.Second
 	}
+
+	// Browser watchdog state
+	lastDone := c.stats.Done()
+	lastDoneAt := time.Now()
+	var lastRestartDone int64 // pages at last periodic restart
+	const stallTimeout = 60 * time.Second   // restart after 60s of zero progress
+	const restartEvery = int64(2000)         // restart every 2000 pages for memory
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
 		}
-		if c.config.MaxPages > 0 && c.stats.Done() >= int64(c.config.MaxPages) {
+		if c.config.MaxPages > 0 && c.stats.success.Load() >= int64(c.config.MaxPages) {
 			cancel()
 			return
 		}
+
+		// Browser watchdog: detect stalls and periodic restart
+		done := c.stats.Done()
+		if c.rodPool != nil {
+			// Throughput stall detection: no pages processed for >60s with workers in-flight.
+			// This catches Chrome hangs, memory exhaustion, and stuck tabs.
+			if done != lastDone {
+				lastDone = done
+				lastDoneAt = time.Now()
+			} else if c.stats.inFlight.Load() > 0 && time.Since(lastDoneAt) > stallTimeout {
+				c.rodPool.tryRestart()
+				c.stats.rodRestarts.Add(1)
+				lastDone = done
+				lastDoneAt = time.Now()
+			}
+
+			// Periodic restart: every 2000 pages to clear Chrome memory.
+			// Chrome accumulates memory from page history, JS heaps, and DOM.
+			if done-lastRestartDone >= restartEvery {
+				c.rodPool.tryRestart()
+				c.stats.rodRestarts.Add(1)
+				lastRestartDone = done
+				lastDone = done
+				lastDoneAt = time.Now()
+			}
+		}
+
 		if c.frontier.Len() == 0 && c.stats.inFlight.Load() == 0 && c.retryQ.len() == 0 {
 			empty++
 			if c.config.Continuous && empty >= 15 {
@@ -647,7 +687,7 @@ func (c *Crawler) reseed(ctx context.Context) int {
 		urls, _ := DiscoverSitemapURLs(sctx, c.clients[0], c.config.Domain, robotsSitemaps, 1_000_000)
 		sc()
 		for _, u := range urls {
-			if c.frontier.TryAdd(u, 0) {
+			if c.frontier.TryAdd(u, 1) {
 				added++
 			}
 		}
@@ -733,7 +773,7 @@ func (c *Crawler) worker(ctx context.Context, client *http.Client) {
 }
 
 func (c *Crawler) fetchAndProcess(ctx context.Context, client *http.Client, item CrawlItem) {
-	if c.config.MaxPages > 0 && c.claimed.Add(1) > int64(c.config.MaxPages) {
+	if c.config.MaxPages > 0 && c.stats.success.Load() >= int64(c.config.MaxPages) {
 		return
 	}
 	c.stats.inFlight.Add(1)
@@ -804,6 +844,13 @@ func (c *Crawler) fetchAndProcess(ctx context.Context, client *http.Client, item
 		result.Description = meta.Description
 		result.Language = meta.Language
 		result.Canonical = meta.Canonical
+
+		// Detect soft 404 / anti-bot pages before extracting links.
+		if blocked, reason := isBlockedPage(body, meta.Title, item.URL); blocked {
+			c.recordBlocked(item, reason, fetchMs)
+			return
+		}
+
 		result.LinkCount = len(meta.Links)
 		c.stats.RecordLinks(len(meta.Links))
 
@@ -832,6 +879,17 @@ func (c *Crawler) fetchAndProcess(ctx context.Context, client *http.Client, item
 		c.stats.RecordFailure(result.StatusCode, false)
 	}
 	c.stats.RecordDepth(item.Depth)
+}
+
+func (c *Crawler) recordBlocked(item CrawlItem, reason string, fetchMs int64) {
+	c.stats.RecordBlocked()
+	c.stats.RecordDepth(item.Depth)
+	c.stats.fetchMs.Add(fetchMs)
+	c.resultDB.AddPage(Result{
+		URL: item.URL, URLHash: xxhash.Sum64String(item.URL),
+		Depth: item.Depth, FetchTimeMs: fetchMs,
+		CrawledAt: time.Now(), Error: "blocked: " + reason,
+	})
 }
 
 func (c *Crawler) recordError(item CrawlItem, err error, fetchMs int64) {

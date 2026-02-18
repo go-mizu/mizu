@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DataDog/zstd"
 	"github.com/cespare/xxhash/v2"
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
@@ -245,7 +246,7 @@ func (c *Crawler) rodWorker(ctx context.Context, rp *rodPool, workerID int) {
 // rodFetchAndProcess fetches a page using headless Chrome.
 // Returns true if the browser appears dead (CDP connection broken) — caller should restart.
 func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item CrawlItem, workerID int) (browserDead bool) {
-	if c.config.MaxPages > 0 && c.claimed.Add(1) > int64(c.config.MaxPages) {
+	if c.config.MaxPages > 0 && c.stats.success.Load() >= int64(c.config.MaxPages) {
 		return
 	}
 	c.stats.inFlight.Add(1)
@@ -262,6 +263,13 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 	fetchCtx, fetchCancel := context.WithTimeout(ctx, timeout+30*time.Second)
 	defer fetchCancel()
 
+	// Hard deadline: force-close page if worker exceeds total timeout.
+	// Chrome operations can hang beyond context cancellation (blocking system calls),
+	// so we need a goroutine that kills the page from outside.
+	hardDeadline := timeout + 45*time.Second // 15s beyond fetchCtx for cleanup
+	pageClosed := make(chan struct{})
+	var forceClosePage func()
+
 	// Phase: get page from pool
 	c.stats.SetRodPhase(workerID, "pool")
 	page, err := rp.getPageCtx(fetchCtx)
@@ -276,13 +284,27 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		return
 	}
 
+	// Start hard-deadline watchdog: if this page is still alive after hardDeadline,
+	// force-close it. This unblocks any goroutine stuck in Chrome operations.
+	forceClosePage = func() { page.Close() }
+	go func() {
+		select {
+		case <-time.After(hardDeadline):
+			page.Close() // force-kill: unblocks any stuck Chrome call
+		case <-pageClosed:
+			// Normal cleanup completed before hard deadline
+		}
+	}()
+
 	// Context-bound page: ALL operations respect the global deadline.
 	p := page.Context(fetchCtx)
 	defer func() {
 		// Reset page to about:blank to free JS memory (critical for heavy SPA sites).
 		// This is both a cleanup step AND a browser health check.
 		if err := page.Timeout(2 * time.Second).Navigate("about:blank"); err != nil {
-			page.Close()
+			if forceClosePage != nil {
+				forceClosePage()
+			}
 			if isBrowserDead(err) {
 				browserDead = true
 			}
@@ -290,6 +312,7 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 			rp.putPage(page) // page is healthy, recycle it
 			browserDead = false
 		}
+		close(pageClosed) // signal watchdog to stop
 	}()
 
 	// Inject XHR/fetch interceptor to capture URLs from API responses (news feeds, AJAX pagination).
@@ -434,6 +457,19 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		}
 	}
 
+	// Early blocked-page detection: check title BEFORE scrolling to avoid wasting
+	// 10-15s scrolling a blocked page. Real pages have descriptive titles after render;
+	// anti-bot pages keep the URL path as title.
+	if fetchCtx.Err() == nil {
+		if info, ie := p.Info(); ie == nil && info != nil && info.Title != "" {
+			if blocked, reason := isBlockedPage(nil, info.Title, item.URL); blocked {
+				fetchMs := time.Since(start).Milliseconds()
+				c.recordBlocked(item, reason, fetchMs)
+				return
+			}
+		}
+	}
+
 	// Scroll for infinite scroll pages (Pinterest, news feeds, etc.)
 	// Uses early termination: stops when BOTH page height AND XHR URL count
 	// stop growing. Checking XHR count is critical for sites like news.qq.com
@@ -515,7 +551,7 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 	// Common patterns: very small pages (<500 bytes), "Access Restricted" pages,
 	// pages whose title is just the URL path (QQ anti-bot placeholder).
 	if blocked, reason := isBlockedPage(body, pageTitle, item.URL); blocked {
-		c.recordError(item, fmt.Errorf("blocked: %s", reason), fetchMs)
+		c.recordBlocked(item, reason, fetchMs)
 		return
 	}
 
@@ -538,6 +574,11 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 	}
 	if finalURL != item.URL {
 		result.RedirectURL = finalURL
+	}
+	if c.config.StoreBody {
+		if compressed, err := zstd.Compress(nil, body); err == nil {
+			result.BodyCompressed = compressed
+		}
 	}
 
 	baseURL, _ := url.Parse(finalURL)
@@ -624,15 +665,24 @@ func isBlockedPage(body []byte, title, requestURL string) (bool, string) {
 	bodyLen := len(body)
 
 	// Very small pages (< 500 bytes) with HTTP 200 are almost certainly anti-bot placeholders.
-	// Real pages are at least a few KB.
-	if bodyLen < 500 {
+	// Real pages are at least a few KB. Skip when body is nil (early title-only check).
+	if body != nil && bodyLen < 500 {
 		return true, fmt.Sprintf("empty response (%d bytes)", bodyLen)
 	}
 
-	// QQ/Tencent anti-bot: page title is just the URL path (e.g., "/rain/a/20260218A0xxxx").
-	// Normal pages have descriptive titles.
-	if title != "" && strings.HasPrefix(title, "/") && strings.Contains(requestURL, title) {
-		return true, "title matches URL path (anti-bot placeholder)"
+	// QQ/Tencent anti-bot: title matches the URL path or hostname+path.
+	// Browser mode returns titles like "news.qq.com/rain/a/20260218A0xxxx" (hostname+path),
+	// while raw HTML has titles like "/rain/a/20260218A0xxxx" (path only).
+	// Normal pages have descriptive titles like "Article Title_腾讯新闻".
+	if title != "" {
+		// Extract path from request URL for comparison
+		if u, err := url.Parse(requestURL); err == nil && u.Path != "" && u.Path != "/" {
+			urlPath := u.Path                       // e.g., "/rain/a/20260218A0xxxx"
+			hostPath := u.Host + u.Path              // e.g., "news.qq.com/rain/a/20260218A0xxxx"
+			if title == urlPath || title == urlPath[1:] || title == hostPath {
+				return true, "title matches URL path (anti-bot placeholder)"
+			}
+		}
 	}
 
 	// Check for known WAF/anti-bot signatures in small pages (< 10KB).
@@ -640,12 +690,12 @@ func isBlockedPage(body []byte, title, requestURL string) (bool, string) {
 	if bodyLen < 10_000 {
 		content := strings.ToLower(string(body))
 		wafSignatures := []string{
-			"access restricted",      // Generic access block
-			"限制访问",                   // Chinese: access restricted
-			"访问受限",                   // Chinese: access limited
-			"eo_bot_ssid",            // Tencent Edge One WAF
-			"waf.tencent.com",        // Tencent WAF redirect
-			"captcha-delivery",       // Generic CAPTCHA
+			"access restricted",       // Generic access block
+			"限制访问",                    // Chinese: access restricted
+			"访问受限",                    // Chinese: access limited
+			"eo_bot_ssid",             // Tencent Edge One WAF
+			"waf.tencent.com",         // Tencent WAF redirect
+			"captcha-delivery",        // Generic CAPTCHA
 			"cf-browser-verification", // Cloudflare
 		}
 		for _, sig := range wafSignatures {
