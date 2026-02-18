@@ -298,7 +298,7 @@ func (c *Crawler) lightpandaWorker(ctx context.Context, lp *lightpandaPool, work
 // lightpandaFetchAndProcess fetches a page using Lightpanda.
 // Returns true if the process appears dead — caller should restart.
 func (c *Crawler) lightpandaFetchAndProcess(ctx context.Context, lp *lightpandaPool, item CrawlItem, workerID int) (processDead bool) {
-	if c.config.MaxPages > 0 && c.claimed.Add(1) > int64(c.config.MaxPages) {
+	if c.config.MaxPages > 0 && c.stats.success.Load() >= int64(c.config.MaxPages) {
 		return
 	}
 	c.stats.inFlight.Add(1)
