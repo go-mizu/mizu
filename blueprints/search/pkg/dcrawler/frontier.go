@@ -16,6 +16,7 @@ type Frontier struct {
 	filter     *bloom.BloomFilter
 	mu         sync.Mutex
 	domain     string
+	aliases    map[string]bool // additional domains treated as same-domain
 	includeSub bool
 	robots     *RobotsChecker
 	added      atomic.Int64
@@ -23,11 +24,16 @@ type Frontier struct {
 }
 
 // NewFrontier creates a new URL frontier with bloom filter dedup.
-func NewFrontier(domain string, capacity int, bloomCap uint, bloomFPR float64, includeSub bool) *Frontier {
+func NewFrontier(domain string, capacity int, bloomCap uint, bloomFPR float64, includeSub bool, aliases []string) *Frontier {
+	aliasMap := make(map[string]bool)
+	for _, a := range aliases {
+		aliasMap[NormalizeDomain(a)] = true
+	}
 	return &Frontier{
 		ch:         make(chan CrawlItem, capacity),
 		filter:     bloom.NewWithEstimates(bloomCap, bloomFPR),
 		domain:     NormalizeDomain(domain),
+		aliases:    aliasMap,
 		includeSub: includeSub,
 	}
 }
@@ -151,6 +157,9 @@ func (f *Frontier) isSameDomain(u *url.URL) bool {
 	host := strings.ToLower(u.Hostname())
 	host = strings.TrimPrefix(host, "www.")
 	if host == f.domain {
+		return true
+	}
+	if f.aliases[host] {
 		return true
 	}
 	if f.includeSub && strings.HasSuffix(host, "."+f.domain) {

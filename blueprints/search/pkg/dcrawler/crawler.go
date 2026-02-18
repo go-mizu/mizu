@@ -144,7 +144,7 @@ func New(cfg Config) (*Crawler, error) {
 
 	c := &Crawler{config: cfg}
 	c.setupTransport()
-	c.frontier = NewFrontier(cfg.Domain, cfg.FrontierSize, cfg.BloomCapacity, cfg.BloomFPR, cfg.IncludeSubdomain)
+	c.frontier = NewFrontier(cfg.Domain, cfg.FrontierSize, cfg.BloomCapacity, cfg.BloomFPR, cfg.IncludeSubdomain, cfg.DomainAliases)
 	c.stats = NewStats(cfg.Domain, cfg.MaxPages, cfg.Continuous)
 	c.stats.SetFrontierFuncs(c.frontier.Len, c.frontier.BloomCount)
 	c.stats.SetUseRod(cfg.UseRod || cfg.UseLightpanda)
@@ -163,6 +163,17 @@ func (c *Crawler) setupTransport() {
 	var cachedIPs []string
 	for _, host := range []string{c.config.Domain, "www." + c.config.Domain} {
 		if ips, err := net.LookupHost(host); err == nil && len(ips) > 0 {
+			// Filter to IPv4 only: IPv6 connectivity is unreliable for crawling,
+			// and Go's Happy Eyeballs (RFC 6555) doesn't apply when using cached IPs.
+			for _, ip := range ips {
+				if parsed := net.ParseIP(ip); parsed != nil && parsed.To4() != nil {
+					cachedIPs = append(cachedIPs, ip)
+				}
+			}
+			if len(cachedIPs) > 0 {
+				break
+			}
+			// Fall back to all IPs if no IPv4 found
 			cachedIPs = ips
 			break
 		}
@@ -217,12 +228,17 @@ func (c *Crawler) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// robots.txt (browser mode ignores robots.txt, like real browsers)
-	if c.config.RespectRobots && !c.config.UseRod && !c.config.UseLightpanda {
+	// robots.txt: always fetch for Sitemap directives (URL discovery).
+	// In browser mode, skip path-blocking rules (Disallow) but still use Sitemap: directives.
+	// Many sites (e.g., news.qq.com) have sitemaps at non-standard paths only listed in robots.txt.
+	{
 		rctx, rc := context.WithTimeout(ctx, 10*time.Second)
 		if r, _ := FetchRobots(rctx, c.clients[0], c.config.Domain); r != nil {
 			c.robots = r
-			c.frontier.SetRobots(r)
+			// Only enforce path-blocking rules for non-browser mode
+			if c.config.RespectRobots && !c.config.UseRod && !c.config.UseLightpanda {
+				c.frontier.SetRobots(r)
+			}
 		}
 		rc()
 	}
@@ -258,6 +274,32 @@ func (c *Crawler) Run(ctx context.Context) error {
 	// 2. State DB frontier: auto-load saved frontier entries
 	// 3. Fallback: config SeedURLs (domain root)
 	c.loadSeeds()
+
+	// Sitemap discovery: use sitemap.xml as additional seed source.
+	// Uses robots.txt Sitemap: directives (fetched above) for non-standard paths.
+	if c.config.FollowSitemap {
+		var robotsSitemaps []string
+		if c.robots != nil {
+			robotsSitemaps = c.robots.Sitemaps()
+		}
+		// 2 minutes timeout: large sitemap indexes (1000+ child sitemaps) need time
+		// for concurrent fetching of individual sitemaps.
+		sctx, sc := context.WithTimeout(ctx, 2*time.Minute)
+		sitemapURLs, _ := DiscoverSitemapURLs(sctx, c.clients[0], c.config.Domain, robotsSitemaps, 100_000)
+		sc()
+		if len(sitemapURLs) > 0 {
+			added := 0
+			for _, u := range sitemapURLs {
+				if c.frontier.TryAdd(u, 0) {
+					added++
+				}
+			}
+			if added > 0 {
+				fmt.Printf("  Sitemap: %s URLs added to frontier\n", fmtInt(added))
+			}
+		}
+	}
+
 	fmt.Printf("  Frontier: %s seed URLs\n\n", fmtInt(c.frontier.Len()))
 
 	// errgroup: workers + coordinator
@@ -584,6 +626,17 @@ func (c *Crawler) coordinator(ctx context.Context, cancel context.CancelFunc) {
 func (c *Crawler) reseed(ctx context.Context) int {
 	added := 0
 
+	// Browser mode: re-insert homepage into frontier for browser-based re-crawl.
+	// This triggers fresh XHR API calls that discover newly published articles.
+	// The bloom filter is bypassed for the homepage since it was already crawled.
+	if c.config.UseRod || c.config.UseLightpanda {
+		homeURL := fmt.Sprintf("https://%s/", NormalizeDomain(c.config.Domain))
+		if c.frontier.PushDirect(CrawlItem{URL: homeURL, Depth: 0}) {
+			added++
+		}
+		return added
+	}
+
 	// Re-fetch sitemap for new URLs
 	if c.config.FollowSitemap {
 		var robotsSitemaps []string
@@ -759,9 +812,10 @@ func (c *Crawler) fetchAndProcess(ctx context.Context, client *http.Client, item
 				result.BodyCompressed = compressed
 			}
 		}
+		hasAliases := len(c.config.DomainAliases) > 0
 		if c.config.MaxDepth == 0 || item.Depth < c.config.MaxDepth {
 			for _, link := range meta.Links {
-				if link.IsInternal {
+				if link.IsInternal || hasAliases {
 					c.frontier.TryAdd(link.TargetURL, item.Depth+1)
 				}
 			}

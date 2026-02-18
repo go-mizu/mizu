@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
+	"sync/atomic"
 )
 
 // sitemapIndex represents a <sitemapindex> root element.
@@ -30,6 +32,7 @@ type urlEntry struct {
 
 // DiscoverSitemapURLs fetches and parses sitemap.xml (and sitemap indexes)
 // to discover seed URLs. Returns up to maxURLs URLs.
+// Uses concurrent fetching for sitemap indexes with many child sitemaps.
 func DiscoverSitemapURLs(ctx context.Context, client *http.Client, domain string, robotsSitemaps []string, maxURLs int) ([]string, error) {
 	if maxURLs <= 0 {
 		maxURLs = 1_000_000
@@ -38,7 +41,7 @@ func DiscoverSitemapURLs(ctx context.Context, client *http.Client, domain string
 	candidates := make([]string, 0, len(robotsSitemaps)+2)
 	seen := make(map[string]bool)
 
-	// Add robots.txt sitemaps first (highest priority)
+	// Add robots.txt sitemaps first (highest priority — may contain non-standard paths)
 	for _, s := range robotsSitemaps {
 		if !seen[s] {
 			seen[s] = true
@@ -54,52 +57,117 @@ func DiscoverSitemapURLs(ctx context.Context, client *http.Client, domain string
 		}
 	}
 
+	var mu sync.Mutex
 	var urls []string
 	seenURLs := make(map[string]bool)
+	var urlCount atomic.Int64
 
-	var discover func(sitemapURL string, depth int)
-	discover = func(sitemapURL string, depth int) {
-		if depth > 3 || len(urls) >= maxURLs {
-			return
+	addURLs := func(newURLs []string) {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, loc := range newURLs {
+			if loc != "" && !seenURLs[loc] && len(urls) < maxURLs {
+				seenURLs[loc] = true
+				urls = append(urls, loc)
+				urlCount.Store(int64(len(urls)))
+			}
 		}
+	}
+
+	// fetchAndParse fetches a single sitemap and returns its URLs.
+	fetchAndParse := func(sitemapURL string) []string {
 		body, err := fetchSitemap(ctx, client, sitemapURL)
 		if err != nil || len(body) == 0 {
-			return
+			return nil
+		}
+		var us urlSet
+		if err := xml.Unmarshal(body, &us); err != nil {
+			return nil
+		}
+		result := make([]string, 0, len(us.URLs))
+		for _, u := range us.URLs {
+			loc := strings.TrimSpace(u.Loc)
+			if loc != "" {
+				result = append(result, loc)
+			}
+		}
+		return result
+	}
+
+	for _, candidate := range candidates {
+		if ctx.Err() != nil || urlCount.Load() >= int64(maxURLs) {
+			break
+		}
+
+		body, err := fetchSitemap(ctx, client, candidate)
+		if err != nil || len(body) == 0 {
+			continue
 		}
 
 		if isSitemapIndexXML(body) {
+			// Parse the index to get child sitemap URLs
 			var idx sitemapIndex
 			if err := xml.Unmarshal(body, &idx); err != nil {
-				return
+				continue
 			}
+
+			// Collect child sitemaps not yet seen
+			var childSitemaps []string
 			for _, sm := range idx.Sitemaps {
 				loc := strings.TrimSpace(sm.Loc)
 				if loc != "" && !seen[loc] {
 					seen[loc] = true
-					discover(loc, depth+1)
+					childSitemaps = append(childSitemaps, loc)
 				}
 			}
+
+			if len(childSitemaps) == 0 {
+				continue
+			}
+
+			// Fetch child sitemaps concurrently (up to 20 at a time)
+			concurrency := 20
+			if len(childSitemaps) < concurrency {
+				concurrency = len(childSitemaps)
+			}
+			sem := make(chan struct{}, concurrency)
+			var wg sync.WaitGroup
+
+			for _, childURL := range childSitemaps {
+				if ctx.Err() != nil || urlCount.Load() >= int64(maxURLs) {
+					break
+				}
+
+				wg.Add(1)
+				sem <- struct{}{}
+				go func(u string) {
+					defer wg.Done()
+					defer func() { <-sem }()
+
+					childURLs := fetchAndParse(u)
+					if len(childURLs) > 0 {
+						addURLs(childURLs)
+					}
+				}(childURL)
+			}
+			wg.Wait()
 		} else {
+			// Direct URL set
 			var us urlSet
 			if err := xml.Unmarshal(body, &us); err != nil {
-				return
+				continue
 			}
+			result := make([]string, 0, len(us.URLs))
 			for _, u := range us.URLs {
 				loc := strings.TrimSpace(u.Loc)
-				if loc != "" && !seenURLs[loc] && len(urls) < maxURLs {
-					seenURLs[loc] = true
-					urls = append(urls, loc)
+				if loc != "" {
+					result = append(result, loc)
 				}
 			}
+			addURLs(result)
 		}
 	}
 
-	for _, c := range candidates {
-		discover(c, 0)
-		if len(urls) >= maxURLs {
-			break
-		}
-	}
 	return urls, nil
 }
 
@@ -108,6 +176,7 @@ func fetchSitemap(ctx context.Context, client *http.Client, sitemapURL string) (
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
 	req.Header.Set("Accept", "application/xml, text/xml, */*")
 	req.Header.Set("Accept-Encoding", "gzip")
 	resp, err := client.Do(req)

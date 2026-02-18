@@ -36,6 +36,7 @@ func NewCrawlDomain() *cobra.Command {
 		extractImages    bool
 		downloadImages   bool
 		staleHours       int
+		domainAliases    []string
 	)
 
 	cmd := &cobra.Command{
@@ -100,12 +101,14 @@ Pinterest (auto-detected, uses internal API - no browser needed):
 				cfg.Timeout = 30 * time.Second
 			}
 			cfg.ScrollCount = scrollCount
-			// Browser mode: auto-scroll to discover lazy-loaded content (infinite scroll, AJAX feeds)
+			// Browser mode: auto-scroll to discover lazy-loaded content (infinite scroll, AJAX feeds).
+			// High count (20) is safe: early termination stops when page stops growing.
 			if (useRod || useLightpanda) && !cmd.Flags().Changed("scroll") {
-				cfg.ScrollCount = 3
+				cfg.ScrollCount = 20
 			}
 			cfg.ExtractImages = extractImages || downloadImages
 			cfg.StaleHours = staleHours
+			cfg.DomainAliases = domainAliases
 
 			return runCrawlDomain(cmd, cfg, downloadImages)
 		},
@@ -136,6 +139,7 @@ Pinterest (auto-detected, uses internal API - no browser needed):
 	cmd.Flags().BoolVar(&extractImages, "extract-images", false, "Extract <img> URLs and store in links table")
 	cmd.Flags().BoolVar(&downloadImages, "download-images", false, "Download discovered images after crawl (implies --extract-images)")
 	cmd.Flags().IntVar(&staleHours, "stale", 0, "Re-crawl pages older than N hours on --resume (0=disabled)")
+	cmd.Flags().StringSliceVar(&domainAliases, "domain-alias", nil, "Additional domains to treat as same-domain (e.g., --domain-alias new.qq.com)")
 
 	return cmd
 }
