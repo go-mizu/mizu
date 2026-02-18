@@ -1,10 +1,10 @@
 package api
 
 import (
-	"net/http"
 	"github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/lingo/store"
 	"github.com/google/uuid"
+	"net/http"
 )
 
 // ProgressHandler handles progress endpoints
@@ -36,7 +36,7 @@ func (h *ProgressHandler) GetProgress(c *mizu.Ctx) error {
 
 	user, _ := h.store.Users().GetByID(c.Context(), uid)
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]any{
 		"courses":     courses,
 		"total_xp":    user.XPTotal,
 		"streak_days": user.StreakDays,
@@ -84,7 +84,7 @@ func (h *ProgressHandler) GetStreaks(c *mizu.Ctx) error {
 
 	history, _ := h.store.Progress().GetStreakHistory(c.Context(), uid, 30)
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]any{
 		"current_streak":      user.StreakDays,
 		"streak_freeze_count": user.StreakFreezeCount,
 		"history":             history,
@@ -113,7 +113,7 @@ func (h *ProgressHandler) UseStreakFreeze(c *mizu.Ctx) error {
 	}
 
 	// Use streak freeze (in production, this would be more complex)
-	return c.JSON(http.StatusOK, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]any{
 		"message":             "streak freeze used",
 		"streak_freeze_count": user.StreakFreezeCount - 1,
 	})
@@ -136,7 +136,7 @@ func (h *ProgressHandler) GetHearts(c *mizu.Ctx) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "user not found"})
 	}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]any{
 		"hearts":           user.Hearts,
 		"max_hearts":       5,
 		"is_premium":       user.IsPremium,
@@ -171,7 +171,7 @@ func (h *ProgressHandler) RefillHearts(c *mizu.Ctx) error {
 	h.store.Users().UpdateGems(c.Context(), uid, user.Gems-gemCost)
 	h.store.Users().UpdateHearts(c.Context(), uid, 5)
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]any{
 		"hearts": 5,
 		"gems":   user.Gems - gemCost,
 	})

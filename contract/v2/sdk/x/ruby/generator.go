@@ -51,23 +51,23 @@ func Generate(svc *contract.Service, cfg *Config) ([]*sdk.File, error) {
 
 	tpl, err := template.New("sdkruby").
 		Funcs(template.FuncMap{
-			"rubyQuote":    rubyQuote,
-			"rubyString":   rubyQuote,
-			"rubySymbol":   rubySymbol,
-			"rubyName":     toRubyName,
-			"rubyTypeName": toRubyTypeName,
-			"snake":        toSnake,
-			"pascal":       toPascal,
+			"rubyQuote":      rubyQuote,
+			"rubyString":     rubyQuote,
+			"rubySymbol":     rubySymbol,
+			"rubyName":       toRubyName,
+			"rubyTypeName":   toRubyTypeName,
+			"snake":          toSnake,
+			"pascal":         toPascal,
 			"screamingSnake": toScreamingSnake,
-			"upper":        strings.ToUpper,
-			"join":         strings.Join,
-			"trim":         strings.TrimSpace,
-			"lower":        strings.ToLower,
-			"indent":       indent,
-			"hasPrefix":    strings.HasPrefix,
-			"add":          func(a, b int) int { return a + b },
-			"sub":          func(a, b int) int { return a - b },
-			"len":          func(s interface{}) int { return lenHelper(s) },
+			"upper":          strings.ToUpper,
+			"join":           strings.Join,
+			"trim":           strings.TrimSpace,
+			"lower":          strings.ToLower,
+			"indent":         indent,
+			"hasPrefix":      strings.HasPrefix,
+			"add":            func(a, b int) int { return a + b },
+			"sub":            func(a, b int) int { return a - b },
+			"len":            func(s any) int { return lenHelper(s) },
 		}).
 		ParseFS(templateFS, "templates/*.tmpl")
 	if err != nil {
@@ -530,14 +530,14 @@ func baseRubyType(typeByName map[string]*contract.Type, r string) string {
 	}
 
 	// Handle slice types
-	if strings.HasPrefix(r, "[]") {
-		elem := strings.TrimSpace(strings.TrimPrefix(r, "[]"))
+	if after, ok := strings.CutPrefix(r, "[]"); ok {
+		elem := strings.TrimSpace(after)
 		return "Array<" + baseRubyType(typeByName, elem) + ">"
 	}
 
 	// Handle map types
-	if strings.HasPrefix(r, "map[string]") {
-		elem := strings.TrimSpace(strings.TrimPrefix(r, "map[string]"))
+	if after, ok := strings.CutPrefix(r, "map[string]"); ok {
+		elem := strings.TrimSpace(after)
 		return "Hash{String => " + baseRubyType(typeByName, elem) + "}"
 	}
 
@@ -582,7 +582,7 @@ func toSnake(s string) string {
 		return r == '_' || r == '-' || r == '.' || r == ' '
 	}
 
-	for i := 0; i < len(runes); i++ {
+	for i := range runes {
 		r := runes[i]
 
 		if isSep(r) {
@@ -765,7 +765,7 @@ func indent(n int, s string) string {
 }
 
 // lenHelper returns the length of a slice or array.
-func lenHelper(s interface{}) int {
+func lenHelper(s any) int {
 	switch v := s.(type) {
 	case []fieldModel:
 		return len(v)

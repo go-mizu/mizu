@@ -21,10 +21,10 @@ const (
 
 // Client provides HTTP access to Common Crawl data.
 type Client struct {
-	baseURL     string
-	apiClient   *http.Client // Short timeout for API calls
-	dlClients   []*http.Client // Sharded clients for data downloads
-	shardCount  int
+	baseURL    string
+	apiClient  *http.Client   // Short timeout for API calls
+	dlClients  []*http.Client // Sharded clients for data downloads
+	shardCount int
 }
 
 // NewClient creates a new Common Crawl client.
@@ -84,8 +84,8 @@ type collInfoEntry struct {
 	Name     string `json:"name"`
 	Timegate string `json:"timegate"`
 	CDXAPI   string `json:"cdx-api"`
-	From     string `json:"from"`  // 2026-01-12T16:12:39
-	To       string `json:"to"`    // 2026-01-25T14:05:40
+	From     string `json:"from"` // 2026-01-12T16:12:39
+	To       string `json:"to"`   // 2026-01-25T14:05:40
 }
 
 // ListCrawls fetches the list of available Common Crawl datasets.
@@ -165,7 +165,7 @@ func (c *Client) DownloadManifest(ctx context.Context, crawlID, kind string) ([]
 	}
 
 	var paths []string
-	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(data)), "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" {
 			paths = append(paths, line)

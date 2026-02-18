@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -36,10 +37,10 @@ type ExecuteRequest struct {
 
 // NativeQueryRequest represents a native SQL query request.
 type NativeQueryRequest struct {
-	DataSourceID string                    `json:"datasource_id"`
-	Query        string                    `json:"query"`
-	Params       []any                     `json:"params,omitempty"`
-	Variables    map[string]VariableValue  `json:"variables,omitempty"`
+	DataSourceID string                   `json:"datasource_id"`
+	Query        string                   `json:"query"`
+	Params       []any                    `json:"params,omitempty"`
+	Variables    map[string]VariableValue `json:"variables,omitempty"`
 }
 
 // VariableValue represents a value for a query variable
@@ -169,10 +170,10 @@ func (h *Query) History(c *mizu.Ctx) error {
 
 // paginationInfo holds pagination metadata
 type paginationInfo struct {
-	Page       int
-	PageSize   int
-	Offset     int
-	CountQuery string
+	Page        int
+	PageSize    int
+	Offset      int
+	CountQuery  string
 	CountParams []any
 }
 
@@ -183,10 +184,9 @@ func executeQuery(ds *store.DataSource, query map[string]any) (*store.QueryResul
 	if page, ok := query["page"].(int); ok && page > 0 {
 		pageSize := 25 // default
 		if ps, ok := query["page_size"].(int); ok && ps > 0 {
-			pageSize = ps
-			if pageSize > 1000 {
-				pageSize = 1000 // max page size
-			}
+			pageSize = min(ps,
+				// max page size
+				1000)
 		}
 		pagination = &paginationInfo{
 			Page:     page,
@@ -286,7 +286,6 @@ func executeNativeQuery(ds *store.DataSource, query string, params []any) (*stor
 	return storeResult, nil
 }
 
-
 // identifierRegex validates SQL identifiers (table names, column names)
 // Only allows alphanumeric characters, underscores, and dots (for schema.table)
 var identifierRegex = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)?$`)
@@ -305,10 +304,8 @@ func validateIdentifier(s string) error {
 	// Check for SQL keywords that could be used for injection
 	upper := strings.ToUpper(s)
 	forbidden := []string{"SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "TRUNCATE", "EXEC", "EXECUTE", "UNION", "SCRIPT"}
-	for _, keyword := range forbidden {
-		if upper == keyword {
-			return fmt.Errorf("identifier cannot be a SQL keyword: %s", s)
-		}
+	if slices.Contains(forbidden, upper) {
+		return fmt.Errorf("identifier cannot be a SQL keyword: %s", s)
 	}
 	return nil
 }

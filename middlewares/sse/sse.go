@@ -178,8 +178,8 @@ func (c *Client) send(event *Event) {
 	}
 	if event.Data != "" {
 		// Split data by newlines
-		lines := strings.Split(event.Data, "\n")
-		for _, line := range lines {
+		lines := strings.SplitSeq(event.Data, "\n")
+		for line := range lines {
 			_, _ = fmt.Fprintf(c.w, "data: %s\n", line)
 		}
 	}

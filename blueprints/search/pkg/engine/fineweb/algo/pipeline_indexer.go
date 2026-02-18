@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -19,16 +20,17 @@ import (
 // Memory is bounded by segment size (~50k docs = ~400MB), regardless of total docs.
 //
 // Architecture:
-//   [Read] → [Tokenize] → [Index] → [Write to Disk]
-//            (parallel)   (single)   (async)
+//
+//	[Read] → [Tokenize] → [Index] → [Write to Disk]
+//	         (parallel)   (single)   (async)
 //
 // Double-buffered: while segment N writes to disk, segment N+1 indexes.
 type PipelineIndexer struct {
 	// Configuration
-	SegmentSize  int           // docs per segment (default: 50k)
-	NumWorkers   int           // parallel tokenizers
-	OutputDir    string        // segment output directory
-	Tokenizer    TokenizerFunc // text → term frequencies
+	SegmentSize int           // docs per segment (default: 50k)
+	NumWorkers  int           // parallel tokenizers
+	OutputDir   string        // segment output directory
+	Tokenizer   TokenizerFunc // text → term frequencies
 
 	// Pipeline channels
 	docCh       chan indexItem    // documents to tokenize
@@ -36,19 +38,19 @@ type PipelineIndexer struct {
 	segmentCh   chan *diskSegment // segments to write
 
 	// State
-	segments      []*SegmentMeta // written segment metadata
-	currentSeg    *segmentBuilder
-	segmentID     int
-	segmentMu     sync.Mutex
+	segments   []*SegmentMeta // written segment metadata
+	currentSeg *segmentBuilder
+	segmentID  int
+	segmentMu  sync.Mutex
 
 	// Metrics
 	docsProcessed atomic.Int64
 	bytesWritten  atomic.Int64
 
 	// Synchronization
-	wg       sync.WaitGroup
-	writeWg  sync.WaitGroup
-	indexWg  sync.WaitGroup
+	wg      sync.WaitGroup
+	writeWg sync.WaitGroup
+	indexWg sync.WaitGroup
 }
 
 type tokenizedDoc struct {
@@ -88,9 +90,9 @@ func NewPipelineIndexer(outputDir string, tokenizer TokenizerFunc) *PipelineInde
 
 // PipelineConfig configures the PipelineIndexer.
 type PipelineConfig struct {
-	SegmentSize   int // Docs per segment (0 = default 10k)
-	NumWorkers    int // Number of tokenization workers (0 = auto)
-	ChannelBuffer int // Channel buffer multiplier (0 = default)
+	SegmentSize    int  // Docs per segment (0 = default 10k)
+	NumWorkers     int  // Number of tokenization workers (0 = auto)
+	ChannelBuffer  int  // Channel buffer multiplier (0 = default)
 	HighThroughput bool // Enable high-throughput mode (larger buffers)
 }
 
@@ -126,14 +128,14 @@ func NewPipelineIndexerWithConfig(outputDir string, tokenizer TokenizerFunc, cfg
 	}
 
 	pi := &PipelineIndexer{
-		SegmentSize:  segmentSize,
-		NumWorkers:   numWorkers,
-		OutputDir:    outputDir,
-		Tokenizer:    tokenizer,
-		docCh:        make(chan indexItem, numWorkers*bufferMult),
-		tokenizedCh:  make(chan tokenizedDoc, numWorkers*bufferMult/2),
-		segmentCh:    make(chan *diskSegment, 4), // More segment buffers
-		segments:     make([]*SegmentMeta, 0, 128),
+		SegmentSize: segmentSize,
+		NumWorkers:  numWorkers,
+		OutputDir:   outputDir,
+		Tokenizer:   tokenizer,
+		docCh:       make(chan indexItem, numWorkers*bufferMult),
+		tokenizedCh: make(chan tokenizedDoc, numWorkers*bufferMult/2),
+		segmentCh:   make(chan *diskSegment, 4), // More segment buffers
+		segments:    make([]*SegmentMeta, 0, 128),
 	}
 
 	// Create output directory
@@ -156,9 +158,7 @@ func (pi *PipelineIndexer) Add(docID uint32, text string) {
 // startTokenizeStage runs parallel tokenization workers.
 func (pi *PipelineIndexer) startTokenizeStage() {
 	for i := 0; i < pi.NumWorkers; i++ {
-		pi.wg.Add(1)
-		go func() {
-			defer pi.wg.Done()
+		pi.wg.Go(func() {
 			for item := range pi.docCh {
 				terms := pi.Tokenizer(item.text)
 				docLen := 0
@@ -171,7 +171,7 @@ func (pi *PipelineIndexer) startTokenizeStage() {
 					docLen: docLen,
 				}
 			}
-		}()
+		})
 	}
 
 	// Close tokenizedCh when all tokenizers done
@@ -183,9 +183,7 @@ func (pi *PipelineIndexer) startTokenizeStage() {
 
 // startIndexStage builds segments from tokenized docs.
 func (pi *PipelineIndexer) startIndexStage() {
-	pi.indexWg.Add(1)
-	go func() {
-		defer pi.indexWg.Done()
+	pi.indexWg.Go(func() {
 
 		pi.currentSeg = pi.newSegmentBuilder()
 
@@ -212,7 +210,7 @@ func (pi *PipelineIndexer) startIndexStage() {
 		}
 
 		close(pi.segmentCh)
-	}()
+	})
 }
 
 func (pi *PipelineIndexer) newSegmentBuilder() *segmentBuilder {
@@ -238,9 +236,7 @@ func (pi *PipelineIndexer) flushSegment() {
 
 // startWriteStage writes segments to disk asynchronously.
 func (pi *PipelineIndexer) startWriteStage() {
-	pi.writeWg.Add(1)
-	go func() {
-		defer pi.writeWg.Done()
+	pi.writeWg.Go(func() {
 
 		for seg := range pi.segmentCh {
 			meta := pi.writeSegment(seg)
@@ -253,7 +249,7 @@ func (pi *PipelineIndexer) startWriteStage() {
 			seg.docLens = nil
 			runtime.GC() // Help release memory promptly
 		}
-	}()
+	})
 }
 
 // writeSegment writes a segment to disk and returns metadata.
@@ -319,7 +315,7 @@ func (pi *PipelineIndexer) writeSegment(seg *diskSegment) *SegmentMeta {
 	for docID := range seg.docLens {
 		docIDs = append(docIDs, docID)
 	}
-	sort.Slice(docIDs, func(i, j int) bool { return docIDs[i] < docIDs[j] })
+	slices.Sort(docIDs)
 
 	fw.WriteUint32(uint32(len(docIDs)))
 	for _, docID := range docIDs {
@@ -412,10 +408,7 @@ func (pi *PipelineIndexer) mergeSegments() (map[string][]IndexPosting, []int) {
 	}
 
 	// Phase 4: Sort postings by docID (parallel)
-	numWorkers := runtime.NumCPU()
-	if numWorkers > 8 {
-		numWorkers = 8
-	}
+	numWorkers := min(runtime.NumCPU(), 8)
 
 	terms := make([]string, 0, len(finalTerms))
 	for term := range finalTerms {
@@ -425,17 +418,15 @@ func (pi *PipelineIndexer) mergeSegments() (map[string][]IndexPosting, []int) {
 	termCh := make(chan string, len(terms))
 	var sortWg sync.WaitGroup
 
-	for i := 0; i < numWorkers; i++ {
-		sortWg.Add(1)
-		go func() {
-			defer sortWg.Done()
+	for range numWorkers {
+		sortWg.Go(func() {
 			for term := range termCh {
 				postings := finalTerms[term]
 				sort.Slice(postings, func(i, j int) bool {
 					return postings[i].DocID < postings[j].DocID
 				})
 			}
-		}()
+		})
 	}
 
 	for _, term := range terms {
@@ -490,9 +481,9 @@ func (r *segmentReader) load() {
 
 	// Read term dictionary
 	type termEntry struct {
-		term     string
-		count    uint32
-		offset   int64
+		term   string
+		count  uint32
+		offset int64
 	}
 	termEntries := make([]termEntry, numTerms)
 

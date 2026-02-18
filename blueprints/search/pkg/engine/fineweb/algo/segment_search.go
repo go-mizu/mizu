@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"sync"
 )
@@ -18,19 +19,19 @@ import (
 // SegmentedIndex stores multiple segment files and searches across them.
 // No merge required - segments are searched in parallel at query time.
 type SegmentedIndex struct {
-	segments []*SearchSegment
-	numDocs  int
+	segments  []*SearchSegment
+	numDocs   int
 	avgDocLen float64
-	docLens  []uint16
-	mu       sync.RWMutex
+	docLens   []uint16
+	mu        sync.RWMutex
 }
 
 // SearchSegment is a single searchable segment loaded in memory.
 type SearchSegment struct {
-	id        int
-	terms     map[string]*SegmentPostings
-	docLens   map[uint32]uint16
-	numDocs   int
+	id      int
+	terms   map[string]*SegmentPostings
+	docLens map[uint32]uint16
+	numDocs int
 }
 
 // SegmentPostings stores posting list for a term in a segment.
@@ -54,10 +55,10 @@ type NoMergeIndexer struct {
 	segmentCh   chan *nmSegment
 
 	// State
-	currentSeg  *nmSegmentBuilder
-	segmentID   int
-	segmentMu   sync.Mutex
-	segments    []string // paths to written segments
+	currentSeg *nmSegmentBuilder
+	segmentID  int
+	segmentMu  sync.Mutex
+	segments   []string // paths to written segments
 
 	// Document lengths (for BM25)
 	docLens     []uint16
@@ -66,9 +67,9 @@ type NoMergeIndexer struct {
 	numDocs     int
 
 	// Sync
-	wg       sync.WaitGroup
-	indexWg  sync.WaitGroup
-	writeWg  sync.WaitGroup
+	wg      sync.WaitGroup
+	indexWg sync.WaitGroup
+	writeWg sync.WaitGroup
 }
 
 type nmDoc struct {
@@ -98,13 +99,7 @@ type nmSegment struct {
 
 // NewNoMergeIndexer creates an indexer that skips the merge phase.
 func NewNoMergeIndexer(outputDir string, tokenizer TokenizerFunc, segmentSize int) *NoMergeIndexer {
-	numWorkers := runtime.NumCPU()
-	if numWorkers < 4 {
-		numWorkers = 4
-	}
-	if numWorkers > 16 {
-		numWorkers = 16
-	}
+	numWorkers := min(max(runtime.NumCPU(), 4), 16)
 
 	if segmentSize <= 0 {
 		segmentSize = 100000 // 100k docs per segment
@@ -113,15 +108,15 @@ func NewNoMergeIndexer(outputDir string, tokenizer TokenizerFunc, segmentSize in
 	os.MkdirAll(outputDir, 0755)
 
 	nm := &NoMergeIndexer{
-		SegmentSize:  segmentSize,
-		NumWorkers:   numWorkers,
-		OutputDir:    outputDir,
-		Tokenizer:    tokenizer,
-		docCh:        make(chan nmDoc, numWorkers*500),
-		tokenizedCh:  make(chan nmTokenized, numWorkers*250),
-		segmentCh:    make(chan *nmSegment, 4),
-		segments:     make([]string, 0, 32),
-		docLens:      make([]uint16, 0, 3000000),
+		SegmentSize: segmentSize,
+		NumWorkers:  numWorkers,
+		OutputDir:   outputDir,
+		Tokenizer:   tokenizer,
+		docCh:       make(chan nmDoc, numWorkers*500),
+		tokenizedCh: make(chan nmTokenized, numWorkers*250),
+		segmentCh:   make(chan *nmSegment, 4),
+		segments:    make([]string, 0, 32),
+		docLens:     make([]uint16, 0, 3000000),
 	}
 
 	nm.startTokenizeStage()
@@ -138,9 +133,7 @@ func (nm *NoMergeIndexer) Add(docID uint32, text string) {
 
 func (nm *NoMergeIndexer) startTokenizeStage() {
 	for i := 0; i < nm.NumWorkers; i++ {
-		nm.wg.Add(1)
-		go func() {
-			defer nm.wg.Done()
+		nm.wg.Go(func() {
 			for doc := range nm.docCh {
 				terms := nm.Tokenizer(doc.text)
 				docLen := 0
@@ -153,7 +146,7 @@ func (nm *NoMergeIndexer) startTokenizeStage() {
 					docLen: docLen,
 				}
 			}
-		}()
+		})
 	}
 
 	go func() {
@@ -163,9 +156,7 @@ func (nm *NoMergeIndexer) startTokenizeStage() {
 }
 
 func (nm *NoMergeIndexer) startIndexStage() {
-	nm.indexWg.Add(1)
-	go func() {
-		defer nm.indexWg.Done()
+	nm.indexWg.Go(func() {
 
 		nm.currentSeg = nm.newSegmentBuilder()
 
@@ -175,10 +166,7 @@ func (nm *NoMergeIndexer) startIndexStage() {
 			for uint32(len(nm.docLens)) <= tdoc.docID {
 				nm.docLens = append(nm.docLens, 0)
 			}
-			docLen := tdoc.docLen
-			if docLen > 65535 {
-				docLen = 65535
-			}
+			docLen := min(tdoc.docLen, 65535)
 			nm.docLens[tdoc.docID] = uint16(docLen)
 			nm.totalDocLen += int64(docLen)
 			nm.numDocs++
@@ -212,7 +200,7 @@ func (nm *NoMergeIndexer) startIndexStage() {
 		}
 
 		close(nm.segmentCh)
-	}()
+	})
 }
 
 func (nm *NoMergeIndexer) newSegmentBuilder() *nmSegmentBuilder {
@@ -237,9 +225,7 @@ func (nm *NoMergeIndexer) flushSegment() {
 }
 
 func (nm *NoMergeIndexer) startWriteStage() {
-	nm.writeWg.Add(1)
-	go func() {
-		defer nm.writeWg.Done()
+	nm.writeWg.Go(func() {
 
 		for seg := range nm.segmentCh {
 			path := nm.writeSegment(seg)
@@ -252,7 +238,7 @@ func (nm *NoMergeIndexer) startWriteStage() {
 			seg.docLens = nil
 			runtime.GC()
 		}
-	}()
+	})
 }
 
 func (nm *NoMergeIndexer) writeSegment(seg *nmSegment) string {
@@ -301,7 +287,7 @@ func (nm *NoMergeIndexer) writeSegment(seg *nmSegment) string {
 	for docID := range seg.docLens {
 		docIDs = append(docIDs, docID)
 	}
-	sort.Slice(docIDs, func(i, j int) bool { return docIDs[i] < docIDs[j] })
+	slices.Sort(docIDs)
 
 	binary.Write(w, binary.LittleEndian, uint32(len(docIDs)))
 	for _, docID := range docIDs {

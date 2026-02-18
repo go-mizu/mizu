@@ -40,10 +40,10 @@ func (s *scenarioProvider) ChatWithTools(ctx context.Context, req *types.LLMTool
 func createTempFiles(t *testing.T, dir string, ext string, count int) []string {
 	t.Helper()
 	names := make([]string, count)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		name := fmt.Sprintf("file%d%s", i+1, ext)
 		path := filepath.Join(dir, name)
-		if err := os.WriteFile(path, []byte(fmt.Sprintf("content of %s", name)), 0o644); err != nil {
+		if err := os.WriteFile(path, fmt.Appendf(nil, "content of %s", name), 0o644); err != nil {
 			t.Fatalf("create temp file %s: %v", path, err)
 		}
 		names[i] = name

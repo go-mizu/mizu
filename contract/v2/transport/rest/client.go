@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -46,9 +47,7 @@ func NewClient(svc *contract.Service) (*Client, error) {
 			// Token remains empty until user sets it.
 			token = ""
 		}
-		for k, v := range svc.Client.Headers {
-			h[k] = v
-		}
+		maps.Copy(h, svc.Client.Headers)
 	}
 
 	return &Client{

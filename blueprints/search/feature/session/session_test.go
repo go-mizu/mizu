@@ -41,10 +41,7 @@ func (m *mockStore) List(ctx context.Context, limit, offset int) ([]Session, int
 	if offset >= len(result) {
 		return nil, total, nil
 	}
-	end := offset + limit
-	if end > len(result) {
-		end = len(result)
-	}
+	end := min(offset+limit, len(result))
 	return result[offset:end], total, nil
 }
 
@@ -119,7 +116,7 @@ func TestService_List(t *testing.T) {
 	ctx := context.Background()
 
 	// Create sessions
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		svc.Create(ctx, "Session")
 	}
 

@@ -387,7 +387,7 @@ func TestCSVConverter_BasicDatabase(t *testing.T) {
 				Title: "Task 1",
 				Properties: pages.Properties{
 					"title":  pages.PropertyValue{Type: "title", Value: "Task 1"},
-					"status": pages.PropertyValue{Type: "select", Value: map[string]interface{}{"name": "In Progress"}},
+					"status": pages.PropertyValue{Type: "select", Value: map[string]any{"name": "In Progress"}},
 					"done":   pages.PropertyValue{Type: "checkbox", Value: false},
 				},
 			},
@@ -395,7 +395,7 @@ func TestCSVConverter_BasicDatabase(t *testing.T) {
 				Title: "Task 2",
 				Properties: pages.Properties{
 					"title":  pages.PropertyValue{Type: "title", Value: "Task 2"},
-					"status": pages.PropertyValue{Type: "select", Value: map[string]interface{}{"name": "Done"}},
+					"status": pages.PropertyValue{Type: "select", Value: map[string]any{"name": "Done"}},
 					"done":   pages.PropertyValue{Type: "checkbox", Value: true},
 				},
 			},
@@ -835,42 +835,42 @@ func TestHTMLConverter_Table(t *testing.T) {
 
 func TestValidateRequest(t *testing.T) {
 	tests := []struct {
-		name      string
-		req       *Request
-		wantError bool
+		name        string
+		req         *Request
+		wantError   bool
 		errContains string
 	}{
 		{
-			name:      "missing page_id",
-			req:       &Request{Format: FormatMarkdown},
-			wantError: true,
+			name:        "missing page_id",
+			req:         &Request{Format: FormatMarkdown},
+			wantError:   true,
 			errContains: "page_id",
 		},
 		{
-			name:      "missing format",
-			req:       &Request{PageID: "page-123"},
-			wantError: true,
+			name:        "missing format",
+			req:         &Request{PageID: "page-123"},
+			wantError:   true,
 			errContains: "format",
 		},
 		{
-			name:      "invalid format",
-			req:       &Request{PageID: "page-123", Format: "invalid"},
-			wantError: true,
+			name:        "invalid format",
+			req:         &Request{PageID: "page-123", Format: "invalid"},
+			wantError:   true,
 			errContains: "invalid format",
 		},
 		{
-			name: "valid markdown request",
-			req:  &Request{PageID: "page-123", Format: FormatMarkdown},
+			name:      "valid markdown request",
+			req:       &Request{PageID: "page-123", Format: FormatMarkdown},
 			wantError: false,
 		},
 		{
-			name: "valid html request",
-			req:  &Request{PageID: "page-123", Format: FormatHTML},
+			name:      "valid html request",
+			req:       &Request{PageID: "page-123", Format: FormatHTML},
 			wantError: false,
 		},
 		{
-			name: "valid pdf request",
-			req:  &Request{PageID: "page-123", Format: FormatPDF},
+			name:      "valid pdf request",
+			req:       &Request{PageID: "page-123", Format: FormatPDF},
 			wantError: false,
 		},
 	}

@@ -126,7 +126,7 @@ func TestParseSSEStream_EmptyLines(t *testing.T) {
 func TestParseSSEStream_ContextCancel(t *testing.T) {
 	// Create a very long stream that would block.
 	var lines []string
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		lines = append(lines, "event: content_block_delta")
 		lines = append(lines, `data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"chunk"}}`)
 		lines = append(lines, "")

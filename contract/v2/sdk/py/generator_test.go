@@ -470,7 +470,7 @@ func isNonFatalE2E(err error, stderr string) bool {
 
 func splitNonEmptyLines(s string) []string {
 	var out []string
-	for _, line := range strings.Split(s, "\n") {
+	for line := range strings.SplitSeq(s, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue

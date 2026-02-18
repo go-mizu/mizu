@@ -69,10 +69,7 @@ func WithOptions(opts Options) mizu.Middleware {
 					// Backoff before retry.
 					time.Sleep(delay)
 
-					delay = time.Duration(float64(delay) * opts.Multiplier)
-					if delay > opts.MaxDelay {
-						delay = opts.MaxDelay
-					}
+					delay = min(time.Duration(float64(delay)*opts.Multiplier), opts.MaxDelay)
 
 					if opts.OnRetry != nil {
 						opts.OnRetry(c, lastErr, attempt)

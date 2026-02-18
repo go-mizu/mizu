@@ -76,7 +76,7 @@ func Generate(svc *contract.Service, cfg *Config) ([]*sdk.File, error) {
 			"hasPrefix":      strings.HasPrefix,
 			"add":            func(a, b int) int { return a + b },
 			"sub":            func(a, b int) int { return a - b },
-			"len":            func(s interface{}) int { return lenHelper(s) },
+			"len":            func(s any) int { return lenHelper(s) },
 		}).
 		ParseFS(templateFS, "templates/*.tmpl")
 	if err != nil {
@@ -591,15 +591,15 @@ func baseOCamlType(typeByName map[string]*contract.Type, r string) string {
 	}
 
 	// Handle slice types
-	if strings.HasPrefix(r, "[]") {
-		elem := strings.TrimSpace(strings.TrimPrefix(r, "[]"))
+	if after, ok := strings.CutPrefix(r, "[]"); ok {
+		elem := strings.TrimSpace(after)
 		elemType := baseOCamlType(typeByName, elem)
 		return elemType + " list"
 	}
 
 	// Handle map types
-	if strings.HasPrefix(r, "map[string]") {
-		elem := strings.TrimSpace(strings.TrimPrefix(r, "map[string]"))
+	if after, ok := strings.CutPrefix(r, "map[string]"); ok {
+		elem := strings.TrimSpace(after)
 		elemType := baseOCamlType(typeByName, elem)
 		return "(string * " + elemType + ") list"
 	}
@@ -676,7 +676,7 @@ func toSnake(s string) string {
 		return r == '_' || r == '-' || r == '.' || r == ' '
 	}
 
-	for i := 0; i < len(runes); i++ {
+	for i := range runes {
 		r := runes[i]
 
 		if isSep(r) {
@@ -886,7 +886,7 @@ func indent(n int, s string) string {
 }
 
 // lenHelper returns the length of a slice or array.
-func lenHelper(s interface{}) int {
+func lenHelper(s any) int {
 	switch v := s.(type) {
 	case []fieldModel:
 		return len(v)

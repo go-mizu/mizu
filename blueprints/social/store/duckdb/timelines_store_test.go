@@ -32,7 +32,7 @@ func TestTimelinesStore_GetHomeFeed(t *testing.T) {
 	})
 
 	// Create posts
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		createTestPost(t, postsStore, user.ID)     // user's own posts
 		createTestPost(t, postsStore, friend.ID)   // friend's posts
 		createTestPost(t, postsStore, stranger.ID) // stranger's posts
@@ -66,7 +66,7 @@ func TestTimelinesStore_GetPublicFeed(t *testing.T) {
 	timelinesStore := NewTimelinesStore(db)
 
 	// Create public posts
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		createTestPost(t, postsStore, account.ID)
 	}
 
@@ -135,7 +135,7 @@ func TestTimelinesStore_GetUserFeed(t *testing.T) {
 	timelinesStore := NewTimelinesStore(db)
 
 	// Create posts for user
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		createTestPost(t, postsStore, user.ID)
 	}
 
@@ -203,7 +203,7 @@ func TestTimelinesStore_GetHashtagFeed(t *testing.T) {
 	timelinesStore := NewTimelinesStore(db)
 
 	// Create posts with hashtag
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		post := createTestPost(t, postsStore, account.ID)
 		hashtagID, _ := postsStore.UpsertHashtag(ctx, "golang")
 		postsStore.LinkPostHashtag(ctx, post.ID, hashtagID)
@@ -367,7 +367,7 @@ func TestTimelinesStore_Pagination(t *testing.T) {
 
 	// Create posts
 	var postIDs []string
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		post := createTestPost(t, postsStore, account.ID)
 		postIDs = append(postIDs, post.ID)
 	}

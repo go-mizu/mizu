@@ -258,7 +258,7 @@ func TestPagesStore_List(t *testing.T) {
 	store := NewPagesStore(db)
 	ctx := context.Background()
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		page := &pages.Page{
 			ID:            "page-list-" + string(rune('a'+i)),
 			AuthorID:      "author-001",
@@ -299,7 +299,7 @@ func TestPagesStore_List_FilterByParent(t *testing.T) {
 	assertNoError(t, store.Create(ctx, parent))
 
 	// Create children
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		child := &pages.Page{
 			ID:            "page-child-list-" + string(rune('a'+i)),
 			AuthorID:      "author-001",
@@ -458,7 +458,7 @@ func TestPagesStore_GetTree(t *testing.T) {
 	ctx := context.Background()
 
 	// Create pages with different sort orders
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		page := &pages.Page{
 			ID:            "page-tree-" + string(rune('a'+i)),
 			AuthorID:      "author-001",

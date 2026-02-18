@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"slices"
 	"time"
 
 	"github.com/go-mizu/blueprints/githome/feature/webhooks"
@@ -90,13 +91,7 @@ func (s *WebhooksStore) Update(ctx context.Context, id int64, in *webhooks.Updat
 	}
 	if in.AddEvents != nil {
 		for _, e := range in.AddEvents {
-			found := false
-			for _, existing := range events {
-				if existing == e {
-					found = true
-					break
-				}
-			}
+			found := slices.Contains(events, e)
 			if !found {
 				events = append(events, e)
 			}
@@ -105,13 +100,7 @@ func (s *WebhooksStore) Update(ctx context.Context, id int64, in *webhooks.Updat
 	if in.RemoveEvents != nil {
 		var filtered []string
 		for _, e := range events {
-			remove := false
-			for _, r := range in.RemoveEvents {
-				if e == r {
-					remove = true
-					break
-				}
-			}
+			remove := slices.Contains(in.RemoveEvents, e)
 			if !remove {
 				filtered = append(filtered, e)
 			}

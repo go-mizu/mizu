@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"github.com/go-mizu/blueprints/workspace/feature/databases"
@@ -76,12 +77,7 @@ func (s *Service) RecordAccess(ctx context.Context, userID, pageID string) error
 }
 
 func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, item)
 }
 
 func containsIgnoreCase(s, substr string) bool {
@@ -93,7 +89,7 @@ func containsIgnoreCase(s, substr string) bool {
 	}
 	for i := 0; i <= sl-subl; i++ {
 		match := true
-		for j := 0; j < subl; j++ {
+		for j := range subl {
 			sc := s[i+j]
 			subc := substr[j]
 			if sc >= 'A' && sc <= 'Z' {

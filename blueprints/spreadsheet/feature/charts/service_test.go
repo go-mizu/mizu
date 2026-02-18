@@ -52,28 +52,28 @@ func (m *mockStore) Delete(ctx context.Context, id string) error {
 
 // mockCellProvider is a mock implementation of CellDataProvider.
 type mockCellProvider struct {
-	data map[string][][]interface{}
+	data map[string][][]any
 }
 
 func newMockCellProvider() *mockCellProvider {
-	return &mockCellProvider{data: make(map[string][][]interface{})}
+	return &mockCellProvider{data: make(map[string][][]any)}
 }
 
-func (m *mockCellProvider) SetData(sheetID string, data [][]interface{}) {
+func (m *mockCellProvider) SetData(sheetID string, data [][]any) {
 	m.data[sheetID] = data
 }
 
-func (m *mockCellProvider) GetCellValues(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) ([][]interface{}, error) {
+func (m *mockCellProvider) GetCellValues(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) ([][]any, error) {
 	if data, ok := m.data[sheetID]; ok {
 		// Extract the requested range
 		numRows := endRow - startRow + 1
 		numCols := endCol - startCol + 1
-		result := make([][]interface{}, numRows)
-		for i := 0; i < numRows; i++ {
-			result[i] = make([]interface{}, numCols)
+		result := make([][]any, numRows)
+		for i := range numRows {
+			result[i] = make([]any, numCols)
 			srcRow := startRow + i
 			if srcRow < len(data) {
-				for j := 0; j < numCols; j++ {
+				for j := range numCols {
 					srcCol := startCol + j
 					if srcCol < len(data[srcRow]) {
 						result[i][j] = data[srcRow][srcCol]
@@ -271,7 +271,7 @@ func TestService_ListBySheet(t *testing.T) {
 
 	// Create multiple charts
 	sheetID := "sheet-1"
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		in := &CreateIn{
 			SheetID:   sheetID,
 			Name:      "Chart",
@@ -471,7 +471,7 @@ func TestService_GetData(t *testing.T) {
 	ctx := context.Background()
 
 	// Set up mock data
-	cellProvider.SetData("sheet-1", [][]interface{}{
+	cellProvider.SetData("sheet-1", [][]any{
 		{"Month", "Sales", "Expenses"},
 		{"Jan", 12000, 8000},
 		{"Feb", 15000, 9000},
@@ -560,7 +560,7 @@ func TestIsValidChartType(t *testing.T) {
 
 func TestToString(t *testing.T) {
 	tests := []struct {
-		input    interface{}
+		input    any
 		expected string
 	}{
 		{"hello", "hello"},
@@ -583,7 +583,7 @@ func TestToString(t *testing.T) {
 
 func TestToFloat64(t *testing.T) {
 	tests := []struct {
-		input    interface{}
+		input    any
 		expected float64
 	}{
 		{42.5, 42.5},
@@ -610,7 +610,7 @@ func TestParseChartData_PieChart(t *testing.T) {
 	ctx := context.Background()
 
 	// Set up mock data for pie chart
-	cellProvider.SetData("sheet-1", [][]interface{}{
+	cellProvider.SetData("sheet-1", [][]any{
 		{"Category", "Value"},
 		{"A", 30},
 		{"B", 50},
@@ -736,7 +736,7 @@ func TestService_GetData_AreaChart(t *testing.T) {
 	svc := NewService(store, cellProvider)
 	ctx := context.Background()
 
-	cellProvider.SetData("sheet-1", [][]interface{}{
+	cellProvider.SetData("sheet-1", [][]any{
 		{"Month", "Sales"},
 		{"Jan", 100},
 		{"Feb", 150},
@@ -774,7 +774,7 @@ func TestService_GetData_WithSeriesConfig(t *testing.T) {
 	svc := NewService(store, cellProvider)
 	ctx := context.Background()
 
-	cellProvider.SetData("sheet-1", [][]interface{}{
+	cellProvider.SetData("sheet-1", [][]any{
 		{"Month", "Sales", "Expenses"},
 		{"Jan", 100, 80},
 		{"Feb", 150, 90},
@@ -825,7 +825,7 @@ func TestService_GetData_NoHeader(t *testing.T) {
 	ctx := context.Background()
 
 	// Data without header row
-	cellProvider.SetData("sheet-1", [][]interface{}{
+	cellProvider.SetData("sheet-1", [][]any{
 		{"Jan", 12000, 8000},
 		{"Feb", 15000, 9000},
 		{"Mar", 18000, 10000},

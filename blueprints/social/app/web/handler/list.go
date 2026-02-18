@@ -135,7 +135,7 @@ func (h *List) GetMembers(c *mizu.Ctx) error {
 	}
 
 	// Return accounts
-	accounts := make([]interface{}, len(members))
+	accounts := make([]any, len(members))
 	for i, m := range members {
 		accounts[i] = m.Account
 	}

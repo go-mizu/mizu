@@ -484,10 +484,7 @@ func TestPaginationInfo(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pageSize := tt.pageSize
-			if pageSize > 1000 {
-				pageSize = 1000
-			}
+			pageSize := min(tt.pageSize, 1000)
 			offset := (tt.page - 1) * pageSize
 
 			assert.Equal(t, tt.expectedPage, tt.page)
@@ -920,11 +917,11 @@ func TestBuildSQLFromQuery_StringFilters(t *testing.T) {
 
 func TestBuildSQLFromQuery_RelativeDateFilters(t *testing.T) {
 	tests := []struct {
-		name         string
-		query        map[string]any
-		sqlContains  string
-		paramsCount  int
-		expectErr    bool
+		name        string
+		query       map[string]any
+		sqlContains string
+		paramsCount int
+		expectErr   bool
 	}{
 		{
 			name: "last 30 days",

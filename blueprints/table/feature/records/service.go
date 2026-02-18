@@ -17,7 +17,7 @@ func NewService(store Store) *Service {
 }
 
 // Create creates a new record.
-func (s *Service) Create(ctx context.Context, tableID string, cells map[string]interface{}, userID string) (*Record, error) {
+func (s *Service) Create(ctx context.Context, tableID string, cells map[string]any, userID string) (*Record, error) {
 	record := &Record{
 		ID:        ulid.New(),
 		TableID:   tableID,
@@ -27,7 +27,7 @@ func (s *Service) Create(ctx context.Context, tableID string, cells map[string]i
 	}
 
 	if record.Cells == nil {
-		record.Cells = make(map[string]interface{})
+		record.Cells = make(map[string]any)
 	}
 
 	if err := s.store.Create(ctx, record); err != nil {
@@ -38,7 +38,7 @@ func (s *Service) Create(ctx context.Context, tableID string, cells map[string]i
 }
 
 // CreateBatch creates multiple records.
-func (s *Service) CreateBatch(ctx context.Context, tableID string, recordsData []map[string]interface{}, userID string) ([]*Record, error) {
+func (s *Service) CreateBatch(ctx context.Context, tableID string, recordsData []map[string]any, userID string) ([]*Record, error) {
 	var records []*Record
 	for _, data := range recordsData {
 		record := &Record{
@@ -49,7 +49,7 @@ func (s *Service) CreateBatch(ctx context.Context, tableID string, recordsData [
 			UpdatedBy: userID,
 		}
 		if record.Cells == nil {
-			record.Cells = make(map[string]interface{})
+			record.Cells = make(map[string]any)
 		}
 		records = append(records, record)
 	}
@@ -72,7 +72,7 @@ func (s *Service) GetByIDs(ctx context.Context, ids []string) (map[string]*Recor
 }
 
 // Update updates a record.
-func (s *Service) Update(ctx context.Context, id string, cells map[string]interface{}, userID string) (*Record, error) {
+func (s *Service) Update(ctx context.Context, id string, cells map[string]any, userID string) (*Record, error) {
 	record, err := s.store.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -80,7 +80,7 @@ func (s *Service) Update(ctx context.Context, id string, cells map[string]interf
 
 	// Merge cells
 	if record.Cells == nil {
-		record.Cells = make(map[string]interface{})
+		record.Cells = make(map[string]any)
 	}
 	for k, v := range cells {
 		if v == nil {
@@ -130,7 +130,7 @@ func (s *Service) UpdateBatch(ctx context.Context, updates []RecordUpdate, userI
 
 		// Merge cells and collect updates
 		if record.Cells == nil {
-			record.Cells = make(map[string]interface{})
+			record.Cells = make(map[string]any)
 		}
 		for k, v := range update.Cells {
 			if v == nil {
@@ -180,7 +180,7 @@ func (s *Service) Search(ctx context.Context, tableID, query string, opts ListOp
 }
 
 // UpdateCell updates a single cell value.
-func (s *Service) UpdateCell(ctx context.Context, recordID, fieldID string, value interface{}, userID string) error {
+func (s *Service) UpdateCell(ctx context.Context, recordID, fieldID string, value any, userID string) error {
 	return s.store.UpdateCell(ctx, recordID, fieldID, value)
 }
 
@@ -191,7 +191,7 @@ func (s *Service) ClearCell(ctx context.Context, recordID, fieldID string, userI
 
 // UpdateFieldValues updates a field value across multiple records efficiently.
 // Uses batch cell update for better performance (1 transaction instead of N queries).
-func (s *Service) UpdateFieldValues(ctx context.Context, tableID, fieldID string, updates map[string]interface{}, userID string) error {
+func (s *Service) UpdateFieldValues(ctx context.Context, tableID, fieldID string, updates map[string]any, userID string) error {
 	if len(updates) == 0 {
 		return nil
 	}

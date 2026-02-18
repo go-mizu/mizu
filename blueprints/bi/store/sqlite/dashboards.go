@@ -21,7 +21,7 @@ func (s *DashboardStore) Create(ctx context.Context, d *store.Dashboard) error {
 	d.CreatedAt = now
 	d.UpdatedAt = now
 
-	var collID interface{}
+	var collID any
 	if d.CollectionID != "" {
 		collID = d.CollectionID
 	}
@@ -99,7 +99,7 @@ func (s *DashboardStore) ListByCollection(ctx context.Context, collectionID stri
 func (s *DashboardStore) Update(ctx context.Context, d *store.Dashboard) error {
 	d.UpdatedAt = time.Now()
 
-	var collID interface{}
+	var collID any
 	if d.CollectionID != "" {
 		collID = d.CollectionID
 	}
@@ -121,7 +121,7 @@ func (s *DashboardStore) CreateCard(ctx context.Context, card *store.DashboardCa
 		card.ID = generateID()
 	}
 
-	var questionID interface{}
+	var questionID any
 	if card.QuestionID != "" {
 		questionID = card.QuestionID
 	}
@@ -180,7 +180,7 @@ func (s *DashboardStore) ListCards(ctx context.Context, dashboardID string) ([]*
 }
 
 func (s *DashboardStore) UpdateCard(ctx context.Context, card *store.DashboardCard) error {
-	var questionID, tabID interface{}
+	var questionID, tabID any
 	if card.QuestionID != "" {
 		questionID = card.QuestionID
 	}

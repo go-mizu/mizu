@@ -338,7 +338,7 @@ func TestBlockTypes(t *testing.T) {
 }
 
 func TestMarshalMeta(t *testing.T) {
-	meta := map[string]interface{}{
+	meta := map[string]any{
 		"key1": "value1",
 		"key2": 42,
 	}

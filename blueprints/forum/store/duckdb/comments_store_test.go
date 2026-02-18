@@ -264,7 +264,7 @@ func TestCommentsStore_ListByThread_Top(t *testing.T) {
 	thread := createTestThread(t, store, board, author)
 
 	// Create comments with different scores
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		comment := &comments.Comment{
 			ID:        newTestID(),
 			ThreadID:  thread.ID,
@@ -309,7 +309,7 @@ func TestCommentsStore_ListByThread_New(t *testing.T) {
 	thread := createTestThread(t, store, board, author)
 
 	// Create comments at different times
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		comment := &comments.Comment{
 			ID:        newTestID(),
 			ThreadID:  thread.ID,
@@ -353,7 +353,7 @@ func TestCommentsStore_ListByThread_Old(t *testing.T) {
 	thread := createTestThread(t, store, board, author)
 
 	// Create comments at different times
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		comment := &comments.Comment{
 			ID:        newTestID(),
 			ThreadID:  thread.ID,
@@ -413,7 +413,7 @@ func TestCommentsStore_ListByParent(t *testing.T) {
 	}
 
 	// Create child comments
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		child := &comments.Comment{
 			ID:        newTestID(),
 			ThreadID:  thread.ID,
@@ -468,7 +468,7 @@ func TestCommentsStore_ListByAuthor(t *testing.T) {
 	thread := createTestThread(t, store, board, author1)
 
 	// Create comments by different authors
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		comment := &comments.Comment{
 			ID:        newTestID(),
 			ThreadID:  thread.ID,
@@ -485,7 +485,7 @@ func TestCommentsStore_ListByAuthor(t *testing.T) {
 		}
 	}
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		comment := &comments.Comment{
 			ID:        newTestID(),
 			ThreadID:  thread.ID,

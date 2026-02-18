@@ -102,7 +102,7 @@ func TestWithOptions_Percentage(t *testing.T) {
 	})
 
 	// Send 100 requests
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)

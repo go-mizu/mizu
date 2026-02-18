@@ -20,7 +20,7 @@ import (
 var cdxClient = &http.Client{
 	Transport: &http.Transport{
 		DialContext:           (&net.Dialer{Timeout: 30 * time.Second}).DialContext,
-		TLSHandshakeTimeout:  15 * time.Second,
+		TLSHandshakeTimeout:   15 * time.Second,
 		ResponseHeaderTimeout: 60 * time.Second,
 		IdleConnTimeout:       90 * time.Second,
 		MaxIdleConnsPerHost:   10,
@@ -207,9 +207,7 @@ func LookupDomainAll(ctx context.Context, crawlID, domain string, concurrency in
 
 	var wg sync.WaitGroup
 	for range min(concurrency, numPages) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for page := range pageCh {
 				if ctx.Err() != nil {
 					return
@@ -224,7 +222,7 @@ func LookupDomainAll(ctx context.Context, crawlID, domain string, concurrency in
 				}
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

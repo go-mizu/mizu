@@ -39,18 +39,18 @@ type Thumbnail struct {
 
 // SearchResult represents a single search result.
 type SearchResult struct {
-	ID          string      `json:"id"`
-	URL         string      `json:"url"`
-	Title       string      `json:"title"`
-	Snippet     string      `json:"snippet"`
-	Domain      string      `json:"domain"`
-	Favicon     string      `json:"favicon,omitempty"`
-	Thumbnail   *Thumbnail  `json:"thumbnail,omitempty"`
-	Published   *time.Time  `json:"published,omitempty"`
-	Score       float64     `json:"score"`
-	Highlights  []string    `json:"highlights,omitempty"`
-	Sitelinks   []Sitelink  `json:"sitelinks,omitempty"`
-	CrawledAt   time.Time   `json:"crawled_at"`
+	ID         string     `json:"id"`
+	URL        string     `json:"url"`
+	Title      string     `json:"title"`
+	Snippet    string     `json:"snippet"`
+	Domain     string     `json:"domain"`
+	Favicon    string     `json:"favicon,omitempty"`
+	Thumbnail  *Thumbnail `json:"thumbnail,omitempty"`
+	Published  *time.Time `json:"published,omitempty"`
+	Score      float64    `json:"score"`
+	Highlights []string   `json:"highlights,omitempty"`
+	Sitelinks  []Sitelink `json:"sitelinks,omitempty"`
+	CrawledAt  time.Time  `json:"crawled_at"`
 	// Engine that provided this result
 	Engine  string   `json:"engine,omitempty"`
 	Engines []string `json:"engines,omitempty"`
@@ -144,7 +144,7 @@ type ScienceResult struct {
 	DOI         string    `json:"doi,omitempty"`
 	Journal     string    `json:"journal,omitempty"`
 	Publisher   string    `json:"publisher,omitempty"`
-	PublishedAt time.Time `json:"published_at,omitempty"`
+	PublishedAt time.Time `json:"published_at"`
 	AccessRight string    `json:"access_right,omitempty"`
 	Engine      string    `json:"engine,omitempty"`
 }
@@ -157,7 +157,7 @@ type SocialResult struct {
 	Content      string    `json:"content,omitempty"`
 	Author       string    `json:"author,omitempty"`
 	ThumbnailURL string    `json:"thumbnail_url,omitempty"`
-	PublishedAt  time.Time `json:"published_at,omitempty"`
+	PublishedAt  time.Time `json:"published_at"`
 	Engine       string    `json:"engine,omitempty"`
 }
 
@@ -165,11 +165,11 @@ type SocialResult struct {
 type SearchOptions struct {
 	Page        int    `json:"page"`
 	PerPage     int    `json:"per_page"`
-	TimeRange   string `json:"time_range,omitempty"`   // day, week, month, year
-	Region      string `json:"region,omitempty"`       // us, uk, de, etc.
+	TimeRange   string `json:"time_range,omitempty"` // day, week, month, year
+	Region      string `json:"region,omitempty"`     // us, uk, de, etc.
 	Language    string `json:"language,omitempty"`
-	SafeSearch  string `json:"safe_search,omitempty"`  // off, moderate, strict
-	SafeLevel   int    `json:"safe_level,omitempty"`   // 0=off, 1=moderate, 2=strict (Kagi-style)
+	SafeSearch  string `json:"safe_search,omitempty"` // off, moderate, strict
+	SafeLevel   int    `json:"safe_level,omitempty"`  // 0=off, 1=moderate, 2=strict (Kagi-style)
 	Verbatim    bool   `json:"verbatim,omitempty"`
 	Site        string `json:"site,omitempty"`         // site: operator
 	FileType    string `json:"file_type,omitempty"`    // filetype: operator
@@ -332,7 +332,7 @@ type UserPreference struct {
 	Action    string    `json:"action"` // upvote, downvote, block (legacy)
 	Level     int       `json:"level"`  // -2 to +2 (new Kagi-style)
 	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // SearchLens represents a custom search filter.

@@ -29,7 +29,7 @@ func fastTokenize(text string) map[string]int {
 	data := []byte(text)
 	start := -1
 
-	for i := 0; i < len(data); i++ {
+	for i := range data {
 		c := data[i]
 		isDelim := c <= ' ' || (c >= '!' && c <= '/') || (c >= ':' && c <= '@') ||
 			(c >= '[' && c <= '`') || (c >= '{' && c <= '~')
@@ -38,7 +38,7 @@ func fastTokenize(text string) map[string]int {
 			if start >= 0 {
 				token := data[start:i]
 				if len(token) < 100 {
-					for j := 0; j < len(token); j++ {
+					for j := range token {
 						if token[j] >= 'A' && token[j] <= 'Z' {
 							token[j] += 32
 						}
@@ -55,7 +55,7 @@ func fastTokenize(text string) map[string]int {
 	if start >= 0 {
 		token := data[start:]
 		if len(token) < 100 {
-			for j := 0; j < len(token); j++ {
+			for j := range token {
 				if token[j] >= 'A' && token[j] <= 'Z' {
 					token[j] += 32
 				}
@@ -443,10 +443,7 @@ func (d *Driver) buildBalancedPostings(termPostings map[string][]posting) {
 	sort.Strings(terms)
 
 	// Parallel posting list building
-	numWorkers := runtime.NumCPU()
-	if numWorkers > 8 {
-		numWorkers = 8
-	}
+	numWorkers := min(runtime.NumCPU(), 8)
 
 	type termResult struct {
 		term string
@@ -458,9 +455,7 @@ func (d *Driver) buildBalancedPostings(termPostings map[string][]posting) {
 
 	var wg sync.WaitGroup
 	for range numWorkers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for term := range termCh {
 				postings := termPostings[term]
 
@@ -485,10 +480,7 @@ func (d *Driver) buildBalancedPostings(termPostings map[string][]posting) {
 				// Build block metadata
 				var blocks []BlockMeta
 				for i := 0; i < len(postings); i += BlockSize {
-					end := i + BlockSize
-					if end > len(postings) {
-						end = len(postings)
-					}
+					end := min(i+BlockSize, len(postings))
 
 					block := BlockMeta{
 						MinDocID: postings[i].docNum,
@@ -529,7 +521,7 @@ func (d *Driver) buildBalancedPostings(termPostings map[string][]posting) {
 					},
 				}
 			}
-		}()
+		})
 	}
 
 	// Feed terms to workers
@@ -561,10 +553,7 @@ func (d *Driver) buildBalancedPostingsDirect(termPostings map[string][]algo.Inde
 	n := float64(d.index.NumDocs)
 
 	// Parallel posting list building - collect terms directly
-	numWorkers := runtime.NumCPU()
-	if numWorkers > 16 {
-		numWorkers = 16
-	}
+	numWorkers := min(runtime.NumCPU(), 16)
 
 	// Pre-collect terms (skip sorting - not needed for indexing)
 	terms := make([]string, 0, len(termPostings))
@@ -582,9 +571,7 @@ func (d *Driver) buildBalancedPostingsDirect(termPostings map[string][]algo.Inde
 
 	var wg sync.WaitGroup
 	for range numWorkers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for term := range termCh {
 				postings := termPostings[term]
 
@@ -613,7 +600,7 @@ func (d *Driver) buildBalancedPostingsDirect(termPostings map[string][]algo.Inde
 					},
 				}
 			}
-		}()
+		})
 	}
 
 	// Feed terms to workers

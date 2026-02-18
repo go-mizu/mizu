@@ -13,7 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -142,7 +142,7 @@ func benchmarkProfile(profile string) (ProfileResult, error) {
 	}
 
 	// Warmup
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		driver.Search(context.Background(), queries[i%len(queries)], 10, 0)
 	}
 
@@ -157,9 +157,7 @@ func benchmarkProfile(profile string) (ProfileResult, error) {
 	totalDuration := time.Since(start)
 
 	// Sort and calculate percentiles
-	sort.Slice(latencies, func(i, j int) bool {
-		return latencies[i] < latencies[j]
-	})
+	slices.Sort(latencies)
 
 	result.SearchP50 = latencies[len(latencies)/2]
 	result.SearchP95 = latencies[int(float64(len(latencies))*0.95)]
@@ -182,9 +180,9 @@ func generateDocs(count int) iter.Seq2[fineweb.Document, error] {
 			"index", "query", "document", "text", "retrieval", "ranking",
 		}
 
-		for i := 0; i < count; i++ {
+		for i := range count {
 			var sb strings.Builder
-			for j := 0; j < 50; j++ {
+			for j := range 50 {
 				if j > 0 {
 					sb.WriteByte(' ')
 				}

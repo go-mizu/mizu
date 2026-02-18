@@ -34,13 +34,13 @@ func TestGenerate_ProducesExpectedFiles(t *testing.T) {
 	}
 
 	expected := map[string]bool{
-		"package.json":       false,
-		"tsconfig.json":      false,
-		"src/index.ts":       false,
-		"src/_client.ts":     false,
-		"src/_types.ts":      false,
-		"src/_streaming.ts":  false,
-		"src/_resources.ts":  false,
+		"package.json":      false,
+		"tsconfig.json":     false,
+		"src/index.ts":      false,
+		"src/_client.ts":    false,
+		"src/_types.ts":     false,
+		"src/_streaming.ts": false,
+		"src/_resources.ts": false,
 	}
 
 	for _, f := range files {
@@ -952,7 +952,7 @@ func isNonFatalE2E(err error, stderr string) bool {
 
 func splitNonEmptyLines(s string) []string {
 	var out []string
-	for _, line := range strings.Split(s, "\n") {
+	for line := range strings.SplitSeq(s, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue

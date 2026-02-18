@@ -55,12 +55,9 @@ func TestSIMDvsGoTokenization(t *testing.T) {
 	runtime.GC()
 
 	start := time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -85,12 +82,9 @@ func TestSIMDvsGoTokenization(t *testing.T) {
 	runtime.GC()
 
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -121,12 +115,9 @@ func TestSIMDvsGoTokenization(t *testing.T) {
 	}
 
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -200,12 +191,9 @@ func TestBatchSIMDTokenization(t *testing.T) {
 	var wg sync.WaitGroup
 
 	start := time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -230,12 +218,9 @@ func TestBatchSIMDTokenization(t *testing.T) {
 	// Process in batches of 1000 docs to amortize CGO overhead
 	batchDocSize := 1000
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -243,10 +228,7 @@ func TestBatchSIMDTokenization(t *testing.T) {
 		go func(s, e int) {
 			defer wg.Done()
 			for batchStart := s; batchStart < e; batchStart += batchDocSize {
-				batchEnd := batchStart + batchDocSize
-				if batchEnd > e {
-					batchEnd = e
-				}
+				batchEnd := min(batchStart+batchDocSize, e)
 				algo.BatchSIMDTokenize(allTexts[batchStart:batchEnd], (batchEnd-batchStart)*200)
 			}
 		}(startIdx, endIdx)

@@ -43,14 +43,14 @@ type Revision struct {
 
 // Activity represents an action in the workspace.
 type Activity struct {
-	ID          string      `json:"id"`
-	WorkspaceID string      `json:"workspace_id"`
-	PageID      string      `json:"page_id,omitempty"`
-	BlockID     string      `json:"block_id,omitempty"`
-	ActorID     string      `json:"actor_id"`
-	Action      ActionType  `json:"action"`
-	Details     interface{} `json:"details,omitempty"`
-	CreatedAt   time.Time   `json:"created_at"`
+	ID          string     `json:"id"`
+	WorkspaceID string     `json:"workspace_id"`
+	PageID      string     `json:"page_id,omitempty"`
+	BlockID     string     `json:"block_id,omitempty"`
+	ActorID     string     `json:"actor_id"`
+	Action      ActionType `json:"action"`
+	Details     any        `json:"details,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
 
 	// Enriched
 	Actor *users.User    `json:"actor,omitempty"`
@@ -87,7 +87,7 @@ type API interface {
 	CompareRevisions(ctx context.Context, revID1, revID2 string) (*Diff, error)
 
 	// Activity
-	RecordActivity(ctx context.Context, workspaceID, pageID, blockID, actorID string, action ActionType, details interface{}) error
+	RecordActivity(ctx context.Context, workspaceID, pageID, blockID, actorID string, action ActionType, details any) error
 	ListByWorkspace(ctx context.Context, workspaceID string, opts ActivityOpts) ([]*Activity, error)
 	ListByPage(ctx context.Context, pageID string, opts ActivityOpts) ([]*Activity, error)
 	ListByUser(ctx context.Context, userID string, opts ActivityOpts) ([]*Activity, error)

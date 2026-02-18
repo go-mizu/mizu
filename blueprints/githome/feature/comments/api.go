@@ -89,7 +89,7 @@ type ListOpts struct {
 	PerPage   int       `json:"per_page,omitempty"`
 	Sort      string    `json:"sort,omitempty"`      // created, updated
 	Direction string    `json:"direction,omitempty"` // asc, desc
-	Since     time.Time `json:"since,omitempty"`
+	Since     time.Time `json:"since"`
 }
 
 // API defines the comments service interface

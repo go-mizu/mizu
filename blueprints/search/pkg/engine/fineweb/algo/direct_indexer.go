@@ -14,9 +14,9 @@ import (
 // Memory bounded by periodic flushing of low-frequency terms.
 type DirectIndexer struct {
 	// Configuration
-	NumShards   int           // Number of term shards
-	NumWorkers  int           // Parallel tokenization workers
-	Tokenizer   TokenizerFunc // text → term frequencies
+	NumShards  int           // Number of term shards
+	NumWorkers int           // Parallel tokenization workers
+	Tokenizer  TokenizerFunc // text → term frequencies
 
 	// Sharded term accumulators (each shard is independent)
 	shards []*termAccumShard
@@ -36,8 +36,8 @@ type DirectIndexer struct {
 
 // termAccumShard is an independent term accumulator.
 type termAccumShard struct {
-	mu       sync.Mutex
-	terms    map[string]*termPostings
+	mu    sync.Mutex
+	terms map[string]*termPostings
 }
 
 // termPostings holds postings for a single term.
@@ -48,13 +48,7 @@ type termPostings struct {
 
 // NewDirectIndexer creates a direct-to-mmap indexer.
 func NewDirectIndexer(tokenizer TokenizerFunc) *DirectIndexer {
-	numWorkers := runtime.NumCPU()
-	if numWorkers < 4 {
-		numWorkers = 4
-	}
-	if numWorkers > 16 {
-		numWorkers = 16
-	}
+	numWorkers := min(max(runtime.NumCPU(), 4), 16)
 
 	numShards := 64 // More shards = less contention
 
@@ -68,7 +62,7 @@ func NewDirectIndexer(tokenizer TokenizerFunc) *DirectIndexer {
 
 	// Initialize shards
 	di.shards = make([]*termAccumShard, numShards)
-	for i := 0; i < numShards; i++ {
+	for i := range numShards {
 		di.shards[i] = &termAccumShard{
 			terms: make(map[string]*termPostings, 50000/numShards),
 		}
@@ -82,13 +76,11 @@ func NewDirectIndexer(tokenizer TokenizerFunc) *DirectIndexer {
 
 func (di *DirectIndexer) startWorkers() {
 	for i := 0; i < di.NumWorkers; i++ {
-		di.wg.Add(1)
-		go func() {
-			defer di.wg.Done()
+		di.wg.Go(func() {
 			for item := range di.docCh {
 				di.processDoc(item)
 			}
-		}()
+		})
 	}
 }
 
@@ -234,7 +226,7 @@ func (di *DirectIndexer) FinishToMmap(outputPath string) (*MmapIndex, error) {
 	}
 
 	writer.SetDocCount(numDocs, avgDocLen)
-	for i := 0; i < numDocs; i++ {
+	for i := range numDocs {
 		if i < len(di.docLens) {
 			writer.AddDocLen(int(di.docLens[i]))
 		} else {

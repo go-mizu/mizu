@@ -97,7 +97,7 @@ func TestSearchStore_SearchAccounts_Pagination(t *testing.T) {
 	searchStore := NewSearchStore(db)
 
 	// Create multiple accounts
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		createTestAccount(t, db, "searchtest"+string(rune('0'+i)))
 	}
 
@@ -239,7 +239,7 @@ func TestSearchStore_SearchPosts_MinLikes(t *testing.T) {
 	postsStore.Insert(ctx, post2)
 
 	// Add likes to post1
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		interactionsStore.IncrementLikesCount(ctx, post1.ID)
 	}
 
@@ -295,7 +295,7 @@ func TestSearchStore_SearchHashtags_OrderByPostsCount(t *testing.T) {
 	postsStore.UpsertHashtag(ctx, "testtag1") // count = 1
 
 	// Call UpsertHashtag multiple times for tag2 to increase its count
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		postsStore.UpsertHashtag(ctx, "testtag2") // count = 1, 2, 3, 4
 	}
 
@@ -345,7 +345,7 @@ func TestSearchStore_SuggestHashtags_Limit(t *testing.T) {
 	searchStore := NewSearchStore(db)
 
 	// Create many hashtags
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		postsStore.UpsertHashtag(ctx, "suggest"+string(rune('a'+i)))
 	}
 

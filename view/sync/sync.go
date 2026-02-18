@@ -101,7 +101,7 @@ type mutation struct {
 	Client    string         `json:"client,omitempty"`
 	Seq       uint64         `json:"seq,omitempty"`
 	Args      map[string]any `json:"args,omitempty"`
-	CreatedAt time.Time      `json:"created_at,omitempty"`
+	CreatedAt time.Time      `json:"created_at"`
 }
 
 // change is a single durable state change from the server.

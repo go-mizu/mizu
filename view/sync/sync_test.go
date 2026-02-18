@@ -1,7 +1,6 @@
 package sync
 
 import (
-	"context"
 	"encoding/json"
 	"sync/atomic"
 	"testing"
@@ -151,14 +150,14 @@ func TestSignal_ConcurrentAccess(t *testing.T) {
 	done := make(chan bool)
 
 	go func() {
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			s.Set(i)
 		}
 		done <- true
 	}()
 
 	go func() {
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			_ = s.Get()
 		}
 		done <- true
@@ -765,8 +764,7 @@ func TestClient_Stop(t *testing.T) {
 func TestClient_StartAlreadyStarted(t *testing.T) {
 	client := newTestClient()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	_ = client.Start(ctx)
 

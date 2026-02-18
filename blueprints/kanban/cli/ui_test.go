@@ -40,7 +40,7 @@ func TestColorConstants(t *testing.T) {
 	// Verify color constants are defined
 	colors := []struct {
 		name  string
-		color interface{}
+		color any
 	}{
 		{"primaryColor", primaryColor},
 		{"secondaryColor", secondaryColor},
@@ -60,7 +60,7 @@ func TestStyleConstants(t *testing.T) {
 	// Verify style constants are defined
 	styles := []struct {
 		name  string
-		style interface{}
+		style any
 	}{
 		{"headerStyle", headerStyle},
 		{"successStyle", successStyle},

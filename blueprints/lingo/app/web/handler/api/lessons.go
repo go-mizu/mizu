@@ -1,10 +1,10 @@
 package api
 
 import (
-	"net/http"
 	"github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/lingo/store"
 	"github.com/google/uuid"
+	"net/http"
 )
 
 // LessonHandler handles lesson endpoints
@@ -82,7 +82,7 @@ func (h *LessonHandler) StartLesson(c *mizu.Ctx) error {
 	// Get user hearts
 	user, _ := h.store.Users().GetByID(c.Context(), uid)
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]any{
 		"session_id": session.ID,
 		"lesson":     lesson,
 		"exercises":  exercises,
@@ -161,17 +161,14 @@ func (h *LessonHandler) CompleteLesson(c *mizu.Ctx) error {
 	// Update hearts if lost
 	if req.HeartsLost > 0 {
 		user, _ := h.store.Users().GetByID(c.Context(), uid)
-		newHearts := user.Hearts - req.HeartsLost
-		if newHearts < 0 {
-			newHearts = 0
-		}
+		newHearts := max(user.Hearts-req.HeartsLost, 0)
 		h.store.Users().UpdateHearts(c.Context(), uid, newHearts)
 	}
 
 	// Get updated user
 	user, _ := h.store.Users().GetByID(c.Context(), uid)
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]any{
 		"xp_earned":  xpEarned,
 		"is_perfect": isPerfect,
 		"total_xp":   user.XPTotal,
@@ -226,7 +223,7 @@ func (h *LessonHandler) AnswerExercise(c *mizu.Ctx) error {
 		h.store.Progress().RecordMistake(c.Context(), mistake)
 	}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]any{
 		"correct":        isCorrect,
 		"correct_answer": "the correct answer",
 	})

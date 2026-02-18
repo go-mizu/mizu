@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"runtime"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/go-mizu/blueprints/spreadsheet/feature/cells"
@@ -323,7 +323,7 @@ func (r *BenchmarkRunner) benchmarkBatchSet(ctx *DriverContext, count int) Bench
 	var totalAllocs int64
 	iterations := r.config.Iterations
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		sheet := r.createSheet(ctx, r.config.Warmup+i)
 		cellList := generateCells(sheet.ID, count)
 
@@ -362,7 +362,7 @@ func (r *BenchmarkRunner) benchmarkGetByPositionsSparse(ctx *DriverContext, coun
 	// Setup: create sparse cells
 	sheet := r.createSheet(ctx, 1000)
 	positions := make([]cells.CellPosition, count)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		row := i * 100
 		col := i * 100
 		cell := &cells.Cell{
@@ -388,7 +388,7 @@ func (r *BenchmarkRunner) benchmarkGetByPositionsSparse(ctx *DriverContext, coun
 	var totalDuration time.Duration
 	iterations := r.config.Iterations
 
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		start := time.Now()
 		_, err := ctx.CellsStore.GetByPositions(context.Background(), sheet.ID, positions)
 		elapsed := time.Since(start)
@@ -416,8 +416,8 @@ func (r *BenchmarkRunner) benchmarkGetByPositionsDense(ctx *DriverContext, rows,
 	cellList := make([]*cells.Cell, 0, count)
 	positions := make([]cells.CellPosition, 0, count)
 
-	for row := 0; row < rows; row++ {
-		for col := 0; col < cols; col++ {
+	for row := range rows {
+		for col := range cols {
 			cellList = append(cellList, &cells.Cell{
 				ID:        ulid.Make().String(),
 				SheetID:   sheet.ID,
@@ -442,7 +442,7 @@ func (r *BenchmarkRunner) benchmarkGetByPositionsDense(ctx *DriverContext, rows,
 	var totalDuration time.Duration
 	iterations := r.config.Iterations
 
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		start := time.Now()
 		_, err := ctx.CellsStore.GetByPositions(context.Background(), sheet.ID, positions)
 		elapsed := time.Since(start)
@@ -479,7 +479,7 @@ func (r *BenchmarkRunner) benchmarkGetRange(ctx *DriverContext, rows, cols int) 
 	var totalDuration time.Duration
 	iterations := r.config.Iterations
 
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		start := time.Now()
 		_, err := ctx.CellsStore.GetRange(context.Background(), sheet.ID, 0, 0, rows-1, cols-1)
 		elapsed := time.Since(start)
@@ -552,7 +552,7 @@ func (r *BenchmarkRunner) benchmarkShiftRows(ctx *DriverContext, count int) Benc
 	var totalDuration time.Duration
 	iterations := r.config.Iterations
 
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		start := time.Now()
 		err := ctx.CellsStore.ShiftRows(context.Background(), sheet.ID, 50, count)
 		elapsed := time.Since(start)
@@ -582,7 +582,7 @@ func (r *BenchmarkRunner) benchmarkShiftCols(ctx *DriverContext, count int) Benc
 	var totalDuration time.Duration
 	iterations := r.config.Iterations
 
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		start := time.Now()
 		err := ctx.CellsStore.ShiftCols(context.Background(), sheet.ID, 25, count)
 		elapsed := time.Since(start)
@@ -645,11 +645,11 @@ func (r *BenchmarkRunner) benchmarkCreateMergeIndividual(ctx *DriverContext, cou
 	var totalDuration time.Duration
 	iterations := r.config.Iterations
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		sheet := r.createSheet(ctx, 6000+i)
 
 		start := time.Now()
-		for j := 0; j < count; j++ {
+		for j := range count {
 			region := &cells.MergedRegion{
 				ID:       ulid.Make().String(),
 				SheetID:  sheet.ID,
@@ -678,11 +678,11 @@ func (r *BenchmarkRunner) benchmarkBatchCreateMerge(ctx *DriverContext, count in
 	var totalDuration time.Duration
 	iterations := r.config.Iterations
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		sheet := r.createSheet(ctx, 7000+i)
 
 		regions := make([]*cells.MergedRegion, count)
-		for j := 0; j < count; j++ {
+		for j := range count {
 			regions[j] = &cells.MergedRegion{
 				ID:       ulid.Make().String(),
 				SheetID:  sheet.ID,
@@ -757,11 +757,11 @@ func (r *BenchmarkRunner) benchmarkBatchSetWithFormat(ctx *DriverContext, count 
 	var totalDuration time.Duration
 	iterations := r.config.Iterations
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		sheet := r.createSheet(ctx, 8000+i)
 		cellList := make([]*cells.Cell, count)
 
-		for j := 0; j < count; j++ {
+		for j := range count {
 			cellList[j] = &cells.Cell{
 				ID:      ulid.Make().String(),
 				SheetID: sheet.ID,
@@ -809,7 +809,7 @@ func (r *BenchmarkRunner) benchmarkBatchSetNoFormat(ctx *DriverContext, count in
 	var totalDuration time.Duration
 	iterations := r.config.Iterations
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		sheet := r.createSheet(ctx, 9000+i)
 		cellList := generateCells(sheet.ID, count)
 
@@ -834,11 +834,11 @@ func (r *BenchmarkRunner) benchmarkBatchSetPartialFormat(ctx *DriverContext, cou
 	var totalDuration time.Duration
 	iterations := r.config.Iterations
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		sheet := r.createSheet(ctx, 10000+i)
 		cellList := make([]*cells.Cell, count)
 
-		for j := 0; j < count; j++ {
+		for j := range count {
 			cellList[j] = &cells.Cell{
 				ID:      ulid.Make().String(),
 				SheetID: sheet.ID,
@@ -904,7 +904,7 @@ func (r *BenchmarkRunner) benchmarkQueryNonEmpty(ctx *DriverContext, count int) 
 	var totalDuration time.Duration
 	iterations := r.config.Iterations
 
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		start := time.Now()
 		// Query a range that covers all cells
 		_, err := ctx.CellsStore.GetRange(context.Background(), sheet.ID, 0, 0, count/100+1, 100)
@@ -953,7 +953,7 @@ func (r *BenchmarkRunner) benchmarkFinancialWorkbook(ctx *DriverContext) BenchRe
 	var totalDuration time.Duration
 	iterations := r.config.Iterations
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		sheet := r.createSheet(ctx, 12000+i)
 		cellList := make([]*cells.Cell, 0, count)
 
@@ -1043,21 +1043,18 @@ func (r *BenchmarkRunner) benchmarkCSVImport(ctx *DriverContext, totalCells int)
 	var totalDuration time.Duration
 	iterations := r.config.Iterations
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		sheet := r.createSheet(ctx, 13000+i)
 
 		start := time.Now()
 
 		// Simulate CSV import with batching
 		for batchStart := 0; batchStart < rows; batchStart += batchSize / cols {
-			batchEnd := batchStart + batchSize/cols
-			if batchEnd > rows {
-				batchEnd = rows
-			}
+			batchEnd := min(batchStart+batchSize/cols, rows)
 
 			batch := make([]*cells.Cell, 0, (batchEnd-batchStart)*cols)
 			for row := batchStart; row < batchEnd; row++ {
-				for col := 0; col < cols; col++ {
+				for col := range cols {
 					batch = append(batch, &cells.Cell{
 						ID:        ulid.Make().String(),
 						SheetID:   sheet.ID,
@@ -1117,7 +1114,7 @@ func (r *BenchmarkRunner) benchmarkReportGeneration(ctx *DriverContext) BenchRes
 	var totalDuration time.Duration
 	iterations := r.config.Iterations
 
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		start := time.Now()
 
 		// Simulate report generation: multiple range queries
@@ -1167,13 +1164,13 @@ func (r *BenchmarkRunner) benchmarkSparseData(ctx *DriverContext) BenchResult {
 	var totalDuration time.Duration
 	iterations := r.config.Iterations
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		sheet := r.createSheet(ctx, 15000+i)
 
 		// Generate sparse cells
 		cellList := make([]*cells.Cell, 0, totalCells)
 		step := int(1.0 / density)
-		for idx := 0; idx < totalCells; idx++ {
+		for idx := range totalCells {
 			row := (idx * step) / cols
 			col := (idx * step) % cols
 			cellList = append(cellList, &cells.Cell{
@@ -1195,7 +1192,7 @@ func (r *BenchmarkRunner) benchmarkSparseData(ctx *DriverContext) BenchResult {
 
 		// Random access reads
 		positions := make([]cells.CellPosition, 100)
-		for j := 0; j < 100; j++ {
+		for j := range 100 {
 			positions[j] = cells.CellPosition{Row: j * 100, Col: j % cols}
 		}
 		_, _ = ctx.CellsStore.GetByPositions(context.Background(), sheet.ID, positions)
@@ -1236,7 +1233,7 @@ func (r *BenchmarkRunner) benchmarkBulkOperations(ctx *DriverContext) BenchResul
 	var totalDuration time.Duration
 	iterations := r.config.Iterations
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		sheet := r.createSheet(ctx, 16000+i)
 		cellList := generateCellsForSheet(sheet.ID, rows, cols)
 		ctx.CellsStore.BatchSet(context.Background(), cellList)
@@ -1251,7 +1248,7 @@ func (r *BenchmarkRunner) benchmarkBulkOperations(ctx *DriverContext) BenchResul
 
 		// Create 20 merge regions
 		regions := make([]*cells.MergedRegion, 20)
-		for j := 0; j < 20; j++ {
+		for j := range 20 {
 			regions[j] = &cells.MergedRegion{
 				ID:       ulid.Make().String(),
 				SheetID:  sheet.ID,
@@ -1338,7 +1335,7 @@ func (r *BenchmarkRunner) benchmarkSustainedWrite(ctx *DriverContext, cellsPerSe
 		<-ticker.C
 
 		batch := make([]*cells.Cell, batchSize)
-		for j := 0; j < batchSize; j++ {
+		for j := range batchSize {
 			batch[j] = &cells.Cell{
 				ID:        ulid.Make().String(),
 				SheetID:   sheet.ID,
@@ -1365,7 +1362,7 @@ func (r *BenchmarkRunner) benchmarkSustainedWrite(ctx *DriverContext, cellsPerSe
 	}
 
 	// Calculate percentiles
-	sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
+	slices.Sort(latencies)
 
 	var p50, p95, p99, maxLatency time.Duration
 	if len(latencies) > 0 {
@@ -1438,7 +1435,7 @@ func (r *BenchmarkRunner) benchmarkMixedWorkload(ctx *DriverContext) BenchResult
 	}
 
 	// Calculate percentiles
-	sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
+	slices.Sort(latencies)
 
 	var p50, p95, p99, maxLatency time.Duration
 	if len(latencies) > 0 {
@@ -1492,7 +1489,7 @@ func generateCells(sheetID string, count int) []*cells.Cell {
 	now := time.Now()
 	cols := 100
 
-	for i := 0; i < count; i++ {
+	for i := range count {
 		cellList[i] = &cells.Cell{
 			ID:        ulid.Make().String(),
 			SheetID:   sheetID,
@@ -1512,8 +1509,8 @@ func generateCellsForSheet(sheetID string, rows, cols int) []*cells.Cell {
 	cellList := make([]*cells.Cell, 0, rows*cols)
 	now := time.Now()
 
-	for row := 0; row < rows; row++ {
-		for col := 0; col < cols; col++ {
+	for row := range rows {
+		for col := range cols {
 			cellList = append(cellList, &cells.Cell{
 				ID:        ulid.Make().String(),
 				SheetID:   sheetID,
@@ -1531,10 +1528,5 @@ func generateCellsForSheet(sheetID string, rows, cols int) []*cells.Cell {
 }
 
 func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, item)
 }

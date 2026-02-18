@@ -7,22 +7,22 @@ import "time"
 type WidgetType string
 
 const (
-	WidgetInlineImages     WidgetType = "inline_images"
-	WidgetInlineVideos     WidgetType = "inline_videos"
-	WidgetInlineNews       WidgetType = "inline_news"
+	WidgetInlineImages      WidgetType = "inline_images"
+	WidgetInlineVideos      WidgetType = "inline_videos"
+	WidgetInlineNews        WidgetType = "inline_news"
 	WidgetInlineDiscussions WidgetType = "inline_discussions"
-	WidgetInterestingFinds WidgetType = "interesting_finds"
-	WidgetListicles        WidgetType = "listicles"
-	WidgetInlineMaps       WidgetType = "inline_maps"
-	WidgetPublicRecords    WidgetType = "public_records"
-	WidgetPodcasts         WidgetType = "podcasts"
-	WidgetQuickPeek        WidgetType = "quick_peek"
-	WidgetSummaryBox       WidgetType = "summary_box"
-	WidgetCheatSheet       WidgetType = "cheat_sheet"
-	WidgetBlastFromPast    WidgetType = "blast_from_past"
-	WidgetCode             WidgetType = "code"
-	WidgetRelatedSearches  WidgetType = "related_searches"
-	WidgetWikipedia        WidgetType = "wikipedia"
+	WidgetInterestingFinds  WidgetType = "interesting_finds"
+	WidgetListicles         WidgetType = "listicles"
+	WidgetInlineMaps        WidgetType = "inline_maps"
+	WidgetPublicRecords     WidgetType = "public_records"
+	WidgetPodcasts          WidgetType = "podcasts"
+	WidgetQuickPeek         WidgetType = "quick_peek"
+	WidgetSummaryBox        WidgetType = "summary_box"
+	WidgetCheatSheet        WidgetType = "cheat_sheet"
+	WidgetBlastFromPast     WidgetType = "blast_from_past"
+	WidgetCode              WidgetType = "code"
+	WidgetRelatedSearches   WidgetType = "related_searches"
+	WidgetWikipedia         WidgetType = "wikipedia"
 )
 
 // AllWidgetTypes returns all available widget types.
@@ -49,10 +49,10 @@ func AllWidgetTypes() []WidgetType {
 
 // Widget represents a search result widget.
 type Widget struct {
-	Type     WidgetType  `json:"type"`
-	Title    string      `json:"title,omitempty"`
-	Position int         `json:"position"` // Position in results (0 = top, -1 = sidebar)
-	Content  any `json:"content"`
+	Type     WidgetType `json:"type"`
+	Title    string     `json:"title,omitempty"`
+	Position int        `json:"position"` // Position in results (0 = top, -1 = sidebar)
+	Content  any        `json:"content"`
 }
 
 // WidgetSetting represents user widget preferences.
@@ -102,7 +102,7 @@ type InterestingFind struct {
 	Snippet   string    `json:"snippet"`
 	Source    string    `json:"source"` // "blog", "forum", "discussion"
 	Domain    string    `json:"domain"`
-	Published time.Time `json:"published,omitempty"`
+	Published time.Time `json:"published"`
 }
 
 // BlastFromPast represents a historical article.
@@ -126,13 +126,13 @@ type CodeSnippet struct {
 
 // Discussion represents a forum/discussion result.
 type Discussion struct {
-	URL         string    `json:"url"`
-	Title       string    `json:"title"`
-	Snippet     string    `json:"snippet"`
-	Source      string    `json:"source"` // "reddit", "hackernews", "forum"
-	Author      string    `json:"author,omitempty"`
-	Replies     int       `json:"replies,omitempty"`
-	Published   time.Time `json:"published,omitempty"`
+	URL       string    `json:"url"`
+	Title     string    `json:"title"`
+	Snippet   string    `json:"snippet"`
+	Source    string    `json:"source"` // "reddit", "hackernews", "forum"
+	Author    string    `json:"author,omitempty"`
+	Replies   int       `json:"replies,omitempty"`
+	Published time.Time `json:"published"`
 }
 
 // Podcast represents a podcast episode.
@@ -142,7 +142,7 @@ type Podcast struct {
 	Description string    `json:"description"`
 	ShowName    string    `json:"show_name"`
 	Duration    int       `json:"duration_seconds,omitempty"`
-	Published   time.Time `json:"published,omitempty"`
+	Published   time.Time `json:"published"`
 	AudioURL    string    `json:"audio_url,omitempty"`
 	ImageURL    string    `json:"image_url,omitempty"`
 }

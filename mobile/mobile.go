@@ -3,6 +3,7 @@ package mobile
 import (
 	"context"
 	"net/http"
+	"slices"
 
 	"github.com/go-mizu/mizu"
 )
@@ -107,13 +108,7 @@ func WithOptions(opts Options) mizu.Middleware {
 
 			// Validate platform
 			if len(opts.AllowedPlatforms) > 0 {
-				allowed := false
-				for _, p := range opts.AllowedPlatforms {
-					if device.Platform == p {
-						allowed = true
-						break
-					}
-				}
+				allowed := slices.Contains(opts.AllowedPlatforms, device.Platform)
 				if !allowed {
 					if opts.OnUnsupportedPlatform != nil {
 						return opts.OnUnsupportedPlatform(c, device.Platform)

@@ -23,7 +23,7 @@ func TestNew(t *testing.T) {
 	})
 
 	// Send 100 requests
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
@@ -231,7 +231,7 @@ func TestReleaseManager_ShouldUseCanary(t *testing.T) {
 	manager.Set("feature", 50)
 
 	var canaryCount int
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		if manager.ShouldUseCanary("feature") {
 			canaryCount++
 		}

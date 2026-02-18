@@ -40,7 +40,7 @@ func TestHistoryStore_GetHistory(t *testing.T) {
 	history := s.History()
 
 	// Record some searches
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		entry := &store.SearchHistory{
 			Query:   "query " + string(rune('A'+i)),
 			Results: i * 10,
@@ -97,7 +97,7 @@ func TestHistoryStore_GetHistory_Pagination(t *testing.T) {
 	ctx := context.Background()
 	history := s.History()
 
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		entry := &store.SearchHistory{
 			Query: "query " + string(rune('a'+i)),
 		}
@@ -134,7 +134,7 @@ func TestHistoryStore_GetHistory_DefaultLimit(t *testing.T) {
 	ctx := context.Background()
 	history := s.History()
 
-	for i := 0; i < 60; i++ {
+	for i := range 60 {
 		entry := &store.SearchHistory{
 			Query: "query " + string(rune('A'+i%26)),
 		}
@@ -236,7 +236,7 @@ func TestHistoryStore_ClearHistory(t *testing.T) {
 	history := s.History()
 
 	// Add multiple entries
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		entry := &store.SearchHistory{
 			Query: "query " + string(rune('A'+i)),
 		}

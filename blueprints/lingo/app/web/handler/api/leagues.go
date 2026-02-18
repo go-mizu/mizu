@@ -1,10 +1,10 @@
 package api
 
 import (
-	"net/http"
 	"github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/lingo/store"
 	"github.com/google/uuid"
+	"net/http"
 )
 
 // LeagueHandler handles league endpoints
@@ -64,7 +64,7 @@ func (h *LeagueHandler) GetCurrentLeague(c *mizu.Ctx) error {
 		}
 	}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]any{
 		"user_league":    userLeague,
 		"current_league": currentLeague,
 		"all_leagues":    leagues,
@@ -93,7 +93,7 @@ func (h *LeagueHandler) GetLeaderboard(c *mizu.Ctx) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to fetch leaderboard"})
 	}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]any{
 		"leaderboard": leaderboard,
 		"user_rank":   userLeague.Rank,
 		"user_xp":     userLeague.XPEarned,

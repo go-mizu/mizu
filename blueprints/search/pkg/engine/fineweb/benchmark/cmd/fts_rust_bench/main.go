@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb"
@@ -24,15 +25,15 @@ import (
 )
 
 var (
-	mode       = flag.String("mode", "index", "Benchmark mode: index, search, memory")
-	dataPath   = flag.String("data", "", "Path to parquet data file")
+	mode        = flag.String("mode", "index", "Benchmark mode: index, search, memory")
+	dataPath    = flag.String("data", "", "Path to parquet data file")
 	queriesPath = flag.String("queries", "", "Path to queries file (one per line)")
-	profile    = flag.String("profile", "ensemble", "Search profile to use")
-	outputPath = flag.String("output", "", "Output file for results (JSON)")
-	indexDir   = flag.String("index", "", "Index directory (default: temp)")
-	limit      = flag.Int("limit", 0, "Limit number of documents to index (0 = all)")
+	profile     = flag.String("profile", "ensemble", "Search profile to use")
+	outputPath  = flag.String("output", "", "Output file for results (JSON)")
+	indexDir    = flag.String("index", "", "Index directory (default: temp)")
+	limit       = flag.Int("limit", 0, "Limit number of documents to index (0 = all)")
 	searchLimit = flag.Int("search-limit", 10, "Number of results per search")
-	iterations = flag.Int("iterations", 1000, "Number of search iterations")
+	iterations  = flag.Int("iterations", 1000, "Number of search iterations")
 )
 
 func main() {
@@ -213,7 +214,7 @@ func runSearchBenchmark() {
 
 	// Warmup
 	fmt.Println("Warming up...")
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		driver.Search(context.Background(), queries[i%len(queries)], *searchLimit, 0)
 	}
 
@@ -365,14 +366,14 @@ func generateTestDocs(count int) iter.Seq2[fineweb.Document, error] {
 
 		for i := 0; i < count; i++ {
 			// Generate random text
-			text := ""
-			for j := 0; j < 50; j++ {
-				text += words[(i+j)%len(words)] + " "
+			var text strings.Builder
+			for j := range 50 {
+				text.WriteString(words[(i+j)%len(words)] + " ")
 			}
 
 			doc := fineweb.Document{
 				ID:   fmt.Sprintf("doc_%d", i),
-				Text: text,
+				Text: text.String(),
 			}
 
 			if !yield(doc, nil) {
@@ -396,7 +397,7 @@ func generateTestQueries(count int) []string {
 	}
 
 	result := make([]string, count)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		result[i] = queries[i%len(queries)]
 	}
 	return result
@@ -426,7 +427,7 @@ func loadQueries() []string {
 
 // sortDurations sorts a slice of durations
 func sortDurations(d []time.Duration) {
-	for i := 0; i < len(d); i++ {
+	for i := range d {
 		for j := i + 1; j < len(d); j++ {
 			if d[i] > d[j] {
 				d[i], d[j] = d[j], d[i]

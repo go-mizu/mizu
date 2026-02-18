@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -69,10 +70,8 @@ func (s *Service) ValidateFile(ctx context.Context, reader io.Reader, format For
 	switch format {
 	case FormatCSV, FormatTSV:
 		// CSV/TSV should be text
-		for _, b := range buf[:n] {
-			if b == 0 {
-				return fmt.Errorf("file appears to be binary, not CSV/TSV")
-			}
+		if slices.Contains(buf[:n], 0) {
+			return fmt.Errorf("file appears to be binary, not CSV/TSV")
 		}
 	case FormatXLSX:
 		// XLSX starts with PK (zip file)
@@ -81,7 +80,7 @@ func (s *Service) ValidateFile(ctx context.Context, reader io.Reader, format For
 		}
 	case FormatJSON:
 		// JSON should start with { or [
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if buf[i] == ' ' || buf[i] == '\n' || buf[i] == '\r' || buf[i] == '\t' {
 				continue
 			}
@@ -282,13 +281,13 @@ func (s *Service) parseJSON(reader io.Reader, opts *Options) ([]SheetImport, err
 	var data struct {
 		Version string `json:"version"`
 		Sheets  []struct {
-			ID            string `json:"id"`
-			Name          string `json:"name"`
-			Cells         []struct {
-				Row     int         `json:"row"`
-				Col     int         `json:"col"`
-				Value   interface{} `json:"value"`
-				Formula string      `json:"formula"`
+			ID    string `json:"id"`
+			Name  string `json:"name"`
+			Cells []struct {
+				Row     int    `json:"row"`
+				Col     int    `json:"col"`
+				Value   any    `json:"value"`
+				Formula string `json:"formula"`
 				Format  *struct {
 					FontFamily      string `json:"fontFamily"`
 					FontSize        int    `json:"fontSize"`
@@ -443,10 +442,7 @@ func (s *Service) importCellsToSheet(ctx context.Context, sheetID string, sheetI
 	} else {
 		// Sequential batch processing for small imports or when parallel is disabled
 		for i := 0; i < len(cellsToImport); i += batchSize {
-			end := i + batchSize
-			if end > len(cellsToImport) {
-				end = len(cellsToImport)
-			}
+			end := min(i+batchSize, len(cellsToImport))
 
 			batch := cellsToImport[i:end]
 			updates := make([]cells.CellUpdate, len(batch))
@@ -492,7 +488,7 @@ func (s *Service) importCellsToSheet(ctx context.Context, sheetID string, sheetI
 }
 
 // detectType attempts to detect the type of a string value.
-func (s *Service) detectType(value string, dateFormat string) interface{} {
+func (s *Service) detectType(value string, dateFormat string) any {
 	// Try boolean
 	lower := strings.ToLower(value)
 	if lower == "true" || lower == "yes" {
@@ -535,7 +531,7 @@ func (s *Service) detectType(value string, dateFormat string) interface{} {
 }
 
 // detectCellType detects the cell type from a value.
-func detectCellType(value interface{}) cells.CellType {
+func detectCellType(value any) cells.CellType {
 	switch value.(type) {
 	case bool:
 		return cells.CellTypeBool
@@ -546,13 +542,6 @@ func detectCellType(value interface{}) cells.CellType {
 	default:
 		return cells.CellTypeText
 	}
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 // Ensure Service implements API

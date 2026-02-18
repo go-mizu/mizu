@@ -71,9 +71,9 @@ type Store struct {
 	merges sync.Map
 
 	// Dirty tracking
-	mu          sync.RWMutex
-	dirtyTiles  map[tileKey]struct{}
-	dirtyMerges map[string]struct{}
+	mu           sync.RWMutex
+	dirtyTiles   map[tileKey]struct{}
+	dirtyMerges  map[string]struct{}
 	deletedTiles map[tileKey]struct{}
 
 	// Background flusher
@@ -117,9 +117,7 @@ func New(underlying cells.Store, config Config) *Store {
 // startBackgroundFlusher starts the periodic flush goroutine.
 func (s *Store) startBackgroundFlusher() {
 	s.flushTicker = time.NewTicker(s.config.FlushInterval)
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
+	s.wg.Go(func() {
 		for {
 			select {
 			case <-s.flushTicker.C:
@@ -128,7 +126,7 @@ func (s *Store) startBackgroundFlusher() {
 				return
 			}
 		}
-	}()
+	})
 }
 
 // Close flushes remaining data and stops background workers.
@@ -396,10 +394,7 @@ func (s *Store) GetRange(ctx context.Context, sheetID string, startRow, startCol
 	}
 
 	// Pre-allocate result based on estimated density
-	capacity := (endRow - startRow + 1) * (endCol - startCol + 1) / 10
-	if capacity < 16 {
-		capacity = 16
-	}
+	capacity := max((endRow-startRow+1)*(endCol-startCol+1)/10, 16)
 	result := make([]*cells.Cell, 0, capacity)
 
 	// Iterate through rows in range using rowIndex
@@ -429,7 +424,6 @@ func (s *Store) GetRange(ctx context.Context, sheetID string, startRow, startCol
 	// Just need to sort by column within each row (which is already done via rowIndex)
 	return result, nil
 }
-
 
 // sortCells sorts cells by row then column using an efficient algorithm.
 func sortCells(cells []*cells.Cell) {
@@ -689,7 +683,7 @@ func (s *Store) Delete(ctx context.Context, sheetID string, row, col int) error 
 
 // removeFromSorted removes a value from a sorted slice.
 func removeFromSorted(slice []int, val int) []int {
-	for i := 0; i < len(slice); i++ {
+	for i := range slice {
 		if slice[i] == val {
 			return append(slice[:i], slice[i+1:]...)
 		}

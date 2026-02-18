@@ -20,18 +20,18 @@ const (
 
 // Cell represents a single cell in a sheet.
 type Cell struct {
-	ID        string      `json:"id"`
-	SheetID   string      `json:"sheetId"`
-	Row       int         `json:"row"`
-	Col       int         `json:"col"`
-	Value     interface{} `json:"value"`
-	Formula   string      `json:"formula,omitempty"`
-	Display   string      `json:"display"`
-	Type      CellType    `json:"type"`
-	Format    Format      `json:"format"`
-	Hyperlink *Hyperlink  `json:"hyperlink,omitempty"`
-	Note      string      `json:"note,omitempty"`
-	UpdatedAt time.Time   `json:"updatedAt"`
+	ID        string     `json:"id"`
+	SheetID   string     `json:"sheetId"`
+	Row       int        `json:"row"`
+	Col       int        `json:"col"`
+	Value     any        `json:"value"`
+	Formula   string     `json:"formula,omitempty"`
+	Display   string     `json:"display"`
+	Type      CellType   `json:"type"`
+	Format    Format     `json:"format"`
+	Hyperlink *Hyperlink `json:"hyperlink,omitempty"`
+	Note      string     `json:"note,omitempty"`
+	UpdatedAt time.Time  `json:"updatedAt"`
 }
 
 // Format contains cell formatting options.
@@ -56,10 +56,10 @@ type Format struct {
 	Indent       int    `json:"indent,omitempty"`
 
 	// Borders
-	BorderTop    Border `json:"borderTop,omitempty"`
-	BorderRight  Border `json:"borderRight,omitempty"`
-	BorderBottom Border `json:"borderBottom,omitempty"`
-	BorderLeft   Border `json:"borderLeft,omitempty"`
+	BorderTop    Border `json:"borderTop"`
+	BorderRight  Border `json:"borderRight"`
+	BorderBottom Border `json:"borderBottom"`
+	BorderLeft   Border `json:"borderLeft"`
 
 	// Number format
 	NumberFormat string `json:"numberFormat,omitempty"` // "0.00", "#,##0", "yyyy-mm-dd"
@@ -95,19 +95,19 @@ type Range struct {
 
 // SetIn contains cell set input.
 type SetIn struct {
-	SheetID   string      `json:"sheet_id"`
-	Row       int         `json:"row"`
-	Col       int         `json:"col"`
-	Value     interface{} `json:"value,omitempty"`
-	Formula   string      `json:"formula,omitempty"`
-	CreatedBy string      `json:"created_by"`
+	SheetID   string `json:"sheet_id"`
+	Row       int    `json:"row"`
+	Col       int    `json:"col"`
+	Value     any    `json:"value,omitempty"`
+	Formula   string `json:"formula,omitempty"`
+	CreatedBy string `json:"created_by"`
 }
 
 // SetCellIn contains cell update input for a single cell.
 type SetCellIn struct {
-	Value   interface{} `json:"value,omitempty"`
-	Formula string      `json:"formula,omitempty"`
-	Format  *Format     `json:"format,omitempty"`
+	Value   any     `json:"value,omitempty"`
+	Formula string  `json:"formula,omitempty"`
+	Format  *Format `json:"format,omitempty"`
 }
 
 // BatchUpdateIn contains batch cell update input.
@@ -117,11 +117,11 @@ type BatchUpdateIn struct {
 
 // CellUpdate represents a single cell update in a batch.
 type CellUpdate struct {
-	Row     int         `json:"row"`
-	Col     int         `json:"col"`
-	Value   interface{} `json:"value,omitempty"`
-	Formula string      `json:"formula,omitempty"`
-	Format  *Format     `json:"format,omitempty"`
+	Row     int     `json:"row"`
+	Col     int     `json:"col"`
+	Value   any     `json:"value,omitempty"`
+	Formula string  `json:"formula,omitempty"`
+	Format  *Format `json:"format,omitempty"`
 }
 
 // SetFormatIn contains cell format input.
@@ -134,9 +134,9 @@ type SetFormatIn struct {
 
 // BatchSetIn contains batch cell set input.
 type BatchSetIn struct {
-	SheetID   string   `json:"sheet_id"`
-	Cells     []SetIn  `json:"cells"`
-	CreatedBy string   `json:"created_by"`
+	SheetID   string  `json:"sheet_id"`
+	Cells     []SetIn `json:"cells"`
+	CreatedBy string  `json:"created_by"`
 }
 
 // MergedRegion represents a merged cell region.
@@ -213,7 +213,7 @@ type API interface {
 	DeleteCols(ctx context.Context, sheetID string, startCol, count int) error
 
 	// EvaluateFormula evaluates a formula and returns the result.
-	EvaluateFormula(ctx context.Context, sheetID, formula string) (interface{}, error)
+	EvaluateFormula(ctx context.Context, sheetID, formula string) (any, error)
 }
 
 // CellPosition represents a cell position for batch lookups.

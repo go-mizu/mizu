@@ -176,9 +176,7 @@ func RunWithDisplay(ctx context.Context, f *Fetcher, pointers []WARCPointer, ski
 	// Start display ticker
 	displayCtx, displayCancel := context.WithCancel(ctx)
 	var displayWg sync.WaitGroup
-	displayWg.Add(1)
-	go func() {
-		defer displayWg.Done()
+	displayWg.Go(func() {
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 
@@ -196,7 +194,7 @@ func RunWithDisplay(ctx context.Context, f *Fetcher, pointers []WARCPointer, ski
 				return
 			}
 		}
-	}()
+	})
 
 	// Run fetcher
 	err := f.Run(ctx, pointers, skip)

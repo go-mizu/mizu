@@ -52,7 +52,7 @@ func (s *SummaryStore) SaveSummary(ctx context.Context, summary *store.SummaryCa
 	// Cache for 24 hours by default
 	summary.ExpiresAt = summary.CreatedAt.Add(24 * time.Hour)
 
-	var targetLang interface{}
+	var targetLang any
 	if summary.TargetLanguage != "" {
 		targetLang = summary.TargetLanguage
 	}

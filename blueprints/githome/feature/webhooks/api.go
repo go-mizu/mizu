@@ -7,24 +7,24 @@ import (
 )
 
 var (
-	ErrNotFound       = errors.New("webhook not found")
-	ErrWebhookExists  = errors.New("webhook already exists")
+	ErrNotFound         = errors.New("webhook not found")
+	ErrWebhookExists    = errors.New("webhook already exists")
 	ErrDeliveryNotFound = errors.New("delivery not found")
 )
 
 // Webhook represents a webhook
 type Webhook struct {
-	ID        int64          `json:"id"`
-	NodeID    string         `json:"node_id"`
-	URL       string         `json:"url"`
-	TestURL   string         `json:"test_url"`
-	PingURL   string         `json:"ping_url"`
-	Name      string         `json:"name"`
-	Events    []string       `json:"events"`
-	Config    *Config        `json:"config"`
-	Active    bool           `json:"active"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	ID        int64     `json:"id"`
+	NodeID    string    `json:"node_id"`
+	URL       string    `json:"url"`
+	TestURL   string    `json:"test_url"`
+	PingURL   string    `json:"ping_url"`
+	Name      string    `json:"name"`
+	Events    []string  `json:"events"`
+	Config    *Config   `json:"config"`
+	Active    bool      `json:"active"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 	// Internal
 	OwnerID   int64  `json:"-"`
 	OwnerType string `json:"-"` // repo, org
@@ -62,7 +62,7 @@ type Delivery struct {
 // DeliveryRequest represents the request of a delivery
 type DeliveryRequest struct {
 	Headers map[string]string `json:"headers"`
-	Payload interface{}       `json:"payload"`
+	Payload any               `json:"payload"`
 }
 
 // DeliveryResponse represents the response of a delivery
@@ -81,11 +81,11 @@ type CreateIn struct {
 
 // UpdateIn represents input for updating a webhook
 type UpdateIn struct {
-	Config        *Config  `json:"config,omitempty"`
-	Events        []string `json:"events,omitempty"`
-	AddEvents     []string `json:"add_events,omitempty"`
-	RemoveEvents  []string `json:"remove_events,omitempty"`
-	Active        *bool    `json:"active,omitempty"`
+	Config       *Config  `json:"config,omitempty"`
+	Events       []string `json:"events,omitempty"`
+	AddEvents    []string `json:"add_events,omitempty"`
+	RemoveEvents []string `json:"remove_events,omitempty"`
+	Active       *bool    `json:"active,omitempty"`
 }
 
 // ListOpts contains pagination options
@@ -124,7 +124,7 @@ type API interface {
 	RedeliverForOrg(ctx context.Context, org string, hookID int64, deliveryID int64) (*Delivery, error)
 
 	// Dispatch a webhook event (internal use)
-	Dispatch(ctx context.Context, hookID int64, event string, payload interface{}) (*Delivery, error)
+	Dispatch(ctx context.Context, hookID int64, event string, payload any) (*Delivery, error)
 }
 
 // Store defines the data access interface for webhooks

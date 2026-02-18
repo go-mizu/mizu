@@ -38,6 +38,7 @@ type Crawler struct {
 	retryAttempts sync.Map // URL -> int: per-URL retry attempt counter
 	rodPool       *rodPool // browser page pool (nil if not in rod mode)
 	urlClasses    sync.Map // string → *urlClassStats: adaptive block rate per URL class
+	sitemapDone   chan struct{} // closed when background sitemap discovery completes
 }
 
 // urlClassStats tracks blocked vs total counts for a URL "class"
@@ -259,9 +260,13 @@ func (c *Crawler) setupTransport() {
 		t := &http.Transport{
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 				if len(cachedIPs) > 0 {
-					_, port, _ := net.SplitHostPort(addr)
-					ip := cachedIPs[ipIdx.Add(1)%uint64(len(cachedIPs))]
-					return dialer.DialContext(ctx, network, net.JoinHostPort(ip, port))
+					host, port, _ := net.SplitHostPort(addr)
+					// Only use cached IPs for the primary domain — redirects
+					// and sitemap fetches to other hosts need real DNS resolution.
+					if strings.TrimPrefix(host, "www.") == c.config.Domain {
+						ip := cachedIPs[ipIdx.Add(1)%uint64(len(cachedIPs))]
+						return dialer.DialContext(ctx, network, net.JoinHostPort(ip, port))
+					}
 				}
 				return dialer.DialContext(ctx, network, addr)
 			},
@@ -345,35 +350,46 @@ func (c *Crawler) Run(ctx context.Context) error {
 	// 3. Fallback: config SeedURLs (domain root)
 	c.loadSeeds()
 
-	// Sitemap discovery: use sitemap.xml as additional seed source.
-	// Uses robots.txt Sitemap: directives (fetched above) for non-standard paths.
-	if c.config.FollowSitemap {
-		var robotsSitemaps []string
-		if c.robots != nil {
-			robotsSitemaps = c.robots.Sitemaps()
-		}
-		// 2 minutes timeout: large sitemap indexes (1000+ child sitemaps) need time
-		// for concurrent fetching of individual sitemaps.
-		sctx, sc := context.WithTimeout(ctx, 2*time.Minute)
-		sitemapURLs, _ := DiscoverSitemapURLs(sctx, c.clients[0], c.config.Domain, robotsSitemaps, 100_000)
-		sc()
-		if len(sitemapURLs) > 0 {
-			added := 0
-			for _, u := range sitemapURLs {
-				if c.frontier.TryAdd(u, 1) {
-					added++
-				}
-			}
-			if added > 0 {
-				c.logInit("Sitemap: %s URLs added to frontier", fmtInt(added))
-			}
-		}
-	}
-
 	c.logInit("Frontier: %s seed URLs", fmtInt(c.frontier.Len()))
 
-	// errgroup: workers + coordinator
+	// Sitemap discovery signal: closed when background sitemap discovery completes.
+	// The coordinator checks this to avoid premature exit while sitemaps load.
+	c.sitemapDone = make(chan struct{})
+	if !c.config.FollowSitemap {
+		close(c.sitemapDone)
+	}
+
+	// errgroup: workers + coordinator + sitemap discovery
 	g, gctx := errgroup.WithContext(ctx)
+
+	// Sitemap discovery runs in background: workers start immediately with seed URLs,
+	// and sitemap URLs are added to the frontier as they're discovered.
+	// Previous behavior blocked initialization for up to 2 minutes on sites with
+	// massive sitemaps (e.g., music.apple.com with 7 sitemap indexes).
+	if c.config.FollowSitemap {
+		g.Go(func() error {
+			defer close(c.sitemapDone)
+			var robotsSitemaps []string
+			if c.robots != nil {
+				robotsSitemaps = c.robots.Sitemaps()
+			}
+			sctx, sc := context.WithTimeout(gctx, 2*time.Minute)
+			sitemapURLs, _ := DiscoverSitemapURLs(sctx, c.clients[0], c.config.Domain, robotsSitemaps, 100_000)
+			sc()
+			if len(sitemapURLs) > 0 {
+				added := 0
+				for _, u := range sitemapURLs {
+					if c.frontier.TryAdd(u, 1) {
+						added++
+					}
+				}
+				if added > 0 {
+					c.logInit("Sitemap: %s URLs added to frontier", fmtInt(added))
+				}
+			}
+			return nil
+		})
+	}
 
 	if c.config.UseLightpanda {
 		lp, err := newLightpandaPool(c.config)
@@ -716,6 +732,15 @@ func (c *Crawler) coordinator(ctx context.Context, cancel context.CancelFunc) {
 		}
 
 		if c.frontier.Len() == 0 && c.stats.inFlight.Load() == 0 && c.retryQ.len() == 0 {
+			// Don't exit while background sitemap discovery is still running —
+			// new URLs may be about to be added to the frontier.
+			select {
+			case <-c.sitemapDone:
+				// Sitemap discovery complete, proceed with empty check
+			default:
+				empty = 0
+				continue
+			}
 			empty++
 			if c.config.Continuous && empty >= 15 {
 				// Re-seed: fetch new URLs from sitemap + homepage

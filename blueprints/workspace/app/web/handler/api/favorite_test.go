@@ -17,7 +17,7 @@ func TestFavoriteAdd(t *testing.T) {
 	page := createTestPage(ts, cookie, ws.ID, "Favorite Test Page")
 
 	t.Run("add favorite", func(t *testing.T) {
-		resp := ts.Request("POST", "/api/v1/favorites", map[string]interface{}{
+		resp := ts.Request("POST", "/api/v1/favorites", map[string]any{
 			"page_id":      page.ID,
 			"workspace_id": ws.ID,
 		}, cookie)
@@ -38,7 +38,7 @@ func TestFavoriteAdd(t *testing.T) {
 	})
 
 	t.Run("missing page_id", func(t *testing.T) {
-		resp := ts.Request("POST", "/api/v1/favorites", map[string]interface{}{
+		resp := ts.Request("POST", "/api/v1/favorites", map[string]any{
 			"workspace_id": ws.ID,
 		}, cookie)
 		ts.ExpectStatus(resp, http.StatusCreated) // App allows favorites without page_id
@@ -56,7 +56,7 @@ func TestFavoriteRemove(t *testing.T) {
 	page := createTestPage(ts, cookie, ws.ID, "Remove Test Page")
 
 	// Add favorite first
-	resp := ts.Request("POST", "/api/v1/favorites", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/favorites", map[string]any{
 		"page_id":      page.ID,
 		"workspace_id": ws.ID,
 	}, cookie)
@@ -93,10 +93,10 @@ func TestFavoriteList(t *testing.T) {
 	ws := createTestWorkspace(ts, cookie, "List Workspace", "list-fav-ws")
 
 	// Create pages and add as favorites
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		page := createTestPage(ts, cookie, ws.ID, "Page "+string(rune('A'+i)))
 
-		resp := ts.Request("POST", "/api/v1/favorites", map[string]interface{}{
+		resp := ts.Request("POST", "/api/v1/favorites", map[string]any{
 			"page_id":      page.ID,
 			"workspace_id": ws.ID,
 		}, cookie)
@@ -149,7 +149,7 @@ func TestFavoritePerUser(t *testing.T) {
 	page2 := createTestPage(ts, cookie1, ws.ID, "Page 2")
 
 	// User 1 favorites page 1
-	resp := ts.Request("POST", "/api/v1/favorites", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/favorites", map[string]any{
 		"page_id":      page1.ID,
 		"workspace_id": ws.ID,
 	}, cookie1)
@@ -157,7 +157,7 @@ func TestFavoritePerUser(t *testing.T) {
 	resp.Body.Close()
 
 	// User 2 favorites page 2
-	resp = ts.Request("POST", "/api/v1/favorites", map[string]interface{}{
+	resp = ts.Request("POST", "/api/v1/favorites", map[string]any{
 		"page_id":      page2.ID,
 		"workspace_id": ws.ID,
 	}, cookie2)

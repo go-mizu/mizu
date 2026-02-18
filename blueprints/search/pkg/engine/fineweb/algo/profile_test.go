@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
+	"strings"
 	"testing"
 	"time"
 
@@ -105,14 +106,14 @@ func generateText(words int) string {
 		"hello", "world", "testing", "performance", "optimization", "golang",
 		"search", "index", "document", "text", "word", "token", "hash", "map",
 	}
-	result := ""
-	for i := 0; i < words; i++ {
+	var result strings.Builder
+	for i := range words {
 		if i > 0 {
-			result += " "
+			result.WriteString(" ")
 		}
-		result += wordList[i%len(wordList)]
+		result.WriteString(wordList[i%len(wordList)])
 	}
-	return result
+	return result.String()
 }
 
 // TestBottleneckAnalysis runs targeted profiling on specific components.

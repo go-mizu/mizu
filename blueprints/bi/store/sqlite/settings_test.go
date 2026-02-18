@@ -136,7 +136,7 @@ func TestAuditLogStore_ListAuditLogs(t *testing.T) {
 
 	t.Run("ordered by timestamp DESC", func(t *testing.T) {
 		// Create logs in order
-		for i := 0; i < 3; i++ {
+		for range 3 {
 			log := &store.AuditLog{
 				ActorID:      "user",
 				ActorEmail:   "user@example.com",
@@ -160,7 +160,7 @@ func TestAuditLogStore_ListAuditLogs(t *testing.T) {
 	t.Run("pagination with limit", func(t *testing.T) {
 		s := testStore(t) // Fresh store
 
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			log := &store.AuditLog{
 				ActorID:      "user",
 				ActorEmail:   "user@example.com",
@@ -178,7 +178,7 @@ func TestAuditLogStore_ListAuditLogs(t *testing.T) {
 	t.Run("pagination with offset", func(t *testing.T) {
 		s := testStore(t) // Fresh store
 
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			log := &store.AuditLog{
 				ActorID:      "user",
 				ActorEmail:   "user@example.com",

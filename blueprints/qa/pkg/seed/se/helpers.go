@@ -154,7 +154,7 @@ func parseTags(value string) []string {
 	// Handle pipe-separated format: |tag1|tag2|tag3|
 	if strings.HasPrefix(value, "|") {
 		var tags []string
-		for _, tag := range strings.Split(value, "|") {
+		for tag := range strings.SplitSeq(value, "|") {
 			tag = strings.ToLower(strings.TrimSpace(tag))
 			if tag != "" {
 				tags = append(tags, tag)

@@ -50,10 +50,7 @@ func (p *BatchProcessor) processSequential(ctx context.Context, sheetID string, 
 	imported := 0
 
 	for i := 0; i < len(cellsToImport); i += p.batchSize {
-		end := i + p.batchSize
-		if end > len(cellsToImport) {
-			end = len(cellsToImport)
-		}
+		end := min(i+p.batchSize, len(cellsToImport))
 
 		batch := cellsToImport[i:end]
 		updates := make([]cells.CellUpdate, len(batch))
@@ -83,10 +80,7 @@ func (p *BatchProcessor) processParallel(ctx context.Context, sheetID string, ce
 	// Split into batches
 	var batches [][]*cells.Cell
 	for i := 0; i < len(cellsToImport); i += p.batchSize {
-		end := i + p.batchSize
-		if end > len(cellsToImport) {
-			end = len(cellsToImport)
-		}
+		end := min(i+p.batchSize, len(cellsToImport))
 		batches = append(batches, cellsToImport[i:end])
 	}
 
@@ -107,9 +101,7 @@ func (p *BatchProcessor) processParallel(ctx context.Context, sheetID string, ce
 	// Start workers
 	var wg sync.WaitGroup
 	for i := 0; i < p.workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for batch := range work {
 				// Check context cancellation
 				select {
@@ -137,7 +129,7 @@ func (p *BatchProcessor) processParallel(ctx context.Context, sheetID string, ce
 					results <- result{imported: len(batch)}
 				}
 			}
-		}()
+		})
 	}
 
 	// Wait for workers to finish and close results channel

@@ -352,7 +352,7 @@ func TestService_ListForIssue_Pagination(t *testing.T) {
 	repo := createTestRepo(t, env, owner, "testrepo")
 	createTestIssue(t, env, repo, owner, "Test Issue")
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		_, _ = env.service.CreateIssueComment(context.Background(), "owner", "testrepo", 1, owner.ID, "Comment")
 	}
 

@@ -125,7 +125,7 @@ func TestUI_Styles(t *testing.T) {
 
 func TestUI_Colors(t *testing.T) {
 	// Verify colors are defined
-	colors := []interface{}{
+	colors := []any{
 		primaryColor,
 		secondaryColor,
 		accentColor,

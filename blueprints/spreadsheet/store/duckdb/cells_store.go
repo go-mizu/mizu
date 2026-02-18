@@ -404,7 +404,7 @@ func (s *CellsStore) GetByPositions(ctx context.Context, sheetID string, positio
 		// Build IN clause for sparse position sets (more efficient for scattered positions)
 		// Use (row_num, col_num) pairs for precise matching
 		var conditions []string
-		args := []interface{}{sheetID}
+		args := []any{sheetID}
 		for _, pos := range positions {
 			conditions = append(conditions, "(row_num = ? AND col_num = ?)")
 			args = append(args, pos.Row, pos.Col)

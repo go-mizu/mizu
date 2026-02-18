@@ -1,10 +1,10 @@
 package api
 
 import (
-	"net/http"
 	"github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/lingo/store"
 	"github.com/google/uuid"
+	"net/http"
 )
 
 // ShopHandler handles shop endpoints
@@ -99,10 +99,10 @@ func (h *ShopHandler) Purchase(c *mizu.Ctx) error {
 
 	// Item prices
 	prices := map[string]int{
-		"streak_freeze":    200,
-		"heart_refill":     350,
+		"streak_freeze":     200,
+		"heart_refill":      350,
 		"double_or_nothing": 50,
-		"xp_boost":         100,
+		"xp_boost":          100,
 	}
 
 	price, ok := prices[req.ItemID]
@@ -130,7 +130,7 @@ func (h *ShopHandler) Purchase(c *mizu.Ctx) error {
 		// In production, activate XP boost
 	}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]any{
 		"message": "purchase successful",
 		"gems":    newGems,
 		"item_id": req.ItemID,

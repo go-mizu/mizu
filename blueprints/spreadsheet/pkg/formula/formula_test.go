@@ -291,24 +291,24 @@ func TestParser(t *testing.T) {
 
 // mockCellGetter implements CellGetter for testing.
 type mockCellGetter struct {
-	cells map[string]map[string]interface{} // sheetID -> "row,col" -> value
+	cells map[string]map[string]any // sheetID -> "row,col" -> value
 }
 
 func newMockCellGetter() *mockCellGetter {
 	return &mockCellGetter{
-		cells: make(map[string]map[string]interface{}),
+		cells: make(map[string]map[string]any),
 	}
 }
 
-func (m *mockCellGetter) setCell(sheetID string, row, col int, value interface{}) {
+func (m *mockCellGetter) setCell(sheetID string, row, col int, value any) {
 	if m.cells[sheetID] == nil {
-		m.cells[sheetID] = make(map[string]interface{})
+		m.cells[sheetID] = make(map[string]any)
 	}
 	key := CellRefString(row, col)
 	m.cells[sheetID][key] = value
 }
 
-func (m *mockCellGetter) GetCellValue(ctx context.Context, sheetID string, row, col int) (interface{}, error) {
+func (m *mockCellGetter) GetCellValue(ctx context.Context, sheetID string, row, col int) (any, error) {
 	if m.cells[sheetID] == nil {
 		return nil, nil
 	}
@@ -316,12 +316,12 @@ func (m *mockCellGetter) GetCellValue(ctx context.Context, sheetID string, row, 
 	return m.cells[sheetID][key], nil
 }
 
-func (m *mockCellGetter) GetRangeValues(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) ([][]interface{}, error) {
+func (m *mockCellGetter) GetRangeValues(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) ([][]any, error) {
 	rows := endRow - startRow + 1
 	cols := endCol - startCol + 1
-	result := make([][]interface{}, rows)
+	result := make([][]any, rows)
 	for i := range result {
-		result[i] = make([]interface{}, cols)
+		result[i] = make([]any, cols)
 		for j := range result[i] {
 			key := CellRefString(startRow+i, startCol+j)
 			if m.cells[sheetID] != nil {
@@ -358,7 +358,7 @@ func TestEvaluator(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
-		want    interface{}
+		want    any
 		wantErr bool
 	}{
 		// Basic arithmetic
@@ -466,115 +466,115 @@ func TestFunctions(t *testing.T) {
 	tests := []struct {
 		name    string
 		fn      string
-		args    []interface{}
-		want    interface{}
+		args    []any
+		want    any
 		wantErr bool
 	}{
 		// Math functions
-		{name: "SUM", fn: "SUM", args: []interface{}{1.0, 2.0, 3.0}, want: 6.0},
-		{name: "SUM with array", fn: "SUM", args: []interface{}{[][]interface{}{{1.0, 2.0}, {3.0, 4.0}}}, want: 10.0},
-		{name: "AVERAGE", fn: "AVERAGE", args: []interface{}{2.0, 4.0, 6.0}, want: 4.0},
-		{name: "MIN", fn: "MIN", args: []interface{}{5.0, 2.0, 8.0}, want: 2.0},
-		{name: "MAX", fn: "MAX", args: []interface{}{5.0, 2.0, 8.0}, want: 8.0},
-		{name: "COUNT", fn: "COUNT", args: []interface{}{1.0, 2.0, "text", nil}, want: 2.0},
-		{name: "COUNTA", fn: "COUNTA", args: []interface{}{1.0, 2.0, "text", nil}, want: 3.0},
-		{name: "ABS positive", fn: "ABS", args: []interface{}{-5.0}, want: 5.0},
-		{name: "ABS negative", fn: "ABS", args: []interface{}{5.0}, want: 5.0},
-		{name: "ROUND", fn: "ROUND", args: []interface{}{2.567, 2.0}, want: 2.57},
-		{name: "ROUND no decimals", fn: "ROUND", args: []interface{}{2.567}, want: 3.0},
-		{name: "INT", fn: "INT", args: []interface{}{2.9}, want: 2.0},
-		{name: "MOD", fn: "MOD", args: []interface{}{7.0, 3.0}, want: 1.0},
-		{name: "POWER", fn: "POWER", args: []interface{}{2.0, 3.0}, want: 8.0},
-		{name: "SQRT", fn: "SQRT", args: []interface{}{16.0}, want: 4.0},
-		{name: "SQRT negative", fn: "SQRT", args: []interface{}{-1.0}, wantErr: true},
-		{name: "LN", fn: "LN", args: []interface{}{2.718281828}, want: 0.9999999998311266},
-		{name: "LOG10", fn: "LOG10", args: []interface{}{100.0}, want: 2.0},
-		{name: "SIGN positive", fn: "SIGN", args: []interface{}{5.0}, want: 1.0},
-		{name: "SIGN negative", fn: "SIGN", args: []interface{}{-5.0}, want: -1.0},
-		{name: "SIGN zero", fn: "SIGN", args: []interface{}{0.0}, want: 0.0},
+		{name: "SUM", fn: "SUM", args: []any{1.0, 2.0, 3.0}, want: 6.0},
+		{name: "SUM with array", fn: "SUM", args: []any{[][]any{{1.0, 2.0}, {3.0, 4.0}}}, want: 10.0},
+		{name: "AVERAGE", fn: "AVERAGE", args: []any{2.0, 4.0, 6.0}, want: 4.0},
+		{name: "MIN", fn: "MIN", args: []any{5.0, 2.0, 8.0}, want: 2.0},
+		{name: "MAX", fn: "MAX", args: []any{5.0, 2.0, 8.0}, want: 8.0},
+		{name: "COUNT", fn: "COUNT", args: []any{1.0, 2.0, "text", nil}, want: 2.0},
+		{name: "COUNTA", fn: "COUNTA", args: []any{1.0, 2.0, "text", nil}, want: 3.0},
+		{name: "ABS positive", fn: "ABS", args: []any{-5.0}, want: 5.0},
+		{name: "ABS negative", fn: "ABS", args: []any{5.0}, want: 5.0},
+		{name: "ROUND", fn: "ROUND", args: []any{2.567, 2.0}, want: 2.57},
+		{name: "ROUND no decimals", fn: "ROUND", args: []any{2.567}, want: 3.0},
+		{name: "INT", fn: "INT", args: []any{2.9}, want: 2.0},
+		{name: "MOD", fn: "MOD", args: []any{7.0, 3.0}, want: 1.0},
+		{name: "POWER", fn: "POWER", args: []any{2.0, 3.0}, want: 8.0},
+		{name: "SQRT", fn: "SQRT", args: []any{16.0}, want: 4.0},
+		{name: "SQRT negative", fn: "SQRT", args: []any{-1.0}, wantErr: true},
+		{name: "LN", fn: "LN", args: []any{2.718281828}, want: 0.9999999998311266},
+		{name: "LOG10", fn: "LOG10", args: []any{100.0}, want: 2.0},
+		{name: "SIGN positive", fn: "SIGN", args: []any{5.0}, want: 1.0},
+		{name: "SIGN negative", fn: "SIGN", args: []any{-5.0}, want: -1.0},
+		{name: "SIGN zero", fn: "SIGN", args: []any{0.0}, want: 0.0},
 
 		// Text functions
-		{name: "CONCATENATE", fn: "CONCATENATE", args: []interface{}{"a", "b", "c"}, want: "abc"},
-		{name: "LEFT", fn: "LEFT", args: []interface{}{"hello", 3.0}, want: "hel"},
-		{name: "RIGHT", fn: "RIGHT", args: []interface{}{"hello", 3.0}, want: "llo"},
-		{name: "MID", fn: "MID", args: []interface{}{"hello", 2.0, 3.0}, want: "ell"},
-		{name: "LEN", fn: "LEN", args: []interface{}{"hello"}, want: 5.0},
-		{name: "LOWER", fn: "LOWER", args: []interface{}{"HELLO"}, want: "hello"},
-		{name: "UPPER", fn: "UPPER", args: []interface{}{"hello"}, want: "HELLO"},
-		{name: "TRIM", fn: "TRIM", args: []interface{}{"  hello  "}, want: "hello"},
-		{name: "SUBSTITUTE", fn: "SUBSTITUTE", args: []interface{}{"hello world", "world", "there"}, want: "hello there"},
-		{name: "REPT", fn: "REPT", args: []interface{}{"ab", 3.0}, want: "ababab"},
+		{name: "CONCATENATE", fn: "CONCATENATE", args: []any{"a", "b", "c"}, want: "abc"},
+		{name: "LEFT", fn: "LEFT", args: []any{"hello", 3.0}, want: "hel"},
+		{name: "RIGHT", fn: "RIGHT", args: []any{"hello", 3.0}, want: "llo"},
+		{name: "MID", fn: "MID", args: []any{"hello", 2.0, 3.0}, want: "ell"},
+		{name: "LEN", fn: "LEN", args: []any{"hello"}, want: 5.0},
+		{name: "LOWER", fn: "LOWER", args: []any{"HELLO"}, want: "hello"},
+		{name: "UPPER", fn: "UPPER", args: []any{"hello"}, want: "HELLO"},
+		{name: "TRIM", fn: "TRIM", args: []any{"  hello  "}, want: "hello"},
+		{name: "SUBSTITUTE", fn: "SUBSTITUTE", args: []any{"hello world", "world", "there"}, want: "hello there"},
+		{name: "REPT", fn: "REPT", args: []any{"ab", 3.0}, want: "ababab"},
 
 		// Logical functions
-		{name: "IF true", fn: "IF", args: []interface{}{true, "yes", "no"}, want: "yes"},
-		{name: "IF false", fn: "IF", args: []interface{}{false, "yes", "no"}, want: "no"},
-		{name: "AND all true", fn: "AND", args: []interface{}{true, true, true}, want: true},
-		{name: "AND one false", fn: "AND", args: []interface{}{true, false, true}, want: false},
-		{name: "OR all false", fn: "OR", args: []interface{}{false, false, false}, want: false},
-		{name: "OR one true", fn: "OR", args: []interface{}{false, true, false}, want: true},
-		{name: "NOT true", fn: "NOT", args: []interface{}{true}, want: false},
-		{name: "NOT false", fn: "NOT", args: []interface{}{false}, want: true},
-		{name: "XOR odd", fn: "XOR", args: []interface{}{true, false, true, false}, want: false},
-		{name: "CHOOSE", fn: "CHOOSE", args: []interface{}{2.0, "a", "b", "c"}, want: "b"},
+		{name: "IF true", fn: "IF", args: []any{true, "yes", "no"}, want: "yes"},
+		{name: "IF false", fn: "IF", args: []any{false, "yes", "no"}, want: "no"},
+		{name: "AND all true", fn: "AND", args: []any{true, true, true}, want: true},
+		{name: "AND one false", fn: "AND", args: []any{true, false, true}, want: false},
+		{name: "OR all false", fn: "OR", args: []any{false, false, false}, want: false},
+		{name: "OR one true", fn: "OR", args: []any{false, true, false}, want: true},
+		{name: "NOT true", fn: "NOT", args: []any{true}, want: false},
+		{name: "NOT false", fn: "NOT", args: []any{false}, want: true},
+		{name: "XOR odd", fn: "XOR", args: []any{true, false, true, false}, want: false},
+		{name: "CHOOSE", fn: "CHOOSE", args: []any{2.0, "a", "b", "c"}, want: "b"},
 
 		// Statistical functions
-		{name: "MEDIAN odd", fn: "MEDIAN", args: []interface{}{1.0, 3.0, 5.0}, want: 3.0},
-		{name: "MEDIAN even", fn: "MEDIAN", args: []interface{}{1.0, 2.0, 3.0, 4.0}, want: 2.5},
-		{name: "LARGE", fn: "LARGE", args: []interface{}{[][]interface{}{{1.0, 5.0, 3.0}}, 2.0}, want: 3.0},
-		{name: "SMALL", fn: "SMALL", args: []interface{}{[][]interface{}{{1.0, 5.0, 3.0}}, 2.0}, want: 3.0},
+		{name: "MEDIAN odd", fn: "MEDIAN", args: []any{1.0, 3.0, 5.0}, want: 3.0},
+		{name: "MEDIAN even", fn: "MEDIAN", args: []any{1.0, 2.0, 3.0, 4.0}, want: 2.5},
+		{name: "LARGE", fn: "LARGE", args: []any{[][]any{{1.0, 5.0, 3.0}}, 2.0}, want: 3.0},
+		{name: "SMALL", fn: "SMALL", args: []any{[][]any{{1.0, 5.0, 3.0}}, 2.0}, want: 3.0},
 
 		// Information functions
-		{name: "ISBLANK nil", fn: "ISBLANK", args: []interface{}{nil}, want: true},
-		{name: "ISBLANK empty", fn: "ISBLANK", args: []interface{}{""}, want: true},
-		{name: "ISBLANK value", fn: "ISBLANK", args: []interface{}{1.0}, want: false},
-		{name: "ISNUMBER true", fn: "ISNUMBER", args: []interface{}{42.0}, want: true},
-		{name: "ISNUMBER false", fn: "ISNUMBER", args: []interface{}{"text"}, want: false},
-		{name: "ISTEXT true", fn: "ISTEXT", args: []interface{}{"hello"}, want: true},
-		{name: "ISTEXT false", fn: "ISTEXT", args: []interface{}{42.0}, want: false},
+		{name: "ISBLANK nil", fn: "ISBLANK", args: []any{nil}, want: true},
+		{name: "ISBLANK empty", fn: "ISBLANK", args: []any{""}, want: true},
+		{name: "ISBLANK value", fn: "ISBLANK", args: []any{1.0}, want: false},
+		{name: "ISNUMBER true", fn: "ISNUMBER", args: []any{42.0}, want: true},
+		{name: "ISNUMBER false", fn: "ISNUMBER", args: []any{"text"}, want: false},
+		{name: "ISTEXT true", fn: "ISTEXT", args: []any{"hello"}, want: true},
+		{name: "ISTEXT false", fn: "ISTEXT", args: []any{42.0}, want: false},
 
 		// New math functions
-		{name: "TRUNC", fn: "TRUNC", args: []interface{}{3.567, 2.0}, want: 3.56},
-		{name: "TRUNC no decimals", fn: "TRUNC", args: []interface{}{3.567}, want: 3.0},
-		{name: "GCD", fn: "GCD", args: []interface{}{12.0, 18.0}, want: 6.0},
-		{name: "GCD three", fn: "GCD", args: []interface{}{24.0, 36.0, 48.0}, want: 12.0},
-		{name: "LCM", fn: "LCM", args: []interface{}{4.0, 6.0}, want: 12.0},
-		{name: "FACT", fn: "FACT", args: []interface{}{5.0}, want: 120.0},
-		{name: "FACT zero", fn: "FACT", args: []interface{}{0.0}, want: 1.0},
-		{name: "COMBIN", fn: "COMBIN", args: []interface{}{5.0, 2.0}, want: 10.0},
-		{name: "PERMUT", fn: "PERMUT", args: []interface{}{5.0, 2.0}, want: 20.0},
-		{name: "QUOTIENT", fn: "QUOTIENT", args: []interface{}{10.0, 3.0}, want: 3.0},
-		{name: "MROUND", fn: "MROUND", args: []interface{}{7.0, 3.0}, want: 6.0},
-		{name: "ODD", fn: "ODD", args: []interface{}{2.5}, want: 3.0},
-		{name: "EVEN", fn: "EVEN", args: []interface{}{3.0}, want: 4.0},
+		{name: "TRUNC", fn: "TRUNC", args: []any{3.567, 2.0}, want: 3.56},
+		{name: "TRUNC no decimals", fn: "TRUNC", args: []any{3.567}, want: 3.0},
+		{name: "GCD", fn: "GCD", args: []any{12.0, 18.0}, want: 6.0},
+		{name: "GCD three", fn: "GCD", args: []any{24.0, 36.0, 48.0}, want: 12.0},
+		{name: "LCM", fn: "LCM", args: []any{4.0, 6.0}, want: 12.0},
+		{name: "FACT", fn: "FACT", args: []any{5.0}, want: 120.0},
+		{name: "FACT zero", fn: "FACT", args: []any{0.0}, want: 1.0},
+		{name: "COMBIN", fn: "COMBIN", args: []any{5.0, 2.0}, want: 10.0},
+		{name: "PERMUT", fn: "PERMUT", args: []any{5.0, 2.0}, want: 20.0},
+		{name: "QUOTIENT", fn: "QUOTIENT", args: []any{10.0, 3.0}, want: 3.0},
+		{name: "MROUND", fn: "MROUND", args: []any{7.0, 3.0}, want: 6.0},
+		{name: "ODD", fn: "ODD", args: []any{2.5}, want: 3.0},
+		{name: "EVEN", fn: "EVEN", args: []any{3.0}, want: 4.0},
 
 		// Hyperbolic functions
-		{name: "SINH", fn: "SINH", args: []interface{}{0.0}, want: 0.0},
-		{name: "COSH", fn: "COSH", args: []interface{}{0.0}, want: 1.0},
-		{name: "TANH", fn: "TANH", args: []interface{}{0.0}, want: 0.0},
+		{name: "SINH", fn: "SINH", args: []any{0.0}, want: 0.0},
+		{name: "COSH", fn: "COSH", args: []any{0.0}, want: 1.0},
+		{name: "TANH", fn: "TANH", args: []any{0.0}, want: 0.0},
 
 		// New text functions
-		{name: "EXACT match", fn: "EXACT", args: []interface{}{"hello", "hello"}, want: true},
-		{name: "EXACT different", fn: "EXACT", args: []interface{}{"hello", "Hello"}, want: false},
-		{name: "DOLLAR", fn: "DOLLAR", args: []interface{}{1234.567, 2.0}, want: "$1,234.57"},
-		{name: "REGEXMATCH true", fn: "REGEXMATCH", args: []interface{}{"hello world", "wo.*d"}, want: true},
-		{name: "REGEXMATCH false", fn: "REGEXMATCH", args: []interface{}{"hello", "wo.*d"}, want: false},
-		{name: "REGEXEXTRACT", fn: "REGEXEXTRACT", args: []interface{}{"hello123world", "[0-9]+"}, want: "123"},
-		{name: "REGEXREPLACE", fn: "REGEXREPLACE", args: []interface{}{"hello123", "[0-9]+", "XXX"}, want: "helloXXX"},
+		{name: "EXACT match", fn: "EXACT", args: []any{"hello", "hello"}, want: true},
+		{name: "EXACT different", fn: "EXACT", args: []any{"hello", "Hello"}, want: false},
+		{name: "DOLLAR", fn: "DOLLAR", args: []any{1234.567, 2.0}, want: "$1,234.57"},
+		{name: "REGEXMATCH true", fn: "REGEXMATCH", args: []any{"hello world", "wo.*d"}, want: true},
+		{name: "REGEXMATCH false", fn: "REGEXMATCH", args: []any{"hello", "wo.*d"}, want: false},
+		{name: "REGEXEXTRACT", fn: "REGEXEXTRACT", args: []any{"hello123world", "[0-9]+"}, want: "123"},
+		{name: "REGEXREPLACE", fn: "REGEXREPLACE", args: []any{"hello123", "[0-9]+", "XXX"}, want: "helloXXX"},
 
 		// Date/Time functions
-		{name: "TIME", fn: "TIME", args: []interface{}{12.0, 30.0, 45.0}, want: 0.5213541666666667},
+		{name: "TIME", fn: "TIME", args: []any{12.0, 30.0, 45.0}, want: 0.5213541666666667},
 
 		// New information functions
-		{name: "ISEVEN true", fn: "ISEVEN", args: []interface{}{4.0}, want: true},
-		{name: "ISEVEN false", fn: "ISEVEN", args: []interface{}{5.0}, want: false},
-		{name: "ISODD true", fn: "ISODD", args: []interface{}{5.0}, want: true},
-		{name: "ISODD false", fn: "ISODD", args: []interface{}{4.0}, want: false},
-		{name: "ADDRESS", fn: "ADDRESS", args: []interface{}{1.0, 1.0, 1.0}, want: "$A$1"},
-		{name: "ADDRESS relative", fn: "ADDRESS", args: []interface{}{1.0, 1.0, 4.0}, want: "A1"},
+		{name: "ISEVEN true", fn: "ISEVEN", args: []any{4.0}, want: true},
+		{name: "ISEVEN false", fn: "ISEVEN", args: []any{5.0}, want: false},
+		{name: "ISODD true", fn: "ISODD", args: []any{5.0}, want: true},
+		{name: "ISODD false", fn: "ISODD", args: []any{4.0}, want: false},
+		{name: "ADDRESS", fn: "ADDRESS", args: []any{1.0, 1.0, 1.0}, want: "$A$1"},
+		{name: "ADDRESS relative", fn: "ADDRESS", args: []any{1.0, 1.0, 4.0}, want: "A1"},
 
 		// Conditional aggregates with criteria
-		{name: "COUNTIF", fn: "COUNTIF", args: []interface{}{[][]interface{}{{1.0, 2.0, 3.0, 4.0, 5.0}}, ">2"}, want: 3.0},
-		{name: "SUMIF", fn: "SUMIF", args: []interface{}{[][]interface{}{{1.0, 2.0, 3.0, 4.0, 5.0}}, ">2"}, want: 12.0},
+		{name: "COUNTIF", fn: "COUNTIF", args: []any{[][]any{{1.0, 2.0, 3.0, 4.0, 5.0}}, ">2"}, want: 3.0},
+		{name: "SUMIF", fn: "SUMIF", args: []any{[][]any{{1.0, 2.0, 3.0, 4.0, 5.0}}, ">2"}, want: 12.0},
 	}
 
 	for _, tt := range tests {
@@ -703,10 +703,10 @@ func TestColToLetter(t *testing.T) {
 // TestParseRangeRef tests range reference parsing.
 func TestParseRangeRef(t *testing.T) {
 	tests := []struct {
-		input                                    string
-		wantStartRow, wantStartCol               int
-		wantEndRow, wantEndCol                   int
-		wantErr                                  bool
+		input                      string
+		wantStartRow, wantStartCol int
+		wantEndRow, wantEndCol     int
+		wantErr                    bool
 	}{
 		{input: "A1:B2", wantStartRow: 0, wantStartCol: 0, wantEndRow: 1, wantEndCol: 1},
 		{input: "A1:A10", wantStartRow: 0, wantStartCol: 0, wantEndRow: 9, wantEndCol: 0},

@@ -382,10 +382,10 @@ func TestRepository_UpdateRef(t *testing.T) {
 	commit, _ := repo.GetCommit(head.SHA)
 
 	newSHA, _ := repo.CreateCommit(&CreateCommitOpts{
-		Message: "New",
-		TreeSHA: commit.TreeSHA,
-		Parents: []string{head.SHA},
-		Author:  Signature{Name: "Test", Email: "test@example.com", When: time.Now()},
+		Message:   "New",
+		TreeSHA:   commit.TreeSHA,
+		Parents:   []string{head.SHA},
+		Author:    Signature{Name: "Test", Email: "test@example.com", When: time.Now()},
 		Committer: Signature{Name: "Test", Email: "test@example.com", When: time.Now()},
 	})
 
@@ -584,12 +584,12 @@ func TestRepository_Log(t *testing.T) {
 	commit, _ := repo.GetCommit(head.SHA)
 
 	// Create a few more commits
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		sha, _ := repo.CreateCommit(&CreateCommitOpts{
-			Message: "Commit " + string(rune('1'+i)),
-			TreeSHA: commit.TreeSHA,
-			Parents: []string{head.SHA},
-			Author:  Signature{Name: "Test", Email: "test@example.com", When: time.Now()},
+			Message:   "Commit " + string(rune('1'+i)),
+			TreeSHA:   commit.TreeSHA,
+			Parents:   []string{head.SHA},
+			Author:    Signature{Name: "Test", Email: "test@example.com", When: time.Now()},
 			Committer: Signature{Name: "Test", Email: "test@example.com", When: time.Now()},
 		})
 		repo.UpdateRef("refs/heads/main", sha, true)
@@ -614,12 +614,12 @@ func TestRepository_Log_Limit(t *testing.T) {
 	commit, _ := repo.GetCommit(head.SHA)
 
 	// Create more commits
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		sha, _ := repo.CreateCommit(&CreateCommitOpts{
-			Message: "Commit",
-			TreeSHA: commit.TreeSHA,
-			Parents: []string{head.SHA},
-			Author:  Signature{Name: "Test", Email: "test@example.com", When: time.Now()},
+			Message:   "Commit",
+			TreeSHA:   commit.TreeSHA,
+			Parents:   []string{head.SHA},
+			Author:    Signature{Name: "Test", Email: "test@example.com", When: time.Now()},
 			Committer: Signature{Name: "Test", Email: "test@example.com", When: time.Now()},
 		})
 		repo.UpdateRef("refs/heads/main", sha, true)

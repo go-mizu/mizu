@@ -232,7 +232,7 @@ func (s *CacheStore) SearchCacheHistory(ctx context.Context, queryPattern string
 }
 
 // MarshalOptions serializes search options to JSON.
-func MarshalOptions(opts interface{}) string {
+func MarshalOptions(opts any) string {
 	data, _ := json.Marshal(opts)
 	return string(data)
 }

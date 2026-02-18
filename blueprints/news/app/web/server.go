@@ -150,8 +150,8 @@ func (s *Server) serveStatic(c *mizu.Ctx) error {
 func (s *Server) getUserID(c *mizu.Ctx) string {
 	// Check Authorization header (request header, not response header)
 	auth := c.Request().Header.Get("Authorization")
-	if strings.HasPrefix(auth, "Bearer ") {
-		token := strings.TrimPrefix(auth, "Bearer ")
+	if after, ok := strings.CutPrefix(auth, "Bearer "); ok {
+		token := after
 		session, err := s.users.GetSession(c.Request().Context(), token)
 		if err == nil && session != nil {
 			return session.UserID
@@ -169,4 +169,3 @@ func (s *Server) getUserID(c *mizu.Ctx) string {
 
 	return ""
 }
-

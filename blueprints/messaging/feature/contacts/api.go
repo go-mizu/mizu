@@ -21,7 +21,7 @@ type Contact struct {
 	DisplayName   string    `json:"display_name,omitempty"`
 	IsBlocked     bool      `json:"is_blocked"`
 	IsFavorite    bool      `json:"is_favorite"`
-	BlockedAt     time.Time `json:"blocked_at,omitempty"`
+	BlockedAt     time.Time `json:"blocked_at"`
 	CreatedAt     time.Time `json:"created_at"`
 
 	// Joined user info
@@ -36,7 +36,7 @@ type ContactUser struct {
 	AvatarURL   string    `json:"avatar_url,omitempty"`
 	Status      string    `json:"status,omitempty"`
 	IsOnline    bool      `json:"is_online"`
-	LastSeenAt  time.Time `json:"last_seen_at,omitempty"`
+	LastSeenAt  time.Time `json:"last_seen_at"`
 }
 
 // AddIn contains input for adding a contact.

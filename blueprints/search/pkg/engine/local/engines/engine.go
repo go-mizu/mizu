@@ -133,7 +133,7 @@ type Result struct {
 	Priority    Priority  `json:"priority,omitempty"`
 	Template    string    `json:"template,omitempty"`
 	ParsedURL   *url.URL  `json:"-"`
-	PublishedAt time.Time `json:"published_at,omitempty"`
+	PublishedAt time.Time `json:"published_at"`
 
 	// Image fields
 	ThumbnailURL string `json:"thumbnail_url,omitempty"`
@@ -201,11 +201,11 @@ type Answer struct {
 
 // Translation represents a translation item.
 type Translation struct {
-	Text           string   `json:"text"`
+	Text            string   `json:"text"`
 	Transliteration string   `json:"transliteration,omitempty"`
-	Examples       []string `json:"examples,omitempty"`
-	Definitions    []string `json:"definitions,omitempty"`
-	Synonyms       []string `json:"synonyms,omitempty"`
+	Examples        []string `json:"examples,omitempty"`
+	Definitions     []string `json:"definitions,omitempty"`
+	Synonyms        []string `json:"synonyms,omitempty"`
 }
 
 // TranslationsAnswer represents a translation answer.
@@ -265,11 +265,11 @@ type KeyValueAnswer struct {
 // CodeResult represents a code snippet result.
 type CodeResult struct {
 	Result
-	Repository    string         `json:"repository,omitempty"`
-	CodeLines     []CodeLine     `json:"code_lines,omitempty"`
-	HighlightLines []int         `json:"highlight_lines,omitempty"`
-	Language      string         `json:"code_language,omitempty"`
-	Filename      string         `json:"filename,omitempty"`
+	Repository     string     `json:"repository,omitempty"`
+	CodeLines      []CodeLine `json:"code_lines,omitempty"`
+	HighlightLines []int      `json:"highlight_lines,omitempty"`
+	Language       string     `json:"code_language,omitempty"`
+	Filename       string     `json:"filename,omitempty"`
 }
 
 // CodeLine represents a single line of code.
@@ -281,25 +281,25 @@ type CodeLine struct {
 // PaperResult represents a scientific paper result.
 type PaperResult struct {
 	Result
-	Abstract    string   `json:"abstract,omitempty"`
-	Comments    string   `json:"comments,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
-	Editor      string   `json:"editor,omitempty"`
-	Volume      string   `json:"volume,omitempty"`
-	Pages       string   `json:"pages,omitempty"`
-	Number      string   `json:"number,omitempty"`
-	PDFUrl      string   `json:"pdf_url,omitempty"`
-	HTMLUrl     string   `json:"html_url,omitempty"`
+	Abstract string   `json:"abstract,omitempty"`
+	Comments string   `json:"comments,omitempty"`
+	Tags     []string `json:"tags,omitempty"`
+	Editor   string   `json:"editor,omitempty"`
+	Volume   string   `json:"volume,omitempty"`
+	Pages    string   `json:"pages,omitempty"`
+	Number   string   `json:"number,omitempty"`
+	PDFUrl   string   `json:"pdf_url,omitempty"`
+	HTMLUrl  string   `json:"html_url,omitempty"`
 }
 
 // FileResult represents a file/download result.
 type FileResult struct {
 	Result
-	Filename string `json:"filename,omitempty"`
-	MimeType string `json:"mimetype,omitempty"`
-	Size     string `json:"size,omitempty"`
-	ModTime  string `json:"mod_time,omitempty"`
-	Embedded string `json:"embedded,omitempty"` // URL for embedded media
+	Filename  string `json:"filename,omitempty"`
+	MimeType  string `json:"mimetype,omitempty"`
+	Size      string `json:"size,omitempty"`
+	ModTime   string `json:"mod_time,omitempty"`
+	Embedded  string `json:"embedded,omitempty"`   // URL for embedded media
 	MediaType string `json:"media_type,omitempty"` // "audio" or "video"
 }
 
@@ -529,19 +529,19 @@ type BaseEngine struct {
 // NewBaseEngine creates a new BaseEngine.
 func NewBaseEngine(name, shortcut string, categories []Category) *BaseEngine {
 	return &BaseEngine{
-		name:            name,
-		shortcut:        shortcut,
-		categories:      categories,
-		engineType:      EngineTypeOnline,
-		paging:          false,
+		name:             name,
+		shortcut:         shortcut,
+		categories:       categories,
+		engineType:       EngineTypeOnline,
+		paging:           false,
 		timeRangeSupport: false,
-		safeSearch:      false,
-		languageSupport: true,
-		maxPage:         0,
-		timeout:         3 * time.Second,
-		weight:          1.0,
-		disabled:        false,
-		traits:          NewEngineTraits(),
+		safeSearch:       false,
+		languageSupport:  true,
+		maxPage:          0,
+		timeout:          3 * time.Second,
+		weight:           1.0,
+		disabled:         false,
+		traits:           NewEngineTraits(),
 	}
 }
 

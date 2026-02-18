@@ -59,10 +59,9 @@ func (s *Service) Create(ctx context.Context, authorID string, in *CreateIn) (*P
 
 	// Calculate word count and reading time
 	wordCount := countWords(in.Content)
-	readingTime := wordCount / 200 // ~200 words per minute
-	if readingTime < 1 {
-		readingTime = 1
-	}
+	readingTime := max(
+		// ~200 words per minute
+		wordCount/200, 1)
 
 	post := &Post{
 		ID:              ulid.New(),
@@ -137,10 +136,7 @@ func (s *Service) Update(ctx context.Context, id string, in *UpdateIn) (*Post, e
 	// Update word count and reading time if content changed
 	if in.Content != nil {
 		wordCount := countWords(*in.Content)
-		readingTime := wordCount / 200
-		if readingTime < 1 {
-			readingTime = 1
-		}
+		readingTime := max(wordCount/200, 1)
 		// Note: Could add word_count and reading_time to UpdateIn if needed
 	}
 

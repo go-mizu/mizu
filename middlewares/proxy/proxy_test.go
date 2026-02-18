@@ -272,7 +272,7 @@ func TestBalancer(t *testing.T) {
 	})
 
 	// Make multiple requests
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)

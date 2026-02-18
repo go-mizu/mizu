@@ -3,6 +3,7 @@ package feature
 
 import (
 	"context"
+	"maps"
 	"sync"
 
 	"github.com/go-mizu/mizu"
@@ -161,9 +162,7 @@ func StaticProvider(flags Flags) Provider {
 func (p *staticProvider) GetFlags(c *mizu.Ctx) (Flags, error) {
 	// Return a copy to prevent modification
 	result := make(Flags)
-	for k, v := range p.flags {
-		result[k] = v
-	}
+	maps.Copy(result, p.flags)
 	return result, nil
 }
 
@@ -185,9 +184,7 @@ func (p *MemoryProvider) GetFlags(c *mizu.Ctx) (Flags, error) {
 	defer p.mu.RUnlock()
 
 	result := make(Flags)
-	for k, v := range p.flags {
-		result[k] = v
-	}
+	maps.Copy(result, p.flags)
 	return result, nil
 }
 

@@ -17,12 +17,12 @@ func TestWorkspaceCreate(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		body       map[string]interface{}
+		body       map[string]any
 		wantStatus int
 	}{
 		{
 			name: "valid workspace",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"name": "My Workspace",
 				"slug": "my-workspace",
 				"icon": "rocket",
@@ -31,7 +31,7 @@ func TestWorkspaceCreate(t *testing.T) {
 		},
 		{
 			name: "workspace without icon",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"name": "Another Workspace",
 				"slug": "another-workspace",
 			},
@@ -39,14 +39,14 @@ func TestWorkspaceCreate(t *testing.T) {
 		},
 		{
 			name: "missing name",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"slug": "no-name",
 			},
 			wantStatus: http.StatusBadRequest,
 		},
 		{
 			name: "missing slug",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"name": "No Slug Workspace",
 			},
 			wantStatus: http.StatusBadRequest,
@@ -81,7 +81,7 @@ func TestWorkspaceCreateUnauthenticated(t *testing.T) {
 	ts := NewTestServer(t)
 	defer ts.Close()
 
-	resp := ts.Request("POST", "/api/v1/workspaces", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/workspaces", map[string]any{
 		"name": "Test Workspace",
 		"slug": "test-workspace",
 	})
@@ -108,8 +108,8 @@ func TestWorkspaceList(t *testing.T) {
 
 	t.Run("after creating workspaces", func(t *testing.T) {
 		// Create workspaces
-		for i := 0; i < 3; i++ {
-			resp := ts.Request("POST", "/api/v1/workspaces", map[string]interface{}{
+		for i := range 3 {
+			resp := ts.Request("POST", "/api/v1/workspaces", map[string]any{
 				"name": "Workspace " + string(rune('A'+i)),
 				"slug": "workspace-" + string(rune('a'+i)),
 			}, cookie)
@@ -137,7 +137,7 @@ func TestWorkspaceGet(t *testing.T) {
 	// Register and create workspace
 	_, cookie := ts.Register("get@example.com", "Get Test", "password123")
 
-	resp := ts.Request("POST", "/api/v1/workspaces", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/workspaces", map[string]any{
 		"name": "Get Test Workspace",
 		"slug": "get-test-workspace",
 	}, cookie)
@@ -187,7 +187,7 @@ func TestWorkspaceUpdate(t *testing.T) {
 	// Register and create workspace
 	_, cookie := ts.Register("update@example.com", "Update Test", "password123")
 
-	resp := ts.Request("POST", "/api/v1/workspaces", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/workspaces", map[string]any{
 		"name": "Original Name",
 		"slug": "original-slug",
 		"icon": "star",
@@ -198,7 +198,7 @@ func TestWorkspaceUpdate(t *testing.T) {
 	ts.ParseJSON(resp, &created)
 
 	t.Run("update name", func(t *testing.T) {
-		resp := ts.Request("PATCH", "/api/v1/workspaces/"+created.ID, map[string]interface{}{
+		resp := ts.Request("PATCH", "/api/v1/workspaces/"+created.ID, map[string]any{
 			"name": "Updated Name",
 		}, cookie)
 		ts.ExpectStatus(resp, http.StatusOK)
@@ -212,7 +212,7 @@ func TestWorkspaceUpdate(t *testing.T) {
 	})
 
 	t.Run("update icon", func(t *testing.T) {
-		resp := ts.Request("PATCH", "/api/v1/workspaces/"+created.ID, map[string]interface{}{
+		resp := ts.Request("PATCH", "/api/v1/workspaces/"+created.ID, map[string]any{
 			"icon": "moon",
 		}, cookie)
 		ts.ExpectStatus(resp, http.StatusOK)
@@ -233,7 +233,7 @@ func TestWorkspaceDelete(t *testing.T) {
 	// Register and create workspace
 	_, cookie := ts.Register("delete@example.com", "Delete Test", "password123")
 
-	resp := ts.Request("POST", "/api/v1/workspaces", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/workspaces", map[string]any{
 		"name": "To Delete",
 		"slug": "to-delete",
 	}, cookie)
@@ -266,7 +266,7 @@ func TestWorkspaceMembers(t *testing.T) {
 	member, _ := ts.Register("member@example.com", "Member", "password123")
 
 	// Create workspace
-	resp := ts.Request("POST", "/api/v1/workspaces", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/workspaces", map[string]any{
 		"name": "Team Workspace",
 		"slug": "team-workspace",
 	}, ownerCookie)
@@ -298,7 +298,7 @@ func TestWorkspaceMembers(t *testing.T) {
 	})
 
 	t.Run("add member", func(t *testing.T) {
-		resp := ts.Request("POST", "/api/v1/workspaces/"+ws.ID+"/members", map[string]interface{}{
+		resp := ts.Request("POST", "/api/v1/workspaces/"+ws.ID+"/members", map[string]any{
 			"user_id": member.ID,
 			"role":    "member",
 		}, ownerCookie)
@@ -336,7 +336,7 @@ func TestWorkspaceDuplicateSlug(t *testing.T) {
 	_, cookie := ts.Register("dupslug@example.com", "Dup Slug", "password123")
 
 	// Create first workspace
-	resp := ts.Request("POST", "/api/v1/workspaces", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/workspaces", map[string]any{
 		"name": "First Workspace",
 		"slug": "duplicate-slug",
 	}, cookie)
@@ -344,7 +344,7 @@ func TestWorkspaceDuplicateSlug(t *testing.T) {
 	resp.Body.Close()
 
 	// Try to create second workspace with same slug
-	resp = ts.Request("POST", "/api/v1/workspaces", map[string]interface{}{
+	resp = ts.Request("POST", "/api/v1/workspaces", map[string]any{
 		"name": "Second Workspace",
 		"slug": "duplicate-slug",
 	}, cookie)

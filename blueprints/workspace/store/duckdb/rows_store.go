@@ -93,7 +93,7 @@ func (s *RowsStore) List(ctx context.Context, in *rows.ListIn) ([]*rows.Row, err
 		FROM pages
 		WHERE database_id = ? AND is_archived = FALSE
 	`
-	args := []interface{}{in.DatabaseID}
+	args := []any{in.DatabaseID}
 
 	// Apply cursor pagination
 	if in.Cursor != "" {
@@ -132,7 +132,7 @@ func (s *RowsStore) List(ctx context.Context, in *rows.ListIn) ([]*rows.Row, err
 
 func (s *RowsStore) Count(ctx context.Context, databaseID string, filters []rows.Filter) (int, error) {
 	query := "SELECT COUNT(*) FROM pages WHERE database_id = ? AND is_archived = FALSE"
-	args := []interface{}{databaseID}
+	args := []any{databaseID}
 
 	filterSQL, filterArgs := s.buildFilterSQL(filters)
 	if filterSQL != "" {
@@ -146,13 +146,13 @@ func (s *RowsStore) Count(ctx context.Context, databaseID string, filters []rows
 }
 
 // buildFilterSQL builds SQL WHERE clause from filters.
-func (s *RowsStore) buildFilterSQL(filters []rows.Filter) (string, []interface{}) {
+func (s *RowsStore) buildFilterSQL(filters []rows.Filter) (string, []any) {
 	if len(filters) == 0 {
 		return "", nil
 	}
 
 	var conditions []string
-	var args []interface{}
+	var args []any
 
 	for _, f := range filters {
 		condition, filterArgs := s.buildSingleFilter(f)
@@ -169,24 +169,24 @@ func (s *RowsStore) buildFilterSQL(filters []rows.Filter) (string, []interface{}
 	return "(" + strings.Join(conditions, " AND ") + ")", args
 }
 
-func (s *RowsStore) buildSingleFilter(f rows.Filter) (string, []interface{}) {
+func (s *RowsStore) buildSingleFilter(f rows.Filter) (string, []any) {
 	// Properties are stored as {type, value} objects, so we need to access the .value field
 	propPath := fmt.Sprintf("$.%s.value", f.Property)
 
 	switch f.Operator {
 	// Text operators
 	case "is":
-		return fmt.Sprintf("json_extract_string(properties, '%s') = ?", propPath), []interface{}{f.Value}
+		return fmt.Sprintf("json_extract_string(properties, '%s') = ?", propPath), []any{f.Value}
 	case "is_not":
-		return fmt.Sprintf("json_extract_string(properties, '%s') != ?", propPath), []interface{}{f.Value}
+		return fmt.Sprintf("json_extract_string(properties, '%s') != ?", propPath), []any{f.Value}
 	case "contains":
-		return fmt.Sprintf("json_extract_string(properties, '%s') LIKE ?", propPath), []interface{}{"%" + fmt.Sprint(f.Value) + "%"}
+		return fmt.Sprintf("json_extract_string(properties, '%s') LIKE ?", propPath), []any{"%" + fmt.Sprint(f.Value) + "%"}
 	case "does_not_contain":
-		return fmt.Sprintf("json_extract_string(properties, '%s') NOT LIKE ?", propPath), []interface{}{"%" + fmt.Sprint(f.Value) + "%"}
+		return fmt.Sprintf("json_extract_string(properties, '%s') NOT LIKE ?", propPath), []any{"%" + fmt.Sprint(f.Value) + "%"}
 	case "starts_with":
-		return fmt.Sprintf("json_extract_string(properties, '%s') LIKE ?", propPath), []interface{}{fmt.Sprint(f.Value) + "%"}
+		return fmt.Sprintf("json_extract_string(properties, '%s') LIKE ?", propPath), []any{fmt.Sprint(f.Value) + "%"}
 	case "ends_with":
-		return fmt.Sprintf("json_extract_string(properties, '%s') LIKE ?", propPath), []interface{}{"%" + fmt.Sprint(f.Value)}
+		return fmt.Sprintf("json_extract_string(properties, '%s') LIKE ?", propPath), []any{"%" + fmt.Sprint(f.Value)}
 	case "is_empty":
 		return fmt.Sprintf("(json_extract_string(properties, '%s') IS NULL OR json_extract_string(properties, '%s') = '')", propPath, propPath), nil
 	case "is_not_empty":
@@ -194,31 +194,31 @@ func (s *RowsStore) buildSingleFilter(f rows.Filter) (string, []interface{}) {
 
 	// Number operators
 	case "=":
-		return fmt.Sprintf("CAST(json_extract_string(properties, '%s') AS DOUBLE) = ?", propPath), []interface{}{f.Value}
+		return fmt.Sprintf("CAST(json_extract_string(properties, '%s') AS DOUBLE) = ?", propPath), []any{f.Value}
 	case "!=", "≠":
-		return fmt.Sprintf("CAST(json_extract_string(properties, '%s') AS DOUBLE) != ?", propPath), []interface{}{f.Value}
+		return fmt.Sprintf("CAST(json_extract_string(properties, '%s') AS DOUBLE) != ?", propPath), []any{f.Value}
 	case ">":
-		return fmt.Sprintf("CAST(json_extract_string(properties, '%s') AS DOUBLE) > ?", propPath), []interface{}{f.Value}
+		return fmt.Sprintf("CAST(json_extract_string(properties, '%s') AS DOUBLE) > ?", propPath), []any{f.Value}
 	case "<":
-		return fmt.Sprintf("CAST(json_extract_string(properties, '%s') AS DOUBLE) < ?", propPath), []interface{}{f.Value}
+		return fmt.Sprintf("CAST(json_extract_string(properties, '%s') AS DOUBLE) < ?", propPath), []any{f.Value}
 	case ">=", "≥":
-		return fmt.Sprintf("CAST(json_extract_string(properties, '%s') AS DOUBLE) >= ?", propPath), []interface{}{f.Value}
+		return fmt.Sprintf("CAST(json_extract_string(properties, '%s') AS DOUBLE) >= ?", propPath), []any{f.Value}
 	case "<=", "≤":
-		return fmt.Sprintf("CAST(json_extract_string(properties, '%s') AS DOUBLE) <= ?", propPath), []interface{}{f.Value}
+		return fmt.Sprintf("CAST(json_extract_string(properties, '%s') AS DOUBLE) <= ?", propPath), []any{f.Value}
 
 	// Date operators
 	case "before":
 		dateVal := s.resolveDateValue(f.Value)
-		return fmt.Sprintf("CAST(json_extract_string(properties, '%s') AS DATE) < ?", propPath), []interface{}{dateVal}
+		return fmt.Sprintf("CAST(json_extract_string(properties, '%s') AS DATE) < ?", propPath), []any{dateVal}
 	case "after":
 		dateVal := s.resolveDateValue(f.Value)
-		return fmt.Sprintf("CAST(json_extract_string(properties, '%s') AS DATE) > ?", propPath), []interface{}{dateVal}
+		return fmt.Sprintf("CAST(json_extract_string(properties, '%s') AS DATE) > ?", propPath), []any{dateVal}
 	case "on_or_before":
 		dateVal := s.resolveDateValue(f.Value)
-		return fmt.Sprintf("CAST(json_extract_string(properties, '%s') AS DATE) <= ?", propPath), []interface{}{dateVal}
+		return fmt.Sprintf("CAST(json_extract_string(properties, '%s') AS DATE) <= ?", propPath), []any{dateVal}
 	case "on_or_after":
 		dateVal := s.resolveDateValue(f.Value)
-		return fmt.Sprintf("CAST(json_extract_string(properties, '%s') AS DATE) >= ?", propPath), []interface{}{dateVal}
+		return fmt.Sprintf("CAST(json_extract_string(properties, '%s') AS DATE) >= ?", propPath), []any{dateVal}
 
 	// Checkbox
 	case "is_true":
@@ -231,9 +231,9 @@ func (s *RowsStore) buildSingleFilter(f rows.Filter) (string, []interface{}) {
 }
 
 // resolveDateValue resolves relative date values to actual dates.
-func (s *RowsStore) resolveDateValue(value interface{}) string {
+func (s *RowsStore) resolveDateValue(value any) string {
 	// Check if it's a relative date
-	if m, ok := value.(map[string]interface{}); ok {
+	if m, ok := value.(map[string]any); ok {
 		if m["type"] == "relative" {
 			return s.resolveRelativeDate(fmt.Sprint(m["value"]))
 		}
@@ -368,17 +368,17 @@ func (s *RowsStore) scanRows(sqlRows *sql.Rows) ([]*rows.Row, error) {
 }
 
 // parseProperties parses JSON properties and extracts values from {type, value} objects.
-func (s *RowsStore) parseProperties(propsJSON string) map[string]interface{} {
-	var rawProps map[string]interface{}
+func (s *RowsStore) parseProperties(propsJSON string) map[string]any {
+	var rawProps map[string]any
 	json.Unmarshal([]byte(propsJSON), &rawProps)
 	if rawProps == nil {
-		return make(map[string]interface{})
+		return make(map[string]any)
 	}
 
 	// Extract .value from each property if it's stored as {type, value} object
-	result := make(map[string]interface{})
+	result := make(map[string]any)
 	for k, v := range rawProps {
-		if m, ok := v.(map[string]interface{}); ok {
+		if m, ok := v.(map[string]any); ok {
 			// Check if it has a "value" key (PropertyValue format)
 			if val, hasValue := m["value"]; hasValue {
 				result[k] = val

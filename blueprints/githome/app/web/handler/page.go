@@ -145,14 +145,14 @@ type TreeEntry struct {
 
 // CommitView represents a commit for display
 type CommitView struct {
-	SHA             string
-	ShortSHA        string
-	Message         string
-	MessageTitle    string
-	Author          string
-	AuthorEmail     string
-	Date            string
-	TimeAgo         string
+	SHA          string
+	ShortSHA     string
+	Message      string
+	MessageTitle string
+	Author       string
+	AuthorEmail  string
+	Date         string
+	TimeAgo      string
 }
 
 // UserView represents a user for commit display
@@ -418,7 +418,7 @@ type TimelineEvent struct {
 	Type    string
 	Actor   *users.SimpleUser
 	TimeAgo string
-	Data    map[string]interface{}
+	Data    map[string]any
 }
 
 // IssueDetailData holds data for single issue view.
@@ -712,12 +712,12 @@ func (h *Page) Home(c *mizu.Ctx) error {
 		// Convert stars.Repository to repos.Repository
 		for _, sr := range starRepos {
 			starredRepos = append(starredRepos, &repos.Repository{
-				ID:              sr.ID,
-				Name:            sr.Name,
-				FullName:        sr.FullName,
-				Description:     sr.Description,
-				Private:         sr.Private,
-				HTMLURL:         sr.HTMLURL,
+				ID:          sr.ID,
+				Name:        sr.Name,
+				FullName:    sr.FullName,
+				Description: sr.Description,
+				Private:     sr.Private,
+				HTMLURL:     sr.HTMLURL,
 			})
 		}
 	}
@@ -812,15 +812,15 @@ func (h *Page) UserProfile(c *mizu.Ctx) error {
 	orgList, _ := h.orgs.ListForUser(ctx, username, &orgs.ListOpts{PerPage: 10})
 
 	return render(h, c, "user_profile", UserProfileData{
-		Title:        profileUser.Login,
-		User:         user,
-		ProfileUser:  profileUser,
-		Repositories: repoList,
+		Title:         profileUser.Login,
+		User:          user,
+		ProfileUser:   profileUser,
+		Repositories:  repoList,
 		Organizations: orgList,
-		IsOwnProfile: userID == profileUser.ID,
-		IsFollowing:  isFollowing,
-		ActiveTab:    "overview",
-		ActiveNav:    "",
+		IsOwnProfile:  userID == profileUser.ID,
+		IsFollowing:   isFollowing,
+		ActiveTab:     "overview",
+		ActiveNav:     "",
 	})
 }
 
@@ -1002,10 +1002,7 @@ func (h *Page) RepoIssues(c *mizu.Ctx) error {
 		sortParam = "created-desc"
 	}
 
-	page := parseInt(c.Query("page"))
-	if page < 1 {
-		page = 1
-	}
+	page := max(parseInt(c.Query("page")), 1)
 	perPage := 30
 
 	issueList, _ := h.issues.ListForRepo(ctx, owner, repoName, &issues.ListOpts{
@@ -1034,10 +1031,7 @@ func (h *Page) RepoIssues(c *mizu.Ctx) error {
 	if state == "closed" {
 		totalCount = closedCount
 	}
-	totalPages := (totalCount + perPage - 1) / perPage
-	if totalPages < 1 {
-		totalPages = 1
-	}
+	totalPages := max((totalCount+perPage-1)/perPage, 1)
 
 	issueViews := make([]*IssueView, len(issueList))
 	for i, issue := range issueList {
@@ -1263,10 +1257,7 @@ func (h *Page) RepoPulls(c *mizu.Ctx) error {
 		sortParam = "created-desc"
 	}
 
-	page := parseInt(c.Query("page"))
-	if page < 1 {
-		page = 1
-	}
+	page := max(parseInt(c.Query("page")), 1)
 	perPage := 30
 
 	pullList, _ := h.pulls.List(ctx, owner, repoName, &pulls.ListOpts{
@@ -1301,10 +1292,7 @@ func (h *Page) RepoPulls(c *mizu.Ctx) error {
 	if state == "closed" {
 		totalCount = closedCount
 	}
-	totalPages := (totalCount + perPage - 1) / perPage
-	if totalPages < 1 {
-		totalPages = 1
-	}
+	totalPages := max((totalCount+perPage-1)/perPage, 1)
 
 	pullViews := make([]*PullView, len(pullList))
 	for i, pr := range pullList {
@@ -1719,9 +1707,9 @@ func groupCommitsByDateForPR(commits []*pulls.Commit) []*PullCommitGroup {
 		msg := c.Commit.Message
 		msgTitle := msg
 		msgBody := ""
-		if idx := strings.Index(msg, "\n"); idx != -1 {
-			msgTitle = msg[:idx]
-			msgBody = strings.TrimSpace(msg[idx+1:])
+		if before, after, ok := strings.Cut(msg, "\n"); ok {
+			msgTitle = before
+			msgBody = strings.TrimSpace(after)
 		}
 
 		groups[key].Commits = append(groups[key].Commits, &PullCommitView{
@@ -2238,7 +2226,7 @@ func splitPath(path string) []string {
 		return nil
 	}
 	var parts []string
-	for _, p := range strings.Split(path, "/") {
+	for p := range strings.SplitSeq(path, "/") {
 		if p != "" {
 			parts = append(parts, p)
 		}
@@ -2326,14 +2314,6 @@ func isBinaryContent(content string) bool {
 	return false
 }
 
-// min returns the smaller of two ints
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // buildRepoView creates a RepoView with tabs and permissions.
 func (h *Page) buildRepoView(ctx context.Context, repo *repos.Repository, userID int64, activeTab string) *RepoView {
 	view := &RepoView{
@@ -2374,7 +2354,7 @@ func (h *Page) buildRepoView(ctx context.Context, repo *repos.Repository, userID
 }
 
 // timeAgo returns a human-readable time difference.
-func timeAgo(t interface{}) string {
+func timeAgo(t any) string {
 	return formatTimeAgo(t)
 }
 
@@ -2426,7 +2406,7 @@ func humanizeBytes(bytes int64) string {
 }
 
 // formatTimeAgo formats a time as a human-readable relative string
-func formatTimeAgo(t interface{}) string {
+func formatTimeAgo(t any) string {
 	var when time.Time
 	switch v := t.(type) {
 	case time.Time:
@@ -2488,8 +2468,8 @@ func shortSHA(sha string) string {
 
 // firstLine returns the first line of a string
 func firstLine(s string) string {
-	if idx := strings.Index(s, "\n"); idx >= 0 {
-		return s[:idx]
+	if before, _, ok := strings.Cut(s, "\n"); ok {
+		return before
 	}
 	return s
 }
@@ -2799,8 +2779,8 @@ func (h *Page) CommitDetail(c *mizu.Ctx) error {
 	if commit.Commit != nil {
 		message = commit.Commit.Message
 		messageTitle = firstLine(message)
-		if idx := strings.Index(message, "\n"); idx >= 0 {
-			messageBody = strings.TrimSpace(message[idx+1:])
+		if _, after, ok := strings.Cut(message, "\n"); ok {
+			messageBody = strings.TrimSpace(after)
 		}
 		if commit.Commit.Author != nil {
 			authorDate = commit.Commit.Author.Date
@@ -2878,12 +2858,12 @@ func (h *Page) CommitDetail(c *mizu.Ctx) error {
 	}
 
 	return render(h, c, "commit_detail", CommitDetailData{
-		Title:   fmt.Sprintf("Commit %s - %s", shortSHA(commit.SHA), repo.FullName),
-		User:    user,
-		Repo:    repoView,
-		Commit:  commitDetail,
-		Files:   files,
-		Stats:   stats,
+		Title:    fmt.Sprintf("Commit %s - %s", shortSHA(commit.SHA), repo.FullName),
+		User:     user,
+		Repo:     repoView,
+		Commit:   commitDetail,
+		Files:    files,
+		Stats:    stats,
 		Branches: branchList,
 		Breadcrumbs: []Breadcrumb{
 			{Label: repo.FullName, URL: "/" + repo.FullName},
@@ -2966,8 +2946,8 @@ func parsePatch(patch string) []*DiffLine {
 
 // restOfMessage returns everything after the first line
 func restOfMessage(s string) string {
-	if idx := strings.Index(s, "\n"); idx >= 0 {
-		return strings.TrimSpace(s[idx+1:])
+	if _, after, ok := strings.Cut(s, "\n"); ok {
+		return strings.TrimSpace(after)
 	}
 	return ""
 }

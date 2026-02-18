@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"maps"
 	"net/http"
 	"sort"
 	"strconv"
@@ -14,9 +15,9 @@ import (
 // To enable full Prometheus support, add prometheus/client_golang dependency.
 
 var (
-	prometheusOnce     sync.Once
-	prometheusEnabled  bool
-	metricsData        = &inMemoryMetrics{}
+	prometheusOnce    sync.Once
+	prometheusEnabled bool
+	metricsData       = &inMemoryMetrics{}
 )
 
 // inMemoryMetrics stores metrics in memory for basic reporting.
@@ -24,10 +25,10 @@ type inMemoryMetrics struct {
 	mu sync.RWMutex
 
 	// Counters
-	requestsTotal     map[string]int64   // key: provider:model:status
-	tokensTotal       map[string]int64   // key: provider:model:direction
-	costTotal         map[string]float64 // key: provider:model
-	toolCallsTotal    map[string]int64   // key: provider:tool:status
+	requestsTotal  map[string]int64   // key: provider:model:status
+	tokensTotal    map[string]int64   // key: provider:model:direction
+	costTotal      map[string]float64 // key: provider:model
+	toolCallsTotal map[string]int64   // key: provider:tool:status
 
 	// Histograms (simplified as lists)
 	requestDurations  []float64
@@ -107,15 +108,15 @@ func recordPrometheusMetrics(m llm.RequestMetrics) {
 
 // MetricsSnapshot represents a point-in-time snapshot of metrics.
 type MetricsSnapshot struct {
-	RequestsTotal     map[string]int64   `json:"requests_total"`
-	TokensTotal       map[string]int64   `json:"tokens_total"`
-	CostTotal         map[string]float64 `json:"cost_total"`
-	ToolCallsTotal    map[string]int64   `json:"tool_calls_total"`
-	AvgDurationSec    float64            `json:"avg_duration_sec"`
-	AvgTTFTSec        float64            `json:"avg_ttft_sec"`
-	P50DurationSec    float64            `json:"p50_duration_sec"`
-	P95DurationSec    float64            `json:"p95_duration_sec"`
-	P99DurationSec    float64            `json:"p99_duration_sec"`
+	RequestsTotal  map[string]int64   `json:"requests_total"`
+	TokensTotal    map[string]int64   `json:"tokens_total"`
+	CostTotal      map[string]float64 `json:"cost_total"`
+	ToolCallsTotal map[string]int64   `json:"tool_calls_total"`
+	AvgDurationSec float64            `json:"avg_duration_sec"`
+	AvgTTFTSec     float64            `json:"avg_ttft_sec"`
+	P50DurationSec float64            `json:"p50_duration_sec"`
+	P95DurationSec float64            `json:"p95_duration_sec"`
+	P99DurationSec float64            `json:"p99_duration_sec"`
 }
 
 // GetMetricsSnapshot returns current metrics snapshot.
@@ -131,18 +132,10 @@ func GetMetricsSnapshot() *MetricsSnapshot {
 	}
 
 	// Copy counters
-	for k, v := range metricsData.requestsTotal {
-		snapshot.RequestsTotal[k] = v
-	}
-	for k, v := range metricsData.tokensTotal {
-		snapshot.TokensTotal[k] = v
-	}
-	for k, v := range metricsData.costTotal {
-		snapshot.CostTotal[k] = v
-	}
-	for k, v := range metricsData.toolCallsTotal {
-		snapshot.ToolCallsTotal[k] = v
-	}
+	maps.Copy(snapshot.RequestsTotal, metricsData.requestsTotal)
+	maps.Copy(snapshot.TokensTotal, metricsData.tokensTotal)
+	maps.Copy(snapshot.CostTotal, metricsData.costTotal)
+	maps.Copy(snapshot.ToolCallsTotal, metricsData.toolCallsTotal)
 
 	// Calculate duration statistics
 	if len(metricsData.requestDurations) > 0 {

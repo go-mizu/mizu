@@ -230,8 +230,8 @@ func (s *Service) Detect(query string) *store.InstantAnswer {
 	}
 
 	// Definition detection
-	if strings.HasPrefix(query, "define ") {
-		word := strings.TrimPrefix(query, "define ")
+	if after, ok := strings.CutPrefix(query, "define "); ok {
+		word := after
 		if answer, err := s.Define(word); err == nil {
 			return answer
 		}

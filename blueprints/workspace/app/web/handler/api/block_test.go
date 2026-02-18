@@ -10,7 +10,7 @@ import (
 
 // createTestPage creates a page for testing blocks.
 func createTestPage(ts *TestServer, cookie *http.Cookie, workspaceID, title string) *pages.Page {
-	resp := ts.Request("POST", "/api/v1/pages", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/pages", map[string]any{
 		"workspace_id": workspaceID,
 		"title":        title,
 		"parent_type":  "workspace",
@@ -33,18 +33,18 @@ func TestBlockCreate(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		body       map[string]interface{}
+		body       map[string]any
 		wantStatus int
 		wantType   blocks.BlockType
 	}{
 		{
 			name: "paragraph block",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"page_id":  page.ID,
 				"type":     "paragraph",
 				"position": 0,
-				"content": map[string]interface{}{
-					"rich_text": []map[string]interface{}{
+				"content": map[string]any{
+					"rich_text": []map[string]any{
 						{"type": "text", "text": "Hello, world!"},
 					},
 				},
@@ -54,12 +54,12 @@ func TestBlockCreate(t *testing.T) {
 		},
 		{
 			name: "heading 1 block",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"page_id":  page.ID,
 				"type":     "heading_1",
 				"position": 1,
-				"content": map[string]interface{}{
-					"rich_text": []map[string]interface{}{
+				"content": map[string]any{
+					"rich_text": []map[string]any{
 						{"type": "text", "text": "Big Heading"},
 					},
 				},
@@ -69,12 +69,12 @@ func TestBlockCreate(t *testing.T) {
 		},
 		{
 			name: "heading 2 block",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"page_id":  page.ID,
 				"type":     "heading_2",
 				"position": 2,
-				"content": map[string]interface{}{
-					"rich_text": []map[string]interface{}{
+				"content": map[string]any{
+					"rich_text": []map[string]any{
 						{"type": "text", "text": "Medium Heading"},
 					},
 				},
@@ -84,12 +84,12 @@ func TestBlockCreate(t *testing.T) {
 		},
 		{
 			name: "heading 3 block",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"page_id":  page.ID,
 				"type":     "heading_3",
 				"position": 3,
-				"content": map[string]interface{}{
-					"rich_text": []map[string]interface{}{
+				"content": map[string]any{
+					"rich_text": []map[string]any{
 						{"type": "text", "text": "Small Heading"},
 					},
 				},
@@ -99,12 +99,12 @@ func TestBlockCreate(t *testing.T) {
 		},
 		{
 			name: "quote block",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"page_id":  page.ID,
 				"type":     "quote",
 				"position": 4,
-				"content": map[string]interface{}{
-					"rich_text": []map[string]interface{}{
+				"content": map[string]any{
+					"rich_text": []map[string]any{
 						{"type": "text", "text": "To be or not to be"},
 					},
 				},
@@ -114,14 +114,14 @@ func TestBlockCreate(t *testing.T) {
 		},
 		{
 			name: "callout block",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"page_id":  page.ID,
 				"type":     "callout",
 				"position": 5,
-				"content": map[string]interface{}{
+				"content": map[string]any{
 					"icon":  "bulb",
 					"color": "yellow",
-					"rich_text": []map[string]interface{}{
+					"rich_text": []map[string]any{
 						{"type": "text", "text": "Important note"},
 					},
 				},
@@ -131,12 +131,12 @@ func TestBlockCreate(t *testing.T) {
 		},
 		{
 			name: "bulleted list block",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"page_id":  page.ID,
 				"type":     "bulleted_list",
 				"position": 6,
-				"content": map[string]interface{}{
-					"rich_text": []map[string]interface{}{
+				"content": map[string]any{
+					"rich_text": []map[string]any{
 						{"type": "text", "text": "List item"},
 					},
 				},
@@ -146,12 +146,12 @@ func TestBlockCreate(t *testing.T) {
 		},
 		{
 			name: "numbered list block",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"page_id":  page.ID,
 				"type":     "numbered_list",
 				"position": 7,
-				"content": map[string]interface{}{
-					"rich_text": []map[string]interface{}{
+				"content": map[string]any{
+					"rich_text": []map[string]any{
 						{"type": "text", "text": "Numbered item"},
 					},
 				},
@@ -161,13 +161,13 @@ func TestBlockCreate(t *testing.T) {
 		},
 		{
 			name: "to-do block",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"page_id":  page.ID,
 				"type":     "to_do",
 				"position": 8,
-				"content": map[string]interface{}{
+				"content": map[string]any{
 					"checked": false,
-					"rich_text": []map[string]interface{}{
+					"rich_text": []map[string]any{
 						{"type": "text", "text": "Task to complete"},
 					},
 				},
@@ -177,12 +177,12 @@ func TestBlockCreate(t *testing.T) {
 		},
 		{
 			name: "toggle block",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"page_id":  page.ID,
 				"type":     "toggle",
 				"position": 9,
-				"content": map[string]interface{}{
-					"rich_text": []map[string]interface{}{
+				"content": map[string]any{
+					"rich_text": []map[string]any{
 						{"type": "text", "text": "Toggle header"},
 					},
 				},
@@ -192,13 +192,13 @@ func TestBlockCreate(t *testing.T) {
 		},
 		{
 			name: "code block",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"page_id":  page.ID,
 				"type":     "code",
 				"position": 10,
-				"content": map[string]interface{}{
+				"content": map[string]any{
 					"language": "go",
-					"rich_text": []map[string]interface{}{
+					"rich_text": []map[string]any{
 						{"type": "text", "text": "func main() {}"},
 					},
 				},
@@ -208,24 +208,24 @@ func TestBlockCreate(t *testing.T) {
 		},
 		{
 			name: "divider block",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"page_id":  page.ID,
 				"type":     "divider",
 				"position": 11,
-				"content":  map[string]interface{}{},
+				"content":  map[string]any{},
 			},
 			wantStatus: http.StatusCreated,
 			wantType:   blocks.BlockDivider,
 		},
 		{
 			name: "image block",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"page_id":  page.ID,
 				"type":     "image",
 				"position": 12,
-				"content": map[string]interface{}{
+				"content": map[string]any{
 					"url": "https://example.com/image.png",
-					"caption": []map[string]interface{}{
+					"caption": []map[string]any{
 						{"type": "text", "text": "Image caption"},
 					},
 				},
@@ -235,11 +235,11 @@ func TestBlockCreate(t *testing.T) {
 		},
 		{
 			name: "bookmark block",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"page_id":  page.ID,
 				"type":     "bookmark",
 				"position": 13,
-				"content": map[string]interface{}{
+				"content": map[string]any{
 					"url":         "https://example.com",
 					"title":       "Example Website",
 					"description": "An example website",
@@ -250,7 +250,7 @@ func TestBlockCreate(t *testing.T) {
 		},
 		{
 			name: "missing page_id",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"type":     "paragraph",
 				"position": 0,
 			},
@@ -294,12 +294,12 @@ func TestBlockUpdate(t *testing.T) {
 	page := createTestPage(ts, cookie, ws.ID, "Block Update Page")
 
 	// Create a block
-	resp := ts.Request("POST", "/api/v1/blocks", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/blocks", map[string]any{
 		"page_id":  page.ID,
 		"type":     "paragraph",
 		"position": 0,
-		"content": map[string]interface{}{
-			"rich_text": []map[string]interface{}{
+		"content": map[string]any{
+			"rich_text": []map[string]any{
 				{"type": "text", "text": "Original text"},
 			},
 		},
@@ -310,9 +310,9 @@ func TestBlockUpdate(t *testing.T) {
 	ts.ParseJSON(resp, &created)
 
 	t.Run("update content", func(t *testing.T) {
-		resp := ts.Request("PATCH", "/api/v1/blocks/"+created.ID, map[string]interface{}{
-			"content": map[string]interface{}{
-				"rich_text": []map[string]interface{}{
+		resp := ts.Request("PATCH", "/api/v1/blocks/"+created.ID, map[string]any{
+			"content": map[string]any{
+				"rich_text": []map[string]any{
 					{"type": "text", "text": "Updated text"},
 				},
 			},
@@ -329,13 +329,13 @@ func TestBlockUpdate(t *testing.T) {
 
 	t.Run("update to-do checked", func(t *testing.T) {
 		// Create a to-do block
-		resp := ts.Request("POST", "/api/v1/blocks", map[string]interface{}{
+		resp := ts.Request("POST", "/api/v1/blocks", map[string]any{
 			"page_id":  page.ID,
 			"type":     "to_do",
 			"position": 1,
-			"content": map[string]interface{}{
+			"content": map[string]any{
 				"checked": false,
-				"rich_text": []map[string]interface{}{
+				"rich_text": []map[string]any{
 					{"type": "text", "text": "Task"},
 				},
 			},
@@ -346,10 +346,10 @@ func TestBlockUpdate(t *testing.T) {
 		ts.ParseJSON(resp, &todo)
 
 		// Update checked state
-		resp = ts.Request("PATCH", "/api/v1/blocks/"+todo.ID, map[string]interface{}{
-			"content": map[string]interface{}{
+		resp = ts.Request("PATCH", "/api/v1/blocks/"+todo.ID, map[string]any{
+			"content": map[string]any{
 				"checked": true,
-				"rich_text": []map[string]interface{}{
+				"rich_text": []map[string]any{
 					{"type": "text", "text": "Task"},
 				},
 			},
@@ -365,8 +365,8 @@ func TestBlockUpdate(t *testing.T) {
 	})
 
 	t.Run("non-existent block", func(t *testing.T) {
-		resp := ts.Request("PATCH", "/api/v1/blocks/non-existent-id", map[string]interface{}{
-			"content": map[string]interface{}{},
+		resp := ts.Request("PATCH", "/api/v1/blocks/non-existent-id", map[string]any{
+			"content": map[string]any{},
 		}, cookie)
 		ts.ExpectStatus(resp, http.StatusInternalServerError)
 		resp.Body.Close()
@@ -383,12 +383,12 @@ func TestBlockDelete(t *testing.T) {
 	page := createTestPage(ts, cookie, ws.ID, "Block Delete Page")
 
 	// Create a block
-	resp := ts.Request("POST", "/api/v1/blocks", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/blocks", map[string]any{
 		"page_id":  page.ID,
 		"type":     "paragraph",
 		"position": 0,
-		"content": map[string]interface{}{
-			"rich_text": []map[string]interface{}{
+		"content": map[string]any{
+			"rich_text": []map[string]any{
 				{"type": "text", "text": "To delete"},
 			},
 		},
@@ -416,13 +416,13 @@ func TestBlockMove(t *testing.T) {
 
 	// Create blocks
 	var blockIDs []string
-	for i := 0; i < 3; i++ {
-		resp := ts.Request("POST", "/api/v1/blocks", map[string]interface{}{
+	for i := range 3 {
+		resp := ts.Request("POST", "/api/v1/blocks", map[string]any{
 			"page_id":  page.ID,
 			"type":     "paragraph",
 			"position": i,
-			"content": map[string]interface{}{
-				"rich_text": []map[string]interface{}{
+			"content": map[string]any{
+				"rich_text": []map[string]any{
 					{"type": "text", "text": "Block " + string(rune('A'+i))},
 				},
 			},
@@ -436,7 +436,7 @@ func TestBlockMove(t *testing.T) {
 
 	t.Run("move block to new position", func(t *testing.T) {
 		// Move first block to last position
-		resp := ts.Request("POST", "/api/v1/blocks/"+blockIDs[0]+"/move", map[string]interface{}{
+		resp := ts.Request("POST", "/api/v1/blocks/"+blockIDs[0]+"/move", map[string]any{
 			"position": 2,
 		}, cookie)
 		ts.ExpectStatus(resp, http.StatusOK)
@@ -445,12 +445,12 @@ func TestBlockMove(t *testing.T) {
 
 	t.Run("move block to nested parent", func(t *testing.T) {
 		// Create a toggle block as parent
-		resp := ts.Request("POST", "/api/v1/blocks", map[string]interface{}{
+		resp := ts.Request("POST", "/api/v1/blocks", map[string]any{
 			"page_id":  page.ID,
 			"type":     "toggle",
 			"position": 0,
-			"content": map[string]interface{}{
-				"rich_text": []map[string]interface{}{
+			"content": map[string]any{
+				"rich_text": []map[string]any{
 					{"type": "text", "text": "Toggle Parent"},
 				},
 			},
@@ -461,7 +461,7 @@ func TestBlockMove(t *testing.T) {
 		ts.ParseJSON(resp, &toggle)
 
 		// Move a block under the toggle
-		resp = ts.Request("POST", "/api/v1/blocks/"+blockIDs[1]+"/move", map[string]interface{}{
+		resp = ts.Request("POST", "/api/v1/blocks/"+blockIDs[1]+"/move", map[string]any{
 			"parent_id": toggle.ID,
 			"position":  0,
 		}, cookie)
@@ -480,12 +480,12 @@ func TestBlockNestedCreate(t *testing.T) {
 	page := createTestPage(ts, cookie, ws.ID, "Block Nested Page")
 
 	// Create toggle block
-	resp := ts.Request("POST", "/api/v1/blocks", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/blocks", map[string]any{
 		"page_id":  page.ID,
 		"type":     "toggle",
 		"position": 0,
-		"content": map[string]interface{}{
-			"rich_text": []map[string]interface{}{
+		"content": map[string]any{
+			"rich_text": []map[string]any{
 				{"type": "text", "text": "Toggle"},
 			},
 		},
@@ -496,13 +496,13 @@ func TestBlockNestedCreate(t *testing.T) {
 	ts.ParseJSON(resp, &toggle)
 
 	// Create nested block under toggle
-	resp = ts.Request("POST", "/api/v1/blocks", map[string]interface{}{
+	resp = ts.Request("POST", "/api/v1/blocks", map[string]any{
 		"page_id":   page.ID,
 		"parent_id": toggle.ID,
 		"type":      "paragraph",
 		"position":  0,
-		"content": map[string]interface{}{
-			"rich_text": []map[string]interface{}{
+		"content": map[string]any{
+			"rich_text": []map[string]any{
 				{"type": "text", "text": "Nested content"},
 			},
 		},
@@ -527,16 +527,16 @@ func TestBlockRichTextAnnotations(t *testing.T) {
 	page := createTestPage(ts, cookie, ws.ID, "Block Annot Page")
 
 	// Create block with annotations
-	resp := ts.Request("POST", "/api/v1/blocks", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/blocks", map[string]any{
 		"page_id":  page.ID,
 		"type":     "paragraph",
 		"position": 0,
-		"content": map[string]interface{}{
-			"rich_text": []map[string]interface{}{
+		"content": map[string]any{
+			"rich_text": []map[string]any{
 				{
 					"type": "text",
 					"text": "Bold and italic",
-					"annotations": map[string]interface{}{
+					"annotations": map[string]any{
 						"bold":   true,
 						"italic": true,
 						"color":  "red",
@@ -573,11 +573,11 @@ func TestBlockUnauthenticated(t *testing.T) {
 	page := createTestPage(ts, cookie, ws.ID, "Block Auth Page")
 
 	// Create a block for testing
-	resp := ts.Request("POST", "/api/v1/blocks", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/blocks", map[string]any{
 		"page_id":  page.ID,
 		"type":     "paragraph",
 		"position": 0,
-		"content":  map[string]interface{}{},
+		"content":  map[string]any{},
 	}, cookie)
 	ts.ExpectStatus(resp, http.StatusCreated)
 

@@ -129,8 +129,8 @@ func WithOptions(opts Options) mizu.Middleware {
 
 			// Remove prefix if present
 			if opts.SignaturePrefix != "" {
-				if strings.HasPrefix(signature, opts.SignaturePrefix) {
-					signature = strings.TrimPrefix(signature, opts.SignaturePrefix)
+				if after, ok := strings.CutPrefix(signature, opts.SignaturePrefix); ok {
+					signature = after
 				} else {
 					return handleError(c, opts)
 				}
@@ -296,14 +296,15 @@ func Twilio(authToken string) mizu.Middleware {
 			}
 
 			// Build base string: URL + sorted params
-			baseString := url
+			var baseString strings.Builder
+			baseString.WriteString(url)
 			for key, values := range c.Request().PostForm {
 				for _, value := range values {
-					baseString += key + value
+					baseString.WriteString(key + value)
 				}
 			}
 
-			return []byte(baseString), nil
+			return []byte(baseString.String()), nil
 		},
 	})
 }

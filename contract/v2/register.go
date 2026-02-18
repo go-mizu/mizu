@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -97,7 +98,7 @@ func (r *invoker) NewInput(resource, method string) (any, error) {
 	}
 
 	// Always return a pointer when input is a pointer type.
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		return reflect.New(t.Elem()).Interface(), nil
 	}
 
@@ -114,8 +115,7 @@ func (r *invoker) Stream(ctx context.Context, resource, method string, in any) (
 // Register creates a contract service from a Go interface and implementation.
 // T must be an interface type. impl must implement T.
 func Register[T any](impl T, opts ...Option) Invoker {
-	var t T
-	ifaceType := reflect.TypeOf(&t).Elem()
+	ifaceType := reflect.TypeFor[T]()
 	if ifaceType.Kind() != reflect.Interface {
 		panic("contract: Register requires an interface type parameter")
 	}
@@ -175,11 +175,8 @@ func Register[T any](impl T, opts ...Option) Invoker {
 			resourceName = toLowerSnake(svc.Name)
 		}
 		for res, methods := range o.resources {
-			for _, mn := range methods {
-				if mn == im.Name {
-					resourceName = res
-					break
-				}
+			if slices.Contains(methods, im.Name) {
+				resourceName = res
 			}
 		}
 
@@ -248,8 +245,8 @@ func Register[T any](impl T, opts ...Option) Invoker {
 }
 
 var (
-	contextType = reflect.TypeOf((*context.Context)(nil)).Elem()
-	errorType   = reflect.TypeOf((*error)(nil)).Elem()
+	contextType = reflect.TypeFor[context.Context]()
+	errorType   = reflect.TypeFor[error]()
 )
 
 // validateAndExtractSignature enforces supported shapes and returns:
@@ -274,7 +271,7 @@ func validateAndExtractSignature(iface reflect.Type, m reflect.Method) (inType r
 	if mt.NumIn() == 2 {
 		inType = mt.In(1)
 		// Keep v2 strict: require pointer input for stable optional semantics.
-		if inType.Kind() != reflect.Ptr || inType.Elem().Kind() != reflect.Struct {
+		if inType.Kind() != reflect.Pointer || inType.Elem().Kind() != reflect.Struct {
 			return nil, nil, fmt.Errorf("contract: %s.%s: input must be pointer to struct (got %s)", iface.Name(), m.Name, inType)
 		}
 	}
@@ -325,7 +322,7 @@ func newTypeRegistry() *typeRegistry {
 
 func (r *typeRegistry) register(t reflect.Type) TypeRef {
 	// Handle pointer types.
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 
@@ -466,7 +463,7 @@ func (r *typeRegistry) registerStruct(key, name string, t reflect.Type) {
 		}
 
 		// Nullable (pointer type or explicit tag).
-		if f.Type.Kind() == reflect.Ptr {
+		if f.Type.Kind() == reflect.Pointer {
 			field.Nullable = true
 		}
 		if tag := f.Tag.Get("nullable"); tag == "true" {

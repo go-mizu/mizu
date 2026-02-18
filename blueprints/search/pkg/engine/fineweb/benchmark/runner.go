@@ -53,18 +53,18 @@ type Report struct {
 
 // DriverResult contains benchmark results for a single driver.
 type DriverResult struct {
-	Name        string                        `json:"name"`
-	Error       string                        `json:"error,omitempty"`
-	Indexing    *IndexingMetrics              `json:"indexing,omitempty"`
-	Incremental *IncrementalMetrics           `json:"incremental,omitempty"`
-	IndexSize   int64                         `json:"index_size"`
-	DocCount    int64                         `json:"doc_count"`
-	Latency     *LatencyMetrics               `json:"latency,omitempty"`
-	Throughput  *ThroughputMetrics            `json:"throughput,omitempty"`
-	Concurrency map[int]*ThroughputMetrics    `json:"concurrency,omitempty"`
-	ColdStart   time.Duration                 `json:"cold_start"`
-	Memory      *MemoryMetrics                `json:"memory,omitempty"`
-	QueryStats  map[string]*QueryMetrics      `json:"query_stats,omitempty"`
+	Name        string                     `json:"name"`
+	Error       string                     `json:"error,omitempty"`
+	Indexing    *IndexingMetrics           `json:"indexing,omitempty"`
+	Incremental *IncrementalMetrics        `json:"incremental,omitempty"`
+	IndexSize   int64                      `json:"index_size"`
+	DocCount    int64                      `json:"doc_count"`
+	Latency     *LatencyMetrics            `json:"latency,omitempty"`
+	Throughput  *ThroughputMetrics         `json:"throughput,omitempty"`
+	Concurrency map[int]*ThroughputMetrics `json:"concurrency,omitempty"`
+	ColdStart   time.Duration              `json:"cold_start"`
+	Memory      *MemoryMetrics             `json:"memory,omitempty"`
+	QueryStats  map[string]*QueryMetrics   `json:"query_stats,omitempty"`
 }
 
 // Run executes the full benchmark suite.
@@ -391,10 +391,8 @@ func (r *Runner) benchmarkThroughput(ctx context.Context, driver fineweb.Driver,
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
-	for i := 0; i < goroutines; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range goroutines {
+		wg.Go(func() {
 			queryIdx := 0
 			for time.Now().Before(deadline) {
 				select {
@@ -412,7 +410,7 @@ func (r *Runner) benchmarkThroughput(ctx context.Context, driver fineweb.Driver,
 
 				queryIdx++
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -465,14 +463,14 @@ func (r *Runner) benchmarkQuery(ctx context.Context, driver fineweb.Driver, q Qu
 	}
 }
 
-func (r *Runner) log(format string, args ...interface{}) {
+func (r *Runner) log(format string, args ...any) {
 	if r.Logger != nil {
 		r.Logger.Printf(format, args...)
 	}
 }
 
 // logPhase logs a benchmark phase with consistent formatting
-func (r *Runner) logPhase(phase, driver string, format string, args ...interface{}) {
+func (r *Runner) logPhase(phase, driver string, format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	r.log("  [%s] %s: %s", phase, driver, msg)
 }

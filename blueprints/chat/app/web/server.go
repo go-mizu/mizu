@@ -323,8 +323,8 @@ func (s *Server) userSearch(c *mizu.Ctx) error {
 func (s *Server) getUserID(c *mizu.Ctx) string {
 	// Try Authorization header first
 	auth := c.Request().Header.Get("Authorization")
-	if strings.HasPrefix(auth, "Bearer ") {
-		token := strings.TrimPrefix(auth, "Bearer ")
+	if after, ok := strings.CutPrefix(auth, "Bearer "); ok {
+		token := after
 		session, err := s.accounts.GetSession(c.Request().Context(), token)
 		if err == nil {
 			return session.UserID

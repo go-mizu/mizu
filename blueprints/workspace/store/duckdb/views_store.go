@@ -41,7 +41,7 @@ func (s *ViewsStore) GetByID(ctx context.Context, id string) (*views.View, error
 func (s *ViewsStore) Update(ctx context.Context, id string, in *views.UpdateIn) error {
 	// Build a single UPDATE with all fields to avoid multiple round-trips
 	sets := []string{}
-	args := []interface{}{}
+	args := []any{}
 
 	if in.Name != nil {
 		sets = append(sets, "name = ?")
@@ -108,7 +108,7 @@ func (s *ViewsStore) Reorder(ctx context.Context, databaseID string, viewIDs []s
 
 	// Build batch UPDATE with CASE statement to avoid N individual updates
 	var caseBuilder strings.Builder
-	args := make([]interface{}, 0, len(viewIDs)*2+len(viewIDs))
+	args := make([]any, 0, len(viewIDs)*2+len(viewIDs))
 
 	caseBuilder.WriteString("UPDATE views SET position = CASE id ")
 	for i, id := range viewIDs {

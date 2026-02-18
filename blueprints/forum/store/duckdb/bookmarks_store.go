@@ -3,6 +3,7 @@ package duckdb
 import (
 	"context"
 	"database/sql"
+	"strings"
 
 	"github.com/go-mizu/mizu/blueprints/forum/feature/bookmarks"
 )
@@ -82,21 +83,22 @@ func (s *BookmarksStore) GetByTargets(ctx context.Context, accountID, targetType
 		return nil, nil
 	}
 
-	query := `
+	var query strings.Builder
+	query.WriteString(`
 		SELECT id, account_id, target_type, target_id, created_at
-		FROM bookmarks WHERE account_id = $1 AND target_type = $2 AND target_id IN (`
+		FROM bookmarks WHERE account_id = $1 AND target_type = $2 AND target_id IN (`)
 
 	args := []any{accountID, targetType}
 	for i, id := range targetIDs {
 		if i > 0 {
-			query += ", "
+			query.WriteString(", ")
 		}
-		query += "?"
+		query.WriteString("?")
 		args = append(args, id)
 	}
-	query += ")"
+	query.WriteString(")")
 
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.db.QueryContext(ctx, query.String(), args...)
 	if err != nil {
 		return nil, err
 	}

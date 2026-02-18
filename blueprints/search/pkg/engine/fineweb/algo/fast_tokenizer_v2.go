@@ -132,7 +132,7 @@ var alphanumMask [4]uint64
 
 func init() {
 	// Build bitmask where bit position corresponds to byte value
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		if megaToLower[i] != 0 {
 			alphanumMask[i/64] |= 1 << (i % 64)
 		}

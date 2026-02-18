@@ -177,7 +177,7 @@ func (h *Interaction) LikedBy(c *mizu.Ctx) error {
 		return InternalError(c, err)
 	}
 
-	return Success(c, map[string]interface{}{
+	return Success(c, map[string]any{
 		"account_ids": accountIDs,
 	})
 }
@@ -193,7 +193,7 @@ func (h *Interaction) RepostedBy(c *mizu.Ctx) error {
 		return InternalError(c, err)
 	}
 
-	return Success(c, map[string]interface{}{
+	return Success(c, map[string]any{
 		"account_ids": accountIDs,
 	})
 }

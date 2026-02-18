@@ -122,7 +122,7 @@ func (h *AuthHandler) Logout(c *mizu.Ctx) error {
 func (h *AuthHandler) Refresh(c *mizu.Ctx) error {
 	// In a real implementation, validate and refresh the token
 	token := uuid.New().String()
-	return c.JSON(http.StatusOK, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]any{
 		"access_token": token,
 		"expires_at":   time.Now().Add(24 * time.Hour),
 	})

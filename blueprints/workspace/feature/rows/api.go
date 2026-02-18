@@ -12,29 +12,29 @@ import (
 // Row represents a single row in a database.
 // Internally, a row is a page with database_id set.
 type Row struct {
-	ID          string                 `json:"id"`
-	DatabaseID  string                 `json:"database_id"`
-	WorkspaceID string                 `json:"workspace_id,omitempty"`
-	Title       string                 `json:"title,omitempty"`
-	Properties  map[string]interface{} `json:"properties"`
-	RowPosition int64                  `json:"row_position,omitempty"`
-	CreatedBy   string                 `json:"created_by"`
-	CreatedAt   time.Time              `json:"created_at"`
-	UpdatedBy   string                 `json:"updated_by"`
-	UpdatedAt   time.Time              `json:"updated_at"`
+	ID          string         `json:"id"`
+	DatabaseID  string         `json:"database_id"`
+	WorkspaceID string         `json:"workspace_id,omitempty"`
+	Title       string         `json:"title,omitempty"`
+	Properties  map[string]any `json:"properties"`
+	RowPosition int64          `json:"row_position,omitempty"`
+	CreatedBy   string         `json:"created_by"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedBy   string         `json:"updated_by"`
+	UpdatedAt   time.Time      `json:"updated_at"`
 }
 
 // Filter represents a single filter condition.
 type Filter struct {
-	Property string      `json:"property"`
-	Operator string      `json:"operator"`
-	Value    interface{} `json:"value"`
+	Property string `json:"property"`
+	Operator string `json:"operator"`
+	Value    any    `json:"value"`
 }
 
 // FilterGroup allows AND/OR combinations of filters.
 type FilterGroup struct {
-	Operator string        `json:"operator"` // "and" | "or"
-	Filters  []interface{} `json:"filters"`  // Filter or FilterGroup
+	Operator string `json:"operator"` // "and" | "or"
+	Filters  []any  `json:"filters"`  // Filter or FilterGroup
 }
 
 // Sort represents a sort condition.
@@ -61,16 +61,16 @@ type ListResult struct {
 
 // CreateIn contains input for creating a row.
 type CreateIn struct {
-	DatabaseID  string                 `json:"database_id"`
-	WorkspaceID string                 `json:"workspace_id"` // Required for creating the underlying page
-	Properties  map[string]interface{} `json:"properties"`
-	CreatedBy   string                 `json:"-"`
+	DatabaseID  string         `json:"database_id"`
+	WorkspaceID string         `json:"workspace_id"` // Required for creating the underlying page
+	Properties  map[string]any `json:"properties"`
+	CreatedBy   string         `json:"-"`
 }
 
 // UpdateIn contains input for updating a row.
 type UpdateIn struct {
-	Properties map[string]interface{} `json:"properties"`
-	UpdatedBy  string                 `json:"-"`
+	Properties map[string]any `json:"properties"`
+	UpdatedBy  string         `json:"-"`
 }
 
 // API defines the rows service contract.
@@ -108,7 +108,7 @@ func PageToRow(p *pages.Page) *Row {
 	}
 
 	// Convert page properties to row properties (map[string]interface{})
-	props := make(map[string]interface{})
+	props := make(map[string]any)
 	for k, v := range p.Properties {
 		props[k] = v.Value
 	}

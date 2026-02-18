@@ -3,6 +3,7 @@ package duckdb
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 
 	"github.com/go-mizu/blueprints/messaging/feature/media"
@@ -109,16 +110,17 @@ func (s *MediaStore) Update(ctx context.Context, id string, updates map[string]a
 	// Add the WHERE clause parameter
 	args = append(args, id)
 
-	query := "UPDATE media SET "
+	var query strings.Builder
+	query.WriteString("UPDATE media SET ")
 	for i, clause := range setClauses {
 		if i > 0 {
-			query += ", "
+			query.WriteString(", ")
 		}
-		query += clause
+		query.WriteString(clause)
 	}
-	query += " WHERE id = ?"
+	query.WriteString(" WHERE id = ?")
 
-	_, err := s.db.ExecContext(ctx, query, args...)
+	_, err := s.db.ExecContext(ctx, query.String(), args...)
 	return err
 }
 

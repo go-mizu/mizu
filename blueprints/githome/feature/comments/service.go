@@ -468,7 +468,7 @@ func (s *Service) getAuthorAssociation(ctx context.Context, r *repos.Repository,
 
 // populateIssueCommentURLs fills in the URL fields for an issue comment
 func (s *Service) populateIssueCommentURLs(c *IssueComment, owner, repo string) {
-	c.NodeID = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("IssueComment:%d", c.ID)))
+	c.NodeID = base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "IssueComment:%d", c.ID))
 	c.URL = fmt.Sprintf("%s/api/v3/repos/%s/%s/issues/comments/%d", s.baseURL, owner, repo, c.ID)
 	c.HTMLURL = fmt.Sprintf("%s/%s/%s/issues/%d#issuecomment-%d", s.baseURL, owner, repo, c.IssueID, c.ID)
 	c.IssueURL = fmt.Sprintf("%s/api/v3/repos/%s/%s/issues/%d", s.baseURL, owner, repo, c.IssueID)
@@ -476,7 +476,7 @@ func (s *Service) populateIssueCommentURLs(c *IssueComment, owner, repo string) 
 
 // populateCommitCommentURLs fills in the URL fields for a commit comment
 func (s *Service) populateCommitCommentURLs(c *CommitComment, owner, repo string) {
-	c.NodeID = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("CommitComment:%d", c.ID)))
+	c.NodeID = base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "CommitComment:%d", c.ID))
 	c.URL = fmt.Sprintf("%s/api/v3/repos/%s/%s/comments/%d", s.baseURL, owner, repo, c.ID)
 	c.HTMLURL = fmt.Sprintf("%s/%s/%s/commit/%s#commitcomment-%d", s.baseURL, owner, repo, c.CommitID, c.ID)
 }

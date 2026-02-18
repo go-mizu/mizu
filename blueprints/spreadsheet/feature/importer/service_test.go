@@ -248,7 +248,7 @@ func (m *mockCellsAPI) CopyRange(ctx context.Context, sourceSheetID string, sour
 	return nil
 }
 
-func (m *mockCellsAPI) EvaluateFormula(ctx context.Context, sheetID, formula string) (interface{}, error) {
+func (m *mockCellsAPI) EvaluateFormula(ctx context.Context, sheetID, formula string) (any, error) {
 	return nil, nil
 }
 
@@ -381,13 +381,13 @@ func TestImportJSON(t *testing.T) {
 
 	svc := NewService(mockWB, mockSh, mockCe)
 
-	jsonData := map[string]interface{}{
+	jsonData := map[string]any{
 		"version": "1.0",
-		"sheets": []map[string]interface{}{
+		"sheets": []map[string]any{
 			{
 				"id":   "sh1",
 				"name": "Sheet1",
-				"cells": []map[string]interface{}{
+				"cells": []map[string]any{
 					{"row": 0, "col": 0, "value": "Hello"},
 					{"row": 0, "col": 1, "value": 123},
 					{"row": 1, "col": 0, "value": "World"},
@@ -419,12 +419,12 @@ func TestImportJSONWithFormulas(t *testing.T) {
 
 	svc := NewService(mockWB, mockSh, mockCe)
 
-	jsonData := map[string]interface{}{
+	jsonData := map[string]any{
 		"version": "1.0",
-		"sheets": []map[string]interface{}{
+		"sheets": []map[string]any{
 			{
 				"name": "Sheet1",
-				"cells": []map[string]interface{}{
+				"cells": []map[string]any{
 					{"row": 0, "col": 0, "value": 10},
 					{"row": 0, "col": 1, "value": 20},
 					{"row": 0, "col": 2, "formula": "=A1+B1"},
@@ -470,15 +470,15 @@ func TestImportJSONWithMergedRegions(t *testing.T) {
 
 	svc := NewService(mockWB, mockSh, mockCe)
 
-	jsonData := map[string]interface{}{
+	jsonData := map[string]any{
 		"version": "1.0",
-		"sheets": []map[string]interface{}{
+		"sheets": []map[string]any{
 			{
 				"name": "Sheet1",
-				"cells": []map[string]interface{}{
+				"cells": []map[string]any{
 					{"row": 0, "col": 0, "value": "Merged"},
 				},
-				"mergedRegions": []map[string]interface{}{
+				"mergedRegions": []map[string]any{
 					{"startRow": 0, "startCol": 0, "endRow": 1, "endCol": 1},
 				},
 			},
@@ -582,7 +582,7 @@ func TestDetectFormat(t *testing.T) {
 		{"test.xlsm", FormatXLSX},
 		{"test.json", FormatJSON},
 		{"test.txt", FormatCSV}, // Unknown defaults to CSV
-		{"test", FormatCSV},    // No extension defaults to CSV
+		{"test", FormatCSV},     // No extension defaults to CSV
 	}
 
 	for _, tt := range tests {
@@ -859,17 +859,17 @@ func TestImportJSONWithFormatting(t *testing.T) {
 
 	svc := NewService(mockWB, mockSh, mockCe)
 
-	jsonData := map[string]interface{}{
+	jsonData := map[string]any{
 		"version": "1.0",
-		"sheets": []map[string]interface{}{
+		"sheets": []map[string]any{
 			{
 				"name": "Sheet1",
-				"cells": []map[string]interface{}{
+				"cells": []map[string]any{
 					{
 						"row":   0,
 						"col":   0,
 						"value": "Formatted",
-						"format": map[string]interface{}{
+						"format": map[string]any{
 							"bold":            true,
 							"fontColor":       "#FF0000",
 							"backgroundColor": "#FFFF00",
@@ -921,19 +921,19 @@ func TestImportMultipleSheets(t *testing.T) {
 
 	svc := NewService(mockWB, mockSh, mockCe)
 
-	jsonData := map[string]interface{}{
+	jsonData := map[string]any{
 		"version": "1.0",
-		"sheets": []map[string]interface{}{
+		"sheets": []map[string]any{
 			{
 				"name": "Sheet1",
-				"cells": []map[string]interface{}{
+				"cells": []map[string]any{
 					{"row": 0, "col": 0, "value": "A1"},
 					{"row": 0, "col": 1, "value": "B1"},
 				},
 			},
 			{
 				"name": "Sheet2",
-				"cells": []map[string]interface{}{
+				"cells": []map[string]any{
 					{"row": 0, "col": 0, "value": "C1"},
 					{"row": 0, "col": 1, "value": "D1"},
 				},
@@ -956,7 +956,7 @@ func TestImportMultipleSheets(t *testing.T) {
 
 func TestDetectCellType(t *testing.T) {
 	tests := []struct {
-		value    interface{}
+		value    any
 		expected cells.CellType
 	}{
 		{true, cells.CellTypeBool},

@@ -450,12 +450,12 @@ func baseTSType(typeByName map[string]*contract.Type, r string) string {
 		return "unknown"
 	}
 
-	if strings.HasPrefix(r, "[]") {
-		elem := strings.TrimSpace(strings.TrimPrefix(r, "[]"))
+	if after, ok := strings.CutPrefix(r, "[]"); ok {
+		elem := strings.TrimSpace(after)
 		return baseTSType(typeByName, elem) + "[]"
 	}
-	if strings.HasPrefix(r, "map[string]") {
-		elem := strings.TrimSpace(strings.TrimPrefix(r, "map[string]"))
+	if after, ok := strings.CutPrefix(r, "map[string]"); ok {
+		elem := strings.TrimSpace(after)
 		return "Record<string, " + baseTSType(typeByName, elem) + ">"
 	}
 

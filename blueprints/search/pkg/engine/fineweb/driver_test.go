@@ -378,7 +378,7 @@ func generateTestDocs(n int) []fineweb.Document {
 	}
 
 	docs := make([]fineweb.Document, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		docs[i] = fineweb.Document{
 			ID:   fmt.Sprintf("doc-%d", i),
 			URL:  fmt.Sprintf("http://example.com/%d", i),

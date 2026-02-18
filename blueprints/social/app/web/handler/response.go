@@ -30,12 +30,12 @@ func BoolQuery(c *mizu.Ctx, key string, defaultVal bool) bool {
 }
 
 // Success returns a 200 JSON response.
-func Success(c *mizu.Ctx, data interface{}) error {
+func Success(c *mizu.Ctx, data any) error {
 	return c.JSON(200, data)
 }
 
 // Created returns a 201 JSON response.
-func Created(c *mizu.Ctx, data interface{}) error {
+func Created(c *mizu.Ctx, data any) error {
 	return c.JSON(201, data)
 }
 

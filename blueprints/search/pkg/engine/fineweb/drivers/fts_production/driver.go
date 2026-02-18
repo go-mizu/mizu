@@ -26,7 +26,7 @@ func fastTokenize(text string) map[string]int {
 	data := []byte(text)
 	start := -1
 
-	for i := 0; i < len(data); i++ {
+	for i := range data {
 		c := data[i]
 		isDelim := c <= ' ' || (c >= '!' && c <= '/') || (c >= ':' && c <= '@') ||
 			(c >= '[' && c <= '`') || (c >= '{' && c <= '~')
@@ -35,7 +35,7 @@ func fastTokenize(text string) map[string]int {
 			if start >= 0 {
 				token := data[start:i]
 				if len(token) < 100 {
-					for j := 0; j < len(token); j++ {
+					for j := range token {
 						if token[j] >= 'A' && token[j] <= 'Z' {
 							token[j] += 32
 						}
@@ -52,7 +52,7 @@ func fastTokenize(text string) map[string]int {
 	if start >= 0 {
 		token := data[start:]
 		if len(token) < 100 {
-			for j := 0; j < len(token); j++ {
+			for j := range token {
 				if token[j] >= 'A' && token[j] <= 'Z' {
 					token[j] += 32
 				}
@@ -560,10 +560,7 @@ func (d *Driver) buildProductionPostings(termPostings map[string][]posting) {
 	}
 
 	// Parallel posting list building
-	numWorkers := runtime.NumCPU()
-	if numWorkers > 8 {
-		numWorkers = 8
-	}
+	numWorkers := min(runtime.NumCPU(), 8)
 
 	type termResult struct {
 		term string
@@ -575,9 +572,7 @@ func (d *Driver) buildProductionPostings(termPostings map[string][]posting) {
 
 	var wg sync.WaitGroup
 	for range numWorkers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for term := range termCh {
 				postings := termPostings[term]
 
@@ -624,7 +619,7 @@ func (d *Driver) buildProductionPostings(termPostings map[string][]posting) {
 					},
 				}
 			}
-		}()
+		})
 	}
 
 	// Feed terms to workers

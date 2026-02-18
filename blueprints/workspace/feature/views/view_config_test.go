@@ -487,7 +487,7 @@ func TestOmitEmptyFields(t *testing.T) {
 			t.Fatalf("failed to marshal: %v", err)
 		}
 
-		var decoded map[string]interface{}
+		var decoded map[string]any
 		if err := json.Unmarshal(data, &decoded); err != nil {
 			t.Fatalf("failed to unmarshal: %v", err)
 		}

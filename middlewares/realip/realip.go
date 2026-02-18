@@ -128,8 +128,8 @@ func extractIP(addr string) string {
 
 func extractFirstIP(header string) string {
 	// X-Forwarded-For can be comma-separated
-	parts := strings.Split(header, ",")
-	for _, part := range parts {
+	parts := strings.SplitSeq(header, ",")
+	for part := range parts {
 		ip := strings.TrimSpace(part)
 		if net.ParseIP(ip) != nil {
 			return ip

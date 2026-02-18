@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -11,50 +12,50 @@ import (
 )
 
 // FunctionImpl is the signature for built-in functions.
-type FunctionImpl func(args ...interface{}) (interface{}, error)
+type FunctionImpl func(args ...any) (any, error)
 
 // Functions is the registry of built-in functions.
 var Functions = map[string]FunctionImpl{
 	// Math functions
 	"SUM":         fnSum,
-	"AVERAGE":    fnAverage,
-	"MIN":        fnMin,
-	"MAX":        fnMax,
-	"COUNT":      fnCount,
-	"COUNTA":     fnCountA,
-	"COUNTBLANK": fnCountBlank,
-	"ABS":        fnAbs,
-	"ROUND":      fnRound,
-	"ROUNDUP":    fnRoundUp,
-	"ROUNDDOWN":  fnRoundDown,
-	"FLOOR":      fnFloor,
-	"CEILING":    fnCeiling,
-	"INT":        fnInt,
-	"MOD":        fnMod,
-	"POWER":      fnPower,
-	"SQRT":       fnSqrt,
-	"EXP":        fnExp,
-	"LN":         fnLn,
-	"LOG":        fnLog,
-	"LOG10":      fnLog10,
-	"PI":         fnPi,
-	"RAND":       fnRand,
+	"AVERAGE":     fnAverage,
+	"MIN":         fnMin,
+	"MAX":         fnMax,
+	"COUNT":       fnCount,
+	"COUNTA":      fnCountA,
+	"COUNTBLANK":  fnCountBlank,
+	"ABS":         fnAbs,
+	"ROUND":       fnRound,
+	"ROUNDUP":     fnRoundUp,
+	"ROUNDDOWN":   fnRoundDown,
+	"FLOOR":       fnFloor,
+	"CEILING":     fnCeiling,
+	"INT":         fnInt,
+	"MOD":         fnMod,
+	"POWER":       fnPower,
+	"SQRT":        fnSqrt,
+	"EXP":         fnExp,
+	"LN":          fnLn,
+	"LOG":         fnLog,
+	"LOG10":       fnLog10,
+	"PI":          fnPi,
+	"RAND":        fnRand,
 	"RANDBETWEEN": fnRandBetween,
 	"SIGN":        fnSign,
-	"PRODUCT":    fnProduct,
-	"SUMPRODUCT": fnSumProduct,
-	"SUMSQ":      fnSumSq,
-	"TRUNC":      fnTrunc,
-	"GCD":        fnGcd,
-	"LCM":        fnLcm,
-	"FACT":       fnFact,
-	"FACTDOUBLE": fnFactDouble,
-	"COMBIN":     fnCombin,
-	"PERMUT":     fnPermut,
-	"QUOTIENT":   fnQuotient,
-	"MROUND":     fnMround,
-	"ODD":        fnOdd,
-	"EVEN":       fnEven,
+	"PRODUCT":     fnProduct,
+	"SUMPRODUCT":  fnSumProduct,
+	"SUMSQ":       fnSumSq,
+	"TRUNC":       fnTrunc,
+	"GCD":         fnGcd,
+	"LCM":         fnLcm,
+	"FACT":        fnFact,
+	"FACTDOUBLE":  fnFactDouble,
+	"COMBIN":      fnCombin,
+	"PERMUT":      fnPermut,
+	"QUOTIENT":    fnQuotient,
+	"MROUND":      fnMround,
+	"ODD":         fnOdd,
+	"EVEN":        fnEven,
 
 	// Trigonometric functions
 	"SIN":     fnSin,
@@ -74,72 +75,72 @@ var Functions = map[string]FunctionImpl{
 	"ATANH":   fnAtanh,
 
 	// Text functions
-	"CONCATENATE": fnConcatenate,
-	"CONCAT":      fnConcatenate,
-	"LEFT":        fnLeft,
-	"RIGHT":       fnRight,
-	"MID":         fnMid,
-	"LEN":         fnLen,
-	"LOWER":       fnLower,
-	"UPPER":       fnUpper,
-	"PROPER":      fnProper,
-	"TRIM":        fnTrim,
-	"SUBSTITUTE":  fnSubstitute,
-	"REPLACE":     fnReplace,
-	"REPT":        fnRept,
-	"FIND":        fnFind,
-	"SEARCH":      fnSearch,
-	"TEXT":        fnText,
-	"VALUE":       fnValue,
-	"TEXTJOIN":    fnTextJoin,
-	"CHAR":        fnChar,
-	"CODE":        fnCode,
-	"CLEAN":       fnClean,
-	"T":           fnT,
-	"N":           fnN,
-	"SPLIT":       fnSplit,
-	"JOIN":        fnJoin,
-	"EXACT":       fnExact,
-	"DOLLAR":      fnDollar,
-	"FIXED":       fnFixed,
-	"REGEXMATCH":  fnRegexMatch,
+	"CONCATENATE":  fnConcatenate,
+	"CONCAT":       fnConcatenate,
+	"LEFT":         fnLeft,
+	"RIGHT":        fnRight,
+	"MID":          fnMid,
+	"LEN":          fnLen,
+	"LOWER":        fnLower,
+	"UPPER":        fnUpper,
+	"PROPER":       fnProper,
+	"TRIM":         fnTrim,
+	"SUBSTITUTE":   fnSubstitute,
+	"REPLACE":      fnReplace,
+	"REPT":         fnRept,
+	"FIND":         fnFind,
+	"SEARCH":       fnSearch,
+	"TEXT":         fnText,
+	"VALUE":        fnValue,
+	"TEXTJOIN":     fnTextJoin,
+	"CHAR":         fnChar,
+	"CODE":         fnCode,
+	"CLEAN":        fnClean,
+	"T":            fnT,
+	"N":            fnN,
+	"SPLIT":        fnSplit,
+	"JOIN":         fnJoin,
+	"EXACT":        fnExact,
+	"DOLLAR":       fnDollar,
+	"FIXED":        fnFixed,
+	"REGEXMATCH":   fnRegexMatch,
 	"REGEXEXTRACT": fnRegexExtract,
 	"REGEXREPLACE": fnRegexReplace,
 
 	// Logical functions
-	"IF":       fnIf,
-	"AND":      fnAnd,
-	"OR":       fnOr,
-	"NOT":      fnNot,
-	"XOR":      fnXor,
-	"IFS":      fnIfs,
-	"SWITCH":   fnSwitch,
-	"IFERROR":  fnIfError,
-	"IFNA":     fnIfNA,
-	"TRUE":     fnTrue,
-	"FALSE":    fnFalse,
+	"IF":      fnIf,
+	"AND":     fnAnd,
+	"OR":      fnOr,
+	"NOT":     fnNot,
+	"XOR":     fnXor,
+	"IFS":     fnIfs,
+	"SWITCH":  fnSwitch,
+	"IFERROR": fnIfError,
+	"IFNA":    fnIfNA,
+	"TRUE":    fnTrue,
+	"FALSE":   fnFalse,
 
 	// Lookup functions
-	"VLOOKUP":  fnVlookup,
-	"HLOOKUP":  fnHlookup,
-	"INDEX":    fnIndex,
-	"MATCH":    fnMatch,
-	"CHOOSE":   fnChoose,
-	"LOOKUP":   fnLookup,
+	"VLOOKUP": fnVlookup,
+	"HLOOKUP": fnHlookup,
+	"INDEX":   fnIndex,
+	"MATCH":   fnMatch,
+	"CHOOSE":  fnChoose,
+	"LOOKUP":  fnLookup,
 
 	// Statistical functions
-	"MEDIAN":   fnMedian,
-	"MODE":     fnMode,
-	"STDEV":    fnStdev,
-	"STDEVP":   fnStdevP,
-	"VAR":      fnVar,
-	"VARP":     fnVarP,
-	"LARGE":    fnLarge,
-	"SMALL":    fnSmall,
-	"RANK":     fnRank,
+	"MEDIAN":     fnMedian,
+	"MODE":       fnMode,
+	"STDEV":      fnStdev,
+	"STDEVP":     fnStdevP,
+	"VAR":        fnVar,
+	"VARP":       fnVarP,
+	"LARGE":      fnLarge,
+	"SMALL":      fnSmall,
+	"RANK":       fnRank,
 	"PERCENTILE": fnPercentile,
-	"QUARTILE": fnQuartile,
-	"CORREL":   fnCorrel,
+	"QUARTILE":   fnQuartile,
+	"CORREL":     fnCorrel,
 
 	// Conditional aggregates
 	"SUMIF":      fnSumIf,
@@ -195,29 +196,29 @@ var Functions = map[string]FunctionImpl{
 	"ADDRESS":   fnAddress,
 
 	// Array functions
-	"UNIQUE":     fnUnique,
-	"SORT":       fnSort,
-	"TRANSPOSE":  fnTranspose,
-	"FLATTEN":    fnFlatten,
-	"FILTER":     fnFilter,
-	"SEQUENCE":   fnSequence,
-	"FREQUENCY":  fnFrequency,
+	"UNIQUE":    fnUnique,
+	"SORT":      fnSort,
+	"TRANSPOSE": fnTranspose,
+	"FLATTEN":   fnFlatten,
+	"FILTER":    fnFilter,
+	"SEQUENCE":  fnSequence,
+	"FREQUENCY": fnFrequency,
 
 	// Financial functions
-	"PMT":      fnPmt,
-	"PPMT":     fnPpmt,
-	"IPMT":     fnIpmt,
-	"PV":       fnPv,
-	"FV":       fnFv,
-	"NPV":      fnNpv,
-	"IRR":      fnIrr,
-	"RATE":     fnRate,
-	"NPER":     fnNper,
+	"PMT":  fnPmt,
+	"PPMT": fnPpmt,
+	"IPMT": fnIpmt,
+	"PV":   fnPv,
+	"FV":   fnFv,
+	"NPV":  fnNpv,
+	"IRR":  fnIrr,
+	"RATE": fnRate,
+	"NPER": fnNper,
 }
 
 // Math functions
 
-func fnSum(args ...interface{}) (interface{}, error) {
+func fnSum(args ...any) (any, error) {
 	sum := 0.0
 	for _, arg := range args {
 		sum += sumValues(arg)
@@ -225,7 +226,7 @@ func fnSum(args ...interface{}) (interface{}, error) {
 	return sum, nil
 }
 
-func fnAverage(args ...interface{}) (interface{}, error) {
+func fnAverage(args ...any) (any, error) {
 	sum := 0.0
 	count := 0
 	for _, arg := range args {
@@ -239,7 +240,7 @@ func fnAverage(args ...interface{}) (interface{}, error) {
 	return sum / float64(count), nil
 }
 
-func fnMin(args ...interface{}) (interface{}, error) {
+func fnMin(args ...any) (any, error) {
 	result := math.MaxFloat64
 	found := false
 	for _, arg := range args {
@@ -258,7 +259,7 @@ func fnMin(args ...interface{}) (interface{}, error) {
 	return result, nil
 }
 
-func fnMax(args ...interface{}) (interface{}, error) {
+func fnMax(args ...any) (any, error) {
 	result := -math.MaxFloat64
 	found := false
 	for _, arg := range args {
@@ -277,7 +278,7 @@ func fnMax(args ...interface{}) (interface{}, error) {
 	return result, nil
 }
 
-func fnCount(args ...interface{}) (interface{}, error) {
+func fnCount(args ...any) (any, error) {
 	count := 0
 	for _, arg := range args {
 		for _, v := range flattenValues(arg) {
@@ -289,7 +290,7 @@ func fnCount(args ...interface{}) (interface{}, error) {
 	return float64(count), nil
 }
 
-func fnCountA(args ...interface{}) (interface{}, error) {
+func fnCountA(args ...any) (any, error) {
 	count := 0
 	for _, arg := range args {
 		for _, v := range flattenValues(arg) {
@@ -301,7 +302,7 @@ func fnCountA(args ...interface{}) (interface{}, error) {
 	return float64(count), nil
 }
 
-func fnCountBlank(args ...interface{}) (interface{}, error) {
+func fnCountBlank(args ...any) (any, error) {
 	count := 0
 	for _, arg := range args {
 		for _, v := range flattenValues(arg) {
@@ -313,14 +314,14 @@ func fnCountBlank(args ...interface{}) (interface{}, error) {
 	return float64(count), nil
 }
 
-func fnAbs(args ...interface{}) (interface{}, error) {
+func fnAbs(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("ABS requires 1 argument")
 	}
 	return math.Abs(toFloat(args[0])), nil
 }
 
-func fnRound(args ...interface{}) (interface{}, error) {
+func fnRound(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("ROUND requires at least 1 argument")
 	}
@@ -333,7 +334,7 @@ func fnRound(args ...interface{}) (interface{}, error) {
 	return math.Round(num*mult) / mult, nil
 }
 
-func fnRoundUp(args ...interface{}) (interface{}, error) {
+func fnRoundUp(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("ROUNDUP requires at least 1 argument")
 	}
@@ -349,7 +350,7 @@ func fnRoundUp(args ...interface{}) (interface{}, error) {
 	return math.Floor(num*mult) / mult, nil
 }
 
-func fnRoundDown(args ...interface{}) (interface{}, error) {
+func fnRoundDown(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("ROUNDDOWN requires at least 1 argument")
 	}
@@ -362,7 +363,7 @@ func fnRoundDown(args ...interface{}) (interface{}, error) {
 	return math.Trunc(num*mult) / mult, nil
 }
 
-func fnFloor(args ...interface{}) (interface{}, error) {
+func fnFloor(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("FLOOR requires at least 1 argument")
 	}
@@ -377,7 +378,7 @@ func fnFloor(args ...interface{}) (interface{}, error) {
 	return math.Floor(num/significance) * significance, nil
 }
 
-func fnCeiling(args ...interface{}) (interface{}, error) {
+func fnCeiling(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("CEILING requires at least 1 argument")
 	}
@@ -392,14 +393,14 @@ func fnCeiling(args ...interface{}) (interface{}, error) {
 	return math.Ceil(num/significance) * significance, nil
 }
 
-func fnInt(args ...interface{}) (interface{}, error) {
+func fnInt(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("INT requires 1 argument")
 	}
 	return math.Floor(toFloat(args[0])), nil
 }
 
-func fnMod(args ...interface{}) (interface{}, error) {
+func fnMod(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("MOD requires 2 arguments")
 	}
@@ -410,14 +411,14 @@ func fnMod(args ...interface{}) (interface{}, error) {
 	return math.Mod(toFloat(args[0]), divisor), nil
 }
 
-func fnPower(args ...interface{}) (interface{}, error) {
+func fnPower(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("POWER requires 2 arguments")
 	}
 	return math.Pow(toFloat(args[0]), toFloat(args[1])), nil
 }
 
-func fnSqrt(args ...interface{}) (interface{}, error) {
+func fnSqrt(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("SQRT requires 1 argument")
 	}
@@ -428,14 +429,14 @@ func fnSqrt(args ...interface{}) (interface{}, error) {
 	return math.Sqrt(num), nil
 }
 
-func fnExp(args ...interface{}) (interface{}, error) {
+func fnExp(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("EXP requires 1 argument")
 	}
 	return math.Exp(toFloat(args[0])), nil
 }
 
-func fnLn(args ...interface{}) (interface{}, error) {
+func fnLn(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("LN requires 1 argument")
 	}
@@ -446,7 +447,7 @@ func fnLn(args ...interface{}) (interface{}, error) {
 	return math.Log(num), nil
 }
 
-func fnLog(args ...interface{}) (interface{}, error) {
+func fnLog(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("LOG requires at least 1 argument")
 	}
@@ -464,7 +465,7 @@ func fnLog(args ...interface{}) (interface{}, error) {
 	return math.Log(num) / math.Log(base), nil
 }
 
-func fnLog10(args ...interface{}) (interface{}, error) {
+func fnLog10(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("LOG10 requires 1 argument")
 	}
@@ -475,15 +476,15 @@ func fnLog10(args ...interface{}) (interface{}, error) {
 	return math.Log10(num), nil
 }
 
-func fnPi(args ...interface{}) (interface{}, error) {
+func fnPi(args ...any) (any, error) {
 	return math.Pi, nil
 }
 
-func fnRand(args ...interface{}) (interface{}, error) {
+func fnRand(args ...any) (any, error) {
 	return float64(time.Now().UnixNano()%1000000) / 1000000.0, nil
 }
 
-func fnRandBetween(args ...interface{}) (interface{}, error) {
+func fnRandBetween(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("RANDBETWEEN requires 2 arguments")
 	}
@@ -495,7 +496,7 @@ func fnRandBetween(args ...interface{}) (interface{}, error) {
 	return float64(bottom + int(time.Now().UnixNano())%(top-bottom+1)), nil
 }
 
-func fnSign(args ...interface{}) (interface{}, error) {
+func fnSign(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("SIGN requires 1 argument")
 	}
@@ -508,7 +509,7 @@ func fnSign(args ...interface{}) (interface{}, error) {
 	return 0.0, nil
 }
 
-func fnProduct(args ...interface{}) (interface{}, error) {
+func fnProduct(args ...any) (any, error) {
 	product := 1.0
 	for _, arg := range args {
 		for _, v := range flattenValues(arg) {
@@ -520,18 +521,18 @@ func fnProduct(args ...interface{}) (interface{}, error) {
 	return product, nil
 }
 
-func fnSumProduct(args ...interface{}) (interface{}, error) {
+func fnSumProduct(args ...any) (any, error) {
 	if len(args) == 0 {
 		return 0.0, nil
 	}
 
 	// Get first array
-	arrays := make([][][]interface{}, len(args))
+	arrays := make([][][]any, len(args))
 	for i, arg := range args {
-		if arr, ok := arg.([][]interface{}); ok {
+		if arr, ok := arg.([][]any); ok {
 			arrays[i] = arr
 		} else {
-			arrays[i] = [][]interface{}{{arg}}
+			arrays[i] = [][]any{{arg}}
 		}
 	}
 
@@ -543,7 +544,7 @@ func fnSumProduct(args ...interface{}) (interface{}, error) {
 	}
 
 	sum := 0.0
-	for r := 0; r < rows; r++ {
+	for r := range rows {
 		for c := 0; c < cols; c++ {
 			product := 1.0
 			for _, arr := range arrays {
@@ -558,7 +559,7 @@ func fnSumProduct(args ...interface{}) (interface{}, error) {
 	return sum, nil
 }
 
-func fnSumSq(args ...interface{}) (interface{}, error) {
+func fnSumSq(args ...any) (any, error) {
 	sum := 0.0
 	for _, arg := range args {
 		for _, v := range flattenValues(arg) {
@@ -572,7 +573,7 @@ func fnSumSq(args ...interface{}) (interface{}, error) {
 
 // Additional math functions
 
-func fnTrunc(args ...interface{}) (interface{}, error) {
+func fnTrunc(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("TRUNC requires at least 1 argument")
 	}
@@ -585,7 +586,7 @@ func fnTrunc(args ...interface{}) (interface{}, error) {
 	return math.Trunc(num*mult) / mult, nil
 }
 
-func fnGcd(args ...interface{}) (interface{}, error) {
+func fnGcd(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("GCD requires at least 2 arguments")
 	}
@@ -604,7 +605,7 @@ func gcdHelper(a, b int64) int64 {
 	return a
 }
 
-func fnLcm(args ...interface{}) (interface{}, error) {
+func fnLcm(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("LCM requires at least 2 arguments")
 	}
@@ -619,7 +620,7 @@ func fnLcm(args ...interface{}) (interface{}, error) {
 	return float64(result), nil
 }
 
-func fnFact(args ...interface{}) (interface{}, error) {
+func fnFact(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("FACT requires 1 argument")
 	}
@@ -634,7 +635,7 @@ func fnFact(args ...interface{}) (interface{}, error) {
 	return result, nil
 }
 
-func fnFactDouble(args ...interface{}) (interface{}, error) {
+func fnFactDouble(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("FACTDOUBLE requires 1 argument")
 	}
@@ -652,7 +653,7 @@ func fnFactDouble(args ...interface{}) (interface{}, error) {
 	return result, nil
 }
 
-func fnCombin(args ...interface{}) (interface{}, error) {
+func fnCombin(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("COMBIN requires 2 arguments")
 	}
@@ -674,7 +675,7 @@ func fnCombin(args ...interface{}) (interface{}, error) {
 	return math.Round(result), nil
 }
 
-func fnPermut(args ...interface{}) (interface{}, error) {
+func fnPermut(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("PERMUT requires 2 arguments")
 	}
@@ -684,13 +685,13 @@ func fnPermut(args ...interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("#NUM!")
 	}
 	result := 1.0
-	for i := 0; i < k; i++ {
+	for i := range k {
 		result *= float64(n - i)
 	}
 	return result, nil
 }
 
-func fnQuotient(args ...interface{}) (interface{}, error) {
+func fnQuotient(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("QUOTIENT requires 2 arguments")
 	}
@@ -701,7 +702,7 @@ func fnQuotient(args ...interface{}) (interface{}, error) {
 	return math.Trunc(toFloat(args[0]) / divisor), nil
 }
 
-func fnMround(args ...interface{}) (interface{}, error) {
+func fnMround(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("MROUND requires 2 arguments")
 	}
@@ -716,7 +717,7 @@ func fnMround(args ...interface{}) (interface{}, error) {
 	return math.Round(num/multiple) * multiple, nil
 }
 
-func fnOdd(args ...interface{}) (interface{}, error) {
+func fnOdd(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("ODD requires 1 argument")
 	}
@@ -736,7 +737,7 @@ func fnOdd(args ...interface{}) (interface{}, error) {
 	return result * sign, nil
 }
 
-func fnEven(args ...interface{}) (interface{}, error) {
+func fnEven(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("EVEN requires 1 argument")
 	}
@@ -758,63 +759,63 @@ func fnEven(args ...interface{}) (interface{}, error) {
 
 // Trigonometric functions
 
-func fnSin(args ...interface{}) (interface{}, error) {
+func fnSin(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("SIN requires 1 argument")
 	}
 	return math.Sin(toFloat(args[0])), nil
 }
 
-func fnCos(args ...interface{}) (interface{}, error) {
+func fnCos(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("COS requires 1 argument")
 	}
 	return math.Cos(toFloat(args[0])), nil
 }
 
-func fnTan(args ...interface{}) (interface{}, error) {
+func fnTan(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("TAN requires 1 argument")
 	}
 	return math.Tan(toFloat(args[0])), nil
 }
 
-func fnAsin(args ...interface{}) (interface{}, error) {
+func fnAsin(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("ASIN requires 1 argument")
 	}
 	return math.Asin(toFloat(args[0])), nil
 }
 
-func fnAcos(args ...interface{}) (interface{}, error) {
+func fnAcos(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("ACOS requires 1 argument")
 	}
 	return math.Acos(toFloat(args[0])), nil
 }
 
-func fnAtan(args ...interface{}) (interface{}, error) {
+func fnAtan(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("ATAN requires 1 argument")
 	}
 	return math.Atan(toFloat(args[0])), nil
 }
 
-func fnAtan2(args ...interface{}) (interface{}, error) {
+func fnAtan2(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("ATAN2 requires 2 arguments")
 	}
 	return math.Atan2(toFloat(args[0]), toFloat(args[1])), nil
 }
 
-func fnRadians(args ...interface{}) (interface{}, error) {
+func fnRadians(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("RADIANS requires 1 argument")
 	}
 	return toFloat(args[0]) * math.Pi / 180.0, nil
 }
 
-func fnDegrees(args ...interface{}) (interface{}, error) {
+func fnDegrees(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("DEGREES requires 1 argument")
 	}
@@ -823,35 +824,35 @@ func fnDegrees(args ...interface{}) (interface{}, error) {
 
 // Hyperbolic functions
 
-func fnSinh(args ...interface{}) (interface{}, error) {
+func fnSinh(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("SINH requires 1 argument")
 	}
 	return math.Sinh(toFloat(args[0])), nil
 }
 
-func fnCosh(args ...interface{}) (interface{}, error) {
+func fnCosh(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("COSH requires 1 argument")
 	}
 	return math.Cosh(toFloat(args[0])), nil
 }
 
-func fnTanh(args ...interface{}) (interface{}, error) {
+func fnTanh(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("TANH requires 1 argument")
 	}
 	return math.Tanh(toFloat(args[0])), nil
 }
 
-func fnAsinh(args ...interface{}) (interface{}, error) {
+func fnAsinh(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("ASINH requires 1 argument")
 	}
 	return math.Asinh(toFloat(args[0])), nil
 }
 
-func fnAcosh(args ...interface{}) (interface{}, error) {
+func fnAcosh(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("ACOSH requires 1 argument")
 	}
@@ -862,7 +863,7 @@ func fnAcosh(args ...interface{}) (interface{}, error) {
 	return math.Acosh(x), nil
 }
 
-func fnAtanh(args ...interface{}) (interface{}, error) {
+func fnAtanh(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("ATANH requires 1 argument")
 	}
@@ -875,7 +876,7 @@ func fnAtanh(args ...interface{}) (interface{}, error) {
 
 // Text functions
 
-func fnConcatenate(args ...interface{}) (interface{}, error) {
+func fnConcatenate(args ...any) (any, error) {
 	var result strings.Builder
 	for _, arg := range args {
 		result.WriteString(toString(arg))
@@ -883,7 +884,7 @@ func fnConcatenate(args ...interface{}) (interface{}, error) {
 	return result.String(), nil
 }
 
-func fnLeft(args ...interface{}) (interface{}, error) {
+func fnLeft(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("LEFT requires at least 1 argument")
 	}
@@ -901,7 +902,7 @@ func fnLeft(args ...interface{}) (interface{}, error) {
 	return text[:numChars], nil
 }
 
-func fnRight(args ...interface{}) (interface{}, error) {
+func fnRight(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("RIGHT requires at least 1 argument")
 	}
@@ -919,7 +920,7 @@ func fnRight(args ...interface{}) (interface{}, error) {
 	return text[len(text)-numChars:], nil
 }
 
-func fnMid(args ...interface{}) (interface{}, error) {
+func fnMid(args ...any) (any, error) {
 	if len(args) < 3 {
 		return nil, fmt.Errorf("MID requires 3 arguments")
 	}
@@ -936,50 +937,47 @@ func fnMid(args ...interface{}) (interface{}, error) {
 		return "", nil
 	}
 
-	end := start + numChars
-	if end > len(text) {
-		end = len(text)
-	}
+	end := min(start+numChars, len(text))
 
 	return text[start:end], nil
 }
 
-func fnLen(args ...interface{}) (interface{}, error) {
+func fnLen(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("LEN requires 1 argument")
 	}
 	return float64(len(toString(args[0]))), nil
 }
 
-func fnLower(args ...interface{}) (interface{}, error) {
+func fnLower(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("LOWER requires 1 argument")
 	}
 	return strings.ToLower(toString(args[0])), nil
 }
 
-func fnUpper(args ...interface{}) (interface{}, error) {
+func fnUpper(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("UPPER requires 1 argument")
 	}
 	return strings.ToUpper(toString(args[0])), nil
 }
 
-func fnProper(args ...interface{}) (interface{}, error) {
+func fnProper(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("PROPER requires 1 argument")
 	}
 	return strings.Title(strings.ToLower(toString(args[0]))), nil
 }
 
-func fnTrim(args ...interface{}) (interface{}, error) {
+func fnTrim(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("TRIM requires 1 argument")
 	}
 	return strings.TrimSpace(toString(args[0])), nil
 }
 
-func fnSubstitute(args ...interface{}) (interface{}, error) {
+func fnSubstitute(args ...any) (any, error) {
 	if len(args) < 3 {
 		return nil, fmt.Errorf("SUBSTITUTE requires at least 3 arguments")
 	}
@@ -1009,7 +1007,7 @@ func fnSubstitute(args ...interface{}) (interface{}, error) {
 	return strings.ReplaceAll(text, oldText, newText), nil
 }
 
-func fnReplace(args ...interface{}) (interface{}, error) {
+func fnReplace(args ...any) (any, error) {
 	if len(args) < 4 {
 		return nil, fmt.Errorf("REPLACE requires 4 arguments")
 	}
@@ -1022,20 +1020,14 @@ func fnReplace(args ...interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("#VALUE!")
 	}
 
-	start := startNum - 1
-	if start > len(text) {
-		start = len(text)
-	}
+	start := min(startNum-1, len(text))
 
-	end := start + numChars
-	if end > len(text) {
-		end = len(text)
-	}
+	end := min(start+numChars, len(text))
 
 	return text[:start] + newText + text[end:], nil
 }
 
-func fnRept(args ...interface{}) (interface{}, error) {
+func fnRept(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("REPT requires 2 arguments")
 	}
@@ -1047,7 +1039,7 @@ func fnRept(args ...interface{}) (interface{}, error) {
 	return strings.Repeat(text, times), nil
 }
 
-func fnFind(args ...interface{}) (interface{}, error) {
+func fnFind(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("FIND requires at least 2 arguments")
 	}
@@ -1068,7 +1060,7 @@ func fnFind(args ...interface{}) (interface{}, error) {
 	return float64(idx + startNum), nil
 }
 
-func fnSearch(args ...interface{}) (interface{}, error) {
+func fnSearch(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("SEARCH requires at least 2 arguments")
 	}
@@ -1089,7 +1081,7 @@ func fnSearch(args ...interface{}) (interface{}, error) {
 	return float64(idx + startNum), nil
 }
 
-func fnText(args ...interface{}) (interface{}, error) {
+func fnText(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("TEXT requires 2 arguments")
 	}
@@ -1110,14 +1102,14 @@ func fnText(args ...interface{}) (interface{}, error) {
 	return fmt.Sprintf("%v", value), nil
 }
 
-func fnValue(args ...interface{}) (interface{}, error) {
+func fnValue(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("VALUE requires 1 argument")
 	}
 	return toFloat(args[0]), nil
 }
 
-func fnTextJoin(args ...interface{}) (interface{}, error) {
+func fnTextJoin(args ...any) (any, error) {
 	if len(args) < 3 {
 		return nil, fmt.Errorf("TEXTJOIN requires at least 3 arguments")
 	}
@@ -1137,7 +1129,7 @@ func fnTextJoin(args ...interface{}) (interface{}, error) {
 	return strings.Join(parts, delimiter), nil
 }
 
-func fnChar(args ...interface{}) (interface{}, error) {
+func fnChar(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("CHAR requires 1 argument")
 	}
@@ -1148,7 +1140,7 @@ func fnChar(args ...interface{}) (interface{}, error) {
 	return string(rune(code)), nil
 }
 
-func fnCode(args ...interface{}) (interface{}, error) {
+func fnCode(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("CODE requires 1 argument")
 	}
@@ -1159,7 +1151,7 @@ func fnCode(args ...interface{}) (interface{}, error) {
 	return float64(text[0]), nil
 }
 
-func fnClean(args ...interface{}) (interface{}, error) {
+func fnClean(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("CLEAN requires 1 argument")
 	}
@@ -1173,7 +1165,7 @@ func fnClean(args ...interface{}) (interface{}, error) {
 	return result.String(), nil
 }
 
-func fnT(args ...interface{}) (interface{}, error) {
+func fnT(args ...any) (any, error) {
 	if len(args) < 1 {
 		return "", nil
 	}
@@ -1183,7 +1175,7 @@ func fnT(args ...interface{}) (interface{}, error) {
 	return "", nil
 }
 
-func fnN(args ...interface{}) (interface{}, error) {
+func fnN(args ...any) (any, error) {
 	if len(args) < 1 {
 		return 0.0, nil
 	}
@@ -1204,7 +1196,7 @@ func fnN(args ...interface{}) (interface{}, error) {
 
 // Additional text functions
 
-func fnSplit(args ...interface{}) (interface{}, error) {
+func fnSplit(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("SPLIT requires at least 2 arguments")
 	}
@@ -1228,14 +1220,14 @@ func fnSplit(args ...interface{}) (interface{}, error) {
 	}
 
 	// Return as 2D array (row)
-	row := make([]interface{}, len(parts))
+	row := make([]any, len(parts))
 	for i, p := range parts {
 		row[i] = p
 	}
-	return [][]interface{}{row}, nil
+	return [][]any{row}, nil
 }
 
-func fnJoin(args ...interface{}) (interface{}, error) {
+func fnJoin(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("JOIN requires at least 2 arguments")
 	}
@@ -1252,14 +1244,14 @@ func fnJoin(args ...interface{}) (interface{}, error) {
 	return strings.Join(parts, delimiter), nil
 }
 
-func fnExact(args ...interface{}) (interface{}, error) {
+func fnExact(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("EXACT requires 2 arguments")
 	}
 	return toString(args[0]) == toString(args[1]), nil
 }
 
-func fnDollar(args ...interface{}) (interface{}, error) {
+func fnDollar(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("DOLLAR requires at least 1 argument")
 	}
@@ -1305,7 +1297,7 @@ func fnDollar(args ...interface{}) (interface{}, error) {
 	return result, nil
 }
 
-func fnFixed(args ...interface{}) (interface{}, error) {
+func fnFixed(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("FIXED requires at least 1 argument")
 	}
@@ -1358,7 +1350,7 @@ func fnFixed(args ...interface{}) (interface{}, error) {
 	return result, nil
 }
 
-func fnRegexMatch(args ...interface{}) (interface{}, error) {
+func fnRegexMatch(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("REGEXMATCH requires 2 arguments")
 	}
@@ -1373,7 +1365,7 @@ func fnRegexMatch(args ...interface{}) (interface{}, error) {
 	return re.MatchString(text), nil
 }
 
-func fnRegexExtract(args ...interface{}) (interface{}, error) {
+func fnRegexExtract(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("REGEXEXTRACT requires 2 arguments")
 	}
@@ -1393,7 +1385,7 @@ func fnRegexExtract(args ...interface{}) (interface{}, error) {
 	return match, nil
 }
 
-func fnRegexReplace(args ...interface{}) (interface{}, error) {
+func fnRegexReplace(args ...any) (any, error) {
 	if len(args) < 3 {
 		return nil, fmt.Errorf("REGEXREPLACE requires 3 arguments")
 	}
@@ -1411,7 +1403,7 @@ func fnRegexReplace(args ...interface{}) (interface{}, error) {
 
 // Logical functions
 
-func fnIf(args ...interface{}) (interface{}, error) {
+func fnIf(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("IF requires at least 2 arguments")
 	}
@@ -1425,7 +1417,7 @@ func fnIf(args ...interface{}) (interface{}, error) {
 	return false, nil
 }
 
-func fnAnd(args ...interface{}) (interface{}, error) {
+func fnAnd(args ...any) (any, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("AND requires at least 1 argument")
 	}
@@ -1439,28 +1431,26 @@ func fnAnd(args ...interface{}) (interface{}, error) {
 	return true, nil
 }
 
-func fnOr(args ...interface{}) (interface{}, error) {
+func fnOr(args ...any) (any, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("OR requires at least 1 argument")
 	}
 	for _, arg := range args {
-		for _, v := range flattenValues(arg) {
-			if toBool(v) {
-				return true, nil
-			}
+		if slices.ContainsFunc(flattenValues(arg), toBool) {
+			return true, nil
 		}
 	}
 	return false, nil
 }
 
-func fnNot(args ...interface{}) (interface{}, error) {
+func fnNot(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("NOT requires 1 argument")
 	}
 	return !toBool(args[0]), nil
 }
 
-func fnXor(args ...interface{}) (interface{}, error) {
+func fnXor(args ...any) (any, error) {
 	count := 0
 	for _, arg := range args {
 		for _, v := range flattenValues(arg) {
@@ -1472,7 +1462,7 @@ func fnXor(args ...interface{}) (interface{}, error) {
 	return count%2 == 1, nil
 }
 
-func fnIfs(args ...interface{}) (interface{}, error) {
+func fnIfs(args ...any) (any, error) {
 	if len(args) < 2 || len(args)%2 != 0 {
 		return nil, fmt.Errorf("IFS requires pairs of condition and value")
 	}
@@ -1484,7 +1474,7 @@ func fnIfs(args ...interface{}) (interface{}, error) {
 	return nil, fmt.Errorf("#N/A")
 }
 
-func fnSwitch(args ...interface{}) (interface{}, error) {
+func fnSwitch(args ...any) (any, error) {
 	if len(args) < 3 {
 		return nil, fmt.Errorf("SWITCH requires at least 3 arguments")
 	}
@@ -1500,7 +1490,7 @@ func fnSwitch(args ...interface{}) (interface{}, error) {
 	return nil, fmt.Errorf("#N/A")
 }
 
-func fnIfError(args ...interface{}) (interface{}, error) {
+func fnIfError(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("IFERROR requires 2 arguments")
 	}
@@ -1508,30 +1498,30 @@ func fnIfError(args ...interface{}) (interface{}, error) {
 	return args[0], nil
 }
 
-func fnIfNA(args ...interface{}) (interface{}, error) {
+func fnIfNA(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("IFNA requires 2 arguments")
 	}
 	return args[0], nil
 }
 
-func fnTrue(args ...interface{}) (interface{}, error) {
+func fnTrue(args ...any) (any, error) {
 	return true, nil
 }
 
-func fnFalse(args ...interface{}) (interface{}, error) {
+func fnFalse(args ...any) (any, error) {
 	return false, nil
 }
 
 // Lookup functions (simplified implementations)
 
-func fnVlookup(args ...interface{}) (interface{}, error) {
+func fnVlookup(args ...any) (any, error) {
 	if len(args) < 3 {
 		return nil, fmt.Errorf("VLOOKUP requires at least 3 arguments")
 	}
 
 	lookup := args[0]
-	table, ok := args[1].([][]interface{})
+	table, ok := args[1].([][]any)
 	if !ok {
 		return nil, fmt.Errorf("#VALUE!")
 	}
@@ -1563,13 +1553,13 @@ func fnVlookup(args ...interface{}) (interface{}, error) {
 	return nil, fmt.Errorf("#N/A")
 }
 
-func fnHlookup(args ...interface{}) (interface{}, error) {
+func fnHlookup(args ...any) (any, error) {
 	if len(args) < 3 {
 		return nil, fmt.Errorf("HLOOKUP requires at least 3 arguments")
 	}
 
 	lookup := args[0]
-	table, ok := args[1].([][]interface{})
+	table, ok := args[1].([][]any)
 	if !ok {
 		return nil, fmt.Errorf("#VALUE!")
 	}
@@ -1598,12 +1588,12 @@ func fnHlookup(args ...interface{}) (interface{}, error) {
 	return nil, fmt.Errorf("#N/A")
 }
 
-func fnIndex(args ...interface{}) (interface{}, error) {
+func fnIndex(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("INDEX requires at least 2 arguments")
 	}
 
-	array, ok := args[0].([][]interface{})
+	array, ok := args[0].([][]any)
 	if !ok {
 		return nil, fmt.Errorf("#VALUE!")
 	}
@@ -1621,7 +1611,7 @@ func fnIndex(args ...interface{}) (interface{}, error) {
 	return array[rowNum-1][colNum-1], nil
 }
 
-func fnMatch(args ...interface{}) (interface{}, error) {
+func fnMatch(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("MATCH requires at least 2 arguments")
 	}
@@ -1652,7 +1642,7 @@ func fnMatch(args ...interface{}) (interface{}, error) {
 	return nil, fmt.Errorf("#N/A")
 }
 
-func fnChoose(args ...interface{}) (interface{}, error) {
+func fnChoose(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("CHOOSE requires at least 2 arguments")
 	}
@@ -1663,7 +1653,7 @@ func fnChoose(args ...interface{}) (interface{}, error) {
 	return args[index], nil
 }
 
-func fnLookup(args ...interface{}) (interface{}, error) {
+func fnLookup(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("LOOKUP requires at least 2 arguments")
 	}
@@ -1673,7 +1663,7 @@ func fnLookup(args ...interface{}) (interface{}, error) {
 
 // Statistical functions
 
-func fnMedian(args ...interface{}) (interface{}, error) {
+func fnMedian(args ...any) (any, error) {
 	values := []float64{}
 	for _, arg := range args {
 		for _, v := range flattenValues(arg) {
@@ -1693,7 +1683,7 @@ func fnMedian(args ...interface{}) (interface{}, error) {
 	return values[mid], nil
 }
 
-func fnMode(args ...interface{}) (interface{}, error) {
+func fnMode(args ...any) (any, error) {
 	counts := make(map[float64]int)
 	for _, arg := range args {
 		for _, v := range flattenValues(arg) {
@@ -1720,7 +1710,7 @@ func fnMode(args ...interface{}) (interface{}, error) {
 	return mode, nil
 }
 
-func fnStdev(args ...interface{}) (interface{}, error) {
+func fnStdev(args ...any) (any, error) {
 	values := []float64{}
 	for _, arg := range args {
 		for _, v := range flattenValues(arg) {
@@ -1748,7 +1738,7 @@ func fnStdev(args ...interface{}) (interface{}, error) {
 	return math.Sqrt(variance), nil
 }
 
-func fnStdevP(args ...interface{}) (interface{}, error) {
+func fnStdevP(args ...any) (any, error) {
 	values := []float64{}
 	for _, arg := range args {
 		for _, v := range flattenValues(arg) {
@@ -1776,7 +1766,7 @@ func fnStdevP(args ...interface{}) (interface{}, error) {
 	return math.Sqrt(variance), nil
 }
 
-func fnVar(args ...interface{}) (interface{}, error) {
+func fnVar(args ...any) (any, error) {
 	values := []float64{}
 	for _, arg := range args {
 		for _, v := range flattenValues(arg) {
@@ -1803,7 +1793,7 @@ func fnVar(args ...interface{}) (interface{}, error) {
 	return variance / float64(len(values)-1), nil
 }
 
-func fnVarP(args ...interface{}) (interface{}, error) {
+func fnVarP(args ...any) (any, error) {
 	values := []float64{}
 	for _, arg := range args {
 		for _, v := range flattenValues(arg) {
@@ -1830,7 +1820,7 @@ func fnVarP(args ...interface{}) (interface{}, error) {
 	return variance / float64(len(values)), nil
 }
 
-func fnLarge(args ...interface{}) (interface{}, error) {
+func fnLarge(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("LARGE requires 2 arguments")
 	}
@@ -1848,7 +1838,7 @@ func fnLarge(args ...interface{}) (interface{}, error) {
 	return values[len(values)-k], nil
 }
 
-func fnSmall(args ...interface{}) (interface{}, error) {
+func fnSmall(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("SMALL requires 2 arguments")
 	}
@@ -1866,7 +1856,7 @@ func fnSmall(args ...interface{}) (interface{}, error) {
 	return values[k-1], nil
 }
 
-func fnRank(args ...interface{}) (interface{}, error) {
+func fnRank(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("RANK requires at least 2 arguments")
 	}
@@ -1898,7 +1888,7 @@ func fnRank(args ...interface{}) (interface{}, error) {
 	return nil, fmt.Errorf("#N/A")
 }
 
-func fnPercentile(args ...interface{}) (interface{}, error) {
+func fnPercentile(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("PERCENTILE requires 2 arguments")
 	}
@@ -1922,7 +1912,7 @@ func fnPercentile(args ...interface{}) (interface{}, error) {
 	return values[lower] + (index-float64(lower))*(values[upper]-values[lower]), nil
 }
 
-func fnQuartile(args ...interface{}) (interface{}, error) {
+func fnQuartile(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("QUARTILE requires 2 arguments")
 	}
@@ -1933,7 +1923,7 @@ func fnQuartile(args ...interface{}) (interface{}, error) {
 	return fnPercentile(args[0], float64(quart)/4.0)
 }
 
-func fnCorrel(args ...interface{}) (interface{}, error) {
+func fnCorrel(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("CORREL requires 2 arguments")
 	}
@@ -1965,7 +1955,7 @@ func fnCorrel(args ...interface{}) (interface{}, error) {
 
 // Conditional aggregates - Full implementation with criteria parsing
 
-func fnSumIf(args ...interface{}) (interface{}, error) {
+func fnSumIf(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("SUMIF requires at least 2 arguments")
 	}
@@ -1994,7 +1984,7 @@ func fnSumIf(args ...interface{}) (interface{}, error) {
 	return sum, nil
 }
 
-func fnCountIf(args ...interface{}) (interface{}, error) {
+func fnCountIf(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("COUNTIF requires at least 2 arguments")
 	}
@@ -2008,7 +1998,7 @@ func fnCountIf(args ...interface{}) (interface{}, error) {
 	return float64(len(indices)), nil
 }
 
-func fnAverageIf(args ...interface{}) (interface{}, error) {
+func fnAverageIf(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("AVERAGEIF requires at least 2 arguments")
 	}
@@ -2046,7 +2036,7 @@ func fnAverageIf(args ...interface{}) (interface{}, error) {
 	return sum / float64(count), nil
 }
 
-func fnSumIfs(args ...interface{}) (interface{}, error) {
+func fnSumIfs(args ...any) (any, error) {
 	if len(args) < 3 || len(args)%2 != 1 {
 		return nil, fmt.Errorf("SUMIFS requires sum_range and pairs of criteria_range, criteria")
 	}
@@ -2081,7 +2071,7 @@ func fnSumIfs(args ...interface{}) (interface{}, error) {
 	return sum, nil
 }
 
-func fnCountIfs(args ...interface{}) (interface{}, error) {
+func fnCountIfs(args ...any) (any, error) {
 	if len(args) < 2 || len(args)%2 != 0 {
 		return nil, fmt.Errorf("COUNTIFS requires pairs of criteria_range, criteria")
 	}
@@ -2103,7 +2093,7 @@ func fnCountIfs(args ...interface{}) (interface{}, error) {
 	return float64(len(matchingIndices)), nil
 }
 
-func fnAverageIfs(args ...interface{}) (interface{}, error) {
+func fnAverageIfs(args ...any) (any, error) {
 	if len(args) < 3 || len(args)%2 != 1 {
 		return nil, fmt.Errorf("AVERAGEIFS requires average_range and pairs of criteria_range, criteria")
 	}
@@ -2144,7 +2134,7 @@ func fnAverageIfs(args ...interface{}) (interface{}, error) {
 	return sum / float64(count), nil
 }
 
-func fnMaxIfs(args ...interface{}) (interface{}, error) {
+func fnMaxIfs(args ...any) (any, error) {
 	if len(args) < 3 || len(args)%2 != 1 {
 		return nil, fmt.Errorf("MAXIFS requires max_range and pairs of criteria_range, criteria")
 	}
@@ -2186,7 +2176,7 @@ func fnMaxIfs(args ...interface{}) (interface{}, error) {
 	return result, nil
 }
 
-func fnMinIfs(args ...interface{}) (interface{}, error) {
+func fnMinIfs(args ...any) (any, error) {
 	if len(args) < 3 || len(args)%2 != 1 {
 		return nil, fmt.Errorf("MINIFS requires min_range and pairs of criteria_range, criteria")
 	}
@@ -2246,17 +2236,17 @@ func intersectIndices(a, b []int) []int {
 
 // Date/Time functions
 
-func fnNow(args ...interface{}) (interface{}, error) {
-	return float64(time.Now().Unix()) / 86400.0 + 25569.0, nil
+func fnNow(args ...any) (any, error) {
+	return float64(time.Now().Unix())/86400.0 + 25569.0, nil
 }
 
-func fnToday(args ...interface{}) (interface{}, error) {
+func fnToday(args ...any) (any, error) {
 	now := time.Now()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	return float64(today.Unix()) / 86400.0 + 25569.0, nil
+	return float64(today.Unix())/86400.0 + 25569.0, nil
 }
 
-func fnDate(args ...interface{}) (interface{}, error) {
+func fnDate(args ...any) (any, error) {
 	if len(args) < 3 {
 		return nil, fmt.Errorf("DATE requires 3 arguments")
 	}
@@ -2267,7 +2257,7 @@ func fnDate(args ...interface{}) (interface{}, error) {
 	return float64(date.Unix())/86400.0 + 25569.0, nil
 }
 
-func fnYear(args ...interface{}) (interface{}, error) {
+func fnYear(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("YEAR requires 1 argument")
 	}
@@ -2276,7 +2266,7 @@ func fnYear(args ...interface{}) (interface{}, error) {
 	return float64(t.Year()), nil
 }
 
-func fnMonth(args ...interface{}) (interface{}, error) {
+func fnMonth(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("MONTH requires 1 argument")
 	}
@@ -2285,7 +2275,7 @@ func fnMonth(args ...interface{}) (interface{}, error) {
 	return float64(t.Month()), nil
 }
 
-func fnDay(args ...interface{}) (interface{}, error) {
+func fnDay(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("DAY requires 1 argument")
 	}
@@ -2294,7 +2284,7 @@ func fnDay(args ...interface{}) (interface{}, error) {
 	return float64(t.Day()), nil
 }
 
-func fnHour(args ...interface{}) (interface{}, error) {
+func fnHour(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("HOUR requires 1 argument")
 	}
@@ -2303,7 +2293,7 @@ func fnHour(args ...interface{}) (interface{}, error) {
 	return float64(t.Hour()), nil
 }
 
-func fnMinute(args ...interface{}) (interface{}, error) {
+func fnMinute(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("MINUTE requires 1 argument")
 	}
@@ -2312,7 +2302,7 @@ func fnMinute(args ...interface{}) (interface{}, error) {
 	return float64(t.Minute()), nil
 }
 
-func fnSecond(args ...interface{}) (interface{}, error) {
+func fnSecond(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("SECOND requires 1 argument")
 	}
@@ -2321,7 +2311,7 @@ func fnSecond(args ...interface{}) (interface{}, error) {
 	return float64(t.Second()), nil
 }
 
-func fnWeekday(args ...interface{}) (interface{}, error) {
+func fnWeekday(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("WEEKDAY requires 1 argument")
 	}
@@ -2330,7 +2320,7 @@ func fnWeekday(args ...interface{}) (interface{}, error) {
 	return float64(t.Weekday()) + 1, nil
 }
 
-func fnDateDif(args ...interface{}) (interface{}, error) {
+func fnDateDif(args ...any) (any, error) {
 	if len(args) < 3 {
 		return nil, fmt.Errorf("DATEDIF requires 3 arguments")
 	}
@@ -2350,7 +2340,7 @@ func fnDateDif(args ...interface{}) (interface{}, error) {
 	}
 }
 
-func fnEomonth(args ...interface{}) (interface{}, error) {
+func fnEomonth(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("EOMONTH requires 2 arguments")
 	}
@@ -2360,7 +2350,7 @@ func fnEomonth(args ...interface{}) (interface{}, error) {
 	return float64(result.Unix())/86400.0 + 25569.0, nil
 }
 
-func fnEdate(args ...interface{}) (interface{}, error) {
+func fnEdate(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("EDATE requires 2 arguments")
 	}
@@ -2370,7 +2360,7 @@ func fnEdate(args ...interface{}) (interface{}, error) {
 	return float64(result.Unix())/86400.0 + 25569.0, nil
 }
 
-func fnDays(args ...interface{}) (interface{}, error) {
+func fnDays(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("DAYS requires 2 arguments")
 	}
@@ -2379,7 +2369,7 @@ func fnDays(args ...interface{}) (interface{}, error) {
 	return math.Floor(end - start), nil
 }
 
-func fnNetworkDays(args ...interface{}) (interface{}, error) {
+func fnNetworkDays(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("NETWORKDAYS requires 2 arguments")
 	}
@@ -2397,7 +2387,7 @@ func fnNetworkDays(args ...interface{}) (interface{}, error) {
 
 // Additional Date/Time functions
 
-func fnTime(args ...interface{}) (interface{}, error) {
+func fnTime(args ...any) (any, error) {
 	if len(args) < 3 {
 		return nil, fmt.Errorf("TIME requires 3 arguments")
 	}
@@ -2410,7 +2400,7 @@ func fnTime(args ...interface{}) (interface{}, error) {
 	return float64(totalSeconds) / 86400.0, nil
 }
 
-func fnTimeValue(args ...interface{}) (interface{}, error) {
+func fnTimeValue(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("TIMEVALUE requires 1 argument")
 	}
@@ -2433,7 +2423,7 @@ func fnTimeValue(args ...interface{}) (interface{}, error) {
 	return nil, fmt.Errorf("#VALUE!")
 }
 
-func fnDateValue(args ...interface{}) (interface{}, error) {
+func fnDateValue(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("DATEVALUE requires 1 argument")
 	}
@@ -2458,7 +2448,7 @@ func fnDateValue(args ...interface{}) (interface{}, error) {
 	return nil, fmt.Errorf("#VALUE!")
 }
 
-func fnWorkday(args ...interface{}) (interface{}, error) {
+func fnWorkday(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("WORKDAY requires 2 arguments")
 	}
@@ -2486,7 +2476,7 @@ func fnWorkday(args ...interface{}) (interface{}, error) {
 	return float64(result.Unix())/86400.0 + 25569.0, nil
 }
 
-func fnWeekNum(args ...interface{}) (interface{}, error) {
+func fnWeekNum(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("WEEKNUM requires at least 1 argument")
 	}
@@ -2516,7 +2506,7 @@ func fnWeekNum(args ...interface{}) (interface{}, error) {
 	return float64(week), nil
 }
 
-func fnIsoWeekNum(args ...interface{}) (interface{}, error) {
+func fnIsoWeekNum(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("ISOWEEKNUM requires 1 argument")
 	}
@@ -2528,23 +2518,23 @@ func fnIsoWeekNum(args ...interface{}) (interface{}, error) {
 
 // Information functions
 
-func fnIsBlank(args ...interface{}) (interface{}, error) {
+func fnIsBlank(args ...any) (any, error) {
 	if len(args) < 1 {
 		return true, nil
 	}
 	return args[0] == nil || args[0] == "", nil
 }
 
-func fnIsError(args ...interface{}) (interface{}, error) {
+func fnIsError(args ...any) (any, error) {
 	// In actual implementation, this would check for error values
 	return false, nil
 }
 
-func fnIsNA(args ...interface{}) (interface{}, error) {
+func fnIsNA(args ...any) (any, error) {
 	return false, nil
 }
 
-func fnIsNumber(args ...interface{}) (interface{}, error) {
+func fnIsNumber(args ...any) (any, error) {
 	if len(args) < 1 {
 		return false, nil
 	}
@@ -2552,7 +2542,7 @@ func fnIsNumber(args ...interface{}) (interface{}, error) {
 	return ok, nil
 }
 
-func fnIsText(args ...interface{}) (interface{}, error) {
+func fnIsText(args ...any) (any, error) {
 	if len(args) < 1 {
 		return false, nil
 	}
@@ -2560,7 +2550,7 @@ func fnIsText(args ...interface{}) (interface{}, error) {
 	return ok, nil
 }
 
-func fnIsLogical(args ...interface{}) (interface{}, error) {
+func fnIsLogical(args ...any) (any, error) {
 	if len(args) < 1 {
 		return false, nil
 	}
@@ -2568,7 +2558,7 @@ func fnIsLogical(args ...interface{}) (interface{}, error) {
 	return ok, nil
 }
 
-func fnType(args ...interface{}) (interface{}, error) {
+func fnType(args ...any) (any, error) {
 	if len(args) < 1 {
 		return 1.0, nil
 	}
@@ -2584,18 +2574,18 @@ func fnType(args ...interface{}) (interface{}, error) {
 	}
 }
 
-func fnNA(args ...interface{}) (interface{}, error) {
+func fnNA(args ...any) (any, error) {
 	return nil, fmt.Errorf("#N/A")
 }
 
 // Additional information functions
 
-func fnIsErr(args ...interface{}) (interface{}, error) {
+func fnIsErr(args ...any) (any, error) {
 	// ISERR returns TRUE for errors except #N/A
 	return false, nil
 }
 
-func fnIsEven(args ...interface{}) (interface{}, error) {
+func fnIsEven(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("ISEVEN requires 1 argument")
 	}
@@ -2603,7 +2593,7 @@ func fnIsEven(args ...interface{}) (interface{}, error) {
 	return num%2 == 0, nil
 }
 
-func fnIsOdd(args ...interface{}) (interface{}, error) {
+func fnIsOdd(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("ISODD requires 1 argument")
 	}
@@ -2611,7 +2601,7 @@ func fnIsOdd(args ...interface{}) (interface{}, error) {
 	return num%2 != 0, nil
 }
 
-func fnIsNonText(args ...interface{}) (interface{}, error) {
+func fnIsNonText(args ...any) (any, error) {
 	if len(args) < 1 {
 		return true, nil
 	}
@@ -2619,25 +2609,25 @@ func fnIsNonText(args ...interface{}) (interface{}, error) {
 	return !isText, nil
 }
 
-func fnIsFormula(args ...interface{}) (interface{}, error) {
+func fnIsFormula(args ...any) (any, error) {
 	// This would need cell context to work properly
 	return false, nil
 }
 
-func fnRow(args ...interface{}) (interface{}, error) {
+func fnRow(args ...any) (any, error) {
 	// If no args, would return current row from context
 	if len(args) < 1 {
 		return 1.0, nil // Default
 	}
 	// If arg is a range/reference, return starting row
-	if arr, ok := args[0].([][]interface{}); ok {
+	if arr, ok := args[0].([][]any); ok {
 		return 1.0, nil // Would need reference info
 		_ = arr
 	}
 	return 1.0, nil
 }
 
-func fnColumn(args ...interface{}) (interface{}, error) {
+func fnColumn(args ...any) (any, error) {
 	// If no args, would return current column from context
 	if len(args) < 1 {
 		return 1.0, nil
@@ -2645,21 +2635,21 @@ func fnColumn(args ...interface{}) (interface{}, error) {
 	return 1.0, nil
 }
 
-func fnRows(args ...interface{}) (interface{}, error) {
+func fnRows(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("ROWS requires 1 argument")
 	}
-	if arr, ok := args[0].([][]interface{}); ok {
+	if arr, ok := args[0].([][]any); ok {
 		return float64(len(arr)), nil
 	}
 	return 1.0, nil
 }
 
-func fnColumns(args ...interface{}) (interface{}, error) {
+func fnColumns(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("COLUMNS requires 1 argument")
 	}
-	if arr, ok := args[0].([][]interface{}); ok {
+	if arr, ok := args[0].([][]any); ok {
 		if len(arr) > 0 {
 			return float64(len(arr[0])), nil
 		}
@@ -2668,7 +2658,7 @@ func fnColumns(args ...interface{}) (interface{}, error) {
 	return 1.0, nil
 }
 
-func fnAddress(args ...interface{}) (interface{}, error) {
+func fnAddress(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("ADDRESS requires at least 2 arguments")
 	}
@@ -2712,14 +2702,14 @@ func columnToLetter(col int) string {
 
 // Array functions
 
-func fnUnique(args ...interface{}) (interface{}, error) {
+func fnUnique(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("UNIQUE requires at least 1 argument")
 	}
 
 	values := flattenValues(args[0])
-	seen := make(map[interface{}]bool)
-	var result []interface{}
+	seen := make(map[any]bool)
+	var result []any
 
 	for _, v := range values {
 		key := v
@@ -2733,25 +2723,25 @@ func fnUnique(args ...interface{}) (interface{}, error) {
 	}
 
 	// Return as column array
-	arr := make([][]interface{}, len(result))
+	arr := make([][]any, len(result))
 	for i, v := range result {
-		arr[i] = []interface{}{v}
+		arr[i] = []any{v}
 	}
 
 	return arr, nil
 }
 
-func fnSort(args ...interface{}) (interface{}, error) {
+func fnSort(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("SORT requires at least 1 argument")
 	}
 
-	arr, ok := args[0].([][]interface{})
+	arr, ok := args[0].([][]any)
 	if !ok {
 		values := flattenValues(args[0])
-		arr = make([][]interface{}, len(values))
+		arr = make([][]any, len(values))
 		for i, v := range values {
-			arr[i] = []interface{}{v}
+			arr[i] = []any{v}
 		}
 	}
 
@@ -2766,11 +2756,11 @@ func fnSort(args ...interface{}) (interface{}, error) {
 	}
 
 	// Make a copy to sort
-	result := make([][]interface{}, len(arr))
+	result := make([][]any, len(arr))
 	copy(result, arr)
 
 	sort.Slice(result, func(i, j int) bool {
-		var vi, vj interface{}
+		var vi, vj any
 		if sortIndex <= len(result[i]) {
 			vi = result[i][sortIndex-1]
 		}
@@ -2788,27 +2778,27 @@ func fnSort(args ...interface{}) (interface{}, error) {
 	return result, nil
 }
 
-func fnTranspose(args ...interface{}) (interface{}, error) {
+func fnTranspose(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("TRANSPOSE requires 1 argument")
 	}
 
-	arr, ok := args[0].([][]interface{})
+	arr, ok := args[0].([][]any)
 	if !ok {
-		return [][]interface{}{{args[0]}}, nil
+		return [][]any{{args[0]}}, nil
 	}
 
 	if len(arr) == 0 {
-		return [][]interface{}{}, nil
+		return [][]any{}, nil
 	}
 
 	rows := len(arr)
 	cols := len(arr[0])
 
-	result := make([][]interface{}, cols)
-	for c := 0; c < cols; c++ {
-		result[c] = make([]interface{}, rows)
-		for r := 0; r < rows; r++ {
+	result := make([][]any, cols)
+	for c := range cols {
+		result[c] = make([]any, rows)
+		for r := range rows {
 			if c < len(arr[r]) {
 				result[c][r] = arr[r][c]
 			}
@@ -2818,42 +2808,42 @@ func fnTranspose(args ...interface{}) (interface{}, error) {
 	return result, nil
 }
 
-func fnFlatten(args ...interface{}) (interface{}, error) {
+func fnFlatten(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("FLATTEN requires at least 1 argument")
 	}
 
-	var result []interface{}
+	var result []any
 	for _, arg := range args {
 		result = append(result, flattenValues(arg)...)
 	}
 
 	// Return as column array
-	arr := make([][]interface{}, len(result))
+	arr := make([][]any, len(result))
 	for i, v := range result {
-		arr[i] = []interface{}{v}
+		arr[i] = []any{v}
 	}
 
 	return arr, nil
 }
 
-func fnFilter(args ...interface{}) (interface{}, error) {
+func fnFilter(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("FILTER requires at least 2 arguments")
 	}
 
-	arr, ok := args[0].([][]interface{})
+	arr, ok := args[0].([][]any)
 	if !ok {
 		values := flattenValues(args[0])
-		arr = make([][]interface{}, len(values))
+		arr = make([][]any, len(values))
 		for i, v := range values {
-			arr[i] = []interface{}{v}
+			arr[i] = []any{v}
 		}
 	}
 
 	include := flattenValues(args[1])
 
-	var result [][]interface{}
+	var result [][]any
 	for i, row := range arr {
 		if i < len(include) && toBool(include[i]) {
 			result = append(result, row)
@@ -2870,7 +2860,7 @@ func fnFilter(args ...interface{}) (interface{}, error) {
 	return result, nil
 }
 
-func fnSequence(args ...interface{}) (interface{}, error) {
+func fnSequence(args ...any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("SEQUENCE requires at least 1 argument")
 	}
@@ -2893,10 +2883,10 @@ func fnSequence(args ...interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("#VALUE!")
 	}
 
-	result := make([][]interface{}, rows)
+	result := make([][]any, rows)
 	value := start
-	for r := 0; r < rows; r++ {
-		result[r] = make([]interface{}, cols)
+	for r := range rows {
+		result[r] = make([]any, cols)
 		for c := 0; c < cols; c++ {
 			result[r][c] = value
 			value += step
@@ -2906,7 +2896,7 @@ func fnSequence(args ...interface{}) (interface{}, error) {
 	return result, nil
 }
 
-func fnFrequency(args ...interface{}) (interface{}, error) {
+func fnFrequency(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("FREQUENCY requires 2 arguments")
 	}
@@ -2933,9 +2923,9 @@ func fnFrequency(args ...interface{}) (interface{}, error) {
 	sort.Float64s(binValues)
 
 	// Count frequencies
-	result := make([][]interface{}, len(binValues)+1)
+	result := make([][]any, len(binValues)+1)
 	for i := range result {
-		result[i] = []interface{}{0.0}
+		result[i] = []any{0.0}
 	}
 
 	for _, num := range numbers {
@@ -2957,7 +2947,7 @@ func fnFrequency(args ...interface{}) (interface{}, error) {
 
 // Financial functions (simplified)
 
-func fnPmt(args ...interface{}) (interface{}, error) {
+func fnPmt(args ...any) (any, error) {
 	if len(args) < 3 {
 		return nil, fmt.Errorf("PMT requires 3 arguments")
 	}
@@ -2973,18 +2963,18 @@ func fnPmt(args ...interface{}) (interface{}, error) {
 		return -(pv + fv) / nper, nil
 	}
 
-	return -rate * (pv * math.Pow(1+rate, nper) + fv) / (math.Pow(1+rate, nper) - 1), nil
+	return -rate * (pv*math.Pow(1+rate, nper) + fv) / (math.Pow(1+rate, nper) - 1), nil
 }
 
-func fnPpmt(args ...interface{}) (interface{}, error) {
+func fnPpmt(args ...any) (any, error) {
 	return fnPmt(args...)
 }
 
-func fnIpmt(args ...interface{}) (interface{}, error) {
+func fnIpmt(args ...any) (any, error) {
 	return fnPmt(args...)
 }
 
-func fnPv(args ...interface{}) (interface{}, error) {
+func fnPv(args ...any) (any, error) {
 	if len(args) < 3 {
 		return nil, fmt.Errorf("PV requires 3 arguments")
 	}
@@ -2999,7 +2989,7 @@ func fnPv(args ...interface{}) (interface{}, error) {
 	return -pmt * (1 - math.Pow(1+rate, -nper)) / rate, nil
 }
 
-func fnFv(args ...interface{}) (interface{}, error) {
+func fnFv(args ...any) (any, error) {
 	if len(args) < 3 {
 		return nil, fmt.Errorf("FV requires 3 arguments")
 	}
@@ -3018,7 +3008,7 @@ func fnFv(args ...interface{}) (interface{}, error) {
 	return -pv*math.Pow(1+rate, nper) - pmt*(math.Pow(1+rate, nper)-1)/rate, nil
 }
 
-func fnNpv(args ...interface{}) (interface{}, error) {
+func fnNpv(args ...any) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("NPV requires at least 2 arguments")
 	}
@@ -3030,7 +3020,7 @@ func fnNpv(args ...interface{}) (interface{}, error) {
 	return npv, nil
 }
 
-func fnIrr(args ...interface{}) (interface{}, error) {
+func fnIrr(args ...any) (any, error) {
 	// Simplified IRR using Newton-Raphson
 	if len(args) < 1 {
 		return nil, fmt.Errorf("IRR requires at least 1 argument")
@@ -3038,7 +3028,7 @@ func fnIrr(args ...interface{}) (interface{}, error) {
 	values := flattenValues(args[0])
 
 	rate := 0.1
-	for iter := 0; iter < 100; iter++ {
+	for range 100 {
 		npv := 0.0
 		dnpv := 0.0
 		for i, v := range values {
@@ -3054,12 +3044,12 @@ func fnIrr(args ...interface{}) (interface{}, error) {
 	return rate, nil
 }
 
-func fnRate(args ...interface{}) (interface{}, error) {
+func fnRate(args ...any) (any, error) {
 	// Simplified
 	return 0.05, nil
 }
 
-func fnNper(args ...interface{}) (interface{}, error) {
+func fnNper(args ...any) (any, error) {
 	if len(args) < 3 {
 		return nil, fmt.Errorf("NPER requires 3 arguments")
 	}
@@ -3076,7 +3066,7 @@ func fnNper(args ...interface{}) (interface{}, error) {
 
 // Helper functions
 
-func sumValues(arg interface{}) float64 {
+func sumValues(arg any) float64 {
 	sum := 0.0
 	for _, v := range flattenValues(arg) {
 		if n, ok := toNumber(v); ok {
@@ -3086,7 +3076,7 @@ func sumValues(arg interface{}) float64 {
 	return sum
 }
 
-func sumCountValues(arg interface{}) (float64, int) {
+func sumCountValues(arg any) (float64, int) {
 	sum := 0.0
 	count := 0
 	for _, v := range flattenValues(arg) {
@@ -3098,21 +3088,21 @@ func sumCountValues(arg interface{}) (float64, int) {
 	return sum, count
 }
 
-func flattenValues(arg interface{}) []interface{} {
+func flattenValues(arg any) []any {
 	if arg == nil {
 		return nil
 	}
 
 	switch v := arg.(type) {
-	case [][]interface{}:
-		result := []interface{}{}
+	case [][]any:
+		result := []any{}
 		for _, row := range v {
 			result = append(result, row...)
 		}
 		return result
-	case []interface{}:
+	case []any:
 		return v
 	default:
-		return []interface{}{v}
+		return []any{v}
 	}
 }

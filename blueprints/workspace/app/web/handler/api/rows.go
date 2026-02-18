@@ -33,7 +33,7 @@ func (h *Row) Create(c *mizu.Ctx) error {
 	userID := h.getUserID(c)
 
 	var in struct {
-		Properties map[string]interface{} `json:"properties"`
+		Properties map[string]any `json:"properties"`
 	}
 	if err := c.BindJSON(&in, 1<<20); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -76,7 +76,7 @@ func (h *Row) Update(c *mizu.Ctx) error {
 	userID := h.getUserID(c)
 
 	var in struct {
-		Properties map[string]interface{} `json:"properties"`
+		Properties map[string]any `json:"properties"`
 	}
 	if err := c.BindJSON(&in, 1<<20); err != nil {
 		slog.Error("Row.Update: failed to bind JSON", "error", err, "rowID", id)

@@ -14,23 +14,23 @@ import (
 
 // Service implements the issues API
 type Service struct {
-	store            Store
-	repoStore        repos.Store
-	userStore        users.Store
-	orgStore         orgs.Store
+	store             Store
+	repoStore         repos.Store
+	userStore         users.Store
+	orgStore          orgs.Store
 	collaboratorStore collaborators.Store
-	baseURL          string
+	baseURL           string
 }
 
 // NewService creates a new issues service
 func NewService(store Store, repoStore repos.Store, userStore users.Store, orgStore orgs.Store, collaboratorStore collaborators.Store, baseURL string) *Service {
 	return &Service{
-		store:            store,
-		repoStore:        repoStore,
-		userStore:        userStore,
-		orgStore:         orgStore,
+		store:             store,
+		repoStore:         repoStore,
+		userStore:         userStore,
+		orgStore:          orgStore,
 		collaboratorStore: collaboratorStore,
-		baseURL:          baseURL,
+		baseURL:           baseURL,
 	}
 }
 
@@ -522,7 +522,7 @@ func (s *Service) ListEvents(ctx context.Context, owner, repo string, number int
 }
 
 // CreateEvent creates an event (internal use)
-func (s *Service) CreateEvent(ctx context.Context, issueID, actorID int64, eventType string, data map[string]interface{}) (*IssueEvent, error) {
+func (s *Service) CreateEvent(ctx context.Context, issueID, actorID int64, eventType string, data map[string]any) (*IssueEvent, error) {
 	actor, err := s.userStore.GetByID(ctx, actorID)
 	if err != nil {
 		return nil, err
@@ -572,7 +572,7 @@ func (s *Service) getAuthorAssociation(ctx context.Context, r *repos.Repository,
 
 // populateURLs fills in the URL fields for an issue
 func (s *Service) populateURLs(issue *Issue, owner, repo string) {
-	issue.NodeID = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Issue:%d", issue.ID)))
+	issue.NodeID = base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Issue:%d", issue.ID))
 	issue.URL = fmt.Sprintf("%s/api/v3/repos/%s/%s/issues/%d", s.baseURL, owner, repo, issue.Number)
 	issue.RepositoryURL = fmt.Sprintf("%s/api/v3/repos/%s/%s", s.baseURL, owner, repo)
 	issue.LabelsURL = fmt.Sprintf("%s/api/v3/repos/%s/%s/issues/%d/labels{/name}", s.baseURL, owner, repo, issue.Number)

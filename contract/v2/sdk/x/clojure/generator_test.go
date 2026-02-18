@@ -120,7 +120,7 @@ func TestGenerate(t *testing.T) {
 	// Verify expected files
 	// Namespace "anthropic.sdk" -> path "anthropic/sdk"
 	expectedFiles := map[string]bool{
-		"deps.edn":                       false,
+		"deps.edn":                        false,
 		"src/anthropic/sdk/core.clj":      false,
 		"src/anthropic/sdk/types.clj":     false,
 		"src/anthropic/sdk/resources.clj": false,
@@ -275,15 +275,15 @@ func TestGenerateMinimal(t *testing.T) {
 
 func TestNamingConventions(t *testing.T) {
 	tests := []struct {
-		input    string
-		kebab    string
-		pascal   string
-		camel    string
-		keyword  string
+		input   string
+		kebab   string
+		pascal  string
+		camel   string
+		keyword string
 	}{
 		{"userId", "user-id", "UserId", "userId", ":user-id"},
 		{"user_name", "user-name", "UserName", "userName", ":user-name"},
-		{"ID", "id", "ID", "iD", ":id"},                           // All-caps stays lowercase in kebab
+		{"ID", "id", "ID", "iD", ":id"},                                         // All-caps stays lowercase in kebab
 		{"HTTPMethod", "httpmethod", "HTTPMethod", "hTTPMethod", ":httpmethod"}, // All-caps run treated as single word
 		{"simple", "simple", "Simple", "simple", ":simple"},
 	}
@@ -336,11 +336,4 @@ func TestNsToPath(t *testing.T) {
 			t.Errorf("nsToPath(%q) = %q, want %q", tt.ns, got, tt.path)
 		}
 	}
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

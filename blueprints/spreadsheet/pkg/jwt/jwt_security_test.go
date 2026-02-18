@@ -14,7 +14,7 @@ import (
 func TestGenerateSecret_Strength(t *testing.T) {
 	// Generate multiple secrets to ensure randomness
 	secrets := make(map[string]bool)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		secret := GenerateSecret()
 
 		// Verify minimum length (32 bytes base64 encoded = ~43 chars)

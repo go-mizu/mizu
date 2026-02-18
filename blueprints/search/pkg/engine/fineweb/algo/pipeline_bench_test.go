@@ -58,12 +58,9 @@ func TestPipelineBreakdown(t *testing.T) {
 	runtime.GC()
 
 	start := time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > numDocs {
-			endIdx = numDocs
-		}
+		endIdx := min(startIdx+batchSize, numDocs)
 		if startIdx >= endIdx {
 			break
 		}
@@ -94,12 +91,9 @@ func TestPipelineBreakdown(t *testing.T) {
 	}
 
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > numDocs {
-			endIdx = numDocs
-		}
+		endIdx := min(startIdx+batchSize, numDocs)
 		if startIdx >= endIdx {
 			break
 		}
@@ -145,12 +139,9 @@ func TestPipelineBreakdown(t *testing.T) {
 	start = time.Now()
 
 	// Phase C1: Tokenize and collect
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > numDocs {
-			endIdx = numDocs
-		}
+		endIdx := min(startIdx+batchSize, numDocs)
 		if startIdx >= endIdx {
 			break
 		}
@@ -200,12 +191,9 @@ func TestPipelineBreakdown(t *testing.T) {
 	shardsPerWorker := (256 + numWorkers - 1) / numWorkers
 	buildStart := time.Now()
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startShard := w * shardsPerWorker
-		endShard := startShard + shardsPerWorker
-		if endShard > 256 {
-			endShard = 256
-		}
+		endShard := min(startShard+shardsPerWorker, 256)
 		if startShard >= endShard {
 			break
 		}
@@ -332,12 +320,9 @@ func TestIOvsCPU(t *testing.T) {
 	batchSize := (len(allTexts) + numWorkers - 1) / numWorkers
 
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -402,12 +387,9 @@ func TestConcatenatedDocuments(t *testing.T) {
 	// Test 1: Individual documents
 	runtime.GC()
 	start := time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -428,10 +410,7 @@ func TestConcatenatedDocuments(t *testing.T) {
 	concatSize := 100
 	var megaDocs []string
 	for i := 0; i < len(allTexts); i += concatSize {
-		end := i + concatSize
-		if end > len(allTexts) {
-			end = len(allTexts)
-		}
+		end := min(i+concatSize, len(allTexts))
 		var totalLen int
 		for j := i; j < end; j++ {
 			totalLen += len(allTexts[j]) + 1
@@ -448,12 +427,9 @@ func TestConcatenatedDocuments(t *testing.T) {
 	runtime.GC()
 	megaBatchSize := (len(megaDocs) + numWorkers - 1) / numWorkers
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * megaBatchSize
-		endIdx := startIdx + megaBatchSize
-		if endIdx > len(megaDocs) {
-			endIdx = len(megaDocs)
-		}
+		endIdx := min(startIdx+megaBatchSize, len(megaDocs))
 		if startIdx >= endIdx {
 			break
 		}

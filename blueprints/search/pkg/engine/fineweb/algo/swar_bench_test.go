@@ -63,12 +63,9 @@ func TestSWARTokenizerComparison(t *testing.T) {
 	// ═══════════════════════════════════════════════════════════════
 	runtime.GC()
 	start := time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -89,12 +86,9 @@ func TestSWARTokenizerComparison(t *testing.T) {
 	// ═══════════════════════════════════════════════════════════════
 	runtime.GC()
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -115,12 +109,9 @@ func TestSWARTokenizerComparison(t *testing.T) {
 	// ═══════════════════════════════════════════════════════════════
 	runtime.GC()
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -143,12 +134,9 @@ func TestSWARTokenizerComparison(t *testing.T) {
 	// ═══════════════════════════════════════════════════════════════
 	runtime.GC()
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -171,12 +159,9 @@ func TestSWARTokenizerComparison(t *testing.T) {
 	// ═══════════════════════════════════════════════════════════════
 	runtime.GC()
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -198,12 +183,9 @@ func TestSWARTokenizerComparison(t *testing.T) {
 	// ═══════════════════════════════════════════════════════════════
 	runtime.GC()
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -396,12 +378,9 @@ func TestBatchProcessingSpeedup(t *testing.T) {
 	// Test 1: Individual document processing
 	runtime.GC()
 	start := time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -421,12 +400,9 @@ func TestBatchProcessingSpeedup(t *testing.T) {
 	// Test 2: Batch processing with shared structures
 	runtime.GC()
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -436,10 +412,7 @@ func TestBatchProcessingSpeedup(t *testing.T) {
 			// Process in mini-batches of 100 docs
 			table := algo.NewFixedHashTable(8192) // Larger table for batch
 			for batchStart := s; batchStart < e; batchStart += 100 {
-				batchEnd := batchStart + 100
-				if batchEnd > e {
-					batchEnd = e
-				}
+				batchEnd := min(batchStart+100, e)
 				for i := batchStart; i < batchEnd; i++ {
 					algo.FixedTokenize(allTexts[i], table)
 				}
@@ -453,12 +426,9 @@ func TestBatchProcessingSpeedup(t *testing.T) {
 	// Test 3: Concatenated text processing
 	runtime.GC()
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -468,10 +438,7 @@ func TestBatchProcessingSpeedup(t *testing.T) {
 			table := algo.NewFixedHashTable(4096)
 			// Process 10 docs at a time by concatenating
 			for batchStart := s; batchStart < e; batchStart += 10 {
-				batchEnd := batchStart + 10
-				if batchEnd > e {
-					batchEnd = e
-				}
+				batchEnd := min(batchStart+10, e)
 				// Concatenate texts with delimiter
 				var totalLen int
 				for i := batchStart; i < batchEnd; i++ {

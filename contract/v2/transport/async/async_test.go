@@ -232,10 +232,10 @@ func readSSEEvent(scanner *bufio.Scanner) (*sseEvent, error) {
 			}
 			continue
 		}
-		if strings.HasPrefix(line, "event: ") {
-			event.Type = strings.TrimPrefix(line, "event: ")
-		} else if strings.HasPrefix(line, "data: ") {
-			event.Data = json.RawMessage(strings.TrimPrefix(line, "data: "))
+		if after, ok := strings.CutPrefix(line, "event: "); ok {
+			event.Type = after
+		} else if after, ok := strings.CutPrefix(line, "data: "); ok {
+			event.Data = json.RawMessage(after)
 		}
 		// Lines starting with ": " are comments (pings) - no action needed
 	}
@@ -1030,7 +1030,7 @@ func TestConcurrentRequests(t *testing.T) {
 	// Submit multiple requests concurrently
 	numRequests := 5
 	var wg sync.WaitGroup
-	for i := 0; i < numRequests; i++ {
+	for i := range numRequests {
 		wg.Add(1)
 		go func(n int) {
 			defer wg.Done()
@@ -1046,7 +1046,7 @@ func TestConcurrentRequests(t *testing.T) {
 	receivedIDs := make(map[string]bool)
 	scanner := bufio.NewScanner(streamResp.Body)
 
-	for i := 0; i < numRequests; i++ {
+	for range numRequests {
 		event, err := readSSEEvent(scanner)
 		if err != nil {
 			break

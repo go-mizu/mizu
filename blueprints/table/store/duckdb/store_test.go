@@ -477,7 +477,7 @@ func TestRecordsStore(t *testing.T) {
 
 	t.Run("List with pagination", func(t *testing.T) {
 		// Create 10 records
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			rec := &records.Record{
 				ID:        ulid.New(),
 				TableID:   tbl.ID,

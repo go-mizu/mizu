@@ -283,7 +283,7 @@ func TestTimeline_HomeWithLimit(t *testing.T) {
 	relSvc.Follow(context.Background(), account1.ID, account2.ID)
 
 	// Create multiple posts
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		postsSvc.Create(context.Background(), account2.ID, &posts.CreateIn{
 			Content: "Post #" + string(rune('0'+i)),
 		})

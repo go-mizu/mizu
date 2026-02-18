@@ -20,8 +20,8 @@ type NavItem struct {
 	URL      string
 	Icon     string // SVG icon name
 	Active   bool
-	Badge    int    // Notification count
-	External bool   // Opens in new tab
+	Badge    int  // Notification count
+	External bool // Opens in new tab
 	Children []NavItem
 }
 
@@ -51,11 +51,11 @@ type BaseData struct {
 
 // DashboardMetric represents a single metric on the dashboard.
 type DashboardMetric struct {
-	Label      string
-	Value      string
-	Trend      string  // "+12%", "-5%", etc.
-	TrendUp    bool    // true = positive trend
-	Sparkline  []int   // Data points for mini chart
+	Label     string
+	Value     string
+	Trend     string // "+12%", "-5%", etc.
+	TrendUp   bool   // true = positive trend
+	Sparkline []int  // Data points for mini chart
 }
 
 // TopContent represents a top performing content item.
@@ -83,41 +83,41 @@ type DashboardData struct {
 	BaseData
 
 	// Overview tab
-	ActiveTab       string // "overview", "newsletters", "growth", "locations"
-	DateRange       string // "today", "7d", "30d", "90d", "all"
-	AudienceFilter  string // "all", "free", "paid"
+	ActiveTab      string // "overview", "newsletters", "growth", "locations"
+	DateRange      string // "today", "7d", "30d", "90d", "all"
+	AudienceFilter string // "all", "free", "paid"
 
 	// Metrics
-	UniqueVisitors  DashboardMetric
-	TotalPageviews  DashboardMetric
+	UniqueVisitors   DashboardMetric
+	TotalPageviews   DashboardMetric
 	RealtimeVisitors int
-	TopContent      []TopContent
-	TopSources      []TopSource
+	TopContent       []TopContent
+	TopSources       []TopSource
 
 	// Newsletters tab
-	TotalSubscribers     DashboardMetric
-	AverageOpenRate      DashboardMetric
-	AverageClickRate     DashboardMetric
-	TopNewsletters       []NewsletterStats
+	TotalSubscribers DashboardMetric
+	AverageOpenRate  DashboardMetric
+	AverageClickRate DashboardMetric
+	TopNewsletters   []NewsletterStats
 
 	// Growth tab
-	TotalMembers   DashboardMetric
-	FreeMembers    DashboardMetric
-	PaidMembers    DashboardMetric
-	MRR            DashboardMetric
+	TotalMembers DashboardMetric
+	FreeMembers  DashboardMetric
+	PaidMembers  DashboardMetric
+	MRR          DashboardMetric
 
 	// Locations tab
-	TopCountries   []CountryStats
+	TopCountries []CountryStats
 }
 
 // NewsletterStats represents newsletter performance data.
 type NewsletterStats struct {
-	ID          string
-	Title       string
-	SentDate    time.Time
-	Recipients  int
-	OpenRate    float64
-	ClickRate   float64
+	ID         string
+	Title      string
+	SentDate   time.Time
+	Recipients int
+	OpenRate   float64
+	ClickRate  float64
 }
 
 // CountryStats represents traffic by country.
@@ -158,39 +158,39 @@ type PostsListData struct {
 	ViewMode     string // "list", "grid"
 
 	// For filters
-	Authors      []*users.User
-	AllTags      []*tags.Tag
+	Authors []*users.User
+	AllTags []*tags.Tag
 }
 
 // PostCard represents an editor card/block.
 type PostCard struct {
 	Type    string // "image", "markdown", "html", "gallery", etc.
 	Content string
-	Data    map[string]interface{}
+	Data    map[string]any
 }
 
 // PostEditData holds data for the post editor.
 type PostEditData struct {
 	BaseData
 
-	Post          *posts.Post
-	IsNew         bool
-	PostType      string // "post" or "page"
+	Post     *posts.Post
+	IsNew    bool
+	PostType string // "post" or "page"
 
 	// Sidebar settings
-	Slug          string
-	PublishDate   string
-	PublishTime   string
-	Authors       []*users.User
+	Slug            string
+	PublishDate     string
+	PublishTime     string
+	Authors         []*users.User
 	SelectedAuthors []string
-	AllAuthors    []*users.User
-	Tags          []*tags.Tag
-	SelectedTags  []string
-	AllTags       []*tags.Tag
-	FeaturedImage *media.Media
-	Excerpt       string
-	AccessLevel   string
-	Featured      bool
+	AllAuthors      []*users.User
+	Tags            []*tags.Tag
+	SelectedTags    []string
+	AllTags         []*tags.Tag
+	FeaturedImage   *media.Media
+	Excerpt         string
+	AccessLevel     string
+	Featured        bool
 
 	// SEO
 	MetaTitle       string
@@ -198,20 +198,20 @@ type PostEditData struct {
 	CanonicalURL    string
 
 	// Social
-	TwitterTitle    string
-	TwitterDescription string
-	TwitterImage    string
-	FacebookTitle   string
+	TwitterTitle        string
+	TwitterDescription  string
+	TwitterImage        string
+	FacebookTitle       string
 	FacebookDescription string
-	FacebookImage   string
+	FacebookImage       string
 
 	// Code injection
-	CodeHead        string
-	CodeFoot        string
+	CodeHead string
+	CodeFoot string
 
 	// Template
-	Template        string
-	Templates       []SelectOption
+	Template  string
+	Templates []SelectOption
 }
 
 // SelectOption represents a select dropdown option.
@@ -246,30 +246,30 @@ type PagesListData struct {
 type PageEditData struct {
 	BaseData
 
-	Page           *pages.Page
-	IsNew          bool
-	ParentPages    []*pages.Page
-	SelectedParent string
-	Slug           string
-	PublishDate    string
-	PublishTime    string
-	Authors        []*users.User
+	Page            *pages.Page
+	IsNew           bool
+	ParentPages     []*pages.Page
+	SelectedParent  string
+	Slug            string
+	PublishDate     string
+	PublishTime     string
+	Authors         []*users.User
 	SelectedAuthors []string
-	FeaturedImage  *media.Media
-	Excerpt        string
-	AccessLevel    string
-	MetaTitle      string
+	FeaturedImage   *media.Media
+	Excerpt         string
+	AccessLevel     string
+	MetaTitle       string
 	MetaDescription string
-	Template       string
-	Templates      []SelectOption
+	Template        string
+	Templates       []SelectOption
 }
 
 // TagRow represents a tag in the list view.
 type TagRow struct {
 	*tags.Tag
-	PostCount   int
-	IsInternal  bool // Tags starting with #
-	Featured    *media.Media
+	PostCount  int
+	IsInternal bool // Tags starting with #
+	Featured   *media.Media
 }
 
 // TagsListData holds data for tags list.
@@ -285,53 +285,53 @@ type TagsListData struct {
 type TagEditData struct {
 	BaseData
 
-	Tag             *tags.Tag
-	IsNew           bool
-	IsInternal      bool
-	Slug            string
-	Description     string
-	FeaturedImage   *media.Media
-	MetaTitle       string
-	MetaDescription string
-	CanonicalURL    string
-	TwitterTitle    string
-	TwitterDescription string
-	TwitterImage    string
-	FacebookTitle   string
+	Tag                 *tags.Tag
+	IsNew               bool
+	IsInternal          bool
+	Slug                string
+	Description         string
+	FeaturedImage       *media.Media
+	MetaTitle           string
+	MetaDescription     string
+	CanonicalURL        string
+	TwitterTitle        string
+	TwitterDescription  string
+	TwitterImage        string
+	FacebookTitle       string
 	FacebookDescription string
-	FacebookImage   string
-	CodeHead        string
-	CodeFoot        string
-	PostCount       int
+	FacebookImage       string
+	CodeHead            string
+	CodeFoot            string
+	PostCount           int
 }
 
 // MemberRow represents a member in the list view.
 type MemberRow struct {
-	ID           string
-	Email        string
-	Name         string
-	Avatar       string
-	Status       string // "free", "paid", "comped"
-	Tier         string
-	Subscribed   time.Time
-	LastSeen     time.Time
-	OpenRate     float64
-	Labels       []string
+	ID         string
+	Email      string
+	Name       string
+	Avatar     string
+	Status     string // "free", "paid", "comped"
+	Tier       string
+	Subscribed time.Time
+	LastSeen   time.Time
+	OpenRate   float64
+	Labels     []string
 }
 
 // MembersListData holds data for members list.
 type MembersListData struct {
 	BaseData
 
-	Members       []*MemberRow
-	TotalMembers  int
-	FreeCount     int
-	PaidCount     int
-	FilterStatus  string
-	FilterLabel   string
-	SortBy        string
-	SearchQuery   string
-	Labels        []string
+	Members      []*MemberRow
+	TotalMembers int
+	FreeCount    int
+	PaidCount    int
+	FilterStatus string
+	FilterLabel  string
+	SortBy       string
+	SearchQuery  string
+	Labels       []string
 }
 
 // MemberActivity represents a member activity log entry.
@@ -345,10 +345,10 @@ type MemberActivity struct {
 type MemberDetailData struct {
 	BaseData
 
-	Member       *MemberRow
-	Notes        string
+	Member        *MemberRow
+	Notes         string
 	Subscriptions []MemberSubscription
-	Activity     []MemberActivity
+	Activity      []MemberActivity
 	EmailActivity []EmailActivity
 }
 
@@ -363,57 +363,57 @@ type MemberSubscription struct {
 
 // EmailActivity represents email engagement.
 type EmailActivity struct {
-	Subject   string
-	SentDate  time.Time
-	Opened    bool
-	Clicked   bool
+	Subject  string
+	SentDate time.Time
+	Opened   bool
+	Clicked  bool
 }
 
 // StaffRow represents a staff member in the list.
 type StaffRow struct {
 	*users.User
-	Role         string
-	RoleLabel    string
-	PostCount    int
-	LastSeen     time.Time
-	Avatar       string
+	Role      string
+	RoleLabel string
+	PostCount int
+	LastSeen  time.Time
+	Avatar    string
 }
 
 // StaffListData holds data for staff list.
 type StaffListData struct {
 	BaseData
 
-	Staff       []*StaffRow
-	InviteURL   string
+	Staff     []*StaffRow
+	InviteURL string
 }
 
 // StaffEditData holds data for staff edit.
 type StaffEditData struct {
 	BaseData
 
-	Staff          *users.User
-	IsNew          bool
-	IsSelf         bool
-	IsOwner        bool
+	Staff   *users.User
+	IsNew   bool
+	IsSelf  bool
+	IsOwner bool
 
 	// Profile
-	Name           string
-	Slug           string
-	Email          string
-	Location       string
-	Website        string
-	Bio            string
-	ProfileImage   *media.Media
-	CoverImage     *media.Media
-	FacebookURL    string
-	TwitterURL     string
+	Name         string
+	Slug         string
+	Email        string
+	Location     string
+	Website      string
+	Bio          string
+	ProfileImage *media.Media
+	CoverImage   *media.Media
+	FacebookURL  string
+	TwitterURL   string
 
 	// Role
-	Role           string
-	Roles          []SelectOption
+	Role  string
+	Roles []SelectOption
 
 	// Password
-	ShowPassword   bool
+	ShowPassword bool
 }
 
 // SettingsGeneralData holds data for general settings.
@@ -433,11 +433,11 @@ type SettingsGeneralData struct {
 	MetaDescription string
 
 	// Social
-	FacebookURL     string
-	TwitterURL      string
-	TwitterTitle    string
+	FacebookURL        string
+	TwitterURL         string
+	TwitterTitle       string
 	TwitterDescription string
-	TwitterImage    string
+	TwitterImage       string
 
 	// Privacy
 	IsPrivate       bool
@@ -463,14 +463,14 @@ type SettingsDesignData struct {
 	ActiveTheme string
 
 	// Branding
-	Icon            *media.Media
-	Logo            *media.Media
-	CoverImage      *media.Media
-	AccentColor     string
+	Icon        *media.Media
+	Logo        *media.Media
+	CoverImage  *media.Media
+	AccentColor string
 
 	// Navigation
-	PrimaryNav      []NavLink
-	SecondaryNav    []NavLink
+	PrimaryNav   []NavLink
+	SecondaryNav []NavLink
 
 	// Announcement
 	AnnouncementEnabled bool
@@ -489,28 +489,28 @@ type SettingsMembershipData struct {
 	BaseData
 
 	// Access
-	DefaultAccess    string // "public", "members", "paid"
-	CommentAccess    string
+	DefaultAccess string // "public", "members", "paid"
+	CommentAccess string
 
 	// Portal
-	PortalEnabled    bool
-	PortalButton     bool
-	PortalSignup     bool
+	PortalEnabled     bool
+	PortalButton      bool
+	PortalSignup      bool
 	PortalAccountLink bool
 
 	// Tiers
-	Tiers            []Tier
+	Tiers []Tier
 }
 
 // Tier represents a membership tier.
 type Tier struct {
-	ID          string
-	Name        string
-	Description string
+	ID           string
+	Name         string
+	Description  string
 	MonthlyPrice string
 	YearlyPrice  string
-	Benefits    []string
-	Active      bool
+	Benefits     []string
+	Active       bool
 }
 
 // SettingsEmailData holds data for email settings.
@@ -525,9 +525,9 @@ type SettingsEmailData struct {
 	ReplyTo           string
 
 	// Mailgun
-	MailgunDomain     string
-	MailgunAPIKey     string
-	MailgunBaseURL    string
+	MailgunDomain  string
+	MailgunAPIKey  string
+	MailgunBaseURL string
 }
 
 // SettingsAdvancedData holds data for advanced settings.
@@ -535,17 +535,17 @@ type SettingsAdvancedData struct {
 	BaseData
 
 	// Code injection
-	CodeHead          string
-	CodeFoot          string
+	CodeHead string
+	CodeFoot string
 
 	// Integrations
-	Integrations      []Integration
+	Integrations []Integration
 
 	// Labs
-	LabsFeatures      []LabsFeature
+	LabsFeatures []LabsFeature
 
 	// Data
-	ExportURL         string
+	ExportURL string
 }
 
 // Integration represents a custom integration.
@@ -570,12 +570,12 @@ type LabsFeature struct {
 
 // LoginData holds data for the login page.
 type LoginData struct {
-	SiteTitle    string
-	SiteURL      string
-	SiteLogo     string
-	Error        string
-	Email        string
-	RedirectTo   string
+	SiteTitle  string
+	SiteURL    string
+	SiteLogo   string
+	Error      string
+	Email      string
+	RedirectTo string
 }
 
 // SearchResultItem represents a search result.
@@ -610,12 +610,12 @@ type MediaLibraryData struct {
 // CommentRow represents a comment in moderation view.
 type CommentRow struct {
 	*comments.Comment
-	Author      string
-	AuthorEmail string
+	Author       string
+	AuthorEmail  string
 	AuthorAvatar string
-	PostTitle   string
-	PostURL     string
-	Status      string
+	PostTitle    string
+	PostURL      string
+	Status       string
 }
 
 // CommentsListData holds data for comments list.

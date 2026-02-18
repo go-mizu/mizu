@@ -386,11 +386,11 @@ func (s *Server) seedDevData() error {
 	// Rows are now pages with database_id set
 	devRows := []struct {
 		id    string
-		props map[string]interface{}
+		props map[string]any
 	}{
 		{
 			id: "row1",
-			props: map[string]interface{}{
+			props: map[string]any{
 				"title":       "Improve website copy",
 				"description": "Review and update all marketing copy on the main website. Focus on clarity and conversion optimization.",
 				"progress":    100,
@@ -403,7 +403,7 @@ func (s *Server) seedDevData() error {
 		},
 		{
 			id: "row2",
-			props: map[string]interface{}{
+			props: map[string]any{
 				"title":       "Update help center & FAQ",
 				"description": "Add new articles covering recent feature releases. Update existing documentation for accuracy.",
 				"progress":    60,
@@ -416,7 +416,7 @@ func (s *Server) seedDevData() error {
 		},
 		{
 			id: "row3",
-			props: map[string]interface{}{
+			props: map[string]any{
 				"title":       "Publish release notes@",
 				"description": "Draft and publish release notes for version 2.5. Include all new features and bug fixes.",
 				"progress":    0,
@@ -429,7 +429,7 @@ func (s *Server) seedDevData() error {
 		},
 		{
 			id: "row4",
-			props: map[string]interface{}{
+			props: map[string]any{
 				"title":       "Design new onboarding flow",
 				"description": "Create wireframes and mockups for the new user onboarding experience. Focus on reducing time-to-value.",
 				"progress":    35,
@@ -442,7 +442,7 @@ func (s *Server) seedDevData() error {
 		},
 		{
 			id: "row5",
-			props: map[string]interface{}{
+			props: map[string]any{
 				"title":       "Prepare Q1 marketing campaign",
 				"description": "Develop comprehensive marketing plan including social media, email campaigns, and paid advertising.",
 				"progress":    0,
@@ -455,7 +455,7 @@ func (s *Server) seedDevData() error {
 		},
 		{
 			id: "row6",
-			props: map[string]interface{}{
+			props: map[string]any{
 				"title":       "Review API documentation",
 				"description": "Audit current API docs for completeness and accuracy. Add missing endpoints and examples.",
 				"progress":    0,
@@ -468,7 +468,7 @@ func (s *Server) seedDevData() error {
 		},
 		{
 			id: "row7",
-			props: map[string]interface{}{
+			props: map[string]any{
 				"title":       "Customer feedback analysis",
 				"description": "Analyze recent customer feedback and support tickets. Identify top feature requests and pain points.",
 				"progress":    80,
@@ -481,7 +481,7 @@ func (s *Server) seedDevData() error {
 		},
 		{
 			id: "row8",
-			props: map[string]interface{}{
+			props: map[string]any{
 				"title":       "Launch blog series",
 				"description": "Write and publish a 5-part blog series on best practices for productivity. Include case studies.",
 				"progress":    45,
@@ -554,11 +554,11 @@ func (s *Server) seedDevData() error {
 		{string(blocks.BlockHeading2), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Task description"}}}, 0},
 		{string(blocks.BlockParagraph), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Provide an overview of the task and related details."}}}, 1},
 		{string(blocks.BlockHeading2), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Sub-tasks"}}}, 2},
-		{string(blocks.BlockTodo), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Review previous release notes format"}}, Checked: ptrBool(false)}, 3},
-		{string(blocks.BlockTodo), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Gather feature list from engineering"}}, Checked: ptrBool(false)}, 4},
-		{string(blocks.BlockTodo), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Write initial draft"}}, Checked: ptrBool(false)}, 5},
-		{string(blocks.BlockTodo), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Get approval from PM"}}, Checked: ptrBool(false)}, 6},
-		{string(blocks.BlockTodo), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Publish to blog and email"}}, Checked: ptrBool(false)}, 7},
+		{string(blocks.BlockTodo), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Review previous release notes format"}}, Checked: new(false)}, 3},
+		{string(blocks.BlockTodo), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Gather feature list from engineering"}}, Checked: new(false)}, 4},
+		{string(blocks.BlockTodo), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Write initial draft"}}, Checked: new(false)}, 5},
+		{string(blocks.BlockTodo), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Get approval from PM"}}, Checked: new(false)}, 6},
+		{string(blocks.BlockTodo), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Publish to blog and email"}}, Checked: new(false)}, 7},
 		{string(blocks.BlockHeading2), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Supporting files"}}}, 8},
 		{string(blocks.BlockCallout), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Add any relevant documents, designs, or references here."}}, Icon: "📎"}, 9},
 	}
@@ -766,6 +766,7 @@ func (s *Server) setupRoutes() {
 	})
 }
 
+//go:fix inline
 func ptrBool(b bool) *bool {
-	return &b
+	return new(b)
 }

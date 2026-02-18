@@ -286,7 +286,7 @@ func TestSession_DefaultQueueSize(t *testing.T) {
 	s := newSession("id", nil, 0, nil) // 0 should use default
 
 	// Fill with more than default
-	for i := 0; i < defaultQueueSize; i++ {
+	for i := range defaultQueueSize {
 		err := s.Send(Message{Topic: "test"})
 		if err != nil {
 			t.Errorf("Send() %d error = %v", i, err)
@@ -506,7 +506,7 @@ func TestPubSub_Concurrent(t *testing.T) {
 	}
 
 	// Concurrent publishes
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -924,7 +924,7 @@ func TestHandleConn_InvalidKey(t *testing.T) {
 		name string
 		key  string
 	}{
-		{"too short", "dG9vIHNob3J0"},                     // Decodes to less than 16 bytes
+		{"too short", "dG9vIHNob3J0"}, // Decodes to less than 16 bytes
 		{"invalid base64", "not-valid-base64!!!"},
 		{"too long", "dGhlIHNhbXBsZSBub25jZSBleHRyYQ=="}, // 20 bytes
 	}
@@ -1325,7 +1325,7 @@ func TestWsValidateKey(t *testing.T) {
 	}{
 		{"valid key", "dGhlIHNhbXBsZSBub25jZQ==", true}, // RFC example
 		{"invalid base64", "not-valid-base64!!!", false},
-		{"too short", "dG9vIHNob3J0", false},                     // < 16 bytes
+		{"too short", "dG9vIHNob3J0", false},                    // < 16 bytes
 		{"too long", "dGhlIHNhbXBsZSBub25jZSBleHRyYQ==", false}, // > 16 bytes
 		{"empty", "", false},
 	}

@@ -120,16 +120,13 @@ func TestProfileTokenizationOnly(t *testing.T) {
 	start := time.Now()
 
 	// Run tokenization multiple times for better profiling
-	for iter := 0; iter < 10; iter++ {
+	for range 10 {
 		batchSize := (len(allTexts) + numWorkers - 1) / numWorkers
 		done := make(chan struct{}, numWorkers)
 
-		for w := 0; w < numWorkers; w++ {
+		for w := range numWorkers {
 			startIdx := w * batchSize
-			endIdx := startIdx + batchSize
-			if endIdx > len(allTexts) {
-				endIdx = len(allTexts)
-			}
+			endIdx := min(startIdx+batchSize, len(allTexts))
 			if startIdx >= endIdx {
 				done <- struct{}{}
 				continue
@@ -144,7 +141,7 @@ func TestProfileTokenizationOnly(t *testing.T) {
 			}(startIdx, endIdx)
 		}
 
-		for w := 0; w < numWorkers; w++ {
+		for range numWorkers {
 			<-done
 		}
 	}

@@ -39,7 +39,7 @@ func (s *PagesStore) GetByID(ctx context.Context, id string) (*pages.Page, error
 
 func (s *PagesStore) Update(ctx context.Context, id string, in *pages.UpdateIn) error {
 	sets := []string{"updated_at = CURRENT_TIMESTAMP"}
-	args := []interface{}{}
+	args := []any{}
 
 	if in.Title != nil {
 		sets = append(sets, "title = ?")
@@ -123,7 +123,7 @@ func (s *PagesStore) ListByParentIDs(ctx context.Context, parentIDs []string, pa
 
 	// Build placeholders for IN clause
 	placeholders := make([]string, len(parentIDs))
-	args := make([]interface{}, len(parentIDs)+1)
+	args := make([]any, len(parentIDs)+1)
 	for i, id := range parentIDs {
 		placeholders[i] = "?"
 		args[i] = id
@@ -269,7 +269,7 @@ func (s *PagesStore) ListByDatabase(ctx context.Context, databaseID string, limi
 		FROM pages
 		WHERE database_id = ? AND is_archived = FALSE
 	`
-	args := []interface{}{databaseID}
+	args := []any{databaseID}
 
 	if cursor != "" {
 		query += " AND id > ?"

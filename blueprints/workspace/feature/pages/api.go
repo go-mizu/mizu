@@ -20,24 +20,24 @@ const (
 // Page represents a document page.
 // When DatabaseID is set, this page acts as a database row.
 type Page struct {
-	ID          string      `json:"id"`
-	WorkspaceID string      `json:"workspace_id"`
-	ParentID    string      `json:"parent_id,omitempty"`
-	ParentType  ParentType  `json:"parent_type"`
-	DatabaseID  string      `json:"database_id,omitempty"`  // When set, this page is a database row
-	RowPosition int64       `json:"row_position,omitempty"` // Ordering within a database
-	Title       string      `json:"title"`
-	Icon        string      `json:"icon,omitempty"`
-	Cover       string      `json:"cover,omitempty"`
-	CoverY      float64     `json:"cover_y"`
-	Properties  Properties  `json:"properties,omitempty"`
-	IsTemplate  bool        `json:"is_template"`
-	IsArchived  bool        `json:"is_archived"`
-	IsFavorite  bool        `json:"is_favorite,omitempty"` // Per-user computed
-	CreatedBy   string      `json:"created_by"`
-	CreatedAt   time.Time   `json:"created_at"`
-	UpdatedBy   string      `json:"updated_by"`
-	UpdatedAt   time.Time   `json:"updated_at"`
+	ID          string     `json:"id"`
+	WorkspaceID string     `json:"workspace_id"`
+	ParentID    string     `json:"parent_id,omitempty"`
+	ParentType  ParentType `json:"parent_type"`
+	DatabaseID  string     `json:"database_id,omitempty"`  // When set, this page is a database row
+	RowPosition int64      `json:"row_position,omitempty"` // Ordering within a database
+	Title       string     `json:"title"`
+	Icon        string     `json:"icon,omitempty"`
+	Cover       string     `json:"cover,omitempty"`
+	CoverY      float64    `json:"cover_y"`
+	Properties  Properties `json:"properties,omitempty"`
+	IsTemplate  bool       `json:"is_template"`
+	IsArchived  bool       `json:"is_archived"`
+	IsFavorite  bool       `json:"is_favorite,omitempty"` // Per-user computed
+	CreatedBy   string     `json:"created_by"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedBy   string     `json:"updated_by"`
+	UpdatedAt   time.Time  `json:"updated_at"`
 
 	// Enriched fields
 	Children   []*Page     `json:"children,omitempty"`
@@ -57,8 +57,8 @@ type Properties map[string]PropertyValue
 
 // PropertyValue represents a property value.
 type PropertyValue struct {
-	Type  string      `json:"type"`
-	Value interface{} `json:"value"`
+	Type  string `json:"type"`
+	Value any    `json:"value"`
 }
 
 // CreateIn contains input for creating a page.
@@ -94,9 +94,9 @@ type ListOpts struct {
 
 // SearchOpts contains options for searching pages.
 type SearchOpts struct {
-	Types    []string
-	Cursor   string
-	Limit    int
+	Types  []string
+	Cursor string
+	Limit  int
 }
 
 // API defines the pages service contract.

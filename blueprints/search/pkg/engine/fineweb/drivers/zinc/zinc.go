@@ -142,15 +142,15 @@ func (d *Driver) Search(ctx context.Context, query string, limit, offset int) (*
 	start := time.Now()
 
 	// Build Zinc search query (Elasticsearch compatible)
-	searchQuery := map[string]interface{}{
+	searchQuery := map[string]any{
 		"search_type": "match",
-		"query": map[string]interface{}{
+		"query": map[string]any{
 			"term":  query,
 			"field": "text",
 		},
-		"from":       offset,
+		"from":        offset,
 		"max_results": limit,
-		"_source":    []string{"id", "url", "text", "dump", "date", "language", "language_score"},
+		"_source":     []string{"id", "url", "text", "dump", "date", "language", "language_score"},
 	}
 
 	body, _ := json.Marshal(searchQuery)
@@ -280,7 +280,7 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 
 func (d *Driver) bulkIndex(ctx context.Context, docs []ZincDocument) error {
 	// Zinc bulk API format
-	bulkRequest := map[string]interface{}{
+	bulkRequest := map[string]any{
 		"index":   d.indexName,
 		"records": docs,
 	}

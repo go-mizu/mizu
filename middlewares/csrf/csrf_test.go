@@ -343,7 +343,7 @@ func TestGenerateToken(t *testing.T) {
 
 	// Test uniqueness
 	tokens := make(map[string]bool)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		tok := generateToken(32, testSecret)
 		if tokens[tok] {
 			t.Error("duplicate token generated")

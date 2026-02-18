@@ -50,11 +50,11 @@ func TestSearchComparison(t *testing.T) {
 
 	// Test queries
 	queries := []string{
-		"Việt Nam",        // Vietnamese text
-		"thành phố",       // "city" in Vietnamese
-		"công nghệ",       // "technology" in Vietnamese
-		"internet",        // English loanword
-		"2024",            // Number/date
+		"Việt Nam",  // Vietnamese text
+		"thành phố", // "city" in Vietnamese
+		"công nghệ", // "technology" in Vietnamese
+		"internet",  // English loanword
+		"2024",      // Number/date
 	}
 
 	for _, query := range queries {
@@ -204,11 +204,11 @@ func TestBM25Parameters(t *testing.T) {
 		id   string
 		text string
 	}{
-		{"1", "cat cat cat cat cat"},                    // High term frequency
-		{"2", "cat"},                                     // Low term frequency
-		{"3", "cat dog bird fish snake lizard"},         // Long document
-		{"4", "cat dog"},                                 // Short document
-		{"5", "the cat sat on the mat"},                 // Normal sentence
+		{"1", "cat cat cat cat cat"},            // High term frequency
+		{"2", "cat"},                            // Low term frequency
+		{"3", "cat dog bird fish snake lizard"}, // Long document
+		{"4", "cat dog"},                        // Short document
+		{"5", "the cat sat on the mat"},         // Normal sentence
 	}
 
 	for _, doc := range docs {
@@ -236,10 +236,10 @@ func TestBM25Parameters(t *testing.T) {
 	}{
 		{"default", 1.2, 0.75, false},
 		{"high_k", 2.0, 0.75, false},     // Higher term frequency saturation
-		{"low_k", 0.5, 0.75, false},       // Lower term frequency saturation
-		{"high_b", 1.2, 1.0, false},       // Full length normalization
-		{"low_b", 1.2, 0.0, false},        // No length normalization
-		{"conjunctive", 1.2, 0.75, true},  // Require all terms
+		{"low_k", 0.5, 0.75, false},      // Lower term frequency saturation
+		{"high_b", 1.2, 1.0, false},      // Full length normalization
+		{"low_b", 1.2, 0.0, false},       // No length normalization
+		{"conjunctive", 1.2, 0.75, true}, // Require all terms
 	}
 
 	for _, tc := range testCases {
@@ -601,11 +601,4 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

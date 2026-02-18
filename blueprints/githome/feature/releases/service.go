@@ -466,7 +466,7 @@ func (s *Service) DownloadAsset(ctx context.Context, owner, repo string, assetID
 
 // populateURLs fills in the URL fields for a release
 func (s *Service) populateURLs(rel *Release, owner, repo string) {
-	rel.NodeID = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Release:%d", rel.ID)))
+	rel.NodeID = base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Release:%d", rel.ID))
 	rel.URL = fmt.Sprintf("%s/api/v3/repos/%s/%s/releases/%d", s.baseURL, owner, repo, rel.ID)
 	rel.HTMLURL = fmt.Sprintf("%s/%s/%s/releases/tag/%s", s.baseURL, owner, repo, rel.TagName)
 	rel.AssetsURL = fmt.Sprintf("%s/api/v3/repos/%s/%s/releases/%d/assets", s.baseURL, owner, repo, rel.ID)
@@ -477,7 +477,7 @@ func (s *Service) populateURLs(rel *Release, owner, repo string) {
 
 // populateAssetURLs fills in the URL fields for an asset
 func (s *Service) populateAssetURLs(a *Asset, owner, repo string, releaseID int64) {
-	a.NodeID = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("ReleaseAsset:%d", a.ID)))
+	a.NodeID = base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "ReleaseAsset:%d", a.ID))
 	a.URL = fmt.Sprintf("%s/api/v3/repos/%s/%s/releases/assets/%d", s.baseURL, owner, repo, a.ID)
 	a.BrowserDownloadURL = fmt.Sprintf("%s/%s/%s/releases/download/%d/%s", s.baseURL, owner, repo, releaseID, a.Name)
 }

@@ -72,7 +72,7 @@ func Generate(svc *contract.Service, cfg *Config) ([]*sdk.File, error) {
 			"isPrimitive":      isPrimitive,
 			"add":              func(a, b int) int { return a + b },
 			"sub":              func(a, b int) int { return a - b },
-			"len":              func(s interface{}) int { return lenHelper(s) },
+			"len":              func(s any) int { return lenHelper(s) },
 		}).
 		ParseFS(templateFS, "templates/*.cs.tmpl", "templates/*.csproj.tmpl")
 	if err != nil {
@@ -149,10 +149,10 @@ type typeModel struct {
 	Variants []variantModel
 
 	// For struct types that are union variants
-	IsUnionVariant  bool
-	UnionBase       string // Base class name (e.g., "ContentBlock")
-	UnionTag        string // Tag property name (e.g., "Type")
-	UnionTagValue   string // Tag value (e.g., "text")
+	IsUnionVariant bool
+	UnionBase      string // Base class name (e.g., "ContentBlock")
+	UnionTag       string // Tag property name (e.g., "Type")
+	UnionTagValue  string // Tag value (e.g., "text")
 }
 
 type fieldModel struct {
@@ -564,14 +564,14 @@ func baseCSharpType(typeByName map[string]*contract.Type, r string) string {
 	}
 
 	// Handle slice types
-	if strings.HasPrefix(r, "[]") {
-		elem := strings.TrimSpace(strings.TrimPrefix(r, "[]"))
+	if after, ok := strings.CutPrefix(r, "[]"); ok {
+		elem := strings.TrimSpace(after)
 		return "IReadOnlyList<" + baseCSharpType(typeByName, elem) + ">"
 	}
 
 	// Handle map types
-	if strings.HasPrefix(r, "map[string]") {
-		elem := strings.TrimSpace(strings.TrimPrefix(r, "map[string]"))
+	if after, ok := strings.CutPrefix(r, "map[string]"); ok {
+		elem := strings.TrimSpace(after)
 		return "IReadOnlyDictionary<string, " + baseCSharpType(typeByName, elem) + ">"
 	}
 
@@ -780,7 +780,7 @@ func isPrimitive(s string) bool {
 }
 
 // lenHelper returns the length of a slice or array.
-func lenHelper(s interface{}) int {
+func lenHelper(s any) int {
 	switch v := s.(type) {
 	case []fieldModel:
 		return len(v)

@@ -115,16 +115,16 @@ func buildCSP(opts Options, nonce string) string {
 	// Parse base policy if provided
 	directives := make(map[string]string)
 	if opts.BasePolicy != "" {
-		for _, part := range strings.Split(opts.BasePolicy, ";") {
+		for part := range strings.SplitSeq(opts.BasePolicy, ";") {
 			part = strings.TrimSpace(part)
 			if part == "" {
 				continue
 			}
-			spaceIdx := strings.Index(part, " ")
-			if spaceIdx == -1 {
+			before, after, ok := strings.Cut(part, " ")
+			if !ok {
 				directives[part] = ""
 			} else {
-				directives[part[:spaceIdx]] = part[spaceIdx+1:]
+				directives[before] = after
 			}
 		}
 	}

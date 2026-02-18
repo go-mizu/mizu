@@ -151,10 +151,10 @@ type QuickDraftData struct {
 
 // RecentDraft represents a recent draft in the Quick Draft widget.
 type RecentDraft struct {
-	ID       string
-	Title    string
-	Date     time.Time
-	EditURL  string
+	ID      string
+	Title   string
+	Date    time.Time
+	EditURL string
 }
 
 // DashboardData holds data for the dashboard page.
@@ -166,34 +166,34 @@ type DashboardData struct {
 	Breadcrumbs []Breadcrumb
 	Notices     []AdminNotice
 
-	SiteTitle       string
-	SiteURL         string
-	AtAGlance       AtAGlance
-	Activity        []ActivityItem
-	QuickDraft      QuickDraftData
-	RecentDrafts    []RecentDraft
-	SiteHealth      SiteHealth
-	RecentComments  []*CommentRow
-	WelcomePanel    bool
+	SiteTitle      string
+	SiteURL        string
+	AtAGlance      AtAGlance
+	Activity       []ActivityItem
+	QuickDraft     QuickDraftData
+	RecentDrafts   []RecentDraft
+	SiteHealth     SiteHealth
+	RecentComments []*CommentRow
+	WelcomePanel   bool
 }
 
 // PostRow represents a post in the list table.
 type PostRow struct {
 	*posts.Post
-	Author        *users.User
-	Categories    []*categories.Category
-	Tags          []*tags.Tag
-	CommentCount  int
-	ThumbnailURL  string
-	RowActions    []RowAction
+	Author       *users.User
+	Categories   []*categories.Category
+	Tags         []*tags.Tag
+	CommentCount int
+	ThumbnailURL string
+	RowActions   []RowAction
 }
 
 // RowAction represents an action link in a table row.
 type RowAction struct {
-	Label  string
-	URL    string
-	Class  string
-	Attr   string // Additional attributes
+	Label string
+	URL   string
+	Class string
+	Attr  string // Additional attributes
 }
 
 // PostsListData holds data for the posts list page.
@@ -232,24 +232,24 @@ type PostEditData struct {
 	SiteTitle   string
 	SiteURL     string
 
-	Post              *posts.Post
-	IsNew             bool
-	PostType          string
+	Post               *posts.Post
+	IsNew              bool
+	PostType           string
 	SelectedCategories []string
-	AllCategories     []*CategoryOption
-	SelectedTags      []string
-	AllTags           []*tags.Tag
-	FeaturedMedia     *media.Media
-	Statuses          []PostStatus
-	Visibilities      []Visibility
-	CurrentStatus     string
-	CurrentVisibility string
-	PublishDate       string
-	PublishTime       string
-	Excerpt           string
-	Slug              string
-	Template          string
-	Templates         []SelectOption
+	AllCategories      []*CategoryOption
+	SelectedTags       []string
+	AllTags            []*tags.Tag
+	FeaturedMedia      *media.Media
+	Statuses           []PostStatus
+	Visibilities       []Visibility
+	CurrentStatus      string
+	CurrentVisibility  string
+	PublishDate        string
+	PublishTime        string
+	Excerpt            string
+	Slug               string
+	Template           string
+	Templates          []SelectOption
 }
 
 // CategoryOption represents a category in the category checklist.
@@ -375,35 +375,35 @@ type MediaEditData struct {
 	SiteTitle   string
 	SiteURL     string
 
-	Media         *media.Media
-	Uploader      *users.User
-	ThumbnailURL  string
-	FileURL       string
-	FileSize      string
-	Dimensions    string
-	Duration      string
-	MimeType      string
-	AttachedTo    []*AttachedPost
-	AltText       string
-	Caption       string
-	Description   string
+	Media        *media.Media
+	Uploader     *users.User
+	ThumbnailURL string
+	FileURL      string
+	FileSize     string
+	Dimensions   string
+	Duration     string
+	MimeType     string
+	AttachedTo   []*AttachedPost
+	AltText      string
+	Caption      string
+	Description  string
 }
 
 // CommentRow represents a comment in the list table.
 type CommentRow struct {
 	*comments.Comment
-	AuthorName    string
-	AuthorEmail   string
-	AuthorURL     string
-	AuthorIP      string
-	AuthorAvatar  string
-	Post          *posts.Post
-	PostTitle     string
-	PostEditURL   string
-	PostViewURL   string
-	InReplyTo     *comments.Comment
-	RowActions    []RowAction
-	Pending       bool
+	AuthorName   string
+	AuthorEmail  string
+	AuthorURL    string
+	AuthorIP     string
+	AuthorAvatar string
+	Post         *posts.Post
+	PostTitle    string
+	PostEditURL  string
+	PostViewURL  string
+	InReplyTo    *comments.Comment
+	RowActions   []RowAction
+	Pending      bool
 }
 
 // CommentsListData holds data for the comments list page.
@@ -493,13 +493,13 @@ type UserEditData struct {
 	SiteTitle   string
 	SiteURL     string
 
-	EditUser      *users.User
-	IsNew         bool
-	IsSelf        bool
-	Roles         []SelectOption
-	CurrentRole   string
-	AvatarURL     string
-	ShowPassword  bool
+	EditUser     *users.User
+	IsNew        bool
+	IsSelf       bool
+	Roles        []SelectOption
+	CurrentRole  string
+	AvatarURL    string
+	ShowPassword bool
 }
 
 // ProfileData holds data for the profile page.
@@ -513,10 +513,10 @@ type ProfileData struct {
 	SiteTitle   string
 	SiteURL     string
 
-	AvatarURL       string
-	ColorSchemes    []ColorScheme
-	CurrentScheme   string
-	AdminBarFront   bool
+	AvatarURL     string
+	ColorSchemes  []ColorScheme
+	CurrentScheme string
+	AdminBarFront bool
 }
 
 // ColorScheme represents an admin color scheme option.
@@ -566,7 +566,7 @@ type TaxonomyListData struct {
 type MenuItemView struct {
 	*menus.MenuItem
 	TypeLabel   string // "Page", "Post", "Custom Link", etc.
-	OriginalObj interface{}
+	OriginalObj any
 	Children    []*MenuItemView
 	Depth       int
 }
@@ -617,32 +617,32 @@ type SettingsData struct {
 	SiteTitle   string
 	SiteURL     string
 
-	Section    string // "general", "writing", "reading", etc.
-	Settings   map[string]string
-	Options    map[string][]SelectOption
-	Timezones  []SelectOption
+	Section     string // "general", "writing", "reading", etc.
+	Settings    map[string]string
+	Options     map[string][]SelectOption
+	Timezones   []SelectOption
 	DateFormats []SelectOption
 	TimeFormats []SelectOption
 }
 
 // LoginData holds data for the login page.
 type LoginData struct {
-	Title        string
-	SiteTitle    string
-	SiteURL      string
-	Error        string
-	Message      string
-	RedirectTo   string
-	RememberMe   bool
-	Interim      bool
+	Title          string
+	SiteTitle      string
+	SiteURL        string
+	Error          string
+	Message        string
+	RedirectTo     string
+	RememberMe     bool
+	Interim        bool
 	CustomizeLogin bool
 }
 
 // Screen options for list tables
 type ScreenOptions struct {
-	PerPage       int
-	Columns       []string
-	ViewMode      string
+	PerPage  int
+	Columns  []string
+	ViewMode string
 }
 
 // ThemeInfo holds information about a theme.

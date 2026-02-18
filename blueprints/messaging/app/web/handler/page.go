@@ -2,6 +2,7 @@ package handler
 
 import (
 	"html/template"
+	"maps"
 	"net/http"
 
 	"github.com/go-mizu/mizu"
@@ -184,9 +185,7 @@ func (h *Page) render(c *mizu.Ctx, name string, data any) error {
 	}
 	if data != nil {
 		if m, ok := data.(map[string]any); ok {
-			for k, v := range m {
-				viewData[k] = v
-			}
+			maps.Copy(viewData, m)
 		}
 	}
 

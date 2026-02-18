@@ -149,7 +149,7 @@ func TestParallelZstdDecompression(t *testing.T) {
 	// Prepare compressed chunks
 	original := generateCompressibleData(dataSize)
 	compressedChunks := make([][]byte, numChunks)
-	for i := 0; i < numChunks; i++ {
+	for i := range numChunks {
 		compressed, _ := zstd.Compress(nil, original)
 		compressedChunks[i] = compressed
 	}
@@ -161,12 +161,9 @@ func TestParallelZstdDecompression(t *testing.T) {
 	var wg sync.WaitGroup
 	chunksPerWorker := (numChunks + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * chunksPerWorker
-		endIdx := startIdx + chunksPerWorker
-		if endIdx > numChunks {
-			endIdx = numChunks
-		}
+		endIdx := min(startIdx+chunksPerWorker, numChunks)
 		if startIdx >= endIdx {
 			break
 		}
@@ -189,16 +186,13 @@ func TestParallelZstdDecompression(t *testing.T) {
 
 	// Pre-create decoders per worker
 	decoders := make([]*klauspost.Decoder, numWorkers)
-	for i := 0; i < numWorkers; i++ {
+	for i := range numWorkers {
 		decoders[i], _ = klauspost.NewReader(nil)
 	}
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * chunksPerWorker
-		endIdx := startIdx + chunksPerWorker
-		if endIdx > numChunks {
-			endIdx = numChunks
-		}
+		endIdx := min(startIdx+chunksPerWorker, numChunks)
 		if startIdx >= endIdx {
 			break
 		}

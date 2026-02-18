@@ -2,6 +2,7 @@ package frontend
 
 import (
 	"html/template"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -63,13 +64,7 @@ func TestLoadViteManifest(t *testing.T) {
 		if len(preloads) == 0 {
 			t.Error("expected preloads to include imports")
 		}
-		found := false
-		for _, p := range preloads {
-			if p == "assets/vendor-789xyz.js" {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(preloads, "assets/vendor-789xyz.js")
 		if !found {
 			t.Error("expected preloads to include vendor")
 		}

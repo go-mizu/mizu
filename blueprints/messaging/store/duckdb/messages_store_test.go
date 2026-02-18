@@ -316,7 +316,7 @@ func TestMessagesStore_List(t *testing.T) {
 	ctx := context.Background()
 
 	// Create multiple messages
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		createTestMessage(t, ms, c.ID, userID, "list"+string(rune('a'+i)))
 		time.Sleep(1 * time.Millisecond) // Ensure different timestamps
 	}
@@ -610,17 +610,17 @@ func TestMessagesStore_Media(t *testing.T) {
 
 	t.Run("insert media", func(t *testing.T) {
 		media := &messages.Media{
-			ID:          "media_1",
-			MessageID:   m.ID,
-			Type:        "image",
-			Filename:    "photo.jpg",
-			ContentType: "image/jpeg",
-			Size:        1024000,
-			URL:         "https://example.com/photo.jpg",
+			ID:           "media_1",
+			MessageID:    m.ID,
+			Type:         "image",
+			Filename:     "photo.jpg",
+			ContentType:  "image/jpeg",
+			Size:         1024000,
+			URL:          "https://example.com/photo.jpg",
 			ThumbnailURL: "https://example.com/photo_thumb.jpg",
-			Width:       1920,
-			Height:      1080,
-			CreatedAt:   now,
+			Width:        1920,
+			Height:       1080,
+			CreatedAt:    now,
 		}
 
 		err := ms.InsertMedia(ctx, media)
@@ -651,13 +651,13 @@ func TestMessagesStore_Media(t *testing.T) {
 
 	t.Run("insert view-once media", func(t *testing.T) {
 		media := &messages.Media{
-			ID:          "media_viewonce",
-			MessageID:   m.ID,
-			Type:        "image",
-			Size:        500000,
-			URL:         "https://example.com/secret.jpg",
-			IsViewOnce:  true,
-			CreatedAt:   now,
+			ID:         "media_viewonce",
+			MessageID:  m.ID,
+			Type:       "image",
+			Size:       500000,
+			URL:        "https://example.com/secret.jpg",
+			IsViewOnce: true,
+			CreatedAt:  now,
 		}
 
 		err := ms.InsertMedia(ctx, media)

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -41,9 +42,7 @@ func NewClient(svc *contract.Service) (*Client, error) {
 	}
 	h := map[string]string{"content-type": "application/json"}
 	if svc.Client != nil {
-		for k, v := range svc.Client.Headers {
-			h[k] = v
-		}
+		maps.Copy(h, svc.Client.Headers)
 	}
 	return &Client{
 		Svc:     svc,

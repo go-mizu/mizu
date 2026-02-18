@@ -147,7 +147,7 @@ func openMmapSegment(path string) (*mmapSegment, error) {
 	termEntrySize := uint64(24) // hash(8) + offset(8) + docfreq(4) + padding(4)
 	termCount := (seg.header.PostingsOffset - seg.header.TermsOffset) / termEntrySize
 
-	for i := uint64(0); i < termCount; i++ {
+	for i := range termCount {
 		offset := seg.header.TermsOffset + i*termEntrySize
 		if offset+termEntrySize > uint64(len(data)) {
 			break
@@ -309,11 +309,4 @@ func (d *mmapDriver) Close() error {
 	d.docs = nil
 
 	return nil
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

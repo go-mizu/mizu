@@ -727,8 +727,8 @@ func (s *PullsStore) GetCommitBySHA(ctx context.Context, repoID int64, sha strin
 		// Simple parsing of ["sha1","sha2"] format
 		trimmed := strings.Trim(parentSHAs, "[]")
 		if trimmed != "" {
-			parts := strings.Split(trimmed, ",")
-			for _, p := range parts {
+			parts := strings.SplitSeq(trimmed, ",")
+			for p := range parts {
 				sha := strings.Trim(p, `"`)
 				if sha != "" {
 					c.Parents = append(c.Parents, &pulls.CommitRef{SHA: sha})
@@ -834,9 +834,10 @@ func joinStrings(strs []string, sep string) string {
 	if len(strs) == 0 {
 		return ""
 	}
-	result := strs[0]
+	var result strings.Builder
+	result.WriteString(strs[0])
 	for i := 1; i < len(strs); i++ {
-		result += sep + strs[i]
+		result.WriteString(sep + strs[i])
 	}
-	return result
+	return result.String()
 }

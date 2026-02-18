@@ -32,7 +32,7 @@ type Chat struct {
 	IconURL       string    `json:"icon_url,omitempty"`
 	OwnerID       string    `json:"owner_id,omitempty"`
 	LastMessageID string    `json:"last_message_id,omitempty"`
-	LastMessageAt time.Time `json:"last_message_at,omitempty"`
+	LastMessageAt time.Time `json:"last_message_at"`
 	MessageCount  int64     `json:"message_count"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
@@ -53,16 +53,16 @@ type Chat struct {
 
 // Participant represents a chat participant.
 type Participant struct {
-	ChatID             string    `json:"chat_id"`
-	UserID             string    `json:"user_id"`
-	Role               string    `json:"role"`
-	JoinedAt           time.Time `json:"joined_at"`
-	IsMuted            bool      `json:"is_muted"`
-	MuteUntil          time.Time `json:"mute_until,omitempty"`
-	UnreadCount        int       `json:"unread_count"`
-	LastReadMessageID  string    `json:"last_read_message_id,omitempty"`
-	LastReadAt         time.Time `json:"last_read_at,omitempty"`
-	NotificationLevel  string    `json:"notification_level"`
+	ChatID            string    `json:"chat_id"`
+	UserID            string    `json:"user_id"`
+	Role              string    `json:"role"`
+	JoinedAt          time.Time `json:"joined_at"`
+	IsMuted           bool      `json:"is_muted"`
+	MuteUntil         time.Time `json:"mute_until"`
+	UnreadCount       int       `json:"unread_count"`
+	LastReadMessageID string    `json:"last_read_message_id,omitempty"`
+	LastReadAt        time.Time `json:"last_read_at"`
+	NotificationLevel string    `json:"notification_level"`
 
 	// Joined user info
 	User any `json:"user,omitempty"`
@@ -75,9 +75,9 @@ type CreateDirectIn struct {
 
 // CreateGroupIn contains input for creating a group chat.
 type CreateGroupIn struct {
-	Name         string   `json:"name"`
-	Description  string   `json:"description,omitempty"`
-	IconURL      string   `json:"icon_url,omitempty"`
+	Name           string   `json:"name"`
+	Description    string   `json:"description,omitempty"`
+	IconURL        string   `json:"icon_url,omitempty"`
 	ParticipantIDs []string `json:"participant_ids"`
 }
 
@@ -90,8 +90,8 @@ type UpdateIn struct {
 
 // ListOpts specifies options for listing chats.
 type ListOpts struct {
-	Limit        int
-	Offset       int
+	Limit           int
+	Offset          int
 	IncludeArchived bool
 }
 

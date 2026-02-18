@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-mizu/blueprints/microblog/feature/notifications"
@@ -20,56 +21,57 @@ func NewNotificationsStore(db *sql.DB) *NotificationsStore {
 }
 
 func (s *NotificationsStore) List(ctx context.Context, accountID string, types, excludeTypes []notifications.NotificationType, limit int, maxID, sinceID string) ([]*notifications.Notification, error) {
-	query := `
+	var query strings.Builder
+	query.WriteString(`
 		SELECT id, type, account_id, actor_id, post_id, read, created_at
 		FROM notifications
 		WHERE account_id = $1
-	`
+	`)
 
 	args := []any{accountID}
 	argIdx := 2
 
 	if len(types) > 0 {
-		query += " AND type IN ("
+		query.WriteString(" AND type IN (")
 		for i, t := range types {
 			if i > 0 {
-				query += ","
+				query.WriteString(",")
 			}
-			query += fmt.Sprintf("$%d", argIdx)
+			query.WriteString(fmt.Sprintf("$%d", argIdx))
 			args = append(args, string(t))
 			argIdx++
 		}
-		query += ")"
+		query.WriteString(")")
 	}
 
 	if len(excludeTypes) > 0 {
-		query += " AND type NOT IN ("
+		query.WriteString(" AND type NOT IN (")
 		for i, t := range excludeTypes {
 			if i > 0 {
-				query += ","
+				query.WriteString(",")
 			}
-			query += fmt.Sprintf("$%d", argIdx)
+			query.WriteString(fmt.Sprintf("$%d", argIdx))
 			args = append(args, string(t))
 			argIdx++
 		}
-		query += ")"
+		query.WriteString(")")
 	}
 
 	if maxID != "" {
-		query += fmt.Sprintf(" AND id < $%d", argIdx)
+		query.WriteString(fmt.Sprintf(" AND id < $%d", argIdx))
 		args = append(args, maxID)
 		argIdx++
 	}
 	if sinceID != "" {
-		query += fmt.Sprintf(" AND id > $%d", argIdx)
+		query.WriteString(fmt.Sprintf(" AND id > $%d", argIdx))
 		args = append(args, sinceID)
 		argIdx++
 	}
 
-	query += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d", argIdx)
+	query.WriteString(fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d", argIdx))
 	args = append(args, limit)
 
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.db.QueryContext(ctx, query.String(), args...)
 	if err != nil {
 		return nil, err
 	}

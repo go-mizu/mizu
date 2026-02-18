@@ -26,13 +26,9 @@ type ParallelIndexer struct {
 
 // NewParallelIndexer creates a new parallel indexer.
 func NewParallelIndexer(tokenizer TokenizerFunc) *ParallelIndexer {
-	numWorkers := runtime.NumCPU()
-	if numWorkers < 2 {
-		numWorkers = 2
-	}
-	if numWorkers > 16 {
-		numWorkers = 16 // Cap to avoid too much memory
-	}
+	numWorkers := min(max(runtime.NumCPU(), 2),
+		// Cap to avoid too much memory
+		16)
 
 	return &ParallelIndexer{
 		NumWorkers: numWorkers,
@@ -64,16 +60,10 @@ func (pi *ParallelIndexer) IndexTexts(texts []string) (map[string][]IndexPosting
 	var wg sync.WaitGroup
 
 	// Distribute work
-	batchSize := (len(texts) + pi.NumWorkers - 1) / pi.NumWorkers
-	if batchSize < 100 {
-		batchSize = 100
-	}
+	batchSize := max((len(texts)+pi.NumWorkers-1)/pi.NumWorkers, 100)
 
 	for start := 0; start < len(texts); start += batchSize {
-		end := start + batchSize
-		if end > len(texts) {
-			end = len(texts)
-		}
+		end := min(start+batchSize, len(texts))
 
 		wg.Add(1)
 		go func(batch []string, startIdx int) {
@@ -159,13 +149,7 @@ type indexItem struct {
 
 // NewStreamingIndexer creates a streaming parallel indexer.
 func NewStreamingIndexer(tokenizer TokenizerFunc) *StreamingIndexer {
-	numWorkers := runtime.NumCPU()
-	if numWorkers < 2 {
-		numWorkers = 2
-	}
-	if numWorkers > 16 {
-		numWorkers = 16
-	}
+	numWorkers := min(max(runtime.NumCPU(), 2), 16)
 
 	si := &StreamingIndexer{
 		NumWorkers:   numWorkers,
@@ -305,20 +289,11 @@ type turboWorkerData struct {
 // NewTurboIndexer creates a new turbo indexer optimized for maximum throughput.
 func NewTurboIndexer(tokenizer TokenizerFunc) *TurboIndexer {
 	// Use 8 workers - optimal for balancing tokenization vs merge overhead
-	numWorkers := 8
-	if runtime.NumCPU() < 8 {
-		numWorkers = runtime.NumCPU()
-	}
-	if numWorkers < 4 {
-		numWorkers = 4
-	}
+	numWorkers := max(min(runtime.NumCPU(), 8), 4)
 
 	// Channel buffer sized for ~10 seconds of work at 50k docs/sec
 	// Smaller buffer reduces memory while still allowing I/O overlap
-	bufferSize := numWorkers * 5000
-	if bufferSize > 50000 {
-		bufferSize = 50000
-	}
+	bufferSize := min(numWorkers*5000, 50000)
 
 	ti := &TurboIndexer{
 		NumWorkers: numWorkers,
@@ -470,13 +445,7 @@ func (bi *BatchIndexer) Finish() (map[string][]IndexPosting, []int) {
 	}
 
 	// Use up to 16 CPUs for parallelism
-	numWorkers := runtime.NumCPU()
-	if numWorkers > 16 {
-		numWorkers = 16
-	}
-	if numWorkers < 2 {
-		numWorkers = 2
-	}
+	numWorkers := max(min(runtime.NumCPU(), 16), 2)
 
 	// Divide documents evenly across workers
 	docsPerWorker := (len(bi.docs) + numWorkers - 1) / numWorkers
@@ -498,10 +467,7 @@ func (bi *BatchIndexer) Finish() (map[string][]IndexPosting, []int) {
 			defer wg.Done()
 
 			start := workerID * docsPerWorker
-			end := start + docsPerWorker
-			if end > len(bi.docs) {
-				end = len(bi.docs)
-			}
+			end := min(start+docsPerWorker, len(bi.docs))
 			if start >= len(bi.docs) {
 				return
 			}

@@ -73,22 +73,16 @@ func (ri *RocketIndexer) AddBatch(docIDs []uint32, texts []string) {
 	}
 
 	numDocs := len(texts)
-	numWorkers := ri.config.NumWorkers
-	if numWorkers > numDocs {
-		numWorkers = numDocs
-	}
+	numWorkers := min(ri.config.NumWorkers, numDocs)
 
 	// Each worker processes its docs into its own isolated index
 	docLensLocal := make([]uint16, numDocs)
 	var wg sync.WaitGroup
 	batchSize := (numDocs + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		start := w * batchSize
-		end := start + batchSize
-		if end > numDocs {
-			end = numDocs
-		}
+		end := min(start+batchSize, numDocs)
 		if start >= end {
 			break
 		}
@@ -103,10 +97,7 @@ func (ri *RocketIndexer) AddBatch(docIDs []uint32, texts []string) {
 
 			for i := start; i < end; i++ {
 				docID := docIDs[i]
-				docLen := TokenizeToHashReuse(texts[i], freqs)
-				if docLen > 65535 {
-					docLen = 65535
-				}
+				docLen := min(TokenizeToHashReuse(texts[i], freqs), 65535)
 				docLensLocal[i] = uint16(docLen)
 
 				// Add to worker's isolated index - NO LOCKS!
@@ -227,7 +218,7 @@ func NewRocket256Indexer(outDir string, cfg RocketConfig) *Rocket256Indexer {
 		docLens: make([]uint16, 0, 4000000),
 	}
 
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		ri.shards[i] = &rocket256Shard{
 			terms: make(map[uint64]*rocketPostings, 5000),
 		}
@@ -243,10 +234,7 @@ func (ri *Rocket256Indexer) AddBatch(docIDs []uint32, texts []string) {
 	}
 
 	numDocs := len(texts)
-	numWorkers := ri.config.NumWorkers
-	if numWorkers > numDocs {
-		numWorkers = numDocs
-	}
+	numWorkers := min(ri.config.NumWorkers, numDocs)
 
 	// Per-worker shard buffers (256 shards)
 	type posting struct {
@@ -255,9 +243,9 @@ func (ri *Rocket256Indexer) AddBatch(docIDs []uint32, texts []string) {
 		freq  uint16
 	}
 	workerShardPostings := make([][][]posting, numWorkers)
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		workerShardPostings[w] = make([][]posting, 256)
-		for s := 0; s < 256; s++ {
+		for s := range 256 {
 			workerShardPostings[w][s] = make([]posting, 0, (numDocs/numWorkers)/2)
 		}
 	}
@@ -267,12 +255,9 @@ func (ri *Rocket256Indexer) AddBatch(docIDs []uint32, texts []string) {
 	batchSize := (numDocs + numWorkers - 1) / numWorkers
 
 	// Phase 1: Parallel tokenization
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		start := w * batchSize
-		end := start + batchSize
-		if end > numDocs {
-			end = numDocs
-		}
+		end := min(start+batchSize, numDocs)
 		if start >= end {
 			break
 		}
@@ -286,10 +271,7 @@ func (ri *Rocket256Indexer) AddBatch(docIDs []uint32, texts []string) {
 
 			for i := start; i < end; i++ {
 				docID := docIDs[i]
-				docLen := TokenizeToHashReuse(texts[i], freqs)
-				if docLen > 65535 {
-					docLen = 65535
-				}
+				docLen := min(TokenizeToHashReuse(texts[i], freqs), 65535)
 				docLensLocal[i] = uint16(docLen)
 
 				for hash, freq := range freqs {
@@ -320,12 +302,9 @@ func (ri *Rocket256Indexer) AddBatch(docIDs []uint32, texts []string) {
 	ri.docLensMu.Unlock()
 
 	// Phase 2: Parallel shard updates (256 shards = less contention)
-	shardsPerWorker := 256 / numWorkers
-	if shardsPerWorker < 1 {
-		shardsPerWorker = 1
-	}
+	shardsPerWorker := max(256/numWorkers, 1)
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startShard := w * shardsPerWorker
 		endShard := startShard + shardsPerWorker
 		if w == numWorkers-1 {
@@ -381,7 +360,7 @@ func (ri *Rocket256Indexer) Finish() (*SegmentedIndex, error) {
 	avgDocLen := float64(ri.totalLen.Load()) / float64(numDocs)
 	terms := make(map[string]*SegmentPostings)
 
-	for shardID := 0; shardID < 256; shardID++ {
+	for shardID := range 256 {
 		shard := ri.shards[shardID]
 		for hash, pl := range shard.terms {
 			hashKey := hashToKey(hash)

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 )
 
@@ -14,22 +15,22 @@ const skillFileName = "SKILL.md"
 
 // Skill represents a loaded skill from SKILL.md.
 type Skill struct {
-	Name                   string   // skill identifier
-	Description            string   // trigger text for AI
-	Emoji                  string   // visual indicator
-	Homepage               string   // documentation URL
-	Source                 string   // "bundled", "workspace", "user"
-	Dir                    string   // directory containing SKILL.md
-	Content                string   // full SKILL.md content (after frontmatter)
-	Ready                  bool     // all requirements met
-	Always                 bool     // always included in prompt (not on-demand)
-	UserInvocable          bool     // can user /command invoke (default true)
-	DisableModelInvocation bool     // prevent AI auto-trigger (default false)
+	Name                   string               // skill identifier
+	Description            string               // trigger text for AI
+	Emoji                  string               // visual indicator
+	Homepage               string               // documentation URL
+	Source                 string               // "bundled", "workspace", "user"
+	Dir                    string               // directory containing SKILL.md
+	Content                string               // full SKILL.md content (after frontmatter)
+	Ready                  bool                 // all requirements met
+	Always                 bool                 // always included in prompt (not on-demand)
+	UserInvocable          bool                 // can user /command invoke (default true)
+	DisableModelInvocation bool                 // prevent AI auto-trigger (default false)
 	PrimaryEnv             string               // main env var for API key
 	SkillKey               string               // override key for config lookup
 	Requires               Requires             // dependency requirements
 	InstallRaw             json.RawMessage      // raw install JSON from metadata
-	CommandDispatch        *CommandDispatchSpec  // deterministic tool routing (OpenClaw command-dispatch)
+	CommandDispatch        *CommandDispatchSpec // deterministic tool routing (OpenClaw command-dispatch)
 	CommandTool            string               // target tool name (OpenClaw command-tool)
 }
 
@@ -221,13 +222,13 @@ func ParseSkillMD(content string) (*Skill, string, error) {
 	// Trim the newline right after opening ---.
 	rest = strings.TrimLeft(rest, "\r\n")
 
-	idx := strings.Index(rest, "---")
-	if idx < 0 {
+	before, after, ok := strings.Cut(rest, "---")
+	if !ok {
 		return sk, content, nil // no closing delimiter, treat all as body
 	}
 
-	frontmatter := rest[:idx]
-	body := strings.TrimLeft(rest[idx+3:], "\r\n")
+	frontmatter := before
+	body := strings.TrimLeft(after, "\r\n")
 
 	// Parse simple YAML key: value frontmatter.
 	parseFrontmatter(sk, frontmatter)
@@ -272,13 +273,13 @@ func parseFrontmatter(sk *Skill, fm string) {
 		}
 
 		// key: value pair.
-		colonIdx := strings.Index(trimmed, ":")
-		if colonIdx < 0 {
+		before, after, ok := strings.Cut(trimmed, ":")
+		if !ok {
 			continue
 		}
 
-		key := strings.TrimSpace(trimmed[:colonIdx])
-		val := strings.TrimSpace(trimmed[colonIdx+1:])
+		key := strings.TrimSpace(before)
+		val := strings.TrimSpace(after)
 
 		// Subsection under requires (indent > 0, section == "requires").
 		if indent > 0 && section == "requires" {
@@ -351,13 +352,7 @@ func CheckEligibility(s *Skill) bool {
 	// Check OS requirement first (always applies, even for "always" skills).
 	if len(s.Requires.OS) > 0 {
 		currentOS := runtime.GOOS
-		osMatch := false
-		for _, o := range s.Requires.OS {
-			if o == currentOS {
-				osMatch = true
-				break
-			}
-		}
+		osMatch := slices.Contains(s.Requires.OS, currentOS)
 		if !osMatch {
 			return false
 		}

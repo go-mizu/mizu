@@ -13,26 +13,26 @@ func almostEqual(a, b, tolerance float64) bool {
 func TestXLOOKUP(t *testing.T) {
 	tests := []struct {
 		name     string
-		args     []interface{}
-		expected interface{}
+		args     []any
+		expected any
 		wantErr  bool
 	}{
 		{
 			name: "exact match found",
-			args: []interface{}{
-				"B",                                           // search key
-				[][]interface{}{{"A"}, {"B"}, {"C"}},          // lookup range (vertical)
-				[][]interface{}{{100}, {200}, {300}},          // return range
+			args: []any{
+				"B",                          // search key
+				[][]any{{"A"}, {"B"}, {"C"}}, // lookup range (vertical)
+				[][]any{{100}, {200}, {300}}, // return range
 			},
 			expected: 200,
 			wantErr:  false,
 		},
 		{
 			name: "exact match not found with default",
-			args: []interface{}{
+			args: []any{
 				"D",
-				[][]interface{}{{"A"}, {"B"}, {"C"}},
-				[][]interface{}{{100}, {200}, {300}},
+				[][]any{{"A"}, {"B"}, {"C"}},
+				[][]any{{100}, {200}, {300}},
 				"Not Found", // missing value
 			},
 			expected: "Not Found",
@@ -40,19 +40,19 @@ func TestXLOOKUP(t *testing.T) {
 		},
 		{
 			name: "exact match not found without default",
-			args: []interface{}{
+			args: []any{
 				"D",
-				[][]interface{}{{"A"}, {"B"}, {"C"}},
-				[][]interface{}{{100}, {200}, {300}},
+				[][]any{{"A"}, {"B"}, {"C"}},
+				[][]any{{100}, {200}, {300}},
 			},
 			wantErr: true,
 		},
 		{
 			name: "numeric match",
-			args: []interface{}{
+			args: []any{
 				2.0,
-				[][]interface{}{{1.0}, {2.0}, {3.0}},
-				[][]interface{}{{"One"}, {"Two"}, {"Three"}},
+				[][]any{{1.0}, {2.0}, {3.0}},
+				[][]any{{"One"}, {"Two"}, {"Three"}},
 			},
 			expected: "Two",
 			wantErr:  false,
@@ -82,32 +82,32 @@ func TestXLOOKUP(t *testing.T) {
 func TestXMATCH(t *testing.T) {
 	tests := []struct {
 		name     string
-		args     []interface{}
+		args     []any
 		expected float64
 		wantErr  bool
 	}{
 		{
 			name: "exact match",
-			args: []interface{}{
+			args: []any{
 				"B",
-				[][]interface{}{{"A"}, {"B"}, {"C"}},
+				[][]any{{"A"}, {"B"}, {"C"}},
 			},
 			expected: 2.0, // 1-indexed
 			wantErr:  false,
 		},
 		{
 			name: "not found",
-			args: []interface{}{
+			args: []any{
 				"D",
-				[][]interface{}{{"A"}, {"B"}, {"C"}},
+				[][]any{{"A"}, {"B"}, {"C"}},
 			},
 			wantErr: true,
 		},
 		{
 			name: "numeric match",
-			args: []interface{}{
+			args: []any{
 				50.0,
-				[][]interface{}{{10.0}, {50.0}, {100.0}},
+				[][]any{{10.0}, {50.0}, {100.0}},
 			},
 			expected: 2.0,
 			wantErr:  false,
@@ -137,24 +137,24 @@ func TestXMATCH(t *testing.T) {
 func TestHSTACK(t *testing.T) {
 	tests := []struct {
 		name     string
-		args     []interface{}
-		expected [][]interface{}
+		args     []any
+		expected [][]any
 	}{
 		{
 			name: "stack two single columns",
-			args: []interface{}{
-				[][]interface{}{{1}, {2}, {3}},
-				[][]interface{}{{4}, {5}, {6}},
+			args: []any{
+				[][]any{{1}, {2}, {3}},
+				[][]any{{4}, {5}, {6}},
 			},
-			expected: [][]interface{}{{1, 4}, {2, 5}, {3, 6}},
+			expected: [][]any{{1, 4}, {2, 5}, {3, 6}},
 		},
 		{
 			name: "stack multi-column arrays",
-			args: []interface{}{
-				[][]interface{}{{1, 2}, {3, 4}},
-				[][]interface{}{{5, 6}, {7, 8}},
+			args: []any{
+				[][]any{{1, 2}, {3, 4}},
+				[][]any{{5, 6}, {7, 8}},
 			},
-			expected: [][]interface{}{{1, 2, 5, 6}, {3, 4, 7, 8}},
+			expected: [][]any{{1, 2, 5, 6}, {3, 4, 7, 8}},
 		},
 	}
 
@@ -164,7 +164,7 @@ func TestHSTACK(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			resultArr, ok := result.([][]interface{})
+			resultArr, ok := result.([][]any)
 			if !ok {
 				t.Fatalf("result is not [][]interface{}")
 			}
@@ -189,24 +189,24 @@ func TestHSTACK(t *testing.T) {
 func TestVSTACK(t *testing.T) {
 	tests := []struct {
 		name     string
-		args     []interface{}
-		expected [][]interface{}
+		args     []any
+		expected [][]any
 	}{
 		{
 			name: "stack two rows",
-			args: []interface{}{
-				[][]interface{}{{1, 2, 3}},
-				[][]interface{}{{4, 5, 6}},
+			args: []any{
+				[][]any{{1, 2, 3}},
+				[][]any{{4, 5, 6}},
 			},
-			expected: [][]interface{}{{1, 2, 3}, {4, 5, 6}},
+			expected: [][]any{{1, 2, 3}, {4, 5, 6}},
 		},
 		{
 			name: "stack multi-row arrays",
-			args: []interface{}{
-				[][]interface{}{{1, 2}, {3, 4}},
-				[][]interface{}{{5, 6}},
+			args: []any{
+				[][]any{{1, 2}, {3, 4}},
+				[][]any{{5, 6}},
 			},
-			expected: [][]interface{}{{1, 2}, {3, 4}, {5, 6}},
+			expected: [][]any{{1, 2}, {3, 4}, {5, 6}},
 		},
 	}
 
@@ -216,7 +216,7 @@ func TestVSTACK(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			resultArr, ok := result.([][]interface{})
+			resultArr, ok := result.([][]any)
 			if !ok {
 				t.Fatalf("result is not [][]interface{}")
 			}
@@ -237,24 +237,24 @@ func TestVSTACK(t *testing.T) {
 func TestTAKE(t *testing.T) {
 	tests := []struct {
 		name     string
-		args     []interface{}
-		expected [][]interface{}
+		args     []any
+		expected [][]any
 	}{
 		{
 			name: "take first 2 rows",
-			args: []interface{}{
-				[][]interface{}{{1, 2}, {3, 4}, {5, 6}},
+			args: []any{
+				[][]any{{1, 2}, {3, 4}, {5, 6}},
 				2.0,
 			},
-			expected: [][]interface{}{{1, 2}, {3, 4}},
+			expected: [][]any{{1, 2}, {3, 4}},
 		},
 		{
 			name: "take last 2 rows",
-			args: []interface{}{
-				[][]interface{}{{1, 2}, {3, 4}, {5, 6}},
+			args: []any{
+				[][]any{{1, 2}, {3, 4}, {5, 6}},
 				-2.0,
 			},
-			expected: [][]interface{}{{3, 4}, {5, 6}},
+			expected: [][]any{{3, 4}, {5, 6}},
 		},
 	}
 
@@ -264,7 +264,7 @@ func TestTAKE(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			resultArr, ok := result.([][]interface{})
+			resultArr, ok := result.([][]any)
 			if !ok {
 				t.Fatalf("result is not [][]interface{}")
 			}
@@ -278,24 +278,24 @@ func TestTAKE(t *testing.T) {
 func TestDROP(t *testing.T) {
 	tests := []struct {
 		name     string
-		args     []interface{}
-		expected [][]interface{}
+		args     []any
+		expected [][]any
 	}{
 		{
 			name: "drop first 2 rows",
-			args: []interface{}{
-				[][]interface{}{{1, 2}, {3, 4}, {5, 6}},
+			args: []any{
+				[][]any{{1, 2}, {3, 4}, {5, 6}},
 				2.0,
 			},
-			expected: [][]interface{}{{5, 6}},
+			expected: [][]any{{5, 6}},
 		},
 		{
 			name: "drop last 2 rows",
-			args: []interface{}{
-				[][]interface{}{{1, 2}, {3, 4}, {5, 6}},
+			args: []any{
+				[][]any{{1, 2}, {3, 4}, {5, 6}},
 				-2.0,
 			},
-			expected: [][]interface{}{{1, 2}},
+			expected: [][]any{{1, 2}},
 		},
 	}
 
@@ -305,7 +305,7 @@ func TestDROP(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			resultArr, ok := result.([][]interface{})
+			resultArr, ok := result.([][]any)
 			if !ok {
 				t.Fatalf("result is not [][]interface{}")
 			}
@@ -319,25 +319,25 @@ func TestDROP(t *testing.T) {
 func TestTEXTSPLIT(t *testing.T) {
 	tests := []struct {
 		name     string
-		args     []interface{}
-		expected [][]interface{}
+		args     []any
+		expected [][]any
 	}{
 		{
 			name: "split by comma",
-			args: []interface{}{
+			args: []any{
 				"a,b,c",
 				",",
 			},
-			expected: [][]interface{}{{"a", "b", "c"}},
+			expected: [][]any{{"a", "b", "c"}},
 		},
 		{
 			name: "split by comma and newline",
-			args: []interface{}{
+			args: []any{
 				"a,b\nc,d",
 				",",
 				"\n",
 			},
-			expected: [][]interface{}{{"a", "b"}, {"c", "d"}},
+			expected: [][]any{{"a", "b"}, {"c", "d"}},
 		},
 	}
 
@@ -347,7 +347,7 @@ func TestTEXTSPLIT(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			resultArr, ok := result.([][]interface{})
+			resultArr, ok := result.([][]any)
 			if !ok {
 				t.Fatalf("result is not [][]interface{}")
 			}
@@ -368,30 +368,30 @@ func TestTEXTSPLIT(t *testing.T) {
 func TestGEOMEAN(t *testing.T) {
 	tests := []struct {
 		name     string
-		args     []interface{}
+		args     []any
 		expected float64
 		wantErr  bool
 	}{
 		{
 			name:     "simple geometric mean",
-			args:     []interface{}{1.0, 4.0},
+			args:     []any{1.0, 4.0},
 			expected: 2.0, // sqrt(1*4) = 2
 			wantErr:  false,
 		},
 		{
 			name:     "three values",
-			args:     []interface{}{2.0, 4.0, 8.0},
+			args:     []any{2.0, 4.0, 8.0},
 			expected: 4.0, // cuberoot(2*4*8) = cuberoot(64) = 4
 			wantErr:  false,
 		},
 		{
 			name:    "zero value",
-			args:    []interface{}{0.0, 4.0},
+			args:    []any{0.0, 4.0},
 			wantErr: true, // Cannot have zero in geometric mean
 		},
 		{
 			name:    "negative value",
-			args:    []interface{}{-1.0, 4.0},
+			args:    []any{-1.0, 4.0},
 			wantErr: true,
 		},
 	}
@@ -424,31 +424,31 @@ func TestGEOMEAN(t *testing.T) {
 func TestDec2Bin(t *testing.T) {
 	tests := []struct {
 		name     string
-		args     []interface{}
+		args     []any
 		expected string
 		wantErr  bool
 	}{
 		{
 			name:     "positive number",
-			args:     []interface{}{10.0},
+			args:     []any{10.0},
 			expected: "1010",
 			wantErr:  false,
 		},
 		{
 			name:     "zero",
-			args:     []interface{}{0.0},
+			args:     []any{0.0},
 			expected: "0",
 			wantErr:  false,
 		},
 		{
 			name:     "with places",
-			args:     []interface{}{10.0, 8.0},
+			args:     []any{10.0, 8.0},
 			expected: "00001010",
 			wantErr:  false,
 		},
 		{
 			name:    "out of range",
-			args:    []interface{}{1000.0},
+			args:    []any{1000.0},
 			wantErr: true,
 		},
 	}
@@ -476,25 +476,25 @@ func TestDec2Bin(t *testing.T) {
 func TestDec2Hex(t *testing.T) {
 	tests := []struct {
 		name     string
-		args     []interface{}
+		args     []any
 		expected string
 		wantErr  bool
 	}{
 		{
 			name:     "positive number",
-			args:     []interface{}{255.0},
+			args:     []any{255.0},
 			expected: "FF",
 			wantErr:  false,
 		},
 		{
 			name:     "with places",
-			args:     []interface{}{255.0, 4.0},
+			args:     []any{255.0, 4.0},
 			expected: "00FF",
 			wantErr:  false,
 		},
 		{
 			name:     "zero",
-			args:     []interface{}{0.0},
+			args:     []any{0.0},
 			expected: "0",
 			wantErr:  false,
 		},
@@ -523,25 +523,25 @@ func TestDec2Hex(t *testing.T) {
 func TestBin2Dec(t *testing.T) {
 	tests := []struct {
 		name     string
-		args     []interface{}
+		args     []any
 		expected float64
 		wantErr  bool
 	}{
 		{
 			name:     "positive number",
-			args:     []interface{}{"1010"},
+			args:     []any{"1010"},
 			expected: 10.0,
 			wantErr:  false,
 		},
 		{
 			name:     "zero",
-			args:     []interface{}{"0"},
+			args:     []any{"0"},
 			expected: 0.0,
 			wantErr:  false,
 		},
 		{
 			name:    "invalid binary",
-			args:    []interface{}{"123"},
+			args:    []any{"123"},
 			wantErr: true,
 		},
 	}
@@ -569,25 +569,25 @@ func TestBin2Dec(t *testing.T) {
 func TestHex2Dec(t *testing.T) {
 	tests := []struct {
 		name     string
-		args     []interface{}
+		args     []any
 		expected float64
 		wantErr  bool
 	}{
 		{
 			name:     "FF",
-			args:     []interface{}{"FF"},
+			args:     []any{"FF"},
 			expected: 255.0,
 			wantErr:  false,
 		},
 		{
 			name:     "lowercase",
-			args:     []interface{}{"ff"},
+			args:     []any{"ff"},
 			expected: 255.0,
 			wantErr:  false,
 		},
 		{
 			name:     "zero",
-			args:     []interface{}{"0"},
+			args:     []any{"0"},
 			expected: 0.0,
 			wantErr:  false,
 		},

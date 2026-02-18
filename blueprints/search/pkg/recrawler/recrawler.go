@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"maps"
 	"math/rand/v2"
 	"net"
 	"net/http"
@@ -133,17 +134,17 @@ func (r *Recrawler) buildClient(shardID int) *http.Client {
 
 	transport := &http.Transport{
 		DialContext:           dialFunc,
-		TLSClientConfig:      &tls.Config{InsecureSkipVerify: false},
-		MaxIdleConns:         maxIdlePerShard,
-		MaxIdleConnsPerHost:  50,
-		MaxConnsPerHost:      0,
-		IdleConnTimeout:      30 * time.Second,
-		TLSHandshakeTimeout: tlsTimeout,
+		TLSClientConfig:       &tls.Config{InsecureSkipVerify: false},
+		MaxIdleConns:          maxIdlePerShard,
+		MaxIdleConnsPerHost:   50,
+		MaxConnsPerHost:       0,
+		IdleConnTimeout:       30 * time.Second,
+		TLSHandshakeTimeout:   tlsTimeout,
 		ResponseHeaderTimeout: cfg.Timeout,
-		DisableCompression:   true,
-		ForceAttemptHTTP2:    false, // HTTP/1.1 is faster for many-host one-shot fetches
-		WriteBufferSize:      4 * 1024,
-		ReadBufferSize:       8 * 1024,
+		DisableCompression:    true,
+		ForceAttemptHTTP2:     false, // HTTP/1.1 is faster for many-host one-shot fetches
+		WriteBufferSize:       4 * 1024,
+		ReadBufferSize:        8 * 1024,
 	}
 
 	return &http.Client{
@@ -174,9 +175,7 @@ func (r *Recrawler) SetDeadDomains(domains map[string]string) {
 // SetDNSCache populates the cached DNS map for direct-IP dialing.
 func (r *Recrawler) SetDNSCache(resolved map[string][]string) {
 	r.dnsCacheMu.Lock()
-	for domain, ips := range resolved {
-		r.dnsCache[domain] = ips
-	}
+	maps.Copy(r.dnsCache, resolved)
 	r.dnsCacheMu.Unlock()
 }
 
@@ -189,9 +188,7 @@ func (r *Recrawler) SetDNSResolver(dns *DNSResolver) {
 	resolved := dns.ResolvedIPs()
 	if len(resolved) > 0 {
 		r.dnsCacheMu.Lock()
-		for domain, ips := range resolved {
-			r.dnsCache[domain] = ips
-		}
+		maps.Copy(r.dnsCache, resolved)
 		r.dnsCacheMu.Unlock()
 	}
 	// Pre-populate dead domains with reasons
@@ -368,9 +365,7 @@ func (r *Recrawler) dnsPipeline(ctx context.Context, domains []string, domainURL
 	dnsWorkers := min(r.config.DNSWorkers, len(domains))
 	var wg sync.WaitGroup
 	for range dnsWorkers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for domain := range domainCh {
 				select {
 				case <-ctx.Done():
@@ -437,7 +432,7 @@ func (r *Recrawler) dnsPipeline(ctx context.Context, domains []string, domainURL
 					}
 				}
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -767,10 +762,7 @@ func (r *Recrawler) fetchOne(ctx context.Context, client *http.Client, seed Seed
 	// Read body (up to 512KB for full content capture)
 	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
 	resp.Body.Close()
-	bodySize := int64(len(bodyBytes))
-	if resp.ContentLength > bodySize {
-		bodySize = resp.ContentLength
-	}
+	bodySize := max(resp.ContentLength, int64(len(bodyBytes)))
 
 	var title, description, language, body string
 	if resp.StatusCode == 200 && isHTML && len(bodyBytes) > 0 {

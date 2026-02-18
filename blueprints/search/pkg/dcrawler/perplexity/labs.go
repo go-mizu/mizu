@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -263,13 +264,7 @@ func (lc *LabsClient) Ask(ctx context.Context, query, model string) (*LabsResult
 	lc.mu.Lock()
 
 	// Validate model
-	validModel := false
-	for _, m := range LabsModels {
-		if m == model {
-			validModel = true
-			break
-		}
-	}
+	validModel := slices.Contains(LabsModels, model)
 	if !validModel {
 		lc.mu.Unlock()
 		return nil, fmt.Errorf("invalid labs model: %s (valid: %s)", model, strings.Join(LabsModels, ", "))

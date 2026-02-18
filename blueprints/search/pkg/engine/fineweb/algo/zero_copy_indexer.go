@@ -6,10 +6,10 @@
 //   - Combined: 63.6% of time
 //
 // New architecture:
-//   1. Each worker owns a fixed shard range (no cross-worker distribution)
-//   2. Documents are assigned to workers based on docID % numWorkers
-//   3. Postings go directly to worker-local index (no intermediate buffers)
-//   4. Final merge is trivial (just combine worker indexes)
+//  1. Each worker owns a fixed shard range (no cross-worker distribution)
+//  2. Documents are assigned to workers based on docID % numWorkers
+//  3. Postings go directly to worker-local index (no intermediate buffers)
+//  4. Final merge is trivial (just combine worker indexes)
 //
 // This eliminates:
 //   - Per-shard buffer allocation
@@ -144,10 +144,7 @@ func (zc *ZeroCopyIndexer) AddBatch(docIDs []uint32, texts []string) {
 	}
 
 	numDocs := len(texts)
-	numWorkers := len(zc.workers)
-	if numWorkers > numDocs {
-		numWorkers = numDocs
-	}
+	numWorkers := min(len(zc.workers), numDocs)
 
 	docLensLocal := make([]uint16, numDocs)
 
@@ -155,12 +152,9 @@ func (zc *ZeroCopyIndexer) AddBatch(docIDs []uint32, texts []string) {
 	batchSize := (numDocs + numWorkers - 1) / numWorkers
 
 	// Each worker processes a slice of documents and writes directly to its own index
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		start := w * batchSize
-		end := start + batchSize
-		if end > numDocs {
-			end = numDocs
-		}
+		end := min(start+batchSize, numDocs)
 		if start >= end {
 			break
 		}
@@ -172,10 +166,7 @@ func (zc *ZeroCopyIndexer) AddBatch(docIDs []uint32, texts []string) {
 
 			worker.mu.Lock()
 			for i := start; i < end; i++ {
-				docLen := zcTokenizeAndIndex(texts[i], docIDs[i], worker.terms)
-				if docLen > 65535 {
-					docLen = 65535
-				}
+				docLen := min(zcTokenizeAndIndex(texts[i], docIDs[i], worker.terms), 65535)
 				docLensLocal[i] = uint16(docLen)
 			}
 			worker.mu.Unlock()
@@ -347,10 +338,7 @@ func (di *PartitionedIndexer) AddBatch(docIDs []uint32, texts []string) {
 	}
 
 	numDocs := len(texts)
-	numWorkers := runtime.NumCPU() * 5
-	if numWorkers > numDocs {
-		numWorkers = numDocs
-	}
+	numWorkers := min(runtime.NumCPU()*5, numDocs)
 
 	docLensLocal := make([]uint16, numDocs)
 
@@ -361,7 +349,7 @@ func (di *PartitionedIndexer) AddBatch(docIDs []uint32, texts []string) {
 		freq  uint16
 	}
 	workerPartitions := make([][][]posting, numWorkers)
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		workerPartitions[w] = make([][]posting, 256)
 		for p := range workerPartitions[w] {
 			workerPartitions[w][p] = make([]posting, 0, 32)
@@ -371,12 +359,9 @@ func (di *PartitionedIndexer) AddBatch(docIDs []uint32, texts []string) {
 	var wg sync.WaitGroup
 	batchSize := (numDocs + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		start := w * batchSize
-		end := start + batchSize
-		if end > numDocs {
-			end = numDocs
-		}
+		end := min(start+batchSize, numDocs)
 		if start >= end {
 			break
 		}
@@ -419,12 +404,9 @@ func (di *PartitionedIndexer) AddBatch(docIDs []uint32, texts []string) {
 	// Phase 2: Merge postings to partitions (parallel by partition)
 	partitionsPerWorker := (256 + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startP := w * partitionsPerWorker
-		endP := startP + partitionsPerWorker
-		if endP > 256 {
-			endP = 256
-		}
+		endP := min(startP+partitionsPerWorker, 256)
 		if startP >= endP {
 			break
 		}
@@ -613,22 +595,16 @@ func (fi *FusedIndexer) AddBatch(docIDs []uint32, texts []string) {
 	}
 
 	numDocs := len(texts)
-	numWorkers := len(fi.workers)
-	if numWorkers > numDocs {
-		numWorkers = numDocs
-	}
+	numWorkers := min(len(fi.workers), numDocs)
 
 	docLensLocal := make([]uint16, numDocs)
 
 	var wg sync.WaitGroup
 	batchSize := (numDocs + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		start := w * batchSize
-		end := start + batchSize
-		if end > numDocs {
-			end = numDocs
-		}
+		end := min(start+batchSize, numDocs)
 		if start >= end {
 			break
 		}
@@ -639,10 +615,7 @@ func (fi *FusedIndexer) AddBatch(docIDs []uint32, texts []string) {
 			terms := fi.workers[workerID].terms
 
 			for i := start; i < end; i++ {
-				docLen := fusedTokenizeAndIndex(texts[i], docIDs[i], terms)
-				if docLen > 65535 {
-					docLen = 65535
-				}
+				docLen := min(fusedTokenizeAndIndex(texts[i], docIDs[i], terms), 65535)
 				docLensLocal[i] = uint16(docLen)
 			}
 		}(w, start, end)

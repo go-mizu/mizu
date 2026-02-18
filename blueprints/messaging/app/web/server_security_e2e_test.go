@@ -109,7 +109,7 @@ func TestSecurity_RateLimiting_Login(t *testing.T) {
 	server.app.ServeHTTP(registerRec, registerReq)
 
 	// Attempt multiple failed logins (rate limit is 5 per minute)
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		body := `{"login": "ratelimituser", "password": "wrongpassword"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -149,7 +149,7 @@ func TestSecurity_RateLimiting_Register(t *testing.T) {
 	defer server.Close()
 
 	// Attempt multiple registrations (rate limit is 3 per 10 minutes)
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		body := `{"username": "reguser` + string(rune('0'+i)) + `", "email": "reg` + string(rune('0'+i)) + `@example.com", "password": "SecurePass123"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")

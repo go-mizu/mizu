@@ -19,7 +19,7 @@ func (s *CollectionStore) Create(ctx context.Context, c *store.Collection) error
 	}
 	c.CreatedAt = time.Now()
 
-	var parentID interface{}
+	var parentID any
 	if c.ParentID != "" {
 		parentID = c.ParentID
 	}
@@ -104,7 +104,7 @@ func (s *CollectionStore) ListByParent(ctx context.Context, parentID string) ([]
 }
 
 func (s *CollectionStore) Update(ctx context.Context, c *store.Collection) error {
-	var parentID interface{}
+	var parentID any
 	if c.ParentID != "" {
 		parentID = c.ParentID
 	}

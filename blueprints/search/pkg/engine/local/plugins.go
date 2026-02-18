@@ -210,9 +210,9 @@ func NewTrackerURLRemoverPlugin() *TrackerURLRemoverPlugin {
 	}
 }
 
-func (p *TrackerURLRemoverPlugin) ID() string        { return p.info.ID }
-func (p *TrackerURLRemoverPlugin) Info() PluginInfo  { return p.info }
-func (p *TrackerURLRemoverPlugin) Active() bool      { return true }
+func (p *TrackerURLRemoverPlugin) ID() string       { return p.info.ID }
+func (p *TrackerURLRemoverPlugin) Info() PluginInfo { return p.info }
+func (p *TrackerURLRemoverPlugin) Active() bool     { return true }
 
 func (p *TrackerURLRemoverPlugin) OnResult(ctx context.Context, search *Search, result *engines.Result) bool {
 	if result.URL == "" {
@@ -269,9 +269,9 @@ func NewHostnameBlockerPlugin(hostnames []string) *HostnameBlockerPlugin {
 	}
 }
 
-func (p *HostnameBlockerPlugin) ID() string        { return p.info.ID }
-func (p *HostnameBlockerPlugin) Info() PluginInfo  { return p.info }
-func (p *HostnameBlockerPlugin) Active() bool      { return false }
+func (p *HostnameBlockerPlugin) ID() string       { return p.info.ID }
+func (p *HostnameBlockerPlugin) Info() PluginInfo { return p.info }
+func (p *HostnameBlockerPlugin) Active() bool     { return false }
 
 func (p *HostnameBlockerPlugin) OnResult(ctx context.Context, search *Search, result *engines.Result) bool {
 	if result.ParsedURL == nil {
@@ -350,9 +350,9 @@ func NewHashPlugin() *HashPlugin {
 	}
 }
 
-func (p *HashPlugin) ID() string        { return p.info.ID }
-func (p *HashPlugin) Info() PluginInfo  { return p.info }
-func (p *HashPlugin) Active() bool      { return true }
+func (p *HashPlugin) ID() string       { return p.info.ID }
+func (p *HashPlugin) Info() PluginInfo { return p.info }
+func (p *HashPlugin) Active() bool     { return true }
 
 func (p *HashPlugin) PreSearch(ctx context.Context, search *Search) bool {
 	query := strings.TrimSpace(search.Query)
@@ -389,9 +389,9 @@ func NewHostnameReplacerPlugin(replacements map[string]string) *HostnameReplacer
 	}
 }
 
-func (p *HostnameReplacerPlugin) ID() string        { return p.info.ID }
-func (p *HostnameReplacerPlugin) Info() PluginInfo  { return p.info }
-func (p *HostnameReplacerPlugin) Active() bool      { return false }
+func (p *HostnameReplacerPlugin) ID() string       { return p.info.ID }
+func (p *HostnameReplacerPlugin) Info() PluginInfo { return p.info }
+func (p *HostnameReplacerPlugin) Active() bool     { return false }
 
 func (p *HostnameReplacerPlugin) OnResult(ctx context.Context, search *Search, result *engines.Result) bool {
 	if result.ParsedURL == nil {
@@ -506,8 +506,8 @@ func evaluateExpression(expr string) (string, error) {
 
 // UnitConverterPlugin converts between units.
 type UnitConverterPlugin struct {
-	info       PluginInfo
-	pattern    *regexp.Regexp
+	info        PluginInfo
+	pattern     *regexp.Regexp
 	conversions map[string]map[string]float64
 }
 
@@ -532,11 +532,11 @@ func NewUnitConverterPlugin() *UnitConverterPlugin {
 			"mm": {"cm": 0.1, "m": 0.001, "in": 0.0393701},
 			"yd": {"m": 0.9144, "ft": 3},
 			// Weight
-			"kg":  {"g": 1000, "lb": 2.20462, "oz": 35.274},
-			"g":   {"kg": 0.001, "mg": 1000, "oz": 0.035274},
-			"lb":  {"kg": 0.453592, "oz": 16, "g": 453.592},
-			"oz":  {"g": 28.3495, "lb": 0.0625},
-			"mg":  {"g": 0.001},
+			"kg": {"g": 1000, "lb": 2.20462, "oz": 35.274},
+			"g":  {"kg": 0.001, "mg": 1000, "oz": 0.035274},
+			"lb": {"kg": 0.453592, "oz": 16, "g": 453.592},
+			"oz": {"g": 28.3495, "lb": 0.0625},
+			"mg": {"g": 0.001},
 			// Temperature (handled specially)
 			// Volume
 			"l":   {"ml": 1000, "gal": 0.264172, "qt": 1.05669},
@@ -718,7 +718,7 @@ func formatFloat(v float64) string {
 
 // OpenAccessDOIRewritePlugin rewrites DOI URLs to open access versions.
 type OpenAccessDOIRewritePlugin struct {
-	info      PluginInfo
+	info       PluginInfo
 	doiPattern *regexp.Regexp
 }
 
@@ -789,8 +789,8 @@ func (p *TimezonePlugin) PostSearch(ctx context.Context, search *Search) {
 	timeKeywords := []string{"time ", "time in ", "clock ", "now ", "timezone "}
 	var location string
 	for _, kw := range timeKeywords {
-		if strings.HasPrefix(query, kw) {
-			location = strings.TrimPrefix(query, kw)
+		if after, ok := strings.CutPrefix(query, kw); ok {
+			location = after
 			break
 		}
 	}
@@ -801,24 +801,24 @@ func (p *TimezonePlugin) PostSearch(ctx context.Context, search *Search) {
 
 	// Map common location names to timezone identifiers
 	timezones := map[string]string{
-		"new york":     "America/New_York",
-		"los angeles":  "America/Los_Angeles",
-		"london":       "Europe/London",
-		"paris":        "Europe/Paris",
-		"berlin":       "Europe/Berlin",
-		"tokyo":        "Asia/Tokyo",
-		"sydney":       "Australia/Sydney",
-		"beijing":      "Asia/Shanghai",
-		"moscow":       "Europe/Moscow",
-		"dubai":        "Asia/Dubai",
-		"singapore":    "Asia/Singapore",
-		"hong kong":    "Asia/Hong_Kong",
-		"mumbai":       "Asia/Kolkata",
-		"chicago":      "America/Chicago",
-		"toronto":      "America/Toronto",
-		"vancouver":    "America/Vancouver",
-		"utc":          "UTC",
-		"gmt":          "UTC",
+		"new york":    "America/New_York",
+		"los angeles": "America/Los_Angeles",
+		"london":      "Europe/London",
+		"paris":       "Europe/Paris",
+		"berlin":      "Europe/Berlin",
+		"tokyo":       "Asia/Tokyo",
+		"sydney":      "Australia/Sydney",
+		"beijing":     "Asia/Shanghai",
+		"moscow":      "Europe/Moscow",
+		"dubai":       "Asia/Dubai",
+		"singapore":   "Asia/Singapore",
+		"hong kong":   "Asia/Hong_Kong",
+		"mumbai":      "Asia/Kolkata",
+		"chicago":     "America/Chicago",
+		"toronto":     "America/Toronto",
+		"vancouver":   "America/Vancouver",
+		"utc":         "UTC",
+		"gmt":         "UTC",
 	}
 
 	tz, ok := timezones[strings.ToLower(location)]

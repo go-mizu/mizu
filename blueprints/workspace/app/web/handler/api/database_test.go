@@ -17,12 +17,12 @@ func TestDatabaseCreate(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		body       map[string]interface{}
+		body       map[string]any
 		wantStatus int
 	}{
 		{
 			name: "basic database",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"workspace_id": ws.ID,
 				"title":        "My Database",
 			},
@@ -30,7 +30,7 @@ func TestDatabaseCreate(t *testing.T) {
 		},
 		{
 			name: "database with icon",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"workspace_id": ws.ID,
 				"title":        "Database with Icon",
 				"icon":         "table",
@@ -39,7 +39,7 @@ func TestDatabaseCreate(t *testing.T) {
 		},
 		{
 			name: "inline database",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"workspace_id": ws.ID,
 				"title":        "Inline Database",
 				"is_inline":    true,
@@ -48,10 +48,10 @@ func TestDatabaseCreate(t *testing.T) {
 		},
 		{
 			name: "database with properties",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"workspace_id": ws.ID,
 				"title":        "Database with Properties",
-				"properties": []map[string]interface{}{
+				"properties": []map[string]any{
 					{
 						"id":   "title",
 						"name": "Name",
@@ -61,8 +61,8 @@ func TestDatabaseCreate(t *testing.T) {
 						"id":   "status",
 						"name": "Status",
 						"type": "select",
-						"config": map[string]interface{}{
-							"options": []map[string]interface{}{
+						"config": map[string]any{
+							"options": []map[string]any{
 								{"name": "Todo", "color": "gray"},
 								{"name": "In Progress", "color": "blue"},
 								{"name": "Done", "color": "green"},
@@ -75,7 +75,7 @@ func TestDatabaseCreate(t *testing.T) {
 		},
 		{
 			name: "missing workspace_id",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"title": "No Workspace",
 			},
 			wantStatus: http.StatusCreated, // App allows databases without workspace_id
@@ -116,7 +116,7 @@ func TestDatabaseGet(t *testing.T) {
 	ws := createTestWorkspace(ts, cookie, "DB Get Workspace", "db-get-ws")
 
 	// Create database
-	resp := ts.Request("POST", "/api/v1/databases", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/databases", map[string]any{
 		"workspace_id": ws.ID,
 		"title":        "Get Test Database",
 		"icon":         "database",
@@ -157,7 +157,7 @@ func TestDatabaseUpdate(t *testing.T) {
 	ws := createTestWorkspace(ts, cookie, "DB Update Workspace", "db-update-ws")
 
 	// Create database
-	resp := ts.Request("POST", "/api/v1/databases", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/databases", map[string]any{
 		"workspace_id": ws.ID,
 		"title":        "Original Title",
 		"icon":         "star",
@@ -168,7 +168,7 @@ func TestDatabaseUpdate(t *testing.T) {
 	ts.ParseJSON(resp, &created)
 
 	t.Run("update title", func(t *testing.T) {
-		resp := ts.Request("PATCH", "/api/v1/databases/"+created.ID, map[string]interface{}{
+		resp := ts.Request("PATCH", "/api/v1/databases/"+created.ID, map[string]any{
 			"title": "Updated Title",
 		}, cookie)
 		ts.ExpectStatus(resp, http.StatusOK)
@@ -182,7 +182,7 @@ func TestDatabaseUpdate(t *testing.T) {
 	})
 
 	t.Run("update icon", func(t *testing.T) {
-		resp := ts.Request("PATCH", "/api/v1/databases/"+created.ID, map[string]interface{}{
+		resp := ts.Request("PATCH", "/api/v1/databases/"+created.ID, map[string]any{
 			"icon": "moon",
 		}, cookie)
 		ts.ExpectStatus(resp, http.StatusOK)
@@ -205,7 +205,7 @@ func TestDatabaseDelete(t *testing.T) {
 	ws := createTestWorkspace(ts, cookie, "DB Delete Workspace", "db-delete-ws")
 
 	// Create database
-	resp := ts.Request("POST", "/api/v1/databases", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/databases", map[string]any{
 		"workspace_id": ws.ID,
 		"title":        "To Delete",
 	}, cookie)
@@ -236,7 +236,7 @@ func TestDatabaseAddProperty(t *testing.T) {
 	ws := createTestWorkspace(ts, cookie, "DB Prop Workspace", "db-prop-ws")
 
 	// Create database
-	resp := ts.Request("POST", "/api/v1/databases", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/databases", map[string]any{
 		"workspace_id": ws.ID,
 		"title":        "Property Test",
 	}, cookie)
@@ -247,11 +247,11 @@ func TestDatabaseAddProperty(t *testing.T) {
 
 	propertyTests := []struct {
 		name string
-		prop map[string]interface{}
+		prop map[string]any
 	}{
 		{
 			name: "rich_text property",
-			prop: map[string]interface{}{
+			prop: map[string]any{
 				"id":   "description",
 				"name": "Description",
 				"type": "rich_text",
@@ -259,23 +259,23 @@ func TestDatabaseAddProperty(t *testing.T) {
 		},
 		{
 			name: "number property",
-			prop: map[string]interface{}{
+			prop: map[string]any{
 				"id":   "amount",
 				"name": "Amount",
 				"type": "number",
-				"config": map[string]interface{}{
+				"config": map[string]any{
 					"format": "dollar",
 				},
 			},
 		},
 		{
 			name: "select property",
-			prop: map[string]interface{}{
+			prop: map[string]any{
 				"id":   "priority",
 				"name": "Priority",
 				"type": "select",
-				"config": map[string]interface{}{
-					"options": []map[string]interface{}{
+				"config": map[string]any{
+					"options": []map[string]any{
 						{"name": "Low", "color": "gray"},
 						{"name": "Medium", "color": "yellow"},
 						{"name": "High", "color": "red"},
@@ -285,12 +285,12 @@ func TestDatabaseAddProperty(t *testing.T) {
 		},
 		{
 			name: "multi_select property",
-			prop: map[string]interface{}{
+			prop: map[string]any{
 				"id":   "tags",
 				"name": "Tags",
 				"type": "multi_select",
-				"config": map[string]interface{}{
-					"options": []map[string]interface{}{
+				"config": map[string]any{
+					"options": []map[string]any{
 						{"name": "Bug", "color": "red"},
 						{"name": "Feature", "color": "blue"},
 						{"name": "Enhancement", "color": "green"},
@@ -300,7 +300,7 @@ func TestDatabaseAddProperty(t *testing.T) {
 		},
 		{
 			name: "date property",
-			prop: map[string]interface{}{
+			prop: map[string]any{
 				"id":   "due_date",
 				"name": "Due Date",
 				"type": "date",
@@ -308,7 +308,7 @@ func TestDatabaseAddProperty(t *testing.T) {
 		},
 		{
 			name: "checkbox property",
-			prop: map[string]interface{}{
+			prop: map[string]any{
 				"id":   "completed",
 				"name": "Completed",
 				"type": "checkbox",
@@ -316,7 +316,7 @@ func TestDatabaseAddProperty(t *testing.T) {
 		},
 		{
 			name: "url property",
-			prop: map[string]interface{}{
+			prop: map[string]any{
 				"id":   "website",
 				"name": "Website",
 				"type": "url",
@@ -324,7 +324,7 @@ func TestDatabaseAddProperty(t *testing.T) {
 		},
 		{
 			name: "email property",
-			prop: map[string]interface{}{
+			prop: map[string]any{
 				"id":   "email",
 				"name": "Email",
 				"type": "email",
@@ -332,7 +332,7 @@ func TestDatabaseAddProperty(t *testing.T) {
 		},
 		{
 			name: "phone_number property",
-			prop: map[string]interface{}{
+			prop: map[string]any{
 				"id":   "phone",
 				"name": "Phone",
 				"type": "phone_number",
@@ -368,10 +368,10 @@ func TestDatabaseUpdateProperty(t *testing.T) {
 	ws := createTestWorkspace(ts, cookie, "DB Update Prop Workspace", "db-update-prop-ws")
 
 	// Create database with property
-	resp := ts.Request("POST", "/api/v1/databases", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/databases", map[string]any{
 		"workspace_id": ws.ID,
 		"title":        "Update Prop Test",
-		"properties": []map[string]interface{}{
+		"properties": []map[string]any{
 			{
 				"id":   "status",
 				"name": "Status",
@@ -385,7 +385,7 @@ func TestDatabaseUpdateProperty(t *testing.T) {
 	ts.ParseJSON(resp, &db)
 
 	t.Run("update property name", func(t *testing.T) {
-		resp := ts.Request("PATCH", "/api/v1/databases/"+db.ID+"/properties/status", map[string]interface{}{
+		resp := ts.Request("PATCH", "/api/v1/databases/"+db.ID+"/properties/status", map[string]any{
 			"id":   "status",
 			"name": "Updated Status",
 			"type": "select",
@@ -404,10 +404,10 @@ func TestDatabaseDeleteProperty(t *testing.T) {
 	ws := createTestWorkspace(ts, cookie, "DB Delete Prop Workspace", "db-delete-prop-ws")
 
 	// Create database with property
-	resp := ts.Request("POST", "/api/v1/databases", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/databases", map[string]any{
 		"workspace_id": ws.ID,
 		"title":        "Delete Prop Test",
-		"properties": []map[string]interface{}{
+		"properties": []map[string]any{
 			{
 				"id":   "to_delete",
 				"name": "To Delete",
@@ -436,7 +436,7 @@ func TestDatabaseUnauthenticated(t *testing.T) {
 	ws := createTestWorkspace(ts, cookie, "DB Auth Workspace", "db-auth-ws")
 
 	// Create database
-	resp := ts.Request("POST", "/api/v1/databases", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/databases", map[string]any{
 		"workspace_id": ws.ID,
 		"title":        "Auth Test Database",
 	}, cookie)

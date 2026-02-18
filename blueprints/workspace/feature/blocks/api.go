@@ -11,12 +11,12 @@ type BlockType string
 
 const (
 	// Text blocks
-	BlockParagraph  BlockType = "paragraph"
-	BlockHeading1   BlockType = "heading_1"
-	BlockHeading2   BlockType = "heading_2"
-	BlockHeading3   BlockType = "heading_3"
-	BlockQuote      BlockType = "quote"
-	BlockCallout    BlockType = "callout"
+	BlockParagraph BlockType = "paragraph"
+	BlockHeading1  BlockType = "heading_1"
+	BlockHeading2  BlockType = "heading_2"
+	BlockHeading3  BlockType = "heading_3"
+	BlockQuote     BlockType = "quote"
+	BlockCallout   BlockType = "callout"
 
 	// List blocks
 	BlockBulletList BlockType = "bulleted_list"
@@ -25,11 +25,11 @@ const (
 	BlockTodo       BlockType = "to_do"
 
 	// Media blocks
-	BlockImage      BlockType = "image"
-	BlockVideo      BlockType = "video"
-	BlockFile       BlockType = "file"
-	BlockBookmark   BlockType = "bookmark"
-	BlockEmbed      BlockType = "embed"
+	BlockImage    BlockType = "image"
+	BlockVideo    BlockType = "video"
+	BlockFile     BlockType = "file"
+	BlockBookmark BlockType = "bookmark"
+	BlockEmbed    BlockType = "embed"
 
 	// Advanced blocks
 	BlockCode       BlockType = "code"
@@ -41,9 +41,9 @@ const (
 	BlockColumn     BlockType = "column"
 
 	// Database blocks
-	BlockChildPage  BlockType = "child_page"
-	BlockChildDB    BlockType = "child_database"
-	BlockLinkedDB   BlockType = "linked_database"
+	BlockChildPage   BlockType = "child_page"
+	BlockChildDB     BlockType = "child_database"
+	BlockLinkedDB    BlockType = "linked_database"
 	BlockSyncedBlock BlockType = "synced_block"
 
 	// Navigation blocks
@@ -113,7 +113,7 @@ type Content struct {
 type RichText struct {
 	Type        string      `json:"type"` // text, mention, equation
 	Text        string      `json:"text"`
-	Annotations Annotations `json:"annotations,omitempty"`
+	Annotations Annotations `json:"annotations"`
 	Link        string      `json:"link,omitempty"`
 	Mention     *Mention    `json:"mention,omitempty"`
 }

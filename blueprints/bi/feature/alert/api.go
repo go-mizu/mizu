@@ -19,23 +19,23 @@ var (
 
 // Alert represents an alert configuration.
 type Alert struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	QuestionID  string     `json:"question_id"`
-	Condition   *Condition `json:"condition"`
-	Channels    []Channel  `json:"channels"`
-	Schedule    *Schedule  `json:"schedule,omitempty"`
-	CreatorID   string     `json:"creator_id"`
-	Active      bool       `json:"active"`
-	LastChecked *time.Time `json:"last_checked,omitempty"`
+	ID            string     `json:"id"`
+	Name          string     `json:"name"`
+	QuestionID    string     `json:"question_id"`
+	Condition     *Condition `json:"condition"`
+	Channels      []Channel  `json:"channels"`
+	Schedule      *Schedule  `json:"schedule,omitempty"`
+	CreatorID     string     `json:"creator_id"`
+	Active        bool       `json:"active"`
+	LastChecked   *time.Time `json:"last_checked,omitempty"`
 	LastTriggered *time.Time `json:"last_triggered,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 // Condition defines when an alert should trigger.
 type Condition struct {
-	Type       string `json:"type"`       // above, below, reaches, changes, rows_present
+	Type       string `json:"type"` // above, below, reaches, changes, rows_present
 	Column     string `json:"column,omitempty"`
 	Value      any    `json:"value,omitempty"`
 	Comparison string `json:"comparison,omitempty"` // gt, gte, lt, lte, eq
@@ -43,30 +43,30 @@ type Condition struct {
 
 // Channel represents a notification channel.
 type Channel struct {
-	Type    string            `json:"type"`    // email, slack, webhook
-	Config  map[string]string `json:"config"`  // type-specific configuration
+	Type    string            `json:"type"`   // email, slack, webhook
+	Config  map[string]string `json:"config"` // type-specific configuration
 	Enabled bool              `json:"enabled"`
 }
 
 // Schedule defines when to check the alert.
 type Schedule struct {
-	Type     string `json:"type"`      // hourly, daily, weekly
-	Hour     int    `json:"hour,omitempty"`
-	Minute   int    `json:"minute,omitempty"`
-	DayOfWeek int   `json:"day_of_week,omitempty"` // 0=Sunday
-	Timezone string `json:"timezone,omitempty"`
+	Type      string `json:"type"` // hourly, daily, weekly
+	Hour      int    `json:"hour,omitempty"`
+	Minute    int    `json:"minute,omitempty"`
+	DayOfWeek int    `json:"day_of_week,omitempty"` // 0=Sunday
+	Timezone  string `json:"timezone,omitempty"`
 }
 
 // AlertExecution represents a single alert check execution.
 type AlertExecution struct {
-	ID          string    `json:"id"`
-	AlertID     string    `json:"alert_id"`
-	Triggered   bool      `json:"triggered"`
-	Result      any       `json:"result,omitempty"`
-	Message     string    `json:"message,omitempty"`
-	Error       string    `json:"error,omitempty"`
-	ExecutedAt  time.Time `json:"executed_at"`
-	Duration    float64   `json:"duration_ms"`
+	ID         string    `json:"id"`
+	AlertID    string    `json:"alert_id"`
+	Triggered  bool      `json:"triggered"`
+	Result     any       `json:"result,omitempty"`
+	Message    string    `json:"message,omitempty"`
+	Error      string    `json:"error,omitempty"`
+	ExecutedAt time.Time `json:"executed_at"`
+	Duration   float64   `json:"duration_ms"`
 }
 
 // Notification represents a notification sent.
@@ -77,7 +77,7 @@ type Notification struct {
 	Channel     string    `json:"channel"`
 	Status      string    `json:"status"` // pending, sent, failed
 	Error       string    `json:"error,omitempty"`
-	SentAt      time.Time `json:"sent_at,omitempty"`
+	SentAt      time.Time `json:"sent_at"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 

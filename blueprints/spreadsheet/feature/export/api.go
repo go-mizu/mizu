@@ -87,7 +87,7 @@ type SheetData struct {
 type CellData struct {
 	Row       int
 	Col       int
-	Value     interface{}
+	Value     any
 	Formula   string
 	Display   string
 	Type      string

@@ -9,17 +9,18 @@ import (
 
 // PreTokenizedDoc represents a pre-tokenized document
 type PreTokenizedDoc struct {
-	DocID   uint32
-	Tokens  []uint64 // FNV hashes
-	Freqs   []uint16 // Frequencies
-	DocLen  uint16   // Number of tokens
+	DocID  uint32
+	Tokens []uint64 // FNV hashes
+	Freqs  []uint16 // Frequencies
+	DocLen uint16   // Number of tokens
 }
 
 // PreTokenizedFormat stores documents in a binary format optimized for fast reading
 // Format:
-//   Header: [4 bytes: num_docs] [4 bytes: total_tokens]
-//   Per document: [4 bytes: doc_id] [2 bytes: num_tokens] [2 bytes: doc_len]
-//                 [8*num_tokens bytes: hashes] [2*num_tokens bytes: freqs]
+//
+//	Header: [4 bytes: num_docs] [4 bytes: total_tokens]
+//	Per document: [4 bytes: doc_id] [2 bytes: num_tokens] [2 bytes: doc_len]
+//	              [8*num_tokens bytes: hashes] [2*num_tokens bytes: freqs]
 type PreTokenizedFormat struct {
 	NumDocs     uint32
 	TotalTokens uint64
@@ -106,7 +107,7 @@ func ReadPreTokenized(filename string) (*PreTokenizedFormat, error) {
 
 	// Read documents
 	docHeader := make([]byte, 8)
-	for i := uint32(0); i < numDocs; i++ {
+	for i := range numDocs {
 		if _, err := io.ReadFull(f, docHeader); err != nil {
 			return nil, err
 		}
@@ -161,7 +162,7 @@ func NewPreTokenizedIndexer(numWorkers int) *PreTokenizedIndexer {
 		numWorkers: numWorkers,
 	}
 
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		idx.shards[i] = &optimizedShard{
 			terms: make(map[uint64]*optimizedPostings, 10000),
 		}
@@ -178,22 +179,13 @@ func (idx *PreTokenizedIndexer) IndexBatch(docs []PreTokenizedDoc) {
 	}
 
 	numDocs := len(docs)
-	numWorkers := idx.numWorkers
-	if numWorkers > numDocs {
-		numWorkers = numDocs
-	}
+	numWorkers := min(idx.numWorkers, numDocs)
 
 	// Process in chunks to reduce memory pressure
-	chunkSize := 100000
-	if chunkSize > numDocs {
-		chunkSize = numDocs
-	}
+	chunkSize := min(100000, numDocs)
 
 	for chunkStart := 0; chunkStart < numDocs; chunkStart += chunkSize {
-		chunkEnd := chunkStart + chunkSize
-		if chunkEnd > numDocs {
-			chunkEnd = numDocs
-		}
+		chunkEnd := min(chunkStart+chunkSize, numDocs)
 		idx.indexChunk(docs[chunkStart:chunkEnd], numWorkers)
 	}
 }
@@ -209,11 +201,8 @@ func (idx *PreTokenizedIndexer) indexChunk(docs []PreTokenizedDoc, numWorkers in
 	workerShards := make([][256][]optimizedPosting, numWorkers)
 	for w := 0; w < numWorkers; w++ {
 		docsPerWorker := (numDocs + numWorkers - 1) / numWorkers
-		postingsPerShard := (docsPerWorker * avgTokensPerDoc) / 256
-		if postingsPerShard < 64 {
-			postingsPerShard = 64
-		}
-		for s := 0; s < 256; s++ {
+		postingsPerShard := max((docsPerWorker*avgTokensPerDoc)/256, 64)
+		for s := range 256 {
 			workerShards[w][s] = make([]optimizedPosting, 0, postingsPerShard)
 		}
 	}
@@ -226,10 +215,7 @@ func (idx *PreTokenizedIndexer) indexChunk(docs []PreTokenizedDoc, numWorkers in
 	// Phase 1: Distribute to local shards (no locks needed)
 	for w := 0; w < numWorkers; w++ {
 		start := w * batchSize
-		end := start + batchSize
-		if end > numDocs {
-			end = numDocs
-		}
+		end := min(start+batchSize, numDocs)
 		if start >= end {
 			break
 		}
@@ -262,10 +248,7 @@ func (idx *PreTokenizedIndexer) indexChunk(docs []PreTokenizedDoc, numWorkers in
 	// Process shards in parallel batches
 	const shardsPerBatch = 32
 	for shardBatchStart := 0; shardBatchStart < 256; shardBatchStart += shardsPerBatch {
-		shardBatchEnd := shardBatchStart + shardsPerBatch
-		if shardBatchEnd > 256 {
-			shardBatchEnd = 256
-		}
+		shardBatchEnd := min(shardBatchStart+shardsPerBatch, 256)
 
 		for shardID := shardBatchStart; shardID < shardBatchEnd; shardID++ {
 			wg.Add(1)

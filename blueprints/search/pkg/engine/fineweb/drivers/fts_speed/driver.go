@@ -29,8 +29,8 @@ func init() {
 }
 
 const (
-	BlockSize    = 128  // Documents per block
-	SkipInterval = 128  // Skip pointer interval
+	BlockSize    = 128 // Documents per block
+	SkipInterval = 128 // Skip pointer interval
 )
 
 // Driver implements maximum search speed optimization.
@@ -56,18 +56,18 @@ type BlockMaxIndex struct {
 
 // PostingList with block-level max scores for WAND.
 type PostingList struct {
-	Blocks    []Block
-	MaxScore  float32 // Global max score
-	DocFreq   int
-	IDF       float32
+	Blocks   []Block
+	MaxScore float32 // Global max score
+	DocFreq  int
+	IDF      float32
 }
 
 // Block is a group of postings with pre-computed max score.
 type Block struct {
-	DocNums   []uint32  // Document numbers (sequential)
-	Freqs     []uint16  // Term frequencies
-	MaxScore  float32   // Maximum BM25 score in this block
-	MaxDocNum uint32    // Last doc number in block
+	DocNums   []uint32 // Document numbers (sequential)
+	Freqs     []uint16 // Term frequencies
+	MaxScore  float32  // Maximum BM25 score in this block
+	MaxDocNum uint32   // Last doc number in block
 }
 
 // New creates a new maximum-speed driver.
@@ -373,7 +373,7 @@ func (d *Driver) blockMaxWAND(ctx context.Context, queryTerms []string, k int) [
 
 // termMapPool for reducing allocations during tokenization
 var termMapPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return make(map[string]int, 256)
 	},
 }
@@ -388,7 +388,7 @@ func fastTokenize(text string) map[string]int {
 	data := []byte(text)
 	start := -1
 
-	for i := 0; i < len(data); i++ {
+	for i := range data {
 		c := data[i]
 		// Check if delimiter (space, punctuation, control chars)
 		isDelim := c <= ' ' || (c >= '!' && c <= '/') || (c >= ':' && c <= '@') ||
@@ -400,7 +400,7 @@ func fastTokenize(text string) map[string]int {
 				token := data[start:i]
 				if len(token) < 100 {
 					// Lowercase in-place (ASCII only, preserves UTF-8)
-					for j := 0; j < len(token); j++ {
+					for j := range token {
 						if token[j] >= 'A' && token[j] <= 'Z' {
 							token[j] += 32
 						}
@@ -418,7 +418,7 @@ func fastTokenize(text string) map[string]int {
 	if start >= 0 {
 		token := data[start:]
 		if len(token) < 100 {
-			for j := 0; j < len(token); j++ {
+			for j := range token {
 				if token[j] >= 'A' && token[j] <= 'Z' {
 					token[j] += 32
 				}
@@ -585,10 +585,7 @@ func (d *Driver) buildBlocks(termPostings map[string][]posting) {
 	}
 
 	// Parallel posting list building
-	numWorkers := runtime.NumCPU()
-	if numWorkers > 8 {
-		numWorkers = 8
-	}
+	numWorkers := min(runtime.NumCPU(), 8)
 
 	type termResult struct {
 		term string
@@ -600,9 +597,7 @@ func (d *Driver) buildBlocks(termPostings map[string][]posting) {
 
 	var wg sync.WaitGroup
 	for range numWorkers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for term := range termCh {
 				postings := termPostings[term]
 				pl := &PostingList{
@@ -620,10 +615,7 @@ func (d *Driver) buildBlocks(termPostings map[string][]posting) {
 
 				// Build blocks
 				for i := 0; i < len(postings); i += BlockSize {
-					end := i + BlockSize
-					if end > len(postings) {
-						end = len(postings)
-					}
+					end := min(i+BlockSize, len(postings))
 
 					block := Block{
 						DocNums: make([]uint32, end-i),
@@ -658,7 +650,7 @@ func (d *Driver) buildBlocks(termPostings map[string][]posting) {
 
 				resultCh <- termResult{term: term, pl: pl}
 			}
-		}()
+		})
 	}
 
 	// Feed terms to workers
@@ -694,10 +686,7 @@ func (d *Driver) buildBlocksDirect(termPostings map[string][]algo.IndexPosting) 
 	}
 
 	// Parallel posting list building with more workers
-	numWorkers := runtime.NumCPU()
-	if numWorkers > 16 {
-		numWorkers = 16
-	}
+	numWorkers := min(runtime.NumCPU(), 16)
 
 	type termResult struct {
 		term string
@@ -709,9 +698,7 @@ func (d *Driver) buildBlocksDirect(termPostings map[string][]algo.IndexPosting) 
 
 	var wg sync.WaitGroup
 	for range numWorkers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for term := range termCh {
 				postings := termPostings[term]
 				pl := &PostingList{
@@ -729,10 +716,7 @@ func (d *Driver) buildBlocksDirect(termPostings map[string][]algo.IndexPosting) 
 
 				// Build blocks
 				for i := 0; i < len(postings); i += BlockSize {
-					end := i + BlockSize
-					if end > len(postings) {
-						end = len(postings)
-					}
+					end := min(i+BlockSize, len(postings))
 
 					block := Block{
 						DocNums: make([]uint32, end-i),
@@ -767,7 +751,7 @@ func (d *Driver) buildBlocksDirect(termPostings map[string][]algo.IndexPosting) 
 
 				resultCh <- termResult{term: term, pl: pl}
 			}
-		}()
+		})
 	}
 
 	// Feed terms to workers
@@ -927,8 +911,8 @@ type searchResult struct {
 // minHeap for top-k results.
 type minHeap []searchResult
 
-func (h *minHeap) Len() int            { return len(*h) }
-func (h *minHeap) peek() searchResult  { return (*h)[0] }
+func (h *minHeap) Len() int           { return len(*h) }
+func (h *minHeap) peek() searchResult { return (*h)[0] }
 func (h *minHeap) push(r searchResult) {
 	*h = append(*h, r)
 	h.up(len(*h) - 1)

@@ -48,10 +48,8 @@ func TestPreTokenizedProduction(t *testing.T) {
 	start := time.Now()
 
 	// Tokenization workers
-	for w := 0; w < numWorkers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range numWorkers {
+		wg.Go(func() {
 			table := algo.NewFixedHashTable(4096)
 
 			for batch := range docChan {
@@ -79,14 +77,12 @@ func TestPreTokenizedProduction(t *testing.T) {
 				}
 				resultChan <- results
 			}
-		}()
+		})
 	}
 
 	// Collector
 	var collectWg sync.WaitGroup
-	collectWg.Add(1)
-	go func() {
-		defer collectWg.Done()
+	collectWg.Go(func() {
 		docID := uint32(0)
 		for batch := range resultChan {
 			for i := range batch {
@@ -97,7 +93,7 @@ func TestPreTokenizedProduction(t *testing.T) {
 			preDocs = append(preDocs, batch...)
 			mu.Unlock()
 		}
-	}()
+	})
 
 	// Progress tracking
 	var docCount int

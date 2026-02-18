@@ -203,7 +203,7 @@ func (s *Service) GetFeeds(ctx context.Context, userID int64) (*Feeds, error) {
 }
 
 // Create creates an event (internal use)
-func (s *Service) Create(ctx context.Context, eventType string, actorID, repoID int64, orgID *int64, payload interface{}, public bool) (*Event, error) {
+func (s *Service) Create(ctx context.Context, eventType string, actorID, repoID int64, orgID *int64, payload any, public bool) (*Event, error) {
 	actor, err := s.userStore.GetByID(ctx, actorID)
 	if err != nil {
 		return nil, err

@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strconv"
 	"time"
 )
@@ -35,20 +35,20 @@ func CollectSystemInfo() SystemInfo {
 
 // IndexingMetrics contains metrics from the indexing phase.
 type IndexingMetrics struct {
-	Duration   time.Duration `json:"duration"`
-	DocsPerSec float64       `json:"docs_per_sec"`
-	PeakMemory int64         `json:"peak_memory"`
-	TotalDocs  int64         `json:"total_docs"`
-	FromScratch bool         `json:"from_scratch"` // true = fresh index, false = incremental
+	Duration    time.Duration `json:"duration"`
+	DocsPerSec  float64       `json:"docs_per_sec"`
+	PeakMemory  int64         `json:"peak_memory"`
+	TotalDocs   int64         `json:"total_docs"`
+	FromScratch bool          `json:"from_scratch"` // true = fresh index, false = incremental
 }
 
 // IncrementalMetrics contains metrics from incremental indexing.
 type IncrementalMetrics struct {
-	Duration    time.Duration `json:"duration"`
-	DocsPerSec  float64       `json:"docs_per_sec"`
-	DocsAdded   int64         `json:"docs_added"`
-	StartCount  int64         `json:"start_count"`  // docs before
-	EndCount    int64         `json:"end_count"`    // docs after
+	Duration   time.Duration `json:"duration"`
+	DocsPerSec float64       `json:"docs_per_sec"`
+	DocsAdded  int64         `json:"docs_added"`
+	StartCount int64         `json:"start_count"` // docs before
+	EndCount   int64         `json:"end_count"`   // docs after
 }
 
 // LatencyMetrics contains search latency percentiles.
@@ -116,9 +116,7 @@ func (c *LatencyCollector) Metrics() *LatencyMetrics {
 	// Sort samples
 	sorted := make([]time.Duration, len(c.samples))
 	copy(sorted, c.samples)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i] < sorted[j]
-	})
+	slices.Sort(sorted)
 
 	// Calculate metrics
 	var sum time.Duration

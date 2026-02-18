@@ -124,8 +124,8 @@ func decodeUnicodeEscapes(s string) string {
 // e.g., "https://news.qq.com/rain/a/20260217A02A7D00" -> "20260217A02A7D00"
 func ExtractArticleID(rawURL string) string {
 	// Handle /rain/a/ pattern
-	if idx := strings.Index(rawURL, "/rain/a/"); idx != -1 {
-		id := rawURL[idx+8:]
+	if _, after, ok := strings.Cut(rawURL, "/rain/a/"); ok {
+		id := after
 		// Trim trailing slash or query params
 		if q := strings.IndexAny(id, "?#/"); q != -1 {
 			id = id[:q]
@@ -133,8 +133,8 @@ func ExtractArticleID(rawURL string) string {
 		return id
 	}
 	// Handle /a/ pattern (view.inews.qq.com/a/...)
-	if idx := strings.Index(rawURL, "/a/"); idx != -1 {
-		id := rawURL[idx+3:]
+	if _, after, ok := strings.Cut(rawURL, "/a/"); ok {
+		id := after
 		if q := strings.IndexAny(id, "?#/"); q != -1 {
 			id = id[:q]
 		}

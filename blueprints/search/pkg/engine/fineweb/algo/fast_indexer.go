@@ -35,13 +35,7 @@ type workerData struct {
 
 // NewFastIndexer creates a new fast indexer.
 func NewFastIndexer(tokenizer TokenizerFunc) *FastIndexer {
-	numWorkers := runtime.NumCPU()
-	if numWorkers < 2 {
-		numWorkers = 2
-	}
-	if numWorkers > 32 {
-		numWorkers = 32
-	}
+	numWorkers := min(max(runtime.NumCPU(), 2), 32)
 
 	fi := &FastIndexer{
 		NumWorkers:    numWorkers,
@@ -130,10 +124,7 @@ func (fi *FastIndexer) parallelMergeWorkers() (map[string][]IndexPosting, []int)
 	}
 
 	// Parallel term merging
-	numWorkers := runtime.NumCPU()
-	if numWorkers > 16 {
-		numWorkers = 16
-	}
+	numWorkers := min(runtime.NumCPU(), 16)
 
 	termCh := make(chan string, len(terms))
 	type mergeResult struct {
@@ -143,10 +134,8 @@ func (fi *FastIndexer) parallelMergeWorkers() (map[string][]IndexPosting, []int)
 	resultCh := make(chan mergeResult, len(terms))
 
 	var wg sync.WaitGroup
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range numWorkers {
+		wg.Go(func() {
 			for term := range termCh {
 				// Count total
 				total := 0
@@ -162,7 +151,7 @@ func (fi *FastIndexer) parallelMergeWorkers() (map[string][]IndexPosting, []int)
 
 				resultCh <- mergeResult{term: term, postings: merged}
 			}
-		}()
+		})
 	}
 
 	// Feed terms

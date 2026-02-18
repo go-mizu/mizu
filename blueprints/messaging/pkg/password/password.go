@@ -3,6 +3,7 @@ package password
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -119,12 +120,7 @@ func NeedsRehash(hash string) bool {
 // isCommonPassword checks if the password is in the list of common passwords.
 func isCommonPassword(password string) bool {
 	lower := strings.ToLower(password)
-	for _, common := range commonPasswords {
-		if lower == common {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(commonPasswords, lower)
 }
 
 // commonPasswords is a list of the most common passwords.

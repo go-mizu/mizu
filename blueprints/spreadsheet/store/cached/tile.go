@@ -14,7 +14,7 @@ type Tile struct {
 // TileCell represents a cell within a tile.
 type TileCell struct {
 	ID        string
-	Value     interface{}
+	Value     any
 	Formula   string
 	Display   string
 	Type      cells.CellType

@@ -21,7 +21,7 @@ var megaCharClass [256]byte
 var megaToLower [256]byte
 
 func init() {
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		if (i >= 'a' && i <= 'z') || (i >= '0' && i <= '9') {
 			megaCharClass[i] = 1
 			megaToLower[i] = byte(i)
@@ -40,7 +40,7 @@ type MegaConfig struct {
 
 // Global hash buffer pool for reuse
 var hashBufferPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		buf := make([]uint64, 0, 2048)
 		return &buf
 	},
@@ -146,7 +146,7 @@ func NewMegaIndexer(outDir string, cfg MegaConfig) *MegaIndexer {
 		docLens: make([]uint16, 0, 4000000),
 	}
 
-	for i := 0; i < ultraNumShards; i++ {
+	for i := range ultraNumShards {
 		mi.shards[i] = &megaShard{
 			terms: make(map[uint64]*megaPostings, 20000),
 		}
@@ -291,7 +291,7 @@ func TokenizeMegaV2(text string, freqs map[uint64]uint16) int {
 	hash := uint64(fnvOffset)
 	tokenLen := 0
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		c := megaToLower[data[i]]
 		if c != 0 {
 			// Continue token
@@ -404,10 +404,7 @@ func (mi *MegaIndexer) AddBatch(docIDs []uint32, texts []string) {
 	}
 
 	numDocs := len(texts)
-	numWorkers := mi.config.NumWorkers
-	if numWorkers > numDocs {
-		numWorkers = numDocs
-	}
+	numWorkers := min(mi.config.NumWorkers, numDocs)
 
 	// Per-worker posting collection
 	type posting struct {
@@ -416,9 +413,9 @@ func (mi *MegaIndexer) AddBatch(docIDs []uint32, texts []string) {
 		freq  uint16
 	}
 	workerShardPostings := make([][][]posting, numWorkers)
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		workerShardPostings[w] = make([][]posting, ultraNumShards)
-		for s := 0; s < ultraNumShards; s++ {
+		for s := range ultraNumShards {
 			workerShardPostings[w][s] = make([]posting, 0, (numDocs/numWorkers)*2)
 		}
 	}
@@ -428,12 +425,9 @@ func (mi *MegaIndexer) AddBatch(docIDs []uint32, texts []string) {
 	var wg sync.WaitGroup
 	batchSize := (numDocs + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		start := w * batchSize
-		end := start + batchSize
-		if end > numDocs {
-			end = numDocs
-		}
+		end := min(start+batchSize, numDocs)
 		if start >= end {
 			break
 		}
@@ -447,10 +441,7 @@ func (mi *MegaIndexer) AddBatch(docIDs []uint32, texts []string) {
 
 			for i := start; i < end; i++ {
 				docID := docIDs[i]
-				docLen := TokenizeMega(texts[i], freqs)
-				if docLen > 65535 {
-					docLen = 65535
-				}
+				docLen := min(TokenizeMega(texts[i], freqs), 65535)
 				docLensLocal[i] = uint16(docLen)
 
 				for hash, freq := range freqs {
@@ -483,12 +474,9 @@ func (mi *MegaIndexer) AddBatch(docIDs []uint32, texts []string) {
 	// Phase 2: Parallel shard updates
 	shardsPerWorker := (ultraNumShards + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startShard := w * shardsPerWorker
-		endShard := startShard + shardsPerWorker
-		if endShard > ultraNumShards {
-			endShard = ultraNumShards
-		}
+		endShard := min(startShard+shardsPerWorker, ultraNumShards)
 		if startShard >= endShard {
 			break
 		}
@@ -540,7 +528,7 @@ func (mi *MegaIndexer) Finish() (*SegmentedIndex, error) {
 
 	terms := make(map[string]*SegmentPostings)
 
-	for shardID := 0; shardID < ultraNumShards; shardID++ {
+	for shardID := range ultraNumShards {
 		shard := mi.shards[shardID]
 		shard.mu.Lock()
 		for hash, pl := range shard.terms {
@@ -604,7 +592,7 @@ func NewMega256Indexer(outDir string, cfg MegaConfig) *Mega256Indexer {
 		docLens: make([]uint16, 0, 4000000),
 	}
 
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		mi.shards[i] = &mega256Shard{
 			terms: make(map[uint64]*megaPostings, 5000),
 		}
@@ -620,10 +608,7 @@ func (mi *Mega256Indexer) AddBatch(docIDs []uint32, texts []string) {
 	}
 
 	numDocs := len(texts)
-	numWorkers := mi.config.NumWorkers
-	if numWorkers > numDocs {
-		numWorkers = numDocs
-	}
+	numWorkers := min(mi.config.NumWorkers, numDocs)
 
 	// Per-worker shard buffers
 	type posting struct {
@@ -632,9 +617,9 @@ func (mi *Mega256Indexer) AddBatch(docIDs []uint32, texts []string) {
 		freq  uint16
 	}
 	workerShardPostings := make([][][]posting, numWorkers)
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		workerShardPostings[w] = make([][]posting, 256)
-		for s := 0; s < 256; s++ {
+		for s := range 256 {
 			workerShardPostings[w][s] = make([]posting, 0, (numDocs/numWorkers)/2)
 		}
 	}
@@ -644,12 +629,9 @@ func (mi *Mega256Indexer) AddBatch(docIDs []uint32, texts []string) {
 	batchSize := (numDocs + numWorkers - 1) / numWorkers
 
 	// Phase 1: Parallel tokenization
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		start := w * batchSize
-		end := start + batchSize
-		if end > numDocs {
-			end = numDocs
-		}
+		end := min(start+batchSize, numDocs)
 		if start >= end {
 			break
 		}
@@ -663,10 +645,7 @@ func (mi *Mega256Indexer) AddBatch(docIDs []uint32, texts []string) {
 
 			for i := start; i < end; i++ {
 				docID := docIDs[i]
-				docLen := TokenizeMega(texts[i], freqs)
-				if docLen > 65535 {
-					docLen = 65535
-				}
+				docLen := min(TokenizeMega(texts[i], freqs), 65535)
 				docLensLocal[i] = uint16(docLen)
 
 				for hash, freq := range freqs {
@@ -699,12 +678,9 @@ func (mi *Mega256Indexer) AddBatch(docIDs []uint32, texts []string) {
 	// Phase 2: Parallel shard updates (256 shards = less contention)
 	shardsPerWorker := (256 + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startShard := w * shardsPerWorker
-		endShard := startShard + shardsPerWorker
-		if endShard > 256 {
-			endShard = 256
-		}
+		endShard := min(startShard+shardsPerWorker, 256)
 		if startShard >= endShard {
 			break
 		}
@@ -755,7 +731,7 @@ func (mi *Mega256Indexer) Finish() (*SegmentedIndex, error) {
 	avgDocLen := float64(mi.totalLen.Load()) / float64(numDocs)
 	terms := make(map[string]*SegmentPostings)
 
-	for shardID := 0; shardID < 256; shardID++ {
+	for shardID := range 256 {
 		shard := mi.shards[shardID]
 		for hash, pl := range shard.terms {
 			hashKey := hashToKey(hash)

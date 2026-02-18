@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 
 	"github.com/go-mizu/mizu/blueprints/bot/types"
 )
@@ -192,10 +193,8 @@ func computeMissingOS(osList []string) []string {
 		return nil
 	}
 	current := runtime.GOOS
-	for _, o := range osList {
-		if o == current {
-			return nil
-		}
+	if slices.Contains(osList, current) {
+		return nil
 	}
 	return osList
 }

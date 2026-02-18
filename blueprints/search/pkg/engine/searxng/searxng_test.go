@@ -3,6 +3,7 @@ package searxng
 import (
 	"context"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -45,11 +46,8 @@ func TestEngine_Categories(t *testing.T) {
 
 	// Check that general is included
 	var hasGeneral bool
-	for _, c := range cats {
-		if c == engine.CategoryGeneral {
-			hasGeneral = true
-			break
-		}
+	if slices.Contains(cats, engine.CategoryGeneral) {
+		hasGeneral = true
 	}
 	if !hasGeneral {
 		t.Error("expected 'general' category to be included")

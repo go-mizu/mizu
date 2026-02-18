@@ -281,7 +281,7 @@ func TestService_List_Pagination(t *testing.T) {
 	defer cleanup()
 
 	// Create multiple users
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		createTestUser(t, service, "user"+string(rune('a'+i)), "user"+string(rune('a'+i))+"@example.com")
 	}
 

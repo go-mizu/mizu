@@ -44,9 +44,9 @@ Examples:
 
 // seedUsers holds the test users data
 var seedUsers = []struct {
-	Email       string
-	Name        string
-	Password    string
+	Email    string
+	Name     string
+	Password string
 }{
 	{"alice@example.com", "Alice Johnson", "password123"},
 	{"bob@example.com", "Bob Smith", "password123"},
@@ -147,9 +147,9 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		{blocks.BlockBulletList, blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Press / to open the command menu and add new blocks"}}}},
 		{blocks.BlockBulletList, blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Drag blocks to reorder them"}}}},
 		{blocks.BlockBulletList, blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Use @mentions to reference people and pages"}}}},
-		{blocks.BlockTodo, blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Create your first page"}}, Checked: ptrBool(false)}},
-		{blocks.BlockTodo, blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Add a database"}}, Checked: ptrBool(false)}},
-		{blocks.BlockTodo, blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Invite a team member"}}, Checked: ptrBool(false)}},
+		{blocks.BlockTodo, blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Create your first page"}}, Checked: new(false)}},
+		{blocks.BlockTodo, blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Add a database"}}, Checked: new(false)}},
+		{blocks.BlockTodo, blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Invite a team member"}}, Checked: new(false)}},
 		{blocks.BlockDivider, blocks.Content{}},
 		{blocks.BlockCallout, blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Need help? Check out our documentation or reach out to support."}}, Icon: "💡", Color: "blue"}},
 	}
@@ -258,18 +258,18 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		Status      string
 		Priority    string
 		DueDays     int
-		Attachments []map[string]interface{}
+		Attachments []map[string]any
 	}{
-		{"Design new landing page", "In Progress", "High", 3, []map[string]interface{}{
+		{"Design new landing page", "In Progress", "High", 3, []map[string]any{
 			{"id": "file-1", "name": "mockup.png", "url": "https://via.placeholder.com/800x600?text=Landing+Page+Mockup", "type": "image/png"},
 			{"id": "file-2", "name": "design-spec.pdf", "url": "https://example.com/design-spec.pdf", "type": "application/pdf"},
 		}},
-		{"Write documentation", "Not Started", "Medium", 7, []map[string]interface{}{
+		{"Write documentation", "Not Started", "Medium", 7, []map[string]any{
 			{"id": "file-3", "name": "outline.md", "url": "https://example.com/outline.md", "type": "text/markdown"},
 		}},
 		{"Fix login bug", "Done", "High", -2, nil},
 		{"Review pull requests", "In Progress", "Medium", 1, nil},
-		{"Update dependencies", "Not Started", "Low", 14, []map[string]interface{}{
+		{"Update dependencies", "Not Started", "Low", 14, []map[string]any{
 			{"id": "file-4", "name": "audit-report.txt", "url": "https://example.com/audit.txt", "type": "text/plain"},
 		}},
 	}
@@ -318,8 +318,8 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			{blocks.BlockNumberList, blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Blockers discussion"}}}},
 			{blocks.BlockNumberList, blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Next steps"}}}},
 			{blocks.BlockHeading3, blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Action Items"}}}},
-			{blocks.BlockTodo, blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Follow up on design review"}}, Checked: ptrBool(false)}},
-			{blocks.BlockTodo, blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Schedule demo with stakeholders"}}, Checked: ptrBool(false)}},
+			{blocks.BlockTodo, blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Follow up on design review"}}, Checked: new(false)}},
+			{blocks.BlockTodo, blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Schedule demo with stakeholders"}}, Checked: new(false)}},
 		}
 
 		for i, bc := range meetingBlocks {
@@ -366,8 +366,9 @@ func runSeed(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+//go:fix inline
 func ptrBool(b bool) *bool {
-	return &b
+	return new(b)
 }
 
 // createDevTestBlocks creates comprehensive test blocks for the Development Test Page
@@ -473,9 +474,9 @@ func createDevTestBlocks(ctx context.Context, blockSvc blocks.API, pageID, userI
 		{blocks.BlockNumberList, blocks.Content{RichText: rt("Third numbered item")}},
 
 		{blocks.BlockHeading2, blocks.Content{RichText: rt("To-Do List")}},
-		{blocks.BlockTodo, blocks.Content{RichText: rt("Unchecked task"), Checked: ptrBool(false)}},
-		{blocks.BlockTodo, blocks.Content{RichText: rt("Checked/completed task"), Checked: ptrBool(true)}},
-		{blocks.BlockTodo, blocks.Content{RichText: rt("Another pending task"), Checked: ptrBool(false)}},
+		{blocks.BlockTodo, blocks.Content{RichText: rt("Unchecked task"), Checked: new(false)}},
+		{blocks.BlockTodo, blocks.Content{RichText: rt("Checked/completed task"), Checked: new(true)}},
+		{blocks.BlockTodo, blocks.Content{RichText: rt("Another pending task"), Checked: new(false)}},
 
 		{blocks.BlockHeading2, blocks.Content{RichText: rt("Toggle List")}},
 		// Note: Nested toggles are created separately below with parent_id references

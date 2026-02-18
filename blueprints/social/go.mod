@@ -4,7 +4,7 @@ go 1.25.5
 
 require (
 	github.com/duckdb/duckdb-go/v2 v2.5.5
-	github.com/go-mizu/mizu v0.5.21
+	github.com/go-mizu/mizu v0.5.23
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/crypto v0.48.0

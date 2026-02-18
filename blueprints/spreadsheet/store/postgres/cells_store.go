@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/go-mizu/blueprints/spreadsheet/feature/cells"
@@ -298,9 +299,7 @@ func (s *CellsStore) BatchSet(ctx context.Context, cellList []*cells.Cell) error
 		}
 
 		// Apply updates
-		for cellKey, tc := range updates {
-			tile.Cells[cellKey] = tc
-		}
+		maps.Copy(tile.Cells, updates)
 
 		// Save tile
 		newBlob, _ := json.Marshal(tile)

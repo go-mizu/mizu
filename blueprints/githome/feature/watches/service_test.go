@@ -287,7 +287,7 @@ func TestService_ListWatchers_Pagination(t *testing.T) {
 	createTestRepo(t, reposStore, owner, "testrepo")
 
 	// Create multiple watchers
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		watcher := createTestUser(t, usersStore, "watcher"+string(rune('a'+i)), "watcher"+string(rune('a'+i))+"@example.com")
 		_, _ = service.SetSubscription(context.Background(), watcher.ID, "owner", "testrepo", true, false)
 	}
@@ -399,7 +399,7 @@ func TestService_MultipleUsersWatching(t *testing.T) {
 	repo := createTestRepo(t, reposStore, owner, "testrepo")
 
 	// Multiple users watch the repo
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		watcher := createTestUser(t, usersStore, "watcher"+string(rune('a'+i)), "watcher"+string(rune('a'+i))+"@example.com")
 		_, _ = service.SetSubscription(context.Background(), watcher.ID, "owner", "testrepo", true, false)
 	}

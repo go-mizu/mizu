@@ -162,7 +162,7 @@ func TestKnowledgeStore_GetEntity_WithFacts(t *testing.T) {
 		Type:        "programming_language",
 		Description: "A systems programming language",
 		Facts: map[string]any{
-			"Designed by": "Mozilla",
+			"Designed by":    "Mozilla",
 			"First appeared": 2010,
 		},
 	}
@@ -385,7 +385,7 @@ func TestKnowledgeStore_ListEntities_Pagination(t *testing.T) {
 	ctx := context.Background()
 	knowledge := s.Knowledge()
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		entity := &store.Entity{
 			Name:        "Entity " + string(rune('A'+i)),
 			Type:        "test",

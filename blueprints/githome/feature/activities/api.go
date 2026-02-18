@@ -12,14 +12,14 @@ var (
 
 // Event represents an activity event
 type Event struct {
-	ID        string      `json:"id"`
-	Type      string      `json:"type"`
-	Actor     *Actor      `json:"actor"`
-	Repo      *EventRepo  `json:"repo"`
-	Org       *Actor      `json:"org,omitempty"`
-	Payload   interface{} `json:"payload"`
-	Public    bool        `json:"public"`
-	CreatedAt time.Time   `json:"created_at"`
+	ID        string     `json:"id"`
+	Type      string     `json:"type"`
+	Actor     *Actor     `json:"actor"`
+	Repo      *EventRepo `json:"repo"`
+	Org       *Actor     `json:"org,omitempty"`
+	Payload   any        `json:"payload"`
+	Public    bool       `json:"public"`
+	CreatedAt time.Time  `json:"created_at"`
 }
 
 // Actor represents an event actor
@@ -41,12 +41,12 @@ type EventRepo struct {
 
 // Feeds represents activity feeds
 type Feeds struct {
-	TimelineURL                 string `json:"timeline_url"`
-	UserURL                     string `json:"user_url"`
-	CurrentUserPublicURL        string `json:"current_user_public_url,omitempty"`
-	CurrentUserURL              string `json:"current_user_url,omitempty"`
-	CurrentUserActorURL         string `json:"current_user_actor_url,omitempty"`
-	CurrentUserOrganizationURL  string `json:"current_user_organization_url,omitempty"`
+	TimelineURL                 string   `json:"timeline_url"`
+	UserURL                     string   `json:"user_url"`
+	CurrentUserPublicURL        string   `json:"current_user_public_url,omitempty"`
+	CurrentUserURL              string   `json:"current_user_url,omitempty"`
+	CurrentUserActorURL         string   `json:"current_user_actor_url,omitempty"`
+	CurrentUserOrganizationURL  string   `json:"current_user_organization_url,omitempty"`
 	CurrentUserOrganizationsURL []string `json:"current_user_organization_urls,omitempty"`
 }
 
@@ -112,7 +112,7 @@ type API interface {
 	GetFeeds(ctx context.Context, userID int64) (*Feeds, error)
 
 	// Create creates an event (internal use)
-	Create(ctx context.Context, eventType string, actorID, repoID int64, orgID *int64, payload interface{}, public bool) (*Event, error)
+	Create(ctx context.Context, eventType string, actorID, repoID int64, orgID *int64, payload any, public bool) (*Event, error)
 }
 
 // Store defines the data access interface for activities

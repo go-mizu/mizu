@@ -164,7 +164,7 @@ func (h *Page) GetHierarchy(c *mizu.Ctx) error {
 		})
 	}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{"path": path})
+	return c.JSON(http.StatusOK, map[string]any{"path": path})
 }
 
 // UpdateBlocks updates all blocks for a page.

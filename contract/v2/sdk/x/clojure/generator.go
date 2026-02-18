@@ -207,10 +207,10 @@ type methodModel struct {
 	HasInput  bool
 	HasOutput bool
 
-	InputType   string
-	OutputType  string
-	InputClj    string
-	OutputClj   string
+	InputType  string
+	OutputType string
+	InputClj   string
+	OutputClj  string
 
 	HTTPMethod string
 	HTTPPath   string
@@ -548,14 +548,14 @@ func baseCljType(typeByName map[string]*contract.Type, r string) string {
 	}
 
 	// Handle slice types
-	if strings.HasPrefix(r, "[]") {
-		elem := strings.TrimSpace(strings.TrimPrefix(r, "[]"))
+	if after, ok := strings.CutPrefix(r, "[]"); ok {
+		elem := strings.TrimSpace(after)
 		return "(s/coll-of " + baseCljType(typeByName, elem) + ")"
 	}
 
 	// Handle map types
-	if strings.HasPrefix(r, "map[string]") {
-		elem := strings.TrimSpace(strings.TrimPrefix(r, "map[string]"))
+	if after, ok := strings.CutPrefix(r, "map[string]"); ok {
+		elem := strings.TrimSpace(after)
 		return "(s/map-of keyword? " + baseCljType(typeByName, elem) + ")"
 	}
 
@@ -786,7 +786,7 @@ func indent(n int, s string) string {
 }
 
 // lenHelper returns the length of a slice or array.
-func lenHelper(s interface{}) int {
+func lenHelper(s any) int {
 	switch v := s.(type) {
 	case []fieldModel:
 		return len(v)

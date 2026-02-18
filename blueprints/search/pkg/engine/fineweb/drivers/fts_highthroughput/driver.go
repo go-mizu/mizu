@@ -23,11 +23,11 @@ func init() {
 
 // Driver implements ultra-high-throughput FTS.
 type Driver struct {
-	indexDir      string
-	language      string
-	mmapIndex     *algo.MmapIndex      // Legacy mmap index
-	segmentedIdx  *algo.SegmentedIndex // New segment-based index (no merge)
-	docIDs        []string
+	indexDir     string
+	language     string
+	mmapIndex    *algo.MmapIndex      // Legacy mmap index
+	segmentedIdx *algo.SegmentedIndex // New segment-based index (no merge)
+	docIDs       []string
 }
 
 // New creates a new high-throughput driver.
@@ -199,7 +199,7 @@ func tokenizeQuery(query string) []string {
 	var start int = -1
 	data := []byte(query)
 
-	for i := 0; i < len(data); i++ {
+	for i := range data {
 		c := data[i]
 		isDelim := c <= ' ' || (c >= '!' && c <= '/') || (c >= ':' && c <= '@') ||
 			(c >= '[' && c <= '`') || (c >= '{' && c <= '~')
@@ -208,7 +208,7 @@ func tokenizeQuery(query string) []string {
 			if start >= 0 {
 				token := data[start:i]
 				if len(token) < 100 {
-					for j := 0; j < len(token); j++ {
+					for j := range token {
 						if token[j] >= 'A' && token[j] <= 'Z' {
 							token[j] += 32
 						}
@@ -225,7 +225,7 @@ func tokenizeQuery(query string) []string {
 	if start >= 0 {
 		token := data[start:]
 		if len(token) < 100 {
-			for j := 0; j < len(token); j++ {
+			for j := range token {
 				if token[j] >= 'A' && token[j] <= 'Z' {
 					token[j] += 32
 				}

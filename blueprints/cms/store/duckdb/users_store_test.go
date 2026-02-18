@@ -302,7 +302,7 @@ func TestUsersStore_List(t *testing.T) {
 	ctx := context.Background()
 
 	// Create users
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		user := &users.User{
 			ID:           "user-list-" + string(rune('a'+i)),
 			Email:        "list" + string(rune('a'+i)) + "@example.com",

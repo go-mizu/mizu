@@ -216,7 +216,7 @@ func TestService_List_Pagination(t *testing.T) {
 	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
 	createTestRepo(t, reposStore, owner, "testrepo")
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		createTestLabel(t, service, "owner", "testrepo", "label"+string(rune('a'+i)), "ffffff")
 	}
 

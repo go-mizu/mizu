@@ -119,7 +119,6 @@ func (s *Service) getProviderForMode(mode Mode) llm.Provider {
 	return nil
 }
 
-
 // Query represents an AI search query.
 type Query struct {
 	Text      string `json:"text"`
@@ -131,14 +130,14 @@ type Query struct {
 type Response struct {
 	Answer           string             `json:"answer"`
 	Citations        []session.Citation `json:"citations"`
-	FollowUps        []string           `json:"follow_ups"`         // Backward compat
-	RelatedQuestions []RelatedQuestion  `json:"related_questions"`  // Enhanced follow-ups
-	Images           []ImageResult      `json:"images"`             // Related images
+	FollowUps        []string           `json:"follow_ups"`        // Backward compat
+	RelatedQuestions []RelatedQuestion  `json:"related_questions"` // Enhanced follow-ups
+	Images           []ImageResult      `json:"images"`            // Related images
 	Sources          []Source           `json:"sources"`
 	Reasoning        []ReasoningStep    `json:"reasoning,omitempty"`
 	SessionID        string             `json:"session_id"`
 	Mode             Mode               `json:"mode"`
-	Usage            *TokenUsage        `json:"usage,omitempty"`    // Token usage stats
+	Usage            *TokenUsage        `json:"usage,omitempty"` // Token usage stats
 }
 
 // RelatedQuestion represents a categorized follow-up question.
@@ -175,13 +174,13 @@ type ReasoningStep struct {
 
 // StreamEvent represents a streaming response event.
 type StreamEvent struct {
-	Type      string             `json:"type"` // start, token, citation, thinking, search, done, error
-	Content   string             `json:"content,omitempty"`
-	Citation  *session.Citation  `json:"citation,omitempty"`
-	Thinking  string             `json:"thinking,omitempty"`
-	Query     string             `json:"query,omitempty"`
-	Response  *StreamResponse    `json:"response,omitempty"`
-	Error     string             `json:"error,omitempty"`
+	Type     string            `json:"type"` // start, token, citation, thinking, search, done, error
+	Content  string            `json:"content,omitempty"`
+	Citation *session.Citation `json:"citation,omitempty"`
+	Thinking string            `json:"thinking,omitempty"`
+	Query    string            `json:"query,omitempty"`
+	Response *StreamResponse   `json:"response,omitempty"`
+	Error    string            `json:"error,omitempty"`
 }
 
 // TokenUsage tracks token consumption and cost.
@@ -200,9 +199,9 @@ type StreamResponse struct {
 	Text             string             `json:"text"`
 	Mode             Mode               `json:"mode"`
 	Citations        []session.Citation `json:"citations"`
-	FollowUps        []string           `json:"follow_ups"`         // Backward compat
-	RelatedQuestions []RelatedQuestion  `json:"related_questions"`  // Enhanced follow-ups
-	Images           []ImageResult      `json:"images"`             // Related images
+	FollowUps        []string           `json:"follow_ups"`        // Backward compat
+	RelatedQuestions []RelatedQuestion  `json:"related_questions"` // Enhanced follow-ups
+	Images           []ImageResult      `json:"images"`            // Related images
 	SessionID        string             `json:"session_id"`
 	SourcesUsed      int                `json:"sources_used"`
 	Usage            *TokenUsage        `json:"usage,omitempty"`    // Token usage stats
@@ -1254,14 +1253,11 @@ Respond with just the action and argument.`, agentContext, strings.Join(notes, "
 		reasoning = append(reasoning, ReasoningStep{Type: "action", Input: truncate(agentContext, 200), Output: action})
 
 		// Parse and execute action
-		if strings.HasPrefix(action, "search:") {
-			sq := strings.TrimSpace(strings.TrimPrefix(action, "search:"))
+		if after, ok := strings.CutPrefix(action, "search:"); ok {
+			sq := strings.TrimSpace(after)
 			searchResp, err := s.search.Search(ctx, sq, store.SearchOptions{})
 			if err == nil {
-				limit := 5
-				if len(searchResp.Results) < limit {
-					limit = len(searchResp.Results)
-				}
+				limit := min(len(searchResp.Results), 5)
 				for _, r := range searchResp.Results[:limit] {
 					if !seen[r.URL] {
 						seen[r.URL] = true
@@ -1270,8 +1266,8 @@ Respond with just the action and argument.`, agentContext, strings.Join(notes, "
 					}
 				}
 			}
-		} else if strings.HasPrefix(action, "fetch:") {
-			url := strings.TrimSpace(strings.TrimPrefix(action, "fetch:"))
+		} else if after, ok := strings.CutPrefix(action, "fetch:"); ok {
+			url := strings.TrimSpace(after)
 			if s.chunker != nil && !seen[url] {
 				doc, err := s.chunker.Fetch(ctx, url)
 				if err == nil {
@@ -1282,12 +1278,12 @@ Respond with just the action and argument.`, agentContext, strings.Join(notes, "
 					}
 				}
 			}
-		} else if strings.HasPrefix(action, "note:") {
-			note := strings.TrimSpace(strings.TrimPrefix(action, "note:"))
+		} else if after, ok := strings.CutPrefix(action, "note:"); ok {
+			note := strings.TrimSpace(after)
 			notes = append(notes, "Observation: "+note)
-		} else if strings.HasPrefix(action, "answer:") {
+		} else if after, ok := strings.CutPrefix(action, "answer:"); ok {
 			// Final answer
-			answer := strings.TrimSpace(strings.TrimPrefix(action, "answer:"))
+			answer := strings.TrimSpace(after)
 
 			// Build citations from sources
 			for i, src := range sources {
@@ -1441,10 +1437,7 @@ func (s *Service) processResearchStream(ctx context.Context, provider llm.Provid
 		})
 
 		// Collect top results
-		limit := 3
-		if len(searchResp.Results) < limit {
-			limit = len(searchResp.Results)
-		}
+		limit := min(len(searchResp.Results), 3)
 		for _, r := range searchResp.Results[:limit] {
 			if !seen[r.URL] {
 				seen[r.URL] = true
@@ -1604,10 +1597,10 @@ func (s *Service) generateFollowUps(ctx context.Context, provider llm.Provider, 
 // generateRelatedQuestions generates categorized related questions based on the topic and answer.
 func (s *Service) generateRelatedQuestions(ctx context.Context, provider llm.Provider, query, answer string, citations []session.Citation) []RelatedQuestion {
 	// Build source context from citations for topic awareness
-	sourceContext := ""
+	var sourceContext strings.Builder
 	for i, c := range citations {
 		if i < 5 {
-			sourceContext += fmt.Sprintf("- %s\n", c.Title)
+			sourceContext.WriteString(fmt.Sprintf("- %s\n", c.Title))
 		}
 	}
 
@@ -1645,7 +1638,7 @@ Categories:
 
 Format each question on its own line with its category prefix (e.g., "DEEPER: What is...?")
 
-Questions:`, query, answerContext, sourceContext)
+Questions:`, query, answerContext, sourceContext.String())
 
 	resp, err := questionProvider.ChatCompletion(ctx, llm.ChatRequest{
 		Messages:    []llm.Message{{Role: "user", Content: prompt}},
@@ -1786,7 +1779,6 @@ func truncate(s string, maxLen int) string {
 	}
 	return s[:maxLen-3] + "..."
 }
-
 
 // GetModes returns available AI modes.
 func GetModes() []ModeInfo {

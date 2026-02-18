@@ -10,7 +10,7 @@ import (
 )
 
 // FormatValue formats a value according to a number format string.
-func FormatValue(value interface{}, format string) string {
+func FormatValue(value any, format string) string {
 	if value == nil {
 		return ""
 	}

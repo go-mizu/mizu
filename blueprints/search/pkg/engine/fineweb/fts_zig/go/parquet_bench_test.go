@@ -78,10 +78,7 @@ func TestImportFromParquetIter(t *testing.T) {
 	batchSize := 100
 	batches := func(yield func([]string, error) bool) {
 		for i := 0; i < len(texts); i += batchSize {
-			end := i + batchSize
-			if end > len(texts) {
-				end = len(texts)
-			}
+			end := min(i+batchSize, len(texts))
 			if !yield(texts[i:end], nil) {
 				return
 			}
@@ -162,10 +159,7 @@ func BenchmarkImportStreaming(b *testing.B) {
 
 				batches := func(yield func([]string, error) bool) {
 					for j := 0; j < len(texts); j += batchSize {
-						end := j + batchSize
-						if end > len(texts) {
-							end = len(texts)
-						}
+						end := min(j+batchSize, len(texts))
 						if !yield(texts[j:end], nil) {
 							return
 						}

@@ -224,7 +224,7 @@ func TestChatsStore_List(t *testing.T) {
 	now := time.Now()
 
 	// Create multiple chats for the user
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		c := createTestChat(t, cs, chats.TypeGroup, "list"+string(rune('a'+i)), u.ID)
 		cs.InsertParticipant(ctx, &chats.Participant{
 			ChatID:   c.ID,
@@ -725,7 +725,7 @@ func TestChatsStore_MessageCount(t *testing.T) {
 	})
 
 	t.Run("increment multiple times", func(t *testing.T) {
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			cs.IncrementMessageCount(ctx, c.ID)
 		}
 

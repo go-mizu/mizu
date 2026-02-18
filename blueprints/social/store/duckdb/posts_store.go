@@ -46,7 +46,7 @@ func (s *PostsStore) GetByIDs(ctx context.Context, ids []string) ([]*posts.Post,
 	}
 
 	placeholders := make([]string, len(ids))
-	args := make([]interface{}, len(ids))
+	args := make([]any, len(ids))
 	for i, id := range ids {
 		placeholders[i] = fmt.Sprintf("$%d", i+1)
 		args[i] = id
@@ -77,7 +77,7 @@ func (s *PostsStore) GetByIDs(ctx context.Context, ids []string) ([]*posts.Post,
 // Update updates a post.
 func (s *PostsStore) Update(ctx context.Context, id string, in *posts.UpdateIn) error {
 	sets := []string{"edited_at = $1"}
-	args := []interface{}{time.Now()}
+	args := []any{time.Now()}
 	argNum := 2
 
 	if in.Content != nil {
@@ -114,7 +114,7 @@ func (s *PostsStore) List(ctx context.Context, opts posts.ListOpts) ([]*posts.Po
 		SELECT id, account_id, content, content_warning, visibility, reply_to_id, thread_id, quote_of_id, language, sensitive, edited_at, created_at, likes_count, reposts_count, replies_count, quotes_count
 		FROM posts WHERE 1=1
 	`
-	args := []interface{}{}
+	args := []any{}
 	argNum := 1
 
 	if opts.AccountID != "" {

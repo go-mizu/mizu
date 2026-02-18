@@ -1,6 +1,7 @@
 package mobile
 
 import (
+	"maps"
 	"regexp"
 	"time"
 
@@ -34,10 +35,10 @@ type PushToken struct {
 	Sandbox bool `json:"sandbox,omitempty"`
 
 	// CreatedAt is when the token was registered
-	CreatedAt time.Time `json:"created_at,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 
 	// UpdatedAt is when the token was last updated
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
 
 	// AppVersion is the app version when token was registered
 	AppVersion string `json:"app_version,omitempty"`
@@ -232,9 +233,7 @@ func (p *PushPayload) ToAPNS() map[string]any {
 	payload := map[string]any{"aps": aps}
 
 	// Add custom data
-	for k, v := range p.Data {
-		payload[k] = v
-	}
+	maps.Copy(payload, p.Data)
 
 	return payload
 }

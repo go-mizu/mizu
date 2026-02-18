@@ -326,7 +326,7 @@ func (s *Service) ListCommits(ctx context.Context, owner, repo string, number in
 
 		commit := &Commit{
 			SHA:    gc.SHA,
-			NodeID: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Commit:%s", gc.SHA))),
+			NodeID: base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Commit:%s", gc.SHA)),
 			Commit: &CommitData{
 				Message: gc.Message,
 				Author: &CommitAuthor{
@@ -1027,7 +1027,7 @@ func (s *Service) getAuthorAssociation(ctx context.Context, r *repos.Repository,
 
 // populateURLs fills in the URL fields for a pull request
 func (s *Service) populateURLs(pr *PullRequest, owner, repo string) {
-	pr.NodeID = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("PullRequest:%d", pr.ID)))
+	pr.NodeID = base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "PullRequest:%d", pr.ID))
 	pr.URL = fmt.Sprintf("%s/api/v3/repos/%s/%s/pulls/%d", s.baseURL, owner, repo, pr.Number)
 	pr.HTMLURL = fmt.Sprintf("%s/%s/%s/pull/%d", s.baseURL, owner, repo, pr.Number)
 	pr.DiffURL = fmt.Sprintf("%s/%s/%s/pull/%d.diff", s.baseURL, owner, repo, pr.Number)
@@ -1042,14 +1042,14 @@ func (s *Service) populateURLs(pr *PullRequest, owner, repo string) {
 
 // populateReviewURLs fills in the URL fields for a review
 func (s *Service) populateReviewURLs(r *Review, owner, repo string, number int) {
-	r.NodeID = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Review:%d", r.ID)))
+	r.NodeID = base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "Review:%d", r.ID))
 	r.HTMLURL = fmt.Sprintf("%s/%s/%s/pull/%d#pullrequestreview-%d", s.baseURL, owner, repo, number, r.ID)
 	r.PullRequestURL = fmt.Sprintf("%s/api/v3/repos/%s/%s/pulls/%d", s.baseURL, owner, repo, number)
 }
 
 // populateReviewCommentURLs fills in the URL fields for a review comment
 func (s *Service) populateReviewCommentURLs(c *ReviewComment, owner, repo string, number int) {
-	c.NodeID = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("ReviewComment:%d", c.ID)))
+	c.NodeID = base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "ReviewComment:%d", c.ID))
 	c.URL = fmt.Sprintf("%s/api/v3/repos/%s/%s/pulls/comments/%d", s.baseURL, owner, repo, c.ID)
 	c.HTMLURL = fmt.Sprintf("%s/%s/%s/pull/%d#discussion_r%d", s.baseURL, owner, repo, number, c.ID)
 	c.PullRequestURL = fmt.Sprintf("%s/api/v3/repos/%s/%s/pulls/%d", s.baseURL, owner, repo, number)

@@ -27,7 +27,7 @@ func RunToolLoop(
 	registry *Registry,
 	req *types.LLMToolRequest,
 ) (*types.LLMToolResponse, error) {
-	for i := 0; i < MaxToolIterations; i++ {
+	for i := range MaxToolIterations {
 		resp, err := provider.ChatWithTools(ctx, req)
 		if err != nil {
 			return nil, fmt.Errorf("tool loop iteration %d: %w", i, err)
@@ -105,7 +105,7 @@ func RunToolLoopStream(
 	broadcaster Broadcaster,
 	runID, sessionKey string,
 ) (*types.LLMToolResponse, error) {
-	for i := 0; i < MaxToolIterations; i++ {
+	for i := range MaxToolIterations {
 		var opts []llm.StreamOptions
 		if req.ThinkingLevel != "" && req.ThinkingLevel != "off" {
 			opts = append(opts, llm.StreamOptions{Thinking: llm.ThinkingLevel(req.ThinkingLevel)})

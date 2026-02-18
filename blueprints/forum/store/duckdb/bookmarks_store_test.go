@@ -114,7 +114,7 @@ func TestBookmarksStore_List(t *testing.T) {
 	author := createTestAccount(t, store, "author")
 
 	// Create multiple bookmarks
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		bookmark := &bookmarks.Bookmark{
 			ID:         newTestID(),
 			AccountID:  author.ID,
@@ -129,7 +129,7 @@ func TestBookmarksStore_List(t *testing.T) {
 	}
 
 	// Also create comment bookmarks
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		bookmark := &bookmarks.Bookmark{
 			ID:         newTestID(),
 			AccountID:  author.ID,
@@ -171,7 +171,7 @@ func TestBookmarksStore_List_Limit(t *testing.T) {
 	author := createTestAccount(t, store, "author")
 
 	// Create 10 bookmarks
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		bookmark := &bookmarks.Bookmark{
 			ID:         newTestID(),
 			AccountID:  author.ID,

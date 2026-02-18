@@ -140,7 +140,7 @@ func TestSearch_SearchWithLimit(t *testing.T) {
 	})
 
 	// Create multiple posts
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		postsSvc.Create(context.Background(), account.ID, &posts.CreateIn{
 			Content: "Test post with keyword searchable",
 		})

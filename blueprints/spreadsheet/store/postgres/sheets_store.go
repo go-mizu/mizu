@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"slices"
 
 	"github.com/go-mizu/blueprints/spreadsheet/feature/sheets"
 )
@@ -257,10 +258,8 @@ func (s *SheetsStore) AddHiddenRow(ctx context.Context, sheetID string, row int)
 	}
 
 	// Check if already hidden
-	for _, r := range hiddenRowsList {
-		if r == row {
-			return nil
-		}
+	if slices.Contains(hiddenRowsList, row) {
+		return nil
 	}
 
 	hiddenRowsList = append(hiddenRowsList, row)
@@ -317,10 +316,8 @@ func (s *SheetsStore) AddHiddenCol(ctx context.Context, sheetID string, col int)
 	}
 
 	// Check if already hidden
-	for _, c := range hiddenColsList {
-		if c == col {
-			return nil
-		}
+	if slices.Contains(hiddenColsList, col) {
+		return nil
 	}
 
 	hiddenColsList = append(hiddenColsList, col)

@@ -5,10 +5,11 @@ import (
 	"embed"
 	"html/template"
 	"io/fs"
+	"strings"
 )
 
 // toFloat64 converts various numeric types to float64.
-func toFloat64(v interface{}) float64 {
+func toFloat64(v any) float64 {
 	switch n := v.(type) {
 	case int:
 		return float64(n)
@@ -51,17 +52,17 @@ func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 	funcMap := template.FuncMap{
 		"lower": func(s string) string {
 			// Simple lowercase for status classes
-			result := ""
+			var result strings.Builder
 			for _, c := range s {
 				if c >= 'A' && c <= 'Z' {
-					result += string(c + 32)
+					result.WriteString(string(c + 32))
 				} else if c == ' ' {
-					result += "-"
+					result.WriteString("-")
 				} else {
-					result += string(c)
+					result.WriteString(string(c))
 				}
 			}
-			return result
+			return result.String()
 		},
 		"slice": func(s string, start, end int) string {
 			if start >= len(s) {
@@ -72,7 +73,7 @@ func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 			}
 			return s[start:end]
 		},
-		"div": func(a, b interface{}) float64 {
+		"div": func(a, b any) float64 {
 			af := toFloat64(a)
 			bf := toFloat64(b)
 			if bf == 0 {
@@ -80,10 +81,10 @@ func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 			}
 			return af / bf
 		},
-		"mul": func(a, b interface{}) float64 {
+		"mul": func(a, b any) float64 {
 			return toFloat64(a) * toFloat64(b)
 		},
-		"float64": func(i interface{}) float64 {
+		"float64": func(i any) float64 {
 			return toFloat64(i)
 		},
 		"sub": func(a, b int) int {

@@ -69,7 +69,7 @@ func TestSaveAndCountSearches(t *testing.T) {
 func TestRecentSearches(t *testing.T) {
 	db := tempDB(t)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		r := &SearchResult{
 			Query:      fmt.Sprintf("query %d", i),
 			Answer:     fmt.Sprintf("answer %d", i),
@@ -304,9 +304,9 @@ func TestErrorLogging(t *testing.T) {
 	e := &ErrorLog{
 		Source:     "sse",
 		Operation:  "search",
-		Query:     "test query",
+		Query:      "test query",
 		ErrorType:  ErrHTTP,
-		ErrorMsg:  "HTTP 403 Forbidden",
+		ErrorMsg:   "HTTP 403 Forbidden",
 		HTTPStatus: 403,
 	}
 	if err := db.LogError(e); err != nil {
@@ -316,9 +316,9 @@ func TestErrorLogging(t *testing.T) {
 	e2 := &ErrorLog{
 		Source:     "api",
 		Operation:  "api_chat",
-		Query:     "api query",
+		Query:      "api query",
 		ErrorType:  ErrRateLimit,
-		ErrorMsg:  "429 Too Many Requests",
+		ErrorMsg:   "429 Too Many Requests",
 		HTTPStatus: 429,
 		APIKeyID:   1,
 	}
@@ -401,7 +401,7 @@ func TestAccountManagerRoundRobin(t *testing.T) {
 	db := tempDB(t)
 
 	// Add 3 accounts
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		a := &Account{
 			Email:       fmt.Sprintf("user%d@test.com", i),
 			Source:      "emailnator",
@@ -419,7 +419,7 @@ func TestAccountManagerRoundRobin(t *testing.T) {
 
 	// Verify round-robin
 	emails := make([]string, 3)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		a, err := am.NextAccount()
 		if err != nil {
 			t.Fatalf("next account %d: %v", i, err)
@@ -959,7 +959,7 @@ func TestMultipleAccountsDB(t *testing.T) {
 	am := NewAccountManager(db)
 
 	// Add multiple accounts
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		sess := &sessionData{
 			CopilotQueries: 5,
 			FileUploads:    10,
@@ -1013,7 +1013,7 @@ func TestMultipleAPIKeysDB(t *testing.T) {
 	db := tempDB(t)
 	am := NewAccountManager(db)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if err := am.AddAPIKey(fmt.Sprintf("pplx-key%d", i), fmt.Sprintf("key%d", i)); err != nil {
 			t.Fatalf("add key %d: %v", i, err)
 		}
@@ -1104,7 +1104,7 @@ func TestFullWorkflowSimulation(t *testing.T) {
 	am := NewAccountManager(db)
 
 	// Step 1: Register multiple accounts
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		sess := &sessionData{
 			CopilotQueries: defaultCopilotQueries,
 			FileUploads:    defaultFileUploads,
@@ -1127,7 +1127,7 @@ func TestFullWorkflowSimulation(t *testing.T) {
 
 	// Step 3: Rotate through accounts for scrape queries
 	cfg := Config{DataDir: t.TempDir(), Timeout: 10 * time.Second}
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		account, err := am.NextAccount()
 		if err != nil {
 			t.Fatalf("next account: %v", err)
@@ -1147,7 +1147,7 @@ func TestFullWorkflowSimulation(t *testing.T) {
 	}
 
 	// Step 4: Use API keys for API queries
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		key, err := am.NextAPIKey()
 		if err != nil {
 			t.Fatalf("next key: %v", err)
@@ -1186,18 +1186,18 @@ func TestFullWorkflowSimulation(t *testing.T) {
 	db.LogError(&ErrorLog{
 		Source:     "sse",
 		Operation:  "search",
-		Query:     "test query",
+		Query:      "test query",
 		ErrorType:  ErrCloudflare,
-		ErrorMsg:  "403 Cloudflare challenge",
+		ErrorMsg:   "403 Cloudflare challenge",
 		HTTPStatus: 403,
 	})
 	db.LogError(&ErrorLog{
 		APIKeyID:   keys[0].ID,
 		Source:     "api",
 		Operation:  "api_chat",
-		Query:     "api query",
+		Query:      "api query",
 		ErrorType:  ErrRateLimit,
-		ErrorMsg:  "429 Too Many Requests",
+		ErrorMsg:   "429 Too Many Requests",
 		HTTPStatus: 429,
 	})
 
@@ -1380,7 +1380,7 @@ func TestThreadDeleteCascade(t *testing.T) {
 	db.CreateThread(thread)
 
 	// Add messages
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		db.AddThreadMessage(&ThreadMessage{
 			ThreadID: thread.ID,
 			Role:     "user",
@@ -1421,7 +1421,7 @@ func TestGetLastBackendUUIDEmpty(t *testing.T) {
 func TestMultipleThreads(t *testing.T) {
 	db := tempDB(t)
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		thread := &Thread{Title: fmt.Sprintf("Thread %d", i), Mode: ModeAuto, Source: "sse"}
 		db.CreateThread(thread)
 		db.AddThreadMessage(&ThreadMessage{
@@ -1555,9 +1555,9 @@ func TestEmailProviderRegistry(t *testing.T) {
 	}
 
 	expectedTiers := map[string]ProviderTier{
-		"mail.tm":      TierPrivate,
-		"mail.gw":      TierPrivate,
-		"tempmail.lol": TierPrivate,
+		"mail.tm":       TierPrivate,
+		"mail.gw":       TierPrivate,
+		"tempmail.lol":  TierPrivate,
 		"guerrillamail": TierSession,
 		"dropmail":      TierSession,
 		"tempmail.plus": TierPublic,

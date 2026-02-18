@@ -61,8 +61,8 @@ github.com/duckdb/duckdb-go/v2 v2.5.5 h1:TlK8ipnzoKW2aNrjGqRkFWLCDpJDxR/VwH8ezEc
 github.com/duckdb/duckdb-go/v2 v2.5.5/go.mod h1:6uIbC3gz36NCEygECzboygOo/Z9TeVwox/puG+ohWV0=
 github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f h1:Y/CXytFA4m6baUTXGLOoWe4PQhGxaX0KpnayAqC48p4=
 github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f/go.mod h1:vw97MGsxSvLiUE2X8qFplwetxpGLQrlU1Q9AUEIzCaM=
-github.com/go-mizu/mizu v0.5.21 h1:sM92o88IAboxHMxiXujfad9WjB5I3qclKa7iPm7rGpk=
-github.com/go-mizu/mizu v0.5.21/go.mod h1:uAB/VeZxmEhPueqTi4THbitXEHRi3kTIYXwYbXivsIc=
+github.com/go-mizu/mizu v0.5.23 h1:QNfNGqbKhb9Hgp40zharI383mwRIImljWBwB0NvKcnE=
+github.com/go-mizu/mizu v0.5.23/go.mod h1:uAB/VeZxmEhPueqTi4THbitXEHRi3kTIYXwYbXivsIc=
 github.com/go-viper/mapstructure/v2 v2.5.0 h1:vM5IJoUAy3d7zRSVtIwQgBj7BiWtMPfmPEgAXnvj1Ro=
 github.com/go-viper/mapstructure/v2 v2.5.0/go.mod h1:oJDH3BJKyqBA2TXFhDsKDGDTlndYOZ6rGS0BRZIxGhM=
 github.com/goccy/go-json v0.10.5 h1:Fq85nIqj+gXn/S5ahsiTlK3TmC85qgirsdTP/+DeaC4=

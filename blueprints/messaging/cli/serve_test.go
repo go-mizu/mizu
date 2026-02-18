@@ -213,7 +213,7 @@ func TestServerConcurrentRequests(t *testing.T) {
 	// Send concurrent requests
 	done := make(chan bool, 10)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		go func() {
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			rec := httptest.NewRecorder()
@@ -227,7 +227,7 @@ func TestServerConcurrentRequests(t *testing.T) {
 	defer cancel()
 
 	successCount := 0
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		select {
 		case success := <-done:
 			if success {

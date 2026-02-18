@@ -147,8 +147,8 @@ func TestCellsStore_GetRange(t *testing.T) {
 		store := factory.NewCellsStore(f.DB)
 
 		// Create a 3x3 grid of cells
-		for row := 0; row < 3; row++ {
-			for col := 0; col < 3; col++ {
+		for row := range 3 {
+			for col := range 3 {
 				f.CreateTestCell(t, f.Sheet.ID, row, col)
 			}
 		}
@@ -190,7 +190,7 @@ func TestCellsStore_BatchSet(t *testing.T) {
 
 		now := FixedTime()
 		cellList := make([]*cells.Cell, 10)
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			cellList[i] = &cells.Cell{
 				ID:        NewTestID(),
 				SheetID:   f.Sheet.ID,
@@ -364,7 +364,7 @@ func TestCellsStore_DeleteRowsRange(t *testing.T) {
 		store := factory.NewCellsStore(f.DB)
 
 		// Create 10 rows of cells
-		for row := 0; row < 10; row++ {
+		for row := range 10 {
 			f.CreateTestCell(t, f.Sheet.ID, row, 0)
 		}
 
@@ -390,7 +390,7 @@ func TestCellsStore_DeleteColsRange(t *testing.T) {
 		store := factory.NewCellsStore(f.DB)
 
 		// Create 10 columns of cells
-		for col := 0; col < 10; col++ {
+		for col := range 10 {
 			f.CreateTestCell(t, f.Sheet.ID, 0, col)
 		}
 

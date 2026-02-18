@@ -54,6 +54,8 @@ func testTime() time.Time {
 }
 
 // ptr returns a pointer to the given value.
+//
+//go:fix inline
 func ptr[T any](v T) *T {
-	return &v
+	return new(v)
 }

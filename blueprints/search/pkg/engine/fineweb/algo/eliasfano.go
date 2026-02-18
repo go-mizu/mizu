@@ -11,11 +11,11 @@ import (
 
 // EliasFano represents an Elias-Fano encoded sequence of sorted integers.
 type EliasFano struct {
-	LowBits   []uint64 // Packed low bits (l bits per integer)
-	HighBits  []uint64 // Unary-encoded high bits with select support
-	LowLen    int      // Number of bits in low part
-	N         int      // Number of elements
-	Universe  uint64   // Maximum possible value + 1
+	LowBits  []uint64 // Packed low bits (l bits per integer)
+	HighBits []uint64 // Unary-encoded high bits with select support
+	LowLen   int      // Number of bits in low part
+	N        int      // Number of elements
+	Universe uint64   // Maximum possible value + 1
 
 	// Select acceleration structures (exported for serialization)
 	SelectSamples []int // Samples for fast select1
@@ -149,7 +149,7 @@ func (ef *EliasFano) buildSelectSamples() {
 			continue
 		}
 
-		for bitIdx := 0; bitIdx < 64; bitIdx++ {
+		for bitIdx := range 64 {
 			if (word & (1 << bitIdx)) != 0 {
 				if oneCount%ef.SampleRate == 0 && sampleIdx < len(ef.SelectSamples) {
 					ef.SelectSamples[sampleIdx] = wordIdx*64 + bitIdx
@@ -194,7 +194,7 @@ func (ef *EliasFano) select1(i int) int {
 		if popCount > onesNeeded {
 			// The answer is in this word
 			// Find the (onesNeeded+1)-th bit
-			for j := 0; j < 64; j++ {
+			for j := range 64 {
 				if (word & (1 << j)) != 0 {
 					if onesNeeded == 0 {
 						return wordIdx*64 + j

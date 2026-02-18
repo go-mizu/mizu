@@ -41,7 +41,7 @@ func (s *DatabasesStore) GetByID(ctx context.Context, id string) (*databases.Dat
 func (s *DatabasesStore) Update(ctx context.Context, id string, in *databases.UpdateIn) error {
 	// Build a single UPDATE with all fields to avoid multiple round-trips
 	sets := []string{"updated_at = CURRENT_TIMESTAMP"}
-	args := []interface{}{}
+	args := []any{}
 
 	if in.Title != nil {
 		sets = append(sets, "title = ?")

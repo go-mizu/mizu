@@ -1,6 +1,7 @@
 package fineweb
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 )
@@ -105,9 +106,7 @@ func (c DriverConfig) GetBool(key string, defaultVal bool) bool {
 // With returns a copy of the config with the given option set.
 func (c DriverConfig) With(key string, value any) DriverConfig {
 	newOpts := make(map[string]any, len(c.Options)+1)
-	for k, v := range c.Options {
-		newOpts[k] = v
-	}
+	maps.Copy(newOpts, c.Options)
 	newOpts[key] = value
 	return DriverConfig{
 		DataDir:  c.DataDir,

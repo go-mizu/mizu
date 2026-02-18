@@ -3,6 +3,7 @@ package duckdb
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/forum/feature/notifications"
@@ -118,18 +119,19 @@ func (s *NotificationsStore) MarkRead(ctx context.Context, ids []string) error {
 		return nil
 	}
 
-	query := "UPDATE notifications SET read = TRUE WHERE id IN ("
+	var query strings.Builder
+	query.WriteString("UPDATE notifications SET read = TRUE WHERE id IN (")
 	args := make([]any, len(ids))
 	for i, id := range ids {
 		if i > 0 {
-			query += ", "
+			query.WriteString(", ")
 		}
-		query += "?"
+		query.WriteString("?")
 		args[i] = id
 	}
-	query += ")"
+	query.WriteString(")")
 
-	_, err := s.db.ExecContext(ctx, query, args...)
+	_, err := s.db.ExecContext(ctx, query.String(), args...)
 	return err
 }
 

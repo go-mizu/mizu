@@ -257,7 +257,7 @@ func TestEngine_Pull_Pagination(t *testing.T) {
 	e := newTestEngine()
 
 	// Create 10 items
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		e.Push(ctx, []sync.Mutation{
 			{Name: "create", Scope: "test", Args: makeArgs("items", string(rune('a'+i)), "{}")},
 		})
@@ -358,7 +358,7 @@ func TestEngine_Pull_CursorTooOld(t *testing.T) {
 	})
 
 	// Create some data
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		e.Push(ctx, []sync.Mutation{
 			{Name: "create", Scope: "test", Args: makeArgs("e", string(rune('a'+i)), "{}")},
 		})

@@ -34,11 +34,11 @@ type Result struct {
 
 // Seeder seeds data from local repositories.
 type Seeder struct {
-	db           *sql.DB
-	usersStore   *duckdb.UsersStore
-	orgsStore    *duckdb.OrgsStore
-	reposStore   *duckdb.ReposStore
-	config       Config
+	db         *sql.DB
+	usersStore *duckdb.UsersStore
+	orgsStore  *duckdb.OrgsStore
+	reposStore *duckdb.ReposStore
+	config     Config
 }
 
 // NewSeeder creates a new Seeder.
@@ -140,23 +140,23 @@ func (s *Seeder) Seed(ctx context.Context) (*Result, error) {
 			}
 
 			repo := &repos.Repository{
-				Name:          repoName,
-				FullName:      fmt.Sprintf("%s/%s", orgName, repoName),
-				OwnerID:       existingOrg.ID,
-				OwnerType:     "Organization",
-				Private:       !s.config.IsPublic,
-				Visibility:    visibility,
-				DefaultBranch: "main",
-				HasIssues:     true,
-				HasProjects:   true,
-				HasWiki:       true,
-				HasDownloads:  true,
-				AllowSquashMerge:  true,
-				AllowMergeCommit:  true,
-				AllowRebaseMerge:  true,
-				AllowForking:      true,
-				CreatedAt:     now,
-				UpdatedAt:     now,
+				Name:             repoName,
+				FullName:         fmt.Sprintf("%s/%s", orgName, repoName),
+				OwnerID:          existingOrg.ID,
+				OwnerType:        "Organization",
+				Private:          !s.config.IsPublic,
+				Visibility:       visibility,
+				DefaultBranch:    "main",
+				HasIssues:        true,
+				HasProjects:      true,
+				HasWiki:          true,
+				HasDownloads:     true,
+				AllowSquashMerge: true,
+				AllowMergeCommit: true,
+				AllowRebaseMerge: true,
+				AllowForking:     true,
+				CreatedAt:        now,
+				UpdatedAt:        now,
 			}
 
 			if err := s.reposStore.Create(ctx, repo); err != nil {
@@ -184,17 +184,17 @@ func (s *Seeder) ensureOrg(ctx context.Context, login string) (*orgs.Organizatio
 
 	now := time.Now()
 	org := &orgs.Organization{
-		Login:                       login,
-		Name:                        login,
-		Type:                        "Organization",
-		HasOrganizationProjects:     true,
-		HasRepositoryProjects:       true,
-		MembersCanCreateRepositories: true,
-		MembersCanCreatePublicRepositories: true,
+		Login:                               login,
+		Name:                                login,
+		Type:                                "Organization",
+		HasOrganizationProjects:             true,
+		HasRepositoryProjects:               true,
+		MembersCanCreateRepositories:        true,
+		MembersCanCreatePublicRepositories:  true,
 		MembersCanCreatePrivateRepositories: true,
-		DefaultRepositoryPermission: "read",
-		CreatedAt:                   now,
-		UpdatedAt:                   now,
+		DefaultRepositoryPermission:         "read",
+		CreatedAt:                           now,
+		UpdatedAt:                           now,
 	}
 
 	if err := s.orgsStore.Create(ctx, org); err != nil {
@@ -229,7 +229,7 @@ func isGitRepo(path string) bool {
 }
 
 // EnsureAdminUser ensures an admin user exists and returns their ID.
-func EnsureAdminUser(ctx context.Context, usersStore *duckdb.UsersStore, _ interface{}) (int64, int64, error) {
+func EnsureAdminUser(ctx context.Context, usersStore *duckdb.UsersStore, _ any) (int64, int64, error) {
 	// Check if admin user exists
 	admin, err := usersStore.GetByLogin(ctx, "admin")
 	if err != nil {

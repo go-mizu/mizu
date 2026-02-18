@@ -16,21 +16,21 @@ const (
 	OpGreaterEqual
 	OpLess
 	OpLessEqual
-	OpContains    // wildcard match
-	OpStartsWith  // wildcard at end
-	OpEndsWith    // wildcard at start
-	OpRegex       // for future regex support
+	OpContains   // wildcard match
+	OpStartsWith // wildcard at end
+	OpEndsWith   // wildcard at start
+	OpRegex      // for future regex support
 )
 
 // Criteria represents a parsed criteria expression.
 type Criteria struct {
 	Operator CriteriaOperator
-	Value    interface{}
+	Value    any
 	Pattern  *regexp.Regexp // for wildcard/regex matching
 }
 
 // ParseCriteria parses a criteria string like ">10", "=text", "<>0", "abc*".
-func ParseCriteria(criteriaStr interface{}) *Criteria {
+func ParseCriteria(criteriaStr any) *Criteria {
 	if criteriaStr == nil {
 		return &Criteria{Operator: OpEqual, Value: nil}
 	}
@@ -109,22 +109,23 @@ func parseCriteriaValue(valueStr string, op CriteriaOperator) *Criteria {
 func parseWildcardCriteria(pattern string) *Criteria {
 	// Convert wildcard to regex
 	// * matches any sequence, ? matches single character
-	regexStr := "^"
+	var regexStr strings.Builder
+	regexStr.WriteString("^")
 	for _, r := range pattern {
 		switch r {
 		case '*':
-			regexStr += ".*"
+			regexStr.WriteString(".*")
 		case '?':
-			regexStr += "."
+			regexStr.WriteString(".")
 		case '.', '+', '^', '$', '(', ')', '[', ']', '{', '}', '|', '\\':
-			regexStr += "\\" + string(r)
+			regexStr.WriteString("\\" + string(r))
 		default:
-			regexStr += string(r)
+			regexStr.WriteString(string(r))
 		}
 	}
-	regexStr += "$"
+	regexStr.WriteString("$")
 
-	re, err := regexp.Compile("(?i)" + regexStr) // case insensitive
+	re, err := regexp.Compile("(?i)" + regexStr.String()) // case insensitive
 	if err != nil {
 		// Fallback to exact match
 		return &Criteria{Operator: OpEqual, Value: pattern}
@@ -134,7 +135,7 @@ func parseWildcardCriteria(pattern string) *Criteria {
 }
 
 // Matches checks if a value matches the criteria.
-func (c *Criteria) Matches(value interface{}) bool {
+func (c *Criteria) Matches(value any) bool {
 	if c == nil {
 		return true
 	}
@@ -206,7 +207,7 @@ func (c *Criteria) Matches(value interface{}) bool {
 }
 
 // evalCriteriaRange evaluates a range against a criteria and returns matching indices.
-func evalCriteriaRange(criteriaRange interface{}, criteria *Criteria) []int {
+func evalCriteriaRange(criteriaRange any, criteria *Criteria) []int {
 	values := flattenValues(criteriaRange)
 	indices := make([]int, 0)
 
@@ -220,9 +221,9 @@ func evalCriteriaRange(criteriaRange interface{}, criteria *Criteria) []int {
 }
 
 // getValuesByIndices gets values from a range by indices.
-func getValuesByIndices(sumRange interface{}, indices []int) []interface{} {
+func getValuesByIndices(sumRange any, indices []int) []any {
 	values := flattenValues(sumRange)
-	result := make([]interface{}, 0, len(indices))
+	result := make([]any, 0, len(indices))
 
 	for _, idx := range indices {
 		if idx >= 0 && idx < len(values) {

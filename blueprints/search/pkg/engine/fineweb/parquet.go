@@ -202,7 +202,7 @@ func (r *ParquetReader) readFile(ctx context.Context, file string, yield func(Do
 			return yield(Document{}, fmt.Errorf("reading parquet %s: %w", file, err))
 		}
 
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if !yield(batch[i].toDocument(), nil) {
 				return false
 			}
@@ -275,7 +275,7 @@ func (r *ParquetReader) readFileBatches(ctx context.Context, file string, yield 
 
 		if n > 0 {
 			docs := make([]Document, n)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				docs[i] = batch[i].toDocument()
 			}
 			if !yield(docs, nil) {
@@ -353,10 +353,7 @@ func (r *ParquetReader) readFileRowGroupsParallel(ctx context.Context, file stri
 	}
 
 	for startIdx := 0; startIdx < numRowGroups; startIdx += numWorkers {
-		endIdx := startIdx + numWorkers
-		if endIdx > numRowGroups {
-			endIdx = numRowGroups
-		}
+		endIdx := min(startIdx+numWorkers, numRowGroups)
 
 		select {
 		case <-ctx.Done():
@@ -380,7 +377,7 @@ func (r *ParquetReader) readFileRowGroupsParallel(ctx context.Context, file stri
 				}
 
 				docs := make([]Document, n)
-				for i := 0; i < n; i++ {
+				for i := range n {
 					docs[i] = batch[i].toDocument()
 				}
 				results <- rowGroupResult{idx: idx, docs: docs}
@@ -515,10 +512,7 @@ func (r *ParquetReader) readFilePureTextsParallel(ctx context.Context, file stri
 	}
 
 	for startIdx := 0; startIdx < numRowGroups; startIdx += numWorkers {
-		endIdx := startIdx + numWorkers
-		if endIdx > numRowGroups {
-			endIdx = numRowGroups
-		}
+		endIdx := min(startIdx+numWorkers, numRowGroups)
 
 		select {
 		case <-ctx.Done():
@@ -541,7 +535,7 @@ func (r *ParquetReader) readFilePureTextsParallel(ctx context.Context, file stri
 				}
 
 				texts := make([]string, n)
-				for i := 0; i < n; i++ {
+				for i := range n {
 					texts[i] = batch[i].Text
 				}
 				results <- rowGroupResult{idx: idx, texts: texts}
@@ -605,7 +599,7 @@ func (r *ParquetReader) readFileTextsOnly(ctx context.Context, file string, yiel
 
 		if n > 0 {
 			docs := make([]TextOnlyDoc, n)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				docs[i] = TextOnlyDoc{ID: batch[i].ID, Text: batch[i].Text}
 			}
 			if !yield(docs, nil) {
@@ -684,10 +678,7 @@ func (r *ParquetReader) readFileTextsOnlyParallel(ctx context.Context, file stri
 	}
 
 	for startIdx := 0; startIdx < numRowGroups; startIdx += numWorkers {
-		endIdx := startIdx + numWorkers
-		if endIdx > numRowGroups {
-			endIdx = numRowGroups
-		}
+		endIdx := min(startIdx+numWorkers, numRowGroups)
 
 		select {
 		case <-ctx.Done():
@@ -711,7 +702,7 @@ func (r *ParquetReader) readFileTextsOnlyParallel(ctx context.Context, file stri
 				}
 
 				docs := make([]TextOnlyDoc, n)
-				for i := 0; i < n; i++ {
+				for i := range n {
 					docs[i] = TextOnlyDoc{ID: batch[i].ID, Text: batch[i].Text}
 				}
 				results <- rowGroupResult{idx: idx, docs: docs}

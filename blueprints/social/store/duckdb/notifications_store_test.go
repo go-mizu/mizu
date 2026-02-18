@@ -211,7 +211,7 @@ func TestNotificationsStore_MarkAllRead(t *testing.T) {
 	store := NewNotificationsStore(db)
 
 	// Create unread notifications
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		store.Insert(ctx, &notifications.Notification{
 			ID:        newTestID(),
 			AccountID: account.ID,
@@ -269,7 +269,7 @@ func TestNotificationsStore_DeleteAll(t *testing.T) {
 	store := NewNotificationsStore(db)
 
 	// Create notifications
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		store.Insert(ctx, &notifications.Notification{
 			ID:        newTestID(),
 			AccountID: account.ID,
@@ -299,7 +299,7 @@ func TestNotificationsStore_UnreadCount(t *testing.T) {
 	store := NewNotificationsStore(db)
 
 	// Create mix of read and unread
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		store.Insert(ctx, &notifications.Notification{
 			ID:        newTestID(),
 			AccountID: account.ID,
@@ -308,7 +308,7 @@ func TestNotificationsStore_UnreadCount(t *testing.T) {
 			CreatedAt: testTime(),
 		})
 	}
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		store.Insert(ctx, &notifications.Notification{
 			ID:        newTestID(),
 			AccountID: account.ID,

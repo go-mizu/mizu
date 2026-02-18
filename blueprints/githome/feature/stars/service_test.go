@@ -281,7 +281,7 @@ func TestService_ListStargazers_Pagination(t *testing.T) {
 	createTestRepo(t, reposStore, owner, "testrepo")
 
 	// Create multiple starrers
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		starrer := createTestUser(t, usersStore, "starrer"+string(rune('a'+i)), "starrer"+string(rune('a'+i))+"@example.com")
 		_ = service.Star(context.Background(), starrer.ID, "owner", "testrepo")
 	}
@@ -419,7 +419,7 @@ func TestService_MultipleUsersStarring(t *testing.T) {
 	repo := createTestRepo(t, reposStore, owner, "testrepo")
 
 	// Multiple users star the repo
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		starrer := createTestUser(t, usersStore, "starrer"+string(rune('a'+i)), "starrer"+string(rune('a'+i))+"@example.com")
 		_ = service.Star(context.Background(), starrer.ID, "owner", "testrepo")
 	}

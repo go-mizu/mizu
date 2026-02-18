@@ -3,6 +3,7 @@ package perplexity
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -203,35 +204,36 @@ func (tr *ThreadRunner) RunWithFollowUps(ctx context.Context, query string, foll
 
 // FormatThread formats a thread's messages for terminal display.
 func FormatThread(thread *Thread, messages []ThreadMessage) string {
-	out := fmt.Sprintf("Thread #%d: %s\n", thread.ID, thread.Title)
-	out += fmt.Sprintf("Mode: %s  Model: %s  Source: %s  Messages: %d\n",
-		thread.Mode, thread.Model, thread.Source, thread.MessageCount)
-	out += fmt.Sprintf("Created: %s  Updated: %s\n\n",
+	var out strings.Builder
+	out.WriteString(fmt.Sprintf("Thread #%d: %s\n", thread.ID, thread.Title))
+	out.WriteString(fmt.Sprintf("Mode: %s  Model: %s  Source: %s  Messages: %d\n",
+		thread.Mode, thread.Model, thread.Source, thread.MessageCount))
+	out.WriteString(fmt.Sprintf("Created: %s  Updated: %s\n\n",
 		thread.CreatedAt.Format("2006-01-02 15:04"),
-		thread.UpdatedAt.Format("2006-01-02 15:04"))
+		thread.UpdatedAt.Format("2006-01-02 15:04")))
 
 	for _, m := range messages {
 		switch m.Role {
 		case "user":
-			out += fmt.Sprintf(">> %s\n\n", m.Content)
+			out.WriteString(fmt.Sprintf(">> %s\n\n", m.Content))
 		case "assistant":
-			out += fmt.Sprintf("%s\n", m.Content)
+			out.WriteString(fmt.Sprintf("%s\n", m.Content))
 			if len(m.Citations) > 0 {
-				out += "\nCitations:\n"
+				out.WriteString("\nCitations:\n")
 				for i, c := range m.Citations {
 					if c.Title != "" {
-						out += fmt.Sprintf("  [%d] %s — %s\n", i+1, c.URL, c.Title)
+						out.WriteString(fmt.Sprintf("  [%d] %s — %s\n", i+1, c.URL, c.Title))
 					} else {
-						out += fmt.Sprintf("  [%d] %s\n", i+1, c.URL)
+						out.WriteString(fmt.Sprintf("  [%d] %s\n", i+1, c.URL))
 					}
 				}
 			}
 			if m.DurationMs > 0 {
-				out += fmt.Sprintf("\n(%dms)\n", m.DurationMs)
+				out.WriteString(fmt.Sprintf("\n(%dms)\n", m.DurationMs))
 			}
-			out += "\n"
+			out.WriteString("\n")
 		}
 	}
 
-	return out
+	return out.String()
 }

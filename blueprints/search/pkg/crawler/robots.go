@@ -246,8 +246,8 @@ func matchRobotsPattern(path, pattern string) bool {
 	}
 
 	// Handle $ end anchor
-	if strings.HasSuffix(pattern, "$") {
-		pattern = strings.TrimSuffix(pattern, "$")
+	if before, ok := strings.CutSuffix(pattern, "$"); ok {
+		pattern = before
 		if !strings.Contains(pattern, "*") {
 			return path == pattern
 		}

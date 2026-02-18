@@ -50,7 +50,7 @@ func (s *NotificationsStore) List(ctx context.Context, accountID string, limit i
 		SELECT id, account_id, type, actor_id, post_id, read, created_at
 		FROM notifications WHERE account_id = $1
 	`
-	args := []interface{}{accountID}
+	args := []any{accountID}
 	argNum := 2
 
 	if maxID != "" {
@@ -140,7 +140,7 @@ func (s *NotificationsStore) UnreadCount(ctx context.Context, accountID string) 
 // Exists checks if a notification already exists.
 func (s *NotificationsStore) Exists(ctx context.Context, accountID, notifType, actorID, postID string) (bool, error) {
 	query := "SELECT EXISTS(SELECT 1 FROM notifications WHERE account_id = $1 AND type = $2"
-	args := []interface{}{accountID, notifType}
+	args := []any{accountID, notifType}
 	argNum := 3
 
 	if actorID != "" {

@@ -457,7 +457,7 @@ func (d *Decoder) readBinary(length int) ([]byte, error) {
 
 func (d *Decoder) readArray(length int) ([]any, error) {
 	arr := make([]any, length)
-	for i := 0; i < length; i++ {
+	for i := range length {
 		v, err := d.decodeValue()
 		if err != nil {
 			return nil, err
@@ -469,7 +469,7 @@ func (d *Decoder) readArray(length int) ([]any, error) {
 
 func (d *Decoder) readMap(length int) (map[string]any, error) {
 	m := make(map[string]any, length)
-	for i := 0; i < length; i++ {
+	for range length {
 		k, err := d.decodeValue()
 		if err != nil {
 			return nil, err

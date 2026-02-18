@@ -18,12 +18,12 @@ import (
 
 // PhaseResults holds timing for each phase
 type PhaseResults struct {
-	ParquetReadTime   time.Duration
-	TokenizeTime      time.Duration
-	ShardDistribTime  time.Duration
-	PostingAccumTime  time.Duration
-	TotalDocs         int
-	TotalBytes        int64
+	ParquetReadTime  time.Duration
+	TokenizeTime     time.Duration
+	ShardDistribTime time.Duration
+	PostingAccumTime time.Duration
+	TotalDocs        int
+	TotalBytes       int64
 }
 
 func (p PhaseResults) String() string {
@@ -109,12 +109,9 @@ func TestPhaseBreakdown(t *testing.T) {
 	var wg sync.WaitGroup
 	batchSize := (len(allTexts) + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -163,12 +160,9 @@ func TestPhaseBreakdown(t *testing.T) {
 	var shardMu [256]sync.Mutex
 
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -224,12 +218,9 @@ func TestPhaseBreakdown(t *testing.T) {
 	start = time.Now()
 	shardsPerWorker := (256 + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startShard := w * shardsPerWorker
-		endShard := startShard + shardsPerWorker
-		if endShard > 256 {
-			endShard = 256
-		}
+		endShard := min(startShard+shardsPerWorker, 256)
 		if startShard >= endShard {
 			break
 		}
@@ -399,12 +390,9 @@ func BenchmarkPhase2_Tokenization(b *testing.B) {
 		var wg sync.WaitGroup
 		batchSize := (len(texts) + numWorkers - 1) / numWorkers
 
-		for w := 0; w < numWorkers; w++ {
+		for w := range numWorkers {
 			startIdx := w * batchSize
-			endIdx := startIdx + batchSize
-			if endIdx > len(texts) {
-				endIdx = len(texts)
-			}
+			endIdx := min(startIdx+batchSize, len(texts))
 			if startIdx >= endIdx {
 				break
 			}
@@ -541,12 +529,9 @@ func BenchmarkPhase3_ShardDistribution(b *testing.B) {
 		var wg sync.WaitGroup
 		batchSize := (numDocs + numWorkers - 1) / numWorkers
 
-		for w := 0; w < numWorkers; w++ {
+		for w := range numWorkers {
 			startIdx := w * batchSize
-			endIdx := startIdx + batchSize
-			if endIdx > numDocs {
-				endIdx = numDocs
-			}
+			endIdx := min(startIdx+batchSize, numDocs)
 			if startIdx >= endIdx {
 				break
 			}
@@ -627,12 +612,9 @@ func BenchmarkPhase4_PostingAccumulation(b *testing.B) {
 		var wg sync.WaitGroup
 		shardsPerWorker := (256 + numWorkers - 1) / numWorkers
 
-		for w := 0; w < numWorkers; w++ {
+		for w := range numWorkers {
 			startShard := w * shardsPerWorker
-			endShard := startShard + shardsPerWorker
-			if endShard > 256 {
-				endShard = 256
-			}
+			endShard := min(startShard+shardsPerWorker, 256)
 			if startShard >= endShard {
 				break
 			}
@@ -706,10 +688,7 @@ func BenchmarkEndToEnd_Comparison(b *testing.B) {
 			})
 
 			for j := 0; j < len(texts); j += batchSize {
-				end := j + batchSize
-				if end > len(texts) {
-					end = len(texts)
-				}
+				end := min(j+batchSize, len(texts))
 				indexer.AddBatch(docIDs[j:end], texts[j:end])
 			}
 		}
@@ -726,10 +705,7 @@ func BenchmarkEndToEnd_Comparison(b *testing.B) {
 			})
 
 			for j := 0; j < len(texts); j += batchSize {
-				end := j + batchSize
-				if end > len(texts) {
-					end = len(texts)
-				}
+				end := min(j+batchSize, len(texts))
 				indexer.AddBatch(docIDs[j:end], texts[j:end])
 			}
 		}
@@ -777,12 +753,9 @@ func TestProfileTokenization(t *testing.T) {
 	start := time.Now()
 	var wg sync.WaitGroup
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(texts) {
-			endIdx = len(texts)
-		}
+		endIdx := min(startIdx+batchSize, len(texts))
 		if startIdx >= endIdx {
 			break
 		}

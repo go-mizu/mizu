@@ -3,6 +3,7 @@ package algo
 import (
 	"encoding/binary"
 	"math/bits"
+	"slices"
 	"sort"
 )
 
@@ -23,15 +24,15 @@ func (rb *RoaringBitmap) GobDecode(data []byte) error {
 // Reference: https://arxiv.org/abs/1709.07821
 
 const (
-	containerSize     = 1 << 16 // 65536 integers per container
-	arrayThreshold    = 4096    // Switch to bitmap above this
-	runThreshold      = 2048    // Use run encoding if beneficial
+	containerSize  = 1 << 16 // 65536 integers per container
+	arrayThreshold = 4096    // Switch to bitmap above this
+	runThreshold   = 2048    // Use run encoding if beneficial
 )
 
 // RoaringBitmap is a compressed bitmap for storing sorted integers.
 type RoaringBitmap struct {
-	keys       []uint16      // High 16 bits of container
-	containers []container   // Container for each key
+	keys       []uint16    // High 16 bits of container
+	containers []container // Container for each key
 }
 
 // container interface for different container types
@@ -57,8 +58,8 @@ type arrayContainer struct {
 
 // bitmapContainer stores values in a 64-bit bitmap array
 type bitmapContainer struct {
-	bitmap     [1024]uint64 // 64 * 1024 = 65536 bits
-	card       int          // Cached cardinality
+	bitmap [1024]uint64 // 64 * 1024 = 65536 bits
+	card   int          // Cached cardinality
 }
 
 // NewRoaringBitmap creates an empty roaring bitmap.
@@ -93,7 +94,7 @@ func (rb *RoaringBitmap) AddMany(values []uint32) {
 	// Sort values for efficient insertion
 	sorted := make([]uint32, len(values))
 	copy(sorted, values)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+	slices.Sort(sorted)
 
 	for _, v := range sorted {
 		rb.Add(v)
@@ -286,7 +287,7 @@ func DeserializeRoaring(data []byte) *RoaringBitmap {
 	rb.keys = make([]uint16, numContainers)
 	rb.containers = make([]container, numContainers)
 
-	for i := 0; i < numContainers; i++ {
+	for i := range numContainers {
 		rb.keys[i] = binary.LittleEndian.Uint16(data[pos:])
 		pos += 2
 
@@ -417,7 +418,7 @@ func (bc *bitmapContainer) toArray() []uint16 {
 		if word == 0 {
 			continue
 		}
-		for j := 0; j < 64; j++ {
+		for j := range 64 {
 			if (word & (1 << j)) != 0 {
 				result = append(result, uint16(i*64+j))
 			}
@@ -442,10 +443,10 @@ func (bc *bitmapContainer) iterator() containerIterator {
 }
 
 type bitmapIterator struct {
-	bitmap   *[1024]uint64
-	wordIdx  int
-	bitIdx   int
-	current  uint64
+	bitmap  *[1024]uint64
+	wordIdx int
+	bitIdx  int
+	current uint64
 }
 
 func (it *bitmapIterator) hasNext() bool {
@@ -480,7 +481,7 @@ func (it *bitmapIterator) next() uint16 {
 func deserializeBitmapContainer(data []byte) *bitmapContainer {
 	bc := &bitmapContainer{}
 	bc.card = int(binary.LittleEndian.Uint32(data))
-	for i := 0; i < 1024; i++ {
+	for i := range 1024 {
 		bc.bitmap[i] = binary.LittleEndian.Uint64(data[4+i*8:])
 	}
 	return bc

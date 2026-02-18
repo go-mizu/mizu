@@ -196,9 +196,7 @@ func (d *Downloader) DownloadStoriesParallel(ctx context.Context, storyIDs []str
 	errChan := make(chan error, workers)
 
 	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for {
 				select {
 				case <-ctx.Done():
@@ -235,7 +233,7 @@ func (d *Downloader) DownloadStoriesParallel(ctx context.Context, storyIDs []str
 					time.Sleep(100 * time.Millisecond)
 				}
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -316,9 +314,9 @@ func extractStoryList(doc *html.Node, pair LanguagePair) []StoryListItem {
 			// Look for story links - they're usually in anchor tags with story URLs
 			if n.Data == "a" {
 				href := getAttr(n, "href")
-				if strings.HasPrefix(href, "/stories/") {
+				if after, ok := strings.CutPrefix(href, "/stories/"); ok {
 					// This is an individual story link
-					externalID := strings.TrimPrefix(href, "/stories/")
+					externalID := after
 
 					// Skip if it's a language list link (like /stories/en or /stories/en/es)
 					if len(externalID) <= 5 || !strings.Contains(externalID, "-") {
@@ -762,9 +760,7 @@ func (p *Parser) ParseStoriesParallel(storyIDs []string, pair LanguagePair, work
 	// Create worker pool
 	var wg sync.WaitGroup
 	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for externalID := range work {
 				// Try to load from JSON cache first
 				if p.IsStoryParsed(externalID) {
@@ -801,7 +797,7 @@ func (p *Parser) ParseStoriesParallel(storyIDs []string, pair LanguagePair, work
 				}
 				results <- story
 			}
-		}()
+		})
 	}
 
 	// Wait for all workers to finish

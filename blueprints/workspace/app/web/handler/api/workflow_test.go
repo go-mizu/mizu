@@ -73,7 +73,7 @@ func TestUIPageCreationWorkflow(t *testing.T) {
 	ws := createTestWorkspace(ts, cookie, "Workflow WS", "workflow-ws")
 
 	// Create page via API (simulating frontend click on "New Page")
-	resp := ts.Request("POST", "/api/v1/pages", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/pages", map[string]any{
 		"workspace_id": ws.ID,
 		"title":        "Untitled",
 		"parent_type":  "workspace",
@@ -102,7 +102,7 @@ func TestUIDatabaseCreationWorkflow(t *testing.T) {
 	ws := createTestWorkspace(ts, cookie, "DB Workflow WS", "db-workflow-ws")
 
 	// Create database via API
-	resp := ts.Request("POST", "/api/v1/databases", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/databases", map[string]any{
 		"workspace_id": ws.ID,
 		"title":        "Untitled Database",
 	}, cookie)
@@ -405,12 +405,12 @@ func TestBlockCreationWorkflow(t *testing.T) {
 
 	for _, bt := range blockTypes {
 		t.Run(bt.blockType, func(t *testing.T) {
-			resp := ts.Request("POST", "/api/v1/blocks", map[string]interface{}{
+			resp := ts.Request("POST", "/api/v1/blocks", map[string]any{
 				"page_id":  page.ID,
 				"type":     bt.blockType,
 				"position": bt.position,
-				"content": map[string]interface{}{
-					"rich_text": []map[string]interface{}{
+				"content": map[string]any{
+					"rich_text": []map[string]any{
 						{"type": "text", "text": "Test content for " + bt.blockType},
 					},
 				},
@@ -536,11 +536,11 @@ func TestCommentWorkflow(t *testing.T) {
 	page := createTestPage(ts, cookie, ws.ID, "Comment Test Page")
 
 	// Create a comment
-	resp := ts.Request("POST", "/api/v1/comments", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/comments", map[string]any{
 		"workspace_id": ws.ID,
 		"target_type":  "page",
 		"target_id":    page.ID,
-		"content": []map[string]interface{}{
+		"content": []map[string]any{
 			{"type": "text", "text": "This is a test comment"},
 		},
 	}, cookie)
@@ -557,8 +557,8 @@ func TestCommentWorkflow(t *testing.T) {
 	resp.Body.Close()
 
 	// Update the comment
-	resp = ts.Request("PATCH", "/api/v1/comments/"+comment.ID, map[string]interface{}{
-		"content": []map[string]interface{}{
+	resp = ts.Request("PATCH", "/api/v1/comments/"+comment.ID, map[string]any{
+		"content": []map[string]any{
 			{"type": "text", "text": "Updated comment"},
 		},
 	}, cookie)
@@ -590,7 +590,7 @@ func TestViewWorkflow(t *testing.T) {
 
 	for _, viewType := range viewTypes {
 		t.Run(viewType, func(t *testing.T) {
-			resp := ts.Request("POST", "/api/v1/views", map[string]interface{}{
+			resp := ts.Request("POST", "/api/v1/views", map[string]any{
 				"database_id": db.ID,
 				"type":        viewType,
 				"name":        viewType + " view",
@@ -619,7 +619,7 @@ func TestShareWorkflow(t *testing.T) {
 	page := createTestPage(ts, cookieA, ws.ID, "Shared Page")
 
 	// Share page with user B
-	resp := ts.Request("POST", "/api/v1/pages/"+page.ID+"/shares", map[string]interface{}{
+	resp := ts.Request("POST", "/api/v1/pages/"+page.ID+"/shares", map[string]any{
 		"type":       "user",
 		"user_id":    userB.ID,
 		"permission": "edit",

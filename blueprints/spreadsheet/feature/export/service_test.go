@@ -201,7 +201,7 @@ func (m *mockCellsAPI) CopyRange(ctx context.Context, sourceSheetID string, sour
 	return nil
 }
 
-func (m *mockCellsAPI) EvaluateFormula(ctx context.Context, sheetID, formula string) (interface{}, error) {
+func (m *mockCellsAPI) EvaluateFormula(ctx context.Context, sheetID, formula string) (any, error) {
 	return nil, nil
 }
 
@@ -336,7 +336,7 @@ func TestExportJSON(t *testing.T) {
 
 	// Verify valid JSON
 	data, _ := io.ReadAll(result.Data)
-	var jsonData map[string]interface{}
+	var jsonData map[string]any
 	if err := json.Unmarshal(data, &jsonData); err != nil {
 		t.Errorf("Invalid JSON output: %v", err)
 	}

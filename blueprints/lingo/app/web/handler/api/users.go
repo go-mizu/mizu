@@ -1,10 +1,10 @@
 package api
 
 import (
-	"net/http"
 	"github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/lingo/store"
 	"github.com/google/uuid"
+	"net/http"
 )
 
 // UserHandler handles user endpoints
@@ -90,7 +90,7 @@ func (h *UserHandler) GetByUsername(c *mizu.Ctx) error {
 	}
 
 	// Don't expose sensitive data for other users
-	return c.JSON(http.StatusOK, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]any{
 		"id":           user.ID,
 		"username":     user.Username,
 		"display_name": user.DisplayName,
@@ -119,7 +119,7 @@ func (h *UserHandler) GetStats(c *mizu.Ctx) error {
 	achievements, _ := h.store.Achievements().GetUserAchievements(c.Context(), id)
 	streakHistory, _ := h.store.Progress().GetStreakHistory(c.Context(), id, 30)
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]any{
 		"user":           user,
 		"courses":        len(courses),
 		"achievements":   len(achievements),

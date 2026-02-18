@@ -181,7 +181,7 @@ func (s *Service) PingRepo(ctx context.Context, owner, repo string, hookID int64
 		return err
 	}
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"zen":     "Keep it logically awesome.",
 		"hook_id": h.ID,
 		"hook":    h,
@@ -405,7 +405,7 @@ func (s *Service) PingOrg(ctx context.Context, org string, hookID int64) error {
 		return err
 	}
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"zen":     "Keep it logically awesome.",
 		"hook_id": h.ID,
 		"hook":    h,
@@ -476,7 +476,7 @@ func (s *Service) RedeliverForOrg(ctx context.Context, org string, hookID int64,
 }
 
 // Dispatch dispatches a webhook event
-func (s *Service) Dispatch(ctx context.Context, hookID int64, event string, payload interface{}) (*Delivery, error) {
+func (s *Service) Dispatch(ctx context.Context, hookID int64, event string, payload any) (*Delivery, error) {
 	h, err := s.store.GetByID(ctx, hookID)
 	if err != nil {
 		return nil, err

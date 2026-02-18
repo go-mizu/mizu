@@ -140,7 +140,7 @@ func New(cfg Config) (*Server, error) {
 				})
 				if err == nil {
 					// Add sample data
-					sampleData := [][]interface{}{
+					sampleData := [][]any{
 						{"Product", "Q1", "Q2", "Q3", "Q4", "Total"},
 						{"Laptops", 15000, 18000, 22000, 25000, "=SUM(B2:E2)"},
 						{"Phones", 25000, 28000, 32000, 35000, "=SUM(B3:E3)"},
@@ -150,7 +150,7 @@ func New(cfg Config) (*Server, error) {
 					for row, rowData := range sampleData {
 						for col, value := range rowData {
 							var formula string
-							var cellValue interface{}
+							var cellValue any
 							if strVal, ok := value.(string); ok && len(strVal) > 0 && strVal[0] == '=' {
 								formula = strVal
 							} else {
@@ -174,7 +174,7 @@ func New(cfg Config) (*Server, error) {
 				})
 				if err == nil {
 					// Add demo data for charts
-					chartsDemoData := [][]interface{}{
+					chartsDemoData := [][]any{
 						// Monthly Sales Data (A1:E7) - Row 0-6
 						{"Month", "Sales", "Expenses", "Profit", "Growth"},
 						{"Jan", 12000, 8000, 4000, 0},
@@ -237,7 +237,7 @@ func New(cfg Config) (*Server, error) {
 								continue
 							}
 							var formula string
-							var cellValue interface{}
+							var cellValue any
 							if strVal, ok := value.(string); ok && len(strVal) > 0 && strVal[0] == '=' {
 								formula = strVal
 							} else {
@@ -262,7 +262,7 @@ func New(cfg Config) (*Server, error) {
 							StartRow: 0, StartCol: 0, EndRow: 6, EndCol: 3,
 							HasHeader: true,
 						}},
-						Title: &charts.ChartTitle{Text: "Monthly Sales Trend", FontSize: 16, Bold: true},
+						Title:  &charts.ChartTitle{Text: "Monthly Sales Trend", FontSize: 16, Bold: true},
 						Legend: &charts.LegendConfig{Enabled: true, Position: "bottom"},
 						Axes: &charts.AxesConfig{
 							XAxis: &charts.AxisConfig{GridLines: false},
@@ -282,8 +282,8 @@ func New(cfg Config) (*Server, error) {
 							StartRow: 8, StartCol: 0, EndRow: 12, EndCol: 2,
 							HasHeader: true,
 						}},
-						Title: &charts.ChartTitle{Text: "Regional Sales Comparison", FontSize: 16, Bold: true},
-						Legend: &charts.LegendConfig{Enabled: true, Position: "bottom"},
+						Title:   &charts.ChartTitle{Text: "Regional Sales Comparison", FontSize: 16, Bold: true},
+						Legend:  &charts.LegendConfig{Enabled: true, Position: "bottom"},
 						Options: &charts.ChartOptions{Animated: true, TooltipEnabled: true, Interactive: true},
 					})
 
@@ -298,8 +298,8 @@ func New(cfg Config) (*Server, error) {
 							StartRow: 14, StartCol: 0, EndRow: 18, EndCol: 1,
 							HasHeader: true,
 						}},
-						Title: &charts.ChartTitle{Text: "Product Market Share", FontSize: 16, Bold: true},
-						Legend: &charts.LegendConfig{Enabled: true, Position: "right"},
+						Title:   &charts.ChartTitle{Text: "Product Market Share", FontSize: 16, Bold: true},
+						Legend:  &charts.LegendConfig{Enabled: true, Position: "right"},
 						Options: &charts.ChartOptions{Animated: true, TooltipEnabled: true, Interactive: true},
 					})
 
@@ -314,8 +314,8 @@ func New(cfg Config) (*Server, error) {
 							StartRow: 14, StartCol: 0, EndRow: 18, EndCol: 1,
 							HasHeader: true,
 						}},
-						Title: &charts.ChartTitle{Text: "Market Share (Doughnut)", FontSize: 16, Bold: true},
-						Legend: &charts.LegendConfig{Enabled: true, Position: "right"},
+						Title:   &charts.ChartTitle{Text: "Market Share (Doughnut)", FontSize: 16, Bold: true},
+						Legend:  &charts.LegendConfig{Enabled: true, Position: "right"},
 						Options: &charts.ChartOptions{Animated: true, TooltipEnabled: true, Interactive: true, CutoutPercentage: 50},
 					})
 
@@ -330,8 +330,8 @@ func New(cfg Config) (*Server, error) {
 							StartRow: 8, StartCol: 0, EndRow: 12, EndCol: 2,
 							HasHeader: true,
 						}},
-						Title: &charts.ChartTitle{Text: "Regional Sales (Horizontal)", FontSize: 16, Bold: true},
-						Legend: &charts.LegendConfig{Enabled: true, Position: "bottom"},
+						Title:   &charts.ChartTitle{Text: "Regional Sales (Horizontal)", FontSize: 16, Bold: true},
+						Legend:  &charts.LegendConfig{Enabled: true, Position: "bottom"},
 						Options: &charts.ChartOptions{Animated: true, TooltipEnabled: true, Interactive: true},
 					})
 
@@ -346,8 +346,8 @@ func New(cfg Config) (*Server, error) {
 							StartRow: 0, StartCol: 0, EndRow: 6, EndCol: 3,
 							HasHeader: true,
 						}},
-						Title: &charts.ChartTitle{Text: "Sales, Expenses & Profit (Area)", FontSize: 16, Bold: true},
-						Legend: &charts.LegendConfig{Enabled: true, Position: "bottom"},
+						Title:   &charts.ChartTitle{Text: "Sales, Expenses & Profit (Area)", FontSize: 16, Bold: true},
+						Legend:  &charts.LegendConfig{Enabled: true, Position: "bottom"},
 						Options: &charts.ChartOptions{Animated: true, TooltipEnabled: true, Interactive: true},
 					})
 
@@ -362,8 +362,8 @@ func New(cfg Config) (*Server, error) {
 							StartRow: 39, StartCol: 0, EndRow: 43, EndCol: 3,
 							HasHeader: true,
 						}},
-						Title: &charts.ChartTitle{Text: "Quarterly Revenue by Segment", FontSize: 16, Bold: true},
-						Legend: &charts.LegendConfig{Enabled: true, Position: "bottom"},
+						Title:   &charts.ChartTitle{Text: "Quarterly Revenue by Segment", FontSize: 16, Bold: true},
+						Legend:  &charts.LegendConfig{Enabled: true, Position: "bottom"},
 						Options: &charts.ChartOptions{Animated: true, TooltipEnabled: true, Interactive: true},
 					})
 
@@ -378,8 +378,8 @@ func New(cfg Config) (*Server, error) {
 							StartRow: 20, StartCol: 0, EndRow: 25, EndCol: 3,
 							HasHeader: true,
 						}},
-						Title: &charts.ChartTitle{Text: "Team Performance Comparison", FontSize: 16, Bold: true},
-						Legend: &charts.LegendConfig{Enabled: true, Position: "bottom"},
+						Title:   &charts.ChartTitle{Text: "Team Performance Comparison", FontSize: 16, Bold: true},
+						Legend:  &charts.LegendConfig{Enabled: true, Position: "bottom"},
 						Options: &charts.ChartOptions{Animated: true, TooltipEnabled: true, Interactive: true},
 					})
 
@@ -394,7 +394,7 @@ func New(cfg Config) (*Server, error) {
 							StartRow: 27, StartCol: 1, EndRow: 37, EndCol: 2,
 							HasHeader: true,
 						}},
-						Title: &charts.ChartTitle{Text: "X vs Y Correlation", FontSize: 16, Bold: true},
+						Title:  &charts.ChartTitle{Text: "X vs Y Correlation", FontSize: 16, Bold: true},
 						Legend: &charts.LegendConfig{Enabled: false, Position: "none"},
 						Axes: &charts.AxesConfig{
 							XAxis: &charts.AxisConfig{Title: &charts.ChartTitle{Text: "X Value"}, GridLines: true},
@@ -414,8 +414,8 @@ func New(cfg Config) (*Server, error) {
 							StartRow: 39, StartCol: 0, EndRow: 43, EndCol: 3,
 							HasHeader: true,
 						}},
-						Title: &charts.ChartTitle{Text: "Revenue by Segment (Horizontal)", FontSize: 16, Bold: true},
-						Legend: &charts.LegendConfig{Enabled: true, Position: "bottom"},
+						Title:   &charts.ChartTitle{Text: "Revenue by Segment (Horizontal)", FontSize: 16, Bold: true},
+						Legend:  &charts.LegendConfig{Enabled: true, Position: "bottom"},
 						Options: &charts.ChartOptions{Animated: true, TooltipEnabled: true, Interactive: true},
 					})
 
@@ -430,8 +430,8 @@ func New(cfg Config) (*Server, error) {
 							StartRow: 0, StartCol: 0, EndRow: 6, EndCol: 3,
 							HasHeader: true,
 						}},
-						Title: &charts.ChartTitle{Text: "Sales Trend (Stacked Area)", FontSize: 16, Bold: true},
-						Legend: &charts.LegendConfig{Enabled: true, Position: "bottom"},
+						Title:   &charts.ChartTitle{Text: "Sales Trend (Stacked Area)", FontSize: 16, Bold: true},
+						Legend:  &charts.LegendConfig{Enabled: true, Position: "bottom"},
 						Options: &charts.ChartOptions{Animated: true, TooltipEnabled: true, Interactive: true},
 					})
 
@@ -446,7 +446,7 @@ func New(cfg Config) (*Server, error) {
 							StartRow: 0, StartCol: 0, EndRow: 6, EndCol: 3,
 							HasHeader: true,
 						}},
-						Title: &charts.ChartTitle{Text: "Sales vs Profit (Combo)", FontSize: 16, Bold: true},
+						Title:  &charts.ChartTitle{Text: "Sales vs Profit (Combo)", FontSize: 16, Bold: true},
 						Legend: &charts.LegendConfig{Enabled: true, Position: "bottom"},
 						Series: []charts.SeriesConfig{
 							{Name: "Sales", ChartType: charts.ChartTypeColumn, Color: "#4CAF50"},
@@ -640,7 +640,7 @@ type cellDataProviderAdapter struct {
 }
 
 // GetCellValues retrieves cell values in a range.
-func (a *cellDataProviderAdapter) GetCellValues(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) ([][]interface{}, error) {
+func (a *cellDataProviderAdapter) GetCellValues(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) ([][]any, error) {
 	cellList, err := a.cells.GetRange(ctx, sheetID, startRow, startCol, endRow, endCol)
 	if err != nil {
 		return nil, err
@@ -651,9 +651,9 @@ func (a *cellDataProviderAdapter) GetCellValues(ctx context.Context, sheetID str
 	numCols := endCol - startCol + 1
 
 	// Initialize 2D array
-	result := make([][]interface{}, numRows)
+	result := make([][]any, numRows)
 	for i := range result {
-		result[i] = make([]interface{}, numCols)
+		result[i] = make([]any, numCols)
 	}
 
 	// Populate with cell values

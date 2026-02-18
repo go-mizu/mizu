@@ -157,7 +157,7 @@ func TestVotesStore_CountByTarget(t *testing.T) {
 	targetID := newTestID()
 
 	// Create multiple votes
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		author := createTestAccount(t, store, "voter"+string(rune('a'+i)))
 		value := 1
 		if i >= 3 { // Last 2 are downvotes

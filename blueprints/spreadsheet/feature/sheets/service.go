@@ -3,6 +3,7 @@ package sheets
 import (
 	"context"
 	"errors"
+	"maps"
 	"time"
 
 	"github.com/go-mizu/blueprints/spreadsheet/pkg/ulid"
@@ -200,9 +201,7 @@ func copyIntMap(m map[int]int) map[int]int {
 		return nil
 	}
 	result := make(map[int]int, len(m))
-	for k, v := range m {
-		result[k] = v
-	}
+	maps.Copy(result, m)
 	return result
 }
 

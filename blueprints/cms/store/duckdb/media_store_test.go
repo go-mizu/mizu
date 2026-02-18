@@ -201,7 +201,7 @@ func TestMediaStore_List(t *testing.T) {
 	store := NewMediaStore(db)
 	ctx := context.Background()
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		m := &media.Media{
 			ID:               "media-list-" + string(rune('a'+i)),
 			UploaderID:       "user-001",
@@ -326,7 +326,7 @@ func TestMediaStore_List_OrderBy(t *testing.T) {
 	store := NewMediaStore(db)
 	ctx := context.Background()
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		m := &media.Media{
 			ID:               "media-order-" + string(rune('a'+i)),
 			UploaderID:       "user-001",

@@ -1,5 +1,7 @@
 package telegram
 
+import "slices"
+
 import "strings"
 
 // accessResult is the result of an access control check.
@@ -197,10 +199,5 @@ func checkMention(text string, entities []TelegramEntity, botUsername string) bo
 
 // containsID checks whether a string slice contains the given ID.
 func containsID(list []string, id string) bool {
-	for _, item := range list {
-		if item == id {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(list, id)
 }

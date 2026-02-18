@@ -21,8 +21,8 @@ func NewRecord(records *records.Service, getUserID func(*mizu.Ctx) string) *Reco
 
 // CreateRecordRequest is the request body for creating a record.
 type CreateRecordRequest struct {
-	TableID string                 `json:"table_id"`
-	Fields  map[string]interface{} `json:"fields"`
+	TableID string         `json:"table_id"`
+	Fields  map[string]any `json:"fields"`
 }
 
 // List returns records for a table.
@@ -58,14 +58,14 @@ func (h *Record) List(c *mizu.Ctx) error {
 	result := make([]map[string]any, 0, len(list.Records))
 	for _, rec := range list.Records {
 		result = append(result, map[string]any{
-			"id":         rec.ID,
-			"table_id":   rec.TableID,
-			"position":   rec.Position,
-			"values":     rec.Cells,
-			"createdBy":  rec.CreatedBy,
-			"createdAt":  rec.CreatedAt,
-			"updatedBy":  rec.UpdatedBy,
-			"updatedAt":  rec.UpdatedAt,
+			"id":        rec.ID,
+			"table_id":  rec.TableID,
+			"position":  rec.Position,
+			"values":    rec.Cells,
+			"createdBy": rec.CreatedBy,
+			"createdAt": rec.CreatedAt,
+			"updatedBy": rec.UpdatedBy,
+			"updatedAt": rec.UpdatedAt,
 		})
 	}
 
@@ -99,14 +99,14 @@ func (h *Record) Create(c *mizu.Ctx) error {
 
 	// Convert to frontend format
 	result := map[string]any{
-		"id":         record.ID,
-		"table_id":   record.TableID,
-		"position":   record.Position,
-		"values":     record.Cells,
-		"createdBy":  record.CreatedBy,
-		"createdAt":  record.CreatedAt,
-		"updatedBy":  record.UpdatedBy,
-		"updatedAt":  record.UpdatedAt,
+		"id":        record.ID,
+		"table_id":  record.TableID,
+		"position":  record.Position,
+		"values":    record.Cells,
+		"createdBy": record.CreatedBy,
+		"createdAt": record.CreatedAt,
+		"updatedBy": record.UpdatedBy,
+		"updatedAt": record.UpdatedAt,
 	}
 
 	return Created(c, map[string]any{"record": result})
@@ -122,14 +122,14 @@ func (h *Record) Get(c *mizu.Ctx) error {
 	}
 
 	result := map[string]any{
-		"id":         record.ID,
-		"table_id":   record.TableID,
-		"position":   record.Position,
-		"values":     record.Cells,
-		"createdBy":  record.CreatedBy,
-		"createdAt":  record.CreatedAt,
-		"updatedBy":  record.UpdatedBy,
-		"updatedAt":  record.UpdatedAt,
+		"id":        record.ID,
+		"table_id":  record.TableID,
+		"position":  record.Position,
+		"values":    record.Cells,
+		"createdBy": record.CreatedBy,
+		"createdAt": record.CreatedAt,
+		"updatedBy": record.UpdatedBy,
+		"updatedAt": record.UpdatedAt,
 	}
 
 	return OK(c, map[string]any{"record": result})
@@ -137,7 +137,7 @@ func (h *Record) Get(c *mizu.Ctx) error {
 
 // UpdateRecordRequest is the request body for updating a record.
 type UpdateRecordRequest struct {
-	Fields map[string]interface{} `json:"fields"`
+	Fields map[string]any `json:"fields"`
 }
 
 // Update updates a record.
@@ -159,14 +159,14 @@ func (h *Record) Update(c *mizu.Ctx) error {
 	}
 
 	result := map[string]any{
-		"id":         record.ID,
-		"table_id":   record.TableID,
-		"position":   record.Position,
-		"values":     record.Cells,
-		"createdBy":  record.CreatedBy,
-		"createdAt":  record.CreatedAt,
-		"updatedBy":  record.UpdatedBy,
-		"updatedAt":  record.UpdatedAt,
+		"id":        record.ID,
+		"table_id":  record.TableID,
+		"position":  record.Position,
+		"values":    record.Cells,
+		"createdBy": record.CreatedBy,
+		"createdAt": record.CreatedAt,
+		"updatedBy": record.UpdatedBy,
+		"updatedAt": record.UpdatedAt,
 	}
 
 	return OK(c, map[string]any{"record": result})
@@ -185,8 +185,8 @@ func (h *Record) Delete(c *mizu.Ctx) error {
 
 // BatchCreateRequest is the request body for batch creating records.
 type BatchCreateRequest struct {
-	TableID string                   `json:"table_id"`
-	Records []map[string]interface{} `json:"records"`
+	TableID string           `json:"table_id"`
+	Records []map[string]any `json:"records"`
 }
 
 // BatchCreate creates multiple records.
@@ -199,9 +199,9 @@ func (h *Record) BatchCreate(c *mizu.Ctx) error {
 	}
 
 	// Convert records format
-	recordsData := make([]map[string]interface{}, 0, len(req.Records))
+	recordsData := make([]map[string]any, 0, len(req.Records))
 	for _, r := range req.Records {
-		if fields, ok := r["fields"].(map[string]interface{}); ok {
+		if fields, ok := r["fields"].(map[string]any); ok {
 			recordsData = append(recordsData, fields)
 		} else {
 			recordsData = append(recordsData, r)
@@ -217,14 +217,14 @@ func (h *Record) BatchCreate(c *mizu.Ctx) error {
 	records := make([]map[string]any, 0, len(result))
 	for _, rec := range result {
 		records = append(records, map[string]any{
-			"id":         rec.ID,
-			"table_id":   rec.TableID,
-			"position":   rec.Position,
-			"values":     rec.Cells,
-			"createdBy":  rec.CreatedBy,
-			"createdAt":  rec.CreatedAt,
-			"updatedBy":  rec.UpdatedBy,
-			"updatedAt":  rec.UpdatedAt,
+			"id":        rec.ID,
+			"table_id":  rec.TableID,
+			"position":  rec.Position,
+			"values":    rec.Cells,
+			"createdBy": rec.CreatedBy,
+			"createdAt": rec.CreatedAt,
+			"updatedBy": rec.UpdatedBy,
+			"updatedAt": rec.UpdatedAt,
 		})
 	}
 
@@ -234,8 +234,8 @@ func (h *Record) BatchCreate(c *mizu.Ctx) error {
 // BatchUpdateRequest is the request body for batch updating records.
 type BatchUpdateRequest struct {
 	Records []struct {
-		ID     string                 `json:"id"`
-		Fields map[string]interface{} `json:"fields"`
+		ID     string         `json:"id"`
+		Fields map[string]any `json:"fields"`
 	} `json:"records"`
 }
 
@@ -265,14 +265,14 @@ func (h *Record) BatchUpdate(c *mizu.Ctx) error {
 	recordsList := make([]map[string]any, 0, len(result))
 	for _, rec := range result {
 		recordsList = append(recordsList, map[string]any{
-			"id":         rec.ID,
-			"table_id":   rec.TableID,
-			"position":   rec.Position,
-			"values":     rec.Cells,
-			"createdBy":  rec.CreatedBy,
-			"createdAt":  rec.CreatedAt,
-			"updatedBy":  rec.UpdatedBy,
-			"updatedAt":  rec.UpdatedAt,
+			"id":        rec.ID,
+			"table_id":  rec.TableID,
+			"position":  rec.Position,
+			"values":    rec.Cells,
+			"createdBy": rec.CreatedBy,
+			"createdAt": rec.CreatedAt,
+			"updatedBy": rec.UpdatedBy,
+			"updatedAt": rec.UpdatedAt,
 		})
 	}
 

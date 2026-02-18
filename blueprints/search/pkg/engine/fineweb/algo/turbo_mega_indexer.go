@@ -29,7 +29,7 @@ var delimMask64 [256]uint64
 
 func init() {
 	// Initialize delimiter mask lookup
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		if megaToLower[i] == 0 {
 			// This byte is a delimiter
 			delimMask64[i] = 0xFF
@@ -90,7 +90,7 @@ func NewTurboMegaIndexer(outDir string, cfg TurboMegaConfig) *TurboMegaIndexer {
 		docLens: make([]uint16, 0, 4000000),
 	}
 
-	for i := 0; i < 512; i++ {
+	for i := range 512 {
 		tmi.shards[i] = &turboShard{
 			terms: make(map[uint64]*turboPostings, 10000),
 		}
@@ -175,7 +175,7 @@ func TokenizeTurboSWAR(text string, docID uint32, postings *[]turboPosting) int 
 			// Check if any byte is alphanumeric (non-delimiter)
 			// A byte is alphanumeric if megaToLower[b] != 0
 			hasAlpha := false
-			for j := 0; j < 8; j++ {
+			for j := range 8 {
 				b := byte(chunk >> (j * 8))
 				if megaToLower[b] != 0 {
 					hasAlpha = true
@@ -204,12 +204,12 @@ func TokenizeTurboSWAR(text string, docID uint32, postings *[]turboPosting) int 
 			// Check if all 8 bytes are alphanumeric
 			allAlpha := true
 			var hashes [8]uint64
-			for j := 0; j < 8; j++ {
+			for j := range 8 {
 				c := megaToLower[data[i+j]]
 				if c == 0 {
 					allAlpha = false
 					// Process bytes before delimiter
-					for k := 0; k < j; k++ {
+					for k := range j {
 						hash ^= hashes[k]
 						hash *= fnvPrime
 					}
@@ -220,7 +220,7 @@ func TokenizeTurboSWAR(text string, docID uint32, postings *[]turboPosting) int 
 			}
 			if allAlpha {
 				// Hash all 8 bytes
-				for j := 0; j < 8; j++ {
+				for j := range 8 {
 					hash ^= hashes[j]
 					hash *= fnvPrime
 				}
@@ -268,7 +268,7 @@ func TokenizeTurboV3(text string, freqs map[uint64]uint16) int {
 	tokenLen := 0
 
 	// Single pass - minimal branching
-	for i := 0; i < n; i++ {
+	for i := range n {
 		c := megaToLower[data[i]]
 		isAlpha := c != 0
 
@@ -330,18 +330,15 @@ func (tmi *TurboMegaIndexer) AddBatch(docIDs []uint32, texts []string) {
 	}
 
 	numDocs := len(texts)
-	numWorkers := tmi.config.NumWorkers
-	if numWorkers > numDocs {
-		numWorkers = numDocs
-	}
+	numWorkers := min(tmi.config.NumWorkers, numDocs)
 
 	// Per-worker shard buffers - pre-allocated
 	type shardBuffer struct {
 		postings []turboPosting
 	}
 	workerShards := make([][512]*shardBuffer, numWorkers)
-	for w := 0; w < numWorkers; w++ {
-		for s := 0; s < 512; s++ {
+	for w := range numWorkers {
+		for s := range 512 {
 			workerShards[w][s] = &shardBuffer{
 				postings: make([]turboPosting, 0, (numDocs/numWorkers)*2/512+16),
 			}
@@ -353,12 +350,9 @@ func (tmi *TurboMegaIndexer) AddBatch(docIDs []uint32, texts []string) {
 	batchSize := (numDocs + numWorkers - 1) / numWorkers
 
 	// Phase 1: Parallel tokenization with direct shard distribution
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		start := w * batchSize
-		end := start + batchSize
-		if end > numDocs {
-			end = numDocs
-		}
+		end := min(start+batchSize, numDocs)
 		if start >= end {
 			break
 		}
@@ -373,10 +367,7 @@ func (tmi *TurboMegaIndexer) AddBatch(docIDs []uint32, texts []string) {
 			for i := start; i < end; i++ {
 				docID := docIDs[i]
 				clear(freqs)
-				docLen := TokenizeTurboV3(texts[i], freqs)
-				if docLen > 65535 {
-					docLen = 65535
-				}
+				docLen := min(TokenizeTurboV3(texts[i], freqs), 65535)
 				docLensLocal[i] = uint16(docLen)
 
 				// Distribute to shards
@@ -411,12 +402,9 @@ func (tmi *TurboMegaIndexer) AddBatch(docIDs []uint32, texts []string) {
 	// Phase 2: Parallel shard updates
 	shardsPerWorker := (512 + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startShard := w * shardsPerWorker
-		endShard := startShard + shardsPerWorker
-		if endShard > 512 {
-			endShard = 512
-		}
+		endShard := min(startShard+shardsPerWorker, 512)
 		if startShard >= endShard {
 			break
 		}
@@ -468,7 +456,7 @@ func (tmi *TurboMegaIndexer) Finish() (*SegmentedIndex, error) {
 	avgDocLen := float64(tmi.totalLen.Load()) / float64(numDocs)
 	terms := make(map[string]*SegmentPostings)
 
-	for shardID := 0; shardID < 512; shardID++ {
+	for shardID := range 512 {
 		shard := tmi.shards[shardID]
 		for hash, pl := range shard.terms {
 			hashKey := hashToKey(hash)
@@ -531,7 +519,7 @@ func NewHyper1024Indexer(outDir string, cfg TurboMegaConfig) *Hyper1024Indexer {
 		docLens: make([]uint16, 0, 4000000),
 	}
 
-	for i := 0; i < 1024; i++ {
+	for i := range 1024 {
 		hi.shards[i] = &hyper1024Shard{
 			terms: make(map[uint64]*turboPostings, 5000),
 		}
@@ -553,7 +541,7 @@ func TokenizeHyper(text string, freqs map[uint64]uint16) int {
 	hash := uint64(fnvOffset)
 	tokenStart := -1
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		c := megaToLower[data[i]]
 		if c != 0 {
 			if tokenStart < 0 {
@@ -591,10 +579,7 @@ func (hi *Hyper1024Indexer) AddBatch(docIDs []uint32, texts []string) {
 	}
 
 	numDocs := len(texts)
-	numWorkers := hi.config.NumWorkers
-	if numWorkers > numDocs {
-		numWorkers = numDocs
-	}
+	numWorkers := min(hi.config.NumWorkers, numDocs)
 
 	// Per-worker posting buffers for each shard
 	type posting struct {
@@ -605,7 +590,7 @@ func (hi *Hyper1024Indexer) AddBatch(docIDs []uint32, texts []string) {
 
 	// Use a flat buffer per worker, then distribute
 	workerPostings := make([][]posting, numWorkers)
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		workerPostings[w] = make([]posting, 0, (numDocs/numWorkers)*50)
 	}
 
@@ -614,12 +599,9 @@ func (hi *Hyper1024Indexer) AddBatch(docIDs []uint32, texts []string) {
 	batchSize := (numDocs + numWorkers - 1) / numWorkers
 
 	// Phase 1: Parallel tokenization - collect all postings flat
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		start := w * batchSize
-		end := start + batchSize
-		if end > numDocs {
-			end = numDocs
-		}
+		end := min(start+batchSize, numDocs)
 		if start >= end {
 			break
 		}
@@ -634,10 +616,7 @@ func (hi *Hyper1024Indexer) AddBatch(docIDs []uint32, texts []string) {
 			for i := start; i < end; i++ {
 				docID := docIDs[i]
 				clear(freqs)
-				docLen := TokenizeHyper(texts[i], freqs)
-				if docLen > 65535 {
-					docLen = 65535
-				}
+				docLen := min(TokenizeHyper(texts[i], freqs), 65535)
 				docLensLocal[i] = uint16(docLen)
 
 				for hash, freq := range freqs {
@@ -671,12 +650,9 @@ func (hi *Hyper1024Indexer) AddBatch(docIDs []uint32, texts []string) {
 	// Each worker handles a subset of shards
 	shardsPerWorker := (1024 + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startShard := w * shardsPerWorker
-		endShard := startShard + shardsPerWorker
-		if endShard > 1024 {
-			endShard = 1024
-		}
+		endShard := min(startShard+shardsPerWorker, 1024)
 		if startShard >= endShard {
 			break
 		}
@@ -731,7 +707,7 @@ func (hi *Hyper1024Indexer) Finish() (*SegmentedIndex, error) {
 	avgDocLen := float64(hi.totalLen.Load()) / float64(numDocs)
 	terms := make(map[string]*SegmentPostings)
 
-	for shardID := 0; shardID < 1024; shardID++ {
+	for shardID := range 1024 {
 		shard := hi.shards[shardID]
 		for hash, pl := range shard.terms {
 			hashKey := hashToKey(hash)

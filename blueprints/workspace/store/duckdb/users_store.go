@@ -43,7 +43,7 @@ func (s *UsersStore) GetByIDs(ctx context.Context, ids []string) ([]*users.User,
 	}
 
 	placeholders := make([]string, len(ids))
-	args := make([]interface{}, len(ids))
+	args := make([]any, len(ids))
 	for i, id := range ids {
 		placeholders[i] = "?"
 		args[i] = id
@@ -81,7 +81,7 @@ func (s *UsersStore) GetByEmail(ctx context.Context, email string) (*users.User,
 
 func (s *UsersStore) Update(ctx context.Context, id string, in *users.UpdateIn) error {
 	sets := []string{"updated_at = CURRENT_TIMESTAMP"}
-	args := []interface{}{}
+	args := []any{}
 
 	if in.Name != nil {
 		sets = append(sets, "name = ?")

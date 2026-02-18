@@ -81,14 +81,12 @@ func TestFrontierClose(t *testing.T) {
 	f := NewFrontier(0)
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		_, ok := f.Pop()
 		if ok {
 			t.Error("Pop should return false when closed and empty")
 		}
-	}()
+	})
 
 	time.Sleep(10 * time.Millisecond)
 	f.Close()
@@ -99,7 +97,7 @@ func TestFrontierConcurrent(t *testing.T) {
 	f := NewFrontier(0)
 
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()

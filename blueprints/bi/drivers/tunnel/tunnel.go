@@ -30,19 +30,19 @@ type Config struct {
 	RemotePort int    `json:"remote_port"`
 
 	// Timeouts
-	DialTimeout    time.Duration `json:"dial_timeout"`
-	KeepAlive      time.Duration `json:"keep_alive"`
-	MaxRetries     int           `json:"max_retries"`
+	DialTimeout time.Duration `json:"dial_timeout"`
+	KeepAlive   time.Duration `json:"keep_alive"`
+	MaxRetries  int           `json:"max_retries"`
 }
 
 // Tunnel manages an SSH tunnel connection.
 type Tunnel struct {
-	config     Config
-	client     *ssh.Client
-	listener   net.Listener
-	localAddr  string
-	mu         sync.Mutex
-	closed     bool
+	config      Config
+	client      *ssh.Client
+	listener    net.Listener
+	localAddr   string
+	mu          sync.Mutex
+	closed      bool
 	activeConns sync.WaitGroup
 }
 
@@ -185,9 +185,7 @@ func (t *Tunnel) forward() {
 			continue
 		}
 
-		t.activeConns.Add(1)
-		go func() {
-			defer t.activeConns.Done()
+		t.activeConns.Go(func() {
 			defer localConn.Close()
 
 			// Connect to remote through SSH
@@ -212,7 +210,7 @@ func (t *Tunnel) forward() {
 
 			// Wait for either direction to finish
 			<-done
-		}()
+		})
 	}
 }
 
@@ -294,11 +292,11 @@ func (t *Tunnel) IsConnected() bool {
 
 // TunneledConfig wraps a database config to use an SSH tunnel.
 type TunneledConfig struct {
-	Tunnel     *Tunnel
-	OrigHost   string
-	OrigPort   int
-	LocalHost  string
-	LocalPort  int
+	Tunnel    *Tunnel
+	OrigHost  string
+	OrigPort  int
+	LocalHost string
+	LocalPort int
 }
 
 // ParseLocalAddr parses the local address into host and port.

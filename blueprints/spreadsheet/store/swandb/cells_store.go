@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"maps"
 
 	"github.com/go-mizu/blueprints/spreadsheet/feature/cells"
 	"github.com/go-mizu/blueprints/spreadsheet/pkg/formula"
@@ -17,14 +18,14 @@ const (
 
 // TileCell represents a cell within a tile.
 type TileCell struct {
-	ID        string         `json:"id,omitempty"`
-	Value     interface{}    `json:"value,omitempty"`
-	Formula   string         `json:"formula,omitempty"`
-	Display   string         `json:"display,omitempty"`
-	Type      cells.CellType `json:"type,omitempty"`
-	Format    *cells.Format  `json:"format,omitempty"`
+	ID        string           `json:"id,omitempty"`
+	Value     any              `json:"value,omitempty"`
+	Formula   string           `json:"formula,omitempty"`
+	Display   string           `json:"display,omitempty"`
+	Type      cells.CellType   `json:"type,omitempty"`
+	Format    *cells.Format    `json:"format,omitempty"`
 	Hyperlink *cells.Hyperlink `json:"hyperlink,omitempty"`
-	Note      string         `json:"note,omitempty"`
+	Note      string           `json:"note,omitempty"`
 }
 
 // Tile represents a tile of cells.
@@ -248,9 +249,9 @@ func (s *CellsStore) BatchSet(ctx context.Context, cellList []*cells.Cell) error
 
 	// Group cells by tile
 	type tileKey struct {
-		sheetID  string
-		tileRow  int
-		tileCol  int
+		sheetID string
+		tileRow int
+		tileCol int
 	}
 	tileUpdates := make(map[tileKey]map[string]*TileCell)
 
@@ -296,9 +297,7 @@ func (s *CellsStore) BatchSet(ctx context.Context, cellList []*cells.Cell) error
 		}
 
 		// Apply updates
-		for cellKey, tc := range updates {
-			tile.Cells[cellKey] = tc
-		}
+		maps.Copy(tile.Cells, updates)
 
 		// Save tile
 		newBlob, _ := json.Marshal(tile)

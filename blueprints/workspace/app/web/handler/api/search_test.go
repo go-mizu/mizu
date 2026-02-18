@@ -80,7 +80,7 @@ func TestQuickSearch(t *testing.T) {
 	ws := createTestWorkspace(ts, cookie, "Quick Search Workspace", "quick-ws")
 
 	// Create pages
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		createTestPage(ts, cookie, ws.ID, "Quick Page "+string(rune('A'+i)))
 	}
 
@@ -108,7 +108,7 @@ func TestQuickSearch(t *testing.T) {
 
 	t.Run("quick search limited results", func(t *testing.T) {
 		// Create many pages
-		for i := 0; i < 20; i++ {
+		for i := range 20 {
 			createTestPage(ts, cookie, ws.ID, "Many Page "+string(rune('A'+i%26)))
 		}
 
@@ -135,7 +135,7 @@ func TestRecent(t *testing.T) {
 
 	// Create and access pages
 	var pageIDs []string
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		page := createTestPage(ts, cookie, ws.ID, "Recent Page "+string(rune('A'+i)))
 		pageIDs = append(pageIDs, page.ID)
 

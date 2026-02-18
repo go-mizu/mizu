@@ -945,7 +945,7 @@ func TestService_ListTags_Pagination(t *testing.T) {
 	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	// Create multiple tags
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		gitRepo.CreateRef("refs/tags/v1."+string(rune('0'+i))+".0", commitSHA)
 	}
 

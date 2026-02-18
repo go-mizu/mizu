@@ -246,7 +246,7 @@ func (h *View) List(c *mizu.Ctx) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	return c.JSON(http.StatusOK, map[string]interface{}{"views": list})
+	return c.JSON(http.StatusOK, map[string]any{"views": list})
 }
 
 func (h *View) Query(c *mizu.Ctx) error {
@@ -341,9 +341,9 @@ func (h *Share) Create(c *mizu.Ctx) error {
 	pageID := c.Param("id")
 	userID := h.getUserID(c)
 	var in struct {
-		Type       sharing.ShareType   `json:"type"`
-		Permission sharing.Permission  `json:"permission"`
-		UserID     string              `json:"user_id"`
+		Type       sharing.ShareType  `json:"type"`
+		Permission sharing.Permission `json:"permission"`
+		UserID     string             `json:"user_id"`
 	}
 	if err := c.BindJSON(&in, 1<<20); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})

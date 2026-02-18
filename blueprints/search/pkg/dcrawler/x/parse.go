@@ -536,10 +536,10 @@ func parseMediaFromEntities(node map[string]any, t *Tweet) {
 // extractSourceName extracts the app name from Twitter's source HTML like
 // `<a href="...">Twitter Web App</a>`.
 func extractSourceName(src string) string {
-	if i := strings.Index(src, ">"); i >= 0 {
-		rest := src[i+1:]
-		if j := strings.Index(rest, "<"); j >= 0 {
-			return rest[:j]
+	if _, after, ok := strings.Cut(src, ">"); ok {
+		rest := after
+		if before, _, ok := strings.Cut(rest, "<"); ok {
+			return before
 		}
 		return rest
 	}

@@ -197,7 +197,7 @@ func TestSearchStore_Search_Pagination(t *testing.T) {
 	ctx := context.Background()
 
 	// Add many documents
-	for i := 0; i < 25; i++ {
+	for i := range 25 {
 		doc := &store.Document{
 			URL:     "https://example.com/page" + string(rune('a'+i)),
 			Title:   "Page Doc",

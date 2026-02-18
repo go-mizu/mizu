@@ -210,7 +210,7 @@ func TestPostsStore_List(t *testing.T) {
 	store := NewPostsStore(db)
 
 	// Create posts
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		createTestPost(t, store, account.ID)
 	}
 
@@ -243,11 +243,11 @@ func TestPostsStore_List_ByAccountID(t *testing.T) {
 	store := NewPostsStore(db)
 
 	// Create posts for user1
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		createTestPost(t, store, user1.ID)
 	}
 	// Create posts for user2
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		createTestPost(t, store, user2.ID)
 	}
 
@@ -307,7 +307,7 @@ func TestPostsStore_GetReplies(t *testing.T) {
 	parent := createTestPost(t, store, account.ID)
 
 	// Create replies
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		reply := &posts.Post{
 			ID:         newTestID(),
 			AccountID:  account.ID,
@@ -397,7 +397,7 @@ func TestPostsStore_GetDescendants(t *testing.T) {
 	parent := createTestPost(t, store, account.ID)
 
 	// Create replies with thread_id
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		reply := &posts.Post{
 			ID:         newTestID(),
 			AccountID:  account.ID,

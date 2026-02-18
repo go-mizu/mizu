@@ -215,22 +215,22 @@ type UpdateIn struct {
 
 // ChartData represents resolved chart data from cell values.
 type ChartData struct {
-	Labels   []string    `json:"labels"`
-	Datasets []Dataset   `json:"datasets"`
-	Metadata interface{} `json:"metadata,omitempty"`
+	Labels   []string  `json:"labels"`
+	Datasets []Dataset `json:"datasets"`
+	Metadata any       `json:"metadata,omitempty"`
 }
 
 // Dataset represents a single dataset in chart data.
 type Dataset struct {
-	Label           string      `json:"label"`
-	Data            []float64   `json:"data"`
-	BackgroundColor interface{} `json:"backgroundColor,omitempty"` // string or []string
-	BorderColor     interface{} `json:"borderColor,omitempty"`
-	BorderWidth     int         `json:"borderWidth,omitempty"`
-	Fill            bool        `json:"fill,omitempty"`
-	Tension         float64     `json:"tension,omitempty"`
-	PointRadius     int         `json:"pointRadius,omitempty"`
-	PointStyle      string      `json:"pointStyle,omitempty"`
+	Label           string    `json:"label"`
+	Data            []float64 `json:"data"`
+	BackgroundColor any       `json:"backgroundColor,omitempty"` // string or []string
+	BorderColor     any       `json:"borderColor,omitempty"`
+	BorderWidth     int       `json:"borderWidth,omitempty"`
+	Fill            bool      `json:"fill,omitempty"`
+	Tension         float64   `json:"tension,omitempty"`
+	PointRadius     int       `json:"pointRadius,omitempty"`
+	PointStyle      string    `json:"pointStyle,omitempty"`
 }
 
 // API defines the charts service interface.
@@ -269,5 +269,5 @@ type Store interface {
 // CellDataProvider provides cell data for chart rendering.
 type CellDataProvider interface {
 	// GetCellValues retrieves cell values in a range.
-	GetCellValues(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) ([][]interface{}, error)
+	GetCellValues(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) ([][]any, error)
 }

@@ -14,14 +14,14 @@ var (
 
 // Record represents a row in a table.
 type Record struct {
-	ID        string                 `json:"id"`
-	TableID   string                 `json:"table_id"`
-	Cells     map[string]interface{} `json:"cells"`
-	Position  int                    `json:"position"`
-	CreatedBy string                 `json:"created_by"`
-	CreatedAt time.Time              `json:"created_at"`
-	UpdatedAt time.Time              `json:"updated_at"`
-	UpdatedBy string                 `json:"updated_by,omitempty"`
+	ID        string         `json:"id"`
+	TableID   string         `json:"table_id"`
+	Cells     map[string]any `json:"cells"`
+	Position  int            `json:"position"`
+	CreatedBy string         `json:"created_by"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	UpdatedBy string         `json:"updated_by,omitempty"`
 }
 
 // RecordLink represents a link between two records.
@@ -56,35 +56,35 @@ type SortSpec struct {
 
 // Filter defines a filter condition.
 type Filter struct {
-	FieldID  string      `json:"field_id"`
-	Operator string      `json:"operator"` // equals, not_equals, contains, etc.
-	Value    interface{} `json:"value"`
+	FieldID  string `json:"field_id"`
+	Operator string `json:"operator"` // equals, not_equals, contains, etc.
+	Value    any    `json:"value"`
 }
 
 // Supported filter operators
 const (
-	OpEquals              = "equals"
-	OpNotEquals           = "not_equals"
-	OpContains            = "contains"
-	OpNotContains         = "not_contains"
-	OpStartsWith          = "starts_with"
-	OpEndsWith            = "ends_with"
-	OpIsEmpty             = "is_empty"
-	OpIsNotEmpty          = "is_not_empty"
-	OpGreaterThan         = "greater_than"
-	OpGreaterThanOrEqual  = "greater_than_or_equal"
-	OpLessThan            = "less_than"
-	OpLessThanOrEqual     = "less_than_or_equal"
-	OpBetween             = "between"
-	OpIn                  = "in"
-	OpNotIn               = "not_in"
-	OpIsBefore            = "is_before"
-	OpIsAfter             = "is_after"
-	OpIsWithin            = "is_within"
-	OpIsChecked           = "is_checked"
-	OpIsUnchecked         = "is_unchecked"
-	OpIsAnyOf             = "is_any_of"
-	OpIsNoneOf            = "is_none_of"
+	OpEquals             = "equals"
+	OpNotEquals          = "not_equals"
+	OpContains           = "contains"
+	OpNotContains        = "not_contains"
+	OpStartsWith         = "starts_with"
+	OpEndsWith           = "ends_with"
+	OpIsEmpty            = "is_empty"
+	OpIsNotEmpty         = "is_not_empty"
+	OpGreaterThan        = "greater_than"
+	OpGreaterThanOrEqual = "greater_than_or_equal"
+	OpLessThan           = "less_than"
+	OpLessThanOrEqual    = "less_than_or_equal"
+	OpBetween            = "between"
+	OpIn                 = "in"
+	OpNotIn              = "not_in"
+	OpIsBefore           = "is_before"
+	OpIsAfter            = "is_after"
+	OpIsWithin           = "is_within"
+	OpIsChecked          = "is_checked"
+	OpIsUnchecked        = "is_unchecked"
+	OpIsAnyOf            = "is_any_of"
+	OpIsNoneOf           = "is_none_of"
 )
 
 // RecordList represents a paginated list of records.
@@ -96,25 +96,25 @@ type RecordList struct {
 
 // RecordUpdate contains an update for a single record.
 type RecordUpdate struct {
-	ID    string                 `json:"id"`
-	Cells map[string]interface{} `json:"cells"`
+	ID    string         `json:"id"`
+	Cells map[string]any `json:"cells"`
 }
 
 // CellUpdate contains an update for a single cell (record + field + value).
 // Used for batch cell updates across multiple records.
 type CellUpdate struct {
-	RecordID string      `json:"record_id"`
-	FieldID  string      `json:"field_id"`
-	Value    interface{} `json:"value"`
+	RecordID string `json:"record_id"`
+	FieldID  string `json:"field_id"`
+	Value    any    `json:"value"`
 }
 
 // API defines the records service interface.
 type API interface {
-	Create(ctx context.Context, tableID string, cells map[string]interface{}, userID string) (*Record, error)
-	CreateBatch(ctx context.Context, tableID string, records []map[string]interface{}, userID string) ([]*Record, error)
+	Create(ctx context.Context, tableID string, cells map[string]any, userID string) (*Record, error)
+	CreateBatch(ctx context.Context, tableID string, records []map[string]any, userID string) ([]*Record, error)
 	GetByID(ctx context.Context, id string) (*Record, error)
 	GetByIDs(ctx context.Context, ids []string) (map[string]*Record, error)
-	Update(ctx context.Context, id string, cells map[string]interface{}, userID string) (*Record, error)
+	Update(ctx context.Context, id string, cells map[string]any, userID string) (*Record, error)
 	UpdateBatch(ctx context.Context, updates []RecordUpdate, userID string) ([]*Record, error)
 	Delete(ctx context.Context, id string) error
 	DeleteBatch(ctx context.Context, ids []string) error
@@ -124,11 +124,11 @@ type API interface {
 	Search(ctx context.Context, tableID, query string, opts ListOpts) (*RecordList, error)
 
 	// Cell operations
-	UpdateCell(ctx context.Context, recordID, fieldID string, value interface{}, userID string) error
+	UpdateCell(ctx context.Context, recordID, fieldID string, value any, userID string) error
 	ClearCell(ctx context.Context, recordID, fieldID string, userID string) error
 
 	// Bulk operations
-	UpdateFieldValues(ctx context.Context, tableID, fieldID string, updates map[string]interface{}, userID string) error
+	UpdateFieldValues(ctx context.Context, tableID, fieldID string, updates map[string]any, userID string) error
 }
 
 // Store defines the records data access interface.
@@ -143,7 +143,7 @@ type Store interface {
 	List(ctx context.Context, tableID string, opts ListOpts) (*RecordList, error)
 
 	// Cell operations
-	UpdateCell(ctx context.Context, recordID, fieldID string, value interface{}) error
+	UpdateCell(ctx context.Context, recordID, fieldID string, value any) error
 	UpdateCellsBatch(ctx context.Context, updates []CellUpdate) error
 	ClearCell(ctx context.Context, recordID, fieldID string) error
 

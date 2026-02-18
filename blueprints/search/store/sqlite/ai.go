@@ -500,20 +500,20 @@ func (s *ChunkerStore) DeleteOldDocuments(ctx context.Context, olderThan time.Du
 
 // LLMCacheEntry represents a cached LLM response.
 type LLMCacheEntry struct {
-	ID               int64     `json:"id"`
-	QueryHash        string    `json:"query_hash"`
-	Query            string    `json:"query"`
-	Mode             string    `json:"mode"`
-	Model            string    `json:"model"`
-	ResponseText     string    `json:"response_text"`
-	Citations        string    `json:"citations"`
-	FollowUps        string    `json:"follow_ups"`
-	RelatedQuestions string    `json:"related_questions"`
-	InputTokens      int       `json:"input_tokens"`
-	OutputTokens     int       `json:"output_tokens"`
-	CreatedAt        time.Time `json:"created_at"`
+	ID               int64      `json:"id"`
+	QueryHash        string     `json:"query_hash"`
+	Query            string     `json:"query"`
+	Mode             string     `json:"mode"`
+	Model            string     `json:"model"`
+	ResponseText     string     `json:"response_text"`
+	Citations        string     `json:"citations"`
+	FollowUps        string     `json:"follow_ups"`
+	RelatedQuestions string     `json:"related_questions"`
+	InputTokens      int        `json:"input_tokens"`
+	OutputTokens     int        `json:"output_tokens"`
+	CreatedAt        time.Time  `json:"created_at"`
 	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
-	HitCount         int       `json:"hit_count"`
+	HitCount         int        `json:"hit_count"`
 	LastHitAt        *time.Time `json:"last_hit_at,omitempty"`
 }
 
@@ -568,7 +568,7 @@ func (s *LLMCacheStore) Get(ctx context.Context, queryHash, mode, model string) 
 
 // Set stores a new cache entry.
 func (s *LLMCacheStore) Set(ctx context.Context, entry *LLMCacheEntry) error {
-	var expiresAt interface{}
+	var expiresAt any
 	if entry.ExpiresAt != nil {
 		expiresAt = entry.ExpiresAt
 	}
@@ -613,8 +613,8 @@ func (s *LLMCacheStore) DeleteExpired(ctx context.Context) (int64, error) {
 }
 
 // GetStats returns cache statistics.
-func (s *LLMCacheStore) GetStats(ctx context.Context) (map[string]interface{}, error) {
-	stats := make(map[string]interface{})
+func (s *LLMCacheStore) GetStats(ctx context.Context) (map[string]any, error) {
+	stats := make(map[string]any)
 
 	// Total entries
 	var total int64
@@ -780,8 +780,8 @@ func (s *LLMLogStore) List(ctx context.Context, limit, offset int) ([]LLMLogEntr
 }
 
 // GetStats returns logging statistics.
-func (s *LLMLogStore) GetStats(ctx context.Context) (map[string]interface{}, error) {
-	stats := make(map[string]interface{})
+func (s *LLMLogStore) GetStats(ctx context.Context) (map[string]any, error) {
+	stats := make(map[string]any)
 
 	// Total requests
 	var total int64
@@ -819,7 +819,7 @@ func (s *LLMLogStore) GetStats(ctx context.Context) (map[string]interface{}, err
 	}
 	defer rows.Close()
 
-	byProvider := make(map[string]map[string]interface{})
+	byProvider := make(map[string]map[string]any)
 	for rows.Next() {
 		var provider string
 		var count, input, output int64
@@ -827,7 +827,7 @@ func (s *LLMLogStore) GetStats(ctx context.Context) (map[string]interface{}, err
 		if err := rows.Scan(&provider, &count, &input, &output, &cost); err != nil {
 			return nil, err
 		}
-		byProvider[provider] = map[string]interface{}{
+		byProvider[provider] = map[string]any{
 			"count":         count,
 			"input_tokens":  input,
 			"output_tokens": output,

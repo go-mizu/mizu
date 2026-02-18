@@ -40,7 +40,7 @@ func setupTestServer(t *testing.T) (*Server, func()) {
 }
 
 // doRequest performs an HTTP request and returns the response.
-func doRequest(t *testing.T, handler http.Handler, method, path string, body interface{}, token string) *httptest.ResponseRecorder {
+func doRequest(t *testing.T, handler http.Handler, method, path string, body any, token string) *httptest.ResponseRecorder {
 	t.Helper()
 
 	var reqBody []byte
@@ -64,7 +64,7 @@ func doRequest(t *testing.T, handler http.Handler, method, path string, body int
 }
 
 // parseResponse parses the JSON response body.
-func parseResponse(t *testing.T, rec *httptest.ResponseRecorder, v interface{}) {
+func parseResponse(t *testing.T, rec *httptest.ResponseRecorder, v any) {
 	t.Helper()
 	if err := json.NewDecoder(rec.Body).Decode(v); err != nil {
 		t.Fatalf("decode response: %v (body: %s)", err, rec.Body.String())
@@ -89,11 +89,11 @@ func TestE2E_Auth_Register(t *testing.T) {
 		t.Errorf("status = %d, want %d (body: %s)", rec.Code, http.StatusCreated, rec.Body.String())
 	}
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	parseResponse(t, rec, &resp)
 
 	// Register returns {data: user} - extract the user from data
-	data, ok := resp["data"].(map[string]interface{})
+	data, ok := resp["data"].(map[string]any)
 	if !ok {
 		t.Fatal("response should contain data object")
 	}
@@ -150,11 +150,11 @@ func TestE2E_Auth_Login(t *testing.T) {
 		t.Errorf("status = %d, want %d (body: %s)", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	parseResponse(t, rec, &resp)
 
 	// Login returns {data: {token: ..., user: ...}}
-	data, ok := resp["data"].(map[string]interface{})
+	data, ok := resp["data"].(map[string]any)
 	if !ok {
 		t.Fatal("response should contain data object")
 	}
@@ -203,11 +203,11 @@ func TestE2E_Auth_Me(t *testing.T) {
 		t.Errorf("status = %d, want %d (body: %s)", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	parseResponse(t, rec, &resp)
 
 	// Response is {data: user}
-	data, ok := resp["data"].(map[string]interface{})
+	data, ok := resp["data"].(map[string]any)
 	if !ok {
 		t.Fatal("response should contain data object")
 	}
@@ -248,7 +248,7 @@ func TestE2E_Servers_Create(t *testing.T) {
 	token := registerAndGetToken(t, srv.app, "serverowner")
 
 	// Create server
-	body := map[string]interface{}{
+	body := map[string]any{
 		"name":        "Test Server",
 		"description": "A test server",
 		"is_public":   true,
@@ -259,10 +259,10 @@ func TestE2E_Servers_Create(t *testing.T) {
 		t.Errorf("status = %d, want 200 or 201 (body: %s)", rec.Code, rec.Body.String())
 	}
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	parseResponse(t, rec, &resp)
 
-	data := resp["data"].(map[string]interface{})
+	data := resp["data"].(map[string]any)
 	if data["name"] != "Test Server" {
 		t.Errorf("name = %v, want Test Server", data["name"])
 	}
@@ -276,8 +276,8 @@ func TestE2E_Servers_List(t *testing.T) {
 	token := registerAndGetToken(t, srv.app, "listuser")
 
 	// Create servers
-	for i := 0; i < 3; i++ {
-		body := map[string]interface{}{
+	for i := range 3 {
+		body := map[string]any{
 			"name": "Server-" + string(rune('A'+i)),
 		}
 		doRequest(t, srv.app, "POST", "/api/v1/servers", body, token)
@@ -290,10 +290,10 @@ func TestE2E_Servers_List(t *testing.T) {
 		t.Errorf("status = %d, want %d (body: %s)", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	parseResponse(t, rec, &resp)
 
-	data := resp["data"].([]interface{})
+	data := resp["data"].([]any)
 	if len(data) != 3 {
 		t.Errorf("len(servers) = %d, want 3", len(data))
 	}
@@ -307,14 +307,14 @@ func TestE2E_Servers_ListPublic(t *testing.T) {
 	token := registerAndGetToken(t, srv.app, "publicuser")
 
 	// Create public server
-	body := map[string]interface{}{
+	body := map[string]any{
 		"name":      "Public Server",
 		"is_public": true,
 	}
 	doRequest(t, srv.app, "POST", "/api/v1/servers", body, token)
 
 	// Create private server
-	body = map[string]interface{}{
+	body = map[string]any{
 		"name":      "Private Server",
 		"is_public": false,
 	}
@@ -327,13 +327,13 @@ func TestE2E_Servers_ListPublic(t *testing.T) {
 		t.Errorf("status = %d, want %d (body: %s)", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	parseResponse(t, rec, &resp)
 
-	servers := resp["data"].([]interface{})
+	servers := resp["data"].([]any)
 	// Should only have public servers
 	for _, s := range servers {
-		server := s.(map[string]interface{})
+		server := s.(map[string]any)
 		if !server["is_public"].(bool) {
 			t.Error("ListPublic returned private server")
 		}
@@ -348,16 +348,16 @@ func TestE2E_Channels_Create(t *testing.T) {
 	token := registerAndGetToken(t, srv.app, "channelowner")
 
 	// Create server first
-	serverBody := map[string]interface{}{"name": "Channel Test Server"}
+	serverBody := map[string]any{"name": "Channel Test Server"}
 	serverRec := doRequest(t, srv.app, "POST", "/api/v1/servers", serverBody, token)
 
-	var serverResp map[string]interface{}
+	var serverResp map[string]any
 	parseResponse(t, serverRec, &serverResp)
-	serverData := serverResp["data"].(map[string]interface{})
+	serverData := serverResp["data"].(map[string]any)
 	serverID := serverData["id"].(string)
 
 	// Create channel
-	body := map[string]interface{}{
+	body := map[string]any{
 		"name":  "general",
 		"type":  "text",
 		"topic": "General discussion",
@@ -377,22 +377,22 @@ func TestE2E_Messages_Create(t *testing.T) {
 	token := registerAndGetToken(t, srv.app, "msguser")
 
 	// Create server and channel
-	serverBody := map[string]interface{}{"name": "Message Test Server"}
+	serverBody := map[string]any{"name": "Message Test Server"}
 	serverRec := doRequest(t, srv.app, "POST", "/api/v1/servers", serverBody, token)
 
-	var serverResp map[string]interface{}
+	var serverResp map[string]any
 	parseResponse(t, serverRec, &serverResp)
-	serverID := serverResp["data"].(map[string]interface{})["id"].(string)
+	serverID := serverResp["data"].(map[string]any)["id"].(string)
 
-	channelBody := map[string]interface{}{"name": "test-channel", "type": "text"}
+	channelBody := map[string]any{"name": "test-channel", "type": "text"}
 	channelRec := doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/channels", channelBody, token)
 
-	var channelResp map[string]interface{}
+	var channelResp map[string]any
 	parseResponse(t, channelRec, &channelResp)
-	channelID := channelResp["data"].(map[string]interface{})["id"].(string)
+	channelID := channelResp["data"].(map[string]any)["id"].(string)
 
 	// Create message
-	body := map[string]interface{}{
+	body := map[string]any{
 		"content": "Hello, world!",
 	}
 	rec := doRequest(t, srv.app, "POST", "/api/v1/channels/"+channelID+"/messages", body, token)
@@ -410,23 +410,23 @@ func TestE2E_Messages_List(t *testing.T) {
 	token := registerAndGetToken(t, srv.app, "listmsguser")
 
 	// Create server and channel
-	serverBody := map[string]interface{}{"name": "List Messages Server"}
+	serverBody := map[string]any{"name": "List Messages Server"}
 	serverRec := doRequest(t, srv.app, "POST", "/api/v1/servers", serverBody, token)
 
-	var serverResp map[string]interface{}
+	var serverResp map[string]any
 	parseResponse(t, serverRec, &serverResp)
-	serverID := serverResp["data"].(map[string]interface{})["id"].(string)
+	serverID := serverResp["data"].(map[string]any)["id"].(string)
 
-	channelBody := map[string]interface{}{"name": "messages-channel", "type": "text"}
+	channelBody := map[string]any{"name": "messages-channel", "type": "text"}
 	channelRec := doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/channels", channelBody, token)
 
-	var channelResp map[string]interface{}
+	var channelResp map[string]any
 	parseResponse(t, channelRec, &channelResp)
-	channelID := channelResp["data"].(map[string]interface{})["id"].(string)
+	channelID := channelResp["data"].(map[string]any)["id"].(string)
 
 	// Create multiple messages
-	for i := 0; i < 5; i++ {
-		body := map[string]interface{}{
+	for i := range 5 {
+		body := map[string]any{
 			"content": "Message " + string(rune('A'+i)),
 		}
 		doRequest(t, srv.app, "POST", "/api/v1/channels/"+channelID+"/messages", body, token)
@@ -439,10 +439,10 @@ func TestE2E_Messages_List(t *testing.T) {
 		t.Errorf("status = %d, want %d (body: %s)", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	parseResponse(t, rec, &resp)
 
-	messages := resp["data"].([]interface{})
+	messages := resp["data"].([]any)
 	if len(messages) != 5 {
 		t.Errorf("len(messages) = %d, want 5", len(messages))
 	}
@@ -465,10 +465,10 @@ func TestE2E_Users_Search(t *testing.T) {
 		t.Errorf("status = %d, want %d (body: %s)", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	parseResponse(t, rec, &resp)
 
-	users := resp["data"].([]interface{})
+	users := resp["data"].([]any)
 	if len(users) != 1 {
 		t.Errorf("len(users) = %d, want 1", len(users))
 	}
@@ -484,7 +484,7 @@ func TestE2E_FullFlow_CreateServerAndChat(t *testing.T) {
 	bobToken := registerAndGetToken(t, srv.app, "flowbob")
 
 	// 2. Alice creates a server
-	serverBody := map[string]interface{}{
+	serverBody := map[string]any{
 		"name":        "Flow Test Server",
 		"description": "Testing the complete flow",
 		"is_public":   true,
@@ -494,12 +494,12 @@ func TestE2E_FullFlow_CreateServerAndChat(t *testing.T) {
 		t.Fatalf("create server failed: %s", serverRec.Body.String())
 	}
 
-	var serverResp map[string]interface{}
+	var serverResp map[string]any
 	parseResponse(t, serverRec, &serverResp)
-	serverID := serverResp["data"].(map[string]interface{})["id"].(string)
+	serverID := serverResp["data"].(map[string]any)["id"].(string)
 
 	// 3. Alice creates a channel
-	channelBody := map[string]interface{}{
+	channelBody := map[string]any{
 		"name":  "flow-general",
 		"type":  "text",
 		"topic": "General chat",
@@ -509,9 +509,9 @@ func TestE2E_FullFlow_CreateServerAndChat(t *testing.T) {
 		t.Fatalf("create channel failed: %s", channelRec.Body.String())
 	}
 
-	var channelResp map[string]interface{}
+	var channelResp map[string]any
 	parseResponse(t, channelRec, &channelResp)
-	channelID := channelResp["data"].(map[string]interface{})["id"].(string)
+	channelID := channelResp["data"].(map[string]any)["id"].(string)
 
 	// 4. Bob joins the server
 	joinRec := doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/join", nil, bobToken)
@@ -520,11 +520,11 @@ func TestE2E_FullFlow_CreateServerAndChat(t *testing.T) {
 	}
 
 	// 5. Alice sends a message
-	aliceMsgBody := map[string]interface{}{"content": "Hello Bob!"}
+	aliceMsgBody := map[string]any{"content": "Hello Bob!"}
 	doRequest(t, srv.app, "POST", "/api/v1/channels/"+channelID+"/messages", aliceMsgBody, aliceToken)
 
 	// 6. Bob sends a message
-	bobMsgBody := map[string]interface{}{"content": "Hey Alice!"}
+	bobMsgBody := map[string]any{"content": "Hey Alice!"}
 	doRequest(t, srv.app, "POST", "/api/v1/channels/"+channelID+"/messages", bobMsgBody, bobToken)
 
 	// 7. Verify messages
@@ -533,10 +533,10 @@ func TestE2E_FullFlow_CreateServerAndChat(t *testing.T) {
 		t.Fatalf("list messages failed: %s", msgRec.Body.String())
 	}
 
-	var msgResp map[string]interface{}
+	var msgResp map[string]any
 	parseResponse(t, msgRec, &msgResp)
 
-	messages := msgResp["data"].([]interface{})
+	messages := msgResp["data"].([]any)
 	if len(messages) != 2 {
 		t.Errorf("len(messages) = %d, want 2", len(messages))
 	}
@@ -547,10 +547,10 @@ func TestE2E_FullFlow_CreateServerAndChat(t *testing.T) {
 		t.Fatalf("list members failed: %s", membersRec.Body.String())
 	}
 
-	var membersResp map[string]interface{}
+	var membersResp map[string]any
 	parseResponse(t, membersRec, &membersResp)
 
-	members := membersResp["data"].([]interface{})
+	members := membersResp["data"].([]any)
 	if len(members) != 2 {
 		t.Errorf("len(members) = %d, want 2", len(members))
 	}
@@ -583,11 +583,11 @@ func registerAndGetToken(t *testing.T, handler http.Handler, username string) st
 		t.Fatalf("login user %s failed: %s", username, loginRec.Body.String())
 	}
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	parseResponse(t, loginRec, &resp)
 
 	// Extract token from data.token
-	data, ok := resp["data"].(map[string]interface{})
+	data, ok := resp["data"].(map[string]any)
 	if !ok {
 		t.Fatalf("login response missing data: %v", resp)
 	}

@@ -65,7 +65,7 @@ func DownloadIndex(ctx context.Context, client *Client, cfg Config, sampleSize i
 	if sampleSize > 0 && sampleSize < len(warcPaths) {
 		sampled := make([]string, 0, sampleSize)
 		step := float64(len(warcPaths)) / float64(sampleSize)
-		for i := 0; i < sampleSize; i++ {
+		for i := range sampleSize {
 			idx := int(float64(i) * step)
 			if idx >= len(warcPaths) {
 				idx = len(warcPaths) - 1

@@ -58,20 +58,22 @@ func Generate(svc *contract.Service, cfg *Config) ([]*sdk.File, error) {
 			"rustString":   rustQuote,
 			"rustName":     toRustName,
 			"rustTypeName": toRustTypeName,
-			"rustType":     func(ref string, opt, null bool) string { return rustType(m.typeByName, contract.TypeRef(ref), opt, null) },
-			"snake":        toSnake,
-			"pascal":       toPascal,
-			"screaming":    toScreamingSnake,
-			"httpMethod":   strings.ToLower,
-			"upper":        strings.ToUpper,
-			"join":         strings.Join,
-			"trim":         strings.TrimSpace,
-			"lower":        strings.ToLower,
-			"indent":       indent,
-			"hasPrefix":    strings.HasPrefix,
-			"add":          func(a, b int) int { return a + b },
-			"sub":          func(a, b int) int { return a - b },
-			"len":          func(s interface{}) int { return lenHelper(s) },
+			"rustType": func(ref string, opt, null bool) string {
+				return rustType(m.typeByName, contract.TypeRef(ref), opt, null)
+			},
+			"snake":      toSnake,
+			"pascal":     toPascal,
+			"screaming":  toScreamingSnake,
+			"httpMethod": strings.ToLower,
+			"upper":      strings.ToUpper,
+			"join":       strings.Join,
+			"trim":       strings.TrimSpace,
+			"lower":      strings.ToLower,
+			"indent":     indent,
+			"hasPrefix":  strings.HasPrefix,
+			"add":        func(a, b int) int { return a + b },
+			"sub":        func(a, b int) int { return a - b },
+			"len":        func(s any) int { return lenHelper(s) },
 		}).
 		ParseFS(templateFS, "templates/*.rs.tmpl", "templates/*.toml.tmpl")
 	if err != nil {
@@ -529,14 +531,14 @@ func baseRustType(typeByName map[string]*contract.Type, r string) string {
 	}
 
 	// Handle slice types
-	if strings.HasPrefix(r, "[]") {
-		elem := strings.TrimSpace(strings.TrimPrefix(r, "[]"))
+	if after, ok := strings.CutPrefix(r, "[]"); ok {
+		elem := strings.TrimSpace(after)
 		return "Vec<" + baseRustType(typeByName, elem) + ">"
 	}
 
 	// Handle map types
-	if strings.HasPrefix(r, "map[string]") {
-		elem := strings.TrimSpace(strings.TrimPrefix(r, "map[string]"))
+	if after, ok := strings.CutPrefix(r, "map[string]"); ok {
+		elem := strings.TrimSpace(after)
 		return "std::collections::HashMap<String, " + baseRustType(typeByName, elem) + ">"
 	}
 
@@ -753,7 +755,7 @@ func indent(n int, s string) string {
 }
 
 // lenHelper returns the length of a slice or array.
-func lenHelper(s interface{}) int {
+func lenHelper(s any) int {
 	switch v := s.(type) {
 	case []fieldModel:
 		return len(v)

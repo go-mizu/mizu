@@ -156,10 +156,7 @@ func (s *FetchStats) Render() string {
 	}
 
 	barWidth := 40
-	filled := int(pct / 100 * float64(barWidth))
-	if filled > barWidth {
-		filled = barWidth
-	}
+	filled := min(int(pct/100*float64(barWidth)), barWidth)
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
 
 	var b strings.Builder

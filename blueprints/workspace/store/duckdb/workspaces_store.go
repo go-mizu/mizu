@@ -71,7 +71,7 @@ func (s *WorkspacesStore) ListByUser(ctx context.Context, userID string) ([]*wor
 
 func (s *WorkspacesStore) Update(ctx context.Context, id string, in *workspaces.UpdateIn) error {
 	sets := []string{"updated_at = CURRENT_TIMESTAMP"}
-	args := []interface{}{}
+	args := []any{}
 
 	if in.Name != nil {
 		sets = append(sets, "name = ?")

@@ -5,6 +5,7 @@ package algo
 import (
 	"bufio"
 	"encoding/binary"
+	"maps"
 	"math"
 	"os"
 	"runtime"
@@ -26,9 +27,9 @@ type HyperIndexer struct {
 	Tokenizer  TokenizerFunc
 
 	// Sharded term accumulators (reduce lock contention)
-	numShards   int
-	termShards  []*termShard
-	shardMask   uint32
+	numShards  int
+	termShards []*termShard
+	shardMask  uint32
 
 	// Document metadata
 	docLens     []uint16
@@ -58,13 +59,7 @@ type postingList struct {
 
 // NewHyperIndexer creates a streaming indexer.
 func NewHyperIndexer(outputPath string, tokenizer TokenizerFunc) *HyperIndexer {
-	numWorkers := runtime.NumCPU()
-	if numWorkers < 4 {
-		numWorkers = 4
-	}
-	if numWorkers > 16 {
-		numWorkers = 16
-	}
+	numWorkers := min(max(runtime.NumCPU(), 4), 16)
 
 	// Use power-of-2 shards for fast modulo
 	numShards := 256
@@ -168,9 +163,7 @@ func (si *HyperIndexer) Finish() (*MmapIndex, error) {
 	// Merge all shards into single map
 	allTerms := make(map[string]*postingList, 500000)
 	for _, shard := range si.termShards {
-		for term, pl := range shard.terms {
-			allTerms[term] = pl
-		}
+		maps.Copy(allTerms, shard.terms)
 		shard.terms = nil // Free shard memory
 	}
 	si.termShards = nil
@@ -186,21 +179,16 @@ func (si *HyperIndexer) Finish() (*MmapIndex, error) {
 	// Sort postings by docID (parallel)
 	termCh := make(chan string, len(sortedTerms))
 	var sortWg sync.WaitGroup
-	numSorters := runtime.NumCPU()
-	if numSorters > 8 {
-		numSorters = 8
-	}
+	numSorters := min(runtime.NumCPU(), 8)
 
-	for i := 0; i < numSorters; i++ {
-		sortWg.Add(1)
-		go func() {
-			defer sortWg.Done()
+	for range numSorters {
+		sortWg.Go(func() {
 			for term := range termCh {
 				pl := allTerms[term]
 				// Sort postings by docID
 				sortPostings(pl.docIDs, pl.freqs)
 			}
-		}()
+		})
 	}
 
 	for _, term := range sortedTerms {

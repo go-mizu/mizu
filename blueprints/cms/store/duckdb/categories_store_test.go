@@ -148,7 +148,7 @@ func TestCategoriesStore_List(t *testing.T) {
 	store := NewCategoriesStore(db)
 	ctx := context.Background()
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		cat := &categories.Category{
 			ID:        "cat-list-" + string(rune('a'+i)),
 			Name:      "List Category " + string(rune('A'+i)),
@@ -181,7 +181,7 @@ func TestCategoriesStore_List_FilterByParent(t *testing.T) {
 	assertNoError(t, store.Create(ctx, parent))
 
 	// Create children
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		child := &categories.Category{
 			ID:        "cat-child-list-" + string(rune('a'+i)),
 			ParentID:  parent.ID,
@@ -238,7 +238,7 @@ func TestCategoriesStore_GetTree(t *testing.T) {
 	ctx := context.Background()
 
 	// Create categories with different sort orders
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		cat := &categories.Category{
 			ID:        "cat-tree-" + string(rune('a'+i)),
 			Name:      "Tree Category " + string(rune('C'-i)), // C, B, A

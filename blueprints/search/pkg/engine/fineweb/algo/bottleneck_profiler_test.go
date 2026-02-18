@@ -70,12 +70,9 @@ func TestBottleneckProfile(t *testing.T) {
 
 	var wg sync.WaitGroup
 	start := time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -106,12 +103,9 @@ func TestBottleneckProfile(t *testing.T) {
 	pprof.StartCPUProfile(f2)
 
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -143,12 +137,9 @@ func TestBottleneckProfile(t *testing.T) {
 	pprof.StartCPUProfile(f3)
 
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -249,12 +240,9 @@ func runFullPipeline(texts []string, numWorkers int) {
 	batchSize := (len(texts) + numWorkers - 1) / numWorkers
 	var wg sync.WaitGroup
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(texts) {
-			endIdx = len(texts)
-		}
+		endIdx := min(startIdx+batchSize, len(texts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -304,12 +292,9 @@ func runFullPipeline(texts []string, numWorkers int) {
 
 	shardsPerWorker := (256 + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startShard := w * shardsPerWorker
-		endShard := startShard + shardsPerWorker
-		if endShard > 256 {
-			endShard = 256
-		}
+		endShard := min(startShard+shardsPerWorker, 256)
 		if startShard >= endShard {
 			break
 		}
@@ -379,12 +364,9 @@ func TestPhaseBreakdownDetailed(t *testing.T) {
 	// ═══════════════════════════════════════════════════════════════
 	runtime.GC()
 	start := time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -405,12 +387,9 @@ func TestPhaseBreakdownDetailed(t *testing.T) {
 	// ═══════════════════════════════════════════════════════════════
 	runtime.GC()
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -431,12 +410,9 @@ func TestPhaseBreakdownDetailed(t *testing.T) {
 	// ═══════════════════════════════════════════════════════════════
 	runtime.GC()
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -458,12 +434,9 @@ func TestPhaseBreakdownDetailed(t *testing.T) {
 	// ═══════════════════════════════════════════════════════════════
 	runtime.GC()
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -549,12 +522,9 @@ func TestStreamIndexerVsFixedHashTable(t *testing.T) {
 	runtime.GC()
 
 	start := time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -588,12 +558,9 @@ func TestStreamIndexerVsFixedHashTable(t *testing.T) {
 	var shardMu [256]sync.Mutex
 
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}

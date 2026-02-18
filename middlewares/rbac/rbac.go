@@ -4,6 +4,7 @@ package rbac
 import (
 	"context"
 	"net/http"
+	"slices"
 
 	"github.com/go-mizu/mizu"
 )
@@ -47,12 +48,7 @@ func HasRole(c *mizu.Ctx, role string) bool {
 	if user == nil {
 		return false
 	}
-	for _, r := range user.Roles {
-		if r == role {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(user.Roles, role)
 }
 
 // HasPermission checks if user has a permission.
@@ -61,12 +57,7 @@ func HasPermission(c *mizu.Ctx, permission string) bool {
 	if user == nil {
 		return false
 	}
-	for _, p := range user.Permissions {
-		if p == permission {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(user.Permissions, permission)
 }
 
 // HasAnyRole checks if user has any of the roles.

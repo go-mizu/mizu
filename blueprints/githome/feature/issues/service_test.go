@@ -297,7 +297,7 @@ func TestService_ListForRepo_Pagination(t *testing.T) {
 
 	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
 	createTestRepo(t, reposStore, user, "testrepo")
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		createTestIssue(t, service, "testowner", "testrepo", user.ID, "Issue")
 	}
 

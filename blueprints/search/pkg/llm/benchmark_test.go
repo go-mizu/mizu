@@ -299,7 +299,7 @@ func TestModelLatencyBenchmark(t *testing.T) {
 			var totalLatency time.Duration
 			var totalTokens int
 
-			for i := 0; i < iterations; i++ {
+			for i := range iterations {
 				ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 				start := time.Now()
 

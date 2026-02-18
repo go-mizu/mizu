@@ -183,9 +183,9 @@ type claudeTool struct {
 }
 
 type JSONSchema struct {
-	Type        string              `json:"type"`
-	Properties  map[string]Property `json:"properties,omitempty"`
-	Required    []string            `json:"required,omitempty"`
+	Type       string              `json:"type"`
+	Properties map[string]Property `json:"properties,omitempty"`
+	Required   []string            `json:"required,omitempty"`
 }
 
 type Property struct {
@@ -621,13 +621,13 @@ func convertProperties(props map[string]llm.Property) map[string]Property {
 
 // convertResponse converts Claude's response to llm.ChatResponse.
 func (c *Client) convertResponse(resp claudeResponse, _ string) *llm.ChatResponse {
-	var content string
+	var content strings.Builder
 	var toolCalls []llm.ToolCall
 
 	for _, block := range resp.Content {
 		switch block.Type {
 		case "text":
-			content += block.Text
+			content.WriteString(block.Text)
 		case "tool_use":
 			toolCalls = append(toolCalls, llm.ToolCall{
 				ID:    block.ID,
@@ -653,7 +653,7 @@ func (c *Client) convertResponse(resp claudeResponse, _ string) *llm.ChatRespons
 			Index: 0,
 			Message: llm.Message{
 				Role:      "assistant",
-				Content:   content,
+				Content:   content.String(),
 				ToolCalls: toolCalls,
 			},
 			FinishReason: finishReason,

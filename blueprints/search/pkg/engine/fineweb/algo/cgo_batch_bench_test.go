@@ -55,12 +55,9 @@ func TestCGOBatchTokenization(t *testing.T) {
 
 	var wg sync.WaitGroup
 	start := time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -86,12 +83,9 @@ func TestCGOBatchTokenization(t *testing.T) {
 
 	tokenizer := algo.NewCGOBatchTokenizer(1000)
 	start = time.Now()
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		startIdx := w * batchSize
-		endIdx := startIdx + batchSize
-		if endIdx > len(allTexts) {
-			endIdx = len(allTexts)
-		}
+		endIdx := min(startIdx+batchSize, len(allTexts))
 		if startIdx >= endIdx {
 			break
 		}
@@ -116,10 +110,7 @@ func TestCGOBatchTokenization(t *testing.T) {
 	start = time.Now()
 	// Process in larger batches
 	for i := 0; i < len(allTexts); i += 5000 {
-		end := i + 5000
-		if end > len(allTexts) {
-			end = len(allTexts)
-		}
+		end := min(i+5000, len(allTexts))
 		largeBatchTokenizer.TokenizeBatch(allTexts[i:end])
 	}
 	largeBatchTime := time.Since(start)

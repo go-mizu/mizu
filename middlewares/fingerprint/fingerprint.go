@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"maps"
 	"sort"
 	"strings"
 
@@ -92,9 +93,7 @@ func WithOptions(opts Options) mizu.Middleware {
 
 			// Add custom components
 			if opts.Custom != nil {
-				for k, v := range opts.Custom(c) {
-					components[k] = v
-				}
+				maps.Copy(components, opts.Custom(c))
 			}
 
 			// Generate hash

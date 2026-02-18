@@ -2,7 +2,9 @@ package local
 
 import (
 	"hash/fnv"
+	"maps"
 	"net/url"
+	"slices"
 	"sort"
 	"sync"
 
@@ -97,9 +99,7 @@ func (rc *ResultContainer) Extend(engineName string, results *engines.EngineResu
 		if rc.engineData[engineName] == nil {
 			rc.engineData[engineName] = make(map[string]string)
 		}
-		for k, v := range results.EngineData {
-			rc.engineData[engineName][k] = v
-		}
+		maps.Copy(rc.engineData[engineName], results.EngineData)
 	}
 }
 
@@ -150,13 +150,7 @@ func (rc *ResultContainer) mergeResults(existing, newResult *engines.Result) {
 	}
 
 	// Add engine to list
-	found := false
-	for _, e := range existing.Engines {
-		if e == newResult.Engine {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(existing.Engines, newResult.Engine)
 	if !found {
 		existing.Engines = append(existing.Engines, newResult.Engine)
 	}

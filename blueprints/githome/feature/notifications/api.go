@@ -12,15 +12,15 @@ var (
 
 // Notification represents a notification
 type Notification struct {
-	ID              string             `json:"id"`
-	Unread          bool               `json:"unread"`
-	Reason          string             `json:"reason"` // assign, author, comment, invitation, manual, mention, review_requested, security_alert, state_change, subscribed, team_mention
-	UpdatedAt       time.Time          `json:"updated_at"`
-	LastReadAt      *time.Time         `json:"last_read_at"`
-	Subject         *Subject           `json:"subject"`
-	Repository      *Repository        `json:"repository"`
-	URL             string             `json:"url"`
-	SubscriptionURL string             `json:"subscription_url"`
+	ID              string      `json:"id"`
+	Unread          bool        `json:"unread"`
+	Reason          string      `json:"reason"` // assign, author, comment, invitation, manual, mention, review_requested, security_alert, state_change, subscribed, team_mention
+	UpdatedAt       time.Time   `json:"updated_at"`
+	LastReadAt      *time.Time  `json:"last_read_at"`
+	Subject         *Subject    `json:"subject"`
+	Repository      *Repository `json:"repository"`
+	URL             string      `json:"url"`
+	SubscriptionURL string      `json:"subscription_url"`
 }
 
 // Subject represents the subject of a notification
@@ -45,12 +45,12 @@ type Repository struct {
 
 // ThreadSubscription represents a thread subscription
 type ThreadSubscription struct {
-	Subscribed bool       `json:"subscribed"`
-	Ignored    bool       `json:"ignored"`
-	Reason     string     `json:"reason,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
-	URL        string     `json:"url"`
-	ThreadURL  string     `json:"thread_url"`
+	Subscribed bool      `json:"subscribed"`
+	Ignored    bool      `json:"ignored"`
+	Reason     string    `json:"reason,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	URL        string    `json:"url"`
+	ThreadURL  string    `json:"thread_url"`
 }
 
 // ListOpts contains options for listing notifications
@@ -59,8 +59,8 @@ type ListOpts struct {
 	PerPage       int       `json:"per_page,omitempty"`
 	All           bool      `json:"all,omitempty"`
 	Participating bool      `json:"participating,omitempty"`
-	Since         time.Time `json:"since,omitempty"`
-	Before        time.Time `json:"before,omitempty"`
+	Since         time.Time `json:"since"`
+	Before        time.Time `json:"before"`
 }
 
 // API defines the notifications service interface

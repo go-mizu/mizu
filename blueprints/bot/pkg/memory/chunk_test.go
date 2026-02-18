@@ -43,7 +43,7 @@ func TestChunkMarkdown_MultipleChunks(t *testing.T) {
 	// Build content that exceeds 400 tokens (1600 chars).
 	// Each line is ~80 chars so 30 lines ~ 2400 chars ~ 600 tokens.
 	var lines []string
-	for i := 0; i < 30; i++ {
+	for range 30 {
 		lines = append(lines, strings.Repeat("abcdefgh ", 9)) // ~81 chars per line
 	}
 	content := strings.Join(lines, "\n")
@@ -90,7 +90,7 @@ func TestChunkMarkdown_OverlapSharedText(t *testing.T) {
 	// Build content long enough to force multiple chunks, then verify overlap.
 	// 400 tokens ~ 1600 chars. Use short identifiable lines.
 	var lines []string
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		lines = append(lines, strings.Repeat("x", 60)+"-line-"+string(rune('A'+i%26)))
 	}
 	content := strings.Join(lines, "\n")
@@ -120,7 +120,7 @@ func TestChunkMarkdown_OverlapSharedText(t *testing.T) {
 		if overlapCount > 0 && overlapCount <= len(chunk0Lines) && overlapCount <= len(chunk1Lines) {
 			tail := chunk0Lines[len(chunk0Lines)-overlapCount:]
 			head := chunk1Lines[:overlapCount]
-			for i := 0; i < overlapCount; i++ {
+			for i := range overlapCount {
 				if tail[i] != head[i] {
 					t.Errorf("overlap mismatch at relative line %d: %q vs %q", i, tail[i], head[i])
 				}

@@ -20,24 +20,24 @@ var (
 
 // User represents a user account.
 type User struct {
-	ID                   string    `json:"id"`
-	Phone                string    `json:"phone,omitempty"`
-	Email                string    `json:"email,omitempty"`
-	Username             string    `json:"username"`
-	DisplayName          string    `json:"display_name"`
-	Bio                  string    `json:"bio,omitempty"`
-	AvatarURL            string    `json:"avatar_url,omitempty"`
-	Status               string    `json:"status,omitempty"`
-	LastSeenAt           time.Time `json:"last_seen_at,omitempty"`
-	IsOnline             bool      `json:"is_online"`
-	PrivacyLastSeen      string    `json:"privacy_last_seen,omitempty"`
-	PrivacyProfilePhoto  string    `json:"privacy_profile_photo,omitempty"`
-	PrivacyAbout         string    `json:"privacy_about,omitempty"`
-	PrivacyGroups        string    `json:"privacy_groups,omitempty"`
-	PrivacyReadReceipts  bool      `json:"privacy_read_receipts"`
-	TwoFAEnabled         bool      `json:"two_fa_enabled"`
-	CreatedAt            time.Time `json:"created_at"`
-	UpdatedAt            time.Time `json:"updated_at"`
+	ID                  string    `json:"id"`
+	Phone               string    `json:"phone,omitempty"`
+	Email               string    `json:"email,omitempty"`
+	Username            string    `json:"username"`
+	DisplayName         string    `json:"display_name"`
+	Bio                 string    `json:"bio,omitempty"`
+	AvatarURL           string    `json:"avatar_url,omitempty"`
+	Status              string    `json:"status,omitempty"`
+	LastSeenAt          time.Time `json:"last_seen_at"`
+	IsOnline            bool      `json:"is_online"`
+	PrivacyLastSeen     string    `json:"privacy_last_seen,omitempty"`
+	PrivacyProfilePhoto string    `json:"privacy_profile_photo,omitempty"`
+	PrivacyAbout        string    `json:"privacy_about,omitempty"`
+	PrivacyGroups       string    `json:"privacy_groups,omitempty"`
+	PrivacyReadReceipts bool      `json:"privacy_read_receipts"`
+	TwoFAEnabled        bool      `json:"two_fa_enabled"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 // CreateIn contains input for creating an account.
@@ -51,15 +51,15 @@ type CreateIn struct {
 
 // UpdateIn contains input for updating an account.
 type UpdateIn struct {
-	DisplayName          *string `json:"display_name,omitempty"`
-	Bio                  *string `json:"bio,omitempty"`
-	AvatarURL            *string `json:"avatar_url,omitempty"`
-	Status               *string `json:"status,omitempty"`
-	PrivacyLastSeen      *string `json:"privacy_last_seen,omitempty"`
-	PrivacyProfilePhoto  *string `json:"privacy_profile_photo,omitempty"`
-	PrivacyAbout         *string `json:"privacy_about,omitempty"`
-	PrivacyGroups        *string `json:"privacy_groups,omitempty"`
-	PrivacyReadReceipts  *bool   `json:"privacy_read_receipts,omitempty"`
+	DisplayName         *string `json:"display_name,omitempty"`
+	Bio                 *string `json:"bio,omitempty"`
+	AvatarURL           *string `json:"avatar_url,omitempty"`
+	Status              *string `json:"status,omitempty"`
+	PrivacyLastSeen     *string `json:"privacy_last_seen,omitempty"`
+	PrivacyProfilePhoto *string `json:"privacy_profile_photo,omitempty"`
+	PrivacyAbout        *string `json:"privacy_about,omitempty"`
+	PrivacyGroups       *string `json:"privacy_groups,omitempty"`
+	PrivacyReadReceipts *bool   `json:"privacy_read_receipts,omitempty"`
 }
 
 // LoginIn contains input for login.

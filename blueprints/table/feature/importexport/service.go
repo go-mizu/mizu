@@ -316,22 +316,22 @@ func (s *Service) importMetaWithMaps(ctx context.Context, workspaceID, userID st
 
 // remapChoiceIDsInOptions remaps choice IDs in field options and updates the maps.
 func (s *Service) remapChoiceIDsInOptions(options json.RawMessage, fieldID string, allChoices map[string][]*fields.SelectChoice, maps *idMaps) json.RawMessage {
-	var opts map[string]interface{}
+	var opts map[string]any
 	if err := json.Unmarshal(options, &opts); err != nil {
 		return options
 	}
 
-	choices, ok := opts["choices"].([]interface{})
+	choices, ok := opts["choices"].([]any)
 	if !ok {
 		return options
 	}
 
 	// Get original choices to maintain order
 	originalChoices := allChoices[fieldID]
-	newChoices := make([]interface{}, 0, len(choices))
+	newChoices := make([]any, 0, len(choices))
 
 	for i, c := range choices {
-		choice, ok := c.(map[string]interface{})
+		choice, ok := c.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -346,7 +346,7 @@ func (s *Service) remapChoiceIDsInOptions(options json.RawMessage, fieldID strin
 			maps.choiceIDs[originalChoices[i].ID] = newID
 		}
 
-		newChoice := map[string]interface{}{
+		newChoice := map[string]any{
 			"id":    newID,
 			"name":  choice["name"],
 			"color": choice["color"],
@@ -424,8 +424,8 @@ func (s *Service) remapFieldConfig(config []views.FieldViewConfig, maps *idMaps)
 }
 
 // remapViewConfig remaps field IDs in view config JSON.
-func (s *Service) remapViewConfig(config json.RawMessage, maps *idMaps) map[string]interface{} {
-	var cfg map[string]interface{}
+func (s *Service) remapViewConfig(config json.RawMessage, maps *idMaps) map[string]any {
+	var cfg map[string]any
 	if err := json.Unmarshal(config, &cfg); err != nil {
 		return nil
 	}
@@ -444,15 +444,15 @@ func (s *Service) remapViewConfig(config json.RawMessage, maps *idMaps) map[stri
 }
 
 // remapValueChoiceIDs remaps choice IDs in filter values.
-func (s *Service) remapValueChoiceIDs(value interface{}, maps *idMaps) interface{} {
+func (s *Service) remapValueChoiceIDs(value any, maps *idMaps) any {
 	switch v := value.(type) {
 	case string:
 		if newID, ok := maps.choiceIDs[v]; ok {
 			return newID
 		}
 		return v
-	case []interface{}:
-		result := make([]interface{}, len(v))
+	case []any:
+		result := make([]any, len(v))
 		for i, item := range v {
 			result[i] = s.remapValueChoiceIDs(item, maps)
 		}
@@ -577,14 +577,14 @@ func (s *Service) importTableData(ctx context.Context, tm *TableMeta, newTableID
 	}
 
 	// Read and import records
-	var recordsData []map[string]interface{}
+	var recordsData []map[string]any
 	for {
 		row, err := reader.Read()
 		if err != nil {
 			break // EOF or error
 		}
 
-		cells := make(map[string]interface{})
+		cells := make(map[string]any)
 		for i, header := range headers {
 			if i >= len(row) {
 				continue
@@ -626,7 +626,7 @@ func (s *Service) importTableData(ctx context.Context, tm *TableMeta, newTableID
 }
 
 // formatCellValue converts a cell value to CSV string format.
-func (s *Service) formatCellValue(value interface{}, fld *fields.Field, choiceNames map[string]string) string {
+func (s *Service) formatCellValue(value any, fld *fields.Field, choiceNames map[string]string) string {
 	if value == nil {
 		return ""
 	}
@@ -646,7 +646,7 @@ func (s *Service) formatCellValue(value interface{}, fld *fields.Field, choiceNa
 		}
 	case fields.TypeMultiSelect:
 		// Convert choice IDs to names
-		if ids, ok := value.([]interface{}); ok {
+		if ids, ok := value.([]any); ok {
 			names := make([]string, 0, len(ids))
 			for _, id := range ids {
 				if idStr, ok := id.(string); ok {
@@ -682,7 +682,7 @@ func (s *Service) formatCellValue(value interface{}, fld *fields.Field, choiceNa
 		}
 	case fields.TypeCollaborators:
 		// Serialize as comma-separated
-		if ids, ok := value.([]interface{}); ok {
+		if ids, ok := value.([]any); ok {
 			strs := make([]string, len(ids))
 			for i, id := range ids {
 				strs[i] = fmt.Sprintf("%v", id)
@@ -695,7 +695,7 @@ func (s *Service) formatCellValue(value interface{}, fld *fields.Field, choiceNa
 }
 
 // parseCellValue converts a CSV string to the appropriate type.
-func (s *Service) parseCellValue(str string, fld *fields.Field, choiceIDByName map[string]string) interface{} {
+func (s *Service) parseCellValue(str string, fld *fields.Field, choiceIDByName map[string]string) any {
 	if str == "" {
 		return nil
 	}
@@ -737,7 +737,7 @@ func (s *Service) parseCellValue(str string, fld *fields.Field, choiceIDByName m
 		return nil
 	case fields.TypeAttachment:
 		// Parse JSON attachments
-		var attachments []map[string]interface{}
+		var attachments []map[string]any
 		if err := json.Unmarshal([]byte(str), &attachments); err == nil {
 			return attachments
 		}
@@ -777,4 +777,3 @@ func buildFieldMap(fieldList []*fields.Field) map[string]*fields.Field {
 	}
 	return m
 }
-

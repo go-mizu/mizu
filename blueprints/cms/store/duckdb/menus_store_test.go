@@ -155,7 +155,7 @@ func TestMenusStore_ListMenus(t *testing.T) {
 	store := NewMenusStore(db)
 	ctx := context.Background()
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		menu := &menus.Menu{
 			ID:        "menu-list-" + string(rune('a'+i)),
 			Name:      "Menu " + string(rune('A'+i)),
@@ -421,7 +421,7 @@ func TestMenusStore_GetItemsByMenu(t *testing.T) {
 	assertNoError(t, store.CreateMenu(ctx, menu))
 
 	// Create items
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		item := &menus.MenuItem{
 			ID:        "item-list-" + string(rune('a'+i)),
 			MenuID:    menu.ID,
@@ -625,7 +625,7 @@ func TestMenusStore_DeleteItemsByMenu(t *testing.T) {
 	assertNoError(t, store.CreateMenu(ctx, menu))
 
 	// Create multiple items
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		item := &menus.MenuItem{
 			ID:        "item-delall-" + string(rune('a'+i)),
 			MenuID:    menu.ID,

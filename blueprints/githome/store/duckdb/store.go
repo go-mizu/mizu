@@ -89,7 +89,7 @@ func (s *Store) Stats(ctx context.Context) (map[string]any, error) {
 
 // generateNodeID creates a GitHub-compatible node ID.
 func generateNodeID(prefix string, id int64) string {
-	return base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s_%d", prefix, id)))
+	return base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "%s_%d", prefix, id))
 }
 
 // nullString converts a string to sql.NullString.

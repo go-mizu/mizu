@@ -85,9 +85,9 @@ type FST struct {
 
 type fstNode struct {
 	children map[byte]*fstNode
-	label    []byte  // For compacted nodes (path compression)
-	value    uint64  // Output value (0 means no value)
-	hasValue bool    // Whether this node has a value
+	label    []byte // For compacted nodes (path compression)
+	value    uint64 // Output value (0 means no value)
+	hasValue bool   // Whether this node has a value
 }
 
 func (fst *FST) insert(term string, value uint64) {
@@ -200,7 +200,7 @@ func (fst *FST) PrefixSearch(prefix string) []TermValue {
 		// Check path-compressed label
 		if len(node.label) > 0 {
 			matchLen := min(len(node.label), len(prefix)-pos)
-			for i := 0; i < matchLen; i++ {
+			for i := range matchLen {
 				if node.label[i] != prefix[pos+i] {
 					return nil
 				}
@@ -311,7 +311,7 @@ func DeserializeFST(data []byte) *FST {
 
 	builder := NewFSTBuilder()
 
-	for i := 0; i < numTerms; i++ {
+	for range numTerms {
 		termLen := int(binary.LittleEndian.Uint32(data[pos:]))
 		pos += 4
 		term := string(data[pos : pos+termLen])

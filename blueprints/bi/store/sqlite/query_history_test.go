@@ -99,7 +99,7 @@ func TestQueryHistoryStore_List(t *testing.T) {
 		s := testStore(t) // Fresh store
 		ds := createTestDataSource(t, s)
 
-		for i := 0; i < 3; i++ {
+		for range 3 {
 			createTestQueryHistory(t, s, "user123", ds.ID)
 		}
 
@@ -118,7 +118,7 @@ func TestQueryHistoryStore_List(t *testing.T) {
 		s := testStore(t) // Fresh store
 		ds := createTestDataSource(t, s)
 
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			createTestQueryHistory(t, s, "user123", ds.ID)
 		}
 

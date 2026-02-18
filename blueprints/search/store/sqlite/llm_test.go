@@ -104,7 +104,7 @@ func TestLLMCacheStore_GetStats(t *testing.T) {
 	cache := store.LLMCache()
 
 	// Add some entries
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		entry := &LLMCacheEntry{
 			QueryHash:    "hash-" + string(rune('a'+i)),
 			Query:        "query-" + string(rune('a'+i)),
@@ -176,7 +176,7 @@ func TestLLMLogStore_List(t *testing.T) {
 	log := store.LLMLog()
 
 	// Log multiple entries
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		entry := &LLMLogEntry{
 			RequestID:   "req-" + string(rune('a'+i)),
 			Provider:    "claude",

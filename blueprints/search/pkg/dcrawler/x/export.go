@@ -72,9 +72,9 @@ func ExportCSV(tweets []Tweet, path string) error {
 
 // rssXML types for RSS 2.0 feed generation.
 type rssXML struct {
-	XMLName xml.Name    `xml:"rss"`
-	Version string      `xml:"version,attr"`
-	Channel rssChannel  `xml:"channel"`
+	XMLName xml.Name   `xml:"rss"`
+	Version string     `xml:"version,attr"`
+	Channel rssChannel `xml:"channel"`
 }
 
 type rssChannel struct {
@@ -102,16 +102,17 @@ func ExportRSS(tweets []Tweet, title, link, path string) error {
 
 	items := make([]rssItem, 0, len(tweets))
 	for _, t := range tweets {
-		desc := t.Text
+		var desc strings.Builder
+		desc.WriteString(t.Text)
 		if len(t.Photos) > 0 {
 			for _, p := range t.Photos {
-				desc += fmt.Sprintf(`<br/><img src="%s"/>`, p)
+				desc.WriteString(fmt.Sprintf(`<br/><img src="%s"/>`, p))
 			}
 		}
 		items = append(items, rssItem{
 			Title:       fmt.Sprintf("@%s: %s", t.Username, truncate(t.Text, 100)),
 			Link:        t.PermanentURL,
-			Description: desc,
+			Description: desc.String(),
 			PubDate:     t.PostedAt.Format(time.RFC1123Z),
 			GUID:        t.PermanentURL,
 			Author:      t.Username,

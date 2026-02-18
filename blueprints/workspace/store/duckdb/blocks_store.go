@@ -97,7 +97,7 @@ func (s *BlocksStore) Reorder(ctx context.Context, parentID string, blockIDs []s
 
 	// Build batch UPDATE with CASE statement to avoid N individual updates
 	var caseBuilder strings.Builder
-	args := make([]interface{}, 0, len(blockIDs)*2+len(blockIDs))
+	args := make([]any, 0, len(blockIDs)*2+len(blockIDs))
 
 	caseBuilder.WriteString("UPDATE blocks SET position = CASE id ")
 	for i, id := range blockIDs {
@@ -132,7 +132,7 @@ func (s *BlocksStore) BatchCreate(ctx context.Context, blocks []*blocks.Block) e
 	var sb strings.Builder
 	sb.WriteString("INSERT INTO blocks (id, page_id, parent_id, type, content, position, created_by, created_at, updated_by, updated_at) VALUES ")
 
-	args := make([]interface{}, 0, len(blocks)*10)
+	args := make([]any, 0, len(blocks)*10)
 	for i, b := range blocks {
 		if i > 0 {
 			sb.WriteString(", ")
@@ -152,7 +152,7 @@ func (s *BlocksStore) BatchDelete(ctx context.Context, ids []string) error {
 	}
 
 	placeholders := make([]string, len(ids))
-	args := make([]interface{}, len(ids))
+	args := make([]any, len(ids))
 	for i, id := range ids {
 		placeholders[i] = "?"
 		args[i] = id
