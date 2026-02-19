@@ -1,6 +1,7 @@
 package horse
 
 import (
+	"runtime"
 	"sync"
 	"sync/atomic"
 )
@@ -17,6 +18,7 @@ type writeBuffer struct {
 	capacity  int64        // capacity in bytes
 	volOffset int64        // volume offset where this buffer starts
 	frozen    atomic.Bool  // true = no more writes, being flushed
+	writers   atomic.Int32 // active writers count (for safe flush)
 }
 
 // newWriteBuffer creates a pre-allocated write buffer.
@@ -29,19 +31,27 @@ func newWriteBuffer(capacity int64, volOffset int64) *writeBuffer {
 	return wb
 }
 
-// claim atomically reserves space in the buffer.
+// claim atomically reserves space in the buffer and increments the writers count.
 // Returns the local offset within the buffer, or -1 if the buffer is full/frozen.
+// Caller MUST call done() after writing to the claimed region.
 func (wb *writeBuffer) claim(size int64) int64 {
 	if wb.frozen.Load() {
 		return -1
 	}
+	wb.writers.Add(1)
 	pos := wb.pos.Add(size) - size
 	if pos+size > wb.capacity {
 		// Overflowed — revert and signal full.
 		wb.pos.Add(-size)
+		wb.writers.Add(-1)
 		return -1
 	}
 	return pos
+}
+
+// done signals that a write at a previously claimed position is complete.
+func (wb *writeBuffer) done() {
+	wb.writers.Add(-1)
 }
 
 // written returns how many bytes have been written.
@@ -111,6 +121,7 @@ func (br *bufferRing) write(record []byte, valPosInRecord int) (recOff int64, va
 		pos := ab.claim(size)
 		if pos >= 0 {
 			copy(ab.data[pos:], record)
+			ab.done()
 			return ab.volOffset + pos, ab.volOffset + pos + int64(valPosInRecord)
 		}
 		// Buffer full — swap.
@@ -120,13 +131,14 @@ func (br *bufferRing) write(record []byte, valPosInRecord int) (recOff int64, va
 
 // writeInline claims space and returns a buffer slice for the caller to fill directly.
 // This avoids one memcpy for callers that can serialize in-place.
-// Returns (slice to fill, volume record offset, volume value offset given valPosInRecord).
-func (br *bufferRing) writeInline(totalSize int64, valPosInRecord int) (buf []byte, recOff int64, valOff int64) {
+// Caller MUST call wb.done() after filling the returned buffer slice.
+// Returns (slice to fill, volume record offset, volume value offset, writeBuffer for done()).
+func (br *bufferRing) writeInline(totalSize int64, valPosInRecord int) (buf []byte, recOff int64, valOff int64, wb *writeBuffer) {
 	for {
 		ab := br.activeBuffer()
 		pos := ab.claim(totalSize)
 		if pos >= 0 {
-			return ab.data[pos : pos+totalSize], ab.volOffset + pos, ab.volOffset + pos + int64(valPosInRecord)
+			return ab.data[pos : pos+totalSize], ab.volOffset + pos, ab.volOffset + pos + int64(valPosInRecord), ab
 		}
 		br.swap()
 	}
@@ -182,17 +194,29 @@ func (br *bufferRing) flusher() {
 // flushBuffer writes a buffer's contents to the volume and resets it.
 func (br *bufferRing) flushBuffer(idx int) {
 	wb := br.buffers[idx]
+
+	// Wait for all active writers to finish their memcpy.
+	for wb.writers.Load() > 0 {
+		runtime.Gosched()
+	}
+
 	n := wb.written()
 	if n == 0 {
 		wb.frozen.Store(false)
 		return
 	}
 
+	newTail := wb.volOffset + n
+
+	// Ensure file is large enough BEFORE writing.
+	if newTail > br.vol.fileSize.Load() {
+		br.vol.growFile(newTail)
+	}
+
 	// Single pwrite to volume — sequential, kernel-optimized.
 	br.vol.fd.WriteAt(wb.data[:n], wb.volOffset)
 
 	// Update volume tail.
-	newTail := wb.volOffset + n
 	for {
 		old := br.vol.tail.Load()
 		if newTail <= old {
@@ -201,11 +225,6 @@ func (br *bufferRing) flushBuffer(idx int) {
 		if br.vol.tail.CompareAndSwap(old, newTail) {
 			break
 		}
-	}
-
-	// Ensure file is large enough.
-	if newTail > br.vol.fileSize.Load() {
-		br.vol.growFile(newTail)
 	}
 
 	// Compute next volume offset for reuse.

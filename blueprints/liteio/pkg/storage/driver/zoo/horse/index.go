@@ -17,6 +17,25 @@ type indexEntry struct {
 	updated     int64 // UnixNano
 }
 
+// indexEntryPool reduces GC pressure by recycling indexEntry allocations.
+var indexEntryPool = sync.Pool{
+	New: func() any { return &indexEntry{} },
+}
+
+// acquireIndexEntry gets a zeroed indexEntry from the pool.
+func acquireIndexEntry() *indexEntry {
+	e := indexEntryPool.Get().(*indexEntry)
+	*e = indexEntry{}
+	return e
+}
+
+// releaseIndexEntry returns an indexEntry to the pool.
+func releaseIndexEntry(e *indexEntry) {
+	if e != nil {
+		indexEntryPool.Put(e)
+	}
+}
+
 // shard is one segment of the sharded hash index.
 type shard struct {
 	mu      sync.RWMutex
@@ -113,11 +132,13 @@ func (idx *shardedIndex) put(bucket, key string, e *indexEntry) {
 	s := &idx.shards[si]
 
 	s.mu.Lock()
-	_, exists := s.entries[ck]
+	old, exists := s.entries[ck]
 	s.entries[ck] = e
 	s.mu.Unlock()
 
-	if !exists {
+	if exists {
+		releaseIndexEntry(old)
+	} else {
 		bk := idx.getBucketKeys(bucket)
 		bk.mu.Lock()
 		sk := bk.getSegment(key)
@@ -145,13 +166,14 @@ func (idx *shardedIndex) remove(bucket, key string) bool {
 	s := &idx.shards[si]
 
 	s.mu.Lock()
-	_, exists := s.entries[ck]
+	old, exists := s.entries[ck]
 	if exists {
 		delete(s.entries, ck)
 	}
 	s.mu.Unlock()
 
 	if exists {
+		releaseIndexEntry(old)
 		bk := idx.getBucketKeys(bucket)
 		bk.mu.Lock()
 		sk := bk.getSegment(key)
