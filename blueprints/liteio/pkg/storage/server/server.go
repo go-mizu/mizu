@@ -45,6 +45,7 @@ import (
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/usagi"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/bee"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/horse"
+	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/zebra"
 )
 
 // Version can be set by the caller to embed version information in API docs.

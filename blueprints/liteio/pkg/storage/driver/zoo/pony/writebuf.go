@@ -1,4 +1,4 @@
-package zebra
+package pony
 
 import (
 	"runtime"
@@ -6,9 +6,14 @@ import (
 	"sync/atomic"
 )
 
-const defaultBufSize = 32 * 1024 * 1024 // 32MB per stripe
-const ringSize = 4
+// Default write buffer size: 4MB (vs Horse's 64MB).
+const defaultBufSize = 4 * 1024 * 1024
 
+// ringSize is the number of buffers in the ring.
+// 2 buffers keeps memory low: 1 accepts writes while 1 flushes.
+const ringSize = 2
+
+// writeBuffer is a pre-allocated contiguous memory region for accumulating writes.
 type writeBuffer struct {
 	data      []byte
 	pos       atomic.Int64
@@ -58,6 +63,7 @@ func (wb *writeBuffer) reset(volOffset int64) {
 	wb.frozen.Store(false)
 }
 
+// bufferRing manages a ring of write buffers with background flush.
 type bufferRing struct {
 	buffers  [ringSize]*writeBuffer
 	active   atomic.Int32
@@ -73,6 +79,7 @@ func newBufferRing(vol *volume, bufSize int64) *bufferRing {
 	if bufSize <= 0 {
 		bufSize = defaultBufSize
 	}
+
 	tail := vol.tail.Load()
 	br := &bufferRing{
 		vol:      vol,
@@ -84,8 +91,10 @@ func newBufferRing(vol *volume, bufSize int64) *bufferRing {
 		br.buffers[i] = newWriteBuffer(bufSize, tail+int64(i)*bufSize)
 	}
 	br.active.Store(0)
+
 	br.wg.Add(1)
 	go br.flusher()
+
 	return br
 }
 
@@ -167,6 +176,7 @@ func (br *bufferRing) flushBuffer(idx int) {
 	}
 
 	newTail := wb.volOffset + n
+
 	if newTail > br.vol.fileSize.Load() {
 		br.vol.growFile(newTail)
 	}

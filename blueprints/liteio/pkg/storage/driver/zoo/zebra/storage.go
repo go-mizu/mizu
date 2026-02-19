@@ -204,6 +204,12 @@ func (s *store) stripeFor(bucket, key string) *stripe {
 	return s.stripes[h%uint64(s.numStripes)]
 }
 
+// stripeForH returns both the stripe and hash (for single-hash read/write paths).
+func (s *store) stripeForH(bucket, key string) (*stripe, uint64) {
+	h := fnvHash(bucket, key)
+	return s.stripes[h%uint64(s.numStripes)], h
+}
+
 // fnvHash computes FNV-1a over bucket + 0x00 + key without allocation.
 func fnvHash(bucket, key string) uint64 {
 	const offset64 = 14695981039346656037
@@ -371,7 +377,7 @@ func (b *bucket) Write(_ context.Context, key string, src io.Reader, size int64,
 	}
 
 	now := fastNow()
-	st := b.st.stripeFor(b.name, key)
+	st, h := b.st.stripeForH(b.name, key)
 
 	// === Inline path: small values in sync=none bypass volume entirely ===
 	if b.st.inlineMax > 0 && b.st.syncMode == "none" && size >= 0 && size <= b.st.inlineMax {
@@ -390,7 +396,7 @@ func (b *bucket) Write(_ context.Context, key string, src io.Reader, size int64,
 			updated:     now,
 			inline:      data,
 		}
-		st.idx.put(b.name, key, e)
+		st.idx.putH(h, b.name, key, e)
 
 		return &storage.Object{
 			Bucket:      b.name,
@@ -506,7 +512,7 @@ func (b *bucket) Write(_ context.Context, key string, src io.Reader, size int64,
 	e.contentType = contentType
 	e.created = now
 	e.updated = now
-	st.idx.put(b.name, key, e)
+	st.idx.putH(h, b.name, key, e)
 
 	if b.st.syncMode == "full" {
 		st.vol.sync()
@@ -533,8 +539,8 @@ func (b *bucket) Open(_ context.Context, key string, offset, length int64, _ sto
 		}
 	}
 
-	st := b.st.stripeFor(b.name, key)
-	e, ok := st.idx.get(b.name, key)
+	st, h := b.st.stripeForH(b.name, key)
+	e, ok := st.idx.getH(h, b.name, key)
 	if !ok {
 		return nil, nil, storage.ErrNotExist
 	}
@@ -603,8 +609,8 @@ func (b *bucket) Stat(_ context.Context, key string, _ storage.Options) (*storag
 		}, nil
 	}
 
-	st := b.st.stripeFor(b.name, key)
-	e, ok := st.idx.get(b.name, key)
+	st, h := b.st.stripeForH(b.name, key)
+	e, ok := st.idx.getH(h, b.name, key)
 	if !ok {
 		return nil, storage.ErrNotExist
 	}

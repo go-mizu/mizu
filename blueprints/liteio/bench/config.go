@@ -201,6 +201,24 @@ func (c *Config) BenchTimeForSize(size int) time.Duration {
 	}
 }
 
+// MaxIterationsForSize caps the adaptive benchmark iteration count based on object size.
+// Prevents the adaptive algorithm from overshooting on operations like Read/1MB where
+// initial iterations are fast (page cache hot) but the algorithm commits to millions.
+func (c *Config) MaxIterationsForSize(size int) int {
+	switch {
+	case size >= 100*1024*1024: // 100MB+: cap at 100 (10 GB max)
+		return 100
+	case size >= 10*1024*1024: // 10MB+: cap at 1K (10 GB max)
+		return 1_000
+	case size >= 1*1024*1024: // 1MB+: cap at 10K (10 GB max)
+		return 10_000
+	case size >= 64*1024: // 64KB+: cap at 50K (3.2 GB max)
+		return 50_000
+	default:
+		return c.MaxBenchIterations
+	}
+}
+
 // DriverConfig holds connection info for a driver.
 type DriverConfig struct {
 	Name           string
@@ -366,6 +384,13 @@ func AllDriverConfigs() []DriverConfig {
 			DataPath: "/tmp/horse-bench",
 		},
 		{
+			Name:     "pony",
+			DSN:      "pony:///tmp/pony-bench?sync=none&prealloc=256&slots=65536",
+			Bucket:   "test-bucket",
+			Enabled:  true,
+			DataPath: "/tmp/pony-bench",
+		},
+		{
 			Name:     "bee3",
 			DSN:      "bee:///tmp/bee3-bench?nodes=3&replicas=3&w=1&r=1&sync=none&inline_kb=64&repair=true&repair_workers=6&repair_max_kb=256",
 			Bucket:   "test-bucket",
@@ -388,6 +413,43 @@ func AllDriverConfigs() []DriverConfig {
 		{
 			Name:    "bee5net",
 			DSN:     "bee:///?peers=http://127.0.0.1:9501,http://127.0.0.1:9502,http://127.0.0.1:9503,http://127.0.0.1:9504,http://127.0.0.1:9505&replicas=3&w=1&r=1&repair=true&repair_workers=10&repair_max_kb=256",
+			Bucket:  "test-bucket",
+			Enabled: true,
+		},
+		{
+			Name:     "zebra",
+			DSN:      "zebra:///tmp/zebra-bench?stripes=8&sync=none&inline_kb=4&prealloc=1024",
+			Bucket:   "test-bucket",
+			Enabled:  true,
+			DataPath: "/tmp/zebra-bench",
+		},
+		{
+			Name:    "zebra_s3",
+			DSN:     "s3://zebra:zebra123@localhost:9220/test-bucket?insecure=true&force_path_style=true&unsigned_payload=true",
+			Bucket:  "test-bucket",
+			Enabled: true,
+		},
+		{
+			Name:    "zebra3net",
+			DSN:     "zebra:///?peers=127.0.0.1:9601,127.0.0.1:9602,127.0.0.1:9603&replicas=1&w=1&r=1",
+			Bucket:  "test-bucket",
+			Enabled: true,
+		},
+		{
+			Name:    "zebra5net",
+			DSN:     "zebra:///?peers=127.0.0.1:9601,127.0.0.1:9602,127.0.0.1:9603,127.0.0.1:9604,127.0.0.1:9605&replicas=1&w=1&r=1",
+			Bucket:  "test-bucket",
+			Enabled: true,
+		},
+		{
+			Name:    "zebra3net_s3",
+			DSN:     "s3://zebra3:zebra3123@localhost:9221/test-bucket?insecure=true&force_path_style=true&unsigned_payload=true",
+			Bucket:  "test-bucket",
+			Enabled: true,
+		},
+		{
+			Name:    "zebra5net_s3",
+			DSN:     "s3://zebra5:zebra5123@localhost:9222/test-bucket?insecure=true&force_path_style=true&unsigned_payload=true",
 			Bucket:  "test-bucket",
 			Enabled: true,
 		},

@@ -21,6 +21,8 @@ import (
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/usagi"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/bee"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/horse"
+	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/pony"
+	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/zebra"
 )
 
 // Runner orchestrates benchmark execution.
@@ -489,7 +491,7 @@ func (r *Runner) benchmarkWrite(ctx context.Context, bucket storage.Bucket, driv
 	// Adaptive benchmark (Go-style)
 	collector := NewCollector()
 	benchTime := r.config.BenchTimeForSize(size)
-	ab := NewAdaptiveBenchmarkWithContext(ctx, benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
+	ab := NewAdaptiveBenchmarkWithContext(ctx, benchTime, r.config.MinBenchIterations, r.config.MaxIterationsForSize(size))
 
 	// Start live progress display
 	r.currentIter = 0
@@ -559,7 +561,7 @@ func (r *Runner) benchmarkRead(ctx context.Context, bucket storage.Bucket, drive
 	// Adaptive benchmark with TTFB tracking
 	collector := NewCollector()
 	benchTime := r.config.BenchTimeForSize(size)
-	ab := NewAdaptiveBenchmarkWithContext(ctx, benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
+	ab := NewAdaptiveBenchmarkWithContext(ctx, benchTime, r.config.MinBenchIterations, r.config.MaxIterationsForSize(size))
 	var keyIdx uint64
 
 	// Start live progress display
@@ -815,7 +817,7 @@ func (r *Runner) benchmarkParallelWrite(ctx context.Context, bucket storage.Buck
 	// Adaptive benchmark
 	collector := NewCollector()
 	benchTime := r.config.BenchTimeForSize(size)
-	ab := NewAdaptiveBenchmarkWithContext(ctx, benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
+	ab := NewAdaptiveBenchmarkWithContext(ctx, benchTime, r.config.MinBenchIterations, r.config.MaxIterationsForSize(size))
 
 	sem := make(chan struct{}, concurrency)
 	opTimeout := 10 * time.Second
@@ -907,7 +909,7 @@ func (r *Runner) benchmarkParallelRead(ctx context.Context, bucket storage.Bucke
 	// Adaptive benchmark
 	collector := NewCollector()
 	benchTime := r.config.BenchTimeForSize(size)
-	ab := NewAdaptiveBenchmarkWithContext(ctx, benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
+	ab := NewAdaptiveBenchmarkWithContext(ctx, benchTime, r.config.MinBenchIterations, r.config.MaxIterationsForSize(size))
 
 	var keyIdx uint64
 	sem := make(chan struct{}, concurrency)
@@ -1287,7 +1289,7 @@ func (r *Runner) benchmarkCopy(ctx context.Context, bucket storage.Bucket, drive
 	// Adaptive benchmark
 	collector := NewCollector()
 	benchTime := r.config.BenchTimeForSize(size)
-	ab := NewAdaptiveBenchmarkWithContext(ctx, benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
+	ab := NewAdaptiveBenchmarkWithContext(ctx, benchTime, r.config.MinBenchIterations, r.config.MaxIterationsForSize(size))
 
 	// Start live progress display
 	r.currentIter = 0
@@ -1444,7 +1446,7 @@ func (r *Runner) benchmarkMultipart(ctx context.Context, bucket storage.Bucket, 
 
 	// Use shorter BenchTime for multipart (expensive operation)
 	benchTime := r.config.BenchTimeForSize(totalSize)
-	ab := NewAdaptiveBenchmarkWithContext(ctx, benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
+	ab := NewAdaptiveBenchmarkWithContext(ctx, benchTime, r.config.MinBenchIterations, r.config.MaxIterationsForSize(totalSize))
 
 	// Start live progress display
 	r.currentIter = 0

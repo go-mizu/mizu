@@ -34,7 +34,6 @@ func releaseEntry(e *indexEntry) {
 	if e != nil && e.inline == nil {
 		entryPool.Put(e)
 	}
-	// Don't pool inline entries — their []byte would need special handling.
 }
 
 type indexShard struct {
@@ -43,36 +42,66 @@ type indexShard struct {
 	_       [40]byte              // cache-line padding
 }
 
+// bucketKeyList tracks all keys for a bucket with lazy sorting.
+type bucketKeyList struct {
+	keys   map[string]struct{}
+	sorted []string
+	dirty  bool
+}
+
+func (bkl *bucketKeyList) add(key string) {
+	if _, exists := bkl.keys[key]; !exists {
+		bkl.keys[key] = struct{}{}
+		bkl.dirty = true
+	}
+}
+
+func (bkl *bucketKeyList) remove(key string) {
+	if _, exists := bkl.keys[key]; exists {
+		delete(bkl.keys, key)
+		bkl.dirty = true
+	}
+}
+
+func (bkl *bucketKeyList) ensureSorted() []string {
+	if !bkl.dirty {
+		return bkl.sorted
+	}
+	bkl.sorted = bkl.sorted[:0]
+	for k := range bkl.keys {
+		bkl.sorted = append(bkl.sorted, k)
+	}
+	sort.Strings(bkl.sorted)
+	bkl.dirty = false
+	return bkl.sorted
+}
+
 // index is the per-stripe sharded hash index.
-// No bucketKeySet — listing scans shards on demand (saves ~100ns/write).
+// Stripe-level bucket key tracking enables fast list.
 type index struct {
 	shards [shardCount]indexShard
+
+	// Stripe-level bucket key tracking for efficient list operations.
+	// Separate from shard locks to avoid holding shard locks during sort.
+	keysMu     sync.RWMutex
+	bucketKeys map[string]*bucketKeyList // bucket → sorted keys
 }
 
 func newIndex() *index {
-	idx := &index{}
+	idx := &index{
+		bucketKeys: make(map[string]*bucketKeyList, 4),
+	}
 	for i := range idx.shards {
 		idx.shards[i].entries = make(map[string]*indexEntry, 64)
 	}
 	return idx
 }
 
-// shardForParts computes shard index from bucket+key without allocation (FNV-1a).
+// shardForParts computes shard index using high 32 bits of 64-bit FNV-1a.
+// Must match getH/putH which use (h>>32) % shardCount.
 func shardForParts(bucket, key string) uint32 {
-	const offset32 = 2166136261
-	const prime32 = 16777619
-	h := uint32(offset32)
-	for i := 0; i < len(bucket); i++ {
-		h ^= uint32(bucket[i])
-		h *= prime32
-	}
-	h ^= 0
-	h *= prime32
-	for i := 0; i < len(key); i++ {
-		h ^= uint32(key[i])
-		h *= prime32
-	}
-	return h % shardCount
+	h := fnvHash(bucket, key)
+	return uint32(h>>32) % shardCount
 }
 
 func compositeKey(bucket, key string) string {
@@ -98,6 +127,16 @@ func unsafeString(b []byte) string {
 
 func (idx *index) put(bucket, key string, e *indexEntry) {
 	si := shardForParts(bucket, key)
+	idx.putToShard(si, bucket, key, e)
+}
+
+// putH uses a pre-computed 64-bit hash (high 32 bits) for shard selection.
+func (idx *index) putH(h uint64, bucket, key string, e *indexEntry) {
+	si := uint32(h>>32) % shardCount
+	idx.putToShard(si, bucket, key, e)
+}
+
+func (idx *index) putToShard(si uint32, bucket, key string, e *indexEntry) {
 	s := &idx.shards[si]
 
 	var buf [256]byte
@@ -111,6 +150,18 @@ func (idx *index) put(bucket, key string, e *indexEntry) {
 	s.entries[ck] = e
 	s.mu.Unlock()
 
+	// Track key in bucket key list (separate lock from shard).
+	if !exists {
+		idx.keysMu.Lock()
+		bkl := idx.bucketKeys[bucket]
+		if bkl == nil {
+			bkl = &bucketKeyList{keys: make(map[string]struct{}, 64)}
+			idx.bucketKeys[bucket] = bkl
+		}
+		bkl.add(key)
+		idx.keysMu.Unlock()
+	}
+
 	if exists {
 		releaseEntry(old)
 	}
@@ -118,6 +169,16 @@ func (idx *index) put(bucket, key string, e *indexEntry) {
 
 func (idx *index) get(bucket, key string) (*indexEntry, bool) {
 	si := shardForParts(bucket, key)
+	return idx.getFromShard(si, bucket, key)
+}
+
+// getH uses a pre-computed 64-bit hash (high 32 bits) for shard selection.
+func (idx *index) getH(h uint64, bucket, key string) (*indexEntry, bool) {
+	si := uint32(h>>32) % shardCount
+	return idx.getFromShard(si, bucket, key)
+}
+
+func (idx *index) getFromShard(si uint32, bucket, key string) (*indexEntry, bool) {
 	s := &idx.shards[si]
 
 	var buf [256]byte
@@ -144,73 +205,74 @@ func (idx *index) remove(bucket, key string) bool {
 	s.mu.Unlock()
 
 	if exists {
+		// Remove from bucket key list.
+		idx.keysMu.Lock()
+		if bkl := idx.bucketKeys[bucket]; bkl != nil {
+			bkl.remove(key)
+		}
+		idx.keysMu.Unlock()
 		releaseEntry(old)
 	}
 	return exists
 }
 
-// list scans all shards for entries matching bucket+prefix, sorted by key.
-// No pre-built key sets — O(entries_in_stripe) scan, fast for typical workloads.
+// list returns entries matching bucket+prefix, sorted by key.
+// Uses stripe-level sorted key list with binary search for efficient prefix matching.
+// The sorted list is built lazily on first call and reused until new keys are added.
 func (idx *index) list(bucket, prefix string) []listResult {
-	ckPrefix := bucket + "\x00" + prefix
-	bucketPrefixLen := len(bucket) + 1
-
-	var results []listResult
-	for i := range idx.shards {
-		s := &idx.shards[i]
-		s.mu.RLock()
-		for k, e := range s.entries {
-			if strings.HasPrefix(k, ckPrefix) {
-				key := k[bucketPrefixLen:]
-				results = append(results, listResult{key: key, entry: e})
-			}
-		}
-		s.mu.RUnlock()
+	idx.keysMu.Lock()
+	bkl := idx.bucketKeys[bucket]
+	if bkl == nil {
+		idx.keysMu.Unlock()
+		return nil
 	}
 
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].key < results[j].key
-	})
+	sorted := bkl.ensureSorted()
+	// Binary search for prefix start.
+	start := sort.SearchStrings(sorted, prefix)
 
+	var matching []string
+	for i := start; i < len(sorted); i++ {
+		if prefix != "" && !strings.HasPrefix(sorted[i], prefix) {
+			break
+		}
+		matching = append(matching, sorted[i])
+	}
+	idx.keysMu.Unlock()
+
+	if len(matching) == 0 {
+		return nil
+	}
+
+	// Look up entries for matching keys.
+	results := make([]listResult, 0, len(matching))
+	for _, key := range matching {
+		si := shardForParts(bucket, key)
+		s := &idx.shards[si]
+		var buf [256]byte
+		ck := unsafeString(compositeKeyBuf(buf[:0], bucket, key))
+		s.mu.RLock()
+		e, ok := s.entries[ck]
+		s.mu.RUnlock()
+		if ok {
+			results = append(results, listResult{key: key, entry: e})
+		}
+	}
+
+	// Already sorted from binary search.
 	return results
 }
 
-// hasBucket scans shards to check if any keys exist for the bucket.
+// hasBucket checks if any keys exist for the bucket.
 func (idx *index) hasBucket(bucket string) bool {
-	prefix := bucket + "\x00"
-	for i := range idx.shards {
-		s := &idx.shards[i]
-		s.mu.RLock()
-		for k := range s.entries {
-			if strings.HasPrefix(k, prefix) {
-				s.mu.RUnlock()
-				return true
-			}
-		}
-		s.mu.RUnlock()
+	idx.keysMu.RLock()
+	bkl := idx.bucketKeys[bucket]
+	n := 0
+	if bkl != nil {
+		n = len(bkl.keys)
 	}
-	return false
-}
-
-// bucketNames returns all unique bucket names across all shards.
-func (idx *index) bucketNames() []string {
-	seen := make(map[string]struct{})
-	for i := range idx.shards {
-		s := &idx.shards[i]
-		s.mu.RLock()
-		for k := range s.entries {
-			if sep := strings.IndexByte(k, 0); sep >= 0 {
-				seen[k[:sep]] = struct{}{}
-			}
-		}
-		s.mu.RUnlock()
-	}
-	names := make([]string, 0, len(seen))
-	for n := range seen {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	return names
+	idx.keysMu.RUnlock()
+	return n > 0
 }
 
 type listResult struct {
