@@ -41,21 +41,23 @@ type Runner struct {
 	currentOp       string
 	currentIter     int64
 	currentDuration time.Duration
-	payloads        map[int][]byte
-	payloadsMu      sync.Mutex
-	readBufPool     sync.Pool
+	payloads          map[int][]byte
+	payloadsMu        sync.Mutex
+	readBufPool       sync.Pool
+	resourceSnapshots map[string]*ResourceSummary
 }
 
 // NewRunner creates a new benchmark runner.
 func NewRunner(cfg *Config) *Runner {
 	r := &Runner{
-		config:          cfg,
-		drivers:         FilterDrivers(AllDriverConfigs(), cfg.Drivers),
-		results:         make([]*Metrics, 0),
-		dockerStats:     make(map[string]*DockerStats),
-		logger:          func(format string, args ...any) { fmt.Printf(format+"\n", args...) },
-		dockerCollector: NewDockerStatsCollector("all-"),
-		payloads:        make(map[int][]byte),
+		config:            cfg,
+		drivers:           FilterDrivers(AllDriverConfigs(), cfg.Drivers),
+		results:           make([]*Metrics, 0),
+		dockerStats:       make(map[string]*DockerStats),
+		logger:            func(format string, args ...any) { fmt.Printf(format+"\n", args...) },
+		dockerCollector:   NewDockerStatsCollector("all-"),
+		payloads:          make(map[int][]byte),
+		resourceSnapshots: make(map[string]*ResourceSummary),
 	}
 	if cfg.ReadBufferSize > 0 {
 		r.readBufPool.New = func() any {
@@ -191,6 +193,15 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 
 		r.logger("=== [%d/%d] Benchmarking %s ===", i+1, len(available), driver.Name)
 
+		// Start resource tracking for embedded drivers (no container).
+		var tracker *ResourceTracker
+		if r.config.ResourceTracking && driver.Container == "" && driver.DataPath != "" {
+			tracker = NewResourceTracker(driver.DataPath)
+			snap := tracker.Snapshot("before")
+			r.logger("  Resource: RSS=%.1fMB, GoSys=%.1fMB, Heap=%.1fMB, Disk=%.1fMB",
+				snap.PeakRSSMB, snap.GoSysMB, snap.GoHeapMB, snap.DiskUsageMB)
+		}
+
 		// Collect Docker stats before benchmarks (to show growth)
 		if r.config.DockerStats && driver.Container != "" {
 			r.logger("  Collecting initial Docker stats...")
@@ -216,6 +227,15 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			r.logger("Benchmark cancelled after %s", driver.Name)
 			return r.generateReport(), ctx.Err()
 		default:
+		}
+
+		// Capture resource snapshot after benchmarks for embedded drivers.
+		if tracker != nil {
+			snap := tracker.Snapshot("after")
+			summary := tracker.Summary()
+			r.resourceSnapshots[driver.Name] = summary
+			r.logger("  Resource: RSS=%.1fMB, GoSys=%.1fMB, Heap=%.1fMB, Disk=%.1fMB, GC=%d",
+				snap.PeakRSSMB, snap.GoSysMB, snap.GoHeapMB, snap.DiskUsageMB, snap.NumGC)
 		}
 
 		// Collect Docker stats after benchmarks
@@ -1182,7 +1202,22 @@ func (r *Runner) payload(size int) []byte {
 	return data
 }
 
+// stripWriteTo wraps a reader to hide the WriteTo interface.
+// This forces io.Copy to use Read() calls through a buffer,
+// measuring actual data transfer instead of pointer-passing to io.Discard.
+type stripWriteTo struct{ io.Reader }
+
+func (s stripWriteTo) Read(p []byte) (int, error) { return s.Reader.Read(p) }
+func (s stripWriteTo) Close() error {
+	if c, ok := s.Reader.(io.Closer); ok {
+		return c.Close()
+	}
+	return nil
+}
+
 func (r *Runner) copyToDiscard(src io.Reader) {
+	// Strip WriteTo to force actual data reads through buffer.
+	src = stripWriteTo{src}
 	if r.config.ReadBufferSize <= 0 {
 		io.Copy(io.Discard, src)
 		return
@@ -1198,13 +1233,17 @@ func (r *Runner) copyToDiscard(src io.Reader) {
 }
 
 func (r *Runner) generateReport() *Report {
-	return &Report{
+	rpt := &Report{
 		Timestamp:         time.Now(),
 		Config:            r.config,
 		Results:           r.results,
 		DockerStats:       r.dockerStats,
 		SkippedBenchmarks: r.skippedBenchmarks,
 	}
+	if len(r.resourceSnapshots) > 0 {
+		rpt.ResourceSnapshots = r.resourceSnapshots
+	}
+	return rpt
 }
 
 func (r *Runner) benchmarkRangeRead(ctx context.Context, bucket storage.Bucket, driver string) error {

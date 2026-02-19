@@ -484,6 +484,20 @@ func (v *volume) growFile(needed int64) error {
 	if err := v.fd.Truncate(newSize); err != nil {
 		return fmt.Errorf("pony: truncate: %w", err)
 	}
+
+	// Remap mmap to cover the new file size.
+	oldRegion := v.region.Load()
+	if oldRegion != nil && oldRegion.buf != nil {
+		syscall.Munmap(oldRegion.buf)
+	}
+
+	newBuf, err := syscall.Mmap(int(v.fd.Fd()), 0, int(newSize),
+		syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+	if err != nil {
+		return fmt.Errorf("pony: remap volume: %w", err)
+	}
+
+	v.region.Store(&mmapRegion{buf: newBuf, capacity: newSize})
 	v.fileSize.Store(newSize)
 	return nil
 }

@@ -101,6 +101,10 @@ type Config struct {
 	// Filter is a substring filter for benchmark names.
 	// Only benchmarks containing this string will run. Empty means all.
 	Filter string
+
+	// ResourceTracking enables Go runtime memory and disk usage tracking.
+	// Captures snapshots before/after each driver benchmark.
+	ResourceTracking bool
 }
 
 // DefaultConfig returns sensible defaults.
@@ -135,6 +139,7 @@ func DefaultConfig() *Config {
 		ScaleMaxBytes:      2 * 1024 * 1024 * 1024, // 2GB cap to prevent runaway disk usage
 		CleanupDataPaths:   true,
 		CleanupDockerData:  true,
+		ResourceTracking:   true,
 	}
 }
 
