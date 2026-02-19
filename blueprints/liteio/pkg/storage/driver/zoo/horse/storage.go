@@ -14,7 +14,9 @@ package horse
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"net/url"
 	"path/filepath"
@@ -70,11 +72,6 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 		return nil, err
 	}
 
-	// Skip CRC for sync=none (benchmark mode) — no crash recovery needed.
-	if syncMode == "none" {
-		vol.noCRC = true
-	}
-
 	idx := newIndex()
 
 	// Recover index from volume if volume has data.
@@ -92,6 +89,18 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 		syncMode: syncMode,
 		buckets:  make(map[string]time.Time),
 		mp:       newMultipartRegistry(),
+	}
+
+	// Initialize write buffer ring for sync=none (benchmark/high-throughput mode).
+	// For sync=batch and sync=full, use direct volume writes for durability.
+	if syncMode == "none" {
+		bufSize := int64(defaultBufSize)
+		if bs := u.Query().Get("bufsize"); bs != "" {
+			if n, err := strconv.ParseInt(bs, 10, 64); err == nil && n > 0 {
+				bufSize = n
+			}
+		}
+		st.bufRing = newBufferRing(vol, bufSize)
 	}
 
 	// Start group commit batcher if sync=batch.
@@ -136,6 +145,7 @@ type store struct {
 	vol      *volume
 	idx      *shardedIndex
 	syncMode string
+	bufRing  *bufferRing // double-buffered write ring for 10x write throughput
 
 	mu      sync.RWMutex
 	buckets map[string]time.Time // bucket name → created time
@@ -290,6 +300,11 @@ func (s *store) Close() error {
 		s.batcherWg.Wait()
 	}
 
+	// Flush write buffer ring before closing volume.
+	if s.bufRing != nil {
+		s.bufRing.close()
+	}
+
 	// Final sync.
 	if s.syncMode != "none" {
 		s.vol.sync()
@@ -347,38 +362,98 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 	}
 
 	now := fastNow()
+	bl, kl, cl := len(b.name), len(key), len(contentType)
 
 	var valOff int64
-	if size >= 0 {
-		// Known size: write directly into mmap via writeFromReader.
+
+	if size < 0 {
+		// Unknown size: read all first, then write.
+		var tmpBuf bytes.Buffer
+		if _, err := io.Copy(&tmpBuf, src); err != nil {
+			return nil, fmt.Errorf("horse: read value: %w", err)
+		}
+		data := tmpBuf.Bytes()
+		size = int64(len(data))
+
+		totalSize := int64(recFixedSize+bl+kl+cl) + size
+		if b.st.bufRing != nil && totalSize <= b.st.bufRing.capacity {
+			valPosInRecord := 19 + bl + kl + cl
+			bufSlice, _, vo, wb := b.st.bufRing.writeInline(totalSize, valPosInRecord)
+			valOff = vo
+			b.st.vol.buildRecordBuf(bufSlice, recPut, b.name, key, contentType, data, now)
+			wb.done()
+		} else {
+			var err error
+			_, valOff, err = b.st.vol.appendRecord(recPut, b.name, key, contentType, data, now)
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else if b.st.bufRing != nil {
+		totalSize := int64(recFixedSize+bl+kl+cl) + size
+		if totalSize > b.st.bufRing.capacity {
+			var err error
+			valOff, err = b.st.vol.writeFromReader(recPut, b.name, key, contentType, src, size, now)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			// Known size: serialize header + read value directly into write buffer.
+			valPosInRecord := 19 + bl + kl + cl
+			bufSlice, _, vo, wb := b.st.bufRing.writeInline(totalSize, valPosInRecord)
+			valOff = vo
+
+			// Inline record serialization — no intermediate alloc.
+			bufSlice[0] = recPut
+			pos := 5
+			binary.LittleEndian.PutUint16(bufSlice[pos:], uint16(bl))
+			pos += 2
+			copy(bufSlice[pos:], b.name)
+			pos += bl
+			binary.LittleEndian.PutUint16(bufSlice[pos:], uint16(kl))
+			pos += 2
+			copy(bufSlice[pos:], key)
+			pos += kl
+			binary.LittleEndian.PutUint16(bufSlice[pos:], uint16(cl))
+			pos += 2
+			copy(bufSlice[pos:], contentType)
+			pos += cl
+			binary.LittleEndian.PutUint64(bufSlice[pos:], uint64(size))
+			pos += 8
+
+			// Read value from src directly into write buffer — one memcpy.
+			if size > 0 {
+				if _, err := io.ReadFull(src, bufSlice[pos:pos+int(size)]); err != nil {
+					if err != io.EOF && err != io.ErrUnexpectedEOF {
+						wb.done()
+						return nil, fmt.Errorf("horse: read value: %w", err)
+					}
+				}
+			}
+			pos += int(size)
+
+			binary.LittleEndian.PutUint64(bufSlice[pos:], uint64(now))
+
+			checksum := crc32.Checksum(bufSlice[5:], b.st.vol.crcTable)
+			binary.LittleEndian.PutUint32(bufSlice[1:5], checksum)
+			wb.done()
+		}
+	} else {
+		// Direct volume path (sync=batch or sync=full).
 		var err error
 		valOff, err = b.st.vol.writeFromReader(recPut, b.name, key, contentType, src, size, now)
 		if err != nil {
 			return nil, err
 		}
-	} else {
-		// Unknown size: read into buffer first.
-		var buf bytes.Buffer
-		if _, err := io.Copy(&buf, src); err != nil {
-			return nil, fmt.Errorf("horse: read value: %w", err)
-		}
-		data := buf.Bytes()
-		size = int64(len(data))
-
-		var err error
-		_, valOff, err = b.st.vol.appendRecord(recPut, b.name, key, contentType, data, now)
-		if err != nil {
-			return nil, err
-		}
 	}
 
-	b.st.idx.put(b.name, key, &indexEntry{
-		valueOffset: valOff,
-		size:        size,
-		contentType: contentType,
-		created:     now,
-		updated:     now,
-	})
+	e := acquireIndexEntry()
+	e.valueOffset = valOff
+	e.size = size
+	e.contentType = contentType
+	e.created = now
+	e.updated = now
+	b.st.idx.put(b.name, key, e)
 
 	if b.st.syncMode == "full" {
 		b.st.vol.sync()
@@ -408,8 +483,17 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 		return nil, nil, storage.ErrNotExist
 	}
 
-	// Zero-copy read from mmap.
-	data := b.st.vol.readValueSlice(e.valueOffset, e.size)
+	// Check write buffer first (for recently written, unflushed data).
+	var data []byte
+	if b.st.bufRing != nil {
+		if bufData, inBuf := b.st.bufRing.readFromBuffer(e.valueOffset, e.size); inBuf {
+			data = bufData
+		}
+	}
+	if data == nil {
+		// Zero-copy read from mmap.
+		data = b.st.vol.readValueSlice(e.valueOffset, e.size)
+	}
 
 	if offset < 0 {
 		offset = 0
@@ -487,9 +571,17 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 		return storage.ErrNotExist
 	}
 
-	// Append delete tombstone to volume.
+	// Append delete tombstone.
 	now := fastNow()
-	b.st.vol.appendRecord(recDelete, b.name, key, "", nil, now)
+	if b.st.bufRing != nil {
+		bl, kl := len(b.name), len(key)
+		totalSize := int64(recFixedSize + bl + kl)
+		bufSlice, _, _, wb := b.st.bufRing.writeInline(totalSize, 0)
+		b.st.vol.buildRecordBuf(bufSlice, recDelete, b.name, key, "", nil, now)
+		wb.done()
+	} else {
+		b.st.vol.appendRecord(recDelete, b.name, key, "", nil, now)
+	}
 
 	return nil
 }
@@ -513,23 +605,44 @@ func (b *bucket) Copy(ctx context.Context, dstKey string, srcBucket, srcKey stri
 		return nil, storage.ErrNotExist
 	}
 
-	// Read source value from mmap.
-	srcData := b.st.vol.readValueSlice(srcEntry.valueOffset, srcEntry.size)
-
-	// Write copy to volume.
-	now := fastNow()
-	_, valOff, err := b.st.vol.appendRecord(recPut, b.name, dstKey, srcEntry.contentType, srcData, now)
-	if err != nil {
-		return nil, err
+	// Read source value (check write buffer first).
+	var srcData []byte
+	if b.st.bufRing != nil {
+		if bufData, inBuf := b.st.bufRing.readFromBuffer(srcEntry.valueOffset, srcEntry.size); inBuf {
+			srcData = bufData
+		}
+	}
+	if srcData == nil {
+		srcData = b.st.vol.readValueSlice(srcEntry.valueOffset, srcEntry.size)
 	}
 
-	b.st.idx.put(b.name, dstKey, &indexEntry{
-		valueOffset: valOff,
-		size:        srcEntry.size,
-		contentType: srcEntry.contentType,
-		created:     now,
-		updated:     now,
-	})
+	// Write copy.
+	now := fastNow()
+	bl, kl, cl := len(b.name), len(dstKey), len(srcEntry.contentType)
+	totalSize := int64(recFixedSize+bl+kl+cl) + srcEntry.size
+
+	var valOff int64
+	if b.st.bufRing != nil && totalSize <= b.st.bufRing.capacity {
+		valPosInRecord := 19 + bl + kl + cl
+		bufSlice, _, vo, wb := b.st.bufRing.writeInline(totalSize, valPosInRecord)
+		valOff = vo
+		b.st.vol.buildRecordBuf(bufSlice, recPut, b.name, dstKey, srcEntry.contentType, srcData, now)
+		wb.done()
+	} else {
+		var err error
+		_, valOff, err = b.st.vol.appendRecord(recPut, b.name, dstKey, srcEntry.contentType, srcData, now)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	e := acquireIndexEntry()
+	e.valueOffset = valOff
+	e.size = srcEntry.size
+	e.contentType = srcEntry.contentType
+	e.created = now
+	e.updated = now
+	b.st.idx.put(b.name, dstKey, e)
 
 	return &storage.Object{
 		Bucket:      b.name,

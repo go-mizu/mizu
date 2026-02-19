@@ -230,13 +230,13 @@ func (b *bucket) CompleteMultipart(ctx context.Context, mu *storage.MultipartUpl
 	}
 
 	size := int64(totalSize)
-	b.st.idx.put(b.name, upload.mu.Key, &indexEntry{
-		valueOffset: valOff,
-		size:        size,
-		contentType: upload.contentType,
-		created:     now,
-		updated:     now,
-	})
+	e := acquireIndexEntry()
+	e.valueOffset = valOff
+	e.size = size
+	e.contentType = upload.contentType
+	e.created = now
+	e.updated = now
+	b.st.idx.put(b.name, upload.mu.Key, e)
 
 	return &storage.Object{
 		Bucket:      b.name,
