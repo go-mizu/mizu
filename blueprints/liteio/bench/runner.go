@@ -68,6 +68,26 @@ func NewRunner(cfg *Config) *Runner {
 	return r
 }
 
+// NewRunnerWithDrivers creates a runner with explicit driver configs (for external tools).
+func NewRunnerWithDrivers(cfg *Config, drivers []DriverConfig) *Runner {
+	r := &Runner{
+		config:            cfg,
+		drivers:           drivers,
+		results:           make([]*Metrics, 0),
+		dockerStats:       make(map[string]*DockerStats),
+		logger:            func(format string, args ...any) { fmt.Printf(format+"\n", args...) },
+		dockerCollector:   NewDockerStatsCollector("all-"),
+		payloads:          make(map[int][]byte),
+		resourceSnapshots: make(map[string]*ResourceSummary),
+	}
+	if cfg.ReadBufferSize > 0 {
+		r.readBufPool.New = func() any {
+			return make([]byte, cfg.ReadBufferSize)
+		}
+	}
+	return r
+}
+
 // SetLogger sets a custom logger.
 func (r *Runner) SetLogger(fn func(format string, args ...any)) {
 	r.logger = fn

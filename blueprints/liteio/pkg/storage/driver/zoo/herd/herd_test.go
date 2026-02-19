@@ -35,6 +35,18 @@ func openTestStore(t *testing.T) storage.Storage {
 	return st
 }
 
+func openTestStoreBatch(t *testing.T) storage.Storage {
+	t.Helper()
+	dir := tempDir(t)
+	dsn := fmt.Sprintf("herd://%s?stripes=4&sync=batch&inline_kb=8&prealloc=16", dir)
+	st, err := storage.Open(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	return st
+}
+
 func TestWriteRead(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()
@@ -419,6 +431,97 @@ func TestMultiNodeConcurrent(t *testing.T) {
 	// Verify all 200.
 	for i := 0; i < 200; i++ {
 		key := fmt.Sprintf("concurrent_%04d", i)
+		expected := fmt.Sprintf("value_%d", i)
+		rc, _, err := bkt.Open(ctx, key, 0, 0, nil)
+		if err != nil {
+			t.Fatalf("open %s: %v", key, err)
+		}
+		got, _ := io.ReadAll(rc)
+		rc.Close()
+		if string(got) != expected {
+			t.Fatalf("%s: expected %q, got %q", key, expected, got)
+		}
+	}
+}
+
+func TestBatchSyncWriteRead(t *testing.T) {
+	st := openTestStoreBatch(t)
+	ctx := context.Background()
+	bkt := st.Bucket("test")
+
+	// Inline path (1KB < 8KB threshold).
+	small := bytes.Repeat([]byte("s"), 1024)
+	_, err := bkt.Write(ctx, "small.bin", bytes.NewReader(small), int64(len(small)), "application/octet-stream", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rc, _, err := bkt.Open(ctx, "small.bin", 0, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := io.ReadAll(rc)
+	rc.Close()
+	if !bytes.Equal(got, small) {
+		t.Fatal("batch sync: small value mismatch")
+	}
+
+	// Large path (64KB > 8KB threshold).
+	large := bytes.Repeat([]byte("L"), 64*1024)
+	_, err = bkt.Write(ctx, "large.bin", bytes.NewReader(large), int64(len(large)), "application/octet-stream", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rc, _, err = bkt.Open(ctx, "large.bin", 0, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ = io.ReadAll(rc)
+	rc.Close()
+	if !bytes.Equal(got, large) {
+		t.Fatal("batch sync: large value mismatch")
+	}
+
+	// Delete with tombstone.
+	if err := bkt.Delete(ctx, "small.bin", nil); err != nil {
+		t.Fatal(err)
+	}
+	_, err = bkt.Stat(ctx, "small.bin", nil)
+	if err != storage.ErrNotExist {
+		t.Fatalf("expected ErrNotExist, got %v", err)
+	}
+}
+
+func TestBatchSyncMultiNode(t *testing.T) {
+	dir := tempDir(t)
+	dsn := fmt.Sprintf("herd://%s?nodes=3&stripes=4&sync=batch&inline_kb=8&prealloc=16", dir)
+	st, err := storage.Open(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	ctx := context.Background()
+	bkt := st.Bucket("test")
+
+	var wg sync.WaitGroup
+	for i := 0; i < 200; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			key := fmt.Sprintf("batch_%04d", n)
+			data := []byte(fmt.Sprintf("value_%d", n))
+			_, err := bkt.Write(ctx, key, bytes.NewReader(data), int64(len(data)), "text/plain", nil)
+			if err != nil {
+				t.Errorf("write %s: %v", key, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	for i := 0; i < 200; i++ {
+		key := fmt.Sprintf("batch_%04d", i)
 		expected := fmt.Sprintf("value_%d", i)
 		rc, _, err := bkt.Open(ctx, key, 0, 0, nil)
 		if err != nil {

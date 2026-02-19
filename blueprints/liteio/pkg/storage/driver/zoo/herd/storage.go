@@ -179,7 +179,10 @@ func newStripe(id int, root, syncMode string, preallocBytes, bufSize, inlineMax 
 		bloom: bloom,
 	}
 
-	if syncMode == "none" {
+	// Buffer ring batches many small writes into one large WriteAt,
+	// dramatically improving throughput. Enable for both none and batch modes.
+	// Only sync=full skips the ring (needs per-write msync).
+	if syncMode != "full" {
 		s.ring = newBufferRing(vol, bufSize)
 	}
 
@@ -330,18 +333,18 @@ func (s *store) Features() storage.Features {
 }
 
 func (s *store) Close() error {
-	for _, st := range s.stripes {
-		if st != nil {
-			st.close()
-		}
-	}
-
-	// Final sync.
+	// Sync BEFORE closing — mmap must still be active for msync.
 	if s.syncMode != "none" {
 		for _, st := range s.stripes {
 			if st != nil {
 				st.vol.sync()
 			}
+		}
+	}
+
+	for _, st := range s.stripes {
+		if st != nil {
+			st.close()
 		}
 	}
 
@@ -416,7 +419,15 @@ func (b *bucket) Write(_ context.Context, key string, src io.Reader, size int64,
 		// Skip volume write in sync=none mode for pure speed.
 		// In batch/full mode, write to volume for durability.
 		if !noSync && size > 0 {
-			stripe.vol.appendRecord(recPut, b.name, key, contentType, e.inline, now)
+			if stripe.ring != nil {
+				bl, kl, cl := len(b.name), len(key), len(contentType)
+				totalSize := int64(recFixedSize+bl+kl+cl) + size
+				bufSlice, _, _, wb := stripe.ring.writeInline(totalSize, 19+bl+kl+cl)
+				stripe.vol.buildRecordBuf(bufSlice, recPut, b.name, key, contentType, e.inline, now)
+				wb.done()
+			} else {
+				stripe.vol.appendRecord(recPut, b.name, key, contentType, e.inline, now)
+			}
 		}
 
 		return &storage.Object{
@@ -451,7 +462,14 @@ func (b *bucket) Write(_ context.Context, key string, src io.Reader, size int64,
 			stripe.idx.put(b.name, key, e)
 
 			if !noSync && size > 0 {
-				stripe.vol.appendRecord(recPut, b.name, key, contentType, data, now)
+				if stripe.ring != nil {
+					ts := int64(recFixedSize+len(b.name)+len(key)+len(contentType)) + size
+					bufSlice, _, _, wb := stripe.ring.writeInline(ts, 19+len(b.name)+len(key)+len(contentType))
+					stripe.vol.buildRecordBuf(bufSlice, recPut, b.name, key, contentType, data, now)
+					wb.done()
+				} else {
+					stripe.vol.appendRecord(recPut, b.name, key, contentType, data, now)
+				}
 			}
 
 			return &storage.Object{
@@ -670,7 +688,15 @@ func (b *bucket) Delete(_ context.Context, key string, _ storage.Options) error 
 	// In batch/full mode, append delete tombstone for durability.
 	if !b.st.noSync {
 		now := fastNow()
-		stripe.vol.appendRecord(recDelete, b.name, key, "", nil, now)
+		if stripe.ring != nil {
+			bl, kl := len(b.name), len(key)
+			totalSize := int64(recFixedSize + bl + kl)
+			bufSlice, _, _, wb := stripe.ring.writeInline(totalSize, 0)
+			stripe.vol.buildRecordBuf(bufSlice, recDelete, b.name, key, "", nil, now)
+			wb.done()
+		} else {
+			stripe.vol.appendRecord(recDelete, b.name, key, "", nil, now)
+		}
 	}
 
 	return nil

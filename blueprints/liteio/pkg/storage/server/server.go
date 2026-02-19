@@ -229,11 +229,9 @@ func New(cfg *Config) (*Server, error) {
 	app := mizu.New()
 	app.SetLogger(cfg.Logger)
 
-	// NoLog: completely remove Logger middleware for maximum performance.
-	// This eliminates crypto/rand UUID generation, time.Now, and log attribute
-	// building on every request (~8% CPU savings).
+	// NoLog: skip logger middleware for maximum performance.
 	if cfg.NoLog {
-		app.ClearMiddleware()
+		app.SetLogger(nil)
 	}
 
 	// Configure S3 transport
