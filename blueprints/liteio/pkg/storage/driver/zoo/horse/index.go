@@ -1,4 +1,4 @@
-package turtle
+package horse
 
 import (
 	"sort"

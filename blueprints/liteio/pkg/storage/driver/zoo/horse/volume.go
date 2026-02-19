@@ -1,4 +1,4 @@
-package turtle
+package horse
 
 import (
 	"encoding/binary"
@@ -14,7 +14,7 @@ import (
 
 // Volume file constants.
 const (
-	magic           = "TURTLE01"
+	magic           = "HORSE001"
 	version         = 1
 	headerSize      = 64
 	defaultPrealloc = 64 * 1024 * 1024 * 1024 // 64GB sparse
@@ -102,18 +102,18 @@ func newVolume(path string, prealloc int64) (*volume, error) {
 		dir = path[:idx]
 	}
 	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return nil, fmt.Errorf("turtle: mkdir %q: %w", dir, err)
+		return nil, fmt.Errorf("horse: mkdir %q: %w", dir, err)
 	}
 
 	fd, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
-		return nil, fmt.Errorf("turtle: open volume: %w", err)
+		return nil, fmt.Errorf("horse: open volume: %w", err)
 	}
 
 	info, err := fd.Stat()
 	if err != nil {
 		fd.Close()
-		return nil, fmt.Errorf("turtle: stat volume: %w", err)
+		return nil, fmt.Errorf("horse: stat volume: %w", err)
 	}
 
 	isNew := info.Size() == 0
@@ -126,7 +126,7 @@ func newVolume(path string, prealloc int64) (*volume, error) {
 	if info.Size() < allocSize {
 		if err := fd.Truncate(allocSize); err != nil {
 			fd.Close()
-			return nil, fmt.Errorf("turtle: truncate volume: %w", err)
+			return nil, fmt.Errorf("horse: truncate volume: %w", err)
 		}
 	}
 
@@ -135,7 +135,7 @@ func newVolume(path string, prealloc int64) (*volume, error) {
 		syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 	if err != nil {
 		fd.Close()
-		return nil, fmt.Errorf("turtle: mmap: %w", err)
+		return nil, fmt.Errorf("horse: mmap: %w", err)
 	}
 
 	v := &volume{
@@ -171,14 +171,14 @@ func (v *volume) writeHeader() {
 func (v *volume) readHeader() error {
 	r := v.region.Load()
 	if len(r.buf) < headerSize {
-		return errors.New("turtle: volume too small for header")
+		return errors.New("horse: volume too small for header")
 	}
 	if string(r.buf[0:8]) != magic {
-		return errors.New("turtle: invalid volume magic")
+		return errors.New("horse: invalid volume magic")
 	}
 	ver := binary.LittleEndian.Uint32(r.buf[8:12])
 	if ver != version {
-		return fmt.Errorf("turtle: unsupported version %d", ver)
+		return fmt.Errorf("horse: unsupported version %d", ver)
 	}
 	tail := binary.LittleEndian.Uint64(r.buf[16:24])
 	if tail < headerSize {
@@ -260,7 +260,7 @@ func (v *volume) appendRecord(recType byte, bucket, key, contentType string, val
 	_, err := v.fd.WriteAt(buf, offset)
 	putWriteBuf(bp, poolIdx)
 	if err != nil {
-		return 0, 0, fmt.Errorf("turtle: pwrite: %w", err)
+		return 0, 0, fmt.Errorf("horse: pwrite: %w", err)
 	}
 	return offset, offset + int64(valPos), nil
 }
@@ -305,7 +305,7 @@ func (v *volume) writeFromReader(recType byte, bucket, key, contentType string, 
 		if size > 0 {
 			if _, err := io.ReadFull(src, r.buf[valOff:valOff+size]); err != nil {
 				if err != io.EOF && err != io.ErrUnexpectedEOF {
-					return 0, fmt.Errorf("turtle: read value: %w", err)
+					return 0, fmt.Errorf("horse: read value: %w", err)
 				}
 			}
 		}
@@ -356,7 +356,7 @@ func (v *volume) writeFromReader(recType byte, bucket, key, contentType string, 
 		if _, err := io.ReadFull(src, buf[pos:pos+int(size)]); err != nil {
 			if err != io.EOF && err != io.ErrUnexpectedEOF {
 				putWriteBuf(bp, poolIdx)
-				return 0, fmt.Errorf("turtle: read value: %w", err)
+				return 0, fmt.Errorf("horse: read value: %w", err)
 			}
 		}
 	}
@@ -372,7 +372,7 @@ func (v *volume) writeFromReader(recType byte, bucket, key, contentType string, 
 	_, err := v.fd.WriteAt(buf, offset)
 	putWriteBuf(bp, poolIdx)
 	if err != nil {
-		return 0, fmt.Errorf("turtle: pwrite: %w", err)
+		return 0, fmt.Errorf("horse: pwrite: %w", err)
 	}
 	return valOff, nil
 }
@@ -499,7 +499,7 @@ func (v *volume) growFile(needed int64) error {
 	}
 
 	if err := v.fd.Truncate(newSize); err != nil {
-		return fmt.Errorf("turtle: truncate: %w", err)
+		return fmt.Errorf("horse: truncate: %w", err)
 	}
 	v.fileSize.Store(newSize)
 	return nil
@@ -515,7 +515,7 @@ func (v *volume) sync() error {
 		uintptr(v.tail.Load()),
 		uintptr(syscall.MS_SYNC))
 	if errno != 0 {
-		return fmt.Errorf("turtle: msync: %w", errno)
+		return fmt.Errorf("horse: msync: %w", errno)
 	}
 	return nil
 }

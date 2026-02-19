@@ -1,4 +1,4 @@
-package turtle
+package horse
 
 import (
 	"bytes"
@@ -53,7 +53,7 @@ func (b *bucket) InitMultipart(ctx context.Context, key string, contentType stri
 
 	key = strings.TrimSpace(key)
 	if key == "" {
-		return nil, fmt.Errorf("turtle: key is empty")
+		return nil, fmt.Errorf("horse: key is empty")
 	}
 
 	uploadID := newUploadID()
@@ -81,7 +81,7 @@ func (b *bucket) UploadPart(ctx context.Context, mu *storage.MultipartUpload, nu
 	_ = opts
 
 	if number <= 0 || number > 10000 {
-		return nil, fmt.Errorf("turtle: part number %d out of range (1-10000)", number)
+		return nil, fmt.Errorf("horse: part number %d out of range (1-10000)", number)
 	}
 
 	// Read part data.
@@ -183,7 +183,7 @@ func (b *bucket) CompleteMultipart(ctx context.Context, mu *storage.MultipartUpl
 	_ = opts
 
 	if len(parts) == 0 {
-		return nil, fmt.Errorf("turtle: no parts to complete")
+		return nil, fmt.Errorf("horse: no parts to complete")
 	}
 
 	b.st.mp.mu.Lock()
@@ -206,7 +206,7 @@ func (b *bucket) CompleteMultipart(ctx context.Context, mu *storage.MultipartUpl
 		pd, exists := upload.parts[part.Number]
 		if !exists {
 			b.st.mp.mu.Unlock()
-			return nil, fmt.Errorf("turtle: part %d not found", part.Number)
+			return nil, fmt.Errorf("horse: part %d not found", part.Number)
 		}
 		totalSize += len(pd.data)
 	}

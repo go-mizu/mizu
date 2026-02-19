@@ -596,7 +596,7 @@ func benchPread(ctx context.Context, benchTime time.Duration, dir string, size i
 }
 
 func benchPwriteSparse(ctx context.Context, benchTime time.Duration, dir string, size int) *LimitsResult {
-	// Each iteration writes to a NEW sparse region (simulating turtle's append to sparse file).
+	// Each iteration writes to a NEW sparse region (simulating horse's append to sparse file).
 	path := filepath.Join(dir, fmt.Sprintf("pwrite-sparse-%d", size))
 
 	f, err := os.Create(path)
