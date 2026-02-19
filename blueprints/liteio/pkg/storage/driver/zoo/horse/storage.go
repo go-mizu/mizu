@@ -1,15 +1,15 @@
-// Package turtle implements a durable single-volume-file object storage driver.
+// Package horse implements a durable single-volume-file object storage driver.
 //
 // Architecture: Bitcask-style append-only log with Haystack-style single volume file,
 // FASTER-inspired lock-free concurrent writes, and Kreon-inspired mmap zero-copy reads.
 //
 // DSN format:
 //
-//	turtle:///path/to/data
-//	turtle:///path/to/data?sync=batch
-//	turtle:///path/to/data?sync=none
-//	turtle:///path/to/data?prealloc=65536  (MB, default 65536)
-package turtle
+//	horse:///path/to/data
+//	horse:///path/to/data?sync=batch
+//	horse:///path/to/data?sync=none
+//	horse:///path/to/data?prealloc=65536  (MB, default 65536)
+package horse
 
 import (
 	"bytes"
@@ -30,7 +30,7 @@ import (
 )
 
 func init() {
-	storage.Register("turtle", &driver{})
+	storage.Register("horse", &driver{})
 }
 
 type driver struct{}
@@ -40,15 +40,15 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 
 	u, err := url.Parse(dsn)
 	if err != nil {
-		return nil, fmt.Errorf("turtle: parse dsn: %w", err)
+		return nil, fmt.Errorf("horse: parse dsn: %w", err)
 	}
-	if u.Scheme != "turtle" && u.Scheme != "" {
-		return nil, fmt.Errorf("turtle: unexpected scheme %q", u.Scheme)
+	if u.Scheme != "horse" && u.Scheme != "" {
+		return nil, fmt.Errorf("horse: unexpected scheme %q", u.Scheme)
 	}
 
 	root := filepath.Clean(u.Path)
 	if root == "" || root == "." {
-		root = "/tmp/turtle-data"
+		root = "/tmp/horse-data"
 	}
 
 	syncMode := u.Query().Get("sync")
@@ -81,7 +81,7 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 	if vol.tail.Load() > headerSize {
 		if err := vol.recover(idx); err != nil {
 			vol.close()
-			return nil, fmt.Errorf("turtle: recovery failed: %w", err)
+			return nil, fmt.Errorf("horse: recovery failed: %w", err)
 		}
 	}
 
@@ -225,7 +225,7 @@ func (s *store) CreateBucket(ctx context.Context, name string, opts storage.Opti
 
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return nil, fmt.Errorf("turtle: bucket name is empty")
+		return nil, fmt.Errorf("horse: bucket name is empty")
 	}
 
 	s.mu.Lock()
@@ -249,7 +249,7 @@ func (s *store) DeleteBucket(ctx context.Context, name string, opts storage.Opti
 
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return fmt.Errorf("turtle: bucket name is empty")
+		return fmt.Errorf("horse: bucket name is empty")
 	}
 
 	force := false
@@ -337,12 +337,12 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 	_ = opts
 
 	if key == "" {
-		return nil, fmt.Errorf("turtle: key is empty")
+		return nil, fmt.Errorf("horse: key is empty")
 	}
 	if key[0] == ' ' || key[len(key)-1] == ' ' {
 		key = strings.TrimSpace(key)
 		if key == "" {
-			return nil, fmt.Errorf("turtle: key is empty")
+			return nil, fmt.Errorf("horse: key is empty")
 		}
 	}
 
@@ -360,7 +360,7 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 		// Unknown size: read into buffer first.
 		var buf bytes.Buffer
 		if _, err := io.Copy(&buf, src); err != nil {
-			return nil, fmt.Errorf("turtle: read value: %w", err)
+			return nil, fmt.Errorf("horse: read value: %w", err)
 		}
 		data := buf.Bytes()
 		size = int64(len(data))
@@ -400,7 +400,7 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 
 	key = strings.TrimSpace(key)
 	if key == "" {
-		return nil, nil, fmt.Errorf("turtle: key is empty")
+		return nil, nil, fmt.Errorf("horse: key is empty")
 	}
 
 	e, ok := b.st.idx.get(b.name, key)
@@ -441,7 +441,7 @@ func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*s
 
 	key = strings.TrimSpace(key)
 	if key == "" {
-		return nil, fmt.Errorf("turtle: key is empty")
+		return nil, fmt.Errorf("horse: key is empty")
 	}
 
 	// Check for directory stat (key ending with "/").
@@ -480,7 +480,7 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 
 	key = strings.TrimSpace(key)
 	if key == "" {
-		return fmt.Errorf("turtle: key is empty")
+		return fmt.Errorf("horse: key is empty")
 	}
 
 	if !b.st.idx.remove(b.name, key) {
@@ -501,7 +501,7 @@ func (b *bucket) Copy(ctx context.Context, dstKey string, srcBucket, srcKey stri
 	dstKey = strings.TrimSpace(dstKey)
 	srcKey = strings.TrimSpace(srcKey)
 	if dstKey == "" || srcKey == "" {
-		return nil, fmt.Errorf("turtle: key is empty")
+		return nil, fmt.Errorf("horse: key is empty")
 	}
 
 	if srcBucket == "" {

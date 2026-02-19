@@ -19,7 +19,7 @@ import (
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/local"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/rabbit"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/usagi"
-	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/turtle"
+	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/horse"
 )
 
 // Runner orchestrates benchmark execution.

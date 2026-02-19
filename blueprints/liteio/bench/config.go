@@ -312,11 +312,11 @@ func AllDriverConfigs() []DriverConfig {
 			DataPath: "/tmp/local-bench",
 		},
 		{
-			Name:     "turtle",
-			DSN:      "turtle:///tmp/turtle-bench?sync=none",
+			Name:     "horse",
+			DSN:      "horse:///tmp/horse-bench?sync=none",
 			Bucket:   "test-bucket",
 			Enabled:  true,
-			DataPath: "/tmp/turtle-bench",
+			DataPath: "/tmp/horse-bench",
 		},
 	}
 }
