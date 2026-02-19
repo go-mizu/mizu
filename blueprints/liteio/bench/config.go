@@ -422,6 +422,19 @@ func AllDriverConfigs() []DriverConfig {
 			Enabled: true,
 		},
 		{
+			Name:     "herd",
+			DSN:      "herd:///tmp/herd-bench?stripes=16&sync=none&inline_kb=8&prealloc=1024&bufsize=8388608",
+			Bucket:   "test-bucket",
+			Enabled:  true,
+			DataPath: "/tmp/herd-bench",
+		},
+		{
+			Name:    "herd_s3",
+			DSN:     "s3://herd:herd123@localhost:9230/test-bucket?insecure=true&force_path_style=true&unsigned_payload=true",
+			Bucket:  "test-bucket",
+			Enabled: true,
+		},
+		{
 			Name:     "zebra",
 			DSN:      "zebra:///tmp/zebra-bench?stripes=8&sync=none&inline_kb=4&prealloc=1024",
 			Bucket:   "test-bucket",

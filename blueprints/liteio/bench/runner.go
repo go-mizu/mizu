@@ -20,6 +20,7 @@ import (
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/rabbit"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/usagi"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/bee"
+	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/herd"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/horse"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/pony"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/zebra"
