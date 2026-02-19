@@ -3,7 +3,7 @@
 //
 // Usage:
 //
-//	# S3 server (default):
+//	# S3 server (default, single embedded store):
 //	herd [flags]
 //	  -listen :9230       S3 API listen address
 //	  -data-dir /tmp/herd Data directory
@@ -13,14 +13,16 @@
 //	  -prealloc 1024      Preallocate per stripe (MB)
 //	  -access-key herd    S3 access key
 //	  -secret-key herd123 S3 secret key
-//	  -no-auth            Disable authentication
-//	  -no-log             Disable request logging
-//	  -pprof              Enable pprof endpoints
+//
+//	# Embedded multi-node S3 server:
+//	herd -nodes 3 [flags]
 //
 //	# TCP node server (cluster mode):
 //	herd -node [flags]
 //	  -listen :9241       TCP listen address
-//	  -data-dir /tmp/herd Data directory
+//
+//	# TCP node server with gossip membership:
+//	herd -node -seeds 127.0.0.1:7241 -gossip-port 7241 [flags]
 package main
 
 import (
@@ -32,6 +34,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/liteio-dev/liteio/pkg/storage/driver/zoo/herd"
@@ -52,26 +55,31 @@ func main() {
 		noAuth     = flag.Bool("no-auth", false, "Disable S3 authentication")
 		noLog      = flag.Bool("no-log", false, "Disable request logging")
 		pprof      = flag.Bool("pprof", true, "Enable pprof endpoints")
-		nodeMode   = flag.Bool("node", false, "Run as TCP node server (binary protocol) instead of S3 server")
+		nodeMode   = flag.Bool("node", false, "Run as TCP node server (binary protocol)")
+		nodes      = flag.Int("nodes", 0, "Embedded multi-node count (0 = single store)")
+		seeds      = flag.String("seeds", "", "Gossip seed addresses (comma-separated)")
+		gossipPort = flag.Int("gossip-port", 7241, "Gossip bind port")
 	)
 	flag.Parse()
 
 	if *nodeMode {
-		runNodeServer(*listen, *dataDir, *stripes, *syncMode, *inlineKB, *preallocMB, *bufSize)
+		runNodeServer(*listen, *dataDir, *stripes, *syncMode, *inlineKB, *preallocMB, *bufSize,
+			*seeds, *gossipPort)
 		return
 	}
 
 	runS3Server(*listen, *dataDir, *stripes, *syncMode, *inlineKB, *preallocMB, *bufSize,
-		*accessKey, *secretKey, *noAuth, *noLog, *pprof)
+		*accessKey, *secretKey, *noAuth, *noLog, *pprof, *nodes)
 }
 
-func runNodeServer(listen, dataDir string, stripes int, syncMode string, inlineKB, preallocMB, bufSize int) {
+func runNodeServer(listen, dataDir string, numStripes int, syncMode string, inlineKB, preallocMB, bufSize int,
+	seedsStr string, gossipPort int) {
 	if listen == "" {
 		listen = ":9241"
 	}
 
 	q := url.Values{}
-	q.Set("stripes", strconv.Itoa(stripes))
+	q.Set("stripes", strconv.Itoa(numStripes))
 	q.Set("sync", syncMode)
 	q.Set("inline_kb", strconv.Itoa(inlineKB))
 	q.Set("prealloc", strconv.Itoa(preallocMB))
@@ -92,33 +100,59 @@ func runNodeServer(listen, dataDir string, stripes int, syncMode string, inlineK
 
 	srv := herd.NewNodeServerFromEngine(engine)
 
+	// Start gossip membership if seeds provided.
+	var membership *herd.Membership
+	if seedsStr != "" {
+		seeds := strings.Split(seedsStr, ",")
+		membership, err = herd.NewMembership(herd.GossipConfig{
+			BindPort: gossipPort,
+			DataAddr: listen,
+			Seeds:    seeds,
+		})
+		if err != nil {
+			log.Fatalf("herd: gossip: %v", err)
+		}
+		log.Printf("herd gossip on port %d, seeds=%v", gossipPort, seeds)
+	}
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
 		<-sigCh
 		log.Println("shutting down...")
+		if membership != nil {
+			membership.Leave(5 * 1e9) // 5 seconds
+			membership.Shutdown()
+		}
 		srv.Close()
 		st.Close()
 		os.Exit(0)
 	}()
 
 	log.Printf("herd node listening on %s (data=%s, stripes=%d, sync=%s, inline=%dKB)",
-		listen, dataDir, stripes, syncMode, inlineKB)
+		listen, dataDir, numStripes, syncMode, inlineKB)
 
 	if err := srv.ListenAndServe(listen); err != nil {
 		log.Fatalf("herd: serve: %v", err)
 	}
 }
 
-func runS3Server(listen, dataDir string, stripes int, syncMode string, inlineKB, preallocMB, bufSize int,
-	accessKey, secretKey string, noAuth, noLog, enablePprof bool) {
+func runS3Server(listen, dataDir string, numStripes int, syncMode string, inlineKB, preallocMB, bufSize int,
+	accessKey, secretKey string, noAuth, noLog, enablePprof bool, numNodes int) {
 	if listen == "" {
 		listen = ":9230"
 	}
 
-	dsn := fmt.Sprintf("herd://%s?stripes=%d&sync=%s&inline_kb=%d&prealloc=%d&bufsize=%d",
-		dataDir, stripes, syncMode, inlineKB, preallocMB, bufSize)
+	var dsn string
+	if numNodes > 0 {
+		// Embedded multi-node mode.
+		dsn = fmt.Sprintf("herd://%s?nodes=%d&stripes=%d&sync=%s&inline_kb=%d&prealloc=%d&bufsize=%d",
+			dataDir, numNodes, numStripes, syncMode, inlineKB, preallocMB, bufSize)
+	} else {
+		dsn = fmt.Sprintf("herd://%s?stripes=%d&sync=%s&inline_kb=%d&prealloc=%d&bufsize=%d",
+			dataDir, numStripes, syncMode, inlineKB, preallocMB, bufSize)
+	}
 
 	// Parse host/port from listen address.
 	host := "0.0.0.0"
@@ -129,12 +163,12 @@ func runS3Server(listen, dataDir string, stripes int, syncMode string, inlineKB,
 	}
 
 	cfg := &server.Config{
-		Host:           host,
-		Port:           port,
-		DSN:            dsn,
-		AccessKeyID:    accessKey,
+		Host:            host,
+		Port:            port,
+		DSN:             dsn,
+		AccessKeyID:     accessKey,
 		SecretAccessKey: secretKey,
-		EnablePprof:    enablePprof,
+		EnablePprof:     enablePprof,
 	}
 
 	if noAuth {
@@ -158,8 +192,13 @@ func runS3Server(listen, dataDir string, stripes int, syncMode string, inlineKB,
 		srv.Stop()
 	}()
 
-	fmt.Printf("Herd S3 server listening on %s (data-dir=%s, stripes=%d, sync=%s, inline-kb=%d)\n",
-		listen, dataDir, stripes, syncMode, inlineKB)
+	if numNodes > 0 {
+		fmt.Printf("Herd S3 server listening on %s (nodes=%d, data-dir=%s, stripes=%d, sync=%s, inline-kb=%d)\n",
+			listen, numNodes, dataDir, numStripes, syncMode, inlineKB)
+	} else {
+		fmt.Printf("Herd S3 server listening on %s (data-dir=%s, stripes=%d, sync=%s, inline-kb=%d)\n",
+			listen, dataDir, numStripes, syncMode, inlineKB)
+	}
 	fmt.Printf("  DSN: %s\n", dsn)
 	fmt.Printf("  Auth: access-key=%s\n", accessKey)
 

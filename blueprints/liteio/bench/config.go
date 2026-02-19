@@ -429,6 +429,20 @@ func AllDriverConfigs() []DriverConfig {
 			DataPath: "/tmp/herd-bench",
 		},
 		{
+			Name:     "herd3",
+			DSN:      "herd:///tmp/herd3-bench?nodes=3&stripes=16&sync=none&inline_kb=8&prealloc=1024&bufsize=8388608",
+			Bucket:   "test-bucket",
+			Enabled:  true,
+			DataPath: "/tmp/herd3-bench",
+		},
+		{
+			Name:     "herd5",
+			DSN:      "herd:///tmp/herd5-bench?nodes=5&stripes=16&sync=none&inline_kb=8&prealloc=1024&bufsize=8388608",
+			Bucket:   "test-bucket",
+			Enabled:  true,
+			DataPath: "/tmp/herd5-bench",
+		},
+		{
 			Name:    "herd_s3",
 			DSN:     "s3://herd:herd123@localhost:9230/test-bucket?insecure=true&force_path_style=true&unsigned_payload=true",
 			Bucket:  "test-bucket",

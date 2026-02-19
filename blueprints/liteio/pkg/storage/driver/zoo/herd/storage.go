@@ -77,8 +77,20 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 		return nil, fmt.Errorf("herd: parse dsn: %w", err)
 	}
 
-	// Cluster mode: herd:///?peers=...
-	if u.Query().Has("peers") {
+	q := u.Query()
+
+	// Embedded multi-node: herd:///path?nodes=3
+	if q.Has("nodes") {
+		return openMultiNode(ctx, u)
+	}
+
+	// TCP cluster with gossip: herd:///?seeds=...
+	if q.Has("seeds") {
+		return openGossipCluster(ctx, u)
+	}
+
+	// TCP cluster with static peers: herd:///?peers=...
+	if q.Has("peers") {
 		return openCluster(ctx, u)
 	}
 

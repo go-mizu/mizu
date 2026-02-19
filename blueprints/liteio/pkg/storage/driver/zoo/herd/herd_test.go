@@ -305,6 +305,133 @@ func TestConcurrentWriteRead(t *testing.T) {
 	wg.Wait()
 }
 
+func TestMultiNodeWriteRead(t *testing.T) {
+	dir := tempDir(t)
+	dsn := fmt.Sprintf("herd://%s?nodes=3&stripes=4&sync=none&inline_kb=8&prealloc=16", dir)
+	st, err := storage.Open(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	ctx := context.Background()
+	bkt := st.Bucket("test")
+
+	// Write 100 objects, verify they distribute across nodes.
+	for i := 0; i < 100; i++ {
+		key := fmt.Sprintf("obj_%03d.txt", i)
+		data := []byte(fmt.Sprintf("data_%d", i))
+		_, err := bkt.Write(ctx, key, bytes.NewReader(data), int64(len(data)), "text/plain", nil)
+		if err != nil {
+			t.Fatalf("write %s: %v", key, err)
+		}
+	}
+
+	// Read them all back.
+	for i := 0; i < 100; i++ {
+		key := fmt.Sprintf("obj_%03d.txt", i)
+		expected := fmt.Sprintf("data_%d", i)
+		rc, _, err := bkt.Open(ctx, key, 0, 0, nil)
+		if err != nil {
+			t.Fatalf("open %s: %v", key, err)
+		}
+		got, _ := io.ReadAll(rc)
+		rc.Close()
+		if string(got) != expected {
+			t.Fatalf("key %s: expected %q, got %q", key, expected, got)
+		}
+	}
+
+	// List should return all 100.
+	iter, err := bkt.List(ctx, "", 0, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for {
+		obj, err := iter.Next()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if obj == nil {
+			break
+		}
+		count++
+	}
+	iter.Close()
+	if count != 100 {
+		t.Fatalf("expected 100 objects in list, got %d", count)
+	}
+
+	// Delete and verify.
+	if err := bkt.Delete(ctx, "obj_050.txt", nil); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = bkt.Open(ctx, "obj_050.txt", 0, 0, nil)
+	if err != storage.ErrNotExist {
+		t.Fatalf("expected ErrNotExist after delete, got %v", err)
+	}
+
+	// Copy across nodes.
+	_, err = bkt.Copy(ctx, "obj_copy.txt", "", "obj_001.txt", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rc, _, err := bkt.Open(ctx, "obj_copy.txt", 0, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := io.ReadAll(rc)
+	rc.Close()
+	if string(got) != "data_1" {
+		t.Fatalf("copy: expected 'data_1', got %q", got)
+	}
+}
+
+func TestMultiNodeConcurrent(t *testing.T) {
+	dir := tempDir(t)
+	dsn := fmt.Sprintf("herd://%s?nodes=3&stripes=4&sync=none&inline_kb=8&prealloc=16", dir)
+	st, err := storage.Open(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	ctx := context.Background()
+	bkt := st.Bucket("test")
+
+	// Concurrent writes across 3 nodes.
+	var wg sync.WaitGroup
+	for i := 0; i < 200; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			key := fmt.Sprintf("concurrent_%04d", n)
+			data := []byte(fmt.Sprintf("value_%d", n))
+			_, err := bkt.Write(ctx, key, bytes.NewReader(data), int64(len(data)), "text/plain", nil)
+			if err != nil {
+				t.Errorf("write %s: %v", key, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	// Verify all 200.
+	for i := 0; i < 200; i++ {
+		key := fmt.Sprintf("concurrent_%04d", i)
+		expected := fmt.Sprintf("value_%d", i)
+		rc, _, err := bkt.Open(ctx, key, 0, 0, nil)
+		if err != nil {
+			t.Fatalf("open %s: %v", key, err)
+		}
+		got, _ := io.ReadAll(rc)
+		rc.Close()
+		if string(got) != expected {
+			t.Fatalf("%s: expected %q, got %q", key, expected, got)
+		}
+	}
+}
+
 func TestMultipart(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()
