@@ -16,8 +16,10 @@ import (
 	"github.com/liteio-dev/liteio/pkg/storage"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/devnull"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/exp/s3"
+	_ "github.com/liteio-dev/liteio/pkg/storage/driver/local"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/rabbit"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/usagi"
+	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/turtle"
 )
 
 // Runner orchestrates benchmark execution.
@@ -258,6 +260,11 @@ func (r *Runner) detectDrivers(ctx context.Context) []DriverConfig {
 
 	r.logger("Detecting available drivers...")
 	for _, d := range r.drivers {
+		// For non-docker drivers with a data path, ensure the directory exists.
+		if d.Container == "" && d.DataPath != "" {
+			os.MkdirAll(d.DataPath, 0o750)
+		}
+
 		detectCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		st, err := storage.Open(detectCtx, d.DSN)
 

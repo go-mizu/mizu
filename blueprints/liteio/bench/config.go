@@ -304,6 +304,20 @@ func AllDriverConfigs() []DriverConfig {
 			Container: "", // No container - pure in-process driver
 			DataPath:  "/tmp/usagi-bench",
 		},
+		{
+			Name:     "local",
+			DSN:      "local:///tmp/local-bench",
+			Bucket:   "test-bucket",
+			Enabled:  true,
+			DataPath: "/tmp/local-bench",
+		},
+		{
+			Name:     "turtle",
+			DSN:      "turtle:///tmp/turtle-bench?sync=none",
+			Bucket:   "test-bucket",
+			Enabled:  true,
+			DataPath: "/tmp/turtle-bench",
+		},
 	}
 }
 
