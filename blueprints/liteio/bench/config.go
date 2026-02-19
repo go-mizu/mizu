@@ -2,6 +2,7 @@ package bench
 
 import (
 	"fmt"
+	"os"
 	"time"
 )
 
@@ -214,6 +215,27 @@ type DriverConfig struct {
 	Features       map[string]bool
 }
 
+// garageDriverConfig returns the Garage driver config.
+// Garage uses dynamically generated API keys, so credentials come from env vars.
+func garageDriverConfig() DriverConfig {
+	accessKey := os.Getenv("GARAGE_BENCH_ACCESS_KEY")
+	secretKey := os.Getenv("GARAGE_BENCH_SECRET_KEY")
+	if accessKey == "" || secretKey == "" {
+		return DriverConfig{
+			Name:    "garage",
+			Enabled: true,
+			Skip:    true,
+			SkipMsg: "Garage credentials not set (GARAGE_BENCH_ACCESS_KEY/GARAGE_BENCH_SECRET_KEY)",
+		}
+	}
+	return DriverConfig{
+		Name:    "garage",
+		DSN:     fmt.Sprintf("s3://%s:%s@localhost:3900/test-bucket?insecure=true&force_path_style=true", accessKey, secretKey),
+		Bucket:  "test-bucket",
+		Enabled: true,
+	}
+}
+
 // AllDriverConfigs returns configurations for all supported drivers.
 func AllDriverConfigs() []DriverConfig {
 	return []DriverConfig{
@@ -241,6 +263,7 @@ func AllDriverConfigs() []DriverConfig {
 			Container: "all-seaweedfs-volume-1", // Use volume container for data size
 			DataPath:  "/data",
 		},
+		garageDriverConfig(),
 		{
 			Name:      "localstack",
 			DSN:       "s3://test:test@localhost:4566/test-bucket?insecure=true&force_path_style=true",
