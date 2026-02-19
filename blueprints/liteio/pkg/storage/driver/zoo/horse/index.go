@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unsafe"
 )
 
 const shardCount = 256
@@ -40,6 +41,7 @@ func releaseIndexEntry(e *indexEntry) {
 type shard struct {
 	mu      sync.RWMutex
 	entries map[string]*indexEntry // "bucket\x00key" → entry
+	_       [40]byte              // padding to avoid false sharing (cache line = 64 bytes)
 }
 
 // segmentKeys holds keys for one path segment with lazy sorting.
@@ -50,13 +52,11 @@ type segmentKeys struct {
 }
 
 // bucketKeySet tracks all keys for a bucket, segmented by first path component.
-// Keys like "write/123" go into segment "write", "scale-1000/45/001" into "scale-1000".
-// List operations only sort within the matching segment, not all keys in the bucket.
 type bucketKeySet struct {
 	mu       sync.RWMutex
-	total    int                       // total key count across all segments
-	segments map[string]*segmentKeys   // first_segment → keys
-	noSlash  *segmentKeys              // keys without any "/" go here
+	total    int                     // total key count across all segments
+	segments map[string]*segmentKeys // first_segment → keys
+	noSlash  *segmentKeys            // keys without any "/" go here
 }
 
 // shardedIndex is a 256-shard concurrent hash index (KeyDir).
@@ -73,30 +73,59 @@ func newIndex() *shardedIndex {
 	return idx
 }
 
-// compositeKey creates a lookup key from bucket and object key.
-func compositeKey(bucket, key string) string {
-	return bucket + "\x00" + key
-}
-
-// shardFor returns the shard index using FNV-1a (inlined for speed).
-func shardFor(ck string) uint32 {
+// shardForParts computes shard index directly from bucket+key without allocating a compositeKey string.
+// Equivalent to shardFor(bucket + "\x00" + key) but zero-alloc.
+func shardForParts(bucket, key string) uint32 {
 	const offset32 = 2166136261
 	const prime32 = 16777619
 	h := uint32(offset32)
-	for i := 0; i < len(ck); i++ {
-		h ^= uint32(ck[i])
+	for i := 0; i < len(bucket); i++ {
+		h ^= uint32(bucket[i])
+		h *= prime32
+	}
+	// Hash the null separator.
+	h ^= 0
+	h *= prime32
+	for i := 0; i < len(key); i++ {
+		h ^= uint32(key[i])
 		h *= prime32
 	}
 	return h % shardCount
 }
 
+// compositeKey creates a lookup key from bucket and object key.
+// Used only for map operations where a string key is required.
+func compositeKey(bucket, key string) string {
+	return bucket + "\x00" + key
+}
+
+// compositeKeyBuf writes a composite key into buf, returning the result slice.
+// Avoids heap allocation when buf is large enough (stack-allocated by caller).
+func compositeKeyBuf(buf []byte, bucket, key string) []byte {
+	n := len(bucket) + 1 + len(key)
+	if cap(buf) >= n {
+		buf = buf[:n]
+	} else {
+		buf = make([]byte, n)
+	}
+	copy(buf, bucket)
+	buf[len(bucket)] = 0
+	copy(buf[len(bucket)+1:], key)
+	return buf
+}
+
+// unsafeString creates a string from a byte slice without copying.
+// The caller must ensure the byte slice is not modified while the string is in use.
+func unsafeString(b []byte) string {
+	return unsafe.String(unsafe.SliceData(b), len(b))
+}
+
 // firstSegment returns the portion of key before the first '/'.
-// For "write/123" → "write", for "abc" → "".
 func firstSegment(key string) string {
 	if i := strings.IndexByte(key, '/'); i >= 0 {
 		return key[:i]
 	}
-	return "" // no slash
+	return ""
 }
 
 // getBucketKeys returns (or creates) the per-bucket key set.
@@ -127,12 +156,19 @@ func (bk *bucketKeySet) getSegment(key string) *segmentKeys {
 }
 
 func (idx *shardedIndex) put(bucket, key string, e *indexEntry) {
-	ck := compositeKey(bucket, key)
-	si := shardFor(ck)
+	si := shardForParts(bucket, key)
 	s := &idx.shards[si]
+
+	// Build composite key using stack buffer to avoid heap alloc in common case.
+	var buf [256]byte
+	ck := unsafeString(compositeKeyBuf(buf[:0], bucket, key))
 
 	s.mu.Lock()
 	old, exists := s.entries[ck]
+	if !exists {
+		// Only allocate the string for the map key on first insert.
+		ck = compositeKey(bucket, key)
+	}
 	s.entries[ck] = e
 	s.mu.Unlock()
 
@@ -150,9 +186,12 @@ func (idx *shardedIndex) put(bucket, key string, e *indexEntry) {
 }
 
 func (idx *shardedIndex) get(bucket, key string) (*indexEntry, bool) {
-	ck := compositeKey(bucket, key)
-	si := shardFor(ck)
+	si := shardForParts(bucket, key)
 	s := &idx.shards[si]
+
+	// Use stack buffer for map lookup — no heap alloc.
+	var buf [256]byte
+	ck := unsafeString(compositeKeyBuf(buf[:0], bucket, key))
 
 	s.mu.RLock()
 	e, ok := s.entries[ck]
@@ -161,9 +200,11 @@ func (idx *shardedIndex) get(bucket, key string) (*indexEntry, bool) {
 }
 
 func (idx *shardedIndex) remove(bucket, key string) bool {
-	ck := compositeKey(bucket, key)
-	si := shardFor(ck)
+	si := shardForParts(bucket, key)
 	s := &idx.shards[si]
+
+	var buf [256]byte
+	ck := unsafeString(compositeKeyBuf(buf[:0], bucket, key))
 
 	s.mu.Lock()
 	old, exists := s.entries[ck]
@@ -200,7 +241,6 @@ func (sk *segmentKeys) ensureSorted() {
 }
 
 // list returns all entries matching bucket and prefix, sorted by key.
-// Uses segmented index: only sorts keys within the matching segment.
 func (idx *shardedIndex) list(bucket, prefix string) []listResult {
 	bk := idx.getBucketKeys(bucket)
 
@@ -222,7 +262,6 @@ func (idx *shardedIndex) list(bucket, prefix string) []listResult {
 	sorted := sk.sorted
 	bk.mu.Unlock()
 
-	// Binary search for the first key >= prefix.
 	start := sort.SearchStrings(sorted, prefix)
 
 	var results []listResult
@@ -232,9 +271,12 @@ func (idx *shardedIndex) list(bucket, prefix string) []listResult {
 			break
 		}
 
-		ck := compositeKey(bucket, key)
-		si := shardFor(ck)
+		si := shardForParts(bucket, key)
 		s := &idx.shards[si]
+
+		var buf [256]byte
+		ck := unsafeString(compositeKeyBuf(buf[:0], bucket, key))
+
 		s.mu.RLock()
 		e, ok := s.entries[ck]
 		s.mu.RUnlock()

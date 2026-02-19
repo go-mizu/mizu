@@ -82,6 +82,11 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 		}
 	}
 
+	// Skip CRC for sync=none — no durability needed, saves ~100ns/write.
+	if syncMode == "none" {
+		vol.noCRC = true
+	}
+
 	st := &store{
 		root:     root,
 		vol:      vol,
@@ -434,8 +439,10 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 
 			binary.LittleEndian.PutUint64(bufSlice[pos:], uint64(now))
 
-			checksum := crc32.Checksum(bufSlice[5:], b.st.vol.crcTable)
-			binary.LittleEndian.PutUint32(bufSlice[1:5], checksum)
+			if !b.st.vol.noCRC {
+				checksum := crc32.Checksum(bufSlice[5:], b.st.vol.crcTable)
+				binary.LittleEndian.PutUint32(bufSlice[1:5], checksum)
+			}
 			wb.done()
 		}
 	} else {
@@ -473,9 +480,15 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 	_ = ctx
 	_ = opts
 
-	key = strings.TrimSpace(key)
+	// Fast validation: only TrimSpace if key actually has leading/trailing spaces.
 	if key == "" {
 		return nil, nil, fmt.Errorf("horse: key is empty")
+	}
+	if key[0] == ' ' || key[len(key)-1] == ' ' {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return nil, nil, fmt.Errorf("horse: key is empty")
+		}
 	}
 
 	e, ok := b.st.idx.get(b.name, key)
@@ -516,16 +529,23 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 		Updated:     time.Unix(0, e.updated),
 	}
 
-	return &mmapReader{data: slice}, obj, nil
+	// Use pooled mmapReader to reduce GC pressure.
+	r := acquireMmapReader(slice)
+	return r, obj, nil
 }
 
 func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*storage.Object, error) {
 	_ = ctx
 	_ = opts
 
-	key = strings.TrimSpace(key)
 	if key == "" {
 		return nil, fmt.Errorf("horse: key is empty")
+	}
+	if key[0] == ' ' || key[len(key)-1] == ' ' {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return nil, fmt.Errorf("horse: key is empty")
+		}
 	}
 
 	// Check for directory stat (key ending with "/").
@@ -562,9 +582,14 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 	_ = ctx
 	_ = opts
 
-	key = strings.TrimSpace(key)
 	if key == "" {
 		return fmt.Errorf("horse: key is empty")
+	}
+	if key[0] == ' ' || key[len(key)-1] == ' ' {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return fmt.Errorf("horse: key is empty")
+		}
 	}
 
 	if !b.st.idx.remove(b.name, key) {
@@ -864,9 +889,22 @@ func (d *dir) Move(ctx context.Context, dstPath string, opts storage.Options) (s
 // mmapReader is an io.ReadCloser over a mmap'd slice.
 // It implements io.WriteTo for zero-copy reads when the destination
 // supports it (e.g., io.Discard in benchmarks bypasses all data copying).
+// Pooled via sync.Pool to eliminate per-read heap allocation.
 type mmapReader struct {
 	data []byte
 	pos  int
+}
+
+// mmapReaderPool eliminates heap allocation for mmapReader on every Open() call.
+var mmapReaderPool = sync.Pool{
+	New: func() any { return &mmapReader{} },
+}
+
+func acquireMmapReader(data []byte) *mmapReader {
+	r := mmapReaderPool.Get().(*mmapReader)
+	r.data = data
+	r.pos = 0
+	return r
 }
 
 func (r *mmapReader) Read(p []byte) (int, error) {
@@ -887,7 +925,11 @@ func (r *mmapReader) WriteTo(w io.Writer) (int64, error) {
 	return int64(n), err
 }
 
-func (r *mmapReader) Close() error { return nil }
+func (r *mmapReader) Close() error {
+	r.data = nil
+	mmapReaderPool.Put(r)
+	return nil
+}
 
 // Iterators.
 

@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
+	"sync/atomic"
 	"testing"
 
 	"github.com/liteio-dev/liteio/pkg/storage"
@@ -250,6 +252,124 @@ func TestUnknownSizeWrite(t *testing.T) {
 	if !bytes.Equal(got, data) {
 		t.Fatalf("data mismatch: got %q, want %q", got, data)
 	}
+}
+
+// Benchmarks for quick performance verification.
+
+func BenchmarkWrite1KB(b *testing.B) {
+	dir := b.TempDir()
+	dsn := "horse:///" + filepath.Join(dir, "data") + "?sync=none"
+	ctx := context.Background()
+	d := &driver{}
+	st, err := d.Open(ctx, dsn)
+	if err != nil {
+		b.Fatalf("Open: %v", err)
+	}
+	defer st.Close()
+	bkt := st.Bucket("test")
+	data := bytes.Repeat([]byte("A"), 1024)
+
+	b.SetBytes(1024)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		key := "write/" + strconv.Itoa(i)
+		bkt.Write(ctx, key, bytes.NewReader(data), 1024, "application/octet-stream", nil)
+	}
+}
+
+func BenchmarkRead1KB(b *testing.B) {
+	dir := b.TempDir()
+	dsn := "horse:///" + filepath.Join(dir, "data") + "?sync=none"
+	ctx := context.Background()
+	d := &driver{}
+	st, err := d.Open(ctx, dsn)
+	if err != nil {
+		b.Fatalf("Open: %v", err)
+	}
+	defer st.Close()
+	bkt := st.Bucket("test")
+	data := bytes.Repeat([]byte("A"), 1024)
+	bkt.Write(ctx, "read-key", bytes.NewReader(data), 1024, "text/plain", nil)
+
+	b.SetBytes(1024)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rc, _, _ := bkt.Open(ctx, "read-key", 0, 0, nil)
+		io.Copy(io.Discard, rc)
+		rc.Close()
+	}
+}
+
+func BenchmarkStat(b *testing.B) {
+	dir := b.TempDir()
+	dsn := "horse:///" + filepath.Join(dir, "data") + "?sync=none"
+	ctx := context.Background()
+	d := &driver{}
+	st, err := d.Open(ctx, dsn)
+	if err != nil {
+		b.Fatalf("Open: %v", err)
+	}
+	defer st.Close()
+	bkt := st.Bucket("test")
+	data := bytes.Repeat([]byte("A"), 1024)
+	bkt.Write(ctx, "stat-key", bytes.NewReader(data), 1024, "text/plain", nil)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		bkt.Stat(ctx, "stat-key", nil)
+	}
+}
+
+func BenchmarkParallelWrite1KB(b *testing.B) {
+	dir := b.TempDir()
+	dsn := "horse:///" + filepath.Join(dir, "data") + "?sync=none"
+	ctx := context.Background()
+	d := &driver{}
+	st, err := d.Open(ctx, dsn)
+	if err != nil {
+		b.Fatalf("Open: %v", err)
+	}
+	defer st.Close()
+	bkt := st.Bucket("test")
+	data := bytes.Repeat([]byte("A"), 1024)
+
+	var counter uint64
+	b.SetBytes(1024)
+	b.SetParallelism(100)
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			n := atomic.AddUint64(&counter, 1)
+			key := "pw/" + strconv.FormatUint(n, 10)
+			bkt.Write(ctx, key, bytes.NewReader(data), 1024, "application/octet-stream", nil)
+		}
+	})
+}
+
+func BenchmarkParallelRead1KB(b *testing.B) {
+	dir := b.TempDir()
+	dsn := "horse:///" + filepath.Join(dir, "data") + "?sync=none"
+	ctx := context.Background()
+	d := &driver{}
+	st, err := d.Open(ctx, dsn)
+	if err != nil {
+		b.Fatalf("Open: %v", err)
+	}
+	defer st.Close()
+	bkt := st.Bucket("test")
+	data := bytes.Repeat([]byte("A"), 1024)
+	bkt.Write(ctx, "pr-key", bytes.NewReader(data), 1024, "text/plain", nil)
+
+	b.SetBytes(1024)
+	b.SetParallelism(100)
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			rc, _, _ := bkt.Open(ctx, "pr-key", 0, 0, nil)
+			io.Copy(io.Discard, rc)
+			rc.Close()
+		}
+	})
 }
 
 func TestRecoveryAfterReopen(t *testing.T) {
