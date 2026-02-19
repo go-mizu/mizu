@@ -281,6 +281,30 @@ func AllDriverConfigs() []DriverConfig {
 			DataPath:  "/data",
 		},
 		{
+			Name:    "local_s3",
+			DSN:     "s3://local:local123@localhost:9213/test-bucket?insecure=true&force_path_style=true&unsigned_payload=true",
+			Bucket:  "test-bucket",
+			Enabled: true,
+		},
+		{
+			Name:    "horse_s3",
+			DSN:     "s3://horse:horse123@localhost:9210/test-bucket?insecure=true&force_path_style=true&unsigned_payload=true",
+			Bucket:  "test-bucket",
+			Enabled: true,
+		},
+		{
+			Name:    "bee3net_s3",
+			DSN:     "s3://bee3:bee3123@localhost:9211/test-bucket?insecure=true&force_path_style=true&unsigned_payload=true",
+			Bucket:  "test-bucket",
+			Enabled: true,
+		},
+		{
+			Name:    "bee5net_s3",
+			DSN:     "s3://bee5:bee5123@localhost:9212/test-bucket?insecure=true&force_path_style=true&unsigned_payload=true",
+			Bucket:  "test-bucket",
+			Enabled: true,
+		},
+		{
 			Name:      "rabbit_s3",
 			DSN:       "s3://rabbit:rabbit123@localhost:9300/test-bucket?insecure=true&force_path_style=true&unsigned_payload=true",
 			Bucket:    "test-bucket",
@@ -336,10 +360,36 @@ func AllDriverConfigs() []DriverConfig {
 		},
 		{
 			Name:     "horse",
-			DSN:      "horse:///tmp/horse-bench?sync=none",
+			DSN:      "horse:///tmp/horse-bench?sync=none&prealloc=2048",
 			Bucket:   "test-bucket",
 			Enabled:  true,
 			DataPath: "/tmp/horse-bench",
+		},
+		{
+			Name:     "bee3",
+			DSN:      "bee:///tmp/bee3-bench?nodes=3&replicas=3&w=1&r=1&sync=none&inline_kb=64&repair=true&repair_workers=6&repair_max_kb=256",
+			Bucket:   "test-bucket",
+			Enabled:  true,
+			DataPath: "/tmp/bee3-bench",
+		},
+		{
+			Name:     "bee5",
+			DSN:      "bee:///tmp/bee5-bench?nodes=5&replicas=3&w=1&r=1&sync=none&inline_kb=64&repair=true&repair_workers=10&repair_max_kb=256",
+			Bucket:   "test-bucket",
+			Enabled:  true,
+			DataPath: "/tmp/bee5-bench",
+		},
+		{
+			Name:    "bee3net",
+			DSN:     "bee:///?peers=http://127.0.0.1:9401,http://127.0.0.1:9402,http://127.0.0.1:9403&replicas=3&w=1&r=1&repair=true&repair_workers=6&repair_max_kb=256",
+			Bucket:  "test-bucket",
+			Enabled: true,
+		},
+		{
+			Name:    "bee5net",
+			DSN:     "bee:///?peers=http://127.0.0.1:9501,http://127.0.0.1:9502,http://127.0.0.1:9503,http://127.0.0.1:9504,http://127.0.0.1:9505&replicas=3&w=1&r=1&repair=true&repair_workers=10&repair_max_kb=256",
+			Bucket:  "test-bucket",
+			Enabled: true,
 		},
 	}
 }

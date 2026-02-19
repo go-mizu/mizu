@@ -19,6 +19,7 @@ import (
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/local"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/rabbit"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/usagi"
+	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/bee"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/horse"
 )
 
@@ -547,11 +548,11 @@ func (r *Runner) benchmarkRead(ctx context.Context, bucket storage.Bucket, drive
 	// Warmup
 	for i := 0; i < warmup && i < len(keys); i++ {
 		opCtx, cancel := r.opContextForSize(ctx, size)
-			rc, _, _ := bucket.Open(opCtx, keys[i], 0, 0, nil)
-			if rc != nil {
-				r.copyToDiscard(rc)
-				rc.Close()
-			}
+		rc, _, _ := bucket.Open(opCtx, keys[i], 0, 0, nil)
+		if rc != nil {
+			r.copyToDiscard(rc)
+			rc.Close()
+		}
 		cancel()
 	}
 

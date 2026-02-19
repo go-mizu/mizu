@@ -32,10 +32,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-mizu/mizu"
 	"github.com/liteio-dev/liteio/pkg/storage"
 	"github.com/liteio-dev/liteio/pkg/storage/transport/rest"
 	"github.com/liteio-dev/liteio/pkg/storage/transport/s3"
-	"github.com/go-mizu/mizu"
 
 	// Register storage drivers
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/devnull"
@@ -43,6 +43,7 @@ import (
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/memory"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/rabbit"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/usagi"
+	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/bee"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/horse"
 )
 
