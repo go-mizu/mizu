@@ -1,70 +1,70 @@
 # Storage Benchmark Summary
 
-**Generated:** 2026-02-19T03:49:39+07:00
+**Generated:** 2026-02-19T07:31:08+07:00
 
 ## Overall Winner
 
-**turtle** won 44/48 categories (92%)
+**turtle** won 43/48 categories (90%)
 
 ### Win Counts
 
 | Driver | Wins | Percentage |
 |--------|------|------------|
-| turtle | 44 | 92% |
-| local | 4 | 8% |
+| turtle | 43 | 90% |
+| local | 5 | 10% |
 
 ## Best Driver by Category
 
 | Category | Winner | Performance | Runner-up | Runner-up Perf | Margin |
 |----------|--------|-------------|-----------|----------------|--------|
-| Copy/1KB | **turtle** | 29.9 MB/s | local | 2.4 MB/s | 12.4x faster |
-| Delete | **turtle** | 133.0K ops/s | local | 24.1K ops/s | 5.5x faster |
-| EdgeCase/DeepNested | **turtle** | 85.9 MB/s | local | 0.2 MB/s | 390.2x faster |
-| EdgeCase/EmptyObject | **turtle** | 1.9M ops/s | local | 2.5K ops/s | 756.7x faster |
-| EdgeCase/LongKey256 | **turtle** | 5.1 MB/s | local | 0.2 MB/s | 21.6x faster |
-| List/100 | **turtle** | 89.2K ops/s | local | 4.6K ops/s | 19.3x faster |
-| MixedWorkload/Balanced_50_50 | **turtle** | 1.4 MB/s | local | 0.5 MB/s | 2.6x faster |
-| MixedWorkload/ReadHeavy_90_10 | **turtle** | 7.4 MB/s | local | 2.8 MB/s | 2.6x faster |
-| MixedWorkload/WriteHeavy_10_90 | **turtle** | 0.8 MB/s | local | 0.3 MB/s | 2.8x faster |
-| Multipart/15MB_3Parts | **turtle** | 400.1 MB/s | local | 242.4 MB/s | +65% |
-| ParallelRead/1KB/C1 | **turtle** | 4.6 GB/s | local | 1.5 GB/s | 3.0x faster |
-| ParallelRead/1KB/C10 | **turtle** | 3.5 GB/s | local | 986.2 MB/s | 3.6x faster |
-| ParallelRead/1KB/C100 | **turtle** | 2.9 GB/s | local | 636.7 MB/s | 4.5x faster |
-| ParallelRead/1KB/C200 | **turtle** | 2.6 GB/s | local | 580.1 MB/s | 4.5x faster |
-| ParallelRead/1KB/C25 | **turtle** | 3.4 GB/s | local | 902.1 MB/s | 3.8x faster |
-| ParallelRead/1KB/C50 | **turtle** | 3.1 GB/s | local | 756.1 MB/s | 4.0x faster |
-| ParallelWrite/1KB/C1 | **turtle** | 272.2 MB/s | local | 2.1 MB/s | 127.5x faster |
-| ParallelWrite/1KB/C10 | **turtle** | 6.5 MB/s | local | 0.7 MB/s | 8.9x faster |
-| ParallelWrite/1KB/C100 | **turtle** | 9.6 MB/s | local | 0.0 MB/s | 212.0x faster |
-| ParallelWrite/1KB/C200 | **turtle** | 6.8 MB/s | local | 0.0 MB/s | 296.8x faster |
-| ParallelWrite/1KB/C25 | **turtle** | 68.9 MB/s | local | 0.2 MB/s | 324.6x faster |
-| ParallelWrite/1KB/C50 | **turtle** | 1.7 MB/s | local | 0.1 MB/s | 18.8x faster |
-| RangeRead/End_256KB | **turtle** | 1948.1 GB/s | local | 16.1 GB/s | 120.9x faster |
-| RangeRead/Middle_256KB | **turtle** | 1928.9 GB/s | local | 16.3 GB/s | 118.3x faster |
-| RangeRead/Start_256KB | **turtle** | 1842.5 GB/s | local | 16.3 GB/s | 113.0x faster |
-| Read/100MB | **turtle** | 781684.1 GB/s | local | 16.7 GB/s | 46819.9x faster |
-| Read/10MB | **turtle** | 77141.5 GB/s | local | 13.1 GB/s | 5866.8x faster |
-| Read/1KB | **local** | 7.4 GB/s | turtle | 6.9 GB/s | ~equal |
-| Read/1MB | **turtle** | 7574.5 GB/s | local | 96.1 GB/s | 78.8x faster |
-| Read/64KB | **turtle** | 468.1 GB/s | local | 29.6 GB/s | 15.8x faster |
-| Scale/Delete/10 | **turtle** | 263.8K ops/s | local | 2.2K ops/s | 118.6x faster |
-| Scale/Delete/100 | **turtle** | 36.6K ops/s | local | 266 ops/s | 137.8x faster |
-| Scale/Delete/1000 | **turtle** | 3.6K ops/s | local | 19 ops/s | 188.4x faster |
-| Scale/Delete/10000 | **turtle** | 271 ops/s | local | 2 ops/s | 145.4x faster |
-| Scale/List/10 | **turtle** | 153.8K ops/s | local | 9.9K ops/s | 15.5x faster |
-| Scale/List/100 | **turtle** | 40.9K ops/s | local | 3.0K ops/s | 13.5x faster |
-| Scale/List/1000 | **turtle** | 3.8K ops/s | local | 314 ops/s | 12.0x faster |
-| Scale/List/10000 | **turtle** | 270 ops/s | local | 35 ops/s | 7.7x faster |
-| Scale/Write/10 | **turtle** | 113.6 MB/s | local | 0.7 MB/s | 156.5x faster |
-| Scale/Write/100 | **turtle** | 198.1 MB/s | local | 0.7 MB/s | 302.6x faster |
-| Scale/Write/1000 | **turtle** | 176.2 MB/s | local | 0.6 MB/s | 272.1x faster |
-| Scale/Write/10000 | **turtle** | 167.7 MB/s | local | 0.6 MB/s | 282.2x faster |
-| Stat | **turtle** | 12.5M ops/s | local | 5.6M ops/s | 2.3x faster |
-| Write/100MB | **local** | 2.8 GB/s | turtle | 667.4 MB/s | 4.2x faster |
-| Write/10MB | **local** | 2.7 GB/s | turtle | 759.6 MB/s | 3.6x faster |
-| Write/1KB | **turtle** | 147.8 MB/s | local | 2.7 MB/s | 55.8x faster |
-| Write/1MB | **local** | 1.5 GB/s | turtle | 647.6 MB/s | 2.4x faster |
-| Write/64KB | **turtle** | 576.7 MB/s | local | 149.0 MB/s | 3.9x faster |
+| Copy/1KB | **turtle** | 1.0 GB/s | local | 1.8 MB/s | 577.2x faster |
+| Delete | **turtle** | 2.3M ops/s | local | 22.6K ops/s | 102.3x faster |
+| EdgeCase/DeepNested | **turtle** | 80.7 MB/s | local | 0.1 MB/s | 707.3x faster |
+| EdgeCase/EmptyObject | **local** | 2.7K ops/s | turtle | 665 ops/s | 4.0x faster |
+| EdgeCase/LongKey256 | **turtle** | 54.2 MB/s | local | 0.2 MB/s | 334.0x faster |
+| List/100 | **turtle** | 92.5K ops/s | local | 4.6K ops/s | 20.1x faster |
+| MixedWorkload/Balanced_50_50 | **turtle** | 1.5 MB/s | local | 0.7 MB/s | 2.2x faster |
+| MixedWorkload/ReadHeavy_90_10 | **turtle** | 10.4 MB/s | local | 4.4 MB/s | 2.4x faster |
+| MixedWorkload/WriteHeavy_10_90 | **turtle** | 0.8 MB/s | local | 0.3 MB/s | 2.6x faster |
+| Multipart/15MB_3Parts | **turtle** | 338.4 MB/s | local | 77.0 MB/s | 4.4x faster |
+| ParallelRead/1KB/C1 | **turtle** | 4.5 GB/s | local | 1.5 GB/s | 2.9x faster |
+| ParallelRead/1KB/C10 | **turtle** | 3.5 GB/s | local | 944.3 MB/s | 3.7x faster |
+| ParallelRead/1KB/C100 | **turtle** | 2.8 GB/s | local | 611.2 MB/s | 4.5x faster |
+| ParallelRead/1KB/C200 | **turtle** | 2.5 GB/s | local | 327.4 MB/s | 7.7x faster |
+| ParallelRead/1KB/C25 | **turtle** | 3.4 GB/s | local | 894.1 MB/s | 3.8x faster |
+| ParallelRead/1KB/C50 | **turtle** | 3.2 GB/s | local | 752.0 MB/s | 4.2x faster |
+| ParallelWrite/1KB/C1 | **turtle** | 26.5 MB/s | local | 3.0 MB/s | 8.9x faster |
+| ParallelWrite/1KB/C10 | **turtle** | 65.3 MB/s | local | 0.7 MB/s | 89.6x faster |
+| ParallelWrite/1KB/C100 | **turtle** | 1.0 MB/s | local | 0.0 MB/s | 21.3x faster |
+| ParallelWrite/1KB/C200 | **turtle** | 1.8 MB/s | local | 0.0 MB/s | 80.5x faster |
+| ParallelWrite/1KB/C25 | **turtle** | 1.9 MB/s | local | 0.2 MB/s | 9.5x faster |
+| ParallelWrite/1KB/C50 | **turtle** | 25.1 MB/s | local | 0.1 MB/s | 236.3x faster |
+| RangeRead/End_256KB | **turtle** | 1927.9 GB/s | local | 23.7 GB/s | 81.5x faster |
+| RangeRead/Middle_256KB | **turtle** | 1908.4 GB/s | local | 11.3 GB/s | 168.6x faster |
+| RangeRead/Start_256KB | **turtle** | 1838.2 GB/s | local | 11.0 GB/s | 167.5x faster |
+| Read/100MB | **turtle** | 825265.6 GB/s | local | 14.9 GB/s | 55365.0x faster |
+| Read/10MB | **turtle** | 77683.3 GB/s | local | 11.2 GB/s | 6945.7x faster |
+| Read/1KB | **local** | 7.0 GB/s | turtle | 6.9 GB/s | ~equal |
+| Read/1MB | **turtle** | 7907.3 GB/s | local | 95.1 GB/s | 83.2x faster |
+| Read/64KB | **turtle** | 476.3 GB/s | local | 22.6 GB/s | 21.0x faster |
+| Scale/Delete/10 | **turtle** | 263.8K ops/s | local | 1.8K ops/s | 149.3x faster |
+| Scale/Delete/100 | **turtle** | 39.9K ops/s | local | 266 ops/s | 149.8x faster |
+| Scale/Delete/1000 | **turtle** | 1.5K ops/s | local | 20 ops/s | 76.8x faster |
+| Scale/Delete/10000 | **turtle** | 163 ops/s | local | 2 ops/s | 105.5x faster |
+| Scale/List/10 | **turtle** | 122.4K ops/s | local | 8.7K ops/s | 14.1x faster |
+| Scale/List/100 | **turtle** | 41.0K ops/s | local | 3.1K ops/s | 13.2x faster |
+| Scale/List/1000 | **turtle** | 4.8K ops/s | local | 309 ops/s | 15.4x faster |
+| Scale/List/10000 | **turtle** | 277 ops/s | local | 31 ops/s | 9.1x faster |
+| Scale/Write/10 | **turtle** | 114.9 MB/s | local | 0.0 MB/s | 3382.4x faster |
+| Scale/Write/100 | **turtle** | 96.1 MB/s | local | 0.1 MB/s | 695.2x faster |
+| Scale/Write/1000 | **turtle** | 309.8 MB/s | local | 0.4 MB/s | 696.1x faster |
+| Scale/Write/10000 | **turtle** | 174.9 MB/s | local | 0.6 MB/s | 310.0x faster |
+| Stat | **turtle** | 12.6M ops/s | local | 5.3M ops/s | 2.4x faster |
+| Write/100MB | **local** | 1.1 GB/s | turtle | 273.6 MB/s | 4.1x faster |
+| Write/10MB | **local** | 1.1 GB/s | turtle | 210.2 MB/s | 5.1x faster |
+| Write/1KB | **turtle** | 75.9 MB/s | local | 2.2 MB/s | 34.0x faster |
+| Write/1MB | **local** | 639.8 MB/s | turtle | 550.0 MB/s | +16% |
+| Write/64KB | **turtle** | 412.5 MB/s | local | 149.6 MB/s | 2.8x faster |
 
 ## Category Summaries
 
@@ -74,11 +74,11 @@
 
 | Operation | Winner | Performance | vs Runner-up |
 |-----------|--------|-------------|-------------|
-| Write/100MB | local | 2.8 GB/s | 4.2x faster |
-| Write/10MB | local | 2.7 GB/s | 3.6x faster |
-| Write/1KB | turtle | 147.8 MB/s | 55.8x faster |
-| Write/1MB | local | 1.5 GB/s | 2.4x faster |
-| Write/64KB | turtle | 576.7 MB/s | 3.9x faster |
+| Write/100MB | local | 1.1 GB/s | 4.1x faster |
+| Write/10MB | local | 1.1 GB/s | 5.1x faster |
+| Write/1KB | turtle | 75.9 MB/s | 34.0x faster |
+| Write/1MB | local | 639.8 MB/s | +16% |
+| Write/64KB | turtle | 412.5 MB/s | 2.8x faster |
 
 ### Read Operations
 
@@ -86,11 +86,11 @@
 
 | Operation | Winner | Performance | vs Runner-up |
 |-----------|--------|-------------|-------------|
-| Read/100MB | turtle | 781684.1 GB/s | 46819.9x faster |
-| Read/10MB | turtle | 77141.5 GB/s | 5866.8x faster |
-| Read/1KB | local | 7.4 GB/s | ~equal |
-| Read/1MB | turtle | 7574.5 GB/s | 78.8x faster |
-| Read/64KB | turtle | 468.1 GB/s | 15.8x faster |
+| Read/100MB | turtle | 825265.6 GB/s | 55365.0x faster |
+| Read/10MB | turtle | 77683.3 GB/s | 6945.7x faster |
+| Read/1KB | local | 7.0 GB/s | ~equal |
+| Read/1MB | turtle | 7907.3 GB/s | 83.2x faster |
+| Read/64KB | turtle | 476.3 GB/s | 21.0x faster |
 
 ### ParallelWrite Operations
 
@@ -98,12 +98,12 @@
 
 | Operation | Winner | Performance | vs Runner-up |
 |-----------|--------|-------------|-------------|
-| ParallelWrite/1KB/C1 | turtle | 272.2 MB/s | 127.5x faster |
-| ParallelWrite/1KB/C10 | turtle | 6.5 MB/s | 8.9x faster |
-| ParallelWrite/1KB/C100 | turtle | 9.6 MB/s | 212.0x faster |
-| ParallelWrite/1KB/C200 | turtle | 6.8 MB/s | 296.8x faster |
-| ParallelWrite/1KB/C25 | turtle | 68.9 MB/s | 324.6x faster |
-| ParallelWrite/1KB/C50 | turtle | 1.7 MB/s | 18.8x faster |
+| ParallelWrite/1KB/C1 | turtle | 26.5 MB/s | 8.9x faster |
+| ParallelWrite/1KB/C10 | turtle | 65.3 MB/s | 89.6x faster |
+| ParallelWrite/1KB/C100 | turtle | 1.0 MB/s | 21.3x faster |
+| ParallelWrite/1KB/C200 | turtle | 1.8 MB/s | 80.5x faster |
+| ParallelWrite/1KB/C25 | turtle | 1.9 MB/s | 9.5x faster |
+| ParallelWrite/1KB/C50 | turtle | 25.1 MB/s | 236.3x faster |
 
 ### ParallelRead Operations
 
@@ -111,12 +111,12 @@
 
 | Operation | Winner | Performance | vs Runner-up |
 |-----------|--------|-------------|-------------|
-| ParallelRead/1KB/C1 | turtle | 4.6 GB/s | 3.0x faster |
-| ParallelRead/1KB/C10 | turtle | 3.5 GB/s | 3.6x faster |
-| ParallelRead/1KB/C100 | turtle | 2.9 GB/s | 4.5x faster |
-| ParallelRead/1KB/C200 | turtle | 2.6 GB/s | 4.5x faster |
+| ParallelRead/1KB/C1 | turtle | 4.5 GB/s | 2.9x faster |
+| ParallelRead/1KB/C10 | turtle | 3.5 GB/s | 3.7x faster |
+| ParallelRead/1KB/C100 | turtle | 2.8 GB/s | 4.5x faster |
+| ParallelRead/1KB/C200 | turtle | 2.5 GB/s | 7.7x faster |
 | ParallelRead/1KB/C25 | turtle | 3.4 GB/s | 3.8x faster |
-| ParallelRead/1KB/C50 | turtle | 3.1 GB/s | 4.0x faster |
+| ParallelRead/1KB/C50 | turtle | 3.2 GB/s | 4.2x faster |
 
 ### Delete Operations
 
@@ -124,7 +124,7 @@
 
 | Operation | Winner | Performance | vs Runner-up |
 |-----------|--------|-------------|-------------|
-| Delete | turtle | 133.0K ops/s | 5.5x faster |
+| Delete | turtle | 2.3M ops/s | 102.3x faster |
 
 ### Stat Operations
 
@@ -132,7 +132,7 @@
 
 | Operation | Winner | Performance | vs Runner-up |
 |-----------|--------|-------------|-------------|
-| Stat | turtle | 12.5M ops/s | 2.3x faster |
+| Stat | turtle | 12.6M ops/s | 2.4x faster |
 
 ### List Operations
 
@@ -140,7 +140,7 @@
 
 | Operation | Winner | Performance | vs Runner-up |
 |-----------|--------|-------------|-------------|
-| List/100 | turtle | 89.2K ops/s | 19.3x faster |
+| List/100 | turtle | 92.5K ops/s | 20.1x faster |
 
 ### Copy Operations
 
@@ -148,7 +148,7 @@
 
 | Operation | Winner | Performance | vs Runner-up |
 |-----------|--------|-------------|-------------|
-| Copy/1KB | turtle | 29.9 MB/s | 12.4x faster |
+| Copy/1KB | turtle | 1.0 GB/s | 577.2x faster |
 
 ### Scale Operations
 
@@ -156,18 +156,18 @@
 
 | Operation | Winner | Performance | vs Runner-up |
 |-----------|--------|-------------|-------------|
-| Scale/Delete/10 | turtle | 263.8K ops/s | 118.6x faster |
-| Scale/Delete/100 | turtle | 36.6K ops/s | 137.8x faster |
-| Scale/Delete/1000 | turtle | 3.6K ops/s | 188.4x faster |
-| Scale/Delete/10000 | turtle | 271 ops/s | 145.4x faster |
-| Scale/List/10 | turtle | 153.8K ops/s | 15.5x faster |
-| Scale/List/100 | turtle | 40.9K ops/s | 13.5x faster |
-| Scale/List/1000 | turtle | 3.8K ops/s | 12.0x faster |
-| Scale/List/10000 | turtle | 270 ops/s | 7.7x faster |
-| Scale/Write/10 | turtle | 113.6 MB/s | 156.5x faster |
-| Scale/Write/100 | turtle | 198.1 MB/s | 302.6x faster |
-| Scale/Write/1000 | turtle | 176.2 MB/s | 272.1x faster |
-| Scale/Write/10000 | turtle | 167.7 MB/s | 282.2x faster |
+| Scale/Delete/10 | turtle | 263.8K ops/s | 149.3x faster |
+| Scale/Delete/100 | turtle | 39.9K ops/s | 149.8x faster |
+| Scale/Delete/1000 | turtle | 1.5K ops/s | 76.8x faster |
+| Scale/Delete/10000 | turtle | 163 ops/s | 105.5x faster |
+| Scale/List/10 | turtle | 122.4K ops/s | 14.1x faster |
+| Scale/List/100 | turtle | 41.0K ops/s | 13.2x faster |
+| Scale/List/1000 | turtle | 4.8K ops/s | 15.4x faster |
+| Scale/List/10000 | turtle | 277 ops/s | 9.1x faster |
+| Scale/Write/10 | turtle | 114.9 MB/s | 3382.4x faster |
+| Scale/Write/100 | turtle | 96.1 MB/s | 695.2x faster |
+| Scale/Write/1000 | turtle | 309.8 MB/s | 696.1x faster |
+| Scale/Write/10000 | turtle | 174.9 MB/s | 310.0x faster |
 
 ---
 

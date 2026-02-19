@@ -39,17 +39,26 @@ type mmapRegion struct {
 const pwriteThreshold = 4096
 
 // writeBufPools provides tiered sync.Pools for pwrite buffers (avoids heap allocation per write).
-var writeBufPools = [4]sync.Pool{
-	{New: func() any { b := make([]byte, 64*1024); return &b }},       // 64KB
-	{New: func() any { b := make([]byte, 1*1024*1024); return &b }},   // 1MB
-	{New: func() any { b := make([]byte, 16*1024*1024); return &b }},  // 16MB
-	{New: func() any { b := make([]byte, 128*1024*1024); return &b }}, // 128MB
+// Tier sizes include 1KB padding for record headers (recFixedSize + bucket + key + contentType).
+// Without padding, a 1MB value (totalSize = 1MB+27+names) exceeds the 1MB tier → jumps to 16MB.
+var writeBufPools = [5]sync.Pool{
+	{New: func() any { b := make([]byte, 64*1024+1024); return &b }},    // 65KB  — values up to 64KB
+	{New: func() any { b := make([]byte, 1024*1024+1024); return &b }},  // ~1MB  — values up to 1MB
+	{New: func() any { b := make([]byte, 10*1024*1024+1024); return &b }}, // ~10MB — values up to 10MB
+	{New: func() any { b := make([]byte, 100*1024*1024+4096); return &b }}, // ~100MB — values up to 100MB
+	{New: func() any { b := make([]byte, 256*1024*1024); return &b }},   // 256MB — values up to ~256MB
 }
 
 // getWriteBuf returns a pooled buffer of at least size bytes.
 // Returns the buffer, a pointer for returning to pool, and the pool index.
 func getWriteBuf(size int64) ([]byte, *[]byte, int) {
-	tiers := [4]int64{64 * 1024, 1024 * 1024, 16 * 1024 * 1024, 128 * 1024 * 1024}
+	tiers := [5]int64{
+		64*1024 + 1024,
+		1024*1024 + 1024,
+		10*1024*1024 + 1024,
+		100*1024*1024 + 4096,
+		256 * 1024 * 1024,
+	}
 	for i, tier := range tiers {
 		if size <= tier {
 			bp := writeBufPools[i].Get().(*[]byte)
