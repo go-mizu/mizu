@@ -66,12 +66,20 @@ func unsafePtr(b []byte) unsafe.Pointer {
 	return unsafe.Pointer(&b[0])
 }
 
+// Driver is the exported type alias for the herd driver.
+type Driver = driver
+
 type driver struct{}
 
 func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) {
 	u, err := url.Parse(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("herd: parse dsn: %w", err)
+	}
+
+	// Cluster mode: herd:///?peers=...
+	if u.Query().Has("peers") {
+		return openCluster(ctx, u)
 	}
 
 	return openEmbedded(ctx, u)
@@ -746,6 +754,16 @@ func (b *bucket) Move(_ context.Context, dstKey string, srcBucket, srcKey string
 		return nil, err
 	}
 	return obj, nil
+}
+
+// listAll returns all objects from all stripes for a given prefix.
+// Used by NodeServer for cluster list operations.
+func (b *bucket) listAll(prefix string) []listResult {
+	var all []listResult
+	for _, st := range b.st.stripes {
+		all = append(all, st.idx.list(b.name, prefix)...)
+	}
+	return all
 }
 
 func (b *bucket) List(_ context.Context, prefix string, limit, offset int, opts storage.Options) (storage.ObjectIter, error) {

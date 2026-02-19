@@ -435,6 +435,24 @@ func AllDriverConfigs() []DriverConfig {
 			Enabled: true,
 		},
 		{
+			Name:    "herd3net",
+			DSN:     "herd:///?peers=127.0.0.1:9241,127.0.0.1:9242,127.0.0.1:9243&replicas=1",
+			Bucket:  "test-bucket",
+			Enabled: true,
+		},
+		{
+			Name:    "herd5net",
+			DSN:     "herd:///?peers=127.0.0.1:9241,127.0.0.1:9242,127.0.0.1:9243,127.0.0.1:9244,127.0.0.1:9245&replicas=1",
+			Bucket:  "test-bucket",
+			Enabled: true,
+		},
+		{
+			Name:    "herd3net_s3",
+			DSN:     "s3://herd3:herd3123@localhost:9231/test-bucket?insecure=true&force_path_style=true&unsigned_payload=true",
+			Bucket:  "test-bucket",
+			Enabled: true,
+		},
+		{
 			Name:     "zebra",
 			DSN:      "zebra:///tmp/zebra-bench?stripes=8&sync=none&inline_kb=4&prealloc=1024",
 			Bucket:   "test-bucket",
