@@ -42,7 +42,8 @@ func main() {
 		scaleMaxBytes = flag.Int64("scale-max-bytes", 2*1024*1024*1024, "Max total bytes per Scale test (safety cap)")
 		cleanupData   = flag.Bool("cleanup-data", true, "Cleanup local benchmark data paths after each driver run")
 		cleanupDocker = flag.Bool("cleanup-docker-data", true, "Cleanup docker volume data paths after each driver run")
-		filter        = flag.String("filter", "", "Filter benchmarks by name (substring match, e.g., 'MixedWorkload')")
+		filter           = flag.String("filter", "", "Filter benchmarks by name (substring match, e.g., 'MixedWorkload')")
+		resourceTracking = flag.Bool("resource-tracking", true, "Track Go runtime memory and disk usage for embedded drivers")
 		// Go-style adaptive benchmark settings (same defaults as 'go test -bench')
 		benchTime = flag.Duration("benchtime", 1*time.Second, "Target duration for each benchmark (e.g., 1s, 500ms, 2s)")
 		minIters  = flag.Int("min-iters", 3, "Minimum iterations for statistical significance")
@@ -95,6 +96,7 @@ func main() {
 
 	cfg.OutputFormats = strings.Split(*outputFormats, ",")
 	cfg.Filter = *filter
+	cfg.ResourceTracking = *resourceTracking
 
 	// Parse scale counts
 	countsInput := strings.TrimSpace(*scales)
@@ -250,12 +252,12 @@ func main() {
 	if len(errorDetails) > 0 {
 		fmt.Println()
 		fmt.Println("=== Error Details ===")
-		drivers := make([]string, 0, len(errorDetails))
+		driverNames := make([]string, 0, len(errorDetails))
 		for driver := range errorDetails {
-			drivers = append(drivers, driver)
+			driverNames = append(driverNames, driver)
 		}
-		sort.Strings(drivers)
-		for _, driver := range drivers {
+		sort.Strings(driverNames)
+		for _, driver := range driverNames {
 			details := errorDetails[driver]
 			sort.Slice(details, func(i, j int) bool {
 				return details[i].Operation < details[j].Operation
@@ -268,6 +270,23 @@ func main() {
 				}
 				fmt.Printf("    - %s: %d errors (last: %s)\n", m.Operation, m.Errors, msg)
 			}
+		}
+	}
+
+	// Print runtime resource usage for embedded drivers
+	if len(report.ResourceSnapshots) > 0 {
+		fmt.Println()
+		fmt.Println("=== Resource Usage ===")
+		fmt.Printf("  %-12s %10s %10s %10s %10s %8s\n", "Driver", "Peak RSS", "Go Heap", "Go Sys", "Disk", "GC")
+		rsDrivers := make([]string, 0, len(report.ResourceSnapshots))
+		for d := range report.ResourceSnapshots {
+			rsDrivers = append(rsDrivers, d)
+		}
+		sort.Strings(rsDrivers)
+		for _, d := range rsDrivers {
+			rs := report.ResourceSnapshots[d]
+			fmt.Printf("  %-12s %8.1f MB %8.1f MB %8.1f MB %8.1f MB %8d\n",
+				d, rs.PeakRSSMB, rs.PeakHeapMB, rs.PeakSysMB, rs.FinalDiskMB, rs.NumGC)
 		}
 	}
 
