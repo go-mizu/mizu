@@ -119,6 +119,23 @@ func getDriverConfigs(t testing.TB) []DriverConfig {
 		})
 	}
 
+	// Garage (port 3900) - uses dynamic credentials from env vars
+	garageAccessKey := os.Getenv("GARAGE_BENCH_ACCESS_KEY")
+	garageSecretKey := os.Getenv("GARAGE_BENCH_SECRET_KEY")
+	if garageAccessKey != "" && garageSecretKey != "" && checkS3Endpoint("localhost:3900", garageAccessKey, garageSecretKey) {
+		configs = append(configs, DriverConfig{
+			Name:   "garage",
+			DSN:    fmt.Sprintf("s3://%s:%s@localhost:3900/test-bucket?insecure=true&force_path_style=true", garageAccessKey, garageSecretKey),
+			Bucket: "test-bucket",
+		})
+	} else {
+		configs = append(configs, DriverConfig{
+			Name:    "garage",
+			Skip:    true,
+			SkipMsg: "Garage not available at localhost:3900 or credentials not set",
+		})
+	}
+
 	// LocalStack (port 4566)
 	if checkS3Endpoint("localhost:4566", "test", "test") {
 		configs = append(configs, DriverConfig{
