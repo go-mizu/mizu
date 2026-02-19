@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Run benchmark comparison: horse (in-process) vs MinIO vs RustFS (native servers).
+# Run benchmark comparison: LiteIO (horse driver via S3) vs MinIO vs RustFS.
+# All drivers go through HTTP/S3 transport for a fair comparison.
 # Uses temp directories with automatic cleanup.
 #
 # Usage:
 #   ./scripts/bench-compare.sh                    # Default: 1s per benchmark
 #   ./scripts/bench-compare.sh --quick            # Quick mode: 500ms per benchmark
-#   ./scripts/bench-compare.sh --drivers horse,minio  # Specific drivers
+#   ./scripts/bench-compare.sh --drivers liteio,minio  # Specific drivers
 #   ./scripts/bench-compare.sh --benchtime 2s     # Custom bench time
 #   ./scripts/bench-compare.sh --progress         # Live progress
 set -euo pipefail
@@ -16,16 +17,26 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Temp directories (created per run, cleaned up on exit)
 MINIO_DATA=""
 RUSTFS_DATA=""
+LITEIO_DATA=""
 MINIO_PID=""
 RUSTFS_PID=""
+LITEIO_PID=""
+LITEIO_BIN=""
 
 # Ports
 MINIO_PORT=9000
 RUSTFS_PORT=9100
+LITEIO_PORT=9200
 
 cleanup() {
     echo ""
     echo "=== Cleaning up ==="
+
+    if [[ -n "$LITEIO_PID" ]] && kill -0 "$LITEIO_PID" 2>/dev/null; then
+        echo "Stopping LiteIO (PID $LITEIO_PID)..."
+        kill "$LITEIO_PID" 2>/dev/null || true
+        wait "$LITEIO_PID" 2>/dev/null || true
+    fi
 
     if [[ -n "$MINIO_PID" ]] && kill -0 "$MINIO_PID" 2>/dev/null; then
         echo "Stopping MinIO (PID $MINIO_PID)..."
@@ -39,6 +50,11 @@ cleanup() {
         wait "$RUSTFS_PID" 2>/dev/null || true
     fi
 
+    if [[ -n "$LITEIO_DATA" && -d "$LITEIO_DATA" ]]; then
+        echo "Removing LiteIO temp dir: $LITEIO_DATA"
+        rm -rf "$LITEIO_DATA"
+    fi
+
     if [[ -n "$MINIO_DATA" && -d "$MINIO_DATA" ]]; then
         echo "Removing MinIO temp dir: $MINIO_DATA"
         rm -rf "$MINIO_DATA"
@@ -49,10 +65,9 @@ cleanup() {
         rm -rf "$RUSTFS_DATA"
     fi
 
-    # Horse driver data is cleaned by --cleanup-data flag
-    if [[ -d /tmp/horse-bench ]]; then
-        echo "Removing horse temp dir: /tmp/horse-bench"
-        rm -rf /tmp/horse-bench
+    if [[ -n "$LITEIO_BIN" && -f "$LITEIO_BIN" ]]; then
+        echo "Removing LiteIO binary: $LITEIO_BIN"
+        rm -f "$LITEIO_BIN"
     fi
 
     echo "Cleanup complete."
@@ -98,14 +113,13 @@ create_bucket() {
     aws --endpoint-url="$endpoint" s3 mb s3://test-bucket 2>/dev/null || true
 }
 
-# Parse which drivers to run (default: all three)
-DRIVERS="horse,minio,rustfs"
+# Parse which drivers to run (default: all three via S3)
+DRIVERS="liteio,minio,rustfs"
 EXTRA_ARGS=()
 for arg in "$@"; do
     if [[ "$arg" == --drivers=* ]]; then
         DRIVERS="${arg#--drivers=}"
     elif [[ "$arg" == "--drivers" ]]; then
-        # Next arg will be the drivers value, handled by shift below
         :
     else
         EXTRA_ARGS+=("$arg")
@@ -132,12 +146,14 @@ for i in "$@"; do
     PARSED_ARGS+=("$i")
 done
 
+RUN_LITEIO=false
 RUN_MINIO=false
 RUN_RUSTFS=false
+if [[ "$DRIVERS" == *"liteio"* ]]; then RUN_LITEIO=true; fi
 if [[ "$DRIVERS" == *"minio"* ]]; then RUN_MINIO=true; fi
 if [[ "$DRIVERS" == *"rustfs"* ]]; then RUN_RUSTFS=true; fi
 
-echo "=== LiteIO Native Benchmark Comparison ==="
+echo "=== LiteIO Native Benchmark Comparison (Fair: All S3) ==="
 echo "Drivers: $DRIVERS"
 echo ""
 
@@ -162,15 +178,44 @@ if $RUN_RUSTFS; then
     fi
 fi
 
-if ! command -v aws &>/dev/null; then
-    echo "Error: aws CLI not found. Install with: brew install awscli"
-    exit 1
+if $RUN_MINIO || $RUN_RUSTFS || $RUN_LITEIO; then
+    if ! command -v aws &>/dev/null; then
+        echo "Error: aws CLI not found. Install with: brew install awscli"
+        exit 1
+    fi
+    echo "  AWS CLI: installed"
 fi
-echo "  AWS CLI: installed"
 echo ""
+
+# Build LiteIO binary if needed
+if $RUN_LITEIO; then
+    echo "=== Building LiteIO ==="
+    LITEIO_BIN="$(mktemp /tmp/liteio-bench.XXXXXX)"
+    # Build from repo root to use go.work workspace (resolves local mizu dependency)
+    REPO_ROOT="$(cd "$PROJECT_DIR/../.." && pwd)"
+    echo "  Building cmd/liteio..."
+    (cd "$REPO_ROOT" && go build -o "$LITEIO_BIN" ./blueprints/liteio/cmd/liteio)
+    echo "  Built: $LITEIO_BIN"
+    echo ""
+fi
 
 # Start servers
 echo "=== Starting servers ==="
+
+if $RUN_LITEIO; then
+    LITEIO_DATA="$(mktemp -d /tmp/liteio-bench-data.XXXXXX)"
+    echo "  LiteIO data dir: $LITEIO_DATA"
+
+    "$LITEIO_BIN" \
+        --driver "horse://$LITEIO_DATA?sync=none" \
+        --port "$LITEIO_PORT" \
+        --access-key liteio \
+        --secret-key liteio123 \
+        --no-log \
+        >"$LITEIO_DATA/liteio.log" 2>&1 &
+    LITEIO_PID=$!
+    echo "  LiteIO started (PID $LITEIO_PID, port $LITEIO_PORT, horse driver)"
+fi
 
 if $RUN_MINIO; then
     MINIO_DATA="$(mktemp -d /tmp/minio-bench.XXXXXX)"
@@ -205,10 +250,18 @@ echo ""
 # Wait for servers to be ready
 echo "=== Waiting for servers ==="
 
+if $RUN_LITEIO; then
+    if ! wait_for_server "LiteIO" "http://localhost:${LITEIO_PORT}/healthz/ready" 30; then
+        echo "LiteIO failed to start. Log:"
+        tail -20 "$LITEIO_DATA/liteio.log" 2>/dev/null || true
+        exit 1
+    fi
+fi
+
 if $RUN_MINIO; then
     if ! wait_for_server "MinIO" "http://localhost:${MINIO_PORT}/minio/health/live" 30; then
         echo "MinIO failed to start. Log:"
-        cat "$MINIO_DATA/minio.log" 2>/dev/null | tail -20
+        tail -20 "$MINIO_DATA/minio.log" 2>/dev/null || true
         exit 1
     fi
 fi
@@ -216,7 +269,7 @@ fi
 if $RUN_RUSTFS; then
     if ! wait_for_server "RustFS" "http://localhost:${RUSTFS_PORT}/" 30; then
         echo "RustFS failed to start. Log:"
-        cat "$RUSTFS_DATA/rustfs.log" 2>/dev/null | tail -20
+        tail -20 "$RUSTFS_DATA/rustfs.log" 2>/dev/null || true
         exit 1
     fi
 fi
@@ -225,6 +278,10 @@ echo ""
 
 # Create buckets
 echo "=== Creating test buckets ==="
+
+if $RUN_LITEIO; then
+    create_bucket "LiteIO" "http://localhost:${LITEIO_PORT}" liteio liteio123
+fi
 
 if $RUN_MINIO; then
     create_bucket "MinIO" "http://localhost:${MINIO_PORT}" minioadmin minioadmin
@@ -238,16 +295,17 @@ echo ""
 
 # Run benchmark
 echo "=== Running benchmark ==="
-echo "Drivers: $DRIVERS"
+echo "Drivers: $DRIVERS (all via S3 transport)"
 echo ""
 
-cd "$PROJECT_DIR"
+REPO_ROOT="${REPO_ROOT:-$(cd "$PROJECT_DIR/../.." && pwd)}"
+cd "$REPO_ROOT"
 
-GOWORK=off go run ./cmd/bench \
+go run ./blueprints/liteio/cmd/bench \
     --drivers "$DRIVERS" \
     --docker-stats=false \
     --cleanup-data=true \
-    --output ./report \
+    --output "$PROJECT_DIR/report" \
     --formats markdown,json,csv \
     "${PARSED_ARGS[@]}"
 

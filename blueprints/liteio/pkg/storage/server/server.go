@@ -38,11 +38,12 @@ import (
 	"github.com/go-mizu/mizu"
 
 	// Register storage drivers
+	_ "github.com/liteio-dev/liteio/pkg/storage/driver/devnull"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/local"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/memory"
-	_ "github.com/liteio-dev/liteio/pkg/storage/driver/devnull"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/rabbit"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/usagi"
+	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/horse"
 )
 
 // Version can be set by the caller to embed version information in API docs.
