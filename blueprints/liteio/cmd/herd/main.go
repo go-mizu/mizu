@@ -57,6 +57,7 @@ func main() {
 		pprof      = flag.Bool("pprof", true, "Enable pprof endpoints")
 		nodeMode   = flag.Bool("node", false, "Run as TCP node server (binary protocol)")
 		nodes      = flag.Int("nodes", 0, "Embedded multi-node count (0 = single store)")
+		peers      = flag.String("peers", "", "TCP cluster peer addresses (comma-separated, e.g. 127.0.0.1:9241,127.0.0.1:9242)")
 		seeds      = flag.String("seeds", "", "Gossip seed addresses (comma-separated)")
 		gossipPort = flag.Int("gossip-port", 7241, "Gossip bind port")
 	)
@@ -69,7 +70,7 @@ func main() {
 	}
 
 	runS3Server(*listen, *dataDir, *stripes, *syncMode, *inlineKB, *preallocMB, *bufSize,
-		*accessKey, *secretKey, *noAuth, *noLog, *pprof, *nodes)
+		*accessKey, *secretKey, *noAuth, *noLog, *pprof, *nodes, *peers)
 }
 
 func runNodeServer(listen, dataDir string, numStripes int, syncMode string, inlineKB, preallocMB, bufSize int,
@@ -139,13 +140,16 @@ func runNodeServer(listen, dataDir string, numStripes int, syncMode string, inli
 }
 
 func runS3Server(listen, dataDir string, numStripes int, syncMode string, inlineKB, preallocMB, bufSize int,
-	accessKey, secretKey string, noAuth, noLog, enablePprof bool, numNodes int) {
+	accessKey, secretKey string, noAuth, noLog, enablePprof bool, numNodes int, peersStr string) {
 	if listen == "" {
 		listen = ":9230"
 	}
 
 	var dsn string
-	if numNodes > 0 {
+	if peersStr != "" {
+		// TCP cluster mode: S3 gateway connecting to remote TCP nodes.
+		dsn = fmt.Sprintf("herd:///?peers=%s", peersStr)
+	} else if numNodes > 0 {
 		// Embedded multi-node mode.
 		dsn = fmt.Sprintf("herd://%s?nodes=%d&stripes=%d&sync=%s&inline_kb=%d&prealloc=%d&bufsize=%d",
 			dataDir, numNodes, numStripes, syncMode, inlineKB, preallocMB, bufSize)
@@ -192,7 +196,9 @@ func runS3Server(listen, dataDir string, numStripes int, syncMode string, inline
 		srv.Stop()
 	}()
 
-	if numNodes > 0 {
+	if peersStr != "" {
+		fmt.Printf("Herd S3 gateway listening on %s (peers=%s)\n", listen, peersStr)
+	} else if numNodes > 0 {
 		fmt.Printf("Herd S3 server listening on %s (nodes=%d, data-dir=%s, stripes=%d, sync=%s, inline-kb=%d)\n",
 			listen, numNodes, dataDir, numStripes, syncMode, inlineKB)
 	} else {

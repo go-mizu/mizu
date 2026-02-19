@@ -1,0 +1,104 @@
+# RustFS Distributed Cluster (4 nodes, 2 drives each)
+# Same distributed architecture as MinIO, HAProxy load balancer.
+#
+# Usage: docker compose up -d
+# S3 endpoint: http://localhost:9100
+# Credentials: rustfsadmin / rustfsadmin
+
+x-rustfs-common: &rustfs-common
+  image: rustfs/rustfs:latest
+  expose:
+    - "9000"
+    - "9001"
+  environment:
+    RUSTFS_ACCESS_KEY: rustfsadmin
+    RUSTFS_SECRET_KEY: rustfsadmin
+    RUSTFS_ADDRESS: "0.0.0.0:9000"
+    RUSTFS_CONSOLE_ADDRESS: "0.0.0.0:9001"
+    RUSTFS_VOLUMES: "http://rustfs{1...4}:9000/data{1...2}"
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:9000/minio/health/live 2>&1 || exit 1"]
+    interval: 5s
+    timeout: 5s
+    retries: 10
+    start_period: 20s
+
+services:
+  rustfs1:
+    <<: *rustfs-common
+    hostname: rustfs1
+    volumes:
+      - rustfs1-data1:/data1
+      - rustfs1-data2:/data2
+
+  rustfs2:
+    <<: *rustfs-common
+    hostname: rustfs2
+    volumes:
+      - rustfs2-data1:/data1
+      - rustfs2-data2:/data2
+
+  rustfs3:
+    <<: *rustfs-common
+    hostname: rustfs3
+    volumes:
+      - rustfs3-data1:/data1
+      - rustfs3-data2:/data2
+
+  rustfs4:
+    <<: *rustfs-common
+    hostname: rustfs4
+    volumes:
+      - rustfs4-data1:/data1
+      - rustfs4-data2:/data2
+
+  haproxy:
+    image: haproxy:3.0-alpine
+    ports:
+      - "9100:9000"
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    restart: unless-stopped
+    depends_on:
+      rustfs1:
+        condition: service_healthy
+      rustfs2:
+        condition: service_healthy
+      rustfs3:
+        condition: service_healthy
+      rustfs4:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:9000/minio/health/live 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  rustfs-init:
+    image: public.ecr.aws/aws-cli/aws-cli:latest
+    pull_policy: if_not_present
+    depends_on:
+      haproxy:
+        condition: service_healthy
+    restart: "no"
+    environment:
+      AWS_ACCESS_KEY_ID: rustfsadmin
+      AWS_SECRET_ACCESS_KEY: rustfsadmin
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://haproxy:9000 s3 mb s3://test-bucket || true;
+      exit 0;
+      "
+
+volumes:
+  rustfs1-data1:
+  rustfs1-data2:
+  rustfs2-data1:
+  rustfs2-data2:
+  rustfs3-data1:
+  rustfs3-data2:
+  rustfs4-data1:
+  rustfs4-data2:

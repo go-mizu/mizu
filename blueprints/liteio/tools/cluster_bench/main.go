@@ -39,13 +39,20 @@ func main() {
 		skipStop  = flag.Bool("skip-stop", false, "Don't stop clusters after benchmark")
 		large     = flag.Bool("large", false, "Include 100MB object benchmarks")
 		verbose   = flag.Bool("verbose", false, "Verbose output")
+		direct    = flag.Bool("direct", false, "Client-side LB (bypass HAProxy, route directly to backends)")
 	)
 	flag.Parse()
 
 	systemList := strings.Split(*systems, ",")
 
+	mode := "Cluster"
+	if *direct {
+		mode = "Cluster + Direct (client-side LB, bypass HAProxy for MinIO/RustFS)"
+	}
+
 	fmt.Println("=== Cluster S3 Benchmark ===")
 	fmt.Printf("Systems: %v\n", systemList)
+	fmt.Printf("Mode: %s\n", mode)
 	fmt.Printf("BenchTime: %v, Quick: %v, Large: %v\n", *benchTime, *quick, *large)
 	fmt.Println()
 
@@ -70,136 +77,27 @@ func main() {
 		"herd":      NewHerdCluster,
 	}
 
-	var clusters []*Cluster
+	// Each system is benchmarked in ISOLATION: start → benchmark → stop.
+	// Running all clusters simultaneously causes CPU/disk contention that
+	// makes 1MB+ writes timeout (24 server processes on one machine).
+	os.MkdirAll(baseDir, 0o755)
 	defer func() {
 		if !*skipStop {
-			for _, c := range clusters {
-				fmt.Printf("Stopping %s...\n", c.Name)
-				c.Stop()
-			}
-			// Clean up all data
 			os.RemoveAll(baseDir)
 		}
 	}()
 
-	// Phase 1: Start clusters
-	if !*skipStart {
-		fmt.Println("=== Phase 1: Starting Clusters ===")
-		os.MkdirAll(baseDir, 0o755)
-
-		for _, sys := range systemList {
-			sys = strings.TrimSpace(sys)
-			constructor, ok := constructors[sys]
-			if !ok {
-				fmt.Printf("  Unknown system: %s (available: minio, rustfs, seaweedfs, herd)\n", sys)
-				continue
-			}
-
-			fmt.Printf("  Starting %s cluster...\n", sys)
-			cluster, err := constructor()
-			if err != nil {
-				fmt.Printf("  ERROR starting %s: %v\n", sys, err)
-				continue
-			}
-			clusters = append(clusters, cluster)
-		}
-		fmt.Println()
-
-		// Wait for all clusters to be ready
-		fmt.Println("=== Phase 2: Waiting for Clusters ===")
-		var readyClusters []*Cluster
-		for _, c := range clusters {
-			fmt.Printf("  Waiting for %s (health: %s)...\n", c.Name, c.HealthURL)
-			if err := c.WaitReady(ctx, 90*time.Second); err != nil {
-				fmt.Printf("  ERROR: %s not ready: %v\n", c.Name, err)
-				fmt.Printf("  Check logs: %s/logs/\n", baseDir)
-				continue
-			}
-			fmt.Printf("  %s: ready\n", c.Name)
-			readyClusters = append(readyClusters, c)
-		}
-		clusters = readyClusters
-		fmt.Println()
-
-		// Create test buckets
-		fmt.Println("=== Phase 3: Creating Test Buckets ===")
-		var benchableClusters []*Cluster
-		for _, c := range clusters {
-			fmt.Printf("  Creating bucket on %s...\n", c.Name)
-			var lastErr error
-			for attempt := 0; attempt < 5; attempt++ {
-				if attempt > 0 {
-					time.Sleep(3 * time.Second)
-				}
-				lastErr = createBucket(c.S3Endpoint(), c.AccessKey, c.SecretKey, "test-bucket")
-				if lastErr == nil {
-					break
-				}
-			}
-			if lastErr != nil {
-				fmt.Printf("  ERROR: %v\n", lastErr)
-				continue
-			}
-			fmt.Printf("  %s: bucket created\n", c.Name)
-			benchableClusters = append(benchableClusters, c)
-		}
-		clusters = benchableClusters
-		fmt.Println()
-	} else {
-		// Build cluster objects for already-running services
-		for _, sys := range systemList {
-			sys = strings.TrimSpace(sys)
-			switch sys {
-			case "minio":
-				clusters = append(clusters, &Cluster{
-					Name: "minio_cluster", S3Port: 9000,
-					AccessKey: "minioadmin", SecretKey: "minioadmin",
-				})
-			case "rustfs":
-				clusters = append(clusters, &Cluster{
-					Name: "rustfs_cluster", S3Port: 9100,
-					AccessKey: "rustfsadmin", SecretKey: "rustfsadmin",
-				})
-			case "seaweedfs":
-				clusters = append(clusters, &Cluster{
-					Name: "seaweedfs_cluster", S3Port: 8333,
-					AccessKey: "admin", SecretKey: "adminpassword",
-				})
-			case "herd":
-				clusters = append(clusters, &Cluster{
-					Name: "herd_cluster", S3Port: 9230,
-					AccessKey: "herd", SecretKey: "herd123",
-				})
-			}
-		}
-	}
-
-	if len(clusters) == 0 {
-		log.Fatal("No clusters available for benchmarking")
-	}
-
-	// Phase 4: Run benchmarks
-	fmt.Println("=== Phase 4: Running Benchmarks ===")
-
-	// Build driver configs for the bench runner
-	var driverConfigs []bench.DriverConfig
-	for _, c := range clusters {
-		driverConfigs = append(driverConfigs, bench.DriverConfig{
-			Name:    c.Name,
-			DSN:     c.DSN(),
-			Bucket:  "test-bucket",
-			Enabled: true,
-		})
-	}
-
-	// Configure benchmark
+	// Configure benchmark (shared across all systems)
 	cfg := bench.DefaultConfig()
 	if *quick {
 		cfg = bench.QuickConfig()
 	}
-	cfg.BenchTime = *benchTime
+	// Only override BenchTime if user explicitly set the flag (not using default 1s)
+	if !*quick || *benchTime != 1*time.Second {
+		cfg.BenchTime = *benchTime
+	}
 	cfg.OutputDir = *outputDir
-	cfg.DockerStats = false // No docker containers
+	cfg.DockerStats = false
 	cfg.CleanupDataPaths = false
 	cfg.CleanupDockerData = false
 	cfg.ResourceTracking = false
@@ -207,65 +105,182 @@ func main() {
 	cfg.OutputFormats = []string{"markdown", "json", "csv"}
 	cfg.Filter = *filter
 	cfg.Progress = true
+	cfg.PerOpTimeouts = true               // Network ops need timeouts to avoid hanging
+	cfg.Timeout = 30 * time.Second         // 30s per S3 operation — matches HAProxy timeout server
+	cfg.ParallelTimeout = 60 * time.Second // 60s for parallel benchmarks
+	cfg.WarmupIterations = 2               // Fewer warmup for network ops
+	cfg.Concurrency = 50                   // 50 for mixed workload (200 overwhelms HAProxy)
 	if *large {
 		cfg.EnableLargeObjects()
 	}
 
-	// Override the default drivers with our cluster configs
-	cfg.Drivers = make([]string, len(driverConfigs))
-	for i, d := range driverConfigs {
-		cfg.Drivers[i] = d.Name
-	}
+	// Accumulate all results across systems
+	var allResults []*bench.Metrics
+	var benchedSystems []string
 
-	// Create a custom runner that uses our driver configs
-	runner := bench.NewRunnerWithDrivers(cfg, driverConfigs)
-	runner.SetLogger(func(format string, args ...any) {
-		fmt.Printf(format+"\n", args...)
-	})
-
-	report, err := runner.Run(ctx)
-	if err != nil {
+	for _, sys := range systemList {
+		sys = strings.TrimSpace(sys)
 		if ctx.Err() != nil {
-			fmt.Println("\nBenchmark interrupted")
-			os.Exit(1)
+			break
 		}
-		log.Fatalf("Benchmark failed: %v", err)
+
+		constructor, ok := constructors[sys]
+		if !ok {
+			fmt.Printf("Unknown system: %s (available: minio, rustfs, seaweedfs, herd)\n", sys)
+			continue
+		}
+
+		var cluster *Cluster
+
+		if !*skipStart {
+			// Start this system's cluster
+			fmt.Printf("=== Starting %s cluster ===\n", sys)
+			var err error
+			cluster, err = constructor()
+			if err != nil {
+				fmt.Printf("  ERROR starting %s: %v\n", sys, err)
+				continue
+			}
+
+			// Wait for ready
+			fmt.Printf("  Waiting for %s...\n", cluster.Name)
+			if err := cluster.WaitReady(ctx, 90*time.Second); err != nil {
+				fmt.Printf("  ERROR: %s not ready: %v\n", cluster.Name, err)
+				cluster.Stop()
+				continue
+			}
+			fmt.Printf("  %s: ready\n", cluster.Name)
+
+			// Create bucket via the cluster's S3 endpoint.
+			// With proper clusters (distributed MinIO, SeaweedFS master, Herd gateway),
+			// a single createBucket call propagates to all nodes internally.
+			var lastErr error
+			for attempt := 0; attempt < 5; attempt++ {
+				if attempt > 0 {
+					time.Sleep(3 * time.Second)
+				}
+				lastErr = createBucket(cluster.S3Endpoint(), cluster.AccessKey, cluster.SecretKey, "test-bucket")
+				if lastErr == nil {
+					break
+				}
+			}
+			if lastErr != nil {
+				fmt.Printf("  ERROR creating bucket: %v\n", lastErr)
+				cluster.Stop()
+				continue
+			}
+			fmt.Printf("  %s: bucket created\n", cluster.Name)
+		} else {
+			switch sys {
+			case "minio":
+				cluster = &Cluster{Name: "minio_cluster", S3Port: 9000, AccessKey: "minioadmin", SecretKey: "minioadmin",
+					endpointMode: "roundrobin", backendAddrs: []string{"127.0.0.1:9050", "127.0.0.1:9051", "127.0.0.1:9052", "127.0.0.1:9053"}}
+			case "rustfs":
+				cluster = &Cluster{Name: "rustfs_cluster", S3Port: 9100, AccessKey: "rustfsadmin", SecretKey: "rustfsadmin",
+					endpointMode: "roundrobin", backendAddrs: []string{"127.0.0.1:9150", "127.0.0.1:9151", "127.0.0.1:9152", "127.0.0.1:9153"}}
+			case "seaweedfs":
+				cluster = &Cluster{Name: "seaweedfs_cluster", S3Port: 8333, AccessKey: "admin", SecretKey: "adminpassword",
+					endpointMode: "roundrobin", backendAddrs: []string{"127.0.0.1:8333"}}
+			case "herd":
+				cluster = &Cluster{Name: "herd_cluster", S3Port: 9230, AccessKey: "herd", SecretKey: "herd123",
+					endpointMode: "rendezvous", backendAddrs: []string{"127.0.0.1:9241", "127.0.0.1:9242", "127.0.0.1:9243", "127.0.0.1:9244"}}
+			default:
+				continue
+			}
+		}
+
+		// Benchmark this system in isolation
+		fmt.Printf("\n=== Benchmarking %s ===\n", cluster.Name)
+
+		dsn := cluster.DSN()
+		if *direct {
+			dsn = cluster.DirectDSN()
+			fmt.Printf("  Direct mode: %d backends, mode=%s\n", len(cluster.BackendAddrs()), cluster.EndpointMode())
+		}
+
+		driverCfg := bench.DriverConfig{
+			Name:    cluster.Name,
+			DSN:     dsn,
+			Bucket:  "test-bucket",
+			Enabled: true,
+		}
+
+		runCfg := *cfg // Copy
+		runCfg.Drivers = []string{cluster.Name}
+
+		runner := bench.NewRunnerWithDrivers(&runCfg, []bench.DriverConfig{driverCfg})
+		runner.SetLogger(func(format string, args ...any) {
+			fmt.Printf(format+"\n", args...)
+		})
+
+		report, err := runner.Run(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				fmt.Println("\nBenchmark interrupted")
+				if cluster != nil && !*skipStop {
+					cluster.Stop()
+				}
+				break
+			}
+			fmt.Printf("  Benchmark failed for %s: %v\n", cluster.Name, err)
+		} else {
+			allResults = append(allResults, report.Results...)
+			benchedSystems = append(benchedSystems, cluster.Name)
+			count, errors := 0, 0
+			for _, m := range report.Results {
+				count++
+				errors += m.Errors
+			}
+			fmt.Printf("  %s: %d benchmarks, %d errors\n", cluster.Name, count, errors)
+		}
+
+		// Stop this system before starting the next
+		if !*skipStop && !*skipStart {
+			fmt.Printf("  Stopping %s...\n", cluster.Name)
+			cluster.Stop()
+			cluster.Cleanup()
+			fmt.Println()
+		}
 	}
 
-	// Phase 5: Save reports
+	if len(allResults) == 0 {
+		log.Fatal("No benchmark results collected")
+	}
+
+	// Merge all results into a single report
 	fmt.Println()
-	fmt.Println("=== Phase 5: Generating Reports ===")
+	fmt.Println("=== Generating Reports ===")
+
+	mergedReport := &bench.Report{
+		Results: allResults,
+		Config:  cfg,
+	}
 
 	os.MkdirAll(*outputDir, 0o755)
 
-	// Save standard reports
-	if err := report.SaveAll(*outputDir, cfg.OutputFormats); err != nil {
+	if err := mergedReport.SaveAll(*outputDir, cfg.OutputFormats); err != nil {
 		log.Fatalf("Save reports failed: %v", err)
 	}
 
-	// Generate cluster comparison report
-	generateClusterReport(report, *outputDir)
+	generateClusterReport(mergedReport, *outputDir, mode)
 
 	fmt.Printf("\nReports saved to %s/\n", *outputDir)
-
-	// Print summary
 	fmt.Println()
 	fmt.Println("=== Summary ===")
-	for _, c := range clusters {
-		count := 0
-		errors := 0
-		for _, m := range report.Results {
-			if m.Driver == c.Name {
+	for _, sys := range benchedSystems {
+		count, errors := 0, 0
+		for _, m := range allResults {
+			if m.Driver == sys {
 				count++
 				errors += m.Errors
 			}
 		}
-		fmt.Printf("  %s: %d benchmarks, %d errors\n", c.Name, count, errors)
+		fmt.Printf("  %s: %d benchmarks, %d errors\n", sys, count, errors)
 	}
 }
 
 // generateClusterReport creates a detailed cluster comparison markdown report.
-func generateClusterReport(report *bench.Report, outputDir string) {
+func generateClusterReport(report *bench.Report, outputDir, mode string) {
 	path := filepath.Join(outputDir, "cluster_comparison.md")
 	f, err := os.Create(path)
 	if err != nil {
@@ -281,7 +296,7 @@ func generateClusterReport(report *bench.Report, outputDir string) {
 	w("# Cluster S3 Benchmark: MinIO vs RustFS vs SeaweedFS vs Herd")
 	w("")
 	w("**Date**: %s", time.Now().Format("2006-01-02 15:04:05"))
-	w("**Mode**: 3-node cluster, all via S3 HTTP API")
+	w("**Mode**: 4-node cluster, %s, all via S3 HTTP API", mode)
 	w("")
 
 	// Collect all drivers

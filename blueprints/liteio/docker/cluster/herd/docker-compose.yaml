@@ -1,0 +1,94 @@
+# Herd True Cluster (4 independent S3+storage servers + HAProxy)
+# Each server has its own embedded store. No gateway bottleneck.
+# HAProxy uses consistent URI hashing.
+#
+# Usage: docker compose up -d
+# S3 endpoint: http://localhost:9230
+# Credentials: herd / herd123
+#
+# Build the herd image first:
+#   docker build -t herd:latest -f Dockerfile ../../..
+
+x-herd-common: &herd-common
+  image: herd:latest
+  command: >
+    -listen :9000 -data-dir /data
+    -stripes 16 -sync batch -inline-kb 8
+    -prealloc 1024 -bufsize 16777216
+    -access-key herd -secret-key herd123 -no-log
+  expose:
+    - "9000"
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:9000/ 2>&1 || exit 1"]
+    interval: 5s
+    timeout: 5s
+    retries: 10
+    start_period: 5s
+
+services:
+  herd1:
+    <<: *herd-common
+    volumes:
+      - herd1_data:/data
+
+  herd2:
+    <<: *herd-common
+    volumes:
+      - herd2_data:/data
+
+  herd3:
+    <<: *herd-common
+    volumes:
+      - herd3_data:/data
+
+  herd4:
+    <<: *herd-common
+    volumes:
+      - herd4_data:/data
+
+  haproxy:
+    image: haproxy:3.0-alpine
+    ports:
+      - "9230:9230"
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    restart: unless-stopped
+    depends_on:
+      herd1:
+        condition: service_healthy
+      herd2:
+        condition: service_healthy
+      herd3:
+        condition: service_healthy
+      herd4:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:9230/ 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  herd-init:
+    image: public.ecr.aws/aws-cli/aws-cli:latest
+    pull_policy: if_not_present
+    depends_on:
+      haproxy:
+        condition: service_healthy
+    restart: "no"
+    environment:
+      AWS_ACCESS_KEY_ID: herd
+      AWS_SECRET_ACCESS_KEY: herd123
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://haproxy:9230 s3 mb s3://test-bucket || true;
+      exit 0;
+      "
+
+volumes:
+  herd1_data:
+  herd2_data:
+  herd3_data:
+  herd4_data:

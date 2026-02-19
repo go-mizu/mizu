@@ -1,0 +1,100 @@
+# MinIO True Distributed Cluster (4 nodes, 2 drives each)
+# Erasure coding across 8 drives (EC:4), HAProxy load balancer.
+#
+# Usage: docker compose up -d
+# S3 endpoint: http://localhost:9000
+# Credentials: minioadmin / minioadmin
+
+x-minio-common: &minio-common
+  image: minio/minio:latest
+  command: server --console-address ":9001" http://minio{1...4}/data{1...2}
+  expose:
+    - "9000"
+    - "9001"
+  environment:
+    MINIO_ROOT_USER: minioadmin
+    MINIO_ROOT_PASSWORD: minioadmin
+    MINIO_CI_CD: "on"
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD", "mc", "ready", "local"]
+    interval: 5s
+    timeout: 5s
+    retries: 10
+    start_period: 10s
+
+services:
+  minio1:
+    <<: *minio-common
+    hostname: minio1
+    volumes:
+      - minio1-data1:/data1
+      - minio1-data2:/data2
+
+  minio2:
+    <<: *minio-common
+    hostname: minio2
+    volumes:
+      - minio2-data1:/data1
+      - minio2-data2:/data2
+
+  minio3:
+    <<: *minio-common
+    hostname: minio3
+    volumes:
+      - minio3-data1:/data1
+      - minio3-data2:/data2
+
+  minio4:
+    <<: *minio-common
+    hostname: minio4
+    volumes:
+      - minio4-data1:/data1
+      - minio4-data2:/data2
+
+  haproxy:
+    image: haproxy:3.0-alpine
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    restart: unless-stopped
+    depends_on:
+      minio1:
+        condition: service_healthy
+      minio2:
+        condition: service_healthy
+      minio3:
+        condition: service_healthy
+      minio4:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9000/minio/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      haproxy:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set cluster http://haproxy:9000 minioadmin minioadmin;
+      mc mb cluster/test-bucket --ignore-existing;
+      exit 0;
+      "
+
+volumes:
+  minio1-data1:
+  minio1-data2:
+  minio2-data1:
+  minio2-data2:
+  minio3-data1:
+  minio3-data2:
+  minio4-data1:
+  minio4-data2:

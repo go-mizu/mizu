@@ -1,0 +1,90 @@
+# RustFS MNMD (Multi-Node Multi-Drive) — 4 nodes × 2 drives = 8 drive erasure set
+# Based on: docs.rustfs.com/installation/linux/multiple-node-multiple-disk
+#
+# Same erasure coding model as MinIO. Any node serves any request.
+# Status: Alpha (distributed mode "Under Testing")
+#
+# Ports:
+#   9100  — nginx frontend (round-robin)
+#   9150-9153 — RustFS S3 backends
+#   9160-9163 — RustFS console
+
+x-rustfs-common: &rustfs-common
+  image: rustfs/rustfs:latest
+  command: server http://rustfs{1...4}/data{1...2}
+  environment:
+    RUSTFS_ACCESS_KEY: rustfsadmin
+    RUSTFS_SECRET_KEY: rustfsadmin
+  healthcheck:
+    test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+    interval: 5s
+    timeout: 5s
+    retries: 5
+
+services:
+  rustfs1:
+    <<: *rustfs-common
+    hostname: rustfs1
+    ports:
+      - "9150:9000"
+      - "9160:9001"
+    volumes:
+      - rustfs1-data1:/data1
+      - rustfs1-data2:/data2
+
+  rustfs2:
+    <<: *rustfs-common
+    hostname: rustfs2
+    ports:
+      - "9151:9000"
+      - "9161:9001"
+    volumes:
+      - rustfs2-data1:/data1
+      - rustfs2-data2:/data2
+
+  rustfs3:
+    <<: *rustfs-common
+    hostname: rustfs3
+    ports:
+      - "9152:9000"
+      - "9162:9001"
+    volumes:
+      - rustfs3-data1:/data1
+      - rustfs3-data2:/data2
+
+  rustfs4:
+    <<: *rustfs-common
+    hostname: rustfs4
+    ports:
+      - "9153:9000"
+      - "9163:9001"
+    volumes:
+      - rustfs4-data1:/data1
+      - rustfs4-data2:/data2
+
+  nginx:
+    image: nginx:alpine
+    hostname: nginx
+    ports:
+      - "9100:9100"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      rustfs1:
+        condition: service_healthy
+      rustfs2:
+        condition: service_healthy
+      rustfs3:
+        condition: service_healthy
+      rustfs4:
+        condition: service_healthy
+
+volumes:
+  rustfs1-data1:
+  rustfs1-data2:
+  rustfs2-data1:
+  rustfs2-data2:
+  rustfs3-data1:
+  rustfs3-data2:
+  rustfs4-data1:
+  rustfs4-data2:

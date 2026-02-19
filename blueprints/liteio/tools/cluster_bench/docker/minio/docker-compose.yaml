@@ -1,0 +1,91 @@
+# MinIO MNMD (Multi-Node Multi-Drive) — 4 nodes × 2 drives = 8 drive erasure set
+# Based on: github.com/minio/minio/docs/orchestration/docker-compose
+#
+# Erasure coding: EC:4 (4 data + 4 parity), 50% usable capacity
+# Any node can serve any request — round-robin LB is correct.
+#
+# Ports:
+#   9000  — nginx frontend (round-robin to all nodes)
+#   9050-9053 — MinIO S3 backends
+#   9060-9063 — MinIO console (optional)
+
+x-minio-common: &minio-common
+  image: minio/minio:latest
+  command: server --console-address ":9001" http://minio{1...4}/data{1...2}
+  environment:
+    MINIO_ROOT_USER: minioadmin
+    MINIO_ROOT_PASSWORD: minioadmin
+    MINIO_CI_CD: "on"
+  healthcheck:
+    test: ["CMD", "mc", "ready", "local"]
+    interval: 5s
+    timeout: 5s
+    retries: 5
+
+services:
+  minio1:
+    <<: *minio-common
+    hostname: minio1
+    ports:
+      - "9050:9000"
+      - "9060:9001"
+    volumes:
+      - minio1-data1:/data1
+      - minio1-data2:/data2
+
+  minio2:
+    <<: *minio-common
+    hostname: minio2
+    ports:
+      - "9051:9000"
+      - "9061:9001"
+    volumes:
+      - minio2-data1:/data1
+      - minio2-data2:/data2
+
+  minio3:
+    <<: *minio-common
+    hostname: minio3
+    ports:
+      - "9052:9000"
+      - "9062:9001"
+    volumes:
+      - minio3-data1:/data1
+      - minio3-data2:/data2
+
+  minio4:
+    <<: *minio-common
+    hostname: minio4
+    ports:
+      - "9053:9000"
+      - "9063:9001"
+    volumes:
+      - minio4-data1:/data1
+      - minio4-data2:/data2
+
+  nginx:
+    image: nginx:alpine
+    hostname: nginx
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      minio1:
+        condition: service_healthy
+      minio2:
+        condition: service_healthy
+      minio3:
+        condition: service_healthy
+      minio4:
+        condition: service_healthy
+
+volumes:
+  minio1-data1:
+  minio1-data2:
+  minio2-data1:
+  minio2-data2:
+  minio3-data1:
+  minio3-data2:
+  minio4-data1:
+  minio4-data2:

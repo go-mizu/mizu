@@ -1,0 +1,229 @@
+# SeaweedFS True Cluster (1 master + 3 volumes + 4 filer/S3 + HAProxy)
+# All S3 gateways are stateless and load-balanced with leastconn.
+#
+# Usage: docker compose up -d
+# S3 endpoint: http://localhost:8333
+# Credentials: admin / adminpassword
+
+services:
+  master:
+    image: chrislusf/seaweedfs:latest
+    command: master -ip=master -ip.bind=0.0.0.0 -volumeSizeLimitMB=1024
+    expose:
+      - "9333"
+      - "19333"
+    volumes:
+      - master_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9333/cluster/status"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  volume1:
+    image: chrislusf/seaweedfs:latest
+    command: volume -mserver="master:9333" -port=8080 -ip=volume1 -ip.bind=0.0.0.0 -rack=rack1 -max=0
+    depends_on:
+      master:
+        condition: service_healthy
+    volumes:
+      - volume1_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/status"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  volume2:
+    image: chrislusf/seaweedfs:latest
+    command: volume -mserver="master:9333" -port=8080 -ip=volume2 -ip.bind=0.0.0.0 -rack=rack2 -max=0
+    depends_on:
+      master:
+        condition: service_healthy
+    volumes:
+      - volume2_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/status"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  volume3:
+    image: chrislusf/seaweedfs:latest
+    command: volume -mserver="master:9333" -port=8080 -ip=volume3 -ip.bind=0.0.0.0 -rack=rack3 -max=0
+    depends_on:
+      master:
+        condition: service_healthy
+    volumes:
+      - volume3_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/status"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  filer1:
+    image: chrislusf/seaweedfs:latest
+    command: >
+      filer -master="master:9333" -ip=filer1 -ip.bind=0.0.0.0
+      -defaultStoreDir=/data/filerldb
+      -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+    depends_on:
+      volume1:
+        condition: service_healthy
+      volume2:
+        condition: service_healthy
+      volume3:
+        condition: service_healthy
+    expose:
+      - "8333"
+      - "8888"
+    volumes:
+      - filer1_data:/data
+      - ./s3.json:/etc/seaweedfs/s3.json:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8888/"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 15s
+
+  filer2:
+    image: chrislusf/seaweedfs:latest
+    command: >
+      filer -master="master:9333" -ip=filer2 -ip.bind=0.0.0.0
+      -defaultStoreDir=/data/filerldb
+      -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+    depends_on:
+      volume1:
+        condition: service_healthy
+      volume2:
+        condition: service_healthy
+      volume3:
+        condition: service_healthy
+    expose:
+      - "8333"
+      - "8888"
+    volumes:
+      - filer2_data:/data
+      - ./s3.json:/etc/seaweedfs/s3.json:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8888/"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 15s
+
+  filer3:
+    image: chrislusf/seaweedfs:latest
+    command: >
+      filer -master="master:9333" -ip=filer3 -ip.bind=0.0.0.0
+      -defaultStoreDir=/data/filerldb
+      -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+    depends_on:
+      volume1:
+        condition: service_healthy
+      volume2:
+        condition: service_healthy
+      volume3:
+        condition: service_healthy
+    expose:
+      - "8333"
+      - "8888"
+    volumes:
+      - filer3_data:/data
+      - ./s3.json:/etc/seaweedfs/s3.json:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8888/"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 15s
+
+  filer4:
+    image: chrislusf/seaweedfs:latest
+    command: >
+      filer -master="master:9333" -ip=filer4 -ip.bind=0.0.0.0
+      -defaultStoreDir=/data/filerldb
+      -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+    depends_on:
+      volume1:
+        condition: service_healthy
+      volume2:
+        condition: service_healthy
+      volume3:
+        condition: service_healthy
+    expose:
+      - "8333"
+      - "8888"
+    volumes:
+      - filer4_data:/data
+      - ./s3.json:/etc/seaweedfs/s3.json:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8888/"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 15s
+
+  haproxy:
+    image: haproxy:3.0-alpine
+    ports:
+      - "8333:8333"
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    restart: unless-stopped
+    depends_on:
+      filer1:
+        condition: service_healthy
+      filer2:
+        condition: service_healthy
+      filer3:
+        condition: service_healthy
+      filer4:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:8333/ 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  s3-init:
+    image: public.ecr.aws/aws-cli/aws-cli:latest
+    pull_policy: if_not_present
+    depends_on:
+      haproxy:
+        condition: service_healthy
+    restart: "no"
+    environment:
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: adminpassword
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://haproxy:8333 s3 mb s3://test-bucket || true;
+      exit 0;
+      "
+
+volumes:
+  master_data:
+  volume1_data:
+  volume2_data:
+  volume3_data:
+  filer1_data:
+  filer2_data:
+  filer3_data:
+  filer4_data:

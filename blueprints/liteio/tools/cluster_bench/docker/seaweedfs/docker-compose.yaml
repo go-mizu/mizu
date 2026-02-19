@@ -1,0 +1,154 @@
+# SeaweedFS cluster — 1 master + 3 volumes + 4 filer/S3 gateways
+# Based on: github.com/seaweedfs/seaweedfs/docker/compose
+#
+# Architecture:
+#   Master (9333)    — Raft coordination, volume assignment
+#   Volume ×3        — Blob data storage (repl:000 = no replication)
+#   Filer+S3 ×4      — Stateless S3 gateways (any filer serves any key)
+#   HAProxy (8333)   — leastconn across filer S3 ports
+#
+# Critical: Filers start sequentially (gRPC bootstrap from peers).
+
+services:
+  master:
+    image: chrislusf/seaweedfs:latest
+    command: master -mdir=/data -volumeSizeLimitMB=1024 -defaultReplication=000
+    ports:
+      - "9333:9333"
+      - "19333:19333"
+    volumes:
+      - master-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9333/cluster/status"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  volume1:
+    image: chrislusf/seaweedfs:latest
+    command: volume -mserver=master:9333 -ip.bind=0.0.0.0 -port=8080 -port.grpc=18080 -max=0 -rack=rack1
+    ports:
+      - "8080:8080"
+    volumes:
+      - volume1-data:/data
+    depends_on:
+      master:
+        condition: service_healthy
+
+  volume2:
+    image: chrislusf/seaweedfs:latest
+    command: volume -mserver=master:9333 -ip.bind=0.0.0.0 -port=8080 -port.grpc=18080 -max=0 -rack=rack2
+    ports:
+      - "8081:8080"
+    volumes:
+      - volume2-data:/data
+    depends_on:
+      master:
+        condition: service_healthy
+
+  volume3:
+    image: chrislusf/seaweedfs:latest
+    command: volume -mserver=master:9333 -ip.bind=0.0.0.0 -port=8080 -port.grpc=18080 -max=0 -rack=rack3
+    ports:
+      - "8082:8080"
+    volumes:
+      - volume3-data:/data
+    depends_on:
+      master:
+        condition: service_healthy
+
+  # Filers start sequentially — each waits for the previous to be healthy.
+  filer1:
+    image: chrislusf/seaweedfs:latest
+    command: filer -master=master:9333 -ip.bind=0.0.0.0 -port=8888 -port.grpc=18888 -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+    ports:
+      - "8340:8333"
+      - "8880:8888"
+    volumes:
+      - filer1-data:/data
+      - ./s3.json:/etc/seaweedfs/s3.json:ro
+    depends_on:
+      volume1:
+        condition: service_started
+      volume2:
+        condition: service_started
+      volume3:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  filer2:
+    image: chrislusf/seaweedfs:latest
+    command: filer -master=master:9333 -ip.bind=0.0.0.0 -port=8888 -port.grpc=18888 -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+    ports:
+      - "8341:8333"
+      - "8881:8888"
+    volumes:
+      - filer2-data:/data
+      - ./s3.json:/etc/seaweedfs/s3.json:ro
+    depends_on:
+      filer1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  filer3:
+    image: chrislusf/seaweedfs:latest
+    command: filer -master=master:9333 -ip.bind=0.0.0.0 -port=8888 -port.grpc=18888 -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+    ports:
+      - "8342:8333"
+      - "8882:8888"
+    volumes:
+      - filer3-data:/data
+      - ./s3.json:/etc/seaweedfs/s3.json:ro
+    depends_on:
+      filer2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  filer4:
+    image: chrislusf/seaweedfs:latest
+    command: filer -master=master:9333 -ip.bind=0.0.0.0 -port=8888 -port.grpc=18888 -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+    ports:
+      - "8343:8333"
+      - "8883:8888"
+    volumes:
+      - filer4-data:/data
+      - ./s3.json:/etc/seaweedfs/s3.json:ro
+    depends_on:
+      filer3:
+        condition: service_healthy
+
+  haproxy:
+    image: haproxy:alpine
+    ports:
+      - "8333:8333"
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      filer1:
+        condition: service_healthy
+      filer2:
+        condition: service_healthy
+      filer3:
+        condition: service_healthy
+
+volumes:
+  master-data:
+  volume1-data:
+  volume2-data:
+  volume3-data:
+  filer1-data:
+  filer2-data:
+  filer3-data:
+  filer4-data:

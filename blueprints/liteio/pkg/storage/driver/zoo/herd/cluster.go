@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/md5"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -222,7 +224,10 @@ type multiNodeBucket struct {
 	name string
 }
 
-var _ storage.Bucket = (*multiNodeBucket)(nil)
+var (
+	_ storage.Bucket       = (*multiNodeBucket)(nil)
+	_ storage.HasMultipart = (*multiNodeBucket)(nil)
+)
 
 func (b *multiNodeBucket) Name() string { return b.name }
 func (b *multiNodeBucket) Features() storage.Features {
@@ -378,6 +383,155 @@ func (b *multiNodeBucket) List(_ context.Context, prefix string, limit, offset i
 
 func (b *multiNodeBucket) SignedURL(_ context.Context, _ string, _ string, _ time.Duration, _ storage.Options) (string, error) {
 	return "", storage.ErrUnsupported
+}
+
+// Multipart support for multiNodeBucket — gateway-side buffering.
+
+func (b *multiNodeBucket) InitMultipart(_ context.Context, key string, contentType string, _ storage.Options) (*storage.MultipartUpload, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return nil, fmt.Errorf("herd: key is empty")
+	}
+	uploadID := newUploadID()
+	mu := &storage.MultipartUpload{
+		Bucket:   b.name,
+		Key:      key,
+		UploadID: uploadID,
+	}
+	b.ms.mp.mu.Lock()
+	b.ms.mp.uploads[uploadID] = &multipartUpload{
+		mu:          mu,
+		contentType: contentType,
+		createdAt:   fastNowTime(),
+		parts:       make(map[int]*partData),
+	}
+	b.ms.mp.mu.Unlock()
+	return mu, nil
+}
+
+func (b *multiNodeBucket) UploadPart(_ context.Context, mu *storage.MultipartUpload, number int, src io.Reader, size int64, _ storage.Options) (*storage.PartInfo, error) {
+	if number <= 0 || number > 10000 {
+		return nil, fmt.Errorf("herd: part number %d out of range (1-10000)", number)
+	}
+	var data []byte
+	if size >= 0 {
+		data = make([]byte, size)
+		n, err := io.ReadFull(src, data)
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+			return nil, err
+		}
+		data = data[:n]
+	} else {
+		var buf bytes.Buffer
+		if _, err := io.Copy(&buf, src); err != nil {
+			return nil, err
+		}
+		data = buf.Bytes()
+	}
+	now := fastNowTime()
+	sum := md5Sum(data)
+	pd := &partData{
+		number:       number,
+		data:         data,
+		etag:         sum,
+		lastModified: now,
+	}
+	b.ms.mp.mu.Lock()
+	upload, ok := b.ms.mp.uploads[mu.UploadID]
+	if !ok {
+		b.ms.mp.mu.Unlock()
+		return nil, storage.ErrNotExist
+	}
+	upload.parts[number] = pd
+	b.ms.mp.mu.Unlock()
+	return &storage.PartInfo{
+		Number:       number,
+		Size:         int64(len(data)),
+		ETag:         sum,
+		LastModified: &now,
+	}, nil
+}
+
+func (b *multiNodeBucket) CopyPart(_ context.Context, _ *storage.MultipartUpload, _ int, _ storage.Options) (*storage.PartInfo, error) {
+	return nil, storage.ErrUnsupported
+}
+
+func (b *multiNodeBucket) ListParts(_ context.Context, mu *storage.MultipartUpload, limit, offset int, _ storage.Options) ([]*storage.PartInfo, error) {
+	b.ms.mp.mu.RLock()
+	defer b.ms.mp.mu.RUnlock()
+	upload, ok := b.ms.mp.uploads[mu.UploadID]
+	if !ok {
+		return nil, storage.ErrNotExist
+	}
+	parts := make([]*storage.PartInfo, 0, len(upload.parts))
+	for _, pd := range upload.parts {
+		lastMod := pd.lastModified
+		parts = append(parts, &storage.PartInfo{
+			Number:       pd.number,
+			Size:         int64(len(pd.data)),
+			ETag:         pd.etag,
+			LastModified: &lastMod,
+		})
+	}
+	sort.Slice(parts, func(i, j int) bool { return parts[i].Number < parts[j].Number })
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(parts) {
+		offset = len(parts)
+	}
+	parts = parts[offset:]
+	if limit > 0 && limit < len(parts) {
+		parts = parts[:limit]
+	}
+	return parts, nil
+}
+
+func (b *multiNodeBucket) CompleteMultipart(ctx context.Context, mu *storage.MultipartUpload, parts []*storage.PartInfo, _ storage.Options) (*storage.Object, error) {
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("herd: no parts to complete")
+	}
+	b.ms.mp.mu.Lock()
+	upload, ok := b.ms.mp.uploads[mu.UploadID]
+	if !ok {
+		b.ms.mp.mu.Unlock()
+		return nil, storage.ErrNotExist
+	}
+	sortedParts := make([]*storage.PartInfo, len(parts))
+	copy(sortedParts, parts)
+	sort.Slice(sortedParts, func(i, j int) bool { return sortedParts[i].Number < sortedParts[j].Number })
+	totalSize := 0
+	for _, part := range sortedParts {
+		pd, exists := upload.parts[part.Number]
+		if !exists {
+			b.ms.mp.mu.Unlock()
+			return nil, fmt.Errorf("herd: part %d not found", part.Number)
+		}
+		totalSize += len(pd.data)
+	}
+	data := make([]byte, 0, totalSize)
+	for _, part := range sortedParts {
+		pd := upload.parts[part.Number]
+		data = append(data, pd.data...)
+	}
+	contentType := upload.contentType
+	key := upload.mu.Key
+	delete(b.ms.mp.uploads, mu.UploadID)
+	b.ms.mp.mu.Unlock()
+
+	// Write assembled object to the correct node.
+	node := b.ms.nodeFor(b.name, key)
+	return node.Bucket(b.name).Write(ctx, key, bytes.NewReader(data), int64(totalSize), contentType, nil)
+}
+
+func (b *multiNodeBucket) AbortMultipart(_ context.Context, mu *storage.MultipartUpload, _ storage.Options) error {
+	b.ms.mp.mu.Lock()
+	defer b.ms.mp.mu.Unlock()
+	if _, ok := b.ms.mp.uploads[mu.UploadID]; !ok {
+		return storage.ErrNotExist
+	}
+	delete(b.ms.mp.uploads, mu.UploadID)
+	return nil
 }
 
 // openGossipCluster creates a cluster store with dynamic membership via HashiCorp memberlist.
@@ -653,7 +807,10 @@ type clusterBucket struct {
 	name string
 }
 
-var _ storage.Bucket = (*clusterBucket)(nil)
+var (
+	_ storage.Bucket       = (*clusterBucket)(nil)
+	_ storage.HasMultipart = (*clusterBucket)(nil)
+)
 
 func (b *clusterBucket) Name() string { return b.name }
 func (b *clusterBucket) Features() storage.Features {
@@ -706,12 +863,42 @@ func (b *clusterBucket) Delete(_ context.Context, key string, _ storage.Options)
 	return node.del(b.name, key)
 }
 
-func (b *clusterBucket) Copy(_ context.Context, _ string, _, _ string, _ storage.Options) (*storage.Object, error) {
-	return nil, storage.ErrUnsupported
+func (b *clusterBucket) Copy(_ context.Context, dstKey string, srcBucket, srcKey string, _ storage.Options) (*storage.Object, error) {
+	srcKey = strings.TrimSpace(srcKey)
+	dstKey = strings.TrimSpace(dstKey)
+	if srcKey == "" || dstKey == "" {
+		return nil, fmt.Errorf("herd: key is empty")
+	}
+	if srcBucket == "" {
+		srcBucket = b.name
+	}
+
+	// Read from source node.
+	srcNode := b.cs.nodeFor(srcBucket, srcKey)
+	rc, obj, err := srcNode.get(srcBucket, srcKey, 0, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+
+	// Write to destination node.
+	dstNode := b.cs.nodeFor(b.name, dstKey)
+	return dstNode.put(b.name, dstKey, obj.ContentType, rc, obj.Size)
 }
 
-func (b *clusterBucket) Move(_ context.Context, _ string, _, _ string, _ storage.Options) (*storage.Object, error) {
-	return nil, storage.ErrUnsupported
+func (b *clusterBucket) Move(_ context.Context, dstKey string, srcBucket, srcKey string, _ storage.Options) (*storage.Object, error) {
+	obj, err := b.Copy(context.Background(), dstKey, srcBucket, srcKey, nil)
+	if err != nil {
+		return nil, err
+	}
+	if srcBucket == "" {
+		srcBucket = b.name
+	}
+	srcNode := b.cs.nodeFor(srcBucket, srcKey)
+	if err := srcNode.del(srcBucket, srcKey); err != nil {
+		return nil, err
+	}
+	return obj, nil
 }
 
 func (b *clusterBucket) List(_ context.Context, prefix string, limit, offset int, _ storage.Options) (storage.ObjectIter, error) {
@@ -754,27 +941,189 @@ func (b *clusterBucket) SignedURL(_ context.Context, _ string, _ string, _ time.
 	return "", storage.ErrUnsupported
 }
 
+func md5Sum(data []byte) string {
+	sum := md5.Sum(data)
+	return hex.EncodeToString(sum[:])
+}
+
+// Multipart support — gateway-side buffering with final write to the correct node.
+
+func (b *clusterBucket) InitMultipart(_ context.Context, key string, contentType string, _ storage.Options) (*storage.MultipartUpload, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return nil, fmt.Errorf("herd: key is empty")
+	}
+	uploadID := newUploadID()
+	mu := &storage.MultipartUpload{
+		Bucket:   b.name,
+		Key:      key,
+		UploadID: uploadID,
+	}
+	b.cs.mp.mu.Lock()
+	b.cs.mp.uploads[uploadID] = &multipartUpload{
+		mu:          mu,
+		contentType: contentType,
+		createdAt:   fastNowTime(),
+		parts:       make(map[int]*partData),
+	}
+	b.cs.mp.mu.Unlock()
+	return mu, nil
+}
+
+func (b *clusterBucket) UploadPart(_ context.Context, mu *storage.MultipartUpload, number int, src io.Reader, size int64, _ storage.Options) (*storage.PartInfo, error) {
+	if number <= 0 || number > 10000 {
+		return nil, fmt.Errorf("herd: part number %d out of range (1-10000)", number)
+	}
+	var data []byte
+	if size >= 0 {
+		data = make([]byte, size)
+		n, err := io.ReadFull(src, data)
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+			return nil, err
+		}
+		data = data[:n]
+	} else {
+		var buf bytes.Buffer
+		if _, err := io.Copy(&buf, src); err != nil {
+			return nil, err
+		}
+		data = buf.Bytes()
+	}
+	now := fastNowTime()
+	sum := md5Sum(data)
+	pd := &partData{
+		number:       number,
+		data:         data,
+		etag:         sum,
+		lastModified: now,
+	}
+	b.cs.mp.mu.Lock()
+	upload, ok := b.cs.mp.uploads[mu.UploadID]
+	if !ok {
+		b.cs.mp.mu.Unlock()
+		return nil, storage.ErrNotExist
+	}
+	upload.parts[number] = pd
+	b.cs.mp.mu.Unlock()
+	return &storage.PartInfo{
+		Number:       number,
+		Size:         int64(len(data)),
+		ETag:         sum,
+		LastModified: &now,
+	}, nil
+}
+
+func (b *clusterBucket) CopyPart(_ context.Context, _ *storage.MultipartUpload, _ int, _ storage.Options) (*storage.PartInfo, error) {
+	return nil, storage.ErrUnsupported
+}
+
+func (b *clusterBucket) ListParts(_ context.Context, mu *storage.MultipartUpload, limit, offset int, _ storage.Options) ([]*storage.PartInfo, error) {
+	b.cs.mp.mu.RLock()
+	defer b.cs.mp.mu.RUnlock()
+	upload, ok := b.cs.mp.uploads[mu.UploadID]
+	if !ok {
+		return nil, storage.ErrNotExist
+	}
+	parts := make([]*storage.PartInfo, 0, len(upload.parts))
+	for _, pd := range upload.parts {
+		lastMod := pd.lastModified
+		parts = append(parts, &storage.PartInfo{
+			Number:       pd.number,
+			Size:         int64(len(pd.data)),
+			ETag:         pd.etag,
+			LastModified: &lastMod,
+		})
+	}
+	sort.Slice(parts, func(i, j int) bool { return parts[i].Number < parts[j].Number })
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(parts) {
+		offset = len(parts)
+	}
+	parts = parts[offset:]
+	if limit > 0 && limit < len(parts) {
+		parts = parts[:limit]
+	}
+	return parts, nil
+}
+
+func (b *clusterBucket) CompleteMultipart(_ context.Context, mu *storage.MultipartUpload, parts []*storage.PartInfo, _ storage.Options) (*storage.Object, error) {
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("herd: no parts to complete")
+	}
+	b.cs.mp.mu.Lock()
+	upload, ok := b.cs.mp.uploads[mu.UploadID]
+	if !ok {
+		b.cs.mp.mu.Unlock()
+		return nil, storage.ErrNotExist
+	}
+	sortedParts := make([]*storage.PartInfo, len(parts))
+	copy(sortedParts, parts)
+	sort.Slice(sortedParts, func(i, j int) bool { return sortedParts[i].Number < sortedParts[j].Number })
+	totalSize := 0
+	for _, part := range sortedParts {
+		pd, exists := upload.parts[part.Number]
+		if !exists {
+			b.cs.mp.mu.Unlock()
+			return nil, fmt.Errorf("herd: part %d not found", part.Number)
+		}
+		totalSize += len(pd.data)
+	}
+	data := make([]byte, 0, totalSize)
+	for _, part := range sortedParts {
+		pd := upload.parts[part.Number]
+		data = append(data, pd.data...)
+	}
+	contentType := upload.contentType
+	key := upload.mu.Key
+	delete(b.cs.mp.uploads, mu.UploadID)
+	b.cs.mp.mu.Unlock()
+
+	// Write assembled object to the correct node.
+	node := b.cs.nodeFor(b.name, key)
+	return node.put(b.name, key, contentType, bytes.NewReader(data), int64(totalSize))
+}
+
+func (b *clusterBucket) AbortMultipart(_ context.Context, mu *storage.MultipartUpload, _ storage.Options) error {
+	b.cs.mp.mu.Lock()
+	defer b.cs.mp.mu.Unlock()
+	if _, ok := b.cs.mp.uploads[mu.UploadID]; !ok {
+		return storage.ErrNotExist
+	}
+	delete(b.cs.mp.uploads, mu.UploadID)
+	return nil
+}
+
+// connWrapper bundles a TCP connection with persistent buffered reader/writer
+// to avoid per-operation allocation of bufio buffers.
+type connWrapper struct {
+	conn net.Conn
+	r    *bufio.Reader
+	w    *bufio.Writer
+}
+
 // remoteNode is a TCP client to a single herd node.
 type remoteNode struct {
 	addr string
-	pool chan net.Conn
+	pool chan *connWrapper
 }
 
 func newRemoteNode(addr string) (*remoteNode, error) {
 	rn := &remoteNode{
 		addr: addr,
-		pool: make(chan net.Conn, 64),
+		pool: make(chan *connWrapper, 256),
 	}
 	// Test connection.
-	conn, err := rn.dial()
+	cw, err := rn.dial()
 	if err != nil {
 		return nil, err
 	}
-	rn.putConn(conn)
+	rn.putConn(cw)
 	return rn, nil
 }
 
-func (rn *remoteNode) dial() (net.Conn, error) {
+func (rn *remoteNode) dial() (*connWrapper, error) {
 	conn, err := net.DialTimeout("tcp", rn.addr, 5*time.Second)
 	if err != nil {
 		return nil, err
@@ -783,30 +1132,34 @@ func (rn *remoteNode) dial() (net.Conn, error) {
 		tc.SetNoDelay(true)
 		tc.SetKeepAlive(true)
 	}
-	return conn, nil
+	return &connWrapper{
+		conn: conn,
+		r:    bufio.NewReaderSize(conn, 256*1024),
+		w:    bufio.NewWriterSize(conn, 256*1024),
+	}, nil
 }
 
-func (rn *remoteNode) getConn() (net.Conn, error) {
+func (rn *remoteNode) getConn() (*connWrapper, error) {
 	select {
-	case c := <-rn.pool:
-		return c, nil
+	case cw := <-rn.pool:
+		return cw, nil
 	default:
 		return rn.dial()
 	}
 }
 
-func (rn *remoteNode) putConn(c net.Conn) {
+func (rn *remoteNode) putConn(cw *connWrapper) {
 	select {
-	case rn.pool <- c:
+	case rn.pool <- cw:
 	default:
-		c.Close()
+		cw.conn.Close()
 	}
 }
 
 func (rn *remoteNode) close() {
 	close(rn.pool)
-	for c := range rn.pool {
-		c.Close()
+	for cw := range rn.pool {
+		cw.conn.Close()
 	}
 }
 
@@ -945,25 +1298,22 @@ func (rn *remoteNode) put(bucket, key, contentType string, src io.Reader, size i
 	now := fastNow()
 	body := encodePutBody(bucket, key, contentType, data, now)
 
-	conn, err := rn.getConn()
+	cw, err := rn.getConn()
 	if err != nil {
 		return nil, err
 	}
 
-	w := bufio.NewWriterSize(conn, 65536)
-	r := bufio.NewReaderSize(conn, 65536)
-
-	if err := writeRequest(w, opPut, body); err != nil {
-		conn.Close()
+	if err := writeRequest(cw.w, opPut, body); err != nil {
+		cw.conn.Close()
 		return nil, err
 	}
 
-	status, _, err := readResponse(r)
+	status, _, err := readResponse(cw.r)
 	if err != nil {
-		conn.Close()
+		cw.conn.Close()
 		return nil, err
 	}
-	rn.putConn(conn)
+	rn.putConn(cw)
 
 	if status != statusOK {
 		return nil, fmt.Errorf("herd: remote put failed (status %d)", status)
@@ -982,25 +1332,22 @@ func (rn *remoteNode) put(bucket, key, contentType string, src io.Reader, size i
 func (rn *remoteNode) get(bucket, key string, offset, length int64) (io.ReadCloser, *storage.Object, error) {
 	body := encodeGetBody(bucket, key, offset, length)
 
-	conn, err := rn.getConn()
+	cw, err := rn.getConn()
 	if err != nil {
 		return nil, nil, err
 	}
 
-	w := bufio.NewWriterSize(conn, 4096)
-	r := bufio.NewReaderSize(conn, 65536)
-
-	if err := writeRequest(w, opGet, body); err != nil {
-		conn.Close()
+	if err := writeRequest(cw.w, opGet, body); err != nil {
+		cw.conn.Close()
 		return nil, nil, err
 	}
 
-	status, respBody, err := readResponse(r)
+	status, respBody, err := readResponse(cw.r)
 	if err != nil {
-		conn.Close()
+		cw.conn.Close()
 		return nil, nil, err
 	}
-	rn.putConn(conn)
+	rn.putConn(cw)
 
 	if status == statusNotFound {
 		return nil, nil, storage.ErrNotExist
@@ -1035,25 +1382,22 @@ func (rn *remoteNode) get(bucket, key string, offset, length int64) (io.ReadClos
 func (rn *remoteNode) stat(bucket, key string) (*storage.Object, error) {
 	body := encodeKeyBody(bucket, key)
 
-	conn, err := rn.getConn()
+	cw, err := rn.getConn()
 	if err != nil {
 		return nil, err
 	}
 
-	w := bufio.NewWriterSize(conn, 4096)
-	r := bufio.NewReaderSize(conn, 4096)
-
-	if err := writeRequest(w, opStat, body); err != nil {
-		conn.Close()
+	if err := writeRequest(cw.w, opStat, body); err != nil {
+		cw.conn.Close()
 		return nil, err
 	}
 
-	status, respBody, err := readResponse(r)
+	status, respBody, err := readResponse(cw.r)
 	if err != nil {
-		conn.Close()
+		cw.conn.Close()
 		return nil, err
 	}
-	rn.putConn(conn)
+	rn.putConn(cw)
 
 	if status == statusNotFound {
 		return nil, storage.ErrNotExist
@@ -1085,25 +1429,22 @@ func (rn *remoteNode) stat(bucket, key string) (*storage.Object, error) {
 func (rn *remoteNode) del(bucket, key string) error {
 	body := encodeKeyBody(bucket, key)
 
-	conn, err := rn.getConn()
+	cw, err := rn.getConn()
 	if err != nil {
 		return err
 	}
 
-	w := bufio.NewWriterSize(conn, 4096)
-	r := bufio.NewReaderSize(conn, 4096)
-
-	if err := writeRequest(w, opDelete, body); err != nil {
-		conn.Close()
+	if err := writeRequest(cw.w, opDelete, body); err != nil {
+		cw.conn.Close()
 		return err
 	}
 
-	status, _, err := readResponse(r)
+	status, _, err := readResponse(cw.r)
 	if err != nil {
-		conn.Close()
+		cw.conn.Close()
 		return err
 	}
-	rn.putConn(conn)
+	rn.putConn(cw)
 
 	if status == statusNotFound {
 		return storage.ErrNotExist
@@ -1117,25 +1458,22 @@ func (rn *remoteNode) del(bucket, key string) error {
 func (rn *remoteNode) list(bucket, prefix string, recursive bool) ([]*storage.Object, error) {
 	body := encodeListBody(bucket, prefix, recursive)
 
-	conn, err := rn.getConn()
+	cw, err := rn.getConn()
 	if err != nil {
 		return nil, err
 	}
 
-	w := bufio.NewWriterSize(conn, 4096)
-	r := bufio.NewReaderSize(conn, 65536)
-
-	if err := writeRequest(w, opList, body); err != nil {
-		conn.Close()
+	if err := writeRequest(cw.w, opList, body); err != nil {
+		cw.conn.Close()
 		return nil, err
 	}
 
-	status, respBody, err := readResponse(r)
+	status, respBody, err := readResponse(cw.r)
 	if err != nil {
-		conn.Close()
+		cw.conn.Close()
 		return nil, err
 	}
-	rn.putConn(conn)
+	rn.putConn(cw)
 
 	if status != statusOK {
 		return nil, fmt.Errorf("herd: remote list failed (status %d)", status)

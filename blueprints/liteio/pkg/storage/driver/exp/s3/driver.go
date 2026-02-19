@@ -81,6 +81,10 @@ type dsnConfig struct {
 	insecure        bool
 	useAccelerate   bool
 	unsignedPayload bool
+
+	// Multi-endpoint support for client-side load balancing.
+	multiEndpoints []string // host:port pairs (from DSN ?endpoints=h1:p1,h2:p2)
+	endpointMode   string   // "roundrobin" or "rendezvous"
 }
 
 // parseDSN parses an S3 DSN string into configuration.
@@ -130,6 +134,15 @@ func parseDSN(dsn string) (*dsnConfig, error) {
 	cfg.sessionToken = q.Get("session_token")
 	cfg.useAccelerate = parseBool(q.Get("use_accelerate"))
 	cfg.unsignedPayload = parseBool(q.Get("unsigned_payload"))
+
+	// Multi-endpoint support: ?endpoints=h1:p1,h2:p2&endpoint_mode=roundrobin
+	if eps := q.Get("endpoints"); eps != "" {
+		cfg.multiEndpoints = strings.Split(eps, ",")
+	}
+	cfg.endpointMode = q.Get("endpoint_mode")
+	if cfg.endpointMode == "" {
+		cfg.endpointMode = "roundrobin"
+	}
 
 	// Parse host and path
 	host := u.Host
@@ -211,8 +224,13 @@ func buildAWSConfig(ctx context.Context, cfg *dsnConfig) (aws.Config, error) {
 		opts = append(opts, config.WithCredentialsProvider(creds))
 	}
 
-	// For insecure connections, configure custom HTTP client with proper connection pooling
-	if cfg.insecure {
+	// Multi-endpoint transport for client-side load balancing
+	if len(cfg.multiEndpoints) > 0 {
+		httpClient := &http.Client{
+			Transport: NewMultiEndpointTransport(cfg.multiEndpoints, cfg.endpointMode),
+		}
+		opts = append(opts, config.WithHTTPClient(httpClient))
+	} else if cfg.insecure {
 		dialer := &net.Dialer{
 			Timeout:   10 * time.Second,
 			KeepAlive: 30 * time.Second,

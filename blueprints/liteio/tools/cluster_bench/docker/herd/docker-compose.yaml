@@ -1,0 +1,92 @@
+# Herd — 4 independent S3+storage servers behind HAProxy
+#
+# Architecture:
+#   Each node has embedded S3 parsing + storage (zero gateway overhead).
+#   Independent storage — key affinity required (HAProxy uri hash).
+#
+# Ports:
+#   9230  — HAProxy frontend (uri consistent hash)
+#   9240-9243 — Herd S3 backends
+
+services:
+  herd1:
+    build:
+      context: ../../../..
+      dockerfile: tools/cluster_bench/docker/herd/Dockerfile
+    command: ["-listen", ":9000", "-data-dir", "/data", "-stripes", "16", "-sync", "batch", "-inline-kb", "8", "-prealloc", "1024", "-bufsize", "16777216", "-access-key", "herd", "-secret-key", "herd123", "-no-log"]
+    ports:
+      - "9240:9000"
+    volumes:
+      - herd1-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  herd2:
+    build:
+      context: ../../../..
+      dockerfile: tools/cluster_bench/docker/herd/Dockerfile
+    command: ["-listen", ":9000", "-data-dir", "/data", "-stripes", "16", "-sync", "batch", "-inline-kb", "8", "-prealloc", "1024", "-bufsize", "16777216", "-access-key", "herd", "-secret-key", "herd123", "-no-log"]
+    ports:
+      - "9241:9000"
+    volumes:
+      - herd2-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  herd3:
+    build:
+      context: ../../../..
+      dockerfile: tools/cluster_bench/docker/herd/Dockerfile
+    command: ["-listen", ":9000", "-data-dir", "/data", "-stripes", "16", "-sync", "batch", "-inline-kb", "8", "-prealloc", "1024", "-bufsize", "16777216", "-access-key", "herd", "-secret-key", "herd123", "-no-log"]
+    ports:
+      - "9242:9000"
+    volumes:
+      - herd3-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  herd4:
+    build:
+      context: ../../../..
+      dockerfile: tools/cluster_bench/docker/herd/Dockerfile
+    command: ["-listen", ":9000", "-data-dir", "/data", "-stripes", "16", "-sync", "batch", "-inline-kb", "8", "-prealloc", "1024", "-bufsize", "16777216", "-access-key", "herd", "-secret-key", "herd123", "-no-log"]
+    ports:
+      - "9243:9000"
+    volumes:
+      - herd4-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  haproxy:
+    image: haproxy:alpine
+    ports:
+      - "9230:9230"
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      herd1:
+        condition: service_healthy
+      herd2:
+        condition: service_healthy
+      herd3:
+        condition: service_healthy
+      herd4:
+        condition: service_healthy
+
+volumes:
+  herd1-data:
+  herd2-data:
+  herd3-data:
+  herd4-data:

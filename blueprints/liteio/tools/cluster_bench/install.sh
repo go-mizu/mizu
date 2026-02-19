@@ -9,6 +9,22 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 echo "=== Installing Cluster Benchmark Dependencies ==="
 echo
 
+# 0. HAProxy (load balancer)
+echo "--- HAProxy ---"
+if command -v haproxy &>/dev/null; then
+    echo "  Already installed: $(haproxy -v 2>&1 | head -1)"
+else
+    echo "  Installing..."
+    if command -v brew &>/dev/null; then
+        brew install haproxy
+    else
+        echo "  Error: brew not found. Install HAProxy manually."
+        exit 1
+    fi
+    echo "  Installed: $(haproxy -v 2>&1 | head -1)"
+fi
+echo
+
 # 1. MinIO
 echo "--- MinIO ---"
 if command -v minio &>/dev/null; then

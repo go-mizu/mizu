@@ -545,8 +545,14 @@ func (r *Runner) benchmarkWrite(ctx context.Context, bucket storage.Bucket, driv
 		n := ab.NextN()
 		start := time.Now()
 
-		// Run N iterations
+		// Run N iterations with overshoot protection: if this batch is taking
+		// much longer than expected, break early to prevent the adaptive
+		// algorithm from committing to minutes of work based on a fast first sample.
+		batchDone := 0
 		for i := 0; i < n; i++ {
+			if i > 0 && time.Since(start) > 3*benchTime {
+				break
+			}
 			key := r.uniqueKey("write")
 			timer := NewTimer()
 
@@ -556,11 +562,12 @@ func (r *Runner) benchmarkWrite(ctx context.Context, bucket storage.Bucket, driv
 
 			collector.RecordWithError(timer.Elapsed(), err)
 			totalIters++
+			batchDone++
 			r.updateProgress(totalIters)
 		}
 
 		elapsed := time.Since(start)
-		ab.RecordRun(n, elapsed)
+		ab.RecordRun(batchDone, elapsed)
 	}
 
 	cleanup() // Stop progress display before logging result
@@ -580,12 +587,27 @@ func (r *Runner) benchmarkRead(ctx context.Context, bucket storage.Bucket, drive
 
 	// Pre-create objects (enough for adaptive benchmark)
 	numObjects := r.readPoolSize(size)
-	keys := make([]string, numObjects)
-	for i := range keys {
-		keys[i] = r.uniqueKey("read")
+	keys := make([]string, 0, numObjects)
+	r.logger("%s: creating %d read pool objects...", operation, numObjects)
+	poolStart := time.Now()
+	for i := 0; i < numObjects; i++ {
+		if ctx.Err() != nil {
+			break
+		}
+		key := r.uniqueKey("read")
 		opCtx, cancel := r.opContextForSize(ctx, size)
-		bucket.Write(opCtx, keys[i], bytes.NewReader(data), int64(size), "application/octet-stream", nil)
+		_, err := bucket.Write(opCtx, key, bytes.NewReader(data), int64(size), "application/octet-stream", nil)
 		cancel()
+		if err != nil {
+			r.logger("%s: pool object %d/%d failed: %v", operation, i+1, numObjects, err)
+			continue
+		}
+		keys = append(keys, key)
+	}
+	r.logger("%s: pool ready (%d objects in %v)", operation, len(keys), time.Since(poolStart).Round(time.Millisecond))
+	if len(keys) < 2 {
+		r.logger("%s: SKIP — not enough pool objects (need 2, got %d)", operation, len(keys))
+		return nil
 	}
 
 	// Warmup
@@ -611,13 +633,18 @@ func (r *Runner) benchmarkRead(ctx context.Context, bucket storage.Bucket, drive
 	defer cleanup()
 
 	// Adaptive scaling loop
+	numKeys := uint64(len(keys))
 	var totalIters int64
 	for ab.ShouldContinue() {
 		n := ab.NextN()
 		runStart := time.Now()
 
+		batchDone := 0
 		for i := 0; i < n; i++ {
-			idx := atomic.AddUint64(&keyIdx, 1) % uint64(numObjects)
+			if i > 0 && time.Since(runStart) > 3*benchTime {
+				break
+			}
+			idx := atomic.AddUint64(&keyIdx, 1) % numKeys
 			start := time.Now()
 
 			opCtx, cancel := r.opContextForSize(ctx, size)
@@ -640,11 +667,12 @@ func (r *Runner) benchmarkRead(ctx context.Context, bucket storage.Bucket, drive
 			}
 			cancel()
 			totalIters++
+			batchDone++
 			r.updateProgress(totalIters)
 		}
 
 		elapsed := time.Since(runStart)
-		ab.RecordRun(n, elapsed)
+		ab.RecordRun(batchDone, elapsed)
 	}
 
 	cleanup() // Stop progress display before logging result
@@ -929,12 +957,27 @@ func (r *Runner) benchmarkParallelRead(ctx context.Context, bucket storage.Bucke
 
 	// Pre-create objects
 	numObjects := r.readPoolSize(size)
-	keys := make([]string, numObjects)
-	for i := range keys {
-		keys[i] = r.uniqueKey("parallel-read")
+	keys := make([]string, 0, numObjects)
+	r.logger("%s: creating %d read pool objects...", operation, numObjects)
+	poolStart := time.Now()
+	for i := 0; i < numObjects; i++ {
+		if ctx.Err() != nil {
+			break
+		}
+		key := r.uniqueKey("parallel-read")
 		opCtx, cancel := r.opContextForSize(ctx, size)
-		bucket.Write(opCtx, keys[i], bytes.NewReader(data), int64(size), "application/octet-stream", nil)
+		_, err := bucket.Write(opCtx, key, bytes.NewReader(data), int64(size), "application/octet-stream", nil)
 		cancel()
+		if err != nil {
+			r.logger("%s: pool object %d/%d failed: %v", operation, i+1, numObjects, err)
+			continue
+		}
+		keys = append(keys, key)
+	}
+	r.logger("%s: pool ready (%d objects in %v)", operation, len(keys), time.Since(poolStart).Round(time.Millisecond))
+	if len(keys) < 2 {
+		r.logger("%s: SKIP — not enough pool objects (need 2, got %d)", operation, len(keys))
+		return nil
 	}
 
 	// Use parallel timeout if set, otherwise use default
@@ -1143,7 +1186,6 @@ func (r *Runner) runBenchmark(ctx context.Context, bucket storage.Bucket, label 
 	if err := fn(); err != nil {
 		r.logger("  %s failed: %v", label, err)
 	}
-	// Note: cleanup is done once per driver via Docker container restart, not after each operation
 }
 
 func (r *Runner) opContext(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -1171,7 +1213,13 @@ func (r *Runner) readPoolSize(size int) int {
 	if n < 2 {
 		n = 2
 	}
-	if n > 50 {
+	// For large objects (≥1MB), cap at 10 to keep pool creation fast.
+	// 50 × 1MB with 60s timeouts = 50 min silent hang if storage is slow.
+	if size >= 1024*1024 {
+		if n > 10 {
+			n = 10
+		}
+	} else if n > 50 {
 		n = 50
 	}
 	return n
@@ -1191,6 +1239,16 @@ func (r *Runner) timeoutForSize(size int) time.Duration {
 		if timeout < 2*time.Minute {
 			return 2 * time.Minute
 		}
+	}
+	// Cap per-op timeout: no single operation should take longer than
+	// 10x the benchTime. This prevents a 30s timeout from turning a 500ms
+	// benchmark into a multi-minute ordeal when storage is slow.
+	maxTimeout := 10 * r.config.BenchTime
+	if maxTimeout < 5*time.Second {
+		maxTimeout = 5 * time.Second
+	}
+	if timeout > maxTimeout {
+		return maxTimeout
 	}
 	return timeout
 }
@@ -1398,12 +1456,22 @@ func (r *Runner) benchmarkMixedWorkload(ctx context.Context, bucket storage.Buck
 
 	// Pre-create objects for reading
 	numObjects := 50
-	keys := make([]string, numObjects)
+	keys := make([]string, 0, numObjects)
 	for i := 0; i < numObjects; i++ {
-		keys[i] = r.uniqueKey("mixed")
+		if ctx.Err() != nil {
+			break
+		}
+		key := r.uniqueKey("mixed")
 		opCtx, cancel := r.opContext(ctx)
-		bucket.Write(opCtx, keys[i], bytes.NewReader(data), int64(objectSize), "application/octet-stream", nil)
+		_, err := bucket.Write(opCtx, key, bytes.NewReader(data), int64(objectSize), "application/octet-stream", nil)
 		cancel()
+		if err != nil {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	if len(keys) < 2 {
+		return nil
 	}
 
 	workloads := []struct {
@@ -1933,9 +2001,12 @@ func (ab *AdaptiveBenchmark) predictN(goalns, prevIters, prevns, last int64) int
 	// Add 20% buffer for timing variability
 	n += n / 5
 
-	// Cap growth at 100x previous (protects against timing errors)
-	if n > 100*last {
-		n = 100 * last
+	// Cap growth at 10x previous. The original Go benchmark uses 100x, but
+	// that's dangerous for network/S3 benchmarks where the first iteration
+	// may complete in 1ms (buffered write) while subsequent iterations take
+	// 10s each (actual I/O with fsync). 10x limits overshoot to manageable levels.
+	if n > 10*last {
+		n = 10 * last
 	}
 
 	// Ensure at least one more iteration than last (guarantee progress)
@@ -1960,6 +2031,20 @@ func (ab *AdaptiveBenchmark) ShouldContinue() bool {
 			return false
 		default:
 		}
+	}
+
+	// Safety valve: never exceed 10x benchTime total. This protects against
+	// the adaptive algorithm overshooting when early iterations are fast
+	// (buffered writes) but later iterations are slow (actual I/O).
+	if ab.totalDuration > 10*ab.benchTime && ab.totalN >= int64(ab.minIterations) {
+		return false
+	}
+
+	// Hard abort: if we've exceeded 30x benchTime, stop regardless of iterations.
+	// A single operation taking 30s with benchTime=500ms means the system is too
+	// slow for meaningful benchmarking — continuing just wastes time.
+	if ab.totalDuration > 30*ab.benchTime {
+		return false
 	}
 
 	// Always run at least minIterations

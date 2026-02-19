@@ -1,84 +1,84 @@
 # Cluster S3 Benchmark: MinIO vs RustFS vs SeaweedFS vs Herd
 
-**Date**: 2026-02-20 01:08:45
-**Mode**: 3-node cluster, all via S3 HTTP API
+**Date**: 2026-02-20 06:54:00
+**Mode**: 4-node cluster, Cluster, all via S3 HTTP API
 
 ## Sequential Write Throughput (MB/s)
 
-| Size | herd_cluster | minio_cluster | rustfs_cluster | seaweedfs_cluster |
-|------| --- | --- | --- | --- ||
-| Write/10MB | **652.0** | 330.9 | 280.4 | 186.8 |
-| Write/1KB | **7.8** | 0.4 | 0.5 | 2.8 |
-| Write/1MB | **618.5** | 96.9 | 148.6 | 209.7 |
-| Write/64KB | **290.1** | 19.8 | 28.1 | 103.1 |
+| Size | herd_cluster | minio_cluster | seaweedfs_cluster |
+|------| --- | --- | --- ||
+| Write/10MB | **868.2** | 338.7 | 304.0 |
+| Write/1KB | **9.6** | 0.1 | 2.7 |
+| Write/1MB | **875.2** | 208.0 | 225.5 |
+| Write/64KB | **374.5** | 38.9 | 101.1 |
 
 ## Sequential Read Throughput (MB/s)
 
-| Size | herd_cluster | minio_cluster | rustfs_cluster | seaweedfs_cluster |
-|------| --- | --- | --- | --- ||
-| Read/10MB | **4818.9** | 2378.2 | 1915.9 | 2144.5 |
-| Read/1KB | **10.0** | 4.8 | 2.6 | 2.3 |
-| Read/1MB | **2193.5** | 538.5 | 782.9 | 1974.4 |
-| Read/64KB | **535.6** | 227.8 | 157.5 | 303.9 |
+| Size | herd_cluster | minio_cluster | seaweedfs_cluster |
+|------| --- | --- | --- ||
+| Read/10MB | 2273.0 | **2782.3** | 2115.7 |
+| Read/1KB | **14.0** | 2.0 | 5.3 |
+| Read/1MB | 1963.6 | 946.0 | **2053.8** |
+| Read/64KB | **860.1** | 113.4 | 294.6 |
 
 ## Metadata Operations (ops/s)
 
-| Operation | herd_cluster | minio_cluster | rustfs_cluster | seaweedfs_cluster |
-|-----------| --- | --- | --- | --- ||
-| Delete | **13.7K** | 733 | 569 | 5.6K |
-| List/100 | **1.9K** | 213 | 144 | 923 |
-| Stat | **10.0K** | 4.9K | 4.3K | 8.0K |
+| Operation | herd_cluster | minio_cluster | seaweedfs_cluster |
+|-----------| --- | --- | --- ||
+| Delete | **11.5K** | 1.2K | 7.4K |
+| List/100 | **2.0K** | 378 | 1.1K |
+| Stat | **11.4K** | 3.0K | 8.0K |
 
 ## Concurrency Scaling — Parallel Write (MB/s)
 
-| Concurrency | herd_cluster | minio_cluster | rustfs_cluster | seaweedfs_cluster |
-|-------------| --- | --- | --- | --- ||
-| ParallelWrite/1KB/C1 | **8.3** | 0.6 | 0.6 | 0.5 |
-| ParallelWrite/1KB/C10 | **3.1** | 0.0 | 0.0 | 0.8 |
-| ParallelWrite/1KB/C50 | **0.8** | 0.0 | 0.0 | 0.2 |
+| Concurrency | herd_cluster | minio_cluster | seaweedfs_cluster |
+|-------------| --- | --- | --- ||
+| ParallelWrite/1KB/C1 | **7.3** | 0.1 | 2.6 |
+| ParallelWrite/1KB/C10 | **2.9** | 0.0 | 1.0 |
+| ParallelWrite/1KB/C50 | **0.9** | 0.0 | 0.3 |
 
 ## Concurrency Scaling — Parallel Read (MB/s)
 
-| Concurrency | herd_cluster | minio_cluster | rustfs_cluster | seaweedfs_cluster |
-|-------------| --- | --- | --- | --- ||
-| ParallelRead/1KB/C1 | **9.0** | 3.8 | 2.5 | 4.2 |
-| ParallelRead/1KB/C10 | **3.2** | 1.3 | 0.2 | 1.3 |
-| ParallelRead/1KB/C50 | **0.8** | 0.1 | 0.1 | 0.4 |
+| Concurrency | herd_cluster | minio_cluster | seaweedfs_cluster |
+|-------------| --- | --- | --- ||
+| ParallelRead/1KB/C1 | **9.4** | 1.8 | 4.6 |
+| ParallelRead/1KB/C10 | **4.0** | 0.7 | 1.8 |
+| ParallelRead/1KB/C50 | **1.2** | 0.2 | 0.5 |
 
 ## Mixed Workload Throughput (MB/s)
 
-| Workload | herd_cluster | minio_cluster | rustfs_cluster | seaweedfs_cluster |
-|----------| --- | --- | --- | --- ||
-| MixedWorkload/Balanced_50_50 | **3.7** | 0.0 | 0.1 | 1.1 |
-| MixedWorkload/ReadHeavy_90_10 | **4.0** | 0.3 | 0.2 | 1.4 |
-| MixedWorkload/WriteHeavy_10_90 | **2.9** | 0.0 | 0.0 | 0.6 |
+| Workload | herd_cluster | minio_cluster | seaweedfs_cluster |
+|----------| --- | --- | --- ||
+| MixedWorkload/Balanced_50_50 | **13.4** | 0.7 | 5.1 |
+| MixedWorkload/ReadHeavy_90_10 | **17.1** | 1.7 | 6.9 |
+| MixedWorkload/WriteHeavy_10_90 | **11.4** | 0.4 | 4.3 |
 
 ## Latency P99 (lower is better)
 
-| Operation | herd_cluster | minio_cluster | rustfs_cluster | seaweedfs_cluster |
-|-----------| --- | --- | --- | --- ||
-| Delete | **182.4us** | 4.52ms | 6.40ms | 1.11ms |
-| List/100 | **1.13ms** | 5.97ms | 12.75ms | 2.43ms |
-| Read/1KB | 280.0us | **264.6us** | 1.23ms | 2.50ms |
-| Stat | 284.4us | 425.4us | 374.5us | **192.3us** |
-| Write/1KB | **349.8us** | 8.35ms | 7.12ms | 680.1us |
+| Operation | herd_cluster | minio_cluster | seaweedfs_cluster |
+|-----------| --- | --- | --- ||
+| Delete | **155.4us** | 1.09ms | 205.1us |
+| List/100 | **827.0us** | 3.96ms | 1.29ms |
+| Read/1KB | **133.1us** | 744.7us | 269.9us |
+| Stat | **148.8us** | 486.3us | 189.0us |
+| Write/1KB | **210.8us** | 213.22ms | 655.8us |
 
 ## Performance Leaders
 
 | Category | Winner | Throughput/Ops |
 |----------|--------|----------------|
-| Small Write (1KB) | **herd_cluster** | 7.8 MB/s |
-| Medium Write (64KB) | **herd_cluster** | 290.1 MB/s |
-| Large Write (1MB) | **herd_cluster** | 618.5 MB/s |
-| Small Read (1KB) | **herd_cluster** | 10.0 MB/s |
-| Medium Read (64KB) | **herd_cluster** | 535.6 MB/s |
-| Large Read (1MB) | **herd_cluster** | 2193.5 MB/s |
-| Stat (HEAD) | **herd_cluster** | 10.0K ops/s |
-| List/100 | **herd_cluster** | 1.9K ops/s |
+| Small Write (1KB) | **herd_cluster** | 9.6 MB/s |
+| Medium Write (64KB) | **herd_cluster** | 374.5 MB/s |
+| Large Write (1MB) | **herd_cluster** | 875.2 MB/s |
+| Small Read (1KB) | **herd_cluster** | 14.0 MB/s |
+| Medium Read (64KB) | **herd_cluster** | 860.1 MB/s |
+| Large Read (1MB) | **seaweedfs_cluster** | 2053.8 MB/s |
+| Stat (HEAD) | **herd_cluster** | 11.4K ops/s |
+| List/100 | **herd_cluster** | 2.0K ops/s |
 
 ## Error Summary
 
-- **herd_cluster**: 1101 errors
+No errors during benchmarks.
 
 ---
-*Generated by cluster_bench on 2026-02-20 01:08:45*
+*Generated by cluster_bench on 2026-02-20 06:54:00*
