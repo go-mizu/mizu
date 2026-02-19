@@ -53,6 +53,13 @@ func main() {
 	)
 	flag.Parse()
 
+	// Check for subcommand: "limits"
+	args := flag.Args()
+	if len(args) > 0 && args[0] == "limits" {
+		runLimits(*outputDir, *benchTime)
+		return
+	}
+
 	cfg := bench.DefaultConfig()
 	cfg.WarmupIterations = *warmup
 	cfg.Timeout = *timeout
@@ -265,6 +272,31 @@ func main() {
 	}
 
 	os.Exit(0)
+}
+
+// runLimits runs the physical limits benchmark subcommand.
+func runLimits(outputDir string, benchTime time.Duration) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		fmt.Println("\nCancelling...")
+		cancel()
+		<-sigCh
+		os.Exit(1)
+	}()
+
+	cfg := bench.LimitsConfig{
+		BenchTime: benchTime,
+		OutputDir: outputDir,
+	}
+
+	if err := bench.RunLimits(ctx, cfg); err != nil {
+		log.Fatalf("Physical limits benchmark failed: %v", err)
+	}
 }
 
 // dockerCompose runs docker-compose with the given arguments.
