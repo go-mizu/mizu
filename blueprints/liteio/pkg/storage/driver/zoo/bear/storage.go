@@ -199,9 +199,6 @@ type store struct {
 	file *os.File
 	mmap []byte
 
-	// mmapMu serializes file growth + remap. Lock order: mmapMu before mu.
-	mmapMu sync.Mutex
-
 	// Cached header fields (protected by mu)
 	rootPage   uint32
 	pageCount  uint32
@@ -430,7 +427,7 @@ func (s *store) loadMmap() error {
 }
 
 // remapIfNeeded grows the file and remaps if we need more pages.
-// Caller must hold mu (write) AND mmapMu.
+// Caller must hold mu (write).
 func (s *store) remapIfNeeded(requiredPages uint32) error {
 	currentSize := len(s.mmap)
 	neededSize := int(requiredPages) * pageSize
@@ -484,10 +481,7 @@ func (s *store) remapIfNeeded(requiredPages uint32) error {
 // The growth factor in remapIfNeeded means actual growth is typically much
 // larger, so this only needs to be a rough estimate.
 func (s *store) ensureSpace(extraPages uint32) {
-	s.mmapMu.Lock()
-	defer s.mmapMu.Unlock()
-
-	// Quick check without the main lock — if we have plenty of room, skip.
+	// Quick check without the write lock — if we have plenty of room, skip.
 	s.mu.RLock()
 	required := s.pageCount + extraPages
 	currentCap := uint32(len(s.mmap) / pageSize)
@@ -540,9 +534,7 @@ func (s *store) page(id uint32) []byte {
 }
 
 // allocPage returns a new page ID, reusing free pages or extending the file.
-// Caller must hold mu (write lock). If a remap is needed it will release mu,
-// acquire mmapMu (respecting documented lock order mmapMu -> mu), perform
-// the remap, release mmapMu, and reacquire mu.
+// Caller must hold mu (write lock).
 func (s *store) allocPage() (uint32, error) {
 	if s.freeHead != 0 {
 		id := s.freeHead
@@ -564,36 +556,11 @@ func (s *store) allocPage() (uint32, error) {
 		return id, nil
 	}
 
-	// Slow path: need remap. Release mu first to respect lock order
-	// (mmapMu -> mu), then reacquire mu after remap.
-	needed := s.pageCount
-	s.mu.Unlock()
-
-	s.mmapMu.Lock()
-	err := s.remapIfNeeded(needed)
-	s.mmapMu.Unlock()
-
-	s.mu.Lock()
-
-	if err != nil {
+	// Slow path: need remap. We hold mu.Lock() so readers (mu.RLock) are
+	// blocked during the remap. ensureSpace() pre-grows to avoid this path.
+	if err := s.remapIfNeeded(s.pageCount); err != nil {
 		s.pageCount--
 		return 0, err
-	}
-
-	// After releasing and reacquiring mu, another goroutine may have
-	// modified pageCount. Our reserved ID is still valid because we
-	// incremented pageCount before releasing the lock (so other writers
-	// will allocate beyond our ID). Verify the mmap covers our page.
-	if int(s.pageCount)*pageSize > len(s.mmap) {
-		// Another writer also grew past mmap; re-grow.
-		s.mu.Unlock()
-		s.mmapMu.Lock()
-		err = s.remapIfNeeded(s.pageCount)
-		s.mmapMu.Unlock()
-		s.mu.Lock()
-		if err != nil {
-			return 0, err
-		}
 	}
 
 	return id, nil
@@ -1534,7 +1501,6 @@ func (s *store) Close() error {
 	if !s.closed.CompareAndSwap(false, true) {
 		return nil
 	}
-	s.mmapMu.Lock()
 	s.mu.Lock()
 
 	s.writeHeader()
@@ -1547,7 +1513,6 @@ func (s *store) Close() error {
 	}
 
 	s.mu.Unlock()
-	s.mmapMu.Unlock()
 
 	// Close value log
 	s.valMu.Lock()
