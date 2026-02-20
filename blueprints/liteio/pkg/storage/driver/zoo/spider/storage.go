@@ -59,6 +59,10 @@ const (
 	bloomNumHash     = 7
 
 	maxPartNumber = 10000
+
+	maxSSTSize         = 256 * 1024 * 1024 // 256 MB
+	maxBuckets         = 10000
+	maxMultipartAssembly = 1 << 30 // 1 GB
 )
 
 // ---------------------------------------------------------------------------
@@ -501,6 +505,14 @@ func writeSST(path string, entries []*memEntry) (*bloomFilter, error) {
 
 // readSST reads all entries from an SST file.
 func readSST(path string) ([]*memEntry, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("spider: stat sst: %w", err)
+	}
+	if info.Size() > maxSSTSize {
+		return nil, fmt.Errorf("spider: sst file %s too large (%d bytes, max %d)", filepath.Base(path), info.Size(), maxSSTSize)
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("spider: read sst: %w", err)
@@ -679,7 +691,17 @@ func (s *store) Bucket(name string) storage.Bucket {
 	if name == "" {
 		name = "default"
 	}
-	s.bucketMap.LoadOrStore(name, time.Now())
+	if _, ok := s.bucketMap.Load(name); !ok {
+		// Count existing buckets before adding a new one.
+		count := 0
+		s.bucketMap.Range(func(_, _ any) bool {
+			count++
+			return count < maxBuckets
+		})
+		if count < maxBuckets {
+			s.bucketMap.LoadOrStore(name, time.Now())
+		}
+	}
 	return &bucket{st: s, name: name}
 }
 
@@ -1696,8 +1718,18 @@ func (b *bucket) CompleteMultipart(_ context.Context, mu *storage.MultipartUploa
 		}
 	}
 
+	// Check total assembly size.
+	var totalSize int64
+	for _, p := range parts {
+		totalSize += int64(len(upload.parts[p.Number].data))
+	}
+	if totalSize > maxMultipartAssembly {
+		return nil, fmt.Errorf("spider: assembled multipart size %d exceeds limit %d", totalSize, maxMultipartAssembly)
+	}
+
 	// Assemble.
 	var buf bytes.Buffer
+	buf.Grow(int(totalSize))
 	for _, p := range parts {
 		part := upload.parts[p.Number]
 		buf.Write(part.data)

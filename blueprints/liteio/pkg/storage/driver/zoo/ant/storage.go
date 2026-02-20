@@ -96,6 +96,13 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 		return nil, fmt.Errorf("ant: replay wal: %w", err)
 	}
 
+	// Truncate WAL after successful replay to avoid unbounded growth.
+	if err := st.truncateWAL(); err != nil {
+		wf.Close()
+		vf.Close()
+		return nil, fmt.Errorf("ant: truncate wal after replay: %w", err)
+	}
+
 	return st, nil
 }
 
@@ -556,15 +563,195 @@ func growToNode256(node *artNode) {
 	*node = *newN
 }
 
-// artDelete marks a leaf as deleted. Returns true if a leaf was found and deleted.
+// artDelete removes a leaf from the tree. Returns true if a leaf was found and removed.
 func artDelete(tree *artTree, key []byte) bool {
-	lf := artSearch(tree.root, key)
-	if lf == nil {
+	if tree.root == nil {
 		return false
 	}
-	lf.deleted = true
-	tree.size--
+	found := artDeleteRecursive(&tree.root, tree.root, key, 0)
+	if found {
+		tree.size--
+	}
+	return found
+}
+
+// artDeleteRecursive removes a leaf node from the tree and cleans up empty parent nodes.
+// Returns true if a leaf was found and removed.
+func artDeleteRecursive(ref **artNode, node *artNode, key []byte, depth int) bool {
+	if node == nil {
+		return false
+	}
+
+	// Check prefix match.
+	if len(node.prefix) > 0 {
+		pLen := len(node.prefix)
+		if depth+pLen > len(key) {
+			return false
+		}
+		for i := 0; i < pLen; i++ {
+			if key[depth+i] != node.prefix[i] {
+				return false
+			}
+		}
+		depth += pLen
+	}
+
+	// If this node has a leaf that matches, remove it.
+	if node.leaf != nil && bytes.Equal(node.leaf.key, key) && !node.leaf.deleted {
+		node.leaf = nil
+		// If the node has no children, remove it entirely.
+		if node.numChildren == 0 {
+			*ref = nil
+		} else if node.numChildren == 1 {
+			// Merge with single remaining child (path compression).
+			child := getOnlyChild(node)
+			if child != nil {
+				// Combine prefixes: node.prefix + child_byte + child.prefix
+				// The child_byte is the key byte used to reach the child.
+				childByte := getOnlyChildByte(node)
+				newPrefix := make([]byte, 0, len(node.prefix)+1+len(child.prefix))
+				newPrefix = append(newPrefix, node.prefix...)
+				newPrefix = append(newPrefix, childByte)
+				newPrefix = append(newPrefix, child.prefix...)
+				child.prefix = newPrefix
+				*ref = child
+			}
+		}
+		return true
+	}
+
+	if depth >= len(key) {
+		return false
+	}
+
+	// Find the child for the next byte.
+	b := key[depth]
+	childRef := findChildRef(node, b)
+	if childRef == nil || *childRef == nil {
+		return false
+	}
+
+	found := artDeleteRecursive(childRef, *childRef, key, depth+1)
+	if !found {
+		return false
+	}
+
+	// If the child was removed (set to nil), remove it from this node.
+	if *childRef == nil {
+		removeChild(node, b)
+		// If this node now has no children and no leaf, remove it too.
+		if node.numChildren == 0 && node.leaf == nil {
+			*ref = nil
+		} else if node.numChildren == 1 && node.leaf == nil {
+			// Merge with single remaining child.
+			child := getOnlyChild(node)
+			if child != nil {
+				childByte := getOnlyChildByte(node)
+				newPrefix := make([]byte, 0, len(node.prefix)+1+len(child.prefix))
+				newPrefix = append(newPrefix, node.prefix...)
+				newPrefix = append(newPrefix, childByte)
+				newPrefix = append(newPrefix, child.prefix...)
+				child.prefix = newPrefix
+				*ref = child
+			}
+		}
+	}
 	return true
+}
+
+// removeChild removes the child at byte b from node and decrements numChildren.
+func removeChild(node *artNode, b byte) {
+	switch node.kind {
+	case kindNode4:
+		for i := uint16(0); i < node.numChildren; i++ {
+			if node.keys[i] == b {
+				// Shift remaining entries left.
+				last := node.numChildren - 1
+				if i < last {
+					node.keys[i] = node.keys[last]
+					node.children[i] = node.children[last]
+				}
+				node.keys[last] = 0
+				node.children[last] = nil
+				node.numChildren--
+				return
+			}
+		}
+	case kindNode16:
+		idx := -1
+		for i := uint16(0); i < node.numChildren; i++ {
+			if node.keys[i] == b {
+				idx = int(i)
+				break
+			}
+		}
+		if idx >= 0 {
+			copy(node.keys[idx:], node.keys[idx+1:node.numChildren])
+			copy(node.children[idx:], node.children[idx+1:node.numChildren])
+			node.keys[node.numChildren-1] = 0
+			node.children[node.numChildren-1] = nil
+			node.numChildren--
+		}
+	case kindNode48:
+		slot := node.childIndex[b]
+		if slot != 255 {
+			node.childIndex[b] = 255
+			node.children[slot] = nil
+			node.numChildren--
+		}
+	case kindNode256:
+		if node.children256[b] != nil {
+			node.children256[b] = nil
+			node.numChildren--
+		}
+	}
+}
+
+// getOnlyChild returns the single child of a node that has numChildren == 1.
+func getOnlyChild(node *artNode) *artNode {
+	switch node.kind {
+	case kindNode4, kindNode16:
+		if node.numChildren == 1 {
+			return node.children[0]
+		}
+	case kindNode48:
+		for i := 0; i < 256; i++ {
+			idx := node.childIndex[byte(i)]
+			if idx != 255 {
+				return node.children[idx]
+			}
+		}
+	case kindNode256:
+		for i := 0; i < 256; i++ {
+			if node.children256[i] != nil {
+				return node.children256[i]
+			}
+		}
+	}
+	return nil
+}
+
+// getOnlyChildByte returns the key byte of the single child of a node with numChildren == 1.
+func getOnlyChildByte(node *artNode) byte {
+	switch node.kind {
+	case kindNode4, kindNode16:
+		if node.numChildren == 1 {
+			return node.keys[0]
+		}
+	case kindNode48:
+		for i := 0; i < 256; i++ {
+			if node.childIndex[byte(i)] != 255 {
+				return byte(i)
+			}
+		}
+	case kindNode256:
+		for i := 0; i < 256; i++ {
+			if node.children256[i] != nil {
+				return byte(i)
+			}
+		}
+	}
+	return 0
 }
 
 // artForEach iterates all non-deleted leaves in the tree, calling fn for each.
@@ -703,6 +890,8 @@ type store struct {
 
 var _ storage.Storage = (*store)(nil)
 
+const maxBuckets = 10000
+
 func (s *store) Bucket(name string) storage.Bucket {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -765,6 +954,10 @@ func (s *store) CreateBucket(ctx context.Context, name string, opts storage.Opti
 	if _, exists := s.bucketMap[name]; exists {
 		s.bucketMu.Unlock()
 		return nil, storage.ErrExist
+	}
+	if len(s.bucketMap) >= maxBuckets {
+		s.bucketMu.Unlock()
+		return nil, fmt.Errorf("ant: too many buckets (max %d)", maxBuckets)
 	}
 	now := time.Now()
 	s.bucketMap[name] = now
@@ -836,16 +1029,25 @@ func (s *store) Features() storage.Features {
 
 func (s *store) Close() error {
 	var errs []error
+
+	s.walMu.Lock()
 	if s.wal != nil {
 		if err := s.wal.Close(); err != nil {
 			errs = append(errs, err)
 		}
+		s.wal = nil
 	}
+	s.walMu.Unlock()
+
+	s.vlogMu.Lock()
 	if s.vlog != nil {
 		if err := s.vlog.Close(); err != nil {
 			errs = append(errs, err)
 		}
+		s.vlog = nil
 	}
+	s.vlogMu.Unlock()
+
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
@@ -1051,6 +1253,23 @@ func (s *store) replayWAL() error {
 	return nil
 }
 
+// truncateWAL resets the WAL file to zero length.
+func (s *store) truncateWAL() error {
+	s.walMu.Lock()
+	defer s.walMu.Unlock()
+
+	if s.wal == nil {
+		return nil
+	}
+	if err := s.wal.Truncate(0); err != nil {
+		return fmt.Errorf("ant: truncate wal: %w", err)
+	}
+	if _, err := s.wal.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("ant: seek wal: %w", err)
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Bucket (storage.Bucket + HasDirectories + HasMultipart)
 // ---------------------------------------------------------------------------
@@ -1107,7 +1326,9 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 	// Ensure bucket exists.
 	b.store.bucketMu.Lock()
 	if _, exists := b.store.bucketMap[b.name]; !exists {
-		b.store.bucketMap[b.name] = time.Now()
+		if len(b.store.bucketMap) < maxBuckets {
+			b.store.bucketMap[b.name] = time.Now()
+		}
 	}
 	b.store.bucketMu.Unlock()
 

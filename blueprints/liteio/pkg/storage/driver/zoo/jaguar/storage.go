@@ -61,6 +61,8 @@ const (
 
 	// Multipart limits.
 	maxPartNumber = 10000
+
+	maxBuckets = 10000
 )
 
 // ---------------------------------------------------------------------------
@@ -107,6 +109,7 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 		memLimit:   memSize,
 		buckets:    make(map[string]time.Time),
 		mpUploads:  make(map[string]*multipartUpload),
+		stopTick:   make(chan struct{}),
 	}
 
 	st.mem.entries = make(map[string]*memEntry)
@@ -124,9 +127,24 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 	// Open WAL and replay.
 	if walEnabled {
 		if err := st.openWAL(); err != nil {
+			st.treeFile.Close()
 			return nil, err
 		}
 	}
+
+	// Start per-store time cache ticker.
+	go func() {
+		ticker := time.NewTicker(5 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				cachedTimeNano.Store(time.Now().UnixNano())
+			case <-st.stopTick:
+				return
+			}
+		}
+	}()
 
 	return st, nil
 }
@@ -237,6 +255,14 @@ func (s *store) openWAL() error {
 	if err != nil {
 		return fmt.Errorf("jaguar: open wal: %w", err)
 	}
+
+	success := false
+	defer func() {
+		if !success {
+			f.Close()
+		}
+	}()
+
 	s.walFile = f
 
 	// Replay WAL from s.walPos to end.
@@ -263,6 +289,8 @@ func (s *store) openWAL() error {
 	if _, err := f.Seek(0, io.SeekEnd); err != nil {
 		return fmt.Errorf("jaguar: seek wal end: %w", err)
 	}
+
+	success = true
 	return nil
 }
 
@@ -505,6 +533,14 @@ func (s *store) openTree() error {
 	if err != nil {
 		return fmt.Errorf("jaguar: open tree: %w", err)
 	}
+
+	success := false
+	defer func() {
+		if !success {
+			f.Close()
+		}
+	}()
+
 	s.treeFile = f
 
 	info, err := f.Stat()
@@ -525,6 +561,7 @@ func (s *store) openTree() error {
 		s.nodeCount = 0
 	}
 
+	success = true
 	return nil
 }
 
@@ -606,7 +643,7 @@ func (s *store) readTreeEntry(nodeType byte) (treeEntry, error) {
 			return e, fmt.Errorf("jaguar: read entry valLen: %w", err)
 		}
 		vl := binary.BigEndian.Uint64(buf8[:])
-		if vl > 1<<30 { // sanity check: max 1GB value
+		if vl > 64<<20 { // sanity check: max 64MB value
 			return e, fmt.Errorf("jaguar: read entry: corrupt valLen %d", vl)
 		}
 		valBuf := make([]byte, vl)
@@ -1053,7 +1090,8 @@ type store struct {
 	mpMu      sync.RWMutex
 	mpUploads map[string]*multipartUpload
 
-	closed atomic.Bool
+	stopTick chan struct{}
+	closed   atomic.Bool
 }
 
 var _ storage.Storage = (*store)(nil)
@@ -1063,12 +1101,6 @@ var cachedTimeNano atomic.Int64
 
 func init() {
 	cachedTimeNano.Store(time.Now().UnixNano())
-	go func() {
-		ticker := time.NewTicker(5 * time.Millisecond)
-		for range ticker.C {
-			cachedTimeNano.Store(time.Now().UnixNano())
-		}
-	}()
 }
 
 func fastNow() time.Time {
@@ -1095,7 +1127,9 @@ func (s *store) Bucket(name string) storage.Bucket {
 
 	s.mu.Lock()
 	if _, ok := s.buckets[name]; !ok {
-		s.buckets[name] = fastNow()
+		if len(s.buckets) < maxBuckets {
+			s.buckets[name] = fastNow()
+		}
 	}
 	s.mu.Unlock()
 
@@ -1223,6 +1257,9 @@ func (s *store) Close() error {
 	if s.closed.Swap(true) {
 		return nil
 	}
+
+	// Stop the time cache ticker goroutine.
+	close(s.stopTick)
 
 	// Flush memtable to tree.
 	if s.mem.size > 0 {
@@ -1972,6 +2009,13 @@ func (b *bucket) InitMultipart(ctx context.Context, key string, contentType stri
 	if key == "" {
 		return nil, errors.New("jaguar: empty key")
 	}
+
+	b.st.mpMu.Lock()
+	if len(b.st.mpUploads) > 1000 {
+		b.st.mpMu.Unlock()
+		return nil, errors.New("jaguar: too many concurrent uploads")
+	}
+	b.st.mpMu.Unlock()
 
 	uploadID := newUploadID()
 	mu := &storage.MultipartUpload{

@@ -130,6 +130,14 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 	}
 	st.baseFile = f
 
+	// Cleanup pattern: if any subsequent step fails, close all opened files.
+	success := false
+	defer func() {
+		if !success {
+			st.closeFiles()
+		}
+	}()
+
 	// Open or create delta bucket files.
 	st.deltaFiles = make([]*os.File, deltaBuckets)
 	st.deltaMu = make([]sync.Mutex, deltaBuckets)
@@ -137,7 +145,6 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 		name := fmt.Sprintf("delta_%03d.dat", i)
 		df, err := os.OpenFile(filepath.Join(root, name), os.O_CREATE|os.O_RDWR|os.O_APPEND, filePerm)
 		if err != nil {
-			st.closeFiles()
 			return nil, fmt.Errorf("gecko: open delta %d: %w", i, err)
 		}
 		st.deltaFiles[i] = df
@@ -145,10 +152,10 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 
 	// Recover in-memory index from base + delta files.
 	if err := st.recover(); err != nil {
-		st.closeFiles()
 		return nil, fmt.Errorf("gecko: recovery: %w", err)
 	}
 
+	success = true
 	return st, nil
 }
 
@@ -185,6 +192,8 @@ type deltaEntry struct {
 // ---------------------------------------------------------------------------
 // Store (implements storage.Storage)
 // ---------------------------------------------------------------------------
+
+const maxBuckets = 10000
 
 type store struct {
 	root         string
@@ -258,7 +267,9 @@ func (s *store) Bucket(name string) storage.Bucket {
 
 	s.bktMu.Lock()
 	if _, ok := s.bucketMap[name]; !ok {
-		s.bucketMap[name] = time.Now()
+		if len(s.bucketMap) < maxBuckets {
+			s.bucketMap[name] = time.Now()
+		}
 	}
 	s.bktMu.Unlock()
 
@@ -319,6 +330,10 @@ func (s *store) CreateBucket(ctx context.Context, name string, opts storage.Opti
 
 	if _, ok := s.bucketMap[name]; ok {
 		return nil, storage.ErrExist
+	}
+
+	if len(s.bucketMap) >= maxBuckets {
+		return nil, fmt.Errorf("gecko: maximum number of buckets (%d) reached", maxBuckets)
 	}
 
 	now := time.Now()
@@ -659,9 +674,35 @@ func (s *store) flushDeltaBucket(bucketID int, entries []deltaEntry) error {
 
 	f := s.deltaFiles[bucketID]
 
+	// Get current end-of-file offset so we can compute value offsets.
+	baseOffset, err := f.Seek(0, io.SeekEnd)
+	if err != nil {
+		return fmt.Errorf("gecko: seek delta %d: %w", bucketID, err)
+	}
+
 	var b bytes.Buffer
+	// Track the offset of each entry's value within the buffer.
+	type entryPos struct {
+		compositeKey string
+		valueOffset  int64
+		valueSize    int64
+	}
+	positions := make([]entryPos, 0, len(entries))
+
 	for _, de := range entries {
+		// Record position: the value starts after keyLen(2) + key + valLen(8).
+		entryStart := int64(b.Len())
 		writeDeltaEntry(&b, de)
+
+		if de.op == opPut {
+			// Value offset within the file = baseOffset + entryStart + 2 + len(key) + 8.
+			valueFileOffset := baseOffset + entryStart + 2 + int64(len(de.compositeKey)) + 8
+			positions = append(positions, entryPos{
+				compositeKey: de.compositeKey,
+				valueOffset:  valueFileOffset,
+				valueSize:    int64(len(de.value)),
+			})
+		}
 	}
 
 	if _, err := f.Write(b.Bytes()); err != nil {
@@ -677,13 +718,18 @@ func (s *store) flushDeltaBucket(bucketID int, entries []deltaEntry) error {
 	s.deltaCount[bucketID].Add(int64(len(entries)))
 
 	// Update index entries: values now live in delta file, not buffer.
-	// We don't need to update offset here because we tracked it at write time
-	// and the index already points to the buffer value. After flush, readers
-	// fall through to the delta file. We update source to srcDelta.
-	// Actually, we need to re-seek to find offsets. For simplicity, we keep
-	// buffer values in index until next read forces a re-read.
-	// The index entries were already updated with bufValue during put, so
-	// they remain valid (value is kept in indexEntry.bufValue).
+	// Clear bufValue to release memory; point to delta file instead.
+	s.idxMu.Lock()
+	for _, pos := range positions {
+		if entry, ok := s.index[pos.compositeKey]; ok && entry.source == srcBuffer {
+			entry.source = srcDelta
+			entry.deltaFileID = bucketID
+			entry.offset = pos.valueOffset
+			entry.size = pos.valueSize
+			entry.bufValue = nil
+		}
+	}
+	s.idxMu.Unlock()
 
 	return nil
 }

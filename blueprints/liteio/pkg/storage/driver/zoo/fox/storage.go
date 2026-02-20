@@ -94,6 +94,7 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 		metaPath: metaPath,
 		buckets:  make(map[string]time.Time),
 		mp:       newMultipartRegistry(),
+		stopTick: make(chan struct{}),
 	}
 
 	// Open or create page file.
@@ -101,6 +102,15 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 	if err != nil {
 		return nil, fmt.Errorf("fox: open pages: %w", err)
 	}
+
+	// Ensure pf is closed if we fail after this point.
+	success := false
+	defer func() {
+		if !success {
+			pf.Close()
+		}
+	}()
+
 	st.pageFile = pf
 
 	// Initialize B-tree and pool.
@@ -112,7 +122,6 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 		// Fresh store -- allocate root leaf page.
 		rootID, allocErr := st.allocPage()
 		if allocErr != nil {
-			pf.Close()
 			return nil, allocErr
 		}
 		st.tree.root = &btreeNode{
@@ -122,6 +131,21 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 		st.tree.height = 1
 	}
 
+	// Start per-store time cache ticker.
+	go func() {
+		ticker := time.NewTicker(1 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				cachedTimeNano.Store(time.Now().UnixNano())
+			case <-st.stopTick:
+				return
+			}
+		}
+	}()
+
+	success = true
 	return st, nil
 }
 
@@ -142,6 +166,8 @@ const (
 	tombstoneMarker = 0xFFFFFFFF
 
 	maxPartNumber = 10000
+
+	maxBuckets = 10000
 )
 
 // ---------------------------------------------------------------------------
@@ -152,12 +178,6 @@ var cachedTimeNano atomic.Int64
 
 func init() {
 	cachedTimeNano.Store(time.Now().UnixNano())
-	go func() {
-		ticker := time.NewTicker(1 * time.Millisecond)
-		for range ticker.C {
-			cachedTimeNano.Store(time.Now().UnixNano())
-		}
-	}()
 }
 
 func fastNow() int64     { return cachedTimeNano.Load() }
@@ -184,6 +204,8 @@ type store struct {
 	buckets map[string]time.Time
 
 	mp *multipartRegistry
+
+	stopTick chan struct{}
 }
 
 var _ storage.Storage = (*store)(nil)
@@ -213,7 +235,9 @@ func (s *store) Bucket(name string) storage.Bucket {
 
 	s.mu.Lock()
 	if _, ok := s.buckets[name]; !ok {
-		s.buckets[name] = fastNowTime()
+		if len(s.buckets) < maxBuckets {
+			s.buckets[name] = fastNowTime()
+		}
 	}
 	s.mu.Unlock()
 
@@ -323,11 +347,16 @@ func (s *store) Features() storage.Features {
 }
 
 func (s *store) Close() error {
+	// Stop the time cache ticker goroutine.
+	close(s.stopTick)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Flush all dirty mini-pages.
+	// Flush all dirty mini-pages while holding the pool lock.
+	s.pool.mu.Lock()
 	s.pool.flushAll()
+	s.pool.mu.Unlock()
 
 	// Sync page file.
 	if s.syncMode != "none" {

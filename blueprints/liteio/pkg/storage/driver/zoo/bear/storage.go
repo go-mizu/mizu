@@ -91,6 +91,12 @@ const (
 	// Multipart
 	maxPartNumber = 10000
 
+	// Max file size for the mmap'd B-tree file (4 GB).
+	maxBearFileSize = 4 * 1024 * 1024 * 1024
+
+	// Max number of buckets to prevent unbounded map growth.
+	maxBuckets = 10000
+
 	// Permissions
 	dirPerms  = 0750
 	filePerms = 0600
@@ -433,6 +439,10 @@ func (s *store) remapIfNeeded(requiredPages uint32) error {
 		return nil
 	}
 
+	if neededSize > maxBearFileSize {
+		return fmt.Errorf("bear: file size would exceed limit (%d bytes)", maxBearFileSize)
+	}
+
 	// Grow file — use 2x growth factor so remaps are rare.
 	newSize := currentSize
 	for newSize < neededSize {
@@ -441,6 +451,9 @@ func (s *store) remapIfNeeded(requiredPages uint32) error {
 		} else {
 			newSize += 1024 * pageSize
 		}
+	}
+	if newSize > maxBearFileSize {
+		newSize = maxBearFileSize
 	}
 
 	if err := s.file.Truncate(int64(newSize)); err != nil {
@@ -527,8 +540,9 @@ func (s *store) page(id uint32) []byte {
 }
 
 // allocPage returns a new page ID, reusing free pages or extending the file.
-// Caller must hold mu (write lock). If a remap is needed it will briefly
-// acquire mmapMu (the ensureSpace pre-grow should make this rare).
+// Caller must hold mu (write lock). If a remap is needed it will release mu,
+// acquire mmapMu (respecting documented lock order mmapMu -> mu), perform
+// the remap, release mmapMu, and reacquire mu.
 func (s *store) allocPage() (uint32, error) {
 	if s.freeHead != 0 {
 		id := s.freeHead
@@ -550,14 +564,38 @@ func (s *store) allocPage() (uint32, error) {
 		return id, nil
 	}
 
-	// Slow path: need remap. Acquire mmapMu to serialise with ensureSpace.
+	// Slow path: need remap. Release mu first to respect lock order
+	// (mmapMu -> mu), then reacquire mu after remap.
+	needed := s.pageCount
+	s.mu.Unlock()
+
 	s.mmapMu.Lock()
-	err := s.remapIfNeeded(s.pageCount)
+	err := s.remapIfNeeded(needed)
 	s.mmapMu.Unlock()
+
+	s.mu.Lock()
+
 	if err != nil {
 		s.pageCount--
 		return 0, err
 	}
+
+	// After releasing and reacquiring mu, another goroutine may have
+	// modified pageCount. Our reserved ID is still valid because we
+	// incremented pageCount before releasing the lock (so other writers
+	// will allocate beyond our ID). Verify the mmap covers our page.
+	if int(s.pageCount)*pageSize > len(s.mmap) {
+		// Another writer also grew past mmap; re-grow.
+		s.mu.Unlock()
+		s.mmapMu.Lock()
+		err = s.remapIfNeeded(s.pageCount)
+		s.mmapMu.Unlock()
+		s.mu.Lock()
+		if err != nil {
+			return 0, err
+		}
+	}
+
 	return id, nil
 }
 
@@ -1255,6 +1293,9 @@ func (s *store) btreeDelete(key []byte) bool {
 
 // btreeScan iterates over all entries with keys >= startKey.
 // It calls fn for each entry; fn returns false to stop iteration.
+// Caller must hold mu (read or write lock) to prevent concurrent remap
+// from invalidating the mmap slice. The only exception is single-threaded
+// init paths (e.g. loadBucketMeta) where the store is not yet shared.
 func (s *store) btreeScan(startKey []byte, fn func(e *leafEntry) bool) {
 	// Find the leaf containing startKey
 	pageID := s.rootPage
@@ -1384,6 +1425,10 @@ func (s *store) CreateBucket(ctx context.Context, name string, opts storage.Opti
 
 	if _, exists := s.buckets[name]; exists {
 		return nil, storage.ErrExist
+	}
+
+	if len(s.buckets) >= maxBuckets {
+		return nil, fmt.Errorf("bear: too many buckets (max %d)", maxBuckets)
 	}
 
 	now := time.Now()

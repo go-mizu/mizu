@@ -115,6 +115,7 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 		buckets:       make(map[string]time.Time),
 		writeBuf:      make(map[string]*bufEntry),
 		mp:            newMultipartRegistry(),
+		stopTick:      make(chan struct{}),
 	}
 
 	// Load existing data if present.
@@ -122,12 +123,28 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 		return nil, fmt.Errorf("owl: load: %w", err)
 	}
 
+	// Start per-store ticker for cached time.
+	go func() {
+		ticker := time.NewTicker(1 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-st.stopTick:
+				return
+			case <-ticker.C:
+				cachedTimeNano.Store(time.Now().UnixNano())
+			}
+		}
+	}()
+
 	return st, nil
 }
 
 // =============================================================================
 // STORE
 // =============================================================================
+
+const maxBuckets = 10000
 
 // store implements storage.Storage.
 type store struct {
@@ -141,14 +158,19 @@ type store struct {
 	buckets map[string]time.Time
 
 	// Write buffer: compositeKey -> bufEntry.
-	wmu       sync.RWMutex
-	writeBuf  map[string]*bufEntry
-	bufBytes  int64
-	compactMu sync.Mutex // serialises compaction
+	wmu        sync.RWMutex
+	writeBuf   map[string]*bufEntry
+	bufBytes   int64
+	compactMu  sync.Mutex     // serialises compaction
+	compacting atomic.Bool    // true while a compaction goroutine is running
+	compactCh  chan struct{}   // closed when current compaction finishes (for backpressure)
 
 	// Background compaction tracking.
 	closed    int32          // atomic: 1 = store is closing/closed
 	compactWg sync.WaitGroup // tracks in-flight background compactions
+
+	// Per-store stoppable ticker for cached time.
+	stopTick chan struct{}
 
 	// Sorted data (loaded from data.dat or rebuilt on compaction).
 	dmu       sync.RWMutex
@@ -440,19 +462,22 @@ func writeFileAtomic(tmpPath, finalPath string, data []byte, syncMode string) er
 	if err != nil {
 		return err
 	}
+	// Always clean up the temp file on failure (including failed rename).
+	defer os.Remove(tmpPath)
+
 	if _, err := f.Write(data); err != nil {
 		f.Close()
-		os.Remove(tmpPath)
 		return err
 	}
 	if syncMode != "none" {
 		if err := f.Sync(); err != nil {
 			f.Close()
-			os.Remove(tmpPath)
 			return err
 		}
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		return err
+	}
 	return os.Rename(tmpPath, finalPath)
 }
 
@@ -764,18 +789,52 @@ func (s *store) compact() error {
 	return nil
 }
 
+// errWriteBufferFull is returned when write buffer exceeds 2x threshold
+// and a compaction is already in progress.
+var errWriteBufferFull = fmt.Errorf("owl: write buffer full, try again")
+
 // maybeCompact triggers compaction if buffer exceeds threshold.
-func (s *store) maybeCompact() {
-	if atomic.LoadInt32(&s.closed) != 0 {
-		return
+// Returns an error if write buffer is dangerously large and compaction
+// is already in progress (backpressure).
+func (s *store) maybeCompact() error {
+	s.wmu.RLock()
+	currentBytes := s.bufBytes
+	s.wmu.RUnlock()
+
+	if currentBytes < s.maxBufferSize {
+		return nil
 	}
-	if atomic.LoadInt64((*int64)(&s.bufBytes)) >= s.maxBufferSize {
+
+	// Backpressure: if buffer exceeds 2x threshold and compaction is
+	// already running, reject writes to prevent OOM.
+	if currentBytes >= 2*s.maxBufferSize && s.compacting.Load() {
+		return errWriteBufferFull
+	}
+
+	// Try to start a new compaction. Use CompareAndSwap so only one
+	// goroutine runs compaction at a time.
+	if s.compacting.CompareAndSwap(false, true) {
+		// Re-check closed inside the lock to avoid TOCTOU race.
+		if atomic.LoadInt32(&s.closed) != 0 {
+			s.compacting.Store(false)
+			return nil
+		}
+
+		ch := make(chan struct{})
+		s.compactMu.Lock()
+		s.compactCh = ch
+		s.compactMu.Unlock()
+
 		s.compactWg.Add(1)
 		go func() {
 			defer s.compactWg.Done()
+			defer s.compacting.Store(false)
+			defer close(ch)
 			s.compact()
 		}()
 	}
+
+	return nil
 }
 
 // =============================================================================
@@ -844,7 +903,9 @@ func (s *store) Bucket(name string) storage.Bucket {
 
 	s.bmu.Lock()
 	if _, ok := s.buckets[name]; !ok {
-		s.buckets[name] = fastNowTime()
+		if len(s.buckets) < maxBuckets {
+			s.buckets[name] = fastNowTime()
+		}
 	}
 	s.bmu.Unlock()
 
@@ -902,6 +963,10 @@ func (s *store) CreateBucket(ctx context.Context, name string, opts storage.Opti
 
 	if _, ok := s.buckets[name]; ok {
 		return nil, storage.ErrExist
+	}
+
+	if len(s.buckets) >= maxBuckets {
+		return nil, fmt.Errorf("owl: maximum number of buckets (%d) reached", maxBuckets)
 	}
 
 	now := fastNowTime()
@@ -976,7 +1041,12 @@ func (s *store) Features() storage.Features {
 
 func (s *store) Close() error {
 	// Signal that the store is closing so no new background compactions start.
-	atomic.StoreInt32(&s.closed, 1)
+	if !atomic.CompareAndSwapInt32(&s.closed, 0, 1) {
+		return nil
+	}
+
+	// Stop the per-store ticker goroutine.
+	close(s.stopTick)
 
 	// Wait for any in-flight background compactions to finish.
 	s.compactWg.Wait()
@@ -1093,7 +1163,9 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 	b.st.bufBytes += entry.size
 	b.st.wmu.Unlock()
 
-	b.st.maybeCompact()
+	if err := b.st.maybeCompact(); err != nil {
+		return nil, err
+	}
 
 	return &storage.Object{
 		Bucket:      b.name,
@@ -1352,7 +1424,9 @@ func (b *bucket) Copy(ctx context.Context, dstKey string, srcBucket, srcKey stri
 	b.st.bufBytes += entry.size
 	b.st.wmu.Unlock()
 
-	b.st.maybeCompact()
+	if err := b.st.maybeCompact(); err != nil {
+		return nil, err
+	}
 
 	return &storage.Object{
 		Bucket:      b.name,
@@ -1684,7 +1758,9 @@ func (d *dir) Move(ctx context.Context, dstPath string, opts storage.Options) (s
 		}
 	}
 
-	d.b.st.maybeCompact()
+	if err := d.b.st.maybeCompact(); err != nil {
+		return nil, err
+	}
 	return &dir{b: d.b, path: strings.Trim(dstPath, "/")}, nil
 }
 
@@ -1957,12 +2033,6 @@ var cachedTimeNano atomic.Int64
 
 func init() {
 	cachedTimeNano.Store(time.Now().UnixNano())
-	go func() {
-		ticker := time.NewTicker(1 * time.Millisecond)
-		for range ticker.C {
-			cachedTimeNano.Store(time.Now().UnixNano())
-		}
-	}()
 }
 
 func fastNow() int64 {

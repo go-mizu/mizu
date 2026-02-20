@@ -54,6 +54,7 @@ const (
 	filePerm = 0600
 
 	maxPartNumber = 10000
+	maxBuckets    = 10000
 )
 
 // ---------------------------------------------------------------------------
@@ -238,7 +239,9 @@ func (s *store) Bucket(name string) storage.Bucket {
 
 	s.mu.Lock()
 	if _, ok := s.buckets[name]; !ok {
-		s.buckets[name] = time.Now()
+		if len(s.buckets) < maxBuckets {
+			s.buckets[name] = time.Now()
+		}
 	}
 	s.mu.Unlock()
 
@@ -298,6 +301,9 @@ func (s *store) CreateBucket(ctx context.Context, name string, opts storage.Opti
 
 	if _, ok := s.buckets[name]; ok {
 		return nil, storage.ErrExist
+	}
+	if len(s.buckets) >= maxBuckets {
+		return nil, fmt.Errorf("kangaroo: too many buckets (max %d)", maxBuckets)
 	}
 
 	now := time.Now()
@@ -382,10 +388,16 @@ func keyHash(ck string) uint32 {
 	return h.Sum32()
 }
 
+const maxAccessEntries = 100000
+
 // incrAccess bumps the access counter and returns the new count.
+// Resets the map when it exceeds maxAccessEntries to bound memory usage.
 func (s *store) incrAccess(ck string) uint8 {
 	h := keyHash(ck)
 	s.accessMu.Lock()
+	if len(s.access) >= maxAccessEntries {
+		s.access = make(map[uint32]uint8)
+	}
 	c := s.access[h] + 1
 	s.access[h] = c
 	s.accessMu.Unlock()
@@ -732,16 +744,6 @@ type klogFile struct {
 
 	// In-memory index: compositeKey -> offset+size in the log.
 	index map[string]klogEntry
-
-	// Cached entry data for reads (avoids re-reading from file).
-	data map[string]*klogCached
-}
-
-type klogCached struct {
-	value       []byte
-	contentType string
-	created     time.Time
-	updated     time.Time
 }
 
 func newKLog(path string, capacity int64) (*klogFile, error) {
@@ -763,7 +765,6 @@ func newKLog(path string, capacity int64) (*klogFile, error) {
 		f:        f,
 		capacity: capacity,
 		index:    make(map[string]klogEntry),
-		data:     make(map[string]*klogCached),
 	}, nil
 }
 
@@ -812,16 +813,11 @@ func (kl *klogFile) append(ck string, val []byte, ct string, created, updated ti
 	}
 
 	// Update index.
-	kl.index[ck] = klogEntry{offset: kl.writePos - entrySize, size: entrySize}
-	if kl.index[ck].offset < 0 {
-		kl.index[ck] = klogEntry{offset: kl.capacity + (kl.writePos - entrySize), size: entrySize}
+	off := kl.writePos - entrySize
+	if off < 0 {
+		off = kl.capacity + off
 	}
-	kl.data[ck] = &klogCached{
-		value:       val,
-		contentType: ct,
-		created:     created,
-		updated:     updated,
-	}
+	kl.index[ck] = klogEntry{offset: off, size: entrySize}
 
 	return promoted
 }
@@ -833,49 +829,50 @@ func (kl *klogFile) collectOverwritten(start, end int64) []promotionCandidate {
 	for ck, e := range kl.index {
 		entryEnd := e.offset + e.size
 		// Check overlap with [start, end).
-		if e.offset >= start && e.offset < end {
-			if cached, ok := kl.data[ck]; ok {
-				result = append(result, promotionCandidate{
-					key:         ck,
-					value:       cached.value,
-					contentType: cached.contentType,
-					created:     cached.created,
-					updated:     cached.updated,
-				})
+		overlaps := (e.offset >= start && e.offset < end) ||
+			(entryEnd > start && entryEnd <= end)
+		if overlaps {
+			// Read entry from disk.
+			buf := make([]byte, e.size)
+			if _, err := kl.f.ReadAt(buf, e.offset); err == nil {
+				key, val, ct, created, updated, consumed := decodeEntry(buf)
+				if consumed > 0 && key == ck {
+					result = append(result, promotionCandidate{
+						key:         ck,
+						value:       val,
+						contentType: ct,
+						created:     created,
+						updated:     updated,
+					})
+				}
 			}
 			delete(kl.index, ck)
-			delete(kl.data, ck)
-		} else if entryEnd > start && entryEnd <= end {
-			if cached, ok := kl.data[ck]; ok {
-				result = append(result, promotionCandidate{
-					key:         ck,
-					value:       cached.value,
-					contentType: cached.contentType,
-					created:     cached.created,
-					updated:     cached.updated,
-				})
-			}
-			delete(kl.index, ck)
-			delete(kl.data, ck)
 		}
 	}
 	return result
 }
 
-// get reads an entry from the in-memory cache.
+// get reads an entry from disk via the index.
 func (kl *klogFile) get(ck string) ([]byte, string, time.Time, time.Time, bool) {
 	kl.mu.Lock()
 	defer kl.mu.Unlock()
 
-	cached, ok := kl.data[ck]
+	e, ok := kl.index[ck]
 	if !ok {
 		return nil, "", time.Time{}, time.Time{}, false
 	}
 
-	// Return a copy.
-	val := make([]byte, len(cached.value))
-	copy(val, cached.value)
-	return val, cached.contentType, cached.created, cached.updated, true
+	buf := make([]byte, e.size)
+	if _, err := kl.f.ReadAt(buf, e.offset); err != nil {
+		return nil, "", time.Time{}, time.Time{}, false
+	}
+
+	key, val, ct, created, updated, consumed := decodeEntry(buf)
+	if consumed <= 0 || key != ck {
+		return nil, "", time.Time{}, time.Time{}, false
+	}
+
+	return val, ct, created, updated, true
 }
 
 // remove removes an entry from the klog index.
@@ -888,7 +885,6 @@ func (kl *klogFile) remove(ck string) bool {
 		return false
 	}
 	delete(kl.index, ck)
-	delete(kl.data, ck)
 	return true
 }
 
@@ -897,14 +893,22 @@ func (kl *klogFile) allEntries() []entryMeta {
 	kl.mu.Lock()
 	defer kl.mu.Unlock()
 
-	result := make([]entryMeta, 0, len(kl.data))
-	for ck, cached := range kl.data {
+	result := make([]entryMeta, 0, len(kl.index))
+	for ck, e := range kl.index {
+		buf := make([]byte, e.size)
+		if _, err := kl.f.ReadAt(buf, e.offset); err != nil {
+			continue
+		}
+		key, val, ct, created, updated, consumed := decodeEntry(buf)
+		if consumed <= 0 || key != ck {
+			continue
+		}
 		result = append(result, entryMeta{
 			key:         ck,
-			size:        int64(len(cached.value)),
-			contentType: cached.contentType,
-			created:     cached.created,
-			updated:     cached.updated,
+			size:        int64(len(val)),
+			contentType: ct,
+			created:     created,
+			updated:     updated,
 		})
 	}
 	return result
@@ -936,6 +940,7 @@ type ksetFile struct {
 	capacity int64
 	pageSize int
 	numPages int
+	pagePool sync.Pool
 }
 
 func newKSet(path string, capacity int64, pageSize, numPages int) (*ksetFile, error) {
@@ -953,12 +958,18 @@ func newKSet(path string, capacity int64, pageSize, numPages int) (*ksetFile, er
 		}
 	}
 
-	return &ksetFile{
+	ks := &ksetFile{
 		f:        f,
 		capacity: capacity,
 		pageSize: pageSize,
 		numPages: numPages,
-	}, nil
+	}
+	ks.pagePool = sync.Pool{
+		New: func() any {
+			return make([]byte, ks.pageSize)
+		},
+	}
+	return ks, nil
 }
 
 // pageOffset returns the byte offset for a given page number.
@@ -971,15 +982,26 @@ func (ks *ksetFile) pageForKey(ck string) int {
 	return int(keyHash(ck) % uint32(ks.numPages))
 }
 
-// readPage reads the full page into a buffer.
+// readPage reads the full page into a pooled buffer.
+// The caller must return the buffer via putPage when done.
 func (ks *ksetFile) readPage(pageNum int) ([]byte, error) {
-	buf := make([]byte, ks.pageSize)
+	buf := ks.pagePool.Get().([]byte)
+	// Clear the buffer in case the pool returned a dirty one.
+	for i := range buf {
+		buf[i] = 0
+	}
 	off := ks.pageOffset(pageNum)
 	_, err := ks.f.ReadAt(buf, off)
 	if err != nil && err != io.EOF {
+		ks.pagePool.Put(buf)
 		return nil, err
 	}
 	return buf, nil
+}
+
+// putPage returns a page buffer to the pool.
+func (ks *ksetFile) putPage(buf []byte) {
+	ks.pagePool.Put(buf)
 }
 
 // writePage writes the full page buffer back to disk.
@@ -1004,6 +1026,7 @@ func (ks *ksetFile) put(ck string, val []byte, ct string, created, updated time.
 	if err != nil {
 		return
 	}
+	defer ks.putPage(page)
 
 	usable := ks.usablePageSize()
 	if usable < 4 {
@@ -1075,23 +1098,29 @@ func (ks *ksetFile) get(ck string) ([]byte, string, time.Time, time.Time, bool) 
 
 	usable := ks.usablePageSize()
 	if usable < 4 {
+		ks.putPage(page)
 		return nil, "", time.Time{}, time.Time{}, false
 	}
 
 	// Check bloom filter first.
 	bloom := page[usable:]
 	if !bloomMayContain(bloom, ck) {
+		ks.putPage(page)
 		return nil, "", time.Time{}, time.Time{}, false
 	}
 
 	used := int(binary.LittleEndian.Uint16(page[:2]))
 	if used == 0 || used > usable-2 {
+		ks.putPage(page)
 		return nil, "", time.Time{}, time.Time{}, false
 	}
 
-	// Scan entries in the data area.
+	// Scan entries in the data area. scanPageForKey copies the value,
+	// so we can return the page buffer to the pool after scanning.
 	dataStart := 2
-	return scanPageForKey(page[dataStart:dataStart+used], ck)
+	val, ct, created, updated, found := scanPageForKey(page[dataStart:dataStart+used], ck)
+	ks.putPage(page)
+	return val, ct, created, updated, found
 }
 
 // remove marks an entry as deleted in its KSet page.
@@ -1104,6 +1133,7 @@ func (ks *ksetFile) remove(ck string) bool {
 	if err != nil {
 		return false
 	}
+	defer ks.putPage(page)
 
 	usable := ks.usablePageSize()
 	if usable < 4 {
@@ -1143,15 +1173,18 @@ func (ks *ksetFile) allEntries() []entryMeta {
 		}
 		usable := ks.usablePageSize()
 		if usable < 4 {
+			ks.putPage(page)
 			continue
 		}
 		used := int(binary.LittleEndian.Uint16(page[:2]))
 		if used == 0 || used > usable-2 {
+			ks.putPage(page)
 			continue
 		}
 		dataStart := 2
 		entries := parsePageEntries(page[dataStart : dataStart+used])
 		result = append(result, entries...)
+		ks.putPage(page)
 	}
 	return result
 }

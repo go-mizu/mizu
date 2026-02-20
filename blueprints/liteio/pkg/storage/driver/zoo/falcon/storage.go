@@ -68,6 +68,9 @@ const (
 
 	defaultHotSize  = 1_048_576
 	defaultColdSlot = 1 << 20 // initial cold file capacity in slots (~256 MB)
+	maxColdSlots    = 1 << 24 // 16M slots, ~256 MB at 16 bytes/slot
+
+	maxBuckets = 10000
 
 	dirPerms  = 0750
 	filePerms = 0600
@@ -120,6 +123,8 @@ func (d *driver) Open(_ context.Context, dsn string) (storage.Storage, error) {
 		return nil, err
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+
 	st := &store{
 		root:     root,
 		syncMode: syncMode,
@@ -128,11 +133,28 @@ func (d *driver) Open(_ context.Context, dsn string) (storage.Storage, error) {
 		overflow: over,
 		buckets:  make(map[string]time.Time),
 		mp:       newMultipartRegistry(),
+		stopTick: make(chan struct{}),
+		ctx:      ctx,
+		cancel:   cancel,
 	}
 
 	for i := range st.hot {
 		st.hot[i] = &hotShard{m: make(map[string]*hotEntry, 256)}
 	}
+
+	// Start per-store ticker for cachedNano.
+	go func() {
+		t := time.NewTicker(1 * time.Millisecond)
+		defer t.Stop()
+		for {
+			select {
+			case <-st.stopTick:
+				return
+			case <-t.C:
+				cachedNano.Store(time.Now().UnixNano())
+			}
+		}
+	}()
 
 	return st, nil
 }
@@ -145,12 +167,6 @@ var cachedNano atomic.Int64
 
 func init() {
 	cachedNano.Store(time.Now().UnixNano())
-	go func() {
-		t := time.NewTicker(1 * time.Millisecond)
-		for range t.C {
-			cachedNano.Store(time.Now().UnixNano())
-		}
-	}()
 }
 
 func fastNow() int64  { return cachedNano.Load() }
@@ -509,6 +525,10 @@ func (cf *coldFile) grow(over *overflowFile) error {
 	oldSlots := cf.numSlots
 	newSlots := oldSlots * 2
 
+	if newSlots > maxColdSlots {
+		return fmt.Errorf("falcon: cold file would exceed max capacity (%d slots)", maxColdSlots)
+	}
+
 	// Read all existing entries.
 	type entry struct {
 		ck   string
@@ -679,6 +699,13 @@ type store struct {
 	epoch    atomic.Int64
 	flushMu  sync.Mutex
 	flushing atomic.Bool
+
+	// Per-store stoppable ticker for cachedNano.
+	stopTick chan struct{}
+
+	// Context for stopping background goroutines (e.g. demote).
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 var _ storage.Storage = (*store)(nil)
@@ -690,7 +717,9 @@ func (s *store) Bucket(name string) storage.Bucket {
 
 	s.mu.Lock()
 	if _, ok := s.buckets[name]; !ok {
-		s.buckets[name] = fastTime()
+		if len(s.buckets) < maxBuckets {
+			s.buckets[name] = fastTime()
+		}
 	}
 	s.mu.Unlock()
 
@@ -820,6 +849,10 @@ func (s *store) Features() storage.Features {
 }
 
 func (s *store) Close() error {
+	// Stop background goroutines.
+	s.cancel()
+	close(s.stopTick)
+
 	// Flush hot tier to cold.
 	s.flushAll()
 
@@ -852,6 +885,12 @@ func (s *store) hotPut(ck string, e *hotEntry) {
 		newCount := s.hotCount.Add(1)
 		if int(newCount) > s.hotSize && s.flushing.CompareAndSwap(false, true) {
 			go func() {
+				select {
+				case <-s.ctx.Done():
+					s.flushing.Store(false)
+					return
+				default:
+				}
 				s.demote()
 				s.flushing.Store(false)
 			}()

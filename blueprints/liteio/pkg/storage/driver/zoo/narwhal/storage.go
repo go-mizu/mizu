@@ -56,6 +56,9 @@ const (
 	filePerm = 0o600
 
 	maxPartNumber = 10000
+
+	maxBuckets          = 10000
+	maxParityFileSize   = 10 * 1024 * 1024 * 1024 // 10GB
 )
 
 // ---------------------------------------------------------------------------
@@ -96,6 +99,7 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 		syncMode: syncMode,
 		buckets:  make(map[string]time.Time),
 		mp:       &mpRegistry{uploads: make(map[string]*mpUpload)},
+		stopTick: startTimeTicker(),
 	}
 
 	// Open data volumes.
@@ -171,6 +175,8 @@ type store struct {
 	buckets map[string]time.Time
 
 	mp *mpRegistry
+
+	stopTick chan struct{} // stops the cached-time ticker goroutine
 }
 
 var _ storage.Storage = (*store)(nil)
@@ -183,7 +189,9 @@ func (s *store) Bucket(name string) storage.Bucket {
 
 	s.mu.Lock()
 	if _, ok := s.buckets[name]; !ok {
-		s.buckets[name] = fastNowTime()
+		if len(s.buckets) < maxBuckets {
+			s.buckets[name] = fastNowTime()
+		}
 	}
 	s.mu.Unlock()
 
@@ -236,6 +244,10 @@ func (s *store) CreateBucket(ctx context.Context, name string, opts storage.Opti
 		return nil, storage.ErrExist
 	}
 
+	if len(s.buckets) >= maxBuckets {
+		return nil, fmt.Errorf("narwhal: too many buckets (max %d)", maxBuckets)
+	}
+
 	now := fastNowTime()
 	s.buckets[name] = now
 	return &storage.BucketInfo{Name: name, CreatedAt: now}, nil
@@ -280,6 +292,11 @@ func (s *store) Features() storage.Features {
 }
 
 func (s *store) Close() error {
+	if s.stopTick != nil {
+		close(s.stopTick)
+		s.stopTick = nil
+	}
+
 	s.saveMeta()
 
 	if s.syncMode != "none" {
@@ -644,9 +661,9 @@ func openParityVolume(path string) (*parityVolume, error) {
 // of the source data volume. The parity file is conceptually divided into
 // parityBlock-sized blocks; each block stores the XOR of corresponding
 // blocks across all data volumes.
-func (pv *parityVolume) xorInto(volumeOffset int64, data []byte) {
+func (pv *parityVolume) xorInto(volumeOffset int64, data []byte) error {
 	if len(data) == 0 {
-		return
+		return nil
 	}
 
 	pv.mu.Lock()
@@ -654,6 +671,9 @@ func (pv *parityVolume) xorInto(volumeOffset int64, data []byte) {
 
 	// Ensure parity file is large enough.
 	endPos := volumeOffset + int64(len(data))
+	if endPos > maxParityFileSize {
+		return fmt.Errorf("narwhal: parity file too large: %d", endPos)
+	}
 	info, _ := pv.fd.Stat()
 	if info != nil && info.Size() < endPos {
 		pv.fd.Truncate(endPos)
@@ -670,6 +690,7 @@ func (pv *parityVolume) xorInto(volumeOffset int64, data []byte) {
 
 	// Write back.
 	pv.fd.WriteAt(existing, volumeOffset)
+	return nil
 }
 
 func (pv *parityVolume) close() {
@@ -875,7 +896,9 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 	valueOffset := offset + 1 + 2 + int64(len(ck)) + 2 + int64(len(contentType)) + 8
 
 	// XOR value into parity.
-	b.st.parity.xorInto(valueOffset, data)
+	if err := b.st.parity.xorInto(valueOffset, data); err != nil {
+		return nil, err
+	}
 
 	// Update index.
 	b.st.idx.put(ck, volID, &indexEntry{
@@ -1061,7 +1084,9 @@ func (b *bucket) Copy(ctx context.Context, dstKey string, srcBucket, srcKey stri
 
 	valueOffset := offset + 1 + 2 + int64(len(dstCK)) + 2 + int64(len(srcEntry.contentType)) + 8
 
-	b.st.parity.xorInto(valueOffset, data)
+	if err := b.st.parity.xorInto(valueOffset, data); err != nil {
+		return nil, err
+	}
 
 	b.st.idx.put(dstCK, dstVolID, &indexEntry{
 		valueOffset: valueOffset,
@@ -1557,7 +1582,9 @@ func (b *bucket) CompleteMultipart(ctx context.Context, mu *storage.MultipartUpl
 
 	valueOffset := recOffset + 1 + 2 + int64(len(ck)) + 2 + int64(len(ct)) + 8
 
-	b.st.parity.xorInto(valueOffset, data)
+	if err := b.st.parity.xorInto(valueOffset, data); err != nil {
+		return nil, err
+	}
 
 	b.st.idx.put(ck, volID, &indexEntry{
 		valueOffset: valueOffset,
@@ -1731,17 +1758,28 @@ func fnv1a(s string) uint32 {
 	return h
 }
 
-// Fast cached time.
+// Fast cached time (per-store; no global goroutine).
 var cachedTimeNano atomic.Int64
 
 func init() {
 	cachedTimeNano.Store(time.Now().UnixNano())
+}
+
+func startTimeTicker() chan struct{} {
+	stop := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(5 * time.Millisecond)
-		for range ticker.C {
-			cachedTimeNano.Store(time.Now().UnixNano())
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case t := <-ticker.C:
+				cachedTimeNano.Store(t.UnixNano())
+			}
 		}
 	}()
+	return stop
 }
 
 func fastNow() int64 {
