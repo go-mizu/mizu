@@ -217,7 +217,7 @@ func (sk *segmentKeys) ensureSorted() {
 	if !sk.dirty {
 		return
 	}
-	sk.sorted = make([]string, 0, len(sk.keys))
+	sk.sorted = sk.sorted[:0] // reuse underlying array
 	for k := range sk.keys {
 		sk.sorted = append(sk.sorted, k)
 	}

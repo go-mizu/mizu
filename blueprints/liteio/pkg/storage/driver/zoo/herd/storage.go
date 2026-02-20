@@ -129,7 +129,6 @@ func openEmbedded(_ context.Context, u *url.URL) (*store, error) {
 		inlineMax:  int64(inlineKB) * 1024,
 		numStripes: numStripes,
 		stripes:    make([]*stripe, numStripes),
-		buckets:    make(map[string]time.Time),
 		mp:         newMultipartRegistry(),
 	}
 
@@ -210,29 +209,25 @@ type store struct {
 	numStripes int
 	stripes    []*stripe
 
-	mu      sync.RWMutex
-	buckets map[string]time.Time
+	buckets sync.Map // string → time.Time — lock-free bucket tracking
 
 	mp *multipartRegistry
 }
 
 var _ storage.Storage = (*store)(nil)
 
-// stripeFor selects a stripe for a bucket+key using fast partial FNV-1a.
-// Only hashes last 8 key bytes (where entropy is highest) + first bucket byte.
-// 16 stripes don't need a full cryptographic-quality hash.
+// stripeFor selects a stripe for a bucket+key using full FNV-1a hash.
+// Full hash ensures even distribution across stripes regardless of key patterns.
 func (s *store) stripeFor(bucket, key string) *stripe {
 	const prime32 = 16777619
 	h := uint32(2166136261)
-	if len(bucket) > 0 {
-		h ^= uint32(bucket[0])
+	for i := 0; i < len(bucket); i++ {
+		h ^= uint32(bucket[i])
 		h *= prime32
 	}
-	start := len(key) - 8
-	if start < 0 {
-		start = 0
-	}
-	for i := start; i < len(key); i++ {
+	h ^= 0
+	h *= prime32
+	for i := 0; i < len(key); i++ {
 		h ^= uint32(key[i])
 		h *= prime32
 	}
@@ -243,29 +238,17 @@ func (s *store) Bucket(name string) storage.Bucket {
 	if name == "" {
 		name = "default"
 	}
-	s.mu.Lock()
-	if _, ok := s.buckets[name]; !ok {
-		s.buckets[name] = fastNowTime()
-	}
-	s.mu.Unlock()
+	s.buckets.LoadOrStore(name, fastNowTime())
 	return &bucket{st: s, name: name}
 }
 
 func (s *store) Buckets(_ context.Context, limit, offset int, _ storage.Options) (storage.BucketIter, error) {
-	s.mu.RLock()
-	names := make([]string, 0, len(s.buckets))
-	for n := range s.buckets {
-		names = append(names, n)
-	}
-	s.mu.RUnlock()
-	sort.Strings(names)
-
-	s.mu.RLock()
-	infos := make([]*storage.BucketInfo, 0, len(names))
-	for _, n := range names {
-		infos = append(infos, &storage.BucketInfo{Name: n, CreatedAt: s.buckets[n]})
-	}
-	s.mu.RUnlock()
+	var infos []*storage.BucketInfo
+	s.buckets.Range(func(key, value any) bool {
+		infos = append(infos, &storage.BucketInfo{Name: key.(string), CreatedAt: value.(time.Time)})
+		return true
+	})
+	sort.Slice(infos, func(i, j int) bool { return infos[i].Name < infos[j].Name })
 
 	if offset < 0 {
 		offset = 0
@@ -285,13 +268,10 @@ func (s *store) CreateBucket(_ context.Context, name string, _ storage.Options) 
 	if name == "" {
 		return nil, fmt.Errorf("herd: bucket name is empty")
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, ok := s.buckets[name]; ok {
+	now := fastNowTime()
+	if _, loaded := s.buckets.LoadOrStore(name, now); loaded {
 		return nil, storage.ErrExist
 	}
-	now := fastNowTime()
-	s.buckets[name] = now
 	return &storage.BucketInfo{Name: name, CreatedAt: now}, nil
 }
 
@@ -308,14 +288,11 @@ func (s *store) DeleteBucket(_ context.Context, name string, opts storage.Option
 		}
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, ok := s.buckets[name]; !ok {
+	if _, ok := s.buckets.Load(name); !ok {
 		return storage.ErrNotExist
 	}
 
 	if !force {
-		// Check if any stripe has keys for this bucket.
 		for _, st := range s.stripes {
 			if st.idx.hasBucket(name) {
 				return storage.ErrPermission
@@ -323,7 +300,7 @@ func (s *store) DeleteBucket(_ context.Context, name string, opts storage.Option
 		}
 	}
 
-	delete(s.buckets, name)
+	s.buckets.Delete(name)
 	return nil
 }
 
@@ -375,13 +352,11 @@ func (b *bucket) Features() storage.Features {
 }
 
 func (b *bucket) Info(_ context.Context) (*storage.BucketInfo, error) {
-	b.st.mu.RLock()
-	created, ok := b.st.buckets[b.name]
-	b.st.mu.RUnlock()
+	v, ok := b.st.buckets.Load(b.name)
 	if !ok {
 		return nil, storage.ErrNotExist
 	}
-	return &storage.BucketInfo{Name: b.name, CreatedAt: created}, nil
+	return &storage.BucketInfo{Name: b.name, CreatedAt: v.(time.Time)}, nil
 }
 
 func (b *bucket) Write(_ context.Context, key string, src io.Reader, size int64, contentType string, _ storage.Options) (*storage.Object, error) {
@@ -593,21 +568,65 @@ func (b *bucket) Open(_ context.Context, key string, offset, length int64, _ sto
 		return nil, nil, storage.ErrNotExist
 	}
 
-	// Read value data: inline → buffer ring → mmap.
-	var data []byte
+	obj := &storage.Object{
+		Bucket: b.name, Key: key, Size: e.size,
+		ContentType: e.contentType,
+		Created:     time.Unix(0, e.created), Updated: time.Unix(0, e.updated),
+	}
+
+	// Inline data: direct slice, no volume I/O.
 	if e.inline != nil {
-		data = e.inline
-	} else {
-		if stripe.ring != nil {
-			if bufData, inBuf := stripe.ring.readFromBuffer(e.valueOffset, e.size); inBuf {
-				data = bufData
-			}
+		data := e.inline
+		if offset < 0 {
+			offset = 0
 		}
-		if data == nil {
-			data = stripe.vol.readValueSlice(e.valueOffset, e.size)
+		if offset > int64(len(data)) {
+			offset = int64(len(data))
+		}
+		end := int64(len(data))
+		if length > 0 && offset+length < end {
+			end = offset + length
+		}
+		return acquireMmapReader(data[offset:end]), obj, nil
+	}
+
+	// Buffer ring: data may still be in unflushed write buffer.
+	if stripe.ring != nil {
+		if bufData, inBuf := stripe.ring.readFromBuffer(e.valueOffset, e.size); inBuf {
+			if offset < 0 {
+				offset = 0
+			}
+			if offset > int64(len(bufData)) {
+				offset = int64(len(bufData))
+			}
+			end := int64(len(bufData))
+			if length > 0 && offset+length < end {
+				end = offset + length
+			}
+			return acquireMmapReader(bufData[offset:end]), obj, nil
 		}
 	}
 
+	// Large object: use pread-based reader for better sequential throughput.
+	// pread benefits from kernel readahead and avoids TLB pressure vs mmap.
+	if e.size > largeReadThreshold {
+		readOff := e.valueOffset
+		readSize := e.size
+		if offset > 0 {
+			readOff += offset
+			readSize -= offset
+		}
+		if readSize < 0 {
+			readSize = 0
+		}
+		if length > 0 && length < readSize {
+			readSize = length
+		}
+		return acquireVolumeReader(stripe.vol.fd, readOff, readSize), obj, nil
+	}
+
+	// Small/medium non-inline: mmap slice (zero-copy, low overhead).
+	data := stripe.vol.readValueSlice(e.valueOffset, e.size)
 	if offset < 0 {
 		offset = 0
 	}
@@ -618,16 +637,7 @@ func (b *bucket) Open(_ context.Context, key string, offset, length int64, _ sto
 	if length > 0 && offset+length < end {
 		end = offset + length
 	}
-	slice := data[offset:end]
-
-	obj := &storage.Object{
-		Bucket: b.name, Key: key, Size: e.size,
-		ContentType: e.contentType,
-		Created:     time.Unix(0, e.created), Updated: time.Unix(0, e.updated),
-	}
-
-	r := acquireMmapReader(slice)
-	return r, obj, nil
+	return acquireMmapReader(data[offset:end]), obj, nil
 }
 
 func (b *bucket) Stat(_ context.Context, key string, _ storage.Options) (*storage.Object, error) {
@@ -1007,6 +1017,54 @@ func (d *dir) Move(_ context.Context, dstPath string, _ storage.Options) (storag
 	}
 
 	return &dir{b: d.b, path: strings.Trim(dstPath, "/")}, nil
+}
+
+// largeReadThreshold: above this size, use pread-based reader for better sequential throughput.
+// mmap reads suffer from TLB pressure at large sizes; pread benefits from kernel readahead.
+const largeReadThreshold = 256 * 1024
+
+// volumeReader reads from a volume file using pread for large sequential reads.
+// Unlike mmap slices, pread benefits from kernel readahead and avoids TLB pressure.
+type volumeReader struct {
+	fd     *os.File
+	offset int64
+	size   int64
+	pos    int64
+}
+
+var volumeReaderPool = sync.Pool{
+	New: func() any { return &volumeReader{} },
+}
+
+func acquireVolumeReader(fd *os.File, offset, size int64) *volumeReader {
+	r := volumeReaderPool.Get().(*volumeReader)
+	r.fd = fd
+	r.offset = offset
+	r.size = size
+	r.pos = 0
+	return r
+}
+
+func (r *volumeReader) Read(p []byte) (int, error) {
+	remaining := r.size - r.pos
+	if remaining <= 0 {
+		return 0, io.EOF
+	}
+	if int64(len(p)) > remaining {
+		p = p[:remaining]
+	}
+	n, err := r.fd.ReadAt(p, r.offset+r.pos)
+	r.pos += int64(n)
+	if r.pos >= r.size {
+		err = io.EOF
+	}
+	return n, err
+}
+
+func (r *volumeReader) Close() error {
+	r.fd = nil
+	volumeReaderPool.Put(r)
+	return nil
 }
 
 // mmapReader is an io.ReadCloser over a mmap'd or inline slice.

@@ -219,10 +219,22 @@ func (b *bucket) CompleteMultipart(ctx context.Context, mu *storage.MultipartUpl
 	size := int64(totalSize)
 	stripe := b.st.stripeFor(b.name, upload.mu.Key)
 
+	bl, kl, cl := len(b.name), len(upload.mu.Key), len(upload.contentType)
+	recTotalSize := int64(recFixedSize+bl+kl+cl) + size
+
 	var valOff int64
-	_, valOff, err := stripe.vol.appendRecord(recPut, b.name, upload.mu.Key, upload.contentType, data, now)
-	if err != nil {
-		return nil, err
+	if stripe.ring != nil && recTotalSize <= stripe.ring.capacity {
+		valPosInRecord := 19 + bl + kl + cl
+		bufSlice, _, vo, wb := stripe.ring.writeInline(recTotalSize, valPosInRecord)
+		valOff = vo
+		stripe.vol.buildRecordBuf(bufSlice, recPut, b.name, upload.mu.Key, upload.contentType, data, now)
+		wb.done()
+	} else {
+		var err error
+		_, valOff, err = stripe.vol.appendRecord(recPut, b.name, upload.mu.Key, upload.contentType, data, now)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	e := acquireIndexEntry()
