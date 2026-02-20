@@ -821,3 +821,120 @@ func TestDistributedMultipart(t *testing.T) {
 		t.Fatalf("expected 'hello distributed!', got %q", got)
 	}
 }
+
+// openEngine opens a store engine for testing.
+func openEngine(t *testing.T, dataDir string) *store {
+	t.Helper()
+	u := mustParseURL(fmt.Sprintf("herd:///%s?stripes=4&sync=none&inline_kb=8&prealloc=16", dataDir))
+	engine, err := openEmbedded(context.Background(), u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { engine.Close() })
+	return engine
+}
+
+// startNodeSrv starts a NodeServer for the given engine and waits for it to be ready.
+func startNodeSrv(t *testing.T, engine *store, port int) {
+	t.Helper()
+	srv := NewNodeServer(engine)
+	go func() { _ = srv.ListenAndServe(fmt.Sprintf(":%d", port)) }()
+	t.Cleanup(func() { srv.Close() })
+	for i := 0; i < 100; i++ {
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 50*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("NodeServer on port %d not ready", port)
+}
+
+// TestDistributedMultipartCrossNode simulates HAProxy round-robin:
+// multipart requests scatter across different distributed store instances.
+// Each node shares its engine between NodeServer and distributedStore (production pattern).
+func TestDistributedMultipartCrossNode(t *testing.T) {
+	dir := tempDir(t)
+	port1 := getFreePort(t)
+	port2 := getFreePort(t)
+
+	addr1 := fmt.Sprintf("127.0.0.1:%d", port1)
+	addr2 := fmt.Sprintf("127.0.0.1:%d", port2)
+	allPeers := []string{addr1, addr2}
+
+	// Phase 1: Open engines and start TCP servers for BOTH nodes first.
+	engine1 := openEngine(t, fmt.Sprintf("%s/node0", dir))
+	engine2 := openEngine(t, fmt.Sprintf("%s/node1", dir))
+	startNodeSrv(t, engine1, port1)
+	startNodeSrv(t, engine2, port2)
+
+	// Phase 2: Create distributed stores (connects to peers — both TCP servers are ready).
+	st1, err := OpenDistributedFromEngine(engine1, addr1, allPeers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st1.Close()
+	st2, err := OpenDistributedFromEngine(engine2, addr2, allPeers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st2.Close()
+
+	ctx := context.Background()
+
+	// Test multiple keys — some will hash to node0, some to node1.
+	// Scatter Init/UploadPart/Complete across both stores (simulating HAProxy RR).
+	for i := 0; i < 10; i++ {
+		key := fmt.Sprintf("mp-cross-%d.bin", i)
+		stores := []storage.Storage{st1, st2}
+
+		// InitMultipart on store[i%2]
+		bkt0 := stores[i%2].Bucket("test")
+		mp0 := bkt0.(storage.HasMultipart)
+		mu, err := mp0.InitMultipart(ctx, key, "application/octet-stream", nil)
+		if err != nil {
+			t.Fatalf("key=%s init: %v", key, err)
+		}
+
+		// UploadPart 1 on store[(i+1)%2] — different node!
+		bkt1 := stores[(i+1)%2].Bucket("test")
+		mp1 := bkt1.(storage.HasMultipart)
+		data1 := []byte(fmt.Sprintf("part1-of-%s", key))
+		p1, err := mp1.UploadPart(ctx, mu, 1, bytes.NewReader(data1), int64(len(data1)), nil)
+		if err != nil {
+			t.Fatalf("key=%s part1: %v", key, err)
+		}
+
+		// UploadPart 2 on store[i%2] — back to first node.
+		data2 := []byte(fmt.Sprintf("part2-of-%s", key))
+		p2, err := mp0.UploadPart(ctx, mu, 2, bytes.NewReader(data2), int64(len(data2)), nil)
+		if err != nil {
+			t.Fatalf("key=%s part2: %v", key, err)
+		}
+
+		// CompleteMultipart on store[(i+1)%2] — again different node.
+		obj, err := mp1.CompleteMultipart(ctx, mu, []*storage.PartInfo{p1, p2}, nil)
+		if err != nil {
+			t.Fatalf("key=%s complete: %v", key, err)
+		}
+		expectedSize := int64(len(data1) + len(data2))
+		if obj.Size != expectedSize {
+			t.Fatalf("key=%s size: got %d, want %d", key, obj.Size, expectedSize)
+		}
+
+		// Read from both stores — both should see the object.
+		for si, st := range stores {
+			rc, _, err := st.Bucket("test").Open(ctx, key, 0, 0, nil)
+			if err != nil {
+				t.Fatalf("key=%s read from store%d: %v", key, si, err)
+			}
+			got, _ := io.ReadAll(rc)
+			rc.Close()
+			want := string(data1) + string(data2)
+			if string(got) != want {
+				t.Fatalf("key=%s store%d: got %q, want %q", key, si, got, want)
+			}
+		}
+	}
+}

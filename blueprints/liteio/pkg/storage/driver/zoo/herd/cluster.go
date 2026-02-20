@@ -32,6 +32,13 @@ const (
 	opList   byte = 5
 	opPing   byte = 6
 
+	// Multipart ops: forward multipart state to owning node.
+	opInitMP     byte = 7
+	opPartMP     byte = 8
+	opCompleteMP byte = 9
+	opAbortMP    byte = 10
+	opListParts  byte = 11
+
 	statusOK       byte = 0
 	statusNotFound byte = 1
 	statusError    byte = 2
@@ -1539,15 +1546,14 @@ func (rn *remoteNode) list(bucket, prefix string, recursive bool) ([]*storage.Ob
 // Owned keys are served from the local store (zero TCP, mmap reads).
 // Non-owned keys are forwarded to the correct peer via persistent TCP.
 type distributedStore struct {
-	selfAddr string   // This node's peer address (e.g. "127.0.0.1:7241")
-	local    *store   // Local embedded store engine
-	peers    []*remoteNode // TCP connections to other nodes
-	allAddrs []string // All node addresses including self (for rendezvous)
+	selfAddr  string        // This node's peer address (e.g. "127.0.0.1:7241")
+	local     *store        // Local embedded store engine
+	peers     []*remoteNode // TCP connections to other nodes
+	allAddrs  []string      // All node addresses including self (for rendezvous)
+	ownsLocal bool          // If true, Close() also closes the local store.
 
 	mu      sync.RWMutex
 	buckets map[string]time.Time
-
-	mp *multipartRegistry
 }
 
 var _ storage.Storage = (*distributedStore)(nil)
@@ -1662,7 +1668,10 @@ func (ds *distributedStore) Close() error {
 	for _, p := range ds.peers {
 		p.close()
 	}
-	return ds.local.Close()
+	if ds.ownsLocal {
+		return ds.local.Close()
+	}
+	return nil
 }
 
 // distributedBucket routes operations to local store or remote peer.
@@ -1848,32 +1857,31 @@ func (b *distributedBucket) SignedURL(_ context.Context, _ string, _ string, _ t
 
 // Multipart support for distributedBucket — gateway-side buffering.
 
-func (b *distributedBucket) InitMultipart(_ context.Context, key string, contentType string, _ storage.Options) (*storage.MultipartUpload, error) {
+func (b *distributedBucket) localMP() storage.HasMultipart {
+	return b.ds.local.Bucket(b.name).(*bucket)
+}
+
+func (b *distributedBucket) InitMultipart(ctx context.Context, key string, contentType string, opts storage.Options) (*storage.MultipartUpload, error) {
 	key = strings.TrimSpace(key)
 	if key == "" {
 		return nil, fmt.Errorf("herd: key is empty")
 	}
-	uploadID := newUploadID()
-	mu := &storage.MultipartUpload{
-		Bucket:   b.name,
-		Key:      key,
-		UploadID: uploadID,
+	peer := b.ds.peerFor(b.name, key)
+	if peer == nil {
+		return b.localMP().InitMultipart(ctx, key, contentType, opts)
 	}
-	b.ds.mp.mu.Lock()
-	b.ds.mp.uploads[uploadID] = &multipartUpload{
-		mu:          mu,
-		contentType: contentType,
-		createdAt:   fastNowTime(),
-		parts:       make(map[int]*partData),
-	}
-	b.ds.mp.mu.Unlock()
-	return mu, nil
+	return peer.initMultipart(b.name, key, contentType)
 }
 
-func (b *distributedBucket) UploadPart(_ context.Context, mu *storage.MultipartUpload, number int, src io.Reader, size int64, _ storage.Options) (*storage.PartInfo, error) {
+func (b *distributedBucket) UploadPart(ctx context.Context, mu *storage.MultipartUpload, number int, src io.Reader, size int64, opts storage.Options) (*storage.PartInfo, error) {
 	if number <= 0 || number > 10000 {
 		return nil, fmt.Errorf("herd: part number %d out of range (1-10000)", number)
 	}
+	peer := b.ds.peerFor(b.name, mu.Key)
+	if peer == nil {
+		return b.localMP().UploadPart(ctx, mu, number, src, size, opts)
+	}
+	// Read data for TCP forwarding.
 	var data []byte
 	if size >= 0 {
 		data = make([]byte, size)
@@ -1889,113 +1897,38 @@ func (b *distributedBucket) UploadPart(_ context.Context, mu *storage.MultipartU
 		}
 		data = buf.Bytes()
 	}
-	now := fastNowTime()
-	sum := md5Sum(data)
-	pd := &partData{
-		number:       number,
-		data:         data,
-		etag:         sum,
-		lastModified: now,
-	}
-	b.ds.mp.mu.Lock()
-	upload, ok := b.ds.mp.uploads[mu.UploadID]
-	if !ok {
-		b.ds.mp.mu.Unlock()
-		return nil, storage.ErrNotExist
-	}
-	upload.parts[number] = pd
-	b.ds.mp.mu.Unlock()
-	return &storage.PartInfo{
-		Number:       number,
-		Size:         int64(len(data)),
-		ETag:         sum,
-		LastModified: &now,
-	}, nil
+	return peer.uploadPart(b.name, mu.Key, mu.UploadID, number, data)
 }
 
 func (b *distributedBucket) CopyPart(_ context.Context, _ *storage.MultipartUpload, _ int, _ storage.Options) (*storage.PartInfo, error) {
 	return nil, storage.ErrUnsupported
 }
 
-func (b *distributedBucket) ListParts(_ context.Context, mu *storage.MultipartUpload, limit, offset int, _ storage.Options) ([]*storage.PartInfo, error) {
-	b.ds.mp.mu.RLock()
-	defer b.ds.mp.mu.RUnlock()
-	upload, ok := b.ds.mp.uploads[mu.UploadID]
-	if !ok {
-		return nil, storage.ErrNotExist
+func (b *distributedBucket) ListParts(ctx context.Context, mu *storage.MultipartUpload, limit, offset int, opts storage.Options) ([]*storage.PartInfo, error) {
+	peer := b.ds.peerFor(b.name, mu.Key)
+	if peer == nil {
+		return b.localMP().ListParts(ctx, mu, limit, offset, opts)
 	}
-	parts := make([]*storage.PartInfo, 0, len(upload.parts))
-	for _, pd := range upload.parts {
-		lastMod := pd.lastModified
-		parts = append(parts, &storage.PartInfo{
-			Number:       pd.number,
-			Size:         int64(len(pd.data)),
-			ETag:         pd.etag,
-			LastModified: &lastMod,
-		})
-	}
-	sort.Slice(parts, func(i, j int) bool { return parts[i].Number < parts[j].Number })
-	if offset < 0 {
-		offset = 0
-	}
-	if offset > len(parts) {
-		offset = len(parts)
-	}
-	parts = parts[offset:]
-	if limit > 0 && limit < len(parts) {
-		parts = parts[:limit]
-	}
-	return parts, nil
+	return peer.listParts(b.name, mu.Key, mu.UploadID, limit, offset)
 }
 
-func (b *distributedBucket) CompleteMultipart(ctx context.Context, mu *storage.MultipartUpload, parts []*storage.PartInfo, _ storage.Options) (*storage.Object, error) {
+func (b *distributedBucket) CompleteMultipart(ctx context.Context, mu *storage.MultipartUpload, parts []*storage.PartInfo, opts storage.Options) (*storage.Object, error) {
 	if len(parts) == 0 {
 		return nil, fmt.Errorf("herd: no parts to complete")
 	}
-	b.ds.mp.mu.Lock()
-	upload, ok := b.ds.mp.uploads[mu.UploadID]
-	if !ok {
-		b.ds.mp.mu.Unlock()
-		return nil, storage.ErrNotExist
-	}
-	sortedParts := make([]*storage.PartInfo, len(parts))
-	copy(sortedParts, parts)
-	sort.Slice(sortedParts, func(i, j int) bool { return sortedParts[i].Number < sortedParts[j].Number })
-	totalSize := 0
-	for _, part := range sortedParts {
-		pd, exists := upload.parts[part.Number]
-		if !exists {
-			b.ds.mp.mu.Unlock()
-			return nil, fmt.Errorf("herd: part %d not found", part.Number)
-		}
-		totalSize += len(pd.data)
-	}
-	data := make([]byte, 0, totalSize)
-	for _, part := range sortedParts {
-		pd := upload.parts[part.Number]
-		data = append(data, pd.data...)
-	}
-	contentType := upload.contentType
-	key := upload.mu.Key
-	delete(b.ds.mp.uploads, mu.UploadID)
-	b.ds.mp.mu.Unlock()
-
-	// Route assembled object to local or peer.
-	peer := b.ds.peerFor(b.name, key)
+	peer := b.ds.peerFor(b.name, mu.Key)
 	if peer == nil {
-		return b.ds.local.Bucket(b.name).Write(ctx, key, bytes.NewReader(data), int64(totalSize), contentType, nil)
+		return b.localMP().CompleteMultipart(ctx, mu, parts, opts)
 	}
-	return peer.put(b.name, key, contentType, bytes.NewReader(data), int64(totalSize))
+	return peer.completeMultipart(b.name, mu.Key, mu.UploadID, parts)
 }
 
-func (b *distributedBucket) AbortMultipart(_ context.Context, mu *storage.MultipartUpload, _ storage.Options) error {
-	b.ds.mp.mu.Lock()
-	defer b.ds.mp.mu.Unlock()
-	if _, ok := b.ds.mp.uploads[mu.UploadID]; !ok {
-		return storage.ErrNotExist
+func (b *distributedBucket) AbortMultipart(ctx context.Context, mu *storage.MultipartUpload, opts storage.Options) error {
+	peer := b.ds.peerFor(b.name, mu.Key)
+	if peer == nil {
+		return b.localMP().AbortMultipart(ctx, mu, opts)
 	}
-	delete(b.ds.mp.uploads, mu.UploadID)
-	return nil
+	return peer.abortMultipart(b.name, mu.Key, mu.UploadID)
 }
 
 // openDistributed creates a distributed store: local engine + TCP peers.
@@ -2042,17 +1975,18 @@ func openDistributed(ctx context.Context, u *url.URL) (*distributedStore, error)
 	}
 
 	return &distributedStore{
-		selfAddr: selfAddr,
-		local:    local,
-		peers:    peers,
-		allAddrs: allAddrs,
-		buckets:  make(map[string]time.Time),
-		mp:       newMultipartRegistry(),
+		selfAddr:  selfAddr,
+		local:     local,
+		ownsLocal: true, // DSN factory owns the store.
+		peers:     peers,
+		allAddrs:  allAddrs,
+		buckets:   make(map[string]time.Time),
 	}, nil
 }
 
 // OpenDistributedFromEngine creates a distributedStore wrapping an existing store engine.
 // The engine is shared with a NodeServer in the same process — no new store is opened.
+// The caller is responsible for closing the engine.
 func OpenDistributedFromEngine(engine StoreEngine, selfAddr string, allPeerAddrs []string) (storage.Storage, error) {
 	local := engine.(*store)
 
@@ -2078,12 +2012,12 @@ func OpenDistributedFromEngine(engine StoreEngine, selfAddr string, allPeerAddrs
 	}
 
 	return &distributedStore{
-		selfAddr: selfAddr,
-		local:    local,
-		peers:    peers,
-		allAddrs: allAddrs,
-		buckets:  make(map[string]time.Time),
-		mp:       newMultipartRegistry(),
+		selfAddr:  selfAddr,
+		local:     local,
+		ownsLocal: false, // Shared engine — caller closes it.
+		peers:     peers,
+		allAddrs:  allAddrs,
+		buckets:   make(map[string]time.Time),
 	}, nil
 }
 
@@ -2185,6 +2119,16 @@ func (ns *NodeServer) handleRequest(w *bufio.Writer, op byte, body []byte) {
 		ns.handleDelete(w, body)
 	case opList:
 		ns.handleList(w, body)
+	case opInitMP:
+		ns.handleInitMP(w, body)
+	case opPartMP:
+		ns.handlePartMP(w, body)
+	case opCompleteMP:
+		ns.handleCompleteMP(w, body)
+	case opAbortMP:
+		ns.handleAbortMP(w, body)
+	case opListParts:
+		ns.handleListParts(w, body)
 	default:
 		writeResponseMsg(w, statusError, []byte("unknown op"))
 	}
@@ -2380,4 +2324,416 @@ func writeResponseMsg(w *bufio.Writer, status byte, body []byte) {
 		w.Write(body)
 	}
 	w.Flush()
+}
+
+// ---------------------------------------------------------------------------
+// TCP multipart protocol: handlers (server) + client methods (remoteNode).
+// Wire format for each op documented inline.
+// ---------------------------------------------------------------------------
+
+// encodeInitMPBody: [2B bucket_len][bucket][2B key_len][key][2B ct_len][contentType]
+func encodeInitMPBody(bucket, key, contentType string) []byte {
+	bl, kl, cl := len(bucket), len(key), len(contentType)
+	buf := make([]byte, 2+bl+2+kl+2+cl)
+	pos := 0
+	binary.BigEndian.PutUint16(buf[pos:], uint16(bl)); pos += 2
+	copy(buf[pos:], bucket); pos += bl
+	binary.BigEndian.PutUint16(buf[pos:], uint16(kl)); pos += 2
+	copy(buf[pos:], key); pos += kl
+	binary.BigEndian.PutUint16(buf[pos:], uint16(cl)); pos += 2
+	copy(buf[pos:], contentType)
+	return buf
+}
+
+func (ns *NodeServer) handleInitMP(w *bufio.Writer, body []byte) {
+	pos := 0
+	bl := int(binary.BigEndian.Uint16(body[pos:])); pos += 2
+	bucketName := string(body[pos : pos+bl]); pos += bl
+	kl := int(binary.BigEndian.Uint16(body[pos:])); pos += 2
+	key := string(body[pos : pos+kl]); pos += kl
+	cl := int(binary.BigEndian.Uint16(body[pos:])); pos += 2
+	contentType := string(body[pos : pos+cl])
+
+	bkt := ns.engine.Bucket(bucketName).(*bucket)
+	mu, err := bkt.InitMultipart(context.Background(), key, contentType, nil)
+	if err != nil {
+		writeResponseMsg(w, statusError, []byte(err.Error()))
+		return
+	}
+	// Response: [2B uploadID_len][uploadID]
+	uid := mu.UploadID
+	resp := make([]byte, 2+len(uid))
+	binary.BigEndian.PutUint16(resp[0:2], uint16(len(uid)))
+	copy(resp[2:], uid)
+	writeResponseMsg(w, statusOK, resp)
+}
+
+func (rn *remoteNode) initMultipart(bucket, key, contentType string) (*storage.MultipartUpload, error) {
+	body := encodeInitMPBody(bucket, key, contentType)
+	cw, err := rn.getConn()
+	if err != nil {
+		return nil, err
+	}
+	if err := writeRequest(cw.w, opInitMP, body); err != nil {
+		cw.conn.Close()
+		return nil, err
+	}
+	status, resp, err := readResponse(cw.r)
+	if err != nil {
+		cw.conn.Close()
+		return nil, err
+	}
+	rn.putConn(cw)
+	if status != statusOK {
+		return nil, fmt.Errorf("herd: initMultipart: %s", string(resp))
+	}
+	uidLen := int(binary.BigEndian.Uint16(resp[0:2]))
+	uploadID := string(resp[2 : 2+uidLen])
+	return &storage.MultipartUpload{
+		Bucket:   bucket,
+		Key:      key,
+		UploadID: uploadID,
+	}, nil
+}
+
+// encodePartMPBody: [2B bucket_len][bucket][2B key_len][key][2B uid_len][uploadID][4B partNum][8B data_len][data]
+func encodePartMPBody(bucket, key, uploadID string, partNum int, data []byte) []byte {
+	bl, kl, ul := len(bucket), len(key), len(uploadID)
+	buf := make([]byte, 2+bl+2+kl+2+ul+4+8+len(data))
+	pos := 0
+	binary.BigEndian.PutUint16(buf[pos:], uint16(bl)); pos += 2
+	copy(buf[pos:], bucket); pos += bl
+	binary.BigEndian.PutUint16(buf[pos:], uint16(kl)); pos += 2
+	copy(buf[pos:], key); pos += kl
+	binary.BigEndian.PutUint16(buf[pos:], uint16(ul)); pos += 2
+	copy(buf[pos:], uploadID); pos += ul
+	binary.BigEndian.PutUint32(buf[pos:], uint32(partNum)); pos += 4
+	binary.BigEndian.PutUint64(buf[pos:], uint64(len(data))); pos += 8
+	copy(buf[pos:], data)
+	return buf
+}
+
+func (ns *NodeServer) handlePartMP(w *bufio.Writer, body []byte) {
+	pos := 0
+	bl := int(binary.BigEndian.Uint16(body[pos:])); pos += 2
+	bucketName := string(body[pos : pos+bl]); pos += bl
+	kl := int(binary.BigEndian.Uint16(body[pos:])); pos += 2
+	key := string(body[pos : pos+kl]); pos += kl
+	ul := int(binary.BigEndian.Uint16(body[pos:])); pos += 2
+	uploadID := string(body[pos : pos+ul]); pos += ul
+	partNum := int(binary.BigEndian.Uint32(body[pos:])); pos += 4
+	dataLen := int(binary.BigEndian.Uint64(body[pos:])); pos += 8
+	data := body[pos : pos+dataLen]
+
+	mu := &storage.MultipartUpload{Bucket: bucketName, Key: key, UploadID: uploadID}
+	bkt := ns.engine.Bucket(bucketName).(*bucket)
+	pi, err := bkt.UploadPart(context.Background(), mu, partNum, bytes.NewReader(data), int64(dataLen), nil)
+	if err != nil {
+		if err == storage.ErrNotExist {
+			writeResponseMsg(w, statusNotFound, nil)
+		} else {
+			writeResponseMsg(w, statusError, []byte(err.Error()))
+		}
+		return
+	}
+	// Response: [2B etag_len][etag][8B size]
+	etag := pi.ETag
+	resp := make([]byte, 2+len(etag)+8)
+	binary.BigEndian.PutUint16(resp[0:2], uint16(len(etag)))
+	copy(resp[2:], etag)
+	binary.BigEndian.PutUint64(resp[2+len(etag):], uint64(pi.Size))
+	writeResponseMsg(w, statusOK, resp)
+}
+
+func (rn *remoteNode) uploadPart(bucket, key, uploadID string, partNum int, data []byte) (*storage.PartInfo, error) {
+	body := encodePartMPBody(bucket, key, uploadID, partNum, data)
+	cw, err := rn.getConn()
+	if err != nil {
+		return nil, err
+	}
+	if err := writeRequest(cw.w, opPartMP, body); err != nil {
+		cw.conn.Close()
+		return nil, err
+	}
+	status, resp, err := readResponse(cw.r)
+	if err != nil {
+		cw.conn.Close()
+		return nil, err
+	}
+	rn.putConn(cw)
+	if status == statusNotFound {
+		return nil, storage.ErrNotExist
+	}
+	if status != statusOK {
+		return nil, fmt.Errorf("herd: uploadPart: %s", string(resp))
+	}
+	etagLen := int(binary.BigEndian.Uint16(resp[0:2]))
+	etag := string(resp[2 : 2+etagLen])
+	size := int64(binary.BigEndian.Uint64(resp[2+etagLen:]))
+	now := fastNowTime()
+	return &storage.PartInfo{
+		Number:       partNum,
+		Size:         size,
+		ETag:         etag,
+		LastModified: &now,
+	}, nil
+}
+
+// encodeCompleteMPBody: [2B bucket][bucket][2B key][key][2B uid][uploadID][4B num_parts][per part: 4B num + 2B etag_len + etag]
+func encodeCompleteMPBody(bucket, key, uploadID string, parts []*storage.PartInfo) []byte {
+	bl, kl, ul := len(bucket), len(key), len(uploadID)
+	size := 2 + bl + 2 + kl + 2 + ul + 4
+	for _, p := range parts {
+		size += 4 + 2 + len(p.ETag)
+	}
+	buf := make([]byte, size)
+	pos := 0
+	binary.BigEndian.PutUint16(buf[pos:], uint16(bl)); pos += 2
+	copy(buf[pos:], bucket); pos += bl
+	binary.BigEndian.PutUint16(buf[pos:], uint16(kl)); pos += 2
+	copy(buf[pos:], key); pos += kl
+	binary.BigEndian.PutUint16(buf[pos:], uint16(ul)); pos += 2
+	copy(buf[pos:], uploadID); pos += ul
+	binary.BigEndian.PutUint32(buf[pos:], uint32(len(parts))); pos += 4
+	for _, p := range parts {
+		binary.BigEndian.PutUint32(buf[pos:], uint32(p.Number)); pos += 4
+		binary.BigEndian.PutUint16(buf[pos:], uint16(len(p.ETag))); pos += 2
+		copy(buf[pos:], p.ETag); pos += len(p.ETag)
+	}
+	return buf
+}
+
+func (ns *NodeServer) handleCompleteMP(w *bufio.Writer, body []byte) {
+	pos := 0
+	bl := int(binary.BigEndian.Uint16(body[pos:])); pos += 2
+	bucketName := string(body[pos : pos+bl]); pos += bl
+	kl := int(binary.BigEndian.Uint16(body[pos:])); pos += 2
+	key := string(body[pos : pos+kl]); pos += kl
+	ul := int(binary.BigEndian.Uint16(body[pos:])); pos += 2
+	uploadID := string(body[pos : pos+ul]); pos += ul
+	numParts := int(binary.BigEndian.Uint32(body[pos:])); pos += 4
+
+	parts := make([]*storage.PartInfo, numParts)
+	for i := 0; i < numParts; i++ {
+		num := int(binary.BigEndian.Uint32(body[pos:])); pos += 4
+		el := int(binary.BigEndian.Uint16(body[pos:])); pos += 2
+		etag := string(body[pos : pos+el]); pos += el
+		parts[i] = &storage.PartInfo{Number: num, ETag: etag}
+	}
+
+	mu := &storage.MultipartUpload{Bucket: bucketName, Key: key, UploadID: uploadID}
+	bkt := ns.engine.Bucket(bucketName).(*bucket)
+	obj, err := bkt.CompleteMultipart(context.Background(), mu, parts, nil)
+	if err != nil {
+		if err == storage.ErrNotExist {
+			writeResponseMsg(w, statusNotFound, nil)
+		} else {
+			writeResponseMsg(w, statusError, []byte(err.Error()))
+		}
+		return
+	}
+	// Response: [8B size][2B ct_len][ct][8B created][8B updated]
+	ct := obj.ContentType
+	resp := make([]byte, 8+2+len(ct)+8+8)
+	binary.BigEndian.PutUint64(resp[0:8], uint64(obj.Size))
+	binary.BigEndian.PutUint16(resp[8:10], uint16(len(ct)))
+	copy(resp[10:], ct)
+	binary.BigEndian.PutUint64(resp[10+len(ct):], uint64(obj.Created.UnixNano()))
+	binary.BigEndian.PutUint64(resp[18+len(ct):], uint64(obj.Updated.UnixNano()))
+	writeResponseMsg(w, statusOK, resp)
+}
+
+func (rn *remoteNode) completeMultipart(bucket, key, uploadID string, parts []*storage.PartInfo) (*storage.Object, error) {
+	body := encodeCompleteMPBody(bucket, key, uploadID, parts)
+	cw, err := rn.getConn()
+	if err != nil {
+		return nil, err
+	}
+	if err := writeRequest(cw.w, opCompleteMP, body); err != nil {
+		cw.conn.Close()
+		return nil, err
+	}
+	status, resp, err := readResponse(cw.r)
+	if err != nil {
+		cw.conn.Close()
+		return nil, err
+	}
+	rn.putConn(cw)
+	if status == statusNotFound {
+		return nil, storage.ErrNotExist
+	}
+	if status != statusOK {
+		return nil, fmt.Errorf("herd: completeMultipart: %s", string(resp))
+	}
+	size := int64(binary.BigEndian.Uint64(resp[0:8]))
+	ctLen := int(binary.BigEndian.Uint16(resp[8:10]))
+	ct := string(resp[10 : 10+ctLen])
+	created := time.Unix(0, int64(binary.BigEndian.Uint64(resp[10+ctLen:])))
+	updated := time.Unix(0, int64(binary.BigEndian.Uint64(resp[18+ctLen:])))
+	return &storage.Object{
+		Bucket:      bucket,
+		Key:         key,
+		Size:        size,
+		ContentType: ct,
+		Created:     created,
+		Updated:     updated,
+	}, nil
+}
+
+// encodeAbortMPBody: [2B bucket][bucket][2B key][key][2B uid][uploadID]
+func encodeAbortMPBody(bucket, key, uploadID string) []byte {
+	bl, kl, ul := len(bucket), len(key), len(uploadID)
+	buf := make([]byte, 2+bl+2+kl+2+ul)
+	pos := 0
+	binary.BigEndian.PutUint16(buf[pos:], uint16(bl)); pos += 2
+	copy(buf[pos:], bucket); pos += bl
+	binary.BigEndian.PutUint16(buf[pos:], uint16(kl)); pos += 2
+	copy(buf[pos:], key); pos += kl
+	binary.BigEndian.PutUint16(buf[pos:], uint16(ul)); pos += 2
+	copy(buf[pos:], uploadID)
+	return buf
+}
+
+func (ns *NodeServer) handleAbortMP(w *bufio.Writer, body []byte) {
+	pos := 0
+	bl := int(binary.BigEndian.Uint16(body[pos:])); pos += 2
+	bucketName := string(body[pos : pos+bl]); pos += bl
+	kl := int(binary.BigEndian.Uint16(body[pos:])); pos += 2
+	key := string(body[pos : pos+kl]); pos += kl
+	ul := int(binary.BigEndian.Uint16(body[pos:])); pos += 2
+	uploadID := string(body[pos : pos+ul])
+
+	mu := &storage.MultipartUpload{Bucket: bucketName, Key: key, UploadID: uploadID}
+	bkt := ns.engine.Bucket(bucketName).(*bucket)
+	err := bkt.AbortMultipart(context.Background(), mu, nil)
+	if err != nil {
+		if err == storage.ErrNotExist {
+			writeResponseMsg(w, statusNotFound, nil)
+		} else {
+			writeResponseMsg(w, statusError, []byte(err.Error()))
+		}
+		return
+	}
+	writeResponseMsg(w, statusOK, nil)
+}
+
+func (rn *remoteNode) abortMultipart(bucket, key, uploadID string) error {
+	body := encodeAbortMPBody(bucket, key, uploadID)
+	cw, err := rn.getConn()
+	if err != nil {
+		return err
+	}
+	if err := writeRequest(cw.w, opAbortMP, body); err != nil {
+		cw.conn.Close()
+		return err
+	}
+	status, resp, err := readResponse(cw.r)
+	if err != nil {
+		cw.conn.Close()
+		return err
+	}
+	rn.putConn(cw)
+	if status == statusNotFound {
+		return storage.ErrNotExist
+	}
+	if status != statusOK {
+		return fmt.Errorf("herd: abortMultipart: %s", string(resp))
+	}
+	return nil
+}
+
+// encodeListPartsMPBody: [2B bucket][bucket][2B key][key][2B uid][uploadID][4B limit][4B offset]
+func encodeListPartsMPBody(bucket, key, uploadID string, limit, offset int) []byte {
+	bl, kl, ul := len(bucket), len(key), len(uploadID)
+	buf := make([]byte, 2+bl+2+kl+2+ul+4+4)
+	pos := 0
+	binary.BigEndian.PutUint16(buf[pos:], uint16(bl)); pos += 2
+	copy(buf[pos:], bucket); pos += bl
+	binary.BigEndian.PutUint16(buf[pos:], uint16(kl)); pos += 2
+	copy(buf[pos:], key); pos += kl
+	binary.BigEndian.PutUint16(buf[pos:], uint16(ul)); pos += 2
+	copy(buf[pos:], uploadID); pos += ul
+	binary.BigEndian.PutUint32(buf[pos:], uint32(limit)); pos += 4
+	binary.BigEndian.PutUint32(buf[pos:], uint32(offset))
+	return buf
+}
+
+func (ns *NodeServer) handleListParts(w *bufio.Writer, body []byte) {
+	pos := 0
+	bl := int(binary.BigEndian.Uint16(body[pos:])); pos += 2
+	bucketName := string(body[pos : pos+bl]); pos += bl
+	kl := int(binary.BigEndian.Uint16(body[pos:])); pos += 2
+	key := string(body[pos : pos+kl]); pos += kl
+	ul := int(binary.BigEndian.Uint16(body[pos:])); pos += 2
+	uploadID := string(body[pos : pos+ul]); pos += ul
+	limit := int(binary.BigEndian.Uint32(body[pos:])); pos += 4
+	offset := int(binary.BigEndian.Uint32(body[pos:]))
+
+	mu := &storage.MultipartUpload{Bucket: bucketName, Key: key, UploadID: uploadID}
+	bkt := ns.engine.Bucket(bucketName).(*bucket)
+	parts, err := bkt.ListParts(context.Background(), mu, limit, offset, nil)
+	if err != nil {
+		if err == storage.ErrNotExist {
+			writeResponseMsg(w, statusNotFound, nil)
+		} else {
+			writeResponseMsg(w, statusError, []byte(err.Error()))
+		}
+		return
+	}
+	// Response: [4B count][per part: 4B num + 8B size + 2B etag_len + etag]
+	totalSize := 4
+	for _, p := range parts {
+		totalSize += 4 + 8 + 2 + len(p.ETag)
+	}
+	resp := make([]byte, totalSize)
+	off := 0
+	binary.BigEndian.PutUint32(resp[off:], uint32(len(parts))); off += 4
+	for _, p := range parts {
+		binary.BigEndian.PutUint32(resp[off:], uint32(p.Number)); off += 4
+		binary.BigEndian.PutUint64(resp[off:], uint64(p.Size)); off += 8
+		binary.BigEndian.PutUint16(resp[off:], uint16(len(p.ETag))); off += 2
+		copy(resp[off:], p.ETag); off += len(p.ETag)
+	}
+	writeResponseMsg(w, statusOK, resp)
+}
+
+func (rn *remoteNode) listParts(bucket, key, uploadID string, limit, offset int) ([]*storage.PartInfo, error) {
+	body := encodeListPartsMPBody(bucket, key, uploadID, limit, offset)
+	cw, err := rn.getConn()
+	if err != nil {
+		return nil, err
+	}
+	if err := writeRequest(cw.w, opListParts, body); err != nil {
+		cw.conn.Close()
+		return nil, err
+	}
+	status, resp, err := readResponse(cw.r)
+	if err != nil {
+		cw.conn.Close()
+		return nil, err
+	}
+	rn.putConn(cw)
+	if status == statusNotFound {
+		return nil, storage.ErrNotExist
+	}
+	if status != statusOK {
+		return nil, fmt.Errorf("herd: listParts: %s", string(resp))
+	}
+	off := 0
+	count := int(binary.BigEndian.Uint32(resp[off:])); off += 4
+	parts := make([]*storage.PartInfo, count)
+	for i := 0; i < count; i++ {
+		num := int(binary.BigEndian.Uint32(resp[off:])); off += 4
+		size := int64(binary.BigEndian.Uint64(resp[off:])); off += 8
+		el := int(binary.BigEndian.Uint16(resp[off:])); off += 2
+		etag := string(resp[off : off+el]); off += el
+		now := fastNowTime()
+		parts[i] = &storage.PartInfo{
+			Number:       num,
+			Size:         size,
+			ETag:         etag,
+			LastModified: &now,
+		}
+	}
+	return parts, nil
 }
