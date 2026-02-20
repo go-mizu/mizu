@@ -1,15 +1,13 @@
 // Command bench_s3 runs S3 protocol benchmarks using the AWS SDK v2 directly.
 //
-// Unlike cmd/bench which uses the storage.Storage abstraction, this tool
-// exercises the raw S3 API path — the same path real applications use.
-//
 // Usage:
 //
-//	go run ./cmd/bench_s3/
-//	go run ./cmd/bench_s3/ -quick
-//	go run ./cmd/bench_s3/ -drivers minio,liteio,herd_s3
+//	go run ./cmd/bench_s3/                              # local mode (default)
+//	go run ./cmd/bench_s3/ -mode docker                 # docker mode
+//	go run ./cmd/bench_s3/ -quick                       # quick mode
+//	go run ./cmd/bench_s3/ -drivers liteio_local,liteio_herd
 //	go run ./cmd/bench_s3/ -filter PutObject
-//	go run ./cmd/bench_s3/ -docker-up -docker-down
+//	go run ./cmd/bench_s3/ -mode docker -docker-up -docker-down
 package main
 
 import (
@@ -30,6 +28,7 @@ import (
 
 func main() {
 	var (
+		mode      = flag.String("mode", "local", "Benchmark mode: local (start servers locally) or docker (use running containers)")
 		quick     = flag.Bool("quick", false, "Quick mode (500ms per benchmark)")
 		benchTime = flag.Duration("benchtime", 1*time.Second, "Target duration per benchmark")
 		warmup    = flag.Int("warmup", 10, "Warmup iterations")
@@ -38,11 +37,10 @@ func main() {
 		filter    = flag.String("filter", "", "Filter benchmarks by operation name (substring)")
 		formats   = flag.String("formats", "markdown,json", "Output formats")
 		verbose   = flag.Bool("verbose", false, "Verbose output")
-		progress  = flag.Bool("progress", false, "Live progress output")
 
 		composeDir = flag.String("compose-dir", "./docker/s3/all", "Docker compose directory")
-		dockerUp   = flag.Bool("docker-up", false, "Start docker-compose before benchmarks")
-		dockerDown = flag.Bool("docker-down", false, "Stop docker-compose after benchmarks")
+		dockerUp   = flag.Bool("docker-up", false, "Start docker-compose before benchmarks (docker mode)")
+		dockerDown = flag.Bool("docker-down", false, "Stop docker-compose after benchmarks (docker mode)")
 	)
 	flag.Parse()
 
@@ -50,12 +48,12 @@ func main() {
 	if *quick {
 		cfg = bench_s3.QuickConfig()
 	}
+	cfg.Mode = *mode
 	cfg.BenchTime = *benchTime
 	cfg.WarmupIters = *warmup
 	cfg.OutputDir = *outputDir
 	cfg.Filter = *filter
 	cfg.Verbose = *verbose
-	cfg.Progress = *progress
 	cfg.OutputFormats = strings.Split(*formats, ",")
 
 	if *quick {
@@ -88,13 +86,13 @@ func main() {
 		}
 	}()
 
-	// Docker lifecycle
-	if *dockerUp {
+	// Docker lifecycle (docker mode only)
+	if *mode == "docker" && *dockerUp {
 		fmt.Println("=== Starting Docker Services ===")
 		if err := dockerCompose(*composeDir, "up", "-d", "--wait"); err != nil {
 			log.Fatalf("docker compose up failed: %v", err)
 		}
-		fmt.Println("Docker services started, waiting 5s for healthy status...")
+		fmt.Println("Docker services started, waiting 5s...")
 		time.Sleep(5 * time.Second)
 		if interrupted {
 			os.Exit(1)
@@ -102,7 +100,7 @@ func main() {
 		fmt.Println()
 	}
 
-	if *dockerDown {
+	if *mode == "docker" && *dockerDown {
 		defer func() {
 			fmt.Println("\nStopping docker services...")
 			if err := dockerCompose(*composeDir, "down"); err != nil {

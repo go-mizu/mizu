@@ -5,31 +5,32 @@ import "time"
 
 // Object sizes for benchmarks.
 const (
-	SizeSmall  = 1024            // 1 KB
-	SizeMedium = 64 * 1024       // 64 KB
-	SizeLarge  = 1024 * 1024     // 1 MB
+	SizeSmall  = 1024             // 1 KB
+	SizeMedium = 64 * 1024        // 64 KB
+	SizeLarge  = 1024 * 1024      // 1 MB
 	SizeXLarge = 10 * 1024 * 1024 // 10 MB
 )
 
 // Config holds benchmark configuration.
 type Config struct {
-	BenchTime      time.Duration // Target duration per benchmark (default 1s)
-	MinIterations  int           // Minimum iterations for statistics
-	WarmupIters    int           // Warmup iterations
-	Bucket         string        // S3 bucket name
-	OutputDir      string        // Report output directory
-	Drivers        []string      // Filter: only run these drivers (nil = all)
-	Filter         string        // Substring filter for benchmark names
-	Quick          bool          // Quick mode (500ms benchtime)
-	Verbose        bool          // Verbose logging
-	Progress       bool          // Live progress output
-	OutputFormats  []string      // markdown, json, csv
-	Timeout        time.Duration // Per-operation timeout
+	Mode          string        // "local" or "docker"
+	BenchTime     time.Duration // Target duration per benchmark (default 1s)
+	MinIterations int           // Minimum iterations for statistics
+	WarmupIters   int           // Warmup iterations
+	Bucket        string        // S3 bucket name
+	OutputDir     string        // Report output directory
+	Drivers       []string      // Filter: only run these drivers (nil = all)
+	Filter        string        // Substring filter for benchmark names
+	Quick         bool          // Quick mode (500ms benchtime)
+	Verbose       bool          // Verbose logging
+	OutputFormats []string      // markdown, json, csv
+	Timeout       time.Duration // Per-operation timeout
 }
 
 // DefaultConfig returns sensible defaults.
 func DefaultConfig() *Config {
 	return &Config{
+		Mode:          "local",
 		BenchTime:     1 * time.Second,
 		MinIterations: 3,
 		WarmupIters:   10,
@@ -49,53 +50,34 @@ func QuickConfig() *Config {
 	return cfg
 }
 
-// Endpoint describes an S3-compatible server.
+// Endpoint describes an S3-compatible server to benchmark.
 type Endpoint struct {
 	Name      string
 	Host      string // host:port
 	AccessKey string
 	SecretKey string
-	Container string // Docker container name (for stats)
 }
 
-// AllEndpoints returns all known S3 server configurations.
-func AllEndpoints() []Endpoint {
+// DockerEndpoints returns endpoints for docker mode (existing containers).
+func DockerEndpoints() []Endpoint {
 	return []Endpoint{
-		{
-			Name:      "minio",
-			Host:      "localhost:9000",
-			AccessKey: "minioadmin",
-			SecretKey: "minioadmin",
-			Container: "all-minio-1",
-		},
-		{
-			Name:      "rustfs",
-			Host:      "localhost:9100",
-			AccessKey: "rustfsadmin",
-			SecretKey: "rustfsadmin",
-			Container: "all-rustfs-1",
-		},
-		{
-			Name:      "seaweedfs",
-			Host:      "localhost:8333",
-			AccessKey: "admin",
-			SecretKey: "adminpassword",
-			Container: "all-seaweedfs-volume-1",
-		},
-		{
-			Name:      "liteio",
-			Host:      "localhost:9200",
-			AccessKey: "liteio",
-			SecretKey: "liteio123",
-			Container: "all-liteio-1",
-		},
-		{
-			Name:      "herd_s3",
-			Host:      "localhost:9230",
-			AccessKey: "herd",
-			SecretKey: "herd123",
-			Container: "all-herd-1",
-		},
+		{Name: "minio", Host: "localhost:9000", AccessKey: "minioadmin", SecretKey: "minioadmin"},
+		{Name: "rustfs", Host: "localhost:9100", AccessKey: "rustfsadmin", SecretKey: "rustfsadmin"},
+		{Name: "seaweedfs", Host: "localhost:8333", AccessKey: "admin", SecretKey: "adminpassword"},
+		{Name: "liteio", Host: "localhost:9200", AccessKey: "liteio", SecretKey: "liteio123"},
+		{Name: "herd_s3", Host: "localhost:9230", AccessKey: "herd", SecretKey: "herd123"},
+	}
+}
+
+// LocalEndpoints returns endpoints for local mode.
+// Ports use 19xxx to avoid conflicts with docker services on 9xxx.
+func LocalEndpoints() []Endpoint {
+	return []Endpoint{
+		{Name: "minio", Host: "localhost:19000", AccessKey: "minioadmin", SecretKey: "minioadmin"},
+		{Name: "rustfs", Host: "localhost:19100", AccessKey: "rustfsadmin", SecretKey: "rustfsadmin"},
+		{Name: "seaweedfs", Host: "localhost:18333", AccessKey: "admin", SecretKey: "adminpassword"},
+		{Name: "liteio_local", Host: "localhost:19200", AccessKey: "bench", SecretKey: "bench123"},
+		{Name: "liteio_herd", Host: "localhost:19230", AccessKey: "bench", SecretKey: "bench123"},
 	}
 }
 
