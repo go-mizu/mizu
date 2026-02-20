@@ -40,7 +40,6 @@ type Metrics struct {
 	Errors     int           `json:"errors"`
 	LastError  string        `json:"last_error,omitempty"`
 
-	// Latency stats (nanoseconds)
 	AvgLatency time.Duration `json:"avg_latency"`
 	MinLatency time.Duration `json:"min_latency"`
 	MaxLatency time.Duration `json:"max_latency"`
@@ -48,7 +47,6 @@ type Metrics struct {
 	P95Latency time.Duration `json:"p95_latency"`
 	P99Latency time.Duration `json:"p99_latency"`
 
-	// Throughput
 	ThroughputMBps float64 `json:"throughput_mbps"`
 	OpsPerSec      float64 `json:"ops_per_sec"`
 }
@@ -75,11 +73,100 @@ func (r *Runner) SetLogger(fn func(format string, args ...any)) {
 	r.log = fn
 }
 
-// Run executes all benchmarks.
+// Run executes benchmarks in the configured mode.
 func (r *Runner) Run(ctx context.Context) (*Report, error) {
-	endpoints := FilterEndpoints(AllEndpoints(), r.config.Drivers)
-	r.log("=== S3 Client Benchmark Suite ===")
-	r.log("Target: %d endpoints, BenchTime: %v, Warmup: %d", len(endpoints), r.config.BenchTime, r.config.WarmupIters)
+	switch r.config.Mode {
+	case "local":
+		return r.runLocal(ctx)
+	case "docker":
+		return r.runDocker(ctx)
+	default:
+		return nil, fmt.Errorf("unknown mode: %s (use 'local' or 'docker')", r.config.Mode)
+	}
+}
+
+// runLocal resolves binaries, starts local servers one at a time, benchmarks, then cleans up.
+func (r *Runner) runLocal(ctx context.Context) (*Report, error) {
+	r.log("=== S3 Client Benchmark (Local Mode) ===")
+	r.log("BenchTime: %v, Warmup: %d", r.config.BenchTime, r.config.WarmupIters)
+	r.log("")
+
+	// Resolve all binaries and create temp dirs
+	allServers := LocalServerConfigs()
+
+	// Filter by driver names if specified
+	if len(r.config.Drivers) > 0 {
+		nameSet := make(map[string]bool)
+		for _, n := range r.config.Drivers {
+			nameSet[n] = true
+		}
+		var filtered []LocalServer
+		for _, s := range allServers {
+			if nameSet[s.Endpoint.Name] {
+				filtered = append(filtered, s)
+			}
+		}
+		allServers = filtered
+	}
+
+	r.log("--- Resolving binaries ---")
+	servers, cleanup := ResolveBinaries(allServers, r.log)
+	defer func() {
+		r.log("")
+		r.log("--- Final cleanup ---")
+		cleanup()
+	}()
+
+	if len(servers) == 0 {
+		return nil, fmt.Errorf("no servers available for local mode")
+	}
+	r.log("")
+
+	// Start, benchmark, stop each server sequentially
+	for i, srv := range servers {
+		if ctx.Err() != nil {
+			break
+		}
+
+		r.log("=== [%d/%d] %s ===", i+1, len(servers), srv.Endpoint.Name)
+
+		proc, err := StartServer(ctx, srv, r.log)
+		if err != nil {
+			r.log("  Failed to start %s: %v", srv.Endpoint.Name, err)
+			continue
+		}
+
+		// Run benchmarks
+		client := NewS3Client(srv.Endpoint)
+		if err := EnsureBucket(ctx, client, r.config.Bucket); err != nil {
+			r.log("  Failed to create bucket: %v", err)
+			proc.Stop(r.log)
+			continue
+		}
+
+		r.benchmarkEndpoint(ctx, client, srv.Endpoint.Name)
+
+		// Cleanup S3 objects before stopping server
+		r.cleanupObjects(ctx, client, srv.Endpoint.Name)
+
+		// Stop server process
+		r.log("  Stopping %s...", srv.Endpoint.Name)
+		proc.Stop(r.log)
+		r.log("")
+	}
+
+	return &Report{
+		Timestamp: time.Now(),
+		Config:    r.config,
+		Results:   r.results,
+	}, nil
+}
+
+// runDocker benchmarks against already-running docker containers.
+func (r *Runner) runDocker(ctx context.Context) (*Report, error) {
+	endpoints := FilterEndpoints(DockerEndpoints(), r.config.Drivers)
+	r.log("=== S3 Client Benchmark (Docker Mode) ===")
+	r.log("BenchTime: %v, Warmup: %d, Endpoints: %d", r.config.BenchTime, r.config.WarmupIters, len(endpoints))
 	r.log("")
 
 	// Detect available endpoints
@@ -95,76 +182,22 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 	r.log("")
 
 	if len(available) == 0 {
-		return nil, fmt.Errorf("no S3 endpoints available")
+		return nil, fmt.Errorf("no S3 endpoints available (start docker services first)")
 	}
-
-	sizes := []int{SizeSmall, SizeMedium, SizeLarge, SizeXLarge}
 
 	for i, ep := range available {
 		if ctx.Err() != nil {
 			break
 		}
-		r.log("=== [%d/%d] Benchmarking %s ===", i+1, len(available), ep.Name)
+		r.log("=== [%d/%d] %s ===", i+1, len(available), ep.Name)
 
 		client := NewS3Client(ep)
 		if err := EnsureBucket(ctx, client, r.config.Bucket); err != nil {
-			r.log("  Failed to ensure bucket: %v", err)
+			r.log("  Failed to create bucket: %v", err)
 			continue
 		}
 
-		// PutObject benchmarks
-		for _, size := range sizes {
-			if ctx.Err() != nil {
-				break
-			}
-			if !r.matchFilter("PutObject") {
-				continue
-			}
-			r.benchPutObject(ctx, client, ep.Name, size)
-		}
-
-		// GetObject benchmarks
-		for _, size := range sizes {
-			if ctx.Err() != nil {
-				break
-			}
-			if !r.matchFilter("GetObject") {
-				continue
-			}
-			r.benchGetObject(ctx, client, ep.Name, size)
-		}
-
-		// HeadObject benchmark
-		if ctx.Err() == nil && r.matchFilter("HeadObject") {
-			r.benchHeadObject(ctx, client, ep.Name)
-		}
-
-		// DeleteObject benchmark
-		if ctx.Err() == nil && r.matchFilter("DeleteObject") {
-			r.benchDeleteObject(ctx, client, ep.Name)
-		}
-
-		// ListObjectsV2 benchmark
-		if ctx.Err() == nil && r.matchFilter("ListObjects") {
-			r.benchListObjects(ctx, client, ep.Name)
-		}
-
-		// Multipart upload benchmark
-		if ctx.Err() == nil && r.matchFilter("Multipart") {
-			r.benchMultipart(ctx, client, ep.Name)
-		}
-
-		// Mixed workloads
-		if ctx.Err() == nil && r.matchFilter("Mixed") {
-			r.benchMixed(ctx, client, ep.Name)
-		}
-
-		// Concurrency scaling
-		if ctx.Err() == nil && r.matchFilter("Concurrency") {
-			r.benchConcurrencyScaling(ctx, client, ep.Name)
-		}
-
-		// Cleanup
+		r.benchmarkEndpoint(ctx, client, ep.Name)
 		r.cleanupObjects(ctx, client, ep.Name)
 		r.log("")
 	}
@@ -174,6 +207,63 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		Config:    r.config,
 		Results:   r.results,
 	}, nil
+}
+
+// benchmarkEndpoint runs all benchmark operations against one endpoint.
+func (r *Runner) benchmarkEndpoint(ctx context.Context, client *s3.Client, driver string) {
+	sizes := []int{SizeSmall, SizeMedium, SizeLarge, SizeXLarge}
+
+	// PutObject
+	for _, size := range sizes {
+		if ctx.Err() != nil {
+			return
+		}
+		if !r.matchFilter("PutObject") {
+			continue
+		}
+		r.benchPutObject(ctx, client, driver, size)
+	}
+
+	// GetObject
+	for _, size := range sizes {
+		if ctx.Err() != nil {
+			return
+		}
+		if !r.matchFilter("GetObject") {
+			continue
+		}
+		r.benchGetObject(ctx, client, driver, size)
+	}
+
+	// HeadObject
+	if ctx.Err() == nil && r.matchFilter("HeadObject") {
+		r.benchHeadObject(ctx, client, driver)
+	}
+
+	// DeleteObject
+	if ctx.Err() == nil && r.matchFilter("DeleteObject") {
+		r.benchDeleteObject(ctx, client, driver)
+	}
+
+	// ListObjectsV2
+	if ctx.Err() == nil && r.matchFilter("ListObjects") {
+		r.benchListObjects(ctx, client, driver)
+	}
+
+	// Multipart
+	if ctx.Err() == nil && r.matchFilter("Multipart") {
+		r.benchMultipart(ctx, client, driver)
+	}
+
+	// Mixed workloads
+	if ctx.Err() == nil && r.matchFilter("Mixed") {
+		r.benchMixed(ctx, client, driver)
+	}
+
+	// Concurrency scaling
+	if ctx.Err() == nil && r.matchFilter("Concurrency") {
+		r.benchConcurrencyScaling(ctx, client, driver)
+	}
 }
 
 func (r *Runner) matchFilter(name string) bool {
@@ -206,8 +296,12 @@ func (r *Runner) addResult(m *Metrics) {
 	r.mu.Unlock()
 }
 
-// latencyCollector collects operation latencies.
+// ============================================================================
+// LATENCY COLLECTOR
+// ============================================================================
+
 type latencyCollector struct {
+	mu        sync.Mutex
 	latencies []time.Duration
 	errors    int
 	lastError string
@@ -220,6 +314,8 @@ func newCollector() *latencyCollector {
 }
 
 func (c *latencyCollector) record(d time.Duration, err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if err != nil {
 		c.errors++
 		c.lastError = err.Error()
@@ -229,6 +325,9 @@ func (c *latencyCollector) record(d time.Duration, err error) {
 }
 
 func (c *latencyCollector) metrics(op, driver string, size int) *Metrics {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	m := &Metrics{
 		Driver:     driver,
 		Operation:  op,
@@ -242,7 +341,6 @@ func (c *latencyCollector) metrics(op, driver string, size int) *Metrics {
 		return m
 	}
 
-	// Sort for percentiles
 	sorted := make([]time.Duration, len(c.latencies))
 	copy(sorted, c.latencies)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
@@ -285,7 +383,10 @@ func percentile(sorted []time.Duration, p float64) time.Duration {
 	return sorted[idx]
 }
 
-// adaptiveBench implements Go-style adaptive benchmarking.
+// ============================================================================
+// ADAPTIVE BENCHMARK
+// ============================================================================
+
 type adaptiveBench struct {
 	target    time.Duration
 	minIters  int
@@ -318,7 +419,6 @@ func (ab *adaptiveBench) nextN() int {
 	if ab.totalN == 0 {
 		return 1
 	}
-	// Estimate how many more iterations to reach target
 	if ab.totalTime <= 0 {
 		return ab.totalN * 2
 	}
@@ -331,7 +431,6 @@ func (ab *adaptiveBench) nextN() int {
 	if n < 1 {
 		n = 1
 	}
-	// Cap growth to 2x to prevent overshooting
 	if n > ab.totalN*2 {
 		n = ab.totalN * 2
 	}
@@ -358,7 +457,6 @@ func (r *Runner) benchPutObject(ctx context.Context, client *s3.Client, driver s
 	data := r.payload(size)
 	warmup := r.config.WarmupForSize(size)
 
-	// Warmup
 	for i := 0; i < warmup; i++ {
 		key := r.uniqueKey("warmup")
 		client.PutObject(ctx, &s3.PutObjectInput{
@@ -404,7 +502,6 @@ func (r *Runner) benchGetObject(ctx context.Context, client *s3.Client, driver s
 	op := fmt.Sprintf("GetObject/%s", sizeLabel(size))
 	data := r.payload(size)
 
-	// Pre-seed object
 	key := r.uniqueKey("get-seed")
 	_, err := client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:        aws.String(r.config.Bucket),
@@ -467,7 +564,6 @@ func (r *Runner) benchHeadObject(ctx context.Context, client *s3.Client, driver 
 	op := "HeadObject"
 	data := r.payload(SizeSmall)
 
-	// Pre-seed
 	key := r.uniqueKey("head-seed")
 	client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:        aws.String(r.config.Bucket),
@@ -476,7 +572,6 @@ func (r *Runner) benchHeadObject(ctx context.Context, client *s3.Client, driver 
 		ContentLength: aws.Int64(int64(SizeSmall)),
 	})
 
-	// Warmup
 	for i := 0; i < r.config.WarmupIters; i++ {
 		client.HeadObject(ctx, &s3.HeadObjectInput{
 			Bucket: aws.String(r.config.Bucket),
@@ -518,7 +613,6 @@ func (r *Runner) benchDeleteObject(ctx context.Context, client *s3.Client, drive
 	for ab.shouldContinue() {
 		n := ab.nextN()
 
-		// Pre-seed N objects to delete
 		keys := make([]string, n)
 		for i := 0; i < n; i++ {
 			keys[i] = r.uniqueKey("del")
@@ -553,7 +647,6 @@ func (r *Runner) benchListObjects(ctx context.Context, client *s3.Client, driver
 	op := "ListObjects"
 	data := r.payload(SizeSmall)
 
-	// Pre-seed 100 objects for listing
 	prefix := r.uniqueKey("list-seed")
 	for i := 0; i < 100; i++ {
 		key := fmt.Sprintf("%s/%04d", prefix, i)
@@ -565,7 +658,6 @@ func (r *Runner) benchListObjects(ctx context.Context, client *s3.Client, driver
 		})
 	}
 
-	// Warmup
 	for i := 0; i < r.config.WarmupIters; i++ {
 		client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
 			Bucket: aws.String(r.config.Bucket),
@@ -599,8 +691,8 @@ func (r *Runner) benchListObjects(ctx context.Context, client *s3.Client, driver
 
 func (r *Runner) benchMultipart(ctx context.Context, client *s3.Client, driver string) {
 	op := "Multipart/20MB"
-	partSize := 5 * 1024 * 1024 // 5MB minimum part size
-	numParts := 4               // 20MB total
+	partSize := 5 * 1024 * 1024
+	numParts := 4
 	partData := r.payload(partSize)
 
 	coll := newCollector()
@@ -616,7 +708,6 @@ func (r *Runner) benchMultipart(ctx context.Context, client *s3.Client, driver s
 			key := r.uniqueKey("multipart")
 			t0 := time.Now()
 
-			// Create multipart upload
 			createResp, err := client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
 				Bucket: aws.String(r.config.Bucket),
 				Key:    aws.String(key),
@@ -626,7 +717,6 @@ func (r *Runner) benchMultipart(ctx context.Context, client *s3.Client, driver s
 				continue
 			}
 
-			// Upload parts
 			var completedParts []types.CompletedPart
 			failed := false
 			for p := 1; p <= numParts; p++ {
@@ -656,7 +746,6 @@ func (r *Runner) benchMultipart(ctx context.Context, client *s3.Client, driver s
 				continue
 			}
 
-			// Complete
 			_, err = client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
 				Bucket:   aws.String(r.config.Bucket),
 				Key:      aws.String(key),
@@ -680,17 +769,16 @@ func (r *Runner) benchMultipart(ctx context.Context, client *s3.Client, driver s
 
 func (r *Runner) benchMixed(ctx context.Context, client *s3.Client, driver string) {
 	type ratio struct {
-		name       string
-		readPct    int
-		writePct   int
+		name     string
+		readPct  int
 	}
 	ratios := []ratio{
-		{"Mixed/90r10w", 90, 10},
-		{"Mixed/50r50w", 50, 50},
-		{"Mixed/10r90w", 10, 90},
+		{"Mixed/90r10w", 90},
+		{"Mixed/50r50w", 50},
+		{"Mixed/10r90w", 10},
 	}
 
-	size := SizeMedium // 64KB
+	size := SizeMedium
 	data := r.payload(size)
 	concurrency := 50
 
@@ -699,7 +787,6 @@ func (r *Runner) benchMixed(ctx context.Context, client *s3.Client, driver strin
 			break
 		}
 
-		// Pre-seed objects for reads
 		readKeys := make([]string, 100)
 		for i := range readKeys {
 			readKeys[i] = r.uniqueKey("mixed-seed")
@@ -714,11 +801,9 @@ func (r *Runner) benchMixed(ctx context.Context, client *s3.Client, driver strin
 		coll := newCollector()
 		benchTime := r.config.BenchTime
 
-		// Run for benchTime with concurrency workers
 		var wg sync.WaitGroup
 		opCtx, cancel := context.WithTimeout(ctx, benchTime+5*time.Second)
-		start := time.Now()
-		deadline := start.Add(benchTime)
+		deadline := time.Now().Add(benchTime)
 
 		for w := 0; w < concurrency; w++ {
 			wg.Add(1)
@@ -773,7 +858,7 @@ func (r *Runner) benchMixed(ctx context.Context, client *s3.Client, driver strin
 }
 
 func (r *Runner) benchConcurrencyScaling(ctx context.Context, client *s3.Client, driver string) {
-	size := SizeMedium // 64KB
+	size := SizeMedium
 	data := r.payload(size)
 	concLevels := []int{1, 10, 50, 100, 200}
 
@@ -788,8 +873,7 @@ func (r *Runner) benchConcurrencyScaling(ctx context.Context, client *s3.Client,
 
 		var wg sync.WaitGroup
 		opCtx, cancel := context.WithTimeout(ctx, benchTime+5*time.Second)
-		start := time.Now()
-		deadline := start.Add(benchTime)
+		deadline := time.Now().Add(benchTime)
 
 		for w := 0; w < conc; w++ {
 			wg.Add(1)
@@ -825,7 +909,6 @@ func (r *Runner) benchConcurrencyScaling(ctx context.Context, client *s3.Client,
 func (r *Runner) cleanupObjects(ctx context.Context, client *s3.Client, driver string) {
 	r.log("  Cleaning up %s objects...", driver)
 
-	// List and delete all bench/ prefixed objects
 	paginator := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{
 		Bucket: aws.String(r.config.Bucket),
 		Prefix: aws.String("bench/"),
@@ -854,11 +937,9 @@ func (r *Runner) cleanupObjects(ctx context.Context, client *s3.Client, driver s
 func sizeLabel(size int) string {
 	switch {
 	case size >= 1024*1024:
-		mb := size / (1024 * 1024)
-		return fmt.Sprintf("%dMB", mb)
+		return fmt.Sprintf("%dMB", size/(1024*1024))
 	case size >= 1024:
-		kb := size / 1024
-		return fmt.Sprintf("%dKB", kb)
+		return fmt.Sprintf("%dKB", size/1024)
 	default:
 		return fmt.Sprintf("%dB", size)
 	}
