@@ -33,6 +33,7 @@ type Runner struct {
 	results           []*Metrics
 	skippedBenchmarks []SkippedBenchmark
 	dockerStats       map[string]*DockerStats
+	serverMetrics     map[string]*ServerMetrics
 	logger            func(format string, args ...any)
 	resultsMu         sync.Mutex
 	keyCounter        uint64
@@ -55,6 +56,7 @@ func NewRunner(cfg *Config) *Runner {
 		drivers:           FilterDrivers(AllDriverConfigs(), cfg.Drivers),
 		results:           make([]*Metrics, 0),
 		dockerStats:       make(map[string]*DockerStats),
+		serverMetrics:     make(map[string]*ServerMetrics),
 		logger:            func(format string, args ...any) { fmt.Printf(format+"\n", args...) },
 		dockerCollector:   NewDockerStatsCollector("all-"),
 		payloads:          make(map[int][]byte),
@@ -75,6 +77,7 @@ func NewRunnerWithDrivers(cfg *Config, drivers []DriverConfig) *Runner {
 		drivers:           drivers,
 		results:           make([]*Metrics, 0),
 		dockerStats:       make(map[string]*DockerStats),
+		serverMetrics:     make(map[string]*ServerMetrics),
 		logger:            func(format string, args ...any) { fmt.Printf(format+"\n", args...) },
 		dockerCollector:   NewDockerStatsCollector("all-"),
 		payloads:          make(map[int][]byte),
@@ -224,11 +227,14 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		}
 
 		// Collect Docker stats before benchmarks (to show growth)
+		var beforeStats *DockerStats
 		if r.config.DockerStats && driver.Container != "" {
 			r.logger("  Collecting initial Docker stats...")
 			stats, err := r.dockerCollector.GetStatsWithDataPath(ctx, driver.Container, driver.DataPath)
 			if err == nil {
-				r.logger("  Initial: Memory=%.1fMB, Volume=%.1fMB", stats.MemoryUsageMB, stats.VolumeSize)
+				beforeStats = stats
+				r.logger("  Initial: Memory=%.1fMB, Disk=%.1fMB, NetIn=%.1fMB, NetOut=%.1fMB, BlockR=%.1fMB, BlockW=%.1fMB",
+					stats.MemoryUsageMB, stats.VolumeSize, stats.NetInputMB, stats.NetOutputMB, stats.BlockReadMB, stats.BlockWriteMB)
 			}
 		}
 
@@ -265,7 +271,14 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			stats, err := r.dockerCollector.GetStatsWithDataPath(ctx, driver.Container, driver.DataPath)
 			if err == nil {
 				r.dockerStats[driver.Name] = stats
-				r.logger("  Final: Memory=%.1fMB, Volume=%.1fMB", stats.MemoryUsageMB, stats.VolumeSize)
+				r.logger("  Final: Memory=%.1fMB, Disk=%.1fMB, NetIn=%.1fMB, NetOut=%.1fMB, BlockR=%.1fMB, BlockW=%.1fMB, CPU=%.1f%%",
+					stats.MemoryUsageMB, stats.VolumeSize, stats.NetInputMB, stats.NetOutputMB, stats.BlockReadMB, stats.BlockWriteMB, stats.CPUPercent)
+
+				// Compute server-side deltas
+				sm := ComputeServerMetrics(beforeStats, stats)
+				r.serverMetrics[driver.Name] = sm
+				r.logger("  Server deltas: Memory=%+.1fMB, Disk=%+.1fMB, NetIn=%.1fMB, NetOut=%.1fMB, BlockR=%.1fMB, BlockW=%.1fMB",
+					sm.MemoryGrowthMB, sm.DiskGrowthMB, sm.NetInTotalMB, sm.NetOutTotalMB, sm.BlockReadMB, sm.BlockWriteMB)
 			}
 
 			if r.config.CleanupDockerData && driver.DataPath != "" {
@@ -1321,6 +1334,9 @@ func (r *Runner) generateReport() *Report {
 	}
 	if len(r.resourceSnapshots) > 0 {
 		rpt.ResourceSnapshots = r.resourceSnapshots
+	}
+	if len(r.serverMetrics) > 0 {
+		rpt.ServerMetrics = r.serverMetrics
 	}
 	return rpt
 }

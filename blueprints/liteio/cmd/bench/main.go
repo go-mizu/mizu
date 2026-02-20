@@ -276,7 +276,7 @@ func main() {
 	// Print runtime resource usage for embedded drivers
 	if len(report.ResourceSnapshots) > 0 {
 		fmt.Println()
-		fmt.Println("=== Resource Usage ===")
+		fmt.Println("=== Resource Usage (Embedded) ===")
 		fmt.Printf("  %-12s %10s %10s %10s %10s %8s\n", "Driver", "Peak RSS", "Go Heap", "Go Sys", "Disk", "GC")
 		rsDrivers := make([]string, 0, len(report.ResourceSnapshots))
 		for d := range report.ResourceSnapshots {
@@ -287,6 +287,25 @@ func main() {
 			rs := report.ResourceSnapshots[d]
 			fmt.Printf("  %-12s %8.1f MB %8.1f MB %8.1f MB %8.1f MB %8d\n",
 				d, rs.PeakRSSMB, rs.PeakHeapMB, rs.PeakSysMB, rs.FinalDiskMB, rs.NumGC)
+		}
+	}
+
+	// Print server-side metrics for Docker containers
+	if len(report.ServerMetrics) > 0 {
+		fmt.Println()
+		fmt.Println("=== Server-Side Resource Usage ===")
+		fmt.Printf("  %-14s %10s %10s %10s %10s %10s %10s %8s\n",
+			"Driver", "Memory", "Disk", "Net In", "Net Out", "Block R", "Block W", "CPU%")
+		smDrivers := make([]string, 0, len(report.ServerMetrics))
+		for d := range report.ServerMetrics {
+			smDrivers = append(smDrivers, d)
+		}
+		sort.Strings(smDrivers)
+		for _, d := range smDrivers {
+			sm := report.ServerMetrics[d]
+			fmt.Printf("  %-14s %8.1f MB %8.1f MB %8.1f MB %8.1f MB %8.1f MB %8.1f MB %7.1f%%\n",
+				d, sm.AfterMemoryMB, sm.AfterDiskMB, sm.NetInTotalMB, sm.NetOutTotalMB,
+				sm.BlockReadMB, sm.BlockWriteMB, sm.AfterCPU)
 		}
 	}
 

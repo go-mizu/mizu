@@ -463,12 +463,13 @@ type SkippedBenchmark struct {
 
 // Report holds complete benchmark results from CLI runner.
 type Report struct {
-	Timestamp          time.Time                  `json:"timestamp"`
-	Config             *Config                    `json:"config"`
-	Results            []*Metrics                 `json:"results"`
-	DockerStats        map[string]*DockerStats    `json:"docker_stats,omitempty"`
-	SkippedBenchmarks  []SkippedBenchmark         `json:"skipped_benchmarks,omitempty"`
-	ResourceSnapshots  map[string]*ResourceSummary `json:"resource_snapshots,omitempty"`
+	Timestamp          time.Time                    `json:"timestamp"`
+	Config             *Config                      `json:"config"`
+	Results            []*Metrics                   `json:"results"`
+	DockerStats        map[string]*DockerStats      `json:"docker_stats,omitempty"`
+	SkippedBenchmarks  []SkippedBenchmark           `json:"skipped_benchmarks,omitempty"`
+	ResourceSnapshots  map[string]*ResourceSummary  `json:"resource_snapshots,omitempty"`
+	ServerMetrics      map[string]*ServerMetrics    `json:"server_metrics,omitempty"`
 }
 
 // SaveJSON saves the report as JSON.

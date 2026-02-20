@@ -288,6 +288,65 @@ services:
       "
 
   # ============================================================================
+  # Herd S3 - High-performance S3 server backed by herd driver (Go)
+  # 16 stripes, inline caching, append-only volumes
+  # Credentials: herd / herd123
+  # ============================================================================
+  herd:
+    build:
+      context: ../../..
+      dockerfile: docker/s3/herd/Dockerfile
+    image: herd-s3:latest
+    ports:
+      - "9230:9000"   # S3 API
+    environment:
+      # Override via env for flexibility
+      HERD_ACCESS_KEY: herd
+      HERD_SECRET_KEY: herd123
+    command:
+      - "-listen"
+      - ":9000"
+      - "-data-dir"
+      - "/data"
+      - "-no-log"
+      - "-stripes"
+      - "16"
+      - "-sync"
+      - "none"
+      - "-inline-kb"
+      - "8"
+      - "-prealloc"
+      - "1024"
+      - "-access-key"
+      - "herd"
+      - "-secret-key"
+      - "herd123"
+    volumes:
+      - herd_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9000/ 2>&1 || exit 0"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  herd-init:
+    image: public.ecr.aws/aws-cli/aws-cli:latest
+    pull_policy: if_not_present
+    depends_on:
+      herd:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: herd
+      AWS_SECRET_ACCESS_KEY: herd123
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://herd:9000 s3 mb s3://test-bucket || true;
+      exit 0;
+      "
+
+  # ============================================================================
   # Rabbit S3 - S3-compatible server backed by rabbit driver
   # Credentials: rabbit / rabbit123
   # ============================================================================
@@ -403,5 +462,6 @@ volumes:
   seaweedfs_volume:
   localstack_data:
   liteio_data:
+  herd_data:
   rabbit_s3_data:
   usagi_s3_data:

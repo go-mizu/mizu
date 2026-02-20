@@ -443,10 +443,12 @@ func AllDriverConfigs() []DriverConfig {
 			DataPath: "/tmp/herd5-bench",
 		},
 		{
-			Name:    "herd_s3",
-			DSN:     "s3://herd:herd123@localhost:9230/test-bucket?insecure=true&force_path_style=true&unsigned_payload=true",
-			Bucket:  "test-bucket",
-			Enabled: true,
+			Name:      "herd_s3",
+			DSN:       "s3://herd:herd123@localhost:9230/test-bucket?insecure=true&force_path_style=true&unsigned_payload=true",
+			Bucket:    "test-bucket",
+			Enabled:   true,
+			Container: "all-herd-1",
+			DataPath:  "/data",
 		},
 		{
 			Name:    "herd3net",

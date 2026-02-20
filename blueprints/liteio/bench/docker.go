@@ -32,6 +32,41 @@ type DockerStats struct {
 	VolumeName    string  `json:"volume_name,omitempty"`       // Docker volume name
 	ImageSize     float64 `json:"image_size_mb,omitempty"`     // Container image size
 	ContainerSize float64 `json:"container_size_mb,omitempty"` // Container writable layer size
+
+	// Parsed network I/O in MB
+	NetInputMB  float64 `json:"net_input_mb,omitempty"`
+	NetOutputMB float64 `json:"net_output_mb,omitempty"`
+	// Parsed block I/O in MB
+	BlockReadMB  float64 `json:"block_read_mb,omitempty"`
+	BlockWriteMB float64 `json:"block_write_mb,omitempty"`
+}
+
+// ServerMetrics holds before/after server-side resource deltas for a driver.
+type ServerMetrics struct {
+	// Before benchmark
+	BeforeMemoryMB float64 `json:"before_memory_mb"`
+	BeforeDiskMB   float64 `json:"before_disk_mb"`
+	BeforeNetInMB  float64 `json:"before_net_in_mb"`
+	BeforeNetOutMB float64 `json:"before_net_out_mb"`
+	BeforeBlockRMB float64 `json:"before_block_read_mb"`
+	BeforeBlockWMB float64 `json:"before_block_write_mb"`
+
+	// After benchmark
+	AfterMemoryMB float64 `json:"after_memory_mb"`
+	AfterDiskMB   float64 `json:"after_disk_mb"`
+	AfterNetInMB  float64 `json:"after_net_in_mb"`
+	AfterNetOutMB float64 `json:"after_net_out_mb"`
+	AfterBlockRMB float64 `json:"after_block_read_mb"`
+	AfterBlockWMB float64 `json:"after_block_write_mb"`
+	AfterCPU      float64 `json:"after_cpu_percent"`
+
+	// Deltas
+	MemoryGrowthMB float64 `json:"memory_growth_mb"`
+	DiskGrowthMB   float64 `json:"disk_growth_mb"`
+	NetInTotalMB   float64 `json:"net_in_total_mb"`
+	NetOutTotalMB  float64 `json:"net_out_total_mb"`
+	BlockReadMB    float64 `json:"block_read_total_mb"`
+	BlockWriteMB   float64 `json:"block_write_total_mb"`
 }
 
 // DockerStatsCollector collects Docker container statistics.
@@ -100,6 +135,14 @@ func (c *DockerStatsCollector) GetStatsWithDataPath(ctx context.Context, contain
 	if parts := strings.Split(parsed.BlockIO, " / "); len(parts) == 2 {
 		stats.BlockRead = strings.TrimSpace(parts[0])
 		stats.BlockWrite = strings.TrimSpace(parts[1])
+		stats.BlockReadMB = parseSize(stats.BlockRead)
+		stats.BlockWriteMB = parseSize(stats.BlockWrite)
+	}
+
+	// Parse network I/O from "1.5MB / 2.3MB" format
+	if parts := strings.Split(parsed.NetIO, " / "); len(parts) == 2 {
+		stats.NetInputMB = parseSize(strings.TrimSpace(parts[0]))
+		stats.NetOutputMB = parseSize(strings.TrimSpace(parts[1]))
 	}
 
 	// Get detailed memory breakdown (cache vs RSS)
@@ -607,6 +650,35 @@ func (c *DockerStatsCollector) CleanupContainer(ctx context.Context, containerNa
 	}
 
 	return nil
+}
+
+// ComputeServerMetrics computes deltas between before/after DockerStats snapshots.
+func ComputeServerMetrics(before, after *DockerStats) *ServerMetrics {
+	sm := &ServerMetrics{}
+	if before != nil {
+		sm.BeforeMemoryMB = before.MemoryUsageMB
+		sm.BeforeDiskMB = before.VolumeSize
+		sm.BeforeNetInMB = before.NetInputMB
+		sm.BeforeNetOutMB = before.NetOutputMB
+		sm.BeforeBlockRMB = before.BlockReadMB
+		sm.BeforeBlockWMB = before.BlockWriteMB
+	}
+	if after != nil {
+		sm.AfterMemoryMB = after.MemoryUsageMB
+		sm.AfterDiskMB = after.VolumeSize
+		sm.AfterNetInMB = after.NetInputMB
+		sm.AfterNetOutMB = after.NetOutputMB
+		sm.AfterBlockRMB = after.BlockReadMB
+		sm.AfterBlockWMB = after.BlockWriteMB
+		sm.AfterCPU = after.CPUPercent
+	}
+	sm.MemoryGrowthMB = sm.AfterMemoryMB - sm.BeforeMemoryMB
+	sm.DiskGrowthMB = sm.AfterDiskMB - sm.BeforeDiskMB
+	sm.NetInTotalMB = sm.AfterNetInMB - sm.BeforeNetInMB
+	sm.NetOutTotalMB = sm.AfterNetOutMB - sm.BeforeNetOutMB
+	sm.BlockReadMB = sm.AfterBlockRMB - sm.BeforeBlockRMB
+	sm.BlockWriteMB = sm.AfterBlockWMB - sm.BeforeBlockWMB
+	return sm
 }
 
 // ClearVolumeData clears data inside a container's data directory.
