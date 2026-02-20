@@ -287,9 +287,10 @@ func NewMinIOCluster() (*Cluster, error) {
 // RustFS: 4 SNMD instances behind HAProxy
 // ---------------------------------------------------------------------------
 
-// NewRustFSCluster creates a 4-node RustFS distributed cluster behind HAProxy.
-// RustFS is a MinIO fork; same distributed endpoint syntax.
-// 4 nodes × 2 drives = 8 drives, erasure coded.
+// NewRustFSCluster creates a 4-node RustFS cluster behind HAProxy.
+// RustFS 1.0.0-alpha.83 does NOT support MinIO's distributed `server` syntax.
+// Each node runs as an independent single-node instance with local volumes.
+// HAProxy round-robins across all 4 nodes.
 func NewRustFSCluster() (*Cluster, error) {
 	c := &Cluster{
 		Name:         "rustfs_cluster",
@@ -311,28 +312,20 @@ func NewRustFSCluster() (*Cluster, error) {
 		}
 	}
 
-	// Build per-node endpoints (same syntax as MinIO distributed mode).
-	var endpoints []string
-	for j := 0; j < 4; j++ {
-		ep := fmt.Sprintf("http://127.0.0.1:%d%s/node%d/vol{1...2}", 9150+j, c.DataDir, j)
-		endpoints = append(endpoints, ep)
-	}
-
-	env := []string{
-		"MINIO_ROOT_USER=rustfsadmin",
-		"MINIO_ROOT_PASSWORD=rustfsadmin",
-		"MINIO_CI_CD=true",
-	}
-
 	var backends []haproxyBackend
 	for i := 0; i < 4; i++ {
 		port := 9150 + i
+		nodeDir := filepath.Join(c.DataDir, fmt.Sprintf("node%d", i))
 		args := []string{
-			"server",
 			"--address", fmt.Sprintf(":%d", port),
 			"--console-address", fmt.Sprintf(":%d", 9160+i),
+			filepath.Join(nodeDir, "vol1"),
+			filepath.Join(nodeDir, "vol2"),
 		}
-		args = append(args, endpoints...)
+		env := []string{
+			"RUSTFS_ROOT_USER=rustfsadmin",
+			"RUSTFS_ROOT_PASSWORD=rustfsadmin",
+		}
 
 		proc, err := startProcess("rustfs", args, env, fmt.Sprintf("rustfs-node%d", i))
 		if err != nil {
@@ -490,80 +483,94 @@ func NewSeaweedFSCluster() (*Cluster, error) {
 }
 
 // ---------------------------------------------------------------------------
-// Herd: 4 TCP node servers + 1 S3 gateway (no HAProxy)
+// Herd: 4 distributed nodes (each S3 + TCP peer) behind HAProxy
 // ---------------------------------------------------------------------------
 
-// NewHerdCluster creates a Herd TCP cluster:
-// 4 node servers (TCP binary protocol) + 1 S3 gateway connecting to peers.
-// The S3 gateway uses rendezvous hashing to route keys to nodes.
-// No HAProxy — the gateway IS the native entry point.
-// 5 processes total (fair comparison with MinIO/RustFS/SeaweedFS).
+// NewHerdCluster creates a 4-node distributed Herd cluster behind HAProxy.
+// Each node runs S3 server + TCP peer listener + local embedded store.
+// Rendezvous hashing determines key ownership. Requests hitting the owning
+// node are served locally (zero TCP, mmap reads). Non-owning requests are
+// forwarded via persistent TCP connections.
+// HAProxy round-robins across all 4 S3 ports.
 func NewHerdCluster() (*Cluster, error) {
 	c := &Cluster{
 		Name:         "herd_cluster",
 		S3Port:       9230,
 		AccessKey:    "herd",
 		SecretKey:    "herd123",
-		HealthURL:    "http://127.0.0.1:9230/",
+		HealthURL:    "http://127.0.0.1:9250/minio/health/live",
 		DataDir:      filepath.Join(baseDir, "herd"),
 		endpointMode: "rendezvous",
 	}
 
-	// Start 4 TCP node servers (data nodes).
+	// Port allocation:
+	// S3 ports: 9250, 9251, 9252, 9253 (4 distributed nodes)
+	// TCP ports: 7241, 7242, 7243, 7244 (peer communication)
+	// HAProxy: 9230 (frontend, roundrobin across 4 S3 ports)
 	var peerAddrs []string
 	for i := 0; i < 4; i++ {
-		port := 9241 + i
+		peerAddrs = append(peerAddrs, fmt.Sprintf("127.0.0.1:%d", 7241+i))
+	}
+	allPeers := strings.Join(peerAddrs, ",")
+
+	var backends []haproxyBackend
+	for i := 0; i < 4; i++ {
+		s3Port := 9250 + i
+		tcpPort := 7241 + i
 		nodeDir := filepath.Join(c.DataDir, fmt.Sprintf("node%d", i))
 		if err := os.MkdirAll(nodeDir, 0o755); err != nil {
 			return nil, err
 		}
 
 		proc, err := startProcess("herd", []string{
-			"-node",
-			"-listen", fmt.Sprintf(":%d", port),
+			"-distributed",
+			"-listen", fmt.Sprintf(":%d", s3Port),
+			"-node-listen", fmt.Sprintf(":%d", tcpPort),
 			"-data-dir", nodeDir,
+			"-dist-peers", allPeers,
 			"-stripes", "16",
 			"-sync", "batch",
 			"-inline-kb", "8",
 			"-prealloc", "1024",
 			"-bufsize", "16777216",
+			"-access-key", c.AccessKey,
+			"-secret-key", c.SecretKey,
+			"-no-log",
 		}, nil, fmt.Sprintf("herd-node%d", i))
 		if err != nil {
 			c.Stop()
 			return nil, err
 		}
 		c.procs = append(c.procs, proc)
-		peerAddrs = append(peerAddrs, fmt.Sprintf("127.0.0.1:%d", port))
-		c.backendAddrs = append(c.backendAddrs, fmt.Sprintf("127.0.0.1:%d", port))
+		backends = append(backends, haproxyBackend{fmt.Sprintf("herd%d", i), s3Port})
+		c.backendAddrs = append(c.backendAddrs, fmt.Sprintf("127.0.0.1:%d", s3Port))
 	}
 
-	// Wait for all node servers to be ready.
-	for i, addr := range peerAddrs {
-		port := 9241 + i
-		if err := waitForPort(port, 30*time.Second); err != nil {
+	// Wait for all S3 ports to be ready.
+	for _, b := range backends {
+		if err := waitForPort(b.port, 30*time.Second); err != nil {
 			c.Stop()
-			return nil, fmt.Errorf("herd node%d (%s): %w", i, addr, err)
+			return nil, fmt.Errorf("herd node %s: %w", b.name, err)
 		}
 	}
 
-	// Start S3 gateway connecting to the 4 TCP peers.
-	proc, err := startProcess("herd", []string{
-		"-listen", fmt.Sprintf(":%d", c.S3Port),
-		"-peers", strings.Join(peerAddrs, ","),
-		"-access-key", c.AccessKey,
-		"-secret-key", c.SecretKey,
-		"-no-log",
-	}, nil, "herd-gateway")
+	// Start HAProxy to round-robin across all 4 distributed S3 nodes.
+	cfgPath := filepath.Join(c.DataDir, "haproxy.cfg")
+	if err := writeHAProxyConfig(cfgPath, c.S3Port, backends, "roundrobin"); err != nil {
+		c.Stop()
+		return nil, err
+	}
+	proc, err := startHAProxy(cfgPath, "herd-haproxy")
 	if err != nil {
 		c.Stop()
 		return nil, err
 	}
 	c.procs = append(c.procs, proc)
 
-	// Wait for S3 gateway to be ready.
+	// Wait for HAProxy to be ready.
 	if err := waitForPort(c.S3Port, 30*time.Second); err != nil {
 		c.Stop()
-		return nil, fmt.Errorf("herd gateway: %w", err)
+		return nil, fmt.Errorf("herd haproxy: %w", err)
 	}
 
 	return c, nil

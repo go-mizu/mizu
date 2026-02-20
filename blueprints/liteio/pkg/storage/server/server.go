@@ -67,6 +67,10 @@ type Config struct {
 	// Default: "local://$HOME/data/liteio"
 	DSN string
 
+	// Storage is an optional pre-built storage backend.
+	// If set, DSN is ignored and this storage is used directly.
+	Storage storage.Storage
+
 	// AccessKeyID for S3 authentication. Default "liteio".
 	// If empty, authentication is disabled.
 	AccessKeyID string
@@ -211,18 +215,25 @@ func New(cfg *Config) (*Server, error) {
 		cfg.applyDefaults()
 	}
 
-	// Ensure data directory exists for local driver
-	if err := ensureDataDir(cfg.DSN); err != nil {
-		return nil, fmt.Errorf("ensure data dir: %w", err)
-	}
+	// Use pre-built storage if provided, otherwise open from DSN.
+	var stor storage.Storage
+	if cfg.Storage != nil {
+		stor = cfg.Storage
+	} else {
+		// Ensure data directory exists for local driver
+		if err := ensureDataDir(cfg.DSN); err != nil {
+			return nil, fmt.Errorf("ensure data dir: %w", err)
+		}
 
-	// Open storage backend
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+		// Open storage backend
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
-	stor, err := storage.Open(ctx, cfg.DSN)
-	if err != nil {
-		return nil, fmt.Errorf("open storage: %w", err)
+		var err error
+		stor, err = storage.Open(ctx, cfg.DSN)
+		if err != nil {
+			return nil, fmt.Errorf("open storage: %w", err)
+		}
 	}
 
 	// Create mizu app
