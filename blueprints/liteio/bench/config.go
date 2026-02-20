@@ -505,6 +505,77 @@ func AllDriverConfigs() []DriverConfig {
 			Bucket:  "test-bucket",
 			Enabled: true,
 		},
+		// Paper-inspired drivers (spec/0570_papers.md)
+		{
+			Name:     "falcon",
+			DSN:      "falcon:///tmp/falcon-bench?sync=none&hot_size=1048576",
+			Bucket:   "test-bucket",
+			Enabled:  true,
+			DataPath: "/tmp/falcon-bench",
+		},
+		{
+			Name:     "spider",
+			DSN:      "spider:///tmp/spider-bench?sync=none&levels=4&memtable_size=4194304",
+			Bucket:   "test-bucket",
+			Enabled:  true,
+			DataPath: "/tmp/spider-bench",
+		},
+		{
+			Name:     "fox",
+			DSN:      "fox:///tmp/fox-bench?sync=none&page_size=4096&pool_size=16777216",
+			Bucket:   "test-bucket",
+			Enabled:  true,
+			DataPath: "/tmp/fox-bench",
+		},
+		{
+			Name:     "jaguar",
+			DSN:      "jaguar:///tmp/jaguar-bench?sync=none&memtable_size=4194304&wal=true",
+			Bucket:   "test-bucket",
+			Enabled:  true,
+			DataPath: "/tmp/jaguar-bench",
+		},
+		{
+			Name:     "gecko",
+			DSN:      "gecko:///tmp/gecko-bench?sync=none&delta_buckets=64&gc_threshold=1000",
+			Bucket:   "test-bucket",
+			Enabled:  true,
+			DataPath: "/tmp/gecko-bench",
+		},
+		{
+			Name:     "owl",
+			DSN:      "owl:///tmp/owl-bench?sync=none&segments=128&buffer_size=4194304",
+			Bucket:   "test-bucket",
+			Enabled:  true,
+			DataPath: "/tmp/owl-bench",
+		},
+		{
+			Name:     "ant",
+			DSN:      "ant:///tmp/ant-bench?sync=none",
+			Bucket:   "test-bucket",
+			Enabled:  true,
+			DataPath: "/tmp/ant-bench",
+		},
+		{
+			Name:     "kangaroo",
+			DSN:      "kangaroo:///tmp/kangaroo-bench?sync=none&l1_size=10000&klog_mb=64&kset_mb=512&kset_page=4096&admission=2",
+			Bucket:   "test-bucket",
+			Enabled:  true,
+			DataPath: "/tmp/kangaroo-bench",
+		},
+		{
+			Name:     "narwhal",
+			DSN:      "narwhal:///tmp/narwhal-bench?sync=none&stripes=4",
+			Bucket:   "test-bucket",
+			Enabled:  true,
+			DataPath: "/tmp/narwhal-bench",
+		},
+		{
+			Name:     "bear",
+			DSN:      "bear:///tmp/bear-bench?sync=none",
+			Bucket:   "test-bucket",
+			Enabled:  true,
+			DataPath: "/tmp/bear-bench",
+		},
 	}
 }
 
