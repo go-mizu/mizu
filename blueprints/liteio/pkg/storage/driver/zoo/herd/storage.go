@@ -84,6 +84,11 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 		return openMultiNode(ctx, u)
 	}
 
+	// Distributed mode: herd:///path?distributed=true&self=...&peers=...
+	if q.Get("distributed") == "true" {
+		return openDistributed(ctx, u)
+	}
+
 	// TCP cluster with gossip: herd:///?seeds=...
 	if q.Has("seeds") {
 		return openGossipCluster(ctx, u)

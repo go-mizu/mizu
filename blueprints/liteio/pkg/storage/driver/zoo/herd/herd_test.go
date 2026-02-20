@@ -5,10 +5,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/liteio-dev/liteio/pkg/storage"
 )
@@ -580,5 +583,241 @@ func TestMultipart(t *testing.T) {
 
 	if string(got) != "hello world!" {
 		t.Fatalf("expected 'hello world!', got %q", got)
+	}
+}
+
+// getFreePort returns a free TCP port.
+func getFreePort(t *testing.T) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+	return port
+}
+
+// startNodeServer opens a herd store and starts a TCP node server on the given port.
+// Returns the store (caller must close) and a cleanup function.
+func startNodeServer(t *testing.T, dir string, port int) *store {
+	t.Helper()
+	ctx := context.Background()
+	st, err := openEmbedded(ctx, mustParseURL(fmt.Sprintf("herd:///%s?stripes=4&sync=none&inline_kb=8&prealloc=16", dir)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srv := NewNodeServer(st)
+	go srv.ListenAndServe(fmt.Sprintf(":%d", port))
+
+	// Wait for port.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 100*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Cleanup(func() {
+		srv.Close()
+		st.Close()
+	})
+	return st
+}
+
+func mustParseURL(s string) *url.URL {
+	u, _ := url.Parse(s)
+	return u
+}
+
+func TestDistributedWriteRead(t *testing.T) {
+	dir := tempDir(t)
+	port1 := getFreePort(t)
+	port2 := getFreePort(t)
+
+	// Start 2 TCP node servers with separate data dirs.
+	startNodeServer(t, fmt.Sprintf("%s/node0", dir), port1)
+	startNodeServer(t, fmt.Sprintf("%s/node1", dir), port2)
+
+	addr1 := fmt.Sprintf("127.0.0.1:%d", port1)
+	addr2 := fmt.Sprintf("127.0.0.1:%d", port2)
+	allPeers := addr1 + "," + addr2
+
+	// Open distributed store as node 1 (self=addr1).
+	dsn := fmt.Sprintf("herd:///%s/node0?distributed=true&self=%s&peers=%s&stripes=4&sync=none&inline_kb=8&prealloc=16",
+		dir, addr1, allPeers)
+	st, err := storage.Open(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	ctx := context.Background()
+	bkt := st.Bucket("test")
+
+	// Write 50 objects — some will be local, some forwarded.
+	for i := 0; i < 50; i++ {
+		key := fmt.Sprintf("obj_%03d.txt", i)
+		data := []byte(fmt.Sprintf("data_%d", i))
+		_, err := bkt.Write(ctx, key, bytes.NewReader(data), int64(len(data)), "text/plain", nil)
+		if err != nil {
+			t.Fatalf("write %s: %v", key, err)
+		}
+	}
+
+	// Read all back.
+	for i := 0; i < 50; i++ {
+		key := fmt.Sprintf("obj_%03d.txt", i)
+		expected := fmt.Sprintf("data_%d", i)
+		rc, _, err := bkt.Open(ctx, key, 0, 0, nil)
+		if err != nil {
+			t.Fatalf("open %s: %v", key, err)
+		}
+		got, _ := io.ReadAll(rc)
+		rc.Close()
+		if string(got) != expected {
+			t.Fatalf("key %s: expected %q, got %q", key, expected, got)
+		}
+	}
+
+	// List should return all 50.
+	iter, err := bkt.List(ctx, "", 0, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for {
+		obj, err := iter.Next()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if obj == nil {
+			break
+		}
+		count++
+	}
+	iter.Close()
+	if count != 50 {
+		t.Fatalf("expected 50 objects in list, got %d", count)
+	}
+}
+
+func TestDistributedCrossNodeCopy(t *testing.T) {
+	dir := tempDir(t)
+	port1 := getFreePort(t)
+	port2 := getFreePort(t)
+
+	startNodeServer(t, fmt.Sprintf("%s/node0", dir), port1)
+	startNodeServer(t, fmt.Sprintf("%s/node1", dir), port2)
+
+	addr1 := fmt.Sprintf("127.0.0.1:%d", port1)
+	addr2 := fmt.Sprintf("127.0.0.1:%d", port2)
+	allPeers := addr1 + "," + addr2
+
+	dsn := fmt.Sprintf("herd:///%s/node0?distributed=true&self=%s&peers=%s&stripes=4&sync=none&inline_kb=8&prealloc=16",
+		dir, addr1, allPeers)
+	st, err := storage.Open(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	ctx := context.Background()
+	bkt := st.Bucket("test")
+
+	// Write a source object.
+	data := []byte("copy-me-across-nodes")
+	_, err = bkt.Write(ctx, "src.txt", bytes.NewReader(data), int64(len(data)), "text/plain", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Copy to a destination key (may route to different node).
+	_, err = bkt.Copy(ctx, "dst.txt", "test", "src.txt", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify copy.
+	rc, obj, err := bkt.Open(ctx, "dst.txt", 0, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := io.ReadAll(rc)
+	rc.Close()
+	if string(got) != "copy-me-across-nodes" {
+		t.Fatalf("expected 'copy-me-across-nodes', got %q", got)
+	}
+	if obj.Size != int64(len(data)) {
+		t.Fatalf("expected size %d, got %d", len(data), obj.Size)
+	}
+}
+
+func TestDistributedMultipart(t *testing.T) {
+	dir := tempDir(t)
+	port1 := getFreePort(t)
+	port2 := getFreePort(t)
+
+	startNodeServer(t, fmt.Sprintf("%s/node0", dir), port1)
+	startNodeServer(t, fmt.Sprintf("%s/node1", dir), port2)
+
+	addr1 := fmt.Sprintf("127.0.0.1:%d", port1)
+	addr2 := fmt.Sprintf("127.0.0.1:%d", port2)
+	allPeers := addr1 + "," + addr2
+
+	dsn := fmt.Sprintf("herd:///%s/node0?distributed=true&self=%s&peers=%s&stripes=4&sync=none&inline_kb=8&prealloc=16",
+		dir, addr1, allPeers)
+	st, err := storage.Open(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	ctx := context.Background()
+	bkt := st.Bucket("test")
+
+	mp, ok := bkt.(storage.HasMultipart)
+	if !ok {
+		t.Skip("bucket does not support multipart")
+	}
+
+	mu, err := mp.InitMultipart(ctx, "multi.txt", "text/plain", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	part1Data := []byte("hello ")
+	part2Data := []byte("distributed!")
+
+	p1, err := mp.UploadPart(ctx, mu, 1, bytes.NewReader(part1Data), int64(len(part1Data)), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p2, err := mp.UploadPart(ctx, mu, 2, bytes.NewReader(part2Data), int64(len(part2Data)), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	obj, err := mp.CompleteMultipart(ctx, mu, []*storage.PartInfo{p1, p2}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if obj.Size != int64(len(part1Data)+len(part2Data)) {
+		t.Fatalf("expected size %d, got %d", len(part1Data)+len(part2Data), obj.Size)
+	}
+
+	rc, _, err := bkt.Open(ctx, "multi.txt", 0, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := io.ReadAll(rc)
+	rc.Close()
+
+	if string(got) != "hello distributed!" {
+		t.Fatalf("expected 'hello distributed!', got %q", got)
 	}
 }

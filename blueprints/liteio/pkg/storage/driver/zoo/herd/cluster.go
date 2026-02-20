@@ -1529,6 +1529,564 @@ func (rn *remoteNode) list(bucket, prefix string, recursive bool) ([]*storage.Ob
 	return objs, nil
 }
 
+// ---------------------------------------------------------------------------
+// Distributed store: local engine + TCP peers, every node is a full S3 participant.
+// Owned keys served locally (zero TCP, mmap reads). Non-owned keys forwarded via TCP.
+// ---------------------------------------------------------------------------
+
+// distributedStore is a true distributed node: local store + TCP peers.
+// Each node owns ~1/N of the keyspace (rendezvous hashing).
+// Owned keys are served from the local store (zero TCP, mmap reads).
+// Non-owned keys are forwarded to the correct peer via persistent TCP.
+type distributedStore struct {
+	selfAddr string   // This node's peer address (e.g. "127.0.0.1:7241")
+	local    *store   // Local embedded store engine
+	peers    []*remoteNode // TCP connections to other nodes
+	allAddrs []string // All node addresses including self (for rendezvous)
+
+	mu      sync.RWMutex
+	buckets map[string]time.Time
+
+	mp *multipartRegistry
+}
+
+var _ storage.Storage = (*distributedStore)(nil)
+
+// peerFor returns the remote node that owns this key, or nil if local.
+func (ds *distributedStore) peerFor(bucket, key string) *remoteNode {
+	if len(ds.allAddrs) <= 1 {
+		return nil
+	}
+	var bestAddr string
+	var bestScore uint64
+	ck := bucket + "\x00" + key
+	for _, addr := range ds.allAddrs {
+		score := rendezvousScore(addr, ck)
+		if score > bestScore {
+			bestScore = score
+			bestAddr = addr
+		}
+	}
+	if bestAddr == ds.selfAddr {
+		return nil // local
+	}
+	for _, p := range ds.peers {
+		if p.addr == bestAddr {
+			return p
+		}
+	}
+	return nil // fallback to local if peer not found
+}
+
+func (ds *distributedStore) Bucket(name string) storage.Bucket {
+	if name == "" {
+		name = "default"
+	}
+	ds.mu.Lock()
+	if _, ok := ds.buckets[name]; !ok {
+		ds.buckets[name] = fastNowTime()
+	}
+	ds.mu.Unlock()
+	return &distributedBucket{ds: ds, name: name}
+}
+
+func (ds *distributedStore) Buckets(_ context.Context, limit, offset int, _ storage.Options) (storage.BucketIter, error) {
+	ds.mu.RLock()
+	names := make([]string, 0, len(ds.buckets))
+	for n := range ds.buckets {
+		names = append(names, n)
+	}
+	ds.mu.RUnlock()
+	sort.Strings(names)
+
+	ds.mu.RLock()
+	infos := make([]*storage.BucketInfo, 0, len(names))
+	for _, n := range names {
+		infos = append(infos, &storage.BucketInfo{Name: n, CreatedAt: ds.buckets[n]})
+	}
+	ds.mu.RUnlock()
+
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(infos) {
+		offset = len(infos)
+	}
+	infos = infos[offset:]
+	if limit > 0 && limit < len(infos) {
+		infos = infos[:limit]
+	}
+	return &bucketIter{buckets: infos}, nil
+}
+
+func (ds *distributedStore) CreateBucket(_ context.Context, name string, _ storage.Options) (*storage.BucketInfo, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, fmt.Errorf("herd: bucket name is empty")
+	}
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	if _, ok := ds.buckets[name]; ok {
+		return nil, storage.ErrExist
+	}
+	now := fastNowTime()
+	ds.buckets[name] = now
+	return &storage.BucketInfo{Name: name, CreatedAt: now}, nil
+}
+
+func (ds *distributedStore) DeleteBucket(_ context.Context, name string, _ storage.Options) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("herd: bucket name is empty")
+	}
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	if _, ok := ds.buckets[name]; !ok {
+		return storage.ErrNotExist
+	}
+	delete(ds.buckets, name)
+	return nil
+}
+
+func (ds *distributedStore) Features() storage.Features {
+	return storage.Features{
+		"move":             true,
+		"server_side_move": true,
+		"server_side_copy": true,
+		"directories":      true,
+		"multipart":        true,
+	}
+}
+
+func (ds *distributedStore) Close() error {
+	for _, p := range ds.peers {
+		p.close()
+	}
+	return ds.local.Close()
+}
+
+// distributedBucket routes operations to local store or remote peer.
+type distributedBucket struct {
+	ds   *distributedStore
+	name string
+}
+
+var (
+	_ storage.Bucket       = (*distributedBucket)(nil)
+	_ storage.HasMultipart = (*distributedBucket)(nil)
+)
+
+func (b *distributedBucket) Name() string              { return b.name }
+func (b *distributedBucket) Features() storage.Features { return b.ds.Features() }
+
+func (b *distributedBucket) Info(_ context.Context) (*storage.BucketInfo, error) {
+	b.ds.mu.RLock()
+	created, ok := b.ds.buckets[b.name]
+	b.ds.mu.RUnlock()
+	if !ok {
+		return nil, storage.ErrNotExist
+	}
+	return &storage.BucketInfo{Name: b.name, CreatedAt: created}, nil
+}
+
+func (b *distributedBucket) Write(ctx context.Context, key string, src io.Reader, size int64, contentType string, opts storage.Options) (*storage.Object, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return nil, fmt.Errorf("herd: key is empty")
+	}
+	peer := b.ds.peerFor(b.name, key)
+	if peer == nil {
+		return b.ds.local.Bucket(b.name).Write(ctx, key, src, size, contentType, opts)
+	}
+	return peer.put(b.name, key, contentType, src, size)
+}
+
+func (b *distributedBucket) Open(ctx context.Context, key string, offset, length int64, opts storage.Options) (io.ReadCloser, *storage.Object, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return nil, nil, fmt.Errorf("herd: key is empty")
+	}
+	peer := b.ds.peerFor(b.name, key)
+	if peer == nil {
+		return b.ds.local.Bucket(b.name).Open(ctx, key, offset, length, opts)
+	}
+	return peer.get(b.name, key, offset, length)
+}
+
+func (b *distributedBucket) Stat(ctx context.Context, key string, opts storage.Options) (*storage.Object, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return nil, fmt.Errorf("herd: key is empty")
+	}
+	peer := b.ds.peerFor(b.name, key)
+	if peer == nil {
+		return b.ds.local.Bucket(b.name).Stat(ctx, key, opts)
+	}
+	return peer.stat(b.name, key)
+}
+
+func (b *distributedBucket) Delete(ctx context.Context, key string, opts storage.Options) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return fmt.Errorf("herd: key is empty")
+	}
+	peer := b.ds.peerFor(b.name, key)
+	if peer == nil {
+		return b.ds.local.Bucket(b.name).Delete(ctx, key, opts)
+	}
+	return peer.del(b.name, key)
+}
+
+func (b *distributedBucket) Copy(ctx context.Context, dstKey string, srcBucket, srcKey string, opts storage.Options) (*storage.Object, error) {
+	srcKey = strings.TrimSpace(srcKey)
+	dstKey = strings.TrimSpace(dstKey)
+	if srcKey == "" || dstKey == "" {
+		return nil, fmt.Errorf("herd: key is empty")
+	}
+	if srcBucket == "" {
+		srcBucket = b.name
+	}
+
+	srcPeer := b.ds.peerFor(srcBucket, srcKey)
+	dstPeer := b.ds.peerFor(b.name, dstKey)
+
+	// Both local: use store's native zero-copy.
+	if srcPeer == nil && dstPeer == nil {
+		return b.ds.local.Bucket(b.name).Copy(ctx, dstKey, srcBucket, srcKey, opts)
+	}
+
+	// Read from source (local or remote).
+	var rc io.ReadCloser
+	var obj *storage.Object
+	var err error
+	if srcPeer == nil {
+		rc, obj, err = b.ds.local.Bucket(srcBucket).Open(ctx, srcKey, 0, 0, nil)
+	} else {
+		rc, obj, err = srcPeer.get(srcBucket, srcKey, 0, 0)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+
+	// Write to destination (local or remote).
+	if dstPeer == nil {
+		return b.ds.local.Bucket(b.name).Write(ctx, dstKey, rc, obj.Size, obj.ContentType, nil)
+	}
+	return dstPeer.put(b.name, dstKey, obj.ContentType, rc, obj.Size)
+}
+
+func (b *distributedBucket) Move(ctx context.Context, dstKey string, srcBucket, srcKey string, opts storage.Options) (*storage.Object, error) {
+	obj, err := b.Copy(ctx, dstKey, srcBucket, srcKey, opts)
+	if err != nil {
+		return nil, err
+	}
+	if srcBucket == "" {
+		srcBucket = b.name
+	}
+	srcPeer := b.ds.peerFor(srcBucket, srcKey)
+	if srcPeer == nil {
+		_ = b.ds.local.Bucket(srcBucket).Delete(ctx, srcKey, nil)
+	} else {
+		_ = srcPeer.del(srcBucket, srcKey)
+	}
+	return obj, nil
+}
+
+func (b *distributedBucket) List(_ context.Context, prefix string, limit, offset int, opts storage.Options) (storage.ObjectIter, error) {
+	prefix = strings.TrimSpace(prefix)
+	// Fan out to local + all peers, merge results.
+	var all []*storage.Object
+
+	// Local.
+	bkt := b.ds.local.Bucket(b.name).(*bucket)
+	for _, r := range bkt.listAll(prefix) {
+		all = append(all, &storage.Object{
+			Bucket: b.name, Key: r.key, Size: r.entry.size,
+			ContentType: r.entry.contentType,
+			Created:     time.Unix(0, r.entry.created),
+			Updated:     time.Unix(0, r.entry.updated),
+		})
+	}
+
+	// Peers.
+	for _, peer := range b.ds.peers {
+		objs, err := peer.list(b.name, prefix, true)
+		if err != nil {
+			continue
+		}
+		all = append(all, objs...)
+	}
+
+	sort.Slice(all, func(i, j int) bool { return all[i].Key < all[j].Key })
+	if len(all) > 1 {
+		deduped := all[:1]
+		for i := 1; i < len(all); i++ {
+			if all[i].Key != all[i-1].Key {
+				deduped = append(deduped, all[i])
+			}
+		}
+		all = deduped
+	}
+
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(all) {
+		offset = len(all)
+	}
+	all = all[offset:]
+	if limit > 0 && limit < len(all) {
+		all = all[:limit]
+	}
+	return &objectIter{objects: all}, nil
+}
+
+func (b *distributedBucket) SignedURL(_ context.Context, _ string, _ string, _ time.Duration, _ storage.Options) (string, error) {
+	return "", storage.ErrUnsupported
+}
+
+// Multipart support for distributedBucket — gateway-side buffering.
+
+func (b *distributedBucket) InitMultipart(_ context.Context, key string, contentType string, _ storage.Options) (*storage.MultipartUpload, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return nil, fmt.Errorf("herd: key is empty")
+	}
+	uploadID := newUploadID()
+	mu := &storage.MultipartUpload{
+		Bucket:   b.name,
+		Key:      key,
+		UploadID: uploadID,
+	}
+	b.ds.mp.mu.Lock()
+	b.ds.mp.uploads[uploadID] = &multipartUpload{
+		mu:          mu,
+		contentType: contentType,
+		createdAt:   fastNowTime(),
+		parts:       make(map[int]*partData),
+	}
+	b.ds.mp.mu.Unlock()
+	return mu, nil
+}
+
+func (b *distributedBucket) UploadPart(_ context.Context, mu *storage.MultipartUpload, number int, src io.Reader, size int64, _ storage.Options) (*storage.PartInfo, error) {
+	if number <= 0 || number > 10000 {
+		return nil, fmt.Errorf("herd: part number %d out of range (1-10000)", number)
+	}
+	var data []byte
+	if size >= 0 {
+		data = make([]byte, size)
+		n, err := io.ReadFull(src, data)
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+			return nil, err
+		}
+		data = data[:n]
+	} else {
+		var buf bytes.Buffer
+		if _, err := io.Copy(&buf, src); err != nil {
+			return nil, err
+		}
+		data = buf.Bytes()
+	}
+	now := fastNowTime()
+	sum := md5Sum(data)
+	pd := &partData{
+		number:       number,
+		data:         data,
+		etag:         sum,
+		lastModified: now,
+	}
+	b.ds.mp.mu.Lock()
+	upload, ok := b.ds.mp.uploads[mu.UploadID]
+	if !ok {
+		b.ds.mp.mu.Unlock()
+		return nil, storage.ErrNotExist
+	}
+	upload.parts[number] = pd
+	b.ds.mp.mu.Unlock()
+	return &storage.PartInfo{
+		Number:       number,
+		Size:         int64(len(data)),
+		ETag:         sum,
+		LastModified: &now,
+	}, nil
+}
+
+func (b *distributedBucket) CopyPart(_ context.Context, _ *storage.MultipartUpload, _ int, _ storage.Options) (*storage.PartInfo, error) {
+	return nil, storage.ErrUnsupported
+}
+
+func (b *distributedBucket) ListParts(_ context.Context, mu *storage.MultipartUpload, limit, offset int, _ storage.Options) ([]*storage.PartInfo, error) {
+	b.ds.mp.mu.RLock()
+	defer b.ds.mp.mu.RUnlock()
+	upload, ok := b.ds.mp.uploads[mu.UploadID]
+	if !ok {
+		return nil, storage.ErrNotExist
+	}
+	parts := make([]*storage.PartInfo, 0, len(upload.parts))
+	for _, pd := range upload.parts {
+		lastMod := pd.lastModified
+		parts = append(parts, &storage.PartInfo{
+			Number:       pd.number,
+			Size:         int64(len(pd.data)),
+			ETag:         pd.etag,
+			LastModified: &lastMod,
+		})
+	}
+	sort.Slice(parts, func(i, j int) bool { return parts[i].Number < parts[j].Number })
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(parts) {
+		offset = len(parts)
+	}
+	parts = parts[offset:]
+	if limit > 0 && limit < len(parts) {
+		parts = parts[:limit]
+	}
+	return parts, nil
+}
+
+func (b *distributedBucket) CompleteMultipart(ctx context.Context, mu *storage.MultipartUpload, parts []*storage.PartInfo, _ storage.Options) (*storage.Object, error) {
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("herd: no parts to complete")
+	}
+	b.ds.mp.mu.Lock()
+	upload, ok := b.ds.mp.uploads[mu.UploadID]
+	if !ok {
+		b.ds.mp.mu.Unlock()
+		return nil, storage.ErrNotExist
+	}
+	sortedParts := make([]*storage.PartInfo, len(parts))
+	copy(sortedParts, parts)
+	sort.Slice(sortedParts, func(i, j int) bool { return sortedParts[i].Number < sortedParts[j].Number })
+	totalSize := 0
+	for _, part := range sortedParts {
+		pd, exists := upload.parts[part.Number]
+		if !exists {
+			b.ds.mp.mu.Unlock()
+			return nil, fmt.Errorf("herd: part %d not found", part.Number)
+		}
+		totalSize += len(pd.data)
+	}
+	data := make([]byte, 0, totalSize)
+	for _, part := range sortedParts {
+		pd := upload.parts[part.Number]
+		data = append(data, pd.data...)
+	}
+	contentType := upload.contentType
+	key := upload.mu.Key
+	delete(b.ds.mp.uploads, mu.UploadID)
+	b.ds.mp.mu.Unlock()
+
+	// Route assembled object to local or peer.
+	peer := b.ds.peerFor(b.name, key)
+	if peer == nil {
+		return b.ds.local.Bucket(b.name).Write(ctx, key, bytes.NewReader(data), int64(totalSize), contentType, nil)
+	}
+	return peer.put(b.name, key, contentType, bytes.NewReader(data), int64(totalSize))
+}
+
+func (b *distributedBucket) AbortMultipart(_ context.Context, mu *storage.MultipartUpload, _ storage.Options) error {
+	b.ds.mp.mu.Lock()
+	defer b.ds.mp.mu.Unlock()
+	if _, ok := b.ds.mp.uploads[mu.UploadID]; !ok {
+		return storage.ErrNotExist
+	}
+	delete(b.ds.mp.uploads, mu.UploadID)
+	return nil
+}
+
+// openDistributed creates a distributed store: local engine + TCP peers.
+// DSN: herd:///path?distributed=true&self=127.0.0.1:7241&peers=127.0.0.1:7241,127.0.0.1:7242,...
+func openDistributed(ctx context.Context, u *url.URL) (*distributedStore, error) {
+	q := u.Query()
+	selfAddr := q.Get("self")
+	allPeers := strings.Split(q.Get("peers"), ",")
+
+	// Open local embedded store (strip distributed params).
+	localQ := make(url.Values)
+	for k, v := range q {
+		if k != "distributed" && k != "self" && k != "peers" {
+			localQ[k] = v
+		}
+	}
+	localURL := &url.URL{Path: u.Path, RawQuery: localQ.Encode()}
+	local, err := openEmbedded(ctx, localURL)
+	if err != nil {
+		return nil, fmt.Errorf("herd: open local store: %w", err)
+	}
+
+	// Connect to remote peers (skip self).
+	var peers []*remoteNode
+	var allAddrs []string
+	for _, addr := range allPeers {
+		addr = strings.TrimSpace(addr)
+		if addr == "" {
+			continue
+		}
+		allAddrs = append(allAddrs, addr)
+		if addr == selfAddr {
+			continue // skip self
+		}
+		rn, err := newRemoteNode(addr)
+		if err != nil {
+			for _, p := range peers {
+				p.close()
+			}
+			local.Close()
+			return nil, fmt.Errorf("herd: connect to peer %s: %w", addr, err)
+		}
+		peers = append(peers, rn)
+	}
+
+	return &distributedStore{
+		selfAddr: selfAddr,
+		local:    local,
+		peers:    peers,
+		allAddrs: allAddrs,
+		buckets:  make(map[string]time.Time),
+		mp:       newMultipartRegistry(),
+	}, nil
+}
+
+// OpenDistributedFromEngine creates a distributedStore wrapping an existing store engine.
+// The engine is shared with a NodeServer in the same process — no new store is opened.
+func OpenDistributedFromEngine(engine StoreEngine, selfAddr string, allPeerAddrs []string) (storage.Storage, error) {
+	local := engine.(*store)
+
+	var peers []*remoteNode
+	var allAddrs []string
+	for _, addr := range allPeerAddrs {
+		addr = strings.TrimSpace(addr)
+		if addr == "" {
+			continue
+		}
+		allAddrs = append(allAddrs, addr)
+		if addr == selfAddr {
+			continue // skip self
+		}
+		rn, err := newRemoteNode(addr)
+		if err != nil {
+			for _, p := range peers {
+				p.close()
+			}
+			return nil, fmt.Errorf("herd: connect to peer %s: %w", addr, err)
+		}
+		peers = append(peers, rn)
+	}
+
+	return &distributedStore{
+		selfAddr: selfAddr,
+		local:    local,
+		peers:    peers,
+		allAddrs: allAddrs,
+		buckets:  make(map[string]time.Time),
+		mp:       newMultipartRegistry(),
+	}, nil
+}
+
 // StoreEngine is the exported interface for accessing the underlying store.
 type StoreEngine interface {
 	storage.Storage
