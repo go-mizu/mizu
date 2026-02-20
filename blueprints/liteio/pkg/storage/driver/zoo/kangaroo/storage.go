@@ -750,7 +750,7 @@ func newKLog(path string, capacity int64) (*klogFile, error) {
 		return nil, fmt.Errorf("kangaroo: open klog: %w", err)
 	}
 
-	// Pre-allocate file.
+	// Ensure file is at least as large as capacity for circular WriteAt.
 	info, _ := f.Stat()
 	if info.Size() < capacity {
 		if err := f.Truncate(capacity); err != nil {
@@ -944,6 +944,7 @@ func newKSet(path string, capacity int64, pageSize, numPages int) (*ksetFile, er
 		return nil, fmt.Errorf("kangaroo: open kset: %w", err)
 	}
 
+	// Ensure file is at least as large as capacity for page-based random access.
 	info, _ := f.Stat()
 	if info.Size() < capacity {
 		if err := f.Truncate(capacity); err != nil {

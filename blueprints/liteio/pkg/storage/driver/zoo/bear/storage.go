@@ -64,8 +64,20 @@ const (
 	innerChildSize = 4    // childPage(4)
 	leafSlotSize  = 4 + 2 // keyHead(4) + entryOffset(2)
 
-	// Entry overhead: keyLen(2) + ctLen(2) + valLen(8) + created(8) + updated(8) = 28
-	leafEntryOverhead = 2 + 2 + 8 + 8 + 8
+	// Entry overhead for inline values:
+	// keyLen(2) + ctLen(2) + flags(1) + valLen(4) + created(8) + updated(8) = 25
+	leafEntryOverheadInline = 2 + 2 + 1 + 4 + 8 + 8
+
+	// Entry overhead for external values (stored in value log):
+	// keyLen(2) + ctLen(2) + flags(1) + valOffset(8) + valLen(8) + created(8) + updated(8) = 37
+	leafEntryOverheadExternal = 2 + 2 + 1 + 8 + 8 + 8 + 8
+
+	// Value log threshold: values larger than this go to the value log.
+	valLogThreshold = 2048
+
+	// Flags byte values for leaf entry encoding.
+	flagInline   byte = 0x00
+	flagExternal byte = 0x01
 
 	// Minimum number of entries before page is considered for merge
 	minLeafEntries = 2
@@ -191,6 +203,11 @@ type store struct {
 	entryCount uint64
 	freeHead   uint32
 
+	// Value log for large values (protected by valMu).
+	valMu     sync.Mutex
+	valLog    *os.File
+	valLogPos int64
+
 	// Bucket metadata: name -> creation time
 	bucketsMu sync.RWMutex
 	buckets   map[string]time.Time
@@ -244,9 +261,117 @@ func newStore(root, syncMode string) (*store, error) {
 	}
 
 	s.readHeader()
+
+	// Open or create the value log for large values.
+	if err := s.openValueLog(); err != nil {
+		_ = syscall.Munmap(s.mmap)
+		f.Close()
+		return nil, err
+	}
+
 	s.loadBucketMeta()
 
 	return s, nil
+}
+
+// prepareEntry creates a leafEntry, writing the value to the value log if
+// it exceeds valLogThreshold. Must be called BEFORE acquiring mu.
+func (s *store) prepareEntry(key, contentType, value []byte, created, updated int64) (*leafEntry, error) {
+	if len(value) > valLogThreshold {
+		offset, err := s.writeToValueLog(value)
+		if err != nil {
+			return nil, err
+		}
+		return &leafEntry{
+			key:         key,
+			contentType: contentType,
+			created:     created,
+			updated:     updated,
+			valOffset:   offset,
+			valLen:      int64(len(value)),
+		}, nil
+	}
+	return &leafEntry{
+		key:         key,
+		contentType: contentType,
+		value:       value,
+		created:     created,
+		updated:     updated,
+		valOffset:   -1,
+	}, nil
+}
+
+// writeToValueLog appends data to the value log and returns the offset
+// where the data was written. Caller must NOT hold valMu.
+func (s *store) writeToValueLog(data []byte) (int64, error) {
+	s.valMu.Lock()
+	defer s.valMu.Unlock()
+
+	offset := s.valLogPos
+	_, err := s.valLog.WriteAt(data, offset)
+	if err != nil {
+		return 0, fmt.Errorf("bear: write value log: %w", err)
+	}
+	s.valLogPos += int64(len(data))
+	if s.syncMode == "msync" {
+		_ = s.valLog.Sync()
+	}
+	return offset, nil
+}
+
+// readFromValueLog reads length bytes from the value log at the given offset.
+func (s *store) readFromValueLog(offset, length int64) ([]byte, error) {
+	buf := make([]byte, length)
+	_, err := s.valLog.ReadAt(buf, offset)
+	if err != nil {
+		return nil, fmt.Errorf("bear: read value log at offset %d length %d: %w", offset, length, err)
+	}
+	return buf, nil
+}
+
+// resolveValue resolves the value for a leaf entry. If the value is stored
+// externally in the value log, it reads it from there. Otherwise, it
+// returns the inline value. The returned entry has the value field populated.
+func (s *store) resolveValue(e *leafEntry) (*leafEntry, error) {
+	if e == nil {
+		return nil, nil
+	}
+	if e.valOffset < 0 {
+		// Inline — value already populated
+		return e, nil
+	}
+	val, err := s.readFromValueLog(e.valOffset, e.valLen)
+	if err != nil {
+		return nil, err
+	}
+	// Return a copy with value filled in
+	return &leafEntry{
+		key:         e.key,
+		contentType: e.contentType,
+		value:       val,
+		created:     e.created,
+		updated:     e.updated,
+		valOffset:   e.valOffset,
+		valLen:      e.valLen,
+	}, nil
+}
+
+// openValueLog opens (or creates) the append-only value log file and seeks
+// to the end so that subsequent writes append correctly.
+func (s *store) openValueLog() error {
+	vlPath := filepath.Join(s.root, "values.log")
+	vf, err := os.OpenFile(vlPath, os.O_RDWR|os.O_CREATE, filePerms)
+	if err != nil {
+		return fmt.Errorf("bear: open value log: %w", err)
+	}
+	info, err := vf.Stat()
+	if err != nil {
+		vf.Close()
+		return fmt.Errorf("bear: stat value log: %w", err)
+	}
+	s.valLog = vf
+	s.valLogPos = info.Size()
+	return nil
 }
 
 // initFile creates the initial file: header + empty root leaf, pre-allocated
@@ -483,17 +608,27 @@ func keyHead(k []byte) uint32 {
 // ---------------------------------------------------------------------------
 
 // leafEntry is an in-memory representation of a leaf entry.
+// When valOffset >= 0 the value lives in the external value log at that
+// offset (valLen bytes). When valOffset < 0 the value is stored inline
+// in the B-tree page and the value field holds the actual data.
 type leafEntry struct {
 	key         []byte
 	contentType []byte
-	value       []byte
+	value       []byte // inline value (only when valOffset < 0)
 	created     int64
 	updated     int64
+	valOffset   int64 // >=0: external offset in value log, <0: inline
+	valLen      int64 // length of value in value log (only when valOffset >= 0)
 }
 
 // entrySize returns the on-disk size of the entry (excluding slot).
 func (e *leafEntry) entrySize() int {
-	return leafEntryOverhead + len(e.key) + len(e.contentType) + len(e.value)
+	if e.valOffset >= 0 {
+		// External: no inline value data, just offset+length
+		return leafEntryOverheadExternal + len(e.key) + len(e.contentType)
+	}
+	// Inline: value data is stored in the page
+	return leafEntryOverheadInline + len(e.key) + len(e.contentType) + len(e.value)
 }
 
 // writeEntry writes the entry to dst and returns bytes written.
@@ -507,10 +642,25 @@ func (e *leafEntry) writeEntry(dst []byte) int {
 	off += 2
 	copy(dst[off:], e.contentType)
 	off += len(e.contentType)
-	binary.LittleEndian.PutUint64(dst[off:], uint64(len(e.value)))
-	off += 8
-	copy(dst[off:], e.value)
-	off += len(e.value)
+
+	if e.valOffset >= 0 {
+		// External value: flags(1) + valOffset(8) + valLen(8)
+		dst[off] = flagExternal
+		off++
+		binary.LittleEndian.PutUint64(dst[off:], uint64(e.valOffset))
+		off += 8
+		binary.LittleEndian.PutUint64(dst[off:], uint64(e.valLen))
+		off += 8
+	} else {
+		// Inline value: flags(1) + valLen(4) + val
+		dst[off] = flagInline
+		off++
+		binary.LittleEndian.PutUint32(dst[off:], uint32(len(e.value)))
+		off += 4
+		copy(dst[off:], e.value)
+		off += len(e.value)
+	}
+
 	binary.LittleEndian.PutUint64(dst[off:], uint64(e.created))
 	off += 8
 	binary.LittleEndian.PutUint64(dst[off:], uint64(e.updated))
@@ -536,36 +686,59 @@ func readLeafEntry(pg []byte, offset uint16) *leafEntry {
 
 	ctLen := int(binary.LittleEndian.Uint16(pg[off:]))
 	off += 2
-	if off+ctLen+8 > len(pg) {
+	if off+ctLen+1 > len(pg) {
 		return nil
 	}
 	ct := make([]byte, ctLen)
 	copy(ct, pg[off:off+ctLen])
 	off += ctLen
 
-	if off+8 > len(pg) {
+	// Read flags byte
+	if off+1 > len(pg) {
 		return nil
 	}
-	valLen := int(binary.LittleEndian.Uint64(pg[off:]))
-	off += 8
-	if off+valLen+16 > len(pg) {
-		return nil
-	}
-	val := make([]byte, valLen)
-	copy(val, pg[off:off+valLen])
-	off += valLen
+	flags := pg[off]
+	off++
 
-	created := int64(binary.LittleEndian.Uint64(pg[off:]))
-	off += 8
-	updated := int64(binary.LittleEndian.Uint64(pg[off:]))
-
-	return &leafEntry{
+	e := &leafEntry{
 		key:         key,
 		contentType: ct,
-		value:       val,
-		created:     created,
-		updated:     updated,
+		valOffset:   -1, // default: inline
 	}
+
+	if flags == flagExternal {
+		// External value: valOffset(8) + valLen(8)
+		if off+16+16 > len(pg) {
+			return nil
+		}
+		e.valOffset = int64(binary.LittleEndian.Uint64(pg[off:]))
+		off += 8
+		e.valLen = int64(binary.LittleEndian.Uint64(pg[off:]))
+		off += 8
+	} else {
+		// Inline value: valLen(4) + val
+		if off+4 > len(pg) {
+			return nil
+		}
+		valLen := int(binary.LittleEndian.Uint32(pg[off:]))
+		off += 4
+		if off+valLen+16 > len(pg) {
+			return nil
+		}
+		val := make([]byte, valLen)
+		copy(val, pg[off:off+valLen])
+		off += valLen
+		e.value = val
+	}
+
+	if off+16 > len(pg) {
+		return nil
+	}
+	e.created = int64(binary.LittleEndian.Uint64(pg[off:]))
+	off += 8
+	e.updated = int64(binary.LittleEndian.Uint64(pg[off:]))
+
+	return e
 }
 
 // readAllLeafEntries reads all entries from a leaf page.
@@ -869,6 +1042,8 @@ func (s *store) insertIntoLeaf(pageID uint32, entry *leafEntry) (*splitResult, e
 				e.contentType = entry.contentType
 				e.value = entry.value
 				e.updated = entry.updated
+				e.valOffset = entry.valOffset
+				e.valLen = entry.valLen
 				break
 			}
 		}
@@ -1135,9 +1310,10 @@ func (s *store) loadBucketMeta() {
 func (s *store) saveBucketMeta(name string, created time.Time) error {
 	key := bucketMetaKey(name)
 	entry := &leafEntry{
-		key:     key,
-		created: created.UnixNano(),
-		updated: created.UnixNano(),
+		key:       key,
+		created:   created.UnixNano(),
+		updated:   created.UnixNano(),
+		valOffset: -1, // inline (no value data)
 	}
 	_, err := s.btreeInsert(entry)
 	return err
@@ -1328,6 +1504,14 @@ func (s *store) Close() error {
 	s.mu.Unlock()
 	s.mmapMu.Unlock()
 
+	// Close value log
+	s.valMu.Lock()
+	if s.valLog != nil {
+		_ = s.valLog.Close()
+		s.valLog = nil
+	}
+	s.valMu.Unlock()
+
 	if s.file != nil {
 		err := s.file.Close()
 		s.file = nil
@@ -1407,12 +1591,10 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 	ck := compositeKey(b.name, relKey)
 	now := time.Now()
 
-	entry := &leafEntry{
-		key:         ck,
-		contentType: []byte(contentType),
-		value:       data,
-		created:     now.UnixNano(),
-		updated:     now.UnixNano(),
+	// Write large values to the value log before acquiring the main lock.
+	entry, err := b.store.prepareEntry(ck, []byte(contentType), data, now.UnixNano(), now.UnixNano())
+	if err != nil {
+		return nil, fmt.Errorf("bear: prepare entry: %w", err)
 	}
 
 	// Pre-grow the mmap so that allocPage inside the write lock won't
@@ -1466,6 +1648,12 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 
 	if entry == nil {
 		return nil, nil, storage.ErrNotExist
+	}
+
+	// Resolve external values from the value log.
+	entry, err = b.store.resolveValue(entry)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	obj := &storage.Object{
@@ -1533,10 +1721,16 @@ func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*s
 		return nil, storage.ErrNotExist
 	}
 
+	// Compute size: for external values use valLen, for inline use len(value).
+	sz := int64(len(entry.value))
+	if entry.valOffset >= 0 {
+		sz = entry.valLen
+	}
+
 	return &storage.Object{
 		Bucket:      b.name,
 		Key:         relToKey(relKey),
-		Size:        int64(len(entry.value)),
+		Size:        sz,
 		ContentType: string(entry.contentType),
 		Created:     time.Unix(0, entry.created),
 		Updated:     time.Unix(0, entry.updated),
@@ -1618,26 +1812,32 @@ func (b *bucket) Copy(ctx context.Context, dstKey string, srcBucket, srcKey stri
 	srcBucketName := safeBucketName(strings.TrimSpace(srcBucket))
 	srcCK := compositeKey(srcBucketName, srcRel)
 
-	b.store.ensureSpace(4)
-
-	b.store.mu.Lock()
+	// Read the source entry (under read lock) and resolve its value.
+	b.store.mu.RLock()
 	srcEntry := b.store.btreeGet(srcCK)
+	b.store.mu.RUnlock()
+
 	if srcEntry == nil {
-		b.store.mu.Unlock()
 		return nil, storage.ErrNotExist
+	}
+
+	srcEntry, err = b.store.resolveValue(srcEntry)
+	if err != nil {
+		return nil, fmt.Errorf("bear: copy resolve src: %w", err)
 	}
 
 	dstCK := compositeKey(b.name, dstRel)
 	now := time.Now()
 
-	newEntry := &leafEntry{
-		key:         dstCK,
-		contentType: copyBytes(srcEntry.contentType),
-		value:       copyBytes(srcEntry.value),
-		created:     now.UnixNano(),
-		updated:     now.UnixNano(),
+	// Prepare the destination entry (may write to value log).
+	newEntry, err := b.store.prepareEntry(dstCK, copyBytes(srcEntry.contentType), copyBytes(srcEntry.value), now.UnixNano(), now.UnixNano())
+	if err != nil {
+		return nil, fmt.Errorf("bear: copy prepare: %w", err)
 	}
 
+	b.store.ensureSpace(4)
+
+	b.store.mu.Lock()
 	existing := b.store.btreeGet(dstCK)
 	if existing == nil {
 		b.store.entryCount++
@@ -1679,26 +1879,34 @@ func (b *bucket) Move(ctx context.Context, dstKey string, srcBucket, srcKey stri
 	srcBucketName := safeBucketName(strings.TrimSpace(srcBucket))
 	srcCK := compositeKey(srcBucketName, srcRel)
 
-	b.store.ensureSpace(4)
-
-	b.store.mu.Lock()
+	// Read the source entry (under read lock) and resolve its value.
+	b.store.mu.RLock()
 	srcEntry := b.store.btreeGet(srcCK)
+	b.store.mu.RUnlock()
+
 	if srcEntry == nil {
-		b.store.mu.Unlock()
 		return nil, storage.ErrNotExist
+	}
+
+	srcEntry, err = b.store.resolveValue(srcEntry)
+	if err != nil {
+		return nil, fmt.Errorf("bear: move resolve src: %w", err)
 	}
 
 	dstCK := compositeKey(b.name, dstRel)
 	now := time.Now()
 
-	newEntry := &leafEntry{
-		key:         dstCK,
-		contentType: copyBytes(srcEntry.contentType),
-		value:       copyBytes(srcEntry.value),
-		created:     srcEntry.created,
-		updated:     now.UnixNano(),
+	// Prepare the destination entry (may write to value log).
+	newEntry, err := b.store.prepareEntry(dstCK, copyBytes(srcEntry.contentType), copyBytes(srcEntry.value), srcEntry.created, now.UnixNano())
+	if err != nil {
+		return nil, fmt.Errorf("bear: move prepare: %w", err)
 	}
 
+	valSize := int64(len(srcEntry.value))
+
+	b.store.ensureSpace(4)
+
+	b.store.mu.Lock()
 	existing := b.store.btreeGet(dstCK)
 	if existing == nil {
 		b.store.entryCount++
@@ -1721,7 +1929,7 @@ func (b *bucket) Move(ctx context.Context, dstKey string, srcBucket, srcKey stri
 	return &storage.Object{
 		Bucket:      b.name,
 		Key:         relToKey(dstRel),
-		Size:        int64(len(newEntry.value)),
+		Size:        valSize,
 		ContentType: string(newEntry.contentType),
 		Created:     time.Unix(0, newEntry.created),
 		Updated:     now,
@@ -1798,10 +2006,16 @@ func (b *bucket) List(ctx context.Context, prefix string, limit, offset int, opt
 			}
 		}
 
+		// Compute size: for external values use valLen, for inline use len(value).
+		sz := int64(len(e.value))
+		if e.valOffset >= 0 {
+			sz = e.valLen
+		}
+
 		objects = append(objects, &storage.Object{
 			Bucket:      b.name,
 			Key:         eKey,
-			Size:        int64(len(e.value)),
+			Size:        sz,
 			ContentType: string(e.contentType),
 			Created:     time.Unix(0, e.created),
 			Updated:     time.Unix(0, e.updated),
@@ -2099,6 +2313,12 @@ func (b *bucket) CopyPart(ctx context.Context, mu *storage.MultipartUpload, numb
 		return nil, storage.ErrNotExist
 	}
 
+	// Resolve external values from the value log.
+	srcEntry, err = b.store.resolveValue(srcEntry)
+	if err != nil {
+		return nil, fmt.Errorf("bear: copy part resolve: %w", err)
+	}
+
 	data := srcEntry.value
 	if srcOffset > 0 {
 		if srcOffset >= int64(len(data)) {
@@ -2185,12 +2405,10 @@ func (b *bucket) CompleteMultipart(ctx context.Context, mu *storage.MultipartUpl
 	ck := compositeKey(b.name, st.key)
 	now := time.Now()
 
-	entry := &leafEntry{
-		key:         ck,
-		contentType: []byte(st.contentType),
-		value:       assembled,
-		created:     now.UnixNano(),
-		updated:     now.UnixNano(),
+	// Write large values to the value log before acquiring the main lock.
+	entry, err := b.store.prepareEntry(ck, []byte(st.contentType), assembled, now.UnixNano(), now.UnixNano())
+	if err != nil {
+		return nil, fmt.Errorf("bear: complete multipart prepare: %w", err)
 	}
 
 	b.store.ensureSpace(4)
@@ -2202,7 +2420,7 @@ func (b *bucket) CompleteMultipart(ctx context.Context, mu *storage.MultipartUpl
 	} else {
 		b.store.entryCount++
 	}
-	_, err := b.store.btreeInsert(entry)
+	_, err = b.store.btreeInsert(entry)
 	b.store.writeHeader()
 	b.store.syncPages()
 	b.store.mu.Unlock()

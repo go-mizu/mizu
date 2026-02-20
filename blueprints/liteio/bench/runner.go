@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -248,7 +250,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			}
 		}
 
-		if err := r.benchmarkDriver(ctx, driver); err != nil {
+		if err := r.benchmarkDriverWithTracker(ctx, driver, tracker); err != nil {
 			// Check if error is due to context cancellation
 			if ctx.Err() != nil {
 				r.logger("Driver %s cancelled", driver.Name)
@@ -315,10 +317,25 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			}
 		}
 
+		// Force GC between drivers to reclaim memory from abandoned goroutines.
+		runtime.GC()
+		debug.FreeOSMemory()
+
+		// Save incremental report after each driver completes.
+		// This prevents data loss if the process is OOM-killed later.
+		if r.config.OutputDir != "" && len(r.config.OutputFormats) > 0 {
+			interim := r.generateReport()
+			if err := interim.SaveAll(r.config.OutputDir, r.config.OutputFormats); err != nil {
+				r.logger("  Warning: incremental save failed: %v", err)
+			} else {
+				r.logger("  Incremental report saved (%d/%d drivers)", i+1, len(available))
+			}
+		}
+
 		r.logger("")
 	}
 
-	// Generate report
+	// Generate final report
 	return r.generateReport(), nil
 }
 
@@ -361,6 +378,10 @@ func (r *Runner) detectDrivers(ctx context.Context) []DriverConfig {
 }
 
 func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error {
+	return r.benchmarkDriverWithTracker(ctx, driver, nil)
+}
+
+func (r *Runner) benchmarkDriverWithTracker(ctx context.Context, driver DriverConfig, tracker *ResourceTracker) error {
 	// Check for context cancellation
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -370,7 +391,9 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 	if err != nil {
 		return fmt.Errorf("open storage: %w", err)
 	}
-	defer st.Close()
+	// NOTE: we close st explicitly at the end, NOT via defer, because
+	// timed-out benchmark goroutines may still be accessing the storage.
+	// Closing while they run causes SIGSEGV on mmap'd drivers.
 
 	// Ensure bucket exists
 	st.CreateBucket(ctx, driver.Bucket, nil)
@@ -382,15 +405,28 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 		r.logger("  Note: %s limited to C%d", driver.Name, maxConc)
 	}
 
+	// Take resource snapshot before benchmarks start.
+	if tracker != nil {
+		tracker.Snapshot(fmt.Sprintf("%s/before", driver.Name))
+	}
+
+	// Per-driver timeout flag: if any benchmark times out (likely deadlock),
+	// skip all remaining benchmarks since the leaked goroutine holds locks.
+	var timedOut bool
+
 	// Run write benchmarks
 	for _, size := range r.config.ObjectSizes {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 		label := fmt.Sprintf("Write/%s", SizeLabel(size))
-		r.runBenchmark(ctx, bucket, label, func() error {
+		r.runBenchmark(ctx, bucket, label, &timedOut, func() error {
 			return r.benchmarkWrite(ctx, bucket, driver.Name, size)
 		})
+		// Take resource snapshot after each write benchmark to track memory growth.
+		if tracker != nil {
+			tracker.Snapshot(fmt.Sprintf("%s/after-write/%s", driver.Name, SizeLabel(size)))
+		}
 	}
 
 	// Run read benchmarks
@@ -399,7 +435,7 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 			return ctx.Err()
 		}
 		label := fmt.Sprintf("Read/%s", SizeLabel(size))
-		r.runBenchmark(ctx, bucket, label, func() error {
+		r.runBenchmark(ctx, bucket, label, &timedOut, func() error {
 			return r.benchmarkRead(ctx, bucket, driver.Name, size)
 		})
 	}
@@ -408,7 +444,7 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	r.runBenchmark(ctx, bucket, "Stat", func() error {
+	r.runBenchmark(ctx, bucket, "Stat", &timedOut, func() error {
 		return r.benchmarkStat(ctx, bucket, driver.Name)
 	})
 
@@ -416,7 +452,7 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	r.runBenchmark(ctx, bucket, "List", func() error {
+	r.runBenchmark(ctx, bucket, "List", &timedOut, func() error {
 		return r.benchmarkList(ctx, bucket, driver.Name)
 	})
 
@@ -424,7 +460,7 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	r.runBenchmark(ctx, bucket, "Delete", func() error {
+	r.runBenchmark(ctx, bucket, "Delete", &timedOut, func() error {
 		return r.benchmarkDelete(ctx, bucket, driver.Name)
 	})
 
@@ -453,10 +489,10 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 				continue
 			}
 
-			r.runBenchmark(ctx, bucket, fmt.Sprintf("ParallelWrite/C%d", conc), func() error {
+			r.runBenchmark(ctx, bucket, fmt.Sprintf("ParallelWrite/C%d", conc), &timedOut, func() error {
 				return r.benchmarkParallelWrite(ctx, bucket, driver.Name, size, conc)
 			})
-			r.runBenchmark(ctx, bucket, fmt.Sprintf("ParallelRead/C%d", conc), func() error {
+			r.runBenchmark(ctx, bucket, fmt.Sprintf("ParallelRead/C%d", conc), &timedOut, func() error {
 				return r.benchmarkParallelRead(ctx, bucket, driver.Name, size, conc)
 			})
 		}
@@ -466,7 +502,7 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	r.runBenchmark(ctx, bucket, "RangeRead", func() error {
+	r.runBenchmark(ctx, bucket, "RangeRead", &timedOut, func() error {
 		return r.benchmarkRangeRead(ctx, bucket, driver.Name)
 	})
 
@@ -476,7 +512,7 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 			return ctx.Err()
 		}
 		label := fmt.Sprintf("Copy/%s", SizeLabel(size))
-		r.runBenchmark(ctx, bucket, label, func() error {
+		r.runBenchmark(ctx, bucket, label, &timedOut, func() error {
 			return r.benchmarkCopy(ctx, bucket, driver.Name, size)
 		})
 	}
@@ -489,7 +525,7 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	r.runBenchmark(ctx, bucket, "MixedWorkload", func() error {
+	r.runBenchmark(ctx, bucket, "MixedWorkload", &timedOut, func() error {
 		return r.benchmarkMixedWorkload(ctx, bucket, driver.Name, maxConc)
 	})
 
@@ -501,7 +537,7 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	r.runBenchmark(ctx, bucket, "Multipart", func() error {
+	r.runBenchmark(ctx, bucket, "Multipart", &timedOut, func() error {
 		return r.benchmarkMultipart(ctx, bucket, driver.Name)
 	})
 
@@ -513,7 +549,7 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	r.runBenchmark(ctx, bucket, "EdgeCases", func() error {
+	r.runBenchmark(ctx, bucket, "EdgeCases", &timedOut, func() error {
 		return r.benchmarkEdgeCases(ctx, bucket, driver.Name)
 	})
 
@@ -526,13 +562,27 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 		return ctx.Err()
 	}
 	if len(r.config.ScaleCounts) > 0 {
-		r.runBenchmark(ctx, bucket, "Scale", func() error {
+		r.runBenchmark(ctx, bucket, "Scale", &timedOut, func() error {
 			return r.benchmarkScale(ctx, bucket, driver.Name)
 		})
 	}
 
 	if r.config.Verbose {
 		r.logger("  [debug] Scale done, driver %s complete", driver.Name)
+	}
+
+	// Take resource snapshot after all benchmarks complete.
+	if tracker != nil {
+		tracker.Snapshot(fmt.Sprintf("%s/after", driver.Name))
+	}
+
+	// Only close storage if no benchmarks timed out or panicked.
+	// Abandoned goroutines may still hold references to the storage;
+	// closing it (unmapping files) would cause SIGSEGV.
+	if !timedOut {
+		st.Close()
+	} else {
+		r.logger("  Warning: storage not closed (abandoned goroutines from timeout)")
 	}
 
 	return nil
@@ -1057,7 +1107,7 @@ func (r *Runner) benchmarkParallelRead(ctx context.Context, bucket storage.Bucke
 				}
 				defer opCancel()
 
-				idx := atomic.AddUint64(&keyIdx, 1) % uint64(numObjects)
+				idx := atomic.AddUint64(&keyIdx, 1) % uint64(len(keys))
 				opStart := time.Now()
 
 				rc, _, err := bucket.Open(opCtx, keys[idx], 0, 0, nil)
@@ -1197,7 +1247,13 @@ func (r *Runner) cleanupBucket(ctx context.Context, bucket storage.Bucket) {
 	fmt.Print("\r" + strings.Repeat(" ", 60) + "\r")
 }
 
-func (r *Runner) runBenchmark(ctx context.Context, bucket storage.Bucket, label string, fn func() error) {
+func (r *Runner) runBenchmark(ctx context.Context, _ storage.Bucket, label string, timedOut *bool, fn func() error) {
+	// If a previous benchmark on this driver timed out, skip all remaining.
+	if *timedOut {
+		r.logger("  %s: skipped (previous timeout)", label)
+		return
+	}
+
 	// Check filter - skip if filter is set and label doesn't match
 	if r.config.Filter != "" && !strings.Contains(label, r.config.Filter) {
 		if r.config.Verbose {
@@ -1206,8 +1262,38 @@ func (r *Runner) runBenchmark(ctx context.Context, bucket storage.Bucket, label 
 		return
 	}
 
-	if err := fn(); err != nil {
-		r.logger("  %s failed: %v", label, err)
+	// Per-benchmark timeout: 10x benchTime, minimum 30s.
+	bmTimeout := r.config.BenchTime * 10
+	if bmTimeout < 30*time.Second {
+		bmTimeout = 30 * time.Second
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				done <- fmt.Errorf("PANIC: %v", r)
+			}
+		}()
+		done <- fn()
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			errStr := err.Error()
+			if strings.HasPrefix(errStr, "PANIC:") {
+				*timedOut = true // skip remaining benchmarks after a panic
+				r.logger("  %s: %s (skipping remaining benchmarks for this driver)", label, errStr)
+			} else {
+				r.logger("  %s failed: %v", label, err)
+			}
+		}
+	case <-time.After(bmTimeout):
+		*timedOut = true
+		r.logger("  %s: TIMEOUT after %v (skipping remaining benchmarks for this driver)", label, bmTimeout)
+	case <-ctx.Done():
+		r.logger("  %s: cancelled", label)
 	}
 }
 

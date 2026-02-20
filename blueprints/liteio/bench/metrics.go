@@ -2,6 +2,7 @@ package bench
 
 import (
 	"io"
+	"math"
 	"sort"
 	"sync"
 	"time"
@@ -9,22 +10,26 @@ import (
 
 // Metrics holds benchmark metrics for a single operation type.
 type Metrics struct {
-	Operation  string        `json:"operation"`
-	Driver     string        `json:"driver"`
-	ObjectSize int           `json:"object_size,omitempty"`
-	Iterations int           `json:"iterations"`
-	TotalTime  time.Duration `json:"total_time"`
-	MinLatency time.Duration `json:"min_latency"`
-	MaxLatency time.Duration `json:"max_latency"`
-	AvgLatency time.Duration `json:"avg_latency"`
-	P50Latency time.Duration `json:"p50_latency"`
-	P95Latency time.Duration `json:"p95_latency"`
-	P99Latency time.Duration `json:"p99_latency"`
-	Throughput float64       `json:"throughput"`  // MB/s for data ops
-	OpsPerSec  float64       `json:"ops_per_sec"` // operations per second
-	TotalBytes int64         `json:"total_bytes,omitempty"`
-	Errors     int           `json:"errors"`
-	LastError  string        `json:"last_error,omitempty"`
+	Operation     string        `json:"operation"`
+	Driver        string        `json:"driver"`
+	ObjectSize    int           `json:"object_size,omitempty"`
+	Iterations    int           `json:"iterations"`
+	TotalTime     time.Duration `json:"total_time"`
+	MinLatency    time.Duration `json:"min_latency"`
+	MaxLatency    time.Duration `json:"max_latency"`
+	AvgLatency    time.Duration `json:"avg_latency"`
+	P50Latency    time.Duration `json:"p50_latency"`
+	P95Latency    time.Duration `json:"p95_latency"`
+	P99Latency    time.Duration `json:"p99_latency"`
+	StdDevLatency time.Duration `json:"stddev_latency"`          // standard deviation
+	P999Latency   time.Duration `json:"p999_latency"`            // P99.9 percentile
+	Throughput    float64       `json:"throughput"`               // MB/s for data ops
+	OpsPerSec     float64       `json:"ops_per_sec"`             // operations per second
+	TotalBytes    int64         `json:"total_bytes,omitempty"`
+	Errors        int           `json:"errors"`
+	LastError     string        `json:"last_error,omitempty"`
+	AllocsPerOp   int64         `json:"allocs_per_op,omitempty"` // tracked if available
+	BytesPerOp    int64         `json:"bytes_per_op,omitempty"`  // tracked if available
 
 	// TTFB (Time To First Byte) metrics for read operations
 	TTFBMin time.Duration `json:"ttfb_min,omitempty"`
@@ -133,6 +138,50 @@ func (c *Collector) Stats() (min, max, avg, p50, p95, p99 time.Duration, total t
 	return
 }
 
+// StdDev computes the standard deviation of collected samples.
+func (c *Collector) StdDev() time.Duration {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	n := len(c.samples)
+	if n < 2 {
+		return 0
+	}
+
+	// Compute mean
+	var sum float64
+	for _, s := range c.samples {
+		sum += float64(s)
+	}
+	mean := sum / float64(n)
+
+	// Compute variance
+	var variance float64
+	for _, s := range c.samples {
+		diff := float64(s) - mean
+		variance += diff * diff
+	}
+	variance /= float64(n - 1) // sample standard deviation
+
+	return time.Duration(math.Sqrt(variance))
+}
+
+// P999 computes the P99.9 percentile of collected samples.
+func (c *Collector) P999() time.Duration {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if len(c.samples) == 0 {
+		return 0
+	}
+
+	sorted := make([]time.Duration, len(c.samples))
+	copy(sorted, c.samples)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+
+	return percentileFloat(sorted, 99.9)
+}
+
 // TTFBStats computes TTFB statistics from collected samples.
 func (c *Collector) TTFBStats() (min, max, avg, p50, p95, p99 time.Duration) {
 	c.mu.Lock()
@@ -166,6 +215,8 @@ func (c *Collector) TTFBStats() (min, max, avg, p50, p95, p99 time.Duration) {
 // Metrics returns a Metrics struct from collected data.
 func (c *Collector) Metrics(operation, driver string, objectSize int) *Metrics {
 	min, max, avg, p50, p95, p99, total := c.Stats()
+	stddev := c.StdDev()
+	p999 := c.P999()
 	ttfbMin, ttfbMax, ttfbAvg, ttfbP50, ttfbP95, ttfbP99 := c.TTFBStats()
 
 	c.mu.Lock()
@@ -175,19 +226,21 @@ func (c *Collector) Metrics(operation, driver string, objectSize int) *Metrics {
 	c.mu.Unlock()
 
 	m := &Metrics{
-		Operation:  operation,
-		Driver:     driver,
-		ObjectSize: objectSize,
-		Iterations: iterations,
-		TotalTime:  total,
-		MinLatency: min,
-		MaxLatency: max,
-		AvgLatency: avg,
-		P50Latency: p50,
-		P95Latency: p95,
-		P99Latency: p99,
-		Errors:     errors,
-		LastError:  lastErr,
+		Operation:     operation,
+		Driver:        driver,
+		ObjectSize:    objectSize,
+		Iterations:    iterations,
+		TotalTime:     total,
+		MinLatency:    min,
+		MaxLatency:    max,
+		AvgLatency:    avg,
+		P50Latency:    p50,
+		P95Latency:    p95,
+		P99Latency:    p99,
+		StdDevLatency: stddev,
+		P999Latency:   p999,
+		Errors:        errors,
+		LastError:     lastErr,
 		// TTFB metrics
 		TTFBMin: ttfbMin,
 		TTFBMax: ttfbMax,
@@ -241,6 +294,21 @@ func percentile(sorted []time.Duration, pct int) time.Duration {
 		return sorted[len(sorted)-1]
 	}
 	idx := (len(sorted) - 1) * pct / 100
+	return sorted[idx]
+}
+
+// percentileFloat computes a percentile with fractional precision (e.g., 99.9).
+func percentileFloat(sorted []time.Duration, pct float64) time.Duration {
+	if len(sorted) == 0 {
+		return 0
+	}
+	if pct >= 100 {
+		return sorted[len(sorted)-1]
+	}
+	idx := int(math.Ceil(float64(len(sorted)-1) * pct / 100))
+	if idx >= len(sorted) {
+		idx = len(sorted) - 1
+	}
 	return sorted[idx]
 }
 

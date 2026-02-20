@@ -606,6 +606,9 @@ func (s *store) readTreeEntry(nodeType byte) (treeEntry, error) {
 			return e, fmt.Errorf("jaguar: read entry valLen: %w", err)
 		}
 		vl := binary.BigEndian.Uint64(buf8[:])
+		if vl > 1<<30 { // sanity check: max 1GB value
+			return e, fmt.Errorf("jaguar: read entry: corrupt valLen %d", vl)
+		}
 		valBuf := make([]byte, vl)
 		if _, err := io.ReadFull(s.treeFile, valBuf); err != nil {
 			return e, fmt.Errorf("jaguar: read entry value: %w", err)
