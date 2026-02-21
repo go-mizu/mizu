@@ -2032,6 +2032,7 @@ func (s *store) storeEngine() {}
 // NodeServer serves the herd binary protocol for a standalone node.
 type NodeServer struct {
 	engine   *store
+	mu       sync.Mutex
 	listener net.Listener
 }
 
@@ -2051,7 +2052,9 @@ func (ns *NodeServer) ListenAndServe(addr string) error {
 	if err != nil {
 		return err
 	}
+	ns.mu.Lock()
 	ns.listener = ln
+	ns.mu.Unlock()
 
 	for {
 		conn, err := ln.Accept()
@@ -2064,8 +2067,11 @@ func (ns *NodeServer) ListenAndServe(addr string) error {
 
 // Close stops the server.
 func (ns *NodeServer) Close() error {
-	if ns.listener != nil {
-		return ns.listener.Close()
+	ns.mu.Lock()
+	ln := ns.listener
+	ns.mu.Unlock()
+	if ln != nil {
+		return ln.Close()
 	}
 	return nil
 }

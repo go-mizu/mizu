@@ -2,7 +2,7 @@
 // the F2 paper (FASTER evolved, VLDB 2025).
 //
 // Architecture:
-//   - 4096 shards (16x more than falcon) for minimal lock contention
+//   - 256 shards with per-shard RWMutex + hasPending fast-skip
 //   - Per-shard RWMutex + Go map (leveraging Swiss table internals)
 //   - Zero-alloc reads via stack-buffer composite key
 //   - Deferred bloom + key index updates via per-shard pending lists
@@ -44,7 +44,7 @@ func init() {
 // ---------------------------------------------------------------------------
 
 const (
-	numShards     = 4096
+	numShards     = 256
 	shardMask     = numShards - 1
 	maxPartNumber = 10000
 	maxBuckets    = 10000

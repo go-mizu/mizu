@@ -47,10 +47,13 @@ func init() {
 
 // Cached time to avoid time.Now() overhead per operation.
 var cachedTimeNano atomic.Int64
+var cachedTime atomic.Pointer[time.Time] // v5: cached time.Time avoids time.Unix(0, n) per op
 var timeTickerStop chan struct{}
 
 func init() {
-	cachedTimeNano.Store(time.Now().UnixNano())
+	now := time.Now()
+	cachedTimeNano.Store(now.UnixNano())
+	cachedTime.Store(&now)
 	timeTickerStop = make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(500 * time.Microsecond)
@@ -58,7 +61,9 @@ func init() {
 		for {
 			select {
 			case <-ticker.C:
-				cachedTimeNano.Store(time.Now().UnixNano())
+				now := time.Now()
+				cachedTimeNano.Store(now.UnixNano())
+				cachedTime.Store(&now)
 			case <-timeTickerStop:
 				return
 			}
@@ -80,8 +85,24 @@ func internContentType(s string) string {
 	return s
 }
 
-func fastNow() int64     { return cachedTimeNano.Load() }
-func fastNowTime() time.Time { return time.Unix(0, fastNow()) }
+func fastNow() int64         { return cachedTimeNano.Load() }
+func fastNowTime() time.Time { return *cachedTime.Load() } // v5: atomic load instead of time.Unix(0, n)
+
+// v5: object pool reduces storage.Object allocation pressure.
+// Callers own the pointer — no explicit release. GC reclaims pool between cycles.
+var objectPool = sync.Pool{New: func() any { return &storage.Object{} }}
+
+func acquireObject(bucket, key string, size int64, contentType string, created, updated int64) *storage.Object {
+	o := objectPool.Get().(*storage.Object)
+	o.Bucket = bucket
+	o.Key = key
+	o.Size = size
+	o.ContentType = contentType
+	o.Created = time.Unix(0, created)
+	o.Updated = time.Unix(0, updated)
+	o.IsDir = false
+	return o
+}
 
 // unsafePtr converts a byte slice to an unsafe.Pointer for syscalls.
 func unsafePtr(b []byte) unsafe.Pointer {
@@ -425,7 +446,7 @@ func (b *bucket) Write(_ context.Context, key string, src io.Reader, size int64,
 	// INLINE PATH: small known-size values skip volume I/O entirely in sync=none mode.
 	// v3: mmap-backed slab (no GC, no memclr), direct bytes.Reader copy bypass.
 	if size >= 0 && size <= b.st.inlineMax {
-		e := acquireIndexEntry()
+		e := stripe.idx.fl.acquire()
 		e.size = size
 		e.contentType = contentType
 		e.created = now
@@ -440,7 +461,7 @@ func (b *bucket) Write(_ context.Context, key string, src io.Reader, size int64,
 			} else {
 				if _, err := io.ReadFull(src, e.inline); err != nil {
 					if err != io.EOF && err != io.ErrUnexpectedEOF {
-						releaseIndexEntry(e)
+						stripe.idx.fl.release(e)
 						return nil, fmt.Errorf("herd: read value: %w", err)
 					}
 				}
@@ -463,11 +484,7 @@ func (b *bucket) Write(_ context.Context, key string, src io.Reader, size int64,
 			}
 		}
 
-		return &storage.Object{
-			Bucket: b.name, Key: key, Size: size,
-			ContentType: contentType,
-			Created:     time.Unix(0, now), Updated: time.Unix(0, now),
-		}, nil
+		return acquireObject(b.name, key, size, contentType, now, now), nil
 	}
 
 	bl, kl, cl := len(b.name), len(key), len(contentType)
@@ -484,7 +501,7 @@ func (b *bucket) Write(_ context.Context, key string, src io.Reader, size int64,
 
 		// Check if we can inline after reading.
 		if size <= b.st.inlineMax {
-			e := acquireIndexEntry()
+			e := stripe.idx.fl.acquire()
 			e.size = size
 			e.contentType = contentType
 			e.created = now
@@ -507,11 +524,7 @@ func (b *bucket) Write(_ context.Context, key string, src io.Reader, size int64,
 				}
 			}
 
-			return &storage.Object{
-				Bucket: b.name, Key: key, Size: size,
-				ContentType: contentType,
-				Created:     time.Unix(0, now), Updated: time.Unix(0, now),
-			}, nil
+			return acquireObject(b.name, key, size, contentType, now, now), nil
 		}
 
 		totalSize := int64(recFixedSize+bl+kl+cl) + size
@@ -586,7 +599,7 @@ func (b *bucket) Write(_ context.Context, key string, src io.Reader, size int64,
 		}
 	}
 
-	e := acquireIndexEntry()
+	e := stripe.idx.fl.acquire()
 	e.valueOffset = valOff
 	e.size = size
 	e.contentType = contentType
@@ -599,11 +612,7 @@ func (b *bucket) Write(_ context.Context, key string, src io.Reader, size int64,
 		stripe.vol.sync()
 	}
 
-	return &storage.Object{
-		Bucket: b.name, Key: key, Size: size,
-		ContentType: contentType,
-		Created:     time.Unix(0, now), Updated: time.Unix(0, now),
-	}, nil
+	return acquireObject(b.name, key, size, contentType, now, now), nil
 }
 
 func (b *bucket) Open(_ context.Context, key string, offset, length int64, _ storage.Options) (io.ReadCloser, *storage.Object, error) {
@@ -647,18 +656,10 @@ func (b *bucket) Open(_ context.Context, key string, offset, length int64, _ sto
 			}
 			data = data[offset:end]
 		}
-		return acquireMmapReader(data), &storage.Object{
-			Bucket: b.name, Key: key, Size: e.size,
-			ContentType: e.contentType,
-			Created:     time.Unix(0, e.created), Updated: time.Unix(0, e.updated),
-		}, nil
+		return acquireMmapReader(data), acquireObject(b.name, key, e.size, e.contentType, e.created, e.updated), nil
 	}
 
-	obj := &storage.Object{
-		Bucket: b.name, Key: key, Size: e.size,
-		ContentType: e.contentType,
-		Created:     time.Unix(0, e.created), Updated: time.Unix(0, e.updated),
-	}
+	obj := acquireObject(b.name, key, e.size, e.contentType, e.created, e.updated)
 
 	// Buffer ring: data may still be in unflushed write buffer.
 	if stripe.ring != nil {
@@ -750,11 +751,7 @@ func (b *bucket) Stat(_ context.Context, key string, _ storage.Options) (*storag
 		return nil, storage.ErrNotExist
 	}
 
-	return &storage.Object{
-		Bucket: b.name, Key: key, Size: e.size,
-		ContentType: e.contentType,
-		Created:     time.Unix(0, e.created), Updated: time.Unix(0, e.updated),
-	}, nil
+	return acquireObject(b.name, key, e.size, e.contentType, e.created, e.updated), nil
 }
 
 func (b *bucket) Delete(_ context.Context, key string, _ storage.Options) error {
@@ -827,7 +824,7 @@ func (b *bucket) Copy(_ context.Context, dstKey string, srcBucket, srcKey string
 	dstStripe := b.st.stripeFor(b.name, dstKey)
 	now := fastNow()
 
-	e := acquireIndexEntry()
+	e := dstStripe.idx.fl.acquire()
 	e.size = srcEntry.size
 	e.contentType = srcEntry.contentType
 	e.created = now
@@ -863,11 +860,7 @@ func (b *bucket) Copy(_ context.Context, dstKey string, srcBucket, srcKey string
 	dstStripe.idx.put(b.name, dstKey, e)
 	dstStripe.bloom.add(b.name, dstKey)
 
-	return &storage.Object{
-		Bucket: b.name, Key: dstKey, Size: srcEntry.size,
-		ContentType: srcEntry.contentType,
-		Created:     time.Unix(0, now), Updated: time.Unix(0, now),
-	}, nil
+	return acquireObject(b.name, dstKey, srcEntry.size, srcEntry.contentType, now, now), nil
 }
 
 func (b *bucket) Move(_ context.Context, dstKey string, srcBucket, srcKey string, opts storage.Options) (*storage.Object, error) {
@@ -1077,7 +1070,7 @@ func (d *dir) Move(_ context.Context, dstPath string, _ storage.Options) (storag
 
 			// Get destination stripe.
 			dstStripe := d.b.st.stripeFor(d.b.name, newKey)
-			ne := acquireIndexEntry()
+			ne := dstStripe.idx.fl.acquire()
 			ne.valueOffset = r.entry.valueOffset
 			ne.size = r.entry.size
 			ne.contentType = r.entry.contentType
