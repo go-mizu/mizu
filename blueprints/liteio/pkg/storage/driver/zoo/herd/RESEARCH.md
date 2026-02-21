@@ -569,12 +569,14 @@ The `compositeKey = bucket + "\x00" + key` pattern seems innocuous but it was 4.
 
 ### 3. Profile After Every Change (Still True)
 
-v2 → v3 → v4 shifted bottlenecks dramatically:
+v2 → v3 → v4 → v5 shifted bottlenecks dramatically:
 - v2: GC scanning (27%) + per-write allocation (78% heap)
 - v3 baseline: GC zeroing (10%) + composite key (4%) + map ops (8%)
 - v3 optimized: Scheduler (34%) + memmove (14%) — application-level, not GC
 - v4 baseline: Scheduler (42%) + GC scan (8.6%) + madvise (2.4%)
 - v4 optimized: Scheduler (45%) + memmove (10%) — volume remap eliminated fallback allocs
+- v5 baseline: usleep (20%) + GC scan (6.3%) + mapaccess2 (2.1%) + cmpbody (2.6%)
+- v5 optimized: memmove (33%) + usleep (17%) — swiss table + freelist removed map/GC overhead
 
 Each round of profiling reveals different bottlenecks. Without re-profiling, we would have optimized the wrong thing.
 
@@ -615,7 +617,28 @@ Using `unsafe.Slice((*atomic.Uint64)(unsafe.Pointer(&data[0])), numWords)` creat
 
 A CAS-loop approach over raw pointers was 15-20% slower under contention than `atomic.Uint64.Or()`.
 
-### 9. GC Frequency vs GC Duration Trade-off
+### 9. Lock-Free CAS Freelists Have ABA Problems
+
+v5 initially used lock-free Treiber stacks for mmapReader and indexEntry recycling. Under high-concurrency parallel reads, this caused a SIGSEGV from the ABA problem: thread A loads head=R1 with next=R2, threads B/C cycle R1 through pop→use→push, thread A's CAS succeeds but R2 is already in use by another thread.
+
+**Rule:** Lock-free CAS freelists are only safe when ABA can't occur (e.g., objects have unique identifiers preventing reuse confusion). For simple object recycling, a mutex-protected stack or sync.Pool is safer. The mutex overhead is negligible for long-lived objects like indexEntry.
+
+### 10. Swiss Table Eliminates Go Map GC Overhead
+
+Go's built-in `map[string]*indexEntry` stores entries in bucket chains with string keys. The GC must scan all bucket pointers and string headers. A swiss table (flat array of slots) has no pointer chains — the GC sees a single allocation. This reduced GC scanning from 6.3% → 2.2% of CPU.
+
+Additionally, Robin Hood probing with hash-first comparison eliminated `cmpbody` (string comparison) and `mapaccess2_faststr` from the CPU top-10.
+
+### 11. Incremental Sort vs Lazy Rebuild
+
+v5 replaced the lazy "dirty flag → sort.Strings() on list()" pattern with incremental binary-search insert on put() and binary-search remove on remove(). This:
+1. Eliminated 2.1% CPU from sort overhead
+2. Made list() purely RLock (no write-lock upgrade) — reducing lock contention
+3. Removed 580 MB of heap allocations from sorted array rebuilds
+
+The trade-off: put/remove are slightly slower (O(log n + n) for binary search + copy shift). But since list() is called less frequently than put/get, the net effect is positive.
+
+### 12. GC Frequency vs GC Duration Trade-off
 
 Moving 1,024 MB of write buffers off-heap made the Go heap smaller. Go's GOGC=100 triggers GC when heap doubles from the post-GC baseline. A smaller baseline doubles faster → more GC cycles (31 → 51, +65%). But each cycle scans less → total GC pause stayed flat (6.0 → 5.9 ms). Net effect: slightly positive, but the GC cycle count increase can be alarming if not understood.
 
@@ -625,7 +648,7 @@ Moving 1,024 MB of write buffers off-heap made the Go heap smaller. Go's GOGC=10
 
 ### Near-Term (Moderate Effort, High Impact)
 
-1. **Swiss table index**: Replace Go's `map[string]*indexEntry` with open-addressing hash table. Go maps have ~40% overhead from bucket chains and string hashing. A swiss table with inline keys could save 15-20% on map operations.
+1. ~~**Swiss table index**~~: ✅ Done in v5. Replaced Go's `map[string]*indexEntry` with open-addressing hash table with Robin Hood probing. Eliminated `mapaccess2_faststr` from CPU top-10.
 
 2. **Vectorized FNV-1a**: Use NEON SIMD for the FNV-1a hash in `stripeFor()` and `shardForParts()`. Currently byte-at-a-time; NEON can process 16 bytes per cycle.
 
@@ -633,7 +656,7 @@ Moving 1,024 MB of write buffers off-heap made the Go heap smaller. Go's GOGC=10
 
 ### Medium-Term (High Effort, High Impact)
 
-4. **B-tree per shard**: Replace `map + sorted cache` with concurrent B-tree. O(log n) insert and range query without dirty/rebuild cycle. `github.com/tidwall/btree` provides good Go implementations.
+4. ~~**B-tree per shard**~~: Partially addressed in v5 with incremental sorted insert (binary search + copy shift), eliminating the dirty/rebuild cycle. A B-tree could further improve insert/remove for very large per-shard key counts.
 
 5. **io_uring for writes**: Replace `pwrite` with io_uring batch submissions. Eliminates syscall overhead and enables true async I/O. Linux-only.
 
@@ -663,6 +686,20 @@ go tool pprof -http=:8080 report/v4_baseline/herd/allocs.pprof
 go tool pprof -http=:8080 report/v4_optimized/herd/cpu.pprof
 go tool pprof -http=:8080 report/v4_optimized/herd/heap.pprof
 go tool pprof -http=:8080 report/v4_optimized/herd/allocs.pprof
+
+# v5 baseline (before v5 optimizations)
+go tool pprof -http=:8080 report/v5_baseline/herd/cpu.pprof
+go tool pprof -http=:8080 report/v5_baseline/herd/heap.pprof
+go tool pprof -http=:8080 report/v5_baseline/herd/allocs.pprof
+
+# v5 optimized (after all v5 optimizations)
+go tool pprof -http=:8080 report/v5_optimized/herd/cpu.pprof
+go tool pprof -http=:8080 report/v5_optimized/herd/heap.pprof
+go tool pprof -http=:8080 report/v5_optimized/herd/allocs.pprof
+
+# Compare v5 baseline vs optimized
+go tool pprof -base report/v5_baseline/herd/cpu.pprof report/v5_optimized/herd/cpu.pprof
+go tool pprof -base report/v5_baseline/herd/heap.pprof report/v5_optimized/herd/heap.pprof
 
 # Compare v4 baseline vs optimized
 go tool pprof -base report/v4_baseline/herd/cpu.pprof report/v4_optimized/herd/cpu.pprof
