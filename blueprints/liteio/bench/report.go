@@ -470,6 +470,7 @@ type Report struct {
 	SkippedBenchmarks  []SkippedBenchmark           `json:"skipped_benchmarks,omitempty"`
 	ResourceSnapshots  map[string]*ResourceSummary  `json:"resource_snapshots,omitempty"`
 	ServerMetrics      map[string]*ServerMetrics    `json:"server_metrics,omitempty"`
+	ProfileAnalyses    map[string]*ProfileAnalysis  `json:"profile_analyses,omitempty"`
 }
 
 // SaveJSON saves the report as JSON.
@@ -917,12 +918,29 @@ func (r *Report) generateMarkdown() string {
 	r.mdResourceEfficiency(&sb, driverList, byDriver)
 
 	// =========================================================================
-	// 9. Error & Timeout Summary
+	// 9. Profiling (if available)
+	// =========================================================================
+	if len(r.ProfileAnalyses) > 0 {
+		sb.WriteString("## Profiling\n\n")
+		// Sort driver names for deterministic output
+		paDrivers := make([]string, 0, len(r.ProfileAnalyses))
+		for d := range r.ProfileAnalyses {
+			paDrivers = append(paDrivers, d)
+		}
+		sort.Strings(paDrivers)
+		for _, d := range paDrivers {
+			pa := r.ProfileAnalyses[d]
+			sb.WriteString(pa.FormatMarkdown())
+		}
+	}
+
+	// =========================================================================
+	// 10. Error & Timeout Summary
 	// =========================================================================
 	r.mdErrorSummary(&sb, driverList, byDriver)
 
 	// =========================================================================
-	// 10. Recommendations
+	// 11. Recommendations
 	// =========================================================================
 	r.mdRecommendations(&sb, driverList, byDriver, byOperation)
 

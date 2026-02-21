@@ -105,6 +105,9 @@ type Config struct {
 	// ResourceTracking enables Go runtime memory and disk usage tracking.
 	// Captures snapshots before/after each driver benchmark.
 	ResourceTracking bool
+
+	// Profile enables in-process pprof profiling for embedded drivers.
+	Profile bool
 }
 
 // DefaultConfig returns sensible defaults.

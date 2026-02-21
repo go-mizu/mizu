@@ -59,6 +59,7 @@ type Runner struct {
 	payloadsMu        sync.Mutex
 	readBufPool       sync.Pool
 	resourceSnapshots map[string]*ResourceSummary
+	profileAnalyses   map[string]*ProfileAnalysis
 }
 
 // NewRunner creates a new benchmark runner.
@@ -73,6 +74,7 @@ func NewRunner(cfg *Config) *Runner {
 		dockerCollector:   NewDockerStatsCollector("all-"),
 		payloads:          make(map[int][]byte),
 		resourceSnapshots: make(map[string]*ResourceSummary),
+		profileAnalyses:   make(map[string]*ProfileAnalysis),
 	}
 	if cfg.ReadBufferSize > 0 {
 		r.readBufPool.New = func() any {
@@ -94,6 +96,7 @@ func NewRunnerWithDrivers(cfg *Config, drivers []DriverConfig) *Runner {
 		dockerCollector:   NewDockerStatsCollector("all-"),
 		payloads:          make(map[int][]byte),
 		resourceSnapshots: make(map[string]*ResourceSummary),
+		profileAnalyses:   make(map[string]*ProfileAnalysis),
 	}
 	if cfg.ReadBufferSize > 0 {
 		r.readBufPool.New = func() any {
@@ -399,6 +402,14 @@ func (r *Runner) benchmarkDriverWithTracker(ctx context.Context, driver DriverCo
 	st.CreateBucket(ctx, driver.Bucket, nil)
 	bucket := st.Bucket(driver.Bucket)
 
+	// Start in-process profiling if enabled and this is an embedded driver
+	var inProcProfiler *InProcessProfiler
+	if r.config.Profile && driver.Container == "" {
+		inProcProfiler = NewInProcessProfiler(r.config.OutputDir)
+		inProcProfiler.SetLogger(r.logger)
+		inProcProfiler.StartCPU(driver.Name)
+	}
+
 	// Determine max concurrency for this driver (0 means unlimited)
 	maxConc := driver.MaxConcurrency
 	if maxConc > 0 {
@@ -574,6 +585,12 @@ func (r *Runner) benchmarkDriverWithTracker(ctx context.Context, driver DriverCo
 	// Take resource snapshot after all benchmarks complete.
 	if tracker != nil {
 		tracker.Snapshot(fmt.Sprintf("%s/after", driver.Name))
+	}
+
+	// Capture profiling data
+	if inProcProfiler != nil {
+		analysis := inProcProfiler.StopAndCapture(driver.Name)
+		r.profileAnalyses[driver.Name] = analysis
 	}
 
 	// Only close storage if no benchmarks timed out or panicked.
@@ -1433,6 +1450,9 @@ func (r *Runner) generateReport() *Report {
 	}
 	if len(r.serverMetrics) > 0 {
 		rpt.ServerMetrics = r.serverMetrics
+	}
+	if len(r.profileAnalyses) > 0 {
+		rpt.ProfileAnalyses = r.profileAnalyses
 	}
 	return rpt
 }

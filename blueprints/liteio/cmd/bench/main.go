@@ -44,6 +44,7 @@ func main() {
 		cleanupDocker = flag.Bool("cleanup-docker-data", true, "Cleanup docker volume data paths after each driver run")
 		filter           = flag.String("filter", "", "Filter benchmarks by name (substring match, e.g., 'MixedWorkload')")
 		resourceTracking = flag.Bool("resource-tracking", true, "Track Go runtime memory and disk usage for embedded drivers")
+		profile          = flag.Bool("profile", false, "Enable in-process CPU/heap/goroutine profiling for embedded drivers")
 		// Go-style adaptive benchmark settings (same defaults as 'go test -bench')
 		benchTime = flag.Duration("benchtime", 1*time.Second, "Target duration for each benchmark (e.g., 1s, 500ms, 2s)")
 		minIters  = flag.Int("min-iters", 3, "Minimum iterations for statistical significance")
@@ -97,6 +98,7 @@ func main() {
 	cfg.OutputFormats = strings.Split(*outputFormats, ",")
 	cfg.Filter = *filter
 	cfg.ResourceTracking = *resourceTracking
+	cfg.Profile = *profile
 
 	// Parse scale counts
 	countsInput := strings.TrimSpace(*scales)

@@ -7,6 +7,15 @@
 //   - Promotion: reading a cold entry copies it to the hot tier
 //   - Demotion: when hot tier exceeds capacity, oldest entries flush to cold tier
 //
+// Optimizations over baseline:
+//   - Zero-copy reads: Open() returns pooled reader referencing entry's value slice directly
+//   - Bloom filter: lock-free concurrent bloom filter for fast negative lookups
+//   - Per-bucket key index: segmented sorted keys for O(matching) List operations
+//   - In-memory cold directory: map lookup instead of linear probing for cold tier
+//   - Allocation-free lookups: stack buffer + unsafe.String for map lookups
+//   - Reader pooling: sync.Pool for dataReader to eliminate GC pressure
+//   - Entry pooling: sync.Pool for hotEntry structs
+//
 // DSN format:
 //
 //	falcon:///path/to/data?sync=none&hot_size=1048576
@@ -19,7 +28,6 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"hash/fnv"
 	"io"
 	"net/url"
 	"os"
@@ -30,6 +38,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/liteio-dev/liteio/pkg/storage"
 )
@@ -66,9 +75,10 @@ const (
 	// Fixed overhead inside a 256B slot (before variable-length key/ct/val).
 	slotFixedOverhead = fieldHash + fieldKeyLen + fieldCTLen + fieldValLen + fieldCreated + fieldUpdated + fieldFlags // 37
 
-	defaultHotSize  = 1_048_576
-	defaultColdSlot = 1 << 20 // initial cold file capacity in slots (~256 MB)
-	maxColdSlots    = 1 << 24 // 16M slots, ~256 MB at 16 bytes/slot
+	defaultHotSize     = 1_048_576
+	defaultHotMaxBytes = 0 // 0 = no auto-demote; hot tier grows freely. Cold used only on Close/flushAll.
+	defaultColdSlot    = 1 << 22                 // 4M slots (~1 GB cold file) — avoids grow events
+	maxColdSlots       = 1 << 24           // 16M slots
 
 	maxBuckets = 10000
 
@@ -126,21 +136,33 @@ func (d *driver) Open(_ context.Context, dsn string) (storage.Storage, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	st := &store{
-		root:     root,
-		syncMode: syncMode,
-		hotSize:  hotSize,
-		cold:     cold,
-		overflow: over,
-		buckets:  make(map[string]time.Time),
-		mp:       newMultipartRegistry(),
+		root:        root,
+		syncMode:    syncMode,
+		hotSize:     hotSize,
+		hotMaxBytes: defaultHotMaxBytes,
+		cold:        cold,
+		overflow:    over,
+		buckets:     make(map[string]time.Time),
+		bloom:       newBloomFilter(hotSize),
+		coldDir:     newColdDirectory(),
+		mp:          newMultipartRegistry(),
+		demoteCh: make(chan struct{}, 1),
 		stopTick: make(chan struct{}),
-		ctx:      ctx,
-		cancel:   cancel,
+		ctx:         ctx,
+		cancel:      cancel,
 	}
 
 	for i := range st.hot {
 		st.hot[i] = &hotShard{m: make(map[string]*hotEntry, 256)}
 	}
+
+	// Build cold directory from existing cold file.
+	st.buildColdDirectory()
+
+	// Start background goroutines.
+	st.bgWg.Add(2)
+	go st.demoteLoop()
+	go st.indexLoop()
 
 	// Start per-store ticker for cachedNano.
 	go func() {
@@ -169,30 +191,347 @@ func init() {
 	cachedNano.Store(time.Now().UnixNano())
 }
 
-func fastNow() int64  { return cachedNano.Load() }
+func fastNow() int64     { return cachedNano.Load() }
 func fastTime() time.Time { return time.Unix(0, fastNow()) }
 
 // ---------------------------------------------------------------------------
-// FNV helpers
+// FNV helpers (allocation-free)
 // ---------------------------------------------------------------------------
 
-func fnv1a32(s string) uint32 {
-	h := uint32(2166136261)
-	for i := range len(s) {
-		h ^= uint32(s[i])
-		h *= 16777619
+// shardForParts computes shard index from bucket+key without allocation.
+func shardForParts(bucket, key string) uint32 {
+	const offset32 = 2166136261
+	const prime32 = 16777619
+	h := uint32(offset32)
+	for i := 0; i < len(bucket); i++ {
+		h ^= uint32(bucket[i])
+		h *= prime32
+	}
+	h ^= 0 // null separator
+	h *= prime32
+	for i := 0; i < len(key); i++ {
+		h ^= uint32(key[i])
+		h *= prime32
+	}
+	return h % numShards
+}
+
+func fnv1a64Parts(bucket, key string) uint64 {
+	const offset64 = 14695981039346656037
+	const prime64 = 1099511628211
+	h := uint64(offset64)
+	for i := 0; i < len(bucket); i++ {
+		h ^= uint64(bucket[i])
+		h *= prime64
+	}
+	h ^= 0 // null separator
+	h *= prime64
+	for i := 0; i < len(key); i++ {
+		h ^= uint64(key[i])
+		h *= prime64
 	}
 	return h
 }
 
-func fnv1a64(b []byte) uint64 {
-	h := fnv.New64a()
-	h.Write(b)
-	return h.Sum64()
+func fnv1a64Str(s string) uint64 {
+	const offset64 = 14695981039346656037
+	const prime64 = 1099511628211
+	h := uint64(offset64)
+	for i := 0; i < len(s); i++ {
+		h ^= uint64(s[i])
+		h *= prime64
+	}
+	return h
 }
 
 func compositeKey(bucket, key string) string {
 	return bucket + "\x00" + key
+}
+
+func compositeKeyBuf(buf []byte, bucket, key string) []byte {
+	n := len(bucket) + 1 + len(key)
+	if cap(buf) >= n {
+		buf = buf[:n]
+	} else {
+		buf = make([]byte, n)
+	}
+	copy(buf, bucket)
+	buf[len(bucket)] = 0
+	copy(buf[len(bucket)+1:], key)
+	return buf
+}
+
+func unsafeString(b []byte) string {
+	return unsafe.String(unsafe.SliceData(b), len(b))
+}
+
+func splitCompositeKey(ck string) (bucket, key string) {
+	if i := strings.IndexByte(ck, 0); i >= 0 {
+		return ck[:i], ck[i+1:]
+	}
+	return ck, ""
+}
+
+// ---------------------------------------------------------------------------
+// Bloom filter (lock-free)
+// ---------------------------------------------------------------------------
+
+type bloomFilter struct {
+	bits    []atomic.Uint64
+	numBits uint64
+	numHash int
+}
+
+func newBloomFilter(expectedItems int) *bloomFilter {
+	if expectedItems < 1024 {
+		expectedItems = 1024
+	}
+	numBits := uint64(expectedItems) * 10
+	numBits = (numBits + 63) &^ 63
+
+	return &bloomFilter{
+		bits:    make([]atomic.Uint64, numBits/64),
+		numBits: numBits,
+		numHash: 7,
+	}
+}
+
+func (bf *bloomFilter) add(bucket, key string) {
+	h1, h2 := bloomHash(bucket, key)
+	for i := 0; i < bf.numHash; i++ {
+		bit := (h1 + uint64(i)*h2) % bf.numBits
+		bf.bits[bit/64].Or(uint64(1) << (bit % 64))
+	}
+}
+
+func (bf *bloomFilter) mayContain(bucket, key string) bool {
+	h1, h2 := bloomHash(bucket, key)
+	for i := 0; i < bf.numHash; i++ {
+		bit := (h1 + uint64(i)*h2) % bf.numBits
+		if bf.bits[bit/64].Load()&(1<<(bit%64)) == 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func bloomHash(bucket, key string) (uint64, uint64) {
+	const offset64 = 14695981039346656037
+	const prime64 = 1099511628211
+
+	h1 := uint64(offset64)
+	for i := 0; i < len(bucket); i++ {
+		h1 ^= uint64(bucket[i])
+		h1 *= prime64
+	}
+	h1 ^= 0
+	h1 *= prime64
+	for i := 0; i < len(key); i++ {
+		h1 ^= uint64(key[i])
+		h1 *= prime64
+	}
+
+	h2 := h1 ^ 0xDEADBEEFCAFEBABE
+	for i := 0; i < len(key); i++ {
+		h2 ^= uint64(key[i])
+		h2 *= prime64
+	}
+	h2 ^= 0xFF
+	h2 *= prime64
+	for i := 0; i < len(bucket); i++ {
+		h2 ^= uint64(bucket[i])
+		h2 *= prime64
+	}
+	h2 |= 1
+
+	return h1, h2
+}
+
+// ---------------------------------------------------------------------------
+// Per-bucket key index (for fast List)
+// ---------------------------------------------------------------------------
+
+func firstSegment(key string) string {
+	if i := strings.IndexByte(key, '/'); i >= 0 {
+		return key[:i]
+	}
+	return ""
+}
+
+type segmentKeys struct {
+	keys   map[string]struct{}
+	sorted []string
+	dirty  bool
+}
+
+func (sk *segmentKeys) ensureSorted() {
+	if !sk.dirty {
+		return
+	}
+	sk.sorted = sk.sorted[:0]
+	for k := range sk.keys {
+		sk.sorted = append(sk.sorted, k)
+	}
+	sort.Strings(sk.sorted)
+	sk.dirty = false
+}
+
+type bucketKeySet struct {
+	mu       sync.RWMutex
+	total    int
+	segments map[string]*segmentKeys
+	noSlash  *segmentKeys
+}
+
+func (bk *bucketKeySet) getSegment(key string) *segmentKeys {
+	seg := firstSegment(key)
+	if seg == "" {
+		return bk.noSlash
+	}
+	sk, ok := bk.segments[seg]
+	if !ok {
+		sk = &segmentKeys{keys: make(map[string]struct{}, 64), dirty: true}
+		bk.segments[seg] = sk
+	}
+	return sk
+}
+
+type keyIndex struct {
+	buckets sync.Map // bucket name → *bucketKeySet
+}
+
+func (ki *keyIndex) getBucketKeys(bucket string) *bucketKeySet {
+	if v, ok := ki.buckets.Load(bucket); ok {
+		return v.(*bucketKeySet)
+	}
+	bk := &bucketKeySet{
+		segments: make(map[string]*segmentKeys, 16),
+		noSlash:  &segmentKeys{keys: make(map[string]struct{}, 16), dirty: true},
+	}
+	actual, _ := ki.buckets.LoadOrStore(bucket, bk)
+	return actual.(*bucketKeySet)
+}
+
+func (ki *keyIndex) add(bucket, key string) {
+	bk := ki.getBucketKeys(bucket)
+	// Optimistic check: skip write lock if key already tracked.
+	bk.mu.RLock()
+	sk := bk.getSegment(key)
+	if _, exists := sk.keys[key]; exists {
+		bk.mu.RUnlock()
+		return
+	}
+	bk.mu.RUnlock()
+
+	// Upgrade to write lock for insertion.
+	bk.mu.Lock()
+	sk = bk.getSegment(key)
+	if _, exists := sk.keys[key]; !exists {
+		sk.keys[key] = struct{}{}
+		sk.dirty = true
+		bk.total++
+	}
+	bk.mu.Unlock()
+}
+
+func (ki *keyIndex) remove(bucket, key string) {
+	bk := ki.getBucketKeys(bucket)
+	bk.mu.Lock()
+	sk := bk.getSegment(key)
+	if _, exists := sk.keys[key]; exists {
+		delete(sk.keys, key)
+		sk.dirty = true
+		bk.total--
+	}
+	bk.mu.Unlock()
+}
+
+func (ki *keyIndex) list(bucket, prefix string) []string {
+	bk := ki.getBucketKeys(bucket)
+	seg := firstSegment(prefix)
+
+	bk.mu.Lock()
+	var sk *segmentKeys
+	if seg == "" {
+		sk = bk.noSlash
+	} else {
+		sk = bk.segments[seg]
+	}
+	if sk == nil || len(sk.keys) == 0 {
+		bk.mu.Unlock()
+		return nil
+	}
+
+	sk.ensureSorted()
+	sorted := sk.sorted
+	bk.mu.Unlock()
+
+	start := sort.SearchStrings(sorted, prefix)
+
+	var results []string
+	for i := start; i < len(sorted); i++ {
+		key := sorted[i]
+		if !strings.HasPrefix(key, prefix) {
+			break
+		}
+		results = append(results, key)
+	}
+	return results
+}
+
+func (ki *keyIndex) hasBucket(bucket string) bool {
+	v, ok := ki.buckets.Load(bucket)
+	if !ok {
+		return false
+	}
+	bk := v.(*bucketKeySet)
+	bk.mu.RLock()
+	n := bk.total
+	bk.mu.RUnlock()
+	return n > 0
+}
+
+// removeAllForBucket removes all keys for a bucket from the index.
+func (ki *keyIndex) removeAllForBucket(bucket string) {
+	ki.buckets.Delete(bucket)
+}
+
+// ---------------------------------------------------------------------------
+// In-memory cold directory
+// ---------------------------------------------------------------------------
+
+type coldLocation struct {
+	slotIndex int64
+}
+
+type coldDirectory struct {
+	mu      sync.RWMutex
+	entries map[string]coldLocation // composite key → slot location
+}
+
+func newColdDirectory() *coldDirectory {
+	return &coldDirectory{
+		entries: make(map[string]coldLocation, 1024),
+	}
+}
+
+func (cd *coldDirectory) get(ck string) (coldLocation, bool) {
+	cd.mu.RLock()
+	loc, ok := cd.entries[ck]
+	cd.mu.RUnlock()
+	return loc, ok
+}
+
+func (cd *coldDirectory) put(ck string, loc coldLocation) {
+	cd.mu.Lock()
+	cd.entries[ck] = loc
+	cd.mu.Unlock()
+}
+
+func (cd *coldDirectory) remove(ck string) {
+	cd.mu.Lock()
+	delete(cd.entries, ck)
+	cd.mu.Unlock()
 }
 
 // ---------------------------------------------------------------------------
@@ -207,9 +546,78 @@ type hotEntry struct {
 	size        int64
 }
 
+var entryPool = sync.Pool{
+	New: func() any { return &hotEntry{} },
+}
+
+func acquireEntry() *hotEntry {
+	e := entryPool.Get().(*hotEntry)
+	*e = hotEntry{}
+	return e
+}
+
+func releaseEntry(e *hotEntry) {
+	if e != nil {
+		e.value = nil
+		entryPool.Put(e)
+	}
+}
+
 type hotShard struct {
-	mu sync.RWMutex
-	m  map[string]*hotEntry
+	mu      sync.RWMutex
+	m       map[string]*hotEntry
+	pending []indexOp // deferred bloom+keyIndex adds, processed by indexLoop
+	_       [24]byte  // padding to avoid false sharing
+}
+
+// indexOp is a deferred bloom+keyIndex update, processed by indexLoop.
+type indexOp struct {
+	bucket, key string
+	remove      bool // true = keyIdx.remove, false = bloom.add + keyIdx.add
+}
+
+// ---------------------------------------------------------------------------
+// Reader pool (zero-copy)
+// ---------------------------------------------------------------------------
+
+type dataReader struct {
+	data []byte
+	pos  int
+}
+
+var readerPool = sync.Pool{
+	New: func() any { return &dataReader{} },
+}
+
+func acquireReader(data []byte) *dataReader {
+	r := readerPool.Get().(*dataReader)
+	r.data = data
+	r.pos = 0
+	return r
+}
+
+func (r *dataReader) Read(p []byte) (int, error) {
+	if r.pos >= len(r.data) {
+		return 0, io.EOF
+	}
+	n := copy(p, r.data[r.pos:])
+	r.pos += n
+	return n, nil
+}
+
+func (r *dataReader) WriteTo(w io.Writer) (int64, error) {
+	if r.pos >= len(r.data) {
+		return 0, nil
+	}
+	n, err := w.Write(r.data[r.pos:])
+	r.pos += n
+	return int64(n), err
+}
+
+func (r *dataReader) Close() error {
+	r.data = nil
+	readerPool.Put(r)
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -219,8 +627,9 @@ type hotShard struct {
 // Layout: [header 64B] [slot0 256B] [slot1 256B] ...
 //
 // Each 256B slot:
-//   hash(8) | keyLen(2) | key(...) | ctLen(2) | ct(...) | valLen(8) |
-//   value(...) or overflowOffset(8)+overflowLen(8) | created(8) | updated(8) | flags(1)
+//
+//	hash(8) | keyLen(2) | key(...) | ctLen(2) | ct(...) | valLen(8) |
+//	value(...) or overflowOffset(8)+overflowLen(8) | created(8) | updated(8) | flags(1)
 //
 // Flags: 0x01=occupied 0x02=tombstone 0x04=overflow
 
@@ -351,18 +760,28 @@ func (cf *coldFile) probe(ck string, hash uint64) (int64, bool, error) {
 }
 
 // encodeSlot creates a 256B slot buffer for the given entry.
+var errSlotTooSmall = fmt.Errorf("falcon: entry too large for cold slot")
+
 func (cf *coldFile) encodeSlot(ck string, hash uint64, e *hotEntry, over *overflowFile) ([slotSize]byte, error) {
 	var buf [slotSize]byte
 
+	kl := len(ck)
+	cl := len(e.contentType)
+
+	// Minimum space: hash(8) + keyLen(2) + key + ctLen(2) + ct + valLen(8) + created(8) + updated(8) + flags(1) = 37 + key + ct
+	// Plus at least 16 bytes for overflow pointer (offset 8 + length 8) if value doesn't fit inline.
+	minSpace := 10 + kl + 2 + cl + fieldValLen + fieldCreated + fieldUpdated + fieldFlags
+	if minSpace > slotSize {
+		return buf, errSlotTooSmall
+	}
+
 	binary.LittleEndian.PutUint64(buf[0:8], hash)
 
-	kl := len(ck)
 	binary.LittleEndian.PutUint16(buf[8:10], uint16(kl))
 	pos := 10
 	copy(buf[pos:], ck)
 	pos += kl
 
-	cl := len(e.contentType)
 	binary.LittleEndian.PutUint16(buf[pos:pos+2], uint16(cl))
 	pos += 2
 	copy(buf[pos:], e.contentType)
@@ -441,43 +860,42 @@ func (cf *coldFile) decodeSlot(buf [slotSize]byte, over *overflowFile) (ck strin
 		copy(value, buf[pos:pos+int(valLen)])
 	}
 
-	e = &hotEntry{
-		value:       value,
-		contentType: ct,
-		created:     created,
-		updated:     updated,
-		size:        valLen,
-	}
+	e = acquireEntry()
+	e.value = value
+	e.contentType = ct
+	e.created = created
+	e.updated = updated
+	e.size = valLen
 	return ck, e, nil
 }
 
-// put writes an entry to the cold file.
-func (cf *coldFile) put(ck string, hash uint64, e *hotEntry, over *overflowFile) error {
+// put writes an entry to the cold file. Returns the slot index where it was written.
+func (cf *coldFile) put(ck string, hash uint64, e *hotEntry, over *overflowFile) (int64, error) {
 	// Check load factor and grow if needed.
 	if float64(cf.count+1)/float64(cf.numSlots) > 0.7 {
 		if err := cf.grow(over); err != nil {
-			return err
+			return 0, err
 		}
 	}
 
 	idx, found, err := cf.probe(ck, hash)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	buf, err := cf.encodeSlot(ck, hash, e, over)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	if err := cf.writeSlot(idx, buf); err != nil {
-		return err
+		return 0, err
 	}
 
 	if !found {
 		cf.count++
 	}
-	return nil
+	return idx, nil
 }
 
 // get reads an entry from the cold file.
@@ -500,6 +918,15 @@ func (cf *coldFile) get(ck string, hash uint64, over *overflowFile) (*hotEntry, 
 	return e, true, nil
 }
 
+// getAt reads an entry from a known slot index (used with cold directory).
+func (cf *coldFile) getAt(idx int64, over *overflowFile) (string, *hotEntry, error) {
+	buf, err := cf.readSlot(idx)
+	if err != nil {
+		return "", nil, err
+	}
+	return cf.decodeSlot(buf, over)
+}
+
 // markTombstone marks a cold slot as deleted.
 func (cf *coldFile) markTombstone(ck string, hash uint64) error {
 	idx, found, err := cf.probe(ck, hash)
@@ -512,6 +939,20 @@ func (cf *coldFile) markTombstone(ck string, hash uint64) error {
 		return err
 	}
 
+	buf[slotSize-1] = flagTombstone
+	if err := cf.writeSlot(idx, buf); err != nil {
+		return err
+	}
+	cf.count--
+	return nil
+}
+
+// markTombstoneAt marks a cold slot at a known index as deleted (used with cold directory).
+func (cf *coldFile) markTombstoneAt(idx int64) error {
+	buf, err := cf.readSlot(idx)
+	if err != nil {
+		return err
+	}
 	buf[slotSize-1] = flagTombstone
 	if err := cf.writeSlot(idx, buf); err != nil {
 		return err
@@ -599,9 +1040,10 @@ func (cf *coldFile) grow(over *overflowFile) error {
 	return nil
 }
 
-// allEntries returns all live (ck, hotEntry) pairs from cold storage.
-func (cf *coldFile) allEntries(over *overflowFile) []coldEntry {
-	var result []coldEntry
+// allEntries returns all live (ck, slotIndex) pairs from cold storage.
+// Used only during startup to build the cold directory.
+func (cf *coldFile) allSlotEntries() []coldSlotEntry {
+	var result []coldSlotEntry
 	for i := int64(0); i < cf.numSlots; i++ {
 		buf, err := cf.readSlot(i)
 		if err != nil {
@@ -611,18 +1053,16 @@ func (cf *coldFile) allEntries(over *overflowFile) []coldEntry {
 		if flags&flagOccupied == 0 || flags&flagTombstone != 0 {
 			continue
 		}
-		ck, e, err := cf.decodeSlot(buf, over)
-		if err != nil {
-			continue
-		}
-		result = append(result, coldEntry{ck: ck, entry: e})
+		kl := int(binary.LittleEndian.Uint16(buf[8:10]))
+		ck := string(buf[10 : 10+kl])
+		result = append(result, coldSlotEntry{ck: ck, slotIndex: i})
 	}
 	return result
 }
 
-type coldEntry struct {
-	ck    string
-	entry *hotEntry
+type coldSlotEntry struct {
+	ck        string
+	slotIndex int64
 }
 
 // ---------------------------------------------------------------------------
@@ -682,33 +1122,64 @@ func (of *overflowFile) close() error {
 // ---------------------------------------------------------------------------
 
 type store struct {
-	root     string
-	syncMode string
-	hotSize  int
-	cold     *coldFile
-	overflow *overflowFile
-	hot      [numShards]*hotShard
-	hotCount atomic.Int64
+	root        string
+	syncMode    string
+	hotSize     int
+	hotMaxBytes int64
+	cold        *coldFile
+	overflow    *overflowFile
+	hot         [numShards]*hotShard
+	hotCount    atomic.Int64
+	hotBytes    atomic.Int64 // total value bytes in hot tier
 
 	mu      sync.RWMutex
 	buckets map[string]time.Time
 
+	// New: bloom filter for fast negative lookups.
+	bloom *bloomFilter
+
+	// New: per-bucket key index for fast List.
+	keyIdx keyIndex
+
+	// New: in-memory cold directory for O(1) cold lookups.
+	coldDir *coldDirectory
+
 	mp *multipartRegistry
 
 	// Epoch counter for safe concurrent demotion.
-	epoch    atomic.Int64
-	flushMu  sync.Mutex
-	flushing atomic.Bool
+	epoch   atomic.Int64
+	flushMu sync.Mutex
+
+	// Background demote goroutine channel.
+	demoteCh chan struct{}
+
+	// Async index: dirty flag signals indexLoop to sweep per-shard pending lists.
+	indexDirty atomic.Bool
 
 	// Per-store stoppable ticker for cachedNano.
 	stopTick chan struct{}
 
-	// Context for stopping background goroutines (e.g. demote).
+	// Context for stopping background goroutines.
 	ctx    context.Context
 	cancel context.CancelFunc
+	bgWg   sync.WaitGroup // tracks background goroutines (demoteLoop, indexLoop)
 }
 
 var _ storage.Storage = (*store)(nil)
+
+// buildColdDirectory scans the cold file once at startup to populate the
+// in-memory cold directory, key index, and bloom filter.
+func (s *store) buildColdDirectory() {
+	entries := s.cold.allSlotEntries()
+	for _, e := range entries {
+		s.coldDir.put(e.ck, coldLocation{slotIndex: e.slotIndex})
+		bucket, key := splitCompositeKey(e.ck)
+		if bucket != "" && key != "" {
+			s.keyIdx.add(bucket, key)
+			s.bloom.add(bucket, key)
+		}
+	}
+}
 
 func (s *store) Bucket(name string) storage.Bucket {
 	if name == "" {
@@ -803,7 +1274,13 @@ func (s *store) DeleteBucket(_ context.Context, name string, opts storage.Option
 	}
 
 	if !force {
-		// Check if any keys exist for this bucket in the hot tier.
+		// Flush any pending index updates before checking.
+		s.syncIndex()
+		// Check via key index first (fast path).
+		if s.keyIdx.hasBucket(name) {
+			return storage.ErrPermission
+		}
+		// Fallback: check hot shards directly.
 		prefix := name + "\x00"
 		for i := range numShards {
 			sh := s.hot[i]
@@ -832,6 +1309,7 @@ func (s *store) DeleteBucket(_ context.Context, name string, opts storage.Option
 			}
 			sh.mu.Unlock()
 		}
+		s.keyIdx.removeAllForBucket(name)
 	}
 
 	delete(s.buckets, name)
@@ -849,9 +1327,10 @@ func (s *store) Features() storage.Features {
 }
 
 func (s *store) Close() error {
-	// Stop background goroutines.
+	// Stop background goroutines and wait for them to finish.
 	s.cancel()
 	close(s.stopTick)
+	s.bgWg.Wait()
 
 	// Flush hot tier to cold.
 	s.flushAll()
@@ -874,33 +1353,57 @@ func (s *store) Close() error {
 }
 
 // hotPut writes an entry to the hot tier.
-func (s *store) hotPut(ck string, e *hotEntry) {
-	sh := s.hot[fnv1a32(ck)%numShards]
+// Bloom filter and key index updates are deferred to per-shard pending lists
+// and processed asynchronously by indexLoop. This keeps the write hot path
+// to just: shard lock → map write → unlock (no bloom/keyIndex overhead).
+func (s *store) hotPut(bucket, key string, e *hotEntry) {
+	si := shardForParts(bucket, key)
+	sh := s.hot[si]
+
+	var buf [256]byte
+	ck := unsafeString(compositeKeyBuf(buf[:0], bucket, key))
+
 	sh.mu.Lock()
-	_, existed := sh.m[ck]
+	old, existed := sh.m[ck]
+	if !existed {
+		ck = compositeKey(bucket, key)
+		// Defer bloom+keyIndex update — zero overhead since we hold the lock.
+		sh.pending = append(sh.pending, indexOp{bucket: bucket, key: key})
+	} else if e.created == e.updated {
+		// Preserve created time when updating an existing key.
+		e.created = old.created
+	}
 	sh.m[ck] = e
 	sh.mu.Unlock()
 
-	if !existed {
-		newCount := s.hotCount.Add(1)
-		if int(newCount) > s.hotSize && s.flushing.CompareAndSwap(false, true) {
-			go func() {
-				select {
-				case <-s.ctx.Done():
-					s.flushing.Store(false)
-					return
-				default:
-				}
-				s.demote()
-				s.flushing.Store(false)
-			}()
+	newValBytes := int64(len(e.value))
+	if existed {
+		oldBytes := int64(len(old.value))
+		s.hotBytes.Add(newValBytes - oldBytes)
+		releaseEntry(old)
+	} else {
+		s.hotCount.Add(1)
+		s.hotBytes.Add(newValBytes)
+		s.indexDirty.Store(true)
+	}
+
+	// Signal background demote goroutine if hot tier exceeds soft limit.
+	if s.hotMaxBytes > 0 && s.hotBytes.Load() > s.hotMaxBytes {
+		select {
+		case s.demoteCh <- struct{}{}:
+		default:
 		}
 	}
 }
 
-// hotGet retrieves an entry from the hot tier.
-func (s *store) hotGet(ck string) (*hotEntry, bool) {
-	sh := s.hot[fnv1a32(ck)%numShards]
+// hotGet retrieves an entry from the hot tier (allocation-free lookup).
+func (s *store) hotGet(bucket, key string) (*hotEntry, bool) {
+	si := shardForParts(bucket, key)
+	sh := s.hot[si]
+
+	var buf [256]byte
+	ck := unsafeString(compositeKeyBuf(buf[:0], bucket, key))
+
 	sh.mu.RLock()
 	e, ok := sh.m[ck]
 	sh.mu.RUnlock()
@@ -908,91 +1411,175 @@ func (s *store) hotGet(ck string) (*hotEntry, bool) {
 }
 
 // hotDelete removes an entry from the hot tier.
-func (s *store) hotDelete(ck string) bool {
-	sh := s.hot[fnv1a32(ck)%numShards]
+// keyIdx.remove is deferred to per-shard pending list (same as hotPut).
+func (s *store) hotDelete(bucket, key string) bool {
+	si := shardForParts(bucket, key)
+	sh := s.hot[si]
+
+	var buf [256]byte
+	ck := unsafeString(compositeKeyBuf(buf[:0], bucket, key))
+
 	sh.mu.Lock()
-	_, ok := sh.m[ck]
+	old, ok := sh.m[ck]
 	if ok {
 		delete(sh.m, ck)
 		s.hotCount.Add(-1)
+		s.hotBytes.Add(-int64(len(old.value)))
+		sh.pending = append(sh.pending, indexOp{bucket: bucket, key: key, remove: true})
 	}
 	sh.mu.Unlock()
+
+	if ok {
+		releaseEntry(old)
+		s.indexDirty.Store(true)
+	}
 	return ok
 }
 
 // coldGet retrieves an entry from the cold tier and promotes it to hot.
-func (s *store) coldGet(ck string) (*hotEntry, bool) {
-	hash := fnv1a64([]byte(ck))
+func (s *store) coldGet(bucket, key string) (*hotEntry, bool) {
+	// Check bloom filter first.
+	if !s.bloom.mayContain(bucket, key) {
+		return nil, false
+	}
 
+	// Stack-buffer compositeKey for directory lookup.
+	var buf [256]byte
+	ck := unsafeString(compositeKeyBuf(buf[:0], bucket, key))
+
+	// Check in-memory cold directory first.
+	loc, found := s.coldDir.get(ck)
+	if found {
+		s.cold.mu.RLock()
+		_, e, err := s.cold.getAt(loc.slotIndex, s.overflow)
+		s.cold.mu.RUnlock()
+		if err == nil && e != nil {
+			// Promote to hot tier.
+			s.hotPut(bucket, key, e)
+			return e, true
+		}
+	}
+
+	// Fallback: probe cold file directly.
+	heapCK := compositeKey(bucket, key)
+	hash := fnv1a64Str(heapCK)
 	s.cold.mu.RLock()
-	e, found, err := s.cold.get(ck, hash, s.overflow)
+	e, ok, err := s.cold.get(heapCK, hash, s.overflow)
 	s.cold.mu.RUnlock()
 
-	if err != nil || !found {
+	if err != nil || !ok {
 		return nil, false
 	}
 
 	// Promote to hot tier.
-	s.hotPut(ck, e)
+	s.hotPut(bucket, key, e)
 	return e, true
 }
 
-// demote evicts the oldest ~25% of hot tier entries to cold tier.
+// coldStat retrieves metadata from the cold tier without promotion.
+func (s *store) coldStat(bucket, key string) (*hotEntry, bool) {
+	// Check bloom filter first.
+	if !s.bloom.mayContain(bucket, key) {
+		return nil, false
+	}
+
+	// Stack-buffer compositeKey for directory lookup.
+	var buf [256]byte
+	ck := unsafeString(compositeKeyBuf(buf[:0], bucket, key))
+
+	// Check in-memory cold directory first.
+	loc, found := s.coldDir.get(ck)
+	if found {
+		s.cold.mu.RLock()
+		_, e, err := s.cold.getAt(loc.slotIndex, s.overflow)
+		s.cold.mu.RUnlock()
+		if err == nil && e != nil {
+			return e, true
+		}
+	}
+
+	// Fallback: probe cold file directly.
+	heapCK := compositeKey(bucket, key)
+	hash := fnv1a64Str(heapCK)
+	s.cold.mu.RLock()
+	e, ok, err := s.cold.get(heapCK, hash, s.overflow)
+	s.cold.mu.RUnlock()
+
+	if err != nil || !ok {
+		return nil, false
+	}
+	return e, true
+}
+
+// demote evicts entries from the hot tier to cold until hotBytes drops below half the limit.
+// Per-shard three-phase approach:
+//   Phase A: RLock(shard) — snapshot entries to evict (no deletion)
+//   Phase B: Lock(cold) — write snapshots to cold file + cold directory
+//   Phase C: Lock(shard) — delete from hot (pointer compare to skip concurrent updates)
+// This ensures no visibility gap (entries exist in BOTH hot and cold during B+C),
+// and minimizes cold.mu hold time (one shard batch at a time, not all shards).
 func (s *store) demote() {
 	s.flushMu.Lock()
 	defer s.flushMu.Unlock()
 
 	s.epoch.Add(1)
 
-	// Collect all entries with timestamps.
-	type kv struct {
-		ck string
-		e  *hotEntry
-	}
-
-	var all []kv
-	for i := range numShards {
-		sh := s.hot[i]
-		sh.mu.RLock()
-		for k, v := range sh.m {
-			all = append(all, kv{ck: k, e: v})
-		}
-		sh.mu.RUnlock()
-	}
-
-	if len(all) <= s.hotSize/2 {
+	currentBytes := s.hotBytes.Load()
+	targetBytes := s.hotMaxBytes / 2
+	if currentBytes <= targetBytes {
 		return
 	}
+	bytesToEvict := currentBytes - targetBytes
 
-	// Sort by updated timestamp ascending (oldest first).
-	sort.Slice(all, func(i, j int) bool {
-		return all[i].e.updated < all[j].e.updated
-	})
-
-	// Evict oldest 25%.
-	evictCount := len(all) / 4
-	if evictCount < 1 {
-		evictCount = 1
+	type evictItem struct {
+		ck   string
+		hash uint64
+		e    *hotEntry
 	}
 
-	s.cold.mu.Lock()
-	defer s.cold.mu.Unlock()
+	var evictedBytes int64
+	for i := range numShards {
+		if evictedBytes >= bytesToEvict {
+			break
+		}
+		sh := s.hot[i]
 
-	for i := range evictCount {
-		entry := all[i]
-		hash := fnv1a64([]byte(entry.ck))
+		// Phase A: Snapshot entries from this shard (RLock — doesn't block writers).
+		sh.mu.RLock()
+		var batch []evictItem
+		for ck, e := range sh.m {
+			batch = append(batch, evictItem{ck: ck, hash: fnv1a64Str(ck), e: e})
+			evictedBytes += int64(len(e.value))
+			if evictedBytes >= bytesToEvict {
+				break
+			}
+		}
+		sh.mu.RUnlock()
 
-		if err := s.cold.put(entry.ck, hash, entry.e, s.overflow); err != nil {
+		if len(batch) == 0 {
 			continue
 		}
 
-		// Remove from hot tier.
-		sh := s.hot[fnv1a32(entry.ck)%numShards]
+		// Phase B: Write to cold (brief Lock — one shard's batch only).
+		s.cold.mu.Lock()
+		for _, item := range batch {
+			slotIdx, err := s.cold.put(item.ck, item.hash, item.e, s.overflow)
+			if err != nil {
+				continue
+			}
+			s.coldDir.put(item.ck, coldLocation{slotIndex: slotIdx})
+		}
+		s.cold.mu.Unlock()
+
+		// Phase C: Remove from hot (only if entry pointer unchanged).
 		sh.mu.Lock()
-		// Verify the entry is still the same (not updated concurrently).
-		if cur, ok := sh.m[entry.ck]; ok && cur.updated == entry.e.updated {
-			delete(sh.m, entry.ck)
-			s.hotCount.Add(-1)
+		for _, item := range batch {
+			if cur, ok := sh.m[item.ck]; ok && cur == item.e {
+				delete(sh.m, item.ck)
+				valBytes := int64(len(item.e.value))
+				s.hotCount.Add(-1)
+				s.hotBytes.Add(-valBytes)
+			}
 		}
 		sh.mu.Unlock()
 	}
@@ -1003,6 +1590,72 @@ func (s *store) demote() {
 		s.overflow.f.Sync()
 		s.overflow.mu.Unlock()
 	}
+}
+
+// demoteLoop runs in a dedicated goroutine, processing demote signals.
+func (s *store) demoteLoop() {
+	defer s.bgWg.Done()
+	for {
+		select {
+		case <-s.demoteCh:
+			s.demote()
+		case <-s.ctx.Done():
+			return
+		}
+	}
+}
+
+// indexLoop runs in a dedicated goroutine, periodically sweeping per-shard
+// pending lists and applying bloom+keyIndex updates in batches.
+// This decouples index maintenance from the write hot path.
+func (s *store) indexLoop() {
+	defer s.bgWg.Done()
+	t := time.NewTicker(1 * time.Millisecond)
+	defer t.Stop()
+	for {
+		select {
+		case <-t.C:
+			if s.indexDirty.Load() {
+				s.processIndexOps()
+			}
+		case <-s.ctx.Done():
+			// Final drain — ensure all pending ops are processed before shutdown.
+			s.processIndexOps()
+			return
+		}
+	}
+}
+
+// processIndexOps sweeps all shards and processes their pending bloom+keyIndex ops.
+func (s *store) processIndexOps() {
+	for i := range numShards {
+		sh := s.hot[i]
+		sh.mu.Lock()
+		pending := sh.pending
+		if len(pending) > 0 {
+			sh.pending = nil
+		}
+		sh.mu.Unlock()
+
+		for _, op := range pending {
+			if op.remove {
+				s.keyIdx.remove(op.bucket, op.key)
+			} else {
+				s.bloom.add(op.bucket, op.key)
+				s.keyIdx.add(op.bucket, op.key)
+			}
+		}
+	}
+	s.indexDirty.Store(false)
+}
+
+// syncIndex ensures all pending index ops are flushed before a read operation
+// that depends on the key index (List, DeleteBucket, directory Stat).
+func (s *store) syncIndex() {
+	if !s.indexDirty.Load() {
+		return
+	}
+	s.processIndexOps()
 }
 
 // flushAll writes all hot tier entries to cold.
@@ -1017,68 +1670,41 @@ func (s *store) flushAll() {
 		sh := s.hot[i]
 		sh.mu.Lock()
 		for ck, e := range sh.m {
-			hash := fnv1a64([]byte(ck))
-			s.cold.put(ck, hash, e, s.overflow)
+			hash := fnv1a64Str(ck)
+			slotIdx, err := s.cold.put(ck, hash, e, s.overflow)
+			if err == nil {
+				s.coldDir.put(ck, coldLocation{slotIndex: slotIdx})
+			}
 		}
 		sh.mu.Unlock()
 	}
 }
 
 // listKeys returns all keys (from both tiers) matching bucket and prefix.
+// Uses per-bucket key index for O(matching) instead of scanning cold file.
 func (s *store) listKeys(bucketName, prefix string) []*storage.Object {
-	fullPrefix := bucketName + "\x00" + prefix
-	seen := make(map[string]struct{})
-	var objs []*storage.Object
-
-	// Hot tier.
-	for i := range numShards {
-		sh := s.hot[i]
-		sh.mu.RLock()
-		for ck, e := range sh.m {
-			if !strings.HasPrefix(ck, bucketName+"\x00") {
-				continue
-			}
-			key := ck[len(bucketName)+1:]
-			if prefix != "" && !strings.HasPrefix(key, prefix) {
-				continue
-			}
-			seen[ck] = struct{}{}
-			objs = append(objs, &storage.Object{
-				Bucket:      bucketName,
-				Key:         key,
-				Size:        e.size,
-				ContentType: e.contentType,
-				Created:     time.Unix(0, e.created),
-				Updated:     time.Unix(0, e.updated),
-			})
-		}
-		sh.mu.RUnlock()
+	s.syncIndex()
+	keys := s.keyIdx.list(bucketName, prefix)
+	if len(keys) == 0 {
+		return nil
 	}
 
-	// Cold tier.
-	s.cold.mu.RLock()
-	coldEntries := s.cold.allEntries(s.overflow)
-	s.cold.mu.RUnlock()
-
-	for _, ce := range coldEntries {
-		if _, ok := seen[ce.ck]; ok {
-			continue // Hot tier has newer version.
+	objs := make([]*storage.Object, 0, len(keys))
+	for _, key := range keys {
+		e, ok := s.hotGet(bucketName, key)
+		if !ok {
+			e, ok = s.coldStat(bucketName, key)
+			if !ok {
+				continue
+			}
 		}
-		if !strings.HasPrefix(ce.ck, bucketName+"\x00") {
-			continue
-		}
-		key := ce.ck[len(bucketName)+1:]
-		if prefix != "" && !strings.HasPrefix(key, prefix) {
-			continue
-		}
-		_ = fullPrefix
 		objs = append(objs, &storage.Object{
 			Bucket:      bucketName,
 			Key:         key,
-			Size:        ce.entry.size,
-			ContentType: ce.entry.contentType,
-			Created:     time.Unix(0, ce.entry.created),
-			Updated:     time.Unix(0, ce.entry.updated),
+			Size:        e.size,
+			ContentType: e.contentType,
+			Created:     time.Unix(0, e.created),
+			Updated:     time.Unix(0, e.updated),
 		})
 	}
 
@@ -1086,22 +1712,6 @@ func (s *store) listKeys(bucketName, prefix string) []*storage.Object {
 	return objs
 }
 
-// hasBucketKeys returns true if any key exists for the bucket.
-func (s *store) hasBucketKeys(bucketName string) bool {
-	prefix := bucketName + "\x00"
-	for i := range numShards {
-		sh := s.hot[i]
-		sh.mu.RLock()
-		for k := range sh.m {
-			if strings.HasPrefix(k, prefix) {
-				sh.mu.RUnlock()
-				return true
-			}
-		}
-		sh.mu.RUnlock()
-	}
-	return false
-}
 
 // ---------------------------------------------------------------------------
 // Bucket (storage.Bucket + HasDirectories + HasMultipart)
@@ -1136,7 +1746,6 @@ func (b *bucket) Info(_ context.Context) (*storage.BucketInfo, error) {
 }
 
 func (b *bucket) Write(_ context.Context, key string, src io.Reader, size int64, contentType string, _ storage.Options) (*storage.Object, error) {
-	key = strings.TrimSpace(key)
 	if key == "" {
 		return nil, fmt.Errorf("falcon: key is empty")
 	}
@@ -1160,22 +1769,15 @@ func (b *bucket) Write(_ context.Context, key string, src io.Reader, size int64,
 	}
 
 	now := fastNow()
-	ck := compositeKey(b.name, key)
 
-	e := &hotEntry{
-		value:       data,
-		contentType: contentType,
-		created:     now,
-		updated:     now,
-		size:        int64(len(data)),
-	}
+	e := acquireEntry()
+	e.value = data
+	e.contentType = contentType
+	e.created = now
+	e.updated = now
+	e.size = int64(len(data))
 
-	// Check if updating an existing entry; preserve created time.
-	if old, ok := b.st.hotGet(ck); ok {
-		e.created = old.created
-	}
-
-	b.st.hotPut(ck, e)
+	b.st.hotPut(b.name, key, e)
 
 	return &storage.Object{
 		Bucket:      b.name,
@@ -1188,18 +1790,15 @@ func (b *bucket) Write(_ context.Context, key string, src io.Reader, size int64,
 }
 
 func (b *bucket) Open(_ context.Context, key string, offset, length int64, _ storage.Options) (io.ReadCloser, *storage.Object, error) {
-	key = strings.TrimSpace(key)
 	if key == "" {
 		return nil, nil, fmt.Errorf("falcon: key is empty")
 	}
 
-	ck := compositeKey(b.name, key)
-
-	// Hot tier first.
-	e, ok := b.st.hotGet(ck)
+	// Hot tier first (allocation-free lookup).
+	e, ok := b.st.hotGet(b.name, key)
 	if !ok {
 		// Cold tier with promotion.
-		e, ok = b.st.coldGet(ck)
+		e, ok = b.st.coldGet(b.name, key)
 		if !ok {
 			return nil, nil, storage.ErrNotExist
 		}
@@ -1214,6 +1813,7 @@ func (b *bucket) Open(_ context.Context, key string, offset, length int64, _ sto
 		Updated:     time.Unix(0, e.updated),
 	}
 
+	// Zero-copy: reference entry's value slice directly.
 	data := e.value
 	if offset < 0 {
 		offset = 0
@@ -1226,43 +1826,52 @@ func (b *bucket) Open(_ context.Context, key string, offset, length int64, _ sto
 		end = offset + length
 	}
 
-	// Copy the slice to avoid data races after demotion.
-	slice := make([]byte, end-offset)
-	copy(slice, data[offset:end])
-
-	return &dataReader{data: slice}, obj, nil
+	return acquireReader(data[offset:end]), obj, nil
 }
 
 func (b *bucket) Stat(_ context.Context, key string, _ storage.Options) (*storage.Object, error) {
-	key = strings.TrimSpace(key)
 	if key == "" {
 		return nil, fmt.Errorf("falcon: key is empty")
 	}
 
-	// Check for directory stat.
+	// Check for directory stat via key index (no cold scan).
 	if strings.HasSuffix(key, "/") {
-		results := b.st.listKeys(b.name, key)
-		if len(results) == 0 {
+		b.st.syncIndex()
+		keys := b.st.keyIdx.list(b.name, key)
+		if len(keys) == 0 {
 			return nil, storage.ErrNotExist
 		}
+		// Get first key's timestamps.
+		if e, ok := b.st.hotGet(b.name, keys[0]); ok {
+			return &storage.Object{
+				Bucket:  b.name,
+				Key:     strings.TrimSuffix(key, "/"),
+				IsDir:   true,
+				Created: time.Unix(0, e.created),
+				Updated: time.Unix(0, e.updated),
+			}, nil
+		}
+		if e, ok := b.st.coldStat(b.name, keys[0]); ok {
+			return &storage.Object{
+				Bucket:  b.name,
+				Key:     strings.TrimSuffix(key, "/"),
+				IsDir:   true,
+				Created: time.Unix(0, e.created),
+				Updated: time.Unix(0, e.updated),
+			}, nil
+		}
 		return &storage.Object{
-			Bucket:  b.name,
-			Key:     strings.TrimSuffix(key, "/"),
-			IsDir:   true,
-			Created: results[0].Created,
-			Updated: results[0].Updated,
+			Bucket: b.name,
+			Key:    strings.TrimSuffix(key, "/"),
+			IsDir:  true,
 		}, nil
 	}
 
-	ck := compositeKey(b.name, key)
-
-	e, ok := b.st.hotGet(ck)
+	// Hot tier first (allocation-free lookup).
+	e, ok := b.st.hotGet(b.name, key)
 	if !ok {
-		// Check cold tier (no promotion for stat).
-		hash := fnv1a64([]byte(ck))
-		b.st.cold.mu.RLock()
-		e, ok, _ = b.st.cold.get(ck, hash, b.st.overflow)
-		b.st.cold.mu.RUnlock()
+		// Cold tier stat (no promotion).
+		e, ok = b.st.coldStat(b.name, key)
 		if !ok {
 			return nil, storage.ErrNotExist
 		}
@@ -1279,31 +1888,65 @@ func (b *bucket) Stat(_ context.Context, key string, _ storage.Options) (*storag
 }
 
 func (b *bucket) Delete(_ context.Context, key string, _ storage.Options) error {
-	key = strings.TrimSpace(key)
 	if key == "" {
 		return fmt.Errorf("falcon: key is empty")
 	}
 
-	ck := compositeKey(b.name, key)
+	// Hot-only delete when possible (no cold probe if found in hot).
+	if b.st.hotDelete(b.name, key) {
+		// Key was in hot. Only check cold if bloom filter says it might exist there.
+		if !b.st.bloom.mayContain(b.name, key) {
+			return nil // Definitely not in cold.
+		}
+		// Stack-buffer compositeKey (no heap allocation).
+		var buf [256]byte
+		ck := unsafeString(compositeKeyBuf(buf[:0], b.name, key))
+		if loc, found := b.st.coldDir.get(ck); found {
+			b.st.cold.mu.Lock()
+			b.st.cold.markTombstoneAt(loc.slotIndex)
+			b.st.cold.mu.Unlock()
+			// Need heap-allocated key for coldDir.remove (map key).
+			b.st.coldDir.remove(compositeKey(b.name, key))
+		}
+		return nil
+	}
 
-	hotDeleted := b.st.hotDelete(ck)
-
-	// Mark tombstone in cold tier.
-	hash := fnv1a64([]byte(ck))
-	b.st.cold.mu.Lock()
-	coldErr := b.st.cold.markTombstone(ck, hash)
-	b.st.cold.mu.Unlock()
-
-	if !hotDeleted && coldErr != nil {
+	// Not in hot. Check cold via bloom filter first.
+	if !b.st.bloom.mayContain(b.name, key) {
 		return storage.ErrNotExist
 	}
 
+	// Stack-buffer for cold directory lookup.
+	var buf [256]byte
+	ck := unsafeString(compositeKeyBuf(buf[:0], b.name, key))
+
+	// Check cold directory.
+	if loc, found := b.st.coldDir.get(ck); found {
+		b.st.cold.mu.Lock()
+		b.st.cold.markTombstoneAt(loc.slotIndex)
+		b.st.cold.mu.Unlock()
+		heapCK := compositeKey(b.name, key)
+		b.st.coldDir.remove(heapCK)
+		b.st.keyIdx.remove(b.name, key)
+		return nil
+	}
+
+	// Fallback: probe cold file.
+	heapCK := compositeKey(b.name, key)
+	hash := fnv1a64Str(heapCK)
+	b.st.cold.mu.Lock()
+	coldErr := b.st.cold.markTombstone(heapCK, hash)
+	b.st.cold.mu.Unlock()
+
+	if coldErr != nil {
+		return storage.ErrNotExist
+	}
+
+	b.st.keyIdx.remove(b.name, key)
 	return nil
 }
 
 func (b *bucket) Copy(_ context.Context, dstKey string, srcBucket, srcKey string, _ storage.Options) (*storage.Object, error) {
-	dstKey = strings.TrimSpace(dstKey)
-	srcKey = strings.TrimSpace(srcKey)
 	if dstKey == "" || srcKey == "" {
 		return nil, fmt.Errorf("falcon: key is empty")
 	}
@@ -1311,32 +1954,28 @@ func (b *bucket) Copy(_ context.Context, dstKey string, srcBucket, srcKey string
 		srcBucket = b.name
 	}
 
-	srcCK := compositeKey(srcBucket, srcKey)
-
-	e, ok := b.st.hotGet(srcCK)
+	e, ok := b.st.hotGet(srcBucket, srcKey)
 	if !ok {
-		e, ok = b.st.coldGet(srcCK)
+		e, ok = b.st.coldGet(srcBucket, srcKey)
 		if !ok {
 			return nil, storage.ErrNotExist
 		}
 	}
 
 	now := fastNow()
-	dstCK := compositeKey(b.name, dstKey)
 
 	// Copy value bytes.
 	valCopy := make([]byte, len(e.value))
 	copy(valCopy, e.value)
 
-	dst := &hotEntry{
-		value:       valCopy,
-		contentType: e.contentType,
-		created:     now,
-		updated:     now,
-		size:        e.size,
-	}
+	dst := acquireEntry()
+	dst.value = valCopy
+	dst.contentType = e.contentType
+	dst.created = now
+	dst.updated = now
+	dst.size = e.size
 
-	b.st.hotPut(dstCK, dst)
+	b.st.hotPut(b.name, dstKey, dst)
 
 	return &storage.Object{
 		Bucket:      b.name,
@@ -1428,16 +2067,26 @@ func (d *dir) Info(_ context.Context) (*storage.Object, error) {
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		prefix += "/"
 	}
-	results := d.b.st.listKeys(d.b.name, prefix)
-	if len(results) == 0 {
+	// Use key index instead of cold file scan.
+	keys := d.b.st.keyIdx.list(d.b.name, prefix)
+	if len(keys) == 0 {
 		return nil, storage.ErrNotExist
+	}
+	// Get first key's timestamps.
+	var created, updated time.Time
+	if e, ok := d.b.st.hotGet(d.b.name, keys[0]); ok {
+		created = time.Unix(0, e.created)
+		updated = time.Unix(0, e.updated)
+	} else if e, ok := d.b.st.coldStat(d.b.name, keys[0]); ok {
+		created = time.Unix(0, e.created)
+		updated = time.Unix(0, e.updated)
 	}
 	return &storage.Object{
 		Bucket:  d.b.name,
 		Key:     d.path,
 		IsDir:   true,
-		Created: results[0].Created,
-		Updated: results[0].Updated,
+		Created: created,
+		Updated: updated,
 	}, nil
 }
 
@@ -1485,25 +2134,28 @@ func (d *dir) Delete(_ context.Context, opts storage.Options) error {
 		prefix += "/"
 	}
 
-	results := d.b.st.listKeys(d.b.name, prefix)
-	if len(results) == 0 {
+	// Use key index instead of cold file scan.
+	keys := d.b.st.keyIdx.list(d.b.name, prefix)
+	if len(keys) == 0 {
 		return storage.ErrNotExist
 	}
 
-	for _, r := range results {
+	for _, key := range keys {
 		if !recursive {
-			rest := strings.TrimPrefix(r.Key, prefix)
+			rest := strings.TrimPrefix(key, prefix)
 			if strings.Contains(rest, "/") {
 				continue
 			}
 		}
-		ck := compositeKey(d.b.name, r.Key)
-		d.b.st.hotDelete(ck)
+		d.b.st.hotDelete(d.b.name, key)
 
-		hash := fnv1a64([]byte(ck))
-		d.b.st.cold.mu.Lock()
-		d.b.st.cold.markTombstone(ck, hash)
-		d.b.st.cold.mu.Unlock()
+		ck := compositeKey(d.b.name, key)
+		if loc, found := d.b.st.coldDir.get(ck); found {
+			d.b.st.cold.mu.Lock()
+			d.b.st.cold.markTombstoneAt(loc.slotIndex)
+			d.b.st.cold.mu.Unlock()
+			d.b.st.coldDir.remove(ck)
+		}
 	}
 	return nil
 }
@@ -1519,42 +2171,46 @@ func (d *dir) Move(_ context.Context, dstPath string, _ storage.Options) (storag
 		dstPrefix += "/"
 	}
 
-	results := d.b.st.listKeys(d.b.name, srcPrefix)
-	if len(results) == 0 {
+	// Use key index instead of cold file scan.
+	keys := d.b.st.keyIdx.list(d.b.name, srcPrefix)
+	if len(keys) == 0 {
 		return nil, storage.ErrNotExist
 	}
 
-	for _, r := range results {
-		rel := strings.TrimPrefix(r.Key, srcPrefix)
+	for _, key := range keys {
+		rel := strings.TrimPrefix(key, srcPrefix)
 		newKey := dstPrefix + rel
 
-		srcCK := compositeKey(d.b.name, r.Key)
-		e, ok := d.b.st.hotGet(srcCK)
+		e, ok := d.b.st.hotGet(d.b.name, key)
 		if !ok {
-			e, ok = d.b.st.coldGet(srcCK)
+			e, ok = d.b.st.coldGet(d.b.name, key)
 		}
 		if !ok {
 			continue
 		}
 
 		now := fastNow()
-		dstCK := compositeKey(d.b.name, newKey)
 		valCopy := make([]byte, len(e.value))
 		copy(valCopy, e.value)
-		d.b.st.hotPut(dstCK, &hotEntry{
-			value:       valCopy,
-			contentType: e.contentType,
-			created:     e.created,
-			updated:     now,
-			size:        e.size,
-		})
+
+		dst := acquireEntry()
+		dst.value = valCopy
+		dst.contentType = e.contentType
+		dst.created = e.created
+		dst.updated = now
+		dst.size = e.size
+
+		d.b.st.hotPut(d.b.name, newKey, dst)
 
 		// Delete old.
-		d.b.st.hotDelete(srcCK)
-		hash := fnv1a64([]byte(srcCK))
-		d.b.st.cold.mu.Lock()
-		d.b.st.cold.markTombstone(srcCK, hash)
-		d.b.st.cold.mu.Unlock()
+		d.b.st.hotDelete(d.b.name, key)
+		ck := compositeKey(d.b.name, key)
+		if loc, found := d.b.st.coldDir.get(ck); found {
+			d.b.st.cold.mu.Lock()
+			d.b.st.cold.markTombstoneAt(loc.slotIndex)
+			d.b.st.cold.mu.Unlock()
+			d.b.st.coldDir.remove(ck)
+		}
 	}
 
 	return &dir{b: d.b, path: strings.Trim(dstPath, "/")}, nil
@@ -1705,10 +2361,9 @@ func (b *bucket) CopyPart(ctx context.Context, mu *storage.MultipartUpload, numb
 	srcLength, _ := opts["source_length"].(int64)
 
 	// Open source object.
-	srcCK := compositeKey(srcBucket, srcKey)
-	e, found := b.st.hotGet(srcCK)
+	e, found := b.st.hotGet(srcBucket, srcKey)
 	if !found {
-		e, found = b.st.coldGet(srcCK)
+		e, found = b.st.coldGet(srcBucket, srcKey)
 		if !found {
 			return nil, storage.ErrNotExist
 		}
@@ -1795,17 +2450,15 @@ func (b *bucket) CompleteMultipart(_ context.Context, mu *storage.MultipartUploa
 	}
 
 	now := fastNow()
-	ck := compositeKey(b.name, upload.key)
 
-	e := &hotEntry{
-		value:       assembled,
-		contentType: upload.contentType,
-		created:     now,
-		updated:     now,
-		size:        int64(len(assembled)),
-	}
+	e := acquireEntry()
+	e.value = assembled
+	e.contentType = upload.contentType
+	e.created = now
+	e.updated = now
+	e.size = int64(len(assembled))
 
-	b.st.hotPut(ck, e)
+	b.st.hotPut(b.name, upload.key, e)
 
 	return &storage.Object{
 		Bucket:      b.name,
@@ -1869,32 +2522,3 @@ func (it *objectIter) Close() error {
 	it.list = nil
 	return nil
 }
-
-// ---------------------------------------------------------------------------
-// Data reader
-// ---------------------------------------------------------------------------
-
-type dataReader struct {
-	data []byte
-	pos  int
-}
-
-func (r *dataReader) Read(p []byte) (int, error) {
-	if r.pos >= len(r.data) {
-		return 0, io.EOF
-	}
-	n := copy(p, r.data[r.pos:])
-	r.pos += n
-	return n, nil
-}
-
-func (r *dataReader) WriteTo(w io.Writer) (int64, error) {
-	if r.pos >= len(r.data) {
-		return 0, nil
-	}
-	n, err := w.Write(r.data[r.pos:])
-	r.pos = len(r.data)
-	return int64(n), err
-}
-
-func (r *dataReader) Close() error { return nil }
