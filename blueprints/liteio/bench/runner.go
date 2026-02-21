@@ -29,6 +29,7 @@ import (
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/horse"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/jaguar"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/kangaroo"
+	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/kestrel"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/narwhal"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/owl"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/pony"

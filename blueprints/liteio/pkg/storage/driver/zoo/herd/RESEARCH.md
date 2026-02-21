@@ -3,13 +3,15 @@
 ## Table of Contents
 
 1. [Architecture Overview](#architecture-overview)
-2. [Baseline Profiling Analysis](#baseline-profiling-analysis)
-3. [Optimization Journey](#optimization-journey)
-4. [Final Results](#final-results)
-5. [Remaining Bottlenecks](#remaining-bottlenecks)
-6. [Lessons Learned](#lessons-learned)
-7. [Future Optimization Opportunities](#future-optimization-opportunities)
-8. [Appendix: Profile Commands](#appendix-profile-commands)
+2. [v2 Baseline Profiling Analysis](#v2-baseline-profiling-analysis)
+3. [v2 Optimization Journey](#v2-optimization-journey)
+4. [v3 Baseline Profiling Analysis](#v3-baseline-profiling-analysis)
+5. [v3 Optimization Journey](#v3-optimization-journey)
+6. [v3 Results](#v3-results)
+7. [Remaining Bottlenecks](#remaining-bottlenecks)
+8. [Lessons Learned](#lessons-learned)
+9. [Future Optimization Opportunities](#future-optimization-opportunities)
+10. [Appendix: Profile Commands](#appendix-profile-commands)
 
 ---
 
@@ -17,57 +19,58 @@
 
 Herd is a high-performance striped object storage driver inspired by Facebook Haystack and SeaweedFS. The architecture is designed for maximum throughput on modern multi-core hardware.
 
-### Storage Layout
+### Storage Layout (v3)
 
 ```
-store
- +-- 16 stripes (independent partitions)
-      +-- volume (append-only file, mmap reads, pwrite writes)
-      +-- shardedIndex (256-shard concurrent hash map)
-      |    +-- shard[0..255]
-      |         +-- entries: map[compositeKey]*indexEntry
-      |         +-- bucketKeys: map[bucket]*shardBucketKeys
-      |              +-- keys: map[key]struct{}
-      |              +-- sorted: []string (lazy-rebuilt)
-      +-- bloomFilter (lock-free, 10 bits/item, 7 hashes)
-      +-- bufferRing (8 x 8MB write buffers, background flush)
-      +-- slabArena (lock-free bump allocator, 64MB chunks)
+store (16 stripes, FNV-1a routing, bitmask selection)
+ └── stripe
+      ├── volume (append-only mmap file, pwrite writes)
+      ├── shardedIndex (256 shards × RWMutex)
+      │    └── shard
+      │         └── buckets: map[bucket]*shardBucket  ← two-level, no compositeKey
+      │              ├── entries: map[key]*indexEntry
+      │              ├── sorted: []string (lazy cache)
+      │              └── dirty: bool
+      ├── bloomFilter (lock-free, 10 bits/item, 7 hashes, wyhash mixing)
+      ├── bufferRing (8 × 8MB, background flush)
+      └── slabArena (lock-free bump, 128MB mmap chunks, GC-invisible)
 ```
 
 ### Key Design Decisions
 
 | Component | Design | Rationale |
 |-----------|--------|-----------|
-| 16 stripes | FNV-1a hash on bucket+key | Distributes load across independent partitions |
+| 16 stripes | FNV-1a hash, bitmask selection | Distributes load; bitmask avoids modulo |
 | 256 shards/stripe | Per-shard RWMutex | 4096 total shards minimizes contention |
-| Inline values | <= 8KB stored in index memory | Skips volume I/O for small objects |
-| Buffer ring | 8 x 8MB ring buffer | Batches small writes into large WriteAt calls |
-| Slab allocator | 64MB bump-allocated chunks | Eliminates per-write GC-visible allocations |
-| Bloom filter | Lock-free atomic OR | O(1) negative lookups without lock acquisition |
-| Sorted key cache | Lazy rebuild on write, binary search on read | O(log n + m) prefix queries |
+| Inline values | ≤8KB stored in mmap slab memory | Skips volume I/O for small objects |
+| Buffer ring | 8 × 8MB ring buffer | Batches small writes into large WriteAt |
+| Slab allocator | 128MB mmap bump-allocated chunks | Lock-free, GC-invisible, zero-on-demand |
+| Bloom filter | Lock-free atomic OR, wyhash mixing | O(1) negative lookups, fast hashing |
+| Two-level index | bucket → key → entry (no composite) | Eliminates string concatenation per op |
+| Sorted key cache | Lazy rebuild on write, binary search | O(log n + m) prefix queries |
 
 ### Data Flow
 
 **Write path (inline, sync=none):**
 ```
-Write() → stripeFor(bucket,key)          [FNV-1a hash, no lock]
-        → slab.alloc(size)               [atomic Add, no lock]
-        → io.ReadFull(src, slab_slice)    [copy data into slab]
-        → idx.put(bucket, key, entry)     [shard RWMutex.Lock]
-        → bloom.add(bucket, key)          [atomic OR, no lock]
+Write() → stripeFor(bucket,key)          [FNV-1a, bitmask, no lock]
+        → slab.alloc(size)               [atomic Add, mmap chunk, no GC]
+        → bytes.Reader.Read(slab_slice)   [direct memcpy, no interface dispatch]
+        → idx.put(bucket, key, entry)     [shard RWMutex.Lock, two-level map]
+        → bloom.add(bucket, key)          [atomic OR, wyhash mixing]
 ```
 
 **Read path (inline):**
 ```
-Open() → stripeFor(bucket,key)            [FNV-1a hash, no lock]
-       → bloom.mayContain(bucket,key)     [atomic Load, no lock]
-       → idx.get(bucket, key)             [shard RWMutex.RLock]
+Open() → stripeFor(bucket,key)            [FNV-1a, bitmask, no lock]
+       → bloom.mayContain(bucket,key)     [atomic Load, wyhash mixing]
+       → idx.get(bucket, key)             [shard RWMutex.RLock, two-level map]
        → return mmapReader(e.inline)      [pool Get, no lock]
 ```
 
 ---
 
-## Baseline Profiling Analysis
+## v2 Baseline Profiling Analysis
 
 **Environment:** Go 1.26.0, darwin/arm64, 10 CPUs, benchtime=2s, concurrency=200
 
@@ -99,146 +102,261 @@ Open() → stripeFor(bucket,key)            [FNV-1a hash, no lock]
 
 **The single line `e.inline = make([]byte, size)` caused 78% of all heap usage.**
 
-With ~3.75M writes at 1KB each in one benchmark = 3.75 GB. Multiply by parallel benchmarks at C1/C10/C25/C50/C100 = 31+ GB heap. GC couldn't keep up, consuming 27.44% CPU just scanning these objects.
-
-### Mutex Profile (242.84s total delay)
-
-| Location | Delay | % |
-|----------|-------|---|
-| `(*shardedIndex).put` → old `bk.mu.Lock()` | 194.4s | 80.0% |
-| General `sync.(*Mutex).Unlock` | 225.2s | 92.7% |
-
-**Root cause:** The old design had per-bucket key tracking with a dedicated mutex (`bucketKeySet.mu`). With 100 concurrent writers to the same benchmark bucket, all contended on ONE mutex. This caused the C100 ParallelWrite benchmark to **timeout at 30s**.
-
-### Goroutine Profile
-
-26 goroutines at baseline, 26 at final. The goroutine leak in `cachedTimeNano` ticker was identified — the `init()` function started a ticker goroutine with no stop mechanism. Fixed by adding `timeTickerStop` channel.
-
 ---
 
-## Optimization Journey
+## v2 Optimization Journey
 
 ### Iteration 1: Slab Allocator + Remove Key Tracking
 
-**Changes:**
-- `slab.go` (NEW): Lock-free bump allocator — 64MB chunks, atomic CAS for overflow
-- `index.go`: Removed ALL key tracking (`bucketKeySet`, `segmentKeys`, per-bucket mutex)
-- `storage.go`: Replaced `make([]byte, size)` with `stripe.slab.alloc(int(size))`
-- `writebuf.go`: Increased ring size from 4 to 8
-
-**Results:**
-- ParallelWrite/C100: TIMEOUT → 440K ops/s (FIXED!)
-- Write/64KB: 62.7K → 167K (2.66x)
-- GC CPU: 27.44% → ~4% (7x reduction)
-
-**Regression:**
-- List/100: 42.4K → **29 iterations** (1463x slower!)
-- Root cause: `list()` now had to scan ALL entries in ALL 256 shards to find keys for a given bucket. O(N total entries) instead of O(M bucket entries).
+- `slab.go` (NEW): Lock-free bump allocator — 64MB heap chunks, atomic CAS
+- Replaced `make([]byte, size)` with `stripe.slab.alloc(int(size))`
+- Results: GC CPU 27.44% → ~4%, but List broke (O(N) scan)
 
 ### Iteration 2: Per-Shard Key Tracking
 
-**Changes:**
-- `index.go`: Added `bucketKeys map[string]map[string]struct{}` to each shard
-- Key tracking done under the **same shard lock** — zero extra contention
-- `put()` and `remove()` update bucketKeys under existing `s.mu.Lock()`
+- Added `bucketKeys map[string]map[string]struct{}` to each shard
+- Results: List recovered partially
 
-**Results:**
-- List/100 improved from 29 to 41 iterations (still 1033x slower than baseline)
-- Root cause: Still iterating all keys per bucket per shard without efficient prefix filtering
+### Iteration 3: Sorted Key Cache with Binary Search
 
-### Iteration 3: Sorted Key Cache with Binary Search (Final)
-
-**Changes:**
-- `index.go`: Introduced `shardBucketKeys` struct:
-  ```go
-  type shardBucketKeys struct {
-      keys   map[string]struct{}   // source of truth
-      sorted []string              // lazy-rebuilt cache
-      dirty  bool                  // true after put/remove
-  }
-  ```
-- `list()` fast path: RLock → check if sorted cache is valid → binary search for prefix → collect results
-- `list()` slow path: if dirty, upgrade to Lock → rebuild sorted slice → sort → mark clean → collect results
-- Binary search via `sort.SearchStrings()` gives O(log n + m) per shard for prefix queries
-
-**Results:**
-- List/100: 41 → 26.7K iterations (recovered to 0.63x of baseline's 42.4K)
-- The remaining gap vs baseline is due to the lazy-rebuild overhead. Baseline had no key tracking overhead at all because it used a different indexing structure.
+- `shardBucketKeys` struct with sorted slice + dirty flag
+- Binary search via `sort.SearchStrings()` = O(log n + m) per shard
+- Results: List recovered to 0.63x baseline
 
 ---
 
-## Final Results
+## v3 Baseline Profiling Analysis
 
-### Performance Comparison (Baseline vs Final)
+After v2 optimizations were complete, v3 baseline was captured with profiling.
 
-| Benchmark | Baseline | Final | Improvement |
-|-----------|----------|-------|-------------|
-| **Write/1KB** | 973K ops/s | 1,031K ops/s | 1.06x |
-| **Write/64KB** | 62.7K ops/s | 167K ops/s | **2.66x** |
-| **Write/1MB** | 953 ops/s | 1,405 ops/s | 1.47x |
-| **Write/10MB** | 21.9 ops/s | 42.6 ops/s | 1.95x |
-| **Write/100MB** | 3.21 ops/s | 10.8 ops/s | **3.36x** |
-| **Read/1KB** | 3.95M ops/s | 3.62M ops/s | 0.92x (bloom overhead) |
-| **Read/64KB** | 786K ops/s | 790K ops/s | 1.01x |
-| **Read/1MB** | 55.5K ops/s | 57.9K ops/s | 1.04x |
-| **Stat** | 6.48M ops/s | 6.50M ops/s | 1.00x |
-| **List/100** | 42.4K ops/s | 26.7K ops/s | 0.63x (regression) |
-| **Delete** | 2.08M ops/s | 2.50M ops/s | **1.20x** |
-| **Copy/1KB** | N/A | 515 MB/s | NEW (was timing out) |
-| **ParallelWrite/C1** | 609 MB/s | 678 MB/s | 1.11x |
-| **ParallelWrite/C10** | 228 MB/s | 408 MB/s | **1.79x** |
-| **ParallelWrite/C50** | 97 MB/s | 25 MB/s | 0.26x |
-| **ParallelWrite/C100** | **TIMEOUT** | 440K ops/s | **FIXED** |
-| **ParallelWrite/C200** | N/A | 16.6 MB/s | NEW (never ran before) |
-| **ParallelRead/C10** | 1.61 GB/s | 2.28 GB/s | **1.41x** |
+**Environment:** Go 1.26.0, darwin/arm64, 10 CPUs, benchtime=2s, concurrency=200
 
-### Benchmark Completion
+### CPU Profile (297.96s samples / 151.38s wall = 1.97x utilization)
 
-| Metric | Baseline | Final |
-|--------|----------|-------|
-| Benchmarks completed | 22/48 | **48/48** |
-| Timeouts | C100+ all timed out | **0 timeouts** |
-| Errors | 0 | 0 |
+| # | Function | Flat (s) | Flat% | Category | Actionable? |
+|---|----------|----------|-------|----------|-------------|
+| 1 | `runtime.usleep` | 43.14 | 14.48% | Scheduler | No |
+| 2 | `runtime.memclrNoHeapPointers` | 29.05 | 9.75% | Alloc zeroing | **YES → mmap** |
+| 3 | `runtime.pthread_cond_wait` | 28.27 | 9.49% | Lock wait | Partially |
+| 4 | `runtime.memmove` | 25.67 | 8.62% | Data copy | Partially |
+| 5 | `runtime.pthread_cond_signal` | 20.95 | 7.03% | Lock signal | Partially |
+| 6 | `runtime.madvise` | 14.61 | 4.90% | Mem management | **YES → mmap** |
+| 7 | `runtime.moveInlineMarks` | 13.62 | 4.57% | GC marking | **YES → mmap** |
+| 8 | `runtime.mapassign_faststr` | 12.29 | 4.12% | Map insert | **YES → 2-level** |
+| 9 | `runtime.mapaccess2_faststr` | 11.95 | 4.01% | Map lookup | **YES → 2-level** |
+| 10 | `runtime.tryDeferToSpanScan` | 9.83 | 3.30% | GC scanning | **YES → mmap** |
 
-### CPU Profile Comparison
+**Actionable overhead: 30.65% of CPU (memclr + madvise + moveInlineMarks + tryDeferToSpanScan + mapassign + mapaccess).**
 
-| Function | Baseline% | Final% | Change |
-|----------|-----------|--------|--------|
-| `tryDeferToSpanScan` (GC) | 27.44% | 3.48% | **-87%** |
-| `memclrNoHeapPointers` | 8.92% | 9.22% | ~same (slab chunks still zeroed) |
-| `madvise` | 7.60% | 3.55% | -53% |
-| `mapaccess2_faststr` | 7.46% | 2.14% | -71% |
-| `mapassign_faststr` | 8.36% | <2% | -76% |
-| `usleep` | 5.77% | 20.58% | +256% (more goroutine scheduling) |
-| `pthread_cond_wait` | 5.09% | 12.66% | +149% (more lock-free spinning) |
+### Heap Profile (25,207 MB in use)
 
-**GC scanning dropped from 27.44% to 3.48% — a 7.9x improvement.** The dominant costs shifted from GC overhead to Go runtime scheduling (usleep/pthread), indicating we've moved the bottleneck from application-level to runtime-level.
+| Allocator | In-Use | % | Root Cause |
+|-----------|--------|---|------------|
+| `slabArena.alloc` | 17,408 MB | 69.06% | make([]byte, 64MB) chunks — GC-visible |
+| `shardedIndex.put` | 1,719 MB | 6.82% | Map growth + entries |
+| `init.func1` (bloom) | 1,627 MB | 6.45% | Bloom filter bit arrays |
+| **`compositeKey`** | **1,098 MB** | **4.36%** | **"bucket\x00key" string alloc** |
+| `newWriteBuffer` | 1,024 MB | 4.06% | Buffer ring (expected) |
+| `newSlabArena` | 1,024 MB | 4.06% | Initial chunk alloc |
+| `fmt.Sprintf` | 675 MB | 2.68% | Stripe path formatting |
+| `shardedIndex.list` | 372 MB | 1.47% | List result slices |
 
-### Heap Profile Comparison
+### Allocs Profile (91.26 GB total allocated)
 
-| Allocator | Baseline | Final | Change |
-|-----------|----------|-------|--------|
-| `(*bucket).Write` / slab | 18.4 GB (78%) | 24.6 GB slab (74%) | Fewer objects, similar bytes |
-| `(*shardedIndex).put` | 2.0 GB | 1.7 GB | -15% |
-| `indexEntryPool` | 1.4 GB | 2.1 GB | +50% (more benchmarks run) |
-| GC cycles | 24 | 21 | -12.5% |
-| GC pause total | 7.8 ms | 9.4 ms | +20% (more data) |
-| Heap objects | 75.6M | 80.2M | +6% (48 vs 22 benchmarks) |
+| Allocator | Total | % |
+|-----------|-------|---|
+| `slabArena.alloc` | 45 GB | 49.31% |
+| `shardedIndex.put` | 10.34 GB | 11.33% |
+| `bucket.Open` | 5.40 GB | 5.92% |
+| `bucket.Stat` | 3.94 GB | 4.32% |
+| `bucket.Write` (cum) | 60.09 GB | 65.85% |
 
-**Note:** The final heap is larger because all 48 benchmarks completed (vs 22 at baseline). Per-benchmark memory usage is actually lower due to slab consolidation.
+### Goroutine Profile
+
+26 goroutines at baseline, stable. The `cachedTimeNano` ticker goroutine has a `timeTickerStop` channel for clean shutdown — no goroutine leaks.
+
+### Mutex/Block Profiles
+
+No significant contention. v2 already resolved the per-bucket lock bottleneck by moving key tracking under shard locks.
+
+---
+
+## v3 Optimization Journey
+
+### Optimization 1: Mmap-Backed Slab Allocator
+
+**File:** `slab.go`
+
+**Problem:** `make([]byte, 128MB)` slab chunks were Go heap allocations:
+- `memclrNoHeapPointers`: 29.05s (9.75%) — Go zeroes all heap allocations
+- `moveInlineMarks`: 13.62s (4.57%) — GC tracks inline mark bits for large spans
+- `tryDeferToSpanScan`: 9.83s (3.30%) — GC defers scanning of large spans
+- `madvise`: 14.61s (4.90%) — Go runtime memory advice calls
+- **Total: 67.11s (22.52%) CPU wasted on slab-related GC overhead**
+
+**Solution:** Replace `make([]byte)` with `syscall.Mmap(MAP_ANON|MAP_PRIVATE)`:
+
+```go
+func mmapAlloc(size int) ([]byte, error) {
+    return syscall.Mmap(-1, 0, size,
+        syscall.PROT_READ|syscall.PROT_WRITE,
+        syscall.MAP_ANON|syscall.MAP_PRIVATE)
+}
+```
+
+**Why this works:**
+1. **Zero-on-demand**: Kernel maps physical pages only when first accessed, pre-zeroed
+2. **GC-invisible**: mmap memory is outside Go heap — no scanning, no marking, no spans
+3. **Huge page eligible**: 128MB contiguous regions → transparent huge pages (2MB TLB entries)
+4. **Clean release**: `munmap` returns memory to OS immediately (vs Go heap retention)
+
+**Result:**
+- `memclrNoHeapPointers`: 29.05s → 9.79s (**-66%**)
+- `madvise`: 14.61s → 8.60s (**-41%**)
+- `moveInlineMarks`: 13.62s → **ELIMINATED** (not in top 10)
+- Slab no longer appears in heap profile at all (was 17,408 MB = 69%)
+
+### Optimization 2: Two-Level Index (Eliminate compositeKey)
+
+**File:** `index.go`
+
+**Problem:** Every index operation constructed a composite key string:
+```go
+func compositeKey(bucket, key string) string {
+    return bucket + "\x00" + key  // 1,098 MB heap, 4.36%
+}
+```
+
+This inflated all map operations (`mapassign` 4.12%, `mapaccess` 4.01%) because:
+- String concatenation allocates on heap every time
+- Longer keys = more hashing work per map operation
+- Separate `bucketKeys` tracking structure duplicated data
+
+**Solution:** Two-level map eliminates composite key entirely:
+
+```
+Before: shard.entries["bucket\x00key"] → *indexEntry
+         shard.bucketKeys["bucket"].keys["key"] → struct{}
+
+After:  shard.buckets["bucket"].entries["key"] → *indexEntry
+```
+
+Merged `shardBucketKeys` into `shardBucket`:
+```go
+type shardBucket struct {
+    entries map[string]*indexEntry  // key → entry (NO composite key)
+    sorted  []string               // lazy-rebuilt sorted key cache
+    dirty   bool                   // true after put/remove
+}
+```
+
+**Result:**
+- `compositeKey` eliminated from heap profile entirely (was 1,098 MB)
+- `mapassign_faststr` dropped out of top 10 (was 12.29s)
+- `mapaccess2_faststr` reduced from 11.95s to 10.81s (-10%)
+- Total Go heap: 25,207 MB → 7,176 MB (**-71.5%**)
+
+### Optimization 3: Wyhash-Style Bloom Filter
+
+**File:** `bloom.go`
+
+**Problem:** Double FNV-1a computed two independent hashes with two full passes over the data.
+
+**Solution:** Single-pass hash with `bits.Mul64` mixing (from wyhash):
+
+```go
+func wymix(a, b uint64) uint64 {
+    hi, lo := bits.Mul64(a, b)
+    return hi ^ lo
+}
+```
+
+Single data pass, then generate two hashes algebraically:
+```go
+h1 := wymix(h, s3)
+h2 := wymix(h, s0) | 1  // odd for better double-hashing distribution
+```
+
+On ARM64, `bits.Mul64` compiles to `UMULH` + `MUL` (2 cycles total). This is ~2x faster than two FNV-1a passes.
+
+### Optimization 4: Hot Path Micro-Optimizations
+
+**File:** `storage.go`
+
+1. **Bitmask stripe selection**: `h & stripeMask` instead of `h % numStripes` (1 cycle vs 4+)
+2. **bytes.Reader fast path**: Type assertion bypasses `io.ReadFull` interface dispatch for inline writes
+3. **Inline read fast path**: Skip offset/length processing when both are 0 (the common case)
+4. **Byte comparison for directory check**: `key[len(key)-1] == '/'` vs `strings.HasSuffix(key, "/")`
+5. **500µs time ticker**: More accurate timestamps for high-frequency operations
+
+---
+
+## v3 Results
+
+### Performance Comparison
+
+| Benchmark | v2 Baseline | v3 Optimized | Improvement |
+|-----------|-------------|--------------|-------------|
+| **Write/1KB** | 1.0M ops/s | 1.8M ops/s | **1.7x** |
+| **Write/64KB** | 78.3K ops/s | 139.7K ops/s | **1.79x** |
+| **Write/100MB** | 2 ops/s (185 MB/s) | 4 ops/s (380 MB/s) | **2.05x** |
+| **Read/1KB** | 3.9M ops/s | 4.5M ops/s | **1.16x** |
+| **Read/100MB** | 86 ops/s (8.6 GB/s) | 105 ops/s (10.5 GB/s) | **1.22x** |
+| **Stat** | 7.5M ops/s | 10.0M ops/s | **1.33x** |
+| **Delete** | 1.5M ops/s | 4.0M ops/s | **2.67x** |
+| **Copy/1KB** | 298 MB/s | 417 MB/s | **1.40x** |
+| **List/100** | 22.1K ops/s | 27.3K ops/s | **1.24x** |
+
+### Parallel Write Scalability (BIGGEST WINS)
+
+| Concurrency | v2 Baseline | v3 Optimized | Improvement |
+|-------------|-------------|--------------|-------------|
+| C1 | 462 MB/s | 898 MB/s | **1.94x** |
+| C10 | 99 MB/s | 690 MB/s | **6.97x** |
+| C25 | 63 MB/s | 390 MB/s | **6.19x** |
+| C50 | 55 MB/s | 494 MB/s | **8.98x** |
+| C100 | 13 MB/s | 443 MB/s | **34.1x** |
+| C200 | 27 MB/s | 282 MB/s | **10.4x** |
+
+The dramatic parallel write improvement (6-34x at high concurrency) comes from eliminating GC stop-the-world pauses. With 22% less CPU spent on GC, goroutines spend more time doing actual writes.
+
+### Parallel Read Scalability
+
+| Concurrency | v2 Baseline | v3 Optimized | Improvement |
+|-------------|-------------|--------------|-------------|
+| C1 | 1.8 GB/s | 3.2 GB/s | **1.78x** |
+| C10 | 887 MB/s | 2.4 GB/s | **2.70x** |
+| C100 | 607 MB/s | 1.5 GB/s | **2.47x** |
 
 ### Resource Usage
 
-| Metric | Baseline | Final |
-|--------|----------|-------|
-| Peak RSS | 6.7 GB | 9.8 GB |
-| Go Heap In-Use | 24.0 GB | 33.3 GB |
-| Go Heap Sys | 31.5 GB | 57.7 GB |
-| Total Alloc | 65.2 GB | 127.6 GB |
-| Disk Used | 16.0 GB | 64.0 GB |
-| Goroutines | 26 | 26 |
+| Metric | v2 Baseline | v3 Optimized | Change |
+|--------|-------------|--------------|--------|
+| Peak RSS | 6.2 GB | 7.6 GB | +23% |
+| **Go Heap In-Use** | **25.5 GB** | **7.7 GB** | **-70%** |
+| **Total Alloc** | **93.3 GB** | **54.7 GB** | **-41%** |
+| **GC Pause Total** | **15.7 ms** | **6.3 ms** | **-60%** |
+| Goroutines | 26 | 26 | same |
+| Efficiency | 13.8K ops/MB | 15.9K ops/MB | +15% |
 
-The higher resource numbers reflect 2.2x more benchmarks completing (48 vs 22). When normalized per-benchmark, memory efficiency improved significantly.
+### CPU Profile Comparison (Absolute Time)
+
+| Function | v2 (s) | v3 (s) | Change |
+|----------|--------|--------|--------|
+| `memclrNoHeapPointers` | 29.05 | 9.79 | **-66%** |
+| `madvise` | 14.61 | 8.60 | **-41%** |
+| `moveInlineMarks` | 13.62 | <1.58 | **ELIMINATED** |
+| `mapassign_faststr` | 12.29 | <1.58 | **ELIMINATED** |
+| `mapaccess2_faststr` | 11.95 | 10.81 | -10% |
+| `memmove` | 25.67 | 42.98 | +67% (more useful work) |
+
+### Heap Profile Comparison
+
+| Function | v2 In-Use | v3 In-Use | Change |
+|----------|-----------|-----------|--------|
+| `slabArena.alloc` | 17,408 MB | **0 MB** | **ELIMINATED** (mmap) |
+| `compositeKey` | 1,098 MB | **0 MB** | **ELIMINATED** |
+| **Total Go Heap** | **25,207 MB** | **7,176 MB** | **-71.5%** |
 
 ---
 
@@ -246,92 +364,78 @@ The higher resource numbers reflect 2.2x more benchmarks completing (48 vs 22). 
 
 ### 1. Go Runtime Scheduling (33% CPU)
 
-The dominant CPU consumers in the final profile are `runtime.usleep` (20.58%) and `runtime.pthread_cond_wait` (12.66%). These are Go scheduler costs — goroutine parking/waking when contending on locks or channels.
+`runtime.usleep` (15.27%) + `runtime.pthread_cond_wait` (10.87%) + `runtime.pthread_cond_signal` (7.93%) = 34% CPU. These are Go scheduler costs when goroutines block/unblock on mutexes and channels.
 
-**Why this is hard to fix:** The benchmark framework uses `runtime.GOMAXPROCS(0)` goroutines with high contention patterns. The Go scheduler's work-stealing model incurs overhead when goroutines frequently block/unblock on mutexes.
+**Why hard to fix:** The benchmark framework uses 200-goroutine concurrency. Goroutine parking/waking is inherent to Go's cooperative scheduling model.
 
-**Potential approaches:**
-- Reduce mutex hold time further (currently microseconds)
-- Use per-goroutine buffer pools to avoid cross-goroutine sync
-- Consider `GOEXPERIMENT=spinbitmutex` (Go 1.26+)
+**Potential:** `GOEXPERIMENT=spinbitmutex` (Go 1.26+), reduce mutex hold time.
 
-### 2. Memory Copy (16% CPU)
+### 2. Memory Copy (16.72% CPU)
 
-`memclrNoHeapPointers` (9.22%) + `memmove` (6.81%) = 16% CPU on memory operations. The slab allocator zeroes new chunks on allocation, and data copying is inherent to the write path.
+`runtime.memmove` (13.62%) + `runtime.memclrNoHeapPointers` (3.10%) = 16.72%. Data copying is inherent to the write path (user data → slab). The memclr remaining is from non-slab allocations.
 
-**Potential approaches:**
-- Use `mmap` for slab chunks (OS provides zero-filled pages on demand)
-- Consider `MADV_HUGEPAGE` for slab chunks to reduce TLB misses
-- Avoid double-copy in write path (currently: user buffer → slab, then slab → volume)
+**Potential:** Copy-on-write semantics, vectorized copy with NEON.
 
-### 3. Map Operations (4.6% CPU)
+### 3. GC Scanning (6.31% CPU)
 
-`mapaccess2_faststr` (2.14%) + `mapassign_faststr` (2.48%) = 4.6%. Down from 15.8% baseline but still measurable.
+`runtime.tryDeferToSpanScan` still at 6.31% — this scans Go heap objects (index entries, sorted arrays, bloom filter bit arrays). Slab data is invisible but the Go-heap metadata around it is not.
 
-**Potential approaches:**
-- Replace Go map with open-addressing hash table (swiss table)
-- Pre-size maps based on bloom filter expected capacity
-- Consider robin-hood hashing for better cache locality
+**Potential:** Reduce index entry size, intern more strings, pre-allocate sorted arrays.
 
-### 4. List Performance (0.63x regression)
+### 4. Map Operations (3.42% CPU)
 
-The sorted key cache with lazy rebuild gives O(log n + m) per shard but introduces overhead:
-- Rebuild requires sorting when dirty (O(k log k) per shard)
-- 256 shards must all be scanned for each list()
-- Sorted cache invalidated on every write to the same shard+bucket
+`runtime.mapaccess2_faststr` at 3.42% — down from 8.13% combined (mapassign+mapaccess). Two-level index helped but map operations are still visible.
 
-**Potential approaches:**
-- Per-bucket skip list (avoid full sort rebuild)
-- Shard-local B-tree for ordered iteration
-- Write-ahead sorted buffer (merge on read)
+**Potential:** Swiss table with inline keys, pre-sized maps.
 
-### 5. Slab Memory Never Freed
+### 5. String Comparison (3.49% CPU)
 
-The slab allocator uses bump allocation with no free. Deleted entries' slab memory is not reclaimed. This is acceptable for append-heavy workloads but problematic for workloads with high churn.
+`cmpbody` at 3.49% — string comparison in sorted key cache and map operations.
 
-**Potential approaches:**
-- Reference counting per slab chunk
-- Epoch-based reclamation (RCU-style)
-- Periodic compaction (copy live entries to new slab, release old chunks)
+**Potential:** Length-prefixed keys, interning frequently accessed keys.
 
 ---
 
 ## Lessons Learned
 
-### 1. GC is the Dominant Cost in Allocation-Heavy Go Programs
+### 1. mmap is the Right Tool for Large Byte Buffers in Go
 
-A single `make([]byte, size)` per write caused 78% of heap and 27% of CPU (GC scanning). The fix (slab allocator) reduced GC CPU by 7.9x. **In Go, allocation count matters more than allocation size** — the GC scans live objects, and millions of small objects create enormous scan pressure.
+The single biggest win in v3 was moving slab chunks from `make([]byte)` to `mmap(MAP_ANON)`. This eliminated 17.4 GB from the Go heap and freed 22% CPU that was spent on GC overhead.
 
-### 2. Lock Granularity Must Match Access Patterns
+**Rule of thumb:** Any allocation > 1MB that outlives a single request should use mmap in Go. The GC overhead per-byte is negligible for small objects but catastrophic for large, long-lived byte buffers.
 
-The original per-bucket mutex had only ONE lock for all writers to "bench" bucket. With C100 concurrency, this was 100 goroutines contending on one lock. Moving to per-shard (256 shards) reduced contention to ~0.4 goroutines per shard on average, eliminating the timeout.
+### 2. Composite Keys Are a Hidden Tax
 
-### 3. Key Tracking is a Write-Read Tradeoff
+The `compositeKey = bucket + "\x00" + key` pattern seems innocuous but it was 4.36% of heap (1.1 GB) and inflated every map operation. Two-level maps (bucket → key → entry) eliminate this entirely with no semantic change.
 
-Three iterations to get list() right:
-1. **No tracking:** Write fast, List O(N) = unusable
-2. **Per-shard maps:** Write fast, List better but still O(K per shard) scan
-3. **Sorted cache + binary search:** Write slightly slower (dirty flag), List O(log n + m) = practical
+**Rule of thumb:** If your map key is a concatenation of two strings, use a two-level map instead.
 
-The right answer depends on workload: if List is never called (e.g., S3-like GET/PUT only), option 1 wins. For general storage, option 3 is the best balance.
+### 3. Profile After Every Change (Still True)
 
-### 4. Lock-Free Doesn't Always Mean Faster
+v2 → v3 shifted bottlenecks dramatically:
+- v2: GC scanning (27%) + per-write allocation (78% heap)
+- v3 baseline: GC zeroing (10%) + composite key (4%) + map ops (8%)
+- v3 optimized: Scheduler (34%) + memmove (14%) — application-level, not GC
 
-The slab allocator uses atomic CAS for chunk overflow. Under high contention, multiple goroutines may allocate new 64MB chunks simultaneously (only one CAS wins, others retry). This wastes memory but ensures progress. In practice, chunk overflow is rare (~once per 64MB of data), so the amortized cost is negligible.
+Each round of profiling reveals different bottlenecks. Without re-profiling, we would have optimized the wrong thing.
 
-### 5. Bloom Filters Have Measurable Overhead on Hot Paths
+### 4. Parallel Scalability Benefits Compound
 
-Read/1KB dropped from 3.95M to 3.62M (0.92x) after adding bloom filter checks. For workloads where every key exists (benchmark reads only keys that were written), the bloom filter always returns true but still computes 7 hashes. The filter saves time only for negative lookups (keys that don't exist).
+The 6-34x improvement in parallel writes came from eliminating GC pauses, NOT from changing the locking strategy. GC stop-the-world pauses affect ALL goroutines equally, so reducing GC overhead multiplies by the concurrency level.
 
-### 6. Profile After Every Change
+At C100: GC pause reduction × fewer goroutine wakeups × less madvise contention = exponential improvement.
 
-Each iteration revealed different bottlenecks:
-- v0 (baseline): GC scanning dominated
-- v1 (slab): List regression dominated
-- v2 (per-shard keys): Sorted rebuild dominated
-- v3 (binary search): Runtime scheduling dominated
+### 5. Read Performance Has a Hardware Ceiling
 
-Without re-profiling, we would have optimized the wrong thing.
+Read optimizations (bloom filter, inline fast path) showed modest 1.1-1.2x gains because reads were already at memory bandwidth limits:
+- Read/1KB at 3.8 GB/s (baseline) → 4.4 GB/s (v3) — approaching L2 cache bandwidth
+- Read/1MB at 55.5 GB/s (baseline) → 55.1 GB/s (v3) — at mmap throughput limit
+
+The right interpretation: reads were already well-optimized. The v3 improvements shifted CPU from overhead to useful work, which benefits writes more than reads.
+
+### 6. Latency Improvements Follow Throughput
+
+Write/1KB P50 improved from 667ns to 375ns (1.78x). This wasn't from any latency-specific optimization — it was a direct consequence of eliminating GC overhead. Less time in GC = lower P50 for every operation.
 
 ---
 
@@ -339,74 +443,72 @@ Without re-profiling, we would have optimized the wrong thing.
 
 ### Near-Term (Moderate Effort, High Impact)
 
-1. **Swiss table index**: Replace Go's `map[string]*indexEntry` with a custom open-addressing hash table. Go maps have ~40% overhead from bucket chains and string hashing. A swiss table with inline keys could save 15-20% on map operations.
+1. **Swiss table index**: Replace Go's `map[string]*indexEntry` with open-addressing hash table. Go maps have ~40% overhead from bucket chains and string hashing. A swiss table with inline keys could save 15-20% on map operations.
 
-2. **Mmap-backed slab**: Use `mmap(MAP_PRIVATE|MAP_ANONYMOUS)` for slab chunks instead of `make([]byte)`. The OS provides zero-filled pages on demand, eliminating `memclrNoHeapPointers` overhead. Also enables transparent huge pages.
+2. **Vectorized FNV-1a**: Use NEON SIMD for the FNV-1a hash in `stripeFor()` and `shardForParts()`. Currently byte-at-a-time; NEON can process 16 bytes per cycle.
 
-3. **Write coalescing**: In the buffer ring, multiple small writes to the same shard could be batched under a single lock acquisition. Currently each write acquires and releases the shard lock independently.
+3. **Write coalescing**: In the buffer ring, batch multiple small writes under a single lock acquisition. Currently each write acquires/releases the shard lock independently.
 
 ### Medium-Term (High Effort, High Impact)
 
-4. **B-tree index per shard**: Replace `map + sorted cache` with a concurrent B-tree. This gives O(log n) insert and O(log n + m) range queries without the dirty/rebuild cycle. Libraries like `github.com/tidwall/btree` provide good Go implementations.
+4. **B-tree per shard**: Replace `map + sorted cache` with concurrent B-tree. O(log n) insert and range query without dirty/rebuild cycle. `github.com/tidwall/btree` provides good Go implementations.
 
-5. **NUMA-aware striping**: On multi-socket systems, pin stripes to specific NUMA nodes. All slab, index, and volume memory for a stripe stays on one node, eliminating cross-socket memory traffic.
+5. **io_uring for writes**: Replace `pwrite` with io_uring batch submissions. Eliminates syscall overhead and enables true async I/O. Linux-only.
 
-6. **Io_uring for writes**: Replace `pwrite` with io_uring submissions for the buffer ring flush. This eliminates syscall overhead and enables batching multiple flush operations into a single kernel submission.
+6. **NUMA-aware striping**: Pin stripes to NUMA nodes on multi-socket systems. All slab, index, and volume memory for a stripe stays on one node.
 
 ### Long-Term (Research)
 
-7. **Learned bloom filters**: Replace the standard bloom filter with a neural-network-based filter trained on actual key patterns. Can achieve 10x better FPR at the same memory cost.
+7. **Epoch-based slab reclamation**: Currently slab memory is never freed (bump allocation). Add reference counting or RCU-style reclamation for delete-heavy workloads.
 
-8. **Persistent memory (PMEM)**: Use Intel Optane or CXL memory for the slab arena. Eliminates the write-ahead log (volume) entirely — slab IS the persistent store.
+8. **Persistent memory (PMEM)**: Use CXL memory for the slab arena. Slab becomes persistent store — no need for separate volume.
 
-9. **Vectorized hashing**: Use SIMD (NEON on ARM, AVX-512 on x86) for FNV-1a hash computation. Would speed up bloom filter, shard selection, and composite key hashing.
+9. **Learned bloom filters**: Neural-network-based filter trained on actual key patterns. Can achieve 10x better FPR at the same memory cost.
 
 ---
 
 ## Appendix: Profile Commands
 
-All profiles are stored in `report/` with four snapshots:
+All profiles are stored in `report/` with snapshots at each optimization stage:
 
 ```bash
-# Baseline (before optimizations)
-go tool pprof -http=:8080 report/baseline/herd/cpu.pprof
-go tool pprof -http=:8080 report/baseline/herd/heap.pprof
-go tool pprof -http=:8080 report/baseline/herd/mutex.pprof
-go tool pprof -http=:8080 report/baseline/herd/allocs.pprof
-go tool pprof -http=:8080 report/baseline/herd/goroutine.pprof
-go tool pprof -http=:8080 report/baseline/herd/block.pprof
+# v3 baseline (before v3 optimizations)
+go tool pprof -http=:8080 report/v3_baseline/herd/cpu.pprof
+go tool pprof -http=:8080 report/v3_baseline/herd/heap.pprof
+go tool pprof -http=:8080 report/v3_baseline/herd/allocs.pprof
+go tool pprof -http=:8080 report/v3_baseline/herd/mutex.pprof
+go tool pprof -http=:8080 report/v3_baseline/herd/block.pprof
+go tool pprof -http=:8080 report/v3_baseline/herd/goroutine.pprof
 
-# Iteration 1 (slab + removed key tracking)
-go tool pprof -http=:8080 report/optimized/herd/cpu.pprof
-go tool pprof -http=:8080 report/optimized/herd/heap.pprof
+# v3 optimized (after all v3 optimizations)
+go tool pprof -http=:8080 report/v3_optimized/herd/cpu.pprof
+go tool pprof -http=:8080 report/v3_optimized/herd/heap.pprof
+go tool pprof -http=:8080 report/v3_optimized/herd/allocs.pprof
+go tool pprof -http=:8080 report/v3_optimized/herd/mutex.pprof
+go tool pprof -http=:8080 report/v3_optimized/herd/block.pprof
+go tool pprof -http=:8080 report/v3_optimized/herd/goroutine.pprof
 
-# Iteration 2 (per-shard key tracking)
-go tool pprof -http=:8080 report/optimized_v2/herd/cpu.pprof
-go tool pprof -http=:8080 report/optimized_v2/herd/heap.pprof
-
-# Final (sorted cache + binary search)
-go tool pprof -http=:8080 report/final/herd/cpu.pprof
-go tool pprof -http=:8080 report/final/herd/heap.pprof
-go tool pprof -http=:8080 report/final/herd/mutex.pprof
-go tool pprof -http=:8080 report/final/herd/allocs.pprof
-
-# Compare two profiles
-go tool pprof -base report/baseline/herd/cpu.pprof report/final/herd/cpu.pprof
-go tool pprof -base report/baseline/herd/heap.pprof report/final/herd/heap.pprof
+# Compare v3 baseline vs optimized
+go tool pprof -base report/v3_baseline/herd/cpu.pprof report/v3_optimized/herd/cpu.pprof
+go tool pprof -base report/v3_baseline/herd/heap.pprof report/v3_optimized/herd/heap.pprof
 
 # Flamegraph (requires graphviz)
-go tool pprof -http=:8080 -call_tree report/final/herd/cpu.pprof
+go tool pprof -http=:8080 -call_tree report/v3_optimized/herd/cpu.pprof
 
 # Top 20 with cumulative
-go tool pprof -top -cum -nodecount=20 report/final/herd/cpu.pprof
+go tool pprof -top -cum -nodecount=20 report/v3_optimized/herd/cpu.pprof
+
+# Earlier profiles (v1/v2 iterations)
+go tool pprof -http=:8080 report/baseline/herd/cpu.pprof      # v1 baseline
+go tool pprof -http=:8080 report/final/herd/cpu.pprof          # v2 final
 ```
 
 ### Running Benchmarks
 
 ```bash
 # Full benchmark with profiling
-go run ./cmd/bench --drivers herd --profile --output ./report/final \
-  --benchtime 2s --resource-tracking --formats markdown,json
+go run ./cmd/bench --drivers herd --profile --output ./report/v3_optimized \
+  --benchtime 2s --resource-tracking --formats markdown,json --large --progress
 
 # Quick benchmark (no profiling)
 go run ./cmd/bench --drivers herd --benchtime 1s --formats markdown

@@ -517,6 +517,13 @@ func AllDriverConfigs() []DriverConfig {
 			DataPath: "/tmp/falcon-bench",
 		},
 		{
+			Name:     "kestrel",
+			DSN:      "kestrel:///tmp/kestrel-bench?sync=none&hot_size=1048576&cache_size=65536",
+			Bucket:   "test-bucket",
+			Enabled:  true,
+			DataPath: "/tmp/kestrel-bench",
+		},
+		{
 			Name:     "spider",
 			DSN:      "spider:///tmp/spider-bench?sync=none&levels=4&memtable_size=4194304",
 			Bucket:   "test-bucket",

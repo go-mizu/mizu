@@ -53,7 +53,7 @@ func init() {
 	cachedTimeNano.Store(time.Now().UnixNano())
 	timeTickerStop = make(chan struct{})
 	go func() {
-		ticker := time.NewTicker(1 * time.Millisecond)
+		ticker := time.NewTicker(500 * time.Microsecond)
 		defer ticker.Stop()
 		for {
 			select {
@@ -144,12 +144,29 @@ func openEmbedded(_ context.Context, u *url.URL) (*store, error) {
 		return nil, fmt.Errorf("herd: mkdir %q: %w", root, err)
 	}
 
+	// Ensure numStripes is a power of 2 for bitmask optimization.
+	mask := uint32(numStripes - 1)
+	if numStripes&(numStripes-1) != 0 {
+		// Round up to next power of 2.
+		v := numStripes
+		v--
+		v |= v >> 1
+		v |= v >> 2
+		v |= v >> 4
+		v |= v >> 8
+		v |= v >> 16
+		v++
+		numStripes = v
+		mask = uint32(numStripes - 1)
+	}
+
 	s := &store{
 		root:       root,
 		syncMode:   syncMode,
 		noSync:     syncMode == "none",
 		inlineMax:  int64(inlineKB) * 1024,
 		numStripes: numStripes,
+		stripeMask: mask,
 		stripes:    make([]*stripe, numStripes),
 		mp:         newMultipartRegistry(),
 	}
@@ -231,6 +248,7 @@ type store struct {
 	noSync     bool // cached syncMode == "none" to avoid string comparison per op
 	inlineMax  int64
 	numStripes int
+	stripeMask uint32 // v3: bitmask for stripe selection (power-of-2 stripes)
 	stripes    []*stripe
 
 	buckets sync.Map // string → time.Time — lock-free bucket tracking
@@ -242,6 +260,7 @@ var _ storage.Storage = (*store)(nil)
 
 // stripeFor selects a stripe for a bucket+key using full FNV-1a hash.
 // Full hash ensures even distribution across stripes regardless of key patterns.
+// v3: numStripes is always a power of 2, so use bitmask instead of modulo.
 func (s *store) stripeFor(bucket, key string) *stripe {
 	const prime32 = 16777619
 	h := uint32(2166136261)
@@ -255,7 +274,7 @@ func (s *store) stripeFor(bucket, key string) *stripe {
 		h ^= uint32(key[i])
 		h *= prime32
 	}
-	return s.stripes[h%uint32(s.numStripes)]
+	return s.stripes[h&s.stripeMask]
 }
 
 func (s *store) Bucket(name string) storage.Bucket {
@@ -400,8 +419,7 @@ func (b *bucket) Write(_ context.Context, key string, src io.Reader, size int64,
 	contentType = internContentType(contentType)
 
 	// INLINE PATH: small known-size values skip volume I/O entirely in sync=none mode.
-	// Slab allocator: sub-allocate from pre-allocated 64MB chunks (lock-free atomic bump).
-	// Eliminates per-write make([]byte) that caused 78% of heap and 40% GC overhead.
+	// v3: mmap-backed slab (no GC, no memclr), direct bytes.Reader copy bypass.
 	if size >= 0 && size <= b.st.inlineMax {
 		e := acquireIndexEntry()
 		e.size = size
@@ -410,12 +428,17 @@ func (b *bucket) Write(_ context.Context, key string, src io.Reader, size int64,
 		e.updated = now
 
 		if size > 0 {
-			// Slab allocation: lock-free sub-allocation from 64MB chunks.
 			e.inline = stripe.slab.alloc(int(size))
-			if _, err := io.ReadFull(src, e.inline); err != nil {
-				if err != io.EOF && err != io.ErrUnexpectedEOF {
-					releaseIndexEntry(e)
-					return nil, fmt.Errorf("herd: read value: %w", err)
+			// v3 optimization: detect *bytes.Reader to bypass io.ReadFull overhead.
+			// bytes.Reader.Read() on known-size is a single memcpy, no interface dispatch.
+			if br, ok := src.(*bytes.Reader); ok {
+				br.Read(e.inline)
+			} else {
+				if _, err := io.ReadFull(src, e.inline); err != nil {
+					if err != io.EOF && err != io.ErrUnexpectedEOF {
+						releaseIndexEntry(e)
+						return nil, fmt.Errorf("herd: read value: %w", err)
+					}
 				}
 			}
 		}
@@ -424,7 +447,6 @@ func (b *bucket) Write(_ context.Context, key string, src io.Reader, size int64,
 		stripe.bloom.add(b.name, key)
 
 		// Skip volume write in sync=none mode for pure speed.
-		// In batch/full mode, write to volume for durability.
 		if !noSync && size > 0 {
 			if stripe.ring != nil {
 				bl, kl, cl := len(b.name), len(key), len(contentType)
@@ -604,26 +626,34 @@ func (b *bucket) Open(_ context.Context, key string, offset, length int64, _ sto
 		return nil, nil, storage.ErrNotExist
 	}
 
+	// v3 optimization: inline fast path — minimize work for the common case.
+	// No offset/length processing needed when both are 0 (the common case).
+	if e.inline != nil {
+		data := e.inline
+		if offset > 0 || length > 0 {
+			if offset < 0 {
+				offset = 0
+			}
+			if offset > int64(len(data)) {
+				offset = int64(len(data))
+			}
+			end := int64(len(data))
+			if length > 0 && offset+length < end {
+				end = offset + length
+			}
+			data = data[offset:end]
+		}
+		return acquireMmapReader(data), &storage.Object{
+			Bucket: b.name, Key: key, Size: e.size,
+			ContentType: e.contentType,
+			Created:     time.Unix(0, e.created), Updated: time.Unix(0, e.updated),
+		}, nil
+	}
+
 	obj := &storage.Object{
 		Bucket: b.name, Key: key, Size: e.size,
 		ContentType: e.contentType,
 		Created:     time.Unix(0, e.created), Updated: time.Unix(0, e.updated),
-	}
-
-	// Inline data: direct slice, no volume I/O.
-	if e.inline != nil {
-		data := e.inline
-		if offset < 0 {
-			offset = 0
-		}
-		if offset > int64(len(data)) {
-			offset = int64(len(data))
-		}
-		end := int64(len(data))
-		if length > 0 && offset+length < end {
-			end = offset + length
-		}
-		return acquireMmapReader(data[offset:end]), obj, nil
 	}
 
 	// Buffer ring: data may still be in unflushed write buffer.
@@ -644,7 +674,6 @@ func (b *bucket) Open(_ context.Context, key string, offset, length int64, _ sto
 	}
 
 	// Large object: use pread-based reader for better sequential throughput.
-	// pread benefits from kernel readahead and avoids TLB pressure vs mmap.
 	if e.size > largeReadThreshold {
 		readOff := e.valueOffset
 		readSize := e.size
@@ -680,6 +709,8 @@ func (b *bucket) Stat(_ context.Context, key string, _ storage.Options) (*storag
 	if key == "" {
 		return nil, fmt.Errorf("herd: key is empty")
 	}
+
+	// v3: Only TrimSpace if leading/trailing space detected (avoid work in hot path).
 	if key[0] == ' ' || key[len(key)-1] == ' ' {
 		key = strings.TrimSpace(key)
 		if key == "" {
@@ -687,9 +718,8 @@ func (b *bucket) Stat(_ context.Context, key string, _ storage.Options) (*storag
 		}
 	}
 
-	// Check for directory stat.
-	if strings.HasSuffix(key, "/") {
-		// Fan-out to all stripes for directory listing.
+	// Directory stat: only when key ends with /.
+	if key[len(key)-1] == '/' {
 		for _, st := range b.st.stripes {
 			results := st.idx.list(b.name, key)
 			if len(results) > 0 {
