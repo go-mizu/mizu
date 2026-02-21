@@ -10,7 +10,9 @@ import (
 const defaultBufSize = 8 * 1024 * 1024
 
 // ringSize is the number of buffers per stripe.
-const ringSize = 4
+// 8 buffers gives more headroom for high-concurrency writers while
+// the flusher processes frozen buffers.
+const ringSize = 8
 
 // writeBuffer is a pre-allocated contiguous memory region for accumulating writes.
 type writeBuffer struct {
@@ -113,7 +115,18 @@ func (br *bufferRing) writeInline(totalSize int64, valPosInRecord int) (buf []by
 }
 
 func (br *bufferRing) swap() {
-	br.swapMu.Lock()
+	// Try lock-free first: another goroutine may have already swapped.
+	if !br.swapMu.TryLock() {
+		// Someone is already swapping. Spin briefly on active buffer.
+		for i := 0; i < 64; i++ {
+			ab := br.activeBuffer()
+			if !ab.frozen.Load() && ab.pos.Load() < ab.capacity {
+				return // active buffer was swapped by someone else
+			}
+			runtime.Gosched()
+		}
+		br.swapMu.Lock()
+	}
 	defer br.swapMu.Unlock()
 
 	cur := br.active.Load()

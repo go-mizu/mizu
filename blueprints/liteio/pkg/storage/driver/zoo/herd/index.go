@@ -13,9 +13,9 @@ const shardCount = 256
 type indexEntry struct {
 	valueOffset int64  // offset in volume file where value bytes start (0 for inline)
 	size        int64  // value size in bytes
-	contentType string
-	created     int64 // UnixNano
-	updated     int64 // UnixNano
+	contentType string // interned content type
+	created     int64  // UnixNano
+	updated     int64  // UnixNano
 	inline      []byte // inline value data (≤inlineMax), nil for volume-backed
 }
 
@@ -37,38 +37,34 @@ func releaseIndexEntry(e *indexEntry) {
 	}
 }
 
-// shard is one segment of the sharded hash index.
-type shard struct {
-	mu      sync.RWMutex
-	entries map[string]*indexEntry // "bucket\x00key" → entry
-	_       [40]byte              // padding to avoid false sharing
-}
-
-// segmentKeys holds keys for one path segment with lazy sorting.
-type segmentKeys struct {
+// shardBucketKeys tracks keys for a single bucket within a single shard.
+// The sorted array is rebuilt lazily on list() after writes dirty it.
+type shardBucketKeys struct {
 	keys   map[string]struct{}
 	sorted []string
 	dirty  bool
 }
 
-// bucketKeySet tracks all keys for a bucket, segmented by first path component.
-type bucketKeySet struct {
-	mu       sync.RWMutex
-	total    int
-	segments map[string]*segmentKeys
-	noSlash  *segmentKeys
+// shard is one segment of the sharded hash index.
+// Key tracking is per-shard (under the same shard lock) — zero extra contention
+// compared to the old per-bucket lock that caused C100 timeouts.
+type shard struct {
+	mu         sync.RWMutex
+	entries    map[string]*indexEntry                // "bucket\x00key" → entry
+	bucketKeys map[string]*shardBucketKeys           // bucket → key set for list
+	_          [40]byte                              // padding to avoid false sharing
 }
 
 // shardedIndex is a 256-shard concurrent hash index.
 type shardedIndex struct {
-	shards  [shardCount]shard
-	buckets sync.Map // bucket name → *bucketKeySet
+	shards [shardCount]shard
 }
 
 func newIndex() *shardedIndex {
 	idx := &shardedIndex{}
 	for i := range idx.shards {
 		idx.shards[i].entries = make(map[string]*indexEntry, 64)
+		idx.shards[i].bucketKeys = make(map[string]*shardBucketKeys, 4)
 	}
 	return idx
 }
@@ -112,38 +108,6 @@ func unsafeString(b []byte) string {
 	return unsafe.String(unsafe.SliceData(b), len(b))
 }
 
-func firstSegment(key string) string {
-	if i := strings.IndexByte(key, '/'); i >= 0 {
-		return key[:i]
-	}
-	return ""
-}
-
-func (idx *shardedIndex) getBucketKeys(bucket string) *bucketKeySet {
-	if v, ok := idx.buckets.Load(bucket); ok {
-		return v.(*bucketKeySet)
-	}
-	bk := &bucketKeySet{
-		segments: make(map[string]*segmentKeys, 16),
-		noSlash:  &segmentKeys{keys: make(map[string]struct{}, 16), dirty: true},
-	}
-	actual, _ := idx.buckets.LoadOrStore(bucket, bk)
-	return actual.(*bucketKeySet)
-}
-
-func (bk *bucketKeySet) getSegment(key string) *segmentKeys {
-	seg := firstSegment(key)
-	if seg == "" {
-		return bk.noSlash
-	}
-	sk, ok := bk.segments[seg]
-	if !ok {
-		sk = &segmentKeys{keys: make(map[string]struct{}, 64), dirty: true}
-		bk.segments[seg] = sk
-	}
-	return sk
-}
-
 func (idx *shardedIndex) put(bucket, key string, e *indexEntry) {
 	si := shardForParts(bucket, key)
 	s := &idx.shards[si]
@@ -155,20 +119,20 @@ func (idx *shardedIndex) put(bucket, key string, e *indexEntry) {
 	old, exists := s.entries[ck]
 	if !exists {
 		ck = compositeKey(bucket, key)
+		// Track key for list — under same shard lock, zero extra contention.
+		sbk := s.bucketKeys[bucket]
+		if sbk == nil {
+			sbk = &shardBucketKeys{keys: make(map[string]struct{}, 64)}
+			s.bucketKeys[bucket] = sbk
+		}
+		sbk.keys[key] = struct{}{}
+		sbk.dirty = true
 	}
 	s.entries[ck] = e
 	s.mu.Unlock()
 
 	if exists {
 		releaseIndexEntry(old)
-	} else {
-		bk := idx.getBucketKeys(bucket)
-		bk.mu.Lock()
-		sk := bk.getSegment(key)
-		sk.keys[key] = struct{}{}
-		sk.dirty = true
-		bk.total++
-		bk.mu.Unlock()
 	}
 }
 
@@ -196,92 +160,104 @@ func (idx *shardedIndex) remove(bucket, key string) bool {
 	old, exists := s.entries[ck]
 	if exists {
 		delete(s.entries, ck)
+		if sbk := s.bucketKeys[bucket]; sbk != nil {
+			delete(sbk.keys, key)
+			sbk.dirty = true
+		}
 	}
 	s.mu.Unlock()
 
 	if exists {
 		releaseIndexEntry(old)
-		bk := idx.getBucketKeys(bucket)
-		bk.mu.Lock()
-		sk := bk.getSegment(key)
-		delete(sk.keys, key)
-		sk.dirty = true
-		bk.total--
-		bk.mu.Unlock()
 	}
-
 	return exists
 }
 
-func (sk *segmentKeys) ensureSorted() {
-	if !sk.dirty {
-		return
-	}
-	sk.sorted = sk.sorted[:0] // reuse underlying array
-	for k := range sk.keys {
-		sk.sorted = append(sk.sorted, k)
-	}
-	sort.Strings(sk.sorted)
-	sk.dirty = false
-}
-
+// list returns keys matching bucket+prefix using sorted arrays with binary search.
+// Sorted arrays are rebuilt lazily (only when dirty from writes), giving O(log n + m)
+// per shard for prefix queries instead of O(n).
 func (idx *shardedIndex) list(bucket, prefix string) []listResult {
-	bk := idx.getBucketKeys(bucket)
-	seg := firstSegment(prefix)
-
-	bk.mu.Lock()
-	var sk *segmentKeys
-	if seg == "" {
-		sk = bk.noSlash
-	} else {
-		sk = bk.segments[seg]
-	}
-	if sk == nil || len(sk.keys) == 0 {
-		bk.mu.Unlock()
-		return nil
-	}
-
-	sk.ensureSorted()
-	sorted := sk.sorted
-	bk.mu.Unlock()
-
-	start := sort.SearchStrings(sorted, prefix)
-
 	var results []listResult
-	for i := start; i < len(sorted); i++ {
-		key := sorted[i]
-		if !strings.HasPrefix(key, prefix) {
-			break
-		}
+	for i := range idx.shards {
+		s := &idx.shards[i]
 
-		si := shardForParts(bucket, key)
-		s := &idx.shards[si]
-
-		var buf [256]byte
-		ck := unsafeString(compositeKeyBuf(buf[:0], bucket, key))
-
+		// First try RLock — fast path when sorted cache is valid.
 		s.mu.RLock()
-		e, ok := s.entries[ck]
-		s.mu.RUnlock()
-
-		if ok {
-			results = append(results, listResult{key: key, entry: e})
+		sbk := s.bucketKeys[bucket]
+		if sbk == nil || len(sbk.keys) == 0 {
+			s.mu.RUnlock()
+			continue
 		}
-	}
 
+		if sbk.dirty {
+			// Need to rebuild sorted list. Upgrade to write lock.
+			s.mu.RUnlock()
+			s.mu.Lock()
+			// Double-check after acquiring write lock.
+			sbk = s.bucketKeys[bucket]
+			if sbk != nil && sbk.dirty {
+				sbk.sorted = sbk.sorted[:0]
+				for k := range sbk.keys {
+					sbk.sorted = append(sbk.sorted, k)
+				}
+				sort.Strings(sbk.sorted)
+				sbk.dirty = false
+			}
+			// Downgrade: collect results under write lock (safe, just slower).
+			if sbk != nil && len(sbk.sorted) > 0 {
+				idx.collectResults(s, bucket, prefix, sbk.sorted, &results)
+			}
+			s.mu.Unlock()
+			continue
+		}
+
+		// Fast path: sorted cache is valid.
+		idx.collectResults(s, bucket, prefix, sbk.sorted, &results)
+		s.mu.RUnlock()
+	}
 	return results
 }
 
-func (idx *shardedIndex) hasBucket(bucket string) bool {
-	v, ok := idx.buckets.Load(bucket)
-	if !ok {
-		return false
+// collectResults appends matching list results from a sorted key slice.
+// Uses binary search for O(log n + m) prefix matching.
+func (idx *shardedIndex) collectResults(s *shard, bucket, prefix string, sorted []string, results *[]listResult) {
+	if prefix == "" {
+		for _, key := range sorted {
+			var buf [256]byte
+			ck := unsafeString(compositeKeyBuf(buf[:0], bucket, key))
+			if e, ok := s.entries[ck]; ok {
+				*results = append(*results, listResult{key: key, entry: e})
+			}
+		}
+		return
 	}
-	bk := v.(*bucketKeySet)
-	bk.mu.RLock()
-	n := bk.total
-	bk.mu.RUnlock()
-	return n > 0
+
+	start := sort.SearchStrings(sorted, prefix)
+	for j := start; j < len(sorted); j++ {
+		key := sorted[j]
+		if !strings.HasPrefix(key, prefix) {
+			break
+		}
+		var buf [256]byte
+		ck := unsafeString(compositeKeyBuf(buf[:0], bucket, key))
+		if e, ok := s.entries[ck]; ok {
+			*results = append(*results, listResult{key: key, entry: e})
+		}
+	}
+}
+
+func (idx *shardedIndex) hasBucket(bucket string) bool {
+	for i := range idx.shards {
+		s := &idx.shards[i]
+		s.mu.RLock()
+		sbk := s.bucketKeys[bucket]
+		has := sbk != nil && len(sbk.keys) > 0
+		s.mu.RUnlock()
+		if has {
+			return true
+		}
+	}
+	return false
 }
 
 type listResult struct {
