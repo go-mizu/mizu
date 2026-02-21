@@ -3,32 +3,35 @@ package pony
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"unsafe"
 )
 
-// On-disk hash table via mmap.
+// Sharded on-disk hash table via mmap.
 //
-// Layout: [Header 64B] [Slots N×64B] [StringPool...]
+// Layout per shard: [Header 64B] [Slots N×64B] [StringPool...]
 //
-// Uses open-addressing with linear probing. The string pool stores composite
-// keys (bucket\x00key) and content types for each entry. Only mmap'd pages
-// that are accessed consume physical memory — the OS manages eviction.
+// 256 shards, each with its own RWMutex and mmap file. Shard selection via
+// FNV-1a hash bitmask. This eliminates the global lock bottleneck from v1.
 
 const (
 	idxMagic     = "PONYIDX\x00"
-	idxVersion   = 1
+	idxVersion   = 2
 	idxHdrSize   = 64
 	idxSlotSize  = 64
 	hashEmpty    = 0
 	hashTombstone = 1
 
-	defaultSlotCount     = 1 << 16 // 65536 slots
+	shardCount           = 256
+	shardMask            = shardCount - 1
+	defaultSlotsPerShard = 256 // 256 slots × 64B = 16KB per shard
 	maxLoadPercent       = 75
-	defaultStringPoolCap = 4 * 1024 * 1024 // 4MB initial string pool
+	defaultStringPoolCap = 64 * 1024 // 64KB per shard (vs 4MB for single index)
 )
 
 // diskSlot is the on-disk format for a hash table entry.
@@ -46,7 +49,7 @@ type diskSlot struct {
 	_pad2   [8]byte
 }
 
-// idxHeader is the on-disk header for the index file.
+// idxHeader is the on-disk header for each shard index file.
 type idxHeader struct {
 	Magic      [8]byte
 	Version    uint32
@@ -57,212 +60,292 @@ type idxHeader struct {
 	_pad       [24]byte
 }
 
-// diskIndex manages the mmap'd on-disk hash table.
-type diskIndex struct {
-	mu   sync.RWMutex
-	path string
-	fd   *os.File
-	data []byte // mmap'd region
-
+// diskShard is one shard of the sharded hash table.
+type diskShard struct {
+	mu         sync.RWMutex
+	path       string
+	fd         *os.File
+	data       []byte // mmap'd region
 	slotCount  uint64
 	entryCount uint64
 	stringsPos uint64
 	fileSize   int64
-
-	// In-memory per-bucket key lists for fast List operations.
-	bucketKeys sync.Map // bucket name → *bucketKeyList
 }
 
-// bucketKeyList maintains a sorted key list for one bucket.
-type bucketKeyList struct {
-	mu     sync.RWMutex
-	keys   map[string]struct{}
-	sorted []string
-	dirty  bool
+// shardedIndex manages 256 independent shard indexes.
+type shardedIndex struct {
+	shards  [shardCount]*diskShard
+	dir     string
+	version atomic.Uint64 // bumped on every put/remove for list cache invalidation
+
+	// List result cache — avoids rescanning when data hasn't changed.
+	listCacheMu sync.RWMutex
+	listCache   map[string]listCacheEntry
 }
 
-func newDiskIndex(path string, initialSlots uint64) (*diskIndex, error) {
-	if initialSlots == 0 {
-		initialSlots = defaultSlotCount
-	}
-	// Round up to power of 2.
-	initialSlots = nextPow2(initialSlots)
+type listCacheEntry struct {
+	version uint64
+	results []listResult
+}
 
-	dir := path
-	if i := lastSlash(path); i >= 0 {
-		dir = path[:i]
+func newShardedIndex(dir string, initialSlotsPerShard uint64) (*shardedIndex, error) {
+	if initialSlotsPerShard == 0 {
+		initialSlotsPerShard = defaultSlotsPerShard
 	}
-	if err := os.MkdirAll(dir, 0o750); err != nil {
+	initialSlotsPerShard = nextPow2(initialSlotsPerShard)
+
+	idxDir := filepath.Join(dir, "idx")
+	if err := os.MkdirAll(idxDir, 0o750); err != nil {
 		return nil, fmt.Errorf("pony: mkdir index: %w", err)
 	}
 
+	si := &shardedIndex{
+		dir:       idxDir,
+		listCache: make(map[string]listCacheEntry),
+	}
+
+	for i := 0; i < shardCount; i++ {
+		path := filepath.Join(idxDir, fmt.Sprintf("s%03d.idx", i))
+		shard, err := newDiskShard(path, initialSlotsPerShard)
+		if err != nil {
+			// Close already-opened shards.
+			for j := 0; j < i; j++ {
+				si.shards[j].close()
+			}
+			return nil, err
+		}
+		si.shards[i] = shard
+	}
+
+	return si, nil
+}
+
+func newDiskShard(path string, initialSlots uint64) (*diskShard, error) {
 	fd, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
-		return nil, fmt.Errorf("pony: open index: %w", err)
+		return nil, fmt.Errorf("pony: open shard: %w", err)
 	}
 
 	info, err := fd.Stat()
 	if err != nil {
 		fd.Close()
-		return nil, fmt.Errorf("pony: stat index: %w", err)
+		return nil, fmt.Errorf("pony: stat shard: %w", err)
 	}
 
-	idx := &diskIndex{
+	shard := &diskShard{
 		path: path,
 		fd:   fd,
 	}
 
 	if info.Size() == 0 {
-		// New index file — initialize.
-		if err := idx.initNew(initialSlots); err != nil {
+		if err := shard.initNew(initialSlots); err != nil {
 			fd.Close()
 			return nil, err
 		}
 	} else {
-		// Existing index file — load.
-		if err := idx.loadExisting(); err != nil {
+		if err := shard.loadExisting(); err != nil {
 			fd.Close()
 			return nil, err
 		}
 	}
 
-	return idx, nil
+	return shard, nil
 }
 
-func (idx *diskIndex) initNew(slotCount uint64) error {
+func (s *diskShard) initNew(slotCount uint64) error {
 	stringsStart := int64(idxHdrSize) + int64(slotCount)*idxSlotSize
 	fileSize := stringsStart + defaultStringPoolCap
 
-	if err := idx.fd.Truncate(fileSize); err != nil {
-		return fmt.Errorf("pony: truncate index: %w", err)
+	if err := s.fd.Truncate(fileSize); err != nil {
+		return fmt.Errorf("pony: truncate shard: %w", err)
 	}
 
-	data, err := syscall.Mmap(int(idx.fd.Fd()), 0, int(fileSize),
+	data, err := syscall.Mmap(int(s.fd.Fd()), 0, int(fileSize),
 		syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 	if err != nil {
-		return fmt.Errorf("pony: mmap index: %w", err)
+		return fmt.Errorf("pony: mmap shard: %w", err)
 	}
 
-	idx.data = data
-	idx.slotCount = slotCount
-	idx.entryCount = 0
-	idx.stringsPos = uint64(stringsStart)
-	idx.fileSize = fileSize
-
-	// Write header.
-	idx.writeHeader()
+	s.data = data
+	s.slotCount = slotCount
+	s.entryCount = 0
+	s.stringsPos = uint64(stringsStart)
+	s.fileSize = fileSize
+	s.writeHeader()
 
 	return nil
 }
 
-func (idx *diskIndex) loadExisting() error {
-	info, err := idx.fd.Stat()
+func (s *diskShard) loadExisting() error {
+	info, err := s.fd.Stat()
 	if err != nil {
-		return fmt.Errorf("pony: stat index: %w", err)
+		return fmt.Errorf("pony: stat shard: %w", err)
 	}
 
-	data, err := syscall.Mmap(int(idx.fd.Fd()), 0, int(info.Size()),
+	data, err := syscall.Mmap(int(s.fd.Fd()), 0, int(info.Size()),
 		syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 	if err != nil {
-		return fmt.Errorf("pony: mmap index: %w", err)
+		return fmt.Errorf("pony: mmap shard: %w", err)
 	}
 
-	idx.data = data
-	idx.fileSize = info.Size()
+	s.data = data
+	s.fileSize = info.Size()
 
-	// Read header.
 	if len(data) < idxHdrSize {
-		return fmt.Errorf("pony: index file too small")
+		return fmt.Errorf("pony: shard file too small")
 	}
 	hdr := (*idxHeader)(unsafe.Pointer(&data[0]))
 	if string(hdr.Magic[:]) != idxMagic {
-		return fmt.Errorf("pony: invalid index magic")
-	}
-	if hdr.Version != idxVersion {
-		return fmt.Errorf("pony: unsupported index version %d", hdr.Version)
+		return fmt.Errorf("pony: invalid shard magic")
 	}
 
-	idx.slotCount = hdr.SlotCount
-	idx.entryCount = hdr.EntryCount
-	idx.stringsPos = hdr.StringsPos
-
-	// Rebuild in-memory key lists from the hash table.
-	idx.rebuildKeyLists()
+	s.slotCount = hdr.SlotCount
+	s.entryCount = hdr.EntryCount
+	s.stringsPos = hdr.StringsPos
 
 	return nil
 }
 
-func (idx *diskIndex) writeHeader() {
-	hdr := (*idxHeader)(unsafe.Pointer(&idx.data[0]))
+func (s *diskShard) writeHeader() {
+	hdr := (*idxHeader)(unsafe.Pointer(&s.data[0]))
 	copy(hdr.Magic[:], idxMagic)
 	hdr.Version = idxVersion
-	hdr.SlotCount = idx.slotCount
-	hdr.EntryCount = idx.entryCount
-	hdr.StringsPos = idx.stringsPos
+	hdr.SlotCount = s.slotCount
+	hdr.EntryCount = s.entryCount
+	hdr.StringsPos = s.stringsPos
 }
 
-func (idx *diskIndex) updateHeaderCounts() {
-	hdr := (*idxHeader)(unsafe.Pointer(&idx.data[0]))
-	hdr.EntryCount = idx.entryCount
-	hdr.StringsPos = idx.stringsPos
+func (s *diskShard) updateHeaderCounts() {
+	hdr := (*idxHeader)(unsafe.Pointer(&s.data[0]))
+	hdr.EntryCount = s.entryCount
+	hdr.StringsPos = s.stringsPos
 }
 
-// slotAt returns a pointer to the i-th slot in the mmap'd hash table.
-func (idx *diskIndex) slotAt(i uint64) *diskSlot {
+func (s *diskShard) slotAt(i uint64) *diskSlot {
 	off := idxHdrSize + i*idxSlotSize
-	return (*diskSlot)(unsafe.Pointer(&idx.data[off]))
-}
-
-// readString reads a string from the mmap'd data at given offset and length.
-func (idx *diskIndex) readString(off uint64, length uint32) string {
-	return string(idx.data[off : off+uint64(length)])
+	return (*diskSlot)(unsafe.Pointer(&s.data[off]))
 }
 
 // appendString writes a string to the string pool and returns its offset.
 // Caller must hold the write lock.
-func (idx *diskIndex) appendString(s string) uint64 {
-	off := idx.stringsPos
-	needed := off + uint64(len(s))
+func (s *diskShard) appendString(str string) uint64 {
+	off := s.stringsPos
+	needed := off + uint64(len(str))
 
-	// Grow file if string pool is full.
-	if int64(needed) > idx.fileSize {
-		idx.growFile(int64(needed))
+	if int64(needed) > s.fileSize {
+		s.growFile(int64(needed))
 	}
 
-	copy(idx.data[off:], s)
-	idx.stringsPos = needed
+	copy(s.data[off:], str)
+	s.stringsPos = needed
 	return off
 }
 
-// growFile extends the index file and remaps.
-func (idx *diskIndex) growFile(needed int64) {
-	newSize := idx.fileSize * 2
+// appendCompositeAndCT writes bucket+"\x00"+key+contentType directly to the
+// string pool without concatenating them into a Go string first. Returns the
+// offset where the composite key starts.
+func (s *diskShard) appendCompositeAndCT(bucket, key, contentType string) uint64 {
+	total := uint64(len(bucket) + 1 + len(key) + len(contentType))
+	off := s.stringsPos
+	needed := off + total
+
+	if int64(needed) > s.fileSize {
+		s.growFile(int64(needed))
+	}
+
+	p := off
+	copy(s.data[p:], bucket)
+	p += uint64(len(bucket))
+	s.data[p] = 0
+	p++
+	copy(s.data[p:], key)
+	p += uint64(len(key))
+	copy(s.data[p:], contentType)
+	s.stringsPos = needed
+	return off
+}
+
+func (s *diskShard) growFile(needed int64) {
+	newSize := s.fileSize * 2
 	for newSize < needed {
 		newSize *= 2
 	}
 
-	// munmap old region.
-	syscall.Munmap(idx.data)
+	syscall.Munmap(s.data)
+	s.fd.Truncate(newSize)
 
-	idx.fd.Truncate(newSize)
-
-	data, err := syscall.Mmap(int(idx.fd.Fd()), 0, int(newSize),
+	data, err := syscall.Mmap(int(s.fd.Fd()), 0, int(newSize),
 		syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 	if err != nil {
-		// Fatal — index is corrupted.
-		panic(fmt.Sprintf("pony: remap index failed: %v", err))
+		panic(fmt.Sprintf("pony: remap shard failed: %v", err))
 	}
 
-	idx.data = data
-	idx.fileSize = newSize
+	s.data = data
+	s.fileSize = newSize
 }
 
-// compositeKey returns bucket + "\x00" + key.
-func compositeKey(bucket, key string) string {
-	return bucket + "\x00" + key
+// readStringView returns a zero-copy string view into mmap'd data.
+// The returned string is only valid while the shard's RLock/Lock is held.
+func (s *diskShard) readStringView(off uint64, length uint32) string {
+	b := s.data[off : off+uint64(length)]
+	return unsafe.String(unsafe.SliceData(b), len(b))
 }
 
-// hashComposite computes FNV-1a hash of the composite key.
+// readStringCopy returns a copied string from the mmap'd data.
+// Safe to use after releasing the lock.
+func (s *diskShard) readStringCopy(off uint64, length uint32) string {
+	return string(s.data[off : off+uint64(length)])
+}
+
+// matchCompositeKey checks if the stored composite key matches bucket+"\x00"+key
+// without allocating a new string.
+func (s *diskShard) matchCompositeKey(off uint64, strLen uint32, bucket, key string) bool {
+	bl := len(bucket)
+	kl := len(key)
+	expected := bl + 1 + kl
+	if int(strLen) != expected {
+		return false
+	}
+	base := off
+	// Compare bucket bytes.
+	for i := 0; i < bl; i++ {
+		if s.data[base+uint64(i)] != bucket[i] {
+			return false
+		}
+	}
+	// Check null separator.
+	if s.data[base+uint64(bl)] != 0 {
+		return false
+	}
+	// Compare key bytes.
+	keyOff := base + uint64(bl) + 1
+	for i := 0; i < kl; i++ {
+		if s.data[keyOff+uint64(i)] != key[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *diskShard) close() error {
+	s.writeHeader()
+	if s.data != nil {
+		syscall.Munmap(s.data)
+	}
+	if s.fd != nil {
+		return s.fd.Close()
+	}
+	return nil
+}
+
+// --- shardedIndex methods ---
+
+// shardFor returns the shard index for a given hash.
+func (si *shardedIndex) shardFor(h uint64) *diskShard {
+	return si.shards[h&shardMask]
+}
+
+// hashComposite computes FNV-1a hash of bucket + "\x00" + key.
 // Returns hash >= 2 (0=empty, 1=tombstone are reserved).
 func hashComposite(bucket, key string) uint64 {
 	const offset64 = 14695981039346656037
@@ -284,74 +367,65 @@ func hashComposite(bucket, key string) uint64 {
 	return h
 }
 
-// put inserts or updates an entry in the hash table.
-func (idx *diskIndex) put(bucket, key, contentType string, valOff, valSize, created, updated int64) {
+// put inserts or updates an entry in the appropriate shard.
+func (si *shardedIndex) put(bucket, key, contentType string, valOff, valSize, created, updated int64) {
+	si.version.Add(1)
 	h := hashComposite(bucket, key)
-	ck := compositeKey(bucket, key)
+	shard := si.shardFor(h)
+	ckLen := uint32(len(bucket) + 1 + len(key))
+	ctLen := uint16(len(contentType))
 
-	idx.mu.Lock()
+	shard.mu.Lock()
 
 	// Check if we need to grow.
-	if idx.entryCount*100/idx.slotCount >= maxLoadPercent {
-		idx.rehash(idx.slotCount * 2)
+	if shard.entryCount*100/shard.slotCount >= maxLoadPercent {
+		shard.rehash(shard.slotCount * 2)
 	}
 
-	mask := idx.slotCount - 1
+	mask := shard.slotCount - 1
 	startSlot := h & mask
 
-	// Linear probe.
-	for i := uint64(0); i < idx.slotCount; i++ {
+	for i := uint64(0); i < shard.slotCount; i++ {
 		si := (startSlot + i) & mask
-		s := idx.slotAt(si)
+		slot := shard.slotAt(si)
 
-		if s.Hash == hashEmpty || s.Hash == hashTombstone {
-			// Found empty slot — insert new entry.
-			// appendString may call growFile (munmap+mmap), invalidating s.
-			strOff := idx.appendString(ck + contentType)
-			s = idx.slotAt(si) // re-obtain after possible remap
+		if slot.Hash == hashEmpty || slot.Hash == hashTombstone {
+			// Write directly to string pool without Go string concat.
+			strOff := shard.appendCompositeAndCT(bucket, key, contentType)
+			slot = shard.slotAt(si) // re-obtain after possible remap
 
-			s.Hash = h
-			s.StrOff = strOff
-			s.StrLen = uint32(len(ck))
-			s.CtLen = uint16(len(contentType))
-			s.ValOff = valOff
-			s.ValSize = valSize
-			s.Created = created
-			s.Updated = updated
+			slot.Hash = h
+			slot.StrOff = strOff
+			slot.StrLen = ckLen
+			slot.CtLen = ctLen
+			slot.ValOff = valOff
+			slot.ValSize = valSize
+			slot.Created = created
+			slot.Updated = updated
 
-			idx.entryCount++
-			idx.updateHeaderCounts()
-			idx.mu.Unlock()
-
-			// Update in-memory key list.
-			idx.addBucketKey(bucket, key)
+			shard.entryCount++
+			shard.updateHeaderCounts()
+			shard.mu.Unlock()
 			return
 		}
 
-		if s.Hash == h {
-			// Possible match — verify key.
-			storedKey := idx.readString(s.StrOff, s.StrLen)
-			if storedKey == ck {
-				// Update existing entry.
-				// appendString may call growFile (munmap+mmap), invalidating s.
-				strOff := idx.appendString(ck + contentType)
-				s = idx.slotAt(si) // re-obtain after possible remap
-				s.StrOff = strOff
-				s.StrLen = uint32(len(ck))
-				s.CtLen = uint16(len(contentType))
-				s.ValOff = valOff
-				s.ValSize = valSize
-				s.Updated = updated
+		if slot.Hash == h && shard.matchCompositeKey(slot.StrOff, slot.StrLen, bucket, key) {
+			strOff := shard.appendCompositeAndCT(bucket, key, contentType)
+			slot = shard.slotAt(si) // re-obtain after possible remap
+			slot.StrOff = strOff
+			slot.StrLen = ckLen
+			slot.CtLen = ctLen
+			slot.ValOff = valOff
+			slot.ValSize = valSize
+			slot.Updated = updated
 
-				idx.updateHeaderCounts()
-				idx.mu.Unlock()
-				return
-			}
+			shard.updateHeaderCounts()
+			shard.mu.Unlock()
+			return
 		}
 	}
 
-	// Table is full — should not happen with load factor check.
-	idx.mu.Unlock()
+	shard.mu.Unlock()
 }
 
 // indexResult holds the result of a hash table lookup.
@@ -364,141 +438,257 @@ type indexResult struct {
 }
 
 // get looks up an entry by bucket and key.
-func (idx *diskIndex) get(bucket, key string) (indexResult, bool) {
+func (si *shardedIndex) get(bucket, key string) (indexResult, bool) {
 	h := hashComposite(bucket, key)
-	ck := compositeKey(bucket, key)
+	shard := si.shardFor(h)
 
-	idx.mu.RLock()
-	defer idx.mu.RUnlock()
+	shard.mu.RLock()
 
-	mask := idx.slotCount - 1
+	mask := shard.slotCount - 1
 	startSlot := h & mask
 
-	for i := uint64(0); i < idx.slotCount; i++ {
+	for i := uint64(0); i < shard.slotCount; i++ {
 		si := (startSlot + i) & mask
-		s := idx.slotAt(si)
+		slot := shard.slotAt(si)
 
-		if s.Hash == hashEmpty {
+		if slot.Hash == hashEmpty {
+			shard.mu.RUnlock()
 			return indexResult{}, false
 		}
 
-		if s.Hash == hashTombstone {
+		if slot.Hash == hashTombstone {
 			continue
 		}
 
-		if s.Hash == h {
-			storedKey := idx.readString(s.StrOff, s.StrLen)
-			if storedKey == ck {
-				ct := idx.readString(s.StrOff+uint64(s.StrLen), uint32(s.CtLen))
-				return indexResult{
-					valOff:      s.ValOff,
-					valSize:     s.ValSize,
-					contentType: ct,
-					created:     s.Created,
-					updated:     s.Updated,
-				}, true
+		if slot.Hash == h && shard.matchCompositeKey(slot.StrOff, slot.StrLen, bucket, key) {
+			ct := shard.readStringCopy(slot.StrOff+uint64(slot.StrLen), uint32(slot.CtLen))
+			r := indexResult{
+				valOff:      slot.ValOff,
+				valSize:     slot.ValSize,
+				contentType: ct,
+				created:     slot.Created,
+				updated:     slot.Updated,
 			}
+			shard.mu.RUnlock()
+			return r, true
 		}
 	}
 
+	shard.mu.RUnlock()
 	return indexResult{}, false
 }
 
 // remove marks an entry as deleted.
-func (idx *diskIndex) remove(bucket, key string) bool {
+func (si *shardedIndex) remove(bucket, key string) bool {
+	si.version.Add(1)
 	h := hashComposite(bucket, key)
-	ck := compositeKey(bucket, key)
+	shard := si.shardFor(h)
 
-	idx.mu.Lock()
+	shard.mu.Lock()
 
-	mask := idx.slotCount - 1
+	mask := shard.slotCount - 1
 	startSlot := h & mask
 
-	for i := uint64(0); i < idx.slotCount; i++ {
+	for i := uint64(0); i < shard.slotCount; i++ {
 		si := (startSlot + i) & mask
-		s := idx.slotAt(si)
+		slot := shard.slotAt(si)
 
-		if s.Hash == hashEmpty {
-			idx.mu.Unlock()
+		if slot.Hash == hashEmpty {
+			shard.mu.Unlock()
 			return false
 		}
 
-		if s.Hash == hashTombstone {
+		if slot.Hash == hashTombstone {
 			continue
 		}
 
-		if s.Hash == h {
-			storedKey := idx.readString(s.StrOff, s.StrLen)
-			if storedKey == ck {
-				s.Hash = hashTombstone
-				idx.entryCount--
-				idx.updateHeaderCounts()
-				idx.mu.Unlock()
-
-				// Update in-memory key list.
-				idx.removeBucketKey(bucket, key)
-				return true
-			}
+		if slot.Hash == h && shard.matchCompositeKey(slot.StrOff, slot.StrLen, bucket, key) {
+			slot.Hash = hashTombstone
+			shard.entryCount--
+			shard.updateHeaderCounts()
+			shard.mu.Unlock()
+			return true
 		}
 	}
 
-	idx.mu.Unlock()
+	shard.mu.Unlock()
 	return false
 }
 
 // hasBucket returns true if any keys exist for the given bucket.
-func (idx *diskIndex) hasBucket(bucket string) bool {
-	v, ok := idx.bucketKeys.Load(bucket)
-	if !ok {
-		return false
+// Scans all shards.
+func (si *shardedIndex) hasBucket(bucket string) bool {
+	for i := 0; i < shardCount; i++ {
+		shard := si.shards[i]
+		shard.mu.RLock()
+		for j := uint64(0); j < shard.slotCount; j++ {
+			slot := shard.slotAt(j)
+			if slot.Hash <= hashTombstone {
+				continue
+			}
+			// Check if composite key starts with bucket + "\x00".
+			bl := len(bucket)
+			if int(slot.StrLen) > bl && shard.data[slot.StrOff+uint64(bl)] == 0 {
+				match := true
+				for k := 0; k < bl; k++ {
+					if shard.data[slot.StrOff+uint64(k)] != bucket[k] {
+						match = false
+						break
+					}
+				}
+				if match {
+					shard.mu.RUnlock()
+					return true
+				}
+			}
+		}
+		shard.mu.RUnlock()
 	}
-	bk := v.(*bucketKeyList)
-	bk.mu.RLock()
-	n := len(bk.keys)
-	bk.mu.RUnlock()
-	return n > 0
+	return false
 }
 
+// hasPrefix returns true if any key in the bucket starts with prefix.
+// Scans shards until first match (early exit for Stat directory checks).
+func (si *shardedIndex) hasPrefix(bucket, prefix string) bool {
+	for i := 0; i < shardCount; i++ {
+		shard := si.shards[i]
+		shard.mu.RLock()
+		for j := uint64(0); j < shard.slotCount; j++ {
+			slot := shard.slotAt(j)
+			if slot.Hash <= hashTombstone {
+				continue
+			}
+			b, k := shard.extractBucketKey(slot.StrOff, slot.StrLen)
+			if b == bucket && strings.HasPrefix(k, prefix) {
+				shard.mu.RUnlock()
+				return true
+			}
+		}
+		shard.mu.RUnlock()
+	}
+	return false
+}
+
+// firstMatch returns the first entry matching bucket+prefix.
+func (si *shardedIndex) firstMatch(bucket, prefix string) (listResult, bool) {
+	for i := 0; i < shardCount; i++ {
+		shard := si.shards[i]
+		shard.mu.RLock()
+		for j := uint64(0); j < shard.slotCount; j++ {
+			slot := shard.slotAt(j)
+			if slot.Hash <= hashTombstone {
+				continue
+			}
+			b, k := shard.extractBucketKey(slot.StrOff, slot.StrLen)
+			if b == bucket && strings.HasPrefix(k, prefix) {
+				ct := shard.readStringCopy(slot.StrOff+uint64(slot.StrLen), uint32(slot.CtLen))
+				r := listResult{
+					key:         k,
+					valOff:      slot.ValOff,
+					valSize:     slot.ValSize,
+					contentType: ct,
+					created:     slot.Created,
+					updated:     slot.Updated,
+				}
+				shard.mu.RUnlock()
+				return r, true
+			}
+		}
+		shard.mu.RUnlock()
+	}
+	return listResult{}, false
+}
+
+// listScanWorkers is the number of goroutines for parallel shard scanning.
+const listScanWorkers = 8
+
 // list returns all entries matching bucket and prefix, sorted by key.
-func (idx *diskIndex) list(bucket, prefix string) []listResult {
-	v, ok := idx.bucketKeys.Load(bucket)
-	if !ok {
-		return nil
+// Uses a version-based cache to avoid rescanning when data hasn't changed.
+func (si *shardedIndex) list(bucket, prefix string) []listResult {
+	cacheKey := bucket + "\x00" + prefix
+	ver := si.version.Load()
+
+	// Check cache.
+	si.listCacheMu.RLock()
+	if entry, ok := si.listCache[cacheKey]; ok && entry.version == ver {
+		result := entry.results
+		si.listCacheMu.RUnlock()
+		return result
 	}
-	bk := v.(*bucketKeyList)
+	si.listCacheMu.RUnlock()
 
-	bk.mu.Lock()
-	if bk.dirty {
-		bk.sorted = make([]string, 0, len(bk.keys))
-		for k := range bk.keys {
-			bk.sorted = append(bk.sorted, k)
-		}
-		sort.Strings(bk.sorted)
-		bk.dirty = false
+	// Cache miss — scan shards in parallel.
+	results := si.listScan(bucket, prefix)
+
+	// Update cache.
+	si.listCacheMu.Lock()
+	si.listCache[cacheKey] = listCacheEntry{version: ver, results: results}
+	si.listCacheMu.Unlock()
+
+	return results
+}
+
+// listScan performs the actual parallel shard scan.
+func (si *shardedIndex) listScan(bucket, prefix string) []listResult {
+	perWorker := shardCount / listScanWorkers
+	partials := make([][]listResult, listScanWorkers)
+
+	var wg sync.WaitGroup
+	wg.Add(listScanWorkers)
+	for w := 0; w < listScanWorkers; w++ {
+		go func(workerIdx int) {
+			defer wg.Done()
+			start := workerIdx * perWorker
+			end := start + perWorker
+			if workerIdx == listScanWorkers-1 {
+				end = shardCount
+			}
+			var local []listResult
+			for i := start; i < end; i++ {
+				shard := si.shards[i]
+				shard.mu.RLock()
+				if shard.entryCount == 0 {
+					shard.mu.RUnlock()
+					continue
+				}
+				for j := uint64(0); j < shard.slotCount; j++ {
+					slot := shard.slotAt(j)
+					if slot.Hash <= hashTombstone {
+						continue
+					}
+					b, k := shard.extractBucketKey(slot.StrOff, slot.StrLen)
+					if b == bucket && strings.HasPrefix(k, prefix) {
+						ct := shard.readStringCopy(slot.StrOff+uint64(slot.StrLen), uint32(slot.CtLen))
+						local = append(local, listResult{
+							key:         k,
+							valOff:      slot.ValOff,
+							valSize:     slot.ValSize,
+							contentType: ct,
+							created:     slot.Created,
+							updated:     slot.Updated,
+						})
+					}
+				}
+				shard.mu.RUnlock()
+			}
+			partials[workerIdx] = local
+		}(w)
 	}
-	sorted := bk.sorted
-	bk.mu.Unlock()
+	wg.Wait()
 
-	start := sort.SearchStrings(sorted, prefix)
-
-	var results []listResult
-	for i := start; i < len(sorted); i++ {
-		key := sorted[i]
-		if !strings.HasPrefix(key, prefix) {
-			break
-		}
-
-		if r, ok := idx.get(bucket, key); ok {
-			results = append(results, listResult{
-				key:         key,
-				valOff:      r.valOff,
-				valSize:     r.valSize,
-				contentType: r.contentType,
-				created:     r.created,
-				updated:     r.updated,
-			})
-		}
+	// Merge partials.
+	total := 0
+	for _, p := range partials {
+		total += len(p)
 	}
+	results := make([]listResult, 0, total)
+	for _, p := range partials {
+		results = append(results, p...)
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].key < results[j].key
+	})
 
 	return results
 }
@@ -512,129 +702,88 @@ type listResult struct {
 	updated     int64
 }
 
-// addBucketKey adds a key to the in-memory per-bucket list.
-func (idx *diskIndex) addBucketKey(bucket, key string) {
-	v, ok := idx.bucketKeys.Load(bucket)
-	if !ok {
-		bk := &bucketKeyList{
-			keys:  make(map[string]struct{}, 64),
-			dirty: true,
+// extractBucketKey splits a composite key from the string pool into bucket and key.
+// Returns zero-copy views (valid under shard lock).
+func (s *diskShard) extractBucketKey(off uint64, strLen uint32) (bucket, key string) {
+	data := s.data[off : off+uint64(strLen)]
+	for i, b := range data {
+		if b == 0 {
+			bucket = unsafe.String(unsafe.SliceData(data[:i]), i)
+			rest := data[i+1:]
+			key = unsafe.String(unsafe.SliceData(rest), len(rest))
+			return bucket, key
 		}
-		actual, _ := idx.bucketKeys.LoadOrStore(bucket, bk)
-		v = actual
 	}
-	bk := v.(*bucketKeyList)
-	bk.mu.Lock()
-	if _, exists := bk.keys[key]; !exists {
-		bk.keys[key] = struct{}{}
-		bk.dirty = true
-	}
-	bk.mu.Unlock()
+	return "", ""
 }
 
-// removeBucketKey removes a key from the in-memory per-bucket list.
-func (idx *diskIndex) removeBucketKey(bucket, key string) {
-	v, ok := idx.bucketKeys.Load(bucket)
-	if !ok {
-		return
-	}
-	bk := v.(*bucketKeyList)
-	bk.mu.Lock()
-	delete(bk.keys, key)
-	bk.dirty = true
-	bk.mu.Unlock()
-}
-
-// rebuildKeyLists scans the hash table and rebuilds in-memory key lists.
-func (idx *diskIndex) rebuildKeyLists() {
-	for i := uint64(0); i < idx.slotCount; i++ {
-		s := idx.slotAt(i)
-		if s.Hash <= hashTombstone {
-			continue
-		}
-		ck := idx.readString(s.StrOff, s.StrLen)
-		// Split composite key at null byte.
-		nullIdx := strings.IndexByte(ck, 0)
-		if nullIdx < 0 {
-			continue
-		}
-		bucket := ck[:nullIdx]
-		key := ck[nullIdx+1:]
-		idx.addBucketKey(bucket, key)
-	}
-}
-
-// rehash grows the hash table to newSlotCount and re-inserts all entries.
+// rehash grows the shard's hash table to newSlotCount and re-inserts all entries.
 // Caller must hold the write lock.
-func (idx *diskIndex) rehash(newSlotCount uint64) {
+func (s *diskShard) rehash(newSlotCount uint64) {
 	newSlotCount = nextPow2(newSlotCount)
 
-	// Collect all live entries.
 	type entry struct {
 		hash    uint64
-		ck      string
+		ckct    string // compositeKey + contentType (copied)
+		ckLen   uint32
 		ctLen   uint16
-		ct      string
 		valOff  int64
 		valSize int64
 		created int64
 		updated int64
 	}
 
-	entries := make([]entry, 0, idx.entryCount)
-	for i := uint64(0); i < idx.slotCount; i++ {
-		s := idx.slotAt(i)
-		if s.Hash <= hashTombstone {
+	entries := make([]entry, 0, s.entryCount)
+	for i := uint64(0); i < s.slotCount; i++ {
+		slot := s.slotAt(i)
+		if slot.Hash <= hashTombstone {
 			continue
 		}
-		ck := idx.readString(s.StrOff, s.StrLen)
-		ct := idx.readString(s.StrOff+uint64(s.StrLen), uint32(s.CtLen))
+		totalLen := uint32(slot.StrLen) + uint32(slot.CtLen)
+		ckct := s.readStringCopy(slot.StrOff, totalLen)
 		entries = append(entries, entry{
-			hash:    s.Hash,
-			ck:      ck,
-			ctLen:   s.CtLen,
-			ct:      ct,
-			valOff:  s.ValOff,
-			valSize: s.ValSize,
-			created: s.Created,
-			updated: s.Updated,
+			hash:    slot.Hash,
+			ckct:    ckct,
+			ckLen:   slot.StrLen,
+			ctLen:   slot.CtLen,
+			valOff:  slot.ValOff,
+			valSize: slot.ValSize,
+			created: slot.Created,
+			updated: slot.Updated,
 		})
 	}
 
-	// munmap old.
-	syscall.Munmap(idx.data)
+	syscall.Munmap(s.data)
 
-	// Compute new file size.
 	stringsStart := int64(idxHdrSize) + int64(newSlotCount)*idxSlotSize
-	// Estimate string pool size: double what we have plus some headroom.
-	stringPoolSize := int64(idx.stringsPos) - (int64(idxHdrSize) + int64(idx.slotCount)*idxSlotSize)
+	stringPoolSize := int64(s.stringsPos) - (int64(idxHdrSize) + int64(s.slotCount)*idxSlotSize)
 	if stringPoolSize < defaultStringPoolCap {
 		stringPoolSize = defaultStringPoolCap
 	}
 	stringPoolSize *= 2
 	fileSize := stringsStart + stringPoolSize
 
-	idx.fd.Truncate(fileSize)
+	s.fd.Truncate(fileSize)
 
-	data, err := syscall.Mmap(int(idx.fd.Fd()), 0, int(fileSize),
+	data, err := syscall.Mmap(int(s.fd.Fd()), 0, int(fileSize),
 		syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 	if err != nil {
 		panic(fmt.Sprintf("pony: rehash remap failed: %v", err))
 	}
 
-	idx.data = data
-	idx.fileSize = fileSize
-	idx.slotCount = newSlotCount
-	idx.entryCount = 0
-	idx.stringsPos = uint64(stringsStart)
+	s.data = data
+	s.fileSize = fileSize
+	s.slotCount = newSlotCount
+	s.entryCount = 0
+	s.stringsPos = uint64(stringsStart)
 
 	// Clear slots.
 	slotsEnd := idxHdrSize + newSlotCount*idxSlotSize
 	for i := uint64(idxHdrSize); i < slotsEnd; i++ {
-		idx.data[i] = 0
+		s.data[i] = 0
 	}
 
-	idx.writeHeader()
+	s.writeHeader()
 
 	// Re-insert all entries.
 	mask := newSlotCount - 1
@@ -642,58 +791,68 @@ func (idx *diskIndex) rehash(newSlotCount uint64) {
 		startSlot := e.hash & mask
 		for j := uint64(0); j < newSlotCount; j++ {
 			si := (startSlot + j) & mask
-			s := idx.slotAt(si)
-			if s.Hash == hashEmpty {
-				strOff := idx.appendString(e.ck + e.ct)
-				s.Hash = e.hash
-				s.StrOff = strOff
-				s.StrLen = uint32(len(e.ck))
-				s.CtLen = e.ctLen
-				s.ValOff = e.valOff
-				s.ValSize = e.valSize
-				s.Created = e.created
-				s.Updated = e.updated
-				idx.entryCount++
+			slot := s.slotAt(si)
+			if slot.Hash == hashEmpty {
+				strOff := s.appendString(e.ckct)
+				slot.Hash = e.hash
+				slot.StrOff = strOff
+				slot.StrLen = e.ckLen
+				slot.CtLen = e.ctLen
+				slot.ValOff = e.valOff
+				slot.ValSize = e.valSize
+				slot.Created = e.created
+				slot.Updated = e.updated
+				s.entryCount++
 				break
 			}
 		}
 	}
 
-	idx.updateHeaderCounts()
+	s.updateHeaderCounts()
 }
 
-// reset clears the index for reuse (e.g., after volume recovery).
-func (idx *diskIndex) reset() {
-	idx.mu.Lock()
-	defer idx.mu.Unlock()
+// reset clears a shard for reuse.
+func (s *diskShard) reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	// Clear all slots.
-	slotsEnd := uint64(idxHdrSize) + idx.slotCount*idxSlotSize
+	slotsEnd := uint64(idxHdrSize) + s.slotCount*idxSlotSize
 	for i := uint64(idxHdrSize); i < slotsEnd; i++ {
-		idx.data[i] = 0
+		s.data[i] = 0
 	}
 
-	stringsStart := int64(idxHdrSize) + int64(idx.slotCount)*idxSlotSize
-	idx.entryCount = 0
-	idx.stringsPos = uint64(stringsStart)
-	idx.writeHeader()
-
-	// Clear key lists.
-	idx.bucketKeys.Range(func(k, _ any) bool {
-		idx.bucketKeys.Delete(k)
-		return true
-	})
+	stringsStart := int64(idxHdrSize) + int64(s.slotCount)*idxSlotSize
+	s.entryCount = 0
+	s.stringsPos = uint64(stringsStart)
+	s.writeHeader()
 }
 
-func (idx *diskIndex) close() error {
-	idx.writeHeader()
-	if idx.data != nil {
-		syscall.Munmap(idx.data)
+// totalEntryCount returns the sum of entries across all shards.
+func (si *shardedIndex) totalEntryCount() uint64 {
+	var total uint64
+	for i := 0; i < shardCount; i++ {
+		shard := si.shards[i]
+		shard.mu.RLock()
+		total += shard.entryCount
+		shard.mu.RUnlock()
 	}
-	if idx.fd != nil {
-		return idx.fd.Close()
+	return total
+}
+
+func (si *shardedIndex) reset() {
+	for i := 0; i < shardCount; i++ {
+		si.shards[i].reset()
 	}
-	return nil
+}
+
+func (si *shardedIndex) close() error {
+	var firstErr error
+	for i := 0; i < shardCount; i++ {
+		if err := si.shards[i].close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
 }
 
 // nextPow2 returns the smallest power of 2 >= n.
@@ -716,4 +875,3 @@ var _ [idxSlotSize]byte = [unsafe.Sizeof(diskSlot{})]byte{}
 
 // hdrSize verifies idxHeader is exactly 64 bytes at compile time.
 var _ [idxHdrSize]byte = [unsafe.Sizeof(idxHeader{})]byte{}
-

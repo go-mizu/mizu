@@ -75,7 +75,6 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 	}
 
 	volPath := filepath.Join(root, "volume.dat")
-	idxPath := filepath.Join(root, "index.dat")
 
 	vol, err := newVolume(volPath, prealloc)
 	if err != nil {
@@ -86,14 +85,14 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 		vol.noCRC = true
 	}
 
-	idx, err := newDiskIndex(idxPath, initialSlots)
+	idx, err := newShardedIndex(root, initialSlots/shardCount)
 	if err != nil {
 		vol.close()
 		return nil, err
 	}
 
 	// If index is empty but volume has data, recover from volume.
-	if idx.entryCount == 0 && vol.tail.Load() > headerSize {
+	if idx.totalEntryCount() == 0 && vol.tail.Load() > headerSize {
 		idx.reset()
 		if err := vol.recover(idx); err != nil {
 			idx.close()
@@ -157,7 +156,7 @@ func unsafePointer(b []byte) unsafe.Pointer {
 type store struct {
 	root     string
 	vol      *volume
-	idx      *diskIndex
+	idx      *shardedIndex
 	syncMode string
 	bufRing  *bufferRing
 
@@ -540,16 +539,16 @@ func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*s
 	}
 
 	if strings.HasSuffix(key, "/") {
-		results := b.st.idx.list(b.name, key)
-		if len(results) == 0 {
+		r, ok := b.st.idx.firstMatch(b.name, key)
+		if !ok {
 			return nil, storage.ErrNotExist
 		}
 		return &storage.Object{
 			Bucket:  b.name,
 			Key:     strings.TrimSuffix(key, "/"),
 			IsDir:   true,
-			Created: time.Unix(0, results[0].created),
-			Updated: time.Unix(0, results[0].updated),
+			Created: time.Unix(0, r.created),
+			Updated: time.Unix(0, r.updated),
 		}, nil
 	}
 
@@ -747,16 +746,16 @@ func (d *dir) Info(ctx context.Context) (*storage.Object, error) {
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		prefix += "/"
 	}
-	results := d.b.st.idx.list(d.b.name, prefix)
-	if len(results) == 0 {
+	r, ok := d.b.st.idx.firstMatch(d.b.name, prefix)
+	if !ok {
 		return nil, storage.ErrNotExist
 	}
 	return &storage.Object{
 		Bucket:  d.b.name,
 		Key:     d.path,
 		IsDir:   true,
-		Created: time.Unix(0, results[0].created),
-		Updated: time.Unix(0, results[0].updated),
+		Created: time.Unix(0, r.created),
+		Updated: time.Unix(0, r.updated),
 	}, nil
 }
 

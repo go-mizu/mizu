@@ -386,7 +386,7 @@ func (v *volume) readRecord(recOff int64) (bucket, key, contentType string, ok b
 	return bucket, key, contentType, true
 }
 
-func (v *volume) recover(idx *diskIndex) error {
+func (v *volume) recover(idx *shardedIndex) error {
 	r := v.region.Load()
 	tail := v.tail.Load()
 	pos := int64(headerSize)

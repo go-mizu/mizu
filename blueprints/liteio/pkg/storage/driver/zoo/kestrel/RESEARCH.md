@@ -1,714 +1,709 @@
-# Kestrel Driver — Research & Design Document
+# Kestrel Driver: Research & Implementation Guide
 
-> Based on **"From FASTER to F2"** (Kanellis & Chandramouli, PVLDB Vol 18, 2025, pp 4910–4923)
+> Based on **"From FASTER to F2"** (Kanellis & Chandramouli, PVLDB Vol 18, 2025, pp 4910-4923)
 > and the C++ reference implementation: [microsoft/FASTER PR #922](https://github.com/microsoft/FASTER/pull/922)
-
-## 1. Paper Summary
-
-F2 is the evolution of Microsoft's FASTER key-value store, designed for **high-throughput
-point operations on datasets much larger than available memory** with naturally skewed
-(Zipfian) access patterns. The key innovation is a **two-tier record-oriented architecture**
-that separates hot (frequently accessed) records from cold records, eliminating the
-"death spiral" problem where garbage collection of cold data flushes hot data to disk.
-
-### 1.1 The Death Spiral Problem
-
-Original FASTER uses a single HybridLog. During GC/compaction, cold records at the log's
-beginning are copied to the tail. This pushes hot (in-memory) records out to disk. When
-compaction finishes, hot records re-enter the tail, evicting cold records again — triggering
-another compaction cycle. The system becomes entirely occupied with background compaction
-rather than serving requests.
-
-### 1.2 Key Results (vs Baselines)
-
-| System       | Avg Speedup |
-|-------------|-------------|
-| vs FASTER v1 | 2.1×        |
-| vs LeanStore  | 2.0×        |
-| vs KVell      | 11.9×       |
-| vs SplinterDB | 4.6×        |
-| vs RocksDB    | 11.8×       |
-
-Best case: **22× over RocksDB** on read-heavy YCSB-C.
+> C++ source at `$HOME/github/microsoft/FASTER/cc/src/`
 
 ---
 
-## 2. Architecture (from C++ Source: `cc/src/core/f2.h`)
+## 1. Paper Summary
+
+F2 is the evolution of Microsoft's FASTER key-value store. Key contribution: a
+**two-tier record-oriented architecture** separating hot (frequently accessed) records
+from cold records. This eliminates the "death spiral" where GC of cold data evicts
+hot data to disk.
+
+### 1.1 The Death Spiral Problem
+
+Original FASTER uses a single HybridLog. During GC/compaction, cold records at the
+log's beginning are copied to the tail. This pushes hot (in-memory) records to disk.
+When compaction finishes, hot records re-enter, evicting cold records again - creating
+an infinite compaction loop.
+
+### 1.2 Key Results (Table 2 from paper)
+
+| System      | Avg Speedup |
+|-------------|-------------|
+| vs FASTER v1 | 2.1x       |
+| vs LeanStore | 2.0x       |
+| vs KVell     | 11.9x      |
+| vs SplinterDB | 4.6x      |
+| vs RocksDB   | 11.8x      |
+
+Best case: **22x over RocksDB** on read-heavy YCSB-C.
+
+---
+
+## 2. C++ Architecture (`cc/src/core/f2.h`)
 
 ### 2.1 Component Overview
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                          F2Kv<K,V,D>                             │
-│                                                                  │
-│  ┌─────────────────────┐        ┌─────────────────────────────┐  │
-│  │     Hot Store        │        │       Cold Store             │  │
-│  │  (FasterKv instance) │        │    (FasterKv instance)       │  │
-│  │                     │        │                             │  │
-│  │  ┌───────────────┐  │        │  ┌───────────────────────┐  │  │
-│  │  │ Hot-Log Index  │  │        │  │ Cold-Log Index         │  │  │
-│  │  │ (MemHashIndex) │  │        │  │ (ColdIndex, 2-level)   │  │  │
-│  │  │ In-memory      │  │        │  │ Small in-mem + on-disk │  │  │
-│  │  │ 7 entries/     │  │        │  │ 8 entries/bucket       │  │  │
-│  │  │ bucket + ovfl  │  │        │  │ No overflow chaining   │  │  │
-│  │  └───────────────┘  │        │  └───────────────────────┘  │  │
-│  │                     │        │                             │  │
-│  │  ┌───────────────┐  │        │  ┌───────────────────────┐  │  │
-│  │  │ Hot HybridLog  │  │        │  │ Cold HybridLog         │  │  │
-│  │  │ ┌───────────┐ │  │        │  │ (Primarily on-disk)     │  │  │
-│  │  │ │  Mutable  │ │  │        │  └───────────────────────┘  │  │
-│  │  │ │ (in-mem)  │ │  │        │                             │  │
-│  │  │ ├───────────┤ │  │        └─────────────────────────────┘  │
-│  │  │ │ Read-Only │ │  │                                         │
-│  │  │ │ (in-mem)  │ │  │        ┌─────────────────────────────┐  │
-│  │  │ ├───────────┤ │  │        │      Read Cache              │  │
-│  │  │ │  Stable   │ │  │        │  (In-memory HybridLog,       │  │
-│  │  │ │ (on-disk) │ │  │        │   NullDisk, 2nd-chance FIFO) │  │
-│  │  │ └───────────┘ │  │        └─────────────────────────────┘  │
-│  │  └───────────────┘  │                                         │
-│  └─────────────────────┘        ┌─────────────────────────────┐  │
-│                                  │   Background Worker          │  │
-│                                  │  - Hot→Cold compaction       │  │
-│                                  │  - Cold→Cold compaction      │  │
-│                                  │  - Checkpoint/Recovery       │  │
-│                                  └─────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────┘
+F2Kv<K, V, D, HHI=MemHashIndex, CHI=ColdIndex>
+ |
+ +-- hot_store (FasterKv)        -- In-memory HybridLog + MemHashIndex
+ |   +-- hash_index_             -- 7-entry buckets, 14-bit tags, overflow chain
+ |   +-- hlog                    -- Mutable (90%) + ReadOnly (10%) + Stable (disk)
+ |   +-- read_cache_             -- Optional 2nd-chance FIFO, NullDisk
+ |
+ +-- cold_store (FasterKv)       -- On-disk HybridLog + ColdIndex
+ |   +-- hash_index_             -- 8-entry buckets, 3-bit tags, no overflow
+ |   +-- hlog                    -- Small in-memory + large on-disk
+ |
+ +-- background_worker_thread_   -- Hot→Cold compaction, Cold→Cold compaction
+ +-- retry_rmw_requests          -- Queue for failed ConditionalInsert retries
 ```
 
-### 2.2 Two-Tier Hash Index
-
-**Hot-Log Index** (`cc/src/index/hash_bucket.h`):
-- Cache-line aligned (64 bytes) buckets
-- 7 hash bucket entries (8 bytes each) + 1 overflow pointer (8 bytes)
-- Each entry: `address(48 bits) | tag(14 bits) | reserved(1) | tentative(1)`
-- In-memory only, points to records in the hot HybridLog
-
-**Cold-Log Index** (`cc/src/index/cold_index.h`):
-- Two-level structure: small in-memory hash → on-disk hash chunks
-- 8 entries per bucket (no overflow pointer)
-- Each entry: `address(48 bits) | tag(3 bits) | reserved(12 bits) | tentative(1)`
-- Hash chunks: 256 bytes = 32 entries (4 buckets × 8 entries)
-- For 250M cold keys: ~8M chunks, ~64 MiB in-memory overhead (<1 byte/key)
-
-### 2.3 Record Format (`cc/src/core/record.h`)
+### 2.2 Data Flow
 
 ```
-┌──────────────────────────────────────────────────────┐
-│ RecordInfo Header (8 bytes)                          │
-│  previous_address : 48 bits  (hash chain link)       │
-│  checkpoint_ver   : 13 bits  (CPR version)           │
-│  invalid          :  1 bit   (record invalidated)    │
-│  tombstone        :  1 bit   (deleted record)        │
-│  final            :  1 bit   (checkpoint final)      │
-├──────────────────────────────────────────────────────┤
-│ [alignment padding to key alignment]                 │
-├──────────────────────────────────────────────────────┤
-│ Key (variable length, immutable once written)        │
-├──────────────────────────────────────────────────────┤
-│ [alignment padding to value alignment]               │
-├──────────────────────────────────────────────────────┤
-│ Value (variable length, mutable in mutable region)   │
-└──────────────────────────────────────────────────────┘
-```
+Write(key, value) ──────────────────> hot_store.Upsert()
+                                      └─> Append record to hot log tail
+                                      └─> CAS hash index entry
 
-### 2.4 Address Format (`cc/src/core/address.h`)
+Read(key) ──> hot_store.Read() ──────> Found? Return
+         └──> cold_store.Read() ─────> Found? Insert into read_cache, Return
+         └──> NotFound
 
-48-bit logical addresses:
-- Bits 0–24 (25 bits): offset within page (32 MB pages)
-- Bits 25–47 (23 bits): page index (~8M pages)
-- Bit 47: read-cache flag
-- Bits 48–63: reserved for hash table (tag + control)
+Delete(key) ────────────────────────> hot_store.Delete(force_tombstone=true)
 
-### 2.5 HybridLog Regions (`cc/src/core/persistent_memory_malloc.h`)
-
-```
-               TAIL (append point)
-                ↓
-  ┌────────────────────────────┐
-  │      MUTABLE REGION        │  90% of in-memory budget
-  │  - In-place atomic updates │  - Thread-safe via CAS
-  │  - New records appended    │  - No latches needed
-  ├────────────────────────────┤
-  │      READ-ONLY REGION      │  10% of in-memory budget
-  │  - Immutable in memory     │  - Read-Copy-Update semantics
-  │  - Being flushed to disk   │  - Pin-based reader protection
-  ├────────────────────────────┤
-  │      STABLE (ON-DISK)      │  Unbounded
-  │  - Persistent storage      │  - I/O required for access
-  │  - Compaction source       │
-  └────────────────────────────┘
-                ↑
-              BEGIN (GC boundary)
+RMW(key, modifier) ─> hot_store.Rmw() ─> Found? In-place update, Return
+                  └──> cold_store.Read() ─> ConditionalInsert(modified) to hot log
+                  └──> If CI fails: push to retry_rmw_requests queue
 ```
 
 ---
 
-## 3. Core Algorithms
+## 3. Core Data Structures (from C++ source)
 
-### 3.1 Epoch Protection Framework (`cc/src/core/light_epoch.h`)
+### 3.1 Address (`cc/src/core/address.h`)
 
-Lazy synchronization without fine-grained locks. Every thread that enters a protected
-region stores the current global epoch in a per-thread slot. The safe-to-reclaim epoch
-is `min(all active thread epochs) - 1`.
-
+48-bit logical address, 8 bytes total:
 ```
-Thread entry:    table[thread_id].local_epoch = global_epoch.load()
-Thread exit:     table[thread_id].local_epoch = UNPROTECTED (0)
-Bump epoch:      global_epoch++, register (epoch, callback) in drain_list
-Safe reclaim:    scan all slots, fire callbacks with trigger_epoch <= min_active - 1
+Bits  0-24  (25 bits): offset within page (page size = 2^25 = 32 MB)
+Bits 25-47  (23 bits): page index (max ~8M pages)
+Bit     47:            read-cache flag (alternative layout)
+Bits 48-63  (16 bits): reserved for hash table (tag + control)
 ```
 
-Key constants from C++:
-- Table size: 96 entries (max threads)
-- Drain list: 256 action slots
-- CAS-based lock pattern: `kFree` → `kLocked` → `epoch_value`
+Constants:
+```cpp
+kAddressBits   = 48
+kOffsetBits    = 25      // 32 MB pages
+kPageBits      = 23      // ~8M pages
+kInvalidAddress = 1      // Not 0, to distinguish from empty hash bucket entry
+kMaxAddress    = (1<<48)-1
+kReadCacheMask = 1<<47
+```
 
-### 3.2 Read Operation (`f2.h` lines 302–404)
+### 3.2 RecordInfo Header (`cc/src/core/record.h`)
+
+8 bytes, packed bitfield:
+```
+Bits  0-47  (48 bits): previous_address  -- Hash chain link to older record
+Bits 48-60  (13 bits): checkpoint_version -- CPR version number
+Bit     61  ( 1 bit):  invalid           -- Record has been invalidated
+Bit     62  ( 1 bit):  tombstone         -- Record is deleted
+Bit     63  ( 1 bit):  final             -- Checkpoint final marker
+```
+
+Alternative layout (with read cache):
+```
+Bits  0-46  (47 bits): previous_address
+Bit     47  ( 1 bit):  readcache         -- Points to read cache record
+Bits 48-60  (13 bits): checkpoint_version
+Bit     61:            invalid
+Bit     62:            tombstone
+Bit     63:            final
+```
+
+### 3.3 Record Layout (`cc/src/core/record.h`)
+
+```
++----------------------------------------------+
+| RecordInfo header (8 bytes)                   |
++----------------------------------------------+
+| [alignment padding to alignof(key_t)]         |
++----------------------------------------------+
+| Key (variable length, immutable)              |
++----------------------------------------------+
+| [alignment padding to alignof(value_t)]       |
++----------------------------------------------+
+| Value (variable length, mutable in mutable    |
+|        region only)                           |
++----------------------------------------------+
+| [alignment padding to alignof(RecordInfo)]    |
++----------------------------------------------+
+```
+
+Size calculation: `pad(pad(pad(8, alignof(K)) + keyLen, alignof(V)) + valLen, alignof(RecordInfo))`
+
+### 3.4 Hash Bucket Entry (`cc/src/index/hash_bucket.h`)
+
+**Hot-Log Index Entry** (8 bytes):
+```
+Bits  0-47  (48 bits): address    -- Logical address into hot log
+Bits 48-61  (14 bits): tag        -- Hash fingerprint for fast rejection
+Bit     62  ( 1 bit):  reserved
+Bit     63  ( 1 bit):  tentative  -- CAS coordination flag
+```
+
+**Cold-Log Index Entry** (8 bytes):
+```
+Bits  0-47  (48 bits): address    -- Logical address into cold log
+Bits 48-50  ( 3 bits): tag        -- Smaller tag (cold index uses chunk-level)
+Bits 51-62  (12 bits): reserved   -- Used by cold index for in-chunk indexing
+Bit     63  ( 1 bit):  tentative
+```
+
+### 3.5 Hash Bucket (`cc/src/index/hash_bucket.h`)
+
+**Hot-Log Bucket** (64 bytes, cache-line aligned):
+```
++--------------------------------------------------+
+| entries[0..6]: 7 x AtomicHashBucketEntry (56 B)  |
+| overflow_entry: AtomicHashBucketOverflowEntry (8B)|
++--------------------------------------------------+
+```
+- 7 entries per bucket + 1 overflow pointer
+- Overflow chains to additional buckets allocated from FixedPageSize allocator
+- `sizeof == Constants::kCacheLineBytes == 64`
+
+**Cold-Log Bucket** (64 bytes, cache-line aligned):
+```
++--------------------------------------------------+
+| entries[0..7]: 8 x AtomicHashBucketEntry (64 B)  |
++--------------------------------------------------+
+```
+- 8 entries, NO overflow chaining (closed addressing)
+
+### 3.6 KeyHash (`cc/src/core/key_hash.h`)
+
+```cpp
+struct KeyHash { uint64_t control_; };  // 8 bytes
+
+// Tag extraction: upper 14 bits for hot index
+tag = entry_.tag  // bits 48-61
+
+// Bucket index: lower bits masked to table size
+index = entry_.address & (table_size - 1)  // power-of-2 mask
+```
+
+For cold index, `IndexKeyHash` template adds in-chunk indexing:
+- `kInChunkIndexBits` + `kInChunkTagBits` stored in reserved bits
+- Used for two-level cold index hash chunks
+
+---
+
+## 4. HybridLog Allocator (`cc/src/core/persistent_memory_malloc.h`)
+
+### 4.1 Region Model
+
+```
+                TAIL (append point, atomic bump pointer)
+                 |
+  +--------------+----------------------------------+
+  |    MUTABLE REGION (90% of in-memory budget)     |
+  |  - In-place atomic updates allowed              |
+  |  - Thread-safe via CAS on RecordInfo            |
+  +-------------------------------------------------+
+  |    READ-ONLY REGION (10% of in-memory budget)   |
+  |  - Immutable in memory                          |
+  |  - Being flushed to disk asynchronously         |
+  |  - Read-Copy-Update (RCU) for writes            |
+  +-------------------------------------------------+
+  |    STABLE (ON-DISK)                             |
+  |  - Requires async I/O to access                 |
+  |  - Compaction source                            |
+  +-------------------------------------------------+
+                 |
+               BEGIN (GC/compaction boundary)
+```
+
+### 4.2 Key Addresses (atomic)
+
+| Address | Meaning |
+|---------|---------|
+| `tail_page_offset_` | Next allocation point (atomic bump) |
+| `read_only_address` | Boundary: mutable above, read-only below |
+| `safe_read_only_address` | All threads have acknowledged read-only shift |
+| `head_address` | In-memory boundary: above = in-memory, below = on disk |
+| `begin_address` | GC boundary: below = truncated/compacted away |
+
+### 4.3 Allocation
+
+```cpp
+// Atomic bump-pointer allocation:
+Address Allocate(uint32_t record_size, uint32_t& page) {
+  PageOffset tail = tail_page_offset_.fetch_add(record_size);
+  page = tail.page();
+  if (tail.offset() + record_size <= kPageSize) {
+    return Address{page, tail.offset()};
+  }
+  // Page full - need new page
+  return Address::kInvalidAddress;  // Caller retries with NewPage()
+}
+```
+
+---
+
+## 5. Epoch Protection (`cc/src/core/light_epoch.h`)
+
+### 5.1 Thread Table
+
+```cpp
+struct alignas(64) Entry {  // Cache-line aligned (64 bytes)
+  uint64_t local_current_epoch;     // Thread's view of global epoch
+  uint32_t reentrant;               // Reentrance counter
+  atomic<Phase> phase_finished;     // Phase acknowledgement
+};
+// Table size: Thread::kMaxNumThreads (96 entries)
+```
+
+### 5.2 Drain List (EpochAction)
+
+```cpp
+struct EpochAction {
+  static constexpr uint64_t kFree = UINT64_MAX;
+  static constexpr uint64_t kLocked = UINT64_MAX - 1;
+
+  atomic<uint64_t> epoch;        // Trigger epoch (kFree = available slot)
+  callback_t callback;           // Action to perform when safe
+  IAsyncContext* context;        // Context for callback
+};
+// 256 action slots
+```
+
+### 5.3 Protocol
+
+```
+Thread entry:  table[thread_id].local_current_epoch = global_epoch.load()
+Thread exit:   table[thread_id].local_current_epoch = kUnprotected (0)
+Bump epoch:    global_epoch++, register (epoch, callback) in drain_list
+Safe reclaim:  scan all slots, min_active = min(non-zero epochs)
+               fire callbacks where trigger_epoch <= min_active - 1
+```
+
+---
+
+## 6. Core Algorithms
+
+### 6.1 Read (`f2.h` lines 302-404)
 
 ```
 Read(key):
   1. hash = Hash(key)
-  2. entry = hot_index.Lookup(hash)
-  3. status = hot_store.Read(key, entry)
-     - Walk hash chain from entry.address backward
-     - If found in mutable/read-only region → return value
-     - If found on disk → async I/O, return Pending
-  4. If status == NotFound:
-     status = cold_store.Read(key)
-     - Look up cold index (may require disk I/O for hash chunk)
-     - Walk cold log chain
-  5. If status == Ok AND read_cache_enabled:
-     read_cache.TryInsert(key, value)  // 2nd-chance FIFO
-  6. Return status
+  2. entry = hot_index.FindEntry(hash)
+     → If Pending (cold index I/O): return Pending
+     → If NotFound: skip to step 5
+  3. address = entry.address
+  4. status = hot_store.InternalRead(key, address)
+     - Walk hash chain from address backward through hot log
+     - If in mutable region: GetAtomic(record)  // concurrent-safe
+     - If in read-only/immutable: Get(record)    // safe, no mutation
+     - If tombstone found: return ABORTED (hot store read uses abort_if_tombstone)
+     - If on disk: return RECORD_ON_DISK (async I/O)
+     → If Ok or Aborted: return status
+  5. status = cold_store.Read(key)  // no abort_if_tombstone
+     → If NotFound: return NotFound
+  6. If Ok AND read_cache enabled:
+     - Verify hot log tail hasn't advanced past compaction boundary
+     - TryInsert(key, value) into hot store's read cache
+     - Abort status acceptable (concurrent race)
+  7. Return status
 ```
 
-### 3.3 Upsert Operation
+### 6.2 Upsert (`f2.h` lines 408-412)
 
 ```
 Upsert(key, value):
-  1. hash = Hash(key)
-  2. entry = hot_index.FindOrCreate(hash)
-  3. Append record to hot log tail (mutable region)
-     - Set record.previous_address = entry.address
-  4. CAS(entry.address, old_addr, new_tail_addr)
-     - If CAS fails: mark record invalid, retry from step 2
-  5. Return Ok
+  → Delegates to hot_store.Upsert() directly
+  → All writes go to hot log only
+
+hot_store.InternalUpsert():
+  1. entry = hash_index.FindOrCreateEntry(hash)
+  2. address = read_cache.SkipAndInvalidate(entry)  // Skip RC entries
+  3. Walk hash chain for matching key
+  4. If found in MUTABLE region:
+     - PutAtomic(record)  → In-place update, return SUCCESS
+  5. If found in READ-ONLY or NOT found:
+     - Allocate new record at tail (BlockAllocate)
+     - Write RecordInfo{previous_address=old_address}
+     - Copy key, write value
+     - CAS hash index entry (old → new_address)
+     - If CAS fails: mark record invalid, retry
 ```
 
-### 3.4 Read-Modify-Write (Algorithm 1 in paper, `f2.h` lines 416–485)
+### 6.3 RMW (Read-Modify-Write) (`f2.h` lines 414-485)
 
-The most complex operation, spanning both stores:
-
-```
-RMW(key, modifier):
-  Stage 1 — HOT_LOG_RMW:
-    1. entry = hot_index.FindOrCreate(hash)
-    2. start_addr = entry.address  (capture for conditional insert)
-    3. status = hot_store.Rmw(key, modifier, do_not_create=true)
-    4. If found in mutable region → in-place update, return Ok
-    5. If found in read-only region → copy to tail with modification
-
-  Stage 2 — COLD_LOG_READ (if not found in hot):
-    6. old_value = cold_store.Read(key)
-    7. new_value = modifier.apply(old_value)  // or initial value if not found
-
-  Stage 3 — HOT_LOG_CONDITIONAL_INSERT:
-    8. Validate start_addr still valid (not truncated by compaction)
-    9. ConditionalInsert(key, new_value, expected=start_addr)
-       - Check range (start_addr, TAIL] for matching key
-       - If no match → write to tail, CAS index entry
-       - If match found → abort (concurrent update won)
-    10. If aborted → push to retry_rmw_requests queue
-    11. CompleteRmwRetryRequests() retries with fresh index lookups
-```
-
-### 3.5 Conditional Insert (Foundational Primitive)
-
-Ensures exactly one record per key is inserted during compaction/RMW:
+Three-stage operation spanning both stores:
 
 ```
-ConditionalInsert(key, value, expected_entry):
-  1. Save current index entry
-  2. Walk hash chain from most-recent address in [START, TAIL]
-  3. If matching key found → ABORT (newer version exists)
-  4. If no match → write record to log tail
-  5. CAS index entry (expected → new_tail)
-  6. If CAS fails:
-     - Mark written record invalid
-     - Re-scan only NEW records (between old and new head)
-     - Repeat until success or abort
+Stage 1 - HOT_LOG_RMW:
+  1. entry = hot_index.FindOrCreateEntry(hash)
+  2. expected_address = entry.address (skip read cache entries)
+  3. status = hot_store.Rmw(key, modifier, create_if_not_exists=false)
+  4. If found in mutable: in-place RMW, return Ok
+  5. If found in read-only: RCU (copy-modify to tail)
+
+Stage 2 - COLD_LOG_READ (if not found in hot):
+  6. old_value = cold_store.Read(key)
+  7. new_value = modifier.apply(old_value)  // or initial if NotFound
+
+Stage 3 - HOT_LOG_CONDITIONAL_INSERT:
+  8. Validate expected_address still valid (not compacted)
+  9. ConditionalInsert(key, new_value, expected=expected_address)
+     - Scan (expected_address, TAIL] for matching key
+     - If newer record found → ABORT (concurrent update won)
+     - If no match → write to tail, CAS index entry
+  10. If ABORTED: deep-copy context, push to retry_rmw_requests queue
+  11. CompleteRmwRetryRequests() retries with fresh index lookups
 ```
 
-### 3.6 Compaction (`cc/src/core/compact.h`)
+### 6.4 Delete (`f2.h` lines 575-581)
 
-**Hot→Cold Compaction** (when hot log exceeds budget):
+```
+Delete(key):
+  → Delegates to hot_store.Delete(force_tombstone=true)
+  → Ensures tombstone entry in hot log tail
+  → Cold store records naturally obsoleted by hot tombstones
+```
+
+### 6.5 ConditionalInsert (`faster.h` lines 3968-4257)
+
+Foundational primitive for compaction and RMW correctness:
+
+```
+ConditionalInsert(key, value, min_search_offset):
+  1. entry = hash_index.FindOrCreateEntry(hash)
+  2. address = read_cache.Skip(entry)  // Get hlog address
+  3. Validate min_search_offset not truncated (begin_address check)
+  4. Walk hash chain from address, searching down to min_search_offset:
+     - If matching key found at address > min_search_offset: ABORT (newer exists)
+     - If matching key found at address == min_search_offset: proceed (expected)
+     - If matching key found on disk but > min_search_offset: async I/O
+  5. No newer record found → create record at tail:
+     - BlockAllocate(record_size)
+     - Write RecordInfo{previous_address=expected_address}
+     - Copy key + value
+  6. CAS hash index entry (expected → new_address)
+     - If CAS ok: SUCCESS
+     - If CAS fails: mark record invalid, retry from step 1
+```
+
+---
+
+## 7. Compaction (`cc/src/core/compact.h`, `f2.h` lines 788-961)
+
+### 7.1 Configuration Defaults (`cc/src/core/config.h`)
+
+```
+Hot Store:
+  check_interval:     250ms
+  trigger_pct:        0.8   (trigger when hlog >= 80% of budget)
+  compact_pct:        0.2   (compact 20% of total size)
+  max_compacted_size: 256 MB
+  hlog_size_budget:   1 GB
+  num_threads:        4
+
+Cold Store:
+  check_interval:     250ms
+  trigger_pct:        0.9   (trigger when hlog >= 90% of budget)
+  compact_pct:        0.1   (compact 10% of total size)
+  max_compacted_size: 1 GB
+  hlog_size_budget:   8 GB
+  num_threads:        4
+
+HybridLog:
+  mutable_fraction:   0.9   (90% mutable, 10% read-only)
+  page_size:          32 MB (2^25 bytes)
+```
+
+### 7.2 Hot→Cold Compaction
+
 ```
 CompactHotToCold(begin, until):
-  1. Scan hot log range [begin, until] using circular buffer (3 × 32MB frames)
-  2. Distribute records to N compaction threads (default 4)
-  3. Each thread: ConditionalInsert record into cold log
+  1. Create ConcurrentLogPageIterator over [begin, until)
+  2. Spawn num_threads workers
+  3. Each worker:
+     a. Get next record from concurrent iterator
+     b. Skip tombstones (unless forwarding to cold)
+     c. ConditionalInsert record into cold store
+        - If newer version exists in hot: skip (ABORTED)
+        - If ok: record now in cold log
+     d. Track pending async I/Os
+     e. Periodic CompletePending()
   4. After all records processed:
      - Set hot_log.begin = until (truncate)
      - GC hot index entries pointing to truncated range
 ```
 
-**Cold→Cold Compaction** (when cold log exceeds budget):
-```
-CompactColdInPlace(begin, until):
-  Same algorithm but source=cold log, target=cold log tail
-  Uses full CI variant (check for newer versions in cold log)
-```
+### 7.3 Cold→Cold Compaction
 
-Configuration defaults from `cc/src/core/config.h`:
-```
-Hot:  check=250ms, trigger=80%, compact=20%, max=256MB, budget=1GB, threads=4
-Cold: check=250ms, trigger=90%, compact=10%, max=1GB,   budget=8GB, threads=4
-```
+Same algorithm, but source=cold log, target=cold log tail.
+Uses full ConditionalInsert variant (check for newer versions in cold log).
 
-### 3.7 Read Cache (`cc/src/core/read_cache.h`)
+---
+
+## 8. Read Cache (`cc/src/core/read_cache.h`)
 
 - Separate in-memory HybridLog using NullDisk (never persists)
 - Hash chains span both read cache and hot log
 - At most one read-cache entry per key
-- **Second-chance FIFO**: if record in read-only region is re-accessed, copy to tail
+- **2nd-chance FIFO eviction**: if record in RC read-only region is re-accessed, copy to RC tail
 
 ```
 ReadCache.Read(key, address):
   1. If address.in_readcache():
      - Verify key match, not invalid, address >= safe_head
      - Return value
-     - If in read-only region → CopyToTail (second chance)
+     - If in RC read-only region: CopyToTail (2nd chance)
   2. Else: Skip() to next non-RC address → return NotFound
 
 ReadCache.TryInsert(key, value):
-  1. Write record to RC tail
-  2. CAS index entry to point to RC record
-  3. Set rc bit on new record's previous_address
+  1. Allocate record in RC tail
+  2. CAS hash index entry to point to RC record
+  3. Set readcache bit on previous_address
 
 Eviction (when RC head advances):
   1. Collect valid records in evicted page range
-  2. CAS index entries to skip RC records → point to hot log addresses
+  2. CAS index entries to skip RC records → point to hlog addresses
   3. Multi-threaded participation via atomic counter
 ```
 
-### 3.8 False-Absence Anomaly Prevention
+---
+
+## 9. False-Absence Prevention (`f2.h`)
 
 During concurrent cold→cold compaction, a read might miss a record migrating
-between cold log positions. Solution:
+between cold log positions:
 
 ```
-Shared atomic: num_truncs (counts cold log truncations)
+Shared atomic: num_compaction_truncations_
 
 ColdRead(key):
-  1. t1 = num_truncs.load()
+  1. t1 = num_compaction_truncations_.load()
   2. tail = cold_log.tail
   3. result = scan cold log for key
-  4. t2 = num_truncs.load()
+  4. t2 = num_compaction_truncations_.load()
   5. If t1 != t2: re-traverse newly appended hash chain portion
 ```
 
 ---
 
-## 4. Key Hash & Bucket Entry Details
+## 10. Go Translation Strategy
 
-### 4.1 KeyHash (`cc/src/core/key_hash.h`)
+### 10.1 What We Keep From F2
 
-```cpp
-struct KeyHash {
-  uint64_t control_;
+| F2 C++ Concept | Kestrel Go Implementation |
+|----------------|---------------------------|
+| Two-tier (hot + cold) | Sharded in-memory hot map + mmap value arena |
+| Cache-line aligned hash buckets | Go map (Swiss table) for O(1) lookup |
+| Mmap'd HybridLog regions | Mmap'd value arena (bump-pointer allocator) |
+| Epoch protection | Per-shard RWMutex (simpler, same effect for in-memory) |
+| Record format (header + K + V) | `hotRecord{value []byte, ct string, ...}` |
+| Lock-free allocation | `atomic.Int64.Add` on arena bump pointer |
+| Background compaction | Not needed (fully in-memory, no disk tier) |
+| Read cache | Not needed (all data in hot tier, no cold miss) |
 
-  // Lower bits select bucket
-  size_t hash_table_index(uint64_t table_size) {
-    return control_ & (table_size - 1);  // power-of-2 mask
-  }
-
-  // Upper 16 bits as tag for fast discrimination
-  uint16_t tag() {
-    return static_cast<uint16_t>(control_ >> 48);
-  }
-};
-```
-
-### 4.2 Hash Bucket Entry (8 bytes)
-
-```
-Bits 0-47:   address (48 bits) — logical log address
-Bits 48-61:  tag (14 bits) — hash fingerprint for fast rejection
-Bit 62:      reserved
-Bit 63:      tentative — marks entry as being inserted (CAS coordination)
-```
-
-### 4.3 Hash Bucket (64 bytes, cache-line aligned)
-
-```
-Hot-Log Index:  7 entries × 8B = 56B + 8B overflow pointer = 64B
-Cold-Log Index: 8 entries × 8B = 64B (no overflow, closed addressing)
-```
-
----
-
-## 5. Go Translation Strategy
-
-### 5.1 What We Keep From F2
-
-| F2 Concept | Kestrel Go Implementation |
-|-----------|--------------------------|
-| Two-tier (hot + cold) | Sharded in-memory hot map + on-disk cold log |
-| Hash chain via previous_address | In-memory: Go map. Cold: append-only log with index |
-| Epoch protection | Simplified: per-shard RWMutex + atomic epoch counter |
-| Read cache (2nd-chance FIFO) | Dedicated read cache with clock/FIFO eviction |
-| Conditional Insert | CAS-based upsert with version checking |
-| Hot→Cold compaction | Background goroutine, batch flush |
-| Cold→Cold compaction | Background goroutine, log rewrite |
-| Record format (header + K + V) | Binary record: `[flags(1)][hash(8)][keyLen(2)][key][ctLen(2)][ct][valLen(4)][val][created(8)][updated(8)]` |
-| Bloom filter for cold | Lock-free concurrent bloom filter |
-
-### 5.2 What We Change for Go
+### 10.2 What We Change For Go
 
 | F2 C++ Design | Go Adaptation | Rationale |
-|--------------|---------------|-----------|
-| 48-bit packed addresses | 64-bit file offsets | Go has no 48-bit types; simpler addressing |
-| Template metaprogramming | Interface + concrete types | Go doesn't have templates |
-| Cache-line aligned buckets | Shard-based locking (256 shards) | Go scheduler not cache-line aware; sharding is idiomatic |
-| per-thread epoch table | sync.Pool + atomic counters | Go goroutines ≠ OS threads; epoch table impractical |
-| HybridLog pages (32MB) | Append-only log file + mmap for reads | Simpler, leverages OS page cache |
-| FixedPageAddress overflow | Chained hash in cold file | Go maps handle overflow natively |
-| 96-thread limit | Unbounded goroutines | Go runtime handles scheduling |
-| NullDisk for read cache | In-memory circular buffer | No need for disk abstraction |
+|---------------|---------------|-----------|
+| 48-bit packed addresses | Direct pointers / offsets | Go has no 48-bit types |
+| Template metaprogramming | Concrete types | Go doesn't have templates |
+| Cache-line aligned buckets | 256 sharded Go maps | Go's Swiss table is faster than manual buckets |
+| Per-thread epoch table | sync.RWMutex per shard | Go goroutines != OS threads |
+| HybridLog pages (32MB) | Mmap arena (128MB chunks) | Simpler bump allocator |
+| 7-entry bucket scan | Go map lookup | Swiss table does same internally |
+| Overflow chain | Go map handles growth | Automatic rehash |
+| NullDisk read cache | Not applicable | Everything in memory |
 
-### 5.3 Kestrel Architecture
+### 10.3 Key Insight: Why Not Direct Port?
 
-```
-┌───────────────────────────────────────────────────────┐
-│                    kestrel.store                       │
-│                                                       │
-│  ┌─────────────────────────────────────────────────┐  │
-│  │ HOT TIER (in-memory, 256 shards)                │  │
-│  │  Each shard:                                     │  │
-│  │   - sync.RWMutex                                │  │
-│  │   - map[string]*record (composite key → record) │  │
-│  │   - Pending index ops (deferred bloom updates)  │  │
-│  │   - LRU/clock eviction tracking                 │  │
-│  └─────────────────────────────────────────────────┘  │
-│                                                       │
-│  ┌─────────────────────────────────────────────────┐  │
-│  │ READ CACHE (in-memory, separate from hot tier)  │  │
-│  │  - Fixed-size circular buffer (configurable)    │  │
-│  │  - 2nd-chance FIFO eviction (clock algorithm)   │  │
-│  │  - Populated on cold reads                      │  │
-│  │  - At most 1 entry per key                      │  │
-│  │  - Separate 64-shard map for O(1) lookup        │  │
-│  └─────────────────────────────────────────────────┘  │
-│                                                       │
-│  ┌─────────────────────────────────────────────────┐  │
-│  │ COLD TIER (on-disk, append-only log)            │  │
-│  │  File layout:                                    │  │
-│  │   [header 64B][record0][record1]...[recordN]    │  │
-│  │                                                  │  │
-│  │  Cold Index (in-memory directory):               │  │
-│  │   map[uint64][]coldEntry  (hash → entries list) │  │
-│  │   Each entry: {offset, keyHash, tag}            │  │
-│  │                                                  │  │
-│  │  Bloom filter for fast negative lookups          │  │
-│  └─────────────────────────────────────────────────┘  │
-│                                                       │
-│  ┌─────────────────────────────────────────────────┐  │
-│  │ BACKGROUND WORKERS                              │  │
-│  │  - Hot→Cold compactor (triggered by size)       │  │
-│  │  - Cold→Cold compactor (triggered by size)      │  │
-│  │  - Index updater (deferred bloom+keyIdx)        │  │
-│  └─────────────────────────────────────────────────┘  │
-│                                                       │
-│  ┌─────────────────────────────────────────────────┐  │
-│  │ PER-BUCKET KEY INDEX                            │  │
-│  │  - Segmented sorted keys for O(matching) List   │  │
-│  │  - Same design as falcon driver                 │  │
-│  └─────────────────────────────────────────────────┘  │
-└───────────────────────────────────────────────────────┘
-```
+Go's built-in `map` uses **Swiss tables** (since Go 1.24) — the same data structure
+FASTER's MemHashIndex implements manually. A custom hash table in Go cannot outperform
+the runtime's implementation because:
+
+1. Go's Swiss table uses SIMD-like tag matching (via `math/bits`)
+2. It's deeply integrated with the GC (no write barriers for internal data)
+3. It handles growth/rehash transparently
+4. Inline assembly optimizations for common architectures
+
+The real performance win from F2 is **separating bulk data from the GC heap**:
+- Values stored in mmap'd arena → invisible to GC scanner
+- Only map keys + pointers on Go heap → minimal GC work
+- `debug.SetGCPercent(800)` further reduces GC frequency
 
 ---
 
-## 6. Record Format (Cold Log)
-
-Variable-length records appended to the cold log file:
+## 11. Kestrel Architecture (v5 — Current)
 
 ```
-Offset  Size  Field
-──────  ────  ──────────────────────
-0       1     flags (occupied|tombstone|invalid)
-1       8     hash (FNV-1a 64-bit)
-9       2     keyLen (uint16, composite key length)
-11      var   key (composite: "bucket\x00key")
-11+kl   2     contentTypeLen (uint16)
-13+kl   var   contentType
-13+kl+cl 4    valueLen (uint32)
-17+kl+cl var  value (inline bytes)
-...     8     created (unix nano)
-...     8     updated (unix nano)
-
-Total record size = 33 + keyLen + ctLen + valueLen
+256 Sharded Go Maps (Swiss table speed)
++--------------------------------------------+
+| Shard 0: sync.RWMutex + map[string]*hotRecord |
+| Shard 1: sync.RWMutex + map[string]*hotRecord |
+| ...                                            |
+| Shard 255: sync.RWMutex + map[string]*hotRecord|
++--------------------------------------------+
+          | hotRecord.value points into |
+Mmap Value Arena (GC-invisible, lock-free bump allocator)
++--------------------------------------------+
+| Chunk 0: [128MB mmap MAP_ANON|MAP_PRIVATE] |
+| Chunk 1: [128MB mmap region]               |
+| ...   (CAS-linked list for chunk growth)   |
++--------------------------------------------+
+          |
+Background Index Loop (1ms tick)
++--------------------------------------------+
+| Per-shard pending ops → keyIndex updates   |
++--------------------------------------------+
 ```
 
-For values > 1MB, the value is stored in a separate overflow file and the record
-stores an 8-byte offset + 4-byte length instead of inline bytes (flagged by
-`flagOverflow` in the flags byte).
+**Key optimizations:**
+- Allocation-free lookups: `unsafeString(compositeKeyBuf(buf[:0], ...))` with `[256]byte` stack buffer
+- FNV-1a shard selection: `shardForParts(bucket, key)` hashes without allocation
+- Direct-to-arena writes: `io.ReadFull(src, arena.alloc(size))` — single copy
+- Cache-line padding: `[24]byte` on shard struct prevents false sharing
+- GC tuning: `debug.SetGCPercent(800)` since bulk data in mmap
 
-### 6.1 Cold Index Entry (in-memory)
-
-```go
-type coldEntry struct {
-    offset    int64   // byte offset in cold log file
-    size      int32   // total record size
-    hash      uint64  // full hash for verification
-    tombstone bool    // true if record is deleted
-}
-```
-
-The cold index is a sharded map: `hash % numColdShards` selects the shard,
-then linear scan of entries with matching hash. This is equivalent to F2's
-hash chunk approach but using Go's native maps.
-
----
-
-## 7. Optimization Strategy (Target: 2× Falcon)
-
-### 7.1 Phase 1 — Core Performance (Match Falcon)
-
-1. **Sharded hot tier** with 256 shards (same as falcon)
-2. **Allocation-free lookups** using `unsafe.String` + stack buffers
-3. **Entry pooling** via `sync.Pool` for hot entries
-4. **Value chunk allocator** (4MB bump pointer, same as falcon)
-5. **Deferred index updates** (batch bloom+keyIndex via channel)
-6. **Zero-copy readers** via pooled `dataReader`
-
-### 7.2 Phase 2 — Read Cache (Beat Falcon by ~1.3×)
-
-The read cache is the biggest architectural advantage F2 has. Falcon doesn't have one.
-
-1. **Clock-based eviction**: O(1) eviction vs falcon's no-cache design
-2. **Dedicated cache shards** (64 shards, separate from hot tier)
-3. **Population on cold reads**: every cold hit populates the cache
-4. **At-most-one invariant**: CAS-based insertion prevents duplicates
-5. **Expected improvement**: 19–27% on read-heavy workloads (per paper benchmarks)
-
-### 7.3 Phase 3 — Cold Log Optimization (Beat Falcon by ~1.5×)
-
-Falcon uses fixed 256-byte slots with linear probing — severely wasteful for
-small objects and slow for large cold files.
-
-1. **Append-only log** vs fixed-slot: no wasted space, no probing
-2. **In-memory hash index** for cold log: O(1) lookup vs O(probe_length)
-3. **Batch I/O**: coalesce reads with `preadv` when available
-4. **Background compaction**: live records rewritten to new log, dead space reclaimed
-5. **Expected improvement**: 50–100% for mixed workloads with cold data
-
-### 7.4 Phase 4 — Concurrency & Memory (Beat Falcon by ~2×)
-
-1. **Separate read/write paths**: reads never contend with writes (RWMutex per shard)
-2. **Lock-free bloom filter**: atomic OR for adds, atomic AND for queries
-3. **Epoch-inspired GC**: use atomic generation counter to batch-free old cold log entries
-4. **Amortized compaction**: spread compaction work across ticks, not burst
-5. **Cold file mmap for reads**: let OS manage page caching, zero-copy into userspace
-6. **Write-ahead buffer**: batch cold writes into 1MB buffer, flush on threshold
-
-### 7.5 Summary of Expected Improvements
-
-| Benchmark | Falcon Bottleneck | Kestrel Advantage | Expected Gain |
-|-----------|-------------------|-------------------|---------------|
-| Write | Allocation, cold slot probing | Chunk allocator, append-only cold | 1.2–1.5× |
-| Read (hot) | Map lookup (same) | Map lookup + read cache hit | 1.0–1.3× |
-| Read (cold) | Linear probe cold file | In-memory index + mmap | 2.0–3.0× |
-| ParallelRead | Lock contention | Read cache reduces cold path | 1.5–2.5× |
-| ParallelWrite | Shard contention | Same sharding, faster cold | 1.2–1.5× |
-| MixedWorkload | No caching, cold probe | Read cache + append log | 2.0–3.0× |
-| Delete | Cold tombstone + probe | Append tombstone (O(1)) | 1.5–2.0× |
-| List | Same key index | Same (negligible) | 1.0× |
-| Scale (10K) | Cold file growth | Compaction keeps file tight | 1.5–2.0× |
-
----
-
-## 8. Implementation Plan
-
-### 8.1 File Structure
+### 11.1 File Structure
 
 ```
 pkg/storage/driver/zoo/kestrel/
-├── RESEARCH.md          — This document
-├── storage.go           — Driver, store, bucket, all operations
-└── (single file, same pattern as falcon)
+  RESEARCH.md     -- This document
+  storage.go      -- Driver, store, shards, hot path (hotGet/hotPut/hotDelete)
+  arena.go        -- Mmap value arena (bump-pointer allocator)
+  bucket.go       -- storage.Bucket implementation (Write/Open/Stat/Delete/Copy/Move)
+  multipart.go    -- Multipart upload support
+  keyindex.go     -- Sorted key index for List operations
 ```
-
-### 8.2 Core Types
-
-```go
-// Record in hot tier (in-memory)
-type hotRecord struct {
-    value       []byte
-    contentType string
-    created     int64  // unix nano
-    updated     int64  // unix nano
-    size        int64
-}
-
-// Record in read cache
-type cacheEntry struct {
-    key         string // composite key
-    value       []byte
-    contentType string
-    created     int64
-    updated     int64
-    size        int64
-    accessed    atomic.Bool // second-chance bit
-}
-
-// Cold log index entry
-type coldEntry struct {
-    offset    int64   // file offset
-    size      int32   // record size
-    hash      uint64  // for verification
-    tombstone bool
-}
-
-// Hot tier shard
-type hotShard struct {
-    mu      sync.RWMutex
-    m       map[string]*hotRecord
-    pending []indexOp
-    _       [24]byte // padding
-}
-
-// Read cache shard
-type cacheShard struct {
-    mu      sync.RWMutex
-    m       map[string]*cacheEntry
-}
-
-// Cold index shard
-type coldShard struct {
-    mu      sync.RWMutex
-    entries map[uint64][]coldEntry // hash → entries
-}
-```
-
-### 8.3 Operation Flow
-
-**Write(key, value)**:
-1. Compute shard = `hash(bucket, key) % 256`
-2. Lock hot shard (write)
-3. Create/update entry in hot map
-4. Queue deferred bloom+keyIndex update
-5. If hot tier exceeds budget → signal compactor
-
-**Open(key) — Read**:
-1. Check hot shard (read lock) → if found, return pooled reader
-2. Check read cache (read lock) → if found, mark accessed, return
-3. Check bloom filter → if negative, return NotFound
-4. Check cold index → find offset → read from cold log
-5. Insert into read cache (2nd-chance FIFO)
-6. Return value
-
-**Delete(key)**:
-1. Remove from hot shard
-2. Invalidate read cache entry
-3. Append tombstone to cold log + update cold index
-4. Queue keyIndex removal
-
-**Hot→Cold Compaction** (background):
-1. Select entries to evict (oldest by `updated` timestamp)
-2. Batch-serialize records to write buffer
-3. Append buffer to cold log file
-4. Update cold index with new offsets
-5. Remove entries from hot shards
-6. Update bloom filter
-
-**Cold→Cold Compaction** (background):
-1. Scan cold log from beginning
-2. Skip tombstones and entries with newer versions
-3. Rewrite live records to new log file
-4. Atomically swap old log → new log
-5. Rebuild cold index
-
-### 8.4 DSN Format
-
-```
-kestrel:///path/to/data?hot_size=1048576&cache_size=65536&cold_budget=1073741824
-```
-
-Parameters:
-- `hot_size`: max hot entries before compaction trigger (default: 1M)
-- `cache_size`: read cache capacity in entries (default: 64K)
-- `cold_budget`: cold log size budget in bytes (default: 1GB)
-- `sync`: sync mode — `none`, `data`, `full` (default: `none`)
 
 ---
 
-## 9. Benchmark Plan
+## 12. Benchmark Results (v5 vs Falcon Baseline)
 
-### 9.1 Baseline Comparison
+**Overall: kestrel 26/40 wins (65%)**
 
-Run `cmd/bench` with `--drivers falcon,kestrel` to get head-to-head comparison:
+| Category | Kestrel Wins | Notable |
+|----------|-------------|---------|
+| Read | 4/4 | Read/64KB +76% |
+| ParallelRead | 3/3 | C50 +49% |
+| ParallelWrite | 3/3 | C1 +47%, C50 +44% |
+| Scale | 7/12 | Scale/Write/1000 3.3x, Scale/List/1 3.2x |
+| Write | 2/4 | Write/64KB -47% (arena contention) |
+
+### Resource Comparison
+
+| Metric | Kestrel | Falcon | Ratio |
+|--------|---------|--------|-------|
+| Go Heap | 5.8 GB | 54.2 GB | **9.3x less** |
+| GC Cycles | 14 | 6 | 2.3x more |
+| Disk Usage | 0 MB | 1024 MB | **Zero disk** |
+
+### Known Bottleneck: Write/64KB (-47%)
+
+Kestrel's mmap arena uses a **shared atomic bump pointer** (`atomic.Int64.Add`)
+that creates contention under concurrent medium-sized writes. Falcon uses **per-P
+`sync.Pool` value chunks** with zero contention.
+
+---
+
+## 13. Optimization Targets for 5x
+
+### 13.1 Arena Allocation Contention
+
+**Problem:** Single atomic bump pointer bottleneck for concurrent writes.
+**Solution:** Per-shard arena striping — each shard has its own arena region.
+Each write locks the shard anyway, so arena allocation inside the lock is free.
+
+### 13.2 Read Path Allocation
+
+**Problem:** `compositeKey()` string concatenation allocates on every write.
+**Current:** Fixed with `unsafeString` + stack buffer for reads, but writes still allocate.
+**Solution:** Pool composite keys for write path too.
+
+### 13.3 GC Pressure from Map Pointers
+
+**Problem:** 256 maps × N entries × pointer to hotRecord = millions of GC-visible pointers.
+**Solution:** Store records inline in a flat mmap'd slab instead of heap-allocated `*hotRecord`.
+The map value becomes a 4-byte index into the slab instead of an 8-byte pointer.
+
+### 13.4 Stat/Delete Hot Path
+
+**Problem:** Stat and Delete paths do unnecessary work (composite key alloc, arena tracking).
+**Solution:** Stat returns metadata only (no value access needed). Delete can skip arena tracking.
+
+### 13.5 Large Value Writes (1MB, 10MB)
+
+**Problem:** `io.ReadFull` into arena may block if reader is slow.
+**Solution:** For known-size writes, pre-allocate arena space and use direct copy.
+Already implemented — verify no regression.
+
+---
+
+## 14. Benchmark Tool Usage
+
+### 14.1 Running Benchmarks
 
 ```bash
-go run ./cmd/bench --drivers falcon,kestrel --benchtime 2s --quick
+# Build bench CLI
+go build -o /tmp/bench-cli ./cmd/bench/
+
+# Quick benchmark (adaptive, ~500ms per test)
+/tmp/bench-cli --drivers falcon,kestrel --quick --output /tmp/report --formats markdown,json
+
+# Full benchmark (1s per test, more stable)
+/tmp/bench-cli --drivers falcon,kestrel --output /tmp/report --formats markdown,json
+
+# With profiling (CPU + heap pprof)
+/tmp/bench-cli --drivers kestrel --profile --output /tmp/profile-report --formats markdown,json
+
+# Cleanup data after each driver
+/tmp/bench-cli --drivers falcon,kestrel --quick --output /tmp/report --cleanup-data
 ```
 
-### 9.2 Target Metrics
+### 14.2 Profiling
 
-| Benchmark | Falcon (baseline) | Kestrel Target |
-|-----------|-------------------|----------------|
-| Write 256B | X ops/s | ≥ 2X ops/s |
-| Write 1KB | X ops/s | ≥ 2X ops/s |
-| Read 256B | X ops/s | ≥ 2X ops/s |
-| Read 1KB | X ops/s | ≥ 2X ops/s |
-| ParallelRead C16 | X ops/s | ≥ 2X ops/s |
-| ParallelWrite C16 | X ops/s | ≥ 2X ops/s |
-| MixedWorkload ReadHeavy | X ops/s | ≥ 2X ops/s |
-| MixedWorkload Balanced | X ops/s | ≥ 2X ops/s |
-| Scale 10K | X ops/s | ≥ 2X ops/s |
+```bash
+# CPU profile analysis
+go tool pprof -top -cum /tmp/profile-report/kestrel/cpu.pprof
 
-### 9.3 Optimization Iteration
+# Heap profile analysis
+go tool pprof -top /tmp/profile-report/kestrel/heap.pprof
 
-1. Implement base kestrel driver with all features
-2. Run benchmark, identify bottlenecks with `--profile`
-3. Optimize hot path (allocation, locking)
-4. Optimize cold path (I/O, index lookup)
-5. Tune read cache parameters
-6. Re-benchmark until 2× achieved across all metrics
+# Interactive web UI
+go tool pprof -http=:8080 /tmp/profile-report/kestrel/cpu.pprof
 
----
+# Compare two profiles (before/after optimization)
+go tool pprof -base /tmp/v1-profile/kestrel/cpu.pprof /tmp/v2-profile/kestrel/cpu.pprof
+```
 
-## 10. Key Lessons from FASTER C++ Source
+### 14.3 Benchmark Categories
 
-1. **Epoch > Locks**: The epoch framework replaces most fine-grained locking with
-   cooperative synchronization. In Go, we approximate this with generation counters
-   and `sync.Pool` for safe reclamation.
-
-2. **Conditional Insert is fundamental**: Both compaction and RMW correctness depend
-   on CI. Our Go version uses CAS on atomic version counters per entry.
-
-3. **Read cache has outsized impact**: 19–27% improvement for just caching cold reads.
-   This is kestrel's primary advantage over falcon.
-
-4. **Two-level cold index scales**: <1 byte/key overhead for 250M keys. Our Go version
-   uses sharded maps which are comparably efficient.
-
-5. **Append-only beats fixed-slot**: F2 uses append-only logs, not fixed-size slots.
-   This eliminates falcon's linear probing overhead and wasted slot space.
-
-6. **Compaction must be incremental**: F2 compacts 10–20% at a time with 250ms checks.
-   Burst compaction causes latency spikes.
-
-7. **Background work must not block foreground**: Compaction runs on separate threads
-   with careful synchronization. In Go, we use separate goroutines with non-blocking
-   channel signals.
+| Category | What It Measures |
+|----------|-----------------|
+| Write/1KB..10MB | Single-writer throughput by object size |
+| Read/1KB..10MB | Single-reader throughput by object size |
+| ParallelWrite/C1..C50 | Multi-writer throughput by concurrency |
+| ParallelRead/C1..C50 | Multi-reader throughput by concurrency |
+| Delete | Single-thread delete throughput |
+| Stat | Metadata-only lookup throughput |
+| List/100 | List 100 objects throughput |
+| Copy/1KB | Server-side copy throughput |
+| MixedWorkload | Read+Write mixed ratios (90/10, 50/50, 10/90) |
+| RangeRead | Partial reads from start/middle/end of 256KB object |
+| Multipart | 15MB upload in 3 parts |
+| EdgeCase | Empty objects, 256-byte keys, deeply nested paths |
+| Scale/Write,Delete,List | Operations at 1/10/100/1000 pre-existing objects |
 
 ---
 
-## 11. References
+## 15. References
 
 1. Kanellis, K. & Chandramouli, B. "From FASTER to F2: Evolving Concurrent Key-Value
-   Store Designs for Large Skewed Workloads." PVLDB 18(12): 4910–4923, 2025.
+   Store Designs for Large Skewed Workloads." PVLDB 18(12): 4910-4923, 2025.
    https://www.vldb.org/pvldb/vol18/p4910-kanellis.pdf
 
 2. Microsoft FASTER GitHub Repository.
@@ -716,22 +711,19 @@ go run ./cmd/bench --drivers falcon,kestrel --benchtime 2s --quick
 
 3. PR #922: [C++] F2 KV store.
    https://github.com/microsoft/FASTER/pull/922
-   19,706 additions, 3,014 deletions, 81 files. Merged 2025-02-17.
+   19,706 additions, 3,014 deletions, 81 files.
 
-4. Chandramouli, B. et al. "FASTER: A Concurrent Key-Value Store with In-Place Updates."
-   SIGMOD 2018. (Original FASTER paper)
-
-5. Key C++ source files referenced:
-   - `cc/src/core/f2.h` — F2Kv top-level class
-   - `cc/src/core/faster.h` — FasterKv core
-   - `cc/src/core/record.h` — Record/RecordInfo layout
-   - `cc/src/core/address.h` — 48-bit address scheme
-   - `cc/src/core/light_epoch.h` — Epoch protection
-   - `cc/src/core/persistent_memory_malloc.h` — HybridLog allocator
-   - `cc/src/core/read_cache.h` — Read cache
-   - `cc/src/core/compact.h` — Compaction
-   - `cc/src/core/config.h` — Configuration defaults
-   - `cc/src/index/hash_bucket.h` — Bucket entry format
-   - `cc/src/index/hash_table.h` — Hash table
-   - `cc/src/index/cold_index.h` — Two-level cold index
-   - `cc/src/index/mem_index.h` — In-memory hash index
+4. Key C++ source files:
+   - `cc/src/core/f2.h` (1,013 lines) — F2Kv top-level class
+   - `cc/src/core/faster.h` (4,200+ lines) — FasterKv core with InternalRead/Upsert/Rmw/Delete
+   - `cc/src/core/record.h` — RecordInfo (8B) + Record<K,V> layout
+   - `cc/src/core/address.h` — 48-bit address: offset[25] | page[23]
+   - `cc/src/core/light_epoch.h` — Epoch protection with 96-entry thread table
+   - `cc/src/core/persistent_memory_malloc.h` — HybridLog allocator (32MB pages)
+   - `cc/src/core/config.h` — Configuration defaults (hot/cold budgets, compaction)
+   - `cc/src/core/compact.h` — Compaction with ConditionalInsert
+   - `cc/src/core/read_cache.h` — 2nd-chance FIFO read cache
+   - `cc/src/index/hash_bucket.h` — 64-byte cache-line buckets (7 or 8 entries)
+   - `cc/src/index/hash_table.h` — Hash table with overflow bucket pool
+   - `cc/src/index/mem_index.h` — In-memory hash index (MemHashIndex)
+   - `cc/src/index/cold_index.h` — Two-level cold index (in-mem dir + on-disk chunks)

@@ -6,12 +6,14 @@ import (
 	"sync/atomic"
 )
 
-// Default write buffer size: 4MB (vs Horse's 64MB).
+// Default write buffer size: 4MB.
 const defaultBufSize = 4 * 1024 * 1024
 
 // ringSize is the number of buffers in the ring.
-// 2 buffers keeps memory low: 1 accepts writes while 1 flushes.
-const ringSize = 2
+const ringSize = 4
+
+// numFlushers: concurrent flush goroutines.
+const numFlushers = 2
 
 // writeBuffer is a pre-allocated contiguous memory region for accumulating writes.
 type writeBuffer struct {
@@ -63,7 +65,8 @@ func (wb *writeBuffer) reset(volOffset int64) {
 	wb.frozen.Store(false)
 }
 
-// bufferRing manages a ring of write buffers with background flush.
+// bufferRing manages a ring of write buffers with concurrent background flush.
+// Uses sync.Cond to block writers when all buffers are full (no busy spinning).
 type bufferRing struct {
 	buffers  [ringSize]*writeBuffer
 	active   atomic.Int32
@@ -72,7 +75,9 @@ type bufferRing struct {
 	stopCh   chan struct{}
 	wg       sync.WaitGroup
 	swapMu   sync.Mutex
+	bufReady sync.Cond // signaled when a flusher resets a buffer
 	capacity int64
+	nextBase atomic.Int64
 }
 
 func newBufferRing(vol *volume, bufSize int64) *bufferRing {
@@ -87,13 +92,18 @@ func newBufferRing(vol *volume, bufSize int64) *bufferRing {
 		stopCh:   make(chan struct{}),
 		capacity: bufSize,
 	}
+	br.bufReady.L = &br.swapMu
+
 	for i := 0; i < ringSize; i++ {
 		br.buffers[i] = newWriteBuffer(bufSize, tail+int64(i)*bufSize)
 	}
 	br.active.Store(0)
+	br.nextBase.Store(tail + int64(ringSize)*bufSize)
 
-	br.wg.Add(1)
-	go br.flusher()
+	for i := 0; i < numFlushers; i++ {
+		br.wg.Add(1)
+		go br.flusher()
+	}
 
 	return br
 }
@@ -102,6 +112,7 @@ func (br *bufferRing) activeBuffer() *writeBuffer {
 	return br.buffers[br.active.Load()]
 }
 
+// writeInline writes to a buffer in the ring. Blocks (via Cond) if all full.
 func (br *bufferRing) writeInline(totalSize int64, valPosInRecord int) (buf []byte, recOff int64, valOff int64, wb *writeBuffer) {
 	for {
 		ab := br.activeBuffer()
@@ -113,6 +124,9 @@ func (br *bufferRing) writeInline(totalSize int64, valPosInRecord int) (buf []by
 	}
 }
 
+// swap freezes the current buffer, sends it for flushing, and switches to the
+// next available buffer. If all buffers are frozen, blocks on bufReady Cond
+// until a flusher resets one.
 func (br *bufferRing) swap() {
 	br.swapMu.Lock()
 	defer br.swapMu.Unlock()
@@ -120,33 +134,27 @@ func (br *bufferRing) swap() {
 	cur := br.active.Load()
 	ab := br.buffers[cur]
 
+	// Freeze current and submit for flush.
 	if !ab.frozen.Load() {
 		ab.frozen.Store(true)
-		br.flushCh <- int(cur)
-	}
-
-	for attempt := 0; attempt < ringSize*100; attempt++ {
-		next := (cur + 1 + int32(attempt)) % int32(ringSize)
-		nb := br.buffers[next]
-		if !nb.frozen.Load() {
-			br.active.Store(next)
-			return
-		}
-		if attempt%ringSize == ringSize-1 {
-			br.swapMu.Unlock()
-			runtime.Gosched()
-			br.swapMu.Lock()
+		select {
+		case br.flushCh <- int(cur):
+		default:
 		}
 	}
 
-	next := (cur + 1) % int32(ringSize)
-	nb := br.buffers[next]
-	for nb.frozen.Load() {
-		br.swapMu.Unlock()
-		runtime.Gosched()
-		br.swapMu.Lock()
+	// Find next non-frozen buffer. If all frozen, wait for flusher.
+	for {
+		for i := int32(1); i < int32(ringSize); i++ {
+			next := (cur + i) % int32(ringSize)
+			if !br.buffers[next].frozen.Load() {
+				br.active.Store(next)
+				return
+			}
+		}
+		// All frozen — block until flusher resets one.
+		br.bufReady.Wait()
 	}
-	br.active.Store(next)
 }
 
 func (br *bufferRing) flusher() {
@@ -154,7 +162,6 @@ func (br *bufferRing) flusher() {
 	for {
 		select {
 		case <-br.stopCh:
-			br.flushActive()
 			return
 		case idx := <-br.flushCh:
 			br.flushBuffer(idx)
@@ -165,13 +172,18 @@ func (br *bufferRing) flusher() {
 func (br *bufferRing) flushBuffer(idx int) {
 	wb := br.buffers[idx]
 
-	for wb.writers.Load() > 0 {
-		runtime.Gosched()
+	// Wait for active writers to finish (bounded spin).
+	for spins := 0; wb.writers.Load() > 0; spins++ {
+		if spins > 1000 {
+			runtime.Gosched()
+			spins = 0
+		}
 	}
 
 	n := wb.written()
 	if n == 0 {
 		wb.frozen.Store(false)
+		br.signalReady()
 		return
 	}
 
@@ -183,6 +195,7 @@ func (br *bufferRing) flushBuffer(idx int) {
 
 	br.vol.fd.WriteAt(wb.data[:n], wb.volOffset)
 
+	// Advance tail (CAS loop — never go backwards).
 	for {
 		old := br.vol.tail.Load()
 		if newTail <= old {
@@ -193,18 +206,18 @@ func (br *bufferRing) flushBuffer(idx int) {
 		}
 	}
 
-	nextOffset := newTail + br.capacity*int64(ringSize-1)
-	for i := 0; i < ringSize; i++ {
-		if i == idx {
-			continue
-		}
-		other := br.buffers[i]
-		end := other.volOffset + other.capacity
-		if nextOffset < end {
-			nextOffset = end
-		}
-	}
+	// Claim next offset atomically (race-free across concurrent flushers).
+	nextOffset := br.nextBase.Add(br.capacity) - br.capacity
 	wb.reset(nextOffset)
+
+	// Wake up blocked writers.
+	br.signalReady()
+}
+
+func (br *bufferRing) signalReady() {
+	br.swapMu.Lock()
+	br.bufReady.Broadcast()
+	br.swapMu.Unlock()
 }
 
 func (br *bufferRing) flushActive() {
@@ -230,6 +243,7 @@ func (br *bufferRing) readFromBuffer(offset, size int64) ([]byte, bool) {
 }
 
 func (br *bufferRing) close() {
+	br.flushActive()
 	close(br.stopCh)
 	br.wg.Wait()
 }
