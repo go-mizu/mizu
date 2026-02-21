@@ -570,6 +570,44 @@ type hotShard struct {
 	_       [24]byte  // padding to avoid false sharing
 }
 
+// valueChunk is a bump-pointer buffer for amortizing value byte allocation.
+// Used via sync.Pool for per-P locality (zero lock contention).
+type valueChunk struct {
+	buf []byte
+	off int
+}
+
+const (
+	valueChunkSize = 4 << 20 // 4MB per chunk
+	valueChunkMax  = 2 << 20 // values > 2MB use individual make()
+)
+
+var valueChunkPool = sync.Pool{
+	New: func() any { return &valueChunk{buf: make([]byte, valueChunkSize)} },
+}
+
+// allocValue amortizes heap allocation for value bytes using per-P chunk buffers.
+// This reduces GC object count by ~64x for 64KB values (one 4MB chunk
+// instead of 64 individual allocations), while adding zero lock contention
+// (sync.Pool uses per-P caches).
+func allocValue(size int) []byte {
+	if size <= 0 {
+		return nil
+	}
+	if size > valueChunkMax {
+		return make([]byte, size)
+	}
+	vc := valueChunkPool.Get().(*valueChunk)
+	if vc.off+size > len(vc.buf) {
+		vc.buf = make([]byte, valueChunkSize)
+		vc.off = 0
+	}
+	s := vc.buf[vc.off : vc.off+size : vc.off+size]
+	vc.off += size
+	valueChunkPool.Put(vc)
+	return s
+}
+
 // indexOp is a deferred bloom+keyIndex update, processed by indexLoop.
 type indexOp struct {
 	bucket, key string
@@ -1332,8 +1370,10 @@ func (s *store) Close() error {
 	close(s.stopTick)
 	s.bgWg.Wait()
 
-	// Flush hot tier to cold.
-	s.flushAll()
+	// Flush hot tier to cold — skip if auto-demote is disabled (ephemeral mode).
+	if s.hotMaxBytes > 0 {
+		s.flushAll()
+	}
 
 	if s.syncMode != "none" {
 		s.cold.mu.Lock()
@@ -1376,14 +1416,16 @@ func (s *store) hotPut(bucket, key string, e *hotEntry) {
 	sh.m[ck] = e
 	sh.mu.Unlock()
 
-	newValBytes := int64(len(e.value))
 	if existed {
-		oldBytes := int64(len(old.value))
-		s.hotBytes.Add(newValBytes - oldBytes)
+		if s.hotMaxBytes > 0 {
+			s.hotBytes.Add(int64(len(e.value)) - int64(len(old.value)))
+		}
 		releaseEntry(old)
 	} else {
 		s.hotCount.Add(1)
-		s.hotBytes.Add(newValBytes)
+		if s.hotMaxBytes > 0 {
+			s.hotBytes.Add(int64(len(e.value)))
+		}
 		s.indexDirty.Store(true)
 	}
 
@@ -1424,7 +1466,9 @@ func (s *store) hotDelete(bucket, key string) bool {
 	if ok {
 		delete(sh.m, ck)
 		s.hotCount.Add(-1)
-		s.hotBytes.Add(-int64(len(old.value)))
+		if s.hotMaxBytes > 0 {
+			s.hotBytes.Add(-int64(len(old.value)))
+		}
 		sh.pending = append(sh.pending, indexOp{bucket: bucket, key: key, remove: true})
 	}
 	sh.mu.Unlock()
@@ -1752,7 +1796,7 @@ func (b *bucket) Write(_ context.Context, key string, src io.Reader, size int64,
 
 	var data []byte
 	if size >= 0 {
-		data = make([]byte, size)
+		data = allocValue(int(size))
 		if size > 0 {
 			n, err := io.ReadFull(src, data)
 			if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
@@ -1894,6 +1938,10 @@ func (b *bucket) Delete(_ context.Context, key string, _ storage.Options) error 
 
 	// Hot-only delete when possible (no cold probe if found in hot).
 	if b.st.hotDelete(b.name, key) {
+		// Ephemeral mode: no cold tier exists, so skip all cold checks.
+		if b.st.hotMaxBytes == 0 {
+			return nil
+		}
 		// Key was in hot. Only check cold if bloom filter says it might exist there.
 		if !b.st.bloom.mayContain(b.name, key) {
 			return nil // Definitely not in cold.
@@ -1911,7 +1959,12 @@ func (b *bucket) Delete(_ context.Context, key string, _ storage.Options) error 
 		return nil
 	}
 
-	// Not in hot. Check cold via bloom filter first.
+	// Not in hot. In ephemeral mode, if it's not in hot, it doesn't exist.
+	if b.st.hotMaxBytes == 0 {
+		return storage.ErrNotExist
+	}
+
+	// Check cold via bloom filter first.
 	if !b.st.bloom.mayContain(b.name, key) {
 		return storage.ErrNotExist
 	}
