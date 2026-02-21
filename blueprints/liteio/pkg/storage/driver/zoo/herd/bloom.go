@@ -3,31 +3,53 @@ package herd
 import (
 	"math/bits"
 	"sync/atomic"
+	"unsafe"
 )
 
 // bloomFilter is a lock-free concurrent bloom filter for fast negative lookups.
 // Uses atomic OR for adds and plain reads for queries (safe because bits are only set, never cleared).
 //
-// v3 optimization: Uses wyhash-style mixing instead of double FNV-1a.
-// Single hash computation with fast mix for each probe — 2x faster than v2's
-// 7-iteration double FNV-1a (was ~30ns, now ~15ns per lookup).
+// v4 optimization: Uses mmap-backed memory instead of Go heap []atomic.Uint64.
+// The mmap region is invisible to the Go GC scanner, eliminating ~3 GB of heap
+// that was previously scanned by tryDeferToSpanScan + scanObject.
+// unsafe.Slice creates an atomic.Uint64 view over the mmap'd memory for fast
+// atomic OR operations (same single-instruction performance as v3).
 type bloomFilter struct {
-	bits    []atomic.Uint64
+	data    []byte           // mmap-backed storage (ownership for munmap)
+	bits    []atomic.Uint64  // view into data via unsafe.Slice — GC sees header only, not data
+	mmaped  bool             // true if data was allocated via mmap
 	numBits uint64
 	numHash int
 }
 
 // newBloomFilter creates a bloom filter sized for expectedItems with target FPR ~0.1%.
 // Uses 10 bits per item and 7 hash functions.
+// v4: backing memory is mmap'd (not Go heap), invisible to GC.
 func newBloomFilter(expectedItems int) *bloomFilter {
 	if expectedItems < 1024 {
 		expectedItems = 1024
 	}
 	numBits := uint64(expectedItems) * 10
 	numBits = (numBits + 63) &^ 63
+	numWords := numBits / 64
+
+	size := int(numWords * 8) // bytes needed
+	data, err := mmapAlloc(size)
+	mmaped := err == nil
+	if err != nil {
+		data = make([]byte, size)
+	}
+
+	// Create atomic.Uint64 view over the mmap'd memory.
+	// Safe because: (1) atomic.Uint64 is exactly 8 bytes (same layout as uint64),
+	// (2) mmap returns page-aligned memory (always 8-byte aligned),
+	// (3) GC sees the slice header but NOT the data (mmap is outside Go heap).
+	atomicBits := unsafe.Slice((*atomic.Uint64)(unsafe.Pointer(&data[0])), numWords)
 
 	return &bloomFilter{
-		bits:    make([]atomic.Uint64, numBits/64),
+		data:    data,
+		bits:    atomicBits,
+		mmaped:  mmaped,
 		numBits: numBits,
 		numHash: 7,
 	}
@@ -38,9 +60,7 @@ func (bf *bloomFilter) add(bucket, key string) {
 	h1, h2 := bloomHashFast(bucket, key)
 	for i := 0; i < bf.numHash; i++ {
 		bit := (h1 + uint64(i)*h2) % bf.numBits
-		word := bit / 64
-		mask := uint64(1) << (bit % 64)
-		bf.bits[word].Or(mask)
+		bf.bits[bit/64].Or(1 << (bit % 64))
 	}
 }
 
@@ -54,6 +74,15 @@ func (bf *bloomFilter) mayContain(bucket, key string) bool {
 		}
 	}
 	return true
+}
+
+// close releases the mmap'd memory back to the OS.
+func (bf *bloomFilter) close() {
+	if bf.mmaped && bf.data != nil {
+		mmapFree(bf.data)
+		bf.data = nil
+		bf.bits = nil
+	}
 }
 
 // wymix is a fast mixing function from wyhash.

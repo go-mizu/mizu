@@ -15,8 +15,10 @@ const defaultBufSize = 8 * 1024 * 1024
 const ringSize = 8
 
 // writeBuffer is a pre-allocated contiguous memory region for accumulating writes.
+// v4: uses mmap-backed memory (GC-invisible) instead of Go heap allocation.
 type writeBuffer struct {
 	data      []byte
+	mmaped    bool // true if data was allocated via mmap
 	pos       atomic.Int64
 	capacity  int64
 	volOffset int64
@@ -25,8 +27,14 @@ type writeBuffer struct {
 }
 
 func newWriteBuffer(capacity int64, volOffset int64) *writeBuffer {
+	data, err := mmapAlloc(int(capacity))
+	mmaped := err == nil
+	if err != nil {
+		data = make([]byte, capacity)
+	}
 	return &writeBuffer{
-		data:      make([]byte, capacity),
+		data:      data,
+		mmaped:    mmaped,
 		capacity:  capacity,
 		volOffset: volOffset,
 	}
@@ -244,4 +252,11 @@ func (br *bufferRing) readFromBuffer(offset, size int64) ([]byte, bool) {
 func (br *bufferRing) close() {
 	close(br.stopCh)
 	br.wg.Wait()
+	// v4: free mmap'd buffer memory.
+	for i := 0; i < ringSize; i++ {
+		if br.buffers[i] != nil && br.buffers[i].mmaped {
+			mmapFree(br.buffers[i].data)
+			br.buffers[i].data = nil
+		}
+	}
 }

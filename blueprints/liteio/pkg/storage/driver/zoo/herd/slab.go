@@ -44,6 +44,11 @@ func mmapAlloc(size int) ([]byte, error) {
 	return data, nil
 }
 
+// mmapFree releases a previously mmap'd region back to the OS.
+func mmapFree(data []byte) error {
+	return syscall.Munmap(data)
+}
+
 func newSlabArena() *slabArena {
 	data, err := mmapAlloc(slabChunkSize)
 	if err != nil {

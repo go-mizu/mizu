@@ -238,6 +238,9 @@ func (s *stripe) close() error {
 	if s.ring != nil {
 		s.ring.close()
 	}
+	if s.bloom != nil {
+		s.bloom.close()
+	}
 	return s.vol.close()
 }
 
@@ -261,6 +264,7 @@ var _ storage.Storage = (*store)(nil)
 // stripeFor selects a stripe for a bucket+key using full FNV-1a hash.
 // Full hash ensures even distribution across stripes regardless of key patterns.
 // v3: numStripes is always a power of 2, so use bitmask instead of modulo.
+// v4: proper separator byte (was no-op h ^= 0).
 func (s *store) stripeFor(bucket, key string) *stripe {
 	const prime32 = 16777619
 	h := uint32(2166136261)
@@ -268,7 +272,7 @@ func (s *store) stripeFor(bucket, key string) *stripe {
 		h ^= uint32(bucket[i])
 		h *= prime32
 	}
-	h ^= 0
+	h ^= 0xFF // v4: proper separator between bucket and key hash
 	h *= prime32
 	for i := 0; i < len(key); i++ {
 		h ^= uint32(key[i])

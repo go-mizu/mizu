@@ -7,6 +7,7 @@ import (
 )
 
 const shardCount = 256
+const shardMask = shardCount - 1 // v4: bitmask for power-of-2 shard selection
 
 // indexEntry stores the location and metadata for a single object.
 type indexEntry struct {
@@ -67,6 +68,7 @@ func newIndex() *shardedIndex {
 }
 
 // shardForParts computes shard index from bucket+key without allocation.
+// v4: bitmask instead of modulo, proper separator byte.
 func shardForParts(bucket, key string) uint32 {
 	const offset32 = 2166136261
 	const prime32 = 16777619
@@ -75,13 +77,13 @@ func shardForParts(bucket, key string) uint32 {
 		h ^= uint32(bucket[i])
 		h *= prime32
 	}
-	h ^= 0
+	h ^= 0xFF // v4: proper separator (was no-op h ^= 0)
 	h *= prime32
 	for i := 0; i < len(key); i++ {
 		h ^= uint32(key[i])
 		h *= prime32
 	}
-	return h % shardCount
+	return h & shardMask
 }
 
 func (idx *shardedIndex) put(bucket, key string, e *indexEntry) {

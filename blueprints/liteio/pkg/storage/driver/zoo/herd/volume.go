@@ -472,6 +472,17 @@ func (v *volume) growFile(needed int64) error {
 	if err := v.fd.Truncate(newSize); err != nil {
 		return fmt.Errorf("herd: truncate: %w", err)
 	}
+
+	// v4: remap mmap to cover the grown file.
+	// Old mapping is intentionally leaked (readers may still reference it).
+	// Leak is bounded by geometric growth: total leaked ≤ current size.
+	// This eliminates readValueSlice fallback to make([]byte) + ReadAt.
+	newData, err := syscall.Mmap(int(v.fd.Fd()), 0, int(newSize),
+		syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+	if err == nil {
+		v.region.Store(&mmapRegion{buf: newData, capacity: newSize})
+	}
+
 	v.fileSize.Store(newSize)
 	return nil
 }
