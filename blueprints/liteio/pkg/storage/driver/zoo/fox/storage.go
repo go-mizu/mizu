@@ -12,6 +12,7 @@
 package fox
 
 import (
+	"bytes"
 	"container/list"
 	"context"
 	"crypto/md5"
@@ -259,33 +260,6 @@ func splitCompositeKey(ck string) (bucket, key string) {
 		return ck, ""
 	}
 	return ck[:i], ck[i+1:]
-}
-
-// compareStringBytes compares a string to a byte slice lexicographically
-// without allocating a temporary []byte for the string.
-func compareStringBytes(s string, b []byte) int {
-	n := len(s)
-	if len(b) < n {
-		n = len(b)
-	}
-	for i := 0; i < n; i++ {
-		sb := s[i]
-		bb := b[i]
-		if sb < bb {
-			return -1
-		}
-		if sb > bb {
-			return 1
-		}
-	}
-	switch {
-	case len(s) < len(b):
-		return -1
-	case len(s) > len(b):
-		return 1
-	default:
-		return 0
-	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1549,6 +1523,7 @@ func findPageEntry(buf []byte, ck string, loadValue bool) (pageEntry, bool) {
 	if count == 0 {
 		return pageEntry{}, false
 	}
+	ckb := []byte(ck)
 	pos := pageHeaderSize
 
 	for i := range count {
@@ -1564,7 +1539,7 @@ func findPageEntry(buf []byte, ck string, loadValue bool) (pageEntry, bool) {
 		keyBytes := buf[pos : pos+kl]
 		pos += kl
 
-		cmp := -compareStringBytes(ck, keyBytes)
+		cmp := bytes.Compare(keyBytes, ckb)
 		if cmp > 0 {
 			return pageEntry{}, false
 		}
@@ -2691,6 +2666,11 @@ func (r *valueSectionReader) Read(p []byte) (int, error) {
 }
 
 func (r *valueSectionReader) WriteTo(w io.Writer) (int64, error) {
+	// Small reads often hit io.Copy's ReaderFrom fast path without needing a pooled
+	// buffer. Reserve the larger pooled buffer for bigger sections (e.g. range reads).
+	if r.r.Size() <= 64*1024 {
+		return io.Copy(w, r.r)
+	}
 	buf := valueStreamBufPool.Get().([]byte)
 	defer valueStreamBufPool.Put(buf)
 	return io.CopyBuffer(w, r.r, buf)
