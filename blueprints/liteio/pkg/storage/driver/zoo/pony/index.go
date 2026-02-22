@@ -27,8 +27,7 @@ const (
 	hashEmpty    = 0
 	hashTombstone = 1
 
-	shardCount           = 256
-	shardMask            = shardCount - 1
+	defaultShardCount    = 64  // shards per stripe (4 stripes × 64 = 256 total)
 	defaultSlotsPerShard = 256 // 256 slots × 64B = 16KB per shard
 	maxLoadPercent       = 75
 	defaultStringPoolCap = 64 * 1024 // 64KB per shard (vs 4MB for single index)
@@ -72,11 +71,13 @@ type diskShard struct {
 	fileSize   int64
 }
 
-// shardedIndex manages 256 independent shard indexes.
+// shardedIndex manages N independent shard indexes (default 64 per stripe).
 type shardedIndex struct {
-	shards  [shardCount]*diskShard
-	dir     string
-	version atomic.Uint64 // bumped on every put/remove for list cache invalidation
+	shards     []*diskShard
+	shardCount int
+	shardMask  uint64
+	dir        string
+	version    atomic.Uint64 // bumped on every put/remove for list cache invalidation
 
 	// List result cache — avoids rescanning when data hasn't changed.
 	listCacheMu sync.RWMutex
@@ -88,7 +89,11 @@ type listCacheEntry struct {
 	results []listResult
 }
 
-func newShardedIndex(dir string, initialSlotsPerShard uint64) (*shardedIndex, error) {
+func newShardedIndex(dir string, nShards int, initialSlotsPerShard uint64) (*shardedIndex, error) {
+	if nShards <= 0 {
+		nShards = defaultShardCount
+	}
+	nShards = int(nextPow2(uint64(nShards)))
 	if initialSlotsPerShard == 0 {
 		initialSlotsPerShard = defaultSlotsPerShard
 	}
@@ -100,15 +105,17 @@ func newShardedIndex(dir string, initialSlotsPerShard uint64) (*shardedIndex, er
 	}
 
 	si := &shardedIndex{
-		dir:       idxDir,
-		listCache: make(map[string]listCacheEntry),
+		shards:     make([]*diskShard, nShards),
+		shardCount: nShards,
+		shardMask:  uint64(nShards - 1),
+		dir:        idxDir,
+		listCache:  make(map[string]listCacheEntry),
 	}
 
-	for i := 0; i < shardCount; i++ {
+	for i := 0; i < nShards; i++ {
 		path := filepath.Join(idxDir, fmt.Sprintf("s%03d.idx", i))
 		shard, err := newDiskShard(path, initialSlotsPerShard)
 		if err != nil {
-			// Close already-opened shards.
 			for j := 0; j < i; j++ {
 				si.shards[j].close()
 			}
@@ -342,7 +349,7 @@ func (s *diskShard) close() error {
 
 // shardFor returns the shard index for a given hash.
 func (si *shardedIndex) shardFor(h uint64) *diskShard {
-	return si.shards[h&shardMask]
+	return si.shards[h&si.shardMask]
 }
 
 // hashComposite computes FNV-1a hash of bucket + "\x00" + key.
@@ -355,7 +362,7 @@ func hashComposite(bucket, key string) uint64 {
 		h ^= uint64(bucket[i])
 		h *= prime64
 	}
-	h ^= 0 // null separator
+	h ^= 0xFF // separator byte (not 0 — XOR with 0 is a no-op)
 	h *= prime64
 	for i := 0; i < len(key); i++ {
 		h ^= uint64(key[i])
@@ -439,7 +446,11 @@ type indexResult struct {
 
 // get looks up an entry by bucket and key.
 func (si *shardedIndex) get(bucket, key string) (indexResult, bool) {
-	h := hashComposite(bucket, key)
+	return si.getWithHash(bucket, key, hashComposite(bucket, key))
+}
+
+// getWithHash looks up an entry using a precomputed hash (avoids double hashing in striped mode).
+func (si *shardedIndex) getWithHash(bucket, key string, h uint64) (indexResult, bool) {
 	shard := si.shardFor(h)
 
 	shard.mu.RLock()
@@ -461,7 +472,7 @@ func (si *shardedIndex) get(bucket, key string) (indexResult, bool) {
 		}
 
 		if slot.Hash == h && shard.matchCompositeKey(slot.StrOff, slot.StrLen, bucket, key) {
-			ct := shard.readStringCopy(slot.StrOff+uint64(slot.StrLen), uint32(slot.CtLen))
+			ct := internContentType(shard.readStringCopy(slot.StrOff+uint64(slot.StrLen), uint32(slot.CtLen)))
 			r := indexResult{
 				valOff:      slot.ValOff,
 				valSize:     slot.ValSize,
@@ -476,6 +487,100 @@ func (si *shardedIndex) get(bucket, key string) (indexResult, bool) {
 
 	shard.mu.RUnlock()
 	return indexResult{}, false
+}
+
+// putWithHash inserts using a precomputed hash (avoids double hashing in striped mode).
+func (si *shardedIndex) putWithHash(bucket, key, contentType string, valOff, valSize, created, updated int64, h uint64) {
+	si.version.Add(1)
+	shard := si.shardFor(h)
+	ckLen := uint32(len(bucket) + 1 + len(key))
+	ctLen := uint16(len(contentType))
+
+	shard.mu.Lock()
+
+	if shard.entryCount*100/shard.slotCount >= maxLoadPercent {
+		shard.rehash(shard.slotCount * 2)
+	}
+
+	mask := shard.slotCount - 1
+	startSlot := h & mask
+
+	for i := uint64(0); i < shard.slotCount; i++ {
+		si := (startSlot + i) & mask
+		slot := shard.slotAt(si)
+
+		if slot.Hash == hashEmpty || slot.Hash == hashTombstone {
+			strOff := shard.appendCompositeAndCT(bucket, key, contentType)
+			slot = shard.slotAt(si)
+
+			slot.Hash = h
+			slot.StrOff = strOff
+			slot.StrLen = ckLen
+			slot.CtLen = ctLen
+			slot.ValOff = valOff
+			slot.ValSize = valSize
+			slot.Created = created
+			slot.Updated = updated
+
+			shard.entryCount++
+			shard.updateHeaderCounts()
+			shard.mu.Unlock()
+			return
+		}
+
+		if slot.Hash == h && shard.matchCompositeKey(slot.StrOff, slot.StrLen, bucket, key) {
+			strOff := shard.appendCompositeAndCT(bucket, key, contentType)
+			slot = shard.slotAt(si)
+			slot.StrOff = strOff
+			slot.StrLen = ckLen
+			slot.CtLen = ctLen
+			slot.ValOff = valOff
+			slot.ValSize = valSize
+			slot.Updated = updated
+
+			shard.updateHeaderCounts()
+			shard.mu.Unlock()
+			return
+		}
+	}
+
+	shard.mu.Unlock()
+}
+
+// removeWithHash removes using a precomputed hash.
+func (si *shardedIndex) removeWithHash(bucket, key string, h uint64) bool {
+	si.version.Add(1)
+	shard := si.shardFor(h)
+
+	shard.mu.Lock()
+
+	mask := shard.slotCount - 1
+	startSlot := h & mask
+
+	for i := uint64(0); i < shard.slotCount; i++ {
+		si := (startSlot + i) & mask
+		slot := shard.slotAt(si)
+
+		if slot.Hash == hashEmpty {
+			shard.mu.Unlock()
+			return false
+		}
+
+		if slot.Hash == hashTombstone {
+			continue
+		}
+
+		if slot.Hash == h && shard.matchCompositeKey(slot.StrOff, slot.StrLen, bucket, key) {
+			slot.Hash = hashTombstone
+			shard.entryCount--
+			shard.updateHeaderCounts()
+			shard.mu.Unlock()
+			return true
+		}
+	}
+
+	shard.mu.Unlock()
+	return false
 }
 
 // remove marks an entry as deleted.
@@ -518,7 +623,7 @@ func (si *shardedIndex) remove(bucket, key string) bool {
 // hasBucket returns true if any keys exist for the given bucket.
 // Scans all shards.
 func (si *shardedIndex) hasBucket(bucket string) bool {
-	for i := 0; i < shardCount; i++ {
+	for i := 0; i < si.shardCount; i++ {
 		shard := si.shards[i]
 		shard.mu.RLock()
 		for j := uint64(0); j < shard.slotCount; j++ {
@@ -550,7 +655,7 @@ func (si *shardedIndex) hasBucket(bucket string) bool {
 // hasPrefix returns true if any key in the bucket starts with prefix.
 // Scans shards until first match (early exit for Stat directory checks).
 func (si *shardedIndex) hasPrefix(bucket, prefix string) bool {
-	for i := 0; i < shardCount; i++ {
+	for i := 0; i < si.shardCount; i++ {
 		shard := si.shards[i]
 		shard.mu.RLock()
 		for j := uint64(0); j < shard.slotCount; j++ {
@@ -571,7 +676,7 @@ func (si *shardedIndex) hasPrefix(bucket, prefix string) bool {
 
 // firstMatch returns the first entry matching bucket+prefix.
 func (si *shardedIndex) firstMatch(bucket, prefix string) (listResult, bool) {
-	for i := 0; i < shardCount; i++ {
+	for i := 0; i < si.shardCount; i++ {
 		shard := si.shards[i]
 		shard.mu.RLock()
 		for j := uint64(0); j < shard.slotCount; j++ {
@@ -630,7 +735,7 @@ func (si *shardedIndex) list(bucket, prefix string) []listResult {
 
 // listScan performs the actual parallel shard scan.
 func (si *shardedIndex) listScan(bucket, prefix string) []listResult {
-	perWorker := shardCount / listScanWorkers
+	perWorker := si.shardCount / listScanWorkers
 	partials := make([][]listResult, listScanWorkers)
 
 	var wg sync.WaitGroup
@@ -641,7 +746,7 @@ func (si *shardedIndex) listScan(bucket, prefix string) []listResult {
 			start := workerIdx * perWorker
 			end := start + perWorker
 			if workerIdx == listScanWorkers-1 {
-				end = shardCount
+				end = si.shardCount
 			}
 			var local []listResult
 			for i := start; i < end; i++ {
@@ -830,7 +935,7 @@ func (s *diskShard) reset() {
 // totalEntryCount returns the sum of entries across all shards.
 func (si *shardedIndex) totalEntryCount() uint64 {
 	var total uint64
-	for i := 0; i < shardCount; i++ {
+	for i := 0; i < si.shardCount; i++ {
 		shard := si.shards[i]
 		shard.mu.RLock()
 		total += shard.entryCount
@@ -840,14 +945,14 @@ func (si *shardedIndex) totalEntryCount() uint64 {
 }
 
 func (si *shardedIndex) reset() {
-	for i := 0; i < shardCount; i++ {
+	for i := 0; i < si.shardCount; i++ {
 		si.shards[i].reset()
 	}
 }
 
 func (si *shardedIndex) close() error {
 	var firstErr error
-	for i := 0; i < shardCount; i++ {
+	for i := 0; i < si.shardCount; i++ {
 		if err := si.shards[i].close(); err != nil && firstErr == nil {
 			firstErr = err
 		}

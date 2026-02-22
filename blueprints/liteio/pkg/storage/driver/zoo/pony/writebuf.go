@@ -4,6 +4,7 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"syscall"
 )
 
 // Default write buffer size: 4MB.
@@ -23,13 +24,23 @@ type writeBuffer struct {
 	volOffset int64
 	frozen    atomic.Bool
 	writers   atomic.Int32
+	mmaped    bool
 }
 
 func newWriteBuffer(capacity int64, volOffset int64) *writeBuffer {
+	// Use mmap for GC-invisible buffer memory.
+	data, err := syscall.Mmap(-1, 0, int(capacity),
+		syscall.PROT_READ|syscall.PROT_WRITE,
+		syscall.MAP_ANON|syscall.MAP_PRIVATE)
+	mmaped := err == nil
+	if !mmaped {
+		data = make([]byte, capacity)
+	}
 	return &writeBuffer{
-		data:      make([]byte, capacity),
+		data:      data,
 		capacity:  capacity,
 		volOffset: volOffset,
+		mmaped:    mmaped,
 	}
 }
 
@@ -63,6 +74,13 @@ func (wb *writeBuffer) reset(volOffset int64) {
 	wb.pos.Store(0)
 	wb.volOffset = volOffset
 	wb.frozen.Store(false)
+}
+
+func (wb *writeBuffer) free() {
+	if wb.mmaped && wb.data != nil {
+		syscall.Munmap(wb.data)
+		wb.data = nil
+	}
 }
 
 // bufferRing manages a ring of write buffers with concurrent background flush.
@@ -246,4 +264,7 @@ func (br *bufferRing) close() {
 	br.flushActive()
 	close(br.stopCh)
 	br.wg.Wait()
+	for i := 0; i < ringSize; i++ {
+		br.buffers[i].free()
+	}
 }

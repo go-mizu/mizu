@@ -1,8 +1,8 @@
-// Package pony implements a memory-constrained single-volume object storage driver.
+// Package pony implements a memory-constrained striped object storage driver.
 //
-// Architecture: Same append-only volume as Horse, but with an mmap'd on-disk hash table
-// index instead of an in-memory Go map. This keeps total process RSS under 100MB even
-// at 1M+ objects, while Horse consumes 300-500MB.
+// Architecture: 4 stripes, each with an append-only volume and an mmap'd on-disk hash table
+// index. This keeps total process heap near zero (all buffers are mmap-backed) while
+// providing good parallel throughput via stripe-level isolation.
 //
 // DSN format:
 //
@@ -31,6 +31,12 @@ import (
 	"unsafe"
 
 	"github.com/liteio-dev/liteio/pkg/storage"
+)
+
+const (
+	numStripes = 4
+	stripeMask = numStripes - 1
+	shardsPerStripe = 64
 )
 
 func init() {
@@ -74,50 +80,74 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 		}
 	}
 
-	volPath := filepath.Join(root, "volume.dat")
-
-	vol, err := newVolume(volPath, prealloc)
-	if err != nil {
-		return nil, err
-	}
-
-	if syncMode == "none" {
-		vol.noCRC = true
-	}
-
-	idx, err := newShardedIndex(root, initialSlots/shardCount)
-	if err != nil {
-		vol.close()
-		return nil, err
-	}
-
-	// If index is empty but volume has data, recover from volume.
-	if idx.totalEntryCount() == 0 && vol.tail.Load() > headerSize {
-		idx.reset()
-		if err := vol.recover(idx); err != nil {
-			idx.close()
-			vol.close()
-			return nil, fmt.Errorf("pony: recovery failed: %w", err)
+	bufSize := int64(defaultBufSize)
+	if bs := u.Query().Get("bufsize"); bs != "" {
+		if n, err := strconv.ParseInt(bs, 10, 64); err == nil && n > 0 {
+			bufSize = n
 		}
 	}
 
 	st := &store{
 		root:     root,
-		vol:      vol,
-		idx:      idx,
 		syncMode: syncMode,
 		buckets:  make(map[string]time.Time),
 		mp:       newMultipartRegistry(),
 	}
 
-	if syncMode == "none" {
-		bufSize := int64(defaultBufSize)
-		if bs := u.Query().Get("bufsize"); bs != "" {
-			if n, err := strconv.ParseInt(bs, 10, 64); err == nil && n > 0 {
-				bufSize = n
+	// Divide prealloc and slots across stripes.
+	preallocPerStripe := prealloc / numStripes
+	slotsPerShard := initialSlots / (numStripes * shardsPerStripe)
+
+	for i := 0; i < numStripes; i++ {
+		stripeDir := filepath.Join(root, fmt.Sprintf("stripe_%d", i))
+		volPath := filepath.Join(stripeDir, "volume.dat")
+
+		vol, err := newVolume(volPath, preallocPerStripe)
+		if err != nil {
+			// Close already-opened stripes.
+			for j := 0; j < i; j++ {
+				st.stripes[j].close()
+			}
+			return nil, err
+		}
+
+		if syncMode == "none" {
+			vol.noCRC = true
+		}
+
+		idx, err := newShardedIndex(stripeDir, shardsPerStripe, slotsPerShard)
+		if err != nil {
+			vol.close()
+			for j := 0; j < i; j++ {
+				st.stripes[j].close()
+			}
+			return nil, err
+		}
+
+		// Recovery: if index is empty but volume has data, recover.
+		if idx.totalEntryCount() == 0 && vol.tail.Load() > headerSize {
+			idx.reset()
+			if err := vol.recover(idx); err != nil {
+				idx.close()
+				vol.close()
+				for j := 0; j < i; j++ {
+					st.stripes[j].close()
+				}
+				return nil, fmt.Errorf("pony: stripe %d recovery failed: %w", i, err)
 			}
 		}
-		st.bufRing = newBufferRing(vol, bufSize)
+
+		s := &stripe{
+			id:  i,
+			vol: vol,
+			idx: idx,
+		}
+
+		if syncMode == "none" {
+			s.bufRing = newBufferRing(vol, bufSize)
+		}
+
+		st.stripes[i] = s
 	}
 
 	if syncMode == "batch" {
@@ -127,15 +157,36 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 	return st, nil
 }
 
-// Cached time to avoid time.Now() overhead.
+// stripe is an independent partition with its own volume, index, and buffer ring.
+type stripe struct {
+	id      int
+	vol     *volume
+	idx     *shardedIndex
+	bufRing *bufferRing
+}
+
+func (s *stripe) close() {
+	if s.bufRing != nil {
+		s.bufRing.close()
+	}
+	s.idx.close()
+	s.vol.close()
+}
+
+// Cached time — both nano and time.Time pointer to avoid time.Unix(0, n) allocs.
 var cachedTimeNano atomic.Int64
+var cachedTimePtr atomic.Pointer[time.Time]
 
 func init() {
-	cachedTimeNano.Store(time.Now().UnixNano())
+	now := time.Now()
+	cachedTimeNano.Store(now.UnixNano())
+	cachedTimePtr.Store(&now)
 	go func() {
-		ticker := time.NewTicker(1 * time.Millisecond)
+		ticker := time.NewTicker(500 * time.Microsecond)
 		for range ticker.C {
-			cachedTimeNano.Store(time.Now().UnixNano())
+			now := time.Now()
+			cachedTimeNano.Store(now.UnixNano())
+			cachedTimePtr.Store(&now)
 		}
 	}()
 }
@@ -145,20 +196,29 @@ func fastNow() int64 {
 }
 
 func fastNowTime() time.Time {
-	return time.Unix(0, fastNow())
+	return *cachedTimePtr.Load()
+}
+
+// Content type interning — most apps use <10 distinct types.
+var contentTypeIntern sync.Map
+
+func internContentType(s string) string {
+	if v, ok := contentTypeIntern.Load(s); ok {
+		return v.(string)
+	}
+	contentTypeIntern.Store(s, s)
+	return s
 }
 
 func unsafePointer(b []byte) unsafe.Pointer {
 	return unsafe.Pointer(&b[0])
 }
 
-// store implements storage.Storage.
+// store implements storage.Storage with 4 independent stripes.
 type store struct {
 	root     string
-	vol      *volume
-	idx      *shardedIndex
+	stripes  [numStripes]*stripe
 	syncMode string
-	bufRing  *bufferRing
 
 	mu      sync.RWMutex
 	buckets map[string]time.Time
@@ -170,6 +230,19 @@ type store struct {
 }
 
 var _ storage.Storage = (*store)(nil)
+
+// stripeFor routes a bucket+key to a stripe via FNV-1a hash.
+func (s *store) stripeFor(bucket, key string) *stripe {
+	h := hashComposite(bucket, key)
+	return s.stripes[(h>>8)&stripeMask]
+}
+
+// stripeAndHash computes the hash once and returns both stripe and hash.
+// Use this on hot paths to avoid double hashing (stripe routing + index lookup).
+func (s *store) stripeAndHash(bucket, key string) (*stripe, uint64) {
+	h := hashComposite(bucket, key)
+	return s.stripes[(h>>8)&stripeMask], h
+}
 
 func (s *store) startBatcher() {
 	s.batcherStop = make(chan struct{})
@@ -183,7 +256,9 @@ func (s *store) startBatcher() {
 			case <-s.batcherStop:
 				return
 			case <-ticker.C:
-				s.vol.sync()
+				for i := 0; i < numStripes; i++ {
+					s.stripes[i].vol.sync()
+				}
 			}
 		}
 	}()
@@ -287,8 +362,12 @@ func (s *store) DeleteBucket(ctx context.Context, name string, opts storage.Opti
 		return storage.ErrNotExist
 	}
 
-	if !force && s.idx.hasBucket(name) {
-		return storage.ErrPermission
+	if !force {
+		for i := 0; i < numStripes; i++ {
+			if s.stripes[i].idx.hasBucket(name) {
+				return storage.ErrPermission
+			}
+		}
 	}
 
 	delete(s.buckets, name)
@@ -311,16 +390,11 @@ func (s *store) Close() error {
 		s.batcherWg.Wait()
 	}
 
-	if s.bufRing != nil {
-		s.bufRing.close()
+	for i := 0; i < numStripes; i++ {
+		s.stripes[i].close()
 	}
 
-	if s.syncMode != "none" {
-		s.vol.sync()
-	}
-
-	s.idx.close()
-	return s.vol.close()
+	return nil
 }
 
 // bucket implements storage.Bucket.
@@ -372,6 +446,8 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 	}
 
 	now := fastNow()
+	nowTime := fastNowTime()
+	st, h := b.st.stripeAndHash(b.name, key)
 	bl, kl, cl := len(b.name), len(key), len(contentType)
 
 	var valOff int64
@@ -385,30 +461,30 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 		size = int64(len(data))
 
 		totalSize := int64(recFixedSize+bl+kl+cl) + size
-		if b.st.bufRing != nil && totalSize <= b.st.bufRing.capacity {
+		if st.bufRing != nil && totalSize <= st.bufRing.capacity {
 			valPosInRecord := 19 + bl + kl + cl
-			bufSlice, _, vo, wb := b.st.bufRing.writeInline(totalSize, valPosInRecord)
+			bufSlice, _, vo, wb := st.bufRing.writeInline(totalSize, valPosInRecord)
 			valOff = vo
-			b.st.vol.buildRecordBuf(bufSlice, recPut, b.name, key, contentType, data, now)
+			st.vol.buildRecordBuf(bufSlice, recPut, b.name, key, contentType, data, now)
 			wb.done()
 		} else {
 			var err error
-			_, valOff, err = b.st.vol.appendRecord(recPut, b.name, key, contentType, data, now)
+			_, valOff, err = st.vol.appendRecord(recPut, b.name, key, contentType, data, now)
 			if err != nil {
 				return nil, err
 			}
 		}
-	} else if b.st.bufRing != nil {
+	} else if st.bufRing != nil {
 		totalSize := int64(recFixedSize+bl+kl+cl) + size
-		if totalSize > b.st.bufRing.capacity {
+		if totalSize > st.bufRing.capacity {
 			var err error
-			valOff, err = b.st.vol.writeFromReader(recPut, b.name, key, contentType, src, size, now)
+			valOff, err = st.vol.writeFromReader(recPut, b.name, key, contentType, src, size, now)
 			if err != nil {
 				return nil, err
 			}
 		} else {
 			valPosInRecord := 19 + bl + kl + cl
-			bufSlice, _, vo, wb := b.st.bufRing.writeInline(totalSize, valPosInRecord)
+			bufSlice, _, vo, wb := st.bufRing.writeInline(totalSize, valPosInRecord)
 			valOff = vo
 
 			bufSlice[0] = recPut
@@ -429,7 +505,10 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 			pos += 8
 
 			if size > 0 {
-				if _, err := io.ReadFull(src, bufSlice[pos:pos+int(size)]); err != nil {
+				// Fast path: avoid io.ReadFull interface dispatch for bytes.Reader.
+				if br, ok := src.(*bytes.Reader); ok {
+					br.Read(bufSlice[pos : pos+int(size)])
+				} else if _, err := io.ReadFull(src, bufSlice[pos:pos+int(size)]); err != nil {
 					if err != io.EOF && err != io.ErrUnexpectedEOF {
 						wb.done()
 						return nil, fmt.Errorf("pony: read value: %w", err)
@@ -440,24 +519,24 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 
 			binary.LittleEndian.PutUint64(bufSlice[pos:], uint64(now))
 
-			if !b.st.vol.noCRC {
-				checksum := crc32.Checksum(bufSlice[5:], b.st.vol.crcTable)
+			if !st.vol.noCRC {
+				checksum := crc32.Checksum(bufSlice[5:], st.vol.crcTable)
 				binary.LittleEndian.PutUint32(bufSlice[1:5], checksum)
 			}
 			wb.done()
 		}
 	} else {
 		var err error
-		valOff, err = b.st.vol.writeFromReader(recPut, b.name, key, contentType, src, size, now)
+		valOff, err = st.vol.writeFromReader(recPut, b.name, key, contentType, src, size, now)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	b.st.idx.put(b.name, key, contentType, valOff, size, now, now)
+	st.idx.putWithHash(b.name, key, contentType, valOff, size, now, now, h)
 
 	if b.st.syncMode == "full" {
-		b.st.vol.sync()
+		st.vol.sync()
 	}
 
 	return &storage.Object{
@@ -465,8 +544,8 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 		Key:         key,
 		Size:        size,
 		ContentType: contentType,
-		Created:     time.Unix(0, now),
-		Updated:     time.Unix(0, now),
+		Created:     nowTime,
+		Updated:     nowTime,
 	}, nil
 }
 
@@ -484,19 +563,20 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 		}
 	}
 
-	r, ok := b.st.idx.get(b.name, key)
+	st, h := b.st.stripeAndHash(b.name, key)
+	r, ok := st.idx.getWithHash(b.name, key, h)
 	if !ok {
 		return nil, nil, storage.ErrNotExist
 	}
 
 	var data []byte
-	if b.st.bufRing != nil {
-		if bufData, inBuf := b.st.bufRing.readFromBuffer(r.valOff, r.valSize); inBuf {
+	if st.bufRing != nil {
+		if bufData, inBuf := st.bufRing.readFromBuffer(r.valOff, r.valSize); inBuf {
 			data = bufData
 		}
 	}
 	if data == nil {
-		data = b.st.vol.readValueSlice(r.valOff, r.valSize)
+		data = st.vol.readValueSlice(r.valOff, r.valSize)
 	}
 
 	if offset < 0 {
@@ -538,21 +618,25 @@ func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*s
 		}
 	}
 
-	if strings.HasSuffix(key, "/") {
-		r, ok := b.st.idx.firstMatch(b.name, key)
-		if !ok {
-			return nil, storage.ErrNotExist
+	if key[len(key)-1] == '/' {
+		// Directory stat — scan all stripes for first match.
+		for i := 0; i < numStripes; i++ {
+			r, ok := b.st.stripes[i].idx.firstMatch(b.name, key)
+			if ok {
+				return &storage.Object{
+					Bucket:  b.name,
+					Key:     strings.TrimSuffix(key, "/"),
+					IsDir:   true,
+					Created: time.Unix(0, r.created),
+					Updated: time.Unix(0, r.updated),
+				}, nil
+			}
 		}
-		return &storage.Object{
-			Bucket:  b.name,
-			Key:     strings.TrimSuffix(key, "/"),
-			IsDir:   true,
-			Created: time.Unix(0, r.created),
-			Updated: time.Unix(0, r.updated),
-		}, nil
+		return nil, storage.ErrNotExist
 	}
 
-	r, ok := b.st.idx.get(b.name, key)
+	st, h := b.st.stripeAndHash(b.name, key)
+	r, ok := st.idx.getWithHash(b.name, key, h)
 	if !ok {
 		return nil, storage.ErrNotExist
 	}
@@ -581,19 +665,20 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 		}
 	}
 
-	if !b.st.idx.remove(b.name, key) {
+	st, h := b.st.stripeAndHash(b.name, key)
+	if !st.idx.removeWithHash(b.name, key, h) {
 		return storage.ErrNotExist
 	}
 
 	now := fastNow()
-	if b.st.bufRing != nil {
+	if st.bufRing != nil {
 		bl, kl := len(b.name), len(key)
 		totalSize := int64(recFixedSize + bl + kl)
-		bufSlice, _, _, wb := b.st.bufRing.writeInline(totalSize, 0)
-		b.st.vol.buildRecordBuf(bufSlice, recDelete, b.name, key, "", nil, now)
+		bufSlice, _, _, wb := st.bufRing.writeInline(totalSize, 0)
+		st.vol.buildRecordBuf(bufSlice, recDelete, b.name, key, "", nil, now)
 		wb.done()
 	} else {
-		b.st.vol.appendRecord(recDelete, b.name, key, "", nil, now)
+		st.vol.appendRecord(recDelete, b.name, key, "", nil, now)
 	}
 
 	return nil
@@ -613,49 +698,52 @@ func (b *bucket) Copy(ctx context.Context, dstKey string, srcBucket, srcKey stri
 		srcBucket = b.name
 	}
 
-	srcResult, ok := b.st.idx.get(srcBucket, srcKey)
+	srcStripe, srcH := b.st.stripeAndHash(srcBucket, srcKey)
+	srcResult, ok := srcStripe.idx.getWithHash(srcBucket, srcKey, srcH)
 	if !ok {
 		return nil, storage.ErrNotExist
 	}
 
 	var srcData []byte
-	if b.st.bufRing != nil {
-		if bufData, inBuf := b.st.bufRing.readFromBuffer(srcResult.valOff, srcResult.valSize); inBuf {
+	if srcStripe.bufRing != nil {
+		if bufData, inBuf := srcStripe.bufRing.readFromBuffer(srcResult.valOff, srcResult.valSize); inBuf {
 			srcData = bufData
 		}
 	}
 	if srcData == nil {
-		srcData = b.st.vol.readValueSlice(srcResult.valOff, srcResult.valSize)
+		srcData = srcStripe.vol.readValueSlice(srcResult.valOff, srcResult.valSize)
 	}
 
 	now := fastNow()
+	nowTime := fastNowTime()
+	dstStripe, dstH := b.st.stripeAndHash(b.name, dstKey)
 	bl, kl, cl := len(b.name), len(dstKey), len(srcResult.contentType)
 	totalSize := int64(recFixedSize+bl+kl+cl) + srcResult.valSize
 
 	var valOff int64
-	if b.st.bufRing != nil && totalSize <= b.st.bufRing.capacity {
+	if dstStripe.bufRing != nil && totalSize <= dstStripe.bufRing.capacity {
 		valPosInRecord := 19 + bl + kl + cl
-		bufSlice, _, vo, wb := b.st.bufRing.writeInline(totalSize, valPosInRecord)
+		bufSlice, _, vo, wb := dstStripe.bufRing.writeInline(totalSize, valPosInRecord)
 		valOff = vo
-		b.st.vol.buildRecordBuf(bufSlice, recPut, b.name, dstKey, srcResult.contentType, srcData, now)
+		dstStripe.vol.buildRecordBuf(bufSlice, recPut, b.name, dstKey, srcResult.contentType, srcData, now)
 		wb.done()
 	} else {
 		var err error
-		_, valOff, err = b.st.vol.appendRecord(recPut, b.name, dstKey, srcResult.contentType, srcData, now)
+		_, valOff, err = dstStripe.vol.appendRecord(recPut, b.name, dstKey, srcResult.contentType, srcData, now)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	b.st.idx.put(b.name, dstKey, srcResult.contentType, valOff, srcResult.valSize, now, now)
+	dstStripe.idx.putWithHash(b.name, dstKey, srcResult.contentType, valOff, srcResult.valSize, now, now, dstH)
 
 	return &storage.Object{
 		Bucket:      b.name,
 		Key:         dstKey,
 		Size:        srcResult.valSize,
 		ContentType: srcResult.contentType,
-		Created:     time.Unix(0, now),
-		Updated:     time.Unix(0, now),
+		Created:     nowTime,
+		Updated:     nowTime,
 	}, nil
 }
 
@@ -685,39 +773,58 @@ func (b *bucket) List(ctx context.Context, prefix string, limit, offset int, opt
 		}
 	}
 
-	results := b.st.idx.list(b.name, prefix)
+	// Collect results from all stripes.
+	var allResults []listResult
+	for i := 0; i < numStripes; i++ {
+		results := b.st.stripes[i].idx.list(b.name, prefix)
+		allResults = append(allResults, results...)
+	}
+	// Sort merged results.
+	sort.Slice(allResults, func(i, j int) bool {
+		return allResults[i].key < allResults[j].key
+	})
 
-	objs := make([]*storage.Object, 0, len(results))
-	for _, r := range results {
-		if !recursive {
+	// Batch allocate objects: 2 allocs instead of N+1.
+	nowTime := fastNowTime()
+	_ = nowTime
+	filtered := allResults
+	if !recursive {
+		filtered = filtered[:0]
+		for _, r := range allResults {
 			rest := strings.TrimPrefix(r.key, prefix)
 			rest = strings.TrimPrefix(rest, "/")
-			if strings.Contains(rest, "/") {
-				continue
+			if !strings.Contains(rest, "/") {
+				filtered = append(filtered, r)
 			}
 		}
-		objs = append(objs, &storage.Object{
+	}
+
+	objSlice := make([]storage.Object, len(filtered))
+	ptrs := make([]*storage.Object, len(filtered))
+	for i, r := range filtered {
+		objSlice[i] = storage.Object{
 			Bucket:      b.name,
 			Key:         r.key,
 			Size:        r.valSize,
 			ContentType: r.contentType,
 			Created:     time.Unix(0, r.created),
 			Updated:     time.Unix(0, r.updated),
-		})
+		}
+		ptrs[i] = &objSlice[i]
 	}
 
 	if offset < 0 {
 		offset = 0
 	}
-	if offset > len(objs) {
-		offset = len(objs)
+	if offset > len(ptrs) {
+		offset = len(ptrs)
 	}
-	objs = objs[offset:]
-	if limit > 0 && limit < len(objs) {
-		objs = objs[:limit]
+	ptrs = ptrs[offset:]
+	if limit > 0 && limit < len(ptrs) {
+		ptrs = ptrs[:limit]
 	}
 
-	return &objectIter{objects: objs}, nil
+	return &objectIter{objects: ptrs}, nil
 }
 
 func (b *bucket) SignedURL(ctx context.Context, key string, method string, expires time.Duration, opts storage.Options) (string, error) {
@@ -746,17 +853,19 @@ func (d *dir) Info(ctx context.Context) (*storage.Object, error) {
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		prefix += "/"
 	}
-	r, ok := d.b.st.idx.firstMatch(d.b.name, prefix)
-	if !ok {
-		return nil, storage.ErrNotExist
+	for i := 0; i < numStripes; i++ {
+		r, ok := d.b.st.stripes[i].idx.firstMatch(d.b.name, prefix)
+		if ok {
+			return &storage.Object{
+				Bucket:  d.b.name,
+				Key:     d.path,
+				IsDir:   true,
+				Created: time.Unix(0, r.created),
+				Updated: time.Unix(0, r.updated),
+			}, nil
+		}
 	}
-	return &storage.Object{
-		Bucket:  d.b.name,
-		Key:     d.path,
-		IsDir:   true,
-		Created: time.Unix(0, r.created),
-		Updated: time.Unix(0, r.updated),
-	}, nil
+	return nil, storage.ErrNotExist
 }
 
 func (d *dir) List(ctx context.Context, limit, offset int, opts storage.Options) (storage.ObjectIter, error) {
@@ -766,10 +875,18 @@ func (d *dir) List(ctx context.Context, limit, offset int, opts storage.Options)
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		prefix += "/"
 	}
-	results := d.b.st.idx.list(d.b.name, prefix)
+
+	var allResults []listResult
+	for i := 0; i < numStripes; i++ {
+		results := d.b.st.stripes[i].idx.list(d.b.name, prefix)
+		allResults = append(allResults, results...)
+	}
+	sort.Slice(allResults, func(i, j int) bool {
+		return allResults[i].key < allResults[j].key
+	})
 
 	var objs []*storage.Object
-	for _, r := range results {
+	for _, r := range allResults {
 		rest := strings.TrimPrefix(r.key, prefix)
 		if strings.Contains(rest, "/") {
 			continue
@@ -812,19 +929,25 @@ func (d *dir) Delete(ctx context.Context, opts storage.Options) error {
 		prefix += "/"
 	}
 
-	results := d.b.st.idx.list(d.b.name, prefix)
-	if len(results) == 0 {
-		return storage.ErrNotExist
+	found := false
+	for i := 0; i < numStripes; i++ {
+		results := d.b.st.stripes[i].idx.list(d.b.name, prefix)
+		if len(results) > 0 {
+			found = true
+		}
+		for _, r := range results {
+			if !recursive {
+				rest := strings.TrimPrefix(r.key, prefix)
+				if strings.Contains(rest, "/") {
+					continue
+				}
+			}
+			d.b.st.stripes[i].idx.remove(d.b.name, r.key)
+		}
 	}
 
-	for _, r := range results {
-		if !recursive {
-			rest := strings.TrimPrefix(r.key, prefix)
-			if strings.Contains(rest, "/") {
-				continue
-			}
-		}
-		d.b.st.idx.remove(d.b.name, r.key)
+	if !found {
+		return storage.ErrNotExist
 	}
 	return nil
 }
@@ -843,17 +966,25 @@ func (d *dir) Move(ctx context.Context, dstPath string, opts storage.Options) (s
 		dstPrefix += "/"
 	}
 
-	results := d.b.st.idx.list(d.b.name, srcPrefix)
-	if len(results) == 0 {
-		return nil, storage.ErrNotExist
+	found := false
+	for i := 0; i < numStripes; i++ {
+		results := d.b.st.stripes[i].idx.list(d.b.name, srcPrefix)
+		if len(results) > 0 {
+			found = true
+		}
+		for _, r := range results {
+			rel := strings.TrimPrefix(r.key, srcPrefix)
+			newKey := dstPrefix + rel
+
+			// Route new key to its destination stripe.
+			dstStripe := d.b.st.stripeFor(d.b.name, newKey)
+			dstStripe.idx.put(d.b.name, newKey, r.contentType, r.valOff, r.valSize, r.created, r.updated)
+			d.b.st.stripes[i].idx.remove(d.b.name, r.key)
+		}
 	}
 
-	for _, r := range results {
-		rel := strings.TrimPrefix(r.key, srcPrefix)
-		newKey := dstPrefix + rel
-
-		d.b.st.idx.put(d.b.name, newKey, r.contentType, r.valOff, r.valSize, r.created, r.updated)
-		d.b.st.idx.remove(d.b.name, r.key)
+	if !found {
+		return nil, storage.ErrNotExist
 	}
 
 	return &dir{b: d.b, path: strings.Trim(dstPath, "/")}, nil
