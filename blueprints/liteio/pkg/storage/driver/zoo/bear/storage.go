@@ -1480,7 +1480,7 @@ type leafRawEntryRef struct {
 	head uint32
 	raw  []byte
 	size uint16
-	off  uint16 // source page offset for page-backed refs; 0 for synthetic refs
+	off  uint32 // source page offset for page-backed refs; 0 for synthetic refs
 }
 
 func leafRawRefAtCount(pg []byte, count, idx int) (leafRawEntryRef, bool) {
@@ -1530,7 +1530,7 @@ func leafRawRefAtCount(pg []byte, count, idx int) (leafRawEntryRef, bool) {
 		head: head,
 		raw:  raw,
 		size: uint16(len(raw)),
-		off:  uint16(entryOff),
+		off:  uint32(entryOff),
 	}, true
 }
 
@@ -1681,41 +1681,32 @@ func rewriteLeafPrefixInPlace(pg []byte, left []leafRawEntryRef, nextLeaf, prevL
 	if len(left) == 0 {
 		return false
 	}
-	last := left[len(left)-1]
-	if len(last.raw) != int(last.size) || last.off == 0 {
-		return false
-	}
-	freeOff := int(last.off)
-	if freeOff < leafHeaderSize || freeOff >= pageSize {
-		return false
-	}
-	if int(last.off)+int(last.size) > pageSize {
-		return false
-	}
-	// Safety check: metadata-only truncation is valid only when the last logical
-	// left entry is also the lowest-offset surviving entry. In-place updates can
-	// break packed/monotonic offset ordering.
-	minOff := freeOff
-	for i := 0; i < len(left)-1; i++ {
+	// Safety check: metadata-only truncation is valid only when the surviving left
+	// prefix is still in the exact packed layout a raw writer would produce. This
+	// excludes pages whose offsets were disturbed by prior in-place updates.
+	runOff := pageSize
+	for i := 0; i < len(left); i++ {
 		e := left[i]
 		if e.off == 0 || len(e.raw) != int(e.size) {
 			return false
 		}
+		runOff -= int(e.size)
 		off := int(e.off)
 		if off < leafHeaderSize || off+int(e.size) > pageSize {
 			return false
 		}
-		if off < minOff {
-			minOff = off
+		if off != runOff {
+			return false
 		}
 	}
-	if minOff != freeOff {
+	freeOff := runOff
+	if freeOff < leafHeaderSize || freeOff >= pageSize {
 		return false
 	}
 
 	pg[0] = pageTypeLeaf
 	putU16LE(pg[1:], uint16(len(left)))
-	putU16LE(pg[3:], last.off)
+	putU16LE(pg[3:], uint16(freeOff))
 	putU32LE(pg[5:], nextLeaf)
 	putU32LE(pg[9:], prevLeaf)
 	return true
@@ -2614,21 +2605,22 @@ func splitLeafInsertRaw(pg, newPg []byte, pageID, newID uint32, idx int, entry *
 	}
 	// splitKey must be owned before we rewrite/copy source-page-backed entries.
 	splitKey := shortestSeparator(leafRawKey(left[len(left)-1].raw), leafRawKey(right[0].raw))
-	// Common append-heavy split on the rightmost leaf: left side is an unchanged
-	// prefix of the existing page, so avoid re-rendering it.
+	// Common append-heavy split on the rightmost leaf: try a metadata-only left
+	// rewrite when the left prefix is still packed, otherwise keep the raw split
+	// path with a generic left-page rewrite (avoid decode+rebuild fallback).
 	if idx == count && nextLeaf == 0 && mid <= count {
-		rightOld := right
-		if len(right) > 0 {
-			rightOld = right[:len(right)-1]
-		}
-		if !writeLeafPageRawAppendSplitRight(newPg, pg, rightOld, newRef, nextLeaf, pageID) {
-			if !writeLeafPageRawSortedSized(newPg, right, rightData, nextLeaf, pageID) {
-				return nil, false
-			}
-		}
-		if !rewriteLeafPrefixInPlace(pg, left, newID, prevLeaf) {
+		if !writeLeafPageRawSortedSized(newPg, right, rightData, nextLeaf, pageID) {
 			return nil, false
 		}
+		if rewriteLeafPrefixInPlace(pg, left, newID, prevLeaf) {
+			return splitKey, true
+		}
+		leftTmp := getLeafScratchPage()
+		defer putLeafScratchPage(leftTmp)
+		if !writeLeafPageRawSortedSized(leftTmp, left, leftData, newID, prevLeaf) {
+			return nil, false
+		}
+		copy(pg, leftTmp[:])
 		return splitKey, true
 	}
 

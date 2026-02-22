@@ -2732,3 +2732,189 @@ Comparison vs v26 full subprocess (`report/bear_v26_full_subproc`):
 2. Further specialize raw writer paths that can avoid per-entry `copy` calls
 3. Continue profiler-guided work on `bucket.Write` allocation pressure only after
    raw leaf writer CPU is reduced further
+
+## 23. v28 optimization (safe append raw fallback) + benchmark methodology correction
+
+This section records v28. The intended optimization was small but targeted:
+keep the raw split path for append-heavy splits even when the metadata-only left
+rewrite is not safe, instead of falling all the way back to decode+rebuild.
+
+During this work, several apparent "intermittent panics" were observed. The
+root cause for most of those observations was benchmark methodology, not the
+driver: multiple local `cmd/bench` processes were accidentally run concurrently
+against the same embedded data path (`/tmp/bear-bench`), which is unsafe and
+produces invalid results/corruption-like behavior. v28 final results below are
+from serial runs only.
+
+### 23.1 What changed in v28 (final code)
+
+Implemented:
+
+1. `rewriteLeafPrefixInPlace(...)` now uses a stricter packed-layout gate
+   (all surviving left-prefix entry offsets must match the exact packed raw-writer
+   layout)
+2. In `splitLeafInsertRaw(...)`, append-heavy rightmost-leaf splits:
+   - write the right page via normal raw writer
+   - use metadata-only left rewrite only when the packed-layout gate passes
+   - otherwise rewrite the left page using the generic raw writer
+   - avoid decode+rebuild fallback in this append case
+3. The more aggressive append-right specialized batch-copy writer from v27 is
+   left in the codebase for research but is not on the active path in v28 final
+
+Interpretation:
+
+- v28 is a safety-first optimization/stabilization step for append-heavy raw
+  splits, preserving the raw path more often while using a stricter correctness
+  gate for metadata-only left rewrite.
+
+### 23.2 Important benchmarking correction (serial only)
+
+Invalid runs observed during v28 experimentation were caused by overlapping local
+`cmd/bench` invocations (profiled and non-profiled runs launched in parallel)
+using the same embedded benchmark path.
+
+Do not run two local `cmd/bench` processes concurrently against `bear` embedded
+storage unless the data paths are isolated.
+
+Validation used for final v28 metrics:
+
+- serial profiled `Write/1KB`
+- serial non-profile `Write/1KB`
+- serial full quick subprocess suite
+- additional serial stress loop (`12x` focused `Write/1KB`) with `0` panics
+
+### 23.3 Commands used (serial, final)
+
+Focused profiled `Write/1KB`:
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --filter 'Write/1KB' \
+  --profile \
+  --progress=false \
+  --formats json \
+  --output ./report/bear_v28j_profile_write1k
+```
+
+Focused non-profile `Write/1KB`:
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --filter 'Write/1KB' \
+  --progress=false \
+  --formats json \
+  --output ./report/bear_v28j_focus_write1k_serial
+```
+
+Full quick subprocess suite:
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --isolate-embedded-benchmarks-subprocess \
+  --progress=false \
+  --formats json \
+  --output ./report/bear_v28j_full_subproc
+```
+
+### 23.4 v28 focused `Write/1KB` results (serial)
+
+Profiled artifact:
+
+- `report/bear_v28j_profile_write1k`
+
+Results:
+
+- `Write/1KB`: **1,278,546 ops/s**
+- Peak RSS: **84.109 MB** (`<100MB` verified)
+- Peak Go Heap: **29.945 MB**
+- Peak Go Sys: **75.725 MB**
+- Total alloc-space: **329.4 MB**
+- Errors: `0`
+
+CPU profile (`pprof -top`):
+
+- `writeLeafPageRawSortedSized`: **58.97% flat** (still dominant)
+- `syscall.rawsyscalln`: **14.10% flat**
+
+Non-profile artifact:
+
+- `report/bear_v28j_focus_write1k_serial`
+
+Results:
+
+- `Write/1KB`: **1,378,923 ops/s**
+- Peak RSS: **85.188 MB** (`<100MB` verified)
+- Errors: `0`
+
+### 23.5 v28 full quick subprocess suite (serial)
+
+Artifact:
+
+- `report/bear_v28j_full_subproc`
+
+Results:
+
+- Benchmarks: `40`
+- Errors: `0`
+- Peak RSS: **557.984 MB**
+- Peak Go Heap: **36.859 MB**
+- Peak Go Sys: **303.752 MB**
+- Final disk: **4804.516 MB**
+- `Write/1KB`: **1,359,372 ops/s**
+- `Write/64KB`: **33,830 ops/s**
+- `Delete`: **4,380,348 ops/s**
+
+### 23.6 Comparison vs v27b / v26 (interpreting with corrected methodology)
+
+Key caution:
+
+- Some previously observed v28 "panics" and volatile regressions were artifacts
+  of overlapping local benchmark processes and should not be used for
+  comparisons.
+
+Compared with v27b focused non-profile (`report/bear_v27b_focus_write1k`):
+
+- `Write/1KB`: `1,361,502 -> 1,378,923 ops/s` (**~+1.3%**)
+- Peak RSS: `86.906 MB -> 85.188 MB` (**lower**)
+
+Compared with v26 focused profiled (`report/bear_v26c_profile_write1k`):
+
+- `Write/1KB`: `1,392,146 -> 1,278,546 ops/s` (profiled run variance; hotspot remains unchanged)
+- Peak RSS: `93.734 MB -> 84.109 MB` (**lower**)
+
+Compared with v27b full subprocess (`report/bear_v27b_full_subproc`):
+
+- `Write/1KB`: `1,329,233 -> 1,359,372 ops/s` (**+2.3%**)
+- `Write/64KB`: `54,961 -> 33,830 ops/s` (**mixed regression in this run set**)
+- `Delete`: `4,237,852 -> 4,380,348` (**+3.4%**)
+- Peak RSS: `547.2 MB -> 558.0 MB` (**slightly higher**)
+
+Interpretation:
+
+- v28 is primarily a correctness/safety optimization of the append split raw
+  path with a small focused `Write/1KB` improvement in the serial non-profile
+  run.
+- The main CPU hotspot remains `writeLeafPageRawSortedSized`.
+- Full-suite metrics remain noisy and mixed across runs; focused serial runs are
+  the better signal for this tuning stage.
+
+### 23.7 Remaining bottlenecks after v28
+
+1. `writeLeafPageRawSortedSized` remains the dominant `Write/1KB` CPU hotspot
+2. `bucket.Write` + key construction still dominate alloc-space
+3. `Write/64KB` remains substantially syscall-bound
+4. Full-suite process RSS remains far above `<100MB`
+
+### 23.8 Suggested v29+ directions
+
+1. Add a dedicated raw split microbenchmark to isolate split serialization from
+   `cmd/bench` suite noise
+2. Revisit the append-right specialized batch-copy writer with stronger
+   correctness validation before re-enabling
+3. Continue profiler-guided work on `writeLeafPageRawSortedSized` itself
