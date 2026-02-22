@@ -1462,11 +1462,30 @@ func innerSlotHead(pg []byte, count, idx int) uint32 {
 	return binary.BigEndian.Uint32(pg[keySlotOff:])
 }
 
+func innerSlotOffset(pg []byte, count, idx int) uint16 {
+	keySlotOff := innerHeaderSize + (count+1)*innerChildSize + idx*innerSlotSize
+	return binary.LittleEndian.Uint16(pg[keySlotOff+4:])
+}
+
 func innerKeySliceAt(pg []byte, count, idx int) []byte {
 	keySlotOff := innerHeaderSize + (count+1)*innerChildSize + idx*innerSlotSize
 	keyOff := binary.LittleEndian.Uint16(pg[keySlotOff+4:])
 	keyLen := int(binary.LittleEndian.Uint16(pg[keyOff:]))
 	return pg[keyOff+2 : keyOff+2+uint16(keyLen)]
+}
+
+func innerFixedSize(count int, hasHint bool) int {
+	size := innerHeaderSize + (count+1)*innerChildSize + count*innerSlotSize
+	if hasHint {
+		size += count
+	}
+	return size
+}
+
+func innerFreeSpace(pg []byte) int {
+	count := int(binary.LittleEndian.Uint16(pg[1:3]))
+	freeOff := int(binary.LittleEndian.Uint16(pg[3:5]))
+	return freeOff - innerFixedSize(count, innerHasHintArray(pg))
 }
 
 func innerKeyHintAt(pg []byte, count, idx int) byte {
@@ -1594,6 +1613,69 @@ func innerSearch(pg []byte, key []byte) int {
 		}
 	}
 	return searchLo
+}
+
+// innerInsertAt inserts a separator key + right child into an inner page without
+// decoding/re-encoding all keys. Returns false if the page must be rebuilt.
+func innerInsertAt(pg []byte, key []byte, newChild uint32, childIdx int) bool {
+	count := int(binary.LittleEndian.Uint16(pg[1:3]))
+	if childIdx < 0 || childIdx > count {
+		return false
+	}
+	hasHint := innerHasHintArray(pg)
+	if hasHint {
+		// Hint-array pages have a denser moving metadata prefix; fall back to the
+		// safe rebuild path for now.
+		return false
+	}
+	keySize := 2 + len(key)
+	needed := innerChildSize + innerSlotSize + keySize
+	if innerFreeSpace(pg) < needed {
+		return false
+	}
+
+	freeOff := int(binary.LittleEndian.Uint16(pg[3:5])) - keySize
+	binary.LittleEndian.PutUint16(pg[freeOff:], uint16(len(key)))
+	copy(pg[freeOff+2:], key)
+
+	oldChildren := make([]uint32, count+1)
+	for i := 0; i <= count; i++ {
+		oldChildren[i] = readInnerChild(pg, i)
+	}
+	newChildren := make([]uint32, count+2)
+	copy(newChildren, oldChildren[:childIdx+1])
+	newChildren[childIdx+1] = newChild
+	copy(newChildren[childIdx+2:], oldChildren[childIdx+1:])
+
+	oldHeads := make([]uint32, count)
+	oldOffs := make([]uint16, count)
+	for i := 0; i < count; i++ {
+		oldHeads[i] = innerSlotHead(pg, count, i)
+		oldOffs[i] = innerSlotOffset(pg, count, i)
+	}
+	newHeads := make([]uint32, count+1)
+	newOffs := make([]uint16, count+1)
+	copy(newHeads, oldHeads[:childIdx])
+	copy(newOffs, oldOffs[:childIdx])
+	newHeads[childIdx] = keyHead(key)
+	newOffs[childIdx] = uint16(freeOff)
+	copy(newHeads[childIdx+1:], oldHeads[childIdx:])
+	copy(newOffs[childIdx+1:], oldOffs[childIdx:])
+
+	newCount := count + 1
+	for i, c := range newChildren {
+		off := innerHeaderSize + i*innerChildSize
+		binary.LittleEndian.PutUint32(pg[off:], c)
+	}
+	slotBase := innerHeaderSize + (newCount+1)*innerChildSize
+	for i := 0; i < newCount; i++ {
+		off := slotBase + i*innerSlotSize
+		binary.BigEndian.PutUint32(pg[off:], newHeads[i])
+		binary.LittleEndian.PutUint16(pg[off+4:], newOffs[i])
+	}
+	binary.LittleEndian.PutUint16(pg[1:], uint16(newCount))
+	binary.LittleEndian.PutUint16(pg[3:], uint16(freeOff))
+	return true
 }
 
 // innerKeyEntry holds key data for inner node reconstruction.
@@ -1951,6 +2033,11 @@ func (s *store) leafInsertAt(pg []byte, idx int, entry *leafEntry) {
 // insertIntoInner inserts a split result into an inner node, splitting if necessary.
 func (s *store) insertIntoInner(pageID uint32, pg []byte, split *splitResult, childIdx int) (*splitResult, error) {
 	count := int(binary.LittleEndian.Uint16(pg[1:3]))
+
+	// Fast path: in-place metadata insert, no full page decode/rebuild.
+	if innerInsertAt(pg, split.splitKey, split.newPageID, childIdx) {
+		return nil, nil
+	}
 
 	// Read all keys and children
 	keys := make([][]byte, count)

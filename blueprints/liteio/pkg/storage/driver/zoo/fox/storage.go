@@ -12,7 +12,6 @@
 package fox
 
 import (
-	"bytes"
 	"container/list"
 	"context"
 	"crypto/md5"
@@ -260,6 +259,33 @@ func splitCompositeKey(ck string) (bucket, key string) {
 		return ck, ""
 	}
 	return ck[:i], ck[i+1:]
+}
+
+// compareStringBytes compares a string to a byte slice lexicographically
+// without allocating a temporary []byte for the string.
+func compareStringBytes(s string, b []byte) int {
+	n := len(s)
+	if len(b) < n {
+		n = len(b)
+	}
+	for i := 0; i < n; i++ {
+		sb := s[i]
+		bb := b[i]
+		if sb < bb {
+			return -1
+		}
+		if sb > bb {
+			return 1
+		}
+	}
+	switch {
+	case len(s) < len(b):
+		return -1
+	case len(s) > len(b):
+		return 1
+	default:
+		return 0
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1523,7 +1549,6 @@ func findPageEntry(buf []byte, ck string, loadValue bool) (pageEntry, bool) {
 	if count == 0 {
 		return pageEntry{}, false
 	}
-	ckb := []byte(ck)
 	pos := pageHeaderSize
 
 	for i := range count {
@@ -1539,7 +1564,7 @@ func findPageEntry(buf []byte, ck string, loadValue bool) (pageEntry, bool) {
 		keyBytes := buf[pos : pos+kl]
 		pos += kl
 
-		cmp := bytes.Compare(keyBytes, ckb)
+		cmp := -compareStringBytes(ck, keyBytes)
 		if cmp > 0 {
 			return pageEntry{}, false
 		}
@@ -1670,7 +1695,7 @@ func (s *store) del(bkt, key string) bool {
 	ck := compositeKey(bkt, key)
 
 	// Check existence first.
-	_, found := s.get(bkt, key)
+	_, found := s.getMeta(bkt, key)
 	if !found {
 		return false
 	}
@@ -2087,22 +2112,35 @@ func (b *bucket) Copy(ctx context.Context, dstKey string, srcBucket, srcKey stri
 	b.st.mu.Lock()
 	defer b.st.mu.Unlock()
 
-	e, ok := b.st.get(srcBucket, srcKey)
+	e, ok := b.st.getMeta(srcBucket, srcKey)
 	if !ok {
 		return nil, storage.ErrNotExist
 	}
 
-	copyBytes := e.value
-	var err error
 	if e.hasIndirectValue() {
-		copyBytes, err = b.st.readValue(e.valueRef, 0, int64(e.valueRef.size))
+		created, updated, err := b.st.putValueRef(b.name, dstKey, e.contentType, e.valueRef, e.valueRef.size)
 		if err != nil {
 			return nil, err
 		}
-	} else if len(copyBytes) > 0 {
-		copyBytes = append([]byte(nil), copyBytes...)
+		return &storage.Object{
+			Bucket:      b.name,
+			Key:         dstKey,
+			Size:        e.objectSize(),
+			ContentType: e.contentType,
+			Created:     time.Unix(0, created),
+			Updated:     time.Unix(0, updated),
+		}, nil
 	}
 
+	// Inline values are only populated via loadValue=true lookup.
+	e, ok = b.st.get(srcBucket, srcKey)
+	if !ok {
+		return nil, storage.ErrNotExist
+	}
+	copyBytes := e.value
+	if len(copyBytes) > 0 {
+		copyBytes = append([]byte(nil), copyBytes...)
+	}
 	created, updated, err := b.st.put(b.name, dstKey, e.contentType, copyBytes)
 	if err != nil {
 		return nil, err
@@ -2653,7 +2691,9 @@ func (r *valueSectionReader) Read(p []byte) (int, error) {
 }
 
 func (r *valueSectionReader) WriteTo(w io.Writer) (int64, error) {
-	return io.Copy(w, r.r)
+	buf := valueStreamBufPool.Get().([]byte)
+	defer valueStreamBufPool.Put(buf)
+	return io.CopyBuffer(w, r.r, buf)
 }
 
 func (r *valueSectionReader) Close() error { return nil }

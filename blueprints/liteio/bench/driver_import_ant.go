@@ -1,4 +1,4 @@
-//go:build !noant
+//go:build antbench
 
 package bench
 

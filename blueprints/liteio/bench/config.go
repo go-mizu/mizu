@@ -102,12 +102,22 @@ type Config struct {
 	// Only benchmarks containing this string will run. Empty means all.
 	Filter string
 
+	// PhaseFilterExact filters by the internal benchmark phase label used by the
+	// runner (exact match). This is primarily for subprocess orchestration in
+	// cmd/bench to run one phase per process.
+	PhaseFilterExact string
+
 	// ResourceTracking enables Go runtime memory and disk usage tracking.
 	// Captures snapshots before/after each driver benchmark.
 	ResourceTracking bool
 
 	// Profile enables in-process pprof profiling for embedded drivers.
 	Profile bool
+
+	// IsolateEmbeddedBenchmarks reopens a fresh embedded storage instance for
+	// each benchmark phase (per driver) to reduce long-suite accumulation and
+	// measure per-benchmark footprint more directly.
+	IsolateEmbeddedBenchmarks bool
 }
 
 // DefaultConfig returns sensible defaults.

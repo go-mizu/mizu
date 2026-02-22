@@ -1007,3 +1007,171 @@ Interpretation:
 - Full-suite `<100MB` process RSS remains unmet.
 - Rebuild vacuum improves B-tree file compaction behavior (fragmented free-page reclaim), but value-log growth still dominates disk footprint in long suites.
 - The new subprocess mode improves methodology and reportability, but not peak RSS enough to satisfy the `<100MB` full-suite target.
+
+## 15. v8 Follow-Up Addendum (Temporary `ant` disable + inner fast-path optimization)
+
+Date: `2026-02-22`
+
+This pass focused on two practical goals:
+
+1. make `cmd/bench` usable locally without the broken `ant` driver
+2. improve `bear` write-path CPU cost again without changing external behavior
+
+### 15.1 `cmd/bench`: temporary `ant` disable by default
+
+Problem:
+
+- `bench` / `cmd/bench` default builds could fail when local `ant` is mid-refactor.
+- This blocked normal benchmark runs even when benchmarking `bear` only.
+
+Change:
+
+- Switched `bench/driver_import_ant.go` build tag from default-on to opt-in:
+  - now `//go:build antbench`
+- Result:
+  - `ant` is **disabled by default** in `cmd/bench`
+  - re-enable explicitly with `-tags antbench`
+
+Validation:
+
+- `go test ./cmd/bench` ✅
+- `go test ./bench` ✅
+
+### 15.2 `bear`: inner-node in-place insert fast path
+
+Targeted hot path:
+
+- `insertIntoInner(...)` previously always decoded all inner keys/children and rebuilt the page (`writeInnerPage`) after each child split, even when the page still had room.
+
+Optimization:
+
+- Added an in-place inner-page insert path for non-hint inner pages:
+  - computes `innerFreeSpace(...)`
+  - appends only the new separator key payload to the data region
+  - rewrites only child/slot metadata arrays (no full key decode/re-encode)
+  - falls back to existing safe rebuild path when needed
+- Hint-array pages (`pageTypeInnerHint`) intentionally still use the safe rebuild path in this version.
+  - I tested a hint-page in-place variant and hit corruption; this was intentionally rolled back to preserve correctness.
+
+Key code points:
+
+- `innerFixedSize`, `innerFreeSpace`: metadata accounting for inner pages
+- `innerInsertAt`: in-place fast path
+- `insertIntoInner`: fast-path attempt before full rebuild
+
+### 15.3 Benchmarking notes (important)
+
+I hit false `bear` panics during one intermediate validation because I launched **two `cmd/bench` processes in parallel** against the same default local embedded data path (`/tmp/bear-bench`).
+
+This is a benchmark harness collision, not a `bear` correctness issue.
+
+Rule for local embedded-driver benchmarking:
+
+- do **not** run multiple `cmd/bench` processes concurrently unless they use distinct data paths
+
+### 15.4 Validation runs (local `cmd/bench`, serial)
+
+#### A. Focused `Write/1KB` (`report/bear_v8c_focus_write1k`)
+
+Command:
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --filter Write/1KB \
+  --output ./report/bear_v8c_focus_write1k \
+  --formats json
+```
+
+Results:
+
+- `Write/1KB`: **789,684 ops/s**
+- Peak RSS: **78.5 MB**
+- Errors: `0`
+
+Comparison:
+
+- prior focused reference (`report/bear_v7_focus_write1k`): **775,127 ops/s**
+- delta: modest improvement (~`+1.9%`)
+
+#### B. Focused `Delete` (`report/bear_v8c_focus_delete`)
+
+Command:
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --filter Delete \
+  --output ./report/bear_v8c_focus_delete \
+  --formats json
+```
+
+Results:
+
+- `Delete`: **760,458 ops/s**
+- Peak RSS: **193.0 MB**
+- Errors: `0`
+
+#### C. Full quick suite (`report/bear_v8_full`)
+
+Command:
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --output ./report/bear_v8_full \
+  --formats json,markdown
+```
+
+Results:
+
+- Benchmarks: `40`
+- Errors: `0`
+- Peak RSS: **232.2 MB**
+- Peak Go Heap: **28.9 MB**
+- Peak Go Sys: **148.9 MB**
+- Final disk: **8604.4 MB**
+- Selected throughput:
+  - `Write/1KB`: **761,115 ops/s**
+  - `Delete`: **792,825 ops/s**
+
+#### D. Full quick suite, subprocess isolation (`report/bear_v8_full_subproc`)
+
+Command:
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --isolate-embedded-benchmarks-subprocess \
+  --output ./report/bear_v8_full_subproc \
+  --formats json,markdown
+```
+
+Results:
+
+- Benchmarks: `40`
+- Errors: `0`
+- Peak RSS: **183.6 MB**
+- Peak Go Heap: **30.0 MB**
+- Peak Go Sys: **181.0 MB**
+- Final disk (merged phase max): **4665.9 MB**
+- Selected throughput:
+  - `Write/1KB`: **856,927 ops/s**
+  - `Delete`: **787,639 ops/s**
+
+Comparison vs prior subprocess reference (`report/bear_v7_full_subproc`):
+
+- `Write/1KB`: `734,927 -> 856,927` (**+16.6%**)
+- Peak RSS: `229.8 MB -> 183.6 MB` (**-20.1%**)
+
+### 15.5 Current status after v8
+
+- `cmd/bench` is usable again by default without `ant` (temporary opt-in via `-tags antbench`)
+- `bear` got an additional safe write-path optimization (inner insert fast path for non-hint pages)
+- Full-suite `<100MB` RSS is still not met
+- Focused `Write/1KB` remains `<100MB` RSS and improved slightly
+- Subprocess-isolated full-suite results improved significantly versus `v7` on this machine/run set
