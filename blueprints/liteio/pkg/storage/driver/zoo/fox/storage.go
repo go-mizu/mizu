@@ -79,6 +79,12 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 			poolSize = n
 		}
 	}
+	readCacheSize := int64(defaultReadCacheSize)
+	if rc := u.Query().Get("read_cache"); rc != "" {
+		if n, err := strconv.ParseInt(rc, 10, 64); err == nil && n >= 0 {
+			readCacheSize = n
+		}
+	}
 
 	if err := os.MkdirAll(root, 0750); err != nil {
 		return nil, fmt.Errorf("fox: mkdir %q: %w", root, err)
@@ -131,6 +137,7 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 
 	// Initialize B-tree and pool.
 	st.pool = newMiniPagePool(poolSize, st)
+	st.lc = newLeafPageCache(readCacheSize, pageSize)
 	st.tree = newBTree(pageSize)
 
 	// Try to load existing metadata.
@@ -191,6 +198,8 @@ const (
 
 	miniPageBaseCost      = 512
 	miniPageEntryOverhead = 1024
+
+	defaultReadCacheSize = 4 * 1024 * 1024 // 4 MB raw leaf page cache
 )
 
 // ---------------------------------------------------------------------------
@@ -224,6 +233,7 @@ type store struct {
 
 	tree *btree
 	pool *miniPagePool
+	lc   *leafPageCache
 
 	inlineValueLimit int
 	pageBufPool      sync.Pool
@@ -403,6 +413,100 @@ func (s *store) Close() error {
 }
 
 // ---------------------------------------------------------------------------
+// Leaf page cache (bounded LRU, raw page bytes)
+// ---------------------------------------------------------------------------
+
+type leafPageCacheEntry struct {
+	pageID int64
+	data   []byte
+	elem   *list.Element
+}
+
+type leafPageCache struct {
+	mu       sync.Mutex
+	pages    map[int64]*leafPageCacheEntry
+	lru      *list.List
+	curBytes int64
+	maxBytes int64
+	pageSize int
+	bufPool  sync.Pool
+}
+
+func newLeafPageCache(maxBytes int64, pageSize int) *leafPageCache {
+	if maxBytes <= 0 || pageSize <= 0 {
+		return nil
+	}
+	return &leafPageCache{
+		pages:    make(map[int64]*leafPageCacheEntry),
+		lru:      list.New(),
+		maxBytes: maxBytes,
+		pageSize: pageSize,
+		bufPool: sync.Pool{
+			New: func() any { return make([]byte, pageSize) },
+		},
+	}
+}
+
+func (c *leafPageCache) get(pageID int64) ([]byte, bool) {
+	if c == nil {
+		return nil, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.pages[pageID]
+	if !ok {
+		return nil, false
+	}
+	c.lru.MoveToFront(e.elem)
+	return e.data, true
+}
+
+func (c *leafPageCache) set(pageID int64, page []byte) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if len(page) < c.pageSize {
+		// Should not happen for normal leaf writes/reads, but ignore short buffers.
+		return
+	}
+	page = page[:c.pageSize]
+
+	if e, ok := c.pages[pageID]; ok {
+		copy(e.data, page)
+		c.lru.MoveToFront(e.elem)
+		return
+	}
+
+	data := c.bufPool.Get().([]byte)
+	if cap(data) < c.pageSize {
+		data = make([]byte, c.pageSize)
+	}
+	data = data[:c.pageSize]
+	copy(data, page)
+	e := &leafPageCacheEntry{pageID: pageID, data: data}
+	e.elem = c.lru.PushFront(e)
+	c.pages[pageID] = e
+	c.curBytes += int64(len(data))
+
+	for c.curBytes > c.maxBytes && c.lru.Len() > 0 {
+		back := c.lru.Back()
+		if back == nil {
+			break
+		}
+		old := back.Value.(*leafPageCacheEntry)
+		c.lru.Remove(back)
+		delete(c.pages, old.pageID)
+		c.curBytes -= int64(len(old.data))
+		if cap(old.data) >= c.pageSize {
+			c.bufPool.Put(old.data[:c.pageSize])
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Page file I/O
 // ---------------------------------------------------------------------------
 
@@ -429,7 +533,7 @@ func (s *store) putPageBuf(buf []byte) {
 	s.pageBufPool.Put(buf[:s.pageSize])
 }
 
-func (s *store) readPageInto(id int64, buf []byte) ([]byte, error) {
+func (s *store) readPageIntoNoCache(id int64, buf []byte) ([]byte, error) {
 	if len(buf) < s.pageSize {
 		return nil, fmt.Errorf("fox: page buffer too small")
 	}
@@ -445,6 +549,23 @@ func (s *store) readPageInto(id int64, buf []byte) ([]byte, error) {
 	return buf, nil
 }
 
+func (s *store) readPageInto(id int64, buf []byte) ([]byte, error) {
+	if len(buf) < s.pageSize {
+		return nil, fmt.Errorf("fox: page buffer too small")
+	}
+	buf = buf[:s.pageSize]
+	if page, ok := s.lc.get(id); ok {
+		copy(buf, page)
+		return buf, nil
+	}
+	buf, err := s.readPageIntoNoCache(id, buf)
+	if err != nil {
+		return nil, err
+	}
+	s.lc.set(id, buf)
+	return buf, nil
+}
+
 func (s *store) readPage(id int64) ([]byte, error) {
 	buf := make([]byte, s.pageSize)
 	return s.readPageInto(id, buf)
@@ -455,6 +576,7 @@ func (s *store) writePage(id int64, data []byte) error {
 	if _, err := s.pageFile.WriteAt(data, off); err != nil {
 		return fmt.Errorf("fox: write page %d: %w", id, err)
 	}
+	s.lc.set(id, data)
 	if s.syncMode == "full" {
 		s.pageFile.Sync()
 	}
@@ -578,11 +700,14 @@ func (s *store) rebuildTree() error {
 
 	var leaves []leafEntry
 	for pid := int64(0); pid < s.pageCount; pid++ {
-		pageData, err := s.readPage(pid)
+		pageBuf := s.getPageBuf()
+		pageData, err := s.readPageIntoNoCache(pid, pageBuf)
 		if err != nil {
+			s.putPageBuf(pageBuf)
 			continue
 		}
 		entries := decodePageEntriesMeta(pageData)
+		s.putPageBuf(pageBuf)
 		minKey := ""
 		if len(entries) > 0 {
 			minKey = entries[0].key
@@ -619,13 +744,15 @@ func (s *store) rebuildTree() error {
 					// Use the first key of this child as separator.
 					sep := ""
 					if child.leaf {
-						pageData, err := s.readPage(child.pageID)
+						pageBuf := s.getPageBuf()
+						pageData, err := s.readPageIntoNoCache(child.pageID, pageBuf)
 						if err == nil {
 							entries := decodePageEntriesMeta(pageData)
 							if len(entries) > 0 {
 								sep = entries[0].key
 							}
 						}
+						s.putPageBuf(pageBuf)
 					} else if len(child.keys) > 0 {
 						sep = child.keys[0]
 					}
@@ -763,6 +890,17 @@ func miniPageEntryCost(e pageEntry) int {
 // Returns the buffer and whether it fits.
 func encodePageEntries(entries []pageEntry, pageSize int) ([]byte, bool) {
 	buf := make([]byte, pageSize)
+	return encodePageEntriesInto(buf, entries, pageSize)
+}
+
+// encodePageEntriesInto serializes entries into the provided page buffer.
+// The caller must pass a buffer with len >= pageSize.
+func encodePageEntriesInto(buf []byte, entries []pageEntry, pageSize int) ([]byte, bool) {
+	if len(buf) < pageSize {
+		return nil, false
+	}
+	buf = buf[:pageSize]
+	clear(buf)
 
 	// Header: count(2) + freeOff(2) + flags(2) + nextPage(4) + pad(6)
 	pos := pageHeaderSize
@@ -1010,8 +1148,11 @@ func (p *miniPagePool) flushMiniPage(mp *miniPage) {
 		return
 	}
 
+	pageBuf := p.st.getPageBuf()
+	defer p.st.putPageBuf(pageBuf)
+
 	// Read existing page.
-	existing, err := p.st.readPage(mp.leafID)
+	existing, err := p.st.readPageIntoNoCache(mp.leafID, pageBuf)
 	if err != nil {
 		return
 	}
@@ -1022,7 +1163,7 @@ func (p *miniPagePool) flushMiniPage(mp *miniPage) {
 	merged := mergeEntries(diskEntries, mp.entries)
 
 	// Remove tombstones.
-	live := make([]pageEntry, 0, len(merged))
+	live := merged[:0]
 	for _, e := range merged {
 		if !e.tombstone {
 			live = append(live, e)
@@ -1030,7 +1171,7 @@ func (p *miniPagePool) flushMiniPage(mp *miniPage) {
 	}
 
 	// Encode back.
-	buf, fits := encodePageEntries(live, p.st.pageSize)
+	buf, fits := encodePageEntriesInto(pageBuf, live, p.st.pageSize)
 	if !fits {
 		chunks := splitEntriesByPage(live, p.st.pageSize)
 		if len(chunks) == 0 {
@@ -1038,7 +1179,7 @@ func (p *miniPagePool) flushMiniPage(mp *miniPage) {
 			return
 		}
 
-		firstBuf, ok := encodePageEntries(chunks[0], p.st.pageSize)
+		firstBuf, ok := encodePageEntriesInto(pageBuf, chunks[0], p.st.pageSize)
 		if !ok || p.st.writePage(mp.leafID, firstBuf) != nil {
 			return
 		}
@@ -1049,7 +1190,7 @@ func (p *miniPagePool) flushMiniPage(mp *miniPage) {
 			if err != nil {
 				return
 			}
-			chunkBuf, ok := encodePageEntries(chunk, p.st.pageSize)
+			chunkBuf, ok := encodePageEntriesInto(pageBuf, chunk, p.st.pageSize)
 			if !ok {
 				return
 			}
@@ -1082,24 +1223,42 @@ func (p *miniPagePool) flushAll() {
 	}
 }
 
-// mergeEntries merges disk entries with mini-page entries.
-// Mini-page entries take precedence. Result is sorted by key.
+// mergeEntries merges sorted disk entries with mini-page entries.
+// Mini-page entries override disk entries. Result is sorted by key.
+// mini is sorted in-place to avoid an extra allocation.
 func mergeEntries(disk, mini []pageEntry) []pageEntry {
-	m := make(map[string]pageEntry, len(disk)+len(mini))
-	for _, e := range disk {
-		m[e.key] = e
+	if len(mini) == 0 {
+		result := make([]pageEntry, len(disk))
+		copy(result, disk)
+		return result
 	}
-	for _, e := range mini {
-		m[e.key] = e
-	}
-
-	result := make([]pageEntry, 0, len(m))
-	for _, e := range m {
-		result = append(result, e)
-	}
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].key < result[j].key
+	sort.Slice(mini, func(i, j int) bool {
+		return mini[i].key < mini[j].key
 	})
+
+	result := make([]pageEntry, 0, len(disk)+len(mini))
+	i, j := 0, 0
+	for i < len(disk) && j < len(mini) {
+		switch {
+		case disk[i].key < mini[j].key:
+			result = append(result, disk[i])
+			i++
+		case disk[i].key > mini[j].key:
+			result = append(result, mini[j])
+			j++
+		default:
+			// mini overrides disk on key collision.
+			result = append(result, mini[j])
+			i++
+			j++
+		}
+	}
+	if i < len(disk) {
+		result = append(result, disk[i:]...)
+	}
+	if j < len(mini) {
+		result = append(result, mini[j:]...)
+	}
 	return result
 }
 
@@ -1613,11 +1772,14 @@ func (s *store) collectFromNode(n *btreeNode, prefix string, seen, tombstones ma
 	}
 
 	if n.leaf {
-		data, err := s.readPage(n.pageID)
+		pageBuf := s.getPageBuf()
+		data, err := s.readPageIntoNoCache(n.pageID, pageBuf)
 		if err != nil {
+			s.putPageBuf(pageBuf)
 			return
 		}
 		entries := decodePageEntriesMeta(data)
+		s.putPageBuf(pageBuf)
 		for _, e := range entries {
 			if !strings.HasPrefix(e.key, prefix) {
 				continue

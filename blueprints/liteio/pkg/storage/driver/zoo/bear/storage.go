@@ -44,8 +44,9 @@ const (
 	magicLen    = 8
 
 	// Page types
-	pageTypeInner byte = 0x01
-	pageTypeLeaf  byte = 0x02
+	pageTypeInner     byte = 0x01
+	pageTypeLeaf      byte = 0x02
+	pageTypeInnerHint byte = 0x03 // inner page with contiguous on-disk hint array
 
 	// Header offsets (page 0)
 	hdrMagic      = 0
@@ -94,6 +95,25 @@ const (
 
 	// Initial file allocation: 256 pages (1 MB) to avoid early remaps.
 	initialAllocPages = 256
+
+	// Trigger tail-trim vacuum after enough pages have been freed. This avoids
+	// scanning/rebuilding the free list on every single delete while still
+	// reclaiming mmap/file size during delete-heavy benchmark phases.
+	vacuumTrimDebtThreshold = 16
+
+	// Trigger rebuild vacuum only for large bulk deletes with substantial
+	// fragmentation. Rebuild is expensive, so keep thresholds conservative.
+	vacuumRebuildMinDeletes   = 256
+	vacuumRebuildMinFreePages = 64
+
+	// Runtime search hints: sample a few slot heads to narrow the binary-search
+	// window for large pages without changing the on-disk format.
+	searchHintSegments = 8
+	searchHintMinKeys  = 32
+
+	// Persisted inner-page hint arrays cost 1 byte per separator key. Only use
+	// them on larger inner pages where the search benefit outweighs fanout loss.
+	innerHintArrayMinKeys = 64
 
 	// Multipart
 	maxPartNumber = 10000
@@ -212,6 +232,7 @@ type store struct {
 	height     uint32
 	entryCount uint64
 	freeHead   uint32
+	vacuumDebt uint32
 
 	// Value log for large values (protected by valMu).
 	valMu       sync.Mutex
@@ -601,24 +622,31 @@ func (s *store) initFile() error {
 
 // loadMmap maps the entire file into memory.
 func (s *store) loadMmap() error {
-	info, err := s.file.Stat()
+	data, err := mmapFile(s.file)
 	if err != nil {
-		return fmt.Errorf("bear: stat file: %w", err)
+		return err
+	}
+	s.mmap = data
+	return nil
+}
+
+func mmapFile(f *os.File) ([]byte, error) {
+	info, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("bear: stat file: %w", err)
 	}
 
 	size := int(info.Size())
 	if size < initialPages*pageSize {
-		return fmt.Errorf("bear: file too small (%d bytes)", size)
+		return nil, fmt.Errorf("bear: file too small (%d bytes)", size)
 	}
 
-	data, err := syscall.Mmap(int(s.file.Fd()), 0, size,
+	data, err := syscall.Mmap(int(f.Fd()), 0, size,
 		syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 	if err != nil {
-		return fmt.Errorf("bear: mmap: %w", err)
+		return nil, fmt.Errorf("bear: mmap: %w", err)
 	}
-
-	s.mmap = data
-	return nil
+	return data, nil
 }
 
 // remapIfNeeded grows the file and remaps if we need more pages.
@@ -769,6 +797,268 @@ func (s *store) freePage(id uint32) {
 	}
 	binary.LittleEndian.PutUint32(pg[0:4], s.freeHead)
 	s.freeHead = id
+	s.vacuumDebt++
+}
+
+func (s *store) remapToPageCountLocked(newPageCount uint32) error {
+	if newPageCount < initialPages {
+		newPageCount = initialPages
+	}
+	newSize := int(newPageCount) * pageSize
+	if newSize == len(s.mmap) {
+		return nil
+	}
+	if newSize <= 0 {
+		return fmt.Errorf("bear: invalid remap size %d", newSize)
+	}
+
+	if err := s.file.Truncate(int64(newSize)); err != nil {
+		return fmt.Errorf("bear: truncate shrink: %w", err)
+	}
+	if err := syscall.Munmap(s.mmap); err != nil {
+		return fmt.Errorf("bear: munmap shrink: %w", err)
+	}
+	data, err := syscall.Mmap(int(s.file.Fd()), 0, newSize,
+		syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+	if err != nil {
+		return fmt.Errorf("bear: remap shrink: %w", err)
+	}
+	s.mmap = data
+	return nil
+}
+
+func (s *store) trimFreeTailLocked() uint32 {
+	if s.pageCount <= initialPages || s.freeHead == 0 {
+		return 0
+	}
+
+	seen := make(map[uint32]struct{})
+	freeOrder := make([]uint32, 0, 64)
+	freeSet := make(map[uint32]struct{}, 64)
+
+	for id := s.freeHead; id != 0; {
+		if id >= s.pageCount {
+			break
+		}
+		if _, ok := seen[id]; ok {
+			break
+		}
+		seen[id] = struct{}{}
+		freeOrder = append(freeOrder, id)
+		freeSet[id] = struct{}{}
+		pg := s.page(id)
+		id = binary.LittleEndian.Uint32(pg[0:4])
+	}
+
+	newPageCount := s.pageCount
+	for newPageCount > initialPages {
+		tailID := newPageCount - 1
+		if _, ok := freeSet[tailID]; !ok {
+			break
+		}
+		newPageCount--
+	}
+	if newPageCount == s.pageCount {
+		return 0
+	}
+
+	// Rebuild free list without the trimmed tail pages.
+	kept := freeOrder[:0]
+	for _, id := range freeOrder {
+		if id < newPageCount {
+			kept = append(kept, id)
+		}
+	}
+	s.freeHead = 0
+	for i := len(kept) - 1; i >= 0; i-- {
+		id := kept[i]
+		pg := s.page(id)
+		for j := range pg {
+			pg[j] = 0
+		}
+		binary.LittleEndian.PutUint32(pg[0:4], s.freeHead)
+		s.freeHead = id
+	}
+
+	oldPageCount := s.pageCount
+	s.pageCount = newPageCount
+	s.writeHeader()
+	if err := s.remapToPageCountLocked(newPageCount); err != nil {
+		// Best effort only. On remap failure we avoid touching the old mmap slice
+		// again; the caller continues without further shrink attempts in this path.
+		return 0
+	}
+	if s.syncMode == "msync" {
+		_ = s.file.Sync()
+	}
+	return oldPageCount - newPageCount
+}
+
+func (s *store) maybeTrimFreeTailLocked(force bool) {
+	if s.freeHead == 0 || s.pageCount <= initialPages {
+		return
+	}
+	if !force && s.vacuumDebt < vacuumTrimDebtThreshold {
+		return
+	}
+	if trimmed := s.trimFreeTailLocked(); trimmed > 0 || force {
+		s.vacuumDebt = 0
+	}
+}
+
+func (s *store) countFreePagesLocked() int {
+	if s.freeHead == 0 || s.pageCount <= initialPages {
+		return 0
+	}
+	seen := make(map[uint32]struct{}, 64)
+	count := 0
+	for id := s.freeHead; id != 0; {
+		if id >= s.pageCount {
+			break
+		}
+		if _, ok := seen[id]; ok {
+			break
+		}
+		seen[id] = struct{}{}
+		count++
+		pg := s.page(id)
+		id = binary.LittleEndian.Uint32(pg[0:4])
+	}
+	return count
+}
+
+func newVacuumBuildStore(filePath, syncMode string) (*store, error) {
+	tmp := &store{syncMode: syncMode}
+	f, err := os.OpenFile(filePath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, filePerms)
+	if err != nil {
+		return nil, fmt.Errorf("bear: open vacuum temp btree: %w", err)
+	}
+	tmp.file = f
+	if err := tmp.initFile(); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	if err := tmp.loadMmap(); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	tmp.readHeader()
+	return tmp, nil
+}
+
+func closeVacuumBuildStore(tmp *store) {
+	if tmp == nil {
+		return
+	}
+	if tmp.mmap != nil {
+		_ = syscall.Munmap(tmp.mmap)
+		tmp.mmap = nil
+	}
+	if tmp.file != nil {
+		_ = tmp.file.Close()
+		tmp.file = nil
+	}
+}
+
+func (s *store) rebuildVacuumLocked() error {
+	if len(s.mmap) == 0 || s.file == nil {
+		return nil
+	}
+	btreePath := filepath.Join(s.root, "btree.dat")
+	tmpPath := filepath.Join(s.root, "btree.dat.vacuum.tmp")
+	_ = os.Remove(tmpPath)
+
+	tmp, err := newVacuumBuildStore(tmpPath, s.syncMode)
+	if err != nil {
+		return err
+	}
+	buildOK := false
+	defer func() {
+		closeVacuumBuildStore(tmp)
+		if !buildOK {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	var rebuildErr error
+	s.btreeScan(nil, func(e *leafEntry) bool {
+		if e == nil {
+			return true
+		}
+		if _, err := tmp.btreeInsert(e); err != nil {
+			rebuildErr = err
+			return false
+		}
+		return true
+	})
+	if rebuildErr != nil {
+		return fmt.Errorf("bear: rebuild vacuum insert: %w", rebuildErr)
+	}
+
+	tmp.entryCount = s.entryCount
+	tmp.freeHead = 0
+	tmp.vacuumDebt = 0
+	tmp.writeHeader()
+	if err := tmp.file.Sync(); err != nil {
+		return fmt.Errorf("bear: rebuild vacuum sync temp: %w", err)
+	}
+	if err := tmp.remapToPageCountLocked(tmp.pageCount); err != nil {
+		return err
+	}
+	tmp.writeHeader()
+	if err := tmp.file.Sync(); err != nil {
+		return fmt.Errorf("bear: rebuild vacuum final sync: %w", err)
+	}
+
+	// Close the temp build handle before atomically replacing the active btree file.
+	closeVacuumBuildStore(tmp)
+	tmp = nil
+
+	if err := os.Rename(tmpPath, btreePath); err != nil {
+		return fmt.Errorf("bear: rebuild vacuum replace btree: %w", err)
+	}
+
+	newFile, err := os.OpenFile(btreePath, os.O_RDWR, filePerms)
+	if err != nil {
+		return fmt.Errorf("bear: rebuild vacuum reopen btree: %w", err)
+	}
+	newMmap, err := mmapFile(newFile)
+	if err != nil {
+		_ = newFile.Close()
+		return err
+	}
+
+	oldFile := s.file
+	oldMmap := s.mmap
+	s.file = newFile
+	s.mmap = newMmap
+	s.readHeader()
+	s.vacuumDebt = 0
+
+	if oldMmap != nil {
+		_ = syscall.Munmap(oldMmap)
+	}
+	if oldFile != nil {
+		_ = oldFile.Close()
+	}
+
+	buildOK = true
+	return nil
+}
+
+func (s *store) maybeRebuildVacuumLocked(deletedKeys int) {
+	if deletedKeys < vacuumRebuildMinDeletes || s.pageCount <= initialPages {
+		return
+	}
+	freePages := s.countFreePagesLocked()
+	if freePages < vacuumRebuildMinFreePages {
+		return
+	}
+	// Only rebuild when fragmentation is substantial (>= ~25% free pages).
+	if freePages*4 < int(s.pageCount) {
+		return
+	}
+	_ = s.rebuildVacuumLocked()
 }
 
 // ---------------------------------------------------------------------------
@@ -802,9 +1092,29 @@ func bucketMetaKey(name string) []byte {
 
 // keyHead extracts the first 4 bytes of a key for the head optimization.
 func keyHead(k []byte) uint32 {
-	var h [4]byte
-	copy(h[:], k)
-	return binary.BigEndian.Uint32(h[:])
+	switch len(k) {
+	case 0:
+		return 0
+	case 1:
+		return uint32(k[0]) << 24
+	case 2:
+		return uint32(k[0])<<24 | uint32(k[1])<<16
+	case 3:
+		return uint32(k[0])<<24 | uint32(k[1])<<16 | uint32(k[2])<<8
+	default:
+		return binary.BigEndian.Uint32(k[:4])
+	}
+}
+
+func keyHintByte(k []byte) byte {
+	if len(k) > 4 {
+		return k[4]
+	}
+	return 0
+}
+
+func isInnerPageType(t byte) bool {
+	return t == pageTypeInner || t == pageTypeInnerHint
 }
 
 // ---------------------------------------------------------------------------
@@ -1006,6 +1316,71 @@ func writeLeafPage(pg []byte, entries []*leafEntry, nextLeaf, prevLeaf uint32) b
 	return true
 }
 
+func leafSlotHead(pg []byte, idx int) uint32 {
+	slotOff := leafHeaderSize + idx*leafSlotSize
+	return binary.BigEndian.Uint32(pg[slotOff:])
+}
+
+func leafEntryKeyAt(pg []byte, idx int) []byte {
+	slotOff := leafHeaderSize + idx*leafSlotSize
+	entryOff := binary.LittleEndian.Uint16(pg[slotOff+4:])
+	keyLen := int(binary.LittleEndian.Uint16(pg[entryOff:]))
+	return pg[entryOff+2 : entryOff+2+uint16(keyLen)]
+}
+
+func leafHintWindow(pg []byte, count int, head uint32) (int, int) {
+	if count < searchHintMinKeys {
+		return 0, count
+	}
+	lo, hi := 0, count
+	for seg := 1; seg < searchHintSegments; seg++ {
+		idx := seg * count / searchHintSegments
+		if idx <= 0 || idx >= count {
+			continue
+		}
+		h := leafSlotHead(pg, idx)
+		if h < head {
+			lo = idx + 1
+			continue
+		}
+		if h > head {
+			hi = idx
+			break
+		}
+		// Equality at a sample point means an equal-head run may cross segment
+		// boundaries; keep the full range for correctness.
+		return 0, count
+	}
+	if lo > hi {
+		lo = hi
+	}
+	return lo, hi
+}
+
+func leafLowerBoundHead(pg []byte, lo, hi int, head uint32) int {
+	for lo < hi {
+		mid := lo + (hi-lo)/2
+		if leafSlotHead(pg, mid) < head {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	return lo
+}
+
+func leafUpperBoundHead(pg []byte, lo, hi int, head uint32) int {
+	for lo < hi {
+		mid := lo + (hi-lo)/2
+		if leafSlotHead(pg, mid) <= head {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	return lo
+}
+
 // leafSearch returns the index where key would be inserted (binary search with head opt).
 func leafSearch(pg []byte, key []byte) (int, bool) {
 	count := int(binary.LittleEndian.Uint16(pg[1:3]))
@@ -1014,33 +1389,30 @@ func leafSearch(pg []byte, key []byte) (int, bool) {
 	}
 
 	head := keyHead(key)
-	lo, hi := 0, count-1
+	winLo, winHi := leafHintWindow(pg, count, head)
+	lo := leafLowerBoundHead(pg, winLo, winHi, head)
+	if lo >= count {
+		return count, false
+	}
+	if leafSlotHead(pg, lo) != head {
+		return lo, false
+	}
+	hi := leafUpperBoundHead(pg, lo, winHi, head)
 
-	for lo <= hi {
-		mid := lo + (hi-lo)/2
-		slotOff := leafHeaderSize + mid*leafSlotSize
-		midHead := binary.BigEndian.Uint32(pg[slotOff:])
-
-		if midHead < head {
-			lo = mid + 1
-		} else if midHead > head {
-			hi = mid - 1
+	searchLo, searchHi := lo, hi
+	for searchLo < searchHi {
+		mid := searchLo + (searchHi-searchLo)/2
+		cmp := bytes.Compare(leafEntryKeyAt(pg, mid), key)
+		if cmp < 0 {
+			searchLo = mid + 1
 		} else {
-			// Heads match — compare full key
-			entryOff := binary.LittleEndian.Uint16(pg[slotOff+4:])
-			keyLen := int(binary.LittleEndian.Uint16(pg[entryOff:]))
-			entryKey := pg[entryOff+2 : entryOff+2+uint16(keyLen)]
-			cmp := bytes.Compare(entryKey, key)
-			if cmp == 0 {
-				return mid, true
-			} else if cmp < 0 {
-				lo = mid + 1
-			} else {
-				hi = mid - 1
-			}
+			searchHi = mid
 		}
 	}
-	return lo, false
+	if searchLo < hi && bytes.Equal(leafEntryKeyAt(pg, searchLo), key) {
+		return searchLo, true
+	}
+	return searchLo, false
 }
 
 // leafFreeSpace returns available free space in the leaf page.
@@ -1077,6 +1449,108 @@ func readInnerChild(pg []byte, i int) uint32 {
 	return binary.LittleEndian.Uint32(pg[off:])
 }
 
+func innerHintArrayBase(count int) int {
+	return innerHeaderSize + (count+1)*innerChildSize + count*innerSlotSize
+}
+
+func innerHasHintArray(pg []byte) bool {
+	return len(pg) > 0 && pg[0] == pageTypeInnerHint
+}
+
+func innerSlotHead(pg []byte, count, idx int) uint32 {
+	keySlotOff := innerHeaderSize + (count+1)*innerChildSize + idx*innerSlotSize
+	return binary.BigEndian.Uint32(pg[keySlotOff:])
+}
+
+func innerKeySliceAt(pg []byte, count, idx int) []byte {
+	keySlotOff := innerHeaderSize + (count+1)*innerChildSize + idx*innerSlotSize
+	keyOff := binary.LittleEndian.Uint16(pg[keySlotOff+4:])
+	keyLen := int(binary.LittleEndian.Uint16(pg[keyOff:]))
+	return pg[keyOff+2 : keyOff+2+uint16(keyLen)]
+}
+
+func innerKeyHintAt(pg []byte, count, idx int) byte {
+	if innerHasHintArray(pg) {
+		return pg[innerHintArrayBase(count)+idx]
+	}
+	return keyHintByte(innerKeySliceAt(pg, count, idx))
+}
+
+func innerHintWindow(pg []byte, count int, head uint32) (int, int) {
+	if count < searchHintMinKeys {
+		return 0, count
+	}
+	lo, hi := 0, count
+	for seg := 1; seg < searchHintSegments; seg++ {
+		idx := seg * count / searchHintSegments
+		if idx <= 0 || idx >= count {
+			continue
+		}
+		h := innerSlotHead(pg, count, idx)
+		if h < head {
+			lo = idx + 1
+			continue
+		}
+		if h > head {
+			hi = idx
+			break
+		}
+		return 0, count
+	}
+	if lo > hi {
+		lo = hi
+	}
+	return lo, hi
+}
+
+func innerLowerBoundHead(pg []byte, count, lo, hi int, head uint32) int {
+	for lo < hi {
+		mid := lo + (hi-lo)/2
+		if innerSlotHead(pg, count, mid) < head {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	return lo
+}
+
+func innerUpperBoundHead(pg []byte, count, lo, hi int, head uint32) int {
+	for lo < hi {
+		mid := lo + (hi-lo)/2
+		if innerSlotHead(pg, count, mid) <= head {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	return lo
+}
+
+func innerLowerBoundHint(pg []byte, count, lo, hi int, hint byte) int {
+	for lo < hi {
+		mid := lo + (hi-lo)/2
+		if innerKeyHintAt(pg, count, mid) < hint {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	return lo
+}
+
+func innerUpperBoundHint(pg []byte, count, lo, hi int, hint byte) int {
+	for lo < hi {
+		mid := lo + (hi-lo)/2
+		if innerKeyHintAt(pg, count, mid) <= hint {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	return lo
+}
+
 // innerSearch finds the child index for the given key.
 func innerSearch(pg []byte, key []byte) int {
 	count := int(binary.LittleEndian.Uint16(pg[1:3]))
@@ -1085,33 +1559,41 @@ func innerSearch(pg []byte, key []byte) int {
 	}
 
 	head := keyHead(key)
-	lo, hi := 0, count-1
+	winLo, winHi := innerHintWindow(pg, count, head)
+	lo := innerLowerBoundHead(pg, count, winLo, winHi, head)
+	if lo >= count {
+		return count
+	}
+	if innerSlotHead(pg, count, lo) != head {
+		return lo
+	}
+	hi := innerUpperBoundHead(pg, count, lo, winHi, head)
 
-	for lo <= hi {
-		mid := lo + (hi-lo)/2
-		keySlotOff := innerHeaderSize + (count+1)*innerChildSize + mid*innerSlotSize
-		midHead := binary.BigEndian.Uint32(pg[keySlotOff:])
+	searchLo, searchHi := lo, hi
+	if innerHasHintArray(pg) && hi-lo > 1 {
+		hint := keyHintByte(key)
+		hLo := innerLowerBoundHint(pg, count, lo, hi, hint)
+		if hLo >= hi {
+			return hLo
+		}
+		if innerKeyHintAt(pg, count, hLo) != hint {
+			return hLo
+		}
+		hHi := innerUpperBoundHint(pg, count, hLo, hi, hint)
+		searchLo, searchHi = hLo, hHi
+	}
 
-		if midHead < head {
-			lo = mid + 1
-		} else if midHead > head {
-			hi = mid - 1
+	// Child routing uses upper_bound(keys, key): exact match goes right.
+	for searchLo < searchHi {
+		mid := searchLo + (searchHi-searchLo)/2
+		cmp := bytes.Compare(innerKeySliceAt(pg, count, mid), key)
+		if cmp <= 0 {
+			searchLo = mid + 1
 		} else {
-			// Heads match — compare full key
-			keyOff := binary.LittleEndian.Uint16(pg[keySlotOff+4:])
-			keyLen := int(binary.LittleEndian.Uint16(pg[keyOff:]))
-			entryKey := pg[keyOff+2 : keyOff+2+uint16(keyLen)]
-			cmp := bytes.Compare(entryKey, key)
-			if cmp == 0 {
-				return mid + 1
-			} else if cmp < 0 {
-				lo = mid + 1
-			} else {
-				hi = mid - 1
-			}
+			searchHi = mid
 		}
 	}
-	return lo
+	return searchLo
 }
 
 // innerKeyEntry holds key data for inner node reconstruction.
@@ -1130,13 +1612,18 @@ func writeInnerPage(pg []byte, keys [][]byte, children []uint32) bool {
 	// Calculate space needed
 	childrenSize := (count + 1) * innerChildSize
 	slotsSize := count * innerSlotSize
-	headerAndSlots := innerHeaderSize + childrenSize + slotsSize
+	baseFixed := innerHeaderSize + childrenSize + slotsSize
 	dataSize := 0
 	for _, k := range keys {
 		dataSize += 2 + len(k) // keyLen(2B) + key
 	}
-	if headerAndSlots+dataSize > pageSize {
+	if baseFixed+dataSize > pageSize {
 		return false
+	}
+	useHintArray := count >= innerHintArrayMinKeys && baseFixed+count+dataSize <= pageSize
+	fixedSize := baseFixed
+	if useHintArray {
+		fixedSize += count
 	}
 
 	// Clear
@@ -1145,7 +1632,11 @@ func writeInnerPage(pg []byte, keys [][]byte, children []uint32) bool {
 	}
 
 	// Header
-	pg[0] = pageTypeInner
+	if useHintArray {
+		pg[0] = pageTypeInnerHint
+	} else {
+		pg[0] = pageTypeInner
+	}
 	binary.LittleEndian.PutUint16(pg[1:], uint16(count))
 
 	// Write children
@@ -1156,6 +1647,7 @@ func writeInnerPage(pg []byte, keys [][]byte, children []uint32) bool {
 
 	// Write keys from end backwards
 	freeOff := pageSize
+	hintBase := innerHintArrayBase(count)
 	for i, k := range keys {
 		sz := 2 + len(k)
 		freeOff -= sz
@@ -1166,6 +1658,12 @@ func writeInnerPage(pg []byte, keys [][]byte, children []uint32) bool {
 		slotOff := innerHeaderSize + (count+1)*innerChildSize + i*innerSlotSize
 		binary.BigEndian.PutUint32(pg[slotOff:], keyHead(k))
 		binary.LittleEndian.PutUint16(pg[slotOff+4:], uint16(freeOff))
+		if useHintArray {
+			pg[hintBase+i] = keyHintByte(k)
+		}
+	}
+	if freeOff < fixedSize {
+		return false
 	}
 
 	binary.LittleEndian.PutUint16(pg[3:], uint16(freeOff))
@@ -1238,7 +1736,7 @@ func (s *store) subtreeMinKey(pageID uint32) []byte {
 				return nil
 			}
 			return e.key
-		case pageTypeInner:
+		case pageTypeInner, pageTypeInnerHint:
 			pageID = readInnerChild(pg, 0)
 		default:
 			return nil
@@ -1263,7 +1761,7 @@ func (s *store) subtreeMaxKey(pageID uint32) []byte {
 				return nil
 			}
 			return e.key
-		case pageTypeInner:
+		case pageTypeInner, pageTypeInnerHint:
 			count := int(binary.LittleEndian.Uint16(pg[1:3]))
 			pageID = readInnerChild(pg, count)
 		default:
@@ -1544,7 +2042,7 @@ func (s *store) btreeDelete(key []byte) bool {
 	// Shrink a degenerate root (single child, no separator keys).
 	for s.height > 1 {
 		rootPg := s.page(s.rootPage)
-		if rootPg[0] != pageTypeInner {
+		if !isInnerPageType(rootPg[0]) {
 			break
 		}
 		count := int(binary.LittleEndian.Uint16(rootPg[1:3]))
@@ -1590,7 +2088,7 @@ func (s *store) deleteFrom(pageID uint32, key []byte, level int, isRoot bool) (d
 	}
 
 	pg := s.page(pageID)
-	if pg[0] != pageTypeInner {
+	if !isInnerPageType(pg[0]) {
 		return false, false
 	}
 
@@ -1637,7 +2135,7 @@ func (s *store) rebalanceChildAfterDelete(parentID uint32, childIdx, childLevel 
 
 func (s *store) tryMergeLeafChildrenAt(parentID uint32, leftIdx int) bool {
 	parentPg := s.page(parentID)
-	if parentPg[0] != pageTypeInner {
+	if !isInnerPageType(parentPg[0]) {
 		return false
 	}
 
@@ -1689,7 +2187,7 @@ func (s *store) tryMergeLeafChildrenAt(parentID uint32, leftIdx int) bool {
 
 func (s *store) tryMergeInnerChildrenAt(parentID uint32, leftIdx int) bool {
 	parentPg := s.page(parentID)
-	if parentPg[0] != pageTypeInner {
+	if !isInnerPageType(parentPg[0]) {
 		return false
 	}
 
@@ -1702,7 +2200,7 @@ func (s *store) tryMergeInnerChildrenAt(parentID uint32, leftIdx int) bool {
 	rightID := children[leftIdx+1]
 	leftPg := s.page(leftID)
 	rightPg := s.page(rightID)
-	if leftPg[0] != pageTypeInner || rightPg[0] != pageTypeInner {
+	if !isInnerPageType(leftPg[0]) || !isInnerPageType(rightPg[0]) {
 		return false
 	}
 
@@ -1959,9 +2457,12 @@ func (s *store) DeleteBucket(ctx context.Context, name string, opts storage.Opti
 				s.entryCount--
 			}
 		}
+		s.maybeTrimFreeTailLocked(true)
+		s.maybeRebuildVacuumLocked(len(toDelete))
 	}
 
 	s.deleteBucketMeta(name)
+	s.maybeTrimFreeTailLocked(force)
 	s.writeHeader()
 	s.syncPages()
 	s.mu.Unlock()
@@ -2339,6 +2840,8 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 				b.store.entryCount--
 			}
 		}
+		b.store.maybeTrimFreeTailLocked(true)
+		b.store.maybeRebuildVacuumLocked(len(toDelete))
 		return nil
 	}
 
@@ -2347,6 +2850,8 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 		return storage.ErrNotExist
 	}
 	b.store.entryCount--
+	// Tail trimming is intentionally batched through recursive/bulk delete paths
+	// to avoid adding high fixed overhead to single-object delete latency.
 	return nil
 }
 

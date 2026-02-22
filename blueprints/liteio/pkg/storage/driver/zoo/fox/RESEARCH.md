@@ -11,8 +11,9 @@
 7. Memory Verification (<100MB target)
 8. Remaining Bottlenecks
 9. Next Optimization Directions (v3)
-10. Appendix: Benchmark / pprof Commands
-11. References
+10. v3 Focused Pass (Leaf Read Cache + Flush Scratch Reuse)
+11. Appendix: Benchmark / pprof Commands
+12. References
 
 ---
 
@@ -491,6 +492,168 @@ Likely improvements:
 
 ---
 
+## v3 Focused Pass (Leaf Read Cache + Flush Scratch Reuse)
+
+After the v2e pass, the main remaining issue was the large gap between:
+
+- process peak RSS (`~505MB`) and
+- profile-time retained heap (much lower)
+
+This suggested a large part of the problem was **allocation churn / heap growth retention**, not only retained state.
+
+### v3 hypothesis
+
+A focused pass on:
+
+1. **bounded leaf read cache** (to cut repeated `pread` and page-buffer allocations)
+2. **flush-path scratch reuse** (pooled page buffers + reusable encode buffer)
+3. **lower-allocation flush merge** (sorted merge, no map+sort)
+
+should reduce allocation churn and improve read-heavy throughput, while potentially lowering peak RSS.
+
+### v3 implemented changes
+
+#### 1. Bounded raw leaf page cache (LRU)
+
+- Added `leafPageCache` (bounded LRU, default `4MB`)
+- Raw page bytes keyed by `leafID`
+- Integrated with `readPageInto()` and `writePage()` for cache consistency
+
+#### 2. Flush path scratch reuse
+
+- `flushMiniPage()` now uses pooled page buffers (`pageBufPool`) for page read + encode writeback
+- Added `encodePageEntriesInto()` to reuse the same 4KB page buffer across flush/split writes
+- Removed per-flush page buffer allocations in this path
+
+#### 3. Lower-allocation merge on flush
+
+- Replaced `mergeEntries` map+sort implementation with:
+  - in-place sort of mini-page entries
+  - linear merge with sorted disk entries
+- Eliminates large temporary map allocations during flush
+
+#### 4. v3 cache polish (critical)
+
+The first v3 attempt (`fox_v3_focused`) showed `leafPageCache.set` as a top allocator because the cache was being populated by:
+
+- point lookups (good)
+- **flush reads / list scans / rebuild scans** (bad, cache pollution)
+
+v3b fixed this by:
+
+- adding `readPageIntoNoCache()` for non-point-read paths
+- keeping cache usage for point lookups only
+- pooling leaf-cache page buffers to reduce cache insert churn
+
+### Benchmark execution note (local workspace issue)
+
+Local `cmd/bench/main.go` is currently broken by unrelated in-progress edits in this workspace, so v3 was run via a tiny temporary wrapper that calls `bench.NewRunner` directly (same quick/profile config, fox-only).
+
+This preserves the same benchmark engine (`bench` package) and output artifacts.
+
+### v3 benchmark commands
+
+```bash
+# v3 first pass (leaf cache + flush scratch reuse)
+go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v3_focused
+
+# v3b polished pass (cache only on point lookups + cache page pooling)
+go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v3b_final
+```
+
+### v3a vs v3b results summary
+
+| Metric | v3a (`fox_v3_focused`) | v3b (`fox_v3b_final`) | Delta |
+|---|---:|---:|---:|
+| Errors | `0` | `0` | stable |
+| Peak RSS | `497.9 MB` | `438.8 MB` | **-11.9%** |
+| Peak Go Heap | `203.9 MB` | `181.4 MB` | **-11.0%** |
+| Peak Go Sys | `498.2 MB` | `435.4 MB` | **-12.6%** |
+| Runtime `HeapSys` (profile analysis) | `477.7 MB` | `416.8 MB` | **-12.7%** |
+| Total allocations | `12.58 GB` | `9.24 GB` | **-26.5%** |
+
+### v2e final vs v3b final (current best)
+
+| Metric | v2e Final | v3b Final | Change |
+|---|---:|---:|---:|
+| Errors | `0` | `0` | stable |
+| Peak RSS | `504.9 MB` | `438.8 MB` | **-13.1%** |
+| Peak Go Heap | `219.5 MB` | `181.4 MB` | **-17.4%** |
+| Peak Go Sys | `507.8 MB` | `435.4 MB` | **-14.3%** |
+| Runtime heap in use (profile analysis) | `183.6 MB` | `175.9 MB` | `-4.2%` |
+| Total allocations | `16.26 GB` | `9.24 GB` | **-43.2%** |
+
+### Selected throughput deltas (v2e -> v3b)
+
+#### Improved
+
+- `Write/1KB`: `334.8 MB/s -> 350.9 MB/s` (`+4.8%`)
+- `Write/64KB`: `1.45 GB/s -> 1.65 GB/s` (`+13.8%`)
+- `Read/1KB`: `878.1 MB/s -> 1.19 GB/s` (`+35.3%`)
+- `Read/64KB`: `5.5 GB/s -> 13.2 GB/s` (`+2.4x`)
+- `Read/1MB`: `5.8 GB/s -> 12.9 GB/s` (`+2.2x`)
+- `Read/10MB`: `7.4 GB/s -> 9.4 GB/s` (`+27.7%`)
+- `Stat`: `5.47M/s -> 5.68M/s` (`+3.8%`)
+- `Delete`: `1.09M/s -> 1.31M/s` (`+19.9%`)
+
+#### Regressed (needs follow-up)
+
+- `Write/1MB`: `1.35 GB/s -> 447 MB/s`
+- `Write/10MB`: `1.47 GB/s -> 454 MB/s`
+- `Copy/1KB`: `232.5 MB/s -> 79.1 MB/s`
+- `RangeRead/*256KB`: significant regression in v3b
+- `List/100`: small regression (`51/s -> 46.7/s`)
+
+Interpretation:
+
+- v3b improved the memory profile and many read-heavy paths.
+- Some write/copy/range-read regressions likely reflect interactions with the new cache policy and changed benchmark dynamics; they need targeted follow-up before calling v3 \"net better\" for all workloads.
+
+### v3b profile highlights
+
+#### Heap in-use (`report/fox_v3b_final/fox/heap.pprof`)
+
+- Total heap in-use profile: **`92.33 MB`** (below 100MB)
+- Key fox contributors:
+  - `(*store).putPreparedEntry`: `31.62 MB`
+  - `compositeKey`: `12.50 MB`
+  - `(*btree).insertIntoParent`: `10.97 MB`
+  - leaf page cache buffers (`newLeafPageCache` pool alloc path): `4.52 MB`
+
+#### Allocs (`report/fox_v3b_final/fox/allocs.pprof`)
+
+- Total alloc-space: **`9.01 GB`** (down from `16.01 GB` in v2e final)
+- `leafPageCache.set` is no longer a top allocator after v3b cache-polish
+- Remaining top allocator is still `decodePageEntriesWithMode` (`3.76 GB`)
+
+### Updated memory verification (v3b)
+
+Strict process-level metric (resource tracker):
+
+- **Peak RSS = `438.8 MB`** (still FAIL vs `<100MB` target)
+
+Profile-time heap metrics:
+
+- `heap.pprof` total in-use: **`92.33 MB`** (PASS vs `<100MB`, but snapshot metric)
+- `runtime.MemStats.HeapInUse` in profile analysis: `175.9 MB` (runtime page accounting)
+
+This reinforces the earlier conclusion:
+
+- we can get fox-retained/profiled heap near or below `100MB`,
+- but full-process peak RSS under the current benchmark harness remains well above `100MB`.
+
+### v3 conclusion
+
+The focused v3 pass succeeded at what it targeted:
+
+- lower allocation churn (especially after v3b cache-polish)
+- lower peak RSS / GoSys / GoHeap vs v2e
+- faster point/read-heavy paths
+
+It did **not** solve the strict `<100MB process peak RSS` requirement, and it introduced notable regressions in some write/copy/range-read paths that should be addressed in the next pass.
+
+---
+
 ## Appendix: Benchmark / pprof Commands
 
 ### Benchmark commands used
@@ -507,6 +670,10 @@ go run -tags noant ./cmd/bench --drivers fox --quick --profile --docker-stats=fa
 
 # final
 go run -tags noant ./cmd/bench --drivers fox --quick --profile --docker-stats=false --output ./report/fox_v2e_final
+
+# v3 focused pass (wrapper, because local cmd/bench is temporarily broken in this workspace)
+go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v3_focused
+go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v3b_final
 ```
 
 ### pprof commands (same workflow style as herd)
@@ -522,11 +689,19 @@ go tool pprof -http=:8080 report/fox_v2e_final/fox/cpu.pprof
 go tool pprof -http=:8080 report/fox_v2e_final/fox/heap.pprof
 go tool pprof -http=:8080 report/fox_v2e_final/fox/allocs.pprof
 
+go tool pprof -http=:8080 report/fox_v3b_final/fox/cpu.pprof
+go tool pprof -http=:8080 report/fox_v3b_final/fox/heap.pprof
+go tool pprof -http=:8080 report/fox_v3b_final/fox/allocs.pprof
+
 # Text summaries (top / cumulative)
 
 go tool pprof -top -nodecount=20 report/fox_v2e_final/fox/heap.pprof
 go tool pprof -top -nodecount=20 report/fox_v2e_final/fox/allocs.pprof
 go tool pprof -top -cum -nodecount=15 report/fox_v2e_final/fox/cpu.pprof
+
+go tool pprof -top -nodecount=20 report/fox_v3b_final/fox/heap.pprof
+go tool pprof -top -nodecount=20 report/fox_v3b_final/fox/allocs.pprof
+go tool pprof -top -cum -nodecount=15 report/fox_v3b_final/fox/cpu.pprof
 
 # Compare baseline vs final
 
