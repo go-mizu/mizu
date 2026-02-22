@@ -1477,10 +1477,10 @@ func readAllLeafEntries(pg []byte) []*leafEntry {
 }
 
 type leafRawEntryRef struct {
-	key  []byte
 	head uint32
 	raw  []byte
-	size int
+	size uint16
+	off  uint16 // source page offset for page-backed refs; 0 for synthetic refs
 }
 
 func leafRawRefAtCount(pg []byte, count, idx int) (leafRawEntryRef, bool) {
@@ -1500,7 +1500,6 @@ func leafRawRefAtCount(pg []byte, count, idx int) (leafRawEntryRef, bool) {
 	if off+keyLen+2 > len(pg) {
 		return leafRawEntryRef{}, false
 	}
-	key := pg[off : off+keyLen]
 	off += keyLen
 
 	ctLen := int(binary.LittleEndian.Uint16(pg[off:]))
@@ -1528,11 +1527,22 @@ func leafRawRefAtCount(pg []byte, count, idx int) (leafRawEntryRef, bool) {
 
 	raw := pg[entryOff:off]
 	return leafRawEntryRef{
-		key:  key,
 		head: head,
 		raw:  raw,
-		size: len(raw),
+		size: uint16(len(raw)),
+		off:  uint16(entryOff),
 	}, true
+}
+
+func leafRawKey(raw []byte) []byte {
+	if len(raw) < 2 {
+		return nil
+	}
+	keyLen := int(binary.LittleEndian.Uint16(raw[:2]))
+	if keyLen < 0 || 2+keyLen > len(raw) {
+		return nil
+	}
+	return raw[2 : 2+keyLen]
 }
 
 func leafRawRefAt(pg []byte, idx int) (leafRawEntryRef, bool) {
@@ -1543,7 +1553,7 @@ func leafRawRefAt(pg []byte, idx int) (leafRawEntryRef, bool) {
 func leafRawEntriesDataSize(entries []leafRawEntryRef) int {
 	dataSize := 0
 	for i := 0; i < len(entries); i++ {
-		dataSize += entries[i].size
+		dataSize += int(entries[i].size)
 	}
 	return dataSize
 }
@@ -1589,9 +1599,8 @@ func putLeafRawRefScratch(b []leafRawEntryRef, used int) {
 		used = len(b)
 	}
 	for i := 0; i < used; i++ {
-		// Clear only pointer-bearing fields so pooled scratch slices do not retain
+		// Clear pointer-bearing fields so pooled scratch slices do not retain
 		// references to page-backed or temporary encoded-entry memory.
-		b[i].key = nil
 		b[i].raw = nil
 	}
 	leafRawRefScratchPool.Put(b[:leafScratchMaxEntries])
@@ -1650,7 +1659,7 @@ func writeLeafPageRawSortedSized(pg []byte, entries []leafRawEntryRef, dataSize 
 	slotOff := leafHeaderSize
 	for i := 0; i < len(entries); i++ {
 		e := &entries[i]
-		freeOff -= e.size
+		freeOff -= int(e.size)
 		copy(pg[freeOff:], e.raw)
 
 		putU32BE(pg[slotOff:], e.head)
@@ -1664,6 +1673,29 @@ func writeLeafPageRawSortedSized(pg []byte, entries []leafRawEntryRef, dataSize 
 
 func writeLeafPageRawSorted(pg []byte, entries []leafRawEntryRef, nextLeaf, prevLeaf uint32) bool {
 	return writeLeafPageRawSortedSized(pg, entries, leafRawEntriesDataSize(entries), nextLeaf, prevLeaf)
+}
+
+// rewriteLeafPrefixInPlace rewrites only the leaf metadata when the new left
+// split half is an unchanged prefix of the original page (common append split).
+func rewriteLeafPrefixInPlace(pg []byte, left []leafRawEntryRef, nextLeaf, prevLeaf uint32) bool {
+	if len(left) == 0 {
+		return false
+	}
+	last := left[len(left)-1]
+	freeOff := int(last.off)
+	if freeOff < leafHeaderSize || freeOff >= pageSize {
+		return false
+	}
+	if int(last.off)+int(last.size) > pageSize {
+		return false
+	}
+
+	pg[0] = pageTypeLeaf
+	putU16LE(pg[1:], uint16(len(left)))
+	putU16LE(pg[3:], last.off)
+	putU32LE(pg[5:], nextLeaf)
+	putU32LE(pg[9:], prevLeaf)
+	return true
 }
 
 func writeLeafPageSorted(pg []byte, entries []*leafEntry, nextLeaf, prevLeaf uint32) bool {
@@ -2338,10 +2370,10 @@ func buildLeafRawRefsAppend(pg []byte, count int, newRef leafRawEntryRef, dst []
 			return nil, 0, false
 		}
 		refs[i] = ref
-		totalData += ref.size
+		totalData += int(ref.size)
 	}
 	refs[count] = newRef
-	totalData += newRef.size
+	totalData += int(newRef.size)
 	return refs, totalData, true
 }
 
@@ -2350,7 +2382,7 @@ func buildLeafRawRefsPrepend(pg []byte, count int, newRef leafRawEntryRef, dst [
 		return nil, 0, false
 	}
 	refs := dst[:count+1]
-	totalData := newRef.size
+	totalData := int(newRef.size)
 	refs[0] = newRef
 	for i := 0; i < count; i++ {
 		ref, ok := leafRawRefAtCount(pg, count, i)
@@ -2358,7 +2390,7 @@ func buildLeafRawRefsPrepend(pg []byte, count int, newRef leafRawEntryRef, dst [
 			return nil, 0, false
 		}
 		refs[i+1] = ref
-		totalData += ref.size
+		totalData += int(ref.size)
 	}
 	return refs, totalData, true
 }
@@ -2372,7 +2404,7 @@ func buildLeafRawRefsGeneral(pg []byte, count, idx int, newRef leafRawEntryRef, 
 	for i := 0; i < count+1; i++ {
 		if i == idx {
 			refs[i] = newRef
-			totalData += newRef.size
+			totalData += int(newRef.size)
 			continue
 		}
 		oldIdx := i
@@ -2384,7 +2416,7 @@ func buildLeafRawRefsGeneral(pg []byte, count, idx int, newRef leafRawEntryRef, 
 			return nil, 0, false
 		}
 		refs[i] = ref
-		totalData += ref.size
+		totalData += int(ref.size)
 	}
 	return refs, totalData, true
 }
@@ -2402,7 +2434,7 @@ func buildLeafRawRefsFromPage(pg []byte, dst []leafRawEntryRef) ([]leafRawEntryR
 			return nil, 0, false
 		}
 		refs[i] = ref
-		totalData += ref.size
+		totalData += int(ref.size)
 	}
 	return refs, totalData, true
 }
@@ -2428,10 +2460,9 @@ func splitLeafInsertRaw(pg, newPg []byte, pageID, newID uint32, idx int, entry *
 	defer putLeafRawRefScratch(refsScratch, count+1)
 	refs := refsScratch[:0]
 	newRef := leafRawEntryRef{
-		key:  entry.key,
 		head: keyHead(entry.key),
 		raw:  encoded,
-		size: len(encoded),
+		size: uint16(len(encoded)),
 	}
 	var (
 		totalData int
@@ -2456,7 +2487,7 @@ func splitLeafInsertRaw(pg, newPg []byte, pageID, newID uint32, idx int, entry *
 	defer putLeafPrefixScratch(prefixScratch)
 	prefixData := prefixScratch[:len(refs)+1]
 	for i, r := range refs {
-		prefixData[i+1] = prefixData[i] + r.size
+		prefixData[i+1] = prefixData[i] + int(r.size)
 	}
 	if prefixData[len(refs)] != totalData {
 		totalData = prefixData[len(refs)]
@@ -2474,7 +2505,18 @@ func splitLeafInsertRaw(pg, newPg []byte, pageID, newID uint32, idx int, entry *
 		return nil, false
 	}
 	// splitKey must be owned before we rewrite/copy source-page-backed entries.
-	splitKey := shortestSeparator(left[len(left)-1].key, right[0].key)
+	splitKey := shortestSeparator(leafRawKey(left[len(left)-1].raw), leafRawKey(right[0].raw))
+	// Common append-heavy split on the rightmost leaf: left side is an unchanged
+	// prefix of the existing page, so avoid re-rendering it.
+	if idx == count && nextLeaf == 0 && mid <= count {
+		if !writeLeafPageRawSortedSized(newPg, right, rightData, nextLeaf, pageID) {
+			return nil, false
+		}
+		if !rewriteLeafPrefixInPlace(pg, left, newID, prevLeaf) {
+			return nil, false
+		}
+		return splitKey, true
+	}
 
 	leftTmp := getLeafScratchPage()
 	defer putLeafScratchPage(leftTmp)
