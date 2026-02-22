@@ -1682,11 +1682,34 @@ func rewriteLeafPrefixInPlace(pg []byte, left []leafRawEntryRef, nextLeaf, prevL
 		return false
 	}
 	last := left[len(left)-1]
+	if len(last.raw) != int(last.size) || last.off == 0 {
+		return false
+	}
 	freeOff := int(last.off)
 	if freeOff < leafHeaderSize || freeOff >= pageSize {
 		return false
 	}
 	if int(last.off)+int(last.size) > pageSize {
+		return false
+	}
+	// Safety check: metadata-only truncation is valid only when the last logical
+	// left entry is also the lowest-offset surviving entry. In-place updates can
+	// break packed/monotonic offset ordering.
+	minOff := freeOff
+	for i := 0; i < len(left)-1; i++ {
+		e := left[i]
+		if e.off == 0 || len(e.raw) != int(e.size) {
+			return false
+		}
+		off := int(e.off)
+		if off < leafHeaderSize || off+int(e.size) > pageSize {
+			return false
+		}
+		if off < minOff {
+			minOff = off
+		}
+	}
+	if minOff != freeOff {
 		return false
 	}
 
@@ -1695,6 +1718,91 @@ func rewriteLeafPrefixInPlace(pg []byte, left []leafRawEntryRef, nextLeaf, prevL
 	putU16LE(pg[3:], last.off)
 	putU32LE(pg[5:], nextLeaf)
 	putU32LE(pg[9:], prevLeaf)
+	return true
+}
+
+// writeLeafPageRawAppendSplitRight writes the right page for an append-heavy raw
+// split where entries are "old suffix + appended new entry". When the old suffix
+// is tightly packed in the source page, it copies that suffix as one contiguous
+// block and only writes slots per entry (avoiding per-entry data copies).
+func writeLeafPageRawAppendSplitRight(dstPg, srcPg []byte, suffix []leafRawEntryRef, newRef leafRawEntryRef, nextLeaf, prevLeaf uint32) bool {
+	count := len(suffix) + 1
+	newSize := int(newRef.size)
+	suffixData := leafRawEntriesDataSize(suffix)
+	totalData := suffixData + newSize
+	if !leafRawEntriesFitData(count, totalData) {
+		return false
+	}
+
+	if len(newRef.raw) != newSize || newSize <= 0 {
+		return false
+	}
+
+	// Fallback-worthy edge case; caller can use generic writer instead.
+	if len(suffix) == 0 {
+		return writeLeafPageRawSortedSized(dstPg, []leafRawEntryRef{newRef}, totalData, nextLeaf, prevLeaf)
+	}
+
+	// Validate that the old suffix is tightly packed and contiguous in srcPg.
+	first := suffix[0]
+	last := suffix[len(suffix)-1]
+	if first.off == 0 || last.off == 0 || len(first.raw) != int(first.size) || len(last.raw) != int(last.size) {
+		return false
+	}
+	srcBlockStart := int(last.off)
+	srcBlockEnd := int(first.off) + int(first.size)
+	if srcBlockStart < leafHeaderSize || srcBlockEnd > len(srcPg) || srcBlockStart >= srcBlockEnd {
+		return false
+	}
+	for i := 0; i+1 < len(suffix); i++ {
+		a := suffix[i]
+		b := suffix[i+1]
+		if a.off == 0 || b.off == 0 {
+			return false
+		}
+		// Logical neighbors are contiguous in packed leaf layout when the lower
+		// entry's end reaches the higher entry's start.
+		if int(b.off)+int(b.size) != int(a.off) {
+			return false
+		}
+	}
+	if srcBlockEnd-srcBlockStart != suffixData {
+		return false
+	}
+
+	// Header
+	dstPg[0] = pageTypeLeaf
+	putU16LE(dstPg[1:], uint16(count))
+	putU32LE(dstPg[5:], nextLeaf)
+	putU32LE(dstPg[9:], prevLeaf)
+
+	// Data region layout (low -> high): newRef, then contiguous old suffix block.
+	freeOff := pageSize - totalData
+	newOff := freeOff
+	if copy(dstPg[newOff:newOff+newSize], newRef.raw) != newSize {
+		return false
+	}
+	suffixDstStart := newOff + newSize
+	if copy(dstPg[suffixDstStart:suffixDstStart+suffixData], srcPg[srcBlockStart:srcBlockEnd]) != suffixData {
+		return false
+	}
+
+	// Slots for suffix logical entries, then appended new entry.
+	slotOff := leafHeaderSize
+	runOff := pageSize
+	for i := 0; i < len(suffix); i++ {
+		runOff -= int(suffix[i].size)
+		putU32BE(dstPg[slotOff:], suffix[i].head)
+		putU16LE(dstPg[slotOff+4:], uint16(runOff))
+		slotOff += leafSlotSize
+	}
+	runOff -= newSize
+	if runOff != freeOff {
+		return false
+	}
+	putU32BE(dstPg[slotOff:], newRef.head)
+	putU16LE(dstPg[slotOff+4:], uint16(runOff))
+	putU16LE(dstPg[3:], uint16(freeOff))
 	return true
 }
 
@@ -2509,8 +2617,14 @@ func splitLeafInsertRaw(pg, newPg []byte, pageID, newID uint32, idx int, entry *
 	// Common append-heavy split on the rightmost leaf: left side is an unchanged
 	// prefix of the existing page, so avoid re-rendering it.
 	if idx == count && nextLeaf == 0 && mid <= count {
-		if !writeLeafPageRawSortedSized(newPg, right, rightData, nextLeaf, pageID) {
-			return nil, false
+		rightOld := right
+		if len(right) > 0 {
+			rightOld = right[:len(right)-1]
+		}
+		if !writeLeafPageRawAppendSplitRight(newPg, pg, rightOld, newRef, nextLeaf, pageID) {
+			if !writeLeafPageRawSortedSized(newPg, right, rightData, nextLeaf, pageID) {
+				return nil, false
+			}
 		}
 		if !rewriteLeafPrefixInPlace(pg, left, newID, prevLeaf) {
 			return nil, false

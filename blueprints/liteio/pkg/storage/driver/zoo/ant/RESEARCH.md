@@ -1224,7 +1224,48 @@ and the GC collects unreturned objects normally.
 
 ## v4 Results
 
-*(To be filled after implementation)*
+### v4 Optimizations Applied
+
+1. **Fast-path cleanKey** — `isCleanKey()` single-pass byte scan; returns immediately for already-clean keys (zero allocations)
+2. **Eliminate relToKey** — replaced all `relToKey(relKey)` calls with `relKey` (cleanKey output already normalized)
+3. **Embedded Object in mmapReadCloser** — `storage.Object` embedded in pooled reader; Read allocs reduced from 2→1
+4. **Lock-free ctStringTable.get()** — `atomic.Pointer[[]string]` snapshot; `get()` never takes a lock
+5. **Direct-mapped hash cache** — 4096-entry fixed-size cache per shard for O(1) point lookups; no allocation, no probing, no grow
+
+### v4 Benchmark Results
+
+```
+goos: darwin
+goarch: arm64
+cpu: Apple M4
+```
+
+| Benchmark | v3 ns/op | v4 ns/op | Speedup | v3 B/op | v4 B/op | v3 allocs | v4 allocs |
+|-----------|----------|----------|---------|---------|---------|-----------|-----------|
+| Write/1KB | 695 | 790 | 0.88x | 460 | 461 | 7 | 7 |
+| Read/1KB | 142 | 73 | **1.94x** | 173 | 13 | 2 | 1 |
+| Stat | 133 | 84 | **1.58x** | 173 | 173 | 2 | 2 |
+| Delete | 221 | 203 | **1.09x** | 26 | 26 | 2 | 2 |
+| ParallelWrite C10 | 339 | 396 | 0.86x | 436 | 438 | 7 | 7 |
+| ParallelRead C10 | 104 | 57 | **1.82x** | 175 | 15 | 2 | 1 |
+| List/100 | 10806 | 9398 | **1.15x** | 20176 | 20176 | 351 | 351 |
+
+### v4 Memory Budget
+
+| Component | v3 | v4 |
+|-----------|-----|-----|
+| ART nodes (100K entries) | ~23 MB | ~23 MB |
+| Hash cache (64 × 4096 × 16B) | 0 | ~4 MB |
+| Vlog mmap | ~6 MB | ~6 MB |
+| **Total (measured HeapInuse)** | **24 MB** | **24.5 MB** |
+| Budget | 100 MB | 100 MB |
+
+### v4 Key Findings
+
+- **Read path: 1.94x faster** with 92% reduction in bytes/op (173→13) and 50% fewer allocations. The direct-mapped hash cache provides O(1) lookups for ~80% of operations; the remaining 20% (slot conflicts) fall back to ART.
+- **Write path: 12% regression** — the cache insert (one cache line write) adds a small fixed cost. This is an acceptable trade-off given the read improvement. Write remains dominated by memmove (44%) and madvise (23%) which are irreducible.
+- **Delete path: 9% faster** — the cache remove is just a comparison + clear, cheaper than the backward-shift deletion used in the earlier open-addressing hash table approach.
+- **Failed approaches**: Open-addressing hash table with key storage regressed Write by 68% (1173 ns) and Delete by 75% (386 ns) due to per-insert key allocation. Vlog-backed zero-copy keys also regressed due to scattered mmap access patterns causing cache misses.
 
 ---
 
@@ -1289,6 +1330,16 @@ and the GC collects unreturned objects normally.
 24. **Embed pooled objects to avoid secondary allocations** — Instead of pooling the reader and separately allocating the Object, embed the Object inside the reader. One pool Get replaces two heap allocations.
 
 25. **Profile the BENCHMARK, not just the code** — fmt.Sprintf in key generation consumes 22% of Read/Stat CPU. This means measured ns/op includes ~31ns of benchmark overhead. True code performance is ~30% better than benchmark numbers suggest.
+
+### From v4 Implementation:
+
+26. **Direct-mapped cache beats open-addressing hash table** — A proper hash table with key storage for collision handling added 68% overhead to Write (key allocation per insert) and 75% to Delete (backward-shift deletion). A direct-mapped cache (single array, hash-indexed, last-writer-wins on conflict) adds near-zero overhead: insert is one assignment, remove is one comparison + clear. The ~20% miss rate (slot conflicts) is acceptable because ART fallback is still fast.
+
+27. **Memory locality matters more than algorithmic complexity** — Storing keys in vlog-backed mmap (zero-copy, zero-allocation) was SLOWER than heap-allocated keys because the vlog data is scattered across the file. Sequential heap allocations have better spatial locality for hash table verification. Always prefer contiguous, recently-accessed memory over clever zero-copy tricks.
+
+28. **Hash table overhead is asymmetric** — A hash table helps reads (eliminate O(key_length) ART traversal) but hurts writes (maintain secondary data structure). For read-heavy workloads, the trade-off is clear. For write-heavy workloads, skip the hash table entirely.
+
+29. **64-bit FNV-1a is sufficient for hash cache keys** — With 100K entries, collision probability is ~10^-10. Direct-mapped cache uses hash-only comparison (no key storage). FNV-1a's avalanche properties ensure even distribution across cache slots. Storing extra key data for collision verification is unnecessary overhead.
 
 ---
 
