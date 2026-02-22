@@ -228,8 +228,8 @@ var _ storage.Storage = (*store)(nil)
 
 // hotPut stores a pre-populated record.
 // Value data should already be allocated (via allocValue).
-// Single-traversal upsert: stack-backed key for search,
-// heap-allocate only when inserting a genuinely new entry.
+// Single-traversal putOrUpdate: stack-backed key for search,
+// pre-allocated heap key for insert. Zero allocation inside lock.
 func (s *store) hotPut(bkt, key string, rec *hotRecord) {
 	h := htHash64(bkt, key)
 	si := uint32(h>>32) & shardMask
@@ -239,10 +239,11 @@ func (s *store) hotPut(bkt, key string, rec *hotRecord) {
 	var buf [256]byte
 	ck := unsafeString(compositeKeyBuf(buf[:0], bkt, key))
 
+	// Pre-allocate heap key outside lock (for insert path).
+	heapCK := compositeKey(bkt, key)
+
 	sh.mu.Lock()
-	old, updated := sh.ht.upsert(h, ck, rec, func() string {
-		return compositeKey(bkt, key)
-	})
+	old, updated := sh.ht.putOrUpdate(h, ck, heapCK, rec)
 	if updated {
 		if rec.created == rec.updated {
 			rec.created = old.created

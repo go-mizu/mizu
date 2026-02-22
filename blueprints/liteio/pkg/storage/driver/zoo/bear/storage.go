@@ -56,13 +56,13 @@ const (
 	hdrFreeHead   = 28
 
 	// Page header sizes
-	innerHeaderSize = 1 + 2 + 2                // type(1) + count(2) + freeOff(2)
-	leafHeaderSize  = 1 + 2 + 2 + 4 + 4        // type(1) + count(2) + freeOff(2) + nextLeaf(4) + prevLeaf(4)
+	innerHeaderSize = 1 + 2 + 2         // type(1) + count(2) + freeOff(2)
+	leafHeaderSize  = 1 + 2 + 2 + 4 + 4 // type(1) + count(2) + freeOff(2) + nextLeaf(4) + prevLeaf(4)
 
 	// Slot sizes
-	innerSlotSize = 4 + 2 // keyHead(4) + keyOffset(2)
-	innerChildSize = 4    // childPage(4)
-	leafSlotSize  = 4 + 2 // keyHead(4) + entryOffset(2)
+	innerSlotSize  = 4 + 2 // keyHead(4) + keyOffset(2)
+	innerChildSize = 4     // childPage(4)
+	leafSlotSize   = 4 + 2 // keyHead(4) + entryOffset(2)
 
 	// Entry overhead for inline values:
 	// keyLen(2) + ctLen(2) + flags(1) + valLen(4) + created(8) + updated(8) = 25
@@ -73,7 +73,13 @@ const (
 	leafEntryOverheadExternal = 2 + 2 + 1 + 8 + 8 + 8 + 8
 
 	// Value log threshold: values larger than this go to the value log.
-	valLogThreshold = 2048
+	// We keep non-empty values in the append-only value log to keep B-tree pages
+	// dense (keys + metadata only), which dramatically reduces split churn.
+	valLogThreshold = 0
+
+	// Buffered append size for the value log. This amortizes syscall cost for
+	// small writes (e.g. 1KB benchmark workload).
+	valLogBufferSize = 8 * 1024 * 1024
 
 	// Flags byte values for leaf entry encoding.
 	flagInline   byte = 0x00
@@ -207,9 +213,13 @@ type store struct {
 	freeHead   uint32
 
 	// Value log for large values (protected by valMu).
-	valMu     sync.Mutex
-	valLog    *os.File
-	valLogPos int64
+	valMu       sync.Mutex
+	valLog      *os.File
+	valLogPos   int64 // logical end (includes buffered, not-yet-flushed bytes)
+	valFlushed  int64 // durable on-disk end (all reads must be <= this)
+	valBufStart int64
+	valBuf      []byte
+	valTmpPool  sync.Pool
 
 	// Bucket metadata: name -> creation time
 	bucketsMu sync.RWMutex
@@ -280,7 +290,7 @@ func newStore(root, syncMode string) (*store, error) {
 // prepareEntry creates a leafEntry, writing the value to the value log if
 // it exceeds valLogThreshold. Must be called BEFORE acquiring mu.
 func (s *store) prepareEntry(key, contentType, value []byte, created, updated int64) (*leafEntry, error) {
-	if len(value) > valLogThreshold {
+	if shouldStoreExternal(len(value)) {
 		offset, err := s.writeToValueLog(value)
 		if err != nil {
 			return nil, err
@@ -307,29 +317,207 @@ func (s *store) prepareEntry(key, contentType, value []byte, created, updated in
 // writeToValueLog appends data to the value log and returns the offset
 // where the data was written. Caller must NOT hold valMu.
 func (s *store) writeToValueLog(data []byte) (int64, error) {
+	if len(data) == 0 {
+		return -1, nil
+	}
 	s.valMu.Lock()
 	defer s.valMu.Unlock()
 
-	offset := s.valLogPos
-	_, err := s.valLog.WriteAt(data, offset)
-	if err != nil {
-		return 0, fmt.Errorf("bear: write value log: %w", err)
+	return s.appendValueLogBytesLocked(data)
+}
+
+// writeStreamToValueLog streams src into the value log with a small reusable
+// buffer to avoid per-write heap allocations for small objects.
+func (s *store) writeStreamToValueLog(src io.Reader, expected int64) (int64, int64, error) {
+	s.valMu.Lock()
+	defer s.valMu.Unlock()
+
+	bufAny := s.valTmpPool.Get()
+	var tmp []byte
+	if b, ok := bufAny.([]byte); ok && len(b) > 0 {
+		tmp = b
+	} else {
+		tmp = make([]byte, 32*1024)
 	}
+	defer s.valTmpPool.Put(tmp)
+
+	start := s.valLogPos
+	var wrote int64
+
+	if expected >= 0 {
+		remaining := expected
+		for remaining > 0 {
+			nmax := len(tmp)
+			if remaining < int64(nmax) {
+				nmax = int(remaining)
+			}
+			n, err := io.ReadFull(src, tmp[:nmax])
+			if n > 0 {
+				if _, werr := s.appendValueLogBytesLocked(tmp[:n]); werr != nil {
+					return 0, wrote, werr
+				}
+				wrote += int64(n)
+				remaining -= int64(n)
+			}
+			if err != nil {
+				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+					break
+				}
+				return 0, wrote, fmt.Errorf("bear: stream value log read: %w", err)
+			}
+		}
+	} else {
+		for {
+			n, err := src.Read(tmp)
+			if n > 0 {
+				if _, werr := s.appendValueLogBytesLocked(tmp[:n]); werr != nil {
+					return 0, wrote, werr
+				}
+				wrote += int64(n)
+			}
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				return 0, wrote, fmt.Errorf("bear: stream value log read: %w", err)
+			}
+		}
+	}
+
+	if wrote == 0 {
+		return -1, 0, nil
+	}
+	return start, wrote, nil
+}
+
+// appendValueLogBytesLocked appends bytes to the buffered value log.
+// Caller must hold valMu.
+func (s *store) appendValueLogBytesLocked(data []byte) (int64, error) {
+	offset := s.valLogPos
+	if len(data) == 0 {
+		return offset, nil
+	}
+
 	s.valLogPos += int64(len(data))
+	curOff := offset
+
+	for len(data) > 0 {
+		// Direct-write very large payloads when no buffered tail is pending.
+		if len(s.valBuf) == 0 && len(data) >= valLogBufferSize {
+			if err := s.writeValueLogDirectLocked(curOff, data); err != nil {
+				return 0, err
+			}
+			curOff += int64(len(data))
+			data = nil
+			break
+		}
+
+		if len(s.valBuf) == 0 {
+			s.valBufStart = curOff
+		}
+
+		space := valLogBufferSize - len(s.valBuf)
+		if space == 0 {
+			if err := s.flushValueLogLocked(); err != nil {
+				return 0, err
+			}
+			continue
+		}
+		n := len(data)
+		if n > space {
+			n = space
+		}
+		s.valBuf = append(s.valBuf, data[:n]...)
+		curOff += int64(n)
+		data = data[n:]
+		if len(s.valBuf) == valLogBufferSize {
+			if err := s.flushValueLogLocked(); err != nil {
+				return 0, err
+			}
+		}
+	}
+
 	if s.syncMode == "msync" {
-		_ = s.valLog.Sync()
+		if err := s.flushValueLogLocked(); err != nil {
+			return 0, err
+		}
+		if err := s.valLog.Sync(); err != nil {
+			return 0, fmt.Errorf("bear: sync value log: %w", err)
+		}
 	}
 	return offset, nil
 }
 
+// writeValueLogDirectLocked writes data at the given offset without buffering.
+// Caller must hold valMu. If data is nil/empty, this is a no-op.
+func (s *store) writeValueLogDirectLocked(offset int64, data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+	if _, err := s.valLog.WriteAt(data, offset); err != nil {
+		return fmt.Errorf("bear: write value log: %w", err)
+	}
+	end := offset + int64(len(data))
+	if end > s.valFlushed {
+		s.valFlushed = end
+	}
+	return nil
+}
+
+// flushValueLogLocked flushes buffered value bytes to disk. Caller must hold valMu.
+func (s *store) flushValueLogLocked() error {
+	if len(s.valBuf) == 0 {
+		return nil
+	}
+	if _, err := s.valLog.WriteAt(s.valBuf, s.valBufStart); err != nil {
+		return fmt.Errorf("bear: flush value log: %w", err)
+	}
+	s.valFlushed = s.valBufStart + int64(len(s.valBuf))
+	s.valBuf = s.valBuf[:0]
+	return nil
+}
+
+// ensureValueLogReadable flushes pending buffered bytes so ReadAt/SectionReader
+// sees the requested region.
+func (s *store) ensureValueLogReadable(offset, length int64) error {
+	if length <= 0 {
+		return nil
+	}
+	end := offset + length
+	s.valMu.Lock()
+	defer s.valMu.Unlock()
+	if end <= s.valFlushed {
+		return nil
+	}
+	return s.flushValueLogLocked()
+}
+
 // readFromValueLog reads length bytes from the value log at the given offset.
 func (s *store) readFromValueLog(offset, length int64) ([]byte, error) {
+	if err := s.ensureValueLogReadable(offset, length); err != nil {
+		return nil, err
+	}
+	if length < 0 {
+		return nil, fmt.Errorf("bear: negative value length %d", length)
+	}
+	if length == 0 {
+		return nil, nil
+	}
 	buf := make([]byte, length)
 	_, err := s.valLog.ReadAt(buf, offset)
 	if err != nil {
 		return nil, fmt.Errorf("bear: read value log at offset %d length %d: %w", offset, length, err)
 	}
 	return buf, nil
+}
+
+// openValueLogReader returns a reader for a value log region without allocating
+// a new value slice. Callers can stream directly to the client.
+func (s *store) openValueLogReader(offset, length int64) (io.ReadCloser, error) {
+	if err := s.ensureValueLogReadable(offset, length); err != nil {
+		return nil, err
+	}
+	return io.NopCloser(io.NewSectionReader(s.valLog, offset, length)), nil
 }
 
 // resolveValue resolves the value for a leaf entry. If the value is stored
@@ -374,6 +562,12 @@ func (s *store) openValueLog() error {
 	}
 	s.valLog = vf
 	s.valLogPos = info.Size()
+	s.valFlushed = info.Size()
+	s.valBuf = make([]byte, 0, valLogBufferSize)
+	s.valBufStart = s.valFlushed
+	s.valTmpPool = sync.Pool{
+		New: func() any { return make([]byte, 32*1024) },
+	}
 	return nil
 }
 
@@ -384,19 +578,19 @@ func (s *store) initFile() error {
 
 	// Page 0: header
 	copy(buf[hdrMagic:], magicString)
-	binary.LittleEndian.PutUint32(buf[hdrRootPage:], 1)   // root is page 1
-	binary.LittleEndian.PutUint32(buf[hdrPageCount:], 2)   // 2 pages total
-	binary.LittleEndian.PutUint32(buf[hdrHeight:], 1)      // height 1 (single leaf)
+	binary.LittleEndian.PutUint32(buf[hdrRootPage:], 1)  // root is page 1
+	binary.LittleEndian.PutUint32(buf[hdrPageCount:], 2) // 2 pages total
+	binary.LittleEndian.PutUint32(buf[hdrHeight:], 1)    // height 1 (single leaf)
 	binary.LittleEndian.PutUint64(buf[hdrEntryCount:], 0)
 	binary.LittleEndian.PutUint32(buf[hdrFreeHead:], 0)
 
 	// Page 1: empty leaf node
 	pg := buf[pageSize:]
 	pg[0] = pageTypeLeaf
-	binary.LittleEndian.PutUint16(pg[1:], 0)               // count = 0
+	binary.LittleEndian.PutUint16(pg[1:], 0)                // count = 0
 	binary.LittleEndian.PutUint16(pg[3:], uint16(pageSize)) // freeOffset = end of page
-	binary.LittleEndian.PutUint32(pg[5:], 0)               // nextLeaf = 0
-	binary.LittleEndian.PutUint32(pg[9:], 0)               // prevLeaf = 0
+	binary.LittleEndian.PutUint32(pg[5:], 0)                // nextLeaf = 0
+	binary.LittleEndian.PutUint32(pg[9:], 0)                // prevLeaf = 0
 
 	if _, err := s.file.WriteAt(buf, 0); err != nil {
 		return fmt.Errorf("bear: init file: %w", err)
@@ -579,6 +773,10 @@ func (s *store) freePage(id uint32) {
 // ---------------------------------------------------------------------------
 // Composite key helpers
 // ---------------------------------------------------------------------------
+
+func shouldStoreExternal(n int) bool {
+	return n > 0 && n > valLogThreshold
+}
 
 func compositeKey(bucket, key string) []byte {
 	b := make([]byte, len(bucket)+1+len(key))
@@ -1517,6 +1715,10 @@ func (s *store) Close() error {
 	// Close value log
 	s.valMu.Lock()
 	if s.valLog != nil {
+		_ = s.flushValueLogLocked()
+		if s.syncMode == "msync" {
+			_ = s.valLog.Sync()
+		}
 		_ = s.valLog.Close()
 		s.valLog = nil
 	}
@@ -1579,32 +1781,70 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 		return nil, err
 	}
 
-	// Read all data
-	var data []byte
-	if size > 0 {
-		data = make([]byte, size)
-		n, err := io.ReadFull(src, data)
-		if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
-			return nil, fmt.Errorf("bear: read: %w", err)
-		}
-		data = data[:n]
-	} else if size < 0 {
-		data, err = io.ReadAll(src)
-		if err != nil {
-			return nil, fmt.Errorf("bear: read: %w", err)
-		}
-	} else {
-		// size == 0, read anyway in case there's data
-		data, _ = io.ReadAll(src)
-	}
-
 	ck := compositeKey(b.name, relKey)
 	now := time.Now()
+	ctBytes := []byte(contentType)
 
-	// Write large values to the value log before acquiring the main lock.
-	entry, err := b.store.prepareEntry(ck, []byte(contentType), data, now.UnixNano(), now.UnixNano())
-	if err != nil {
-		return nil, fmt.Errorf("bear: prepare entry: %w", err)
+	var (
+		data      []byte
+		entry     *leafEntry
+		actualLen int64
+	)
+
+	// Stream known-size external values directly into the buffered value log to
+	// avoid allocating a per-write value slice on the Go heap.
+	if size > 0 && shouldStoreExternal(int(size)) {
+		offset, wrote, werr := b.store.writeStreamToValueLog(src, size)
+		if werr != nil {
+			return nil, fmt.Errorf("bear: write stream: %w", werr)
+		}
+		actualLen = wrote
+		if wrote > 0 {
+			entry = &leafEntry{
+				key:         ck,
+				contentType: ctBytes,
+				created:     now.UnixNano(),
+				updated:     now.UnixNano(),
+				valOffset:   offset,
+				valLen:      wrote,
+			}
+		} else {
+			entry = &leafEntry{
+				key:         ck,
+				contentType: ctBytes,
+				value:       nil,
+				created:     now.UnixNano(),
+				updated:     now.UnixNano(),
+				valOffset:   -1,
+			}
+		}
+	} else {
+		// Read all data (fallback path for tiny/unknown-size writes).
+		if size > 0 {
+			data = make([]byte, size)
+			n, err := io.ReadFull(src, data)
+			if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
+				return nil, fmt.Errorf("bear: read: %w", err)
+			}
+			data = data[:n]
+		} else if size < 0 {
+			var err error
+			data, err = io.ReadAll(src)
+			if err != nil {
+				return nil, fmt.Errorf("bear: read: %w", err)
+			}
+		} else {
+			// size == 0, read anyway in case there's data
+			data, _ = io.ReadAll(src)
+		}
+		actualLen = int64(len(data))
+
+		// Write large values to the value log before acquiring the main lock.
+		var err error
+		entry, err = b.store.prepareEntry(ck, ctBytes, data, now.UnixNano(), now.UnixNano())
+		if err != nil {
+			return nil, fmt.Errorf("bear: prepare entry: %w", err)
+		}
 	}
 
 	// Pre-grow the mmap so that allocPage inside the write lock won't
@@ -1633,7 +1873,7 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 	return &storage.Object{
 		Bucket:      b.name,
 		Key:         relToKey(relKey),
-		Size:        int64(len(data)),
+		Size:        actualLen,
 		ContentType: contentType,
 		Created:     time.Unix(0, entry.created),
 		Updated:     now,
@@ -1660,19 +1900,41 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 		return nil, nil, storage.ErrNotExist
 	}
 
-	// Resolve external values from the value log.
-	entry, err = b.store.resolveValue(entry)
-	if err != nil {
-		return nil, nil, err
+	fullSize := int64(len(entry.value))
+	if entry.valOffset >= 0 {
+		fullSize = entry.valLen
 	}
 
 	obj := &storage.Object{
 		Bucket:      b.name,
 		Key:         relToKey(relKey),
-		Size:        int64(len(entry.value)),
+		Size:        fullSize,
 		ContentType: string(entry.contentType),
 		Created:     time.Unix(0, entry.created),
 		Updated:     time.Unix(0, entry.updated),
+	}
+
+	// External values can be streamed directly from the value log without
+	// allocating an intermediate byte slice.
+	if entry.valOffset >= 0 {
+		readOff := entry.valOffset
+		readLen := entry.valLen
+		if offset > 0 {
+			if offset >= readLen {
+				readLen = 0
+			} else {
+				readOff += offset
+				readLen -= offset
+			}
+		}
+		if length > 0 && readLen > length {
+			readLen = length
+		}
+		rc, err := b.store.openValueLogReader(readOff, readLen)
+		if err != nil {
+			return nil, nil, err
+		}
+		return rc, obj, nil
 	}
 
 	data := entry.value
@@ -1831,18 +2093,30 @@ func (b *bucket) Copy(ctx context.Context, dstKey string, srcBucket, srcKey stri
 		return nil, storage.ErrNotExist
 	}
 
-	srcEntry, err = b.store.resolveValue(srcEntry)
-	if err != nil {
-		return nil, fmt.Errorf("bear: copy resolve src: %w", err)
-	}
-
 	dstCK := compositeKey(b.name, dstRel)
 	now := time.Now()
 
-	// Prepare the destination entry (may write to value log).
-	newEntry, err := b.store.prepareEntry(dstCK, copyBytes(srcEntry.contentType), copyBytes(srcEntry.value), now.UnixNano(), now.UnixNano())
-	if err != nil {
-		return nil, fmt.Errorf("bear: copy prepare: %w", err)
+	var (
+		newEntry *leafEntry
+		valSize  int64
+	)
+	if srcEntry.valOffset >= 0 {
+		valSize = srcEntry.valLen
+		newEntry = &leafEntry{
+			key:         dstCK,
+			contentType: copyBytes(srcEntry.contentType),
+			created:     now.UnixNano(),
+			updated:     now.UnixNano(),
+			valOffset:   srcEntry.valOffset,
+			valLen:      srcEntry.valLen,
+		}
+	} else {
+		valSize = int64(len(srcEntry.value))
+		// Prepare the destination entry (may write to value log).
+		newEntry, err = b.store.prepareEntry(dstCK, copyBytes(srcEntry.contentType), copyBytes(srcEntry.value), now.UnixNano(), now.UnixNano())
+		if err != nil {
+			return nil, fmt.Errorf("bear: copy prepare: %w", err)
+		}
 	}
 
 	b.store.ensureSpace(4)
@@ -1865,7 +2139,7 @@ func (b *bucket) Copy(ctx context.Context, dstKey string, srcBucket, srcKey stri
 	return &storage.Object{
 		Bucket:      b.name,
 		Key:         relToKey(dstRel),
-		Size:        int64(len(srcEntry.value)),
+		Size:        valSize,
 		ContentType: string(srcEntry.contentType),
 		Created:     now,
 		Updated:     now,
@@ -1898,21 +2172,31 @@ func (b *bucket) Move(ctx context.Context, dstKey string, srcBucket, srcKey stri
 		return nil, storage.ErrNotExist
 	}
 
-	srcEntry, err = b.store.resolveValue(srcEntry)
-	if err != nil {
-		return nil, fmt.Errorf("bear: move resolve src: %w", err)
-	}
-
 	dstCK := compositeKey(b.name, dstRel)
 	now := time.Now()
 
-	// Prepare the destination entry (may write to value log).
-	newEntry, err := b.store.prepareEntry(dstCK, copyBytes(srcEntry.contentType), copyBytes(srcEntry.value), srcEntry.created, now.UnixNano())
-	if err != nil {
-		return nil, fmt.Errorf("bear: move prepare: %w", err)
+	var (
+		newEntry *leafEntry
+		valSize  int64
+	)
+	if srcEntry.valOffset >= 0 {
+		valSize = srcEntry.valLen
+		newEntry = &leafEntry{
+			key:         dstCK,
+			contentType: copyBytes(srcEntry.contentType),
+			created:     srcEntry.created,
+			updated:     now.UnixNano(),
+			valOffset:   srcEntry.valOffset,
+			valLen:      srcEntry.valLen,
+		}
+	} else {
+		valSize = int64(len(srcEntry.value))
+		// Prepare the destination entry (may write to value log).
+		newEntry, err = b.store.prepareEntry(dstCK, copyBytes(srcEntry.contentType), copyBytes(srcEntry.value), srcEntry.created, now.UnixNano())
+		if err != nil {
+			return nil, fmt.Errorf("bear: move prepare: %w", err)
+		}
 	}
-
-	valSize := int64(len(srcEntry.value))
 
 	b.store.ensureSpace(4)
 

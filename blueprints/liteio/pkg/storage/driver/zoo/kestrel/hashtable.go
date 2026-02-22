@@ -161,11 +161,13 @@ func (t *htable) put(hash uint64, key string, rec *hotRecord) (*hotRecord, bool)
 	}
 }
 
-// upsert performs insert-or-update in a single table traversal.
-// For existing keys (update): uses searchKey directly (may be stack-backed).
-// For new keys (insert): calls makeKey() to get a heap-allocated key for storage.
+// putOrUpdate performs insert-or-update in a single table traversal.
+// searchKey is used for matching (may be stack-backed unsafeString).
+// insertKey is used for storage on insert (must be heap-allocated).
+// For updates: zero allocation (uses searchKey comparison only).
+// For inserts: zero allocation inside this function (insertKey pre-allocated by caller).
 // Returns (oldRecord, true) for updates, (nil, false) for inserts.
-func (t *htable) upsert(hash uint64, searchKey string, rec *hotRecord, makeKey func() string) (*hotRecord, bool) {
+func (t *htable) putOrUpdate(hash uint64, searchKey, insertKey string, rec *hotRecord) (*hotRecord, bool) {
 	if t.count*100 >= t.capacity*htMaxLoad {
 		t.grow()
 	}
@@ -177,7 +179,7 @@ func (t *htable) upsert(hash uint64, searchKey string, rec *hotRecord, makeKey f
 		if e.hash == 0 {
 			// Empty slot — key doesn't exist. Insert here.
 			e.hash = hash
-			e.key = makeKey()
+			e.key = insertKey
 			e.rec = rec
 			t.count++
 			return nil, false
@@ -191,7 +193,7 @@ func (t *htable) upsert(hash uint64, searchKey string, rec *hotRecord, makeKey f
 		ed := t.probeDist(pos, e.hash)
 		if ed < dist {
 			// Key doesn't exist (Robin Hood invariant). Insert with displacement.
-			ih, ik, ir := hash, makeKey(), rec
+			ih, ik, ir := hash, insertKey, rec
 			ih, e.hash = e.hash, ih
 			ik, e.key = e.key, ik
 			ir, e.rec = e.rec, ir

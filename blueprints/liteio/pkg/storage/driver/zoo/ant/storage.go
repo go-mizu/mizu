@@ -62,53 +62,30 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 		root:      root,
 		noSync:    noSync,
 		bucketMap: make(map[string]time.Time),
-		bufPool: sync.Pool{
-			New: func() any { return make([]byte, 0, 4096) },
-		},
 	}
 	st.ctTable.index = make(map[string]uint16)
 
-	// Open value log (mmap-backed).
-	vlogPath := filepath.Join(root, "values.dat")
-	vf, err := os.OpenFile(vlogPath, os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return nil, fmt.Errorf("ant: open value log: %w", err)
-	}
-
-	info, err := vf.Stat()
-	if err != nil {
-		vf.Close()
-		return nil, fmt.Errorf("ant: stat value log: %w", err)
-	}
-
-	vlog := &mmapVlog{fd: vf, size: info.Size()}
-	if err := vlog.init(); err != nil {
-		vf.Close()
-		return nil, fmt.Errorf("ant: init vlog mmap: %w", err)
-	}
-	st.vlog = vlog
-
-	// Open WAL.
-	walPath := filepath.Join(root, "wal.log")
-	wf, err := os.OpenFile(walPath, os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		vlog.close()
-		return nil, fmt.Errorf("ant: open wal: %w", err)
-	}
-	st.wal = wf
-
-	// Replay WAL to rebuild ART.
-	if err := st.replayWAL(); err != nil {
-		wf.Close()
-		vlog.close()
-		return nil, fmt.Errorf("ant: replay wal: %w", err)
-	}
-
-	// Truncate WAL after successful replay.
-	if err := st.truncateWAL(); err != nil {
-		wf.Close()
-		vlog.close()
-		return nil, fmt.Errorf("ant: truncate wal: %w", err)
+	// Open per-shard vlog files and recover ART from entries.
+	for i := range st.shards {
+		path := filepath.Join(root, fmt.Sprintf("shard_%02x.dat", i))
+		fd, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+		if err != nil {
+			// Close already-opened shards.
+			for j := 0; j < i; j++ {
+				st.shards[j].vlog.close()
+			}
+			return nil, fmt.Errorf("ant: open shard %d: %w", i, err)
+		}
+		st.shards[i].vlog.fd = fd
+		if err := st.shards[i].vlog.init(); err != nil {
+			fd.Close()
+			for j := 0; j < i; j++ {
+				st.shards[j].vlog.close()
+			}
+			return nil, fmt.Errorf("ant: init shard %d: %w", i, err)
+		}
+		// Recover ART from vlog scan.
+		st.recoverShard(&st.shards[i])
 	}
 
 	return st, nil
@@ -146,11 +123,9 @@ func parseDSN(dsn string) (string, url.Values, error) {
 // artNode is any: *node4 | *node16 | *node48 | *node256 | nil
 
 type leafEntry struct {
-	valueOffset int64
-	valueSize   int32 // actual value bytes
-	totalSize   int32 // total vlog entry size
-	ctIndex     uint16
-	_           [2]byte // padding
+	valueOffset int64  // offset of value data within shard vlog
+	valueSize   int32  // actual value bytes
+	ctIndex     uint16 // content-type string table index
 	created     int64
 	updated     int64
 	keyHash     uint64 // FNV-1a of composite key for verification
@@ -873,208 +848,181 @@ func (t *ctStringTable) get(idx uint16) string {
 }
 
 // ---------------------------------------------------------------------------
-// Mmap Value Log
+// Per-Shard Vlog (v2b: embedded WAL, no global locks)
 // ---------------------------------------------------------------------------
+//
+// Each shard has its own mmap'd vlog file containing both value data and
+// metadata (key, content-type, timestamps). This eliminates the global WAL
+// and vlog mutexes that serialized all writes in v2.
+//
+// Put entry format:
+//   [4B] entrySize (uint32)  [1B] op=0  [2B] keyLen (uint16)
+//   [NB] key  [1B] ctLen (uint8)  [MB] contentType
+//   [8B] created (int64)  [8B] updated (int64)  [VB] value
+//   Total: 24 + N + M + V bytes
+//
+// Delete entry format:
+//   [4B] entrySize (uint32)  [1B] op=1  [2B] keyLen (uint16)
+//   [NB] key  [8B] timestamp (int64)
+//   Total: 15 + N bytes
+//
+// Recovery: scan shard vlog sequentially, rebuild ART from entries.
 
-const mmapMinCap = 64 * 1024 * 1024 // 64 MB initial
+const shardInitCap = 256 * 1024 // 256 KB per shard
 
-type mmapVlog struct {
-	mu       sync.Mutex
+type shardVlog struct {
 	fd       *os.File
 	data     []byte // mmap'd region
 	size     int64  // bytes written
 	capacity int64
 }
 
-func (v *mmapVlog) init() error {
-	if v.size == 0 && v.capacity == 0 {
-		// New file — preallocate.
-		cap := int64(mmapMinCap)
+func (v *shardVlog) init() error {
+	info, err := v.fd.Stat()
+	if err != nil {
+		return err
+	}
+	cap := info.Size()
+	if cap < shardInitCap {
+		cap = shardInitCap
 		if err := v.fd.Truncate(cap); err != nil {
 			return err
 		}
-		v.capacity = cap
-	} else {
-		// Existing file.
-		info, err := v.fd.Stat()
-		if err != nil {
-			return err
-		}
-		v.capacity = info.Size()
-		if v.capacity < mmapMinCap {
-			if err := v.fd.Truncate(mmapMinCap); err != nil {
-				return err
-			}
-			v.capacity = mmapMinCap
-		}
 	}
-
-	data, err := syscall.Mmap(int(v.fd.Fd()), 0, int(v.capacity),
+	data, err := syscall.Mmap(int(v.fd.Fd()), 0, int(cap),
 		syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 	if err != nil {
-		// Fallback to non-mmap mode.
 		v.data = nil
+		v.capacity = cap
 		return nil
 	}
 	v.data = data
+	v.capacity = cap
 	return nil
 }
 
-func (v *mmapVlog) grow(minSize int64) error {
+func (v *shardVlog) grow(minSize int64) error {
 	newCap := v.capacity * 2
 	if newCap < minSize {
 		newCap = minSize
 	}
-	if newCap < mmapMinCap {
-		newCap = mmapMinCap
-	}
-
 	if err := v.fd.Truncate(newCap); err != nil {
 		return err
 	}
-
 	newData, err := syscall.Mmap(int(v.fd.Fd()), 0, int(newCap),
 		syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 	if err != nil {
-		// Keep old mapping, it still works for existing data.
 		v.capacity = newCap
 		return nil
 	}
-	// Old mapping intentionally leaked (readers may hold references).
-	// Leak is bounded by geometric growth.
+	// Old mapping intentionally leaked (zero-copy readers may hold slices).
 	v.data = newData
 	v.capacity = newCap
 	return nil
 }
 
-func (v *mmapVlog) appendEntry(data []byte, contentType string, created, updated int64) (offset int64, valSize int32, totalSize int32, err error) {
-	v.mu.Lock()
-	defer v.mu.Unlock()
+// appendPut writes a put entry. MUST be called under shard.mu.Lock().
+// Returns the offset of value data within the vlog (for leafEntry.valueOffset).
+func (v *shardVlog) appendPut(key []byte, contentType string, created, updated int64, value []byte) (int64, error) {
+	kl := len(key)
+	cl := len(contentType)
+	vl := len(value)
+	entrySize := 24 + kl + cl + vl
 
-	ctLen := uint16(len(contentType))
-	vLen := int32(len(data))
-	total := int64(2) + int64(ctLen) + 8 + int64(vLen) + 16
-
-	if v.size+total > v.capacity {
-		if err := v.grow(v.size + total); err != nil {
-			return 0, 0, 0, fmt.Errorf("ant: grow vlog: %w", err)
+	need := v.size + int64(entrySize)
+	if need > v.capacity {
+		if err := v.grow(need); err != nil {
+			return 0, fmt.Errorf("ant: grow shard vlog: %w", err)
 		}
 	}
 
-	offset = v.size
-
-	if v.data != nil && v.size+total <= int64(len(v.data)) {
-		// Write directly into mmap'd memory.
-		buf := v.data[v.size : v.size+total]
-		binary.LittleEndian.PutUint16(buf[0:2], ctLen)
-		copy(buf[2:2+ctLen], contentType)
-		binary.LittleEndian.PutUint64(buf[2+int64(ctLen):2+int64(ctLen)+8], uint64(vLen))
-		copy(buf[2+int64(ctLen)+8:2+int64(ctLen)+8+int64(vLen)], data)
-		binary.LittleEndian.PutUint64(buf[2+int64(ctLen)+8+int64(vLen):], uint64(created))
-		binary.LittleEndian.PutUint64(buf[2+int64(ctLen)+8+int64(vLen)+8:], uint64(updated))
-	} else {
-		// Fallback: pwrite.
-		buf := make([]byte, total)
-		binary.LittleEndian.PutUint16(buf[0:2], ctLen)
-		copy(buf[2:2+ctLen], contentType)
-		binary.LittleEndian.PutUint64(buf[2+int64(ctLen):2+int64(ctLen)+8], uint64(vLen))
-		copy(buf[2+int64(ctLen)+8:2+int64(ctLen)+8+int64(vLen)], data)
-		binary.LittleEndian.PutUint64(buf[2+int64(ctLen)+8+int64(vLen):], uint64(created))
-		binary.LittleEndian.PutUint64(buf[2+int64(ctLen)+8+int64(vLen)+8:], uint64(updated))
-		if _, err := v.fd.WriteAt(buf, v.size); err != nil {
-			return 0, 0, 0, fmt.Errorf("ant: write vlog: %w", err)
-		}
-	}
-
-	v.size += total
-	return offset, vLen, int32(total), nil
-}
-
-func (v *mmapVlog) readValue(offset int64, totalSize int32) ([]byte, string, int64, int64, error) {
-	total := int64(totalSize)
-	if v.data != nil && offset+total <= int64(len(v.data)) {
-		buf := v.data[offset : offset+total]
-		ctLen := binary.LittleEndian.Uint16(buf[0:2])
-		ct := string(buf[2 : 2+ctLen])
-		valLen := int64(binary.LittleEndian.Uint64(buf[2+int64(ctLen) : 2+int64(ctLen)+8]))
-		val := make([]byte, valLen)
-		copy(val, buf[2+int64(ctLen)+8:2+int64(ctLen)+8+valLen])
-		created := int64(binary.LittleEndian.Uint64(buf[2+int64(ctLen)+8+valLen:]))
-		updated := int64(binary.LittleEndian.Uint64(buf[2+int64(ctLen)+8+valLen+8:]))
-		return val, ct, created, updated, nil
-	}
-	// Fallback.
-	buf := make([]byte, total)
-	if _, err := v.fd.ReadAt(buf, offset); err != nil {
-		return nil, "", 0, 0, fmt.Errorf("ant: read vlog: %w", err)
-	}
-	ctLen := binary.LittleEndian.Uint16(buf[0:2])
-	ct := string(buf[2 : 2+ctLen])
-	valLen := int64(binary.LittleEndian.Uint64(buf[2+int64(ctLen) : 2+int64(ctLen)+8]))
-	val := buf[2+int64(ctLen)+8 : 2+int64(ctLen)+8+valLen]
-	created := int64(binary.LittleEndian.Uint64(buf[2+int64(ctLen)+8+valLen:]))
-	updated := int64(binary.LittleEndian.Uint64(buf[2+int64(ctLen)+8+valLen+8:]))
-	return val, ct, created, updated, nil
-}
-
-func (v *mmapVlog) readValueOnly(offset int64, totalSize int32) ([]byte, error) {
-	total := int64(totalSize)
-	if v.data != nil && offset+total <= int64(len(v.data)) {
-		buf := v.data[offset : offset+total]
-		ctLen := binary.LittleEndian.Uint16(buf[0:2])
-		valLen := int64(binary.LittleEndian.Uint64(buf[2+int64(ctLen) : 2+int64(ctLen)+8]))
-		val := make([]byte, valLen)
-		copy(val, buf[2+int64(ctLen)+8:2+int64(ctLen)+8+valLen])
-		return val, nil
-	}
-	buf := make([]byte, total)
-	if _, err := v.fd.ReadAt(buf, offset); err != nil {
-		return nil, fmt.Errorf("ant: read vlog: %w", err)
-	}
-	ctLen := binary.LittleEndian.Uint16(buf[0:2])
-	valLen := int64(binary.LittleEndian.Uint64(buf[2+int64(ctLen) : 2+int64(ctLen)+8]))
-	val := make([]byte, valLen)
-	copy(val, buf[2+int64(ctLen)+8:2+int64(ctLen)+8+valLen])
-	return val, nil
-}
-
-func (v *mmapVlog) readContentType(offset int64) string {
-	if v.data != nil && offset+2 < int64(len(v.data)) {
-		ctLen := binary.LittleEndian.Uint16(v.data[offset : offset+2])
-		if ctLen > 0 && offset+2+int64(ctLen) <= int64(len(v.data)) {
-			return string(v.data[offset+2 : offset+2+int64(ctLen)])
-		}
-	}
-	ctBuf := make([]byte, 2)
-	if _, err := v.fd.ReadAt(ctBuf, offset); err != nil {
-		return ""
-	}
-	ctLen := binary.LittleEndian.Uint16(ctBuf)
-	if ctLen == 0 {
-		return ""
-	}
-	ctData := make([]byte, ctLen)
-	if _, err := v.fd.ReadAt(ctData, offset+2); err != nil {
-		return ""
-	}
-	return string(ctData)
-}
-
-func (v *mmapVlog) sync() error {
+	o := int(v.size)
 	if v.data != nil {
+		d := v.data
+		binary.LittleEndian.PutUint32(d[o:], uint32(entrySize))
+		d[o+4] = 0 // op = put
+		binary.LittleEndian.PutUint16(d[o+5:], uint16(kl))
+		copy(d[o+7:], key)
+		d[o+7+kl] = byte(cl)
+		copy(d[o+8+kl:], contentType)
+		binary.LittleEndian.PutUint64(d[o+8+kl+cl:], uint64(created))
+		binary.LittleEndian.PutUint64(d[o+16+kl+cl:], uint64(updated))
+		copy(d[o+24+kl+cl:], value)
+	} else {
+		buf := make([]byte, entrySize)
+		binary.LittleEndian.PutUint32(buf, uint32(entrySize))
+		buf[4] = 0
+		binary.LittleEndian.PutUint16(buf[5:], uint16(kl))
+		copy(buf[7:], key)
+		buf[7+kl] = byte(cl)
+		copy(buf[8+kl:], contentType)
+		binary.LittleEndian.PutUint64(buf[8+kl+cl:], uint64(created))
+		binary.LittleEndian.PutUint64(buf[16+kl+cl:], uint64(updated))
+		copy(buf[24+kl+cl:], value)
+		if _, err := v.fd.WriteAt(buf, v.size); err != nil {
+			return 0, fmt.Errorf("ant: write shard vlog: %w", err)
+		}
+	}
+
+	valueOffset := v.size + int64(24+kl+cl)
+	v.size += int64(entrySize)
+	return valueOffset, nil
+}
+
+// appendDelete writes a delete tombstone. MUST be called under shard.mu.Lock().
+func (v *shardVlog) appendDelete(key []byte, ts int64) error {
+	kl := len(key)
+	entrySize := 15 + kl
+
+	need := v.size + int64(entrySize)
+	if need > v.capacity {
+		if err := v.grow(need); err != nil {
+			return fmt.Errorf("ant: grow shard vlog: %w", err)
+		}
+	}
+
+	o := int(v.size)
+	if v.data != nil {
+		d := v.data
+		binary.LittleEndian.PutUint32(d[o:], uint32(entrySize))
+		d[o+4] = 1 // op = delete
+		binary.LittleEndian.PutUint16(d[o+5:], uint16(kl))
+		copy(d[o+7:], key)
+		binary.LittleEndian.PutUint64(d[o+7+kl:], uint64(ts))
+	} else {
+		buf := make([]byte, entrySize)
+		binary.LittleEndian.PutUint32(buf, uint32(entrySize))
+		buf[4] = 1
+		binary.LittleEndian.PutUint16(buf[5:], uint16(kl))
+		copy(buf[7:], key)
+		binary.LittleEndian.PutUint64(buf[7+kl:], uint64(ts))
+		if _, err := v.fd.WriteAt(buf, v.size); err != nil {
+			return fmt.Errorf("ant: write shard vlog: %w", err)
+		}
+	}
+
+	v.size += int64(entrySize)
+	return nil
+}
+
+func (v *shardVlog) syncData() error {
+	if v.data != nil && v.size > 0 {
 		_, _, errno := syscall.Syscall(syscall.SYS_MSYNC,
 			uintptr(unsafe.Pointer(&v.data[0])),
-			uintptr(len(v.data)),
+			uintptr(v.size),
 			uintptr(syscall.MS_SYNC))
 		if errno != 0 {
-			return fmt.Errorf("ant: msync: %w", errno)
+			return errno
 		}
 		return nil
 	}
-	return v.fd.Sync()
+	if v.fd != nil {
+		return v.fd.Sync()
+	}
+	return nil
 }
 
-func (v *mmapVlog) close() error {
+func (v *shardVlog) close() error {
 	var errs []error
 	if v.data != nil {
 		if err := syscall.Munmap(v.data); err != nil {
@@ -1083,7 +1031,6 @@ func (v *mmapVlog) close() error {
 		v.data = nil
 	}
 	if v.fd != nil {
-		// Truncate file to actual size.
 		if v.size < v.capacity {
 			_ = v.fd.Truncate(v.size)
 		}
@@ -1106,6 +1053,8 @@ type artShard struct {
 	mu   sync.RWMutex
 	root any // artNode
 	size int64
+	vlog shardVlog // per-shard mmap'd vlog (no global lock)
+	_    [64]byte  // cache line padding
 }
 
 type store struct {
@@ -1114,16 +1063,10 @@ type store struct {
 
 	shards [numShards]artShard
 
-	vlog *mmapVlog
-
-	wal   *os.File
-	walMu sync.Mutex
-
 	bucketMu  sync.RWMutex
 	bucketMap map[string]time.Time
 
 	ctTable ctStringTable
-	bufPool sync.Pool
 }
 
 var _ storage.Storage = (*store)(nil)
@@ -1283,169 +1226,108 @@ func (s *store) Features() storage.Features {
 
 func (s *store) Close() error {
 	var errs []error
-
-	s.walMu.Lock()
-	if s.wal != nil {
-		if err := s.wal.Close(); err != nil {
+	for i := range s.shards {
+		shard := &s.shards[i]
+		shard.mu.Lock()
+		if !s.noSync {
+			if err := shard.vlog.syncData(); err != nil {
+				errs = append(errs, err)
+			}
+		}
+		if err := shard.vlog.close(); err != nil {
 			errs = append(errs, err)
 		}
-		s.wal = nil
+		shard.mu.Unlock()
 	}
-	s.walMu.Unlock()
-
-	if s.vlog != nil {
-		if err := s.vlog.close(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-
 	return errors.Join(errs...)
 }
 
-// ---------------------------------------------------------------------------
-// WAL operations
-// ---------------------------------------------------------------------------
-
-const (
-	walOpPut    byte = 'P'
-	walOpDelete byte = 'D'
-)
-
-func (s *store) appendWAL(op byte, key []byte, valOffset int64, totalSize int32, ts int64) error {
-	s.walMu.Lock()
-	defer s.walMu.Unlock()
-
-	keyLen := uint16(len(key))
-	entrySize := 1 + 2 + int(keyLen) + 8 + 4 + 8
-	buf := s.bufPool.Get().([]byte)
-	if cap(buf) < entrySize {
-		buf = make([]byte, entrySize)
-	} else {
-		buf = buf[:entrySize]
+// recoverShard scans a shard's vlog to rebuild its ART index.
+func (s *store) recoverShard(shard *artShard) {
+	v := &shard.vlog
+	if v.data == nil || v.capacity == 0 {
+		v.size = 0
+		return
 	}
 
-	buf[0] = op
-	binary.LittleEndian.PutUint16(buf[1:3], keyLen)
-	copy(buf[3:3+keyLen], key)
-	binary.LittleEndian.PutUint64(buf[3+keyLen:3+keyLen+8], uint64(valOffset))
-	binary.LittleEndian.PutUint32(buf[3+keyLen+8:3+keyLen+12], uint32(totalSize))
-	binary.LittleEndian.PutUint64(buf[3+keyLen+12:3+keyLen+20], uint64(ts))
+	data := v.data
+	cap := v.capacity
+	offset := int64(0)
 
-	_, err := s.wal.Write(buf)
-	s.bufPool.Put(buf[:0])
-
-	if err != nil {
-		return fmt.Errorf("ant: write wal: %w", err)
-	}
-
-	if !s.noSync {
-		if err := s.wal.Sync(); err != nil {
-			return fmt.Errorf("ant: sync wal: %w", err)
+	for offset+7 <= cap { // minimum entry: 4+1+2 = 7 bytes header
+		if offset+4 > cap {
+			break
 		}
-	}
-
-	return nil
-}
-
-func (s *store) replayWAL() error {
-	info, err := s.wal.Stat()
-	if err != nil {
-		return fmt.Errorf("ant: stat wal: %w", err)
-	}
-	if info.Size() == 0 {
-		return nil
-	}
-
-	data, err := io.ReadAll(io.NewSectionReader(s.wal, 0, info.Size()))
-	if err != nil {
-		return fmt.Errorf("ant: read wal: %w", err)
-	}
-
-	pos := 0
-	for pos < len(data) {
-		if pos+3 > len(data) {
+		entrySize := int64(binary.LittleEndian.Uint32(data[offset:]))
+		if entrySize == 0 || offset+entrySize > cap {
 			break
 		}
 
-		op := data[pos]
-		keyLen := int(binary.LittleEndian.Uint16(data[pos+1 : pos+3]))
-		pos += 3
+		op := data[offset+4]
+		kl := int(binary.LittleEndian.Uint16(data[offset+5:]))
 
-		if pos+keyLen+20 > len(data) {
+		if offset+7+int64(kl) > cap {
 			break
 		}
-
-		key := make([]byte, keyLen)
-		copy(key, data[pos:pos+keyLen])
-		pos += keyLen
-
-		valOffset := int64(binary.LittleEndian.Uint64(data[pos : pos+8]))
-		totalSize := int32(binary.LittleEndian.Uint32(data[pos+8 : pos+12]))
-		ts := int64(binary.LittleEndian.Uint64(data[pos+12 : pos+20]))
-		pos += 20
-
+		key := data[offset+7 : offset+7+int64(kl)]
 		keyHash := fnv1a(key)
-		shard := s.shardForHash(keyHash & shardMask)
 
 		switch op {
-		case walOpPut:
-			ct := s.vlog.readContentType(valOffset)
-			ctIdx := s.ctTable.intern(ct)
-
-			// Calculate actual value size.
-			ctLen := uint16(len(ct))
-			valSize := int32(int64(totalSize) - 2 - int64(ctLen) - 8 - 16)
-			if valSize < 0 {
-				valSize = 0
+		case 0: // put
+			if offset+int64(24+kl) > cap {
+				break
 			}
+			cl := int(data[offset+7+int64(kl)])
+			if offset+int64(24+kl+cl) > cap {
+				break
+			}
+			ct := string(data[offset+8+int64(kl) : offset+8+int64(kl)+int64(cl)])
+			created := int64(binary.LittleEndian.Uint64(data[offset+8+int64(kl)+int64(cl):]))
+			updated := int64(binary.LittleEndian.Uint64(data[offset+16+int64(kl)+int64(cl):]))
+			valueOffset := offset + int64(24+kl+cl)
+			valueSize := int32(entrySize - int64(24+kl+cl))
 
+			ctIdx := s.ctTable.intern(ct)
 			leaf := &leafEntry{
-				valueOffset: valOffset,
-				valueSize:   valSize,
-				totalSize:   totalSize,
+				valueOffset: valueOffset,
+				valueSize:   valueSize,
 				ctIndex:     ctIdx,
-				created:     ts,
-				updated:     ts,
+				created:     created,
+				updated:     updated,
 				keyHash:     keyHash,
 			}
-			shard.root = artInsert(shard.root, key, leaf)
+
+			existing := artSearch(shard.root, key, keyHash)
+			if existing != nil {
+				shard.size--
+			}
+			keyCopy := make([]byte, kl)
+			copy(keyCopy, key)
+			shard.root = artInsert(shard.root, keyCopy, leaf)
 			shard.size++
 
 			bucketName, _ := splitCompositeKey(key)
 			if bucketName != "" {
 				s.bucketMu.Lock()
 				if _, exists := s.bucketMap[bucketName]; !exists {
-					s.bucketMap[bucketName] = time.Unix(0, ts)
+					s.bucketMap[bucketName] = time.Unix(0, created)
 				}
 				s.bucketMu.Unlock()
 			}
 
-		case walOpDelete:
-			lf := artSearch(shard.root, key, keyHash)
-			if lf != nil {
-				artDelete(&shard.root, key, keyHash)
+		case 1: // delete
+			if artSearch(shard.root, key, keyHash) != nil {
+				keyCopy := make([]byte, kl)
+				copy(keyCopy, key)
+				artDelete(&shard.root, keyCopy, keyHash)
 				shard.size--
 			}
 		}
+
+		offset += entrySize
 	}
 
-	return nil
-}
-
-func (s *store) truncateWAL() error {
-	s.walMu.Lock()
-	defer s.walMu.Unlock()
-
-	if s.wal == nil {
-		return nil
-	}
-	if err := s.wal.Truncate(0); err != nil {
-		return fmt.Errorf("ant: truncate wal: %w", err)
-	}
-	if _, err := s.wal.Seek(0, io.SeekStart); err != nil {
-		return fmt.Errorf("ant: seek wal: %w", err)
-	}
-	return nil
+	v.size = offset
 }
 
 // ---------------------------------------------------------------------------
@@ -1510,7 +1392,7 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 	}
 	b.store.bucketMu.Unlock()
 
-	// Read all data.
+	// Read all data (outside shard lock — I/O could be slow).
 	var data []byte
 	if size > 0 {
 		data = make([]byte, size)
@@ -1529,59 +1411,42 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 	now := time.Now().UnixNano()
 	ck := compositeKey(b.name, relKey)
 	keyHash := fnv1a(ck)
-	shard := b.store.shardForHash(keyHash & shardMask)
+	shard := b.store.shardForHash(keyHash)
+	ctIdx := b.store.ctTable.intern(contentType)
 
-	// Check existing for created time.
+	// Single lock: check existing + vlog append + ART insert.
+	shard.mu.Lock()
+
 	created := now
-	shard.mu.RLock()
 	existing := artSearch(shard.root, ck, keyHash)
 	if existing != nil {
 		created = existing.created
+		shard.size--
 	}
-	shard.mu.RUnlock()
 
-	// Append value to vlog (outside shard lock).
-	offset, valSize, totalSize, err := b.store.vlog.appendEntry(data, contentType, created, now)
+	valueOffset, err := shard.vlog.appendPut(ck, contentType, created, now, data)
 	if err != nil {
+		shard.mu.Unlock()
 		return nil, err
 	}
 
-	if !b.store.noSync {
-		if err := b.store.vlog.sync(); err != nil {
-			return nil, fmt.Errorf("ant: sync vlog: %w", err)
-		}
-	}
-
-	// Append to WAL (outside shard lock).
-	if err := b.store.appendWAL(walOpPut, ck, offset, totalSize, created); err != nil {
-		return nil, err
-	}
-
-	// Insert into ART (shard lock).
-	ctIdx := b.store.ctTable.intern(contentType)
 	leaf := &leafEntry{
-		valueOffset: offset,
-		valueSize:   valSize,
-		totalSize:   totalSize,
+		valueOffset: valueOffset,
+		valueSize:   int32(len(data)),
 		ctIndex:     ctIdx,
 		created:     created,
 		updated:     now,
 		keyHash:     keyHash,
 	}
-
-	shard.mu.Lock()
-	oldLeaf := artSearch(shard.root, ck, keyHash)
-	if oldLeaf != nil {
-		shard.size--
-	}
 	shard.root = artInsert(shard.root, ck, leaf)
 	shard.size++
+
 	shard.mu.Unlock()
 
 	return &storage.Object{
 		Bucket:      b.name,
 		Key:         relToKey(relKey),
-		Size:        int64(valSize),
+		Size:        int64(len(data)),
 		ContentType: contentType,
 		Created:     time.Unix(0, created),
 		Updated:     time.Unix(0, now),
@@ -1600,47 +1465,51 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 
 	ck := compositeKey(b.name, relKey)
 	keyHash := fnv1a(ck)
-	shard := b.store.shardForHash(keyHash & shardMask)
+	shard := b.store.shardForHash(keyHash)
 
 	shard.mu.RLock()
 	leaf := artSearch(shard.root, ck, keyHash)
-	var leafCopy leafEntry
-	if leaf != nil {
-		leafCopy = *leaf
-	}
-	shard.mu.RUnlock()
-
 	if leaf == nil {
+		shard.mu.RUnlock()
 		return nil, nil, storage.ErrNotExist
 	}
+	lc := *leaf // copy metadata
+	shard.mu.RUnlock()
 
-	data, ct, created, updated, err := b.store.vlog.readValue(leafCopy.valueOffset, leafCopy.totalSize)
-	if err != nil {
-		return nil, nil, err
+	// Zero-copy read from shard vlog mmap.
+	// Safe: old mappings are intentionally leaked; data at this offset is immutable.
+	var val []byte
+	vd := shard.vlog.data
+	if vd != nil && lc.valueOffset+int64(lc.valueSize) <= int64(len(vd)) {
+		val = vd[lc.valueOffset : lc.valueOffset+int64(lc.valueSize)]
+	} else {
+		val = make([]byte, lc.valueSize)
+		if _, err := shard.vlog.fd.ReadAt(val, lc.valueOffset); err != nil {
+			return nil, nil, fmt.Errorf("ant: read shard vlog: %w", err)
+		}
 	}
 
-	objSize := int64(len(data))
 	obj := &storage.Object{
 		Bucket:      b.name,
 		Key:         relToKey(relKey),
-		Size:        objSize,
-		ContentType: ct,
-		Created:     time.Unix(0, created),
-		Updated:     time.Unix(0, updated),
+		Size:        int64(lc.valueSize),
+		ContentType: b.store.ctTable.get(lc.ctIndex),
+		Created:     time.Unix(0, lc.created),
+		Updated:     time.Unix(0, lc.updated),
 	}
 
 	if offset > 0 {
-		if offset >= int64(len(data)) {
-			data = nil
+		if offset >= int64(len(val)) {
+			val = nil
 		} else {
-			data = data[offset:]
+			val = val[offset:]
 		}
 	}
-	if length > 0 && int64(len(data)) > length {
-		data = data[:length]
+	if length > 0 && int64(len(val)) > length {
+		val = val[:length]
 	}
 
-	return io.NopCloser(bytes.NewReader(data)), obj, nil
+	return io.NopCloser(bytes.NewReader(val)), obj, nil
 }
 
 func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*storage.Object, error) {

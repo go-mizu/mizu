@@ -84,17 +84,19 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 	}
 
 	pagesPath := filepath.Join(root, "pages.dat")
+	valuesPath := filepath.Join(root, "values.dat")
 	metaPath := filepath.Join(root, "meta.json")
 
 	st := &store{
-		root:     root,
-		syncMode: syncMode,
-		pageSize: pageSize,
-		poolSize: poolSize,
-		metaPath: metaPath,
-		buckets:  make(map[string]time.Time),
-		mp:       newMultipartRegistry(),
-		stopTick: make(chan struct{}),
+		root:             root,
+		syncMode:         syncMode,
+		pageSize:         pageSize,
+		poolSize:         poolSize,
+		metaPath:         metaPath,
+		inlineValueLimit: min(defaultInlineValueLimit, max(64, pageSize/8)),
+		buckets:          make(map[string]time.Time),
+		mp:               newMultipartRegistry(),
+		stopTick:         make(chan struct{}),
 	}
 
 	// Open or create page file.
@@ -108,10 +110,22 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 	defer func() {
 		if !success {
 			pf.Close()
+			if st.valueFile != nil {
+				_ = st.valueFile.Close()
+			}
 		}
 	}()
 
 	st.pageFile = pf
+
+	vf, err := os.OpenFile(valuesPath, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, fmt.Errorf("fox: open values: %w", err)
+	}
+	st.valueFile = vf
+	if info, statErr := vf.Stat(); statErr == nil {
+		st.valueTail = info.Size()
+	}
 
 	// Initialize B-tree and pool.
 	st.pool = newMiniPagePool(poolSize, st)
@@ -168,6 +182,10 @@ const (
 	maxPartNumber = 10000
 
 	maxBuckets = 10000
+
+	defaultInlineValueLimit = 256
+
+	indirectValueMarker = 0xFFFFFFFE
 )
 
 // ---------------------------------------------------------------------------
@@ -195,10 +213,14 @@ type store struct {
 	metaPath string
 
 	pageFile  *os.File
+	valueFile *os.File
 	pageCount int64 // total pages allocated
+	valueTail int64
 
 	tree *btree
 	pool *miniPagePool
+
+	inlineValueLimit int
 
 	mu      sync.RWMutex
 	buckets map[string]time.Time
@@ -360,13 +382,18 @@ func (s *store) Close() error {
 
 	// Sync page file.
 	if s.syncMode != "none" {
-		s.pageFile.Sync()
+		_ = s.pageFile.Sync()
+		_ = s.valueFile.Sync()
 	}
 
 	// Save metadata.
 	s.saveMeta()
 
-	return s.pageFile.Close()
+	if err := s.pageFile.Close(); err != nil {
+		_ = s.valueFile.Close()
+		return err
+	}
+	return s.valueFile.Close()
 }
 
 // ---------------------------------------------------------------------------
@@ -377,10 +404,9 @@ func (s *store) allocPage() (int64, error) {
 	id := s.pageCount
 	s.pageCount++
 
-	// Extend file.
-	off := id * int64(s.pageSize)
-	buf := make([]byte, s.pageSize)
-	if _, err := s.pageFile.WriteAt(buf, off); err != nil {
+	// Extend file without writing a zero page each time.
+	off := (id + 1) * int64(s.pageSize)
+	if err := s.pageFile.Truncate(off); err != nil {
 		return 0, fmt.Errorf("fox: alloc page: %w", err)
 	}
 	return id, nil
@@ -393,7 +419,10 @@ func (s *store) readPage(id int64) ([]byte, error) {
 	if err != nil && err != io.EOF {
 		return nil, fmt.Errorf("fox: read page %d: %w", id, err)
 	}
-	return buf[:n], nil
+	if n < len(buf) {
+		clear(buf[n:])
+	}
+	return buf, nil
 }
 
 func (s *store) writePage(id int64, data []byte) error {
@@ -405,6 +434,51 @@ func (s *store) writePage(id int64, data []byte) error {
 		s.pageFile.Sync()
 	}
 	return nil
+}
+
+type valueRef struct {
+	offset int64
+	size   uint32
+}
+
+func (s *store) appendValue(data []byte) (valueRef, error) {
+	if len(data) == 0 {
+		return valueRef{}, nil
+	}
+	off := s.valueTail
+	if _, err := s.valueFile.WriteAt(data, off); err != nil {
+		return valueRef{}, fmt.Errorf("fox: write value: %w", err)
+	}
+	s.valueTail += int64(len(data))
+	if s.syncMode == "full" {
+		if err := s.valueFile.Sync(); err != nil {
+			return valueRef{}, fmt.Errorf("fox: sync values: %w", err)
+		}
+	}
+	return valueRef{offset: off, size: uint32(len(data))}, nil
+}
+
+func (s *store) readValue(ref valueRef, offset, length int64) ([]byte, error) {
+	size := int64(ref.size)
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > size {
+		offset = size
+	}
+	end := size
+	if length > 0 && offset+length < end {
+		end = offset + length
+	}
+	n := end - offset
+	if n <= 0 {
+		return nil, nil
+	}
+	buf := make([]byte, n)
+	if _, err := s.valueFile.ReadAt(buf, ref.offset+offset); err != nil && err != io.EOF {
+		return nil, fmt.Errorf("fox: read value: %w", err)
+	}
+	return buf, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -477,7 +551,7 @@ func (s *store) rebuildTree() error {
 		if err != nil {
 			continue
 		}
-		entries := decodePageEntries(pageData)
+		entries := decodePageEntriesMeta(pageData)
 		minKey := ""
 		if len(entries) > 0 {
 			minKey = entries[0].key
@@ -516,7 +590,7 @@ func (s *store) rebuildTree() error {
 					if child.leaf {
 						pageData, err := s.readPage(child.pageID)
 						if err == nil {
-							entries := decodePageEntries(pageData)
+							entries := decodePageEntriesMeta(pageData)
 							if len(entries) > 0 {
 								sep = entries[0].key
 							}
@@ -617,12 +691,38 @@ type pageEntry struct {
 	key         string
 	contentType string
 	value       []byte
+	valueRef    valueRef
+	valueSize   uint32
 	created     int64
 	updated     int64
 	tombstone   bool
 }
 
 const pageHeaderSize = 16
+
+const indirectValueRefSize = 12
+
+func (e pageEntry) hasIndirectValue() bool {
+	return e.valueRef.size > 0 || (e.valueSize > 0 && len(e.value) == 0)
+}
+
+func (e pageEntry) objectSize() int64 {
+	return int64(e.valueSize)
+}
+
+func (e pageEntry) encodedValueSize() int {
+	if e.tombstone {
+		return 0
+	}
+	if e.hasIndirectValue() {
+		return indirectValueRefSize
+	}
+	return len(e.value)
+}
+
+func encodedEntrySize(e pageEntry) int {
+	return 2 + len(e.key) + 2 + len(e.contentType) + 4 + e.encodedValueSize() + 8 + 8
+}
 
 // encodePageEntries serializes entries into a page-sized buffer.
 // Returns the buffer and whether it fits.
@@ -637,7 +737,7 @@ func encodePageEntries(entries []pageEntry, pageSize int) ([]byte, bool) {
 		if e.tombstone {
 			continue
 		}
-		needed := 2 + len(e.key) + 2 + len(e.contentType) + 4 + len(e.value) + 8 + 8
+		needed := encodedEntrySize(e)
 		if pos+needed > pageSize {
 			// Doesn't fit.
 			binary.LittleEndian.PutUint16(buf[0:2], uint16(count))
@@ -655,10 +755,19 @@ func encodePageEntries(entries []pageEntry, pageSize int) ([]byte, bool) {
 		copy(buf[pos:], e.contentType)
 		pos += len(e.contentType)
 
-		binary.LittleEndian.PutUint32(buf[pos:], uint32(len(e.value)))
-		pos += 4
-		copy(buf[pos:], e.value)
-		pos += len(e.value)
+		if e.hasIndirectValue() {
+			binary.LittleEndian.PutUint32(buf[pos:], indirectValueMarker)
+			pos += 4
+			binary.LittleEndian.PutUint64(buf[pos:], uint64(e.valueRef.offset))
+			pos += 8
+			binary.LittleEndian.PutUint32(buf[pos:], e.valueRef.size)
+			pos += 4
+		} else {
+			binary.LittleEndian.PutUint32(buf[pos:], uint32(len(e.value)))
+			pos += 4
+			copy(buf[pos:], e.value)
+			pos += len(e.value)
+		}
 
 		binary.LittleEndian.PutUint64(buf[pos:], uint64(e.created))
 		pos += 8
@@ -673,8 +782,17 @@ func encodePageEntries(entries []pageEntry, pageSize int) ([]byte, bool) {
 	return buf, true
 }
 
+// decodePageEntriesMeta decodes page entries without copying inline values.
+func decodePageEntriesMeta(buf []byte) []pageEntry {
+	return decodePageEntriesWithMode(buf, false)
+}
+
 // decodePageEntries reads entries from a raw page buffer.
 func decodePageEntries(buf []byte) []pageEntry {
+	return decodePageEntriesWithMode(buf, true)
+}
+
+func decodePageEntriesWithMode(buf []byte, copyInlineValues bool) []pageEntry {
 	if len(buf) < pageHeaderSize {
 		return nil
 	}
@@ -687,6 +805,7 @@ func decodePageEntries(buf []byte) []pageEntry {
 	pos := pageHeaderSize
 	entries := make([]pageEntry, 0, count)
 
+entryLoop:
 	for i := range count {
 		_ = i
 		if pos+2 > len(buf) {
@@ -718,17 +837,38 @@ func decodePageEntries(buf []byte) []pageEntry {
 		pos += 4
 
 		tomb := vl == tombstoneMarker
+		indirect := vl == indirectValueMarker
 		valLen := int(vl)
-		if tomb {
-			valLen = 0
-		}
+		var (
+			val []byte
+			ref valueRef
+			sz  uint32
+		)
 
-		if pos+valLen > len(buf) {
-			break
+		switch {
+		case tomb:
+			valLen = 0
+		case indirect:
+			if pos+indirectValueRefSize > len(buf) {
+				break entryLoop
+			}
+			ref.offset = int64(binary.LittleEndian.Uint64(buf[pos:]))
+			pos += 8
+			ref.size = binary.LittleEndian.Uint32(buf[pos:])
+			pos += 4
+			sz = ref.size
+			valLen = 0
+		default:
+			if pos+valLen > len(buf) {
+				break entryLoop
+			}
+			sz = uint32(valLen)
+			if copyInlineValues {
+				val = make([]byte, valLen)
+				copy(val, buf[pos:pos+valLen])
+			}
+			pos += valLen
 		}
-		val := make([]byte, valLen)
-		copy(val, buf[pos:pos+valLen])
-		pos += valLen
 
 		var created, updated int64
 		if pos+16 <= len(buf) {
@@ -742,6 +882,8 @@ func decodePageEntries(buf []byte) []pageEntry {
 			key:         key,
 			contentType: ct,
 			value:       val,
+			valueRef:    ref,
+			valueSize:   sz,
 			created:     created,
 			updated:     updated,
 			tombstone:   tomb,
@@ -853,32 +995,42 @@ func (p *miniPagePool) flushMiniPage(mp *miniPage) {
 	// Encode back.
 	buf, fits := encodePageEntries(live, p.st.pageSize)
 	if !fits {
-		// Need to split. For now, just write what fits and drop the rest.
-		// A production implementation would split the leaf node.
-		// We handle this by splitting into two pages.
-		mid := len(live) / 2
-		left := live[:mid]
-		right := live[mid:]
+		chunks := splitEntriesByPage(live, p.st.pageSize)
+		if len(chunks) == 0 {
+			// If a single entry still can't fit, keep the mini-page dirty.
+			return
+		}
 
-		bufL, _ := encodePageEntries(left, p.st.pageSize)
-		p.st.writePage(mp.leafID, bufL)
+		firstBuf, ok := encodePageEntries(chunks[0], p.st.pageSize)
+		if !ok || p.st.writePage(mp.leafID, firstBuf) != nil {
+			return
+		}
 
-		// Allocate new page for right half.
-		newID, err := p.st.allocPage()
-		if err == nil {
-			bufR, _ := encodePageEntries(right, p.st.pageSize)
-			p.st.writePage(newID, bufR)
-
-			// Insert into B-tree.
-			if len(right) > 0 {
-				splitKey := right[0].key
-				p.st.tree.insertLeaf(mp.leafID, newID, splitKey)
+		prevLeafID := mp.leafID
+		for _, chunk := range chunks[1:] {
+			newID, err := p.st.allocPage()
+			if err != nil {
+				return
 			}
+			chunkBuf, ok := encodePageEntries(chunk, p.st.pageSize)
+			if !ok {
+				return
+			}
+			if err := p.st.writePage(newID, chunkBuf); err != nil {
+				return
+			}
+			p.st.tree.insertLeaf(prevLeafID, newID, chunk[0].key)
+			prevLeafID = newID
 		}
 	} else {
-		p.st.writePage(mp.leafID, buf)
+		if err := p.st.writePage(mp.leafID, buf); err != nil {
+			return
+		}
 	}
 
+	if mp.size > minMiniPageSize {
+		p.curSize -= int64(mp.size - minMiniPageSize)
+	}
 	mp.dirty = false
 	mp.entries = mp.entries[:0]
 	mp.size = minMiniPageSize
@@ -911,6 +1063,35 @@ func mergeEntries(disk, mini []pageEntry) []pageEntry {
 		return result[i].key < result[j].key
 	})
 	return result
+}
+
+func splitEntriesByPage(entries []pageEntry, pageSize int) [][]pageEntry {
+	if len(entries) == 0 {
+		return [][]pageEntry{{}}
+	}
+	chunks := make([][]pageEntry, 0, 2)
+	start := 0
+	for start < len(entries) {
+		pos := pageHeaderSize
+		end := start
+		for end < len(entries) {
+			need := encodedEntrySize(entries[end])
+			if end == start && pos+need > pageSize {
+				return nil
+			}
+			if pos+need > pageSize {
+				break
+			}
+			pos += need
+			end++
+		}
+		if end == start {
+			return nil
+		}
+		chunks = append(chunks, entries[start:end])
+		start = end
+	}
+	return chunks
 }
 
 // insertLeaf splits a leaf node in the B-tree by adding a new child.
@@ -979,14 +1160,89 @@ func (t *btree) insertIntoParent(n *btreeNode, oldLeafID, newLeafID int64, split
 // Store: put / get / delete / list
 // ---------------------------------------------------------------------------
 
-func (s *store) put(bkt, key, contentType string, value []byte) (int64, int64) {
-	ck := compositeKey(bkt, key)
-	now := fastNow()
+func (s *store) shouldSpillValue(ck, contentType string, value []byte) bool {
+	if len(value) == 0 {
+		return false
+	}
+	if len(value) > s.inlineValueLimit {
+		return true
+	}
+	// If a single inline record cannot fit in a page, force an indirect value.
+	e := pageEntry{
+		key:         ck,
+		contentType: contentType,
+		value:       value,
+		valueSize:   uint32(len(value)),
+	}
+	return pageHeaderSize+encodedEntrySize(e) > s.pageSize
+}
 
+func (s *store) buildPageEntry(ck, contentType string, value []byte, created, updated int64) (pageEntry, error) {
+	if len(value) > int(^uint32(0)>>1) {
+		return pageEntry{}, fmt.Errorf("fox: value too large")
+	}
+	e := pageEntry{
+		key:         ck,
+		contentType: contentType,
+		created:     created,
+		updated:     updated,
+		valueSize:   uint32(len(value)),
+	}
+	if s.shouldSpillValue(ck, contentType, value) {
+		ref, err := s.appendValue(value)
+		if err != nil {
+			return pageEntry{}, err
+		}
+		e.valueRef = ref
+		e.value = nil
+		return e, nil
+	}
+	e.value = value
+	return e, nil
+}
+
+func (s *store) appendValueFromReader(src io.Reader) (valueRef, int64, error) {
+	const chunkSize = 256 * 1024
+	off := s.valueTail
+	cur := off
+	buf := make([]byte, chunkSize)
+	for {
+		n, err := src.Read(buf)
+		if n > 0 {
+			if _, werr := s.valueFile.WriteAt(buf[:n], cur); werr != nil {
+				s.valueTail = cur
+				return valueRef{}, cur - off, fmt.Errorf("fox: write value: %w", werr)
+			}
+			cur += int64(n)
+		}
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			s.valueTail = cur
+			return valueRef{}, cur - off, fmt.Errorf("fox: read value: %w", err)
+		}
+	}
+	s.valueTail = cur
+	if s.syncMode == "full" && cur > off {
+		if err := s.valueFile.Sync(); err != nil {
+			return valueRef{}, cur - off, fmt.Errorf("fox: sync values: %w", err)
+		}
+	}
+	if cur == off {
+		return valueRef{}, 0, nil
+	}
+	if cur-off > int64(^uint32(0)>>1) {
+		return valueRef{}, cur - off, fmt.Errorf("fox: value too large")
+	}
+	return valueRef{offset: off, size: uint32(cur - off)}, cur - off, nil
+}
+
+func (s *store) putPreparedEntry(ck string, now int64, entry pageEntry) (int64, int64, error) {
 	leaf := s.tree.findLeaf(ck)
 	if leaf == nil {
 		// Should not happen with a properly initialized tree.
-		return now, now
+		return now, now, nil
 	}
 
 	s.pool.mu.Lock()
@@ -996,24 +1252,26 @@ func (s *store) put(bkt, key, contentType string, value []byte) (int64, int64) {
 	found := false
 	for i := range mp.entries {
 		if mp.entries[i].key == ck {
-			mp.entries[i].value = append([]byte(nil), value...)
-			mp.entries[i].contentType = contentType
-			mp.entries[i].updated = now
-			mp.entries[i].tombstone = false
+			oldSize := encodedEntrySize(mp.entries[i])
+			if mp.entries[i].created != 0 {
+				entry.created = mp.entries[i].created
+			}
+			entry.updated = now
+			entry.tombstone = false
+			mp.entries[i] = entry
+			newSize := encodedEntrySize(mp.entries[i])
+			if delta := newSize - oldSize; delta != 0 {
+				mp.size += delta
+				s.pool.curSize += int64(delta)
+			}
 			found = true
 			break
 		}
 	}
 
 	if !found {
-		newSize := 2 + len(ck) + 2 + len(contentType) + 4 + len(value) + 16
-		mp.entries = append(mp.entries, pageEntry{
-			key:         ck,
-			contentType: contentType,
-			value:       append([]byte(nil), value...),
-			created:     now,
-			updated:     now,
-		})
+		newSize := encodedEntrySize(entry)
+		mp.entries = append(mp.entries, entry)
 		mp.size += newSize
 		s.pool.curSize += int64(newSize)
 	}
@@ -1026,7 +1284,31 @@ func (s *store) put(bkt, key, contentType string, value []byte) (int64, int64) {
 
 	s.pool.mu.Unlock()
 
-	return now, now
+	return now, now, nil
+}
+
+func (s *store) put(bkt, key, contentType string, value []byte) (int64, int64, error) {
+	ck := compositeKey(bkt, key)
+	now := fastNow()
+	entry, err := s.buildPageEntry(ck, contentType, value, now, now)
+	if err != nil {
+		return now, now, err
+	}
+	return s.putPreparedEntry(ck, now, entry)
+}
+
+func (s *store) putValueRef(bkt, key, contentType string, ref valueRef, size uint32) (int64, int64, error) {
+	ck := compositeKey(bkt, key)
+	now := fastNow()
+	entry := pageEntry{
+		key:         ck,
+		contentType: contentType,
+		valueRef:    ref,
+		valueSize:   size,
+		created:     now,
+		updated:     now,
+	}
+	return s.putPreparedEntry(ck, now, entry)
 }
 
 func (s *store) get(bkt, key string) (pageEntry, bool) {
@@ -1101,14 +1383,16 @@ func (s *store) del(bkt, key string) bool {
 	}
 
 	// Add tombstone entry.
-	mp.entries = append(mp.entries, pageEntry{
+	tomb := pageEntry{
 		key:       ck,
 		created:   now,
 		updated:   now,
 		tombstone: true,
-	})
-	mp.size += 2 + len(ck) + 16 + 4
-	s.pool.curSize += int64(2 + len(ck) + 16 + 4)
+	}
+	mp.entries = append(mp.entries, tomb)
+	sz := encodedEntrySize(tomb)
+	mp.size += sz
+	s.pool.curSize += int64(sz)
 	mp.dirty = true
 	s.pool.mu.Unlock()
 
@@ -1144,13 +1428,13 @@ func (s *store) list(bkt, prefix string) []listResult {
 				continue
 			}
 			_, k := splitCompositeKey(e.key)
-			results = append(results, listResult{
-				key:         k,
-				contentType: e.contentType,
-				size:        int64(len(e.value)),
-				created:     e.created,
-				updated:     e.updated,
-			})
+				results = append(results, listResult{
+					key:         k,
+					contentType: e.contentType,
+					size:        e.objectSize(),
+					created:     e.created,
+					updated:     e.updated,
+				})
 			seen[e.key] = true
 		}
 	}
@@ -1176,8 +1460,8 @@ func (s *store) collectFromNode(n *btreeNode, prefix string, seen, tombstones ma
 		if err != nil {
 			return
 		}
-		entries := decodePageEntries(data)
-		for _, e := range entries {
+			entries := decodePageEntriesMeta(data)
+			for _, e := range entries {
 			if !strings.HasPrefix(e.key, prefix) {
 				continue
 			}
@@ -1185,13 +1469,13 @@ func (s *store) collectFromNode(n *btreeNode, prefix string, seen, tombstones ma
 				continue
 			}
 			_, k := splitCompositeKey(e.key)
-			*results = append(*results, listResult{
-				key:         k,
-				contentType: e.contentType,
-				size:        int64(len(e.value)),
-				created:     e.created,
-				updated:     e.updated,
-			})
+				*results = append(*results, listResult{
+					key:         k,
+					contentType: e.contentType,
+					size:        e.objectSize(),
+					created:     e.created,
+					updated:     e.updated,
+				})
 			seen[e.key] = true
 		}
 		return
@@ -1260,6 +1544,29 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 		}
 	}
 
+	// Stream large values directly into values.dat to keep peak heap low.
+	if size > int64(b.st.inlineValueLimit) && size >= 0 {
+		b.st.mu.Lock()
+		ref, actualSize, err := b.st.appendValueFromReader(src)
+		if err == nil {
+			created, updated, putErr := b.st.putValueRef(b.name, key, contentType, ref, uint32(actualSize))
+			b.st.mu.Unlock()
+			if putErr != nil {
+				return nil, putErr
+			}
+			return &storage.Object{
+				Bucket:      b.name,
+				Key:         key,
+				Size:        actualSize,
+				ContentType: contentType,
+				Created:     time.Unix(0, created),
+				Updated:     time.Unix(0, updated),
+			}, nil
+		}
+		b.st.mu.Unlock()
+		return nil, err
+	}
+
 	var data []byte
 	if size >= 0 {
 		data = make([]byte, size)
@@ -1289,9 +1596,14 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 		size = int64(len(data))
 	}
 
+	size = int64(len(data))
+
 	b.st.mu.Lock()
-	created, updated := b.st.put(b.name, key, contentType, data)
+	created, updated, err := b.st.put(b.name, key, contentType, data)
 	b.st.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
 
 	return &storage.Object{
 		Bucket:      b.name,
@@ -1330,12 +1642,12 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 		realKey = key
 	}
 
-	data := e.value
+	objSize := e.objectSize()
 
 	obj := &storage.Object{
 		Bucket:      b.name,
 		Key:         key,
-		Size:        int64(len(data)),
+		Size:        objSize,
 		ContentType: e.contentType,
 		Created:     time.Unix(0, e.created),
 		Updated:     time.Unix(0, e.updated),
@@ -1345,19 +1657,23 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 	if offset < 0 {
 		offset = 0
 	}
-	if offset > int64(len(data)) {
-		offset = int64(len(data))
+	if offset > objSize {
+		offset = objSize
 	}
-	end := int64(len(data))
+	end := objSize
 	if length > 0 && offset+length < end {
 		end = offset + length
 	}
-	slice := data[offset:end]
+	if e.hasIndirectValue() {
+		return &valueSectionReader{
+			r: io.NewSectionReader(b.st.valueFile, e.valueRef.offset+offset, end-offset),
+		}, obj, nil
+	}
 
-	// Copy to avoid referencing page data.
+	data := e.value
+	slice := data[offset:end]
 	result := make([]byte, len(slice))
 	copy(result, slice)
-
 	return &sliceReader{data: result}, obj, nil
 }
 
@@ -1404,7 +1720,7 @@ func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*s
 	return &storage.Object{
 		Bucket:      b.name,
 		Key:         key,
-		Size:        int64(len(e.value)),
+		Size:        e.objectSize(),
 		ContentType: e.contentType,
 		Created:     time.Unix(0, e.created),
 		Updated:     time.Unix(0, e.updated),
@@ -1457,12 +1773,26 @@ func (b *bucket) Copy(ctx context.Context, dstKey string, srcBucket, srcKey stri
 		return nil, storage.ErrNotExist
 	}
 
-	created, updated := b.st.put(b.name, dstKey, e.contentType, e.value)
+	copyBytes := e.value
+	var err error
+	if e.hasIndirectValue() {
+		copyBytes, err = b.st.readValue(e.valueRef, 0, int64(e.valueRef.size))
+		if err != nil {
+			return nil, err
+		}
+	} else if len(copyBytes) > 0 {
+		copyBytes = append([]byte(nil), copyBytes...)
+	}
+
+	created, updated, err := b.st.put(b.name, dstKey, e.contentType, copyBytes)
+	if err != nil {
+		return nil, err
+	}
 
 	return &storage.Object{
 		Bucket:      b.name,
 		Key:         dstKey,
-		Size:        int64(len(e.value)),
+		Size:        e.objectSize(),
 		ContentType: e.contentType,
 		Created:     time.Unix(0, created),
 		Updated:     time.Unix(0, updated),
@@ -1683,7 +2013,13 @@ func (d *dir) Move(ctx context.Context, dstPath string, opts storage.Options) (s
 		if !ok {
 			continue
 		}
-		d.b.st.put(d.b.name, newKey, e.contentType, e.value)
+		payload := e.value
+		if e.hasIndirectValue() {
+			payload, _ = d.b.st.readValue(e.valueRef, 0, int64(e.valueRef.size))
+		} else if len(payload) > 0 {
+			payload = append([]byte(nil), payload...)
+		}
+		_, _, _ = d.b.st.put(d.b.name, newKey, e.contentType, payload)
 		d.b.st.del(d.b.name, r.key)
 	}
 	d.b.st.mu.Unlock()
@@ -1831,20 +2167,27 @@ func (b *bucket) CopyPart(ctx context.Context, mu *storage.MultipartUpload, numb
 		return nil, storage.ErrNotExist
 	}
 
-	data := e.value
-	if offset > 0 {
-		if offset > int64(len(data)) {
-			offset = int64(len(data))
+	var partBytes []byte
+	if e.hasIndirectValue() {
+		var err error
+		partBytes, err = b.st.readValue(e.valueRef, offset, length)
+		if err != nil {
+			return nil, err
 		}
-		data = data[offset:]
+	} else {
+		data := e.value
+		if offset > 0 {
+			if offset > int64(len(data)) {
+				offset = int64(len(data))
+			}
+			data = data[offset:]
+		}
+		if length > 0 && length < int64(len(data)) {
+			data = data[:length]
+		}
+		partBytes = make([]byte, len(data))
+		copy(partBytes, data)
 	}
-	if length > 0 && length < int64(len(data)) {
-		data = data[:length]
-	}
-
-	// Copy the slice.
-	partBytes := make([]byte, len(data))
-	copy(partBytes, data)
 
 	return b.UploadPart(ctx, mu, number, &sliceReaderForUpload{data: partBytes}, int64(len(partBytes)), opts)
 }
@@ -1922,8 +2265,11 @@ func (b *bucket) CompleteMultipart(ctx context.Context, mu *storage.MultipartUpl
 	ct := upload.contentType
 
 	b.st.mu.Lock()
-	created, updated := b.st.put(b.name, upload.key, ct, assembled)
+	created, updated, err := b.st.put(b.name, upload.key, ct, assembled)
 	b.st.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
 
 	return &storage.Object{
 		Bucket:      b.name,
@@ -1978,6 +2324,20 @@ func (r *sliceReader) WriteTo(w io.Writer) (int64, error) {
 }
 
 func (r *sliceReader) Close() error { return nil }
+
+type valueSectionReader struct {
+	r *io.SectionReader
+}
+
+func (r *valueSectionReader) Read(p []byte) (int, error) {
+	return r.r.Read(p)
+}
+
+func (r *valueSectionReader) WriteTo(w io.Writer) (int64, error) {
+	return io.Copy(w, r.r)
+}
+
+func (r *valueSectionReader) Close() error { return nil }
 
 // sliceReaderForUpload is a simple io.Reader for passing part data.
 type sliceReaderForUpload struct {
