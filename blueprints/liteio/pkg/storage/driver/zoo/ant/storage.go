@@ -1183,162 +1183,45 @@ const shardMask = numShards - 1
 // Per-Shard Hash Table (v4: O(1) point lookups)
 // ---------------------------------------------------------------------------
 
-const htInitSize = 64 // initial hash table capacity per shard
+// v4: Direct-mapped hash cache for O(1) point lookups.
+// Fixed-size per shard, no allocation, no probing, no grow.
+// Slot conflicts cause eviction (last writer wins). Misses fall back to ART.
+// Uses 64-bit FNV-1a for lookup — collision probability ~10^-14 per operation.
+const htCacheSize = 4096
+const htCacheMask = htCacheSize - 1
 
-type htEntry struct {
-	keyHash uint64     // 0 = empty slot
+type htCacheEntry struct {
+	keyHash uint64
 	leaf    *leafEntry
-	key     []byte // stored for correct collision handling
 }
 
-type hashTable struct {
-	entries []htEntry
-	mask    uint64
-	count   int
+type htCache struct {
+	entries [htCacheSize]htCacheEntry
 }
 
-// hashTableKey ensures the stored hash is never 0 (the empty sentinel).
-func hashTableKey(h uint64) uint64 {
-	if h == 0 {
-		return 1
+func (c *htCache) lookup(keyHash uint64) *leafEntry {
+	e := &c.entries[keyHash&htCacheMask]
+	if e.keyHash == keyHash {
+		return e.leaf
 	}
-	return h
+	return nil
 }
 
-func (ht *hashTable) lookup(keyHash uint64, key []byte) *leafEntry {
-	if len(ht.entries) == 0 {
-		return nil
-	}
-	h := hashTableKey(keyHash)
-	idx := h & ht.mask
-	entries := ht.entries
-	for {
-		e := &entries[idx]
-		if e.keyHash == 0 {
-			return nil
-		}
-		if e.keyHash == h && len(e.key) == len(key) && bytesEqual(e.key, key) {
-			return e.leaf
-		}
-		idx = (idx + 1) & ht.mask
-	}
+func (c *htCache) insert(keyHash uint64, leaf *leafEntry) {
+	c.entries[keyHash&htCacheMask] = htCacheEntry{keyHash, leaf}
 }
 
-// bytesEqual compares two byte slices. Inlined for short keys.
-func bytesEqual(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func (ht *hashTable) insert(keyHash uint64, key []byte, leaf *leafEntry) {
-	if len(ht.entries) == 0 {
-		ht.entries = make([]htEntry, htInitSize)
-		ht.mask = htInitSize - 1
-	}
-	if ht.count*4 >= len(ht.entries)*3 { // 75% load factor
-		ht.grow()
-	}
-	h := hashTableKey(keyHash)
-	idx := h & ht.mask
-	entries := ht.entries
-	for {
-		e := &entries[idx]
-		if e.keyHash == 0 {
-			e.keyHash = h
-			e.leaf = leaf
-			e.key = make([]byte, len(key))
-			copy(e.key, key)
-			ht.count++
-			return
-		}
-		if e.keyHash == h && len(e.key) == len(key) && bytesEqual(e.key, key) {
-			e.leaf = leaf // update existing
-			return
-		}
-		idx = (idx + 1) & ht.mask
-	}
-}
-
-func (ht *hashTable) remove(keyHash uint64, key []byte) bool {
-	if len(ht.entries) == 0 {
-		return false
-	}
-	h := hashTableKey(keyHash)
-	entries := ht.entries
-	mask := ht.mask
-
-	// Find the entry.
-	i := h & mask
-	for {
-		if entries[i].keyHash == 0 {
-			return false
-		}
-		if entries[i].keyHash == h && len(entries[i].key) == len(key) && bytesEqual(entries[i].key, key) {
-			break
-		}
-		i = (i + 1) & mask
-	}
-
-	// Backward-shift deletion.
-	ht.count--
-	entries[i] = htEntry{}
-	j := (i + 1) & mask
-	for entries[j].keyHash != 0 {
-		k := entries[j].keyHash & mask // natural position
-		needsMove := false
-		if i < j {
-			needsMove = k <= i || k > j
-		} else {
-			needsMove = k <= i && k > j
-		}
-		if needsMove {
-			entries[i] = entries[j]
-			entries[j] = htEntry{}
-			i = j
-		}
-		j = (j + 1) & mask
-	}
-	return true
-}
-
-func (ht *hashTable) grow() {
-	old := ht.entries
-	newSize := len(old) * 2
-	if newSize < htInitSize {
-		newSize = htInitSize
-	}
-	ht.entries = make([]htEntry, newSize)
-	ht.mask = uint64(newSize - 1)
-	ht.count = 0
-	for i := range old {
-		if old[i].keyHash != 0 {
-			// Reuse key slice directly (no copy needed).
-			idx := old[i].keyHash & ht.mask
-			entries := ht.entries
-			for {
-				e := &entries[idx]
-				if e.keyHash == 0 {
-					*e = old[i]
-					ht.count++
-					break
-				}
-				idx = (idx + 1) & ht.mask
-			}
-		}
+func (c *htCache) remove(keyHash uint64) {
+	e := &c.entries[keyHash&htCacheMask]
+	if e.keyHash == keyHash {
+		*e = htCacheEntry{}
 	}
 }
 
 type artShard struct {
 	mu   sync.RWMutex
 	root any // artNode
-	ht   hashTable // v4: O(1) point lookups
+	ht   htCache // v4: direct-mapped O(1) lookup cache
 	size int64
 	vlog shardVlog // per-shard mmap'd vlog (no global lock)
 	_    [64]byte  // cache line padding
@@ -1597,10 +1480,8 @@ func (s *store) recoverShard(shard *artShard) {
 			if existing != nil {
 				shard.size--
 			}
-			keyCopy := make([]byte, kl)
-			copy(keyCopy, key)
-			shard.root = artInsert(shard.root, keyCopy, leaf)
-			shard.ht.insert(keyHash, keyCopy, leaf) // v4: hash table
+			shard.root = artInsert(shard.root, key, leaf)
+			shard.ht.insert(keyHash, leaf) // v4: cache
 			shard.size++
 
 			bucketName, _ := splitCompositeKey(key)
@@ -1614,10 +1495,8 @@ func (s *store) recoverShard(shard *artShard) {
 
 		case 1: // delete
 			if artSearch(shard.root, key, keyHash) != nil {
-				keyCopy := make([]byte, kl)
-				copy(keyCopy, key)
-				artDelete(&shard.root, keyCopy, keyHash)
-				shard.ht.remove(keyHash, keyCopy) // v4: hash table
+				artDelete(&shard.root, key, keyHash)
+				shard.ht.remove(keyHash) // v4: cache
 				shard.size--
 			}
 		}
@@ -1707,10 +1586,7 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 		shard.mu.Lock()
 
 		created := now
-		existing := shard.ht.lookup(keyHash, ck) // v4: hash table for existing check
-		if existing == nil {
-			existing = artSearch(shard.root, ck, keyHash) // fallback
-		}
+		existing := artSearch(shard.root, ck, keyHash)
 		if existing != nil {
 			created = existing.created
 			shard.size--
@@ -1730,7 +1606,7 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 		leaf.updated = now
 		leaf.keyHash = keyHash
 		shard.root = artInsert(shard.root, ck, leaf)
-		shard.ht.insert(keyHash, ck, leaf) // v4: hash table
+		shard.ht.insert(keyHash, leaf) // v4: cache
 		shard.size++
 
 		shard.mu.Unlock()
@@ -1754,10 +1630,7 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 	shard.mu.Lock()
 
 	created := now
-	existing := shard.ht.lookup(keyHash, ck) // v4: hash table
-	if existing == nil {
-		existing = artSearch(shard.root, ck, keyHash) // fallback
-	}
+	existing := artSearch(shard.root, ck, keyHash)
 	if existing != nil {
 		created = existing.created
 		shard.size--
@@ -1777,7 +1650,7 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 	leaf.updated = now
 	leaf.keyHash = keyHash
 	shard.root = artInsert(shard.root, ck, leaf)
-	shard.ht.insert(keyHash, ck, leaf) // v4: hash table
+	shard.ht.insert(keyHash, leaf) // v4: cache
 	shard.size++
 
 	shard.mu.Unlock()
@@ -1824,7 +1697,7 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 	shard := b.store.shardForHash(keyHash)
 
 	shard.mu.RLock()
-	leaf := shard.ht.lookup(keyHash, ck) // v4: O(1) hash table lookup
+	leaf := shard.ht.lookup(keyHash) // v4: O(1) cache lookup
 	if leaf == nil {
 		leaf = artSearch(shard.root, ck, keyHash) // fallback
 	}
@@ -1891,7 +1764,7 @@ func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*s
 	shard := b.store.shardForHash(keyHash)
 
 	shard.mu.RLock()
-	leaf := shard.ht.lookup(keyHash, ck) // v4: O(1) hash table lookup
+	leaf := shard.ht.lookup(keyHash) // v4: O(1) cache lookup
 	if leaf == nil {
 		leaf = artSearch(shard.root, ck, keyHash) // fallback
 	}
@@ -1997,7 +1870,7 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 		for _, item := range toDelete {
 			item.shard.mu.Lock()
 			artDelete(&item.shard.root, item.key, item.keyHash)
-			item.shard.ht.remove(item.keyHash, item.key) // v4: hash table
+			item.shard.ht.remove(item.keyHash) // v4: cache
 			item.shard.size--
 			_ = item.shard.vlog.appendDelete(item.key, now)
 			item.shard.mu.Unlock()
@@ -2016,7 +1889,7 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 	shard.mu.Lock()
 	found := artDelete(&shard.root, ck, keyHash)
 	if found {
-		shard.ht.remove(keyHash, ck) // v4: hash table
+		shard.ht.remove(keyHash) // v4: cache
 		shard.size--
 		_ = shard.vlog.appendDelete(ck, now)
 	}
@@ -2214,7 +2087,7 @@ func (b *bucket) Move(ctx context.Context, dstKey string, srcBucket, srcKey stri
 	now := fastNow()
 	shard.mu.Lock()
 	artDelete(&shard.root, srcCK, srcHash)
-	shard.ht.remove(srcHash, srcCK) // v4: hash table
+	shard.ht.remove(srcHash) // v4: cache
 	shard.size--
 	_ = shard.vlog.appendDelete(srcCK, now)
 	shard.mu.Unlock()

@@ -2543,3 +2543,192 @@ Comparison vs v25 full subprocess (`report/bear_v25_full_subproc`):
 2. Add a raw split microbenchmark to reduce local `cmd/bench` noise while tuning
 3. Revisit composite-key allocation with a non-pool strategy (e.g. short inline
    key paths) only after raw writer CPU drops
+
+## 22. v27 optimization (append-split suffix batch copy) + regression fix
+
+This section records v27, which continued the same profiler-guided line of work:
+reduce `writeLeafPageRawSortedSized` time in append-heavy split paths by
+specializing right-page rendering.
+
+### 22.1 Root cause entering v27
+
+From `report/bear_v26c_profile_write1k`:
+
+- `writeLeafPageRawSortedSized`: **58.23% flat**
+- `syscall.rawsyscalln`: **13.92% flat**
+
+Interpretation:
+
+- The raw leaf writer remained the dominant CPU hotspot, so v27 targeted the
+  append-heavy split path to reduce per-entry copy work.
+
+### 22.2 v27 changes implemented
+
+Implemented:
+
+1. `writeLeafPageRawAppendSplitRight(...)` specialized writer for append-heavy
+   raw split right pages
+2. It batch-copies a tightly-packed old suffix from the source page as one
+   contiguous block (instead of per-entry data copies)
+3. It still writes slots per entry (correct offsets/heads preserved)
+4. Safe fallback to generic `writeLeafPageRawSortedSized(...)` when the suffix is
+   not tightly packed or validation fails
+5. `splitLeafInsertRaw(...)` updated to use the specialized append-right writer
+6. `rewriteLeafPrefixInPlace(...)` retained for left-page metadata-only update on
+   append-heavy splits
+
+### 22.3 Regression found in initial v27 attempt (and fixed)
+
+The first v27 non-profile focused `Write/1KB` run (`report/bear_v27_focus_write1k`)
+hit a real correctness bug:
+
+- Panic: `runtime error: slice bounds out of range ...`
+
+Root cause:
+
+- `rewriteLeafPrefixInPlace(...)` assumed the last logical entry in the left
+  split half always had the minimum (lowest) data offset.
+- That is not guaranteed after in-place updates/deletes, where slot order and
+  data offsets can diverge from packed monotonic layout.
+- The wrong `freeOff` could corrupt the page and later cause invalid page access.
+
+Fix (final v27b code):
+
+1. `rewriteLeafPrefixInPlace(...)` now validates that the last logical left entry
+   is also the lowest-offset surviving left entry
+2. It validates bounds/size consistency of left refs before metadata-only rewrite
+3. If validation fails, the fast path returns `false` and existing safe fallback
+   paths are used
+
+### 22.4 Commands used (final v27b)
+
+Focused profiled `Write/1KB`:
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --filter 'Write/1KB' \
+  --profile \
+  --progress=false \
+  --formats json \
+  --output ./report/bear_v27b_profile_write1k
+```
+
+Focused non-profile `Write/1KB`:
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --filter 'Write/1KB' \
+  --progress=false \
+  --formats json \
+  --output ./report/bear_v27b_focus_write1k
+```
+
+Full quick subprocess suite:
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --isolate-embedded-benchmarks-subprocess \
+  --progress=false \
+  --formats json \
+  --output ./report/bear_v27b_full_subproc
+```
+
+Profiler inspection:
+
+```bash
+go tool pprof -top ./report/bear_v27b_profile_write1k/bear/cpu.pprof
+go tool pprof -top -alloc_space ./report/bear_v27b_profile_write1k/bear/allocs.pprof
+```
+
+### 22.5 v27b focused `Write/1KB` results
+
+Profiled artifact:
+
+- `report/bear_v27b_profile_write1k`
+
+Results:
+
+- `Write/1KB`: **1,298,151 ops/s**
+- Peak RSS: **94.766 MB** (`<100MB` verified)
+- Peak Go Heap: **~30.0 MB**
+- Peak Go Sys: **~91.5 MB**
+- Errors: `0`
+
+CPU profile (`pprof -top`):
+
+- `writeLeafPageRawSortedSized`: **58.23% flat**
+- `syscall.rawsyscalln`: **12.66% flat**
+
+Non-profile artifact:
+
+- `report/bear_v27b_focus_write1k`
+
+Results:
+
+- `Write/1KB`: **1,361,502 ops/s**
+- Peak RSS: **86.906 MB** (`<100MB` verified)
+- Errors: `0`
+
+Alloc-space (`pprof -alloc_space`) highlights:
+
+- `bucket.Write` still dominates alloc-space
+- `splitLeafInsertRaw` remains relatively small in alloc-space (few MB scale)
+
+### 22.6 v27b full quick subprocess suite
+
+Artifact:
+
+- `report/bear_v27b_full_subproc`
+
+Results:
+
+- Benchmarks: `40`
+- Errors: `0`
+- Peak RSS: **547.2 MB**
+- Peak Go Heap: **36.8 MB**
+- Peak Go Sys: **299.7 MB**
+- Final disk: **6681.3 MB**
+- `Write/1KB`: **1,329,233 ops/s**
+- `Write/64KB`: **54,961 ops/s**
+- `Delete`: **4,237,852 ops/s**
+
+Comparison vs v26 full subprocess (`report/bear_v26_full_subproc`):
+
+- Peak RSS: `554.7 MB -> 547.2 MB` (**-1.4%**)
+- Peak Go Sys: `303.8 MB -> 299.7 MB` (**-1.4%**)
+- `Write/1KB`: `1,148,937 -> 1,329,233` (**+15.7%** in this run set)
+- `Write/64KB`: `30,748 -> 54,961` (**+78.7%** in this run set)
+- `Delete`: `4,436,825 -> 4,237,852` (**-4.5%**, mixed full-suite tradeoff)
+
+### 22.7 Net interpretation of v27
+
+- The append-split suffix batch-copy path reduces work in the targeted split
+  scenario and improves full-suite RSS/Go Sys again.
+- A real correctness regression in the initial v27 fast path was caught by a
+  focused non-profile `cmd/bench` run and fixed with stronger validation.
+- Focused profiled `Write/1KB` throughput remains noisy across local runs, but
+  the specialization is retained because:
+  - it is now correct (validated)
+  - it lowers full-suite RSS/Go Sys in v27b
+  - it is aligned with the identified hotspot (`writeLeafPageRawSortedSized`)
+
+### 22.8 Remaining bottlenecks after v27
+
+1. `writeLeafPageRawSortedSized` remains the dominant focused `Write/1KB` CPU hotspot
+2. `bucket.Write` + key construction still dominate alloc-space
+3. `Write/64KB` remains significantly syscall-bound
+4. Full-suite process RSS remains far above `<100MB`
+
+### 22.9 Suggested v28+ directions
+
+1. Add a dedicated raw split microbenchmark (append/prefix/non-packed cases) to
+   tune split serialization with less `cmd/bench` noise
+2. Further specialize raw writer paths that can avoid per-entry `copy` calls
+3. Continue profiler-guided work on `bucket.Write` allocation pressure only after
+   raw leaf writer CPU is reduced further
