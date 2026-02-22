@@ -28,7 +28,7 @@ const (
 	hashTombstone = 1
 
 	defaultShardCount    = 64  // shards per stripe (4 stripes × 64 = 256 total)
-	defaultSlotsPerShard = 256 // 256 slots × 64B = 16KB per shard
+	defaultSlotsPerShard = 512 // 512 slots × 64B = 32KB per shard (larger to reduce rehash)
 	maxLoadPercent       = 75
 	defaultStringPoolCap = 64 * 1024 // 64KB per shard (vs 4MB for single index)
 )
@@ -472,7 +472,17 @@ func (si *shardedIndex) getWithHash(bucket, key string, h uint64) (indexResult, 
 		}
 
 		if slot.Hash == h && shard.matchCompositeKey(slot.StrOff, slot.StrLen, bucket, key) {
-			ct := internContentType(shard.readStringCopy(slot.StrOff+uint64(slot.StrLen), uint32(slot.CtLen)))
+			// Zero-copy content type: check intern map with mmap view (no alloc).
+			// Only copy if not already interned.
+			ctView := shard.readStringView(slot.StrOff+uint64(slot.StrLen), uint32(slot.CtLen))
+			ct := ctView
+			if v, ok := contentTypeIntern.Load(ctView); ok {
+				ct = v.(string)
+			} else {
+				ctCopy := shard.readStringCopy(slot.StrOff+uint64(slot.StrLen), uint32(slot.CtLen))
+				contentTypeIntern.Store(ctCopy, ctCopy)
+				ct = ctCopy
+			}
 			r := indexResult{
 				valOff:      slot.ValOff,
 				valSize:     slot.ValSize,

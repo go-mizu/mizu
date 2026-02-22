@@ -28,34 +28,54 @@ const (
 // pwriteThreshold: values >= this use pwrite instead of mmap memcpy.
 const pwriteThreshold = 4096
 
-// writeBufPools: capped at 10MB to stay within memory budget.
-// Horse has 100MB and 256MB tiers — pony omits those.
-var writeBufPools = [3]sync.Pool{
-	{New: func() any { b := make([]byte, 64*1024+1024); return &b }},   // 65KB
-	{New: func() any { b := make([]byte, 1024*1024+1024); return &b }}, // ~1MB
-	{New: func() any { b := make([]byte, 10*1024*1024+1024); return &b }}, // ~10MB
+// writeBufPool is a GC-resistant free list that survives GC cycles.
+// Unlike sync.Pool, buffers are retained across GC — eliminates 3.38 GB of
+// re-allocations from pool drain (311 GC cycles in v4 baseline).
+// Capped at 2 buffers per tier to limit memory (~22 MB max retained).
+var wbPool struct {
+	mu    sync.Mutex
+	tiers [3]struct {
+		bufs [][]byte
+		cap  int64
+	}
 }
 
-func getWriteBuf(size int64) ([]byte, *[]byte, int) {
-	tiers := [3]int64{
-		64*1024 + 1024,
-		1024*1024 + 1024,
-		10*1024*1024 + 1024,
-	}
-	for i, tier := range tiers {
-		if size <= tier {
-			bp := writeBufPools[i].Get().(*[]byte)
-			return (*bp)[:size], bp, i
+const maxBufsPerTier = 2
+
+func init() {
+	wbPool.tiers[0].cap = 64*1024 + 1024
+	wbPool.tiers[1].cap = 1024*1024 + 1024
+	wbPool.tiers[2].cap = 10*1024*1024 + 1024
+}
+
+func getWriteBuf(size int64) ([]byte, int) {
+	wbPool.mu.Lock()
+	for i := range wbPool.tiers {
+		if size <= wbPool.tiers[i].cap {
+			n := len(wbPool.tiers[i].bufs)
+			if n > 0 {
+				buf := wbPool.tiers[i].bufs[n-1]
+				wbPool.tiers[i].bufs = wbPool.tiers[i].bufs[:n-1]
+				wbPool.mu.Unlock()
+				return buf[:size], i
+			}
+			wbPool.mu.Unlock()
+			return make([]byte, size, wbPool.tiers[i].cap), i
 		}
 	}
-	b := make([]byte, size)
-	return b, nil, -1
+	wbPool.mu.Unlock()
+	return make([]byte, size), -1
 }
 
-func putWriteBuf(bp *[]byte, poolIdx int) {
-	if bp != nil && poolIdx >= 0 {
-		writeBufPools[poolIdx].Put(bp)
+func putWriteBuf(buf []byte, tierIdx int) {
+	if tierIdx < 0 {
+		return
 	}
+	wbPool.mu.Lock()
+	if len(wbPool.tiers[tierIdx].bufs) < maxBufsPerTier {
+		wbPool.tiers[tierIdx].bufs = append(wbPool.tiers[tierIdx].bufs, buf[:cap(buf)])
+	}
+	wbPool.mu.Unlock()
 }
 
 type mmapRegion struct {
@@ -229,10 +249,10 @@ func (v *volume) appendRecord(recType byte, bucket, key, contentType string, val
 			return 0, 0, err
 		}
 	}
-	buf, bp, poolIdx := getWriteBuf(totalSize)
+	buf, poolIdx := getWriteBuf(totalSize)
 	valPos := v.buildRecordBuf(buf, recType, bucket, key, contentType, value, timestamp)
 	_, err := v.fd.WriteAt(buf, offset)
-	putWriteBuf(bp, poolIdx)
+	putWriteBuf(buf, poolIdx)
 	if err != nil {
 		return 0, 0, fmt.Errorf("pony: pwrite: %w", err)
 	}
@@ -298,7 +318,7 @@ func (v *volume) writeFromReader(recType byte, bucket, key, contentType string, 
 		}
 	}
 
-	buf, bp, poolIdx := getWriteBuf(totalSize)
+	buf, poolIdx := getWriteBuf(totalSize)
 	buf[0] = recType
 	pos := 5
 
@@ -324,7 +344,7 @@ func (v *volume) writeFromReader(recType byte, bucket, key, contentType string, 
 	if size > 0 {
 		if _, err := io.ReadFull(src, buf[pos:pos+int(size)]); err != nil {
 			if err != io.EOF && err != io.ErrUnexpectedEOF {
-				putWriteBuf(bp, poolIdx)
+				putWriteBuf(buf, poolIdx)
 				return 0, fmt.Errorf("pony: read value: %w", err)
 			}
 		}
@@ -339,7 +359,7 @@ func (v *volume) writeFromReader(recType byte, bucket, key, contentType string, 
 	}
 
 	_, err := v.fd.WriteAt(buf, offset)
-	putWriteBuf(bp, poolIdx)
+	putWriteBuf(buf, poolIdx)
 	if err != nil {
 		return 0, fmt.Errorf("pony: pwrite: %w", err)
 	}

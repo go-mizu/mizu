@@ -1,10 +1,9 @@
 // Package kestrel implements a high-performance in-memory storage driver
 // using a hybrid architecture: sharded Go maps + per-P value allocation.
 //
-// Architecture (v3):
-//   - 1024 sharded Go maps (minimizes lock contention with 200+ goroutines)
+// Architecture (v4):
+//   - 256 pointer-allocated sharded Go maps (cache isolation, matches falcon)
 //   - Per-P value allocation via sync.Pool chunks (zero lock contention on writes)
-//   - Mmap arena for composite key strings (GC-invisible map keys)
 //   - Pooled hotRecord structs via sync.Pool (eliminates per-record heap alloc)
 //   - Stack-buffer composite keys for reads (allocation-free lookups)
 //   - Pointer returns from hotGet (zero-copy field access)
@@ -41,7 +40,7 @@ const (
 	maxPartNumber = 10000
 	maxBuckets    = 10000
 	dirPerms      = 0750
-	numShards     = 1024
+	numShards     = 256
 	shardMask     = numShards - 1
 )
 
@@ -59,6 +58,8 @@ func fastTime() time.Time { return time.Unix(0, fastNow()) }
 // ---------------------------------------------------------------------------
 // Composite key helpers (allocation-free for read path)
 // ---------------------------------------------------------------------------
+
+func compositeKey(bucket, key string) string { return bucket + "\x00" + key }
 
 func compositeKeyBuf(buf []byte, bucket, key string) []byte {
 	n := len(bucket) + 1 + len(key)
@@ -188,13 +189,7 @@ func (d *driver) Open(_ context.Context, dsn string) (storage.Storage, error) {
 		return nil, fmt.Errorf("kestrel: mkdir root: %w", err)
 	}
 
-	arena, err := newValueArena()
-	if err != nil {
-		return nil, err
-	}
-
-	// Reduce GC frequency. Bulk data lives in sync.Pool chunks;
-	// composite keys live in mmap (GC-invisible).
+	// Reduce GC frequency. Bulk data lives in sync.Pool chunks.
 	debug.SetGCPercent(800)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -202,7 +197,6 @@ func (d *driver) Open(_ context.Context, dsn string) (storage.Storage, error) {
 	st := &store{
 		root:        root,
 		hotMaxBytes: hotMaxBytes,
-		arena:       arena,
 		storBkts:    make(map[string]time.Time),
 		mp:          newMultipartRegistry(),
 		stopTick:    make(chan struct{}),
@@ -210,9 +204,9 @@ func (d *driver) Open(_ context.Context, dsn string) (storage.Storage, error) {
 		cancel:      cancel,
 	}
 
-	// Initialize shards.
+	// Initialize shards (each separately heap-allocated for cache isolation).
 	for i := range st.shards {
-		st.shards[i].data = make(map[string]*hotRecord, 256)
+		st.shards[i] = &shard{data: make(map[string]*hotRecord, 256)}
 	}
 
 	st.bgWg.Add(1)
@@ -242,8 +236,7 @@ type store struct {
 	root        string
 	hotMaxBytes int64
 
-	shards [numShards]shard
-	arena  *valueArena // for composite key strings (GC-invisible)
+	shards [numShards]*shard
 
 	hotCount atomic.Int64
 	hotBytes atomic.Int64
@@ -264,24 +257,18 @@ type store struct {
 var _ storage.Storage = (*store)(nil)
 
 // hotPut stores a pre-populated record.
-// Value data should already be allocated (via allocValue or arena).
+// Value data should already be allocated (via allocValue).
 func (s *store) hotPut(bkt, key string, rec *hotRecord) {
 	si := shardForParts(bkt, key)
-	sh := &s.shards[si]
+	sh := s.shards[si]
 
-	// Stack-buffer composite key for lookup (zero allocation up to ~500B keys).
-	var buf [512]byte
+	var buf [256]byte
 	ck := unsafeString(compositeKeyBuf(buf[:0], bkt, key))
 
 	sh.mu.Lock()
 	old, existed := sh.data[ck]
 	if !existed {
-		// New entry: allocate composite key in mmap arena (GC-invisible).
-		keyBytes := s.arena.alloc(len(bkt) + 1 + len(key))
-		copy(keyBytes, bkt)
-		keyBytes[len(bkt)] = 0
-		copy(keyBytes[len(bkt)+1:], key)
-		ck = unsafeString(keyBytes)
+		ck = compositeKey(bkt, key)
 		sh.pending = append(sh.pending, indexOp{bucket: bkt, key: key})
 	} else if rec.created == rec.updated {
 		rec.created = old.created
@@ -307,9 +294,9 @@ func (s *store) hotPut(bkt, key string, rec *hotRecord) {
 // The returned pointer is valid as long as the key exists in the map.
 func (s *store) hotGet(bkt, key string) (*hotRecord, bool) {
 	si := shardForParts(bkt, key)
-	sh := &s.shards[si]
+	sh := s.shards[si]
 
-	var buf [512]byte
+	var buf [256]byte
 	ck := unsafeString(compositeKeyBuf(buf[:0], bkt, key))
 
 	sh.mu.RLock()
@@ -321,9 +308,9 @@ func (s *store) hotGet(bkt, key string) (*hotRecord, bool) {
 // hotDelete removes a record from the sharded map.
 func (s *store) hotDelete(bkt, key string) bool {
 	si := shardForParts(bkt, key)
-	sh := &s.shards[si]
+	sh := s.shards[si]
 
-	var buf [512]byte
+	var buf [256]byte
 	ck := unsafeString(compositeKeyBuf(buf[:0], bkt, key))
 
 	sh.mu.Lock()
@@ -369,7 +356,7 @@ func (s *store) indexLoop() {
 
 func (s *store) processIndexOps() {
 	for i := range numShards {
-		sh := &s.shards[i]
+		sh := s.shards[i]
 		sh.mu.Lock()
 		pending := sh.pending
 		if len(pending) > 0 {
@@ -531,6 +518,5 @@ func (s *store) Close() error {
 	s.cancel()
 	close(s.stopTick)
 	s.bgWg.Wait()
-	s.arena.close()
 	return nil
 }

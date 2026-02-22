@@ -13,8 +13,8 @@ const defaultBufSize = 4 * 1024 * 1024
 // ringSize is the number of buffers in the ring.
 const ringSize = 4
 
-// numFlushers: concurrent flush goroutines.
-const numFlushers = 2
+// numFlushers: concurrent flush goroutines per stripe.
+const numFlushers = 4
 
 // writeBuffer is a pre-allocated contiguous memory region for accumulating writes.
 type writeBuffer struct {
@@ -84,7 +84,8 @@ func (wb *writeBuffer) free() {
 }
 
 // bufferRing manages a ring of write buffers with concurrent background flush.
-// Uses sync.Cond to block writers when all buffers are full (no busy spinning).
+// When all buffers are frozen, falls back to direct pwrite (non-blocking overflow)
+// instead of blocking on sync.Cond.Wait.
 type bufferRing struct {
 	buffers  [ringSize]*writeBuffer
 	active   atomic.Int32
@@ -130,15 +131,59 @@ func (br *bufferRing) activeBuffer() *writeBuffer {
 	return br.buffers[br.active.Load()]
 }
 
-// writeInline writes to a buffer in the ring. Blocks (via Cond) if all full.
-func (br *bufferRing) writeInline(totalSize int64, valPosInRecord int) (buf []byte, recOff int64, valOff int64, wb *writeBuffer) {
-	for {
+// writeInline writes to a buffer in the ring. Falls back to direct pwrite if
+// all buffers are frozen after 2 swap attempts (non-blocking overflow).
+// When direct=true, caller must call directFlush after filling the returned buf.
+func (br *bufferRing) writeInline(totalSize int64, valPosInRecord int) (buf []byte, recOff int64, valOff int64, wb *writeBuffer, direct bool) {
+	for attempts := 0; ; attempts++ {
 		ab := br.activeBuffer()
 		pos := ab.claim(totalSize)
 		if pos >= 0 {
-			return ab.data[pos : pos+totalSize], ab.volOffset + pos, ab.volOffset + pos + int64(valPosInRecord), ab
+			return ab.data[pos : pos+totalSize], ab.volOffset + pos, ab.volOffset + pos + int64(valPosInRecord), ab, false
+		}
+		if attempts >= 2 {
+			// All buffers frozen — direct pwrite overflow (non-blocking).
+			b, off := br.directWrite(totalSize)
+			return b, off, off + int64(valPosInRecord), nil, true
 		}
 		br.swap()
+	}
+}
+
+// directWrite allocates a volume offset and a temporary buffer for non-blocking
+// overflow when the buffer ring is full. Caller fills the buffer then calls directFlush.
+func (br *bufferRing) directWrite(totalSize int64) (buf []byte, recOff int64) {
+	offset := br.nextBase.Add(totalSize) - totalSize
+	if offset+totalSize > br.vol.fileSize.Load() {
+		br.vol.growFile(offset + totalSize)
+	}
+	b, _ := getWriteBuf(totalSize)
+	return b, offset
+}
+
+// directFlush writes a direct-overflow buffer to disk and advances the volume tail.
+func (br *bufferRing) directFlush(b []byte, offset int64) {
+	size := int64(len(b))
+	br.vol.fd.WriteAt(b, offset)
+	// Return buffer to pool based on capacity.
+	tierIdx := -1
+	for i := range wbPool.tiers {
+		if int64(cap(b)) <= wbPool.tiers[i].cap {
+			tierIdx = i
+			break
+		}
+	}
+	putWriteBuf(b, tierIdx)
+	// Advance tail (CAS loop — never go backwards).
+	newTail := offset + size
+	for {
+		old := br.vol.tail.Load()
+		if newTail <= old {
+			break
+		}
+		if br.vol.tail.CompareAndSwap(old, newTail) {
+			break
+		}
 	}
 }
 

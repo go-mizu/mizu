@@ -200,15 +200,8 @@ func fastNowTime() time.Time {
 }
 
 // Content type interning — most apps use <10 distinct types.
+// Used by index.go getWithHash for zero-copy content type reads.
 var contentTypeIntern sync.Map
-
-func internContentType(s string) string {
-	if v, ok := contentTypeIntern.Load(s); ok {
-		return v.(string)
-	}
-	contentTypeIntern.Store(s, s)
-	return s
-}
 
 func unsafePointer(b []byte) unsafe.Pointer {
 	return unsafe.Pointer(&b[0])
@@ -463,10 +456,14 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 		totalSize := int64(recFixedSize+bl+kl+cl) + size
 		if st.bufRing != nil && totalSize <= st.bufRing.capacity {
 			valPosInRecord := 19 + bl + kl + cl
-			bufSlice, _, vo, wb := st.bufRing.writeInline(totalSize, valPosInRecord)
+			bufSlice, _, vo, wb, isDirect := st.bufRing.writeInline(totalSize, valPosInRecord)
 			valOff = vo
 			st.vol.buildRecordBuf(bufSlice, recPut, b.name, key, contentType, data, now)
-			wb.done()
+			if isDirect {
+				st.bufRing.directFlush(bufSlice, vo-int64(valPosInRecord))
+			} else {
+				wb.done()
+			}
 		} else {
 			var err error
 			_, valOff, err = st.vol.appendRecord(recPut, b.name, key, contentType, data, now)
@@ -484,7 +481,7 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 			}
 		} else {
 			valPosInRecord := 19 + bl + kl + cl
-			bufSlice, _, vo, wb := st.bufRing.writeInline(totalSize, valPosInRecord)
+			bufSlice, recOff, vo, wb, isDirect := st.bufRing.writeInline(totalSize, valPosInRecord)
 			valOff = vo
 
 			bufSlice[0] = recPut
@@ -510,7 +507,9 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 					br.Read(bufSlice[pos : pos+int(size)])
 				} else if _, err := io.ReadFull(src, bufSlice[pos:pos+int(size)]); err != nil {
 					if err != io.EOF && err != io.ErrUnexpectedEOF {
-						wb.done()
+						if !isDirect {
+							wb.done()
+						}
 						return nil, fmt.Errorf("pony: read value: %w", err)
 					}
 				}
@@ -523,7 +522,11 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 				checksum := crc32.Checksum(bufSlice[5:], st.vol.crcTable)
 				binary.LittleEndian.PutUint32(bufSlice[1:5], checksum)
 			}
-			wb.done()
+			if isDirect {
+				st.bufRing.directFlush(bufSlice, recOff)
+			} else {
+				wb.done()
+			}
 		}
 	} else {
 		var err error
@@ -674,9 +677,13 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 	if st.bufRing != nil {
 		bl, kl := len(b.name), len(key)
 		totalSize := int64(recFixedSize + bl + kl)
-		bufSlice, _, _, wb := st.bufRing.writeInline(totalSize, 0)
+		bufSlice, recOff, _, wb, isDirect := st.bufRing.writeInline(totalSize, 0)
 		st.vol.buildRecordBuf(bufSlice, recDelete, b.name, key, "", nil, now)
-		wb.done()
+		if isDirect {
+			st.bufRing.directFlush(bufSlice, recOff)
+		} else {
+			wb.done()
+		}
 	} else {
 		st.vol.appendRecord(recDelete, b.name, key, "", nil, now)
 	}
@@ -723,10 +730,14 @@ func (b *bucket) Copy(ctx context.Context, dstKey string, srcBucket, srcKey stri
 	var valOff int64
 	if dstStripe.bufRing != nil && totalSize <= dstStripe.bufRing.capacity {
 		valPosInRecord := 19 + bl + kl + cl
-		bufSlice, _, vo, wb := dstStripe.bufRing.writeInline(totalSize, valPosInRecord)
+		bufSlice, recOff, vo, wb, isDirect := dstStripe.bufRing.writeInline(totalSize, valPosInRecord)
 		valOff = vo
 		dstStripe.vol.buildRecordBuf(bufSlice, recPut, b.name, dstKey, srcResult.contentType, srcData, now)
-		wb.done()
+		if isDirect {
+			dstStripe.bufRing.directFlush(bufSlice, recOff)
+		} else {
+			wb.done()
+		}
 	} else {
 		var err error
 		_, valOff, err = dstStripe.vol.appendRecord(recPut, b.name, dstKey, srcResult.contentType, srcData, now)

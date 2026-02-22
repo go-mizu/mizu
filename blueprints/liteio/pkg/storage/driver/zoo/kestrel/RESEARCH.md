@@ -700,7 +700,95 @@ go tool pprof -base /tmp/v1-profile/kestrel/cpu.pprof /tmp/v2-profile/kestrel/cp
 
 ---
 
-## 15. References
+## 15. Optimization History (v1-v4)
+
+### 15.1 v1 (Baseline)
+
+Initial implementation using sharded Go maps. Architecture:
+- 1024 sharded `map[string]hotRecord` (value type, not pointer)
+- `sync.RWMutex` per shard
+- Mmap arena for all value data
+- Separate `pendingMu` mutex for index operations
+
+Result: **kestrel 24/40 (60%)** — but unstable due to Go map + arena contention.
+
+### 15.2 v3 (Per-P Value Allocation)
+
+Key changes from v1:
+1. **`allocValue` via sync.Pool chunks** (4MB each, per-P locality) replaces arena for values
+2. **Pointer returns from `hotGet`** (`*hotRecord` instead of copying 5 fields)
+3. **Embedded pending ops in shard** (single lock instead of separate `pendingMu`)
+4. **Mmap arena only for composite key strings** (GC-invisible map keys)
+5. **Stack-buffer composite keys for reads** (512B, allocation-free lookups)
+
+Result: **kestrel 27/40 (68%)** — significant improvement on Write/1MB (+30%), Read/1KB (+14%).
+
+### 15.3 v4 (Cache Isolation Fix)
+
+**Critical finding**: Inline shard array `[1024]shard` caused 2-3x ParallelRead regression.
+
+The problem: with 72-byte inline shards in a contiguous array, the store struct was ~73KB.
+When kestrel ran after falcon, accumulated memory pressure caused cache thrashing across
+the large contiguous shard array. Pointer-allocated shards avoid this by being individually
+heap-allocated with better cache line isolation.
+
+Key changes:
+1. **256 pointer-allocated shards** (`[256]*shard` instead of `[1024]shard`)
+2. **`compositeKey` (string concat)** for new map entries instead of mmap arena
+3. **Removed mmap arena** entirely — composite keys use Go heap strings
+4. **Reduced stack buffer to 256 bytes** (matching falcon)
+
+Result: **kestrel 21-24/40 (52-60%)** — ParallelRead fixed from 2.3x slower to ~equal.
+
+### 15.4 Key Lessons
+
+| Lesson | Impact |
+|--------|--------|
+| Inline shard arrays cause false sharing / cache pressure | 2.3x ParallelRead regression |
+| Per-P sync.Pool chunks beat mmap arena for values | +30% Write/1MB throughput |
+| Pointer returns from hotGet beat field copies | +14% Read/1KB throughput |
+| Embedded pending ops in shard save a mutex acquire | ~5% write path improvement |
+| Go map + RWMutex sets a performance ceiling | Both drivers converge to ~equal |
+| macOS ARM thermal throttling causes 50%+ variance | Second-to-run driver penalized |
+| `debug.SetGCPercent(800)` reduces GC from ~20 to ~12 cycles | Measurable for ParallelRead |
+
+### 15.5 Thermal Effects on macOS ARM
+
+Back-to-back benchmark runs show massive variance due to CPU throttling:
+
+| Run Order | Kestrel Wins | Notes |
+|-----------|--------------|-------|
+| Kestrel first | 24/40 (60%) | Cool CPU favors first driver |
+| Falcon first | 18/40 (45%) | Hot CPU penalizes second driver |
+| Average | ~21/40 (52%) | True performance is roughly equal |
+
+Individual operations swing 20-50% depending on run order. This means:
+- ParallelRead can show 5.0 GB/s (cold) vs 2.5 GB/s (hot) for the same driver
+- MixedWorkload results are especially unreliable (high sustained load)
+- Only isolated benchmarks with cooldown give stable numbers
+
+### 15.6 Path to 5x: Custom Hash Table
+
+Both kestrel and falcon use Go's built-in `map[string]*T`, which means:
+- Same Swiss table implementation
+- Same hash function overhead (~30ns per lookup)
+- Same GC scanning for map internals
+- Same lock contention patterns
+
+To achieve 5x over falcon, kestrel would need to replace Go maps with a
+FASTER-style flat hash table:
+- 64-byte cache-line aligned buckets (7 entries per bucket)
+- 14-bit tags for fast scan (1 cache line load checks 7 entries)
+- Mmap'd record slab (48B fixed headers, GC-invisible)
+- Lock-free reads via epoch protection
+- Bump-pointer value arena (contiguous key+value storage)
+
+This is the plan outlined in Section 2 (C++ Architecture) — a full reimplementation
+of the storage layer replacing Go maps with FASTER's index design.
+
+---
+
+## 16. References
 
 1. Kanellis, K. & Chandramouli, B. "From FASTER to F2: Evolving Concurrent Key-Value
    Store Designs for Large Skewed Workloads." PVLDB 18(12): 4910-4923, 2025.
