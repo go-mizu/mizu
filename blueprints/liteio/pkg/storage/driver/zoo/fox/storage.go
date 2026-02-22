@@ -31,6 +31,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/liteio-dev/liteio/pkg/storage"
 )
@@ -706,12 +707,8 @@ func (s *store) rebuildTree() error {
 			s.putPageBuf(pageBuf)
 			continue
 		}
-		entries := decodePageEntriesMeta(pageData)
+		minKey, _ := firstPageEntryKey(pageData)
 		s.putPageBuf(pageBuf)
-		minKey := ""
-		if len(entries) > 0 {
-			minKey = entries[0].key
-		}
 		leaves = append(leaves, leafEntry{pageID: pid, minKey: minKey})
 	}
 
@@ -747,10 +744,7 @@ func (s *store) rebuildTree() error {
 						pageBuf := s.getPageBuf()
 						pageData, err := s.readPageIntoNoCache(child.pageID, pageBuf)
 						if err == nil {
-							entries := decodePageEntriesMeta(pageData)
-							if len(entries) > 0 {
-								sep = entries[0].key
-							}
+							sep, _ = firstPageEntryKey(pageData)
 						}
 						s.putPageBuf(pageBuf)
 					} else if len(child.keys) > 0 {
@@ -965,6 +959,232 @@ func decodePageEntries(buf []byte) []pageEntry {
 	return decodePageEntriesWithMode(buf, true)
 }
 
+// decodePageEntriesBorrowed decodes entries by borrowing strings and inline value
+// slices from buf. The caller must keep buf alive and unmodified while using the
+// returned entries.
+func decodePageEntriesBorrowed(buf []byte) []pageEntry {
+	if len(buf) < pageHeaderSize {
+		return nil
+	}
+
+	count := int(binary.LittleEndian.Uint16(buf[0:2]))
+	if count == 0 {
+		return nil
+	}
+
+	pos := pageHeaderSize
+	entries := make([]pageEntry, 0, count)
+
+entryLoop:
+	for i := range count {
+		_ = i
+		if pos+2 > len(buf) {
+			break
+		}
+		kl := int(binary.LittleEndian.Uint16(buf[pos:]))
+		pos += 2
+		if pos+kl > len(buf) {
+			break
+		}
+		keyBytes := buf[pos : pos+kl]
+		key := bytesToStringNoCopy(keyBytes)
+		pos += kl
+
+		if pos+2 > len(buf) {
+			break
+		}
+		cl := int(binary.LittleEndian.Uint16(buf[pos:]))
+		pos += 2
+		if pos+cl > len(buf) {
+			break
+		}
+		ctBytes := buf[pos : pos+cl]
+		ct := bytesToStringNoCopy(ctBytes)
+		pos += cl
+
+		if pos+4 > len(buf) {
+			break
+		}
+		vl := binary.LittleEndian.Uint32(buf[pos:])
+		pos += 4
+
+		tomb := vl == tombstoneMarker
+		indirect := vl == indirectValueMarker
+		valLen := int(vl)
+		var (
+			val []byte
+			ref valueRef
+			sz  uint32
+		)
+
+		switch {
+		case tomb:
+			valLen = 0
+		case indirect:
+			if pos+indirectValueRefSize > len(buf) {
+				break entryLoop
+			}
+			ref.offset = int64(binary.LittleEndian.Uint64(buf[pos:]))
+			pos += 8
+			ref.size = binary.LittleEndian.Uint32(buf[pos:])
+			pos += 4
+			sz = ref.size
+		default:
+			if pos+valLen > len(buf) {
+				break entryLoop
+			}
+			sz = uint32(valLen)
+			val = buf[pos : pos+valLen]
+			pos += valLen
+		}
+
+		var created, updated int64
+		if pos+16 <= len(buf) {
+			created = int64(binary.LittleEndian.Uint64(buf[pos:]))
+			pos += 8
+			updated = int64(binary.LittleEndian.Uint64(buf[pos:]))
+			pos += 8
+		}
+
+		entries = append(entries, pageEntry{
+			key:         key,
+			contentType: ct,
+			value:       val,
+			valueRef:    ref,
+			valueSize:   sz,
+			created:     created,
+			updated:     updated,
+			tombstone:   tomb,
+		})
+	}
+
+	return entries
+}
+
+func bytesToStringNoCopy(b []byte) string {
+	if len(b) == 0 {
+		return ""
+	}
+	return unsafe.String(&b[0], len(b))
+}
+
+func hasPrefixBytesString(b []byte, prefix string) bool {
+	if len(prefix) == 0 {
+		return true
+	}
+	if len(b) < len(prefix) {
+		return false
+	}
+	for i := 0; i < len(prefix); i++ {
+		if b[i] != prefix[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// firstPageEntryKey returns the first key stored in a page without decoding the
+// full page payload.
+func firstPageEntryKey(buf []byte) (string, bool) {
+	if len(buf) < pageHeaderSize {
+		return "", false
+	}
+	count := int(binary.LittleEndian.Uint16(buf[0:2]))
+	if count == 0 {
+		return "", false
+	}
+	pos := pageHeaderSize
+	if pos+2 > len(buf) {
+		return "", false
+	}
+	kl := int(binary.LittleEndian.Uint16(buf[pos:]))
+	pos += 2
+	if pos+kl > len(buf) {
+		return "", false
+	}
+	return string(buf[pos : pos+kl]), true
+}
+
+// forEachPageEntryMeta parses page metadata entries without materializing a
+// []pageEntry slice. keyBytes/contentTypeBytes are only valid during the call.
+func forEachPageEntryMeta(buf []byte, fn func(keyBytes, contentTypeBytes []byte, valueSize uint32, created, updated int64, tombstone bool) bool) {
+	if len(buf) < pageHeaderSize {
+		return
+	}
+	count := int(binary.LittleEndian.Uint16(buf[0:2]))
+	if count == 0 {
+		return
+	}
+
+	pos := pageHeaderSize
+	for i := range count {
+		_ = i
+		if pos+2 > len(buf) {
+			return
+		}
+		kl := int(binary.LittleEndian.Uint16(buf[pos:]))
+		pos += 2
+		if pos+kl > len(buf) {
+			return
+		}
+		keyBytes := buf[pos : pos+kl]
+		pos += kl
+
+		if pos+2 > len(buf) {
+			return
+		}
+		cl := int(binary.LittleEndian.Uint16(buf[pos:]))
+		pos += 2
+		if pos+cl > len(buf) {
+			return
+		}
+		ctBytes := buf[pos : pos+cl]
+		pos += cl
+
+		if pos+4 > len(buf) {
+			return
+		}
+		vl := binary.LittleEndian.Uint32(buf[pos:])
+		pos += 4
+
+		tomb := vl == tombstoneMarker
+		indirect := vl == indirectValueMarker
+		var sz uint32
+
+		switch {
+		case tomb:
+			sz = 0
+		case indirect:
+			if pos+indirectValueRefSize > len(buf) {
+				return
+			}
+			_ = binary.LittleEndian.Uint64(buf[pos:]) // offset (unused in meta scan)
+			pos += 8
+			sz = binary.LittleEndian.Uint32(buf[pos:])
+			pos += 4
+		default:
+			valLen := int(vl)
+			if pos+valLen > len(buf) {
+				return
+			}
+			sz = vl
+			pos += valLen
+		}
+
+		if pos+16 > len(buf) {
+			return
+		}
+		created := int64(binary.LittleEndian.Uint64(buf[pos:]))
+		pos += 8
+		updated := int64(binary.LittleEndian.Uint64(buf[pos:]))
+		pos += 8
+
+		if !fn(keyBytes, ctBytes, sz, created, updated, tomb) {
+			return
+		}
+	}
+}
+
 func decodePageEntriesWithMode(buf []byte, copyInlineValues bool) []pageEntry {
 	if len(buf) < pageHeaderSize {
 		return nil
@@ -1148,16 +1368,18 @@ func (p *miniPagePool) flushMiniPage(mp *miniPage) {
 		return
 	}
 
-	pageBuf := p.st.getPageBuf()
-	defer p.st.putPageBuf(pageBuf)
+	readBuf := p.st.getPageBuf()
+	defer p.st.putPageBuf(readBuf)
+	writeBuf := p.st.getPageBuf()
+	defer p.st.putPageBuf(writeBuf)
 
 	// Read existing page.
-	existing, err := p.st.readPageIntoNoCache(mp.leafID, pageBuf)
+	existing, err := p.st.readPageIntoNoCache(mp.leafID, readBuf)
 	if err != nil {
 		return
 	}
 
-	diskEntries := decodePageEntries(existing)
+	diskEntries := decodePageEntriesBorrowed(existing)
 
 	// Merge: mini-page entries override disk entries.
 	merged := mergeEntries(diskEntries, mp.entries)
@@ -1171,7 +1393,7 @@ func (p *miniPagePool) flushMiniPage(mp *miniPage) {
 	}
 
 	// Encode back.
-	buf, fits := encodePageEntriesInto(pageBuf, live, p.st.pageSize)
+	buf, fits := encodePageEntriesInto(writeBuf, live, p.st.pageSize)
 	if !fits {
 		chunks := splitEntriesByPage(live, p.st.pageSize)
 		if len(chunks) == 0 {
@@ -1179,7 +1401,7 @@ func (p *miniPagePool) flushMiniPage(mp *miniPage) {
 			return
 		}
 
-		firstBuf, ok := encodePageEntriesInto(pageBuf, chunks[0], p.st.pageSize)
+		firstBuf, ok := encodePageEntriesInto(writeBuf, chunks[0], p.st.pageSize)
 		if !ok || p.st.writePage(mp.leafID, firstBuf) != nil {
 			return
 		}
@@ -1190,14 +1412,20 @@ func (p *miniPagePool) flushMiniPage(mp *miniPage) {
 			if err != nil {
 				return
 			}
-			chunkBuf, ok := encodePageEntriesInto(pageBuf, chunk, p.st.pageSize)
+			chunkBuf, ok := encodePageEntriesInto(writeBuf, chunk, p.st.pageSize)
 			if !ok {
 				return
 			}
 			if err := p.st.writePage(newID, chunkBuf); err != nil {
 				return
 			}
-			p.st.tree.insertLeaf(prevLeafID, newID, chunk[0].key)
+			// chunk entries may borrow key bytes from readBuf; separator keys stored in
+			// the in-memory tree must own their data.
+			splitKey := chunk[0].key
+			if splitKey != "" {
+				splitKey = string([]byte(splitKey))
+			}
+			p.st.tree.insertLeaf(prevLeafID, newID, splitKey)
 			prevLeafID = newID
 		}
 	} else {
@@ -1778,25 +2006,26 @@ func (s *store) collectFromNode(n *btreeNode, prefix string, seen, tombstones ma
 			s.putPageBuf(pageBuf)
 			return
 		}
-		entries := decodePageEntriesMeta(data)
-		s.putPageBuf(pageBuf)
-		for _, e := range entries {
-			if !strings.HasPrefix(e.key, prefix) {
-				continue
+		forEachPageEntryMeta(data, func(keyBytes, contentTypeBytes []byte, valueSize uint32, created, updated int64, tomb bool) bool {
+			if !hasPrefixBytesString(keyBytes, prefix) {
+				return true
 			}
-			if seen[e.key] || tombstones[e.key] || e.tombstone {
-				continue
+			ck := string(keyBytes)
+			if seen[ck] || tombstones[ck] || tomb {
+				return true
 			}
-			_, k := splitCompositeKey(e.key)
+			_, k := splitCompositeKey(ck)
 			*results = append(*results, listResult{
 				key:         k,
-				contentType: e.contentType,
-				size:        e.objectSize(),
-				created:     e.created,
-				updated:     e.updated,
+				contentType: string(contentTypeBytes),
+				size:        int64(valueSize),
+				created:     created,
+				updated:     updated,
 			})
-			seen[e.key] = true
-		}
+			seen[ck] = true
+			return true
+		})
+		s.putPageBuf(pageBuf)
 		return
 	}
 

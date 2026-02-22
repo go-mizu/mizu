@@ -834,6 +834,208 @@ For a v5 pass, the next high-value work is likely:
 
 ---
 
+## v5 Profiler-Driven Pass: Decoder Allocation Root Cause (List/Rebuild + Flush)
+
+### v5 goal
+
+Use the Go profiler (`allocs.pprof`) to identify the dominant allocation root cause in v4, then implement targeted fixes in fox instead of another broad optimization pass.
+
+### Root cause identified with Go profiler (v4b)
+
+`go tool pprof -top report/fox_v4b_final/fox/allocs.pprof` showed:
+
+- `decodePageEntriesWithMode`: **`2562.61MB`** flat alloc-space (**32.75%** of total `7824.64MB`)
+
+Then `go tool pprof -peek 'decodePageEntriesWithMode' ...` showed the caller split:
+
+- `decodePageEntriesMeta`: **`2075.78MB`** (**81%**)
+- `decodePageEntries`: **`486.83MB`** (**19%**)
+
+Interpretation:
+
+- most decoder allocation churn was coming from **metadata scans** (list/rebuild paths), not only the flush path
+- the remaining write-path decoder churn still mattered (`flushMiniPage -> decodePageEntries`)
+
+This gave a clear v5 plan:
+
+1. remove materialized `[]pageEntry` decoding from metadata scans (list/rebuild)
+2. reduce flush-path decode copies by borrowing page bytes during merge
+
+### v5 implemented changes (profiler-driven)
+
+#### 1. Streaming metadata page scanner (no `[]pageEntry` materialization)
+
+Added:
+
+- `forEachPageEntryMeta(...)`
+- `firstPageEntryKey(...)`
+- `hasPrefixBytesString(...)`
+
+Used in:
+
+- `rebuildTree()` (first-key extraction only)
+- `collectFromNode()` (list scan path)
+
+Effect:
+
+- avoids `decodePageEntriesMeta()` allocating an `entries` slice for every scanned page
+- avoids allocating `pageEntry` structs for metadata-only scans
+- allocates strings only when needed for list output / map keys
+
+#### 2. Borrowed flush-page decoder for merge path
+
+Added:
+
+- `decodePageEntriesBorrowed(buf []byte)`
+
+Behavior:
+
+- borrows keys/content-types (unsafe string view) and inline values (slice view) from the page buffer
+- used only inside `flushMiniPage()`, where the page buffer lifetime is controlled
+
+To make this safe, v5 also changed `flushMiniPage()` to use:
+
+- `readBuf` (decode source)
+- `writeBuf` (encode target)
+
+This prevents encode-time buffer clears from corrupting borrowed decoded entries.
+
+#### 3. Correctness fix for borrowed split keys (critical)
+
+During v5 development, `TestFoxSplitPreservesSmallValues` failed because a borrowed key from the read page buffer escaped into the B-tree separator keys via `insertLeaf(...)`.
+
+Final v5 fix:
+
+- copy `chunk[0].key` before passing it to `tree.insertLeaf(...)`
+
+This preserves correctness while still using borrowed decoding for transient flush merge data.
+
+### v5 benchmark / profiler commands
+
+```bash
+# tests
+go test ./pkg/storage/driver/zoo/fox
+
+# v5 profiler-driven runs
+go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v5a_final
+go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v5b_final
+
+# profiler inspection
+go tool pprof -top -nodecount=20 report/fox_v4b_final/fox/allocs.pprof
+go tool pprof -peek "decodePageEntriesWithMode" report/fox_v4b_final/fox/allocs.pprof
+
+go tool pprof -top -nodecount=20 report/fox_v5b_final/fox/allocs.pprof
+go tool pprof -peek "decodePageEntriesBorrowed" report/fox_v5b_final/fox/allocs.pprof
+go tool pprof -top -nodecount=20 report/fox_v5b_final/fox/heap.pprof
+```
+
+### v5 profiler results (root cause addressed)
+
+#### v4b -> v5 alloc-space (`allocs.pprof`)
+
+- v4b total alloc-space: **`7824.64MB`**
+- v5a total alloc-space: **`6294.76MB`** (**-19.6%**)
+- v5b total alloc-space: **`6393.96MB`** (**-18.3%**)
+
+Most importantly:
+
+- `decodePageEntriesWithMode` disappears from the v5 alloc-space top list (metadata scans no longer route through it)
+- new flush-only decoder appears instead:
+  - `decodePageEntriesBorrowed`: `363.66MB` (v5a) / `391.29MB` (v5b)
+  - `pprof -peek` shows it is **100%** called from `(*miniPagePool).flushMiniPage`
+
+This is exactly the intended root-cause shift:
+
+- metadata decoder allocation hotspot removed
+- remaining decoder churn isolated to the write/flush path
+
+### v5 benchmark results (vs v4b, two runs)
+
+Quick-suite variance remains significant, so v5 is reported as a range (`v5a`, `v5b`).
+
+#### Consistent improvements (both v5 runs vs v4b)
+
+- `Write/1KB`: `+56%` to `+84%` (`206.8 -> 322.6 / 380.8 MB/s`)
+- `Write/64KB`: `+36%` to `+53%` (`1.19 -> 1.61 / 1.82 GB/s`)
+- `Write/1MB`: `+23%` to `+30%` (`390.8 -> 481.5 / 507.6 MB/s`)
+- `Write/10MB`: `+0.7%` to `+7.0%`
+- `Stat`: `+73%` to `+79%` (v4b was a low outlier)
+- `List/100`: `+38%` to `+65%`
+
+#### Preserved / near-flat
+
+- `Copy/1KB`: `587-636 MB/s` (still strong, around v4 levels)
+- `Read/1KB`: `~flat to -11%`
+- `Read/64KB`: `~flat to -2%`
+- `Read/1MB`: `-4% to -6%`
+- `Read/10MB`: `+7% to +10%`
+
+#### Regressed / unstable
+
+- `Delete`: regressed in both v5 runs vs v4b (but still around v3b on one run)
+- `RangeRead/*256KB`: mixed; `v5b` especially regressed on `Start_256KB`
+
+Interpretation:
+
+- v5 clearly improved write-heavy and list-heavy behavior while reducing alloc-space
+- v4's `Copy/1KB` improvement is preserved
+- some range-read and delete behavior remains noisy/regressed and needs a follow-up pass
+
+### v5 memory verification (<100MB), carefully verified
+
+#### 1. Strict process-level metric (resource tracker)
+
+- `v5a` peak RSS: **`559.6 MB`** (FAIL)
+- `v5b` peak RSS: **`576.9 MB`** (FAIL)
+
+This is worse than v4 and far from the strict `<100MB` target.
+
+#### 2. `heap.pprof` in-use snapshot (`go tool pprof`)
+
+- `v5a`: **`91.25 MB`** (PASS)
+- `v5b`: **`103.27 MB`** (FAIL, slightly above target)
+
+So v5 does **not** stably keep the heap snapshot under `100MB`; it now fluctuates around the threshold.
+
+#### 3. Likely cause of worse RSS despite lower alloc-space (inference)
+
+This is an inference from profiler/resource data:
+
+- v5 greatly reduced total alloc-space
+- GC count also dropped materially (`143` vs `188` in v4b, `211` in v4c)
+- process `GoSys`/RSS increased
+
+Likely explanation:
+
+- less allocation churn triggers fewer GCs/scavenges in the benchmark window
+- runtime retains more heap/system memory pages (higher `GoSys` / RSS), even while alloc-space is lower
+
+This further supports treating strict process RSS and `heap.pprof` totals as different metrics with different behavior.
+
+### v5 conclusion
+
+v5 successfully delivered the profiler-driven objective:
+
+- identified the dominant v4 allocation root cause using Go profiler
+- removed the metadata decoder allocation hotspot (`decodePageEntriesWithMode`) from the top alloc-space path
+- reduced total alloc-space by ~`18-20%` vs v4b
+- improved several write/list metrics substantially
+
+v5 did **not** achieve:
+
+- strict `<100MB` process RSS
+- stable `<100MB` `heap.pprof` snapshot in every run
+- stable range-read/delete improvements
+
+### v6 candidates (next)
+
+- profile `RangeRead/*256KB` and `Delete` specifically under v5 (CPU + allocs)
+- reduce `mergeEntries` alloc-space (`~0.84-0.87GB` in v5) via scratch reuse / pooled result slices
+- address `findPageEntry` allocs (`~134-148MB`) with a faster no-alloc compare implementation
+- consider explicit memory-pressure controls (or benchmark isolation) if strict RSS is a hard target
+
+---
+
 ## Appendix: Benchmark / pprof Commands
 
 ### Benchmark commands used
@@ -859,6 +1061,10 @@ go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v3b_final
 go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v4_trial1
 go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v4b_final
 go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v4c_final
+
+# v5 profiler-driven decoder/root-cause pass
+go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v5a_final
+go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v5b_final
 ```
 
 ### pprof commands (same workflow style as herd)
@@ -891,6 +1097,12 @@ go tool pprof -top -cum -nodecount=15 report/fox_v3b_final/fox/cpu.pprof
 go tool pprof -top -nodecount=20 report/fox_v4b_final/fox/heap.pprof
 go tool pprof -top -nodecount=20 report/fox_v4b_final/fox/allocs.pprof
 go tool pprof -top -cum -nodecount=15 report/fox_v4b_final/fox/cpu.pprof
+go tool pprof -peek "decodePageEntriesWithMode" report/fox_v4b_final/fox/allocs.pprof
+
+go tool pprof -top -nodecount=20 report/fox_v5b_final/fox/heap.pprof
+go tool pprof -top -nodecount=20 report/fox_v5b_final/fox/allocs.pprof
+go tool pprof -top -cum -nodecount=15 report/fox_v5b_final/fox/cpu.pprof
+go tool pprof -peek "decodePageEntriesBorrowed" report/fox_v5b_final/fox/allocs.pprof
 
 # Compare baseline vs final
 
@@ -901,6 +1113,8 @@ go tool pprof -base report/fox_v1_baseline/fox/allocs.pprof report/fox_v2e_final
 
 go tool pprof -base report/fox_v3b_final/fox/heap.pprof report/fox_v4b_final/fox/heap.pprof
 go tool pprof -base report/fox_v3b_final/fox/allocs.pprof report/fox_v4b_final/fox/allocs.pprof
+
+go tool pprof -base report/fox_v4b_final/fox/allocs.pprof report/fox_v5b_final/fox/allocs.pprof
 
 # Attribution / call-chain inspection (useful for generic labels)
 
