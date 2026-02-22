@@ -2352,3 +2352,194 @@ Key interpretation:
 2. Investigate non-`sync.Pool` composite-key scratch reuse strategies (e.g. short-key stack embedding in `leafEntry`)
 3. Continue value-log batching and flush scheduling optimization for `64KB/1MB` workloads
 4. Add targeted microbench tests for split serialization and value-log append/flush loops to reduce benchmark noise when tuning
+
+## 21. v26 optimization (raw split ref slimming + append-split left-page elision)
+
+This section records the next profiler-guided iteration after v25. The v25
+profiler still showed `writeLeafPageRawSortedSized` as the dominant `Write/1KB`
+CPU hotspot, so v26 targeted split-path work that directly reduces calls and
+per-entry cache pressure in the raw split writer.
+
+### 21.1 Root cause entering v26
+
+From `report/bear_v25_profile_write1k` (`go tool pprof -top`):
+
+- `writeLeafPageRawSortedSized`: **~52.6% flat**
+- `syscall.rawsyscalln`: **~14.5% flat**
+
+Interpretation:
+
+- The main cost remains leaf split serialization/rewrite work.
+- v26 should prioritize reducing split rewrite overhead before chasing
+  lower-impact allocator tweaks.
+
+### 21.2 v26 changes implemented
+
+Implemented in v26:
+
+1. slimmed `leafRawEntryRef` by removing the `key []byte` field (hot raw writer
+   does not need it)
+2. compacted raw-ref metadata to keep `size`/`off` in `uint16` (page-sized)
+3. added source offset tracking (`leafRawEntryRef.off`) for page-backed raw refs
+4. added `leafRawKey(...)` to derive key view from encoded raw bytes only when
+   needed (split separator derivation)
+5. updated raw-ref scratch cleanup to clear only remaining pointer-bearing field
+   (`raw`)
+6. append-rightmost split fast path: avoid rewriting the left page when it is an
+   unchanged prefix of the original leaf
+7. added `rewriteLeafPrefixInPlace(...)` to patch left leaf metadata (`count`,
+   `freeOff`, `nextLeaf`, `prevLeaf`) in-place for that case
+8. retained existing safe fallback path for non-append and unsupported cases
+
+Key idea (v26 append split):
+
+- In the common append-heavy split (`idx == count && nextLeaf == 0`), the left
+  split half is a prefix of the existing page and its slots/data remain valid.
+- We now render only the new right page and patch the left page header metadata
+  instead of calling `writeLeafPageRawSortedSized` twice.
+
+### 21.3 Commands used (local `cmd/bench`)
+
+Focused profiled `Write/1KB`:
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --filter 'Write/1KB' \
+  --profile \
+  --progress=false \
+  --formats json \
+  --output ./report/bear_v26c_profile_write1k
+```
+
+Focused non-profile `Write/1KB`:
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --filter 'Write/1KB' \
+  --progress=false \
+  --formats json \
+  --output ./report/bear_v26_focus_write1k
+```
+
+Full quick subprocess suite:
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --isolate-embedded-benchmarks-subprocess \
+  --progress=false \
+  --formats json \
+  --output ./report/bear_v26_full_subproc
+```
+
+Profiler inspection:
+
+```bash
+go tool pprof -top ./report/bear_v26c_profile_write1k/bear/cpu.pprof
+go tool pprof -top -alloc_space ./report/bear_v26c_profile_write1k/bear/allocs.pprof
+```
+
+### 21.4 Measurement note: noisy first v26b profile run
+
+An initial profiled run (`report/bear_v26b_profile_write1k`) showed a temporary
+throughput regression despite lower RSS/alloc-space:
+
+- `Write/1KB`: **1,095,370 ops/s**
+- Peak RSS: **88.7 MB**
+
+A repeat profiled run (`v26c`) recovered to the expected range and slightly
+exceeded v25 while preserving the lower-RSS behavior. This is consistent with
+local benchmark noise; v26b is retained only as a cautionary data point.
+
+### 21.5 v26 focused results (`Write/1KB`)
+
+Profiled artifact:
+
+- `report/bear_v26c_profile_write1k`
+
+Results:
+
+- `Write/1KB`: **1,392,146 ops/s**
+- Peak RSS: **93.734 MB** (`<100MB` verified)
+- Peak Go Heap: **~30.0 MB**
+- Peak Go Sys: **~91.3 MB**
+- Total alloc-space: **354.7 MB**
+- Errors: `0`
+
+Profiler outcome (`pprof -top`):
+
+- `writeLeafPageRawSortedSized`: **58.23% flat** (still dominant)
+- `syscall.rawsyscalln`: **13.92% flat**
+
+Alloc-space (`pprof -alloc_space`) highlights:
+
+- `splitLeafInsertRaw` is small in alloc-space (`~1.5MB` cum in this run)
+- `bucket.Write` and benchmark harness allocations still dominate total
+  alloc-space
+
+Non-profile focused artifact:
+
+- `report/bear_v26_focus_write1k`
+
+Results:
+
+- `Write/1KB`: **1,384,191 ops/s**
+- Peak RSS: **87.141 MB** (`<100MB` verified)
+- Errors: `0`
+
+### 21.6 v26 full quick subprocess suite
+
+Artifact:
+
+- `report/bear_v26_full_subproc`
+
+Results (`raw_results.json`):
+
+- Benchmarks: `40`
+- Errors: `0`
+- Peak RSS: **554.7 MB**
+- Peak Go Heap: **36.8 MB**
+- Peak Go Sys: **303.8 MB**
+- Final disk: **4996.0 MB**
+- `Write/1KB`: **1,148,937 ops/s**
+- `Write/64KB`: **30,748 ops/s**
+- `Delete`: **4,436,825 ops/s**
+
+Comparison vs v25 full subprocess (`report/bear_v25_full_subproc`):
+
+- Peak RSS: `562.5 MB -> 554.7 MB` (**-1.4%**)
+- Peak Go Sys: `308.1 MB -> 303.8 MB` (**-1.4%**)
+- `Delete`: `4,439,613 -> 4,436,825` (**flat / noise**)
+- `Write/1KB` and `Write/64KB` were lower in this run set (noisy subprocess
+  suite variance remains high compared with focused runs)
+
+### 21.7 Net interpretation of v26
+
+- v26 successfully preserved/improved focused `Write/1KB` throughput while
+  keeping RSS comfortably below `100MB`.
+- The append-split left-page elision reduces split-path rewrite work in the
+  common append-heavy case and materially lowers memory pressure in some runs.
+- The root CPU hotspot is still `writeLeafPageRawSortedSized`, so the next
+  version should continue optimizing raw leaf serialization directly.
+- Full quick subprocess suite remains useful for correctness/regression checks,
+  but focused profiled runs are a better signal for tuning this hotspot.
+
+### 21.8 Remaining bottlenecks after v26
+
+1. `writeLeafPageRawSortedSized` remains the dominant `Write/1KB` CPU hotspot
+2. `bucket.Write` + key construction remains the largest alloc-space contributor
+3. `Write/64KB` is still syscall-dominated in the value-log flush path
+4. Full-suite process RSS remains far above `<100MB`
+
+### 21.9 Suggested v27+ directions
+
+1. Specialize `writeLeafPageRawSortedSized` further for split rendering
+   (separate data-copy and slot-write strategies for append-heavy cases)
+2. Add a raw split microbenchmark to reduce local `cmd/bench` noise while tuning
+3. Revisit composite-key allocation with a non-pool strategy (e.g. short inline
+   key paths) only after raw writer CPU drops
