@@ -120,6 +120,12 @@ const (
 	// stack scratch arrays in innerInsertAt to avoid heap churn.
 	innerScratchMaxKeys = 512
 
+	// For append/prepend-heavy workloads, avoid symmetric half-splits on edge
+	// leaves. Keeping the hot edge leaf smaller leaves more free space where the
+	// next inserts are likely to land, reducing split frequency and leaf rewrites.
+	leafEdgeSplitBiasNum = 3
+	leafEdgeSplitBiasDen = 4
+
 	// Multipart
 	maxPartNumber = 10000
 
@@ -1880,6 +1886,53 @@ func innerPageFits(keys [][]byte, children []uint32) bool {
 	return headerAndSlots+dataSize <= pageSize
 }
 
+func clampLeafSplitIndex(n, mid int) int {
+	if n <= 2*minLeafEntries {
+		return mid
+	}
+	if mid < minLeafEntries {
+		return minLeafEntries
+	}
+	maxLeft := n - minLeafEntries
+	if mid > maxLeft {
+		return maxLeft
+	}
+	return mid
+}
+
+// chooseLeafSplitIndex biases edge-leaf splits for append/prepend workloads.
+// This reduces repeated splits on the hot edge page without changing format.
+func chooseLeafSplitIndex(entries []*leafEntry, insertIdx int, nextLeaf, prevLeaf uint32) int {
+	n := len(entries)
+	mid := clampLeafSplitIndex(n, n/2)
+	if n <= 2*minLeafEntries || leafEdgeSplitBiasDen <= 0 {
+		return mid
+	}
+
+	try := func(cand int) int {
+		cand = clampLeafSplitIndex(n, cand)
+		if cand == mid {
+			return mid
+		}
+		if !leafEntriesFit(entries[:cand]) || !leafEntriesFit(entries[cand:]) {
+			return mid
+		}
+		return cand
+	}
+
+	// Append-heavy: insertion at right edge of the rightmost leaf.
+	// Keep most entries on the left so the new rightmost page has more slack.
+	if nextLeaf == 0 && insertIdx == n-1 && n >= 16 {
+		return try(n * leafEdgeSplitBiasNum / leafEdgeSplitBiasDen)
+	}
+	// Prepend-heavy: insertion at left edge of the leftmost leaf.
+	// Keep most entries on the right so the new leftmost page has more slack.
+	if prevLeaf == 0 && insertIdx == 0 && n >= 16 {
+		return try(n - (n * leafEdgeSplitBiasNum / leafEdgeSplitBiasDen))
+	}
+	return mid
+}
+
 func shortestSeparator(leftMax, rightMin []byte) []byte {
 	if len(rightMin) == 0 || bytes.Compare(leftMax, rightMin) >= 0 {
 		return copyBytes(rightMin)
@@ -2065,7 +2118,7 @@ func (s *store) insertIntoLeaf(pageID uint32, entry *leafEntry) (*splitResult, e
 	copy(entries[idx+1:], entries[idx:])
 	entries[idx] = entry
 
-	mid := len(entries) / 2
+	mid := chooseLeafSplitIndex(entries, idx, nextLeaf, prevLeaf)
 	left := entries[:mid]
 	right := entries[mid:]
 

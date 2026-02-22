@@ -1416,3 +1416,167 @@ Comparison vs `report/bear_v8_full_subproc`:
 - Value-log tail reclaim now works for bulk-delete patterns (safe tail truncation).
 - Full-suite `<100MB` RSS remains unmet and is now further constrained by benchmark throughput scaling (more work per fixed benchmark duration).
 - The next root cause from Go profiler is `writeLeafPageSorted` (leaf page rewrites during split/merge-heavy paths).
+
+## 17. v11 Follow-Up Addendum (edge-leaf split bias for append-heavy writes)
+
+Date: `2026-02-22`
+
+This pass targets the v10 profiler hotspot (`writeLeafPageSorted`) by reducing
+how often edge leaves split on append-heavy key patterns (like `cmd/bench`
+`Write/*`, which uses monotonic keys `write/<counter>`).
+
+### 17.1 Go profiler baseline before v11 change
+
+Focused `Write/1KB` profile (`report/bear_v11_profile_write1k`):
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --filter Write/1KB \
+  --profile \
+  --output ./report/bear_v11_profile_write1k \
+  --formats json
+```
+
+Key CPU top (`pprof -top`):
+
+- `bear.writeLeafPageSorted`: **~41.8% flat**
+- `runtime.memclrNoHeapPointers`: **~7.5% flat**
+
+Interpretation:
+
+- The v10 root cause remained: leaf page rewrites dominate write throughput.
+- `memclr` stayed low enough that it is no longer the primary optimization
+  target.
+
+### 17.2 v11 optimization: edge-leaf split bias
+
+File:
+
+- `pkg/storage/driver/zoo/bear/storage.go`
+
+Implemented:
+
+- `chooseLeafSplitIndex(...)`
+- `clampLeafSplitIndex(...)`
+- edge split-bias constants (`leafEdgeSplitBiasNum`, `leafEdgeSplitBiasDen`)
+- `insertIntoLeaf(...)` now uses `chooseLeafSplitIndex(...)` instead of always
+  splitting at `len(entries)/2`
+
+Behavior:
+
+- For append-heavy inserts into the **rightmost leaf** (`nextLeaf == 0` and
+  insert at end), the split is biased to keep more entries on the left, leaving
+  more slack in the new hot rightmost leaf.
+- Symmetric bias is applied for prepend-heavy inserts into the leftmost leaf.
+- The change is guarded by fit checks (`leafEntriesFit(...)`) and falls back to
+  the old half-split when the biased split is unsafe.
+
+### 17.3 Tuning notes (failed first attempt, tuned final)
+
+Initial tuning (`7/8` bias) was too aggressive and regressed throughput:
+
+- `report/bear_v11_focus_write1k`: `607,003 ops/s`
+- `report/bear_v11b_profile_write1k`: `739,391 ops/s`
+
+Likely cause:
+
+- over-skewing edge splits increased tree-shape/fanout costs for this workload
+  mix, offsetting split-frequency gains.
+
+Final tuning kept in code:
+
+- `3/4` edge split bias
+- applied only for larger splits (`n >= 16`)
+
+### 17.4 Focused results after tuned v11 (`3/4` bias)
+
+Focused `Write/1KB` (non-profile):
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --filter Write/1KB \
+  --output ./report/bear_v11c_focus_write1k \
+  --formats json
+```
+
+Results:
+
+- `Write/1KB`: **886,291 ops/s**
+- Peak RSS: **76.2 MB**
+- Peak Go Heap: **28.9 MB**
+- Peak Go Sys: **71.1 MB**
+- Errors: `0`
+
+Comparison vs `report/bear_v10_focus_write1k`:
+
+- `Write/1KB`: `684,562 -> 886,291` (**+29.5%**)
+- Peak RSS: `76.9 MB -> 76.2 MB` (still `<100MB`)
+
+Focused `Write/1KB` with profile (`report/bear_v11c_profile_write1k`):
+
+- `Write/1KB`: **1,020,581 ops/s** (profile-mode run; use mainly for hotspot attribution)
+- Peak RSS: **78.4 MB**
+
+### 17.5 Go profiler after tuned v11
+
+Key CPU top (`report/bear_v11c_profile_write1k`, `pprof -top`):
+
+- `bear.writeLeafPageSorted`: **~55.1% flat**
+- `runtime.memclrNoHeapPointers`: **~2.25% flat**
+
+Interpretation:
+
+- The hotspot remains the same (leaf rewrite/encode path).
+- The split-bias change improves throughput for the focused append-heavy case,
+  but does not remove the structural leaf rewrite bottleneck.
+
+### 17.6 Full quick suite (subprocess isolation) tradeoff
+
+Command:
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --isolate-embedded-benchmarks-subprocess \
+  --output ./report/bear_v11_full_subproc \
+  --formats json,markdown
+```
+
+Results (`report/bear_v11_full_subproc/raw_results.json`):
+
+- Benchmarks: `40`
+- Errors: `0`
+- Peak RSS: **453.0 MB**
+- Peak Go Heap: **29.9 MB**
+- Peak Go Sys: **271.8 MB**
+- Final disk: **2885.2 MB**
+- `Write/1KB`: **922,911 ops/s**
+- `Delete`: **3,110,350 ops/s**
+
+Comparison vs `report/bear_v10_full_subproc`:
+
+- `Write/1KB`: `1,115,531 -> 922,911` (**-17.3%**)
+- `Delete`: `2,503,138 -> 3,110,350` (**+24.3%**)
+- Peak RSS: `400.5 MB -> 453.0 MB` (**+13.1%**)
+- Final disk: `4449.2 MB -> 2885.2 MB` (**-35.2%**)
+
+Interpretation:
+
+- v11 split-bias tuning is a **focused append-heavy write win** on local
+  `Write/1KB`, but the broader subprocess suite shows mixed results.
+- The profiler still points at leaf rewrite cost (`writeLeafPageSorted`) as the
+  dominant write bottleneck.
+
+### 17.7 Next v12 candidates (same root cause)
+
+To move past v11, the next step should target the split/rewrite path more
+directly:
+
+1. raw-copy leaf split path (avoid `readAllLeafEntries` decode + full re-encode of unchanged entries)
+2. in-place leaf update fast path (overwrite same-size/smaller payload metadata without full rewrite)
+3. leaf layout changes (prefix compression / persisted metadata) to reduce split frequency structurally
