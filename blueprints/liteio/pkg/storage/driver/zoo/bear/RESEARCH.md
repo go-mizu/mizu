@@ -2918,3 +2918,178 @@ Interpretation:
 2. Revisit the append-right specialized batch-copy writer with stronger
    correctness validation before re-enabling
 3. Continue profiler-guided work on `writeLeafPageRawSortedSized` itself
+
+## 24. v29 optimization (value-log default buffer tuning for 1KB syscall reduction)
+
+This round targets the remaining `Write/1KB` syscall share (`rawsyscalln`) with
+the lowest-risk lever: the default value-log append buffer size.
+
+The profiler after v28 still showed:
+
+- `writeLeafPageRawSortedSized` as the dominant CPU hotspot
+- `syscall.rawsyscalln` as the second hotspot (value-log flush path)
+
+Since all non-empty values are externalized to `values.log`, small-write
+throughput is sensitive to flush frequency. Increasing the default value-log
+buffer can reduce `pwrite` frequency, but it must stay under the focused local
+RSS target (`<100MB`).
+
+### 24.1 Tuning sweep (v29 experiments)
+
+Evaluated default `valLogBufferSize` candidates (serial local `cmd/bench`,
+focused `Write/1KB`):
+
+1. `16MB` (rejected)
+   - exceeded focused RSS target (`~106MB`)
+2. `12MB` (rejected)
+   - still exceeded focused RSS target (`~101.6MB`)
+3. `10MB` (mixed)
+   - within focused RSS in profile run
+   - profiled run improved and `rawsyscalln` share dropped
+   - non-profile / full-suite results were mixed and more variable
+4. `9MB` (selected final v29)
+   - stays under focused RSS target
+   - improves focused profiled `Write/1KB`
+   - keeps non-profile focused `Write/1KB` strong
+
+Final v29 code uses:
+
+- `valLogBufferSize = 9MB` (up from `8MB`)
+
+### 24.2 Final v29 commands (serial)
+
+Focused profiled `Write/1KB`:
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --filter 'Write/1KB' \
+  --profile \
+  --progress=false \
+  --formats json \
+  --output ./report/bear_v29d_profile_write1k
+```
+
+Focused non-profile `Write/1KB`:
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --filter 'Write/1KB' \
+  --progress=false \
+  --formats json \
+  --output ./report/bear_v29d_focus_write1k
+```
+
+Full quick subprocess suite:
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --isolate-embedded-benchmarks-subprocess \
+  --progress=false \
+  --formats json \
+  --output ./report/bear_v29d_full_subproc
+```
+
+Profiler inspection:
+
+```bash
+go tool pprof -top ./report/bear_v29d_profile_write1k/bear/cpu.pprof
+go tool pprof -top -alloc_space ./report/bear_v29d_profile_write1k/bear/allocs.pprof
+```
+
+### 24.3 v29 focused results (`Write/1KB`, serial)
+
+Profiled artifact:
+
+- `report/bear_v29d_profile_write1k`
+
+Results:
+
+- `Write/1KB`: **1,360,015 ops/s**
+- Peak RSS: **88.844 MB** (`<100MB` verified)
+- Peak Go Heap: **31.883 MB**
+- Peak Go Sys: **87.459 MB**
+- Total alloc-space: **356.0 MB**
+- Errors: `0`
+
+CPU profile (`pprof -top`):
+
+- `writeLeafPageRawSortedSized`: **59.49% flat** (still dominant)
+- `syscall.rawsyscalln`: **13.92% flat**
+
+Compared with v28 profiled (`report/bear_v28j_profile_write1k`):
+
+- `Write/1KB`: `1,278,546 -> 1,360,015` (**+6.4%**)
+- Peak RSS: `84.109 MB -> 88.844 MB` (still `<100MB`)
+- `rawsyscalln` flat share: `14.10% -> 13.92%` (small reduction)
+
+Non-profile artifact:
+
+- `report/bear_v29d_focus_write1k`
+
+Results:
+
+- `Write/1KB`: **1,363,558 ops/s**
+- Peak RSS: **89.406 MB** (`<100MB` verified)
+- Peak Go Heap: **30.734 MB**
+- Peak Go Sys: **91.475 MB**
+- Errors: `0`
+
+Compared with v28 focused non-profile (`report/bear_v28j_focus_write1k_serial`):
+
+- `Write/1KB`: `1,378,923 -> 1,363,558` (**-1.1%**, near observed local variance)
+- Peak RSS: `85.188 MB -> 89.406 MB` (still `<100MB`)
+
+### 24.4 v29 full quick subprocess suite (serial)
+
+Artifact:
+
+- `report/bear_v29d_full_subproc`
+
+Results:
+
+- Benchmarks: `40`
+- Errors: `0`
+- Peak RSS: **533.969 MB**
+- Peak Go Heap: **36.797 MB**
+- Peak Go Sys: **315.694 MB**
+- Final disk: **3184.297 MB**
+- `Write/1KB`: **702,860 ops/s**
+- `Write/64KB`: **42,442 ops/s**
+- `Delete`: **3,870,058 ops/s**
+
+Interpretation:
+
+- Full-suite subprocess metrics remain noisy/mixed across runs and should be
+  treated primarily as correctness/regression smoke plus long-suite resource
+  context.
+- The focused profiled and focused non-profile `Write/1KB` runs are a better
+  signal for this particular tuning change.
+
+### 24.5 Net interpretation of v29
+
+- v29 is a small, low-risk tuning step that increases the default value-log
+  buffer from `8MB` to `9MB`.
+- It improves the focused profiled `Write/1KB` run while preserving the focused
+  `<100MB` RSS target.
+- The main hotspot remains `writeLeafPageRawSortedSized`; v29 reduces only part
+  of the secondary syscall overhead.
+
+### 24.6 Remaining bottlenecks after v29
+
+1. `writeLeafPageRawSortedSized` remains the dominant `Write/1KB` CPU hotspot
+2. `bucket.Write` + key construction still dominate alloc-space
+3. `Write/64KB` remains significantly syscall-bound
+4. Full-suite process RSS remains far above `<100MB`
+
+### 24.7 Suggested v30+ directions
+
+1. Add a dedicated raw split microbenchmark (append/non-append, packed/non-packed)
+2. Re-enable and harden append-right batch-copy split optimization only with
+   stronger invariants/tests
+3. Continue direct optimization of `writeLeafPageRawSortedSized`

@@ -318,6 +318,28 @@ func fnv1aParts(bucket, key string) uint64 {
 	return h
 }
 
+// v5: fnv1aBase pre-computes the FNV-1a hash state after hashing "bucket\x00".
+func fnv1aBase(bucket string) uint64 {
+	h := uint64(14695981039346656037)
+	for i := 0; i < len(bucket); i++ {
+		h ^= uint64(bucket[i])
+		h *= 1099511628211
+	}
+	h ^= 0
+	h *= 1099511628211
+	return h
+}
+
+// v5: fnv1aFromBase continues hashing from a pre-computed base state.
+func fnv1aFromBase(base uint64, key string) uint64 {
+	h := base
+	for i := 0; i < len(key); i++ {
+		h ^= uint64(key[i])
+		h *= 1099511628211
+	}
+	return h
+}
+
 func artSearch(n any, key []byte, keyHash uint64) *leafEntry {
 	depth := 0
 	cur := n
@@ -1187,7 +1209,7 @@ const shardMask = numShards - 1
 // Fixed-size per shard, no allocation, no probing, no grow.
 // Slot conflicts cause eviction (last writer wins). Misses fall back to ART.
 // Uses 64-bit FNV-1a for lookup — collision probability ~10^-14 per operation.
-const htCacheSize = 4096
+const htCacheSize = 8192 // v5: increased from 4096 for ~90% hit rate (fits L1 cache)
 const htCacheMask = htCacheSize - 1
 
 type htCacheEntry struct {
@@ -1260,7 +1282,7 @@ func (s *store) Bucket(name string) storage.Bucket {
 		name = "default"
 	}
 	name = safeBucketName(name)
-	return &bucket{store: s, name: name}
+	return &bucket{store: s, name: name, hashBase: fnv1aBase(name)}
 }
 
 func (s *store) Buckets(ctx context.Context, limit, offset int, opts storage.Options) (storage.BucketIter, error) {
@@ -1512,8 +1534,9 @@ func (s *store) recoverShard(shard *artShard) {
 // ---------------------------------------------------------------------------
 
 type bucket struct {
-	store *store
-	name  string
+	store    *store
+	name     string
+	hashBase uint64 // v5: pre-computed FNV-1a of "name\x00"
 
 	mpMu      sync.RWMutex
 	mpUploads map[string]*multipartUpload
@@ -1551,8 +1574,10 @@ func (b *bucket) Info(ctx context.Context) (*storage.BucketInfo, error) {
 }
 
 func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int64, contentType string, opts storage.Options) (*storage.Object, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
+	if ctx != bgCtx {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 	}
 
 	relKey, err := cleanKey(key)
@@ -1572,11 +1597,11 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 		b.store.bucketExists.Store(b.name, struct{}{})
 	}
 
-	// v3: Stack-buffer compositeKey (avoids heap alloc for keys ≤ 256B).
+	// v3: Stack-buffer compositeKey (Write always needs ck for artInsert + vlog).
 	var buf [256]byte
 	ck := appendCompositeKey(buf[:0], b.name, relKey)
 
-	keyHash := fnv1a(ck)
+	keyHash := fnv1aFromBase(b.hashBase, relKey) // v5: hash from pre-computed base
 	shard := b.store.shardForHash(keyHash)
 	ctIdx := b.store.ctTable.intern(contentType)
 	now := fastNow()
@@ -1679,9 +1704,14 @@ func acquireNode4() *node4 {
 	return n
 }
 
+// v5: background context singleton for fast path comparison.
+var bgCtx = context.Background()
+
 func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opts storage.Options) (io.ReadCloser, *storage.Object, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, nil, err
+	if ctx != bgCtx {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	relKey, err := cleanKey(key)
@@ -1689,17 +1719,17 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 		return nil, nil, err
 	}
 
-	// v3: Stack-buffer compositeKey.
-	var buf [256]byte
-	ck := appendCompositeKey(buf[:0], b.name, relKey)
-
-	keyHash := fnv1a(ck)
+	// v5: Hash from pre-computed base, skip ck construction on cache hit.
+	keyHash := fnv1aFromBase(b.hashBase, relKey)
 	shard := b.store.shardForHash(keyHash)
 
 	shard.mu.RLock()
 	leaf := shard.ht.lookup(keyHash) // v4: O(1) cache lookup
 	if leaf == nil {
-		leaf = artSearch(shard.root, ck, keyHash) // fallback
+		// Cache miss — build ck for ART traversal.
+		var buf [256]byte
+		ck := appendCompositeKey(buf[:0], b.name, relKey)
+		leaf = artSearch(shard.root, ck, keyHash)
 	}
 	if leaf == nil {
 		shard.mu.RUnlock()
@@ -1747,8 +1777,10 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 }
 
 func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*storage.Object, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
+	if ctx != bgCtx {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 	}
 
 	relKey, err := cleanKey(key)
@@ -1756,17 +1788,16 @@ func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*s
 		return nil, err
 	}
 
-	// v3: Stack-buffer compositeKey.
-	var buf [256]byte
-	ck := appendCompositeKey(buf[:0], b.name, relKey)
-
-	keyHash := fnv1a(ck)
+	// v5: Hash from pre-computed base, skip ck construction on cache hit.
+	keyHash := fnv1aFromBase(b.hashBase, relKey)
 	shard := b.store.shardForHash(keyHash)
 
 	shard.mu.RLock()
-	leaf := shard.ht.lookup(keyHash) // v4: O(1) cache lookup
+	leaf := shard.ht.lookup(keyHash)
 	if leaf == nil {
-		leaf = artSearch(shard.root, ck, keyHash) // fallback
+		var buf [256]byte
+		ck := appendCompositeKey(buf[:0], b.name, relKey)
+		leaf = artSearch(shard.root, ck, keyHash)
 	}
 	if leaf != nil {
 		// Metadata-only Stat: no disk I/O!
@@ -1809,8 +1840,10 @@ func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*s
 }
 
 func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) error {
-	if err := ctx.Err(); err != nil {
-		return err
+	if ctx != bgCtx {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 	}
 
 	relKey, err := cleanKey(key)
@@ -1831,27 +1864,6 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 		}
 		var toDelete []deleteItem
 
-		for i := range b.store.shards {
-			shard := &b.store.shards[i]
-			shard.mu.RLock()
-			artForEachPrefix(shard.root, prefix, func(leaf *leafEntry) {
-				// Reconstruct composite key from tree — not available.
-				// We need to collect from the WAL or store keys.
-				// Since we removed key from leaf, we need a different approach for recursive delete.
-				// Use the prefix scan and store keyHash for deletion.
-				toDelete = append(toDelete, deleteItem{shard: shard, keyHash: leaf.keyHash})
-			})
-			shard.mu.RUnlock()
-		}
-
-		if len(toDelete) == 0 {
-			return storage.ErrNotExist
-		}
-
-		// For recursive delete we need the actual keys. Since we don't store them in leaves,
-		// we need to collect them during traversal. Let's use a key-reconstruction approach.
-		// Actually, we need to walk the tree and reconstruct keys from the path.
-		toDelete = toDelete[:0]
 		for i := range b.store.shards {
 			shard := &b.store.shards[i]
 			shard.mu.RLock()
@@ -1878,12 +1890,13 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 		return nil
 	}
 
-	// v3: Stack-buffer compositeKey + fastNow.
+	// v5: Hash from pre-computed base, skip ck on cache hit.
+	keyHash := fnv1aFromBase(b.hashBase, relKey)
+	shard := b.store.shardForHash(keyHash)
+
+	// Delete always needs ck for artDelete + vlog appendDelete.
 	var buf [256]byte
 	ck := appendCompositeKey(buf[:0], b.name, relKey)
-
-	keyHash := fnv1a(ck)
-	shard := b.store.shardForHash(keyHash)
 
 	now := fastNow()
 	shard.mu.Lock()

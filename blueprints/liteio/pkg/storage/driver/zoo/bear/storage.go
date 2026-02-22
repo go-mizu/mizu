@@ -80,8 +80,10 @@ const (
 	valLogThreshold = 0
 
 	// Buffered append size for the value log. This amortizes syscall cost for
-	// small writes (e.g. 1KB benchmark workload).
-	valLogBufferSize = 8 * 1024 * 1024
+	// small writes (e.g. 1KB benchmark workload). v29 raises the default from
+	// 8MB to 9MB to cut flush frequency while staying under the focused RSS
+	// target (<100MB) in local Write/1KB runs.
+	valLogBufferSize = 9 * 1024 * 1024
 
 	// Grow the value-log buffer for medium/large write workloads (e.g. 64KB+)
 	// to reduce flush syscall frequency, while keeping the default footprint
