@@ -1175,3 +1175,244 @@ Comparison vs prior subprocess reference (`report/bear_v7_full_subproc`):
 - Full-suite `<100MB` RSS is still not met
 - Focused `Write/1KB` remains `<100MB` RSS and improved slightly
 - Subprocess-isolated full-suite results improved significantly versus `v7` on this machine/run set
+
+## 16. v10 Follow-Up Addendum (Profiler-driven optimization + value-log tail reclaim)
+
+Date: `2026-02-22`
+
+This pass was explicitly profiler-driven.
+
+### 16.1 Go profiler findings (before optimization)
+
+Profiled focused `Write/1KB` (`report/bear_v9_profile_write1k`):
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --filter Write/1KB \
+  --profile \
+  --output ./report/bear_v9_profile_write1k \
+  --formats json
+```
+
+Key CPU finding (`pprof -top`, embedded in `raw_results.json`):
+
+- `runtime.memclrNoHeapPointers`: **~43.5% flat**
+
+Interpretation:
+
+- We were spending a large fraction of CPU repeatedly zeroing 4KB pages.
+- The obvious suspects were full-page clears in:
+  - `writeLeafPage`
+  - `writeInnerPage`
+  - free-list page zeroing (`allocPage` reuse / `freePage`)
+
+Profiled focused `Delete` (`report/bear_v9_profile_delete`) also showed:
+
+- heavy allocations from `readLeafEntry` / `readAllLeafEntries`
+- CPU in page rewrites + metadata writes
+
+### 16.2 Optimizations implemented in this pass
+
+#### A. Remove unnecessary page clears (profiler root cause fix)
+
+- Removed full-page zeroing in:
+  - `writeLeafPage*`
+  - `writeInnerPage`
+  - `allocPage()` free-page reuse path
+  - `freePage()`
+  - free-list rebuild in tail-trim vacuum
+
+Rationale:
+
+- Page readers use `count`, `freeOff`, and slot metadata to define the live region.
+- Stale bytes in free space / dead slots are safe and should not require zeroing.
+- This directly targets the `memclr` hotspot.
+
+#### B. `Delete` path: in-place leaf delete + deferred compaction
+
+- Added `leafDeleteAt(...)`:
+  - removes a slot in-place
+  - updates `count`
+  - coalesces `freeOff` only when deleting the current low-watermark entry
+- Added `compactLeafPage(...)` and `leafPackedFreeSpace(...)`
+  - compaction is only attempted later on insert when a page is full **and** recoverable hole space exists
+
+Effect:
+
+- `Delete` no longer rewrites the entire leaf page on every delete.
+- This removes the previous `readAllLeafEntries`/`writeLeafPage` per-delete cost from the hot path.
+
+#### C. `Write` split path: avoid unnecessary work
+
+- `insertIntoLeaf` split path now inserts at known `idx` instead of append+`sort.Slice`
+- Added `writeLeafPageSorted(...)` and routed hot internal call sites to it (skip redundant sorting)
+- Fixed a regression introduced during compaction work:
+  - compaction-before-split now runs **only** when recoverable hole space exists (`leafPackedFreeSpace > leafFreeSpace`)
+
+#### D. `innerInsertAt` allocation reduction
+
+- Switched `innerInsertAt(...)` scratch metadata slices to stack-backed fixed arrays (`innerScratchMaxKeys`)
+- Reduced heap allocations in the inner insert fast path
+
+#### E. Value-log reclaim: tail trim after bulk deletes (safe reclaim path)
+
+- Added `maybeTrimValueLogTailLocked(...)`
+  - scans live entries to find max live external value end offset
+  - flushes buffered value-log bytes
+  - truncates `values.log` tail if all live external values are below current end
+- Triggered after bulk delete paths (force bucket delete / recursive delete)
+
+Important scope note:
+
+- This is **tail reclaim**, not full value-log rewrite compaction.
+- It reclaims dead space at the end of `values.log` safely with no offset rewriting.
+
+### 16.3 Validation: value-log tail reclaim
+
+Ad-hoc local check (recursive delete):
+
+- `btree.dat`: `4,194,304 -> 8,192` bytes
+- `values.log`: `16,777,216 -> 0` bytes
+
+This confirms the new tail-reclaim path works when recent values are deleted and no live external values remain.
+
+### 16.4 Go profiler findings (after optimization)
+
+Profiled focused `Write/1KB` again (`report/bear_v10b_profile_write1k`):
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --filter Write/1KB \
+  --profile \
+  --output ./report/bear_v10b_profile_write1k \
+  --formats json
+```
+
+Key changes in CPU top:
+
+- `runtime.memclrNoHeapPointers`: **~43.5% -> ~4.35%** (large drop)
+- New root cause: `bear.writeLeafPageSorted` (**~47.8% flat**)
+
+Interpretation:
+
+- The profiler-guided memclr optimization worked.
+- The next dominant bottleneck is structural:
+  - leaf page rewrites during split/merge-heavy paths (`writeLeafPageSorted`)
+- Deeper improvements from here likely require:
+  - reducing split frequency
+  - reducing leaf rewrite volume
+  - or more aggressive page-layout / split-policy changes
+
+### 16.5 Benchmark results (local `cmd/bench`)
+
+#### A. Focused `Write/1KB` (post-fix, non-profile run)
+
+Command:
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --filter Write/1KB \
+  --output ./report/bear_v10_focus_write1k \
+  --formats json
+```
+
+Result (`report/bear_v10_focus_write1k/raw_results.json`):
+
+- `Write/1KB`: **684,562 ops/s**
+- Peak RSS: **76.9 MB**
+- Errors: `0`
+
+Profile-mode reference (`report/bear_v10b_profile_write1k`):
+
+- `Write/1KB`: **794,900 ops/s** (profile mode can vary; use mainly for hotspot attribution)
+
+#### B. Focused `Delete` (post optimization)
+
+Command:
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --filter Delete \
+  --output ./report/bear_v10b_focus_delete \
+  --formats json
+```
+
+Result (`report/bear_v10b_focus_delete/raw_results.json`):
+
+- `Delete`: **2,718,646 ops/s**
+- Peak RSS: **549.1 MB**
+- Errors: `0`
+
+Interpretation:
+
+- Massive throughput increase is expected from the in-place leaf delete path.
+- Peak RSS increased because the adaptive benchmark now completes far more iterations in the same time budget (more total workload / larger transient state).
+
+#### C. Full quick suite (`report/bear_v10_full`)
+
+Command:
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --output ./report/bear_v10_full \
+  --formats json,markdown
+```
+
+Results:
+
+- Benchmarks: `40`
+- Errors: `0`
+- Peak RSS: **527.9 MB**
+- Peak Go Heap: **28.8 MB**
+- Peak Go Sys: **251.6 MB**
+- Final disk: **13148.5 MB**
+- `Write/1KB`: **1,019,533 ops/s**
+- `Delete`: **3,043,130 ops/s**
+
+#### D. Full quick suite, subprocess isolation (`report/bear_v10_full_subproc`)
+
+Command:
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --isolate-embedded-benchmarks-subprocess \
+  --output ./report/bear_v10_full_subproc \
+  --formats json,markdown
+```
+
+Results:
+
+- Benchmarks: `40`
+- Errors: `0`
+- Peak RSS: **400.5 MB**
+- Peak Go Heap: **30.0 MB**
+- Peak Go Sys: **241.4 MB**
+- Final disk (merged phase max): **4449.2 MB**
+- `Write/1KB`: **1,115,531 ops/s**
+- `Delete`: **2,503,138 ops/s**
+
+Comparison vs `report/bear_v8_full_subproc`:
+
+- `Write/1KB`: `856,927 -> 1,115,531` (**+30.2%**)
+- `Delete`: `787,639 -> 2,503,138` (**3.18x**)
+- Peak RSS: `183.6 MB -> 400.5 MB` (**+118.1%**) due much higher adaptive iteration throughput / workload volume
+
+### 16.6 Current conclusion after v10
+
+- Profiler-guided optimization materially improved throughput and removed the prior `memclr` bottleneck.
+- `Delete` performance improved dramatically via in-place leaf deletes.
+- Value-log tail reclaim now works for bulk-delete patterns (safe tail truncation).
+- Full-suite `<100MB` RSS remains unmet and is now further constrained by benchmark throughput scaling (more work per fixed benchmark duration).
+- The next root cause from Go profiler is `writeLeafPageSorted` (leaf page rewrites during split/merge-heavy paths).

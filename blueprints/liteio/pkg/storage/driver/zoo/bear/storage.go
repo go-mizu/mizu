@@ -105,6 +105,7 @@ const (
 	// fragmentation. Rebuild is expensive, so keep thresholds conservative.
 	vacuumRebuildMinDeletes   = 256
 	vacuumRebuildMinFreePages = 64
+	vacuumValueLogTrimDeletes = 64
 
 	// Runtime search hints: sample a few slot heads to narrow the binary-search
 	// window for large pages without changing the on-disk format.
@@ -114,6 +115,10 @@ const (
 	// Persisted inner-page hint arrays cost 1 byte per separator key. Only use
 	// them on larger inner pages where the search benefit outweighs fanout loss.
 	innerHintArrayMinKeys = 64
+
+	// Inner pages (4KB) cannot exceed this separator count in practice; used for
+	// stack scratch arrays in innerInsertAt to avoid heap churn.
+	innerScratchMaxKeys = 512
 
 	// Multipart
 	maxPartNumber = 10000
@@ -763,10 +768,6 @@ func (s *store) allocPage() (uint32, error) {
 		id := s.freeHead
 		pg := s.page(id)
 		s.freeHead = binary.LittleEndian.Uint32(pg[0:4])
-		// Zero the page
-		for i := range pg {
-			pg[i] = 0
-		}
 		return id, nil
 	}
 
@@ -792,9 +793,6 @@ func (s *store) allocPage() (uint32, error) {
 // freePage adds a page to the free list.
 func (s *store) freePage(id uint32) {
 	pg := s.page(id)
-	for i := range pg {
-		pg[i] = 0
-	}
 	binary.LittleEndian.PutUint32(pg[0:4], s.freeHead)
 	s.freeHead = id
 	s.vacuumDebt++
@@ -873,9 +871,6 @@ func (s *store) trimFreeTailLocked() uint32 {
 	for i := len(kept) - 1; i >= 0; i-- {
 		id := kept[i]
 		pg := s.page(id)
-		for j := range pg {
-			pg[j] = 0
-		}
 		binary.LittleEndian.PutUint32(pg[0:4], s.freeHead)
 		s.freeHead = id
 	}
@@ -1059,6 +1054,49 @@ func (s *store) maybeRebuildVacuumLocked(deletedKeys int) {
 		return
 	}
 	_ = s.rebuildVacuumLocked()
+}
+
+func (s *store) maxLiveValueEndLocked() int64 {
+	var maxEnd int64
+	s.btreeScan(nil, func(e *leafEntry) bool {
+		if e == nil || e.valOffset < 0 {
+			return true
+		}
+		end := e.valOffset + e.valLen
+		if end > maxEnd {
+			maxEnd = end
+		}
+		return true
+	})
+	return maxEnd
+}
+
+func (s *store) maybeTrimValueLogTailLocked(deletedKeys int) {
+	if deletedKeys < vacuumValueLogTrimDeletes || s.valLog == nil {
+		return
+	}
+	s.valMu.Lock()
+	defer s.valMu.Unlock()
+	if err := s.flushValueLogLocked(); err != nil {
+		return
+	}
+	liveEnd := s.maxLiveValueEndLocked()
+	if liveEnd < 0 {
+		liveEnd = 0
+	}
+	if liveEnd >= s.valFlushed {
+		return
+	}
+	if err := s.valLog.Truncate(liveEnd); err != nil {
+		return
+	}
+	s.valLogPos = liveEnd
+	s.valFlushed = liveEnd
+	s.valBuf = s.valBuf[:0]
+	s.valBufStart = liveEnd
+	if s.syncMode == "msync" {
+		_ = s.valLog.Sync()
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1271,13 +1309,7 @@ func readAllLeafEntries(pg []byte) []*leafEntry {
 	return entries
 }
 
-// writeLeafPage builds a leaf page from entries. Returns false if entries don't fit.
-func writeLeafPage(pg []byte, entries []*leafEntry, nextLeaf, prevLeaf uint32) bool {
-	// Sort entries by key
-	sort.Slice(entries, func(i, j int) bool {
-		return bytes.Compare(entries[i].key, entries[j].key) < 0
-	})
-
+func writeLeafPageSorted(pg []byte, entries []*leafEntry, nextLeaf, prevLeaf uint32) bool {
 	// Check if everything fits
 	slotsSize := leafHeaderSize + len(entries)*leafSlotSize
 	dataSize := 0
@@ -1286,11 +1318,6 @@ func writeLeafPage(pg []byte, entries []*leafEntry, nextLeaf, prevLeaf uint32) b
 	}
 	if slotsSize+dataSize > pageSize {
 		return false
-	}
-
-	// Clear page
-	for i := range pg {
-		pg[i] = 0
 	}
 
 	// Write header
@@ -1314,6 +1341,14 @@ func writeLeafPage(pg []byte, entries []*leafEntry, nextLeaf, prevLeaf uint32) b
 
 	binary.LittleEndian.PutUint16(pg[3:], uint16(freeOff))
 	return true
+}
+
+// writeLeafPage builds a leaf page from entries. Returns false if entries don't fit.
+func writeLeafPage(pg []byte, entries []*leafEntry, nextLeaf, prevLeaf uint32) bool {
+	sort.Slice(entries, func(i, j int) bool {
+		return bytes.Compare(entries[i].key, entries[j].key) < 0
+	})
+	return writeLeafPageSorted(pg, entries, nextLeaf, prevLeaf)
 }
 
 func leafSlotHead(pg []byte, idx int) uint32 {
@@ -1421,6 +1456,58 @@ func leafFreeSpace(pg []byte) int {
 	freeOff := int(binary.LittleEndian.Uint16(pg[3:5]))
 	slotsEnd := leafHeaderSize + count*leafSlotSize
 	return freeOff - slotsEnd
+}
+
+func leafEntryEncodedSize(pg []byte, offset uint16) int {
+	off := int(offset)
+	if off+2 > len(pg) {
+		return 0
+	}
+	keyLen := int(binary.LittleEndian.Uint16(pg[off:]))
+	off += 2 + keyLen
+	if off+2 > len(pg) {
+		return 0
+	}
+	ctLen := int(binary.LittleEndian.Uint16(pg[off:]))
+	off += 2 + ctLen
+	if off+1 > len(pg) {
+		return 0
+	}
+	flags := pg[off]
+	off++
+	if flags == flagExternal {
+		off += 16
+	} else {
+		if off+4 > len(pg) {
+			return 0
+		}
+		valLen := int(binary.LittleEndian.Uint32(pg[off:]))
+		off += 4 + valLen
+	}
+	off += 16
+	if off > len(pg) {
+		return 0
+	}
+	return off - int(offset)
+}
+
+func leafPackedFreeSpace(pg []byte) int {
+	count := int(binary.LittleEndian.Uint16(pg[1:3]))
+	if count == 0 {
+		return pageSize - leafHeaderSize
+	}
+	liveBytes := 0
+	for i := 0; i < count; i++ {
+		slotOff := leafHeaderSize + i*leafSlotSize
+		entryOff := binary.LittleEndian.Uint16(pg[slotOff+4:])
+		sz := leafEntryEncodedSize(pg, entryOff)
+		if sz <= 0 {
+			return leafFreeSpace(pg)
+		}
+		liveBytes += sz
+	}
+	slotsEnd := leafHeaderSize + count*leafSlotSize
+	return pageSize - slotsEnd - liveBytes
 }
 
 // ---------------------------------------------------------------------------
@@ -1633,28 +1720,37 @@ func innerInsertAt(pg []byte, key []byte, newChild uint32, childIdx int) bool {
 	if innerFreeSpace(pg) < needed {
 		return false
 	}
+	if count+1 > innerScratchMaxKeys {
+		return false
+	}
 
 	freeOff := int(binary.LittleEndian.Uint16(pg[3:5])) - keySize
 	binary.LittleEndian.PutUint16(pg[freeOff:], uint16(len(key)))
 	copy(pg[freeOff+2:], key)
 
-	oldChildren := make([]uint32, count+1)
+	var oldChildrenBuf [innerScratchMaxKeys + 1]uint32
+	oldChildren := oldChildrenBuf[:count+1]
 	for i := 0; i <= count; i++ {
 		oldChildren[i] = readInnerChild(pg, i)
 	}
-	newChildren := make([]uint32, count+2)
+	var newChildrenBuf [innerScratchMaxKeys + 2]uint32
+	newChildren := newChildrenBuf[:count+2]
 	copy(newChildren, oldChildren[:childIdx+1])
 	newChildren[childIdx+1] = newChild
 	copy(newChildren[childIdx+2:], oldChildren[childIdx+1:])
 
-	oldHeads := make([]uint32, count)
-	oldOffs := make([]uint16, count)
+	var oldHeadsBuf [innerScratchMaxKeys]uint32
+	var oldOffsBuf [innerScratchMaxKeys]uint16
+	oldHeads := oldHeadsBuf[:count]
+	oldOffs := oldOffsBuf[:count]
 	for i := 0; i < count; i++ {
 		oldHeads[i] = innerSlotHead(pg, count, i)
 		oldOffs[i] = innerSlotOffset(pg, count, i)
 	}
-	newHeads := make([]uint32, count+1)
-	newOffs := make([]uint16, count+1)
+	var newHeadsBuf [innerScratchMaxKeys]uint32
+	var newOffsBuf [innerScratchMaxKeys]uint16
+	newHeads := newHeadsBuf[:count+1]
+	newOffs := newOffsBuf[:count+1]
 	copy(newHeads, oldHeads[:childIdx])
 	copy(newOffs, oldOffs[:childIdx])
 	newHeads[childIdx] = keyHead(key)
@@ -1706,11 +1802,6 @@ func writeInnerPage(pg []byte, keys [][]byte, children []uint32) bool {
 	fixedSize := baseFixed
 	if useHintArray {
 		fixedSize += count
-	}
-
-	// Clear
-	for i := range pg {
-		pg[i] = 0
 	}
 
 	// Header
@@ -1943,7 +2034,7 @@ func (s *store) insertIntoLeaf(pageID uint32, entry *leafEntry) (*splitResult, e
 		}
 		nextLeaf := binary.LittleEndian.Uint32(pg[5:])
 		prevLeaf := binary.LittleEndian.Uint32(pg[9:])
-		if !writeLeafPage(pg, entries, nextLeaf, prevLeaf) {
+		if !writeLeafPageSorted(pg, entries, nextLeaf, prevLeaf) {
 			return nil, fmt.Errorf("bear: leaf rewrite failed (page %d)", pageID)
 		}
 		return nil, nil
@@ -1956,16 +2047,23 @@ func (s *store) insertIntoLeaf(pageID uint32, entry *leafEntry) (*splitResult, e
 		s.leafInsertAt(pg, idx, entry)
 		return nil, nil
 	}
+	// If holes exist from in-place deletes, compact once before splitting.
+	if packedFree := leafPackedFreeSpace(pg); packedFree >= neededSpace && packedFree > leafFreeSpace(pg) {
+		if s.compactLeafPage(pg) && leafFreeSpace(pg) >= neededSpace {
+			idx, _ = leafSearch(pg, entry.key)
+			s.leafInsertAt(pg, idx, entry)
+			return nil, nil
+		}
+	}
 
 	// Need to split — read all entries before allocating (which may remap)
 	entries := readAllLeafEntries(pg)
 	nextLeaf := binary.LittleEndian.Uint32(pg[5:])
 	prevLeaf := binary.LittleEndian.Uint32(pg[9:])
 
-	entries = append(entries, entry)
-	sort.Slice(entries, func(i, j int) bool {
-		return bytes.Compare(entries[i].key, entries[j].key) < 0
-	})
+	entries = append(entries, nil)
+	copy(entries[idx+1:], entries[idx:])
+	entries[idx] = entry
 
 	mid := len(entries) / 2
 	left := entries[:mid]
@@ -1981,13 +2079,13 @@ func (s *store) insertIntoLeaf(pageID uint32, entry *leafEntry) (*splitResult, e
 	pg = s.page(pageID)
 
 	// Write left half to current page
-	if !writeLeafPage(pg, left, newID, prevLeaf) {
+	if !writeLeafPageSorted(pg, left, newID, prevLeaf) {
 		return nil, fmt.Errorf("bear: left leaf write failed")
 	}
 
 	// Write right half to new page
 	newPg := s.page(newID)
-	if !writeLeafPage(newPg, right, nextLeaf, pageID) {
+	if !writeLeafPageSorted(newPg, right, nextLeaf, pageID) {
 		return nil, fmt.Errorf("bear: right leaf write failed")
 	}
 
@@ -2028,6 +2126,41 @@ func (s *store) leafInsertAt(pg []byte, idx int, entry *leafEntry) {
 	// Update header
 	binary.LittleEndian.PutUint16(pg[1:], uint16(count+1))
 	binary.LittleEndian.PutUint16(pg[3:], uint16(freeOff))
+}
+
+func (s *store) leafDeleteAt(pg []byte, idx int) bool {
+	count := int(binary.LittleEndian.Uint16(pg[1:3]))
+	if idx < 0 || idx >= count {
+		return false
+	}
+	slotOff := leafHeaderSize + idx*leafSlotSize
+	entryOff := binary.LittleEndian.Uint16(pg[slotOff+4:])
+	entrySize := leafEntryEncodedSize(pg, entryOff)
+	if entrySize <= 0 {
+		return false
+	}
+	if idx < count-1 {
+		src := slotOff + leafSlotSize
+		dst := slotOff
+		copy(pg[dst:dst+(count-idx-1)*leafSlotSize], pg[src:src+(count-idx-1)*leafSlotSize])
+	}
+	freeOff := int(binary.LittleEndian.Uint16(pg[3:5]))
+	if int(entryOff) == freeOff {
+		freeOff += entrySize
+		if freeOff > pageSize {
+			freeOff = pageSize
+		}
+	}
+	binary.LittleEndian.PutUint16(pg[1:], uint16(count-1))
+	binary.LittleEndian.PutUint16(pg[3:], uint16(freeOff))
+	return true
+}
+
+func (s *store) compactLeafPage(pg []byte) bool {
+	entries := readAllLeafEntries(pg)
+	nextLeaf := binary.LittleEndian.Uint32(pg[5:])
+	prevLeaf := binary.LittleEndian.Uint32(pg[9:])
+	return writeLeafPageSorted(pg, entries, nextLeaf, prevLeaf)
 }
 
 // insertIntoInner inserts a split result into an inner node, splitting if necessary.
@@ -2151,27 +2284,31 @@ func (s *store) btreeDelete(key []byte) bool {
 func (s *store) deleteFrom(pageID uint32, key []byte, level int, isRoot bool) (deleted, underflow bool) {
 	if level == 1 {
 		pg := s.page(pageID)
-		_, found := leafSearch(pg, key)
+		idx, found := leafSearch(pg, key)
 		if !found {
 			return false, false
 		}
-
-		entries := readAllLeafEntries(pg)
-		filtered := make([]*leafEntry, 0, len(entries)-1)
-		for _, e := range entries {
-			if !bytes.Equal(e.key, key) {
-				filtered = append(filtered, e)
+		count := int(binary.LittleEndian.Uint16(pg[1:3]))
+		if !s.leafDeleteAt(pg, idx) {
+			entries := readAllLeafEntries(pg)
+			filtered := make([]*leafEntry, 0, len(entries)-1)
+			for _, e := range entries {
+				if !bytes.Equal(e.key, key) {
+					filtered = append(filtered, e)
+				}
 			}
+			nextLeaf := binary.LittleEndian.Uint32(pg[5:])
+			prevLeaf := binary.LittleEndian.Uint32(pg[9:])
+			_ = writeLeafPageSorted(pg, filtered, nextLeaf, prevLeaf)
+			count = len(filtered)
+		} else {
+			count--
 		}
-
-		nextLeaf := binary.LittleEndian.Uint32(pg[5:])
-		prevLeaf := binary.LittleEndian.Uint32(pg[9:])
-		_ = writeLeafPage(pg, filtered, nextLeaf, prevLeaf)
 
 		if isRoot {
 			return true, false
 		}
-		return true, len(filtered) < minLeafEntries
+		return true, count < minLeafEntries
 	}
 
 	pg := s.page(pageID)
@@ -2260,7 +2397,7 @@ func (s *store) tryMergeLeafChildrenAt(parentID uint32, leftIdx int) bool {
 
 	nextLeaf := binary.LittleEndian.Uint32(rightPg[5:])
 	prevLeaf := binary.LittleEndian.Uint32(leftPg[9:])
-	if !writeLeafPage(leftPg, mergedEntries, nextLeaf, prevLeaf) {
+	if !writeLeafPageSorted(leftPg, mergedEntries, nextLeaf, prevLeaf) {
 		return false
 	}
 	if nextLeaf != 0 {
@@ -2546,6 +2683,7 @@ func (s *store) DeleteBucket(ctx context.Context, name string, opts storage.Opti
 		}
 		s.maybeTrimFreeTailLocked(true)
 		s.maybeRebuildVacuumLocked(len(toDelete))
+		s.maybeTrimValueLogTailLocked(len(toDelete))
 	}
 
 	s.deleteBucketMeta(name)
@@ -2929,6 +3067,7 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 		}
 		b.store.maybeTrimFreeTailLocked(true)
 		b.store.maybeRebuildVacuumLocked(len(toDelete))
+		b.store.maybeTrimValueLogTailLocked(len(toDelete))
 		return nil
 	}
 
