@@ -86,7 +86,7 @@ const (
 	// Grow the value-log buffer for medium/large write workloads (e.g. 64KB+)
 	// to reduce flush syscall frequency, while keeping the default footprint
 	// small for 1KB-focused runs.
-	valLogBufferSizeMax       = 16 * 1024 * 1024
+	valLogBufferSizeMax       = 24 * 1024 * 1024
 	valLogBufferGrowThreshold = 64 * 1024
 
 	// Direct-write very large payloads when the buffer is empty to avoid an
@@ -95,7 +95,7 @@ const (
 
 	// Streaming chunk size used while copying values into the value log.
 	// Larger chunks reduce read/append loop overhead for 64KB/1MB writes.
-	valLogStreamChunkSize = 256 * 1024
+	valLogStreamChunkSize = 512 * 1024
 
 	// Flags byte values for leaf entry encoding.
 	flagInline   byte = 0x00
@@ -173,6 +173,10 @@ var leafRawRefScratchPool = sync.Pool{
 
 var leafPrefixScratchPool = sync.Pool{
 	New: func() any { return make([]int, leafScratchMaxEntries+1) },
+}
+
+var splitResultScratchPool = sync.Pool{
+	New: func() any { return new(splitResult) },
 }
 
 // ---------------------------------------------------------------------------
@@ -1585,7 +1589,10 @@ func putLeafRawRefScratch(b []leafRawEntryRef, used int) {
 		used = len(b)
 	}
 	for i := 0; i < used; i++ {
-		b[i] = leafRawEntryRef{}
+		// Clear only pointer-bearing fields so pooled scratch slices do not retain
+		// references to page-backed or temporary encoded-entry memory.
+		b[i].key = nil
+		b[i].raw = nil
 	}
 	leafRawRefScratchPool.Put(b[:leafScratchMaxEntries])
 }
@@ -1610,15 +1617,34 @@ func leafRawEntriesFit(entries []leafRawEntryRef) bool {
 	return leafRawEntriesFitData(len(entries), leafRawEntriesDataSize(entries))
 }
 
+func putU16LE(dst []byte, v uint16) {
+	dst[0] = byte(v)
+	dst[1] = byte(v >> 8)
+}
+
+func putU32LE(dst []byte, v uint32) {
+	dst[0] = byte(v)
+	dst[1] = byte(v >> 8)
+	dst[2] = byte(v >> 16)
+	dst[3] = byte(v >> 24)
+}
+
+func putU32BE(dst []byte, v uint32) {
+	dst[0] = byte(v >> 24)
+	dst[1] = byte(v >> 16)
+	dst[2] = byte(v >> 8)
+	dst[3] = byte(v)
+}
+
 func writeLeafPageRawSortedSized(pg []byte, entries []leafRawEntryRef, dataSize int, nextLeaf, prevLeaf uint32) bool {
 	if !leafRawEntriesFitData(len(entries), dataSize) {
 		return false
 	}
 
 	pg[0] = pageTypeLeaf
-	binary.LittleEndian.PutUint16(pg[1:], uint16(len(entries)))
-	binary.LittleEndian.PutUint32(pg[5:], nextLeaf)
-	binary.LittleEndian.PutUint32(pg[9:], prevLeaf)
+	putU16LE(pg[1:], uint16(len(entries)))
+	putU32LE(pg[5:], nextLeaf)
+	putU32LE(pg[9:], prevLeaf)
 
 	freeOff := pageSize
 	slotOff := leafHeaderSize
@@ -1627,12 +1653,12 @@ func writeLeafPageRawSortedSized(pg []byte, entries []leafRawEntryRef, dataSize 
 		freeOff -= e.size
 		copy(pg[freeOff:], e.raw)
 
-		binary.BigEndian.PutUint32(pg[slotOff:], e.head)
-		binary.LittleEndian.PutUint16(pg[slotOff+4:], uint16(freeOff))
+		putU32BE(pg[slotOff:], e.head)
+		putU16LE(pg[slotOff+4:], uint16(freeOff))
 		slotOff += leafSlotSize
 	}
 
-	binary.LittleEndian.PutUint16(pg[3:], uint16(freeOff))
+	putU16LE(pg[3:], uint16(freeOff))
 	return true
 }
 
@@ -1653,9 +1679,9 @@ func writeLeafPageSorted(pg []byte, entries []*leafEntry, nextLeaf, prevLeaf uin
 
 	// Write header
 	pg[0] = pageTypeLeaf
-	binary.LittleEndian.PutUint16(pg[1:], uint16(len(entries)))
-	binary.LittleEndian.PutUint32(pg[5:], nextLeaf)
-	binary.LittleEndian.PutUint32(pg[9:], prevLeaf)
+	putU16LE(pg[1:], uint16(len(entries)))
+	putU32LE(pg[5:], nextLeaf)
+	putU32LE(pg[9:], prevLeaf)
 
 	// Write entries from end backwards, slots from header forward
 	freeOff := pageSize
@@ -1666,11 +1692,11 @@ func writeLeafPageSorted(pg []byte, entries []*leafEntry, nextLeaf, prevLeaf uin
 
 		// Write slot
 		slotOff := leafHeaderSize + i*leafSlotSize
-		binary.BigEndian.PutUint32(pg[slotOff:], keyHead(e.key))
-		binary.LittleEndian.PutUint16(pg[slotOff+4:], uint16(freeOff))
+		putU32BE(pg[slotOff:], keyHead(e.key))
+		putU16LE(pg[slotOff+4:], uint16(freeOff))
 	}
 
-	binary.LittleEndian.PutUint16(pg[3:], uint16(freeOff))
+	putU16LE(pg[3:], uint16(freeOff))
 	return true
 }
 
@@ -2390,8 +2416,9 @@ func splitLeafInsertRaw(pg, newPg []byte, pageID, newID uint32, idx int, entry *
 		return nil, false
 	}
 
-	var encodedBuf [pageSize]byte
-	n := entry.writeEntry(encodedBuf[:])
+	encodedBuf := getLeafScratchPage()
+	defer putLeafScratchPage(encodedBuf)
+	n := entry.writeEntry(encodedBuf)
 	if n <= 0 || n > len(encodedBuf) {
 		return nil, false
 	}
@@ -2548,7 +2575,13 @@ type splitResult struct {
 }
 
 func newSplitResult(newPageID uint32, splitKey []byte) *splitResult {
-	sr := &splitResult{newPageID: newPageID}
+	v := splitResultScratchPool.Get()
+	sr, _ := v.(*splitResult)
+	if sr == nil {
+		sr = &splitResult{}
+	}
+	sr.newPageID = newPageID
+	sr.splitKey = nil
 	if len(splitKey) <= len(sr.inlineKey) {
 		copy(sr.inlineKey[:], splitKey)
 		sr.splitKey = sr.inlineKey[:len(splitKey)]
@@ -2556,6 +2589,15 @@ func newSplitResult(newPageID uint32, splitKey []byte) *splitResult {
 	}
 	sr.splitKey = copyBytes(splitKey)
 	return sr
+}
+
+func putSplitResult(sr *splitResult) {
+	if sr == nil {
+		return
+	}
+	sr.newPageID = 0
+	sr.splitKey = nil
+	splitResultScratchPool.Put(sr)
 }
 
 // btreeInsert inserts a key-value pair into the B-tree. Returns a splitResult if
@@ -2567,6 +2609,7 @@ func (s *store) btreeInsert(entry *leafEntry) (*splitResult, error) {
 	}
 
 	if split != nil {
+		defer putSplitResult(split)
 		// Root split — create new root
 		newRootID, err := s.allocPage()
 		if err != nil {
@@ -2606,7 +2649,9 @@ func (s *store) insertInto(pageID uint32, entry *leafEntry, level int) (*splitRe
 
 	// Child split — re-read page (mmap may have changed during recursive insert)
 	pg = s.page(pageID)
-	return s.insertIntoInner(pageID, pg, split, childIdx)
+	nextSplit, err := s.insertIntoInner(pageID, pg, split, childIdx)
+	putSplitResult(split)
+	return nextSplit, err
 }
 
 // insertIntoLeaf inserts an entry into a leaf page, splitting if necessary.
@@ -2723,12 +2768,12 @@ func (s *store) leafInsertAt(pg []byte, idx int, entry *leafEntry) {
 
 	// Write slot at idx
 	slotOff := leafHeaderSize + idx*leafSlotSize
-	binary.BigEndian.PutUint32(pg[slotOff:], keyHead(entry.key))
-	binary.LittleEndian.PutUint16(pg[slotOff+4:], uint16(freeOff))
+	putU32BE(pg[slotOff:], keyHead(entry.key))
+	putU16LE(pg[slotOff+4:], uint16(freeOff))
 
 	// Update header
-	binary.LittleEndian.PutUint16(pg[1:], uint16(count+1))
-	binary.LittleEndian.PutUint16(pg[3:], uint16(freeOff))
+	putU16LE(pg[1:], uint16(count+1))
+	putU16LE(pg[3:], uint16(freeOff))
 }
 
 func (s *store) leafReplaceAtInPlace(pg []byte, idx int, entry *leafEntry) bool {
@@ -2762,7 +2807,7 @@ func (s *store) leafReplaceAtInPlace(pg []byte, idx int, entry *leafEntry) bool 
 			if freeOff > pageSize {
 				freeOff = pageSize
 			}
-			binary.LittleEndian.PutUint16(pg[3:], uint16(freeOff))
+			putU16LE(pg[3:], uint16(freeOff))
 		}
 	}
 	return true
@@ -2791,8 +2836,8 @@ func (s *store) leafDeleteAt(pg []byte, idx int) bool {
 			freeOff = pageSize
 		}
 	}
-	binary.LittleEndian.PutUint16(pg[1:], uint16(count-1))
-	binary.LittleEndian.PutUint16(pg[3:], uint16(freeOff))
+	putU16LE(pg[1:], uint16(count-1))
+	putU16LE(pg[3:], uint16(freeOff))
 	return true
 }
 
@@ -2879,19 +2924,35 @@ func (s *store) insertIntoInner(pageID uint32, pg []byte, split *splitResult, ch
 	}
 
 	// Read all keys and children
-	keys := make([][]byte, count)
+	var (
+		keys        [][]byte
+		children    []uint32
+		newKeys     [][]byte
+		newChildren []uint32
+	)
+	if count <= innerScratchMaxKeys {
+		var keysBuf [innerScratchMaxKeys][]byte
+		var childrenBuf [innerScratchMaxKeys + 1]uint32
+		var newKeysBuf [innerScratchMaxKeys + 1][]byte
+		var newChildrenBuf [innerScratchMaxKeys + 2]uint32
+		keys = keysBuf[:count]
+		children = childrenBuf[:count+1]
+		newKeys = newKeysBuf[:count+1]
+		newChildren = newChildrenBuf[:count+2]
+	} else {
+		keys = make([][]byte, count)
+		children = make([]uint32, count+1)
+		newKeys = make([][]byte, count+1)
+		newChildren = make([]uint32, count+2)
+	}
 	for i := 0; i < count; i++ {
 		keys[i] = readInnerKey(pg, i)
 	}
-	children := make([]uint32, count+1)
 	for i := 0; i <= count; i++ {
 		children[i] = readInnerChild(pg, i)
 	}
 
 	// Insert split key and new child
-	newKeys := make([][]byte, count+1)
-	newChildren := make([]uint32, count+2)
-
 	copy(newKeys, keys[:childIdx])
 	newKeys[childIdx] = split.splitKey
 	copy(newKeys[childIdx+1:], keys[childIdx:])
@@ -2928,10 +2989,7 @@ func (s *store) insertIntoInner(pageID uint32, pg []byte, split *splitResult, ch
 		return nil, fmt.Errorf("bear: right inner write failed")
 	}
 
-	return &splitResult{
-		newPageID: newID,
-		splitKey:  splitKey,
-	}, nil
+	return newSplitResult(newID, splitKey), nil
 }
 
 // btreeGet retrieves the entry for the given key.

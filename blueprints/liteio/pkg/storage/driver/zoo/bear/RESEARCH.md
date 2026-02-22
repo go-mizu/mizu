@@ -2096,3 +2096,259 @@ Focused `Write/64KB` (profiled):
 2. Reduce split frequency further (layout/fanout improvements; paper-aligned persisted metadata)
 3. Continue value-log flush batching work for medium writes (`64KB/1MB`) while watching focused RSS
 4. Add microbench/unit tests for raw leaf split/merge correctness to catch alias/slice assembly regressions early
+
+## 20. v21-v25 iterative optimization campaign (profiler-guided)
+
+This section records the next profiler-guided batch after v20 (v21 through v25).
+The priorities were:
+
+- reduce split-path allocations in `splitLeafInsertRaw`
+- improve small-write throughput (`Write/1KB`) while keeping focused RSS `<100MB`
+- improve medium-write throughput (`Write/64KB`) by further reducing value-log overhead
+- preserve full-suite correctness (subprocess-isolated quick suite)
+
+### 20.1 Starting point (post-v20)
+
+From v20 (`report/bear_v20e_profile_write1k`, `report/bear_v20e_profile_write64k`):
+
+- `Write/1KB` (profiled): **1,356,754 ops/s**, peak RSS **91.8 MB**
+- `Write/64KB` (profiled): **51,869.5 ops/s**, peak RSS **74.7 MB**
+- `Write/1KB` CPU hotspot: `writeLeafPageRawSortedSized` (~61.9% flat)
+- `Write/1KB` alloc hotspot (`bear` side): split-path (`splitLeafInsertRaw`) and composite-key construction
+- `Write/64KB` CPU hotspot: `syscall.rawsyscalln` (value-log flush path / `pwrite`)
+
+### 20.2 v21: split-path allocation reduction (raw split encoded buffer)
+
+Root cause (from `pprof -alloc_space` on v20):
+
+- `splitLeafInsertRaw` still showed large alloc-space cost, primarily from the local
+  `encodedBuf [pageSize]byte` escaping to the heap.
+
+Implemented in v21:
+
+1. `splitLeafInsertRaw(...)` now encodes the new entry into a pooled scratch page (`getLeafScratchPage`) instead of a local `[pageSize]byte` that escaped
+2. `putLeafRawRefScratch(...)` now clears only pointer-bearing fields (`key`, `raw`) rather than zeroing the whole struct
+3. Added tiny manual endian helpers (`putU16LE`, `putU32LE`, `putU32BE`)
+4. `writeLeafPageRawSortedSized(...)` switched header writes to manual helpers
+5. `writeLeafPageRawSortedSized(...)` switched slot writes to manual helpers
+
+Artifacts:
+
+- `report/bear_v21_profile_write1k`
+
+Results:
+
+- `Write/1KB`: **1,244,409 ops/s**
+- Peak RSS: **84.5 MB** (`<100MB`)
+- Total alloc (Go runtime tracker): **325.5 MB**
+
+Key profiler outcome:
+
+- `splitLeafInsertRaw` was no longer the dominant allocator in the focused alloc profile.
+- CPU hotspot remained `writeLeafPageRawSortedSized`.
+
+Interpretation:
+
+- v21 was a strong allocation reduction step, though not the best throughput point.
+
+### 20.3 v22: inner insert fallback allocation trimming (plus a failed experiment)
+
+Implemented (kept):
+
+1. `insertIntoInner(...)` uses stack scratch arrays for slice headers / child arrays (`keys`, `children`, `newKeys`, `newChildren`) when `count <= innerScratchMaxKeys`
+2. `readInnerKey(...)` copies are preserved (no page-aliasing risk)
+
+Failed experiment (rolled back in the same campaign):
+
+- Tried pooling composite-key buffers for `bucket.Write` using `sync.Pool`.
+- Result: large throughput regression and alloc profile attribution moved into
+  pool `Put/Get` overhead (`putCompositeKeyScratch` / interface escapes).
+- Action: reverted the composite-key pool path.
+
+Artifact (kept checkpoint after rollback + inner scratch change):
+
+- `report/bear_v22b_profile_write1k`
+
+Results:
+
+- `Write/1KB`: **1,397,072 ops/s**
+- Peak RSS: **90.4 MB** (`<100MB`)
+- Total alloc: **365.3 MB**
+
+Interpretation:
+
+- The inner fallback scratch change is low-risk and modestly reduces per-split
+  metadata allocation churn.
+- Composite-key pooling via `sync.Pool` on the per-write hot path is not worth it.
+
+### 20.4 v23: broader leaf write-path micro-optimizations
+
+Implemented in v23 (manual endian helper use across leaf mutation/build paths):
+
+1. `writeLeafPageSorted(...)` header writes switched to manual helpers
+2. `writeLeafPageSorted(...)` slot writes switched to manual helpers
+3. `leafInsertAt(...)` slot writes switched to manual helpers
+4. `leafInsertAt(...)` header writes switched to manual helpers
+5. `leafReplaceAtInPlace(...)` free-offset update switched to manual helper
+6. `leafDeleteAt(...)` header writes switched to manual helpers
+
+Artifact:
+
+- `report/bear_v23_profile_write1k`
+
+Results:
+
+- `Write/1KB`: **1,447,981 ops/s** (best focused profiled `1KB` run in this v21-v25 batch)
+- Peak RSS: **93.5 MB** (`<100MB`)
+- Total alloc: **393.6 MB**
+
+Profiler outcome:
+
+- `writeLeafPageRawSortedSized` remained dominant (~56.6% flat)
+- `syscall.rawsyscalln` remained secondary (~18.1% flat in this run)
+
+Interpretation:
+
+- The leaf write micro-pass improved small-write throughput on this run set, even
+  though the fundamental hotspot did not change.
+
+### 20.5 v24: further `Write/64KB` value-log tuning
+
+Root cause remained the same (v20/v18 evidence): value-log flush syscalls dominated CPU.
+
+Implemented in v24:
+
+1. increased `valLogBufferSizeMax`: **16MB -> 24MB**
+2. increased `valLogStreamChunkSize`: **256KB -> 512KB**
+
+Artifact:
+
+- `report/bear_v24_profile_write64k`
+
+Results:
+
+- `Write/64KB`: **56,184.6 ops/s**
+- Peak RSS: **80.8 MB** (`<100MB`)
+- Peak Go Heap: **43.1 MB**
+- Peak Go Sys: **102.9 MB**
+- Errors: `0`
+
+CPU profile (`pprof -top`) still shows syscall dominance:
+
+- `syscall.rawsyscalln`: **67.19% flat**
+
+Interpretation:
+
+- The path is still syscall-bound, but larger buffering/chunks improved focused
+  `Write/64KB` throughput versus v20 while keeping process RSS under `100MB`.
+
+### 20.6 v25: split-result allocation reduction + final validation
+
+Implemented in v25:
+
+1. added pooled `splitResult` objects (`splitResultScratchPool`)
+2. `newSplitResult(...)` now allocates from pool (and resets fields)
+3. `putSplitResult(...)` added
+4. `btreeInsert(...)` returns pooled split results to pool after root split handling
+5. `insertInto(...)` returns child split results to pool after `insertIntoInner(...)` consumes them
+6. `insertIntoInner(...)` split path now returns pooled `splitResult`
+
+Artifact (focused `Write/1KB` profiled):
+
+- `report/bear_v25_profile_write1k`
+
+Results:
+
+- `Write/1KB`: **1,381,624 ops/s**
+- Peak RSS: **96.3 MB** (`<100MB`)
+- Total alloc: **345.5 MB**
+- Errors: `0`
+
+Profiler outcome (`Write/1KB`):
+
+- CPU hotspot remains `writeLeafPageRawSortedSized` (~52.6% flat)
+- `newSplitResult` is no longer a visible top allocator (replaced by smaller pooled-path effects)
+
+Artifact (focused `Write/64KB` profiled):
+
+- `report/bear_v25_profile_write64k`
+
+Results:
+
+- `Write/64KB`: **55,929.8 ops/s**
+- Peak RSS: **72.8 MB** (`<100MB`)
+- Peak Go Heap: **43.1 MB**
+- Peak Go Sys: **86.9 MB**
+- Errors: `0`
+
+CPU profile (`Write/64KB`):
+
+- `syscall.rawsyscalln`: **~76.1% flat** (still dominant; faster run but still clearly syscall-bound)
+
+### 20.7 Final full quick suite (subprocess isolation) on v25
+
+Command:
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --isolate-embedded-benchmarks-subprocess \
+  --output ./report/bear_v25_full_subproc \
+  --formats json
+```
+
+Results (`report/bear_v25_full_subproc/raw_results.json`):
+
+- Benchmarks: `40`
+- Errors: `0`
+- Peak RSS: **562.5 MB**
+- Peak Go Heap: **36.8 MB**
+- Peak Go Sys: **308.1 MB**
+- Final disk: **4813.5 MB**
+- `Write/1KB`: **1,389,162 ops/s**
+- `Write/64KB`: **56,546 ops/s**
+- `Delete`: **4,439,613 ops/s**
+
+Comparison vs v20 full subprocess (`report/bear_v20e_full_subproc`):
+
+- `Write/1KB`: `1,338,385 -> 1,389,162` (**+3.8%**)
+- `Write/64KB`: `29,932 -> 56,546` (**+88.9%**)
+- `Delete`: `4,454,863 -> 4,439,613` (**-0.3%**, essentially flat)
+- Peak RSS: `600.5 MB -> 562.5 MB` (**-6.3%**)
+- Peak Go Sys: `336.0 MB -> 308.1 MB` (**-8.3%**)
+
+### 20.8 Net outcome of v21-v25
+
+Focused `Write/1KB` (profiled, v20 -> v25):
+
+- `1,356,754 -> 1,381,624 ops/s` (**+1.8%**)
+- Total alloc: `543.8 MB -> 345.5 MB` (**-36.5%**)
+- Peak RSS: `91.8 MB -> 96.3 MB` (still `<100MB`)
+
+Focused `Write/64KB` (profiled, v20 -> v25):
+
+- `51,869.5 -> 55,929.8 ops/s` (**+7.8%**)
+- Peak RSS: `74.7 MB -> 72.8 MB` (still `<100MB`)
+
+Key interpretation:
+
+- v21-v25 achieved meaningful allocation reductions on the `1KB` path and a large
+  `64KB` throughput improvement on the local profiled benchmark path.
+- The core `1KB` CPU hotspot remains `writeLeafPageRawSortedSized`.
+- The `64KB` path remains syscall-dominated in the value-log flush path.
+- Full-suite subprocess RSS is still far above `<100MB` despite focused runs meeting the target.
+
+### 20.9 Remaining bottlenecks after v25 (next profiler-guided targets)
+
+1. `writeLeafPageRawSortedSized` remains the dominant `Write/1KB` CPU hotspot
+2. `compositeKeyWithPrefix` still shows up in focused alloc profiles (but pool-based per-write reuse regressed throughput)
+3. `Write/64KB` remains dominated by `syscall.rawsyscalln` (`pwrite` path)
+4. Full-suite subprocess RSS remains dominated by long-suite/runtime footprint (`Go Sys`) rather than focused driver heap
+
+### 20.10 Suggested v26+ directions
+
+1. Rework `writeLeafPageRawSortedSized` to reduce copy volume (partial/raw-copy split serialization, not just micro-ops)
+2. Investigate non-`sync.Pool` composite-key scratch reuse strategies (e.g. short-key stack embedding in `leafEntry`)
+3. Continue value-log batching and flush scheduling optimization for `64KB/1MB` workloads
+4. Add targeted microbench tests for split serialization and value-log append/flush loops to reduce benchmark noise when tuning

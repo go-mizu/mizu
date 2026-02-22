@@ -1,8 +1,9 @@
 // Package ant implements a storage driver backed by an Adaptive Radix Tree (ART),
 // inspired by the SMART ART paper (OSDI 2023).
 //
-// v2: Type-specific node structs (23x memory reduction), 16 ART shards (parallel),
-// mmap value log (zero-alloc reads), buffer pools, metadata-only Stat.
+// v3: All v2b features plus: cached time, zero-alloc cleanKey, stack-buffer
+// compositeKey, direct-to-mmap writes, pooled leafEntry/node4, 64 shards,
+// bucket existence fast path, increased GC percent, custom mmapReadCloser.
 //
 // DSN format: ant:///path/to/root?sync=none
 package ant
@@ -20,6 +21,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -31,6 +33,37 @@ import (
 
 	"github.com/liteio-dev/liteio/pkg/storage"
 )
+
+// ---------------------------------------------------------------------------
+// Cached time (v3: eliminates time.Now() syscall from hot paths)
+// ---------------------------------------------------------------------------
+
+var cachedNano atomic.Int64
+
+func init() { cachedNano.Store(time.Now().UnixNano()) }
+
+func fastNow() int64      { return cachedNano.Load() }
+func fastTime() time.Time { return time.Unix(0, fastNow()) }
+
+// ---------------------------------------------------------------------------
+// Object and reader pools (v3: reduce per-op allocations)
+// ---------------------------------------------------------------------------
+
+var leafPool = sync.Pool{New: func() any { return new(leafEntry) }}
+var node4Pool = sync.Pool{New: func() any { return new(node4) }}
+var readerPool = sync.Pool{New: func() any { return new(mmapReadCloser) }}
+
+// mmapReadCloser wraps bytes.Reader as io.ReadCloser without io.NopCloser alloc.
+type mmapReadCloser struct {
+	r bytes.Reader
+}
+
+func (rc *mmapReadCloser) Read(p []byte) (int, error) { return rc.r.Read(p) }
+func (rc *mmapReadCloser) Close() error {
+	rc.r.Reset(nil)
+	readerPool.Put(rc)
+	return nil
+}
 
 func init() {
 	storage.Register("ant", &driver{})
@@ -58,10 +91,14 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 		return nil, fmt.Errorf("ant: create root %q: %w", root, err)
 	}
 
+	// v3: Reduce GC frequency. ART data is small (~23 MB for 100K objects).
+	debug.SetGCPercent(800)
+
 	st := &store{
 		root:      root,
 		noSync:    noSync,
 		bucketMap: make(map[string]time.Time),
+		stopTick:  make(chan struct{}),
 	}
 	st.ctTable.index = make(map[string]uint16)
 
@@ -87,6 +124,20 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 		// Recover ART from vlog scan.
 		st.recoverShard(&st.shards[i])
 	}
+
+	// v3: Background time ticker (500μs) for fastNow().
+	go func() {
+		t := time.NewTicker(500 * time.Microsecond)
+		defer t.Stop()
+		for {
+			select {
+			case <-st.stopTick:
+				return
+			case <-t.C:
+				cachedNano.Store(time.Now().UnixNano())
+			}
+		}
+	}()
 
 	return st, nil
 }
@@ -334,7 +385,8 @@ func findChild(n any, b byte) any {
 
 func artInsert(root any, key []byte, leaf *leafEntry) any {
 	if root == nil {
-		n := &node4{leaf: leaf}
+		n := acquireNode4()
+		n.leaf = leaf
 		n.prefix = make([]byte, len(key))
 		copy(n.prefix, key)
 		return n
@@ -345,7 +397,8 @@ func artInsert(root any, key []byte, leaf *leafEntry) any {
 
 func insertRecursive(ref *any, n any, key []byte, leaf *leafEntry, depth int) {
 	if n == nil {
-		nn := &node4{leaf: leaf}
+		nn := acquireNode4()
+		nn.leaf = leaf
 		if depth < len(key) {
 			nn.prefix = make([]byte, len(key)-depth)
 			copy(nn.prefix, key[depth:])
@@ -358,7 +411,7 @@ func insertRecursive(ref *any, n any, key []byte, leaf *leafEntry, depth int) {
 	if len(prefix) > 0 {
 		mismatch := prefixMismatch(prefix, key, depth)
 		if mismatch < len(prefix) {
-			newInner := &node4{}
+			newInner := acquireNode4()
 			newInner.prefix = make([]byte, mismatch)
 			copy(newInner.prefix, prefix[:mismatch])
 
@@ -367,7 +420,8 @@ func insertRecursive(ref *any, n any, key []byte, leaf *leafEntry, depth int) {
 			addChild(newInner, oldByte, n)
 
 			if depth+mismatch < len(key) {
-				newLeaf := &node4{leaf: leaf}
+				newLeaf := acquireNode4()
+				newLeaf.leaf = leaf
 				remaining := key[depth+mismatch+1:]
 				if len(remaining) > 0 {
 					newLeaf.prefix = make([]byte, len(remaining))
@@ -404,7 +458,8 @@ func insertRecursive(ref *any, n any, key []byte, leaf *leafEntry, depth int) {
 		}
 		// New key has more bytes. Existing leaf was shorter or same length.
 		// Create inner node: existing leaf stays as leaf, new key descends.
-		newLeafNode := &node4{leaf: leaf}
+		newLeafNode := acquireNode4()
+		newLeafNode.leaf = leaf
 		remaining := key[depth+1:]
 		if len(remaining) > 0 {
 			newLeafNode.prefix = make([]byte, len(remaining))
@@ -427,7 +482,8 @@ func insertRecursive(ref *any, n any, key []byte, leaf *leafEntry, depth int) {
 			insertRecursive(childRef, child, key, leaf, depth+1)
 		}
 	} else {
-		newLeafNode := &node4{leaf: leaf}
+		newLeafNode := acquireNode4()
+		newLeafNode.leaf = leaf
 		if depth+1 < len(key) {
 			newLeafNode.prefix = make([]byte, len(key)-(depth+1))
 			copy(newLeafNode.prefix, key[depth+1:])
@@ -969,6 +1025,66 @@ func (v *shardVlog) appendPut(key []byte, contentType string, created, updated i
 	return valueOffset, nil
 }
 
+// appendPutDirect writes a put entry reading value data directly from src into mmap.
+// Eliminates the intermediate data buffer. MUST be called under shard.mu.Lock().
+func (v *shardVlog) appendPutDirect(key []byte, contentType string, created, updated int64, src io.Reader, size int64) (int64, error) {
+	kl := len(key)
+	cl := len(contentType)
+	entrySize := 24 + kl + cl + int(size)
+
+	need := v.size + int64(entrySize)
+	if need > v.capacity {
+		if err := v.grow(need); err != nil {
+			return 0, fmt.Errorf("ant: grow shard vlog: %w", err)
+		}
+	}
+
+	o := int(v.size)
+	if v.data != nil {
+		d := v.data
+		binary.LittleEndian.PutUint32(d[o:], uint32(entrySize))
+		d[o+4] = 0 // op = put
+		binary.LittleEndian.PutUint16(d[o+5:], uint16(kl))
+		copy(d[o+7:], key)
+		d[o+7+kl] = byte(cl)
+		copy(d[o+8+kl:], contentType)
+		binary.LittleEndian.PutUint64(d[o+8+kl+cl:], uint64(created))
+		binary.LittleEndian.PutUint64(d[o+16+kl+cl:], uint64(updated))
+		// v3: Read value DIRECTLY into mmap — no intermediate buffer.
+		valueOff := o + 24 + kl + cl
+		if size > 0 {
+			_, err := io.ReadFull(src, d[valueOff:valueOff+int(size)])
+			if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
+				return 0, fmt.Errorf("ant: read direct: %w", err)
+			}
+		}
+	} else {
+		// Fallback without mmap.
+		buf := make([]byte, entrySize)
+		binary.LittleEndian.PutUint32(buf, uint32(entrySize))
+		buf[4] = 0
+		binary.LittleEndian.PutUint16(buf[5:], uint16(kl))
+		copy(buf[7:], key)
+		buf[7+kl] = byte(cl)
+		copy(buf[8+kl:], contentType)
+		binary.LittleEndian.PutUint64(buf[8+kl+cl:], uint64(created))
+		binary.LittleEndian.PutUint64(buf[16+kl+cl:], uint64(updated))
+		if size > 0 {
+			_, err := io.ReadFull(src, buf[24+kl+cl:])
+			if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
+				return 0, fmt.Errorf("ant: read direct: %w", err)
+			}
+		}
+		if _, err := v.fd.WriteAt(buf, v.size); err != nil {
+			return 0, fmt.Errorf("ant: write shard vlog: %w", err)
+		}
+	}
+
+	valueOffset := v.size + int64(24+kl+cl)
+	v.size += int64(entrySize)
+	return valueOffset, nil
+}
+
 // appendDelete writes a delete tombstone. MUST be called under shard.mu.Lock().
 func (v *shardVlog) appendDelete(key []byte, ts int64) error {
 	kl := len(key)
@@ -1046,7 +1162,7 @@ func (v *shardVlog) close() error {
 // Store (storage.Storage) with 16 ART Shards
 // ---------------------------------------------------------------------------
 
-const numShards = 16
+const numShards = 64 // v3: increased from 16 for better parallel scaling
 const shardMask = numShards - 1
 
 type artShard struct {
@@ -1063,10 +1179,12 @@ type store struct {
 
 	shards [numShards]artShard
 
-	bucketMu  sync.RWMutex
-	bucketMap map[string]time.Time
+	bucketMu     sync.RWMutex
+	bucketMap    map[string]time.Time
+	bucketExists sync.Map // v3: fast path for bucket existence check
 
-	ctTable ctStringTable
+	ctTable  ctStringTable
+	stopTick chan struct{} // v3: stops time ticker
 }
 
 var _ storage.Storage = (*store)(nil)
@@ -1225,6 +1343,13 @@ func (s *store) Features() storage.Features {
 }
 
 func (s *store) Close() error {
+	// v3: stop time ticker.
+	select {
+	case <-s.stopTick:
+	default:
+		close(s.stopTick)
+	}
+
 	var errs []error
 	for i := range s.shards {
 		shard := &s.shards[i]
@@ -1383,38 +1508,72 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 		return nil, err
 	}
 
-	// Ensure bucket exists.
-	b.store.bucketMu.Lock()
-	if _, exists := b.store.bucketMap[b.name]; !exists {
-		if len(b.store.bucketMap) < maxBuckets {
-			b.store.bucketMap[b.name] = time.Now()
+	// v3: Bucket existence fast path — avoid global lock on hot path.
+	if _, ok := b.store.bucketExists.Load(b.name); !ok {
+		b.store.bucketMu.Lock()
+		if _, exists := b.store.bucketMap[b.name]; !exists {
+			if len(b.store.bucketMap) < maxBuckets {
+				b.store.bucketMap[b.name] = fastTime()
+			}
 		}
-	}
-	b.store.bucketMu.Unlock()
-
-	// Read all data (outside shard lock — I/O could be slow).
-	var data []byte
-	if size > 0 {
-		data = make([]byte, size)
-		n, err := io.ReadFull(src, data)
-		if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
-			return nil, fmt.Errorf("ant: read: %w", err)
-		}
-		data = data[:n]
-	} else {
-		data, err = io.ReadAll(src)
-		if err != nil {
-			return nil, fmt.Errorf("ant: read: %w", err)
-		}
+		b.store.bucketMu.Unlock()
+		b.store.bucketExists.Store(b.name, struct{}{})
 	}
 
-	now := time.Now().UnixNano()
-	ck := compositeKey(b.name, relKey)
+	// v3: Stack-buffer compositeKey (avoids heap alloc for keys ≤ 256B).
+	var buf [256]byte
+	ck := appendCompositeKey(buf[:0], b.name, relKey)
+
 	keyHash := fnv1a(ck)
 	shard := b.store.shardForHash(keyHash)
 	ctIdx := b.store.ctTable.intern(contentType)
+	now := fastNow()
 
-	// Single lock: check existing + vlog append + ART insert.
+	// v3: Direct-to-mmap write when size is known.
+	if size > 0 {
+		shard.mu.Lock()
+
+		created := now
+		existing := artSearch(shard.root, ck, keyHash)
+		if existing != nil {
+			created = existing.created
+			shard.size--
+		}
+
+		valueOffset, err := shard.vlog.appendPutDirect(ck, contentType, created, now, src, size)
+		if err != nil {
+			shard.mu.Unlock()
+			return nil, err
+		}
+
+		leaf := acquireLeaf()
+		leaf.valueOffset = valueOffset
+		leaf.valueSize = int32(size)
+		leaf.ctIndex = ctIdx
+		leaf.created = created
+		leaf.updated = now
+		leaf.keyHash = keyHash
+		shard.root = artInsert(shard.root, ck, leaf)
+		shard.size++
+
+		shard.mu.Unlock()
+
+		return &storage.Object{
+			Bucket:      b.name,
+			Key:         relToKey(relKey),
+			Size:        size,
+			ContentType: contentType,
+			Created:     time.Unix(0, created),
+			Updated:     time.Unix(0, now),
+		}, nil
+	}
+
+	// Fallback: unknown size — read all data first.
+	data, err := io.ReadAll(src)
+	if err != nil {
+		return nil, fmt.Errorf("ant: read: %w", err)
+	}
+
 	shard.mu.Lock()
 
 	created := now
@@ -1430,14 +1589,13 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 		return nil, err
 	}
 
-	leaf := &leafEntry{
-		valueOffset: valueOffset,
-		valueSize:   int32(len(data)),
-		ctIndex:     ctIdx,
-		created:     created,
-		updated:     now,
-		keyHash:     keyHash,
-	}
+	leaf := acquireLeaf()
+	leaf.valueOffset = valueOffset
+	leaf.valueSize = int32(len(data))
+	leaf.ctIndex = ctIdx
+	leaf.created = created
+	leaf.updated = now
+	leaf.keyHash = keyHash
 	shard.root = artInsert(shard.root, ck, leaf)
 	shard.size++
 
@@ -1453,6 +1611,20 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 	}, nil
 }
 
+// acquireLeaf gets a leafEntry from the pool.
+func acquireLeaf() *leafEntry {
+	l := leafPool.Get().(*leafEntry)
+	*l = leafEntry{}
+	return l
+}
+
+// acquireNode4 gets a node4 from the pool.
+func acquireNode4() *node4 {
+	n := node4Pool.Get().(*node4)
+	*n = node4{}
+	return n
+}
+
 func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opts storage.Options) (io.ReadCloser, *storage.Object, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
@@ -1463,7 +1635,10 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 		return nil, nil, err
 	}
 
-	ck := compositeKey(b.name, relKey)
+	// v3: Stack-buffer compositeKey.
+	var buf [256]byte
+	ck := appendCompositeKey(buf[:0], b.name, relKey)
+
 	keyHash := fnv1a(ck)
 	shard := b.store.shardForHash(keyHash)
 
@@ -1509,7 +1684,10 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 		val = val[:length]
 	}
 
-	return io.NopCloser(bytes.NewReader(val)), obj, nil
+	// v3: Pooled mmapReadCloser — saves 2 allocs (io.NopCloser + bytes.NewReader).
+	rc := readerPool.Get().(*mmapReadCloser)
+	rc.r.Reset(val)
+	return rc, obj, nil
 }
 
 func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*storage.Object, error) {
@@ -1522,7 +1700,10 @@ func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*s
 		return nil, err
 	}
 
-	ck := compositeKey(b.name, relKey)
+	// v3: Stack-buffer compositeKey.
+	var buf [256]byte
+	ck := appendCompositeKey(buf[:0], b.name, relKey)
+
 	keyHash := fnv1a(ck)
 	shard := b.store.shardForHash(keyHash)
 
@@ -1582,7 +1763,7 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 
 	if recursive {
 		prefix := compositeKey(b.name, relKey)
-		now := time.Now().UnixNano()
+		now := fastNow()
 
 		type deleteItem struct {
 			key     []byte
@@ -1637,11 +1818,14 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 		return nil
 	}
 
-	ck := compositeKey(b.name, relKey)
+	// v3: Stack-buffer compositeKey + fastNow.
+	var buf [256]byte
+	ck := appendCompositeKey(buf[:0], b.name, relKey)
+
 	keyHash := fnv1a(ck)
 	shard := b.store.shardForHash(keyHash)
 
-	now := time.Now().UnixNano()
+	now := fastNow()
 	shard.mu.Lock()
 	found := artDelete(&shard.root, ck, keyHash)
 	if found {
@@ -1839,7 +2023,7 @@ func (b *bucket) Move(ctx context.Context, dstKey string, srcBucket, srcKey stri
 	srcHash := fnv1a(srcCK)
 	shard := b.store.shardForHash(srcHash)
 
-	now := time.Now().UnixNano()
+	now := fastNow()
 	shard.mu.Lock()
 	artDelete(&shard.root, srcCK, srcHash)
 	shard.size--
@@ -2099,7 +2283,7 @@ func (d *dir) Delete(ctx context.Context, opts storage.Options) error {
 		return storage.ErrNotExist
 	}
 
-	now := time.Now().UnixNano()
+	now := fastNow()
 
 	for _, item := range toDelete {
 		item.shard.mu.Lock()
@@ -2161,7 +2345,7 @@ func (d *dir) Move(ctx context.Context, dstPath string, opts storage.Options) (s
 		return nil, storage.ErrNotExist
 	}
 
-	now := time.Now().UnixNano()
+	now := fastNow()
 
 	for _, e := range entries {
 		newHash := fnv1a(e.newKey)
@@ -2183,14 +2367,13 @@ func (d *dir) Move(ctx context.Context, dstPath string, opts storage.Options) (s
 		// Write to new shard vlog + ART.
 		newShard.mu.Lock()
 		valueOffset, _ := newShard.vlog.appendPut(e.newKey, ct, e.leaf.created, now, valData)
-		newLeaf := &leafEntry{
-			valueOffset: valueOffset,
-			valueSize:   e.leaf.valueSize,
-			ctIndex:     e.leaf.ctIndex,
-			created:     e.leaf.created,
-			updated:     now,
-			keyHash:     newHash,
-		}
+		newLeaf := acquireLeaf()
+		newLeaf.valueOffset = valueOffset
+		newLeaf.valueSize = e.leaf.valueSize
+		newLeaf.ctIndex = e.leaf.ctIndex
+		newLeaf.created = e.leaf.created
+		newLeaf.updated = now
+		newLeaf.keyHash = newHash
 		newShard.root = artInsert(newShard.root, e.newKey, newLeaf)
 		newShard.size++
 		newShard.mu.Unlock()
@@ -2529,6 +2712,15 @@ func compositeKey(bucketName, key string) []byte {
 	return []byte(bucketName + "\x00" + key)
 }
 
+// appendCompositeKey builds a composite key into buf without heap allocation.
+// The buf should be a stack-allocated [256]byte slice: buf[:0].
+func appendCompositeKey(buf []byte, bucketName, key string) []byte {
+	buf = append(buf, bucketName...)
+	buf = append(buf, 0)
+	buf = append(buf, key...)
+	return buf
+}
+
 func compositePrefix(bucketName string) []byte {
 	return []byte(bucketName + "\x00")
 }
@@ -2541,6 +2733,7 @@ func splitCompositeKey(ck []byte) (bucket, key string) {
 	return string(ck[:idx]), string(ck[idx+1:])
 }
 
+// v3: Allocation-free cleanKey — eliminates strings.Split allocation.
 func cleanKey(key string) (string, error) {
 	key = strings.TrimSpace(key)
 	if key == "" {
@@ -2548,21 +2741,20 @@ func cleanKey(key string) (string, error) {
 	}
 	key = strings.ReplaceAll(key, "\\", "/")
 	key = strings.TrimPrefix(key, "/")
-	if key == "" {
+	if key == "" || key == "." {
 		return "", errors.New("ant: empty key")
 	}
 	key = path.Clean(key)
 	if key == "." {
 		return "", errors.New("ant: empty key")
 	}
-	for _, part := range strings.Split(key, "/") {
-		if part == ".." {
-			return "", storage.ErrPermission
-		}
+	if containsDotDot(key) {
+		return "", storage.ErrPermission
 	}
 	return key, nil
 }
 
+// v3: Allocation-free cleanPrefix — eliminates strings.Split allocation.
 func cleanPrefix(prefix string) (string, error) {
 	prefix = strings.TrimSpace(prefix)
 	if prefix == "" {
@@ -2577,12 +2769,27 @@ func cleanPrefix(prefix string) (string, error) {
 	if prefix == "." {
 		return "", nil
 	}
-	for _, part := range strings.Split(prefix, "/") {
-		if part == ".." {
-			return "", storage.ErrPermission
-		}
+	if containsDotDot(prefix) {
+		return "", storage.ErrPermission
 	}
 	return prefix, nil
+}
+
+// containsDotDot checks for ".." path traversal without allocating.
+func containsDotDot(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] != '.' {
+			continue
+		}
+		if i+1 >= len(s) || s[i+1] != '.' {
+			continue
+		}
+		// Found ".." — check it's a full path component.
+		if (i == 0 || s[i-1] == '/') && (i+2 >= len(s) || s[i+2] == '/') {
+			return true
+		}
+	}
+	return false
 }
 
 func relToKey(rel string) string {
