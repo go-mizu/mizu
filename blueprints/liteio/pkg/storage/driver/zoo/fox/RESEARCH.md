@@ -1,182 +1,561 @@
-# Fox Storage Driver - Research Notes
+# Fox Driver: Deep Performance Research (Bf-Tree-Inspired, Object-Storage Adaptation)
 
-## Paper: Bf-Tree (VLDB 2024)
+## Table of Contents
 
-### Core Architecture
-
-The Bf-Tree is a B-tree variant designed for modern storage hardware that
-separates the hot write path from the cold on-disk storage path. The key
-innovation is the **mini-page** concept: small, variable-length per-leaf
-write buffers that live in a circular buffer pool in memory.
-
-### B-tree Structure
-
-- **Inner nodes** reside entirely in memory as sorted arrays of
-  (separator key, child pointer) pairs. The branching factor is high
-  (~100) to keep the tree shallow.
-- **Leaf pages** are fixed-size (4 KB) pages stored on disk. Each leaf
-  page contains sorted key-value entries and is the unit of I/O.
-- The tree is traversed from root to leaf to find the target leaf for
-  any given key. Inner node traversal uses binary search over the
-  separator keys at each level.
-
-### Mini-Pages
-
-Mini-pages are the central contribution. Each leaf in the B-tree may have
-an associated mini-page in the buffer pool. A mini-page serves three
-roles simultaneously:
-
-1. **Record cache** -- recently read records are present in the
-   mini-page, avoiding a disk read on the next access.
-2. **Write buffer** -- writes are absorbed into the mini-page without
-   touching the disk page, batching many small writes into one eventual
-   flush.
-3. **Gap cache** -- the mini-page can record negative lookups (key
-   ranges known to be absent), avoiding unnecessary disk reads.
-
-Mini-pages grow dynamically from a minimum of 64 bytes to a maximum of
-4096 bytes as more writes accumulate for that leaf. This adaptive sizing
-means cold leaves consume almost no buffer pool space while hot leaves
-get room to buffer many writes.
-
-### Circular Buffer Pool
-
-All mini-pages are allocated from a single circular buffer pool of
-configurable size (default 16 MB). The pool uses LRU eviction: when the
-pool is full and a new mini-page needs space, the least-recently-used
-mini-page is evicted. On eviction, the dirty entries in the mini-page
-are merged into the corresponding disk leaf page.
-
-### Write Path
-
-1. Traverse inner nodes to find the target leaf.
-2. If a mini-page exists for this leaf, insert the record into it.
-3. If no mini-page exists, allocate one from the buffer pool (evicting
-   the LRU mini-page if necessary).
-4. If the mini-page reaches 4096 bytes, flush it to the disk leaf page.
-5. If the disk leaf page overflows after the flush, split the leaf and
-   update the inner node.
-
-### Read Path
-
-1. Traverse inner nodes to find the target leaf.
-2. Check the mini-page cache for the key.
-3. If not found in the mini-page, read the disk leaf page and binary
-   search for the key.
-
-### Performance Characteristics
-
-Compared to baselines measured in the paper:
-
-- **2.5x faster scans** than RocksDB, because data is sorted in leaf
-  pages (no LSM compaction overhead, no overlapping levels).
-- **6x faster writes** than a standard B-tree, because writes are
-  buffered in mini-pages and flushed in bulk.
-- **2x faster point lookups** than RocksDB, because there is no bloom
-  filter false-positive overhead and the single-level index is shallow.
+1. Architecture Overview
+2. Reference Paper Learnings (Bf-Tree, PVLDB 2024)
+3. Fox v1 Baseline (Correctness + Profiling)
+4. Root Causes Identified
+5. Optimization Journey (v2 iterations)
+6. Final v2 Results (Benchmark + Profiles)
+7. Memory Verification (<100MB target)
+8. Remaining Bottlenecks
+9. Next Optimization Directions (v3)
+10. Appendix: Benchmark / pprof Commands
+11. References
 
 ---
 
-## Our Implementation Plan
+## Architecture Overview
 
-### Overview
+`fox` is a Bf-Tree-inspired local storage driver for LiteIO.
 
-We implement a simplified Bf-Tree as the `fox` storage driver. The driver
-stores all data in a single directory with two files (`pages.dat` and
-`meta.json`) plus an in-memory B-tree index with a mini-page buffer pool.
+### Core layout (current v2)
 
-### B-tree Inner Nodes
+- `pages.dat`: fixed-size leaf pages (default `4KB`) containing sorted metadata records
+- `values.dat`: append-only value log for spilled payloads (most non-trivial objects)
+- in-memory B-tree inner nodes (`btreeNode`) for routing leaf pages
+- mini-page pool (LRU) for per-leaf write buffering / merge batching
 
-- In-memory sorted arrays of `(separatorKey, childPageID)` pairs.
-- The separator key is a composite `bucket + "\x00" + key` string.
-- Binary search at each inner node to find the child pointer.
-- Branching factor of ~100 keys per inner node (adjustable).
+### Key v2 design choices (object-storage adaptation)
 
-### Leaf Pages
+The paper targets KV records (small/medium values). LiteIO benchmark includes `1KB`, `64KB`, `1MB`, `10MB`, and multipart workloads. A literal inline-leaf implementation loses correctness/perf for large objects under `4KB` pages.
 
-- Fixed 4 KB pages stored sequentially in `pages.dat`.
-- Page format:
-  ```
-  [pageHdr 16B]
-    count    uint16  -- number of entries
-    freeOff  uint16  -- offset of free space within page
-    flags    uint16  -- page flags (0 = normal, 1 = overflow)
-    nextPage uint32  -- overflow page ID (0 = none)
-    pad      [6]byte -- reserved
-  [entries...]
-    keyLen   uint16
-    key      [keyLen]byte
-    ctLen    uint16
-    ct       [ctLen]byte  -- content type
-    valLen   uint32       -- 0xFFFFFFFF means tombstone
-    value    [valLen]byte
-    created  int64        -- unix nano
-    updated  int64        -- unix nano
-  ```
-- Entries within a page are sorted by key for binary search on read.
+v2 therefore uses:
 
-### Mini-Page Buffer Pool
+- metadata-in-leaf + value-pointer records (`values.dat`) for large values
+- streaming writes into `values.dat` (avoid whole-object heap buffering)
+- streaming `Open` via `io.SectionReader` for indirect values
+- heap-aware mini-page pool budgeting (not just serialized entry bytes)
 
-- In-memory LRU cache of per-leaf write buffers, configurable via the
-  `pool_size` DSN parameter (default 16 MB).
-- Each mini-page is a dynamic byte slice that starts at 64 bytes and
-  grows up to 4096 bytes.
-- On eviction, the mini-page's buffered entries are merged into the
-  on-disk leaf page.
-- The pool is protected by a mutex; individual mini-pages are not
-  shared across goroutines (the store-level RWMutex serializes access
-  to the tree).
+This keeps the B-tree/mini-page structure but makes it viable for object-storage workloads.
 
-### Write Path (Implementation)
+---
 
-1. Acquire store write lock.
-2. Compose composite key: `bucket + "\x00" + key`.
-3. Traverse B-tree inner nodes (binary search at each level) to find
-   the target leaf page ID.
-4. Look up or allocate a mini-page for that leaf.
-5. Insert the entry into the mini-page.
-6. If the mini-page exceeds 4096 bytes, flush it: merge all mini-page
-   entries with the on-disk leaf page, write the merged page back, and
-   split if the merged result exceeds 4096 bytes.
-7. Release lock.
+## Reference Paper Learnings (Bf-Tree, PVLDB 2024)
 
-### Read Path (Implementation)
+### Paper used
 
-1. Acquire store read lock.
-2. Compose composite key.
-3. Traverse B-tree to the target leaf.
-4. Check the mini-page for the key (linear scan of buffered entries).
-5. If not found, read the leaf page from `pages.dat` and binary search.
-6. Release lock.
-7. Return the value (or ErrNotExist / tombstone).
+- **Bf-Tree: Cache-Optimized B-Trees for Modern Hardware** (PVLDB 2024)
+- Primary source PDF used for this work:
+  - <https://www.vldb.org/pvldb/vol17/p3442-yoon.pdf>
+- Project page / implementation notes:
+  - <https://github.com/XiangpengHao/bf-tree-docs>
 
-### Delete Path
+### What the paper contributes (relevant to `fox`)
 
-- Insert a tombstone entry (valLen = 0xFFFFFFFF) into the mini-page.
-- On flush, tombstones remove the corresponding entry from the disk
-  page.
+The paper's central idea is to combine:
 
-### Meta File
+- B-tree leaf page layout (sorted, good for point/range reads)
+- **mini-pages** (small per-leaf in-memory buffers) to absorb writes and cache recent records
+- a buffer manager that can flush only affected leafs rather than rewriting large LSM structures
 
-- `meta.json` stores the root page ID, total page count, and tree
-  height. It is rewritten on Close() and loaded on Open() for crash
-  recovery of the tree structure.
+Paper concepts that directly informed the `fox` v2 changes:
 
-### File Layout
+1. **Leaf-local write buffering matters more than global buffering**
+- Our `miniPagePool` remains per-leaf and flushes by leaf.
+- v2 fixed correctness first, then focused on making leaf flushes cheap and safe.
 
-```
-{root}/
-  pages.dat    -- 4 KB aligned leaf pages, sequentially allocated
-  meta.json    -- B-tree metadata (root, height, page count)
+2. **Do not let hot in-memory buffers explode memory footprint**
+- Paper mini-pages are small and bounded.
+- `fox` v1/v2a used serialized-byte accounting, which badly underestimated Go heap usage.
+- v2c+ switched pool budgeting to approximate heap cost per cached entry.
+
+3. **Reads should avoid unnecessary decode/copy work**
+- Paper aims to reduce cache misses and unnecessary movement.
+- v2e added targeted page lookup parsing (`findPageEntry`) and pooled page buffers for point lookups.
+
+4. **Hardware-aware layout must be adapted to workload shape**
+- LiteIO benchmark includes large object payloads far beyond leaf page size.
+- `fox` v2 externalizes most values to `values.dat`, keeping leaves metadata-dense and tree fanout high.
+
+### Important mismatch vs paper (intentional)
+
+The Bf-Tree paper is not an object-storage engine storing many `10MB` objects inline in `4KB` leaves. The biggest v2 lesson is that **paper-aligned mini-page buffering must be combined with an external value log** for this benchmark profile.
+
+---
+
+## Fox v1 Baseline (Correctness + Profiling)
+
+### Baseline command (local, quick, fox-only)
+
+Because local `ant` code in this workspace is currently broken, `cmd/bench` was run with the existing `noant` build tag:
+
+```bash
+go run -tags noant ./cmd/bench \
+  --drivers fox \
+  --quick \
+  --profile \
+  --docker-stats=false \
+  --output ./report/fox_v1_baseline
 ```
 
-### DSN Format
+### Baseline result summary (`report/fox_v1_baseline`)
 
-```
-fox:///path/to/data?sync=none&page_size=4096&pool_size=16777216
+- Benchmarks: `40`
+- Errors: `3,311,157`
+- Peak RSS: `278.9 MB`
+- Peak Go Heap: `108.7 MB`
+- Peak Go Sys: `305.9 MB`
+- GC cycles: `1981`
+
+### Baseline correctness failure (critical)
+
+v1 dropped records for values larger than the `4KB` leaf page size.
+
+Root cause:
+
+- `flushMiniPage()` split path encoded left/right halves but ignored `encodePageEntries(...)=fits=false` for oversized entries.
+- Single `64KB+` values could not fit into a leaf page, producing empty pages and `storage: not exist` on read/range-read.
+
+This explains the baseline benchmark behavior:
+
+- `Read/64KB`, `Read/1MB`, `Read/10MB`: `0` throughput with errors
+- millions of `not exist` errors across read/range/copy/delete/mixed workloads
+
+### Baseline profile highlights (v1)
+
+From `report/fox_v1_baseline/report.md` and pprof:
+
+#### CPU (v1)
+
+- `syscall.rawsyscalln`: `48.21%` flat
+- `(*store).readPage` cumulative dominated CPU (~`45%` cum)
+
+Interpretation:
+
+- repeated page reads + syscall overhead dominated the hot path
+- large reads were failing early, so CPU profile mostly reflected metadata/page churn, not useful payload reads
+
+#### Heap / allocs (v1)
+
+Top allocators:
+
+- `(*store).readPage`: `25.98 GB` alloc_space
+- `decodePageEntries`: `13.73 GB`
+- `(*store).put`: `13.23 GB`
+- `(*bucket).Write`: `12.92 GB`
+- `encodePageEntries`: `2.60 GB`
+
+Top in-use heap entries:
+
+- `(*btree).insertIntoParent`: `19.89 MB`
+- `compositeKey`: `11 MB`
+
+Interpretation:
+
+- page reads/decodes allocated excessively
+- tree growth was amplified by broken split behavior
+- large values were the correctness cliff
+
+---
+
+## Root Causes Identified
+
+### 1. Large values incompatible with 4KB leaf pages (correctness bug)
+
+- v1 attempted to store all values inline in leaf pages.
+- `64KB+` values could not be encoded into `4KB` pages.
+- split fallback lost data for oversized entries.
+
+### 2. Mini-page pool memory accounting underestimated real Go heap cost
+
+v1/v2a pool accounting used serialized bytes only. In Go, actual cost per cached entry also includes:
+
+- `pageEntry` struct + slice headers
+- string headers + allocated key bytes
+- map/list node overhead
+- per-mini-page object overhead
+
+Result: pool stayed "under budget" while process heap kept growing.
+
+### 3. Large write path buffered full objects in heap
+
+`bucket.Write()` originally read the entire object into `[]byte` before calling `put`.
+
+For large objects this caused:
+
+- large transient heap spikes
+- very high total allocations
+- high Go heap sys retention (`GoSys`) even after GC
+
+### 4. Point lookups decoded whole leaf pages
+
+`get()` used `decodePageEntries()` for every lookup, allocating all entry structs/strings/values in the leaf page even when only one key was needed.
+
+This hurt:
+
+- `Open`
+- `Stat`
+- `CopyPart`
+- read-heavy mixed workloads
+
+---
+
+## Optimization Journey (v2 iterations)
+
+## v2a (`report/fox_v2_optimized`): Correctness fixed, memory regressed
+
+### Implemented
+
+- Added `values.dat` value-log spill for large objects (pointer encoded in leaf entries)
+- Added indirect value encoding marker (`0xFFFFFFFE`)
+- Fixed split logic using size-aware chunking (`splitEntriesByPage`) instead of "split in half and hope"
+- Added section-reader based `Open` for indirect values
+- Added tests for large value round-trip and split preservation
+
+### Result
+
+- Errors: `0` (from `3,311,157`)
+- Peak RSS: **`851.3 MB`** (worse)
+
+Why memory got worse initially:
+
+- `1KB` values still inline (too many leaf splits/tree growth)
+- large writes still allocated full buffers in `bucket.Write`
+- mini-page pool budget still based on serialized bytes
+
+## v2b (`report/fox_v2b_lowmem`): Low-inline threshold + streaming write path
+
+### Implemented
+
+- Lowered inline threshold (spill `1KB` objects too)
+- `bucket.Write` streams large values directly to `values.dat`
+- avoids building full object `[]byte` for spill-path writes
+
+### Result
+
+- Errors: `0`
+- Peak RSS: `625.7 MB` (improved from `851.3 MB`)
+- `List/100`: improved sharply (metadata fanout increased because leaves store pointers)
+
+## v2c (`report/fox_v2c_poolbudget`): Heap-aware mini-page pool budgeting
+
+### Implemented
+
+- Mini-page pool budget now tracks approximate heap cost (`poolCost`), not just serialized bytes
+- separated:
+  - `miniPage.size` (serialized bytes, flush threshold)
+  - `miniPage.poolCost` (heap budget)
+- more aggressive eviction under the same DSN `pool_size`
+
+### Result
+
+- Errors: `0`
+- Peak RSS: `526.5 MB`
+
+## v2d (`report/fox_v2d_mempush`): Pooled streaming buffer + aggressive pool cost
+
+### Implemented
+
+- pooled `appendValueFromReader` buffer via `sync.Pool`
+- sharply reduced alloc churn from spill-path writes
+- further increased per-entry heap-cost weighting for mini-page pool eviction
+
+### Result
+
+- Errors: `0`
+- Best observed peak RSS in this series: `435.2 MB`
+- Heap in-use profile dropped to ~`96.5 MB` total process (near target)
+
+## v2e final (`report/fox_v2e_final`): Point-lookup parser + pooled page buffers
+
+### Implemented
+
+- `findPageEntry()` targeted on-page parser for point lookups (no full-page decode for one key)
+- `getEntry(..., loadValue)` / `getMeta()` split for `Stat` metadata-only path
+- pooled page buffers (`readPageInto`, `pageBufPool`) for lookup path
+
+### Final code state
+
+- Correctness fixed (`0` errors)
+- Throughput materially improved on key workloads
+- Total process heap-in-use at profile time reduced to ~`102.9 MB`
+- Full-suite process **peak RSS still >100MB** (see memory verification section)
+
+---
+
+## Final v2 Results (Benchmark + Profiles)
+
+### Final benchmark command (current code)
+
+```bash
+go run -tags noant ./cmd/bench \
+  --drivers fox \
+  --quick \
+  --profile \
+  --docker-stats=false \
+  --output ./report/fox_v2e_final
 ```
 
-Parameters:
-- `sync` -- `none` (default, no fsync), `batch`, or `full`
-- `page_size` -- leaf page size in bytes (default 4096)
-- `pool_size` -- mini-page buffer pool size in bytes (default 16 MB)
+### Reliability
+
+- Baseline v1: `3,311,157` errors
+- Final v2e: `0` errors
+
+### Selected performance comparison (v1 baseline vs v2e final)
+
+Values below are from `report/fox_v1_baseline/report.md` and `report/fox_v2e_final/report.md`.
+
+| Metric | v1 Baseline | v2e Final | Change | Notes |
+|---|---:|---:|---:|---|
+| `Write/1KB` | `168.0 MB/s` | `334.8 MB/s` | `1.99x` | faster + correct |
+| `Read/1KB` | `559.4 MB/s` | `878.1 MB/s` | `1.57x` | faster + correct |
+| `Read/64KB` | `0.00 MB/s` | `5.5 GB/s` | N/A | baseline broken |
+| `Read/1MB` | `0.00 MB/s` | `5.8 GB/s` | N/A | baseline broken |
+| `Read/10MB` | `0.00 MB/s` | `7.4 GB/s` | N/A | baseline broken |
+| `List/100` | `17/s` | `51/s` | `3.0x` | metadata-only leafs help |
+| `Delete` | `376.6K/s` | `1.1M/s` | `~2.9x` | no read-miss fallout |
+| `Copy/1KB` | `12.5 MB/s` | `232.5 MB/s` | `18.6x` | baseline had many errors |
+
+### Resource summary (v1 baseline vs v2e final)
+
+| Metric | v1 Baseline | v2e Final | Change |
+|---|---:|---:|---:|
+| Errors | `3,311,157` | `0` | fixed |
+| Peak RSS | `278.9 MB` | `504.9 MB` | worse (process peak) |
+| Peak Go Heap | `108.7 MB` | `219.5 MB` | higher |
+| Peak Go Sys | `305.9 MB` | `507.8 MB` | higher |
+| GC cycles | `1981` | `259` | much lower |
+| Runtime heap in use (profile-time) | `77.5 MB` | `183.6 MB` | higher |
+| Total allocations | `76,435.7 MB` | `16,263.2 MB` | **4.7x lower** |
+
+Interpretation:
+
+- v2 fixed correctness and drastically reduced total allocation churn.
+- Peak RSS got worse because the benchmark now successfully executes large reads/writes and the process retains more heap/sys memory over the full run.
+- GC cycles dropped sharply (`1981 -> 259`) because v2 removed huge avoidable allocation churn in the write path and point lookup path.
+
+### Final profile highlights (v2e)
+
+#### CPU (`report/fox_v2e_final/fox/cpu.pprof`)
+
+- `syscall.rawsyscalln`: `68.31%` flat
+- `(*store).readPageInto` remains a major cumulative path
+
+Interpretation:
+
+- `fox` is now correctness-safe and much more allocation-efficient, but largely syscall-bound.
+- Next major gains require I/O reduction/caching or concurrency redesign, not just more heap tuning.
+
+#### Heap in-use (`report/fox_v2e_final/fox/heap.pprof`)
+
+Top in-use contributors (total profile heap ≈ `102.86 MB`):
+
+- `(*store).putPreparedEntry`: `23.59 MB`
+- `(*bucket).Write`: `22 MB`
+- `bench.(*Runner).payload`: `16.16 MB` (benchmark harness)
+- `compositeKey`: `14.50 MB`
+- `(*btree).insertIntoParent`: `9.97 MB`
+
+#### Allocs (`report/fox_v2e_final/fox/allocs.pprof`)
+
+Top alloc-space contributors:
+
+- `decodePageEntriesWithMode`: `4.18 GB`
+- `(*store).readPage`: `3.01 GB`
+- `mergeEntries`: `1.68 GB`
+- `encodePageEntries`: `0.95 GB`
+- `io.ReadAll`: `0.88 GB` (benchmark/client side + multipart paths)
+
+This is much improved from earlier v2 runs (and dramatically lower than v1 total allocations), but page decode/merge paths are still the biggest remaining optimization targets.
+
+---
+
+## Memory Verification (<100MB target)
+
+## Requested target
+
+- "Keep total memory under 100MB (verify carefully)"
+
+## Verified numbers (carefully separated)
+
+### A) Full-suite `cmd/bench` process peak RSS (resource tracker)
+
+From `report/fox_v2e_final/report.md`:
+
+- **Peak RSS: `504.9 MB`** (FAIL vs `<100MB` target)
+
+This is process-level peak resident memory across the entire benchmark run and includes:
+
+- benchmark harness allocations (`bench.(*Runner).payload`, etc.)
+- imported driver init caches (e.g. local/rabbit caches in the same process)
+- transient heap growth retained by the Go runtime (`GoSys`) during the run
+
+### B) Final heap profile in-use (process, profile-time snapshot)
+
+From `report/fox_v2e_final/fox/heap.pprof`:
+
+- **Total heap in-use profile: `102.86 MB`** (near target, slightly above)
+
+This is a snapshot at profile capture time, not peak RSS.
+
+### C) Estimated fox-retained heap (excluding obvious benchmark/import overhead)
+
+Visible non-fox/harness allocations in the final heap profile include roughly:
+
+- `bench.(*Runner).payload`: `16.16 MB`
+- `local` driver init/cache entries: ~`9-10 MB`
+- `rabbit` dir cache: ~`1 MB`
+
+Subtracting those from `102.86 MB` implies **fox-retained heap is roughly in the `75-85 MB` range** at profile time.
+
+### Conclusion on memory target
+
+- **Full benchmark process peak RSS `<100MB` was not achieved**.
+- **Fox driver retained heap at profile time is approximately within the requested envelope**, but that is not the same metric as peak RSS.
+
+If the requirement is strictly **process peak RSS** under the current full `cmd/bench` harness, more intrusive changes are needed (or a benchmark harness mode that isolates driver memory from harness payload caches / imported driver init allocations).
+
+---
+
+## Remaining Bottlenecks
+
+### 1. Syscall-bound read path
+
+CPU profile remains dominated by `pread` syscalls.
+
+Likely improvements:
+
+- small leaf page cache (raw page cache or parsed metadata cache)
+- read-through mini-page caching for hot point lookups
+- batched fs I/O / larger sequential coalescing where safe
+
+### 2. Leaf merge path still allocates heavily
+
+`mergeEntries` + `encodePageEntries` + `decodePageEntriesWithMode` dominate alloc space.
+
+Likely improvements:
+
+- specialized merge for sorted slices without temporary map when mini-page entries are sorted/deduped
+- entry scratch pools for flush path
+- list/scan decode variants that avoid content-type decode when unused
+
+### 3. Global store lock limits parallel write scaling
+
+Parallel write scaling is still poor (expected from current coarse-grained locking).
+
+Likely improvements:
+
+- striped trees / partitioned leaf spaces
+- per-leaf or per-shard locks for mini-page mutation
+- lock-free read-only routing snapshots for inner nodes
+
+### 4. Composite key allocation remains persistent cost
+
+`compositeKey` still shows up in final in-use heap.
+
+Likely improvements:
+
+- per-bucket key namespace / separate bucket routing to avoid `bucket + "\\x00" + key` string creation everywhere
+- key interning/prefix dedup for separator keys (careful with memory tradeoffs)
+
+---
+
+## Next Optimization Directions (v3)
+
+1. **Read-through leaf cache (highest ROI likely)**
+- Cache raw leaf pages or parsed metadata entries for hot leaves.
+- Goal: cut `pread` syscall dominance and `readPage` allocations.
+
+2. **Flush-path allocation reduction**
+- Replace `mergeEntries` map+sort with sorted mini-page entries + linear merge.
+- Add scratch reuse for page encode/decode during flush.
+
+3. **More precise memory budgeting**
+- Separate budgets for:
+  - mini-page metadata cache
+  - dirty write buffers
+  - optional read cache
+- Make memory budget explicit in DSN (e.g. `pool_heap_budget=`).
+
+4. **Concurrency refactor**
+- Partition by key hash into multiple B-tree instances or stripe locks.
+- This is required for meaningful `ParallelWrite` improvement.
+
+5. **Benchmark memory isolation mode (tooling)**
+- If process `<100MB` is a hard requirement for comparison, add a `cmd/bench` mode that:
+  - disables payload cache reuse, or
+  - runs one benchmark case per subprocess, or
+  - imports only the target driver
+
+---
+
+## Appendix: Benchmark / pprof Commands
+
+### Benchmark commands used
+
+```bash
+# v1 baseline (broken correctness)
+go run -tags noant ./cmd/bench --drivers fox --quick --profile --docker-stats=false --output ./report/fox_v1_baseline
+
+# v2 iteration snapshots
+go run -tags noant ./cmd/bench --drivers fox --quick --profile --docker-stats=false --output ./report/fox_v2_optimized
+go run -tags noant ./cmd/bench --drivers fox --quick --profile --docker-stats=false --output ./report/fox_v2b_lowmem
+go run -tags noant ./cmd/bench --drivers fox --quick --profile --docker-stats=false --output ./report/fox_v2c_poolbudget
+go run -tags noant ./cmd/bench --drivers fox --quick --profile --docker-stats=false --output ./report/fox_v2d_mempush
+
+# final
+go run -tags noant ./cmd/bench --drivers fox --quick --profile --docker-stats=false --output ./report/fox_v2e_final
+```
+
+### pprof commands (same workflow style as herd)
+
+```bash
+# Open profiles
+
+go tool pprof -http=:8080 report/fox_v1_baseline/fox/cpu.pprof
+go tool pprof -http=:8080 report/fox_v1_baseline/fox/heap.pprof
+go tool pprof -http=:8080 report/fox_v1_baseline/fox/allocs.pprof
+
+go tool pprof -http=:8080 report/fox_v2e_final/fox/cpu.pprof
+go tool pprof -http=:8080 report/fox_v2e_final/fox/heap.pprof
+go tool pprof -http=:8080 report/fox_v2e_final/fox/allocs.pprof
+
+# Text summaries (top / cumulative)
+
+go tool pprof -top -nodecount=20 report/fox_v2e_final/fox/heap.pprof
+go tool pprof -top -nodecount=20 report/fox_v2e_final/fox/allocs.pprof
+go tool pprof -top -cum -nodecount=15 report/fox_v2e_final/fox/cpu.pprof
+
+# Compare baseline vs final
+
+go tool pprof -base report/fox_v1_baseline/fox/cpu.pprof report/fox_v2e_final/fox/cpu.pprof
+go tool pprof -base report/fox_v1_baseline/fox/heap.pprof report/fox_v2e_final/fox/heap.pprof
+
+go tool pprof -base report/fox_v1_baseline/fox/allocs.pprof report/fox_v2e_final/fox/allocs.pprof
+
+# Attribution / call-chain inspection (useful for generic labels)
+
+go tool pprof -peek "syscall.rawsyscalln" report/fox_v1_baseline/fox/cpu.pprof
+
+go tool pprof -peek "insertIntoParent" report/fox_v1_baseline/fox/heap.pprof
+
+# Line-level inspection
+
+go tool pprof -list "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/fox.(*store).putPreparedEntry" report/fox_v2e_final/fox/heap.pprof
+```
+
+### Unit tests added for regression protection
+
+```bash
+go test ./pkg/storage/driver/zoo/fox -run 'TestFox'
+```
+
+---
+
+## References
+
+- PVLDB paper PDF: <https://www.vldb.org/pvldb/vol17/p3442-yoon.pdf>
+- Bf-Tree docs / project page: <https://github.com/XiangpengHao/bf-tree-docs>
+- Bf-Tree paper announcement / metadata page: <https://collaborate.princeton.edu/en/publications/bf-tree-cache-optimized-b-trees-for-modern-hardware>

@@ -567,4 +567,153 @@ go tool pprof -peek "readFromValueLog" report/bear_v1_baseline/bear/allocs.pprof
 
 ## Summary (v2 status)
 
-v2 fixed the catastrophic correctness/stability problem (4GB B-tree cap failures under the benchmark suite), reduced memory dramatically, and improved small-write throughput substantially. It does **not** yet meet the full requested 5x throughput target, and full-suite `<100MB` memory is blocked both by benchmark harness payload allocation and by `bear`'s remaining page-structure growth / lack of compaction.
+v2 fixed the catastrophic correctness/stability problem (4GB B-tree cap failures under the benchmark suite), reduced memory dramatically, and improved small-write throughput substantially. It did **not** meet the requested 5x throughput target, and at that time the full-suite `<100MB` process target was blocked by both benchmark-harness payload allocation and `bear` page-structure growth.
+
+---
+
+## 12. v3 Follow-Up Addendum (2026-02-22)
+
+This addendum documents the three follow-up changes implemented after the v2 report:
+
+1. delete-time merge / structural compaction (page reuse via free list is now exercised during delete)
+2. paper-aligned separator prefix truncation (safe routing prefixes for inner-node separators)
+3. `cmd/bench` payload-memory fix (streaming large write payloads + cache release between benchmarks)
+
+### 12.1 Implemented code changes
+
+#### A. `bear`: delete-time merge / compaction path
+
+- Replaced the old leaf-only delete rewrite with recursive `deleteFrom(...)` descent.
+- Added sibling-merge rebalancing for:
+  - leaf children (`tryMergeLeafChildrenAt`)
+  - inner children (`tryMergeInnerChildrenAt`)
+- Added root shrink after delete when the root becomes a degenerate inner node (0 keys, 1 child).
+- Freed merged-away pages through the existing free-list (`freePage`), so subsequent inserts can reuse them.
+
+Practical effect:
+
+- delete-heavy phases now reclaim B-tree pages structurally instead of only removing leaf entries and leaving page topology untouched.
+- correctness remained intact in local full-suite validation (`0` benchmark errors).
+
+#### B. `bear`: safe separator prefix truncation (paper-inspired)
+
+- Added `shortestSeparator(leftMax, rightMin)` which returns the shortest prefix of `rightMin` that still satisfies:
+  - `leftMax < separator <= rightMin`
+- Applied on leaf split promotion (parent separator no longer always stores full `right[0].key`).
+- Added subtree boundary helpers (`subtreeMinKey`, `subtreeMaxKey`) and used them when splitting inner nodes so promoted separators are also safely truncated using actual child-subtree bounds.
+
+Why this matters:
+
+- inner nodes store separators only for routing; using shortest valid routing prefixes reduces inner-page key bytes, which lowers split pressure and is directly aligned with the paper's prefix-truncation idea.
+
+#### C. `cmd/bench`: large-payload memory fix (local benchmark harness)
+
+`bench/runner.go` was changed to remove the old payload-memory floor:
+
+- `payloadReader(size)` now streams large payloads (`>= 1MB`) using a deterministic xorshift reader (no giant `[]byte` allocation).
+- `runBenchmark(...)` now calls `releasePayloadCache()` after each benchmark:
+  - clears cached payload map
+  - runs `runtime.GC()`
+  - runs `debug.FreeOSMemory()`
+
+This preserves comparable benchmark behavior while removing the persistent "all payload sizes cached for the whole suite" memory footprint.
+
+### 12.2 v3 validation commands (`cmd/bench`, local)
+
+All validation below uses local `cmd/bench` runs (as requested).
+
+#### Focused smoke (`Write/1KB`, quick)
+
+- Command:
+
+```bash
+go run -tags noant ./cmd/bench \
+  --drivers bear \
+  --quick \
+  --filter Write/1KB \
+  --output ./report/bear_v3_smoke
+```
+
+- Results (`report/bear_v3_smoke/raw_results.json`):
+  - `Write/1KB`: `612,520 ops/s` (`519,157` iterations)
+  - Peak RSS: **75.4 MB**
+  - Peak Go Heap: **28.9 MB**
+  - Errors: `0`
+
+#### Focused large object (`Write/100MB`, non-quick short run)
+
+Note: `--quick` excludes the `100MB` object size even when `--large` is set, so a short non-quick run was used.
+
+- Command:
+
+```bash
+go run -tags noant ./cmd/bench \
+  --drivers bear \
+  --large \
+  --filter Write/100MB \
+  --benchtime 200ms \
+  --warmup 1 \
+  --min-iters 1 \
+  --output ./report/bear_v3_focus_write100mb_real
+```
+
+- Results (`report/bear_v3_focus_write100mb_real/raw_results.json`):
+  - `Write/100MB`: `5.57 ops/s` (`3` iterations)
+  - Peak RSS: **35.6 MB**
+  - Peak Go Heap: **28.7 MB**
+  - Errors: `0`
+
+This confirms the old payload-cache / 100MB-slice harness floor is no longer present.
+
+#### Full suite (`bear`, quick + large)
+
+- Command:
+
+```bash
+go run -tags noant ./cmd/bench \
+  --drivers bear \
+  --quick \
+  --large \
+  --output ./report/bear_v3_full
+```
+
+- Results (`report/bear_v3_full/raw_results.json`):
+  - Benchmarks: `40`
+  - Errors: `0`
+  - Peak RSS: **255.6 MB**
+  - Peak Go Heap: **29.8 MB**
+  - Peak Go Sys: **173.0 MB**
+  - Selected throughput:
+    - `Write/1KB`: `831,402 ops/s`
+    - `Delete`: `836,285 ops/s`
+    - `Copy/1KB`: `941,348 ops/s`
+
+### 12.3 Updated memory interpretation after the harness fix
+
+The v2 report's harness-memory caveat was correct *for v2*, but it is now partially superseded:
+
+- The specific payload-cache floor (including persistent 100MB payload retention) is fixed.
+- This is verified by the `Write/100MB` focused run at **35.6 MB** peak RSS.
+
+However, the full quick suite still peaks at **255.6 MB**. The evidence now points to a different mix of causes:
+
+- long-lived benchmark-suite accumulation (many objects retained until driver cleanup at end of the run)
+- `bear`'s mmap/file growth behavior over a long multi-benchmark session (freed pages are reusable, but file size / mapping size do not shrink automatically)
+- Go runtime `Sys` growth during the suite (`173.0 MB`) despite low live heap (`29.8 MB`)
+
+So, after v3:
+
+- `<100MB` is verified for focused local `cmd/bench` workloads, including `Write/100MB`
+- `<100MB` is still **not** met for the full multi-phase suite run
+- the remaining gap is no longer explained by payload preallocation alone
+
+### 12.4 What remains for the original targets
+
+- **5x throughput target**: still not achieved.
+- **Full-suite `<100MB` process RSS**: still not achieved.
+
+Most impactful next steps are now:
+
+1. add a true B-tree vacuum/truncate path (shrink file + remap after large delete-heavy phases)
+2. optionally add per-benchmark storage isolation in `cmd/bench` (for driver-footprint measurement mode)
+3. implement hint arrays / additional paper-aligned inner-page optimizations for throughput

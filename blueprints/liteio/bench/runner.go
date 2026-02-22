@@ -19,7 +19,6 @@ import (
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/devnull"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/exp/s3"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/local"
-	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/ant"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/bear"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/bee"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/falcon"
@@ -52,10 +51,10 @@ type Runner struct {
 	keyCounter        uint64
 	dockerCollector   *DockerStatsCollector
 	// Progress tracking
-	progressMu      sync.Mutex
-	currentOp       string
-	currentIter     int64
-	currentDuration time.Duration
+	progressMu        sync.Mutex
+	currentOp         string
+	currentIter       int64
+	currentDuration   time.Duration
 	payloads          map[int][]byte
 	payloadsMu        sync.Mutex
 	readBufPool       sync.Pool
@@ -608,7 +607,6 @@ func (r *Runner) benchmarkDriverWithTracker(ctx context.Context, driver DriverCo
 
 func (r *Runner) benchmarkWrite(ctx context.Context, bucket storage.Bucket, driver string, size int) error {
 	operation := fmt.Sprintf("Write/%s", SizeLabel(size))
-	data := r.payload(size)
 
 	warmup := r.config.WarmupForSize(size)
 
@@ -616,7 +614,7 @@ func (r *Runner) benchmarkWrite(ctx context.Context, bucket storage.Bucket, driv
 	for i := 0; i < warmup; i++ {
 		key := r.uniqueKey("warmup")
 		opCtx, cancel := r.opContextForSize(ctx, size)
-		bucket.Write(opCtx, key, bytes.NewReader(data), int64(size), "application/octet-stream", nil)
+		bucket.Write(opCtx, key, r.payloadReader(size), int64(size), "application/octet-stream", nil)
 		cancel()
 	}
 
@@ -648,7 +646,7 @@ func (r *Runner) benchmarkWrite(ctx context.Context, bucket storage.Bucket, driv
 			timer := NewTimer()
 
 			opCtx, cancel := r.opContextForSize(ctx, size)
-			_, err := bucket.Write(opCtx, key, bytes.NewReader(data), int64(size), "application/octet-stream", nil)
+			_, err := bucket.Write(opCtx, key, r.payloadReader(size), int64(size), "application/octet-stream", nil)
 			cancel()
 
 			collector.RecordWithError(timer.Elapsed(), err)
@@ -672,7 +670,6 @@ func (r *Runner) benchmarkWrite(ctx context.Context, bucket storage.Bucket, driv
 
 func (r *Runner) benchmarkRead(ctx context.Context, bucket storage.Bucket, driver string, size int) error {
 	operation := fmt.Sprintf("Read/%s", SizeLabel(size))
-	data := r.payload(size)
 
 	warmup := r.config.WarmupForSize(size)
 
@@ -687,7 +684,7 @@ func (r *Runner) benchmarkRead(ctx context.Context, bucket storage.Bucket, drive
 		}
 		key := r.uniqueKey("read")
 		opCtx, cancel := r.opContextForSize(ctx, size)
-		_, err := bucket.Write(opCtx, key, bytes.NewReader(data), int64(size), "application/octet-stream", nil)
+		_, err := bucket.Write(opCtx, key, r.payloadReader(size), int64(size), "application/octet-stream", nil)
 		cancel()
 		if err != nil {
 			r.logger("%s: pool object %d/%d failed: %v", operation, i+1, numObjects, err)
@@ -962,7 +959,6 @@ func (r *Runner) benchmarkDelete(ctx context.Context, bucket storage.Bucket, dri
 
 func (r *Runner) benchmarkParallelWrite(ctx context.Context, bucket storage.Bucket, driver string, size, concurrency int) error {
 	operation := fmt.Sprintf("ParallelWrite/%s/C%d", SizeLabel(size), concurrency)
-	data := r.payload(size)
 
 	// Use parallel timeout if set, otherwise use default
 	timeout := r.config.ParallelTimeout
@@ -1020,7 +1016,7 @@ func (r *Runner) benchmarkParallelWrite(ctx context.Context, bucket storage.Buck
 				key := r.uniqueKey("parallel-write")
 				timer := NewTimer()
 
-				_, err := bucket.Write(opCtx, key, bytes.NewReader(data), int64(size), "application/octet-stream", nil)
+				_, err := bucket.Write(opCtx, key, r.payloadReader(size), int64(size), "application/octet-stream", nil)
 				collector.RecordWithError(timer.Elapsed(), err)
 				atomic.AddInt64(&totalIters, 1)
 				r.updateProgress(atomic.LoadInt64(&totalIters))
@@ -1044,7 +1040,6 @@ done:
 
 func (r *Runner) benchmarkParallelRead(ctx context.Context, bucket storage.Bucket, driver string, size, concurrency int) error {
 	operation := fmt.Sprintf("ParallelRead/%s/C%d", SizeLabel(size), concurrency)
-	data := r.payload(size)
 
 	// Pre-create objects
 	numObjects := r.readPoolSize(size)
@@ -1057,7 +1052,7 @@ func (r *Runner) benchmarkParallelRead(ctx context.Context, bucket storage.Bucke
 		}
 		key := r.uniqueKey("parallel-read")
 		opCtx, cancel := r.opContextForSize(ctx, size)
-		_, err := bucket.Write(opCtx, key, bytes.NewReader(data), int64(size), "application/octet-stream", nil)
+		_, err := bucket.Write(opCtx, key, r.payloadReader(size), int64(size), "application/octet-stream", nil)
 		cancel()
 		if err != nil {
 			r.logger("%s: pool object %d/%d failed: %v", operation, i+1, numObjects, err)
@@ -1266,6 +1261,8 @@ func (r *Runner) cleanupBucket(ctx context.Context, bucket storage.Bucket) {
 }
 
 func (r *Runner) runBenchmark(ctx context.Context, _ storage.Bucket, label string, timedOut *bool, fn func() error) {
+	defer r.releasePayloadCache()
+
 	// If a previous benchmark on this driver timed out, skip all remaining.
 	if *timedOut {
 		r.logger("  %s: skipped (previous timeout)", label)
@@ -1313,6 +1310,17 @@ func (r *Runner) runBenchmark(ctx context.Context, _ storage.Bucket, label strin
 	case <-ctx.Done():
 		r.logger("  %s: cancelled", label)
 	}
+}
+
+func (r *Runner) releasePayloadCache() {
+	r.payloadsMu.Lock()
+	clear(r.payloads)
+	r.payloadsMu.Unlock()
+
+	// Keep suite-level memory dominated by the driver under test, not by cached
+	// benchmark payload vectors that accumulate across phases.
+	runtime.GC()
+	debug.FreeOSMemory()
 }
 
 func (r *Runner) opContext(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -1408,6 +1416,54 @@ func (r *Runner) payload(size int) []byte {
 	return data
 }
 
+const payloadStreamThreshold = 1 * 1024 * 1024
+
+type deterministicPayloadReader struct {
+	remaining int64
+	state     uint64
+}
+
+func newDeterministicPayloadReader(size int, seed uint64) io.Reader {
+	if size <= 0 {
+		return bytes.NewReader(nil)
+	}
+	return &deterministicPayloadReader{
+		remaining: int64(size),
+		state:     seed ^ (uint64(size) << 1) ^ 0x9e3779b97f4a7c15,
+	}
+}
+
+func (r *deterministicPayloadReader) Read(p []byte) (int, error) {
+	if r.remaining <= 0 {
+		return 0, io.EOF
+	}
+	if int64(len(p)) > r.remaining {
+		p = p[:r.remaining]
+	}
+	for i := range p {
+		// xorshift64* deterministic stream without materializing a large []byte.
+		x := r.state
+		x ^= x >> 12
+		x ^= x << 25
+		x ^= x >> 27
+		r.state = x
+		p[i] = byte((x * 2685821657736338717) >> 56)
+	}
+	r.remaining -= int64(len(p))
+	return len(p), nil
+}
+
+func (r *Runner) payloadReader(size int) io.Reader {
+	if size <= 0 {
+		return bytes.NewReader(nil)
+	}
+	if size < payloadStreamThreshold {
+		return bytes.NewReader(r.payload(size))
+	}
+	seed := uint64(size) * 0x517cc1b727220a95
+	return newDeterministicPayloadReader(size, seed)
+}
+
 // stripWriteTo wraps a reader to hide the WriteTo interface.
 // This forces io.Copy to use Read() calls through a buffer,
 // measuring actual data transfer instead of pointer-passing to io.Discard.
@@ -1460,12 +1516,11 @@ func (r *Runner) generateReport() *Report {
 
 func (r *Runner) benchmarkRangeRead(ctx context.Context, bucket storage.Bucket, driver string) error {
 	const totalSize = 1024 * 1024 // 1MB object
-	data := r.payload(totalSize)
 
 	// Create test object
 	key := r.uniqueKey("range")
 	opCtx, cancel := r.opContextForSize(ctx, totalSize)
-	_, err := bucket.Write(opCtx, key, bytes.NewReader(data), int64(totalSize), "application/octet-stream", nil)
+	_, err := bucket.Write(opCtx, key, r.payloadReader(totalSize), int64(totalSize), "application/octet-stream", nil)
 	cancel()
 	if err != nil {
 		return fmt.Errorf("setup: %w", err)
@@ -1526,12 +1581,11 @@ func (r *Runner) benchmarkRangeRead(ctx context.Context, bucket storage.Bucket, 
 
 func (r *Runner) benchmarkCopy(ctx context.Context, bucket storage.Bucket, driver string, size int) error {
 	operation := fmt.Sprintf("Copy/%s", SizeLabel(size))
-	data := r.payload(size)
 
 	// Create source object
 	srcKey := r.uniqueKey("copy-src")
 	opCtx, cancel := r.opContextForSize(ctx, size)
-	_, err := bucket.Write(opCtx, srcKey, bytes.NewReader(data), int64(size), "application/octet-stream", nil)
+	_, err := bucket.Write(opCtx, srcKey, r.payloadReader(size), int64(size), "application/octet-stream", nil)
 	cancel()
 	if err != nil {
 		return fmt.Errorf("setup: %w", err)
@@ -1700,8 +1754,6 @@ func (r *Runner) benchmarkMultipart(ctx context.Context, bucket storage.Bucket, 
 	partSize := 5 * 1024 * 1024 // 5MB
 	partCount := 3              // 15MB total
 	totalSize := partSize * partCount
-	partData := r.payload(partSize)
-
 	operation := fmt.Sprintf("Multipart/%dMB_%dParts", totalSize/(1024*1024), partCount)
 	collector := NewCollector()
 
@@ -1735,7 +1787,7 @@ func (r *Runner) benchmarkMultipart(ctx context.Context, bucket storage.Bucket, 
 				parts := make([]*storage.PartInfo, partCount)
 				for p := 0; p < partCount && err == nil; p++ {
 					opCtx, cancel := r.opContextForSize(ctx, partSize)
-					part, e := mp.UploadPart(opCtx, mu, p+1, bytes.NewReader(partData), int64(partSize), nil)
+					part, e := mp.UploadPart(opCtx, mu, p+1, r.payloadReader(partSize), int64(partSize), nil)
 					cancel()
 					if e != nil {
 						opCtx, cancel := r.opContextForSize(ctx, partSize)
@@ -1907,7 +1959,6 @@ func (r *Runner) benchmarkScale(ctx context.Context, bucket storage.Bucket, driv
 	if objectSize <= 0 {
 		objectSize = sizeSmall
 	}
-	data := r.payload(objectSize)
 
 	for _, count := range scaleCounts {
 		// Skip very large counts if timeout is short
@@ -1935,7 +1986,7 @@ func (r *Runner) benchmarkScale(ctx context.Context, bucket storage.Bucket, driv
 			for i := 0; i < count; i++ {
 				key := fmt.Sprintf("%s/%05d", prefix, i)
 				opCtx, cancel := r.opContext(ctx)
-				_, err := bucket.Write(opCtx, key, bytes.NewReader(data), int64(objectSize), "application/octet-stream", nil)
+				_, err := bucket.Write(opCtx, key, r.payloadReader(objectSize), int64(objectSize), "application/octet-stream", nil)
 				cancel()
 				if err != nil {
 					collector.RecordError(err)

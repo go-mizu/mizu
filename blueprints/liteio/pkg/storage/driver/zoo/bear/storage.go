@@ -87,6 +87,7 @@ const (
 
 	// Minimum number of entries before page is considered for merge
 	minLeafEntries = 2
+	minInnerKeys   = 2
 
 	// Minimum pages required in a valid file (header + root leaf).
 	initialPages = 2
@@ -1171,6 +1172,116 @@ func writeInnerPage(pg []byte, keys [][]byte, children []uint32) bool {
 	return true
 }
 
+func readAllInnerKeysChildren(pg []byte) ([][]byte, []uint32) {
+	count := int(binary.LittleEndian.Uint16(pg[1:3]))
+	keys := make([][]byte, count)
+	for i := 0; i < count; i++ {
+		keys[i] = readInnerKey(pg, i)
+	}
+	children := make([]uint32, count+1)
+	for i := 0; i <= count; i++ {
+		children[i] = readInnerChild(pg, i)
+	}
+	return keys, children
+}
+
+func leafEntriesFit(entries []*leafEntry) bool {
+	slotsSize := leafHeaderSize + len(entries)*leafSlotSize
+	dataSize := 0
+	for _, e := range entries {
+		dataSize += e.entrySize()
+	}
+	return slotsSize+dataSize <= pageSize
+}
+
+func innerPageFits(keys [][]byte, children []uint32) bool {
+	count := len(keys)
+	if len(children) != count+1 {
+		return false
+	}
+	childrenSize := (count + 1) * innerChildSize
+	slotsSize := count * innerSlotSize
+	headerAndSlots := innerHeaderSize + childrenSize + slotsSize
+	dataSize := 0
+	for _, k := range keys {
+		dataSize += 2 + len(k)
+	}
+	return headerAndSlots+dataSize <= pageSize
+}
+
+func shortestSeparator(leftMax, rightMin []byte) []byte {
+	if len(rightMin) == 0 || bytes.Compare(leftMax, rightMin) >= 0 {
+		return copyBytes(rightMin)
+	}
+	for n := 1; n <= len(rightMin); n++ {
+		cand := rightMin[:n]
+		if bytes.Compare(leftMax, cand) < 0 {
+			return copyBytes(cand)
+		}
+	}
+	return copyBytes(rightMin)
+}
+
+func (s *store) subtreeMinKey(pageID uint32) []byte {
+	for pageID != 0 {
+		pg := s.page(pageID)
+		switch pg[0] {
+		case pageTypeLeaf:
+			count := int(binary.LittleEndian.Uint16(pg[1:3]))
+			if count == 0 {
+				return nil
+			}
+			slotOff := leafHeaderSize
+			entryOff := binary.LittleEndian.Uint16(pg[slotOff+4:])
+			e := readLeafEntry(pg, entryOff)
+			if e == nil {
+				return nil
+			}
+			return e.key
+		case pageTypeInner:
+			pageID = readInnerChild(pg, 0)
+		default:
+			return nil
+		}
+	}
+	return nil
+}
+
+func (s *store) subtreeMaxKey(pageID uint32) []byte {
+	for pageID != 0 {
+		pg := s.page(pageID)
+		switch pg[0] {
+		case pageTypeLeaf:
+			count := int(binary.LittleEndian.Uint16(pg[1:3]))
+			if count == 0 {
+				return nil
+			}
+			slotOff := leafHeaderSize + (count-1)*leafSlotSize
+			entryOff := binary.LittleEndian.Uint16(pg[slotOff+4:])
+			e := readLeafEntry(pg, entryOff)
+			if e == nil {
+				return nil
+			}
+			return e.key
+		case pageTypeInner:
+			count := int(binary.LittleEndian.Uint16(pg[1:3]))
+			pageID = readInnerChild(pg, count)
+		default:
+			return nil
+		}
+	}
+	return nil
+}
+
+func (s *store) separatorForChildren(leftChild, rightChild uint32, fallback []byte) []byte {
+	leftMax := s.subtreeMaxKey(leftChild)
+	rightMin := s.subtreeMinKey(rightChild)
+	if len(leftMax) == 0 || len(rightMin) == 0 {
+		return copyBytes(fallback)
+	}
+	return shortestSeparator(leftMax, rightMin)
+}
+
 // ---------------------------------------------------------------------------
 // B-tree operations
 // ---------------------------------------------------------------------------
@@ -1308,7 +1419,7 @@ func (s *store) insertIntoLeaf(pageID uint32, entry *leafEntry) (*splitResult, e
 
 	return &splitResult{
 		newPageID: newID,
-		splitKey:  copyBytes(right[0].key),
+		splitKey:  shortestSeparator(left[len(left)-1].key, right[0].key),
 	}, nil
 }
 
@@ -1374,9 +1485,9 @@ func (s *store) insertIntoInner(pageID uint32, pg []byte, split *splitResult, ch
 	mid := len(newKeys) / 2
 	leftKeys := newKeys[:mid]
 	rightKeys := newKeys[mid+1:]
-	splitKey := newKeys[mid]
 	leftChildren := newChildren[:mid+1]
 	rightChildren := newChildren[mid+1:]
+	splitKey := s.separatorForChildren(leftChildren[len(leftChildren)-1], rightChildren[0], newKeys[mid])
 
 	newID, err := s.allocPage()
 	if err != nil {
@@ -1425,35 +1536,207 @@ func (s *store) btreeGet(key []byte) *leafEntry {
 
 // btreeDelete removes the entry for the given key. Returns true if found.
 func (s *store) btreeDelete(key []byte) bool {
-	pageID := s.rootPage
-	level := int(s.height)
-
-	for level > 1 {
-		pg := s.page(pageID)
-		childIdx := innerSearch(pg, key)
-		pageID = readInnerChild(pg, childIdx)
-		level--
-	}
-
-	pg := s.page(pageID)
-	_, found := leafSearch(pg, key)
-	if !found {
+	deleted, _ := s.deleteFrom(s.rootPage, key, int(s.height), true)
+	if !deleted {
 		return false
 	}
 
-	// Remove entry — rewrite the page without the deleted entry
-	entries := readAllLeafEntries(pg)
-	filtered := make([]*leafEntry, 0, len(entries)-1)
-	for _, e := range entries {
-		if !bytes.Equal(e.key, key) {
-			filtered = append(filtered, e)
+	// Shrink a degenerate root (single child, no separator keys).
+	for s.height > 1 {
+		rootPg := s.page(s.rootPage)
+		if rootPg[0] != pageTypeInner {
+			break
 		}
+		count := int(binary.LittleEndian.Uint16(rootPg[1:3]))
+		if count != 0 {
+			break
+		}
+		child := readInnerChild(rootPg, 0)
+		if child == 0 {
+			break
+		}
+		oldRoot := s.rootPage
+		s.rootPage = child
+		s.height--
+		s.freePage(oldRoot)
+	}
+	return true
+}
+
+func (s *store) deleteFrom(pageID uint32, key []byte, level int, isRoot bool) (deleted, underflow bool) {
+	if level == 1 {
+		pg := s.page(pageID)
+		_, found := leafSearch(pg, key)
+		if !found {
+			return false, false
+		}
+
+		entries := readAllLeafEntries(pg)
+		filtered := make([]*leafEntry, 0, len(entries)-1)
+		for _, e := range entries {
+			if !bytes.Equal(e.key, key) {
+				filtered = append(filtered, e)
+			}
+		}
+
+		nextLeaf := binary.LittleEndian.Uint32(pg[5:])
+		prevLeaf := binary.LittleEndian.Uint32(pg[9:])
+		_ = writeLeafPage(pg, filtered, nextLeaf, prevLeaf)
+
+		if isRoot {
+			return true, false
+		}
+		return true, len(filtered) < minLeafEntries
 	}
 
-	nextLeaf := binary.LittleEndian.Uint32(pg[5:])
-	prevLeaf := binary.LittleEndian.Uint32(pg[9:])
-	writeLeafPage(pg, filtered, nextLeaf, prevLeaf)
-	return true
+	pg := s.page(pageID)
+	if pg[0] != pageTypeInner {
+		return false, false
+	}
+
+	childIdx := innerSearch(pg, key)
+	childID := readInnerChild(pg, childIdx)
+	deleted, childUnderflow := s.deleteFrom(childID, key, level-1, false)
+	if !deleted {
+		return false, false
+	}
+
+	if childUnderflow {
+		s.rebalanceChildAfterDelete(pageID, childIdx, level-1)
+	}
+
+	if isRoot {
+		return true, false
+	}
+	pg = s.page(pageID)
+	return true, int(binary.LittleEndian.Uint16(pg[1:3])) < minInnerKeys
+}
+
+func (s *store) rebalanceChildAfterDelete(parentID uint32, childIdx, childLevel int) {
+	if childLevel <= 0 {
+		return
+	}
+
+	if childLevel == 1 {
+		if s.tryMergeLeafChildrenAt(parentID, childIdx) {
+			return
+		}
+		if childIdx > 0 {
+			_ = s.tryMergeLeafChildrenAt(parentID, childIdx-1)
+		}
+		return
+	}
+
+	if s.tryMergeInnerChildrenAt(parentID, childIdx) {
+		return
+	}
+	if childIdx > 0 {
+		_ = s.tryMergeInnerChildrenAt(parentID, childIdx-1)
+	}
+}
+
+func (s *store) tryMergeLeafChildrenAt(parentID uint32, leftIdx int) bool {
+	parentPg := s.page(parentID)
+	if parentPg[0] != pageTypeInner {
+		return false
+	}
+
+	keys, children := readAllInnerKeysChildren(parentPg)
+	if leftIdx < 0 || leftIdx+1 >= len(children) || leftIdx >= len(keys) {
+		return false
+	}
+
+	leftID := children[leftIdx]
+	rightID := children[leftIdx+1]
+	leftPg := s.page(leftID)
+	rightPg := s.page(rightID)
+	if leftPg[0] != pageTypeLeaf || rightPg[0] != pageTypeLeaf {
+		return false
+	}
+
+	leftEntries := readAllLeafEntries(leftPg)
+	rightEntries := readAllLeafEntries(rightPg)
+	mergedEntries := make([]*leafEntry, 0, len(leftEntries)+len(rightEntries))
+	mergedEntries = append(mergedEntries, leftEntries...)
+	mergedEntries = append(mergedEntries, rightEntries...)
+	if !leafEntriesFit(mergedEntries) {
+		return false
+	}
+
+	newKeys := make([][]byte, 0, len(keys)-1)
+	newKeys = append(newKeys, keys[:leftIdx]...)
+	newKeys = append(newKeys, keys[leftIdx+1:]...)
+	newChildren := make([]uint32, 0, len(children)-1)
+	newChildren = append(newChildren, children[:leftIdx+1]...)
+	newChildren = append(newChildren, children[leftIdx+2:]...)
+	if !innerPageFits(newKeys, newChildren) {
+		return false
+	}
+
+	nextLeaf := binary.LittleEndian.Uint32(rightPg[5:])
+	prevLeaf := binary.LittleEndian.Uint32(leftPg[9:])
+	if !writeLeafPage(leftPg, mergedEntries, nextLeaf, prevLeaf) {
+		return false
+	}
+	if nextLeaf != 0 {
+		nextPg := s.page(nextLeaf)
+		binary.LittleEndian.PutUint32(nextPg[9:], leftID)
+	}
+
+	s.freePage(rightID)
+	return writeInnerPage(parentPg, newKeys, newChildren)
+}
+
+func (s *store) tryMergeInnerChildrenAt(parentID uint32, leftIdx int) bool {
+	parentPg := s.page(parentID)
+	if parentPg[0] != pageTypeInner {
+		return false
+	}
+
+	keys, children := readAllInnerKeysChildren(parentPg)
+	if leftIdx < 0 || leftIdx+1 >= len(children) || leftIdx >= len(keys) {
+		return false
+	}
+
+	leftID := children[leftIdx]
+	rightID := children[leftIdx+1]
+	leftPg := s.page(leftID)
+	rightPg := s.page(rightID)
+	if leftPg[0] != pageTypeInner || rightPg[0] != pageTypeInner {
+		return false
+	}
+
+	leftKeys, leftChildren := readAllInnerKeysChildren(leftPg)
+	rightKeys, rightChildren := readAllInnerKeysChildren(rightPg)
+
+	mergedKeys := make([][]byte, 0, len(leftKeys)+1+len(rightKeys))
+	mergedKeys = append(mergedKeys, leftKeys...)
+	mergedKeys = append(mergedKeys, copyBytes(keys[leftIdx]))
+	mergedKeys = append(mergedKeys, rightKeys...)
+
+	mergedChildren := make([]uint32, 0, len(leftChildren)+len(rightChildren))
+	mergedChildren = append(mergedChildren, leftChildren...)
+	mergedChildren = append(mergedChildren, rightChildren...)
+
+	if !innerPageFits(mergedKeys, mergedChildren) {
+		return false
+	}
+
+	newKeys := make([][]byte, 0, len(keys)-1)
+	newKeys = append(newKeys, keys[:leftIdx]...)
+	newKeys = append(newKeys, keys[leftIdx+1:]...)
+	newChildren := make([]uint32, 0, len(children)-1)
+	newChildren = append(newChildren, children[:leftIdx+1]...)
+	newChildren = append(newChildren, children[leftIdx+2:]...)
+	if !innerPageFits(newKeys, newChildren) {
+		return false
+	}
+
+	if !writeInnerPage(leftPg, mergedKeys, mergedChildren) {
+		return false
+	}
+	s.freePage(rightID)
+	return writeInnerPage(parentPg, newKeys, newChildren)
 }
 
 // btreeScan iterates over all entries with keys >= startKey.

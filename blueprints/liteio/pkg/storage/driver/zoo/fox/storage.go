@@ -12,6 +12,7 @@
 package fox
 
 import (
+	"bytes"
 	"container/list"
 	"context"
 	"crypto/md5"
@@ -98,6 +99,7 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 		mp:               newMultipartRegistry(),
 		stopTick:         make(chan struct{}),
 	}
+	st.pageBufPool.New = func() any { return make([]byte, pageSize) }
 
 	// Open or create page file.
 	pf, err := os.OpenFile(pagesPath, os.O_CREATE|os.O_RDWR, 0600)
@@ -186,6 +188,9 @@ const (
 	defaultInlineValueLimit = 256
 
 	indirectValueMarker = 0xFFFFFFFE
+
+	miniPageBaseCost      = 512
+	miniPageEntryOverhead = 1024
 )
 
 // ---------------------------------------------------------------------------
@@ -198,7 +203,7 @@ func init() {
 	cachedTimeNano.Store(time.Now().UnixNano())
 }
 
-func fastNow() int64     { return cachedTimeNano.Load() }
+func fastNow() int64         { return cachedTimeNano.Load() }
 func fastNowTime() time.Time { return time.Unix(0, fastNow()) }
 
 // ---------------------------------------------------------------------------
@@ -221,6 +226,7 @@ type store struct {
 	pool *miniPagePool
 
 	inlineValueLimit int
+	pageBufPool      sync.Pool
 
 	mu      sync.RWMutex
 	buckets map[string]time.Time
@@ -412,8 +418,22 @@ func (s *store) allocPage() (int64, error) {
 	return id, nil
 }
 
-func (s *store) readPage(id int64) ([]byte, error) {
-	buf := make([]byte, s.pageSize)
+func (s *store) getPageBuf() []byte {
+	return s.pageBufPool.Get().([]byte)
+}
+
+func (s *store) putPageBuf(buf []byte) {
+	if cap(buf) < s.pageSize {
+		return
+	}
+	s.pageBufPool.Put(buf[:s.pageSize])
+}
+
+func (s *store) readPageInto(id int64, buf []byte) ([]byte, error) {
+	if len(buf) < s.pageSize {
+		return nil, fmt.Errorf("fox: page buffer too small")
+	}
+	buf = buf[:s.pageSize]
 	off := id * int64(s.pageSize)
 	n, err := s.pageFile.ReadAt(buf, off)
 	if err != nil && err != io.EOF {
@@ -423,6 +443,11 @@ func (s *store) readPage(id int64) ([]byte, error) {
 		clear(buf[n:])
 	}
 	return buf, nil
+}
+
+func (s *store) readPage(id int64) ([]byte, error) {
+	buf := make([]byte, s.pageSize)
+	return s.readPageInto(id, buf)
 }
 
 func (s *store) writePage(id int64, data []byte) error {
@@ -439,6 +464,12 @@ func (s *store) writePage(id int64, data []byte) error {
 type valueRef struct {
 	offset int64
 	size   uint32
+}
+
+var valueStreamBufPool = sync.Pool{
+	New: func() any {
+		return make([]byte, 256*1024)
+	},
 }
 
 func (s *store) appendValue(data []byte) (valueRef, error) {
@@ -724,6 +755,10 @@ func encodedEntrySize(e pageEntry) int {
 	return 2 + len(e.key) + 2 + len(e.contentType) + 4 + e.encodedValueSize() + 8 + 8
 }
 
+func miniPageEntryCost(e pageEntry) int {
+	return encodedEntrySize(e) + miniPageEntryOverhead
+}
+
 // encodePageEntries serializes entries into a page-sized buffer.
 // Returns the buffer and whether it fits.
 func encodePageEntries(entries []pageEntry, pageSize int) ([]byte, bool) {
@@ -898,20 +933,21 @@ entryLoop:
 // ---------------------------------------------------------------------------
 
 type miniPage struct {
-	leafID  int64
-	entries []pageEntry
-	size    int // approximate byte size of buffered entries
-	dirty   bool
-	element *list.Element
+	leafID   int64
+	entries  []pageEntry
+	size     int // serialized bytes (used for flush threshold)
+	poolCost int // approximate heap cost (used for pool budget)
+	dirty    bool
+	element  *list.Element
 }
 
 type miniPagePool struct {
-	mu       sync.Mutex
-	pages    map[int64]*miniPage // leafID -> miniPage
-	lru      *list.List
-	curSize  int64
-	maxSize  int64
-	st       *store
+	mu      sync.Mutex
+	pages   map[int64]*miniPage // leafID -> miniPage
+	lru     *list.List
+	curSize int64
+	maxSize int64
+	st      *store
 }
 
 func newMiniPagePool(maxSize int64, st *store) *miniPagePool {
@@ -944,13 +980,14 @@ func (p *miniPagePool) getOrCreate(leafID int64) *miniPage {
 	}
 
 	mp = &miniPage{
-		leafID:  leafID,
-		entries: make([]pageEntry, 0, 4),
-		size:    minMiniPageSize,
+		leafID:   leafID,
+		entries:  make([]pageEntry, 0, 4),
+		size:     minMiniPageSize,
+		poolCost: miniPageBaseCost,
 	}
 	mp.element = p.lru.PushFront(mp)
 	p.pages[leafID] = mp
-	p.curSize += int64(mp.size)
+	p.curSize += int64(mp.poolCost)
 	return mp
 }
 
@@ -964,7 +1001,7 @@ func (p *miniPagePool) evictOldest() {
 		p.flushMiniPage(mp)
 	}
 	p.lru.Remove(oldest)
-	p.curSize -= int64(mp.size)
+	p.curSize -= int64(mp.poolCost)
 	delete(p.pages, mp.leafID)
 }
 
@@ -1028,12 +1065,13 @@ func (p *miniPagePool) flushMiniPage(mp *miniPage) {
 		}
 	}
 
-	if mp.size > minMiniPageSize {
-		p.curSize -= int64(mp.size - minMiniPageSize)
+	if mp.poolCost > miniPageBaseCost {
+		p.curSize -= int64(mp.poolCost - miniPageBaseCost)
 	}
 	mp.dirty = false
 	mp.entries = mp.entries[:0]
 	mp.size = minMiniPageSize
+	mp.poolCost = miniPageBaseCost
 }
 
 func (p *miniPagePool) flushAll() {
@@ -1202,10 +1240,10 @@ func (s *store) buildPageEntry(ck, contentType string, value []byte, created, up
 }
 
 func (s *store) appendValueFromReader(src io.Reader) (valueRef, int64, error) {
-	const chunkSize = 256 * 1024
 	off := s.valueTail
 	cur := off
-	buf := make([]byte, chunkSize)
+	buf := valueStreamBufPool.Get().([]byte)
+	defer valueStreamBufPool.Put(buf)
 	for {
 		n, err := src.Read(buf)
 		if n > 0 {
@@ -1253,6 +1291,7 @@ func (s *store) putPreparedEntry(ck string, now int64, entry pageEntry) (int64, 
 	for i := range mp.entries {
 		if mp.entries[i].key == ck {
 			oldSize := encodedEntrySize(mp.entries[i])
+			oldPoolCost := miniPageEntryCost(mp.entries[i])
 			if mp.entries[i].created != 0 {
 				entry.created = mp.entries[i].created
 			}
@@ -1260,8 +1299,12 @@ func (s *store) putPreparedEntry(ck string, now int64, entry pageEntry) (int64, 
 			entry.tombstone = false
 			mp.entries[i] = entry
 			newSize := encodedEntrySize(mp.entries[i])
+			newPoolCost := miniPageEntryCost(mp.entries[i])
 			if delta := newSize - oldSize; delta != 0 {
 				mp.size += delta
+			}
+			if delta := newPoolCost - oldPoolCost; delta != 0 {
+				mp.poolCost += delta
 				s.pool.curSize += int64(delta)
 			}
 			found = true
@@ -1271,9 +1314,11 @@ func (s *store) putPreparedEntry(ck string, now int64, entry pageEntry) (int64, 
 
 	if !found {
 		newSize := encodedEntrySize(entry)
+		newPoolCost := miniPageEntryCost(entry)
 		mp.entries = append(mp.entries, entry)
 		mp.size += newSize
-		s.pool.curSize += int64(newSize)
+		mp.poolCost += newPoolCost
+		s.pool.curSize += int64(newPoolCost)
 	}
 	mp.dirty = true
 
@@ -1311,7 +1356,114 @@ func (s *store) putValueRef(bkt, key, contentType string, ref valueRef, size uin
 	return s.putPreparedEntry(ck, now, entry)
 }
 
-func (s *store) get(bkt, key string) (pageEntry, bool) {
+func findPageEntry(buf []byte, ck string, loadValue bool) (pageEntry, bool) {
+	if len(buf) < pageHeaderSize {
+		return pageEntry{}, false
+	}
+	count := int(binary.LittleEndian.Uint16(buf[0:2]))
+	if count == 0 {
+		return pageEntry{}, false
+	}
+	ckb := []byte(ck)
+	pos := pageHeaderSize
+
+	for i := range count {
+		_ = i
+		if pos+2 > len(buf) {
+			return pageEntry{}, false
+		}
+		kl := int(binary.LittleEndian.Uint16(buf[pos:]))
+		pos += 2
+		if pos+kl > len(buf) {
+			return pageEntry{}, false
+		}
+		keyBytes := buf[pos : pos+kl]
+		pos += kl
+
+		cmp := bytes.Compare(keyBytes, ckb)
+		if cmp > 0 {
+			return pageEntry{}, false
+		}
+
+		if pos+2 > len(buf) {
+			return pageEntry{}, false
+		}
+		cl := int(binary.LittleEndian.Uint16(buf[pos:]))
+		pos += 2
+		if pos+cl > len(buf) {
+			return pageEntry{}, false
+		}
+		ctBytes := buf[pos : pos+cl]
+		pos += cl
+
+		if pos+4 > len(buf) {
+			return pageEntry{}, false
+		}
+		vl := binary.LittleEndian.Uint32(buf[pos:])
+		pos += 4
+
+		tomb := vl == tombstoneMarker
+		indirect := vl == indirectValueMarker
+
+		var (
+			ref       valueRef
+			val       []byte
+			valueSize uint32
+		)
+		if tomb {
+			valueSize = 0
+		} else if indirect {
+			if pos+indirectValueRefSize > len(buf) {
+				return pageEntry{}, false
+			}
+			ref.offset = int64(binary.LittleEndian.Uint64(buf[pos:]))
+			pos += 8
+			ref.size = binary.LittleEndian.Uint32(buf[pos:])
+			pos += 4
+			valueSize = ref.size
+		} else {
+			valLen := int(vl)
+			if pos+valLen > len(buf) {
+				return pageEntry{}, false
+			}
+			valueSize = uint32(valLen)
+			if cmp == 0 && loadValue {
+				val = make([]byte, valLen)
+				copy(val, buf[pos:pos+valLen])
+			}
+			pos += valLen
+		}
+
+		var created, updated int64
+		if pos+16 > len(buf) {
+			return pageEntry{}, false
+		}
+		created = int64(binary.LittleEndian.Uint64(buf[pos:]))
+		pos += 8
+		updated = int64(binary.LittleEndian.Uint64(buf[pos:]))
+		pos += 8
+
+		if cmp != 0 {
+			continue
+		}
+		if tomb {
+			return pageEntry{}, false
+		}
+		return pageEntry{
+			key:         ck,
+			contentType: string(ctBytes),
+			value:       val,
+			valueRef:    ref,
+			valueSize:   valueSize,
+			created:     created,
+			updated:     updated,
+		}, true
+	}
+
+	return pageEntry{}, false
+}
+
+func (s *store) getEntry(bkt, key string, loadValue bool) (pageEntry, bool) {
 	ck := compositeKey(bkt, key)
 
 	leaf := s.tree.findLeaf(ck)
@@ -1329,27 +1481,30 @@ func (s *store) get(bkt, key string) (pageEntry, bool) {
 				if e.tombstone {
 					return pageEntry{}, false
 				}
+				if !loadValue && len(e.value) > 0 {
+					e.value = nil
+				}
 				return e, true
 			}
 		}
 	}
 	s.pool.mu.Unlock()
 
-	// Read from disk page.
-	data, err := s.readPage(leaf.pageID)
+	pageBuf := s.getPageBuf()
+	defer s.putPageBuf(pageBuf)
+	data, err := s.readPageInto(leaf.pageID, pageBuf)
 	if err != nil {
 		return pageEntry{}, false
 	}
+	return findPageEntry(data, ck, loadValue)
+}
 
-	entries := decodePageEntries(data)
-	idx := sort.Search(len(entries), func(i int) bool {
-		return entries[i].key >= ck
-	})
-	if idx < len(entries) && entries[idx].key == ck && !entries[idx].tombstone {
-		return entries[idx], true
-	}
+func (s *store) get(bkt, key string) (pageEntry, bool) {
+	return s.getEntry(bkt, key, true)
+}
 
-	return pageEntry{}, false
+func (s *store) getMeta(bkt, key string) (pageEntry, bool) {
+	return s.getEntry(bkt, key, false)
 }
 
 func (s *store) del(bkt, key string) bool {
@@ -1391,8 +1546,10 @@ func (s *store) del(bkt, key string) bool {
 	}
 	mp.entries = append(mp.entries, tomb)
 	sz := encodedEntrySize(tomb)
+	poolCost := miniPageEntryCost(tomb)
 	mp.size += sz
-	s.pool.curSize += int64(sz)
+	mp.poolCost += poolCost
+	s.pool.curSize += int64(poolCost)
 	mp.dirty = true
 	s.pool.mu.Unlock()
 
@@ -1428,13 +1585,13 @@ func (s *store) list(bkt, prefix string) []listResult {
 				continue
 			}
 			_, k := splitCompositeKey(e.key)
-				results = append(results, listResult{
-					key:         k,
-					contentType: e.contentType,
-					size:        e.objectSize(),
-					created:     e.created,
-					updated:     e.updated,
-				})
+			results = append(results, listResult{
+				key:         k,
+				contentType: e.contentType,
+				size:        e.objectSize(),
+				created:     e.created,
+				updated:     e.updated,
+			})
 			seen[e.key] = true
 		}
 	}
@@ -1460,8 +1617,8 @@ func (s *store) collectFromNode(n *btreeNode, prefix string, seen, tombstones ma
 		if err != nil {
 			return
 		}
-			entries := decodePageEntriesMeta(data)
-			for _, e := range entries {
+		entries := decodePageEntriesMeta(data)
+		for _, e := range entries {
 			if !strings.HasPrefix(e.key, prefix) {
 				continue
 			}
@@ -1469,13 +1626,13 @@ func (s *store) collectFromNode(n *btreeNode, prefix string, seen, tombstones ma
 				continue
 			}
 			_, k := splitCompositeKey(e.key)
-				*results = append(*results, listResult{
-					key:         k,
-					contentType: e.contentType,
-					size:        e.objectSize(),
-					created:     e.created,
-					updated:     e.updated,
-				})
+			*results = append(*results, listResult{
+				key:         k,
+				contentType: e.contentType,
+				size:        e.objectSize(),
+				created:     e.created,
+				updated:     e.updated,
+			})
 			seen[e.key] = true
 		}
 		return
@@ -1630,7 +1787,7 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 	}
 
 	b.st.mu.RLock()
-	e, ok := b.st.get(b.name, key)
+	e, ok := b.st.getMeta(b.name, key)
 	b.st.mu.RUnlock()
 
 	if !ok {
