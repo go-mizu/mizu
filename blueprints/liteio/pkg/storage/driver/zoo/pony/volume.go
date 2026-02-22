@@ -84,14 +84,15 @@ type mmapRegion struct {
 }
 
 type volume struct {
-	fd       *os.File
-	path     string
-	region   atomic.Pointer[mmapRegion]
-	tail     atomic.Int64
-	fileSize atomic.Int64
-	mu       sync.Mutex
-	crcTable *crc32.Table
-	noCRC    bool
+	fd         *os.File
+	path       string
+	region     atomic.Pointer[mmapRegion]
+	tail       atomic.Int64
+	fileSize   atomic.Int64
+	mu         sync.Mutex
+	crcTable   *crc32.Table
+	noCRC      bool
+	oldRegions [][]byte // deferred munmap — readers may still reference old mappings
 }
 
 func newVolume(path string, prealloc int64) (*volume, error) {
@@ -505,20 +506,22 @@ func (v *volume) growFile(needed int64) error {
 		return fmt.Errorf("pony: truncate: %w", err)
 	}
 
-	// Remap mmap to cover the new file size.
-	oldRegion := v.region.Load()
-	if oldRegion != nil && oldRegion.buf != nil {
-		syscall.Munmap(oldRegion.buf)
-	}
-
+	// Map new region BEFORE unmapping old — concurrent readers may still
+	// reference old mmap bytes. Defer old region munmap until Close().
 	newBuf, err := syscall.Mmap(int(v.fd.Fd()), 0, int(newSize),
 		syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 	if err != nil {
 		return fmt.Errorf("pony: remap volume: %w", err)
 	}
 
+	oldRegion := v.region.Load()
 	v.region.Store(&mmapRegion{buf: newBuf, capacity: newSize})
 	v.fileSize.Store(newSize)
+
+	// Defer unmap of old region — readers may still hold pointers into it.
+	if oldRegion != nil && oldRegion.buf != nil {
+		v.oldRegions = append(v.oldRegions, oldRegion.buf)
+	}
 	return nil
 }
 
@@ -537,6 +540,12 @@ func (v *volume) sync() error {
 
 func (v *volume) close() error {
 	v.flushHeader()
+
+	// Unmap all deferred old regions.
+	for _, buf := range v.oldRegions {
+		syscall.Munmap(buf)
+	}
+	v.oldRegions = nil
 
 	r := v.region.Load()
 	if r != nil && r.buf != nil {

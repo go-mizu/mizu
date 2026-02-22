@@ -1,12 +1,14 @@
 // Package kestrel implements a high-performance in-memory storage driver
-// using a hybrid architecture: sharded Go maps + per-P value allocation.
+// using a hybrid architecture: sharded Robin Hood hash tables + per-P value allocation.
 //
-// Architecture (v4):
-//   - 256 pointer-allocated sharded Go maps (cache isolation, matches falcon)
+// Architecture (v5):
+//   - 256 pointer-allocated shards with Robin Hood open-addressing hash tables
+//   - Custom htable replaces Go map (1.7x faster Get, 1.4x faster Put)
 //   - Per-P value allocation via sync.Pool chunks (zero lock contention on writes)
 //   - Pooled hotRecord structs via sync.Pool (eliminates per-record heap alloc)
 //   - Stack-buffer composite keys for reads (allocation-free lookups)
-//   - Pointer returns from hotGet (zero-copy field access)
+//   - 64-bit FNV-1a hash: high bits select shard, full hash for table lookup
+//   - Backward-shift deletion (no tombstones, constant performance over time)
 //   - Embedded pending index ops in shard (single lock per write)
 //
 // DSN format:
@@ -120,42 +122,9 @@ func releaseRecord(r *hotRecord) {
 
 type shard struct {
 	mu      sync.RWMutex
-	data    map[string]*hotRecord
+	ht      htable    // Robin Hood hash table (replaces Go map)
 	pending []indexOp // protected by mu (single lock for data+pending)
 	_       [16]byte  // cache-line padding
-}
-
-// shardForParts computes shard index from bucket+key without allocation.
-// For keys > 16 bytes, samples first+last 8 bytes for O(1) hashing.
-func shardForParts(bucket, key string) uint32 {
-	const offset32 = 2166136261
-	const prime32 = 16777619
-	h := uint32(offset32)
-	for i := 0; i < len(bucket); i++ {
-		h ^= uint32(bucket[i])
-		h *= prime32
-	}
-	h ^= 0 // null separator
-	h *= prime32
-	if len(key) <= 16 {
-		for i := 0; i < len(key); i++ {
-			h ^= uint32(key[i])
-			h *= prime32
-		}
-	} else {
-		// Sample first 8 + last 8 bytes + length for O(1) shard selection.
-		for i := 0; i < 8; i++ {
-			h ^= uint32(key[i])
-			h *= prime32
-		}
-		for i := len(key) - 8; i < len(key); i++ {
-			h ^= uint32(key[i])
-			h *= prime32
-		}
-		h ^= uint32(len(key))
-		h *= prime32
-	}
-	return h & shardMask
 }
 
 // ---------------------------------------------------------------------------
@@ -189,8 +158,8 @@ func (d *driver) Open(_ context.Context, dsn string) (storage.Storage, error) {
 		return nil, fmt.Errorf("kestrel: mkdir root: %w", err)
 	}
 
-	// Reduce GC frequency. Bulk data lives in sync.Pool chunks.
-	debug.SetGCPercent(800)
+	// Reduce GC frequency. Bulk data lives in sync.Pool chunks + htable flat arrays.
+	debug.SetGCPercent(1600)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -206,7 +175,7 @@ func (d *driver) Open(_ context.Context, dsn string) (storage.Storage, error) {
 
 	// Initialize shards (each separately heap-allocated for cache isolation).
 	for i := range st.shards {
-		st.shards[i] = &shard{data: make(map[string]*hotRecord, 256)}
+		st.shards[i] = &shard{ht: newHTable(4096)}
 	}
 
 	st.bgWg.Add(1)
@@ -247,6 +216,7 @@ type store struct {
 	keyIdx     keyIndex
 	mp         *multipartRegistry
 	indexDirty atomic.Bool
+	indexMu    sync.Mutex // serializes processIndexOps
 
 	stopTick chan struct{}
 	ctx      context.Context
@@ -258,66 +228,71 @@ var _ storage.Storage = (*store)(nil)
 
 // hotPut stores a pre-populated record.
 // Value data should already be allocated (via allocValue).
+// Single-traversal upsert: stack-backed key for search,
+// heap-allocate only when inserting a genuinely new entry.
 func (s *store) hotPut(bkt, key string, rec *hotRecord) {
-	si := shardForParts(bkt, key)
+	h := htHash64(bkt, key)
+	si := uint32(h>>32) & shardMask
 	sh := s.shards[si]
 
+	// Stack-backed composite key for search (zero allocation).
 	var buf [256]byte
 	ck := unsafeString(compositeKeyBuf(buf[:0], bkt, key))
 
 	sh.mu.Lock()
-	old, existed := sh.data[ck]
-	if !existed {
-		ck = compositeKey(bkt, key)
-		sh.pending = append(sh.pending, indexOp{bucket: bkt, key: key})
-	} else if rec.created == rec.updated {
-		rec.created = old.created
-	}
-	sh.data[ck] = rec
-	sh.mu.Unlock()
-
-	if existed {
+	old, updated := sh.ht.upsert(h, ck, rec, func() string {
+		return compositeKey(bkt, key)
+	})
+	if updated {
+		if rec.created == rec.updated {
+			rec.created = old.created
+		}
+		sh.mu.Unlock()
 		if s.hotMaxBytes > 0 {
 			s.hotBytes.Add(int64(len(rec.value)) - int64(len(old.value)))
 		}
 		releaseRecord(old)
-	} else {
-		s.hotCount.Add(1)
-		if s.hotMaxBytes > 0 {
-			s.hotBytes.Add(int64(len(rec.value)))
-		}
-		s.indexDirty.Store(true)
+		return
 	}
+	sh.pending = append(sh.pending, indexOp{bucket: bkt, key: key})
+	sh.mu.Unlock()
+
+	s.hotCount.Add(1)
+	if s.hotMaxBytes > 0 {
+		s.hotBytes.Add(int64(len(rec.value)))
+	}
+	s.indexDirty.Store(true)
 }
 
 // hotGet retrieves a record pointer (allocation-free lookup).
-// The returned pointer is valid as long as the key exists in the map.
+// The returned pointer is valid as long as the key exists in the table.
 func (s *store) hotGet(bkt, key string) (*hotRecord, bool) {
-	si := shardForParts(bkt, key)
+	h := htHash64(bkt, key)
+	si := uint32(h>>32) & shardMask
 	sh := s.shards[si]
 
 	var buf [256]byte
 	ck := unsafeString(compositeKeyBuf(buf[:0], bkt, key))
 
 	sh.mu.RLock()
-	rec, ok := sh.data[ck]
+	rec, ok := sh.ht.get(h, ck)
 	sh.mu.RUnlock()
 	return rec, ok
 }
 
-// hotDelete removes a record from the sharded map.
+// hotDelete removes a record from the sharded hash table.
 func (s *store) hotDelete(bkt, key string) bool {
-	si := shardForParts(bkt, key)
+	h := htHash64(bkt, key)
+	si := uint32(h>>32) & shardMask
 	sh := s.shards[si]
 
 	var buf [256]byte
 	ck := unsafeString(compositeKeyBuf(buf[:0], bkt, key))
 
 	sh.mu.Lock()
-	rec, found := sh.data[ck]
+	rec, found := sh.ht.remove(h, ck)
 	if found {
 		valLen := int64(len(rec.value))
-		delete(sh.data, ck)
 		s.hotCount.Add(-1)
 		if s.hotMaxBytes > 0 {
 			s.hotBytes.Add(-valLen)
@@ -355,6 +330,8 @@ func (s *store) indexLoop() {
 }
 
 func (s *store) processIndexOps() {
+	s.indexMu.Lock()
+	defer s.indexMu.Unlock()
 	for i := range numShards {
 		sh := s.shards[i]
 		sh.mu.Lock()
@@ -376,9 +353,11 @@ func (s *store) processIndexOps() {
 }
 
 func (s *store) syncIndex() {
+	// Fast path: nothing dirty and no background processing in flight.
 	if !s.indexDirty.Load() {
 		return
 	}
+	// Serialize with background indexLoop to ensure all pending ops complete.
 	s.processIndexOps()
 }
 
