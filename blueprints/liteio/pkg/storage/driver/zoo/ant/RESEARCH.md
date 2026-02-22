@@ -827,6 +827,471 @@ v2b had 47.3% memmove + 28% GC. v3 reduced GC to ~14% total.
 
 ---
 
+## v4 Profiling Analysis
+
+**Environment:** Go 1.26.0, darwin/arm64 (Apple M4), 10 CPUs, benchtime=2-3s
+
+### v3 Baseline Benchmarks
+
+| Benchmark | ops/s | ns/op | B/op | allocs/op |
+|-----------|-------|-------|------|-----------|
+| **Write/1KB** | 3,771K | 695 | 460 | 7 |
+| **Read/1KB** | 17,626K | 142 | 173 | 2 |
+| **Stat** | 18,275K | 133 | 173 | 2 |
+| **Delete** | 13,824K | 221 | 26 | 2 |
+| **ParallelWrite/1KB/C10** | 8,743K | 339 | 436 | 7 |
+| **ParallelRead/1KB/C10** | 23,590K | 104 | 175 | 2 |
+| **List/100** | 233K | 10,806 | 20,176 | 351 |
+
+### CPU Profile: Read/1KB (3.47s total samples, 24.7M iterations)
+
+| Function | flat% | cum% | Category | Actionable? |
+|----------|-------|------|----------|-------------|
+| `(*bucket).Open` | 2.88% | 49.86% | **Our code** | Optimization target |
+| `fmt.Sprintf` | — | 22.48% | Benchmark harness | NO — not our code |
+| `runtime.mallocgc` | 5.48% | 21.33% | GC/alloc | YES — reduce allocs |
+| `artSearch` | 3.75% | 13.54% | **Our code** | YES — hash table |
+| `cleanKey` | 0.86% | 8.07% | **Our code** | YES — fast path |
+| `findChild` | 5.76% | 5.76% | **Our code** | YES — hash table |
+| `runtime.newobject` | — | 11.82% | Alloc | YES — pool/eliminate |
+| `strings.ReplaceAll` (via cleanKey) | — | 5.48% | **Our code** | YES — fast path |
+| `relToKey` | — | 3.75% | **Our code** | YES — eliminate |
+| `path.Clean` (via cleanKey) | — | ~4% | **Our code** | YES — fast path |
+| `runtime.convT64` | 0.86% | 4.32% | GC/boxing | Minor |
+
+**Key insight:** Excluding benchmark harness (22.5%), our actual code CPU breakdown is:
+- artSearch (including findChild): **19.3%** ← biggest target
+- cleanKey (path.Clean + strings.ReplaceAll): **8.1%** ← easy win
+- mallocgc/newobject (Object alloc): **21.3%** ← pool/embed
+- relToKey (strings.ReplaceAll scan): **3.75%** ← eliminate entirely
+
+### CPU Profile: Stat (3.61s total, 27.4M iterations)
+
+| Function | flat% | cum% | Actionable? |
+|----------|-------|------|-------------|
+| `(*bucket).Stat` | 3.05% | 52.35% | Target |
+| `fmt.Sprintf` | — | 22.44% | NO — harness |
+| `artSearch` | 4.99% | 16.90% | YES — hash table |
+| `cleanKey` | 0.28% | 9.97% | YES — fast path |
+| `runtime.mallocgc` | 3.05% | 17.73% | YES — reduce allocs |
+| `runtime.kevent` | 9.97% | 9.97% | GC STW syscall |
+| `findChild` | 7.76% | 7.76% | YES — hash table |
+| `path.Clean` | 3.88% | 4.71% | YES — fast path |
+| `relToKey` | 0.28% | 3.32% | YES — eliminate |
+
+### CPU Profile: Write/1KB (5.87s total, 6.6M iterations)
+
+| Function | flat% | cum% | Actionable? |
+|----------|-------|------|-------------|
+| `runtime.memmove` | **44.46%** | 44.46% | NO — copying 1KB to mmap (irreducible) |
+| `runtime.madvise` | **22.66%** | 22.66% | Partially — pre-grow vlog |
+| `syscall.rawsyscalln` | 13.80% | 13.80% | NO — vlog close in cleanup |
+| `appendPutDirect` | — | 46.34% | Target (memmove within) |
+| `binary.PutUint64` | — | ~2% | Minimal |
+
+**Key insight:** Write/1KB is dominated by irreducible costs: 44% memmove (data copy), 23% madvise
+(heap/mmap management), 14% syscall (cleanup). Only ~19% is actionable.
+
+### CPU Profile: Delete (15.87s total, 20.4M iterations)
+
+| Function | flat% | cum% | Actionable? |
+|----------|-------|------|-------------|
+| `runtime.madvise` | **49.53%** | 49.53% | From Write setup in benchmark |
+| `(*bucket).Write` | — | 19.66% | Benchmark setup |
+| `artDeleteRecursive` | 6.43% | 15.88% | YES — hash table |
+| `runtime.memmove` | 13.61% | 13.61% | Write setup |
+| `nodePrefix` (inline) | **8.70%** | 8.70% | YES — hash table bypass |
+| `runtime.tryDeferToSpanScan` | 3.59% | 4.28% | GC scanning |
+
+**Key insight:** Delete benchmark is dominated by its Write setup phase (madvise + memmove). The actual
+Delete path (`artDeleteRecursive` at 16%) is fast but still traverses ART with expensive type switches
+(`nodePrefix` alone is 8.7%).
+
+### Memory Profile: Read/1KB (24.7M iterations, 4,397 MB total alloc)
+
+| Allocation Site | MB | % | Root Cause |
+|-----------------|-----|---|------------|
+| `(*bucket).Open` | 3,957 | **90.0%** | `&storage.Object{}` allocation |
+| `fmt.Sprintf` | 179 | 4.1% | Benchmark harness key gen |
+| `BenchmarkRead1KB` (misc) | 162 | 3.7% | Various |
+| `acquireNode4 → pool.New` | 33 | 0.7% | Pool cold start |
+
+**Root cause:** 90% of Read allocations are the `storage.Object` struct. Each Read allocates
+a ~160B Object on the heap. At 24.7M iterations, that's 3.96 GB of garbage, driving mallocgc to 21% CPU.
+
+### Memory Profile: Stat (27.4M iterations, 4,843 MB total alloc)
+
+| Allocation Site | MB | % | Root Cause |
+|-----------------|-----|---|------------|
+| `(*bucket).Stat` | 4,367 | **90.2%** | `&storage.Object{}` allocation |
+| `fmt.Sprintf` | 208 | 4.3% | Benchmark harness |
+| `acquireNode4 → pool.New` | 38 | 0.8% | Pool cold start |
+
+### Memory Profile: Write/1KB (6.6M iterations, 3,494 MB total alloc)
+
+| Allocation Site | MB | % | Root Cause |
+|-----------------|-----|---|------------|
+| `(*bucket).Write` | 1,224 | **35.0%** | compositeKey, Object, etc. |
+| `acquireNode4 → pool.New` | 1,153 | **33.0%** | node4 pool cold path |
+| `bytes.NewReader` (harness) | 372 | 10.7% | Benchmark wrapping test data |
+| `acquireLeaf → pool.New` | 348 | **10.0%** | leafEntry pool cold path |
+| `addChild` | 169 | 4.8% | Node prefix slice on promotion |
+| `fmt.Sprintf` | 115 | 3.3% | Benchmark harness |
+
+### Detailed cleanKey Analysis (via pprof -peek)
+
+**Read path:** cleanKey = 8.07% cum, breakdown:
+- `path.Clean`: **50%** of cleanKey time (allocation + string processing)
+- `strings.ReplaceAll("\\", "/")`: **21%** (full string scan even when no backslash)
+- `containsDotDot`: **11%** (our zero-alloc scan — already optimized)
+- `strings.TrimSpace`: **7%** (leading/trailing space check)
+
+**Stat path:** cleanKey = 9.97% cum, breakdown:
+- `path.Clean`: **47%** of cleanKey time
+- `strings.ReplaceAll`: **25%**
+- `strings.TrimSpace`: **14%**
+- `containsDotDot`: **11%**
+
+**Conclusion:** `path.Clean` and `strings.ReplaceAll` together consume 70-75% of cleanKey time.
+For already-clean keys (no backslash, no `//`, no `./`, no leading `/`), both are pure overhead.
+
+### Detailed relToKey Analysis
+
+**Read path:** relToKey = 3.75% cum
+- `strings.ReplaceAll("\\", "/")`: **100%** of relToKey time
+
+**Stat path:** relToKey = 3.32% cum
+- `strings.ReplaceAll("\\", "/")`: **92%** of relToKey time
+
+**Conclusion:** relToKey is called AFTER cleanKey, which already removes backslashes.
+The strings.ReplaceAll scan is completely redundant. Replacing with identity saves 3-4% CPU.
+
+---
+
+## v4 Bottleneck Identification
+
+### B1: cleanKey Path Processing (Read/Stat 8-10% CPU, ALL paths)
+
+**Impact:** 8-10% of Read/Stat CPU wasted on `path.Clean()` and `strings.ReplaceAll()` for keys that
+are already clean. At 18M Stat ops/s, that's ~24 ns per call wasted.
+
+**Root cause:** `cleanKey()` unconditionally calls `strings.ReplaceAll(key, "\\", "/")` (scans full
+string) and `path.Clean(key)` (allocates new string, processes path components). For benchmark keys
+like "k/12345", neither function changes the input but both scan/allocate.
+
+**Solution:** Fast-path byte scan: check if key is already clean (no `\`, no leading space/slash,
+no `//`, no `.` or `..`). If clean, return immediately. Falls through to existing cleanKey for edge cases.
+
+### B2: relToKey Redundancy (Read/Stat 3-4% CPU, ALL paths)
+
+**Impact:** 3-4% of CPU scanning for backslashes that cleanKey already removed.
+
+**Root cause:** `relToKey()` calls `strings.ReplaceAll(rel, "\\", "/")` — identical to what cleanKey
+already did. Then `strings.TrimPrefix(result, "/")` — cleanKey already trimmed leading slash.
+
+**Solution:** Replace `relToKey(relKey)` with just `relKey` on all paths. Since cleanKey's output
+is guaranteed to have no backslash and no leading slash, relToKey is always identity.
+
+### B3: ART Traversal for Point Lookups (Read/Stat 14-17% CPU)
+
+**Impact:** artSearch + findChild = 14-17% of Read/Stat CPU. Each lookup traverses the tree
+byte-by-byte with type switches at every node (4-way switch for nodePrefix, nodeLeaf, findChild).
+
+**Root cause:** ART is O(key_length) with constant overhead per node from Go interface type switches.
+For a 10-byte composite key, that's ~10 nodes × 3 type switches = 30 type switch evaluations.
+
+**Solution:** Per-shard open-addressing hash table for O(1) point lookups. Keep ART for prefix
+operations (List, directory checks). Hash table entry: `{keyHash uint64, leaf *leafEntry}` = 16B.
+Robin Hood linear probing with 70% load factor.
+
+### B4: storage.Object Heap Allocation (Read/Stat 90% of alloc bytes)
+
+**Impact:** 90% of Read/Stat allocations are `&storage.Object{}` (~160B). At 18M ops/s, this
+generates 2.88 GB/s of garbage, pushing mallocgc to 18-21% of CPU.
+
+**Root cause:** `(*bucket).Open` and `(*bucket).Stat` allocate `&storage.Object{...}` per call.
+The storage.Bucket interface requires returning `*storage.Object`.
+
+**Solution (Read path):** Embed `storage.Object` inside `mmapReadCloser`. The Object is returned
+with the reader and recycled when the reader goes back to the pool on `Close()`. This eliminates
+the Object allocation entirely on the Read path (0 allocs with warm pool).
+
+**Solution (Stat path):** Use `sync.Pool` for Object. Since Stat has no close hook, the caller
+can't return the Object. Accept 1 alloc on Stat (pool helps with warm path).
+
+### B5: ctStringTable.get() RWMutex (minor, ~1% on Read/Stat)
+
+**Impact:** Every Read/Stat acquires `ctTable.mu.RLock()` to look up content-type string.
+
+**Root cause:** `get()` uses `sync.RWMutex.RLock/RUnlock` even though the strings slice is
+append-only (never modified, only extended).
+
+**Solution:** Publish strings slice via `atomic.Pointer`. Reads use atomic load (no lock).
+Writes (intern) still use mutex + atomic store for new entries.
+
+---
+
+## v4 Optimization Journey
+
+### O1: Fast-Path cleanKey (Zero-Cost for Clean Keys)
+
+**Problem:** cleanKey takes 8-10% of Read/Stat CPU processing already-clean keys through
+`path.Clean()` and `strings.ReplaceAll()`.
+
+**Solution:** Add `isCleanKey()` fast-path check: single pass over key bytes, returns true if:
+- No backslash `\`
+- No leading or trailing space
+- No leading slash `/`
+- No consecutive slashes `//`
+- No dot-dot component `..`
+- Not empty, not `.`
+
+```go
+func isCleanKey(key string) bool {
+    if len(key) == 0 || key[0] == '/' || key[0] == ' ' {
+        return false
+    }
+    prev := byte(0)
+    for i := 0; i < len(key); i++ {
+        c := key[i]
+        if c == '\\' || c == ' ' && i == len(key)-1 {
+            return false
+        }
+        if c == '/' && prev == '/' {
+            return false
+        }
+        if c == '.' && (prev == '/' || prev == 0) {
+            if i+1 >= len(key) || key[i+1] == '/' {
+                return false // "." component
+            }
+            if key[i+1] == '.' && (i+2 >= len(key) || key[i+2] == '/') {
+                return false // ".." component
+            }
+        }
+        prev = c
+    }
+    return true
+}
+
+func cleanKey(key string) (string, error) {
+    if isCleanKey(key) {
+        return key, nil  // fast path: zero allocations
+    }
+    // slow path: existing processing
+    key = strings.TrimSpace(key)
+    // ...
+}
+```
+
+**Expected savings:** 8-10% CPU on Read/Stat → ~12-14 ns per operation.
+
+### O2: Eliminate relToKey (Identity After cleanKey)
+
+**Problem:** relToKey takes 3-4% of Read/Stat CPU scanning for backslashes that cleanKey already
+removed.
+
+**Solution:** Replace all `relToKey(relKey)` calls with just `relKey`. cleanKey guarantees:
+- No backslash (replaced or rejected)
+- No leading slash (trimmed)
+
+So relToKey is always identity. Remove the function call entirely.
+
+**Expected savings:** 3-4% CPU on Read/Stat → ~5 ns per operation.
+
+### O3: Per-Shard Hash Table for Point Lookups
+
+**Problem:** artSearch traverses key byte-by-byte with type switches at every node. 14-17% of
+Read/Stat CPU.
+
+**Solution:** Open-addressing hash table (Robin Hood linear probing) per shard:
+
+```go
+type htEntry struct {
+    keyHash uint64     // 0 = empty slot
+    leaf    *leafEntry
+}
+
+type hashTable struct {
+    entries []htEntry
+    mask    uint64
+    count   int
+}
+
+func (ht *hashTable) lookup(keyHash uint64) *leafEntry {
+    idx := keyHash & ht.mask
+    for {
+        e := &ht.entries[idx]
+        if e.keyHash == 0 {
+            return nil // empty slot — not found
+        }
+        if e.keyHash == keyHash {
+            return e.leaf
+        }
+        idx = (idx + 1) & ht.mask
+    }
+}
+```
+
+Point lookups (Read, Stat, Delete) use hash table. ART retained for prefix operations (List).
+Both structures updated on Write/Delete.
+
+Entry size: 16B. At 70% load factor with 100K entries across 64 shards (~1,562 per shard):
+table size = 4,096 entries × 16B = 64KB per shard = 4MB total. Well within budget.
+
+**Expected savings:** 10-14% CPU on Read/Stat → ~15-20 ns per operation.
+
+### O4: Embed Object in mmapReadCloser
+
+**Problem:** `&storage.Object{}` allocation is 90% of Read memory, driving mallocgc to 21% CPU.
+
+**Solution:** Embed Object directly in the pooled mmapReadCloser:
+
+```go
+type mmapReadCloser struct {
+    r   bytes.Reader
+    obj storage.Object // embedded, not pointer
+}
+
+func (b *bucket) Open(...) (io.ReadCloser, *storage.Object, error) {
+    rc := readerPool.Get().(*mmapReadCloser)
+    rc.obj = storage.Object{
+        Bucket: b.name,
+        Key:    relKey,
+        // ...
+    }
+    rc.r.Reset(val)
+    return rc, &rc.obj, nil // Object lives inside pooled reader
+}
+```
+
+When `Close()` returns the reader to pool, the embedded Object is recycled. This eliminates
+the Object allocation entirely on the Read path.
+
+Read path: 2 allocs → 0 allocs (pool warm), 1 alloc (pool cold).
+
+**Expected savings:** ~15% CPU savings on Read (eliminates mallocgc for Object).
+
+### O5: Lock-Free ctStringTable.get()
+
+**Problem:** Every Read/Stat acquires RLock to look up content-type string.
+
+**Solution:** Use atomic.Pointer for the strings slice:
+
+```go
+type ctStringTable struct {
+    mu      sync.Mutex
+    strs    atomic.Pointer[[]string] // lock-free read
+    index   map[string]uint16
+}
+
+func (t *ctStringTable) get(idx uint16) string {
+    s := *t.strs.Load()
+    if int(idx) < len(s) {
+        return s[idx]
+    }
+    return ""
+}
+```
+
+**Expected savings:** ~1% CPU on Read/Stat.
+
+### O6: Pool storage.Object for Stat
+
+**Problem:** Stat allocates `&storage.Object{}` per call. No close hook to return to pool.
+
+**Solution:** Use sync.Pool for Stat Objects:
+
+```go
+var objPool = sync.Pool{New: func() any { return new(storage.Object) }}
+
+func (b *bucket) Stat(...) (*storage.Object, error) {
+    obj := objPool.Get().(*storage.Object)
+    *obj = storage.Object{
+        Bucket: b.name,
+        Key:    relKey,
+        // ...
+    }
+    return obj, nil
+}
+```
+
+Note: Caller may not return to pool. But pool.Get() is still faster than malloc when pool is warm,
+and the GC collects unreturned objects normally.
+
+**Expected savings:** ~5-8% CPU on Stat path (reduce mallocgc overhead).
+
+---
+
+## v4 Results
+
+*(To be filled after implementation)*
+
+---
+
+## Lessons Learned
+
+### From v1 Analysis:
+
+1. **Union structs are catastrophic for memory** — 2,744B per node when most need 72B. Always use type-specific structs for polymorphic data.
+
+2. **Global locks kill parallelism** — Even RWMutex. At C200, lock contention dominates. Shard early.
+
+3. **Per-operation allocations compound through GC** — 5KB × 221K ops/s = 1.1 GB/s of GC pressure. Pool everything on the hot path.
+
+4. **Stat should never touch disk** — Store all metadata in-memory. The index exists for exactly this purpose.
+
+5. **Fsync batching is essential** — 2 fsyncs per write is 2ms overhead on macOS. Batch to amortize.
+
+### From v2/v2b Optimization:
+
+6. **Per-shard everything** — Having per-shard ART but global WAL/vlog still serializes writes. The shard boundary must encompass ALL mutable state (ART + vlog + WAL) to eliminate global contention.
+
+7. **Single lock per operation** — v2 used 4 locks per write. v2b uses 1 lock. Fewer lock acquisitions = less contention.
+
+8. **Eliminate the WAL** — Embedding key metadata in the vlog entry makes the vlog self-describing. Recovery just scans the vlog.
+
+9. **Zero-copy mmap reads** — Returning a slice of mmap'd memory eliminates the biggest allocation in the read path.
+
+### From v3 Profiling:
+
+10. **GC dominates read paths** — 82% of Read CPU is GC. With zero-copy mmap reads, the remaining allocations (compositeKey, cleanKey, Object, Reader wrappers) drive ALL the GC overhead. Every allocation eliminated has outsized impact.
+
+11. **memmove dominates write paths** — 47% of Write CPU is copying data to mmap. The ONLY way to reduce this is to eliminate intermediate copies (direct-to-mmap writes).
+
+12. **strings.Split is a hidden allocator** — A single `strings.Split(key, "/")` in cleanKey accounts for 10-12% of total allocations. Replace string manipulation with manual byte scanning whenever possible.
+
+13. **Cached time matters at scale** — `time.Now()` is ~20ns (macOS commpage), which is 3% of a 775ns write. At millions of ops/s, background-ticker cached time is essential.
+
+14. **Pool everything, even small structs** — A 48-byte leafEntry allocation, repeated 3.5M times, generates 168 MB of garbage that triggers GC cycles consuming 28% of CPU.
+
+15. **The interface tax is real** — Returning `(io.ReadCloser, *storage.Object, error)` forces 3 heap allocations per read. Custom pooled types (mmapReader with embedded bytes.Reader) can eliminate 2 of 3.
+
+### From v3 Implementation:
+
+16. **Stack buffers eliminate heap escapes** — `var buf [256]byte` + `appendCompositeKey(buf[:0], ...)` keeps the composite key on the stack for keys under 256B. This eliminated 1 allocation per operation on ALL paths.
+
+17. **SetGCPercent(800) is transformative for small heaps** — With 24 MB live data, GC now triggers at ~216 MB (far above our working set). GC cycles dropped 28→2, making read paths 1.41x faster.
+
+18. **Parallel scaling is the real win** — Single-thread Write didn't improve much (memmove bottleneck), but ParallelWrite at C10 improved 1.93x (488→355 ns) from 64 shards + bucket existence fast path.
+
+19. **Direct-to-mmap scales with value size** — Write/64KB improved 1.46x because we eliminated the 64KB intermediate buffer + copy. Write/1KB improvement is smaller (1KB copy is fast). The optimization matters most for large values.
+
+20. **Pool return is critical for pool effectiveness** — `mmapReadCloser.Close()` returns the reader to `readerPool`. Without the Put, every Get allocates. Benchmark Read went from 5→2 allocs because the pool stays warm.
+
+### From v4 Profiling:
+
+21. **path.Clean is an allocation landmine** — `path.Clean(key)` allocates a new string EVEN when the input is already clean. For hot-path key validation, a fast-path byte scan to detect already-clean keys saves 8-10% CPU.
+
+22. **Redundant string processing compounds** — `relToKey()` re-scans for backslashes after `cleanKey()` already handled them. Sequential string functions that overlap in purpose waste CPU. Eliminate redundancy by reasoning about invariants.
+
+23. **Type switches have hidden cost at scale** — ART's type-switch-per-node (nodePrefix, nodeLeaf, findChild) seems cheap per call, but at 10 levels × 3 switches per Read, it adds up to 14-17% of CPU. A hash table with O(1) lookup eliminates this entirely for point operations.
+
+24. **Embed pooled objects to avoid secondary allocations** — Instead of pooling the reader and separately allocating the Object, embed the Object inside the reader. One pool Get replaces two heap allocations.
+
+25. **Profile the BENCHMARK, not just the code** — fmt.Sprintf in key generation consumes 22% of Read/Stat CPU. This means measured ns/op includes ~31ns of benchmark overhead. True code performance is ~30% better than benchmark numbers suggest.
+
+---
+
 ## Appendix: Profile Commands
 
 ### Running Benchmarks

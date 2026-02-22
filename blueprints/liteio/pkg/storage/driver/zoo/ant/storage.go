@@ -53,14 +53,17 @@ var leafPool = sync.Pool{New: func() any { return new(leafEntry) }}
 var node4Pool = sync.Pool{New: func() any { return new(node4) }}
 var readerPool = sync.Pool{New: func() any { return new(mmapReadCloser) }}
 
-// mmapReadCloser wraps bytes.Reader as io.ReadCloser without io.NopCloser alloc.
+// v4: mmapReadCloser embeds storage.Object to avoid separate heap allocation.
+// The Object is valid while the reader is open; after Close() it is recycled.
 type mmapReadCloser struct {
-	r bytes.Reader
+	r   bytes.Reader
+	obj storage.Object
 }
 
 func (rc *mmapReadCloser) Read(p []byte) (int, error) { return rc.r.Read(p) }
 func (rc *mmapReadCloser) Close() error {
 	rc.r.Reset(nil)
+	rc.obj = storage.Object{} // clear for reuse
 	readerPool.Put(rc)
 	return nil
 }
@@ -101,6 +104,8 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 		stopTick:  make(chan struct{}),
 	}
 	st.ctTable.index = make(map[string]uint16)
+	emptySnap := make([]string, 0)
+	st.ctTable.snap.Store(&emptySnap)
 
 	// Open per-shard vlog files and recover ART from entries.
 	for i := range st.shards {
@@ -869,10 +874,12 @@ func artForEachPrefixHelper(n any, prefix []byte, depth int, fn func(leaf *leafE
 // Content-Type String Table
 // ---------------------------------------------------------------------------
 
+// v4: Lock-free reads via atomic.Pointer for the strings slice.
 type ctStringTable struct {
-	mu      sync.RWMutex
-	strings []string
-	index   map[string]uint16
+	mu    sync.RWMutex
+	strs  []string          // protected by mu for writes
+	index map[string]uint16 // protected by mu
+	snap  atomic.Pointer[[]string] // v4: lock-free snapshot for reads
 }
 
 func (t *ctStringTable) intern(ct string) uint16 {
@@ -888,17 +895,24 @@ func (t *ctStringTable) intern(ct string) uint16 {
 	if idx, ok := t.index[ct]; ok {
 		return idx
 	}
-	idx := uint16(len(t.strings))
-	t.strings = append(t.strings, ct)
+	idx := uint16(len(t.strs))
+	t.strs = append(t.strs, ct)
 	t.index[ct] = idx
+	// Publish new snapshot for lock-free get().
+	s := make([]string, len(t.strs))
+	copy(s, t.strs)
+	t.snap.Store(&s)
 	return idx
 }
 
+// v4: Lock-free get — no RWMutex on read path.
 func (t *ctStringTable) get(idx uint16) string {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	if int(idx) < len(t.strings) {
-		return t.strings[idx]
+	p := t.snap.Load()
+	if p != nil {
+		s := *p
+		if int(idx) < len(s) {
+			return s[idx]
+		}
 	}
 	return ""
 }
@@ -1165,9 +1179,166 @@ func (v *shardVlog) close() error {
 const numShards = 64 // v3: increased from 16 for better parallel scaling
 const shardMask = numShards - 1
 
+// ---------------------------------------------------------------------------
+// Per-Shard Hash Table (v4: O(1) point lookups)
+// ---------------------------------------------------------------------------
+
+const htInitSize = 64 // initial hash table capacity per shard
+
+type htEntry struct {
+	keyHash uint64     // 0 = empty slot
+	leaf    *leafEntry
+	key     []byte // stored for correct collision handling
+}
+
+type hashTable struct {
+	entries []htEntry
+	mask    uint64
+	count   int
+}
+
+// hashTableKey ensures the stored hash is never 0 (the empty sentinel).
+func hashTableKey(h uint64) uint64 {
+	if h == 0 {
+		return 1
+	}
+	return h
+}
+
+func (ht *hashTable) lookup(keyHash uint64, key []byte) *leafEntry {
+	if len(ht.entries) == 0 {
+		return nil
+	}
+	h := hashTableKey(keyHash)
+	idx := h & ht.mask
+	entries := ht.entries
+	for {
+		e := &entries[idx]
+		if e.keyHash == 0 {
+			return nil
+		}
+		if e.keyHash == h && len(e.key) == len(key) && bytesEqual(e.key, key) {
+			return e.leaf
+		}
+		idx = (idx + 1) & ht.mask
+	}
+}
+
+// bytesEqual compares two byte slices. Inlined for short keys.
+func bytesEqual(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func (ht *hashTable) insert(keyHash uint64, key []byte, leaf *leafEntry) {
+	if len(ht.entries) == 0 {
+		ht.entries = make([]htEntry, htInitSize)
+		ht.mask = htInitSize - 1
+	}
+	if ht.count*4 >= len(ht.entries)*3 { // 75% load factor
+		ht.grow()
+	}
+	h := hashTableKey(keyHash)
+	idx := h & ht.mask
+	entries := ht.entries
+	for {
+		e := &entries[idx]
+		if e.keyHash == 0 {
+			e.keyHash = h
+			e.leaf = leaf
+			e.key = make([]byte, len(key))
+			copy(e.key, key)
+			ht.count++
+			return
+		}
+		if e.keyHash == h && len(e.key) == len(key) && bytesEqual(e.key, key) {
+			e.leaf = leaf // update existing
+			return
+		}
+		idx = (idx + 1) & ht.mask
+	}
+}
+
+func (ht *hashTable) remove(keyHash uint64, key []byte) bool {
+	if len(ht.entries) == 0 {
+		return false
+	}
+	h := hashTableKey(keyHash)
+	entries := ht.entries
+	mask := ht.mask
+
+	// Find the entry.
+	i := h & mask
+	for {
+		if entries[i].keyHash == 0 {
+			return false
+		}
+		if entries[i].keyHash == h && len(entries[i].key) == len(key) && bytesEqual(entries[i].key, key) {
+			break
+		}
+		i = (i + 1) & mask
+	}
+
+	// Backward-shift deletion.
+	ht.count--
+	entries[i] = htEntry{}
+	j := (i + 1) & mask
+	for entries[j].keyHash != 0 {
+		k := entries[j].keyHash & mask // natural position
+		needsMove := false
+		if i < j {
+			needsMove = k <= i || k > j
+		} else {
+			needsMove = k <= i && k > j
+		}
+		if needsMove {
+			entries[i] = entries[j]
+			entries[j] = htEntry{}
+			i = j
+		}
+		j = (j + 1) & mask
+	}
+	return true
+}
+
+func (ht *hashTable) grow() {
+	old := ht.entries
+	newSize := len(old) * 2
+	if newSize < htInitSize {
+		newSize = htInitSize
+	}
+	ht.entries = make([]htEntry, newSize)
+	ht.mask = uint64(newSize - 1)
+	ht.count = 0
+	for i := range old {
+		if old[i].keyHash != 0 {
+			// Reuse key slice directly (no copy needed).
+			idx := old[i].keyHash & ht.mask
+			entries := ht.entries
+			for {
+				e := &entries[idx]
+				if e.keyHash == 0 {
+					*e = old[i]
+					ht.count++
+					break
+				}
+				idx = (idx + 1) & ht.mask
+			}
+		}
+	}
+}
+
 type artShard struct {
 	mu   sync.RWMutex
 	root any // artNode
+	ht   hashTable // v4: O(1) point lookups
 	size int64
 	vlog shardVlog // per-shard mmap'd vlog (no global lock)
 	_    [64]byte  // cache line padding
@@ -1429,6 +1600,7 @@ func (s *store) recoverShard(shard *artShard) {
 			keyCopy := make([]byte, kl)
 			copy(keyCopy, key)
 			shard.root = artInsert(shard.root, keyCopy, leaf)
+			shard.ht.insert(keyHash, keyCopy, leaf) // v4: hash table
 			shard.size++
 
 			bucketName, _ := splitCompositeKey(key)
@@ -1445,6 +1617,7 @@ func (s *store) recoverShard(shard *artShard) {
 				keyCopy := make([]byte, kl)
 				copy(keyCopy, key)
 				artDelete(&shard.root, keyCopy, keyHash)
+				shard.ht.remove(keyHash, keyCopy) // v4: hash table
 				shard.size--
 			}
 		}
@@ -1534,7 +1707,10 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 		shard.mu.Lock()
 
 		created := now
-		existing := artSearch(shard.root, ck, keyHash)
+		existing := shard.ht.lookup(keyHash, ck) // v4: hash table for existing check
+		if existing == nil {
+			existing = artSearch(shard.root, ck, keyHash) // fallback
+		}
 		if existing != nil {
 			created = existing.created
 			shard.size--
@@ -1554,13 +1730,14 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 		leaf.updated = now
 		leaf.keyHash = keyHash
 		shard.root = artInsert(shard.root, ck, leaf)
+		shard.ht.insert(keyHash, ck, leaf) // v4: hash table
 		shard.size++
 
 		shard.mu.Unlock()
 
 		return &storage.Object{
 			Bucket:      b.name,
-			Key:         relToKey(relKey),
+			Key:         relKey,
 			Size:        size,
 			ContentType: contentType,
 			Created:     time.Unix(0, created),
@@ -1577,7 +1754,10 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 	shard.mu.Lock()
 
 	created := now
-	existing := artSearch(shard.root, ck, keyHash)
+	existing := shard.ht.lookup(keyHash, ck) // v4: hash table
+	if existing == nil {
+		existing = artSearch(shard.root, ck, keyHash) // fallback
+	}
 	if existing != nil {
 		created = existing.created
 		shard.size--
@@ -1597,13 +1777,14 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 	leaf.updated = now
 	leaf.keyHash = keyHash
 	shard.root = artInsert(shard.root, ck, leaf)
+	shard.ht.insert(keyHash, ck, leaf) // v4: hash table
 	shard.size++
 
 	shard.mu.Unlock()
 
 	return &storage.Object{
 		Bucket:      b.name,
-		Key:         relToKey(relKey),
+		Key:         relKey,
 		Size:        int64(len(data)),
 		ContentType: contentType,
 		Created:     time.Unix(0, created),
@@ -1643,7 +1824,10 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 	shard := b.store.shardForHash(keyHash)
 
 	shard.mu.RLock()
-	leaf := artSearch(shard.root, ck, keyHash)
+	leaf := shard.ht.lookup(keyHash, ck) // v4: O(1) hash table lookup
+	if leaf == nil {
+		leaf = artSearch(shard.root, ck, keyHash) // fallback
+	}
 	if leaf == nil {
 		shard.mu.RUnlock()
 		return nil, nil, storage.ErrNotExist
@@ -1664,15 +1848,6 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 		}
 	}
 
-	obj := &storage.Object{
-		Bucket:      b.name,
-		Key:         relToKey(relKey),
-		Size:        int64(lc.valueSize),
-		ContentType: b.store.ctTable.get(lc.ctIndex),
-		Created:     time.Unix(0, lc.created),
-		Updated:     time.Unix(0, lc.updated),
-	}
-
 	if offset > 0 {
 		if offset >= int64(len(val)) {
 			val = nil
@@ -1684,10 +1859,18 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 		val = val[:length]
 	}
 
-	// v3: Pooled mmapReadCloser — saves 2 allocs (io.NopCloser + bytes.NewReader).
+	// v4: Object is embedded in pooled reader — 0 allocs when pool warm.
 	rc := readerPool.Get().(*mmapReadCloser)
+	rc.obj = storage.Object{
+		Bucket:      b.name,
+		Key:         relKey,
+		Size:        int64(lc.valueSize),
+		ContentType: b.store.ctTable.get(lc.ctIndex),
+		Created:     time.Unix(0, lc.created),
+		Updated:     time.Unix(0, lc.updated),
+	}
 	rc.r.Reset(val)
-	return rc, obj, nil
+	return rc, &rc.obj, nil
 }
 
 func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*storage.Object, error) {
@@ -1708,12 +1891,15 @@ func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*s
 	shard := b.store.shardForHash(keyHash)
 
 	shard.mu.RLock()
-	leaf := artSearch(shard.root, ck, keyHash)
+	leaf := shard.ht.lookup(keyHash, ck) // v4: O(1) hash table lookup
+	if leaf == nil {
+		leaf = artSearch(shard.root, ck, keyHash) // fallback
+	}
 	if leaf != nil {
 		// Metadata-only Stat: no disk I/O!
 		obj := &storage.Object{
 			Bucket:      b.name,
-			Key:         relToKey(relKey),
+			Key:         relKey,
 			Size:        int64(leaf.valueSize),
 			ContentType: b.store.ctTable.get(leaf.ctIndex),
 			Created:     time.Unix(0, leaf.created),
@@ -1742,7 +1928,7 @@ func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*s
 	if hasChildren {
 		return &storage.Object{
 			Bucket: b.name,
-			Key:    relToKey(relKey),
+			Key:    relKey,
 			IsDir:  true,
 		}, nil
 	}
@@ -1811,6 +1997,7 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 		for _, item := range toDelete {
 			item.shard.mu.Lock()
 			artDelete(&item.shard.root, item.key, item.keyHash)
+			item.shard.ht.remove(item.keyHash, item.key) // v4: hash table
 			item.shard.size--
 			_ = item.shard.vlog.appendDelete(item.key, now)
 			item.shard.mu.Unlock()
@@ -1829,6 +2016,7 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 	shard.mu.Lock()
 	found := artDelete(&shard.root, ck, keyHash)
 	if found {
+		shard.ht.remove(keyHash, ck) // v4: hash table
 		shard.size--
 		_ = shard.vlog.appendDelete(ck, now)
 	}
@@ -2026,6 +2214,7 @@ func (b *bucket) Move(ctx context.Context, dstKey string, srcBucket, srcKey stri
 	now := fastNow()
 	shard.mu.Lock()
 	artDelete(&shard.root, srcCK, srcHash)
+	shard.ht.remove(srcHash, srcCK) // v4: hash table
 	shard.size--
 	_ = shard.vlog.appendDelete(srcCK, now)
 	shard.mu.Unlock()
@@ -2452,7 +2641,7 @@ func (b *bucket) InitMultipart(ctx context.Context, key string, contentType stri
 
 	return &storage.MultipartUpload{
 		Bucket:   b.name,
-		Key:      relToKey(relKey),
+		Key:      relKey,
 		UploadID: id,
 		Metadata: metadata,
 	}, nil
@@ -2733,8 +2922,53 @@ func splitCompositeKey(ck []byte) (bucket, key string) {
 	return string(ck[:idx]), string(ck[idx+1:])
 }
 
-// v3: Allocation-free cleanKey — eliminates strings.Split allocation.
+// v4: Fast-path cleanKey — skips path.Clean and strings.ReplaceAll for already-clean keys.
+// isCleanKey returns true if the key needs no processing (99.9% of real usage).
+func isCleanKey(key string) bool {
+	n := len(key)
+	if n == 0 {
+		return false
+	}
+	if key[0] == '/' || key[0] == ' ' || key[n-1] == ' ' {
+		return false
+	}
+	prev := byte(0)
+	for i := 0; i < n; i++ {
+		c := key[i]
+		if c == '\\' {
+			return false
+		}
+		if c == '/' && prev == '/' {
+			return false
+		}
+		if c == '.' && (prev == '/' || prev == 0) {
+			next := byte(0)
+			if i+1 < n {
+				next = key[i+1]
+			}
+			if next == 0 || next == '/' {
+				return false // single "." component
+			}
+			if next == '.' {
+				next2 := byte(0)
+				if i+2 < n {
+					next2 = key[i+2]
+				}
+				if next2 == 0 || next2 == '/' {
+					return false // ".." component
+				}
+			}
+		}
+		prev = c
+	}
+	return true
+}
+
 func cleanKey(key string) (string, error) {
+	if isCleanKey(key) {
+		return key, nil // v4 fast path: zero allocations
+	}
+	// Slow path for edge cases.
 	key = strings.TrimSpace(key)
 	if key == "" {
 		return "", errors.New("ant: empty key")
@@ -2792,6 +3026,8 @@ func containsDotDot(s string) bool {
 	return false
 }
 
+// relToKey is no longer needed: cleanKey output is already normalized.
+// Kept for non-hot-path backward compatibility.
 func relToKey(rel string) string {
 	return strings.TrimPrefix(strings.ReplaceAll(rel, "\\", "/"), "/")
 }
