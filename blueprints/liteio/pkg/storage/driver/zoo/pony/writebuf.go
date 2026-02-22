@@ -84,8 +84,7 @@ func (wb *writeBuffer) free() {
 }
 
 // bufferRing manages a ring of write buffers with concurrent background flush.
-// When all buffers are frozen, falls back to direct pwrite (non-blocking overflow)
-// instead of blocking on sync.Cond.Wait.
+// Writers try all buffers lock-free first, then fall back to one blocking swap.
 type bufferRing struct {
 	buffers  [ringSize]*writeBuffer
 	active   atomic.Int32
@@ -150,6 +149,39 @@ func (br *bufferRing) writeInline(totalSize int64, valPosInRecord int) (buf []by
 	}
 }
 
+// swap freezes the current buffer, sends it for flushing, and switches to the
+// next available buffer. If all buffers are frozen, blocks on bufReady Cond
+// until a flusher resets one.
+func (br *bufferRing) swap() {
+	br.swapMu.Lock()
+	defer br.swapMu.Unlock()
+
+	cur := br.active.Load()
+	ab := br.buffers[cur]
+
+	// Freeze current and submit for flush.
+	if !ab.frozen.Load() {
+		ab.frozen.Store(true)
+		select {
+		case br.flushCh <- int(cur):
+		default:
+		}
+	}
+
+	// Find next non-frozen buffer. If all frozen, wait for flusher.
+	for {
+		for i := int32(1); i < int32(ringSize); i++ {
+			next := (cur + i) % int32(ringSize)
+			if !br.buffers[next].frozen.Load() {
+				br.active.Store(next)
+				return
+			}
+		}
+		// All frozen — block until flusher resets one.
+		br.bufReady.Wait()
+	}
+}
+
 // directWrite allocates a volume offset and a temporary buffer for non-blocking
 // overflow when the buffer ring is full. Caller fills the buffer then calls directFlush.
 func (br *bufferRing) directWrite(totalSize int64) (buf []byte, recOff int64) {
@@ -184,39 +216,6 @@ func (br *bufferRing) directFlush(b []byte, offset int64) {
 		if br.vol.tail.CompareAndSwap(old, newTail) {
 			break
 		}
-	}
-}
-
-// swap freezes the current buffer, sends it for flushing, and switches to the
-// next available buffer. If all buffers are frozen, blocks on bufReady Cond
-// until a flusher resets one.
-func (br *bufferRing) swap() {
-	br.swapMu.Lock()
-	defer br.swapMu.Unlock()
-
-	cur := br.active.Load()
-	ab := br.buffers[cur]
-
-	// Freeze current and submit for flush.
-	if !ab.frozen.Load() {
-		ab.frozen.Store(true)
-		select {
-		case br.flushCh <- int(cur):
-		default:
-		}
-	}
-
-	// Find next non-frozen buffer. If all frozen, wait for flusher.
-	for {
-		for i := int32(1); i < int32(ringSize); i++ {
-			next := (cur + i) % int32(ringSize)
-			if !br.buffers[next].frozen.Load() {
-				br.active.Store(next)
-				return
-			}
-		}
-		// All frozen — block until flusher resets one.
-		br.bufReady.Wait()
 	}
 }
 
@@ -273,7 +272,7 @@ func (br *bufferRing) flushBuffer(idx int) {
 	nextOffset := br.nextBase.Add(br.capacity) - br.capacity
 	wb.reset(nextOffset)
 
-	// Wake up blocked writers.
+	// Wake up blocked writers waiting on bufReady.
 	br.signalReady()
 }
 

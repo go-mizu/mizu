@@ -34,8 +34,8 @@ import (
 )
 
 const (
-	numStripes = 4
-	stripeMask = numStripes - 1
+	numStripes      = 4
+	stripeMask      = numStripes - 1
 	shardsPerStripe = 64
 )
 

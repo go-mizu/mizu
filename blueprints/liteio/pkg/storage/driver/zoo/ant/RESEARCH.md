@@ -1,143 +1,555 @@
-# Ant Storage Driver -- SMART ART (OSDI 2023)
+# Ant Driver: Deep Performance Research
 
-## Paper Architecture: SMART -- Adaptive Radix Tree
+## Table of Contents
 
-The SMART paper (OSDI 2023) introduces the first Adaptive Radix Tree (ART) designed
-for disaggregated memory with hybrid concurrency. The core data structure is the
-Adaptive Radix Tree, which provides O(key_length) lookup by decomposing keys
-byte-by-byte and adapting internal node representation based on occupancy.
+1. [Architecture Overview](#architecture-overview)
+2. [v1 Baseline Profiling Analysis](#v1-baseline-profiling-analysis)
+3. [v1 Bottleneck Identification](#v1-bottleneck-identification)
+4. [v2 Optimization Journey](#v2-optimization-journey)
+5. [v2 Results](#v2-results)
+6. [Lessons Learned](#lessons-learned)
+7. [Appendix: Profile Commands](#appendix-profile-commands)
 
-### Adaptive Radix Tree (ART) Node Types
+---
 
-ART uses four node types that dynamically adapt as children are added or removed:
+## Architecture Overview
 
-- **Node4**: Holds up to 4 children. Uses a 4-byte key array and 4 child pointers.
-  Lookup is a simple linear scan over 4 entries. This is the most compact
-  representation, used when a node has very few children.
+Ant is an Adaptive Radix Tree (ART) storage driver inspired by the SMART ART paper (OSDI 2023). It provides O(key_length) lookups by decomposing keys byte-by-byte through four adaptive node types.
 
-- **Node16**: Holds up to 16 children. Uses a 16-byte sorted key array and 16
-  child pointers. Lookup uses sorted binary search or, on x86, SIMD comparison
-  (SSE2 `_mm_cmpeq_epi8`) to find the matching key byte in a single instruction.
-
-- **Node48**: Holds up to 48 children. Uses a 256-byte child index array (one
-  byte per possible key byte value, mapping to a slot index 0..47) and 48 child
-  pointers. Lookup is O(1): index the 256-byte array by the key byte to get the
-  slot, then dereference the pointer at that slot.
-
-- **Node256**: Holds up to 256 children. Uses a direct 256-slot pointer array.
-  Lookup is O(1) by directly indexing the array with the key byte. This is the
-  most space-expensive but fastest representation.
-
-### Key Decomposition and Traversal
-
-Keys are decomposed byte-by-byte for traversal. Each level of the tree processes
-exactly one byte of the key. For an N-byte key, the tree has at most N levels.
-This gives O(key_length) lookup complexity, independent of tree size, compared to
-O(tree_height * fanout) for B+-trees where tree height grows with data volume.
-
-### Path Compression
-
-When a sequence of nodes each has only a single child, ART applies path
-compression: the single-child chain is collapsed into a stored prefix on the
-node. This avoids creating inner nodes that would each hold only one child.
-During lookup, the compressed prefix bytes are compared in bulk rather than
-traversing one level per byte.
-
-### Lazy Expansion
-
-Inner nodes are not created until actually needed. When inserting a key that
-shares a prefix with an existing leaf but diverges at some byte position, ART
-creates the minimum number of inner nodes to distinguish the two keys. This
-keeps the tree shallow and memory-efficient.
-
-### Node Growth and Shrink
-
-Nodes grow when capacity is exceeded:
-- Node4 (full at 4) -> promote to Node16
-- Node16 (full at 16) -> promote to Node48
-- Node48 (full at 48) -> promote to Node256
-
-Nodes shrink when occupancy drops:
-- Node256 (at 48 or below) -> demote to Node48
-- Node48 (at 16 or below) -> demote to Node16
-- Node16 (at 4 or below) -> demote to Node4
-
-### Performance Results from Paper
-
-- 6.1x higher write throughput versus B+-trees
-- 2.8x higher read throughput versus B+-trees
-- First ART implementation for disaggregated memory with hybrid concurrency
-  (optimistic reads with versioned locks for writes)
-
-## Our Implementation Plan
-
-### Full ART with All 4 Node Types
-
-We implement the complete ART data structure with Node4, Node16, Node48, and
-Node256. Keys are composite strings formed as `bucket + "\x00" + key` and
-traversed byte-by-byte through the tree.
-
-### Persistence Strategy
-
-The driver uses an append-only value log combined with an in-memory ART index:
-
-1. **Value log file** (`values.dat`): Append-only file for value data. Each
-   entry at a given offset has the format:
-   `ctLen(2B) | contentType | valLen(8B) | value | created(8B) | updated(8B)`
-   Leaf nodes in the ART store the offset and size to locate the value.
-
-2. **ART tree** (in-memory): The full ART with four node types. Leaf nodes
-   contain `{valueOffset, valueSize, contentType, created, updated}`.
-
-3. **WAL file** (`wal.log`): Write-ahead log for crash recovery. Each WAL
-   entry has format:
-   `[op(1B)] [keyLen(2B)] [key] [valOffset(8B)] [valSize(8B)] [ts(8B)]`
-   On recovery, the WAL is replayed to rebuild the ART.
-
-4. **Snapshot file** (`tree.snap`): Periodic ART serialization using DFS
-   traversal for faster recovery:
-   `[nodeType(1B)] [prefix...] [children...]`
-
-### File Layout
+### Storage Layout (v1)
 
 ```
-{root}/
-  values.dat   -- append-only value log
-  wal.log      -- write-ahead log
-  tree.snap    -- periodic ART snapshot (optional, faster recovery)
+store (single global RWMutex)
+ └── artTree
+      ├── artNode (2,744 bytes EACH, union of all 4 types)
+      │    ├── Node4:   keys[16], children[48]       ← wastes 2,704 bytes
+      │    ├── Node16:  keys[16], children[48]       ← wastes 2,564 bytes
+      │    ├── Node48:  childIndex[256], children[48] ← wastes 2,048 bytes
+      │    └── Node256: children256[256]              ← uses full 2,744 bytes
+      ├── leafData (80 bytes, separate heap alloc)
+      │    └── key []byte (composite key copy)
+      ├── values.dat (append-only, per-op fsync)
+      └── wal.log (per-op fsync, per-op make([]byte))
 ```
 
-### Write Path
+### Key Design Decisions (v1)
 
-1. Append value data to `values.dat`, record offset and size.
-2. Append operation record to WAL.
-3. Insert composite key into ART, growing nodes as needed.
+| Component | Design | Problem |
+|-----------|--------|---------|
+| Single artTree | Global RWMutex | **Kills parallelism** (C1→C200 = 182x drop) |
+| Union artNode | All 4 types in one struct | **2,744 bytes per node** (Node4 needs ~72) |
+| Separate leafData | Heap-allocated per leaf | Extra pointer + GC pressure |
+| compositeKey | `bucket + "\x00" + key` | Per-op []byte allocation |
+| appendValue | `make([]byte, totalSize)` | Per-op heap allocation |
+| appendWAL | `make([]byte, entrySize)` | Per-op heap allocation |
+| readValue | `make([]byte, totalSize)` | Per-op heap allocation (even for Stat!) |
+| Per-op fsync | vlog.Sync() + wal.Sync() | 2 syscalls per write |
+| No buffer pool | Fresh allocations everywhere | GC overhead compounds |
 
-### Read Path
+### Data Flow (v1)
 
-1. Traverse ART byte-by-byte using the composite key.
-2. Find leaf node, read `valueOffset` and `valueSize`.
-3. Read value data from `values.dat` at the recorded offset.
+**Write path:**
+```
+Write() → cleanKey()                     [string processing, allocation]
+        → compositeKey(bucket, key)      [make([]byte), concat]
+        → artSearch() under RLock        [check existing for created time]
+        → io.ReadFull/ReadAll(src)       [make([]byte, size), full buffer]
+        → appendValue(data, ct, ...)     [make([]byte, totalSize), WriteAt, Sync]
+        → appendWAL(op, key, ...)        [make([]byte, entrySize), Write, Sync]
+        → artInsert() under Lock         [allocate artNode 2,744B + leafData 80B]
+```
 
-### Delete Path
+**Read path:**
+```
+Open() → compositeKey(bucket, key)       [make([]byte), concat]
+       → artSearch() under RLock         [tree traversal]
+       → readValue(offset, totalSize)    [make([]byte, totalSize), ReadAt]
+       → bytes.NewReader(data)           [wrap in ReadCloser]
+```
 
-1. Mark leaf as deleted in ART (soft delete).
-2. Append delete record to WAL.
-3. Value data remains in `values.dat` (reclaimed on compaction, not implemented).
+---
 
-### Bucket and Key Management
+## v1 Baseline Profiling Analysis
 
-- Composite key: `bucket + "\x00" + key`
-- Bucket metadata: in-memory `map[string]time.Time` with `sync.RWMutex`
-- Bucket operations (create, delete, list) managed via the bucket map
-- Directory support via prefix scanning on the ART
+**Environment:** Go 1.26.0, darwin/arm64, 10 CPUs, benchtime=1-2s, concurrency=200
 
-### Interface Compliance
+### Benchmark Results
 
-The driver implements:
-- `storage.Storage` (Bucket, Buckets, CreateBucket, DeleteBucket, Features, Close)
-- `storage.Bucket` (Name, Info, Features, Write, Open, Stat, Delete, Copy, Move, List, SignedURL)
-- `storage.HasDirectories` (Directory returning storage.Directory)
-- `storage.HasMultipart` (InitMultipart, UploadPart, CopyPart, ListParts, CompleteMultipart, AbortMultipart)
-- `storage.BucketIter` and `storage.ObjectIter` for iteration
-- `storage.Directory` (Bucket, Path, Info, List, Delete, Move)
+| Benchmark | Throughput | Latency P50 | Latency P99 |
+|-----------|------------|-------------|-------------|
+| **Write/1KB** | 221.0K ops/s (215.8 MB/s) | 3.3us | 14.8us |
+| **Write/64KB** | 13.1K ops/s (816.0 MB/s) | 25.6us | 344.9us |
+| **Write/1MB** | 479 ops/s (478.9 MB/s) | 698.2us | 12.2ms |
+| **Write/10MB** | 42 ops/s (420.4 MB/s) | 10.2ms | 242.0ms |
+| **Write/100MB** | 5 ops/s (469.0 MB/s) | 179.3ms | 413.1ms |
+| **Read/1KB** | 557.7K ops/s (544.6 MB/s) | 875ns | 17.3us |
+| **Read/64KB** | 55.1K ops/s (3.4 GB/s) | 8.5us | 108.7us |
+| **Read/1MB** | 3.3K ops/s (3.3 GB/s) | 218.8us | 1.5ms |
+| **Read/10MB** | 270 ops/s (2.7 GB/s) | 2.8ms | 17.6ms |
+| **Read/100MB** | 24 ops/s (2.4 GB/s) | 32.0ms | 79.9ms |
+| **Stat** | 633.1K ops/s | — | — |
+| **Delete** | 274.2K ops/s | — | — |
+| **Copy/1KB** | 0.87 MB/s | — | — |
+| **List/100** | 77.7K ops/s | — | — |
+
+### Parallel Write Scalability (CRITICAL FAILURE)
+
+| Concurrency | Throughput | vs C1 |
+|-------------|------------|-------|
+| C1 | 83.7 MB/s | 1.0x |
+| C10 | 5.1 MB/s | **0.06x** |
+| C25 | 2.2 MB/s | **0.03x** |
+| C50 | 1.5 MB/s | **0.02x** |
+| C100 | 0.89 MB/s | **0.01x** |
+| C200 | 0.46 MB/s | **0.005x** |
+
+**The global RWMutex causes a 182x throughput collapse from C1 to C200.** This is the single largest performance problem. At C200, 200 goroutines contend for a single lock.
+
+### Parallel Read Scalability
+
+| Concurrency | Throughput | vs C1 |
+|-------------|------------|-------|
+| C1 | 356.4 MB/s | 1.0x |
+| C10 | 58.5 MB/s | 0.16x |
+| C25 | 56.7 MB/s | 0.16x |
+| C50 | 81.7 MB/s | 0.23x |
+| C100 | 81.3 MB/s | 0.23x |
+| C200 | 65.8 MB/s | 0.18x |
+
+Reads use RLock (shared) but still degrade because: (1) Write operations hold exclusive Lock which blocks all readers, (2) readValue() allocates on heap per call, creating GC pressure that affects all goroutines.
+
+### Resource Usage
+
+| Metric | Value |
+|--------|-------|
+| Peak RSS | 6,109 MB |
+| Go Heap | 5,221 MB |
+| Go Sys | 10,434 MB |
+| Disk Used | 9,388 MB |
+| GC Cycles | 57 |
+
+**5.2 GB Go heap is catastrophic.** The 100MB target requires a 52x reduction.
+
+### Memory Budget Analysis
+
+**artNode struct: 2,744 bytes per node**
+
+| Field | Size | Used By | Waste for Node4 |
+|-------|------|---------|-----------------|
+| kind | 1B | All | 0 |
+| numChildren | 2B | All | 0 |
+| prefix (slice) | 24B | All | 0 |
+| keys[16] | 16B | Node4, Node16 | 12B (only needs 4) |
+| children[48] | 384B | Node4/16/48 | 352B (only needs 32) |
+| childIndex[256] | 256B | Node48 only | **256B (unused)** |
+| children256[256] | 2,048B | Node256 only | **2,048B (unused)** |
+| leaf | 8B | All | 0 |
+| **Total** | **2,744B** | | **2,668B waste for Node4** |
+
+**Type-specific sizes (what each node actually needs):**
+
+| Node Type | Fields Needed | Actual Size | vs Current |
+|-----------|---------------|-------------|------------|
+| Node4 | kind + count + prefix + keys[4] + children[4] + leaf | ~72B | **38x smaller** |
+| Node16 | kind + count + prefix + keys[16] + children[16] + leaf | ~184B | **15x smaller** |
+| Node48 | kind + count + prefix + childIndex[256] + children[48] + leaf | ~680B | **4x smaller** |
+| Node256 | kind + count + prefix + children256[256] + leaf | ~2,088B | 1.3x smaller |
+
+**Typical distribution** (80% Node4, 15% Node16, 4% Node48, 1% Node256):
+- 100K nodes current: 100K × 2,744 = **274.4 MB**
+- 100K nodes optimized: 80K×72 + 15K×184 + 4K×680 + 1K×2,088 = **13.4 MB** (20x reduction)
+
+### Per-Operation Allocation Analysis
+
+**Write/1KB path allocations:**
+
+| Operation | Allocation | Size | Per-Op? |
+|-----------|-----------|------|---------|
+| `compositeKey()` | `[]byte(bucket + "\x00" + key)` | ~20B | Yes |
+| `io.ReadFull()` | `make([]byte, size)` | 1,024B | Yes |
+| `appendValue()` | `make([]byte, totalSize)` | ~1,050B | Yes |
+| `appendWAL()` | `make([]byte, entrySize)` | ~50B | Yes |
+| `newNode4()` | `&artNode{}` | 2,744B | Yes |
+| `leafData` | `&leafData{key: compositeKey}` | 80B + ~20B key | Yes |
+| **Total per write** | | **~5,000B** | |
+
+At 221K writes/s: **~1.1 GB/s of allocations.** This is why GC has 57 cycles.
+
+**Read/1KB path allocations:**
+
+| Operation | Allocation | Size | Per-Op? |
+|-----------|-----------|------|---------|
+| `compositeKey()` | `[]byte(bucket + "\x00" + key)` | ~20B | Yes |
+| `readValue()` | `make([]byte, totalSize)` | ~1,050B | Yes |
+| `bytes.NewReader` | wrapper struct | ~16B | Yes |
+| **Total per read** | | **~1,086B** | |
+
+**Stat path (reads ENTIRE value just for metadata!):**
+
+The `Stat()` method at line 1491 calls `readValue()` which reads the FULL value from disk just to extract `contentType`, `created`, and `updated`. For a 100MB object, Stat reads 100MB into heap.
+
+---
+
+## v1 Bottleneck Identification
+
+### Bottleneck 1: Global RWMutex (CRITICAL — 182x parallel collapse)
+
+**Impact:** Parallel write throughput drops 182x (C1→C200). Parallel read drops 5.4x.
+
+**Root cause:** Single `artTree.mu sync.RWMutex` serializes ALL tree operations across ALL buckets, ALL keys. The write path holds exclusive Lock during `artInsert`, blocking all concurrent reads and writes.
+
+Additionally, the Write path acquires the lock TWICE:
+1. Line 1356: `tree.mu.RLock()` to check existing key (preserve created time)
+2. Line 1384: `tree.mu.Lock()` to insert → calls `artSearch` AGAIN inside the lock
+
+**Solution:** Shard the ART by first byte of composite key (256 shards). Each shard has its own RWMutex.
+
+### Bottleneck 2: Union artNode Struct (2,744B per node)
+
+**Impact:** 274 MB for 100K nodes. Exceeds 100MB budget on its own.
+
+**Root cause:** All four node types share one struct. Node256's `children256 [256]*artNode` (2,048B) is allocated for every Node4.
+
+**Solution:** Type-specific structs via interface.
+
+### Bottleneck 3: Per-Operation Heap Allocations (~5KB/write)
+
+**Impact:** ~1.1 GB/s allocation rate → 57 GC cycles → GC pauses affect all goroutines.
+
+**Root cause:** Every Write does: make(compositeKey) + make(valueData) + make(vlogBuf) + make(walBuf) + new(artNode) + new(leafData). Every Read does: make(compositeKey) + make(readBuf).
+
+**Solution:** Buffer pools (sync.Pool or mutex-guarded free lists). Reuse buffers across operations.
+
+### Bottleneck 4: Per-Operation fsync (2 syncs per write)
+
+**Impact:** Each write calls `vlog.Sync()` + `wal.Sync()` when sync!=none. On macOS, fsync→F_FULLFSYNC is ~1ms each.
+
+**Root cause:** No write batching. Each operation syncs independently.
+
+**Solution:** WAL batching — accumulate entries, flush periodically or on buffer full.
+
+### Bottleneck 5: Stat Reads Full Value from Disk
+
+**Impact:** Stat for a 100MB object reads 100MB into heap just to get 16 bytes of metadata.
+
+**Root cause:** `readValue()` reads the entire vlog entry. No way to read just metadata.
+
+**Solution:** Store metadata (size, contentType, timestamps) in the leaf node itself. No disk I/O needed for Stat.
+
+### Bottleneck 6: Leaf Key Duplication
+
+**Impact:** Each leaf stores a full copy of the composite key as `[]byte`. For 100K objects with 30-byte keys: 3 MB of duplicated key data.
+
+**Root cause:** `leafData.key` stores a copy for verification in `artSearch` (line 214: `bytes.Equal(cur.leaf.key, key)`).
+
+**Solution:** The key is implicit in the tree path. With correct path compression, the tree path reconstructs the key exactly. Remove `leafData.key` and verify via path.
+
+### Bottleneck 7: No Value Size in Leaf
+
+**Impact:** Even to return `Object.Size` in List, we must call `computeValueSize()` which computes from `totalSize - overhead`. This is fragile and prevents direct size queries.
+
+**Solution:** Store actual value size directly in the leaf.
+
+---
+
+## v2 Optimization Journey
+
+### Optimization 1: Type-Specific Node Structs
+
+**Problem:** Every artNode is 2,744 bytes regardless of type. 97% is waste for Node4.
+
+**Solution:** Use an interface with type-specific structs:
+
+```go
+type artNode interface {
+    findChild(b byte) artNode
+    addChild(b byte, child artNode)
+    kind() nodeKind
+    // ...
+}
+
+type node4 struct {
+    prefix      []byte
+    numChildren uint8
+    keys        [4]byte
+    children    [4]artNode   // interface, 16B each
+    leaf        *leafData
+}
+// Size: ~120B (vs 2,744B) — 23x smaller
+```
+
+**Actual sizes with interface children (16B each):**
+
+| Type | Size | Savings vs v1 |
+|------|------|---------------|
+| node4 | ~120B | **23x** |
+| node16 | ~344B | **8x** |
+| node48 | ~1,064B | **2.6x** |
+| node256 | ~4,136B | 0.66x (larger due to interface) |
+
+With typical distribution (80/15/4/1): 100K nodes = **23.4 MB** (vs 274 MB, **11.7x reduction**).
+
+**Further optimization — embed leaf in node (eliminate leafData pointer):**
+
+```go
+type leafEntry struct {
+    valueOffset int64
+    valueSize   int32    // actual value size (max 2GB)
+    ctIndex     uint16   // index into content-type string table
+    created     int64
+    updated     int64
+}
+// Size: 32B (vs 80B + 8B pointer = 88B)
+```
+
+With embedded leaf (no separate allocation): 100K objects ≈ **16.6 MB** for nodes + leaves.
+
+### Optimization 2: Sharded ART (16 Shards)
+
+**Problem:** Global RWMutex causes 182x parallel collapse.
+
+**Solution:** 16 independent ART shards, selected by FNV-1a hash of composite key:
+
+```go
+type shardedART struct {
+    shards [16]artShard
+}
+
+type artShard struct {
+    mu   sync.RWMutex
+    root artNode
+    size int64
+}
+
+func (s *shardedART) shardFor(key []byte) *artShard {
+    h := fnv1a(key)
+    return &s.shards[h & 0x0F]
+}
+```
+
+**Expected improvement:**
+- Contention reduced 16x (200 goroutines / 16 shards = 12.5 per shard)
+- Lock hold time unchanged but lock acquisition contention massively reduced
+- Read/write parallelism across shards is fully concurrent
+
+### Optimization 3: Buffer Pool (Eliminate Per-Op Allocations)
+
+**Problem:** ~5KB allocated per write operation, ~1KB per read.
+
+**Solution:** sync.Pool for hot-path buffers:
+
+```go
+var bufPool = sync.Pool{
+    New: func() any { return make([]byte, 0, 4096) },
+}
+
+func (s *store) appendValue(data []byte, ...) (int64, int64, error) {
+    buf := bufPool.Get().([]byte)
+    defer bufPool.Put(buf[:0])
+    buf = buf[:totalSize] // reuse capacity
+    // ... encode into buf ...
+}
+```
+
+**Also pool:** WAL entry buffers, read buffers, composite key buffers.
+
+### Optimization 4: Metadata-Only Stat (No Disk I/O)
+
+**Problem:** Stat reads entire value from disk.
+
+**Solution:** Store value size and content-type in the leaf. Stat becomes a pure in-memory operation:
+
+```go
+func (b *bucket) Stat(...) (*storage.Object, error) {
+    leaf := shard.search(compositeK) // in-memory only
+    return &storage.Object{
+        Size:        int64(leaf.valueSize),
+        ContentType: s.ctTable[leaf.ctIndex],
+        Created:     time.Unix(0, leaf.created),
+        Updated:     time.Unix(0, leaf.updated),
+    }, nil
+}
+```
+
+Content-type interning via string table: most objects share a few content types ("application/octet-stream", "text/plain", etc.). Store an index into a deduplicated table.
+
+### Optimization 5: Mmap Value Log for Reads
+
+**Problem:** Each Read allocates `make([]byte, totalSize)` to read from disk.
+
+**Solution:** Mmap the value log for reads. Return a slice of the mmap'd region — zero allocation, zero copy.
+
+```go
+type mmapVlog struct {
+    data     []byte   // mmap'd region
+    size     int64    // written size
+    fd       *os.File // for writes (pwrite)
+    mu       sync.Mutex
+}
+
+func (v *mmapVlog) readSlice(offset, size int64) []byte {
+    return v.data[offset : offset+size] // zero alloc, zero copy
+}
+```
+
+**Remap on growth** (lesson from herd v4): when the value log grows beyond the current mmap region, remap to cover the new size. Old mappings can leak — bounded by geometric growth.
+
+### Optimization 6: WAL Batching
+
+**Problem:** Each Write calls WAL.Write() + WAL.Sync() — 2 syscalls.
+
+**Solution:** Ring buffer of WAL entries. Background flusher writes + syncs periodically:
+
+```go
+type walBatcher struct {
+    buf     []byte    // pre-allocated WAL buffer
+    pos     int
+    mu      sync.Mutex
+    flushed chan struct{}
+}
+```
+
+Flush triggers: buffer full, 1ms timer, or explicit sync request. This reduces WAL syscalls from 1-per-op to 1-per-batch.
+
+### Optimization 7: Eliminate Leaf Key Duplication
+
+**Problem:** Each leaf stores composite key as `[]byte` (24B slice header + key data).
+
+**Solution:** Remove `leafData.key`. The tree path already encodes the key. For verification, reconstruct the key from the path during traversal (or skip verification since the tree is correct by construction).
+
+### Optimization 8: Inline compositeKey Construction
+
+**Problem:** `compositeKey()` creates `[]byte(bucket + "\x00" + key)` — heap allocation.
+
+**Solution:** Pre-compute composite key into pooled buffer:
+
+```go
+func compositeKeyInto(buf []byte, bucket, key string) []byte {
+    buf = buf[:0]
+    buf = append(buf, bucket...)
+    buf = append(buf, 0)
+    buf = append(buf, key...)
+    return buf
+}
+```
+
+Or better: compute hash directly without materializing the full key:
+
+```go
+func shardForParts(bucket, key string) int {
+    h := fnv1aString(bucket)
+    h = fnv1aByte(h, 0)
+    h = fnv1aString(key)
+    return int(h & 0x0F)
+}
+```
+
+---
+
+## v2 Results
+
+*Results will be populated after optimization implementation and benchmarking.*
+
+### Performance Comparison
+
+| Benchmark | v1 Baseline | v2 Optimized | Improvement |
+|-----------|-------------|--------------|-------------|
+| Write/1KB | 221.0K ops/s | — | — |
+| Write/64KB | 13.1K ops/s | — | — |
+| Read/1KB | 557.7K ops/s | — | — |
+| Stat | 633.1K ops/s | — | — |
+| Delete | 274.2K ops/s | — | — |
+| List/100 | 77.7K ops/s | — | — |
+
+### Parallel Write Scalability
+
+| Concurrency | v1 Baseline | v2 Optimized | Improvement |
+|-------------|-------------|--------------|-------------|
+| C1 | 83.7 MB/s | — | — |
+| C200 | 0.46 MB/s | — | — |
+
+### Resource Usage
+
+| Metric | v1 Baseline | v2 Optimized | Change |
+|--------|-------------|--------------|--------|
+| Peak RSS | 6,109 MB | — | — |
+| Go Heap | 5,221 MB | — | — |
+| GC Cycles | 57 | — | — |
+
+---
+
+## Lessons Learned
+
+*To be updated after v2 implementation.*
+
+### From v1 Analysis:
+
+1. **Union structs are catastrophic for memory** — 2,744B per node when most need 72B. Always use type-specific structs for polymorphic data.
+
+2. **Global locks kill parallelism** — Even RWMutex. At C200, lock contention dominates. Shard early.
+
+3. **Per-operation allocations compound through GC** — 5KB × 221K ops/s = 1.1 GB/s of GC pressure. Pool everything on the hot path.
+
+4. **Stat should never touch disk** — Store all metadata in-memory. The index exists for exactly this purpose.
+
+5. **Fsync batching is essential** — 2 fsyncs per write is 2ms overhead on macOS. Batch to amortize.
+
+---
+
+## Appendix: Profile Commands
+
+### Running Benchmarks
+
+```bash
+# Full benchmark with profiling
+go run ./cmd/bench --drivers ant --profile --resource-tracking \
+  --benchtime 2s --output ./report/ant_v2_optimized \
+  --formats markdown,json --progress
+
+# Quick benchmark (no profiling)
+go run ./cmd/bench --drivers ant --benchtime 1s --formats markdown
+
+# Specific benchmark only
+go run ./cmd/bench --drivers ant --filter "Write/1KB" --benchtime 5s
+
+# Scale tests (data growth behavior)
+go run ./cmd/bench --drivers ant --filter "Scale" --scales "1000,10000,100000"
+```
+
+### Viewing Profiles
+
+```bash
+# CPU profile flamegraph
+go tool pprof -http=:8080 report/ant_v1_baseline/ant/cpu.pprof
+
+# Top allocation sites
+go tool pprof -top -cum -nodecount=30 report/ant_v1_baseline/ant/allocs.pprof
+
+# Heap in-use
+go tool pprof -http=:8080 report/ant_v1_baseline/ant/heap.pprof
+
+# Lock contention
+go tool pprof -top report/ant_v1_baseline/ant/block.pprof
+
+# Compare baseline vs optimized
+go tool pprof -base report/ant_v1_baseline/ant/cpu.pprof \
+              report/ant_v2_optimized/ant/cpu.pprof
+
+# Investigate attribution
+go tool pprof -peek "artInsert" report/ant_v1_baseline/ant/cpu.pprof
+```
+
+### Memory Analysis
+
+```bash
+# Check artNode struct size
+go run -v <<'EOF'
+package main
+import ("fmt"; "unsafe")
+type artNode struct { /* ... */ }
+func main() { fmt.Println(unsafe.Sizeof(artNode{})) }
+EOF
+
+# Runtime memory stats during benchmark
+GODEBUG=gctrace=1 go run ./cmd/bench --drivers ant --benchtime 2s 2>&1 | grep gc
+```
