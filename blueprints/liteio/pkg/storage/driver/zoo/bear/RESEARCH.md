@@ -1580,3 +1580,519 @@ directly:
 1. raw-copy leaf split path (avoid `readAllLeafEntries` decode + full re-encode of unchanged entries)
 2. in-place leaf update fast path (overwrite same-size/smaller payload metadata without full rewrite)
 3. leaf layout changes (prefix compression / persisted metadata) to reduce split frequency structurally
+
+## 18. v12 Follow-Up Addendum (raw-copy leaf split path)
+
+Date: `2026-02-22`
+
+This pass implements the first v12 candidate from section `17.7`:
+
+- raw-copy leaf split path (avoid `readAllLeafEntries` + `readLeafEntry` decode
+  and per-entry re-encoding on split)
+
+### 18.1 Motivation (from v11 profiler)
+
+v11 focused `Write/1KB` profiling still showed leaf split/rewrite work dominating:
+
+- `writeLeafPageSorted` / split path logic as the primary write hotspot
+- large allocation pressure from leaf decode/rebuild on split-heavy paths in
+  earlier profiles (`readLeafEntry`, `readAllLeafEntries`)
+
+### 18.2 Implementation (v12)
+
+File:
+
+- `pkg/storage/driver/zoo/bear/storage.go`
+
+Added raw leaf split helpers:
+
+- `leafRawEntryRef`
+- `leafRawRefAt(...)`
+- `leafRawEntriesFit(...)`
+- `writeLeafPageRawSorted(...)`
+- `chooseLeafSplitIndexRaw(...)`
+- `splitLeafInsertRaw(...)`
+
+Integration:
+
+- `insertIntoLeaf(...)` now tries `splitLeafInsertRaw(...)` after allocating the
+  new right leaf page.
+- If the raw split path fails validation, it falls back to the existing decode +
+  rebuild split path (`readAllLeafEntries` + `writeLeafPageSorted`).
+
+Key design points:
+
+- Existing encoded leaf entries are copied as raw byte slices directly into new
+  leaf pages (slot metadata rebuilt, payload bytes reused).
+- The v11 edge split-bias policy is preserved via `chooseLeafSplitIndexRaw(...)`.
+- The new entry is encoded once, then inserted into the raw entry reference list.
+
+### 18.3 Correctness issue found during v12 (and fix)
+
+Initial v12 attempt had a corruption bug:
+
+- `splitLeafInsertRaw(...)` stored raw entry slices pointing into the source
+  page (`pg`) and then rewrote the left page in place.
+- That overwrote source bytes still needed for later raw refs.
+- Result: runtime panic during benchmark (`slice bounds out of range`) from
+  corrupted leaf entry metadata.
+
+Fix:
+
+- Render left split output into a temporary page buffer first, write the right
+  page, then copy the temporary left page back into `pg`.
+
+This preserves source page bytes until all raw refs have been consumed.
+
+### 18.4 Allocation reduction follow-up (v12c)
+
+The first corrected raw split version (`v12b`) removed `readLeafEntry` from the
+alloc top, but introduced a new allocation hotspot in `splitLeafInsertRaw(...)`
+(raw-ref slice + encoded-entry allocations).
+
+Follow-up improvement (`v12c`):
+
+- added stack scratch limit: `leafScratchMaxEntries`
+- stack-backed raw-ref array for split refs
+- stack-backed entry encoding buffer (`[pageSize]byte`) for the inserted entry
+
+Effect:
+
+- large reduction in total allocs in the profiled focused run
+- no change to on-disk format or external behavior
+
+### 18.5 Focused `Write/1KB` results (local `cmd/bench`)
+
+Final v12 focused run (`report/bear_v12c_focus_write1k`):
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --filter Write/1KB \
+  --output ./report/bear_v12c_focus_write1k \
+  --formats json
+```
+
+Results:
+
+- `Write/1KB`: **1,051,035 ops/s**
+- Peak RSS: **78.0 MB**
+- Peak Go Heap: **28.9 MB**
+- Peak Go Sys: **71.2 MB**
+- Errors: `0`
+
+Comparisons:
+
+- vs `report/bear_v11c_focus_write1k`: `886,291 -> 1,051,035` (**+18.6%**)
+- vs `report/bear_v10_focus_write1k`: `684,562 -> 1,051,035` (**+53.5%**)
+- Focused RSS remains `<100MB`
+
+### 18.6 Go profiler after v12 (focused `Write/1KB`)
+
+Profiled run (`report/bear_v12c_profile_write1k`):
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --filter Write/1KB \
+  --profile \
+  --output ./report/bear_v12c_profile_write1k \
+  --formats json
+```
+
+Profiled result:
+
+- `Write/1KB`: **933,717 ops/s**
+- Peak RSS: **80.5 MB**
+
+CPU top (`pprof -top`):
+
+- `bear.writeLeafPageRawSorted`: **~50.6% flat** (new top hotspot)
+- `bear.splitLeafInsertRaw`: dominant cumulative split-path caller
+- `runtime.memclrNoHeapPointers`: **~2.47% flat**
+
+Allocation profile (`pprof -alloc_space`):
+
+- `readLeafEntry` is no longer a top allocator
+- `splitLeafInsertRaw` is now the main `bear` split-path allocator
+- total allocs dropped substantially vs v11c profiled run:
+  - ~`615.4 MB` -> ~`391.0 MB` (**-36.5%**)
+
+Interpretation:
+
+- v12 successfully moved the bottleneck from leaf decode/re-encode to raw split
+  copy/write code.
+- The remaining dominant write cost is still structural leaf split rewrite work,
+  now in `writeLeafPageRawSorted`.
+
+### 18.7 Full quick suite (subprocess isolation) results
+
+Command:
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --isolate-embedded-benchmarks-subprocess \
+  --output ./report/bear_v12_full_subproc \
+  --formats json,markdown
+```
+
+Results (`report/bear_v12_full_subproc/raw_results.json`):
+
+- Benchmarks: `40`
+- Errors: `0`
+- Peak RSS: **504.8 MB**
+- Peak Go Heap: **30.0 MB**
+- Peak Go Sys: **312.8 MB**
+- Final disk: **3155.8 MB**
+- `Write/1KB`: **1,091,484 ops/s**
+- `Write/64KB`: **29,455 ops/s**
+- `Write/1MB`: **466.5 ops/s**
+- `Write/10MB`: **52.8 ops/s**
+- `Delete`: **3,231,309 ops/s**
+
+Comparison vs `report/bear_v11_full_subproc`:
+
+- `Write/1KB`: `922,911 -> 1,091,484` (**+18.3%**)
+- `Delete`: `3,110,350 -> 3,231,309` (**+3.9%**)
+- Peak RSS: `453.0 MB -> 504.8 MB` (**+11.4%**)
+- Final disk: `2885.2 MB -> 3155.8 MB` (**+9.4%**)
+
+Comparison vs `report/bear_v10_full_subproc`:
+
+- `Write/1KB`: `1,115,531 -> 1,091,484` (**-2.2%**)
+- `Delete`: `2,503,138 -> 3,231,309` (**+29.1%**)
+
+Tradeoff observed:
+
+- Small-write (`Write/1KB`) and `Delete` improved vs v11.
+- `Write/64KB` and `Write/1MB` regressed vs v10/v11 on this run set.
+- Peak RSS / Go Sys increased in the subprocess suite.
+
+### 18.8 Current conclusion after v12
+
+- v12 raw split path materially improves focused `Write/1KB` and reduces split
+  path allocations.
+- It removes the old `readLeafEntry` allocation hotspot from focused profiles.
+- The dominant write hotspot is now `writeLeafPageRawSorted`.
+- Full-suite subprocess results are still mixed (small-write/delete win, some
+  medium/large write regressions, higher RSS).
+
+### 18.9 Next v13 candidates (post-v12)
+
+1. gate raw split path by workload characteristics (e.g. prefer raw split for small/external entries, fallback for larger-value mixes)
+2. reduce `writeLeafPageRawSorted` copy volume (partial/raw-copy split layout optimizations)
+3. in-place leaf update fast path (same-size/smaller update) to cut rewrite pressure outside split path
+
+## 19. v14-v20 iterative optimization campaign (profiler-guided)
+
+This section documents the v14-v20 optimization batch requested after v12.
+The work was done iteratively with local `cmd/bench` runs and Go profiler
+checkpoints after each major change cluster.
+
+### 19.1 Goals and constraints
+
+- Continue optimizing `bear` from v14 through v20
+- Keep focused local benchmark memory under `100MB` and verify it
+- Use Go profiler to identify the next bottleneck before each major pass
+- Preserve correctness across the full quick suite (`cmd/bench`, subprocess-isolated)
+
+### 19.2 How the profiler was used (local workflow)
+
+Commands used repeatedly (same pattern as the earlier sections and `herd/RESEARCH.md` style):
+
+```bash
+# Focused benchmark + in-process profiles
+GOFLAGS= go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --filter Write/1KB \
+  --profile \
+  --output ./report/<run_name> \
+  --formats json
+
+# CPU hotspot summary
+go tool pprof -top ./report/<run_name>/bear/cpu.pprof
+
+# Allocation hotspot summary
+go tool pprof -top -alloc_space ./report/<run_name>/bear/allocs.pprof
+```
+
+Large-write/value-log path profiling used the same flow with `--filter Write/64KB`.
+
+### 19.3 v14-v17 implemented improvements (batch summary, 10+ concrete changes)
+
+The v14-v17 batch focused on the `Write/1KB` hotspot (`writeLeafPageRawSorted*` /
+`splitLeafInsertRaw`) and split-path allocations.
+
+Implemented changes (high level):
+
+1. `leafRawEntryRef.size` cached encoded entry size (avoid repeated `len(raw)` / rescans)
+2. `leafRawRefAtCount(...)` parses key + encoded size in one pass
+3. `writeLeafPageRawSortedSized(...)` added (skip repeated `dataSize` rescans)
+4. `chooseLeafSplitIndexRaw(...)` switched to prefix-sum sizing (O(1) fit checks)
+5. specialized raw-ref builders (`append` / `prepend` / `general`)
+6. raw split path uses prefix scratch and sized raw writer (`splitLeafInsertRaw`)
+7. page/raw-ref/prefix scratch pools added for split/compact/merge hot paths
+8. raw compaction path (`compactLeafPageRaw`) added and integrated
+9. raw merge path (`mergeLeafPagesRaw`) added and integrated (later bug-fixed in v20)
+10. in-place leaf overwrite (`leafReplaceAtInPlace`) for same-size/smaller updates
+11. fast path key canonicalization (`fastCleanRelPath`) for common benchmark keys
+12. cached bucket composite-key prefix (`bucket.prefix`, `bucket.compositeKey`)
+13. `contentTypeBytes(...)` common-case reuse (`application/octet-stream`)
+14. reduced object return-path key normalization overhead (`relKey` reuse)
+15. raw writer loop micro-opts (index loops, incremental slot offsets)
+16. value-log stream chunk tuned upward (32KB -> 128KB in v14-v17 stage)
+
+Important correctness note from this batch:
+
+- During raw split optimization, directly rendering the left split half back into the
+  source page while raw refs still referenced the source page caused page-overwrite
+  corruption. This was fixed by rendering the left half into a scratch page first and
+  copying it back only after the right page was written.
+
+### 19.4 v14 baseline profiler checkpoint (`Write/1KB`)
+
+Artifacts:
+
+- `report/bear_v14_profile_baseline`
+
+Results (`report/bear_v14_profile_baseline/raw_results.json`):
+
+- `Write/1KB`: **774,450 ops/s**
+- Peak RSS: **82.8 MB**
+- Errors: `0`
+
+CPU profile top (`go tool pprof -top report/bear_v14_profile_baseline/bear/cpu.pprof`):
+
+- `bear.writeLeafPageRawSorted`: **42.47% flat**
+- `syscall.rawsyscalln`: **12.33% flat**
+
+Interpretation:
+
+- The primary root cause remained leaf rewrite work during split-heavy insert workloads.
+- Secondary cost already visible: value-log flush syscalls (`pwrite`) via `rawsyscalln`.
+
+### 19.5 v18: value-log write-path optimization (medium/large writes)
+
+Profiler target (from `Write/64KB` baseline): value-log flush syscalls dominated CPU.
+
+Baseline artifact:
+
+- `report/bear_v18_profile_write64k_baseline`
+
+Baseline results:
+
+- `Write/64KB`: **27,867.8 ops/s**
+- Peak RSS: **56.4 MB**
+- Errors: `0`
+
+Baseline CPU top (`pprof -top`):
+
+- `syscall.rawsyscalln`: **67.86% flat**
+
+Implemented v18 changes:
+
+1. adaptive value-log buffer growth (keep small default footprint, grow on larger writes)
+2. value-log buffer max cap raised to reduce flush frequency on `64KB+` workloads
+3. `valLogDirectWriteMin` threshold introduced (large payload direct-write policy)
+4. `writeFixedStreamToValueLogLocked(...)` added
+5. known-size streaming writes now read directly into `s.valBuf` (no temp->buffer copy)
+6. `appendValueLogBytesLocked(...)` uses dynamic buffer capacity (`cap(s.valBuf)`)
+7. `appendValueLogBytesLocked(...)` grows buffer opportunistically on larger payloads
+8. value-log stream chunk increased again (`256KB` final in this batch)
+9. retained small default value-log footprint for `Write/1KB` runs (no forced large buffer)
+10. kept `sync=none` path semantics unchanged (flush behavior only amortized)
+
+v18 profiled result artifact:
+
+- `report/bear_v18b_profile_write64k`
+
+v18 profiled results:
+
+- `Write/64KB`: **30,713.2 ops/s**
+- Peak RSS: **75.2 MB**
+- Errors: `0`
+
+v18 CPU top (`pprof -top`):
+
+- `syscall.rawsyscalln`: **56.45% flat** (down from `67.86%` baseline)
+
+Interpretation:
+
+- The large-write path remained syscall-bound, but the adaptive buffering + direct
+  stream-to-buffer path reduced `pwrite` pressure materially.
+- Focused `Write/64KB` memory remained `<100MB`.
+
+### 19.6 v19: separator and split propagation micro-optimizations
+
+Implemented v19 changes:
+
+1. `shortestSeparatorView(...)` added (linear-time separator derivation; avoids repeated `bytes.Compare` scans)
+2. `shortestSeparator(...)` now wraps `shortestSeparatorView` + copy (same semantics)
+3. `subtreeMinKey(...)` switched to `leafEntryKeyAt(...)` (no `readLeafEntry` alloc on leaf)
+4. `subtreeMaxKey(...)` switched to `leafEntryKeyAt(...)` (same)
+5. `leafSearch(...)` final equality check avoids double key-slice parsing on the same slot
+6. `splitResult` gained inline split-key storage (`inlineKey`) for short separators
+7. `newSplitResult(...)` helper added to inline small split keys and avoid separate heap allocs
+8. leaf split fallback path returns separator view then stores it in `splitResult` inline buffer
+9. raw split/fallback separator computation switched to shared fast separator helper logic
+10. split propagation allocations were reduced for short separator keys (while keeping ownership safety)
+
+Correctness issue found in v19/v20 cycle (and fixed in v20):
+
+- Using `shortestSeparatorView(...)` directly inside `splitLeafInsertRaw(...)` before the
+  source leaf page was rewritten created a separator alias into bytes that were later
+  overwritten by the split write/copy. This corrupted parent separators and routing.
+- Fix: `splitLeafInsertRaw(...)` now takes an owned separator copy before page rewrite.
+
+### 19.7 v20: final profiler-guided pass, bug fixes, and validation
+
+Profiler target after v19:
+
+- `writeLeafPageRawSortedSized` still dominates `Write/1KB`
+- `splitLeafInsertRaw` remains the largest `bear` allocator in alloc-space profiles
+
+Implemented/stabilized in v20:
+
+1. `newSplitResult(...)` retained and validated after separator ownership fix
+2. raw leaf split separator ownership fixed (see above)
+3. raw leaf merge bug fixed in `mergeLeafPagesRaw(...)` (previously dropped left refs)
+4. delete-heavy correctness restored (`Delete` benchmark errors -> `0`)
+5. final focused `Write/1KB` profiling on corrected code
+6. final focused `Write/64KB` profiling on corrected code
+7. final full quick subprocess suite validation on corrected code (`0` errors)
+8. profiler evidence captured for both `1KB` and `64KB` final runs
+9. memory target re-verified for focused runs (`Write/1KB`, `Write/64KB` both `<100MB` RSS)
+10. correctness regressions explicitly documented (root cause + fix) before closing v20
+
+### 19.8 Final focused results on corrected v20 code
+
+#### `Write/1KB` (profiled)
+
+Artifact:
+
+- `report/bear_v20e_profile_write1k`
+
+Results (`report/bear_v20e_profile_write1k/raw_results.json`):
+
+- `Write/1KB`: **1,356,754 ops/s**
+- Peak RSS: **91.8 MB** (verified `<100MB`)
+- Peak Go Heap: **29.8 MB**
+- Peak Go Sys: **91.0 MB**
+- Errors: `0`
+
+CPU top (`pprof -top`):
+
+- `bear.writeLeafPageRawSortedSized`: **61.90% flat** (still dominant)
+- `syscall.rawsyscalln`: **9.52% flat**
+
+Alloc-space top (`pprof -alloc_space`):
+
+- `bear.(*bucket).Write`: **238.53 MB flat**
+- `bear.splitLeafInsertRaw`: **151.59 MB flat**
+- `bear.compositeKeyWithPrefix`: **27 MB flat**
+- `bear.newSplitResult`: **4 MB flat**
+
+Interpretation:
+
+- The bottleneck remains structural leaf split page rewrite (`writeLeafPageRawSortedSized`).
+- Split-path allocation pressure is still substantial, but throughput improved significantly.
+
+#### `Write/64KB` (profiled)
+
+Artifact:
+
+- `report/bear_v20e_profile_write64k`
+
+Results (`report/bear_v20e_profile_write64k/raw_results.json`):
+
+- `Write/64KB`: **51,869.5 ops/s**
+- Peak RSS: **74.7 MB** (verified `<100MB`)
+- Peak Go Heap: **35.2 MB**
+- Peak Go Sys: **79.5 MB**
+- Errors: `0`
+
+CPU top (`pprof -top`):
+
+- `syscall.rawsyscalln`: **60.00% flat** (still dominant, but improved vs v18 baseline)
+- `bear.writeLeafPageRawSortedSized`: **6.67% flat**
+
+Interpretation:
+
+- `Write/64KB` remains value-log flush syscall dominated.
+- The v18 value-log buffering/streaming work is the primary reason for the large gain.
+
+### 19.9 Final full quick suite (subprocess isolation) on corrected v20 code
+
+Command:
+
+```bash
+go run ./cmd/bench \
+  --quick \
+  --drivers bear \
+  --isolate-embedded-benchmarks-subprocess \
+  --output ./report/bear_v20e_full_subproc \
+  --formats json
+```
+
+Results (`report/bear_v20e_full_subproc/raw_results.json`):
+
+- Benchmarks: `40`
+- Errors: `0`
+- Peak RSS: **600.5 MB**
+- Peak Go Heap: **30.1 MB**
+- Peak Go Sys: **336.0 MB**
+- Final disk: **4404.5 MB**
+- `Write/1KB`: **1,338,385 ops/s**
+- `Write/64KB`: **29,932 ops/s**
+- `Delete`: **4,454,863 ops/s**
+
+Notes:
+
+- Full-suite process RSS remains well above `100MB` in subprocess mode.
+- Focused local runs for `Write/1KB` and `Write/64KB` are both verified under `100MB` RSS.
+
+### 19.10 Regressions found during v14-v20 and fixes
+
+1. **Raw leaf split separator alias bug** (`splitLeafInsertRaw`)
+   - Symptom: massive read/list/delete `not exist` errors in full suite
+   - Root cause: separator view aliased source leaf page bytes, then page rewrite invalidated it
+   - Fix: take owned separator copy before split page rewrite/copy
+
+2. **Raw leaf merge bug** (`mergeLeafPagesRaw`)
+   - Symptom: delete benchmark and delete phases returned `storage: not exist`
+   - Root cause: merge path rebuilt left refs, then overwrote the `refs` slice with the
+     right refs and wrote only the right half while using combined `dataSize`
+   - Fix: keep combined ref slice (`refsScratch[:totalCount]`) before writing merged page
+
+### 19.11 Net outcome (v14 -> v20)
+
+Focused `Write/1KB` (profiled):
+
+- `774,450 ops/s` (`v14` baseline profile) -> **1,356,754 ops/s** (`v20e` final profile)
+- Improvement: **~1.75x**
+- Peak RSS: `82.8 MB` -> `91.8 MB` (still `<100MB`)
+
+Focused `Write/64KB` (profiled):
+
+- `27,867.8 ops/s` (`v18` baseline profile) -> **51,869.5 ops/s** (`v20e` final profile)
+- Improvement: **~1.86x**
+- `rawsyscalln` remained dominant but reduced from the v18 baseline profile
+
+### 19.12 Remaining bottlenecks after v20
+
+1. `writeLeafPageRawSortedSized` is still the dominant `Write/1KB` CPU hotspot
+2. `splitLeafInsertRaw` is still the largest `bear` allocator in `Write/1KB` alloc-space profiles
+3. `Write/64KB` remains dominated by value-log flush syscalls (`pwrite` / `rawsyscalln`)
+4. Full-suite subprocess RSS is still far above the `<100MB` target due long-run process/runtime footprint (`Go Sys`) and benchmark scope
+
+### 19.13 Recommended v21+ directions
+
+1. Optimize `writeLeafPageRawSortedSized` directly (partial/raw-copy leaf rewrite avoidance)
+2. Reduce split frequency further (layout/fanout improvements; paper-aligned persisted metadata)
+3. Continue value-log flush batching work for medium writes (`64KB/1MB`) while watching focused RSS
+4. Add microbench/unit tests for raw leaf split/merge correctness to catch alias/slice assembly regressions early

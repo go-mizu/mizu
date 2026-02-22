@@ -201,6 +201,8 @@ const (
 	miniPageEntryOverhead = 1024
 
 	defaultReadCacheSize = 4 * 1024 * 1024 // 4 MB raw leaf page cache
+
+	defaultMiniPageEntryCap = 32
 )
 
 // ---------------------------------------------------------------------------
@@ -261,6 +263,114 @@ func splitCompositeKey(ck string) (bucket, key string) {
 		return ck, ""
 	}
 	return ck[:i], ck[i+1:]
+}
+
+func compositeKeyEqualsParts(ck, bucket, key string) bool {
+	if len(ck) != len(bucket)+1+len(key) {
+		return false
+	}
+	if len(ck) <= len(bucket) || ck[len(bucket)] != 0 {
+		return false
+	}
+	return ck[:len(bucket)] == bucket && ck[len(bucket)+1:] == key
+}
+
+func compareBucketKeyToComposite(bucket, key, composite string) int {
+	// Reuse the bytes comparator to avoid IndexByte+substring churn on each tree step.
+	return -compareCompositeBytesToParts(stringBytesView(composite), bucket, key)
+}
+
+func compareCompositeBytesToParts(b []byte, bucket, key string) int {
+	n := len(bucket)
+	if len(b) < n {
+		n = len(b)
+	}
+	for i := 0; i < n; i++ {
+		if b[i] < bucket[i] {
+			return -1
+		}
+		if b[i] > bucket[i] {
+			return 1
+		}
+	}
+	if len(b) < len(bucket) {
+		return -1
+	}
+	if len(b) == len(bucket) {
+		return 1 // composite key always has separator and object key
+	}
+	// Compare separator byte.
+	sep := b[len(bucket)]
+	if sep < 0 {
+		return -1
+	}
+	if sep > 0 {
+		return 1
+	}
+	b = b[len(bucket)+1:]
+	n = len(key)
+	if len(b) < n {
+		n = len(b)
+	}
+	for i := 0; i < n; i++ {
+		if b[i] < key[i] {
+			return -1
+		}
+		if b[i] > key[i] {
+			return 1
+		}
+	}
+	switch {
+	case len(b) < len(key):
+		return -1
+	case len(b) > len(key):
+		return 1
+	default:
+		return 0
+	}
+}
+
+const (
+	commonContentTypeOctet = "application/octet-stream"
+	commonContentTypeText  = "text/plain"
+	commonContentTypeJSON  = "application/json"
+)
+
+func stringBytesView(s string) []byte {
+	if len(s) == 0 {
+		return nil
+	}
+	return unsafe.Slice((*byte)(unsafe.Pointer(unsafe.StringData(s))), len(s))
+}
+
+func bytesEqString(b []byte, s string) bool {
+	if len(b) != len(s) {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if b[i] != s[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func internContentTypeBytes(b []byte) string {
+	switch len(b) {
+	case len(commonContentTypeOctet):
+		if bytesEqString(b, commonContentTypeOctet) {
+			return commonContentTypeOctet
+		}
+	case len(commonContentTypeText):
+		if bytesEqString(b, commonContentTypeText) {
+			return commonContentTypeText
+		}
+	case len(commonContentTypeJSON):
+		if bytesEqString(b, commonContentTypeJSON) {
+			return commonContentTypeJSON
+		}
+	}
+	return string(b)
 }
 
 // ---------------------------------------------------------------------------
@@ -834,6 +944,20 @@ func (t *btree) findLeaf(key string) *btreeNode {
 	return n
 }
 
+func (t *btree) findLeafParts(bucket, key string) *btreeNode {
+	n := t.root
+	for n != nil && !n.leaf {
+		idx := sort.Search(len(n.keys), func(i int) bool {
+			return compareBucketKeyToComposite(bucket, key, n.keys[i]) < 0
+		})
+		if idx >= len(n.children) {
+			idx = len(n.children) - 1
+		}
+		n = n.children[idx]
+	}
+	return n
+}
+
 // ---------------------------------------------------------------------------
 // Page entry encoding/decoding
 // ---------------------------------------------------------------------------
@@ -853,6 +977,65 @@ type pageEntry struct {
 const pageHeaderSize = 16
 
 const indirectValueRefSize = 12
+
+const (
+	maxPooledPageEntrySliceCap     = 128
+	maxPooledMiniPageEntrySliceCap = 64
+)
+
+var pageEntrySlicePool sync.Pool
+var miniPageEntrySlicePool sync.Pool
+
+func getPageEntrySlice(minCap int) []pageEntry {
+	if minCap <= 0 {
+		return nil
+	}
+	if v := pageEntrySlicePool.Get(); v != nil {
+		s := v.([]pageEntry)
+		if cap(s) >= minCap {
+			return s[:0]
+		}
+		// Return undersized scratch for reuse and allocate exact need.
+		if cap(s) <= maxPooledPageEntrySliceCap {
+			pageEntrySlicePool.Put(s[:0])
+		}
+	}
+	return make([]pageEntry, 0, minCap)
+}
+
+func putPageEntrySlice(s []pageEntry) {
+	if s == nil || cap(s) == 0 || cap(s) > maxPooledPageEntrySliceCap {
+		return
+	}
+	full := s[:cap(s)]
+	clear(full)
+	pageEntrySlicePool.Put(full[:0])
+}
+
+func getMiniPageEntrySlice(minCap int) []pageEntry {
+	if minCap <= 0 {
+		return nil
+	}
+	if v := miniPageEntrySlicePool.Get(); v != nil {
+		s := v.([]pageEntry)
+		if cap(s) >= minCap {
+			return s[:0]
+		}
+		if cap(s) <= maxPooledMiniPageEntrySliceCap {
+			miniPageEntrySlicePool.Put(s[:0])
+		}
+	}
+	return make([]pageEntry, 0, minCap)
+}
+
+func putMiniPageEntrySlice(s []pageEntry) {
+	if s == nil || cap(s) == 0 || cap(s) > maxPooledMiniPageEntrySliceCap {
+		return
+	}
+	full := s[:cap(s)]
+	clear(full)
+	miniPageEntrySlicePool.Put(full[:0])
+}
 
 func (e pageEntry) hasIndirectValue() bool {
 	return e.valueRef.size > 0 || (e.valueSize > 0 && len(e.value) == 0)
@@ -973,7 +1156,7 @@ func decodePageEntriesBorrowed(buf []byte) []pageEntry {
 	}
 
 	pos := pageHeaderSize
-	entries := make([]pageEntry, 0, count)
+	entries := getPageEntrySlice(count)
 
 entryLoop:
 	for i := range count {
@@ -999,7 +1182,7 @@ entryLoop:
 			break
 		}
 		ctBytes := buf[pos : pos+cl]
-		ct := bytesToStringNoCopy(ctBytes)
+		ct := internContentTypeBytes(ctBytes)
 		pos += cl
 
 		if pos+4 > len(buf) {
@@ -1220,7 +1403,7 @@ entryLoop:
 		if pos+cl > len(buf) {
 			break
 		}
-		ct := string(buf[pos : pos+cl])
+		ct := internContentTypeBytes(buf[pos : pos+cl])
 		pos += cl
 
 		if pos+4 > len(buf) {
@@ -1308,6 +1491,8 @@ type miniPagePool struct {
 	st      *store
 }
 
+var miniPageObjPool sync.Pool
+
 func newMiniPagePool(maxSize int64, st *store) *miniPagePool {
 	return &miniPagePool{
 		pages:   make(map[int64]*miniPage),
@@ -1315,6 +1500,60 @@ func newMiniPagePool(maxSize int64, st *store) *miniPagePool {
 		maxSize: maxSize,
 		st:      st,
 	}
+}
+
+func (p *miniPagePool) allocMiniPage(leafID int64) *miniPage {
+	var mp *miniPage
+	if v := miniPageObjPool.Get(); v != nil {
+		mp = v.(*miniPage)
+	} else {
+		mp = &miniPage{}
+	}
+	mp.leafID = leafID
+	mp.dirty = false
+	mp.element = nil
+	mp.size = minMiniPageSize
+	mp.poolCost = miniPageBaseCost
+	if cap(mp.entries) < defaultMiniPageEntryCap {
+		if mp.entries != nil {
+			putMiniPageEntrySlice(mp.entries[:0])
+		}
+		mp.entries = getMiniPageEntrySlice(defaultMiniPageEntryCap)
+	} else {
+		mp.entries = mp.entries[:0]
+	}
+	return mp
+}
+
+func (p *miniPagePool) freeMiniPage(mp *miniPage) {
+	if mp == nil {
+		return
+	}
+	putMiniPageEntrySlice(mp.entries[:0])
+	mp.entries = nil
+	mp.leafID = 0
+	mp.size = 0
+	mp.poolCost = 0
+	mp.dirty = false
+	mp.element = nil
+	miniPageObjPool.Put(mp)
+}
+
+func (p *miniPagePool) ensureMiniPageEntryCap(mp *miniPage, need int) {
+	if cap(mp.entries)-len(mp.entries) >= need {
+		return
+	}
+	newCap := cap(mp.entries) * 2
+	if newCap < len(mp.entries)+need {
+		newCap = len(mp.entries) + need
+	}
+	if newCap < defaultMiniPageEntryCap {
+		newCap = defaultMiniPageEntryCap
+	}
+	ns := getMiniPageEntrySlice(newCap)
+	ns = append(ns, mp.entries...)
+	putMiniPageEntrySlice(mp.entries[:0])
+	mp.entries = ns
 }
 
 func (p *miniPagePool) get(leafID int64) *miniPage {
@@ -1337,12 +1576,7 @@ func (p *miniPagePool) getOrCreate(leafID int64) *miniPage {
 		p.evictOldest()
 	}
 
-	mp = &miniPage{
-		leafID:   leafID,
-		entries:  make([]pageEntry, 0, 4),
-		size:     minMiniPageSize,
-		poolCost: miniPageBaseCost,
-	}
+	mp = p.allocMiniPage(leafID)
 	mp.element = p.lru.PushFront(mp)
 	p.pages[leafID] = mp
 	p.curSize += int64(mp.poolCost)
@@ -1361,6 +1595,7 @@ func (p *miniPagePool) evictOldest() {
 	p.lru.Remove(oldest)
 	p.curSize -= int64(mp.poolCost)
 	delete(p.pages, mp.leafID)
+	p.freeMiniPage(mp)
 }
 
 func (p *miniPagePool) flushMiniPage(mp *miniPage) {
@@ -1380,9 +1615,11 @@ func (p *miniPagePool) flushMiniPage(mp *miniPage) {
 	}
 
 	diskEntries := decodePageEntriesBorrowed(existing)
+	defer putPageEntrySlice(diskEntries)
 
 	// Merge: mini-page entries override disk entries.
 	merged := mergeEntries(diskEntries, mp.entries)
+	defer putPageEntrySlice(merged)
 
 	// Remove tombstones.
 	live := merged[:0]
@@ -1438,7 +1675,10 @@ func (p *miniPagePool) flushMiniPage(mp *miniPage) {
 		p.curSize -= int64(mp.poolCost - miniPageBaseCost)
 	}
 	mp.dirty = false
-	mp.entries = mp.entries[:0]
+	if mp.entries != nil {
+		putMiniPageEntrySlice(mp.entries[:0])
+		mp.entries = nil
+	}
 	mp.size = minMiniPageSize
 	mp.poolCost = miniPageBaseCost
 }
@@ -1456,15 +1696,15 @@ func (p *miniPagePool) flushAll() {
 // mini is sorted in-place to avoid an extra allocation.
 func mergeEntries(disk, mini []pageEntry) []pageEntry {
 	if len(mini) == 0 {
-		result := make([]pageEntry, len(disk))
-		copy(result, disk)
+		result := getPageEntrySlice(len(disk))
+		result = append(result, disk...)
 		return result
 	}
 	sort.Slice(mini, func(i, j int) bool {
 		return mini[i].key < mini[j].key
 	})
 
-	result := make([]pageEntry, 0, len(disk)+len(mini))
+	result := getPageEntrySlice(len(disk) + len(mini))
 	i, j := 0, 0
 	for i < len(disk) && j < len(mini) {
 		switch {
@@ -1700,6 +1940,7 @@ func (s *store) putPreparedEntry(ck string, now int64, entry pageEntry) (int64, 
 	}
 
 	if !found {
+		s.pool.ensureMiniPageEntryCap(mp, 1)
 		newSize := encodedEntrySize(entry)
 		newPoolCost := miniPageEntryCost(entry)
 		mp.entries = append(mp.entries, entry)
@@ -1751,7 +1992,7 @@ func findPageEntry(buf []byte, ck string, loadValue bool) (pageEntry, bool) {
 	if count == 0 {
 		return pageEntry{}, false
 	}
-	ckb := []byte(ck)
+	ckb := stringBytesView(ck)
 	pos := pageHeaderSize
 
 	for i := range count {
@@ -1838,7 +2079,7 @@ func findPageEntry(buf []byte, ck string, loadValue bool) (pageEntry, bool) {
 		}
 		return pageEntry{
 			key:         ck,
-			contentType: string(ctBytes),
+			contentType: internContentTypeBytes(ctBytes),
 			value:       val,
 			valueRef:    ref,
 			valueSize:   valueSize,
@@ -1850,10 +2091,111 @@ func findPageEntry(buf []byte, ck string, loadValue bool) (pageEntry, bool) {
 	return pageEntry{}, false
 }
 
-func (s *store) getEntry(bkt, key string, loadValue bool) (pageEntry, bool) {
-	ck := compositeKey(bkt, key)
+func findPageEntryParts(buf []byte, bucket, key string, loadValue bool) (pageEntry, bool) {
+	if len(buf) < pageHeaderSize {
+		return pageEntry{}, false
+	}
+	count := int(binary.LittleEndian.Uint16(buf[0:2]))
+	if count == 0 {
+		return pageEntry{}, false
+	}
+	pos := pageHeaderSize
 
-	leaf := s.tree.findLeaf(ck)
+	for i := range count {
+		_ = i
+		if pos+2 > len(buf) {
+			return pageEntry{}, false
+		}
+		kl := int(binary.LittleEndian.Uint16(buf[pos:]))
+		pos += 2
+		if pos+kl > len(buf) {
+			return pageEntry{}, false
+		}
+		keyBytes := buf[pos : pos+kl]
+		pos += kl
+
+		cmp := compareCompositeBytesToParts(keyBytes, bucket, key)
+		if cmp > 0 {
+			return pageEntry{}, false
+		}
+
+		if pos+2 > len(buf) {
+			return pageEntry{}, false
+		}
+		cl := int(binary.LittleEndian.Uint16(buf[pos:]))
+		pos += 2
+		if pos+cl > len(buf) {
+			return pageEntry{}, false
+		}
+		ctBytes := buf[pos : pos+cl]
+		pos += cl
+
+		if pos+4 > len(buf) {
+			return pageEntry{}, false
+		}
+		vl := binary.LittleEndian.Uint32(buf[pos:])
+		pos += 4
+
+		tomb := vl == tombstoneMarker
+		indirect := vl == indirectValueMarker
+
+		var (
+			ref       valueRef
+			val       []byte
+			valueSize uint32
+		)
+		if tomb {
+			valueSize = 0
+		} else if indirect {
+			if pos+indirectValueRefSize > len(buf) {
+				return pageEntry{}, false
+			}
+			ref.offset = int64(binary.LittleEndian.Uint64(buf[pos:]))
+			pos += 8
+			ref.size = binary.LittleEndian.Uint32(buf[pos:])
+			pos += 4
+			valueSize = ref.size
+		} else {
+			valLen := int(vl)
+			if pos+valLen > len(buf) {
+				return pageEntry{}, false
+			}
+			valueSize = uint32(valLen)
+			if cmp == 0 && loadValue {
+				val = make([]byte, valLen)
+				copy(val, buf[pos:pos+valLen])
+			}
+			pos += valLen
+		}
+
+		if pos+16 > len(buf) {
+			return pageEntry{}, false
+		}
+		created := int64(binary.LittleEndian.Uint64(buf[pos:]))
+		pos += 8
+		updated := int64(binary.LittleEndian.Uint64(buf[pos:]))
+		pos += 8
+
+		if cmp != 0 {
+			continue
+		}
+		if tomb {
+			return pageEntry{}, false
+		}
+		return pageEntry{
+			contentType: internContentTypeBytes(ctBytes),
+			value:       val,
+			valueRef:    ref,
+			valueSize:   valueSize,
+			created:     created,
+			updated:     updated,
+		}, true
+	}
+	return pageEntry{}, false
+}
+
+func (s *store) getEntry(bkt, key string, loadValue bool) (pageEntry, bool) {
+	leaf := s.tree.findLeafParts(bkt, key)
 	if leaf == nil {
 		return pageEntry{}, false
 	}
@@ -1863,7 +2205,7 @@ func (s *store) getEntry(bkt, key string, loadValue bool) (pageEntry, bool) {
 	mp := s.pool.get(leaf.pageID)
 	if mp != nil {
 		for _, e := range mp.entries {
-			if e.key == ck {
+			if compositeKeyEqualsParts(e.key, bkt, key) {
 				s.pool.mu.Unlock()
 				if e.tombstone {
 					return pageEntry{}, false
@@ -1883,7 +2225,7 @@ func (s *store) getEntry(bkt, key string, loadValue bool) (pageEntry, bool) {
 	if err != nil {
 		return pageEntry{}, false
 	}
-	return findPageEntry(data, ck, loadValue)
+	return findPageEntryParts(data, bkt, key, loadValue)
 }
 
 func (s *store) get(bkt, key string) (pageEntry, bool) {
@@ -1895,15 +2237,13 @@ func (s *store) getMeta(bkt, key string) (pageEntry, bool) {
 }
 
 func (s *store) del(bkt, key string) bool {
-	ck := compositeKey(bkt, key)
-
 	// Check existence first.
 	_, found := s.getMeta(bkt, key)
 	if !found {
 		return false
 	}
 
-	leaf := s.tree.findLeaf(ck)
+	leaf := s.tree.findLeafParts(bkt, key)
 	if leaf == nil {
 		return false
 	}
@@ -1915,7 +2255,7 @@ func (s *store) del(bkt, key string) bool {
 
 	// Check if exists in mini-page and mark as tombstone.
 	for i := range mp.entries {
-		if mp.entries[i].key == ck {
+		if compositeKeyEqualsParts(mp.entries[i].key, bkt, key) {
 			mp.entries[i].tombstone = true
 			mp.entries[i].updated = now
 			mp.dirty = true
@@ -1925,12 +2265,14 @@ func (s *store) del(bkt, key string) bool {
 	}
 
 	// Add tombstone entry.
+	ck := compositeKey(bkt, key)
 	tomb := pageEntry{
 		key:       ck,
 		created:   now,
 		updated:   now,
 		tombstone: true,
 	}
+	s.pool.ensureMiniPageEntryCap(mp, 1)
 	mp.entries = append(mp.entries, tomb)
 	sz := encodedEntrySize(tomb)
 	poolCost := miniPageEntryCost(tomb)
@@ -2017,7 +2359,7 @@ func (s *store) collectFromNode(n *btreeNode, prefix string, seen, tombstones ma
 			_, k := splitCompositeKey(ck)
 			*results = append(*results, listResult{
 				key:         k,
-				contentType: string(contentTypeBytes),
+				contentType: internContentTypeBytes(contentTypeBytes),
 				size:        int64(valueSize),
 				created:     created,
 				updated:     updated,
@@ -2183,11 +2525,6 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 
 	if !ok {
 		return nil, nil, storage.ErrNotExist
-	}
-
-	_, realKey := splitCompositeKey(e.key)
-	if realKey == "" {
-		realKey = key
 	}
 
 	objSize := e.objectSize()

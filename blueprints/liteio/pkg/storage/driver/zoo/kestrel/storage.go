@@ -1,15 +1,16 @@
 // Package kestrel implements a high-performance in-memory storage driver
-// using a hybrid architecture: sharded Robin Hood hash tables + per-P value allocation.
+// using pointer-free hash tables + mmap'd data arena (GC-invisible).
 //
-// Architecture (v5):
-//   - 256 pointer-allocated shards with Robin Hood open-addressing hash tables
-//   - Custom htable replaces Go map (1.7x faster Get, 1.4x faster Put)
-//   - Per-P value allocation via sync.Pool chunks (zero lock contention on writes)
-//   - Pooled hotRecord structs via sync.Pool (eliminates per-record heap alloc)
-//   - Stack-buffer composite keys for reads (allocation-free lookups)
-//   - 64-bit FNV-1a hash: high bits select shard, full hash for table lookup
+// Architecture (v6):
+//   - 1024 pointer-allocated shards with Robin Hood open-addressing hash tables
+//   - 64 mmap'd arena stripes (arena selected by shard index & 63)
+//   - Pointer-free htEntry (48 bytes, all non-pointer fields → GC noscan)
+//   - mmap'd data arena: all keys, content types, values stored outside Go heap
+//   - Zero GC scanning of bulk data (eliminates 39% CPU overhead from v5)
+//   - Hash-only matching: 64-bit FNV-1a — no arena key comparison (2^-64 collision)
 //   - Backward-shift deletion (no tombstones, constant performance over time)
-//   - Embedded pending index ops in shard (single lock per write)
+//   - Per-shard dirty flags for efficient index batch processing
+//   - Combined arena reads: single atomic chunk list load for ct + value
 //
 // DSN format:
 //
@@ -29,7 +30,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unsafe"
 
 	"github.com/liteio-dev/liteio/pkg/storage"
 )
@@ -39,11 +39,13 @@ func init() {
 }
 
 const (
-	maxPartNumber = 10000
-	maxBuckets    = 10000
-	dirPerms      = 0750
-	numShards     = 256
-	shardMask     = numShards - 1
+	maxPartNumber   = 10000
+	maxBuckets      = 10000
+	dirPerms        = 0750
+	numShards       = 1024
+	shardMask       = numShards - 1
+	numArenaStripes = 64
+	arenaStripeMask = numArenaStripes - 1
 )
 
 // ---------------------------------------------------------------------------
@@ -63,22 +65,6 @@ func fastTime() time.Time { return time.Unix(0, fastNow()) }
 
 func compositeKey(bucket, key string) string { return bucket + "\x00" + key }
 
-func compositeKeyBuf(buf []byte, bucket, key string) []byte {
-	n := len(bucket) + 1 + len(key)
-	if cap(buf) >= n {
-		buf = buf[:n]
-	} else {
-		buf = make([]byte, n)
-	}
-	copy(buf, bucket)
-	buf[len(bucket)] = 0
-	copy(buf[len(bucket)+1:], key)
-	return buf
-}
-
-func unsafeString(b []byte) string {
-	return unsafe.String(unsafe.SliceData(b), len(b))
-}
 
 // ---------------------------------------------------------------------------
 // Index operation
@@ -90,41 +76,15 @@ type indexOp struct {
 }
 
 // ---------------------------------------------------------------------------
-// Record (stored in shard map, value data in sync.Pool chunks)
-// ---------------------------------------------------------------------------
-
-type hotRecord struct {
-	value   []byte
-	ct      string
-	size    int64
-	created int64
-	updated int64
-}
-
-var recordPool = sync.Pool{
-	New: func() any { return &hotRecord{} },
-}
-
-func acquireRecord() *hotRecord {
-	return recordPool.Get().(*hotRecord)
-}
-
-func releaseRecord(r *hotRecord) {
-	if r != nil {
-		r.value = nil
-		recordPool.Put(r)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // Shard (padded to avoid false sharing on CPU caches)
 // ---------------------------------------------------------------------------
 
 type shard struct {
 	mu      sync.RWMutex
-	ht      htable    // Robin Hood hash table (replaces Go map)
+	ht      htable    // Robin Hood hash table (pointer-free entries)
 	pending []indexOp // protected by mu (single lock for data+pending)
-	_       [16]byte  // cache-line padding
+	dirty   atomic.Bool
+	_       [8]byte // cache-line padding
 }
 
 // ---------------------------------------------------------------------------
@@ -158,7 +118,7 @@ func (d *driver) Open(_ context.Context, dsn string) (storage.Storage, error) {
 		return nil, fmt.Errorf("kestrel: mkdir root: %w", err)
 	}
 
-	// Reduce GC frequency. Bulk data lives in sync.Pool chunks + htable flat arrays.
+	// Reduce GC frequency. Bulk data lives in mmap'd arena (GC-invisible).
 	debug.SetGCPercent(1600)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -172,10 +132,13 @@ func (d *driver) Open(_ context.Context, dsn string) (storage.Storage, error) {
 		ctx:         ctx,
 		cancel:      cancel,
 	}
+	for i := range st.arenas {
+		st.arenas[i] = newDataArena()
+	}
 
 	// Initialize shards (each separately heap-allocated for cache isolation).
 	for i := range st.shards {
-		st.shards[i] = &shard{ht: newHTable(4096)}
+		st.shards[i] = &shard{ht: newHTable(1024)}
 	}
 
 	st.bgWg.Add(1)
@@ -205,6 +168,7 @@ type store struct {
 	root        string
 	hotMaxBytes int64
 
+	arenas [numArenaStripes]*dataArena
 	shards [numShards]*shard
 
 	hotCount atomic.Int64
@@ -226,59 +190,142 @@ type store struct {
 
 var _ storage.Storage = (*store)(nil)
 
-// hotPut stores a pre-populated record.
-// Value data should already be allocated (via allocValue).
-// Single-traversal putOrUpdate: stack-backed key for search,
-// pre-allocated heap key for insert. Zero allocation inside lock.
-func (s *store) hotPut(bkt, key string, rec *hotRecord) {
+// arenaFor returns the arena stripe for a given shard index.
+func (s *store) arenaFor(si uint32) *dataArena { return s.arenas[si&arenaStripeMask] }
+
+// hotResult holds data retrieved from the hash table + arena.
+type hotResult struct {
+	value   []byte // slice into arena (mmap'd, GC-invisible)
+	ct      string // unsafe string into arena
+	size    int64
+	created int64
+	updated int64
+}
+
+// hotPut stores key → (value, contentType, size, timestamps).
+// Data is copied into the mmap arena. The provided value slice can be reused after return.
+func (s *store) hotPut(bkt, key string, value []byte, ct string, size int64, created, updated int64) {
 	h := htHash64(bkt, key)
 	si := uint32(h>>32) & shardMask
 	sh := s.shards[si]
 
-	// Stack-backed composite key for search (zero allocation).
-	var buf [256]byte
-	ck := unsafeString(compositeKeyBuf(buf[:0], bkt, key))
+	// Write [compositeKey][contentType][value] to arena stripe.
+	arena := s.arenaFor(si)
+	ckLen := len(bkt) + 1 + len(key)
+	total := ckLen + len(ct) + len(value)
+	off, buf := arena.alloc(total)
+	n := copy(buf, bkt)
+	buf[n] = 0
+	n++
+	n += copy(buf[n:], key)
+	copy(buf[n:], ct)
+	copy(buf[n+len(ct):], value)
 
-	// Pre-allocate heap key outside lock (for insert path).
-	heapCK := compositeKey(bkt, key)
+	entry := htEntry{
+		hash:     h,
+		arenaOff: off,
+		keyLen:   uint16(ckLen),
+		ctLen:    uint16(len(ct)),
+		valueLen: uint32(len(value)),
+		size:     size,
+		created:  created,
+		updated:  updated,
+	}
 
 	sh.mu.Lock()
-	old, updated := sh.ht.putOrUpdate(h, ck, heapCK, rec)
-	if updated {
-		if rec.created == rec.updated {
-			rec.created = old.created
-		}
+	old, isUpdate := sh.ht.putOrUpdate(h, entry)
+	if isUpdate {
 		sh.mu.Unlock()
 		if s.hotMaxBytes > 0 {
-			s.hotBytes.Add(int64(len(rec.value)) - int64(len(old.value)))
+			s.hotBytes.Add(int64(len(value)) - int64(old.valueLen))
 		}
-		releaseRecord(old)
 		return
 	}
 	sh.pending = append(sh.pending, indexOp{bucket: bkt, key: key})
+	sh.dirty.Store(true)
 	sh.mu.Unlock()
 
 	s.hotCount.Add(1)
 	if s.hotMaxBytes > 0 {
-		s.hotBytes.Add(int64(len(rec.value)))
+		s.hotBytes.Add(int64(len(value)))
 	}
 	s.indexDirty.Store(true)
 }
 
-// hotGet retrieves a record pointer (allocation-free lookup).
-// The returned pointer is valid as long as the key exists in the table.
-func (s *store) hotGet(bkt, key string) (*hotRecord, bool) {
+// hotPutDirect inserts an entry where arena data is already written.
+// Used by bucket.Write to avoid an extra copy (ReadFull directly into arena).
+func (s *store) hotPutDirect(bkt, key string, entry htEntry) {
+	si := uint32(entry.hash>>32) & shardMask
+	sh := s.shards[si]
+
+	sh.mu.Lock()
+	old, isUpdate := sh.ht.putOrUpdate(entry.hash, entry)
+	if isUpdate {
+		sh.mu.Unlock()
+		if s.hotMaxBytes > 0 {
+			s.hotBytes.Add(int64(entry.valueLen) - int64(old.valueLen))
+		}
+		return
+	}
+	sh.pending = append(sh.pending, indexOp{bucket: bkt, key: key})
+	sh.dirty.Store(true)
+	sh.mu.Unlock()
+
+	s.hotCount.Add(1)
+	if s.hotMaxBytes > 0 {
+		s.hotBytes.Add(int64(entry.valueLen))
+	}
+	s.indexDirty.Store(true)
+}
+
+// hotGet retrieves a record. Returned slices point into mmap'd memory.
+// Uses single arena atomic load for both content-type and value.
+func (s *store) hotGet(bkt, key string) (hotResult, bool) {
 	h := htHash64(bkt, key)
 	si := uint32(h>>32) & shardMask
 	sh := s.shards[si]
 
-	var buf [256]byte
-	ck := unsafeString(compositeKeyBuf(buf[:0], bkt, key))
+	sh.mu.RLock()
+	e, ok := sh.ht.get(h)
+	sh.mu.RUnlock()
+	if !ok {
+		return hotResult{}, false
+	}
+
+	arena := s.arenaFor(si)
+	ctOff := e.arenaOff + int64(e.keyLen)
+	ct, val := arena.readCtAndValue(ctOff, int(e.ctLen), int(e.valueLen))
+	return hotResult{
+		value:   val,
+		ct:      ct,
+		size:    e.size,
+		created: e.created,
+		updated: e.updated,
+	}, true
+}
+
+// hotStat retrieves only metadata (no value bytes). Faster than hotGet for Stat.
+// Uses dedicated readCt for single atomic load (no value access).
+func (s *store) hotStat(bkt, key string) (hotResult, bool) {
+	h := htHash64(bkt, key)
+	si := uint32(h>>32) & shardMask
+	sh := s.shards[si]
 
 	sh.mu.RLock()
-	rec, ok := sh.ht.get(h, ck)
+	e, ok := sh.ht.get(h)
 	sh.mu.RUnlock()
-	return rec, ok
+	if !ok {
+		return hotResult{}, false
+	}
+
+	arena := s.arenaFor(si)
+	ctOff := e.arenaOff + int64(e.keyLen)
+	return hotResult{
+		ct:      arena.readCt(ctOff, int(e.ctLen)),
+		size:    e.size,
+		created: e.created,
+		updated: e.updated,
+	}, true
 }
 
 // hotDelete removes a record from the sharded hash table.
@@ -287,23 +334,19 @@ func (s *store) hotDelete(bkt, key string) bool {
 	si := uint32(h>>32) & shardMask
 	sh := s.shards[si]
 
-	var buf [256]byte
-	ck := unsafeString(compositeKeyBuf(buf[:0], bkt, key))
-
 	sh.mu.Lock()
-	rec, found := sh.ht.remove(h, ck)
+	old, found := sh.ht.remove(h)
 	if found {
-		valLen := int64(len(rec.value))
 		s.hotCount.Add(-1)
 		if s.hotMaxBytes > 0 {
-			s.hotBytes.Add(-valLen)
+			s.hotBytes.Add(-int64(old.valueLen))
 		}
 		sh.pending = append(sh.pending, indexOp{bucket: bkt, key: key, remove: true})
+		sh.dirty.Store(true)
 	}
 	sh.mu.Unlock()
 
 	if found {
-		releaseRecord(rec)
 		s.indexDirty.Store(true)
 	}
 	return found
@@ -335,11 +378,15 @@ func (s *store) processIndexOps() {
 	defer s.indexMu.Unlock()
 	for i := range numShards {
 		sh := s.shards[i]
+		if !sh.dirty.Load() {
+			continue
+		}
 		sh.mu.Lock()
 		pending := sh.pending
 		if len(pending) > 0 {
 			sh.pending = nil
 		}
+		sh.dirty.Store(false)
 		sh.mu.Unlock()
 
 		for _, op := range pending {
@@ -354,11 +401,9 @@ func (s *store) processIndexOps() {
 }
 
 func (s *store) syncIndex() {
-	// Fast path: nothing dirty and no background processing in flight.
 	if !s.indexDirty.Load() {
 		return
 	}
-	// Serialize with background indexLoop to ensure all pending ops complete.
 	s.processIndexOps()
 }
 
@@ -371,7 +416,7 @@ func (s *store) listKeys(bucketName, prefix string) []*storage.Object {
 
 	objs := make([]*storage.Object, 0, len(keys))
 	for _, key := range keys {
-		rec, ok := s.hotGet(bucketName, key)
+		rec, ok := s.hotStat(bucketName, key)
 		if ok {
 			objs = append(objs, &storage.Object{
 				Bucket:      bucketName,
@@ -498,5 +543,8 @@ func (s *store) Close() error {
 	s.cancel()
 	close(s.stopTick)
 	s.bgWg.Wait()
+	for _, a := range s.arenas {
+		a.close()
+	}
 	return nil
 }

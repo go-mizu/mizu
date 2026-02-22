@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/url"
 	"os"
 	"path"
@@ -82,6 +83,20 @@ const (
 	// small writes (e.g. 1KB benchmark workload).
 	valLogBufferSize = 8 * 1024 * 1024
 
+	// Grow the value-log buffer for medium/large write workloads (e.g. 64KB+)
+	// to reduce flush syscall frequency, while keeping the default footprint
+	// small for 1KB-focused runs.
+	valLogBufferSizeMax       = 16 * 1024 * 1024
+	valLogBufferGrowThreshold = 64 * 1024
+
+	// Direct-write very large payloads when the buffer is empty to avoid an
+	// extra memcpy into the value-log buffer.
+	valLogDirectWriteMin = 4 * 1024 * 1024
+
+	// Streaming chunk size used while copying values into the value log.
+	// Larger chunks reduce read/append loop overhead for 64KB/1MB writes.
+	valLogStreamChunkSize = 256 * 1024
+
 	// Flags byte values for leaf entry encoding.
 	flagInline   byte = 0x00
 	flagExternal byte = 0x01
@@ -120,6 +135,14 @@ const (
 	// stack scratch arrays in innerInsertAt to avoid heap churn.
 	innerScratchMaxKeys = 512
 
+	// Leaf pages (4KB) cannot hold many entries; used by splitLeafInsertRaw to
+	// avoid heap allocations for raw split references on the hot split path.
+	leafScratchMaxEntries = 160
+
+	// Most separator keys are short. Keep them inline in splitResult to reduce
+	// heap churn on recursive split propagation.
+	splitKeyInlineMax = 64
+
 	// For append/prepend-heavy workloads, avoid symmetric half-splits on edge
 	// leaves. Keeping the hot edge leaf smaller leaves more free space where the
 	// next inserts are likely to land, reducing split frequency and leaf rewrites.
@@ -139,6 +162,18 @@ const (
 	dirPerms  = 0750
 	filePerms = 0600
 )
+
+var leafPageScratchPool = sync.Pool{
+	New: func() any { return make([]byte, pageSize) },
+}
+
+var leafRawRefScratchPool = sync.Pool{
+	New: func() any { return make([]leafRawEntryRef, leafScratchMaxEntries) },
+}
+
+var leafPrefixScratchPool = sync.Pool{
+	New: func() any { return make([]int, leafScratchMaxEntries+1) },
+}
 
 // ---------------------------------------------------------------------------
 // Driver
@@ -359,47 +394,140 @@ func (s *store) writeToValueLog(data []byte) (int64, error) {
 	return s.appendValueLogBytesLocked(data)
 }
 
+func (s *store) ensureValueLogBufferCapLocked(target int) {
+	if target <= cap(s.valBuf) {
+		return
+	}
+	if target < valLogBufferSize {
+		target = valLogBufferSize
+	}
+	if target > valLogBufferSizeMax {
+		target = valLogBufferSizeMax
+	}
+	if target <= cap(s.valBuf) {
+		return
+	}
+	buf := make([]byte, len(s.valBuf), target)
+	copy(buf, s.valBuf)
+	s.valBuf = buf
+}
+
+func (s *store) maybeGrowValueLogBufferLocked(writeLen int) {
+	if writeLen < valLogBufferGrowThreshold {
+		return
+	}
+	curCap := cap(s.valBuf)
+	if curCap <= 0 {
+		curCap = valLogBufferSize
+	}
+	if curCap >= valLogBufferSizeMax {
+		return
+	}
+	target := curCap * 2
+	if target < curCap+writeLen {
+		target = curCap + writeLen
+	}
+	if target > valLogBufferSizeMax {
+		target = valLogBufferSizeMax
+	}
+	s.ensureValueLogBufferCapLocked(target)
+}
+
+// writeFixedStreamToValueLogLocked streams a known-size value directly into the
+// value-log buffer (and file flushes) without an intermediate temp-copy append.
+// Caller must hold valMu.
+func (s *store) writeFixedStreamToValueLogLocked(src io.Reader, expected int64) (int64, int64, error) {
+	if expected <= 0 {
+		return -1, 0, nil
+	}
+	if expected > 0 {
+		if expected > math.MaxInt {
+			s.maybeGrowValueLogBufferLocked(valLogBufferGrowThreshold)
+		} else {
+			s.maybeGrowValueLogBufferLocked(int(expected))
+		}
+	}
+
+	start := s.valLogPos
+	curOff := start
+	var wrote int64
+	remaining := expected
+
+	for remaining > 0 {
+		bufCap := cap(s.valBuf)
+		if bufCap <= 0 {
+			s.ensureValueLogBufferCapLocked(valLogBufferSize)
+			bufCap = cap(s.valBuf)
+		}
+		if len(s.valBuf) == 0 {
+			s.valBufStart = curOff
+		}
+		space := bufCap - len(s.valBuf)
+		if space == 0 {
+			if err := s.flushValueLogLocked(); err != nil {
+				return 0, wrote, err
+			}
+			continue
+		}
+		nmax := space
+		if remaining < int64(nmax) {
+			nmax = int(remaining)
+		}
+
+		oldLen := len(s.valBuf)
+		s.valBuf = s.valBuf[:oldLen+nmax]
+		n, err := io.ReadFull(src, s.valBuf[oldLen:oldLen+nmax])
+		if n < nmax {
+			s.valBuf = s.valBuf[:oldLen+n]
+		}
+		if n > 0 {
+			curOff += int64(n)
+			wrote += int64(n)
+			s.valLogPos += int64(n)
+		}
+		if len(s.valBuf) == bufCap {
+			if err := s.flushValueLogLocked(); err != nil {
+				return 0, wrote, err
+			}
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				break
+			}
+			return 0, wrote, fmt.Errorf("bear: stream value log read: %w", err)
+		}
+		remaining -= int64(n)
+	}
+
+	if wrote == 0 {
+		return -1, 0, nil
+	}
+	return start, wrote, nil
+}
+
 // writeStreamToValueLog streams src into the value log with a small reusable
 // buffer to avoid per-write heap allocations for small objects.
 func (s *store) writeStreamToValueLog(src io.Reader, expected int64) (int64, int64, error) {
 	s.valMu.Lock()
 	defer s.valMu.Unlock()
 
+	if expected > 0 {
+		return s.writeFixedStreamToValueLogLocked(src, expected)
+	}
+
 	bufAny := s.valTmpPool.Get()
 	var tmp []byte
 	if b, ok := bufAny.([]byte); ok && len(b) > 0 {
 		tmp = b
 	} else {
-		tmp = make([]byte, 32*1024)
+		tmp = make([]byte, valLogStreamChunkSize)
 	}
 	defer s.valTmpPool.Put(tmp)
 
 	start := s.valLogPos
 	var wrote int64
 
-	if expected >= 0 {
-		remaining := expected
-		for remaining > 0 {
-			nmax := len(tmp)
-			if remaining < int64(nmax) {
-				nmax = int(remaining)
-			}
-			n, err := io.ReadFull(src, tmp[:nmax])
-			if n > 0 {
-				if _, werr := s.appendValueLogBytesLocked(tmp[:n]); werr != nil {
-					return 0, wrote, werr
-				}
-				wrote += int64(n)
-				remaining -= int64(n)
-			}
-			if err != nil {
-				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-					break
-				}
-				return 0, wrote, fmt.Errorf("bear: stream value log read: %w", err)
-			}
-		}
-	} else {
+	if expected < 0 {
 		for {
 			n, err := src.Read(tmp)
 			if n > 0 {
@@ -431,12 +559,19 @@ func (s *store) appendValueLogBytesLocked(data []byte) (int64, error) {
 		return offset, nil
 	}
 
+	s.maybeGrowValueLogBufferLocked(len(data))
 	s.valLogPos += int64(len(data))
 	curOff := offset
 
 	for len(data) > 0 {
+		bufCap := cap(s.valBuf)
+		if bufCap <= 0 {
+			s.ensureValueLogBufferCapLocked(valLogBufferSize)
+			bufCap = cap(s.valBuf)
+		}
+
 		// Direct-write very large payloads when no buffered tail is pending.
-		if len(s.valBuf) == 0 && len(data) >= valLogBufferSize {
+		if len(s.valBuf) == 0 && len(data) >= valLogDirectWriteMin {
 			if err := s.writeValueLogDirectLocked(curOff, data); err != nil {
 				return 0, err
 			}
@@ -449,7 +584,7 @@ func (s *store) appendValueLogBytesLocked(data []byte) (int64, error) {
 			s.valBufStart = curOff
 		}
 
-		space := valLogBufferSize - len(s.valBuf)
+		space := bufCap - len(s.valBuf)
 		if space == 0 {
 			if err := s.flushValueLogLocked(); err != nil {
 				return 0, err
@@ -463,7 +598,7 @@ func (s *store) appendValueLogBytesLocked(data []byte) (int64, error) {
 		s.valBuf = append(s.valBuf, data[:n]...)
 		curOff += int64(n)
 		data = data[n:]
-		if len(s.valBuf) == valLogBufferSize {
+		if len(s.valBuf) == bufCap {
 			if err := s.flushValueLogLocked(); err != nil {
 				return 0, err
 			}
@@ -599,7 +734,7 @@ func (s *store) openValueLog() error {
 	s.valBuf = make([]byte, 0, valLogBufferSize)
 	s.valBufStart = s.valFlushed
 	s.valTmpPool = sync.Pool{
-		New: func() any { return make([]byte, 32*1024) },
+		New: func() any { return make([]byte, valLogStreamChunkSize) },
 	}
 	return nil
 }
@@ -1113,12 +1248,34 @@ func shouldStoreExternal(n int) bool {
 	return n > 0 && n > valLogThreshold
 }
 
+var (
+	contentTypeOctetStream = []byte("application/octet-stream")
+)
+
 func compositeKey(bucket, key string) []byte {
 	b := make([]byte, len(bucket)+1+len(key))
 	copy(b, bucket)
 	b[len(bucket)] = 0x00
 	copy(b[len(bucket)+1:], key)
 	return b
+}
+
+func compositeKeyWithPrefix(prefix []byte, key string) []byte {
+	b := make([]byte, len(prefix)+len(key))
+	copy(b, prefix)
+	copy(b[len(prefix):], key)
+	return b
+}
+
+func contentTypeBytes(s string) []byte {
+	switch s {
+	case "":
+		return nil
+	case "application/octet-stream":
+		return contentTypeOctetStream
+	default:
+		return []byte(s)
+	}
 }
 
 func splitCompositeKey(ck []byte) (bucket, key string) {
@@ -1315,6 +1472,174 @@ func readAllLeafEntries(pg []byte) []*leafEntry {
 	return entries
 }
 
+type leafRawEntryRef struct {
+	key  []byte
+	head uint32
+	raw  []byte
+	size int
+}
+
+func leafRawRefAtCount(pg []byte, count, idx int) (leafRawEntryRef, bool) {
+	if idx < 0 || idx >= count {
+		return leafRawEntryRef{}, false
+	}
+	slotOff := leafHeaderSize + idx*leafSlotSize
+	head := binary.BigEndian.Uint32(pg[slotOff:])
+	entryOff := int(binary.LittleEndian.Uint16(pg[slotOff+4:]))
+	if entryOff < 0 || entryOff+2 > len(pg) {
+		return leafRawEntryRef{}, false
+	}
+
+	off := entryOff
+	keyLen := int(binary.LittleEndian.Uint16(pg[off:]))
+	off += 2
+	if off+keyLen+2 > len(pg) {
+		return leafRawEntryRef{}, false
+	}
+	key := pg[off : off+keyLen]
+	off += keyLen
+
+	ctLen := int(binary.LittleEndian.Uint16(pg[off:]))
+	off += 2
+	if off+ctLen+1 > len(pg) {
+		return leafRawEntryRef{}, false
+	}
+	off += ctLen
+
+	flags := pg[off]
+	off++
+	if flags == flagExternal {
+		off += 16
+	} else {
+		if off+4 > len(pg) {
+			return leafRawEntryRef{}, false
+		}
+		valLen := int(binary.LittleEndian.Uint32(pg[off:]))
+		off += 4 + valLen
+	}
+	off += 16
+	if off > len(pg) {
+		return leafRawEntryRef{}, false
+	}
+
+	raw := pg[entryOff:off]
+	return leafRawEntryRef{
+		key:  key,
+		head: head,
+		raw:  raw,
+		size: len(raw),
+	}, true
+}
+
+func leafRawRefAt(pg []byte, idx int) (leafRawEntryRef, bool) {
+	count := int(binary.LittleEndian.Uint16(pg[1:3]))
+	return leafRawRefAtCount(pg, count, idx)
+}
+
+func leafRawEntriesDataSize(entries []leafRawEntryRef) int {
+	dataSize := 0
+	for i := 0; i < len(entries); i++ {
+		dataSize += entries[i].size
+	}
+	return dataSize
+}
+
+func leafRawEntriesFitData(count, dataSize int) bool {
+	if count < 0 || dataSize < 0 {
+		return false
+	}
+	slotsSize := leafHeaderSize + count*leafSlotSize
+	return slotsSize+dataSize <= pageSize
+}
+
+func getLeafScratchPage() []byte {
+	if v := leafPageScratchPool.Get(); v != nil {
+		if b, ok := v.([]byte); ok && len(b) >= pageSize {
+			return b[:pageSize]
+		}
+	}
+	return make([]byte, pageSize)
+}
+
+func putLeafScratchPage(b []byte) {
+	if cap(b) < pageSize {
+		return
+	}
+	leafPageScratchPool.Put(b[:pageSize])
+}
+
+func getLeafRawRefScratch() []leafRawEntryRef {
+	if v := leafRawRefScratchPool.Get(); v != nil {
+		if b, ok := v.([]leafRawEntryRef); ok && len(b) >= leafScratchMaxEntries {
+			return b[:leafScratchMaxEntries]
+		}
+	}
+	return make([]leafRawEntryRef, leafScratchMaxEntries)
+}
+
+func putLeafRawRefScratch(b []leafRawEntryRef, used int) {
+	if cap(b) < leafScratchMaxEntries {
+		return
+	}
+	if used > len(b) {
+		used = len(b)
+	}
+	for i := 0; i < used; i++ {
+		b[i] = leafRawEntryRef{}
+	}
+	leafRawRefScratchPool.Put(b[:leafScratchMaxEntries])
+}
+
+func getLeafPrefixScratch() []int {
+	if v := leafPrefixScratchPool.Get(); v != nil {
+		if b, ok := v.([]int); ok && len(b) >= leafScratchMaxEntries+1 {
+			return b[:leafScratchMaxEntries+1]
+		}
+	}
+	return make([]int, leafScratchMaxEntries+1)
+}
+
+func putLeafPrefixScratch(b []int) {
+	if cap(b) < leafScratchMaxEntries+1 {
+		return
+	}
+	leafPrefixScratchPool.Put(b[:leafScratchMaxEntries+1])
+}
+
+func leafRawEntriesFit(entries []leafRawEntryRef) bool {
+	return leafRawEntriesFitData(len(entries), leafRawEntriesDataSize(entries))
+}
+
+func writeLeafPageRawSortedSized(pg []byte, entries []leafRawEntryRef, dataSize int, nextLeaf, prevLeaf uint32) bool {
+	if !leafRawEntriesFitData(len(entries), dataSize) {
+		return false
+	}
+
+	pg[0] = pageTypeLeaf
+	binary.LittleEndian.PutUint16(pg[1:], uint16(len(entries)))
+	binary.LittleEndian.PutUint32(pg[5:], nextLeaf)
+	binary.LittleEndian.PutUint32(pg[9:], prevLeaf)
+
+	freeOff := pageSize
+	slotOff := leafHeaderSize
+	for i := 0; i < len(entries); i++ {
+		e := &entries[i]
+		freeOff -= e.size
+		copy(pg[freeOff:], e.raw)
+
+		binary.BigEndian.PutUint32(pg[slotOff:], e.head)
+		binary.LittleEndian.PutUint16(pg[slotOff+4:], uint16(freeOff))
+		slotOff += leafSlotSize
+	}
+
+	binary.LittleEndian.PutUint16(pg[3:], uint16(freeOff))
+	return true
+}
+
+func writeLeafPageRawSorted(pg []byte, entries []leafRawEntryRef, nextLeaf, prevLeaf uint32) bool {
+	return writeLeafPageRawSortedSized(pg, entries, leafRawEntriesDataSize(entries), nextLeaf, prevLeaf)
+}
+
 func writeLeafPageSorted(pg []byte, entries []*leafEntry, nextLeaf, prevLeaf uint32) bool {
 	// Check if everything fits
 	slotsSize := leafHeaderSize + len(entries)*leafSlotSize
@@ -1450,8 +1775,11 @@ func leafSearch(pg []byte, key []byte) (int, bool) {
 			searchHi = mid
 		}
 	}
-	if searchLo < hi && bytes.Equal(leafEntryKeyAt(pg, searchLo), key) {
-		return searchLo, true
+	if searchLo < hi {
+		k := leafEntryKeyAt(pg, searchLo)
+		if bytes.Equal(k, key) {
+			return searchLo, true
+		}
 	}
 	return searchLo, false
 }
@@ -1862,6 +2190,15 @@ func readAllInnerKeysChildren(pg []byte) ([][]byte, []uint32) {
 	return keys, children
 }
 
+func readAllInnerKeyViews(pg []byte) [][]byte {
+	count := int(binary.LittleEndian.Uint16(pg[1:3]))
+	keys := make([][]byte, count)
+	for i := 0; i < count; i++ {
+		keys[i] = innerKeySliceAt(pg, count, i)
+	}
+	return keys
+}
+
 func leafEntriesFit(entries []*leafEntry) bool {
 	slotsSize := leafHeaderSize + len(entries)*leafSlotSize
 	dataSize := 0
@@ -1933,17 +2270,222 @@ func chooseLeafSplitIndex(entries []*leafEntry, insertIdx int, nextLeaf, prevLea
 	return mid
 }
 
-func shortestSeparator(leftMax, rightMin []byte) []byte {
-	if len(rightMin) == 0 || bytes.Compare(leftMax, rightMin) >= 0 {
-		return copyBytes(rightMin)
+func chooseLeafSplitIndexRaw(entries []leafRawEntryRef, prefixData []int, insertIdx int, nextLeaf, prevLeaf uint32) int {
+	n := len(entries)
+	mid := clampLeafSplitIndex(n, n/2)
+	if n <= 2*minLeafEntries || leafEdgeSplitBiasDen <= 0 {
+		return mid
 	}
-	for n := 1; n <= len(rightMin); n++ {
-		cand := rightMin[:n]
-		if bytes.Compare(leftMax, cand) < 0 {
-			return copyBytes(cand)
+	totalData := prefixData[n]
+
+	try := func(cand int) int {
+		cand = clampLeafSplitIndex(n, cand)
+		if cand == mid {
+			return mid
 		}
+		leftData := prefixData[cand]
+		rightData := totalData - leftData
+		if !leafRawEntriesFitData(cand, leftData) || !leafRawEntriesFitData(n-cand, rightData) {
+			return mid
+		}
+		return cand
 	}
-	return copyBytes(rightMin)
+
+	if nextLeaf == 0 && insertIdx == n-1 && n >= 16 {
+		return try(n * leafEdgeSplitBiasNum / leafEdgeSplitBiasDen)
+	}
+	if prevLeaf == 0 && insertIdx == 0 && n >= 16 {
+		return try(n - (n * leafEdgeSplitBiasNum / leafEdgeSplitBiasDen))
+	}
+	return mid
+}
+
+func buildLeafRawRefsAppend(pg []byte, count int, newRef leafRawEntryRef, dst []leafRawEntryRef) ([]leafRawEntryRef, int, bool) {
+	if len(dst) < count+1 {
+		return nil, 0, false
+	}
+	refs := dst[:count+1]
+	totalData := 0
+	for i := 0; i < count; i++ {
+		ref, ok := leafRawRefAtCount(pg, count, i)
+		if !ok {
+			return nil, 0, false
+		}
+		refs[i] = ref
+		totalData += ref.size
+	}
+	refs[count] = newRef
+	totalData += newRef.size
+	return refs, totalData, true
+}
+
+func buildLeafRawRefsPrepend(pg []byte, count int, newRef leafRawEntryRef, dst []leafRawEntryRef) ([]leafRawEntryRef, int, bool) {
+	if len(dst) < count+1 {
+		return nil, 0, false
+	}
+	refs := dst[:count+1]
+	totalData := newRef.size
+	refs[0] = newRef
+	for i := 0; i < count; i++ {
+		ref, ok := leafRawRefAtCount(pg, count, i)
+		if !ok {
+			return nil, 0, false
+		}
+		refs[i+1] = ref
+		totalData += ref.size
+	}
+	return refs, totalData, true
+}
+
+func buildLeafRawRefsGeneral(pg []byte, count, idx int, newRef leafRawEntryRef, dst []leafRawEntryRef) ([]leafRawEntryRef, int, bool) {
+	if len(dst) < count+1 {
+		return nil, 0, false
+	}
+	refs := dst[:count+1]
+	totalData := 0
+	for i := 0; i < count+1; i++ {
+		if i == idx {
+			refs[i] = newRef
+			totalData += newRef.size
+			continue
+		}
+		oldIdx := i
+		if i > idx {
+			oldIdx--
+		}
+		ref, ok := leafRawRefAtCount(pg, count, oldIdx)
+		if !ok {
+			return nil, 0, false
+		}
+		refs[i] = ref
+		totalData += ref.size
+	}
+	return refs, totalData, true
+}
+
+func buildLeafRawRefsFromPage(pg []byte, dst []leafRawEntryRef) ([]leafRawEntryRef, int, bool) {
+	count := int(binary.LittleEndian.Uint16(pg[1:3]))
+	if len(dst) < count {
+		return nil, 0, false
+	}
+	refs := dst[:count]
+	totalData := 0
+	for i := 0; i < count; i++ {
+		ref, ok := leafRawRefAtCount(pg, count, i)
+		if !ok {
+			return nil, 0, false
+		}
+		refs[i] = ref
+		totalData += ref.size
+	}
+	return refs, totalData, true
+}
+
+func splitLeafInsertRaw(pg, newPg []byte, pageID, newID uint32, idx int, entry *leafEntry, nextLeaf, prevLeaf uint32) ([]byte, bool) {
+	count := int(binary.LittleEndian.Uint16(pg[1:3]))
+	if idx < 0 || idx > count {
+		return nil, false
+	}
+	if count+1 > leafScratchMaxEntries {
+		return nil, false
+	}
+
+	var encodedBuf [pageSize]byte
+	n := entry.writeEntry(encodedBuf[:])
+	if n <= 0 || n > len(encodedBuf) {
+		return nil, false
+	}
+	encoded := encodedBuf[:n]
+
+	refsScratch := getLeafRawRefScratch()
+	defer putLeafRawRefScratch(refsScratch, count+1)
+	refs := refsScratch[:0]
+	newRef := leafRawEntryRef{
+		key:  entry.key,
+		head: keyHead(entry.key),
+		raw:  encoded,
+		size: len(encoded),
+	}
+	var (
+		totalData int
+		ok        bool
+	)
+	switch {
+	case idx == count && nextLeaf == 0:
+		refs, totalData, ok = buildLeafRawRefsAppend(pg, count, newRef, refsScratch)
+	case idx == 0 && prevLeaf == 0:
+		refs, totalData, ok = buildLeafRawRefsPrepend(pg, count, newRef, refsScratch)
+	default:
+		refs, totalData, ok = buildLeafRawRefsGeneral(pg, count, idx, newRef, refsScratch)
+	}
+	if !ok {
+		return nil, false
+	}
+	if len(refs) != count+1 {
+		return nil, false
+	}
+
+	prefixScratch := getLeafPrefixScratch()
+	defer putLeafPrefixScratch(prefixScratch)
+	prefixData := prefixScratch[:len(refs)+1]
+	for i, r := range refs {
+		prefixData[i+1] = prefixData[i] + r.size
+	}
+	if prefixData[len(refs)] != totalData {
+		totalData = prefixData[len(refs)]
+	}
+
+	mid := chooseLeafSplitIndexRaw(refs, prefixData, idx, nextLeaf, prevLeaf)
+	if mid <= 0 || mid >= len(refs) {
+		return nil, false
+	}
+	left := refs[:mid]
+	right := refs[mid:]
+	leftData := prefixData[mid]
+	rightData := totalData - leftData
+	if !leafRawEntriesFitData(len(left), leftData) || !leafRawEntriesFitData(len(right), rightData) {
+		return nil, false
+	}
+	// splitKey must be owned before we rewrite/copy source-page-backed entries.
+	splitKey := shortestSeparator(left[len(left)-1].key, right[0].key)
+
+	leftTmp := getLeafScratchPage()
+	defer putLeafScratchPage(leftTmp)
+	if !writeLeafPageRawSortedSized(leftTmp, left, leftData, newID, prevLeaf) {
+		return nil, false
+	}
+	// Write right while source-page-backed raw refs are intact, then copy the
+	// rendered left page back into pg.
+	if !writeLeafPageRawSortedSized(newPg, right, rightData, nextLeaf, pageID) {
+		return nil, false
+	}
+	copy(pg, leftTmp[:])
+	return splitKey, true
+}
+
+func shortestSeparatorView(leftMax, rightMin []byte) []byte {
+	if len(rightMin) == 0 {
+		return rightMin
+	}
+	if bytes.Compare(leftMax, rightMin) >= 0 {
+		return rightMin
+	}
+	n := 0
+	lim := len(leftMax)
+	if lim > len(rightMin) {
+		lim = len(rightMin)
+	}
+	for n < lim && leftMax[n] == rightMin[n] {
+		n++
+	}
+	if n < len(rightMin) {
+		return rightMin[:n+1]
+	}
+	return rightMin
+}
+
+func shortestSeparator(leftMax, rightMin []byte) []byte {
+	return copyBytes(shortestSeparatorView(leftMax, rightMin))
 }
 
 func (s *store) subtreeMinKey(pageID uint32) []byte {
@@ -1955,13 +2497,7 @@ func (s *store) subtreeMinKey(pageID uint32) []byte {
 			if count == 0 {
 				return nil
 			}
-			slotOff := leafHeaderSize
-			entryOff := binary.LittleEndian.Uint16(pg[slotOff+4:])
-			e := readLeafEntry(pg, entryOff)
-			if e == nil {
-				return nil
-			}
-			return e.key
+			return leafEntryKeyAt(pg, 0)
 		case pageTypeInner, pageTypeInnerHint:
 			pageID = readInnerChild(pg, 0)
 		default:
@@ -1980,13 +2516,7 @@ func (s *store) subtreeMaxKey(pageID uint32) []byte {
 			if count == 0 {
 				return nil
 			}
-			slotOff := leafHeaderSize + (count-1)*leafSlotSize
-			entryOff := binary.LittleEndian.Uint16(pg[slotOff+4:])
-			e := readLeafEntry(pg, entryOff)
-			if e == nil {
-				return nil
-			}
-			return e.key
+			return leafEntryKeyAt(pg, count-1)
 		case pageTypeInner, pageTypeInnerHint:
 			count := int(binary.LittleEndian.Uint16(pg[1:3]))
 			pageID = readInnerChild(pg, count)
@@ -2014,6 +2544,18 @@ func (s *store) separatorForChildren(leftChild, rightChild uint32, fallback []by
 type splitResult struct {
 	newPageID uint32
 	splitKey  []byte
+	inlineKey [splitKeyInlineMax]byte
+}
+
+func newSplitResult(newPageID uint32, splitKey []byte) *splitResult {
+	sr := &splitResult{newPageID: newPageID}
+	if len(splitKey) <= len(sr.inlineKey) {
+		copy(sr.inlineKey[:], splitKey)
+		sr.splitKey = sr.inlineKey[:len(splitKey)]
+		return sr
+	}
+	sr.splitKey = copyBytes(splitKey)
+	return sr
 }
 
 // btreeInsert inserts a key-value pair into the B-tree. Returns a splitResult if
@@ -2073,7 +2615,13 @@ func (s *store) insertIntoLeaf(pageID uint32, entry *leafEntry) (*splitResult, e
 	idx, found := leafSearch(pg, entry.key)
 
 	if found {
-		// Update existing entry — read all, replace, rewrite
+		// Fast path: in-place overwrite when the new encoded entry fits in the
+		// existing slot payload.
+		if s.leafReplaceAtInPlace(pg, idx, entry) {
+			return nil, nil
+		}
+
+		// Fallback: read all, replace, rewrite
 		entries := readAllLeafEntries(pg)
 		for _, e := range entries {
 			if bytes.Equal(e.key, entry.key) {
@@ -2109,18 +2657,8 @@ func (s *store) insertIntoLeaf(pageID uint32, entry *leafEntry) (*splitResult, e
 		}
 	}
 
-	// Need to split — read all entries before allocating (which may remap)
-	entries := readAllLeafEntries(pg)
 	nextLeaf := binary.LittleEndian.Uint32(pg[5:])
 	prevLeaf := binary.LittleEndian.Uint32(pg[9:])
-
-	entries = append(entries, nil)
-	copy(entries[idx+1:], entries[idx:])
-	entries[idx] = entry
-
-	mid := chooseLeafSplitIndex(entries, idx, nextLeaf, prevLeaf)
-	left := entries[:mid]
-	right := entries[mid:]
 
 	// Allocate new page for right half — this may remap!
 	newID, err := s.allocPage()
@@ -2131,15 +2669,30 @@ func (s *store) insertIntoLeaf(pageID uint32, entry *leafEntry) (*splitResult, e
 	// Re-read page references after potential remap
 	pg = s.page(pageID)
 
-	// Write left half to current page
-	if !writeLeafPageSorted(pg, left, newID, prevLeaf) {
-		return nil, fmt.Errorf("bear: left leaf write failed")
-	}
-
-	// Write right half to new page
 	newPg := s.page(newID)
-	if !writeLeafPageSorted(newPg, right, nextLeaf, pageID) {
-		return nil, fmt.Errorf("bear: right leaf write failed")
+
+	splitKey, ok := splitLeafInsertRaw(pg, newPg, pageID, newID, idx, entry, nextLeaf, prevLeaf)
+	if !ok {
+		// Fallback: decode + rebuild (slower but robust).
+		entries := readAllLeafEntries(pg)
+		entries = append(entries, nil)
+		copy(entries[idx+1:], entries[idx:])
+		entries[idx] = entry
+
+		mid := chooseLeafSplitIndex(entries, idx, nextLeaf, prevLeaf)
+		left := entries[:mid]
+		right := entries[mid:]
+
+		// Write left half to current page
+		if !writeLeafPageSorted(pg, left, newID, prevLeaf) {
+			return nil, fmt.Errorf("bear: left leaf write failed")
+		}
+
+		// Write right half to new page
+		if !writeLeafPageSorted(newPg, right, nextLeaf, pageID) {
+			return nil, fmt.Errorf("bear: right leaf write failed")
+		}
+		splitKey = shortestSeparatorView(left[len(left)-1].key, right[0].key)
 	}
 
 	// Update the old next leaf's prevLeaf pointer
@@ -2148,10 +2701,7 @@ func (s *store) insertIntoLeaf(pageID uint32, entry *leafEntry) (*splitResult, e
 		binary.LittleEndian.PutUint32(nextPg[9:], newID) // prevLeaf
 	}
 
-	return &splitResult{
-		newPageID: newID,
-		splitKey:  shortestSeparator(left[len(left)-1].key, right[0].key),
-	}, nil
+	return newSplitResult(newID, splitKey), nil
 }
 
 // leafInsertAt inserts entry at position idx in the leaf page.
@@ -2179,6 +2729,43 @@ func (s *store) leafInsertAt(pg []byte, idx int, entry *leafEntry) {
 	// Update header
 	binary.LittleEndian.PutUint16(pg[1:], uint16(count+1))
 	binary.LittleEndian.PutUint16(pg[3:], uint16(freeOff))
+}
+
+func (s *store) leafReplaceAtInPlace(pg []byte, idx int, entry *leafEntry) bool {
+	count := int(binary.LittleEndian.Uint16(pg[1:3]))
+	if idx < 0 || idx >= count {
+		return false
+	}
+	slotOff := leafHeaderSize + idx*leafSlotSize
+	entryOff := binary.LittleEndian.Uint16(pg[slotOff+4:])
+	oldSize := leafEntryEncodedSize(pg, entryOff)
+	if oldSize <= 0 {
+		return false
+	}
+	newSize := entry.entrySize()
+	if newSize > oldSize {
+		return false
+	}
+	off := int(entryOff)
+	if off < 0 || off+oldSize > len(pg) {
+		return false
+	}
+	if n := entry.writeEntry(pg[off : off+oldSize]); n != newSize {
+		return false
+	}
+	// If the replaced entry was the current low-watermark payload, shrinking it
+	// can immediately expand the contiguous free space.
+	if newSize < oldSize {
+		freeOff := int(binary.LittleEndian.Uint16(pg[3:5]))
+		if off == freeOff {
+			freeOff += oldSize - newSize
+			if freeOff > pageSize {
+				freeOff = pageSize
+			}
+			binary.LittleEndian.PutUint16(pg[3:], uint16(freeOff))
+		}
+	}
+	return true
 }
 
 func (s *store) leafDeleteAt(pg []byte, idx int) bool {
@@ -2209,7 +2796,73 @@ func (s *store) leafDeleteAt(pg []byte, idx int) bool {
 	return true
 }
 
+func compactLeafPageRaw(pg []byte) bool {
+	count := int(binary.LittleEndian.Uint16(pg[1:3]))
+	if count > leafScratchMaxEntries {
+		return false
+	}
+	if count == 0 {
+		nextLeaf := binary.LittleEndian.Uint32(pg[5:])
+		prevLeaf := binary.LittleEndian.Uint32(pg[9:])
+		return writeLeafPageRawSortedSized(pg, nil, 0, nextLeaf, prevLeaf)
+	}
+	refsScratch := getLeafRawRefScratch()
+	defer putLeafRawRefScratch(refsScratch, count)
+	refs, dataSize, ok := buildLeafRawRefsFromPage(pg, refsScratch)
+	if !ok {
+		return false
+	}
+	nextLeaf := binary.LittleEndian.Uint32(pg[5:])
+	prevLeaf := binary.LittleEndian.Uint32(pg[9:])
+	tmp := getLeafScratchPage()
+	defer putLeafScratchPage(tmp)
+	if !writeLeafPageRawSortedSized(tmp, refs, dataSize, nextLeaf, prevLeaf) {
+		return false
+	}
+	copy(pg, tmp)
+	return true
+}
+
+func mergeLeafPagesRaw(leftPg, rightPg []byte, nextLeaf, prevLeaf uint32) bool {
+	leftCount := int(binary.LittleEndian.Uint16(leftPg[1:3]))
+	rightCount := int(binary.LittleEndian.Uint16(rightPg[1:3]))
+	totalCount := leftCount + rightCount
+	if totalCount > leafScratchMaxEntries {
+		return false
+	}
+
+	refsScratch := getLeafRawRefScratch()
+	defer putLeafRawRefScratch(refsScratch, totalCount)
+	refs := refsScratch[:0]
+	var totalData int
+	var ok bool
+	refs, totalData, ok = buildLeafRawRefsFromPage(leftPg, refsScratch)
+	if !ok {
+		return false
+	}
+	_, rightData, ok := buildLeafRawRefsFromPage(rightPg, refsScratch[leftCount:])
+	if !ok {
+		return false
+	}
+	refs = refsScratch[:totalCount]
+	totalData += rightData
+	if !leafRawEntriesFitData(totalCount, totalData) {
+		return false
+	}
+
+	tmp := getLeafScratchPage()
+	defer putLeafScratchPage(tmp)
+	if !writeLeafPageRawSortedSized(tmp, refs, totalData, nextLeaf, prevLeaf) {
+		return false
+	}
+	copy(leftPg, tmp)
+	return true
+}
+
 func (s *store) compactLeafPage(pg []byte) bool {
+	if compactLeafPageRaw(pg) {
+		return true
+	}
 	entries := readAllLeafEntries(pg)
 	nextLeaf := binary.LittleEndian.Uint32(pg[5:])
 	prevLeaf := binary.LittleEndian.Uint32(pg[9:])
@@ -2429,15 +3082,6 @@ func (s *store) tryMergeLeafChildrenAt(parentID uint32, leftIdx int) bool {
 		return false
 	}
 
-	leftEntries := readAllLeafEntries(leftPg)
-	rightEntries := readAllLeafEntries(rightPg)
-	mergedEntries := make([]*leafEntry, 0, len(leftEntries)+len(rightEntries))
-	mergedEntries = append(mergedEntries, leftEntries...)
-	mergedEntries = append(mergedEntries, rightEntries...)
-	if !leafEntriesFit(mergedEntries) {
-		return false
-	}
-
 	newKeys := make([][]byte, 0, len(keys)-1)
 	newKeys = append(newKeys, keys[:leftIdx]...)
 	newKeys = append(newKeys, keys[leftIdx+1:]...)
@@ -2450,8 +3094,18 @@ func (s *store) tryMergeLeafChildrenAt(parentID uint32, leftIdx int) bool {
 
 	nextLeaf := binary.LittleEndian.Uint32(rightPg[5:])
 	prevLeaf := binary.LittleEndian.Uint32(leftPg[9:])
-	if !writeLeafPageSorted(leftPg, mergedEntries, nextLeaf, prevLeaf) {
-		return false
+	if !mergeLeafPagesRaw(leftPg, rightPg, nextLeaf, prevLeaf) {
+		leftEntries := readAllLeafEntries(leftPg)
+		rightEntries := readAllLeafEntries(rightPg)
+		mergedEntries := make([]*leafEntry, 0, len(leftEntries)+len(rightEntries))
+		mergedEntries = append(mergedEntries, leftEntries...)
+		mergedEntries = append(mergedEntries, rightEntries...)
+		if !leafEntriesFit(mergedEntries) {
+			return false
+		}
+		if !writeLeafPageSorted(leftPg, mergedEntries, nextLeaf, prevLeaf) {
+			return false
+		}
 	}
 	if nextLeaf != 0 {
 		nextPg := s.page(nextLeaf)
@@ -2598,7 +3252,10 @@ func (s *store) Bucket(name string) storage.Bucket {
 		name = "default"
 	}
 	name = safeBucketName(name)
-	return &bucket{store: s, name: name}
+	prefix := make([]byte, len(name)+1)
+	copy(prefix, name)
+	prefix[len(name)] = 0
+	return &bucket{store: s, name: name, prefix: prefix}
 }
 
 func (s *store) Buckets(ctx context.Context, limit, offset int, opts storage.Options) (storage.BucketIter, error) {
@@ -2801,6 +3458,8 @@ func (s *store) Close() error {
 type bucket struct {
 	store *store
 	name  string
+	// Cached composite-key prefix: "<bucket>\x00".
+	prefix []byte
 }
 
 var (
@@ -2809,6 +3468,10 @@ var (
 )
 
 func (b *bucket) Name() string { return b.name }
+
+func (b *bucket) compositeKey(rel string) []byte {
+	return compositeKeyWithPrefix(b.prefix, rel)
+}
 
 func (b *bucket) Features() storage.Features {
 	return b.store.Features()
@@ -2843,9 +3506,10 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 		return nil, err
 	}
 
-	ck := compositeKey(b.name, relKey)
+	ck := b.compositeKey(relKey)
 	now := time.Now()
-	ctBytes := []byte(contentType)
+	nowUnix := now.UnixNano()
+	ctBytes := contentTypeBytes(contentType)
 
 	var (
 		data      []byte
@@ -2865,8 +3529,8 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 			entry = &leafEntry{
 				key:         ck,
 				contentType: ctBytes,
-				created:     now.UnixNano(),
-				updated:     now.UnixNano(),
+				created:     nowUnix,
+				updated:     nowUnix,
 				valOffset:   offset,
 				valLen:      wrote,
 			}
@@ -2875,8 +3539,8 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 				key:         ck,
 				contentType: ctBytes,
 				value:       nil,
-				created:     now.UnixNano(),
-				updated:     now.UnixNano(),
+				created:     nowUnix,
+				updated:     nowUnix,
 				valOffset:   -1,
 			}
 		}
@@ -2903,7 +3567,7 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 
 		// Write large values to the value log before acquiring the main lock.
 		var err error
-		entry, err = b.store.prepareEntry(ck, ctBytes, data, now.UnixNano(), now.UnixNano())
+		entry, err = b.store.prepareEntry(ck, ctBytes, data, nowUnix, nowUnix)
 		if err != nil {
 			return nil, fmt.Errorf("bear: prepare entry: %w", err)
 		}
@@ -2934,7 +3598,7 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 
 	return &storage.Object{
 		Bucket:      b.name,
-		Key:         relToKey(relKey),
+		Key:         relKey,
 		Size:        actualLen,
 		ContentType: contentType,
 		Created:     time.Unix(0, entry.created),
@@ -2952,7 +3616,7 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 		return nil, nil, err
 	}
 
-	ck := compositeKey(b.name, relKey)
+	ck := b.compositeKey(relKey)
 
 	b.store.mu.RLock()
 	entry := b.store.btreeGet(ck)
@@ -2969,7 +3633,7 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 
 	obj := &storage.Object{
 		Bucket:      b.name,
-		Key:         relToKey(relKey),
+		Key:         relKey,
 		Size:        fullSize,
 		ContentType: string(entry.contentType),
 		Created:     time.Unix(0, entry.created),
@@ -3026,7 +3690,7 @@ func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*s
 		return nil, err
 	}
 
-	ck := compositeKey(b.name, relKey)
+	ck := b.compositeKey(relKey)
 
 	b.store.mu.RLock()
 	entry := b.store.btreeGet(ck)
@@ -3034,7 +3698,7 @@ func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*s
 
 	if entry == nil {
 		// Check if this is a directory prefix
-		prefix := compositeKey(b.name, relKey+"/")
+		prefix := b.compositeKey(relKey + "/")
 		isDir := false
 		b.store.mu.RLock()
 		b.store.btreeScan(prefix, func(e *leafEntry) bool {
@@ -3048,7 +3712,7 @@ func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*s
 		if isDir {
 			return &storage.Object{
 				Bucket: b.name,
-				Key:    relToKey(relKey),
+				Key:    relKey,
 				IsDir:  true,
 			}, nil
 		}
@@ -3063,7 +3727,7 @@ func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*s
 
 	return &storage.Object{
 		Bucket:      b.name,
-		Key:         relToKey(relKey),
+		Key:         relKey,
 		Size:        sz,
 		ContentType: string(entry.contentType),
 		Created:     time.Unix(0, entry.created),
@@ -3091,7 +3755,7 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 	}()
 
 	if recursive {
-		prefix := compositeKey(b.name, relKey)
+		prefix := b.compositeKey(relKey)
 		var toDelete [][]byte
 
 		// Collect keys to delete (exact match + prefix/)
@@ -3100,7 +3764,7 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 			toDelete = append(toDelete, copyBytes(prefix))
 		}
 
-		dirPrefix := compositeKey(b.name, relKey+"/")
+		dirPrefix := b.compositeKey(relKey + "/")
 		b.store.btreeScan(dirPrefix, func(e *leafEntry) bool {
 			if bytes.HasPrefix(e.key, dirPrefix) {
 				toDelete = append(toDelete, copyBytes(e.key))
@@ -3124,7 +3788,7 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 		return nil
 	}
 
-	ck := compositeKey(b.name, relKey)
+	ck := b.compositeKey(relKey)
 	if !b.store.btreeDelete(ck) {
 		return storage.ErrNotExist
 	}
@@ -3160,7 +3824,7 @@ func (b *bucket) Copy(ctx context.Context, dstKey string, srcBucket, srcKey stri
 		return nil, storage.ErrNotExist
 	}
 
-	dstCK := compositeKey(b.name, dstRel)
+	dstCK := b.compositeKey(dstRel)
 	now := time.Now()
 
 	var (
@@ -3239,7 +3903,7 @@ func (b *bucket) Move(ctx context.Context, dstKey string, srcBucket, srcKey stri
 		return nil, storage.ErrNotExist
 	}
 
-	dstCK := compositeKey(b.name, dstRel)
+	dstCK := b.compositeKey(dstRel)
 	now := time.Now()
 
 	var (
@@ -3312,7 +3976,7 @@ func (b *bucket) List(ctx context.Context, prefix string, limit, offset int, opt
 		return nil, err
 	}
 
-	scanPrefix := compositeKey(b.name, relPrefix)
+	scanPrefix := b.compositeKey(relPrefix)
 
 	var objects []*storage.Object
 	seenDirs := make(map[string]bool)
@@ -3763,7 +4427,7 @@ func (b *bucket) CompleteMultipart(ctx context.Context, mu *storage.MultipartUpl
 	}
 
 	// Write to B-tree
-	ck := compositeKey(b.name, st.key)
+	ck := b.compositeKey(st.key)
 	now := time.Now()
 
 	// Write large values to the value log before acquiring the main lock.
@@ -3882,10 +4546,45 @@ func boolOpt(opts storage.Options, key string) bool {
 	return ok && b
 }
 
+// fastCleanRelPath returns true when s is already a canonical relative path:
+// non-empty, no backslashes, no empty segments, no "."/".." segments, and no
+// leading/trailing slash. This lets hot paths avoid path.Clean + strings.Split.
+func fastCleanRelPath(s string) bool {
+	if s == "" {
+		return false
+	}
+	if s[0] == '/' || s[len(s)-1] == '/' {
+		return false
+	}
+	segStart := 0
+	for i := 0; i <= len(s); i++ {
+		if i == len(s) || s[i] == '/' {
+			if i == segStart {
+				return false // empty segment / duplicate slash
+			}
+			if i-segStart == 1 && s[segStart] == '.' {
+				return false
+			}
+			if i-segStart == 2 && s[segStart] == '.' && s[segStart+1] == '.' {
+				return false
+			}
+			segStart = i + 1
+			continue
+		}
+		if s[i] == '\\' {
+			return false
+		}
+	}
+	return true
+}
+
 func cleanKey(key string) (string, error) {
 	key = strings.TrimSpace(key)
 	if key == "" {
 		return "", errors.New("bear: empty key")
+	}
+	if fastCleanRelPath(key) {
+		return key, nil
 	}
 	key = strings.ReplaceAll(key, "\\", "/")
 	key = strings.TrimPrefix(key, "/")
@@ -3908,6 +4607,9 @@ func cleanPrefix(prefix string) (string, error) {
 	prefix = strings.TrimSpace(prefix)
 	if prefix == "" {
 		return "", nil
+	}
+	if fastCleanRelPath(prefix) {
+		return prefix, nil
 	}
 	prefix = strings.ReplaceAll(prefix, "\\", "/")
 	prefix = strings.TrimPrefix(prefix, "/")

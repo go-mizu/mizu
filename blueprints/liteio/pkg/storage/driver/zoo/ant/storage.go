@@ -1524,7 +1524,7 @@ func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*s
 
 	ck := compositeKey(b.name, relKey)
 	keyHash := fnv1a(ck)
-	shard := b.store.shardForHash(keyHash & shardMask)
+	shard := b.store.shardForHash(keyHash)
 
 	shard.mu.RLock()
 	leaf := artSearch(shard.root, ck, keyHash)
@@ -1631,29 +1631,29 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 			item.shard.mu.Lock()
 			artDelete(&item.shard.root, item.key, item.keyHash)
 			item.shard.size--
+			_ = item.shard.vlog.appendDelete(item.key, now)
 			item.shard.mu.Unlock()
-			_ = b.store.appendWAL(walOpDelete, item.key, 0, 0, now)
 		}
 		return nil
 	}
 
 	ck := compositeKey(b.name, relKey)
 	keyHash := fnv1a(ck)
-	shard := b.store.shardForHash(keyHash & shardMask)
+	shard := b.store.shardForHash(keyHash)
 
+	now := time.Now().UnixNano()
 	shard.mu.Lock()
 	found := artDelete(&shard.root, ck, keyHash)
 	if found {
 		shard.size--
+		_ = shard.vlog.appendDelete(ck, now)
 	}
 	shard.mu.Unlock()
 
 	if !found {
 		return storage.ErrNotExist
 	}
-
-	now := time.Now().UnixNano()
-	return b.store.appendWAL(walOpDelete, ck, 0, 0, now)
+	return nil
 }
 
 // collectKeysWithPrefix reconstructs full keys during tree traversal.
@@ -1795,25 +1795,31 @@ func (b *bucket) Copy(ctx context.Context, dstKey string, srcBucket, srcKey stri
 	srcBucketName := safeBucketName(strings.TrimSpace(srcBucket))
 	srcCK := compositeKey(srcBucketName, srcRelKey)
 	srcHash := fnv1a(srcCK)
-	shard := b.store.shardForHash(srcHash & shardMask)
+	srcShard := b.store.shardForHash(srcHash)
 
-	shard.mu.RLock()
-	srcLeaf := artSearch(shard.root, srcCK, srcHash)
-	var leafCopy leafEntry
-	if srcLeaf != nil {
-		leafCopy = *srcLeaf
-	}
-	shard.mu.RUnlock()
-
+	srcShard.mu.RLock()
+	srcLeaf := artSearch(srcShard.root, srcCK, srcHash)
 	if srcLeaf == nil {
+		srcShard.mu.RUnlock()
 		return nil, storage.ErrNotExist
 	}
+	lc := *srcLeaf
+	srcShard.mu.RUnlock()
 
-	data, ct, _, _, err := b.store.vlog.readValue(leafCopy.valueOffset, leafCopy.totalSize)
-	if err != nil {
-		return nil, err
+	// Copy value from shard vlog.
+	var data []byte
+	vd := srcShard.vlog.data
+	if vd != nil && lc.valueOffset+int64(lc.valueSize) <= int64(len(vd)) {
+		data = make([]byte, lc.valueSize)
+		copy(data, vd[lc.valueOffset:lc.valueOffset+int64(lc.valueSize)])
+	} else {
+		data = make([]byte, lc.valueSize)
+		if _, err = srcShard.vlog.fd.ReadAt(data, lc.valueOffset); err != nil {
+			return nil, fmt.Errorf("ant: read shard vlog: %w", err)
+		}
 	}
 
+	ct := b.store.ctTable.get(lc.ctIndex)
 	return b.Write(ctx, dstRelKey, bytes.NewReader(data), int64(len(data)), ct, opts)
 }
 
@@ -1831,15 +1837,14 @@ func (b *bucket) Move(ctx context.Context, dstKey string, srcBucket, srcKey stri
 	srcBucketName := safeBucketName(strings.TrimSpace(srcBucket))
 	srcCK := compositeKey(srcBucketName, srcRelKey)
 	srcHash := fnv1a(srcCK)
-	shard := b.store.shardForHash(srcHash & shardMask)
+	shard := b.store.shardForHash(srcHash)
 
+	now := time.Now().UnixNano()
 	shard.mu.Lock()
 	artDelete(&shard.root, srcCK, srcHash)
 	shard.size--
+	_ = shard.vlog.appendDelete(srcCK, now)
 	shard.mu.Unlock()
-
-	now := time.Now().UnixNano()
-	_ = b.store.appendWAL(walOpDelete, srcCK, 0, 0, now)
 
 	return obj, nil
 }
@@ -2100,8 +2105,8 @@ func (d *dir) Delete(ctx context.Context, opts storage.Options) error {
 		item.shard.mu.Lock()
 		artDelete(&item.shard.root, item.key, item.keyHash)
 		item.shard.size--
+		_ = item.shard.vlog.appendDelete(item.key, now)
 		item.shard.mu.Unlock()
-		_ = d.b.store.appendWAL(walOpDelete, item.key, 0, 0, now)
 	}
 
 	return nil
@@ -2160,29 +2165,42 @@ func (d *dir) Move(ctx context.Context, dstPath string, opts storage.Options) (s
 
 	for _, e := range entries {
 		newHash := fnv1a(e.newKey)
-		newShard := d.b.store.shardForHash(newHash & shardMask)
+		newShard := d.b.store.shardForHash(newHash)
+
+		// Read value data from old shard vlog.
+		var valData []byte
+		vd := e.shard.vlog.data
+		if vd != nil && e.leaf.valueOffset+int64(e.leaf.valueSize) <= int64(len(vd)) {
+			valData = make([]byte, e.leaf.valueSize)
+			copy(valData, vd[e.leaf.valueOffset:e.leaf.valueOffset+int64(e.leaf.valueSize)])
+		} else if e.shard.vlog.fd != nil {
+			valData = make([]byte, e.leaf.valueSize)
+			_, _ = e.shard.vlog.fd.ReadAt(valData, e.leaf.valueOffset)
+		}
+
+		ct := d.b.store.ctTable.get(e.leaf.ctIndex)
+
+		// Write to new shard vlog + ART.
+		newShard.mu.Lock()
+		valueOffset, _ := newShard.vlog.appendPut(e.newKey, ct, e.leaf.created, now, valData)
 		newLeaf := &leafEntry{
-			valueOffset: e.leaf.valueOffset,
+			valueOffset: valueOffset,
 			valueSize:   e.leaf.valueSize,
-			totalSize:   e.leaf.totalSize,
 			ctIndex:     e.leaf.ctIndex,
 			created:     e.leaf.created,
 			updated:     now,
 			keyHash:     newHash,
 		}
-
-		newShard.mu.Lock()
 		newShard.root = artInsert(newShard.root, e.newKey, newLeaf)
 		newShard.size++
 		newShard.mu.Unlock()
 
+		// Delete from old shard.
 		e.shard.mu.Lock()
 		artDelete(&e.shard.root, e.oldKey, e.leaf.keyHash)
 		e.shard.size--
+		_ = e.shard.vlog.appendDelete(e.oldKey, now)
 		e.shard.mu.Unlock()
-
-		_ = d.b.store.appendWAL(walOpPut, e.newKey, e.leaf.valueOffset, e.leaf.totalSize, e.leaf.created)
-		_ = d.b.store.appendWAL(walOpDelete, e.oldKey, 0, 0, now)
 	}
 
 	return &dir{b: d.b, path: strings.Trim(dstPath, "/")}, nil
@@ -2330,23 +2348,28 @@ func (b *bucket) CopyPart(ctx context.Context, mu *storage.MultipartUpload, numb
 	}
 	srcCK := compositeKey(safeBucketName(srcBucket), srcRelKey)
 	srcHash := fnv1a(srcCK)
-	shard := b.store.shardForHash(srcHash & shardMask)
+	shard := b.store.shardForHash(srcHash)
 
 	shard.mu.RLock()
 	srcLeaf := artSearch(shard.root, srcCK, srcHash)
-	var leafCopy leafEntry
-	if srcLeaf != nil {
-		leafCopy = *srcLeaf
-	}
-	shard.mu.RUnlock()
-
 	if srcLeaf == nil {
+		shard.mu.RUnlock()
 		return nil, storage.ErrNotExist
 	}
+	lc := *srcLeaf
+	shard.mu.RUnlock()
 
-	data, err := b.store.vlog.readValueOnly(leafCopy.valueOffset, leafCopy.totalSize)
-	if err != nil {
-		return nil, err
+	// Read value from shard vlog.
+	var data []byte
+	vd := shard.vlog.data
+	if vd != nil && lc.valueOffset+int64(lc.valueSize) <= int64(len(vd)) {
+		data = make([]byte, lc.valueSize)
+		copy(data, vd[lc.valueOffset:lc.valueOffset+int64(lc.valueSize)])
+	} else {
+		data = make([]byte, lc.valueSize)
+		if _, err = shard.vlog.fd.ReadAt(data, lc.valueOffset); err != nil {
+			return nil, fmt.Errorf("ant: read shard vlog: %w", err)
+		}
 	}
 
 	if srcOffset > 0 {

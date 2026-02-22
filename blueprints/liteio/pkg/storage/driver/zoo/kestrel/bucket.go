@@ -89,27 +89,46 @@ func (b *bucket) Write(_ context.Context, key string, src io.Reader, size int64,
 
 	now := fastNow()
 
-	// Fast path: known size — allocate from per-P chunk pool (zero contention).
+	// Fast path: known size — allocate arena space and read directly into it.
 	if size >= 0 {
-		data := allocValue(int(size))
+		h := htHash64(b.name, key)
+		si := uint32(h>>32) & shardMask
+		arena := b.st.arenaFor(si)
+
+		ckLen := len(b.name) + 1 + len(key)
+		total := ckLen + len(contentType) + int(size)
+		off, buf := arena.alloc(total)
+
+		// Write composite key into arena.
+		n := copy(buf, b.name)
+		buf[n] = 0
+		n++
+		n += copy(buf[n:], key)
+		// Write content type.
+		copy(buf[n:], contentType)
+		n += len(contentType)
+		// Read value directly into arena (zero intermediate copy).
 		valLen := 0
 		if size > 0 {
-			nr, err := io.ReadFull(src, data)
+			nr, err := io.ReadFull(src, buf[n:])
 			if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 				return nil, fmt.Errorf("kestrel: read value: %w", err)
 			}
 			valLen = nr
-			data = data[:nr]
 		}
 
-		rec := acquireRecord()
-		rec.value = data
-		rec.ct = contentType
-		rec.size = int64(valLen)
-		rec.created = now
-		rec.updated = now
+		entry := htEntry{
+			hash:     h,
+			arenaOff: off,
+			keyLen:   uint16(ckLen),
+			ctLen:    uint16(len(contentType)),
+			valueLen: uint32(valLen),
+			size:     int64(valLen),
+			created:  now,
+			updated:  now,
+		}
 
-		b.st.hotPut(b.name, key, rec)
+		b.st.hotPutDirect(b.name, key, entry)
 
 		return &storage.Object{
 			Bucket: b.name, Key: key, Size: int64(valLen), ContentType: contentType,
@@ -118,20 +137,13 @@ func (b *bucket) Write(_ context.Context, key string, src io.Reader, size int64,
 	}
 
 	// Slow path: unknown size — buffer first.
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, src); err != nil {
+	var tmpBuf bytes.Buffer
+	if _, err := io.Copy(&tmpBuf, src); err != nil {
 		return nil, fmt.Errorf("kestrel: read value: %w", err)
 	}
-	data := buf.Bytes()
+	data := tmpBuf.Bytes()
 
-	rec := acquireRecord()
-	rec.value = data
-	rec.ct = contentType
-	rec.size = int64(len(data))
-	rec.created = now
-	rec.updated = now
-
-	b.st.hotPut(b.name, key, rec)
+	b.st.hotPut(b.name, key, data, contentType, int64(len(data)), now, now)
 
 	return &storage.Object{
 		Bucket: b.name, Key: key, Size: int64(len(data)), ContentType: contentType,
@@ -183,7 +195,7 @@ func (b *bucket) Stat(_ context.Context, key string, _ storage.Options) (*storag
 		if len(keys) == 0 {
 			return nil, storage.ErrNotExist
 		}
-		rec, ok := b.st.hotGet(b.name, keys[0])
+		rec, ok := b.st.hotStat(b.name, keys[0])
 		if ok {
 			return &storage.Object{
 				Bucket:  b.name,
@@ -196,7 +208,7 @@ func (b *bucket) Stat(_ context.Context, key string, _ storage.Options) (*storag
 		return &storage.Object{Bucket: b.name, Key: strings.TrimSuffix(key, "/"), IsDir: true}, nil
 	}
 
-	rec, ok := b.st.hotGet(b.name, key)
+	rec, ok := b.st.hotStat(b.name, key)
 	if !ok {
 		return nil, storage.ErrNotExist
 	}
@@ -233,22 +245,10 @@ func (b *bucket) Copy(_ context.Context, dstKey string, srcBucket, srcKey string
 	}
 
 	now := fastNow()
-
-	// Copy value bytes via per-P chunk allocator.
-	valCopy := allocValue(len(rec.value))
-	copy(valCopy, rec.value)
-
-	dst := acquireRecord()
-	dst.value = valCopy
-	dst.ct = rec.ct
-	dst.size = rec.size
-	dst.created = now
-	dst.updated = now
-
-	b.st.hotPut(b.name, dstKey, dst)
+	b.st.hotPut(b.name, dstKey, rec.value, rec.ct, rec.size, now, now)
 
 	return &storage.Object{
-		Bucket: b.name, Key: dstKey, Size: dst.size, ContentType: dst.ct,
+		Bucket: b.name, Key: dstKey, Size: rec.size, ContentType: rec.ct,
 		Created: time.Unix(0, now), Updated: time.Unix(0, now),
 	}, nil
 }
@@ -419,17 +419,7 @@ func (d *dir) Move(_ context.Context, dstPath string, _ storage.Options) (storag
 			continue
 		}
 		now := fastNow()
-		valCopy := allocValue(len(rec.value))
-		copy(valCopy, rec.value)
-
-		dst := acquireRecord()
-		dst.value = valCopy
-		dst.ct = rec.ct
-		dst.size = rec.size
-		dst.created = rec.created
-		dst.updated = now
-
-		d.b.st.hotPut(d.b.name, newKey, dst)
+		d.b.st.hotPut(d.b.name, newKey, rec.value, rec.ct, rec.size, rec.created, now)
 		d.b.st.hotDelete(d.b.name, key)
 	}
 	return &dir{b: d.b, path: strings.Trim(dstPath, "/")}, nil

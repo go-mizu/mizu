@@ -15,6 +15,409 @@
 11. Appendix: Benchmark / pprof Commands
 12. References
 
+## v7 profiler-driven point-lookup allocation pass
+
+### v7 root cause (Go profiler)
+
+Profiler focus before v7 (from `v6b`):
+
+- `compositeKey` remained a major alloc-space hotspot
+- `findPageEntry` still allocated heavily on point lookups due:
+  - `[]byte(ck)` conversion during key compare
+  - `string(ctBytes)` for content-type decode
+
+Line-level `allocs.pprof` inspection (`pprof -list`) showed the `findPageEntry` compare/content-type conversions were still contributing meaningful alloc-space on read/stat/delete-heavy paths.
+
+### v7 implemented changes
+
+v7 focused on removing avoidable point-lookup string/byte conversion allocations.
+
+- added `stringBytesView(s string) []byte` (unsafe no-copy string-to-bytes view)
+- added `bytesEqString` helper
+- added `internContentTypeBytes` with fast paths for common content types:
+  - `application/octet-stream`
+  - `text/plain`
+  - `application/json`
+- updated `findPageEntry(...)` to compare using `stringBytesView(ck)` (avoids `[]byte(ck)` alloc)
+- updated `findPageEntry(...)` to use `internContentTypeBytes(ctBytes)`
+- updated `decodePageEntriesWithMode(...)` to intern content-type strings
+- updated `decodePageEntriesBorrowed(...)` to intern content-type strings
+- updated list metadata scan path (`forEachPageEntryMeta` / `collectFromNode`) to intern content types
+- removed a redundant `splitCompositeKey(...)` parse path in `bucket.Open(...)`
+
+### v7 profiler verification
+
+From `fox_v7a_final`:
+
+- `allocs.pprof` total alloc-space: **`5821.24MB`**
+- `findPageEntry` is no longer a top alloc-space hotspot (targeted allocations reduced)
+- `compositeKey` still dominates point-lookup alloc-space:
+  - `compositeKey`: **`454.02MB`** flat
+  - `pprof -peek compositeKey` attribution:
+    - `(*store).getEntry`: `258.51MB` (`56.94%`)
+    - `(*store).putValueRef`: `93MB`
+    - `(*store).put`: `51.50MB`
+    - `(*store).del`: `51MB`
+
+Interpretation:
+
+- v7 successfully removed the `findPageEntry` conversion hotspot from the top profile
+- the next root cause became clearer: repeated `compositeKey(...)` allocations across point lookup and delete paths
+
+### v7 benchmark / memory results
+
+Run: `fox_v7a_final`
+
+Selected throughput (vs v6b):
+
+- `Read/1KB`: `733.1 -> 1193.9 MB/s` (`1.63x`)
+- `Read/64KB`: `7.95 -> 13.03 GB/s` (`1.64x`)
+- `Read/1MB`: `11.36 -> 14.40 GB/s` (`1.27x`)
+- `Stat`: `5.69M/s -> 5.79M/s` (near-flat/slight gain)
+- `Delete`: `1.73M/s -> 1.63M/s` (slight regression)
+- `List/100`: `123.3/s -> 73.6/s` (regression)
+
+Memory verification:
+
+- peak RSS (resource tracker): **`518.5MB`** (FAIL for strict `<100MB`)
+- resource tracker Go heap: `181.3MB`
+- `heap.pprof` total in-use: **`98.81MB`** (PASS)
+
+v7 therefore improved point-lookup allocation behavior but did not solve strict memory and introduced mixed benchmark tradeoffs.
+
+## v8 profiler-driven mini-page append churn pass
+
+### v8 root cause (Go profiler)
+
+After v7, `allocs.pprof` line-level inspection (`pprof -list putPreparedEntry`) showed heavy allocation churn around mini-page entry slice growth/append behavior, particularly in write/tombstone paths.
+
+Observed pattern:
+
+- repeated mini-page entry appends caused frequent backing-slice growth
+- mini-page objects themselves were also churned (create/evict/recreate)
+
+### v8 implemented changes
+
+v8 focused on reducing append/growth churn in the mini-page write buffer path.
+
+- increased `defaultMiniPageEntryCap` to `32`
+- added `miniPageObjPool` (`sync.Pool`) for `miniPage` object reuse
+- added `allocMiniPage(...)` helper (resets/reuses pooled mini-page)
+- added `freeMiniPage(...)` helper (returns objects and slices)
+- added `ensureMiniPageEntryCap(...)` explicit pre-growth helper
+- updated `getOrCreate(...)` to use pooled mini-page allocation
+- updated `evictOldest(...)` to return evicted mini-pages to the pool
+- updated `putPreparedEntry(...)` append path to pre-grow via `ensureMiniPageEntryCap`
+- updated `del(...)` tombstone append path to pre-grow via `ensureMiniPageEntryCap`
+
+### v8 profiler verification
+
+From `fox_v8a_final`:
+
+- `allocs.pprof` total alloc-space: **`4902.44MB`** (down materially vs v7)
+- `putPreparedEntry` append-line hotspot moved off the prior dominant line (growth behavior improved)
+
+But `heap.pprof` exposed a new problem:
+
+- `heap.pprof` total in-use: **`137.26MB`** (FAIL)
+- top in-use node:
+  - `getPageEntrySlice`: **`84.87MB`** flat (`61.83%`)
+
+Interpretation:
+
+- v8 reduced alloc churn successfully
+- but the new pooling/growth behavior over-retained page-entry scratch slices, causing a large heap snapshot regression
+
+### v8 benchmark / memory results
+
+Run: `fox_v8a_final`
+
+Selected throughput (vs v7a):
+
+- `Write/1KB`: `336.2 -> 386.3 MB/s` (`1.15x`)
+- `Write/64KB`: `1546 -> 1800 MB/s` (`1.16x`)
+- `Write/1MB`: `466.7 -> 500.7 MB/s` (`1.07x`)
+- `List/100`: `73.6/s -> 113.2/s` (`1.54x`)
+- `Copy/1KB`: `602.8 -> 659.0 MB/s` (`1.09x`)
+- `Read/1KB`: `1193.9 -> 1266.2 MB/s` (`1.06x`)
+
+Memory verification:
+
+- peak RSS: **`525.2MB`** (FAIL)
+- resource tracker Go heap: `278.2MB` (worse)
+- `heap.pprof` total in-use: **`137.26MB`** (FAIL)
+
+v8 was a throughput/alloc-space win but a memory-target regression.
+
+## v9 profiler-driven pool retention stabilization pass
+
+### v9 root cause (Go profiler)
+
+v8 heap profiling clearly showed the next root cause:
+
+- `getPageEntrySlice`: **`84.87MB`** flat in `heap.pprof`
+
+This pointed to pooling retention policy (especially page-entry scratch slices) rather than live object data as the main driver of the v8 memory regression.
+
+### v9 implemented changes
+
+v9 focused on reducing retained slice memory while keeping most of the v8 alloc reductions.
+
+- split pool cap thresholds:
+  - `maxPooledPageEntrySliceCap = 128` (flush scratch)
+  - `maxPooledMiniPageEntrySliceCap = 64` (mini-page entries)
+- added separate mini-page slice pool:
+  - `miniPageEntrySlicePool`
+  - `getMiniPageEntrySlice(...)`
+  - `putMiniPageEntrySlice(...)`
+- moved mini-page entry allocation/free/grow paths to the dedicated mini-page slice pool
+- kept flush scratch (`getPageEntrySlice`) separate from mini-page entry slices
+- shrank oversized mini-page entry slices after flush:
+  - if `cap(mp.entries)` exceeds mini-page threshold, return it and reinitialize small
+- tightened retention policy to prevent oversized slices from accumulating in the pool
+
+### v9 profiler verification
+
+From `fox_v9a_final`:
+
+- `allocs.pprof` total alloc-space: **`4386.28MB`** (down again vs v8)
+- peak RSS improved substantially vs v8
+
+But heap profiling still showed a remaining pool-retention issue, now shifted:
+
+- `heap.pprof` total in-use: **`121.55MB`** (still FAIL)
+- top in-use node:
+  - `getMiniPageEntrySlice`: **`49.82MB`** flat (`40.99%`)
+
+Interpretation:
+
+- v9 successfully moved/reduced retention from shared page scratch pooling
+- mini-page entry slice retention remained the dominant in-use heap blocker for `<100MB`
+
+### v9 benchmark / memory results
+
+Run: `fox_v9a_final`
+
+Selected throughput (vs v8a):
+
+- `List/100`: `113.2/s -> 123.2/s` (`1.09x`)
+- `Delete`: `1.64M/s -> 1.65M/s` (near-flat)
+- `RangeRead/*256KB`: near-flat / slightly improved
+- `Copy/1KB`: `659.0 -> 640.7 MB/s` (slight regression)
+- `Read/10MB`: `9.84 -> 5.72 GB/s` (large regression / unstable run)
+
+Memory verification:
+
+- peak RSS: **`404.0MB`** (major improvement, but FAIL for strict `<100MB`)
+- resource tracker Go heap: `216.2MB`
+- `heap.pprof` total in-use: **`121.55MB`** (FAIL)
+
+v9 significantly improved memory behavior (especially RSS/GoSys) but still did not meet the memory target.
+
+## v10 profiler-driven composite-key elimination + memory stabilization pass
+
+v10 was implemented as an iterative sub-series (`v10a`, `v10b`, `v10c`) because the primary alloc-space fix exposed a secondary heap-retention root cause.
+
+### v10 primary root cause (Go profiler, before coding)
+
+From `fox_v9a_final/fox/allocs.pprof`:
+
+- `compositeKey`: **`368.02MB`** flat (`8.39%`)
+- `pprof -peek compositeKey` attribution:
+  - `(*store).getEntry`: `205.01MB` (`55.71%`)
+  - `(*store).putValueRef`: `77MB`
+  - `(*store).put`: `56.51MB`
+  - `(*store).del`: `29.50MB`
+
+This made point lookup/delete `compositeKey(...)` allocations the clear v10 target.
+
+### v10 implemented changes (v10a -> v10c)
+
+#### v10a: parts-based point lookup / delete path (no `compositeKey` on read path)
+
+- added `compositeKeyEqualsParts(...)`
+- added `compareBucketKeyToComposite(...)`
+- added `compareCompositeBytesToParts(...)`
+- added `(*btree).findLeafParts(bucket, key string)`
+- added `findPageEntryParts(...)` (page scan compare against `bucket,key` parts)
+- updated `(*store).getEntry(...)`:
+  - tree lookup via `findLeafParts(...)`
+  - mini-page scan via `compositeKeyEqualsParts(...)`
+  - disk page scan via `findPageEntryParts(...)`
+- updated `(*store).del(...)`:
+  - leaf lookup via `findLeafParts(...)`
+  - mini-page scan via `compositeKeyEqualsParts(...)`
+  - defer `compositeKey(...)` allocation until tombstone append is actually needed
+
+#### v10b: release mini-page entry slices after flush (heap retention fix)
+
+Secondary root cause after v10a (from `heap.pprof`):
+
+- `getMiniPageEntrySlice` remained the top in-use heap node in the v10a snapshot
+
+Change:
+
+- after successful `flushMiniPage(...)`, always return `mp.entries` backing slice to the mini-page slice pool and set `mp.entries = nil`
+- clean mini-pages keep metadata state but do not retain a pre-sized entry slice
+
+This trades some future re-allocation for much lower retained heap.
+
+#### v10c: no-scan comparator refinement (CPU recovery while keeping no-alloc path)
+
+v10b improved memory substantially but regressed some CPU-heavy lookup paths (`Stat`, `Delete`).
+
+Refinement:
+
+- `compareBucketKeyToComposite(...)` now delegates to `compareCompositeBytesToParts(stringBytesView(composite), ...)` instead of `strings.IndexByte` + substring compares
+- `compositeKeyEqualsParts(...)` now uses fixed-position separator checks (no `IndexByte`)
+
+This keeps the no-allocation design while reducing compare overhead in B-tree traversal / mini-page scans.
+
+### v10 profiler verification
+
+#### v10a (after primary fix)
+
+From `fox_v10a_final`:
+
+- `allocs.pprof` total alloc-space: **`3976.96MB`** (down vs v9a)
+- `compositeKey`: **`157.01MB`** flat (from `368.02MB` in v9a)
+
+This confirms the primary v10 root cause was addressed.
+
+#### v10b (after heap-retention fix)
+
+From `fox_v10b_final`:
+
+- `allocs.pprof` total alloc-space: **`3885.27MB`**
+- `heap.pprof` total in-use: **`42257.88kB`** (~`41.3MB`) (PASS)
+- `compositeKey`: **`148.51MB`** flat
+
+#### v10c (final v10 build)
+
+From `fox_v10c_final`:
+
+- `allocs.pprof` total alloc-space: **`3927.59MB`**
+- `heap.pprof` total in-use: **`46331.98kB`** (~`45.3MB`) (PASS)
+- `compositeKey`: **`139.51MB`** flat
+
+Compared to v9a:
+
+- `compositeKey` alloc-space reduced from `368.02MB -> 139.51MB` (**`-62.1%`**)
+- total alloc-space reduced from `4386.28MB -> 3927.59MB` (**`-10.5%`**)
+
+New top in-use heap nodes in v10c are no longer dominated by retained mini-page slices:
+
+- `getMiniPageEntrySlice`: ~`5.0MB` flat
+- remaining profile is more distributed across tree/cache/runtime initialization
+
+### v10 benchmark / memory results (final = v10c)
+
+Runs:
+
+- `v10a`: primary composite-key elimination
+- `v10b`: memory retention fix (strongest memory)
+- `v10c`: CPU compare refinement + memory target (heap) kept
+
+Selected throughput (`v10c` vs `v9a`):
+
+- `Write/1KB`: `341.8 -> 347.1 MB/s` (`1.02x`)
+- `Read/64KB`: `13.42 -> 13.50 GB/s` (`1.01x`)
+- `Read/1MB`: `14.16 -> 15.16 GB/s` (`1.07x`)
+- `Read/10MB`: `5.72 -> 10.00 GB/s` (`1.75x`) (recovers v9a outlier regression)
+- `RangeRead/Start_256KB`: `14.83 -> 15.28 GB/s` (`1.03x`)
+- `RangeRead/Middle_256KB`: `14.92 -> 15.25 GB/s` (`1.02x`)
+- `RangeRead/End_256KB`: `14.88 -> 15.19 GB/s` (`1.02x`)
+- `List/100`: `123.2/s -> 131.7/s` (`1.07x`)
+
+Known v10c regressions vs v9a:
+
+- `Delete`: `1.65M/s -> 0.95M/s` (`0.58x`)
+- `Stat`: `4.07M/s -> 3.81M/s` (`0.94x`)
+- `Copy/1KB`: `640.7 -> 585.9 MB/s` (`0.91x`)
+- `Write/64KB`: `1730.8 -> 1601.9 MB/s` (`0.93x`)
+
+Interpretation:
+
+- v10 is primarily an allocation + memory pass, not a universal throughput win
+- it significantly reduces alloc-space and heap retention while preserving or improving several read/range/list paths
+- `Delete` remains the main v10 regression to target next
+
+### v10 memory verification (<100MB), carefully verified
+
+#### 1. Strict process-level metric (resource tracker)
+
+`v10c` peak RSS: **`232.6MB`** (FAIL)
+
+Strict process RSS is still above `100MB`.
+
+#### 2. Resource tracker Go heap
+
+`v10c` peak Go heap: **`93.4MB`** (PASS)
+
+#### 3. `heap.pprof` in-use snapshot (`go tool pprof`)
+
+`v10c` total in-use: **`46331.98kB`** (~`45.3MB`) (PASS)
+
+Conclusion:
+
+- v10c meets `<100MB` on Go-heap-centric metrics (tracker Go heap and `heap.pprof` snapshot)
+- v10c still does **not** meet strict process RSS `<100MB` under the full benchmark harness process
+
+### v7-v10 technique inventory (>=10 techniques requirement)
+
+Implemented across v7-v10 (non-exhaustive, but counted):
+
+1. no-copy string-to-bytes view (`stringBytesView`)
+2. byte-vs-string equality helper (`bytesEqString`)
+3. common content-type interning helper
+4. `findPageEntry` no-alloc key compare
+5. content-type interning in full decode path
+6. content-type interning in borrowed decode path
+7. content-type interning in metadata scan/list path
+8. redundant composite-key split removal in `Open`
+9. larger default mini-page entry slice capacity
+10. mini-page object pooling (`miniPageObjPool`)
+11. reusable `allocMiniPage` / `freeMiniPage` lifecycle
+12. explicit mini-page entry slice pre-growth (`ensureMiniPageEntryCap`)
+13. pooled mini-page allocation in `getOrCreate`
+14. pooled mini-page return on eviction
+15. pre-grow append path in writes (`putPreparedEntry`)
+16. pre-grow append path in tombstone writes (`del`)
+17. separate pool caps for page scratch vs mini-page entries
+18. dedicated mini-page entry slice pool
+19. oversize mini-page slice shrink after flush
+20. parts-based composite compare helpers for B-tree/page scans
+21. `btree.findLeafParts` no-composite-key traversal
+22. `findPageEntryParts` no-composite-key disk scan
+23. `getEntry` parts-based mini-page + disk lookup path
+24. `del` parts-based mini-page lookup and deferred tombstone `compositeKey` allocation
+25. release mini-page entry slices after successful flush (`mp.entries=nil`)
+26. no-scan comparator refinement for `compareBucketKeyToComposite`
+27. fixed-position separator equality check in `compositeKeyEqualsParts`
+
+This exceeds the user-requested minimum of 10 optimization techniques.
+
+### v10 conclusion
+
+v10 achieved the profiler-driven objective:
+
+- identified `compositeKey` as the next root cause with Go profiler
+- cut `compositeKey` alloc-space by ~`62%` vs v9a
+- reduced total alloc-space further vs v9a
+- dramatically improved heap retention metrics through flush-slice release
+- brought v10c resource-tracker Go heap and `heap.pprof` snapshot below `100MB`
+
+v10 did not achieve strict process RSS `<100MB` under the full benchmark harness process, and introduced a notable `Delete` regression that should be the first v11 target.
+
+### v11 candidates (next)
+
+- profile `Delete` regression (`cpu.pprof` + `allocs.pprof`) on `v10c`:
+  - compare mini-page scan cost vs old composite-key path
+  - inspect extra existence-check work / tree traversal duplication
+- target `bucket.Stat` CPU regressions after parts-based comparisons
+- reduce `getPageEntrySlice` alloc-space (`~170MB` in v10c) without reintroducing heap retention
+- evaluate bounded mini-page pool occupancy / adaptive flush cadence for further RSS reduction
+
 ---
 
 ## Architecture Overview
@@ -1036,6 +1439,213 @@ v5 did **not** achieve:
 
 ---
 
+## v6 Profiler-Driven Pass: Flush Merge Allocation Root Cause (`mergeEntries`)
+
+### v6 goal
+
+Use Go profiler on v5 to identify the next dominant fox allocation root cause and reduce it with a focused flush-path optimization.
+
+### Root cause identified with Go profiler (v5b)
+
+`go tool pprof -top report/fox_v5b_final/fox/allocs.pprof` showed the top fox alloc-space hotspots after v5:
+
+- `mergeEntries`: **`868.93MB`** flat
+- `decodePageEntriesBorrowed`: **`391.29MB`** flat
+
+`pprof -peek` for both functions showed they were entirely on the flush path:
+
+- `mergeEntries` alloc-space attributed **100%** to `(*miniPagePool).flushMiniPage`
+- `decodePageEntriesBorrowed` alloc-space attributed **100%** to `(*miniPagePool).flushMiniPage`
+
+Interpretation:
+
+- v5 successfully removed metadata decoder churn,
+- but flush still allocated heavily on every mini-page flush due repeated `[]pageEntry` backing allocations (decode + merge result).
+
+### v6 implemented changes (profiler-driven)
+
+#### 1. Pooled `[]pageEntry` scratch reuse for flush decode/merge
+
+Added:
+
+- `getPageEntrySlice(minCap int) []pageEntry`
+- `putPageEntrySlice([]pageEntry)`
+- `pageEntrySlicePool` (`sync.Pool`)
+
+Characteristics:
+
+- bounded pooling (`maxPooledPageEntrySliceCap = 512`)
+- clears pooled entries before reuse to avoid retaining borrowed strings/byte-slice references
+- used for both flush decode and merge result slices
+
+#### 2. `decodePageEntriesBorrowed` now uses pooled scratch
+
+Before v6:
+
+- every call allocated `make([]pageEntry, 0, count)`
+
+After v6:
+
+- decoder gets capacity from `getPageEntrySlice(count)`
+- `flushMiniPage()` returns the decoded slice to the pool after encoding
+
+#### 3. `mergeEntries` now uses pooled scratch
+
+Before v6:
+
+- `mergeEntries` allocated a fresh result slice each flush
+
+After v6:
+
+- `mergeEntries` uses `getPageEntrySlice(len(disk)+len(mini))`
+- `flushMiniPage()` returns the merged slice to the pool after writeback/split handling
+
+### v6 benchmark / profiler commands
+
+```bash
+# tests
+go test ./pkg/storage/driver/zoo/fox
+
+# v6 profiler-driven runs
+go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v6a_final
+go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v6b_final
+
+# root-cause identification (before v6)
+go tool pprof -top -nodecount=20 report/fox_v5b_final/fox/allocs.pprof
+go tool pprof -peek "mergeEntries|decodePageEntriesBorrowed" report/fox_v5b_final/fox/allocs.pprof
+
+# v6 verification
+go tool pprof -top -nodecount=20 report/fox_v6a_final/fox/allocs.pprof
+go tool pprof -top -nodecount=20 report/fox_v6b_final/fox/allocs.pprof
+go tool pprof -peek "mergeEntries" report/fox_v6b_final/fox/allocs.pprof
+go tool pprof -top -nodecount=20 report/fox_v6b_final/fox/heap.pprof
+```
+
+### v6 profiler results (root cause addressed)
+
+#### v5b -> v6 alloc-space totals (`allocs.pprof`)
+
+- v5b: **`6393.96MB`**
+- v6a: **`4945.89MB`** (**-22.6%** vs v5b)
+- v6b: **`5630.80MB`** (**-11.9%** vs v5b)
+
+#### Hotspot shift (v5b -> v6)
+
+v5b:
+
+- `mergeEntries`: `868.93MB` flat
+- `decodePageEntriesBorrowed`: `391.29MB` flat
+
+v6a/v6b:
+
+- `mergeEntries`: no longer a top flat allocator
+  - `pprof -peek` on v6b shows `mergeEntries` **flat ~`1MB`**, cumulative `219.76MB`
+- `decodePageEntriesBorrowed`: effectively removed as a hotspot
+  - v6a `pprof -peek` shows cumulative only `2.01MB`
+- new smaller flush-related allocator appears:
+  - `getPageEntrySlice`: `~0.16-0.20GB` flat (pool misses/initial allocations)
+
+This confirms the v6 fix hit the intended root cause:
+
+- flush-path `[]pageEntry` backing allocations were the main remaining decoder/merge churn
+- pooled scratch reuse materially reduced total alloc-space
+
+### v6 benchmark results (vs v5b, two runs)
+
+Quick-suite variance remains high. v6 is reported as a range (`v6a`, `v6b`).
+
+#### Consistent improvements vs v5b
+
+- `List/100`: `+12%` to `+14%` (`108.3/s -> 121.7/s / 123.3/s`)
+- `Delete`: `+38%` to `+78%` (`0.97M/s -> 1.35M/s / 1.73M/s`)
+- `RangeRead/Start_256KB`: `+2.12x` to `+2.24x` (v5b had regressed badly)
+
+#### Preserved / near-flat (best v6 run keeps v5 gains)
+
+- `Copy/1KB`: `573-652 MB/s` (still strong; v6b exceeds v5b and v4b)
+- `Write/1MB`: near-flat (`0.95x` to `1.01x`)
+- `Write/10MB`: near-flat to modest gain (`0.96x` to `1.06x`)
+
+#### Mixed / unstable
+
+- reads vary significantly between `v6a` and `v6b` (especially `Read/1KB`, `Read/64KB`, `Read/10MB`)
+- `Stat` also varies (`0.71x` to `1.03x` vs v5b)
+- write small/medium throughput is not a stable improvement over the strong v5b outlier
+
+### v6 context vs earlier versions
+
+Compared to v4b (which had restored copy/range-read):
+
+- v6b preserves or improves most v4b wins:
+  - `Copy/1KB`: `620.5 -> 652.2 MB/s` (`1.05x`)
+  - `RangeRead/*256KB`: roughly at parity/slightly better
+  - `List/100`: `78.2/s -> 123.3/s` (`1.58x`)
+  - `Stat`: `3.17M/s -> 5.69M/s` (`1.79x`)
+
+Compared to v3b:
+
+- `Copy/1KB`: `~7.25x` to `~8.25x`
+- `RangeRead/*256KB`: `~2.5x` to `~3.2x`
+- `List/100`: `~2.6x`
+
+The “5x every benchmark” request remains unmet:
+
+- v6a vs v3b: `1 / 40` benchmarks `>=5x`
+- v6b vs v3b: `1 / 40` benchmarks `>=5x`
+
+### v6 memory verification (<100MB), carefully verified
+
+#### 1. Strict process-level metric (resource tracker)
+
+- `v6a` peak RSS: **`578.0 MB`** (FAIL)
+- `v6b` peak RSS: **`546.1 MB`** (FAIL)
+
+Strict process RSS remains far above `100MB`.
+
+#### 2. `heap.pprof` in-use snapshot (`go tool pprof`)
+
+- `v6a`: **`102.88 MB`** (FAIL)
+- `v6b`: **`87.30 MB`** (PASS)
+
+So v6, like v5, does **not** stably satisfy `<100MB` even for the snapshot metric.
+
+#### 3. Allocation vs RSS behavior (inference)
+
+Inference from profiler/resource data:
+
+- v6 reduced alloc-space significantly vs v5b
+- GC count also dropped in `v6a` (`118`) and remained below v4/v5 ranges in `v6b` (`135`)
+- process `GoSys`/RSS remained very high
+
+Likely explanation remains the same pattern seen in v5:
+
+- lower alloc churn reduces GC/scavenge frequency during the benchmark window,
+- so runtime system memory retention dominates process RSS/GoSys metrics.
+
+### v6 conclusion
+
+v6 successfully delivered the profiler-driven objective:
+
+- identified the next root cause with Go profiler (`mergeEntries` + flush decode allocs)
+- removed the flush merge/decode allocation hotspot from the top alloc-space profile
+- reduced total alloc-space materially again vs v5 (up to **`-22.6%`** in `v6a`)
+
+v6 also improved several key behaviors (especially `List/100`, `Delete`, and recovering v5b `RangeRead/Start_256KB` regression), while largely preserving the major copy/range-read wins accumulated since v4.
+
+v6 did **not** solve the memory target:
+
+- strict process RSS still far above `100MB`
+- heap snapshot `<100MB` remains unstable across runs
+
+### v7 candidates (next)
+
+- profile `putPreparedEntry` / `compositeKey` allocation churn (now dominant fox alloc-space)
+- revisit `findPageEntry` allocation (~`140MB`) with a faster no-alloc compare path
+- investigate read-path variance (`Read/1KB`, `Read/64KB`, `Read/10MB`) with targeted profiles
+- if strict RSS is mandatory, add benchmark isolation / explicit memory-mode reporting
+
+---
+
 ## Appendix: Benchmark / pprof Commands
 
 ### Benchmark commands used
@@ -1065,6 +1675,18 @@ go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v4c_final
 # v5 profiler-driven decoder/root-cause pass
 go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v5a_final
 go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v5b_final
+
+# v6 profiler-driven flush merge/root-cause pass
+go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v6a_final
+go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v6b_final
+
+# v7-v10 profiler-driven passes
+go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v7a_final
+go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v8a_final
+go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v9a_final
+go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v10a_final
+go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v10b_final
+go run -tags noant /tmp/fox_bench_wrapper.go ./report/fox_v10c_final
 ```
 
 ### pprof commands (same workflow style as herd)
@@ -1103,6 +1725,27 @@ go tool pprof -top -nodecount=20 report/fox_v5b_final/fox/heap.pprof
 go tool pprof -top -nodecount=20 report/fox_v5b_final/fox/allocs.pprof
 go tool pprof -top -cum -nodecount=15 report/fox_v5b_final/fox/cpu.pprof
 go tool pprof -peek "decodePageEntriesBorrowed" report/fox_v5b_final/fox/allocs.pprof
+go tool pprof -peek "mergeEntries|decodePageEntriesBorrowed" report/fox_v5b_final/fox/allocs.pprof
+
+go tool pprof -top -nodecount=20 report/fox_v6b_final/fox/heap.pprof
+go tool pprof -top -nodecount=20 report/fox_v6b_final/fox/allocs.pprof
+go tool pprof -top -cum -nodecount=15 report/fox_v6b_final/fox/cpu.pprof
+go tool pprof -peek "mergeEntries" report/fox_v6b_final/fox/allocs.pprof
+
+go tool pprof -top -nodecount=20 report/fox_v7a_final/fox/allocs.pprof
+go tool pprof -peek "compositeKey" report/fox_v7a_final/fox/allocs.pprof
+
+go tool pprof -top -nodecount=20 report/fox_v8a_final/fox/allocs.pprof
+go tool pprof -top -nodecount=20 report/fox_v8a_final/fox/heap.pprof
+go tool pprof -list "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/fox.(*store).putPreparedEntry" report/fox_v8a_final/fox/allocs.pprof
+
+go tool pprof -top -nodecount=20 report/fox_v9a_final/fox/allocs.pprof
+go tool pprof -top -nodecount=20 report/fox_v9a_final/fox/heap.pprof
+go tool pprof -peek "compositeKey" report/fox_v9a_final/fox/allocs.pprof
+
+go tool pprof -top -nodecount=20 report/fox_v10c_final/fox/allocs.pprof
+go tool pprof -top -nodecount=20 report/fox_v10c_final/fox/heap.pprof
+go tool pprof -peek "compositeKey" report/fox_v10c_final/fox/allocs.pprof
 
 # Compare baseline vs final
 
@@ -1115,6 +1758,7 @@ go tool pprof -base report/fox_v3b_final/fox/heap.pprof report/fox_v4b_final/fox
 go tool pprof -base report/fox_v3b_final/fox/allocs.pprof report/fox_v4b_final/fox/allocs.pprof
 
 go tool pprof -base report/fox_v4b_final/fox/allocs.pprof report/fox_v5b_final/fox/allocs.pprof
+go tool pprof -base report/fox_v5b_final/fox/allocs.pprof report/fox_v6b_final/fox/allocs.pprof
 
 # Attribution / call-chain inspection (useful for generic labels)
 

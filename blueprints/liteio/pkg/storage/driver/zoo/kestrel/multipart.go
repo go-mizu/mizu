@@ -74,7 +74,7 @@ func (b *bucket) UploadPart(_ context.Context, mu *storage.MultipartUpload, numb
 		return nil, fmt.Errorf("kestrel: part number %d out of range [1, %d]", number, maxPartNumber)
 	}
 	b.st.mp.mu.RLock()
-	upload, ok := b.st.mp.uploads[mu.UploadID]
+	_, ok := b.st.mp.uploads[mu.UploadID]
 	b.st.mp.mu.RUnlock()
 	if !ok {
 		return nil, storage.ErrNotExist
@@ -101,6 +101,7 @@ func (b *bucket) UploadPart(_ context.Context, mu *storage.MultipartUpload, numb
 	hash := md5.Sum(data)
 	etag := hex.EncodeToString(hash[:])
 	b.st.mp.mu.Lock()
+	upload := b.st.mp.uploads[mu.UploadID]
 	upload.parts[number] = &partData{number: number, data: data, size: int64(len(data)), etag: etag}
 	b.st.mp.mu.Unlock()
 	return &storage.PartInfo{Number: number, Size: int64(len(data)), ETag: etag}, nil
@@ -190,22 +191,15 @@ func (b *bucket) CompleteMultipart(_ context.Context, mu *storage.MultipartUploa
 
 	now := fastNow()
 
-	// Assemble parts into a single value via allocValue.
-	assembled := allocValue(int(totalSize))
+	// Assemble parts into a temporary buffer, then store via hotPut.
+	assembled := make([]byte, totalSize)
 	n := 0
 	for _, p := range parts {
 		n += copy(assembled[n:], upload.parts[p.Number].data)
 	}
 	assembled = assembled[:n]
 
-	rec := acquireRecord()
-	rec.value = assembled
-	rec.ct = upload.contentType
-	rec.size = int64(n)
-	rec.created = now
-	rec.updated = now
-
-	b.st.hotPut(b.name, upload.key, rec)
+	b.st.hotPut(b.name, upload.key, assembled, upload.contentType, int64(n), now, now)
 
 	return &storage.Object{
 		Bucket: b.name, Key: upload.key, Size: int64(n), ContentType: upload.contentType,

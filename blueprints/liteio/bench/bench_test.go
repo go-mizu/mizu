@@ -25,6 +25,7 @@ import (
 	"github.com/liteio-dev/liteio/pkg/storage/driver/local"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/exp/s3"
 	_ "github.com/liteio-dev/liteio/pkg/storage/driver/memory"
+	_ "github.com/liteio-dev/liteio/pkg/storage/driver/zoo/falcon"
 )
 
 // TestMain sets up benchmark optimizations.
@@ -196,6 +197,16 @@ func getDriverConfigs(t testing.TB) []DriverConfig {
 		})
 	}
 
+
+	// Falcon (paper-inspired driver)
+	falconRoot := filepath.Join(os.TempDir(), "falcon-bench")
+	os.MkdirAll(falconRoot, 0o755)
+	configs = append(configs, DriverConfig{
+		Name:     "falcon",
+		DSN:      "falcon://" + falconRoot + "?sync=none&hot_size=1048576",
+		Bucket:   "test-bucket",
+		DataPath: falconRoot,
+	})
 	return configs
 }
 

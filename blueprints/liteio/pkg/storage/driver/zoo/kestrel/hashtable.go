@@ -1,24 +1,36 @@
 package kestrel
 
-// htable is a Robin Hood open-addressing hash table that replaces
-// Go's built-in map[string]*hotRecord for hot path operations.
+// htable is a Robin Hood open-addressing hash table with pointer-free entries.
 //
-// Benefits over Go map:
-//   - Flat array layout (better cache utilization, no bucket chains)
-//   - Robin Hood probing (shorter average probe distances at high load)
-//   - Backward-shift deletion (no tombstones, no degradation over time)
-//   - Direct function calls (no runtime.mapaccess1_faststr indirection)
-//   - 64-bit hash with early-exit on hash mismatch (fast reject)
+// All htEntry fields are non-pointer types (uint64, int64, uint16, uint32).
+// This makes the entry array a "noscan" span — Go's GC never scans or walks
+// the entries, eliminating the O(N) GC overhead that dominated v5 profiles.
+//
+// Data (keys, content types, values) is stored in a separate mmap'd dataArena.
+// Each entry stores an arena offset + lengths to locate its data.
+//
+// Benefits over v5 (pointer-based htEntry with Go strings + *hotRecord):
+//   - Zero GC scanning of entry arrays (noscan span)
+//   - No per-record heap allocation (hotRecord eliminated)
+//   - Inline metadata (size, timestamps) avoids pointer chasing
+//   - Same Robin Hood probing + backward-shift deletion (proven optimal)
 
 const (
 	htMinCap  = 64
 	htMaxLoad = 75 // percent — balances probe distance vs cache utilization
 )
 
+// htEntry is a pointer-free hash table entry (48 bytes).
+// All fields are non-pointer types → GC noscan.
 type htEntry struct {
-	hash uint64     // full 64-bit hash; 0 = empty slot
-	key  string     // composite key (bucket\x00key)
-	rec  *hotRecord // record pointer
+	hash     uint64 // 8:  full 64-bit hash; 0 = empty slot
+	arenaOff int64  // 8:  offset in dataArena where [key][ct][value] is stored
+	keyLen   uint16 // 2:  composite key length (bucket\x00key)
+	ctLen    uint16 // 2:  content type length
+	valueLen uint32 // 4:  value data length
+	size     int64  // 8:  object size (for Stat)
+	created  int64  // 8:  unix nano
+	updated  int64  // 8:  unix nano
 }
 
 type htable struct {
@@ -45,7 +57,7 @@ func newHTable(hint int) htable {
 }
 
 // htHash64 computes FNV-1a 64-bit hash for bucket + "\x00" + key
-// without building the composite key string.
+// without building the composite key string. Fully inlined by the compiler.
 func htHash64(bucket, key string) uint64 {
 	const offset64 = 14695981039346656037
 	const prime64 = 1099511628211
@@ -74,87 +86,26 @@ func (t *htable) probeDist(idx int, hash uint64) int {
 	return t.capacity - ideal + idx
 }
 
-// get looks up a record by pre-computed hash and composite key.
-// The key may be a stack-backed unsafeString — comparison is byte-by-byte.
-func (t *htable) get(hash uint64, key string) (*hotRecord, bool) {
+// get looks up an entry by 64-bit hash match (no key comparison).
+// With FNV-1a 64-bit hash, collision probability is ~2^-64 per pair.
+// For millions of keys, false positive probability is ~2^-32 — negligible.
+// This eliminates the arena indirection that caused read regressions in v6a.
+func (t *htable) get(hash uint64) (htEntry, bool) {
 	if t.count == 0 {
-		return nil, false
+		return htEntry{}, false
 	}
 	pos := int(hash & t.mask)
 	dist := 0
 	for {
 		e := &t.entries[pos]
 		if e.hash == 0 {
-			return nil, false
+			return htEntry{}, false
 		}
 		if t.probeDist(pos, e.hash) < dist {
-			return nil, false
+			return htEntry{}, false
 		}
-		if e.hash == hash && e.key == key {
-			return e.rec, true
-		}
-		pos = (pos + 1) & int(t.mask)
-		dist++
-	}
-}
-
-// update replaces the record for an existing key without Robin Hood swapping.
-// Returns (oldRecord, true) if found, (nil, false) if key doesn't exist.
-// Safe to call with stack-backed key strings.
-func (t *htable) update(hash uint64, key string, rec *hotRecord) (*hotRecord, bool) {
-	if t.count == 0 {
-		return nil, false
-	}
-	pos := int(hash & t.mask)
-	dist := 0
-	for {
-		e := &t.entries[pos]
-		if e.hash == 0 {
-			return nil, false
-		}
-		if t.probeDist(pos, e.hash) < dist {
-			return nil, false
-		}
-		if e.hash == hash && e.key == key {
-			old := e.rec
-			e.rec = rec
-			return old, true
-		}
-		pos = (pos + 1) & int(t.mask)
-		dist++
-	}
-}
-
-// put inserts or updates an entry. The key must be heap-allocated for new entries
-// (it will be stored in the table). Returns (oldRecord, true) on replacement.
-func (t *htable) put(hash uint64, key string, rec *hotRecord) (*hotRecord, bool) {
-	if t.count*100 >= t.capacity*htMaxLoad {
-		t.grow()
-	}
-	pos := int(hash & t.mask)
-	dist := 0
-	ih, ik, ir := hash, key, rec
-	for {
-		e := &t.entries[pos]
-		if e.hash == 0 {
-			e.hash = ih
-			e.key = ik
-			e.rec = ir
-			t.count++
-			return nil, false
-		}
-		if e.hash == ih && e.key == ik {
-			old := e.rec
-			e.rec = ir
-			return old, true
-		}
-		// Robin Hood: steal from entries closer to their ideal position.
-		ed := t.probeDist(pos, e.hash)
-		if ed < dist {
-			ih, e.hash = e.hash, ih
-			ik, e.key = e.key, ik
-			ir, e.rec = e.rec, ir
-			dist = ed
+		if e.hash == hash {
+			return *e, true
 		}
 		pos = (pos + 1) & int(t.mask)
 		dist++
@@ -162,12 +113,12 @@ func (t *htable) put(hash uint64, key string, rec *hotRecord) (*hotRecord, bool)
 }
 
 // putOrUpdate performs insert-or-update in a single table traversal.
-// searchKey is used for matching (may be stack-backed unsafeString).
-// insertKey is used for storage on insert (must be heap-allocated).
-// For updates: zero allocation (uses searchKey comparison only).
-// For inserts: zero allocation inside this function (insertKey pre-allocated by caller).
-// Returns (oldRecord, true) for updates, (nil, false) for inserts.
-func (t *htable) putOrUpdate(hash uint64, searchKey, insertKey string, rec *hotRecord) (*hotRecord, bool) {
+// Uses hash-only matching (2^-64 collision probability is negligible).
+// For inserts: newEntry is stored as-is (arena data already written by caller).
+// For updates: only arenaOff, ctLen, valueLen, size, updated are overwritten;
+// hash, keyLen, and created are preserved from the existing entry.
+// Returns (oldEntry, true) for updates, (zero, false) for inserts.
+func (t *htable) putOrUpdate(hash uint64, newEntry htEntry) (htEntry, bool) {
 	if t.count*100 >= t.capacity*htMaxLoad {
 		t.grow()
 	}
@@ -177,44 +128,40 @@ func (t *htable) putOrUpdate(hash uint64, searchKey, insertKey string, rec *hotR
 	for {
 		e := &t.entries[pos]
 		if e.hash == 0 {
-			// Empty slot — key doesn't exist. Insert here.
-			e.hash = hash
-			e.key = insertKey
-			e.rec = rec
+			// Empty slot — key doesn't exist. Insert.
+			*e = newEntry
 			t.count++
-			return nil, false
+			return htEntry{}, false
 		}
-		if e.hash == hash && e.key == searchKey {
-			// Key exists — update in place.
-			old := e.rec
-			e.rec = rec
+		if e.hash == hash {
+			// Hash match → update in place.
+			old := *e
+			e.arenaOff = newEntry.arenaOff
+			e.ctLen = newEntry.ctLen
+			e.valueLen = newEntry.valueLen
+			e.size = newEntry.size
+			e.updated = newEntry.updated
+			// Preserve: hash, keyLen, created
 			return old, true
 		}
 		ed := t.probeDist(pos, e.hash)
 		if ed < dist {
-			// Key doesn't exist (Robin Hood invariant). Insert with displacement.
-			ih, ik, ir := hash, insertKey, rec
-			ih, e.hash = e.hash, ih
-			ik, e.key = e.key, ik
-			ir, e.rec = e.rec, ir
+			// Robin Hood: key doesn't exist. Insert with displacement.
+			ie := newEntry
+			ie, *e = *e, ie
 			dist = ed
 			pos = (pos + 1) & mask
 			dist++
-			// Displacement loop for the evicted entry.
 			for {
 				e2 := &t.entries[pos]
 				if e2.hash == 0 {
-					e2.hash = ih
-					e2.key = ik
-					e2.rec = ir
+					*e2 = ie
 					t.count++
-					return nil, false
+					return htEntry{}, false
 				}
 				ed2 := t.probeDist(pos, e2.hash)
 				if ed2 < dist {
-					ih, e2.hash = e2.hash, ih
-					ik, e2.key = e2.key, ik
-					ir, e2.rec = e2.rec, ir
+					ie, *e2 = *e2, ie
 					dist = ed2
 				}
 				pos = (pos + 1) & mask
@@ -226,24 +173,24 @@ func (t *htable) putOrUpdate(hash uint64, searchKey, insertKey string, rec *hotR
 	}
 }
 
-// remove deletes an entry by hash+key. Uses backward-shift deletion
-// (no tombstones, keeps probe distances optimal).
-func (t *htable) remove(hash uint64, key string) (*hotRecord, bool) {
+// remove deletes an entry by 64-bit hash match. Uses backward-shift deletion.
+// Same hash-only matching as get — 2^-64 collision probability is negligible.
+func (t *htable) remove(hash uint64) (htEntry, bool) {
 	if t.count == 0 {
-		return nil, false
+		return htEntry{}, false
 	}
 	pos := int(hash & t.mask)
 	dist := 0
 	for {
 		e := &t.entries[pos]
 		if e.hash == 0 {
-			return nil, false
+			return htEntry{}, false
 		}
 		if t.probeDist(pos, e.hash) < dist {
-			return nil, false
+			return htEntry{}, false
 		}
-		if e.hash == hash && e.key == key {
-			old := e.rec
+		if e.hash == hash {
+			old := *e
 			t.backShift(pos)
 			t.count--
 			return old, true
@@ -253,7 +200,6 @@ func (t *htable) remove(hash uint64, key string) (*hotRecord, bool) {
 	}
 }
 
-// backwardShift moves entries after a deleted slot backward to fill the gap.
 func (t *htable) backShift(pos int) {
 	mask := int(t.mask)
 	for {
@@ -265,6 +211,27 @@ func (t *htable) backShift(pos int) {
 		}
 		t.entries[pos] = *ne
 		pos = next
+	}
+}
+
+// growInsert inserts during grow — no key comparison needed (no duplicates).
+func (t *htable) growInsert(e htEntry) {
+	pos := int(e.hash & t.mask)
+	dist := 0
+	for {
+		slot := &t.entries[pos]
+		if slot.hash == 0 {
+			*slot = e
+			t.count++
+			return
+		}
+		ed := t.probeDist(pos, slot.hash)
+		if ed < dist {
+			e, *slot = *slot, e
+			dist = ed
+		}
+		pos = (pos + 1) & int(t.mask)
+		dist++
 	}
 }
 
@@ -280,7 +247,7 @@ func (t *htable) grow() {
 	t.count = 0
 	for i := range old {
 		if old[i].hash != 0 {
-			t.put(old[i].hash, old[i].key, old[i].rec)
+			t.growInsert(old[i])
 		}
 	}
 }

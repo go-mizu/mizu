@@ -448,39 +448,69 @@ func shardForParts(bucket, key string) int {
 
 ## v2 Results
 
-*Results will be populated after optimization implementation and benchmarking.*
+### Architecture Changes (v2 → v2b)
+
+The initial v2 kept a global WAL mutex and global vlog mutex, which still serialized all 200 goroutines through 4 lock acquisitions per write. v2b restructured to **per-shard vlogs with embedded WAL metadata**, achieving:
+
+- **ONE lock per write** (shard.mu.Lock → vlog append → ART insert → unlock)
+- **ZERO global locks** in the write path
+- **Zero-copy reads** from mmap (no `make([]byte)` + `copy()` for reads)
+- **No separate WAL** — recovery scans shard vlog entries directly
 
 ### Performance Comparison
 
-| Benchmark | v1 Baseline | v2 Optimized | Improvement |
-|-----------|-------------|--------------|-------------|
-| Write/1KB | 221.0K ops/s | — | — |
-| Write/64KB | 13.1K ops/s | — | — |
-| Read/1KB | 557.7K ops/s | — | — |
-| Stat | 633.1K ops/s | — | — |
-| Delete | 274.2K ops/s | — | — |
-| List/100 | 77.7K ops/s | — | — |
+| Benchmark | v1 Baseline | v2b Optimized | Improvement |
+|-----------|-------------|---------------|-------------|
+| Write/1KB | 221.0K ops/s | **1,400K ops/s** | **6.3x** |
+| Write/64KB | 13.1K ops/s (816 MB/s) | **34.4K ops/s (2.1 GB/s)** | **2.6x** |
+| Write/1MB | — | **437 ops/s (436.9 MB/s)** | — |
+| Read/1KB | 557.7K ops/s | **3,600K ops/s** | **6.5x** |
+| Read/64KB | — | **715.7K ops/s (44.7 GB/s)** | — |
+| Read/1MB | — | **53.1K ops/s (53.1 GB/s)** | — |
+| Stat | 633.1K ops/s | **6,300K ops/s** | **10.0x** |
+| Delete | 274.2K ops/s | **3,900K ops/s** | **14.2x** |
+| Copy/1KB | — | **409.5 MB/s** | — |
+| List/100 | 77.7K ops/s | **72.2K ops/s** | 0.93x |
 
 ### Parallel Write Scalability
 
-| Concurrency | v1 Baseline | v2 Optimized | Improvement |
-|-------------|-------------|--------------|-------------|
-| C1 | 83.7 MB/s | — | — |
-| C200 | 0.46 MB/s | — | — |
+| Concurrency | v1 Baseline | v2b Optimized | Improvement |
+|-------------|-------------|---------------|-------------|
+| C1 | 83.7 MB/s | **500.7 MB/s** | **6.0x** |
+| C10 | — | **83.4 MB/s** | — |
+| C50 | — | **14.7 MB/s** | — |
+| C100 | — | **15.9 MB/s** | — |
+| C200 | 0.46 MB/s | **6.3 MB/s** | **13.7x** |
 
 ### Resource Usage
 
-| Metric | v1 Baseline | v2 Optimized | Change |
-|--------|-------------|--------------|--------|
-| Peak RSS | 6,109 MB | — | — |
-| Go Heap | 5,221 MB | — | — |
-| GC Cycles | 57 | — | — |
+| Metric | v1 Baseline | v2b Optimized | Change |
+|--------|-------------|---------------|--------|
+| Peak RSS (full bench) | 6,109 MB | 6,962 MB | +14% (mmap) |
+| Go Heap (full bench) | 5,221 MB | 3,007 MB | **-42%** |
+| GC Cycles (full bench) | 57 | 140 | +2.5x (more iters) |
+| Go Heap (100K×1KB) | — | **22.4 MB** | — |
+| Go Sys (100K×1KB) | — | **50.6 MB** | — |
+
+### Key Insight: Per-Shard Vlog Entry Format
+
+```
+Put entry:
+  [4B] entrySize  [1B] op=0  [2B] keyLen  [NB] key
+  [1B] ctLen  [MB] contentType  [8B] created  [8B] updated  [VB] value
+  Total: 24 + N + M + V bytes
+
+Delete entry:
+  [4B] entrySize  [1B] op=1  [2B] keyLen  [NB] key  [8B] timestamp
+  Total: 15 + N bytes
+```
+
+Recovery scans each shard's vlog sequentially (16 independent files), rebuilding
+the per-shard ART. No separate WAL file needed.
 
 ---
 
 ## Lessons Learned
-
-*To be updated after v2 implementation.*
 
 ### From v1 Analysis:
 
@@ -493,6 +523,18 @@ func shardForParts(bucket, key string) int {
 4. **Stat should never touch disk** — Store all metadata in-memory. The index exists for exactly this purpose.
 
 5. **Fsync batching is essential** — 2 fsyncs per write is 2ms overhead on macOS. Batch to amortize.
+
+### From v2/v2b Optimization:
+
+6. **Per-shard everything** — Having per-shard ART but global WAL/vlog still serializes writes. The shard boundary must encompass ALL mutable state (ART + vlog + WAL) to eliminate global contention.
+
+7. **Single lock per operation** — v2 used 4 locks per write (shard.RLock, vlog.mu, walMu, shard.Lock). v2b uses 1 lock (shard.Lock). Fewer lock acquisitions = less contention overhead.
+
+8. **Eliminate the WAL** — Embedding key metadata in the vlog entry makes the vlog self-describing. Recovery just scans the vlog. One less file, one less lock, simpler recovery.
+
+9. **Zero-copy mmap reads** — Returning a slice of mmap'd memory instead of `make([]byte) + copy()` eliminates the biggest allocation in the read path. Old mappings are intentionally leaked (bounded by geometric growth) to keep references safe.
+
+10. **Parallel write collapse is fundamental** — Even with 16 independent shards, 200 goroutines still contend ~12.5 per shard. Further improvement requires lock-free data structures or partitioned goroutine assignment.
 
 ---
 
