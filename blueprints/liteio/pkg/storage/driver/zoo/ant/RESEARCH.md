@@ -1343,6 +1343,406 @@ cpu: Apple M4
 
 ---
 
+## v5 Profiling Analysis
+
+**Environment:** Go 1.26.0, darwin/arm64 (Apple M4), 10 CPUs, benchtime=2-3s
+
+### v4 Baseline Benchmarks
+
+| Benchmark | ns/op | B/op | allocs/op |
+|-----------|-------|------|-----------|
+| **Write/1KB** | 790 | 461 | 7 |
+| **Read/1KB** | 73 | 13 | 1 |
+| **Stat** | 84 | 173 | 2 |
+| **Delete** | 203 | 26 | 2 |
+| **ParallelWrite/1KB/C10** | 396 | 438 | 7 |
+| **ParallelRead/1KB/C10** | 57 | 15 | 1 |
+| **Memory (100K)** | — | 24.5 MB | — |
+
+### CPU Profile: Read/1KB (3.47s total, ~47.5M iterations)
+
+```
+Total samples: 3.03s
+
+Function                        flat%   cum%    Category
+────────────────────────────────────────────────────────
+fmt.Sprintf                     —      33.56%   Benchmark harness (NOT our code)
+(*bucket).Open                  —      34.24%   Our code — optimization target
+  appendCompositeKey            —       4.31%   Key construction
+  artSearch (cache miss)        —       3.40%   ART traversal fallback
+  cleanKey                      —       3.40%   Key validation
+  shardForHash                  —       2.72%   Shard routing
+  sync.Pool.Get                 —       5.22%   Pool acquisition
+  fnv1a                         —       1.59%   Hash computation
+  RLock/RUnlock                 —       3.50%   Shard locking
+  htCache.lookup                —       1.32%   Cache lookup (very fast!)
+runtime.mallocgc                5.22%  15.19%   GC / allocation
+sync.Pool.Put (from Close)      —       8.39%   Pool return
+runtime.convT64                 —       8.16%   Boxing for fmt.Sprintf (harness)
+```
+
+**Key insight:** Excluding benchmark harness (~42%), the actual Read code is ~42ns per op.
+Biggest addressable costs: sync.Pool Get+Put (13.6%), appendCompositeKey (4.3%),
+artSearch fallback (3.4%), cleanKey (3.4%), fnv1a (1.6%).
+
+### CPU Profile: Stat (2.97s total, ~35.3M iterations)
+
+```
+Total samples: 1.97s
+
+Function                        flat%   cum%    Category
+────────────────────────────────────────────────────────
+(*bucket).Stat                  —      41.91%   Our code — optimization target
+  runtime.newobject             —      36.04%   &storage.Object{} = BIGGEST cost
+  shardForHash                  —       8.63%   Shard routing
+  cleanKey                      —       6.60%   Key validation
+  appendCompositeKey            —       6.09%   Key construction
+  artSearch (cache miss)        —       4.06%   ART traversal
+  htCache.lookup                —       3.05%   Cache lookup
+  time.Unix                     —       3.05%   Timestamp conversion (×2)
+  fnv1a                         —       2.54%   Hash computation
+  RLock/RUnlock                 —       5.07%   Shard locking
+fmt.Sprintf                     —      30.64%   Benchmark harness (NOT our code)
+```
+
+**Key insight:** Object allocation is **36% of Stat CPU**. At 35.3M iterations, Stat allocated
+4,497 MB of Object structs (89.4% of total memory profile). This is the single biggest
+addressable bottleneck.
+
+### CPU Profile: Write/1KB (8.10s total, ~10.3M iterations)
+
+```
+Total samples: 8.10s
+
+Function                        flat%   cum%    Category
+────────────────────────────────────────────────────────
+runtime.memmove                 34.57%  34.57%  IRREDUCIBLE — copying 1KB to mmap
+runtime.madvise                 20.49%  20.49%  IRREDUCIBLE — mmap page faults
+(*bucket).Write                 0.12%   43.33%  Our code
+  appendPutDirect               —      35.80%     (memmove + header writes)
+  artInsert                     —       2.22%     Tree insertion
+  artSearch (existing check)    —       2.22%     Existing key lookup
+  runtime.newobject             —       3.13%     Object + leaf allocs
+  acquireLeaf                   —       1.11%     Leaf pool
+  cleanKey                      —       0.25%     Key validation
+GC scanning                     —      ~22.72%  GC overhead
+```
+
+**Key insight:** Write is 55% irreducible (memmove + madvise). Only ~22% is addressable
+(GC scanning, artInsert/artSearch, newobject). **5x Write is physically impossible.**
+
+### CPU Profile: Delete (15.87s total, ~78.2M iterations)
+
+```
+Total samples: 15.87s
+
+Function                        flat%   cum%    Category
+────────────────────────────────────────────────────────
+runtime.madvise                 33.46%  33.46%  From Write setup in benchmark
+runtime.memmove                 13.26%  13.26%  From Write setup
+artDeleteRecursive              6.43%   13.70%  Our code — tree deletion
+  nodePrefix (type switch)      8.28%    8.28%  Type switch overhead
+(*bucket).Write (setup)         —      19.66%  Benchmark setup (not Delete)
+GC scanning                     3.59%  15.60%  GC overhead
+```
+
+**Key insight:** Delete benchmark overhead is dominated by its Write pre-population phase.
+Actual Delete path: `artDeleteRecursive` (13.7%) where `nodePrefix` type switches alone
+cost 8.28%. Tagged ART nodes could eliminate this.
+
+### Memory Profile: Read/1KB (567 MB total alloc)
+
+| Allocation Site | MB | % | Root Cause |
+|-----------------|-----|---|------------|
+| `(*bucket).Open` + BenchmarkRead1KB | 199 + others | ~36% | sync.Pool cold misses |
+| `fmt.Sprintf` | 235.5 | **41.5%** | Benchmark harness key gen |
+| `(*driver).Open` | 32.1 | 5.7% | Store initialization |
+| `acquireNode4 (pool.New)` | 30.5 | 5.4% | Pool cold start |
+| `acquireLeaf (pool.New)` | 16.0 | 2.8% | Pool cold start |
+| `bytes.NewReader` | 5.5 | 1.0% | Benchmark input wrapping |
+
+**Read allocations are minimal** — pool warm path achieves 1 alloc at 13 B/op.
+
+### Memory Profile: Stat (5,030 MB total alloc)
+
+| Allocation Site | MB | % | Root Cause |
+|-----------------|-----|---|------------|
+| `(*bucket).Stat` | **4,496.7** | **89.4%** | `&storage.Object{}` allocation |
+| `fmt.Sprintf` | 232.5 | 4.6% | Benchmark harness |
+| `(*bucket).Write` (setup) | 88.5 | 1.8% | Pre-population |
+| `acquireNode4 (pool.New)` | 28.5 | 0.6% | Pool cold start |
+
+**Stat is dominated by Object allocation** — 4.5 GB across 35.3M iterations = ~128 bytes per Object.
+
+### Per-Operation Cost Breakdown (v4)
+
+**Read/1KB at 73 ns/op (1 alloc, 13 B/op):**
+
+| Component | ns (est) | % | Addressable? |
+|-----------|----------|---|--------------|
+| sync.Pool.Get | ~3.8 | 5.2% | Partially — pool warmth |
+| cleanKey (isCleanKey fast path) | ~2.5 | 3.4% | YES — skip for trusted keys |
+| appendCompositeKey | ~3.1 | 4.3% | **YES — skip on cache hit** |
+| fnv1a(ck) | ~1.2 | 1.6% | **YES — use fnv1aParts** |
+| shardForHash | ~2.0 | 2.7% | Partially — pre-compute |
+| RLock | ~1.3 | 1.8% | No — required |
+| htCache.lookup | ~1.0 | 1.3% | No — already O(1) |
+| artSearch (20% miss) | ~0.7 | 1.0% | YES — increase cache size |
+| ctTable.get | ~0.7 | 1.0% | No — already lock-free |
+| time.Unix ×2 | ~1.8 | 2.5% | Minor savings possible |
+| Object fill (embedded) | ~1.0 | 1.4% | No — embedded in pool |
+| bytes.Reader.Reset | ~0.5 | 0.7% | No |
+| RUnlock | ~1.3 | 1.8% | No |
+| sync.Pool.Put (Close) | ~6.1 | 8.4% | Partially |
+| Benchmark overhead | ~30.7 | 42.0% | Not our code |
+| **Total** | **~73** | **100%** | ~8-10 ns addressable |
+
+**Stat at 84 ns/op (2 allocs, 173 B/op):**
+
+| Component | ns (est) | % | Addressable? |
+|-----------|----------|---|--------------|
+| **runtime.newobject (Object)** | **~30** | **36%** | **API constraint — cannot eliminate** |
+| appendCompositeKey | ~5.1 | 6.1% | **YES — skip on cache hit** |
+| cleanKey | ~5.5 | 6.6% | Minor — already fast-path |
+| fnv1a(ck) | ~2.1 | 2.5% | **YES — use fnv1aParts** |
+| shardForHash | ~7.2 | 8.6% | Partially — pre-compute |
+| RLock/RUnlock | ~4.3 | 5.1% | No |
+| htCache.lookup | ~2.6 | 3.1% | No |
+| artSearch (20% miss) | ~0.8 | 1.0% | YES — increase cache size |
+| time.Unix ×2 | ~2.6 | 3.1% | YES — store as raw nanos |
+| ctTable.get | ~0.8 | 1.0% | No |
+| Benchmark overhead | ~25.7 | 30.6% | Not our code |
+| **Total** | **~84** | **100%** | ~12-15 ns addressable |
+
+### v5 Bottleneck Summary
+
+| # | Bottleneck | Impact | Paths | Addressable? |
+|---|------------|--------|-------|--------------|
+| 1 | **Stat Object allocation** | 36% Stat CPU, 89% Stat memory | Stat | **API constraint — hard limit** |
+| 2 | **Composite key on cache hit** | 5-7ns per op (ck build + fnv1a) | Read/Stat/Delete | **YES — fnv1aParts + skip** |
+| 3 | **Bucket name re-hashing** | ~2ns per op | All | **YES — pre-compute hash prefix** |
+| 4 | **Cache miss rate ~20%** | ~0.7-0.8ns avg per op | Read/Stat | **YES — larger cache** |
+| 5 | **ART type switches** | 8.3% Delete CPU (nodePrefix) | Delete | **YES — tagged nodes** |
+| 6 | **time.Unix overhead** | ~2.5ns per op (2 calls) | Read/Stat | Minor |
+| 7 | **ctx.Err() overhead** | ~1ns per op | All | Minor |
+| 8 | **sync.Pool overhead** | 13% Read CPU (Get+Put) | Read | Partially (pool warmth) |
+| 9 | **memmove + madvise** | 55% Write CPU | Write | **IRREDUCIBLE** |
+
+### 5x Feasibility Analysis
+
+**Read/1KB (73 ns → target 14.6 ns):**
+- Benchmark harness alone is ~31 ns. Cannot reach 14.6 ns total.
+- True code time: ~42 ns. Addressable savings: ~8-10 ns → ~32-34 ns true = ~40-42 ns measured.
+- **Realistic: 1.5-1.8x improvement** (40-50 ns measured).
+
+**Stat (84 ns → target 16.8 ns):**
+- Object allocation alone is ~30 ns (API constraint). Cannot reach 16.8 ns.
+- Addressable savings (excl. Object): ~12-15 ns → ~69-72 ns.
+- **Realistic: 1.15-1.22x improvement** (without API change).
+
+**Write/1KB (790 ns → target 158 ns):**
+- memmove alone is ~273 ns. Cannot reach 158 ns.
+- **Realistic: 1.05-1.15x improvement** (700-750 ns).
+
+**Delete (203 ns → target 40.6 ns):**
+- **Realistic: 1.2-1.5x improvement** (135-170 ns) with tagged nodes + skip ck.
+
+**Conclusion:** 5x across-the-board is physically impossible due to:
+1. Write: memmove of 1KB value data = 273 ns irreducible floor
+2. Stat: Object heap allocation = 30 ns irreducible floor (API constraint)
+3. Read: benchmark harness = 31 ns floor; code already at ~42 ns
+4. Delete: benchmark setup overhead masks actual delete performance
+
+**Best achievable improvement with micro-optimizations: 1.1-1.8x per operation.**
+
+---
+
+## v5 Optimization Journey
+
+### O1: Skip Composite Key Construction on Cache Hit
+
+**Problem:** Every Read/Stat/Delete operation builds a composite key (`appendCompositeKey`) and
+hashes it (`fnv1a`), even when the htCache returns a hit and the ART is never consulted.
+This wastes ~5-7 ns per operation on cache hits (~80% of calls).
+
+**Solution:** Use `fnv1aParts(bucket, key)` to compute the hash directly from strings (no
+composite key materialization). Only build the composite key on cache miss (~20% of calls).
+
+```go
+func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*storage.Object, error) {
+    relKey, err := cleanKey(key)
+    if err != nil { return nil, err }
+
+    keyHash := fnv1aParts(b.name, relKey) // hash without building ck
+    shard := b.store.shardForHash(keyHash)
+
+    shard.mu.RLock()
+    leaf := shard.ht.lookup(keyHash)
+    if leaf == nil {
+        // Cache miss — build ck and search ART
+        var buf [256]byte
+        ck := appendCompositeKey(buf[:0], b.name, relKey)
+        leaf = artSearch(shard.root, ck, keyHash)
+    }
+    // ...
+}
+```
+
+**Expected savings:** ~4-5 ns average (5-7 ns × 80% hit rate).
+
+### O2: Pre-Compute Bucket Hash Prefix
+
+**Problem:** Every operation re-hashes the bucket name bytes, which are identical across calls
+to the same bucket. For bucket "default" (7 bytes), that's 7 FNV-1a iterations wasted per call.
+
+**Solution:** Pre-compute FNV-1a state after hashing bucket name + null separator. Store in
+bucket struct. Each operation continues from pre-computed state.
+
+```go
+type bucket struct {
+    store    *store
+    name     string
+    hashBase uint64 // pre-computed FNV-1a of "bucketname\x00"
+}
+
+func fnv1aFromBase(base uint64, key string) uint64 {
+    h := base
+    for i := 0; i < len(key); i++ {
+        h ^= uint64(key[i])
+        h *= 1099511628211
+    }
+    return h
+}
+```
+
+**Expected savings:** ~1-2 ns per op.
+
+### O3: Larger Hash Cache (4096 → 16384)
+
+**Problem:** With htCacheSize=4096 per shard, the cache miss rate is ~20%. Each miss falls
+back to O(key_length) ART traversal. With 100K entries across 64 shards (~1,562 per shard),
+many entries compete for 4,096 slots.
+
+**Solution:** Increase to 16,384 entries. With 1,562 entries in 16,384 slots, expected fill
+rate = 9.5%, collision rate drops to ~5%.
+
+```go
+const htCacheSize = 16384
+const htCacheMask = htCacheSize - 1
+```
+
+**Memory cost:** 64 shards × 16,384 × 16B = **16 MB** (total budget: 100 MB).
+
+**Expected savings:** ~1-2 ns average (fewer ART fallbacks).
+
+### O4: ctx.Err() Fast Path
+
+**Problem:** Every operation calls `ctx.Err()` which checks if context is cancelled. Most
+production and benchmark calls use `context.Background()`, where this is always nil.
+
+**Solution:** Compare context pointer to background context first.
+
+```go
+var bgCtx = context.Background()
+
+func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*storage.Object, error) {
+    if ctx != bgCtx {
+        if err := ctx.Err(); err != nil { return nil, err }
+    }
+    // ...
+}
+```
+
+**Expected savings:** ~0.5-1 ns per op.
+
+### O5: Pre-computed time.Time for fastNow()
+
+**Problem:** Every Read/Stat call makes 2× `time.Unix(0, leaf.created)` + `time.Unix(0, leaf.updated)`.
+Each call does integer division to split seconds and nanoseconds.
+
+**Solution:** Pre-compute the time.Time once per cached time tick and store both
+`fastNow() int64` and `fastTimeVal() time.Time`. For Objects where created == updated
+(common for fresh writes), reuse a single time.Time.
+
+**Expected savings:** ~1-2 ns per op.
+
+---
+
+## v5 Results
+
+### v5 Optimizations Applied
+
+1. **Skip composite key on cache hit** — fnv1aFromBase hashes key from pre-computed state; ck only built on cache miss (~10-20% of calls)
+2. **Pre-compute bucket hash prefix** — `hashBase` field in bucket struct eliminates re-hashing bucket name on every call
+3. **Larger hash cache (4096→8192)** — 2× slots reduces miss rate from ~20% to ~10% (16384 caused L1 cache thrashing)
+4. **ctx.Err() fast path** — pointer comparison to `context.Background()` skips nil check on hot paths
+5. **Hash from pre-computed base** — `fnv1aFromBase(b.hashBase, relKey)` replaces `fnv1a(ck)` on all hot paths
+
+### v5 Benchmark Results (count=3, median)
+
+```
+goos: darwin
+goarch: arm64
+cpu: Apple M4
+```
+
+| Benchmark | v4 ns/op | v5 ns/op | Speedup | B/op | allocs |
+|-----------|----------|----------|---------|------|--------|
+| Write/1KB | 790 | 777 | 1.02x | 460 | 7 |
+| Read/1KB | 73 | 69 | **1.06x** | 13 | 1 |
+| Stat | 84 | 81 | **1.04x** | 173 | 2 |
+| Delete | 203 | 194 | **1.05x** | 26 | 2 |
+| ParallelWrite C10 | 396 | 376 | **1.05x** | 437 | 7 |
+| ParallelRead C10 | 57 | 53 | **1.07x** | 15 | 1 |
+
+### v5 Memory Budget
+
+| Component | v4 | v5 |
+|-----------|-----|-----|
+| ART nodes (100K entries) | ~23 MB | ~23 MB |
+| Hash cache (64 × N × 16B) | 4 MB (N=4096) | 8 MB (N=8192) |
+| Vlog mmap | ~6 MB | ~6 MB |
+| **Total (measured HeapInuse)** | **24.5 MB** | **25.8 MB** |
+| Budget | 100 MB | 100 MB |
+
+### v5 Key Findings
+
+- **Improvements are modest (3-7%)** because v4 already eliminated the major bottlenecks. The remaining costs are dominated by irreducible factors: memmove (34.6% Write), madvise (20.5% Write), Object allocation (36% Stat), and benchmark harness overhead (30-34% Read/Stat).
+
+- **htCacheSize=16384 caused regression** — 256KB per shard exceeds L1 data cache (128KB on M4). Random hash-indexed access thrashes L1. htCacheSize=8192 (128KB per shard) fits L1 and performs better. Lesson: direct-mapped cache size must respect L1 capacity.
+
+- **Skip-ck-on-cache-hit helps Read/Stat most** — these paths use ht.lookup first and only fall back to ART on miss. With 90% hit rate (8192 slots), 90% of calls avoid `appendCompositeKey` + `fnv1a(ck)` entirely, saving ~5ns per operation.
+
+- **Pre-computed hash base is a constant-factor win** — eliminates 7 FNV-1a iterations (bucket "default" = 7 chars + null) per call. Small but compounds: saves ~1-2ns per op across all paths.
+
+### v5 Cumulative Improvement (v1 → v5)
+
+| Benchmark | v1 | v3 | v4 | v5 | v1→v5 |
+|-----------|-----|-----|-----|-----|-------|
+| Write/1KB (ns) | 4,525 | 695 | 790 | 777 | **5.8x** |
+| Read/1KB (ns) | 1,794 | 142 | 73 | 69 | **26.0x** |
+| Stat (ns) | 1,581 | 133 | 84 | 81 | **19.5x** |
+| Delete (ns) | 3,649 | 221 | 203 | 194 | **18.8x** |
+| Memory (100K) | 274 MB | 24 MB | 24.5 MB | 25.8 MB | **10.6x better** |
+
+---
+
+## Lessons Learned
+
+### From v5 Implementation:
+
+30. **L1 cache size constrains direct-mapped cache** — A 16384-entry hash cache (256KB) exceeds M4's 128KB L1d and causes regression on Write/Delete. Halving to 8192 (128KB) restores performance. Always benchmark cache size against the CPU's L1 capacity.
+
+31. **Pre-computing hash base is O(1) amortized** — For a fixed bucket name, hashing the same 7-8 bytes on every call is pure waste. Store the FNV-1a state after hashing the bucket+null prefix. This is a pattern applicable to any hash-based lookup with a shared key prefix.
+
+32. **Skip work on the fast path, not the slow path** — Building the composite key is unnecessary when htCache hits (~90%). Moving ck construction into the cache-miss branch eliminates 5-7 ns on 90% of Read/Stat calls. The principle: defer expensive work until you know you need it.
+
+33. **Micro-optimizations compound but plateau** — v5 improvements (3-7%) are much smaller than v3 (1.3-1.9x) or v4 (1.1-1.9x). Each optimization round has diminishing returns as we approach irreducible costs (memmove, madvise, Object alloc, GC). At some point, the only path to 5x is architectural change (e.g., different storage format, different API contract).
+
+34. **Benchmark harness is 30-40% of measured time** — `fmt.Sprintf("k/%d", i)` in the benchmark loop is 30-40% of Read/Stat CPU. True code performance is 1.4-1.7× better than reported ns/op. When optimizing at the micro level, profile the benchmark itself to understand the measurement floor.
+
+---
+
 ## Appendix: Profile Commands
 
 ### Running Benchmarks
