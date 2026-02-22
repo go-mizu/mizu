@@ -215,13 +215,14 @@ func (b *bucket) CompleteMultipart(ctx context.Context, mu *storage.MultipartUpl
 	b.st.mp.mu.Unlock()
 
 	now := fastNow()
-	_, valOff, err := b.st.vol.appendRecord(recPut, b.name, upload.mu.Key, upload.contentType, data, now)
+	st := b.st.stripeFor(b.name, upload.mu.Key)
+	_, valOff, err := st.vol.appendRecord(recPut, b.name, upload.mu.Key, upload.contentType, data, now)
 	if err != nil {
 		return nil, err
 	}
 
 	size := int64(totalSize)
-	b.st.idx.put(b.name, upload.mu.Key, upload.contentType, valOff, size, now, now)
+	st.idx.put(b.name, upload.mu.Key, upload.contentType, valOff, size, now, now)
 
 	return &storage.Object{
 		Bucket:      b.name,

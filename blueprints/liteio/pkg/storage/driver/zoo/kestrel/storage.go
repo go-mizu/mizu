@@ -1,13 +1,14 @@
 // Package kestrel implements a high-performance in-memory storage driver
-// using sharded Go maps with zero-allocation hot paths.
+// using a hybrid architecture: sharded Go maps + per-P value allocation.
 //
-// Architecture (v2):
-//   - 1024 sharded Go maps (16x less contention than v1's 256)
-//   - Value-type records in map (zero per-record heap allocation)
-//   - sync.Pool chunk allocator for values (per-P locality, no mmap madvise)
+// Architecture (v3):
+//   - 1024 sharded Go maps (minimizes lock contention with 200+ goroutines)
+//   - Per-P value allocation via sync.Pool chunks (zero lock contention on writes)
+//   - Mmap arena for composite key strings (GC-invisible map keys)
+//   - Pooled hotRecord structs via sync.Pool (eliminates per-record heap alloc)
 //   - Stack-buffer composite keys for reads (allocation-free lookups)
-//   - Heap composite key only on new inserts (updates reuse existing map key)
-//   - Deferred key index updates via background goroutine
+//   - Pointer returns from hotGet (zero-copy field access)
+//   - Embedded pending index ops in shard (single lock per write)
 //
 // DSN format:
 //
@@ -59,10 +60,6 @@ func fastTime() time.Time { return time.Unix(0, fastNow()) }
 // Composite key helpers (allocation-free for read path)
 // ---------------------------------------------------------------------------
 
-func compositeKey(bucket, key string) string {
-	return bucket + "\x00" + key
-}
-
 func compositeKeyBuf(buf []byte, bucket, key string) []byte {
 	n := len(bucket) + 1 + len(key)
 	if cap(buf) >= n {
@@ -81,7 +78,7 @@ func unsafeString(b []byte) string {
 }
 
 // ---------------------------------------------------------------------------
-// Index operation (deferred to background goroutine)
+// Index operation
 // ---------------------------------------------------------------------------
 
 type indexOp struct {
@@ -90,28 +87,45 @@ type indexOp struct {
 }
 
 // ---------------------------------------------------------------------------
-// Record stored BY VALUE in shard map (eliminates per-record heap allocation)
+// Record (stored in shard map, value data in sync.Pool chunks)
 // ---------------------------------------------------------------------------
 
 type hotRecord struct {
-	value   []byte // slice into chunk pool (GC sees header only, not contents)
-	ct      string // content type
+	value   []byte
+	ct      string
 	size    int64
 	created int64
 	updated int64
 }
 
+var recordPool = sync.Pool{
+	New: func() any { return &hotRecord{} },
+}
+
+func acquireRecord() *hotRecord {
+	return recordPool.Get().(*hotRecord)
+}
+
+func releaseRecord(r *hotRecord) {
+	if r != nil {
+		r.value = nil
+		recordPool.Put(r)
+	}
+}
+
 // ---------------------------------------------------------------------------
-// Shard (padded to avoid false sharing)
+// Shard (padded to avoid false sharing on CPU caches)
 // ---------------------------------------------------------------------------
 
 type shard struct {
-	mu   sync.RWMutex
-	data map[string]hotRecord
-	_    [24]byte // cache-line padding
+	mu      sync.RWMutex
+	data    map[string]*hotRecord
+	pending []indexOp // protected by mu (single lock for data+pending)
+	_       [16]byte  // cache-line padding
 }
 
 // shardForParts computes shard index from bucket+key without allocation.
+// For keys > 16 bytes, samples first+last 8 bytes for O(1) hashing.
 func shardForParts(bucket, key string) uint32 {
 	const offset32 = 2166136261
 	const prime32 = 16777619
@@ -122,8 +136,22 @@ func shardForParts(bucket, key string) uint32 {
 	}
 	h ^= 0 // null separator
 	h *= prime32
-	for i := 0; i < len(key); i++ {
-		h ^= uint32(key[i])
+	if len(key) <= 16 {
+		for i := 0; i < len(key); i++ {
+			h ^= uint32(key[i])
+			h *= prime32
+		}
+	} else {
+		// Sample first 8 + last 8 bytes + length for O(1) shard selection.
+		for i := 0; i < 8; i++ {
+			h ^= uint32(key[i])
+			h *= prime32
+		}
+		for i := len(key) - 8; i < len(key); i++ {
+			h ^= uint32(key[i])
+			h *= prime32
+		}
+		h ^= uint32(len(key))
 		h *= prime32
 	}
 	return h & shardMask
@@ -160,8 +188,13 @@ func (d *driver) Open(_ context.Context, dsn string) (storage.Storage, error) {
 		return nil, fmt.Errorf("kestrel: mkdir root: %w", err)
 	}
 
-	// Reduce GC frequency. Bulk data lives in chunk pool sub-allocations;
-	// only map bucket metadata is on Go heap.
+	arena, err := newValueArena()
+	if err != nil {
+		return nil, err
+	}
+
+	// Reduce GC frequency. Bulk data lives in sync.Pool chunks;
+	// composite keys live in mmap (GC-invisible).
 	debug.SetGCPercent(800)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -169,6 +202,7 @@ func (d *driver) Open(_ context.Context, dsn string) (storage.Storage, error) {
 	st := &store{
 		root:        root,
 		hotMaxBytes: hotMaxBytes,
+		arena:       arena,
 		storBkts:    make(map[string]time.Time),
 		mp:          newMultipartRegistry(),
 		stopTick:    make(chan struct{}),
@@ -176,9 +210,9 @@ func (d *driver) Open(_ context.Context, dsn string) (storage.Storage, error) {
 		cancel:      cancel,
 	}
 
-	// Initialize shards with pre-sized maps.
+	// Initialize shards.
 	for i := range st.shards {
-		st.shards[i].data = make(map[string]hotRecord, 256)
+		st.shards[i].data = make(map[string]*hotRecord, 256)
 	}
 
 	st.bgWg.Add(1)
@@ -209,6 +243,7 @@ type store struct {
 	hotMaxBytes int64
 
 	shards [numShards]shard
+	arena  *valueArena // for composite key strings (GC-invisible)
 
 	hotCount atomic.Int64
 	hotBytes atomic.Int64
@@ -220,9 +255,6 @@ type store struct {
 	mp         *multipartRegistry
 	indexDirty atomic.Bool
 
-	pendingMu  [numShards]sync.Mutex
-	pendingOps [numShards][]indexOp
-
 	stopTick chan struct{}
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -231,71 +263,59 @@ type store struct {
 
 var _ storage.Storage = (*store)(nil)
 
-// hotPut writes a record. Value data should already be allocated via allocValue.
-func (s *store) hotPut(bkt, key string, value []byte, ct string, size int64, created, updated int64) {
+// hotPut stores a pre-populated record.
+// Value data should already be allocated (via allocValue or arena).
+func (s *store) hotPut(bkt, key string, rec *hotRecord) {
 	si := shardForParts(bkt, key)
 	sh := &s.shards[si]
 
-	// Stack-buffer composite key for map lookup (zero allocation).
-	var buf [256]byte
+	// Stack-buffer composite key for lookup (zero allocation up to ~500B keys).
+	var buf [512]byte
 	ck := unsafeString(compositeKeyBuf(buf[:0], bkt, key))
 
 	sh.mu.Lock()
-	if existing, ok := sh.data[ck]; ok {
-		// Update existing entry: map retains old key string, just replaces value.
-		if created == updated {
-			created = existing.created
-		}
-		oldSize := int64(len(existing.value))
-		sh.data[ck] = hotRecord{
-			value:   value,
-			ct:      ct,
-			size:    size,
-			created: created,
-			updated: updated,
-		}
-		sh.mu.Unlock()
-		if s.hotMaxBytes > 0 {
-			s.hotBytes.Add(int64(len(value)) - oldSize)
-		}
-		return
+	old, existed := sh.data[ck]
+	if !existed {
+		// New entry: allocate composite key in mmap arena (GC-invisible).
+		keyBytes := s.arena.alloc(len(bkt) + 1 + len(key))
+		copy(keyBytes, bkt)
+		keyBytes[len(bkt)] = 0
+		copy(keyBytes[len(bkt)+1:], key)
+		ck = unsafeString(keyBytes)
+		sh.pending = append(sh.pending, indexOp{bucket: bkt, key: key})
+	} else if rec.created == rec.updated {
+		rec.created = old.created
 	}
-	// New entry: must allocate heap string for map key.
-	heapCK := compositeKey(bkt, key)
-	sh.data[heapCK] = hotRecord{
-		value:   value,
-		ct:      ct,
-		size:    size,
-		created: created,
-		updated: updated,
-	}
+	sh.data[ck] = rec
 	sh.mu.Unlock()
 
-	s.hotCount.Add(1)
-	if s.hotMaxBytes > 0 {
-		s.hotBytes.Add(int64(len(value)))
+	if existed {
+		if s.hotMaxBytes > 0 {
+			s.hotBytes.Add(int64(len(rec.value)) - int64(len(old.value)))
+		}
+		releaseRecord(old)
+	} else {
+		s.hotCount.Add(1)
+		if s.hotMaxBytes > 0 {
+			s.hotBytes.Add(int64(len(rec.value)))
+		}
+		s.indexDirty.Store(true)
 	}
-	s.pendingMu[si].Lock()
-	s.pendingOps[si] = append(s.pendingOps[si], indexOp{bucket: bkt, key: key})
-	s.pendingMu[si].Unlock()
-	s.indexDirty.Store(true)
 }
 
-// hotGet retrieves a record (allocation-free lookup via stack buffer).
-func (s *store) hotGet(bkt, key string) (value []byte, ct string, sz int64, created, updated int64, ok bool) {
+// hotGet retrieves a record pointer (allocation-free lookup).
+// The returned pointer is valid as long as the key exists in the map.
+func (s *store) hotGet(bkt, key string) (*hotRecord, bool) {
 	si := shardForParts(bkt, key)
 	sh := &s.shards[si]
 
-	var buf [256]byte
+	var buf [512]byte
 	ck := unsafeString(compositeKeyBuf(buf[:0], bkt, key))
 
 	sh.mu.RLock()
-	rec, found := sh.data[ck]
+	rec, ok := sh.data[ck]
 	sh.mu.RUnlock()
-	if !found {
-		return nil, "", 0, 0, 0, false
-	}
-	return rec.value, rec.ct, rec.size, rec.created, rec.updated, true
+	return rec, ok
 }
 
 // hotDelete removes a record from the sharded map.
@@ -303,28 +323,27 @@ func (s *store) hotDelete(bkt, key string) bool {
 	si := shardForParts(bkt, key)
 	sh := &s.shards[si]
 
-	var buf [256]byte
+	var buf [512]byte
 	ck := unsafeString(compositeKeyBuf(buf[:0], bkt, key))
 
 	sh.mu.Lock()
 	rec, found := sh.data[ck]
-	if !found {
-		sh.mu.Unlock()
-		return false
+	if found {
+		valLen := int64(len(rec.value))
+		delete(sh.data, ck)
+		s.hotCount.Add(-1)
+		if s.hotMaxBytes > 0 {
+			s.hotBytes.Add(-valLen)
+		}
+		sh.pending = append(sh.pending, indexOp{bucket: bkt, key: key, remove: true})
 	}
-	valLen := int64(len(rec.value))
-	delete(sh.data, ck)
 	sh.mu.Unlock()
 
-	s.hotCount.Add(-1)
-	if s.hotMaxBytes > 0 {
-		s.hotBytes.Add(-valLen)
+	if found {
+		releaseRecord(rec)
+		s.indexDirty.Store(true)
 	}
-	s.pendingMu[si].Lock()
-	s.pendingOps[si] = append(s.pendingOps[si], indexOp{bucket: bkt, key: key, remove: true})
-	s.pendingMu[si].Unlock()
-	s.indexDirty.Store(true)
-	return true
+	return found
 }
 
 // ---------------------------------------------------------------------------
@@ -350,12 +369,13 @@ func (s *store) indexLoop() {
 
 func (s *store) processIndexOps() {
 	for i := range numShards {
-		s.pendingMu[i].Lock()
-		pending := s.pendingOps[i]
+		sh := &s.shards[i]
+		sh.mu.Lock()
+		pending := sh.pending
 		if len(pending) > 0 {
-			s.pendingOps[i] = nil
+			sh.pending = nil
 		}
-		s.pendingMu[i].Unlock()
+		sh.mu.Unlock()
 
 		for _, op := range pending {
 			if op.remove {
@@ -384,15 +404,15 @@ func (s *store) listKeys(bucketName, prefix string) []*storage.Object {
 
 	objs := make([]*storage.Object, 0, len(keys))
 	for _, key := range keys {
-		_, ct, sz, created, updated, ok := s.hotGet(bucketName, key)
+		rec, ok := s.hotGet(bucketName, key)
 		if ok {
 			objs = append(objs, &storage.Object{
 				Bucket:      bucketName,
 				Key:         key,
-				Size:        sz,
-				ContentType: ct,
-				Created:     time.Unix(0, created),
-				Updated:     time.Unix(0, updated),
+				Size:        rec.size,
+				ContentType: rec.ct,
+				Created:     time.Unix(0, rec.created),
+				Updated:     time.Unix(0, rec.updated),
 			})
 		}
 	}
@@ -511,5 +531,6 @@ func (s *store) Close() error {
 	s.cancel()
 	close(s.stopTick)
 	s.bgWg.Wait()
+	s.arena.close()
 	return nil
 }

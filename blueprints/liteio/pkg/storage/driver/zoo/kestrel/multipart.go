@@ -127,11 +127,11 @@ func (b *bucket) CopyPart(ctx context.Context, mu *storage.MultipartUpload, numb
 	srcOffset, _ := opts["source_offset"].(int64)
 	srcLength, _ := opts["source_length"].(int64)
 
-	value, _, _, _, _, found := b.st.hotGet(srcBucket, srcKey)
+	rec, found := b.st.hotGet(srcBucket, srcKey)
 	if !found {
 		return nil, storage.ErrNotExist
 	}
-	data := value
+	data := rec.value
 	if srcOffset > 0 {
 		if srcOffset >= int64(len(data)) {
 			data = nil
@@ -190,15 +190,22 @@ func (b *bucket) CompleteMultipart(_ context.Context, mu *storage.MultipartUploa
 
 	now := fastNow()
 
-	// Assemble parts directly into arena.
-	arenaVal := b.st.arena.alloc(int(totalSize))
+	// Assemble parts into a single value via allocValue.
+	assembled := allocValue(int(totalSize))
 	n := 0
 	for _, p := range parts {
-		n += copy(arenaVal[n:], upload.parts[p.Number].data)
+		n += copy(assembled[n:], upload.parts[p.Number].data)
 	}
-	arenaVal = arenaVal[:n]
+	assembled = assembled[:n]
 
-	b.st.hotPutArena(b.name, upload.key, arenaVal, upload.contentType, int64(n), now, now)
+	rec := acquireRecord()
+	rec.value = assembled
+	rec.ct = upload.contentType
+	rec.size = int64(n)
+	rec.created = now
+	rec.updated = now
+
+	b.st.hotPut(b.name, upload.key, rec)
 
 	return &storage.Object{
 		Bucket: b.name, Key: upload.key, Size: int64(n), ContentType: upload.contentType,

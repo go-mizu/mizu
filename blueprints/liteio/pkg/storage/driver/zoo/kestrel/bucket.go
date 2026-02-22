@@ -89,20 +89,27 @@ func (b *bucket) Write(_ context.Context, key string, src io.Reader, size int64,
 
 	now := fastNow()
 
-	// Fast path: known size — allocate from chunk pool, read directly into it.
+	// Fast path: known size — allocate from per-P chunk pool (zero contention).
 	if size >= 0 {
-		var val []byte
+		data := allocValue(int(size))
 		valLen := 0
 		if size > 0 {
-			val = allocValue(int(size))
-			nr, err := io.ReadFull(src, val)
+			nr, err := io.ReadFull(src, data)
 			if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 				return nil, fmt.Errorf("kestrel: read value: %w", err)
 			}
 			valLen = nr
-			val = val[:nr]
+			data = data[:nr]
 		}
-		b.st.hotPut(b.name, key, val, contentType, int64(valLen), now, now)
+
+		rec := acquireRecord()
+		rec.value = data
+		rec.ct = contentType
+		rec.size = int64(valLen)
+		rec.created = now
+		rec.updated = now
+
+		b.st.hotPut(b.name, key, rec)
 
 		return &storage.Object{
 			Bucket: b.name, Key: key, Size: int64(valLen), ContentType: contentType,
@@ -110,15 +117,21 @@ func (b *bucket) Write(_ context.Context, key string, src io.Reader, size int64,
 		}, nil
 	}
 
-	// Slow path: unknown size — buffer first, then copy to chunk pool.
+	// Slow path: unknown size — buffer first.
 	var buf bytes.Buffer
 	if _, err := io.Copy(&buf, src); err != nil {
 		return nil, fmt.Errorf("kestrel: read value: %w", err)
 	}
 	data := buf.Bytes()
-	val := allocValue(len(data))
-	copy(val, data)
-	b.st.hotPut(b.name, key, val, contentType, int64(len(data)), now, now)
+
+	rec := acquireRecord()
+	rec.value = data
+	rec.ct = contentType
+	rec.size = int64(len(data))
+	rec.created = now
+	rec.updated = now
+
+	b.st.hotPut(b.name, key, rec)
 
 	return &storage.Object{
 		Bucket: b.name, Key: key, Size: int64(len(data)), ContentType: contentType,
@@ -131,7 +144,7 @@ func (b *bucket) Open(_ context.Context, key string, offset, length int64, _ sto
 		return nil, nil, fmt.Errorf("kestrel: key is empty")
 	}
 
-	value, ct, sz, created, updated, ok := b.st.hotGet(b.name, key)
+	rec, ok := b.st.hotGet(b.name, key)
 	if !ok {
 		return nil, nil, storage.ErrNotExist
 	}
@@ -139,13 +152,13 @@ func (b *bucket) Open(_ context.Context, key string, offset, length int64, _ sto
 	obj := &storage.Object{
 		Bucket:      b.name,
 		Key:         key,
-		Size:        sz,
-		ContentType: ct,
-		Created:     time.Unix(0, created),
-		Updated:     time.Unix(0, updated),
+		Size:        rec.size,
+		ContentType: rec.ct,
+		Created:     time.Unix(0, rec.created),
+		Updated:     time.Unix(0, rec.updated),
 	}
 
-	data := value
+	data := rec.value
 	if offset < 0 {
 		offset = 0
 	}
@@ -170,30 +183,30 @@ func (b *bucket) Stat(_ context.Context, key string, _ storage.Options) (*storag
 		if len(keys) == 0 {
 			return nil, storage.ErrNotExist
 		}
-		_, _, _, created, updated, ok := b.st.hotGet(b.name, keys[0])
+		rec, ok := b.st.hotGet(b.name, keys[0])
 		if ok {
 			return &storage.Object{
 				Bucket:  b.name,
 				Key:     strings.TrimSuffix(key, "/"),
 				IsDir:   true,
-				Created: time.Unix(0, created),
-				Updated: time.Unix(0, updated),
+				Created: time.Unix(0, rec.created),
+				Updated: time.Unix(0, rec.updated),
 			}, nil
 		}
 		return &storage.Object{Bucket: b.name, Key: strings.TrimSuffix(key, "/"), IsDir: true}, nil
 	}
 
-	_, ct, sz, created, updated, ok := b.st.hotGet(b.name, key)
+	rec, ok := b.st.hotGet(b.name, key)
 	if !ok {
 		return nil, storage.ErrNotExist
 	}
 	return &storage.Object{
 		Bucket:      b.name,
 		Key:         key,
-		Size:        sz,
-		ContentType: ct,
-		Created:     time.Unix(0, created),
-		Updated:     time.Unix(0, updated),
+		Size:        rec.size,
+		ContentType: rec.ct,
+		Created:     time.Unix(0, rec.created),
+		Updated:     time.Unix(0, rec.updated),
 	}, nil
 }
 
@@ -214,22 +227,28 @@ func (b *bucket) Copy(_ context.Context, dstKey string, srcBucket, srcKey string
 	if srcBucket == "" {
 		srcBucket = b.name
 	}
-	value, ct, sz, _, _, ok := b.st.hotGet(srcBucket, srcKey)
+	rec, ok := b.st.hotGet(srcBucket, srcKey)
 	if !ok {
 		return nil, storage.ErrNotExist
 	}
 
 	now := fastNow()
-	var val []byte
-	if len(value) > 0 {
-		val = allocValue(len(value))
-		copy(val, value)
-	}
 
-	b.st.hotPut(b.name, dstKey, val, ct, sz, now, now)
+	// Copy value bytes via per-P chunk allocator.
+	valCopy := allocValue(len(rec.value))
+	copy(valCopy, rec.value)
+
+	dst := acquireRecord()
+	dst.value = valCopy
+	dst.ct = rec.ct
+	dst.size = rec.size
+	dst.created = now
+	dst.updated = now
+
+	b.st.hotPut(b.name, dstKey, dst)
 
 	return &storage.Object{
-		Bucket: b.name, Key: dstKey, Size: sz, ContentType: ct,
+		Bucket: b.name, Key: dstKey, Size: dst.size, ContentType: dst.ct,
 		Created: time.Unix(0, now), Updated: time.Unix(0, now),
 	}, nil
 }
@@ -317,10 +336,10 @@ func (d *dir) Info(_ context.Context) (*storage.Object, error) {
 		return nil, storage.ErrNotExist
 	}
 	var created, updated time.Time
-	_, _, _, c, u, ok := d.b.st.hotGet(d.b.name, keys[0])
+	rec, ok := d.b.st.hotGet(d.b.name, keys[0])
 	if ok {
-		created = time.Unix(0, c)
-		updated = time.Unix(0, u)
+		created = time.Unix(0, rec.created)
+		updated = time.Unix(0, rec.updated)
 	}
 	return &storage.Object{Bucket: d.b.name, Key: d.path, IsDir: true, Created: created, Updated: updated}, nil
 }
@@ -395,14 +414,22 @@ func (d *dir) Move(_ context.Context, dstPath string, _ storage.Options) (storag
 	for _, key := range keys {
 		rel := strings.TrimPrefix(key, srcPrefix)
 		newKey := dstPrefix + rel
-		value, ct, sz, created, _, ok := d.b.st.hotGet(d.b.name, key)
+		rec, ok := d.b.st.hotGet(d.b.name, key)
 		if !ok {
 			continue
 		}
 		now := fastNow()
-		valCopy := allocValue(len(value))
-		copy(valCopy, value)
-		d.b.st.hotPut(d.b.name, newKey, valCopy, ct, sz, created, now)
+		valCopy := allocValue(len(rec.value))
+		copy(valCopy, rec.value)
+
+		dst := acquireRecord()
+		dst.value = valCopy
+		dst.ct = rec.ct
+		dst.size = rec.size
+		dst.created = rec.created
+		dst.updated = now
+
+		d.b.st.hotPut(d.b.name, newKey, dst)
 		d.b.st.hotDelete(d.b.name, key)
 	}
 	return &dir{b: d.b, path: strings.Trim(dstPath, "/")}, nil
