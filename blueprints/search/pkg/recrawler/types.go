@@ -6,10 +6,11 @@ package recrawler
 import "time"
 
 // SeedURL represents a URL loaded from the seed database.
-// Only url and domain are loaded for crawling performance.
+// Domain is the registered domain; Host is the URL hostname used for DNS/IP dialing.
 type SeedURL struct {
 	URL    string
 	Domain string
+	Host   string
 }
 
 // SeedStats holds aggregate stats about the seed database.
@@ -40,20 +41,20 @@ type Result struct {
 
 // Config holds configuration for high-throughput recrawling.
 type Config struct {
-	Workers              int           // Concurrent HTTP fetch workers (default: 2000)
-	DNSWorkers           int           // Concurrent DNS workers (default: 2000)
-	DNSTimeout           time.Duration // DNS lookup timeout (default: 2s)
-	Timeout              time.Duration // Per-request HTTP timeout (default: 3s)
-	UserAgent            string        // User-Agent header
-	HeadOnly             bool          // Only fetch headers, skip body
-	StatusOnly           bool          // Only check HTTP status, close body immediately (fastest)
-	BatchSize            int           // DB write batch size (default: 5000)
-	Resume               bool          // Skip already-crawled URLs
-	DNSPrefetch          bool          // Pre-resolve DNS for all domains
-	DomainFailThreshold  int           // Failures before marking domain dead (default: 3)
-	TransportShards      int           // Number of HTTP transport shards (default: 64)
-	MaxConnsPerDomain    int           // Max concurrent connections per domain (0=unlimited, default: 8)
-	TwoPass              bool          // Enable two-pass: probe domains before full fetch
+	Workers             int           // Concurrent HTTP fetch workers (default: 2000)
+	DNSWorkers          int           // Concurrent DNS workers (default: 2000)
+	DNSTimeout          time.Duration // DNS lookup timeout (default: 2s)
+	Timeout             time.Duration // Per-request HTTP timeout (default: 3s)
+	UserAgent           string        // User-Agent header
+	HeadOnly            bool          // Only fetch headers, skip body
+	StatusOnly          bool          // Only check HTTP status, close body immediately (fastest)
+	BatchSize           int           // DB write batch size (default: 5000)
+	Resume              bool          // Skip already-crawled URLs
+	DNSPrefetch         bool          // Pre-resolve DNS for all domains
+	DomainFailThreshold int           // Failures before marking domain dead (default: 3)
+	TransportShards     int           // Number of HTTP transport shards (default: 64)
+	MaxConnsPerDomain   int           // Max concurrent connections per domain (0=unlimited, default: 8)
+	TwoPass             bool          // Enable two-pass: probe domains before full fetch
 }
 
 // DefaultConfig returns optimal defaults for high throughput.

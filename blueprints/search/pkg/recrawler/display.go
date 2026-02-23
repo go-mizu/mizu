@@ -12,13 +12,14 @@ import (
 // Stats tracks live statistics for the recrawl.
 type Stats struct {
 	// Counters (atomic for lock-free reads)
-	success    atomic.Int64
-	failed     atomic.Int64
-	timeout    atomic.Int64
-	skipped    atomic.Int64
-	domainSkip atomic.Int64 // URLs skipped due to dead domain
-	bytes      atomic.Int64
-	fetchMs    atomic.Int64 // sum of fetch times for avg calculation
+	success     atomic.Int64
+	failed      atomic.Int64
+	timeout     atomic.Int64
+	skipped     atomic.Int64
+	domainSkip  atomic.Int64 // URLs skipped due to truly dead host/domain (not timeout-kill)
+	timeoutSkip atomic.Int64 // URLs skipped due to timeout-based host kill optimization
+	bytes       atomic.Int64
+	fetchMs     atomic.Int64 // sum of fetch times for avg calculation
 
 	// DNS pipeline counters (domain-level, not URL-level)
 	dnsLive    atomic.Int64
@@ -156,6 +157,34 @@ func (s *Stats) RecordDomainSkipBatch(n int) {
 	s.domainSkip.Add(int64(n))
 }
 
+// RecordTimeoutKillSkip records a URL skipped due to timeout-based host kill.
+func (s *Stats) RecordTimeoutKillSkip() {
+	s.timeoutSkip.Add(1)
+}
+
+// RecordTimeoutKillSkipBatch records N URLs skipped due to timeout-based host kill.
+func (s *Stats) RecordTimeoutKillSkipBatch(n int) {
+	s.timeoutSkip.Add(int64(n))
+}
+
+// RecordDomainSkipReason routes skip accounting based on reason.
+func (s *Stats) RecordDomainSkipReason(reason string) {
+	if strings.Contains(reason, "timeout") {
+		s.RecordTimeoutKillSkip()
+		return
+	}
+	s.RecordDomainSkip()
+}
+
+// RecordDomainSkipBatchReason routes batch skip accounting based on reason.
+func (s *Stats) RecordDomainSkipBatchReason(reason string, n int) {
+	if strings.Contains(reason, "timeout") {
+		s.RecordTimeoutKillSkipBatch(n)
+		return
+	}
+	s.RecordDomainSkipBatch(n)
+}
+
 // RecordDNSLive records a domain resolved with live IPs.
 func (s *Stats) RecordDNSLive() {
 	s.dnsLive.Add(1)
@@ -183,7 +212,7 @@ func (s *Stats) RecordProbeUnreachable() {
 
 // Done returns the total number of processed URLs (including skips, for progress bar).
 func (s *Stats) Done() int64 {
-	return s.success.Load() + s.failed.Load() + s.timeout.Load() + s.skipped.Load() + s.domainSkip.Load()
+	return s.success.Load() + s.failed.Load() + s.timeout.Load() + s.skipped.Load() + s.domainSkip.Load() + s.timeoutSkip.Load()
 }
 
 // Fetched returns only URLs that required actual network I/O.
@@ -283,6 +312,7 @@ func (s *Stats) Render() string {
 	tout := s.timeout.Load()
 	skip := s.skipped.Load()
 	dskip := s.domainSkip.Load()
+	tskip := s.timeoutSkip.Load()
 	speed := s.Speed()
 	elapsed := s.Elapsed()
 	bytesTotal := s.bytes.Load()
@@ -342,8 +372,8 @@ func (s *Stats) Render() string {
 	b.WriteString(fmt.Sprintf("  ✓ %s ok (%4.1f%%)  ✗ %s fail (%4.1f%%)  ⏱ %s timeout (%4.1f%%)\n",
 		fmtInt64(succ), safePct(succ, done), fmtInt64(fail), safePct(fail, done),
 		fmtInt64(tout), safePct(tout, done)))
-	b.WriteString(fmt.Sprintf("  ⊘ %s skip  ☠ %s domain-dead (%4.1f%%)\n",
-		fmtInt64(skip), fmtInt64(dskip), safePct(dskip, done)))
+	b.WriteString(fmt.Sprintf("  ⊘ %s skip  ☠ %s dead-skip (%4.1f%%)  ⌛ %s timeout-kill-skip (%4.1f%%)\n",
+		fmtInt64(skip), fmtInt64(dskip), safePct(dskip, done), fmtInt64(tskip), safePct(tskip, done)))
 	b.WriteString("\n")
 	b.WriteString(fmt.Sprintf("  HTTP  %s\n", statusLine))
 	dnsLiveCount := s.dnsLive.Load()
@@ -365,7 +395,7 @@ func (s *Stats) Render() string {
 			fmtInt64(probeOK), fmtInt64(probeFail),
 			safePct(probeFail, probeTotal)))
 	}
-	b.WriteString(fmt.Sprintf("  Domains  %s reached  │  %s unreachable  │  %s avg/page\n",
+	b.WriteString(fmt.Sprintf("  Domains  %s reached  │  %s had-failures  │  %s avg/page\n",
 		fmtInt(domainsReached), fmtInt(domainsFailed), fmtBytes(avgBytes(bytesTotal, succ))))
 
 	return b.String()

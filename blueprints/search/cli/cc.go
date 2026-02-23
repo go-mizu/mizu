@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -42,20 +44,19 @@ Subcommands:
   warc     Fetch and display a single WARC record
   url      Lookup a URL via CDX API
 
-Examples:
-  search cc crawls
-  search cc parquet list                           # defaults: latest crawl + --subset warc
-  search cc parquet list --subset all              # list all subsets for latest crawl
-  search cc parquet download --file 0              # manifest index on latest crawl
-  search cc parquet import --file ~/data/common-crawl/.../part-00000.parquet
-  search cc index --crawl CC-MAIN-2026-04 --sample 5
-  search cc stats --crawl CC-MAIN-2026-04
-  search cc query --crawl CC-MAIN-2026-04 --lang eng --status 200 --limit 100
-  search cc query --crawl CC-MAIN-2026-04 --remote --domain example.com --limit 10
-  search cc fetch --crawl CC-MAIN-2026-04 --lang eng --mime text/html --limit 1000000
-  search cc recrawl --last --status-only --workers 100000
-  search cc warc --file crawl-data/CC-MAIN-2026-04/... --offset 12345 --length 6789
-  search cc url --crawl CC-MAIN-2026-04 --url https://example.com`,
+`,
+		Example: `  search cc crawls
+  search cc parquet list                           # latest crawl + subset=warc
+  search cc parquet list --subset all --limit 20
+  search cc parquet download --file m:600          # manifest selector
+  search cc index --sample 5
+  search cc stats
+  search cc query --lang eng --status 200 --limit 100
+  search cc query --remote --domain example.com --limit 10
+  search cc fetch --remote --domain example.com --limit 100
+  search cc recrawl --file 0 --status-only --limit 1000
+  search cc warc --file crawl-data/CC-MAIN-2026-08/... --offset 12345 --length 6789
+  search cc url --url https://example.com`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
@@ -88,6 +89,14 @@ func newCCCrawls() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "crawls",
 		Short: "List available Common Crawl datasets",
+		Long: `List available Common Crawl datasets from the cached crawl catalog or the CC API.
+
+Shows local status for each crawl (indexed/parquet/cached directory presence) so you
+can quickly choose a crawl for ` + "`cc parquet`" + `, ` + "`cc index`" + `, or ` + "`cc recrawl`" + `.`,
+		Example: `  search cc crawls
+  search cc crawls --limit 10
+  search cc crawls --search 2026-08
+  search cc crawls --no-cache`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCCCrawls(cmd.Context(), search, limit, noCache)
 		},
@@ -107,13 +116,15 @@ func runCCCrawls(ctx context.Context, search string, limit int, noCache bool) er
 
 	cfg := cc.DefaultConfig()
 	cache := cc.NewCache(cfg.DataDir)
+	cacheSource := "api"
 
 	// Try cache first
 	var crawls []cc.Crawl
 	if !noCache {
 		if cd := cache.Load(); cache.IsFresh(cd) && len(cd.Crawls) > 0 {
 			crawls = cd.Crawls
-			fmt.Println(labelStyle.Render("  (cached)"))
+			cacheSource = "cache"
+			fmt.Println(labelStyle.Render("  Using cached crawl catalog"))
 		}
 	}
 
@@ -124,6 +135,7 @@ func runCCCrawls(ctx context.Context, search string, limit int, noCache bool) er
 		if err != nil {
 			return fmt.Errorf("listing crawls: %w", err)
 		}
+		cacheSource = "api"
 
 		// Update cache
 		cd := cache.Load()
@@ -151,6 +163,7 @@ func runCCCrawls(ctx context.Context, search string, limit int, noCache bool) er
 		}
 		crawls = filtered
 	}
+	matchedCount := len(crawls)
 
 	if limit > 0 && len(crawls) > limit {
 		crawls = crawls[:limit]
@@ -159,10 +172,28 @@ func runCCCrawls(ctx context.Context, search string, limit int, noCache bool) er
 	// Check local data
 	dataDir := cfg.DataDir
 
-	fmt.Printf("  %-20s %-30s %-12s %-12s %s\n",
-		"ID", "Name", "From", "To", "Local")
-	fmt.Println(strings.Repeat("─", 100))
+	summary := ccRenderKVCard("Crawl Catalog", [][2]string{
+		{"Source", ccStatusChip("info", cacheSource)},
+		{"Filter", func() string {
+			if strings.TrimSpace(search) == "" {
+				return labelStyle.Render("(none)")
+			}
+			return infoStyle.Render(search)
+		}()},
+		{"Showing", ccFmtInt64(int64(len(crawls)))},
+		{"Matched", ccFmtInt64(int64(matchedCount))},
+	})
+	fmt.Println(summary)
+	fmt.Println()
 
+	latestID := ""
+	for _, c := range crawls {
+		if c.ID > latestID {
+			latestID = c.ID
+		}
+	}
+
+	var rows [][]string
 	for _, c := range crawls {
 		fromStr := "---"
 		toStr := "---"
@@ -173,32 +204,51 @@ func runCCCrawls(ctx context.Context, search string, limit int, noCache bool) er
 			toStr = c.To.Format("2006-01-02")
 		}
 
-		localStatus := labelStyle.Render("---")
+		localStatus := ccStatusChip("muted", "---")
 		crawlDir := filepath.Join(dataDir, c.ID)
 		if fi, err := os.Stat(crawlDir); err == nil && fi.IsDir() {
 			if _, err := os.Stat(filepath.Join(crawlDir, "index.duckdb")); err == nil {
-				localStatus = successStyle.Render("indexed")
+				localStatus = ccStatusChip("ok", "indexed")
 			} else {
 				tmpCfg := cc.DefaultConfig()
 				tmpCfg.CrawlID = c.ID
 				if files, ferr := cc.LocalParquetFiles(tmpCfg); ferr == nil && len(files) > 0 {
-					localStatus = infoStyle.Render(fmt.Sprintf("%d parquet", len(files)))
+					localStatus = ccStatusChip("info", fmt.Sprintf("%d parquet", len(files)))
 				} else {
 					entries, _ := os.ReadDir(filepath.Join(crawlDir, "index"))
 					if len(entries) > 0 {
-						localStatus = infoStyle.Render(fmt.Sprintf("%d entries", len(entries)))
+						localStatus = ccStatusChip("info", fmt.Sprintf("%d entries", len(entries)))
 					} else {
-						localStatus = warningStyle.Render("dir only")
+						localStatus = ccStatusChip("warn", "dir only")
 					}
 				}
 			}
 		}
 
-		fmt.Printf("  %-20s %-30s %-12s %-12s %s\n",
-			c.ID, c.Name, fromStr, toStr, localStatus)
+		idCell := c.ID
+		if c.ID == latestID {
+			idCell = c.ID + " " + ccStatusChip("info", "latest")
+		}
+		rows = append(rows, []string{
+			idCell,
+			trimMiddle(c.Name, 36),
+			fromStr,
+			toStr,
+			localStatus,
+		})
 	}
 
-	fmt.Printf("\n  %s\n", labelStyle.Render(fmt.Sprintf("Showing %d crawls", len(crawls))))
+	fmt.Println(infoStyle.Render("Available Crawls"))
+	fmt.Println(ccRenderTable([]string{"ID", "Name", "From", "To", "Local"}, rows, ccTableOptions{
+		RightAlignCols: map[int]bool{},
+	}))
+	if len(crawls) < matchedCount {
+		fmt.Println()
+		fmt.Println(labelStyle.Render(fmt.Sprintf("Showing %d of %d matched crawls (use --limit 0 for all)", len(crawls), matchedCount)))
+	} else {
+		fmt.Println()
+		fmt.Println(labelStyle.Render(fmt.Sprintf("Showing %d crawls", len(crawls))))
+	}
 	return nil
 }
 
@@ -224,12 +274,16 @@ Each file is ~220MB and contains ~2.5M records. For most queries, 1-10 files suf
   --sample 5   ~1.1GB disk, ~12.5M records (representative sample)
   --sample 20  ~4.4GB disk, ~50M records   (substantial coverage)
   --sample 0   ~200GB disk, ~2.3B records  (full index)`,
+		Example: `  search cc index --sample 1
+  search cc index --sample 5
+  search cc index --crawl CC-MAIN-2026-08 --sample 20
+  search cc index --import-only`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCCIndex(cmd.Context(), crawlID, importOnly, workers, sample)
 		},
 	}
 
-	cmd.Flags().StringVar(&crawlID, "crawl", "CC-MAIN-2026-04", "Crawl ID")
+	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest cached/latest available)")
 	cmd.Flags().BoolVar(&importOnly, "import-only", false, "Skip download, import existing parquet files")
 	cmd.Flags().IntVar(&workers, "workers", 10, "Concurrent download workers")
 	cmd.Flags().IntVar(&sample, "sample", 5, "Download only N parquet files (0 = all ~900)")
@@ -241,6 +295,17 @@ func runCCIndex(ctx context.Context, crawlID string, importOnly bool, workers, s
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("Common Crawl Index"))
 	fmt.Println()
+
+	resolvedCrawlID, crawlNote, err := ccResolveCrawlID(ctx, crawlID)
+	if err != nil {
+		return fmt.Errorf("resolving crawl: %w", err)
+	}
+	crawlID = resolvedCrawlID
+	if crawlNote != "" {
+		fmt.Println(labelStyle.Render("Using defaults"))
+		ccPrintDefaultCrawlResolution(crawlID, crawlNote)
+		fmt.Println()
+	}
 
 	cfg := cc.DefaultConfig()
 	cfg.CrawlID = crawlID
@@ -261,7 +326,7 @@ func runCCIndex(ctx context.Context, crawlID string, importOnly bool, workers, s
 
 		start := time.Now()
 		dlReporter := newCCDownloadReporter()
-		err := cc.DownloadIndex(ctx, client, cfg, sample, dlReporter.Callback)
+		err = cc.DownloadIndex(ctx, client, cfg, sample, dlReporter.Callback)
 		if err != nil {
 			return fmt.Errorf("downloading index: %w", err)
 		}
@@ -294,12 +359,15 @@ func newCCStats() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "stats",
 		Short: "Show index statistics",
+		Long:  "Show summary statistics for the local Common Crawl index DuckDB (defaults to the latest crawl).",
+		Example: `  search cc stats
+  search cc stats --crawl CC-MAIN-2026-08`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCCStats(cmd.Context(), crawlID)
 		},
 	}
 
-	cmd.Flags().StringVar(&crawlID, "crawl", "CC-MAIN-2026-04", "Crawl ID")
+	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest cached/latest available)")
 
 	return cmd
 }
@@ -308,6 +376,17 @@ func runCCStats(ctx context.Context, crawlID string) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("Common Crawl Index Statistics"))
 	fmt.Println()
+
+	resolvedCrawlID, crawlNote, err := ccResolveCrawlID(ctx, crawlID)
+	if err != nil {
+		return fmt.Errorf("resolving crawl: %w", err)
+	}
+	crawlID = resolvedCrawlID
+	if crawlNote != "" {
+		fmt.Println(labelStyle.Render("Using defaults"))
+		ccPrintDefaultCrawlResolution(crawlID, crawlNote)
+		fmt.Println()
+	}
 
 	cfg := cc.DefaultConfig()
 	cfg.CrawlID = crawlID
@@ -386,16 +465,17 @@ By default queries the local DuckDB index (requires 'cc index' first).
 Use --remote to query parquet files directly from S3 — no local download needed,
 but slower (network-bound). Ideal for quick lookups on limited disk.
 
-Examples:
-  search cc query --lang eng --status 200 --limit 100
+`,
+		Example: `  search cc query --lang eng --status 200 --limit 100
   search cc query --remote --domain example.com --limit 10
-  search cc query --tld com --mime text/html --count`,
+  search cc query --tld com --mime text/html --count
+  search cc query --crawl CC-MAIN-2026-08 --domain openai.com --limit 20`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCCQuery(cmd.Context(), crawlID, lang, mime, status, domain, tld, limit, count, remote)
 		},
 	}
 
-	cmd.Flags().StringVar(&crawlID, "crawl", "CC-MAIN-2026-04", "Crawl ID")
+	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest cached/latest available)")
 	cmd.Flags().StringVar(&lang, "lang", "", "Language filter (e.g. eng)")
 	cmd.Flags().StringVar(&mime, "mime", "", "MIME type filter (e.g. text/html)")
 	cmd.Flags().IntVar(&status, "status", 0, "HTTP status filter (e.g. 200)")
@@ -409,6 +489,12 @@ Examples:
 }
 
 func runCCQuery(ctx context.Context, crawlID, lang, mime string, status int, domain, tld string, limit int, countOnly, remote bool) error {
+	if resolvedCrawlID, _, err := ccResolveCrawlID(ctx, crawlID); err != nil {
+		return fmt.Errorf("resolving crawl: %w", err)
+	} else {
+		crawlID = resolvedCrawlID
+	}
+
 	cfg := cc.DefaultConfig()
 	cfg.CrawlID = crawlID
 
@@ -515,16 +601,17 @@ in parallel from the CDN. Extracted pages are stored in sharded DuckDB files.
 
 Use --remote to query the index from S3 directly (no local parquet needed).
 
-Examples:
-  search cc fetch --lang eng --mime text/html --limit 10000
+`,
+		Example: `  search cc fetch --lang eng --mime text/html --limit 10000
   search cc fetch --remote --domain example.com --limit 100
-  search cc fetch --status 200 --workers 5000 --limit 1000000`,
+  search cc fetch --status 200 --workers 5000 --limit 1000000
+  search cc fetch --crawl CC-MAIN-2026-08 --domain openai.com --limit 500`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCCFetch(cmd.Context(), crawlID, lang, mime, status, domain, tld, limit, workers, timeout, resume, remote)
 		},
 	}
 
-	cmd.Flags().StringVar(&crawlID, "crawl", "CC-MAIN-2026-04", "Crawl ID")
+	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest cached/latest available)")
 	cmd.Flags().StringVar(&lang, "lang", "", "Language filter (e.g. eng)")
 	cmd.Flags().StringVar(&mime, "mime", "text/html", "MIME type filter")
 	cmd.Flags().IntVar(&status, "status", 200, "HTTP status filter")
@@ -545,6 +632,17 @@ func runCCFetch(ctx context.Context, crawlID, lang, mime string, status int, dom
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("Common Crawl WARC Page Extraction"))
 	fmt.Println()
+
+	resolvedCrawlID, crawlNote, err := ccResolveCrawlID(ctx, crawlID)
+	if err != nil {
+		return fmt.Errorf("resolving crawl: %w", err)
+	}
+	crawlID = resolvedCrawlID
+	if crawlNote != "" {
+		fmt.Println(labelStyle.Render("Using defaults"))
+		ccPrintDefaultCrawlResolution(crawlID, crawlNote)
+		fmt.Println()
+	}
 
 	cfg := cc.DefaultConfig()
 	cfg.CrawlID = crawlID
@@ -572,7 +670,6 @@ func runCCFetch(ctx context.Context, crawlID, lang, mime string, status int, dom
 
 	// Query WARC pointers (local or remote)
 	var pointers []cc.WARCPointer
-	var err error
 
 	if remote {
 		fmt.Println(infoStyle.Render("Querying S3 parquet index directly..."))
@@ -673,6 +770,10 @@ func newCCWarc() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "warc",
 		Short: "Fetch and display a single WARC record",
+		Long: `Fetch and display a single WARC record by byte range.
+
+Use this when you already have a WARC filename + offset + length from ` + "`cc query`" + ` or ` + "`cc url`" + `.`,
+		Example: `  search cc warc --file crawl-data/CC-MAIN-2026-08/segments/.../warc/CC-MAIN-....warc.gz --offset 12345 --length 6789`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCCWarc(cmd.Context(), file, offset, length)
 		},
@@ -750,15 +851,16 @@ func newCCURL() *cobra.Command {
 		Long: `Lookup URLs in Common Crawl via the CDX API.
 This is the lightest-weight option: uses zero disk space, queries the CC API directly.
 
-Examples:
-  search cc url --url https://example.com
-  search cc url --domain example.com --limit 50`,
+`,
+		Example: `  search cc url --url https://example.com
+  search cc url --domain example.com --limit 50
+  search cc url --crawl CC-MAIN-2026-08 --domain openai.com --limit 20`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCCURL(cmd.Context(), crawlID, targetURL, domain, limit)
 		},
 	}
 
-	cmd.Flags().StringVar(&crawlID, "crawl", "CC-MAIN-2026-04", "Crawl ID")
+	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest cached/latest available)")
 	cmd.Flags().StringVar(&targetURL, "url", "", "URL to lookup")
 	cmd.Flags().StringVar(&domain, "domain", "", "Domain to lookup (all URLs)")
 	cmd.Flags().IntVar(&limit, "limit", 20, "Max results for domain lookup")
@@ -769,6 +871,11 @@ Examples:
 func runCCURL(ctx context.Context, crawlID, targetURL, domain string, limit int) error {
 	if targetURL == "" && domain == "" {
 		return fmt.Errorf("--url or --domain is required")
+	}
+	if resolvedCrawlID, _, err := ccResolveCrawlID(ctx, crawlID); err != nil {
+		return fmt.Errorf("resolving crawl: %w", err)
+	} else {
+		crawlID = resolvedCrawlID
 	}
 
 	var entries []cc.CDXJEntry
@@ -825,6 +932,7 @@ func newCCRecrawl() *cobra.Command {
 		transportShards   int
 		maxConnsPerDomain int
 		dnsPrefetch       bool
+		reloadDNSCache    bool
 		resume            bool
 		lang              string
 		mime              string
@@ -845,27 +953,28 @@ Three modes for loading the CC index:
   --last         Download the LAST (latest) parquet file, query directly via
                  read_parquet() — zero DuckDB import, fastest startup (recommended)
   --file X       Use parquet selector or local path, query directly via read_parquet()
-                 selectors: N (warc subset index), w:N, m:N (manifest index)
+                 selectors: N (warc/part index), p:N, w:N, m:N (manifest index)
   --sample N     Download N evenly-spaced parquet files, import to DuckDB (legacy)
 
 Pipeline:
   1. Download parquet file(s) from CC columnar index (~220MB each, ~2.5M URLs)
   2. Extract URLs matching your filters (direct parquet query or DuckDB)
-  3. Batch DNS pre-resolution (20K workers)
-  4. HTTP recrawl from origin servers (target: 100K pages/s)
+  3. Batch DNS pre-resolution
+  4. HTTP recrawl from origin servers (throughput depends on timeout/concurrency tuning)
 
 This fetches FRESH content from origin servers (not cached WARC data).
 Use 'cc fetch' instead if you want pre-crawled content from WARC files.
 
 Examples:
   search cc recrawl --last --status-only
-  search cc recrawl --last --status-only --workers 100000
+  search cc recrawl --last --status-only --workers 2000
   search cc recrawl --file 0 --status-only --limit 1000          # warc index, latest crawl by default
-  search cc recrawl --file m:600 --status-only --limit 1000      # manifest index
+  search cc recrawl --file p:0 --status-only --limit 1000        # part index (part-00000) in warc subset
+  search cc recrawl --file m:600 --status-only --limit 1000      # global manifest index
   search cc recrawl --file /path/to/local.parquet --status-only
-  search cc recrawl --sample 1 --status-only --workers 100000
+  search cc recrawl --sample 1 --status-only --workers 2000
   search cc recrawl --sample 1 --lang eng --mime text/html --workers 200
-  search cc recrawl --import-only --resume --workers 100000`,
+  search cc recrawl --import-only --resume --workers 2000`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			filter := cc.IndexFilter{}
 			if lang != "" {
@@ -888,41 +997,45 @@ Examples:
 			}
 
 			return runCCRecrawl(cmd.Context(), ccRecrawlOpts{
-				crawlID:           crawlID,
-				sample:            sample,
-				last:              last,
-				file:              file,
-				importOnly:        importOnly,
-				filter:            filter,
-				workers:           workers,
-				dnsWorkers:        dnsWorkers,
-				dnsTimeout:        dnsTimeout,
-				timeout:           timeout,
-				statusOnly:        statusOnly,
-				headOnly:          headOnly,
-				transportShards:   transportShards,
-				maxConnsPerDomain: maxConnsPerDomain,
-				dnsPrefetch:       dnsPrefetch,
-				resume:            resume,
-				batchSize:         batchSize,
+				crawlID:            crawlID,
+				sample:             sample,
+				last:               last,
+				file:               file,
+				importOnly:         importOnly,
+				filter:             filter,
+				workers:            workers,
+				dnsWorkers:         dnsWorkers,
+				dnsTimeout:         dnsTimeout,
+				dnsWorkersExplicit: cmd.Flags().Changed("dns-workers"),
+				dnsTimeoutExplicit: cmd.Flags().Changed("dns-timeout"),
+				timeout:            timeout,
+				statusOnly:         statusOnly,
+				headOnly:           headOnly,
+				transportShards:    transportShards,
+				maxConnsPerDomain:  maxConnsPerDomain,
+				dnsPrefetch:        dnsPrefetch,
+				reloadDNSCache:     reloadDNSCache,
+				resume:             resume,
+				batchSize:          batchSize,
 			})
 		},
 	}
 
 	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest cached/latest available)")
 	cmd.Flags().BoolVar(&last, "last", false, "Download last (latest) parquet file, query directly (recommended)")
-	cmd.Flags().StringVar(&file, "file", "", "Parquet selector/path: N (warc index), w:N, m:N, or local path")
+	cmd.Flags().StringVar(&file, "file", "", "Parquet selector/path: N (warc/part index), p:N, w:N, m:N, or local path")
 	cmd.Flags().IntVar(&sample, "sample", 1, "Number of parquet files to download (0=all, legacy mode)")
 	cmd.Flags().BoolVar(&importOnly, "import-only", false, "Skip parquet download, use existing DuckDB index")
 	cmd.Flags().IntVar(&workers, "workers", 50000, "HTTP fetch workers")
-	cmd.Flags().IntVar(&dnsWorkers, "dns-workers", 2000, "DNS resolution workers")
-	cmd.Flags().IntVar(&dnsTimeout, "dns-timeout", 2000, "DNS timeout in ms")
+	cmd.Flags().IntVar(&dnsWorkers, "dns-workers", 2000, "DNS resolution workers (use 0 for auto)")
+	cmd.Flags().IntVar(&dnsTimeout, "dns-timeout", 2000, "DNS timeout in ms (use 0 for auto)")
 	cmd.Flags().IntVar(&timeout, "timeout", 5000, "HTTP timeout in ms")
 	cmd.Flags().BoolVar(&statusOnly, "status-only", false, "Only check HTTP status (fastest)")
 	cmd.Flags().BoolVar(&headOnly, "head-only", false, "HEAD requests only")
 	cmd.Flags().IntVar(&transportShards, "transport-shards", 64, "HTTP transport pool shards")
 	cmd.Flags().IntVar(&maxConnsPerDomain, "max-conns-per-domain", 8, "Max concurrent connections per domain (prevents server flooding)")
 	cmd.Flags().BoolVar(&dnsPrefetch, "dns-prefetch", true, "Batch DNS pre-resolution")
+	cmd.Flags().BoolVar(&reloadDNSCache, "reload-dns-cache", false, "Ignore cached dns.duckdb and resolve DNS again from network")
 	cmd.Flags().BoolVar(&resume, "resume", false, "Skip already-crawled URLs")
 	cmd.Flags().StringVar(&lang, "lang", "", "Language filter (e.g. eng)")
 	cmd.Flags().StringVar(&mime, "mime", "", "MIME type filter (e.g. text/html)")
@@ -936,23 +1049,26 @@ Examples:
 }
 
 type ccRecrawlOpts struct {
-	crawlID           string
-	sample            int
-	last              bool
-	file              string
-	importOnly        bool
-	filter            cc.IndexFilter
-	workers           int
-	dnsWorkers        int
-	dnsTimeout        int
-	timeout           int
-	statusOnly        bool
-	headOnly          bool
-	transportShards   int
-	maxConnsPerDomain int
-	dnsPrefetch       bool
-	resume            bool
-	batchSize         int
+	crawlID            string
+	sample             int
+	last               bool
+	file               string
+	importOnly         bool
+	filter             cc.IndexFilter
+	workers            int
+	dnsWorkers         int
+	dnsTimeout         int
+	dnsWorkersExplicit bool
+	dnsTimeoutExplicit bool
+	timeout            int
+	statusOnly         bool
+	headOnly           bool
+	transportShards    int
+	maxConnsPerDomain  int
+	dnsPrefetch        bool
+	reloadDNSCache     bool
+	resume             bool
+	batchSize          int
 }
 
 func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
@@ -1005,7 +1121,7 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 			}
 			fmt.Println(successStyle.Render(fmt.Sprintf("  Download complete (%s)", time.Since(start).Truncate(time.Second))))
 		} else {
-			// --file: local path or selector (N, w:N, m:N)
+			// --file: local path or selector (N, p:N, w:N, m:N)
 			fmt.Println(infoStyle.Render(fmt.Sprintf("Step 1: Resolving parquet selector for %s...", opts.crawlID)))
 			start := time.Now()
 			dlReporter := newCCDownloadReporter()
@@ -1168,44 +1284,92 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 		fmt.Println(infoStyle.Render("Batch DNS pre-resolution..."))
 
 		dnsResolver = recrawler.NewDNSResolver(recrawlCfg.DNSTimeout)
-		cached, _ := dnsResolver.LoadCache(dnsPath)
-		if cached > 0 {
-			fmt.Println(successStyle.Render(fmt.Sprintf("  DNS cache: %d entries (live=%d, dead=%d, timeout=%d)",
-				cached, dnsResolver.LiveCount(), dnsResolver.DeadCount(), dnsResolver.TimeoutCount())))
-		}
-
-		// Collect unique domains to resolve
-		allDomains := make(map[string]bool, uniqueDomains)
-		for _, s := range seeds {
-			if skip == nil || !skip[s.URL] {
-				allDomains[s.Domain] = true
+		if opts.reloadDNSCache {
+			fmt.Println(labelStyle.Render("  DNS cache: reload requested (ignoring existing cache file for this run)"))
+			fmt.Println(labelStyle.Render("  Tip: omit --reload-dns-cache to reuse previous DNS results"))
+		} else {
+			cached, _ := dnsResolver.LoadCache(dnsPath)
+			if cached > 0 {
+				fmt.Println(successStyle.Render(fmt.Sprintf("  DNS cache loaded: %d entries (live=%d, dead=%d, timeout=%d)",
+					cached, dnsResolver.LiveCount(), dnsResolver.DeadCount(), dnsResolver.TimeoutCount())))
+			} else {
+				fmt.Println(labelStyle.Render("  DNS cache: no reusable entries found (first run or empty cache)"))
 			}
 		}
-		domainList := make([]string, 0, len(allDomains))
-		for d := range allDomains {
-			domainList = append(domainList, d)
-		}
 
-		fmt.Println(infoStyle.Render(fmt.Sprintf("  Resolving %d domains (%d workers, %v timeout)...",
-			len(domainList), opts.dnsWorkers, recrawlCfg.DNSTimeout)))
-
-		var dnsDisplayLines int
-		live, dead, timedout := dnsResolver.ResolveBatch(ctx, domainList, opts.dnsWorkers, recrawlCfg.DNSTimeout,
-			func(p recrawler.DNSProgress) {
-				if dnsDisplayLines > 0 {
-					fmt.Printf("\033[%dA\033[J", dnsDisplayLines)
+		// Collect unique hosts to resolve (not just registered domains).
+		// DNS cache is keyed by URL hostname used in HTTP dialing.
+		allHosts := make(map[string]bool, len(seeds))
+		for _, s := range seeds {
+			if skip == nil || !skip[s.URL] {
+				host := strings.TrimSpace(s.Host)
+				if host == "" {
+					host = strings.TrimSpace(s.Domain)
 				}
-				output := fmt.Sprintf("  DNS  %d/%d  │  %d live  │  %d dead  │  %d timeout  │  %.0f/s  │  %s\n",
-					p.Done, p.Total, p.Live, p.Dead, p.Timeout, p.Speed, p.Elapsed.Truncate(time.Millisecond))
-				fmt.Print(output)
-				dnsDisplayLines = 1
-			})
-		if dnsDisplayLines > 0 {
-			fmt.Printf("\033[%dA\033[J", dnsDisplayLines)
+				if host != "" {
+					allHosts[host] = true
+				}
+			}
 		}
-		fmt.Println(successStyle.Render(fmt.Sprintf("  DNS: %d live, %d dead, %d timeout (%s)",
-			live, dead, timedout, dnsResolver.Duration().Truncate(time.Millisecond))))
-		fmt.Println()
+		hostList := make([]string, 0, len(allHosts))
+		for h := range allHosts {
+			hostList = append(hostList, h)
+		}
+
+		cov := ccDNSCacheCoverage(dnsResolver, hostList)
+		if cov.CachedTotal > 0 {
+			fmt.Println(labelStyle.Render(fmt.Sprintf("  DNS cache coverage: %s/%s hosts (live=%s, dead=%s, timeout=%s)",
+				ccFmtInt64(int64(cov.CachedTotal)), ccFmtInt64(int64(cov.Total)),
+				ccFmtInt64(int64(cov.CachedResolved)), ccFmtInt64(int64(cov.CachedDead)), ccFmtInt64(int64(cov.CachedTimeout)))))
+		}
+
+		effDNSWorkers, effDNSTimeout, dnsTuneNotes := ccResolveEffectiveDNSTuning(opts, cov.Pending)
+		recrawlCfg.DNSTimeout = effDNSTimeout
+		if effDNSWorkers > 0 {
+			recrawlCfg.DNSWorkers = effDNSWorkers
+		}
+		for _, note := range dnsTuneNotes {
+			fmt.Println(labelStyle.Render("  " + note))
+		}
+
+		if cov.Pending == 0 {
+			fmt.Println(successStyle.Render("  All hosts already covered by DNS cache; skipping network DNS lookups"))
+			fmt.Println(labelStyle.Render("  Use --reload-dns-cache to force a fresh DNS pass"))
+			fmt.Println()
+		} else {
+			fmt.Println(infoStyle.Render(fmt.Sprintf("  Resolving %s uncached hosts (%d workers, %v timeout)...",
+				ccFmtInt64(int64(cov.Pending)), recrawlCfg.DNSWorkers, recrawlCfg.DNSTimeout)))
+
+			var dnsDisplayLines int
+			live, dead, timedout := dnsResolver.ResolveBatch(ctx, hostList, recrawlCfg.DNSWorkers, recrawlCfg.DNSTimeout,
+				func(p recrawler.DNSProgress) {
+					if dnsDisplayLines > 0 {
+						fmt.Printf("\033[%dA\033[J", dnsDisplayLines)
+					}
+					eta := ccDNSProgressETA(p)
+					output := fmt.Sprintf("  DNS  %d/%d  │  %d live  │  %d dead  │  %d timeout  │  %.0f/s  │  ETA %s  │  %s\n",
+						p.Done, p.Total, p.Live, p.Dead, p.Timeout, p.Speed, eta, p.Elapsed.Truncate(time.Millisecond))
+					fmt.Print(output)
+					dnsDisplayLines = 1
+				})
+			if dnsDisplayLines > 0 {
+				fmt.Printf("\033[%dA\033[J", dnsDisplayLines)
+			}
+			fmt.Println(successStyle.Render(fmt.Sprintf("  DNS: %d live, %d dead, %d timeout (%s)",
+				live, dead, timedout, dnsResolver.Duration().Truncate(time.Millisecond))))
+			fmt.Println()
+		}
+
+		timeoutListDir := filepath.Dir(dnsPath)
+		timeoutListPath, timeoutListErr := ccWriteDNSTimeoutList(timeoutListDir, dnsResolver.TimeoutDomainsWithErrors())
+		if timeoutListErr != nil {
+			fmt.Println(warningStyle.Render(fmt.Sprintf("  DNS timeout list export failed: %v", timeoutListErr)))
+		} else {
+			fmt.Println(labelStyle.Render(fmt.Sprintf("  DNS timeout list: %s domains → %s",
+				ccFmtInt64(int64(dnsResolver.TimeoutCount())), timeoutListPath)))
+			fmt.Println(labelStyle.Render("  Re-run with --reload-dns-cache to compare timeout domains after tuning"))
+			fmt.Println()
+		}
 	}
 
 	// ── Step 5: Open FailedDB + result DB + run recrawler ──────────────────
@@ -1250,31 +1414,37 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 
 	// Log DNS-dead domains to FailedDB (before recrawler runs)
 	if dnsResolver != nil {
-		// Build per-domain URL counts for metadata
-		domainCounts := make(map[string]int, uniqueDomains)
+		// Build per-host URL counts for DNS-stage metadata (DNS prefetch operates on URL hosts).
+		hostCounts := make(map[string]int, len(seeds))
 		for _, s := range seeds {
-			domainCounts[s.Domain]++
+			host := strings.TrimSpace(s.Host)
+			if host == "" {
+				host = strings.TrimSpace(s.Domain)
+			}
+			if host != "" {
+				hostCounts[host]++
+			}
 		}
 
-		for domain, errMsg := range dnsResolver.DeadDomainsWithErrors() {
+		for host, errMsg := range dnsResolver.DeadDomainsWithErrors() {
 			reason := "dns_nxdomain"
 			if errMsg == "http_dead" {
 				reason = "http_dead"
 			}
 			failedDB.AddDomain(recrawler.FailedDomain{
-				Domain:   domain,
+				Domain:   host,
 				Reason:   reason,
 				Error:    errMsg,
-				URLCount: domainCounts[domain],
+				URLCount: hostCounts[host],
 				Stage:    "dns_batch",
 			})
 		}
-		for domain, errMsg := range dnsResolver.TimeoutDomainsWithErrors() {
+		for host, errMsg := range dnsResolver.TimeoutDomainsWithErrors() {
 			failedDB.AddDomain(recrawler.FailedDomain{
-				Domain:   domain,
+				Domain:   host,
 				Reason:   "dns_timeout",
 				Error:    errMsg,
-				URLCount: domainCounts[domain],
+				URLCount: hostCounts[host],
 				Stage:    "dns_batch",
 			})
 		}
@@ -1296,6 +1466,13 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 	}
 	fmt.Println(infoStyle.Render(fmt.Sprintf("  %d workers, %v timeout, mode=%s, shards=%d, pipeline=%s",
 		opts.workers, recrawlCfg.Timeout, fetchMode, opts.transportShards, pipeline)))
+	if dnsResolver != nil {
+		if recrawlCfg.DNSWorkers > 0 {
+			fmt.Println(labelStyle.Render(fmt.Sprintf("  dns-workers=%d, dns-timeout=%v", recrawlCfg.DNSWorkers, recrawlCfg.DNSTimeout)))
+		} else {
+			fmt.Println(labelStyle.Render(fmt.Sprintf("  dns-prefetch cache-only (dns-timeout=%v)", recrawlCfg.DNSTimeout)))
+		}
+	}
 	if recrawlCfg.DomainFailThreshold > 0 {
 		fmt.Println(labelStyle.Render(fmt.Sprintf("  domain-fail-threshold=%d", recrawlCfg.DomainFailThreshold)))
 	}
@@ -1306,8 +1483,9 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 
 	// Pre-populate DNS cache with reasons (use SetDNSCache + SetDeadDomains, NOT SetDNSResolver)
 	if dnsResolver != nil {
+		reasons := dnsResolver.DeadOrTimeoutDomainsWithReasons()
 		r.SetDNSCache(dnsResolver.ResolvedIPs())
-		r.SetDeadDomains(dnsResolver.DeadOrTimeoutDomainsWithReasons())
+		r.SetDeadHosts(reasons)
 	}
 
 	err = recrawler.RunWithDisplay(ctx, r, seeds, skip, stats)
@@ -1432,16 +1610,16 @@ For each failed domain:
 
 Use few workers (default 10) to avoid network rate-limiting.
 
-Examples:
-  search cc verify
+`,
+		Example: `  search cc verify
   search cc verify --workers 5 --dns-timeout 15000
-  search cc verify --limit 100`,
+  search cc verify --crawl CC-MAIN-2026-08 --limit 100`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCCVerify(cmd.Context(), crawlID, workers, dnsTimeout, httpTimeout, limit)
 		},
 	}
 
-	cmd.Flags().StringVar(&crawlID, "crawl", "CC-MAIN-2026-04", "Crawl ID")
+	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest cached/latest available)")
 	cmd.Flags().IntVar(&workers, "workers", 10, "Verification workers (keep low for accuracy)")
 	cmd.Flags().IntVar(&dnsTimeout, "dns-timeout", 10000, "DNS timeout per resolver (ms)")
 	cmd.Flags().IntVar(&httpTimeout, "http-timeout", 30000, "HTTP timeout (ms)")
@@ -1454,6 +1632,17 @@ func runCCVerify(ctx context.Context, crawlID string, workers, dnsTimeout, httpT
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("Domain Verification (Slow, Thorough)"))
 	fmt.Println()
+
+	resolvedCrawlID, crawlNote, err := ccResolveCrawlID(ctx, crawlID)
+	if err != nil {
+		return fmt.Errorf("resolving crawl: %w", err)
+	}
+	crawlID = resolvedCrawlID
+	if crawlNote != "" {
+		fmt.Println(labelStyle.Render("Using defaults"))
+		ccPrintDefaultCrawlResolution(crawlID, crawlNote)
+		fmt.Println()
+	}
 
 	ccCfg := cc.DefaultConfig()
 	ccCfg.CrawlID = crawlID
@@ -1576,6 +1765,144 @@ func ccFmtInt64(n int64) string {
 		result = append(result, byte(c))
 	}
 	return string(result)
+}
+
+type ccDNSCacheCoverageSummary struct {
+	Total          int
+	CachedTotal    int
+	CachedResolved int
+	CachedDead     int
+	CachedTimeout  int
+	Pending        int
+}
+
+func ccDNSCacheCoverage(dns *recrawler.DNSResolver, domains []string) ccDNSCacheCoverageSummary {
+	out := ccDNSCacheCoverageSummary{Total: len(domains)}
+	for _, domain := range domains {
+		switch {
+		case dns.IsResolved(domain):
+			out.CachedResolved++
+		case dns.IsDead(domain):
+			out.CachedDead++
+		case dns.IsTimeout(domain):
+			out.CachedTimeout++
+		default:
+			out.Pending++
+		}
+	}
+	out.CachedTotal = out.CachedResolved + out.CachedDead + out.CachedTimeout
+	return out
+}
+
+func ccResolveEffectiveDNSTuning(opts ccRecrawlOpts, pendingDomains int) (workers int, timeout time.Duration, notes []string) {
+	// Timeout: preserve historical behavior by default (2000ms) unless user opts into auto with 0.
+	timeoutMs := opts.dnsTimeout
+	if timeoutMs <= 0 {
+		timeoutMs = 2000
+		if pendingDomains >= 50000 {
+			timeoutMs = 1500
+		}
+		notes = append(notes, fmt.Sprintf("dns-timeout auto=%dms (use --dns-timeout to override)", timeoutMs))
+	} else if !opts.dnsTimeoutExplicit && opts.dnsTimeout == 2000 {
+		notes = append(notes, "dns-timeout=2000ms (default)")
+	}
+	timeout = time.Duration(timeoutMs) * time.Millisecond
+
+	if pendingDomains <= 0 {
+		return 0, timeout, notes
+	}
+
+	// Workers: auto-tune unless explicitly provided. 2000 often oversubscribes fastdns (2x256 UDP conns)
+	// and can increase timeout noise. Cap near 768 by default for better stability.
+	if opts.dnsWorkersExplicit && opts.dnsWorkers > 0 {
+		return opts.dnsWorkers, timeout, notes
+	}
+	if opts.dnsWorkersExplicit && opts.dnsWorkers <= 0 {
+		notes = append(notes, "dns-workers auto requested via --dns-workers 0")
+	}
+	if !opts.dnsWorkersExplicit && opts.dnsWorkers == 2000 {
+		notes = append(notes, "dns-workers auto-tuned (default 2000 is often too high for fastdns UDP pool)")
+	}
+
+	cpu := runtime.NumCPU()
+	auto := cpu * 64
+	if pendingDomains >= 20000 {
+		auto = max(auto, 512)
+	}
+	if pendingDomains >= 50000 {
+		auto = max(auto, 640)
+	}
+	auto = max(auto, 128)
+	auto = min(auto, 768)
+	auto = min(auto, pendingDomains)
+	if auto < 1 {
+		auto = 1
+	}
+	notes = append(notes, fmt.Sprintf("dns-workers auto=%d (cpu=%d, pending=%s)", auto, cpu, ccFmtInt64(int64(pendingDomains))))
+	return auto, timeout, notes
+}
+
+func ccDNSProgressETA(p recrawler.DNSProgress) string {
+	remain := int64(p.Total) - p.Done
+	if remain <= 0 || p.Speed <= 0 {
+		return "0s"
+	}
+	eta := time.Duration(float64(time.Second) * float64(remain) / p.Speed)
+	if eta < 0 {
+		return "0s"
+	}
+	return eta.Truncate(time.Second).String()
+}
+
+func ccWriteDNSTimeoutList(dir string, timeouts map[string]string) (string, error) {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("creating dns timeout list dir: %w", err)
+	}
+	tsvPath := filepath.Join(dir, "dns_timeout_domains.tsv")
+	txtPath := filepath.Join(dir, "dns_timeout_domains.txt")
+
+	domains := make([]string, 0, len(timeouts))
+	for domain := range timeouts {
+		domains = append(domains, domain)
+	}
+	sort.Strings(domains)
+
+	tsvFile, err := os.Create(tsvPath)
+	if err != nil {
+		return "", fmt.Errorf("creating %s: %w", filepath.Base(tsvPath), err)
+	}
+	defer tsvFile.Close()
+	tsvW := bufio.NewWriterSize(tsvFile, 256*1024)
+	if _, err := tsvW.WriteString("domain\terror\n"); err != nil {
+		return "", err
+	}
+	for _, domain := range domains {
+		errMsg := strings.ReplaceAll(timeouts[domain], "\t", " ")
+		errMsg = strings.ReplaceAll(errMsg, "\n", " ")
+		errMsg = strings.ReplaceAll(errMsg, "\r", " ")
+		if _, err := fmt.Fprintf(tsvW, "%s\t%s\n", domain, errMsg); err != nil {
+			return "", err
+		}
+	}
+	if err := tsvW.Flush(); err != nil {
+		return "", err
+	}
+
+	txtFile, err := os.Create(txtPath)
+	if err != nil {
+		return "", fmt.Errorf("creating %s: %w", filepath.Base(txtPath), err)
+	}
+	defer txtFile.Close()
+	txtW := bufio.NewWriterSize(txtFile, 256*1024)
+	for _, domain := range domains {
+		if _, err := txtW.WriteString(domain + "\n"); err != nil {
+			return "", err
+		}
+	}
+	if err := txtW.Flush(); err != nil {
+		return "", err
+	}
+	return tsvPath, nil
 }
 
 func ccRecrawlParquetRunDir(cfg cc.Config, parquetPath string) string {
@@ -1711,19 +2038,21 @@ func ccParseParquetSelector(s string) (kind string, idx int, err error) {
 	}
 	parts := strings.SplitN(s, ":", 2)
 	if len(parts) != 2 {
-		return "", 0, fmt.Errorf("expected local path or selector N / w:N / m:N")
+		return "", 0, fmt.Errorf("expected local path or selector N / p:N / w:N / m:N")
 	}
 	n, convErr := strconv.Atoi(parts[1])
 	if convErr != nil {
 		return "", 0, fmt.Errorf("selector index must be numeric: %q", parts[1])
 	}
 	switch strings.ToLower(strings.TrimSpace(parts[0])) {
+	case "p", "part":
+		return "warc", n, nil
 	case "w", "warc":
 		return "warc", n, nil
 	case "m", "manifest":
 		return "manifest", n, nil
 	default:
-		return "", 0, fmt.Errorf("unknown selector prefix %q (use w: or m:)", parts[0])
+		return "", 0, fmt.Errorf("unknown selector prefix %q (use p:, w:, or m:)", parts[0])
 	}
 }
 
@@ -1824,22 +2153,35 @@ func ccBuildTimeoutReplaySeeds(seeds []recrawler.SeedURL, skip map[string]bool, 
 		want[d.Domain] = struct{}{}
 	}
 
-	// Prefer a URL that was not skipped by --resume, fall back to any URL for the domain.
+	// Candidates may be keyed by registered domain (legacy) or URL host (current).
+	// Prefer a URL that was not skipped by --resume, fall back to any URL for the key.
 	preferred := make(map[string]recrawler.SeedURL, len(domains))
 	fallback := make(map[string]recrawler.SeedURL, len(domains))
 
 	for _, s := range seeds {
-		if _, ok := want[s.Domain]; !ok {
+		keys := []string{}
+		if h := strings.TrimSpace(s.Host); h != "" {
+			keys = append(keys, h)
+		}
+		if d := strings.TrimSpace(s.Domain); d != "" && (len(keys) == 0 || keys[0] != d) {
+			keys = append(keys, d)
+		}
+		if len(keys) == 0 {
 			continue
 		}
-		if _, ok := fallback[s.Domain]; !ok {
-			fallback[s.Domain] = s
-		}
-		if skip != nil && skip[s.URL] {
-			continue
-		}
-		if _, ok := preferred[s.Domain]; !ok {
-			preferred[s.Domain] = s
+		for _, key := range keys {
+			if _, ok := want[key]; !ok {
+				continue
+			}
+			if _, ok := fallback[key]; !ok {
+				fallback[key] = s
+			}
+			if skip != nil && skip[s.URL] {
+				continue
+			}
+			if _, ok := preferred[key]; !ok {
+				preferred[key] = s
+			}
 		}
 	}
 
@@ -1943,11 +2285,11 @@ func ccRunTimeoutKilledReplay(
 		MissingSeeds: len(missingSeeds),
 	}
 
-	fmt.Println(infoStyle.Render("Timeout replay pass (requeue timeout-killed domains)..."))
-	fmt.Println(labelStyle.Render(fmt.Sprintf("  Candidates: %s domains", ccFmtInt64(int64(len(candidates))))))
-	fmt.Println(labelStyle.Render(fmt.Sprintf("  Replay seeds: %s URLs (1 per domain)", ccFmtInt64(int64(len(replaySeeds))))))
+	fmt.Println(infoStyle.Render("Timeout replay pass (requeue timeout-killed hosts/domains)..."))
+	fmt.Println(labelStyle.Render(fmt.Sprintf("  Candidates: %s keys", ccFmtInt64(int64(len(candidates))))))
+	fmt.Println(labelStyle.Render(fmt.Sprintf("  Replay seeds: %s URLs (1 per key)", ccFmtInt64(int64(len(replaySeeds))))))
 	if len(missingSeeds) > 0 {
-		fmt.Println(warningStyle.Render(fmt.Sprintf("  Missing seeds for %d domain(s); will classify as recheck_failed", len(missingSeeds))))
+		fmt.Println(warningStyle.Render(fmt.Sprintf("  Missing seeds for %d key(s); will classify as recheck_failed", len(missingSeeds))))
 	}
 
 	if len(replaySeeds) == 0 {
@@ -1990,7 +2332,7 @@ func ccRunTimeoutKilledReplay(
 	r.SetFailedDB(failedDB)
 	if dnsResolver != nil {
 		r.SetDNSCache(dnsResolver.ResolvedIPs())
-		r.SetDeadDomains(dnsResolver.DeadOrTimeoutDomainsWithReasons())
+		r.SetDeadHosts(dnsResolver.DeadOrTimeoutDomainsWithReasons())
 	}
 
 	if err := recrawler.RunWithDisplay(ctx, r, replaySeeds, nil, replayStats); err != nil {
@@ -2004,7 +2346,15 @@ func ccRunTimeoutKilledReplay(
 	}
 	failedDB = nil
 
-	reclass, err := ccReclassifyTimeoutKilledDomains(failedDBPath, candidates, r.SucceededDomains(), r.DeadDomainReasons())
+	recovered := r.SucceededDomains()
+	for h := range r.SucceededHosts() {
+		recovered[h] = true
+	}
+	replayDead := r.DeadDomainReasons()
+	for h, reason := range r.DeadHostReasons() {
+		replayDead[h] = reason
+	}
+	reclass, err := ccReclassifyTimeoutKilledDomains(failedDBPath, candidates, recovered, replayDead)
 	if err != nil {
 		return summary, err
 	}

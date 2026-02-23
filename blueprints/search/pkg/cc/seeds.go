@@ -63,7 +63,7 @@ func extractSeeds(ctx context.Context, db *sql.DB, source string, filter IndexFi
 	var seeds []recrawler.SeedURL
 	for rows.Next() {
 		var s recrawler.SeedURL
-		if err := rows.Scan(&s.URL, &s.Domain); err != nil {
+		if err := rows.Scan(&s.URL, &s.Domain, &s.Host); err != nil {
 			return nil, 0, fmt.Errorf("scanning seed: %w", err)
 		}
 		seeds = append(seeds, s)
@@ -96,7 +96,10 @@ func buildSeedQuery(f IndexFilter, source string) (string, []any) {
 	var b strings.Builder
 	var args []any
 
-	b.WriteString(fmt.Sprintf(`SELECT url, COALESCE(url_host_registered_domain, '') as domain FROM %s`, source))
+	b.WriteString(fmt.Sprintf(`SELECT url,
+		COALESCE(url_host_registered_domain, '') as domain,
+		COALESCE(NULLIF(url_host_name, ''), COALESCE(url_host_registered_domain, '')) as host
+		FROM %s`, source))
 
 	conditions, condArgs := buildSeedConditions(f)
 	args = append(args, condArgs...)

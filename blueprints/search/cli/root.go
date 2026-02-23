@@ -79,6 +79,7 @@ Get started:
 	root.AddCommand(NewX())
 	root.AddCommand(NewPerplexity())
 	root.AddCommand(NewQQ())
+	root.AddCommand(NewLocal())
 
 	if err := fang.Execute(ctx, root,
 		fang.WithVersion(Version),

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -258,6 +259,36 @@ func (c *Client) DownloadFile(ctx context.Context, remotePath, localPath string,
 	}
 
 	return nil
+}
+
+// HeadFileSize returns the remote object size for a Common Crawl path via HTTP HEAD.
+func (c *Client) HeadFileSize(ctx context.Context, remotePath string) (int64, error) {
+	url := fmt.Sprintf("%s/%s", c.baseURL, strings.TrimLeft(remotePath, "/"))
+	req, err := http.NewRequestWithContext(ctx, "HEAD", url, nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := c.apiClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("HEAD %s: %w", remotePath, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("HEAD %s: HTTP %d", remotePath, resp.StatusCode)
+	}
+	if resp.ContentLength > 0 {
+		return resp.ContentLength, nil
+	}
+	if v := resp.Header.Get("Content-Length"); v != "" {
+		n, convErr := strconv.ParseInt(v, 10, 64)
+		if convErr == nil && n > 0 {
+			return n, nil
+		}
+	}
+	return 0, fmt.Errorf("HEAD %s: missing Content-Length", remotePath)
 }
 
 // FetchWARCRecord fetches a single WARC record using an HTTP Range request.
