@@ -1,624 +1,257 @@
-export const latestBuildPage = `
-<h2>Current Build: OI-2026-02</h2>
-<p>The February 2026 crawl is now complete and available for download and API access.</p>
+import { icons, cardIcon } from '../icons'
 
-<div class="card-grid">
-  <div class="card" style="text-align:center">
-    <h3 style="margin:0;font-size:2rem;color:#2563eb">2.8B</h3>
-    <p>Pages Crawled</p>
+export const latestBuildPage = `
+<h2>Current Status</h2>
+<p>OpenIndex is in its initial data collection phase. The first crawls are underway, seeded from Common Crawl data and processed through the Go recrawler pipeline.</p>
+
+<div class="note">
+  <strong>Early stage.</strong> OpenIndex does not yet have its own complete web crawl. The data available today comes from recrawling Common Crawl seed URLs and targeted domain crawls. Numbers will grow as the pipeline matures.
+</div>
+
+<div class="stats" style="max-width:100%">
+  <div class="stat">
+    <div class="stat-v">Active</div>
+    <div class="stat-l">Crawl Status</div>
   </div>
-  <div class="card" style="text-align:center">
-    <h3 style="margin:0;font-size:2rem;color:#2563eb">420 TiB</h3>
-    <p>Raw Data</p>
+  <div class="stat">
+    <div class="stat-v">CC-MAIN-2026-04</div>
+    <div class="stat-l">Seed Source</div>
   </div>
-  <div class="card" style="text-align:center">
-    <h3 style="margin:0;font-size:2rem;color:#2563eb">180+</h3>
-    <p>Languages</p>
+  <div class="stat">
+    <div class="stat-v">Go + DuckDB</div>
+    <div class="stat-l">Pipeline</div>
   </div>
-  <div class="card" style="text-align:center">
-    <h3 style="margin:0;font-size:2rem;color:#2563eb">890M</h3>
-    <p>Unique Entities</p>
+  <div class="stat">
+    <div class="stat-v">Parquet</div>
+    <div class="stat-l">Index Format</div>
   </div>
 </div>
 
-<h3>Crawl Details</h3>
+<h2>Data Sources</h2>
+
+<h3>Common Crawl Seed Data</h3>
+<p>OpenIndex builds on <a href="https://commoncrawl.org">Common Crawl</a>, the largest open web archive. The current seed source is <strong>CC-MAIN-2026-04</strong>.</p>
+
 <table>
   <thead>
     <tr>
-      <th>Property</th>
-      <th>Value</th>
+      <th>Source</th>
+      <th>Description</th>
+      <th>Access</th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <td><strong>Crawl ID</strong></td>
-      <td><code>OI-2026-02</code></td>
+      <td><strong>CC Columnar Index</strong></td>
+      <td>Parquet files with URL metadata for billions of pages</td>
+      <td>S3 remote query via DuckDB httpfs</td>
     </tr>
     <tr>
-      <td><strong>Crawl period</strong></td>
-      <td>February 1 -- February 22, 2026</td>
+      <td><strong>CC CDX Index</strong></td>
+      <td>URL-to-WARC record lookup</td>
+      <td>CDX API (zero disk)</td>
     </tr>
     <tr>
-      <td><strong>Pages crawled</strong></td>
-      <td>2,814,392,047</td>
+      <td><strong>CC WARC Files</strong></td>
+      <td>Raw HTTP responses</td>
+      <td>S3 byte-range requests</td>
     </tr>
     <tr>
-      <td><strong>Unique domains</strong></td>
-      <td>42,183,291</td>
-    </tr>
-    <tr>
-      <td><strong>Unique hosts</strong></td>
-      <td>185,420,813</td>
-    </tr>
-    <tr>
-      <td><strong>Languages detected</strong></td>
-      <td>183</td>
-    </tr>
-    <tr>
-      <td><strong>Total raw size</strong></td>
-      <td>420.3 TiB (compressed)</td>
-    </tr>
-    <tr>
-      <td><strong>WARC files</strong></td>
-      <td>72,000</td>
-    </tr>
-    <tr>
-      <td><strong>Segments</strong></td>
-      <td>900</td>
+      <td><strong>CC Web Graphs</strong></td>
+      <td>Host-level and domain-level link graphs</td>
+      <td>S3 download</td>
     </tr>
   </tbody>
 </table>
 
-<h2>File Listings</h2>
+<h3>Recrawl Data</h3>
+<p>Seed URLs extracted from CC index are recrawled live through the Go pipeline to verify liveness and capture fresh content.</p>
+
+<pre><code># Extract seed URLs from CC parquet and recrawl
+search cc recrawl --last
+
+# Or target a specific CC parquet file
+search cc recrawl --file 50
+
+# Results stored locally:
+~/data/common-crawl/CC-MAIN-2026-04/recrawl/
+  shard_00.duckdb ... shard_15.duckdb
+
+# DNS cache shared across runs:
+~/data/common-crawl/CC-MAIN-2026-04/dns.duckdb</code></pre>
+
+<h3>Domain Crawl Data</h3>
+<p>Targeted domain crawls produce deep coverage of specific sites.</p>
+
+<pre><code># Crawl a domain
+search crawl-domain example.com --max-pages 5000
+
+# Results:
+~/data/crawler/example.com/
+  results/shard_00.duckdb ... shard_15.duckdb
+  state.duckdb  # resumable state</code></pre>
+
+<h2>Data Formats Available</h2>
 
 <details>
-  <summary>WARC Files (raw HTTP responses)</summary>
+  <summary>DuckDB Sharded Results</summary>
   <div class="details-body">
-    <p>WARC (Web ARChive) files contain the complete HTTP request and response for every crawled page. Each file is approximately 1 GB compressed (gzip).</p>
+    <p>Primary storage format. 16-shard DuckDB with batch-VALUES inserts.</p>
     <table>
       <thead>
-        <tr>
-          <th>Property</th>
-          <th>Value</th>
-        </tr>
+        <tr><th>Property</th><th>Value</th></tr>
       </thead>
       <tbody>
-        <tr>
-          <td>File count</td>
-          <td>72,000</td>
-        </tr>
-        <tr>
-          <td>File size (each)</td>
-          <td>~1 GB compressed</td>
-        </tr>
-        <tr>
-          <td>Total size</td>
-          <td>~72 TiB</td>
-        </tr>
-        <tr>
-          <td>Format</td>
-          <td>WARC/1.1 (gzip)</td>
-        </tr>
-        <tr>
-          <td>Path pattern</td>
-          <td><code>OI-2026-02/segments/{segment}/warc/{file}.warc.gz</code></td>
-        </tr>
+        <tr><td>Shards</td><td>16 DuckDB files</td></tr>
+        <tr><td>Insert strategy</td><td>Batch-VALUES, 500 rows/stmt</td></tr>
+        <tr><td>Distribution</td><td>URL hash</td></tr>
+        <tr><td>Location</td><td><code>~/data/common-crawl/{CrawlID}/recrawl/</code></td></tr>
       </tbody>
     </table>
-    <pre><code># List WARC files
-aws s3 ls s3://openindex-data/OI-2026-02/segments/1738368000000.00/warc/
-
-# Download a single WARC file
-wget https://data.openindex.org/OI-2026-02/segments/1738368000000.00/warc/00000.warc.gz</code></pre>
+    <pre><code># Query results with DuckDB CLI
+duckdb ~/data/common-crawl/CC-MAIN-2026-04/recrawl/shard_00.duckdb \\
+  "SELECT url, status_code, content_type FROM results LIMIT 10"</code></pre>
   </div>
 </details>
 
 <details>
-  <summary>WAT Files (metadata extracts)</summary>
+  <summary>Parquet (via CC Index)</summary>
   <div class="details-body">
-    <p>WAT files contain structured metadata extracted from each HTTP response, including headers, HTML metadata, link lists, and detected properties. Stored in WARC envelope format with JSON payloads.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Property</th>
-          <th>Value</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>File count</td>
-          <td>72,000</td>
-        </tr>
-        <tr>
-          <td>Total size</td>
-          <td>~28 TiB</td>
-        </tr>
-        <tr>
-          <td>Format</td>
-          <td>WARC envelope with JSON metadata (gzip)</td>
-        </tr>
-        <tr>
-          <td>Path pattern</td>
-          <td><code>OI-2026-02/segments/{segment}/wat/{file}.warc.wat.gz</code></td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-</details>
-
-<details>
-  <summary>WET Files (text extracts)</summary>
-  <div class="details-body">
-    <p>WET files contain clean extracted plaintext from each crawled page. HTML tags, scripts, styles, and boilerplate content are removed. Useful for NLP, text mining, and language model training.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Property</th>
-          <th>Value</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>File count</td>
-          <td>72,000</td>
-        </tr>
-        <tr>
-          <td>Total size</td>
-          <td>~18 TiB</td>
-        </tr>
-        <tr>
-          <td>Format</td>
-          <td>WARC envelope with plaintext (gzip)</td>
-        </tr>
-        <tr>
-          <td>Path pattern</td>
-          <td><code>OI-2026-02/segments/{segment}/wet/{file}.warc.wet.gz</code></td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-</details>
-
-<h2>Index Files</h2>
-
-<details>
-  <summary>CDX Index</summary>
-  <div class="details-body">
-    <p>CDXJ-format index for URL-level lookups. Sorted by SURT key for efficient binary search and prefix queries.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Property</th>
-          <th>Value</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>File count</td>
-          <td>300 shards</td>
-        </tr>
-        <tr>
-          <td>Total size</td>
-          <td>~45 GB (compressed)</td>
-        </tr>
-        <tr>
-          <td>Format</td>
-          <td>CDXJ (gzip)</td>
-        </tr>
-        <tr>
-          <td>Path pattern</td>
-          <td><code>OI-2026-02/cdx/cdx-{shard}.gz</code></td>
-        </tr>
-      </tbody>
-    </table>
-    <pre><code># Download CDX shard
-wget https://data.openindex.org/OI-2026-02/cdx/cdx-00000.gz
-
-# Query via API (recommended)
-curl "https://api.openindex.org/v1/cdx?url=https://example.com/&crawl=OI-2026-02"</code></pre>
-  </div>
-</details>
-
-<details>
-  <summary>Columnar Index (Parquet)</summary>
-  <div class="details-body">
-    <p>Apache Parquet files containing structured metadata for every crawled page. Queryable with DuckDB, Spark, Polars, or any Parquet-compatible tool.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Property</th>
-          <th>Value</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>File count</td>
-          <td>560 files</td>
-        </tr>
-        <tr>
-          <td>File size (each)</td>
-          <td>~500 MB</td>
-        </tr>
-        <tr>
-          <td>Total size</td>
-          <td>~280 GB</td>
-        </tr>
-        <tr>
-          <td>Compression</td>
-          <td>Snappy</td>
-        </tr>
-        <tr>
-          <td>Path pattern</td>
-          <td><code>OI-2026-02/parquet/segment-{id}.parquet</code></td>
-        </tr>
-      </tbody>
-    </table>
-    <pre><code># Query directly from S3 with DuckDB
+    <p>Common Crawl's columnar index is queryable directly from S3 without downloading.</p>
+    <pre><code># Remote query -- zero disk, zero download
 duckdb -c "
+  INSTALL httpfs; LOAD httpfs;
   SELECT url_host_tld, count(*) as pages
-  FROM read_parquet('s3://openindex-data/OI-2026-02/parquet/*.parquet')
+  FROM read_parquet(
+    's3://commoncrawl/cc-index/table/cc-main/warc/crawl=CC-MAIN-2026-04/subset=warc/*.parquet'
+  )
   GROUP BY url_host_tld
   ORDER BY pages DESC
   LIMIT 10;
-"
-
-# Download individual files
-wget https://data.openindex.org/OI-2026-02/parquet/segment-00000.parquet</code></pre>
+"</code></pre>
   </div>
 </details>
 
 <details>
-  <summary>Vector Index</summary>
+  <summary>DNS Cache</summary>
   <div class="details-body">
-    <p>Pre-computed dense embeddings (1024-dim, float32) for every crawled page. Available as downloadable shards or via the vector search API.</p>
+    <p>Three-category DNS cache persisted in DuckDB. Shared across crawl runs.</p>
     <table>
       <thead>
-        <tr>
-          <th>Property</th>
-          <th>Value</th>
-        </tr>
+        <tr><th>Category</th><th>Description</th></tr>
       </thead>
       <tbody>
-        <tr>
-          <td>Vectors</td>
-          <td>2,814,392,047</td>
-        </tr>
-        <tr>
-          <td>Dimensions</td>
-          <td>1024</td>
-        </tr>
-        <tr>
-          <td>Total size</td>
-          <td>~12 TiB</td>
-        </tr>
-        <tr>
-          <td>Format</td>
-          <td>Vald index shards</td>
-        </tr>
-        <tr>
-          <td>Access</td>
-          <td>API only (too large for download)</td>
-        </tr>
+        <tr><td><strong>Resolved</strong></td><td>Domain resolved to IP addresses</td></tr>
+        <tr><td><strong>Dead</strong></td><td>NXDOMAIN confirmed by multiple DNS servers</td></tr>
+        <tr><td><strong>Timeout</strong></td><td>DNS timeout, saved for retry</td></tr>
       </tbody>
     </table>
-    <pre><code># Query via API
-curl -X POST "https://api.openindex.org/v1/vector/search" \\
-  -H "Content-Type: application/json" \\
-  -d '{"query": "climate change mitigation strategies", "k": 10, "crawl": "OI-2026-02"}'</code></pre>
-  </div>
-</details>
-
-<h2>Knowledge Graph Exports</h2>
-
-<details>
-  <summary>Entity Graph</summary>
-  <div class="details-body">
-    <p>All extracted entities with properties, relationships, and provenance links.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>File</th>
-          <th>Format</th>
-          <th>Size</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><code>entities.jsonld.gz</code></td>
-          <td>JSON-LD</td>
-          <td>82 GB</td>
-        </tr>
-        <tr>
-          <td><code>relationships.nt.gz</code></td>
-          <td>N-Triples</td>
-          <td>120 GB</td>
-        </tr>
-        <tr>
-          <td><code>entities.jsonl.gz</code></td>
-          <td>JSONL</td>
-          <td>68 GB</td>
-        </tr>
-      </tbody>
-    </table>
-    <pre><code>wget https://data.openindex.org/OI-2026-02/graph/entities.jsonld.gz
-wget https://data.openindex.org/OI-2026-02/graph/relationships.nt.gz</code></pre>
+    <pre><code># DNS cache location
+~/data/common-crawl/CC-MAIN-2026-04/dns.duckdb</code></pre>
   </div>
 </details>
 
 <details>
-  <summary>Web Graph</summary>
+  <summary>WARC Files (via CC)</summary>
   <div class="details-body">
-    <p>Host-level and domain-level hyperlink graphs.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>File</th>
-          <th>Granularity</th>
-          <th>Nodes</th>
-          <th>Edges</th>
-          <th>Size</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><code>webgraph-host.tsv.gz</code></td>
-          <td>Host-level</td>
-          <td>185M</td>
-          <td>12.4B</td>
-          <td>48 GB</td>
-        </tr>
-        <tr>
-          <td><code>webgraph-domain.tsv.gz</code></td>
-          <td>Domain-level</td>
-          <td>42M</td>
-          <td>2.1B</td>
-          <td>8.5 GB</td>
-        </tr>
-      </tbody>
-    </table>
-    <pre><code>wget https://data.openindex.org/OI-2026-02/graph/webgraph-host.tsv.gz
-wget https://data.openindex.org/OI-2026-02/graph/webgraph-domain.tsv.gz</code></pre>
+    <p>Raw HTTP responses accessible via Common Crawl's CDN using byte-range requests.</p>
+    <pre><code># Fetch a specific WARC record by byte range
+search cc fetch --url https://example.com
+
+# Or look up via CDX API
+search cc url https://example.com</code></pre>
   </div>
 </details>
 
-<h2>Download Paths</h2>
-<p>Data is available via both S3-compatible storage and HTTP download:</p>
-
-<h3>S3 Access</h3>
-<pre><code># Requires AWS CLI or compatible S3 client
-# No authentication required (public bucket)
-
-# List all files in the latest crawl
-aws s3 ls s3://openindex-data/OI-2026-02/ --no-sign-request
-
-# Download a specific WARC file
-aws s3 cp s3://openindex-data/OI-2026-02/segments/1738368000000.00/warc/00000.warc.gz . --no-sign-request
-
-# Sync an entire segment
-aws s3 sync s3://openindex-data/OI-2026-02/segments/1738368000000.00/ ./segment-00/ --no-sign-request</code></pre>
-
-<h3>HTTP Download</h3>
-<pre><code># Direct download via CDN
-wget https://data.openindex.org/OI-2026-02/segments/1738368000000.00/warc/00000.warc.gz
-
-# Download Parquet index
-wget https://data.openindex.org/OI-2026-02/parquet/segment-00000.parquet
-
-# Download file listings
-wget https://data.openindex.org/OI-2026-02/warc.paths.gz
-wget https://data.openindex.org/OI-2026-02/wat.paths.gz
-wget https://data.openindex.org/OI-2026-02/wet.paths.gz</code></pre>
+<h2>Accessing the Data</h2>
 
 <h3>CLI Tool</h3>
-<pre><code># Install the OpenIndex CLI
-go install github.com/nicholasgasior/gopher-crawl/cmd/openindex@latest
+<pre><code># Install
+go install github.com/nicholasgasior/gopher-crawl/cmd/search@latest
 
-# List available crawls
-openindex crawls
+# List available CC crawls
+search cc crawls
 
-# Download Parquet index for latest crawl
-openindex download --type parquet --crawl OI-2026-02
+# Query CC index remotely
+search cc stats --remote
 
-# Query via CLI
-openindex search "climate change" --crawl OI-2026-02 --limit 20</code></pre>
+# Download CC parquet sample
+search cc index --sample 5
 
-<h3>API Access</h3>
-<pre><code># CDX lookup
-curl "https://api.openindex.org/v1/cdx?url=https://example.com/&crawl=OI-2026-02"
+# Recrawl from CC seeds
+search cc recrawl --last
 
-# Full-text search
-curl "https://api.openindex.org/v1/search?q=machine+learning&crawl=OI-2026-02&limit=10"
+# Crawl a single domain
+search crawl-domain example.com</code></pre>
 
-# Vector search
-curl -X POST "https://api.openindex.org/v1/vector/search" \\
-  -H "Content-Type: application/json" \\
-  -d '{"query": "advances in robotics", "crawl": "OI-2026-02", "k": 10}'</code></pre>
+<h3>CC Viewer (Web)</h3>
+<p>Browse Common Crawl data through the web viewer:</p>
+<pre><code># Deployed at:
+https://cc-viewer.go-mizu.workers.dev
 
-<h2>Previous Builds</h2>
+# Routes:
+/url/*         -- Look up a URL in CC
+/domain/:name  -- Browse a domain
+/view          -- WARC record viewer
+/crawls        -- List available crawls</code></pre>
+
+<h3>DuckDB Direct</h3>
+<pre><code># Query local recrawl results
+duckdb ~/data/common-crawl/CC-MAIN-2026-04/recrawl/shard_00.duckdb
+
+# Query CC index remotely (requires httpfs)
+duckdb -c "INSTALL httpfs; LOAD httpfs;
+  SELECT count(*) FROM read_parquet('s3://commoncrawl/cc-index/...');"</code></pre>
+
+<h2>What Is Next</h2>
 <table>
   <thead>
     <tr>
-      <th>Crawl ID</th>
-      <th>Date</th>
-      <th>Pages</th>
-      <th>Size</th>
-      <th>Domains</th>
+      <th>Milestone</th>
+      <th>Description</th>
       <th>Status</th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <td><strong>OI-2026-02</strong></td>
-      <td>February 2026</td>
-      <td>2.8B</td>
-      <td>420 TiB</td>
-      <td>42.2M</td>
-      <td><span class="status-badge status-operational">Current</span></td>
+      <td><strong>CC seed recrawl</strong></td>
+      <td>Recrawl seed URLs from CC-MAIN-2026-04 parquet index</td>
+      <td>In progress</td>
     </tr>
     <tr>
-      <td><strong>OI-2026-01</strong></td>
-      <td>January 2026</td>
-      <td>2.6B</td>
-      <td>398 TiB</td>
-      <td>40.8M</td>
-      <td>Available</td>
+      <td><strong>Domain crawl coverage</strong></td>
+      <td>Deep crawls of selected domains via domain crawler</td>
+      <td>In progress</td>
     </tr>
     <tr>
-      <td><strong>OI-2025-12</strong></td>
-      <td>December 2025</td>
-      <td>2.5B</td>
-      <td>385 TiB</td>
-      <td>39.5M</td>
-      <td>Available</td>
+      <td><strong>Parquet export</strong></td>
+      <td>Export recrawl results to Parquet for sharing</td>
+      <td>Planned</td>
     </tr>
     <tr>
-      <td><strong>OI-2025-11</strong></td>
-      <td>November 2025</td>
-      <td>2.4B</td>
-      <td>372 TiB</td>
-      <td>38.1M</td>
-      <td>Available</td>
+      <td><strong>Own CDX index</strong></td>
+      <td>Produce OpenIndex CDX from own crawl data</td>
+      <td>Planned</td>
     </tr>
     <tr>
-      <td><strong>OI-2025-10</strong></td>
-      <td>October 2025</td>
-      <td>2.3B</td>
-      <td>358 TiB</td>
-      <td>37.0M</td>
-      <td>Available</td>
+      <td><strong>Full-text index</strong></td>
+      <td>Tantivy-based keyword search</td>
+      <td>Planned</td>
     </tr>
     <tr>
-      <td><strong>OI-2025-09</strong></td>
-      <td>September 2025</td>
-      <td>2.2B</td>
-      <td>342 TiB</td>
-      <td>35.8M</td>
-      <td>Available</td>
+      <td><strong>Vector embeddings</strong></td>
+      <td>Generate embeddings, deploy Vald</td>
+      <td>Planned</td>
     </tr>
     <tr>
-      <td><strong>OI-2025-08</strong></td>
-      <td>August 2025</td>
-      <td>2.1B</td>
-      <td>328 TiB</td>
-      <td>34.5M</td>
-      <td>Available</td>
-    </tr>
-    <tr>
-      <td><strong>OI-2025-07</strong></td>
-      <td>July 2025</td>
-      <td>2.0B</td>
-      <td>315 TiB</td>
-      <td>33.2M</td>
-      <td>Available</td>
-    </tr>
-    <tr>
-      <td><strong>OI-2025-06</strong></td>
-      <td>June 2025</td>
-      <td>1.9B</td>
-      <td>298 TiB</td>
-      <td>32.0M</td>
-      <td>Available</td>
-    </tr>
-    <tr>
-      <td><strong>OI-2025-05</strong></td>
-      <td>May 2025</td>
-      <td>1.8B</td>
-      <td>282 TiB</td>
-      <td>30.7M</td>
-      <td>Available</td>
-    </tr>
-    <tr>
-      <td><strong>OI-2025-04</strong></td>
-      <td>April 2025</td>
-      <td>1.6B</td>
-      <td>265 TiB</td>
-      <td>29.1M</td>
-      <td>Archive</td>
-    </tr>
-    <tr>
-      <td><strong>OI-2025-03</strong></td>
-      <td>March 2025</td>
-      <td>1.5B</td>
-      <td>248 TiB</td>
-      <td>27.6M</td>
-      <td>Archive</td>
-    </tr>
-    <tr>
-      <td><strong>OI-2025-02</strong></td>
-      <td>February 2025</td>
-      <td>1.3B</td>
-      <td>220 TiB</td>
-      <td>25.8M</td>
-      <td>Archive</td>
-    </tr>
-    <tr>
-      <td><strong>OI-2025-01</strong></td>
-      <td>January 2025</td>
-      <td>1.1B</td>
-      <td>192 TiB</td>
-      <td>23.4M</td>
-      <td>Archive</td>
-    </tr>
-    <tr>
-      <td><strong>OI-2024-12</strong></td>
-      <td>December 2024</td>
-      <td>0.9B</td>
-      <td>158 TiB</td>
-      <td>20.1M</td>
-      <td>Archive</td>
+      <td><strong>Knowledge graph</strong></td>
+      <td>NER pipeline, entity extraction</td>
+      <td>Planned</td>
     </tr>
   </tbody>
 </table>
 
 <div class="note">
-  <strong>Status key:</strong> <strong>Current</strong> = latest production crawl, all indices available. <strong>Available</strong> = WARC + Parquet + CDX downloadable, full-text and vector search available for latest 3 only. <strong>Archive</strong> = WARC + Parquet + CDX downloadable from cold storage (slower access).
+  <strong>Growing dataset.</strong> OpenIndex is a new project. The dataset is small and growing. If you need large-scale web data today, <a href="https://commoncrawl.org">Common Crawl</a> is the established source -- and OpenIndex integrates with it directly.
 </div>
-
-<h2>Content Breakdown (OI-2026-02)</h2>
-
-<h3>Top Languages</h3>
-<table>
-  <thead>
-    <tr>
-      <th>Language</th>
-      <th>Pages</th>
-      <th>Percentage</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr><td>English</td><td>1,240M</td><td>44.1%</td></tr>
-    <tr><td>Chinese</td><td>198M</td><td>7.0%</td></tr>
-    <tr><td>German</td><td>168M</td><td>6.0%</td></tr>
-    <tr><td>Japanese</td><td>152M</td><td>5.4%</td></tr>
-    <tr><td>French</td><td>140M</td><td>5.0%</td></tr>
-    <tr><td>Spanish</td><td>132M</td><td>4.7%</td></tr>
-    <tr><td>Russian</td><td>118M</td><td>4.2%</td></tr>
-    <tr><td>Portuguese</td><td>85M</td><td>3.0%</td></tr>
-    <tr><td>Italian</td><td>72M</td><td>2.6%</td></tr>
-    <tr><td>Other (173 languages)</td><td>509M</td><td>18.1%</td></tr>
-  </tbody>
-</table>
-
-<h3>Top TLDs</h3>
-<table>
-  <thead>
-    <tr>
-      <th>TLD</th>
-      <th>Pages</th>
-      <th>Domains</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr><td><code>.com</code></td><td>1,180M</td><td>18.4M</td></tr>
-    <tr><td><code>.org</code></td><td>185M</td><td>2.1M</td></tr>
-    <tr><td><code>.de</code></td><td>142M</td><td>1.8M</td></tr>
-    <tr><td><code>.net</code></td><td>98M</td><td>1.2M</td></tr>
-    <tr><td><code>.ru</code></td><td>92M</td><td>1.1M</td></tr>
-    <tr><td><code>.jp</code></td><td>88M</td><td>0.9M</td></tr>
-    <tr><td><code>.fr</code></td><td>82M</td><td>0.8M</td></tr>
-    <tr><td><code>.uk</code></td><td>76M</td><td>0.7M</td></tr>
-    <tr><td><code>.cn</code></td><td>68M</td><td>0.6M</td></tr>
-    <tr><td><code>.io</code></td><td>54M</td><td>0.4M</td></tr>
-  </tbody>
-</table>
 `

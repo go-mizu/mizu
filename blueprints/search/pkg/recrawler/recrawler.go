@@ -41,6 +41,11 @@ type Recrawler struct {
 	domainSems   map[string]chan struct{}
 	domainSemsMu sync.RWMutex
 
+	// Warmup gate: before a domain has any successful response, only allow one
+	// in-flight request. This avoids timeout storms caused by blasting unknown/
+	// dead domains with high concurrency.
+	domainWarmup sync.Map // domain -> chan struct{} (cap=1)
+
 	// Per-domain timeout tracking: kill domains that consistently time out
 	// sync.Map eliminates global mutex for 24K+ concurrent workers
 	domainFailCounts sync.Map // domain → *atomic.Int32
@@ -218,26 +223,37 @@ func (r *Recrawler) markDomainDead(domain, reason string) {
 	r.deadDomains.Store(domain, reason)
 }
 
+// markDomainDeadIfUnset marks a domain dead only if it has not already been marked.
+// Returns true when the domain was newly marked in this call.
+func (r *Recrawler) markDomainDeadIfUnset(domain, reason string) bool {
+	_, loaded := r.deadDomains.LoadOrStore(domain, reason)
+	return !loaded
+}
+
 // recordDomainTimeout increments the failure counter for a domain.
 // If the domain has never succeeded and failures >= threshold, marks it dead.
 // Uses sync.Map + atomic for lock-free operation at 50K+ workers.
 func (r *Recrawler) recordDomainTimeout(domain string) {
+	if r.isDomainDead(domain) {
+		return
+	}
 	if _, ok := r.domainSucceeded.Load(domain); ok {
 		return // domain has succeeded before, immune to timeout-kill
 	}
 	counter, _ := r.domainFailCounts.LoadOrStore(domain, &atomic.Int32{})
 	fails := counter.(*atomic.Int32).Add(1)
 	if int(fails) >= r.config.DomainFailThreshold {
-		r.markDomainDead(domain, "http_timeout_killed")
-		// Log to FailedDB
-		ips := r.cachedIPsFor(domain)
-		r.failedDB.AddDomain(FailedDomain{
-			Domain: domain,
-			Reason: "http_timeout_killed",
-			Error:  fmt.Sprintf("%d consecutive timeouts", fails),
-			IPs:    ips,
-			Stage:  "http_worker",
-		})
+		if r.markDomainDeadIfUnset(domain, "http_timeout_killed") {
+			// Log to FailedDB once per domain.
+			ips := r.cachedIPsFor(domain)
+			r.failedDB.AddDomain(FailedDomain{
+				Domain: domain,
+				Reason: "http_timeout_killed",
+				Error:  fmt.Sprintf("%d consecutive timeouts", fails),
+				IPs:    ips,
+				Stage:  "http_worker",
+			})
+		}
 	}
 }
 
@@ -518,6 +534,47 @@ func (r *Recrawler) directFeed(ctx context.Context, domains []string, domainURLs
 		return
 	}
 
+	// Fast path: when TwoPass probing is disabled (default for cc recrawl),
+	// stream URLs directly after DNS/dead-domain filtering. This avoids an
+	// extra HEAD request per domain and substantially improves throughput.
+	if !r.config.TwoPass {
+		aliveList := make([]struct {
+			domain string
+			urls   []SeedURL
+		}, 0, len(probeDomains))
+		for _, domain := range probeDomains {
+			urls := domainURLs[domain]
+			if len(urls) == 0 {
+				continue
+			}
+			aliveList = append(aliveList, struct {
+				domain string
+				urls   []SeedURL
+			}{domain: domain, urls: urls})
+		}
+
+		// Interleave URLs across domains (round-robin) for even load distribution.
+		cursors := make([]int, len(aliveList))
+		remaining := len(aliveList)
+		for remaining > 0 {
+			remaining = 0
+			for i, ad := range aliveList {
+				if cursors[i] < len(ad.urls) {
+					select {
+					case urlCh <- ad.urls[cursors[i]]:
+						cursors[i]++
+					case <-ctx.Done():
+						return
+					}
+					if cursors[i] < len(ad.urls) {
+						remaining++
+					}
+				}
+			}
+		}
+		return
+	}
+
 	// Phase 2: streaming probe → immediate URL feed
 	// Probe domains in parallel. As each domain is confirmed alive,
 	// its URLs are pushed to workers immediately — no waiting for all probes.
@@ -620,17 +677,47 @@ func (r *Recrawler) worker(ctx context.Context, client *http.Client, urls <-chan
 				r.stats.RecordDomainSkip()
 				continue
 			}
+			warmSem, needWarmup := r.domainWarmupSem(seed.Domain)
+			if needWarmup {
+				select {
+				case warmSem <- struct{}{}:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+				// Domain may have been marked dead while waiting.
+				if r.isDomainDead(seed.Domain) {
+					<-warmSem
+					r.stats.RecordDomainSkip()
+					continue
+				}
+			}
 			// Per-domain connection limit: prevents flooding individual servers
 			sem := r.domainSem(seed.Domain)
 			select {
 			case sem <- struct{}{}:
+				if needWarmup {
+					<-warmSem
+				}
 			case <-ctx.Done():
+				if needWarmup {
+					<-warmSem
+				}
 				return ctx.Err()
 			}
 			r.fetchOne(ctx, client, seed)
 			<-sem
 		}
 	}
+}
+
+// domainWarmupSem returns a per-domain cap=1 semaphore for domains that have not yet
+// succeeded. Once a domain has any successful response, warmup is bypassed.
+func (r *Recrawler) domainWarmupSem(domain string) (chan struct{}, bool) {
+	if _, ok := r.domainSucceeded.Load(domain); ok {
+		return nil, false
+	}
+	v, _ := r.domainWarmup.LoadOrStore(domain, make(chan struct{}, 1))
+	return v.(chan struct{}), true
 }
 
 // domainSem returns the per-domain semaphore channel.
@@ -706,8 +793,9 @@ func (r *Recrawler) fetchOne(ctx context.Context, client *http.Client, seed Seed
 			if isDNSError(err) {
 				reason = "http_dns_error"
 			}
-			r.markDomainDead(seed.Domain, reason)
-			r.failedDB.AddDomain(FailedDomain{Domain: seed.Domain, Reason: reason, Error: truncateStr(err.Error(), 200), IPs: r.cachedIPsFor(seed.Domain), Stage: "http_worker"})
+			if r.markDomainDeadIfUnset(seed.Domain, reason) {
+				r.failedDB.AddDomain(FailedDomain{Domain: seed.Domain, Reason: reason, Error: truncateStr(err.Error(), 200), IPs: r.cachedIPsFor(seed.Domain), Stage: "http_worker"})
+			}
 		} else if isTimeout {
 			r.recordDomainTimeout(seed.Domain)
 		}

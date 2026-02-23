@@ -1,17 +1,17 @@
+import { icons, cardIcon } from '../icons'
+
 export const crawlerPage = `
 <h2>OpenIndexBot</h2>
-<p>OpenIndexBot is the open-source web crawler that powers the OpenIndex platform. It is a distributed, high-throughput crawler written in Go, designed for transparency, compliance, and respect for web publishers.</p>
+<p>OpenIndexBot is the open-source web crawler powering OpenIndex. It is built in Go as part of the Mizu ecosystem and consists of two crawlers: a high-throughput recrawler for bulk URL processing, and a domain crawler for deep single-site crawling.</p>
 
 <div class="note">
-  <strong>Website owners:</strong> If you are seeing requests from OpenIndexBot and want to control its access, see the <a href="#blocking">Blocking OpenIndexBot</a> section below.
+  <strong>Website owners:</strong> If you see requests from OpenIndexBot and want to control access, see the <a href="#blocking">Blocking OpenIndexBot</a> section below.
 </div>
 
 <h2>User-Agent String</h2>
-<p>OpenIndexBot identifies itself with the following user-agent string:</p>
-
 <pre><code>OpenIndexBot/1.0 (+https://open-index.go-mizu.workers.dev/crawler)</code></pre>
 
-<p>The full HTTP request headers sent by the crawler:</p>
+<p>Full HTTP request headers:</p>
 <pre><code>User-Agent: OpenIndexBot/1.0 (+https://open-index.go-mizu.workers.dev/crawler)
 Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
 Accept-Encoding: gzip, br
@@ -19,25 +19,138 @@ Accept-Language: en-US,en;q=0.5
 Connection: keep-alive</code></pre>
 
 <h2 id="blocking">Robots.txt Compliance</h2>
-<p>OpenIndexBot fully respects the <a href="https://www.rfc-editor.org/rfc/rfc9309">Robots Exclusion Protocol (RFC 9309)</a>. To block OpenIndexBot from crawling your site, add the following to your <code>robots.txt</code>:</p>
+<p>OpenIndexBot respects the <a href="https://www.rfc-editor.org/rfc/rfc9309">Robots Exclusion Protocol (RFC 9309)</a>. To block it:</p>
 
 <pre><code># Block OpenIndexBot from all pages
 User-agent: OpenIndexBot
 Disallow: /</code></pre>
 
-<p>You can also selectively block specific paths:</p>
-<pre><code># Block OpenIndexBot from specific directories
+<p>Selective blocking:</p>
+<pre><code># Block specific directories
 User-agent: OpenIndexBot
 Disallow: /private/
 Disallow: /admin/
 Disallow: /api/
 Allow: /api/public/</code></pre>
 
-<p>OpenIndexBot checks <code>robots.txt</code> before every crawl request. The robots.txt file is cached for the duration specified by the <code>Cache-Control</code> header, or for a default of 24 hours if no cache header is present.</p>
+<h2>Technical Architecture</h2>
+<p>The crawler has two modes, each optimized for a different use case.</p>
 
-<h2>Rate Limiting and Adaptive Back-off</h2>
-<p>OpenIndexBot is designed to be a respectful visitor. It implements multiple layers of rate limiting:</p>
+<div class="cards">
+  <div class="card">
+    <div class="card-ic">${cardIcon('globe')} <span>Recrawler</span></div>
+    <h3>Bulk URL Processing</h3>
+    <p>Takes seed URLs (e.g., from Common Crawl index) and recrawls them in bulk. Designed for millions of URLs across thousands of domains.</p>
+  </div>
+  <div class="card">
+    <div class="card-ic">${cardIcon('cpu')} <span>Domain Crawler</span></div>
+    <h3>Deep Single-Site</h3>
+    <p>Crawls a single domain using HTTP/2 multiplexing. Bloom filter frontier, link extraction, resumable state. Best for exhaustive site crawling.</p>
+  </div>
+</div>
 
+<h3>Recrawler Specifications</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Parameter</th>
+      <th>Value</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>HTTP workers</strong></td>
+      <td>Up to 100,000 concurrent</td>
+    </tr>
+    <tr>
+      <td><strong>DNS workers</strong></td>
+      <td>20,000 concurrent</td>
+    </tr>
+    <tr>
+      <td><strong>Probe workers</strong></td>
+      <td>5,000 concurrent</td>
+    </tr>
+    <tr>
+      <td><strong>Max connections per domain</strong></td>
+      <td>8 (configurable, default)</td>
+    </tr>
+    <tr>
+      <td><strong>Domain fail threshold</strong></td>
+      <td>2 consecutive failures before skipping</td>
+    </tr>
+    <tr>
+      <td><strong>Probe timeout</strong></td>
+      <td>3 seconds (conservative: timeout = alive)</td>
+    </tr>
+    <tr>
+      <td><strong>TLS timeout</strong></td>
+      <td>500ms</td>
+    </tr>
+    <tr>
+      <td><strong>Transport shards</strong></td>
+      <td>64</td>
+    </tr>
+    <tr>
+      <td><strong>ResultDB shards</strong></td>
+      <td>16 DuckDB files</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Domain Crawler Specifications</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Parameter</th>
+      <th>Value</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Protocol</strong></td>
+      <td>HTTP/2 with multiplexing</td>
+    </tr>
+    <tr>
+      <td><strong>Frontier</strong></td>
+      <td>Bloom filter (dedup) + channel-based queue</td>
+    </tr>
+    <tr>
+      <td><strong>Concurrency</strong></td>
+      <td>Configurable workers + max connections</td>
+    </tr>
+    <tr>
+      <td><strong>State</strong></td>
+      <td>Resumable via state.duckdb</td>
+    </tr>
+    <tr>
+      <td><strong>Peak throughput</strong></td>
+      <td>275 pages/s (measured on kenh14.vn)</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>Pipeline Stages</h2>
+<p>The recrawler operates in three sequential stages:</p>
+
+<h3>Stage 1: Batch DNS Resolution</h3>
+<pre><code># 20K concurrent DNS workers
+# Multi-server confirmation: Cloudflare -> Google -> stdlib
+# Results: resolved (IPs), dead (NXDOMAIN), timeout (saved for reuse)
+# Dead domains are skipped entirely in later stages</code></pre>
+
+<h3>Stage 2: Streaming Probe</h3>
+<pre><code># 5K concurrent probers check if resolved hosts accept connections
+# Conservative: timeout = alive (only refused/reset/DNS error = dead)
+# URLs are fed IMMEDIATELY to HTTP workers as probes succeed
+# No waiting for all probes to complete -- streaming pipeline</code></pre>
+
+<h3>Stage 3: HTTP Fetch</h3>
+<pre><code># Up to 100K concurrent workers
+# Per-domain semaphores (8 max conns/domain, pre-created)
+# URL interleaving: round-robin across domains, not sequential
+# Results written to 16-shard DuckDB (batch-VALUES, 500 rows/stmt)</code></pre>
+
+<h2>Rate Limiting</h2>
 <table>
   <thead>
     <tr>
@@ -47,213 +160,112 @@ Allow: /api/public/</code></pre>
   </thead>
   <tbody>
     <tr>
-      <td><strong>Default delay</strong></td>
-      <td>Minimum 1 second between requests to the same domain</td>
+      <td><strong>Per-domain connection cap</strong></td>
+      <td>Maximum 8 concurrent connections per domain (configurable)</td>
     </tr>
     <tr>
-      <td><strong>Crawl-Delay directive</strong></td>
-      <td>Honored if specified in robots.txt (up to 60 seconds)</td>
+      <td><strong>Domain fail threshold</strong></td>
+      <td>2 consecutive failures marks domain as dead for this run</td>
     </tr>
     <tr>
-      <td><strong>HTTP 429 (Too Many Requests)</strong></td>
-      <td>Backs off immediately, respects <code>Retry-After</code> header</td>
-    </tr>
-    <tr>
-      <td><strong>HTTP 503 (Service Unavailable)</strong></td>
-      <td>Backs off with exponential delay, respects <code>Retry-After</code></td>
+      <td><strong>HTTP 429 / 503</strong></td>
+      <td>Domain marked as failing, backed off</td>
     </tr>
     <tr>
       <td><strong>Connection errors</strong></td>
-      <td>Exponential back-off starting at 5 seconds, max 5 retries</td>
+      <td>Counted toward domain fail threshold</td>
     </tr>
     <tr>
-      <td><strong>Slow responses</strong></td>
-      <td>If response time exceeds 10 seconds, delay between requests is increased</td>
-    </tr>
-    <tr>
-      <td><strong>Per-domain concurrency</strong></td>
-      <td>Maximum 2 concurrent connections per domain (configurable down to 1)</td>
+      <td><strong>DNS failure</strong></td>
+      <td>Domain excluded after multi-server confirmation</td>
     </tr>
   </tbody>
 </table>
 
-<h3>Adaptive Back-off Algorithm</h3>
-<p>The crawler continuously monitors the response behavior of each domain and adapts its crawl rate accordingly:</p>
-
-<pre><code>// Simplified adaptive back-off logic
-baseDelay := max(crawlDelay, 1*time.Second)
-
-if responseTime > 10*time.Second {
-    delay = baseDelay * 3    // Slow server, triple the delay
-} else if statusCode == 429 || statusCode == 503 {
-    delay = retryAfter       // Respect Retry-After header
-    if retryAfter == 0 {
-        delay = baseDelay * time.Duration(math.Pow(2, float64(retryCount)))
-    }
-} else if consecutiveErrors > 3 {
-    delay = baseDelay * 10   // Persistent errors, back way off
-} else {
-    delay = baseDelay        // Normal operation
-}</code></pre>
-
-<h2>Crawl-Delay Directive</h2>
-<p>OpenIndexBot honors the <code>Crawl-delay</code> directive in robots.txt. This is a non-standard but widely supported extension that specifies the minimum delay (in seconds) between consecutive requests:</p>
-
-<pre><code>User-agent: OpenIndexBot
-Crawl-delay: 5</code></pre>
-
-<p>This tells OpenIndexBot to wait at least 5 seconds between requests to your site. The maximum honored value is 60 seconds. Values above 60 are treated as a signal to not crawl the site.</p>
-
-<h2>Sitemap Protocol Support</h2>
-<p>OpenIndexBot supports the <a href="https://www.sitemaps.org/protocol.html">Sitemap Protocol</a>. It will discover sitemaps via:</p>
-<ul>
-  <li>The <code>Sitemap:</code> directive in <code>robots.txt</code></li>
-  <li>The default location at <code>/sitemap.xml</code></li>
-  <li>Sitemap index files referencing multiple sub-sitemaps</li>
-</ul>
-
-<p>Sitemaps are used for URL discovery and crawl prioritization. The <code>&lt;priority&gt;</code> and <code>&lt;changefreq&gt;</code> hints are respected during scheduling. The <code>&lt;lastmod&gt;</code> field is used with conditional GET requests to avoid re-fetching unchanged pages.</p>
-
-<h2>Conditional GET Support</h2>
-<p>OpenIndexBot supports conditional HTTP requests to minimize bandwidth and server load:</p>
-
-<table>
-  <thead>
-    <tr>
-      <th>Header</th>
-      <th>Behavior</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code>If-Modified-Since</code></td>
-      <td>Sent on revisits using the <code>Last-Modified</code> value from the previous crawl</td>
-    </tr>
-    <tr>
-      <td><code>If-None-Match</code></td>
-      <td>Sent on revisits using the <code>ETag</code> value from the previous crawl</td>
-    </tr>
-  </tbody>
-</table>
-
-<p>When the server responds with <code>304 Not Modified</code>, the crawler skips downloading the body and retains the previous version in the index. This significantly reduces bandwidth for sites that properly implement conditional responses.</p>
-
-<h2>Compression Support</h2>
-<p>OpenIndexBot sends <code>Accept-Encoding: gzip, br</code> and can decompress both gzip and Brotli responses. Servers that support compression will see reduced bandwidth usage from the crawler.</p>
-
-<h2>Link Following and nofollow</h2>
-<p>OpenIndexBot discovers new URLs by extracting links from crawled pages. It respects the following signals to avoid following specific links:</p>
-<ul>
-  <li><code>rel="nofollow"</code> on individual <code>&lt;a&gt;</code> tags</li>
-  <li><code>&lt;meta name="robots" content="nofollow"&gt;</code> to prevent following all links on a page</li>
-  <li><code>&lt;meta name="OpenIndexBot" content="nofollow"&gt;</code> for crawler-specific control</li>
-  <li><code>X-Robots-Tag: nofollow</code> HTTP response header</li>
-</ul>
-
-<p>The <code>noindex</code> directive is also respected. Pages with <code>noindex</code> will be crawled (to discover outgoing links, if <code>nofollow</code> is not also set) but will not be included in the search index.</p>
-
-<h2>IP Ranges</h2>
-<p>OpenIndexBot crawls from the following IP address ranges. You can use these for firewall allowlisting or verification:</p>
-
-<pre><code># IPv4 ranges
-198.51.100.0/24
-203.0.113.0/24
-192.0.2.0/24
-
-# IPv6 ranges
-2001:db8:1000::/48
-2001:db8:2000::/48</code></pre>
-
+<h2>Real Performance Data</h2>
 <div class="note">
-  <strong>Note:</strong> IP ranges may change as infrastructure scales. Always verify using reverse DNS (see below) rather than relying solely on IP allowlists. An up-to-date list is maintained at <code>https://api.openindex.org/v1/crawler/ip-ranges.json</code>.
+  These numbers are from actual crawl runs, not projections.
 </div>
-
-<h2>Reverse DNS Verification</h2>
-<p>The most reliable way to verify that a request is genuinely from OpenIndexBot is through reverse DNS lookup. All crawler IPs resolve to hostnames under <code>*.crawl.openindex.org</code>.</p>
-
-<h3>Verification Steps</h3>
-<ol>
-  <li>Perform a reverse DNS lookup on the IP address</li>
-  <li>Confirm the hostname ends with <code>.crawl.openindex.org</code></li>
-  <li>Perform a forward DNS lookup on the hostname</li>
-  <li>Confirm the forward lookup resolves back to the original IP</li>
-</ol>
-
-<pre><code># Step 1: Reverse DNS lookup
-$ dig -x 198.51.100.42 +short
-crawler-042.us-east.crawl.openindex.org.
-
-# Step 2: Verify the hostname matches *.crawl.openindex.org
-# (hostname ends with .crawl.openindex.org -- verified)
-
-# Step 3: Forward DNS lookup
-$ dig crawler-042.us-east.crawl.openindex.org +short
-198.51.100.42
-
-# Step 4: Confirm the IP matches -- verified!</code></pre>
-
-<p>Hostname format: <code>crawler-{id}.{region}.crawl.openindex.org</code></p>
 
 <table>
   <thead>
     <tr>
-      <th>Region</th>
-      <th>Hostname Pattern</th>
+      <th>Metric</th>
+      <th>Recrawler</th>
+      <th>Domain Crawler</th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <td>US East</td>
-      <td><code>crawler-*.us-east.crawl.openindex.org</code></td>
+      <td><strong>Peak throughput</strong></td>
+      <td>Thousands of URLs/s (depends on domain mix)</td>
+      <td>275 pages/s (kenh14.vn)</td>
     </tr>
     <tr>
-      <td>US West</td>
-      <td><code>crawler-*.us-west.crawl.openindex.org</code></td>
+      <td><strong>Success rate</strong></td>
+      <td>57.5% with 8 max conns/domain (CC data, 97% dead domains)</td>
+      <td>~99% on healthy domains</td>
     </tr>
     <tr>
-      <td>EU West</td>
-      <td><code>crawler-*.eu-west.crawl.openindex.org</code></td>
+      <td><strong>DNS resolution</strong></td>
+      <td>2.5M URLs DNS-resolved in seconds</td>
+      <td>N/A (single domain)</td>
     </tr>
     <tr>
-      <td>EU Central</td>
-      <td><code>crawler-*.eu-central.crawl.openindex.org</code></td>
-    </tr>
-    <tr>
-      <td>Asia Pacific</td>
-      <td><code>crawler-*.ap-east.crawl.openindex.org</code></td>
+      <td><strong>Probe+feed time</strong></td>
+      <td>65s for 2.5M URLs (streaming)</td>
+      <td>N/A</td>
     </tr>
   </tbody>
 </table>
 
-<h2>Crawl Schedule</h2>
-<p>OpenIndex operates two crawl modes:</p>
+<h2>CLI Usage</h2>
+<pre><code># Recrawl from Common Crawl seed data
+search cc recrawl --last
+search cc recrawl --file 50
+search cc recrawl --sample 5
 
-<div class="card-grid">
-  <div class="card">
-    <h3>Monthly Full Crawl</h3>
-    <p>A comprehensive crawl of billions of URLs, producing a complete snapshot of the web. Each monthly crawl is a self-contained dataset identified by its crawl ID (e.g., <code>OI-2026-02</code>). Full crawls typically run from the 1st to the 25th of each month.</p>
-  </div>
-  <div class="card">
-    <h3>Continuous Delta Crawl</h3>
-    <p>A rolling crawl that continuously revisits high-priority and frequently-changing pages between full crawls. Delta crawl data is merged into the next monthly release. Priority is determined by historical change frequency, sitemap hints, and domain importance.</p>
-  </div>
-</div>
+# Crawl a single domain
+search crawl-domain example.com --max-pages 1000 --workers 500
 
-<h3>Crawl Prioritization</h3>
-<p>URLs are prioritized for crawling based on multiple signals:</p>
-<ol>
-  <li><strong>Historical change frequency</strong> -- pages that change often are crawled more frequently</li>
-  <li><strong>Sitemap priority and changefreq</strong> -- publisher-provided hints</li>
-  <li><strong>Inbound link count</strong> -- well-linked pages are prioritized</li>
-  <li><strong>Domain authority</strong> -- pages on high-authority domains are crawled first</li>
-  <li><strong>Content diversity</strong> -- URLs are selected to maximize language and topic diversity</li>
-</ol>
+# Resume an interrupted crawl
+search crawl-domain example.com --resume
+
+# Configure connection limits
+search cc recrawl --last --max-conns-per-domain 4 --domain-fail-threshold 3</code></pre>
+
+<h2>Lessons Learned</h2>
+<details>
+  <summary>Per-domain connection flooding kills success rate</summary>
+  <div class="details-body">
+    <p>50K workers across 73 domains means ~685 connections per domain. This yielded 0.8% success rate. Adding per-domain semaphores with 8 max connections raised success to 57.5% -- a 69x improvement.</p>
+  </div>
+</details>
+
+<details>
+  <summary>Common Crawl parquet files are TLD-partitioned</summary>
+  <div class="details-body">
+    <p>CC file 299 is almost entirely .cn domains, file 0 is mostly .ru, file 50 is predominantly .fi. About 97% of CC index domains are dead when recrawled from outside their geographic region.</p>
+  </div>
+</details>
+
+<details>
+  <summary>Streaming probe-to-feed is 3x faster than batch</summary>
+  <div class="details-body">
+    <p>Old approach: probe ALL domains, collect results, shuffle, feed. New approach: probe in parallel, push URLs immediately as probes succeed. Result: 65s vs 185s for 2.5M URLs.</p>
+  </div>
+</details>
+
+<details>
+  <summary>Never run DNS pipeline and HTTP workers simultaneously</summary>
+  <div class="details-body">
+    <p>Running both causes goroutine explosion. The correct order: batch DNS first, set cache + dead domains, then directFeed to HTTP workers.</p>
+  </div>
+</details>
 
 <h2>Contact</h2>
-<p>If you have questions about OpenIndexBot, need help with robots.txt configuration, or want to report an issue with the crawler's behavior:</p>
+<p>Questions about OpenIndexBot or need help with robots.txt configuration:</p>
 <ul>
-  <li>Email: <a href="mailto:crawler@openindex.org">crawler@openindex.org</a></li>
   <li>GitHub: <a href="https://github.com/nicholasgasior/gopher-crawl/issues">Report an issue</a></li>
-  <li>Discord: <a href="https://discord.gg/openindex">#crawler channel</a></li>
 </ul>
 `

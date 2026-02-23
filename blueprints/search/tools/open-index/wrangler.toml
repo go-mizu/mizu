@@ -3,5 +3,10 @@ main = "src/index.ts"
 compatibility_date = "2026-02-09"
 compatibility_flags = ["nodejs_compat"]
 
+[[rules]]
+type = "Text"
+globs = ["**/*.md"]
+fallthrough = true
+
 [observability]
 enabled = true

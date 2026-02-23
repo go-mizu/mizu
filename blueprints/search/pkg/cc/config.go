@@ -48,6 +48,11 @@ func (c Config) IndexDir() string {
 	return filepath.Join(c.CrawlDir(), "index")
 }
 
+// IndexShardDir returns the directory containing per-parquet DuckDB databases.
+func (c Config) IndexShardDir() string {
+	return filepath.Join(c.CrawlDir(), "index-duckdb")
+}
+
 // IndexDBPath returns the path to the imported DuckDB index.
 func (c Config) IndexDBPath() string {
 	return filepath.Join(c.CrawlDir(), "index.duckdb")

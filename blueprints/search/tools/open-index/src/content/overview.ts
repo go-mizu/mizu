@@ -1,101 +1,178 @@
+import { icons, cardIcon } from '../icons'
+
 export const overviewPage = `
 <h2>What is OpenIndex?</h2>
-<p>OpenIndex is an open-source web intelligence platform that maintains a comprehensive, freely accessible index of the open web. Unlike traditional web archives that stop at storing raw crawl data, OpenIndex provides a complete intelligence stack — from distributed crawling to semantic search, knowledge graphs, and AI-ready embeddings.</p>
+<p>OpenIndex is an open-source web intelligence platform. It combines a high-throughput web crawler, columnar indexing, and (planned) knowledge graph and vector search into a single, composable stack.</p>
 
-<p>The platform is built on the principle that understanding the web should not be a privilege reserved for large corporations with massive infrastructure budgets. Every researcher, developer, journalist, and curious individual deserves access to the same quality of web intelligence that powers the world's largest search engines.</p>
+<p>The project started in 2026 as part of the <a href="https://github.com/nicholasgasior/gopher-crawl">Mizu ecosystem</a> -- a Go web framework. It is currently a solo-developer project, open for contributions.</p>
 
-<h2>The OpenIndex Corpus</h2>
-<p>The OpenIndex corpus contains <strong>petabytes of data</strong>, regularly collected and indexed since 2024. The corpus includes:</p>
-<ul>
-  <li><strong>Raw web page data</strong> — complete HTTP responses stored in WARC format</li>
-  <li><strong>Metadata extracts</strong> — structured metadata in WAT/JSON format</li>
-  <li><strong>Text extracts</strong> — clean plaintext in WET format</li>
-  <li><strong>Full-text index</strong> — searchable content index across all pages</li>
-  <li><strong>Vector embeddings</strong> — dense semantic representations for similarity search</li>
-  <li><strong>Knowledge graph</strong> — entity and relationship data extracted from web content</li>
-  <li><strong>Web graphs</strong> — host-level and domain-level link graphs</li>
-</ul>
+<div class="note">
+  <strong>Honest status:</strong> OpenIndex is early-stage. The crawler pipeline, sharded storage, and columnar index are built and working. Knowledge graph, vector search, full-text search, and the ontology are in design or planning. This page reflects what exists today and what is planned.
+</div>
 
-<p>Data is stored on cloud infrastructure and available for free download or direct querying via API. Researchers can run analysis jobs in the cloud or download datasets for local processing.</p>
-
-<h2>How It Differs</h2>
-<p>OpenIndex was created to address the gap between raw web archives and the intelligence needed to actually understand web content at scale:</p>
-
-<div class="card-grid">
+<h2>What Is Built Today</h2>
+<div class="cards">
   <div class="card">
-    <h3>Beyond URL Lookup</h3>
-    <p>Traditional CDX indices let you look up a URL to find its WARC record. OpenIndex adds full-text search, semantic search, and graph queries — find content by what it says, not just where it lives.</p>
+    <div class="card-ic">${cardIcon('globe')} <span>Recrawler</span></div>
+    <p>Go-based recrawler with 100K HTTP workers, 20K DNS workers, per-domain connection limiting (8 max), multi-server DNS confirmation, and streaming probe-to-feed pipeline. Tested at 275+ pages/s peak throughput.</p>
   </div>
   <div class="card">
-    <h3>Structured Knowledge</h3>
-    <p>Raw HTML is useful, but structured knowledge is powerful. OpenIndex extracts entities (people, organizations, places), relationships, and topics from every crawled page.</p>
+    <div class="card-ic">${cardIcon('cpu')} <span>Domain Crawler</span></div>
+    <p>Single-domain high-throughput crawler using HTTP/2 multiplexing. Bloom filter frontier, sharded DuckDB results, resumable state. 275 pages/s peak on real sites.</p>
   </div>
   <div class="card">
-    <h3>Open Source, End to End</h3>
-    <p>The entire stack is open source — crawler, indexer, graph builder, vector pipeline, API server. You can audit, modify, or run your own instance.</p>
+    <div class="card-ic">${cardIcon('database')} <span>Sharded Storage</span></div>
+    <p>16-shard DuckDB with batch-VALUES inserts (500 rows/stmt). Parquet columnar files for analytics. Zero-copy S3 queries via DuckDB httpfs extension.</p>
   </div>
   <div class="card">
-    <h3>AI-Ready</h3>
-    <p>Vector embeddings are generated for every indexed page, enabling semantic search, content clustering, deduplication, and RAG (retrieval-augmented generation) workflows.</p>
+    <div class="card-ic">${cardIcon('terminal')} <span>CLI Tool</span></div>
+    <p>Go CLI built on Cobra + Fang. Commands: serve, crawl, crawl-domain, cc (Common Crawl), download, analytics, recrawl, reddit. Full pipeline from terminal.</p>
+  </div>
+  <div class="card">
+    <div class="card-ic">${cardIcon('code')} <span>Common Crawl Integration</span></div>
+    <p>Downloads columnar index (parquet), CDX index, WARC files from CC. Smart caching, remote S3 queries, CDX API access. Bridge to recrawler for seed URLs.</p>
+  </div>
+  <div class="card">
+    <div class="card-ic">${cardIcon('zap')} <span>API Layer</span></div>
+    <p>Hono + TypeScript on Cloudflare Workers. CC Viewer deployed at cc-viewer.go-mizu.workers.dev. URL lookup, domain browsing, WARC viewing.</p>
   </div>
 </div>
 
-<h2>Access the Data</h2>
-<p>You can access OpenIndex data in several ways:</p>
-<ol>
-  <li><strong>API</strong> — Query the index programmatically with our REST API. Free for research and open-source use.</li>
-  <li><strong>Bulk Download</strong> — Download WARC files, Parquet indices, or knowledge graph exports directly.</li>
-  <li><strong>Cloud Processing</strong> — Run analysis jobs directly against the data in cloud storage.</li>
-  <li><strong>CLI Tool</strong> — Use the <code>openindex</code> CLI for scripted access and automation.</li>
-</ol>
+<h2>What Is Planned</h2>
+<div class="cards">
+  <div class="card">
+    <div class="card-ic">${cardIcon('search')} <span>Full-text Search</span></div>
+    <p>Tantivy-based inverted index for keyword search across crawled content. BM25 ranking, phrase queries, field-specific filtering.</p>
+  </div>
+  <div class="card">
+    <div class="card-ic">${cardIcon('sparkles')} <span>Vector Search</span></div>
+    <p>Vald distributed vector DB with dense embeddings per page. Semantic similarity search, content clustering, RAG support.</p>
+  </div>
+  <div class="card">
+    <div class="card-ic">${cardIcon('gitFork')} <span>Knowledge Graph</span></div>
+    <p>Entity extraction via NER, Schema.org parsing. Web graph from link analysis. Entity resolution and relationship mapping.</p>
+  </div>
+  <div class="card">
+    <div class="card-ic">${cardIcon('layers')} <span>Open Ontology</span></div>
+    <p>Community-maintained schema for web entities. Schema.org compatible, available in JSON-LD, RDF, and OWL formats.</p>
+  </div>
+</div>
 
-<p>See the <a href="/get-started">Get Started</a> guide for detailed instructions, or jump straight to the <a href="/api">API Reference</a>.</p>
-
-<h2>Available Crawls</h2>
-<p>OpenIndex produces monthly crawls. Each crawl is a self-contained snapshot of billions of web pages, fully indexed and searchable.</p>
-
+<h2>Tech Stack</h2>
 <table>
   <thead>
     <tr>
-      <th>Crawl</th>
-      <th>Date</th>
-      <th>Pages</th>
-      <th>Size</th>
+      <th>Component</th>
+      <th>Technology</th>
+      <th>Status</th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <td><strong>OI-2026-02</strong></td>
-      <td>February 2026</td>
-      <td>2.8 billion</td>
-      <td>420 TiB</td>
+      <td><strong>Crawler</strong></td>
+      <td>Go (net/http, custom DNS)</td>
+      <td>Built</td>
     </tr>
     <tr>
-      <td><strong>OI-2026-01</strong></td>
-      <td>January 2026</td>
-      <td>2.6 billion</td>
-      <td>398 TiB</td>
+      <td><strong>Domain Crawler</strong></td>
+      <td>Go (HTTP/2, bloom filter)</td>
+      <td>Built</td>
     </tr>
     <tr>
-      <td><strong>OI-2025-12</strong></td>
-      <td>December 2025</td>
-      <td>2.5 billion</td>
-      <td>385 TiB</td>
+      <td><strong>Storage</strong></td>
+      <td>DuckDB (16-shard) + Parquet</td>
+      <td>Built</td>
     </tr>
     <tr>
-      <td><strong>OI-2025-11</strong></td>
-      <td>November 2025</td>
-      <td>2.4 billion</td>
-      <td>372 TiB</td>
+      <td><strong>CC Integration</strong></td>
+      <td>Go (S3, CDX API, httpfs)</td>
+      <td>Built</td>
     </tr>
     <tr>
-      <td><strong>OI-2025-10</strong></td>
-      <td>October 2025</td>
-      <td>2.3 billion</td>
-      <td>358 TiB</td>
+      <td><strong>API</strong></td>
+      <td>Hono + TypeScript (CF Workers)</td>
+      <td>Built</td>
+    </tr>
+    <tr>
+      <td><strong>CLI</strong></td>
+      <td>Go (Cobra + Fang)</td>
+      <td>Built</td>
+    </tr>
+    <tr>
+      <td><strong>Web Framework</strong></td>
+      <td>Mizu (Go, net/http 1.22+)</td>
+      <td>Built</td>
+    </tr>
+    <tr>
+      <td><strong>Full-text Index</strong></td>
+      <td>Tantivy (Rust)</td>
+      <td>Planned</td>
+    </tr>
+    <tr>
+      <td><strong>Vector DB</strong></td>
+      <td>Vald (distributed ANN)</td>
+      <td>Planned</td>
+    </tr>
+    <tr>
+      <td><strong>Knowledge Graph</strong></td>
+      <td>TBD (DuckDB or dedicated graph DB)</td>
+      <td>Planned</td>
+    </tr>
+    <tr>
+      <td><strong>Ontology</strong></td>
+      <td>JSON-LD / RDF / OWL</td>
+      <td>Designing</td>
     </tr>
   </tbody>
 </table>
 
-<p>See the <a href="/latest-build">Latest Build</a> page for current crawl details and download links.</p>
+<h2>How It Differs from Common Crawl</h2>
+<p>OpenIndex builds <strong>on top of</strong> Common Crawl rather than replacing it. CC provides petabytes of raw crawl data. OpenIndex adds:</p>
+<ul>
+  <li><strong>An open-source crawler</strong> -- the Go recrawler and domain crawler are fully open, auditable, and configurable.</li>
+  <li><strong>Recrawl pipeline</strong> -- seed URLs from CC index, then recrawl live to get fresh content and verify liveness.</li>
+  <li><strong>Sharded analytics DB</strong> -- DuckDB + Parquet for SQL analytics without downloading terabytes of WARC files.</li>
+  <li><strong>Intelligence layers</strong> -- planned: full-text search, vector embeddings, entity extraction, knowledge graph.</li>
+  <li><strong>Edge API</strong> -- Hono on Cloudflare Workers for low-latency access worldwide.</li>
+</ul>
+
+<h2>Key Packages</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Package</th>
+      <th>Path</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Recrawler</strong></td>
+      <td><code>pkg/recrawler/</code></td>
+      <td>Batch DNS, streaming probe, 100K HTTP workers, sharded ResultDB</td>
+    </tr>
+    <tr>
+      <td><strong>Domain Crawler</strong></td>
+      <td><code>pkg/dcrawler/</code></td>
+      <td>Single-domain crawler, HTTP/2, bloom filter frontier</td>
+    </tr>
+    <tr>
+      <td><strong>Common Crawl</strong></td>
+      <td><code>pkg/cc/</code></td>
+      <td>CC index, CDX API, WARC fetcher, seed URL extraction</td>
+    </tr>
+    <tr>
+      <td><strong>CC Viewer</strong></td>
+      <td><code>tools/cc-viewer/</code></td>
+      <td>Hono CF Worker for browsing CC data</td>
+    </tr>
+    <tr>
+      <td><strong>URL Fetcher</strong></td>
+      <td><code>tools/url-fetcher/</code></td>
+      <td>CF Worker for batch URL fetching from edge</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>See the <a href="/architecture">Architecture</a> page for the full pipeline diagram, or the <a href="/latest-build">Latest Build</a> page for current data status.</p>
 `

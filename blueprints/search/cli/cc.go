@@ -32,6 +32,7 @@ Smart caching:
 
 Subcommands:
   crawls   List available Common Crawl datasets
+  parquet  List/download/import columnar-index parquet files
   index    Download + import columnar index to DuckDB
   stats    Show index statistics
   query    Query index for matching URLs (local or remote)
@@ -42,6 +43,9 @@ Subcommands:
 
 Examples:
   search cc crawls
+  search cc parquet list --crawl CC-MAIN-2026-08
+  search cc parquet download --crawl CC-MAIN-2026-08 --file 0
+  search cc parquet import --crawl CC-MAIN-2026-08 --file ~/data/common-crawl/.../part-00000.parquet
   search cc index --crawl CC-MAIN-2026-04 --sample 5
   search cc stats --crawl CC-MAIN-2026-04
   search cc query --crawl CC-MAIN-2026-04 --lang eng --status 200 --limit 100
@@ -56,6 +60,7 @@ Examples:
 	}
 
 	cmd.AddCommand(newCCCrawls())
+	cmd.AddCommand(newCCParquet())
 	cmd.AddCommand(newCCIndex())
 	cmd.AddCommand(newCCStats())
 	cmd.AddCommand(newCCQuery())
@@ -167,11 +172,17 @@ func runCCCrawls(ctx context.Context, search string, limit int, noCache bool) er
 			if _, err := os.Stat(filepath.Join(crawlDir, "index.duckdb")); err == nil {
 				localStatus = successStyle.Render("indexed")
 			} else {
-				entries, _ := os.ReadDir(filepath.Join(crawlDir, "index"))
-				if len(entries) > 0 {
-					localStatus = infoStyle.Render(fmt.Sprintf("%d parquet", len(entries)))
+				tmpCfg := cc.DefaultConfig()
+				tmpCfg.CrawlID = c.ID
+				if files, ferr := cc.LocalParquetFiles(tmpCfg); ferr == nil && len(files) > 0 {
+					localStatus = infoStyle.Render(fmt.Sprintf("%d parquet", len(files)))
 				} else {
-					localStatus = warningStyle.Render("dir only")
+					entries, _ := os.ReadDir(filepath.Join(crawlDir, "index"))
+					if len(entries) > 0 {
+						localStatus = infoStyle.Render(fmt.Sprintf("%d entries", len(entries)))
+					} else {
+						localStatus = warningStyle.Render("dir only")
+					}
 				}
 			}
 		}
@@ -242,14 +253,8 @@ func runCCIndex(ctx context.Context, crawlID string, importOnly bool, workers, s
 		fmt.Println(labelStyle.Render(fmt.Sprintf("  -> %s", cfg.IndexDir())))
 
 		start := time.Now()
-		err := cc.DownloadIndex(ctx, client, cfg, sample, func(p cc.DownloadProgress) {
-			if p.Error != nil {
-				fmt.Println(warningStyle.Render(fmt.Sprintf("  [%d/%d] %s — error: %v",
-					p.FileIndex, p.TotalFiles, p.File, p.Error)))
-			} else if p.Done {
-				fmt.Printf("  [%d/%d] %s\n", p.FileIndex, p.TotalFiles, p.File)
-			}
-		})
+		dlReporter := newCCDownloadReporter()
+		err := cc.DownloadIndex(ctx, client, cfg, sample, dlReporter.Callback)
 		if err != nil {
 			return fmt.Errorf("downloading index: %w", err)
 		}
@@ -257,11 +262,14 @@ func runCCIndex(ctx context.Context, crawlID string, importOnly bool, workers, s
 	}
 
 	// Import to DuckDB
-	fmt.Println(infoStyle.Render("Importing to DuckDB..."))
-	fmt.Println(labelStyle.Render(fmt.Sprintf("  -> %s", cfg.IndexDBPath())))
+	fmt.Println(infoStyle.Render("Importing parquet to per-file DuckDB + catalog..."))
+	fmt.Println(labelStyle.Render(fmt.Sprintf("  Parquet root: %s", cfg.IndexDir())))
+	fmt.Println(labelStyle.Render(fmt.Sprintf("  Shards:      %s", cfg.IndexShardDir())))
+	fmt.Println(labelStyle.Render(fmt.Sprintf("  Catalog:     %s", cfg.IndexDBPath())))
 
 	importStart := time.Now()
-	rowCount, err := cc.ImportIndex(ctx, cfg)
+	importReporter := newCCImportReporter()
+	rowCount, err := cc.ImportIndexWithProgress(ctx, cfg, importReporter.Callback)
 	if err != nil {
 		return fmt.Errorf("importing index: %w", err)
 	}
@@ -792,28 +800,28 @@ func runCCURL(ctx context.Context, crawlID, targetURL, domain string, limit int)
 
 func newCCRecrawl() *cobra.Command {
 	var (
-		crawlID         string
-		sample          int
-		last            bool
-		file            string
-		importOnly      bool
-		workers         int
-		dnsWorkers      int
-		dnsTimeout      int
-		timeout         int
-		statusOnly      bool
-		headOnly        bool
-		transportShards    int
-		maxConnsPerDomain  int
-		dnsPrefetch        bool
-		resume             bool
-		lang               string
-		mime            string
-		status          int
-		domain          string
-		tld             string
-		limit           int
-		batchSize       int
+		crawlID           string
+		sample            int
+		last              bool
+		file              string
+		importOnly        bool
+		workers           int
+		dnsWorkers        int
+		dnsTimeout        int
+		timeout           int
+		statusOnly        bool
+		headOnly          bool
+		transportShards   int
+		maxConnsPerDomain int
+		dnsPrefetch       bool
+		resume            bool
+		lang              string
+		mime              string
+		status            int
+		domain            string
+		tld               string
+		limit             int
+		batchSize         int
 	)
 
 	cmd := &cobra.Command{
@@ -955,6 +963,7 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 
 	var seeds []recrawler.SeedURL
 	var uniqueDomains int
+	var sourceParquetPath string
 	var err error
 
 	switch mode {
@@ -966,11 +975,8 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 			fmt.Println(infoStyle.Render(fmt.Sprintf("Step 1: Downloading LAST parquet file for %s (~220MB)...", opts.crawlID)))
 			client := cc.NewClient(ccCfg.BaseURL, ccCfg.TransportShards)
 			start := time.Now()
-			parquetPath, err = cc.DownloadOneIndexFile(ctx, client, ccCfg, -1, func(p cc.DownloadProgress) {
-				if p.Done {
-					fmt.Printf("  [%d/%d] %s\n", p.FileIndex, p.TotalFiles, p.File)
-				}
-			})
+			dlReporter := newCCDownloadReporter()
+			parquetPath, err = cc.DownloadOneIndexFile(ctx, client, ccCfg, -1, dlReporter.Callback)
 			if err != nil {
 				return fmt.Errorf("downloading last parquet: %w", err)
 			}
@@ -981,11 +987,8 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 				fmt.Println(infoStyle.Render(fmt.Sprintf("Step 1: Downloading parquet file #%d for %s (~220MB)...", fileIdx, opts.crawlID)))
 				client := cc.NewClient(ccCfg.BaseURL, ccCfg.TransportShards)
 				start := time.Now()
-				parquetPath, err = cc.DownloadOneIndexFile(ctx, client, ccCfg, fileIdx, func(p cc.DownloadProgress) {
-					if p.Done {
-						fmt.Printf("  [%d/%d] %s\n", p.FileIndex, p.TotalFiles, p.File)
-					}
-				})
+				dlReporter := newCCDownloadReporter()
+				parquetPath, err = cc.DownloadOneIndexFile(ctx, client, ccCfg, fileIdx, dlReporter.Callback)
 				if err != nil {
 					return fmt.Errorf("downloading parquet file #%d: %w", fileIdx, err)
 				}
@@ -1000,6 +1003,7 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 			}
 		}
 		fmt.Println()
+		sourceParquetPath = parquetPath
 
 		// ── Step 2: Extract URLs directly from parquet (zero import) ──
 		fmt.Println(infoStyle.Render("Step 2: Extracting URLs directly from parquet (zero DuckDB import)..."))
@@ -1035,14 +1039,8 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 			fmt.Println(labelStyle.Render(fmt.Sprintf("  → %s", ccCfg.IndexDir())))
 
 			start := time.Now()
-			err := cc.DownloadIndex(ctx, client, ccCfg, opts.sample, func(p cc.DownloadProgress) {
-				if p.Error != nil {
-					fmt.Println(warningStyle.Render(fmt.Sprintf("  [%d/%d] %s — error: %v",
-						p.FileIndex, p.TotalFiles, p.File, p.Error)))
-				} else if p.Done {
-					fmt.Printf("  [%d/%d] %s\n", p.FileIndex, p.TotalFiles, p.File)
-				}
-			})
+			dlReporter := newCCDownloadReporter()
+			err := cc.DownloadIndex(ctx, client, ccCfg, opts.sample, dlReporter.Callback)
 			if err != nil {
 				return fmt.Errorf("downloading index: %w", err)
 			}
@@ -1061,11 +1059,14 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 		}
 
 		if needsImport {
-			fmt.Println(infoStyle.Render("Step 2: Importing parquet to DuckDB..."))
-			fmt.Println(labelStyle.Render(fmt.Sprintf("  → %s", dbPath)))
+			fmt.Println(infoStyle.Render("Step 2: Importing parquet to per-file DuckDB + catalog..."))
+			fmt.Println(labelStyle.Render(fmt.Sprintf("  Parquet root: %s", ccCfg.IndexDir())))
+			fmt.Println(labelStyle.Render(fmt.Sprintf("  Shards:      %s", ccCfg.IndexShardDir())))
+			fmt.Println(labelStyle.Render(fmt.Sprintf("  Catalog:     %s", dbPath)))
 
 			importStart := time.Now()
-			rowCount, importErr := cc.ImportIndex(ctx, ccCfg)
+			importReporter := newCCImportReporter()
+			rowCount, importErr := cc.ImportIndexWithProgress(ctx, ccCfg, importReporter.Callback)
 			if importErr != nil {
 				return fmt.Errorf("importing index: %w", importErr)
 			}
@@ -1104,9 +1105,26 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 		DNSPrefetch:       opts.dnsPrefetch,
 		BatchSize:         opts.batchSize,
 	}
+	if opts.statusOnly || opts.headOnly {
+		// High-throughput modes benefit from aggressive dead-domain culling.
+		// This reduces repeated timeout storms on domains that never succeed.
+		recrawlCfg.DomainFailThreshold = 1
+	}
 
 	resultDir := ccCfg.RecrawlDir()
 	dnsPath := ccCfg.DNSCachePath()
+	failedDBPath := ccCfg.FailedDBPath()
+
+	if sourceParquetPath != "" {
+		runDir := ccRecrawlParquetRunDir(ccCfg, sourceParquetPath)
+		resultDir = filepath.Join(runDir, "results")
+		dnsPath = filepath.Join(runDir, "dns.duckdb")
+		failedDBPath = filepath.Join(runDir, "failed.duckdb")
+		fmt.Println(infoStyle.Render("Per-parquet storage enabled"))
+		fmt.Println(labelStyle.Render(fmt.Sprintf("  Parquet: %s", sourceParquetPath)))
+		fmt.Println(labelStyle.Render(fmt.Sprintf("  Run dir: %s", runDir)))
+		fmt.Println()
+	}
 
 	// Check for resume
 	var skip map[string]bool
@@ -1167,9 +1185,11 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 
 	// ── Step 5: Open FailedDB + result DB + run recrawler ──────────────────
 	fmt.Println(infoStyle.Render("Recrawling from origin servers..."))
+	if err := os.MkdirAll(filepath.Dir(failedDBPath), 0755); err != nil {
+		return fmt.Errorf("creating recrawl data dir: %w", err)
+	}
 
 	// Open FailedDB for logging failed domains + URLs
-	failedDBPath := ccCfg.FailedDBPath()
 	failedDB, err := recrawler.NewFailedDB(failedDBPath)
 	if err != nil {
 		return fmt.Errorf("opening failed db: %w", err)
@@ -1188,6 +1208,10 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 
 	rdb.SetMeta(ctx, "crawl_id", opts.crawlID)
 	rdb.SetMeta(ctx, "seed_source", "cc-index")
+	if sourceParquetPath != "" {
+		rdb.SetMeta(ctx, "seed_parquet_path", sourceParquetPath)
+		rdb.SetMeta(ctx, "seed_parquet_subset", cc.ParquetSubsetFromPath(sourceParquetPath))
+	}
 	rdb.SetMeta(ctx, "started_at", time.Now().Format(time.RFC3339))
 	rdb.SetMeta(ctx, "workers", fmt.Sprintf("%d", opts.workers))
 
@@ -1239,6 +1263,9 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 	}
 	fmt.Println(infoStyle.Render(fmt.Sprintf("  %d workers, %v timeout, mode=%s, shards=%d, pipeline=%s",
 		opts.workers, recrawlCfg.Timeout, fetchMode, opts.transportShards, pipeline)))
+	if recrawlCfg.DomainFailThreshold > 0 {
+		fmt.Println(labelStyle.Render(fmt.Sprintf("  domain-fail-threshold=%d", recrawlCfg.DomainFailThreshold)))
+	}
 	fmt.Println()
 
 	r := recrawler.New(recrawlCfg, stats, rdb)
@@ -1452,4 +1479,38 @@ func ccFmtInt64(n int64) string {
 		result = append(result, byte(c))
 	}
 	return string(result)
+}
+
+func ccRecrawlParquetRunDir(cfg cc.Config, parquetPath string) string {
+	subset := cc.ParquetSubsetFromPath(parquetPath)
+	if subset == "" {
+		subset = "unknown"
+	}
+	base := filepath.Base(parquetPath)
+	base = strings.TrimSuffix(base, filepath.Ext(base))
+	base = sanitizePathToken(base)
+	return filepath.Join(cfg.RecrawlDir(), "parquet", subset, base)
+}
+
+func sanitizePathToken(s string) string {
+	if s == "" {
+		return "run"
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '_' || r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
 }

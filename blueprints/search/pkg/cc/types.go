@@ -29,13 +29,13 @@ type WARCPointer struct {
 
 // WARCResponse holds the parsed contents of a single WARC response record.
 type WARCResponse struct {
-	WARCType   string            // WARC-Type (response, revisit, etc.)
-	TargetURI  string            // WARC-Target-URI
-	Date       time.Time         // WARC-Date
-	RecordID   string            // WARC-Record-ID
-	HTTPStatus int               // HTTP status code
+	WARCType    string            // WARC-Type (response, revisit, etc.)
+	TargetURI   string            // WARC-Target-URI
+	Date        time.Time         // WARC-Date
+	RecordID    string            // WARC-Record-ID
+	HTTPStatus  int               // HTTP status code
 	HTTPHeaders map[string]string // HTTP response headers
-	Body       []byte            // HTTP response body
+	Body        []byte            // HTTP response body
 }
 
 // PageResult is the extracted page content stored in the result database.
@@ -69,22 +69,25 @@ type IndexFilter struct {
 
 // IndexSummary holds aggregate statistics about the imported index.
 type IndexSummary struct {
-	TotalRecords   int64
-	UniqueHosts    int64
-	UniqueDomains  int64
-	StatusDist     map[int]int64    // fetch_status → count
-	MimeDist       map[string]int64 // content_mime_detected → count
-	TLDDist        map[string]int64 // url_host_tld → count
-	LangDist       map[string]int64 // content_languages → count
+	TotalRecords  int64
+	UniqueHosts   int64
+	UniqueDomains int64
+	StatusDist    map[int]int64    // fetch_status → count
+	MimeDist      map[string]int64 // content_mime_detected → count
+	TLDDist       map[string]int64 // url_host_tld → count
+	LangDist      map[string]int64 // content_languages → count
 }
 
 // DownloadProgress reports progress of file downloads.
 type DownloadProgress struct {
 	File          string
+	RemotePath    string
 	FileIndex     int
 	TotalFiles    int
 	BytesReceived int64
 	TotalBytes    int64
+	Started       bool
+	Skipped       bool
 	Done          bool
 	Error         error
 }
@@ -92,17 +95,47 @@ type DownloadProgress struct {
 // ProgressFn is a callback for reporting download progress.
 type ProgressFn func(DownloadProgress)
 
+// ParquetFile describes one parquet file in the Common Crawl columnar index manifest.
+type ParquetFile struct {
+	ManifestIndex int
+	RemotePath    string
+	Filename      string
+	Subset        string
+}
+
+// ParquetListOptions controls manifest filtering.
+type ParquetListOptions struct {
+	Subset string // e.g. "warc", "crawldiagnostics"; empty = all
+}
+
+// ImportProgress reports progress of parquet→DuckDB import steps.
+type ImportProgress struct {
+	Stage      string // discover,start,heartbeat,import,indexes,schema,file_done,catalog,done
+	File       string
+	FileIndex  int
+	TotalFiles int
+	Rows       int64
+	Columns    int
+	Message    string
+	Elapsed    time.Duration
+	Done       bool
+	Error      error
+}
+
+// ImportProgressFn is a callback for reporting import progress.
+type ImportProgressFn func(ImportProgress)
+
 // CDXJEntry represents a single CDXJ index entry.
 type CDXJEntry struct {
-	SURTKey    string
-	Timestamp  string
-	URL        string
-	Mime       string
-	Status     string
-	Digest     string
-	Length     string
-	Offset     string
-	Filename   string
-	Languages  string
-	Encoding   string
+	SURTKey   string
+	Timestamp string
+	URL       string
+	Mime      string
+	Status    string
+	Digest    string
+	Length    string
+	Offset    string
+	Filename  string
+	Languages string
+	Encoding  string
 }

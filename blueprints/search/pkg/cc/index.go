@@ -4,11 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
-	"sync"
-	"sync/atomic"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 )
@@ -16,36 +12,15 @@ import (
 // IndexManifest returns the list of parquet file paths for a crawl's columnar index.
 // Uses cache to avoid re-fetching the manifest.
 func IndexManifest(ctx context.Context, client *Client, cfg Config) ([]string, error) {
-	// Check cache first
-	cache := NewCache(cfg.DataDir)
-	cd := cache.Load()
-	if cd != nil {
-		if paths := cache.GetManifest(cd, cfg.CrawlID, "cc-index-table.paths.gz"); paths != nil {
-			return paths, nil
-		}
-	}
-
-	paths, err := client.DownloadManifest(ctx, cfg.CrawlID, "cc-index-table.paths.gz")
+	files, err := ListParquetFiles(ctx, client, cfg, ParquetListOptions{Subset: "warc"})
 	if err != nil {
-		return nil, fmt.Errorf("downloading index manifest: %w", err)
+		return nil, err
 	}
-
-	// Filter to subset=warc only
-	var warcPaths []string
-	for _, p := range paths {
-		if strings.Contains(p, "subset=warc") {
-			warcPaths = append(warcPaths, p)
-		}
+	paths := make([]string, 0, len(files))
+	for _, f := range files {
+		paths = append(paths, f.RemotePath)
 	}
-
-	// Cache manifest
-	if cd == nil {
-		cd = &CacheData{}
-	}
-	cache.SetManifest(cd, cfg.CrawlID, "cc-index-table.paths.gz", warcPaths)
-	cache.Save(cd)
-
-	return warcPaths, nil
+	return paths, nil
 }
 
 // DownloadIndex downloads columnar index parquet files for a crawl.
@@ -53,173 +28,44 @@ func IndexManifest(ctx context.Context, client *Client, cfg Config) ([]string, e
 // If sampleSize > 0, only downloads that many files (evenly spaced for representative sample).
 // This is the key disk/network optimization: 1 file ≈ 220MB → ~2.5M records, enough for most queries.
 func DownloadIndex(ctx context.Context, client *Client, cfg Config, sampleSize int, progress ProgressFn) error {
-	warcPaths, err := IndexManifest(ctx, client, cfg)
+	files, err := ListParquetFiles(ctx, client, cfg, ParquetListOptions{Subset: "warc"})
 	if err != nil {
 		return err
 	}
-	if len(warcPaths) == 0 {
+	if len(files) == 0 {
 		return fmt.Errorf("no warc subset parquet files found in manifest")
 	}
 
 	// Sample mode: pick evenly spaced files for representative coverage
-	if sampleSize > 0 && sampleSize < len(warcPaths) {
-		sampled := make([]string, 0, sampleSize)
-		step := float64(len(warcPaths)) / float64(sampleSize)
-		for i := range sampleSize {
-			idx := int(float64(i) * step)
-			if idx >= len(warcPaths) {
-				idx = len(warcPaths) - 1
-			}
-			sampled = append(sampled, warcPaths[idx])
-		}
-		warcPaths = sampled
-	}
-
-	indexDir := cfg.IndexDir()
-	if err := os.MkdirAll(indexDir, 0755); err != nil {
-		return fmt.Errorf("creating index dir: %w", err)
-	}
-
-	workers := cfg.IndexWorkers
-	if workers <= 0 {
-		workers = 10
-	}
-
-	var completed atomic.Int64
-	total := len(warcPaths)
-	sem := make(chan struct{}, workers)
-	var mu sync.Mutex
-	var firstErr error
-
-	for _, remotePath := range warcPaths {
-		if ctx.Err() != nil {
-			break
-		}
-
-		localName := filepath.Base(remotePath)
-		localPath := filepath.Join(indexDir, localName)
-
-		// Skip if already downloaded
-		if fi, err := os.Stat(localPath); err == nil && fi.Size() > 0 {
-			done := completed.Add(1)
-			if progress != nil {
-				progress(DownloadProgress{
-					File:       localName,
-					FileIndex:  int(done),
-					TotalFiles: total,
-					Done:       true,
-				})
-			}
-			continue
-		}
-
-		path := remotePath
-		lPath := localPath
-		lName := localName
-
-		sem <- struct{}{}
-		go func() {
-			defer func() { <-sem }()
-
-			err := client.DownloadFile(ctx, path, lPath, nil)
-			done := completed.Add(1)
-
-			if err != nil {
-				mu.Lock()
-				if firstErr == nil {
-					firstErr = fmt.Errorf("downloading %s: %w", path, err)
-				}
-				mu.Unlock()
-			}
-
-			if progress != nil {
-				progress(DownloadProgress{
-					File:       lName,
-					FileIndex:  int(done),
-					TotalFiles: total,
-					Done:       err == nil,
-					Error:      err,
-				})
-			}
-		}()
-	}
-
-	// Wait for all workers
-	for range workers {
-		sem <- struct{}{}
-	}
-
-	if firstErr != nil {
-		return firstErr
-	}
-	return nil
+	files = sampleParquetFiles(files, sampleSize)
+	return DownloadParquetFiles(ctx, client, cfg, files, cfg.IndexWorkers, progress)
 }
 
 // DownloadOneIndexFile downloads a single parquet file from the CC index manifest.
 // fileIndex == -1 downloads the last (latest) file; fileIndex >= 0 downloads that specific file.
 // Returns the local path to the downloaded parquet file.
 func DownloadOneIndexFile(ctx context.Context, client *Client, cfg Config, fileIndex int, progress ProgressFn) (string, error) {
-	warcPaths, err := IndexManifest(ctx, client, cfg)
+	files, err := ListParquetFiles(ctx, client, cfg, ParquetListOptions{Subset: "warc"})
 	if err != nil {
 		return "", err
 	}
-	if len(warcPaths) == 0 {
+	if len(files) == 0 {
 		return "", fmt.Errorf("no warc subset parquet files found in manifest")
 	}
 
 	// Resolve file index
 	idx := fileIndex
 	if idx < 0 {
-		idx = len(warcPaths) - 1
+		idx = len(files) - 1
 	}
-	if idx >= len(warcPaths) {
-		return "", fmt.Errorf("file index %d out of range (manifest has %d files)", idx, len(warcPaths))
+	if idx >= len(files) {
+		return "", fmt.Errorf("file index %d out of range (manifest has %d files)", idx, len(files))
 	}
-
-	remotePath := warcPaths[idx]
-	localName := filepath.Base(remotePath)
-
-	indexDir := cfg.IndexDir()
-	if err := os.MkdirAll(indexDir, 0755); err != nil {
-		return "", fmt.Errorf("creating index dir: %w", err)
+	selected := files[idx]
+	if err := DownloadParquetFiles(ctx, client, cfg, []ParquetFile{selected}, 1, progress); err != nil {
+		return "", err
 	}
-	localPath := filepath.Join(indexDir, localName)
-
-	// Skip if already downloaded
-	if fi, err := os.Stat(localPath); err == nil && fi.Size() > 0 {
-		if progress != nil {
-			progress(DownloadProgress{
-				File:       localName,
-				FileIndex:  1,
-				TotalFiles: 1,
-				Done:       true,
-			})
-		}
-		return localPath, nil
-	}
-
-	if progress != nil {
-		progress(DownloadProgress{
-			File:       localName,
-			FileIndex:  0,
-			TotalFiles: 1,
-		})
-	}
-
-	if err := client.DownloadFile(ctx, remotePath, localPath, nil); err != nil {
-		return "", fmt.Errorf("downloading %s: %w", remotePath, err)
-	}
-
-	if progress != nil {
-		progress(DownloadProgress{
-			File:       localName,
-			FileIndex:  1,
-			TotalFiles: 1,
-			Done:       true,
-		})
-	}
-
-	return localPath, nil
+	return LocalParquetPathForRemote(cfg, selected.RemotePath), nil
 }
 
 // QueryRemoteParquet queries parquet files directly from the CC S3 bucket via DuckDB's httpfs.
@@ -340,62 +186,7 @@ func buildRemoteQuery(parquetGlob string, f IndexFilter) (string, []any) {
 // ImportIndex imports downloaded parquet files into a DuckDB database.
 // Creates the ccindex table with all columns and useful indexes.
 func ImportIndex(ctx context.Context, cfg Config) (int64, error) {
-	indexDir := cfg.IndexDir()
-	dbPath := cfg.IndexDBPath()
-
-	// Check that parquet files exist
-	entries, err := os.ReadDir(indexDir)
-	if err != nil {
-		return 0, fmt.Errorf("reading index dir: %w", err)
-	}
-	var parquetCount int
-	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), ".parquet") {
-			parquetCount++
-		}
-	}
-	if parquetCount == 0 {
-		return 0, fmt.Errorf("no parquet files found in %s", indexDir)
-	}
-
-	// Remove existing DB for clean import
-	os.Remove(dbPath)
-	os.Remove(dbPath + ".wal")
-
-	db, err := sql.Open("duckdb", dbPath)
-	if err != nil {
-		return 0, fmt.Errorf("opening duckdb: %w", err)
-	}
-	defer db.Close()
-
-	// Import all parquet files using DuckDB's glob
-	glob := filepath.Join(indexDir, "*.parquet")
-	query := fmt.Sprintf(`CREATE TABLE ccindex AS SELECT * FROM read_parquet('%s')`, glob)
-	if _, err := db.ExecContext(ctx, query); err != nil {
-		return 0, fmt.Errorf("importing parquet: %w", err)
-	}
-
-	// Create indexes for common query patterns
-	indexes := []string{
-		"CREATE INDEX idx_domain ON ccindex(url_host_registered_domain)",
-		"CREATE INDEX idx_tld ON ccindex(url_host_tld)",
-		"CREATE INDEX idx_status ON ccindex(fetch_status)",
-		"CREATE INDEX idx_mime ON ccindex(content_mime_detected)",
-	}
-	for _, idx := range indexes {
-		if _, err := db.ExecContext(ctx, idx); err != nil {
-			// Non-fatal: index creation may fail on large datasets
-			continue
-		}
-	}
-
-	// Count rows
-	var rowCount int64
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ccindex").Scan(&rowCount); err != nil {
-		return 0, fmt.Errorf("counting rows: %w", err)
-	}
-
-	return rowCount, nil
+	return ImportIndexWithProgress(ctx, cfg, nil)
 }
 
 // QueryIndex queries the columnar index with the given filter and returns WARC pointers.

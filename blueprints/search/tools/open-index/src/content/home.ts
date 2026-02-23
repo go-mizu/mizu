@@ -1,175 +1,152 @@
+import { icons, cardIcon } from '../icons'
+
 export const homePage = `
 <div class="hero">
-  <h1>Index the web. Understand it.</h1>
-  <p class="hero-sub">OpenIndex is an open-source web intelligence platform. Crawl, index, search, and build knowledge graphs from the open web — with vector search, ontologies, and full-text retrieval built in.</p>
+  <h1>Index the open web.</h1>
+  <p class="hero-sub">An open-source web intelligence platform. Crawl, index, and build knowledge from the open web — with columnar storage, vector search, and graph analysis.</p>
   <div class="hero-actions">
-    <a href="/get-started" class="btn-primary">Get Started</a>
-    <a href="/overview" class="btn-secondary">How it Works</a>
+    <a href="/get-started" class="btn btn-p">Get Started</a>
+    <a href="/overview" class="btn btn-s">How it Works</a>
   </div>
   <div class="stats">
     <div class="stat">
-      <div class="stat-value">2.8B</div>
-      <div class="stat-label">Pages indexed</div>
+      <div class="stat-v">Growing</div>
+      <div class="stat-l">Pages indexed</div>
     </div>
     <div class="stat">
-      <div class="stat-value">180+</div>
-      <div class="stat-label">Languages</div>
+      <div class="stat-v">Go + TS</div>
+      <div class="stat-l">Core stack</div>
     </div>
     <div class="stat">
-      <div class="stat-value">890M</div>
-      <div class="stat-label">Entities extracted</div>
+      <div class="stat-v">2026</div>
+      <div class="stat-l">First crawls</div>
     </div>
     <div class="stat">
-      <div class="stat-value">Open</div>
-      <div class="stat-label">Source &amp; data</div>
+      <div class="stat-v">Open</div>
+      <div class="stat-l">Source &amp; data</div>
     </div>
   </div>
 </div>
 
-<section class="section">
-  <div class="container">
-    <div class="section-header">
-      <h2>A complete web intelligence stack</h2>
-      <p>Not just crawl data. A full platform for understanding the web — from raw HTML to semantic knowledge.</p>
+<div class="feature-grid-wrap">
+  <div class="feature-grid">
+    <a href="/overview" class="feature-cell feature-cell-hero" style="text-decoration:none;color:inherit">
+      <h2>The open<br>web stack.</h2>
+      <p>Not just crawl data. A platform for understanding the web — from raw HTML to semantic knowledge.</p>
+    </a>
+    <a href="/crawler" class="feature-cell" style="text-decoration:none;color:inherit">
+      <div class="cell-icon">${cardIcon('globe')}</div>
+      <h3>Open Crawler</h3>
+      <p>100K concurrent HTTP workers with per-domain rate limiting and full robots.txt compliance.</p>
+      <span class="arrow">${icons.arrowRight}</span>
+    </a>
+    <a href="/indexer" class="feature-cell" style="text-decoration:none;color:inherit">
+      <div class="cell-icon">${cardIcon('database')}</div>
+      <h3>Multi-layer Indexer</h3>
+      <p>Parquet columnar index for analytics via DuckDB. CDX for URL lookup. Full-text and vector planned.</p>
+      <span class="arrow">${icons.arrowRight}</span>
+    </a>
+    <a href="/knowledge-graph" class="feature-cell" style="text-decoration:none;color:inherit">
+      <div class="cell-icon">${cardIcon('gitFork')}</div>
+      <h3>Knowledge Graph</h3>
+      <p>Entity extraction and Schema.org parsing. Web graph from link analysis. Relationship mapping.</p>
+      <span class="arrow">${icons.arrowRight}</span>
+    </a>
+    <a href="/vector-search" class="feature-cell" style="text-decoration:none;color:inherit">
+      <div class="cell-icon">${cardIcon('search')}</div>
+      <h3>Vector Search</h3>
+      <p>Find content by meaning, not just keywords. Dense embeddings per page via Vald distributed ANN.</p>
+      <span class="arrow">${icons.arrowRight}</span>
+    </a>
+    <a href="/architecture" class="feature-cell" style="text-decoration:none;color:inherit">
+      <div class="cell-icon">${cardIcon('cpu')}</div>
+      <h3>Pipeline &amp; API</h3>
+      <p>Go pipeline, DuckDB sharded storage, Hono API on Cloudflare Workers. Full stack from CLI to edge.</p>
+      <span class="arrow">${icons.arrowRight}</span>
+    </a>
+  </div>
+</div>
+
+<div class="showcase">
+  <div>
+    <div class="showcase-tag">${cardIcon('globe')} Open Crawler</div>
+    <h2><strong>Built for throughput.</strong> <span class="muted">100K HTTP workers, per-domain rate limiting, multi-server DNS confirmation, and streaming probe-to-feed pipeline.</span></h2>
+    <a href="/crawler" class="btn btn-s">Learn more</a>
+  </div>
+  <div class="showcase-visual">
+<span class="hl">$ search recrawl --last 5 --workers 50000</span>
+
+<span class="dim">DNS resolution</span>  <span class="blue">████████████████</span>  <span class="hl">20K workers</span>
+  resolved: <span class="green">42,891</span>  dead: <span class="amber">31,204</span>  timeout: 876
+
+<span class="dim">Probing domains</span> <span class="blue">████████████████</span>  <span class="hl">5K workers</span>
+  alive: <span class="green">28,445</span>  dead: <span class="amber">14,446</span>
+
+<span class="dim">Fetching URLs</span>   <span class="blue">████████████████</span>  <span class="hl">50K workers</span>
+  <span class="green">✓ 147,231</span> fetched  <span class="hl">275 pages/s</span> peak
+  → 16-shard ResultDB  1.2 GB total
+  </div>
+</div>
+
+<div class="section-alt">
+  <div class="showcase showcase-rev">
+    <div>
+      <div class="showcase-tag">${cardIcon('database')} Sharded Storage</div>
+      <h2><strong>SQL analytics at web scale.</strong> <span class="muted">16-shard DuckDB with batch inserts, Parquet columnar files, and zero-copy S3 queries via DuckDB httpfs.</span></h2>
+      <a href="/indexer" class="btn btn-s">Learn more</a>
     </div>
-    <div class="card-grid">
-      <a href="/crawler" class="card" style="text-decoration:none;color:inherit">
-        <div class="card-icon" style="background:var(--bg-tertiary)">&#x1F577;</div>
-        <h3>Open Crawler</h3>
-        <p>Distributed, high-throughput web crawler built in Go. Billions of pages monthly with full robots.txt compliance.</p>
-        <span class="card-link">Learn more &rarr;</span>
-      </a>
-      <a href="/indexer" class="card" style="text-decoration:none;color:inherit">
-        <div class="card-icon" style="background:var(--bg-tertiary)">&#x1F4D1;</div>
-        <h3>Multi-layer Indexer</h3>
-        <p>CDX for URL lookup, Parquet for analytics, full-text for search, and vector embeddings for semantic queries.</p>
-        <span class="card-link">Learn more &rarr;</span>
-      </a>
-      <a href="/knowledge-graph" class="card" style="text-decoration:none;color:inherit">
-        <div class="card-icon" style="background:var(--bg-tertiary)">&#x1F578;</div>
-        <h3>Knowledge Graph</h3>
-        <p>Entity extraction, relationship mapping, and graph analytics. Understand the semantic connections in web content.</p>
-        <span class="card-link">Learn more &rarr;</span>
-      </a>
-      <a href="/ontology" class="card" style="text-decoration:none;color:inherit">
-        <div class="card-icon" style="background:var(--bg-tertiary)">&#x1F3D7;</div>
-        <h3>Open Ontology</h3>
-        <p>A community-maintained schema for web entities. Compatible with Schema.org, available in JSON-LD, RDF, and OWL.</p>
-        <span class="card-link">Learn more &rarr;</span>
-      </a>
-      <a href="/vector-search" class="card" style="text-decoration:none;color:inherit">
-        <div class="card-icon" style="background:var(--bg-tertiary)">&#x1F50D;</div>
-        <h3>Vector Search</h3>
-        <p>Find content by meaning, not just keywords. Semantic search powered by dense embeddings across the entire index.</p>
-        <span class="card-link">Learn more &rarr;</span>
-      </a>
-      <a href="/api" class="card" style="text-decoration:none;color:inherit">
-        <div class="card-icon" style="background:var(--bg-tertiary)">&#x26A1;</div>
-        <h3>Open API</h3>
-        <p>RESTful API with generous rate limits. Search, query, browse, and analyze the entire index programmatically.</p>
-        <span class="card-link">Learn more &rarr;</span>
-      </a>
+    <div class="showcase-visual">
+<span class="dim">-- Zero-copy S3 query via DuckDB httpfs</span>
+<span class="blue">SELECT</span> <span class="hl">url_host_name</span>,
+       <span class="blue">COUNT</span>(*) <span class="blue">as</span> pages
+<span class="blue">FROM</span> <span class="green">read_parquet</span>(
+  <span class="amber">'s3://commoncrawl/cc-index/...'</span>
+)
+<span class="blue">WHERE</span> crawl = <span class="amber">'CC-MAIN-2026-04'</span>
+<span class="blue">GROUP BY</span> url_host_name
+<span class="blue">ORDER BY</span> pages <span class="blue">DESC</span>
+<span class="blue">LIMIT</span> <span class="hl">10</span>;
     </div>
   </div>
-</section>
+</div>
 
-<section class="section section-alt">
-  <div class="container">
-    <div class="section-header">
-      <h2>Beyond raw data</h2>
-      <p>Where existing web archives stop at crawl data, OpenIndex adds layers of intelligence.</p>
-    </div>
-    <table>
-      <thead>
-        <tr>
-          <th>Layer</th>
-          <th>Traditional archives</th>
-          <th>OpenIndex</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><strong>Crawling</strong></td>
-          <td>Proprietary crawlers</td>
-          <td>Open-source, distributed, auditable</td>
-        </tr>
-        <tr>
-          <td><strong>Storage</strong></td>
-          <td>WARC files on cloud</td>
-          <td>WARC + structured DB + vector store</td>
-        </tr>
-        <tr>
-          <td><strong>Index</strong></td>
-          <td>CDX + Columnar</td>
-          <td>CDX + Columnar + Full-text + Vector</td>
-        </tr>
-        <tr>
-          <td><strong>Graph</strong></td>
-          <td>Host/domain web graphs</td>
-          <td>Web graph + Knowledge graph + Entity graph</td>
-        </tr>
-        <tr>
-          <td><strong>Ontology</strong></td>
-          <td>None</td>
-          <td>Open, community-maintained schema</td>
-        </tr>
-        <tr>
-          <td><strong>Search</strong></td>
-          <td>URL lookup only</td>
-          <td>Full-text + semantic + vector</td>
-        </tr>
-        <tr>
-          <td><strong>AI</strong></td>
-          <td>Limited</td>
-          <td>Embeddings, RAG, clustering</td>
-        </tr>
-      </tbody>
-    </table>
+<div class="section-alt">
+<section class="section section-narrow">
+  <div class="sh">
+    <h2>Latest</h2>
+  </div>
+  <div class="blog-grid">
+    <a href="/blog/per-domain-flooding" class="blog-card">
+      <div class="blog-card-body">
+        <span class="blog-card-tag">Engineering</span>
+        <h3>685 Connections Per Domain</h3>
+        <p>50K workers, 73 domains, 0.8% success rate. One constraint turned it into 57.5%.</p>
+      </div>
+    </a>
+    <a href="/blog/dead-urls" class="blog-card">
+      <div class="blog-card-body">
+        <span class="blog-card-tag">Data</span>
+        <h3>97% of These URLs Are Dead</h3>
+        <p>CC parquet files are TLD-partitioned. File 299 is .cn domains. Most of them are dead from here.</p>
+      </div>
+    </a>
+    <a href="/blog/zig-recrawler" class="blog-card">
+      <div class="blog-card-body">
+        <span class="blog-card-tag">Engineering</span>
+        <h3>Raw TCP and TLS in Zig</h3>
+        <p>No std.http.Client. Raw sockets, manual TLS, 64KB per worker. An education in how networks work.</p>
+      </div>
+    </a>
   </div>
 </section>
+</div>
 
-<section class="section">
-  <div class="container">
-    <div class="section-header">
-      <h2>Latest from the blog</h2>
-    </div>
-    <div class="blog-grid">
-      <a href="/blog" class="blog-card">
-        <div class="blog-card-img" style="background:linear-gradient(135deg,#171717,#333)">&#x1F680;</div>
-        <div class="blog-card-body">
-          <span class="blog-card-tag">Release</span>
-          <h3>Vector Search is Live</h3>
-          <p>Semantic search across the entire index. Query by meaning, find by understanding.</p>
-        </div>
-      </a>
-      <a href="/blog" class="blog-card">
-        <div class="blog-card-img" style="background:linear-gradient(135deg,#333,#555)">&#x1F4CA;</div>
-        <div class="blog-card-body">
-          <span class="blog-card-tag">Analysis</span>
-          <h3>890M Entities Extracted</h3>
-          <p>Our knowledge graph now maps relationships between 890 million entities from the open web.</p>
-        </div>
-      </a>
-      <a href="/blog" class="blog-card">
-        <div class="blog-card-img" style="background:linear-gradient(135deg,#555,#171717)">&#x1F30D;</div>
-        <div class="blog-card-body">
-          <span class="blog-card-tag">Crawl</span>
-          <h3>February 2026 Crawl Available</h3>
-          <p>2.8 billion pages across 180+ languages. Download or query via API.</p>
-        </div>
-      </a>
-    </div>
-  </div>
-</section>
-
-<section class="section section-alt" style="text-align:center">
-  <div class="container">
-    <h2 style="margin-bottom:0.75rem;font-size:1.5rem">Start building with the open web</h2>
-    <p style="color:var(--fg-secondary);margin-bottom:1.5rem">Free API access. No account required for basic queries.</p>
-    <div class="hero-actions">
-      <a href="/get-started" class="btn-primary">Get Started</a>
-      <a href="/api" class="btn-secondary">API Reference</a>
-    </div>
+<section class="section" style="text-align:center">
+  <h2 style="margin-bottom:0.75rem;font-size:1.25rem">Help build the open web index</h2>
+  <p style="color:var(--fg-2);margin-bottom:2rem;font-size:0.9375rem;max-width:480px;margin-left:auto;margin-right:auto">OpenIndex is open source. Contributions, feedback, and ideas are welcome.</p>
+  <div class="hero-actions">
+    <a href="https://github.com/nicholasgasior/gopher-crawl" class="btn btn-p">${icons.github} View on GitHub</a>
+    <a href="/contributing" class="btn btn-s">Contributing Guide</a>
   </div>
 </section>
 `

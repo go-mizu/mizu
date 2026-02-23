@@ -15,7 +15,6 @@ import { dataFormatsPage } from './content/data-formats'
 import { apiReferencePage } from './content/api-reference'
 import { queryLanguagePage } from './content/query-language'
 import { errataPage } from './content/errata'
-import { blogPage } from './content/blog'
 import { docsPage } from './content/docs'
 import { researchPage } from './content/research'
 import { faqPage } from './content/faq'
@@ -29,6 +28,7 @@ import { roadmapPage } from './content/roadmap'
 import { privacyPage } from './content/privacy'
 import { termsPage } from './content/terms'
 import { contactPage } from './content/contact'
+import { posts, renderBlogListing, renderPostNav, renderPostMeta } from './blog-registry'
 
 const app = new Hono()
 
@@ -45,11 +45,9 @@ function respond(body: string, status = 200) {
 function page(title: string, subtitle: string, bc: string, content: string): string {
   return layout(title, `
   <div class="page-header">
-    <div class="page-header-inner">
-      <div class="breadcrumb">${bc}</div>
-      <h1>${title}</h1>
-      <p>${subtitle}</p>
-    </div>
+    <div class="breadcrumb">${bc}</div>
+    <h1>${title}</h1>
+    <p>${subtitle}</p>
   </div>
   <div class="content">
     ${content}
@@ -77,7 +75,6 @@ const pages = [
   { path: '/query-language', title: 'Query Language', sub: 'OpenIndex Query Language (OQL) — SQL-like queries for the web.', bc: '<a href="/">Home</a> / Data & APIs', content: queryLanguagePage },
   { path: '/errata', title: 'Errata', sub: 'Known issues and corrections.', bc: '<a href="/">Home</a> / Data & APIs', content: errataPage },
   // Resources
-  { path: '/blog', title: 'Blog', sub: 'Updates, research highlights, and engineering deep-dives.', bc: '<a href="/">Home</a> / Resources', content: blogPage },
   { path: '/docs', title: 'Documentation', sub: 'Guides, tutorials, and technical reference.', bc: '<a href="/">Home</a> / Resources', content: docsPage },
   { path: '/research', title: 'Research', sub: 'Academic research powered by OpenIndex data.', bc: '<a href="/">Home</a> / Resources', content: researchPage },
   { path: '/faq', title: 'FAQ', sub: 'Frequently asked questions.', bc: '<a href="/">Home</a> / Resources', content: faqPage },
@@ -99,13 +96,35 @@ for (const p of pages) {
   app.get(p.path, () => respond(page(p.title, p.sub, p.bc, p.content)))
 }
 
+// Blog listing (auto-generated from registry)
+app.get('/blog', () => respond(page('Blog', 'Updates, research highlights, and engineering deep-dives.', '<a href="/">Home</a> / Resources', renderBlogListing())))
+
+// Blog posts (auto-discovered from registry)
+for (const p of posts) {
+  app.get(`/blog/${p.slug}`, () => {
+    const meta = renderPostMeta(p)
+    const nav = renderPostNav(p.slug)
+    const body = layout(p.title, `
+    <div class="page-header">
+      <div class="breadcrumb"><a href="/">Home</a> / <a href="/blog">Blog</a></div>
+      <h1>${p.title}</h1>
+      ${meta}
+    </div>
+    <div class="content">
+      ${p.content}
+      ${nav}
+    </div>`)
+    return respond(body)
+  })
+}
+
 // 404
 app.notFound(() => {
   const body = layout('Not Found', `
-  <div style="text-align:center;padding:8rem 1.5rem">
+  <div style="text-align:center;padding:8rem 2rem">
     <h1 style="font-size:4rem;letter-spacing:-0.04em;margin-bottom:0.5rem">404</h1>
-    <p style="font-size:1rem;color:var(--fg-secondary);margin-bottom:2rem">This page could not be found.</p>
-    <a href="/" class="btn-primary">Back to Home</a>
+    <p style="font-size:1rem;color:var(--fg-2);margin-bottom:2rem">This page could not be found.</p>
+    <a href="/" class="btn btn-p">Back to Home</a>
   </div>`)
   return respond(body, 404)
 })

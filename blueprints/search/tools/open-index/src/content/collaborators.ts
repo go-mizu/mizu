@@ -1,127 +1,66 @@
+import { icons, cardIcon } from '../icons'
+
 export const collaboratorsPage = `
-<h2>Our Collaborators</h2>
-<p>OpenIndex is made possible by a global network of organizations that share our commitment to open web data and open-source infrastructure. Our collaborators contribute data, compute resources, research, and engineering expertise to help build and maintain the platform.</p>
-
-<p>These partnerships span academia, industry, nonprofits, and government research institutions. Together, we are building the open web intelligence layer that benefits everyone.</p>
-
-<hr>
-
-<h3>Partner Organizations</h3>
-<p>We are proud to collaborate with the following organizations:</p>
+<h2>Technologies We Build On</h2>
+<p>OpenIndex is built on the shoulders of exceptional open-source projects and open data initiatives. These are the technologies that make the platform possible.</p>
 
 <div class="collab-grid">
   <div class="collab-card">
-    <div class="collab-card-name">AI Alliance</div>
+    <div class="collab-card-name">${cardIcon('code')} Go</div>
+    <p>Core language for the CLI, crawler, recrawler, and domain crawler. Go 1.22+ with net/http ServeMux patterns.</p>
   </div>
   <div class="collab-card">
-    <div class="collab-card-name">Allen Institute for AI</div>
+    <div class="collab-card-name">${cardIcon('database')} DuckDB</div>
+    <p>Analytical database for sharded storage, Parquet queries, and crawl analytics. Runs embedded, no server needed.</p>
   </div>
   <div class="collab-card">
-    <div class="collab-card-name">ARDC</div>
+    <div class="collab-card-name">${cardIcon('package')} Apache Parquet</div>
+    <p>Columnar file format for the crawl index. Compact, fast to query, and compatible with every data tool.</p>
   </div>
   <div class="collab-card">
-    <div class="collab-card-name">Barcelona Supercomputing Center</div>
+    <div class="collab-card-name">${cardIcon('search')} Vald</div>
+    <p>Distributed vector search engine for semantic similarity. Planned integration for dense embedding search across the corpus.</p>
   </div>
   <div class="collab-card">
-    <div class="collab-card-name">Creative Commons</div>
+    <div class="collab-card-name">${cardIcon('zap')} Hono</div>
+    <p>Lightweight TypeScript web framework for the search worker. Runs on Cloudflare Workers at the edge.</p>
   </div>
   <div class="collab-card">
-    <div class="collab-card-name">EleutherAI</div>
+    <div class="collab-card-name">${cardIcon('globe')} Cloudflare Workers</div>
+    <p>Edge runtime for the search worker and URL fetcher. Low latency, globally distributed, zero cold starts.</p>
   </div>
   <div class="collab-card">
-    <div class="collab-card-name">Hugging Face</div>
+    <div class="collab-card-name">${cardIcon('layers')} Common Crawl</div>
+    <p>Open web crawl archive. OpenIndex integrates directly with CC's CDX API, WARC files, and Parquet columnar index.</p>
   </div>
   <div class="collab-card">
-    <div class="collab-card-name">INRIA</div>
+    <div class="collab-card-name">${cardIcon('boxes')} Apache Arrow</div>
+    <p>In-memory columnar format underlying Parquet. Powers fast analytical processing across the pipeline.</p>
   </div>
   <div class="collab-card">
-    <div class="collab-card-name">Internet Archive</div>
+    <div class="collab-card-name">${cardIcon('terminal')} Zig</div>
+    <p>Systems language for the high-performance recrawler. Raw TCP + TLS for maximum throughput at minimal memory.</p>
   </div>
   <div class="collab-card">
-    <div class="collab-card-name">Linux Foundation</div>
-  </div>
-  <div class="collab-card">
-    <div class="collab-card-name">NVIDIA</div>
-  </div>
-  <div class="collab-card">
-    <div class="collab-card-name">Open Web Search</div>
-  </div>
-  <div class="collab-card">
-    <div class="collab-card-name">PyTorch Foundation</div>
-  </div>
-  <div class="collab-card">
-    <div class="collab-card-name">Mozilla Foundation</div>
-  </div>
-  <div class="collab-card">
-    <div class="collab-card-name">Apache Software Foundation</div>
-  </div>
-  <div class="collab-card">
-    <div class="collab-card-name">CERN</div>
-  </div>
-  <div class="collab-card">
-    <div class="collab-card-name">Stanford NLP Group</div>
-  </div>
-  <div class="collab-card">
-    <div class="collab-card-name">MIT CSAIL</div>
-  </div>
-  <div class="collab-card">
-    <div class="collab-card-name">UC Berkeley BAIR</div>
-  </div>
-  <div class="collab-card">
-    <div class="collab-card-name">Wikimedia Foundation</div>
-  </div>
-  <div class="collab-card">
-    <div class="collab-card-name">OpenAI</div>
-  </div>
-  <div class="collab-card">
-    <div class="collab-card-name">Stability AI</div>
-  </div>
-  <div class="collab-card">
-    <div class="collab-card-name">LAION</div>
-  </div>
-  <div class="collab-card">
-    <div class="collab-card-name">BigScience</div>
+    <div class="collab-card-name">${cardIcon('cpu')} Mizu</div>
+    <p>Lightweight Go web framework that OpenIndex is part of. Thin context layer, middleware support, and app lifecycle management.</p>
   </div>
 </div>
 
 <hr>
 
-<h3>How We Collaborate</h3>
-<p>Our partnerships take many forms, depending on the strengths and interests of each organization:</p>
+<h3>We're Looking for Collaborators</h3>
+<p>OpenIndex is a solo project today, but it does not have to stay that way. If you work with any of these technologies -- or bring expertise in areas like NLP, information retrieval, distributed systems, or web standards -- there is room to contribute.</p>
 
-<div class="card-grid">
-  <div class="card">
-    <h3>Data Partnerships</h3>
-    <p>Organizations contribute crawl seeds, domain lists, language-specific resources, and quality signals that improve the breadth and depth of the OpenIndex corpus.</p>
-  </div>
-  <div class="card">
-    <h3>Compute & Infrastructure</h3>
-    <p>Cloud providers and HPC centers donate compute resources for crawling, indexing, embedding generation, and knowledge graph construction.</p>
-  </div>
-  <div class="card">
-    <h3>Research Collaboration</h3>
-    <p>Academic groups and research labs contribute algorithms, models, and evaluation frameworks that advance the state of the art in web intelligence.</p>
-  </div>
-  <div class="card">
-    <h3>Open Source Development</h3>
-    <p>Engineering teams contribute code to the crawler, indexer, API server, and tooling. All contributions are open source under Apache 2.0.</p>
-  </div>
-</div>
-
-<hr>
-
-<h3>Become a Collaborator</h3>
-<p>We welcome new partnerships with organizations that share our mission of making web intelligence open and accessible to everyone. Whether you can contribute data, compute, research, engineering, or funding, we would love to hear from you.</p>
+<p>What collaboration looks like:</p>
+<ul>
+  <li><strong>Code contributions</strong> -- Pick up an issue, submit a PR, improve a package.</li>
+  <li><strong>Domain expertise</strong> -- Help design the ontology, improve crawl quality heuristics, or refine the search pipeline.</li>
+  <li><strong>Data contributions</strong> -- Share seed URL lists, language-specific resources, or quality signals.</li>
+  <li><strong>Testing and feedback</strong> -- Run the tools, report bugs, suggest improvements.</li>
+</ul>
 
 <div class="note">
-  <strong>Want to collaborate?</strong> Get in touch at <a href="mailto:partners@openindex.org">partners@openindex.org</a> or reach out on our <a href="https://discord.gg/openindex">Discord</a>. We respond to all inquiries within 5 business days.
+  <strong>Interested?</strong> Open an issue on <a href="https://github.com/nicholasgasior/gopher-crawl">GitHub</a> or reach out at <a href="mailto:hello@openindex.org">hello@openindex.org</a>. No formal process -- just start a conversation.
 </div>
-
-<p>Current areas where we are actively seeking collaborators:</p>
-<ul>
-  <li><strong>Language coverage</strong> -- Organizations with expertise in underrepresented languages to help improve crawl coverage and quality assessment.</li>
-  <li><strong>Domain-specific ontologies</strong> -- Research groups working on specialized knowledge domains (biomedical, legal, scientific) to extend the OpenIndex ontology.</li>
-  <li><strong>Infrastructure sponsors</strong> -- Cloud providers and CDN services willing to donate or discount resources for data hosting and distribution.</li>
-  <li><strong>Academic partnerships</strong> -- Universities interested in integrating OpenIndex into their research and teaching programs.</li>
-</ul>
 `

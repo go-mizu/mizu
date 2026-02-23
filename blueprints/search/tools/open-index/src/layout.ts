@@ -1,8 +1,8 @@
 import { css } from './styles'
+import { icons } from './icons'
 
-const chevronSvg = '<svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>'
-
-const githubSvg = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>'
+// Logo: Lucide globe icon at 22px
+const logoIcon = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg>`
 
 const nav = [
   {
@@ -19,7 +19,7 @@ const nav = [
     ],
   },
   {
-    label: 'Data & APIs',
+    label: 'Data',
     items: [
       { label: 'Get Started', href: '/get-started' },
       { label: 'Data Formats', href: '/data-formats' },
@@ -32,8 +32,8 @@ const nav = [
     label: 'Resources',
     items: [
       { label: 'Blog', href: '/blog' },
-      { label: 'Documentation', href: '/docs' },
-      { label: 'Research Papers', href: '/research' },
+      { label: 'Docs', href: '/docs' },
+      { label: 'Research', href: '/research' },
       { label: 'FAQ', href: '/faq' },
       { label: 'Status', href: '/status' },
     ],
@@ -43,8 +43,6 @@ const nav = [
     items: [
       { label: 'Collaborators', href: '/collaborators' },
       { label: 'Contributing', href: '/contributing' },
-      { label: 'Discord', href: 'https://discord.gg/openindex' },
-      { label: 'GitHub', href: 'https://github.com/nicholasgasior/gopher-crawl' },
     ],
   },
   {
@@ -54,8 +52,8 @@ const nav = [
       { label: 'Impact', href: '/impact' },
       { label: 'Team', href: '/team' },
       { label: 'Roadmap', href: '/roadmap' },
-      { label: 'Privacy Policy', href: '/privacy' },
-      { label: 'Terms of Use', href: '/terms' },
+      { label: 'Privacy', href: '/privacy' },
+      { label: 'Terms', href: '/terms' },
       { label: 'Contact', href: '/contact' },
     ],
   },
@@ -64,12 +62,10 @@ const nav = [
 function renderNav(): string {
   return nav
     .map(
-      (group) => `<div class="nav-group">
-        <button class="nav-group-btn">${group.label} ${chevronSvg}</button>
-        <div class="nav-dropdown">
-          ${group.items.map((item) => `<a href="${item.href}">${item.label}</a>`).join('')}
-        </div>
-      </div>`
+      (g) => `<div class="nav-group">
+      <button class="nav-btn">${g.label} ${icons.chevronDown}</button>
+      <div class="nav-drop">${g.items.map((i) => `<a href="${i.href}">${i.label}</a>`).join('')}</div>
+    </div>`
     )
     .join('')
 }
@@ -79,24 +75,16 @@ function renderFooter(): string {
     <div class="footer-inner">
       <div class="footer-grid">
         <div class="footer-brand">
-          <h3>OpenIndex</h3>
-          <p>The open web intelligence platform. Crawl, index, search, and understand the web.</p>
+          <strong>OpenIndex</strong>
+          <p>Open-source web intelligence.<br>Crawl, index, understand.</p>
         </div>
-        ${nav
-          .map(
-            (group) => `<div class="footer-col">
-            <h4>${group.label}</h4>
-            ${group.items.map((item) => `<a href="${item.href}">${item.label}</a>`).join('')}
-          </div>`
-          )
-          .join('')}
+        ${nav.map((g) => `<div class="footer-col"><h4>${g.label}</h4>${g.items.map((i) => `<a href="${i.href}">${i.label}</a>`).join('')}</div>`).join('')}
       </div>
       <div class="footer-bottom">
-        <span>&copy; 2026 OpenIndex Project. Open source under Apache 2.0.</span>
+        <span>&copy; 2026 OpenIndex &middot; Apache 2.0</span>
         <div class="footer-social">
-          <a href="https://github.com/nicholasgasior/gopher-crawl" target="_blank" rel="noopener">GitHub</a>
-          <a href="https://discord.gg/openindex" target="_blank" rel="noopener">Discord</a>
-          <a href="https://x.com/openindex" target="_blank" rel="noopener">X</a>
+          <a href="https://github.com/nicholasgasior/gopher-crawl">GitHub</a>
+          <a href="https://discord.gg/openindex">Discord</a>
         </div>
       </div>
     </div>
@@ -110,34 +98,29 @@ export function layout(title: string, body: string): string {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${title} — OpenIndex</title>
-  <meta name="description" content="OpenIndex: The open web intelligence platform. Crawler, indexer, knowledge graph, ontology, vector search.">
+  <meta name="description" content="OpenIndex: Open-source web intelligence platform. Crawler, indexer, knowledge graph, vector search.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>${css}</style>
 </head>
 <body>
   <header class="header">
     <div class="header-inner">
       <a href="/" class="logo">
-        <div class="logo-icon">Oi</div>
+        ${logoIcon}
         OpenIndex
       </a>
-      <nav class="nav">
-        ${renderNav()}
-      </nav>
+      <nav class="nav">${renderNav()}</nav>
       <div class="header-right">
-        <a href="https://github.com/nicholasgasior/gopher-crawl" class="github-link" target="_blank" rel="noopener">
-          ${githubSvg} GitHub
-        </a>
+        <a href="https://github.com/nicholasgasior/gopher-crawl" class="gh-link">${icons.github} GitHub</a>
       </div>
-      <button class="mobile-toggle" aria-label="Menu">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
-      </button>
+      <button class="mobile-toggle" aria-label="Menu">${icons.menu}</button>
     </div>
   </header>
   ${body}
   ${renderFooter()}
+  <script>document.querySelector('.mobile-toggle').addEventListener('click',function(){document.querySelector('.header').classList.toggle('open')})</script>
 </body>
 </html>`
 }

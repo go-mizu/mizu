@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "gen-posts": "node scripts/gen-posts.js",
+    "deploy": "node scripts/gen-posts.js && wrangler deploy",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
