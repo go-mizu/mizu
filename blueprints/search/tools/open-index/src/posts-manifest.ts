@@ -24,5 +24,10 @@ import post21 from './content/posts/22-ontology-design-decisions.md'
 import post22 from './content/posts/23-rdf-turtle-owl.md'
 import post23 from './content/posts/24-entity-resolution-identity.md'
 import post24 from './content/posts/25-graph-queries-sql.md'
+import post25 from './content/posts/26-agent-loop.md'
+import post26 from './content/posts/27-agent-directed-crawling.md'
+import post27 from './content/posts/28-local-first-agents.md'
+import post28 from './content/posts/29-tool-use-architectures.md'
+import post29 from './content/posts/30-agentic-search.md'
 
-export const postFiles: string[] = [post0, post1, post2, post3, post4, post5, post6, post7, post8, post9, post10, post11, post12, post13, post14, post15, post16, post17, post18, post19, post20, post21, post22, post23, post24]
+export const postFiles: string[] = [post0, post1, post2, post3, post4, post5, post6, post7, post8, post9, post10, post11, post12, post13, post14, post15, post16, post17, post18, post19, post20, post21, post22, post23, post24, post25, post26, post27, post28, post29]

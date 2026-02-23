@@ -1194,7 +1194,11 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 	if err != nil {
 		return fmt.Errorf("opening failed db: %w", err)
 	}
-	defer failedDB.Close()
+	defer func() {
+		if failedDB != nil {
+			failedDB.Close()
+		}
+	}()
 	failedDB.SetMeta("crawl_id", opts.crawlID)
 	failedDB.SetMeta("started_at", time.Now().Format(time.RFC3339))
 	fmt.Println(successStyle.Render(fmt.Sprintf("  FailedDB → %s", failedDBPath)))
@@ -1297,8 +1301,14 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 
 	// FailedDB summary
 	failedDB.SetMeta("finished_at", time.Now().Format(time.RFC3339))
+	if err := failedDB.Close(); err != nil {
+		return fmt.Errorf("closing failed db: %w", err)
+	}
+	failedDomainCount := failedDB.DomainCount()
+	failedURLCount := failedDB.URLCount()
+	failedDB = nil
 	fmt.Println(infoStyle.Render(fmt.Sprintf("  FailedDB: %s domains, %s URLs → %s",
-		ccFmtInt64(failedDB.DomainCount()), ccFmtInt64(failedDB.URLCount()), filepath.Base(failedDBPath))))
+		ccFmtInt64(failedDomainCount), ccFmtInt64(failedURLCount), filepath.Base(failedDBPath))))
 
 	fmt.Println()
 	if err != nil {
