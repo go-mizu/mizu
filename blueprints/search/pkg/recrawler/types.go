@@ -55,6 +55,7 @@ type Config struct {
 	TransportShards     int           // Number of HTTP transport shards (default: 64)
 	MaxConnsPerDomain   int           // Max concurrent connections per domain (0=unlimited, default: 8)
 	TwoPass             bool          // Enable two-pass: probe domains before full fetch
+	ProbeTimeout        time.Duration // Adaptive probe timeout for unknown domains (default: 1.5s)
 }
 
 // DefaultConfig returns optimal defaults for high throughput.

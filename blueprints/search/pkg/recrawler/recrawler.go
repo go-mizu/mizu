@@ -18,6 +18,67 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// adaptiveTracker records successful response latencies and computes adaptive timeouts.
+// Uses a lock-free histogram for P95 calculation at 50K+ worker concurrency.
+type adaptiveTracker struct {
+	// Histogram buckets: <100ms, <250ms, <500ms, <1000ms, <2000ms, <3500ms, <5000ms, >=5000ms
+	buckets [8]atomic.Int64
+	total   atomic.Int64
+	maxMs   int64 // ceiling from config
+}
+
+var adaptiveEdges = [8]int64{100, 250, 500, 1000, 2000, 3500, 5000, 10000}
+
+func (t *adaptiveTracker) record(ms int64) {
+	t.total.Add(1)
+	for i, edge := range adaptiveEdges {
+		if ms < edge {
+			t.buckets[i].Add(1)
+			return
+		}
+	}
+	t.buckets[len(t.buckets)-1].Add(1)
+}
+
+// timeout returns an adaptive timeout based on P95 × 2, or 0 if insufficient samples.
+// Uses P95×2 (not ×3) to stay tight — alive servers rarely fluctuate beyond 2× P95.
+// Kicks in after just 5 samples for fast adaptation on sparse-alive datasets.
+func (t *adaptiveTracker) timeout(ceiling time.Duration) time.Duration {
+	n := t.total.Load()
+	if n < 5 {
+		return 0 // not enough data
+	}
+	target := int64(float64(n) * 0.95)
+	var cum int64
+	for i, edge := range adaptiveEdges {
+		cum += t.buckets[i].Load()
+		if cum >= target {
+			ms := edge * 2
+			ms = max(ms, 500)                        // floor: 500ms
+			ms = min(ms, ceiling.Milliseconds())      // ceiling: config timeout
+			return time.Duration(ms) * time.Millisecond
+		}
+	}
+	return ceiling
+}
+
+// p95Ms returns the current P95 latency in ms, or 0 if insufficient samples.
+func (t *adaptiveTracker) p95Ms() int64 {
+	n := t.total.Load()
+	if n < 10 {
+		return 0
+	}
+	target := int64(float64(n) * 0.95)
+	var cum int64
+	for i, edge := range adaptiveEdges {
+		cum += t.buckets[i].Load()
+		if cum >= target {
+			return edge
+		}
+	}
+	return adaptiveEdges[len(adaptiveEdges)-1]
+}
+
 // Recrawler performs high-throughput recrawling of known URL sets.
 type Recrawler struct {
 	config  Config
@@ -58,6 +119,11 @@ type Recrawler struct {
 
 	// DNS resolver for pipelined mode (resolve + fetch concurrently)
 	dnsResolver *DNSResolver
+
+	// Adaptive timeout: probe unknown domains with short timeout,
+	// then adjust based on observed latencies.
+	adaptive     adaptiveTracker
+	probeTimeout time.Duration
 }
 
 // New creates a recrawler optimized for maximum throughput.
@@ -87,12 +153,24 @@ func New(cfg Config, stats *Stats, rdb *ResultDB) *Recrawler {
 		cfg.MaxConnsPerDomain = 8
 	}
 
+	// Probe timeout: first request to each unknown domain uses a shorter timeout.
+	// Must be long enough for cross-continent TCP+TLS+response (~1.5-2.5s),
+	// but shorter than the full config timeout to speed up dead-domain discovery.
+	// Default: min(3s, config.Timeout). Combined with DomainFailThreshold=2,
+	// dead domains are killed after 2 consecutive timeouts (6s total).
+	probeTimeout := cfg.ProbeTimeout
+	if probeTimeout == 0 {
+		probeTimeout = min(3*time.Second, cfg.Timeout)
+	}
+
 	r := &Recrawler{
-		config:     cfg,
-		stats:      stats,
-		rdb:        rdb,
-		dnsCache:   make(map[string][]string),
-		domainSems: make(map[string]chan struct{}),
+		config:       cfg,
+		stats:        stats,
+		rdb:          rdb,
+		dnsCache:     make(map[string][]string),
+		domainSems:   make(map[string]chan struct{}),
+		probeTimeout: probeTimeout,
+		adaptive:     adaptiveTracker{maxMs: cfg.Timeout.Milliseconds()},
 	}
 
 	// Create sharded HTTP clients — each shard has its own transport+connection pool.
@@ -341,6 +419,62 @@ func (r *Recrawler) cachedIPsFor(key string) string {
 	return r.cachedIPsForHost(key)
 }
 
+// tcpProbeURL performs a raw TCP connect to the host:port derived from a URL.
+// Uses cached DNS IPs when available to bypass runtime DNS lookups.
+// Returns true if the TCP handshake succeeds (port is open).
+// ~100× cheaper than an HTTP probe (no TLS, no HTTP headers).
+func (r *Recrawler) tcpProbeURL(ctx context.Context, urlStr, domain string, timeout time.Duration) bool {
+	host, port := hostPortFromURL(urlStr)
+	if host == "" {
+		return false
+	}
+	// Use cached IP for direct dial (skip DNS)
+	r.dnsCacheMu.RLock()
+	ips := r.dnsCache[host]
+	if len(ips) == 0 {
+		ips = r.dnsCache[domain]
+	}
+	r.dnsCacheMu.RUnlock()
+
+	addr := host
+	if len(ips) > 0 {
+		addr = ips[0]
+	}
+
+	d := net.Dialer{Timeout: timeout}
+	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(addr, port))
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
+// hostPortFromURL extracts host and port from a URL string.
+func hostPortFromURL(urlStr string) (host, port string) {
+	rest := urlStr
+	scheme := "https"
+	if strings.HasPrefix(rest, "http://") {
+		scheme = "http"
+		rest = rest[7:]
+	} else if strings.HasPrefix(rest, "https://") {
+		rest = rest[8:]
+	}
+	if idx := strings.IndexByte(rest, '/'); idx >= 0 {
+		rest = rest[:idx]
+	}
+	host = rest
+	port = "443"
+	if scheme == "http" {
+		port = "80"
+	}
+	if idx := strings.LastIndexByte(host, ':'); idx >= 0 {
+		port = host[idx+1:]
+		host = host[:idx]
+	}
+	return host, port
+}
+
 // HTTPDeadDomains returns domains marked dead during HTTP fetching.
 // These are domains where TCP connection was refused/reset (not timeouts).
 // Can be merged into DNS cache for reuse in subsequent runs.
@@ -467,6 +601,42 @@ func (r *Recrawler) Run(ctx context.Context, seeds []SeedURL, skip map[string]bo
 			return r.worker(gCtx, client, urlCh)
 		})
 	}
+
+	// Tail-timeout: cancel remaining work when progress stalls.
+	// After 95% completion, if fewer than 50 new results arrive in 30s,
+	// the remaining connections are stuck (slow body reads, half-open TCP).
+	// Cancel the context to force-close them instead of waiting indefinitely.
+	go func() {
+		threshold95 := int64(float64(totalLive) * 0.95)
+		stallLimit := 30 * time.Second
+		checkInterval := 5 * time.Second
+		lastDone := r.stats.Done()
+		lastProgress := time.Now()
+
+		for {
+			select {
+			case <-gCtx.Done():
+				return
+			case <-time.After(checkInterval):
+			}
+
+			done := r.stats.Done()
+			if done < threshold95 {
+				lastDone = done
+				lastProgress = time.Now()
+				continue
+			}
+			if done > lastDone {
+				lastDone = done
+				lastProgress = time.Now()
+				continue
+			}
+			if time.Since(lastProgress) >= stallLimit {
+				pipeCancel()
+				return
+			}
+		}
+	}()
 
 	err := g.Wait()
 	pipeCancel() // ensure DNS pipeline stops if still running
@@ -654,25 +824,162 @@ func (r *Recrawler) directFeed(ctx context.Context, domains []string, domainURLs
 	}
 
 	// Fast path: when TwoPass probing is disabled (default for cc recrawl),
-	// stream URLs directly after DNS/dead-domain filtering. This avoids an
-	// extra HEAD request per domain and substantially improves throughput.
+	// use a lightweight TCP connect pre-check to filter truly dead hosts.
+	// TCP SYN probe is ~100× cheaper than HTTP (no TLS, no headers):
+	//   Dead hosts (SYN black hole) → detected in ≤1s
+	//   Refused hosts → detected instantly (RST)
+	//   Alive hosts → connect in ~50-300ms
 	if !r.config.TwoPass {
-		aliveList := make([]struct {
+		type domainEntry struct {
 			domain string
 			urls   []SeedURL
-		}, 0, len(probeDomains))
+		}
+
+		// Phase 1b: Filter host-level dead from DNS batch.
+		// directFeed Phase 1 only checks isDomainDead (deadDomains map),
+		// but the CLI stores DNS dead/timeout in deadHosts via SetDeadHosts.
+		// This batch-skips host-dead domains instead of per-URL skip in workers.
+		var toProbe []domainEntry
 		for _, domain := range probeDomains {
 			urls := domainURLs[domain]
 			if len(urls) == 0 {
 				continue
 			}
-			aliveList = append(aliveList, struct {
-				domain string
-				urls   []SeedURL
-			}{domain: domain, urls: urls})
+			hostKey := strings.TrimSpace(urls[0].Host)
+			if hostKey == "" {
+				hostKey = strings.TrimSpace(urls[0].Domain)
+			}
+			if r.isHostDead(hostKey) {
+				r.stats.RecordDomainSkipBatchReason(r.hostDeadReason(hostKey), len(urls))
+				continue
+			}
+			toProbe = append(toProbe, domainEntry{domain, urls})
 		}
 
-		// Interleave URLs across domains (round-robin) for even load distribution.
+		if len(toProbe) == 0 {
+			return
+		}
+
+		// Phase 2: TCP connect probe — two-pass to avoid false positives.
+		// Pass 1: Bulk probe with moderate concurrency (2000 workers, 2s timeout).
+		// Pass 2: Retry failed high-value domains (≥100 URLs) with low concurrency
+		//   (500 workers, 3s timeout) to catch false positives from network saturation.
+		alive := make([]bool, len(toProbe))
+
+		// --- Pass 1: bulk TCP probe ---
+		pass1Timeout := 2 * time.Second
+		pass1Workers := min(len(toProbe), 2000)
+
+		idxCh := make(chan int, pass1Workers*4)
+		go func() {
+			defer close(idxCh)
+			for i := range toProbe {
+				select {
+				case idxCh <- i:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+
+		var probeWg sync.WaitGroup
+		for range pass1Workers {
+			probeWg.Go(func() {
+				for idx := range idxCh {
+					select {
+					case <-ctx.Done():
+						return
+					default:
+					}
+					e := toProbe[idx]
+					if r.tcpProbeURL(ctx, e.urls[0].URL, e.domain, pass1Timeout) {
+						alive[idx] = true
+					}
+				}
+			})
+		}
+		probeWg.Wait()
+
+		// --- Pass 2: retry failed high-value domains ---
+		// With 2000+ concurrent TCP dials, some alive hosts get false-negative
+		// due to OS/network saturation. Retry domains with ≥100 URLs using
+		// lower concurrency and longer timeout to catch these.
+		var retryList []int
+		for i, e := range toProbe {
+			if !alive[i] && len(e.urls) >= 100 {
+				retryList = append(retryList, i)
+			}
+		}
+		if len(retryList) > 0 {
+			pass2Timeout := 3 * time.Second
+			pass2Workers := min(len(retryList), 500)
+
+			retryCh := make(chan int, pass2Workers*4)
+			go func() {
+				defer close(retryCh)
+				for _, idx := range retryList {
+					select {
+					case retryCh <- idx:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}()
+
+			var retryWg sync.WaitGroup
+			for range pass2Workers {
+				retryWg.Go(func() {
+					for idx := range retryCh {
+						select {
+						case <-ctx.Done():
+							return
+						default:
+						}
+						e := toProbe[idx]
+						if r.tcpProbeURL(ctx, e.urls[0].URL, e.domain, pass2Timeout) {
+							alive[idx] = true
+						}
+					}
+				})
+			}
+			retryWg.Wait()
+		}
+
+		// Mark alive/dead after both passes complete.
+		for i, e := range toProbe {
+			if alive[i] {
+				r.stats.RecordProbeReachable()
+			} else {
+				hostKey := strings.TrimSpace(e.urls[0].Host)
+				if hostKey == "" {
+					hostKey = strings.TrimSpace(e.urls[0].Domain)
+				}
+				r.markHostDeadIfUnset(hostKey, "tcp_unreachable")
+				r.markDomainDead(e.domain, "tcp_unreachable")
+				r.stats.RecordProbeUnreachable()
+				r.stats.RecordDomainSkipBatchReason("tcp_unreachable", len(e.urls))
+				r.failedDB.AddDomain(FailedDomain{
+					Domain:   e.domain,
+					Reason:   "tcp_unreachable",
+					IPs:      r.cachedIPsFor(e.domain),
+					URLCount: len(e.urls),
+					Stage:    "tcp_probe",
+				})
+			}
+		}
+
+		// Phase 3: Feed only TCP-alive domains' URLs (interleaved round-robin).
+		type aliveDomain struct {
+			domain string
+			urls   []SeedURL
+		}
+		var aliveList []aliveDomain
+		for i, e := range toProbe {
+			if alive[i] {
+				aliveList = append(aliveList, aliveDomain{e.domain, e.urls})
+			}
+		}
+
 		cursors := make([]int, len(aliveList))
 		remaining := len(aliveList)
 		for remaining > 0 {
@@ -879,6 +1186,28 @@ func (r *Recrawler) fetchOne(ctx context.Context, client *http.Client, seed Seed
 		hostKey = strings.TrimSpace(seed.Domain)
 	}
 
+	// Adaptive timeout: three tiers for unknown vs known-good domains.
+	//
+	// Tier 1 (probe): Domain never succeeded → use probeTimeout (3s default).
+	//   Single attempt, no retry. On timeout → recordHostTimeout (DomainFailThreshold
+	//   consecutive timeouts = kill). On success → record latency, mark domain alive.
+	//
+	// Tier 2 (adaptive): Domain succeeded before, 5+ latency samples →
+	//   use P95×2 of observed latencies (floor 500ms, ceiling config.Timeout).
+	//   Adapts to dataset: fast servers get tight timeout, slow servers get slack.
+	//
+	// Tier 3 (config): Fallback to config.Timeout when not enough data.
+	isProbe := false
+	reqTimeout := r.config.Timeout
+	if _, ok := r.domainSucceeded.Load(seed.Domain); !ok {
+		isProbe = true
+		reqTimeout = r.probeTimeout
+	} else if at := r.adaptive.timeout(r.config.Timeout); at > 0 {
+		reqTimeout = at
+	}
+	reqCtx, reqCancel := context.WithTimeout(ctx, reqTimeout)
+	defer reqCancel()
+
 	method := http.MethodGet
 	if r.config.HeadOnly {
 		method = http.MethodHead
@@ -888,40 +1217,49 @@ func (r *Recrawler) fetchOne(ctx context.Context, client *http.Client, seed Seed
 		resp *http.Response
 		err  error
 	)
-	clients := []*http.Client{client}
-	if alt := r.alternateClient(client); alt != nil {
-		clients = append(clients, alt)
-	}
-	for attempt, c := range clients {
-		req, reqErr := http.NewRequestWithContext(ctx, method, seed.URL, nil)
+	// Probe requests: single attempt, no retry (fail fast on dead domains).
+	// Non-probe: retry once on transient errors (server jitter).
+	if isProbe {
+		req, reqErr := http.NewRequestWithContext(reqCtx, method, seed.URL, nil)
 		if reqErr != nil {
 			r.recordError(seed, 0, start, reqErr)
 			return
 		}
 		req.Header.Set("User-Agent", r.config.UserAgent)
 		req.Header.Set("Accept", "text/html,application/xhtml+xml,*/*;q=0.8")
+		resp, err = client.Do(req)
+	} else {
+		clients := []*http.Client{client}
+		if alt := r.alternateClient(client); alt != nil {
+			clients = append(clients, alt)
+		}
+		for attempt, c := range clients {
+			req, reqErr := http.NewRequestWithContext(reqCtx, method, seed.URL, nil)
+			if reqErr != nil {
+				r.recordError(seed, 0, start, reqErr)
+				return
+			}
+			req.Header.Set("User-Agent", r.config.UserAgent)
+			req.Header.Set("Accept", "text/html,application/xhtml+xml,*/*;q=0.8")
 
-		resp, err = c.Do(req)
-		if err == nil {
+			resp, err = c.Do(req)
+			if err == nil {
+				break
+			}
+			if attempt == 0 && shouldRetryTransientRequestError(err) {
+				select {
+				case <-reqCtx.Done():
+					goto requestDone
+				case <-time.After(25 * time.Millisecond):
+				}
+				continue
+			}
 			break
 		}
-		// One retry for transient network timeouts/handshake/header delays.
-		if attempt == 0 && shouldRetryTransientRequestError(err) {
-			select {
-			case <-ctx.Done():
-				// Stop retrying if the run is shutting down.
-				goto requestDone
-			case <-time.After(25 * time.Millisecond):
-			}
-			continue
-		}
-		break
 	}
 requestDone:
 	if err != nil {
 		isTimeout := isTimeoutError(err)
-		// Mark host dead on definitive connection failures only.
-		// Timeouts are NOT fatal — server may be slow but alive.
 		isFatal := isConnectionRefused(err) || isDNSError(err)
 		r.stats.RecordFailure(0, seed.Domain, isTimeout)
 		fetchMs := time.Since(start).Milliseconds()
@@ -933,7 +1271,6 @@ requestDone:
 			CrawledAt:   time.Now(),
 			Error:       errStr,
 		})
-		// Log to FailedDB
 		failReason := "http_error"
 		if isTimeout {
 			failReason = "http_timeout"
@@ -958,6 +1295,10 @@ requestDone:
 				r.failedDB.AddDomain(FailedDomain{Domain: hostKey, Reason: reason, Error: truncateStr(err.Error(), 200), IPs: r.cachedIPsForHost(hostKey), Stage: "http_worker"})
 			}
 		} else if isTimeout {
+			// All timeouts (probe and non-probe) go through the same threshold logic.
+			// recordHostTimeout increments the per-host failure counter and kills the
+			// host only after DomainFailThreshold consecutive timeouts (default 2).
+			// This prevents one slow response from killing a domain with 100+ URLs.
 			r.recordHostTimeout(hostKey)
 		}
 		return
@@ -966,6 +1307,9 @@ requestDone:
 	// Any HTTP response means server is alive
 	r.recordDomainSuccess(seed.Domain)
 	r.recordHostSuccess(hostKey)
+
+	// Record latency for adaptive timeout computation
+	r.adaptive.record(time.Since(start).Milliseconds())
 
 	// StatusOnly mode: close body immediately, only record status code
 	if r.config.StatusOnly {
@@ -1127,6 +1471,17 @@ func truncateStr(s string, maxLen int) string {
 	return s
 }
 
+// AdaptiveTimeoutInfo returns a formatted string describing current adaptive timeout state.
+func (r *Recrawler) AdaptiveTimeoutInfo() string {
+	samples := r.adaptive.total.Load()
+	p95 := r.adaptive.p95Ms()
+	at := r.adaptive.timeout(r.config.Timeout)
+	if at == 0 || samples < 5 {
+		return fmt.Sprintf("probe %v, adaptive pending (%d samples)", r.probeTimeout, samples)
+	}
+	return fmt.Sprintf("probe %v, adaptive %v (P95=%dms, %d samples)", r.probeTimeout, at, p95, samples)
+}
+
 // RunWithDisplay runs the recrawl with live terminal display updates.
 func RunWithDisplay(ctx context.Context, r *Recrawler, seeds []SeedURL, skip map[string]bool, stats *Stats) error {
 	var displayLines int
@@ -1143,6 +1498,9 @@ func RunWithDisplay(ctx context.Context, r *Recrawler, seeds []SeedURL, skip map
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				// Update adaptive timeout display info
+				stats.adaptiveInfo.Store(r.AdaptiveTimeoutInfo())
+
 				displayMu.Lock()
 				if displayLines > 0 {
 					fmt.Printf("\033[%dA\033[J", displayLines)

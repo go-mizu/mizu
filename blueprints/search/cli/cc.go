@@ -1337,6 +1337,9 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 			fmt.Println(labelStyle.Render("  Use --reload-dns-cache to force a fresh DNS pass"))
 			fmt.Println()
 		} else {
+			baseLive := dnsResolver.LiveCount()
+			baseDead := dnsResolver.DeadCount()
+			baseTimeout := dnsResolver.TimeoutCount()
 			fmt.Println(infoStyle.Render(fmt.Sprintf("  Resolving %s uncached hosts (%d workers, %v timeout)...",
 				ccFmtInt64(int64(cov.Pending)), recrawlCfg.DNSWorkers, recrawlCfg.DNSTimeout)))
 
@@ -1355,8 +1358,22 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 			if dnsDisplayLines > 0 {
 				fmt.Printf("\033[%dA\033[J", dnsDisplayLines)
 			}
-			fmt.Println(successStyle.Render(fmt.Sprintf("  DNS: %d live, %d dead, %d timeout (%s)",
-				live, dead, timedout, dnsResolver.Duration().Truncate(time.Millisecond))))
+			newLive := int64(live) - baseLive
+			newDead := int64(dead) - baseDead
+			newTimeout := int64(timedout) - baseTimeout
+			if newLive < 0 {
+				newLive = 0
+			}
+			if newDead < 0 {
+				newDead = 0
+			}
+			if newTimeout < 0 {
+				newTimeout = 0
+			}
+			fmt.Println(successStyle.Render(fmt.Sprintf("  DNS (uncached): %s live, %s dead, %s timeout (%s)",
+				ccFmtInt64(newLive), ccFmtInt64(newDead), ccFmtInt64(newTimeout), dnsResolver.Duration().Truncate(time.Millisecond))))
+			fmt.Println(labelStyle.Render(fmt.Sprintf("  DNS totals: live=%s, dead=%s, timeout=%s (cached=%s)",
+				ccFmtInt64(int64(live)), ccFmtInt64(int64(dead)), ccFmtInt64(int64(timedout)), ccFmtInt64(dnsResolver.CachedCount()))))
 			fmt.Println()
 		}
 
@@ -1559,11 +1576,15 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 
 	var domainExportSummary ccDomainExportSummary
 	if sourceParquetPath != "" {
-		exportSummary, exportErr := ccExportPerDomainRecrawlArtifacts(ctx, ccCfg, sourceParquetPath, resultDir, failedDBPath)
-		if exportErr != nil {
-			fmt.Println(warningStyle.Render(fmt.Sprintf("Domain folder export failed: %v", exportErr)))
+		if os.Getenv("CC_RECRAWL_DOMAIN_EXPORT") != "1" {
+			fmt.Println(labelStyle.Render("  Domain parquet export: skipped (temporarily disabled; set CC_RECRAWL_DOMAIN_EXPORT=1 to enable)"))
 		} else {
-			domainExportSummary = exportSummary
+			exportSummary, exportErr := ccExportPerDomainRecrawlArtifacts(ctx, ccCfg, sourceParquetPath, resultDir, failedDBPath)
+			if exportErr != nil {
+				fmt.Println(warningStyle.Render(fmt.Sprintf("Domain folder export failed: %v", exportErr)))
+			} else {
+				domainExportSummary = exportSummary
+			}
 		}
 	}
 
@@ -1795,12 +1816,15 @@ func ccDNSCacheCoverage(dns *recrawler.DNSResolver, domains []string) ccDNSCache
 }
 
 func ccResolveEffectiveDNSTuning(opts ccRecrawlOpts, pendingDomains int) (workers int, timeout time.Duration, notes []string) {
-	// Timeout: preserve historical behavior by default (2000ms) unless user opts into auto with 0.
+	// Timeout: preserve explicit values. Auto mode reduces long-tail stalls on large batches.
 	timeoutMs := opts.dnsTimeout
 	if timeoutMs <= 0 {
 		timeoutMs = 2000
+		if pendingDomains >= 20000 {
+			timeoutMs = 1200
+		}
 		if pendingDomains >= 50000 {
-			timeoutMs = 1500
+			timeoutMs = 1000
 		}
 		notes = append(notes, fmt.Sprintf("dns-timeout auto=%dms (use --dns-timeout to override)", timeoutMs))
 	} else if !opts.dnsTimeoutExplicit && opts.dnsTimeout == 2000 {
@@ -1812,8 +1836,8 @@ func ccResolveEffectiveDNSTuning(opts ccRecrawlOpts, pendingDomains int) (worker
 		return 0, timeout, notes
 	}
 
-	// Workers: auto-tune unless explicitly provided. 2000 often oversubscribes fastdns (2x256 UDP conns)
-	// and can increase timeout noise. Cap near 768 by default for better stability.
+	// Workers: auto-tune unless explicitly provided. Cap below the fastdns UDP pool capacity
+	// to avoid oversubscription and timeout spikes.
 	if opts.dnsWorkersExplicit && opts.dnsWorkers > 0 {
 		return opts.dnsWorkers, timeout, notes
 	}
@@ -1821,7 +1845,7 @@ func ccResolveEffectiveDNSTuning(opts ccRecrawlOpts, pendingDomains int) (worker
 		notes = append(notes, "dns-workers auto requested via --dns-workers 0")
 	}
 	if !opts.dnsWorkersExplicit && opts.dnsWorkers == 2000 {
-		notes = append(notes, "dns-workers auto-tuned (default 2000 is often too high for fastdns UDP pool)")
+		notes = append(notes, "dns-workers auto-tuned (default 2000 oversubscribes fastdns UDP pool)")
 	}
 
 	cpu := runtime.NumCPU()
@@ -1833,7 +1857,13 @@ func ccResolveEffectiveDNSTuning(opts ccRecrawlOpts, pendingDomains int) (worker
 		auto = max(auto, 640)
 	}
 	auto = max(auto, 128)
-	auto = min(auto, 768)
+	if stableCap := recrawler.DNSBatchRecommendedWorkerCap(); stableCap > 0 {
+		if auto > stableCap {
+			notes = append(notes, fmt.Sprintf("dns-workers capped to %d for fastdns pool stability (pool=%d)",
+				stableCap, recrawler.DNSBatchPoolCapacity()))
+		}
+		auto = min(auto, stableCap)
+	}
 	auto = min(auto, pendingDomains)
 	if auto < 1 {
 		auto = 1
@@ -1844,10 +1874,17 @@ func ccResolveEffectiveDNSTuning(opts ccRecrawlOpts, pendingDomains int) (worker
 
 func ccDNSProgressETA(p recrawler.DNSProgress) string {
 	remain := int64(p.Total) - p.Done
-	if remain <= 0 || p.Speed <= 0 {
+	if remain <= 0 {
 		return "0s"
 	}
-	eta := time.Duration(float64(time.Second) * float64(remain) / p.Speed)
+	speed := p.Speed
+	if p.AvgSpeed > 0 && (speed <= 0 || speed < p.AvgSpeed*0.35) {
+		speed = p.AvgSpeed
+	}
+	if speed <= 0 {
+		return "0s"
+	}
+	eta := time.Duration(float64(time.Second) * float64(remain) / speed)
 	if eta < 0 {
 		return "0s"
 	}

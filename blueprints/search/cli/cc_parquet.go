@@ -34,7 +34,7 @@ download specific files or samples, and import them into per-parquet DuckDB
 databases with a catalog DuckDB view.`,
 		Example: `  search cc parquet list
   search cc parquet list --subset all --limit 12
-  search cc parquet download --file m:600
+  search cc parquet download --part 0
   search cc parquet import --limit 5`,
 	}
 
@@ -62,7 +62,7 @@ Defaults:
   --subset warc
 
 Selectors shown in the table:
-  Part      p:N   (from part-000NN filename; intuitive selector)
+  Part      p:N   (from part-000NN filename; preferred for --part N downloads)
   Manifest  m:N   (global manifest index; explicit, stable across subset filters)
   Subset#   N     (ordinal within subset; recrawl --file N uses warc subset by default)`,
 		Example: `  search cc parquet list
@@ -199,15 +199,21 @@ func runCCParquetList(ctx context.Context, crawlID, subset string, limit int, na
 		SizeKnown  int
 		TotalURLs  int64
 		URLsKnown  int
+		TotalHosts int64
+		HostsKnown int
 	}
 	var totalSizeBytes int64
 	var totalSizeKnown int
 	var totalURLs int64
 	var totalURLsKnown int
+	var totalHosts int64
+	var totalHostsKnown int
 	subsetSizeBytes := make(map[string]int64, len(subsetCounts))
 	subsetSizeKnown := make(map[string]int, len(subsetCounts))
 	subsetURLs := make(map[string]int64, len(subsetCounts))
 	subsetURLsKnown := make(map[string]int, len(subsetCounts))
+	subsetHosts := make(map[string]int64, len(subsetCounts))
+	subsetHostsKnown := make(map[string]int, len(subsetCounts))
 	for _, f := range files {
 		key := f.Subset
 		if key == "" {
@@ -226,6 +232,12 @@ func runCCParquetList(ctx context.Context, crawlID, subset string, limit int, na
 			subsetURLs[key] += meta.URLCount
 			subsetURLsKnown[key]++
 		}
+		if !meta.HostCountUpdated.IsZero() && meta.HostCount >= 0 {
+			totalHosts += meta.HostCount
+			totalHostsKnown++
+			subsetHosts[key] += meta.HostCount
+			subsetHostsKnown[key]++
+		}
 	}
 	var pairs []subsetCount
 	for k, v := range subsetCounts {
@@ -238,6 +250,8 @@ func runCCParquetList(ctx context.Context, crawlID, subset string, limit int, na
 			SizeKnown:  subsetSizeKnown[k],
 			TotalURLs:  subsetURLs[k],
 			URLsKnown:  subsetURLsKnown[k],
+			TotalHosts: subsetHosts[k],
+			HostsKnown: subsetHostsKnown[k],
 		})
 	}
 	sort.Slice(pairs, func(i, j int) bool {
@@ -271,6 +285,7 @@ func runCCParquetList(ctx context.Context, crawlID, subset string, limit int, na
 			{"Files", ccFmtInt64(int64(len(files)))},
 			{"Total size", ccFmtKnownTotalBytes(totalSizeBytes, totalSizeKnown, len(files))},
 			{"Total URLs", ccFmtKnownTotalInt(totalURLs, totalURLsKnown, len(files))},
+			{"Total hosts", ccFmtKnownTotalInt(totalHosts, totalHostsKnown, len(files))},
 			{"Showing", ccFmtInt64(int64(displayCount))},
 		})
 		summaryRight := ccRenderKVCard("Local Cache", [][2]string{
@@ -278,6 +293,7 @@ func runCCParquetList(ctx context.Context, crawlID, subset string, limit int, na
 			{"Local bytes", ccFmtBytes(localBytes)},
 			{"Size cache", ccFmtCacheCoverage(totalSizeKnown, len(files))},
 			{"URL cache", ccFmtCacheCoverage(totalURLsKnown, len(files))},
+			{"Host cache", ccFmtCacheCoverage(totalHostsKnown, len(files))},
 			{"Subsets", ccFmtInt64(int64(len(pairs)))},
 			{"Manifest load", manifestElapsed.String()},
 		})
@@ -296,12 +312,13 @@ func runCCParquetList(ctx context.Context, crawlID, subset string, limit int, na
 				ccPct(int64(p.Count), int64(len(files))),
 				ccFmtKnownTotalBytes(p.TotalSize, p.SizeKnown, p.Count),
 				ccFmtKnownTotalInt(p.TotalURLs, p.URLsKnown, p.Count),
+				ccFmtKnownTotalInt(p.TotalHosts, p.HostsKnown, p.Count),
 				localCell + " " + labelStyle.Render(ccFmtBytes(p.LocalBytes)),
 			})
 		}
 		fmt.Println(infoStyle.Render("Subset Breakdown"))
-		fmt.Println(ccRenderTable([]string{"Subset", "Files", "%", "Total size", "Total URLs", "Local cache"}, subsetRows, ccTableOptions{
-			RightAlignCols: map[int]bool{1: true, 2: true, 3: true, 4: true},
+		fmt.Println(ccRenderTable([]string{"Subset", "Files", "%", "Total size", "Total URLs", "Total hosts", "Local cache"}, subsetRows, ccTableOptions{
+			RightAlignCols: map[int]bool{1: true, 2: true, 3: true, 4: true, 5: true},
 		}))
 		fmt.Println()
 
@@ -325,6 +342,14 @@ func runCCParquetList(ctx context.Context, crawlID, subset string, limit int, na
 			if !meta.URLCountUpdated.IsZero() {
 				urlsCell = ccFmtInt64(meta.URLCount)
 			}
+			hostsCell := "-"
+			if !meta.HostCountUpdated.IsZero() {
+				if meta.HostCount >= 0 {
+					hostsCell = ccFmtInt64(meta.HostCount)
+				} else {
+					hostsCell = "n/a"
+				}
+			}
 			rows = append(rows, []string{
 				fmt.Sprintf("p:%d", ccParquetPartNumberOr(subIdx, f.Filename)),
 				fmt.Sprintf("%d", subIdx),
@@ -332,14 +357,15 @@ func runCCParquetList(ctx context.Context, crawlID, subset string, limit int, na
 				fmt.Sprintf("m:%d", f.ManifestIndex),
 				sizeCell,
 				urlsCell,
+				hostsCell,
 				localChip,
 			})
 		}
 		fmt.Println(infoStyle.Render("Parquet Files"))
 		fmt.Println(ccRenderTable(
-			[]string{"Part", "Subset#", "Subset", "Manifest", "Size", "URLs", "Local"},
+			[]string{"Part", "Subset#", "Subset", "Manifest", "Size", "URLs", "Hosts", "Local"},
 			rows,
-			ccTableOptions{RightAlignCols: map[int]bool{1: true, 4: true, 5: true}},
+			ccTableOptions{RightAlignCols: map[int]bool{1: true, 4: true, 5: true, 6: true}},
 		))
 	}
 
@@ -351,8 +377,9 @@ func runCCParquetList(ctx context.Context, crawlID, subset string, limit int, na
 		fmt.Println()
 	}
 	hints := []string{
-		"`p:N` matches the parquet part number (`part-00000...` → `p:0`)",
-		"`cc parquet download --file m:N` uses the global Manifest selector (example: `m:600`)",
+		"`p:N` matches the parquet part number (`part-00000...` → `p:0`) and maps to `cc parquet download --part N`",
+		"`cc parquet import --part N` imports the local cached parquet for that part (download first if missing)",
+		"`m:N` is the global Manifest selector; download with `cc parquet download --file N` (example row `m:600` → `--file 600`)",
 		"`cc recrawl --file p:N` (or plain `N`) uses the warc part index; `m:N` also works",
 	}
 	if subset == "" || subset == "warc" {
@@ -369,6 +396,7 @@ func newCCParquetDownload() *cobra.Command {
 		crawlID string
 		subset  string
 		fileIdx int
+		partIdx int
 		sample  int
 		all     bool
 		workers int
@@ -380,21 +408,25 @@ func newCCParquetDownload() *cobra.Command {
 		Long: `Download parquet files listed in cc-index-table.paths.gz.
 
 Modes:
+  --part N    Download one parquet by part number (within --subset, default warc)
   --file N    Download one parquet by manifest index (all subsets)
   --sample N  Download N evenly spaced parquet files (after subset filter)
   --all       Download every parquet file (after subset filter)`,
-		Example: `  search cc parquet download --file 600
+		Example: `  search cc parquet download --part 0
+  search cc parquet download -p 0
+  search cc parquet download --file 600
   search cc parquet download --subset warc --sample 3
   search cc parquet download --subset all --sample 10
   search cc parquet download --all --subset warc`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCCParquetDownload(cmd.Context(), crawlID, subset, fileIdx, sample, all, workers)
+			return runCCParquetDownload(cmd.Context(), crawlID, subset, fileIdx, partIdx, sample, all, workers)
 		},
 	}
 
 	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest cached/latest available)")
 	cmd.Flags().StringVar(&subset, "subset", "warc", "Subset filter (default: warc; use 'all' for every subset)")
 	cmd.Flags().IntVar(&fileIdx, "file", -1, "Manifest index to download (all-subset manifest index)")
+	cmd.Flags().IntVarP(&partIdx, "part", "p", -1, "Parquet part number to download within --subset (preferred, e.g. --part 0)")
 	cmd.Flags().IntVar(&sample, "sample", 0, "Download N evenly spaced files (after subset filter)")
 	cmd.Flags().BoolVar(&all, "all", false, "Download all files (after subset filter)")
 	cmd.Flags().IntVar(&workers, "workers", 10, "Concurrent download workers")
@@ -402,7 +434,7 @@ Modes:
 	return cmd
 }
 
-func runCCParquetDownload(ctx context.Context, crawlID, subset string, fileIdx, sample int, all bool, workers int) error {
+func runCCParquetDownload(ctx context.Context, crawlID, subset string, fileIdx, partIdx, sample int, all bool, workers int) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("CC Parquet Download"))
 	fmt.Println()
@@ -429,6 +461,42 @@ func runCCParquetDownload(ctx context.Context, crawlID, subset string, fileIdx, 
 
 	reporter := newCCDownloadReporter()
 
+	if fileIdx >= 0 && partIdx >= 0 {
+		return fmt.Errorf("choose only one selector: --part N or --file N")
+	}
+
+	if partIdx >= 0 {
+		fmt.Println(infoStyle.Render(fmt.Sprintf("Loading %s parquet manifest for %s...", subset, crawlID)))
+		manifestStart := time.Now()
+		files, err := cc.ListParquetFiles(ctx, client, cfg, cc.ParquetListOptions{Subset: subset})
+		if err != nil {
+			return err
+		}
+		fmt.Println(successStyle.Render(fmt.Sprintf("  Manifest ready: %s files (%s)",
+			ccFmtInt64(int64(len(files))), time.Since(manifestStart).Truncate(time.Millisecond))))
+		if len(files) == 0 {
+			if subset == "" {
+				return fmt.Errorf("no parquet files matched (all subsets)")
+			}
+			return fmt.Errorf("no parquet files matched subset=%q", subset)
+		}
+		if partIdx < 0 || partIdx >= len(files) {
+			return fmt.Errorf("part out of range: %d (available: 0..%d for subset=%s)", partIdx, len(files)-1, subset)
+		}
+		selected := files[partIdx]
+		fmt.Println(infoStyle.Render(fmt.Sprintf("Downloading part p:%d (%s)...", partIdx, selected.Filename)))
+		fmt.Println(labelStyle.Render(fmt.Sprintf("  Manifest: m:%d", selected.ManifestIndex)))
+		fmt.Println(labelStyle.Render(fmt.Sprintf("  Remote: %s", selected.RemotePath)))
+		fmt.Println(labelStyle.Render(fmt.Sprintf("  → %s", cfg.IndexDir())))
+		start := time.Now()
+		if err := cc.DownloadParquetFiles(ctx, client, cfg, []cc.ParquetFile{selected}, workers, reporter.Callback); err != nil {
+			return err
+		}
+		fmt.Println(successStyle.Render(fmt.Sprintf("Download complete in %s", time.Since(start).Truncate(time.Second))))
+		fmt.Println(labelStyle.Render(fmt.Sprintf("  Part: p:%d  Manifest: m:%d", partIdx, selected.ManifestIndex)))
+		return nil
+	}
+
 	if fileIdx >= 0 {
 		fmt.Println(infoStyle.Render(fmt.Sprintf("Downloading manifest file #%d for %s...", fileIdx, crawlID)))
 		if subset != "" {
@@ -446,7 +514,7 @@ func runCCParquetDownload(ctx context.Context, crawlID, subset string, fileIdx, 
 	}
 
 	if !all && sample <= 0 {
-		return fmt.Errorf("choose one mode: --file N, --sample N, or --all")
+		return fmt.Errorf("choose one mode: --part N, --file N, --sample N, or --all")
 	}
 
 	fmt.Println(infoStyle.Render(fmt.Sprintf("Loading manifest for %s...", crawlID)))
@@ -484,6 +552,7 @@ func newCCParquetImport() *cobra.Command {
 		crawlID string
 		subset  string
 		file    string
+		partIdx int
 		limit   int
 	)
 
@@ -492,23 +561,26 @@ func newCCParquetImport() *cobra.Command {
 		Short: "Import local parquet files into per-parquet DuckDB + catalog",
 		Long: `Import local parquet files into one DuckDB database per parquet file, then
 build a catalog DuckDB at index.duckdb containing metadata tables and a ccindex view.`,
-		Example: `  search cc parquet import --limit 5
+		Example: `  search cc parquet import --part 0
+  search cc parquet import -p 0
+  search cc parquet import --limit 5
   search cc parquet import --subset all --limit 20
   search cc parquet import --file ~/data/common-crawl/.../part-00000...parquet`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCCParquetImport(cmd.Context(), crawlID, subset, file, limit)
+			return runCCParquetImport(cmd.Context(), crawlID, subset, file, partIdx, limit)
 		},
 	}
 
 	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest cached/latest available)")
 	cmd.Flags().StringVar(&subset, "subset", "warc", "Subset filter for local parquet files (default: warc; use 'all' for every subset)")
 	cmd.Flags().StringVar(&file, "file", "", "Import a specific local parquet file")
+	cmd.Flags().IntVarP(&partIdx, "part", "p", -1, "Import one local parquet by part number within --subset (preferred, e.g. --part 0)")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Import only the first N matching local parquet files (0=all)")
 
 	return cmd
 }
 
-func runCCParquetImport(ctx context.Context, crawlID, subset, file string, limit int) error {
+func runCCParquetImport(ctx context.Context, crawlID, subset, file string, partIdx, limit int) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("CC Parquet Import"))
 	fmt.Println()
@@ -533,11 +605,42 @@ func runCCParquetImport(ctx context.Context, crawlID, subset, file string, limit
 
 	var parquetPaths []string
 
+	if file != "" && partIdx >= 0 {
+		return fmt.Errorf("choose only one selector: --part N or --file <path>")
+	}
+
 	if file != "" {
 		if _, err := os.Stat(file); err != nil {
 			return fmt.Errorf("parquet file not found: %s", file)
 		}
 		parquetPaths = []string{file}
+	} else if partIdx >= 0 {
+		fmt.Println(infoStyle.Render(fmt.Sprintf("Resolving local parquet for part p:%d (subset=%s)...", partIdx, subset)))
+		start := time.Now()
+		client := cc.NewClient(cfg.BaseURL, 4)
+		files, err := cc.ListParquetFiles(ctx, client, cfg, cc.ParquetListOptions{Subset: subset})
+		if err != nil {
+			return err
+		}
+		fmt.Println(successStyle.Render(fmt.Sprintf("  Manifest ready: %s files (%s)",
+			ccFmtInt64(int64(len(files))), time.Since(start).Truncate(time.Millisecond))))
+		if len(files) == 0 {
+			if subset == "" {
+				return fmt.Errorf("no parquet files matched (all subsets)")
+			}
+			return fmt.Errorf("no parquet files matched subset=%q", subset)
+		}
+		if partIdx < 0 || partIdx >= len(files) {
+			return fmt.Errorf("part out of range: %d (available: 0..%d for subset=%s)", partIdx, len(files)-1, subset)
+		}
+		selected := files[partIdx]
+		localPath := cc.LocalParquetPathForRemote(cfg, selected.RemotePath)
+		if _, err := os.Stat(localPath); err != nil {
+			return fmt.Errorf("local parquet not found for p:%d (m:%d): %s (download first: `cc parquet download --part %d`)", partIdx, selected.ManifestIndex, localPath, partIdx)
+		}
+		fmt.Println(labelStyle.Render(fmt.Sprintf("  Part: p:%d  Manifest: m:%d", partIdx, selected.ManifestIndex)))
+		fmt.Println(labelStyle.Render(fmt.Sprintf("  Local: %s", localPath)))
+		parquetPaths = []string{localPath}
 	} else {
 		fmt.Println(infoStyle.Render("Scanning local parquet files..."))
 		start := time.Now()
@@ -818,6 +921,7 @@ func ccEnsureParquetListMetadata(
 ) error {
 	var missingSizes int
 	var missingURLs int
+	var missingHosts int
 	for _, f := range files {
 		meta := metaByRemote[f.RemotePath]
 		if meta.SizeUpdatedAt.IsZero() || meta.SizeBytes <= 0 {
@@ -826,14 +930,18 @@ func ccEnsureParquetListMetadata(
 		if meta.URLCountUpdated.IsZero() {
 			missingURLs++
 		}
+		if meta.HostCountUpdated.IsZero() {
+			missingHosts++
+		}
 	}
-	if missingSizes == 0 && missingURLs == 0 {
+	if missingSizes == 0 && missingURLs == 0 && missingHosts == 0 {
 		return nil
 	}
 
-	fmt.Println(infoStyle.Render("Preparing parquet metadata cache (size + URL counts)..."))
+	fmt.Println(infoStyle.Render("Preparing parquet metadata cache (size + URL counts + host counts)..."))
 	fmt.Println(labelStyle.Render(fmt.Sprintf("  Missing size metadata: %s", ccFmtInt64(int64(missingSizes)))))
 	fmt.Println(labelStyle.Render(fmt.Sprintf("  Missing URL counts:    %s", ccFmtInt64(int64(missingURLs)))))
+	fmt.Println(labelStyle.Render(fmt.Sprintf("  Missing host counts:   %s", ccFmtInt64(int64(missingHosts)))))
 
 	var errs []string
 	if missingSizes > 0 {
@@ -843,6 +951,11 @@ func ccEnsureParquetListMetadata(
 	}
 	if missingURLs > 0 {
 		if err := ccEnrichParquetURLCountMetadata(ctx, cfg, files, localStats, cacheStore, cacheData, metaByRemote); err != nil {
+			errs = append(errs, err.Error())
+		}
+	}
+	if missingHosts > 0 {
+		if err := ccEnrichParquetHostCountMetadata(ctx, cfg, files, localStats, cacheStore, cacheData, metaByRemote); err != nil {
 			errs = append(errs, err.Error())
 		}
 	}
@@ -1179,6 +1292,258 @@ func ccEnrichParquetURLCountMetadata(
 	return nil
 }
 
+func ccEnrichParquetHostCountMetadata(
+	ctx context.Context,
+	cfg cc.Config,
+	files []cc.ParquetFile,
+	localStats []ccParquetListLocalStat,
+	cacheStore *cc.Cache,
+	cacheData *cc.CacheData,
+	metaByRemote map[string]cc.ParquetMeta,
+) error {
+	type countReq struct {
+		RemotePath string
+		QueryPath  string
+		Subset     string
+	}
+	var localReqs []countReq
+	var remoteReqs []countReq
+	baseURL := strings.TrimRight(cfg.BaseURL, "/")
+	for i, f := range files {
+		meta := metaByRemote[f.RemotePath]
+		if !meta.HostCountUpdated.IsZero() {
+			continue
+		}
+		sub := f.Subset
+		if sub == "" {
+			sub = "(none)"
+		}
+		if i < len(localStats) && localStats[i].cached {
+			localReqs = append(localReqs, countReq{
+				RemotePath: f.RemotePath,
+				QueryPath:  cc.LocalParquetPathForRemote(cfg, f.RemotePath),
+				Subset:     sub,
+			})
+		} else {
+			remoteReqs = append(remoteReqs, countReq{
+				RemotePath: f.RemotePath,
+				QueryPath:  baseURL + "/" + f.RemotePath,
+				Subset:     sub,
+			})
+		}
+	}
+	totalMissing := len(localReqs) + len(remoteReqs)
+	if totalMissing == 0 {
+		return nil
+	}
+
+	fmt.Println(infoStyle.Render("Host count metadata (DuckDB COUNT(DISTINCT url_host_name))..."))
+	fmt.Println(labelStyle.Render(fmt.Sprintf("  Targets: %s (%d local, %d remote)", ccFmtInt64(int64(totalMissing)), len(localReqs), len(remoteReqs))))
+	start := time.Now()
+	var done int
+	var successCount int
+	var unsupportedCount int
+	var failCount int
+	var sampleErrs []string
+	saveEvery := 8
+	sinceSave := 0
+
+	if len(localReqs) > 0 {
+		subsetCounts := make(map[string]int)
+		for _, r := range localReqs {
+			subsetCounts[r.Subset]++
+		}
+		fmt.Println(labelStyle.Render(fmt.Sprintf("  Local host counts: %d file(s), %d subset(s)", len(localReqs), len(subsetCounts))))
+		for i, r := range localReqs {
+			fmt.Println(labelStyle.Render(fmt.Sprintf("    [local %d/%d] counting %s", i+1, len(localReqs), filepath.Base(r.RemotePath))))
+			counts, err := cc.QueryParquetHostCounts(ctx, []cc.ParquetRowCountRequest{{Key: r.RemotePath, Path: r.QueryPath}})
+			done++
+			now := time.Now()
+			if err != nil {
+				if ccIsParquetHostColumnUnsupportedErr(err) {
+					meta := metaByRemote[r.RemotePath]
+					meta.HostCount = -1
+					meta.HostCountUpdated = now
+					metaByRemote[r.RemotePath] = meta
+					cacheStore.SetParquetMeta(cacheData, r.RemotePath, meta)
+					unsupportedCount++
+				} else {
+					failCount++
+					if len(sampleErrs) < 5 {
+						sampleErrs = append(sampleErrs, fmt.Sprintf("%s (local): %v", filepath.Base(r.RemotePath), err))
+					}
+				}
+			} else if n, ok := counts[r.RemotePath]; ok {
+				meta := metaByRemote[r.RemotePath]
+				meta.HostCount = n
+				meta.HostCountUpdated = now
+				metaByRemote[r.RemotePath] = meta
+				cacheStore.SetParquetMeta(cacheData, r.RemotePath, meta)
+				successCount++
+			} else {
+				failCount++
+				if len(sampleErrs) < 5 {
+					sampleErrs = append(sampleErrs, fmt.Sprintf("%s (local): missing host count", filepath.Base(r.RemotePath)))
+				}
+			}
+			sinceSave++
+			if sinceSave >= saveEvery {
+				sinceSave = 0
+				if saveErr := ccSaveCacheWithParquetMetaMerge(cacheStore, cacheData); saveErr != nil {
+					fmt.Println(warningStyle.Render(fmt.Sprintf("    Cache save warning: %v", saveErr)))
+				}
+			}
+			fmt.Println(labelStyle.Render(fmt.Sprintf(
+				"    Host progress: %s/%s (%s) ok=%s n/a=%s err=%s ETA %s",
+				ccFmtInt64(int64(done)), ccFmtInt64(int64(totalMissing)), ccPct(int64(done), int64(totalMissing)),
+				ccFmtInt64(int64(successCount)), ccFmtInt64(int64(unsupportedCount)), ccFmtInt64(int64(failCount)),
+				ccFmtETA(start, int64(done), int64(totalMissing)),
+			)))
+		}
+	}
+
+	if len(remoteReqs) > 0 {
+		subsetCounts := make(map[string]int)
+		for _, r := range remoteReqs {
+			subsetCounts[r.Subset]++
+		}
+		workers := min(max(runtime.NumCPU()/4, 1), 4)
+		fmt.Println(labelStyle.Render(fmt.Sprintf("  Remote host counts: %d file(s), %d subset(s), workers=%d", len(remoteReqs), len(subsetCounts), workers)))
+
+		var doneA atomic.Int64
+		var okA atomic.Int64
+		var unsupportedA atomic.Int64
+		var errA atomic.Int64
+		baseDone := done
+		baseOK := successCount
+		baseUnsupported := unsupportedCount
+		baseErr := failCount
+		var mu sync.Mutex
+
+		stopProgress := make(chan struct{})
+		progressDone := make(chan struct{})
+		go func() {
+			defer close(progressDone)
+			ticker := time.NewTicker(2 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-stopProgress:
+					return
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					dv := int64(baseDone) + doneA.Load()
+					okv := int64(baseOK) + okA.Load()
+					nav := int64(baseUnsupported) + unsupportedA.Load()
+					errv := int64(baseErr) + errA.Load()
+					fmt.Println(labelStyle.Render(fmt.Sprintf(
+						"    Host progress: %s/%s (%s) ok=%s n/a=%s err=%s ETA %s",
+						ccFmtInt64(dv), ccFmtInt64(int64(totalMissing)), ccPct(dv, int64(totalMissing)),
+						ccFmtInt64(okv), ccFmtInt64(nav), ccFmtInt64(errv), ccFmtETA(start, dv, int64(totalMissing)),
+					)))
+				}
+			}
+		}()
+
+		g, gctx := errgroup.WithContext(ctx)
+		g.SetLimit(workers)
+		for idx, r := range remoteReqs {
+			idx, r := idx, r
+			g.Go(func() error {
+				if idx < 3 || idx%25 == 0 {
+					fmt.Println(labelStyle.Render(fmt.Sprintf("    [remote %d/%d] %s", idx+1, len(remoteReqs), filepath.Base(r.RemotePath))))
+				}
+				counts, err := cc.QueryParquetHostCounts(gctx, []cc.ParquetRowCountRequest{{Key: r.RemotePath, Path: r.QueryPath}})
+				now := time.Now()
+				mu.Lock()
+				defer mu.Unlock()
+				if err != nil {
+					if ccIsParquetHostColumnUnsupportedErr(err) {
+						meta := metaByRemote[r.RemotePath]
+						meta.HostCount = -1
+						meta.HostCountUpdated = now
+						metaByRemote[r.RemotePath] = meta
+						cacheStore.SetParquetMeta(cacheData, r.RemotePath, meta)
+						unsupportedA.Add(1)
+					} else {
+						errA.Add(1)
+						if len(sampleErrs) < 5 {
+							sampleErrs = append(sampleErrs, fmt.Sprintf("%s (remote): %v", filepath.Base(r.RemotePath), err))
+						}
+					}
+				} else if n, ok := counts[r.RemotePath]; ok {
+					meta := metaByRemote[r.RemotePath]
+					meta.HostCount = n
+					meta.HostCountUpdated = now
+					metaByRemote[r.RemotePath] = meta
+					cacheStore.SetParquetMeta(cacheData, r.RemotePath, meta)
+					okA.Add(1)
+				} else {
+					errA.Add(1)
+					if len(sampleErrs) < 5 {
+						sampleErrs = append(sampleErrs, fmt.Sprintf("%s (remote): missing host count", filepath.Base(r.RemotePath)))
+					}
+				}
+				doneA.Add(1)
+				sinceSave++
+				if sinceSave >= saveEvery {
+					sinceSave = 0
+					if saveErr := ccSaveCacheWithParquetMetaMerge(cacheStore, cacheData); saveErr != nil {
+						fmt.Println(warningStyle.Render(fmt.Sprintf("    Cache save warning: %v", saveErr)))
+					}
+				}
+				return nil
+			})
+		}
+		_ = g.Wait()
+		close(stopProgress)
+		<-progressDone
+		done = baseDone + int(doneA.Load())
+		successCount = baseOK + int(okA.Load())
+		unsupportedCount = baseUnsupported + int(unsupportedA.Load())
+		failCount = baseErr + int(errA.Load())
+		fmt.Println(labelStyle.Render(fmt.Sprintf(
+			"    Host progress: %s/%s (%s) ok=%s n/a=%s err=%s ETA %s",
+			ccFmtInt64(int64(done)), ccFmtInt64(int64(totalMissing)), ccPct(int64(done), int64(totalMissing)),
+			ccFmtInt64(int64(successCount)), ccFmtInt64(int64(unsupportedCount)), ccFmtInt64(int64(failCount)),
+			ccFmtETA(start, int64(done), int64(totalMissing)),
+		)))
+	}
+
+	if saveErr := ccSaveCacheWithParquetMetaMerge(cacheStore, cacheData); saveErr != nil {
+		fmt.Println(warningStyle.Render(fmt.Sprintf("  Cache save warning: %v", saveErr)))
+	}
+	fmt.Println(successStyle.Render(fmt.Sprintf(
+		"  Host count metadata complete: ok=%s n/a=%s err=%s (%s)",
+		ccFmtInt64(int64(successCount)), ccFmtInt64(int64(unsupportedCount)), ccFmtInt64(int64(failCount)),
+		time.Since(start).Truncate(time.Second),
+	)))
+	if len(sampleErrs) > 0 {
+		fmt.Println(warningStyle.Render("  Host count metadata errors (sample):"))
+		for _, s := range sampleErrs {
+			fmt.Println(labelStyle.Render("   - " + s))
+		}
+	}
+	if failCount > 0 {
+		return fmt.Errorf("host count metadata missing for %d file(s)", failCount)
+	}
+	return nil
+}
+
+func ccIsParquetHostColumnUnsupportedErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	if !strings.Contains(msg, "url_host_name") {
+		return false
+	}
+	return strings.Contains(msg, "not found") ||
+		strings.Contains(msg, "unknown column") ||
+		strings.Contains(msg, "binder error")
+}
+
 func ccFmtETA(start time.Time, done, total int64) string {
 	if done <= 0 {
 		return "---"
@@ -1246,6 +1611,10 @@ func ccSaveCacheWithParquetMetaMerge(cacheStore *cc.Cache, cacheData *cc.CacheDa
 			if dv.URLCountUpdated.After(mv.URLCountUpdated) {
 				mv.URLCount = dv.URLCount
 				mv.URLCountUpdated = dv.URLCountUpdated
+			}
+			if dv.HostCountUpdated.After(mv.HostCountUpdated) {
+				mv.HostCount = dv.HostCount
+				mv.HostCountUpdated = dv.HostCountUpdated
 			}
 			merged.ParquetMeta[k] = mv
 		}

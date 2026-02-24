@@ -31,10 +31,12 @@ type CacheData struct {
 
 // ParquetMeta caches metadata for one columnar-index parquet file.
 type ParquetMeta struct {
-	SizeBytes       int64     `json:"size_bytes,omitempty"`
-	URLCount        int64     `json:"url_count,omitempty"`
-	SizeUpdatedAt   time.Time `json:"size_updated_at,omitempty"`
-	URLCountUpdated time.Time `json:"url_count_updated_at,omitempty"`
+	SizeBytes        int64     `json:"size_bytes,omitempty"`
+	URLCount         int64     `json:"url_count,omitempty"`
+	HostCount        int64     `json:"host_count,omitempty"`
+	SizeUpdatedAt    time.Time `json:"size_updated_at,omitempty"`
+	URLCountUpdated  time.Time `json:"url_count_updated_at,omitempty"`
+	HostCountUpdated time.Time `json:"host_count_updated_at,omitempty"`
 }
 
 // NewCache creates a cache in the given data directory.

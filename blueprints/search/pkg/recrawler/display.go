@@ -30,14 +30,16 @@ type Stats struct {
 	probeReachable   atomic.Int64
 	probeUnreachable atomic.Int64
 
-	// HTTP status code distribution
-	statusMu sync.Mutex
-	statuses map[int]int
+	// HTTP status code distribution (lock-free per-key increments)
+	// key: int status code, value: *atomic.Int64
+	statuses sync.Map
 
-	// Domain tracking
-	domainMu    sync.Mutex
-	domainsOK   map[string]bool
-	domainsFail map[string]bool
+	// Domain tracking (deduped exact counts without a global mutex)
+	// key: domain string, value: true
+	domainsOK        sync.Map
+	domainsFail      sync.Map
+	domainsOKCount   atomic.Int64
+	domainsFailCount atomic.Int64
 
 	// Config
 	TotalURLs     int
@@ -55,6 +57,9 @@ type Stats struct {
 	rollingDoneSpeed  float64
 	rollingByteSpeed  float64
 
+	// Adaptive timeout info (set by recrawler during fetch)
+	adaptiveInfo atomic.Value // string
+
 	// Frozen state for final display
 	frozen   bool
 	frozenAt time.Duration
@@ -70,9 +75,6 @@ type speedTick struct {
 // NewStats creates a new stats tracker.
 func NewStats(totalURLs, uniqueDomains int, label string) *Stats {
 	return &Stats{
-		statuses:      make(map[int]int),
-		domainsOK:     make(map[string]bool),
-		domainsFail:   make(map[string]bool),
 		TotalURLs:     totalURLs,
 		UniqueDomains: uniqueDomains,
 		startTime:     time.Now(),
@@ -104,24 +106,31 @@ func (s *Stats) RecordFailure(statusCode int, domain string, isTimeout bool) {
 
 // recordStatus updates status histogram with sampling to reduce lock contention.
 func (s *Stats) recordStatus(code int) {
-	s.statusMu.Lock()
-	s.statuses[code]++
-	s.statusMu.Unlock()
+	if code == 0 {
+		return
+	}
+	v, _ := s.statuses.LoadOrStore(code, &atomic.Int64{})
+	v.(*atomic.Int64).Add(1)
 }
 
 // recordDomainOK tracks successful domain with deduplication.
 func (s *Stats) recordDomainOK(domain string) {
-	// Fast path: already recorded (read lock)
-	s.domainMu.Lock()
-	s.domainsOK[domain] = true
-	s.domainMu.Unlock()
+	if domain == "" {
+		return
+	}
+	if _, loaded := s.domainsOK.LoadOrStore(domain, true); !loaded {
+		s.domainsOKCount.Add(1)
+	}
 }
 
 // recordDomainFail tracks failed domain.
 func (s *Stats) recordDomainFail(domain string) {
-	s.domainMu.Lock()
-	s.domainsFail[domain] = true
-	s.domainMu.Unlock()
+	if domain == "" {
+		return
+	}
+	if _, loaded := s.domainsFail.LoadOrStore(domain, true); !loaded {
+		s.domainsFailCount.Add(1)
+	}
 }
 
 // Freeze locks in the elapsed time for the final stats display.
@@ -343,11 +352,9 @@ func (s *Stats) Render() string {
 	filled := min(int(pct/100*float64(barWidth)), barWidth)
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
 
-	// Domain stats
-	s.domainMu.Lock()
-	domainsReached := len(s.domainsOK)
-	domainsFailed := len(s.domainsFail)
-	s.domainMu.Unlock()
+	// Domain stats (exact unique counts)
+	domainsReached := int(s.domainsOKCount.Load())
+	domainsFailed := int(s.domainsFailCount.Load())
 
 	// HTTP status distribution
 	statusLine := s.statusLine()
@@ -390,29 +397,40 @@ func (s *Stats) Render() string {
 	probeFail := s.probeUnreachable.Load()
 	probeTotal := probeOK + probeFail
 	if probeTotal > 0 {
+		probeDenom := dnsLiveCount
+		if probeDenom == 0 {
+			probeDenom = probeTotal
+		}
 		b.WriteString(fmt.Sprintf("  Probe   %s/%s  │  %s reachable  │  %s unreachable (%4.1f%%)\n",
-			fmtInt64(probeTotal), fmtInt64(dnsLiveCount),
+			fmtInt64(probeTotal), fmtInt64(probeDenom),
 			fmtInt64(probeOK), fmtInt64(probeFail),
 			safePct(probeFail, probeTotal)))
 	}
 	b.WriteString(fmt.Sprintf("  Domains  %s reached  │  %s had-failures  │  %s avg/page\n",
 		fmtInt(domainsReached), fmtInt(domainsFailed), fmtBytes(avgBytes(bytesTotal, succ))))
+	if info, ok := s.adaptiveInfo.Load().(string); ok && info != "" {
+		b.WriteString(fmt.Sprintf("  Timeout  %s\n", info))
+	}
 
 	return b.String()
 }
 
 func (s *Stats) statusLine() string {
-	s.statusMu.Lock()
-	defer s.statusMu.Unlock()
-
 	type kv struct {
 		code  int
-		count int
+		count int64
 	}
 	var pairs []kv
-	for k, v := range s.statuses {
-		pairs = append(pairs, kv{k, v})
-	}
+	s.statuses.Range(func(key, value any) bool {
+		code, ok1 := key.(int)
+		cnt, ok2 := value.(*atomic.Int64)
+		if ok1 && ok2 {
+			if n := cnt.Load(); n > 0 {
+				pairs = append(pairs, kv{code, n})
+			}
+		}
+		return true
+	})
 	sort.Slice(pairs, func(i, j int) bool {
 		return pairs[i].count > pairs[j].count
 	})
@@ -422,7 +440,7 @@ func (s *Stats) statusLine() string {
 		if i >= 8 {
 			break
 		}
-		parts = append(parts, fmt.Sprintf("%d:%s", p.code, fmtInt(p.count)))
+		parts = append(parts, fmt.Sprintf("%d:%s", p.code, fmtInt64(p.count)))
 	}
 	if len(parts) == 0 {
 		return "---"
