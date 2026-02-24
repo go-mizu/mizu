@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/hn"
 	"github.com/spf13/cobra"
@@ -56,6 +58,8 @@ Examples:
 	cmd.AddCommand(newHNDownload())
 	cmd.AddCommand(newHNImport())
 	cmd.AddCommand(newHNSync())
+	cmd.AddCommand(newHNCompact())
+	cmd.AddCommand(newHNExport())
 	return cmd
 }
 
@@ -152,6 +156,7 @@ func newHNDownload() *cobra.Command {
 		Short: "Download HN dataset (parquet primary, API fallback)",
 		Example: `  search hn download
   search hn download --source clickhouse
+  search hn download --source delta
   search hn download --source parquet
   search hn download --source api --from-id 1 --to-id 5000
   search hn download --source auto --no-fallback`,
@@ -160,7 +165,7 @@ func newHNDownload() *cobra.Command {
 			return err
 		},
 	}
-	cmd.Flags().String("source", "auto", "Download source: auto|clickhouse|parquet|api")
+	cmd.Flags().String("source", "auto", "Download source: auto|clickhouse|delta|parquet|api")
 	cmd.Flags().Bool("force", false, "Restart download and overwrite existing local target")
 	cmd.Flags().Bool("no-fallback", false, "In auto mode, fail instead of falling back to API")
 	cmd.Flags().Bool("no-delta", false, "Skip API delta after ClickHouse download (auto/clickhouse modes)")
@@ -183,33 +188,22 @@ func newHNImport() *cobra.Command {
   search hn import --source parquet
   search hn import --source api`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-				cfg := hnConfigFromCmd(cmd)
-				sourceStr, _ := cmd.Flags().GetString("source")
-				dbPath, _ := cmd.Flags().GetString("db")
-				rebuild, _ := cmd.Flags().GetBool("rebuild")
-				source, err := parseHNImportSource(sourceStr)
-				if err != nil {
-					return err
-				}
-				fmt.Println(infoStyle.Render("Importing Hacker News data into DuckDB..."))
-				res, err := cfg.Import(cmd.Context(), hn.ImportOptions{Source: source, DBPath: dbPath, Rebuild: rebuild})
-				if err != nil {
-					return err
-				}
-				fmt.Printf("  %s  Source: %s\n", successStyle.Render("OK"), res.SourceUsed)
-				fmt.Printf("  Mode:       %s\n", successStyle.Render(res.Mode))
-				if res.Mode == "incremental" && res.ImportFromID > 0 {
-					fmt.Printf("  From ID:    %s\n", successStyle.Render(formatLargeNumber(res.ImportFromID)))
-				}
-				if res.RowsBefore > 0 || res.Mode == "incremental" {
-					fmt.Printf("  Rows prev:  %s\n", labelStyle.Render(formatLargeNumber(res.RowsBefore)))
-					fmt.Printf("  Rows delta: %s\n", successStyle.Render(formatLargeNumber(res.RowsDelta)))
-				}
-				fmt.Printf("  Rows:       %s\n", successStyle.Render(formatLargeNumber(res.Rows)))
-				fmt.Printf("  DB:         %s\n", labelStyle.Render(res.DBPath))
-				fmt.Printf("  Indexes:    %d\n", res.IndexesMade)
-				return nil
-			},
+			cfg := hnConfigFromCmd(cmd)
+			sourceStr, _ := cmd.Flags().GetString("source")
+			dbPath, _ := cmd.Flags().GetString("db")
+			rebuild, _ := cmd.Flags().GetBool("rebuild")
+			source, err := parseHNImportSource(sourceStr)
+			if err != nil {
+				return err
+			}
+			fmt.Println(infoStyle.Render("Importing Hacker News data into DuckDB..."))
+			res, err := cfg.Import(cmd.Context(), hn.ImportOptions{Source: source, DBPath: dbPath, Rebuild: rebuild})
+			if err != nil {
+				return err
+			}
+			printHNImportResult(res)
+			return nil
+		},
 	}
 	cmd.Flags().String("source", "auto", "Import source: auto|clickhouse|hybrid|parquet|api")
 	cmd.Flags().String("db", "", "DuckDB output path (default: $HOME/data/hn/hn.duckdb)")
@@ -222,34 +216,41 @@ func newHNSync() *cobra.Command {
 		Use:   "sync",
 		Short: "Download and then import HN data in one command",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			usedSource, err := runHNDownload(cmd.Context(), cmd)
-			if err != nil {
-				return err
+			every, _ := cmd.Flags().GetDuration("every")
+			maxRuns, _ := cmd.Flags().GetInt("max-runs")
+			if every <= 0 {
+				return runHNSyncOnce(cmd.Context(), cmd, 1)
 			}
-				cfg := hnConfigFromCmd(cmd)
-				dbPath, _ := cmd.Flags().GetString("db")
-				rebuild, _ := cmd.Flags().GetBool("rebuild")
-				importSource := hn.ImportSource(usedSource)
-				if importSource == "auto" {
-					importSource = hn.ImportSourceAuto
-				}
-				fmt.Println()
-				fmt.Println(infoStyle.Render("Importing downloaded data..."))
-				res, err := cfg.Import(cmd.Context(), hn.ImportOptions{Source: importSource, DBPath: dbPath, Rebuild: rebuild})
-				if err != nil {
+			if maxRuns == 0 {
+				maxRuns = -1
+			}
+			run := 0
+			for {
+				run++
+				started := time.Now()
+				fmt.Printf("%s HN sync tick #%d at %s\n", infoStyle.Render("Running"), run, labelStyle.Render(started.Format(time.RFC3339)))
+				if err := runHNSyncOnce(cmd.Context(), cmd, run); err != nil {
 					return err
 				}
-				fmt.Printf("  %s  Imported %s rows into %s (%s, delta=%s)\n",
-					successStyle.Render("OK"),
-					formatLargeNumber(res.Rows),
-					labelStyle.Render(res.DBPath),
-					res.Mode,
-					formatLargeNumber(res.RowsDelta),
-				)
-				return nil
-			},
-		}
-	cmd.Flags().String("source", "auto", "Download source: auto|clickhouse|parquet|api")
+				if maxRuns > 0 && run >= maxRuns {
+					return nil
+				}
+				wait := time.Until(started.Add(every))
+				if wait <= 0 {
+					continue
+				}
+				fmt.Printf("%s next tick in %s\n", labelStyle.Render("Waiting:"), labelStyle.Render(formatDuration(wait)))
+				timer := time.NewTimer(wait)
+				select {
+				case <-cmd.Context().Done():
+					timer.Stop()
+					return cmd.Context().Err()
+				case <-timer.C:
+				}
+			}
+		},
+	}
+	cmd.Flags().String("source", "auto", "Download source: auto|clickhouse|delta|parquet|api")
 	cmd.Flags().Bool("force", false, "Restart download and overwrite existing local target")
 	cmd.Flags().Bool("no-fallback", false, "In auto mode, fail instead of falling back to API")
 	cmd.Flags().Bool("no-delta", false, "Skip API delta after ClickHouse download (auto/clickhouse modes)")
@@ -261,7 +262,197 @@ func newHNSync() *cobra.Command {
 	cmd.Flags().Int64("to-id", 0, "API mode: end item id (default maxitem)")
 	cmd.Flags().String("db", "", "DuckDB output path (default: $HOME/data/hn/hn.duckdb)")
 	cmd.Flags().Bool("rebuild", false, "Force full table rebuild instead of incremental merge when DB exists")
+	cmd.Flags().Duration("every", 0, "Run sync on a ticker interval (e.g. 1m, 30s)")
+	cmd.Flags().Int("max-runs", 1, "Stop after N runs when --every is set (0 = run forever)")
 	return cmd
+}
+
+func newHNCompact() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "compact",
+		Short: "Merge local API delta chunks back into ClickHouse chunk parquet files",
+		Long: `Reads local raw/api/chunks/*.jsonl, converts them to a ClickHouse-compatible parquet schema
+and merges them into local raw/clickhouse/id_<start>_<end>.parquet partitions using DuckDB.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := hnConfigFromCmd(cmd)
+			fromID, _ := cmd.Flags().GetInt64("from-id")
+			toID, _ := cmd.Flags().GetInt64("to-id")
+			chunkSpan, _ := cmd.Flags().GetInt64("chunk-id-span")
+			compLevel, _ := cmd.Flags().GetInt("compression-level")
+			pruneAPI, _ := cmd.Flags().GetBool("prune-api")
+
+			fmt.Println(infoStyle.Render("Compacting API delta into ClickHouse parquet partitions..."))
+			res, err := cfg.CompactDeltaToClickHouseParquet(cmd.Context(), hn.CompactOptions{
+				FromID:           fromID,
+				ToID:             toID,
+				ChunkIDSpan:      chunkSpan,
+				CompressionLevel: compLevel,
+				PruneAPI:         pruneAPI,
+			})
+			if err != nil {
+				return err
+			}
+			fmt.Printf("  %s  Dir: %s\n", successStyle.Render("OK"), labelStyle.Render(res.Dir))
+			fmt.Printf("  Range:      %s\n", labelStyle.Render(formatHNRange(res.FromID, res.ToID)))
+			fmt.Printf("  Chunk span: %s\n", labelStyle.Render(formatInt64Exact(res.ChunkIDSpan)))
+			fmt.Printf("  API rows:   %s (%s)\n", labelStyle.Render(formatLargeNumber(res.APIRows)), labelStyle.Render(formatInt64Exact(res.APIRows)))
+			fmt.Printf("  Chunks:     touched=%d written=%d skipped=%d\n", res.ChunksTouched, res.ChunksWritten, res.ChunksSkipped)
+			fmt.Printf("  Pruned:     parquet=%d api_chunks=%d\n", res.FilesPruned, res.APIChunksPruned)
+			fmt.Printf("  Elapsed:    %s\n", labelStyle.Render(formatDuration(res.Elapsed)))
+			for _, ch := range res.Chunks {
+				fmt.Printf("    %s rows=%s path=%s\n",
+					labelStyle.Render(formatHNRange(ch.ChunkStart, ch.ChunkEnd)),
+					labelStyle.Render(formatInt64Exact(ch.Rows)),
+					labelStyle.Render(ch.Path),
+				)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().Int64("from-id", 0, "Compact only API delta rows >= this id (default: infer from download state/API chunks)")
+	cmd.Flags().Int64("to-id", 0, "Compact only API delta rows <= this id (default: infer from download state/API chunks)")
+	cmd.Flags().Int64("chunk-id-span", 0, "ClickHouse chunk id span (default: auto-detect local chunk span)")
+	cmd.Flags().Int("compression-level", 22, "Parquet zstd compression level for rewritten chunk files")
+	cmd.Flags().Bool("prune-api", false, "Delete API jsonl chunk files fully covered by the compacted id range")
+	return cmd
+}
+
+func newHNExport() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "export",
+		Short: "Export HN items from DuckDB into monthly parquet files",
+		Example: `  search hn export
+  search hn export --from-month 2006-10 --to-month 2006-12
+  search hn export --out-dir ~/data/hn/export/monthly
+  search hn export --force`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := hnConfigFromCmd(cmd)
+			dbPath, _ := cmd.Flags().GetString("db")
+			outDir, _ := cmd.Flags().GetString("out-dir")
+			fromMonth, _ := cmd.Flags().GetString("from-month")
+			toMonth, _ := cmd.Flags().GetString("to-month")
+			force, _ := cmd.Flags().GetBool("force")
+			refreshLatest, _ := cmd.Flags().GetBool("refresh-latest")
+			compLevel, _ := cmd.Flags().GetInt("compression-level")
+
+			fmt.Println(infoStyle.Render("Exporting HN items by month to parquet..."))
+			res, err := cfg.ExportMonthlyParquet(cmd.Context(), hn.ExportOptions{
+				DBPath:           dbPath,
+				OutDir:           outDir,
+				FromMonth:        fromMonth,
+				ToMonth:          toMonth,
+				Force:            force,
+				RefreshLatest:    refreshLatest,
+				CompressionLevel: compLevel,
+			})
+			if err != nil {
+				return err
+			}
+			fmt.Printf("  %s  Out dir: %s\n", successStyle.Render("OK"), labelStyle.Render(res.OutDir))
+			fmt.Printf("  DB:         %s\n", labelStyle.Render(res.DBPath))
+			if strings.TrimSpace(res.LatestMonth) != "" {
+				fmt.Printf("  Latest:     %s\n", labelStyle.Render(res.LatestMonth))
+			}
+			fmt.Printf("  Months:     scanned=%d written=%d skipped=%d\n", res.MonthsScanned, res.MonthsWritten, res.MonthsSkipped)
+			fmt.Printf("  Rows:       %s (%s)\n", successStyle.Render(formatLargeNumber(res.RowsWritten)), successStyle.Render(formatInt64Exact(res.RowsWritten)))
+			fmt.Printf("  Bytes:      %s\n", successStyle.Render(formatBytes(res.BytesWritten)))
+			fmt.Printf("  Elapsed:    %s\n", labelStyle.Render(formatDuration(res.Elapsed)))
+			for _, m := range res.Months {
+				status := "wrote"
+				if m.Skipped {
+					status = "skipped"
+				} else if m.Refreshed {
+					status = "refreshed"
+				}
+				fmt.Printf("    %s %s rows=%s size=%s %s\n",
+					labelStyle.Render(m.Month),
+					labelStyle.Render(status),
+					labelStyle.Render(formatInt64Exact(m.Rows)),
+					labelStyle.Render(formatBytes(m.Size)),
+					labelStyle.Render(m.Path),
+				)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().String("db", "", "DuckDB path (default: $HOME/data/hn/hn.duckdb)")
+	cmd.Flags().String("out-dir", "", "Output directory (default: $HOME/data/hn/export/hn/monthly)")
+	cmd.Flags().String("from-month", "", "Start month inclusive (YYYY-MM)")
+	cmd.Flags().String("to-month", "", "End month inclusive (YYYY-MM)")
+	cmd.Flags().Bool("force", false, "Rewrite all selected month parquet files even if they already exist")
+	cmd.Flags().Bool("refresh-latest", true, "Rewrite the latest month file if it already exists (even when skipping older months)")
+	cmd.Flags().Int("compression-level", 22, "Parquet zstd compression level (DuckDB COPY)")
+	return cmd
+}
+
+func runHNSyncOnce(ctx context.Context, cmd *cobra.Command, run int) error {
+	usedSource, err := runHNDownload(ctx, cmd)
+	if err != nil {
+		return err
+	}
+	cfg := hnConfigFromCmd(cmd)
+	dbPath, _ := cmd.Flags().GetString("db")
+	rebuild, _ := cmd.Flags().GetBool("rebuild")
+	importSource := hn.ImportSource(usedSource)
+	if importSource == "auto" {
+		importSource = hn.ImportSourceAuto
+	}
+	fmt.Println()
+	if run > 0 {
+		fmt.Printf("%s tick #%d: importing downloaded data...\n", infoStyle.Render("HN sync"), run)
+	} else {
+		fmt.Println(infoStyle.Render("Importing downloaded data..."))
+	}
+	res, err := cfg.Import(ctx, hn.ImportOptions{Source: importSource, DBPath: dbPath, Rebuild: rebuild})
+	if err != nil {
+		return err
+	}
+	printHNImportResult(res)
+	return nil
+}
+
+func printHNImportResult(res *hn.ImportResult) {
+	fmt.Printf("  %s  Source: %s\n", successStyle.Render("OK"), res.SourceUsed)
+	fmt.Printf("  Mode:       %s\n", successStyle.Render(res.Mode))
+	if res.ImportFromID > 0 {
+		fmt.Printf("  From ID:    %s (%s)\n", successStyle.Render(formatLargeNumber(res.ImportFromID)), labelStyle.Render(formatInt64Exact(res.ImportFromID)))
+	}
+	fmt.Printf("  Rows prev:  %s (%s)\n", labelStyle.Render(formatLargeNumber(res.RowsBefore)), labelStyle.Render(formatInt64Exact(res.RowsBefore)))
+	fmt.Printf("  Rows delta: %s (%s)\n", successStyle.Render(formatLargeNumber(res.RowsDelta)), successStyle.Render(formatInt64Exact(res.RowsDelta)))
+	fmt.Printf("  Rows:       %s (%s)\n", successStyle.Render(formatLargeNumber(res.Rows)), successStyle.Render(formatInt64Exact(res.Rows)))
+	fmt.Printf("  DB:         %s\n", labelStyle.Render(res.DBPath))
+	fmt.Printf("  Indexes:    %d\n", res.IndexesMade)
+}
+
+func formatInt64Exact(n int64) string {
+	s := strconv.FormatInt(n, 10)
+	if n < 0 {
+		return "-" + formatInt64Exact(-n)
+	}
+	if len(s) <= 3 {
+		return s
+	}
+	var out []byte
+	rem := len(s) % 3
+	if rem == 0 {
+		rem = 3
+	}
+	out = append(out, s[:rem]...)
+	for i := rem; i < len(s); i += 3 {
+		out = append(out, ',')
+		out = append(out, s[i:i+3]...)
+	}
+	return string(out)
+}
+
+func formatHNRange(startID, endID int64) string {
+	if startID <= 0 && endID <= 0 {
+		return ""
+	}
+	if endID <= 0 {
+		return formatInt64Exact(startID) + "-"
+	}
+	return formatInt64Exact(startID) + "-" + formatInt64Exact(endID)
 }
 
 func showHNLocalStatus(ctx context.Context, cfg hn.Config) error {
@@ -320,8 +511,8 @@ func runHNDownload(ctx context.Context, cmd *cobra.Command) (string, error) {
 	if source == "" {
 		source = "auto"
 	}
-	if source != "auto" && source != "clickhouse" && source != "parquet" && source != "api" {
-		return "", fmt.Errorf("invalid --source %q (want auto|clickhouse|parquet|api)", sourceStr)
+	if source != "auto" && source != "clickhouse" && source != "delta" && source != "parquet" && source != "api" {
+		return "", fmt.Errorf("invalid --source %q (want auto|clickhouse|delta|parquet|api)", sourceStr)
 	}
 	if (source == "auto" || source == "clickhouse") && !cmd.Flags().Changed("chunk-id-span") {
 		if span, ok := cfg.DetectLocalClickHouseChunkSpan(); ok && span > 0 && span != chunkIDSpan {
@@ -450,24 +641,24 @@ func runHNDownload(ctx context.Context, cmd *cobra.Command) (string, error) {
 			fmt.Printf("  Chunk %d/%d [%d-%d] ids=%d items=%d\n",
 				p.ChunksDone, p.ChunksTotal, p.ChunkStart, p.ChunkEnd, p.IDsProcessed, p.ItemsWritten)
 		}
-			res, err := cfg.DownloadAPI(ctx, hn.APIDownloadOptions{
-				Workers:   workers,
-				ChunkSize: chunkSize,
-				FromID:    fromID,
-				ToID:      toID,
-				Force:     force,
+		res, err := cfg.DownloadAPI(ctx, hn.APIDownloadOptions{
+			Workers:   workers,
+			ChunkSize: chunkSize,
+			FromID:    fromID,
+			ToID:      toID,
+			Force:     force,
 		}, cb)
 		if err != nil {
 			return err
-			}
-			apiDownloaded = true
-			apiRes = res
-			apiWasDelta = false
-			apiDeltaFrom, apiDeltaTo = 0, 0
-			fmt.Printf("  Dir:        %s\n", labelStyle.Render(res.Dir))
-			fmt.Printf("  Range:      %d-%d\n", res.StartID, res.EndID)
-			return nil
 		}
+		apiDownloaded = true
+		apiRes = res
+		apiWasDelta = false
+		apiDeltaFrom, apiDeltaTo = 0, 0
+		fmt.Printf("  Dir:        %s\n", labelStyle.Render(res.Dir))
+		fmt.Printf("  Range:      %d-%d\n", res.StartID, res.EndID)
+		return nil
+	}
 
 	doAPIDelta := func() error {
 		if noDelta {
@@ -496,22 +687,22 @@ func runHNDownload(ctx context.Context, cmd *cobra.Command) (string, error) {
 				return
 			}
 		}
-			res, err := cfg.DownloadAPI(ctx, hn.APIDownloadOptions{
-				Workers:   workers,
-				ChunkSize: chunkSize,
-				FromID:    deltaFrom,
-				ToID:      maxItem,
-				Force:     false, // preserve resumability for delta chunks
+		res, err := cfg.DownloadAPI(ctx, hn.APIDownloadOptions{
+			Workers:   workers,
+			ChunkSize: chunkSize,
+			FromID:    deltaFrom,
+			ToID:      maxItem,
+			Force:     false, // preserve resumability for delta chunks
 		}, cb)
-			if err != nil {
-				return err
-			}
-			apiDownloaded = true
-			apiRes = res
-			apiWasDelta = true
-			apiDeltaFrom, apiDeltaTo = deltaFrom, maxItem
-			return nil
+		if err != nil {
+			return err
 		}
+		apiDownloaded = true
+		apiRes = res
+		apiWasDelta = true
+		apiDeltaFrom, apiDeltaTo = deltaFrom, maxItem
+		return nil
+	}
 
 	finalize := func(sourceUsed string) (string, error) {
 		st := &hn.DownloadState{
@@ -542,6 +733,73 @@ func runHNDownload(ctx context.Context, cmd *cobra.Command) (string, error) {
 		return sourceUsed, nil
 	}
 
+	doDelta := func() error {
+		dbPath, _ := cmd.Flags().GetString("db")
+		deltaFrom, hw, err := cfg.SuggestAPIDeltaStartID(ctx, fromID, dbPath)
+		if err != nil {
+			return fmt.Errorf("suggest local delta start id: %w", err)
+		}
+		maxItem, err := cfg.GetMaxItem(ctx)
+		if err != nil {
+			return fmt.Errorf("get HN maxitem for delta: %w", err)
+		}
+		deltaTo := toID
+		if deltaTo <= 0 || deltaTo > maxItem {
+			deltaTo = maxItem
+		}
+		if hw != nil {
+			fmt.Printf("  Local high-water mark: %s (db=%s ch=%s api=%s state=%s)\n",
+				labelStyle.Render(formatInt64Exact(hw.MaxKnownID)),
+				labelStyle.Render(formatInt64Exact(hw.FromDB)),
+				labelStyle.Render(formatInt64Exact(hw.FromCHChunks)),
+				labelStyle.Render(formatInt64Exact(hw.FromAPIChunks)),
+				labelStyle.Render(formatInt64Exact(hw.FromDownloadState)),
+			)
+		}
+		if deltaFrom > deltaTo {
+			fmt.Printf("  %s  no new API delta (local max=%s, remote maxitem=%s)\n",
+				successStyle.Render("OK"),
+				labelStyle.Render(formatInt64Exact(deltaFrom-1)),
+				labelStyle.Render(formatInt64Exact(deltaTo)),
+			)
+			apiDownloaded = false
+			apiWasDelta = true
+			apiRes = &hn.APIDownloadResult{
+				Dir:     cfg.APIChunksDir(),
+				StartID: deltaFrom,
+				EndID:   deltaTo,
+				MaxItem: maxItem,
+			}
+			apiDeltaFrom, apiDeltaTo = deltaFrom, deltaTo
+			return nil
+		}
+		fmt.Println(infoStyle.Render(fmt.Sprintf("Downloading HN API delta %d-%d...", deltaFrom, deltaTo)))
+		cb := func(p hn.APIDownloadProgress) {
+			if p.Complete {
+				fmt.Printf("  %s  delta chunks=%d (skipped=%d) ids=%d items=%d\n",
+					successStyle.Render("OK"), p.ChunksDone, p.ChunksSkipped, p.IDsProcessed, p.ItemsWritten)
+				return
+			}
+		}
+		res, err := cfg.DownloadAPI(ctx, hn.APIDownloadOptions{
+			Workers:   workers,
+			ChunkSize: chunkSize,
+			FromID:    deltaFrom,
+			ToID:      deltaTo,
+			Force:     false,
+		}, cb)
+		if err != nil {
+			return err
+		}
+		apiDownloaded = true
+		apiRes = res
+		apiWasDelta = true
+		apiDeltaFrom, apiDeltaTo = deltaFrom, deltaTo
+		fmt.Printf("  Dir:        %s\n", labelStyle.Render(res.Dir))
+		fmt.Printf("  Range:      %s-%s\n", labelStyle.Render(formatInt64Exact(res.StartID)), labelStyle.Render(formatInt64Exact(res.EndID)))
+		return nil
+	}
+
 	switch source {
 	case "clickhouse":
 		if err := doClickHouse(); err != nil {
@@ -562,6 +820,14 @@ func runHNDownload(ctx context.Context, cmd *cobra.Command) (string, error) {
 	case "api":
 		if err := doAPI(); err != nil {
 			return "", err
+		}
+		return finalize("api")
+	case "delta":
+		if err := doDelta(); err != nil {
+			return "", err
+		}
+		if st, err := cfg.LocalStatus(ctx); err == nil && st.CHParquetCount > 0 {
+			return finalize("hybrid")
 		}
 		return finalize("api")
 	case "auto":

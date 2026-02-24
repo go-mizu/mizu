@@ -32,12 +32,12 @@ type ClickHouseRemoteInfo struct {
 
 // ClickHouseDownloadOptions controls chunked parquet export from sql.clickhouse.com.
 type ClickHouseDownloadOptions struct {
-	FromID      int64
-	ToID        int64 // 0 means remote max id
-	ChunkIDSpan int64
-	Parallelism int
+	FromID            int64
+	ToID              int64 // 0 means remote max id
+	ChunkIDSpan       int64
+	Parallelism       int
 	RefreshTailChunks int
-	Force       bool
+	Force             bool
 }
 
 // ClickHouseDownloadProgress reports chunk-level export progress.
@@ -62,21 +62,21 @@ type ClickHouseDownloadProgress struct {
 
 // ClickHouseDownloadResult summarizes a clickhouse parquet export.
 type ClickHouseDownloadResult struct {
-	Dir           string
-	StartID       int64
-	EndID         int64
-	RemoteMaxID   int64
-	RemoteCount   int64
-	ChunkIDSpan   int64
-	ChunksTotal   int
-	ChunksDone    int
-	ChunksSkipped int
-	BytesDone     int64
-	BytesSkipped  int64
-	FilesPruned   int
-	TailRefreshed int
+	Dir               string
+	StartID           int64
+	EndID             int64
+	RemoteMaxID       int64
+	RemoteCount       int64
+	ChunkIDSpan       int64
+	ChunksTotal       int
+	ChunksDone        int
+	ChunksSkipped     int
+	BytesDone         int64
+	BytesSkipped      int64
+	FilesPruned       int
+	TailRefreshed     int
 	IncrementalFromID int64
-	RemoteInfo    *ClickHouseRemoteInfo
+	RemoteInfo        *ClickHouseRemoteInfo
 }
 
 func (c Config) ClickHouseInfo(ctx context.Context) (*ClickHouseRemoteInfo, error) {
@@ -149,14 +149,14 @@ func (c Config) DownloadClickHouseParquet(ctx context.Context, opts ClickHouseDo
 	}
 	chunksTotal := int((endID-startID)/span + 1)
 	res := &ClickHouseDownloadResult{
-		Dir:           cfg.ClickHouseParquetDir(),
-		StartID:       startID,
-		EndID:         endID,
-		RemoteMaxID:   remote.MaxID,
-		RemoteCount:   remote.Count,
-		ChunkIDSpan:   span,
-		ChunksTotal:   chunksTotal,
-		RemoteInfo:    remote,
+		Dir:         cfg.ClickHouseParquetDir(),
+		StartID:     startID,
+		EndID:       endID,
+		RemoteMaxID: remote.MaxID,
+		RemoteCount: remote.Count,
+		ChunkIDSpan: span,
+		ChunksTotal: chunksTotal,
+		RemoteInfo:  remote,
 	}
 	res.IncrementalFromID = startID
 	if !opts.Force {
@@ -259,9 +259,9 @@ func (c Config) DownloadClickHouseParquet(ctx context.Context, opts ClickHouseDo
 			chunkEnd = endID
 		}
 		path := filepath.Join(cfg.ClickHouseParquetDir(), fmt.Sprintf("id_%09d_%09d.parquet", chunkStart, chunkEnd))
-			if opts.Force {
-				_ = os.Remove(path)
-			}
+		if opts.Force {
+			_ = os.Remove(path)
+		}
 		if !opts.Force && fileExistsNonEmpty(path) {
 			sz, _ := fileSize(path)
 			mu.Lock()

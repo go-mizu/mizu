@@ -295,6 +295,97 @@ func TestClickHouseChunkTailHelpers(t *testing.T) {
 	}
 }
 
+func TestCompactDeltaToClickHouseParquet(t *testing.T) {
+	cfg := Config{DataDir: t.TempDir()}
+	if err := cfg.EnsureRawDirs(); err != nil {
+		t.Fatalf("EnsureRawDirs: %v", err)
+	}
+	createTestClickHouseParquet(t, filepath.Join(cfg.ClickHouseParquetDir(), "id_000000001_000001000.parquet"), []hnCHRow{
+		{ID: 1, TypeCode: 1, By: "alice", Time: 1700000000, Title: "story-1"},
+		{ID: 2, TypeCode: 2, By: "bob", Time: 1700000001, Parent: sqlNullInt64(1), Text: "old-comment"},
+	})
+	writeAPIChunk(t, filepath.Join(cfg.APIChunksDir(), "items_000000002_000000003.jsonl"), []string{
+		`{"id":2,"type":"comment","time":1700000001,"by":"bob","parent":1,"text":"new-comment"}`,
+		`{"id":3,"type":"job","time":1700000002,"by":"carol","title":"job-3"}`,
+	})
+	if err := cfg.WriteDownloadState(&DownloadState{
+		SourceUsed: "hybrid",
+		API:        &APIRunState{StartID: 2, EndID: 3, MaxItem: 3, IsDelta: true},
+		ClickHouse: &ClickHouseRunState{StartID: 1, EndID: 2, ChunkIDSpan: 1000, IncrementalFromID: 1},
+	}); err != nil {
+		t.Fatalf("WriteDownloadState: %v", err)
+	}
+
+	res, err := cfg.CompactDeltaToClickHouseParquet(context.Background(), CompactOptions{ChunkIDSpan: 1000})
+	if err != nil {
+		t.Fatalf("CompactDeltaToClickHouseParquet: %v", err)
+	}
+	if res.ChunksWritten != 1 {
+		t.Fatalf("ChunksWritten=%d want 1", res.ChunksWritten)
+	}
+	if _, err := os.Stat(filepath.Join(cfg.ClickHouseParquetDir(), "id_000000001_000001000.parquet")); err != nil {
+		t.Fatalf("expected compacted chunk file: %v", err)
+	}
+
+	imp, err := cfg.Import(context.Background(), ImportOptions{Source: ImportSourceClickHouse})
+	if err != nil {
+		t.Fatalf("Import clickhouse after compact: %v", err)
+	}
+	db, err := sql.Open("duckdb", imp.DBPath+"?access_mode=read_only")
+	if err != nil {
+		t.Fatalf("open duckdb: %v", err)
+	}
+	defer db.Close()
+	var gotText string
+	if err := db.QueryRow(`SELECT text FROM items WHERE id=2`).Scan(&gotText); err != nil {
+		t.Fatalf("query id=2 text: %v", err)
+	}
+	if gotText != "new-comment" {
+		t.Fatalf("id=2 text=%q want new-comment", gotText)
+	}
+	var count int64
+	if err := db.QueryRow(`SELECT COUNT(*) FROM items WHERE id=3`).Scan(&count); err != nil {
+		t.Fatalf("query id=3 count: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("id=3 count=%d want 1", count)
+	}
+}
+
+func TestExportMonthlyParquet(t *testing.T) {
+	cfg := Config{DataDir: t.TempDir()}
+	dbPath := filepath.Join(cfg.BaseDir(), "hn.duckdb")
+	makeItemsDBForExport(t, dbPath)
+	outDir := filepath.Join(cfg.BaseDir(), "export-test")
+
+	res1, err := cfg.ExportMonthlyParquet(context.Background(), ExportOptions{
+		DBPath:        dbPath,
+		OutDir:        outDir,
+		RefreshLatest: true,
+	})
+	if err != nil {
+		t.Fatalf("ExportMonthlyParquet first: %v", err)
+	}
+	if res1.MonthsWritten != 2 {
+		t.Fatalf("MonthsWritten=%d want 2", res1.MonthsWritten)
+	}
+	if !fileExistsNonEmpty(filepath.Join(outDir, "items_2023_11.parquet")) || !fileExistsNonEmpty(filepath.Join(outDir, "items_2023_12.parquet")) {
+		t.Fatalf("expected exported month parquet files")
+	}
+
+	res2, err := cfg.ExportMonthlyParquet(context.Background(), ExportOptions{
+		DBPath:        dbPath,
+		OutDir:        outDir,
+		RefreshLatest: true,
+	})
+	if err != nil {
+		t.Fatalf("ExportMonthlyParquet second: %v", err)
+	}
+	if res2.MonthsSkipped != 1 || res2.MonthsWritten != 1 {
+		t.Fatalf("second run scanned=%d written=%d skipped=%d want written=1 skipped=1", res2.MonthsScanned, res2.MonthsWritten, res2.MonthsSkipped)
+	}
+}
+
 func createTestParquet(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -325,6 +416,34 @@ func createTestParquet(t *testing.T, path string) {
 	) TO '%s' (FORMAT PARQUET)`, escaped)
 	if _, err := db.Exec(q); err != nil {
 		t.Fatalf("create parquet fixture: %v", err)
+	}
+}
+
+func makeItemsDBForExport(t *testing.T, dbPath string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		t.Fatalf("mkdir db dir: %v", err)
+	}
+	db, err := sql.Open("duckdb", dbPath)
+	if err != nil {
+		t.Fatalf("open duckdb: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TABLE items AS
+SELECT 1::BIGINT AS id, 0::BIGINT AS deleted, 'story'::VARCHAR AS type, 'alice'::VARCHAR AS "by",
+       1700000000::BIGINT AS time, epoch_ms(1700000000::BIGINT * 1000) AS time_ts,
+       NULL::VARCHAR AS text, 0::BIGINT AS dead, NULL::BIGINT AS parent, NULL::BIGINT AS poll,
+       NULL::BIGINT[] AS kids, NULL::VARCHAR AS url, 1::BIGINT AS score, 'nov-story'::VARCHAR AS title,
+       NULL::BIGINT[] AS parts, NULL::BIGINT AS descendants
+UNION ALL
+SELECT 2::BIGINT, 0::BIGINT, 'comment'::VARCHAR, 'bob'::VARCHAR,
+       1701000000::BIGINT, epoch_ms(1701000000::BIGINT * 1000),
+       'nov-comment'::VARCHAR, 0::BIGINT, 1::BIGINT, NULL::BIGINT, NULL::BIGINT[], NULL::VARCHAR, NULL::BIGINT, NULL::VARCHAR, NULL::BIGINT[], NULL::BIGINT
+UNION ALL
+SELECT 3::BIGINT, 0::BIGINT, 'story'::VARCHAR, 'carol'::VARCHAR,
+       1701388800::BIGINT, epoch_ms(1701388800::BIGINT * 1000),
+       NULL::VARCHAR, 0::BIGINT, NULL::BIGINT, NULL::BIGINT, NULL::BIGINT[], NULL::VARCHAR, 5::BIGINT, 'dec-story'::VARCHAR, NULL::BIGINT[], NULL::BIGINT`); err != nil {
+		t.Fatalf("create items export fixture: %v", err)
 	}
 }
 

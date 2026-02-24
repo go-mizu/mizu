@@ -25,6 +25,8 @@ func TestNewHN_Subcommands(t *testing.T) {
 	_ = findSubcommand(t, cmd, "import")
 	_ = findSubcommand(t, cmd, "status")
 	_ = findSubcommand(t, cmd, "sync")
+	_ = findSubcommand(t, cmd, "compact")
+	_ = findSubcommand(t, cmd, "export")
 }
 
 func TestHNCommands_EndToEnd(t *testing.T) {
@@ -65,6 +67,28 @@ func TestHNCommands_EndToEnd(t *testing.T) {
 	}
 	if rows == 0 {
 		t.Fatalf("expected imported rows > 0 after sync")
+	}
+}
+
+func TestHNCommands_DeltaTickerCompactExport(t *testing.T) {
+	items := map[int64]string{
+		1: `{"id":1,"type":"story","time":1700000000,"by":"a","title":"one"}`,
+		2: `{"id":2,"type":"comment","time":1700000001,"by":"b","parent":1,"text":"two"}`,
+		3: `{"id":3,"type":"story","time":1700000002,"by":"c","title":"three"}`,
+	}
+	server := newHNCLITestServer(buildHNParquetFixtureBytes(t), items)
+	defer server.Close()
+
+	dataDir := t.TempDir()
+	t.Setenv("MIZU_HN_DATA_DIR", dataDir)
+	t.Setenv("MIZU_HN_API_BASE_URL", server.URL+"/v0")
+
+	runHNCommand(t, "sync", "--source", "delta", "--every", "20ms", "--max-runs", "2", "--chunk-size", "10", "--workers", "2")
+	runHNCommand(t, "compact", "--chunk-id-span", "1000")
+	runHNCommand(t, "export", "--from-month", "2023-11", "--to-month", "2023-11")
+
+	if _, err := os.Stat(filepath.Join(dataDir, "export", "hn", "monthly", "items_2023_11.parquet")); err != nil {
+		t.Fatalf("expected monthly export parquet after export command: %v", err)
 	}
 }
 

@@ -8,40 +8,40 @@ import (
 )
 
 type DownloadState struct {
-	Version    int                  `json:"version"`
+	Version     int                 `json:"version"`
 	CompletedAt time.Time           `json:"completed_at"`
-	SourceUsed string               `json:"source_used"`
-	ClickHouse *ClickHouseRunState  `json:"clickhouse,omitempty"`
-	API        *APIRunState         `json:"api,omitempty"`
+	SourceUsed  string              `json:"source_used"`
+	ClickHouse  *ClickHouseRunState `json:"clickhouse,omitempty"`
+	API         *APIRunState        `json:"api,omitempty"`
 }
 
 type ClickHouseRunState struct {
-	StartID          int64 `json:"start_id"`
-	EndID            int64 `json:"end_id"`
-	RemoteMaxID      int64 `json:"remote_max_id"`
-	RemoteCount      int64 `json:"remote_count"`
-	ChunkIDSpan      int64 `json:"chunk_id_span"`
-	TailRefreshChunks int  `json:"tail_refresh_chunks"`
+	StartID           int64 `json:"start_id"`
+	EndID             int64 `json:"end_id"`
+	RemoteMaxID       int64 `json:"remote_max_id"`
+	RemoteCount       int64 `json:"remote_count"`
+	ChunkIDSpan       int64 `json:"chunk_id_span"`
+	TailRefreshChunks int   `json:"tail_refresh_chunks"`
 	IncrementalFromID int64 `json:"incremental_from_id"`
 }
 
 type APIRunState struct {
-	StartID  int64 `json:"start_id"`
-	EndID    int64 `json:"end_id"`
-	MaxItem  int64 `json:"max_item"`
-	IsDelta  bool  `json:"is_delta"`
+	StartID int64 `json:"start_id"`
+	EndID   int64 `json:"end_id"`
+	MaxItem int64 `json:"max_item"`
+	IsDelta bool  `json:"is_delta"`
 }
 
 type ImportState struct {
-	Version      int        `json:"version"`
-	CompletedAt  time.Time  `json:"completed_at"`
-	DBPath       string     `json:"db_path"`
-	SourceUsed   string     `json:"source_used"`
-	Mode         string     `json:"mode"`
-	RowsBefore   int64      `json:"rows_before"`
-	RowsAfter    int64      `json:"rows_after"`
-	RowsDelta    int64      `json:"rows_delta"`
-	ImportFromID int64      `json:"import_from_id,omitempty"`
+	Version      int       `json:"version"`
+	CompletedAt  time.Time `json:"completed_at"`
+	DBPath       string    `json:"db_path"`
+	SourceUsed   string    `json:"source_used"`
+	Mode         string    `json:"mode"`
+	RowsBefore   int64     `json:"rows_before"`
+	RowsAfter    int64     `json:"rows_after"`
+	RowsDelta    int64     `json:"rows_delta"`
+	ImportFromID int64     `json:"import_from_id,omitempty"`
 }
 
 func (c Config) ReadDownloadState() (*DownloadState, error) {

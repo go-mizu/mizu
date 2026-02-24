@@ -23,23 +23,23 @@ const (
 
 // ImportOptions controls how local HN data is imported into DuckDB.
 type ImportOptions struct {
-	Source ImportSource
-	DBPath string
+	Source  ImportSource
+	DBPath  string
 	Rebuild bool
 }
 
 // ImportResult summarizes a DuckDB import.
 type ImportResult struct {
-	DBPath      string
-	SourceUsed  ImportSource
-	SourcePath  string
-	Rows        int64
-	RowsBefore  int64
-	RowsDelta   int64
-	Mode        string
+	DBPath       string
+	SourceUsed   ImportSource
+	SourcePath   string
+	Rows         int64
+	RowsBefore   int64
+	RowsDelta    int64
+	Mode         string
 	ImportFromID int64
-	ImportedAt  time.Time
-	IndexesMade int
+	ImportedAt   time.Time
+	IndexesMade  int
 }
 
 func (c Config) Import(ctx context.Context, opts ImportOptions) (*ImportResult, error) {
