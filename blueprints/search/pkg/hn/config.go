@@ -146,6 +146,14 @@ func (c Config) ParquetHeadCachePath() string {
 	return filepath.Join(c.StateDir(), "parquet_head.json")
 }
 
+func (c Config) DownloadStatePath() string {
+	return filepath.Join(c.StateDir(), "download_state.json")
+}
+
+func (c Config) ImportStatePath() string {
+	return filepath.Join(c.StateDir(), "import_state.json")
+}
+
 func (c Config) DefaultDBPath() string {
 	return filepath.Join(c.BaseDir(), "hn.duckdb")
 }

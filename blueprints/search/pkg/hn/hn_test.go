@@ -190,6 +190,111 @@ func TestImportAPIChunks(t *testing.T) {
 	}
 }
 
+func TestImportHybridIncremental(t *testing.T) {
+	cfg := Config{DataDir: t.TempDir()}
+	if err := cfg.EnsureRawDirs(); err != nil {
+		t.Fatalf("EnsureRawDirs: %v", err)
+	}
+
+	ch1 := filepath.Join(cfg.ClickHouseParquetDir(), "id_000000001_000000002.parquet")
+	createTestClickHouseParquet(t, ch1, []hnCHRow{
+		{ID: 1, TypeCode: 1, By: "alice", Time: 1700000000, Title: "s1"},
+		{ID: 2, TypeCode: 2, By: "bob", Time: 1700000001, Parent: sqlNullInt64(1), Text: "c2"},
+	})
+	writeAPIChunk(t, filepath.Join(cfg.APIChunksDir(), "items_000000003_000000003.jsonl"), []string{
+		`{"id":3,"type":"story","time":1700000002,"by":"carol","title":"s3-api-v1"}`,
+	})
+
+	res1, err := cfg.Import(context.Background(), ImportOptions{Source: ImportSourceAuto})
+	if err != nil {
+		t.Fatalf("first Import hybrid error: %v", err)
+	}
+	if res1.Mode != "full" {
+		t.Fatalf("first import mode=%q want full", res1.Mode)
+	}
+	if res1.Rows != 3 {
+		t.Fatalf("first import rows=%d want 3", res1.Rows)
+	}
+
+	ch2 := filepath.Join(cfg.ClickHouseParquetDir(), "id_000000003_000000004.parquet")
+	createTestClickHouseParquet(t, ch2, []hnCHRow{
+		{ID: 3, TypeCode: 1, By: "carol", Time: 1700000002, Title: "s3-ch-v2"},
+		{ID: 4, TypeCode: 1, By: "dave", Time: 1700000003, Title: "s4"},
+	})
+	if err := os.Remove(filepath.Join(cfg.APIChunksDir(), "items_000000003_000000003.jsonl")); err != nil {
+		t.Fatalf("remove old api chunk: %v", err)
+	}
+	writeAPIChunk(t, filepath.Join(cfg.APIChunksDir(), "items_000000003_000000005.jsonl"), []string{
+		`{"id":3,"type":"story","time":1700000002,"by":"carol","title":"s3-api-v2"}`,
+		`{"id":5,"type":"job","time":1700000004,"by":"erin","title":"j5"}`,
+	})
+	if err := cfg.WriteDownloadState(&DownloadState{
+		SourceUsed: "hybrid",
+		ClickHouse: &ClickHouseRunState{StartID: 1, EndID: 4, ChunkIDSpan: 2, IncrementalFromID: 3},
+		API:        &APIRunState{StartID: 3, EndID: 5, MaxItem: 5, IsDelta: true},
+	}); err != nil {
+		t.Fatalf("WriteDownloadState: %v", err)
+	}
+
+	res2, err := cfg.Import(context.Background(), ImportOptions{Source: ImportSourceAuto})
+	if err != nil {
+		t.Fatalf("second Import hybrid incremental error: %v", err)
+	}
+	if res2.Mode != "incremental" {
+		t.Fatalf("second import mode=%q want incremental", res2.Mode)
+	}
+	if res2.RowsBefore != 3 || res2.Rows != 5 || res2.RowsDelta != 2 {
+		t.Fatalf("rows before/after/delta = %d/%d/%d want 3/5/2", res2.RowsBefore, res2.Rows, res2.RowsDelta)
+	}
+	if res2.ImportFromID != 3 {
+		t.Fatalf("ImportFromID=%d want 3", res2.ImportFromID)
+	}
+
+	db, err := sql.Open("duckdb", res2.DBPath+"?access_mode=read_only")
+	if err != nil {
+		t.Fatalf("open duckdb: %v", err)
+	}
+	defer db.Close()
+	var title3 string
+	if err := db.QueryRow(`SELECT title FROM items WHERE id=3`).Scan(&title3); err != nil {
+		t.Fatalf("query id=3 title: %v", err)
+	}
+	if title3 != "s3-api-v2" {
+		t.Fatalf("id=3 title=%q want api overlay update", title3)
+	}
+}
+
+func TestClickHouseChunkTailHelpers(t *testing.T) {
+	if got := tailRefreshStartID(1, 1_250_000, 500_000, 2); got != 500_001 {
+		t.Fatalf("tailRefreshStartID=%d want 500001", got)
+	}
+	if end, ok := expectedCHChunkEnd(1_000_001, 1, 1_250_000, 500_000); !ok || end != 1_250_000 {
+		t.Fatalf("expectedCHChunkEnd tail = (%d,%v) want (1250000,true)", end, ok)
+	}
+	if _, ok := expectedCHChunkEnd(1_100_000, 1, 1_250_000, 500_000); ok {
+		t.Fatalf("expectedCHChunkEnd should reject non-aligned start")
+	}
+	p := filepath.Join(t.TempDir(), "id_000500001_001000000.parquet")
+	if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write chunk fixture: %v", err)
+	}
+	cf, ok := parseCHChunkFilePath(p)
+	if !ok {
+		t.Fatalf("parseCHChunkFilePath failed")
+	}
+	if cf.StartID != 500001 || cf.EndID != 1000000 {
+		t.Fatalf("parsed range=%d-%d want 500001-1000000", cf.StartID, cf.EndID)
+	}
+	span := detectCHChunkSpan([]localChunkFile{
+		{StartID: 1, EndID: 1_000_000},
+		{StartID: 1_000_001, EndID: 2_000_000},
+		{StartID: 2_000_001, EndID: 2_132_548},
+	})
+	if span != 1_000_000 {
+		t.Fatalf("detectCHChunkSpan=%d want 1000000", span)
+	}
+}
+
 func createTestParquet(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -221,6 +326,93 @@ func createTestParquet(t *testing.T, path string) {
 	if _, err := db.Exec(q); err != nil {
 		t.Fatalf("create parquet fixture: %v", err)
 	}
+}
+
+type hnCHRow struct {
+	ID       int64
+	TypeCode int64
+	By       string
+	Time     int64
+	Title    string
+	Text     string
+	Parent   sql.NullInt64
+}
+
+func sqlNullInt64(v int64) sql.NullInt64 {
+	return sql.NullInt64{Int64: v, Valid: true}
+}
+
+func createTestClickHouseParquet(t *testing.T, path string, rows []hnCHRow) {
+	t.Helper()
+	if len(rows) == 0 {
+		t.Fatalf("createTestClickHouseParquet requires rows")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir clickhouse parquet dir: %v", err)
+	}
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		t.Fatalf("open duckdb: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TEMP TABLE ch_items (
+		id BIGINT,
+		deleted BIGINT,
+		type BIGINT,
+		"by" VARCHAR,
+		time BIGINT,
+		text VARCHAR,
+		dead BIGINT,
+		parent BIGINT,
+		poll BIGINT,
+		kids BIGINT[],
+		url VARCHAR,
+		score BIGINT,
+		title VARCHAR,
+		parts BIGINT[],
+		descendants BIGINT
+	)`); err != nil {
+		t.Fatalf("create temp ch_items: %v", err)
+	}
+	for _, r := range rows {
+		if _, err := db.Exec(`INSERT INTO ch_items VALUES (?, 0, ?, ?, ?, ?, 0, ?, NULL, NULL, NULL, NULL, ?, NULL, NULL)`,
+			r.ID, r.TypeCode, r.By, r.Time, nullIfEmpty(r.Text), nullInt64Arg(r.Parent), nullIfEmpty(r.Title),
+		); err != nil {
+			t.Fatalf("insert ch row %d: %v", r.ID, err)
+		}
+	}
+	escaped := strings.ReplaceAll(path, "'", "''")
+	if _, err := db.Exec(fmt.Sprintf(`COPY ch_items TO '%s' (FORMAT PARQUET)`, escaped)); err != nil {
+		t.Fatalf("copy ch_items parquet: %v", err)
+	}
+}
+
+func writeAPIChunk(t *testing.T, path string, lines []string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir api chunk dir: %v", err)
+	}
+	body := strings.Join(lines, "\n")
+	if body != "" {
+		body += "\n"
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write api chunk: %v", err)
+	}
+}
+
+func nullIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+func nullInt64Arg(v sql.NullInt64) any {
+	if !v.Valid {
+		return nil
+	}
+	return v.Int64
 }
 
 func newHNTestServer(t *testing.T, parquetBytes []byte, items map[int64]string) *httptest.Server {

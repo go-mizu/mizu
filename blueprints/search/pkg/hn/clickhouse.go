@@ -36,6 +36,7 @@ type ClickHouseDownloadOptions struct {
 	ToID        int64 // 0 means remote max id
 	ChunkIDSpan int64
 	Parallelism int
+	RefreshTailChunks int
 	Force       bool
 }
 
@@ -66,11 +67,15 @@ type ClickHouseDownloadResult struct {
 	EndID         int64
 	RemoteMaxID   int64
 	RemoteCount   int64
+	ChunkIDSpan   int64
 	ChunksTotal   int
 	ChunksDone    int
 	ChunksSkipped int
 	BytesDone     int64
 	BytesSkipped  int64
+	FilesPruned   int
+	TailRefreshed int
+	IncrementalFromID int64
 	RemoteInfo    *ClickHouseRemoteInfo
 }
 
@@ -127,6 +132,10 @@ func (c Config) DownloadClickHouseParquet(ctx context.Context, opts ClickHouseDo
 	if parallelism <= 0 {
 		parallelism = 4
 	}
+	refreshTailChunks := opts.RefreshTailChunks
+	if refreshTailChunks <= 0 {
+		refreshTailChunks = 2
+	}
 	startID := opts.FromID
 	if startID <= 0 {
 		startID = 1
@@ -140,13 +149,20 @@ func (c Config) DownloadClickHouseParquet(ctx context.Context, opts ClickHouseDo
 	}
 	chunksTotal := int((endID-startID)/span + 1)
 	res := &ClickHouseDownloadResult{
-		Dir:         cfg.ClickHouseParquetDir(),
-		StartID:     startID,
-		EndID:       endID,
-		RemoteMaxID: remote.MaxID,
-		RemoteCount: remote.Count,
-		ChunksTotal: chunksTotal,
-		RemoteInfo:  remote,
+		Dir:           cfg.ClickHouseParquetDir(),
+		StartID:       startID,
+		EndID:         endID,
+		RemoteMaxID:   remote.MaxID,
+		RemoteCount:   remote.Count,
+		ChunkIDSpan:   span,
+		ChunksTotal:   chunksTotal,
+		RemoteInfo:    remote,
+	}
+	res.IncrementalFromID = startID
+	if !opts.Force {
+		if tailFrom := tailRefreshStartID(startID, endID, span, refreshTailChunks); tailFrom > 0 {
+			res.IncrementalFromID = tailFrom
+		}
 	}
 	started := time.Now()
 	type chunkTask struct {
@@ -157,6 +173,65 @@ func (c Config) DownloadClickHouseParquet(ctx context.Context, opts ClickHouseDo
 	var tasks []chunkTask
 	var mu sync.Mutex
 	active := 0
+
+	existingChunks, _ := listLocalCHChunks(cfg.ClickHouseParquetDir())
+	byStart := make(map[int64][]localChunkFile)
+	for _, cf := range existingChunks {
+		byStart[cf.StartID] = append(byStart[cf.StartID], cf)
+	}
+	refreshTailStart := int64(0)
+	if !opts.Force {
+		refreshTailStart = tailRefreshStartID(startID, endID, span, refreshTailChunks)
+	}
+	var prunePaths []string
+	for start, files := range byStart {
+		inRange := start >= startID && start <= endID
+		if !inRange {
+			continue
+		}
+		expectedEnd, alignedTarget := expectedCHChunkEnd(start, startID, endID, span)
+		if !alignedTarget {
+			for _, cf := range files {
+				prunePaths = append(prunePaths, cf.Path)
+			}
+			continue
+		}
+		needRefresh := !opts.Force && refreshTailStart > 0 && start >= refreshTailStart
+		var exact []localChunkFile
+		for _, cf := range files {
+			if needRefresh || cf.EndID != expectedEnd || cf.Size <= 0 {
+				prunePaths = append(prunePaths, cf.Path)
+				continue
+			}
+			exact = append(exact, cf)
+		}
+		if len(exact) > 1 {
+			// Keep the largest exact file and prune duplicates for this start range.
+			bestIdx := 0
+			for i := 1; i < len(exact); i++ {
+				if exact[i].Size > exact[bestIdx].Size || (exact[i].Size == exact[bestIdx].Size && exact[i].Path > exact[bestIdx].Path) {
+					bestIdx = i
+				}
+			}
+			for i, cf := range exact {
+				if i == bestIdx {
+					continue
+				}
+				prunePaths = append(prunePaths, cf.Path)
+			}
+		}
+	}
+	prunePaths = compactPathList(prunePaths)
+	for _, p := range prunePaths {
+		if err := os.Remove(p); err == nil || os.IsNotExist(err) {
+			res.FilesPruned++
+		}
+	}
+	if refreshTailStart > 0 {
+		for s := refreshTailStart; s <= endID; s += span {
+			res.TailRefreshed++
+		}
+	}
 
 	emit := func(p ClickHouseDownloadProgress) {
 		if cb != nil {
@@ -184,9 +259,9 @@ func (c Config) DownloadClickHouseParquet(ctx context.Context, opts ClickHouseDo
 			chunkEnd = endID
 		}
 		path := filepath.Join(cfg.ClickHouseParquetDir(), fmt.Sprintf("id_%09d_%09d.parquet", chunkStart, chunkEnd))
-		if opts.Force {
-			_ = os.Remove(path)
-		}
+			if opts.Force {
+				_ = os.Remove(path)
+			}
 		if !opts.Force && fileExistsNonEmpty(path) {
 			sz, _ := fileSize(path)
 			mu.Lock()
