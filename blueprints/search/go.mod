@@ -29,7 +29,7 @@ require (
 	github.com/meilisearch/meilisearch-go v0.36.1
 	github.com/opensearch-project/opensearch-go/v2 v2.3.0
 	github.com/parquet-go/parquet-go v0.27.0
-	github.com/phuslu/fastdns v0.16.6
+	github.com/phuslu/fastdns v0.16.7
 	github.com/refraction-networking/utls v1.8.2
 	github.com/spf13/cobra v1.10.2
 	github.com/temoto/robotstxt v1.1.2
@@ -38,10 +38,12 @@ require (
 	golang.org/x/sync v0.19.0
 	golang.org/x/text v0.34.0
 	golang.org/x/time v0.14.0
+	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.46.1
 )
 
 replace github.com/go-mizu/mizu => ../..
+
 replace github.com/ysmood/fetchup => github.com/ysmood/fetchup v0.2.4
 
 require (
@@ -101,10 +103,10 @@ require (
 	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.2 // indirect
 	github.com/charmbracelet/harmonica v0.2.0 // indirect
-	github.com/charmbracelet/ultraviolet v0.0.0-20260221133011-393bbf1e9ada // indirect
+	github.com/charmbracelet/ultraviolet v0.0.0-20260223110742-30820af8329c // indirect
 	github.com/charmbracelet/x/ansi v0.11.6 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.15 // indirect
-	github.com/charmbracelet/x/exp/charmtone v0.0.0-20260216111343-536eb63c1f4c // indirect
+	github.com/charmbracelet/x/exp/charmtone v0.0.0-20260223110321-bb4be0bca7ac // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
 	github.com/charmbracelet/x/windows v0.2.2 // indirect

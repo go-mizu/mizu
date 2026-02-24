@@ -4,21 +4,27 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
 
 type MCPServer struct {
-	App     *App
-	started time.Time
+	App       *App
+	started   time.Time
+	sessionMu sync.Mutex
+	sessions  map[string]struct{}
 }
 
 type MCPDaemonStatus struct {
@@ -28,16 +34,30 @@ type MCPDaemonStatus struct {
 }
 
 func NewMCPServer(app *App) *MCPServer {
-	return &MCPServer{App: app, started: time.Now()}
+	return &MCPServer{App: app, started: time.Now(), sessions: map[string]struct{}{}}
 }
 
 func (s *MCPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == "/health":
-		uptime := time.Since(s.started).Round(time.Second).String()
+		uptime := time.Since(s.started).Seconds()
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"ok":     true,
+			"status": "ok",
 			"uptime": uptime,
+		})
+		return
+	case (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.URL.Path == "/mcp":
+		s.maybeEchoSessionHeader(w, r)
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"jsonrpc":   "2.0",
+			"transport": "streamable-http-subset",
+			"server":    "qlocal",
 		})
 		return
 	case r.Method == http.MethodPost && r.URL.Path == "/mcp":
@@ -50,8 +70,12 @@ func (s *MCPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+		s.ensureHTTPMCPResponseSession(w, r, req)
 		resp := s.handleRPC(r.Context(), req)
 		writeRPCResponse(w, resp)
+		return
+	case r.Method == http.MethodPost && r.URL.Path == "/query":
+		s.serveLegacyQueryEndpoint(w, r)
 		return
 	default:
 		http.NotFound(w, r)
@@ -193,7 +217,7 @@ func (s *MCPServer) handleRPC(ctx context.Context, req rpcRequest) rpcResponse {
 		resp.Result = map[string]any{
 			"resources": []map[string]any{
 				{
-					"uriTemplate": "qmd://{path}",
+					"uriTemplate": "qmd://{+path}",
 					"name":        "qmd documents",
 					"description": "Indexed markdown documents addressable by qmd://collection/path",
 					"mimeType":    "text/markdown",
@@ -208,7 +232,8 @@ func (s *MCPServer) handleRPC(ctx context.Context, req rpcRequest) rpcResponse {
 			resp.Error = &rpcError{Code: -32602, Message: "invalid params"}
 			break
 		}
-		doc, err := s.App.Get(p.URI, GetOptions{Full: true})
+		uri := normalizeMCPResourceURI(p.URI)
+		doc, err := s.App.Get(uri, GetOptions{Full: true})
 		if err != nil {
 			resp.Error = &rpcError{Code: -32000, Message: err.Error()}
 			break
@@ -303,11 +328,17 @@ func (s *MCPServer) toolsList() []map[string]any {
 			"type": "object",
 			"properties": map[string]any{
 				"ref":         map[string]any{"type": "string"},
+				"file":        map[string]any{"type": "string"},
+				"path":        map[string]any{"type": "string"},
 				"lineNumbers": map[string]any{"type": "boolean"},
 				"from":        map[string]any{"type": "number"},
 				"lines":       map[string]any{"type": "number"},
 			},
-			"required": []string{"ref"},
+			"anyOf": []map[string]any{
+				{"required": []string{"ref"}},
+				{"required": []string{"file"}},
+				{"required": []string{"path"}},
+			},
 		}),
 		tool("qmd_multi_get", "QMD Multi Get", "Retrieve multiple docs by glob/list", map[string]any{
 			"type": "object",
@@ -322,7 +353,11 @@ func (s *MCPServer) toolsList() []map[string]any {
 		tool("qmd_status", "QMD Status", "Index health and collection info", map[string]any{"type": "object"}),
 		// Aliases closer to qmd.ts MCP server implementation
 		tool("query", "Query", "Alias of qmd_deep_search", deepSchema),
-		tool("get", "Get", "Alias of qmd_get", map[string]any{"type": "object", "properties": map[string]any{"ref": map[string]any{"type": "string"}}}),
+		tool("get", "Get", "Alias of qmd_get", map[string]any{"type": "object", "properties": map[string]any{
+			"ref":  map[string]any{"type": "string"},
+			"file": map[string]any{"type": "string"},
+			"path": map[string]any{"type": "string"},
+		}}),
 		tool("multi_get", "Multi Get", "Alias of qmd_multi_get", map[string]any{"type": "object", "properties": map[string]any{"pattern": map[string]any{"type": "string"}}}),
 		tool("status", "Status", "Alias of qmd_status", map[string]any{"type": "object"}),
 	}
@@ -395,6 +430,9 @@ func (s *MCPServer) callTool(ctx context.Context, name string, args map[string]a
 		if ref == "" {
 			ref = asString(args["file"])
 		}
+		if ref == "" {
+			ref = asString(args["path"])
+		}
 		doc, err := s.App.Get(ref, GetOptions{
 			Full:        true,
 			FromLine:    asInt(args["from"], 0),
@@ -444,6 +482,20 @@ func (s *MCPServer) callTool(ctx context.Context, name string, args map[string]a
 }
 
 func (s *MCPServer) formatToolSearchResult(results []SearchResult, query string) (map[string]any, error) {
+	out := s.buildSearchItems(results, query)
+	text := fmt.Sprintf("Found %d result(s) for %q", len(out), query)
+	if b, err := json.Marshal(map[string]any{"results": out}); err == nil {
+		return map[string]any{
+			"content":           []map[string]any{{"type": "text", "text": text}},
+			"structuredContent": json.RawMessage(b),
+		}, nil
+	}
+	return map[string]any{
+		"content": []map[string]any{{"type": "text", "text": text}},
+	}, nil
+}
+
+func (s *MCPServer) buildSearchItems(results []SearchResult, query string) []map[string]any {
 	type item struct {
 		DocID   string  `json:"docid"`
 		File    string  `json:"file"`
@@ -468,16 +520,19 @@ func (s *MCPServer) formatToolSearchResult(results []SearchResult, query string)
 			Snippet: addLineNumbers(sn.Snippet, sn.Line),
 		})
 	}
-	text := fmt.Sprintf("Found %d result(s) for %q", len(out), query)
-	if b, err := json.Marshal(map[string]any{"results": out}); err == nil {
-		return map[string]any{
-			"content":           []map[string]any{{"type": "text", "text": text}},
-			"structuredContent": json.RawMessage(b),
-		}, nil
+	items := make([]map[string]any, 0, len(out))
+	for _, it := range out {
+		items = append(items, map[string]any{
+			"docid":   it.DocID,
+			"file":    it.File,
+			"title":   it.Title,
+			"score":   it.Score,
+			"context": it.Context,
+			"snippet": it.Snippet,
+		})
 	}
-	return map[string]any{
-		"content": []map[string]any{{"type": "text", "text": text}},
-	}, nil
+	_ = query
+	return items
 }
 
 func singleCollectionArg(args map[string]any) []string {
@@ -530,6 +585,116 @@ func asString(v any) string {
 	default:
 		return ""
 	}
+}
+
+func normalizeMCPResourceURI(in string) string {
+	in = strings.TrimSpace(in)
+	if !strings.HasPrefix(in, "qmd://") {
+		return in
+	}
+	raw := strings.TrimPrefix(in, "qmd://")
+	decoded, err := url.PathUnescape(raw)
+	if err != nil {
+		return in
+	}
+	return "qmd://" + decoded
+}
+
+func (s *MCPServer) maybeEchoSessionHeader(w http.ResponseWriter, r *http.Request) {
+	if sid := strings.TrimSpace(r.Header.Get("mcp-session-id")); sid != "" {
+		w.Header().Set("mcp-session-id", sid)
+	}
+}
+
+func (s *MCPServer) ensureHTTPMCPResponseSession(w http.ResponseWriter, r *http.Request, req rpcRequest) {
+	// Echo an existing session id if present, otherwise generate one on initialize.
+	if sid := strings.TrimSpace(r.Header.Get("mcp-session-id")); sid != "" {
+		s.trackSession(sid)
+		w.Header().Set("mcp-session-id", sid)
+		return
+	}
+	if req.Method != "initialize" {
+		return
+	}
+	sid := newMCPHTTPSessionID()
+	s.trackSession(sid)
+	w.Header().Set("mcp-session-id", sid)
+}
+
+func (s *MCPServer) trackSession(id string) {
+	if strings.TrimSpace(id) == "" {
+		return
+	}
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+	s.sessions[id] = struct{}{}
+}
+
+func newMCPHTTPSessionID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("qlocal-%d", time.Now().UnixNano())
+	}
+	return "qlocal-" + hex.EncodeToString(b[:])
+}
+
+func (s *MCPServer) serveLegacyQueryEndpoint(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Searches    any      `json:"searches"`
+		Collections []string `json:"collections"`
+		Limit       int      `json:"limit"`
+		MinScore    float64  `json:"minScore"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "Invalid JSON"})
+		return
+	}
+	if body.Searches == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "Missing required field: searches (array)"})
+		return
+	}
+	searches, err := coerceStructuredSearches(body.Searches)
+	if err != nil || len(searches) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "Invalid field: searches"})
+		return
+	}
+	var lines []string
+	for _, ss := range searches {
+		lines = append(lines, strings.ToLower(strings.TrimSpace(ss.Type))+": "+strings.TrimSpace(ss.Query))
+	}
+	primary := ""
+	for _, ss := range searches {
+		if ss.Type == "lex" || ss.Type == "vec" {
+			primary = ss.Query
+			break
+		}
+	}
+	if primary == "" {
+		primary = searches[0].Query
+	}
+	limit := body.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	results, err := s.App.QueryContext(r.Context(), strings.Join(lines, "\n"), HybridOptions{
+		Limit:       limit,
+		MinScore:    body.MinScore,
+		Collections: body.Collections,
+	})
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"results": s.buildSearchItems(results, primary)})
 }
 
 func asInt(v any, fallback int) int {
