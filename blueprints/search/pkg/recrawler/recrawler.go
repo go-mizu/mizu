@@ -54,8 +54,8 @@ func (t *adaptiveTracker) timeout(ceiling time.Duration) time.Duration {
 		cum += t.buckets[i].Load()
 		if cum >= target {
 			ms := edge * 2
-			ms = max(ms, 500)                        // floor: 500ms
-			ms = min(ms, ceiling.Milliseconds())      // ceiling: config timeout
+			ms = max(ms, 500)                    // floor: 500ms
+			ms = min(ms, ceiling.Milliseconds()) // ceiling: config timeout
 			return time.Duration(ms) * time.Millisecond
 		}
 	}
@@ -544,7 +544,6 @@ func freshDNSLookup(ctx context.Context, host string) []string {
 	return ipv4s
 }
 
-
 // alternatePort returns the alternate HTTP/HTTPS port for 80/443 pairs.
 // Returns "" for non-standard ports (no alternate).
 func alternatePort(port string) string {
@@ -651,6 +650,11 @@ func (r *Recrawler) clientForWorker(workerID int) *http.Client {
 	return r.clients[workerID%len(r.clients)]
 }
 
+type tcpProbeDomainEntry struct {
+	domain string
+	urls   []SeedURL
+}
+
 // Run executes the recrawl on the given URL set.
 // If a DNS resolver is set (via SetDNSResolver), uses a domain-partitioned pipeline
 // where DNS resolution and HTTP fetching happen concurrently.
@@ -690,13 +694,20 @@ func (r *Recrawler) Run(ctx context.Context, seeds []SeedURL, skip map[string]bo
 
 	// Create a cancelable context so we can stop the pipeline on return
 	pipeCtx, pipeCancel := context.WithCancel(ctx)
+	feedDone := make(chan struct{})
 
 	if r.dnsResolver != nil {
 		// Pipelined: DNS workers resolve domains and feed URLs to fetch pipeline
-		go r.dnsPipeline(pipeCtx, domains, domainURLs, urlCh)
+		go func() {
+			defer close(feedDone)
+			r.dnsPipeline(pipeCtx, domains, domainURLs, urlCh)
+		}()
 	} else {
 		// Direct: pre-filter dead domains, shuffle, and feed URLs
-		go r.directFeed(pipeCtx, domains, domainURLs, urlCh)
+		go func() {
+			defer close(feedDone)
+			r.directFeed(pipeCtx, domains, domainURLs, urlCh)
+		}()
 	}
 
 	// Launch HTTP fetch workers
@@ -747,6 +758,7 @@ func (r *Recrawler) Run(ctx context.Context, seeds []SeedURL, skip map[string]bo
 
 	err := g.Wait()
 	pipeCancel() // ensure DNS pipeline stops if still running
+	<-feedDone
 	return err
 }
 
@@ -909,6 +921,30 @@ func (r *Recrawler) probeDomainStrict(ctx context.Context, probeURL string, shar
 	return true
 }
 
+// probeDomainHTTPReady checks whether the origin returns any HTTP response quickly
+// enough to be worth queueing the rest of the domain's URLs. Unlike
+// probeDomainStrict, timeouts are treated as "not ready" (false) so status/head
+// recrawls can avoid large timeout storms on tarpits and very slow origins.
+func (r *Recrawler) probeDomainHTTPReady(ctx context.Context, probeURL string, shardID int) bool {
+	probeTimeout := min(3*time.Second, r.config.Timeout)
+	probeCtx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(probeCtx, http.MethodHead, probeURL, nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("User-Agent", r.config.UserAgent)
+
+	client := r.clientForWorker(shardID)
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return true
+}
+
 // directFeed probes domains and streams their URLs to workers immediately.
 // Streaming: workers start fetching as soon as the first domain is probed alive,
 // overlapping the probe phase with the fetch phase for maximum throughput.
@@ -937,16 +973,11 @@ func (r *Recrawler) directFeed(ctx context.Context, domains []string, domainURLs
 	//   Refused hosts → detected instantly (RST)
 	//   Alive hosts → connect in ~50-300ms
 	if !r.config.TwoPass {
-		type domainEntry struct {
-			domain string
-			urls   []SeedURL
-		}
-
 		// Phase 1b: Filter host-level dead from DNS batch.
 		// directFeed Phase 1 only checks isDomainDead (deadDomains map),
 		// but the CLI stores DNS dead/timeout in deadHosts via SetDeadHosts.
 		// This batch-skips host-dead domains instead of per-URL skip in workers.
-		var toProbe []domainEntry
+		var toProbe []tcpProbeDomainEntry
 		for _, domain := range probeDomains {
 			urls := domainURLs[domain]
 			if len(urls) == 0 {
@@ -960,341 +991,21 @@ func (r *Recrawler) directFeed(ctx context.Context, domains []string, domainURLs
 				r.stats.RecordDomainSkipBatchReason(r.hostDeadReason(hostKey), len(urls))
 				continue
 			}
-			toProbe = append(toProbe, domainEntry{domain, urls})
+			toProbe = append(toProbe, tcpProbeDomainEntry{domain, urls})
 		}
 
 		if len(toProbe) == 0 {
 			return
 		}
 
-		// Phase 2: TCP connect probe — two-pass to eliminate false negatives.
-		//
-		// Root cause of false negatives: high concurrency overwhelms the local
-		// OS/network stack. Benchmark results (200ms avg RTT to known-open IPs):
-		//   2000 workers → 19.9% false failure rate
-		//   500  workers →  0.4% false failure rate
-		//   200  workers →  0.0% false failure rate
-		//
-		// Fix: Pass 1 uses 500 workers (0.4% false negative, ~2.7 min for 131K).
-		// Pass 2 retries ALL failures with 50 workers, recovering the 0.4%.
-		// Using 200 workers causes ~33 min probe time (131K/200 × 3s) — too slow.
-		alive := make([]bool, len(toProbe))
-
-		// Adaptive multi-phase TCP probe to minimize false negatives (unreachable < 100).
-		//
-		// Problem: single-pass probe misses alive domains due to:
-		//   1. High concurrency causing local OS saturation (0.4% at 500 workers)
-		//   2. HTTP-only sites (port 80) being probed on port 443 (and vice versa)
-		//   3. High-latency hosts (>3s RTT) timing out
-		//
-		// Solution: 3 targeted passes that converge on truly-dead domains only.
-		//
-		// Pass 1: 500 workers, 3s timeout → probe URL's actual port
-		//   → catches 99.6% of alive domains; 0.4% false-negative due to saturation
-		//
-		// Pass 2: 500 workers, 1s timeout → probe alternate port (80↔443)
-		//   → catches HTTP-only (443 probe on 80-only server) and vice versa
-		//   → catches the 0.4% false-negatives from Pass 1 (they're alive, <300ms)
-		//
-		// Pass 3: 200 workers, 8s timeout → long-timeout retry on BOTH ports
-		//   → catches high-latency hosts (>3s RTT, firewalled but eventually responsive)
-		//   → adaptive: repeat until no new alive found (convergence)
-		//
-		// After 3 passes: remaining failures are truly dead (no response on any port).
-
-		// outcomes[i] tracks why toProbe[i] failed in Pass 1
-		outcomes := make([]probeOutcome, len(toProbe))
-
-		// --- Pass 1: bulk probe on URL's actual port ---
-		{
-			pass1Timeout := 3 * time.Second
-			nWorkers := min(len(toProbe), 500)
-			idxCh := make(chan int, nWorkers*4)
-			go func() {
-				defer close(idxCh)
-				for i := range toProbe {
-					select {
-					case idxCh <- i:
-					case <-ctx.Done():
-						return
-					}
-				}
-			}()
-			var wg sync.WaitGroup
-			for range nWorkers {
-				wg.Go(func() {
-					for idx := range idxCh {
-						select {
-						case <-ctx.Done():
-							return
-						default:
-						}
-						e := toProbe[idx]
-						host, port := hostPortFromURL(e.urls[0].URL)
-						out := r.tcpProbeHostPort(ctx, host, port, e.domain, pass1Timeout)
-						if out == probeOK {
-							alive[idx] = true
-						} else {
-							outcomes[idx] = out
-						}
-					}
-				})
-			}
-			wg.Wait()
-		}
-
-		// --- Pass 2: alternate port + false-negative recovery ---
-		// Two goals in one pass:
-		//   (a) Probe alternate port (80↔443) for HTTP/HTTPS mismatches
-		//   (b) Re-probe original port at lower concurrency (recovers 0.4% saturation failures)
-		// All failures feed into this pass; most alive ones succeed here.
-		{
-			type retryEntry struct {
-				idx     int
-				altPort string // may be "" for non-standard ports
-			}
-			var retryList []retryEntry
-			for i := range toProbe {
-				if !alive[i] {
-					_, origPort := hostPortFromURL(toProbe[i].urls[0].URL)
-					retryList = append(retryList, retryEntry{i, alternatePort(origPort)})
-				}
-			}
-			if len(retryList) > 0 {
-				pass2Timeout := 1 * time.Second
-				nWorkers := min(len(retryList), 500)
-				retryCh := make(chan retryEntry, nWorkers*4)
-				go func() {
-					defer close(retryCh)
-					for _, re := range retryList {
-						select {
-						case retryCh <- re:
-						case <-ctx.Done():
-							return
-						}
-					}
-				}()
-				var wg sync.WaitGroup
-				for range nWorkers {
-					wg.Go(func() {
-						for re := range retryCh {
-							select {
-							case <-ctx.Done():
-								return
-							default:
-							}
-							e := toProbe[re.idx]
-							host, origPort := hostPortFromURL(e.urls[0].URL)
-							// Try alternate port first (fast: RST/OK in <50ms for live servers)
-							if re.altPort != "" {
-								if r.tcpProbeHostPort(ctx, host, re.altPort, e.domain, pass2Timeout) == probeOK {
-									alive[re.idx] = true
-									continue
-								}
-							}
-							// Re-probe original port at lower concurrency
-							if r.tcpProbeHostPort(ctx, host, origPort, e.domain, pass2Timeout) == probeOK {
-								alive[re.idx] = true
-							}
-						}
-					})
-				}
-				wg.Wait()
-			}
-		}
-
-		// --- Pass 3: long-timeout adaptive retry ---
-		// For still-failed domains: try both ports with 8s timeout.
-		// Repeat until no new alive found (convergence = truly dead).
-		for round := 0; ; round++ {
-			var hardFails []int
-			for i := range toProbe {
-				if !alive[i] {
-					hardFails = append(hardFails, i)
-				}
-			}
-			if len(hardFails) == 0 {
-				break
-			}
-			pass3Timeout := 8 * time.Second
-			nWorkers := min(len(hardFails), 200)
-			idxCh := make(chan int, nWorkers*4)
-			go func() {
-				defer close(idxCh)
-				for _, i := range hardFails {
-					select {
-					case idxCh <- i:
-					case <-ctx.Done():
-						return
-					}
-				}
-			}()
-			var newAlive atomic.Int64
-			var wg sync.WaitGroup
-			for range nWorkers {
-				wg.Go(func() {
-					for idx := range idxCh {
-						select {
-						case <-ctx.Done():
-							return
-						default:
-						}
-						e := toProbe[idx]
-						host, origPort := hostPortFromURL(e.urls[0].URL)
-						altPort := alternatePort(origPort)
-						// Try original port
-						if r.tcpProbeHostPort(ctx, host, origPort, e.domain, pass3Timeout) == probeOK {
-							alive[idx] = true
-							newAlive.Add(1)
-							continue
-						}
-						// Try alternate port
-						if altPort != "" {
-							if r.tcpProbeHostPort(ctx, host, altPort, e.domain, pass3Timeout) == probeOK {
-								alive[idx] = true
-								newAlive.Add(1)
-							}
-						}
-					}
-				})
-			}
-			wg.Wait()
-			// Adaptive: stop when no new alive found (converged to truly-dead set)
-			if newAlive.Load() == 0 || round >= 2 {
-				break
-			}
-		}
-
-		// --- Pass 4: DNS re-resolution for stale-IP recovery ---
-		// Cached DNS IPs may be stale (server moved to new IP since cache was built).
-		// For still-failed domains: re-resolve hostname live and retry if new IPs found.
-		// This pass recovers domains where the IP changed — common for hosted/CDN sites.
-		// Uses 200 workers, 3s probe timeout (fresh IPs are usually fast if alive).
-		{
-			var staleFails []int
-			for i := range toProbe {
-				if !alive[i] {
-					staleFails = append(staleFails, i)
-				}
-			}
-			if len(staleFails) > 0 {
-				pass4Timeout := 3 * time.Second
-				nWorkers := min(len(staleFails), 200)
-				idxCh := make(chan int, nWorkers*4)
-				go func() {
-					defer close(idxCh)
-					for _, i := range staleFails {
-						select {
-						case idxCh <- i:
-						case <-ctx.Done():
-							return
-						}
-					}
-				}()
-				var wg sync.WaitGroup
-				for range nWorkers {
-					wg.Go(func() {
-						for idx := range idxCh {
-							select {
-							case <-ctx.Done():
-								return
-							default:
-							}
-							e := toProbe[idx]
-							host, origPort := hostPortFromURL(e.urls[0].URL)
-							// Re-resolve live (bypassing stale cache)
-							freshIPs := freshDNSLookup(ctx, host)
-							if len(freshIPs) == 0 {
-								continue // DNS still fails → truly dead
-							}
-							// Check if fresh IPs differ from cached (skip if same)
-							r.dnsCacheMu.RLock()
-							cachedIPs := r.dnsCache[host]
-							r.dnsCacheMu.RUnlock()
-							hasNew := false
-							cachedSet := make(map[string]bool, len(cachedIPs))
-							for _, ip := range cachedIPs {
-								cachedSet[ip] = true
-							}
-							for _, ip := range freshIPs {
-								if !cachedSet[ip] {
-									hasNew = true
-									break
-								}
-							}
-							if !hasNew {
-								continue // same IPs → already tried → skip
-							}
-							// Probe with fresh IPs using direct dial
-							altPort := alternatePort(origPort)
-							for _, ip := range freshIPs {
-								if tcpDialOne(ctx, ip, origPort, pass4Timeout) == nil {
-									alive[idx] = true
-									break
-								}
-								if altPort != "" && tcpDialOne(ctx, ip, altPort, pass4Timeout) == nil {
-									alive[idx] = true
-									break
-								}
-							}
-						}
-					})
-				}
-				wg.Wait()
-			}
-		}
-
-		// Mark alive/dead after all passes complete.
-		for i, e := range toProbe {
-			if alive[i] {
-				r.stats.RecordProbeReachable()
-			} else {
-				hostKey := strings.TrimSpace(e.urls[0].Host)
-				if hostKey == "" {
-					hostKey = strings.TrimSpace(e.urls[0].Domain)
-				}
-				r.markHostDeadIfUnset(hostKey, "tcp_unreachable")
-				r.markDomainDead(e.domain, "tcp_unreachable")
-				r.stats.RecordProbeUnreachable()
-				r.stats.RecordDomainSkipBatchReason("tcp_unreachable", len(e.urls))
-				r.failedDB.AddDomain(FailedDomain{
-					Domain:   e.domain,
-					Reason:   "tcp_unreachable",
-					IPs:      r.cachedIPsFor(e.domain),
-					URLCount: len(e.urls),
-					Stage:    "tcp_probe",
-				})
-			}
-		}
-
-		// Phase 3: Feed only TCP-alive domains' URLs (interleaved round-robin).
-		type aliveDomain struct {
-			domain string
-			urls   []SeedURL
-		}
-		var aliveList []aliveDomain
-		for i, e := range toProbe {
-			if alive[i] {
-				aliveList = append(aliveList, aliveDomain{e.domain, e.urls})
-			}
-		}
-
-		cursors := make([]int, len(aliveList))
-		remaining := len(aliveList)
-		for remaining > 0 {
-			remaining = 0
-			for i, ad := range aliveList {
-				if cursors[i] < len(ad.urls) {
-					select {
-					case urlCh <- ad.urls[cursors[i]]:
-						cursors[i]++
-					case <-ctx.Done():
-						return
-					}
-					if cursors[i] < len(ad.urls) {
-						remaining++
-					}
-				}
+		// Probe in chunks and feed each chunk immediately after classification.
+		// This preserves the low-timeout benefit of TCP pre-probing while avoiding
+		// long "nothing happens" startup periods on 10K-100K domain runs.
+		const probeChunkSize = 1000
+		for start := 0; start < len(toProbe); start += probeChunkSize {
+			end := min(start+probeChunkSize, len(toProbe))
+			if !r.tcpProbeAndFeedChunk(ctx, toProbe[start:end], urlCh) {
+				return
 			}
 		}
 		return
@@ -1387,6 +1098,332 @@ func (r *Recrawler) directFeed(ctx context.Context, domains []string, domainURLs
 			}
 		}
 	}
+}
+
+// tcpProbeAndFeedChunk classifies a batch of domains via multi-pass TCP probing,
+// records stats/dead-host metadata, and immediately feeds alive URLs to workers.
+// Returns false if the context was canceled while feeding.
+func (r *Recrawler) tcpProbeAndFeedChunk(ctx context.Context, toProbe []tcpProbeDomainEntry, urlCh chan<- SeedURL) bool {
+	if len(toProbe) == 0 {
+		return true
+	}
+
+	alive := make([]bool, len(toProbe))
+	outcomes := make([]probeOutcome, len(toProbe))
+
+	// Pass 1: original port, 3s timeout.
+	{
+		pass1Timeout := 3 * time.Second
+		nWorkers := min(len(toProbe), 500)
+		idxCh := make(chan int, max(nWorkers*4, 1))
+		go func() {
+			defer close(idxCh)
+			for i := range toProbe {
+				select {
+				case idxCh <- i:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+		var wg sync.WaitGroup
+		for range nWorkers {
+			wg.Go(func() {
+				for idx := range idxCh {
+					select {
+					case <-ctx.Done():
+						return
+					default:
+					}
+					e := toProbe[idx]
+					host, port := hostPortFromURL(e.urls[0].URL)
+					out := r.tcpProbeHostPort(ctx, host, port, e.domain, pass1Timeout)
+					if out == probeOK {
+						alive[idx] = true
+					} else {
+						outcomes[idx] = out
+					}
+				}
+			})
+		}
+		wg.Wait()
+	}
+
+	// Pass 2: alternate port + original-port retry.
+	{
+		type retryEntry struct {
+			idx     int
+			altPort string
+		}
+		var retryList []retryEntry
+		for i := range toProbe {
+			if !alive[i] {
+				_, origPort := hostPortFromURL(toProbe[i].urls[0].URL)
+				retryList = append(retryList, retryEntry{i, alternatePort(origPort)})
+			}
+		}
+		if len(retryList) > 0 {
+			pass2Timeout := 1 * time.Second
+			nWorkers := min(len(retryList), 500)
+			retryCh := make(chan retryEntry, max(nWorkers*4, 1))
+			go func() {
+				defer close(retryCh)
+				for _, re := range retryList {
+					select {
+					case retryCh <- re:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}()
+			var wg sync.WaitGroup
+			for range nWorkers {
+				wg.Go(func() {
+					for re := range retryCh {
+						select {
+						case <-ctx.Done():
+							return
+						default:
+						}
+						e := toProbe[re.idx]
+						host, origPort := hostPortFromURL(e.urls[0].URL)
+						if re.altPort != "" && r.tcpProbeHostPort(ctx, host, re.altPort, e.domain, pass2Timeout) == probeOK {
+							alive[re.idx] = true
+							continue
+						}
+						if r.tcpProbeHostPort(ctx, host, origPort, e.domain, pass2Timeout) == probeOK {
+							alive[re.idx] = true
+						}
+					}
+				})
+			}
+			wg.Wait()
+		}
+	}
+
+	// Pass 3: long-timeout retries on both ports.
+	for round := 0; ; round++ {
+		var hardFails []int
+		for i := range toProbe {
+			if !alive[i] {
+				hardFails = append(hardFails, i)
+			}
+		}
+		if len(hardFails) == 0 {
+			break
+		}
+		pass3Timeout := 8 * time.Second
+		nWorkers := min(len(hardFails), 200)
+		idxCh := make(chan int, max(nWorkers*4, 1))
+		go func() {
+			defer close(idxCh)
+			for _, i := range hardFails {
+				select {
+				case idxCh <- i:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+		var newAlive atomic.Int64
+		var wg sync.WaitGroup
+		for range nWorkers {
+			wg.Go(func() {
+				for idx := range idxCh {
+					select {
+					case <-ctx.Done():
+						return
+					default:
+					}
+					e := toProbe[idx]
+					host, origPort := hostPortFromURL(e.urls[0].URL)
+					altPort := alternatePort(origPort)
+					if r.tcpProbeHostPort(ctx, host, origPort, e.domain, pass3Timeout) == probeOK {
+						alive[idx] = true
+						newAlive.Add(1)
+						continue
+					}
+					if altPort != "" && r.tcpProbeHostPort(ctx, host, altPort, e.domain, pass3Timeout) == probeOK {
+						alive[idx] = true
+						newAlive.Add(1)
+					}
+				}
+			})
+		}
+		wg.Wait()
+		if newAlive.Load() == 0 || round >= 2 {
+			break
+		}
+	}
+
+	// Pass 4: DNS re-resolution for stale cached IPs.
+	{
+		var staleFails []int
+		for i := range toProbe {
+			if !alive[i] {
+				staleFails = append(staleFails, i)
+			}
+		}
+		if len(staleFails) > 0 {
+			pass4Timeout := 3 * time.Second
+			nWorkers := min(len(staleFails), 200)
+			idxCh := make(chan int, max(nWorkers*4, 1))
+			go func() {
+				defer close(idxCh)
+				for _, i := range staleFails {
+					select {
+					case idxCh <- i:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}()
+			var wg sync.WaitGroup
+			for range nWorkers {
+				wg.Go(func() {
+					for idx := range idxCh {
+						select {
+						case <-ctx.Done():
+							return
+						default:
+						}
+						e := toProbe[idx]
+						host, origPort := hostPortFromURL(e.urls[0].URL)
+						freshIPs := freshDNSLookup(ctx, host)
+						if len(freshIPs) == 0 {
+							continue
+						}
+						r.dnsCacheMu.RLock()
+						cachedIPs := r.dnsCache[host]
+						r.dnsCacheMu.RUnlock()
+						hasNew := false
+						cachedSet := make(map[string]bool, len(cachedIPs))
+						for _, ip := range cachedIPs {
+							cachedSet[ip] = true
+						}
+						for _, ip := range freshIPs {
+							if !cachedSet[ip] {
+								hasNew = true
+								break
+							}
+						}
+						if !hasNew {
+							continue
+						}
+						altPort := alternatePort(origPort)
+						for _, ip := range freshIPs {
+							if tcpDialOne(ctx, ip, origPort, pass4Timeout) == nil {
+								alive[idx] = true
+								break
+							}
+							if altPort != "" && tcpDialOne(ctx, ip, altPort, pass4Timeout) == nil {
+								alive[idx] = true
+								break
+							}
+						}
+					}
+				})
+			}
+			wg.Wait()
+		}
+	}
+
+	httpRejected := make([]bool, len(toProbe))
+	if r.config.StatusOnly || r.config.HeadOnly {
+		var candidates []int
+		for i := range toProbe {
+			if alive[i] {
+				candidates = append(candidates, i)
+			}
+		}
+		if len(candidates) > 0 {
+			nWorkers := min(len(candidates), 500)
+			idxCh := make(chan int, max(nWorkers*4, 1))
+			go func() {
+				defer close(idxCh)
+				for _, i := range candidates {
+					select {
+					case idxCh <- i:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}()
+			var wg sync.WaitGroup
+			for workerID := range nWorkers {
+				id := workerID
+				wg.Go(func() {
+					for idx := range idxCh {
+						select {
+						case <-ctx.Done():
+							return
+						default:
+						}
+						if !r.probeDomainHTTPReady(ctx, toProbe[idx].urls[0].URL, id) {
+							alive[idx] = false
+							httpRejected[idx] = true
+						}
+					}
+				})
+			}
+			wg.Wait()
+		}
+	}
+
+	type aliveDomain struct {
+		domain string
+		urls   []SeedURL
+	}
+	var aliveList []aliveDomain
+	for i, e := range toProbe {
+		if alive[i] {
+			r.stats.RecordProbeReachable()
+			aliveList = append(aliveList, aliveDomain{e.domain, e.urls})
+			continue
+		}
+		hostKey := strings.TrimSpace(e.urls[0].Host)
+		if hostKey == "" {
+			hostKey = strings.TrimSpace(e.urls[0].Domain)
+		}
+		reason := "tcp_unreachable"
+		stage := "tcp_probe"
+		if httpRejected[i] {
+			reason = "http_probe_unreachable"
+			stage = "http_probe"
+		}
+		r.markHostDeadIfUnset(hostKey, reason)
+		r.markDomainDead(e.domain, reason)
+		r.stats.RecordProbeUnreachable()
+		r.stats.RecordDomainSkipBatchReason(reason, len(e.urls))
+		r.failedDB.AddDomain(FailedDomain{
+			Domain:   e.domain,
+			Reason:   reason,
+			IPs:      r.cachedIPsFor(e.domain),
+			URLCount: len(e.urls),
+			Stage:    stage,
+		})
+	}
+
+	cursors := make([]int, len(aliveList))
+	remaining := len(aliveList)
+	for remaining > 0 {
+		remaining = 0
+		for i, ad := range aliveList {
+			if cursors[i] < len(ad.urls) {
+				select {
+				case urlCh <- ad.urls[cursors[i]]:
+					cursors[i]++
+				case <-ctx.Done():
+					return false
+				}
+				if cursors[i] < len(ad.urls) {
+					remaining++
+				}
+			}
+		}
+	}
+
+	return true
 }
 
 func (r *Recrawler) worker(ctx context.Context, client *http.Client, urls <-chan SeedURL) error {
@@ -1501,6 +1538,12 @@ func (r *Recrawler) fetchOne(ctx context.Context, client *http.Client, seed Seed
 	if _, ok := r.domainSucceeded.Load(seed.Domain); !ok {
 		isProbe = true
 		reqTimeout = r.probeTimeout
+		// In status/head modes many domains have only one URL, so the "probe"
+		// request is the only request. Use the full timeout budget to avoid
+		// over-classifying slow-but-alive hosts as timeouts.
+		if r.config.StatusOnly || r.config.HeadOnly {
+			reqTimeout = r.config.Timeout
+		}
 	} else if at := r.adaptive.timeout(r.config.Timeout); at > 0 {
 		reqTimeout = at
 	}
@@ -1527,6 +1570,20 @@ func (r *Recrawler) fetchOne(ctx context.Context, client *http.Client, seed Seed
 		req.Header.Set("User-Agent", r.config.UserAgent)
 		req.Header.Set("Accept", "text/html,application/xhtml+xml,*/*;q=0.8")
 		resp, err = client.Do(req)
+		if err != nil && shouldRetryProbeRequestError(err) {
+			retryClient := r.alternateClient(client)
+			if retryClient == nil {
+				retryClient = client
+			}
+			retryCtx, retryCancel := context.WithTimeout(ctx, r.config.Timeout)
+			req2, reqErr2 := http.NewRequestWithContext(retryCtx, method, seed.URL, nil)
+			if reqErr2 == nil {
+				req2.Header.Set("User-Agent", r.config.UserAgent)
+				req2.Header.Set("Accept", "text/html,application/xhtml+xml,*/*;q=0.8")
+				resp, err = retryClient.Do(req2)
+			}
+			retryCancel()
+		}
 	} else {
 		clients := []*http.Client{client}
 		if alt := r.alternateClient(client); alt != nil {
@@ -1718,8 +1775,25 @@ func shouldRetryTransientRequestError(err error) bool {
 	// Retry a narrow set of transient transport errors.
 	s := strings.ToLower(err.Error())
 	return strings.Contains(s, "temporary") ||
+		strings.Contains(s, "can't assign requested address") ||
 		strings.Contains(s, "server misbehaving") ||
 		strings.Contains(s, "use of closed network connection")
+}
+
+func shouldRetryProbeRequestError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if shouldRetryTransientRequestError(err) {
+		return true
+	}
+	// Probe requests are the first contact with a host and account for most URLs
+	// in sparse domain datasets. Retry a small set of handshake hiccups once.
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "remote error: tls: internal error") ||
+		strings.Contains(s, "remote error: tls: handshake failure") ||
+		strings.Contains(s, "remote error: tls: unrecognized name") ||
+		strings.Contains(s, "eof")
 }
 
 func (r *Recrawler) recordError(seed SeedURL, statusCode int, start time.Time, err error) {

@@ -23,9 +23,17 @@ const (
 
 // ImportOptions controls how local HN data is imported into DuckDB.
 type ImportOptions struct {
-	Source  ImportSource
-	DBPath  string
-	Rebuild bool
+	Source   ImportSource
+	DBPath   string
+	Rebuild  bool
+	Progress func(ImportProgress)
+}
+
+type ImportProgress struct {
+	Stage   string
+	Detail  string
+	Elapsed time.Duration
+	Rows    int64
 }
 
 // ImportResult summarizes a DuckDB import.
@@ -43,11 +51,25 @@ type ImportResult struct {
 }
 
 func (c Config) Import(ctx context.Context, opts ImportOptions) (*ImportResult, error) {
+	started := time.Now()
+	emit := func(stage, detail string, rows int64) {
+		if opts.Progress != nil {
+			opts.Progress(ImportProgress{
+				Stage:   stage,
+				Detail:  detail,
+				Elapsed: time.Since(started),
+				Rows:    rows,
+			})
+		}
+	}
+	emit("start", "starting import", 0)
+
 	cfg := c.WithDefaults()
 	source, sourcePath, err := cfg.resolveLocalImportSource(opts.Source)
 	if err != nil {
 		return nil, err
 	}
+	emit("source", fmt.Sprintf("resolved source=%s path=%s", source, sourcePath), 0)
 	dbPath := opts.DBPath
 	if dbPath == "" {
 		dbPath = cfg.DefaultDBPath()
@@ -61,6 +83,7 @@ func (c Config) Import(ctx context.Context, opts ImportOptions) (*ImportResult, 
 		return nil, fmt.Errorf("open duckdb: %w", err)
 	}
 	defer db.Close()
+	emit("duckdb", fmt.Sprintf("opened %s", dbPath), 0)
 	_, _ = db.ExecContext(ctx, `SET preserve_insertion_order=false`)
 	_, _ = db.ExecContext(ctx, `SET threads=4`)
 
@@ -68,7 +91,7 @@ func (c Config) Import(ctx context.Context, opts ImportOptions) (*ImportResult, 
 		return nil, fmt.Errorf("create meta table: %w", err)
 	}
 
-	itemsExists, err := tableExists(ctx, db, "items")
+	itemsExists, err := tableExistsErr(ctx, db, "items")
 	if err != nil {
 		return nil, fmt.Errorf("check items table: %w", err)
 	}
@@ -76,20 +99,24 @@ func (c Config) Import(ctx context.Context, opts ImportOptions) (*ImportResult, 
 	if itemsExists {
 		rowsBefore, _ = countRows(ctx, db, "items")
 	}
+	emit("inspect", fmt.Sprintf("items_exists=%t rows_before=%d", itemsExists, rowsBefore), rowsBefore)
 
 	mode := "full"
 	importFromID := int64(0)
 	if itemsExists && !opts.Rebuild && source != ImportSourceParquet && itemsSupportsIncremental(ctx, db) {
 		importFromID, _ = cfg.suggestIncrementalImportFromID(ctx, db, source)
 		if importFromID > 0 {
+			emit("incremental", fmt.Sprintf("merging rows with id >= %d", importFromID), 0)
 			if err := importIncremental(ctx, db, cfg, source, importFromID); err != nil {
 				return nil, fmt.Errorf("incremental import from %s (id >= %d): %w", source, importFromID, err)
 			}
 			mode = "incremental"
+			emit("incremental", "merge complete", 0)
 		}
 	}
 
 	if mode == "full" {
+		emit("full", "rebuilding items table", 0)
 		if _, err := db.ExecContext(ctx, `DROP TABLE IF EXISTS items`); err != nil {
 			return nil, fmt.Errorf("drop items table: %w", err)
 		}
@@ -104,6 +131,7 @@ FROM read_parquet('%s')`, escaped)
 		case ImportSourceClickHouse:
 			createSQL = buildCreateItemsFromNormalizedSelectSQL(buildNormalizedClickHouseSelect(sourcePath))
 		case ImportSourceHybrid:
+			emit("full", "building hybrid table (base + delta overlay)", 0)
 			if err := importHybrid(ctx, db, cfg); err != nil {
 				return nil, fmt.Errorf("create items table from %s: %w", source, err)
 			}
@@ -114,18 +142,24 @@ FROM read_parquet('%s')`, escaped)
 		}
 
 		if source != ImportSourceHybrid {
+			emit("full", fmt.Sprintf("creating items table from %s", source), 0)
 			if _, err := db.ExecContext(ctx, createSQL); err != nil {
 				return nil, fmt.Errorf("create items table from %s: %w", source, err)
 			}
 		}
+		emit("full", "items table created", 0)
 	}
 
+	emit("count", "counting rows", 0)
 	var rows int64
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM items`).Scan(&rows); err != nil {
 		return nil, fmt.Errorf("count imported rows: %w", err)
 	}
+	emit("count", "row count ready", rows)
 
+	emit("index", "creating indexes", 0)
 	indexesMade := ensureItemIndexes(ctx, db)
+	emit("index", fmt.Sprintf("indexes created=%d", indexesMade), 0)
 
 	importedAt := time.Now().UTC()
 	metaPairs := map[string]string{
@@ -143,6 +177,7 @@ FROM read_parquet('%s')`, escaped)
 			// Non-fatal; keep import result usable.
 		}
 	}
+	emit("meta", "metadata updated", rows)
 
 	_ = cfg.WriteImportState(&ImportState{
 		CompletedAt:  importedAt,
@@ -154,6 +189,7 @@ FROM read_parquet('%s')`, escaped)
 		RowsDelta:    rows - rowsBefore,
 		ImportFromID: importFromID,
 	})
+	emit("done", "import complete", rows)
 
 	return &ImportResult{
 		DBPath:       dbPath,
@@ -232,7 +268,7 @@ func (c Config) resolveLocalImportSource(requested ImportSource) (ImportSource, 
 	}
 }
 
-func tableExists(ctx context.Context, db *sql.DB, name string) (bool, error) {
+func tableExistsErr(ctx context.Context, db *sql.DB, name string) (bool, error) {
 	var n int64
 	err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.tables WHERE table_name = ?`, name).Scan(&n)
 	if err != nil {

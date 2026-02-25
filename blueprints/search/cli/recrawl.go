@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/recrawler"
 	"github.com/spf13/cobra"
+	_ "github.com/duckdb/duckdb-go/v2"
 )
 
 // NewRecrawl creates the top-level recrawl command.
@@ -155,11 +157,16 @@ func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error 
 		return fmt.Errorf("loading seed URLs: %w", err)
 	}
 	fmt.Println(successStyle.Render(fmt.Sprintf("  Loaded %d URLs", len(seeds))))
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	// Derive result dir and DNS path from seed DB path
 	base := strings.TrimSuffix(dbPath, ".duckdb")
 	base = strings.TrimSuffix(base, ".parquet")
 	resultDir := base + ".results"
+	mergedResultsPath := base + ".results.duckdb"
+	failedDBPath := base + ".failed.duckdb"
 
 	// DNS cache: use directory-level cache for sharing across per-parquet files
 	dnsPath := filepath.Join(filepath.Dir(dbPath), "dns.duckdb")
@@ -175,9 +182,26 @@ func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error 
 			fmt.Println(successStyle.Render(fmt.Sprintf("  Resuming: skipping %d already-crawled URLs", len(skip))))
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	// DNS resolver
 	var dnsResolver *recrawler.DNSResolver
+	saveDNSCache := func(prefix string) {
+		if dnsResolver == nil {
+			return
+		}
+		fmt.Print(infoStyle.Render(prefix))
+		saveStart := time.Now()
+		if saveErr := dnsResolver.SaveCache(dnsPath); saveErr != nil {
+			fmt.Println(warningStyle.Render(fmt.Sprintf(" failed: %v", saveErr)))
+		} else {
+			fmt.Println(successStyle.Render(fmt.Sprintf(" saved in %s → %s (live=%d, dead=%d, timeout=%d)",
+				time.Since(saveStart).Truncate(time.Millisecond), filepath.Base(dnsPath),
+				dnsResolver.LiveCount(), dnsResolver.DeadCount(), dnsResolver.TimeoutCount())))
+		}
+	}
 	if cfg.DNSPrefetch {
 		dnsResolver = recrawler.NewDNSResolver(cfg.DNSTimeout)
 		cached, _ := dnsResolver.LoadCache(dnsPath)
@@ -207,8 +231,18 @@ func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error 
 			if dnsDisplayLines > 0 {
 				fmt.Printf("\033[%dA\033[J", dnsDisplayLines)
 			}
-			output := fmt.Sprintf("  DNS  %d/%d  │  %d live  │  %d dead  │  %d timeout  │  %.0f/s  │  %s\n",
-				p.Done, p.Total, p.Live, p.Dead, p.Timeout, p.Speed, p.Elapsed.Truncate(time.Millisecond))
+			etaStr := "---"
+			if p.Done < int64(p.Total) && p.AvgSpeed > 0 {
+				remaining := float64(p.Total) - float64(p.Done)
+				if remaining > 0 {
+					eta := time.Duration((remaining / p.AvgSpeed) * float64(time.Second))
+					etaStr = formatDuration(eta)
+				}
+			} else if p.Done >= int64(p.Total) {
+				etaStr = "0s"
+			}
+			output := fmt.Sprintf("  DNS  %d/%d  │  %d live  │  %d dead  │  %d timeout  │  %.0f/s  │  ETA %s  │  %s\n",
+				p.Done, p.Total, p.Live, p.Dead, p.Timeout, p.Speed, etaStr, p.Elapsed.Truncate(time.Millisecond))
 			fmt.Print(output)
 			dnsDisplayLines = 1
 		})
@@ -217,6 +251,10 @@ func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error 
 		}
 		fmt.Println(successStyle.Render(fmt.Sprintf("  DNS: %d live, %d dead, %d timeout (%s)",
 			live, dead, timeout, dnsResolver.Duration().Truncate(time.Millisecond))))
+		saveDNSCache("  Saving DNS cache (post-DNS prefetch)...")
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 	}
 
 	// Open sharded result databases
@@ -225,13 +263,23 @@ func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error 
 	if err != nil {
 		return fmt.Errorf("opening result db: %w", err)
 	}
-	defer rdb.Close()
 	fmt.Println(successStyle.Render(fmt.Sprintf("  Results → %s/ (8 shards)", resultDir)))
+	fmt.Printf("  %s %s\n", labelStyle.Render("Merged output:"), labelStyle.Render(mergedResultsPath))
+
+	fmt.Println(infoStyle.Render("Opening failed database..."))
+	fdb, err := recrawler.NewFailedDB(failedDBPath)
+	if err != nil {
+		_ = rdb.Close()
+		return fmt.Errorf("opening failed db: %w", err)
+	}
+	fmt.Println(successStyle.Render(fmt.Sprintf("  Failed → %s", failedDBPath)))
 
 	// Store metadata
 	rdb.SetMeta(ctx, "seed_db", dbPath)
 	rdb.SetMeta(ctx, "started_at", time.Now().Format(time.RFC3339))
 	rdb.SetMeta(ctx, "workers", fmt.Sprintf("%d", cfg.Workers))
+	fdb.SetMeta("seed_db", dbPath)
+	fdb.SetMeta("started_at", time.Now().Format(time.RFC3339))
 
 	// Create stats tracker
 	label := filepath.Base(strings.TrimSuffix(dbPath, ".duckdb"))
@@ -258,6 +306,7 @@ func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error 
 
 	// Create and run recrawler
 	r := recrawler.New(cfg, stats, rdb)
+	r.SetFailedDB(fdb)
 
 	// Pre-populate DNS cache and dead domains from batch resolution.
 	// Use SetDNSCache + SetDeadDomains (NOT SetDNSResolver) so that Run()
@@ -272,17 +321,18 @@ func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error 
 	// Final flush
 	rdb.Flush(ctx)
 	rdb.SetMeta(ctx, "finished_at", time.Now().Format(time.RFC3339))
+	fdb.SetMeta("finished_at", time.Now().Format(time.RFC3339))
+	if closeErr := fdb.Close(); closeErr != nil {
+		fmt.Println(warningStyle.Render(fmt.Sprintf("Failed DB close error: %v", closeErr)))
+	}
+	failedDomains := fdb.DomainCount()
+	failedURLs := fdb.URLCount()
+	if closeErr := rdb.Close(); closeErr != nil {
+		fmt.Println(warningStyle.Render(fmt.Sprintf("Result DB close error: %v", closeErr)))
+	}
 
 	if dnsResolver != nil {
-		fmt.Print(infoStyle.Render("  Saving DNS cache..."))
-		saveStart := time.Now()
-		if saveErr := dnsResolver.SaveCache(dnsPath); saveErr != nil {
-			fmt.Println(warningStyle.Render(fmt.Sprintf(" failed: %v", saveErr)))
-		} else {
-			fmt.Println(successStyle.Render(fmt.Sprintf(" saved in %s → %s (live=%d, dead=%d, timeout=%d)",
-				time.Since(saveStart).Truncate(time.Millisecond), filepath.Base(dnsPath),
-				dnsResolver.LiveCount(), dnsResolver.DeadCount(), dnsResolver.TimeoutCount())))
-		}
+		saveDNSCache("  Saving DNS cache...")
 	}
 
 	fmt.Println()
@@ -292,7 +342,108 @@ func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error 
 		fmt.Println(successStyle.Render("Recrawl complete!"))
 	}
 	fmt.Println(labelStyle.Render(fmt.Sprintf("  Results: %s/", resultDir)))
+	fmt.Println(labelStyle.Render(fmt.Sprintf("  Failed:  %s", failedDBPath)))
+	fmt.Println(labelStyle.Render(fmt.Sprintf("  Failed summary: domains=%s urls=%s",
+		formatLargeNumber(failedDomains), formatLargeNumber(failedURLs))))
+	if err == nil {
+		fmt.Println(infoStyle.Render("Consolidating result shards..."))
+		mergeStart := time.Now()
+		rows, shardCount, mergeErr := mergeResultShardsToDuckDB(ctx, resultDir, mergedResultsPath)
+		if mergeErr != nil {
+			fmt.Println(warningStyle.Render(fmt.Sprintf("  Consolidation failed: %v", mergeErr)))
+		} else {
+			fmt.Println(successStyle.Render(fmt.Sprintf("  Merged %d shard(s) → %s (%s rows, %s)",
+				shardCount, mergedResultsPath, formatLargeNumber(rows), time.Since(mergeStart).Truncate(time.Millisecond))))
+		}
+	} else {
+		fmt.Println(labelStyle.Render("  Consolidation: skipped (recrawl not complete)"))
+	}
 	fmt.Println()
 
 	return err
+}
+
+func mergeResultShardsToDuckDB(ctx context.Context, resultDir, outPath string) (rows int64, shardCount int, err error) {
+	entries, err := os.ReadDir(resultDir)
+	if err != nil {
+		return 0, 0, fmt.Errorf("reading result dir: %w", err)
+	}
+	var shards []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if strings.HasPrefix(name, "results_") && strings.HasSuffix(name, ".duckdb") {
+			shards = append(shards, filepath.Join(resultDir, name))
+		}
+	}
+	if len(shards) == 0 {
+		return 0, 0, fmt.Errorf("no result shards found in %s", resultDir)
+	}
+	sort.Strings(shards)
+
+	tmpPath := outPath + ".tmp"
+	_ = os.Remove(tmpPath)
+	db, err := sql.Open("duckdb", tmpPath)
+	if err != nil {
+		return 0, 0, fmt.Errorf("opening merged db: %w", err)
+	}
+	defer func() {
+		db.Close()
+		if err != nil {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if _, err = db.ExecContext(ctx, `
+		CREATE TABLE results (
+			url VARCHAR PRIMARY KEY,
+			status_code INTEGER,
+			content_type VARCHAR,
+			content_length BIGINT,
+			body VARCHAR,
+			title VARCHAR,
+			description VARCHAR,
+			language VARCHAR,
+			domain VARCHAR,
+			redirect_url VARCHAR,
+			fetch_time_ms BIGINT,
+			crawled_at TIMESTAMP,
+			error VARCHAR,
+			status VARCHAR
+		);
+		CREATE TABLE IF NOT EXISTS meta (key VARCHAR PRIMARY KEY, value VARCHAR);
+	`); err != nil {
+		return 0, 0, fmt.Errorf("creating merged schema: %w", err)
+	}
+
+	for i, shardPath := range shards {
+		alias := fmt.Sprintf("s%d", i)
+		if _, err = db.ExecContext(ctx, fmt.Sprintf("ATTACH '%s' AS %s (READ_ONLY);", strings.ReplaceAll(shardPath, "'", "''"), alias)); err != nil {
+			return 0, len(shards), fmt.Errorf("attach shard %s: %w", shardPath, err)
+		}
+		if _, err = db.ExecContext(ctx, fmt.Sprintf("INSERT OR REPLACE INTO results SELECT * FROM %s.results", alias)); err != nil {
+			return 0, len(shards), fmt.Errorf("merge shard %s: %w", shardPath, err)
+		}
+		_, _ = db.ExecContext(ctx, fmt.Sprintf("INSERT OR REPLACE INTO meta SELECT * FROM %s.meta", alias))
+		if _, err = db.ExecContext(ctx, fmt.Sprintf("DETACH %s", alias)); err != nil {
+			return 0, len(shards), fmt.Errorf("detach shard %s: %w", shardPath, err)
+		}
+	}
+	_ = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM results").Scan(&rows)
+
+	if _, err = db.ExecContext(ctx, "INSERT OR REPLACE INTO meta (key, value) VALUES ('merged_from_dir', ?), ('merged_at', ?)", resultDir, time.Now().Format(time.RFC3339)); err != nil {
+		return 0, len(shards), fmt.Errorf("writing merged meta: %w", err)
+	}
+	if err = db.Close(); err != nil {
+		return 0, len(shards), fmt.Errorf("closing merged db: %w", err)
+	}
+	if rmErr := os.Remove(outPath); rmErr != nil && !os.IsNotExist(rmErr) {
+		return 0, len(shards), fmt.Errorf("removing old merged db: %w", rmErr)
+	}
+	if err = os.Rename(tmpPath, outPath); err != nil {
+		return 0, len(shards), fmt.Errorf("installing merged db: %w", err)
+	}
+	return rows, len(shards), nil
 }

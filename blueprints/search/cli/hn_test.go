@@ -16,6 +16,7 @@ import (
 	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
+	"github.com/spf13/cobra"
 )
 
 func TestNewHN_Subcommands(t *testing.T) {
@@ -27,6 +28,46 @@ func TestNewHN_Subcommands(t *testing.T) {
 	_ = findSubcommand(t, cmd, "sync")
 	_ = findSubcommand(t, cmd, "compact")
 	_ = findSubcommand(t, cmd, "export")
+	_ = findSubcommand(t, cmd, "domains")
+}
+
+func TestHNSync_DefaultsAndOnceFlag(t *testing.T) {
+	cmd := findSubcommand(t, NewHN(), "sync")
+	every := cmd.Flags().Lookup("every")
+	if every == nil || every.DefValue != "1m0s" {
+		t.Fatalf("unexpected --every default: %+v", every)
+	}
+	maxRuns := cmd.Flags().Lookup("max-runs")
+	if maxRuns == nil || maxRuns.DefValue != "0" {
+		t.Fatalf("unexpected --max-runs default: %+v", maxRuns)
+	}
+	once := cmd.Flags().Lookup("once")
+	if once == nil || once.DefValue != "false" {
+		t.Fatalf("unexpected --once default: %+v", once)
+	}
+}
+
+func TestHNConfigFromCmd_UsesHNDefaultDataDirFromRootFlag(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	root := &cobra.Command{Use: "search"}
+	root.PersistentFlags().String("data", filepath.Join(os.Getenv("HOME"), "data", "blueprints", "search"), "Data directory")
+	hnCmd := NewHN()
+	root.AddCommand(hnCmd)
+	hnCmd.Flags().String("data", filepath.Join(os.Getenv("HOME"), "data", "blueprints", "search"), "Data directory")
+
+	cfg := hnConfigFromCmd(hnCmd)
+	if got, want := cfg.WithDefaults().DataDir, filepath.Join(os.Getenv("HOME"), "data", "hn"); got != want {
+		t.Fatalf("unexpected HN default data dir: got %q want %q", got, want)
+	}
+
+	if err := hnCmd.Flags().Set("data", "/tmp/custom-hn-data"); err != nil {
+		t.Fatalf("set inherited data flag: %v", err)
+	}
+	cfg = hnConfigFromCmd(hnCmd)
+	if got, want := cfg.WithDefaults().DataDir, "/tmp/custom-hn-data"; got != want {
+		t.Fatalf("unexpected overridden HN data dir via --data: got %q want %q", got, want)
+	}
 }
 
 func TestHNCommands_EndToEnd(t *testing.T) {

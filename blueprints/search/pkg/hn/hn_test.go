@@ -473,6 +473,111 @@ func TestExportMonthlyParquet_PrefersDuckDBAndSkipsLatestUnchanged(t *testing.T)
 	}
 }
 
+func TestBuildDomains(t *testing.T) {
+	cfg := Config{DataDir: t.TempDir()}
+	srcDB := cfg.DefaultDBPath()
+	makeItemsDBForDomains(t, srcDB)
+
+	var progress []DomainsProgress
+	res1, err := cfg.BuildDomains(context.Background(), DomainsOptions{
+		SourceDBPath: srcDB,
+		OutDBPath:    filepath.Join(cfg.BaseDir(), "hn_domains.duckdb"),
+		Progress: func(p DomainsProgress) {
+			progress = append(progress, p)
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildDomains first: %v", err)
+	}
+	if res1.PagesRows != 4 {
+		t.Fatalf("PagesRows=%d want 4", res1.PagesRows)
+	}
+	if res1.DomainsRows != 3 {
+		t.Fatalf("DomainsRows=%d want 3", res1.DomainsRows)
+	}
+	if !res1.PagesBuilt || res1.PagesReused {
+		t.Fatalf("first run pages flags built=%v reused=%v want built=true reused=false", res1.PagesBuilt, res1.PagesReused)
+	}
+	if len(progress) == 0 {
+		t.Fatalf("expected progress events")
+	}
+
+	db, err := sql.Open("duckdb", res1.OutDBPath+"?access_mode=read_only")
+	if err != nil {
+		t.Fatalf("open domains db: %v", err)
+	}
+	defer db.Close()
+	var pagesN int64
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pages`).Scan(&pagesN); err != nil {
+		t.Fatalf("count pages: %v", err)
+	}
+	if pagesN != 4 {
+		t.Fatalf("pages count=%d want 4", pagesN)
+	}
+	var itemCount, firstItemID, latestItemID int64
+	if err := db.QueryRow(`SELECT item_count, first_item_id, latest_item_id FROM domains WHERE domain='example.com'`).Scan(&itemCount, &firstItemID, &latestItemID); err != nil {
+		t.Fatalf("query example.com domain row: %v", err)
+	}
+	if itemCount != 2 || firstItemID != 1 || latestItemID != 2 {
+		t.Fatalf("example.com domain stats got count=%d first=%d latest=%d want 2/1/2", itemCount, firstItemID, latestItemID)
+	}
+	_ = db.Close()
+
+	res2, err := cfg.BuildDomains(context.Background(), DomainsOptions{
+		SourceDBPath: srcDB,
+		OutDBPath:    res1.OutDBPath,
+	})
+	if err != nil {
+		t.Fatalf("BuildDomains second: %v", err)
+	}
+	if res2.PagesBuilt || !res2.PagesReused {
+		t.Fatalf("second run pages flags built=%v reused=%v want built=false reused=true", res2.PagesBuilt, res2.PagesReused)
+	}
+}
+
+func TestBuildRecrawlSeedDB(t *testing.T) {
+	cfg := Config{DataDir: t.TempDir()}
+	srcDB := cfg.DefaultDBPath()
+	makeItemsDBForDomains(t, srcDB)
+	if _, err := cfg.BuildDomains(context.Background(), DomainsOptions{
+		SourceDBPath: srcDB,
+		OutDBPath:    cfg.DomainsDBPath(),
+	}); err != nil {
+		t.Fatalf("BuildDomains for recrawl seed test: %v", err)
+	}
+
+	res, err := cfg.BuildRecrawlSeedDB(context.Background(), RecrawlSeedOptions{
+		DomainsDBPath: cfg.DomainsDBPath(),
+		OutDBPath:     cfg.RecrawlSeedDBPath(),
+		Limit:         3,
+	})
+	if err != nil {
+		t.Fatalf("BuildRecrawlSeedDB: %v", err)
+	}
+	if res.Rows != 3 {
+		t.Fatalf("seed rows=%d want 3", res.Rows)
+	}
+	db, err := sql.Open("duckdb", res.OutDBPath+"?access_mode=read_only")
+	if err != nil {
+		t.Fatalf("open seed db: %v", err)
+	}
+	defer db.Close()
+	var docsCount int64
+	if err := db.QueryRow(`SELECT COUNT(*) FROM docs`).Scan(&docsCount); err != nil {
+		t.Fatalf("count docs: %v", err)
+	}
+	if docsCount != 3 {
+		t.Fatalf("docs count=%d want 3", docsCount)
+	}
+	var domain, protocol, tld string
+	if err := db.QueryRow(`SELECT domain, protocol, tld FROM docs ORDER BY item_id DESC LIMIT 1`).Scan(&domain, &protocol, &tld); err != nil {
+		t.Fatalf("query docs fields: %v", err)
+	}
+	if strings.TrimSpace(domain) == "" || strings.TrimSpace(protocol) == "" || strings.TrimSpace(tld) == "" {
+		t.Fatalf("expected non-empty domain/protocol/tld, got domain=%q protocol=%q tld=%q", domain, protocol, tld)
+	}
+}
+
 func createTestParquet(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -531,6 +636,67 @@ SELECT 3::BIGINT, 0::BIGINT, 'story'::VARCHAR, 'carol'::VARCHAR,
        1701388800::BIGINT, epoch_ms(1701388800::BIGINT * 1000),
        NULL::VARCHAR, 0::BIGINT, NULL::BIGINT, NULL::BIGINT, NULL::BIGINT[], NULL::VARCHAR, 5::BIGINT, 'dec-story'::VARCHAR, NULL::BIGINT[], NULL::BIGINT`); err != nil {
 		t.Fatalf("create items export fixture: %v", err)
+	}
+}
+
+func makeItemsDBForDomains(t *testing.T, dbPath string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		t.Fatalf("mkdir db dir: %v", err)
+	}
+	db, err := sql.Open("duckdb", dbPath)
+	if err != nil {
+		t.Fatalf("open duckdb: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TABLE items (
+id BIGINT,
+deleted BIGINT,
+type VARCHAR,
+"by" VARCHAR,
+time BIGINT,
+time_ts TIMESTAMP,
+text VARCHAR,
+dead BIGINT,
+parent BIGINT,
+poll BIGINT,
+kids BIGINT[],
+url VARCHAR,
+score BIGINT,
+title VARCHAR,
+parts BIGINT[],
+descendants BIGINT
+)`); err != nil {
+		t.Fatalf("create items table for domains: %v", err)
+	}
+	stmt := `INSERT INTO items (
+id, deleted, type, "by", time, time_ts, text, dead, parent, poll, kids, url, score, title, parts, descendants
+) VALUES (?, ?, ?, ?, ?, epoch_ms(? * 1000), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	rows := []struct {
+		id          int64
+		typ         string
+		by          string
+		t           int64
+		text        any
+		parent      any
+		url         any
+		score       any
+		title       any
+		descendants any
+	}{
+		{1, "story", "alice", 1700000000, nil, nil, "https://example.com/a", int64(10), "a", int64(1)},
+		{2, "story", "bob", 1700001000, nil, nil, "https://example.com/b?q=1", int64(12), "b", int64(2)},
+		{3, "job", "carol", 1700002000, nil, nil, "http://news.ycombinator.com/item?id=1", nil, "job", nil},
+		{4, "story", "dave", 1700003000, nil, nil, "https://sub.example.org/path", int64(8), "c", int64(3)},
+		{5, "comment", "eve", 1700004000, "no link", int64(1), nil, nil, nil, nil},
+	}
+	for _, r := range rows {
+		if _, err := db.Exec(stmt,
+			r.id, int64(0), r.typ, r.by, r.t, r.t,
+			r.text, int64(0), r.parent, nil, nil, r.url, r.score, r.title, nil, r.descendants,
+		); err != nil {
+			t.Fatalf("insert item %d for domains: %v", r.id, err)
+		}
 	}
 }
 

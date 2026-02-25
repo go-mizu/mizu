@@ -1,0 +1,69 @@
+# syntax=docker/dockerfile:1.7
+
+ARG BASE_IMAGE=ubuntu:20.04
+ARG GO_VERSION=1.26.0
+
+FROM ${BASE_IMAGE} AS build
+
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+ARG GO_VERSION
+
+WORKDIR /src
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Cache apt metadata/packages to make rebuilds much faster and less fragile.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates curl xz-utils make pkg-config \
+        software-properties-common gnupg
+
+# Ubuntu 20.04 base keeps glibc compatible with the target server; add newer GCC toolchain
+# only for linking DuckDB's C++ static library. Runtime libstdc++ is bundled on deploy.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    add-apt-repository -y ppa:ubuntu-toolchain-r/test \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gcc-11 g++-11 libc6-dev libstdc++-11-dev
+
+RUN curl -fsSL "https://dl.google.com/go/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" -o /tmp/go.tgz \
+    && tar -C /usr/local -xzf /tmp/go.tgz \
+    && rm -f /tmp/go.tgz
+
+ENV PATH=/usr/local/go/bin:${PATH}
+ENV CC=gcc-11
+ENV CXX=g++-11
+
+# Cache dependency resolution first (best practice).
+# Keep files in their real monorepo paths so relative `replace ../..` works.
+COPY go.mod go.sum /src/
+COPY blueprints/search/go.mod blueprints/search/go.sum /src/blueprints/search/
+
+# Search blueprint module has a local replace to the monorepo root; keep it because
+# the Docker/Podman build context is the monorepo root.
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    cd /src/blueprints/search \
+    && \
+    GOWORK=off go mod download
+
+# Copy sources after dependency cache is primed.
+# Build context is the monorepo root; keep Dockerfile in blueprints/search.
+COPY . .
+
+WORKDIR /src/blueprints/search
+
+ARG GO_LDFLAGS=""
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=1 GOWORK=off GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags "${GO_LDFLAGS} -linkmode external -extldflags '-static-libstdc++ -static-libgcc'" \
+    -o /out/search-linux ./cmd/search \
+    && chmod +x /out/search-linux
+
+FROM scratch AS artifact
+COPY --from=build /out/search-linux /search-linux

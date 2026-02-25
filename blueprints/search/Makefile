@@ -4,10 +4,25 @@ SHELL := /usr/bin/env bash
 GO      ?= go
 PKG     ?= ./...
 BINARY  ?= $(HOME)/bin/search
+LINUX_BINARY ?= $(HOME)/bin/search-linux
+LINUX_RUNTIME_LIB_DIR ?= $(HOME)/bin/search-linux-libs-focal-gcc11
+LINUX_RUNTIME_LIBSTDCPP ?= $(LINUX_RUNTIME_LIB_DIR)/libstdc++.so.6
 CMD     ?= ./cmd/search
 DATA_DIR ?= $(HOME)/data/blueprint/search
+REMOTE_USER ?= tam
+REMOTE_HOST ?= server
+REMOTE_BIN ?= $(HOME)/bin/search
+REMOTE_SSH ?= $(REMOTE_USER)@$(REMOTE_HOST)
 
 CGO_ENABLED ?= 1
+LINUX_BASE_IMAGE ?= ubuntu:20.04
+LINUX_GO_VERSION ?= 1.26.0
+LINUX_GOARCH ?= amd64
+LINUX_DOCKERFILE ?= Dockerfile.linux
+LINUX_BUILD_CONTEXT ?= $(abspath ../..)
+LINUX_IGNOREFILE ?= $(LINUX_DOCKERFILE).dockerignore
+LINUX_CONTAINER ?= podman
+LINUX_IMAGE_TAG ?= mizu-search-linux-build:local
 
 VERSION ?= $(shell git describe --tags --dirty --match "v*" 2>/dev/null || echo "dev")
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -49,6 +64,107 @@ build-quick: ## Build binary without frontend (faster for development)
 	@mkdir -p $(dir $(BINARY))
 	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BINARY) $(CMD)
 	@echo "Built: $(BINARY) ($(VERSION))"
+
+.PHONY: build-linux
+build-linux: ## Build Ubuntu/Linux binary to $$HOME/bin/search-linux (Docker, CGO enabled)
+	@mkdir -p $(dir $(LINUX_BINARY))
+	@tmp_out="$$(mktemp -d)"; \
+		img="$(LINUX_IMAGE_TAG)"; \
+		cid=""; \
+		set -e; \
+		trap 'test -n "$$cid" && $(LINUX_CONTAINER) rm -f "$$cid" >/dev/null 2>&1 || true; rm -rf "$$tmp_out"' EXIT; \
+		command -v "$(LINUX_CONTAINER)" >/dev/null 2>&1 || { echo "$(LINUX_CONTAINER) not found"; exit 127; }; \
+		if [ "$(LINUX_CONTAINER)" = "podman" ]; then \
+			if ! podman machine inspect >/dev/null 2>&1; then \
+				echo "Initializing podman machine..."; \
+				podman machine init; \
+			fi; \
+			if ! podman info >/dev/null 2>&1; then \
+				echo "Starting podman machine..."; \
+				podman machine start >/dev/null; \
+			fi; \
+			for i in $$(seq 1 30); do \
+				podman info >/dev/null 2>&1 && break; \
+				sleep 1; \
+			done; \
+			podman info >/dev/null 2>&1 || { echo "podman not ready"; exit 1; }; \
+		fi; \
+		$(LINUX_CONTAINER) build \
+			--layers \
+			--platform "linux/$(LINUX_GOARCH)" \
+			--file "$(LINUX_DOCKERFILE)" \
+			--ignorefile "$(LINUX_IGNOREFILE)" \
+			--build-arg BASE_IMAGE="$(LINUX_BASE_IMAGE)" \
+			--build-arg GO_VERSION="$(LINUX_GO_VERSION)" \
+			--build-arg TARGETARCH="$(LINUX_GOARCH)" \
+			--build-arg GO_LDFLAGS="$(GO_LDFLAGS)" \
+			--target artifact \
+			-t "$$img" \
+			"$(LINUX_BUILD_CONTEXT)"; \
+		cid="$$($(LINUX_CONTAINER) create "$$img")"; \
+		$(LINUX_CONTAINER) cp "$$cid:/search-linux" "$$tmp_out/search-linux"; \
+		install -m 0755 "$$tmp_out/search-linux" "$(LINUX_BINARY)"
+	@echo "Built Linux binary: $(LINUX_BINARY) ($(VERSION))"
+
+.PHONY: deploy-linux
+deploy-linux: build-linux ## Deploy linux binary to remote $$HOME/bin/search
+	@test -n "$(PHRASE)" || { echo "PHRASE env is required"; exit 1; }
+	@command -v expect >/dev/null 2>&1 || { echo "expect is required"; exit 1; }
+	@test -f "$(LINUX_RUNTIME_LIBSTDCPP)" || { echo "Missing runtime lib: $(LINUX_RUNTIME_LIBSTDCPP)"; exit 1; }
+	@expect -c ' \
+		set timeout -1; \
+		set phrase $env(PHRASE); \
+		spawn ssh $(REMOTE_SSH) "mkdir -p \$$HOME/bin \$$HOME/bin/search-libs"; \
+		expect { \
+			-re "passphrase.*:" { send -- "$$phrase\r"; exp_continue } \
+			eof \
+		} \
+	'
+	@expect -c ' \
+		set timeout -1; \
+		set phrase $env(PHRASE); \
+		spawn scp "$(LINUX_BINARY)" $(REMOTE_SSH):.search-upload.tmp; \
+		expect { \
+			-re "passphrase.*:" { send -- "$$phrase\r"; exp_continue } \
+			eof \
+		} \
+	'
+	@expect -c ' \
+		set timeout -1; \
+		set phrase $env(PHRASE); \
+		spawn scp "$(LINUX_RUNTIME_LIBSTDCPP)" $(REMOTE_SSH):.libstdc++.so.6.tmp; \
+		expect { \
+			-re "passphrase.*:" { send -- "$$phrase\r"; exp_continue } \
+			eof \
+		} \
+	'
+	@expect -c ' \
+		set timeout -1; \
+		set phrase $env(PHRASE); \
+		spawn ssh $(REMOTE_SSH) "bash -lc '\''set -e; install -m 0755 \$$HOME/.search-upload.tmp \$$HOME/bin/search-linux; install -m 0644 \$$HOME/.libstdc++.so.6.tmp \$$HOME/bin/search-libs/libstdc++.so.6; rm -f \$$HOME/.search-upload.tmp \$$HOME/.libstdc++.so.6.tmp \$$HOME/bin/search-linux.bin; cat > \$$HOME/bin/search <<\"SH\"\n#!/usr/bin/env bash\nexport LD_LIBRARY_PATH=\"\$$HOME/bin/search-libs\${LD_LIBRARY_PATH:+:\$$LD_LIBRARY_PATH}\"\nexec \"\$$HOME/bin/search-linux\" \"\$$@\"\nSH\nchmod +x \$$HOME/bin/search'\''"; \
+		expect { \
+			-re "passphrase.*:" { send -- "$$phrase\r"; exp_continue } \
+			eof \
+		} \
+	'
+	@echo "Deployed: $(REMOTE_SSH):~/bin/search"
+
+.PHONY: remote-search
+remote-search: ## Run remote `search --help` (requires PHRASE env)
+	@test -n "$(PHRASE)" || { echo "PHRASE env is required"; exit 1; }
+	@command -v expect >/dev/null 2>&1 || { echo "expect is required"; exit 1; }
+	@tmp_expect="$$(mktemp)"; \
+		trap 'rm -f "$$tmp_expect"' EXIT; \
+		{ \
+			echo 'set timeout -1'; \
+			echo 'set phrase $$env(PHRASE)'; \
+			echo 'spawn ssh $(REMOTE_SSH) {bash -lc '\''timeout 20s ~/bin/search --help | head -40; echo EXIT:$$?'\''}'; \
+			echo 'expect {'; \
+			echo '  -re "passphrase.*:" { send -- "$$phrase\r"; exp_continue }'; \
+			echo '  eof'; \
+			echo '}'; \
+		} > "$$tmp_expect"; \
+		expect "$$tmp_expect"
 
 .PHONY: install
 install: build ## Install search binary to $$HOME/bin/search (alias for build)

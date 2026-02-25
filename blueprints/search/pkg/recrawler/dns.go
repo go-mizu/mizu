@@ -133,9 +133,9 @@ func (d *DNSResolver) LoadCache(dbPath string) (int, error) {
 
 	var query string
 	if hasTimeout {
-		query = "SELECT domain, ips, dead, COALESCE(error, '') as error, timeout FROM dns"
+		query = "SELECT domain, COALESCE(ips, '') as ips, dead, COALESCE(error, '') as error, timeout FROM dns"
 	} else {
-		query = "SELECT domain, ips, dead, COALESCE(error, '') as error FROM dns"
+		query = "SELECT domain, COALESCE(ips, '') as ips, dead, COALESCE(error, '') as error FROM dns"
 	}
 
 	rows, err := db.Query(query)
@@ -218,22 +218,40 @@ func (d *DNSResolver) SaveCache(dbPath string) error {
 		s := &d.shards[i]
 		s.mu.RLock()
 		for domain, ips := range s.resolved {
-			fmt.Fprintf(w, "%s\t%s\tfalse\t \tfalse\n", domain, strings.Join(ips, ","))
+			fmt.Fprintf(w, "%s\t%s\tfalse\t\tfalse\n", csvEscape(domain), csvEscape(strings.Join(ips, ",")))
 		}
 		for domain, errMsg := range s.dead {
-			fmt.Fprintf(w, "%s\t \ttrue\t%s\tfalse\n", domain, csvEscape(errMsg))
+			fmt.Fprintf(w, "%s\t\ttrue\t%s\tfalse\n", csvEscape(domain), csvEscape(errMsg))
 		}
 		for domain, errMsg := range s.timeout {
-			fmt.Fprintf(w, "%s\t \tfalse\t%s\ttrue\n", domain, csvEscape(errMsg))
+			fmt.Fprintf(w, "%s\t\tfalse\t%s\ttrue\n", csvEscape(domain), csvEscape(errMsg))
 		}
 		s.mu.RUnlock()
 	}
-	w.Flush()
-	f.Close()
+	if err := w.Flush(); err != nil {
+		f.Close()
+		os.Remove(tmpFile)
+		return fmt.Errorf("flush dns cache temp csv: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmpFile)
+		return fmt.Errorf("close dns cache temp csv: %w", err)
+	}
 
-	// Bulk load via COPY
-	_, err = db.Exec(fmt.Sprintf(`COPY dns(domain, ips, dead, error, timeout) FROM '%s' (DELIMITER '\t', HEADER false)`, tmpFile))
-	os.Remove(tmpFile)
+	// Bulk load via explicit-schema CSV reader to avoid brittle auto-detection/type inference.
+	_, err = db.Exec(fmt.Sprintf(`INSERT INTO dns(domain, ips, dead, error, timeout)
+SELECT
+  NULLIF(domain, '') AS domain,
+  NULLIF(ips, '') AS ips,
+  lower(trim(dead)) = 'true' AS dead,
+  COALESCE(error, '') AS error,
+  lower(trim(timeout)) = 'true' AS timeout
+FROM read_csv('%s',
+  delim='\t',
+  header=false,
+  columns={'domain':'VARCHAR','ips':'VARCHAR','dead':'VARCHAR','error':'VARCHAR','timeout':'VARCHAR'},
+  nullstr='')`, tmpFile))
+	_ = os.Remove(tmpFile)
 	if err != nil {
 		return fmt.Errorf("bulk loading dns cache: %w", err)
 	}
@@ -467,60 +485,92 @@ drain:
 // resolveOneBatch resolves a single domain using concurrent multi-server lookups.
 // All DNS servers (fastdns + stdlib) are queried simultaneously; first success wins.
 func (d *DNSResolver) resolveOneBatch(ctx context.Context, domain string, clients []*fastdns.Client, stdResolver *net.Resolver, fallbackSem chan struct{}, batchTimeout time.Duration) {
-	totalResolvers := len(clients) + 1
+	totalResolvers := len(clients)
+	if stdResolver != nil {
+		totalResolvers++
+	}
 	resolveCtx, resolveCancel := context.WithTimeout(ctx, batchTimeout)
 	defer resolveCancel()
 
 	type dnsRes struct {
-		addrs []string
-		err   error
+		addrs          []string
+		err            error
+		definitelyDead bool
+		emptyAnswer    bool
 	}
 	resCh := make(chan dnsRes, totalResolvers)
 
 	for _, client := range clients {
 		go func(c *fastdns.Client) {
-			ips, lookupErr := c.LookupNetIP(resolveCtx, "ip4", domain)
+			// Query both IPv4 and IPv6. Using only ip4 can misclassify IPv6-only domains as dead.
+			ips, lookupErr := c.LookupNetIP(resolveCtx, "ip", domain)
 			var addrs []string
+			emptyAnswer := false
 			if lookupErr == nil {
 				addrs = make([]string, len(ips))
 				for j, ip := range ips {
 					addrs[j] = ip.String()
 				}
+				emptyAnswer = len(addrs) == 0
 			}
-			resCh <- dnsRes{addrs, lookupErr}
+			resCh <- dnsRes{addrs: addrs, err: lookupErr, emptyAnswer: emptyAnswer}
 		}(client)
 	}
 
-	// stdlib fallback (concurrent, bounded by semaphore)
-	go func() {
-		select {
-		case fallbackSem <- struct{}{}:
-		case <-resolveCtx.Done():
-			resCh <- dnsRes{err: resolveCtx.Err()}
-			return
-		}
-		addrs, lookupErr := stdResolver.LookupHost(resolveCtx, domain)
-		<-fallbackSem
-		resCh <- dnsRes{addrs, lookupErr}
-	}()
+	// stdlib fallback (concurrent, bounded by semaphore). Optional in batch mode.
+	if stdResolver != nil {
+		go func() {
+			select {
+			case fallbackSem <- struct{}{}:
+			case <-resolveCtx.Done():
+				resCh <- dnsRes{err: resolveCtx.Err()}
+				return
+			}
+			addrs, lookupErr := stdResolver.LookupHost(resolveCtx, domain)
+			<-fallbackSem
+			resCh <- dnsRes{addrs: addrs, err: lookupErr, definitelyDead: isDefinitelyDead(lookupErr)}
+		}()
+	}
 
 	// Collect results — first success wins
 	var resolved bool
 	var lastErr error
-	for range totalResolvers {
-		res := <-resCh
-		if res.err == nil && len(res.addrs) > 0 {
-			s := &d.shards[shardFor(domain)]
-			s.mu.Lock()
-			s.resolved[domain] = res.addrs
-			s.mu.Unlock()
-			d.ok.Add(1)
-			resolved = true
-			resolveCancel() // cancel remaining lookups
-			break
+	var sawDefinitelyDead bool
+	var sawEmptyAnswer bool
+	received := 0
+	for received < totalResolvers {
+		select {
+		case res := <-resCh:
+			received++
+			if res.err == nil && len(res.addrs) > 0 {
+				s := &d.shards[shardFor(domain)]
+				s.mu.Lock()
+				s.resolved[domain] = res.addrs
+				s.mu.Unlock()
+				d.ok.Add(1)
+				resolved = true
+				resolveCancel() // cancel remaining lookups
+				break
+			}
+			if res.definitelyDead {
+				sawDefinitelyDead = true
+			}
+			if res.emptyAnswer {
+				sawEmptyAnswer = true
+			}
+			if res.err != nil {
+				lastErr = res.err
+			}
+		case <-resolveCtx.Done():
+			// Some resolver goroutine (typically stdlib fallback) can ignore context and hang.
+			// Don't block the worker waiting for all backends; classify based on the timeout.
+			if lastErr == nil {
+				lastErr = resolveCtx.Err()
+			}
+			received = totalResolvers
 		}
-		if res.err != nil {
-			lastErr = res.err
+		if resolved {
+			break
 		}
 	}
 	if resolved {
@@ -531,7 +581,7 @@ func (d *DNSResolver) resolveOneBatch(ctx context.Context, domain string, client
 	// For timeout failures: retry once with doubled timeout via stdlib only.
 	// DNS timeouts are often transient (packet loss), not permanent.
 	// This recovers ~30-50% of timeout domains with minimal overhead.
-	if lastErr != nil && isTimeoutErr(lastErr) {
+	if stdResolver != nil && lastErr != nil && isTimeoutErr(lastErr) {
 		retryTimeout := min(batchTimeout*2, 4*time.Second)
 		retryCtx, retryCancel := context.WithTimeout(ctx, retryTimeout)
 		select {
@@ -557,15 +607,9 @@ func (d *DNSResolver) resolveOneBatch(ctx context.Context, domain string, client
 	}
 
 classify:
-	if lastErr != nil && isTimeoutErr(lastErr) {
-		s := &d.shards[shardFor(domain)]
-		s.mu.Lock()
-		s.timeout[domain] = truncateErr(lastErr)
-		s.mu.Unlock()
-		d.timedOut.Add(1)
-	} else {
+	if sawDefinitelyDead {
 		errMsg := "NXDOMAIN"
-		if lastErr != nil {
+		if lastErr != nil && isDefinitelyDead(lastErr) {
 			errMsg = truncateErr(lastErr)
 		}
 		s := &d.shards[shardFor(domain)]
@@ -573,6 +617,30 @@ classify:
 		s.dead[domain] = errMsg
 		s.mu.Unlock()
 		d.failed.Add(1)
+		return
+	}
+	// Empty answers (especially from fastdns) are ambiguous in batch mode and can include
+	// non-NXDOMAIN cases; treat them as timeout/temporary to avoid false "dead" caching.
+	if sawEmptyAnswer && lastErr == nil {
+		lastErr = fmt.Errorf("no dns answer")
+	}
+	if lastErr != nil && isTimeoutErr(lastErr) {
+		s := &d.shards[shardFor(domain)]
+		s.mu.Lock()
+		s.timeout[domain] = truncateErr(lastErr)
+		s.mu.Unlock()
+		d.timedOut.Add(1)
+	} else {
+		// Non-timeout, non-definitive errors are treated as timeout/temporary to avoid false deads.
+		errMsg := "temporary_dns_error"
+		if lastErr != nil {
+			errMsg = truncateErr(lastErr)
+		}
+		s := &d.shards[shardFor(domain)]
+		s.mu.Lock()
+		s.timeout[domain] = errMsg
+		s.mu.Unlock()
+		d.timedOut.Add(1)
 	}
 }
 

@@ -3,12 +3,14 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/hn"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/recrawler"
 	"github.com/spf13/cobra"
 )
 
@@ -58,11 +60,24 @@ Other commands:
 	cmd.AddCommand(newHNSync())
 	cmd.AddCommand(newHNCompact())
 	cmd.AddCommand(newHNExport())
+	cmd.AddCommand(newHNDomains())
+	cmd.AddCommand(newHNRecrawl())
 	return cmd
 }
 
 func hnConfigFromCmd(cmd *cobra.Command) hn.Config {
 	var cfg hn.Config
+	// HN commands use a dedicated data directory by default. If the generic root
+	// --data flag is not explicitly set, force the HN default ($HOME/data/hn).
+	if dataFlag := cmd.Flags().Lookup("data"); dataFlag != nil {
+		if dataFlag.Changed {
+			if v, _ := cmd.Flags().GetString("data"); strings.TrimSpace(v) != "" {
+				cfg.DataDir = v
+			}
+		} else if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
+			cfg.DataDir = filepath.Join(home, "data", "hn")
+		}
+	}
 	if v, _ := cmd.Flags().GetString("dir"); strings.TrimSpace(v) != "" {
 		cfg.DataDir = v
 	}
@@ -176,7 +191,14 @@ func newHNImport() *cobra.Command {
 			fmt.Printf("  Source:      %s\n", labelStyle.Render(strings.ToLower(strings.TrimSpace(sourceStr))))
 			fmt.Printf("  DuckDB:      %s\n", labelStyle.Render(dbPath))
 			fmt.Printf("  Mode hint:   %s\n", labelStyle.Render(ternary(rebuild, "rebuild", "incremental if DB exists")))
-			res, err := cfg.Import(cmd.Context(), hn.ImportOptions{Source: source, DBPath: dbPath, Rebuild: rebuild})
+			res, err := cfg.Import(cmd.Context(), hn.ImportOptions{
+				Source:  source,
+				DBPath:  dbPath,
+				Rebuild: rebuild,
+				Progress: func(p hn.ImportProgress) {
+					printHNImportProgress(p)
+				},
+			})
 			if err != nil {
 				return err
 			}
@@ -193,22 +215,43 @@ func newHNImport() *cobra.Command {
 func newHNSync() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sync",
-		Short: "Download and then import HN data in one command",
+		Short: "Continuously sync HN data (download + import) until Ctrl-C",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			once, _ := cmd.Flags().GetBool("once")
 			every, _ := cmd.Flags().GetDuration("every")
 			maxRuns, _ := cmd.Flags().GetInt("max-runs")
+			if once {
+				every = 0
+				maxRuns = 1
+			}
 			if every <= 0 {
-				return runHNSyncOnce(cmd.Context(), cmd, 1)
+				if err := runHNSyncOnce(cmd.Context(), cmd, 1); err != nil {
+					if cmd.Context().Err() != nil {
+						fmt.Println(warningStyle.Render("Interrupted HN sync."))
+						return nil
+					}
+					return err
+				}
+				return nil
 			}
 			if maxRuns == 0 {
 				maxRuns = -1
 			}
+			fmt.Printf("%s interval=%s runs=%s (Ctrl-C to stop)\n",
+				infoStyle.Render("HN sync loop:"),
+				labelStyle.Render(every.String()),
+				labelStyle.Render(ternary(maxRuns < 0, "infinite", strconv.Itoa(maxRuns))),
+			)
 			run := 0
 			for {
 				run++
 				started := time.Now()
 				fmt.Printf("%s HN sync tick #%d at %s\n", infoStyle.Render("Running"), run, labelStyle.Render(started.Format(time.RFC3339)))
 				if err := runHNSyncOnce(cmd.Context(), cmd, run); err != nil {
+					if cmd.Context().Err() != nil {
+						fmt.Println(warningStyle.Render("Interrupted HN sync."))
+						return nil
+					}
 					return err
 				}
 				if maxRuns > 0 && run >= maxRuns {
@@ -223,7 +266,8 @@ func newHNSync() *cobra.Command {
 				select {
 				case <-cmd.Context().Done():
 					timer.Stop()
-					return cmd.Context().Err()
+					fmt.Println(warningStyle.Render("Interrupted HN sync."))
+					return nil
 				case <-timer.C:
 				}
 			}
@@ -237,8 +281,9 @@ func newHNSync() *cobra.Command {
 	cmd.Flags().Int64("to-id", 0, "End item id (default: remote max id)")
 	cmd.Flags().String("db", "", "DuckDB output path (default: $HOME/data/hn/hn.duckdb)")
 	cmd.Flags().Bool("rebuild", false, "Force full table rebuild instead of incremental merge when DB exists")
-	cmd.Flags().Duration("every", 0, "Run sync on a ticker interval (e.g. 1m, 30s)")
-	cmd.Flags().Int("max-runs", 1, "Stop after N runs when --every is set (0 = run forever)")
+	cmd.Flags().Bool("once", false, "Run one sync cycle and exit (disables the default continuous ticker)")
+	cmd.Flags().Duration("every", time.Minute, "Ticker interval between sync runs (default: 1m)")
+	cmd.Flags().Int("max-runs", 0, "Stop after N runs when ticker is enabled (0 = run forever)")
 	return cmd
 }
 
@@ -391,6 +436,203 @@ func newHNExport() *cobra.Command {
 	return cmd
 }
 
+func newHNDomains() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "domains",
+		Short: "Build pages + domains analytics tables from local HN DuckDB",
+		Long: `Builds a separate DuckDB database with:
+  pages   - one row per HN item that has a URL (normalized host/domain fields)
+  domains - aggregated stats per domain/host (counts, first/latest item, etc.)
+
+It reads from the local HN database (hn.duckdb) and persists pages first, then
+aggregates domains from pages for faster repeated runs.`,
+		Example: `  search hn domains
+  search hn domains --out-db ~/data/hn/hn_domains.duckdb
+  search hn domains --force-pages`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := hnConfigFromCmd(cmd)
+			srcDB, _ := cmd.Flags().GetString("db")
+			outDB, _ := cmd.Flags().GetString("out-db")
+			forcePages, _ := cmd.Flags().GetBool("force-pages")
+			if strings.TrimSpace(srcDB) == "" {
+				srcDB = cfg.WithDefaults().DefaultDBPath()
+			}
+			if strings.TrimSpace(outDB) == "" {
+				outDB = cfg.WithDefaults().DomainsDBPath()
+			}
+			fmt.Println(infoStyle.Render("Building HN domain analytics database..."))
+			fmt.Printf("  Source DB:   %s\n", labelStyle.Render(srcDB))
+			fmt.Printf("  Output DB:   %s\n", labelStyle.Render(outDB))
+			fmt.Printf("  Strategy:    %s\n", labelStyle.Render("materialize pages first, then aggregate domains"))
+			res, err := cfg.BuildDomains(cmd.Context(), hn.DomainsOptions{
+				SourceDBPath: srcDB,
+				OutDBPath:    outDB,
+				ForcePages:   forcePages,
+				Progress: func(p hn.DomainsProgress) {
+					switch p.Stage {
+					case "start", "attach":
+						fmt.Printf("  %s %s\n", labelStyle.Render(p.Stage+":"), labelStyle.Render(p.Detail))
+					case "pages":
+						fmt.Printf("  %s %s\n", labelStyle.Render("pages:"), labelStyle.Render(p.Detail))
+					case "domains":
+						fmt.Printf("  %s %s\n", labelStyle.Render("domains:"), labelStyle.Render(p.Detail))
+					case "done":
+						fmt.Printf("  %s %s\n", successStyle.Render("done:"), labelStyle.Render(p.Detail))
+					}
+				},
+			})
+			if err != nil {
+				return err
+			}
+			fmt.Printf("  %s  Output DB: %s\n", successStyle.Render("OK"), labelStyle.Render(res.OutDBPath))
+			fmt.Printf("  Source rows:   %s (%s)\n", successStyle.Render(formatLargeNumber(res.SourceRows)), successStyle.Render(formatInt64Exact(res.SourceRows)))
+			fmt.Printf("  Source max id: %s (%s)\n", successStyle.Render(formatLargeNumber(res.SourceMaxID)), successStyle.Render(formatInt64Exact(res.SourceMaxID)))
+			if strings.TrimSpace(res.SourceMaxTime) != "" {
+				fmt.Printf("  Source max time: %s\n", labelStyle.Render(res.SourceMaxTime))
+			}
+			fmt.Printf("  Link items:    %s (%s)\n", successStyle.Render(formatLargeNumber(res.SourceLinkItems)), successStyle.Render(formatInt64Exact(res.SourceLinkItems)))
+			fmt.Printf("  Pages table:   %s rows (%s)\n", successStyle.Render(formatLargeNumber(res.PagesRows)), successStyle.Render(formatInt64Exact(res.PagesRows)))
+			fmt.Printf("  Domains table: %s rows (%s)\n", successStyle.Render(formatLargeNumber(res.DomainsRows)), successStyle.Render(formatInt64Exact(res.DomainsRows)))
+			switch {
+			case res.PagesBuilt:
+				fmt.Printf("  Pages build:   %s\n", successStyle.Render("rebuilt"))
+			case res.PagesReused:
+				fmt.Printf("  Pages build:   %s\n", labelStyle.Render("reused (source unchanged)"))
+			default:
+				fmt.Printf("  Pages build:   %s\n", labelStyle.Render("unknown"))
+			}
+			fmt.Printf("  Domains build: %s\n", successStyle.Render(ternary(res.DomainsBuilt, "rebuilt", "skipped")))
+			fmt.Printf("  Elapsed:       %s\n", labelStyle.Render(formatDuration(res.Elapsed)))
+			return nil
+		},
+	}
+	cmd.Flags().String("db", "", "Source HN DuckDB path (default: $HOME/data/hn/hn.duckdb)")
+	cmd.Flags().String("out-db", "", "Output domains DuckDB path (default: $HOME/data/hn/hn_domains.duckdb)")
+	cmd.Flags().Bool("force-pages", false, "Rebuild pages table even if source HN DB appears unchanged")
+	return cmd
+}
+
+func newHNRecrawl() *cobra.Command {
+	var (
+		domainsDB       string
+		seedDB          string
+		limit           int
+		domainLike      string
+		forceSeeds      bool
+		workers         int
+		dnsWorkers      int
+		dnsTimeoutMs    int
+		timeoutMs       int
+		headOnly        bool
+		statusOnly      bool
+		batchSize       int
+		resume          bool
+		userAgent       string
+		dnsPrefetch     bool
+		transportShards int
+		twoPass         bool
+	)
+	cmd := &cobra.Command{
+		Use:   "recrawl",
+		Short: "Recrawl URLs extracted from HN domains/pages database",
+		Long: `Builds a recrawl seed database from hn_domains.duckdb (pages table), then
+runs the high-throughput recrawler with the same live progress/summary UI used by
+the generic recrawl command.`,
+		Example: `  search hn recrawl --limit 100 --status-only
+  search hn recrawl --domain github.com --limit 1000 --resume
+  search hn recrawl --workers 200 --timeout 5000`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := hnConfigFromCmd(cmd)
+			if strings.TrimSpace(domainsDB) == "" {
+				domainsDB = cfg.WithDefaults().DomainsDBPath()
+			}
+			if strings.TrimSpace(seedDB) == "" {
+				seedDB = cfg.WithDefaults().RecrawlSeedDBPath()
+			}
+
+			fmt.Println(infoStyle.Render("Preparing HN recrawl seed database..."))
+			fmt.Printf("  HN domains DB: %s\n", labelStyle.Render(domainsDB))
+			fmt.Printf("  Seed DB:       %s\n", labelStyle.Render(seedDB))
+			if limit > 0 {
+				fmt.Printf("  Limit:         %s\n", labelStyle.Render(formatInt64Exact(int64(limit))))
+			}
+			if strings.TrimSpace(domainLike) != "" {
+				fmt.Printf("  Domain filter: %s\n", labelStyle.Render(domainLike))
+			}
+			seedRes, err := cfg.BuildRecrawlSeedDB(cmd.Context(), hn.RecrawlSeedOptions{
+				DomainsDBPath: domainsDB,
+				OutDBPath:     seedDB,
+				Limit:         limit,
+				DomainLike:    domainLike,
+				Force:         forceSeeds,
+				Progress: func(p hn.RecrawlSeedProgress) {
+					switch p.Stage {
+					case "attach", "build":
+						fmt.Printf("  %s %s\n", labelStyle.Render(p.Stage+":"), labelStyle.Render(p.Detail))
+					case "done":
+						fmt.Printf("  %s %s rows=%s elapsed=%s\n",
+							successStyle.Render("seed:"),
+							labelStyle.Render(p.Detail),
+							labelStyle.Render(formatInt64Exact(p.Rows)),
+							labelStyle.Render(formatDuration(p.Elapsed)),
+						)
+					}
+				},
+			})
+			if err != nil {
+				if cmd.Context().Err() != nil {
+					fmt.Println(warningStyle.Render("Interrupted during HN recrawl seed preparation."))
+					return nil
+				}
+				return err
+			}
+			fmt.Printf("  Seed rows:     %s (%s)\n", successStyle.Render(formatLargeNumber(seedRes.Rows)), successStyle.Render(formatInt64Exact(seedRes.Rows)))
+			fmt.Printf("  Seed domains:  %s (%s)\n", successStyle.Render(formatLargeNumber(seedRes.UniqueDomains)), successStyle.Render(formatInt64Exact(seedRes.UniqueDomains)))
+			fmt.Printf("  Seed build:    %s\n", labelStyle.Render(formatDuration(seedRes.Elapsed)))
+			fmt.Println()
+
+			err = runRecrawl(cmd.Context(), seedRes.OutDBPath, recrawler.Config{
+				Workers:         workers,
+				DNSWorkers:      dnsWorkers,
+				DNSTimeout:      time.Duration(dnsTimeoutMs) * time.Millisecond,
+				Timeout:         time.Duration(timeoutMs) * time.Millisecond,
+				UserAgent:       userAgent,
+				HeadOnly:        headOnly,
+				StatusOnly:      statusOnly,
+				BatchSize:       batchSize,
+				Resume:          resume,
+				DNSPrefetch:     dnsPrefetch,
+				TransportShards: transportShards,
+				TwoPass:         twoPass,
+			})
+			if err != nil && cmd.Context().Err() != nil {
+				fmt.Println(warningStyle.Render("Interrupted HN recrawl."))
+				return nil
+			}
+			return err
+		},
+	}
+	cmd.Flags().StringVar(&domainsDB, "domains-db", "", "Path to hn_domains DuckDB (default: $HOME/data/hn/hn_domains.duckdb)")
+	cmd.Flags().StringVar(&seedDB, "seed-db", "", "Path to recrawl seed DuckDB (default: $HOME/data/hn/recrawl/hn_pages.duckdb)")
+	cmd.Flags().IntVar(&limit, "limit", 0, "Max URLs to recrawl from hn_domains.pages (0=all)")
+	cmd.Flags().StringVar(&domainLike, "domain", "", "Filter host/domain with ILIKE substring match")
+	cmd.Flags().BoolVar(&forceSeeds, "force-seeds", false, "Rebuild seed DB from hn_domains.pages even if existing")
+
+	cmd.Flags().IntVar(&workers, "workers", 200, "Number of concurrent HTTP fetch workers")
+	cmd.Flags().IntVar(&dnsWorkers, "dns-workers", 256, "Number of concurrent DNS workers")
+	cmd.Flags().IntVar(&dnsTimeoutMs, "dns-timeout", 1500, "DNS lookup timeout in milliseconds")
+	cmd.Flags().IntVar(&timeoutMs, "timeout", 5000, "Per-request HTTP timeout in milliseconds")
+	cmd.Flags().BoolVar(&headOnly, "head-only", false, "Only fetch headers, skip body")
+	cmd.Flags().BoolVar(&statusOnly, "status-only", true, "Only check HTTP status, close body immediately (fastest)")
+	cmd.Flags().IntVar(&batchSize, "batch-size", 5000, "DB write batch size")
+	cmd.Flags().BoolVar(&resume, "resume", true, "Skip already-crawled URLs")
+	cmd.Flags().StringVar(&userAgent, "user-agent", "MizuCrawler/1.0", "User-Agent header")
+	cmd.Flags().BoolVar(&dnsPrefetch, "dns-prefetch", true, "Batch DNS pre-resolution for all domains")
+	cmd.Flags().IntVar(&transportShards, "transport-shards", 64, "Number of HTTP transport shards")
+	cmd.Flags().BoolVar(&twoPass, "two-pass", false, "Two-pass mode: probe domains before full fetch")
+	return cmd
+}
+
 func runHNSyncOnce(ctx context.Context, cmd *cobra.Command, run int) error {
 	usedSource, err := runHNDownload(ctx, cmd)
 	if err != nil {
@@ -410,7 +652,14 @@ func runHNSyncOnce(ctx context.Context, cmd *cobra.Command, run int) error {
 		fmt.Println(infoStyle.Render("Importing downloaded data..."))
 	}
 	fmt.Printf("  Import DB:   %s\n", labelStyle.Render(ternary(strings.TrimSpace(dbPath) != "", dbPath, cfg.WithDefaults().DefaultDBPath())))
-	res, err := cfg.Import(ctx, hn.ImportOptions{Source: importSource, DBPath: dbPath, Rebuild: rebuild})
+	res, err := cfg.Import(ctx, hn.ImportOptions{
+		Source:  importSource,
+		DBPath:  dbPath,
+		Rebuild: rebuild,
+		Progress: func(p hn.ImportProgress) {
+			printHNImportProgress(p)
+		},
+	})
 	if err != nil {
 		return err
 	}
@@ -429,6 +678,30 @@ func printHNImportResult(res *hn.ImportResult) {
 	fmt.Printf("  Rows:       %s (%s)\n", successStyle.Render(formatLargeNumber(res.Rows)), successStyle.Render(formatInt64Exact(res.Rows)))
 	fmt.Printf("  DB:         %s\n", labelStyle.Render(res.DBPath))
 	fmt.Printf("  Indexes:    %d\n", res.IndexesMade)
+}
+
+func printHNImportProgress(p hn.ImportProgress) {
+	stage := strings.TrimSpace(p.Stage)
+	if stage == "" {
+		stage = "import"
+	}
+	msg := strings.TrimSpace(p.Detail)
+	if msg == "" {
+		msg = stage
+	}
+	fmt.Printf("  %s %-11s %s (%s)\n",
+		labelStyle.Render("import:"),
+		labelStyle.Render(stage),
+		labelStyle.Render(msg),
+		labelStyle.Render(formatDuration(p.Elapsed)),
+	)
+	if p.Stage == "count" && p.Rows > 0 && strings.Contains(strings.ToLower(p.Detail), "ready") {
+		fmt.Printf("  %s rows=%s (%s)\n",
+			labelStyle.Render("import:"),
+			successStyle.Render(formatLargeNumber(p.Rows)),
+			labelStyle.Render(formatInt64Exact(p.Rows)),
+		)
+	}
 }
 
 func formatInt64Exact(n int64) string {

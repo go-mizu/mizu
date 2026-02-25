@@ -178,7 +178,7 @@ func (s *Stats) RecordTimeoutKillSkipBatch(n int) {
 
 // RecordDomainSkipReason routes skip accounting based on reason.
 func (s *Stats) RecordDomainSkipReason(reason string) {
-	if strings.Contains(reason, "timeout") {
+	if isTimeoutKillSkipReason(reason) {
 		s.RecordTimeoutKillSkip()
 		return
 	}
@@ -187,11 +187,20 @@ func (s *Stats) RecordDomainSkipReason(reason string) {
 
 // RecordDomainSkipBatchReason routes batch skip accounting based on reason.
 func (s *Stats) RecordDomainSkipBatchReason(reason string, n int) {
-	if strings.Contains(reason, "timeout") {
+	if isTimeoutKillSkipReason(reason) {
 		s.RecordTimeoutKillSkipBatch(n)
 		return
 	}
 	s.RecordDomainSkipBatch(n)
+}
+
+func isTimeoutKillSkipReason(reason string) bool {
+	switch reason {
+	case "http_timeout_killed", "domain_http_timeout_killed":
+		return true
+	default:
+		return false
+	}
 }
 
 // RecordDNSLive records a domain resolved with live IPs.
