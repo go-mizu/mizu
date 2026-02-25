@@ -215,9 +215,31 @@ func (r *Recrawler) buildClient(shardID int) *http.Client {
 		r.dnsCacheMu.RUnlock()
 
 		if len(ips) > 0 {
-			// Round-robin across IPs using shard ID for distribution
-			ip := ips[shardID%len(ips)]
-			return baseDialer.DialContext(ctx, network, net.JoinHostPort(ip, port))
+			// Prefer IPv4 on hosts without working IPv6 routes and try multiple cached
+			// IPs before failing to avoid false negatives from a single bad record.
+			ordered := orderDialIPs(ips, shardID)
+			var lastErr error
+			for _, ip := range ordered {
+				conn, derr := baseDialer.DialContext(ctx, network, net.JoinHostPort(ip, port))
+				if derr == nil {
+					return conn, nil
+				}
+				lastErr = derr
+				// If IPv6 is unreachable on this host, continue trying cached IPv4s.
+				if strings.Contains(strings.ToLower(derr.Error()), "network is unreachable") {
+					continue
+				}
+			}
+			if lastErr != nil {
+				// If the cached set appears IPv6-only on an IPv4-only host, fall back to
+				// hostname dialing so the resolver can still return an A record.
+				if strings.Contains(strings.ToLower(lastErr.Error()), "network is unreachable") {
+					if conn, derr := baseDialer.DialContext(ctx, network, addr); derr == nil {
+						return conn, nil
+					}
+				}
+				return nil, lastErr
+			}
 		}
 
 		return baseDialer.DialContext(ctx, network, addr)
@@ -253,6 +275,34 @@ func (r *Recrawler) buildClient(shardID int) *http.Client {
 			return nil
 		},
 	}
+}
+
+func orderDialIPs(ips []string, shardID int) []string {
+	if len(ips) <= 1 {
+		return ips
+	}
+	var v4, v6 []string
+	for _, ip := range ips {
+		if strings.Contains(ip, ":") {
+			v6 = append(v6, ip)
+		} else {
+			v4 = append(v4, ip)
+		}
+	}
+	rotate := func(in []string) []string {
+		if len(in) <= 1 {
+			return in
+		}
+		out := make([]string, 0, len(in))
+		start := shardID % len(in)
+		out = append(out, in[start:]...)
+		out = append(out, in[:start]...)
+		return out
+	}
+	out := make([]string, 0, len(ips))
+	out = append(out, rotate(v4)...)
+	out = append(out, rotate(v6)...)
+	return out
 }
 
 // SetFailedDB sets the FailedDB for logging failed domains and URLs.
@@ -921,28 +971,58 @@ func (r *Recrawler) probeDomainStrict(ctx context.Context, probeURL string, shar
 	return true
 }
 
-// probeDomainHTTPReady checks whether the origin returns any HTTP response quickly
-// enough to be worth queueing the rest of the domain's URLs. Unlike
-// probeDomainStrict, timeouts are treated as "not ready" (false) so status/head
-// recrawls can avoid large timeout storms on tarpits and very slow origins.
-func (r *Recrawler) probeDomainHTTPReady(ctx context.Context, probeURL string, shardID int) bool {
+// probeDomainHTTPReady checks whether the origin returns any HTTP response quickly.
+// Returns:
+//   - ok=true if the domain should proceed to the normal worker path
+//   - hardReject=true only for definitive connection failures (refused / DNS)
+//   - errMsg with the probe error for diagnostics when not ok
+//
+// To avoid false domain-dead classifications on constrained hosts, transient
+// and timeout probe failures are treated as "ok" and left to worker retries.
+func (r *Recrawler) probeDomainHTTPReady(ctx context.Context, probeURL string, shardID int) (ok bool, hardReject bool, errMsg string) {
 	probeTimeout := min(3*time.Second, r.config.Timeout)
 	probeCtx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(probeCtx, http.MethodHead, probeURL, nil)
 	if err != nil {
-		return false
+		return false, false, truncateStr(err.Error(), 200)
 	}
 	req.Header.Set("User-Agent", r.config.UserAgent)
 
 	client := r.clientForWorker(shardID)
 	resp, err := client.Do(req)
 	if err != nil {
-		return false
+		// Retry once on transient/probe handshake issues using a different transport shard.
+		if shouldRetryProbeRequestError(err) {
+			retryClient := r.alternateClient(client)
+			if retryClient == nil {
+				retryClient = client
+			}
+			retryCtx, retryCancel := context.WithTimeout(ctx, r.config.Timeout)
+			req2, reqErr2 := http.NewRequestWithContext(retryCtx, http.MethodHead, probeURL, nil)
+			if reqErr2 == nil {
+				req2.Header.Set("User-Agent", r.config.UserAgent)
+				if resp2, err2 := retryClient.Do(req2); err2 == nil {
+					retryCancel()
+					resp2.Body.Close()
+					return true, false, ""
+				} else {
+					err = err2
+				}
+			}
+			retryCancel()
+		}
+		// Only definitive connection refusal / DNS failures should hard-reject a domain.
+		if isConnectionRefused(err) || isDNSError(err) {
+			return false, true, truncateStr(err.Error(), 200)
+		}
+		// Timeout/transient/TLS oddities are allowed through; the worker path has
+		// better retries and per-host timeout thresholds.
+		return true, false, truncateStr(err.Error(), 200)
 	}
 	resp.Body.Close()
-	return true
+	return true, false, ""
 }
 
 // directFeed probes domains and streams their URLs to workers immediately.
@@ -1110,6 +1190,8 @@ func (r *Recrawler) tcpProbeAndFeedChunk(ctx context.Context, toProbe []tcpProbe
 
 	alive := make([]bool, len(toProbe))
 	outcomes := make([]probeOutcome, len(toProbe))
+	httpRejectedHard := make([]bool, len(toProbe))
+	httpRejectErr := make([]string, len(toProbe))
 
 	// Pass 1: original port, 3s timeout.
 	{
@@ -1137,12 +1219,12 @@ func (r *Recrawler) tcpProbeAndFeedChunk(ctx context.Context, toProbe []tcpProbe
 					}
 					e := toProbe[idx]
 					host, port := hostPortFromURL(e.urls[0].URL)
-					out := r.tcpProbeHostPort(ctx, host, port, e.domain, pass1Timeout)
-					if out == probeOK {
-						alive[idx] = true
-					} else {
-						outcomes[idx] = out
-					}
+						out := r.tcpProbeHostPort(ctx, host, port, e.domain, pass1Timeout)
+						if out == probeOK {
+							alive[idx] = true
+						} else {
+							outcomes[idx] = mergeProbeOutcome(outcomes[idx], out)
+						}
 				}
 			})
 		}
@@ -1187,13 +1269,19 @@ func (r *Recrawler) tcpProbeAndFeedChunk(ctx context.Context, toProbe []tcpProbe
 						}
 						e := toProbe[re.idx]
 						host, origPort := hostPortFromURL(e.urls[0].URL)
-						if re.altPort != "" && r.tcpProbeHostPort(ctx, host, re.altPort, e.domain, pass2Timeout) == probeOK {
-							alive[re.idx] = true
-							continue
-						}
-						if r.tcpProbeHostPort(ctx, host, origPort, e.domain, pass2Timeout) == probeOK {
-							alive[re.idx] = true
-						}
+							if re.altPort != "" {
+								if out := r.tcpProbeHostPort(ctx, host, re.altPort, e.domain, pass2Timeout); out == probeOK {
+									alive[re.idx] = true
+									continue
+								} else {
+									outcomes[re.idx] = mergeProbeOutcome(outcomes[re.idx], out)
+								}
+							}
+							if out := r.tcpProbeHostPort(ctx, host, origPort, e.domain, pass2Timeout); out == probeOK {
+								alive[re.idx] = true
+							} else {
+								outcomes[re.idx] = mergeProbeOutcome(outcomes[re.idx], out)
+							}
 					}
 				})
 			}
@@ -1238,15 +1326,21 @@ func (r *Recrawler) tcpProbeAndFeedChunk(ctx context.Context, toProbe []tcpProbe
 					e := toProbe[idx]
 					host, origPort := hostPortFromURL(e.urls[0].URL)
 					altPort := alternatePort(origPort)
-					if r.tcpProbeHostPort(ctx, host, origPort, e.domain, pass3Timeout) == probeOK {
-						alive[idx] = true
-						newAlive.Add(1)
-						continue
-					}
-					if altPort != "" && r.tcpProbeHostPort(ctx, host, altPort, e.domain, pass3Timeout) == probeOK {
-						alive[idx] = true
-						newAlive.Add(1)
-					}
+						if out := r.tcpProbeHostPort(ctx, host, origPort, e.domain, pass3Timeout); out == probeOK {
+							alive[idx] = true
+							newAlive.Add(1)
+							continue
+						} else {
+							outcomes[idx] = mergeProbeOutcome(outcomes[idx], out)
+						}
+						if altPort != "" {
+							if out := r.tcpProbeHostPort(ctx, host, altPort, e.domain, pass3Timeout); out == probeOK {
+								alive[idx] = true
+								newAlive.Add(1)
+							} else {
+								outcomes[idx] = mergeProbeOutcome(outcomes[idx], out)
+							}
+						}
 				}
 			})
 		}
@@ -1328,7 +1422,6 @@ func (r *Recrawler) tcpProbeAndFeedChunk(ctx context.Context, toProbe []tcpProbe
 		}
 	}
 
-	httpRejected := make([]bool, len(toProbe))
 	if r.config.StatusOnly || r.config.HeadOnly {
 		var candidates []int
 		for i := range toProbe {
@@ -1359,12 +1452,14 @@ func (r *Recrawler) tcpProbeAndFeedChunk(ctx context.Context, toProbe []tcpProbe
 							return
 						default:
 						}
-						if !r.probeDomainHTTPReady(ctx, toProbe[idx].urls[0].URL, id) {
-							alive[idx] = false
-							httpRejected[idx] = true
+							ok, hardReject, errMsg := r.probeDomainHTTPReady(ctx, toProbe[idx].urls[0].URL, id)
+							if !ok {
+								alive[idx] = false
+								httpRejectedHard[idx] = hardReject
+								httpRejectErr[idx] = errMsg
+							}
 						}
-					}
-				})
+					})
 			}
 			wg.Wait()
 		}
@@ -1375,8 +1470,8 @@ func (r *Recrawler) tcpProbeAndFeedChunk(ctx context.Context, toProbe []tcpProbe
 		urls   []SeedURL
 	}
 	var aliveList []aliveDomain
-	for i, e := range toProbe {
-		if alive[i] {
+		for i, e := range toProbe {
+		if alive[i] || (!httpRejectedHard[i] && outcomes[i] != probeRefused) {
 			r.stats.RecordProbeReachable()
 			aliveList = append(aliveList, aliveDomain{e.domain, e.urls})
 			continue
@@ -1387,9 +1482,13 @@ func (r *Recrawler) tcpProbeAndFeedChunk(ctx context.Context, toProbe []tcpProbe
 		}
 		reason := "tcp_unreachable"
 		stage := "tcp_probe"
-		if httpRejected[i] {
+		errMsg := ""
+		if httpRejectedHard[i] {
 			reason = "http_probe_unreachable"
 			stage = "http_probe"
+			errMsg = httpRejectErr[i]
+		} else {
+			errMsg = tcpProbeOutcomeError(outcomes[i], hostKey, e.domain)
 		}
 		r.markHostDeadIfUnset(hostKey, reason)
 		r.markDomainDead(e.domain, reason)
@@ -1398,6 +1497,7 @@ func (r *Recrawler) tcpProbeAndFeedChunk(ctx context.Context, toProbe []tcpProbe
 		r.failedDB.AddDomain(FailedDomain{
 			Domain:   e.domain,
 			Reason:   reason,
+			Error:    truncateStr(errMsg, 200),
 			IPs:      r.cachedIPsFor(e.domain),
 			URLCount: len(e.urls),
 			Stage:    stage,
@@ -1793,7 +1893,43 @@ func shouldRetryProbeRequestError(err error) bool {
 	return strings.Contains(s, "remote error: tls: internal error") ||
 		strings.Contains(s, "remote error: tls: handshake failure") ||
 		strings.Contains(s, "remote error: tls: unrecognized name") ||
+		strings.Contains(s, "tls handshake timeout") ||
+		strings.Contains(s, "connection reset by peer") ||
 		strings.Contains(s, "eof")
+}
+
+func mergeProbeOutcome(prev, next probeOutcome) probeOutcome {
+	// Preserve the strongest evidence for a definitive dead classification.
+	// refused > timeout > error.
+	if next == probeRefused {
+		return probeRefused
+	}
+	if prev == probeRefused {
+		return prev
+	}
+	if next == probeTimeout {
+		return probeTimeout
+	}
+	if prev == probeTimeout {
+		return prev
+	}
+	if next == probeError {
+		return probeError
+	}
+	return prev
+}
+
+func tcpProbeOutcomeError(out probeOutcome, hostKey, domain string) string {
+	switch out {
+	case probeRefused:
+		return fmt.Sprintf("tcp probe refused (host=%s domain=%s)", hostKey, domain)
+	case probeTimeout:
+		return fmt.Sprintf("tcp probe timeout (host=%s domain=%s)", hostKey, domain)
+	case probeError:
+		return fmt.Sprintf("tcp probe error (host=%s domain=%s)", hostKey, domain)
+	default:
+		return ""
+	}
 }
 
 func (r *Recrawler) recordError(seed SeedURL, statusCode int, start time.Time, err error) {

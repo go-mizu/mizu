@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/recrawler"
@@ -227,6 +228,43 @@ func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error 
 			len(domainList), cfg.DNSWorkers, cfg.DNSTimeout)))
 
 		var dnsDisplayLines int
+		var checkpointMu sync.Mutex
+		checkpointSaving := false
+		checkpointDoneAt := int64(0)
+		lastCheckpointAt := time.Now()
+		checkpointEveryDone := int64(50000)
+		if len(domainList) < 50000 {
+			checkpointEveryDone = 5000
+		}
+		if len(domainList) < 5000 {
+			checkpointEveryDone = 1000
+		}
+		checkpointEveryDur := 30 * time.Second
+		saveDNSCheckpointAsync := func(reason string, force bool) {
+			checkpointMu.Lock()
+			if checkpointSaving && !force {
+				checkpointMu.Unlock()
+				return
+			}
+			checkpointSaving = true
+			checkpointMu.Unlock()
+			go func() {
+				saveStart := time.Now()
+				if saveErr := dnsResolver.SaveCache(dnsPath); saveErr != nil {
+					fmt.Println(warningStyle.Render(fmt.Sprintf("  DNS cache checkpoint save failed (%s): %v", reason, saveErr)))
+				} else {
+					fmt.Println(infoStyle.Render(fmt.Sprintf("  DNS cache checkpoint saved (%s) in %s → %s (live=%d, dead=%d, timeout=%d)",
+						reason,
+						time.Since(saveStart).Truncate(time.Millisecond),
+						filepath.Base(dnsPath),
+						dnsResolver.LiveCount(), dnsResolver.DeadCount(), dnsResolver.TimeoutCount(),
+					)))
+				}
+				checkpointMu.Lock()
+				checkpointSaving = false
+				checkpointMu.Unlock()
+			}()
+		}
 		live, dead, timeout := dnsResolver.ResolveBatch(ctx, domainList, cfg.DNSWorkers, cfg.DNSTimeout, func(p recrawler.DNSProgress) {
 			if dnsDisplayLines > 0 {
 				fmt.Printf("\033[%dA\033[J", dnsDisplayLines)
@@ -245,7 +283,39 @@ func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error 
 				p.Done, p.Total, p.Live, p.Dead, p.Timeout, p.Speed, etaStr, p.Elapsed.Truncate(time.Millisecond))
 			fmt.Print(output)
 			dnsDisplayLines = 1
+
+			// Periodically checkpoint DNS cache during long batch DNS runs so progress survives
+			// interrupts and large in-memory caches are persisted incrementally.
+			if p.Total > 0 && p.Done < int64(p.Total) {
+				needDoneCheckpoint := p.Done-checkpointDoneAt >= checkpointEveryDone
+				needTimeCheckpoint := time.Since(lastCheckpointAt) >= checkpointEveryDur && p.Done > checkpointDoneAt
+				if needDoneCheckpoint || needTimeCheckpoint {
+					checkpointDoneAt = p.Done
+					lastCheckpointAt = time.Now()
+					saveDNSCheckpointAsync(fmt.Sprintf("%d/%d", p.Done, p.Total), false)
+				}
+			}
 		})
+		checkpointMu.Lock()
+		inFlight := checkpointSaving
+		checkpointMu.Unlock()
+		if inFlight {
+			fmt.Println(infoStyle.Render("  Waiting for DNS cache checkpoint save to finish..."))
+		waitCheckpoint:
+			for {
+				checkpointMu.Lock()
+				doneSaving := !checkpointSaving
+				checkpointMu.Unlock()
+				if doneSaving {
+					break
+				}
+				select {
+				case <-ctx.Done():
+					break waitCheckpoint
+				case <-time.After(200 * time.Millisecond):
+				}
+			}
+		}
 		if dnsDisplayLines > 0 {
 			fmt.Printf("\033[%dA\033[J", dnsDisplayLines)
 		}

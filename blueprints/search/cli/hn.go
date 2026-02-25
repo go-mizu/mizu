@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/hn"
@@ -96,12 +99,115 @@ func hnConfigFromCmd(cmd *cobra.Command) hn.Config {
 	return cfg
 }
 
+func hnSignalContext(parent context.Context) (context.Context, context.CancelFunc) {
+	ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
+	return ctx, stop
+}
+
+type hnHostMemInfo struct {
+	TotalBytes int64
+	SwapBytes  int64
+}
+
+func readHNHostMemInfo() hnHostMemInfo {
+	b, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return hnHostMemInfo{}
+	}
+	var out hnHostMemInfo
+	for _, line := range strings.Split(string(b), "\n") {
+		f := strings.Fields(line)
+		if len(f) < 2 {
+			continue
+		}
+		key := strings.TrimSuffix(f[0], ":")
+		v, err := strconv.ParseInt(f[1], 10, 64)
+		if err != nil {
+			continue
+		}
+		// meminfo values are kB.
+		switch key {
+		case "MemTotal":
+			out.TotalBytes = v * 1024
+		case "SwapTotal":
+			out.SwapBytes = v * 1024
+		}
+	}
+	return out
+}
+
+func autoTuneHNRecrawlForHost(cmd *cobra.Command, seedRes *hn.RecrawlSeedResult, workers, dnsWorkers, batchSize, transportShards *int, dnsPrefetch *bool) {
+	if seedRes == nil {
+		return
+	}
+	mem := readHNHostMemInfo()
+	if mem.TotalBytes <= 0 {
+		return
+	}
+	largeSeed := seedRes.Rows >= 1_000_000 || seedRes.UniqueDomains >= 200_000
+	lowMem := mem.TotalBytes < 8*1024*1024*1024
+	noSwap := mem.SwapBytes <= 0
+	if !largeSeed || !lowMem {
+		return
+	}
+
+	changed := func(name string) bool { return cmd.Flags().Changed(name) }
+	var changes []string
+
+	if !changed("dns-prefetch") && *dnsPrefetch {
+		*dnsPrefetch = false
+		changes = append(changes, "dns-prefetch=false")
+	}
+	if !changed("workers") && *workers > 64 {
+		*workers = 64
+		changes = append(changes, "workers=64")
+	}
+	if !changed("dns-workers") && *dnsWorkers > 64 {
+		*dnsWorkers = 64
+		changes = append(changes, "dns-workers=64")
+	}
+	if !changed("batch-size") && *batchSize > 1000 {
+		*batchSize = 1000
+		changes = append(changes, "batch-size=1000")
+	}
+	if !changed("transport-shards") && *transportShards > 16 {
+		*transportShards = 16
+		changes = append(changes, "transport-shards=16")
+	}
+
+	if len(changes) == 0 {
+		if *dnsPrefetch {
+			fmt.Printf("  %s low-memory host detected (%s RAM, %s swap) with large seed (%s URLs, %s domains); consider --dns-prefetch=false\n",
+				warningStyle.Render("WARN"),
+				labelStyle.Render(formatBytes(mem.TotalBytes)),
+				labelStyle.Render(formatBytes(mem.SwapBytes)),
+				labelStyle.Render(formatLargeNumber(seedRes.Rows)),
+				labelStyle.Render(formatLargeNumber(seedRes.UniqueDomains)),
+			)
+		}
+		return
+	}
+
+	fmt.Printf("  %s low-memory auto-tune enabled (%s RAM, %s swap; seed=%s URLs/%s domains)\n",
+		infoStyle.Render("Auto-tune:"),
+		labelStyle.Render(formatBytes(mem.TotalBytes)),
+		labelStyle.Render(formatBytes(mem.SwapBytes)),
+		labelStyle.Render(formatLargeNumber(seedRes.Rows)),
+		labelStyle.Render(formatLargeNumber(seedRes.UniqueDomains)),
+	)
+	if noSwap {
+		fmt.Printf("  %s no swap detected; using safer recrawl defaults to avoid OOM during DNS prefetch/loading\n", labelStyle.Render("Reason:"))
+	}
+	fmt.Printf("  %s %s\n", labelStyle.Render("Applied:"), labelStyle.Render(strings.Join(changes, ", ")))
+}
+
 func newHNList() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "Show remote HN source and local file/database status",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
+			ctx, stop := hnSignalContext(cmd.Context())
+			defer stop()
 			cfg := hnConfigFromCmd(cmd)
 			noRemote, _ := cmd.Flags().GetBool("no-remote")
 			showHNLocalStatus(ctx, cfg)
@@ -140,7 +246,9 @@ func newHNStatus() *cobra.Command {
 		Use:   "status",
 		Short: "Show detailed local HN status and remote ClickHouse freshness",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return showHNStatus(cmd.Context(), hnConfigFromCmd(cmd))
+			ctx, stop := hnSignalContext(cmd.Context())
+			defer stop()
+			return showHNStatus(ctx, hnConfigFromCmd(cmd))
 		},
 	}
 }
@@ -154,7 +262,9 @@ func newHNDownload() *cobra.Command {
   search hn download --from-id 47000001
   search hn download --parallel 8`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, err := runHNDownload(cmd.Context(), cmd)
+			ctx, stop := hnSignalContext(cmd.Context())
+			defer stop()
+			_, err := runHNDownload(ctx, cmd)
 			return err
 		},
 	}
@@ -176,6 +286,8 @@ func newHNImport() *cobra.Command {
   search hn import --source hybrid
   search hn import --rebuild`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, stop := hnSignalContext(cmd.Context())
+			defer stop()
 			cfg := hnConfigFromCmd(cmd)
 			sourceStr, _ := cmd.Flags().GetString("source")
 			dbPath, _ := cmd.Flags().GetString("db")
@@ -191,13 +303,10 @@ func newHNImport() *cobra.Command {
 			fmt.Printf("  Source:      %s\n", labelStyle.Render(strings.ToLower(strings.TrimSpace(sourceStr))))
 			fmt.Printf("  DuckDB:      %s\n", labelStyle.Render(dbPath))
 			fmt.Printf("  Mode hint:   %s\n", labelStyle.Render(ternary(rebuild, "rebuild", "incremental if DB exists")))
-			res, err := cfg.Import(cmd.Context(), hn.ImportOptions{
+			res, err := runHNImportWithProgress(ctx, cfg, hn.ImportOptions{
 				Source:  source,
 				DBPath:  dbPath,
 				Rebuild: rebuild,
-				Progress: func(p hn.ImportProgress) {
-					printHNImportProgress(p)
-				},
 			})
 			if err != nil {
 				return err
@@ -217,6 +326,8 @@ func newHNSync() *cobra.Command {
 		Use:   "sync",
 		Short: "Continuously sync HN data (download + import) until Ctrl-C",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, stop := hnSignalContext(cmd.Context())
+			defer stop()
 			once, _ := cmd.Flags().GetBool("once")
 			every, _ := cmd.Flags().GetDuration("every")
 			maxRuns, _ := cmd.Flags().GetInt("max-runs")
@@ -225,8 +336,8 @@ func newHNSync() *cobra.Command {
 				maxRuns = 1
 			}
 			if every <= 0 {
-				if err := runHNSyncOnce(cmd.Context(), cmd, 1); err != nil {
-					if cmd.Context().Err() != nil {
+				if err := runHNSyncOnce(ctx, cmd, 1); err != nil {
+					if ctx.Err() != nil {
 						fmt.Println(warningStyle.Render("Interrupted HN sync."))
 						return nil
 					}
@@ -247,8 +358,8 @@ func newHNSync() *cobra.Command {
 				run++
 				started := time.Now()
 				fmt.Printf("%s HN sync tick #%d at %s\n", infoStyle.Render("Running"), run, labelStyle.Render(started.Format(time.RFC3339)))
-				if err := runHNSyncOnce(cmd.Context(), cmd, run); err != nil {
-					if cmd.Context().Err() != nil {
+				if err := runHNSyncOnce(ctx, cmd, run); err != nil {
+					if ctx.Err() != nil {
 						fmt.Println(warningStyle.Render("Interrupted HN sync."))
 						return nil
 					}
@@ -264,7 +375,7 @@ func newHNSync() *cobra.Command {
 				fmt.Printf("%s next tick in %s\n", labelStyle.Render("Waiting:"), labelStyle.Render(formatDuration(wait)))
 				timer := time.NewTimer(wait)
 				select {
-				case <-cmd.Context().Done():
+				case <-ctx.Done():
 					timer.Stop()
 					fmt.Println(warningStyle.Render("Interrupted HN sync."))
 					return nil
@@ -294,6 +405,8 @@ func newHNCompact() *cobra.Command {
 		Long: `Reads local raw/clickhouse_delta/*.parquet and merges them into
 raw/clickhouse/id_<start>_<end>.parquet partitions using DuckDB.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, stop := hnSignalContext(cmd.Context())
+			defer stop()
 			cfg := hnConfigFromCmd(cmd)
 			fromID, _ := cmd.Flags().GetInt64("from-id")
 			toID, _ := cmd.Flags().GetInt64("to-id")
@@ -302,7 +415,7 @@ raw/clickhouse/id_<start>_<end>.parquet partitions using DuckDB.`,
 			pruneDelta, _ := cmd.Flags().GetBool("prune-delta")
 
 			fmt.Println(infoStyle.Render("Compacting ClickHouse delta parquet into base partitions..."))
-			res, err := cfg.CompactDeltaToClickHouseParquet(cmd.Context(), hn.CompactOptions{
+			res, err := cfg.CompactDeltaToClickHouseParquet(ctx, hn.CompactOptions{
 				FromID:           fromID,
 				ToID:             toID,
 				ChunkIDSpan:      chunkSpan,
@@ -346,6 +459,8 @@ func newHNExport() *cobra.Command {
   search hn export --out-dir ~/data/hn/export/monthly
   search hn export --force`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, stop := hnSignalContext(cmd.Context())
+			defer stop()
 			cfg := hnConfigFromCmd(cmd)
 			outDir, _ := cmd.Flags().GetString("out-dir")
 			fromMonth, _ := cmd.Flags().GetString("from-month")
@@ -364,7 +479,7 @@ func newHNExport() *cobra.Command {
 					labelStyle.Render(ternary(strings.TrimSpace(toMonth) != "", toMonth, "(end)")),
 				)
 			}
-			res, err := cfg.ExportMonthlyParquet(cmd.Context(), hn.ExportOptions{
+			res, err := cfg.ExportMonthlyParquet(ctx, hn.ExportOptions{
 				OutDir:        outDir,
 				FromMonth:     fromMonth,
 				ToMonth:       toMonth,
@@ -450,6 +565,8 @@ aggregates domains from pages for faster repeated runs.`,
   search hn domains --out-db ~/data/hn/hn_domains.duckdb
   search hn domains --force-pages`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, stop := hnSignalContext(cmd.Context())
+			defer stop()
 			cfg := hnConfigFromCmd(cmd)
 			srcDB, _ := cmd.Flags().GetString("db")
 			outDB, _ := cmd.Flags().GetString("out-db")
@@ -464,7 +581,7 @@ aggregates domains from pages for faster repeated runs.`,
 			fmt.Printf("  Source DB:   %s\n", labelStyle.Render(srcDB))
 			fmt.Printf("  Output DB:   %s\n", labelStyle.Render(outDB))
 			fmt.Printf("  Strategy:    %s\n", labelStyle.Render("materialize pages first, then aggregate domains"))
-			res, err := cfg.BuildDomains(cmd.Context(), hn.DomainsOptions{
+			res, err := cfg.BuildDomains(ctx, hn.DomainsOptions{
 				SourceDBPath: srcDB,
 				OutDBPath:    outDB,
 				ForcePages:   forcePages,
@@ -542,6 +659,8 @@ the generic recrawl command.`,
   search hn recrawl --domain github.com --limit 1000 --resume
   search hn recrawl --workers 200 --timeout 5000`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, stop := hnSignalContext(cmd.Context())
+			defer stop()
 			cfg := hnConfigFromCmd(cmd)
 			if strings.TrimSpace(domainsDB) == "" {
 				domainsDB = cfg.WithDefaults().DomainsDBPath()
@@ -559,7 +678,42 @@ the generic recrawl command.`,
 			if strings.TrimSpace(domainLike) != "" {
 				fmt.Printf("  Domain filter: %s\n", labelStyle.Render(domainLike))
 			}
-			seedRes, err := cfg.BuildRecrawlSeedDB(cmd.Context(), hn.RecrawlSeedOptions{
+			if st, err := os.Stat(domainsDB); err != nil || st.Size() <= 0 {
+				srcHNDB := cfg.WithDefaults().DefaultDBPath()
+				fmt.Println(infoStyle.Render("HN domains DB not found. Building it first..."))
+				fmt.Printf("  Source HN DB:  %s\n", labelStyle.Render(srcHNDB))
+				domRes, derr := cfg.BuildDomains(ctx, hn.DomainsOptions{
+					SourceDBPath: srcHNDB,
+					OutDBPath:    domainsDB,
+					ForcePages:   false,
+					Progress: func(p hn.DomainsProgress) {
+						switch p.Stage {
+						case "start", "attach", "pages", "domains":
+							fmt.Printf("  %s %s\n", labelStyle.Render("domains:"+p.Stage), labelStyle.Render(p.Detail))
+						case "done":
+							fmt.Printf("  %s pages=%s domains=%s elapsed=%s\n",
+								successStyle.Render("domains:ready"),
+								labelStyle.Render(formatInt64Exact(p.Rows)),
+								labelStyle.Render(formatInt64Exact(p.Rows2)),
+								labelStyle.Render(formatDuration(p.Elapsed)),
+							)
+						}
+					},
+				})
+				if derr != nil {
+					if ctx.Err() != nil {
+						fmt.Println(warningStyle.Render("Interrupted while building HN domains database."))
+						return nil
+					}
+					return derr
+				}
+				fmt.Printf("  Domains DB:    %s (%s rows, %s domains)\n",
+					successStyle.Render(domRes.OutDBPath),
+					successStyle.Render(formatLargeNumber(domRes.PagesRows)),
+					successStyle.Render(formatLargeNumber(domRes.DomainsRows)),
+				)
+			}
+			seedRes, err := cfg.BuildRecrawlSeedDB(ctx, hn.RecrawlSeedOptions{
 				DomainsDBPath: domainsDB,
 				OutDBPath:     seedDB,
 				Limit:         limit,
@@ -580,7 +734,7 @@ the generic recrawl command.`,
 				},
 			})
 			if err != nil {
-				if cmd.Context().Err() != nil {
+				if ctx.Err() != nil {
 					fmt.Println(warningStyle.Render("Interrupted during HN recrawl seed preparation."))
 					return nil
 				}
@@ -589,9 +743,10 @@ the generic recrawl command.`,
 			fmt.Printf("  Seed rows:     %s (%s)\n", successStyle.Render(formatLargeNumber(seedRes.Rows)), successStyle.Render(formatInt64Exact(seedRes.Rows)))
 			fmt.Printf("  Seed domains:  %s (%s)\n", successStyle.Render(formatLargeNumber(seedRes.UniqueDomains)), successStyle.Render(formatInt64Exact(seedRes.UniqueDomains)))
 			fmt.Printf("  Seed build:    %s\n", labelStyle.Render(formatDuration(seedRes.Elapsed)))
+			autoTuneHNRecrawlForHost(cmd, seedRes, &workers, &dnsWorkers, &batchSize, &transportShards, &dnsPrefetch)
 			fmt.Println()
 
-			err = runRecrawl(cmd.Context(), seedRes.OutDBPath, recrawler.Config{
+			err = runRecrawl(ctx, seedRes.OutDBPath, recrawler.Config{
 				Workers:         workers,
 				DNSWorkers:      dnsWorkers,
 				DNSTimeout:      time.Duration(dnsTimeoutMs) * time.Millisecond,
@@ -605,7 +760,7 @@ the generic recrawl command.`,
 				TransportShards: transportShards,
 				TwoPass:         twoPass,
 			})
-			if err != nil && cmd.Context().Err() != nil {
+			if err != nil && ctx.Err() != nil {
 				fmt.Println(warningStyle.Render("Interrupted HN recrawl."))
 				return nil
 			}
@@ -652,19 +807,74 @@ func runHNSyncOnce(ctx context.Context, cmd *cobra.Command, run int) error {
 		fmt.Println(infoStyle.Render("Importing downloaded data..."))
 	}
 	fmt.Printf("  Import DB:   %s\n", labelStyle.Render(ternary(strings.TrimSpace(dbPath) != "", dbPath, cfg.WithDefaults().DefaultDBPath())))
-	res, err := cfg.Import(ctx, hn.ImportOptions{
+	res, err := runHNImportWithProgress(ctx, cfg, hn.ImportOptions{
 		Source:  importSource,
 		DBPath:  dbPath,
 		Rebuild: rebuild,
-		Progress: func(p hn.ImportProgress) {
-			printHNImportProgress(p)
-		},
 	})
 	if err != nil {
 		return err
 	}
 	printHNImportResult(res)
 	return nil
+}
+
+func runHNImportWithProgress(ctx context.Context, cfg hn.Config, opts hn.ImportOptions) (*hn.ImportResult, error) {
+	started := time.Now()
+	var mu sync.Mutex
+	var last hn.ImportProgress
+	haveLast := false
+	downstream := opts.Progress
+	opts.Progress = func(p hn.ImportProgress) {
+		mu.Lock()
+		last = p
+		haveLast = true
+		mu.Unlock()
+		if downstream != nil {
+			downstream(p)
+		} else {
+			printHNImportProgress(p)
+		}
+	}
+
+	done := make(chan struct{})
+	go func() {
+		t := time.NewTicker(10 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				mu.Lock()
+				p := last
+				ok := haveLast
+				mu.Unlock()
+				if !ok || strings.EqualFold(strings.TrimSpace(p.Stage), "done") {
+					continue
+				}
+				stage := strings.TrimSpace(p.Stage)
+				if stage == "" {
+					stage = "import"
+				}
+				msg := strings.TrimSpace(p.Detail)
+				if msg == "" {
+					msg = stage
+				}
+				fmt.Printf("  %s %-11s %s (%s)\n",
+					labelStyle.Render("import:"),
+					labelStyle.Render("waiting"),
+					labelStyle.Render(fmt.Sprintf("%s: %s", stage, msg)),
+					labelStyle.Render(formatDuration(time.Since(started))),
+				)
+			}
+		}
+	}()
+	defer close(done)
+
+	return cfg.Import(ctx, opts)
 }
 
 func printHNImportResult(res *hn.ImportResult) {

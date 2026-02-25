@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
@@ -23,10 +25,13 @@ const (
 
 // ImportOptions controls how local HN data is imported into DuckDB.
 type ImportOptions struct {
-	Source   ImportSource
-	DBPath   string
-	Rebuild  bool
-	Progress func(ImportProgress)
+	Source        ImportSource
+	DBPath        string
+	Rebuild       bool
+	DuckDBThreads int
+	MemoryLimit   string
+	TempDir       string
+	Progress      func(ImportProgress)
 }
 
 type ImportProgress struct {
@@ -85,7 +90,30 @@ func (c Config) Import(ctx context.Context, opts ImportOptions) (*ImportResult, 
 	defer db.Close()
 	emit("duckdb", fmt.Sprintf("opened %s", dbPath), 0)
 	_, _ = db.ExecContext(ctx, `SET preserve_insertion_order=false`)
-	_, _ = db.ExecContext(ctx, `SET threads=4`)
+
+	threads := opts.DuckDBThreads
+	if threads <= 0 {
+		threads = 2
+		if runtime.NumCPU() < threads {
+			threads = max(1, runtime.NumCPU())
+		}
+	}
+	_, _ = db.ExecContext(ctx, fmt.Sprintf(`SET threads=%d`, threads))
+
+	tempDir := strings.TrimSpace(opts.TempDir)
+	if tempDir == "" {
+		tempDir = filepath.Join(cfg.DataDir, "duckdb_tmp")
+	}
+	if err := os.MkdirAll(tempDir, 0o755); err == nil {
+		_, _ = db.ExecContext(ctx, fmt.Sprintf(`SET temp_directory='%s'`, escapeSQLString(tempDir)))
+	}
+
+	memLimit := strings.TrimSpace(opts.MemoryLimit)
+	if memLimit == "" {
+		memLimit = "768MB"
+	}
+	_, _ = db.ExecContext(ctx, fmt.Sprintf(`SET memory_limit='%s'`, escapeSQLString(memLimit)))
+	emit("duckdb", fmt.Sprintf("settings threads=%d memory_limit=%s temp_dir=%s", threads, memLimit, tempDir), 0)
 
 	if _, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS meta (key VARCHAR PRIMARY KEY, value VARCHAR)`); err != nil {
 		return nil, fmt.Errorf("create meta table: %w", err)
@@ -129,7 +157,14 @@ SELECT *,
        CASE WHEN try_cast(time AS BIGINT) IS NOT NULL THEN epoch_ms(try_cast(time AS BIGINT) * 1000) ELSE NULL END AS time_ts
 FROM read_parquet('%s')`, escaped)
 		case ImportSourceClickHouse:
-			createSQL = buildCreateItemsFromNormalizedSelectSQL(buildNormalizedClickHouseSelect(sourcePath))
+			// Base ClickHouse chunk parquet files are non-overlapping by ID range, so
+			// a global dedupe window is unnecessary and extremely expensive on low-RAM
+			// hosts. Keep dedupe for delta/hybrid paths.
+			if sourcePath == filepath.Join(cfg.ClickHouseParquetDir(), "*.parquet") {
+				createSQL = buildCreateItemsFromNormalizedSelectSQLNoDedup(buildNormalizedClickHouseSelect(sourcePath))
+			} else {
+				createSQL = buildCreateItemsFromNormalizedSelectSQL(buildNormalizedClickHouseSelect(sourcePath))
+			}
 		case ImportSourceHybrid:
 			emit("full", "building hybrid table (base + delta overlay)", 0)
 			if err := importHybrid(ctx, db, cfg); err != nil {
@@ -157,9 +192,14 @@ FROM read_parquet('%s')`, escaped)
 	}
 	emit("count", "row count ready", rows)
 
-	emit("index", "creating indexes", 0)
-	indexesMade := ensureItemIndexes(ctx, db)
-	emit("index", fmt.Sprintf("indexes created=%d", indexesMade), 0)
+	indexesMade := 0
+	if mode == "full" {
+		emit("index", "checking/creating missing indexes", 0)
+		indexesMade = ensureItemIndexes(ctx, db)
+		emit("index", fmt.Sprintf("indexes created=%d", indexesMade), 0)
+	} else {
+		emit("index", "skipping index maintenance on incremental import", 0)
+	}
 
 	importedAt := time.Now().UTC()
 	metaPairs := map[string]string{
@@ -319,15 +359,28 @@ func itemsSupportsIncremental(ctx context.Context, db *sql.DB) bool {
 }
 
 func ensureItemIndexes(ctx context.Context, db *sql.DB) int {
-	indexSQL := []string{
-		`CREATE INDEX IF NOT EXISTS idx_hn_items_id ON items(id)`,
-		`CREATE INDEX IF NOT EXISTS idx_hn_items_type ON items(type)`,
-		`CREATE INDEX IF NOT EXISTS idx_hn_items_time ON items(time)`,
-		`CREATE INDEX IF NOT EXISTS idx_hn_items_by ON items("by")`,
-		`CREATE INDEX IF NOT EXISTS idx_hn_items_parent ON items(parent)`,
+	indexSQL := map[string]string{
+		"idx_hn_items_id":     `CREATE INDEX idx_hn_items_id ON items(id)`,
+		"idx_hn_items_type":   `CREATE INDEX idx_hn_items_type ON items(type)`,
+		"idx_hn_items_time":   `CREATE INDEX idx_hn_items_time ON items(time)`,
+		"idx_hn_items_by":     `CREATE INDEX idx_hn_items_by ON items("by")`,
+		"idx_hn_items_parent": `CREATE INDEX idx_hn_items_parent ON items(parent)`,
+	}
+	existing := map[string]bool{}
+	if rows, err := db.QueryContext(ctx, `SELECT index_name FROM duckdb_indexes() WHERE table_name='items'`); err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err == nil {
+				existing[strings.ToLower(strings.TrimSpace(name))] = true
+			}
+		}
 	}
 	indexesMade := 0
-	for _, stmt := range indexSQL {
+	for name, stmt := range indexSQL {
+		if existing[strings.ToLower(name)] {
+			continue
+		}
 		if _, err := db.ExecContext(ctx, stmt); err == nil {
 			indexesMade++
 		}
@@ -469,6 +522,12 @@ func importHybrid(ctx context.Context, db *sql.DB, cfg Config) error {
 
 func buildCreateItemsFromNormalizedSelectSQL(inner string) string {
 	return `CREATE TABLE items AS ` + buildSelectItemsFromNormalizedSelectSQL(inner)
+}
+
+func buildCreateItemsFromNormalizedSelectSQLNoDedup(inner string) string {
+	return fmt.Sprintf(`CREATE TABLE items AS
+SELECT * EXCLUDE (source_priority)
+FROM (%s) AS __hn_no_dedup`, inner)
 }
 
 func buildSelectItemsFromNormalizedSelectSQL(inner string) string {
