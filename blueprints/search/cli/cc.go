@@ -1705,7 +1705,15 @@ func runCCRecrawlV3(ctx context.Context, opts ccRecrawlOpts,
 	// Progress wrapper counts outcomes as results arrive.
 	pw := &v3ProgressWriter{inner: &recrawl_v3.ResultDBWriter{DB: rdb}}
 
-	// Live progress goroutine: prints a single updating line every 500ms.
+	// Detect TTY: use \r (in-place) for interactive; \n (new line) for SSH/pipes.
+	stdoutStat, statErr := os.Stdout.Stat()
+	isTTY := statErr == nil && stdoutStat.Mode()&os.ModeCharDevice != 0
+	progressInterval := 500 * time.Millisecond
+	if !isTTY {
+		progressInterval = 2 * time.Second // less noisy in logs
+	}
+
+	// Live progress goroutine.
 	progressCtx, cancelProgress := context.WithCancel(ctx)
 	defer cancelProgress()
 	progressDone := make(chan struct{})
@@ -1713,7 +1721,7 @@ func runCCRecrawlV3(ctx context.Context, opts ccRecrawlOpts,
 	seedTotal := int64(len(seeds))
 	go func() {
 		defer close(progressDone)
-		ticker := time.NewTicker(500 * time.Millisecond)
+		ticker := time.NewTicker(progressInterval)
 		defer ticker.Stop()
 		var lastTotal int64
 		var lastT time.Time
@@ -1728,7 +1736,7 @@ func runCCRecrawlV3(ctx context.Context, opts ccRecrawlOpts,
 				tout := atomic.LoadInt64(&pw.timeout)
 				elapsed := time.Since(start)
 
-				// Rolling RPS over last 500ms window
+				// Rolling RPS over last interval window
 				dt := t.Sub(lastT).Seconds()
 				rollingRPS := 0.0
 				if dt > 0 {
@@ -1746,7 +1754,12 @@ func runCCRecrawlV3(ctx context.Context, opts ccRecrawlOpts,
 					etaDur := time.Duration(float64(seedTotal-tot)/rollingRPS) * time.Second
 					eta = fmt.Sprintf("  ETA %s", etaDur.Truncate(time.Second))
 				}
-				fmt.Printf("\r  %s  %d/%d (%.0f%%)  ok=%d fail=%d tout=%d  %.0f rps%s",
+				eol := "\r"
+				if !isTTY {
+					eol = "\n"
+				}
+				fmt.Printf("%s  %s  %d/%d (%.0f%%)  ok=%d fail=%d tout=%d  %.0f rps%s",
+					eol,
 					elapsed.Truncate(time.Second),
 					tot, seedTotal, pct,
 					ok, fail, tout,
@@ -1762,7 +1775,9 @@ func runCCRecrawlV3(ctx context.Context, opts ccRecrawlOpts,
 		&recrawl_v3.FailedDBWriter{DB: failedDB})
 	cancelProgress()
 	<-progressDone
-	fmt.Println() // newline after progress line
+	if isTTY {
+		fmt.Println() // newline after \r progress line
+	}
 
 	if err != nil {
 		return fmt.Errorf("engine run: %w", err)

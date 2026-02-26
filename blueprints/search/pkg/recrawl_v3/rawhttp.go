@@ -156,6 +156,8 @@ func rawHTTPFetch(ctx context.Context, seed recrawler.SeedURL,
 		}
 
 		if pu.Scheme == "https" {
+			// Set deadline BEFORE TLS handshake so hung servers don't block indefinitely.
+			rawConn.SetDeadline(time.Now().Add(cfg.Timeout)) //nolint:errcheck
 			tlsConn := tls.Client(rawConn, &tls.Config{
 				InsecureSkipVerify: cfg.InsecureTLS, //nolint:gosec
 				ServerName:         pu.Host,
