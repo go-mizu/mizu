@@ -13,6 +13,9 @@ REMOTE_USER ?= tam
 REMOTE_HOST ?= server
 REMOTE_BIN ?= $(HOME)/bin/search
 REMOTE_SSH ?= $(REMOTE_USER)@$(REMOTE_HOST)
+DEPLOY_KEY ?= $(HOME)/.ssh/id_ed25519_deploy
+SSH ?= ssh -i $(DEPLOY_KEY) -o BatchMode=yes
+SCP ?= scp -i $(DEPLOY_KEY)
 
 CGO_ENABLED ?= 1
 LINUX_BASE_IMAGE ?= ubuntu:20.04
@@ -108,63 +111,34 @@ build-linux: ## Build Ubuntu/Linux binary to $$HOME/bin/search-linux (Docker, CG
 
 .PHONY: deploy-linux
 deploy-linux: build-linux ## Deploy linux binary to remote $$HOME/bin/search
-	@test -n "$(PHRASE)" || { echo "PHRASE env is required"; exit 1; }
-	@command -v expect >/dev/null 2>&1 || { echo "expect is required"; exit 1; }
+	@test -f "$(DEPLOY_KEY)" || { echo "Deploy key not found: $(DEPLOY_KEY)"; exit 1; }
 	@test -f "$(LINUX_RUNTIME_LIBSTDCPP)" || { echo "Missing runtime lib: $(LINUX_RUNTIME_LIBSTDCPP)"; exit 1; }
-	@expect -c ' \
-		set timeout -1; \
-		set phrase $env(PHRASE); \
-		spawn ssh $(REMOTE_SSH) "mkdir -p \$$HOME/bin \$$HOME/bin/search-libs"; \
-		expect { \
-			-re "passphrase.*:" { send -- "$$phrase\r"; exp_continue } \
-			eof \
-		} \
-	'
-	@expect -c ' \
-		set timeout -1; \
-		set phrase $env(PHRASE); \
-		spawn scp "$(LINUX_BINARY)" $(REMOTE_SSH):.search-upload.tmp; \
-		expect { \
-			-re "passphrase.*:" { send -- "$$phrase\r"; exp_continue } \
-			eof \
-		} \
-	'
-	@expect -c ' \
-		set timeout -1; \
-		set phrase $env(PHRASE); \
-		spawn scp "$(LINUX_RUNTIME_LIBSTDCPP)" $(REMOTE_SSH):.libstdc++.so.6.tmp; \
-		expect { \
-			-re "passphrase.*:" { send -- "$$phrase\r"; exp_continue } \
-			eof \
-		} \
-	'
-	@expect -c ' \
-		set timeout -1; \
-		set phrase $env(PHRASE); \
-		spawn ssh $(REMOTE_SSH) "bash -lc '\''set -e; install -m 0755 \$$HOME/.search-upload.tmp \$$HOME/bin/search-linux; install -m 0644 \$$HOME/.libstdc++.so.6.tmp \$$HOME/bin/search-libs/libstdc++.so.6; rm -f \$$HOME/.search-upload.tmp \$$HOME/.libstdc++.so.6.tmp \$$HOME/bin/search-linux.bin; cat > \$$HOME/bin/search <<\"SH\"\n#!/usr/bin/env bash\nexport LD_LIBRARY_PATH=\"\$$HOME/bin/search-libs\${LD_LIBRARY_PATH:+:\$$LD_LIBRARY_PATH}\"\nexec \"\$$HOME/bin/search-linux\" \"\$$@\"\nSH\nchmod +x \$$HOME/bin/search'\''"; \
-		expect { \
-			-re "passphrase.*:" { send -- "$$phrase\r"; exp_continue } \
-			eof \
-		} \
-	'
+	@$(SSH) $(REMOTE_SSH) "mkdir -p \$$HOME/bin \$$HOME/bin/search-libs"
+	@$(SCP) "$(LINUX_BINARY)" $(REMOTE_SSH):.search-upload.tmp
+	@$(SCP) "$(LINUX_RUNTIME_LIBSTDCPP)" $(REMOTE_SSH):.libstdc++.so.6.tmp
+	@$(SSH) $(REMOTE_SSH) 'bash -lc "set -e; \
+		install -m 0755 $$HOME/.search-upload.tmp $$HOME/bin/search-linux; \
+		install -m 0644 $$HOME/.libstdc++.so.6.tmp $$HOME/bin/search-libs/libstdc++.so.6; \
+		rm -f $$HOME/.search-upload.tmp $$HOME/.libstdc++.so.6.tmp; \
+		printf '"'"'#!/usr/bin/env bash\nulimit -n 65536 2>/dev/null || true\nexport LD_LIBRARY_PATH=\"$$HOME/bin/search-libs\$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}\"\nexec \"$$HOME/bin/search-linux\" \"\$$@\"\n'"'"' > $$HOME/bin/search; \
+		chmod +x $$HOME/bin/search"'
 	@echo "Deployed: $(REMOTE_SSH):~/bin/search"
 
 .PHONY: remote-search
-remote-search: ## Run remote `search --help` (requires PHRASE env)
-	@test -n "$(PHRASE)" || { echo "PHRASE env is required"; exit 1; }
-	@command -v expect >/dev/null 2>&1 || { echo "expect is required"; exit 1; }
-	@tmp_expect="$$(mktemp)"; \
-		trap 'rm -f "$$tmp_expect"' EXIT; \
-		{ \
-			echo 'set timeout -1'; \
-			echo 'set phrase $$env(PHRASE)'; \
-			echo 'spawn ssh $(REMOTE_SSH) {bash -lc '\''timeout 20s ~/bin/search --help | head -40; echo EXIT:$$?'\''}'; \
-			echo 'expect {'; \
-			echo '  -re "passphrase.*:" { send -- "$$phrase\r"; exp_continue }'; \
-			echo '  eof'; \
-			echo '}'; \
-		} > "$$tmp_expect"; \
-		expect "$$tmp_expect"
+remote-search: ## Run remote `search --help`
+	@$(SSH) $(REMOTE_SSH) 'bash -lc "timeout 20s ~/bin/search --help | head -40; echo EXIT:$$?"'
+
+.PHONY: remote-recrawl
+remote-recrawl: ## Run cc recrawl --file p:0 --status-only on remote (foreground, 1500 workers)
+	@$(SSH) $(REMOTE_SSH) 'bash -lc "~/bin/search cc recrawl --file p:0 --status-only --workers 1500"'
+
+.PHONY: remote-recrawl-bg
+remote-recrawl-bg: ## Run cc recrawl --file p:0 --status-only on remote (background, ~/recrawl.log)
+	@$(SSH) $(REMOTE_SSH) 'bash -lc "nohup ~/bin/search cc recrawl --file p:0 --status-only --workers 1500 >~/recrawl.log 2>&1 & echo PID:$$!"'
+
+.PHONY: remote-tail
+remote-tail: ## Tail recrawl log on remote
+	@$(SSH) $(REMOTE_SSH) 'tail -f ~/recrawl.log'
 
 .PHONY: install
 install: build ## Install search binary to $$HOME/bin/search (alias for build)
