@@ -152,3 +152,36 @@ func TestEpollEngine_DeadDomainSkipped(t *testing.T) {
 	}
 	_ = stats
 }
+
+func TestSwarmEngine_FallbackToKeepAlive(t *testing.T) {
+	// When SearchBinary is empty, SwarmEngine falls back to KeepAliveEngine
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	seeds := make([]recrawler.SeedURL, 10)
+	for i := range seeds {
+		seeds[i] = recrawler.SeedURL{
+			URL:    srv.URL + "/s/" + string(rune('a'+i)),
+			Domain: "localhost",
+			Host:   "localhost",
+		}
+	}
+	cfg := DefaultConfig()
+	cfg.Workers = 4
+	cfg.Timeout = 2 * time.Second
+	cfg.InsecureTLS = false
+	cfg.DroneCount = 0    // force fallback
+	cfg.SearchBinary = "" // force fallback
+
+	eng := &SwarmEngine{}
+	stats, err := eng.Run(context.Background(), seeds, &NoopDNS{}, cfg,
+		&noopResultWriter{}, &noopFailureWriter{})
+	if err != nil {
+		t.Fatalf("SwarmEngine fallback failed: %v", err)
+	}
+	if stats.OK != 10 {
+		t.Errorf("want 10 OK, got %d", stats.OK)
+	}
+}

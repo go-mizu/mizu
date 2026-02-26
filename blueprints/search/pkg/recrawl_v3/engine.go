@@ -96,12 +96,9 @@ func New(name string) (Engine, error) {
 // Stub types — replaced by full implementations in keepalive.go, epoll.go, swarm.go, rawhttp.go
 // KeepAliveEngine is defined in keepalive.go
 // EpollEngine is defined in epoll.go
-type SwarmEngine struct{}
+// SwarmEngine is defined in swarm.go
 type RawHTTPEngine struct{}
 
-func (e *SwarmEngine) Run(_ context.Context, _ []recrawler.SeedURL, _ DNSCache, _ Config, _ ResultWriter, _ FailureWriter) (*Stats, error) {
-	return nil, fmt.Errorf("SwarmEngine not yet implemented")
-}
 func (e *RawHTTPEngine) Run(_ context.Context, _ []recrawler.SeedURL, _ DNSCache, _ Config, _ ResultWriter, _ FailureWriter) (*Stats, error) {
 	return nil, fmt.Errorf("RawHTTPEngine not yet implemented")
 }
