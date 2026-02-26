@@ -1400,7 +1400,7 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 	}
 
 	// Open FailedDB for logging failed domains + URLs
-	failedDB, err := recrawler.NewFailedDB(failedDBPath)
+	failedDB, err := recrawler.OpenFailedDB(failedDBPath)
 	if err != nil {
 		return fmt.Errorf("opening failed db: %w", err)
 	}
@@ -1821,18 +1821,24 @@ func ccDNSCacheCoverage(dns *recrawler.DNSResolver, domains []string) ccDNSCache
 
 func ccResolveEffectiveDNSTuning(opts ccRecrawlOpts, pendingDomains int) (workers int, timeout time.Duration, notes []string) {
 	// Timeout: preserve explicit values. Auto mode reduces long-tail stalls on large batches.
+	// BUG FIX: was `if timeoutMs <= 0` — the default flag value is 2000, not 0, so
+	// auto-tune never fired. Now checks !dnsTimeoutExplicit instead.
 	timeoutMs := opts.dnsTimeout
-	if timeoutMs <= 0 {
+	if !opts.dnsTimeoutExplicit {
 		timeoutMs = 2000
 		if pendingDomains >= 20000 {
 			timeoutMs = 1200
 		}
 		if pendingDomains >= 50000 {
-			timeoutMs = 1000
+			// Keep 2000ms at large scale: ~5% of valid domains need 1-2s to resolve
+			// from Cloudflare/Google (slow NS delegation, DNSSEC validation).
+			// The retry that previously recovered these is skipped (see ResolveBatch),
+			// so the first-pass timeout must be long enough to catch slow-but-live.
+			// 4K workers at 2s = 2,048/s dead throughput → ~40s for 80K hosts
+			// (vs 350s at 640 workers with retry, or 60s at 4K workers with retry).
+			timeoutMs = 2000
 		}
 		notes = append(notes, fmt.Sprintf("dns-timeout auto=%dms (use --dns-timeout to override)", timeoutMs))
-	} else if !opts.dnsTimeoutExplicit && opts.dnsTimeout == 2000 {
-		notes = append(notes, "dns-timeout=2000ms (default)")
 	}
 	timeout = time.Duration(timeoutMs) * time.Millisecond
 
@@ -1855,10 +1861,13 @@ func ccResolveEffectiveDNSTuning(opts ccRecrawlOpts, pendingDomains int) (worker
 	cpu := runtime.NumCPU()
 	auto := cpu * 64
 	if pendingDomains >= 20000 {
-		auto = max(auto, 512)
+		auto = max(auto, 1024)
 	}
 	if pendingDomains >= 50000 {
-		auto = max(auto, 640)
+		// For CC recrawl batches (80K+ hosts, ~95% dead):
+		// need ~4K workers at 1s timeout to finish dead-domain scanning in ~20s.
+		// fastDNSConnsPerServer=4096 → pool=8192 → stableCap=6144 allows this.
+		auto = max(auto, 4096)
 	}
 	auto = max(auto, 128)
 	if stableCap := recrawler.DNSBatchRecommendedWorkerCap(); stableCap > 0 {
@@ -2357,7 +2366,7 @@ func ccRunTimeoutKilledReplay(
 		replayCfg.Workers, replayCfg.Timeout, replayCfg.MaxConnsPerDomain, replayCfg.DomainFailThreshold)))
 	fmt.Println()
 
-	failedDB, err := recrawler.NewFailedDB(failedDBPath)
+	failedDB, err := recrawler.OpenFailedDB(failedDBPath)
 	if err != nil {
 		return summary, fmt.Errorf("opening failed db for timeout replay: %w", err)
 	}

@@ -2,10 +2,13 @@ package recrawler
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
@@ -71,6 +74,68 @@ func NewFailedDB(path string) (*FailedDB, error) {
 	go fdb.urlFlusher()
 
 	return fdb, nil
+}
+
+// OpenFailedDB is like NewFailedDB but first removes any stale DuckDB lock
+// left by a dead process, preventing "conflicting lock" errors on retry.
+func OpenFailedDB(path string) (*FailedDB, error) {
+	removeIfStaleLocked(path)
+	return NewFailedDB(path)
+}
+
+// removeIfStaleLocked checks the DuckDB .lock file alongside dbPath.
+// If it exists and the recorded PID belongs to a dead process, both the
+// lock file and the database file are removed so the next open succeeds.
+func removeIfStaleLocked(dbPath string) {
+	lockPath := dbPath + ".lock"
+	data, err := os.ReadFile(lockPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return // no lock file — nothing to do
+	}
+	if err != nil {
+		return // unreadable — let DuckDB handle it
+	}
+	pid := parseLockFilePID(data)
+	if pid <= 0 {
+		return // can't parse PID — let DuckDB handle it
+	}
+	if processIsAlive(pid) {
+		return // genuine live lock — don't touch it
+	}
+	// Dead process: remove stale lock + corrupted/incomplete db
+	os.Remove(lockPath)
+	os.Remove(dbPath)
+}
+
+// parseLockFilePID extracts the PID from DuckDB lock file content.
+// DuckDB writes "PID=<n>\n" on Linux/macOS.
+func parseLockFilePID(data []byte) int {
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if after, ok := strings.CutPrefix(line, "PID="); ok {
+			var pid int
+			fmt.Sscanf(after, "%d", &pid)
+			return pid
+		}
+	}
+	// Fallback: try parsing first integer in file
+	var pid int
+	fmt.Sscanf(string(data), "%d", &pid)
+	return pid
+}
+
+// processIsAlive returns true if the given PID is a running process.
+// Sends signal 0 (no-op) to check existence without disturbing the process.
+func processIsAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	err = proc.Signal(syscall.Signal(0))
+	return err == nil
 }
 
 func initFailedSchema(db *sql.DB) error {
