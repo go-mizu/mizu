@@ -98,3 +98,57 @@ type mockDeadDNS struct{ deadHost string }
 
 func (m *mockDeadDNS) Lookup(_ string) (string, bool) { return "", false }
 func (m *mockDeadDNS) IsDead(host string) bool        { return host == m.deadHost }
+
+func TestEpollEngine_BasicCrawl(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	seeds := make([]recrawler.SeedURL, 20)
+	for i := range seeds {
+		seeds[i] = recrawler.SeedURL{
+			URL:    srv.URL + "/e/" + string(rune('a'+i)),
+			Domain: "localhost",
+			Host:   "localhost",
+		}
+	}
+	cfg := DefaultConfig()
+	cfg.Workers = 4
+	cfg.Timeout = 2 * time.Second
+	cfg.InsecureTLS = false
+	cfg.StatusOnly = true
+
+	eng := &EpollEngine{}
+	stats, err := eng.Run(context.Background(), seeds, &NoopDNS{}, cfg,
+		&noopResultWriter{}, &noopFailureWriter{})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	if stats.OK != 20 {
+		t.Errorf("want 20 OK, got %d (failed=%d)", stats.OK, stats.Failed)
+	}
+}
+
+func TestEpollEngine_DeadDomainSkipped(t *testing.T) {
+	seeds := []recrawler.SeedURL{
+		{URL: "http://dead.example.com/p1", Domain: "dead.example.com", Host: "dead.example.com"},
+	}
+	cfg := DefaultConfig()
+	cfg.Workers = 1
+	cfg.Timeout = 500 * time.Millisecond
+
+	deadDNS := &mockDeadDNS{deadHost: "dead.example.com"}
+	fw := &countFailureWriter{}
+	eng := &EpollEngine{}
+	stats, err := eng.Run(context.Background(), seeds, deadDNS, cfg,
+		&noopResultWriter{}, fw)
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	// Dead domains: EpollEngine skips them, counting as failures but not in Total
+	if fw.count == 0 {
+		t.Error("expected at least 1 failure for dead domain")
+	}
+	_ = stats
+}
