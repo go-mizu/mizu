@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/recrawler"
+	recrawl_v3 "github.com/go-mizu/mizu/blueprints/search/pkg/recrawl_v3"
 	"github.com/spf13/cobra"
 )
 
@@ -941,6 +942,7 @@ func newCCRecrawl() *cobra.Command {
 		tld               string
 		limit             int
 		batchSize         int
+		engine            string
 	)
 
 	cmd := &cobra.Command{
@@ -1018,6 +1020,7 @@ Examples:
 				reloadDNSCache:     reloadDNSCache,
 				resume:             resume,
 				batchSize:          batchSize,
+				engine:             engine,
 			})
 		},
 	}
@@ -1045,6 +1048,7 @@ Examples:
 	cmd.Flags().StringVar(&tld, "tld", "", "TLD filter (e.g. com)")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Max URLs to recrawl (0=all from index)")
 	cmd.Flags().IntVar(&batchSize, "batch-size", 5000, "DB write batch size")
+	cmd.Flags().StringVar(&engine, "engine", "", "v3 engine: keepalive|epoll|swarm|rawhttp|auto (empty=use v1/v2)")
 
 	return cmd
 }
@@ -1071,6 +1075,7 @@ type ccRecrawlOpts struct {
 	reloadDNSCache     bool
 	resume             bool
 	batchSize          int
+	engine             string
 }
 
 func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
@@ -1393,6 +1398,14 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 		}
 	}
 
+	// ── v3 engine dispatch ──────────────────────────────────────────────────
+	if opts.engine != "" {
+		if err := os.MkdirAll(filepath.Dir(failedDBPath), 0755); err != nil {
+			return fmt.Errorf("creating recrawl data dir: %w", err)
+		}
+		return runCCRecrawlV3(ctx, opts, seeds, dnsResolver, resultDir, failedDBPath)
+	}
+
 	// ── Step 5: Open FailedDB + result DB + run recrawler ──────────────────
 	fmt.Println(infoStyle.Render("Recrawling from origin servers..."))
 	if err := os.MkdirAll(filepath.Dir(failedDBPath), 0755); err != nil {
@@ -1610,6 +1623,69 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 	fmt.Println()
 
 	return err
+}
+
+// runCCRecrawlV3 delegates crawling to a recrawl_v3 engine selected by opts.engine.
+// It is called from runCCRecrawl when --engine is set. failedDBPath dir must already exist.
+func runCCRecrawlV3(ctx context.Context, opts ccRecrawlOpts,
+	seeds []recrawler.SeedURL, dnsResolver *recrawler.DNSResolver,
+	resultDir, failedDBPath string) error {
+
+	engineName := opts.engine
+	if engineName == "auto" {
+		engineName = "keepalive"
+	}
+	fmt.Println(infoStyle.Render(fmt.Sprintf("Using recrawl_v3 engine: %s (%d seeds)", engineName, len(seeds))))
+
+	eng, err := recrawl_v3.New(engineName)
+	if err != nil {
+		return fmt.Errorf("engine %q: %w", engineName, err)
+	}
+
+	cfg := recrawl_v3.DefaultConfig()
+	cfg.Workers = opts.workers
+	cfg.Timeout = time.Duration(opts.timeout) * time.Millisecond
+	cfg.StatusOnly = opts.statusOnly
+	cfg.InsecureTLS = true
+	cfg.MaxConnsPerDomain = opts.maxConnsPerDomain
+	if selfBin, execErr := os.Executable(); execErr == nil {
+		cfg.SearchBinary = selfBin
+	}
+
+	var dnsCache recrawl_v3.DNSCache
+	if dnsResolver != nil {
+		dnsCache = recrawl_v3.WrapDNSResolver(dnsResolver)
+	} else {
+		dnsCache = &recrawl_v3.NoopDNS{}
+	}
+
+	failedDB, err := recrawler.OpenFailedDB(failedDBPath)
+	if err != nil {
+		return fmt.Errorf("opening failed db: %w", err)
+	}
+	defer failedDB.Close()
+
+	rdb, err := recrawler.NewResultDB(resultDir, 16, opts.batchSize)
+	if err != nil {
+		return fmt.Errorf("opening result db: %w", err)
+	}
+	defer rdb.Close()
+
+	fmt.Println(successStyle.Render(fmt.Sprintf("  FailedDB → %s", failedDBPath)))
+	fmt.Println(successStyle.Render(fmt.Sprintf("  Results  → %s/ (16 shards)", resultDir)))
+
+	stats, err := eng.Run(ctx, seeds, dnsCache, cfg,
+		&recrawl_v3.ResultDBWriter{DB: rdb},
+		&recrawl_v3.FailedDBWriter{DB: failedDB})
+	if err != nil {
+		return fmt.Errorf("engine run: %w", err)
+	}
+
+	fmt.Println(successStyle.Render(fmt.Sprintf(
+		"Engine %s done: %d ok / %d total | avg %.0f rps | peak %.0f rps | %s",
+		engineName, stats.OK, stats.Total, stats.AvgRPS, stats.PeakRPS, stats.Duration.Truncate(time.Second),
+	)))
+	return nil
 }
 
 // ── cc verify ──────────────────────────────────────────────
