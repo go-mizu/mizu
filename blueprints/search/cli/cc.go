@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -1596,6 +1597,9 @@ type v3LiveStats struct {
 	peakRPS    float64
 	rollingRPS float64
 	rollingBW  float64
+
+	// Optional binary writer for segment stats display (nil when not in use).
+	binWriter *crawl.BinSegWriter
 }
 
 // v3DomainInfo holds per-domain state for the slow-domain display.
@@ -2020,6 +2024,35 @@ func v3RenderProgress(ls *v3LiveStats, cfg crawl.Config, engineName string, seed
 	if adaptiveStr != "" {
 		sb.WriteString(adaptiveStr)
 	}
+	// Memory + writer telemetry
+	sb.WriteString(v3MemLine(ls.binWriter))
+	return sb.String()
+}
+
+// v3MemLine returns a status line showing heap usage, GOMEMLIMIT, GC cycles,
+// and (when w != nil) BinSegWriter segment/drain stats.
+func v3MemLine(w *crawl.BinSegWriter) string {
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms)
+
+	// GOMEMLIMIT: pass -1 to read current limit without changing it.
+	limitBytes := debug.SetMemoryLimit(-1)
+
+	heapGB := float64(ms.HeapInuse) / (1 << 30)
+	limitGB := float64(limitBytes) / (1 << 30)
+	pct := 0.0
+	if limitBytes > 0 {
+		pct = float64(ms.HeapInuse) / float64(limitBytes) * 100
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("  Mem   heap=%.1f GB / lim=%.1f GB (%.0f%%)  │  GC %d×",
+		heapGB, limitGB, pct, ms.NumGC))
+	if w != nil {
+		sb.WriteString(fmt.Sprintf("  │  Writer seg=%d pend=%d drain=%s",
+			w.SegCount(), w.PendingSegs(), ccFmtInt64(w.Drained())))
+	}
+	sb.WriteByte('\n')
 	return sb.String()
 }
 

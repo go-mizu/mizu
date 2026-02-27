@@ -556,6 +556,7 @@ func newHNRecrawl() *cobra.Command {
 		domainTimeoutMs     int
 		retryTimeoutMs      int
 		noRetry             bool
+		writerMode          string
 	)
 	cmd := &cobra.Command{
 		Use:   "recrawl",
@@ -661,7 +662,7 @@ and adaptive timeouts.`,
 			return runHNRecrawlV3(ctx, cfg, seedRes,
 				engine, workers, maxConnsPerDomain, timeoutMs, domainFailThreshold, domainTimeoutMs, statusOnly, batchSize, int64(slowDomainMs),
 				dnsWorkers, dnsTimeoutMs,
-				retryTimeoutMs, noRetry)
+				retryTimeoutMs, noRetry, writerMode)
 		},
 	}
 	cmd.Flags().StringVar(&domainsDB, "domains-db", "", "Path to hn_domains DuckDB (default: $HOME/data/hn/hn_domains.duckdb)")
@@ -686,6 +687,7 @@ and adaptive timeouts.`,
 
 	cmd.Flags().IntVar(&retryTimeoutMs, "retry-timeout", 5000, "Pass-2 timeout for retrying http_timeout URLs (ms); 0=disabled")
 	cmd.Flags().BoolVar(&noRetry, "no-retry", false, "Skip pass-2 retry of timeout URLs (faster; may miss slow-but-live servers)")
+	cmd.Flags().StringVar(&writerMode, "writer", "duckdb", "Result writer backend: duckdb (default), bin (non-blocking NDJSON→DuckDB drain), devnull (benchmark only)")
 	return cmd
 }
 
@@ -704,6 +706,7 @@ func runHNRecrawlV3(ctx context.Context,
 	dnsWorkers, dnsTimeoutMs int,
 	retryTimeoutMs int,
 	noRetry bool,
+	writerMode string,
 ) error {
 
 	eng, err := crawl.New(engineName)
@@ -836,22 +839,40 @@ func runHNRecrawlV3(ctx context.Context,
 	cfg.SwarmFailedDir = hnCfg.WithDefaults().RecrawlDir()
 	cfg.BatchSize = batchSize
 
-	failedDB, err := recrawler.OpenFailedDB(failedDBPath)
-	if err != nil {
-		return fmt.Errorf("opening failed db: %w", err)
+	// ── Writer setup (--writer duckdb | bin | devnull) ────────────────────────
+	// devnull: no DB files, no pass 2 — pure throughput benchmark.
+	// bin:     non-blocking NDJSON segments, drained to DuckDB in background.
+	// duckdb:  direct DuckDB writes (original behaviour).
+	writerMode = strings.TrimSpace(strings.ToLower(writerMode))
+	if writerMode == "" {
+		writerMode = "duckdb"
 	}
-	failedDBDone := false
-	defer func() {
-		if !failedDBDone {
-			failedDB.Close()
-		}
-	}()
 
-	rdb, err := recrawler.NewResultDB(resultDir, 16, batchSize)
-	if err != nil {
-		return fmt.Errorf("opening result db: %w", err)
+	var (
+		rdb         *recrawler.ResultDB
+		failedDB    *recrawler.FailedDB
+		failedDBDone bool
+		binWriter   *crawl.BinSegWriter
+	)
+
+	if writerMode != "devnull" {
+		var err error
+		rdb, err = recrawler.NewResultDB(resultDir, 16, batchSize)
+		if err != nil {
+			return fmt.Errorf("opening result db: %w", err)
+		}
+		defer rdb.Close()
+
+		failedDB, err = recrawler.OpenFailedDB(failedDBPath)
+		if err != nil {
+			return fmt.Errorf("opening failed db: %w", err)
+		}
+		defer func() {
+			if !failedDBDone {
+				failedDB.Close()
+			}
+		}()
 	}
-	defer rdb.Close()
 
 	// Print config summary
 	bodyMode := "full-body (256 KB limit)"
@@ -864,11 +885,18 @@ func runHNRecrawlV3(ctx context.Context,
 		domainFail = fmt.Sprintf("abandon after %d total timeouts (%d rounds × %d conns)",
 			effectiveRounds, cfg.DomainFailThreshold, cfg.MaxConnsPerDomain)
 	}
+	writerLabel := writerMode
+	switch writerMode {
+	case "bin":
+		writerLabel = "bin  (NDJSON segments → DuckDB drain)"
+	case "devnull":
+		writerLabel = "devnull  (benchmark only — no data saved, no pass 2)"
+	}
 	fmt.Printf("  Engine            %s\n", engineName)
 	fmt.Printf("  Workers           %s\n", ccFmtInt64(int64(cfg.Workers)))
 	fmt.Printf("  Max Conns/Domain  %d\n", cfg.MaxConnsPerDomain)
 	fmt.Printf("  Timeout           %v (adaptive P95×2)  [pass 1]\n", cfg.Timeout)
-	if !noRetry && retryTimeoutMs > 0 {
+	if !noRetry && retryTimeoutMs > 0 && writerMode != "devnull" {
 		fmt.Printf("  Retry Timeout     %v  [pass 2 for http_timeout URLs]\n", time.Duration(retryTimeoutMs)*time.Millisecond)
 	}
 	if cfg.DomainTimeout > 0 {
@@ -878,8 +906,12 @@ func runHNRecrawlV3(ctx context.Context,
 	fmt.Printf("  Body              %s\n", bodyMode)
 	fmt.Printf("  TLS               skip-verify\n")
 	fmt.Printf("  Seeds             %s URLs\n", ccFmtInt64(int64(len(seeds))))
-	fmt.Printf("  FailedDB          %s\n", failedDBPath)
-	fmt.Printf("  Results           %s/ (16 shards)\n\n", resultDir)
+	fmt.Printf("  Writer            %s\n", writerLabel)
+	if writerMode != "devnull" {
+		fmt.Printf("  FailedDB          %s\n", failedDBPath)
+		fmt.Printf("  Results           %s/ (16 shards)\n", resultDir)
+	}
+	fmt.Println()
 
 	ls := &v3LiveStats{slowDomainMs: slowDomainMs}
 	cfg.Notifier = ls
@@ -892,12 +924,39 @@ func runHNRecrawlV3(ctx context.Context,
 			ls.total.Store(ok + failed + timeout)
 		}
 	}
+
+	// Build the ResultWriter for pass 1.
+	var resultWriter crawl.ResultWriter
+	switch writerMode {
+	case "bin":
+		segDir := filepath.Join(hnCfg.WithDefaults().RecrawlDir(), "segments")
+		var bwErr error
+		binWriter, bwErr = crawl.NewBinSegWriter(segDir, 0, rdb)
+		if bwErr != nil {
+			return fmt.Errorf("creating bin writer: %w", bwErr)
+		}
+		defer binWriter.Close()
+		ls.binWriter = binWriter
+		resultWriter = binWriter
+	case "devnull":
+		resultWriter = &crawl.DevNullResultWriter{}
+	default: // "duckdb"
+		resultWriter = &crawl.ResultDBWriter{DB: rdb}
+	}
+
+	var failureWriter crawl.FailureWriter
+	if writerMode == "devnull" {
+		failureWriter = &crawl.DevNullFailureWriter{}
+	} else {
+		failureWriter = &crawl.FailedDBWriter{DB: failedDB}
+	}
+
 	pw := &v3ProgressWriter{
-		inner: &crawl.ResultDBWriter{DB: rdb},
+		inner: resultWriter,
 		ls:    ls,
 	}
 	fw := &v3ProgressFailureWriter{
-		inner: &crawl.FailedDBWriter{DB: failedDB},
+		inner: failureWriter,
 		ls:    ls,
 	}
 
@@ -975,7 +1034,8 @@ func runHNRecrawlV3(ctx context.Context,
 	// ── Pass 2: retry http_timeout URLs with a longer timeout ─────────────────
 	// Purpose: eliminate false negatives — servers that respond in 2–20s would be
 	// lost after pass 1's short timeout. Pass 2 gives them a fair chance.
-	if !noRetry && retryTimeoutMs > 0 && ctx.Err() == nil {
+	// devnull mode skips pass 2 (no failedDB → no timeout URL tracking).
+	if !noRetry && retryTimeoutMs > 0 && writerMode != "devnull" && ctx.Err() == nil {
 		// DuckDB only allows one connection per file. Close pass-1 failedDB so
 		// LoadTimeoutURLs can open it read-only without a "conflicting lock" error.
 		failedDBDone = true
@@ -1005,9 +1065,16 @@ func runHNRecrawlV3(ctx context.Context,
 			// Longer domain deadline for pass 2 (slow servers need time).
 			retryCfg.DomainTimeout = time.Duration(retryTimeoutMs*3) * time.Millisecond
 
-			ls2 := &v3LiveStats{slowDomainMs: slowDomainMs}
+			ls2 := &v3LiveStats{slowDomainMs: slowDomainMs, binWriter: binWriter}
 			retryCfg.Notifier = ls2
-			pw2 := &v3ProgressWriter{inner: &crawl.ResultDBWriter{DB: rdb}, ls: ls2}
+			// Pass 2 uses the same result writer as pass 1 (bin writers are reusable).
+			var p2ResultWriter crawl.ResultWriter
+			if writerMode == "bin" {
+				p2ResultWriter = binWriter // BinSegWriter stays open across passes
+			} else {
+				p2ResultWriter = &crawl.ResultDBWriter{DB: rdb}
+			}
+			pw2 := &v3ProgressWriter{inner: p2ResultWriter, ls: ls2}
 			fw2 := &v3ProgressFailureWriter{inner: &crawl.FailedDBWriter{DB: failedDB2}, ls: ls2}
 
 			retryStart := time.Now()

@@ -91,11 +91,12 @@ func (rdb *ResultDB) closeOpenShards(n int) {
 }
 
 func initResultSchema(db *sql.DB) error {
-	// Cap DuckDB buffer pool at 96 MB per shard (8 shards × 96 MB = 768 MB total).
-	// 64 MB is too small: "failed to pin block" errors occur during large body INSERTs.
-	// 128 MB is too large: OOM kills the process on a 5.9 GB server (Go 2 GB + DuckDB 2 GB).
-	// DuckDB spills excess pages to a temp file, so this limit does not affect correctness.
-	if _, err := db.Exec("SET memory_limit='96MB'"); err != nil {
+	// Cap DuckDB buffer pool at 128 MB per shard (8 shards × 128 MB = 1 GB total).
+	// 96 MB is too small: DuckDB fills to 91.5/91.5 MiB and can't pin 260 KB for checkpoint,
+	// causing TransactionContext errors that roll back all uncommitted WAL data (total data loss).
+	// With no-PRIMARY-KEY schema (no index), checkpoints are lighter and 128 MB is sufficient.
+	// Peak RSS with 8 shards: ~2.8 GB (well within 5.8 GB server limit).
+	if _, err := db.Exec("SET memory_limit='128MB'"); err != nil {
 		return fmt.Errorf("set memory_limit: %w", err)
 	}
 	// Limit DuckDB to 1 thread per shard (default = all CPU cores).
