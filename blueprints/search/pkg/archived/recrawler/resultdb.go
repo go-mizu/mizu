@@ -91,12 +91,13 @@ func (rdb *ResultDB) closeOpenShards(n int) {
 }
 
 func initResultSchema(db *sql.DB) error {
-	// Cap DuckDB buffer pool at 128 MB per shard (8 shards × 128 MB = 1 GB total).
-	// 96 MB is too small: DuckDB fills to 91.5/91.5 MiB and can't pin 260 KB for checkpoint,
-	// causing TransactionContext errors that roll back all uncommitted WAL data (total data loss).
-	// With no-PRIMARY-KEY schema (no index), checkpoints are lighter and 128 MB is sufficient.
-	// Peak RSS with 8 shards: ~2.8 GB (well within 5.8 GB server limit).
-	if _, err := db.Exec("SET memory_limit='128MB'"); err != nil {
+	// Cap DuckDB buffer pool at 256 MB per shard (8 shards × 256 MB = 2 GB total).
+	// '128MB' (decimal) = 122 MiB; DuckDB fills to 99.8% = 121.8 MiB, leaving only 270 KB.
+	// Checkpoint needs 256-260 KB → intermittent failures rolling back uncommitted WAL data.
+	// '256MB' = 244 MiB; at 99.8% fill = 243.5 MiB, headroom = 0.5 MiB >> 260 KB needed.
+	// We also CHECKPOINT after every batch (see flusher) to prevent pool from filling.
+	// Peak RSS with 8 shards: ~3.4 GB (well within 5.8 GB server limit).
+	if _, err := db.Exec("SET memory_limit='256MB'"); err != nil {
 		return fmt.Errorf("set memory_limit: %w", err)
 	}
 	// Limit DuckDB to 1 thread per shard (default = all CPU cores).
@@ -178,9 +179,21 @@ func (rdb *ResultDB) Flush(_ context.Context) error {
 
 func (s *resultShard) flusher(flushed *atomic.Int64) {
 	defer close(s.done)
+	var batchN int
 	for batch := range s.flushCh {
 		n := writeBatchValues(s.db, batch)
 		flushed.Add(int64(n))
+		// Checkpoint every 10 batches (100 rows) to prevent buffer-pool overflow.
+		// DuckDB fills the pool to 99.94% of its limit (all pages dirty/clean).
+		// When pool is full, new checkpoint pins fail: "failed to pin 256 KiB (244/244 MiB)".
+		// Every 10 batches = ≤25.6 MB dirty pages (10% of 244 MiB pool), leaving
+		// 90% clean pages for LRU eviction so the checkpoint pin succeeds.
+		// Performance impact: ~17% overhead (≈ 1,600 checkpoints × 37 ms each).
+		batchN++
+		if batchN >= 10 {
+			batchN = 0
+			s.db.Exec("CHECKPOINT") //nolint:errcheck
+		}
 	}
 }
 
