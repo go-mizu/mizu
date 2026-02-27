@@ -214,23 +214,19 @@ func RunDrone(ctx context.Context, cfg Config) error {
 	// Stage 3: DB write goroutine.
 	writeCh := make(chan recrawler.Result, 256)
 	var writeWg sync.WaitGroup
-	writeWg.Add(1)
-	go func() {
-		defer writeWg.Done()
+	writeWg.Go(func() {
 		for r := range writeCh {
 			rdb.Add(r)
 		}
 		rdb.Flush(context.Background()) //nolint:errcheck
-	}()
+	})
 
 	// Stage 2: parse workers (CPU-bound, NumCPU goroutines).
 	parseN := max(runtime.NumCPU(), 2)
 	fetchCh := make(chan rawFetch, max(cfg.Workers*2, 1000))
 	var parseWg sync.WaitGroup
 	for range parseN {
-		parseWg.Add(1)
-		go func() {
-			defer parseWg.Done()
+		parseWg.Go(func() {
 			for rf := range fetchCh {
 				r := parseRawFetch(rf)
 				writeCh <- r
@@ -257,16 +253,14 @@ func RunDrone(ctx context.Context, cfg Config) error {
 					okCount.Add(1)
 				}
 			}
-		}()
+		})
 	}
 
 	// Stats reporter: write cumulative JSON to stdout every 500ms.
 	ticker := time.NewTicker(500 * time.Millisecond)
 	reportCtx, cancelReport := context.WithCancel(ctx)
 	var reportWg sync.WaitGroup
-	reportWg.Add(1)
-	go func() {
-		defer reportWg.Done()
+	reportWg.Go(func() {
 		defer ticker.Stop()
 		enc := json.NewEncoder(os.Stdout)
 		for {
@@ -282,7 +276,7 @@ func RunDrone(ctx context.Context, cfg Config) error {
 				return
 			}
 		}
-	}()
+	})
 
 	// Stage 1: domain-affine fetch pipeline.
 	runSwarmFetch(ctx, seeds, dns, cfg, fetchCh, failDB)
@@ -420,9 +414,7 @@ func swarmProcessDomain(ctx context.Context, urls []recrawler.SeedURL,
 	n := min(innerN, len(urls))
 	var wg sync.WaitGroup
 	for range n {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			client := &http.Client{
 				Transport: transport,
 				Timeout:   cfg.Timeout,
@@ -477,7 +469,7 @@ func swarmProcessDomain(ctx context.Context, urls []recrawler.SeedURL,
 					return
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	_ = domain
