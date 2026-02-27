@@ -961,7 +961,7 @@ Examples:
 	cmd.Flags().StringVar(&file, "file", "", "Parquet selector/path: N (warc/part index), p:N, w:N, m:N, or local path")
 	cmd.Flags().IntVar(&sample, "sample", 1, "Number of parquet files to download (0=all, legacy mode)")
 	cmd.Flags().BoolVar(&importOnly, "import-only", false, "Skip parquet download, use existing DuckDB index")
-	cmd.Flags().IntVar(&workers, "workers", 5000, "HTTP fetch workers")
+	cmd.Flags().IntVar(&workers, "workers", 500, "HTTP fetch workers")
 	cmd.Flags().IntVar(&dnsWorkers, "dns-workers", 2000, "DNS resolution workers (use 0 for auto)")
 	cmd.Flags().IntVar(&dnsTimeout, "dns-timeout", 2000, "DNS timeout in ms (use 0 for auto)")
 	cmd.Flags().IntVar(&timeout, "timeout", 5000, "HTTP timeout in ms")
@@ -978,7 +978,7 @@ Examples:
 	cmd.Flags().StringVar(&domain, "domain", "", "Domain filter")
 	cmd.Flags().StringVar(&tld, "tld", "", "TLD filter (e.g. com)")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Max URLs to recrawl (0=all from index)")
-	cmd.Flags().IntVar(&batchSize, "batch-size", 5000, "DB write batch size")
+	cmd.Flags().IntVar(&batchSize, "batch-size", 100, "DB write batch size")
 	cmd.Flags().StringVar(&engine, "engine", "keepalive", "Crawl engine: keepalive|epoll|swarm|rawhttp")
 	cmd.Flags().IntVar(&domainTimeoutMs, "domain-timeout", 30_000, "Per-domain context deadline in ms; cancel remaining URLs after this (0=disabled)")
 	cmd.Flags().IntVar(&domainFailThreshold, "domain-fail-threshold", -1, "Abandon domain after this many timeout rounds (×conns); -1=engine default (3)")
@@ -1779,7 +1779,7 @@ func runCCRecrawlV3(ctx context.Context, opts ccRecrawlOpts,
 	defer rdb.Close()
 
 	// Print config summary
-	bodyMode := "full-body (512 KB limit)"
+	bodyMode := "full-body (256 KB limit)"
 	if cfg.StatusOnly {
 		bodyMode = "status-only"
 	}

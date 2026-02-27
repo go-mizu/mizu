@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"unicode/utf8"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 )
@@ -64,7 +65,7 @@ func NewResultDB(dir string, shardCount, batchSize int) (*ResultDB, error) {
 		s := &resultShard{
 			db:      db,
 			batchSz: batchSize,
-			flushCh: make(chan []Result, 16),
+			flushCh: make(chan []Result, 2),
 			done:    make(chan struct{}),
 		}
 
@@ -155,17 +156,33 @@ func (rdb *ResultDB) Flush(_ context.Context) error {
 func (s *resultShard) flusher(flushed *atomic.Int64) {
 	defer close(s.done)
 	for batch := range s.flushCh {
-		writeBatchValues(s.db, batch)
-		flushed.Add(int64(len(batch)))
+		n := writeBatchValues(s.db, batch)
+		flushed.Add(int64(n))
 	}
+}
+
+// sanitizeStr ensures s is safe for DuckDB VARCHAR: no null bytes and valid UTF-8.
+// Russian/CJK pages are often Windows-1251/Shift-JIS; the raw bytes cast to string
+// produce invalid UTF-8 sequences that cause duckdb_bind_varchar to fail.
+func sanitizeStr(s string) string {
+	if s == "" {
+		return s
+	}
+	s = strings.ReplaceAll(s, "\x00", "")
+	if !utf8.ValidString(s) {
+		s = strings.ToValidUTF8(s, "")
+	}
+	return s
 }
 
 // writeBatchValues uses multi-row VALUES for high-throughput inserts.
 // ~100x faster than row-by-row prepared statements.
-func writeBatchValues(db *sql.DB, batch []Result) {
+// Returns the number of rows successfully written.
+func writeBatchValues(db *sql.DB, batch []Result) int {
 	const cols = 14
 	const maxPerStmt = 500 // DuckDB param limit / cols
 
+	written := 0
 	for i := 0; i < len(batch); i += maxPerStmt {
 		end := min(i+maxPerStmt, len(batch))
 		chunk := batch[i:end]
@@ -183,13 +200,19 @@ func writeBatchValues(db *sql.DB, batch []Result) {
 			if r.Error != "" {
 				status = "failed"
 			}
-			args = append(args, r.URL, r.StatusCode, r.ContentType, r.ContentLength,
-				r.Body, r.Title, r.Description, r.Language, r.Domain,
-				r.RedirectURL, r.FetchTimeMs, r.CrawledAt, r.Error, status)
+			args = append(args, sanitizeStr(r.URL), r.StatusCode, sanitizeStr(r.ContentType), r.ContentLength,
+				sanitizeStr(r.Body), sanitizeStr(r.Title), sanitizeStr(r.Description), sanitizeStr(r.Language),
+				sanitizeStr(r.Domain), sanitizeStr(r.RedirectURL), r.FetchTimeMs, r.CrawledAt,
+				sanitizeStr(r.Error), status)
 		}
 
-		db.Exec(b.String(), args...)
+		if _, err := db.Exec(b.String(), args...); err != nil {
+			fmt.Fprintf(os.Stderr, "[resultdb] INSERT error (batch %d rows): %v\n", len(chunk), err)
+		} else {
+			written += len(chunk)
+		}
 	}
+	return written
 }
 
 // SetMeta stores a key-value pair in shard 0's meta table.

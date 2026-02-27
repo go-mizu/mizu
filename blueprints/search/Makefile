@@ -9,13 +9,18 @@ LINUX_RUNTIME_LIB_DIR ?= $(HOME)/bin/search-linux-libs-focal-gcc11
 LINUX_RUNTIME_LIBSTDCPP ?= $(LINUX_RUNTIME_LIB_DIR)/libstdc++.so.6
 CMD     ?= ./cmd/search
 DATA_DIR ?= $(HOME)/data/blueprint/search
-REMOTE_USER ?= tam
-REMOTE_HOST ?= server
-REMOTE_BIN ?= $(HOME)/bin/search
-REMOTE_SSH ?= $(REMOTE_USER)@$(REMOTE_HOST)
-DEPLOY_KEY ?= $(HOME)/.ssh/id_ed25519_deploy
-SSH ?= ssh -i $(DEPLOY_KEY) -o BatchMode=yes
-SCP ?= scp -i $(DEPLOY_KEY)
+DEPLOY_KEY    ?= $(HOME)/.ssh/id_ed25519_deploy
+SERVER1_USER  ?= tam
+SERVER1_HOST  ?= server
+SERVER2_USER  ?= root
+SERVER2_HOST  ?= server2
+# Pass SERVER=2 to any remote/deploy target to operate on server2
+SERVER        ?= 1
+REMOTE_USER   ?= $(if $(filter 2,$(SERVER)),$(SERVER2_USER),$(SERVER1_USER))
+REMOTE_HOST   ?= $(if $(filter 2,$(SERVER)),$(SERVER2_HOST),$(SERVER1_HOST))
+REMOTE_SSH     = $(REMOTE_USER)@$(REMOTE_HOST)
+SSH           ?= ssh -i $(DEPLOY_KEY) -o BatchMode=yes
+SCP           ?= scp -i $(DEPLOY_KEY)
 
 CGO_ENABLED ?= 1
 LINUX_BASE_IMAGE ?= ubuntu:20.04
@@ -120,33 +125,59 @@ deploy-linux: build-linux ## Deploy linux binary to remote $$HOME/bin/search
 		install -m 0755 $$HOME/.search-upload.tmp $$HOME/bin/search-linux; \
 		install -m 0644 $$HOME/.libstdc++.so.6.tmp $$HOME/bin/search-libs/libstdc++.so.6; \
 		rm -f $$HOME/.search-upload.tmp $$HOME/.libstdc++.so.6.tmp; \
-		printf '"'"'#!/usr/bin/env bash\nulimit -n 65536 2>/dev/null || true\nexport LD_LIBRARY_PATH=\"$$HOME/bin/search-libs\$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}\"\nexec \"$$HOME/bin/search-linux\" \"\$$@\"\n'"'"' > $$HOME/bin/search; \
+		printf '"'"'#!/usr/bin/env bash\nulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=2000000000\nexport LD_LIBRARY_PATH=\"$$HOME/bin/search-libs\$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}\"\nexec \"$$HOME/bin/search-linux\" \"\$$@\"\n'"'"' > $$HOME/bin/search; \
 		chmod +x $$HOME/bin/search"'
 	@echo "Deployed: $(REMOTE_SSH):~/bin/search"
+
+.PHONY: deploy-key-install
+deploy-key-install: ## Authorize DEPLOY_KEY on remote server (SERVER=2 for server2)
+	@test -f "$(DEPLOY_KEY).pub" || { echo "Deploy public key not found: $(DEPLOY_KEY).pub"; exit 1; }
+	@echo "Installing deploy key on $(REMOTE_SSH)..."
+	@ssh $(REMOTE_SSH) \
+		"mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys" \
+		< "$(DEPLOY_KEY).pub"
+	@echo "Done. Test with: make remote-search SERVER=$(SERVER)"
 
 .PHONY: remote-search
 remote-search: ## Run remote `search --help`
 	@$(SSH) $(REMOTE_SSH) 'bash -lc "timeout 20s ~/bin/search --help | head -40; echo EXIT:$$?"'
 
 .PHONY: remote-recrawl
-remote-recrawl: ## Run cc recrawl --file p:0 --status-only on remote (foreground, 1500 workers)
-	@$(SSH) $(REMOTE_SSH) 'bash -lc "~/bin/search cc recrawl --file p:0 --status-only --workers 1500"'
+remote-recrawl: ## Run cc recrawl --file p:0 (full body, 500 workers) on remote (foreground)
+	@$(SSH) $(REMOTE_SSH) 'bash -lc "~/bin/search cc recrawl --file p:0 --workers 500"'
 
 .PHONY: remote-recrawl-bg
-remote-recrawl-bg: ## Run cc recrawl --file p:0 --status-only on remote (background, ~/recrawl.log)
-	@$(SSH) $(REMOTE_SSH) 'bash -lc "nohup ~/bin/search cc recrawl --file p:0 --status-only --workers 1500 >~/recrawl.log 2>&1 & echo PID:$$!"'
+remote-recrawl-bg: ## Run cc recrawl --file p:0 (full body, 500 workers) on remote (background, ~/recrawl.log)
+	@$(SSH) $(REMOTE_SSH) 'bash -lc "nohup ~/bin/search cc recrawl --file p:0 --workers 500 >~/recrawl.log 2>&1 & echo PID:$$!"'
 
 .PHONY: remote-tail
 remote-tail: ## Tail recrawl log on remote
 	@$(SSH) $(REMOTE_SSH) 'tail -f ~/recrawl.log'
 
+.PHONY: remote-hn-recrawl
+remote-hn-recrawl: ## Run hn recrawl (keepalive, auto-config) on remote server
+	@$(SSH) $(REMOTE_SSH) 'bash -lc "~/bin/search hn recrawl"'
+
+.PHONY: remote-hn-recrawl-bg
+remote-hn-recrawl-bg: ## Run hn recrawl (keepalive, auto-config) in background (~/hn-recrawl.log)
+	@$(SSH) $(REMOTE_SSH) 'bash -lc "nohup ~/bin/search hn recrawl >~/hn-recrawl.log 2>&1 & echo PID:$$!"'
+
 .PHONY: remote-hn-recrawl-swarm
-remote-hn-recrawl-swarm: ## Run hn recrawl --engine swarm (body mode) on remote server
-	@$(SSH) $(REMOTE_SSH) 'bash -lc "~/bin/search hn recrawl --engine swarm --workers 300 --status-only=false --domain-timeout 30000"'
+remote-hn-recrawl-swarm: ## Run hn recrawl --engine swarm (body mode, auto-config) on remote server
+	@$(SSH) $(REMOTE_SSH) 'bash -lc "~/bin/search hn recrawl --engine swarm --domain-timeout 30000"'
 
 .PHONY: remote-hn-recrawl-swarm-bg
 remote-hn-recrawl-swarm-bg: ## Run hn recrawl swarm in background (~/hn-swarm.log)
-	@$(SSH) $(REMOTE_SSH) 'bash -lc "nohup ~/bin/search hn recrawl --engine swarm --workers 300 --status-only=false --domain-timeout 30000 >~/hn-swarm.log 2>&1 & echo PID:$$!"'
+	@$(SSH) $(REMOTE_SSH) 'bash -lc "nohup ~/bin/search hn recrawl --engine swarm --domain-timeout 30000 >~/hn-swarm.log 2>&1 & echo PID:$$!"'
+
+.PHONY: seed-copy
+seed-copy: ## Copy HN hn_domains.duckdb from server1 → server2 via local pipe (1.2 GB)
+	@echo "Preparing server2..."
+	@$(SSH) $(SERVER2_USER)@$(SERVER2_HOST) 'mkdir -p ~/data/hn/recrawl'
+	@echo "Streaming hn_domains.duckdb: $(SERVER1_USER)@$(SERVER1_HOST) → local → $(SERVER2_USER)@$(SERVER2_HOST)..."
+	@$(SSH) $(SERVER1_USER)@$(SERVER1_HOST) "cat ~/data/hn/hn_domains.duckdb" | \
+		$(SSH) $(SERVER2_USER)@$(SERVER2_HOST) "cat > ~/data/hn/hn_domains.duckdb"
+	@echo "Done. Run: make remote-hn-recrawl SERVER=2"
 
 .PHONY: remote-hn-tail
 remote-hn-tail: ## Tail hn swarm recrawl log on remote

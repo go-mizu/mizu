@@ -193,7 +193,7 @@ func RunDrone(ctx context.Context, cfg Config) error {
 	if err := os.MkdirAll(cfg.SwarmResultDir, 0o755); err != nil {
 		return fmt.Errorf("mkdir result dir: %w", err)
 	}
-	batchSz := max(cfg.BatchSize, 1000)
+	batchSz := max(cfg.BatchSize, 50)
 	rdb, err := recrawler.NewResultDB(cfg.SwarmResultDir, 8, batchSz)
 	if err != nil {
 		return fmt.Errorf("open result db: %w", err)

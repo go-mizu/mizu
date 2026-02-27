@@ -84,6 +84,10 @@ func (t *adaptiveTracker) P95Ms() int64 {
 func (e *KeepAliveEngine) Run(ctx context.Context, seeds []recrawler.SeedURL,
 	dns DNSCache, cfg Config, results ResultWriter, failures FailureWriter) (*Stats, error) {
 
+	// Raise fd limit so large worker counts don't hit the 1024 soft limit ceiling.
+	// Idempotent: no-op if already ≥ 65536.
+	_ = raiseRlimit(65536)
+
 	// Skip dead domains up front; group live URLs by domain
 	byDomain := make(map[string][]recrawler.SeedURL, 1024)
 	for _, s := range seeds {
@@ -372,10 +376,10 @@ func keepaliveFetchOne(ctx context.Context, client *http.Client,
 		}
 	}
 
-	// Full fetch: read body (up to 512 KB), extract metadata for HTML pages
+	// Full fetch: read body (up to 256 KB), extract metadata for HTML pages
 	ct := resp.Header.Get("Content-Type")
 	isHTML := strings.Contains(ct, "text/html") || strings.Contains(ct, "application/xhtml")
-	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
+	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
 	bodySize := max(resp.ContentLength, int64(len(bodyBytes)))
 
 	var title, description, language, body string

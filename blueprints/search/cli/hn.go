@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -561,9 +562,9 @@ func newHNRecrawl() *cobra.Command {
 runs the high-throughput keepalive recrawl engine with per-domain connection pooling
 and adaptive timeouts.`,
 		Example: `  search hn recrawl
-  search hn recrawl --workers 3000 --max-conns-per-domain 8
+  search hn recrawl --workers 1500 --max-conns-per-domain 4
   search hn recrawl --domain github.com --limit 1000
-  search hn recrawl --engine epoll`,
+  search hn recrawl --engine swarm`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := hnSignalContext(cmd.Context())
 			defer stop()
@@ -668,11 +669,11 @@ and adaptive timeouts.`,
 	cmd.Flags().BoolVar(&forceSeeds, "force-seeds", false, "Rebuild seed DB from hn_domains.pages even if existing")
 	cmd.Flags().StringVar(&engine, "engine", "keepalive", "Crawl engine: keepalive|epoll|rawhttp|swarm")
 
-	cmd.Flags().IntVar(&workers, "workers", 3000, "Concurrent domain workers")
-	cmd.Flags().IntVar(&maxConnsPerDomain, "max-conns-per-domain", 8, "Max simultaneous connections per domain")
+	cmd.Flags().IntVar(&workers, "workers", -1, "Concurrent domain workers (-1 = auto from hardware)")
+	cmd.Flags().IntVar(&maxConnsPerDomain, "max-conns-per-domain", -1, "Max simultaneous connections per domain (-1 = auto from hardware)")
 	cmd.Flags().IntVar(&timeoutMs, "timeout", 5000, "Per-request HTTP timeout in milliseconds")
-	cmd.Flags().BoolVar(&statusOnly, "status-only", true, "Only check HTTP status, close body immediately (fastest)")
-	cmd.Flags().IntVar(&batchSize, "batch-size", 5000, "DB write batch size")
+	cmd.Flags().BoolVar(&statusOnly, "status-only", false, "Only check HTTP status, close body immediately (fastest)")
+	cmd.Flags().IntVar(&batchSize, "batch-size", 100, "DB write batch size")
 	cmd.Flags().IntVar(&slowDomainMs, "slow-domain-ms", 30_000, "Highlight domains active for longer than this threshold (ms)")
 	cmd.Flags().IntVar(&domainFailThreshold, "domain-fail-threshold", -1, "Abandon domain after this many timeout rounds (×conns); -1=engine default (3)")
 	cmd.Flags().IntVar(&domainTimeoutMs, "domain-timeout", 30_000, "Per-domain context deadline in ms; cancel remaining URLs after this (0=disabled)")
@@ -699,6 +700,40 @@ func runHNRecrawlV3(ctx context.Context,
 	if err != nil {
 		return fmt.Errorf("engine %q: %w", engineName, err)
 	}
+
+	// ── Hardware profile ──────────────────────────────────────────────────────
+	siCache := filepath.Join(hnCfg.WithDefaults().RecrawlDir(), ".sysinfo.json")
+	si := crawl.LoadOrGatherSysInfo(siCache, 30*time.Minute)
+	fmt.Print(infoStyle.Render("Hardware Profile") + "\n")
+	fmt.Print(si.Table())
+
+	// Set GOMEMLIMIT to 75% of available RAM (overrides wrapper's fixed 2 GB).
+	if autoMem := si.MemAvailableMB * 1024 * 1024 * 75 / 100; autoMem > 0 {
+		debug.SetMemoryLimit(autoMem)
+		fmt.Printf("  GOMEMLIMIT     %s (auto-set from avail RAM)\n", crawl.FormatMB(si.MemAvailableMB*75/100))
+	}
+	fmt.Println()
+
+	// Auto-config workers and innerN from hardware when not explicitly provided.
+	if workers <= 0 {
+		autoCfg, reason := crawl.AutoConfigKeepAlive(si, !statusOnly)
+		workers = autoCfg.Workers
+		if maxConnsPerDomain <= 0 {
+			maxConnsPerDomain = autoCfg.MaxConnsPerDomain
+		}
+		fmt.Printf("  %s  %s\n\n", infoStyle.Render("Auto-config:"), labelStyle.Render(reason))
+	} else if maxConnsPerDomain <= 0 {
+		// Workers explicitly set but innerN still auto.
+		innerN := si.CPUCount * 2
+		if innerN < 4 {
+			innerN = 4
+		}
+		if innerN > 16 {
+			innerN = 16
+		}
+		maxConnsPerDomain = innerN
+	}
+	// ─────────────────────────────────────────────────────────────────────────
 
 	cfg := crawl.DefaultConfig()
 	cfg.Workers = workers
