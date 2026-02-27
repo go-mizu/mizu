@@ -46,6 +46,16 @@ type Config struct {
 	DomainFailThreshold int           // consecutive timeouts before abandoning a domain (0=disabled)
 	DomainTimeout       time.Duration // per-domain context deadline; cancel remaining URLs after this (0=disabled)
 	Notifier            DomainNotifier // optional domain lifecycle callbacks (nil = disabled)
+
+	// Swarm engine – used by queen to tell drones where to write.
+	SwarmResultDir string // base dir; drone i writes to SwarmResultDir/d{i}/
+	SwarmFailedDir string // base dir; drone i writes to SwarmFailedDir/failed_{i}.duckdb
+
+	// Swarm drone – set from --result-dir / --failed-db CLI flags.
+	SwarmFailedDB string // this drone's failed DB path
+
+	// DB write batch size (used by swarm drones when creating ResultDB).
+	BatchSize int
 }
 
 // DomainNotifier receives domain lifecycle events from the engine.
@@ -68,6 +78,7 @@ func DefaultConfig() Config {
 		InsecureTLS:         true,
 		DroneCount:          4,
 		DomainFailThreshold: 3, // abandon domain after 3 consecutive timeouts
+		BatchSize:           5000,
 	}
 }
 
