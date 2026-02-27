@@ -407,6 +407,37 @@ func FailedDomainSummary(dbPath string) (map[string]int, int, error) {
 	return summary, total, nil
 }
 
+// LoadTimeoutURLs reads all URLs with reason="http_timeout" from a FailedDB file,
+// returning them as SeedURLs for a second-pass retry crawl.
+func LoadTimeoutURLs(dbPath string) ([]SeedURL, error) {
+	db, err := sql.Open("duckdb", dbPath+"?access_mode=READ_ONLY")
+	if err != nil {
+		return nil, fmt.Errorf("opening failed db: %w", err)
+	}
+	defer db.Close()
+
+	rows, err := db.Query(`
+		SELECT url, domain
+		FROM failed_urls
+		WHERE reason = 'http_timeout'
+		ORDER BY domain, url
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("querying timeout URLs: %w", err)
+	}
+	defer rows.Close()
+
+	var seeds []SeedURL
+	for rows.Next() {
+		var s SeedURL
+		if err := rows.Scan(&s.URL, &s.Domain); err != nil {
+			continue
+		}
+		seeds = append(seeds, s)
+	}
+	return seeds, nil
+}
+
 // FailedURLSummary returns a breakdown of failed URLs by reason and total count.
 func FailedURLSummary(dbPath string) (map[string]int, int, error) {
 	db, err := sql.Open("duckdb", dbPath+"?access_mode=READ_ONLY")

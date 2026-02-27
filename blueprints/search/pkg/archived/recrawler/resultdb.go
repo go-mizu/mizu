@@ -91,6 +91,12 @@ func (rdb *ResultDB) closeOpenShards(n int) {
 }
 
 func initResultSchema(db *sql.DB) error {
+	// Cap DuckDB buffer pool at 128 MB per shard (16 shards × 128 MB = 2 GB total).
+	// Without this, DuckDB aggressively buffers body data and exhausts server RAM.
+	// DuckDB spills excess pages to a temp file, so this does not affect correctness.
+	if _, err := db.Exec("SET memory_limit='128MB'"); err != nil {
+		return fmt.Errorf("set memory_limit: %w", err)
+	}
 	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS results (
 			url VARCHAR PRIMARY KEY,

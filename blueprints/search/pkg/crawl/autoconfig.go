@@ -7,19 +7,25 @@ import "fmt"
 //
 // Formula:
 //
-//	innerN = clamp(CPUCount×2, 4, 16)
 //	bodyKB = 256 (fullBody) or 4 (status-only)
 //
-//	wMem  = min(availKB×0.70 / (innerN×bodyKB/4),    ← expected use, 25% saturation
-//	            availKB×0.80 / (innerN×bodyKB))        ← worst-case OOM guard
-//	wFd   = fdSoftAfter / (innerN×2)                  ← fd safety factor 2×
+//	# Step 1: compute max workers RAM can support at innerN=4 (minimum useful innerN)
+//	wMemUncapped = min(availKB×0.70 / (4×bodyKB/4),
+//	                   availKB×0.80 / (4×bodyKB))
 //
+//	# Step 2: choose innerN
+//	if fdSoft/(4×2) <= wMemUncapped:   # fd-capped even at innerN=4
+//	    innerN = 4                      # maximize workers
+//	else:                              # mem-capped → can afford more conns/domain
+//	    innerN = clamp(CPUCount×2, 4, min(16, fdSoft/(2×wMemUncapped)))
+//
+//	# Step 3: recompute with chosen innerN
+//	wMem    = min(availKB×0.70 / (innerN×bodyKB/4),
+//	              availKB×0.80 / (innerN×bodyKB))
+//	wFd     = fdSoft / (innerN×2)
 //	workers = max(min(wMem, wFd, 10000), 200)
 func AutoConfigKeepAlive(si SysInfo, fullBody bool) (Config, string) {
 	cfg := DefaultConfig()
-
-	// Inner connections per domain: 2 per CPU, clamped [4,16]
-	innerN := max(min(si.CPUCount*2, 16), 4)
 
 	availKB := si.MemAvailableMB * 1024
 	if availKB <= 0 {
@@ -31,23 +37,44 @@ func AutoConfigKeepAlive(si SysInfo, fullBody bool) (Config, string) {
 		bodyKB = 4
 	}
 
-	// Memory per worker: expected (25% saturation) and worst-case (100%)
-	memExpKB := max(int64(innerN)*bodyKB/4, 1)
-	memWrstKB := max(int64(innerN)*bodyKB, 1)
-
-	// Workers from memory constraints (soft = expected use, hard = worst-case OOM guard)
-	wMem := min(availKB*70/100/memExpKB, availKB*80/100/memWrstKB)
-
-	// Workers from fd limit
 	fdSoft := int64(si.FdSoftAfter)
 	if fdSoft <= 0 {
 		fdSoft = 65536
 	}
+
+	const minInnerN = 4
+
+	// Step 1: how many workers can RAM support at the minimum innerN?
+	uncappedExpKB := max(int64(minInnerN)*bodyKB/4, 1)
+	uncappedWrstKB := max(int64(minInnerN)*bodyKB, 1)
+	wMemUncapped := min(availKB*70/100/uncappedExpKB, availKB*80/100/uncappedWrstKB)
+
+	// Step 2: choose innerN.
+	// If even at innerN=4 the fd budget is the limiting factor, use innerN=4 to
+	// maximise worker count (more domains in parallel beats deeper per-domain).
+	// Otherwise use a CPU-proportional innerN, capped so workers stay ≥ wMemUncapped.
+	wFdMin := fdSoft / int64(minInnerN*2) // max workers achievable at innerN=4
+	var innerN int
+	if wFdMin <= wMemUncapped {
+		// fd-capped: minimize innerN to squeeze out the most workers
+		innerN = minInnerN
+	} else {
+		// mem-capped: CPU-proportional innerN, but don't over-allocate fds
+		cpuInnerN := max(min(si.CPUCount*2, 16), minInnerN)
+		// cap so wFd doesn't drop below wMemUncapped (avoid fd becoming the new cap)
+		maxInnerNForFd := max(int(fdSoft/(2*max(wMemUncapped, 1))), minInnerN)
+		innerN = min(cpuInnerN, maxInnerNForFd)
+	}
+
+	// Step 3: recompute memory/fd budgets with the chosen innerN
+	memExpKB := max(int64(innerN)*bodyKB/4, 1)
+	memWrstKB := max(int64(innerN)*bodyKB, 1)
+	wMem := min(availKB*70/100/memExpKB, availKB*80/100/memWrstKB)
 	wFd := fdSoft / int64(innerN*2)
 
 	workers := max(min(wMem, wFd, 10000), 200)
 
-	// Build human-readable reason
+	// Human-readable reason
 	var limitBy string
 	if wFd <= wMem {
 		limitBy = fmt.Sprintf("fd-capped (%d÷%d)", fdSoft, innerN*2)

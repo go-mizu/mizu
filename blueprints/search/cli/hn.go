@@ -554,6 +554,8 @@ func newHNRecrawl() *cobra.Command {
 		slowDomainMs        int
 		domainFailThreshold int
 		domainTimeoutMs     int
+		retryTimeoutMs      int
+		noRetry             bool
 	)
 	cmd := &cobra.Command{
 		Use:   "recrawl",
@@ -658,7 +660,8 @@ and adaptive timeouts.`,
 
 			return runHNRecrawlV3(ctx, cfg, seedRes,
 				engine, workers, maxConnsPerDomain, timeoutMs, domainFailThreshold, domainTimeoutMs, statusOnly, batchSize, int64(slowDomainMs),
-				dnsWorkers, dnsTimeoutMs)
+				dnsWorkers, dnsTimeoutMs,
+				retryTimeoutMs, noRetry)
 		},
 	}
 	cmd.Flags().StringVar(&domainsDB, "domains-db", "", "Path to hn_domains DuckDB (default: $HOME/data/hn/hn_domains.duckdb)")
@@ -671,7 +674,7 @@ and adaptive timeouts.`,
 
 	cmd.Flags().IntVar(&workers, "workers", -1, "Concurrent domain workers (-1 = auto from hardware)")
 	cmd.Flags().IntVar(&maxConnsPerDomain, "max-conns-per-domain", -1, "Max simultaneous connections per domain (-1 = auto from hardware)")
-	cmd.Flags().IntVar(&timeoutMs, "timeout", 5000, "Per-request HTTP timeout in milliseconds")
+	cmd.Flags().IntVar(&timeoutMs, "timeout", 2000, "Per-request HTTP timeout in milliseconds (pass 1)")
 	cmd.Flags().BoolVar(&statusOnly, "status-only", false, "Only check HTTP status, close body immediately (fastest)")
 	cmd.Flags().IntVar(&batchSize, "batch-size", 100, "DB write batch size")
 	cmd.Flags().IntVar(&slowDomainMs, "slow-domain-ms", 30_000, "Highlight domains active for longer than this threshold (ms)")
@@ -680,11 +683,16 @@ and adaptive timeouts.`,
 
 	cmd.Flags().IntVar(&dnsWorkers, "dns-workers", 1000, "Concurrent DNS workers (0=skip DNS pre-resolution)")
 	cmd.Flags().IntVar(&dnsTimeoutMs, "dns-timeout", 1500, "DNS lookup timeout in milliseconds")
+
+	cmd.Flags().IntVar(&retryTimeoutMs, "retry-timeout", 20000, "Pass-2 timeout for retrying http_timeout URLs (ms); 0=disabled")
+	cmd.Flags().BoolVar(&noRetry, "no-retry", false, "Skip pass-2 retry of timeout URLs (faster; may miss slow-but-live servers)")
 	return cmd
 }
 
 // runHNRecrawlV3 runs the v3 recrawl engine for HN seeds.
 // It mirrors the structure of runCCRecrawlV3 but uses HN-specific result paths.
+// Pass 1 uses the configured timeout. Pass 2 (unless --no-retry) retries
+// http_timeout URLs with retryTimeoutMs to eliminate false negatives.
 func runHNRecrawlV3(ctx context.Context,
 	hnCfg hn.Config,
 	seedRes *hn.RecrawlSeedResult,
@@ -694,6 +702,8 @@ func runHNRecrawlV3(ctx context.Context,
 	batchSize int,
 	slowDomainMs int64,
 	dnsWorkers, dnsTimeoutMs int,
+	retryTimeoutMs int,
+	noRetry bool,
 ) error {
 
 	eng, err := crawl.New(engineName)
@@ -852,7 +862,10 @@ func runHNRecrawlV3(ctx context.Context,
 	fmt.Printf("  Engine            %s\n", engineName)
 	fmt.Printf("  Workers           %s\n", ccFmtInt64(int64(cfg.Workers)))
 	fmt.Printf("  Max Conns/Domain  %d\n", cfg.MaxConnsPerDomain)
-	fmt.Printf("  Timeout           %v (adaptive P95×2)\n", cfg.Timeout)
+	fmt.Printf("  Timeout           %v (adaptive P95×2)  [pass 1]\n", cfg.Timeout)
+	if !noRetry && retryTimeoutMs > 0 {
+		fmt.Printf("  Retry Timeout     %v  [pass 2 for http_timeout URLs]\n", time.Duration(retryTimeoutMs)*time.Millisecond)
+	}
 	if cfg.DomainTimeout > 0 {
 		fmt.Printf("  Domain Timeout    %v (cancel remaining URLs per domain after this)\n", cfg.DomainTimeout)
 	}
@@ -941,14 +954,109 @@ func runHNRecrawlV3(ctx context.Context,
 	if b := ls.bytes.Load(); b > 0 {
 		bw = fmt.Sprintf("  |  %s total", v3FmtBytes(b))
 	}
+	passLabel := ""
+	if !noRetry && retryTimeoutMs > 0 {
+		passLabel = " (pass 1)"
+	}
 	fmt.Println(successStyle.Render(fmt.Sprintf(
-		"Engine %s done: %s ok / %s total | avg %.0f rps | peak %.0f rps | %s%s%s",
-		engineName,
+		"Engine %s done%s: %s ok / %s total | avg %.0f rps | peak %.0f rps | %s%s%s",
+		engineName, passLabel,
 		ccFmtInt64(stats.OK), ccFmtInt64(stats.Total),
 		stats.AvgRPS, stats.PeakRPS,
 		stats.Duration.Truncate(time.Second),
 		bw, skippedNote,
 	)))
+
+	// ── Pass 2: retry http_timeout URLs with a longer timeout ─────────────────
+	// Purpose: eliminate false negatives — servers that respond in 2–20s would be
+	// lost after pass 1's short timeout. Pass 2 gives them a fair chance.
+	if !noRetry && retryTimeoutMs > 0 && ctx.Err() == nil {
+		retrySeeds, rErr := recrawler.LoadTimeoutURLs(failedDBPath)
+		if rErr != nil {
+			fmt.Printf("  %s loading timeout URLs for retry: %v\n", warningStyle.Render("warn:"), rErr)
+		} else if len(retrySeeds) > 0 {
+			fmt.Printf("\n%s  %s timeout URLs → retrying at %dms timeout\n",
+				infoStyle.Render("Pass 2:"),
+				labelStyle.Render(formatInt64Exact(int64(len(retrySeeds)))),
+				retryTimeoutMs,
+			)
+
+			retryCfg := cfg
+			retryCfg.Timeout = time.Duration(retryTimeoutMs) * time.Millisecond
+			// Quarter the workers for pass 2 — slow domains need fewer concurrent connections.
+			retryCfg.Workers = max(workers/4, 200)
+			// Be more lenient: don't abandon domains early in pass 2 (they might just be slow).
+			retryCfg.DomainFailThreshold = 1
+			// Longer domain deadline for pass 2 (slow servers need time).
+			retryCfg.DomainTimeout = time.Duration(retryTimeoutMs*3) * time.Millisecond
+
+			ls2 := &v3LiveStats{slowDomainMs: slowDomainMs}
+			retryCfg.Notifier = ls2
+			pw2 := &v3ProgressWriter{inner: &crawl.ResultDBWriter{DB: rdb}, ls: ls2}
+			fw2 := &v3ProgressFailureWriter{inner: &crawl.FailedDBWriter{DB: failedDB}, ls: ls2}
+
+			retryStart := time.Now()
+			retryTotal := int64(len(retrySeeds))
+
+			progressCtx2, cancelProgress2 := context.WithCancel(ctx)
+			progressDone2 := make(chan struct{})
+			go func() {
+				defer close(progressDone2)
+				ticker := time.NewTicker(progressInterval)
+				defer ticker.Stop()
+				var displayLines int
+				for {
+					select {
+					case <-progressCtx2.Done():
+						return
+					case t := <-ticker.C:
+						ls2.updateSpeed(t)
+						output := v3RenderProgress(ls2, retryCfg, engineName, retryTotal, retryStart, isTTY)
+						if isTTY {
+							if displayLines > 0 {
+								fmt.Printf("\033[%dA\033[J", displayLines)
+							}
+							fmt.Print(output)
+							displayLines = strings.Count(output, "\n")
+						} else {
+							fmt.Print(output)
+						}
+					}
+				}
+			}()
+
+			eng2, _ := crawl.New(engineName)
+			retryStats, _ := eng2.Run(ctx, retrySeeds, dnsCache, retryCfg, pw2, fw2)
+			cancelProgress2()
+			<-progressDone2
+
+			if retryStats != nil {
+				if isTTY {
+					fmt.Println()
+				}
+				fmt.Println(successStyle.Render(fmt.Sprintf(
+					"Pass 2 done: %s rescued / %s retried | avg %.0f rps | %s",
+					ccFmtInt64(retryStats.OK), ccFmtInt64(retryStats.Total),
+					retryStats.AvgRPS, retryStats.Duration.Truncate(time.Second),
+				)))
+				// Merge into pass-1 stats for final totals
+				stats.OK += retryStats.OK
+				stats.Total += retryStats.Total
+				stats.Failed += retryStats.Failed
+				stats.Bytes += retryStats.Bytes
+			}
+		} else {
+			fmt.Printf("\n%s  no timeout URLs to retry\n", infoStyle.Render("Pass 2:"))
+		}
+	}
+	// ─────────────────────────────────────────────────────────────────────────
+
+	if !noRetry && retryTimeoutMs > 0 {
+		fmt.Println(successStyle.Render(fmt.Sprintf(
+			"Combined total: %s ok / %s total | %s bytes",
+			ccFmtInt64(stats.OK), ccFmtInt64(stats.Total), v3FmtBytes(stats.Bytes),
+		)))
+	}
 	return nil
 }
 
