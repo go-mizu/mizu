@@ -284,7 +284,8 @@ func RunDrone(ctx context.Context, cfg Config) error {
 	})
 
 	// Stage 1: domain-affine fetch pipeline.
-	runSwarmFetch(ctx, seeds, dns, cfg, fetchCh, failDB)
+	trk := &adaptiveTracker{}
+	runSwarmFetch(ctx, seeds, dns, cfg, trk, fetchCh, failDB)
 
 	// Shutdown pipeline in order: fetch → parse → write.
 	close(fetchCh)
@@ -310,7 +311,7 @@ func RunDrone(ctx context.Context, cfg Config) error {
 // Each domain's URLs go to one inner goroutine group sharing a single http.Transport.
 // Results are sent to fetchCh (never calling crawler.Extract).
 func runSwarmFetch(ctx context.Context, seeds []recrawler.SeedURL,
-	dns DNSCache, cfg Config, fetchCh chan<- rawFetch, failDB *recrawler.FailedDB) {
+	dns DNSCache, cfg Config, trk *adaptiveTracker, fetchCh chan<- rawFetch, failDB *recrawler.FailedDB) {
 
 	byDomain := make(map[string][]recrawler.SeedURL, 1024)
 	for _, s := range seeds {
@@ -356,7 +357,7 @@ func runSwarmFetch(ctx context.Context, seeds []recrawler.SeedURL,
 				if gctx.Err() != nil {
 					return nil
 				}
-				swarmProcessDomain(gctx, urls, dns, cfg, innerN, fetchCh, failDB)
+				swarmProcessDomain(gctx, urls, dns, cfg, trk, innerN, fetchCh, failDB)
 			}
 			return nil
 		})
@@ -367,7 +368,7 @@ func runSwarmFetch(ctx context.Context, seeds []recrawler.SeedURL,
 // swarmProcessDomain handles all URLs for one domain using a shared http.Transport.
 // It mirrors processOneDomain from keepalive.go but sends rawFetch to fetchCh.
 func swarmProcessDomain(ctx context.Context, urls []recrawler.SeedURL,
-	dns DNSCache, cfg Config, innerN int, fetchCh chan<- rawFetch,
+	dns DNSCache, cfg Config, trk *adaptiveTracker, innerN int, fetchCh chan<- rawFetch,
 	failDB *recrawler.FailedDB) {
 
 	if len(urls) == 0 {
@@ -455,7 +456,19 @@ func swarmProcessDomain(ctx context.Context, urls []recrawler.SeedURL,
 					}
 				}
 
+				// Apply adaptive timeout (P95×2) if enough samples exist.
+				if t := trk.Timeout(cfg.Timeout); t > 0 {
+					client.Timeout = t
+				} else {
+					client.Timeout = cfg.Timeout
+				}
+
 				rf := keepaliveFetchRaw(domainCtx, client, seed, cfg)
+
+				// Record successful latencies for adaptive ceiling.
+				if rf.errStr == "" {
+					trk.record(rf.fetchMs)
+				}
 
 				isTimeout := rf.errStr != "" && isTimeoutErr(rf.errStr)
 				if isTimeout {
