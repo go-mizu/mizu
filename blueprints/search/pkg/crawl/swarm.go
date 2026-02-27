@@ -87,8 +87,8 @@ func (e *SwarmEngine) Run(ctx context.Context, seeds []recrawler.SeedURL,
 	n := cfg.DroneCount
 	buckets := make([][]recrawler.SeedURL, n)
 	for _, s := range seeds {
-		h := fnvHash(s.Domain)
-		buckets[int(h%uint32(n))] = append(buckets[int(h%uint32(n))], s)
+		idx := int(fnvHash(s.Domain) % uint32(n))
+		buckets[idx] = append(buckets[idx], s)
 	}
 
 	frame := buildDNSFrame(seeds, dns)
@@ -112,7 +112,10 @@ func (e *SwarmEngine) Run(ctx context.Context, seeds []recrawler.SeedURL,
 				return
 			}
 			droneResultDir := filepath.Join(cfg.SwarmResultDir, fmt.Sprintf("d%d", droneIdx))
-			droneFailedDB := filepath.Join(cfg.SwarmFailedDir, fmt.Sprintf("failed_%d.duckdb", droneIdx))
+			var droneFailedDB string
+			if cfg.SwarmFailedDir != "" {
+				droneFailedDB = filepath.Join(cfg.SwarmFailedDir, fmt.Sprintf("failed_%d.duckdb", droneIdx))
+			}
 			if err := runDroneProcess(ctx, cfg, droneIdx, droneSeeds, frame,
 				droneResultDir, droneFailedDB,
 				&totalOK, &totalFailed, &totalTimeout, &totalReqs, peak); err != nil {
