@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/recrawler"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/archived/recrawler"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 )

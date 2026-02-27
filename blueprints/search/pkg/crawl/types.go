@@ -1,4 +1,4 @@
-package recrawl_v3
+package crawl
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/recrawler"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/archived/recrawler"
 )
 
 // staticDNSCache wraps recrawler.DNSResolver for the DNSCache interface.

@@ -1,4 +1,4 @@
-package recrawl_v3
+package crawl
 
 import (
 	"bufio"
@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/recrawler"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/archived/recrawler"
 )
 
 // SwarmEngine spawns N drone sub-processes (one per CPU), distributes seeds by

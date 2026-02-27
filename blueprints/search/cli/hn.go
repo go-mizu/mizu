@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/hn"
-	"github.com/go-mizu/mizu/blueprints/search/pkg/recrawler"
-	recrawl_v3 "github.com/go-mizu/mizu/blueprints/search/pkg/recrawl_v3"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/archived/recrawler"
+	crawl "github.com/go-mizu/mizu/blueprints/search/pkg/crawl"
 	"github.com/spf13/cobra"
 )
 
@@ -105,102 +105,6 @@ func hnSignalContext(parent context.Context) (context.Context, context.CancelFun
 	return ctx, stop
 }
 
-type hnHostMemInfo struct {
-	TotalBytes int64
-	SwapBytes  int64
-}
-
-func readHNHostMemInfo() hnHostMemInfo {
-	b, err := os.ReadFile("/proc/meminfo")
-	if err != nil {
-		return hnHostMemInfo{}
-	}
-	var out hnHostMemInfo
-	for _, line := range strings.Split(string(b), "\n") {
-		f := strings.Fields(line)
-		if len(f) < 2 {
-			continue
-		}
-		key := strings.TrimSuffix(f[0], ":")
-		v, err := strconv.ParseInt(f[1], 10, 64)
-		if err != nil {
-			continue
-		}
-		// meminfo values are kB.
-		switch key {
-		case "MemTotal":
-			out.TotalBytes = v * 1024
-		case "SwapTotal":
-			out.SwapBytes = v * 1024
-		}
-	}
-	return out
-}
-
-func autoTuneHNRecrawlForHost(cmd *cobra.Command, seedRes *hn.RecrawlSeedResult, workers, dnsWorkers, batchSize, transportShards *int, dnsPrefetch *bool) {
-	if seedRes == nil {
-		return
-	}
-	mem := readHNHostMemInfo()
-	if mem.TotalBytes <= 0 {
-		return
-	}
-	largeSeed := seedRes.Rows >= 1_000_000 || seedRes.UniqueDomains >= 200_000
-	lowMem := mem.TotalBytes < 8*1024*1024*1024
-	noSwap := mem.SwapBytes <= 0
-	if !largeSeed || !lowMem {
-		return
-	}
-
-	changed := func(name string) bool { return cmd.Flags().Changed(name) }
-	var changes []string
-
-	if !changed("dns-prefetch") && *dnsPrefetch {
-		*dnsPrefetch = false
-		changes = append(changes, "dns-prefetch=false")
-	}
-	if !changed("workers") && *workers > 64 {
-		*workers = 64
-		changes = append(changes, "workers=64")
-	}
-	if !changed("dns-workers") && *dnsWorkers > 64 {
-		*dnsWorkers = 64
-		changes = append(changes, "dns-workers=64")
-	}
-	if !changed("batch-size") && *batchSize > 1000 {
-		*batchSize = 1000
-		changes = append(changes, "batch-size=1000")
-	}
-	if !changed("transport-shards") && *transportShards > 16 {
-		*transportShards = 16
-		changes = append(changes, "transport-shards=16")
-	}
-
-	if len(changes) == 0 {
-		if *dnsPrefetch {
-			fmt.Printf("  %s low-memory host detected (%s RAM, %s swap) with large seed (%s URLs, %s domains); consider --dns-prefetch=false\n",
-				warningStyle.Render("WARN"),
-				labelStyle.Render(formatBytes(mem.TotalBytes)),
-				labelStyle.Render(formatBytes(mem.SwapBytes)),
-				labelStyle.Render(formatLargeNumber(seedRes.Rows)),
-				labelStyle.Render(formatLargeNumber(seedRes.UniqueDomains)),
-			)
-		}
-		return
-	}
-
-	fmt.Printf("  %s low-memory auto-tune enabled (%s RAM, %s swap; seed=%s URLs/%s domains)\n",
-		infoStyle.Render("Auto-tune:"),
-		labelStyle.Render(formatBytes(mem.TotalBytes)),
-		labelStyle.Render(formatBytes(mem.SwapBytes)),
-		labelStyle.Render(formatLargeNumber(seedRes.Rows)),
-		labelStyle.Render(formatLargeNumber(seedRes.UniqueDomains)),
-	)
-	if noSwap {
-		fmt.Printf("  %s no swap detected; using safer recrawl defaults to avoid OOM during DNS prefetch/loading\n", labelStyle.Render("Reason:"))
-	}
-	fmt.Printf("  %s %s\n", labelStyle.Render("Applied:"), labelStyle.Render(strings.Join(changes, ", ")))
-}
 
 func newHNList() *cobra.Command {
 	cmd := &cobra.Command{
@@ -632,43 +536,34 @@ aggregates domains from pages for faster repeated runs.`,
 
 func newHNRecrawl() *cobra.Command {
 	var (
-		domainsDB        string
-		seedDB           string
-		limit            int
-		maxPerDomain     int
-		domainLike       string
-		forceSeeds       bool
-		engine           string
-		workers          int
-		maxConnsPerDomain int
-		dnsWorkers       int
-		dnsTimeoutMs     int
-		timeoutMs        int
-		headOnly         bool
-		statusOnly       bool
-		batchSize        int
-		resume           bool
-		userAgent        string
-		dnsPrefetch      bool
-		transportShards  int
-		twoPass              bool
-		slowDomainMs         int
-		domainFailThreshold  int
-		domainTimeoutMs      int
+		domainsDB           string
+		seedDB              string
+		limit               int
+		maxPerDomain        int
+		domainLike          string
+		forceSeeds          bool
+		engine              string
+		workers             int
+		maxConnsPerDomain   int
+		dnsWorkers          int
+		dnsTimeoutMs        int
+		timeoutMs           int
+		statusOnly          bool
+		batchSize           int
+		slowDomainMs        int
+		domainFailThreshold int
+		domainTimeoutMs     int
 	)
 	cmd := &cobra.Command{
 		Use:   "recrawl",
 		Short: "Recrawl URLs extracted from HN domains/pages database",
 		Long: `Builds a recrawl seed database from hn_domains.duckdb (pages table), then
-runs the high-throughput recrawler with the same live progress/summary UI used by
-the generic recrawl command.
-
-When --engine is set (default: keepalive), uses the recrawl_v3 high-performance
-engine with keep-alive connection pooling and per-domain tracking.`,
-		Example: `  search hn recrawl --limit 100000 --status-only
-  search hn recrawl --engine keepalive --workers 1500 --max-conns-per-domain 8
+runs the high-throughput keepalive recrawl engine with per-domain connection pooling
+and adaptive timeouts.`,
+		Example: `  search hn recrawl
+  search hn recrawl --workers 3000 --max-conns-per-domain 8
   search hn recrawl --domain github.com --limit 1000
-  search hn recrawl --engine "" --workers 200 --timeout 5000`,
+  search hn recrawl --engine epoll`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := hnSignalContext(cmd.Context())
 			defer stop()
@@ -760,61 +655,30 @@ engine with keep-alive connection pooling and per-domain tracking.`,
 			fmt.Printf("  Seed build:    %s\n", labelStyle.Render(formatDuration(seedRes.Elapsed)))
 			fmt.Println()
 
-			if engine != "" {
-				return runHNRecrawlV3(ctx, cfg, seedRes,
-					engine, workers, maxConnsPerDomain, timeoutMs, domainFailThreshold, domainTimeoutMs, statusOnly, batchSize, int64(slowDomainMs),
-					dnsWorkers, dnsTimeoutMs)
-			}
-
-			autoTuneHNRecrawlForHost(cmd, seedRes, &workers, &dnsWorkers, &batchSize, &transportShards, &dnsPrefetch)
-			err = runRecrawl(ctx, seedRes.OutDBPath, recrawler.Config{
-				Workers:         workers,
-				DNSWorkers:      dnsWorkers,
-				DNSTimeout:      time.Duration(dnsTimeoutMs) * time.Millisecond,
-				Timeout:         time.Duration(timeoutMs) * time.Millisecond,
-				UserAgent:       userAgent,
-				HeadOnly:        headOnly,
-				StatusOnly:      statusOnly,
-				BatchSize:       batchSize,
-				Resume:          resume,
-				DNSPrefetch:     dnsPrefetch,
-				TransportShards: transportShards,
-				TwoPass:         twoPass,
-			})
-			if err != nil && ctx.Err() != nil {
-				fmt.Println(warningStyle.Render("Interrupted HN recrawl."))
-				return nil
-			}
-			return err
+			return runHNRecrawlV3(ctx, cfg, seedRes,
+				engine, workers, maxConnsPerDomain, timeoutMs, domainFailThreshold, domainTimeoutMs, statusOnly, batchSize, int64(slowDomainMs),
+				dnsWorkers, dnsTimeoutMs)
 		},
 	}
 	cmd.Flags().StringVar(&domainsDB, "domains-db", "", "Path to hn_domains DuckDB (default: $HOME/data/hn/hn_domains.duckdb)")
 	cmd.Flags().StringVar(&seedDB, "seed-db", "", "Path to recrawl seed DuckDB (default: $HOME/data/hn/recrawl/hn_pages.duckdb)")
-	cmd.Flags().IntVar(&limit, "limit", 100_000, "Max URLs to recrawl from hn_domains.pages (0=all)")
-	cmd.Flags().IntVar(&maxPerDomain, "max-per-domain", 50, "Max URLs per domain via stratified sampling (0=no limit)")
+	cmd.Flags().IntVar(&limit, "limit", 0, "Max URLs to recrawl from hn_domains.pages (0=all)")
+	cmd.Flags().IntVar(&maxPerDomain, "max-per-domain", 10, "Max URLs per domain via stratified sampling (0=no limit)")
 	cmd.Flags().StringVar(&domainLike, "domain", "", "Filter host/domain with ILIKE substring match")
 	cmd.Flags().BoolVar(&forceSeeds, "force-seeds", false, "Rebuild seed DB from hn_domains.pages even if existing")
-	cmd.Flags().StringVar(&engine, "engine", "keepalive", "v3 engine: keepalive|epoll|rawhttp|swarm (empty=legacy v1/v2)")
+	cmd.Flags().StringVar(&engine, "engine", "keepalive", "Crawl engine: keepalive|epoll|rawhttp|swarm")
 
-	// v3 engine flags (used when --engine is set)
-	cmd.Flags().IntVar(&workers, "workers", 1500, "Concurrent domain workers (v3) or HTTP workers (legacy)")
-	cmd.Flags().IntVar(&maxConnsPerDomain, "max-conns-per-domain", 8, "Max simultaneous connections per domain (v3 only)")
+	cmd.Flags().IntVar(&workers, "workers", 3000, "Concurrent domain workers")
+	cmd.Flags().IntVar(&maxConnsPerDomain, "max-conns-per-domain", 8, "Max simultaneous connections per domain")
 	cmd.Flags().IntVar(&timeoutMs, "timeout", 5000, "Per-request HTTP timeout in milliseconds")
 	cmd.Flags().BoolVar(&statusOnly, "status-only", true, "Only check HTTP status, close body immediately (fastest)")
 	cmd.Flags().IntVar(&batchSize, "batch-size", 5000, "DB write batch size")
 	cmd.Flags().IntVar(&slowDomainMs, "slow-domain-ms", 30_000, "Highlight domains active for longer than this threshold (ms)")
 	cmd.Flags().IntVar(&domainFailThreshold, "domain-fail-threshold", -1, "Abandon domain after this many timeout rounds (×conns); -1=engine default (3)")
-	cmd.Flags().IntVar(&domainTimeoutMs, "domain-timeout", 0, "Per-domain context deadline in ms; cancel remaining URLs after this (0=disabled)")
+	cmd.Flags().IntVar(&domainTimeoutMs, "domain-timeout", 30_000, "Per-domain context deadline in ms; cancel remaining URLs after this (0=disabled)")
 
-	// DNS flags (used for v3 pre-resolution and legacy per-request DNS)
-	cmd.Flags().IntVar(&dnsWorkers, "dns-workers", 1000, "Concurrent DNS workers (v3: pre-resolution; 0=skip DNS; legacy: per-request)")
+	cmd.Flags().IntVar(&dnsWorkers, "dns-workers", 1000, "Concurrent DNS workers (0=skip DNS pre-resolution)")
 	cmd.Flags().IntVar(&dnsTimeoutMs, "dns-timeout", 1500, "DNS lookup timeout in milliseconds")
-	cmd.Flags().BoolVar(&headOnly, "head-only", false, "Only fetch headers, skip body (legacy only)")
-	cmd.Flags().BoolVar(&resume, "resume", true, "Skip already-crawled URLs (legacy only)")
-	cmd.Flags().StringVar(&userAgent, "user-agent", "MizuCrawler/1.0", "User-Agent header (legacy only)")
-	cmd.Flags().BoolVar(&dnsPrefetch, "dns-prefetch", true, "Batch DNS pre-resolution (legacy only)")
-	cmd.Flags().IntVar(&transportShards, "transport-shards", 64, "Number of HTTP transport shards (legacy only)")
-	cmd.Flags().BoolVar(&twoPass, "two-pass", false, "Two-pass mode: probe domains before full fetch (legacy only)")
 	return cmd
 }
 
@@ -831,12 +695,12 @@ func runHNRecrawlV3(ctx context.Context,
 	dnsWorkers, dnsTimeoutMs int,
 ) error {
 
-	eng, err := recrawl_v3.New(engineName)
+	eng, err := crawl.New(engineName)
 	if err != nil {
 		return fmt.Errorf("engine %q: %w", engineName, err)
 	}
 
-	cfg := recrawl_v3.DefaultConfig()
+	cfg := crawl.DefaultConfig()
 	cfg.Workers = workers
 	cfg.Timeout = time.Duration(timeoutMs) * time.Millisecond
 	cfg.StatusOnly = statusOnly
@@ -861,7 +725,7 @@ func runHNRecrawlV3(ctx context.Context,
 	fmt.Printf("  Loaded %s seed URLs\n\n", labelStyle.Render(formatInt64Exact(int64(len(seeds)))))
 
 	// DNS pre-resolution: resolve all unique hosts, skip NXDOMAIN domains.
-	var dnsCache recrawl_v3.DNSCache
+	var dnsCache crawl.DNSCache
 	dnsCachePath := filepath.Join(hnCfg.WithDefaults().RecrawlDir(), "dns.duckdb")
 	if dnsWorkers > 0 {
 		resolver := recrawler.NewDNSResolver(time.Duration(dnsTimeoutMs) * time.Millisecond)
@@ -912,10 +776,10 @@ func runHNRecrawlV3(ctx context.Context,
 				labelStyle.Render(formatInt64Exact(int64(len(seeds)))),
 			)
 		}
-		dnsCache = recrawl_v3.WrapDNSResolver(resolver)
+		dnsCache = crawl.WrapDNSResolver(resolver)
 	}
 	if dnsCache == nil {
-		dnsCache = &recrawl_v3.NoopDNS{}
+		dnsCache = &crawl.NoopDNS{}
 	}
 
 	resultDir := filepath.Join(hnCfg.WithDefaults().RecrawlDir(), "results")
@@ -964,11 +828,11 @@ func runHNRecrawlV3(ctx context.Context,
 	ls := &v3LiveStats{slowDomainMs: slowDomainMs}
 	cfg.Notifier = ls
 	pw := &v3ProgressWriter{
-		inner: &recrawl_v3.ResultDBWriter{DB: rdb},
+		inner: &crawl.ResultDBWriter{DB: rdb},
 		ls:    ls,
 	}
 	fw := &v3ProgressFailureWriter{
-		inner: &recrawl_v3.FailedDBWriter{DB: failedDB},
+		inner: &crawl.FailedDBWriter{DB: failedDB},
 		ls:    ls,
 	}
 

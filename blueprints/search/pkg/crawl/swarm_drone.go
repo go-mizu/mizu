@@ -1,4 +1,4 @@
-package recrawl_v3
+package crawl
 
 import (
 	"bufio"
@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/recrawler"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/archived/recrawler"
 )
 
 // RunDrone is called by the hidden "cc recrawl-drone" CLI subcommand.

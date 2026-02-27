@@ -1,4 +1,4 @@
-package recrawl_v3
+package crawl
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/recrawler"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/archived/recrawler"
 )
 
 func TestKeepAliveEngine_BasicCrawl(t *testing.T) {

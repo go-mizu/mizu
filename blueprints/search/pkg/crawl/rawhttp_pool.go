@@ -1,4 +1,4 @@
-package recrawl_v3
+package crawl
 
 import (
 	"net"

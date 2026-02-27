@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
-	"github.com/go-mizu/mizu/blueprints/search/pkg/recrawler"
-	recrawl_v3 "github.com/go-mizu/mizu/blueprints/search/pkg/recrawl_v3"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/archived/recrawler"
+	crawl "github.com/go-mizu/mizu/blueprints/search/pkg/crawl"
 	"github.com/spf13/cobra"
 )
 
@@ -922,30 +922,32 @@ func runCCURL(ctx context.Context, crawlID, targetURL, domain string, limit int)
 
 func newCCRecrawl() *cobra.Command {
 	var (
-		crawlID           string
-		sample            int
-		last              bool
-		file              string
-		importOnly        bool
-		workers           int
-		dnsWorkers        int
-		dnsTimeout        int
-		timeout           int
-		statusOnly        bool
-		headOnly          bool
-		transportShards   int
-		maxConnsPerDomain int
-		dnsPrefetch       bool
-		reloadDNSCache    bool
-		resume            bool
-		lang              string
-		mime              string
-		status            int
-		domain            string
-		tld               string
-		limit             int
-		batchSize         int
-		engine            string
+		crawlID             string
+		sample              int
+		last                bool
+		file                string
+		importOnly          bool
+		workers             int
+		dnsWorkers          int
+		dnsTimeout          int
+		timeout             int
+		statusOnly          bool
+		headOnly            bool
+		transportShards     int
+		maxConnsPerDomain   int
+		dnsPrefetch         bool
+		reloadDNSCache      bool
+		resume              bool
+		lang                string
+		mime                string
+		status              int
+		domain              string
+		tld                 string
+		limit               int
+		batchSize           int
+		engine              string
+		domainTimeoutMs     int
+		domainFailThreshold int
 	)
 
 	cmd := &cobra.Command{
@@ -1023,7 +1025,9 @@ Examples:
 				reloadDNSCache:     reloadDNSCache,
 				resume:             resume,
 				batchSize:          batchSize,
-				engine:             engine,
+				engine:              engine,
+			domainTimeoutMs:     domainTimeoutMs,
+			domainFailThreshold: domainFailThreshold,
 			})
 		},
 	}
@@ -1051,34 +1055,38 @@ Examples:
 	cmd.Flags().StringVar(&tld, "tld", "", "TLD filter (e.g. com)")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Max URLs to recrawl (0=all from index)")
 	cmd.Flags().IntVar(&batchSize, "batch-size", 5000, "DB write batch size")
-	cmd.Flags().StringVar(&engine, "engine", "", "v3 engine: keepalive|epoll|swarm|rawhttp|auto (empty=use v1/v2)")
+	cmd.Flags().StringVar(&engine, "engine", "keepalive", "Crawl engine: keepalive|epoll|swarm|rawhttp")
+	cmd.Flags().IntVar(&domainTimeoutMs, "domain-timeout", 30_000, "Per-domain context deadline in ms; cancel remaining URLs after this (0=disabled)")
+	cmd.Flags().IntVar(&domainFailThreshold, "domain-fail-threshold", -1, "Abandon domain after this many timeout rounds (×conns); -1=engine default (3)")
 
 	return cmd
 }
 
 type ccRecrawlOpts struct {
-	crawlID            string
-	sample             int
-	last               bool
-	file               string
-	importOnly         bool
-	filter             cc.IndexFilter
-	workers            int
-	workersExplicit    bool
-	dnsWorkers         int
-	dnsTimeout         int
-	dnsWorkersExplicit bool
-	dnsTimeoutExplicit bool
-	timeout            int
-	statusOnly         bool
-	headOnly           bool
-	transportShards    int
-	maxConnsPerDomain  int
-	dnsPrefetch        bool
-	reloadDNSCache     bool
-	resume             bool
-	batchSize          int
-	engine             string
+	crawlID             string
+	sample              int
+	last                bool
+	file                string
+	importOnly          bool
+	filter              cc.IndexFilter
+	workers             int
+	workersExplicit     bool
+	dnsWorkers          int
+	dnsTimeout          int
+	dnsWorkersExplicit  bool
+	dnsTimeoutExplicit  bool
+	timeout             int
+	statusOnly          bool
+	headOnly            bool
+	transportShards     int
+	maxConnsPerDomain   int
+	dnsPrefetch         bool
+	reloadDNSCache      bool
+	resume              bool
+	batchSize           int
+	engine              string
+	domainTimeoutMs     int
+	domainFailThreshold int
 }
 
 func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
@@ -1652,7 +1660,7 @@ type v3LiveStats struct {
 	latBuckets [8]atomic.Int64
 	latTotal   atomic.Int64
 
-	// Per-domain tracking (implements recrawl_v3.DomainNotifier)
+	// Per-domain tracking (implements crawl.DomainNotifier)
 	activeDomains sync.Map     // domain → *v3DomainInfo
 	totalDomains  atomic.Int64 // domains entered via StartDomain
 	doneDomains   atomic.Int64 // domains exited via EndDomain
@@ -1672,13 +1680,13 @@ type v3DomainInfo struct {
 	total int
 }
 
-// StartDomain implements recrawl_v3.DomainNotifier.
+// StartDomain implements crawl.DomainNotifier.
 func (ls *v3LiveStats) StartDomain(domain string, urlCount int) {
 	ls.totalDomains.Add(1)
 	ls.activeDomains.Store(domain, &v3DomainInfo{start: time.Now(), total: urlCount})
 }
 
-// EndDomain implements recrawl_v3.DomainNotifier.
+// EndDomain implements crawl.DomainNotifier.
 func (ls *v3LiveStats) EndDomain(domain string) {
 	ls.activeDomains.Delete(domain)
 	ls.doneDomains.Add(1)
@@ -1767,7 +1775,7 @@ var v3LatEdges = [8]int64{100, 250, 500, 1000, 2000, 3500, 5000, 10000}
 
 // v3ProgressWriter wraps ResultWriter and tracks live statistics.
 type v3ProgressWriter struct {
-	inner recrawl_v3.ResultWriter
+	inner crawl.ResultWriter
 	ls    *v3LiveStats
 }
 
@@ -1780,7 +1788,7 @@ func (p *v3ProgressWriter) Close() error                    { return p.inner.Clo
 
 // v3ProgressFailureWriter wraps FailureWriter and counts domain-killed skips.
 type v3ProgressFailureWriter struct {
-	inner recrawl_v3.FailureWriter
+	inner crawl.FailureWriter
 	ls    *v3LiveStats
 }
 
@@ -1803,26 +1811,32 @@ func runCCRecrawlV3(ctx context.Context, opts ccRecrawlOpts,
 		engineName = "keepalive"
 	}
 
-	eng, err := recrawl_v3.New(engineName)
+	eng, err := crawl.New(engineName)
 	if err != nil {
 		return fmt.Errorf("engine %q: %w", engineName, err)
 	}
 
-	cfg := recrawl_v3.DefaultConfig()
+	cfg := crawl.DefaultConfig()
 	cfg.Workers = opts.workers
 	cfg.Timeout = time.Duration(opts.timeout) * time.Millisecond
 	cfg.StatusOnly = opts.statusOnly
 	cfg.InsecureTLS = true
 	cfg.MaxConnsPerDomain = opts.maxConnsPerDomain
+	if opts.domainFailThreshold >= 0 {
+		cfg.DomainFailThreshold = opts.domainFailThreshold
+	}
+	if opts.domainTimeoutMs > 0 {
+		cfg.DomainTimeout = time.Duration(opts.domainTimeoutMs) * time.Millisecond
+	}
 	if selfBin, execErr := os.Executable(); execErr == nil {
 		cfg.SearchBinary = selfBin
 	}
 
-	var dnsCache recrawl_v3.DNSCache
+	var dnsCache crawl.DNSCache
 	if dnsResolver != nil {
-		dnsCache = recrawl_v3.WrapDNSResolver(dnsResolver)
+		dnsCache = crawl.WrapDNSResolver(dnsResolver)
 	} else {
-		dnsCache = &recrawl_v3.NoopDNS{}
+		dnsCache = &crawl.NoopDNS{}
 	}
 
 	failedDB, err := recrawler.OpenFailedDB(failedDBPath)
@@ -1852,6 +1866,9 @@ func runCCRecrawlV3(ctx context.Context, opts ccRecrawlOpts,
 	fmt.Printf("  Workers           %s\n", ccFmtInt64(int64(cfg.Workers)))
 	fmt.Printf("  Max Conns/Domain  %d\n", cfg.MaxConnsPerDomain)
 	fmt.Printf("  Timeout           %v (adaptive P95×2)\n", cfg.Timeout)
+	if cfg.DomainTimeout > 0 {
+		fmt.Printf("  Domain Timeout    %v (cancel remaining URLs per domain after this)\n", cfg.DomainTimeout)
+	}
 	fmt.Printf("  Domain Fail       %s\n", domainFail)
 	fmt.Printf("  Body              %s\n", bodyMode)
 	fmt.Printf("  TLS               skip-verify\n")
@@ -1862,11 +1879,11 @@ func runCCRecrawlV3(ctx context.Context, opts ccRecrawlOpts,
 	ls := &v3LiveStats{slowDomainMs: 30_000}
 	cfg.Notifier = ls
 	pw := &v3ProgressWriter{
-		inner: &recrawl_v3.ResultDBWriter{DB: rdb},
+		inner: &crawl.ResultDBWriter{DB: rdb},
 		ls:    ls,
 	}
 	fw := &v3ProgressFailureWriter{
-		inner: &recrawl_v3.FailedDBWriter{DB: failedDB},
+		inner: &crawl.FailedDBWriter{DB: failedDB},
 		ls:    ls,
 	}
 
@@ -1944,7 +1961,7 @@ func runCCRecrawlV3(ctx context.Context, opts ccRecrawlOpts,
 }
 
 // v3RenderProgress returns a formatted multi-line progress string.
-func v3RenderProgress(ls *v3LiveStats, cfg recrawl_v3.Config, engineName string, seedTotal int64, start time.Time, isTTY bool) string {
+func v3RenderProgress(ls *v3LiveStats, cfg crawl.Config, engineName string, seedTotal int64, start time.Time, isTTY bool) string {
 	ls.speedMu.Lock()
 	rollingRPS := ls.rollingRPS
 	rollingBW := ls.rollingBW
@@ -2149,11 +2166,11 @@ func newCCRecrawlDrone() *cobra.Command {
 		Hidden: true,
 		Short:  "Internal: drone worker for swarm engine",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg := recrawl_v3.DefaultConfig()
+			cfg := crawl.DefaultConfig()
 			cfg.Workers = 500
 			cfg.StatusOnly = true
 			cfg.InsecureTLS = true
-			return recrawl_v3.RunDrone(cmd.Context(), cfg)
+			return crawl.RunDrone(cmd.Context(), cfg)
 		},
 	}
 	cmd.Flags().IntVar(&droneID, "drone-id", 0, "Drone index (used for log prefix)")

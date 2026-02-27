@@ -1,13 +1,13 @@
 // Package recrawl_v3 implements four independent high-performance recrawl engines.
 // All engines implement the Engine interface and share ResultWriter / FailureWriter.
-package recrawl_v3
+package crawl
 
 import (
 	"context"
 	"fmt"
 	"time"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/recrawler"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/archived/recrawler"
 )
 
 // Engine is implemented by all four v3 strategies.
