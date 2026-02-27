@@ -116,7 +116,7 @@ func keepaliveFetchRaw(ctx context.Context, client *http.Client,
 	isHTML := strings.Contains(ct, "text/html") || strings.Contains(ct, "application/xhtml")
 	var bodyBytes []byte
 	if resp.StatusCode == 200 && isHTML {
-		bodyBytes, _ = io.ReadAll(io.LimitReader(resp.Body, 512*1024))
+		bodyBytes, _ = io.ReadAll(io.LimitReader(resp.Body, 256*1024))
 	} else {
 		io.Copy(io.Discard, resp.Body) //nolint:errcheck
 	}
@@ -228,7 +228,7 @@ func RunDrone(ctx context.Context, cfg Config) error {
 
 	// Stage 2: parse workers (CPU-bound, NumCPU goroutines).
 	parseN := max(runtime.NumCPU(), 2)
-	fetchCh := make(chan rawFetch, max(cfg.Workers*2, 1000))
+	fetchCh := make(chan rawFetch, 2000)
 	var parseWg sync.WaitGroup
 	for range parseN {
 		parseWg.Go(func() {
