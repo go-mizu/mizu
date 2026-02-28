@@ -242,7 +242,9 @@ export function renderPreview(): string {
 '  else { tb.style.display = \'none\'; }\n' +
 '  document.getElementById(\'r-raw\').href = \'/\' + currentUrl;\n' +
 '  document.getElementById(\'md-out\').textContent = md;\n' +
-'  document.getElementById(\'prev-out\').innerHTML = DOMPurify.sanitize(marked.parse(md));\n' +
+'  var parsed = marked.parse(md);\n' +
+'  if (typeof parsed !== \'string\') return;\n' +
+'  document.getElementById(\'prev-out\').innerHTML = DOMPurify.sanitize(parsed);\n' +
 '  document.getElementById(\'result-state\').style.display = \'block\';\n' +
 '  switchTab(\'md\');\n' +
 '}\n' +
@@ -272,8 +274,10 @@ export function renderPreview(): string {
 '  a.href = URL.createObjectURL(blob);\n' +
 '  var title = document.getElementById(\'r-title\').textContent || \'document\';\n' +
 '  a.download = title.replace(/[^\\w\\s-]/g,\'\').trim().replace(/\\s+/g,\'-\').toLowerCase() + \'.md\';\n' +
+'  document.body.appendChild(a);\n' +
 '  a.click();\n' +
-'  URL.revokeObjectURL(a.href);\n' +
+'  document.body.removeChild(a);\n' +
+'  setTimeout(function() { URL.revokeObjectURL(a.href); }, 100);\n' +
 '}\n' +
 '\n' +
 'window.addEventListener(\'load\', function() {\n' +
