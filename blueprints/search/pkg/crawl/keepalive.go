@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -87,33 +88,50 @@ func (e *KeepAliveEngine) Run(ctx context.Context, seeds []SeedURL,
 	// Idempotent: no-op if already ≥ 65536.
 	_ = raiseRlimit(65536)
 
-	// Skip dead domains up front; group live URLs by domain
-	byDomain := make(map[string][]SeedURL, 1024)
-	for _, s := range seeds {
-		if dns.IsDead(s.Host) {
-			failures.AddURL(FailedURL{
-				URL:    s.URL,
-				Domain: s.Domain,
-				Reason: "domain_dead",
-			})
-			continue
-		}
-		byDomain[s.Domain] = append(byDomain[s.Domain], s)
-	}
-	if len(byDomain) == 0 {
+	if len(seeds) == 0 {
 		return &Stats{}, nil
 	}
+
+	// Sort seeds in-place by domain so we can stream domain-by-domain without
+	// building a full byDomain map (~331 MB for 6.9M seeds). At any time only
+	// one domain's URL slice is held in the goroutine (~4.5 KB avg).
+	sort.Slice(seeds, func(i, j int) bool { return seeds[i].Domain < seeds[j].Domain })
 
 	type domainWork struct {
 		urls []SeedURL
 	}
 
-	workCh := make(chan domainWork, min(len(byDomain), 4096))
+	workCh := make(chan domainWork, 4096)
 	go func() {
-		for _, us := range byDomain {
-			workCh <- domainWork{us}
+		defer close(workCh)
+		var currentDomain string
+		var batch []SeedURL
+		flush := func() {
+			if len(batch) == 0 {
+				return
+			}
+			select {
+			case workCh <- domainWork{batch}:
+			case <-ctx.Done():
+			}
+			batch = nil
 		}
-		close(workCh)
+		for _, s := range seeds {
+			if dns.IsDead(s.Host) {
+				failures.AddURL(FailedURL{
+					URL:    s.URL,
+					Domain: s.Domain,
+					Reason: "domain_dead",
+				})
+				continue
+			}
+			if s.Domain != currentDomain {
+				flush()
+				currentDomain = s.Domain
+			}
+			batch = append(batch, s)
+		}
+		flush()
 	}()
 
 	// Inner parallelism: concurrent requests within one domain (keep-alive pool).
