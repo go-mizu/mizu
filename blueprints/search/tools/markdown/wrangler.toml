@@ -15,6 +15,7 @@ binding = "BROWSER"
 [[rules]]
 type = "Text"
 globs = ["**/*.md"]
+fallthrough = false
 
 [assets]
 directory = "./public"
