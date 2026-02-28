@@ -36,9 +36,9 @@
 <!-- Hero -->
 <div class="max-w-page mx-auto px-8">
   <section class="pt-24 pb-16">
-    <h1 class="text-hero font-semibold tracking-hero leading-hero mb-5 whitespace-pre-line">Any URL →
+    <h1 class="text-4xl sm:text-5xl font-semibold tracking-tight leading-tight mb-5 whitespace-pre-line">Any URL →
 Clean Markdown.</h1>
-    <p class="text-xl text-zinc-500 dark:text-zinc-400 mb-9">No API key. No account. Instant.</p>
+    <p class="text-xl text-zinc-600 dark:text-zinc-400 mb-9">No API key. No account. Instant.</p>
     <form id="form" onsubmit="handleSubmit(event)">
       <div class="flex max-w-form">
         <input id="url-in" type="url" class="flex-1 font-mono text-sm px-3.5 py-2.5 border border-zinc-200 dark:border-zinc-800 border-r-0 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 outline-none focus:border-zinc-900 dark:focus:border-zinc-100 min-w-0 transition-colors placeholder:text-zinc-400 dark:placeholder:text-zinc-600" placeholder="https://example.com" autocomplete="off" spellcheck="false">
@@ -46,11 +46,11 @@ Clean Markdown.</h1>
       </div>
     </form>
     <p class="mt-3.5 text-sm text-zinc-400">Try:
-      <span class="text-zinc-500 dark:text-zinc-400 cursor-pointer underline decoration-zinc-300 dark:decoration-zinc-700 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors" onclick="setEg('https://example.com')">example.com</span>
+      <span class="text-zinc-600 dark:text-zinc-400 cursor-pointer underline decoration-zinc-300 dark:decoration-zinc-700 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors" onclick="setEg('https://example.com')">example.com</span>
       <span class="mx-1 opacity-50">·</span>
-      <span class="text-zinc-500 dark:text-zinc-400 cursor-pointer underline decoration-zinc-300 dark:decoration-zinc-700 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors" onclick="setEg('https://news.ycombinator.com')">news.ycombinator.com</span>
+      <span class="text-zinc-600 dark:text-zinc-400 cursor-pointer underline decoration-zinc-300 dark:decoration-zinc-700 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors" onclick="setEg('https://news.ycombinator.com')">news.ycombinator.com</span>
       <span class="mx-1 opacity-50">·</span>
-      <span class="text-zinc-500 dark:text-zinc-400 cursor-pointer underline decoration-zinc-300 dark:decoration-zinc-700 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors" onclick="setEg('https://docs.python.org/3/')">docs.python.org</span>
+      <span class="text-zinc-600 dark:text-zinc-400 cursor-pointer underline decoration-zinc-300 dark:decoration-zinc-700 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors" onclick="setEg('https://docs.python.org/3/')">docs.python.org</span>
     </p>
   </section>
 </div>
@@ -58,7 +58,7 @@ Clean Markdown.</h1>
 <!-- Value props -->
 <div class="max-w-page mx-auto px-8">
   <div class="pb-20">
-    <p class="text-xl text-zinc-500 dark:text-zinc-400 leading-wide max-w-xl mb-14">The web was built for humans. AI agents need structured data. We convert any URL to clean Markdown using Cloudflare's native <code class="font-mono text-xs bg-zinc-100 dark:bg-zinc-900 px-1.5 py-0.5 text-zinc-700 dark:text-zinc-300">text/markdown</code> content negotiation — no parsing overhead, no wasted tokens.</p>
+    <p class="text-xl text-zinc-600 dark:text-zinc-400 leading-wide max-w-xl mb-14">The web was built for humans. AI agents need structured data. We convert any URL to clean Markdown using Cloudflare's native <code class="font-mono text-xs bg-zinc-100 dark:bg-zinc-900 px-1.5 py-0.5 text-zinc-700 dark:text-zinc-300">text/markdown</code> content negotiation — no parsing overhead, no wasted tokens.</p>
     <div class="flex gap-14 flex-wrap">
       <div class="flex flex-col gap-1.5">
         <span class="text-stat font-bold tracking-hero text-zinc-900 dark:text-zinc-100">80%</span>
@@ -80,7 +80,7 @@ Clean Markdown.</h1>
 <div class="max-w-page mx-auto px-8">
   <section class="py-16" id="agents">
     <h2 class="text-2xl font-semibold tracking-h2 mb-2.5">For AI Agents</h2>
-    <p class="text-xl text-zinc-500 dark:text-zinc-400 mb-9 max-w-2xl leading-relaxed">Add this to your agent's system prompt:</p>
+    <p class="text-xl text-zinc-600 dark:text-zinc-400 mb-9 max-w-2xl leading-relaxed">Add this to your agent's system prompt:</p>
     <div class="bg-zinc-50 dark:bg-zinc-900 p-6 max-w-2xl mb-5">
       <pre id="agent-instructions" class="font-mono text-sm leading-loose text-zinc-600 dark:text-zinc-400 whitespace-pre">Use https://markdown.go-mizu.workers.dev to read any URL as clean Markdown.
 
@@ -90,7 +90,7 @@ POST https://markdown.go-mizu.workers.dev/convert
 
 No auth required. Returns text/markdown or JSON with metadata.</pre>
     </div>
-    <button id="agent-copy-btn" onclick="copyAgentInstructions()" class="relative inline-flex items-center gap-3 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-5 py-3 text-sm font-medium cursor-pointer border-none hover:opacity-90 transition-opacity overflow-hidden">
+    <button id="agent-copy-btn" onclick="copyAgentInstructions()" class="relative inline-flex items-center gap-3 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-5 py-3 text-base font-medium cursor-pointer border-none hover:opacity-90 transition-opacity overflow-hidden">
       <span id="agent-cta-text" class="transition-opacity duration-200">Copy setup instructions for my agent</span>
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="9" height="9" rx="1"/><path d="M10.5 5.5V2.5a1 1 0 0 0-1-1h-7a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h3"/></svg>
     </button>
@@ -101,19 +101,19 @@ No auth required. Returns text/markdown or JSON with metadata.</pre>
 <div class="max-w-page mx-auto px-8">
   <section class="py-16" id="how">
     <h2 class="text-2xl font-semibold tracking-h2 mb-2.5">How it works</h2>
-    <p class="text-xl text-zinc-500 dark:text-zinc-400 mb-10 max-w-2xl leading-relaxed">Every URL goes through three tiers, falling back automatically until clean Markdown is produced.</p>
+    <p class="text-xl text-zinc-600 dark:text-zinc-400 mb-10 max-w-2xl leading-relaxed">Every URL goes through three tiers, falling back automatically until clean Markdown is produced.</p>
     <div class="flex flex-col gap-7 max-w-2xl">
       <div class="grid grid-tier gap-0">
         <span class="font-mono text-2xs text-zinc-400 dark:text-zinc-500 uppercase tracking-widest pt-1">Tier 1 · Native</span>
-        <span class="text-lg text-zinc-500 dark:text-zinc-400 leading-relaxed"><strong class="text-zinc-900 dark:text-zinc-100 font-medium">Content negotiation</strong> — sites that natively serve <code class="font-mono text-xs bg-zinc-100 dark:bg-zinc-900 px-1.5 py-0.5">text/markdown</code> return it directly.</span>
+        <span class="text-lg text-zinc-600 dark:text-zinc-400 leading-relaxed"><strong class="text-zinc-900 dark:text-zinc-100 font-medium">Content negotiation</strong> — sites that natively serve <code class="font-mono text-xs bg-zinc-100 dark:bg-zinc-900 px-1.5 py-0.5">text/markdown</code> return it directly.</span>
       </div>
       <div class="grid grid-tier gap-0">
         <span class="font-mono text-2xs text-zinc-400 dark:text-zinc-500 uppercase tracking-widest pt-1">Tier 2 · AI</span>
-        <span class="text-lg text-zinc-500 dark:text-zinc-400 leading-relaxed">HTML fetched and converted via <strong class="text-zinc-900 dark:text-zinc-100 font-medium">Cloudflare Workers AI</strong> — fast, structure-aware extraction.</span>
+        <span class="text-lg text-zinc-600 dark:text-zinc-400 leading-relaxed">HTML fetched and converted via <strong class="text-zinc-900 dark:text-zinc-100 font-medium">Cloudflare Workers AI</strong> — fast, structure-aware extraction.</span>
       </div>
       <div class="grid grid-tier gap-0">
         <span class="font-mono text-2xs text-zinc-400 dark:text-zinc-500 uppercase tracking-widest pt-1">Tier 3 · Browser</span>
-        <span class="text-lg text-zinc-500 dark:text-zinc-400 leading-relaxed">JS-heavy SPAs rendered in a <strong class="text-zinc-900 dark:text-zinc-100 font-medium">headless browser</strong> before AI conversion — handles React, Vue, any SPA.</span>
+        <span class="text-lg text-zinc-600 dark:text-zinc-400 leading-relaxed">JS-heavy SPAs rendered in a <strong class="text-zinc-900 dark:text-zinc-100 font-medium">headless browser</strong> before AI conversion — handles React, Vue, any SPA.</span>
       </div>
     </div>
     <p class="mt-8 text-sm text-zinc-400 max-w-2xl leading-relaxed">Edge-cached for 1 hour with stale-while-revalidate. CORS enabled on all endpoints.</p>
@@ -127,27 +127,27 @@ No auth required. Returns text/markdown or JSON with metadata.</pre>
     <div class="space-y-9 max-w-2xl">
       <div>
         <h3 class="text-lg font-semibold">Why Markdown instead of HTML?</h3>
-        <p class="mt-2 text-lg text-zinc-500 dark:text-zinc-400">HTML has navigation, ads, scripts, and markup that wastes tokens. Markdown strips to the essentials — headings, paragraphs, links — giving agents 80% fewer tokens to process.</p>
+        <p class="mt-2 text-lg text-zinc-600 dark:text-zinc-400">HTML has navigation, ads, scripts, and markup that wastes tokens. Markdown strips to the essentials — headings, paragraphs, links — giving agents 80% fewer tokens to process.</p>
       </div>
       <div>
         <h3 class="text-lg font-semibold">Is it really free?</h3>
-        <p class="mt-2 text-lg text-zinc-500 dark:text-zinc-400">Yes. No account, no API key, no credit card. Just use the URL directly in your code or agent prompt.</p>
+        <p class="mt-2 text-lg text-zinc-600 dark:text-zinc-400">Yes. No account, no API key, no credit card. Just use the URL directly in your code or agent prompt.</p>
       </div>
       <div>
         <h3 class="text-lg font-semibold">How do you handle JavaScript-heavy pages?</h3>
-        <p class="mt-2 text-lg text-zinc-500 dark:text-zinc-400">Pages that require JavaScript to render fall back to a headless browser (Tier 3), which runs the page fully before converting. This handles React, Vue, Angular, and any SPA.</p>
+        <p class="mt-2 text-lg text-zinc-600 dark:text-zinc-400">Pages that require JavaScript to render fall back to a headless browser (Tier 3), which runs the page fully before converting. This handles React, Vue, Angular, and any SPA.</p>
       </div>
       <div>
         <h3 class="text-lg font-semibold">Can I call this from the browser?</h3>
-        <p class="mt-2 text-lg text-zinc-500 dark:text-zinc-400">Yes. All endpoints include <code class="font-mono text-xs bg-zinc-100 dark:bg-zinc-900 px-1.5 py-0.5">Access-Control-Allow-Origin: *</code>, so you can call directly from browser JavaScript with no proxy.</p>
+        <p class="mt-2 text-lg text-zinc-600 dark:text-zinc-400">Yes. All endpoints include <code class="font-mono text-xs bg-zinc-100 dark:bg-zinc-900 px-1.5 py-0.5">Access-Control-Allow-Origin: *</code>, so you can call directly from browser JavaScript with no proxy.</p>
       </div>
       <div>
         <h3 class="text-lg font-semibold">What about login-protected pages?</h3>
-        <p class="mt-2 text-lg text-zinc-500 dark:text-zinc-400">We can only access publicly available URLs. Pages behind authentication, paywalls, or rate limits will return an error.</p>
+        <p class="mt-2 text-lg text-zinc-600 dark:text-zinc-400">We can only access publicly available URLs. Pages behind authentication, paywalls, or rate limits will return an error.</p>
       </div>
       <div>
         <h3 class="text-lg font-semibold">What are the limits?</h3>
-        <p class="mt-2 text-lg text-zinc-500 dark:text-zinc-400">Responses are capped at ~1MB of Markdown. Requests time out after 30 seconds. The browser tier adds 2–5 seconds of latency for JS-heavy pages.</p>
+        <p class="mt-2 text-lg text-zinc-600 dark:text-zinc-400">Responses are capped at ~1MB of Markdown. Requests time out after 30 seconds. The browser tier adds 2–5 seconds of latency for JS-heavy pages.</p>
       </div>
     </div>
   </section>
