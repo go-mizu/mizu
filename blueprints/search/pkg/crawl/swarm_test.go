@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/archived/recrawler"
 )
 
 // TestDNSFrameRoundTrip verifies encode→decode preserves resolved IPs and dead hosts.
@@ -31,7 +30,7 @@ func TestDNSFrameRoundTrip(t *testing.T) {
 		t.Fatalf("writeDNSFrame: %v", err)
 	}
 
-	seeds := []recrawler.SeedURL{
+	seeds := []SeedURL{
 		{URL: "http://example.com/", Domain: "example.com"},
 	}
 
@@ -79,7 +78,7 @@ func TestReadDroneInput_EmptySeeds(t *testing.T) {
 func TestParseRawFetch_HTMLPage(t *testing.T) {
 	html := `<html><head><title>Hello World</title></head><body>content</body></html>`
 	rf := rawFetch{
-		seed:        recrawler.SeedURL{URL: "http://example.com/", Domain: "example.com"},
+		seed:        SeedURL{URL: "http://example.com/", Domain: "example.com"},
 		statusCode:  200,
 		bodyBytes:   []byte(html),
 		contentType: "text/html; charset=utf-8",
@@ -101,7 +100,7 @@ func TestParseRawFetch_HTMLPage(t *testing.T) {
 // TestParseRawFetch_ErrorResult verifies error rawFetches produce Results with Error set.
 func TestParseRawFetch_ErrorResult(t *testing.T) {
 	rf := rawFetch{
-		seed:    recrawler.SeedURL{URL: "http://example.com/fail", Domain: "example.com"},
+		seed:    SeedURL{URL: "http://example.com/fail", Domain: "example.com"},
 		errStr:  "connection refused",
 		fetchMs: 5,
 	}
@@ -120,7 +119,7 @@ func TestBuildDNSFrame(t *testing.T) {
 		resolved: map[string]string{"live.com": "1.2.3.4"},
 		dead:     map[string]bool{"dead.com": true},
 	}
-	seeds := []recrawler.SeedURL{
+	seeds := []SeedURL{
 		{URL: "http://live.com/a", Domain: "live.com", Host: "live.com"},
 		{URL: "http://dead.com/b", Domain: "dead.com", Host: "dead.com"},
 		{URL: "http://unknown.com/c", Domain: "unknown.com", Host: "unknown.com"},
@@ -156,7 +155,7 @@ func TestKeepaliveFetchRaw_FullBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	seed := recrawler.SeedURL{URL: srv.URL + "/page", Domain: "localhost", Host: "localhost"}
+	seed := SeedURL{URL: srv.URL + "/page", Domain: "localhost", Host: "localhost"}
 	cfg := DefaultConfig()
 	cfg.StatusOnly = false
 	cfg.Timeout = 2 * time.Second
@@ -189,7 +188,7 @@ func TestKeepaliveFetchRaw_StatusOnly(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	seed := recrawler.SeedURL{URL: srv.URL + "/page", Domain: "localhost", Host: "localhost"}
+	seed := SeedURL{URL: srv.URL + "/page", Domain: "localhost", Host: "localhost"}
 	cfg := DefaultConfig()
 	cfg.StatusOnly = true
 	cfg.Timeout = 2 * time.Second

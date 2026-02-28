@@ -6,7 +6,6 @@ import (
 	"runtime/debug"
 	"sync"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/archived/recrawler"
 )
 
 // PipelineConfig holds configuration for the Mode C pipeline crawler.
@@ -15,7 +14,7 @@ type PipelineConfig struct {
 	DNS       DNSCache
 	Results   ResultWriter
 	Failures  FailureWriter
-	RDB       *recrawler.ResultDB
+	RDB       ShardReopener
 	SeedPath  string
 	BatchSize int // domains per batch (0=auto from AvailMB)
 	PageSize  int // seeds per SeedCursor page (0=10000)
@@ -48,7 +47,7 @@ func RunPipeline(ctx context.Context, pcfg PipelineConfig) (*Stats, error) {
 
 	// batchCh carries domain-grouped seed slices; cap=1 means CrawlStage
 	// applies back-pressure to DomainBatcher when it falls behind.
-	batchCh := make(chan []recrawler.SeedURL, 1)
+	batchCh := make(chan []SeedURL, 1)
 
 	var wg sync.WaitGroup
 	var batcherErr error
@@ -62,14 +61,14 @@ func RunPipeline(ctx context.Context, pcfg PipelineConfig) (*Stats, error) {
 		defer close(batchCh)
 		defer wg.Done()
 
-		domainMap := make(map[string][]recrawler.SeedURL)
+		domainMap := make(map[string][]SeedURL)
 		var domainOrder []string
 
 		emit := func() {
 			if len(domainOrder) == 0 {
 				return
 			}
-			batch := make([]recrawler.SeedURL, 0)
+			batch := make([]SeedURL, 0)
 			for _, d := range domainOrder {
 				batch = append(batch, domainMap[d]...)
 			}
@@ -78,7 +77,7 @@ func RunPipeline(ctx context.Context, pcfg PipelineConfig) (*Stats, error) {
 			case <-ctx.Done():
 				return
 			}
-			domainMap = make(map[string][]recrawler.SeedURL)
+			domainMap = make(map[string][]SeedURL)
 			domainOrder = domainOrder[:0]
 		}
 

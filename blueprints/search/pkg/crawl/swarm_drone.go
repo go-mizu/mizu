@@ -27,7 +27,7 @@ import (
 // rawFetch is the result of an HTTP fetch before HTML extraction.
 // Fetch workers produce these; parse workers consume them.
 type rawFetch struct {
-	seed        recrawler.SeedURL
+	seed        SeedURL
 	statusCode  int
 	bodyBytes   []byte // populated only for 200 HTML when !StatusOnly
 	contentType string
@@ -51,7 +51,7 @@ func (c *staticFrameCache) IsDead(host string) bool { return c.dead[host] }
 
 // readDroneInput reads the DNS gob frame then seed JSON lines from r.
 // Protocol: [4-byte big-endian length][gob dnsFrame][JSON lines…][EOF]
-func readDroneInput(r io.Reader) (dnsFrame, []recrawler.SeedURL, error) {
+func readDroneInput(r io.Reader) (dnsFrame, []SeedURL, error) {
 	var frameLen uint32
 	if err := binary.Read(r, binary.BigEndian, &frameLen); err != nil {
 		return dnsFrame{}, nil, fmt.Errorf("read frame length: %w", err)
@@ -64,11 +64,11 @@ func readDroneInput(r io.Reader) (dnsFrame, []recrawler.SeedURL, error) {
 	if err := gob.NewDecoder(bytes.NewReader(frameBytes)).Decode(&frame); err != nil {
 		return dnsFrame{}, nil, fmt.Errorf("decode dns frame: %w", err)
 	}
-	var seeds []recrawler.SeedURL
+	var seeds []SeedURL
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 1<<20), 1<<20)
 	for scanner.Scan() {
-		var s recrawler.SeedURL
+		var s SeedURL
 		if err := json.Unmarshal(scanner.Bytes(), &s); err == nil {
 			seeds = append(seeds, s)
 		}
@@ -79,7 +79,7 @@ func readDroneInput(r io.Reader) (dnsFrame, []recrawler.SeedURL, error) {
 // keepaliveFetchRaw performs an HTTP GET and returns raw bytes without HTML extraction.
 // For 200 HTML responses (and !cfg.StatusOnly) it reads up to 512 KB of body.
 func keepaliveFetchRaw(ctx context.Context, client *http.Client,
-	seed recrawler.SeedURL, cfg Config) rawFetch {
+	seed SeedURL, cfg Config) rawFetch {
 
 	start := time.Now()
 	ms := func() int64 { return time.Since(start).Milliseconds() }
@@ -133,10 +133,10 @@ func keepaliveFetchRaw(ctx context.Context, client *http.Client,
 	}
 }
 
-// parseRawFetch converts a rawFetch to a recrawler.Result by running crawler.Extract.
-func parseRawFetch(rf rawFetch) recrawler.Result {
+// parseRawFetch converts a rawFetch to a Result by running crawler.Extract.
+func parseRawFetch(rf rawFetch) Result {
 	if rf.errStr != "" {
-		return recrawler.Result{
+		return Result{
 			URL:         rf.seed.URL,
 			Domain:      rf.seed.Domain,
 			Error:       rf.errStr,
@@ -151,7 +151,7 @@ func parseRawFetch(rf rawFetch) recrawler.Result {
 		description = extracted.Description
 		language = extracted.Language
 	}
-	return recrawler.Result{
+	return Result{
 		URL:           rf.seed.URL,
 		Domain:        rf.seed.Domain,
 		StatusCode:    rf.statusCode,
@@ -164,6 +164,28 @@ func parseRawFetch(rf rawFetch) recrawler.Result {
 		RedirectURL:   rf.redirectURL,
 		FetchTimeMs:   rf.fetchMs,
 		CrawledAt:     time.Now(),
+	}
+}
+
+// toRecrawlerResult converts a crawl.Result to recrawler.Result for the legacy
+// recrawler.ResultDB used by the drone. Fields are identical; this is a bridge
+// needed until swarm_drone.go is migrated to use store.ResultDB (Task 3).
+func toRecrawlerResult(r Result) recrawler.Result {
+	return recrawler.Result{
+		URL:           r.URL,
+		StatusCode:    r.StatusCode,
+		ContentType:   r.ContentType,
+		ContentLength: r.ContentLength,
+		Body:          r.Body,
+		BodyCID:       r.BodyCID,
+		Title:         r.Title,
+		Description:   r.Description,
+		Language:      r.Language,
+		Domain:        r.Domain,
+		RedirectURL:   r.RedirectURL,
+		FetchTimeMs:   r.FetchTimeMs,
+		CrawledAt:     r.CrawledAt,
+		Error:         r.Error,
 	}
 }
 
@@ -217,11 +239,11 @@ func RunDrone(ctx context.Context, cfg Config) error {
 	var okCount, failCount, timeoutCount atomic.Int64
 
 	// Stage 3: DB write goroutine.
-	writeCh := make(chan recrawler.Result, 256)
+	writeCh := make(chan Result, 256)
 	var writeWg sync.WaitGroup
 	writeWg.Go(func() {
 		for r := range writeCh {
-			rdb.Add(r)
+			rdb.Add(toRecrawlerResult(r))
 		}
 		rdb.Flush(context.Background()) //nolint:errcheck
 	})
@@ -310,10 +332,10 @@ func RunDrone(ctx context.Context, cfg Config) error {
 // runSwarmFetch groups seeds by domain and runs domain-affine fetch workers.
 // Each domain's URLs go to one inner goroutine group sharing a single http.Transport.
 // Results are sent to fetchCh (never calling crawler.Extract).
-func runSwarmFetch(ctx context.Context, seeds []recrawler.SeedURL,
+func runSwarmFetch(ctx context.Context, seeds []SeedURL,
 	dns DNSCache, cfg Config, trk *adaptiveTracker, fetchCh chan<- rawFetch, failDB *recrawler.FailedDB) {
 
-	byDomain := make(map[string][]recrawler.SeedURL, 1024)
+	byDomain := make(map[string][]SeedURL, 1024)
 	for _, s := range seeds {
 		h := s.Host
 		if h == "" {
@@ -333,7 +355,7 @@ func runSwarmFetch(ctx context.Context, seeds []recrawler.SeedURL,
 		return
 	}
 
-	workCh := make(chan []recrawler.SeedURL, min(len(byDomain), 4096))
+	workCh := make(chan []SeedURL, min(len(byDomain), 4096))
 	go func() {
 		for _, us := range byDomain {
 			workCh <- us
@@ -367,7 +389,7 @@ func runSwarmFetch(ctx context.Context, seeds []recrawler.SeedURL,
 
 // swarmProcessDomain handles all URLs for one domain using a shared http.Transport.
 // It mirrors processOneDomain from keepalive.go but sends rawFetch to fetchCh.
-func swarmProcessDomain(ctx context.Context, urls []recrawler.SeedURL,
+func swarmProcessDomain(ctx context.Context, urls []SeedURL,
 	dns DNSCache, cfg Config, trk *adaptiveTracker, innerN int, fetchCh chan<- rawFetch,
 	failDB *recrawler.FailedDB) {
 
@@ -402,7 +424,7 @@ func swarmProcessDomain(ctx context.Context, urls []recrawler.SeedURL,
 	}
 	defer transport.CloseIdleConnections()
 
-	urlCh := make(chan recrawler.SeedURL, len(urls))
+	urlCh := make(chan SeedURL, len(urls))
 	for _, u := range urls {
 		urlCh <- u
 	}

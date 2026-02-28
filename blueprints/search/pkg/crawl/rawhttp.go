@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/archived/recrawler"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -21,18 +20,18 @@ import (
 // allocation overhead — no header maps, no response struct, no goroutine per conn.
 type RawHTTPEngine struct{}
 
-func (e *RawHTTPEngine) Run(ctx context.Context, seeds []recrawler.SeedURL,
+func (e *RawHTTPEngine) Run(ctx context.Context, seeds []SeedURL,
 	dns DNSCache, cfg Config, results ResultWriter, failures FailureWriter) (*Stats, error) {
 
 	// Filter dead domains upfront
-	live := make([]recrawler.SeedURL, 0, len(seeds))
+	live := make([]SeedURL, 0, len(seeds))
 	for _, s := range seeds {
 		host := s.Host
 		if host == "" {
 			host = s.Domain
 		}
 		if dns.IsDead(host) {
-			failures.AddURL(recrawler.FailedURL{
+			failures.AddURL(FailedURL{
 				URL:    s.URL,
 				Domain: s.Domain,
 				Reason: "domain_dead",
@@ -50,7 +49,7 @@ func (e *RawHTTPEngine) Run(ctx context.Context, seeds []recrawler.SeedURL,
 		maxWorkers = 500
 	}
 
-	workCh := make(chan recrawler.SeedURL, min(len(live), 10000))
+	workCh := make(chan SeedURL, min(len(live), 10000))
 	go func() {
 		for _, s := range live {
 			workCh <- s
@@ -76,7 +75,7 @@ func (e *RawHTTPEngine) Run(ctx context.Context, seeds []recrawler.SeedURL,
 				switch {
 				case r.Error != "" && isTimeoutErr(r.Error):
 					timeout.Add(1)
-					failures.AddURL(recrawler.FailedURL{
+					failures.AddURL(FailedURL{
 						URL:         seed.URL,
 						Domain:      seed.Domain,
 						Reason:      "http_timeout",
@@ -85,7 +84,7 @@ func (e *RawHTTPEngine) Run(ctx context.Context, seeds []recrawler.SeedURL,
 					})
 				case r.Error != "":
 					failed.Add(1)
-					failures.AddURL(recrawler.FailedURL{
+					failures.AddURL(FailedURL{
 						URL:         seed.URL,
 						Domain:      seed.Domain,
 						Reason:      "http_error",
@@ -123,15 +122,15 @@ func (e *RawHTTPEngine) Run(ctx context.Context, seeds []recrawler.SeedURL,
 // rawHTTPFetch performs a single HTTP/1.1 GET over a raw net.Conn.
 // Tries to reuse a pooled connection; opens a new one on miss.
 // Returns the connection to the pool on success (after draining response).
-func rawHTTPFetch(ctx context.Context, seed recrawler.SeedURL,
-	dns DNSCache, cfg Config, pool *rawConnPool) recrawler.Result {
+func rawHTTPFetch(ctx context.Context, seed SeedURL,
+	dns DNSCache, cfg Config, pool *rawConnPool) Result {
 
 	start := time.Now()
 	ms := func() int64 { return time.Since(start).Milliseconds() }
 
 	pu, err := parseRawURL(seed.URL)
 	if err != nil {
-		return recrawler.Result{URL: seed.URL, Domain: seed.Domain,
+		return Result{URL: seed.URL, Domain: seed.Domain,
 			Error: "parse: " + err.Error(), FetchTimeMs: ms()}
 	}
 
@@ -151,7 +150,7 @@ func rawHTTPFetch(ctx context.Context, seed recrawler.SeedURL,
 		defer cancel()
 		rawConn, err := (&net.Dialer{}).DialContext(dialCtx, "tcp", dialAddr)
 		if err != nil {
-			return recrawler.Result{URL: seed.URL, Domain: seed.Domain,
+			return Result{URL: seed.URL, Domain: seed.Domain,
 				Error: err.Error(), FetchTimeMs: ms()}
 		}
 
@@ -164,7 +163,7 @@ func rawHTTPFetch(ctx context.Context, seed recrawler.SeedURL,
 			})
 			if err := tlsConn.Handshake(); err != nil {
 				rawConn.Close()
-				return recrawler.Result{URL: seed.URL, Domain: seed.Domain,
+				return Result{URL: seed.URL, Domain: seed.Domain,
 					Error: "tls: " + err.Error(), FetchTimeMs: ms()}
 			}
 			conn = tlsConn
@@ -180,7 +179,7 @@ func rawHTTPFetch(ctx context.Context, seed recrawler.SeedURL,
 		pu.Path, pu.Host, cfg.UserAgent)
 	if _, err := conn.Write([]byte(reqLine)); err != nil {
 		conn.Close()
-		return recrawler.Result{URL: seed.URL, Domain: seed.Domain,
+		return Result{URL: seed.URL, Domain: seed.Domain,
 			Error: "write: " + err.Error(), FetchTimeMs: ms()}
 	}
 
@@ -189,7 +188,7 @@ func rawHTTPFetch(ctx context.Context, seed recrawler.SeedURL,
 	line, err := br.ReadString('\n')
 	if err != nil && len(line) < 12 {
 		conn.Close()
-		return recrawler.Result{URL: seed.URL, Domain: seed.Domain,
+		return Result{URL: seed.URL, Domain: seed.Domain,
 			Error: "read status: " + err.Error(), FetchTimeMs: ms()}
 	}
 
@@ -207,7 +206,7 @@ func rawHTTPFetch(ctx context.Context, seed recrawler.SeedURL,
 
 	pool.Put(poolKey, conn)
 
-	return recrawler.Result{
+	return Result{
 		URL:         seed.URL,
 		Domain:      seed.Domain,
 		StatusCode:  code,

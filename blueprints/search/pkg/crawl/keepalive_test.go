@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/archived/recrawler"
 )
 
 func TestKeepAliveEngine_BasicCrawl(t *testing.T) {
@@ -18,9 +17,9 @@ func TestKeepAliveEngine_BasicCrawl(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	seeds := make([]recrawler.SeedURL, 20)
+	seeds := make([]SeedURL, 20)
 	for i := range seeds {
-		seeds[i] = recrawler.SeedURL{
+		seeds[i] = SeedURL{
 			URL:    srv.URL + "/page/" + string(rune('a'+i)),
 			Domain: "localhost",
 			Host:   "localhost",
@@ -51,7 +50,7 @@ func TestKeepAliveEngine_BasicCrawl(t *testing.T) {
 }
 
 func TestKeepAliveEngine_DeadDomainSkipped(t *testing.T) {
-	seeds := []recrawler.SeedURL{
+	seeds := []SeedURL{
 		{URL: "http://dead.example.com/page", Domain: "dead.example.com", Host: "dead.example.com"},
 		{URL: "http://dead.example.com/page2", Domain: "dead.example.com", Host: "dead.example.com"},
 	}
@@ -80,18 +79,18 @@ func TestKeepAliveEngine_DeadDomainSkipped(t *testing.T) {
 
 type noopResultWriter struct{}
 
-func (n *noopResultWriter) Add(_ recrawler.Result)        {}
+func (n *noopResultWriter) Add(_ Result)        {}
 func (n *noopResultWriter) Flush(_ context.Context) error { return nil }
 func (n *noopResultWriter) Close() error                  { return nil }
 
 type noopFailureWriter struct{}
 
-func (n *noopFailureWriter) AddURL(_ recrawler.FailedURL) {}
+func (n *noopFailureWriter) AddURL(_ FailedURL) {}
 func (n *noopFailureWriter) Close() error                 { return nil }
 
 type countFailureWriter struct{ count int }
 
-func (c *countFailureWriter) AddURL(_ recrawler.FailedURL) { c.count++ }
+func (c *countFailureWriter) AddURL(_ FailedURL) { c.count++ }
 func (c *countFailureWriter) Close() error                 { return nil }
 
 type mockDeadDNS struct{ deadHost string }
@@ -105,9 +104,9 @@ func TestEpollEngine_BasicCrawl(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	seeds := make([]recrawler.SeedURL, 20)
+	seeds := make([]SeedURL, 20)
 	for i := range seeds {
-		seeds[i] = recrawler.SeedURL{
+		seeds[i] = SeedURL{
 			URL:    srv.URL + "/e/" + string(rune('a'+i)),
 			Domain: "localhost",
 			Host:   "localhost",
@@ -131,7 +130,7 @@ func TestEpollEngine_BasicCrawl(t *testing.T) {
 }
 
 func TestEpollEngine_DeadDomainSkipped(t *testing.T) {
-	seeds := []recrawler.SeedURL{
+	seeds := []SeedURL{
 		{URL: "http://dead.example.com/p1", Domain: "dead.example.com", Host: "dead.example.com"},
 	}
 	cfg := DefaultConfig()
@@ -159,9 +158,9 @@ func TestRawHTTPEngine_BasicCrawl(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	seeds := make([]recrawler.SeedURL, 20)
+	seeds := make([]SeedURL, 20)
 	for i := range seeds {
-		seeds[i] = recrawler.SeedURL{
+		seeds[i] = SeedURL{
 			URL:    srv.URL + "/r/" + string(rune('a'+i)),
 			Domain: "localhost",
 			Host:   "localhost",
@@ -185,7 +184,7 @@ func TestRawHTTPEngine_BasicCrawl(t *testing.T) {
 }
 
 func TestRawHTTPEngine_DeadDomainSkipped(t *testing.T) {
-	seeds := []recrawler.SeedURL{
+	seeds := []SeedURL{
 		{URL: "http://dead.example.com/p1", Domain: "dead.example.com", Host: "dead.example.com"},
 	}
 	cfg := DefaultConfig()
@@ -212,9 +211,9 @@ func TestSwarmEngine_FallbackToKeepAlive(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	seeds := make([]recrawler.SeedURL, 10)
+	seeds := make([]SeedURL, 10)
 	for i := range seeds {
-		seeds[i] = recrawler.SeedURL{
+		seeds[i] = SeedURL{
 			URL:    srv.URL + "/s/" + string(rune('a'+i)),
 			Domain: "localhost",
 			Host:   "localhost",

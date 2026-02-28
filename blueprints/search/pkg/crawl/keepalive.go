@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/crawler"
-	"github.com/go-mizu/mizu/blueprints/search/pkg/archived/recrawler"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -81,7 +80,7 @@ func (t *adaptiveTracker) P95Ms() int64 {
 	return adaptiveEdgesKA[len(adaptiveEdgesKA)-1]
 }
 
-func (e *KeepAliveEngine) Run(ctx context.Context, seeds []recrawler.SeedURL,
+func (e *KeepAliveEngine) Run(ctx context.Context, seeds []SeedURL,
 	dns DNSCache, cfg Config, results ResultWriter, failures FailureWriter) (*Stats, error) {
 
 	// Raise fd limit so large worker counts don't hit the 1024 soft limit ceiling.
@@ -89,10 +88,10 @@ func (e *KeepAliveEngine) Run(ctx context.Context, seeds []recrawler.SeedURL,
 	_ = raiseRlimit(65536)
 
 	// Skip dead domains up front; group live URLs by domain
-	byDomain := make(map[string][]recrawler.SeedURL, 1024)
+	byDomain := make(map[string][]SeedURL, 1024)
 	for _, s := range seeds {
 		if dns.IsDead(s.Host) {
-			failures.AddURL(recrawler.FailedURL{
+			failures.AddURL(FailedURL{
 				URL:    s.URL,
 				Domain: s.Domain,
 				Reason: "domain_dead",
@@ -106,7 +105,7 @@ func (e *KeepAliveEngine) Run(ctx context.Context, seeds []recrawler.SeedURL,
 	}
 
 	type domainWork struct {
-		urls []recrawler.SeedURL
+		urls []SeedURL
 	}
 
 	workCh := make(chan domainWork, min(len(byDomain), 4096))
@@ -180,7 +179,7 @@ func (e *KeepAliveEngine) Run(ctx context.Context, seeds []recrawler.SeedURL,
 	}, nil
 }
 
-func processOneDomain(ctx context.Context, urls []recrawler.SeedURL,
+func processOneDomain(ctx context.Context, urls []SeedURL,
 	dns DNSCache, cfg Config, adaptive *adaptiveTracker, innerN int,
 	results ResultWriter, failures FailureWriter,
 	ok, failed, timeout, skipped, total *atomic.Int64, bytesTotal *atomic.Int64, peak *peakTracker) {
@@ -225,7 +224,7 @@ func processOneDomain(ctx context.Context, urls []recrawler.SeedURL,
 	defer transport.CloseIdleConnections()
 
 	// Feed all URLs into a channel; innerN goroutines drain it concurrently.
-	urlCh := make(chan recrawler.SeedURL, len(urls))
+	urlCh := make(chan SeedURL, len(urls))
 	for _, u := range urls {
 		urlCh <- u
 	}
@@ -265,7 +264,7 @@ func processOneDomain(ctx context.Context, urls []recrawler.SeedURL,
 				select {
 				case <-abandonCh:
 					skipped.Add(1)
-					failures.AddURL(recrawler.FailedURL{
+					failures.AddURL(FailedURL{
 						URL:    seed.URL,
 						Domain: seed.Domain,
 						Reason: "domain_http_timeout_killed",
@@ -278,7 +277,7 @@ func processOneDomain(ctx context.Context, urls []recrawler.SeedURL,
 					select {
 					case <-domainCtx.Done():
 						skipped.Add(1)
-						failures.AddURL(recrawler.FailedURL{
+						failures.AddURL(FailedURL{
 							URL:    seed.URL,
 							Domain: seed.Domain,
 							Reason: "domain_deadline_exceeded",
@@ -311,7 +310,7 @@ func processOneDomain(ctx context.Context, urls []recrawler.SeedURL,
 					if effectiveThreshold > 0 && n >= effectiveThreshold {
 						abandonOnce.Do(func() { close(abandonCh) })
 					}
-					failures.AddURL(recrawler.FailedURL{
+					failures.AddURL(FailedURL{
 						URL:         seed.URL,
 						Domain:      seed.Domain,
 						Reason:      "http_timeout",
@@ -320,7 +319,7 @@ func processOneDomain(ctx context.Context, urls []recrawler.SeedURL,
 					})
 				case r.Error != "":
 					failed.Add(1)
-					failures.AddURL(recrawler.FailedURL{
+					failures.AddURL(FailedURL{
 						URL:         seed.URL,
 						Domain:      seed.Domain,
 						Reason:      "http_error",
@@ -339,12 +338,12 @@ func processOneDomain(ctx context.Context, urls []recrawler.SeedURL,
 }
 
 func keepaliveFetchOne(ctx context.Context, client *http.Client,
-	seed recrawler.SeedURL, cfg Config) recrawler.Result {
+	seed SeedURL, cfg Config) Result {
 
 	start := time.Now()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, seed.URL, nil)
 	if err != nil {
-		return recrawler.Result{
+		return Result{
 			URL: seed.URL, Domain: seed.Domain,
 			Error: err.Error(), FetchTimeMs: time.Since(start).Milliseconds(),
 		}
@@ -353,7 +352,7 @@ func keepaliveFetchOne(ctx context.Context, client *http.Client,
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return recrawler.Result{
+		return Result{
 			URL: seed.URL, Domain: seed.Domain,
 			Error: err.Error(), FetchTimeMs: time.Since(start).Milliseconds(),
 		}
@@ -364,7 +363,7 @@ func keepaliveFetchOne(ctx context.Context, client *http.Client,
 		// Read 1 byte to allow connection reuse, then discard
 		var buf [1]byte
 		resp.Body.Read(buf[:]) //nolint:errcheck
-		return recrawler.Result{
+		return Result{
 			URL:           seed.URL,
 			Domain:        seed.Domain,
 			StatusCode:    resp.StatusCode,
@@ -397,7 +396,7 @@ func keepaliveFetchOne(ctx context.Context, client *http.Client,
 		}
 	}
 
-	return recrawler.Result{
+	return Result{
 		URL:           seed.URL,
 		Domain:        seed.Domain,
 		StatusCode:    resp.StatusCode,

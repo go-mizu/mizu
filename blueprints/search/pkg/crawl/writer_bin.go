@@ -16,7 +16,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/archived/recrawler"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/crawl/bseg"
 )
 
@@ -61,9 +60,9 @@ func binChanCapFromMem(availMB, avgRecordKB int) int {
 type BinSegWriter struct {
 	segDir   string              // directory for binary segment files
 	maxBytes int64               // rotate segment when it reaches this size
-	rdb      *recrawler.ResultDB // drain destination (nil = no drain, segments left on disk)
+	rdb      ResultWriter // drain destination (nil = no drain, segments left on disk)
 
-	ch    chan recrawler.Result // primary write channel, buffered
+	ch    chan Result // primary write channel, buffered
 	segCh chan string           // completed segment paths for drain goroutine
 
 	// flusher state — accessed only by the flusher goroutine, no lock needed.
@@ -87,7 +86,7 @@ type BinSegWriter struct {
 //   - maxMB: segment size threshold (0 → default 64 MB).
 //   - availMB: available RAM in MB for channel capacity tuning (0 → use default 32768).
 //   - rdb: the ResultDB to drain completed segments into (nil = accumulate on disk).
-func NewBinSegWriter(segDir string, maxMB int, availMB int, rdb *recrawler.ResultDB) (*BinSegWriter, error) {
+func NewBinSegWriter(segDir string, maxMB int, availMB int, rdb ResultWriter) (*BinSegWriter, error) {
 	if err := os.MkdirAll(segDir, 0o755); err != nil {
 		return nil, fmt.Errorf("bin writer: creating segment dir: %w", err)
 	}
@@ -99,7 +98,7 @@ func NewBinSegWriter(segDir string, maxMB int, availMB int, rdb *recrawler.Resul
 		segDir:   segDir,
 		maxBytes: int64(maxMB) * 1024 * 1024,
 		rdb:      rdb,
-		ch:       make(chan recrawler.Result, chanCap),
+		ch:       make(chan Result, chanCap),
 		segCh:    make(chan string, binSegQueueCap),
 	}
 	w.wg.Add(2) // flusher + drainer
@@ -111,7 +110,7 @@ func NewBinSegWriter(segDir string, maxMB int, availMB int, rdb *recrawler.Resul
 // Add enqueues a result for writing. It blocks only when the channel is full
 // (which only occurs if the flusher goroutine cannot keep up with disk writes).
 // Under normal operation this channel stays near-empty.
-func (w *BinSegWriter) Add(r recrawler.Result) {
+func (w *BinSegWriter) Add(r Result) {
 	w.ch <- r
 }
 
@@ -154,7 +153,7 @@ func (w *BinSegWriter) ChanFill() float64 {
 // no results are lost from the prior run.
 //
 // Returns the total number of records drained.
-func DrainLeftovers(segDir string, rdb *recrawler.ResultDB) (int64, error) {
+func DrainLeftovers(segDir string, rdb ResultWriter) (int64, error) {
 	entries, err := os.ReadDir(segDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -210,7 +209,7 @@ func (w *BinSegWriter) flusher() {
 	}
 }
 
-func (w *BinSegWriter) writeOne(r recrawler.Result) {
+func (w *BinSegWriter) writeOne(r Result) {
 	// Rotate if current segment is at capacity or not yet opened.
 	if w.cur == nil || w.curBytes >= w.maxBytes {
 		w.rotateSeg()
@@ -381,9 +380,9 @@ func (w *BinSegWriter) drainSegGob(path string, f *os.File) int64 {
 	return count
 }
 
-// bsegToResult converts a bseg.Record to a recrawler.Result.
-func bsegToResult(r *bseg.Record) recrawler.Result {
-	return recrawler.Result{
+// bsegToResult converts a bseg.Record to a crawl.Result.
+func bsegToResult(r *bseg.Record) Result {
+	return Result{
 		URL:           r.URL,
 		StatusCode:    int(r.StatusCode),
 		ContentType:   r.ContentType,
@@ -421,8 +420,8 @@ type binRecord struct {
 	Failed        bool
 }
 
-func (r *binRecord) toResult() recrawler.Result {
-	return recrawler.Result{
+func (r *binRecord) toResult() Result {
+	return Result{
 		URL:           r.URL,
 		StatusCode:    r.StatusCode,
 		ContentType:   r.ContentType,
@@ -442,7 +441,7 @@ func (r *binRecord) toResult() recrawler.Result {
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 // binSanitize removes null bytes and invalid UTF-8 sequences.
-// Mirrors recrawler.sanitizeStr but accessible in this package.
+// Mirrors the sanitizeStr helper from the recrawler package.
 func binSanitize(s string) string {
 	if s == "" {
 		return s

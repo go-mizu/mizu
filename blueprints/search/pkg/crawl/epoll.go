@@ -12,7 +12,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/archived/recrawler"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -22,18 +21,18 @@ import (
 // Pre-resolved IPs (from DNSCache) eliminate DNS lookup latency.
 type EpollEngine struct{}
 
-func (e *EpollEngine) Run(ctx context.Context, seeds []recrawler.SeedURL,
+func (e *EpollEngine) Run(ctx context.Context, seeds []SeedURL,
 	dns DNSCache, cfg Config, results ResultWriter, failures FailureWriter) (*Stats, error) {
 
 	// Filter out dead-domain seeds upfront
-	live := make([]recrawler.SeedURL, 0, len(seeds))
+	live := make([]SeedURL, 0, len(seeds))
 	for _, s := range seeds {
 		host := s.Host
 		if host == "" {
 			host = s.Domain
 		}
 		if dns.IsDead(host) {
-			failures.AddURL(recrawler.FailedURL{
+			failures.AddURL(FailedURL{
 				URL:    s.URL,
 				Domain: s.Domain,
 				Reason: "domain_dead",
@@ -51,7 +50,7 @@ func (e *EpollEngine) Run(ctx context.Context, seeds []recrawler.SeedURL,
 		numWorkers = 1
 	}
 
-	workCh := make(chan recrawler.SeedURL, min(len(live), 10000))
+	workCh := make(chan SeedURL, min(len(live), 10000))
 	go func() {
 		for _, s := range live {
 			workCh <- s
@@ -77,7 +76,7 @@ func (e *EpollEngine) Run(ctx context.Context, seeds []recrawler.SeedURL,
 				switch {
 				case r.Error != "" && isTimeoutErr(r.Error):
 					timeout.Add(1)
-					failures.AddURL(recrawler.FailedURL{
+					failures.AddURL(FailedURL{
 						URL:         seed.URL,
 						Domain:      seed.Domain,
 						Reason:      "http_timeout",
@@ -86,7 +85,7 @@ func (e *EpollEngine) Run(ctx context.Context, seeds []recrawler.SeedURL,
 					})
 				case r.Error != "":
 					failed.Add(1)
-					failures.AddURL(recrawler.FailedURL{
+					failures.AddURL(FailedURL{
 						URL:         seed.URL,
 						Domain:      seed.Domain,
 						Reason:      "http_error",
@@ -123,13 +122,13 @@ func (e *EpollEngine) Run(ctx context.Context, seeds []recrawler.SeedURL,
 
 // epollFetch dials a raw TCP connection, sends a minimal HTTP/1.1 GET,
 // reads only the status line. Uses pre-resolved IPs when available.
-func epollFetch(ctx context.Context, seed recrawler.SeedURL, dns DNSCache, cfg Config) recrawler.Result {
+func epollFetch(ctx context.Context, seed SeedURL, dns DNSCache, cfg Config) Result {
 	start := time.Now()
 	ms := func() int64 { return time.Since(start).Milliseconds() }
 
 	pu, err := parseRawURL(seed.URL)
 	if err != nil {
-		return recrawler.Result{URL: seed.URL, Domain: seed.Domain,
+		return Result{URL: seed.URL, Domain: seed.Domain,
 			Error: "parse: " + err.Error(), FetchTimeMs: ms()}
 	}
 
@@ -146,7 +145,7 @@ func epollFetch(ctx context.Context, seed recrawler.SeedURL, dns DNSCache, cfg C
 
 	conn, err := (&net.Dialer{}).DialContext(dialCtx, "tcp", dialAddr)
 	if err != nil {
-		return recrawler.Result{URL: seed.URL, Domain: seed.Domain,
+		return Result{URL: seed.URL, Domain: seed.Domain,
 			Error: err.Error(), FetchTimeMs: ms()}
 	}
 	defer conn.Close()
@@ -159,7 +158,7 @@ func epollFetch(ctx context.Context, seed recrawler.SeedURL, dns DNSCache, cfg C
 			ServerName:         pu.Host,
 		})
 		if err := tlsConn.Handshake(); err != nil {
-			return recrawler.Result{URL: seed.URL, Domain: seed.Domain,
+			return Result{URL: seed.URL, Domain: seed.Domain,
 				Error: "tls: " + err.Error(), FetchTimeMs: ms()}
 		}
 		rwConn = tlsConn
@@ -169,7 +168,7 @@ func epollFetch(ctx context.Context, seed recrawler.SeedURL, dns DNSCache, cfg C
 	reqLine := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: %s\r\nConnection: close\r\n\r\n",
 		pu.Path, pu.Host, cfg.UserAgent)
 	if _, err := rwConn.Write([]byte(reqLine)); err != nil {
-		return recrawler.Result{URL: seed.URL, Domain: seed.Domain,
+		return Result{URL: seed.URL, Domain: seed.Domain,
 			Error: "write: " + err.Error(), FetchTimeMs: ms()}
 	}
 
@@ -177,7 +176,7 @@ func epollFetch(ctx context.Context, seed recrawler.SeedURL, dns DNSCache, cfg C
 	br := bufio.NewReaderSize(rwConn, 256)
 	line, err := br.ReadString('\n')
 	if err != nil && len(line) < 12 {
-		return recrawler.Result{URL: seed.URL, Domain: seed.Domain,
+		return Result{URL: seed.URL, Domain: seed.Domain,
 			Error: "read: " + err.Error(), FetchTimeMs: ms()}
 	}
 
@@ -187,7 +186,7 @@ func epollFetch(ctx context.Context, seed recrawler.SeedURL, dns DNSCache, cfg C
 		code, _ = strconv.Atoi(strings.TrimSpace(line[9:12]))
 	}
 
-	return recrawler.Result{
+	return Result{
 		URL:         seed.URL,
 		Domain:      seed.Domain,
 		StatusCode:  code,

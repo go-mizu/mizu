@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/archived/recrawler"
 )
 
 // benchURLsPerRun is the number of URLs processed per benchmark iteration.
@@ -20,11 +19,11 @@ const benchDomains = 10
 
 // makeBenchSeeds creates n seed URLs spread across domains fake domains,
 // all pointing to srv (so there is no real network latency).
-func makeBenchSeeds(srv *httptest.Server, n, domains int) []recrawler.SeedURL {
-	seeds := make([]recrawler.SeedURL, n)
+func makeBenchSeeds(srv *httptest.Server, n, domains int) []SeedURL {
+	seeds := make([]SeedURL, n)
 	for i := range seeds {
 		dom := fmt.Sprintf("d%d.bench.localhost", i%domains)
-		seeds[i] = recrawler.SeedURL{
+		seeds[i] = SeedURL{
 			URL:    fmt.Sprintf("%s/%s/%d", srv.URL, dom, i),
 			Domain: dom,
 			Host:   "localhost",

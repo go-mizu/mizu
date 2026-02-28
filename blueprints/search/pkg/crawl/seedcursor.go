@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	_ "github.com/duckdb/duckdb-go/v2"
-	"github.com/go-mizu/mizu/blueprints/search/pkg/archived/recrawler"
 )
 
 // SeedCursor pages through a DuckDB seed table without loading all rows into memory.
@@ -31,7 +30,7 @@ func NewSeedCursor(dbPath string, pageSize int) (*SeedCursor, error) {
 }
 
 // Next returns the next page of seed URLs. Returns an empty slice at EOF.
-func (c *SeedCursor) Next(ctx context.Context) ([]recrawler.SeedURL, error) {
+func (c *SeedCursor) Next(ctx context.Context) ([]SeedURL, error) {
 	rows, err := c.db.QueryContext(ctx,
 		"SELECT url, COALESCE(domain, '') FROM docs ORDER BY domain LIMIT ? OFFSET ?",
 		c.pageSize, c.offset)
@@ -40,9 +39,9 @@ func (c *SeedCursor) Next(ctx context.Context) ([]recrawler.SeedURL, error) {
 	}
 	defer rows.Close()
 
-	var page []recrawler.SeedURL
+	var page []SeedURL
 	for rows.Next() {
-		var s recrawler.SeedURL
+		var s SeedURL
 		if err := rows.Scan(&s.URL, &s.Domain); err != nil {
 			return nil, fmt.Errorf("seedcursor: scan: %w", err)
 		}

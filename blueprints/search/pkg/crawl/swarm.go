@@ -16,7 +16,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/archived/recrawler"
 )
 
 // SwarmEngine spawns DroneCount drone sub-processes, distributes seeds by domain hash
@@ -41,7 +40,7 @@ type dnsFrame struct {
 }
 
 // buildDNSFrame iterates over seeds and snapshots Lookup/IsDead for every unique host.
-func buildDNSFrame(seeds []recrawler.SeedURL, dns DNSCache) dnsFrame {
+func buildDNSFrame(seeds []SeedURL, dns DNSCache) dnsFrame {
 	resolved := make(map[string]string, 1024)
 	dead := make(map[string]bool, 256)
 	seen := make(map[string]struct{}, 1024)
@@ -77,7 +76,7 @@ func writeDNSFrame(w io.Writer, frame dnsFrame) error {
 	return err
 }
 
-func (e *SwarmEngine) Run(ctx context.Context, seeds []recrawler.SeedURL,
+func (e *SwarmEngine) Run(ctx context.Context, seeds []SeedURL,
 	dns DNSCache, cfg Config, results ResultWriter, failures FailureWriter) (*Stats, error) {
 
 	if cfg.SearchBinary == "" || cfg.DroneCount <= 1 || cfg.SwarmResultDir == "" {
@@ -85,7 +84,7 @@ func (e *SwarmEngine) Run(ctx context.Context, seeds []recrawler.SeedURL,
 	}
 
 	n := cfg.DroneCount
-	buckets := make([][]recrawler.SeedURL, n)
+	buckets := make([][]SeedURL, n)
 	for _, s := range seeds {
 		idx := int(fnvHash(s.Domain) % uint32(n))
 		buckets[idx] = append(buckets[idx], s)
@@ -129,7 +128,7 @@ func (e *SwarmEngine) Run(ctx context.Context, seeds []recrawler.SeedURL,
 
 	for i := range n {
 		wg.Add(1)
-		go func(droneIdx int, droneSeeds []recrawler.SeedURL) {
+		go func(droneIdx int, droneSeeds []SeedURL) {
 			defer wg.Done()
 			if len(droneSeeds) == 0 {
 				return
@@ -166,7 +165,7 @@ func (e *SwarmEngine) Run(ctx context.Context, seeds []recrawler.SeedURL,
 	}, nil
 }
 
-func runDroneProcess(ctx context.Context, cfg Config, idx int, seeds []recrawler.SeedURL,
+func runDroneProcess(ctx context.Context, cfg Config, idx int, seeds []SeedURL,
 	frame dnsFrame, resultDir, failedDB string,
 	ok, failed, timeout, total *atomic.Int64, peak *peakTracker) error {
 
