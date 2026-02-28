@@ -46,8 +46,9 @@ export function renderDocs(contentHtml: string): string {
   <div class="hdr">
     <a href="/" class="logo">
       <span class="logo-sq">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M8 3L4 7l4 4"/><line x1="4" y1="7" x2="20" y2="7"/><path d="M16 21l4-4-4-4"/><line x1="20" y1="17" x2="4" y2="17"/>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect width="16" height="12" x="4" y="6" rx="1"/>
+          <path d="M4 12h2l2-2 2 2 2-4 2 4 2-2h2"/>
         </svg>
       </span>
       URL → Markdown

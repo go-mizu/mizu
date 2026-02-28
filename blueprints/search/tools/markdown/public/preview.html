@@ -11,9 +11,10 @@
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
   <link rel="stylesheet" href="/styles.css">
   <style>
-/* url bar */
-.url-bar{width:100%;border-bottom:1px solid var(--border2);padding:20px 32px}
-.url-bar-inner{max-width:var(--w);margin:0 auto;display:flex;gap:0}
+/* top bar — Google search results style: icon + url + button in one row */
+.top-bar{width:100%;border-bottom:1px solid var(--border2);padding:10px 20px;display:flex;align-items:center;gap:14px}
+.top-bar .logo-sq{flex-shrink:0}
+.url-form{flex:1;display:flex;max-width:860px}
 /* states */
 .loading-state{display:none;padding:80px 32px;text-align:center}
 .spinner{margin-right:10px;vertical-align:middle}
@@ -67,25 +68,14 @@
 </head>
 <body>
 
-<header>
-  <div class="hdr">
-    <a href="/" class="logo">
-      <span class="logo-sq">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M8 3L4 7l4 4"/><line x1="4" y1="7" x2="20" y2="7"/><path d="M16 21l4-4-4-4"/><line x1="20" y1="17" x2="4" y2="17"/>
-        </svg>
-      </span>
-      markdown.go-mizu
-    </a>
-    <nav>
-      <a href="/docs">Docs</a>
-      <a href="https://github.com/go-mizu/mizu">GitHub</a>
-    </nav>
-  </div>
-</header>
-
-<div class="url-bar">
-  <form class="url-bar-inner" id="form" onsubmit="handleSubmit(event)">
+<div class="top-bar">
+  <a href="/" class="logo-sq" title="URL → Markdown">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect width="16" height="12" x="4" y="6" rx="1"/>
+      <path d="M4 12h2l2-2 2 2 2-4 2 4 2-2h2"/>
+    </svg>
+  </a>
+  <form class="url-form" id="form" onsubmit="handleSubmit(event)">
     <input id="url-in" type="url" class="url-in" placeholder="https://example.com" autocomplete="off" spellcheck="false">
     <button type="submit" id="sub-btn" class="cvt-btn"><span id="btn-sp" style="display:none" class="spinner"></span><span id="btn-t">Convert</span></button>
   </form>
@@ -190,7 +180,8 @@ async function convertUrl(url) {
 }
 
 function showResult(data) {
-  md = data.markdown || '';
+  // Strip horizontal rules (--- / *** / ___) — too noisy in scraped content
+  md = (data.markdown || '').replace(/^[-*_]{3,}\s*$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
   document.getElementById('r-title').textContent = data.title || currentUrl;
   var cfg = METHOD_MAP[data.method] || METHOD_MAP.ai;
   var mb = document.getElementById('r-method');
