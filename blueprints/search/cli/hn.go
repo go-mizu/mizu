@@ -954,6 +954,12 @@ func runHNRecrawlV3(ctx context.Context,
 	switch writerMode {
 	case "bin":
 		segDir := filepath.Join(hnCfg.WithDefaults().RecrawlDir(), "segments")
+		// Drain any leftover segment files from a previous crashed run.
+		if n, err := crawl.DrainLeftovers(segDir, rdb); err != nil {
+			fmt.Fprintf(os.Stderr, "  [warn] drain leftovers: %v\n", err)
+		} else if n > 0 {
+			fmt.Printf("  Recovered %s records from leftover segments\n", labelStyle.Render(formatInt64Exact(n)))
+		}
 		var bwErr error
 		binWriter, bwErr = crawl.NewBinSegWriter(segDir, 0, int(si.MemAvailableMB), rdb)
 		if bwErr != nil {

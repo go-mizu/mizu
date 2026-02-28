@@ -149,6 +149,39 @@ func (w *BinSegWriter) ChanFill() float64 {
 	return float64(len(w.ch)) / float64(c)
 }
 
+// DrainLeftovers drains any leftover .bseg2 and .bseg segment files from a previous
+// crashed run into rdb, then deletes them. Call before starting a new crawl to ensure
+// no results are lost from the prior run.
+//
+// Returns the total number of records drained.
+func DrainLeftovers(segDir string, rdb *recrawler.ResultDB) (int64, error) {
+	entries, err := os.ReadDir(segDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil // no segment dir — nothing to drain
+		}
+		return 0, fmt.Errorf("drain leftovers: readdir %s: %w", segDir, err)
+	}
+
+	// Reuse a temporary BinSegWriter shell for its drainSeg method.
+	w := &BinSegWriter{rdb: rdb}
+	var total int64
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || (filepath.Ext(name) != ".bseg2" && filepath.Ext(name) != ".bseg") {
+			continue
+		}
+		path := filepath.Join(segDir, name)
+		fmt.Fprintf(os.Stderr, "[binwriter] drain leftover: %s\n", name)
+		n := w.drainSeg(path) // drainSeg deletes the file on return
+		total += n
+	}
+	if total > 0 && rdb != nil {
+		rdb.Flush(context.Background())
+	}
+	return total, nil
+}
+
 // shouldPause returns true when heap usage exceeds 70% of GOMEMLIMIT and the
 // write channel is more than 90% full. Used by the flusher to apply back-pressure.
 func (w *BinSegWriter) shouldPause() bool {
