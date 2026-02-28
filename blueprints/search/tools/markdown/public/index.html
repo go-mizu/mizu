@@ -21,9 +21,10 @@
     </svg>
     markdown.go-mizu
   </a>
-  <nav class="flex items-center gap-0.5">
-    <a href="/docs" class="text-xs text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-2.5 py-1.5 transition-colors no-underline">Docs</a>
-    <a href="https://github.com/go-mizu/mizu" class="text-xs text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-2.5 py-1.5 transition-colors no-underline">GitHub</a>
+  <nav class="flex items-center gap-1">
+    <a href="/docs" class="text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-3 py-1.5 transition-colors no-underline">Docs</a>
+    <a href="https://github.com/go-mizu/mizu" class="text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-3 py-1.5 transition-colors no-underline">GitHub</a>
+    <a href="/llms.txt" class="text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-3 py-1.5 transition-colors no-underline">llms.txt</a>
     <button onclick="toggleTheme()" title="Toggle dark mode" class="text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 p-1.5 transition-colors ml-1 cursor-pointer bg-transparent border-none flex items-center">
       <svg class="dark:hidden" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
       <svg class="hidden dark:block" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
@@ -36,7 +37,7 @@
 <!-- Hero -->
 <div class="max-w-page mx-auto px-8">
   <section class="pt-24 pb-16">
-    <h1 class="text-4xl sm:text-5xl font-semibold tracking-tight leading-tight mb-5 whitespace-pre-line">Any URL →
+    <h1 class="text-4xl font-semibold tracking-tight leading-tight mb-5 whitespace-pre-line">Any URL →
 Clean Markdown.</h1>
     <p class="text-xl text-zinc-600 dark:text-zinc-400 mb-9">No API key. No account. Instant.</p>
     <form id="form" onsubmit="handleSubmit(event)">
@@ -58,7 +59,7 @@ Clean Markdown.</h1>
 <!-- Value props -->
 <div class="max-w-page mx-auto px-8">
   <div class="pb-20">
-    <p class="text-xl text-zinc-600 dark:text-zinc-400 leading-wide max-w-xl mb-14">The web was built for humans. AI agents need structured data. We convert any URL to clean Markdown using Cloudflare's native <code class="font-mono text-xs bg-zinc-100 dark:bg-zinc-900 px-1.5 py-0.5 text-zinc-700 dark:text-zinc-300">text/markdown</code> content negotiation — no parsing overhead, no wasted tokens.</p>
+    <p class="text-xl text-zinc-600 dark:text-zinc-400 leading-wide max-w-xl mb-14">The web is designed for humans, but agents need clean structured text. Pass any URL and get back Markdown. No parsing overhead, no wasted tokens.</p>
     <div class="flex gap-14 flex-wrap">
       <div class="flex flex-col gap-1.5">
         <span class="text-stat font-bold tracking-hero text-zinc-900 dark:text-zinc-100">80%</span>
@@ -66,11 +67,11 @@ Clean Markdown.</h1>
       </div>
       <div class="flex flex-col gap-1.5">
         <span class="text-stat font-bold tracking-hero text-zinc-900 dark:text-zinc-100">0.1–0.6s</span>
-        <span class="text-sm text-zinc-400 leading-snug max-w-lbl">typical response, edge-cached globally</span>
+        <span class="text-sm text-zinc-400 leading-snug max-w-lbl">typical response, cached globally</span>
       </div>
       <div class="flex flex-col gap-1.5">
         <span class="text-stat font-bold tracking-hero text-zinc-900 dark:text-zinc-100">Free</span>
-        <span class="text-sm text-zinc-400 leading-snug max-w-lbl">open access — just use the URL</span>
+        <span class="text-sm text-zinc-400 leading-snug max-w-lbl">open access, just use the URL</span>
       </div>
     </div>
   </div>
@@ -102,32 +103,35 @@ No auth required. Returns text/markdown or JSON with metadata.</pre>
   <section class="py-16" id="how">
     <h2 class="text-2xl font-semibold tracking-h2 mb-2.5">How it works</h2>
     <p class="text-xl text-zinc-600 dark:text-zinc-400 mb-10 max-w-2xl leading-relaxed">Every URL goes through three tiers, falling back automatically until clean Markdown is produced.</p>
-    <div class="flex flex-col gap-7 max-w-2xl">
-      <div class="grid grid-tier gap-0">
-        <span class="font-mono text-2xs text-zinc-400 dark:text-zinc-500 uppercase tracking-widest pt-1">Tier 1 · Native</span>
-        <span class="text-lg text-zinc-600 dark:text-zinc-400 leading-relaxed"><strong class="text-zinc-900 dark:text-zinc-100 font-medium">Content negotiation</strong> — sites that natively serve <code class="font-mono text-xs bg-zinc-100 dark:bg-zinc-900 px-1.5 py-0.5">text/markdown</code> return it directly.</span>
+    <div class="flex gap-5 flex-wrap mb-8">
+      <div class="flex-1 bg-zinc-50 dark:bg-zinc-900 p-7" style="min-width:200px">
+        <span class="font-mono text-2xs text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">01</span>
+        <h3 class="text-base font-semibold text-zinc-900 dark:text-zinc-100 mt-4 mb-2">Native</h3>
+        <p class="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">Sites that support <code class="font-mono text-xs bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5">Accept: text/markdown</code> return it directly. Zero conversion overhead.</p>
       </div>
-      <div class="grid grid-tier gap-0">
-        <span class="font-mono text-2xs text-zinc-400 dark:text-zinc-500 uppercase tracking-widest pt-1">Tier 2 · AI</span>
-        <span class="text-lg text-zinc-600 dark:text-zinc-400 leading-relaxed">HTML fetched and converted via <strong class="text-zinc-900 dark:text-zinc-100 font-medium">Cloudflare Workers AI</strong> — fast, structure-aware extraction.</span>
+      <div class="flex-1 bg-zinc-50 dark:bg-zinc-900 p-7" style="min-width:200px">
+        <span class="font-mono text-2xs text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">02</span>
+        <h3 class="text-base font-semibold text-zinc-900 dark:text-zinc-100 mt-4 mb-2">AI extraction</h3>
+        <p class="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">HTML pages are fetched and converted by an AI model. Pulls out what matters and drops the noise.</p>
       </div>
-      <div class="grid grid-tier gap-0">
-        <span class="font-mono text-2xs text-zinc-400 dark:text-zinc-500 uppercase tracking-widest pt-1">Tier 3 · Browser</span>
-        <span class="text-lg text-zinc-600 dark:text-zinc-400 leading-relaxed">JS-heavy SPAs rendered in a <strong class="text-zinc-900 dark:text-zinc-100 font-medium">headless browser</strong> before AI conversion — handles React, Vue, any SPA.</span>
+      <div class="flex-1 bg-zinc-50 dark:bg-zinc-900 p-7" style="min-width:200px">
+        <span class="font-mono text-2xs text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">03</span>
+        <h3 class="text-base font-semibold text-zinc-900 dark:text-zinc-100 mt-4 mb-2">Browser rendering</h3>
+        <p class="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">React, Vue, Angular, any SPA. Rendered in a real browser first so all content is present before conversion.</p>
       </div>
     </div>
-    <p class="mt-8 text-sm text-zinc-400 max-w-2xl leading-relaxed">Edge-cached for 1 hour with stale-while-revalidate. CORS enabled on all endpoints.</p>
+    <p class="text-sm text-zinc-400 max-w-2xl leading-relaxed">Results are cached for 1 hour. CORS is open on all endpoints so you can call from any browser or agent.</p>
   </section>
 </div>
 
 <!-- FAQ -->
 <div class="max-w-page mx-auto px-8">
   <section class="py-16 mt-8" id="faq">
-    <h2 class="text-4xl sm:text-5xl font-semibold tracking-tight leading-tight mb-10">FAQ</h2>
+    <h2 class="text-4xl font-semibold tracking-tight leading-tight mb-10">FAQ</h2>
     <div class="space-y-9 max-w-2xl">
       <div>
         <h3 class="text-lg font-semibold">Why Markdown instead of HTML?</h3>
-        <p class="mt-2 text-lg text-zinc-600 dark:text-zinc-400">HTML has navigation, ads, scripts, and markup that wastes tokens. Markdown strips to the essentials — headings, paragraphs, links — giving agents 80% fewer tokens to process.</p>
+        <p class="mt-2 text-lg text-zinc-600 dark:text-zinc-400">HTML includes navigation, ads, scripts, and styling your agent doesn't need. Markdown strips all of that down to headings, paragraphs, and links. About 80% fewer tokens to process.</p>
       </div>
       <div>
         <h3 class="text-lg font-semibold">Is it really free?</h3>
@@ -135,11 +139,11 @@ No auth required. Returns text/markdown or JSON with metadata.</pre>
       </div>
       <div>
         <h3 class="text-lg font-semibold">How do you handle JavaScript-heavy pages?</h3>
-        <p class="mt-2 text-lg text-zinc-600 dark:text-zinc-400">Pages that require JavaScript to render fall back to a headless browser (Tier 3), which runs the page fully before converting. This handles React, Vue, Angular, and any SPA.</p>
+        <p class="mt-2 text-lg text-zinc-600 dark:text-zinc-400">Pages that require JavaScript fall back to a headless browser that runs the page fully before converting. This handles React, Vue, Angular, and any SPA.</p>
       </div>
       <div>
         <h3 class="text-lg font-semibold">Can I call this from the browser?</h3>
-        <p class="mt-2 text-lg text-zinc-600 dark:text-zinc-400">Yes. All endpoints include <code class="font-mono text-xs bg-zinc-100 dark:bg-zinc-900 px-1.5 py-0.5">Access-Control-Allow-Origin: *</code>, so you can call directly from browser JavaScript with no proxy.</p>
+        <p class="mt-2 text-lg text-zinc-600 dark:text-zinc-400">Yes. All endpoints include <code class="font-mono text-xs bg-zinc-100 dark:bg-zinc-900 px-1.5 py-0.5">Access-Control-Allow-Origin: *</code> so you can call directly from browser JavaScript with no proxy.</p>
       </div>
       <div>
         <h3 class="text-lg font-semibold">What about login-protected pages?</h3>
@@ -147,20 +151,13 @@ No auth required. Returns text/markdown or JSON with metadata.</pre>
       </div>
       <div>
         <h3 class="text-lg font-semibold">What are the limits?</h3>
-        <p class="mt-2 text-lg text-zinc-600 dark:text-zinc-400">Responses are capped at ~1MB of Markdown. Requests time out after 30 seconds. The browser tier adds 2–5 seconds of latency for JS-heavy pages.</p>
+        <p class="mt-2 text-lg text-zinc-600 dark:text-zinc-400">Responses are capped at 5 MB. Requests time out after 10 seconds (30 for browser rendering). No rate limit for reasonable use.</p>
       </div>
     </div>
   </section>
 </div>
 
 </main>
-
-<footer class="py-10 text-center text-sm text-zinc-400">
-  <span>© 2026 markdown.go-mizu</span>
-  <span class="mx-2 opacity-40">·</span><a href="https://github.com/go-mizu/mizu" class="hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors no-underline">GitHub</a>
-  <span class="mx-2 opacity-40">·</span><a href="/docs" class="hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors no-underline">Docs</a>
-  <span class="mx-2 opacity-40">·</span><a href="/llms.txt" class="hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors no-underline">llms.txt</a>
-</footer>
 
 <script>
 var AGENT_INSTRUCTIONS = document.getElementById('agent-instructions').textContent;

@@ -1,25 +1,25 @@
-# URL → Markdown
+# URL to Markdown
 
-Free, instant URL-to-Markdown conversion for AI agents and LLM pipelines. No API key, no account.
+Turn any URL into clean Markdown with a single request. No API key, no account, no setup.
 
 ## Overview
 
-Convert any HTTP/HTTPS URL to clean, structured Markdown with a single request.
+Pass any public URL and get back structured Markdown your agent can actually use.
 
-- Works with any HTTP/HTTPS URL
-- Three-tier pipeline: native negotiation → Workers AI → Browser rendering
-- Edge-cached for 1 hour with stale-while-revalidate
-- CORS-enabled — fetch from any origin, no proxy needed
+- Works with any HTTP or HTTPS URL
+- Three-tier pipeline: native negotiation, AI extraction, browser rendering
+- Results cached for 1 hour
+- CORS open on all endpoints, call from anywhere
 
 ## Quick start
 
-Fetch as Markdown:
+Get Markdown from a URL:
 
 ```bash
 curl https://markdown.go-mizu.workers.dev/https://example.com
 ```
 
-Use the JSON API:
+Get JSON with metadata:
 
 ```bash
 curl -X POST https://markdown.go-mizu.workers.dev/convert \
@@ -44,7 +44,7 @@ md = httpx.get('https://markdown.go-mizu.workers.dev/' + url).text
 
 ## GET /{url}
 
-Convert a URL to Markdown. Append any `http://` or `https://` URL to the worker base URL. Query strings are preserved.
+Append any URL to the base endpoint. Returns `text/markdown`. Query strings are preserved.
 
 ```bash
 curl https://markdown.go-mizu.workers.dev/https://example.com?q=hello
@@ -52,7 +52,7 @@ curl https://markdown.go-mizu.workers.dev/https://example.com?q=hello
 
 ## POST /convert
 
-Convert a URL and receive a structured JSON response.
+Returns a JSON object with the Markdown plus metadata.
 
 Request body:
 
@@ -78,9 +78,9 @@ Response:
 
 Every URL goes through up to three tiers, falling back automatically:
 
-- **Tier 1 — Native:** Requests with `Accept: text/markdown`. Sites that support this return structured Markdown directly.
-- **Tier 2 — Workers AI:** Fetches HTML and converts via Cloudflare Workers AI `toMarkdown()`.
-- **Tier 3 — Browser:** For JS-heavy SPAs. Renders in a headless browser via Puppeteer, then passes to Workers AI.
+- **Tier 1 — Native:** Requests `Accept: text/markdown`. Sites that support this return Markdown directly.
+- **Tier 2 — AI:** Fetches HTML and converts via an AI model. Fast, structure-aware extraction.
+- **Tier 3 — Browser:** For JS-heavy SPAs. Renders in a headless browser, then converts.
 
 ## Response headers
 
@@ -111,10 +111,9 @@ The `GET /{url}` endpoint returns plain text: `Error: description`
 
 ## CORS
 
-All endpoints return `Access-Control-Allow-Origin: *`. You can call the API directly from browser JavaScript with no proxy needed.
+All endpoints return `Access-Control-Allow-Origin: *`. Call directly from browser JavaScript with no proxy.
 
 ```javascript
-// Works in browser — no CORS errors
 const md = await fetch(
   'https://markdown.go-mizu.workers.dev/' + url
 ).then(r => r.text());
@@ -125,4 +124,4 @@ const md = await fetch(
 - Max response body: **5 MB** per URL
 - Fetch timeout: **10 seconds** (30 seconds for browser rendering)
 - Protocols: **http://** and **https://** only
-- Rate limits: Cloudflare Workers free tier (100,000 requests/day)
+- No hard rate limit for reasonable use
