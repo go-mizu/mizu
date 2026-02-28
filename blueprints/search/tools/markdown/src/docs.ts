@@ -101,7 +101,6 @@ export function renderDocs(contentHtml: string): string {
       btn.textContent = 'copied!';
       setTimeout(function() { btn.textContent = 'copy'; }, 2000);
     };
-    pre.style.position = 'relative';
     pre.appendChild(btn);
   });
 
@@ -112,7 +111,7 @@ export function renderDocs(contentHtml: string): string {
   window.addEventListener('scroll', function() {
     var pos = window.scrollY + 80;
     var active = null;
-    sections.forEach(function(s) { if (s.offsetTop <= pos) active = s; });
+    sections.forEach(function(s) { if (s.getBoundingClientRect().top + window.scrollY <= pos) active = s; });
     links.forEach(function(l) {
       l.className = (active && l.getAttribute('href') === '#' + active.id) ? 'on' : '';
     });

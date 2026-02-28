@@ -102,8 +102,7 @@ app.options('/*', (c) => {
 // Docs page
 app.get('/docs', (c) => {
   if (!cachedDocsHtml) {
-    const rendered = marked.parse(docsMarkdown);
-    cachedDocsHtml = typeof rendered === 'string' ? rendered : '';
+    cachedDocsHtml = marked.parse(docsMarkdown, { async: false });
   }
   return c.html(renderDocs(cachedDocsHtml));
 });
