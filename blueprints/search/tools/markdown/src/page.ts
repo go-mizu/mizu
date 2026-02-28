@@ -7,6 +7,7 @@ export function renderPage(): string {
   <title>URL → Markdown · go-mizu</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     .prose h1 { font-size: 1.5rem; font-weight: 700; margin: 1rem 0 0.5rem; color: #111827; }
@@ -280,7 +281,7 @@ function showResult(data) {
   }
 
   document.getElementById('md-content').textContent = currentMarkdown;
-  document.getElementById('preview-content').innerHTML = marked.parse(currentMarkdown);
+  document.getElementById('preview-content').innerHTML = DOMPurify.sanitize(marked.parse(currentMarkdown));
 
   document.getElementById('result-card').classList.remove('hidden');
   switchTab('md');
