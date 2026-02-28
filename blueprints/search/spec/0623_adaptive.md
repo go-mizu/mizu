@@ -379,10 +379,13 @@ Useful for operators to verify configuration before a long crawl.
 
 ## Status
 
-- [ ] `resultdb.go`: adaptive `memory_limit` + `checkpoint_threshold`; `AutoShardCount`
-- [ ] `autoconfig.go`: remove 10K worker cap; add `AutoBinSegMB`, `AutoDuckMemMB`
-- [ ] `hn.go`: wire new flags; pass 2 workers = pass 1 workers; enhanced Hardware Profile
-- [ ] `cc.go`: auto-configure workers; add pass 2
+- [x] `resultdb.go`: adaptive `memory_limit` + `checkpoint_threshold`; `duckMemPerShardMB` param
+- [x] `autoconfig.go`: remove 10K worker cap; add `AutoShardCount`, `AutoDuckMemPerShard`, `AutoBinSegMB`, `AutoBinChanCap`
+- [x] `hn.go`: wire new flags; pass 2 workers = pass 1 workers; enhanced Hardware Profile; `--auto-config` dry-run
+- [x] `cc.go`: auto-configure workers (default -1=auto); add pass 2; wire `--db-mem-mb`, `--db-shards`; adaptive shard count + DuckDB mem
+- [x] `swarm_drone.go`: updated `NewResultDB` call with `duckMemPerShardMB=0`
 - [ ] Run `bench-chunk` on server2 to validate no regression
 - [ ] Verify server1 DuckDB RSS drops from 2 GB to ~880 MB
 - [ ] Verify CC recrawl pass 2 rescues domain-killed URLs
+
+**Implementation commit:** `bd8fc424`
