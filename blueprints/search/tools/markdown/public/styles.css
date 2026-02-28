@@ -21,6 +21,7 @@ a{color:inherit;text-decoration:none}
 .text-xl{font-size:1.25rem;line-height:1.75rem}
 .text-2xl{font-size:1.5rem;line-height:2rem}
 .text-4xl{font-size:2.25rem;line-height:2.5rem}
+.text-5xl{font-size:3rem;line-height:1}
 
 /* Font sizes — custom */
 .text-hero{font-size:clamp(44px,6vw,72px)}
@@ -107,12 +108,15 @@ a{color:inherit;text-decoration:none}
 .gap-14{gap:3.5rem}
 
 /* Space-y */
+.space-y-5>*+*{margin-top:1.25rem}
 .space-y-9>*+*{margin-top:2.25rem}
 
 /* Sizing */
 .w-full{width:100%}
 .w-5{width:1.25rem}
 .h-5{height:1.25rem}
+.w-7{width:1.75rem}
+.h-7{height:1.75rem}
 .w-11{width:2.75rem}
 .h-11{height:2.75rem}
 .min-w-0{min-width:0}
@@ -227,6 +231,7 @@ a{color:inherit;text-decoration:none}
 .bg-zinc-950{background-color:#09090b}
 
 .border-zinc-200{border-color:#e4e4e7}
+.border-zinc-300{border-color:#d4d4d8}
 .border-zinc-700{border-color:#3f3f46}
 .border-zinc-800{border-color:#27272a}
 .border-zinc-900{border-color:#18181b}
@@ -237,6 +242,7 @@ a{color:inherit;text-decoration:none}
 
 /* Hover — light */
 .hover\:text-zinc-900:hover{color:#18181b}
+.hover\:bg-zinc-50:hover{background-color:#fafafa}
 .hover\:bg-zinc-200:hover{background-color:#e4e4e7}
 .hover\:opacity-85:hover{opacity:.85}
 .hover\:opacity-90:hover{opacity:.9}
@@ -276,6 +282,7 @@ a{color:inherit;text-decoration:none}
 
 .dark .dark\:hover\:text-zinc-100:hover{color:#f4f4f5}
 .dark .dark\:hover\:bg-zinc-800:hover{background-color:#27272a}
+.dark .dark\:hover\:bg-zinc-900:hover{background-color:#18181b}
 .dark .dark\:hover\:decoration-zinc-100:hover{text-decoration-color:#f4f4f5}
 .dark .dark\:focus\:border-zinc-100:focus{border-color:#f4f4f5}
 .dark .dark\:placeholder\:text-zinc-600::placeholder{color:#52525b}

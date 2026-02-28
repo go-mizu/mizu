@@ -30,7 +30,7 @@
 #prev-out th,#prev-out td{padding:.5rem .75rem;text-align:left;color:#71717a}
 #prev-out th{background:#f4f4f5;font-weight:600;color:#18181b}
 #prev-out hr{border:none;margin:1.5rem 0}
-#prev-out img{max-width:100%;height:auto}
+#prev-out img{max-width:100%;height:auto;margin:1rem 0}
 .dark #prev-out h1,.dark #prev-out h2,.dark #prev-out h3,.dark #prev-out h4,.dark #prev-out h5,.dark #prev-out h6{color:#f4f4f5}
 .dark #prev-out p,.dark #prev-out li{color:#a1a1aa}
 .dark #prev-out code{background:#18181b;color:#d4d4d8}
@@ -39,33 +39,78 @@
 .dark #prev-out a{color:#f4f4f5;text-decoration-color:#3f3f46}
 .dark #prev-out a:hover{text-decoration-color:#f4f4f5}
 .dark #prev-out blockquote{color:#52525b}
+
 /* Tabs */
 #tab-md,#tab-pv{border:none;border-bottom:2px solid transparent;font-family:inherit;font-size:.875rem;padding:.625rem 1rem;cursor:pointer;background:transparent;transition:color .15s,border-color .15s;color:#a1a1aa;outline:none}
 #tab-md[data-active],#tab-pv[data-active]{border-bottom-color:#18181b;color:#18181b}
 .dark #tab-md[data-active],.dark #tab-pv[data-active]{border-bottom-color:#f4f4f5;color:#f4f4f5}
+
+/* Light convert button */
+.btn-convert{font-family:'Geist',-apple-system,sans-serif;font-size:.875rem;font-weight:500;padding:.625rem 1.25rem;border:1px solid #e4e4e7;border-left:0;background:transparent;color:#3f3f46;white-space:nowrap;cursor:pointer;transition:background .15s,border-color .15s;flex-shrink:0}
+.btn-convert:hover{background:#fafafa;border-color:#d4d4d8}
+.dark .btn-convert{border-color:#3f3f46;color:#d4d4d8}
+.dark .btn-convert:hover{background:#18181b;border-color:#52525b}
+.btn-convert:disabled{opacity:.5;cursor:default}
+
+/* Action buttons (copy/save) */
+.action-btn{font-family:'Geist',-apple-system,sans-serif;font-size:.8125rem;padding:.375rem .75rem;background:transparent;border:1px solid #e4e4e7;color:#71717a;cursor:pointer;transition:background .15s,border-color .15s,color .15s;display:inline-flex;align-items:center;gap:.375rem;flex-shrink:0}
+.action-btn:hover{background:#fafafa;border-color:#d4d4d8;color:#18181b}
+.dark .action-btn{border-color:#27272a;color:#71717a}
+.dark .action-btn:hover{background:#18181b;border-color:#3f3f46;color:#f4f4f5}
+
+/* Token savings badge */
+.tok-badge{font-family:'Geist Mono',monospace;font-size:11px;padding:2px 8px;background:#f4f4f5;color:#52525b;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.dark .tok-badge{background:#18181b;color:#71717a}
+.tok-savings{color:#16a34a;font-size:10px}
+.dark .tok-savings{color:#4ade80}
+
+/* Stat pills */
+.stat-pill{font-family:'Geist Mono',monospace;font-size:11px;padding:2px 8px;background:#f4f4f5;color:#71717a;white-space:nowrap}
+.dark .stat-pill{background:#18181b;color:#71717a}
+
+/* Responsive header */
+#prev-header{display:flex;align-items:center;gap:12px;padding:10px 32px;position:sticky;top:0;z-index:50;background:#fff;transition:background .2s}
+.dark #prev-header{background:#09090b}
+#prev-form{flex:1;min-width:0;display:flex;max-width:640px}
+.prev-nav{display:flex;align-items:center;gap:4px;flex-shrink:0;margin-left:auto}
+@media(max-width:700px){
+  #prev-header{flex-wrap:wrap;padding:10px 16px;gap:8px}
+  #prev-form{order:3;width:100%;max-width:none;flex:none}
+  .prev-nav-links{display:none}
+}
+@media(max-width:640px){
+  .result-bar{padding-left:16px;padding-right:16px}
+  .panel-inner{padding:24px 16px}
+}
   </style>
 </head>
 <body class="font-sans bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 transition-colors duration-200">
 
 <!-- Top bar — sticky -->
-<header class="sticky top-0 z-50 bg-white dark:bg-zinc-950 px-8 py-3.5 flex items-center gap-5 transition-colors duration-200">
-  <a href="/" class="flex items-center gap-2.5 text-zinc-900 dark:text-zinc-100 text-logo font-medium tracking-tight no-underline flex-shrink-0">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+<header id="prev-header">
+  <a href="/" class="flex items-center flex-shrink-0 text-zinc-900 dark:text-zinc-100 no-underline">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <rect x="3" y="3" width="18" height="18" rx="2"/>
       <path d="M8 16V8.5a.5.5 0 0 1 .9-.3l2.7 3.6a.5.5 0 0 0 .8 0l2.7-3.6a.5.5 0 0 1 .9.3V16"/>
     </svg>
-    markdown.go-mizu
   </a>
-  <form class="flex flex-1" style="max-width:520px" id="form" onsubmit="handleSubmit(event)">
+  <form id="prev-form" onsubmit="handleSubmit(event)">
     <input id="url-in" type="url" class="flex-1 font-mono text-sm px-3.5 py-2.5 border border-zinc-200 dark:border-zinc-800 border-r-0 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 outline-none focus:border-zinc-900 dark:focus:border-zinc-100 min-w-0 transition-colors placeholder:text-zinc-400 dark:placeholder:text-zinc-600" placeholder="https://example.com" autocomplete="off" spellcheck="false">
-    <button type="submit" id="sub-btn" class="font-sans text-sm font-medium px-5 py-2.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 whitespace-nowrap hover:opacity-85 disabled:opacity-50 disabled:cursor-default transition-opacity cursor-pointer border-none">
+    <button type="submit" id="sub-btn" class="btn-convert">
       <span id="btn-t">Convert</span>
     </button>
   </form>
-  <button onclick="toggleTheme()" title="Toggle dark mode" class="text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 p-1.5 transition-colors ml-auto cursor-pointer bg-transparent border-none flex items-center flex-shrink-0">
-    <svg class="dark:hidden" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
-    <svg class="hidden dark:block" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
-  </button>
+  <nav class="prev-nav">
+    <div class="prev-nav-links flex items-center">
+      <a href="/docs" class="text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-3 py-1.5 transition-colors no-underline">Docs</a>
+      <a href="https://github.com/go-mizu/mizu" class="text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-3 py-1.5 transition-colors no-underline">GitHub</a>
+      <a href="/llms.txt" class="text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-3 py-1.5 transition-colors no-underline">llms.txt</a>
+    </div>
+    <button onclick="toggleTheme()" title="Toggle dark mode" class="text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 p-1.5 transition-colors cursor-pointer bg-transparent border-none flex items-center">
+      <svg class="dark:hidden" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
+      <svg class="hidden dark:block" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+    </button>
+  </nav>
 </header>
 
 <!-- Empty state -->
@@ -97,35 +142,43 @@
 
 <!-- Result state -->
 <div id="result-state" style="display:none">
-  <!-- Meta bar -->
-  <div class="w-full px-8 py-2.5 bg-white dark:bg-zinc-950">
-    <div class="max-w-page mx-auto flex items-center gap-2.5">
-      <span id="r-title" class="flex-1 text-sm font-medium truncate text-zinc-900 dark:text-zinc-100"></span>
-      <span id="r-method" class="font-mono text-2xs px-1.5 py-0.5 bg-zinc-100 dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 whitespace-nowrap"></span>
-      <span id="r-dur" class="font-mono text-2xs px-1.5 py-0.5 bg-zinc-100 dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 whitespace-nowrap"></span>
-      <span id="r-tok" style="display:none" class="font-mono text-2xs px-1.5 py-0.5 bg-zinc-100 dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 whitespace-nowrap"></span>
-      <a id="r-raw" href="#" target="_blank" rel="noopener" class="text-sm text-zinc-400 whitespace-nowrap underline underline-offset-2 decoration-zinc-300 dark:decoration-zinc-700 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors no-underline" style="text-decoration:underline">raw ↗</a>
+  <!-- Stats bar -->
+  <div class="result-bar w-full px-8 py-2 bg-zinc-50 dark:bg-zinc-900 border-b border-zinc-100 dark:border-zinc-800">
+    <div class="max-w-page mx-auto flex items-center gap-2 flex-wrap">
+      <span id="r-method" class="stat-pill"></span>
+      <span id="r-dur" class="stat-pill"></span>
+      <span id="r-tok" style="display:none" class="tok-badge">
+        <span id="r-tok-val"></span>
+        <span id="r-tok-savings" class="tok-savings"></span>
+      </span>
+      <a id="r-raw" href="#" target="_blank" rel="noopener" class="text-xs text-zinc-400 underline underline-offset-2 decoration-zinc-300 dark:decoration-zinc-600 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors ml-auto" style="text-decoration:underline">raw ↗</a>
     </div>
   </div>
   <!-- Tab bar -->
-  <div class="w-full px-8 bg-white dark:bg-zinc-950">
+  <div class="result-bar w-full px-8 bg-white dark:bg-zinc-950 border-b border-zinc-100 dark:border-zinc-800">
     <div class="max-w-page mx-auto flex items-center justify-between">
       <div class="flex">
         <button id="tab-md" onclick="switchTab('md')" data-active>Markdown</button>
         <button id="tab-pv" onclick="switchTab('pv')">Preview</button>
       </div>
       <div class="flex gap-2">
-        <button onclick="copyMd()" class="font-sans text-sm px-3.5 py-1.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-none cursor-pointer hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"><span id="copy-lbl">Copy</span></button>
-        <button onclick="saveMd()" class="font-sans text-sm px-3.5 py-1.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-none cursor-pointer hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors">Save .md</button>
+        <button onclick="copyMd()" class="action-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          <span id="copy-lbl">Copy</span>
+        </button>
+        <button onclick="saveMd()" class="action-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+          Save .md
+        </button>
       </div>
     </div>
   </div>
   <!-- Panels -->
   <div id="panel-md" class="px-8 py-9 bg-white dark:bg-zinc-950">
-    <div class="max-w-page mx-auto"><pre id="md-out" class="font-mono text-code-out leading-body whitespace-pre-wrap text-zinc-900 dark:text-zinc-100"></pre></div>
+    <div class="panel-inner max-w-page mx-auto"><pre id="md-out" class="font-mono text-code-out leading-body whitespace-pre-wrap text-zinc-900 dark:text-zinc-100"></pre></div>
   </div>
   <div id="panel-pv" style="display:none" class="px-8 py-9 bg-white dark:bg-zinc-950">
-    <div class="max-w-2xl mx-auto"><div id="prev-out"></div></div>
+    <div class="panel-inner max-w-page mx-auto"><div id="prev-out"></div></div>
   </div>
 </div>
 
@@ -151,6 +204,10 @@ function setLoading(v) {
   document.getElementById('btn-t').textContent = v ? 'Converting…' : 'Convert';
   document.getElementById('loading-state').style.display = v ? 'flex' : 'none';
   document.getElementById('empty-state').style.display = 'none';
+}
+
+function fmtTok(n) {
+  return n >= 10000 ? Math.round(n/1000) + 'k' : n >= 1000 ? (n/1000).toFixed(1) + 'k' : n.toString();
 }
 
 async function convertUrl(url) {
@@ -180,12 +237,16 @@ async function convertUrl(url) {
 
 function showResult(data) {
   md = (data.markdown || '').replace(/^[-*_]{3,}\s*$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
-  document.getElementById('r-title').textContent = data.title || currentUrl;
   document.getElementById('r-method').textContent = data.method || '';
   document.getElementById('r-dur').textContent = data.durationMs < 1 ? '<1ms' : data.durationMs + 'ms';
-  var tb = document.getElementById('r-tok');
-  if (data.tokens) { tb.textContent = '~' + data.tokens.toLocaleString() + ' tok'; tb.style.display = ''; }
-  else { tb.style.display = 'none'; }
+  var tokWrap = document.getElementById('r-tok');
+  if (data.tokens) {
+    var tok = data.tokens;
+    var htmlEst = Math.round(tok * 5);
+    document.getElementById('r-tok-val').textContent = '~' + fmtTok(tok) + ' tokens';
+    document.getElementById('r-tok-savings').textContent = '↓80% vs ~' + fmtTok(htmlEst) + ' HTML';
+    tokWrap.style.display = '';
+  } else { tokWrap.style.display = 'none'; }
   document.getElementById('r-raw').href = '/' + currentUrl;
   document.getElementById('md-out').textContent = md;
   var parsed = marked.parse(md);
@@ -196,12 +257,10 @@ function showResult(data) {
 }
 
 function switchTab(t) {
-  var mdPanel = document.getElementById('panel-md');
-  var pvPanel = document.getElementById('panel-pv');
   document.getElementById('tab-md')[t === 'md' ? 'setAttribute' : 'removeAttribute']('data-active', '');
   document.getElementById('tab-pv')[t === 'pv' ? 'setAttribute' : 'removeAttribute']('data-active', '');
-  mdPanel.style.display = t === 'md' ? '' : 'none';
-  pvPanel.style.display = t === 'pv' ? '' : 'none';
+  document.getElementById('panel-md').style.display = t === 'md' ? '' : 'none';
+  document.getElementById('panel-pv').style.display = t === 'pv' ? '' : 'none';
 }
 
 async function copyMd() {
@@ -220,8 +279,8 @@ function saveMd() {
   var blob = new Blob([md], {type: 'text/markdown'});
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  var title = document.getElementById('r-title').textContent || 'document';
-  a.download = title.replace(/[^\w\s-]/g,'').trim().replace(/\s+/g,'-').toLowerCase() + '.md';
+  var title = document.getElementById('r-raw').href.split('/').pop() || 'document';
+  a.download = currentUrl.replace(/https?:\/\//,'').replace(/[^\w.-]/g,'-').replace(/-+/g,'-').slice(0,60) + '.md';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(function() { URL.revokeObjectURL(a.href); }, 100);
 }
