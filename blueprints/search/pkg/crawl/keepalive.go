@@ -322,9 +322,14 @@ func processOneDomain(ctx context.Context, urls []SeedURL,
 					}
 				}
 
-				// Apply adaptive timeout
-				if t := adaptive.Timeout(cfg.Timeout); t > 0 {
-					client.Timeout = t
+				// Apply adaptive timeout (skip if disabled — pass-2 uses full timeout
+				// to avoid fast domains skewing P95 down and cutting off slow retries).
+				if !cfg.DisableAdaptiveTimeout {
+					if t := adaptive.Timeout(cfg.Timeout); t > 0 {
+						client.Timeout = t
+					} else {
+						client.Timeout = cfg.Timeout
+					}
 				} else {
 					client.Timeout = cfg.Timeout
 				}
