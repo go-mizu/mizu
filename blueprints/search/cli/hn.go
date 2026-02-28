@@ -706,7 +706,7 @@ and adaptive timeouts.`,
 	cmd.Flags().IntVar(&dnsWorkers, "dns-workers", 1000, "Concurrent DNS workers (0=skip DNS pre-resolution)")
 	cmd.Flags().IntVar(&dnsTimeoutMs, "dns-timeout", 1500, "DNS lookup timeout in milliseconds")
 
-	cmd.Flags().IntVar(&retryTimeoutMs, "retry-timeout", 5000, "Pass-2 timeout for retrying http_timeout URLs (ms); 0=disabled")
+	cmd.Flags().IntVar(&retryTimeoutMs, "retry-timeout", 15000, "Pass-2 timeout for retrying http_timeout URLs (ms); 0=disabled")
 	cmd.Flags().BoolVar(&noRetry, "no-retry", false, "Skip pass-2 retry of timeout URLs (faster; may miss slow-but-live servers)")
 	cmd.Flags().StringVar(&writerMode, "writer", "bin", "Result writer backend: bin (default, non-blocking segment→DuckDB drain), duckdb (direct), devnull (benchmark only)")
 	cmd.Flags().StringVar(&chunkMode, "chunk-mode", "stream", "Chunk mode: stream|batch|pipeline (stream: sort-then-stream, lower memory; batch: N-domain chunks)")

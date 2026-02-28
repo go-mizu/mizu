@@ -92,19 +92,20 @@ func runRecrawlJob(ctx context.Context, args recrawlJobArgs) error {
 		_ = args.BodyStoreDir
 	}
 
-	// aliveDomains is populated by v3ProgressWriter during pass 1.
-	// Every domain that returns at least one successful result is added here.
-	// LoadRetrySeeds filters the pass-2 retry list to only these domains,
-	// skipping retries on domains where every URL timed out (likely dead servers).
-	var aliveDomains sync.Map
+	// aliveCount is populated by v3ProgressWriter during pass 1.
+	// It tracks per-domain success counts (domain → *atomic.Int64).
+	// LoadRetrySeeds filters the pass-2 retry list using a ratio-based check:
+	// only retry URLs from domains where pass-1 successes >= retry-seed count for that domain.
+	// This skips dead domains (0 successes) AND barely-alive domains (high timeout rate).
+	var aliveCount sync.Map
 
 	// Inject storage constructors
 	if writerMode != "devnull" {
 		args.JobCfg.OpenResultWriter = func() (crawl.ResultWriter, error) {
 			if writerMode == "bin" {
-				return &v3ProgressWriter{inner: binWriter, ls: ls, alive: &aliveDomains}, nil
+				return &v3ProgressWriter{inner: binWriter, ls: ls, aliveCount: &aliveCount}, nil
 			}
-			return &v3ProgressWriter{inner: rdb, ls: ls, alive: &aliveDomains}, nil
+			return &v3ProgressWriter{inner: rdb, ls: ls, aliveCount: &aliveCount}, nil
 		}
 		args.JobCfg.OpenFailureWriter = func() (crawl.FailureWriter, error) {
 			fdb, err := store.OpenFailedDB(args.FailedDBPath)
@@ -118,19 +119,27 @@ func runRecrawlJob(ctx context.Context, args recrawlJobArgs) error {
 			if err != nil || len(seeds) == 0 {
 				return seeds, err
 			}
-			// Filter: only retry URLs from domains that had at least one success in pass 1.
-			// Domains with zero successes are almost certainly dead — retrying them wastes
-			// time and inflates the failure count without rescuing any URLs.
+			// Count how many retry seeds exist per domain (= pass-1 timeout count).
+			timeoutCounts := make(map[string]int64, len(seeds)/5)
+			for _, s := range seeds {
+				timeoutCounts[s.Domain]++
+			}
+			// Filter: only retry domains where pass-1 successes >= timeout count.
+			// Ratio ≥1 means the domain was at least 50% OK in pass 1 — worth retrying.
+			// Domains with 0 successes or high timeout rates are skipped entirely.
 			total := len(seeds)
 			filtered := seeds[:0]
 			for _, s := range seeds {
-				if _, ok := aliveDomains.Load(s.Domain); ok {
-					filtered = append(filtered, s)
+				if v, ok := aliveCount.Load(s.Domain); ok {
+					successes := v.(*atomic.Int64).Load()
+					if successes >= timeoutCounts[s.Domain] {
+						filtered = append(filtered, s)
+					}
 				}
 			}
 			skipped := total - len(filtered)
 			if skipped > 0 {
-				fmt.Printf("  Pass-2 filter  %s → %s retry seeds (%s dead-domain URLs skipped)\n",
+				fmt.Printf("  Pass-2 filter  %s → %s retry seeds (%s skipped: dead or low-success-rate domains)\n",
 					labelStyle.Render(formatInt64Exact(int64(total))),
 					labelStyle.Render(formatInt64Exact(int64(len(filtered)))),
 					labelStyle.Render(formatInt64Exact(int64(skipped))),
@@ -423,19 +432,20 @@ func (ls *v3LiveStats) p95Ms() int64 {
 var v3LatEdges = [8]int64{100, 250, 500, 1000, 2000, 3500, 5000, 10000}
 
 // v3ProgressWriter wraps ResultWriter and tracks live statistics.
-// When alive is non-nil, every successful result's domain is stored in the map —
-// used to filter pass-2 retry seeds to only domains that showed signs of life.
+// When aliveCount is non-nil, every successful result increments a per-domain
+// counter — used to filter pass-2 retry seeds by pass-1 success rate.
 type v3ProgressWriter struct {
-	inner crawl.ResultWriter
-	ls    *v3LiveStats
-	alive *sync.Map // optional: domain → struct{}{} for all pass-1 successes
+	inner      crawl.ResultWriter
+	ls         *v3LiveStats
+	aliveCount *sync.Map // optional: domain → *atomic.Int64 (pass-1 success count)
 }
 
 func (p *v3ProgressWriter) Add(r crawl.Result) {
 	p.inner.Add(r)
 	p.ls.recordResult(r)
-	if p.alive != nil && r.Error == "" {
-		p.alive.Store(r.Domain, struct{}{})
+	if p.aliveCount != nil && r.Error == "" {
+		v, _ := p.aliveCount.LoadOrStore(r.Domain, new(atomic.Int64))
+		v.(*atomic.Int64).Add(1)
 	}
 }
 func (p *v3ProgressWriter) Flush(ctx context.Context) error { return p.inner.Flush(ctx) }
