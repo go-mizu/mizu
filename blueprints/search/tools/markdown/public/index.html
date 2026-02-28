@@ -12,47 +12,104 @@
   <link rel="stylesheet" href="/styles.css">
   <style>
   /* Header */
-  #site-header{display:flex;align-items:center;gap:14px;padding:10px 32px;position:sticky;top:0;z-index:50;background:#fff;transition:background .2s}
-  .dark #site-header{background:#09090b}
+  #site-header{display:flex;align-items:center;gap:14px;padding:10px 32px;position:sticky;top:0;z-index:50;background:rgba(255,255,255,.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);transition:background .2s}
+  .dark #site-header{background:rgba(9,9,11,.85)}
   .header-nav{display:flex;align-items:center;gap:2px;flex-shrink:0;margin-left:auto}
-  /* Compact form */
   #header-form{flex:1;min-width:0;display:flex;max-width:420px}
   .fi{flex:1;font-family:'Geist Mono',monospace;font-size:12px;padding:5px 10px;border:1px solid #e4e4e7;border-right:0;background:transparent;color:#18181b;outline:none;min-width:0;transition:border-color .15s}
-  .fi:focus{border-color:#a1a1aa}
-  .fi::placeholder{color:#a1a1aa}
-  .dark .fi{border-color:#27272a;color:#f4f4f5}
-  .dark .fi:focus{border-color:#52525b}
-  .dark .fi::placeholder{color:#3f3f46}
+  .fi:focus{border-color:#a1a1aa}.fi::placeholder{color:#a1a1aa}
+  .dark .fi{border-color:#27272a;color:#f4f4f5}.dark .fi:focus{border-color:#52525b}.dark .fi::placeholder{color:#3f3f46}
   .fb{font-family:'Geist',-apple-system,sans-serif;font-size:12px;font-weight:500;padding:5px 12px;border:1px solid #e4e4e7;background:transparent;color:#52525b;white-space:nowrap;cursor:pointer;transition:background .15s,border-color .15s}
   .fb:hover{background:#fafafa;border-color:#d4d4d8}
-  .dark .fb{border-color:#27272a;color:#a1a1aa}
-  .dark .fb:hover{background:#18181b;border-color:#3f3f46}
+  .dark .fb{border-color:#27272a;color:#a1a1aa}.dark .fb:hover{background:#18181b;border-color:#3f3f46}
   @media(max-width:680px){
     #site-header{flex-wrap:wrap;padding:10px 16px;gap:8px}
     #header-form{order:3;width:100%;max-width:none;flex:none}
     .hn{display:none}
   }
-  /* Terminal block */
-  .term{background:#09090b;padding:20px 24px;font-family:'Geist Mono',monospace;font-size:13px;line-height:2;overflow-x:auto}
-  .dark .term{background:#18181b}
+
+  /* Hero background */
+  .hero-wrap{position:relative;overflow:hidden}
+  .hero-dots{position:absolute;inset:0;background-image:radial-gradient(#d4d4d8 1px,transparent 1px);background-size:24px 24px;-webkit-mask-image:radial-gradient(ellipse 60% 60% at 50% 40%,black 20%,transparent 70%);mask-image:radial-gradient(ellipse 60% 60% at 50% 40%,black 20%,transparent 70%);opacity:.5}
+  .dark .hero-dots{background-image:radial-gradient(#27272a 1px,transparent 1px);opacity:.6}
+  .hero-glow{position:absolute;top:-120px;left:50%;transform:translateX(-50%);width:700px;height:500px;background:radial-gradient(ellipse,rgba(161,161,170,.1) 0%,transparent 70%);pointer-events:none}
+  .dark .hero-glow{background:radial-gradient(ellipse,rgba(244,244,245,.03) 0%,transparent 70%)}
+
+  /* Hero anim */
+  @keyframes heroIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+  .ha{animation:heroIn .8s ease forwards}.ha1{opacity:0;animation-delay:.1s}.ha2{opacity:0;animation-delay:.25s}.ha3{opacity:0;animation-delay:.4s}.ha4{opacity:0;animation-delay:.55s}
+
+  /* Scroll reveal */
+  .rv{opacity:0;transform:translateY(20px);transition:opacity .7s ease,transform .7s ease}
+  .rv.vis{opacity:1;transform:none}
+  .rv.d1{transition-delay:.1s}.rv.d2{transition-delay:.15s}.rv.d3{transition-delay:.2s}
+
+  /* Gradient divider */
+  .gdiv{height:1px;background:linear-gradient(90deg,transparent,#e4e4e7 25%,#e4e4e7 75%,transparent)}
+  .dark .gdiv{background:linear-gradient(90deg,transparent,#1f1f23 25%,#1f1f23 75%,transparent)}
+
+  /* Stats */
+  .stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:0;text-align:center}
+  .stat-num{font-family:'Geist Mono',monospace;font-size:clamp(36px,5vw,56px);font-weight:700;letter-spacing:-.04em;line-height:1}
+  .stat-lbl{font-size:14px;color:#71717a;margin-top:10px;line-height:1.5}
+
+  /* Feature cards (1px border grid trick) */
+  .feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:#e4e4e7}
+  .dark .feat-grid{background:#1f1f23}
+  .feat-card{background:#fff;padding:36px 32px;transition:background .2s}
+  .feat-card:hover{background:#fafafa}
+  .dark .feat-card{background:#09090b}
+  .dark .feat-card:hover{background:#111113}
+  .feat-card .fc-icon{color:#a1a1aa;margin-bottom:20px}
+  .feat-card h3{font-size:16px;font-weight:600;margin-bottom:8px}
+  .feat-card p{font-size:14px;color:#71717a;line-height:1.65}
+  .dark .feat-card p{color:#52525b}
+
+  /* Use case cards */
+  .use-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+  .use-card{padding:28px;border:1px solid #e4e4e7;transition:border-color .2s,background .2s}
+  .use-card:hover{border-color:#d4d4d8;background:#fafafa}
+  .dark .use-card{border-color:#1f1f23}
+  .dark .use-card:hover{border-color:#27272a;background:#111113}
+  .use-card .uc-icon{color:#a1a1aa;margin-bottom:16px}
+  .use-card h3{font-size:15px;font-weight:600;margin-bottom:6px}
+  .use-card p{font-size:13px;color:#71717a;line-height:1.6}
+  .dark .use-card p{color:#52525b}
+
+  /* Terminal */
+  .term{background:#09090b;padding:24px 28px;font-family:'Geist Mono',monospace;font-size:13px;line-height:2;overflow-x:auto;border:1px solid #1f1f23}
+  .dark .term{background:#111113;border-color:#1f1f23}
   .tc{color:#52525b}.tv{color:#f4f4f5;font-weight:500}.td{color:#71717a}.ts{color:#3f3f46}
-  /* Pipeline */
-  .pipe{position:relative;padding-left:28px;padding-bottom:28px}
-  .pipe:last-child{padding-bottom:0}
-  .pipe::before{content:'';position:absolute;left:4px;top:5px;width:10px;height:10px;border-radius:50%;background:#18181b}
-  .dark .pipe::before{background:#d4d4d8}
-  .pipe::after{content:'';position:absolute;left:8.5px;top:20px;bottom:0;width:1px;background:#e4e4e7}
-  .dark .pipe::after{background:#27272a}
-  .pipe:last-child::after{display:none}
-  .pipe h3{font-size:14px;font-weight:600;margin-bottom:4px}
-  .pipe p{font-size:13px;color:#71717a;line-height:1.6}
-  .dark .pipe p{color:#52525b}
-  /* CTA */
-  .cta{display:inline-flex;align-items:center;gap:8px;font-family:'Geist',-apple-system,sans-serif;font-size:13px;font-weight:500;padding:8px 16px;background:#18181b;color:#fff;border:none;cursor:pointer;transition:opacity .15s}
+
+  /* CTA buttons */
+  .cta{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:500;padding:10px 20px;background:#18181b;color:#fff;border:none;cursor:pointer;transition:opacity .15s}
   .cta:hover{opacity:.85}
   .dark .cta{background:#f4f4f5;color:#18181b}
-  /* Hero */
-  @media(max-width:480px){.hero-h1{font-size:1.75rem;line-height:1.2}}
+  .cta-ghost{display:inline-flex;align-items:center;gap:6px;font-size:14px;font-weight:500;padding:10px 20px;background:transparent;color:#52525b;border:1px solid #e4e4e7;cursor:pointer;transition:background .15s,border-color .15s,color .15s;text-decoration:none}
+  .cta-ghost:hover{background:#fafafa;border-color:#d4d4d8;color:#18181b}
+  .dark .cta-ghost{border-color:#27272a;color:#a1a1aa}
+  .dark .cta-ghost:hover{background:#18181b;border-color:#3f3f46;color:#f4f4f5}
+
+  /* Section label */
+  .slbl{font-family:'Geist Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#a1a1aa;margin-bottom:16px}
+  .dark .slbl{color:#52525b}
+
+  /* FAQ grid */
+  .faq-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:40px 56px}
+  .faq-grid h3{font-size:15px;font-weight:600;margin-bottom:8px}
+  .faq-grid p{font-size:14px;color:#71717a;line-height:1.7}
+  .dark .faq-grid p{color:#52525b}
+
+  /* Responsive */
+  @media(max-width:768px){
+    .feat-grid{grid-template-columns:1fr}
+    .use-grid{grid-template-columns:1fr}
+    .stat-grid{grid-template-columns:1fr;gap:40px;text-align:left;padding-left:8px}
+    .faq-grid{grid-template-columns:1fr;gap:32px}
+  }
+  @media(max-width:480px){
+    .hero-h1{font-size:2rem!important;line-height:1.15!important}
+  }
   </style>
 </head>
 <body class="font-sans bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 transition-colors duration-200">
@@ -82,16 +139,29 @@
 </header>
 
 <main>
-<div class="max-w-page mx-auto px-8">
 
-  <!-- Hero -->
-  <section style="padding:80px 0 56px">
-    <p class="font-mono text-2xs uppercase tracking-widest text-zinc-400 dark:text-zinc-500" style="margin-bottom:20px">url to markdown</p>
-    <h1 class="hero-h1 text-4xl font-bold tracking-tight" style="margin-bottom:20px;max-width:560px;line-height:1.2">Convert any URL to clean, structured Markdown.</h1>
-    <p class="text-zinc-500 dark:text-zinc-400" style="font-size:15px;margin-bottom:40px;max-width:420px;line-height:1.7">Built for AI agents and LLM pipelines. One request, structured output.</p>
+<!-- ─── Hero ─── -->
+<div class="hero-wrap">
+  <div class="hero-dots"></div>
+  <div class="hero-glow"></div>
+  <div class="max-w-page mx-auto px-8" style="position:relative;padding-top:100px;padding-bottom:100px;text-align:center">
+    <p class="slbl ha ha1">url to markdown</p>
+    <h1 class="hero-h1 ha ha2 font-bold tracking-tight" style="font-size:clamp(2.25rem,5vw,3.75rem);line-height:1.1;margin:0 auto 24px;max-width:720px">Convert any URL to clean, structured Markdown.</h1>
+    <p class="ha ha3" style="font-size:17px;color:#71717a;max-width:520px;margin:0 auto 44px;line-height:1.7">Built for AI agents and LLM pipelines. Pass any public URL, get structured text your models can use directly.</p>
+    <div class="ha ha4" style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+      <button id="agent-copy-btn" onclick="copyAgentInstructions()" class="cta">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+        <span id="agent-cta-text">Copy agent setup</span>
+      </button>
+      <a href="/docs" class="cta-ghost">
+        Read docs
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+      </a>
+    </div>
+  </div>
+</div>
 
-    <!-- Hidden agent instructions for JS copy -->
-    <pre id="agent-instructions" style="display:none">Use https://markdown.go-mizu.workers.dev to read any URL as clean Markdown.
+<pre id="agent-instructions" style="display:none">Use https://markdown.go-mizu.workers.dev to read any URL as clean Markdown.
 
 GET  https://markdown.go-mizu.workers.dev/{url}
 POST https://markdown.go-mizu.workers.dev/convert
@@ -99,89 +169,135 @@ POST https://markdown.go-mizu.workers.dev/convert
 
 Returns text/markdown or JSON with metadata. Open access.</pre>
 
-    <button id="agent-copy-btn" onclick="copyAgentInstructions()" class="cta">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-      <span id="agent-cta-text">Copy agent instructions</span>
-    </button>
-  </section>
-
-  <!-- Stats (terminal style) -->
-  <section style="padding:40px 0 56px">
-    <div class="term" style="max-width:480px">
-      <span class="tc">$</span> <span class="tv">stats</span><br>
-      <span class="td">&nbsp;&nbsp;tokens</span>&nbsp;&nbsp;&nbsp;<span class="ts">&middot;&middot;&middot;</span>&nbsp;&nbsp;<span class="tv">80%</span> <span class="td">fewer vs raw HTML</span><br>
-      <span class="td">&nbsp;&nbsp;speed</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="ts">&middot;&middot;&middot;</span>&nbsp;&nbsp;<span class="tv">&lt;1s</span> <span class="td">cached globally</span><br>
-      <span class="td">&nbsp;&nbsp;price</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="ts">&middot;&middot;&middot;</span>&nbsp;&nbsp;<span class="tv">free</span> <span class="td">open access</span>
+<!-- ─── Stats ─── -->
+<div class="max-w-page mx-auto px-8">
+  <div class="gdiv"></div>
+  <div class="stat-grid rv" style="padding:72px 0">
+    <div>
+      <div class="stat-num">80%</div>
+      <div class="stat-lbl">fewer tokens vs raw HTML</div>
     </div>
-  </section>
-
-  <!-- Pipeline -->
-  <section style="padding:40px 0 56px">
-    <h2 style="font-size:15px;font-weight:600;margin-bottom:6px">Pipeline</h2>
-    <p style="font-size:13px;color:#71717a;margin-bottom:28px">Three conversion tiers. Automatic fallback.</p>
-    <div style="max-width:480px">
-      <div class="pipe">
-        <h3 class="text-zinc-900 dark:text-zinc-100">Native</h3>
-        <p>Content negotiation via <code class="font-mono" style="font-size:12px;background:#f4f4f5;padding:1px 5px">Accept: text/markdown</code>. Zero overhead.</p>
-      </div>
-      <div class="pipe">
-        <h3 class="text-zinc-900 dark:text-zinc-100">AI extraction</h3>
-        <p>HTML fetched and converted by AI model. Structure-aware, pulls what matters.</p>
-      </div>
-      <div class="pipe">
-        <h3 class="text-zinc-900 dark:text-zinc-100">Browser render</h3>
-        <p>Headless browser for JS-heavy pages. React, Vue, Angular, any SPA.</p>
-      </div>
+    <div>
+      <div class="stat-num">&lt;1s</div>
+      <div class="stat-lbl">response time, cached globally</div>
     </div>
-  </section>
-
-  <!-- Quick start (terminal style) -->
-  <section style="padding:40px 0 56px">
-    <h2 style="font-size:15px;font-weight:600;margin-bottom:6px">Quick start</h2>
-    <p style="font-size:13px;color:#71717a;margin-bottom:28px">Works from any language, shell, or agent.</p>
-    <div class="term" style="max-width:560px">
-      <span class="tc">#</span> <span class="td">get markdown from any URL</span><br>
-      <span class="tc">$</span> <span class="tv">curl</span> <span class="td">https://markdown.go-mizu.workers.dev/https://example.com</span><br>
-      <br>
-      <span class="tc">#</span> <span class="td">or POST for JSON with metadata</span><br>
-      <span class="tc">$</span> <span class="tv">curl</span> <span class="td">-X POST https://markdown.go-mizu.workers.dev/convert \</span><br>
-      <span class="td">&nbsp;&nbsp;&nbsp;&nbsp;-H 'Content-Type: application/json' \</span><br>
-      <span class="td">&nbsp;&nbsp;&nbsp;&nbsp;-d '{"url":"https://example.com"}'</span>
+    <div>
+      <div class="stat-num">Free</div>
+      <div class="stat-lbl">open access, use the URL directly</div>
     </div>
-  </section>
-
-  <!-- FAQ -->
-  <section style="padding:56px 0 80px">
-    <h2 style="font-size:15px;font-weight:600;margin-bottom:28px">FAQ</h2>
-    <div style="max-width:560px" class="space-y-9">
-      <div>
-        <h3 style="font-size:14px;font-weight:600;margin-bottom:6px">Why Markdown instead of HTML?</h3>
-        <p style="font-size:14px;color:#71717a;line-height:1.7">HTML includes navigation, ads, scripts, and styling your agent doesn't need. Markdown strips that to headings, paragraphs, and links. About 80% fewer tokens.</p>
-      </div>
-      <div>
-        <h3 style="font-size:14px;font-weight:600;margin-bottom:6px">Is it really free?</h3>
-        <p style="font-size:14px;color:#71717a;line-height:1.7">Yes. Open access, use the URL directly in your code or agent prompt.</p>
-      </div>
-      <div>
-        <h3 style="font-size:14px;font-weight:600;margin-bottom:6px">How are JavaScript-heavy pages handled?</h3>
-        <p style="font-size:14px;color:#71717a;line-height:1.7">Pages that require JS fall back to a headless browser that runs the page fully before converting. Handles React, Vue, Angular, and any SPA.</p>
-      </div>
-      <div>
-        <h3 style="font-size:14px;font-weight:600;margin-bottom:6px">Can I call this from the browser?</h3>
-        <p style="font-size:14px;color:#71717a;line-height:1.7">Yes. All endpoints include <code class="font-mono" style="font-size:12px;background:#f4f4f5;padding:1px 5px">Access-Control-Allow-Origin: *</code>. Call directly from browser JS.</p>
-      </div>
-      <div>
-        <h3 style="font-size:14px;font-weight:600;margin-bottom:6px">What about login-protected pages?</h3>
-        <p style="font-size:14px;color:#71717a;line-height:1.7">Only publicly available URLs are accessible. Pages behind authentication or paywalls return an error.</p>
-      </div>
-      <div>
-        <h3 style="font-size:14px;font-weight:600;margin-bottom:6px">What are the limits?</h3>
-        <p style="font-size:14px;color:#71717a;line-height:1.7">5 MB max response. 10s timeout (30s for browser rendering). Reasonable use is not rate-limited.</p>
-      </div>
-    </div>
-  </section>
-
+  </div>
+  <div class="gdiv"></div>
 </div>
+
+<!-- ─── Pipeline ─── -->
+<div class="max-w-page mx-auto px-8" style="padding:80px 0">
+  <p class="slbl rv">Pipeline</p>
+  <h2 class="rv d1 font-semibold tracking-tight" style="font-size:28px;margin-bottom:12px">Three tiers. Automatic fallback.</h2>
+  <p class="rv d2" style="font-size:16px;color:#71717a;margin-bottom:48px;max-width:560px;line-height:1.7">Every URL goes through up to three conversion tiers. Each falls back to the next automatically until clean Markdown is produced.</p>
+  <div class="feat-grid rv d3">
+    <div class="feat-card">
+      <div class="fc-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      </div>
+      <h3 class="text-zinc-900 dark:text-zinc-100">Native</h3>
+      <p>Requests content via <code style="font-family:'Geist Mono',monospace;font-size:12px;background:#f4f4f5;padding:1px 5px">Accept: text/markdown</code> header. Sites that support it return Markdown directly with zero conversion overhead.</p>
+    </div>
+    <div class="feat-card">
+      <div class="fc-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg>
+      </div>
+      <h3 class="text-zinc-900 dark:text-zinc-100">AI extraction</h3>
+      <p>HTML is fetched and converted by an AI model. Structure-aware extraction that pulls headings, text, and links while dropping navigation, ads, and scripts.</p>
+    </div>
+    <div class="feat-card">
+      <div class="fc-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+      </div>
+      <h3 class="text-zinc-900 dark:text-zinc-100">Browser render</h3>
+      <p>Full headless browser rendering for JavaScript-heavy pages. React, Vue, Angular, any SPA. Content is fully loaded before conversion starts.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Quick start ─── -->
+<div class="max-w-page mx-auto px-8" style="padding-bottom:80px">
+  <p class="slbl rv">Quick start</p>
+  <h2 class="rv d1 font-semibold tracking-tight" style="font-size:28px;margin-bottom:12px">Works from any language or shell.</h2>
+  <p class="rv d2" style="font-size:16px;color:#71717a;margin-bottom:40px;max-width:560px;line-height:1.7">Append any URL to the endpoint. Or POST for JSON with metadata including token count, conversion method, and page title.</p>
+  <div class="term rv d3">
+    <span class="tc">#</span> <span class="td">get markdown from any URL</span><br>
+    <span class="tc">$</span> <span class="tv">curl</span> <span class="td">https://markdown.go-mizu.workers.dev/https://example.com</span><br>
+    <br>
+    <span class="tc">#</span> <span class="td">or POST for JSON with metadata</span><br>
+    <span class="tc">$</span> <span class="tv">curl</span> <span class="td">-X POST https://markdown.go-mizu.workers.dev/convert \</span><br>
+    <span class="td">&nbsp;&nbsp;&nbsp;&nbsp;-H 'Content-Type: application/json' \</span><br>
+    <span class="td">&nbsp;&nbsp;&nbsp;&nbsp;-d '{"url":"https://example.com"}'</span>
+  </div>
+</div>
+
+<!-- ─── Use cases ─── -->
+<div class="max-w-page mx-auto px-8" style="padding-bottom:80px">
+  <div class="gdiv" style="margin-bottom:80px"></div>
+  <p class="slbl rv">Use cases</p>
+  <h2 class="rv d1 font-semibold tracking-tight" style="font-size:28px;margin-bottom:48px">Built for agents. Used everywhere.</h2>
+  <div class="use-grid">
+    <div class="use-card rv">
+      <div class="uc-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+      </div>
+      <h3 class="text-zinc-900 dark:text-zinc-100">Agent browsing</h3>
+      <p>Let your AI agent read any webpage as clean structured text. Add one line to your system prompt and every URL becomes readable.</p>
+    </div>
+    <div class="use-card rv d1">
+      <div class="uc-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
+      </div>
+      <h3 class="text-zinc-900 dark:text-zinc-100">RAG pipelines</h3>
+      <p>Feed clean Markdown into vector databases and embeddings. Structured content produces better chunks and more relevant retrieval results.</p>
+    </div>
+    <div class="use-card rv d2">
+      <div class="uc-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg>
+      </div>
+      <h3 class="text-zinc-900 dark:text-zinc-100">Content monitoring</h3>
+      <p>Track and compare content changes across URLs over time. Markdown diffs are clean, meaningful, and easy to process programmatically.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ─── FAQ ─── -->
+<div class="max-w-page mx-auto px-8" style="padding-bottom:120px">
+  <div class="gdiv" style="margin-bottom:80px"></div>
+  <p class="slbl rv">FAQ</p>
+  <h2 class="rv d1 font-semibold tracking-tight" style="font-size:28px;margin-bottom:48px">Common questions</h2>
+  <div class="faq-grid rv d2">
+    <div>
+      <h3 class="text-zinc-900 dark:text-zinc-100">Why Markdown instead of HTML?</h3>
+      <p>HTML includes navigation, ads, scripts, and styling your agent doesn't need. Markdown keeps headings, paragraphs, and links. About 80% fewer tokens to process.</p>
+    </div>
+    <div>
+      <h3 class="text-zinc-900 dark:text-zinc-100">Is it really free?</h3>
+      <p>Yes. Open access. Use the URL directly in your code or agent prompt. No account, no API key.</p>
+    </div>
+    <div>
+      <h3 class="text-zinc-900 dark:text-zinc-100">How are JS-heavy pages handled?</h3>
+      <p>Pages requiring JavaScript fall back to a headless browser that fully renders the page before converting. Handles React, Vue, Angular, and any SPA.</p>
+    </div>
+    <div>
+      <h3 class="text-zinc-900 dark:text-zinc-100">Can I call from the browser?</h3>
+      <p>Yes. All endpoints return <code style="font-family:'Geist Mono',monospace;font-size:12px;background:#f4f4f5;padding:1px 5px">Access-Control-Allow-Origin: *</code>. Call directly from client-side JavaScript.</p>
+    </div>
+    <div>
+      <h3 class="text-zinc-900 dark:text-zinc-100">What about protected pages?</h3>
+      <p>Only publicly available URLs are accessible. Pages behind authentication or paywalls return an error.</p>
+    </div>
+    <div>
+      <h3 class="text-zinc-900 dark:text-zinc-100">What are the limits?</h3>
+      <p>5 MB max response. 10s timeout (30s for browser rendering). Reasonable use is not rate-limited.</p>
+    </div>
+  </div>
+</div>
+
 </main>
 
 <script>
@@ -196,7 +312,7 @@ function handleSubmit(e) {
 function copyAgentInstructions() {
   var btn = document.getElementById('agent-copy-btn');
   var textEl = document.getElementById('agent-cta-text');
-  var orig = 'Copy agent instructions';
+  var orig = 'Copy agent setup';
   function done() {
     textEl.textContent = 'Copied!';
     btn.style.opacity = '.6';
@@ -218,6 +334,12 @@ function toggleTheme() {
   var isDark = document.documentElement.classList.toggle('dark');
   localStorage.setItem('theme', isDark ? 'dark' : 'light');
 }
+
+// Scroll reveal
+var io = new IntersectionObserver(function(entries) {
+  entries.forEach(function(e) { if (e.isIntersecting) { e.target.classList.add('vis'); io.unobserve(e.target); } });
+}, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+document.querySelectorAll('.rv').forEach(function(el) { io.observe(el); });
 </script>
 </body>
 </html>
