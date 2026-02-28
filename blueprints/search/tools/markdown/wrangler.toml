@@ -9,5 +9,5 @@ enabled = true
 [ai]
 binding = "AI"
 
-[[browser]]
+[browser]
 binding = "BROWSER"
