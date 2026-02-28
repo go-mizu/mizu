@@ -483,6 +483,43 @@ func LoadRetryURLs(dbPath string) ([]SeedURL, error) {
 	return seeds, nil
 }
 
+// LoadRetryURLsSince is like LoadRetryURLs but only returns URLs detected on or after since.
+// Use to restrict pass 2 to the current run when failedDB accumulates across multiple runs.
+func LoadRetryURLsSince(dbPath string, since time.Time) ([]SeedURL, error) {
+	db, err := sql.Open("duckdb", dbPath+"?access_mode=READ_ONLY")
+	if err != nil {
+		return nil, fmt.Errorf("opening failed db: %w", err)
+	}
+	defer db.Close()
+
+	rows, err := db.Query(`
+		SELECT url, domain
+		FROM failed_urls
+		WHERE reason IN (
+			'http_timeout',
+			'dns_timeout',
+			'domain_http_timeout_killed',
+			'domain_deadline_exceeded'
+		)
+		AND detected_at >= ?
+		ORDER BY domain, url
+	`, since)
+	if err != nil {
+		return nil, fmt.Errorf("querying retry URLs: %w", err)
+	}
+	defer rows.Close()
+
+	var seeds []SeedURL
+	for rows.Next() {
+		var s SeedURL
+		if err := rows.Scan(&s.URL, &s.Domain); err != nil {
+			continue
+		}
+		seeds = append(seeds, s)
+	}
+	return seeds, nil
+}
+
 // FailedURLSummary returns a breakdown of failed URLs by reason and total count.
 func FailedURLSummary(dbPath string) (map[string]int, int, error) {
 	db, err := sql.Open("duckdb", dbPath+"?access_mode=READ_ONLY")

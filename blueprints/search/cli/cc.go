@@ -1952,7 +1952,10 @@ func runCCRecrawlV3(ctx context.Context, opts ccRecrawlOpts,
 		failedDBDone = true
 		failedDB.Close()
 
-		retrySeeds, rErr := recrawler.LoadRetryURLs(failedDBPath)
+		// Use LoadRetryURLsSince to only retry URLs from THIS run.
+		// failedDB accumulates across multiple runs on the same parquet file;
+		// without the time filter, pass 2 would reload URLs from all prior runs.
+		retrySeeds, rErr := recrawler.LoadRetryURLsSince(failedDBPath, start)
 		if rErr != nil {
 			fmt.Printf("  %s loading timeout URLs for retry: %v\n", warningStyle.Render("warn:"), rErr)
 		} else if len(retrySeeds) > 0 {
