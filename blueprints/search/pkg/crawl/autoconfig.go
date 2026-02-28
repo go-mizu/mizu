@@ -90,3 +90,51 @@ func AutoConfigKeepAlive(si SysInfo, fullBody bool) (Config, string) {
 
 	return cfg, reason
 }
+
+// AutoBinChanCap returns a channel buffer size capped at 5% of available RAM.
+// Prevents the 32K×bodyKB channel from consuming 256 MB at full load.
+func AutoBinChanCap(availMB, bodyKB int) int {
+	if bodyKB <= 0 {
+		bodyKB = 256
+	}
+	c := availMB * 1024 * 1024 / 20 / (bodyKB * 1024)
+	return clamp(c, 256, 32768)
+}
+
+// AutoWorkersFull returns max workers constrained to 20% of available RAM for bodies.
+// Use when full-body crawl is enabled (bodyKB = 256).
+func AutoWorkersFull(availMB, bodyKB int) int {
+	if bodyKB <= 0 {
+		bodyKB = 256
+	}
+	w := availMB * 1024 / 5 / bodyKB
+	return clamp(w, 100, 8192)
+}
+
+// AutoBatchDomains returns how many domains to process per chunk in batch mode.
+// Budgets 30% of available RAM for in-flight bodies in one batch.
+func AutoBatchDomains(availMB, avgURLsPerDomain, bodyKB int) int {
+	if bodyKB <= 0 {
+		bodyKB = 256
+	}
+	if avgURLsPerDomain <= 0 {
+		avgURLsPerDomain = 3
+	}
+	budgetKB := availMB * 1024 / 3
+	urls := budgetKB / bodyKB
+	n := urls / avgURLsPerDomain
+	if n < 500 {
+		n = 500
+	}
+	return n
+}
+
+func clamp(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
