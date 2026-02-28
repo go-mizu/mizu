@@ -6,15 +6,13 @@ import (
 	"context"
 	"fmt"
 	"time"
-
-	"github.com/go-mizu/mizu/blueprints/search/pkg/archived/recrawler"
 )
 
 // Engine is implemented by all four v3 strategies.
 type Engine interface {
 	// Run crawls all seeds, writing results and failures to the provided writers.
 	// Returns Stats when done or ctx is cancelled.
-	Run(ctx context.Context, seeds []recrawler.SeedURL, dns DNSCache, cfg Config,
+	Run(ctx context.Context, seeds []SeedURL, dns DNSCache, cfg Config,
 		results ResultWriter, failures FailureWriter) (*Stats, error)
 }
 
@@ -100,14 +98,14 @@ type DNSCache interface {
 
 // ResultWriter accepts crawl results.
 type ResultWriter interface {
-	Add(r recrawler.Result)
+	Add(r Result)
 	Flush(ctx context.Context) error
 	Close() error
 }
 
 // FailureWriter accepts failed URLs.
 type FailureWriter interface {
-	AddURL(u recrawler.FailedURL)
+	AddURL(u FailedURL)
 	Close() error
 }
 

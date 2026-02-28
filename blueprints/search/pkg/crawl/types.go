@@ -7,15 +7,74 @@ import (
 	"runtime"
 	"sync"
 	"time"
-
-	"github.com/go-mizu/mizu/blueprints/search/pkg/archived/recrawler"
 )
 
-// staticDNSCache wraps recrawler.DNSResolver for the DNSCache interface.
+// SeedURL represents a URL loaded from the seed database.
+// Domain is the registered domain; Host is the URL hostname used for DNS/IP dialing.
+type SeedURL struct {
+	URL    string
+	Domain string
+	Host   string
+}
+
+// Result holds the result of crawling a single URL.
+type Result struct {
+	URL           string
+	StatusCode    int
+	ContentType   string
+	ContentLength int64
+	Body          string // always "" (overflow string fix; bodies stored via BodyCID)
+	BodyCID       string // CAS reference e.g. "sha256:{hex64}"; "" = not stored
+	Title         string
+	Description   string
+	Language      string
+	Domain        string
+	RedirectURL   string
+	FetchTimeMs   int64
+	CrawledAt     time.Time
+	Error         string
+}
+
+// FailedURL records a URL that failed during crawling.
+type FailedURL struct {
+	URL         string
+	Domain      string
+	Reason      string // http_timeout, dns_timeout, domain_http_timeout_killed, domain_deadline_exceeded, etc.
+	Error       string
+	StatusCode  int
+	FetchTimeMs int64
+	ContentType string
+	RedirectURL string
+	DetectedAt  time.Time
+}
+
+// FailedDomain records a domain classified as unreachable.
+type FailedDomain struct {
+	Domain     string
+	Reason     string // dns_nxdomain, dns_timeout, http_timeout_killed, http_refused, http_dns_error
+	Error      string
+	IPs        string // comma-separated resolved IPs
+	URLCount   int
+	Stage      string // dns_batch, probe, http_worker
+	DetectedAt time.Time
+}
+
+// ShardReopener is implemented by ResultDB to release CGO buffer pools between batches.
+type ShardReopener interface {
+	ReopenShards() error
+}
+
+// dnsLookup is the minimum interface needed from a resolver for DNSCache adaptation.
+type dnsLookup interface {
+	ResolvedIPs() map[string][]string
+	IsDead(host string) bool
+}
+
+// staticDNSCache wraps a dnsLookup for the DNSCache interface.
 // It snapshots the resolved IP map at construction time for O(1) lookups.
 type staticDNSCache struct {
 	resolved map[string][]string // host → IPs snapshot
-	r        *recrawler.DNSResolver
+	r        dnsLookup
 }
 
 func (s *staticDNSCache) Lookup(host string) (string, bool) {
@@ -30,10 +89,10 @@ func (s *staticDNSCache) IsDead(host string) bool {
 	return s.r.IsDead(host)
 }
 
-// WrapDNSResolver adapts a *recrawler.DNSResolver to DNSCache.
+// WrapDNSResolver adapts any dnsLookup (including *store.DNSResolver) to DNSCache.
 // It snapshots resolved IPs at call time; call again after resolution completes
 // to get an up-to-date view.
-func WrapDNSResolver(r *recrawler.DNSResolver) DNSCache {
+func WrapDNSResolver(r dnsLookup) DNSCache {
 	return &staticDNSCache{
 		resolved: r.ResolvedIPs(),
 		r:        r,
@@ -46,18 +105,20 @@ type NoopDNS struct{}
 func (n *NoopDNS) Lookup(_ string) (string, bool) { return "", false }
 func (n *NoopDNS) IsDead(_ string) bool           { return false }
 
-// ResultDBWriter adapts recrawler.ResultDB to ResultWriter.
-type ResultDBWriter struct{ DB *recrawler.ResultDB }
+// ResultDBWriter adapts a ResultWriter to ResultWriter.
+// DEPRECATED: store.ResultDB implements ResultWriter directly. Remove after store migration.
+type ResultDBWriter struct{ DB ResultWriter }
 
-func (r *ResultDBWriter) Add(result recrawler.Result)     { r.DB.Add(result) }
+func (r *ResultDBWriter) Add(result Result)               { r.DB.Add(result) }
 func (r *ResultDBWriter) Flush(ctx context.Context) error { return r.DB.Flush(ctx) }
 func (r *ResultDBWriter) Close() error                    { return r.DB.Close() }
 
-// FailedDBWriter adapts recrawler.FailedDB to FailureWriter.
-type FailedDBWriter struct{ DB *recrawler.FailedDB }
+// FailedDBWriter adapts a FailureWriter to FailureWriter.
+// DEPRECATED: store.FailedDB implements FailureWriter directly. Remove after store migration.
+type FailedDBWriter struct{ DB FailureWriter }
 
-func (f *FailedDBWriter) AddURL(u recrawler.FailedURL) { f.DB.AddURL(u) }
-func (f *FailedDBWriter) Close() error                 { return f.DB.Close() }
+func (f *FailedDBWriter) AddURL(u FailedURL) { f.DB.AddURL(u) }
+func (f *FailedDBWriter) Close() error       { return f.DB.Close() }
 
 // rssNow returns current process RSS memory in bytes (approximated via runtime.MemStats).
 func rssNow() int64 {
