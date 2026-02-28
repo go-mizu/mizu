@@ -212,7 +212,7 @@ remote-recrawl-bg: ## Run cc recrawl --file p:0 (full body, 500 workers) on remo
 remote-tail: ## Tail recrawl log on remote
 	@$(SSH) $(REMOTE_SSH) 'tail -f ~/recrawl.log'
 
-CC_RECRAWL_FLAGS ?= --domain-fail-threshold 0 --domain-timeout 0 --batch-size 5000 --workers 4096
+CC_RECRAWL_FLAGS ?= --domain-fail-threshold 0 --domain-timeout 0 --batch-size 5000 --workers 4096 --timeout 2000 --max-conns-per-domain 2
 
 .PHONY: remote-cc-recrawl-p0
 remote-cc-recrawl-p0: ## Launch cc recrawl --file p:0 in background (~/cc-p0.log)
