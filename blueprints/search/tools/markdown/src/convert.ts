@@ -58,15 +58,20 @@ export async function convert(url: string, env: Env): Promise<ConversionResult> 
   }
 
   // Tier 3: Browser Rendering via Puppeteer → AI
-  const browserHtml = await tryBrowserRendering(url, env);
-  const aiFromBrowser = await tryWorkersAI(browserHtml, env).catch(() => null);
-  const markdown = aiFromBrowser?.markdown ?? stripHtml(browserHtml);
+  let browserHtml = '';
+  try {
+    browserHtml = await tryBrowserRendering(url, env);
+  } catch {
+    // Browser binding unavailable or navigation failed; fall through to stripHtml
+  }
+  const aiFromBrowser = browserHtml ? await tryWorkersAI(browserHtml, env).catch(() => null) : null;
+  const markdown = aiFromBrowser?.markdown ?? (browserHtml ? stripHtml(browserHtml) : 'Unable to retrieve page content.');
 
   return {
     markdown,
     method: 'browser',
     durationMs: Date.now() - start,
-    title: extractTitleFromHTML(browserHtml),
+    title: browserHtml ? extractTitleFromHTML(browserHtml) : 'Untitled',
     tokens: aiFromBrowser?.tokens,
     sourceUrl: url,
   };
@@ -106,6 +111,8 @@ async function fetchHTML(url: string): Promise<string | null> {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!resp.ok) return null;
+    const contentLength = parseInt(resp.headers.get('content-length') ?? '0', 10);
+    if (contentLength > 5_000_000) return null; // skip responses > 5MB
     return await resp.text();
   } catch {
     return null;
