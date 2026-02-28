@@ -207,7 +207,46 @@ func runRecrawlJob(ctx context.Context, args recrawlJobArgs) error {
 		)))
 	}
 
+	if args.FailedDBPath != "" {
+		printErrorBreakdown(args.FailedDBPath)
+	}
+
 	return err
+}
+
+// printErrorBreakdown prints a reason breakdown and top failing domains from the failed URL DB.
+// It prints even when queries partially fail (graceful degradation).
+func printErrorBreakdown(dbPath string) {
+	summary, total, err := store.FailedURLSummary(dbPath)
+	if err == nil && len(summary) > 0 {
+		fmt.Println("\nError breakdown (failed URLs):")
+		// Sort reasons by count descending
+		type kv struct {
+			reason string
+			count  int
+		}
+		pairs := make([]kv, 0, len(summary))
+		for r, c := range summary {
+			pairs = append(pairs, kv{r, c})
+		}
+		sort.Slice(pairs, func(i, j int) bool { return pairs[i].count > pairs[j].count })
+		for _, p := range pairs {
+			pct := float64(0)
+			if total > 0 {
+				pct = float64(p.count) / float64(total) * 100
+			}
+			fmt.Printf("  %-38s %s  (%5.1f%%)\n", p.reason, ccFmtInt64(int64(p.count)), pct)
+		}
+	}
+
+	top, err := store.FailedURLTopDomains(dbPath, 10)
+	if err == nil && len(top) > 0 {
+		fmt.Println("\nTop failing domains:")
+		for _, entry := range top {
+			fmt.Printf("  %-40s %s\n", entry[0], entry[1])
+		}
+		fmt.Printf("  (top %d)\n", len(top))
+	}
 }
 
 // ── Display types ──────────────────────────────────────────────────────────────
