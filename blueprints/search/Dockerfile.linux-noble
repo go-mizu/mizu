@@ -6,9 +6,10 @@
 #   - glibc 2.39 vs 2.31 — newer libc runtime at link time
 #   - libstdc++ comes from GCC 14; no need to bundle and deploy separately
 #   - Binary requires glibc >= 2.38 (NOT backward compatible with Ubuntu 20.04)
+#   - -march=x86-64-v3 enables AVX2 SIMD for DuckDB on AMD EPYC (server2)
 #
-# TARGETING: server2 (Ubuntu 24.04 Noble, kernel 6.8.0, glibc 2.39)
-# DO NOT use this binary on Ubuntu 20.04 servers.
+# TARGETING: server2 (Ubuntu 24.04 Noble, kernel 6.8.0, glibc 2.39, AMD EPYC AVX2)
+# DO NOT use this binary on Ubuntu 20.04 servers or non-AVX2 hardware.
 
 ARG BASE_IMAGE=ubuntu:24.04
 ARG GO_VERSION=1.26.0
@@ -41,6 +42,14 @@ ENV PATH=/usr/local/go/bin:${PATH}
 # Use Ubuntu 24.04's default GCC (gcc-14 on noble).
 ENV CC=gcc
 ENV CXX=g++
+
+# -march=x86-64-v3: enables AVX2 + BMI2 + FMA + POPCNT for DuckDB CGO code.
+# x86-64-v3 = Haswell/Zen2+ baseline: safe for server2 (AMD EPYC).
+# DO NOT set this in Dockerfile.linux-focal — may generate instructions absent on older hardware.
+ARG CGO_CFLAGS="-O2 -march=x86-64-v3"
+ARG CGO_CXXFLAGS="-O2 -march=x86-64-v3"
+ENV CGO_CFLAGS=${CGO_CFLAGS}
+ENV CGO_CXXFLAGS=${CGO_CXXFLAGS}
 
 # Cache dependency resolution first (best practice).
 COPY go.mod go.sum /src/
