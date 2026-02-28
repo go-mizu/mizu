@@ -564,6 +564,11 @@ func newHNRecrawl() *cobra.Command {
 		chunkSize           int
 		pprofPort           int
 		bodyStoreDir        string
+		dbMemMB             int
+		dbShards            int
+		pass2Workers        int
+		segSizeMB           int
+		printAutoConfig     bool
 	)
 	cmd := &cobra.Command{
 		Use:   "recrawl",
@@ -674,7 +679,8 @@ and adaptive timeouts.`,
 				engine, workers, maxConnsPerDomain, timeoutMs, domainFailThreshold, domainTimeoutMs, statusOnly, batchSize, int64(slowDomainMs),
 				dnsWorkers, dnsTimeoutMs,
 				retryTimeoutMs, noRetry, writerMode,
-				chunkMode, chunkSize, bodyStoreDir)
+				chunkMode, chunkSize, bodyStoreDir,
+				dbMemMB, dbShards, pass2Workers, segSizeMB, printAutoConfig)
 		},
 	}
 	cmd.Flags().StringVar(&domainsDB, "domains-db", "", "Path to hn_domains DuckDB (default: $HOME/data/hn/hn_domains.duckdb)")
@@ -704,6 +710,11 @@ and adaptive timeouts.`,
 	cmd.Flags().IntVar(&chunkSize, "chunk-size", 0, "Override batch domain count (0=auto)")
 	cmd.Flags().IntVar(&pprofPort, "pprof-port", 0, "Enable pprof HTTP server on this port (0=off)")
 	cmd.Flags().StringVar(&bodyStoreDir, "body-store", "", "Body CAS store dir (default: $dataDir/bodies)")
+	cmd.Flags().IntVar(&dbMemMB, "db-mem-mb", 0, "DuckDB memory per shard in MB (0=auto: 15% avail RAM / shards)")
+	cmd.Flags().IntVar(&dbShards, "db-shards", 0, "ResultDB shard count (0=auto: clamp(CPUs×2, 4, 16))")
+	cmd.Flags().IntVar(&pass2Workers, "pass2-workers", 0, "Pass-2 worker count (0=same as pass 1)")
+	cmd.Flags().IntVar(&segSizeMB, "seg-size-mb", 0, "Binary segment rotation threshold in MB (0=auto)")
+	cmd.Flags().BoolVar(&printAutoConfig, "auto-config", false, "Print auto-configured values and exit without running")
 	return cmd
 }
 
@@ -726,6 +737,8 @@ func runHNRecrawlV3(ctx context.Context,
 	chunkMode string,
 	chunkSize int,
 	bodyStoreDir string,
+	dbMemMB, dbShards, pass2Workers, segSizeMB int,
+	printAutoConfig bool,
 ) error {
 
 	eng, err := crawl.New(engineName)
@@ -753,7 +766,7 @@ func runHNRecrawlV3(ctx context.Context,
 		if maxConnsPerDomain <= 0 {
 			maxConnsPerDomain = autoCfg.MaxConnsPerDomain
 		}
-		fmt.Printf("  %s  %s\n\n", infoStyle.Render("Auto-config:"), labelStyle.Render(reason))
+		fmt.Printf("  %s  %s\n", infoStyle.Render("Auto-config:"), labelStyle.Render(reason))
 	} else if maxConnsPerDomain <= 0 {
 		// Workers explicitly set but innerN still auto.
 		innerN := si.CPUCount * 2
@@ -764,6 +777,31 @@ func runHNRecrawlV3(ctx context.Context,
 			innerN = 16
 		}
 		maxConnsPerDomain = innerN
+	}
+
+	// Compute adaptive DB + writer settings (0 = auto).
+	if dbShards <= 0 {
+		dbShards = crawl.AutoShardCount(si.CPUCount)
+	}
+	availMB := int(si.MemAvailableMB)
+	if dbMemMB <= 0 {
+		dbMemMB = crawl.AutoDuckMemPerShard(availMB, dbShards)
+	}
+	if segSizeMB <= 0 {
+		segSizeMB = crawl.AutoBinSegMB(availMB)
+	}
+	p2Workers := pass2Workers
+	if p2Workers <= 0 {
+		p2Workers = workers
+	}
+	chanCap := crawl.AutoBinChanCap(availMB, 256)
+	fmt.Printf("  DB config:    shards=%d  mem/shard=%dMB  ckpt=%dMB\n", dbShards, dbMemMB, max(dbMemMB/40, 4))
+	fmt.Printf("  Bin writer:   seg=%dMB  chan=%d\n", segSizeMB, chanCap)
+	fmt.Printf("  Pass 2:       workers=%d  timeout=%dms  domain_timeout=%dms\n\n",
+		p2Workers, retryTimeoutMs, retryTimeoutMs*3)
+
+	if printAutoConfig {
+		return nil
 	}
 	// ─────────────────────────────────────────────────────────────────────────
 
@@ -876,7 +914,7 @@ func runHNRecrawlV3(ctx context.Context,
 
 	if writerMode != "devnull" {
 		var err error
-		rdb, err = recrawler.NewResultDB(resultDir, 16, batchSize)
+		rdb, err = recrawler.NewResultDB(resultDir, dbShards, batchSize, dbMemMB)
 		if err != nil {
 			return fmt.Errorf("opening result db: %w", err)
 		}
@@ -928,7 +966,7 @@ func runHNRecrawlV3(ctx context.Context,
 	fmt.Printf("  Writer            %s\n", writerLabel)
 	if writerMode != "devnull" {
 		fmt.Printf("  FailedDB          %s\n", failedDBPath)
-		fmt.Printf("  Results           %s/ (16 shards)\n", resultDir)
+		fmt.Printf("  Results           %s/ (%d shards)\n", resultDir, dbShards)
 	}
 	fmt.Println()
 
@@ -1222,8 +1260,9 @@ func runHNRecrawlV3(ctx context.Context,
 
 			retryCfg := cfg
 			retryCfg.Timeout = time.Duration(retryTimeoutMs) * time.Millisecond
-			// Half the workers for pass 2 — slow domains need more time but we still want throughput.
-			retryCfg.Workers = max(workers/2, 200)
+			// Pass 2 uses the same worker count as pass 1 (or --pass2-workers override).
+			// Slow domains benefit from full concurrency — halving workers just slows recovery.
+			retryCfg.Workers = p2Workers
 			// Disable domain-kill in pass 2: every URL must get a fair attempt at the longer
 			// timeout. domain_http_timeout_killed URLs from pass 1 are now retried here, and we
 			// must not kill them again before they have a chance to respond.

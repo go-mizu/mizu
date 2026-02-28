@@ -873,6 +873,10 @@ func newCCRecrawl() *cobra.Command {
 		engine              string
 		domainTimeoutMs     int
 		domainFailThreshold int
+		retryTimeoutMs      int
+		noRetry             bool
+		dbMemMB             int
+		dbShards            int
 	)
 
 	cmd := &cobra.Command{
@@ -953,7 +957,11 @@ Examples:
 				engine:              engine,
 			domainTimeoutMs:     domainTimeoutMs,
 			domainFailThreshold: domainFailThreshold,
-			})
+			retryTimeoutMs:      retryTimeoutMs,
+			noRetry:             noRetry,
+			dbMemMB:             dbMemMB,
+			dbShards:            dbShards,
+		})
 		},
 	}
 
@@ -962,7 +970,7 @@ Examples:
 	cmd.Flags().StringVar(&file, "file", "", "Parquet selector/path: N (warc/part index), p:N, w:N, m:N, or local path")
 	cmd.Flags().IntVar(&sample, "sample", 1, "Number of parquet files to download (0=all, legacy mode)")
 	cmd.Flags().BoolVar(&importOnly, "import-only", false, "Skip parquet download, use existing DuckDB index")
-	cmd.Flags().IntVar(&workers, "workers", 500, "HTTP fetch workers")
+	cmd.Flags().IntVar(&workers, "workers", -1, "HTTP fetch workers (-1=auto from hardware)")
 	cmd.Flags().IntVar(&dnsWorkers, "dns-workers", 2000, "DNS resolution workers (use 0 for auto)")
 	cmd.Flags().IntVar(&dnsTimeout, "dns-timeout", 2000, "DNS timeout in ms (use 0 for auto)")
 	cmd.Flags().IntVar(&timeout, "timeout", 5000, "HTTP timeout in ms")
@@ -983,6 +991,10 @@ Examples:
 	cmd.Flags().StringVar(&engine, "engine", "keepalive", "Crawl engine: keepalive|epoll|swarm|rawhttp")
 	cmd.Flags().IntVar(&domainTimeoutMs, "domain-timeout", 30_000, "Per-domain context deadline in ms; cancel remaining URLs after this (0=disabled)")
 	cmd.Flags().IntVar(&domainFailThreshold, "domain-fail-threshold", -1, "Abandon domain after this many timeout rounds (×conns); -1=engine default (3)")
+	cmd.Flags().IntVar(&retryTimeoutMs, "retry-timeout", 10000, "Pass-2 timeout in ms for retrying timeout URLs (0=disabled)")
+	cmd.Flags().BoolVar(&noRetry, "no-retry", false, "Skip pass-2 retry of timeout URLs")
+	cmd.Flags().IntVar(&dbMemMB, "db-mem-mb", 0, "DuckDB memory per shard in MB (0=auto: 15% avail RAM / shards)")
+	cmd.Flags().IntVar(&dbShards, "db-shards", 0, "ResultDB shard count (0=auto: clamp(CPUs×2, 4, 16))")
 
 	return cmd
 }
@@ -1012,6 +1024,10 @@ type ccRecrawlOpts struct {
 	engine              string
 	domainTimeoutMs     int
 	domainFailThreshold int
+	retryTimeoutMs      int
+	noRetry             bool
+	dbMemMB             int
+	dbShards            int
 }
 
 func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
@@ -1362,7 +1378,7 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 	failedDB.SetMeta("started_at", time.Now().Format(time.RFC3339))
 	fmt.Println(successStyle.Render(fmt.Sprintf("  FailedDB → %s", failedDBPath)))
 
-	rdb, err := recrawler.NewResultDB(resultDir, 8, opts.batchSize)
+	rdb, err := recrawler.NewResultDB(resultDir, 8, opts.batchSize, 0)
 	if err != nil {
 		return fmt.Errorf("opening result db: %w", err)
 	}
@@ -1747,12 +1763,44 @@ func runCCRecrawlV3(ctx context.Context, opts ccRecrawlOpts,
 		return fmt.Errorf("engine %q: %w", engineName, err)
 	}
 
+	// Load sysinfo once; used for both worker auto-config and adaptive DB settings.
+	homeDir, _ := os.UserHomeDir()
+	siCache := filepath.Join(homeDir, ".cache", "search", "sysinfo.json")
+	si := crawl.LoadOrGatherSysInfo(siCache, 30*time.Minute)
+
+	// Set GOMEMLIMIT to 75% of available RAM.
+	if autoMem := si.MemAvailableMB * 1024 * 1024 * 75 / 100; autoMem > 0 {
+		debug.SetMemoryLimit(autoMem)
+	}
+
+	// Auto-configure workers from hardware when not explicitly set.
+	workers := opts.workers
+	maxConnsPerDomain := opts.maxConnsPerDomain
+	if workers <= 0 {
+		autoCfg, reason := crawl.AutoConfigKeepAlive(si, !opts.statusOnly)
+		workers = autoCfg.Workers
+		if maxConnsPerDomain <= 0 {
+			maxConnsPerDomain = autoCfg.MaxConnsPerDomain
+		}
+		fmt.Printf("  Auto-config:      %s\n", reason)
+	}
+
+	// Adaptive DB settings (0 = auto from hardware).
+	dbShards := opts.dbShards
+	if dbShards <= 0 {
+		dbShards = crawl.AutoShardCount(si.CPUCount)
+	}
+	dbMemMB := opts.dbMemMB
+	if dbMemMB <= 0 {
+		dbMemMB = crawl.AutoDuckMemPerShard(int(si.MemAvailableMB), dbShards)
+	}
+
 	cfg := crawl.DefaultConfig()
-	cfg.Workers = opts.workers
+	cfg.Workers = workers
 	cfg.Timeout = time.Duration(opts.timeout) * time.Millisecond
 	cfg.StatusOnly = opts.statusOnly
 	cfg.InsecureTLS = true
-	cfg.MaxConnsPerDomain = opts.maxConnsPerDomain
+	cfg.MaxConnsPerDomain = maxConnsPerDomain
 	if opts.domainFailThreshold >= 0 {
 		cfg.DomainFailThreshold = opts.domainFailThreshold
 	}
@@ -1773,13 +1821,18 @@ func runCCRecrawlV3(ctx context.Context, opts ccRecrawlOpts,
 		dnsCache = &crawl.NoopDNS{}
 	}
 
+	var failedDBDone bool
 	failedDB, err := recrawler.OpenFailedDB(failedDBPath)
 	if err != nil {
 		return fmt.Errorf("opening failed db: %w", err)
 	}
-	defer failedDB.Close()
+	defer func() {
+		if !failedDBDone {
+			failedDB.Close()
+		}
+	}()
 
-	rdb, err := recrawler.NewResultDB(resultDir, 8, opts.batchSize)
+	rdb, err := recrawler.NewResultDB(resultDir, dbShards, opts.batchSize, dbMemMB)
 	if err != nil {
 		return fmt.Errorf("opening result db: %w", err)
 	}
@@ -1808,7 +1861,7 @@ func runCCRecrawlV3(ctx context.Context, opts ccRecrawlOpts,
 	fmt.Printf("  TLS               skip-verify\n")
 	fmt.Printf("  Seeds             %s URLs\n", ccFmtInt64(int64(len(seeds))))
 	fmt.Printf("  FailedDB          %s\n", failedDBPath)
-	fmt.Printf("  Results           %s/ (8 shards)\n\n", resultDir)
+	fmt.Printf("  Results           %s/ (%d shards, %dMB/shard)\n\n", resultDir, dbShards, dbMemMB)
 
 	ls := &v3LiveStats{slowDomainMs: 30_000}
 	cfg.Notifier = ls
@@ -1891,6 +1944,89 @@ func runCCRecrawlV3(ctx context.Context, opts ccRecrawlOpts,
 		stats.Duration.Truncate(time.Second),
 		bw, skippedNote,
 	)))
+
+	// Pass 2: retry http_timeout + domain_http_timeout_killed URLs at a longer timeout.
+	if !opts.noRetry && opts.retryTimeoutMs > 0 && ctx.Err() == nil {
+		// DuckDB only allows one connection per file. Close pass-1 failedDB so
+		// LoadRetryURLs can open it read-only without a "conflicting lock" error.
+		failedDBDone = true
+		failedDB.Close()
+
+		retrySeeds, rErr := recrawler.LoadRetryURLs(failedDBPath)
+		if rErr != nil {
+			fmt.Printf("  %s loading timeout URLs for retry: %v\n", warningStyle.Render("warn:"), rErr)
+		} else if len(retrySeeds) > 0 {
+			fmt.Printf("\n%s  %s http_timeout + domain-killed URLs → retrying at %dms timeout\n",
+				infoStyle.Render("Pass 2:"),
+				labelStyle.Render(ccFmtInt64(int64(len(retrySeeds)))),
+				opts.retryTimeoutMs,
+			)
+
+			// Reopen failedDB for pass 2 failure writes (appends to same file).
+			failedDB2, _ := recrawler.OpenFailedDB(failedDBPath)
+			defer failedDB2.Close()
+
+			retryCfg := cfg
+			retryCfg.Timeout = time.Duration(opts.retryTimeoutMs) * time.Millisecond
+			retryCfg.Workers = cfg.Workers
+			// Disable domain-kill in pass 2: every URL must get a fair attempt.
+			retryCfg.DomainFailThreshold = 0
+			retryCfg.DomainTimeout = time.Duration(opts.retryTimeoutMs*3) * time.Millisecond
+
+			ls2 := &v3LiveStats{slowDomainMs: 30_000}
+			retryCfg.Notifier = ls2
+			pw2 := &v3ProgressWriter{inner: &crawl.ResultDBWriter{DB: rdb}, ls: ls2}
+			fw2 := &v3ProgressFailureWriter{inner: &crawl.FailedDBWriter{DB: failedDB2}, ls: ls2}
+
+			retryStart := time.Now()
+			retryTotal := int64(len(retrySeeds))
+
+			progressCtx2, cancelProgress2 := context.WithCancel(ctx)
+			progressDone2 := make(chan struct{})
+			go func() {
+				defer close(progressDone2)
+				ticker := time.NewTicker(progressInterval)
+				defer ticker.Stop()
+				var displayLines int
+				for {
+					select {
+					case <-progressCtx2.Done():
+						return
+					case t := <-ticker.C:
+						ls2.updateSpeed(t)
+						output := v3RenderProgress(ls2, retryCfg, engineName, retryTotal, retryStart, isTTY)
+						if isTTY {
+							if displayLines > 0 {
+								fmt.Printf("\033[%dA\033[J", displayLines)
+							}
+							fmt.Print(output)
+							displayLines = strings.Count(output, "\n")
+						} else {
+							fmt.Print(output)
+						}
+					}
+				}
+			}()
+
+			eng2, _ := crawl.New(engineName)
+			retryStats, _ := eng2.Run(ctx, retrySeeds, dnsCache, retryCfg, pw2, fw2)
+			cancelProgress2()
+			<-progressDone2
+
+			if retryStats != nil {
+				if isTTY {
+					fmt.Println()
+				}
+				fmt.Println(successStyle.Render(fmt.Sprintf(
+					"Pass 2 done: %s rescued / %s retried | avg %.0f rps | %s",
+					ccFmtInt64(retryStats.OK), ccFmtInt64(retryStats.Total),
+					retryStats.AvgRPS, retryStats.Duration.Truncate(time.Second),
+				)))
+			}
+		} else {
+			fmt.Printf("\n%s  no timeout URLs to retry\n", infoStyle.Render("Pass 2:"))
+		}
+	}
 	return nil
 }
 

@@ -72,7 +72,7 @@ func AutoConfigKeepAlive(si SysInfo, fullBody bool) (Config, string) {
 	wMem := min(availKB*70/100/memExpKB, availKB*80/100/memWrstKB)
 	wFd := fdSoft / int64(innerN*2)
 
-	workers := max(min(wMem, wFd, 10000), 200)
+	workers := max(min(wMem, wFd), 200)
 
 	// Human-readable reason
 	var limitBy string
@@ -89,6 +89,31 @@ func AutoConfigKeepAlive(si SysInfo, fullBody bool) (Config, string) {
 	cfg.StatusOnly = !fullBody
 
 	return cfg, reason
+}
+
+// AutoShardCount returns the number of DuckDB result shards, proportional to CPU count.
+// More shards = more write parallelism, but each shard has its own DuckDB buffer pool.
+func AutoShardCount(cpuCount int) int {
+	return clamp(cpuCount*2, 4, 16)
+}
+
+// AutoDuckMemPerShard returns DuckDB memory_limit per shard in MB.
+// Targets 15% of available RAM spread across all shards, with 64 MB minimum.
+func AutoDuckMemPerShard(availMB, shardCount int) int {
+	if shardCount <= 0 {
+		shardCount = 8
+	}
+	mb := availMB * 15 / 100 / shardCount
+	if mb < 64 {
+		mb = 64
+	}
+	return mb
+}
+
+// AutoBinSegMB returns the binary segment rotation threshold in MB.
+// Scales with available RAM (~1.5% per segment, clamped 32–256 MB).
+func AutoBinSegMB(availMB int) int {
+	return clamp(availMB/64, 32, 256)
 }
 
 // AutoBinChanCap returns a channel buffer size capped at 5% of available RAM.

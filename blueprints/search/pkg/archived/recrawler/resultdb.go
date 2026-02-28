@@ -20,9 +20,10 @@ const defaultShardCount = 8
 // Each shard has its own async flusher goroutine, eliminating cross-shard contention.
 // Uses batch multi-row VALUES inserts for maximum write throughput.
 type ResultDB struct {
-	dir     string
-	shards  []*resultShard
-	flushed atomic.Int64
+	dir           string
+	shards        []*resultShard
+	flushed       atomic.Int64
+	memPerShardMB int // DuckDB memory_limit per shard; 0 treated as defaultDuckMemPerShardMB
 }
 
 // resultShard is one DuckDB file with its own buffer and flusher.
@@ -37,12 +38,16 @@ type resultShard struct {
 
 // NewResultDB creates a sharded result DB in the given directory.
 // Creates dir/results_000.duckdb through dir/results_NNN.duckdb.
-func NewResultDB(dir string, shardCount, batchSize int) (*ResultDB, error) {
+// duckMemPerShardMB sets DuckDB memory_limit per shard (0 = use default 256 MB).
+func NewResultDB(dir string, shardCount, batchSize, duckMemPerShardMB int) (*ResultDB, error) {
 	if shardCount <= 0 {
 		shardCount = defaultShardCount
 	}
 	if batchSize <= 0 {
 		batchSize = 5000
+	}
+	if duckMemPerShardMB <= 0 {
+		duckMemPerShardMB = 256
 	}
 
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -50,8 +55,9 @@ func NewResultDB(dir string, shardCount, batchSize int) (*ResultDB, error) {
 	}
 
 	rdb := &ResultDB{
-		dir:    dir,
-		shards: make([]*resultShard, shardCount),
+		dir:           dir,
+		shards:        make([]*resultShard, shardCount),
+		memPerShardMB: duckMemPerShardMB,
 	}
 
 	for i := range shardCount {
@@ -69,7 +75,7 @@ func NewResultDB(dir string, shardCount, batchSize int) (*ResultDB, error) {
 			done:    make(chan struct{}),
 		}
 
-		if err := initResultSchema(db); err != nil {
+		if err := initResultSchema(db, rdb.memPerShardMB); err != nil {
 			db.Close()
 			rdb.closeOpenShards(i)
 			return nil, fmt.Errorf("init shard %d schema: %w", i, err)
@@ -90,13 +96,13 @@ func (rdb *ResultDB) closeOpenShards(n int) {
 	}
 }
 
-func initResultSchema(db *sql.DB) error {
-	// Cap DuckDB buffer pool at 256 MB per shard (8 shards × 256 MB = 2 GB total).
-	// '256MB' (decimal) = 244 MiB. Combined with checkpoint_threshold='4MB' below,
-	// auto-checkpoints fire every 4 MB of WAL, keeping dirty pages << pool size so
-	// LRU eviction succeeds when checkpoint pins a new 256 KB block.
-	// Peak RSS with 8 shards: ~3.4 GB (well within 5.8 GB server limit).
-	if _, err := db.Exec("SET memory_limit='256MB'"); err != nil {
+func initResultSchema(db *sql.DB, memMB int) error {
+	// Cap DuckDB buffer pool per shard. checkpoint_threshold is scaled proportionally:
+	// at memMB/40 we keep dirty pages << pool, so LRU eviction succeeds when checkpoint
+	// pins a new 256 KB block. Both values are passed in from the caller for adaptive sizing.
+	// Note: calling CHECKPOINT explicitly from Go causes DuckDB SIGSEGV — use threshold only.
+	ckptMB := max(memMB/40, 4)
+	if _, err := db.Exec(fmt.Sprintf("SET memory_limit='%dMB'", memMB)); err != nil {
 		return fmt.Errorf("set memory_limit: %w", err)
 	}
 	// Limit DuckDB to 1 thread per shard (default = all CPU cores).
@@ -111,13 +117,7 @@ func initResultSchema(db *sql.DB) error {
 	if _, err := db.Exec("SET preserve_insertion_order=false"); err != nil {
 		return fmt.Errorf("set preserve_insertion_order: %w", err)
 	}
-	// Trigger auto-checkpoint every 4 MB of WAL data (default is ~16 MiB).
-	// At 4 MB dirty pages, 240 MB of the 244 MiB pool is clean → LRU eviction
-	// succeeds when checkpoint needs to pin a new 256 KB block.
-	// Without this, 16 MB dirty pages accumulate before checkpoint, and at
-	// pool 99.94% full, DuckDB fails "failed to pin block of size 256 KiB".
-	// Note: calling CHECKPOINT explicitly from Go causes DuckDB SIGSEGV.
-	if _, err := db.Exec("SET checkpoint_threshold='4MB'"); err != nil {
+	if _, err := db.Exec(fmt.Sprintf("SET checkpoint_threshold='%dMB'", ckptMB)); err != nil {
 		fmt.Fprintf(os.Stderr, "[resultdb] SET checkpoint_threshold: %v (continuing with default)\n", err)
 	}
 	// No PRIMARY KEY: avoids ART index I/O on every INSERT (which keeps index pages
@@ -309,7 +309,7 @@ func (rdb *ResultDB) ReopenShards() error {
 		if err != nil {
 			return fmt.Errorf("reopen shard %d: %w", i, err)
 		}
-		if err := applyShardSettings(db); err != nil {
+		if err := applyShardSettings(db, rdb.memPerShardMB); err != nil {
 			db.Close()
 			return fmt.Errorf("reopen shard %d settings: %w", i, err)
 		}
@@ -324,12 +324,13 @@ func (rdb *ResultDB) ReopenShards() error {
 }
 
 // applyShardSettings applies DuckDB performance settings to a freshly opened connection.
-func applyShardSettings(db *sql.DB) error {
+func applyShardSettings(db *sql.DB, memMB int) error {
+	ckptMB := max(memMB/40, 4)
 	for _, stmt := range []string{
-		"SET memory_limit='256MB'",
+		fmt.Sprintf("SET memory_limit='%dMB'", memMB),
 		"SET threads=1",
 		"SET preserve_insertion_order=false",
-		"SET checkpoint_threshold='4MB'",
+		fmt.Sprintf("SET checkpoint_threshold='%dMB'", ckptMB),
 	} {
 		if _, err := db.Exec(stmt); err != nil {
 			fmt.Fprintf(os.Stderr, "[resultdb] %s: %v\n", stmt, err)
