@@ -20,12 +20,12 @@ func makeSeedDB(t *testing.T, rows int) string {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if _, err := db.Exec(`CREATE TABLE seeds (url VARCHAR, domain VARCHAR, host VARCHAR)`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE docs (url VARCHAR, domain VARCHAR)`); err != nil {
 		t.Fatal(err)
 	}
 	for i := range rows {
-		if _, err := db.Exec("INSERT INTO seeds VALUES (?, ?, ?)",
-			"http://example.com/"+strconv.Itoa(i), "example.com", "example.com"); err != nil {
+		if _, err := db.Exec("INSERT INTO docs VALUES (?, ?)",
+			"http://example.com/"+strconv.Itoa(i), "example.com"); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -17,7 +17,7 @@ type SeedCursor struct {
 	offset   int
 }
 
-// NewSeedCursor opens a read-only cursor over the seeds table in dbPath.
+// NewSeedCursor opens a read-only cursor over the docs table in dbPath.
 // pageSize controls how many rows are returned per Next() call (default 10000 if ≤0).
 func NewSeedCursor(dbPath string, pageSize int) (*SeedCursor, error) {
 	if pageSize <= 0 {
@@ -33,7 +33,7 @@ func NewSeedCursor(dbPath string, pageSize int) (*SeedCursor, error) {
 // Next returns the next page of seed URLs. Returns an empty slice at EOF.
 func (c *SeedCursor) Next(ctx context.Context) ([]recrawler.SeedURL, error) {
 	rows, err := c.db.QueryContext(ctx,
-		"SELECT url, domain, host FROM seeds LIMIT ? OFFSET ?",
+		"SELECT url, COALESCE(domain, '') FROM docs ORDER BY domain LIMIT ? OFFSET ?",
 		c.pageSize, c.offset)
 	if err != nil {
 		return nil, fmt.Errorf("seedcursor: query: %w", err)
@@ -43,7 +43,7 @@ func (c *SeedCursor) Next(ctx context.Context) ([]recrawler.SeedURL, error) {
 	var page []recrawler.SeedURL
 	for rows.Next() {
 		var s recrawler.SeedURL
-		if err := rows.Scan(&s.URL, &s.Domain, &s.Host); err != nil {
+		if err := rows.Scan(&s.URL, &s.Domain); err != nil {
 			return nil, fmt.Errorf("seedcursor: scan: %w", err)
 		}
 		page = append(page, s)
