@@ -1111,6 +1111,26 @@ func runHNRecrawlV3(ctx context.Context,
 		fmt.Printf("  Chunk mode:    stream (workers=%d)\n", cfg.Workers)
 		stats, runErr = eng.Run(ctx, seeds, dnsCache, cfg, pw, fw)
 
+	case "pipeline":
+		si2 := crawl.LoadOrGatherSysInfo("", 0)
+		batchDomains := chunkSize
+		if batchDomains <= 0 {
+			batchDomains = crawl.AutoBatchDomains(int(si2.MemAvailableMB), 3, 256)
+		}
+		fmt.Printf("  Chunk mode:    pipeline (%d domains/batch)\n", batchDomains)
+		var pipeStats *crawl.Stats
+		pipeStats, runErr = crawl.RunPipeline(ctx, crawl.PipelineConfig{
+			Cfg:       cfg,
+			DNS:       dnsCache,
+			Results:   pw,
+			Failures:  fw,
+			RDB:       rdb,
+			SeedPath:  seedRes.OutDBPath,
+			BatchSize: batchDomains,
+			AvailMB:   int(si2.MemAvailableMB),
+		})
+		stats = pipeStats
+
 	default:
 		fmt.Printf("  Chunk mode:    %s (fallback to stream)\n", mode)
 		stats, runErr = eng.Run(ctx, seeds, dnsCache, cfg, pw, fw)
