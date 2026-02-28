@@ -29,6 +29,7 @@ type Result struct {
 	ContentType   string
 	ContentLength int64
 	Body          string // HTML body (full content mode)
+	BodyCID       string // CAS reference e.g. "sha256:{hex64}"; "" = not stored
 	Title         string
 	Description   string
 	Language      string

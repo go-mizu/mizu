@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 	"unicode/utf8"
 
 	_ "github.com/duckdb/duckdb-go/v2"
@@ -123,7 +124,7 @@ func initResultSchema(db *sql.DB) error {
 	// No PRIMARY KEY: avoids ART index I/O on every INSERT (which keeps index pages
 	// resident in RSS, causing OOM on the 5.9 GB server). Fresh crawl runs have
 	// unique URLs from the parquet seed file; duplicates can be deduped post-hoc.
-	_, err := db.Exec(`
+	if _, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS results (
 			url VARCHAR,
 			status_code INTEGER,
@@ -138,10 +139,15 @@ func initResultSchema(db *sql.DB) error {
 			fetch_time_ms BIGINT,
 			crawled_at TIMESTAMP,
 			error VARCHAR,
-			status VARCHAR DEFAULT 'done'
+			status VARCHAR DEFAULT 'done',
+			body_cid VARCHAR DEFAULT ''
 		)
-	`)
-	return err
+	`); err != nil {
+		return err
+	}
+	// Add body_cid to existing DBs created before this schema version.
+	_, _ = db.Exec(`ALTER TABLE results ADD COLUMN IF NOT EXISTS body_cid VARCHAR DEFAULT ''`)
+	return nil
 }
 
 // shardFor returns the shard index for a URL using FNV-1a hash.
@@ -211,8 +217,8 @@ func sanitizeStr(s string) string {
 // ~100x faster than row-by-row prepared statements.
 // Returns the number of rows successfully written.
 func writeBatchValues(db *sql.DB, batch []Result) int {
-	const cols = 14
-	const maxPerStmt = 500 // DuckDB param limit / cols
+	const cols = 15
+	const maxPerStmt = 400 // DuckDB param limit / cols; 400×15=6000, well within 32767
 
 	written := 0
 	for i := 0; i < len(batch); i += maxPerStmt {
@@ -220,22 +226,22 @@ func writeBatchValues(db *sql.DB, batch []Result) int {
 		chunk := batch[i:end]
 
 		var b strings.Builder
-		b.WriteString("INSERT INTO results (url, status_code, content_type, content_length, body, title, description, language, domain, redirect_url, fetch_time_ms, crawled_at, error, status) VALUES ")
+		b.WriteString("INSERT INTO results (url, status_code, content_type, content_length, body, title, description, language, domain, redirect_url, fetch_time_ms, crawled_at, error, status, body_cid) VALUES ")
 		args := make([]any, 0, len(chunk)*cols)
 
 		for j, r := range chunk {
 			if j > 0 {
 				b.WriteByte(',')
 			}
-			b.WriteString("(?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+			b.WriteString("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
 			status := "done"
 			if r.Error != "" {
 				status = "failed"
 			}
 			args = append(args, sanitizeStr(r.URL), r.StatusCode, sanitizeStr(r.ContentType), r.ContentLength,
-				sanitizeStr(r.Body), sanitizeStr(r.Title), sanitizeStr(r.Description), sanitizeStr(r.Language),
+				"", sanitizeStr(r.Title), sanitizeStr(r.Description), sanitizeStr(r.Language),
 				sanitizeStr(r.Domain), sanitizeStr(r.RedirectURL), r.FetchTimeMs, r.CrawledAt,
-				sanitizeStr(r.Error), status)
+				sanitizeStr(r.Error), status, sanitizeStr(r.BodyCID))
 		}
 
 		if _, err := db.Exec(b.String(), args...); err != nil {
@@ -274,6 +280,60 @@ func (rdb *ResultDB) PendingCount() int {
 // Dir returns the result directory path.
 func (rdb *ResultDB) Dir() string {
 	return rdb.dir
+}
+
+// ReopenShards closes and reopens each DuckDB shard connection, releasing the
+// CGO buffer pool (~256 MB per shard × 8 shards = ~2 GB) which is invisible
+// to Go's GC. Call between domain batches in batch/pipeline chunk modes.
+func (rdb *ResultDB) ReopenShards() error {
+	for i, s := range rdb.shards {
+		// Flush any pending batch before closing.
+		s.mu.Lock()
+		if len(s.batch) > 0 {
+			batch := s.batch
+			s.batch = make([]Result, 0, s.batchSz)
+			s.mu.Unlock()
+			s.flushCh <- batch
+			// Wait for the flusher goroutine to drain it.
+			for {
+				if len(s.flushCh) == 0 {
+					break
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		} else {
+			s.mu.Unlock()
+		}
+
+		// Close and reopen to release DuckDB's CGO buffer pool.
+		path := filepath.Join(rdb.dir, fmt.Sprintf("results_%03d.duckdb", i))
+		s.db.Close()
+		db, err := sql.Open("duckdb", path)
+		if err != nil {
+			return fmt.Errorf("reopen shard %d: %w", i, err)
+		}
+		if err := applyShardSettings(db); err != nil {
+			db.Close()
+			return fmt.Errorf("reopen shard %d settings: %w", i, err)
+		}
+		s.db = db
+	}
+	return nil
+}
+
+// applyShardSettings applies DuckDB performance settings to a freshly opened connection.
+func applyShardSettings(db *sql.DB) error {
+	for _, stmt := range []string{
+		"SET memory_limit='256MB'",
+		"SET threads=1",
+		"SET preserve_insertion_order=false",
+		"SET checkpoint_threshold='4MB'",
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			fmt.Fprintf(os.Stderr, "[resultdb] %s: %v\n", stmt, err)
+		}
+	}
+	return nil
 }
 
 // Close flushes remaining results, waits for all flushers, and closes databases.
