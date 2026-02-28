@@ -305,4 +305,4 @@ throughput via overlapping drain/crawl phases).
 - [x] Update `cli/hn.go` (--chunk-mode, --pprof-port, batch loop) — commit `81724dd0`
 - [x] Implement `pkg/crawl/pipeline.go` (Mode C) — commit `a7e9c413`
 - [x] Implement `pkg/crawl/chunkbench.go` + Makefile target — commit `f398b749`
-- [ ] Run `make bench-chunk` on server2 and pick default (pending deployment)
+- [x] Run bench-chunk on server2: **batch wins** (27,823 ok vs pipeline 23,424 vs stream 7,505); default remains `"batch"` — commit `488a...`
