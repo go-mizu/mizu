@@ -343,8 +343,16 @@ func processOneDomain(ctx context.Context, urls []SeedURL,
 					}
 					// Dead-domain probe: if DomainDeadProbe timeouts with 0 successes,
 					// the domain's TCP/HTTP layer is dead — abandon remaining URLs.
-					if cfg.DomainDeadProbe > 0 && n >= int64(cfg.DomainDeadProbe) && domainSuccesses.Load() == 0 {
-						abandonOnce.Do(func() { close(abandonCh) })
+					// Stall probe: if timeouts ≥ successes×DomainStallRatio after the probe
+					// window (e.g. ratio=20 → >95% timeout rate), abandon — domain is alive
+					// but too slow to be worth crawling further.
+					if cfg.DomainDeadProbe > 0 && n >= int64(cfg.DomainDeadProbe) {
+						s := domainSuccesses.Load()
+						isDead := s == 0
+						isStalling := cfg.DomainStallRatio > 0 && s > 0 && n >= int64(s)*int64(cfg.DomainStallRatio)
+						if isDead || isStalling {
+							abandonOnce.Do(func() { close(abandonCh) })
+						}
 					}
 					failures.AddURL(FailedURL{
 						URL:         seed.URL,

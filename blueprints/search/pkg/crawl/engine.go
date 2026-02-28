@@ -45,6 +45,7 @@ type Config struct {
 	DomainFailThreshold int           // consecutive timeouts before abandoning a domain (0=disabled)
 	DomainTimeout       time.Duration // per-domain context deadline; cancel remaining URLs after this (0=disabled, <0=adaptive: 2×sweep time, clamped [30s,10min])
 	DomainDeadProbe     int           // abandon domain after this many timeouts with 0 successes (0=disabled); catches dead-HTTP domains early
+	DomainStallRatio    int           // abandon domain when timeouts ≥ successes×ratio after DomainDeadProbe timeouts (0=disabled); e.g. 20 = >95% timeout rate
 	Notifier            DomainNotifier // optional domain lifecycle callbacks (nil = disabled)
 
 	// Swarm engine – used by queen to tell drones where to write.

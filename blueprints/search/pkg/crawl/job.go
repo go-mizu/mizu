@@ -21,6 +21,7 @@ type JobConfig struct {
 	DomainFailThreshold int
 	DomainTimeout       time.Duration // 0=disabled, <0=adaptive per-domain
 	DomainDeadProbe     int           // abandon dead-HTTP domains after N timeouts with 0 successes (0=disabled)
+	DomainStallRatio    int           // abandon stalling domains when timeouts ≥ successes×ratio (0=disabled, e.g. 20 = >95% timeout rate)
 	BatchSize           int
 
 	SysInfo *SysInfo // nil = auto-gather via LoadOrGatherSysInfo
@@ -114,6 +115,9 @@ func RunJob(ctx context.Context, seeds []SeedURL, dns DNSCache, cfg JobConfig) (
 	}
 	if cfg.DomainDeadProbe > 0 {
 		engCfg.DomainDeadProbe = cfg.DomainDeadProbe
+	}
+	if cfg.DomainStallRatio > 0 {
+		engCfg.DomainStallRatio = cfg.DomainStallRatio
 	}
 	if cfg.BatchSize > 0 {
 		engCfg.BatchSize = cfg.BatchSize

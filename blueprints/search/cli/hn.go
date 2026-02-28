@@ -557,6 +557,7 @@ func newHNRecrawl() *cobra.Command {
 		domainFailThreshold int
 		domainTimeoutMs     int
 		domainDeadProbe     int
+		domainStallRatio    int
 		retryTimeoutMs      int
 		noRetry             bool
 		writerMode          string
@@ -676,7 +677,7 @@ and adaptive timeouts.`,
 			fmt.Println()
 
 			return runHNRecrawlV3(ctx, cfg, seedRes,
-				engine, workers, maxConnsPerDomain, timeoutMs, domainFailThreshold, domainTimeoutMs, domainDeadProbe, statusOnly, batchSize, int64(slowDomainMs),
+				engine, workers, maxConnsPerDomain, timeoutMs, domainFailThreshold, domainTimeoutMs, domainDeadProbe, domainStallRatio, statusOnly, batchSize, int64(slowDomainMs),
 				dnsWorkers, dnsTimeoutMs,
 				retryTimeoutMs, noRetry, writerMode,
 				chunkMode, chunkSize, bodyStoreDir,
@@ -700,6 +701,7 @@ and adaptive timeouts.`,
 	cmd.Flags().IntVar(&domainFailThreshold, "domain-fail-threshold", -1, "Abandon domain after this many timeout rounds (×conns); -1=engine default (3)")
 	cmd.Flags().IntVar(&domainTimeoutMs, "domain-timeout", -1, "Per-domain context deadline in ms; 0=disabled, -1=adaptive (2×sweep time, clamped [30s,10min])")
 	cmd.Flags().IntVar(&domainDeadProbe, "domain-dead-probe", 10, "Abandon domain after this many consecutive timeouts with 0 successes (0=disabled)")
+	cmd.Flags().IntVar(&domainStallRatio, "domain-stall-ratio", 20, "Abandon domain when timeouts ≥ successes×ratio after dead-probe window (0=disabled; 20 = >95% timeout rate)")
 
 	cmd.Flags().IntVar(&dnsWorkers, "dns-workers", 1000, "Concurrent DNS workers (0=skip DNS pre-resolution)")
 	cmd.Flags().IntVar(&dnsTimeoutMs, "dns-timeout", 1500, "DNS lookup timeout in milliseconds")
@@ -725,7 +727,7 @@ func runHNRecrawlV3(ctx context.Context,
 	hnCfg hn.Config,
 	seedRes *hn.RecrawlSeedResult,
 	engineName string,
-	workers, maxConnsPerDomain, timeoutMs, domainFailThreshold, domainTimeoutMs, domainDeadProbe int,
+	workers, maxConnsPerDomain, timeoutMs, domainFailThreshold, domainTimeoutMs, domainDeadProbe, domainStallRatio int,
 	statusOnly bool,
 	batchSize int,
 	slowDomainMs int64,
@@ -874,6 +876,7 @@ func runHNRecrawlV3(ctx context.Context,
 		InsecureTLS:         true,
 		DomainFailThreshold: domainFailThreshold,
 		DomainDeadProbe:     domainDeadProbe,
+		DomainStallRatio:    domainStallRatio,
 		BatchSize:           batchSize,
 		ChunkMode:           chunkMode,
 		ChunkSize:           chunkSize,

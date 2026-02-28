@@ -872,6 +872,7 @@ func newCCRecrawl() *cobra.Command {
 		domainTimeoutMs     int
 		domainFailThreshold int
 		domainDeadProbe     int
+		domainStallRatio    int
 		retryTimeoutMs      int
 		noRetry             bool
 		dbMemMB             int
@@ -958,6 +959,7 @@ Examples:
 			domainTimeoutMs:     domainTimeoutMs,
 			domainFailThreshold: domainFailThreshold,
 			domainDeadProbe:     domainDeadProbe,
+			domainStallRatio:    domainStallRatio,
 			retryTimeoutMs:      retryTimeoutMs,
 			noRetry:             noRetry,
 			dbMemMB:             dbMemMB,
@@ -994,6 +996,7 @@ Examples:
 	cmd.Flags().IntVar(&domainTimeoutMs, "domain-timeout", -1, "Per-domain context deadline in ms; 0=disabled, -1=adaptive (2×sweep time, clamped [30s,10min])")
 	cmd.Flags().IntVar(&domainFailThreshold, "domain-fail-threshold", -1, "Abandon domain after this many timeout rounds (×conns); -1=engine default (3)")
 	cmd.Flags().IntVar(&domainDeadProbe, "domain-dead-probe", 10, "Abandon domain after this many consecutive timeouts with 0 successes (0=disabled)")
+	cmd.Flags().IntVar(&domainStallRatio, "domain-stall-ratio", 20, "Abandon domain when timeouts ≥ successes×ratio after dead-probe window (0=disabled; 20 = >95% timeout rate)")
 	cmd.Flags().IntVar(&retryTimeoutMs, "retry-timeout", 10000, "Pass-2 timeout in ms for retrying timeout URLs (0=disabled)")
 	cmd.Flags().BoolVar(&noRetry, "no-retry", false, "Skip pass-2 retry of timeout URLs")
 	cmd.Flags().IntVar(&dbMemMB, "db-mem-mb", 0, "DuckDB memory per shard in MB (0=auto: 15% avail RAM / shards)")
@@ -1029,6 +1032,7 @@ type ccRecrawlOpts struct {
 	domainTimeoutMs     int
 	domainFailThreshold int
 	domainDeadProbe     int
+	domainStallRatio    int
 	retryTimeoutMs      int
 	noRetry             bool
 	dbMemMB             int
@@ -1379,6 +1383,7 @@ func runCCRecrawlV3(ctx context.Context, opts ccRecrawlOpts,
 		InsecureTLS:         true,
 		DomainFailThreshold: opts.domainFailThreshold,
 		DomainDeadProbe:     opts.domainDeadProbe,
+		DomainStallRatio:    opts.domainStallRatio,
 		BatchSize:           opts.batchSize,
 		ChunkMode:           opts.chunkMode,
 	}
