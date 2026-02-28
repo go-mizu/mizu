@@ -687,7 +687,7 @@ and adaptive timeouts.`,
 
 	cmd.Flags().IntVar(&workers, "workers", -1, "Concurrent domain workers (-1 = auto from hardware)")
 	cmd.Flags().IntVar(&maxConnsPerDomain, "max-conns-per-domain", -1, "Max simultaneous connections per domain (-1 = auto from hardware)")
-	cmd.Flags().IntVar(&timeoutMs, "timeout", 2000, "Per-request HTTP timeout in milliseconds (pass 1)")
+	cmd.Flags().IntVar(&timeoutMs, "timeout", 1000, "Per-request HTTP timeout in milliseconds (pass 1)")
 	cmd.Flags().BoolVar(&statusOnly, "status-only", false, "Only check HTTP status, close body immediately (fastest)")
 	cmd.Flags().IntVar(&batchSize, "batch-size", 100, "DB write batch size")
 	cmd.Flags().IntVar(&slowDomainMs, "slow-domain-ms", 30_000, "Highlight domains active for longer than this threshold (ms)")
@@ -1199,11 +1199,11 @@ func runHNRecrawlV3(ctx context.Context,
 		failedDBDone = true
 		failedDB.Close()
 
-		retrySeeds, rErr := recrawler.LoadTimeoutURLs(failedDBPath)
+		retrySeeds, rErr := recrawler.LoadRetryURLs(failedDBPath)
 		if rErr != nil {
 			fmt.Printf("  %s loading timeout URLs for retry: %v\n", warningStyle.Render("warn:"), rErr)
 		} else if len(retrySeeds) > 0 {
-			fmt.Printf("\n%s  %s timeout URLs → retrying at %dms timeout\n",
+			fmt.Printf("\n%s  %s http_timeout + dns_timeout URLs → retrying at %dms timeout\n",
 				infoStyle.Render("Pass 2:"),
 				labelStyle.Render(formatInt64Exact(int64(len(retrySeeds)))),
 				retryTimeoutMs,
@@ -1284,6 +1284,18 @@ func runHNRecrawlV3(ctx context.Context,
 				stats.Total += retryStats.Total
 				stats.Failed += retryStats.Failed
 				stats.Bytes += retryStats.Bytes
+
+				// Report false negatives rescued by pass 2
+				falseNegCount := retryStats.OK
+				bt.RecordFalseNeg(falseNegCount)
+				if saveErr := bt.Save(benchDataDir); saveErr != nil {
+					fmt.Fprintf(os.Stderr, "  [warn] bench save (pass 2): %v\n", saveErr)
+				}
+				if falseNegCount > 0 {
+					fmt.Printf("  %s  false negatives rescued by pass 2: %s\n",
+						successStyle.Render("↑"),
+						labelStyle.Render(ccFmtInt64(falseNegCount)))
+				}
 			}
 		} else {
 			fmt.Printf("\n%s  no timeout URLs to retry\n", infoStyle.Render("Pass 2:"))

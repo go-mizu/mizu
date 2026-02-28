@@ -20,6 +20,7 @@ type BenchResult struct {
 	OKCount         int64   `json:"ok_count"`
 	BodyStoreWrites int64   `json:"body_store_writes"`
 	BatchCount      int     `json:"batch_count"`
+	FalseNegCount   int64   `json:"false_neg_count"` // URLs rescued by pass 2 retry
 }
 
 // BenchTracker collects runtime stats during a chunk mode crawl run.
@@ -32,6 +33,7 @@ type BenchTracker struct {
 	bsWrites   int64
 	batchCount int
 	peakRPS    float64
+	falseNeg   int64
 }
 
 // NewBenchTracker starts a new benchmark tracker for the given chunk mode.
@@ -66,6 +68,9 @@ func (t *BenchTracker) RecordBatch(okDelta int64, elapsed time.Duration) {
 // RecordBodyStore adds n to the body store write count.
 func (t *BenchTracker) RecordBodyStore(n int64) { t.bsWrites += n }
 
+// RecordFalseNeg records the number of false negatives rescued by pass 2.
+func (t *BenchTracker) RecordFalseNeg(n int64) { t.falseNeg = n }
+
 // Save writes the benchmark result JSON to dataDir/bench_chunk_{mode}.json.
 func (t *BenchTracker) Save(dataDir string) error {
 	dur := time.Since(t.start)
@@ -82,6 +87,7 @@ func (t *BenchTracker) Save(dataDir string) error {
 		OKCount:         t.okCount,
 		BodyStoreWrites: t.bsWrites,
 		BatchCount:      t.batchCount,
+		FalseNegCount:   t.falseNeg,
 	}
 
 	path := filepath.Join(dataDir, fmt.Sprintf("bench_chunk_%s.json", t.mode))

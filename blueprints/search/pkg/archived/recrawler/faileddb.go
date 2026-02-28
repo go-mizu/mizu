@@ -438,6 +438,40 @@ func LoadTimeoutURLs(dbPath string) ([]SeedURL, error) {
 	return seeds, nil
 }
 
+// LoadRetryURLs reads all URLs worth retrying in pass 2:
+//   - http_timeout: server connected but timed out (most common false negative)
+//   - dns_timeout:  DNS lookup timed out; may succeed with more time
+//
+// Returns seeds ordered by domain for connection-pool efficiency.
+func LoadRetryURLs(dbPath string) ([]SeedURL, error) {
+	db, err := sql.Open("duckdb", dbPath+"?access_mode=READ_ONLY")
+	if err != nil {
+		return nil, fmt.Errorf("opening failed db: %w", err)
+	}
+	defer db.Close()
+
+	rows, err := db.Query(`
+		SELECT url, domain
+		FROM failed_urls
+		WHERE reason IN ('http_timeout', 'dns_timeout')
+		ORDER BY domain, url
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("querying retry URLs: %w", err)
+	}
+	defer rows.Close()
+
+	var seeds []SeedURL
+	for rows.Next() {
+		var s SeedURL
+		if err := rows.Scan(&s.URL, &s.Domain); err != nil {
+			continue
+		}
+		seeds = append(seeds, s)
+	}
+	return seeds, nil
+}
+
 // FailedURLSummary returns a breakdown of failed URLs by reason and total count.
 func FailedURLSummary(dbPath string) (map[string]int, int, error) {
 	db, err := sql.Open("duckdb", dbPath+"?access_mode=READ_ONLY")

@@ -101,14 +101,14 @@ func AutoBinChanCap(availMB, bodyKB int) int {
 	return clamp(c, 256, 32768)
 }
 
-// AutoWorkersFull returns max workers constrained to 20% of available RAM for bodies.
+// AutoWorkersFull returns max workers constrained to 25% of available RAM for bodies.
 // Use when full-body crawl is enabled (bodyKB = 256).
 func AutoWorkersFull(availMB, bodyKB int) int {
 	if bodyKB <= 0 {
 		bodyKB = 256
 	}
-	w := availMB * 1024 / 5 / bodyKB
-	return clamp(w, 100, 8192)
+	w := availMB * 1024 / 4 / bodyKB
+	return clamp(w, 100, 16384)
 }
 
 // AutoBatchDomains returns how many domains to process per chunk in batch mode.
