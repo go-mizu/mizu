@@ -83,12 +83,12 @@ func RunJob(ctx context.Context, seeds []SeedURL, dns DNSCache, cfg JobConfig) (
 		si = &gathered
 	}
 
-	if si.MemAvailableMB > 0 {
-		// GOMEMLIMIT = 75% of available RAM: leaves headroom for DuckDB CGO
-		// allocations while encouraging GC to run more aggressively than the
-		// default (unlimited). Seeds are loaded into memory at startup (~1 GB
-		// for 7M seeds) so the limit must be above the startup heap peak.
-		if limit := int64(si.MemAvailableMB) * 1024 * 1024 * 75 / 100; limit > 0 {
+	if si.MemTotalMB > 0 {
+		// GOMEMLIMIT = 75% of total RAM. Using total (not available) avoids
+		// stale-cache issues: available fluctuates when sysinfo is measured
+		// while a prior run is still in memory. Total is stable and seeds
+		// (~1 GB for 7M URLs) need headroom above the startup heap peak.
+		if limit := int64(si.MemTotalMB) * 1024 * 1024 * 75 / 100; limit > 0 {
 			debug.SetMemoryLimit(limit)
 		}
 	}
