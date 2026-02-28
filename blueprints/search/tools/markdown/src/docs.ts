@@ -4,41 +4,36 @@ export function renderDocs(contentHtml: string): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Docs — URL → Markdown</title>
+  <title>Docs — markdown.go-mizu</title>
+  <script>
+  (function(){var t=localStorage.getItem('theme');if(t)document.documentElement.setAttribute('data-theme',t);})();
+  <\/script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
   <style>
-  /* docs layout — no borders */
-  .layout{display:flex;min-height:calc(100vh - 52px)}
-  .sidebar{width:220px;flex-shrink:0;padding:32px 24px;position:sticky;top:0;height:calc(100vh - 52px);overflow-y:auto}
-  .sidebar-title{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg3);margin-bottom:16px}
-  .sidebar a{display:block;font-size:14px;color:var(--fg3);padding:4px 0;transition:color .15s}
-  .sidebar a:hover{color:var(--fg)}
-  .sidebar a.on{color:var(--fg);font-weight:500}
-  /* content — centered, generous width */
-  .content{flex:1;padding:48px 64px;max-width:800px}
-  @media(max-width:720px){.sidebar{display:none}.content{padding:32px 24px;max-width:100%}}
-  /* rendered markdown styles */
-  .content h1{font-size:36px;font-weight:700;letter-spacing:-.03em;margin-bottom:16px}
-  .content h2{font-size:22px;font-weight:600;letter-spacing:-.02em;margin:48px 0 14px;scroll-margin-top:24px}
-  .content h2:first-of-type{margin-top:0}
-  .content h3{font-size:17px;font-weight:600;margin:28px 0 10px}
-  .content p{font-size:16px;color:var(--fg2);line-height:1.75;margin-bottom:16px}
-  .content ul,.content ol{padding-left:1.5em;margin-bottom:16px}
-  .content li{font-size:16px;color:var(--fg2);margin:4px 0;line-height:1.7}
-  .content strong{color:var(--fg);font-weight:600}
-  .content a{color:var(--fg);text-decoration:underline;text-underline-offset:2px}
-  .content pre{background:var(--code-bg);padding:20px 22px;overflow-x:auto;margin:20px 0;position:relative}
-  .content pre code{font-family:var(--mono);font-size:13.5px;line-height:1.7;color:var(--code-fg);background:none;padding:0}
-  .content table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
-  .content th{text-align:left;padding:8px 14px;border-bottom:1px solid var(--border);font-weight:600}
-  .content td{padding:8px 14px;border-bottom:1px solid var(--border2);color:var(--fg2)}
-  .content td:first-child{font-family:var(--mono);font-size:12.5px;color:var(--fg)}
-  /* copy buttons on pre blocks */
-  .content pre .copy-btn{position:absolute;top:10px;right:10px;background:#222;border:1px solid #333;color:#aaa;font-family:var(--mono);font-size:11px;padding:4px 10px;cursor:pointer;transition:all .15s}
-  .content pre .copy-btn:hover{background:#333;color:#fff}
+  .doc-wrap{max-width:720px;margin:0 auto;padding:48px 32px 80px}
+  @media(max-width:640px){.doc-wrap{padding:32px 20px 60px}}
+  .doc-wrap h1{font-size:32px;font-weight:700;letter-spacing:-.03em;margin-bottom:12px;color:var(--fg)}
+  .doc-wrap>p:first-of-type{font-size:16px;color:var(--fg2);margin-bottom:40px;line-height:1.7}
+  .doc-wrap h2{font-size:20px;font-weight:600;letter-spacing:-.02em;margin:0;scroll-margin-top:24px;color:var(--fg);padding:48px 0 14px;border-top:1px solid var(--border)}
+  .doc-wrap h2:first-of-type{padding-top:0;border-top:none}
+  .doc-wrap h3{font-size:16px;font-weight:600;margin:28px 0 10px;color:var(--fg)}
+  .doc-wrap p{font-size:15px;color:var(--fg2);line-height:1.75;margin-bottom:14px}
+  .doc-wrap ul,.doc-wrap ol{padding-left:1.5em;margin-bottom:16px}
+  .doc-wrap li{font-size:15px;color:var(--fg2);margin:4px 0;line-height:1.7}
+  .doc-wrap strong{color:var(--fg);font-weight:600}
+  .doc-wrap a{color:var(--fg);text-decoration:underline;text-underline-offset:2px;text-decoration-color:var(--border2)}
+  .doc-wrap a:hover{text-decoration-color:var(--fg)}
+  .doc-wrap code{font-family:var(--mono);font-size:12px;background:var(--bg2);padding:2px 6px;color:var(--fg)}
+  .doc-wrap pre{background:var(--code-bg);padding:20px 22px;overflow-x:auto;margin:16px 0;position:relative}
+  .doc-wrap pre code{font-family:var(--mono);font-size:13px;line-height:1.7;color:var(--code-fg);background:none;padding:0}
+  .doc-wrap table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+  .doc-wrap th{text-align:left;padding:8px 14px;border-bottom:1px solid var(--border);font-weight:600;color:var(--fg)}
+  .doc-wrap td{padding:8px 14px;border-bottom:1px solid var(--border2);color:var(--fg2)}
+  .doc-wrap pre .copy-btn{position:absolute;top:10px;right:10px;background:#222;border:1px solid #333;color:#aaa;font-family:var(--mono);font-size:11px;padding:4px 10px;cursor:pointer;transition:all .15s}
+  .doc-wrap pre .copy-btn:hover{color:#fff}
   </style>
 </head>
 <body>
@@ -46,79 +41,73 @@ export function renderDocs(contentHtml: string): string {
   <div class="hdr">
     <a href="/" class="logo">
       <span class="logo-sq">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect width="16" height="12" x="4" y="6" rx="1"/>
-          <path d="M4 12h2l2-2 2 2 2-4 2 4 2-2h2"/>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--bg)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <path d="M8 16V8.5a.5.5 0 0 1 .9-.3l2.7 3.6a.5.5 0 0 0 .8 0l2.7-3.6a.5.5 0 0 1 .9.3V16"/>
         </svg>
       </span>
-      URL → Markdown
+      markdown.go-mizu
     </a>
     <nav>
       <a href="/">Home</a>
-      <a href="/llms.txt">llms.txt</a>
       <a href="https://github.com/go-mizu/mizu">GitHub</a>
+      <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">
+        <svg id="icon-moon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
+        <svg id="icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </button>
     </nav>
   </div>
 </header>
 
-<div class="layout">
-  <nav class="sidebar" id="sidebar">
-    <div class="sidebar-title">Docs</div>
-    <!-- JS builds nav from h2 headings -->
-  </nav>
-  <div class="content" id="content">
-    ${contentHtml}
-  </div>
+<div class="doc-wrap">
+  ${contentHtml}
 </div>
 
 <script>
 (function() {
-  var headings = document.querySelectorAll('.content h2');
-  var sidebar = document.getElementById('sidebar');
-  headings.forEach(function(h) {
-    if (!h.id) {
-      h.id = h.textContent.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    }
-    var a = document.createElement('a');
-    a.href = '#' + h.id;
-    a.textContent = h.textContent;
-    sidebar.appendChild(a);
-  });
-
-  // Add copy buttons to pre blocks
-  document.querySelectorAll('.content pre').forEach(function(pre) {
+  document.querySelectorAll('.doc-wrap pre').forEach(function(pre) {
     var btn = document.createElement('button');
     btn.className = 'copy-btn';
     btn.textContent = 'copy';
     btn.onclick = function() {
-      var text = (pre.querySelector('code') || pre).innerText || '';
-      navigator.clipboard.writeText(text.trim()).catch(function() {
+      var code = pre.querySelector('code') || pre;
+      var text = code.innerText || '';
+      var self = btn;
+      function done() { self.textContent = 'copied!'; setTimeout(function() { self.textContent = 'copy'; }, 2000); }
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text.trim()).then(done).catch(function() {
+          var ta = document.createElement('textarea');
+          ta.style.position='fixed';ta.style.top='-9999px';ta.value=text.trim();
+          document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+          done();
+        });
+      } else {
         var ta = document.createElement('textarea');
-        ta.style.position = 'fixed'; ta.style.top = '-9999px';
-        ta.value = text.trim();
-        document.body.appendChild(ta); ta.select();
-        document.execCommand('copy'); document.body.removeChild(ta);
-      });
-      btn.textContent = 'copied!';
-      setTimeout(function() { btn.textContent = 'copy'; }, 2000);
+        ta.style.position='fixed';ta.style.top='-9999px';ta.value=text.trim();
+        document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+        done();
+      }
     };
     pre.appendChild(btn);
   });
-
-  // Scroll-spy
-  var links = [];
-  document.querySelectorAll('.sidebar a[href^="#"]').forEach(function(l) { links.push(l); });
-  var sections = document.querySelectorAll('.content h2[id]');
-  window.addEventListener('scroll', function() {
-    var pos = window.scrollY + 80;
-    var active = null;
-    sections.forEach(function(s) { if (s.getBoundingClientRect().top + window.scrollY <= pos) active = s; });
-    links.forEach(function(l) {
-      l.className = (active && l.getAttribute('href') === '#' + active.id) ? 'on' : '';
-    });
-  }, { passive: true });
 })();
-</script>
+
+function updateToggleIcon() {
+  var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  document.getElementById('icon-moon').style.display = dark ? 'none' : '';
+  document.getElementById('icon-sun').style.display = dark ? '' : 'none';
+}
+
+function toggleTheme() {
+  var cur = document.documentElement.getAttribute('data-theme');
+  var next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('theme', next);
+  updateToggleIcon();
+}
+
+updateToggleIcon();
+<\/script>
 </body>
 </html>`;
 }
