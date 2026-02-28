@@ -11,3 +11,7 @@ binding = "AI"
 
 [browser]
 binding = "BROWSER"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"

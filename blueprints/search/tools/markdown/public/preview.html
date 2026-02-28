@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Preview — markdown.go-mizu</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+/* url bar */
+.url-bar{width:100%;border-bottom:1px solid var(--border2);padding:20px 32px}
+.url-bar-inner{max-width:var(--w);margin:0 auto;display:flex;gap:0}
+/* states */
+.loading-state{display:none;padding:80px 32px;text-align:center}
+.spinner{display:inline-block;width:22px;height:22px;border:2px solid var(--border2);border-top-color:var(--fg);animation:spin .7s linear infinite;margin-right:10px;vertical-align:middle}
+.loading-txt{font-size:14px;color:var(--fg3);vertical-align:middle}
+.error-state{display:none;padding:32px}
+.error-box{max-width:var(--w);margin:0 auto;background:#fff5f5;border:1px solid #fecaca;padding:16px 20px;font-size:14px;color:#b91c1c}
+.result-state{display:none}
+/* meta bar */
+.meta-bar{width:100%;padding:14px 32px;border-bottom:1px solid var(--border2)}
+.meta-inner{max-width:var(--w);margin:0 auto;display:flex;align-items:center;gap:10px}
+.r-title{flex:1;font-size:14px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.r-raw{font-size:13px;color:var(--fg3);white-space:nowrap;flex-shrink:0}
+.r-raw:hover{color:var(--fg)}
+/* tab bar */
+.tab-bar{width:100%;padding:0 32px;border-bottom:1px solid var(--border2)}
+.tab-bar-inner{max-width:var(--w);margin:0 auto;display:flex;align-items:center;justify-content:space-between}
+.tabs{display:flex}
+.tab{font-size:13px;padding:12px 16px;background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer;color:var(--fg3);transition:color .15s,border-color .15s;font-family:var(--sans)}
+.tab.on{color:var(--fg);border-bottom-color:var(--fg)}
+.tab-actions{display:flex;gap:8px}
+.act-btn{font-family:var(--sans);font-size:13px;padding:7px 14px;background:#fff;color:var(--fg2);border:1px solid transparent;cursor:pointer;transition:border-color .15s,color .15s}
+.act-btn:hover{border:1px solid var(--border2);color:var(--fg)}
+/* panels */
+.panel{display:none}
+.panel.on{display:block}
+.md-panel{padding:32px}
+.pv-panel{padding:32px}
+.md-wrap{max-width:var(--w);margin:0 auto}
+.pv-wrap{max-width:860px;margin:0 auto}
+#md-out{font-family:var(--mono);font-size:13.5px;line-height:1.75;white-space:pre-wrap;color:var(--fg)}
+/* prose */
+#prev-out h1{font-size:1.6em;font-weight:600;margin-bottom:16px;letter-spacing:-.02em}
+#prev-out h2{font-size:1.3em;font-weight:600;margin:24px 0 12px}
+#prev-out h3{font-size:1.1em;font-weight:600;margin:20px 0 10px}
+#prev-out h4,#prev-out h5,#prev-out h6{font-weight:600;margin:16px 0 8px}
+#prev-out p{color:#333;line-height:1.75;margin-bottom:14px}
+#prev-out ul,#prev-out ol{padding-left:24px;margin-bottom:14px}
+#prev-out li{line-height:1.7;color:#333}
+#prev-out code{font-family:var(--mono);font-size:12px;background:#f5f5f5;padding:1px 5px}
+#prev-out pre{background:#111;padding:20px;overflow-x:auto;margin-bottom:16px}
+#prev-out pre code{background:none;padding:0;color:#e4e4e7;font-size:13px}
+#prev-out blockquote{border-left:3px solid var(--border2);padding-left:16px;color:var(--fg3);margin-bottom:14px}
+#prev-out a{color:#1a73e8;text-decoration:underline;text-decoration-color:#c7d7f5}
+#prev-out a:hover{text-decoration-color:#1a73e8}
+#prev-out table{width:100%;border-collapse:collapse;margin-bottom:16px;font-size:14px}
+#prev-out th,#prev-out td{border:1px solid var(--border2);padding:8px 12px;text-align:left}
+#prev-out th{background:#fafafa;font-weight:600}
+#prev-out hr{border:none;border-top:1px solid var(--border2);margin:24px 0}
+#prev-out img{max-width:100%;height:auto}
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="hdr">
+    <a href="/" class="logo">
+      <span class="logo-sq">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 3L4 7l4 4"/><line x1="4" y1="7" x2="20" y2="7"/><path d="M16 21l4-4-4-4"/><line x1="20" y1="17" x2="4" y2="17"/>
+        </svg>
+      </span>
+      markdown.go-mizu
+    </a>
+    <nav>
+      <a href="/docs">Docs</a>
+      <a href="https://github.com/go-mizu/mizu">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<div class="url-bar">
+  <form class="url-bar-inner" id="form" onsubmit="handleSubmit(event)">
+    <input id="url-in" type="url" class="url-in" placeholder="https://example.com" autocomplete="off" spellcheck="false">
+    <button type="submit" id="sub-btn" class="cvt-btn"><span id="btn-sp" style="display:none" class="spinner"></span><span id="btn-t">Convert</span></button>
+  </form>
+</div>
+
+<div class="loading-state" id="loading-state">
+  <span class="spinner"></span>
+  <span class="loading-txt">Converting…</span>
+</div>
+
+<div class="error-state" id="error-state">
+  <div class="error-box" id="err-msg"></div>
+</div>
+
+<div class="result-state" id="result-state">
+
+  <div class="meta-bar">
+    <div class="meta-inner">
+      <span class="r-title" id="r-title"></span>
+      <span class="badge b-ai" id="r-method"></span>
+      <span class="badge b-dim" id="r-dur"></span>
+      <span class="badge b-dim" id="r-tok" style="display:none"></span>
+      <a class="r-raw" id="r-raw" href="#" target="_blank" rel="noopener">View raw →</a>
+    </div>
+  </div>
+
+  <div class="tab-bar">
+    <div class="tab-bar-inner">
+      <div class="tabs">
+        <button class="tab on" id="tab-md" onclick="switchTab('md')">Markdown</button>
+        <button class="tab" id="tab-pv" onclick="switchTab('pv')">Preview</button>
+      </div>
+      <div class="tab-actions">
+        <button class="act-btn" onclick="copyMd()"><span id="copy-lbl">Copy</span></button>
+        <button class="act-btn" onclick="saveMd()">Save .md</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="panel-md" class="panel md-panel on">
+    <div class="md-wrap">
+      <pre id="md-out"></pre>
+    </div>
+  </div>
+
+  <div id="panel-pv" class="panel pv-panel">
+    <div class="pv-wrap">
+      <div id="prev-out"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+var md = '';
+var currentUrl = '';
+
+var METHOD_MAP = {
+  primary: ['✦ Native', 'badge b-native'],
+  ai:      ['⚡ Workers AI', 'badge b-ai'],
+  browser: ['🖥 Browser', 'badge b-browser'],
+};
+
+function handleSubmit(e) {
+  e.preventDefault();
+  var url = document.getElementById('url-in').value.trim();
+  if (!url) return;
+  history.replaceState(null, '', '/preview?url=' + encodeURIComponent(url));
+  convertUrl(url);
+}
+
+function setLoading(v) {
+  document.getElementById('sub-btn').disabled = v;
+  document.getElementById('btn-t').textContent = v ? 'Converting…' : 'Convert';
+  document.getElementById('btn-sp').style.display = v ? '' : 'none';
+  document.getElementById('loading-state').style.display = v ? 'block' : 'none';
+}
+
+async function convertUrl(url) {
+  currentUrl = url;
+  document.getElementById('url-in').value = url;
+  document.getElementById('error-state').style.display = 'none';
+  document.getElementById('result-state').style.display = 'none';
+  setLoading(true);
+  try {
+    var r = await fetch('/convert', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url: url})
+    });
+    if (!r.ok) {
+      var j = await r.json().catch(function() { return {error: 'Conversion failed'}; });
+      throw new Error(j.error || 'HTTP ' + r.status);
+    }
+    showResult(await r.json());
+  } catch(e) {
+    document.getElementById('err-msg').textContent = e.message || 'Conversion failed';
+    document.getElementById('error-state').style.display = 'block';
+  } finally {
+    setLoading(false);
+  }
+}
+
+function showResult(data) {
+  md = data.markdown || '';
+  document.getElementById('r-title').textContent = data.title || currentUrl;
+  var cfg = METHOD_MAP[data.method] || METHOD_MAP.ai;
+  var mb = document.getElementById('r-method');
+  mb.textContent = cfg[0]; mb.className = cfg[1];
+  document.getElementById('r-dur').textContent = data.durationMs + 'ms';
+  var tb = document.getElementById('r-tok');
+  if (data.tokens) { tb.textContent = '~' + data.tokens.toLocaleString() + ' tokens'; tb.style.display = ''; }
+  else { tb.style.display = 'none'; }
+  document.getElementById('r-raw').href = '/' + currentUrl;
+  document.getElementById('md-out').textContent = md;
+  var parsed = marked.parse(md);
+  if (typeof parsed !== 'string') return;
+  document.getElementById('prev-out').innerHTML = DOMPurify.sanitize(parsed);
+  document.getElementById('result-state').style.display = 'block';
+  switchTab('md');
+}
+
+function switchTab(t) {
+  ['md','pv'].forEach(function(k) {
+    document.getElementById('panel-' + k).className = 'panel' + (k === t ? ' on' : '') + (k === 'md' ? ' md-panel' : ' pv-panel');
+    document.getElementById('tab-' + k).className = 'tab' + (k === t ? ' on' : '');
+  });
+}
+
+async function copyMd() {
+  try { await navigator.clipboard.writeText(md); }
+  catch(e) {
+    var ta = document.createElement('textarea');
+    ta.value = md; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+  }
+  var el = document.getElementById('copy-lbl');
+  el.textContent = 'Copied!';
+  setTimeout(function() { el.textContent = 'Copy'; }, 2000);
+}
+
+function saveMd() {
+  var blob = new Blob([md], {type: 'text/markdown'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  var title = document.getElementById('r-title').textContent || 'document';
+  a.download = title.replace(/[^\w\s-]/g,'').trim().replace(/\s+/g,'-').toLowerCase() + '.md';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function() { URL.revokeObjectURL(a.href); }, 100);
+}
+
+window.addEventListener('load', function() {
+  var params = new URLSearchParams(window.location.search);
+  var url = params.get('url');
+  if (url) {
+    convertUrl(url);
+  } else {
+    document.getElementById('url-in').focus();
+  }
+});
+</script>
+</body>
+</html>

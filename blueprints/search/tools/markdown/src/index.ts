@@ -1,16 +1,11 @@
 import { Hono } from 'hono';
 import { convert } from './convert';
-import { renderPage } from './page';
-import { renderPreview } from './preview';
 import { renderDocs } from './docs';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Env = { AI: any; BROWSER: Fetcher };
+type Env = { AI: any; BROWSER: Fetcher; ASSETS: Fetcher };
 
 const app = new Hono<{ Bindings: Env }>();
-
-// Landing page
-app.get('/', (c) => c.html(renderPage()));
 
 // llms.txt — machine-readable API summary for LLM agents
 app.get('/llms.txt', (c) =>
@@ -102,15 +97,13 @@ app.options('/*', (c) => {
 // Docs page
 app.get('/docs', (c) => c.html(renderDocs()));
 
-// Preview page — client reads ?url= and calls POST /convert
-app.get('/preview', (c) => c.html(renderPreview()));
-
 // Text API: GET /:url+ (mirrors markdown.new/https://example.com pattern)
 // Matches any path starting with http:// or https://
-app.get('/*', async (c) => {
+// For other paths, falls through to the static assets handler below.
+app.get('/*', async (c, next) => {
   const path = c.req.path.slice(1); // strip leading /
   if (!path.startsWith('http://') && !path.startsWith('https://')) {
-    return c.notFound();
+    return next(); // fall through to static assets
   }
   // Reconstruct full URL including query string
   const search = new URL(c.req.url).search;
@@ -133,5 +126,8 @@ app.get('/*', async (c) => {
     return c.text(`Error: ${msg}`, 422);
   }
 });
+
+// Fall through to static assets (public/ directory)
+app.get('*', (c) => c.env.ASSETS.fetch(c.req.raw));
 
 export default app;

@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>URL → Markdown</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+/* page-specific */
+.hero{padding:72px 0 64px}
+.hero h1{font-size:clamp(40px,6vw,68px);font-weight:700;letter-spacing:-.04em;line-height:1.05;margin-bottom:36px;white-space:pre-line}
+.steps-list{list-style:none;margin-bottom:52px;display:flex;flex-direction:column;gap:14px}
+.step-item{display:flex;align-items:flex-start;gap:14px;font-size:15px;color:var(--fg2);line-height:1.5}
+.step-badge{width:22px;height:22px;background:#0a0a0a;color:#fff;font-size:12px;font-weight:700;font-family:var(--mono);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+.step-item code{font-size:12px;background:#f5f5f5;padding:1px 6px}
+.cta-grid{display:grid;grid-template-columns:1fr 1fr;gap:48px;max-width:900px}
+@media(max-width:680px){.cta-grid{grid-template-columns:1fr}}
+.cta-col-lbl{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg3);margin-bottom:10px}
+.url-row{display:flex}
+.agent-btn{width:100%;font-family:var(--sans);font-size:14px;font-weight:500;padding:14px 20px;background:#0a0a0a;color:#fff;border:1px solid #0a0a0a;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;transition:background .15s;margin-bottom:10px}
+.agent-btn:hover{background:#222;border-color:#222}
+.agent-confirm{font-size:13px;color:#15803d;display:none;margin-top:6px}
+.examples{margin-top:10px;font-size:13px;color:var(--fg3)}
+.eg{color:var(--fg2);cursor:pointer;text-decoration:underline;text-decoration-color:var(--border);transition:color .15s}
+.eg:hover{color:var(--fg)}
+.sec{padding:72px 0}
+.sec-lbl{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg3);margin-bottom:20px}
+.sec h2{font-size:28px;font-weight:600;letter-spacing:-.03em;margin-bottom:12px}
+.sec-sub{font-size:16px;color:#555;margin-bottom:44px;max-width:540px;line-height:1.6}
+.bgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border2);border:1px solid var(--border2);margin-bottom:44px}
+@media(max-width:640px){.bgrid{grid-template-columns:1fr}}
+.bcard{background:#fff;padding:28px}
+.bcard-n{font-family:var(--mono);font-size:11px;color:var(--fg3);margin-bottom:10px}
+.bcard-t{font-size:15px;font-weight:600;margin-bottom:6px}
+.bcard-d{font-size:13px;color:var(--fg2);line-height:1.6}
+.cbar{display:flex;background:#fafafa;border-bottom:1px solid var(--border)}
+.ctab{font-family:var(--mono);font-size:12px;padding:9px 14px;background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer;color:var(--fg3);transition:color .15s,border-color .15s}
+.ctab.on{color:var(--fg);border-bottom-color:var(--fg)}
+.cpanel{display:none;background:var(--code-bg);padding:22px;overflow-x:auto;position:relative}
+.cpanel.on{display:block}
+.cpanel pre{font-family:var(--mono);font-size:13px;line-height:1.7;color:var(--code-fg);white-space:pre;margin:0}
+.c1{color:#6b7280}.c2{color:#93c5fd}.c3{color:#86efac}.c4{color:#fcd34d}
+.copy-btn{position:absolute;top:12px;right:12px;background:#222;border:1px solid #333;color:#aaa;font-size:11px;font-family:var(--mono);padding:4px 10px;cursor:pointer;transition:color .15s}
+.copy-btn:hover{color:#fff}
+.ptag{display:inline-block;font-family:var(--mono);font-size:11px;padding:2px 7px;margin-top:14px}
+.ep{border:1px solid var(--border2);margin-bottom:16px}
+.eph{padding:12px 16px;display:flex;align-items:center;gap:10px;background:#fafafa;border-bottom:1px solid var(--border2)}
+.mtag{font-family:var(--mono);font-size:11px;font-weight:600;padding:3px 8px;flex-shrink:0}
+.get{background:#f0fdf4;color:#15803d}
+.post{background:#eff6ff;color:#1d4ed8}
+.epath{font-family:var(--mono);font-size:13px}
+.edesc{font-size:12px;color:var(--fg3);margin-left:auto}
+.epcode{background:#111;padding:22px;overflow-x:auto;position:relative}
+.epcode pre{font-family:var(--mono);font-size:12.5px;line-height:1.8;color:#e4e4e7;white-space:pre;margin:0}
+.rk{color:#93c5fd}.rv{color:#e4e4e7}.rc{color:#6b7280}
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="hdr">
+    <a href="/" class="logo">
+      <span class="logo-sq">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 3L4 7l4 4"/><line x1="4" y1="7" x2="20" y2="7"/><path d="M16 21l4-4-4-4"/><line x1="20" y1="17" x2="4" y2="17"/>
+        </svg>
+      </span>
+      URL → Markdown
+    </a>
+    <nav>
+      <a href="#agents">For agents</a>
+      <a href="#api">API</a>
+      <a href="/docs">Docs</a>
+      <a href="/llms.txt">llms.txt</a>
+      <a href="https://github.com/go-mizu/mizu">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+<div class="w">
+  <section class="hero">
+    <h1>Any URL,
+clean Markdown</h1>
+
+    <ul class="steps-list">
+      <li class="step-item">
+        <span class="step-badge">1</span>
+        <span>Prepend your URL: <code>markdown.go-mizu.workers.dev/{url}</code></span>
+      </li>
+      <li class="step-item">
+        <span class="step-badge">2</span>
+        <span>Get <code>text/markdown</code> back — no account, no API key</span>
+      </li>
+    </ul>
+
+    <div class="cta-grid">
+      <div>
+        <div class="cta-col-lbl">CONVERT A URL</div>
+        <form id="form" onsubmit="handleSubmit(event)">
+          <div class="url-row">
+            <input id="url-in" type="url" class="url-in" placeholder="https://example.com" autocomplete="off" spellcheck="false">
+            <button type="submit" class="cvt-btn">Convert</button>
+          </div>
+        </form>
+        <div class="examples">Try: <span class="eg" onclick="setEg('https://example.com')">example.com</span> &middot; <span class="eg" onclick="setEg('https://news.ycombinator.com')">news.ycombinator.com</span></div>
+      </div>
+      <div>
+        <div class="cta-col-lbl">FOR YOUR AGENT</div>
+        <button class="agent-btn" onclick="copyAgentInstructions()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="0"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy setup instructions for my agent
+        </button>
+        <div id="agent-confirm" class="agent-confirm">Copied to clipboard — paste into your agent chat.</div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="w">
+  <section class="sec" id="agents">
+    <p class="sec-lbl">How it works for agents</p>
+    <h2>Get Markdown in one request</h2>
+    <p class="sec-sub">No SDK, no setup. Any agent that can make HTTP requests works immediately.</p>
+
+    <div class="bgrid">
+      <div class="bcard">
+        <div class="bcard-n">01 / Request</div>
+        <div class="bcard-t">Prepend the URL</div>
+        <div class="bcard-d">Append any URL to <code>markdown.go-mizu.workers.dev/</code>. Query strings are preserved.</div>
+      </div>
+      <div class="bcard">
+        <div class="bcard-n">02 / Receive</div>
+        <div class="bcard-t">Plain text/markdown</div>
+        <div class="bcard-d">Response is clean <code>text/markdown</code>. Metadata in headers: method, duration, title, token count.</div>
+      </div>
+      <div class="bcard">
+        <div class="bcard-n">03 / Scale</div>
+        <div class="bcard-t">Edge-cached at 1 hour</div>
+        <div class="bcard-d">CDN caches for 1 hour with stale-while-revalidate so latency stays low as you scale.</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="cbar">
+        <button class="ctab on" id="ctab-sh" onclick="switchCode('sh')">Shell</button>
+        <button class="ctab" id="ctab-js" onclick="switchCode('js')">JavaScript</button>
+        <button class="ctab" id="ctab-py" onclick="switchCode('py')">Python</button>
+      </div>
+      <div id="cpanel-sh" class="cpanel on">
+        <button class="copy-btn" onclick="copyBlock('cpanel-sh', this)">copy</button>
+        <pre><span class="c1"># GET — returns text/markdown</span>
+curl https://markdown.go-mizu.workers.dev/https://example.com
+
+<span class="c1"># POST — structured JSON with metadata</span>
+curl -s -X POST https://markdown.go-mizu.workers.dev/convert \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://example.com"}' | jq .method</pre>
+      </div>
+      <div id="cpanel-js" class="cpanel">
+        <button class="copy-btn" onclick="copyBlock('cpanel-js', this)">copy</button>
+        <pre><span class="c1">// One line — returns markdown text</span>
+<span class="c2">const</span> md = <span class="c2">await</span> <span class="c4">fetch</span>(
+  <span class="c3">'https://markdown.go-mizu.workers.dev/'</span> + url
+).<span class="c4">then</span>(r =&gt; r.<span class="c4">text</span>());
+
+<span class="c1">// JSON API with method + timing</span>
+<span class="c2">const</span> res = <span class="c2">await</span> <span class="c4">fetch</span>(<span class="c3">'https://markdown.go-mizu.workers.dev/convert'</span>, {
+  method: <span class="c3">'POST'</span>,
+  headers: { <span class="c3">'Content-Type'</span>: <span class="c3">'application/json'</span> },
+  body: JSON.stringify({ url })
+}).<span class="c4">then</span>(r =&gt; r.<span class="c4">json</span>());</pre>
+      </div>
+      <div id="cpanel-py" class="cpanel">
+        <button class="copy-btn" onclick="copyBlock('cpanel-py', this)">copy</button>
+        <pre><span class="c2">import</span> httpx
+
+md = httpx.<span class="c4">get</span>(
+    <span class="c3">'https://markdown.go-mizu.workers.dev/'</span> + url
+).text
+
+res = httpx.<span class="c4">post</span>(
+    <span class="c3">'https://markdown.go-mizu.workers.dev/convert'</span>,
+    json={<span class="c3">'url'</span>: url}
+).<span class="c4">json</span>()</pre>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="w">
+  <section class="sec" id="pipeline">
+    <p class="sec-lbl">Conversion pipeline</p>
+    <h2>Three tiers, one result</h2>
+    <p class="sec-sub">Every URL goes through the best available tier, falling back automatically until Markdown is produced.</p>
+    <div class="bgrid">
+      <div class="bcard">
+        <div class="bcard-n">Tier 1</div>
+        <div class="bcard-t">Native Markdown</div>
+        <div class="bcard-d"><code>Accept: text/markdown</code> negotiation — sites that serve Markdown natively return it directly.</div>
+        <span class="ptag b-native">primary</span>
+      </div>
+      <div class="bcard">
+        <div class="bcard-n">Tier 2</div>
+        <div class="bcard-t">Workers AI</div>
+        <div class="bcard-d">HTML converted via Cloudflare Workers AI <code>toMarkdown()</code> — fast, structure-aware extraction.</div>
+        <span class="ptag b-ai">ai</span>
+      </div>
+      <div class="bcard">
+        <div class="bcard-n">Tier 3</div>
+        <div class="bcard-t">Browser Render</div>
+        <div class="bcard-d">JS-heavy SPAs rendered in a headless browser first, capturing dynamic content before AI conversion.</div>
+        <span class="ptag b-browser">browser</span>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="w">
+  <section class="sec" id="api">
+    <p class="sec-lbl">API reference</p>
+    <h2>Endpoints</h2>
+
+    <div class="ep">
+      <div class="eph">
+        <span class="mtag get">GET</span>
+        <span class="epath">/{url}</span>
+        <span class="edesc">Returns text/markdown</span>
+      </div>
+      <div class="epcode">
+        <button class="copy-btn" onclick="copyBlock('ep-get', this)">copy</button>
+        <pre id="ep-get"><span class="rc"># Append any absolute URL (http:// or https://)</span>
+<span class="rc">curl https://markdown.go-mizu.workers.dev/https://example.com</span>
+
+<span class="rc"># Response headers</span>
+<span class="rk">Content-Type</span><span class="rv">: text/markdown; charset=utf-8</span>
+<span class="rk">X-Conversion-Method</span><span class="rv">: primary | ai | browser</span>
+<span class="rk">X-Duration-Ms</span><span class="rv">: 342</span>
+<span class="rk">X-Title</span><span class="rv">: Example Domain</span>
+<span class="rk">X-Markdown-Tokens</span><span class="rv">: 1248</span>
+<span class="rk">Cache-Control</span><span class="rv">: public, max-age=300, s-maxage=3600, stale-while-revalidate=86400</span></pre>
+      </div>
+    </div>
+
+    <div class="ep">
+      <div class="eph">
+        <span class="mtag post">POST</span>
+        <span class="epath">/convert</span>
+        <span class="edesc">Returns JSON</span>
+      </div>
+      <div class="epcode">
+        <button class="copy-btn" onclick="copyBlock('ep-post', this)">copy</button>
+        <pre id="ep-post"><span class="rc"># Request</span>
+curl -X POST https://markdown.go-mizu.workers.dev/convert \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://example.com"}'
+
+<span class="rc"># Response JSON</span>
+{
+  <span class="rk">"markdown"</span>: <span class="rv">"# Example Domain\n\n..."</span>,
+  <span class="rk">"method"</span>: <span class="rv">"ai"</span>,
+  <span class="rk">"durationMs"</span>: <span class="rv">342</span>,
+  <span class="rk">"title"</span>: <span class="rv">"Example Domain"</span>,
+  <span class="rk">"tokens"</span>: <span class="rv">1248</span>
+}</pre>
+      </div>
+    </div>
+  </section>
+</div>
+
+</main>
+
+<script>
+var AGENT_INSTRUCTIONS = "I'd like you to use https://markdown.go-mizu.workers.dev, the URL-to-Markdown API.\n\nTo fetch any URL as Markdown:\n  GET https://markdown.go-mizu.workers.dev/{url}\n\nFor structured JSON with metadata:\n  POST https://markdown.go-mizu.workers.dev/convert\n  Body: {\"url\": \"https://example.com\"}\n\nReturns text/markdown. No API key needed. Free.";
+
+function handleSubmit(e) {
+  e.preventDefault();
+  var url = document.getElementById('url-in').value.trim();
+  if (url) window.location.href = '/preview?url=' + encodeURIComponent(url);
+}
+
+function setEg(url) {
+  document.getElementById('url-in').value = url;
+  handleSubmit({ preventDefault: function() {} });
+}
+
+function copyAgentInstructions() {
+  var confirmEl = document.getElementById('agent-confirm');
+  function showConfirm() {
+    confirmEl.style.display = 'block';
+    setTimeout(function() { confirmEl.style.display = 'none'; }, 3000);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(AGENT_INSTRUCTIONS).then(showConfirm).catch(function() {
+      fallbackCopy(AGENT_INSTRUCTIONS);
+      showConfirm();
+    });
+  } else {
+    fallbackCopy(AGENT_INSTRUCTIONS);
+    showConfirm();
+  }
+}
+
+function fallbackCopy(text) {
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
+}
+
+function switchCode(lang) {
+  ['sh', 'js', 'py'].forEach(function(k) {
+    document.getElementById('cpanel-' + k).className = 'cpanel' + (k === lang ? ' on' : '');
+    document.getElementById('ctab-' + k).className = 'ctab' + (k === lang ? ' on' : '');
+  });
+}
+
+function copyBlock(panelId, btn) {
+  var el = document.getElementById(panelId);
+  if (!el) return;
+  var target = el.querySelector('pre') || el;
+  var text = target.innerText || target.textContent || '';
+  var origText = btn.textContent;
+  function done() {
+    btn.textContent = 'copied!';
+    setTimeout(function() { btn.textContent = origText; }, 2000);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(function() { fallbackCopy(text); done(); });
+  } else {
+    fallbackCopy(text);
+    done();
+  }
+}
+</script>
+</body>
+</html>
