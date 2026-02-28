@@ -228,9 +228,9 @@ res = httpx.<span class="c4">post</span>(
         <span class="epath">/{url}</span>
         <span class="edesc">Returns text/markdown</span>
       </div>
-      <div class="epcode">
+      <div class="epcode" id="ep-get">
         <button class="copy-btn" onclick="copyBlock('ep-get',this)">copy</button>
-        <pre id="ep-get"><span class="rc"># Append any absolute URL (http:// or https://)</span>
+        <pre><span class="rc"># Append any absolute URL (http:// or https://)</span>
 curl https://markdown.go-mizu.workers.dev/https://example.com</pre>
       </div>
     </div>
@@ -241,9 +241,9 @@ curl https://markdown.go-mizu.workers.dev/https://example.com</pre>
         <span class="epath">/convert</span>
         <span class="edesc">Returns JSON</span>
       </div>
-      <div class="epcode">
+      <div class="epcode" id="ep-post">
         <button class="copy-btn" onclick="copyBlock('ep-post',this)">copy</button>
-        <pre id="ep-post"><span class="rc"># Request</span>
+        <pre><span class="rc"># Request</span>
 curl -X POST https://markdown.go-mizu.workers.dev/convert \
   -H <span class="rv">'Content-Type: application/json'</span> \
   -d <span class="rv">'{"url":"https://example.com"}'</span>
@@ -280,8 +280,7 @@ function handleSubmit(e) {
 }
 
 function setEg(url) {
-  document.getElementById('url-in').value = url;
-  handleSubmit({ preventDefault: function() {} });
+  window.location.href = '/preview?url=' + encodeURIComponent(url);
 }
 
 function copyAgentInstructions() {
