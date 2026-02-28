@@ -501,3 +501,35 @@ func FailedURLSummary(dbPath string) (map[string]int, int, error) {
 	}
 	return summary, total, nil
 }
+
+// FailedURLTopDomains returns the top N domains by total failure count.
+// Each entry is [domain, count_string] sorted by count descending.
+// Returns nil, nil when dbPath is empty or the DB has no failed URLs.
+func FailedURLTopDomains(dbPath string, n int) ([][2]string, error) {
+	if dbPath == "" {
+		return nil, nil
+	}
+	db, err := sql.Open("duckdb", dbPath+"?access_mode=READ_ONLY")
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	rows, err := db.Query(
+		`SELECT domain, COUNT(*) AS c FROM failed_urls
+		 GROUP BY domain ORDER BY c DESC LIMIT ?`, n,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result [][2]string
+	for rows.Next() {
+		var domain string
+		var count int
+		rows.Scan(&domain, &count) //nolint:errcheck
+		result = append(result, [2]string{domain, fmt.Sprintf("%d", count)})
+	}
+	return result, nil
+}
