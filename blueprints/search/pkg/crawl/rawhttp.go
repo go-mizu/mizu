@@ -176,7 +176,7 @@ func rawHTTPFetch(ctx context.Context, seed SeedURL,
 
 	// Send minimal HTTP/1.1 request with keep-alive
 	reqLine := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: %s\r\nConnection: keep-alive\r\n\r\n",
-		pu.Path, pu.Host, cfg.UserAgent)
+		pu.Path, pu.Host, cfg.PickUserAgent())
 	if _, err := conn.Write([]byte(reqLine)); err != nil {
 		conn.Close()
 		return Result{URL: seed.URL, Domain: seed.Domain,

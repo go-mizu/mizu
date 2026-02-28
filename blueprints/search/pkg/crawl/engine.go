@@ -5,6 +5,7 @@ package crawl
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"time"
 )
 
@@ -38,8 +39,9 @@ type Config struct {
 	Timeout             time.Duration // per-request HTTP timeout
 	StatusOnly          bool          // discard body, read status line only
 	MaxConnsPerDomain   int           // max simultaneous connections per domain (engine A)
-	UserAgent           string
-	InsecureTLS         bool   // skip TLS verification
+	UserAgent           string   // used if UserAgents is empty
+	UserAgents          []string // rotation pool; if non-empty, picked randomly per request
+	InsecureTLS         bool     // skip TLS verification
 	DroneCount          int    // swarm engine: number of drone processes (engine C)
 	SearchBinary        string // path to self binary (engine C drones re-exec it)
 	DomainFailThreshold int           // consecutive timeouts before abandoning a domain (0=disabled)
@@ -76,6 +78,27 @@ type DomainNotifier interface {
 	EndDomain(domain string)
 }
 
+// BrowserUserAgents is the default rotation pool of realistic browser User-Agents.
+// Using browser UAs bypasses bot-detection that holds connections open for crawler UAs.
+var BrowserUserAgents = []string{
+	// Chrome 131 – Windows (most common desktop)
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+	// Chrome 131 – macOS
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+	// Chrome 131 – Linux
+	"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+	// Firefox 132 – Windows
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0",
+	// Firefox 132 – macOS
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 14.7; rv:132.0) Gecko/20100101 Firefox/132.0",
+	// Safari 17 – macOS
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15",
+	// Edge 131 – Windows
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
+	// Chrome 131 – Android (mobile)
+	"Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.204 Mobile Safari/537.36",
+}
+
 // DefaultConfig returns sensible defaults for the remote server.
 func DefaultConfig() Config {
 	return Config{
@@ -84,11 +107,20 @@ func DefaultConfig() Config {
 		StatusOnly:          false, // default to full body download
 		MaxConnsPerDomain:   4,
 		UserAgent:           "MizuCrawler/3.0",
+		UserAgents:          BrowserUserAgents,
 		InsecureTLS:         true,
 		DroneCount:          4,
 		DomainFailThreshold: 3, // abandon domain after 3 consecutive timeouts
 		BatchSize:           5000,
 	}
+}
+
+// PickUserAgent returns a random UA from UserAgents, falling back to UserAgent.
+func (c Config) PickUserAgent() string {
+	if len(c.UserAgents) > 0 {
+		return c.UserAgents[rand.IntN(len(c.UserAgents))]
+	}
+	return c.UserAgent
 }
 
 // DNSCache is a read-only pre-resolved host→IP mapping.

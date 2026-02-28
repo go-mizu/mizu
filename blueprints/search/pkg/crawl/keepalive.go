@@ -397,7 +397,7 @@ func keepaliveFetchOne(ctx context.Context, client *http.Client,
 			Error: err.Error(), FetchTimeMs: time.Since(start).Milliseconds(),
 		}
 	}
-	req.Header.Set("User-Agent", cfg.UserAgent)
+	req.Header.Set("User-Agent", cfg.PickUserAgent())
 
 	resp, err := client.Do(req)
 	if err != nil {

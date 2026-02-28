@@ -166,7 +166,7 @@ func epollFetch(ctx context.Context, seed SeedURL, dns DNSCache, cfg Config) Res
 
 	// Minimal HTTP/1.1 request — no allocations beyond the string
 	reqLine := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: %s\r\nConnection: close\r\n\r\n",
-		pu.Path, pu.Host, cfg.UserAgent)
+		pu.Path, pu.Host, cfg.PickUserAgent())
 	if _, err := rwConn.Write([]byte(reqLine)); err != nil {
 		return Result{URL: seed.URL, Domain: seed.Domain,
 			Error: "write: " + err.Error(), FetchTimeMs: ms()}
