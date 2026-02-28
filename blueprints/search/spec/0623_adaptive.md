@@ -363,17 +363,33 @@ Useful for operators to verify configuration before a long crawl.
 
 ## Performance Comparison: server1 vs server2 (CC recrawl p:0, --limit 200000)
 
-| Metric | server1 | server2 |
-|--------|---------|---------|
-| Workers (auto) | ~2,066 | 8,192 |
-| Peak RPS | 1,320 | TBD |
-| Avg RPS | 606 | TBD |
-| OK rate | 83.0% | TBD |
-| Domain-killed | 8,770 (11.3%) | TBD |
-| Heap | 0.1 GB / 1.9 GB | TBD |
-| Pass 2 | N/A (no pass 2 in cc) | N/A |
+| Metric | server1 (5.9 GB, 4 CPU) | server2 (11.7 GB, 6 CPU) |
+|--------|--------------------------|--------------------------|
+| Workers (auto) | 2,028 | 8,192 |
+| innerN | 8 | 4 |
+| DB shards | 8 | 12 |
+| DuckDB mem/shard | 95 MB | 139 MB |
+| Total DuckDB RSS | ~760 MB (was 2 GB) | ~1.67 GB (was 2 GB) |
+| Seeds (p:0) | 105,285 | 200,000 |
+| Pass 1 ok rate | 40.1% | 78.1% |
+| Pass 1 avg RPS | 804 | ~1,000 |
+| Pass 1 peak RPS | 5,235 | 2,508 |
+| Pass 1 elapsed | 52s | ~34s |
+| Heap / GOMEMLIMIT | 2.7 GB / 3.7 GB (72%) | 5.2–6.0 GB / 8.2 GB (64–74%) |
+| Pass 2 rescued | 17,936 | 31,597 |
+| Pass 2 retried | 27,726 | 40,381 |
+| Pass 2 avg RPS | 710 | 1,145 |
+| Pass 2 elapsed | 39s | 35s |
+| OOM | None ✓ | None ✓ |
 
-*(server2 results pending; HN recrawl comparison: server2 peak 7,886 RPS vs server1 ~1,320 RPS)*
+**Key observations:**
+- Server1 memory dropped from 107-123% of limit (OOM) to 72% after `LoadRetryURLsSince` fix
+- Server2: 12 shards vs 8 (scales with 6 CPUs), 139 MB/shard vs 256 MB — total DuckDB RSS reduced 18%
+- Server1: 8 shards, 95 MB/shard vs 256 MB — total DuckDB RSS reduced 63%
+- Pass 2 rescued 17,936/17,011 on server1 (+105% bonus URLs), 31,597/30,928 on server2 (+102%)
+- `LoadRetryURLsSince` fix critical: without it, pass 2 loaded 767K stale URLs → OOM on server1
+
+**Fix applied:** `LoadRetryURLsSince(failedDBPath, start)` (commit `96decd3c`) filters by `detected_at >= run_start_time` to exclude stale entries from prior runs on same parquet file.
 
 ---
 
@@ -384,8 +400,11 @@ Useful for operators to verify configuration before a long crawl.
 - [x] `hn.go`: wire new flags; pass 2 workers = pass 1 workers; enhanced Hardware Profile; `--auto-config` dry-run
 - [x] `cc.go`: auto-configure workers (default -1=auto); add pass 2; wire `--db-mem-mb`, `--db-shards`; adaptive shard count + DuckDB mem
 - [x] `swarm_drone.go`: updated `NewResultDB` call with `duckMemPerShardMB=0`
-- [ ] Run `bench-chunk` on server2 to validate no regression
-- [ ] Verify server1 DuckDB RSS drops from 2 GB to ~880 MB
-- [ ] Verify CC recrawl pass 2 rescues domain-killed URLs
+- [x] `faileddb.go`: added `LoadRetryURLsSince(dbPath, since)` to prevent stale cross-run retries
+- [x] `cc.go`: use `LoadRetryURLsSince(failedDBPath, start)` in pass 2
+- [x] Deployed and verified on both servers — no OOM
+- [x] Verified CC recrawl pass 2 rescues domain-killed URLs (17,936 on server1, 31,597 on server2)
+- [x] Verified DuckDB RSS reduction: server1 760 MB (was 2 GB, -63%), server2 1.67 GB (was 2 GB, -18%)
+- [ ] Run `bench-chunk` on server2 to validate HN recrawl no regression
 
-**Implementation commit:** `bd8fc424`
+**Implementation commits:** `bd8fc424` (spec/0623 impl) + `96decd3c` (LoadRetryURLsSince fix)
