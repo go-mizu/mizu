@@ -18,14 +18,38 @@ const UA = 'Mozilla/5.0 (compatible; go-mizu-markdown/1.0; +https://markdown.go-
 const FETCH_TIMEOUT_MS = 10_000;
 const BROWSER_TIMEOUT_MS = 20_000;
 
-export async function convert(url: string, env: Env): Promise<ConversionResult> {
-  const start = Date.now();
+interface CachedResult {
+  result: ConversionResult;
+}
 
+const resultCache = new Map<string, CachedResult>();
+
+export async function convert(url: string, env: Env): Promise<ConversionResult> {
   // Validate URL
   const parsed = new URL(url); // throws TypeError if invalid
   if (!['http:', 'https:'].includes(parsed.protocol)) {
     throw new Error('Only http and https URLs are supported');
   }
+
+  // Check in-memory cache
+  const cached = resultCache.get(url);
+  if (cached) {
+    return { ...cached.result, durationMs: 0 };
+  }
+
+  const result = await doConvert(url, env);
+
+  // Cache the result (no TTL — keep until isolate recycles)
+  // Only cache successful conversions (not error fallbacks)
+  if (result.markdown && result.markdown !== 'Unable to retrieve page content.') {
+    resultCache.set(url, { result });
+  }
+
+  return result;
+}
+
+async function doConvert(url: string, env: Env): Promise<ConversionResult> {
+  const start = Date.now();
 
   // Tier 1: Native Markdown negotiation
   const nativeResult = await tryNativeMarkdown(url);

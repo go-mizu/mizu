@@ -118,9 +118,16 @@ app.get('/*', async (c, next) => {
   // Reconstruct full URL including query string
   const search = new URL(c.req.url).search;
   const url = path + search;
+
+  // Check Cloudflare edge cache (persists across isolates and CDN pops)
+  const cache = caches.default;
+  const cacheKey = new Request(c.req.url, { method: 'GET' });
+  const cachedResp = await cache.match(cacheKey);
+  if (cachedResp) return cachedResp;
+
   try {
     const result = await convert(url, c.env);
-    return new Response(result.markdown, {
+    const response = new Response(result.markdown, {
       headers: {
         'Content-Type': 'text/markdown; charset=utf-8',
         'X-Conversion-Method': result.method,
@@ -131,6 +138,9 @@ app.get('/*', async (c, next) => {
         'Cache-Control': 'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400',
       },
     });
+    // Store in CF edge cache (non-blocking)
+    c.executionCtx.waitUntil(cache.put(cacheKey, response.clone()));
+    return response;
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Conversion failed';
     return c.text(`Error: ${msg}`, 422);
