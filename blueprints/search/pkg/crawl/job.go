@@ -84,15 +84,11 @@ func RunJob(ctx context.Context, seeds []SeedURL, dns DNSCache, cfg JobConfig) (
 	}
 
 	if si.MemAvailableMB > 0 {
-		// Tiered GOMEMLIMIT: small servers get a tighter ceiling so the GC
-		// runs more aggressively and keeps HeapInuse near the live set.
-		// Large servers: 75% leaves enough headroom for DuckDB CGO allocations.
-		// Small (< 6 GB): 40% — roughly halves HeapInuse vs the 75% default.
-		fraction := int64(75)
-		if si.MemAvailableMB < 6000 {
-			fraction = 40
-		}
-		if limit := int64(si.MemAvailableMB) * 1024 * 1024 * fraction / 100; limit > 0 {
+		// GOMEMLIMIT = 75% of available RAM: leaves headroom for DuckDB CGO
+		// allocations while encouraging GC to run more aggressively than the
+		// default (unlimited). Seeds are loaded into memory at startup (~1 GB
+		// for 7M seeds) so the limit must be above the startup heap peak.
+		if limit := int64(si.MemAvailableMB) * 1024 * 1024 * 75 / 100; limit > 0 {
 			debug.SetMemoryLimit(limit)
 		}
 	}

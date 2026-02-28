@@ -308,7 +308,7 @@ func processOneDomain(ctx context.Context, urls []SeedURL,
 				default:
 				}
 				// Per-domain context deadline exceeded?
-				if cfg.DomainTimeout > 0 {
+				if effectiveDomainTimeout > 0 {
 					select {
 					case <-domainCtx.Done():
 						skipped.Add(1)
