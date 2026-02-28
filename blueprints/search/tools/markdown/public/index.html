@@ -3,59 +3,80 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>URL → Markdown — markdown.go-mizu</title>
-  <meta name="description" content="Convert any URL to clean Markdown. Free, instant, no account required. Built for AI agents and LLM pipelines.">
+  <title>URL to Markdown</title>
+  <meta name="description" content="Convert any URL to clean Markdown. Free, instant, built for AI agents.">
   <script>(function(){if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark');})();</script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
   <style>
-  /* Responsive header */
-  #site-header{display:flex;align-items:center;gap:12px;padding:10px 32px;position:sticky;top:0;z-index:50;background:#fff;transition:background .2s}
+  /* Header */
+  #site-header{display:flex;align-items:center;gap:14px;padding:10px 32px;position:sticky;top:0;z-index:50;background:#fff;transition:background .2s}
   .dark #site-header{background:#09090b}
-  #header-form{flex:1;min-width:0;display:flex;max-width:640px}
-  .header-nav{display:flex;align-items:center;gap:4px;flex-shrink:0;margin-left:auto}
+  .header-nav{display:flex;align-items:center;gap:2px;flex-shrink:0;margin-left:auto}
+  /* Compact form */
+  #header-form{flex:1;min-width:0;display:flex;max-width:420px}
+  .fi{flex:1;font-family:'Geist Mono',monospace;font-size:12px;padding:5px 10px;border:1px solid #e4e4e7;border-right:0;background:transparent;color:#18181b;outline:none;min-width:0;transition:border-color .15s}
+  .fi:focus{border-color:#a1a1aa}
+  .fi::placeholder{color:#a1a1aa}
+  .dark .fi{border-color:#27272a;color:#f4f4f5}
+  .dark .fi:focus{border-color:#52525b}
+  .dark .fi::placeholder{color:#3f3f46}
+  .fb{font-family:'Geist',-apple-system,sans-serif;font-size:12px;font-weight:500;padding:5px 12px;border:1px solid #e4e4e7;background:transparent;color:#52525b;white-space:nowrap;cursor:pointer;transition:background .15s,border-color .15s}
+  .fb:hover{background:#fafafa;border-color:#d4d4d8}
+  .dark .fb{border-color:#27272a;color:#a1a1aa}
+  .dark .fb:hover{background:#18181b;border-color:#3f3f46}
   @media(max-width:680px){
-    #site-header{flex-wrap:wrap;padding:10px 16px;gap:6px}
+    #site-header{flex-wrap:wrap;padding:10px 16px;gap:8px}
     #header-form{order:3;width:100%;max-width:none;flex:none}
-    .header-nav-links{display:none}
+    .hn{display:none}
   }
+  /* Terminal block */
+  .term{background:#09090b;padding:20px 24px;font-family:'Geist Mono',monospace;font-size:13px;line-height:2;overflow-x:auto}
+  .dark .term{background:#18181b}
+  .tc{color:#52525b}.tv{color:#f4f4f5;font-weight:500}.td{color:#71717a}.ts{color:#3f3f46}
+  /* Pipeline */
+  .pipe{position:relative;padding-left:28px;padding-bottom:28px}
+  .pipe:last-child{padding-bottom:0}
+  .pipe::before{content:'';position:absolute;left:4px;top:5px;width:10px;height:10px;border-radius:50%;background:#18181b}
+  .dark .pipe::before{background:#d4d4d8}
+  .pipe::after{content:'';position:absolute;left:8.5px;top:20px;bottom:0;width:1px;background:#e4e4e7}
+  .dark .pipe::after{background:#27272a}
+  .pipe:last-child::after{display:none}
+  .pipe h3{font-size:14px;font-weight:600;margin-bottom:4px}
+  .pipe p{font-size:13px;color:#71717a;line-height:1.6}
+  .dark .pipe p{color:#52525b}
+  /* CTA */
+  .cta{display:inline-flex;align-items:center;gap:8px;font-family:'Geist',-apple-system,sans-serif;font-size:13px;font-weight:500;padding:8px 16px;background:#18181b;color:#fff;border:none;cursor:pointer;transition:opacity .15s}
+  .cta:hover{opacity:.85}
+  .dark .cta{background:#f4f4f5;color:#18181b}
   /* Hero */
-  @media(max-width:480px){.hero-h1{font-size:2rem;line-height:1.15}}
-  /* Step badge */
-  .step-badge{width:1.75rem;height:1.75rem;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:'Geist Mono',monospace;font-size:11px;font-weight:700;background:#18181b;color:#fff}
-  .dark .step-badge{background:#f4f4f5;color:#18181b}
-  /* Light convert button */
-  .btn-convert{font-family:'Geist',-apple-system,sans-serif;font-size:.875rem;font-weight:500;padding:.625rem 1.25rem;border:1px solid #e4e4e7;background:transparent;color:#3f3f46;white-space:nowrap;cursor:pointer;transition:background .15s,border-color .15s;flex-shrink:0}
-  .btn-convert:hover{background:#fafafa;border-color:#d4d4d8}
-  .dark .btn-convert{border-color:#3f3f46;color:#d4d4d8}
-  .dark .btn-convert:hover{background:#18181b;border-color:#52525b}
-  .btn-convert:disabled{opacity:.5;cursor:default}
+  @media(max-width:480px){.hero-h1{font-size:1.75rem;line-height:1.2}}
   </style>
 </head>
 <body class="font-sans bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 transition-colors duration-200">
 
 <header id="site-header">
-  <a href="/" class="flex items-center flex-shrink-0 text-zinc-900 dark:text-zinc-100 no-underline">
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <a href="/" class="flex items-center flex-shrink-0 no-underline">
+    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-900 dark:text-zinc-100">
       <rect x="3" y="3" width="18" height="18" rx="2"/>
       <path d="M8 16V8.5a.5.5 0 0 1 .9-.3l2.7 3.6a.5.5 0 0 0 .8 0l2.7-3.6a.5.5 0 0 1 .9.3V16"/>
     </svg>
   </a>
   <form id="header-form" onsubmit="handleSubmit(event)">
-    <input id="url-in" type="url" class="flex-1 font-mono text-sm px-3.5 py-2.5 border border-zinc-200 dark:border-zinc-800 border-r-0 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 outline-none focus:border-zinc-900 dark:focus:border-zinc-100 min-w-0 transition-colors placeholder:text-zinc-400 dark:placeholder:text-zinc-600" placeholder="https://example.com" autocomplete="off" spellcheck="false">
-    <button type="submit" class="btn-convert">Convert</button>
+    <input id="url-in" type="url" class="fi" placeholder="https://example.com" autocomplete="off" spellcheck="false">
+    <button type="submit" class="fb">Convert</button>
   </form>
   <nav class="header-nav">
-    <div class="header-nav-links flex items-center">
-      <a href="/docs" class="text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-3 py-1.5 transition-colors no-underline">Docs</a>
-      <a href="https://github.com/go-mizu/mizu" class="text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-3 py-1.5 transition-colors no-underline">GitHub</a>
-      <a href="/llms.txt" class="text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-3 py-1.5 transition-colors no-underline">llms.txt</a>
+    <div class="hn flex items-center">
+      <a href="/docs" class="text-xs text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-2.5 py-1.5 transition-colors no-underline">Docs</a>
+      <a href="https://github.com/go-mizu/mizu" class="text-xs text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-2.5 py-1.5 transition-colors no-underline">GitHub</a>
+      <a href="/llms.txt" class="text-xs text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-2.5 py-1.5 transition-colors no-underline">llms.txt</a>
     </div>
     <button onclick="toggleTheme()" title="Toggle dark mode" class="text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 p-1.5 transition-colors cursor-pointer bg-transparent border-none flex items-center">
-      <svg class="dark:hidden" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
-      <svg class="hidden dark:block" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      <svg class="dark:hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
+      <svg class="hidden dark:block" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
     </button>
   </nav>
 </header>
@@ -64,113 +85,98 @@
 <div class="max-w-page mx-auto px-8">
 
   <!-- Hero -->
-  <section class="pt-20 pb-16">
-    <p class="font-mono text-2xs uppercase tracking-widest text-zinc-400 dark:text-zinc-500 mb-6">For AI Agents</p>
-    <h1 class="hero-h1 text-4xl sm:text-5xl font-bold tracking-tight leading-tight mb-6" style="max-width:600px">Free, instant Markdown for agents.</h1>
-    <p class="text-xl text-zinc-600 dark:text-zinc-400 mb-12 leading-relaxed" style="max-width:520px">The web is built for browsers. Agents need structured text. Pass any URL and get back Markdown — clean, accurate, immediately useful.</p>
+  <section style="padding:80px 0 56px">
+    <p class="font-mono text-2xs uppercase tracking-widest text-zinc-400 dark:text-zinc-500" style="margin-bottom:20px">url to markdown</p>
+    <h1 class="hero-h1 text-4xl font-bold tracking-tight" style="margin-bottom:20px;max-width:560px;line-height:1.2">Convert any URL to clean, structured Markdown.</h1>
+    <p class="text-zinc-500 dark:text-zinc-400" style="font-size:15px;margin-bottom:40px;max-width:420px;line-height:1.7">Built for AI agents and LLM pipelines. One request, structured output.</p>
 
-    <!-- Numbered steps -->
-    <div class="flex flex-col gap-5 mb-14">
-      <div class="flex items-start gap-4">
-        <span class="step-badge">01</span>
-        <span class="text-base text-zinc-700 dark:text-zinc-300 pt-1">Works with any public HTTP or HTTPS URL</span>
-      </div>
-      <div class="flex items-start gap-4">
-        <span class="step-badge">02</span>
-        <span class="text-base text-zinc-700 dark:text-zinc-300 pt-1">Native negotiation, AI extraction, or browser rendering — falls back automatically until clean Markdown is produced</span>
-      </div>
-      <div class="flex items-start gap-4">
-        <span class="step-badge">03</span>
-        <span class="text-base text-zinc-700 dark:text-zinc-300 pt-1">Results cached globally for 1 hour. CORS open — call from any browser or agent, zero setup</span>
-      </div>
-    </div>
-
-    <!-- Agent setup CTA -->
-    <p class="font-mono text-2xs uppercase tracking-widest text-zinc-400 dark:text-zinc-500 mb-4">Add to your agent</p>
-    <div class="bg-zinc-50 dark:bg-zinc-900 p-6 mb-5" style="max-width:600px">
-      <pre id="agent-instructions" class="font-mono text-sm leading-loose text-zinc-600 dark:text-zinc-400 whitespace-pre">Use https://markdown.go-mizu.workers.dev to read any URL as clean Markdown.
+    <!-- Hidden agent instructions for JS copy -->
+    <pre id="agent-instructions" style="display:none">Use https://markdown.go-mizu.workers.dev to read any URL as clean Markdown.
 
 GET  https://markdown.go-mizu.workers.dev/{url}
 POST https://markdown.go-mizu.workers.dev/convert
      Body: {"url": "https://example.com"}
 
-Open access. Returns text/markdown or JSON with metadata.</pre>
-    </div>
-    <button id="agent-copy-btn" onclick="copyAgentInstructions()" class="relative inline-flex items-center gap-3 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-5 py-3 text-base font-medium cursor-pointer border-none hover:opacity-90 transition-opacity overflow-hidden">
-      <span id="agent-cta-text" class="transition-opacity duration-200">Copy setup instructions for my agent</span>
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+Returns text/markdown or JSON with metadata. Open access.</pre>
+
+    <button id="agent-copy-btn" onclick="copyAgentInstructions()" class="cta">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+      <span id="agent-cta-text">Copy agent instructions</span>
     </button>
   </section>
 
-  <!-- Stats -->
-  <section class="py-16 border-t border-zinc-100 dark:border-zinc-800">
-    <div class="flex gap-14 flex-wrap">
-      <div class="flex flex-col gap-1.5">
-        <span class="text-stat font-bold tracking-hero text-zinc-900 dark:text-zinc-100">80%</span>
-        <span class="text-sm text-zinc-400 leading-snug max-w-lbl">fewer tokens than raw HTML</span>
+  <!-- Stats (terminal style) -->
+  <section style="padding:40px 0 56px">
+    <div class="term" style="max-width:480px">
+      <span class="tc">$</span> <span class="tv">stats</span><br>
+      <span class="td">&nbsp;&nbsp;tokens</span>&nbsp;&nbsp;&nbsp;<span class="ts">&middot;&middot;&middot;</span>&nbsp;&nbsp;<span class="tv">80%</span> <span class="td">fewer vs raw HTML</span><br>
+      <span class="td">&nbsp;&nbsp;speed</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="ts">&middot;&middot;&middot;</span>&nbsp;&nbsp;<span class="tv">&lt;1s</span> <span class="td">cached globally</span><br>
+      <span class="td">&nbsp;&nbsp;price</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="ts">&middot;&middot;&middot;</span>&nbsp;&nbsp;<span class="tv">free</span> <span class="td">open access</span>
+    </div>
+  </section>
+
+  <!-- Pipeline -->
+  <section style="padding:40px 0 56px">
+    <h2 style="font-size:15px;font-weight:600;margin-bottom:6px">Pipeline</h2>
+    <p style="font-size:13px;color:#71717a;margin-bottom:28px">Three conversion tiers. Automatic fallback.</p>
+    <div style="max-width:480px">
+      <div class="pipe">
+        <h3 class="text-zinc-900 dark:text-zinc-100">Native</h3>
+        <p>Content negotiation via <code class="font-mono" style="font-size:12px;background:#f4f4f5;padding:1px 5px">Accept: text/markdown</code>. Zero overhead.</p>
       </div>
-      <div class="flex flex-col gap-1.5">
-        <span class="text-stat font-bold tracking-hero text-zinc-900 dark:text-zinc-100">0.1–0.6s</span>
-        <span class="text-sm text-zinc-400 leading-snug max-w-lbl">typical response, cached globally</span>
+      <div class="pipe">
+        <h3 class="text-zinc-900 dark:text-zinc-100">AI extraction</h3>
+        <p>HTML fetched and converted by AI model. Structure-aware, pulls what matters.</p>
       </div>
-      <div class="flex flex-col gap-1.5">
-        <span class="text-stat font-bold tracking-hero text-zinc-900 dark:text-zinc-100">Free</span>
-        <span class="text-sm text-zinc-400 leading-snug max-w-lbl">open access, just use the URL</span>
+      <div class="pipe">
+        <h3 class="text-zinc-900 dark:text-zinc-100">Browser render</h3>
+        <p>Headless browser for JS-heavy pages. React, Vue, Angular, any SPA.</p>
       </div>
     </div>
   </section>
 
-  <!-- How it works -->
-  <section class="py-16" id="how">
-    <h2 class="text-2xl font-semibold tracking-h2 mb-2.5">How it works</h2>
-    <p class="text-xl text-zinc-600 dark:text-zinc-400 mb-10 leading-relaxed" style="max-width:520px">Every URL goes through three tiers, falling back automatically until clean Markdown is produced.</p>
-    <div class="flex gap-5 flex-wrap mb-8">
-      <div class="flex-1 bg-zinc-50 dark:bg-zinc-900 p-7" style="min-width:200px">
-        <span class="font-mono text-2xs text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">01</span>
-        <h3 class="text-base font-semibold text-zinc-900 dark:text-zinc-100 mt-4 mb-2">Native</h3>
-        <p class="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">Sites that support <code class="font-mono text-xs bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5">Accept: text/markdown</code> return it directly. Zero conversion overhead.</p>
-      </div>
-      <div class="flex-1 bg-zinc-50 dark:bg-zinc-900 p-7" style="min-width:200px">
-        <span class="font-mono text-2xs text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">02</span>
-        <h3 class="text-base font-semibold text-zinc-900 dark:text-zinc-100 mt-4 mb-2">AI extraction</h3>
-        <p class="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">HTML pages are fetched and converted by an AI model. Pulls out what matters and drops the noise.</p>
-      </div>
-      <div class="flex-1 bg-zinc-50 dark:bg-zinc-900 p-7" style="min-width:200px">
-        <span class="font-mono text-2xs text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">03</span>
-        <h3 class="text-base font-semibold text-zinc-900 dark:text-zinc-100 mt-4 mb-2">Browser rendering</h3>
-        <p class="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">React, Vue, Angular, any SPA. Rendered in a real browser first so all content is present before conversion.</p>
-      </div>
+  <!-- Quick start (terminal style) -->
+  <section style="padding:40px 0 56px">
+    <h2 style="font-size:15px;font-weight:600;margin-bottom:6px">Quick start</h2>
+    <p style="font-size:13px;color:#71717a;margin-bottom:28px">Works from any language, shell, or agent.</p>
+    <div class="term" style="max-width:560px">
+      <span class="tc">#</span> <span class="td">get markdown from any URL</span><br>
+      <span class="tc">$</span> <span class="tv">curl</span> <span class="td">https://markdown.go-mizu.workers.dev/https://example.com</span><br>
+      <br>
+      <span class="tc">#</span> <span class="td">or POST for JSON with metadata</span><br>
+      <span class="tc">$</span> <span class="tv">curl</span> <span class="td">-X POST https://markdown.go-mizu.workers.dev/convert \</span><br>
+      <span class="td">&nbsp;&nbsp;&nbsp;&nbsp;-H 'Content-Type: application/json' \</span><br>
+      <span class="td">&nbsp;&nbsp;&nbsp;&nbsp;-d '{"url":"https://example.com"}'</span>
     </div>
-    <p class="text-sm text-zinc-400 leading-relaxed" style="max-width:520px">Results are cached for 1 hour. CORS is open on all endpoints so you can call from any browser or agent.</p>
   </section>
 
   <!-- FAQ -->
-  <section class="py-16 mt-8" id="faq">
-    <h2 class="text-4xl font-semibold tracking-tight leading-tight mb-10">FAQ</h2>
-    <div class="space-y-9" style="max-width:640px">
+  <section style="padding:56px 0 80px">
+    <h2 style="font-size:15px;font-weight:600;margin-bottom:28px">FAQ</h2>
+    <div style="max-width:560px" class="space-y-9">
       <div>
-        <h3 class="text-lg font-semibold">Why Markdown instead of HTML?</h3>
-        <p class="mt-2 text-lg text-zinc-600 dark:text-zinc-400">HTML includes navigation, ads, scripts, and styling your agent doesn't need. Markdown strips all of that down to headings, paragraphs, and links — about 80% fewer tokens to process.</p>
+        <h3 style="font-size:14px;font-weight:600;margin-bottom:6px">Why Markdown instead of HTML?</h3>
+        <p style="font-size:14px;color:#71717a;line-height:1.7">HTML includes navigation, ads, scripts, and styling your agent doesn't need. Markdown strips that to headings, paragraphs, and links. About 80% fewer tokens.</p>
       </div>
       <div>
-        <h3 class="text-lg font-semibold">Is it really free?</h3>
-        <p class="mt-2 text-lg text-zinc-600 dark:text-zinc-400">Yes. Open access, no account, no API key. Just use the URL directly in your code or agent prompt.</p>
+        <h3 style="font-size:14px;font-weight:600;margin-bottom:6px">Is it really free?</h3>
+        <p style="font-size:14px;color:#71717a;line-height:1.7">Yes. Open access, use the URL directly in your code or agent prompt.</p>
       </div>
       <div>
-        <h3 class="text-lg font-semibold">How do you handle JavaScript-heavy pages?</h3>
-        <p class="mt-2 text-lg text-zinc-600 dark:text-zinc-400">Pages that require JavaScript fall back to a headless browser that runs the page fully before converting. This handles React, Vue, Angular, and any SPA.</p>
+        <h3 style="font-size:14px;font-weight:600;margin-bottom:6px">How are JavaScript-heavy pages handled?</h3>
+        <p style="font-size:14px;color:#71717a;line-height:1.7">Pages that require JS fall back to a headless browser that runs the page fully before converting. Handles React, Vue, Angular, and any SPA.</p>
       </div>
       <div>
-        <h3 class="text-lg font-semibold">Can I call this from the browser?</h3>
-        <p class="mt-2 text-lg text-zinc-600 dark:text-zinc-400">Yes. All endpoints include <code class="font-mono text-xs bg-zinc-100 dark:bg-zinc-900 px-1.5 py-0.5">Access-Control-Allow-Origin: *</code> so you can call directly from browser JavaScript.</p>
+        <h3 style="font-size:14px;font-weight:600;margin-bottom:6px">Can I call this from the browser?</h3>
+        <p style="font-size:14px;color:#71717a;line-height:1.7">Yes. All endpoints include <code class="font-mono" style="font-size:12px;background:#f4f4f5;padding:1px 5px">Access-Control-Allow-Origin: *</code>. Call directly from browser JS.</p>
       </div>
       <div>
-        <h3 class="text-lg font-semibold">What about login-protected pages?</h3>
-        <p class="mt-2 text-lg text-zinc-600 dark:text-zinc-400">Only publicly available URLs are accessible. Pages behind authentication, paywalls, or rate limits will return an error.</p>
+        <h3 style="font-size:14px;font-weight:600;margin-bottom:6px">What about login-protected pages?</h3>
+        <p style="font-size:14px;color:#71717a;line-height:1.7">Only publicly available URLs are accessible. Pages behind authentication or paywalls return an error.</p>
       </div>
       <div>
-        <h3 class="text-lg font-semibold">What are the limits?</h3>
-        <p class="mt-2 text-lg text-zinc-600 dark:text-zinc-400">Responses are capped at 5 MB. Requests time out after 10 seconds (30 for browser rendering). Reasonable use is not rate-limited.</p>
+        <h3 style="font-size:14px;font-weight:600;margin-bottom:6px">What are the limits?</h3>
+        <p style="font-size:14px;color:#71717a;line-height:1.7">5 MB max response. 10s timeout (30s for browser rendering). Reasonable use is not rate-limited.</p>
       </div>
     </div>
   </section>
@@ -190,11 +196,11 @@ function handleSubmit(e) {
 function copyAgentInstructions() {
   var btn = document.getElementById('agent-copy-btn');
   var textEl = document.getElementById('agent-cta-text');
-  var orig = 'Copy setup instructions for my agent';
+  var orig = 'Copy agent instructions';
   function done() {
-    textEl.textContent = 'Copied! Now paste into your agent';
-    btn.disabled = true;
-    setTimeout(function() { textEl.textContent = orig; btn.disabled = false; }, 2500);
+    textEl.textContent = 'Copied!';
+    btn.style.opacity = '.6';
+    setTimeout(function() { textEl.textContent = orig; btn.style.opacity = ''; }, 2000);
   }
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(AGENT_INSTRUCTIONS.trim()).then(done).catch(function() { fallbackCopy(AGENT_INSTRUCTIONS.trim()); done(); });

@@ -45,12 +45,18 @@
 #tab-md[data-active],#tab-pv[data-active]{border-bottom-color:#18181b;color:#18181b}
 .dark #tab-md[data-active],.dark #tab-pv[data-active]{border-bottom-color:#f4f4f5;color:#f4f4f5}
 
-/* Light convert button */
-.btn-convert{font-family:'Geist',-apple-system,sans-serif;font-size:.875rem;font-weight:500;padding:.625rem 1.25rem;border:1px solid #e4e4e7;border-left:0;background:transparent;color:#3f3f46;white-space:nowrap;cursor:pointer;transition:background .15s,border-color .15s;flex-shrink:0}
-.btn-convert:hover{background:#fafafa;border-color:#d4d4d8}
-.dark .btn-convert{border-color:#3f3f46;color:#d4d4d8}
-.dark .btn-convert:hover{background:#18181b;border-color:#52525b}
-.btn-convert:disabled{opacity:.5;cursor:default}
+/* Compact form (matches landing) */
+.fi{flex:1;font-family:'Geist Mono',monospace;font-size:12px;padding:5px 10px;border:1px solid #e4e4e7;border-right:0;background:transparent;color:#18181b;outline:none;min-width:0;transition:border-color .15s}
+.fi:focus{border-color:#a1a1aa}
+.fi::placeholder{color:#a1a1aa}
+.dark .fi{border-color:#27272a;color:#f4f4f5}
+.dark .fi:focus{border-color:#52525b}
+.dark .fi::placeholder{color:#3f3f46}
+.fb{font-family:'Geist',-apple-system,sans-serif;font-size:12px;font-weight:500;padding:5px 12px;border:1px solid #e4e4e7;background:transparent;color:#52525b;white-space:nowrap;cursor:pointer;transition:background .15s,border-color .15s;flex-shrink:0}
+.fb:hover{background:#fafafa;border-color:#d4d4d8}
+.dark .fb{border-color:#27272a;color:#a1a1aa}
+.dark .fb:hover{background:#18181b;border-color:#3f3f46}
+.fb:disabled{opacity:.5;cursor:default}
 
 /* Action buttons (copy/save) */
 .action-btn{font-family:'Geist',-apple-system,sans-serif;font-size:.8125rem;padding:.375rem .75rem;background:transparent;border:1px solid #e4e4e7;color:#71717a;cursor:pointer;transition:background .15s,border-color .15s,color .15s;display:inline-flex;align-items:center;gap:.375rem;flex-shrink:0}
@@ -69,10 +75,10 @@
 .dark .stat-pill{background:#18181b;color:#71717a}
 
 /* Responsive header */
-#prev-header{display:flex;align-items:center;gap:12px;padding:10px 32px;position:sticky;top:0;z-index:50;background:#fff;transition:background .2s}
+#prev-header{display:flex;align-items:center;gap:14px;padding:10px 32px;position:sticky;top:0;z-index:50;background:#fff;transition:background .2s}
 .dark #prev-header{background:#09090b}
 #prev-form{flex:1;min-width:0;display:flex;max-width:640px}
-.prev-nav{display:flex;align-items:center;gap:4px;flex-shrink:0;margin-left:auto}
+.prev-nav{display:flex;align-items:center;gap:2px;flex-shrink:0;margin-left:auto}
 @media(max-width:700px){
   #prev-header{flex-wrap:wrap;padding:10px 16px;gap:8px}
   #prev-form{order:3;width:100%;max-width:none;flex:none}
@@ -88,27 +94,27 @@
 
 <!-- Top bar — sticky -->
 <header id="prev-header">
-  <a href="/" class="flex items-center flex-shrink-0 text-zinc-900 dark:text-zinc-100 no-underline">
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <a href="/" class="flex items-center flex-shrink-0 no-underline">
+    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-900 dark:text-zinc-100">
       <rect x="3" y="3" width="18" height="18" rx="2"/>
       <path d="M8 16V8.5a.5.5 0 0 1 .9-.3l2.7 3.6a.5.5 0 0 0 .8 0l2.7-3.6a.5.5 0 0 1 .9.3V16"/>
     </svg>
   </a>
   <form id="prev-form" onsubmit="handleSubmit(event)">
-    <input id="url-in" type="url" class="flex-1 font-mono text-sm px-3.5 py-2.5 border border-zinc-200 dark:border-zinc-800 border-r-0 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 outline-none focus:border-zinc-900 dark:focus:border-zinc-100 min-w-0 transition-colors placeholder:text-zinc-400 dark:placeholder:text-zinc-600" placeholder="https://example.com" autocomplete="off" spellcheck="false">
-    <button type="submit" id="sub-btn" class="btn-convert">
+    <input id="url-in" type="url" class="fi" placeholder="https://example.com" autocomplete="off" spellcheck="false">
+    <button type="submit" id="sub-btn" class="fb">
       <span id="btn-t">Convert</span>
     </button>
   </form>
   <nav class="prev-nav">
     <div class="prev-nav-links flex items-center">
-      <a href="/docs" class="text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-3 py-1.5 transition-colors no-underline">Docs</a>
-      <a href="https://github.com/go-mizu/mizu" class="text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-3 py-1.5 transition-colors no-underline">GitHub</a>
-      <a href="/llms.txt" class="text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-3 py-1.5 transition-colors no-underline">llms.txt</a>
+      <a href="/docs" class="text-xs text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-2.5 py-1.5 transition-colors no-underline">Docs</a>
+      <a href="https://github.com/go-mizu/mizu" class="text-xs text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-2.5 py-1.5 transition-colors no-underline">GitHub</a>
+      <a href="/llms.txt" class="text-xs text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-2.5 py-1.5 transition-colors no-underline">llms.txt</a>
     </div>
     <button onclick="toggleTheme()" title="Toggle dark mode" class="text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 p-1.5 transition-colors cursor-pointer bg-transparent border-none flex items-center">
-      <svg class="dark:hidden" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
-      <svg class="hidden dark:block" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      <svg class="dark:hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
+      <svg class="hidden dark:block" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
     </button>
   </nav>
 </header>

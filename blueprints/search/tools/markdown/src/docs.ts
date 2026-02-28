@@ -44,21 +44,21 @@ export function renderDocs(contentHtml: string): string {
 </head>
 <body class="font-sans bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 transition-colors duration-200">
 
-<header class="sticky top-0 z-50 bg-white dark:bg-zinc-950 px-8 py-3.5 flex items-center justify-between transition-colors duration-200">
+<header class="sticky top-0 z-50 bg-white dark:bg-zinc-950 px-8 py-2.5 flex items-center justify-between transition-colors duration-200" style="gap:14px">
   <a href="/" class="flex items-center text-zinc-900 dark:text-zinc-100 no-underline flex-shrink-0">
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
       <rect x="3" y="3" width="18" height="18" rx="2"/>
       <path d="M8 16V8.5a.5.5 0 0 1 .9-.3l2.7 3.6a.5.5 0 0 0 .8 0l2.7-3.6a.5.5 0 0 1 .9.3V16"/>
     </svg>
   </a>
-  <nav class="flex items-center gap-1 ml-auto">
-    <a href="/" class="text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-3 py-1.5 transition-colors no-underline">Home</a>
-    <span class="text-sm text-zinc-900 dark:text-zinc-100 font-medium px-3 py-1.5">Docs</span>
-    <a href="https://github.com/go-mizu/mizu" class="text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-3 py-1.5 transition-colors no-underline">GitHub</a>
-    <a href="/llms.txt" class="text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-3 py-1.5 transition-colors no-underline">llms.txt</a>
-    <button onclick="toggleTheme()" title="Toggle dark mode" class="text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 p-1.5 transition-colors ml-1 cursor-pointer bg-transparent border-none flex items-center">
-      <svg class="dark:hidden" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
-      <svg class="hidden dark:block" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+  <nav class="flex items-center ml-auto" style="gap:2px">
+    <a href="/" class="text-xs text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-2.5 py-1.5 transition-colors no-underline">Home</a>
+    <span class="text-xs text-zinc-900 dark:text-zinc-100 font-medium px-2.5 py-1.5">Docs</span>
+    <a href="https://github.com/go-mizu/mizu" class="text-xs text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-2.5 py-1.5 transition-colors no-underline">GitHub</a>
+    <a href="/llms.txt" class="text-xs text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-2.5 py-1.5 transition-colors no-underline">llms.txt</a>
+    <button onclick="toggleTheme()" title="Toggle dark mode" class="text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 p-1.5 transition-colors cursor-pointer bg-transparent border-none flex items-center">
+      <svg class="dark:hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
+      <svg class="hidden dark:block" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
     </button>
   </nav>
 </header>
