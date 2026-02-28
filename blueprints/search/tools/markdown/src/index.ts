@@ -138,8 +138,8 @@ app.get('/*', async (c, next) => {
         'Cache-Control': 'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400',
       },
     });
-    // Store in CF edge cache (non-blocking)
-    c.executionCtx.waitUntil(cache.put(cacheKey, response.clone()));
+    // Store in CF edge cache (non-blocking; executionCtx may be absent in test environments)
+    try { c.executionCtx.waitUntil(cache.put(cacheKey, response.clone())); } catch { /* no-op */ }
     return response;
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Conversion failed';

@@ -9,6 +9,7 @@ export interface ConversionResult {
   title: string;
   tokens?: number;
   sourceUrl: string;
+  fetchFailed?: boolean; // true when all tiers failed to retrieve content
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -41,7 +42,7 @@ export async function convert(url: string, env: Env): Promise<ConversionResult> 
 
   // Cache the result (no TTL — keep until isolate recycles)
   // Only cache successful conversions (not error fallbacks)
-  if (result.markdown && result.markdown !== 'Unable to retrieve page content.') {
+  if (!result.fetchFailed) {
     resultCache.set(url, { result });
   }
 
@@ -89,6 +90,7 @@ async function doConvert(url: string, env: Env): Promise<ConversionResult> {
     // Browser binding unavailable or navigation failed; fall through to stripHtml
   }
   const aiFromBrowser = browserHtml ? await tryWorkersAI(browserHtml, env).catch(() => null) : null;
+  const fetchFailed = !browserHtml && !aiFromBrowser;
   const markdown = aiFromBrowser?.markdown ?? (browserHtml ? stripHtml(browserHtml) : 'Unable to retrieve page content.');
 
   return {
@@ -97,6 +99,7 @@ async function doConvert(url: string, env: Env): Promise<ConversionResult> {
     durationMs: Date.now() - start,
     title: browserHtml ? extractTitleFromHTML(browserHtml) : 'Untitled',
     tokens: aiFromBrowser?.tokens,
+    fetchFailed: fetchFailed || undefined,
     sourceUrl: url,
   };
 }
