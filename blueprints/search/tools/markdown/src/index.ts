@@ -30,6 +30,19 @@ app.post('/convert', async (c) => {
   }
 });
 
+// CORS preflight for cross-origin API usage
+app.options('/*', (c) => {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Max-Age': '86400',
+    },
+  });
+});
+
 // Text API: GET /:url+ (mirrors markdown.new/https://example.com pattern)
 // Matches any path starting with http:// or https://
 app.get('/*', async (c) => {
@@ -47,7 +60,7 @@ app.get('/*', async (c) => {
         'Content-Type': 'text/markdown; charset=utf-8',
         'X-Conversion-Method': result.method,
         'X-Duration-Ms': String(result.durationMs),
-        'X-Title': encodeURIComponent(result.title),
+        'X-Title': encodeURIComponent(result.title.slice(0, 200)),
         ...(result.tokens ? { 'X-Markdown-Tokens': String(result.tokens) } : {}),
         'Access-Control-Allow-Origin': '*',
         'Cache-Control': 'public, max-age=300',
