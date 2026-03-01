@@ -178,18 +178,61 @@ Complete rewrite with `ratatui 0.30` + `crossterm 0.29`:
 | **reqwest + devnull (new)**| **3,641** | 140,680†  | 14.2% | —      |
 | reqwest + binary (prev)    | 3,486   | 10,444     | —     | 29.6s  |
 | **reqwest + binary (new)** | **3,275** | 140,680†  | 12.3% | 31.4s  |
-| hyper + devnull            | TBD     | —          | —     | —      |
-| hyper + binary             | TBD     | —          | —     | TBD    |
+| **hyper + devnull**        | **4,573**† | 66,540  | 4.6%  | —      |
+| **hyper + binary**         | **3,123**† | 65,740  | 2.2%  | 21.6s  |
 
-†Peak is a startup burst artifact (16K workers × fast DNS fail < 100ms → delta×10 ≈ 140K).
-Not a sustained rate.
+†Hyper records only 150K/200K seeds (25% silently skipped due to DNS-timeout domain killing —
+see root cause below). Apparent "high RPS" is misleading: reqwest processes all 200K seeds,
+hyper abandons domains early after 3×1s DNS timeouts.
+
+Peak burst artifact for reqwest (140K): 16K workers × fast hickory-dns failures in < 100ms
+window → delta×10. Hyper peak (65K) is lower because domains take 1s per timeout to kill.
 
 **Analysis of new vs prev results**:
-- devnull: 3,641 vs 3,734 — within variance (~2.5%), no regression
-- binary: 3,275 vs 3,486 — ~6% regression, rkyv serialize slightly slower than bincode for
-  this workload. Drain 31.4s vs 29.6s (also ~6% slower).
-- The binary regression is likely rkyv's per-record overhead being slightly higher than
-  bincode for simple structs without large string fields (body="").
+- reqwest devnull: 3,641 vs 3,734 — within variance (~2.5%)
+- reqwest binary: 3,275 vs 3,486 — ~6% regression; rkyv encode+`.to_vec()` copy slightly
+  slower than bincode. Drain 31.4s vs 29.6s (~6% slower).
+- hyper binary: 3,123 avg, 97% timeout, only 146K/200K records — see root cause below.
+
+---
+
+## Root Cause Analysis: Hyper Engine Underperformance
+
+### Why 97% timeout rate in hyper vs 0% in reqwest
+
+**Reqwest with hickory-dns** (async DNS):
+- NXDOMAIN returns in < 5ms via in-memory cache or async resolver
+- ECONNREFUSED returns in < 1ms
+- Both classified as "Failed" → domain killed after `domain_fail_threshold=3` (< 3ms)
+- 87.7% of HN seeds die instantly → very high throughput
+
+**Hyper with blocking getaddrinfo** (default HttpConnector):
+- DNS resolution uses `getaddrinfo` in a thread pool (not cancellable)
+- For NXDOMAIN domains: getaddrinfo attempts multiple DNS servers with retries — can take
+  3-15+ seconds per resolution attempt
+- `tokio::time::timeout(1s, client.request(...))` fires before getaddrinfo returns
+- Error is our literal "timeout" string → classified as `Timeout` not `Failed`
+- `domain_dead_probe=3` requires 3 timeouts (3 × 1s = 3s minimum) to abandon domain
+- Slower domain abandonment → more time wasted per dead domain
+
+**Result**: The same 77K HN domains that reqwest kills in < 3ms each take 3+ seconds each
+in hyper, consuming worker slots and reducing throughput.
+
+### Why only 146K/200K records in hyper
+
+The missing 53K records are URLs skipped due to domain abandonment. With hyper's slower
+abandonment (3 × 1s timeouts), domains are abandoned after just 3 URLs, and remaining URLs
+for those domains are written to failures as "domain_http_timeout_killed" (not to results).
+
+### Conclusion: reqwest + hickory-dns >> hyper for dead-domain-heavy workloads
+
+For workloads where most domains are dead/unreachable (HN seeds: 87%+ failure), hickory-dns's
+instant async DNS is the critical differentiator. Hyper would likely match or exceed reqwest
+on a clean, high-OK-rate seed set where DNS is pre-resolved.
+
+Fix options for hyper (not implemented):
+- Add `hickory-resolver` + custom `HttpConnector` with async DNS (`hyper-hickory` crate)
+- Set `HttpConnector::set_connect_timeout(Some(Duration::from_millis(200)))` to fail faster
 
 ---
 
@@ -197,37 +240,35 @@ Not a sustained rate.
 
 The HN seed set is the fundamental bottleneck:
 
-1. **Low OK rate (12-14%)**: ~87% of requests are failures (connection refused, DNS failure,
-   timeout). Failed requests complete faster but still consume worker slots.
+1. **Low OK rate (12-14%)**: ~87% of requests fail (connection refused, DNS failure, timeout).
+   With hickory-dns, failed requests complete in < 1ms but still occupy one worker slot.
 
-2. **Network saturation at ~3,500 avg**: With the HN domain set (~77K unique domains),
-   the dead/unreachable domain ratio means most workers are cycling through failures.
-   The network interface on server2 appears to saturate around 3,500 avg for this workload.
+2. **Network saturation ~3,500 avg**: With the HN domain set (~77K unique domains), the dead
+   domain ratio means most workers cycle through failures. Server2's network saturates around
+   3,500 avg for this dead-domain workload.
 
-3. **rkyv overhead**: Binary writer rkyv serialization adds ~200 RPS overhead vs bincode.
-   This is a ~6% regression that offsets hickory-dns and http2 gains.
+3. **rkyv binary overhead**: rkyv encode + `.to_vec()` copy adds ~366 RPS overhead vs devnull
+   (10.1%), compared to bincode's ~248 RPS overhead (6.6%). The extra copy from `AlignedVec`
+   to `Vec<u8>` is avoidable.
 
 ---
 
 ## Next Steps
 
-### Option A: Better seeds
+### Option A: Better seeds (highest impact)
 Use CC seeds with higher OK rate (70%+). Previous CC recrawl showed 86%+ rescue rates.
-With 70% OK rate and same worker count, avg RPS could reach 4,000+ easily.
+With 70% OK rate, avg RPS would reflect real HTTP throughput not DNS failure cycling.
+The 4,000 avg RPS target likely requires better seeds.
 
-### Option B: Address rkyv overhead
-Profile the flusher thread CPU usage. The rkyv `to_bytes` + `to_vec()` copy may be the
-bottleneck. Options:
-- Use `rkyv::to_bytes` returning `AlignedVec` directly (no `.to_vec()` copy)
-- Use `write_to_vec` with pre-allocated buffer
+### Option B: Fix rkyv overhead
+Eliminate the `.to_vec()` copy in the flusher encode closure. Write `AlignedVec<16>` bytes
+directly to the `BufWriter` via `.as_slice()` without converting to `Vec<u8>`. Potential
+recovery: ~100 RPS.
 
-### Option C: Reduce per-request overhead
-- Zero-copy header parsing (avoid String allocations for non-HTML responses)
-- Skip TLS verification for crawling (controversial but faster)
-- Tune reqwest connection pool settings
-
-### Option D: Hyper engine
-If hyper outperforms reqwest (avoids native-tls-vendored overhead), switch default engine.
+### Option C: Fix hyper async DNS
+Add `hickory-resolver` crate and create a custom hyper connector that uses async DNS.
+This would make hyper match reqwest for dead-domain workloads and potentially outperform
+it on good seeds (ring TLS is faster than OpenSSL on AES-NI hardware).
 
 ---
 
