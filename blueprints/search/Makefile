@@ -5,7 +5,7 @@ GO      ?= go
 PKG     ?= ./...
 BINARY  ?= $(HOME)/bin/search
 LINUX_BINARY ?= $(HOME)/bin/search-linux
-LINUX_RUNTIME_LIB_DIR ?= $(HOME)/bin/search-linux-libs-focal-gcc11
+LINUX_RUNTIME_LIB_DIR ?= $(HOME)/bin/search-linux-libs-focal-gcc13
 LINUX_RUNTIME_LIBSTDCPP ?= $(LINUX_RUNTIME_LIB_DIR)/libstdc++.so.6
 # Noble (Ubuntu 24.04) build — no bundled libstdc++ needed (system ships it)
 LINUX_BINARY_NOBLE ?= $(HOME)/bin/search-linux-noble
@@ -117,8 +117,12 @@ build-linux: ## Build Ubuntu/Linux binary to $$HOME/bin/search-linux (Docker, CG
 			"$(LINUX_BUILD_CONTEXT)"; \
 		cid="$$($(LINUX_CONTAINER) create --platform "linux/$(LINUX_GOARCH)" "$$img")"; \
 		$(LINUX_CONTAINER) cp "$$cid:/search-linux" "$$tmp_out/search-linux"; \
-		install -m 0755 "$$tmp_out/search-linux" "$(LINUX_BINARY)"
+		$(LINUX_CONTAINER) cp "$$cid:/libstdc++.so.6" "$$tmp_out/libstdc++.so.6"; \
+		install -m 0755 "$$tmp_out/search-linux" "$(LINUX_BINARY)"; \
+		mkdir -p "$(LINUX_RUNTIME_LIB_DIR)"; \
+		install -m 0644 "$$tmp_out/libstdc++.so.6" "$(LINUX_RUNTIME_LIB_DIR)/libstdc++.so.6"
 	@echo "Built Linux binary: $(LINUX_BINARY) ($(VERSION))"
+	@echo "Runtime libstdc++: $(LINUX_RUNTIME_LIB_DIR)/libstdc++.so.6"
 
 .PHONY: build-linux-noble
 build-linux-noble: ## Build Ubuntu 24.04 (Noble) binary to $$HOME/bin/search-linux-noble (Docker, CGO enabled)
@@ -192,11 +196,19 @@ download-chrome: ## Download chrome-headless-shell to ~/bin/chrome-headless/ + w
 		rm -rf /tmp/chrome-headless.zip /tmp/chrome-headless-extract; \
 		printf '"'"'#!/usr/bin/env bash\nexec \"$$HOME/bin/chrome-headless/chrome-headless-shell\" \"\$$@\"\n'"'"' > \$$HOME/bin/chromium; \
 		chmod +x \$$HOME/bin/chromium; \
-		echo \"Downloading required system libs via apt-get download (no sudo)...\"; \
-		cd /tmp && apt-get download libnspr4 libnss3 libatk1.0-0 libatk-bridge2.0-0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libxkbcommon0 libatspi2.0-0 libxrender1 libwayland-server0 2>/dev/null || true; \
+		echo \"Downloading NSS/NSPR (pinned focal-security versions compatible with Chrome 146+)...\"; \
+		rm -rf /tmp/chrome-libs-extract && mkdir -p /tmp/chrome-libs-extract; \
+		curl -fsSL http://security.ubuntu.com/ubuntu/pool/main/n/nss/libnss3_3.98-0ubuntu0.20.04.2_amd64.deb -o /tmp/libnss3.deb; \
+		curl -fsSL http://archive.ubuntu.com/ubuntu/pool/main/n/nspr/libnspr4_4.35-0ubuntu0.20.04.1_amd64.deb -o /tmp/libnspr4.deb; \
+		dpkg-deb -x /tmp/libnss3.deb /tmp/chrome-libs-extract; \
+		dpkg-deb -x /tmp/libnspr4.deb /tmp/chrome-libs-extract; \
+		echo \"Downloading other required system libs via apt-get download...\"; \
+		cd /tmp && apt-get download libatk1.0-0 libatk-bridge2.0-0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libxkbcommon0 libatspi2.0-0 libxrender1 libwayland-server0 2>/dev/null || true; \
 		for f in /tmp/*.deb; do [ -f \"\$$f\" ] && dpkg-deb -x \"\$$f\" /tmp/chrome-libs-extract || true; done; \
-		find /tmp/chrome-libs-extract -name '*.so*' -exec cp -P {} \$$HOME/bin/chrome-libs/ \\; 2>/dev/null || true; \
-		rm -f /tmp/*.deb; rm -rf /tmp/chrome-libs-extract; \
+		find /tmp/chrome-libs-extract -name '*.so*' ! -type l -exec cp {} \$$HOME/bin/chrome-libs/ \\; 2>/dev/null || true; \
+		find /tmp/chrome-libs-extract -path '*/nss/*.so*' ! -type l -exec cp {} \$$HOME/bin/chrome-libs/ \\; 2>/dev/null || true; \
+		rm -f /tmp/libnss3.deb /tmp/libnspr4.deb /tmp/*.deb; rm -rf /tmp/chrome-libs-extract; \
+		echo \"chrome-libs contents:\"; ls \$$HOME/bin/chrome-libs/ | grep -i nss; \
 		LD_LIBRARY_PATH=\$$HOME/bin/chrome-libs \$$HOME/bin/chromium --version 2>&1 || echo \"(version check may fail - binary installed)\""'
 	@echo "chrome-headless-shell installed at $(REMOTE_SSH):~/bin/chrome-headless/, wrapper at ~/bin/chromium"
 
