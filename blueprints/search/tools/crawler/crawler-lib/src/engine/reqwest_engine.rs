@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::domain::{group_by_domain, DomainState};
-use crate::stats::{AdaptiveTimeout, Stats, StatsSnapshot};
+use crate::stats::{classify_error, AdaptiveTimeout, ErrorCategory, Stats, StatsSnapshot};
 use crate::types::{CrawlResult, FailedURL, SeedURL};
 use crate::ua;
 use crate::writer::{FailureWriter, ResultWriter};
@@ -59,16 +59,7 @@ impl super::Engine for ReqwestEngine {
     ) -> Result<StatsSnapshot> {
         let total_seeds = seeds.len();
         if total_seeds == 0 {
-            return Ok(StatsSnapshot {
-                ok: 0,
-                failed: 0,
-                timeout: 0,
-                skipped: 0,
-                bytes_downloaded: 0,
-                total: 0,
-                duration: Duration::ZERO,
-                peak_rps: 0,
-            });
+            return Ok(StatsSnapshot::empty());
         }
 
         info!(
@@ -89,6 +80,13 @@ impl super::Engine for ReqwestEngine {
         }
         // Reset done flag (may be set from a previous pass)
         stats.done.store(false, Ordering::Relaxed);
+        stats.domains_total.store(domain_count as u64, Ordering::Relaxed);
+
+        // Push a start event to the TUI log.
+        stats.push_warning(format!(
+            "engine: {} seeds, {} domains, {} workers, inner_n={}",
+            total_seeds, domain_count, cfg.workers, cfg.inner_n,
+        ));
 
         let adaptive = Arc::new(AdaptiveTimeout::new());
 
@@ -111,6 +109,12 @@ impl super::Engine for ReqwestEngine {
                 peak_stats.peak_rps.fetch_max(rps, Ordering::Relaxed);
                 prev_total = cur;
             }
+        });
+
+        // Spawn a system-monitor task: samples RSS, FDs, network every 500ms.
+        let sysmon_stats = Arc::clone(&stats);
+        tokio::spawn(async move {
+            spawn_sysmon(sysmon_stats).await;
         });
 
         let workers = cfg.workers.max(1);
@@ -245,6 +249,18 @@ impl super::Engine for ReqwestEngine {
             snapshot.duration.as_secs_f64()
         );
 
+        // Push final summary event.
+        stats.push_warning(format!(
+            "done: {} ok, {} failed (dns={} conn={} tls={}), {} timeout, {:.0} avg rps",
+            snapshot.ok,
+            snapshot.failed,
+            snapshot.err_dns,
+            snapshot.err_conn,
+            snapshot.err_tls,
+            snapshot.timeout,
+            snapshot.avg_rps(),
+        ));
+
         Ok(snapshot)
     }
 }
@@ -299,12 +315,9 @@ async fn process_one_url(
 
     // Classify result and update domain state.
     if !result.error.is_empty() {
-        let is_timeout = result.error.contains("timeout")
-            || result.error.contains("Timeout")
-            || result.error.contains("deadline")
-            || result.error.contains("timed out");
+        let category = classify_error(&result.error);
 
-        if is_timeout {
+        if category == ErrorCategory::Timeout {
             stats.timeout.fetch_add(1, Ordering::Relaxed);
             let t = domain_entry.timeouts.fetch_add(1, Ordering::Relaxed) + 1;
             let s = domain_entry.ok.load(Ordering::Relaxed);
@@ -322,6 +335,7 @@ async fn process_one_url(
                         "abandoning domain {} (timeouts={}, ok={})",
                         seed.domain, t, s
                     );
+                    stats.domains_abandoned.fetch_add(1, Ordering::Relaxed);
                     stats.push_warning(format!(
                         "abandoned {} (timeouts={}, ok={})",
                         seed.domain, t, s
@@ -340,10 +354,49 @@ async fn process_one_url(
             });
         } else {
             stats.failed.fetch_add(1, Ordering::Relaxed);
+
+            // Track error sub-category.
+            match category {
+                ErrorCategory::Dns => {
+                    let n = stats.err_dns.fetch_add(1, Ordering::Relaxed) + 1;
+                    // Log first few DNS failures as events.
+                    if n <= 5 || (n <= 100 && n % 20 == 0) || n % 500 == 0 {
+                        stats.push_warning(format!("dns: {} ({})", seed.domain, short_error(&result.error)));
+                    }
+                }
+                ErrorCategory::Connection => {
+                    let n = stats.err_conn.fetch_add(1, Ordering::Relaxed) + 1;
+                    if n <= 3 || n % 500 == 0 {
+                        stats.push_warning(format!("conn: {} ({})", seed.domain, short_error(&result.error)));
+                    }
+                    // Sample first 50 conn errors with full detail for debugging.
+                    if n <= 50 {
+                        tracing::warn!(n, domain = %seed.domain, error = %result.error, fetch_ms = result.fetch_time_ms, "conn_sample");
+                    }
+                }
+                ErrorCategory::Tls => {
+                    let n = stats.err_tls.fetch_add(1, Ordering::Relaxed) + 1;
+                    if n <= 3 || n % 200 == 0 {
+                        stats.push_warning(format!("tls: {} ({})", seed.domain, short_error(&result.error)));
+                    }
+                }
+                _ => {
+                    let n = stats.err_other.fetch_add(1, Ordering::Relaxed) + 1;
+                    if n <= 5 || n % 500 == 0 {
+                        stats.push_warning(format!("error: {} ({})", seed.domain, short_error(&result.error)));
+                    }
+                }
+            }
+
             let _ = failures.write_url(FailedURL {
                 url: seed.url.clone(),
                 domain: seed.domain.clone(),
-                reason: "http_error".to_string(),
+                reason: match category {
+                    ErrorCategory::Dns => "dns_error",
+                    ErrorCategory::Connection => "conn_error",
+                    ErrorCategory::Tls => "tls_error",
+                    _ => "http_error",
+                }.to_string(),
                 error: result.error.clone(),
                 status_code: result.status_code,
                 fetch_time_ms: result.fetch_time_ms,
@@ -354,12 +407,105 @@ async fn process_one_url(
         stats.ok.fetch_add(1, Ordering::Relaxed);
         domain_entry.ok.fetch_add(1, Ordering::Relaxed);
         adaptive.record(result.fetch_time_ms);
+
+        // Track HTTP status code distribution.
+        match result.status_code {
+            200..=299 => { stats.status_2xx.fetch_add(1, Ordering::Relaxed); }
+            300..=399 => { stats.status_3xx.fetch_add(1, Ordering::Relaxed); }
+            400..=499 => { stats.status_4xx.fetch_add(1, Ordering::Relaxed); }
+            500..=599 => { stats.status_5xx.fetch_add(1, Ordering::Relaxed); }
+            _ => {}
+        }
     }
 
     stats
         .bytes_downloaded
         .fetch_add(result.content_length as u64, Ordering::Relaxed);
     let _ = results.write(result);
+}
+
+/// Sanitize a URL for reqwest:
+/// - Trim whitespace
+/// - Fix "http:// domain" → "http://domain" (space after scheme)
+/// - Fix double schemes "http:// http://..." → "http://..."
+fn sanitize_url(url: &str) -> String {
+    let url = url.trim();
+
+    // Fix "http:// http://..." or "http:// https://..." (double scheme with space)
+    if let Some(rest) = url.strip_prefix("http:// http://") {
+        return format!("http://{}", rest.trim_start());
+    }
+    if let Some(rest) = url.strip_prefix("http:// https://") {
+        return format!("https://{}", rest.trim_start());
+    }
+
+    // Fix "http:// domain" → "http://domain"
+    if let Some(rest) = url.strip_prefix("http:// ") {
+        return format!("http://{}", rest.trim_start());
+    }
+    if let Some(rest) = url.strip_prefix("https:// ") {
+        return format!("https://{}", rest.trim_start());
+    }
+
+    url.to_string()
+}
+
+/// Background system monitor: updates RSS, FDs, network stats every 500ms.
+async fn spawn_sysmon(stats: Arc<Stats>) {
+    let pid = sysinfo::Pid::from_u32(std::process::id());
+    let mut sys = sysinfo::System::new();
+    let mut nets = sysinfo::Networks::new_with_refreshed_list();
+    let mut interval = tokio::time::interval(Duration::from_millis(500));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+    loop {
+        interval.tick().await;
+        if stats.done.load(Ordering::Relaxed) {
+            break;
+        }
+
+        // RSS memory
+        sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
+        if let Some(proc) = sys.process(pid) {
+            stats.mem_rss_mb.store(proc.memory() / (1024 * 1024), Ordering::Relaxed);
+        }
+
+        // Open FDs (Linux only: count entries in /proc/self/fd)
+        #[cfg(target_os = "linux")]
+        {
+            if let Ok(entries) = std::fs::read_dir("/proc/self/fd") {
+                stats.open_fds.store(entries.count() as u64, Ordering::Relaxed);
+            }
+        }
+
+        // Network I/O
+        nets.refresh(true);
+        let mut total_rx = 0u64;
+        let mut total_tx = 0u64;
+        for (_name, data) in nets.iter() {
+            total_rx += data.received();
+            total_tx += data.transmitted();
+        }
+        // received()/transmitted() return bytes since last refresh → /0.5s = per-second.
+        stats.net_rx_bps.store(total_rx * 2, Ordering::Relaxed);
+        stats.net_tx_bps.store(total_tx * 2, Ordering::Relaxed);
+    }
+}
+
+/// Shorten an error message for log display (max 60 chars).
+fn short_error(error: &str) -> String {
+    // Extract the most useful part from reqwest error chains.
+    // e.g. "error sending request for url... : dns error: ..." → "dns error: ..."
+    let s = if let Some(idx) = error.rfind(": ") {
+        &error[idx + 2..]
+    } else {
+        error
+    };
+    if s.len() > 60 {
+        format!("{}...", &s[..57])
+    } else {
+        s.to_string()
+    }
 }
 
 /// Fetch a single URL using the shared reqwest client.
@@ -374,8 +520,11 @@ async fn fetch_one(
 ) -> CrawlResult {
     let start = Instant::now();
 
+    // Sanitize URL: fix "http:// domain" → "http://domain", trim whitespace.
+    let url = sanitize_url(&seed.url);
+
     let response = client
-        .get(&seed.url)
+        .get(&url)
         .header("User-Agent", ua::pick_user_agent())
         .timeout(timeout)
         .send()

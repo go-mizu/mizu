@@ -73,16 +73,7 @@ impl super::Engine for HyperEngine {
     ) -> Result<StatsSnapshot> {
         let total_seeds = seeds.len();
         if total_seeds == 0 {
-            return Ok(StatsSnapshot {
-                ok: 0,
-                failed: 0,
-                timeout: 0,
-                skipped: 0,
-                bytes_downloaded: 0,
-                total: 0,
-                duration: Duration::ZERO,
-                peak_rps: 0,
-            });
+            return Ok(StatsSnapshot::empty());
         }
 
         info!(

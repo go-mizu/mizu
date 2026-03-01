@@ -84,6 +84,10 @@ pub async fn run_job(
     };
 
     // --- Pass 1 ---
+    // Signal TUI that pass 1 is starting.
+    if let Some(ref stats) = cfg.live_stats {
+        stats.pass.store(1, std::sync::atomic::Ordering::Relaxed);
+    }
     let failure_writer1 = open_failure_writer()?;
     tracing::info!(
         seeds = seeds.len(),
@@ -130,6 +134,16 @@ pub async fn run_job(
         let loader = load_retry_seeds.unwrap();
         match loader(start) {
             Ok(retry_seeds) if !retry_seeds.is_empty() => {
+                // Signal TUI: pass 2 starting.
+                if let Some(ref stats) = cfg.live_stats {
+                    stats.pass.store(2, std::sync::atomic::Ordering::Relaxed);
+                    stats.pass2_seeds.store(retry_seeds.len() as u64, std::sync::atomic::Ordering::Relaxed);
+                    stats.push_warning(format!(
+                        "pass 2: {} retry URLs, timeout={}ms",
+                        retry_seeds.len(),
+                        cfg.retry_timeout.as_millis(),
+                    ));
+                }
                 tracing::info!(
                     retry_seeds = retry_seeds.len(),
                     retry_timeout_ms = cfg.retry_timeout.as_millis() as u64,
@@ -294,16 +308,15 @@ mod tests {
 
     #[test]
     fn test_job_result_fields() {
-        let snap = StatsSnapshot {
-            ok: 100,
-            failed: 10,
-            timeout: 5,
-            skipped: 2,
-            bytes_downloaded: 1024,
-            total: 117,
-            duration: Duration::from_secs(10),
-            peak_rps: 50,
-        };
+        let mut snap = StatsSnapshot::empty();
+        snap.ok = 100;
+        snap.failed = 10;
+        snap.timeout = 5;
+        snap.skipped = 2;
+        snap.bytes_downloaded = 1024;
+        snap.total = 117;
+        snap.duration = Duration::from_secs(10);
+        snap.peak_rps = 50;
 
         let result = JobResult {
             pass1: snap.clone(),

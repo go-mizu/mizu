@@ -74,6 +74,10 @@ pub struct RecrawlArgs {
     /// DuckDB memory per shard in MB (0 = auto)
     #[arg(long, default_value_t = 0)]
     pub db_mem_mb: usize,
+
+    /// Disable TUI dashboard (text-only output)
+    #[arg(long)]
+    pub no_tui: bool,
 }
 
 /// Expand `~` in a path string to the user's home directory.
@@ -215,10 +219,19 @@ pub async fn run_recrawl(args: RecrawlArgs) -> Result<()> {
     println!("Starting crawl job...");
     let job_start = std::time::Instant::now();
 
-    // 7. Start TUI dashboard (only when stdout is a terminal).
-    //    TUI thread reads from live_stats Arc; job updates it atomically.
-    let tui_title = format!("HN Recrawl — {} seeds", seeds.len());
-    let tui_handle = tui::spawn(live_stats.clone(), tui_title);
+    // 7. Start TUI dashboard (only when stdout is a terminal and --no-tui not set).
+    let tui_handle = if !args.no_tui {
+        let tui_cfg = tui::TuiConfig {
+            title: "HN Recrawl".to_string(),
+            engine: cfg.engine.to_string(),
+            writer: cfg.writer.to_string(),
+            workers: if cfg.workers == 0 { "auto".to_string() } else { cfg.workers.to_string() },
+            timeout_ms: cfg.timeout.as_millis() as u64,
+        };
+        tui::spawn(live_stats.clone(), tui_cfg)
+    } else {
+        None
+    };
 
     // 8. Run job (blocks until both passes complete)
     let job_result = run_job(

@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use std::io::IsTerminal;
 use tracing_subscriber::EnvFilter;
 
 mod cc;
@@ -45,13 +46,21 @@ enum CcAction {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Always write tracing output to stderr so the TUI (stdout) is unaffected.
+    // When stdout is a TTY, the TUI uses alternate screen — tracing to stderr
+    // would corrupt the display. Suppress INFO logs; WARN+ still visible.
+    // When piped/non-TTY, full INFO logging to stderr.
+    let filter = if std::io::stdout().is_terminal() {
+        EnvFilter::from_default_env()
+            .add_directive("crawler_cli=warn".parse().unwrap())
+            .add_directive("crawler_lib=warn".parse().unwrap())
+    } else {
+        EnvFilter::from_default_env()
+            .add_directive("crawler_cli=info".parse().unwrap())
+            .add_directive("crawler_lib=info".parse().unwrap())
+    };
+
     tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::from_default_env()
-                .add_directive("crawler_cli=info".parse().unwrap())
-                .add_directive("crawler_lib=info".parse().unwrap()),
-        )
+        .with_env_filter(filter)
         .with_target(false)
         .with_writer(std::io::stderr)
         .init();

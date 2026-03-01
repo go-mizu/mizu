@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -18,7 +18,40 @@ pub struct Stats {
     pub peak_rps: AtomicU64,
     /// Set to true when the crawl completes; used to stop the peak tracker task.
     pub done: AtomicBool,
-    /// Recent warning messages (domain timeouts, abandonments). Cap 100.
+    /// Current pass (1 or 2). Set by job.rs before each engine run.
+    pub pass: AtomicU8,
+    /// Seed count for pass 2 (set when pass 2 begins).
+    pub pass2_seeds: AtomicU64,
+
+    // --- Error breakdown (sub-categories of `failed`) ---
+    pub err_dns: AtomicU64,
+    pub err_conn: AtomicU64,
+    pub err_tls: AtomicU64,
+    pub err_http_status: AtomicU64, // 4xx/5xx counted as errors
+    pub err_other: AtomicU64,
+
+    // --- HTTP status code distribution (for successful responses) ---
+    pub status_2xx: AtomicU64,
+    pub status_3xx: AtomicU64,
+    pub status_4xx: AtomicU64,
+    pub status_5xx: AtomicU64,
+
+    // --- Domain tracking ---
+    pub domains_total: AtomicU64,
+    pub domains_done: AtomicU64,
+    pub domains_abandoned: AtomicU64,
+
+    // --- System resources (updated by sysmon task) ---
+    /// RSS memory in MB (of this process)
+    pub mem_rss_mb: AtomicU64,
+    /// Network bytes sent since last sample (per second)
+    pub net_tx_bps: AtomicU64,
+    /// Network bytes received since last sample (per second)
+    pub net_rx_bps: AtomicU64,
+    /// Open file descriptors (this process)
+    pub open_fds: AtomicU64,
+
+    /// Recent warning messages (domain timeouts, abandonments). Cap 200.
     pub warnings: Mutex<VecDeque<String>>,
 }
 
@@ -35,14 +68,32 @@ impl Stats {
             start: Instant::now(),
             peak_rps: AtomicU64::new(0),
             done: AtomicBool::new(false),
-            warnings: Mutex::new(VecDeque::with_capacity(100)),
+            pass: AtomicU8::new(1),
+            pass2_seeds: AtomicU64::new(0),
+            err_dns: AtomicU64::new(0),
+            err_conn: AtomicU64::new(0),
+            err_tls: AtomicU64::new(0),
+            err_http_status: AtomicU64::new(0),
+            err_other: AtomicU64::new(0),
+            status_2xx: AtomicU64::new(0),
+            status_3xx: AtomicU64::new(0),
+            status_4xx: AtomicU64::new(0),
+            status_5xx: AtomicU64::new(0),
+            domains_total: AtomicU64::new(0),
+            domains_done: AtomicU64::new(0),
+            domains_abandoned: AtomicU64::new(0),
+            mem_rss_mb: AtomicU64::new(0),
+            net_tx_bps: AtomicU64::new(0),
+            net_rx_bps: AtomicU64::new(0),
+            open_fds: AtomicU64::new(0),
+            warnings: Mutex::new(VecDeque::with_capacity(200)),
         }
     }
 
-    /// Push a warning message into the ring buffer (max 100 entries).
+    /// Push a warning message into the ring buffer (max 200 entries).
     pub fn push_warning(&self, msg: String) {
         if let Ok(mut w) = self.warnings.lock() {
-            if w.len() >= 100 {
+            if w.len() >= 200 {
                 w.pop_front();
             }
             w.push_back(msg);
@@ -59,8 +110,87 @@ impl Stats {
             total: self.total.load(Ordering::Relaxed),
             duration: self.start.elapsed(),
             peak_rps: self.peak_rps.load(Ordering::Relaxed),
+            err_dns: self.err_dns.load(Ordering::Relaxed),
+            err_conn: self.err_conn.load(Ordering::Relaxed),
+            err_tls: self.err_tls.load(Ordering::Relaxed),
+            err_http_status: self.err_http_status.load(Ordering::Relaxed),
+            err_other: self.err_other.load(Ordering::Relaxed),
+            status_2xx: self.status_2xx.load(Ordering::Relaxed),
+            status_3xx: self.status_3xx.load(Ordering::Relaxed),
+            status_4xx: self.status_4xx.load(Ordering::Relaxed),
+            status_5xx: self.status_5xx.load(Ordering::Relaxed),
         }
     }
+}
+
+/// Error category for classification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ErrorCategory {
+    Dns,
+    Connection,
+    Tls,
+    Timeout,
+    Other,
+}
+
+/// Classify a reqwest error string into a category.
+pub fn classify_error(error: &str) -> ErrorCategory {
+    let lower = error.to_lowercase();
+
+    // Timeout first (already handled separately in engine, but useful for standalone use)
+    if lower.contains("timeout")
+        || lower.contains("deadline")
+        || lower.contains("timed out")
+    {
+        return ErrorCategory::Timeout;
+    }
+
+    // DNS resolution failures
+    if lower.contains("dns error")
+        || lower.contains("resolve")
+        || lower.contains("name or service not known")
+        || lower.contains("no address associated")
+        || lower.contains("nxdomain")
+        || lower.contains("no record found")
+        || lower.contains("failed to lookup")
+        || lower.contains("dns")
+    {
+        return ErrorCategory::Dns;
+    }
+
+    // TLS / SSL errors
+    if lower.contains("tls")
+        || lower.contains("ssl")
+        || lower.contains("certificate")
+        || lower.contains("handshake")
+        || lower.contains("alert")
+        || lower.contains("crypto")
+    {
+        return ErrorCategory::Tls;
+    }
+
+    // Connection errors
+    if lower.contains("connect")
+        || lower.contains("connection refused")
+        || lower.contains("connection reset")
+        || lower.contains("broken pipe")
+        || lower.contains("network is unreachable")
+        || lower.contains("no route to host")
+        || lower.contains("connection aborted")
+        || lower.contains("builder error")
+        || lower.contains("error sending request")
+        || lower.contains("tcp")
+        || lower.contains("socket")
+        || lower.contains("eof")
+        || lower.contains("peer")
+        || lower.contains("refused")
+        || lower.contains("reset")
+        || lower.contains("closed")
+    {
+        return ErrorCategory::Connection;
+    }
+
+    ErrorCategory::Other
 }
 
 #[derive(Debug, Clone)]
@@ -73,9 +203,28 @@ pub struct StatsSnapshot {
     pub total: u64,
     pub duration: Duration,
     pub peak_rps: u64,
+    pub err_dns: u64,
+    pub err_conn: u64,
+    pub err_tls: u64,
+    pub err_http_status: u64,
+    pub err_other: u64,
+    pub status_2xx: u64,
+    pub status_3xx: u64,
+    pub status_4xx: u64,
+    pub status_5xx: u64,
 }
 
 impl StatsSnapshot {
+    pub fn empty() -> Self {
+        Self {
+            ok: 0, failed: 0, timeout: 0, skipped: 0,
+            bytes_downloaded: 0, total: 0,
+            duration: Duration::ZERO, peak_rps: 0,
+            err_dns: 0, err_conn: 0, err_tls: 0, err_http_status: 0, err_other: 0,
+            status_2xx: 0, status_3xx: 0, status_4xx: 0, status_5xx: 0,
+        }
+    }
+
     pub fn avg_rps(&self) -> f64 {
         let secs = self.duration.as_secs_f64();
         if secs > 0.0 {
@@ -95,6 +244,15 @@ impl StatsSnapshot {
             total: a.total + b.total,
             duration: a.duration + b.duration,
             peak_rps: a.peak_rps.max(b.peak_rps),
+            err_dns: a.err_dns + b.err_dns,
+            err_conn: a.err_conn + b.err_conn,
+            err_tls: a.err_tls + b.err_tls,
+            err_http_status: a.err_http_status + b.err_http_status,
+            err_other: a.err_other + b.err_other,
+            status_2xx: a.status_2xx + b.status_2xx,
+            status_3xx: a.status_3xx + b.status_3xx,
+            status_4xx: a.status_4xx + b.status_4xx,
+            status_5xx: a.status_5xx + b.status_5xx,
         }
     }
 }

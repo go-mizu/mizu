@@ -54,8 +54,16 @@ pub fn print_summary(
     println!("  OK:       {:>8}  ({:.1}%)", pass1.ok, pct(pass1.ok, pass1.total));
     println!("  Timeout:  {:>8}  ({:.1}%)", pass1.timeout, pct(pass1.timeout, pass1.total));
     println!("  Failed:   {:>8}  ({:.1}%)", pass1.failed, pct(pass1.failed, pass1.total));
+    if pass1.failed > 0 {
+        println!("    dns:    {:>8}  conn: {}  tls: {}  other: {}",
+            pass1.err_dns, pass1.err_conn, pass1.err_tls, pass1.err_other);
+    }
     println!("  Skipped:  {:>8}  ({:.1}%)", pass1.skipped, pct(pass1.skipped, pass1.total));
     println!("  Total:    {:>8}", pass1.total);
+    if pass1.status_2xx + pass1.status_3xx + pass1.status_4xx + pass1.status_5xx > 0 {
+        println!("  HTTP:     2xx={}  3xx={}  4xx={}  5xx={}",
+            pass1.status_2xx, pass1.status_3xx, pass1.status_4xx, pass1.status_5xx);
+    }
     println!(
         "  Avg RPS:  {:>8.0}    Peak: {} rps",
         pass1.avg_rps(),
@@ -97,6 +105,10 @@ pub fn print_summary(
         total.failed,
         pct(total.failed, total.total)
     );
+    if total.failed > 0 {
+        println!("    dns:    {:>8}  conn: {}  tls: {}  other: {}",
+            total.err_dns, total.err_conn, total.err_tls, total.err_other);
+    }
     println!("  Workers:  {}", workers);
     println!("  Duration: {}", format_duration(total.duration));
     println!();

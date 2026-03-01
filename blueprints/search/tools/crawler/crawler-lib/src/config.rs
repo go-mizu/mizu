@@ -180,8 +180,12 @@ fn clamp(val: usize, min_v: usize, max_v: usize) -> usize {
 
 /// Auto-configure workers and inner_n based on hardware.
 ///
-/// Flat URL queue: each worker holds 1 body at a time (not inner_n bodies),
-/// so the memory formula is total_kb * 75% / body_kb (no inner_n multiplier).
+/// KEY INSIGHT: Unlike Go goroutines which are scheduled cooperatively, tokio tasks
+/// with 16K workers all fire DNS lookups + TCP handshakes simultaneously, overwhelming
+/// the OS network stack. Empirically tested: 200w = 69% OK, 2000w = 47% OK, 16000w = 5% OK.
+/// The sweet spot is ~500-2000 workers: high enough for throughput, low enough to avoid
+/// DNS/TCP contention.
+///
 /// Uses mem_total_mb (stable) not mem_available_mb (snapshot at startup, varies).
 pub fn auto_config(si: &SysInfo, full_body: bool) -> Config {
     let body_kb: usize = if full_body { 256 } else { 4 };
@@ -192,12 +196,13 @@ pub fn auto_config(si: &SysInfo, full_body: bool) -> Config {
     // inner_n: CPU×2 clamped [4, 16] — per-domain fetch concurrency limit.
     let inner_n = clamp(si.cpu_count * 2, 4, 16);
 
-    // workers: flat queue = 1 body per worker.
-    // w_mem: 75% of total RAM / body size per worker.
-    // w_fd: half of fd limit (other half for OS/system sockets).
+    // workers: network-bound, not memory-bound.
+    // Cap at 2000 to avoid DNS/TCP contention (see KEY INSIGHT above).
+    // Lower bound: CPU×100 (enough parallelism for small machines).
+    // Upper bound: min(mem-based, fd-based, 2000).
     let w_mem = total_kb * 75 / 100 / body_kb.max(1);
     let w_fd = fd / 2;
-    let workers = clamp(w_mem.min(w_fd).min(16_000), 200, 16_000);
+    let workers = clamp(w_mem.min(w_fd).min(2_000), si.cpu_count * 100, 2_000);
 
     let db_shards = clamp(si.cpu_count * 2, 4, 16);
     // 10% of total RAM split across shards; minimum 64MB per shard.
