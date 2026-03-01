@@ -175,7 +175,7 @@ deploy-linux-noble: build-linux-noble ## Deploy Ubuntu 24.04 binary to remote $$
 .PHONY: install-chrome
 install-chrome: ## One-time: install Chromium on remote server (SERVER=1 or 2)
 	@echo "Installing Chromium on $(REMOTE_SSH)..."
-	@$(SSH) $(REMOTE_SSH) "bash -lc 'apt-get update -qq && apt-get install -y --no-install-recommends chromium chromium-common fonts-liberation && which chromium && chromium --version'"
+	@$(SSH) $(REMOTE_SSH) "bash -lc 'sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends chromium chromium-common fonts-liberation && which chromium && chromium --version'"
 	@echo "Chromium installed on $(REMOTE_SSH)"
 
 .PHONY: deploy-linux-noble-browser

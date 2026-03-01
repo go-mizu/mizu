@@ -43,8 +43,8 @@ func newLauncher(headless bool) *launcher.Launcher {
 		Headless(headless).
 		Set("disable-blink-features", "AutomationControlled").
 		Set("disable-features", "IsolateOrigins,site-per-process").
-		Set("disable-dev-shm-usage", "").
-		Set("no-sandbox", "")
+		Set("disable-dev-shm-usage", ""). // required in Docker/CI (no /dev/shm)
+		Set("no-sandbox", "")             // required when running as root on servers
 	if bin := detectChromeBin(); bin != "" {
 		l = l.Bin(bin)
 	}

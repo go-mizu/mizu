@@ -114,7 +114,7 @@ func readProcMemAvailMB() int {
 			}
 		}
 	}
-	return 4000 // fallback
+	return 4000 // fallback: 4 GB → AutoBrowserPages(4000) = 80 tabs (dev/macOS default)
 }
 
 func defaultDataDir() string {

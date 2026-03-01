@@ -375,7 +375,7 @@ func (c *Crawler) Run(ctx context.Context) error {
 
 	c.logInit("Frontier: %s seed URLs", fmtInt(c.frontier.Len()))
 	if c.config.UseRod || c.config.UseLightpanda {
-		c.logInit("Browser: %d tabs (auto from RAM)", c.config.RodWorkers)
+		c.logInit("Browser: %d tabs", c.config.RodWorkers)
 	}
 
 	// Sitemap discovery signal: closed when background sitemap discovery completes.
@@ -444,9 +444,6 @@ func (c *Crawler) Run(ctx context.Context) error {
 		defer lp.close()
 
 		workers := c.config.RodWorkers
-		if workers <= 0 {
-			workers = 8
-		}
 		c.stats.SetRodTotalWorkers(workers)
 		for i := range workers {
 			workerID := i
@@ -464,9 +461,6 @@ func (c *Crawler) Run(ctx context.Context) error {
 		c.rodPool = rp
 
 		workers := c.config.RodWorkers
-		if workers <= 0 {
-			workers = 40
-		}
 		c.stats.SetRodTotalWorkers(workers)
 		for i := range workers {
 			workerID := i
