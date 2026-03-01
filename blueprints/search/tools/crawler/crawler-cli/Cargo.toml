@@ -1,0 +1,17 @@
+[package]
+name = "crawler-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "crawler"
+path = "src/main.rs"
+
+[dependencies]
+crawler-lib = { path = "../crawler-lib" }
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+chrono = "0.4"

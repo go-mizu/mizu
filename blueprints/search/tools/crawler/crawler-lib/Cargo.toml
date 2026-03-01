@@ -1,0 +1,33 @@
+[package]
+name = "crawler-lib"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "brotli", "deflate"] }
+hyper = { version = "1", features = ["client", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "tokio", "http1", "http2"] }
+hyper-rustls = { version = "0.27", features = ["http2", "ring"] }
+rustls = "0.23"
+http-body-util = "0.1"
+bytes = "1"
+http = "1"
+
+duckdb = { version = "1.2", features = ["bundled"] }
+arrow = { version = "54", default-features = false }
+parquet = { version = "54", features = ["snap", "zstd"] }
+
+chrono = { version = "0.4", features = ["serde"] }
+url = "2"
+addr = "0.15"
+serde = { version = "1", features = ["derive"] }
+bincode = "1"
+tracing = "0.1"
+anyhow = "1"
+thiserror = "2"
+rand = "0.9"
+ahash = "0.8"
+crossbeam-channel = "0.5"
+sysinfo = "0.34"
+async-trait = "0.1"
