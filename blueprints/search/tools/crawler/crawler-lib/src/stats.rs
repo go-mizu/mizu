@@ -31,6 +31,21 @@ pub struct Stats {
     pub err_http_status: AtomicU64, // 4xx/5xx counted as errors
     pub err_other: AtomicU64,
 
+    // --- DNS sub-categories ---
+    pub dns_nxdomain: AtomicU64,    // no records found / NXDOMAIN
+    pub dns_malformed: AtomicU64,   // malformed label, invalid chars, too long
+    pub dns_other: AtomicU64,       // servfail, network error, etc
+
+    // --- Connection sub-categories ---
+    pub conn_refused: AtomicU64,    // connection refused (os error 111)
+    pub conn_reset: AtomicU64,      // reset by peer (os error 104)
+    pub conn_eof: AtomicU64,        // unexpected EOF / connection closed
+    pub conn_other: AtomicU64,
+
+    // --- Timeout sub-categories ---
+    pub timeout_connect: AtomicU64, // TCP/TLS connect timeout (< cfg.timeout)
+    pub timeout_response: AtomicU64,// full HTTP timeout (>= cfg.timeout)
+
     // --- HTTP status code distribution (for successful responses) ---
     pub status_2xx: AtomicU64,
     pub status_3xx: AtomicU64,
@@ -77,6 +92,15 @@ impl Stats {
             err_tls: AtomicU64::new(0),
             err_http_status: AtomicU64::new(0),
             err_other: AtomicU64::new(0),
+            dns_nxdomain: AtomicU64::new(0),
+            dns_malformed: AtomicU64::new(0),
+            dns_other: AtomicU64::new(0),
+            conn_refused: AtomicU64::new(0),
+            conn_reset: AtomicU64::new(0),
+            conn_eof: AtomicU64::new(0),
+            conn_other: AtomicU64::new(0),
+            timeout_connect: AtomicU64::new(0),
+            timeout_response: AtomicU64::new(0),
             status_2xx: AtomicU64::new(0),
             status_3xx: AtomicU64::new(0),
             status_4xx: AtomicU64::new(0),
@@ -118,6 +142,15 @@ impl Stats {
             err_tls: self.err_tls.load(Ordering::Relaxed),
             err_http_status: self.err_http_status.load(Ordering::Relaxed),
             err_other: self.err_other.load(Ordering::Relaxed),
+            dns_nxdomain: self.dns_nxdomain.load(Ordering::Relaxed),
+            dns_malformed: self.dns_malformed.load(Ordering::Relaxed),
+            dns_other: self.dns_other.load(Ordering::Relaxed),
+            conn_refused: self.conn_refused.load(Ordering::Relaxed),
+            conn_reset: self.conn_reset.load(Ordering::Relaxed),
+            conn_eof: self.conn_eof.load(Ordering::Relaxed),
+            conn_other: self.conn_other.load(Ordering::Relaxed),
+            timeout_connect: self.timeout_connect.load(Ordering::Relaxed),
+            timeout_response: self.timeout_response.load(Ordering::Relaxed),
             status_2xx: self.status_2xx.load(Ordering::Relaxed),
             status_3xx: self.status_3xx.load(Ordering::Relaxed),
             status_4xx: self.status_4xx.load(Ordering::Relaxed),
@@ -213,6 +246,16 @@ pub struct StatsSnapshot {
     pub err_tls: u64,
     pub err_http_status: u64,
     pub err_other: u64,
+    // Sub-categories
+    pub dns_nxdomain: u64,
+    pub dns_malformed: u64,
+    pub dns_other: u64,
+    pub conn_refused: u64,
+    pub conn_reset: u64,
+    pub conn_eof: u64,
+    pub conn_other: u64,
+    pub timeout_connect: u64,
+    pub timeout_response: u64,
     pub status_2xx: u64,
     pub status_3xx: u64,
     pub status_4xx: u64,
@@ -226,6 +269,9 @@ impl StatsSnapshot {
             bytes_downloaded: 0, total: 0,
             duration: Duration::ZERO, peak_rps: 0,
             err_invalid_url: 0, err_dns: 0, err_conn: 0, err_tls: 0, err_http_status: 0, err_other: 0,
+            dns_nxdomain: 0, dns_malformed: 0, dns_other: 0,
+            conn_refused: 0, conn_reset: 0, conn_eof: 0, conn_other: 0,
+            timeout_connect: 0, timeout_response: 0,
             status_2xx: 0, status_3xx: 0, status_4xx: 0, status_5xx: 0,
         }
     }
@@ -255,6 +301,15 @@ impl StatsSnapshot {
             err_tls: a.err_tls + b.err_tls,
             err_http_status: a.err_http_status + b.err_http_status,
             err_other: a.err_other + b.err_other,
+            dns_nxdomain: a.dns_nxdomain + b.dns_nxdomain,
+            dns_malformed: a.dns_malformed + b.dns_malformed,
+            dns_other: a.dns_other + b.dns_other,
+            conn_refused: a.conn_refused + b.conn_refused,
+            conn_reset: a.conn_reset + b.conn_reset,
+            conn_eof: a.conn_eof + b.conn_eof,
+            conn_other: a.conn_other + b.conn_other,
+            timeout_connect: a.timeout_connect + b.timeout_connect,
+            timeout_response: a.timeout_response + b.timeout_response,
             status_2xx: a.status_2xx + b.status_2xx,
             status_3xx: a.status_3xx + b.status_3xx,
             status_4xx: a.status_4xx + b.status_4xx,

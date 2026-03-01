@@ -32,9 +32,30 @@ pub fn print_progress(elapsed: Duration, snap: &StatsSnapshot) {
     );
 }
 
+/// Print detailed error breakdown for a pass.
+fn print_error_breakdown(s: &StatsSnapshot) {
+    if s.failed > 0 {
+        println!("    inv:    {:>8}  dns: {}  conn: {}  tls: {}  other: {}",
+            s.err_invalid_url, s.err_dns, s.err_conn, s.err_tls, s.err_other);
+    }
+    // Timeout sub-categories
+    if s.timeout > 0 {
+        println!("    timeout: connect={} response={}",
+            s.timeout_connect, s.timeout_response);
+    }
+    // DNS sub-categories
+    if s.err_dns > 0 {
+        println!("    dns:     nxdomain={} malformed={} other={}",
+            s.dns_nxdomain, s.dns_malformed, s.dns_other);
+    }
+    // Connection sub-categories
+    if s.err_conn > 0 {
+        println!("    conn:    refused={} reset={} eof={} other={}",
+            s.conn_refused, s.conn_reset, s.conn_eof, s.conn_other);
+    }
+}
+
 /// Print the final summary for a completed two-pass job.
-///
-/// Matches the format described in the task spec (Go's printFinalSummary).
 pub fn print_summary(
     pass1: &StatsSnapshot,
     pass2: Option<&StatsSnapshot>,
@@ -54,10 +75,7 @@ pub fn print_summary(
     println!("  OK:       {:>8}  ({:.1}%)", pass1.ok, pct(pass1.ok, pass1.total));
     println!("  Timeout:  {:>8}  ({:.1}%)", pass1.timeout, pct(pass1.timeout, pass1.total));
     println!("  Failed:   {:>8}  ({:.1}%)", pass1.failed, pct(pass1.failed, pass1.total));
-    if pass1.failed > 0 {
-        println!("    inv:    {:>8}  dns: {}  conn: {}  tls: {}  other: {}",
-            pass1.err_invalid_url, pass1.err_dns, pass1.err_conn, pass1.err_tls, pass1.err_other);
-    }
+    print_error_breakdown(pass1);
     println!("  Skipped:  {:>8}  ({:.1}%)", pass1.skipped, pct(pass1.skipped, pass1.total));
     println!("  Total:    {:>8}", pass1.total);
     if pass1.status_2xx + pass1.status_3xx + pass1.status_4xx + pass1.status_5xx > 0 {
@@ -77,6 +95,7 @@ pub fn print_summary(
         println!("  Rescued:  {:>8}  ({:.1}%)", p2.ok, pct(p2.ok, p2.total));
         println!("  Timeout:  {:>8}  ({:.1}%)", p2.timeout, pct(p2.timeout, p2.total));
         println!("  Failed:   {:>8}  ({:.1}%)", p2.failed, pct(p2.failed, p2.total));
+        print_error_breakdown(p2);
         println!("  Skipped:  {:>8}  ({:.1}%)", p2.skipped, pct(p2.skipped, p2.total));
         println!("  Total:    {:>8}", p2.total);
         println!(
@@ -105,10 +124,7 @@ pub fn print_summary(
         total.failed,
         pct(total.failed, total.total)
     );
-    if total.failed > 0 {
-        println!("    inv:    {:>8}  dns: {}  conn: {}  tls: {}  other: {}",
-            total.err_invalid_url, total.err_dns, total.err_conn, total.err_tls, total.err_other);
-    }
+    print_error_breakdown(total);
     println!("  Workers:  {}", workers);
     println!("  Duration: {}", format_duration(total.duration));
     println!();
