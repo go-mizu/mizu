@@ -1,4 +1,5 @@
 use crate::config::{auto_config, Config, EngineType, SysInfo};
+use crate::engine::hyper_engine::HyperEngine;
 use crate::engine::reqwest_engine::ReqwestEngine;
 use crate::engine::Engine;
 use crate::stats::StatsSnapshot;
@@ -79,11 +80,7 @@ pub async fn run_job(
     // Create engine based on config
     let engine: Box<dyn Engine> = match cfg.engine {
         EngineType::Reqwest => Box::new(ReqwestEngine::new()),
-        EngineType::Hyper => {
-            // Hyper engine not yet implemented; fall back to reqwest
-            tracing::warn!("hyper engine requested but not available; falling back to reqwest");
-            Box::new(ReqwestEngine::new())
-        }
+        EngineType::Hyper => Box::new(HyperEngine::new()),
     };
 
     // --- Pass 1 ---

@@ -1,42 +1,59 @@
 use crate::config::Config;
-use crate::domain::{group_by_domain, DomainBatch, DomainState};
-use crate::stats::{AdaptiveTimeout, PeakTracker, Stats, StatsSnapshot};
+use crate::domain::{group_by_domain, DomainState};
+use crate::stats::{AdaptiveTimeout, Stats, StatsSnapshot};
 use crate::types::{CrawlResult, FailedURL, SeedURL};
 use crate::ua;
 use crate::writer::{FailureWriter, ResultWriter};
 use anyhow::Result;
 use bytes::Bytes;
+use dashmap::DashMap;
 use http_body_util::{BodyExt, Empty};
 use hyper_rustls::HttpsConnector;
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client as HyperClient;
 use hyper_util::rt::{TokioExecutor, TokioTimer};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
-use super::reqwest_engine::{compute_domain_timeout, extract_metadata};
+use super::reqwest_engine::extract_metadata;
 
-/// Type alias for the hyper HTTPS client to tame the verbose generic types.
+/// Type alias for the hyper HTTPS client.
 type HttpsClient = HyperClient<HttpsConnector<HttpConnector>, Empty<Bytes>>;
 
 /// Maximum number of HTTP redirects to follow per request.
 const MAX_REDIRECTS: usize = 7;
 
-/// Hyper+rustls-based crawl engine with domain-grouped batch processing.
+/// Per-domain state shared across all workers fetching from the same domain.
+/// Mirrors DomainEntry in reqwest_engine.
+struct DomainEntry {
+    semaphore: tokio::sync::Semaphore,
+    abandoned: AtomicBool,
+    ok: AtomicU64,
+    timeouts: AtomicU64,
+}
+
+impl DomainEntry {
+    fn new(inner_n: usize) -> Self {
+        Self {
+            semaphore: tokio::sync::Semaphore::new(inner_n.max(1)),
+            abandoned: AtomicBool::new(false),
+            ok: AtomicU64::new(0),
+            timeouts: AtomicU64::new(0),
+        }
+    }
+}
+
+/// Hyper+rustls crawl engine with flat URL task queue.
 ///
-/// Architecture mirrors ReqwestEngine exactly:
-/// 1. Seeds are sorted and grouped by domain into DomainBatches.
-/// 2. A producer feeds batches into a bounded channel (cap 4096).
-/// 3. N worker tasks drain from the channel, each processing one domain at a time.
-/// 4. Per-domain: inner_n fetch tasks share a hyper Client with connection pooling.
-/// 5. Adaptive timeout, domain abandonment, and peak RPS tracking are all lock-free.
+/// Identical architecture to ReqwestEngine but uses:
+/// - hyper + hyper-rustls (rustls/ring backend) instead of reqwest/OpenSSL
+/// - HTTP/2 multiplexing via ALPN negotiation
+/// - Shared single client for all workers (connection pool reused globally)
 ///
-/// Key differences from ReqwestEngine:
-/// - Uses hyper + hyper-rustls instead of reqwest
-/// - Manual redirect following (301/302/307/308, up to 7 hops)
-/// - Body reading via http_body_util::BodyExt
+/// On modern x86-64 (AES-NI, SHA extensions), ring is 10-20% faster than
+/// OpenSSL for TLS handshakes and bulk crypto operations.
 pub struct HyperEngine;
 
 impl HyperEngine {
@@ -73,55 +90,115 @@ impl super::Engine for HyperEngine {
             total_seeds, cfg.workers, cfg.inner_n
         );
 
-        // Group seeds by domain
         let batches = group_by_domain(seeds);
         let domain_count = batches.len();
         info!("grouped into {} domains", domain_count);
 
-        // Shared stats
-        let stats = Arc::new(Stats::new());
+        // Shared stats — use caller-provided Arc for live TUI display.
+        let stats = cfg.live_stats.clone().unwrap_or_else(|| Arc::new(Stats::new()));
+        if stats.total_seeds.load(Ordering::Relaxed) == 0 {
+            stats.total_seeds.store(total_seeds as u64, Ordering::Relaxed);
+        }
+        stats.done.store(false, Ordering::Relaxed);
+
         let adaptive = Arc::new(AdaptiveTimeout::new());
-        let peak = Arc::new(PeakTracker::new());
 
-        // Work channel: producer feeds domain batches, workers consume
-        let (batch_tx, batch_rx) = async_channel::bounded::<DomainBatch>(4096);
-
-        // Producer: feed all domain batches into the channel
-        let producer = tokio::spawn(async move {
-            for batch in batches {
-                if batch_tx.send(batch).await.is_err() {
-                    break; // receivers dropped
+        // Spawn live peak-RPS tracker (same as reqwest engine).
+        let peak_stats = Arc::clone(&stats);
+        tokio::spawn(async move {
+            let mut prev_total = 0u64;
+            let mut interval = tokio::time::interval(Duration::from_millis(100));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                interval.tick().await;
+                if peak_stats.done.load(Ordering::Relaxed) {
+                    break;
                 }
+                let cur = peak_stats.total.load(Ordering::Relaxed);
+                let delta = cur.saturating_sub(prev_total);
+                peak_stats.peak_rps.fetch_max(delta * 10, Ordering::Relaxed);
+                prev_total = cur;
             }
-            // Channel closes when batch_tx is dropped
         });
 
-        // Worker tasks
         let workers = cfg.workers.max(1);
         let inner_n = cfg.inner_n.max(1);
-        let mut worker_handles = Vec::with_capacity(workers);
 
+        // Pre-create per-domain entries.
+        let domain_map: Arc<DashMap<String, Arc<DomainEntry>>> =
+            Arc::new(DashMap::with_capacity(domain_count));
+        for batch in &batches {
+            domain_map.insert(
+                batch.domain.clone(),
+                Arc::new(DomainEntry::new(inner_n)),
+            );
+        }
+
+        // Flat URL channel.
+        let (url_tx, url_rx) =
+            async_channel::bounded::<(SeedURL, Arc<DomainEntry>)>(workers * 4);
+
+        // Round-robin producer.
+        let dm = Arc::clone(&domain_map);
+        let producer = tokio::spawn(async move {
+            let domain_batches: Vec<(Vec<SeedURL>, Arc<DomainEntry>)> = batches
+                .into_iter()
+                .filter_map(|batch| {
+                    dm.get(&batch.domain)
+                        .map(|e| (batch.urls, Arc::clone(e.value())))
+                })
+                .collect();
+
+            let max_len = domain_batches
+                .iter()
+                .map(|(urls, _)| urls.len())
+                .max()
+                .unwrap_or(0);
+
+            for slot in 0..max_len {
+                for (urls, entry) in &domain_batches {
+                    if let Some(url) = urls.get(slot) {
+                        if url_tx
+                            .send((url.clone(), Arc::clone(entry)))
+                            .await
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                }
+            }
+        });
+
+        // Build ONE shared hyper client with rustls+ring and HTTP/2.
+        let shared_client = match build_hyper_client(Duration::from_secs(60)) {
+            Ok(c) => Arc::new(c),
+            Err(e) => return Err(anyhow::anyhow!("failed to build hyper client: {}", e)),
+        };
+
+        // Spawn N worker tasks.
+        let mut worker_handles = Vec::with_capacity(workers);
         for _ in 0..workers {
-            let rx = batch_rx.clone();
+            let rx = url_rx.clone();
             let cfg = cfg.clone();
             let results = Arc::clone(&results);
             let failures = Arc::clone(&failures);
             let stats = Arc::clone(&stats);
             let adaptive = Arc::clone(&adaptive);
-            let peak = Arc::clone(&peak);
+            let client = Arc::clone(&shared_client);
 
             let handle = tokio::spawn(async move {
-                while let Ok(batch) = rx.recv().await {
-                    process_one_domain(
-                        batch.domain,
-                        batch.urls,
+                while let Ok((seed, domain_entry)) = rx.recv().await {
+                    process_one_url(
+                        seed,
+                        &domain_entry,
                         &cfg,
                         &adaptive,
                         inner_n,
+                        &client,
                         &results,
                         &failures,
                         &stats,
-                        &peak,
                     )
                     .await;
                 }
@@ -129,20 +206,14 @@ impl super::Engine for HyperEngine {
             worker_handles.push(handle);
         }
 
-        // Wait for producer to finish sending
         let _ = producer.await;
-        // Close the channel so workers see EOF
-        batch_rx.close();
+        url_rx.close();
 
-        // Wait for all workers to finish
         for h in worker_handles {
             let _ = h.await;
         }
 
-        // Update peak RPS in stats
-        stats
-            .peak_rps
-            .store(peak.peak(), Ordering::Relaxed);
+        stats.done.store(true, Ordering::Relaxed);
 
         let snapshot = stats.snapshot();
         info!(
@@ -160,10 +231,11 @@ impl super::Engine for HyperEngine {
     }
 }
 
-/// Build a hyper client with HTTPS (rustls) support.
-///
-/// Uses webpki root certificates (Mozilla's trusted roots), enables HTTP/1.1 and HTTP/2,
-/// and configures connection pool idle timeout.
+/// Build a shared hyper client with:
+/// - rustls + ring backend (faster TLS than OpenSSL on AES-NI hardware)
+/// - HTTP/2 via ALPN negotiation
+/// - HTTP/1.1 fallback
+/// - Connection pool with configurable idle timeout
 fn build_hyper_client(pool_idle: Duration) -> Result<HttpsClient> {
     let https = hyper_rustls::HttpsConnectorBuilder::new()
         .with_webpki_roots()
@@ -180,237 +252,109 @@ fn build_hyper_client(pool_idle: Duration) -> Result<HttpsClient> {
     Ok(client)
 }
 
-/// Process all URLs for a single domain.
-///
-/// Creates a hyper Client with connection pooling, spawns inner_n fetch tasks
-/// sharing the client, and tracks domain health for abandonment.
-async fn process_one_domain(
-    domain: String,
-    urls: Vec<SeedURL>,
+/// Process a single URL using the shared hyper client.
+async fn process_one_url(
+    seed: SeedURL,
+    domain_entry: &Arc<DomainEntry>,
     cfg: &Config,
     adaptive: &Arc<AdaptiveTimeout>,
     inner_n: usize,
+    client: &Arc<HttpsClient>,
     results: &Arc<dyn ResultWriter>,
     failures: &Arc<dyn FailureWriter>,
     stats: &Arc<Stats>,
-    peak: &Arc<PeakTracker>,
 ) {
-    let url_count = urls.len();
-    if url_count == 0 {
+    if domain_entry.abandoned.load(Ordering::Relaxed) {
+        stats.skipped.fetch_add(1, Ordering::Relaxed);
+        let _ = failures.write_url(FailedURL::new(
+            &seed.url,
+            &seed.domain,
+            "domain_http_timeout_killed",
+        ));
         return;
     }
 
-    // Calculate effective domain timeout
-    let effective_domain_timeout = compute_domain_timeout(cfg, url_count, inner_n);
-
-    // Build hyper client for this domain
-    let client = match build_hyper_client(Duration::from_secs(15)) {
-        Ok(c) => Arc::new(c),
-        Err(e) => {
-            warn!("failed to build hyper client for {}: {}", domain, e);
-            // Mark all URLs as failed
-            for seed in &urls {
-                let _ = failures.write_url(FailedURL {
-                    url: seed.url.clone(),
-                    domain: seed.domain.clone(),
-                    reason: "client_build_error".to_string(),
-                    error: e.to_string(),
-                    status_code: 0,
-                    fetch_time_ms: 0,
-                    detected_at: chrono::Utc::now().naive_utc(),
-                });
-                stats.failed.fetch_add(1, Ordering::Relaxed);
-            }
-            return;
-        }
+    let _permit = match domain_entry.semaphore.acquire().await {
+        Ok(p) => p,
+        Err(_) => return,
     };
 
-    // URL channel: bounded by URL count so send never blocks
-    let (url_tx, url_rx) = async_channel::bounded::<SeedURL>(url_count);
-    for u in urls {
-        let _ = url_tx.send(u).await;
-    }
-    url_tx.close();
+    let effective_timeout = if !cfg.disable_adaptive_timeout {
+        adaptive
+            .timeout(cfg.adaptive_timeout_max)
+            .unwrap_or(cfg.timeout)
+            .min(cfg.timeout.saturating_mul(5))
+    } else {
+        cfg.timeout
+    };
 
-    // Shared domain state for abandonment
-    let abandoned = Arc::new(AtomicBool::new(false));
-    let domain_successes = Arc::new(std::sync::atomic::AtomicU64::new(0));
-    let domain_timeouts = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let result = hyper_fetch_one(client, &seed, effective_timeout, cfg.max_body_bytes).await;
+    stats.total.fetch_add(1, Ordering::Relaxed);
 
-    // Spawn inner_n fetch tasks (capped by url count)
-    let n = inner_n.min(url_count);
-    let mut handles = Vec::with_capacity(n);
+    if !result.error.is_empty() {
+        let is_timeout = result.error.contains("timeout")
+            || result.error.contains("Timeout")
+            || result.error.contains("deadline")
+            || result.error.contains("timed out");
 
-    for _ in 0..n {
-        let rx = url_rx.clone();
-        let client = Arc::clone(&client);
-        let cfg_timeout = cfg.timeout;
-        let cfg_adaptive_max = cfg.adaptive_timeout_max;
-        let disable_adaptive = cfg.disable_adaptive_timeout;
-        let max_body_bytes = cfg.max_body_bytes;
-        let domain_fail_threshold = cfg.domain_fail_threshold;
-        let domain_dead_probe = cfg.domain_dead_probe;
-        let domain_stall_ratio = cfg.domain_stall_ratio;
-        let inner_n_copy = inner_n;
-        let adaptive = Arc::clone(adaptive);
-        let results = Arc::clone(results);
-        let failures = Arc::clone(failures);
-        let stats = Arc::clone(stats);
-        let peak = Arc::clone(peak);
-        let abandoned = Arc::clone(&abandoned);
-        let domain_successes = Arc::clone(&domain_successes);
-        let domain_timeouts = Arc::clone(&domain_timeouts);
-        let domain_name = domain.clone();
+        if is_timeout {
+            stats.timeout.fetch_add(1, Ordering::Relaxed);
+            let t = domain_entry.timeouts.fetch_add(1, Ordering::Relaxed) + 1;
+            let s = domain_entry.ok.load(Ordering::Relaxed);
 
-        let handle = tokio::spawn(async move {
-            while let Ok(seed) = rx.recv().await {
-                // Check if domain has been abandoned
-                if abandoned.load(Ordering::Relaxed) {
-                    stats.skipped.fetch_add(1, Ordering::Relaxed);
-                    let _ = failures.write_url(FailedURL::new(
-                        &seed.url,
-                        &seed.domain,
-                        "domain_http_timeout_killed",
-                    ));
-                    continue;
-                }
-
-                // Compute effective timeout (adaptive or fixed)
-                let effective_timeout = if !disable_adaptive {
-                    adaptive
-                        .timeout(cfg_adaptive_max)
-                        .unwrap_or(cfg_timeout)
-                } else {
-                    cfg_timeout
-                };
-
-                // Fetch the URL
-                let result = hyper_fetch_one(
-                    &client,
-                    &seed,
-                    effective_timeout,
-                    max_body_bytes,
-                )
-                .await;
-
-                stats.total.fetch_add(1, Ordering::Relaxed);
-                peak.record();
-
-                // Classify result
-                if !result.error.is_empty() {
-                    let is_timeout = result.error.contains("timeout")
-                        || result.error.contains("Timeout")
-                        || result.error.contains("deadline")
-                        || result.error.contains("timed out");
-
-                    if is_timeout {
-                        stats.timeout.fetch_add(1, Ordering::Relaxed);
-                        let t = domain_timeouts.fetch_add(1, Ordering::Relaxed) + 1;
-
-                        // Check abandonment
-                        let ds = DomainState {
-                            successes: domain_successes.load(Ordering::Relaxed),
-                            timeouts: t,
-                        };
-                        if ds.should_abandon(
-                            domain_fail_threshold,
-                            domain_dead_probe,
-                            domain_stall_ratio,
-                            inner_n_copy,
-                        ) {
-                            abandoned.store(true, Ordering::Relaxed);
-                            debug!(
-                                "abandoning domain {} (timeouts={}, successes={})",
-                                domain_name, t, ds.successes
-                            );
-                        }
-
-                        let _ = failures.write_url(FailedURL {
-                            url: seed.url.clone(),
-                            domain: seed.domain.clone(),
-                            reason: "http_timeout".to_string(),
-                            error: result.error.clone(),
-                            status_code: 0,
-                            fetch_time_ms: result.fetch_time_ms,
-                            detected_at: chrono::Utc::now().naive_utc(),
-                        });
-                    } else {
-                        stats.failed.fetch_add(1, Ordering::Relaxed);
-                        let _ = failures.write_url(FailedURL {
-                            url: seed.url.clone(),
-                            domain: seed.domain.clone(),
-                            reason: "http_error".to_string(),
-                            error: result.error.clone(),
-                            status_code: result.status_code,
-                            fetch_time_ms: result.fetch_time_ms,
-                            detected_at: chrono::Utc::now().naive_utc(),
-                        });
-                    }
-                } else {
-                    stats.ok.fetch_add(1, Ordering::Relaxed);
-                    domain_successes.fetch_add(1, Ordering::Relaxed);
-                    adaptive.record(result.fetch_time_ms);
-                }
-
-                stats
-                    .bytes_downloaded
-                    .fetch_add(result.content_length as u64, Ordering::Relaxed);
-
-                let _ = results.write(result);
-            }
-        });
-        handles.push(handle);
-    }
-
-    // Optionally wrap with domain timeout
-    if let Some(dt) = effective_domain_timeout {
-        let domain_name = domain.clone();
-        let abandoned_outer = Arc::clone(&abandoned);
-        let stats_outer = Arc::clone(stats);
-        let failures_outer = Arc::clone(failures);
-
-        let wait_fut = async {
-            for h in handles {
-                let _ = h.await;
-            }
-        };
-
-        match tokio::time::timeout(dt, wait_fut).await {
-            Ok(()) => {
-                // All tasks completed within domain timeout
-            }
-            Err(_) => {
-                // Domain timeout exceeded — abandon remaining URLs
-                abandoned_outer.store(true, Ordering::Relaxed);
-                warn!(
-                    "domain {} exceeded timeout ({:.1}s), abandoning remaining URLs",
-                    domain_name,
-                    dt.as_secs_f64()
-                );
-
-                // Drain remaining URLs and mark them as deadline exceeded
-                while let Ok(seed) = url_rx.try_recv() {
-                    stats_outer.skipped.fetch_add(1, Ordering::Relaxed);
-                    let _ = failures_outer.write_url(FailedURL::new(
-                        &seed.url,
-                        &seed.domain,
-                        "domain_deadline_exceeded",
+            let ds = DomainState { successes: s, timeouts: t };
+            if ds.should_abandon(
+                cfg.domain_fail_threshold,
+                cfg.domain_dead_probe,
+                cfg.domain_stall_ratio,
+                inner_n,
+            ) {
+                if !domain_entry.abandoned.swap(true, Ordering::Relaxed) {
+                    debug!(
+                        "abandoning domain {} (timeouts={}, ok={})",
+                        seed.domain, t, s
+                    );
+                    stats.push_warning(format!(
+                        "abandoned {} (timeouts={}, ok={})",
+                        seed.domain, t, s
                     ));
                 }
             }
+
+            let _ = failures.write_url(FailedURL {
+                url: seed.url.clone(),
+                domain: seed.domain.clone(),
+                reason: "http_timeout".to_string(),
+                error: result.error.clone(),
+                status_code: 0,
+                fetch_time_ms: result.fetch_time_ms,
+                detected_at: chrono::Utc::now().naive_utc(),
+            });
+        } else {
+            stats.failed.fetch_add(1, Ordering::Relaxed);
+            let _ = failures.write_url(FailedURL {
+                url: seed.url.clone(),
+                domain: seed.domain.clone(),
+                reason: "http_error".to_string(),
+                error: result.error.clone(),
+                status_code: result.status_code,
+                fetch_time_ms: result.fetch_time_ms,
+                detected_at: chrono::Utc::now().naive_utc(),
+            });
         }
     } else {
-        // No domain timeout — just wait for all tasks
-        for h in handles {
-            let _ = h.await;
-        }
+        stats.ok.fetch_add(1, Ordering::Relaxed);
+        domain_entry.ok.fetch_add(1, Ordering::Relaxed);
+        adaptive.record(result.fetch_time_ms);
     }
+
+    stats
+        .bytes_downloaded
+        .fetch_add(result.content_length as u64, Ordering::Relaxed);
+    let _ = results.write(result);
 }
 
-/// Fetch a single URL using the shared hyper client with manual redirect following.
-///
-/// Returns a CrawlResult with metadata extracted from HTML responses.
-/// On error, returns an error result with the error message.
+/// Fetch a single URL using the shared hyper client with redirect following.
 async fn hyper_fetch_one(
     client: &HttpsClient,
     seed: &SeedURL,
@@ -450,7 +394,6 @@ async fn hyper_fetch_one(
             }
         };
 
-        // Send request with timeout
         let resp = match tokio::time::timeout(timeout, client.request(req)).await {
             Ok(Ok(r)) => r,
             Ok(Err(e)) => {
@@ -473,7 +416,6 @@ async fn hyper_fetch_one(
 
         let status = resp.status().as_u16();
 
-        // Extract headers before consuming the response
         let content_type = resp
             .headers()
             .get("content-type")
@@ -492,18 +434,22 @@ async fn hyper_fetch_one(
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
 
-        // Handle redirects
+        // Follow redirects.
         if matches!(status, 301 | 302 | 307 | 308) {
             if let Some(ref loc) = location {
-                // Resolve relative redirects
+                // Drop the response body before following the redirect.
+                drop(resp);
                 current_url = resolve_redirect(&current_url, loc);
                 continue;
             }
-            // Redirect without location header — treat as final response
         }
 
-        // Collect body with timeout
-        let body_bytes =
+        let is_html =
+            content_type.contains("text/html") || content_type.contains("application/xhtml");
+
+        // Only read body for 200 HTML responses where metadata can be extracted.
+        let should_read_body = status == 200 && is_html;
+        let body_bytes = if should_read_body {
             match tokio::time::timeout(timeout, collect_body(resp, max_body_bytes)).await {
                 Ok(Ok(b)) => b,
                 Ok(Err(e)) => {
@@ -522,18 +468,18 @@ async fn hyper_fetch_one(
                         start.elapsed().as_millis() as i64,
                     );
                 }
-            };
+            }
+        } else {
+            drop(resp);
+            Bytes::new()
+        };
 
         let body_len = body_bytes.len() as i64;
-        let is_html =
-            content_type.contains("text/html") || content_type.contains("application/xhtml");
-
-        let (title, description, language) =
-            if status == 200 && is_html && !body_bytes.is_empty() {
-                extract_metadata(&body_bytes)
-            } else {
-                (String::new(), String::new(), String::new())
-            };
+        let (title, description, language) = if should_read_body && !body_bytes.is_empty() {
+            extract_metadata(&body_bytes)
+        } else {
+            (String::new(), String::new(), String::new())
+        };
 
         return CrawlResult {
             url: seed.url.clone(),
@@ -552,7 +498,6 @@ async fn hyper_fetch_one(
         };
     }
 
-    // Exceeded max redirects
     CrawlResult::error_result(
         &seed.url,
         &seed.domain,
@@ -566,21 +511,13 @@ async fn collect_body(
     resp: hyper::Response<hyper::body::Incoming>,
     max_bytes: usize,
 ) -> Result<Bytes, String> {
-    // Use Limited to cap body size, then collect
     use http_body_util::Limited;
     let limited = Limited::new(resp.into_body(), max_bytes);
     match limited.collect().await {
         Ok(collected) => Ok(collected.to_bytes()),
         Err(e) => {
-            // If the error is due to length limit, that is fine —
-            // we just got a truncated body. But http_body_util::Limited
-            // returns an error when the limit is exceeded, so we need
-            // to handle this gracefully. Unfortunately Limited doesn't
-            // give us the partial data on error, so fall back to empty.
             let err_str = e.to_string();
             if err_str.contains("length limit exceeded") {
-                // Body exceeded limit — return empty rather than failing
-                // This matches the reqwest engine behavior of truncation
                 Ok(Bytes::new())
             } else {
                 Err(err_str)
@@ -590,23 +527,18 @@ async fn collect_body(
 }
 
 /// Resolve a redirect location against the current URL.
-/// Handles both absolute and relative redirect targets.
 fn resolve_redirect(base_url: &str, location: &str) -> String {
-    // If the location is already absolute, use it directly
     if location.starts_with("http://") || location.starts_with("https://") {
         return location.to_string();
     }
 
-    // Parse the base URL to extract scheme + authority
     if let Ok(base_uri) = base_url.parse::<hyper::Uri>() {
         let scheme = base_uri.scheme_str().unwrap_or("https");
         let authority = base_uri.authority().map(|a| a.as_str()).unwrap_or("");
 
         if location.starts_with('/') {
-            // Absolute path
             format!("{}://{}{}", scheme, authority, location)
         } else {
-            // Relative path — resolve against base path
             let base_path = base_uri.path();
             let parent = if let Some(pos) = base_path.rfind('/') {
                 &base_path[..=pos]
@@ -616,7 +548,6 @@ fn resolve_redirect(base_url: &str, location: &str) -> String {
             format!("{}://{}{}{}", scheme, authority, parent, location)
         }
     } else {
-        // Fallback: return location as-is
         location.to_string()
     }
 }
@@ -631,35 +562,33 @@ mod tests {
 
     #[test]
     fn test_resolve_redirect_absolute() {
-        let base = "https://example.com/page";
-        let loc = "https://other.com/new";
-        assert_eq!(resolve_redirect(base, loc), "https://other.com/new");
+        assert_eq!(
+            resolve_redirect("https://example.com/page", "https://other.com/new"),
+            "https://other.com/new"
+        );
     }
 
     #[test]
     fn test_resolve_redirect_absolute_path() {
-        let base = "https://example.com/old/page";
-        let loc = "/new/page";
         assert_eq!(
-            resolve_redirect(base, loc),
+            resolve_redirect("https://example.com/old/page", "/new/page"),
             "https://example.com/new/page"
         );
     }
 
     #[test]
     fn test_resolve_redirect_relative() {
-        let base = "https://example.com/dir/page";
-        let loc = "other";
         assert_eq!(
-            resolve_redirect(base, loc),
+            resolve_redirect("https://example.com/dir/page", "other"),
             "https://example.com/dir/other"
         );
     }
 
     #[test]
     fn test_resolve_redirect_http() {
-        let base = "http://example.com/page";
-        let loc = "/new";
-        assert_eq!(resolve_redirect(base, loc), "http://example.com/new");
+        assert_eq!(
+            resolve_redirect("http://example.com/page", "/new"),
+            "http://example.com/new"
+        );
     }
 }

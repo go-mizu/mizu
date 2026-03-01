@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::domain::{group_by_domain, DomainState};
-use crate::stats::{AdaptiveTimeout, PeakTracker, Stats, StatsSnapshot};
+use crate::stats::{AdaptiveTimeout, Stats, StatsSnapshot};
 use crate::types::{CrawlResult, FailedURL, SeedURL};
 use crate::ua;
 use crate::writer::{FailureWriter, ResultWriter};
@@ -87,8 +87,31 @@ impl super::Engine for ReqwestEngine {
         if stats.total_seeds.load(Ordering::Relaxed) == 0 {
             stats.total_seeds.store(total_seeds as u64, Ordering::Relaxed);
         }
+        // Reset done flag (may be set from a previous pass)
+        stats.done.store(false, Ordering::Relaxed);
+
         let adaptive = Arc::new(AdaptiveTimeout::new());
-        let peak = Arc::new(PeakTracker::new());
+
+        // Spawn a peak-RPS tracker task: samples total every 100ms, writes live peak_rps.
+        // This replaces PeakTracker (which used try_lock and almost never fired at 16K workers).
+        let peak_stats = Arc::clone(&stats);
+        tokio::spawn(async move {
+            let mut prev_total = 0u64;
+            let mut interval = tokio::time::interval(Duration::from_millis(100));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                interval.tick().await;
+                if peak_stats.done.load(Ordering::Relaxed) {
+                    break;
+                }
+                let cur = peak_stats.total.load(Ordering::Relaxed);
+                let delta = cur.saturating_sub(prev_total);
+                // delta/100ms → per-second rate
+                let rps = delta * 10;
+                peak_stats.peak_rps.fetch_max(rps, Ordering::Relaxed);
+                prev_total = cur;
+            }
+        });
 
         let workers = cfg.workers.max(1);
         let inner_n = cfg.inner_n.max(1);
@@ -176,7 +199,6 @@ impl super::Engine for ReqwestEngine {
             let failures = Arc::clone(&failures);
             let stats = Arc::clone(&stats);
             let adaptive = Arc::clone(&adaptive);
-            let peak = Arc::clone(&peak);
             let client = Arc::clone(&shared_client);
 
             let handle = tokio::spawn(async move {
@@ -191,7 +213,6 @@ impl super::Engine for ReqwestEngine {
                         &results,
                         &failures,
                         &stats,
-                        &peak,
                     )
                     .await;
                 }
@@ -209,8 +230,8 @@ impl super::Engine for ReqwestEngine {
             let _ = h.await;
         }
 
-        // Update peak RPS in stats.
-        stats.peak_rps.store(peak.peak(), Ordering::Relaxed);
+        // Signal the peak tracker task to stop.
+        stats.done.store(true, Ordering::Relaxed);
 
         let snapshot = stats.snapshot();
         info!(
@@ -243,7 +264,6 @@ async fn process_one_url(
     results: &Arc<dyn ResultWriter>,
     failures: &Arc<dyn FailureWriter>,
     stats: &Arc<Stats>,
-    peak: &Arc<PeakTracker>,
 ) {
     // Skip if domain has been abandoned (dead/stalling).
     if domain_entry.abandoned.load(Ordering::Relaxed) {
@@ -276,7 +296,6 @@ async fn process_one_url(
     // Fetch the URL.
     let result = fetch_one(client, &seed, effective_timeout, cfg.max_body_bytes).await;
     stats.total.fetch_add(1, Ordering::Relaxed);
-    peak.record();
 
     // Classify result and update domain state.
     if !result.error.is_empty() {
@@ -389,24 +408,34 @@ async fn fetch_one(
         .unwrap_or("")
         .to_string();
 
-    // Read body (up to max_body_bytes)
-    let body_bytes = match read_body_limited(resp, max_body_bytes).await {
-        Ok(b) => b,
-        Err(e) => {
-            return CrawlResult::error_result(
-                &seed.url,
-                &seed.domain,
-                e.to_string(),
-                start.elapsed().as_millis() as i64,
-            );
-        }
-    };
-
-    let body_len = body_bytes.len() as i64;
     let is_html =
         content_type.contains("text/html") || content_type.contains("application/xhtml");
 
-    let (title, description, language) = if status == 200 && is_html && !body_bytes.is_empty() {
+    // Only read the body for 200 HTML responses where we can extract metadata.
+    // For all other responses (4xx, 5xx, non-HTML, non-200), drop the response
+    // immediately so the connection returns to the pool and bandwidth is saved.
+    let should_read_body = status == 200 && is_html;
+    let body_bytes = if should_read_body {
+        match read_body_limited(resp, max_body_bytes).await {
+            Ok(b) => b,
+            Err(e) => {
+                return CrawlResult::error_result(
+                    &seed.url,
+                    &seed.domain,
+                    e.to_string(),
+                    start.elapsed().as_millis() as i64,
+                );
+            }
+        }
+    } else {
+        // Drop the response body — reqwest handles connection cleanup.
+        drop(resp);
+        bytes::Bytes::new()
+    };
+
+    let body_len = body_bytes.len() as i64;
+
+    let (title, description, language) = if should_read_body && !body_bytes.is_empty() {
         extract_metadata(&body_bytes)
     } else {
         (String::new(), String::new(), String::new())

@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -14,7 +14,10 @@ pub struct Stats {
     /// Set by engine before crawl starts; used by TUI for progress %.
     pub total_seeds: AtomicU64,
     pub start: Instant,
+    /// Live peak RPS — updated every ~100ms by the engine's peak tracker task.
     pub peak_rps: AtomicU64,
+    /// Set to true when the crawl completes; used to stop the peak tracker task.
+    pub done: AtomicBool,
     /// Recent warning messages (domain timeouts, abandonments). Cap 100.
     pub warnings: Mutex<VecDeque<String>>,
 }
@@ -31,6 +34,7 @@ impl Stats {
             total_seeds: AtomicU64::new(0),
             start: Instant::now(),
             peak_rps: AtomicU64::new(0),
+            done: AtomicBool::new(false),
             warnings: Mutex::new(VecDeque::with_capacity(100)),
         }
     }

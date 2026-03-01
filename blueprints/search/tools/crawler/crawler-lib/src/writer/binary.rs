@@ -3,6 +3,8 @@ use crate::types::{CrawlResult, FailedDomain, FailedURL};
 use crate::writer::duckdb_writer::{flush_result_batch, open_result_db, shard_for_url};
 use anyhow::{Context, Result};
 use rayon::prelude::*;
+use rkyv::rancor::Error as RkyvError;
+use rkyv::util::AlignedVec as AlignedVec;
 use std::fs::File;
 use std::io::{BufWriter, Read as _, Write};
 use std::path::{Path, PathBuf};
@@ -40,7 +42,7 @@ pub struct BinDrainConfig {
 // ---------------------------------------------------------------------------
 
 /// Non-blocking result writer that serializes CrawlResults to length-prefixed
-/// bincode segment files. Workers send results through a bounded crossbeam
+/// rkyv segment files. Workers send results through a bounded crossbeam
 /// channel; a dedicated flusher thread handles all disk I/O.
 ///
 /// Architecture:
@@ -53,9 +55,7 @@ pub struct BinDrainConfig {
 /// ```
 ///
 /// When a `BinDrainConfig` is provided, `close()` imports all segments into
-/// DuckDB and then deletes them. This gives the best of both worlds:
-/// - Zero DuckDB overhead on the hot crawl path (pure sequential disk writes)
-/// - Queryable DuckDB output after the crawl finishes
+/// DuckDB and then deletes them.
 pub struct BinaryResultWriter {
     /// Wrapped in Option so close() can take and drop it to signal the flusher.
     tx: Mutex<Option<crossbeam_channel::Sender<CrawlResult>>>,
@@ -128,66 +128,11 @@ fn result_flusher_loop(
     rx: &crossbeam_channel::Receiver<CrawlResult>,
     seg_size_bytes: usize,
 ) {
-    let mut seg_idx: usize = 0;
-    let mut writer = match open_segment(dir, seg_idx) {
-        Ok(w) => w,
-        Err(e) => {
-            error!("bin-result-flusher: failed to open initial segment: {e}");
-            return;
-        }
-    };
-    let mut seg_bytes: usize = 0;
-    let mut total_records: u64 = 0;
-
-    for result in rx.iter() {
-        let encoded = match bincode::serialize(&result) {
-            Ok(v) => v,
-            Err(e) => {
-                error!("bin-result-flusher: serialize error: {e}");
-                continue;
-            }
-        };
-
-        let len = encoded.len() as u32;
-        if let Err(e) = writer
-            .write_all(&len.to_le_bytes())
-            .and_then(|_| writer.write_all(&encoded))
-        {
-            error!("bin-result-flusher: write error on seg_{seg_idx:03}: {e}");
-            continue;
-        }
-
-        seg_bytes += 4 + encoded.len();
-        total_records += 1;
-
-        if seg_bytes >= seg_size_bytes {
-            if let Err(e) = writer.flush() {
-                error!("bin-result-flusher: flush error on seg_{seg_idx:03}: {e}");
-            }
-            debug!(
-                "bin-result-flusher: rotated seg_{:03}.bin ({} bytes)",
-                seg_idx, seg_bytes
-            );
-            seg_idx += 1;
-            writer = match open_segment(dir, seg_idx) {
-                Ok(w) => w,
-                Err(e) => {
-                    error!("bin-result-flusher: failed to open seg_{seg_idx:03}: {e}");
-                    return;
-                }
-            };
-            seg_bytes = 0;
-        }
-    }
-
-    // Channel closed -- flush remaining data.
-    if let Err(e) = writer.flush() {
-        error!("bin-result-flusher: final flush error: {e}");
-    }
-    info!(
-        "bin-result-flusher: done, {total_records} records in {} segments",
-        seg_idx + 1
-    );
+    run_flusher_loop(dir, rx, seg_size_bytes, "result", |item| {
+        rkyv::to_bytes::<RkyvError>(item)
+            .map(|v| v.to_vec())
+            .map_err(|e| anyhow::anyhow!("rkyv encode CrawlResult: {e}"))
+    });
 }
 
 impl ResultWriter for BinaryResultWriter {
@@ -202,25 +147,21 @@ impl ResultWriter for BinaryResultWriter {
     }
 
     fn flush(&self) -> Result<()> {
-        // Flush is deferred to the flusher thread; no-op here.
         Ok(())
     }
 
     fn close(&self) -> Result<()> {
-        // Drop the sender to signal the flusher thread that no more data is coming.
         {
             let mut guard = self.tx.lock().unwrap();
             guard.take();
         }
 
-        // Join the flusher thread -- it will drain remaining items and exit.
         let handle = self.handle.lock().unwrap().take();
         if let Some(h) = handle {
             h.join()
                 .map_err(|_| anyhow::anyhow!("result flusher thread panicked"))?;
         }
 
-        // If drain is configured, import segments into DuckDB now.
         if let Some(cfg) = &self.drain_config {
             drain_to_duckdb(&self.dir, cfg)?;
         }
@@ -233,16 +174,10 @@ impl ResultWriter for BinaryResultWriter {
 // Drain: import seg_*.bin into sharded DuckDB
 // ---------------------------------------------------------------------------
 
-/// Import all `seg_*.bin` files from `seg_dir` into sharded DuckDB files in
-/// `cfg.duckdb_dir`. Uses a two-phase parallel approach for maximum throughput:
+/// Import all `seg_*.bin` files from `seg_dir` into sharded DuckDB files.
 ///
 /// Phase 1 (sequential): Read all segment files into memory.
 /// Phase 2 (parallel):   Each rayon worker inserts into its own DuckDB shard.
-///
-/// Sequential read avoids disk I/O saturation; parallel insert saturates all
-/// CPU cores and eliminates the sequential DuckDB checkpoint bottleneck.
-///
-/// Returns the total number of records imported.
 pub fn drain_to_duckdb(seg_dir: &Path, cfg: &BinDrainConfig) -> Result<u64> {
     let mut paths = list_segment_files(seg_dir)?;
     if paths.is_empty() {
@@ -263,11 +198,11 @@ pub fn drain_to_duckdb(seg_dir: &Path, cfg: &BinDrainConfig) -> Result<u64> {
 
     let start = std::time::Instant::now();
 
-    // Phase 1: Read all segments sequentially (I/O bound — sequential is fastest).
+    // Phase 1: Read all segments sequentially.
     let mut all_records: Vec<CrawlResult> = Vec::new();
     for (i, path) in paths.iter().enumerate() {
         let seg_start = std::time::Instant::now();
-        let mut records = read_one_segment_file::<CrawlResult>(path)
+        let mut records = read_crawl_result_segment(path)
             .with_context(|| format!("reading segment {:?}", path))?;
         println!(
             "  [read {}/{} segs] {:?}: {} records in {:.1}s",
@@ -298,7 +233,6 @@ pub fn drain_to_duckdb(seg_dir: &Path, cfg: &BinDrainConfig) -> Result<u64> {
     }
 
     // Phase 2: Insert into each shard in parallel.
-    // Each rayon worker opens its own DuckDB connection (Connection is !Sync).
     println!(
         "  Inserting into {} shards in parallel...",
         cfg.num_shards
@@ -342,7 +276,6 @@ pub fn drain_to_duckdb(seg_dir: &Path, cfg: &BinDrainConfig) -> Result<u64> {
     Ok(total)
 }
 
-/// List all `seg_*.bin` files in `dir`.
 fn list_segment_files(dir: &Path) -> Result<Vec<PathBuf>> {
     if !dir.exists() {
         return Ok(Vec::new());
@@ -359,31 +292,6 @@ fn list_segment_files(dir: &Path) -> Result<Vec<PathBuf>> {
         })
         .collect();
     Ok(paths)
-}
-
-/// Read all records from a single segment file (length-prefixed bincode).
-fn read_one_segment_file<T: serde::de::DeserializeOwned>(path: &Path) -> Result<Vec<T>> {
-    let mut file = File::open(path)
-        .with_context(|| format!("failed to open segment: {}", path.display()))?;
-    let mut records = Vec::new();
-    loop {
-        let mut len_buf = [0u8; 4];
-        match file.read_exact(&mut len_buf) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
-            Err(e) => {
-                return Err(e).with_context(|| format!("read len from {}", path.display()));
-            }
-        }
-        let len = u32::from_le_bytes(len_buf) as usize;
-        let mut data = vec![0u8; len];
-        file.read_exact(&mut data)
-            .with_context(|| format!("read record data from {}", path.display()))?;
-        let item: T = bincode::deserialize(&data)
-            .with_context(|| format!("deserialize record from {}", path.display()))?;
-        records.push(item);
-    }
-    Ok(records)
 }
 
 // ---------------------------------------------------------------------------
@@ -415,7 +323,11 @@ impl BinaryFailureWriter {
             .spawn({
                 let d = url_dir;
                 move || {
-                    generic_flusher_loop::<FailedURL>(&d, &url_rx, seg_size_bytes, "fail-url");
+                    run_flusher_loop(&d, &url_rx, seg_size_bytes, "fail-url", |item| {
+                        rkyv::to_bytes::<RkyvError>(item)
+                            .map(|v| v.to_vec())
+                            .map_err(|e| anyhow::anyhow!("rkyv encode FailedURL: {e}"))
+                    });
                 }
             })
             .context("failed to spawn URL failure flusher thread")?;
@@ -429,12 +341,11 @@ impl BinaryFailureWriter {
             .spawn({
                 let d = domain_dir;
                 move || {
-                    generic_flusher_loop::<FailedDomain>(
-                        &d,
-                        &domain_rx,
-                        seg_size_bytes,
-                        "fail-domain",
-                    );
+                    run_flusher_loop(&d, &domain_rx, seg_size_bytes, "fail-domain", |item| {
+                        rkyv::to_bytes::<RkyvError>(item)
+                            .map(|v| v.to_vec())
+                            .map_err(|e| anyhow::anyhow!("rkyv encode FailedDomain: {e}"))
+                    });
                 }
             })
             .context("failed to spawn domain failure flusher thread")?;
@@ -458,12 +369,80 @@ impl BinaryFailureWriter {
     }
 }
 
-/// Generic flusher loop for any Serialize type.
-fn generic_flusher_loop<T: serde::Serialize>(
+impl FailureWriter for BinaryFailureWriter {
+    fn write_url(&self, failed: FailedURL) -> Result<()> {
+        let guard = self.url_tx.lock().unwrap();
+        match guard.as_ref() {
+            Some(tx) => tx
+                .send(failed)
+                .map_err(|e| anyhow::anyhow!("binary failure URL channel closed: {e}")),
+            None => Err(anyhow::anyhow!("binary failure writer already closed")),
+        }
+    }
+
+    fn write_domain(&self, failed: FailedDomain) -> Result<()> {
+        let guard = self.domain_tx.lock().unwrap();
+        match guard.as_ref() {
+            Some(tx) => tx
+                .send(failed)
+                .map_err(|e| anyhow::anyhow!("binary failure domain channel closed: {e}")),
+            None => Err(anyhow::anyhow!("binary failure writer already closed")),
+        }
+    }
+
+    fn flush(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn close(&self) -> Result<()> {
+        {
+            self.url_tx.lock().unwrap().take();
+            self.domain_tx.lock().unwrap().take();
+        }
+
+        let handles: Vec<_> = {
+            let mut guard = self.handles.lock().unwrap();
+            guard.drain(..).collect()
+        };
+        for h in handles {
+            h.join()
+                .map_err(|_| anyhow::anyhow!("failure flusher thread panicked"))?;
+        }
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Segment reading (for external use / testing)
+// ---------------------------------------------------------------------------
+
+/// Read all CrawlResult records from segment files in a directory.
+pub fn read_result_segments(dir: &Path) -> Result<Vec<CrawlResult>> {
+    read_dir_segments(dir, read_crawl_result_segment)
+}
+
+/// Read all FailedURL records from segment files in a directory.
+pub fn read_failed_url_segments(dir: &Path) -> Result<Vec<FailedURL>> {
+    read_dir_segments(dir, read_failed_url_segment)
+}
+
+/// Read all FailedDomain records from segment files in a directory.
+pub fn read_failed_domain_segments(dir: &Path) -> Result<Vec<FailedDomain>> {
+    read_dir_segments(dir, read_failed_domain_segment)
+}
+
+// ---------------------------------------------------------------------------
+// Internals
+// ---------------------------------------------------------------------------
+
+/// Generic flusher loop: receives items from `rx`, serialises with `encode`,
+/// writes length-prefixed records to rotating segment files.
+fn run_flusher_loop<T>(
     dir: &Path,
     rx: &crossbeam_channel::Receiver<T>,
     seg_size_bytes: usize,
     label: &str,
+    encode: impl Fn(&T) -> Result<Vec<u8>>,
 ) {
     let mut seg_idx: usize = 0;
     let mut writer = match open_segment(dir, seg_idx) {
@@ -477,10 +456,10 @@ fn generic_flusher_loop<T: serde::Serialize>(
     let mut total_records: u64 = 0;
 
     for item in rx.iter() {
-        let encoded = match bincode::serialize(&item) {
+        let encoded = match encode(&item) {
             Ok(v) => v,
             Err(e) => {
-                error!("bin-{label}-flusher: serialize error: {e}");
+                error!("bin-{label}-flusher: encode error: {e}");
                 continue;
             }
         };
@@ -526,72 +505,39 @@ fn generic_flusher_loop<T: serde::Serialize>(
     );
 }
 
-impl FailureWriter for BinaryFailureWriter {
-    fn write_url(&self, failed: FailedURL) -> Result<()> {
-        let guard = self.url_tx.lock().unwrap();
-        match guard.as_ref() {
-            Some(tx) => tx
-                .send(failed)
-                .map_err(|e| anyhow::anyhow!("binary failure URL channel closed: {e}")),
-            None => Err(anyhow::anyhow!("binary failure writer already closed")),
+/// Read one segment file, decoding each length-prefixed record with `decode`.
+fn read_segment_file<T>(
+    path: &Path,
+    decode: impl Fn(&[u8]) -> Result<T>,
+) -> Result<Vec<T>> {
+    let mut file = File::open(path)
+        .with_context(|| format!("failed to open segment: {}", path.display()))?;
+    let mut records = Vec::new();
+    loop {
+        let mut len_buf = [0u8; 4];
+        match file.read_exact(&mut len_buf) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+            Err(e) => {
+                return Err(e).with_context(|| format!("read len from {}", path.display()));
+            }
         }
+        let len = u32::from_le_bytes(len_buf) as usize;
+        let mut data = vec![0u8; len];
+        file.read_exact(&mut data)
+            .with_context(|| format!("read record data from {}", path.display()))?;
+        let item = decode(&data)
+            .with_context(|| format!("decode record from {}", path.display()))?;
+        records.push(item);
     }
-
-    fn write_domain(&self, failed: FailedDomain) -> Result<()> {
-        let guard = self.domain_tx.lock().unwrap();
-        match guard.as_ref() {
-            Some(tx) => tx
-                .send(failed)
-                .map_err(|e| anyhow::anyhow!("binary failure domain channel closed: {e}")),
-            None => Err(anyhow::anyhow!("binary failure writer already closed")),
-        }
-    }
-
-    fn flush(&self) -> Result<()> {
-        Ok(())
-    }
-
-    fn close(&self) -> Result<()> {
-        // Drop both senders to signal the flusher threads.
-        {
-            self.url_tx.lock().unwrap().take();
-            self.domain_tx.lock().unwrap().take();
-        }
-
-        // Join all flusher threads.
-        let handles: Vec<_> = {
-            let mut guard = self.handles.lock().unwrap();
-            guard.drain(..).collect()
-        };
-        for h in handles {
-            h.join()
-                .map_err(|_| anyhow::anyhow!("failure flusher thread panicked"))?;
-        }
-        Ok(())
-    }
+    Ok(records)
 }
 
-// ---------------------------------------------------------------------------
-// Segment reading (for external use / testing)
-// ---------------------------------------------------------------------------
-
-/// Read all CrawlResult records from segment files in a directory.
-pub fn read_result_segments(dir: &Path) -> Result<Vec<CrawlResult>> {
-    read_segments::<CrawlResult>(dir)
-}
-
-/// Read all FailedURL records from segment files in a directory.
-pub fn read_failed_url_segments(dir: &Path) -> Result<Vec<FailedURL>> {
-    read_segments::<FailedURL>(dir)
-}
-
-/// Read all FailedDomain records from segment files in a directory.
-pub fn read_failed_domain_segments(dir: &Path) -> Result<Vec<FailedDomain>> {
-    read_segments::<FailedDomain>(dir)
-}
-
-/// Generic segment reader for any Deserialize type.
-fn read_segments<T: serde::de::DeserializeOwned>(dir: &Path) -> Result<Vec<T>> {
+/// Read all matching segment files from a directory using a per-file reader fn.
+fn read_dir_segments<T>(
+    dir: &Path,
+    read_file: impl Fn(&Path) -> Result<Vec<T>>,
+) -> Result<Vec<T>> {
     let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)
         .with_context(|| format!("failed to read segment dir: {}", dir.display()))?
         .filter_map(|e| e.ok())
@@ -603,16 +549,42 @@ fn read_segments<T: serde::de::DeserializeOwned>(dir: &Path) -> Result<Vec<T>> {
                     .map_or(false, |n| n.starts_with("seg_"))
         })
         .collect();
-
     paths.sort();
-
     let mut results = Vec::new();
     for path in &paths {
-        let mut file_records = read_one_segment_file::<T>(path)?;
-        results.append(&mut file_records);
+        let mut recs = read_file(path)?;
+        results.append(&mut recs);
     }
-
     Ok(results)
+}
+
+// Concrete segment readers — rkyv decode with aligned buffer.
+
+fn read_crawl_result_segment(path: &Path) -> Result<Vec<CrawlResult>> {
+    read_segment_file(path, |bytes| {
+        let mut aligned = AlignedVec::<16>::with_capacity(bytes.len());
+        aligned.extend_from_slice(bytes);
+        rkyv::from_bytes::<CrawlResult, RkyvError>(&aligned)
+            .map_err(|e| anyhow::anyhow!("rkyv decode CrawlResult: {e}"))
+    })
+}
+
+fn read_failed_url_segment(path: &Path) -> Result<Vec<FailedURL>> {
+    read_segment_file(path, |bytes| {
+        let mut aligned = AlignedVec::<16>::with_capacity(bytes.len());
+        aligned.extend_from_slice(bytes);
+        rkyv::from_bytes::<FailedURL, RkyvError>(&aligned)
+            .map_err(|e| anyhow::anyhow!("rkyv decode FailedURL: {e}"))
+    })
+}
+
+fn read_failed_domain_segment(path: &Path) -> Result<Vec<FailedDomain>> {
+    read_segment_file(path, |bytes| {
+        let mut aligned = AlignedVec::<16>::with_capacity(bytes.len());
+        aligned.extend_from_slice(bytes);
+        rkyv::from_bytes::<FailedDomain, RkyvError>(&aligned)
+            .map_err(|e| anyhow::anyhow!("rkyv decode FailedDomain: {e}"))
+    })
 }
 
 #[cfg(test)]
@@ -680,10 +652,8 @@ mod tests {
                 .unwrap();
         }
 
-        // close() triggers drain to DuckDB
         writer.close().unwrap();
 
-        // Segments should be deleted after drain
         let remaining_segs: Vec<_> = std::fs::read_dir(&seg_dir)
             .unwrap()
             .filter_map(|e| e.ok())
@@ -695,7 +665,6 @@ mod tests {
             .collect();
         assert!(remaining_segs.is_empty(), "segments should be deleted after drain");
 
-        // DuckDB shards should exist
         assert!(duckdb_dir.exists());
         let db_files: Vec<_> = std::fs::read_dir(&duckdb_dir)
             .unwrap()
@@ -752,7 +721,6 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let seg_dir = dir.path().join("rotation");
 
-        // Use seg_size_mb=0 which means seg_size_bytes=0, so every write rotates.
         let writer = BinaryResultWriter::new(&seg_dir, 100, 0).unwrap();
 
         for i in 0..3 {
@@ -763,7 +731,6 @@ mod tests {
 
         writer.close().unwrap();
 
-        // Should have multiple segment files.
         let seg_count = std::fs::read_dir(&seg_dir)
             .unwrap()
             .filter_map(|e| e.ok())
@@ -776,7 +743,6 @@ mod tests {
             .count();
         assert!(seg_count >= 3, "expected >= 3 segments, got {seg_count}");
 
-        // All records should still be readable.
         let results = read_result_segments(&seg_dir).unwrap();
         assert_eq!(results.len(), 3);
     }
