@@ -7,7 +7,7 @@ pub struct SeedURL {
     pub domain: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CrawlResult {
     pub url: String,
     pub domain: String,
@@ -69,7 +69,7 @@ impl FailedURL {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FailedDomain {
     pub domain: String,
     pub reason: String,
