@@ -5,10 +5,10 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "gzip", "brotli", "deflate"] }
+reqwest = { version = "0.13", default-features = false, features = ["native-tls-vendored", "gzip", "brotli", "deflate"] }
 hyper = { version = "1", features = ["client", "http1", "http2"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "tokio", "http1", "http2"] }
-hyper-rustls = { version = "0.27", default-features = false, features = ["http2", "ring", "webpki-tokio"] }
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "http2", "ring", "webpki-tokio"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "tls12"] }
 http-body-util = "0.1"
 bytes = "1"

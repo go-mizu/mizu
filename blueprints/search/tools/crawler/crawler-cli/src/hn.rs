@@ -10,7 +10,7 @@ use crawler_lib::seed::{load_retry_seeds, load_seeds_duckdb, load_seeds_parquet}
 use crawler_lib::writer::devnull::{DevNullFailureWriter, DevNullResultWriter};
 use crawler_lib::writer::duckdb_writer::{DuckDBFailureWriter, DuckDBResultWriter};
 use crawler_lib::writer::parquet_writer::{ParquetFailureWriter, ParquetResultWriter};
-use crawler_lib::writer::binary::{BinaryFailureWriter, BinaryResultWriter};
+use crawler_lib::writer::binary::{BinDrainConfig, BinaryFailureWriter, BinaryResultWriter};
 use crawler_lib::writer::{FailureWriter, ResultWriter};
 
 use crate::display::{format_duration, print_summary};
@@ -269,8 +269,16 @@ fn create_result_writer(
             Ok(Arc::new(w))
         }
         WriterType::Binary => {
-            let results_dir = output_dir.join("results");
-            let w = BinaryResultWriter::with_defaults(&results_dir)?;
+            // Segments go in output_dir/results/ (fast, non-blocking during crawl).
+            // On close(), they are drained to sharded DuckDB in output_dir/ and deleted.
+            let seg_dir = output_dir.join("results");
+            let drain = BinDrainConfig {
+                duckdb_dir: output_dir.to_path_buf(),
+                num_shards: shards,
+                mem_mb,
+                batch_size,
+            };
+            let w = BinaryResultWriter::with_drain(&seg_dir, drain)?;
             Ok(Arc::new(w))
         }
     }

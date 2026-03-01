@@ -41,16 +41,26 @@ build-on-server:
 	@echo "Building on $(REMOTE_SSH) ..."
 	$(SSH) $(REMOTE_SSH) 'bash -lc "set -e; \
 	  SUDO=\"\"; [ \"\$$(id -u)\" != \"0\" ] && SUDO=\"sudo\"; \
-	  if ! command -v cc &>/dev/null && ! command -v gcc &>/dev/null; then \
-	    \$$SUDO apt-get update -qq && \$$SUDO apt-get install -y -qq build-essential pkg-config libssl-dev curl; \
+	  NEED_PKGS=\"\"; \
+	  command -v gcc &>/dev/null || NEED_PKGS=\"\$$NEED_PKGS build-essential\"; \
+	  command -v pkg-config &>/dev/null || NEED_PKGS=\"\$$NEED_PKGS pkg-config\"; \
+	  dpkg -s libssl-dev &>/dev/null || NEED_PKGS=\"\$$NEED_PKGS libssl-dev\"; \
+	  command -v curl &>/dev/null || NEED_PKGS=\"\$$NEED_PKGS curl\"; \
+	  if [ -n \"\$$NEED_PKGS\" ]; then \
+	    echo \"Installing:\$$NEED_PKGS\"; \
+	    \$$SUDO apt-get update -qq && \$$SUDO apt-get install -y -qq \$$NEED_PKGS; \
 	  fi; \
 	  GCC_VER=\$$(gcc --version 2>/dev/null | head -1 | awk \"{print \\\$$NF}\" | cut -d. -f1); \
 	  if [ \"\$${GCC_VER:-0}\" -lt 10 ] 2>/dev/null; then \
-	    echo \"GCC \$$GCC_VER too old (need >=10), installing gcc-10...\"; \
-	    \$$SUDO apt-get update -qq && \$$SUDO apt-get install -y -qq gcc-10 g++-10; \
-	    \$$SUDO update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 10 2>/dev/null || true; \
-	    \$$SUDO update-alternatives --install /usr/bin/cc cc /usr/bin/gcc-10 10 2>/dev/null || true; \
-	    export CC=/usr/bin/gcc-10; \
+	    echo \"GCC \$$GCC_VER too old (need >=10), trying to install gcc-10...\"; \
+	    \$$SUDO apt-get update -qq && \$$SUDO apt-get install -y -qq gcc-10 g++-10 2>/dev/null || true; \
+	    if command -v gcc-10 &>/dev/null; then \
+	      \$$SUDO update-alternatives --install /usr/bin/gcc gcc \$$(which gcc-10) 10 2>/dev/null || true; \
+	      export CC=\$$(which gcc-10); \
+	      echo \"Using CC=\$$CC\"; \
+	    else \
+	      echo \"WARNING: gcc-10 not available, continuing with GCC \$$GCC_VER (may fail for aws-lc-rs)\"; \
+	    fi; \
 	  fi; \
 	  if ! command -v cargo &>/dev/null; then \
 	    curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable; \

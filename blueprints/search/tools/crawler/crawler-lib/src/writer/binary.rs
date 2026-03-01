@@ -1,5 +1,6 @@
 use super::{FailureWriter, ResultWriter};
 use crate::types::{CrawlResult, FailedDomain, FailedURL};
+use crate::writer::duckdb_writer::{flush_result_batch, open_result_db, shard_for_url};
 use anyhow::{Context, Result};
 use std::fs::File;
 use std::io::{BufWriter, Read as _, Write};
@@ -18,6 +19,21 @@ fn open_segment(dir: &Path, idx: usize) -> Result<BufWriter<File>> {
     Ok(BufWriter::new(f))
 }
 
+/// Config for draining binary segments into DuckDB after the crawl completes.
+///
+/// When set on a `BinaryResultWriter`, `close()` will automatically import
+/// all `seg_*.bin` files into sharded DuckDB files and delete the segments.
+pub struct BinDrainConfig {
+    /// Directory where DuckDB shard files will be written.
+    pub duckdb_dir: PathBuf,
+    /// Number of DuckDB shards (e.g. 8).
+    pub num_shards: usize,
+    /// DuckDB memory limit per shard in MB.
+    pub mem_mb: usize,
+    /// Rows buffered per shard before a batch INSERT.
+    pub batch_size: usize,
+}
+
 // ---------------------------------------------------------------------------
 // BinaryResultWriter
 // ---------------------------------------------------------------------------
@@ -29,19 +45,45 @@ fn open_segment(dir: &Path, idx: usize) -> Result<BufWriter<File>> {
 /// Architecture:
 /// ```text
 /// Workers -> write() -> crossbeam bounded channel -> flusher thread -> seg_NNN.bin files
+///                                                                            |
+///                                                            close() drain (optional)
+///                                                                            |
+///                                                              sharded DuckDB files
 /// ```
 ///
-/// Segment files rotate at a configurable size (default 64 MB). Each record is
-/// stored as `[u32 le length][bincode data]`.
+/// When a `BinDrainConfig` is provided, `close()` imports all segments into
+/// DuckDB and then deletes them. This gives the best of both worlds:
+/// - Zero DuckDB overhead on the hot crawl path (pure sequential disk writes)
+/// - Queryable DuckDB output after the crawl finishes
 pub struct BinaryResultWriter {
     /// Wrapped in Option so close() can take and drop it to signal the flusher.
     tx: Mutex<Option<crossbeam_channel::Sender<CrawlResult>>>,
     handle: Mutex<Option<std::thread::JoinHandle<()>>>,
     dir: PathBuf,
+    drain_config: Option<BinDrainConfig>,
 }
 
 impl BinaryResultWriter {
     pub fn new(dir: &Path, channel_cap: usize, seg_size_mb: usize) -> Result<Self> {
+        Self::new_inner(dir, channel_cap, seg_size_mb, None)
+    }
+
+    /// Create with a drain config: after close(), segments are imported into DuckDB.
+    pub fn new_with_drain(
+        dir: &Path,
+        channel_cap: usize,
+        seg_size_mb: usize,
+        drain: BinDrainConfig,
+    ) -> Result<Self> {
+        Self::new_inner(dir, channel_cap, seg_size_mb, Some(drain))
+    }
+
+    fn new_inner(
+        dir: &Path,
+        channel_cap: usize,
+        seg_size_mb: usize,
+        drain_config: Option<BinDrainConfig>,
+    ) -> Result<Self> {
         std::fs::create_dir_all(dir)
             .with_context(|| format!("failed to create binary writer dir: {}", dir.display()))?;
 
@@ -60,12 +102,18 @@ impl BinaryResultWriter {
             tx: Mutex::new(Some(tx)),
             handle: Mutex::new(Some(handle)),
             dir: dir.to_path_buf(),
+            drain_config,
         })
     }
 
-    /// Create with default channel capacity (65536) and segment size (64 MB).
+    /// Create with default channel capacity (65536) and segment size (64 MB), no drain.
     pub fn with_defaults(dir: &Path) -> Result<Self> {
         Self::new(dir, DEFAULT_CHANNEL_CAP, DEFAULT_SEG_SIZE_MB)
+    }
+
+    /// Create with defaults and a drain config.
+    pub fn with_drain(dir: &Path, drain: BinDrainConfig) -> Result<Self> {
+        Self::new_with_drain(dir, DEFAULT_CHANNEL_CAP, DEFAULT_SEG_SIZE_MB, drain)
     }
 
     /// Returns the directory where segment files are written.
@@ -159,20 +207,168 @@ impl ResultWriter for BinaryResultWriter {
 
     fn close(&self) -> Result<()> {
         // Drop the sender to signal the flusher thread that no more data is coming.
-        // This causes rx.iter() to terminate.
         {
             let mut guard = self.tx.lock().unwrap();
-            guard.take(); // drops the Sender
+            guard.take();
         }
 
-        // Now join the flusher thread -- it will drain remaining items and exit.
+        // Join the flusher thread -- it will drain remaining items and exit.
         let handle = self.handle.lock().unwrap().take();
         if let Some(h) = handle {
             h.join()
                 .map_err(|_| anyhow::anyhow!("result flusher thread panicked"))?;
         }
+
+        // If drain is configured, import segments into DuckDB now.
+        if let Some(cfg) = &self.drain_config {
+            drain_to_duckdb(&self.dir, cfg)?;
+        }
+
         Ok(())
     }
+}
+
+// ---------------------------------------------------------------------------
+// Drain: import seg_*.bin into sharded DuckDB
+// ---------------------------------------------------------------------------
+
+/// Import all `seg_*.bin` files from `seg_dir` into sharded DuckDB files in
+/// `cfg.duckdb_dir`. Each segment is read, deserialized, routed to the correct
+/// shard by URL hash, batch-inserted, then deleted.
+///
+/// Prints progress to stdout (one line per segment) since large crawls can
+/// produce many GB of segments that take time to drain.
+///
+/// Returns the total number of records imported.
+pub fn drain_to_duckdb(seg_dir: &Path, cfg: &BinDrainConfig) -> Result<u64> {
+    let mut paths = list_segment_files(seg_dir)?;
+    if paths.is_empty() {
+        info!("drain_to_duckdb: no segments found in {:?}", seg_dir);
+        return Ok(0);
+    }
+    paths.sort();
+
+    println!(
+        "Draining {} segment(s) → {} DuckDB shard(s) in {:?}",
+        paths.len(),
+        cfg.num_shards,
+        cfg.duckdb_dir
+    );
+
+    // Open all shards.
+    std::fs::create_dir_all(&cfg.duckdb_dir)
+        .with_context(|| format!("failed to create DuckDB drain dir {:?}", cfg.duckdb_dir))?;
+
+    let shard_conns: Vec<duckdb::Connection> = (0..cfg.num_shards)
+        .map(|i| {
+            let path = cfg.duckdb_dir.join(format!("results_{:03}.duckdb", i));
+            open_result_db(&path, cfg.mem_mb)
+                .with_context(|| format!("failed to open drain shard {i}"))
+        })
+        .collect::<Result<_>>()?;
+
+    let mut shard_batches: Vec<Vec<CrawlResult>> = (0..cfg.num_shards)
+        .map(|_| Vec::with_capacity(cfg.batch_size))
+        .collect();
+
+    let mut total: u64 = 0;
+    let start = std::time::Instant::now();
+
+    for (seg_num, path) in paths.iter().enumerate() {
+        let seg_start = std::time::Instant::now();
+        let records = read_one_segment_file::<CrawlResult>(path)
+            .with_context(|| format!("reading segment {:?}", path))?;
+
+        let seg_count = records.len() as u64;
+        for r in records {
+            let idx = shard_for_url(&r.url, cfg.num_shards);
+            shard_batches[idx].push(r);
+            if shard_batches[idx].len() >= cfg.batch_size {
+                let batch = std::mem::replace(
+                    &mut shard_batches[idx],
+                    Vec::with_capacity(cfg.batch_size),
+                );
+                flush_result_batch(&shard_conns[idx], &batch)
+                    .with_context(|| format!("flush batch to shard {idx}"))?;
+            }
+        }
+        total += seg_count;
+
+        println!(
+            "  [{}/{} segs] {:?}: {} records in {:.1}s  (total: {})",
+            seg_num + 1,
+            paths.len(),
+            path.file_name().unwrap_or_default(),
+            seg_count,
+            seg_start.elapsed().as_secs_f64(),
+            total,
+        );
+
+        // Delete segment after successful drain.
+        std::fs::remove_file(path)
+            .with_context(|| format!("failed to delete drained segment {:?}", path))?;
+    }
+
+    // Flush remaining partial batches.
+    for (i, batch) in shard_batches.into_iter().enumerate() {
+        if !batch.is_empty() {
+            flush_result_batch(&shard_conns[i], &batch)
+                .with_context(|| format!("final flush to shard {i}"))?;
+        }
+    }
+
+    println!(
+        "Drain complete: {} records in {:.1}s → {:?}",
+        total,
+        start.elapsed().as_secs_f64(),
+        cfg.duckdb_dir,
+    );
+
+    Ok(total)
+}
+
+/// List all `seg_*.bin` files in `dir`.
+fn list_segment_files(dir: &Path) -> Result<Vec<PathBuf>> {
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+    let paths: Vec<PathBuf> = std::fs::read_dir(dir)
+        .with_context(|| format!("failed to read segment dir: {}", dir.display()))?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.extension().map_or(false, |ext| ext == "bin")
+                && p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map_or(false, |n| n.starts_with("seg_"))
+        })
+        .collect();
+    Ok(paths)
+}
+
+/// Read all records from a single segment file (length-prefixed bincode).
+fn read_one_segment_file<T: serde::de::DeserializeOwned>(path: &Path) -> Result<Vec<T>> {
+    let mut file = File::open(path)
+        .with_context(|| format!("failed to open segment: {}", path.display()))?;
+    let mut records = Vec::new();
+    loop {
+        let mut len_buf = [0u8; 4];
+        match file.read_exact(&mut len_buf) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+            Err(e) => {
+                return Err(e).with_context(|| format!("read len from {}", path.display()));
+            }
+        }
+        let len = u32::from_le_bytes(len_buf) as usize;
+        let mut data = vec![0u8; len];
+        file.read_exact(&mut data)
+            .with_context(|| format!("read record data from {}", path.display()))?;
+        let item: T = bincode::deserialize(&data)
+            .with_context(|| format!("deserialize record from {}", path.display()))?;
+        records.push(item);
+    }
+    Ok(records)
 }
 
 // ---------------------------------------------------------------------------
@@ -361,13 +557,10 @@ impl FailureWriter for BinaryFailureWriter {
 }
 
 // ---------------------------------------------------------------------------
-// Segment reading (for future import)
+// Segment reading (for external use / testing)
 // ---------------------------------------------------------------------------
 
 /// Read all CrawlResult records from segment files in a directory.
-///
-/// Segment files are expected to be named `seg_*.bin` and contain
-/// length-prefixed bincode records: `[u32 le len][bincode data]...`
 pub fn read_result_segments(dir: &Path) -> Result<Vec<CrawlResult>> {
     read_segments::<CrawlResult>(dir)
 }
@@ -399,32 +592,9 @@ fn read_segments<T: serde::de::DeserializeOwned>(dir: &Path) -> Result<Vec<T>> {
     paths.sort();
 
     let mut results = Vec::new();
-
     for path in &paths {
-        let mut file = File::open(path)
-            .with_context(|| format!("failed to open segment: {}", path.display()))?;
-
-        loop {
-            // Read length prefix (4 bytes, little-endian u32).
-            let mut len_buf = [0u8; 4];
-            match file.read_exact(&mut len_buf) {
-                Ok(()) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
-                Err(e) => {
-                    return Err(e)
-                        .with_context(|| format!("read len from {}", path.display()));
-                }
-            }
-
-            let len = u32::from_le_bytes(len_buf) as usize;
-            let mut data = vec![0u8; len];
-            file.read_exact(&mut data)
-                .with_context(|| format!("read record data from {}", path.display()))?;
-
-            let item: T = bincode::deserialize(&data)
-                .with_context(|| format!("deserialize record from {}", path.display()))?;
-            results.push(item);
-        }
+        let mut file_records = read_one_segment_file::<T>(path)?;
+        results.append(&mut file_records);
     }
 
     Ok(results)
@@ -472,6 +642,56 @@ mod tests {
         assert_eq!(results.len(), 10);
         assert_eq!(results[0].url, "https://example.com/0");
         assert_eq!(results[9].url, "https://example.com/9");
+    }
+
+    #[test]
+    fn test_drain_to_duckdb() {
+        let dir = tempfile::tempdir().unwrap();
+        let seg_dir = dir.path().join("results");
+        let duckdb_dir = dir.path().join("duckdb");
+
+        let drain = BinDrainConfig {
+            duckdb_dir: duckdb_dir.clone(),
+            num_shards: 2,
+            mem_mb: 64,
+            batch_size: 100,
+        };
+
+        let writer = BinaryResultWriter::with_drain(&seg_dir, drain).unwrap();
+
+        for i in 0..20 {
+            writer
+                .write(make_result(&format!("https://example.com/{i}")))
+                .unwrap();
+        }
+
+        // close() triggers drain to DuckDB
+        writer.close().unwrap();
+
+        // Segments should be deleted after drain
+        let remaining_segs: Vec<_> = std::fs::read_dir(&seg_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .map_or(false, |ext| ext == "bin")
+            })
+            .collect();
+        assert!(remaining_segs.is_empty(), "segments should be deleted after drain");
+
+        // DuckDB shards should exist
+        assert!(duckdb_dir.exists());
+        let db_files: Vec<_> = std::fs::read_dir(&duckdb_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .map_or(false, |ext| ext == "duckdb")
+            })
+            .collect();
+        assert!(!db_files.is_empty(), "DuckDB shard files should exist after drain");
     }
 
     #[test]
@@ -539,8 +759,6 @@ mod tests {
                     .map_or(false, |n| n.starts_with("seg_") && n.ends_with(".bin"))
             })
             .count();
-        // With seg_size=0, every record triggers rotation so we get N+1 files
-        // (the last one may be empty). At least 3 segments.
         assert!(seg_count >= 3, "expected >= 3 segments, got {seg_count}");
 
         // All records should still be readable.

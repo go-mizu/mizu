@@ -15,7 +15,7 @@ use tracing::{debug, error, info, warn};
 const FNV_OFFSET: u32 = 2_166_136_261;
 const FNV_PRIME: u32 = 16_777_619;
 
-fn fnv1a_hash(data: &[u8]) -> u32 {
+pub(crate) fn fnv1a_hash(data: &[u8]) -> u32 {
     let mut h = FNV_OFFSET;
     for &b in data {
         h ^= b as u32;
@@ -24,7 +24,7 @@ fn fnv1a_hash(data: &[u8]) -> u32 {
     h
 }
 
-fn shard_for_url(url: &str, num_shards: usize) -> usize {
+pub(crate) fn shard_for_url(url: &str, num_shards: usize) -> usize {
     (fnv1a_hash(url.as_bytes()) as usize) % num_shards
 }
 
@@ -78,7 +78,7 @@ fn remove_stale_lock(db_path: &Path) {
 // ---------------------------------------------------------------------------
 // Open DuckDB connection with per-shard settings
 // ---------------------------------------------------------------------------
-fn open_result_db(path: &Path, mem_mb: usize) -> Result<Connection> {
+pub(crate) fn open_result_db(path: &Path, mem_mb: usize) -> Result<Connection> {
     remove_stale_lock(path);
     let conn = Connection::open(path)
         .with_context(|| format!("failed to open DuckDB at {:?}", path))?;
@@ -111,7 +111,7 @@ fn open_result_db(path: &Path, mem_mb: usize) -> Result<Connection> {
 // ---------------------------------------------------------------------------
 // Batch INSERT for results
 // ---------------------------------------------------------------------------
-fn flush_result_batch(conn: &Connection, batch: &[CrawlResult]) -> Result<()> {
+pub(crate) fn flush_result_batch(conn: &Connection, batch: &[CrawlResult]) -> Result<()> {
     if batch.is_empty() {
         return Ok(());
     }
