@@ -173,23 +173,37 @@ deploy-linux-noble: build-linux-noble ## Deploy Ubuntu 24.04 binary to remote $$
 	@echo "Deployed Noble: $(REMOTE_SSH):~/bin/search"
 
 .PHONY: install-chrome
-install-chrome: ## One-time: install Chromium on remote server (SERVER=1 or 2)
+install-chrome: ## One-time: install Chromium via apt on remote server (requires sudo/root, SERVER=1 or 2)
 	@echo "Installing Chromium on $(REMOTE_SSH)..."
 	@$(SSH) $(REMOTE_SSH) "bash -lc 'sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends chromium chromium-common fonts-liberation && which chromium && chromium --version'"
 	@echo "Chromium installed on $(REMOTE_SSH)"
 
+.PHONY: download-chrome
+download-chrome: ## Download chrome-headless-shell to ~/bin/chromium on remote server (no sudo needed, SERVER=1 or 2)
+	@echo "Downloading chrome-headless-shell on $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'bash -lc "set -e; \
+		mkdir -p \$$HOME/bin; \
+		VER=\$$(curl -fsSL https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_STABLE); \
+		echo \"Chrome version: \$$VER\"; \
+		curl -fsSL \"https://storage.googleapis.com/chrome-for-testing-public/\$${VER}/linux64/chrome-headless-shell-linux64.zip\" -o /tmp/chrome-headless.zip; \
+		unzip -o /tmp/chrome-headless.zip -d /tmp/chrome-headless-extract; \
+		install -m 0755 /tmp/chrome-headless-extract/chrome-headless-shell-linux64/chrome-headless-shell \$$HOME/bin/chromium; \
+		rm -rf /tmp/chrome-headless.zip /tmp/chrome-headless-extract; \
+		\$$HOME/bin/chromium --version 2>&1 || echo \"(version check may fail without display - binary is installed)\""'
+	@echo "chrome-headless-shell installed at $(REMOTE_SSH):~/bin/chromium"
+
 .PHONY: deploy-linux-noble-browser
-deploy-linux-noble-browser: build-linux-noble ## Deploy Ubuntu 24.04 binary with Chrome wrapper (run install-chrome SERVER=N first)
+deploy-linux-noble-browser: build-linux-noble ## Deploy Ubuntu 24.04 binary with Chrome auto-detect wrapper (run download-chrome or install-chrome first)
 	@test -f "$(DEPLOY_KEY)" || { echo "Deploy key not found: $(DEPLOY_KEY)"; exit 1; }
 	@$(SSH) $(REMOTE_SSH) "mkdir -p \$$HOME/bin"
 	@$(SCP) "$(LINUX_BINARY_NOBLE)" $(REMOTE_SSH):.search-upload.tmp
 	@$(SSH) $(REMOTE_SSH) 'bash -lc "set -e; \
 		install -m 0755 $$HOME/.search-upload.tmp $$HOME/bin/search-linux-noble; \
 		rm -f $$HOME/.search-upload.tmp; \
-		printf '"'"'#!/usr/bin/env bash\nulimit -Hn 131072 2>/dev/null; ulimit -n 131072 2>/dev/null || ulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=2000000000\nexport GODEBUG=netdns=go\nexport CHROME_BIN=/usr/bin/chromium\nexec \"$$HOME/bin/search-linux-noble\" \"\$$@\"\n'"'"' > $$HOME/bin/search; \
+		printf '"'"'#!/usr/bin/env bash\nulimit -Hn 131072 2>/dev/null; ulimit -n 131072 2>/dev/null || ulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=2000000000\nexport GODEBUG=netdns=go\nif [ -f /usr/bin/chromium ]; then export CHROME_BIN=/usr/bin/chromium; elif [ -f $$HOME/bin/chromium ]; then export CHROME_BIN=$$HOME/bin/chromium; fi\nexec \"$$HOME/bin/search-linux-noble\" \"\$$@\"\n'"'"' > $$HOME/bin/search; \
 		chmod +x $$HOME/bin/search"'
 	@echo "Deployed Noble+Chrome: $(REMOTE_SSH):~/bin/search"
-	@echo "NOTE: Run 'make install-chrome SERVER=$(SERVER)' first if Chromium is not installed"
+	@echo "NOTE: Run 'make download-chrome SERVER=$(SERVER)' (no sudo) or 'make install-chrome SERVER=$(SERVER)' (needs sudo) to install Chrome first"
 
 .PHONY: deploy-linux
 deploy-linux: build-linux ## Deploy linux binary to remote $$HOME/bin/search
