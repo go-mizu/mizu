@@ -1,28 +1,50 @@
 use crate::config::Config;
-use crate::domain::{group_by_domain, DomainBatch, DomainState};
+use crate::domain::{group_by_domain, DomainState};
 use crate::stats::{AdaptiveTimeout, PeakTracker, Stats, StatsSnapshot};
 use crate::types::{CrawlResult, FailedURL, SeedURL};
 use crate::ua;
 use crate::writer::{FailureWriter, ResultWriter};
 use anyhow::Result;
-use std::sync::atomic::{AtomicBool, Ordering};
+use dashmap::DashMap;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
-/// Reqwest-based crawl engine with domain-grouped batch processing.
+/// Reqwest-based crawl engine with flat URL task queue.
 ///
 /// Architecture:
-/// 1. Seeds are sorted and grouped by domain into DomainBatches.
-/// 2. A producer feeds batches into a bounded channel (cap 4096).
-/// 3. N worker tasks drain from the channel, each processing one domain at a time.
-/// 4. Per-domain: inner_n fetch tasks share a reqwest::Client with connection pooling.
-/// 5. Adaptive timeout, domain abandonment, and peak RPS tracking are all lock-free.
+/// 1. Seeds are sorted and grouped by domain to create per-domain state entries.
+/// 2. A flat URL channel is populated with (SeedURL, Arc<DomainEntry>) pairs.
+/// 3. N worker tasks drain from the URL channel, each processing one URL at a time.
+/// 4. Per-domain semaphore (capacity=inner_n) limits concurrency per domain without
+///    blocking the worker — tokio suspends the task, not the thread.
+/// 5. Workers are never idle between domain boundaries (no domain-batch gaps).
 pub struct ReqwestEngine;
 
 impl ReqwestEngine {
     pub fn new() -> Self {
         Self
+    }
+}
+
+/// Per-domain state shared across all workers fetching from the same domain.
+/// The semaphore limits concurrency to inner_n; abandoned flag short-circuits remaining URLs.
+struct DomainEntry {
+    semaphore: tokio::sync::Semaphore,
+    abandoned: AtomicBool,
+    ok: AtomicU64,
+    timeouts: AtomicU64,
+}
+
+impl DomainEntry {
+    fn new(inner_n: usize) -> Self {
+        Self {
+            semaphore: tokio::sync::Semaphore::new(inner_n.max(1)),
+            abandoned: AtomicBool::new(false),
+            ok: AtomicU64::new(0),
+            timeouts: AtomicU64::new(0),
+        }
     }
 }
 
@@ -54,7 +76,7 @@ impl super::Engine for ReqwestEngine {
             total_seeds, cfg.workers, cfg.inner_n
         );
 
-        // Group seeds by domain
+        // Group seeds by domain to create per-domain state entries.
         let batches = group_by_domain(seeds);
         let domain_count = batches.len();
         info!("grouped into {} domains", domain_count);
@@ -68,25 +90,42 @@ impl super::Engine for ReqwestEngine {
         let adaptive = Arc::new(AdaptiveTimeout::new());
         let peak = Arc::new(PeakTracker::new());
 
-        // Work channel: producer feeds domain batches, workers consume
-        let (batch_tx, batch_rx) = async_channel::bounded::<DomainBatch>(4096);
+        let workers = cfg.workers.max(1);
+        let inner_n = cfg.inner_n.max(1);
 
-        // Producer: feed all domain batches into the channel
+        // Pre-create per-domain entries (semaphore + abandonment state).
+        let domain_map: Arc<DashMap<String, Arc<DomainEntry>>> =
+            Arc::new(DashMap::with_capacity(domain_count));
+        for batch in &batches {
+            domain_map.insert(
+                batch.domain.clone(),
+                Arc::new(DomainEntry::new(inner_n)),
+            );
+        }
+
+        // Flat URL channel: capacity = workers * 4 so producer never blocks on startup.
+        // Each item carries the URL and a reference to its domain's shared state.
+        let (url_tx, url_rx) =
+            async_channel::bounded::<(SeedURL, Arc<DomainEntry>)>(workers * 4);
+
+        // Producer: flatten all domain batches into the URL channel.
+        let dm = Arc::clone(&domain_map);
         let producer = tokio::spawn(async move {
             for batch in batches {
-                if batch_tx.send(batch).await.is_err() {
-                    break; // receivers dropped
+                if let Some(entry_ref) = dm.get(&batch.domain) {
+                    let entry = Arc::clone(entry_ref.value());
+                    for url in batch.urls {
+                        if url_tx.send((url, Arc::clone(&entry))).await.is_err() {
+                            return; // receivers all dropped
+                        }
+                    }
                 }
             }
-            // Channel closes when batch_tx is dropped
+            // url_tx dropped here → channel closes when all receivers see EOF
         });
 
         // Build ONE shared reqwest::Client for all workers.
         // reqwest::Client is Arc-backed internally; cloning just bumps the refcount.
-        // Sharing a single client gives a unified connection pool across all workers,
-        // improving keep-alive reuse (especially for domains with many URLs).
-        let workers = cfg.workers.max(1);
-        let inner_n = cfg.inner_n.max(1);
         let max_timeout = cfg.timeout.saturating_mul(5); // adaptive cap ceiling
         let shared_client = match reqwest::Client::builder()
             .pool_max_idle_per_host(inner_n)
@@ -100,10 +139,13 @@ impl super::Engine for ReqwestEngine {
             Err(e) => return Err(anyhow::anyhow!("failed to build reqwest client: {}", e)),
         };
 
+        // Spawn N worker tasks.
+        // Each worker loops: pop URL → acquire domain semaphore → fetch → update state.
+        // Workers are never idle between URLs (no domain-batch boundaries).
         let mut worker_handles = Vec::with_capacity(workers);
 
         for _ in 0..workers {
-            let rx = batch_rx.clone();
+            let rx = url_rx.clone();
             let cfg = cfg.clone();
             let results = Arc::clone(&results);
             let failures = Arc::clone(&failures);
@@ -113,10 +155,10 @@ impl super::Engine for ReqwestEngine {
             let client = Arc::clone(&shared_client);
 
             let handle = tokio::spawn(async move {
-                while let Ok(batch) = rx.recv().await {
-                    process_one_domain(
-                        batch.domain,
-                        batch.urls,
+                while let Ok((seed, domain_entry)) = rx.recv().await {
+                    process_one_url(
+                        seed,
+                        &domain_entry,
                         &cfg,
                         &adaptive,
                         inner_n,
@@ -132,20 +174,18 @@ impl super::Engine for ReqwestEngine {
             worker_handles.push(handle);
         }
 
-        // Wait for producer to finish sending
+        // Wait for producer to finish sending all URLs.
         let _ = producer.await;
-        // Close the channel so workers see EOF
-        batch_rx.close();
+        // Close channel so workers see EOF when all URLs are consumed.
+        url_rx.close();
 
-        // Wait for all workers to finish
+        // Wait for all workers to finish.
         for h in worker_handles {
             let _ = h.await;
         }
 
-        // Update peak RPS in stats
-        stats
-            .peak_rps
-            .store(peak.peak(), Ordering::Relaxed);
+        // Update peak RPS in stats.
+        stats.peak_rps.store(peak.peak(), Ordering::Relaxed);
 
         let snapshot = stats.snapshot();
         info!(
@@ -163,13 +203,14 @@ impl super::Engine for ReqwestEngine {
     }
 }
 
-/// Process all URLs for a single domain.
+/// Process a single URL using the shared reqwest client.
 ///
-/// Takes a shared `reqwest::Client` (built once per run, shared across all workers).
-/// Spawns inner_n fetch tasks and tracks domain health for abandonment.
-async fn process_one_domain(
-    domain: String,
-    urls: Vec<SeedURL>,
+/// Acquires a per-domain semaphore permit before fetching (limits inner_n concurrency
+/// per domain without blocking the worker task itself — tokio suspends and schedules
+/// other tasks while waiting for the permit).
+async fn process_one_url(
+    seed: SeedURL,
+    domain_entry: &Arc<DomainEntry>,
     cfg: &Config,
     adaptive: &Arc<AdaptiveTimeout>,
     inner_n: usize,
@@ -179,232 +220,102 @@ async fn process_one_domain(
     stats: &Arc<Stats>,
     peak: &Arc<PeakTracker>,
 ) {
-    let url_count = urls.len();
-    if url_count == 0 {
+    // Skip if domain has been abandoned (dead/stalling).
+    if domain_entry.abandoned.load(Ordering::Relaxed) {
+        stats.skipped.fetch_add(1, Ordering::Relaxed);
+        let _ = failures.write_url(FailedURL::new(
+            &seed.url,
+            &seed.domain,
+            "domain_http_timeout_killed",
+        ));
         return;
     }
 
-    // Calculate effective domain timeout
-    let effective_domain_timeout = compute_domain_timeout(cfg, url_count, inner_n);
+    // Acquire per-domain concurrency permit.
+    // tokio suspends this task (not the thread) if inner_n fetches are already in flight.
+    let _permit = match domain_entry.semaphore.acquire().await {
+        Ok(p) => p,
+        Err(_) => return, // semaphore closed (should not happen)
+    };
 
-    let client = Arc::clone(client);
+    // Compute effective timeout (adaptive or fixed, capped at 5× base).
+    let effective_timeout = if !cfg.disable_adaptive_timeout {
+        adaptive
+            .timeout(cfg.adaptive_timeout_max)
+            .unwrap_or(cfg.timeout)
+            .min(cfg.timeout.saturating_mul(5))
+    } else {
+        cfg.timeout
+    };
 
-    // URL channel: bounded by URL count so send never blocks
-    let (url_tx, url_rx) = async_channel::bounded::<SeedURL>(url_count);
-    for u in urls {
-        let _ = url_tx.send(u).await;
-    }
-    url_tx.close();
+    // Fetch the URL.
+    let result = fetch_one(client, &seed, effective_timeout, cfg.max_body_bytes).await;
+    stats.total.fetch_add(1, Ordering::Relaxed);
+    peak.record();
 
-    // Shared domain state for abandonment
-    let abandoned = Arc::new(AtomicBool::new(false));
-    let domain_successes = Arc::new(std::sync::atomic::AtomicU64::new(0));
-    let domain_timeouts = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    // Classify result and update domain state.
+    if !result.error.is_empty() {
+        let is_timeout = result.error.contains("timeout")
+            || result.error.contains("Timeout")
+            || result.error.contains("deadline")
+            || result.error.contains("timed out");
 
-    // Spawn inner_n fetch tasks (capped by url count)
-    let n = inner_n.min(url_count);
-    let mut handles = Vec::with_capacity(n);
+        if is_timeout {
+            stats.timeout.fetch_add(1, Ordering::Relaxed);
+            let t = domain_entry.timeouts.fetch_add(1, Ordering::Relaxed) + 1;
+            let s = domain_entry.ok.load(Ordering::Relaxed);
 
-    for _ in 0..n {
-        let rx = url_rx.clone();
-        let client = Arc::clone(&client);
-        let cfg_timeout = cfg.timeout;
-        let cfg_adaptive_max = cfg.adaptive_timeout_max;
-        let disable_adaptive = cfg.disable_adaptive_timeout;
-        let max_body_bytes = cfg.max_body_bytes;
-        let domain_fail_threshold = cfg.domain_fail_threshold;
-        let domain_dead_probe = cfg.domain_dead_probe;
-        let domain_stall_ratio = cfg.domain_stall_ratio;
-        let inner_n_copy = inner_n;
-        let adaptive = Arc::clone(adaptive);
-        let results = Arc::clone(results);
-        let failures = Arc::clone(failures);
-        let stats = Arc::clone(stats);
-        let peak = Arc::clone(peak);
-        let abandoned = Arc::clone(&abandoned);
-        let domain_successes = Arc::clone(&domain_successes);
-        let domain_timeouts = Arc::clone(&domain_timeouts);
-        let domain_name = domain.clone();
-
-        let handle = tokio::spawn(async move {
-            while let Ok(seed) = rx.recv().await {
-                // Check if domain has been abandoned
-                if abandoned.load(Ordering::Relaxed) {
-                    stats.skipped.fetch_add(1, Ordering::Relaxed);
-                    let _ = failures.write_url(FailedURL::new(
-                        &seed.url,
-                        &seed.domain,
-                        "domain_http_timeout_killed",
-                    ));
-                    continue;
-                }
-
-                // Compute effective timeout (adaptive or fixed, capped at 5× base)
-                let effective_timeout = if !disable_adaptive {
-                    adaptive
-                        .timeout(cfg_adaptive_max)
-                        .unwrap_or(cfg_timeout)
-                        .min(cfg_timeout.saturating_mul(5))
-                } else {
-                    cfg_timeout
-                };
-
-                // Fetch the URL
-                let result = fetch_one(
-                    &client,
-                    &seed,
-                    effective_timeout,
-                    max_body_bytes,
-                )
-                .await;
-
-                stats.total.fetch_add(1, Ordering::Relaxed);
-                peak.record();
-
-                // Classify result
-                if !result.error.is_empty() {
-                    let is_timeout = result.error.contains("timeout")
-                        || result.error.contains("Timeout")
-                        || result.error.contains("deadline")
-                        || result.error.contains("timed out");
-
-                    if is_timeout {
-                        stats.timeout.fetch_add(1, Ordering::Relaxed);
-                        let t = domain_timeouts.fetch_add(1, Ordering::Relaxed) + 1;
-
-                        // Check abandonment
-                        let ds = DomainState {
-                            successes: domain_successes.load(Ordering::Relaxed),
-                            timeouts: t,
-                        };
-                        if ds.should_abandon(
-                            domain_fail_threshold,
-                            domain_dead_probe,
-                            domain_stall_ratio,
-                            inner_n_copy,
-                        ) {
-                            abandoned.store(true, Ordering::Relaxed);
-                            debug!(
-                                "abandoning domain {} (timeouts={}, successes={})",
-                                domain_name, t, ds.successes
-                            );
-                            stats.push_warning(format!(
-                                "abandoned {} (timeouts={}, ok={})",
-                                domain_name, t, ds.successes
-                            ));
-                        }
-
-                        let _ = failures.write_url(FailedURL {
-                            url: seed.url.clone(),
-                            domain: seed.domain.clone(),
-                            reason: "http_timeout".to_string(),
-                            error: result.error.clone(),
-                            status_code: 0,
-                            fetch_time_ms: result.fetch_time_ms,
-                            detected_at: chrono::Utc::now().naive_utc(),
-                        });
-                    } else {
-                        stats.failed.fetch_add(1, Ordering::Relaxed);
-                        let _ = failures.write_url(FailedURL {
-                            url: seed.url.clone(),
-                            domain: seed.domain.clone(),
-                            reason: "http_error".to_string(),
-                            error: result.error.clone(),
-                            status_code: result.status_code,
-                            fetch_time_ms: result.fetch_time_ms,
-                            detected_at: chrono::Utc::now().naive_utc(),
-                        });
-                    }
-                } else {
-                    stats.ok.fetch_add(1, Ordering::Relaxed);
-                    domain_successes.fetch_add(1, Ordering::Relaxed);
-                    adaptive.record(result.fetch_time_ms);
-                }
-
-                stats
-                    .bytes_downloaded
-                    .fetch_add(result.content_length as u64, Ordering::Relaxed);
-
-                let _ = results.write(result);
-            }
-        });
-        handles.push(handle);
-    }
-
-    // Optionally wrap with domain timeout
-    if let Some(dt) = effective_domain_timeout {
-        let domain_name = domain.clone();
-        let abandoned_outer = Arc::clone(&abandoned);
-        let stats_outer = Arc::clone(stats);
-        let failures_outer = Arc::clone(failures);
-
-        let wait_fut = async {
-            for h in handles {
-                let _ = h.await;
-            }
-        };
-
-        match tokio::time::timeout(dt, wait_fut).await {
-            Ok(()) => {
-                // All tasks completed within domain timeout
-            }
-            Err(_) => {
-                // Domain timeout exceeded — abandon remaining URLs
-                abandoned_outer.store(true, Ordering::Relaxed);
-                let msg = format!(
-                    "domain {} exceeded timeout ({:.1}s)",
-                    domain_name,
-                    dt.as_secs_f64()
-                );
-                warn!("{}, abandoning remaining URLs", msg);
-                stats_outer.push_warning(msg);
-
-                // Drain remaining URLs and mark them as deadline exceeded
-                while let Ok(seed) = url_rx.try_recv() {
-                    stats_outer.skipped.fetch_add(1, Ordering::Relaxed);
-                    let _ = failures_outer.write_url(FailedURL::new(
-                        &seed.url,
-                        &seed.domain,
-                        "domain_deadline_exceeded",
+            let ds = DomainState { successes: s, timeouts: t };
+            if ds.should_abandon(
+                cfg.domain_fail_threshold,
+                cfg.domain_dead_probe,
+                cfg.domain_stall_ratio,
+                inner_n,
+            ) {
+                // Only emit warning on the first abandonment (swap returns old value).
+                if !domain_entry.abandoned.swap(true, Ordering::Relaxed) {
+                    debug!(
+                        "abandoning domain {} (timeouts={}, ok={})",
+                        seed.domain, t, s
+                    );
+                    stats.push_warning(format!(
+                        "abandoned {} (timeouts={}, ok={})",
+                        seed.domain, t, s
                     ));
                 }
             }
+
+            let _ = failures.write_url(FailedURL {
+                url: seed.url.clone(),
+                domain: seed.domain.clone(),
+                reason: "http_timeout".to_string(),
+                error: result.error.clone(),
+                status_code: 0,
+                fetch_time_ms: result.fetch_time_ms,
+                detected_at: chrono::Utc::now().naive_utc(),
+            });
+        } else {
+            stats.failed.fetch_add(1, Ordering::Relaxed);
+            let _ = failures.write_url(FailedURL {
+                url: seed.url.clone(),
+                domain: seed.domain.clone(),
+                reason: "http_error".to_string(),
+                error: result.error.clone(),
+                status_code: result.status_code,
+                fetch_time_ms: result.fetch_time_ms,
+                detected_at: chrono::Utc::now().naive_utc(),
+            });
         }
     } else {
-        // No domain timeout — just wait for all tasks
-        for h in handles {
-            let _ = h.await;
-        }
-    }
-}
-
-/// Calculate effective domain timeout.
-///
-/// - domain_timeout_ms < 0 (adaptive): len(urls) * timeout / inner_n * 2, clamped [30s, max]
-/// - domain_timeout_ms > 0 (explicit): use as-is
-/// - domain_timeout_ms == 0 (disabled): None
-pub(crate) fn compute_domain_timeout(
-    cfg: &Config,
-    url_count: usize,
-    inner_n: usize,
-) -> Option<Duration> {
-    if cfg.domain_timeout_ms == 0 {
-        return None;
+        stats.ok.fetch_add(1, Ordering::Relaxed);
+        domain_entry.ok.fetch_add(1, Ordering::Relaxed);
+        adaptive.record(result.fetch_time_ms);
     }
 
-    if cfg.domain_timeout_ms > 0 {
-        return Some(Duration::from_millis(cfg.domain_timeout_ms as u64));
-    }
-
-    // Adaptive: estimate how long this domain should take
-    // Formula: urls * timeout_ms / inner_n * 2, clamped [5s, adaptive_timeout_max]
-    let timeout_ms = cfg.timeout.as_millis() as u64;
-    let estimated_ms = url_count as u64 * timeout_ms / inner_n.max(1) as u64 * 2;
-    let min_ms = 5_000u64;
-    let max_ms = cfg.adaptive_timeout_max.as_millis() as u64;
-    let clamped_ms = estimated_ms.max(min_ms).min(max_ms);
-
-    Some(Duration::from_millis(clamped_ms))
+    stats
+        .bytes_downloaded
+        .fetch_add(result.content_length as u64, Ordering::Relaxed);
+    let _ = results.write(result);
 }
 
 /// Fetch a single URL using the shared reqwest client.
@@ -525,6 +436,39 @@ async fn read_body_limited(
         buf.extend_from_slice(&chunk[..take]);
     }
     Ok(buf.freeze())
+}
+
+// ---------------------------------------------------------------------------
+// Domain timeout helper (used by hyper_engine.rs too)
+// ---------------------------------------------------------------------------
+
+/// Calculate effective domain timeout.
+///
+/// - domain_timeout_ms < 0 (adaptive): len(urls) * timeout / inner_n * 2, clamped [5s, max]
+/// - domain_timeout_ms > 0 (explicit): use as-is
+/// - domain_timeout_ms == 0 (disabled): None
+pub(crate) fn compute_domain_timeout(
+    cfg: &Config,
+    url_count: usize,
+    inner_n: usize,
+) -> Option<Duration> {
+    if cfg.domain_timeout_ms == 0 {
+        return None;
+    }
+
+    if cfg.domain_timeout_ms > 0 {
+        return Some(Duration::from_millis(cfg.domain_timeout_ms as u64));
+    }
+
+    // Adaptive: estimate how long this domain should take
+    // Formula: urls * timeout_ms / inner_n * 2, clamped [5s, adaptive_timeout_max]
+    let timeout_ms = cfg.timeout.as_millis() as u64;
+    let estimated_ms = url_count as u64 * timeout_ms / inner_n.max(1) as u64 * 2;
+    let min_ms = 5_000u64;
+    let max_ms = cfg.adaptive_timeout_max.as_millis() as u64;
+    let clamped_ms = estimated_ms.max(min_ms).min(max_ms);
+
+    Some(Duration::from_millis(clamped_ms))
 }
 
 // ---------------------------------------------------------------------------
@@ -710,53 +654,5 @@ mod tests {
         // Should truncate at char boundary: "a" (1 byte) + "€" (3 bytes) = 4 bytes > 3
         // So just "a"
         assert_eq!(truncated, "a");
-    }
-
-    #[test]
-    fn test_compute_domain_timeout_disabled() {
-        let mut cfg = Config::default();
-        cfg.domain_timeout_ms = 0;
-        assert!(compute_domain_timeout(&cfg, 100, 4).is_none());
-    }
-
-    #[test]
-    fn test_compute_domain_timeout_explicit() {
-        let mut cfg = Config::default();
-        cfg.domain_timeout_ms = 5000;
-        let dt = compute_domain_timeout(&cfg, 100, 4);
-        assert_eq!(dt, Some(Duration::from_millis(5000)));
-    }
-
-    #[test]
-    fn test_compute_domain_timeout_adaptive() {
-        let mut cfg = Config::default();
-        cfg.domain_timeout_ms = -1;
-        cfg.timeout = Duration::from_millis(1000);
-        cfg.adaptive_timeout_max = Duration::from_secs(600);
-        // 100 urls * 1000ms / 4 inner * 2 = 50000ms
-        let dt = compute_domain_timeout(&cfg, 100, 4);
-        assert_eq!(dt, Some(Duration::from_millis(50000)));
-    }
-
-    #[test]
-    fn test_compute_domain_timeout_adaptive_clamped_min() {
-        let mut cfg = Config::default();
-        cfg.domain_timeout_ms = -1;
-        cfg.timeout = Duration::from_millis(1000);
-        cfg.adaptive_timeout_max = Duration::from_secs(600);
-        // 2 urls * 1000ms / 4 inner * 2 = 1000ms -> clamped to 5000ms min
-        let dt = compute_domain_timeout(&cfg, 2, 4);
-        assert_eq!(dt, Some(Duration::from_millis(5000)));
-    }
-
-    #[test]
-    fn test_compute_domain_timeout_adaptive_clamped_max() {
-        let mut cfg = Config::default();
-        cfg.domain_timeout_ms = -1;
-        cfg.timeout = Duration::from_millis(10000);
-        cfg.adaptive_timeout_max = Duration::from_secs(120);
-        // 1000 urls * 10000ms / 4 inner * 2 = 5_000_000ms -> clamped to 120_000ms max
-        let dt = compute_domain_timeout(&cfg, 1000, 4);
-        assert_eq!(dt, Some(Duration::from_millis(120_000)));
     }
 }

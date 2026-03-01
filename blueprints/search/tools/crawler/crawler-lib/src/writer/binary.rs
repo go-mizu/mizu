@@ -2,6 +2,7 @@ use super::{FailureWriter, ResultWriter};
 use crate::types::{CrawlResult, FailedDomain, FailedURL};
 use crate::writer::duckdb_writer::{flush_result_batch, open_result_db, shard_for_url};
 use anyhow::{Context, Result};
+use rayon::prelude::*;
 use std::fs::File;
 use std::io::{BufWriter, Read as _, Write};
 use std::path::{Path, PathBuf};
@@ -233,11 +234,13 @@ impl ResultWriter for BinaryResultWriter {
 // ---------------------------------------------------------------------------
 
 /// Import all `seg_*.bin` files from `seg_dir` into sharded DuckDB files in
-/// `cfg.duckdb_dir`. Each segment is read, deserialized, routed to the correct
-/// shard by URL hash, batch-inserted, then deleted.
+/// `cfg.duckdb_dir`. Uses a two-phase parallel approach for maximum throughput:
 ///
-/// Prints progress to stdout (one line per segment) since large crawls can
-/// produce many GB of segments that take time to drain.
+/// Phase 1 (sequential): Read all segment files into memory.
+/// Phase 2 (parallel):   Each rayon worker inserts into its own DuckDB shard.
+///
+/// Sequential read avoids disk I/O saturation; parallel insert saturates all
+/// CPU cores and eliminates the sequential DuckDB checkpoint bottleneck.
 ///
 /// Returns the total number of records imported.
 pub fn drain_to_duckdb(seg_dir: &Path, cfg: &BinDrainConfig) -> Result<u64> {
@@ -249,72 +252,84 @@ pub fn drain_to_duckdb(seg_dir: &Path, cfg: &BinDrainConfig) -> Result<u64> {
     paths.sort();
 
     println!(
-        "Draining {} segment(s) → {} DuckDB shard(s) in {:?}",
+        "Draining {} segment(s) → {} DuckDB shard(s) in {:?} (parallel)",
         paths.len(),
         cfg.num_shards,
         cfg.duckdb_dir
     );
 
-    // Open all shards.
     std::fs::create_dir_all(&cfg.duckdb_dir)
         .with_context(|| format!("failed to create DuckDB drain dir {:?}", cfg.duckdb_dir))?;
 
-    let shard_conns: Vec<duckdb::Connection> = (0..cfg.num_shards)
-        .map(|i| {
-            let path = cfg.duckdb_dir.join(format!("results_{:03}.duckdb", i));
-            open_result_db(&path, cfg.mem_mb)
-                .with_context(|| format!("failed to open drain shard {i}"))
-        })
-        .collect::<Result<_>>()?;
-
-    let mut shard_batches: Vec<Vec<CrawlResult>> = (0..cfg.num_shards)
-        .map(|_| Vec::with_capacity(cfg.batch_size))
-        .collect();
-
-    let mut total: u64 = 0;
     let start = std::time::Instant::now();
 
-    for (seg_num, path) in paths.iter().enumerate() {
+    // Phase 1: Read all segments sequentially (I/O bound — sequential is fastest).
+    let mut all_records: Vec<CrawlResult> = Vec::new();
+    for (i, path) in paths.iter().enumerate() {
         let seg_start = std::time::Instant::now();
-        let records = read_one_segment_file::<CrawlResult>(path)
+        let mut records = read_one_segment_file::<CrawlResult>(path)
             .with_context(|| format!("reading segment {:?}", path))?;
-
-        let seg_count = records.len() as u64;
-        for r in records {
-            let idx = shard_for_url(&r.url, cfg.num_shards);
-            shard_batches[idx].push(r);
-            if shard_batches[idx].len() >= cfg.batch_size {
-                let batch = std::mem::replace(
-                    &mut shard_batches[idx],
-                    Vec::with_capacity(cfg.batch_size),
-                );
-                flush_result_batch(&shard_conns[idx], &batch)
-                    .with_context(|| format!("flush batch to shard {idx}"))?;
-            }
-        }
-        total += seg_count;
-
         println!(
-            "  [{}/{} segs] {:?}: {} records in {:.1}s  (total: {})",
-            seg_num + 1,
+            "  [read {}/{} segs] {:?}: {} records in {:.1}s",
+            i + 1,
             paths.len(),
             path.file_name().unwrap_or_default(),
-            seg_count,
+            records.len(),
             seg_start.elapsed().as_secs_f64(),
-            total,
         );
-
-        // Delete segment after successful drain.
+        all_records.append(&mut records);
         std::fs::remove_file(path)
             .with_context(|| format!("failed to delete drained segment {:?}", path))?;
     }
 
-    // Flush remaining partial batches.
-    for (i, batch) in shard_batches.into_iter().enumerate() {
-        if !batch.is_empty() {
-            flush_result_batch(&shard_conns[i], &batch)
-                .with_context(|| format!("final flush to shard {i}"))?;
-        }
+    let total = all_records.len() as u64;
+    println!(
+        "  Read complete: {} records in {:.1}s",
+        total,
+        start.elapsed().as_secs_f64()
+    );
+
+    // Partition records by shard index.
+    let mut shard_batches: Vec<Vec<CrawlResult>> =
+        (0..cfg.num_shards).map(|_| Vec::new()).collect();
+    for r in all_records {
+        let idx = shard_for_url(&r.url, cfg.num_shards);
+        shard_batches[idx].push(r);
+    }
+
+    // Phase 2: Insert into each shard in parallel.
+    // Each rayon worker opens its own DuckDB connection (Connection is !Sync).
+    println!(
+        "  Inserting into {} shards in parallel...",
+        cfg.num_shards
+    );
+    let duckdb_dir = cfg.duckdb_dir.clone();
+    let mem_mb = cfg.mem_mb;
+    let batch_size = cfg.batch_size;
+
+    let errors: Vec<anyhow::Error> = shard_batches
+        .into_par_iter()
+        .enumerate()
+        .filter_map(|(i, batch)| {
+            if batch.is_empty() {
+                return None;
+            }
+            let path = duckdb_dir.join(format!("results_{:03}.duckdb", i));
+            let conn = match open_result_db(&path, mem_mb) {
+                Ok(c) => c,
+                Err(e) => return Some(e.context(format!("open shard {i}"))),
+            };
+            for chunk in batch.chunks(batch_size) {
+                if let Err(e) = flush_result_batch(&conn, chunk) {
+                    return Some(e.context(format!("flush batch to shard {i}")));
+                }
+            }
+            None
+        })
+        .collect();
+
+    if let Some(e) = errors.into_iter().next() {
+        return Err(e);
     }
 
     println!(

@@ -179,42 +179,29 @@ fn clamp(val: usize, min_v: usize, max_v: usize) -> usize {
 }
 
 /// Auto-configure workers and inner_n based on hardware.
-/// Matches Go's AutoConfigKeepAlive formula.
+///
+/// Flat URL queue: each worker holds 1 body at a time (not inner_n bodies),
+/// so the memory formula is total_kb * 75% / body_kb (no inner_n multiplier).
+/// Uses mem_total_mb (stable) not mem_available_mb (snapshot at startup, varies).
 pub fn auto_config(si: &SysInfo, full_body: bool) -> Config {
     let body_kb: usize = if full_body { 256 } else { 4 };
-    let avail_kb = (si.mem_available_mb as usize) * 1024;
-
-    let inner_n_min = 4usize;
-    let denom1 = (inner_n_min * body_kb / 4).max(1);
-    let denom2 = (inner_n_min * body_kb).max(1);
-    let w_mem_uncapped = std::cmp::min(
-        avail_kb * 70 / 100 / denom1,
-        avail_kb * 80 / 100 / denom2,
-    );
-
+    // Use total memory (stable across runs). Reserve 25% for OS + DuckDB + other.
+    let total_kb = (si.mem_total_mb as usize) * 1024;
     let fd = si.fd_soft_limit as usize;
-    let inner_n;
-    if fd / (inner_n_min * 2) <= w_mem_uncapped {
-        inner_n = inner_n_min;
-    } else {
-        inner_n = clamp(
-            si.cpu_count * 2,
-            4,
-            std::cmp::min(16, fd / (2 * w_mem_uncapped.max(1))),
-        );
-    }
 
-    let denom3 = (inner_n * body_kb / 4).max(1);
-    let denom4 = (inner_n * body_kb).max(1);
-    let w_mem = std::cmp::min(
-        avail_kb * 70 / 100 / denom3,
-        avail_kb * 80 / 100 / denom4,
-    );
-    let w_fd = fd / (inner_n * 2).max(1);
-    let workers = clamp(std::cmp::min(w_mem, w_fd).min(10000), 200, 10000);
+    // inner_n: CPU×2 clamped [4, 16] — per-domain fetch concurrency limit.
+    let inner_n = clamp(si.cpu_count * 2, 4, 16);
+
+    // workers: flat queue = 1 body per worker.
+    // w_mem: 75% of total RAM / body size per worker.
+    // w_fd: half of fd limit (other half for OS/system sockets).
+    let w_mem = total_kb * 75 / 100 / body_kb.max(1);
+    let w_fd = fd / 2;
+    let workers = clamp(w_mem.min(w_fd).min(16_000), 200, 16_000);
 
     let db_shards = clamp(si.cpu_count * 2, 4, 16);
-    let db_mem_mb = ((si.mem_available_mb as usize) * 15 / 100 / db_shards).max(64);
+    // 10% of total RAM split across shards; minimum 64MB per shard.
+    let db_mem_mb = ((si.mem_total_mb as usize) * 10 / 100 / db_shards).max(64);
 
     let mut cfg = Config::default();
     cfg.workers = workers;
