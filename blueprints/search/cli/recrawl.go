@@ -25,6 +25,7 @@ type recrawlJobArgs struct {
 	ResultDir    string
 	FailedDBPath string
 	WriterMode   string // "duckdb" | "bin" | "devnull"
+	BinShards    int    // parallel write shards (0 = default 4)
 	SlowDomainMs int64
 	SegSizeMB    int
 	BodyStoreDir string
@@ -85,7 +86,7 @@ func runRecrawlJob(ctx context.Context, args recrawlJobArgs) error {
 				labelStyle.Render(formatInt64Exact(n)))
 		}
 		var bwErr error
-		binWriter, bwErr = crawl.NewBinSegWriter(segDir, args.SegSizeMB, int(si.MemAvailableMB), rdb)
+		binWriter, bwErr = crawl.NewBinSegWriterN(segDir, args.SegSizeMB, int(si.MemAvailableMB), args.BinShards, rdb)
 		if bwErr != nil {
 			rdb.Close() // rdb is not owned by binWriter; close before returning
 			return fmt.Errorf("creating bin writer: %w", bwErr)

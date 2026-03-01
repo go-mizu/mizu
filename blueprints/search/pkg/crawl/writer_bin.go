@@ -20,8 +20,7 @@ import (
 )
 
 const (
-	// binChanCap is the fallback channel capacity when availMB=0.
-	// At 10K writes/s this provides ~3.2 seconds of headroom before any worker blocks.
+	// binChanCap is the fallback channel capacity per shard when availMB=0.
 	binChanCap = 32768 // 32K records
 
 	// binSegQueueCap is the number of completed segment paths buffered for the drain goroutine.
@@ -32,97 +31,177 @@ const (
 
 	// binFlushBufSize is the bufio.Writer buffer size for each segment file.
 	binFlushBufSize = 512 * 1024 // 512 KB
+
+	// binDefaultShards is the default number of parallel write/drain lanes.
+	// N shards → N concurrent flushers + N drainers. Partial failure isolation:
+	// if shard k's DuckDB write blocks, only 1/N of workers are affected.
+	binDefaultShards = 4
+
+	// binPauseCheckInterval is how often the flusher re-evaluates heap pressure.
+	// ReadMemStats acquires the GC lock — calling it per-record at 3K/s adds
+	// significant contention. Rate-limiting to once per second is sufficient.
+	binPauseCheckInterval = time.Second
 )
 
-// binChanCapFromMem computes the result channel capacity.
-// Targets 5% of available RAM for the write buffer.
-// avgRecordKB: estimated bytes per Result record (default 8).
-func binChanCapFromMem(availMB, avgRecordKB int) int {
-	if availMB <= 0 || avgRecordKB <= 0 {
-		return binChanCap // default
+// pauser rate-limits expensive heap-pressure checks to once per second.
+// The hot path (flusher goroutine) calls this per record; ReadMemStats must not
+// be called on every record or it dominates flusher CPU under high throughput.
+type pauser struct {
+	lastNs  atomic.Int64 // last ReadMemStats call (unix nanoseconds)
+	heapOK  atomic.Bool  // true when heap exceeds 70% of GOMEMLIMIT
+}
+
+// check returns true when heap exceeds 70% of GOMEMLIMIT.
+// ReadMemStats is called at most once per binPauseCheckInterval.
+func (p *pauser) check() bool {
+	now := time.Now().UnixNano()
+	if now-p.lastNs.Load() < int64(binPauseCheckInterval) {
+		return p.heapOK.Load()
 	}
-	v := availMB * 1024 / 20 / avgRecordKB
-	return clamp(v, 4096, 65536)
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms)
+	limit := uint64(debug.SetMemoryLimit(-1))
+	over := limit > 0 && ms.HeapAlloc > limit*7/10
+	p.lastNs.Store(now)
+	p.heapOK.Store(over)
+	return over
+}
+
+// binChanCapFromMem computes the result channel capacity per shard.
+// Targets 5% of available RAM for the total write buffer, split across shards.
+// avgRecordKB: estimated bytes per Result record (default 8).
+func binChanCapFromMem(availMB, avgRecordKB, shards int) int {
+	if shards <= 0 {
+		shards = 1
+	}
+	if availMB <= 0 || avgRecordKB <= 0 {
+		return max(binChanCap/shards, 4096)
+	}
+	total := availMB * 1024 / 20 / avgRecordKB
+	perShard := total / shards
+	return clamp(perShard, 4096, 65536)
+}
+
+// binWriterShard holds per-lane state for one parallel flusher/drainer pair.
+// All flusher-state fields are accessed only by the flusher goroutine; no lock needed.
+type binWriterShard struct {
+	idx      int          // shard index, used in segment file naming
+	segDir   string       // directory for this shard's segment files
+	maxBytes int64        // rotate threshold
+	rdb      ResultWriter // drain destination
+
+	ch    chan Result // inbound results from workers
+	segCh chan string // completed segment paths for this shard's drainer
+
+	// flusher-only state
+	cur      *os.File
+	curEnc   *bseg.Encoder
+	curBytes int64
+	curPath  string
+	segNum   int
+	jr       bseg.Record // reused per-record buffer (zero alloc)
 }
 
 // BinSegWriter writes results to rotating binary segment files (.bseg2).
 //
-// Write path: HTTP workers → ch (RAM-proportional buffer) → flusher goroutine → bseg-encoded file write.
-// Drain path: completed segments → drain goroutine → rdb.Add() → DuckDB (background).
+// Architecture: N parallel shards each have their own (channel → flusher → segCh → drainer → DuckDB)
+// pipeline. Results are routed to shards by domain FNV-1a hash, so all URLs from one domain
+// always go to the same shard (consistent routing, in-domain ordering preserved).
 //
-// Key design properties:
+// Key properties:
+//   - Partial-failure isolation: a slow DuckDB write blocks only 1/N of workers.
 //   - Zero per-record heap alloc: bseg.Encoder writes directly to bufio.Writer; bseg.Record reused.
-//   - After segment close: curEnc=nil — buffers are GC-eligible immediately.
-//   - Channel memory bounded: cap × ~8KB avg record.
+//   - Heap pressure checked at most once/second (not per-record) to avoid GC lock contention.
 //   - Legacy .bseg (gob) files supported via drainSegGob fallback.
 //
 // BinSegWriter implements crawl.ResultWriter.
 type BinSegWriter struct {
-	segDir   string              // directory for binary segment files
-	maxBytes int64               // rotate segment when it reaches this size
-	rdb      ResultWriter // drain destination (nil = no drain, segments left on disk)
+	shards   []*binWriterShard
+	memPause pauser
 
-	ch    chan Result // primary write channel, buffered
-	segCh chan string           // completed segment paths for drain goroutine
-
-	// flusher state — accessed only by the flusher goroutine, no lock needed.
-	cur      *os.File
-	curEnc   *bseg.Encoder // one encoder per segment; nil when no segment is open
-	curBytes int64
-	curPath  string
-	segNum   int
-	jr       bseg.Record // reused record buffer; avoids a bseg.Record allocation per writeOne call
-
+	// Aggregated counters shared across shards (atomics — safe for concurrent use).
 	written  atomic.Int64 // records written to segment files
 	drained  atomic.Int64 // records successfully drained to DuckDB
 	segCount atomic.Int32 // total segments created
 	pendSeg  atomic.Int32 // segments queued for drain (not yet drained)
 
-	wg sync.WaitGroup
+	wg sync.WaitGroup // waits for all 2×N goroutines (flusher + drainer per shard)
 }
 
 // NewBinSegWriter creates a BinSegWriter that writes to segDir.
 //
 //   - maxMB: segment size threshold (0 → default 64 MB).
-//   - availMB: available RAM in MB for channel capacity tuning (0 → use default 32768).
+//   - availMB: available RAM in MB for channel capacity tuning (0 → use default).
 //   - rdb: the ResultDB to drain completed segments into (nil = accumulate on disk).
+//
+// Uses the default shard count (binDefaultShards = 4).
 func NewBinSegWriter(segDir string, maxMB int, availMB int, rdb ResultWriter) (*BinSegWriter, error) {
+	return NewBinSegWriterN(segDir, maxMB, availMB, 0, rdb)
+}
+
+// NewBinSegWriterN creates a BinSegWriter with an explicit shard count.
+// shards=0 uses the default (binDefaultShards = 4).
+func NewBinSegWriterN(segDir string, maxMB int, availMB int, shards int, rdb ResultWriter) (*BinSegWriter, error) {
 	if err := os.MkdirAll(segDir, 0o755); err != nil {
 		return nil, fmt.Errorf("bin writer: creating segment dir: %w", err)
 	}
 	if maxMB <= 0 {
 		maxMB = binSegDefaultMB
 	}
-	chanCap := binChanCapFromMem(availMB, 8)
-	w := &BinSegWriter{
-		segDir:   segDir,
-		maxBytes: int64(maxMB) * 1024 * 1024,
-		rdb:      rdb,
-		ch:       make(chan Result, chanCap),
-		segCh:    make(chan string, binSegQueueCap),
+	if shards <= 0 {
+		shards = binDefaultShards
 	}
-	w.wg.Add(2) // flusher + drainer
-	go w.flusher()
-	go w.drainer()
+	chanPerShard := binChanCapFromMem(availMB, 8, shards)
+	maxBytes := int64(maxMB) * 1024 * 1024
+
+	w := &BinSegWriter{
+		shards: make([]*binWriterShard, shards),
+	}
+	for i := range shards {
+		s := &binWriterShard{
+			idx:      i,
+			segDir:   segDir,
+			maxBytes: maxBytes,
+			rdb:      rdb,
+			ch:       make(chan Result, chanPerShard),
+			segCh:    make(chan string, binSegQueueCap),
+		}
+		w.shards[i] = s
+		w.wg.Add(2) // flusher + drainer
+		go w.flusher(s)
+		go w.drainer(s)
+	}
 	return w, nil
 }
 
-// Add enqueues a result for writing. It blocks only when the channel is full
-// (which only occurs if the flusher goroutine cannot keep up with disk writes).
-// Under normal operation this channel stays near-empty.
+// Add enqueues a result for writing. Routes to the appropriate shard by domain FNV-1a hash.
+// Blocks only when that shard's channel is full (flusher can't keep up with disk writes).
+// With N shards, a slow DuckDB write on shard k blocks only domains mapped to shard k.
 func (w *BinSegWriter) Add(r Result) {
-	w.ch <- r
+	w.shards[domainShardIdx(r.Domain, len(w.shards))].ch <- r
 }
 
-// Flush is a no-op for BinSegWriter; the flusher goroutine maintains continuous writes.
+// domainShardIdx returns the shard index for a domain using FNV-1a hash.
+// Consistent routing: the same domain always goes to the same shard.
+func domainShardIdx(domain string, n int) int {
+	h := uint32(2166136261)
+	for i := 0; i < len(domain); i++ {
+		h ^= uint32(domain[i])
+		h *= 16777619
+	}
+	return int(h % uint32(n))
+}
+
+// Flush is a no-op for BinSegWriter; flusher goroutines maintain continuous writes.
 func (w *BinSegWriter) Flush(_ context.Context) error { return nil }
 
-// Close drains the write channel, rotates the final segment, and waits for the drain
-// goroutine to finish. Returns only after all records are written to disk and drained
-// to the destination ResultDB (if configured).
+// Close drains all write channels, rotates final segments, and waits for all drain
+// goroutines to finish. Returns only after all records are written to disk and drained.
 func (w *BinSegWriter) Close() error {
-	close(w.ch)  // signals flusher to finish; flusher will close(segCh) on exit
-	w.wg.Wait()  // waits for both flusher and drainer to complete
+	for _, s := range w.shards {
+		close(s.ch) // each shard's flusher exits on channel close, then closes segCh
+	}
+	w.wg.Wait()
 	return nil
 }
 
@@ -132,20 +211,27 @@ func (w *BinSegWriter) Written() int64 { return w.written.Load() }
 // Drained returns the total number of records drained to DuckDB.
 func (w *BinSegWriter) Drained() int64 { return w.drained.Load() }
 
-// PendingSegs returns the number of segment files waiting to be drained.
+// PendingSegs returns the total number of segment files waiting to be drained.
 func (w *BinSegWriter) PendingSegs() int32 { return w.pendSeg.Load() }
 
-// SegCount returns the total number of segment files created.
+// SegCount returns the total number of segment files created across all shards.
 func (w *BinSegWriter) SegCount() int32 { return w.segCount.Load() }
 
-// ChanFill returns the fractional fill level of the write channel [0.0, 1.0].
-// Values near 1.0 indicate the flusher cannot keep up (disk I/O bottleneck).
+// ChanFill returns the maximum channel fill level across all shards [0.0, 1.0].
+// Values near 1.0 indicate at least one shard's flusher cannot keep up (disk I/O bottleneck).
 func (w *BinSegWriter) ChanFill() float64 {
-	c := cap(w.ch)
-	if c == 0 {
-		return 0
+	var maxFill float64
+	for _, s := range w.shards {
+		c := cap(s.ch)
+		if c == 0 {
+			continue
+		}
+		f := float64(len(s.ch)) / float64(c)
+		if f > maxFill {
+			maxFill = f
+		}
 	}
-	return float64(len(w.ch)) / float64(c)
+	return maxFill
 }
 
 // DrainLeftovers drains any leftover .bseg2 and .bseg segment files from a previous
@@ -162,8 +248,6 @@ func DrainLeftovers(segDir string, rdb ResultWriter) (int64, error) {
 		return 0, fmt.Errorf("drain leftovers: readdir %s: %w", segDir, err)
 	}
 
-	// Reuse a temporary BinSegWriter shell for its drainSeg method.
-	w := &BinSegWriter{rdb: rdb}
 	var total int64
 	for _, e := range entries {
 		name := e.Name()
@@ -172,7 +256,7 @@ func DrainLeftovers(segDir string, rdb ResultWriter) (int64, error) {
 		}
 		path := filepath.Join(segDir, name)
 		fmt.Fprintf(os.Stderr, "[binwriter] drain leftover: %s\n", name)
-		n := w.drainSeg(path) // drainSeg deletes the file on return
+		n := drainSegFile(path, rdb)
 		total += n
 	}
 	if total > 0 && rdb != nil {
@@ -181,45 +265,38 @@ func DrainLeftovers(segDir string, rdb ResultWriter) (int64, error) {
 	return total, nil
 }
 
-// shouldPause returns true when heap usage exceeds 70% of GOMEMLIMIT and the
-// write channel is more than 90% full. Used by the flusher to apply back-pressure.
-func (w *BinSegWriter) shouldPause() bool {
-	var ms runtime.MemStats
-	runtime.ReadMemStats(&ms)
-	limit := uint64(debug.SetMemoryLimit(-1))
-	return limit > 0 && ms.HeapAlloc > limit*7/10 && w.ChanFill() > 0.9
-}
-
 // ── flusher ──────────────────────────────────────────────────────────────────
 
-// flusher drains w.ch, encodes each Result as a bseg record, and writes to
+// flusher drains s.ch, encodes each Result as a bseg record, and writes to
 // the current segment file. When the segment reaches maxBytes, it's closed and
-// its path sent to segCh for the drain goroutine.
-func (w *BinSegWriter) flusher() {
+// its path sent to s.segCh for the drain goroutine.
+func (w *BinSegWriter) flusher(s *binWriterShard) {
 	defer func() {
-		w.closeCurrentSeg() // flush + close the final segment
-		close(w.segCh)      // signals drainer that no more segments are coming
+		w.closeSeg(s)  // flush + close the final segment
+		close(s.segCh) // signals drainer that no more segments are coming
 		w.wg.Done()
 	}()
-	for r := range w.ch {
-		if w.shouldPause() {
+	for r := range s.ch {
+		// Apply back-pressure: sleep briefly when heap is near limit AND channel is near full.
+		// memPause.check() is rate-limited to once/second to avoid GC lock overhead.
+		if w.memPause.check() && w.ChanFill() > 0.9 {
 			time.Sleep(100 * time.Millisecond)
 		}
-		w.writeOne(r)
+		w.writeOne(s, r)
 	}
 }
 
-func (w *BinSegWriter) writeOne(r Result) {
+func (w *BinSegWriter) writeOne(s *binWriterShard, r Result) {
 	// Rotate if current segment is at capacity or not yet opened.
-	if w.cur == nil || w.curBytes >= w.maxBytes {
-		w.rotateSeg()
-		if w.cur == nil {
+	if s.cur == nil || s.curBytes >= s.maxBytes {
+		w.rotateSeg(s)
+		if s.cur == nil {
 			return // failed to open new segment — skip record rather than block
 		}
 	}
 
-	// Reuse w.jr to avoid a bseg.Record allocation per record.
-	jr := &w.jr
+	// Reuse s.jr to avoid a bseg.Record allocation per record.
+	jr := &s.jr
 	jr.URL         = binSanitize(r.URL)
 	jr.StatusCode  = int32(r.StatusCode)
 	jr.ContentLen  = r.ContentLength
@@ -235,18 +312,14 @@ func (w *BinSegWriter) writeOne(r Result) {
 	jr.ContentType = binSanitize(r.ContentType)
 	jr.Failed      = r.Error != ""
 
-	if err := w.curEnc.Encode(jr); err != nil {
+	if err := s.curEnc.Encode(jr); err != nil {
 		return
 	}
-	w.curBytes += recEstimatedSize(jr)
+	s.curBytes += recEstimatedSize(jr)
 	w.written.Add(1)
 }
 
 // recEstimatedSize returns the estimated encoded byte size for a bseg record.
-// This is exact for the bseg format:
-//
-//	4 (rec_len) + 1 (flags) + 4 (status) + 8 (content_len) + 8 (fetch_ms) + 8 (crawled_ms)
-//	+ 9 string fields × 2 (uint16 length prefix) + sum of string byte lengths
 func recEstimatedSize(r *bseg.Record) int64 {
 	const fixed = 4 + 1 + 4 + 8 + 8 + 8 // rec_len + flags + status + content_len + fetch_ms + crawled_ms
 	const strOverhead = 9 * 2             // 9 string fields × 2 bytes each for uint16 length
@@ -256,14 +329,15 @@ func recEstimatedSize(r *bseg.Record) int64 {
 }
 
 // rotateSeg closes the current segment (if any) and opens a new one.
-func (w *BinSegWriter) rotateSeg() {
-	w.closeCurrentSeg()
-	w.segNum++
-	path := filepath.Join(w.segDir, fmt.Sprintf("seg_%06d.bseg2", w.segNum))
+// Segment filenames include the shard index to avoid collisions between shards.
+func (w *BinSegWriter) rotateSeg(s *binWriterShard) {
+	w.closeSeg(s)
+	s.segNum++
+	path := filepath.Join(s.segDir, fmt.Sprintf("s%02d_seg_%06d.bseg2", s.idx, s.segNum))
 	f, err := os.Create(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[binwriter] failed to create segment %s: %v\n", path, err)
-		w.cur = nil
+		s.cur = nil
 		return
 	}
 	enc, err := bseg.NewEncoder(f, binFlushBufSize)
@@ -271,62 +345,61 @@ func (w *BinSegWriter) rotateSeg() {
 		f.Close()
 		os.Remove(path)
 		fmt.Fprintf(os.Stderr, "[binwriter] failed to init encoder %s: %v\n", path, err)
-		w.cur = nil
+		s.cur = nil
 		return
 	}
-	w.cur = f
-	w.curEnc = enc
-	w.curBytes = 0
-	w.curPath = path
+	s.cur = f
+	s.curEnc = enc
+	s.curBytes = 0
+	s.curPath = path
 	w.segCount.Add(1)
 }
 
-// closeCurrentSeg flushes and closes the current segment file, then queues its path
-// for the drain goroutine. Idempotent: safe to call when w.cur == nil.
-func (w *BinSegWriter) closeCurrentSeg() {
-	if w.cur == nil {
+// closeSeg flushes and closes the current segment file, then queues its path
+// for the drain goroutine. Idempotent: safe to call when s.cur == nil.
+func (w *BinSegWriter) closeSeg(s *binWriterShard) {
+	if s.cur == nil {
 		return
 	}
-	path := w.curPath
-	curBytes := w.curBytes
-	w.curEnc.Close() // flushes bufio + patches rec_count + closes file
-	w.cur = nil
-	w.curEnc = nil // release encoder's internal buffer (GC-eligible immediately)
+	path := s.curPath
+	curBytes := s.curBytes
+	s.curEnc.Close() // flushes bufio + patches rec_count + closes file
+	s.cur = nil
+	s.curEnc = nil // release encoder's internal buffer (GC-eligible immediately)
 
 	if curBytes > 0 {
 		w.pendSeg.Add(1)
-		w.segCh <- path // may block if drain is 16+ segments behind (expected: never)
+		s.segCh <- path // may block if drain is 16+ segments behind (expected: never)
 	}
-	w.curBytes = 0
+	s.curBytes = 0
 }
 
 // ── drainer ──────────────────────────────────────────────────────────────────
 
-// drainer reads completed segment paths from segCh and drains each one into the
+// drainer reads completed segment paths from s.segCh and drains each one into the
 // destination ResultDB. Segment files are deleted after successful drain.
 // rdb.Flush is called once after all segments are drained to amortize DuckDB overhead.
-// Calling Flush per-segment (inside drainSeg) caused ~16s blocking per segment across
-// 16 shards, back-pressuring the flusher and filling the worker channel to 100%.
-func (w *BinSegWriter) drainer() {
+func (w *BinSegWriter) drainer(s *binWriterShard) {
 	defer func() {
-		if w.rdb != nil {
-			w.rdb.Flush(context.Background())
+		if s.rdb != nil {
+			s.rdb.Flush(context.Background())
 		}
 		w.wg.Done()
 	}()
-	for segPath := range w.segCh {
-		count := w.drainSeg(segPath)
+	for segPath := range s.segCh {
+		count := drainSegFile(segPath, s.rdb)
 		w.drained.Add(count)
 		w.pendSeg.Add(-1)
 	}
 }
 
-// drainSeg reads a binary segment file (.bseg2 or legacy .bseg), calls rdb.Add
+// drainSegFile reads a binary segment file (.bseg2 or legacy .bseg), calls rdb.Add
 // for each record, then deletes the file. Returns the number of records successfully decoded.
-func (w *BinSegWriter) drainSeg(path string) int64 {
+// Package-level so DrainLeftovers can use it without a BinSegWriter instance.
+func drainSegFile(path string, rdb ResultWriter) int64 {
 	defer os.Remove(path) // always delete — even on partial read
 
-	if w.rdb == nil {
+	if rdb == nil {
 		return 0 // drain disabled, just clean up the file
 	}
 
@@ -341,7 +414,7 @@ func (w *BinSegWriter) drainSeg(path string) int64 {
 	if err != nil {
 		if errors.Is(err, bseg.ErrBadMagic) || errors.Is(err, bseg.ErrBadVersion) {
 			// Fallback: try legacy gob format (old .bseg files).
-			return w.drainSegGob(path, f)
+			return drainSegGobFile(path, f, rdb)
 		}
 		fmt.Fprintf(os.Stderr, "[binwriter] drain header %s: %v\n", path, err)
 		return 0
@@ -353,15 +426,15 @@ func (w *BinSegWriter) drainSeg(path string) int64 {
 		if err := dec.Decode(&rec); err != nil {
 			break // EOF or corrupt
 		}
-		w.rdb.Add(bsegToResult(&rec))
+		rdb.Add(bsegToResult(&rec))
 		count++
 	}
 	return count
 }
 
-// drainSegGob reads a legacy gob-encoded .bseg segment file. f must be seekable.
+// drainSegGobFile reads a legacy gob-encoded .bseg segment file. f must be seekable.
 // It seeks back to offset 0 before decoding.
-func (w *BinSegWriter) drainSegGob(path string, f *os.File) int64 {
+func drainSegGobFile(path string, f *os.File, rdb ResultWriter) int64 {
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		fmt.Fprintf(os.Stderr, "[binwriter] drain gob seek %s: %v\n", path, err)
 		return 0
@@ -374,7 +447,7 @@ func (w *BinSegWriter) drainSegGob(path string, f *os.File) int64 {
 		if err := dec.Decode(&rec); err != nil {
 			break // EOF or corrupt record
 		}
-		w.rdb.Add(rec.toResult())
+		rdb.Add(rec.toResult())
 		count++
 	}
 	return count
@@ -402,7 +475,7 @@ func bsegToResult(r *bseg.Record) Result {
 // ── legacy gob support ────────────────────────────────────────────────────────
 
 // binRecord is the legacy gob serialization type for old .bseg files.
-// Kept only for backward-compatible drainSegGob reads.
+// Kept only for backward-compatible drainSegGobFile reads.
 type binRecord struct {
 	URL           string
 	StatusCode    int

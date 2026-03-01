@@ -73,7 +73,7 @@ func NewResultDB(dir string, shardCount, batchSize, duckMemPerShardMB int) (*Res
 		s := &resultShard{
 			db:      db,
 			batchSz: batchSize,
-			flushCh: make(chan []crawl.Result, 2), // back-pressure: prevents unbounded body accumulation
+			flushCh: make(chan []crawl.Result, 16), // 16 batches × batchSz headroom before blocking
 			done:    make(chan struct{}),
 		}
 
@@ -321,7 +321,7 @@ func (rdb *ResultDB) ReopenShards() error {
 		s.db = db
 
 		// Start a fresh flusher goroutine for the next batch.
-		s.flushCh = make(chan []crawl.Result, 2)
+		s.flushCh = make(chan []crawl.Result, 16)
 		s.done = make(chan struct{})
 		go s.flusher(&rdb.flushed)
 	}
