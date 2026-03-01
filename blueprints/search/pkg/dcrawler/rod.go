@@ -249,6 +249,65 @@ func (rp *rodPool) tryRestart() error {
 	return nil
 }
 
+// solveChallengeUnblocked creates a temporary page WITHOUT resource blocking,
+// navigates to the challenge URL, and waits up to 15s for CF Turnstile to solve.
+// Returns the cookies from the solved page (including cf_clearance).
+// The caller should inject these cookies into the main page and re-navigate.
+func (rp *rodPool) solveChallengeUnblocked(ctx context.Context, pageURL string) ([]*proto.NetworkCookie, error) {
+	rp.mu.Lock()
+	b := rp.browser
+	rp.mu.Unlock()
+
+	// Create a fresh page WITHOUT resource blocking so CF Turnstile JS can load.
+	p, err := stealth.Page(b)
+	if err != nil {
+		return nil, fmt.Errorf("challenge page: %w", err)
+	}
+	defer p.Close()
+
+	solveCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	sp := p.Context(solveCtx)
+
+	navCmd := proto.PageNavigate{URL: pageURL}
+	if _, err := navCmd.Call(sp); err != nil {
+		return nil, fmt.Errorf("challenge navigate: %w", err)
+	}
+
+	// Poll title until "Just a moment..." clears (CF solved) or timeout.
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) && solveCtx.Err() == nil {
+		info, err := sp.Timeout(2 * time.Second).Info()
+		if err == nil && info != nil && info.Title != "Just a moment..." && info.Title != "" {
+			break
+		}
+		select {
+		case <-time.After(500 * time.Millisecond):
+		case <-solveCtx.Done():
+		}
+	}
+
+	cookies, err := p.Cookies([]string{pageURL})
+	if err != nil {
+		return nil, fmt.Errorf("challenge cookies: %w", err)
+	}
+	return cookies, nil
+}
+
+// injectJarCookies injects stored domain cookies into the page before navigation.
+// This ensures CF clearance cookies solved by another tab are reused immediately.
+func (rp *rodPool) injectJarCookies(page *rod.Page, pageURL string) {
+	u, err := url.Parse(pageURL)
+	if err != nil {
+		return
+	}
+	stored := rp.jar.get(u.Hostname())
+	if len(stored) == 0 {
+		return
+	}
+	_ = page.SetCookies(cookiesToParams(stored))
+}
+
 // setupResourceBlocking configures Chrome to block heavy resources (images, fonts, CSS, etc.)
 // for faster page loads. Only documents, scripts, and data requests are allowed through.
 // This dramatically reduces page load time and Chrome resource usage.
@@ -453,6 +512,9 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		}
 	}()
 
+	// Inject stored domain cookies (e.g., CF clearance from a previously solved challenge).
+	rp.injectJarCookies(page, item.URL)
+
 	// Send the navigate command — Chrome starts loading immediately.
 	navRes, navErr := proto.PageNavigate{URL: item.URL}.Call(p)
 	if navErr != nil {
@@ -563,18 +625,25 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 			}
 		}
 		if isChallenge {
-			c.stats.SetRodPhase(workerID, "cf-check")
-			challengeEnd := time.Now().Add(8 * time.Second)
-			for time.Now().Before(challengeEnd) && fetchCtx.Err() == nil {
-				select {
-				case <-fetchCtx.Done():
-				case <-time.After(500 * time.Millisecond):
-				}
-				// Check if challenge resolved: page grew beyond challenge size.
-				if htmlLen, hErr := p.Timeout(1 * time.Second).Eval(`() => document.documentElement.outerHTML.length`); hErr == nil && htmlLen != nil {
-					if htmlLen.Value.Int() > 5000 {
-						time.Sleep(500 * time.Millisecond)
-						break
+			c.stats.SetRodPhase(workerID, "cf-solve")
+			// Resource blocking prevents CF Turnstile JS from loading on this page.
+			// Spin up a temporary unblocked page to solve the challenge, extract cookies,
+			// then inject into this page and re-navigate.
+			if u, parseErr := url.Parse(item.URL); parseErr == nil {
+				domain := u.Hostname()
+				solvedCookies, solveErr := rp.solveChallengeUnblocked(fetchCtx, item.URL)
+				if solveErr == nil && len(solvedCookies) > 0 {
+					rp.jar.store(domain, solvedCookies)
+					_ = page.SetCookies(cookiesToParams(solvedCookies))
+					// Re-navigate with clearance cookies — CF should skip challenge.
+					renavCmd := proto.PageNavigate{URL: item.URL}
+					if _, renavErr := renavCmd.Call(p); renavErr == nil {
+						// Wait for DOM ready after re-navigation.
+						select {
+						case <-dclCh:
+						case <-time.After(timeout):
+						case <-fetchCtx.Done():
+						}
 					}
 				}
 			}
@@ -768,6 +837,13 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 	}
 	if c.config.StoreLinks && len(meta.Links) > 0 {
 		c.resultDB.AddLinks(result.URLHash, meta.Links)
+	}
+
+	// Merge page cookies into jar so other tabs can reuse them (CF clearance, session cookies).
+	if u, parseErr := url.Parse(finalURL); parseErr == nil {
+		if pageCookies, cookieErr := page.Cookies([]string{finalURL}); cookieErr == nil && len(pageCookies) > 0 {
+			rp.jar.merge(u.Hostname(), pageCookies)
+		}
 	}
 
 	c.resultDB.AddPage(result)
