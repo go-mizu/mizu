@@ -179,23 +179,26 @@ install-chrome: ## One-time: install Chromium via apt on remote server (requires
 	@echo "Chromium installed on $(REMOTE_SSH)"
 
 .PHONY: download-chrome
-download-chrome: ## Download chrome-headless-shell + extract required system libs to ~/bin/ (no sudo needed, SERVER=1 or 2)
+download-chrome: ## Download chrome-headless-shell to ~/bin/chrome-headless/ + wrapper at ~/bin/chromium (no sudo needed, SERVER=1 or 2)
 	@echo "Downloading chrome-headless-shell on $(REMOTE_SSH)..."
 	@$(SSH) $(REMOTE_SSH) 'bash -lc "set -e; \
-		mkdir -p \$$HOME/bin \$$HOME/bin/chrome-libs; \
+		mkdir -p \$$HOME/bin \$$HOME/bin/chrome-headless \$$HOME/bin/chrome-libs; \
 		VER=\$$(curl -fsSL https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_STABLE); \
 		echo \"Chrome version: \$$VER\"; \
 		curl -fsSL \"https://storage.googleapis.com/chrome-for-testing-public/\$${VER}/linux64/chrome-headless-shell-linux64.zip\" -o /tmp/chrome-headless.zip; \
 		unzip -o /tmp/chrome-headless.zip -d /tmp/chrome-headless-extract; \
-		install -m 0755 /tmp/chrome-headless-extract/chrome-headless-shell-linux64/chrome-headless-shell \$$HOME/bin/chromium; \
+		cp -r /tmp/chrome-headless-extract/chrome-headless-shell-linux64/. \$$HOME/bin/chrome-headless/; \
+		chmod +x \$$HOME/bin/chrome-headless/chrome-headless-shell; \
 		rm -rf /tmp/chrome-headless.zip /tmp/chrome-headless-extract; \
+		printf '"'"'#!/usr/bin/env bash\nexec \"$$HOME/bin/chrome-headless/chrome-headless-shell\" \"\$$@\"\n'"'"' > \$$HOME/bin/chromium; \
+		chmod +x \$$HOME/bin/chromium; \
 		echo \"Downloading required system libs via apt-get download (no sudo)...\"; \
 		cd /tmp && apt-get download libnspr4 libnss3 libatk1.0-0 libatk-bridge2.0-0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libxkbcommon0 libatspi2.0-0 libxrender1 libwayland-server0 2>/dev/null || true; \
 		for f in /tmp/*.deb; do [ -f \"\$$f\" ] && dpkg-deb -x \"\$$f\" /tmp/chrome-libs-extract || true; done; \
 		find /tmp/chrome-libs-extract -name '*.so*' -exec cp -P {} \$$HOME/bin/chrome-libs/ \\; 2>/dev/null || true; \
 		rm -f /tmp/*.deb; rm -rf /tmp/chrome-libs-extract; \
-		LD_LIBRARY_PATH=\$$HOME/bin/chrome-libs \$$HOME/bin/chromium --version 2>&1 || echo \"(version check may fail - binary installed, libs in ~/bin/chrome-libs/)\""'
-	@echo "chrome-headless-shell installed at $(REMOTE_SSH):~/bin/chromium"
+		LD_LIBRARY_PATH=\$$HOME/bin/chrome-libs \$$HOME/bin/chromium --version 2>&1 || echo \"(version check may fail - binary installed)\""'
+	@echo "chrome-headless-shell installed at $(REMOTE_SSH):~/bin/chrome-headless/, wrapper at ~/bin/chromium"
 
 .PHONY: deploy-linux-noble-browser
 deploy-linux-noble-browser: build-linux-noble ## Deploy Ubuntu 24.04 binary with Chrome auto-detect wrapper (run download-chrome or install-chrome first)
