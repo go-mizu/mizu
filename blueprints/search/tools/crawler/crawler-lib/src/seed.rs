@@ -93,6 +93,59 @@ pub fn load_seeds_parquet(path: &str, limit: usize) -> Result<Vec<SeedURL>> {
     Ok(seeds)
 }
 
+/// Load seed URLs from a CC index parquet file.
+/// Filters for `warc_filename IS NOT NULL` and extracts `url` + `url_host_registered_domain`.
+pub fn load_seeds_cc_parquet(path: &str, limit: usize, filters: &CcSeedFilter) -> Result<Vec<SeedURL>> {
+    let conn = Connection::open_in_memory()?;
+
+    let escaped = path.replace('\'', "''");
+    let mut conditions = vec!["warc_filename IS NOT NULL".to_string()];
+
+    if !filters.status_codes.is_empty() {
+        let codes: Vec<String> = filters.status_codes.iter().map(|c| c.to_string()).collect();
+        conditions.push(format!("fetch_status IN ({})", codes.join(",")));
+    }
+    if !filters.mime_types.is_empty() {
+        let quoted: Vec<String> = filters.mime_types.iter().map(|m| format!("'{}'", m.replace('\'', "''"))).collect();
+        conditions.push(format!("content_mime_detected IN ({})", quoted.join(",")));
+    }
+    if !filters.languages.is_empty() {
+        for lang in &filters.languages {
+            conditions.push(format!("content_languages LIKE '%{}%'", lang.replace('\'', "''")));
+        }
+    }
+
+    let where_clause = conditions.join(" AND ");
+    let limit_clause = if limit > 0 { format!(" LIMIT {}", limit) } else { String::new() };
+
+    let query = format!(
+        "SELECT url, COALESCE(url_host_registered_domain, '') as domain \
+         FROM read_parquet('{}') WHERE {}{}",
+        escaped, where_clause, limit_clause
+    );
+
+    let mut stmt = conn.prepare(&query)?;
+    let seeds: Vec<SeedURL> = stmt
+        .query_map([], |row| {
+            Ok(SeedURL {
+                url: row.get(0)?,
+                domain: row.get(1)?,
+            })
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(seeds)
+}
+
+/// Filters for CC seed loading.
+#[derive(Default, Clone)]
+pub struct CcSeedFilter {
+    pub status_codes: Vec<i32>,
+    pub mime_types: Vec<String>,
+    pub languages: Vec<String>,
+}
+
 /// Load timeout URLs from failed DB for pass-2 retry.
 /// Only loads URLs with reason='http_timeout' detected after `since`.
 pub fn load_retry_seeds(path: &str, since: NaiveDateTime) -> Result<Vec<SeedURL>> {

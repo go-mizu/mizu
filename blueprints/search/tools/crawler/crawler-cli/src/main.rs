@@ -3,6 +3,7 @@ use std::io::IsTerminal;
 use tracing_subscriber::EnvFilter;
 
 mod cc;
+mod common;
 mod display;
 mod hn;
 mod tui;
@@ -40,7 +41,7 @@ enum HnAction {
 
 #[derive(Subcommand)]
 enum CcAction {
-    /// Recrawl Common Crawl URLs (stub — coming soon)
+    /// Recrawl Common Crawl URLs from CC index parquet
     Recrawl(Box<cc::RecrawlArgs>),
 }
 
