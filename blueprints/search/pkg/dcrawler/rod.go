@@ -81,6 +81,70 @@ type rodPool struct {
 	config      Config
 	lastRestart time.Time
 	restarts    int
+	jar         *cookieJar // shared domain cookie store (CF clearance, session cookies)
+}
+
+// cookieJar stores cookies per domain so CF clearance cookies solved by one tab
+// are shared with all other tabs. Thread-safe.
+type cookieJar struct {
+	mu      sync.RWMutex
+	cookies map[string][]*proto.NetworkCookie // hostname → cookies
+}
+
+func newCookieJar() *cookieJar {
+	return &cookieJar{cookies: make(map[string][]*proto.NetworkCookie)}
+}
+
+// store replaces all cookies for a hostname.
+func (j *cookieJar) store(host string, cookies []*proto.NetworkCookie) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.cookies[host] = cookies
+}
+
+// merge merges new cookies into existing ones for a hostname (newer values win).
+func (j *cookieJar) merge(host string, incoming []*proto.NetworkCookie) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	existing := j.cookies[host]
+	m := make(map[string]*proto.NetworkCookie, len(existing)+len(incoming))
+	for _, c := range existing {
+		m[c.Name] = c
+	}
+	for _, c := range incoming {
+		m[c.Name] = c // newer wins
+	}
+	merged := make([]*proto.NetworkCookie, 0, len(m))
+	for _, c := range m {
+		merged = append(merged, c)
+	}
+	j.cookies[host] = merged
+}
+
+// get returns stored cookies for a hostname (nil if none).
+func (j *cookieJar) get(host string) []*proto.NetworkCookie {
+	j.mu.RLock()
+	defer j.mu.RUnlock()
+	return j.cookies[host]
+}
+
+// cookiesToParams converts NetworkCookie (read) to NetworkCookieParam (write).
+func cookiesToParams(cookies []*proto.NetworkCookie) []*proto.NetworkCookieParam {
+	params := make([]*proto.NetworkCookieParam, 0, len(cookies))
+	for _, c := range cookies {
+		if c.Name != "" {
+			params = append(params, &proto.NetworkCookieParam{
+				Name:     c.Name,
+				Value:    c.Value,
+				Domain:   c.Domain,
+				Path:     c.Path,
+				Secure:   c.Secure,
+				HTTPOnly: c.HTTPOnly,
+				SameSite: c.SameSite,
+			})
+		}
+	}
+	return params
 }
 
 func newRodPool(cfg Config) (*rodPool, error) {
@@ -104,6 +168,7 @@ func newRodPool(cfg Config) (*rodPool, error) {
 		browser: browser,
 		pool:    pool,
 		config:  cfg,
+		jar:     newCookieJar(),
 	}, nil
 }
 
