@@ -1,3 +1,4 @@
+use crate::bodystore::BodyStore;
 use crate::stats::Stats;
 use std::sync::Arc;
 use std::time::Duration;
@@ -109,6 +110,11 @@ pub struct Config {
     /// The caller (CLI) creates Arc<Stats>, passes here, and reads from it in a TUI thread.
     #[allow(clippy::type_complexity)]
     pub live_stats: Option<Arc<Stats>>,
+
+    /// Optional content-addressable body store.
+    /// When set, HTML bodies are written to the CAS and CrawlResult.body_cid is populated.
+    /// Compatible with Go's pkg/crawl/bodystore format: sha256:{hex64} CIDs.
+    pub body_store: Option<Arc<BodyStore>>,
 }
 
 impl Default for Config {
@@ -135,6 +141,7 @@ impl Default for Config {
             output_dir: String::new(),
             failed_db_path: String::new(),
             live_stats: None,
+            body_store: None,
         }
     }
 }

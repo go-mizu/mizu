@@ -514,6 +514,7 @@ async fn hyper_fetch_one(
             crawled_at: chrono::Utc::now().naive_utc(),
             error: String::new(),
             body: String::new(),
+            body_cid: String::new(),
         };
     }
 

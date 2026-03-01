@@ -1,6 +1,6 @@
 use super::{FailureWriter, ResultWriter};
 use crate::types::{CrawlResult, FailedDomain, FailedURL};
-use crate::writer::duckdb_writer::{flush_result_batch, open_result_db, shard_for_url};
+use crate::writer::duckdb_writer::{flush_failed_url_batch, flush_result_batch, open_failed_db, open_result_db, shard_for_url};
 use anyhow::{Context, Result};
 use rayon::prelude::*;
 use rkyv::rancor::Error as RkyvError;
@@ -298,17 +298,49 @@ fn list_segment_files(dir: &Path) -> Result<Vec<PathBuf>> {
 // BinaryFailureWriter
 // ---------------------------------------------------------------------------
 
+/// Config for draining binary failure URL segments into `failed.duckdb` after close().
+///
+/// When set on a `BinaryFailureWriter`, `close()` will read all `seg_*.bin` files
+/// from `failures/failed_urls/` and insert them into a DuckDB `failed_urls` table
+/// at `db_path`. This allows `load_retry_seeds` to load pass-2 retry seeds.
+pub struct BinFailureDrainConfig {
+    /// Path to `failed.duckdb` that will be created/opened for retry seed loading.
+    pub db_path: PathBuf,
+    /// DuckDB memory limit per shard in MB.
+    pub mem_mb: usize,
+    /// Rows buffered per batch INSERT.
+    pub batch_size: usize,
+}
+
 /// Non-blocking failure writer that serializes FailedURL and FailedDomain
 /// to separate segment file streams via bounded crossbeam channels.
+///
+/// When a `BinFailureDrainConfig` is provided, `close()` also drains the URL
+/// segments into `failed.duckdb` so that pass-2 retry can load them.
 pub struct BinaryFailureWriter {
     url_tx: Mutex<Option<crossbeam_channel::Sender<FailedURL>>>,
     domain_tx: Mutex<Option<crossbeam_channel::Sender<FailedDomain>>>,
     handles: Mutex<Vec<std::thread::JoinHandle<()>>>,
     dir: PathBuf,
+    drain_config: Option<BinFailureDrainConfig>,
 }
 
 impl BinaryFailureWriter {
     pub fn new(dir: &Path, channel_cap: usize, seg_size_mb: usize) -> Result<Self> {
+        Self::new_inner(dir, channel_cap, seg_size_mb, None)
+    }
+
+    /// Create with a drain config: after close(), URL segments are imported into DuckDB.
+    pub fn with_drain(dir: &Path, drain: BinFailureDrainConfig) -> Result<Self> {
+        Self::new_inner(dir, DEFAULT_CHANNEL_CAP, DEFAULT_SEG_SIZE_MB, Some(drain))
+    }
+
+    fn new_inner(
+        dir: &Path,
+        channel_cap: usize,
+        seg_size_mb: usize,
+        drain_config: Option<BinFailureDrainConfig>,
+    ) -> Result<Self> {
         std::fs::create_dir_all(dir)
             .with_context(|| format!("failed to create failure writer dir: {}", dir.display()))?;
 
@@ -355,10 +387,11 @@ impl BinaryFailureWriter {
             domain_tx: Mutex::new(Some(domain_tx)),
             handles: Mutex::new(vec![url_handle, domain_handle]),
             dir: dir.to_path_buf(),
+            drain_config,
         })
     }
 
-    /// Create with default channel capacity (65536) and segment size (64 MB).
+    /// Create with default channel capacity (65536) and segment size (64 MB), no drain.
     pub fn with_defaults(dir: &Path) -> Result<Self> {
         Self::new(dir, DEFAULT_CHANNEL_CAP, DEFAULT_SEG_SIZE_MB)
     }
@@ -408,6 +441,29 @@ impl FailureWriter for BinaryFailureWriter {
             h.join()
                 .map_err(|_| anyhow::anyhow!("failure flusher thread panicked"))?;
         }
+
+        // Drain binary URL segments → failed.duckdb for pass-2 retry.
+        if let Some(ref cfg) = self.drain_config {
+            let url_dir = self.dir.join("failed_urls");
+            if url_dir.exists() {
+                let records = read_failed_url_segments(&url_dir)
+                    .context("reading failed_url binary segments for drain")?;
+                if !records.is_empty() {
+                    let conn = open_failed_db(&cfg.db_path, cfg.mem_mb)
+                        .context("opening failed.duckdb for drain")?;
+                    for chunk in records.chunks(cfg.batch_size.max(1)) {
+                        flush_failed_url_batch(&conn, chunk)
+                            .context("inserting failed URLs into duckdb")?;
+                    }
+                    info!(
+                        "bin-fail-drain: {} failed URL records → {:?}",
+                        records.len(),
+                        cfg.db_path
+                    );
+                }
+            }
+        }
+
         Ok(())
     }
 }
@@ -607,6 +663,7 @@ mod tests {
             crawled_at: chrono::Utc::now().naive_utc(),
             error: String::new(),
             body: String::new(),
+            body_cid: String::new(),
         }
     }
 

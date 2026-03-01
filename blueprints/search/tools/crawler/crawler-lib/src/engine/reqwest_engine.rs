@@ -94,7 +94,8 @@ impl super::Engine for ReqwestEngine {
         // This replaces PeakTracker (which used try_lock and almost never fired at 16K workers).
         let peak_stats = Arc::clone(&stats);
         tokio::spawn(async move {
-            let mut prev_total = 0u64;
+            // Initialize from current total so we don't count prior-pass history on restart.
+            let mut prev_total = peak_stats.total.load(Ordering::Relaxed);
             let mut interval = tokio::time::interval(Duration::from_millis(100));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
@@ -311,7 +312,14 @@ async fn process_one_url(
     };
 
     // Fetch the URL.
-    let fetch_result = fetch_one(client, &seed, effective_timeout, cfg.max_body_bytes).await;
+    let fetch_result = fetch_one(
+        client,
+        &seed,
+        effective_timeout,
+        cfg.max_body_bytes,
+        cfg.body_store.as_deref(),
+    )
+    .await;
     stats.total.fetch_add(1, Ordering::Relaxed);
 
     match fetch_result {
@@ -609,8 +617,11 @@ fn classify_reqwest_error(e: &reqwest::Error) -> ErrorCategory {
         }
     } else if e.is_redirect() {
         ErrorCategory::Connection
+    } else if e.is_decode() || e.is_body() {
+        // Server responded but body decompression or read failed (e.g. invalid gzip/deflate).
+        // Count as a connection-category failure rather than an unknown "other".
+        ErrorCategory::Connection
     } else {
-        // Body, decode, or other errors
         ErrorCategory::Other
     }
 }
@@ -636,6 +647,7 @@ async fn fetch_one(
     seed: &SeedURL,
     timeout: Duration,
     max_body_bytes: usize,
+    body_store: Option<&crate::bodystore::BodyStore>,
 ) -> Result<CrawlResult, (reqwest::Error, i64)> {
     let start = Instant::now();
 
@@ -728,6 +740,17 @@ async fn fetch_one(
         (String::new(), String::new(), String::new())
     };
 
+    // Store body in CAS when a body store is configured and body was read.
+    let body_cid = if let Some(store) = body_store {
+        if should_read_body && !body_bytes.is_empty() {
+            store.put(&body_bytes).unwrap_or_default()
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
     Ok(CrawlResult {
         url: seed.url.clone(),
         domain: seed.domain.clone(),
@@ -742,6 +765,7 @@ async fn fetch_one(
         crawled_at: chrono::Utc::now().naive_utc(),
         error: String::new(),
         body: String::new(), // always empty — avoids DuckDB overflow blocks
+        body_cid,
     })
 }
 
@@ -834,16 +858,47 @@ pub(crate) fn extract_metadata(body: &[u8]) -> (String, String, String) {
     )
 }
 
+/// ASCII case-insensitive substring search.
+///
+/// `needle` must be pure lowercase ASCII. Searches `haystack` byte-by-byte,
+/// treating 'A'-'Z' as equivalent to 'a'-'z'. Returns the byte offset of
+/// the first match in `haystack`, or `None`.
+///
+/// Since the needle starts with an ASCII byte, the returned position is always
+/// a valid UTF-8 char boundary in `haystack` — safe to slice at directly.
+fn ascii_find(haystack: &str, needle: &str) -> Option<usize> {
+    let h = haystack.as_bytes();
+    let n = needle.as_bytes();
+    if n.is_empty() {
+        return Some(0);
+    }
+    if h.len() < n.len() {
+        return None;
+    }
+    'outer: for i in 0..=(h.len() - n.len()) {
+        for (j, &nb) in n.iter().enumerate() {
+            let hb = h[i + j];
+            let hb_ci = if hb.is_ascii_uppercase() { hb | 0x20 } else { hb };
+            if hb_ci != nb {
+                continue 'outer;
+            }
+        }
+        return Some(i);
+    }
+    None
+}
+
 /// Extract text content between an opening tag and its closing tag.
 /// e.g. `<title>Hello World</title>` -> "Hello World"
 fn extract_tag_content(html: &str, open_tag: &str, close_tag: &str) -> String {
-    let lower = html.to_lowercase();
-    if let Some(start) = lower.find(open_tag) {
+    // Use ascii_find instead of to_lowercase().find() to avoid char-boundary mismatches:
+    // to_lowercase() can change byte lengths for non-ASCII chars (e.g. Turkish İ),
+    // causing the position from `lower` to be invalid in the original `html`.
+    if let Some(start) = ascii_find(html, open_tag) {
         let rest = &html[start..];
         if let Some(gt) = rest.find('>') {
             let after = &rest[gt + 1..];
-            let lower_after = after.to_lowercase();
-            if let Some(end) = lower_after.find(close_tag) {
+            if let Some(end) = ascii_find(after, close_tag) {
                 return html_decode(after[..end].trim());
             }
         }
@@ -853,26 +908,24 @@ fn extract_tag_content(html: &str, open_tag: &str, close_tag: &str) -> String {
 
 /// Extract the `content` attribute from a `<meta name="..." content="...">` tag.
 fn extract_meta_content(html: &str, name: &str) -> String {
-    let lower = html.to_lowercase();
     let search = format!("name=\"{}\"", name);
 
-    if let Some(pos) = lower.find(&search) {
+    if let Some(pos) = ascii_find(html, &search) {
         // Search in a window around the match for the content attribute.
         // The meta tag could have name before or after content.
-        // Use floor_char_boundary to avoid slicing in the middle of a multi-byte char.
+        // floor_char_boundary ensures window boundaries are valid UTF-8 char boundaries.
         let window_start = html.floor_char_boundary(pos.saturating_sub(200));
         let window_end = html.floor_char_boundary(html.len().min(pos + 500));
         let window = &html[window_start..window_end];
-        let window_lower = window.to_lowercase();
 
-        if let Some(content_pos) = window_lower.find("content=\"") {
+        if let Some(content_pos) = ascii_find(window, "content=\"") {
             let after = &window[content_pos + 9..];
             if let Some(end) = after.find('"') {
                 return html_decode(&after[..end]);
             }
         }
         // Also try content='...' (single quotes)
-        if let Some(content_pos) = window_lower.find("content='") {
+        if let Some(content_pos) = ascii_find(window, "content='") {
             let after = &window[content_pos + 9..];
             if let Some(end) = after.find('\'') {
                 return html_decode(&after[..end]);
@@ -884,17 +937,15 @@ fn extract_meta_content(html: &str, name: &str) -> String {
 
 /// Extract the `lang` attribute from the `<html>` tag.
 fn extract_lang_attr(html: &str) -> String {
-    let lower = html.to_lowercase();
-
     // Find lang="..." (double quotes)
-    if let Some(pos) = lower.find("lang=\"") {
+    if let Some(pos) = ascii_find(html, "lang=\"") {
         let after = &html[pos + 6..];
         if let Some(end) = after.find('"') {
             return after[..end].to_string();
         }
     }
     // Try lang='...' (single quotes)
-    if let Some(pos) = lower.find("lang='") {
+    if let Some(pos) = ascii_find(html, "lang='") {
         let after = &html[pos + 6..];
         if let Some(end) = after.find('\'') {
             return after[..end].to_string();

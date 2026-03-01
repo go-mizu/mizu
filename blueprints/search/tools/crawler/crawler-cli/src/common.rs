@@ -5,11 +5,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use crawler_lib::bodystore::BodyStore;
 use crawler_lib::config::{Config, EngineType, WriterType};
 use crawler_lib::job::run_job;
 use crawler_lib::stats::Stats;
 use crawler_lib::types::SeedURL;
-use crawler_lib::writer::binary::{BinDrainConfig, BinaryFailureWriter, BinaryResultWriter};
+use crawler_lib::writer::binary::{BinDrainConfig, BinFailureDrainConfig, BinaryFailureWriter, BinaryResultWriter};
 use crawler_lib::writer::devnull::{DevNullFailureWriter, DevNullResultWriter};
 use crawler_lib::writer::duckdb_writer::{DuckDBFailureWriter, DuckDBResultWriter};
 use crawler_lib::writer::parquet_writer::{ParquetFailureWriter, ParquetResultWriter};
@@ -107,7 +108,12 @@ pub fn create_failure_writer(
         }
         WriterType::Binary => {
             let failures_dir = output_dir.join("failures");
-            let w = BinaryFailureWriter::with_defaults(&failures_dir)?;
+            let drain = BinFailureDrainConfig {
+                db_path: PathBuf::from(failed_db_path),
+                mem_mb,
+                batch_size,
+            };
+            let w = BinaryFailureWriter::with_drain(&failures_dir, drain)?;
             Ok(Arc::new(w))
         }
     }
@@ -131,6 +137,9 @@ pub struct CrawlJobParams {
     pub db_shards: usize,
     pub db_mem_mb: usize,
     pub no_tui: bool,
+    /// Optional body store directory. When set, HTML bodies are stored in a
+    /// content-addressable store (SHA-256, gzip) and body_cid is populated.
+    pub body_store_dir: Option<String>,
 }
 
 /// Run a two-pass crawl job with TUI, writers, retry logic, and summary.
@@ -161,6 +170,12 @@ pub async fn run_crawl_job(params: CrawlJobParams) -> Result<()> {
     cfg.output_dir = output_dir_str.clone();
     cfg.failed_db_path = failed_db_str.clone();
     cfg.live_stats = Some(live_stats.clone());
+    if let Some(ref dir) = params.body_store_dir {
+        let resolved = expand_home(dir);
+        let store = BodyStore::open(&resolved)?;
+        cfg.body_store = Some(Arc::new(store));
+        println!("Body store: {}", resolved.display());
+    }
 
     println!(
         "Config: engine={} writer={} workers={} inner_n={} timeout={}ms retry_timeout={}ms",

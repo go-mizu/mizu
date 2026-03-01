@@ -82,7 +82,8 @@ pub struct CrawlResult {
     #[rkyv(with = AsMillis)]
     pub crawled_at: NaiveDateTime,
     pub error: String,
-    pub body: String, // always empty (DuckDB overflow block fix)
+    pub body: String,    // always "" (DuckDB overflow block fix)
+    pub body_cid: String, // CAS ref "sha256:{hex64}"; "" = not stored
 }
 
 impl CrawlResult {
@@ -101,6 +102,7 @@ impl CrawlResult {
             crawled_at: chrono::Utc::now().naive_utc(),
             error,
             body: String::new(),
+            body_cid: String::new(),
         }
     }
 }

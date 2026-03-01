@@ -172,7 +172,7 @@ pub async fn run_job(
                     retry_cfg.workers = cfg.pass2_workers;
                 }
 
-                let pass2 = engine
+                let pass2_cumulative = engine
                     .run(
                         retry_seeds,
                         &retry_cfg,
@@ -182,6 +182,10 @@ pub async fn run_job(
                     .await?;
 
                 failure_writer2.close()?;
+
+                // The engine reuses the shared live_stats, so pass2_cumulative is the
+                // cumulative snapshot (pass1 + pass2). Subtract pass1 to get the delta.
+                let pass2 = pass2_cumulative.delta(&pass1);
 
                 tracing::info!(
                     ok = pass2.ok,

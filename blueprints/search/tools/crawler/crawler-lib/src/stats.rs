@@ -285,6 +285,44 @@ impl StatsSnapshot {
         }
     }
 
+    /// Compute delta of `self` relative to a `base` snapshot taken earlier.
+    ///
+    /// Use this when `live_stats` is shared across multiple engine passes: the
+    /// second pass snapshot is cumulative (base + new work), so subtracting the
+    /// first-pass snapshot yields only the new work done in the second pass.
+    /// All additive counters are saturating-subtracted; `peak_rps` is kept as-is.
+    pub fn delta(&self, base: &StatsSnapshot) -> StatsSnapshot {
+        StatsSnapshot {
+            ok:               self.ok.saturating_sub(base.ok),
+            failed:           self.failed.saturating_sub(base.failed),
+            timeout:          self.timeout.saturating_sub(base.timeout),
+            skipped:          self.skipped.saturating_sub(base.skipped),
+            bytes_downloaded: self.bytes_downloaded.saturating_sub(base.bytes_downloaded),
+            total:            self.total.saturating_sub(base.total),
+            duration:         self.duration.saturating_sub(base.duration),
+            peak_rps:         self.peak_rps,
+            err_invalid_url:  self.err_invalid_url.saturating_sub(base.err_invalid_url),
+            err_dns:          self.err_dns.saturating_sub(base.err_dns),
+            err_conn:         self.err_conn.saturating_sub(base.err_conn),
+            err_tls:          self.err_tls.saturating_sub(base.err_tls),
+            err_http_status:  self.err_http_status.saturating_sub(base.err_http_status),
+            err_other:        self.err_other.saturating_sub(base.err_other),
+            dns_nxdomain:     self.dns_nxdomain.saturating_sub(base.dns_nxdomain),
+            dns_malformed:    self.dns_malformed.saturating_sub(base.dns_malformed),
+            dns_other:        self.dns_other.saturating_sub(base.dns_other),
+            conn_refused:     self.conn_refused.saturating_sub(base.conn_refused),
+            conn_reset:       self.conn_reset.saturating_sub(base.conn_reset),
+            conn_eof:         self.conn_eof.saturating_sub(base.conn_eof),
+            conn_other:       self.conn_other.saturating_sub(base.conn_other),
+            timeout_connect:  self.timeout_connect.saturating_sub(base.timeout_connect),
+            timeout_response: self.timeout_response.saturating_sub(base.timeout_response),
+            status_2xx:       self.status_2xx.saturating_sub(base.status_2xx),
+            status_3xx:       self.status_3xx.saturating_sub(base.status_3xx),
+            status_4xx:       self.status_4xx.saturating_sub(base.status_4xx),
+            status_5xx:       self.status_5xx.saturating_sub(base.status_5xx),
+        }
+    }
+
     pub fn merge(a: &StatsSnapshot, b: &StatsSnapshot) -> StatsSnapshot {
         StatsSnapshot {
             ok: a.ok + b.ok,

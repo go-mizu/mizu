@@ -399,6 +399,9 @@ fn classify_wreq_error(e: &wreq::Error) -> ErrorCategory {
         } else {
             ErrorCategory::Connection
         }
+    } else if e.is_decode() || e.is_body() {
+        // Server responded but body decompression or read failed.
+        ErrorCategory::Connection
     } else {
         ErrorCategory::Other
     }
@@ -502,6 +505,7 @@ async fn fetch_one(
         crawled_at: chrono::Utc::now().naive_utc(),
         error: String::new(),
         body: String::new(),
+        body_cid: String::new(), // wreq engine: body store not wired (reqwest engine only)
     })
 }
 

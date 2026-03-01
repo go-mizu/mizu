@@ -1,3 +1,4 @@
+pub mod bodystore;
 pub mod config;
 pub mod domain;
 pub mod engine;

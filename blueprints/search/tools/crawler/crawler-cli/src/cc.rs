@@ -101,6 +101,11 @@ pub struct RecrawlArgs {
     /// Filter: MIME type (e.g. "text/html")
     #[arg(long)]
     pub mime: Vec<String>,
+
+    /// Body CAS store directory (e.g. ~/data/common-crawl/bodies).
+    /// When set, HTML bodies are stored as sha256:{hex}.gz and body_cid is populated.
+    #[arg(long)]
+    pub body_store: Option<String>,
 }
 
 pub async fn run_recrawl(args: RecrawlArgs) -> Result<()> {
@@ -178,6 +183,7 @@ pub async fn run_recrawl(args: RecrawlArgs) -> Result<()> {
         db_shards: args.db_shards,
         db_mem_mb: args.db_mem_mb,
         no_tui: args.no_tui,
+        body_store_dir: args.body_store,
     })
     .await
 }

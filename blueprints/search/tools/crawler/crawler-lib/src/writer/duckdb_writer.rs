@@ -145,7 +145,7 @@ pub(crate) fn flush_result_batch(conn: &Connection, batch: &[CrawlResult]) -> Re
         params.push(Box::new(r.crawled_at.format("%Y-%m-%d %H:%M:%S").to_string()));
         params.push(Box::new(sanitize_str(&r.error)));
         params.push(Box::new("done".to_string()));
-        params.push(Box::new(String::new()));
+        params.push(Box::new(sanitize_str(&r.body_cid)));
     }
 
     let param_refs: Vec<&dyn duckdb::ToSql> = params.iter().map(|p| p.as_ref()).collect();
@@ -347,7 +347,7 @@ impl Drop for DuckDBResultWriter {
 // FailedDB (single DuckDB, two tables, two flusher threads)
 // ===========================================================================
 
-fn open_failed_db(path: &Path, mem_mb: usize) -> Result<Connection> {
+pub fn open_failed_db(path: &Path, mem_mb: usize) -> Result<Connection> {
     remove_stale_lock(path);
     let conn = Connection::open(path)
         .with_context(|| format!("failed to open FailedDB at {:?}", path))?;
@@ -381,7 +381,7 @@ fn open_failed_db(path: &Path, mem_mb: usize) -> Result<Connection> {
 // ---------------------------------------------------------------------------
 // Batch INSERT for failed_urls
 // ---------------------------------------------------------------------------
-fn flush_failed_url_batch(conn: &Connection, batch: &[FailedURL]) -> Result<()> {
+pub fn flush_failed_url_batch(conn: &Connection, batch: &[FailedURL]) -> Result<()> {
     if batch.is_empty() {
         return Ok(());
     }
