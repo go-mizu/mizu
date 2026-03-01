@@ -109,8 +109,9 @@ impl CrawlResult {
 pub struct FailedURL {
     pub url: String,
     pub domain: String,
-    pub reason: String, // http_timeout, dns_timeout, domain_killed, http_error, domain_dead, domain_deadline_exceeded, domain_http_timeout_killed
-    pub error: String,
+    pub reason: String, // http_timeout, dns_error, invalid_url, conn_error, tls_error, http_error, domain_http_timeout_killed
+    pub subcategory: String, // nxdomain, malformed, refused, reset, eof, connect, response, etc.
+    pub error: String, // full error chain from source() walking
     pub status_code: u16,
     pub fetch_time_ms: i64,
     #[rkyv(with = AsMillis)]
@@ -123,6 +124,7 @@ impl FailedURL {
             url: url.to_string(),
             domain: domain.to_string(),
             reason: reason.to_string(),
+            subcategory: String::new(),
             error: String::new(),
             status_code: 0,
             fetch_time_ms: 0,

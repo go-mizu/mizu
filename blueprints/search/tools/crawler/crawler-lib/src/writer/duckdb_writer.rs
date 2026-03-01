@@ -368,8 +368,9 @@ fn open_failed_db(path: &Path, mem_mb: usize) -> Result<Connection> {
             url_count BIGINT, detected_at TIMESTAMP
         );
          CREATE TABLE IF NOT EXISTS failed_urls (
-            url VARCHAR, domain VARCHAR, reason VARCHAR, error VARCHAR,
-            status_code INTEGER, fetch_time_ms BIGINT, detected_at TIMESTAMP
+            url VARCHAR, domain VARCHAR, reason VARCHAR, subcategory VARCHAR,
+            error VARCHAR, status_code INTEGER, fetch_time_ms BIGINT,
+            detected_at TIMESTAMP
         );",
     )
     .context("failed to create failed_domains/failed_urls tables")?;
@@ -384,11 +385,11 @@ fn flush_failed_url_batch(conn: &Connection, batch: &[FailedURL]) -> Result<()> 
     if batch.is_empty() {
         return Ok(());
     }
-    const COLS: usize = 7;
+    const COLS: usize = 8;
     let row_ph = format!("({})", vec!["?"; COLS].join(", "));
     let all_rows = vec![row_ph.as_str(); batch.len()].join(", ");
     let sql = format!(
-        "INSERT INTO failed_urls (url, domain, reason, error, status_code, \
+        "INSERT INTO failed_urls (url, domain, reason, subcategory, error, status_code, \
          fetch_time_ms, detected_at) VALUES {}",
         all_rows
     );
@@ -398,6 +399,7 @@ fn flush_failed_url_batch(conn: &Connection, batch: &[FailedURL]) -> Result<()> 
         params.push(Box::new(sanitize_str(&f.url)));
         params.push(Box::new(sanitize_str(&f.domain)));
         params.push(Box::new(sanitize_str(&f.reason)));
+        params.push(Box::new(sanitize_str(&f.subcategory)));
         params.push(Box::new(sanitize_str(&f.error)));
         params.push(Box::new(f.status_code as i32));
         params.push(Box::new(f.fetch_time_ms));

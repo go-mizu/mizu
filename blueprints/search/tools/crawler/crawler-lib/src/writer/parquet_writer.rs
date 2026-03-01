@@ -184,6 +184,7 @@ fn failure_schema() -> Arc<Schema> {
         Field::new("url", DataType::Utf8, false),
         Field::new("domain", DataType::Utf8, false),
         Field::new("reason", DataType::Utf8, false),
+        Field::new("subcategory", DataType::Utf8, false),
         Field::new("error", DataType::Utf8, false),
         Field::new("status_code", DataType::Int32, false),
         Field::new("fetch_time_ms", DataType::Int64, false),
@@ -223,6 +224,7 @@ fn build_failure_batch(rows: &[FailedURL]) -> Result<RecordBatch> {
     let mut url = StringBuilder::with_capacity(len, len * 64);
     let mut domain = StringBuilder::with_capacity(len, len * 32);
     let mut reason = StringBuilder::with_capacity(len, len * 24);
+    let mut subcategory = StringBuilder::with_capacity(len, len * 16);
     let mut error = StringBuilder::with_capacity(len, len * 64);
     let mut status_code = Int32Builder::with_capacity(len);
     let mut fetch_time_ms = Int64Builder::with_capacity(len);
@@ -232,6 +234,7 @@ fn build_failure_batch(rows: &[FailedURL]) -> Result<RecordBatch> {
         url.append_value(&f.url);
         domain.append_value(&f.domain);
         reason.append_value(&f.reason);
+        subcategory.append_value(&f.subcategory);
         error.append_value(&f.error);
         status_code.append_value(f.status_code as i32);
         fetch_time_ms.append_value(f.fetch_time_ms);
@@ -242,6 +245,7 @@ fn build_failure_batch(rows: &[FailedURL]) -> Result<RecordBatch> {
         Arc::new(url.finish()),
         Arc::new(domain.finish()),
         Arc::new(reason.finish()),
+        Arc::new(subcategory.finish()),
         Arc::new(error.finish()),
         Arc::new(status_code.finish()),
         Arc::new(fetch_time_ms.finish()),
