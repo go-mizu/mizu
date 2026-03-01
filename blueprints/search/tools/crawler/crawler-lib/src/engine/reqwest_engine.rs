@@ -59,8 +59,12 @@ impl super::Engine for ReqwestEngine {
         let domain_count = batches.len();
         info!("grouped into {} domains", domain_count);
 
-        // Shared stats
-        let stats = Arc::new(Stats::new());
+        // Shared stats — use caller-provided Arc for live TUI display, or create fresh.
+        // Only set total_seeds if not already populated (pass 1 sets it; pass 2 reuses).
+        let stats = cfg.live_stats.clone().unwrap_or_else(|| Arc::new(Stats::new()));
+        if stats.total_seeds.load(Ordering::Relaxed) == 0 {
+            stats.total_seeds.store(total_seeds as u64, Ordering::Relaxed);
+        }
         let adaptive = Arc::new(AdaptiveTimeout::new());
         let peak = Arc::new(PeakTracker::new());
 
@@ -77,9 +81,25 @@ impl super::Engine for ReqwestEngine {
             // Channel closes when batch_tx is dropped
         });
 
-        // Worker tasks
+        // Build ONE shared reqwest::Client for all workers.
+        // reqwest::Client is Arc-backed internally; cloning just bumps the refcount.
+        // Sharing a single client gives a unified connection pool across all workers,
+        // improving keep-alive reuse (especially for domains with many URLs).
         let workers = cfg.workers.max(1);
         let inner_n = cfg.inner_n.max(1);
+        let max_timeout = cfg.timeout.saturating_mul(5); // adaptive cap ceiling
+        let shared_client = match reqwest::Client::builder()
+            .pool_max_idle_per_host(inner_n)
+            .timeout(max_timeout)
+            .danger_accept_invalid_certs(true)
+            .redirect(reqwest::redirect::Policy::limited(7))
+            .tcp_keepalive(std::time::Duration::from_secs(60))
+            .build()
+        {
+            Ok(c) => Arc::new(c),
+            Err(e) => return Err(anyhow::anyhow!("failed to build reqwest client: {}", e)),
+        };
+
         let mut worker_handles = Vec::with_capacity(workers);
 
         for _ in 0..workers {
@@ -90,6 +110,7 @@ impl super::Engine for ReqwestEngine {
             let stats = Arc::clone(&stats);
             let adaptive = Arc::clone(&adaptive);
             let peak = Arc::clone(&peak);
+            let client = Arc::clone(&shared_client);
 
             let handle = tokio::spawn(async move {
                 while let Ok(batch) = rx.recv().await {
@@ -99,6 +120,7 @@ impl super::Engine for ReqwestEngine {
                         &cfg,
                         &adaptive,
                         inner_n,
+                        &client,
                         &results,
                         &failures,
                         &stats,
@@ -143,14 +165,15 @@ impl super::Engine for ReqwestEngine {
 
 /// Process all URLs for a single domain.
 ///
-/// Creates a reqwest::Client with connection pooling (pool_max_idle_per_host = inner_n),
-/// spawns inner_n fetch tasks sharing the client, and tracks domain health for abandonment.
+/// Takes a shared `reqwest::Client` (built once per run, shared across all workers).
+/// Spawns inner_n fetch tasks and tracks domain health for abandonment.
 async fn process_one_domain(
     domain: String,
     urls: Vec<SeedURL>,
     cfg: &Config,
     adaptive: &Arc<AdaptiveTimeout>,
     inner_n: usize,
+    client: &Arc<reqwest::Client>,
     results: &Arc<dyn ResultWriter>,
     failures: &Arc<dyn FailureWriter>,
     stats: &Arc<Stats>,
@@ -164,33 +187,7 @@ async fn process_one_domain(
     // Calculate effective domain timeout
     let effective_domain_timeout = compute_domain_timeout(cfg, url_count, inner_n);
 
-    // Build reqwest client for this domain
-    let client = match reqwest::Client::builder()
-        .pool_max_idle_per_host(inner_n)
-        .timeout(cfg.timeout)
-        .danger_accept_invalid_certs(true)
-        .redirect(reqwest::redirect::Policy::limited(7))
-        .build()
-    {
-        Ok(c) => Arc::new(c),
-        Err(e) => {
-            warn!("failed to build client for {}: {}", domain, e);
-            // Mark all URLs as failed
-            for seed in &urls {
-                let _ = failures.write_url(FailedURL {
-                    url: seed.url.clone(),
-                    domain: seed.domain.clone(),
-                    reason: "client_build_error".to_string(),
-                    error: e.to_string(),
-                    status_code: 0,
-                    fetch_time_ms: 0,
-                    detected_at: chrono::Utc::now().naive_utc(),
-                });
-                stats.failed.fetch_add(1, Ordering::Relaxed);
-            }
-            return;
-        }
-    };
+    let client = Arc::clone(client);
 
     // URL channel: bounded by URL count so send never blocks
     let (url_tx, url_rx) = async_channel::bounded::<SeedURL>(url_count);
@@ -242,11 +239,12 @@ async fn process_one_domain(
                     continue;
                 }
 
-                // Compute effective timeout (adaptive or fixed)
+                // Compute effective timeout (adaptive or fixed, capped at 5× base)
                 let effective_timeout = if !disable_adaptive {
                     adaptive
                         .timeout(cfg_adaptive_max)
                         .unwrap_or(cfg_timeout)
+                        .min(cfg_timeout.saturating_mul(5))
                 } else {
                     cfg_timeout
                 };
@@ -290,6 +288,10 @@ async fn process_one_domain(
                                 "abandoning domain {} (timeouts={}, successes={})",
                                 domain_name, t, ds.successes
                             );
+                            stats.push_warning(format!(
+                                "abandoned {} (timeouts={}, ok={})",
+                                domain_name, t, ds.successes
+                            ));
                         }
 
                         let _ = failures.write_url(FailedURL {
@@ -349,11 +351,13 @@ async fn process_one_domain(
             Err(_) => {
                 // Domain timeout exceeded — abandon remaining URLs
                 abandoned_outer.store(true, Ordering::Relaxed);
-                warn!(
-                    "domain {} exceeded timeout ({:.1}s), abandoning remaining URLs",
+                let msg = format!(
+                    "domain {} exceeded timeout ({:.1}s)",
                     domain_name,
                     dt.as_secs_f64()
                 );
+                warn!("{}, abandoning remaining URLs", msg);
+                stats_outer.push_warning(msg);
 
                 // Drain remaining URLs and mark them as deadline exceeded
                 while let Ok(seed) = url_rx.try_recv() {
@@ -393,10 +397,10 @@ pub(crate) fn compute_domain_timeout(
     }
 
     // Adaptive: estimate how long this domain should take
-    // Formula: urls * timeout_ms / inner_n * 2, clamped [30s, adaptive_timeout_max]
+    // Formula: urls * timeout_ms / inner_n * 2, clamped [5s, adaptive_timeout_max]
     let timeout_ms = cfg.timeout.as_millis() as u64;
     let estimated_ms = url_count as u64 * timeout_ms / inner_n.max(1) as u64 * 2;
-    let min_ms = 30_000u64;
+    let min_ms = 5_000u64;
     let max_ms = cfg.adaptive_timeout_max.as_millis() as u64;
     let clamped_ms = estimated_ms.max(min_ms).min(max_ms);
 
@@ -489,20 +493,38 @@ async fn fetch_one(
     }
 }
 
-/// Read response body with a size limit to avoid OOM on large responses.
+/// Read response body up to `max_bytes`, stopping the download early.
+///
+/// Unlike `resp.bytes()` (which buffers the full body), this streams chunks
+/// and stops reading once `max_bytes` are accumulated. This avoids downloading
+/// multi-MB responses when we only need the first 256 KB for metadata extraction.
 async fn read_body_limited(
     resp: reqwest::Response,
     max_bytes: usize,
 ) -> Result<bytes::Bytes, reqwest::Error> {
-    // reqwest does not have a built-in body size limit, so we stream chunks
-    // For simplicity and performance, use bytes() which reads the full body.
-    // The max_body_bytes is enforced by truncation after read.
-    let full = resp.bytes().await?;
-    if full.len() > max_bytes {
-        Ok(full.slice(..max_bytes))
-    } else {
-        Ok(full)
+    use bytes::BytesMut;
+    use futures_util::StreamExt;
+
+    // Fast path: if Content-Length hints that body fits, use the simple path.
+    if let Some(len) = resp.content_length() {
+        if len as usize <= max_bytes {
+            return resp.bytes().await;
+        }
     }
+
+    // Stream chunks, stop once we have enough.
+    let mut stream = resp.bytes_stream();
+    let mut buf = BytesMut::with_capacity(max_bytes.min(64 * 1024));
+    while let Some(chunk) = stream.next().await {
+        let chunk: bytes::Bytes = chunk?;
+        let remaining = max_bytes.saturating_sub(buf.len());
+        if remaining == 0 {
+            break; // Drop remaining stream data (connection may be reused by keep-alive)
+        }
+        let take = chunk.len().min(remaining);
+        buf.extend_from_slice(&chunk[..take]);
+    }
+    Ok(buf.freeze())
 }
 
 // ---------------------------------------------------------------------------
@@ -722,9 +744,9 @@ mod tests {
         cfg.domain_timeout_ms = -1;
         cfg.timeout = Duration::from_millis(1000);
         cfg.adaptive_timeout_max = Duration::from_secs(600);
-        // 2 urls * 1000ms / 4 inner * 2 = 1000ms -> clamped to 30000ms min
+        // 2 urls * 1000ms / 4 inner * 2 = 1000ms -> clamped to 5000ms min
         let dt = compute_domain_timeout(&cfg, 2, 4);
-        assert_eq!(dt, Some(Duration::from_millis(30000)));
+        assert_eq!(dt, Some(Duration::from_millis(5000)));
     }
 
     #[test]

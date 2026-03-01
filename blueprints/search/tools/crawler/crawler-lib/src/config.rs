@@ -1,3 +1,5 @@
+use crate::stats::Stats;
+use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,6 +97,12 @@ pub struct Config {
     // Paths
     pub output_dir: String,
     pub failed_db_path: String,
+
+    /// Optional shared stats for live TUI display.
+    /// If Some, the engine uses this Arc instead of creating a new Stats.
+    /// The caller (CLI) creates Arc<Stats>, passes here, and reads from it in a TUI thread.
+    #[allow(clippy::type_complexity)]
+    pub live_stats: Option<Arc<Stats>>,
 }
 
 impl Default for Config {
@@ -106,8 +114,8 @@ impl Default for Config {
             domain_timeout_ms: -1, // adaptive
             adaptive_timeout_max: Duration::from_secs(600),
             domain_fail_threshold: 3,
-            domain_dead_probe: 10,
-            domain_stall_ratio: 20,
+            domain_dead_probe: 3,
+            domain_stall_ratio: 5,
             disable_adaptive_timeout: false,
             engine: EngineType::Reqwest,
             writer: WriterType::Binary,
@@ -120,6 +128,7 @@ impl Default for Config {
             max_body_bytes: 256 * 1024,
             output_dir: String::new(),
             failed_db_path: String::new(),
+            live_stats: None,
         }
     }
 }

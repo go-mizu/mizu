@@ -1,4 +1,6 @@
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 #[derive(Debug)]
@@ -9,8 +11,12 @@ pub struct Stats {
     pub skipped: AtomicU64,
     pub bytes_downloaded: AtomicU64,
     pub total: AtomicU64,
+    /// Set by engine before crawl starts; used by TUI for progress %.
+    pub total_seeds: AtomicU64,
     pub start: Instant,
     pub peak_rps: AtomicU64,
+    /// Recent warning messages (domain timeouts, abandonments). Cap 100.
+    pub warnings: Mutex<VecDeque<String>>,
 }
 
 impl Stats {
@@ -22,8 +28,20 @@ impl Stats {
             skipped: AtomicU64::new(0),
             bytes_downloaded: AtomicU64::new(0),
             total: AtomicU64::new(0),
+            total_seeds: AtomicU64::new(0),
             start: Instant::now(),
             peak_rps: AtomicU64::new(0),
+            warnings: Mutex::new(VecDeque::with_capacity(100)),
+        }
+    }
+
+    /// Push a warning message into the ring buffer (max 100 entries).
+    pub fn push_warning(&self, msg: String) {
+        if let Ok(mut w) = self.warnings.lock() {
+            if w.len() >= 100 {
+                w.pop_front();
+            }
+            w.push_back(msg);
         }
     }
 

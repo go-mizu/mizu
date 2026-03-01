@@ -7,6 +7,7 @@ use std::time::Duration;
 use crawler_lib::config::{Config, EngineType, WriterType};
 use crawler_lib::job::run_job;
 use crawler_lib::seed::{load_retry_seeds, load_seeds_duckdb, load_seeds_parquet};
+use crawler_lib::stats::Stats;
 use crawler_lib::writer::devnull::{DevNullFailureWriter, DevNullResultWriter};
 use crawler_lib::writer::duckdb_writer::{DuckDBFailureWriter, DuckDBResultWriter};
 use crawler_lib::writer::parquet_writer::{ParquetFailureWriter, ParquetResultWriter};
@@ -14,6 +15,7 @@ use crawler_lib::writer::binary::{BinDrainConfig, BinaryFailureWriter, BinaryRes
 use crawler_lib::writer::{FailureWriter, ResultWriter};
 
 use crate::display::{format_duration, print_summary};
+use crate::tui;
 
 #[derive(Args, Debug)]
 pub struct RecrawlArgs {
@@ -53,12 +55,12 @@ pub struct RecrawlArgs {
     #[arg(long)]
     pub no_retry: bool,
 
-    /// Dead domain probe count
-    #[arg(long, default_value_t = 10)]
+    /// Dead domain probe count (abandon after N timeouts with 0 successes)
+    #[arg(long, default_value_t = 3)]
     pub domain_dead_probe: usize,
 
     /// Domain stall ratio (abandon if timeouts >= successes * ratio)
-    #[arg(long, default_value_t = 20)]
+    #[arg(long, default_value_t = 5)]
     pub domain_stall_ratio: usize,
 
     /// Limit number of seeds (0 = all)
@@ -141,6 +143,9 @@ pub async fn run_recrawl(args: RecrawlArgs) -> Result<()> {
     let failed_db_path = output_dir.join("failed.duckdb");
     let failed_db_str = failed_db_path.to_string_lossy().to_string();
 
+    // Shared live-stats for TUI. Created here so TUI can read it before job starts.
+    let live_stats = Arc::new(Stats::new());
+
     let mut cfg = Config::default();
     cfg.workers = args.workers;
     cfg.inner_n = args.inner_n;
@@ -155,6 +160,7 @@ pub async fn run_recrawl(args: RecrawlArgs) -> Result<()> {
     cfg.db_mem_mb = args.db_mem_mb;
     cfg.output_dir = output_dir_str.clone();
     cfg.failed_db_path = failed_db_str.clone();
+    cfg.live_stats = Some(live_stats.clone());
 
     println!(
         "Config: engine={} writer={} workers={} inner_n={} timeout={}ms retry_timeout={}ms",
@@ -209,7 +215,12 @@ pub async fn run_recrawl(args: RecrawlArgs) -> Result<()> {
     println!("Starting crawl job...");
     let job_start = std::time::Instant::now();
 
-    // 7. Run job (blocks until both passes complete)
+    // 7. Start TUI dashboard (only when stdout is a terminal).
+    //    TUI thread reads from live_stats Arc; job updates it atomically.
+    let tui_title = format!("HN Recrawl — {} seeds", seeds.len());
+    let tui_handle = tui::spawn(live_stats.clone(), tui_title);
+
+    // 8. Run job (blocks until both passes complete)
     let job_result = run_job(
         seeds,
         cfg,
@@ -226,7 +237,12 @@ pub async fn run_recrawl(args: RecrawlArgs) -> Result<()> {
     // Close result writer after job completes
     result_writer.close()?;
 
-    // 8. Print final summary
+    // 9. Stop TUI (does final render, then restores terminal)
+    if let Some(h) = tui_handle {
+        h.stop_and_join();
+    }
+
+    // 10. Print final summary (now on the restored normal screen)
     print_summary(
         &job_result.pass1,
         job_result.pass2.as_ref(),

@@ -4,6 +4,7 @@ use tracing_subscriber::EnvFilter;
 mod cc;
 mod display;
 mod hn;
+mod tui;
 
 #[derive(Parser)]
 #[command(
@@ -44,6 +45,7 @@ enum CcAction {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Always write tracing output to stderr so the TUI (stdout) is unaffected.
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::from_default_env()
@@ -51,6 +53,7 @@ async fn main() -> anyhow::Result<()> {
                 .add_directive("crawler_lib=info".parse().unwrap()),
         )
         .with_target(false)
+        .with_writer(std::io::stderr)
         .init();
 
     let cli = Cli::parse();
