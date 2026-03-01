@@ -3,6 +3,7 @@ package dcrawler
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"net/url"
 	"os"
 	"strings"
@@ -539,6 +540,15 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		default:
 		}
 	}()
+
+	// Human-like timing: random delay before navigation to avoid exact-interval
+	// patterns that CF bot scoring detects when many tabs hit the same domain at
+	// identical cadence.
+	select {
+	case <-time.After(time.Duration(10+rand.Intn(140)) * time.Millisecond):
+	case <-fetchCtx.Done():
+		return
+	}
 
 	// Inject stored domain cookies (e.g., CF clearance from a previously solved challenge).
 	rp.injectJarCookies(page, item.URL)
