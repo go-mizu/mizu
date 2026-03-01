@@ -121,11 +121,17 @@ func (j *cookieJar) merge(host string, incoming []*proto.NetworkCookie) {
 	j.cookies[host] = merged
 }
 
-// get returns stored cookies for a hostname (nil if none).
+// get returns a copy of stored cookies for a hostname (nil if none).
 func (j *cookieJar) get(host string) []*proto.NetworkCookie {
 	j.mu.RLock()
 	defer j.mu.RUnlock()
-	return j.cookies[host]
+	src := j.cookies[host]
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]*proto.NetworkCookie, len(src))
+	copy(out, src)
+	return out
 }
 
 // cookiesToParams converts NetworkCookie (read) to NetworkCookieParam (write).
