@@ -4,17 +4,48 @@ use chrono::NaiveDateTime;
 use duckdb::Connection;
 
 /// Load seed URLs from a DuckDB database.
-/// Reads `url` and `domain` columns from the `docs` table.
+/// Tries table names in order: docs, pages, urls, seeds.
 pub fn load_seeds_duckdb(path: &str, limit: usize) -> Result<Vec<SeedURL>> {
     let config = duckdb::Config::default()
         .access_mode(duckdb::AccessMode::ReadOnly)?;
     let conn = Connection::open_with_flags(path, config)
         .with_context(|| format!("opening seed db: {}", path))?;
 
+    // Discover which table holds the seed URLs.
+    let table_names = ["docs", "pages", "urls", "seeds"];
+    let mut table = None;
+    for name in &table_names {
+        let check = format!(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = '{}'",
+            name
+        );
+        if let Ok(mut stmt) = conn.prepare(&check) {
+            if let Ok(mut rows) = stmt.query([]) {
+                if let Ok(Some(row)) = rows.next() {
+                    let count: i64 = row.get(0).unwrap_or(0);
+                    if count > 0 {
+                        table = Some(*name);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    let table = table.ok_or_else(|| {
+        anyhow::anyhow!(
+            "no recognised seed table in {}: tried {:?}",
+            path,
+            table_names
+        )
+    })?;
+
     let query = if limit > 0 {
-        format!("SELECT url, COALESCE(domain, '') as domain FROM docs LIMIT {}", limit)
+        format!(
+            "SELECT url, COALESCE(domain, '') as domain FROM {} LIMIT {}",
+            table, limit
+        )
     } else {
-        "SELECT url, COALESCE(domain, '') as domain FROM docs".to_string()
+        format!("SELECT url, COALESCE(domain, '') as domain FROM {}", table)
     };
 
     let mut stmt = conn.prepare(&query)?;

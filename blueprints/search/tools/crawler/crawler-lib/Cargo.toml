@@ -5,18 +5,18 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "brotli", "deflate"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "gzip", "brotli", "deflate"] }
 hyper = { version = "1", features = ["client", "http1", "http2"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "tokio", "http1", "http2"] }
-hyper-rustls = { version = "0.27", features = ["http2", "ring", "webpki-tokio"] }
-rustls = "0.23"
+hyper-rustls = { version = "0.27", default-features = false, features = ["http2", "ring", "webpki-tokio"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "tls12"] }
 http-body-util = "0.1"
 bytes = "1"
 http = "1"
 
-duckdb = { version = "1.2", features = ["bundled"] }
-arrow = { version = "54", default-features = false }
-parquet = { version = "54", features = ["snap", "zstd"] }
+duckdb = { version = "1.4", features = ["bundled"] }
+arrow = { version = "58", default-features = false, features = ["csv"] }
+parquet = { version = "58", features = ["snap", "zstd"] }
 
 chrono = { version = "0.4", features = ["serde"] }
 url = "2"
@@ -29,10 +29,10 @@ thiserror = "2"
 rand = "0.9"
 ahash = "0.8"
 crossbeam-channel = "0.5"
-sysinfo = "0.34"
+sysinfo = "0.38"
 libc = "0.2"
 async-trait = "0.1"
 async-channel = "2"
 
 [dev-dependencies]
-tempfile = "3.26.0"
+tempfile = "3"

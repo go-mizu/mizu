@@ -17,8 +17,8 @@ use crate::display::{format_duration, print_summary};
 
 #[derive(Args, Debug)]
 pub struct RecrawlArgs {
-    /// Seed DuckDB or Parquet file path
-    #[arg(long)]
+    /// Seed DuckDB or Parquet file path (default: ~/data/hn/recrawl/hn_pages.duckdb)
+    #[arg(long, default_value = "~/data/hn/recrawl/hn_pages.duckdb")]
     pub seed: String,
 
     /// Output directory for results (default: ~/data/hn/results/)
@@ -111,7 +111,9 @@ fn parse_writer(s: &str) -> Result<WriterType> {
 
 pub async fn run_recrawl(args: RecrawlArgs) -> Result<()> {
     // 1. Detect seed format and load seeds
-    let seed_path = &args.seed;
+    let seed_resolved = expand_home(&args.seed);
+    let seed_path = seed_resolved.to_string_lossy();
+    let seed_path = seed_path.as_ref();
     let is_parquet = seed_path.ends_with(".parquet") || seed_path.ends_with(".parq");
 
     println!("Loading seeds from: {}", seed_path);

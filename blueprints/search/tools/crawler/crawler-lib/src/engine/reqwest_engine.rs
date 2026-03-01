@@ -513,7 +513,7 @@ async fn read_body_limited(
 /// Only scans the first 64KB for performance.
 pub(crate) fn extract_metadata(body: &[u8]) -> (String, String, String) {
     let html = String::from_utf8_lossy(body);
-    let scan_limit = html.len().min(64 * 1024);
+    let scan_limit = html.floor_char_boundary(html.len().min(64 * 1024));
     let html = &html[..scan_limit];
 
     let title = extract_tag_content(html, "<title", "</title>");
@@ -552,8 +552,9 @@ fn extract_meta_content(html: &str, name: &str) -> String {
     if let Some(pos) = lower.find(&search) {
         // Search in a window around the match for the content attribute.
         // The meta tag could have name before or after content.
-        let window_start = pos.saturating_sub(200);
-        let window_end = html.len().min(pos + 500);
+        // Use floor_char_boundary to avoid slicing in the middle of a multi-byte char.
+        let window_start = html.floor_char_boundary(pos.saturating_sub(200));
+        let window_end = html.floor_char_boundary(html.len().min(pos + 500));
         let window = &html[window_start..window_end];
         let window_lower = window.to_lowercase();
 

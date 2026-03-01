@@ -13,7 +13,7 @@ SCP           ?= scp -i $(DEPLOY_KEY)
 BINARY        := crawler-linux
 IMAGE_NAME    := crawler-rust-builder
 
-.PHONY: build build-linux deploy deploy-server1 deploy-server2 test remote-test remote-hn-recrawl remote-benchmark clean
+.PHONY: build build-linux build-on-server deploy deploy-server1 deploy-server2 test remote-test remote-hn-recrawl remote-benchmark clean
 
 ## Local dev build (macOS)
 build:
@@ -27,6 +27,40 @@ build-linux:
 	docker create --name crawler-linux-tmp $(IMAGE_NAME)
 	docker cp crawler-linux-tmp:/build/target/release/crawler ./$(BINARY)
 	docker rm crawler-linux-tmp
+	@echo "Linux binary: ./$(BINARY)"
+
+## Build Linux binary on a remote server (no Docker needed)
+## Rsyncs source to ~/build/crawler on the server, installs Rust if needed, builds, downloads binary.
+build-on-server:
+	@test -f "$(DEPLOY_KEY)" || { echo "Deploy key not found: $(DEPLOY_KEY)"; exit 1; }
+	@echo "Syncing source to $(REMOTE_SSH):~/build/crawler/ ..."
+	$(SSH) $(REMOTE_SSH) "mkdir -p ~/build/crawler"
+	rsync -av --delete --exclude target/ --exclude '.git/' \
+	  -e "ssh -i $(DEPLOY_KEY) -o BatchMode=yes" \
+	  ./ $(REMOTE_SSH):~/build/crawler/
+	@echo "Building on $(REMOTE_SSH) ..."
+	$(SSH) $(REMOTE_SSH) 'bash -lc "set -e; \
+	  SUDO=\"\"; [ \"\$$(id -u)\" != \"0\" ] && SUDO=\"sudo\"; \
+	  if ! command -v cc &>/dev/null && ! command -v gcc &>/dev/null; then \
+	    \$$SUDO apt-get update -qq && \$$SUDO apt-get install -y -qq build-essential pkg-config libssl-dev curl; \
+	  fi; \
+	  GCC_VER=\$$(gcc --version 2>/dev/null | head -1 | awk \"{print \\\$$NF}\" | cut -d. -f1); \
+	  if [ \"\$${GCC_VER:-0}\" -lt 10 ] 2>/dev/null; then \
+	    echo \"GCC \$$GCC_VER too old (need >=10), installing gcc-10...\"; \
+	    \$$SUDO apt-get update -qq && \$$SUDO apt-get install -y -qq gcc-10 g++-10; \
+	    \$$SUDO update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 10 2>/dev/null || true; \
+	    \$$SUDO update-alternatives --install /usr/bin/cc cc /usr/bin/gcc-10 10 2>/dev/null || true; \
+	    export CC=/usr/bin/gcc-10; \
+	  fi; \
+	  if ! command -v cargo &>/dev/null; then \
+	    curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable; \
+	    source ~/.cargo/env; \
+	  fi; \
+	  cd ~/build/crawler; \
+	  RUSTFLAGS=\"-C target-cpu=x86-64-v3\" cargo build --release 2>&1; \
+	  echo BUILD_OK"'
+	@echo "Downloading binary from $(REMOTE_SSH) ..."
+	$(SCP) $(REMOTE_SSH):~/build/crawler/target/release/crawler ./$(BINARY)
 	@echo "Linux binary: ./$(BINARY)"
 
 ## Deploy to a server (SERVER=1 or SERVER=2)
@@ -52,24 +86,26 @@ test:
 remote-test:
 	$(SSH) $(REMOTE_SSH) "~/bin/crawler --help"
 
+HN_SEED      ?= ~/data/hn/recrawl/hn_pages.duckdb
+
 ## HN recrawl on remote server (auto-config)
 remote-hn-recrawl:
-	$(SSH) $(REMOTE_SSH) "~/bin/crawler hn recrawl --seed ~/data/hn/hn_domains.duckdb"
+	$(SSH) $(REMOTE_SSH) "~/bin/crawler hn recrawl --seed $(HN_SEED)"
 
 ## Quick benchmark: 10K seeds, devnull writer (measures raw fetch speed)
 remote-benchmark:
-	$(SSH) $(REMOTE_SSH) "~/bin/crawler hn recrawl --seed ~/data/hn/hn_domains.duckdb --limit 10000 --writer devnull"
+	$(SSH) $(REMOTE_SSH) "~/bin/crawler hn recrawl --seed $(HN_SEED) --limit 10000 --writer devnull"
 
 ## Benchmark all writer/engine combos on remote
 remote-benchmark-all:
 	@echo "=== reqwest + devnull (baseline) ==="
-	$(SSH) $(REMOTE_SSH) "~/bin/crawler hn recrawl --seed ~/data/hn/hn_domains.duckdb --limit 10000 --engine reqwest --writer devnull --no-retry"
+	$(SSH) $(REMOTE_SSH) "~/bin/crawler hn recrawl --seed $(HN_SEED) --limit 10000 --engine reqwest --writer devnull --no-retry"
 	@echo "=== hyper + devnull ==="
-	$(SSH) $(REMOTE_SSH) "~/bin/crawler hn recrawl --seed ~/data/hn/hn_domains.duckdb --limit 10000 --engine hyper --writer devnull --no-retry"
+	$(SSH) $(REMOTE_SSH) "~/bin/crawler hn recrawl --seed $(HN_SEED) --limit 10000 --engine hyper --writer devnull --no-retry"
 	@echo "=== reqwest + duckdb ==="
-	$(SSH) $(REMOTE_SSH) "~/bin/crawler hn recrawl --seed ~/data/hn/hn_domains.duckdb --limit 10000 --engine reqwest --writer duckdb --no-retry"
+	$(SSH) $(REMOTE_SSH) "~/bin/crawler hn recrawl --seed $(HN_SEED) --limit 10000 --engine reqwest --writer duckdb --no-retry"
 	@echo "=== reqwest + binary ==="
-	$(SSH) $(REMOTE_SSH) "~/bin/crawler hn recrawl --seed ~/data/hn/hn_domains.duckdb --limit 10000 --engine reqwest --writer binary --no-retry"
+	$(SSH) $(REMOTE_SSH) "~/bin/crawler hn recrawl --seed $(HN_SEED) --limit 10000 --engine reqwest --writer binary --no-retry"
 
 clean:
 	cargo clean

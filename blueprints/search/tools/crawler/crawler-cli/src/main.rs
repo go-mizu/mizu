@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
+mod cc;
 mod display;
 mod hn;
 
@@ -22,12 +23,23 @@ enum Commands {
         #[command(subcommand)]
         action: HnAction,
     },
+    /// Common Crawl recrawl commands
+    Cc {
+        #[command(subcommand)]
+        action: CcAction,
+    },
 }
 
 #[derive(Subcommand)]
 enum HnAction {
     /// Recrawl HN seed URLs
     Recrawl(Box<hn::RecrawlArgs>),
+}
+
+#[derive(Subcommand)]
+enum CcAction {
+    /// Recrawl Common Crawl URLs (stub — coming soon)
+    Recrawl(Box<cc::RecrawlArgs>),
 }
 
 #[tokio::main]
@@ -47,6 +59,11 @@ async fn main() -> anyhow::Result<()> {
         Commands::Hn { action } => match action {
             HnAction::Recrawl(args) => {
                 hn::run_recrawl(*args).await?;
+            }
+        },
+        Commands::Cc { action } => match action {
+            CcAction::Recrawl(args) => {
+                cc::run_recrawl(*args).await?;
             }
         },
     }
