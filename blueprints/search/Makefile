@@ -117,12 +117,14 @@ build-linux: ## Build Ubuntu/Linux binary to $$HOME/bin/search-linux (Docker, CG
 			"$(LINUX_BUILD_CONTEXT)"; \
 		cid="$$($(LINUX_CONTAINER) create --platform "linux/$(LINUX_GOARCH)" "$$img")"; \
 		$(LINUX_CONTAINER) cp "$$cid:/search-linux" "$$tmp_out/search-linux"; \
-		$(LINUX_CONTAINER) cp "$$cid:/libstdc++.so.6" "$$tmp_out/libstdc++.so.6"; \
+		$(LINUX_CONTAINER) cp "$$cid:/libstdc++.so.6" "$$tmp_out/libstdc++.so.6" 2>/dev/null || true; \
 		install -m 0755 "$$tmp_out/search-linux" "$(LINUX_BINARY)"; \
-		mkdir -p "$(LINUX_RUNTIME_LIB_DIR)"; \
-		install -m 0644 "$$tmp_out/libstdc++.so.6" "$(LINUX_RUNTIME_LIB_DIR)/libstdc++.so.6"
+		if [ -f "$$tmp_out/libstdc++.so.6" ]; then \
+			mkdir -p "$(LINUX_RUNTIME_LIB_DIR)"; \
+			install -m 0644 "$$tmp_out/libstdc++.so.6" "$(LINUX_RUNTIME_LIBSTDCPP)"; \
+			echo "Extracted libstdc++.so.6 → $(LINUX_RUNTIME_LIBSTDCPP)"; \
+		fi
 	@echo "Built Linux binary: $(LINUX_BINARY) ($(VERSION))"
-	@echo "Runtime libstdc++: $(LINUX_RUNTIME_LIB_DIR)/libstdc++.so.6"
 
 .PHONY: build-linux-noble
 build-linux-noble: ## Build Ubuntu 24.04 (Noble) binary to $$HOME/bin/search-linux-noble (Docker, CGO enabled)
@@ -205,8 +207,9 @@ download-chrome: ## Download chrome-headless-shell to ~/bin/chrome-headless/ + w
 		echo \"Downloading other required system libs via apt-get download...\"; \
 		cd /tmp && apt-get download libatk1.0-0 libatk-bridge2.0-0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libxkbcommon0 libatspi2.0-0 libxrender1 libwayland-server0 2>/dev/null || true; \
 		for f in /tmp/*.deb; do [ -f \"\$$f\" ] && dpkg-deb -x \"\$$f\" /tmp/chrome-libs-extract || true; done; \
+		rm -rf \$$HOME/bin/chrome-libs && mkdir -p \$$HOME/bin/chrome-libs; \
 		find /tmp/chrome-libs-extract -name '*.so*' ! -type l -exec cp {} \$$HOME/bin/chrome-libs/ \\; 2>/dev/null || true; \
-		find /tmp/chrome-libs-extract -path '*/nss/*.so*' ! -type l -exec cp {} \$$HOME/bin/chrome-libs/ \\; 2>/dev/null || true; \
+		find /tmp/chrome-libs-extract -name '*.so.[0-9]*' -type l -exec cp -d {} \$$HOME/bin/chrome-libs/ \\; 2>/dev/null || true; \
 		rm -f /tmp/libnss3.deb /tmp/libnspr4.deb /tmp/*.deb; rm -rf /tmp/chrome-libs-extract; \
 		echo \"chrome-libs contents:\"; ls \$$HOME/bin/chrome-libs/ | grep -i nss; \
 		LD_LIBRARY_PATH=\$$HOME/bin/chrome-libs \$$HOME/bin/chromium --version 2>&1 || echo \"(version check may fail - binary installed)\""'
