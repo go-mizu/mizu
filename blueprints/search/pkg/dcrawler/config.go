@@ -1,9 +1,11 @@
 package dcrawler
 
 import (
+	"bufio"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -47,6 +49,7 @@ type Config struct {
 	StaleHours        int          // Resume: re-crawl pages older than N hours (0=disabled)
 	UseLightpanda     bool         // Use Lightpanda browser via CDP (alternative to Chrome/rod)
 	DomainAliases     []string     // Additional domains to treat as same-domain (e.g., "new.qq.com" for "news.qq.com")
+	RodNoRenderWait   bool         // Skip DOM stabilization wait (faster for SSG/static Next.js sites)
 }
 
 // DefaultConfig returns optimal defaults for high-throughput single-domain crawling.
@@ -70,6 +73,48 @@ func DefaultConfig() Config {
 		BloomFPR:        0.001,
 		TransportShards: 16,
 	}
+}
+
+// AutoBrowserPages returns the optimal number of concurrent browser tabs
+// based on available RAM. Formula: clamp(availRAMMB / 50, 20, 150).
+//
+// Benchmarks (openai.com, --no-render-wait):
+//
+//	server1 (~3500 MB avail) → 70 tabs → ~100 pages/s
+//	server2 (~9000 MB avail) → 150 tabs → ~150 pages/s
+func AutoBrowserPages(availRAMMB int) int {
+	n := availRAMMB / 50
+	if n < 20 {
+		n = 20
+	}
+	if n > 150 {
+		n = 150
+	}
+	return n
+}
+
+// readProcMemAvailMB reads MemAvailable from /proc/meminfo (Linux).
+// Returns 4000 MB as fallback on non-Linux or read failure.
+func readProcMemAvailMB() int {
+	f, err := os.Open("/proc/meminfo")
+	if err != nil {
+		return 4000 // fallback: 4GB
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "MemAvailable:") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				kb, err := strconv.Atoi(fields[1])
+				if err == nil {
+					return kb / 1024
+				}
+			}
+		}
+	}
+	return 4000 // fallback
 }
 
 func defaultDataDir() string {
