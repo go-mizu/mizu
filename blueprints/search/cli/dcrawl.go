@@ -71,6 +71,9 @@ Browser mode (JS-rendered pages, bypasses Cloudflare):
 			if useRod && useLightpanda {
 				return fmt.Errorf("--browser and --lightpanda are mutually exclusive")
 			}
+			if (proxyURL != "" || proxyFile != "") && !useRod && !useLightpanda {
+				return fmt.Errorf("--proxy-url and --proxy-file require --browser (or --lightpanda) mode")
+			}
 			cfg := dcrawler.DefaultConfig()
 			// If user passed a full URL, use it as seed
 			if seedURL := dcrawler.ExtractSeedURL(args[0]); seedURL != "" {

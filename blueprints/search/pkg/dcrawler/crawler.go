@@ -188,6 +188,9 @@ func loadProxies(cfg Config) ([]string, error) {
 		for sc.Scan() {
 			add(sc.Text())
 		}
+		if err := sc.Err(); err != nil {
+			return nil, fmt.Errorf("proxy-file read: %w", err)
+		}
 	}
 	return proxies, nil
 }
