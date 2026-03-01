@@ -62,6 +62,9 @@ func newLauncher(cfg Config) *launcher.Launcher {
 	if cfg.UserDataDir != "" {
 		l = l.UserDataDir(cfg.UserDataDir)
 	}
+	if cfg.ProxyURL != "" {
+		l = l.Set("proxy-server", cfg.ProxyURL)
+	}
 	return l
 }
 

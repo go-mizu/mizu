@@ -51,6 +51,8 @@ type Config struct {
 	DomainAliases     []string      // Additional domains to treat as same-domain (e.g., "new.qq.com" for "news.qq.com")
 	RodNoRenderWait   bool          // Skip DOM stabilization wait (faster for SSG/static Next.js sites)
 	UserDataDir       string        // Chrome user-data-dir for persistent cookies/localStorage across restarts
+	ProxyURL          string        // HTTP or SOCKS5 proxy URL for Chrome, e.g. "http://user:pass@host:port"
+	ProxyFile         string        // File with one proxy URL per line; enables multi-browser-instance mode
 }
 
 // DefaultConfig returns optimal defaults for high-throughput single-domain crawling.

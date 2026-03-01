@@ -38,6 +38,8 @@ func NewCrawlDomain() *cobra.Command {
 		staleHours       int
 		domainAliases    []string
 		noRenderWait     bool
+		proxyURL         string
+		proxyFile        string
 	)
 
 	cmd := &cobra.Command{
@@ -116,6 +118,8 @@ Browser mode (JS-rendered pages, bypasses Cloudflare):
 			cfg.StaleHours = staleHours
 			cfg.DomainAliases = domainAliases
 			cfg.RodNoRenderWait = noRenderWait
+			cfg.ProxyURL = proxyURL
+			cfg.ProxyFile = proxyFile
 
 			return runCrawlDomain(cmd, cfg, downloadImages)
 		},
@@ -148,6 +152,8 @@ Browser mode (JS-rendered pages, bypasses Cloudflare):
 	cmd.Flags().BoolVar(&downloadImages, "download-images", false, "Download discovered images after crawl (implies --extract-images)")
 	cmd.Flags().IntVar(&staleHours, "stale", 0, "Re-crawl pages older than N hours on --resume (0=disabled)")
 	cmd.Flags().StringSliceVar(&domainAliases, "domain-alias", nil, "Additional domains to treat as same-domain (e.g., --domain-alias new.qq.com)")
+	cmd.Flags().StringVar(&proxyURL, "proxy-url", "", "HTTP/SOCKS5 proxy for Chrome (e.g. http://user:pass@host:port or socks5://host:port)")
+	cmd.Flags().StringVar(&proxyFile, "proxy-file", "", "File with one proxy URL per line (enables one Chrome instance per proxy, round-robin)")
 
 	return cmd
 }

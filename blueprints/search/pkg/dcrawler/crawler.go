@@ -163,6 +163,35 @@ func (rq *retryQueue) drain() []retryItem {
 
 const maxRetryAttempts = 5
 
+// loadProxies returns a deduplicated list of proxy URLs from cfg.ProxyURL and/or cfg.ProxyFile.
+// Returns nil (not an error) if neither is configured.
+func loadProxies(cfg Config) ([]string, error) {
+	seen := make(map[string]bool)
+	var proxies []string
+	add := func(p string) {
+		p = strings.TrimSpace(p)
+		if p != "" && !strings.HasPrefix(p, "#") && !seen[p] {
+			seen[p] = true
+			proxies = append(proxies, p)
+		}
+	}
+	if cfg.ProxyURL != "" {
+		add(cfg.ProxyURL)
+	}
+	if cfg.ProxyFile != "" {
+		f, err := os.Open(cfg.ProxyFile)
+		if err != nil {
+			return nil, fmt.Errorf("proxy-file: %w", err)
+		}
+		defer f.Close()
+		sc := bufio.NewScanner(f)
+		for sc.Scan() {
+			add(sc.Text())
+		}
+	}
+	return proxies, nil
+}
+
 // New creates a new Crawler with the given config.
 func New(cfg Config) (*Crawler, error) {
 	cfg.Domain = NormalizeDomain(cfg.Domain)
@@ -453,17 +482,38 @@ func (c *Crawler) Run(ctx context.Context) error {
 			})
 		}
 	} else if c.config.UseRod {
-		rp, err := newRodPool(c.config)
-		if err != nil {
-			return fmt.Errorf("rod: %w", err)
+		proxies, proxyErr := loadProxies(c.config)
+		if proxyErr != nil {
+			return proxyErr
 		}
-		defer rp.close()
-		c.rodPool = rp
+		numPools := max(len(proxies), 1)
+		rodPools := make([]*rodPool, numPools)
+		for i := range numPools {
+			proxyCfg := c.config
+			if i < len(proxies) {
+				proxyCfg.ProxyURL = proxies[i]
+			}
+			rp, err := newRodPool(proxyCfg)
+			if err != nil {
+				for j := range i {
+					rodPools[j].close()
+				}
+				return fmt.Errorf("rod[%d]: %w", i, err)
+			}
+			rodPools[i] = rp
+		}
+		defer func() {
+			for _, rp := range rodPools {
+				rp.close()
+			}
+		}()
+		c.rodPool = rodPools[0] // used by health monitor in coordinator
 
 		workers := c.config.RodWorkers
 		c.stats.SetRodTotalWorkers(workers)
 		for i := range workers {
 			workerID := i
+			rp := rodPools[workerID%numPools]
 			g.Go(func() error {
 				c.rodWorker(gctx, rp, workerID)
 				return nil
