@@ -34,7 +34,11 @@ import (
 )
 
 // libInitOnce ensures tantivy_go.LibInit is called at most once per process.
-var libInitOnce sync.Once
+// libInitErr captures any error from that single initialisation attempt.
+var (
+	libInitOnce sync.Once
+	libInitErr  error
+)
 
 func init() {
 	index.Register("tantivy", func() index.Engine { return &Engine{} })
@@ -55,13 +59,16 @@ func (e *Engine) Name() string { return "tantivy" }
 
 // Open initialises the Tantivy index at dir.
 func (e *Engine) Open(_ context.Context, dir string) error {
+	if e.tc != nil {
+		return fmt.Errorf("tantivy: already open, call Close first")
+	}
+
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("tantivy mkdir: %w", err)
 	}
 	e.dir = dir
 
 	// Initialise the Rust logging layer once per process.
-	var libInitErr error
 	libInitOnce.Do(func() {
 		libInitErr = tantivy_go.LibInit(false, true, "error")
 	})
@@ -162,14 +169,29 @@ func (e *Engine) Index(_ context.Context, docs []index.Document) error {
 	tdocs := make([]*tantivy_go.Document, 0, len(docs))
 	deleteIDs := make([]string, 0, len(docs))
 
+	// submitted tracks whether tdocs ownership has been transferred to Rust via
+	// BatchAddAndDeleteDocumentsWithOpstamp. On any error path before that call,
+	// we must free every document we allocated; on the success path Rust owns the
+	// pointers and we must NOT free them.
+	submitted := false
+	defer func() {
+		if !submitted {
+			for _, td := range tdocs {
+				td.Free()
+			}
+		}
+	}()
+
 	for _, d := range docs {
 		deleteIDs = append(deleteIDs, d.DocID)
 
 		td := tantivy_go.NewDocument()
 		if err := td.AddField(d.DocID, e.tc, fieldID); err != nil {
+			td.Free() // free current doc (not yet in tdocs)
 			return fmt.Errorf("tantivy AddField(id) for %s: %w", d.DocID, err)
 		}
 		if err := td.AddField(string(d.Text), e.tc, fieldBody); err != nil {
+			td.Free() // free current doc (not yet in tdocs)
 			return fmt.Errorf("tantivy AddField(body) for %s: %w", d.DocID, err)
 		}
 		tdocs = append(tdocs, td)
@@ -180,6 +202,7 @@ func (e *Engine) Index(_ context.Context, docs []index.Document) error {
 	if err != nil {
 		return fmt.Errorf("tantivy BatchAddAndDelete: %w", err)
 	}
+	submitted = true
 	return nil
 }
 
@@ -235,12 +258,12 @@ func (e *Engine) Search(_ context.Context, q index.Query) (index.Results, error)
 		jsonStr, err := doc.ToJson(e.tc, fieldID, fieldBody)
 		doc.Free()
 		if err != nil {
-			continue
+			return index.Results{}, fmt.Errorf("tantivy ToJson doc %d: %w", i, err)
 		}
 
 		var dr docResult
 		if err := json.Unmarshal([]byte(jsonStr), &dr); err != nil {
-			continue
+			return index.Results{}, fmt.Errorf("tantivy unmarshal doc %d: %w", i, err)
 		}
 
 		h := index.Hit{
@@ -258,7 +281,8 @@ func (e *Engine) Search(_ context.Context, q index.Query) (index.Results, error)
 	}
 
 	return index.Results{
-		Hits:  hits,
+		Hits: hits,
+		// Total reflects returned hit count; tantivy-go does not expose pre-pagination total.
 		Total: len(hits),
 	}, nil
 }
