@@ -350,10 +350,17 @@ pub struct BinFailureDrainConfig {
 ///
 /// When a `BinFailureDrainConfig` is provided, `close()` also drains the URL
 /// segments into `failed.duckdb` so that pass-2 retry can load them.
+///
+/// The write path is fully lock-free: both `write_url()` and `write_domain()`
+/// send directly through crossbeam channels without acquiring a Mutex.
+/// `close()` sends one `None` sentinel per flusher thread per channel to
+/// signal shutdown, then joins all threads.
 pub struct BinaryFailureWriter {
-    url_tx: Mutex<Option<crossbeam_channel::Sender<Option<FailedURL>>>>,
-    domain_tx: Mutex<Option<crossbeam_channel::Sender<Option<FailedDomain>>>>,
+    url_tx: crossbeam_channel::Sender<Option<FailedURL>>,
+    domain_tx: crossbeam_channel::Sender<Option<FailedDomain>>,
     handles: Mutex<Vec<std::thread::JoinHandle<()>>>,
+    url_flushers: usize,
+    domain_flushers: usize,
     dir: PathBuf,
     drain_config: Option<BinFailureDrainConfig>,
 }
@@ -379,12 +386,12 @@ impl BinaryFailureWriter {
 
         let seg_size_bytes = seg_size_mb * 1024 * 1024;
 
-        // URL flusher
+        // URL flusher (1 thread)
         let (url_tx, url_rx) = crossbeam_channel::bounded::<Option<FailedURL>>(channel_cap);
         let url_dir = dir.join("failed_urls");
         std::fs::create_dir_all(&url_dir)?;
         let url_handle = std::thread::Builder::new()
-            .name("bin-fail-url-flusher".into())
+            .name("bin-fail-url-flusher-0".into())
             .spawn({
                 let d = url_dir;
                 move || {
@@ -397,12 +404,12 @@ impl BinaryFailureWriter {
             })
             .context("failed to spawn URL failure flusher thread")?;
 
-        // Domain flusher
+        // Domain flusher (1 thread)
         let (domain_tx, domain_rx) = crossbeam_channel::bounded::<Option<FailedDomain>>(channel_cap);
         let domain_dir = dir.join("failed_domains");
         std::fs::create_dir_all(&domain_dir)?;
         let domain_handle = std::thread::Builder::new()
-            .name("bin-fail-domain-flusher".into())
+            .name("bin-fail-domain-flusher-0".into())
             .spawn({
                 let d = domain_dir;
                 move || {
@@ -416,9 +423,11 @@ impl BinaryFailureWriter {
             .context("failed to spawn domain failure flusher thread")?;
 
         Ok(Self {
-            url_tx: Mutex::new(Some(url_tx)),
-            domain_tx: Mutex::new(Some(domain_tx)),
+            url_tx,
+            domain_tx,
             handles: Mutex::new(vec![url_handle, domain_handle]),
+            url_flushers: 1,
+            domain_flushers: 1,
             dir: dir.to_path_buf(),
             drain_config,
         })
@@ -437,23 +446,15 @@ impl BinaryFailureWriter {
 
 impl FailureWriter for BinaryFailureWriter {
     fn write_url(&self, failed: FailedURL) -> Result<()> {
-        let guard = self.url_tx.lock().unwrap();
-        match guard.as_ref() {
-            Some(tx) => tx
-                .send(Some(failed))
-                .map_err(|e| anyhow::anyhow!("binary failure URL channel closed: {e}")),
-            None => Err(anyhow::anyhow!("binary failure writer already closed")),
-        }
+        self.url_tx
+            .send(Some(failed))
+            .map_err(|_| anyhow::anyhow!("binary failure URL channel closed"))
     }
 
     fn write_domain(&self, failed: FailedDomain) -> Result<()> {
-        let guard = self.domain_tx.lock().unwrap();
-        match guard.as_ref() {
-            Some(tx) => tx
-                .send(Some(failed))
-                .map_err(|e| anyhow::anyhow!("binary failure domain channel closed: {e}")),
-            None => Err(anyhow::anyhow!("binary failure writer already closed")),
-        }
+        self.domain_tx
+            .send(Some(failed))
+            .map_err(|_| anyhow::anyhow!("binary failure domain channel closed"))
     }
 
     fn flush(&self) -> Result<()> {
@@ -461,14 +462,12 @@ impl FailureWriter for BinaryFailureWriter {
     }
 
     fn close(&self) -> Result<()> {
-        {
-            // Send None sentinels to signal flusher threads to exit.
-            if let Some(tx) = self.url_tx.lock().unwrap().take() {
-                let _ = tx.send(None);
-            }
-            if let Some(tx) = self.domain_tx.lock().unwrap().take() {
-                let _ = tx.send(None);
-            }
+        // Send one sentinel per flusher thread for each channel.
+        for _ in 0..self.url_flushers {
+            let _ = self.url_tx.send(None);
+        }
+        for _ in 0..self.domain_flushers {
+            let _ = self.domain_tx.send(None);
         }
 
         let handles: Vec<_> = {
