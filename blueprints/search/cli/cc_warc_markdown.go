@@ -5,12 +5,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/markdown"
 	warcmd "github.com/go-mizu/mizu/blueprints/search/pkg/warc_md"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 // newCCWarcMarkdown returns the `cc warc markdown` command.
@@ -18,11 +22,14 @@ func newCCWarcMarkdown() *cobra.Command {
 	var (
 		crawlID    string
 		fileIdx    string
+		from       int
+		to         int
 		workers    int
 		force      bool
 		fast       bool
 		keepTemp   bool
 		inMemory   bool
+		noIndex    bool
 		statusCode int
 		mimeFilter string
 		maxBody    int64
@@ -45,6 +52,10 @@ In-memory mode (--mem): phases run as a streaming pipeline connected by
 channels. No warc_single/ or markdown_raw/ directories are created. Typically
 5–15% faster and uses less disk I/O.
 
+Parallel mode (--from/--to + --workers N): processes N files concurrently in
+separate in-memory pipelines sharing one DuckDB index. Each pipeline uses
+max(1, NumCPU/N) goroutines for HTML→Markdown conversion.
+
 WARC record path sharding:
   <urn:uuid:5d0e2270-...ab> → 5d/0e/22/5d0e2270-...ab.warc
   (first 6 hex chars → 3-level directory nesting, ~256 files per leaf dir)
@@ -60,21 +71,26 @@ Summary: disk before/after · RAM before/after/peak · per-phase table
   search cc warc markdown --file 0 --fast
   search cc warc markdown --file 0 --mem
   search cc warc markdown --file 0-4 --workers 16
-  search cc warc markdown --file 0 --keep-temp     # inspect warc_single/`,
+  search cc warc markdown --from 1 --to 20 --workers 10   # 10 parallel files
+  search cc warc markdown --file 0 --keep-temp            # inspect warc_single/
+  search cc warc markdown --file 0 --mem --no-index       # skip DuckDB writes`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCCWarcMarkdown(cmd.Context(),
-				crawlID, fileIdx, workers, force, fast, keepTemp, inMemory,
+				crawlID, fileIdx, from, to, workers, force, fast, keepTemp, inMemory, noIndex,
 				statusCode, mimeFilter, maxBody)
 		},
 	}
 
 	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest)")
 	cmd.Flags().StringVar(&fileIdx, "file", "0", "File index, range (0-9), or all")
-	cmd.Flags().IntVar(&workers, "workers", 0, "Parallel workers (0 = NumCPU)")
+	cmd.Flags().IntVar(&from, "from", -1, "First file index (inclusive) for parallel range")
+	cmd.Flags().IntVar(&to, "to", -1, "Last file index (inclusive) for parallel range")
+	cmd.Flags().IntVar(&workers, "workers", 0, "Goroutines per file (single-file) or parallel files (multi-file, 0 = NumCPU)")
 	cmd.Flags().BoolVar(&force, "force", false, "Re-process existing files in all phases")
 	cmd.Flags().BoolVar(&fast, "fast", false, "Use go-readability instead of trafilatura")
 	cmd.Flags().BoolVar(&keepTemp, "keep-temp", false, "Keep warc_single/ and markdown/ after pipeline")
 	cmd.Flags().BoolVar(&inMemory, "mem", false, "Streaming pipeline with no temp files")
+	cmd.Flags().BoolVar(&noIndex, "no-index", false, "Disable DuckDB index writes (for benchmarking)")
 	cmd.Flags().IntVar(&statusCode, "status", 200, "HTTP status filter (0 = all)")
 	cmd.Flags().StringVar(&mimeFilter, "mime", "text/html", "MIME type filter")
 	cmd.Flags().Int64Var(&maxBody, "max-body", 512*1024, "Max HTML body bytes per record")
@@ -90,8 +106,13 @@ type warcMDPhaseRow struct {
 }
 
 func runCCWarcMarkdown(ctx context.Context,
-	crawlID, fileIdx string, workers int, force, fast, keepTemp, inMemory bool,
+	crawlID, fileIdx string, from, to, workers int, force, fast, keepTemp, inMemory, noIndex bool,
 	statusCode int, mimeFilter string, maxBody int64) error {
+
+	// --from/--to overrides --file when both indices are provided
+	if from >= 0 && to >= 0 {
+		fileIdx = fmt.Sprintf("%d-%d", from, to)
+	}
 
 	// Resolve crawl ID
 	resolvedID, note, err := ccResolveCrawlID(ctx, crawlID)
@@ -110,6 +131,7 @@ func runCCWarcMarkdown(ctx context.Context,
 	cfg.Fast = fast
 	cfg.KeepTemp = keepTemp
 	cfg.InMemory = inMemory
+	cfg.NoIndex = noIndex
 	cfg.StatusCode = statusCode
 	cfg.MIMEFilter = mimeFilter
 	cfg.MaxBodySize = maxBody
@@ -138,7 +160,11 @@ func runCCWarcMarkdown(ctx context.Context,
 		inputFiles = append(inputFiles, localPath)
 	}
 
-	// Effective worker counts (adaptive if --workers not specified)
+	// Parallel mode: multiple files + workers > 1 → run workers files concurrently.
+	// Each file gets its own in-memory pipeline; a shared IndexDB is opened once.
+	parallelMode := len(inputFiles) > 1 && workers > 1
+
+	// Effective worker counts for single-file / file-mode paths
 	effConvert := cfg.ConvertWorkers()
 	effCompress := cfg.CompressWorkers()
 
@@ -147,34 +173,152 @@ func runCCWarcMarkdown(ctx context.Context,
 	fmt.Println(subtitleStyle.Render("  WARC → Markdown   3-Phase Pipeline"))
 	fmt.Println()
 
-	mode := "file mode (3-phase with temp dirs)"
-	if inMemory {
-		mode = "in-memory streaming (no temp files)"
-	}
 	extractor := "trafilatura (quality)"
 	if fast {
 		extractor = "go-readability (fast)"
 	}
 
 	fmt.Printf("  Crawl     %s\n", labelStyle.Render(crawlID))
-	fmt.Printf("  Files     %d file(s): %s\n", len(inputFiles), labelStyle.Render(filepath.Base(inputFiles[0])))
-	fmt.Printf("  Mode      %s\n", infoStyle.Render(mode))
+	if len(inputFiles) == 1 {
+		fmt.Printf("  Files     1 file: %s\n", labelStyle.Render(filepath.Base(inputFiles[0])))
+	} else {
+		fmt.Printf("  Files     %d files  [%s … %s]\n",
+			len(inputFiles),
+			labelStyle.Render(filepath.Base(inputFiles[0])),
+			labelStyle.Render(filepath.Base(inputFiles[len(inputFiles)-1])))
+	}
 	fmt.Printf("  Engine    %s\n", infoStyle.Render(extractor))
+	if noIndex {
+		fmt.Printf("  Index     %s\n", warningStyle.Render("disabled (--no-index)"))
+	}
+	if force {
+		fmt.Printf("  Force     %s\n", warningStyle.Render("re-process all files"))
+	}
+
+	if parallelMode {
+		perFile := max(1, runtime.NumCPU()/workers)
+		fmt.Printf("  Mode      %s\n", infoStyle.Render("parallel in-memory pipelines"))
+		fmt.Printf("  Workers   %d parallel files · %d goroutines/file\n", workers, perFile)
+		fmt.Printf("  Output    %s\n", labelStyle.Render(cfg.MarkdownGzDir()))
+		fmt.Println()
+		return runWARCMDParallelFiles(ctx, cfg, inputFiles, workers)
+	}
+
+	mode := "file mode (3-phase with temp dirs)"
+	if inMemory {
+		mode = "in-memory streaming (no temp files)"
+	}
+	fmt.Printf("  Mode      %s\n", infoStyle.Render(mode))
 	if workers > 0 {
 		fmt.Printf("  Workers   %s\n", infoStyle.Render(fmt.Sprintf("%d (manual)", workers)))
 	} else {
 		fmt.Printf("  Workers   convert=%d  compress=%d  (adaptive)\n", effConvert, effCompress)
 	}
 	fmt.Printf("  Output    %s\n", labelStyle.Render(cfg.MarkdownGzDir()))
-	if force {
-		fmt.Printf("  Force     %s\n", warningStyle.Render("re-process all files"))
-	}
 	fmt.Println()
 
 	if inMemory {
 		return runWARCMDInMemory(ctx, cfg, inputFiles, effConvert)
 	}
 	return runWARCMDFileMode(ctx, cfg, inputFiles, effConvert, effCompress)
+}
+
+// runWARCMDParallelFiles runs N in-memory pipelines concurrently, one per WARC
+// file. A single IndexDB is opened and shared across all pipelines (its Add
+// method is goroutine-safe). Per-pipeline goroutines = max(1, NumCPU/parallelN).
+func runWARCMDParallelFiles(ctx context.Context, cfg warcmd.Config, inputFiles []string, parallelN int) error {
+	perFileWorkers := max(1, runtime.NumCPU()/parallelN)
+
+	// Open a shared IndexDB once; all pipelines write into it concurrently.
+	if !cfg.NoIndex {
+		idx, err := markdown.OpenIndex(cfg.IndexPath(), 1000)
+		if err != nil {
+			return fmt.Errorf("open index: %w", err)
+		}
+		defer idx.Close()
+		cfg.SharedIndex = idx
+	}
+	// Each pipeline uses the shared index; don't let them open their own.
+	cfg.Workers = perFileWorkers
+
+	var (
+		mu            sync.Mutex
+		totalExtract  atomic.Int64
+		totalConvert  atomic.Int64
+		totalCompress atomic.Int64
+		totalErrors   atomic.Int64
+		totalRead     atomic.Int64
+		totalWrite    atomic.Int64
+	)
+
+	pipeStart := time.Now()
+
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(parallelN)
+
+	for i, warcPath := range inputFiles {
+		i, warcPath := i, warcPath
+		g.Go(func() error {
+			fname := filepath.Base(warcPath)
+
+			mu.Lock()
+			fmt.Printf("  [%d/%d] %s  starting\n", i+1, len(inputFiles), fname)
+			mu.Unlock()
+
+			result, err := warcmd.RunInMemoryPipeline(gctx, cfg, []string{warcPath}, nil)
+
+			mu.Lock()
+			if result != nil {
+				totalExtract.Add(result.Extract.Files)
+				totalConvert.Add(result.Convert.Files)
+				totalCompress.Add(result.Compress.Files)
+				totalErrors.Add(result.Extract.Errors)
+				totalRead.Add(result.Extract.ReadBytes)
+				totalWrite.Add(result.Compress.WriteBytes)
+				fmt.Printf("  [%d/%d] %s  extract=%-6s  compress=%-6s  %s\n",
+					i+1, len(inputFiles), fname,
+					ccFmtInt64(result.Extract.Files),
+					ccFmtInt64(result.Compress.Files),
+					result.Duration.Round(time.Millisecond))
+			}
+			if err != nil {
+				fmt.Printf("  [%d/%d] %s  %s\n", i+1, len(inputFiles), fname,
+					warningStyle.Render("error: "+err.Error()))
+			}
+			mu.Unlock()
+
+			return err
+		})
+	}
+
+	gerr := g.Wait()
+	totalDuration := time.Since(pipeStart)
+	disk3 := warcmd.DiskUsageMdGz(cfg.MarkdownGzDir())
+
+	fmt.Println()
+	fmt.Println(successStyle.Render("  ✓ All files complete!"))
+	fmt.Println()
+
+	rate := float64(0)
+	if totalDuration.Seconds() > 0 {
+		rate = float64(totalCompress.Load()) / totalDuration.Seconds()
+	}
+	fmt.Printf("  Files      %d processed  (%d parallel)\n", len(inputFiles), parallelN)
+	fmt.Printf("  Extracted  %s HTML records\n", infoStyle.Render(ccFmtInt64(totalExtract.Load())))
+	fmt.Printf("  Converted  %s to Markdown\n", infoStyle.Render(ccFmtInt64(totalConvert.Load())))
+	fmt.Printf("  Compressed %s → markdown/  (%s)\n",
+		infoStyle.Render(ccFmtInt64(totalCompress.Load())), formatBytes(disk3))
+	if totalErrors.Load() > 0 {
+		fmt.Printf("  Errors     %s\n", warningStyle.Render(ccFmtInt64(totalErrors.Load())))
+	}
+	readMBs := float64(totalRead.Load()) / (1024 * 1024) / totalDuration.Seconds()
+	writeMBs := float64(totalWrite.Load()) / (1024 * 1024) / totalDuration.Seconds()
+	fmt.Printf("  Rate       %.0f docs/s  ·  %.1f MB/s read  ·  %.1f MB/s write\n",
+		rate, readMBs, writeMBs)
+	fmt.Printf("  Time       %s\n", totalDuration.Round(time.Millisecond))
+	fmt.Println()
+
+	return gerr
 }
 
 // runWARCMDFileMode runs the 3-phase file-based pipeline.
@@ -389,8 +533,8 @@ func printWarcMDSummary(rows []warcMDPhaseRow, s1, s3 *warcmd.PhaseStats, disk1,
 	for _, r := range rows {
 		s := r.stats
 		rate := float64(0)
-		if s.Duration.Seconds() > 0 && (s.Files > 0 || s.Errors > 0) {
-			rate = float64(s.Files+s.Errors) / s.Duration.Seconds()
+		if s.Duration.Seconds() > 0 {
+			rate = float64(s.Files+s.Skipped+s.Errors) / s.Duration.Seconds()
 		}
 		if s.PeakMemMB > peakRAM {
 			peakRAM = s.PeakMemMB
