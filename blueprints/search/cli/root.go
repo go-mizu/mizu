@@ -68,7 +68,6 @@ Get started:
 	root.AddCommand(NewInit())
 	root.AddCommand(NewSeed())
 	root.AddCommand(NewCrawl())
-	root.AddCommand(NewRecrawl())
 	root.AddCommand(NewAnalytics())
 	root.AddCommand(NewFW1())
 	root.AddCommand(NewFW2())
@@ -79,6 +78,9 @@ Get started:
 	root.AddCommand(NewX())
 	root.AddCommand(NewPerplexity())
 	root.AddCommand(NewQQ())
+	root.AddCommand(NewHN())
+	root.AddCommand(NewLocal())
+	root.AddCommand(NewRSS())
 
 	if err := fang.Execute(ctx, root,
 		fang.WithVersion(Version),

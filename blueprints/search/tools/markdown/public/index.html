@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>URL to Markdown</title>
+  <meta name="description" content="Convert any URL to clean Markdown. Free, instant, built for AI agents.">
+  <script>(function(){if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark');})();</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+  /* ─── Header ─── */
+  #hdr{display:flex;align-items:center;gap:14px;padding:10px 32px;position:sticky;top:0;z-index:50;background:rgba(255,255,255,.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);transition:background .2s}
+  .dark #hdr{background:rgba(9,9,11,.85)}
+  .hnav{display:flex;align-items:center;gap:2px;flex-shrink:0;margin-left:auto}
+  #hform{flex:1;min-width:0;display:flex;max-width:420px}
+  .fi{flex:1;font-family:'Geist Mono',monospace;font-size:12px;padding:5px 10px;border:1px solid #e4e4e7;border-right:0;background:transparent;color:#18181b;outline:none;min-width:0;transition:border-color .15s}
+  .fi:focus{border-color:#a1a1aa}.fi::placeholder{color:#a1a1aa}
+  .dark .fi{border-color:#27272a;color:#f4f4f5}.dark .fi:focus{border-color:#52525b}.dark .fi::placeholder{color:#3f3f46}
+  .fb{font-family:'Geist Mono',monospace;font-size:12px;font-weight:500;padding:5px 12px;border:1px solid #e4e4e7;background:transparent;color:#52525b;white-space:nowrap;cursor:pointer;transition:background .15s,border-color .15s}
+  .fb:hover{background:#fafafa;border-color:#d4d4d8}
+  .dark .fb{border-color:#27272a;color:#a1a1aa}.dark .fb:hover{background:#18181b;border-color:#3f3f46}
+  @media(max-width:680px){
+    #hdr{flex-wrap:wrap;padding:10px 16px;gap:8px}
+    #hform{order:3;width:100%;max-width:none;flex:none}
+    .hlinks{display:none}
+  }
+
+  /* ─── Hero ─── */
+  .hero{position:relative;overflow:hidden;padding:96px 32px 72px;text-align:center}
+  @media(max-width:640px){.hero{padding:56px 20px 48px}}
+  .hero-orb{position:absolute;border-radius:50%;pointer-events:none;filter:blur(100px)}
+  .orb-a{width:500px;height:500px;background:rgba(161,161,170,.07);top:-200px;right:-80px;animation:drift 28s ease-in-out infinite}
+  .orb-b{width:400px;height:400px;background:rgba(113,113,122,.05);bottom:-100px;left:-150px;animation:drift 22s ease-in-out infinite reverse}
+  .dark .orb-a{background:rgba(244,244,245,.025)}.dark .orb-b{background:rgba(161,161,170,.02)}
+  @keyframes drift{0%,100%{transform:translate(0,0)}33%{transform:translate(30px,-20px)}66%{transform:translate(-20px,30px)}}
+
+  @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+  .hi{animation:fadeUp .7s ease forwards}
+  .hi-1{opacity:0;animation-delay:.05s}
+  .hi-2{opacity:0;animation-delay:.15s}
+  .hi-3{opacity:0;animation-delay:.3s}
+  .hi-4{opacity:0;animation-delay:.45s}
+  .hi-5{opacity:0;animation-delay:.6s}
+  .hi-6{opacity:0;animation-delay:.75s}
+
+  .hero-badge{display:inline-block;font-family:'Geist Mono',monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#a1a1aa;margin-bottom:28px}
+  .dark .hero-badge{color:#52525b}
+  .hero h1{font-family:'Geist',-apple-system,sans-serif;font-size:clamp(2rem,5vw,3.25rem);font-weight:700;letter-spacing:-.035em;line-height:1.15;margin:0 auto 48px;max-width:580px}
+
+  /* Steps */
+  .steps{display:flex;flex-direction:column;gap:14px;max-width:480px;margin:0 auto 44px;text-align:left}
+  .step{display:flex;align-items:baseline;gap:16px}
+  .step-n{font-family:'Geist Mono',monospace;font-size:13px;font-weight:600;color:#d4d4d8;flex-shrink:0;width:18px;text-align:right}
+  .dark .step-n{color:#3f3f46}
+  .step-t{font-size:15px;color:#52525b;line-height:1.65}
+  .dark .step-t{color:#a1a1aa}
+  .step-t code{font-family:'Geist Mono',monospace;font-size:12px;background:#f4f4f5;padding:2px 7px;color:#18181b;white-space:nowrap}
+  .dark .step-t code{background:#18181b;color:#e4e4e7}
+
+  .try-btn{display:inline-block;font-family:'Geist Mono',monospace;font-size:12px;font-weight:600;letter-spacing:.08em;padding:11px 28px;background:#18181b;color:#fff;border:none;cursor:pointer;text-decoration:none;transition:opacity .15s}
+  .try-btn:hover{opacity:.8}
+  .dark .try-btn{background:#f4f4f5;color:#09090b}
+
+  /* ─── Agents ─── */
+  .agents{text-align:center;padding:48px 32px 0}
+  .agents-lbl{font-family:'Geist Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#d4d4d8;margin-bottom:20px}
+  .dark .agents-lbl{color:#27272a}
+  .agents-row{display:flex;justify-content:center;gap:28px;flex-wrap:wrap;align-items:center}
+  .ag{display:flex;align-items:center;gap:7px;color:#a1a1aa;transition:color .2s}
+  .ag:hover{color:#71717a}
+  .dark .ag{color:#3f3f46}.dark .ag:hover{color:#52525b}
+  .ag svg{flex-shrink:0}
+  .ag span{font-family:'Geist Mono',monospace;font-size:11px;font-weight:500}
+
+  /* ─── Copy section ─── */
+  .copy-wrap{max-width:480px;margin:44px auto 0;padding:0 32px}
+  .copy-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;font-family:'Geist Mono',monospace;font-size:12px;font-weight:500;padding:13px 20px;background:transparent;border:1px solid #e4e4e7;color:#71717a;cursor:pointer;transition:all .25s}
+  .copy-btn:hover{border-color:#d4d4d8;background:#fafafa;color:#18181b}
+  .dark .copy-btn{border-color:#27272a;color:#52525b}.dark .copy-btn:hover{border-color:#3f3f46;background:#111113;color:#f4f4f5}
+  .copy-btn.copied{border-color:#86efac;color:#16a34a;background:rgba(34,197,94,.03)}
+  .dark .copy-btn.copied{border-color:#166534;color:#4ade80;background:rgba(34,197,94,.05)}
+  .copy-btn svg{flex-shrink:0}
+  .copy-fb{font-family:'Geist Mono',monospace;font-size:11px;color:#16a34a;text-align:center;margin-top:8px;height:16px;opacity:0;transform:translateY(-4px);transition:opacity .3s,transform .3s}
+  .copy-fb.show{opacity:1;transform:none}
+  .dark .copy-fb{color:#4ade80}
+
+  /* ─── Divider ─── */
+  .gdiv{height:1px;background:linear-gradient(90deg,transparent,#e4e4e7 20%,#e4e4e7 80%,transparent)}
+  .dark .gdiv{background:linear-gradient(90deg,transparent,#1f1f23 20%,#1f1f23 80%,transparent)}
+
+  /* ─── Stats ─── */
+  .stats{display:flex;justify-content:center;gap:28px;padding:36px 32px;flex-wrap:wrap}
+  .stat{display:flex;align-items:center;gap:7px}
+  .stat-v{font-family:'Geist Mono',monospace;font-size:13px;font-weight:600;color:#18181b}
+  .dark .stat-v{color:#f4f4f5}
+  .stat-l{font-size:13px;color:#a1a1aa}
+  .dark .stat-l{color:#52525b}
+  .sdot{width:3px;height:3px;border-radius:50%;background:#d4d4d8;flex-shrink:0}
+  .dark .sdot{background:#27272a}
+
+  /* ─── Scroll reveal ─── */
+  .rv{opacity:0;transform:translateY(20px);transition:opacity .7s ease,transform .7s ease}
+  .rv.vis{opacity:1;transform:none}
+  .rv.d1{transition-delay:.1s}.rv.d2{transition-delay:.15s}.rv.d3{transition-delay:.2s}
+
+  /* ─── Section label ─── */
+  .slbl{font-family:'Geist Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#a1a1aa;margin-bottom:16px}
+  .dark .slbl{color:#52525b}
+
+  /* ─── Feature cards (1px grid) ─── */
+  .feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:#e4e4e7}
+  .dark .feat-grid{background:#1f1f23}
+  .feat-card{background:#fff;padding:36px 32px;transition:background .2s}
+  .feat-card:hover{background:#fafafa}
+  .dark .feat-card{background:#09090b}.dark .feat-card:hover{background:#111113}
+  .feat-card .fc-i{color:#a1a1aa;margin-bottom:18px}
+  .feat-card h3{font-family:'Geist Mono',monospace;font-size:13px;font-weight:600;margin-bottom:10px;text-transform:lowercase}
+  .feat-card p{font-size:14px;color:#71717a;line-height:1.7}
+  .dark .feat-card p{color:#52525b}
+  .feat-card code,.dark .feat-card code{font-family:'Geist Mono',monospace;font-size:11px;padding:1px 5px}
+  .feat-card code{background:#f4f4f5;color:#18181b}
+  .dark .feat-card code{background:#18181b;color:#e4e4e7}
+
+  /* ─── Terminal ─── */
+  .term{background:#09090b;padding:24px 28px;font-family:'Geist Mono',monospace;font-size:13px;line-height:2;overflow-x:auto;border:1px solid #1f1f23}
+  .dark .term{background:#111113;border-color:#1f1f23}
+  .tc{color:#52525b}.tv{color:#f4f4f5;font-weight:500}.td{color:#71717a}
+
+  /* ─── Use case cards ─── */
+  .use-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+  .use-card{padding:28px;border:1px solid #e4e4e7;transition:border-color .2s,background .2s}
+  .use-card:hover{border-color:#d4d4d8;background:#fafafa}
+  .dark .use-card{border-color:#1f1f23}.dark .use-card:hover{border-color:#27272a;background:#111113}
+  .use-card .uc-i{color:#a1a1aa;margin-bottom:16px}
+  .use-card h3{font-family:'Geist Mono',monospace;font-size:13px;font-weight:600;margin-bottom:8px;text-transform:lowercase}
+  .use-card p{font-size:13px;color:#71717a;line-height:1.65}
+  .dark .use-card p{color:#52525b}
+
+  /* ─── FAQ ─── */
+  .faq-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:36px 56px}
+  .faq-grid h3{font-family:'Geist Mono',monospace;font-size:13px;font-weight:600;margin-bottom:8px}
+  .faq-grid p{font-size:14px;color:#71717a;line-height:1.7}
+  .dark .faq-grid p{color:#52525b}
+  .faq-grid code{font-family:'Geist Mono',monospace;font-size:11px;padding:1px 5px}
+  .faq-grid code{background:#f4f4f5;color:#18181b}
+  .dark .faq-grid code{background:#18181b;color:#e4e4e7}
+
+  /* ─── Ticker ─── */
+  .ticker-wrap{overflow:hidden;padding:16px 0;border-top:1px solid #e4e4e7}
+  .dark .ticker-wrap{border-top-color:#1f1f23}
+  .ticker{display:flex;width:max-content;animation:tick 50s linear infinite}
+  @keyframes tick{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+  .ticker span{font-family:'Geist Mono',monospace;font-size:11px;color:#d4d4d8;white-space:nowrap;padding:0 16px}
+  .dark .ticker span{color:#27272a}
+
+  /* ─── Responsive ─── */
+  @media(max-width:768px){
+    .feat-grid{grid-template-columns:1fr}
+    .use-grid{grid-template-columns:1fr}
+    .faq-grid{grid-template-columns:1fr;gap:28px}
+    .agents-row{gap:16px}
+    .stats{gap:16px}
+  }
+  @media(max-width:480px){
+    .hero h1{font-size:1.75rem!important}
+    .steps{gap:10px}
+    .agents-row{gap:12px}
+    .copy-wrap{padding:0 16px}
+  }
+  </style>
+</head>
+<body class="font-sans bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 transition-colors duration-200">
+
+<!-- Grain -->
+<svg style="position:fixed;inset:0;width:100%;height:100%;z-index:9999;pointer-events:none;opacity:.03" xmlns="http://www.w3.org/2000/svg"><filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="4" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(#grain)"/></svg>
+
+<!-- Header -->
+<header id="hdr">
+  <a href="/" class="flex items-center flex-shrink-0 no-underline">
+    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-900 dark:text-zinc-100">
+      <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 16V8.5a.5.5 0 0 1 .9-.3l2.7 3.6a.5.5 0 0 0 .8 0l2.7-3.6a.5.5 0 0 1 .9.3V16"/>
+    </svg>
+  </a>
+  <form id="hform" onsubmit="handleSubmit(event)">
+    <input id="url-in" type="url" class="fi" placeholder="https://example.com" autocomplete="off" spellcheck="false">
+    <button type="submit" class="fb">Convert</button>
+  </form>
+  <nav class="hnav">
+    <div class="hlinks flex items-center">
+      <a href="/docs" class="text-xs text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-2.5 py-1.5 transition-colors no-underline">Docs</a>
+      <a href="https://github.com/go-mizu/mizu" class="text-xs text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-2.5 py-1.5 transition-colors no-underline">GitHub</a>
+      <a href="/llms.txt" class="text-xs text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-2.5 py-1.5 transition-colors no-underline">llms.txt</a>
+    </div>
+    <button onclick="toggleTheme()" title="Toggle dark mode" class="text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 p-1.5 transition-colors cursor-pointer bg-transparent border-none flex items-center">
+      <svg class="dark:hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
+      <svg class="hidden dark:block" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+    </button>
+  </nav>
+</header>
+
+<main>
+
+<!-- ─── Hero ─── -->
+<section class="hero">
+  <div class="hero-orb orb-a"></div>
+  <div class="hero-orb orb-b"></div>
+  <div style="position:relative;max-width:600px;margin:0 auto">
+    <p class="hero-badge hi hi-1">url &rarr; markdown</p>
+    <h1 class="hi hi-2">Free, instant Markdown<br>for agents</h1>
+    <div class="steps hi hi-3">
+      <div class="step">
+        <span class="step-n">1</span>
+        <span class="step-t">Pass any URL to <code>markdown.go-mizu.workers.dev/{url}</code></span>
+      </div>
+      <div class="step">
+        <span class="step-n">2</span>
+        <span class="step-t">Get clean Markdown back, ready for your LLM</span>
+      </div>
+    </div>
+    <div class="hi hi-4">
+      <a href="/preview" class="try-btn">TRY IT NOW</a>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Works with every agent ─── -->
+<div class="agents hi hi-5">
+  <p class="agents-lbl">Works with every agent</p>
+  <div class="agents-row">
+    <div class="ag">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+      <span>Claude Code</span>
+    </div>
+    <div class="ag">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4l7.07 17 2.51-7.39L21 11.07z"/></svg>
+      <span>Cursor</span>
+    </div>
+    <div class="ag">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c2-3 6-6 10-6s8 3 10 6"/><path d="M2 18c2-3 6-6 10-6s8 3 10 6"/></svg>
+      <span>Windsurf</span>
+    </div>
+    <div class="ag">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 8h6"/><path d="M9 12h6"/><path d="M9 16h4"/></svg>
+      <span>Codex</span>
+    </div>
+    <div class="ag">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      <span>Copilot</span>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Copy instructions ─── -->
+<div class="copy-wrap hi hi-6">
+  <button id="copy-btn" class="copy-btn" onclick="copySetup()">
+    <svg id="copy-ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+    <svg id="check-ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M20 6 9 17l-5-5"/></svg>
+    <span id="copy-txt">Copy setup instructions for my agent</span>
+  </button>
+  <p id="copy-fb" class="copy-fb">Copied! Now paste into your agent</p>
+</div>
+
+<pre id="agent-inst" style="display:none">Use https://markdown.go-mizu.workers.dev to read any URL as clean Markdown.
+
+GET  https://markdown.go-mizu.workers.dev/{url}
+POST https://markdown.go-mizu.workers.dev/convert
+     Body: {"url": "https://example.com"}
+
+Returns text/markdown or JSON with metadata. Open access.</pre>
+
+<!-- ─── Stats ─── -->
+<div class="max-w-page mx-auto" style="padding:48px 32px 0">
+  <div class="gdiv"></div>
+  <div class="stats rv">
+    <div class="stat"><span class="stat-v">80%</span><span class="stat-l">fewer tokens</span></div>
+    <div class="sdot"></div>
+    <div class="stat"><span class="stat-v">&lt;1s</span><span class="stat-l">cached response</span></div>
+    <div class="sdot"></div>
+    <div class="stat"><span class="stat-v">Free</span><span class="stat-l">no auth required</span></div>
+  </div>
+  <div class="gdiv"></div>
+</div>
+
+<!-- ─── Pipeline ─── -->
+<div class="max-w-page mx-auto px-8" style="padding:80px 0">
+  <p class="slbl rv">pipeline</p>
+  <h2 class="rv d1 font-semibold" style="font-family:'Geist Mono',monospace;font-size:20px;letter-spacing:-.02em;margin-bottom:12px">Three tiers. Automatic fallback.</h2>
+  <p class="rv d2" style="font-size:15px;color:#71717a;margin-bottom:48px;max-width:480px;line-height:1.7">Every URL goes through up to three conversion tiers, falling back automatically until clean Markdown is produced.</p>
+  <div class="feat-grid rv d3">
+    <div class="feat-card">
+      <div class="fc-i"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+      <h3 class="text-zinc-900 dark:text-zinc-100">native</h3>
+      <p>Sends <code>Accept: text/markdown</code>. Sites that support it return Markdown directly with zero conversion overhead.</p>
+    </div>
+    <div class="feat-card">
+      <div class="fc-i"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3Z"/></svg></div>
+      <h3 class="text-zinc-900 dark:text-zinc-100">ai extraction</h3>
+      <p>HTML fetched and converted via AI model. Structure-aware extraction that drops navigation, ads, and scripts.</p>
+    </div>
+    <div class="feat-card">
+      <div class="fc-i"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg></div>
+      <h3 class="text-zinc-900 dark:text-zinc-100">browser render</h3>
+      <p>Headless browser for JS-heavy pages. React, Vue, Angular, any SPA. Fully rendered before conversion.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Quick start ─── -->
+<div class="max-w-page mx-auto px-8" style="padding-bottom:80px">
+  <p class="slbl rv">quick start</p>
+  <h2 class="rv d1 font-semibold" style="font-family:'Geist Mono',monospace;font-size:20px;letter-spacing:-.02em;margin-bottom:12px">Works from any language or shell.</h2>
+  <p class="rv d2" style="font-size:15px;color:#71717a;margin-bottom:40px;max-width:480px;line-height:1.7">Append any URL to the endpoint. POST for JSON with metadata.</p>
+  <div class="term rv d3">
+    <span class="tc">#</span> <span class="td">get markdown from any URL</span><br>
+    <span class="tc">$</span> <span class="tv">curl</span> <span class="td">https://markdown.go-mizu.workers.dev/https://example.com</span><br>
+    <br>
+    <span class="tc">#</span> <span class="td">or POST for JSON with metadata</span><br>
+    <span class="tc">$</span> <span class="tv">curl</span> <span class="td">-X POST https://markdown.go-mizu.workers.dev/convert \</span><br>
+    <span class="td">&nbsp;&nbsp;&nbsp;&nbsp;-H 'Content-Type: application/json' \</span><br>
+    <span class="td">&nbsp;&nbsp;&nbsp;&nbsp;-d '{"url":"https://example.com"}'</span>
+  </div>
+</div>
+
+<!-- ─── Use cases ─── -->
+<div class="max-w-page mx-auto px-8" style="padding-bottom:80px">
+  <div class="gdiv" style="margin-bottom:80px"></div>
+  <p class="slbl rv">use cases</p>
+  <h2 class="rv d1 font-semibold" style="font-family:'Geist Mono',monospace;font-size:20px;letter-spacing:-.02em;margin-bottom:48px">Built for agents. Used everywhere.</h2>
+  <div class="use-grid">
+    <div class="use-card rv">
+      <div class="uc-i"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg></div>
+      <h3 class="text-zinc-900 dark:text-zinc-100">agent browsing</h3>
+      <p>Let your AI agent read any webpage as structured text. One line in your system prompt, every URL readable.</p>
+    </div>
+    <div class="use-card rv d1">
+      <div class="uc-i"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg></div>
+      <h3 class="text-zinc-900 dark:text-zinc-100">rag pipelines</h3>
+      <p>Feed clean Markdown into embeddings. Structured content produces better chunks and retrieval.</p>
+    </div>
+    <div class="use-card rv d2">
+      <div class="uc-i"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg></div>
+      <h3 class="text-zinc-900 dark:text-zinc-100">content monitoring</h3>
+      <p>Track URL changes over time. Markdown diffs are clean, meaningful, easy to process.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ─── FAQ ─── -->
+<div class="max-w-page mx-auto px-8" style="padding-bottom:80px">
+  <div class="gdiv" style="margin-bottom:80px"></div>
+  <p class="slbl rv">faq</p>
+  <h2 class="rv d1 font-semibold" style="font-family:'Geist Mono',monospace;font-size:20px;letter-spacing:-.02em;margin-bottom:48px">Common questions</h2>
+  <div class="faq-grid rv d2">
+    <div>
+      <h3 class="text-zinc-900 dark:text-zinc-100">Why Markdown?</h3>
+      <p>HTML has navigation, ads, scripts, styling your agent doesn't need. Markdown keeps headings, paragraphs, links. ~80% fewer tokens.</p>
+    </div>
+    <div>
+      <h3 class="text-zinc-900 dark:text-zinc-100">Is it free?</h3>
+      <p>Yes. Open access. No account, no API key. Use the URL directly.</p>
+    </div>
+    <div>
+      <h3 class="text-zinc-900 dark:text-zinc-100">JS-heavy pages?</h3>
+      <p>Falls back to headless browser rendering. React, Vue, Angular, any SPA handled automatically.</p>
+    </div>
+    <div>
+      <h3 class="text-zinc-900 dark:text-zinc-100">Browser CORS?</h3>
+      <p>All endpoints return <code>Access-Control-Allow-Origin: *</code>. Call from client JS directly.</p>
+    </div>
+    <div>
+      <h3 class="text-zinc-900 dark:text-zinc-100">Protected pages?</h3>
+      <p>Only public URLs. Pages behind auth or paywalls return an error.</p>
+    </div>
+    <div>
+      <h3 class="text-zinc-900 dark:text-zinc-100">Limits?</h3>
+      <p>5 MB max. 10s timeout, 20s for browser rendering. No hard rate limit.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Ticker ─── -->
+<div class="ticker-wrap">
+  <div class="ticker">
+    <span>agent browsing</span><span>&middot;</span><span>RAG pipelines</span><span>&middot;</span><span>content monitoring</span><span>&middot;</span><span>documentation</span><span>&middot;</span><span>research</span><span>&middot;</span><span>summarization</span><span>&middot;</span><span>data extraction</span><span>&middot;</span><span>web scraping</span><span>&middot;</span>
+    <span>agent browsing</span><span>&middot;</span><span>RAG pipelines</span><span>&middot;</span><span>content monitoring</span><span>&middot;</span><span>documentation</span><span>&middot;</span><span>research</span><span>&middot;</span><span>summarization</span><span>&middot;</span><span>data extraction</span><span>&middot;</span><span>web scraping</span><span>&middot;</span>
+  </div>
+</div>
+
+</main>
+
+<script>
+var INST = document.getElementById('agent-inst').textContent;
+
+function handleSubmit(e) {
+  e.preventDefault();
+  var u = document.getElementById('url-in').value.trim();
+  if (u) window.location.href = '/preview?url=' + encodeURIComponent(u);
+}
+
+function copySetup() {
+  var btn = document.getElementById('copy-btn');
+  var txt = document.getElementById('copy-txt');
+  var fb = document.getElementById('copy-fb');
+  var ci = document.getElementById('copy-ic');
+  var ch = document.getElementById('check-ic');
+  function show() {
+    btn.classList.add('copied');
+    txt.textContent = 'Copied! Now paste into your agent';
+    ci.style.display = 'none';
+    ch.style.display = '';
+    fb.classList.add('show');
+    setTimeout(function() {
+      btn.classList.remove('copied');
+      txt.textContent = 'Copy setup instructions for my agent';
+      ci.style.display = '';
+      ch.style.display = 'none';
+      fb.classList.remove('show');
+    }, 3000);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(INST.trim()).then(show).catch(function() { fbCopy(INST.trim()); show(); });
+  } else { fbCopy(INST.trim()); show(); }
+}
+
+function fbCopy(t) {
+  var a = document.createElement('textarea');
+  a.value = t; a.style.position = 'fixed'; a.style.opacity = '0';
+  document.body.appendChild(a); a.focus(); a.select();
+  document.execCommand('copy'); document.body.removeChild(a);
+}
+
+function toggleTheme() {
+  var d = document.documentElement.classList.toggle('dark');
+  localStorage.setItem('theme', d ? 'dark' : 'light');
+}
+
+// Scroll reveal
+var io = new IntersectionObserver(function(ee) {
+  ee.forEach(function(e) { if (e.isIntersecting) { e.target.classList.add('vis'); io.unobserve(e.target); } });
+}, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+document.querySelectorAll('.rv').forEach(function(el) { io.observe(el); });
+</script>
+</body>
+</html>

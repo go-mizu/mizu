@@ -38,7 +38,11 @@ Examples:
   search cc site duckdb.org
   search cc site duckdb.org --mode links
   search cc site duckdb.org --mode full --workers 1000
-  search cc site duckdb.org --mode urls --crawl CC-MAIN-2025-51`,
+  search cc site duckdb.org --mode urls --crawl CC-MAIN-2026-08`,
+		Example: `  search cc site duckdb.org
+  search cc site duckdb.org --mode links
+  search cc site openai.com --mode full --workers 500
+  search cc site example.com --crawl CC-MAIN-2026-08`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			domain := args[0]
@@ -60,7 +64,7 @@ Examples:
 	}
 
 	cmd.Flags().StringVar(&mode, "mode", "urls", "Extraction mode: urls, links, full")
-	cmd.Flags().StringVar(&crawlID, "crawl", "CC-MAIN-2026-04", "Crawl ID")
+	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest cached/latest available)")
 	cmd.Flags().IntVar(&workers, "workers", 500, "WARC fetch workers")
 	cmd.Flags().IntVar(&timeout, "timeout", 30000, "Per-request timeout ms")
 	cmd.Flags().IntVar(&maxBody, "max-body", 512*1024, "Max body size bytes")
@@ -73,6 +77,17 @@ func runCCSite(ctx context.Context, domain string, mode cc.SiteMode, crawlID str
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("Common Crawl Site Extraction"))
 	fmt.Println()
+
+	resolvedCrawlID, crawlNote, err := ccResolveCrawlID(ctx, crawlID)
+	if err != nil {
+		return fmt.Errorf("resolving crawl: %w", err)
+	}
+	crawlID = resolvedCrawlID
+	if crawlNote != "" {
+		fmt.Println(labelStyle.Render("Using defaults"))
+		ccPrintDefaultCrawlResolution(crawlID, crawlNote)
+		fmt.Println()
+	}
 
 	modeStr := "urls"
 	switch mode {

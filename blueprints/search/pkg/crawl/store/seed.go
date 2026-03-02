@@ -1,0 +1,160 @@
+package store
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	_ "github.com/duckdb/duckdb-go/v2"
+	crawl "github.com/go-mizu/mizu/blueprints/search/pkg/crawl"
+)
+
+// SeedStats holds aggregate stats about the seed database.
+type SeedStats struct {
+	TotalURLs     int
+	UniqueDomains int
+	Protocols     map[string]int // HTTP vs HTTPS
+	ContentTypes  map[string]int
+	TLDs          map[string]int
+}
+
+// LoadSeedURLs reads all URLs from a DuckDB seed database.
+// Only reads url and domain columns for maximum loading speed.
+// No ORDER BY since interleaveByDomain handles distribution.
+func LoadSeedURLs(ctx context.Context, dbPath string, expectedCount int) ([]crawl.SeedURL, error) {
+	db, err := sql.Open("duckdb", dbPath+"?access_mode=READ_ONLY")
+	if err != nil {
+		return nil, fmt.Errorf("opening seed db: %w", err)
+	}
+	defer db.Close()
+
+	rows, err := db.QueryContext(ctx, `
+		SELECT url, COALESCE(domain, '') as domain FROM docs
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("querying seed urls: %w", err)
+	}
+	defer rows.Close()
+
+	seeds := make([]crawl.SeedURL, 0, expectedCount)
+	for rows.Next() {
+		var s crawl.SeedURL
+		if err := rows.Scan(&s.URL, &s.Domain); err != nil {
+			return nil, fmt.Errorf("scanning seed row: %w", err)
+		}
+		seeds = append(seeds, s)
+	}
+	return seeds, rows.Err()
+}
+
+// LoadSeedStats computes aggregate statistics about the seed database.
+func LoadSeedStats(ctx context.Context, dbPath string) (*SeedStats, error) {
+	db, err := sql.Open("duckdb", dbPath+"?access_mode=READ_ONLY")
+	if err != nil {
+		return nil, fmt.Errorf("opening seed db: %w", err)
+	}
+	defer db.Close()
+
+	stats := &SeedStats{
+		Protocols:    make(map[string]int),
+		ContentTypes: make(map[string]int),
+		TLDs:         make(map[string]int),
+	}
+
+	// Total + unique domains
+	err = db.QueryRowContext(ctx,
+		"SELECT COUNT(*), COUNT(DISTINCT domain) FROM docs").
+		Scan(&stats.TotalURLs, &stats.UniqueDomains)
+	if err != nil {
+		return nil, fmt.Errorf("counting: %w", err)
+	}
+
+	// Protocol distribution
+	rows, err := db.QueryContext(ctx,
+		"SELECT COALESCE(protocol,'?'), COUNT(*) FROM docs GROUP BY protocol")
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var k string
+		var v int
+		rows.Scan(&k, &v)
+		stats.Protocols[k] = v
+	}
+	rows.Close()
+
+	// Content type distribution (optional column)
+	rows, err = db.QueryContext(ctx,
+		"SELECT COALESCE(content_type,'?'), COUNT(*) FROM docs GROUP BY content_type ORDER BY COUNT(*) DESC LIMIT 20")
+	if err == nil {
+		for rows.Next() {
+			var k string
+			var v int
+			rows.Scan(&k, &v)
+			stats.ContentTypes[k] = v
+		}
+		rows.Close()
+	}
+
+	// TLD distribution
+	rows, err = db.QueryContext(ctx,
+		"SELECT COALESCE(tld,'?'), COUNT(*) FROM docs GROUP BY tld ORDER BY COUNT(*) DESC LIMIT 20")
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var k string
+		var v int
+		rows.Scan(&k, &v)
+		stats.TLDs[k] = v
+	}
+	rows.Close()
+
+	return stats, nil
+}
+
+// LoadAlreadyCrawledFromDir scans result shard files in a directory for already-crawled URLs.
+func LoadAlreadyCrawledFromDir(ctx context.Context, dir string) (map[string]bool, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, nil // dir doesn't exist yet
+	}
+
+	done := make(map[string]bool)
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Name(), "results_") || !strings.HasSuffix(e.Name(), ".duckdb") {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		db, err := sql.Open("duckdb", path+"?access_mode=READ_ONLY")
+		if err != nil {
+			continue
+		}
+
+		var count int
+		err = db.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'results'").
+			Scan(&count)
+		if err != nil || count == 0 {
+			db.Close()
+			continue
+		}
+
+		rows, err := db.QueryContext(ctx, "SELECT url FROM results")
+		if err != nil {
+			db.Close()
+			continue
+		}
+		for rows.Next() {
+			var u string
+			rows.Scan(&u)
+			done[u] = true
+		}
+		rows.Close()
+		db.Close()
+	}
+	return done, nil
+}

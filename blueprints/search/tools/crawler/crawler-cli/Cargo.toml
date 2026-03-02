@@ -1,0 +1,29 @@
+[package]
+name = "crawler-cli"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "crawler"
+path = "src/main.rs"
+
+[features]
+default = ["wreq-engine"]
+wreq-engine = ["crawler-lib/wreq-engine"]
+
+[dependencies]
+crawler-lib = { path = "../crawler-lib" }
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+chrono = "0.4"
+ratatui = "0.30"
+crossterm = "0.29"
+reqwest = { version = "0.13", default-features = false, features = ["native-tls-vendored", "gzip", "stream"] }
+flate2 = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+indicatif = "0.17"
+futures-util = { version = "0.3", default-features = false }

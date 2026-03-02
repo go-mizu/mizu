@@ -80,9 +80,22 @@ type Store interface {
 	Summary() SummaryStore
 	Widget() WidgetStore
 	SmallWeb() SmallWebStore
+	RSS() RSSStore
 }
 
 // ========== Store Interfaces ==========
+
+// RSSStore handles RSS feed and item storage.
+type RSSStore interface {
+	AddFeed(ctx context.Context, feed *types.RSSFeed) (int64, error)
+	GetFeed(ctx context.Context, id int64) (*types.RSSFeed, error)
+	GetFeedByurl(ctx context.Context, id string) (*types.RSSFeed, error)
+	ListFeeds(ctx context.Context) ([]*types.RSSFeed, error)
+	AddItem(ctx context.Context, item *types.RSSItem) (int64, error)
+	ListItems(ctx context.Context, feedID int64) ([]*types.RSSItem, error)
+	GetItemByUrl(ctx context.Context, url string) (*types.RSSItem, error)
+}
+
 
 // SearchStore handles search operations.
 type SearchStore interface {

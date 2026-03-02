@@ -1,0 +1,56 @@
+# VCS / editor
+.git
+.gitignore
+.DS_Store
+.idea
+.vscode
+*.swp
+*.swo
+
+# Build outputs / local binaries
+search
+searchbin
+/search
+/searchbin
+dist
+bin
+*.out
+*.test
+
+# Local runtime/test data
+tmp
+temp
+reports
+store
+spec
+test
+coverage*
+*.log
+
+# Frontend deps/build cache (keep source; backend build may embed frontend assets)
+**/node_modules
+**/.pnpm-store
+**/.npm
+**/.yarn
+
+# Large local datasets / exports (if present under repo)
+data
+/data
+/tools
+/tools/**
+
+# Large optional engine artifacts not needed to compile cmd/search
+/pkg/engine/fineweb/drivers/fts_rust
+/pkg/engine/fineweb/drivers/fts_rust/**
+/pkg/engine/fineweb/benchmark
+/pkg/engine/fineweb/benchmark/**
+
+# Other local caches / heavyweight generated trees
+/.turbo
+/.cache
+**/target
+**/Pods
+**/.gradle
+**/DerivedData
+
+# Keep all Go source + module files for Docker build

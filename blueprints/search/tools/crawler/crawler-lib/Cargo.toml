@@ -1,0 +1,49 @@
+[package]
+name = "crawler-lib"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+wreq-engine = ["wreq", "wreq-util"]
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.13", default-features = false, features = ["native-tls-vendored", "gzip", "brotli", "deflate", "stream", "hickory-dns", "http2"] }
+wreq = { version = "6.0.0-rc.28", default-features = false, features = ["gzip", "brotli", "deflate", "zstd", "stream", "hickory-dns", "prefix-symbols"], optional = true }
+wreq-util = { version = "3.0.0-rc.10", optional = true }
+hyper = { version = "1", features = ["client", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "tokio", "http1", "http2"] }
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "http2", "ring", "webpki-tokio"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "tls12"] }
+http-body-util = "0.1"
+bytes = "1"
+http = "1"
+
+duckdb = { version = "1.4", features = ["bundled"] }
+arrow = { version = "58", default-features = false, features = ["csv"] }
+parquet = { version = "58", features = ["snap", "zstd"] }
+
+chrono = { version = "0.4", features = ["serde"] }
+sha2 = "0.10"
+flate2 = "1"
+url = "2"
+addr = "0.15"
+serde = { version = "1", features = ["derive"] }
+rkyv = { version = "0.8", features = ["bytecheck"] }
+tracing = "0.1"
+anyhow = "1"
+thiserror = "2"
+rand = "0.10"
+ahash = "0.8"
+crossbeam-channel = "0.5"
+sysinfo = "0.38"
+libc = "0.2"
+async-trait = "0.1"
+async-channel = "2"
+futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
+dashmap = "6"
+rayon = "1"
+
+[dev-dependencies]
+tempfile = "3"

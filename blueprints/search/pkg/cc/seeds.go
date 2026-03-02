@@ -4,9 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"strings"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/recrawler"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/archived/recrawler"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 )
@@ -43,6 +44,62 @@ func ExtractSeedURLsFromParquet(ctx context.Context, parquetPath string, filter 
 	return extractSeeds(ctx, db, source, filter)
 }
 
+// WriteSeedURLsFromParquet writes filtered seeds from a parquet file directly to a DuckDB file
+// without loading all rows into Go heap. The destination DuckDB will have a 'docs' table with
+// (url, domain, host) columns pre-sorted by domain for efficient SeedCursor pagination.
+// Removes any existing file at destPath before writing.
+// Returns the total seed count, unique domain count, and any error.
+func WriteSeedURLsFromParquet(ctx context.Context, parquetPath string, filter IndexFilter, destPath string) (int, int, error) {
+	// Remove stale file so CREATE TABLE starts fresh.
+	os.Remove(destPath)
+
+	db, err := sql.Open("duckdb", destPath)
+	if err != nil {
+		return 0, 0, fmt.Errorf("opening seed db: %w", err)
+	}
+	defer db.Close()
+
+	source := fmt.Sprintf("read_parquet('%s')", parquetPath)
+	query, args := buildSeedQuerySorted(filter, source)
+	if _, err := db.ExecContext(ctx, "CREATE TABLE docs AS "+query, args...); err != nil {
+		return 0, 0, fmt.Errorf("creating docs table: %w", err)
+	}
+
+	var seedCount, uniqueDomains int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*), COUNT(DISTINCT domain) FROM docs").Scan(&seedCount, &uniqueDomains); err != nil {
+		return 0, 0, fmt.Errorf("counting seeds: %w", err)
+	}
+	return seedCount, uniqueDomains, nil
+}
+
+// buildSeedQuerySorted is like buildSeedQuery but inserts ORDER BY domain before LIMIT,
+// so the resulting DuckDB table rows are pre-sorted for efficient SeedCursor pagination.
+func buildSeedQuerySorted(f IndexFilter, source string) (string, []any) {
+	var b strings.Builder
+	var args []any
+
+	b.WriteString(fmt.Sprintf(`SELECT url,
+		COALESCE(url_host_registered_domain, '') as domain,
+		COALESCE(NULLIF(url_host_name, ''), COALESCE(url_host_registered_domain, '')) as host
+		FROM %s`, source))
+
+	conditions, condArgs := buildSeedConditions(f)
+	args = append(args, condArgs...)
+
+	if len(conditions) > 0 {
+		b.WriteString(" WHERE ")
+		b.WriteString(strings.Join(conditions, " AND "))
+	}
+
+	b.WriteString(" ORDER BY domain")
+
+	if f.Limit > 0 {
+		b.WriteString(fmt.Sprintf(" LIMIT %d", f.Limit))
+	}
+
+	return b.String(), args
+}
+
 // extractSeeds is the shared implementation for ExtractSeedURLs and ExtractSeedURLsFromParquet.
 func extractSeeds(ctx context.Context, db *sql.DB, source string, filter IndexFilter) ([]recrawler.SeedURL, int, error) {
 	// Count unique domains first
@@ -63,7 +120,7 @@ func extractSeeds(ctx context.Context, db *sql.DB, source string, filter IndexFi
 	var seeds []recrawler.SeedURL
 	for rows.Next() {
 		var s recrawler.SeedURL
-		if err := rows.Scan(&s.URL, &s.Domain); err != nil {
+		if err := rows.Scan(&s.URL, &s.Domain, &s.Host); err != nil {
 			return nil, 0, fmt.Errorf("scanning seed: %w", err)
 		}
 		seeds = append(seeds, s)
@@ -96,7 +153,10 @@ func buildSeedQuery(f IndexFilter, source string) (string, []any) {
 	var b strings.Builder
 	var args []any
 
-	b.WriteString(fmt.Sprintf(`SELECT url, COALESCE(url_host_registered_domain, '') as domain FROM %s`, source))
+	b.WriteString(fmt.Sprintf(`SELECT url,
+		COALESCE(url_host_registered_domain, '') as domain,
+		COALESCE(NULLIF(url_host_name, ''), COALESCE(url_host_registered_domain, '')) as host
+		FROM %s`, source))
 
 	conditions, condArgs := buildSeedConditions(f)
 	args = append(args, condArgs...)

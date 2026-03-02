@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Preview — markdown.go-mizu</title>
+  <script>(function(){if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark');})();</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+/* Prose rendered from markdown */
+#prev-out h1{font-size:1.6em;font-weight:600;margin-bottom:1rem;letter-spacing:-.02em;color:#18181b}
+#prev-out h2{font-size:1.3em;font-weight:600;margin:1.5rem 0 .75rem;color:#18181b}
+#prev-out h3{font-size:1.1em;font-weight:600;margin:1.25rem 0 .625rem;color:#18181b}
+#prev-out h4,#prev-out h5,#prev-out h6{font-weight:600;margin:1rem 0 .5rem;color:#18181b}
+#prev-out p{color:#71717a;line-height:1.75;margin-bottom:.875rem}
+#prev-out ul,#prev-out ol{padding-left:1.5rem;margin-bottom:.875rem}
+#prev-out li{line-height:1.7;color:#71717a}
+#prev-out code{font-family:'Geist Mono',ui-monospace,monospace;font-size:.75rem;background:#f4f4f5;padding:.125rem .375rem;color:#3f3f46}
+#prev-out pre{background:#09090b;padding:1.25rem;overflow-x:auto;margin-bottom:1rem}
+#prev-out pre code{background:none;padding:0;color:#e4e4e7;font-size:.8125rem}
+#prev-out blockquote{padding-left:1rem;color:#a1a1aa;margin-bottom:.875rem}
+#prev-out a{color:#18181b;text-decoration:underline;text-underline-offset:2px;text-decoration-color:#d4d4d8}
+#prev-out a:hover{text-decoration-color:#18181b}
+#prev-out table{width:100%;border-collapse:collapse;margin-bottom:1rem;font-size:.875rem}
+#prev-out th,#prev-out td{padding:.5rem .75rem;text-align:left;color:#71717a}
+#prev-out th{background:#f4f4f5;font-weight:600;color:#18181b}
+#prev-out hr{border:none;margin:1.5rem 0}
+#prev-out img{max-width:100%;height:auto;margin:1rem 0}
+.dark #prev-out h1,.dark #prev-out h2,.dark #prev-out h3,.dark #prev-out h4,.dark #prev-out h5,.dark #prev-out h6{color:#f4f4f5}
+.dark #prev-out p,.dark #prev-out li{color:#a1a1aa}
+.dark #prev-out code{background:#18181b;color:#d4d4d8}
+.dark #prev-out th{background:#18181b;color:#f4f4f5}
+.dark #prev-out td{color:#a1a1aa}
+.dark #prev-out a{color:#f4f4f5;text-decoration-color:#3f3f46}
+.dark #prev-out a:hover{text-decoration-color:#f4f4f5}
+.dark #prev-out blockquote{color:#52525b}
+
+/* Tabs */
+#tab-md,#tab-pv{border:none;border-bottom:2px solid transparent;font-family:inherit;font-size:.875rem;padding:.625rem 1rem;cursor:pointer;background:transparent;transition:color .15s,border-color .15s;color:#a1a1aa;outline:none}
+#tab-md[data-active],#tab-pv[data-active]{border-bottom-color:#18181b;color:#18181b}
+.dark #tab-md[data-active],.dark #tab-pv[data-active]{border-bottom-color:#f4f4f5;color:#f4f4f5}
+
+/* Compact form (matches landing) */
+.fi{flex:1;font-family:'Geist Mono',monospace;font-size:12px;padding:5px 10px;border:1px solid #e4e4e7;border-right:0;background:transparent;color:#18181b;outline:none;min-width:0;transition:border-color .15s}
+.fi:focus{border-color:#a1a1aa}
+.fi::placeholder{color:#a1a1aa}
+.dark .fi{border-color:#27272a;color:#f4f4f5}
+.dark .fi:focus{border-color:#52525b}
+.dark .fi::placeholder{color:#3f3f46}
+.fb{font-family:'Geist Mono',monospace;font-size:12px;font-weight:500;padding:5px 12px;border:1px solid #e4e4e7;background:transparent;color:#52525b;white-space:nowrap;cursor:pointer;transition:background .15s,border-color .15s;flex-shrink:0}
+.fb:hover{background:#fafafa;border-color:#d4d4d8}
+.dark .fb{border-color:#27272a;color:#a1a1aa}
+.dark .fb:hover{background:#18181b;border-color:#3f3f46}
+.fb:disabled{opacity:.5;cursor:default}
+
+/* Action buttons (copy/save) */
+.action-btn{font-family:'Geist',-apple-system,sans-serif;font-size:.8125rem;padding:.375rem .75rem;background:transparent;border:1px solid #e4e4e7;color:#71717a;cursor:pointer;transition:background .15s,border-color .15s,color .15s;display:inline-flex;align-items:center;gap:.375rem;flex-shrink:0}
+.action-btn:hover{background:#fafafa;border-color:#d4d4d8;color:#18181b}
+.dark .action-btn{border-color:#27272a;color:#71717a}
+.dark .action-btn:hover{background:#18181b;border-color:#3f3f46;color:#f4f4f5}
+
+/* Token savings badge */
+.tok-badge{font-family:'Geist Mono',monospace;font-size:11px;padding:2px 8px;background:#f4f4f5;color:#52525b;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.dark .tok-badge{background:#18181b;color:#71717a}
+.tok-savings{color:#16a34a;font-size:10px}
+.dark .tok-savings{color:#4ade80}
+
+/* Stat pills */
+.stat-pill{font-family:'Geist Mono',monospace;font-size:11px;padding:2px 8px;background:#f4f4f5;color:#71717a;white-space:nowrap}
+.dark .stat-pill{background:#18181b;color:#71717a}
+
+/* Responsive header */
+#prev-header{display:flex;align-items:center;gap:14px;padding:10px 32px;position:sticky;top:0;z-index:50;background:#fff;transition:background .2s}
+.dark #prev-header{background:#09090b}
+#prev-form{flex:1;min-width:0;display:flex;max-width:640px}
+.prev-nav{display:flex;align-items:center;gap:2px;flex-shrink:0;margin-left:auto}
+@media(max-width:700px){
+  #prev-header{flex-wrap:wrap;padding:10px 16px;gap:8px}
+  #prev-form{order:3;width:100%;max-width:none;flex:none}
+  .prev-nav-links{display:none}
+}
+@media(max-width:640px){
+  .result-bar{padding-left:16px;padding-right:16px}
+  .panel-inner{padding:24px 16px}
+}
+  </style>
+</head>
+<body class="font-sans bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 transition-colors duration-200">
+
+<!-- Top bar — sticky -->
+<header id="prev-header">
+  <a href="/" class="flex items-center flex-shrink-0 no-underline">
+    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-900 dark:text-zinc-100">
+      <rect x="3" y="3" width="18" height="18" rx="2"/>
+      <path d="M8 16V8.5a.5.5 0 0 1 .9-.3l2.7 3.6a.5.5 0 0 0 .8 0l2.7-3.6a.5.5 0 0 1 .9.3V16"/>
+    </svg>
+  </a>
+  <form id="prev-form" onsubmit="handleSubmit(event)">
+    <input id="url-in" type="url" class="fi" placeholder="https://example.com" autocomplete="off" spellcheck="false">
+    <button type="submit" id="sub-btn" class="fb">
+      <span id="btn-t">Convert</span>
+    </button>
+  </form>
+  <nav class="prev-nav">
+    <div class="prev-nav-links flex items-center">
+      <a href="/docs" class="text-xs text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-2.5 py-1.5 transition-colors no-underline">Docs</a>
+      <a href="https://github.com/go-mizu/mizu" class="text-xs text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-2.5 py-1.5 transition-colors no-underline">GitHub</a>
+      <a href="/llms.txt" class="text-xs text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-2.5 py-1.5 transition-colors no-underline">llms.txt</a>
+    </div>
+    <button onclick="toggleTheme()" title="Toggle dark mode" class="text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 p-1.5 transition-colors cursor-pointer bg-transparent border-none flex items-center">
+      <svg class="dark:hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
+      <svg class="hidden dark:block" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+    </button>
+  </nav>
+</header>
+
+<!-- Empty state -->
+<div id="empty-state" style="display:none" class="flex flex-col items-center py-24 px-8 text-center">
+  <svg class="w-11 h-11 mb-5 text-zinc-400 dark:text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2"/>
+    <path d="M8 16V8.5a.5.5 0 0 1 .9-.3l2.7 3.6a.5.5 0 0 0 .8 0l2.7-3.6a.5.5 0 0 1 .9.3V16"/>
+  </svg>
+  <p class="text-sm text-zinc-400 mb-3.5">Enter a URL above to preview its Markdown output.</p>
+  <p class="text-sm text-zinc-400">Try:
+    <span class="text-zinc-600 dark:text-zinc-400 cursor-pointer underline decoration-zinc-300 dark:decoration-zinc-700 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors" onclick="setPreviewEg('https://example.com')">example.com</span>
+    <span class="mx-1 opacity-50">·</span>
+    <span class="text-zinc-600 dark:text-zinc-400 cursor-pointer underline decoration-zinc-300 dark:decoration-zinc-700 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors" onclick="setPreviewEg('https://news.ycombinator.com')">news.ycombinator.com</span>
+    <span class="mx-1 opacity-50">·</span>
+    <span class="text-zinc-600 dark:text-zinc-400 cursor-pointer underline decoration-zinc-300 dark:decoration-zinc-700 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors" onclick="setPreviewEg('https://docs.python.org/3/')">docs.python.org</span>
+  </p>
+</div>
+
+<!-- Loading state -->
+<div id="loading-state" style="display:none" class="flex flex-col items-center py-20 px-8 gap-3.5">
+  <span class="inline-block w-5 h-5 rounded-full border-2 border-zinc-200 dark:border-zinc-700 border-t-zinc-900 dark:border-t-zinc-100 animate-spin"></span>
+  <span class="text-sm text-zinc-400">Converting…</span>
+</div>
+
+<!-- Error state -->
+<div id="error-state" style="display:none" class="px-8 py-9">
+  <div id="err-msg" class="max-w-page mx-auto bg-zinc-50 dark:bg-zinc-900 px-5 py-4 text-sm text-zinc-500 dark:text-zinc-400"></div>
+</div>
+
+<!-- Result state -->
+<div id="result-state" style="display:none">
+  <!-- Stats bar -->
+  <div class="result-bar w-full px-8 py-2 bg-zinc-50 dark:bg-zinc-900 border-b border-zinc-100 dark:border-zinc-800">
+    <div class="max-w-page mx-auto flex items-center gap-2 flex-wrap">
+      <span id="r-method" class="stat-pill"></span>
+      <span id="r-dur" class="stat-pill"></span>
+      <span id="r-tok" style="display:none" class="tok-badge">
+        <span id="r-tok-val"></span>
+        <span id="r-tok-savings" class="tok-savings"></span>
+      </span>
+      <a id="r-raw" href="#" target="_blank" rel="noopener" class="text-xs text-zinc-400 underline underline-offset-2 decoration-zinc-300 dark:decoration-zinc-600 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors ml-auto" style="text-decoration:underline">raw ↗</a>
+    </div>
+  </div>
+  <!-- Tab bar -->
+  <div class="result-bar w-full px-8 bg-white dark:bg-zinc-950 border-b border-zinc-100 dark:border-zinc-800">
+    <div class="max-w-page mx-auto flex items-center justify-between">
+      <div class="flex">
+        <button id="tab-md" onclick="switchTab('md')" data-active>Markdown</button>
+        <button id="tab-pv" onclick="switchTab('pv')">Preview</button>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="copyMd()" class="action-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          <span id="copy-lbl">Copy</span>
+        </button>
+        <button onclick="saveMd()" class="action-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+          Save .md
+        </button>
+      </div>
+    </div>
+  </div>
+  <!-- Panels -->
+  <div id="panel-md" class="px-8 py-9 bg-white dark:bg-zinc-950">
+    <div class="panel-inner max-w-page mx-auto"><pre id="md-out" class="font-mono text-code-out leading-body whitespace-pre-wrap text-zinc-900 dark:text-zinc-100"></pre></div>
+  </div>
+  <div id="panel-pv" style="display:none" class="px-8 py-9 bg-white dark:bg-zinc-950">
+    <div class="panel-inner max-w-page mx-auto"><div id="prev-out"></div></div>
+  </div>
+</div>
+
+<script>
+var md = '';
+var currentUrl = '';
+
+function handleSubmit(e) {
+  e.preventDefault();
+  var url = document.getElementById('url-in').value.trim();
+  if (!url) return;
+  history.replaceState(null, '', '/preview?url=' + encodeURIComponent(url));
+  convertUrl(url);
+}
+
+function setPreviewEg(url) {
+  document.getElementById('url-in').value = url;
+  convertUrl(url);
+}
+
+function setLoading(v) {
+  document.getElementById('sub-btn').disabled = v;
+  document.getElementById('btn-t').textContent = v ? 'Converting…' : 'Convert';
+  document.getElementById('loading-state').style.display = v ? 'flex' : 'none';
+  document.getElementById('empty-state').style.display = 'none';
+}
+
+function fmtTok(n) {
+  return n >= 10000 ? Math.round(n/1000) + 'k' : n >= 1000 ? (n/1000).toFixed(1) + 'k' : n.toString();
+}
+
+async function convertUrl(url) {
+  currentUrl = url;
+  document.getElementById('url-in').value = url;
+  document.getElementById('error-state').style.display = 'none';
+  document.getElementById('result-state').style.display = 'none';
+  setLoading(true);
+  try {
+    var r = await fetch('/convert', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url: url})
+    });
+    if (!r.ok) {
+      var j = await r.json().catch(function() { return {error: 'Conversion failed'}; });
+      throw new Error(j.error || 'HTTP ' + r.status);
+    }
+    showResult(await r.json());
+  } catch(e) {
+    document.getElementById('err-msg').textContent = e.message || 'Conversion failed';
+    document.getElementById('error-state').style.display = 'block';
+  } finally {
+    setLoading(false);
+  }
+}
+
+function showResult(data) {
+  md = (data.markdown || '').replace(/^[-*_]{3,}\s*$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
+  document.getElementById('r-method').textContent = data.method || '';
+  document.getElementById('r-dur').textContent = data.durationMs < 1 ? '<1ms' : data.durationMs + 'ms';
+  var tokWrap = document.getElementById('r-tok');
+  if (data.tokens) {
+    var tok = data.tokens;
+    var htmlEst = Math.round(tok * 5);
+    document.getElementById('r-tok-val').textContent = '~' + fmtTok(tok) + ' tokens';
+    document.getElementById('r-tok-savings').textContent = '↓80% vs ~' + fmtTok(htmlEst) + ' HTML';
+    tokWrap.style.display = '';
+  } else { tokWrap.style.display = 'none'; }
+  document.getElementById('r-raw').href = '/' + currentUrl;
+  document.getElementById('md-out').textContent = md;
+  var parsed = marked.parse(md);
+  if (typeof parsed !== 'string') return;
+  document.getElementById('prev-out').innerHTML = DOMPurify.sanitize(parsed);
+  document.getElementById('result-state').style.display = 'block';
+  switchTab('md');
+}
+
+function switchTab(t) {
+  document.getElementById('tab-md')[t === 'md' ? 'setAttribute' : 'removeAttribute']('data-active', '');
+  document.getElementById('tab-pv')[t === 'pv' ? 'setAttribute' : 'removeAttribute']('data-active', '');
+  document.getElementById('panel-md').style.display = t === 'md' ? '' : 'none';
+  document.getElementById('panel-pv').style.display = t === 'pv' ? '' : 'none';
+}
+
+async function copyMd() {
+  try { await navigator.clipboard.writeText(md); }
+  catch(e) {
+    var ta = document.createElement('textarea');
+    ta.value = md; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+  }
+  var el = document.getElementById('copy-lbl');
+  el.textContent = 'Copied!';
+  setTimeout(function() { el.textContent = 'Copy'; }, 2000);
+}
+
+function saveMd() {
+  var blob = new Blob([md], {type: 'text/markdown'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  var title = document.getElementById('r-raw').href.split('/').pop() || 'document';
+  a.download = currentUrl.replace(/https?:\/\//,'').replace(/[^\w.-]/g,'-').replace(/-+/g,'-').slice(0,60) + '.md';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function() { URL.revokeObjectURL(a.href); }, 100);
+}
+
+function toggleTheme() {
+  var isDark = document.documentElement.classList.toggle('dark');
+  localStorage.setItem('theme', isDark ? 'dark' : 'light');
+}
+
+window.addEventListener('load', function() {
+  var params = new URLSearchParams(window.location.search);
+  var url = params.get('url');
+  if (url) { convertUrl(url); }
+  else { document.getElementById('empty-state').style.display = 'flex'; }
+});
+</script>
+</body>
+</html>

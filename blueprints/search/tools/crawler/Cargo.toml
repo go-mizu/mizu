@@ -1,0 +1,3 @@
+[workspace]
+members = ["crawler-lib", "crawler-cli"]
+resolver = "2"

@@ -18,11 +18,25 @@ type Cache struct {
 // CacheData holds all cached Common Crawl data.
 type CacheData struct {
 	// Volatile — expires after TTL
-	Crawls    []Crawl           `json:"crawls,omitempty"`
-	FetchedAt time.Time         `json:"fetched_at"`
+	Crawls        []Crawl   `json:"crawls,omitempty"`
+	LatestCrawlID string    `json:"latest_crawl_id,omitempty"`
+	FetchedAt     time.Time `json:"fetched_at"`
 
 	// Semi-permanent — manifests don't change for a given crawl
 	Manifests map[string][]string `json:"manifests,omitempty"` // key: "CC-MAIN-2026-04:cc-index-table.paths.gz"
+
+	// Semi-permanent — parquet object metadata + row counts per manifest remote path
+	ParquetMeta map[string]ParquetMeta `json:"parquet_meta,omitempty"` // key: remote parquet path
+}
+
+// ParquetMeta caches metadata for one columnar-index parquet file.
+type ParquetMeta struct {
+	SizeBytes        int64     `json:"size_bytes,omitempty"`
+	URLCount         int64     `json:"url_count,omitempty"`
+	HostCount        int64     `json:"host_count,omitempty"`
+	SizeUpdatedAt    time.Time `json:"size_updated_at,omitempty"`
+	URLCountUpdated  time.Time `json:"url_count_updated_at,omitempty"`
+	HostCountUpdated time.Time `json:"host_count_updated_at,omitempty"`
 }
 
 // NewCache creates a cache in the given data directory.
@@ -81,4 +95,21 @@ func (c *Cache) SetManifest(cd *CacheData, crawlID, kind string, paths []string)
 		cd.Manifests = make(map[string][]string)
 	}
 	cd.Manifests[crawlID+":"+kind] = paths
+}
+
+// GetParquetMeta returns cached parquet metadata for a remote parquet path.
+func (c *Cache) GetParquetMeta(cd *CacheData, remotePath string) (ParquetMeta, bool) {
+	if cd == nil || cd.ParquetMeta == nil {
+		return ParquetMeta{}, false
+	}
+	m, ok := cd.ParquetMeta[remotePath]
+	return m, ok
+}
+
+// SetParquetMeta updates cached parquet metadata for a remote parquet path.
+func (c *Cache) SetParquetMeta(cd *CacheData, remotePath string, meta ParquetMeta) {
+	if cd.ParquetMeta == nil {
+		cd.ParquetMeta = make(map[string]ParquetMeta)
+	}
+	cd.ParquetMeta[remotePath] = meta
 }

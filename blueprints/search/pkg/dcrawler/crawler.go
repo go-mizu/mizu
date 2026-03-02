@@ -163,6 +163,38 @@ func (rq *retryQueue) drain() []retryItem {
 
 const maxRetryAttempts = 5
 
+// loadProxies returns a deduplicated list of proxy URLs from cfg.ProxyURL and/or cfg.ProxyFile.
+// Returns nil (not an error) if neither is configured.
+func loadProxies(cfg Config) ([]string, error) {
+	seen := make(map[string]bool)
+	var proxies []string
+	add := func(p string) {
+		p = strings.TrimSpace(p)
+		if p != "" && !strings.HasPrefix(p, "#") && !seen[p] {
+			seen[p] = true
+			proxies = append(proxies, p)
+		}
+	}
+	if cfg.ProxyURL != "" {
+		add(cfg.ProxyURL)
+	}
+	if cfg.ProxyFile != "" {
+		f, err := os.Open(cfg.ProxyFile)
+		if err != nil {
+			return nil, fmt.Errorf("proxy-file: %w", err)
+		}
+		defer f.Close()
+		sc := bufio.NewScanner(f)
+		for sc.Scan() {
+			add(sc.Text())
+		}
+		if err := sc.Err(); err != nil {
+			return nil, fmt.Errorf("proxy-file read: %w", err)
+		}
+	}
+	return proxies, nil
+}
+
 // New creates a new Crawler with the given config.
 func New(cfg Config) (*Crawler, error) {
 	cfg.Domain = NormalizeDomain(cfg.Domain)
@@ -212,6 +244,11 @@ func New(cfg Config) (*Crawler, error) {
 	}
 	if len(cfg.SeedURLs) == 0 {
 		cfg.SeedURLs = []string{fmt.Sprintf("https://%s/", cfg.Domain)}
+	}
+
+	// Auto-scale browser pages from available RAM when not explicitly set.
+	if (cfg.UseRod || cfg.UseLightpanda) && cfg.RodWorkers <= 0 {
+		cfg.RodWorkers = AutoBrowserPages(readProcMemAvailMB())
 	}
 
 	c := &Crawler{config: cfg}
@@ -369,6 +406,9 @@ func (c *Crawler) Run(ctx context.Context) error {
 	c.loadSeeds()
 
 	c.logInit("Frontier: %s seed URLs", fmtInt(c.frontier.Len()))
+	if c.config.UseRod || c.config.UseLightpanda {
+		c.logInit("Browser: %d tabs", c.config.RodWorkers)
+	}
 
 	// Sitemap discovery signal: closed when background sitemap discovery completes.
 	// The coordinator checks this to avoid premature exit while sitemaps load.
@@ -436,9 +476,6 @@ func (c *Crawler) Run(ctx context.Context) error {
 		defer lp.close()
 
 		workers := c.config.RodWorkers
-		if workers <= 0 {
-			workers = 8
-		}
 		c.stats.SetRodTotalWorkers(workers)
 		for i := range workers {
 			workerID := i
@@ -448,20 +485,38 @@ func (c *Crawler) Run(ctx context.Context) error {
 			})
 		}
 	} else if c.config.UseRod {
-		rp, err := newRodPool(c.config)
-		if err != nil {
-			return fmt.Errorf("rod: %w", err)
+		proxies, proxyErr := loadProxies(c.config)
+		if proxyErr != nil {
+			return proxyErr
 		}
-		defer rp.close()
-		c.rodPool = rp
+		numPools := max(len(proxies), 1)
+		rodPools := make([]*rodPool, numPools)
+		for i := range numPools {
+			proxyCfg := c.config
+			if i < len(proxies) {
+				proxyCfg.ProxyURL = proxies[i]
+			}
+			rp, err := newRodPool(proxyCfg)
+			if err != nil {
+				for j := range i {
+					rodPools[j].close()
+				}
+				return fmt.Errorf("rod[%d]: %w", i, err)
+			}
+			rodPools[i] = rp
+		}
+		defer func() {
+			for _, rp := range rodPools {
+				rp.close()
+			}
+		}()
+		c.rodPool = rodPools[0] // used by health monitor in coordinator
 
 		workers := c.config.RodWorkers
-		if workers <= 0 {
-			workers = 40
-		}
 		c.stats.SetRodTotalWorkers(workers)
 		for i := range workers {
 			workerID := i
+			rp := rodPools[workerID%numPools]
 			g.Go(func() error {
 				c.rodWorker(gctx, rp, workerID)
 				return nil

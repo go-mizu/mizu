@@ -3,7 +3,9 @@ package dcrawler
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +17,57 @@ import (
 	"github.com/go-rod/rod/lib/proto"
 	"github.com/go-rod/stealth"
 )
+
+// detectChromeBin returns the Chrome/Chromium binary path to use.
+// Priority: $CHROME_BIN env var → ~/bin/chromium (download-chrome) → system paths → rod auto-detect.
+func detectChromeBin() string {
+	if p := os.Getenv("CHROME_BIN"); p != "" {
+		return p
+	}
+	// Build candidate list: user-local install first, then system paths.
+	candidates := []string{
+		"/usr/bin/chromium",
+		"/usr/bin/chromium-browser",
+		"/usr/bin/google-chrome",
+		"/usr/bin/google-chrome-stable",
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		// Prepend user-local paths (from make download-chrome or manual install).
+		candidates = append([]string{
+			home + "/bin/chromium",
+			home + "/.local/bin/chromium",
+		}, candidates...)
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	return "" // let rod auto-detect via PATH
+}
+
+// newLauncher creates a rod launcher with Chrome path and server-safe flags.
+func newLauncher(cfg Config) *launcher.Launcher {
+	l := launcher.New().
+		Headless(cfg.RodHeadless).
+		Set("disable-blink-features", "AutomationControlled").
+		Set("disable-features", "IsolateOrigins,site-per-process,VizDisplayCompositor").
+		Set("disable-dev-shm-usage", ""). // required in Docker/CI (no /dev/shm)
+		Set("no-sandbox", "").            // required when running as root on servers
+		Set("window-size", "1920,1080").  // match fingerprintJS screen dimensions
+		Set("lang", "en-US").             // consistent locale
+		Set("accept-lang", "en-US,en;q=0.9")
+	if bin := detectChromeBin(); bin != "" {
+		l = l.Bin(bin)
+	}
+	if cfg.UserDataDir != "" {
+		l = l.UserDataDir(cfg.UserDataDir)
+	}
+	if cfg.ProxyURL != "" {
+		l = l.Set("proxy-server", cfg.ProxyURL)
+	}
+	return l
+}
 
 // networkInterceptJS is injected before page scripts to capture URLs from XHR/fetch responses.
 // Catches article URLs loaded via API calls (news feeds, infinite scroll, AJAX pagination).
@@ -30,6 +83,23 @@ var F=window.fetch;if(F){window.fetch=function(){return F.apply(this,arguments).
 var P=XMLHttpRequest.prototype,O=P.send;P.send=function(){this.addEventListener('load',function(){try{var c=this.getResponseHeader('content-type')||'';if(c.includes('json')||c.includes('html')||c.includes('text'))X(this.responseText)}catch(e){}});return O.apply(this,arguments)}
 })()`
 
+// fingerprintJS patches headless-Chrome-detectable properties that go-rod/stealth doesn't cover.
+// Injected before page scripts via PageAddScriptToEvaluateOnNewDocument.
+const fingerprintJS = `(function(){
+// Screen dimensions: headless Chrome reports 0x0; real desktop = 1920x1080
+try{Object.defineProperty(screen,'width',{get:()=>1920});
+Object.defineProperty(screen,'height',{get:()=>1080});
+Object.defineProperty(screen,'availWidth',{get:()=>1920});
+Object.defineProperty(screen,'availHeight',{get:()=>1040});
+Object.defineProperty(screen,'colorDepth',{get:()=>24});
+Object.defineProperty(screen,'pixelDepth',{get:()=>24});}catch(e){}
+// outerWidth/Height: headless = 0; real Chrome = window size
+try{Object.defineProperty(window,'outerWidth',{get:()=>1920});
+Object.defineProperty(window,'outerHeight',{get:()=>1080});}catch(e){}
+// devicePixelRatio: headless = 1; consistent with non-retina desktop
+try{Object.defineProperty(window,'devicePixelRatio',{get:()=>1});}catch(e){}
+})()`
+
 // rodPool manages a headless Chrome browser and a pool of pages.
 type rodPool struct {
 	mu          sync.Mutex
@@ -38,13 +108,81 @@ type rodPool struct {
 	config      Config
 	lastRestart time.Time
 	restarts    int
+	jar         *cookieJar // shared domain cookie store (CF clearance, session cookies)
+}
+
+// cookieJar stores cookies per domain so CF clearance cookies solved by one tab
+// are shared with all other tabs. Thread-safe.
+type cookieJar struct {
+	mu      sync.RWMutex
+	cookies map[string][]*proto.NetworkCookie // hostname → cookies
+}
+
+func newCookieJar() *cookieJar {
+	return &cookieJar{cookies: make(map[string][]*proto.NetworkCookie)}
+}
+
+// store replaces all cookies for a hostname.
+func (j *cookieJar) store(host string, cookies []*proto.NetworkCookie) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.cookies[host] = cookies
+}
+
+// merge merges new cookies into existing ones for a hostname (newer values win).
+func (j *cookieJar) merge(host string, incoming []*proto.NetworkCookie) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	existing := j.cookies[host]
+	m := make(map[string]*proto.NetworkCookie, len(existing)+len(incoming))
+	for _, c := range existing {
+		m[c.Name] = c
+	}
+	for _, c := range incoming {
+		m[c.Name] = c // newer wins
+	}
+	merged := make([]*proto.NetworkCookie, 0, len(m))
+	for _, c := range m {
+		merged = append(merged, c)
+	}
+	j.cookies[host] = merged
+}
+
+// get returns a copy of stored cookies for a hostname (nil if none).
+func (j *cookieJar) get(host string) []*proto.NetworkCookie {
+	j.mu.RLock()
+	defer j.mu.RUnlock()
+	src := j.cookies[host]
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]*proto.NetworkCookie, len(src))
+	copy(out, src)
+	return out
+}
+
+// cookiesToParams converts NetworkCookie (read) to NetworkCookieParam (write).
+func cookiesToParams(cookies []*proto.NetworkCookie) []*proto.NetworkCookieParam {
+	params := make([]*proto.NetworkCookieParam, 0, len(cookies))
+	for _, c := range cookies {
+		if c.Name != "" {
+			params = append(params, &proto.NetworkCookieParam{
+				Name:     c.Name,
+				Value:    c.Value,
+				Domain:   c.Domain,
+				Path:     c.Path,
+				Secure:   c.Secure,
+				HTTPOnly: c.HTTPOnly,
+				SameSite: c.SameSite,
+				Expires:  c.Expires,
+			})
+		}
+	}
+	return params
 }
 
 func newRodPool(cfg Config) (*rodPool, error) {
-	l := launcher.New().
-		Headless(cfg.RodHeadless).
-		Set("disable-blink-features", "AutomationControlled").
-		Set("disable-features", "IsolateOrigins,site-per-process")
+	l := newLauncher(cfg)
 	controlURL, err := l.Launch()
 	if err != nil {
 		return nil, fmt.Errorf("rod launcher: %w", err)
@@ -64,6 +202,7 @@ func newRodPool(cfg Config) (*rodPool, error) {
 		browser: browser,
 		pool:    pool,
 		config:  cfg,
+		jar:     newCookieJar(),
 	}, nil
 }
 
@@ -83,6 +222,8 @@ func (rp *rodPool) getPage() (*rod.Page, error) {
 				UserAgent: rp.config.UserAgent,
 			})
 		}
+		// Inject screen/window dimension patches before any page scripts run.
+		_, _ = proto.PageAddScriptToEvaluateOnNewDocument{Source: fingerprintJS}.Call(p)
 		if rp.config.RodBlockResources {
 			setupResourceBlocking(p)
 		}
@@ -117,10 +258,7 @@ func (rp *rodPool) tryRestart() error {
 	rp.browser.Close()
 
 	// Launch new Chrome
-	l := launcher.New().
-		Headless(rp.config.RodHeadless).
-		Set("disable-blink-features", "AutomationControlled").
-		Set("disable-features", "IsolateOrigins,site-per-process")
+	l := newLauncher(rp.config)
 	controlURL, err := l.Launch()
 	if err != nil {
 		return fmt.Errorf("rod launcher: %w", err)
@@ -139,6 +277,75 @@ func (rp *rodPool) tryRestart() error {
 	rp.lastRestart = time.Now()
 	rp.restarts++
 	return nil
+}
+
+// solveChallengeUnblocked creates a temporary page WITHOUT resource blocking,
+// navigates to the challenge URL, and waits up to 15s for CF Turnstile to solve.
+// Returns the cookies from the solved page (including cf_clearance).
+// The caller should inject these cookies into the main page and re-navigate.
+func (rp *rodPool) solveChallengeUnblocked(ctx context.Context, pageURL string) ([]*proto.NetworkCookie, error) {
+	rp.mu.Lock()
+	b := rp.browser
+	rp.mu.Unlock()
+
+	// Create a fresh page WITHOUT resource blocking so CF Turnstile JS can load.
+	p, err := stealth.Page(b)
+	if err != nil {
+		return nil, fmt.Errorf("challenge page: %w", err)
+	}
+	defer p.Close()
+
+	solveCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	sp := p.Context(solveCtx)
+
+	navCmd := proto.PageNavigate{URL: pageURL}
+	if _, err := navCmd.Call(sp); err != nil {
+		return nil, fmt.Errorf("challenge navigate: %w", err)
+	}
+
+	// Poll title until "Just a moment..." clears (CF solved) or timeout.
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) && solveCtx.Err() == nil {
+		info, err := sp.Timeout(2 * time.Second).Info()
+		if err == nil && info != nil && info.Title != "Just a moment..." && info.Title != "" {
+			break
+		}
+		select {
+		case <-time.After(500 * time.Millisecond):
+		case <-solveCtx.Done():
+		}
+	}
+
+	if solveCtx.Err() != nil {
+		return nil, fmt.Errorf("challenge timed out (still showing 'Just a moment...')")
+	}
+
+	cookies, err := p.Cookies([]string{pageURL})
+	if err != nil {
+		return nil, fmt.Errorf("challenge cookies: %w", err)
+	}
+	// Verify cf_clearance is present — partial cookies (e.g., only __cf_bm) won't bypass CF.
+	for _, c := range cookies {
+		if c.Name == "cf_clearance" {
+			return cookies, nil
+		}
+	}
+	return nil, fmt.Errorf("challenge solved but cf_clearance not found in cookies")
+}
+
+// injectJarCookies injects stored domain cookies into the page before navigation.
+// This ensures CF clearance cookies solved by another tab are reused immediately.
+func (rp *rodPool) injectJarCookies(page *rod.Page, pageURL string) {
+	u, err := url.Parse(pageURL)
+	if err != nil {
+		return
+	}
+	stored := rp.jar.get(u.Hostname())
+	if len(stored) == 0 {
+		return
+	}
+	_ = page.SetCookies(cookiesToParams(stored))
 }
 
 // setupResourceBlocking configures Chrome to block heavy resources (images, fonts, CSS, etc.)
@@ -314,10 +521,12 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 				browserDead = true
 			}
 		} else {
-			rp.putPage(page) // page is healthy, recycle it
+			close(pageClosed)    // stop watchdog before returning page to pool
+			rp.putPage(page)     // page is healthy, recycle it
 			browserDead = false
+			return
 		}
-		close(pageClosed) // signal watchdog to stop
+		close(pageClosed) // signal watchdog to stop (error path: page not recycled)
 	}()
 
 	// Inject XHR/fetch interceptor to capture URLs from API responses (news feeds, AJAX pagination).
@@ -344,6 +553,18 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		default:
 		}
 	}()
+
+	// Human-like timing: random delay before navigation to avoid exact-interval
+	// patterns that CF bot scoring detects when many tabs hit the same domain at
+	// identical cadence.
+	select {
+	case <-time.After(time.Duration(10+rand.Intn(140)) * time.Millisecond):
+	case <-fetchCtx.Done():
+		return
+	}
+
+	// Inject stored domain cookies (e.g., CF clearance from a previously solved challenge).
+	rp.injectJarCookies(page, item.URL)
 
 	// Send the navigate command — Chrome starts loading immediately.
 	navRes, navErr := proto.PageNavigate{URL: item.URL}.Call(p)
@@ -402,29 +623,32 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		// Substantial server-rendered content — proceed with partial extraction.
 	}
 
-	// Phase: wait for DOM to stabilize (React/Next.js hydration + render).
-	// Polls document.body.innerHTML.length: stable for 600ms = hydration complete.
-	c.stats.SetRodPhase(workerID, "render")
-	_, _ = p.Timeout(5 * time.Second).Eval(`() => new Promise((resolve) => {
-		const afterDOM = () => {
-			let lastLen = document.body ? document.body.innerHTML.length : 0;
-			let stable = 0;
-			const check = () => {
-				const len = document.body ? document.body.innerHTML.length : 0;
-				if (len === lastLen) {
-					stable++;
-					if (stable >= 3) { resolve(); return; }
-				} else {
-					stable = 0;
-					lastLen = len;
-				}
-				setTimeout(check, 200);
+	// Skip render wait for SSG/static sites (--no-render-wait flag).
+	if !c.config.RodNoRenderWait {
+		// Phase: wait for DOM to stabilize (React/Next.js hydration + render).
+		// Polls document.body.innerHTML.length: stable for 600ms = hydration complete.
+		c.stats.SetRodPhase(workerID, "render")
+		_, _ = p.Timeout(5 * time.Second).Eval(`() => new Promise((resolve) => {
+			const afterDOM = () => {
+				let lastLen = document.body ? document.body.innerHTML.length : 0;
+				let stable = 0;
+				const check = () => {
+					const len = document.body ? document.body.innerHTML.length : 0;
+					if (len === lastLen) {
+						stable++;
+						if (stable >= 3) { resolve(); return; }
+					} else {
+						stable = 0;
+						lastLen = len;
+					}
+					setTimeout(check, 200);
+				};
+				setTimeout(check, 300);
 			};
-			setTimeout(check, 300);
-		};
-		if (document.readyState !== 'loading') afterDOM();
-		else document.addEventListener('DOMContentLoaded', afterDOM);
-	})`)
+			if (document.readyState !== 'loading') afterDOM();
+			else document.addEventListener('DOMContentLoaded', afterDOM);
+		})`)
+	}
 
 	// Render wait timeout is NOT fatal — the DOM is already "interactive".
 	// Just skip optional post-render steps (CF check, scroll) if deadline expired.
@@ -452,19 +676,42 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 			}
 		}
 		if isChallenge {
-			c.stats.SetRodPhase(workerID, "cf-check")
-			challengeEnd := time.Now().Add(8 * time.Second)
-			for time.Now().Before(challengeEnd) && fetchCtx.Err() == nil {
-				select {
-				case <-fetchCtx.Done():
-				case <-time.After(500 * time.Millisecond):
-				}
-				// Check if challenge resolved: page grew beyond challenge size.
-				if htmlLen, hErr := p.Timeout(1 * time.Second).Eval(`() => document.documentElement.outerHTML.length`); hErr == nil && htmlLen != nil {
-					if htmlLen.Value.Int() > 5000 {
-						time.Sleep(500 * time.Millisecond)
-						break
+			c.stats.SetRodPhase(workerID, "cf-solve")
+			// Resource blocking prevents CF Turnstile JS from loading on this page.
+			// Spin up a temporary unblocked page to solve the challenge, extract cookies,
+			// then inject into this page and re-navigate.
+			if u, parseErr := url.Parse(item.URL); parseErr == nil {
+				domain := u.Hostname()
+				solvedCookies, solveErr := rp.solveChallengeUnblocked(fetchCtx, item.URL)
+				if solveErr == nil && len(solvedCookies) > 0 {
+					rp.jar.store(domain, solvedCookies)
+					_ = page.SetCookies(cookiesToParams(solvedCookies))
+					// Set up a fresh DOMContentLoaded listener for re-navigation (dclCh is already consumed).
+					renavDCLCh := make(chan struct{}, 1)
+					go func() {
+						defer func() { recover() }()
+						p.EachEvent(func(e *proto.PageDomContentEventFired) (stop bool) {
+							return true
+						})()
+						select {
+						case renavDCLCh <- struct{}{}:
+						default:
+						}
+					}()
+					// Re-navigate with clearance cookies — CF should skip challenge.
+					renavCmd := proto.PageNavigate{URL: item.URL}
+					if _, renavErr := renavCmd.Call(p); renavErr == nil {
+						// Wait for DOM ready after re-navigation.
+						select {
+						case <-renavDCLCh:
+						case <-time.After(timeout):
+						case <-fetchCtx.Done():
+						}
 					}
+				} else {
+					// Solver failed or returned no cookies — record as blocked and skip.
+					c.recordBlocked(item, "CF challenge: solver failed or no cookies", time.Since(start).Milliseconds())
+					return
 				}
 			}
 		}
@@ -496,7 +743,7 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 				break
 			}
 			_, _ = p.Eval(`() => window.scrollTo(0, document.body.scrollHeight)`)
-			p.Timeout(1500 * time.Millisecond).WaitRequestIdle(200*time.Millisecond, nil, nil, nil)()
+			p.Timeout(1500*time.Millisecond).WaitRequestIdle(200*time.Millisecond, nil, nil, nil)()
 			time.Sleep(100 * time.Millisecond)
 			// Check if scroll produced new content (height) or new URLs (XHR interceptor)
 			heightGrew, xhrGrew := false, false
@@ -659,6 +906,13 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		c.resultDB.AddLinks(result.URLHash, meta.Links)
 	}
 
+	// Merge page cookies into jar so other tabs can reuse them (CF clearance, session cookies).
+	if u, parseErr := url.Parse(finalURL); parseErr == nil {
+		if pageCookies, cookieErr := page.Cookies([]string{finalURL}); cookieErr == nil && len(pageCookies) > 0 {
+			rp.jar.merge(u.Hostname(), pageCookies)
+		}
+	}
+
 	c.resultDB.AddPage(result)
 	c.stats.RecordSuccess(result.StatusCode, int64(len(body)), fetchMs)
 	c.stats.RecordDepth(item.Depth)
@@ -691,8 +945,8 @@ func isBlockedPage(body []byte, title, requestURL string) (bool, string) {
 	if title != "" {
 		// Extract path from request URL for comparison
 		if u, err := url.Parse(requestURL); err == nil && u.Path != "" && u.Path != "/" {
-			urlPath := u.Path                       // e.g., "/rain/a/20260218A0xxxx"
-			hostPath := u.Host + u.Path              // e.g., "news.qq.com/rain/a/20260218A0xxxx"
+			urlPath := u.Path           // e.g., "/rain/a/20260218A0xxxx"
+			hostPath := u.Host + u.Path // e.g., "news.qq.com/rain/a/20260218A0xxxx"
 			if title == urlPath || title == urlPath[1:] || title == hostPath {
 				return true, "title matches URL path (anti-bot placeholder)"
 			}
@@ -704,16 +958,16 @@ func isBlockedPage(body []byte, title, requestURL string) (bool, string) {
 	if bodyLen < 10_000 {
 		content := strings.ToLower(string(body))
 		wafSignatures := []string{
-			"access restricted",                     // Generic access block
-			"限制访问",                                  // Chinese: access restricted
-			"访问受限",                                  // Chinese: access limited
-			"eo_bot_ssid",                           // Tencent Edge One WAF
-			"waf.tencent.com",                       // Tencent WAF redirect
-			"captcha-delivery",                      // Generic CAPTCHA
-			"cf-browser-verification",               // Cloudflare
-			"generated by cloudfront",               // AWS CloudFront WAF
-			"the request could not be satisfied",    // CloudFront block page
-			"request blocked",                       // CloudFront / generic WAF
+			"access restricted",                  // Generic access block
+			"限制访问",                               // Chinese: access restricted
+			"访问受限",                               // Chinese: access limited
+			"eo_bot_ssid",                        // Tencent Edge One WAF
+			"waf.tencent.com",                    // Tencent WAF redirect
+			"captcha-delivery",                   // Generic CAPTCHA
+			"cf-browser-verification",            // Cloudflare
+			"generated by cloudfront",            // AWS CloudFront WAF
+			"the request could not be satisfied", // CloudFront block page
+			"request blocked",                    // CloudFront / generic WAF
 		}
 		for _, sig := range wafSignatures {
 			if strings.Contains(content, sig) {

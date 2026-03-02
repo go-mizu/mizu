@@ -37,6 +37,9 @@ func NewCrawlDomain() *cobra.Command {
 		downloadImages   bool
 		staleHours       int
 		domainAliases    []string
+		noRenderWait     bool
+		proxyURL         string
+		proxyFile        string
 	)
 
 	cmd := &cobra.Command{
@@ -57,11 +60,19 @@ Examples:
 
 Pinterest (auto-detected, uses internal API - no browser needed):
   search crawl-domain 'https://www.pinterest.com/search/pins/?q=gouache' --download-images
-  search crawl-domain 'https://www.pinterest.com/search/pins/?q=watercolor' --max-pages 200`,
+  search crawl-domain 'https://www.pinterest.com/search/pins/?q=watercolor' --max-pages 200
+
+Browser mode (JS-rendered pages, bypasses Cloudflare):
+  search crawl-domain openai.com --browser
+  search crawl-domain openai.com --browser --no-render-wait   # faster for SSG/Next.js sites
+  search crawl-domain openai.com --browser --browser-pages 80 # explicit tab count`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if useRod && useLightpanda {
 				return fmt.Errorf("--browser and --lightpanda are mutually exclusive")
+			}
+			if (proxyURL != "" || proxyFile != "") && !useRod && !useLightpanda {
+				return fmt.Errorf("--proxy-url and --proxy-file require --browser (or --lightpanda) mode")
 			}
 			cfg := dcrawler.DefaultConfig()
 			// If user passed a full URL, use it as seed
@@ -109,6 +120,9 @@ Pinterest (auto-detected, uses internal API - no browser needed):
 			cfg.ExtractImages = extractImages || downloadImages
 			cfg.StaleHours = staleHours
 			cfg.DomainAliases = domainAliases
+			cfg.RodNoRenderWait = noRenderWait
+			cfg.ProxyURL = proxyURL
+			cfg.ProxyFile = proxyFile
 
 			return runCrawlDomain(cmd, cfg, downloadImages)
 		},
@@ -134,12 +148,15 @@ Pinterest (auto-detected, uses internal API - no browser needed):
 	cmd.Flags().StringVar(&userAgent, "user-agent", "", "User-Agent header")
 	cmd.Flags().BoolVar(&useRod, "browser", false, "Use headless Chrome for JS-rendered pages (bypasses Cloudflare)")
 	cmd.Flags().BoolVar(&useLightpanda, "lightpanda", false, "Use Lightpanda browser (faster, less RAM, but less stable than Chrome)")
-	cmd.Flags().IntVar(&rodWorkers, "browser-pages", 8, "Number of browser pages when using --browser")
+	cmd.Flags().IntVar(&rodWorkers, "browser-pages", 0, "Number of concurrent browser tabs (0=auto from RAM)")
+	cmd.Flags().BoolVar(&noRenderWait, "no-render-wait", false, "Skip DOM stabilization wait in browser mode (faster for SSG/Next.js sites like openai.com)")
 	cmd.Flags().IntVar(&scrollCount, "scroll", 0, "Scroll N times in browser mode for infinite scroll pages (Pinterest, etc.)")
 	cmd.Flags().BoolVar(&extractImages, "extract-images", false, "Extract <img> URLs and store in links table")
 	cmd.Flags().BoolVar(&downloadImages, "download-images", false, "Download discovered images after crawl (implies --extract-images)")
 	cmd.Flags().IntVar(&staleHours, "stale", 0, "Re-crawl pages older than N hours on --resume (0=disabled)")
 	cmd.Flags().StringSliceVar(&domainAliases, "domain-alias", nil, "Additional domains to treat as same-domain (e.g., --domain-alias new.qq.com)")
+	cmd.Flags().StringVar(&proxyURL, "proxy-url", "", "HTTP/SOCKS5 proxy for Chrome (e.g. http://user:pass@host:port or socks5://host:port)")
+	cmd.Flags().StringVar(&proxyFile, "proxy-file", "", "File with one proxy URL per line (enables one Chrome instance per proxy, round-robin)")
 
 	return cmd
 }

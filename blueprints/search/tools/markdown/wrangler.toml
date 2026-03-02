@@ -1,0 +1,22 @@
+name = "markdown"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
+
+[ai]
+binding = "AI"
+
+[browser]
+binding = "BROWSER"
+
+[[rules]]
+type = "Text"
+globs = ["**/*.md"]
+fallthrough = false
+
+[assets]
+directory = "./public"
+binding = "ASSETS"

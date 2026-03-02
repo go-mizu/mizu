@@ -1,0 +1,49 @@
+# Context root is the monorepo root (/Users/apple/github/go-mizu/mizu)
+
+# VCS / editor
+.git
+.gitignore
+.DS_Store
+.idea
+.vscode
+**/*.swp
+**/*.swo
+
+# Build outputs / local caches
+dist
+bin
+coverage*
+*.log
+tmp
+temp
+.turbo
+.cache
+**/target
+**/.gradle
+**/DerivedData
+**/Pods
+
+# Monorepo heavy directories not needed for blueprints/search cmd/search build
+tools
+tools/**
+examples
+examples/**
+
+# Other blueprints (keep only blueprints/search)
+blueprints/*
+!blueprints/search
+!blueprints/search/**
+
+# Search blueprint local heavies not needed for build (keep app/frontend source)
+blueprints/search/**/node_modules
+blueprints/search/tools
+blueprints/search/tools/**
+blueprints/search/reports
+blueprints/search/spec
+blueprints/search/test
+blueprints/search/pkg/engine/fineweb/drivers/fts_rust
+blueprints/search/pkg/engine/fineweb/drivers/fts_rust/**
+blueprints/search/pkg/engine/fineweb/benchmark
+blueprints/search/pkg/engine/fineweb/benchmark/**
+
+# Keep module/workspace metadata and source by default

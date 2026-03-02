@@ -1,0 +1,77 @@
+# syntax=docker/dockerfile:1.7
+#
+# Ubuntu 24.04 (Noble) build — for servers running Ubuntu 24.04 (glibc 2.39).
+# Compared to Dockerfile.linux-focal (Ubuntu 20.04):
+#   - GCC 14 instead of GCC 11 — no PPA required, simpler build
+#   - glibc 2.39 vs 2.31 — newer libc runtime at link time
+#   - libstdc++ comes from GCC 14; no need to bundle and deploy separately
+#   - Binary requires glibc >= 2.38 (NOT backward compatible with Ubuntu 20.04)
+#   - -march=x86-64-v3 enables AVX2 SIMD for DuckDB on AMD EPYC (server2)
+#
+# TARGETING: server2 (Ubuntu 24.04 Noble, kernel 6.8.0, glibc 2.39, AMD EPYC AVX2)
+# DO NOT use this binary on Ubuntu 20.04 servers or non-AVX2 hardware.
+
+ARG BASE_IMAGE=ubuntu:24.04
+ARG GO_VERSION=1.26.0
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+
+FROM --platform=${TARGETOS}/${TARGETARCH} ${BASE_IMAGE} AS build
+
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+ARG GO_VERSION
+
+WORKDIR /src
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Ubuntu 24.04 ships GCC 14 natively — no PPA needed.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates curl xz-utils make pkg-config \
+        gcc g++ libc6-dev libstdc++-14-dev
+
+RUN curl -fsSL "https://dl.google.com/go/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" -o /tmp/go.tgz \
+    && tar -C /usr/local -xzf /tmp/go.tgz \
+    && rm -f /tmp/go.tgz
+
+ENV PATH=/usr/local/go/bin:${PATH}
+# Use Ubuntu 24.04's default GCC (gcc-14 on noble).
+ENV CC=gcc
+ENV CXX=g++
+
+# -march=x86-64-v3: enables AVX2 + BMI2 + FMA + POPCNT for DuckDB CGO code.
+# x86-64-v3 = Haswell/Zen2+ baseline: safe for server2 (AMD EPYC).
+# DO NOT set this in Dockerfile.linux-focal — may generate instructions absent on older hardware.
+ARG CGO_CFLAGS="-O2 -march=x86-64-v3"
+ARG CGO_CXXFLAGS="-O2 -march=x86-64-v3"
+ENV CGO_CFLAGS=${CGO_CFLAGS}
+ENV CGO_CXXFLAGS=${CGO_CXXFLAGS}
+
+# Cache dependency resolution first (best practice).
+COPY go.mod go.sum /src/
+COPY blueprints/search/go.mod blueprints/search/go.sum /src/blueprints/search/
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    cd /src/blueprints/search \
+    && \
+    GOWORK=off go mod download
+
+COPY . .
+
+WORKDIR /src/blueprints/search
+
+ARG GO_LDFLAGS=""
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=1 GOWORK=off GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags "${GO_LDFLAGS} -linkmode external -extldflags '-static-libstdc++ -static-libgcc'" \
+    -o /out/search-linux-noble ./cmd/search \
+    && chmod +x /out/search-linux-noble
+
+FROM --platform=${TARGETOS}/${TARGETARCH} scratch AS artifact
+COPY --from=build /out/search-linux-noble /search-linux-noble

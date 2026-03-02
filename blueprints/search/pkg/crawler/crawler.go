@@ -71,11 +71,11 @@ func (c *Crawler) OnProgress(fn ProgressFn) {
 
 // Crawl starts crawling from a URL and returns aggregate stats.
 func (c *Crawler) Crawl(ctx context.Context, startURL string) (CrawlStats, error) {
-	normalized, err := NormalizeURL(startURL)
-	if err != nil {
-		return CrawlStats{}, fmt.Errorf("invalid start URL: %w", err)
-	}
-	c.startURL = normalized
+	return c.CrawlURLs(ctx, []string{startURL})
+}
+
+// CrawlURLs starts crawling from multiple URLs and returns aggregate stats.
+func (c *Crawler) CrawlURLs(ctx context.Context, urls []string) (CrawlStats, error) {
 	c.startTime = time.Now()
 
 	// Restore from state file if resume
@@ -85,8 +85,20 @@ func (c *Crawler) Crawl(ctx context.Context, startURL string) (CrawlStats, error
 		}
 	}
 
-	// Seed the frontier
-	c.frontier.Push(URLEntry{URL: normalized, Depth: 0, Priority: 0})
+	for i, u := range urls {
+		normalized, err := NormalizeURL(u)
+		if err != nil {
+			continue
+		}
+		if i == 0 {
+			c.startURL = normalized
+		}
+		c.frontier.Push(URLEntry{
+			URL:      normalized,
+			Depth:    0,
+			Priority: i,
+		})
+	}
 
 	return c.run(ctx)
 }

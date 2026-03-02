@@ -1,0 +1,79 @@
+# syntax=docker/dockerfile:1.7
+
+ARG BASE_IMAGE=ubuntu:20.04
+ARG GO_VERSION=1.26.0
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+
+# Explicitly declare platform so podman/docker don't warn about host/image mismatch
+# when cross-compiling (e.g. ARM64 Mac → AMD64 Linux).
+FROM --platform=${TARGETOS}/${TARGETARCH} ${BASE_IMAGE} AS build
+
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+ARG GO_VERSION
+
+WORKDIR /src
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Cache apt metadata/packages to make rebuilds much faster and less fragile.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates curl xz-utils make pkg-config \
+        software-properties-common gnupg
+
+# Ubuntu 20.04 base keeps glibc compatible with the target server (glibc 2.31); add newer GCC
+# toolchain only for linking DuckDB's C++ static library. Runtime libstdc++ is bundled on deploy.
+# GCC 13 is required: DuckDB now needs GLIBCXX_3.4.30 (first available in GCC 12).
+# Built on Ubuntu 20.04 focal so libstdc++.so.6.0.31 only requires glibc ≤ 2.31.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    add-apt-repository -y ppa:ubuntu-toolchain-r/test \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gcc-13 g++-13 libc6-dev libstdc++-13-dev
+
+RUN curl -fsSL "https://dl.google.com/go/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" -o /tmp/go.tgz \
+    && tar -C /usr/local -xzf /tmp/go.tgz \
+    && rm -f /tmp/go.tgz
+
+ENV PATH=/usr/local/go/bin:${PATH}
+ENV CC=gcc-13
+ENV CXX=g++-13
+
+# Cache dependency resolution first (best practice).
+# Keep files in their real monorepo paths so relative `replace ../..` works.
+COPY go.mod go.sum /src/
+COPY blueprints/search/go.mod blueprints/search/go.sum /src/blueprints/search/
+
+# Search blueprint module has a local replace to the monorepo root; keep it because
+# the Docker/Podman build context is the monorepo root.
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    cd /src/blueprints/search \
+    && \
+    GOWORK=off go mod download
+
+# Copy sources after dependency cache is primed.
+# Build context is the monorepo root; keep Dockerfile in blueprints/search.
+COPY . .
+
+WORKDIR /src/blueprints/search
+
+ARG GO_LDFLAGS=""
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=1 GOWORK=off GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags "${GO_LDFLAGS} -linkmode external -extldflags '-static-libstdc++ -static-libgcc'" \
+    -o /out/search-linux ./cmd/search \
+    && chmod +x /out/search-linux \
+    && cp /usr/lib/x86_64-linux-gnu/libstdc++.so.6 /out/libstdc++.so.6.gcc13.focal
+
+FROM --platform=${TARGETOS}/${TARGETARCH} scratch AS artifact
+COPY --from=build /out/search-linux /search-linux
+# Ship the GCC 13 focal libstdc++.so.6 alongside the binary.
+# This provides GLIBCXX_3.4.30/CXXABI_1.3.13 while only requiring glibc ≤ 2.31.
+COPY --from=build /out/libstdc++.so.6.gcc13.focal /libstdc++.so.6

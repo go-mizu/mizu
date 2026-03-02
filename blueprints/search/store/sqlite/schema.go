@@ -403,6 +403,32 @@ func createSchema(ctx context.Context, db *sql.DB) error {
 			INSERT INTO small_web_fts(small_web_fts, rowid, title, snippet)
 			VALUES ('delete', OLD.rowid, OLD.title, OLD.snippet);
 		END;
+
+		-- RSS feeds table
+		CREATE TABLE IF NOT EXISTS rss_feeds (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			url TEXT UNIQUE NOT NULL,
+			title TEXT NOT NULL,
+			site_url TEXT,
+			description TEXT,
+			last_crawled_at DATETIME
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_rss_feeds_url ON rss_feeds(url);
+
+		-- RSS items table
+		CREATE TABLE IF NOT EXISTS rss_items (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			feed_id INTEGER NOT NULL,
+			url TEXT UNIQUE NOT NULL,
+			title TEXT NOT NULL,
+			content TEXT,
+			published_at DATETIME,
+			FOREIGN KEY(feed_id) REFERENCES rss_feeds(id)
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_rss_items_feed_id ON rss_items(feed_id);
+		CREATE INDEX IF NOT EXISTS idx_rss_items_published_at ON rss_items(published_at);
 	`
 
 	// Run migrations BEFORE schema creation to ensure columns exist

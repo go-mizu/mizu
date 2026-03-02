@@ -5,294 +5,745 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/recrawler"
-	"github.com/spf13/cobra"
+	crawl "github.com/go-mizu/mizu/blueprints/search/pkg/crawl"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/crawl/store"
 )
 
-// NewRecrawl creates the top-level recrawl command.
-func NewRecrawl() *cobra.Command {
-	var (
-		dbPath          string
-		dirPath         string
-		latest          bool
-		workers         int
-		dnsWorkers      int
-		dnsTimeout      int
-		timeout         int
-		headOnly        bool
-		statusOnly      bool
-		batchSize       int
-		resume          bool
-		userAgent       string
-		dnsPrefetch     bool
-		transportShards int
-		twoPass         bool
-	)
+// recrawlJobArgs holds all arguments for runRecrawlJob.
+type recrawlJobArgs struct {
+	Seeds        []crawl.SeedURL
+	DNSCache     crawl.DNSCache
+	JobCfg       crawl.JobConfig
+	ResultDir    string
+	FailedDBPath string
+	WriterMode   string // "duckdb" | "bin" | "devnull"
+	BinShards    int    // parallel write shards (0 = default 4)
+	SlowDomainMs int64
+	SegSizeMB    int
+	BodyStoreDir string
+	DBShards     int
+	DBMemMB      int
+	SysInfo      crawl.SysInfo
 
-	cmd := &cobra.Command{
-		Use:   "recrawl",
-		Short: "High-throughput recrawl of URLs from a DuckDB seed database",
-		Long: `Recrawl URLs from a DuckDB seed database at maximum throughput.
+	// Coverage tracking: TotalSeeds is the count before any pre-filtering (0 = use len(Seeds)).
+	// DNSDeadCount is the number of seeds removed by DNS pre-resolution before the engine runs.
+	TotalSeeds   int64
+	DNSDeadCount int64
 
-Seeds URLs from a DuckDB file (e.g. test.duckdb with a 'docs' table),
-stores state in <name>.state.duckdb and results in <name>.result.duckdb.
-
-Performance flags:
-  --status-only       Only check HTTP status, close body immediately (fastest mode)
-  --transport-shards  Shard HTTP transport pools to reduce lock contention
-  --workers           Concurrent workers (default: 100000)
-  --dns-workers       Concurrent DNS workers (default: 2000)
-  --dns-timeout       DNS lookup timeout in ms (default: 2000)
-
-Directory mode:
-  --dir + --latest    Auto-select the highest-index DuckDB file in a directory
-
-Examples:
-  search recrawl --db ~/data/fineweb-2/vie_Latn/test.duckdb
-  search recrawl --db ~/data/fineweb-2/vie_Latn/test.duckdb --status-only --transport-shards 64
-  search recrawl --dir ~/data/fineweb-1/CC-MAIN-2025-26/ --latest --status-only
-  search recrawl --db ~/data/fineweb-2/vie_Latn/test.duckdb --resume`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// Resolve --dir + --latest to --db
-			if dirPath != "" && latest {
-				resolved, err := findLatestDuckDB(dirPath)
-				if err != nil {
-					return err
-				}
-				dbPath = resolved
-			}
-			if dbPath == "" {
-				return fmt.Errorf("--db is required (or use --dir with --latest)")
-			}
-			return runRecrawl(cmd.Context(), dbPath, recrawler.Config{
-				Workers:         workers,
-				DNSWorkers:      dnsWorkers,
-				DNSTimeout:      time.Duration(dnsTimeout) * time.Millisecond,
-				Timeout:         time.Duration(timeout) * time.Millisecond,
-				UserAgent:       userAgent,
-				HeadOnly:        headOnly,
-				StatusOnly:      statusOnly,
-				BatchSize:       batchSize,
-				Resume:          resume,
-				DNSPrefetch:     dnsPrefetch,
-				TransportShards: transportShards,
-				TwoPass:         twoPass,
-			})
-		},
-	}
-
-	cmd.Flags().StringVar(&dbPath, "db", "", "Path to seed DuckDB file")
-	cmd.Flags().StringVar(&dirPath, "dir", "", "Directory containing DuckDB files (use with --latest)")
-	cmd.Flags().BoolVar(&latest, "latest", false, "Auto-select highest-index DuckDB in --dir")
-	cmd.Flags().IntVar(&workers, "workers", 200, "Number of concurrent HTTP fetch workers")
-	cmd.Flags().IntVar(&dnsWorkers, "dns-workers", 2000, "Number of concurrent DNS workers")
-	cmd.Flags().IntVar(&dnsTimeout, "dns-timeout", 2000, "DNS lookup timeout in milliseconds")
-	cmd.Flags().IntVar(&timeout, "timeout", 5000, "Per-request HTTP timeout in milliseconds")
-	cmd.Flags().BoolVar(&headOnly, "head-only", false, "Only fetch headers, skip body")
-	cmd.Flags().BoolVar(&statusOnly, "status-only", false, "Only check HTTP status, close body immediately (fastest)")
-	cmd.Flags().IntVar(&batchSize, "batch-size", 5000, "DB write batch size")
-	cmd.Flags().BoolVar(&resume, "resume", false, "Skip already-crawled URLs")
-	cmd.Flags().StringVar(&userAgent, "user-agent", "MizuCrawler/1.0", "User-Agent header")
-	cmd.Flags().BoolVar(&dnsPrefetch, "dns-prefetch", true, "Batch DNS pre-resolution for all domains")
-	cmd.Flags().IntVar(&transportShards, "transport-shards", 64, "Number of HTTP transport shards")
-	cmd.Flags().BoolVar(&twoPass, "two-pass", false, "Two-pass mode: probe domains before full fetch")
-
-	return cmd
+	// SeedCount overrides len(Seeds) for progress display when Seeds is nil (pipeline mode).
+	SeedCount int64
 }
 
-// findLatestDuckDB finds the DuckDB file with the highest filename index in a directory.
-// Looks for *.parquet.duckdb or *.duckdb (excluding state/result/dns files).
-func findLatestDuckDB(dir string) (string, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return "", fmt.Errorf("reading directory %s: %w", dir, err)
+// runRecrawlJob is the shared two-pass recrawl runner used by both HN and CC pipelines.
+// It handles writer setup, progress display, and calls crawl.RunJob.
+func runRecrawlJob(ctx context.Context, args recrawlJobArgs) error {
+	si := args.SysInfo
+
+	ls := &v3LiveStats{slowDomainMs: args.SlowDomainMs}
+	args.JobCfg.Notifier = ls
+	args.JobCfg.SysInfo = &si
+
+	writerMode := strings.TrimSpace(strings.ToLower(args.WriterMode))
+	if writerMode == "" {
+		writerMode = "duckdb"
 	}
 
-	var candidates []string
-	for _, e := range entries {
-		name := e.Name()
-		if strings.HasSuffix(name, ".parquet.duckdb") {
-			candidates = append(candidates, name)
-		} else if strings.HasSuffix(name, ".duckdb") &&
-			!strings.HasSuffix(name, ".state.duckdb") &&
-			!strings.HasSuffix(name, ".result.duckdb") &&
-			!strings.HasSuffix(name, ".dns.duckdb") &&
-			name != "dns.duckdb" {
-			candidates = append(candidates, name)
+	hwmon := crawl.NewHWMonitor(2 * time.Second)
+	defer hwmon.Stop()
+	ls.hwmon = hwmon
+
+	var rdb *store.ResultDB
+	var binWriter *crawl.BinSegWriter
+
+	if writerMode != "devnull" {
+		if err := os.MkdirAll(args.ResultDir, 0o755); err != nil {
+			return fmt.Errorf("create result dir: %w", err)
 		}
-	}
-
-	if len(candidates) == 0 {
-		return "", fmt.Errorf("no DuckDB files found in %s", dir)
-	}
-
-	sort.Strings(candidates)
-	return filepath.Join(dir, candidates[len(candidates)-1]), nil
-}
-
-func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error {
-	fmt.Println(Banner())
-	fmt.Println(subtitleStyle.Render("High-Throughput Recrawl"))
-	fmt.Println()
-
-	// Load seed stats first
-	fmt.Println(infoStyle.Render("Loading seed database..."))
-	seedStats, err := recrawler.LoadSeedStats(ctx, dbPath)
-	if err != nil {
-		return fmt.Errorf("loading seed stats: %w", err)
-	}
-	fmt.Println(successStyle.Render(fmt.Sprintf("  %d URLs across %d domains",
-		seedStats.TotalURLs, seedStats.UniqueDomains)))
-
-	// Load seed URLs (only url + domain, no sorting)
-	fmt.Println(infoStyle.Render("Loading URLs..."))
-	seeds, err := recrawler.LoadSeedURLs(ctx, dbPath, seedStats.TotalURLs)
-	if err != nil {
-		return fmt.Errorf("loading seed URLs: %w", err)
-	}
-	fmt.Println(successStyle.Render(fmt.Sprintf("  Loaded %d URLs", len(seeds))))
-
-	// Derive result dir and DNS path from seed DB path
-	base := strings.TrimSuffix(dbPath, ".duckdb")
-	base = strings.TrimSuffix(base, ".parquet")
-	resultDir := base + ".results"
-
-	// DNS cache: use directory-level cache for sharing across per-parquet files
-	dnsPath := filepath.Join(filepath.Dir(dbPath), "dns.duckdb")
-
-	// Check for resume (scan existing result shards)
-	var skip map[string]bool
-	if cfg.Resume {
-		fmt.Println(infoStyle.Render("Checking for previous crawl state..."))
-		skip, err = recrawler.LoadAlreadyCrawledFromDir(ctx, resultDir)
+		var err error
+		rdb, err = store.NewResultDB(args.ResultDir, args.DBShards, args.JobCfg.BatchSize, args.DBMemMB)
 		if err != nil {
-			fmt.Println(warningStyle.Render(fmt.Sprintf("  Could not load state: %v", err)))
-		} else if len(skip) > 0 {
-			fmt.Println(successStyle.Render(fmt.Sprintf("  Resuming: skipping %d already-crawled URLs", len(skip))))
+			return fmt.Errorf("opening result db: %w", err)
+		}
+		// rdb lifecycle: for duckdb mode, RunJob closes via resultWriter.Close().
+		// For bin mode, rdb is closed explicitly below after RunJob returns.
+	}
+
+	switch writerMode {
+	case "bin":
+		segDir := filepath.Join(filepath.Dir(args.ResultDir), "segments")
+		if n, err := crawl.DrainLeftovers(segDir, rdb); err != nil {
+			fmt.Fprintf(os.Stderr, "  [warn] drain leftovers: %v\n", err)
+		} else if n > 0 {
+			fmt.Printf("  Recovered %s records from leftover segments\n",
+				labelStyle.Render(formatInt64Exact(n)))
+		}
+		var bwErr error
+		binWriter, bwErr = crawl.NewBinSegWriterN(segDir, args.SegSizeMB, int(si.MemAvailableMB), args.BinShards, rdb)
+		if bwErr != nil {
+			rdb.Close() // rdb is not owned by binWriter; close before returning
+			return fmt.Errorf("creating bin writer: %w", bwErr)
+		}
+		// binWriter lifecycle: RunJob closes via resultWriter.Close().
+		// rdb is closed explicitly below after RunJob returns (binWriter.Close flushes to rdb first).
+		ls.binWriter = binWriter
+	}
+
+	if args.BodyStoreDir != "" {
+		// body store setup if needed
+		_ = args.BodyStoreDir
+	}
+
+	// Inject storage constructors
+	if writerMode != "devnull" {
+		args.JobCfg.OpenResultWriter = func() (crawl.ResultWriter, error) {
+			if writerMode == "bin" {
+				return &v3ProgressWriter{inner: binWriter, ls: ls}, nil
+			}
+			return &v3ProgressWriter{inner: rdb, ls: ls}, nil
+		}
+		args.JobCfg.OpenFailureWriter = func() (crawl.FailureWriter, error) {
+			fdb, err := store.OpenFailedDB(args.FailedDBPath)
+			if err != nil {
+				return nil, fmt.Errorf("opening failed db: %w", err)
+			}
+			return &v3ProgressFailureWriter{inner: fdb, ls: ls}, nil
+		}
+		args.JobCfg.LoadRetrySeeds = func(ctx context.Context, since time.Time) ([]crawl.SeedURL, error) {
+			// Return ALL retry candidates from pass 1 — no domain-based pre-filtering.
+			// Dead domains are handled by DomainDeadProbe=2 in the engine: after 2 timeouts
+			// with 0 successes the engine closes abandonCh and skips remaining URLs for that
+			// domain. This eliminates false negatives from slow-but-alive domains that would
+			// be wrongly dropped by success-rate heuristics.
+			seeds, err := store.LoadRetryURLsSince(args.FailedDBPath, since)
+			if err != nil || len(seeds) == 0 {
+				return seeds, err
+			}
+			fmt.Printf("  Pass-2 seeds   %s retry URLs\n",
+				labelStyle.Render(formatInt64Exact(int64(len(seeds)))),
+			)
+			return seeds, nil
 		}
 	}
 
-	// DNS resolver
-	var dnsResolver *recrawler.DNSResolver
-	if cfg.DNSPrefetch {
-		dnsResolver = recrawler.NewDNSResolver(cfg.DNSTimeout)
-		cached, _ := dnsResolver.LoadCache(dnsPath)
-		if cached > 0 {
-			fmt.Println(successStyle.Render(fmt.Sprintf("  DNS cache: loaded %d entries (live=%d, dead=%d, timeout=%d)",
-				cached, dnsResolver.LiveCount(), dnsResolver.DeadCount(), dnsResolver.TimeoutCount())))
-		}
+	// Progress display
+	stdoutStat, statErr := os.Stdout.Stat()
+	isTTY := statErr == nil && stdoutStat.Mode()&os.ModeCharDevice != 0
+	progressInterval := 500 * time.Millisecond
+	if !isTTY {
+		progressInterval = 2 * time.Second
+	}
 
-		// Batch DNS pre-resolution: resolve all uncached domains upfront
-		// This is much faster than per-domain resolution in the pipeline
-		allDomains := make(map[string]bool, len(seeds))
-		for _, s := range seeds {
-			if skip == nil || !skip[s.URL] {
-				allDomains[s.Domain] = true
+	engineName := args.JobCfg.Engine
+	if engineName == "" {
+		engineName = "keepalive"
+	}
+	seedTotal := int64(len(args.Seeds))
+	if seedTotal == 0 && args.SeedCount > 0 {
+		seedTotal = args.SeedCount
+	}
+	start := time.Now()
+
+	// Build a display config from JobConfig fields
+	displayCfg := crawl.DefaultConfig()
+	displayCfg.Timeout = args.JobCfg.Timeout
+	if args.JobCfg.StatusOnly {
+		displayCfg.StatusOnly = true
+	}
+
+	progressCtx, cancelProgress := context.WithCancel(ctx)
+	defer cancelProgress()
+	progressDone := make(chan struct{})
+
+	go func() {
+		defer close(progressDone)
+		ticker := time.NewTicker(progressInterval)
+		defer ticker.Stop()
+		var displayLines int
+		for {
+			select {
+			case <-progressCtx.Done():
+				return
+			case t := <-ticker.C:
+				ls.updateSpeed(t)
+				output := v3RenderProgress(ls, displayCfg, engineName, seedTotal, start, isTTY)
+				if isTTY {
+					if displayLines > 0 {
+						fmt.Printf("\033[%dA\033[J", displayLines)
+					}
+					fmt.Print(output)
+					displayLines = strings.Count(output, "\n")
+				} else {
+					fmt.Print(output)
+				}
 			}
 		}
-		domainList := make([]string, 0, len(allDomains))
-		for d := range allDomains {
-			domainList = append(domainList, d)
+	}()
+
+	jobResult, err := crawl.RunJob(ctx, args.Seeds, args.DNSCache, args.JobCfg)
+
+	// bin mode: RunJob closed binWriter; now close the backing rdb.
+	if writerMode == "bin" && rdb != nil {
+		rdb.Close()
+	}
+
+	cancelProgress()
+	<-progressDone
+	if isTTY {
+		fmt.Println()
+	}
+
+	// Print summary
+	if jobResult != nil && jobResult.Pass1 != nil {
+		s := jobResult.Pass1
+		skipped := ls.skipped.Load()
+		skippedNote := ""
+		if skipped > 0 {
+			skippedNote = fmt.Sprintf("  skipped %s domain-killed", ccFmtInt64(skipped))
 		}
-
-		fmt.Println(infoStyle.Render(fmt.Sprintf("  Batch DNS: resolving %d domains (%d workers, %v timeout)...",
-			len(domainList), cfg.DNSWorkers, cfg.DNSTimeout)))
-
-		var dnsDisplayLines int
-		live, dead, timeout := dnsResolver.ResolveBatch(ctx, domainList, cfg.DNSWorkers, cfg.DNSTimeout, func(p recrawler.DNSProgress) {
-			if dnsDisplayLines > 0 {
-				fmt.Printf("\033[%dA\033[J", dnsDisplayLines)
-			}
-			output := fmt.Sprintf("  DNS  %d/%d  │  %d live  │  %d dead  │  %d timeout  │  %.0f/s  │  %s\n",
-				p.Done, p.Total, p.Live, p.Dead, p.Timeout, p.Speed, p.Elapsed.Truncate(time.Millisecond))
-			fmt.Print(output)
-			dnsDisplayLines = 1
-		})
-		if dnsDisplayLines > 0 {
-			fmt.Printf("\033[%dA\033[J", dnsDisplayLines)
+		passLabel := ""
+		if !args.JobCfg.NoRetry && args.JobCfg.RetryTimeout > 0 {
+			passLabel = " (pass 1)"
 		}
-		fmt.Println(successStyle.Render(fmt.Sprintf("  DNS: %d live, %d dead, %d timeout (%s)",
-			live, dead, timeout, dnsResolver.Duration().Truncate(time.Millisecond))))
+		fmt.Println(successStyle.Render(fmt.Sprintf(
+			"Engine %s done%s: %s ok / %s total | avg %.0f rps | peak %.0f rps | %s%s",
+			engineName, passLabel,
+			ccFmtInt64(s.OK), ccFmtInt64(s.Total),
+			s.AvgRPS, s.PeakRPS,
+			s.Duration.Truncate(time.Second),
+			skippedNote,
+		)))
 	}
 
-	// Open sharded result databases
-	fmt.Println(infoStyle.Render("Opening result databases..."))
-	rdb, err := recrawler.NewResultDB(resultDir, 8, cfg.BatchSize)
-	if err != nil {
-		return fmt.Errorf("opening result db: %w", err)
-	}
-	defer rdb.Close()
-	fmt.Println(successStyle.Render(fmt.Sprintf("  Results → %s/ (8 shards)", resultDir)))
-
-	// Store metadata
-	rdb.SetMeta(ctx, "seed_db", dbPath)
-	rdb.SetMeta(ctx, "started_at", time.Now().Format(time.RFC3339))
-	rdb.SetMeta(ctx, "workers", fmt.Sprintf("%d", cfg.Workers))
-
-	// Create stats tracker
-	label := filepath.Base(strings.TrimSuffix(dbPath, ".duckdb"))
-	stats := recrawler.NewStats(seedStats.TotalURLs, seedStats.UniqueDomains, label)
-
-	// Print config summary
-	mode := "full"
-	if cfg.StatusOnly {
-		mode = "status-only"
-	} else if cfg.HeadOnly {
-		mode = "head-only"
-	}
-	pipelineMode := "direct"
-	if dnsResolver != nil {
-		pipelineMode = "batch-dns → direct"
-	}
-	if cfg.TwoPass {
-		pipelineMode = "two-pass"
-	}
-	fmt.Println()
-	fmt.Println(infoStyle.Render(fmt.Sprintf("Starting recrawl: %d workers, %v timeout, mode=%s, shards=%d, pipeline=%s",
-		cfg.Workers, cfg.Timeout, mode, cfg.TransportShards, pipelineMode)))
-	fmt.Println()
-
-	// Create and run recrawler
-	r := recrawler.New(cfg, stats, rdb)
-
-	// Pre-populate DNS cache and dead domains from batch resolution.
-	// Use SetDNSCache + SetDeadDomains (NOT SetDNSResolver) so that Run()
-	// uses directFeed instead of spawning another DNS pipeline.
-	if dnsResolver != nil {
-		r.SetDNSCache(dnsResolver.ResolvedIPs())
-		r.SetDeadDomains(dnsResolver.DeadOrTimeoutDomainsWithReasons())
+	if jobResult != nil && jobResult.Pass2 != nil {
+		s := jobResult.Pass2
+		fmt.Println(successStyle.Render(fmt.Sprintf(
+			"Pass 2 done: %s rescued / %s retried | avg %.0f rps | %s",
+			ccFmtInt64(s.OK), ccFmtInt64(s.Total),
+			s.AvgRPS, s.Duration.Truncate(time.Second),
+		)))
 	}
 
-	err = recrawler.RunWithDisplay(ctx, r, seeds, skip, stats)
-
-	// Final flush
-	rdb.Flush(ctx)
-	rdb.SetMeta(ctx, "finished_at", time.Now().Format(time.RFC3339))
-
-	if dnsResolver != nil {
-		fmt.Print(infoStyle.Render("  Saving DNS cache..."))
-		saveStart := time.Now()
-		if saveErr := dnsResolver.SaveCache(dnsPath); saveErr != nil {
-			fmt.Println(warningStyle.Render(fmt.Sprintf(" failed: %v", saveErr)))
-		} else {
-			fmt.Println(successStyle.Render(fmt.Sprintf(" saved in %s → %s (live=%d, dead=%d, timeout=%d)",
-				time.Since(saveStart).Truncate(time.Millisecond), filepath.Base(dnsPath),
-				dnsResolver.LiveCount(), dnsResolver.DeadCount(), dnsResolver.TimeoutCount())))
-		}
+	totalSeeds := args.TotalSeeds
+	if totalSeeds == 0 {
+		totalSeeds = int64(len(args.Seeds))
 	}
-
-	fmt.Println()
-	if err != nil {
-		fmt.Println(warningStyle.Render(fmt.Sprintf("Recrawl finished with error: %v", err)))
-	} else {
-		fmt.Println(successStyle.Render("Recrawl complete!"))
-	}
-	fmt.Println(labelStyle.Render(fmt.Sprintf("  Results: %s/", resultDir)))
-	fmt.Println()
+	printFinalSummary(totalSeeds, args.DNSDeadCount, jobResult)
 
 	return err
+}
+
+// printFinalSummary prints a comprehensive coverage summary using engine stats.
+//
+// Coverage identity:
+//
+//	TotalSeeds ≈ dnsDeadCount + p1.OK + p1.Failed + p1.Timeout + p1.Skipped
+//
+// With pass-2: p1 timeout seeds split into rescued (p2.OK), became-errors (p2.Failed),
+// or still exhausted (p1.Timeout + p1.Skipped - p2.OK - p2.Failed).
+// "other" is non-zero only when the engine's internal DNS filter drops seeds silently
+// (small residual; expected < 0.2% when caller pre-filters dead domains).
+func printFinalSummary(totalSeeds, dnsDeadCount int64, result *crawl.JobResult) {
+	if result == nil || result.Pass1 == nil {
+		return
+	}
+	p1 := result.Pass1
+	p2 := result.Pass2
+	hasRetry := p2 != nil
+
+	ok := p1.OK
+	var httpError, timeoutKilled int64
+	if hasRetry {
+		ok += p2.OK
+		httpError = p1.Failed + p2.Failed
+		// All p1 timeout/domain-killed seeds, minus what pass 2 rescued or turned into HTTP errors.
+		// = p2.Timeout + p2.Skipped + (p1 timeout seeds not loaded into pass 2 retry).
+		timeoutKilled = p1.Timeout + p1.Skipped - p2.OK - p2.Failed
+		if timeoutKilled < 0 {
+			timeoutKilled = 0
+		}
+	} else {
+		httpError = p1.Failed
+		timeoutKilled = p1.Timeout + p1.Skipped
+	}
+
+	failed := totalSeeds - ok
+	computed := dnsDeadCount + ok + httpError + timeoutKilled
+	other := totalSeeds - computed // >0 only if engine dropped seeds outside stats
+
+	const border = "════════════════════════════════════════════════"
+	fmt.Println()
+	fmt.Println(border)
+	fmt.Println("            Crawl Final Summary")
+	fmt.Println(border)
+	fmt.Printf("\n  Total seeds:       %s\n", ccFmtInt64(totalSeeds))
+	fmt.Printf("  ✓ Succeeded:       %s  (%.1f%%)\n", ccFmtInt64(ok), v3SafePct(ok, totalSeeds))
+	if hasRetry {
+		fmt.Printf("      Pass 1:        %s\n", ccFmtInt64(p1.OK))
+		fmt.Printf("      Pass 2:        %s  (rescued)\n", ccFmtInt64(p2.OK))
+	}
+	fmt.Printf("  ✗ Failed:          %s  (%.1f%%)\n", ccFmtInt64(failed), v3SafePct(failed, totalSeeds))
+
+	if failed > 0 {
+		fmt.Println()
+		fmt.Println("  Error breakdown:")
+		if dnsDeadCount > 0 {
+			fmt.Printf("    %-42s %s  (%.1f%%)\n",
+				"dns_dead (filtered pre-crawl):", ccFmtInt64(dnsDeadCount), v3SafePct(dnsDeadCount, totalSeeds))
+		}
+		if httpError > 0 {
+			label := "http_error:"
+			if hasRetry {
+				label = "http_error (pass 1 + pass 2):"
+			}
+			fmt.Printf("    %-42s %s  (%.1f%%)\n", label, ccFmtInt64(httpError), v3SafePct(httpError, totalSeeds))
+		}
+		if timeoutKilled > 0 {
+			label := "timeout/killed (no retry):"
+			if hasRetry {
+				label = "timeout/killed (pass 2 exhausted):"
+			}
+			fmt.Printf("    %-42s %s  (%.1f%%)\n", label, ccFmtInt64(timeoutKilled), v3SafePct(timeoutKilled, totalSeeds))
+		}
+		if other > 0 {
+			fmt.Printf("    %-42s %s  (%.1f%%)\n", "other (engine-filtered):", ccFmtInt64(other), v3SafePct(other, totalSeeds))
+		}
+	}
+
+	fmt.Println()
+	absOther := other
+	if absOther < 0 {
+		absOther = -absOther
+	}
+	if absOther <= totalSeeds/500 { // within 0.2% = engine-internal DNS filter noise
+		fmt.Printf("  Coverage: %s / %s (100.0%%) ✓\n", ccFmtInt64(totalSeeds), ccFmtInt64(totalSeeds))
+	} else {
+		fmt.Printf("  Coverage: %s / %s (%.1f%%)  ← gap: %s unaccounted\n",
+			ccFmtInt64(computed), ccFmtInt64(totalSeeds), v3SafePct(computed, totalSeeds), ccFmtInt64(absOther))
+	}
+	fmt.Println(border)
+}
+
+// ── Display types ──────────────────────────────────────────────────────────────
+
+// v3SpeedTick records a point-in-time measurement for rolling speed calculation.
+type v3SpeedTick struct {
+	t     time.Time
+	total int64
+	bytes int64
+}
+
+// v3LiveStats tracks live statistics for the v3 progress display.
+// All fields are updated atomically from the result/failure writers.
+type v3LiveStats struct {
+	total   atomic.Int64 // all results received (ok + fail + timeout)
+	ok      atomic.Int64 // successful fetches (no error)
+	failed  atomic.Int64 // hard failures (non-timeout errors)
+	timeout atomic.Int64 // timeout failures
+	skipped atomic.Int64 // domain-killed (domain_http_timeout_killed)
+	bytes   atomic.Int64 // total body bytes received
+	fetchMs atomic.Int64 // sum of FetchTimeMs for successful fetches (for avg)
+
+	statusCodes sync.Map // int → *atomic.Int64
+
+	// Latency histogram for adaptive timeout display (mirrors engine's tracker)
+	latBuckets [8]atomic.Int64
+	latTotal   atomic.Int64
+
+	// Per-domain tracking (implements crawl.DomainNotifier)
+	activeDomains sync.Map     // domain → *v3DomainInfo
+	totalDomains  atomic.Int64 // domains entered via StartDomain
+	doneDomains   atomic.Int64 // domains exited via EndDomain
+	slowDomainMs  int64        // show domain as "slow" if active for > this ms (0=disabled)
+
+	// Rolling speed (10-second window), protected by speedMu
+	speedMu    sync.Mutex
+	speedTicks []v3SpeedTick
+	peakRPS    float64
+	rollingRPS float64
+	rollingBW  float64
+
+	// Optional binary writer for segment stats display (nil when not in use).
+	binWriter *crawl.BinSegWriter
+
+	// Optional hardware monitor for disk/net throughput display (nil when not in use).
+	hwmon *crawl.HWMonitor
+}
+
+// v3DomainInfo holds per-domain state for the slow-domain display.
+type v3DomainInfo struct {
+	start time.Time
+	total int
+}
+
+// StartDomain implements crawl.DomainNotifier.
+func (ls *v3LiveStats) StartDomain(domain string, urlCount int) {
+	ls.totalDomains.Add(1)
+	ls.activeDomains.Store(domain, &v3DomainInfo{start: time.Now(), total: urlCount})
+}
+
+// EndDomain implements crawl.DomainNotifier.
+func (ls *v3LiveStats) EndDomain(domain string) {
+	ls.activeDomains.Delete(domain)
+	ls.doneDomains.Add(1)
+}
+
+func (ls *v3LiveStats) recordResult(r crawl.Result) {
+	ls.total.Add(1)
+	ls.bytes.Add(r.ContentLength)
+	if r.StatusCode > 0 {
+		v, _ := ls.statusCodes.LoadOrStore(r.StatusCode, &atomic.Int64{})
+		v.(*atomic.Int64).Add(1)
+	}
+	switch {
+	case r.Error == "":
+		ls.ok.Add(1)
+		ls.fetchMs.Add(r.FetchTimeMs)
+		// Track latency for adaptive timeout display
+		ms := r.FetchTimeMs
+		ls.latTotal.Add(1)
+		for i, edge := range v3LatEdges {
+			if ms < edge {
+				ls.latBuckets[i].Add(1)
+				return
+			}
+		}
+		ls.latBuckets[len(ls.latBuckets)-1].Add(1)
+	case strings.Contains(r.Error, "timeout") || strings.Contains(r.Error, "deadline"):
+		ls.timeout.Add(1)
+	default:
+		ls.failed.Add(1)
+	}
+}
+
+func (ls *v3LiveStats) recordSkip() {
+	ls.skipped.Add(1)
+}
+
+// updateSpeed refreshes rolling RPS and bandwidth (call every tick).
+func (ls *v3LiveStats) updateSpeed(now time.Time) {
+	tot := ls.total.Load()
+	b := ls.bytes.Load()
+
+	ls.speedMu.Lock()
+	defer ls.speedMu.Unlock()
+
+	ls.speedTicks = append(ls.speedTicks, v3SpeedTick{t: now, total: tot, bytes: b})
+	cutoff := now.Add(-10 * time.Second)
+	for len(ls.speedTicks) > 1 && ls.speedTicks[0].t.Before(cutoff) {
+		ls.speedTicks = ls.speedTicks[1:]
+	}
+
+	var rps, bw float64
+	if len(ls.speedTicks) >= 2 {
+		first := ls.speedTicks[0]
+		last := ls.speedTicks[len(ls.speedTicks)-1]
+		dt := last.t.Sub(first.t).Seconds()
+		if dt > 0 {
+			rps = float64(last.total-first.total) / dt
+			bw = float64(last.bytes-first.bytes) / dt
+		}
+	}
+	ls.rollingRPS = rps
+	ls.rollingBW = bw
+	if rps > ls.peakRPS {
+		ls.peakRPS = rps
+	}
+}
+
+func (ls *v3LiveStats) p95Ms() int64 {
+	n := ls.latTotal.Load()
+	if n < 10 {
+		return 0
+	}
+	target := int64(float64(n) * 0.95)
+	var cum int64
+	for i, edge := range v3LatEdges {
+		cum += ls.latBuckets[i].Load()
+		if cum >= target {
+			return edge
+		}
+	}
+	return v3LatEdges[len(v3LatEdges)-1]
+}
+
+var v3LatEdges = [8]int64{100, 250, 500, 1000, 2000, 3500, 5000, 10000}
+
+// v3ProgressWriter wraps ResultWriter and tracks live statistics.
+type v3ProgressWriter struct {
+	inner crawl.ResultWriter
+	ls    *v3LiveStats
+}
+
+func (p *v3ProgressWriter) Add(r crawl.Result) {
+	p.inner.Add(r)
+	p.ls.recordResult(r)
+}
+func (p *v3ProgressWriter) Flush(ctx context.Context) error { return p.inner.Flush(ctx) }
+func (p *v3ProgressWriter) Close() error                    { return p.inner.Close() }
+
+// v3ProgressFailureWriter wraps FailureWriter and counts domain-killed skips.
+type v3ProgressFailureWriter struct {
+	inner crawl.FailureWriter
+	ls    *v3LiveStats
+}
+
+func (f *v3ProgressFailureWriter) AddURL(u crawl.FailedURL) {
+	f.inner.AddURL(u)
+	if u.Reason == "domain_http_timeout_killed" {
+		f.ls.recordSkip()
+	}
+}
+func (f *v3ProgressFailureWriter) Close() error { return f.inner.Close() }
+
+// v3RenderProgress returns a formatted multi-line progress string.
+func v3RenderProgress(ls *v3LiveStats, cfg crawl.Config, engineName string, seedTotal int64, start time.Time, isTTY bool) string {
+	ls.speedMu.Lock()
+	rollingRPS := ls.rollingRPS
+	rollingBW := ls.rollingBW
+	peakRPS := ls.peakRPS
+	ls.speedMu.Unlock()
+
+	tot := ls.total.Load()
+	ok := ls.ok.Load()
+	fail := ls.failed.Load()
+	tout := ls.timeout.Load()
+	skip := ls.skipped.Load()
+	b := ls.bytes.Load()
+	elapsed := time.Since(start)
+
+	pct := float64(0)
+	if seedTotal > 0 {
+		pct = float64(tot) / float64(seedTotal) * 100
+	}
+
+	// ETA based on rolling speed
+	eta := "---"
+	if elapsed.Seconds() > 2 && tot > 0 {
+		speed := rollingRPS
+		if speed <= 0 {
+			speed = float64(tot) / elapsed.Seconds()
+		}
+		if speed > 0 {
+			remaining := seedTotal - tot
+			if remaining > 0 {
+				etaDur := time.Duration(float64(remaining)/speed) * time.Second
+				eta = v3FmtDur(etaDur)
+			} else {
+				eta = "0s"
+			}
+		}
+	}
+
+	// Progress bar (40 chars)
+	barWidth := 40
+	filled := min(int(pct/100*float64(barWidth)), barWidth)
+	bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
+
+	// Avg fetch time
+	avgMs := int64(0)
+	if okN := ls.ok.Load(); okN > 0 {
+		avgMs = ls.fetchMs.Load() / okN
+	}
+
+	// Avg bandwidth
+	avgBW := float64(0)
+	if elapsed.Seconds() > 0 {
+		avgBW = float64(b) / elapsed.Seconds()
+	}
+
+	// Adaptive timeout display
+	p95 := ls.p95Ms()
+	adaptiveStr := ""
+	if p95 > 0 {
+		adapted := p95 * 2
+		if adapted < 500 {
+			adapted = 500
+		}
+		if ceil := cfg.Timeout.Milliseconds(); adapted > ceil {
+			adapted = ceil
+		}
+		adaptiveStr = fmt.Sprintf("  Adaptive  P95=%dms  →  timeout=%dms  (ceiling %v)\n", p95, adapted, cfg.Timeout)
+	}
+
+	// HTTP status codes
+	statusStr := v3StatusLine(&ls.statusCodes)
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("  %s  %5.1f%%  %s/%s\n",
+		bar, pct, ccFmtInt64(tot), ccFmtInt64(seedTotal)))
+	sb.WriteString(fmt.Sprintf("  Speed   %s/s  │  Peak %s/s  │  %s/s  │  Total %s\n",
+		ccFmtInt64(int64(rollingRPS)), ccFmtInt64(int64(peakRPS)),
+		v3FmtBytes(int64(rollingBW)), v3FmtBytes(b)))
+	sb.WriteString(fmt.Sprintf("  ETA     %s  │  Elapsed %s  │  Avg %dms/req  │  Avg %s/s\n",
+		eta, v3FmtDur(elapsed), avgMs, v3FmtBytes(int64(avgBW))))
+	sb.WriteString("\n")
+	done := tot + skip
+	sb.WriteString(fmt.Sprintf("  ✓ %s ok (%4.1f%%)  ✗ %s fail (%4.1f%%)  ⏱ %s timeout (%4.1f%%)\n",
+		ccFmtInt64(ok), v3SafePct(ok, done),
+		ccFmtInt64(fail), v3SafePct(fail, done),
+		ccFmtInt64(tout), v3SafePct(tout, done)))
+	if skip > 0 {
+		sb.WriteString(fmt.Sprintf("  ⌛ %s domain-killed (%4.1f%%)\n",
+			ccFmtInt64(skip), v3SafePct(skip, done)))
+	}
+	// Domain progress (only shown when DomainNotifier is active)
+	if totDom := ls.totalDomains.Load(); totDom > 0 {
+		doneDom := ls.doneDomains.Load()
+		activeDom := totDom - doneDom
+		sb.WriteString(fmt.Sprintf("  Domains   total=%s  done=%s  active=%s\n",
+			ccFmtInt64(totDom), ccFmtInt64(doneDom), ccFmtInt64(activeDom)))
+		if ls.slowDomainMs > 0 {
+			now := time.Now()
+			threshold := time.Duration(ls.slowDomainMs) * time.Millisecond
+			type slowEntry struct {
+				domain  string
+				elapsed time.Duration
+				total   int
+			}
+			var slow []slowEntry
+			ls.activeDomains.Range(func(key, val any) bool {
+				if info, ok := val.(*v3DomainInfo); ok {
+					if el := now.Sub(info.start); el >= threshold {
+						slow = append(slow, slowEntry{key.(string), el, info.total})
+					}
+				}
+				return true
+			})
+			sort.Slice(slow, func(i, j int) bool { return slow[i].elapsed > slow[j].elapsed })
+			if len(slow) > 3 {
+				slow = slow[:3]
+			}
+			if len(slow) > 0 {
+				var parts []string
+				for _, s := range slow {
+					parts = append(parts, fmt.Sprintf("%s (%s, %d urls)", s.domain, v3FmtDur(s.elapsed), s.total))
+				}
+				sb.WriteString(fmt.Sprintf("  Slow      %s\n", strings.Join(parts, "  │  ")))
+			}
+		}
+	}
+	if statusStr != "" {
+		sb.WriteString(fmt.Sprintf("  HTTP  %s\n", statusStr))
+	}
+	if adaptiveStr != "" {
+		sb.WriteString(adaptiveStr)
+	}
+	// Memory + writer telemetry
+	sb.WriteString(v3MemLine(ls.binWriter))
+	// Disk + network + channel fill
+	sb.WriteString(v3HWLine(ls.hwmon, ls.binWriter))
+	return sb.String()
+}
+
+// v3MemLine returns a status line showing heap usage, GOMEMLIMIT, GC cycles,
+// and (when w != nil) BinSegWriter segment/drain stats.
+func v3MemLine(w *crawl.BinSegWriter) string {
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms)
+
+	// GOMEMLIMIT: pass -1 to read current limit without changing it.
+	limitBytes := debug.SetMemoryLimit(-1)
+
+	heapGB := float64(ms.HeapInuse) / (1 << 30)
+	limitGB := float64(limitBytes) / (1 << 30)
+	pct := 0.0
+	if limitBytes > 0 {
+		pct = float64(ms.HeapInuse) / float64(limitBytes) * 100
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("  Mem   heap=%.1f GB / lim=%.1f GB (%.0f%%)  │  GC %d×",
+		heapGB, limitGB, pct, ms.NumGC))
+	if w != nil {
+		sb.WriteString(fmt.Sprintf("  │  Writer seg=%d pend=%d drain=%s",
+			w.SegCount(), w.PendingSegs(), ccFmtInt64(w.Drained())))
+	}
+	sb.WriteByte('\n')
+	return sb.String()
+}
+
+// v3HWLine returns a status line showing disk and network throughput (MB/s)
+// and the BinSegWriter channel fill level.  Returns "" when hwmon is nil.
+func v3HWLine(m *crawl.HWMonitor, w *crawl.BinSegWriter) string {
+	if m == nil {
+		return ""
+	}
+	s := m.Stats()
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("  HW    disk rd=%.1f wr=%.1f MB/s  │  net rx=%.1f tx=%.1f MB/s",
+		s.DiskReadMBps, s.DiskWriteMBps, s.NetRxMBps, s.NetTxMBps))
+	if w != nil {
+		sb.WriteString(fmt.Sprintf("  │  chan %.0f%%", w.ChanFill()*100))
+	}
+	sb.WriteByte('\n')
+	return sb.String()
+}
+
+func v3StatusLine(m *sync.Map) string {
+	type kv struct {
+		code  int
+		count int64
+	}
+	var pairs []kv
+	m.Range(func(key, value any) bool {
+		if code, ok1 := key.(int); ok1 {
+			if cnt, ok2 := value.(*atomic.Int64); ok2 {
+				if n := cnt.Load(); n > 0 {
+					pairs = append(pairs, kv{code, n})
+				}
+			}
+		}
+		return true
+	})
+	sort.Slice(pairs, func(i, j int) bool { return pairs[i].count > pairs[j].count })
+	var parts []string
+	for i, p := range pairs {
+		if i >= 8 {
+			break
+		}
+		parts = append(parts, fmt.Sprintf("%d:%s", p.code, ccFmtInt64(p.count)))
+	}
+	return strings.Join(parts, "  ")
+}
+
+func v3SafePct(part, total int64) float64 {
+	if total == 0 {
+		return 0
+	}
+	return float64(part) / float64(total) * 100
+}
+
+func v3FmtBytes(b int64) string {
+	if b < 0 {
+		return "0 B"
+	}
+	switch {
+	case b < 1024:
+		return fmt.Sprintf("%d B", b)
+	case b < 1024*1024:
+		return fmt.Sprintf("%.1f KB", float64(b)/1024)
+	case b < 1024*1024*1024:
+		return fmt.Sprintf("%.1f MB", float64(b)/(1024*1024))
+	default:
+		return fmt.Sprintf("%.2f GB", float64(b)/(1024*1024*1024))
+	}
+}
+
+func v3FmtDur(d time.Duration) string {
+	d = d.Truncate(time.Second)
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	s := int(d.Seconds()) % 60
+	if h > 0 {
+		return fmt.Sprintf("%02d:%02d:%02d", h, m, s)
+	}
+	return fmt.Sprintf("%02d:%02d", m, s)
 }

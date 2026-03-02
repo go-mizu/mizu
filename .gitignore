@@ -113,6 +113,9 @@ coverage.out
 # Temporary, remove later
 CLAUDE.md
 
+# Go binary build outputs (no extension)
+blueprints/search/search
+
 node_modules/
 
 # ------------------------------

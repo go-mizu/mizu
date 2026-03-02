@@ -48,6 +48,11 @@ func (c Config) IndexDir() string {
 	return filepath.Join(c.CrawlDir(), "index")
 }
 
+// IndexShardDir returns the directory containing per-parquet DuckDB databases.
+func (c Config) IndexShardDir() string {
+	return filepath.Join(c.CrawlDir(), "index-duckdb")
+}
+
 // IndexDBPath returns the path to the imported DuckDB index.
 func (c Config) IndexDBPath() string {
 	return filepath.Join(c.CrawlDir(), "index.duckdb")
@@ -66,6 +71,11 @@ func (c Config) CDXJDir() string {
 // WARCDir returns the directory for downloaded WARC files.
 func (c Config) WARCDir() string {
 	return filepath.Join(c.CrawlDir(), "warc")
+}
+
+// WARCImportDir returns the directory for WARC import result databases.
+func (c Config) WARCImportDir() string {
+	return filepath.Join(c.CrawlDir(), "warc-import")
 }
 
 // RecrawlDir returns the directory for recrawl result shard files.

@@ -1,0 +1,638 @@
+package hn
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"time"
+
+	_ "github.com/duckdb/duckdb-go/v2"
+)
+
+type ImportSource string
+
+const (
+	ImportSourceAuto       ImportSource = "auto"
+	ImportSourceParquet    ImportSource = "parquet"
+	ImportSourceClickHouse ImportSource = "clickhouse"
+	ImportSourceHybrid     ImportSource = "hybrid"
+	ImportSourceAPI        ImportSource = "api"
+)
+
+// ImportOptions controls how local HN data is imported into DuckDB.
+type ImportOptions struct {
+	Source        ImportSource
+	DBPath        string
+	Rebuild       bool
+	DuckDBThreads int
+	MemoryLimit   string
+	TempDir       string
+	Progress      func(ImportProgress)
+}
+
+type ImportProgress struct {
+	Stage   string
+	Detail  string
+	Elapsed time.Duration
+	Rows    int64
+}
+
+// ImportResult summarizes a DuckDB import.
+type ImportResult struct {
+	DBPath       string
+	SourceUsed   ImportSource
+	SourcePath   string
+	Rows         int64
+	RowsBefore   int64
+	RowsDelta    int64
+	Mode         string
+	ImportFromID int64
+	ImportedAt   time.Time
+	IndexesMade  int
+}
+
+func (c Config) Import(ctx context.Context, opts ImportOptions) (*ImportResult, error) {
+	started := time.Now()
+	emit := func(stage, detail string, rows int64) {
+		if opts.Progress != nil {
+			opts.Progress(ImportProgress{
+				Stage:   stage,
+				Detail:  detail,
+				Elapsed: time.Since(started),
+				Rows:    rows,
+			})
+		}
+	}
+	emit("start", "starting import", 0)
+
+	cfg := c.WithDefaults()
+	source, sourcePath, err := cfg.resolveLocalImportSource(opts.Source)
+	if err != nil {
+		return nil, err
+	}
+	emit("source", fmt.Sprintf("resolved source=%s path=%s", source, sourcePath), 0)
+	dbPath := opts.DBPath
+	if dbPath == "" {
+		dbPath = cfg.DefaultDBPath()
+	}
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		return nil, fmt.Errorf("create db dir: %w", err)
+	}
+
+	db, err := sql.Open("duckdb", dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("open duckdb: %w", err)
+	}
+	defer db.Close()
+	emit("duckdb", fmt.Sprintf("opened %s", dbPath), 0)
+	_, _ = db.ExecContext(ctx, `SET preserve_insertion_order=false`)
+
+	threads := opts.DuckDBThreads
+	if threads <= 0 {
+		threads = 2
+		if runtime.NumCPU() < threads {
+			threads = max(1, runtime.NumCPU())
+		}
+	}
+	_, _ = db.ExecContext(ctx, fmt.Sprintf(`SET threads=%d`, threads))
+
+	tempDir := strings.TrimSpace(opts.TempDir)
+	if tempDir == "" {
+		tempDir = filepath.Join(cfg.DataDir, "duckdb_tmp")
+	}
+	if err := os.MkdirAll(tempDir, 0o755); err == nil {
+		_, _ = db.ExecContext(ctx, fmt.Sprintf(`SET temp_directory='%s'`, escapeSQLString(tempDir)))
+	}
+
+	memLimit := strings.TrimSpace(opts.MemoryLimit)
+	if memLimit == "" {
+		memLimit = "768MB"
+	}
+	_, _ = db.ExecContext(ctx, fmt.Sprintf(`SET memory_limit='%s'`, escapeSQLString(memLimit)))
+	emit("duckdb", fmt.Sprintf("settings threads=%d memory_limit=%s temp_dir=%s", threads, memLimit, tempDir), 0)
+
+	if _, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS meta (key VARCHAR PRIMARY KEY, value VARCHAR)`); err != nil {
+		return nil, fmt.Errorf("create meta table: %w", err)
+	}
+
+	itemsExists, err := tableExistsErr(ctx, db, "items")
+	if err != nil {
+		return nil, fmt.Errorf("check items table: %w", err)
+	}
+	var rowsBefore int64
+	if itemsExists {
+		rowsBefore, _ = countRows(ctx, db, "items")
+	}
+	emit("inspect", fmt.Sprintf("items_exists=%t rows_before=%d", itemsExists, rowsBefore), rowsBefore)
+
+	mode := "full"
+	importFromID := int64(0)
+	if itemsExists && !opts.Rebuild && source != ImportSourceParquet && itemsSupportsIncremental(ctx, db) {
+		importFromID, _ = cfg.suggestIncrementalImportFromID(ctx, db, source)
+		if importFromID > 0 {
+			emit("incremental", fmt.Sprintf("merging rows with id >= %d", importFromID), 0)
+			if err := importIncremental(ctx, db, cfg, source, importFromID); err != nil {
+				return nil, fmt.Errorf("incremental import from %s (id >= %d): %w", source, importFromID, err)
+			}
+			mode = "incremental"
+			emit("incremental", "merge complete", 0)
+		}
+	}
+
+	if mode == "full" {
+		emit("full", "rebuilding items table", 0)
+		if _, err := db.ExecContext(ctx, `DROP TABLE IF EXISTS items`); err != nil {
+			return nil, fmt.Errorf("drop items table: %w", err)
+		}
+		var createSQL string
+		switch source {
+		case ImportSourceParquet:
+			escaped := escapeSQLString(sourcePath)
+			createSQL = fmt.Sprintf(`CREATE TABLE items AS
+SELECT *,
+       CASE WHEN try_cast(time AS BIGINT) IS NOT NULL THEN epoch_ms(try_cast(time AS BIGINT) * 1000) ELSE NULL END AS time_ts
+FROM read_parquet('%s')`, escaped)
+		case ImportSourceClickHouse:
+			// Base ClickHouse chunk parquet files are non-overlapping by ID range, so
+			// a global dedupe window is unnecessary and extremely expensive on low-RAM
+			// hosts. Keep dedupe for delta/hybrid paths.
+			if sourcePath == filepath.Join(cfg.ClickHouseParquetDir(), "*.parquet") {
+				createSQL = buildCreateItemsFromNormalizedSelectSQLNoDedup(buildNormalizedClickHouseSelect(sourcePath))
+			} else {
+				createSQL = buildCreateItemsFromNormalizedSelectSQL(buildNormalizedClickHouseSelect(sourcePath))
+			}
+		case ImportSourceHybrid:
+			emit("full", "building hybrid table (base + delta overlay)", 0)
+			if err := importHybrid(ctx, db, cfg); err != nil {
+				return nil, fmt.Errorf("create items table from %s: %w", source, err)
+			}
+		case ImportSourceAPI:
+			createSQL = buildCreateItemsFromNormalizedSelectSQL(buildNormalizedAPISelect(sourcePath))
+		default:
+			return nil, fmt.Errorf("unsupported import source %q", source)
+		}
+
+		if source != ImportSourceHybrid {
+			emit("full", fmt.Sprintf("creating items table from %s", source), 0)
+			if _, err := db.ExecContext(ctx, createSQL); err != nil {
+				return nil, fmt.Errorf("create items table from %s: %w", source, err)
+			}
+		}
+		emit("full", "items table created", 0)
+	}
+
+	emit("count", "counting rows", 0)
+	var rows int64
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM items`).Scan(&rows); err != nil {
+		return nil, fmt.Errorf("count imported rows: %w", err)
+	}
+	emit("count", "row count ready", rows)
+
+	indexesMade := 0
+	if mode == "full" {
+		emit("index", "checking/creating missing indexes", 0)
+		indexesMade = ensureItemIndexes(ctx, db)
+		emit("index", fmt.Sprintf("indexes created=%d", indexesMade), 0)
+	} else {
+		emit("index", "skipping index maintenance on incremental import", 0)
+	}
+
+	importedAt := time.Now().UTC()
+	metaPairs := map[string]string{
+		"source_kind":     string(source),
+		"source_path":     sourcePath,
+		"imported_at":     importedAt.Format(time.RFC3339),
+		"row_count":       fmt.Sprintf("%d", rows),
+		"import_mode":     mode,
+		"import_from_id":  fmt.Sprintf("%d", importFromID),
+		"row_count_prev":  fmt.Sprintf("%d", rowsBefore),
+		"row_count_delta": fmt.Sprintf("%d", rows-rowsBefore),
+	}
+	for k, v := range metaPairs {
+		if _, err := db.ExecContext(ctx, `INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)`, k, v); err != nil {
+			// Non-fatal; keep import result usable.
+		}
+	}
+	emit("meta", "metadata updated", rows)
+
+	_ = cfg.WriteImportState(&ImportState{
+		CompletedAt:  importedAt,
+		DBPath:       dbPath,
+		SourceUsed:   string(source),
+		Mode:         mode,
+		RowsBefore:   rowsBefore,
+		RowsAfter:    rows,
+		RowsDelta:    rows - rowsBefore,
+		ImportFromID: importFromID,
+	})
+	emit("done", "import complete", rows)
+
+	return &ImportResult{
+		DBPath:       dbPath,
+		SourceUsed:   source,
+		SourcePath:   sourcePath,
+		Rows:         rows,
+		RowsBefore:   rowsBefore,
+		RowsDelta:    rows - rowsBefore,
+		Mode:         mode,
+		ImportFromID: importFromID,
+		ImportedAt:   importedAt,
+		IndexesMade:  indexesMade,
+	}, nil
+}
+
+func (c Config) resolveLocalImportSource(requested ImportSource) (ImportSource, string, error) {
+	cfg := c.WithDefaults()
+	if requested == "" {
+		requested = ImportSourceAuto
+	}
+
+	hasParquet := fileExistsNonEmpty(cfg.RawParquetPath())
+	chParquetPattern := filepath.Join(cfg.ClickHouseParquetDir(), "*.parquet")
+	chParquetFiles, _ := sortedGlob(chParquetPattern)
+	hasClickHouseParquet := len(chParquetFiles) > 0
+	deltaPattern := filepath.Join(cfg.ClickHouseDeltaParquetDir(), "*.parquet")
+	deltaChunks, _ := sortedGlob(deltaPattern)
+	hasDelta := len(deltaChunks) > 0
+	apiPattern := filepath.Join(cfg.APIChunksDir(), "*.jsonl")
+	apiChunks, _ := sortedGlob(apiPattern)
+	hasAPI := len(apiChunks) > 0 // legacy fallback, not used by new HN CLI
+
+	switch requested {
+	case ImportSourceAuto:
+			if hasClickHouseParquet && hasDelta {
+				return ImportSourceHybrid, chParquetPattern + " + " + deltaPattern, nil
+			}
+			if hasClickHouseParquet {
+				return ImportSourceClickHouse, chParquetPattern, nil
+			}
+			if hasDelta {
+				return ImportSourceClickHouse, deltaPattern, nil
+			}
+		if hasParquet {
+			return ImportSourceParquet, cfg.RawParquetPath(), nil
+		}
+		if hasAPI {
+			return ImportSourceAPI, apiPattern, nil
+		}
+		return "", "", fmt.Errorf("no local HN data found (expected %s or %s)", cfg.RawParquetPath(), apiPattern)
+	case ImportSourceParquet:
+		if !hasParquet {
+			return "", "", fmt.Errorf("parquet file not found: %s", cfg.RawParquetPath())
+		}
+		return ImportSourceParquet, cfg.RawParquetPath(), nil
+	case ImportSourceClickHouse:
+		if !hasClickHouseParquet {
+			return "", "", fmt.Errorf("no clickhouse parquet chunk files found: %s", chParquetPattern)
+		}
+		return ImportSourceClickHouse, chParquetPattern, nil
+	case ImportSourceHybrid:
+		if !hasClickHouseParquet {
+			return "", "", fmt.Errorf("hybrid import requires clickhouse parquet chunks: %s", chParquetPattern)
+		}
+			if !hasDelta {
+				return "", "", fmt.Errorf("hybrid import requires clickhouse delta parquet chunks: %s", deltaPattern)
+			}
+			return ImportSourceHybrid, chParquetPattern + " + " + deltaPattern, nil
+	case ImportSourceAPI:
+		if !hasAPI {
+			return "", "", fmt.Errorf("no API chunk files found: %s", apiPattern)
+		}
+		return ImportSourceAPI, apiPattern, nil
+	default:
+		return "", "", fmt.Errorf("invalid import source %q", requested)
+	}
+}
+
+func tableExistsErr(ctx context.Context, db *sql.DB, name string) (bool, error) {
+	var n int64
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.tables WHERE table_name = ?`, name).Scan(&n)
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+func countRows(ctx context.Context, db *sql.DB, table string) (int64, error) {
+	var n int64
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+table).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+func maxItemID(ctx context.Context, db *sql.DB) int64 {
+	var v sql.NullInt64
+	if err := db.QueryRowContext(ctx, `SELECT MAX(id) FROM items`).Scan(&v); err != nil || !v.Valid {
+		return 0
+	}
+	return v.Int64
+}
+
+func itemsSupportsIncremental(ctx context.Context, db *sql.DB) bool {
+	rows, err := db.QueryContext(ctx, `SELECT column_name FROM information_schema.columns WHERE table_name='items'`)
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+	have := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err == nil {
+			have[name] = true
+		}
+	}
+	required := []string{
+		"id", "deleted", "type", "by", "time", "time_ts", "text", "dead",
+		"parent", "poll", "kids", "url", "score", "title", "parts", "descendants",
+	}
+	for _, c := range required {
+		if !have[c] {
+			return false
+		}
+	}
+	return true
+}
+
+func ensureItemIndexes(ctx context.Context, db *sql.DB) int {
+	indexSQL := map[string]string{
+		"idx_hn_items_id":     `CREATE INDEX idx_hn_items_id ON items(id)`,
+		"idx_hn_items_type":   `CREATE INDEX idx_hn_items_type ON items(type)`,
+		"idx_hn_items_time":   `CREATE INDEX idx_hn_items_time ON items(time)`,
+		"idx_hn_items_by":     `CREATE INDEX idx_hn_items_by ON items("by")`,
+		"idx_hn_items_parent": `CREATE INDEX idx_hn_items_parent ON items(parent)`,
+	}
+	existing := map[string]bool{}
+	if rows, err := db.QueryContext(ctx, `SELECT index_name FROM duckdb_indexes() WHERE table_name='items'`); err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err == nil {
+				existing[strings.ToLower(strings.TrimSpace(name))] = true
+			}
+		}
+	}
+	indexesMade := 0
+	for name, stmt := range indexSQL {
+		if existing[strings.ToLower(name)] {
+			continue
+		}
+		if _, err := db.ExecContext(ctx, stmt); err == nil {
+			indexesMade++
+		}
+	}
+	return indexesMade
+}
+
+func (c Config) suggestIncrementalImportFromID(ctx context.Context, db *sql.DB, source ImportSource) (int64, string) {
+	cfg := c.WithDefaults()
+	dbMaxID := maxItemID(ctx, db)
+
+	fromState := int64(0)
+	if st, err := cfg.ReadDownloadState(); err == nil {
+		fromState = st.IncrementalFromIDFor(source)
+	}
+
+	fromClickHouseTail := int64(0)
+	if source == ImportSourceClickHouse || source == ImportSourceHybrid {
+		if chFiles, err := listLocalCHChunks(cfg.ClickHouseParquetDir()); err == nil {
+			if starts := newestChunkStarts(chFiles, 2); len(starts) > 0 {
+				fromClickHouseTail = starts[0]
+			}
+		}
+	}
+
+	fromAPITail := int64(0)
+	if source == ImportSourceHybrid || source == ImportSourceClickHouse {
+		if deltaFiles, err := listLocalCHChunks(cfg.ClickHouseDeltaParquetDir()); err == nil {
+			if starts := newestChunkStarts(deltaFiles, 2); len(starts) > 0 {
+				fromAPITail = starts[0]
+			}
+		}
+	}
+
+	from := int64(0)
+	reason := ""
+	if fromState > 0 {
+		from = fromState
+		reason = "download_state"
+	} else {
+		from = minPositiveInt64(fromClickHouseTail, fromAPITail)
+		switch from {
+		case fromClickHouseTail:
+			if from > 0 {
+				reason = "clickhouse_tail"
+			}
+		case fromAPITail:
+			if from > 0 {
+				reason = "api_tail"
+			}
+		}
+	}
+	if from == 0 && dbMaxID > 0 {
+		from = dbMaxID + 1
+		reason = "db_max_plus_one"
+	}
+	return from, reason
+}
+
+func importIncremental(ctx context.Context, db *sql.DB, cfg Config, source ImportSource, fromID int64) error {
+	if fromID <= 0 {
+		return fmt.Errorf("invalid incremental from id %d", fromID)
+	}
+	if _, err := db.ExecContext(ctx, `DROP TABLE IF EXISTS hn_delta`); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, `DROP TABLE IF EXISTS hn_api_delta`); err != nil {
+		return err
+	}
+	if err := createTempDeltaTable(ctx, db, cfg, source, fromID); err != nil {
+		return err
+	}
+	defer func() {
+		_, _ = db.ExecContext(context.Background(), `DROP TABLE IF EXISTS hn_api_delta`)
+		_, _ = db.ExecContext(context.Background(), `DROP TABLE IF EXISTS hn_delta`)
+	}()
+	if _, err := db.ExecContext(ctx, `DELETE FROM items WHERE id IN (SELECT id FROM hn_delta WHERE id IS NOT NULL)`); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO items BY NAME SELECT * FROM hn_delta`); err != nil {
+		return err
+	}
+	return nil
+}
+
+func createTempDeltaTable(ctx context.Context, db *sql.DB, cfg Config, source ImportSource, fromID int64) error {
+	chPattern := filepath.Join(cfg.ClickHouseParquetDir(), "*.parquet")
+	deltaPattern := filepath.Join(cfg.ClickHouseDeltaParquetDir(), "*.parquet")
+	apiPattern := filepath.Join(cfg.APIChunksDir(), "*.jsonl")
+	switch source {
+	case ImportSourceClickHouse:
+		inner := buildFilteredNormalizedSelect(buildNormalizedClickHouseSelect(chPattern), fromID)
+		if files, _ := sortedGlob(deltaPattern); len(files) > 0 {
+			inner = inner + ` UNION ALL ` + buildFilteredNormalizedSelect(buildNormalizedClickHouseSelect(deltaPattern), fromID)
+		}
+		_, err := db.ExecContext(ctx, `CREATE TEMP TABLE hn_delta AS `+buildSelectItemsFromNormalizedSelectSQL(inner))
+		return err
+	case ImportSourceAPI:
+		_, err := db.ExecContext(ctx, `CREATE TEMP TABLE hn_delta AS `+buildSelectItemsFromNormalizedSelectSQL(buildFilteredNormalizedSelect(buildNormalizedAPISelect(apiPattern), fromID)))
+		return err
+	case ImportSourceHybrid:
+		if _, err := db.ExecContext(ctx, `CREATE TEMP TABLE hn_delta AS `+buildSelectItemsFromNormalizedSelectSQL(buildFilteredNormalizedSelect(buildNormalizedClickHouseSelect(chPattern), fromID))); err != nil {
+			return err
+		}
+			if _, err := db.ExecContext(ctx, `CREATE TEMP TABLE hn_api_delta AS `+buildSelectItemsFromNormalizedSelectSQL(buildFilteredNormalizedSelect(buildNormalizedClickHouseSelect(deltaPattern), fromID))); err != nil {
+			return err
+		}
+		if _, err := db.ExecContext(ctx, `DELETE FROM hn_delta WHERE id IN (SELECT id FROM hn_api_delta WHERE id IS NOT NULL)`); err != nil {
+			return err
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO hn_delta BY NAME SELECT * FROM hn_api_delta`); err != nil {
+			return err
+		}
+		return nil
+	default:
+		return fmt.Errorf("incremental import not supported for source %q", source)
+	}
+}
+
+func importHybrid(ctx context.Context, db *sql.DB, cfg Config) error {
+	chPattern := filepath.Join(cfg.ClickHouseParquetDir(), "*.parquet")
+	deltaPattern := filepath.Join(cfg.ClickHouseDeltaParquetDir(), "*.parquet")
+	if _, err := db.ExecContext(ctx, buildCreateItemsFromNormalizedSelectSQL(buildNormalizedClickHouseSelect(chPattern))); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, `CREATE TEMP TABLE hn_api_delta AS `+buildSelectItemsFromNormalizedSelectSQL(buildNormalizedClickHouseSelect(deltaPattern))); err != nil {
+		return err
+	}
+	// Overlay API rows onto the base snapshot. This is cheap because delta is typically small.
+	if _, err := db.ExecContext(ctx, `DELETE FROM items WHERE id IN (SELECT id FROM hn_api_delta WHERE id IS NOT NULL)`); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO items BY NAME SELECT * FROM hn_api_delta`); err != nil {
+		return err
+	}
+	_, _ = db.ExecContext(ctx, `DROP TABLE hn_api_delta`)
+	return nil
+}
+
+func buildCreateItemsFromNormalizedSelectSQL(inner string) string {
+	return `CREATE TABLE items AS ` + buildSelectItemsFromNormalizedSelectSQL(inner)
+}
+
+func buildCreateItemsFromNormalizedSelectSQLNoDedup(inner string) string {
+	return fmt.Sprintf(`CREATE TABLE items AS
+SELECT * EXCLUDE (source_priority)
+FROM (%s) AS __hn_no_dedup`, inner)
+}
+
+func buildSelectItemsFromNormalizedSelectSQL(inner string) string {
+	return fmt.Sprintf(`SELECT * EXCLUDE (source_priority, __hn_rn)
+FROM (
+  SELECT *,
+         row_number() OVER (
+           PARTITION BY id
+           ORDER BY source_priority ASC, COALESCE(time, -1) DESC
+         ) AS __hn_rn
+  FROM (%s)
+) AS __hn_dedup
+WHERE __hn_rn = 1`, inner)
+}
+
+func buildFilteredNormalizedSelect(inner string, fromID int64) string {
+	if fromID <= 0 {
+		return inner
+	}
+	return fmt.Sprintf(`SELECT * FROM (%s) AS __hn_filtered WHERE id >= %d`, inner, fromID)
+}
+
+func buildNormalizedClickHouseSelect(parquetPattern string) string {
+	escaped := escapeSQLString(parquetPattern)
+	return fmt.Sprintf(`WITH __hn_ch_tmp AS (
+  SELECT * FROM read_parquet('%s')
+)
+SELECT
+  try_cast(src.id AS BIGINT) AS id,
+  COALESCE(try_cast(src.deleted AS BIGINT), 0) AS deleted,
+  CASE COALESCE(try_cast(src.type AS BIGINT), -1)
+    WHEN 1 THEN 'story'
+    WHEN 2 THEN 'comment'
+    WHEN 3 THEN 'poll'
+    WHEN 4 THEN 'pollopt'
+    WHEN 5 THEN 'job'
+    ELSE CAST(src.type AS VARCHAR)
+  END AS type,
+  CAST(src."by" AS VARCHAR) AS "by",
+  CASE
+    WHEN try_cast(src.time AS TIMESTAMP) IS NOT NULL THEN CAST(epoch(try_cast(src.time AS TIMESTAMP)) AS BIGINT)
+    ELSE try_cast(src.time AS BIGINT)
+  END AS time,
+  COALESCE(
+    try_cast(src.time AS TIMESTAMP),
+    CASE WHEN try_cast(src.time AS BIGINT) IS NOT NULL THEN epoch_ms(try_cast(src.time AS BIGINT) * 1000) ELSE NULL END
+  ) AS time_ts,
+  CAST(src.text AS VARCHAR) AS text,
+  COALESCE(try_cast(src.dead AS BIGINT), 0) AS dead,
+  try_cast(src.parent AS BIGINT) AS parent,
+  try_cast(src.poll AS BIGINT) AS poll,
+  try_cast(src.kids AS BIGINT[]) AS kids,
+  CAST(src.url AS VARCHAR) AS url,
+  try_cast(src.score AS BIGINT) AS score,
+  CAST(src.title AS VARCHAR) AS title,
+  try_cast(src.parts AS BIGINT[]) AS parts,
+  try_cast(src.descendants AS BIGINT) AS descendants,
+  1 AS source_priority
+FROM __hn_ch_tmp AS src`, escaped)
+}
+
+func buildNormalizedAPISelect(apiJSONLPattern string) string {
+	escaped := escapeSQLString(apiJSONLPattern)
+	return fmt.Sprintf(`WITH __hn_api_tmp AS (
+  SELECT * FROM read_json_auto(
+    '%s',
+    format='newline_delimited',
+    union_by_name=true,
+    ignore_errors=true,
+    columns={
+      id:'BIGINT',
+      deleted:'BOOLEAN',
+      type:'VARCHAR',
+      "by":'VARCHAR',
+      time:'BIGINT',
+      text:'VARCHAR',
+      dead:'BOOLEAN',
+      parent:'BIGINT',
+      poll:'BIGINT',
+      kids:'BIGINT[]',
+      url:'VARCHAR',
+      score:'BIGINT',
+      title:'VARCHAR',
+      parts:'BIGINT[]',
+      descendants:'BIGINT'
+    }
+  )
+)
+SELECT
+  try_cast(src.id AS BIGINT) AS id,
+  COALESCE(CASE WHEN src.deleted THEN 1 ELSE 0 END, 0) AS deleted,
+  CAST(src.type AS VARCHAR) AS type,
+  CAST(src."by" AS VARCHAR) AS "by",
+  try_cast(src.time AS BIGINT) AS time,
+  CASE WHEN try_cast(src.time AS BIGINT) IS NOT NULL THEN epoch_ms(try_cast(src.time AS BIGINT) * 1000) ELSE NULL END AS time_ts,
+  CAST(src.text AS VARCHAR) AS text,
+  COALESCE(CASE WHEN src.dead THEN 1 ELSE 0 END, 0) AS dead,
+  try_cast(src.parent AS BIGINT) AS parent,
+  try_cast(src.poll AS BIGINT) AS poll,
+  try_cast(src.kids AS BIGINT[]) AS kids,
+  CAST(src.url AS VARCHAR) AS url,
+  try_cast(src.score AS BIGINT) AS score,
+  CAST(src.title AS VARCHAR) AS title,
+  try_cast(src.parts AS BIGINT[]) AS parts,
+  try_cast(src.descendants AS BIGINT) AS descendants,
+  0 AS source_priority
+FROM __hn_api_tmp AS src`, escaped)
+}

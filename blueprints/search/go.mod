@@ -16,7 +16,7 @@ require (
 	github.com/duckdb/duckdb-go/v2 v2.5.5
 	github.com/elastic/go-elasticsearch/v8 v8.19.3
 	github.com/expectedsh/go-sonic v0.0.0-20210827144320-d31eb03ae288
-	github.com/go-mizu/mizu v0.5.23
+	github.com/go-mizu/mizu v0.5.24
 	github.com/go-rod/rod v0.116.2
 	github.com/go-rod/stealth v0.4.9
 	github.com/go-sql-driver/mysql v1.9.3
@@ -28,8 +28,8 @@ require (
 	github.com/lib/pq v1.11.2
 	github.com/meilisearch/meilisearch-go v0.36.1
 	github.com/opensearch-project/opensearch-go/v2 v2.3.0
-	github.com/parquet-go/parquet-go v0.27.0
-	github.com/phuslu/fastdns v0.16.5
+	github.com/parquet-go/parquet-go v0.28.0
+	github.com/phuslu/fastdns v0.16.7
 	github.com/refraction-networking/utls v1.8.2
 	github.com/spf13/cobra v1.10.2
 	github.com/temoto/robotstxt v1.1.2
@@ -38,14 +38,18 @@ require (
 	golang.org/x/sync v0.19.0
 	golang.org/x/text v0.34.0
 	golang.org/x/time v0.14.0
-	modernc.org/sqlite v1.46.0
+	gopkg.in/yaml.v3 v3.0.1
+	modernc.org/sqlite v1.46.1
 )
 
 replace github.com/go-mizu/mizu => ../..
 
+replace github.com/ysmood/fetchup => github.com/ysmood/fetchup v0.2.4
+
 require (
-	charm.land/lipgloss/v2 v2.0.0-beta.3.0.20251106193318-19329a3e8410 // indirect
+	charm.land/lipgloss/v2 v2.0.0 // indirect
 	filippo.io/edwards25519 v1.2.0 // indirect
+	github.com/PuerkitoBio/goquery v1.8.0 // indirect
 	github.com/RoaringBitmap/roaring v1.9.4 // indirect
 	github.com/RoaringBitmap/roaring/v2 v2.14.4 // indirect
 	github.com/alecthomas/assert/v2 v2.11.0 // indirect
@@ -68,6 +72,7 @@ require (
 	github.com/anacrolix/upnp v0.1.4 // indirect
 	github.com/anacrolix/utp v0.2.0 // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
+	github.com/andybalholm/cascadia v1.3.1 // indirect
 	github.com/apache/arrow-go/v18 v18.5.1 // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/axiomhq/hyperloglog v0.2.6 // indirect
@@ -75,8 +80,8 @@ require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/benbjohnson/immutable v0.4.3 // indirect
 	github.com/bits-and-blooms/bitset v1.24.4 // indirect
-	github.com/blevesearch/bleve_index_api v1.3.1 // indirect
-	github.com/blevesearch/geo v0.2.4 // indirect
+	github.com/blevesearch/bleve_index_api v1.3.2 // indirect
+	github.com/blevesearch/geo v0.2.5 // indirect
 	github.com/blevesearch/go-faiss v1.0.27 // indirect
 	github.com/blevesearch/go-porterstemmer v1.0.3 // indirect
 	github.com/blevesearch/gtreap v0.1.1 // indirect
@@ -100,14 +105,14 @@ require (
 	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.2 // indirect
 	github.com/charmbracelet/harmonica v0.2.0 // indirect
-	github.com/charmbracelet/ultraviolet v0.0.0-20260216160609-03f41d2f4413 // indirect
+	github.com/charmbracelet/ultraviolet v0.0.0-20260223171050-89c142e4aa73 // indirect
 	github.com/charmbracelet/x/ansi v0.11.6 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.15 // indirect
-	github.com/charmbracelet/x/exp/charmtone v0.0.0-20260216111343-536eb63c1f4c // indirect
+	github.com/charmbracelet/x/exp/charmtone v0.0.0-20260223200540-d6a276319c45 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
-	github.com/clipperhouse/displaywidth v0.10.0 // indirect
+	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dgryski/go-metro v0.0.0-20250106013310-edb8663e5e33 // indirect
@@ -119,9 +124,10 @@ require (
 	github.com/duckdb/duckdb-go-bindings/lib/windows-amd64 v0.3.3 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/edsrzf/mmap-go v1.2.0 // indirect
-	github.com/elastic/elastic-transport-go/v8 v8.8.0 // indirect
+	github.com/elastic/elastic-transport-go/v8 v8.9.0 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/felixge/fgprof v0.9.5 // indirect
+	github.com/gilliek/go-opml v1.0.0 // indirect
 	github.com/go-llsqlite/adapter v0.2.0 // indirect
 	github.com/go-llsqlite/crawshaw v0.6.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
@@ -147,6 +153,8 @@ require (
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.20 // indirect
 	github.com/minio/sha256-simd v1.0.1 // indirect
+	github.com/mmcdole/gofeed v1.3.0 // indirect
+	github.com/mmcdole/goxpp v1.1.1-0.20240225020742-a0c311522b23 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/mr-tron/base58 v1.2.0 // indirect
@@ -167,7 +175,7 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.25 // indirect
 	github.com/pion/datachannel v1.6.0 // indirect
 	github.com/pion/dtls/v3 v3.1.2 // indirect
-	github.com/pion/ice/v4 v4.2.0 // indirect
+	github.com/pion/ice/v4 v4.2.1 // indirect
 	github.com/pion/interceptor v0.1.44 // indirect
 	github.com/pion/logging v0.2.4 // indirect
 	github.com/pion/mdns/v2 v2.1.0 // indirect
@@ -180,7 +188,7 @@ require (
 	github.com/pion/stun/v3 v3.1.1 // indirect
 	github.com/pion/transport/v4 v4.0.1 // indirect
 	github.com/pion/turn/v4 v4.1.4 // indirect
-	github.com/pion/webrtc/v4 v4.2.6 // indirect
+	github.com/pion/webrtc/v4 v4.2.9 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/protolambda/ctxlock v0.1.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
@@ -193,7 +201,7 @@ require (
 	github.com/twpayne/go-geom v1.6.1 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	github.com/ysmood/fetchup v0.2.4 // indirect
+	github.com/ysmood/fetchup v0.5.3 // indirect
 	github.com/ysmood/goob v0.4.0 // indirect
 	github.com/ysmood/got v0.42.3 // indirect
 	github.com/ysmood/gson v0.7.3 // indirect
@@ -205,7 +213,7 @@ require (
 	go.opentelemetry.io/otel/metric v1.40.0 // indirect
 	go.opentelemetry.io/otel/trace v1.40.0 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
-	golang.org/x/exp v0.0.0-20260212183809-81e46e3db34a // indirect
+	golang.org/x/exp v0.0.0-20260218203240-3dfff04db8fa // indirect
 	golang.org/x/mod v0.33.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/telemetry v0.0.0-20260213145524-e0ab670178e1 // indirect

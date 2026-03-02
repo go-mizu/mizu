@@ -36,6 +36,7 @@ type Store struct {
 	summary  *SummaryStore
 	widget   *WidgetStore
 	smallWeb *SmallWebStore
+	rss      *RSSStore
 }
 
 // New creates a new SQLite store.
@@ -84,6 +85,7 @@ func New(dbPath string) (*Store, error) {
 	s.summary = &SummaryStore{db: db}
 	s.widget = &WidgetStore{db: db}
 	s.smallWeb = &SmallWebStore{db: db}
+	s.rss = &RSSStore{db: db}
 
 	return s, nil
 }
@@ -151,6 +153,10 @@ func (s *Store) Widget() store.WidgetStore {
 
 func (s *Store) SmallWeb() store.SmallWebStore {
 	return s.smallWeb
+}
+
+func (s *Store) RSS() store.RSSStore {
+	return s.rss
 }
 
 // AI store accessors
