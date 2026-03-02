@@ -17,6 +17,7 @@ use crawler_lib::writer::parquet_writer::{ParquetFailureWriter, ParquetResultWri
 use crawler_lib::writer::{FailureWriter, ResultWriter};
 
 use crate::display::{format_duration, print_summary};
+use crate::gui;
 use crate::tui;
 
 /// Expand `~` in a path string to the user's home directory.
@@ -140,6 +141,10 @@ pub struct CrawlJobParams {
     /// Optional body store directory. When set, HTML bodies are stored in a
     /// content-addressable store (SHA-256, gzip) and body_cid is populated.
     pub body_store_dir: Option<String>,
+    /// Enable web GUI dashboard (disables TUI).
+    pub gui: bool,
+    /// GUI server port (default 9111).
+    pub gui_port: u16,
 }
 
 /// Run a two-pass crawl job with TUI, writers, retry logic, and summary.
@@ -221,17 +226,43 @@ pub async fn run_crawl_job(params: CrawlJobParams) -> Result<()> {
     println!("Starting crawl job...");
     let job_start = std::time::Instant::now();
 
-    // TUI
-    let tui_handle = if !params.no_tui {
+    let workers_str = if cfg.workers == 0 {
+        "auto".to_string()
+    } else {
+        cfg.workers.to_string()
+    };
+
+    // GUI server (mutually exclusive with TUI)
+    if params.gui {
+        let gui_cfg = gui::GuiConfig {
+            title: params.title.clone(),
+            engine: cfg.engine.to_string(),
+            writer: cfg.writer.to_string(),
+            workers: workers_str.clone(),
+            timeout_ms: cfg.timeout.as_millis() as u64,
+            retry_timeout_ms: cfg.retry_timeout.as_millis() as u64,
+            no_retry: cfg.no_retry,
+        };
+        match gui::spawn(live_stats.clone(), gui_cfg, params.gui_port).await {
+            Ok(addr) => {
+                let host = hostname::get()
+                    .map(|h| h.to_string_lossy().to_string())
+                    .unwrap_or_else(|_| "localhost".to_string());
+                println!("Dashboard: http://{}:{}", host, addr.port());
+            }
+            Err(e) => {
+                eprintln!("GUI server failed to start: {e}");
+            }
+        }
+    }
+
+    // TUI (only if not GUI and not no_tui)
+    let tui_handle = if !params.gui && !params.no_tui {
         let tui_cfg = tui::TuiConfig {
             title: params.title,
             engine: cfg.engine.to_string(),
             writer: cfg.writer.to_string(),
-            workers: if cfg.workers == 0 {
-                "auto".to_string()
-            } else {
-                cfg.workers.to_string()
-            },
+            workers: workers_str,
             timeout_ms: cfg.timeout.as_millis() as u64,
         };
         tui::spawn(live_stats.clone(), tui_cfg)
@@ -266,6 +297,11 @@ pub async fn run_crawl_job(params: CrawlJobParams) -> Result<()> {
     );
 
     println!("Wall time: {}", format_duration(total_elapsed));
+
+    if params.gui {
+        println!("Crawl complete. Dashboard available for 30s...");
+        tokio::time::sleep(Duration::from_secs(30)).await;
+    }
 
     Ok(())
 }

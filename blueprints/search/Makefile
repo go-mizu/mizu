@@ -12,6 +12,7 @@ LINUX_BINARY_NOBLE ?= $(HOME)/bin/search-linux-noble
 CMD     ?= ./cmd/search
 DATA_DIR ?= $(HOME)/data/blueprint/search
 DEPLOY_KEY    ?= $(HOME)/.ssh/id_ed25519_deploy
+# Both servers are Ubuntu 24.04 (Noble): server1 upgraded 2026-03, server2 always Noble
 SERVER1_USER  ?= tam
 SERVER1_HOST  ?= server
 SERVER2_USER  ?= root
@@ -229,7 +230,10 @@ deploy-linux-noble-browser: build-linux-noble ## Deploy Ubuntu 24.04 binary with
 	@echo "NOTE: Run 'make download-chrome SERVER=$(SERVER)' (no sudo) or 'make install-chrome SERVER=$(SERVER)' (needs sudo) to install Chrome first"
 
 .PHONY: deploy-linux
-deploy-linux: build-linux ## Deploy linux binary to remote $$HOME/bin/search
+deploy-linux: deploy-linux-noble ## Deploy binary to remote $$HOME/bin/search (both servers are Ubuntu 24.04 Noble)
+
+.PHONY: deploy-linux-focal
+deploy-linux-focal: build-linux ## [LEGACY] Deploy Ubuntu 20.04 focal binary with bundled libstdc++ (no longer used)
 	@test -f "$(DEPLOY_KEY)" || { echo "Deploy key not found: $(DEPLOY_KEY)"; exit 1; }
 	@test -f "$(LINUX_RUNTIME_LIBSTDCPP)" || { echo "Missing runtime lib: $(LINUX_RUNTIME_LIBSTDCPP)"; exit 1; }
 	@$(SSH) $(REMOTE_SSH) "mkdir -p \$$HOME/bin \$$HOME/bin/search-libs"
@@ -241,10 +245,13 @@ deploy-linux: build-linux ## Deploy linux binary to remote $$HOME/bin/search
 		rm -f $$HOME/.search-upload.tmp $$HOME/.libstdc++.so.6.tmp; \
 		printf '"'"'#!/usr/bin/env bash\nulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=2000000000\nexport GODEBUG=netdns=go\nexport LD_LIBRARY_PATH=\"$$HOME/bin/search-libs\$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}\"\nexec \"$$HOME/bin/search-linux\" \"\$$@\"\n'"'"' > $$HOME/bin/search; \
 		chmod +x $$HOME/bin/search"'
-	@echo "Deployed: $(REMOTE_SSH):~/bin/search"
+	@echo "Deployed (focal): $(REMOTE_SSH):~/bin/search"
 
 .PHONY: deploy-linux-browser
-deploy-linux-browser: build-linux ## Deploy Ubuntu 20.04 binary with Chrome wrapper (bundled libstdc++, SERVER=1)
+deploy-linux-browser: deploy-linux-noble-browser ## Deploy binary with Chrome wrapper (both servers are Ubuntu 24.04 Noble)
+
+.PHONY: deploy-linux-focal-browser
+deploy-linux-focal-browser: build-linux ## [LEGACY] Deploy Ubuntu 20.04 focal binary with Chrome wrapper (bundled libstdc++)
 	@test -f "$(DEPLOY_KEY)" || { echo "Deploy key not found: $(DEPLOY_KEY)"; exit 1; }
 	@test -f "$(LINUX_RUNTIME_LIBSTDCPP)" || { echo "Missing runtime lib: $(LINUX_RUNTIME_LIBSTDCPP)"; exit 1; }
 	@$(SSH) $(REMOTE_SSH) "mkdir -p \$$HOME/bin \$$HOME/bin/search-libs"
@@ -498,6 +505,14 @@ bench-chunk: ## Run all 3 chunk modes with 200K seeds and compare results
 		echo "--- $$mode ---"; \
 		cat $(DATA_DIR)/hn/recrawl/bench_chunk_$$mode.json 2>/dev/null || echo "(not found)"; \
 	done
+
+GUI_PORT ?= 9111
+
+.PHONY: tunnel
+tunnel: ## SSH tunnel for crawler GUI dashboard (localhost:9111)
+	@echo "Tunneling localhost:$(GUI_PORT) -> $(REMOTE_SSH):$(GUI_PORT)"
+	@echo "Open http://localhost:$(GUI_PORT) in your browser"
+	$(SSH) -N -L $(GUI_PORT):localhost:$(GUI_PORT) $(REMOTE_SSH)
 
 .PHONY: help
 help: ## Show available commands

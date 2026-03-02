@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crawler Dashboard</title>
+<style>
+/* ── Reset ────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── Theme variables (shadcn-inspired) ────────────────────────────── */
+[data-theme="light"] {
+  --bg: hsl(0,0%,100%);
+  --bg-card: hsl(0,0%,98%);
+  --border: hsl(0,0%,90%);
+  --text: hsl(0,0%,9%);
+  --text-muted: hsl(0,0%,45%);
+  --text-dim: hsl(0,0%,65%);
+  --ring: hsl(0,0%,80%);
+  --progress-bg: hsl(0,0%,92%);
+  --log-bg: hsl(0,0%,96%);
+  --badge-bg: hsl(0,0%,92%);
+  --hover: hsl(0,0%,95%);
+  --sparkline-fill: hsla(142,71%,45%,0.15);
+}
+[data-theme="dark"] {
+  --bg: hsl(0,0%,4%);
+  --bg-card: hsl(0,0%,7%);
+  --border: hsl(0,0%,15%);
+  --text: hsl(0,0%,95%);
+  --text-muted: hsl(0,0%,55%);
+  --text-dim: hsl(0,0%,35%);
+  --ring: hsl(0,0%,25%);
+  --progress-bg: hsl(0,0%,12%);
+  --log-bg: hsl(0,0%,5%);
+  --badge-bg: hsl(0,0%,12%);
+  --hover: hsl(0,0%,10%);
+  --sparkline-fill: hsla(142,71%,45%,0.1);
+}
+
+/* Accent colors */
+:root {
+  --green: hsl(142,71%,45%);
+  --red: hsl(0,84%,60%);
+  --yellow: hsl(48,96%,53%);
+  --cyan: hsl(199,89%,48%);
+  --blue: hsl(221,83%,53%);
+  --purple: hsl(262,83%,58%);
+  --orange: hsl(25,95%,53%);
+  --gray: hsl(0,0%,55%);
+  --green-dim: hsla(142,71%,45%,0.15);
+  --red-dim: hsla(0,84%,60%,0.15);
+  --yellow-dim: hsla(48,96%,53%,0.15);
+  --cyan-dim: hsla(199,89%,48%,0.15);
+  --blue-dim: hsla(221,83%,53%,0.15);
+}
+
+/* ── Base ─────────────────────────────────────────────────────────── */
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+/* ── Mono numbers ─────────────────────────────────────────────────── */
+.mono {
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", "Segoe UI Mono", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Layout ───────────────────────────────────────────────────────── */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+/* ── Header ───────────────────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.header-left h1 {
+  font-size: 18px;
+  font-weight: 600;
+}
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--badge-bg);
+  border: 1px solid var(--border);
+}
+.badge-pass {
+  color: var(--purple);
+  background: hsla(262,83%,58%,0.12);
+  border-color: hsla(262,83%,58%,0.25);
+  font-weight: 600;
+}
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: pulse 2s ease-in-out infinite;
+}
+.status-dot.done {
+  background: var(--text-muted);
+  animation: none;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Theme toggle */
+.theme-toggle {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  transition: background 0.15s, color 0.15s;
+}
+.theme-toggle:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* ── Card ─────────────────────────────────────────────────────────── */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+.card-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ── Grid ─────────────────────────────────────────────────────────── */
+.grid-main {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.grid-sub {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+/* ── Counter rows ─────────────────────────────────────────────────── */
+.counter-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+}
+.counter-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+.counter-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.counter-value {
+  font-size: 16px;
+  font-weight: 600;
+}
+.counter-pct {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: 6px;
+  min-width: 42px;
+  text-align: right;
+}
+.counter-row.total {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 8px;
+}
+
+/* ── Sparkline ────────────────────────────────────────────────────── */
+.sparkline-wrap {
+  position: relative;
+  height: 80px;
+  margin-bottom: 12px;
+}
+.sparkline-wrap canvas {
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+}
+.throughput-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.stat-item {
+  display: flex;
+  flex-direction: column;
+}
+.stat-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.stat-value {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+/* ── Sub-card rows ────────────────────────────────────────────────── */
+.sub-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-size: 14px;
+}
+.sub-label { color: var(--text-muted); }
+.sub-value { font-weight: 500; }
+
+/* ── HTTP bar ─────────────────────────────────────────────────────── */
+.http-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 12px;
+  background: var(--progress-bg);
+}
+.http-bar span {
+  transition: width 0.3s ease;
+}
+
+/* ── Progress ─────────────────────────────────────────────────────── */
+.progress-card {
+  margin-bottom: 16px;
+}
+.progress-outer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.progress-bar-wrap {
+  flex: 1;
+  height: 10px;
+  background: var(--progress-bg);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: var(--cyan);
+  border-radius: 5px;
+  transition: width 0.3s ease;
+  min-width: 0;
+}
+.progress-text {
+  font-size: 14px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ── Event log ────────────────────────────────────────────────────── */
+.log-card {
+  max-height: 240px;
+  display: flex;
+  flex-direction: column;
+}
+.log-card .card-title { flex-shrink: 0; }
+.log-list {
+  flex: 1;
+  overflow-y: auto;
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 4px 0;
+}
+.log-list::-webkit-scrollbar { width: 6px; }
+.log-list::-webkit-scrollbar-thumb {
+  background: var(--ring);
+  border-radius: 3px;
+}
+.log-entry {
+  padding: 1px 8px;
+  border-radius: 4px;
+}
+.log-entry:hover { background: var(--hover); }
+.log-prefix {
+  color: var(--text-dim);
+  user-select: none;
+}
+.log-dns { color: var(--red); }
+.log-conn { color: var(--orange); }
+.log-tls { color: var(--yellow); }
+.log-engine, .log-done { color: var(--cyan); }
+.log-pass { color: var(--purple); }
+.log-abandoned { color: var(--red); }
+.log-default { color: var(--text-muted); }
+
+/* ── Details (expandable sub-categories) ──────────────────────────── */
+details > summary {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before {
+  content: "\25B8 ";
+  color: var(--text-dim);
+  font-size: 11px;
+}
+details[open] > summary::before { content: "\25BE "; }
+.detail-sub {
+  padding-left: 20px;
+  font-size: 13px;
+}
+.detail-sub .sub-row { padding: 1px 0; }
+
+/* ── Responsive ───────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .grid-main { grid-template-columns: 1fr; }
+  .grid-sub { grid-template-columns: 1fr; }
+  .header { flex-wrap: wrap; gap: 8px; }
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <div class="status-dot" id="statusDot"></div>
+      <h1 id="title">Crawler Dashboard</h1>
+      <span class="badge badge-pass" id="passBadge" style="display:none">Pass 2</span>
+    </div>
+    <div class="header-right">
+      <span class="badge" id="configBadge">...</span>
+      <button class="theme-toggle" onclick="toggleTheme()" id="themeBtn" title="Toggle theme">&#9790;</button>
+    </div>
+  </div>
+
+  <!-- Main grid: Requests + Throughput -->
+  <div class="grid-main">
+    <!-- Requests card -->
+    <div class="card">
+      <div class="card-title">Requests</div>
+      <div class="counter-row">
+        <div class="counter-label"><span class="counter-dot" style="background:var(--green)"></span> OK</div>
+        <div><span class="counter-value mono" id="cntOk">0</span><span class="counter-pct mono" id="pctOk">0%</span></div>
+      </div>
+      <div class="counter-row">
+        <div class="counter-label"><span class="counter-dot" style="background:var(--red)"></span> Failed</div>
+        <div><span class="counter-value mono" id="cntFailed">0</span><span class="counter-pct mono" id="pctFailed">0%</span></div>
+      </div>
+      <div class="counter-row">
+        <div class="counter-label"><span class="counter-dot" style="background:var(--yellow)"></span> Timeout</div>
+        <div><span class="counter-value mono" id="cntTimeout">0</span><span class="counter-pct mono" id="pctTimeout">0%</span></div>
+      </div>
+      <div class="counter-row">
+        <div class="counter-label"><span class="counter-dot" style="background:var(--gray)"></span> Skipped</div>
+        <div><span class="counter-value mono" id="cntSkipped">0</span><span class="counter-pct mono" id="pctSkipped">0%</span></div>
+      </div>
+      <div class="counter-row total">
+        <div class="counter-label" style="font-weight:600">Total</div>
+        <div><span class="counter-value mono" id="cntTotal">0</span></div>
+      </div>
+    </div>
+
+    <!-- Throughput card -->
+    <div class="card">
+      <div class="card-title">Throughput</div>
+      <div class="sparkline-wrap">
+        <canvas id="sparkline"></canvas>
+      </div>
+      <div class="throughput-stats">
+        <div class="stat-item">
+          <span class="stat-label">Avg RPS</span>
+          <span class="stat-value mono" id="avgRps" style="color:var(--cyan)">0</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">Peak RPS</span>
+          <span class="stat-value mono" id="peakRps" style="color:var(--green)">0</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">Elapsed</span>
+          <span class="stat-value mono" id="elapsed">0s</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">ETA</span>
+          <span class="stat-value mono" id="eta" style="color:var(--yellow)">--</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sub grid: Errors + HTTP + System -->
+  <div class="grid-sub">
+    <!-- Errors card -->
+    <div class="card">
+      <div class="card-title">Errors</div>
+      <details id="dnsDetails">
+        <summary>
+          <span class="sub-row" style="display:inline-flex;width:calc(100% - 16px)">
+            <span class="sub-label">DNS</span>
+            <span class="sub-value mono" id="errDns">0</span>
+          </span>
+        </summary>
+        <div class="detail-sub">
+          <div class="sub-row"><span class="sub-label">NXDOMAIN</span><span class="sub-value mono" id="dnsNx">0</span></div>
+          <div class="sub-row"><span class="sub-label">Malformed</span><span class="sub-value mono" id="dnsMal">0</span></div>
+          <div class="sub-row"><span class="sub-label">Other</span><span class="sub-value mono" id="dnsOther">0</span></div>
+        </div>
+      </details>
+      <details id="connDetails">
+        <summary>
+          <span class="sub-row" style="display:inline-flex;width:calc(100% - 16px)">
+            <span class="sub-label">Connection</span>
+            <span class="sub-value mono" id="errConn">0</span>
+          </span>
+        </summary>
+        <div class="detail-sub">
+          <div class="sub-row"><span class="sub-label">Refused</span><span class="sub-value mono" id="connRef">0</span></div>
+          <div class="sub-row"><span class="sub-label">Reset</span><span class="sub-value mono" id="connRst">0</span></div>
+          <div class="sub-row"><span class="sub-label">EOF</span><span class="sub-value mono" id="connEof">0</span></div>
+          <div class="sub-row"><span class="sub-label">Other</span><span class="sub-value mono" id="connOther">0</span></div>
+        </div>
+      </details>
+      <div class="sub-row"><span class="sub-label">TLS</span><span class="sub-value mono" id="errTls">0</span></div>
+      <div class="sub-row"><span class="sub-label">Invalid URL</span><span class="sub-value mono" id="errInvalid">0</span></div>
+      <div class="sub-row"><span class="sub-label">Other</span><span class="sub-value mono" id="errOther">0</span></div>
+    </div>
+
+    <!-- HTTP Status card -->
+    <div class="card">
+      <div class="card-title">HTTP Status</div>
+      <div class="http-bar" id="httpBar">
+        <span id="bar2xx" style="background:var(--green);width:0"></span>
+        <span id="bar3xx" style="background:var(--blue);width:0"></span>
+        <span id="bar4xx" style="background:var(--yellow);width:0"></span>
+        <span id="bar5xx" style="background:var(--red);width:0"></span>
+      </div>
+      <div class="sub-row"><span class="sub-label" style="color:var(--green)">2xx</span><span class="sub-value mono" id="s2xx">0</span></div>
+      <div class="sub-row"><span class="sub-label" style="color:var(--blue)">3xx</span><span class="sub-value mono" id="s3xx">0</span></div>
+      <div class="sub-row"><span class="sub-label" style="color:var(--yellow)">4xx</span><span class="sub-value mono" id="s4xx">0</span></div>
+      <div class="sub-row"><span class="sub-label" style="color:var(--red)">5xx</span><span class="sub-value mono" id="s5xx">0</span></div>
+    </div>
+
+    <!-- System card -->
+    <div class="card">
+      <div class="card-title">System</div>
+      <div class="sub-row"><span class="sub-label">RAM</span><span class="sub-value mono" id="sysRam">--</span></div>
+      <div class="sub-row"><span class="sub-label">File Descriptors</span><span class="sub-value mono" id="sysFds">--</span></div>
+      <div class="sub-row"><span class="sub-label">Network</span><span class="sub-value mono" id="sysNet">--</span></div>
+      <div class="sub-row"><span class="sub-label">Downloaded</span><span class="sub-value mono" id="sysDown">0 B</span></div>
+      <div class="sub-row"><span class="sub-label">Domains</span><span class="sub-value mono" id="sysDomains">--</span></div>
+    </div>
+  </div>
+
+  <!-- Progress bar -->
+  <div class="card progress-card">
+    <div class="progress-outer">
+      <div class="progress-bar-wrap">
+        <div class="progress-bar-fill" id="progressFill" style="width:0%"></div>
+      </div>
+      <span class="progress-text mono" id="progressText">0%</span>
+    </div>
+  </div>
+
+  <!-- Event Log -->
+  <div class="card log-card">
+    <div class="card-title">Event Log</div>
+    <div class="log-list" id="logList">
+      <div class="log-entry log-default">Waiting for events...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Helpers ──────────────────────────────────────────────────────────
+function fmt(n) {
+  return n.toLocaleString('en-US');
+}
+
+function fmtShort(n) {
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e4) return Math.round(n / 1e3) + 'k';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+  return n.toString();
+}
+
+function fmtBytes(b) {
+  if (b >= 1e9) return (b / 1e9).toFixed(1) + ' GB';
+  if (b >= 1e6) return (b / 1e6).toFixed(1) + ' MB';
+  if (b >= 1e3) return (b / 1e3).toFixed(1) + ' KB';
+  return b + ' B';
+}
+
+function fmtBytesRate(bps) {
+  if (bps >= 1e9) return (bps / 1e9).toFixed(1) + ' GB/s';
+  if (bps >= 1e6) return Math.round(bps / 1e6) + ' MB/s';
+  if (bps >= 1e3) return Math.round(bps / 1e3) + ' KB/s';
+  if (bps > 0) return bps + ' B/s';
+  return '--';
+}
+
+function fmtElapsed(ms) {
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return h + 'h' + String(m).padStart(2, '0') + 'm' + String(sec).padStart(2, '0') + 's';
+  if (m > 0) return m + 'm' + String(sec).padStart(2, '0') + 's';
+  return sec + 's';
+}
+
+function pct(n, d) {
+  if (d === 0) return '0%';
+  return (n * 100 / d).toFixed(1) + '%';
+}
+
+function $(id) { return document.getElementById(id); }
+
+// ── Theme ────────────────────────────────────────────────────────────
+function initTheme() {
+  const saved = localStorage.getItem('crawler-theme');
+  if (saved) {
+    document.documentElement.dataset.theme = saved;
+  } else if (window.matchMedia('(prefers-color-scheme: light)').matches) {
+    document.documentElement.dataset.theme = 'light';
+  }
+  updateThemeIcon();
+}
+
+function toggleTheme() {
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem('crawler-theme', next);
+  updateThemeIcon();
+}
+
+function updateThemeIcon() {
+  const isDark = document.documentElement.dataset.theme === 'dark';
+  $('themeBtn').innerHTML = isDark ? '&#9788;' : '&#9790;';
+}
+
+initTheme();
+
+// ── Sparkline ────────────────────────────────────────────────────────
+const sparkData = [];
+const MAX_SPARK = 150;
+let prevTotal = null;
+let prevElapsed = null;
+
+function drawSparkline(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const w = rect.width;
+  const h = rect.height;
+
+  ctx.clearRect(0, 0, w, h);
+
+  if (sparkData.length < 2) return;
+
+  const max = Math.max(...sparkData, 1);
+  const step = w / (MAX_SPARK - 1);
+
+  // Fill
+  ctx.beginPath();
+  ctx.moveTo(0, h);
+  for (let i = 0; i < sparkData.length; i++) {
+    const x = (MAX_SPARK - sparkData.length + i) * step;
+    const y = h - (sparkData[i] / max) * (h - 4);
+    if (i === 0) ctx.lineTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.lineTo((MAX_SPARK - 1) * step, h);
+  ctx.closePath();
+
+  const isDark = document.documentElement.dataset.theme === 'dark';
+  ctx.fillStyle = isDark ? 'hsla(142,71%,45%,0.1)' : 'hsla(142,71%,45%,0.15)';
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  for (let i = 0; i < sparkData.length; i++) {
+    const x = (MAX_SPARK - sparkData.length + i) * step;
+    const y = h - (sparkData[i] / max) * (h - 4);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = 'hsl(142,71%,45%)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+
+// ── Config ───────────────────────────────────────────────────────────
+fetch('/api/config')
+  .then(r => r.json())
+  .then(cfg => {
+    $('title').textContent = cfg.title || 'Crawler Dashboard';
+    document.title = cfg.title || 'Crawler Dashboard';
+    const parts = [cfg.engine, cfg.writer, cfg.workers + 'w', cfg.timeout_ms + 'ms'];
+    $('configBadge').textContent = parts.join(' \u00B7 ');
+  })
+  .catch(() => {});
+
+// ── SSE ──────────────────────────────────────────────────────────────
+let lastPass = 1;
+let seenWarnings = new Set();
+let logInitialized = false;
+
+const es = new EventSource('/api/stats');
+
+es.onmessage = function(e) {
+  const s = JSON.parse(e.data);
+
+  // Counters
+  $('cntOk').textContent = fmt(s.ok);
+  $('cntFailed').textContent = fmt(s.failed);
+  $('cntTimeout').textContent = fmt(s.timeout);
+  $('cntSkipped').textContent = fmt(s.skipped);
+  $('cntTotal').textContent = fmt(s.total);
+
+  $('pctOk').textContent = pct(s.ok, s.total);
+  $('pctFailed').textContent = pct(s.failed, s.total);
+  $('pctTimeout').textContent = pct(s.timeout, s.total);
+  $('pctSkipped').textContent = pct(s.skipped, s.total);
+
+  // Throughput
+  if (prevTotal !== null && prevElapsed !== null) {
+    const dt = (s.elapsed_ms - prevElapsed) / 1000;
+    if (dt > 0.05) {
+      const rps = Math.round((s.total - prevTotal) / dt);
+      sparkData.push(rps);
+      if (sparkData.length > MAX_SPARK) sparkData.shift();
+    }
+  }
+  prevTotal = s.total;
+  prevElapsed = s.elapsed_ms;
+
+  const avgRps = s.elapsed_ms > 100 ? Math.round(s.total / (s.elapsed_ms / 1000)) : 0;
+  $('avgRps').textContent = fmt(avgRps);
+  $('peakRps').textContent = fmt(s.peak_rps);
+  $('elapsed').textContent = fmtElapsed(s.elapsed_ms);
+
+  if (avgRps > 0 && s.total_seeds > s.total) {
+    const remaining = s.total_seeds - s.total;
+    const etaMs = (remaining / avgRps) * 1000;
+    $('eta').textContent = fmtElapsed(etaMs);
+  } else if (s.total >= s.total_seeds && s.total_seeds > 0) {
+    $('eta').textContent = 'done';
+  } else {
+    $('eta').textContent = '--';
+  }
+
+  drawSparkline($('sparkline'));
+
+  // Errors
+  $('errDns').textContent = fmt(s.err_dns);
+  $('errConn').textContent = fmt(s.err_conn);
+  $('errTls').textContent = fmt(s.err_tls);
+  $('errInvalid').textContent = fmt(s.err_invalid_url);
+  $('errOther').textContent = fmt(s.err_other);
+  $('dnsNx').textContent = fmt(s.dns_nxdomain);
+  $('dnsMal').textContent = fmt(s.dns_malformed);
+  $('dnsOther').textContent = fmt(s.dns_other);
+  $('connRef').textContent = fmt(s.conn_refused);
+  $('connRst').textContent = fmt(s.conn_reset);
+  $('connEof').textContent = fmt(s.conn_eof);
+  $('connOther').textContent = fmt(s.conn_other);
+
+  // HTTP status
+  const httpTotal = s.status_2xx + s.status_3xx + s.status_4xx + s.status_5xx;
+  if (httpTotal > 0) {
+    $('bar2xx').style.width = (s.status_2xx / httpTotal * 100) + '%';
+    $('bar3xx').style.width = (s.status_3xx / httpTotal * 100) + '%';
+    $('bar4xx').style.width = (s.status_4xx / httpTotal * 100) + '%';
+    $('bar5xx').style.width = (s.status_5xx / httpTotal * 100) + '%';
+  }
+  $('s2xx').textContent = fmt(s.status_2xx);
+  $('s3xx').textContent = fmt(s.status_3xx);
+  $('s4xx').textContent = fmt(s.status_4xx);
+  $('s5xx').textContent = fmt(s.status_5xx);
+
+  // System
+  if (s.mem_rss_mb > 0) $('sysRam').textContent = s.mem_rss_mb + ' MB';
+  if (s.open_fds > 0) $('sysFds').textContent = fmt(s.open_fds);
+  const netTotal = s.net_rx_bps + s.net_tx_bps;
+  if (netTotal > 0) $('sysNet').textContent = fmtBytesRate(netTotal);
+  $('sysDown').textContent = fmtBytes(s.bytes_downloaded);
+
+  if (s.domains_total > 0) {
+    let domStr = fmt(s.domains_total);
+    if (s.domains_abandoned > 0) domStr += ' (' + s.domains_abandoned + ' abn)';
+    $('sysDomains').textContent = domStr;
+  }
+
+  // Progress
+  if (s.total_seeds > 0) {
+    const ratio = Math.min(s.total / s.total_seeds, 1);
+    $('progressFill').style.width = (ratio * 100) + '%';
+    $('progressText').textContent = (ratio * 100).toFixed(1) + '%  ' + fmtShort(s.total) + ' / ' + fmtShort(s.total_seeds);
+  } else if (s.total > 0) {
+    $('progressText').textContent = fmt(s.total) + ' fetched';
+  }
+
+  // Pass badge
+  if (s.pass > 1) {
+    $('passBadge').style.display = '';
+    $('passBadge').textContent = 'Pass ' + s.pass;
+    if (s.pass !== lastPass) {
+      sparkData.length = 0;
+      prevTotal = null;
+      prevElapsed = null;
+      lastPass = s.pass;
+    }
+  } else {
+    $('passBadge').style.display = 'none';
+  }
+
+  // Done state
+  const dot = $('statusDot');
+  if (s.done) {
+    dot.classList.add('done');
+  } else {
+    dot.classList.remove('done');
+  }
+
+  // Warnings / Event log
+  if (s.warnings && s.warnings.length > 0) {
+    if (!logInitialized) {
+      $('logList').innerHTML = '';
+      logInitialized = true;
+    }
+    for (const w of s.warnings) {
+      if (seenWarnings.has(w)) continue;
+      seenWarnings.add(w);
+      const el = document.createElement('div');
+      el.className = 'log-entry ' + logClass(w);
+      el.innerHTML = '<span class="log-prefix">&gt; </span>' + escHtml(w);
+      $('logList').appendChild(el);
+    }
+    // Auto-scroll
+    const list = $('logList');
+    list.scrollTop = list.scrollHeight;
+  }
+};
+
+es.onerror = function() {
+  const dot = $('statusDot');
+  dot.style.background = 'var(--red)';
+  dot.style.animation = 'none';
+};
+
+function logClass(msg) {
+  if (msg.startsWith('dns:')) return 'log-dns';
+  if (msg.startsWith('conn:')) return 'log-conn';
+  if (msg.startsWith('tls:')) return 'log-tls';
+  if (msg.startsWith('engine:') || msg.startsWith('done:')) return 'log-engine';
+  if (msg.startsWith('pass')) return 'log-pass';
+  if (msg.startsWith('abandoned')) return 'log-abandoned';
+  return 'log-default';
+}
+
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// Redraw sparkline on resize
+window.addEventListener('resize', () => drawSparkline($('sparkline')));
+</script>
+
+</body>
+</html>

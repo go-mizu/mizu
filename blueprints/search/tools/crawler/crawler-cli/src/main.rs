@@ -5,6 +5,7 @@ use tracing_subscriber::EnvFilter;
 mod cc;
 mod common;
 mod display;
+mod gui;
 mod hn;
 mod tui;
 

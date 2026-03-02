@@ -71,6 +71,14 @@ pub struct RecrawlArgs {
     /// When set, HTML bodies are stored as sha256:{hex}.gz and body_cid is populated.
     #[arg(long)]
     pub body_store: Option<String>,
+
+    /// Enable web GUI dashboard (disables TUI)
+    #[arg(long)]
+    pub gui: bool,
+
+    /// GUI server port
+    #[arg(long, default_value_t = 9111)]
+    pub gui_port: u16,
 }
 
 pub async fn run_recrawl(args: RecrawlArgs) -> Result<()> {
@@ -118,6 +126,8 @@ pub async fn run_recrawl(args: RecrawlArgs) -> Result<()> {
         db_mem_mb: args.db_mem_mb,
         no_tui: args.no_tui,
         body_store_dir: args.body_store,
+        gui: args.gui,
+        gui_port: args.gui_port,
     })
     .await
 }
