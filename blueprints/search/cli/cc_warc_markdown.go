@@ -249,7 +249,9 @@ func runWARCMDFileMode(ctx context.Context, cfg warcmd.Config, inputFiles []stri
 	if err != nil {
 		return fmt.Errorf("phase 3 compress: %w", err)
 	}
-	disk3 := warcmd.DiskUsageBytes(cfg.MarkdownGzDir())
+	// Count only .md.gz files — index.duckdb lives in the same dir and must
+	// not be included in the compression comparison.
+	disk3 := warcmd.DiskUsageMdGz(cfg.MarkdownGzDir())
 	mdPhaseEnd("Compress", toMDPhaseStats(s3), memBef3, memSysMB(), disk3, "markdown")
 	rows = append(rows, warcMDPhaseRow{"Compress", s3, disk3})
 	fmt.Println()
