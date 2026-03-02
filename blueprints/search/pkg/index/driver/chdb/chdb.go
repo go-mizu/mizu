@@ -3,7 +3,9 @@
 package chdb
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -72,21 +74,23 @@ func (e *Engine) Index(ctx context.Context, docs []index.Document) error {
 	if len(docs) == 0 {
 		return nil
 	}
-
-	var sb strings.Builder
-	sb.WriteString("INSERT INTO documents (doc_id, text) VALUES ")
-	for i, doc := range docs {
-		if i > 0 {
-			sb.WriteString(", ")
-		}
-		// Escape single quotes
-		id := strings.ReplaceAll(doc.DocID, "'", "''")
-		text := strings.ReplaceAll(string(doc.Text), "'", "''")
-		// Escape backslashes for ClickHouse
-		text = strings.ReplaceAll(text, `\`, `\\`)
-		fmt.Fprintf(&sb, "('%s', '%s')", id, text)
+	// INSERT … FORMAT JSONEachRow embeds NDJSON after the SQL prefix.
+	// json.Encoder escapes all special characters (newlines → \n, etc.) so no
+	// multi-line field ambiguity.  No manual escaping required.
+	var buf bytes.Buffer
+	buf.WriteString("INSERT INTO documents FORMAT JSONEachRow\n")
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	type row struct {
+		DocID string `json:"doc_id"`
+		Text  string `json:"text"`
 	}
-	_, err := e.session.Query(sb.String())
+	for _, doc := range docs {
+		if err := enc.Encode(row{DocID: doc.DocID, Text: string(doc.Text)}); err != nil {
+			return err
+		}
+	}
+	_, err := e.session.Query(buf.String())
 	return err
 }
 
