@@ -19,7 +19,7 @@ GUI_PORT      ?= 9111
 CARGO             ?= $(or $(shell command -v cargo 2>/dev/null),$(HOME)/.cargo/bin/cargo)
 TARGET_DIR        ?= $(HOME)/.cache/mizu/crawler-target
 
-.PHONY: build build-linux build-on-server deploy deploy-server1 deploy-server2 test remote-test remote-hn-recrawl remote-benchmark tunnel clean
+.PHONY: build build-linux build-on-server deploy deploy-server1 deploy-server2 test remote-test remote-hn-recrawl remote-benchmark remote-benchmark-all remote-cc-recrawl remote-cc-recrawl-tui remote-cc-benchmark tunnel clean
 
 ## Local dev build (macOS — no wreq-engine; wreq uses BoringSSL which doesn't link on macOS ARM64)
 ## Uses external cache ($(TARGET_DIR)); installs to ~/bin/crawler automatically.
@@ -126,6 +126,36 @@ remote-benchmark-all:
 	$(SSH) $(REMOTE_SSH) "~/bin/crawler hn recrawl --seed $(HN_SEED) --limit 10000 --engine reqwest --writer duckdb --no-retry"
 	@echo "=== reqwest + binary ==="
 	$(SSH) $(REMOTE_SSH) "~/bin/crawler hn recrawl --seed $(HN_SEED) --limit 10000 --engine reqwest --writer binary --no-retry"
+
+CC_CRAWL   ?= CC-MAIN-2026-04
+CC_FILE    ?= p:0
+
+## CC recrawl on remote server with GUI dashboard (auto-config, pass-2 retry)
+## Runs in foreground so you see logs; open tunnel in a separate terminal.
+## Access dashboard: make tunnel SERVER=<N> (in another terminal)
+remote-cc-recrawl:
+	$(SSH) -t $(REMOTE_SSH) "~/bin/crawler cc recrawl \
+	  --file $(CC_FILE) \
+	  --crawl $(CC_CRAWL) \
+	  --gui --gui-port $(GUI_PORT) \
+	  --no-body-store"
+
+## CC recrawl foreground with TUI (no GUI, for direct SSH sessions without port forwarding)
+remote-cc-recrawl-tui:
+	$(SSH) -t $(REMOTE_SSH) "~/bin/crawler cc recrawl \
+	  --file $(CC_FILE) \
+	  --crawl $(CC_CRAWL) \
+	  --no-body-store"
+
+## CC quick benchmark: 50k seeds, devnull writer, no retry — measures raw fetch speed
+remote-cc-benchmark:
+	$(SSH) $(REMOTE_SSH) "~/bin/crawler cc recrawl \
+	  --file $(CC_FILE) \
+	  --crawl $(CC_CRAWL) \
+	  --limit 50000 \
+	  --writer devnull \
+	  --no-retry \
+	  --no-tui"
 
 ## SSH tunnel for GUI dashboard: forwards localhost:9111 -> server:9111
 tunnel:
