@@ -118,6 +118,10 @@ pub struct RecrawlArgs {
     /// GUI server port
     #[arg(long, default_value_t = 9111)]
     pub gui_port: u16,
+
+    /// Binary writer flusher thread count (0 = auto)
+    #[arg(long, default_value_t = 0)]
+    pub flusher_threads: usize,
 }
 
 pub async fn run_recrawl(args: RecrawlArgs) -> Result<()> {
@@ -198,6 +202,7 @@ pub async fn run_recrawl(args: RecrawlArgs) -> Result<()> {
         body_store_dir: if args.no_body_store { None } else { Some(args.body_store) },
         gui: args.gui,
         gui_port: args.gui_port,
+        flusher_threads: args.flusher_threads,
     })
     .await
 }

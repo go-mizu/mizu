@@ -242,6 +242,7 @@ pub fn create_result_writer(
     db_shards: usize,
     db_mem_mb: usize,
     batch_size: usize,
+    num_flushers: usize,
 ) -> Result<Arc<dyn ResultWriter>> {
     let shards = if db_shards == 0 { 8 } else { db_shards };
     let mem_mb = if db_mem_mb == 0 { 64 } else { db_mem_mb };
@@ -269,7 +270,13 @@ pub fn create_result_writer(
                 mem_mb,
                 batch_size,
             };
-            let w = BinaryResultWriter::with_drain(&seg_dir, drain)?;
+            let w = BinaryResultWriter::new_with_drain(
+                &seg_dir,
+                65536,
+                64,
+                num_flushers.max(1),
+                drain,
+            )?;
             Ok(Arc::new(w))
         }
     }
@@ -345,6 +352,8 @@ pub struct CrawlJobParams {
     pub gui: bool,
     /// GUI server port (default 9111).
     pub gui_port: u16,
+    /// Binary writer flusher thread count (0 = use Config.num_flushers from auto_config).
+    pub flusher_threads: usize,
 }
 
 /// Run a two-pass crawl job with TUI, writers, retry logic, and summary.
@@ -375,6 +384,9 @@ pub async fn run_crawl_job(params: CrawlJobParams) -> Result<()> {
     cfg.output_dir = output_dir_str.clone();
     cfg.failed_db_path = failed_db_str.clone();
     cfg.live_stats = Some(live_stats.clone());
+    if params.flusher_threads > 0 {
+        cfg.num_flushers = params.flusher_threads;
+    }
     if let Some(ref dir) = params.body_store_dir {
         let resolved = expand_home(dir);
         let store = BodyStore::open(&resolved)?;
@@ -420,6 +432,7 @@ pub async fn run_crawl_job(params: CrawlJobParams) -> Result<()> {
         cfg.db_shards,
         cfg.db_mem_mb,
         cfg.batch_size,
+        cfg.num_flushers,
     )?;
 
     // Failure writer factory (fresh per pass for DuckDB lock safety)
