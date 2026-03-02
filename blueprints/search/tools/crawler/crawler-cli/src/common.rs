@@ -276,12 +276,16 @@ pub fn create_result_writer(
 }
 
 /// Create a failure writer for the given writer type.
+///
+/// When `no_retry` is true, the binary writer skips draining into `failed.duckdb`
+/// since pass-2 retry seeds will never be loaded from it.
 pub fn create_failure_writer(
     writer_type: WriterType,
     failed_db_path: &str,
     output_dir: &Path,
     db_mem_mb: usize,
     batch_size: usize,
+    no_retry: bool,
 ) -> Result<Arc<dyn FailureWriter>> {
     let mem_mb = if db_mem_mb == 0 { 64 } else { db_mem_mb };
 
@@ -298,13 +302,20 @@ pub fn create_failure_writer(
         }
         WriterType::Binary => {
             let failures_dir = output_dir.join("failures");
-            let drain = BinFailureDrainConfig {
-                db_path: PathBuf::from(failed_db_path),
-                mem_mb,
-                batch_size,
-            };
-            let w = BinaryFailureWriter::with_drain(&failures_dir, drain)?;
-            Ok(Arc::new(w))
+            if no_retry {
+                // Pass-2 retry is disabled — no need to drain into failed.duckdb.
+                // This avoids DuckDB checkpoint latency on potentially large accumulated files.
+                let w = BinaryFailureWriter::new(&failures_dir, 65536, 64)?;
+                Ok(Arc::new(w))
+            } else {
+                let drain = BinFailureDrainConfig {
+                    db_path: PathBuf::from(failed_db_path),
+                    mem_mb,
+                    batch_size,
+                };
+                let w = BinaryFailureWriter::with_drain(&failures_dir, drain)?;
+                Ok(Arc::new(w))
+            }
         }
     }
 }
@@ -385,7 +396,9 @@ pub async fn run_crawl_job(params: CrawlJobParams) -> Result<()> {
             WriterType::Binary | WriterType::Parquet => Some(output_dir.join("failures")),
             _ => None,
         },
-        failed_db: Some(failed_db_path.clone()),
+        // Only track failed.duckdb when retry is enabled — avoids slow COUNT(*) on
+        // the large accumulated file when --no-retry skips the DuckDB drain entirely.
+        failed_db: if params.no_retry { None } else { Some(failed_db_path.clone()) },
         bodies_dir: params.body_store_dir.as_deref().map(expand_home),
     };
     spawn_disk_sampler(live_stats.clone(), disk_paths.clone());
@@ -414,10 +427,11 @@ pub async fn run_crawl_job(params: CrawlJobParams) -> Result<()> {
     let output_dir2 = output_dir.clone();
     let mem_mb = cfg.db_mem_mb;
     let batch_size = cfg.batch_size;
+    let no_retry = params.no_retry;
 
     let open_failure_writer: Box<dyn Fn() -> Result<Arc<dyn FailureWriter>>> =
         Box::new(move || {
-            create_failure_writer(writer_type, &failed_db_str2, &output_dir2, mem_mb, batch_size)
+            create_failure_writer(writer_type, &failed_db_str2, &output_dir2, mem_mb, batch_size, no_retry)
         });
 
     // Retry seed loader

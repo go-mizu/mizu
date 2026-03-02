@@ -70,7 +70,7 @@ build-on-server:
 	  fi; \
 	  cd ~/build/crawler; \
 	  RUSTFLAGS=\"-C target-cpu=x86-64-v3\" cargo build --release 2>&1; \
-	  mkdir -p ~/bin && cp target/release/crawler ~/bin/crawler && chmod +x ~/bin/crawler; \
+	  mkdir -p ~/bin && cp target/release/crawler ~/bin/crawler.new && mv ~/bin/crawler.new ~/bin/crawler && chmod +x ~/bin/crawler; \
 	  echo BUILD_OK"'
 	@echo "Built and deployed to $(REMOTE_SSH):~/bin/crawler"
 	$(SSH) $(REMOTE_SSH) "~/bin/crawler --help | head -3"
