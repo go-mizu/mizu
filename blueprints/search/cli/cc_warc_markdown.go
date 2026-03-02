@@ -390,8 +390,8 @@ func printWarcMDSummary(rows []warcMDPhaseRow, s1, s3 *warcmd.PhaseStats, disk1,
 	for _, r := range rows {
 		s := r.stats
 		rate := float64(0)
-		if s.Duration.Seconds() > 0 {
-			rate = float64(s.Files+s.Skipped) / s.Duration.Seconds()
+		if s.Duration.Seconds() > 0 && (s.Files > 0 || s.Errors > 0) {
+			rate = float64(s.Files+s.Errors) / s.Duration.Seconds()
 		}
 		if s.PeakMemMB > peakRAM {
 			peakRAM = s.PeakMemMB
