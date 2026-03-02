@@ -66,11 +66,20 @@ impl HyperEngine {
 impl super::Engine for HyperEngine {
     async fn run(
         &self,
-        seeds: Vec<SeedURL>,
+        seed_rx: async_channel::Receiver<SeedURL>,
+        seed_count: u64,
         cfg: &Config,
         results: Arc<dyn ResultWriter>,
         failures: Arc<dyn FailureWriter>,
     ) -> Result<StatsSnapshot> {
+        // Collect all seeds from the receiver.
+        let seeds: Vec<SeedURL> = {
+            let mut v = Vec::new();
+            while let Ok(s) = seed_rx.recv().await {
+                v.push(s);
+            }
+            v
+        };
         let total_seeds = seeds.len();
         if total_seeds == 0 {
             return Ok(StatsSnapshot::empty());
@@ -87,8 +96,9 @@ impl super::Engine for HyperEngine {
 
         // Shared stats — use caller-provided Arc for live TUI display.
         let stats = cfg.live_stats.clone().unwrap_or_else(|| Arc::new(Stats::new()));
+        let display_total = if seed_count > 0 { seed_count } else { total_seeds as u64 };
         if stats.total_seeds.load(Ordering::Relaxed) == 0 {
-            stats.total_seeds.store(total_seeds as u64, Ordering::Relaxed);
+            stats.total_seeds.store(display_total, Ordering::Relaxed);
         }
         stats.done.store(false, Ordering::Relaxed);
 

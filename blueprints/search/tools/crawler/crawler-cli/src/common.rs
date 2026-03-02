@@ -9,6 +9,7 @@ use std::time::Duration;
 use crawler_lib::bodystore::AsyncBodyStore;
 use crawler_lib::config::{Config, EngineType, WriterType};
 use crawler_lib::job::run_job;
+use crawler_lib::seed::vec_to_receiver;
 use crawler_lib::stats::Stats;
 use crawler_lib::types::SeedURL;
 use crawler_lib::writer::binary::{BinDrainConfig, BinFailureDrainConfig, BinaryFailureWriter, BinaryResultWriter};
@@ -508,9 +509,13 @@ pub async fn run_crawl_job(params: CrawlJobParams) -> Result<()> {
     // Clone body store handle before cfg is moved into run_job, so we can close it after.
     let body_store_handle = cfg.body_store.clone();
 
+    // Convert Vec<SeedURL> to a closed receiver — enables the streaming engine interface.
+    let (seed_rx, seed_count) = vec_to_receiver(params.seeds);
+
     // Run job
     let job_result = run_job(
-        params.seeds,
+        seed_rx,
+        seed_count,
         cfg,
         result_writer.clone(),
         open_failure_writer.as_ref(),

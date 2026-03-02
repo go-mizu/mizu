@@ -52,11 +52,22 @@ impl DomainEntry {
 impl super::Engine for ReqwestEngine {
     async fn run(
         &self,
-        seeds: Vec<SeedURL>,
+        seed_rx: async_channel::Receiver<SeedURL>,
+        seed_count: u64,
         cfg: &Config,
         results: Arc<dyn ResultWriter>,
         failures: Arc<dyn FailureWriter>,
     ) -> Result<StatsSnapshot> {
+        // Collect all seeds from the receiver into a Vec for grouping.
+        // For CC streaming this is replaced by Task 8's batch producer;
+        // for now we collect first to keep the change minimal.
+        let seeds: Vec<SeedURL> = {
+            let mut v = Vec::new();
+            while let Ok(s) = seed_rx.recv().await {
+                v.push(s);
+            }
+            v
+        };
         let total_seeds = seeds.len();
         if total_seeds == 0 {
             return Ok(StatsSnapshot::empty());
@@ -73,10 +84,11 @@ impl super::Engine for ReqwestEngine {
         info!("grouped into {} domains", domain_count);
 
         // Shared stats — use caller-provided Arc for live TUI display, or create fresh.
-        // Only set total_seeds if not already populated (pass 1 sets it; pass 2 reuses).
+        // Use seed_count hint for TUI total if provided; otherwise use actual count.
         let stats = cfg.live_stats.clone().unwrap_or_else(|| Arc::new(Stats::new()));
+        let display_total = if seed_count > 0 { seed_count } else { total_seeds as u64 };
         if stats.total_seeds.load(Ordering::Relaxed) == 0 {
-            stats.total_seeds.store(total_seeds as u64, Ordering::Relaxed);
+            stats.total_seeds.store(display_total, Ordering::Relaxed);
         }
         // Reset done flag (may be set from a previous pass)
         stats.done.store(false, Ordering::Relaxed);

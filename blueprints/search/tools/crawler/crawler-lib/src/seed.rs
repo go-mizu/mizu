@@ -158,6 +158,27 @@ pub struct CcSeedFilter {
 }
 
 /// Load timeout URLs from failed DB for pass-2 retry.
+/// Convert a Vec<SeedURL> into an already-closed async_channel::Receiver.
+///
+/// All seeds are sent immediately (bounded by seeds.len()), then the sender
+/// is dropped so the receiver sees EOF. Used by HN and direct --seed callers
+/// that load the full seed list upfront.
+pub fn vec_to_receiver(seeds: Vec<SeedURL>) -> (async_channel::Receiver<SeedURL>, u64) {
+    let total = seeds.len() as u64;
+    if seeds.is_empty() {
+        let (_tx, rx) = async_channel::bounded(1);
+        // tx dropped immediately → rx sees empty closed channel
+        return (rx, 0);
+    }
+    let (tx, rx) = async_channel::bounded(seeds.len());
+    for seed in seeds {
+        // bounded by seeds.len() — never blocks
+        let _ = tx.try_send(seed);
+    }
+    drop(tx); // close sender → receiver returns Err(Closed) after last item
+    (rx, total)
+}
+
 /// Loads URLs with reason='http_timeout' or 'domain_http_timeout_killed' detected after `since`.
 pub fn load_retry_seeds(path: &str, since: NaiveDateTime) -> Result<Vec<SeedURL>> {
     let config = duckdb::Config::default()
@@ -209,6 +230,19 @@ mod tests {
             duckdb::params![url, domain, reason, ts.format("%Y-%m-%d %H:%M:%S").to_string()],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn vec_to_receiver_delivers_all_seeds_then_closes() {
+        let seeds = vec![
+            SeedURL { url: "https://a.com/1".into(), domain: "a.com".into() },
+            SeedURL { url: "https://b.com/1".into(), domain: "b.com".into() },
+        ];
+        let (rx, count) = vec_to_receiver(seeds);
+        assert_eq!(count, 2);
+        assert_eq!(rx.recv_blocking().unwrap().url, "https://a.com/1");
+        assert_eq!(rx.recv_blocking().unwrap().url, "https://b.com/1");
+        assert!(rx.recv_blocking().is_err(), "channel should be closed after last seed");
     }
 
     #[test]
