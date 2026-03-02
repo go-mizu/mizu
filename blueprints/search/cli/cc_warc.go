@@ -62,6 +62,7 @@ Subcommands:
 	cmd.AddCommand(newCCWarcExtract())
 	cmd.AddCommand(newCCWarcImport())
 	cmd.AddCommand(newCCWarcQuery())
+	cmd.AddCommand(newCCWarcMarkdown())
 	return cmd
 }
 
