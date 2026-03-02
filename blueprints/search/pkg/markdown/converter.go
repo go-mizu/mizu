@@ -11,6 +11,8 @@ import (
 	readability "github.com/go-shiori/go-readability"
 	"github.com/markusmobius/go-trafilatura"
 	"golang.org/x/net/html"
+	htmlcharset "golang.org/x/net/html/charset"
+	"golang.org/x/text/transform"
 )
 
 // Result holds the output of a single HTML → Markdown conversion.
@@ -48,8 +50,19 @@ func Convert(rawHTML []byte, pageURL string) Result {
 		}
 	}
 
-	// Step 1: extract main content via trafilatura
-	extracted, err := trafilatura.Extract(bytes.NewReader(rawHTML), opts)
+	// Step 1: parse HTML and extract main content via trafilatura.
+	// trafilatura.Extract() calls dom.Parse() internally, which runs chardet's
+	// n-gram charset detection over the ENTIRE document — a major bottleneck.
+	// Instead we call parseHTMLFast() which uses charset.DetermineEncoding()
+	// (BOM + <meta charset> scan of the first 1024 bytes only) then hands the
+	// parsed *html.Node directly to trafilatura.ExtractDocument(). All extraction
+	// features (dedup, fallback, language detection, etc.) are preserved.
+	doc, parseErr := parseHTMLFast(rawHTML)
+	if parseErr != nil {
+		ms := int(time.Since(start).Milliseconds())
+		return Result{HTMLSize: htmlSize, ConvertMs: ms, Error: "html parse: " + parseErr.Error()}
+	}
+	extracted, err := trafilatura.ExtractDocument(doc, opts)
 	if err != nil || extracted == nil || extracted.ContentNode == nil {
 		ms := int(time.Since(start).Milliseconds())
 		errMsg := ""
@@ -190,5 +203,31 @@ func ConvertFast(rawHTML []byte, pageURL string) Result {
 // EstimateTokens approximates token count: ~4 bytes per token for English text.
 func EstimateTokens(byteLen int) int {
 	return (byteLen + 3) / 4
+}
+
+// parseHTMLFast parses rawHTML into an *html.Node without running chardet's
+// full n-gram character-encoding detection over the whole document.
+//
+// Strategy:
+//   - charset.DetermineEncoding scans only the first 1024 bytes for BOM and
+//     <meta charset> / <meta http-equiv="Content-Type"> declarations.
+//   - For UTF-8 (the vast majority of Common Crawl content), html.Parse is
+//     called directly — no transcoding overhead at all.
+//   - For pages that declare a non-UTF-8 charset in their <meta> tag or BOM
+//     (e.g. GB2312, Shift-JIS), we transcode to UTF-8 via x/text/transform
+//     before parsing, preserving correct extraction on those pages.
+//   - Pages with no charset declaration default to UTF-8; the rare undeclared
+//     non-UTF-8 page (< 1% of CC) will be garbled regardless of the detector.
+func parseHTMLFast(rawHTML []byte) (*html.Node, error) {
+	_, name, _ := htmlcharset.DetermineEncoding(rawHTML, "text/html")
+	if name == "utf-8" {
+		return html.Parse(bytes.NewReader(rawHTML))
+	}
+	enc, _ := htmlcharset.Lookup(name)
+	if enc == nil {
+		// Unknown encoding — fall back to UTF-8 assumption.
+		return html.Parse(bytes.NewReader(rawHTML))
+	}
+	return html.Parse(transform.NewReader(bytes.NewReader(rawHTML), enc.NewDecoder()))
 }
 
