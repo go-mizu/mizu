@@ -131,12 +131,9 @@ func runCCWarcMarkdown(ctx context.Context,
 	for _, idx := range selected {
 		localPath := filepath.Join(warcDir, filepath.Base(paths[idx]))
 		if !fileExists(localPath) {
-			fmt.Printf("  %s not found — downloading...\n",
-				labelStyle.Render(filepath.Base(localPath)))
-			if err := client.DownloadFile(ctx, paths[idx], localPath, nil); err != nil {
+			if err := downloadWithProgress(ctx, client, paths[idx], localPath); err != nil {
 				return fmt.Errorf("downloading %s: %w", filepath.Base(localPath), err)
 			}
-			fmt.Printf("  %s\n", successStyle.Render("✓ downloaded "+filepath.Base(localPath)))
 		}
 		inputFiles = append(inputFiles, localPath)
 	}
@@ -463,4 +460,98 @@ func printWarcMDSummary(rows []warcMDPhaseRow, s1, s3 *warcmd.PhaseStats, disk1,
 		fmt.Printf("  markdown/   %s\n", formatBytes(disk3))
 		fmt.Println()
 	}
+}
+
+// ── download progress ─────────────────────────────────────────────────────────
+
+// downloadWithProgress downloads a WARC file and prints a live progress line:
+//
+//	↓ filename.warc.gz  [████████░░░░░░░░░░░░]  45.3%  234.5/512.0 MB  12.3 MB/s  ETA 23s
+func downloadWithProgress(ctx context.Context, client *cc.Client, remotePath, localPath string) error {
+	name := filepath.Base(localPath)
+	fmt.Printf("  %s  %s\n", labelStyle.Render("↓"), name)
+
+	start := time.Now()
+
+	// Bar geometry: fixed 20-cell width.
+	const barWidth = 20
+
+	progress := func(received, total int64) {
+		elapsed := time.Since(start).Seconds()
+		speedMBs := float64(received) / (1024 * 1024) / elapsed
+
+		var bar, pctStr, etaStr string
+		if total > 0 {
+			pct := float64(received) / float64(total)
+			filled := int(pct * barWidth)
+			if filled > barWidth {
+				filled = barWidth
+			}
+			bar = "[" + repeatChar('█', filled) + repeatChar('░', barWidth-filled) + "]"
+			pctStr = fmt.Sprintf("%5.1f%%", pct*100)
+			remaining := float64(total-received) / (1024 * 1024) / speedMBs
+			if speedMBs > 0 {
+				etaStr = "  ETA " + fmtDuration(remaining)
+			}
+		} else {
+			// Unknown total: show spinner + bytes received
+			bar = "[" + repeatChar('█', barWidth) + "]"
+			pctStr = "  ?  "
+		}
+
+		recvMB := float64(received) / (1024 * 1024)
+		totMB := float64(total) / (1024 * 1024)
+		var sizeStr string
+		if total > 0 {
+			sizeStr = fmt.Sprintf("  %6.1f/%6.1f MB", recvMB, totMB)
+		} else {
+			sizeStr = fmt.Sprintf("  %6.1f MB", recvMB)
+		}
+
+		fmt.Printf("\r\033[K  %s %s  %6.1f MB/s%s%s",
+			bar, pctStr, speedMBs, sizeStr, etaStr)
+	}
+
+	if err := client.DownloadFile(ctx, remotePath, localPath, progress); err != nil {
+		fmt.Printf("\r\033[K  %s %s\n", warningStyle.Render("✗"), name)
+		return err
+	}
+
+	elapsed := time.Since(start)
+	if fi, err := os.Stat(localPath); err == nil {
+		avgMBs := float64(fi.Size()) / (1024 * 1024) / elapsed.Seconds()
+		fmt.Printf("\r\033[K  %s %s  (%s  avg %.1f MB/s  %s)\n",
+			successStyle.Render("✓"), name,
+			formatBytes(fi.Size()), avgMBs, elapsed.Round(time.Millisecond))
+	} else {
+		fmt.Printf("\r\033[K  %s %s\n", successStyle.Render("✓"), name)
+	}
+	return nil
+}
+
+// repeatChar returns a string of n copies of ch.
+func repeatChar(ch rune, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = ch
+	}
+	return string(b)
+}
+
+// fmtDuration formats seconds as "1h23m", "4m12s", or "45s".
+func fmtDuration(secs float64) string {
+	s := int(secs)
+	if s < 0 {
+		s = 0
+	}
+	if s >= 3600 {
+		return fmt.Sprintf("%dh%02dm", s/3600, (s%3600)/60)
+	}
+	if s >= 60 {
+		return fmt.Sprintf("%dm%02ds", s/60, s%60)
+	}
+	return fmt.Sprintf("%ds", s)
 }
