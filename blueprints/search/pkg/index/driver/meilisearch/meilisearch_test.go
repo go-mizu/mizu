@@ -43,7 +43,11 @@ func TestMeilisearchEngine_Roundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}
-	eng.(index.AddrSetter).SetAddr("http://localhost:7700")
+	setter, ok := eng.(index.AddrSetter)
+	if !ok {
+		t.Fatal("meilisearch Engine does not implement AddrSetter")
+	}
+	setter.SetAddr("http://localhost:7700")
 
 	if err := eng.Open(ctx, dir); err != nil {
 		t.Fatalf("Open: %v", err)

@@ -35,13 +35,15 @@ func (e *Engine) Open(ctx context.Context, dir string) error {
 	e.client = ms.New(addr)
 
 	// Create or get the index.
-	task, err := e.client.CreateIndexWithContext(ctx, &ms.IndexConfig{
+	if task, cerr := e.client.CreateIndexWithContext(ctx, &ms.IndexConfig{
 		Uid:        indexUID,
 		PrimaryKey: primaryKey,
-	})
-	if err != nil {
-		// Index may already exist — that's fine, just get it.
-		_ = err
+	}); cerr != nil {
+		// If creation failed, verify the index already exists (it may have been created previously).
+		if _, getErr := e.client.GetIndexWithContext(ctx, indexUID); getErr != nil {
+			return fmt.Errorf("meilisearch create index: %w", cerr)
+		}
+		// Index already existed — continue.
 	} else {
 		if _, err := e.client.WaitForTask(task.TaskUID, 50*time.Millisecond); err != nil {
 			return fmt.Errorf("meilisearch: wait for create index: %w", err)
@@ -84,6 +86,9 @@ func (e *Engine) Stats(ctx context.Context) (index.EngineStats, error) {
 func (e *Engine) Index(ctx context.Context, docs []index.Document) error {
 	if len(docs) == 0 {
 		return nil
+	}
+	if e.idx == nil {
+		return fmt.Errorf("meilisearch: engine not opened")
 	}
 	payload := make([]map[string]any, len(docs))
 	for i, d := range docs {
