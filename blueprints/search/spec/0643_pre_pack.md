@@ -258,27 +258,29 @@ gets a pre-zeroed OS page (virtual memory CoW) — the only write is
 
 ## Full Import Matrix — FTS Engines
 
-173,720 documents; 3 FTS engines × 5 sources.
+173,720 documents; 4 FTS engines × 5 sources.
 
 ### Ingest speed (docs/s)
 
-| source \ engine | devnull    | sqlite FTS5 | duckdb BM25 |
-|-----------------|------------|-------------|-------------|
-| files           | 19,500     | 2,078       | 1,351       |
-| bin             | **715,000** | **3,254**   | 1,386       |
-| parquet         | 401,005    | 2,336       | ~1,050      |
-| ndjson          | 48,485     | 2,368       | ~1,100      |
-| duckdb raw      | 195,841    | 3,205       | **1,451**   |
+| source \ engine | devnull      | sqlite FTS5 | duckdb BM25 | chdb FTS    |
+|-----------------|--------------|-------------|-------------|-------------|
+| files           | 19,500       | 2,078       | 1,351       | —           |
+| bin             | **812,000** ¹ | **3,254**  | 1,386       | **3,992**   |
+| parquet         | 406,460      | 2,336       | ~1,050      | —           |
+| ndjson          | 48,485       | 2,368       | ~1,100      | —           |
+| duckdb raw      | 195,841      | 3,205       | **1,451**   | —           |
+
+¹ Parallel reader (NumCPU workers, record offset index in footer).
 
 ### Elapsed time
 
-| source \ engine | devnull | sqlite FTS5 | duckdb BM25 |
-|-----------------|---------|-------------|-------------|
-| files           | 8.7 s   | 1m 23.6 s   | 2m 8.6 s    |
-| bin             | **200 ms** | **53.4 s** | 2m 5.3 s  |
-| parquet         | 400 ms  | 1m 14.4 s   | ~2m 45 s   |
-| ndjson          | 3.6 s   | 1m 13.4 s   | ~2m 36 s   |
-| duckdb raw      | 800 ms  | 54.2 s      | **1m 59.7 s** |
+| source \ engine | devnull    | sqlite FTS5  | duckdb BM25   | chdb FTS    |
+|-----------------|------------|--------------|---------------|-------------|
+| files           | 8.7 s      | 1m 23.6 s    | 2m 8.6 s      | —           |
+| bin             | **200 ms** | **53.4 s**   | 2m 5.3 s      | **43.5 s**  |
+| parquet         | 400 ms     | 1m 14.4 s    | ~2m 45 s      | —           |
+| ndjson          | 3.6 s      | 1m 13.4 s    | ~2m 36 s      | —           |
+| duckdb raw      | 800 ms     | 54.2 s       | **1m 59.7 s** | —           |
 
 ### Final index disk size
 
@@ -286,6 +288,7 @@ gets a pre-zeroed OS page (virtual memory CoW) — the only write is
 |-------------|-----------|
 | sqlite FTS5 | 1.1 GB    |
 | duckdb BM25 | 1.5 GB    |
+| chdb FTS    | 821 MB    |
 
 ---
 
@@ -303,22 +306,50 @@ under 15% of overall build time.  The source format does affect that margin:
 - `parquet` and `ndjson` are marginally slower for sqlite but the difference
   is within IO noise.
 
+### chdb is the fastest FTS engine for bulk import
+
+chdb (ClickHouse embedded via chdb-go) indexes at **3,992 docs/s** from
+`bin` source — 23% faster than sqlite FTS5 (3,254 docs/s) and 2.9× faster
+than duckdb BM25 (1,386 docs/s).  Index size is also smallest at **821 MB**
+vs 1.1 GB (sqlite) and 1.5 GB (duckdb).
+
+The bulk-insert path uses `INSERT INTO documents FORMAT JSONEachRow` with
+`json.Encoder` generating NDJSON embedded directly in the query string.
+This avoids the ClickHouse SQL parser traversing a multi-megabyte VALUES
+list: `json.Encoder` encodes newlines as `\n`, backslashes as `\\`, and
+quotes as `\"`, keeping each line in the query body well-formed regardless
+of document content.
+
+Alternative approaches investigated:
+- **VALUES clause** (original): hangs at batch=5000 because literal newlines
+  in markdown text break the ClickHouse SQL parser.  Fixed by capping to
+  batch=500 + escaping, but slower (3,203 docs/s).
+- **INSERT FORMAT CSV**: ClickHouse's in-process C library does not support
+  embedded multi-line quoted CSV fields via the `chdb_query` API — the
+  parser fails on non-ASCII characters in document bodies.
+- **JSONEachRow**: works at any batch size; `json.Encoder` handles all
+  escaping; no artificial cap needed.
+
 ### Pack format matters enormously for devnull / pre-validation
 
 When the goal is to verify document counts or pipeline correctness without
-building an index, `bin` is 37× faster than raw files (200 ms vs 8.7 s).
+building an index, `bin` is 42× faster than raw files (200 ms vs 8.7 s)
+with the parallel reader (NumCPU workers each reading their own chunk).
 
 ### Best pack format: flatbin
 
 - **Smallest disk footprint** (709.5 MB — 5% smaller than NDJSON, 5% smaller
   than parquet).
-- **Fastest read** (715 k docs/s — 1.8× faster than parquet, 14.7× faster
-  than NDJSON).
+- **Fastest read** (812 k docs/s with parallel index reader — 2× faster than
+  parquet, 16.8× faster than NDJSON).
 - **Simplest format** — 8-byte magic + length-prefixed records + 30-byte
   footer.  No schema evolution overhead, no parser dependencies, no
   compression codec.
 - **Percentage progress** — footer provides exact row count upfront via
   `pread(2)`, enabling `%` display without a prior scan pass.
+- **Parallel reader** — record offset index (N×uint64 LE) written after the
+  last record; reader spawns `runtime.NumCPU()` goroutines each seeking to
+  their chunk start using the index.
 - **Backward compatible footer** — old files without footer magic fall back
   to `total=0` / read-until-EOF transparently.
 
@@ -359,6 +390,10 @@ search cc fts pack --crawl CC-MAIN-2026-08 --format bin
 search cc fts index --crawl CC-MAIN-2026-08 --engine sqlite --source bin
 search cc fts index --crawl CC-MAIN-2026-08 --engine duckdb --source duckdb
 
+# chdb requires build tag (separate binary)
+make build-chdb
+search cc fts index --crawl CC-MAIN-2026-08 --engine chdb --source bin
+
 # Benchmark read speed only (devnull discards all docs)
 search cc fts index --crawl CC-MAIN-2026-08 --engine devnull --source bin
 ```
@@ -374,3 +409,24 @@ search cc fts index --crawl CC-MAIN-2026-08 --engine devnull --source bin
 - `pkg/index/pack_parquet.go` — `PackParquet` / `RunPipelineFromParquet`
 - `pkg/index/driver/duckdb/pack_raw.go` — `PackDuckDBRaw` / `RunPipelineFromDuckDBRaw`
   (in duckdb driver package to keep `pkg/index` CGO-free)
+- `pkg/index/driver/chdb/chdb.go` — chdb ClickHouse engine (build tag `chdb`)
+  - `INSERT … FORMAT JSONEachRow` with `json.Encoder` for safe bulk insert
+  - Requires `libchdb.so` (ARM64 Mac: install name patched + re-signed)
+  - Build: `make build-chdb` (sets `CGO_LDFLAGS`, `CGO_CFLAGS`, `-tags chdb`)
+  - **Cannot co-load with duckdb driver** — SIGABRT on `duckdb_get_or_create_from_cache`
+
+## chdb Setup (macOS ARM64)
+
+```sh
+# Download libchdb ARM64
+curl -L https://github.com/chdb-io/chdb/releases/download/v4.0.2/macos-arm64-libchdb.tar.gz \
+  | tar xz -C /tmp/libchdb/
+
+# Install library + fix install name + re-sign (SIP strips DYLD_LIBRARY_PATH)
+cp /tmp/libchdb/libchdb.so ~/lib/
+install_name_tool -id "$HOME/lib/libchdb.so" ~/lib/libchdb.so
+codesign --force --sign - ~/lib/libchdb.so
+
+# Build
+make build-chdb
+```
