@@ -35,10 +35,13 @@ func (e *Engine) Open(ctx context.Context, dir string) error {
 	}
 	e.session = session
 
+	if _, err = session.Query(`SET allow_experimental_full_text_index = 1`); err != nil {
+		return fmt.Errorf("chdb set fts: %w", err)
+	}
 	_, err = session.Query(`CREATE TABLE IF NOT EXISTS documents (
 		doc_id String,
 		text   String,
-		INDEX text_idx text TYPE inverted()
+		INDEX text_idx text TYPE text(tokenizer='default') GRANULARITY 1
 	) ENGINE = MergeTree() ORDER BY doc_id
 	SETTINGS index_granularity = 8192`)
 	if err != nil {
@@ -99,7 +102,7 @@ func (e *Engine) Search(ctx context.Context, q index.Query) (index.Results, erro
 
 	sqlStr := fmt.Sprintf(`SELECT doc_id, substring(text, 1, 200) AS snippet
 		FROM documents
-		WHERE hasAllTokens(lower(text), lower('%s'))
+		WHERE hasToken(lower(text), lower('%s'))
 		ORDER BY length(text) ASC
 		LIMIT %d OFFSET %d FORMAT TabSeparated`, query, limit, q.Offset)
 

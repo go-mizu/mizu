@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
 )
 
 // flatBinMagic is the 8-byte file header for the flat binary pack format.
@@ -18,11 +20,11 @@ const flatBinFooterMagic = "MZFTS1F\n"
 
 // flatBinFooterSize is the total byte size of the footer written by PackFlatBin.
 //
-// Footer layout (30 bytes, appended after the last record):
+// Footer layout (30 bytes, appended after the index block and before EOF):
 //
 //	[0:8]   record_count  int64 LE  — number of records in the file
-//	[8:16]  index_offset  int64 LE  — byte offset to index table (0 = no index)
-//	[16:20] index_size    int32 LE  — byte size of index table (0 = no index)
+//	[8:16]  index_offset  int64 LE  — byte offset to index block (0 = no index)
+//	[16:20] index_size    int32 LE  — byte size of index block (N×8 bytes)
 //	[20]    version       uint8     — format version, currently 1
 //	[21]    flags         uint8     — reserved, 0
 //	[22:30] footer_magic  [8]byte   — "MZFTS1F\n"
@@ -32,13 +34,17 @@ const flatBinFooterSize = 30
 //
 // Wire format:
 //
-//	magic (8 bytes: "MZFTS1\n\x00")
+//	magic     (8 bytes: "MZFTS1\n\x00")
 //	repeated:
 //	  id_len  uint16 LE  — doc ID length in bytes (max 65535)
 //	  id      [id_len]byte
 //	  txt_len uint32 LE  — text length in bytes
 //	  text    [txt_len]byte
-//	footer (30 bytes)    — see flatBinFooterSize for layout
+//	index     (N × uint64 LE) — byte offset from file start to the start of record i
+//	footer    (30 bytes)      — see flatBinFooterSize for layout
+//
+// The index allows readers to divide work across multiple goroutines for parallel
+// deserialisation: each worker seeks to offsets[chunkStart] and reads its slice.
 func PackFlatBin(ctx context.Context, markdownDir, packPath string, workers, batchSize int, progress ProgressFunc) (*PipelineStats, error) {
 	if err := os.MkdirAll(filepath.Dir(packPath), 0o755); err != nil {
 		return nil, err
@@ -55,6 +61,13 @@ func PackFlatBin(ctx context.Context, markdownDir, packPath string, workers, bat
 		return nil, err
 	}
 
+	// offsets records the file-start byte offset of each record.
+	// Pre-allocate for a typical corpus size to avoid repeated growth.
+	var (
+		offsets []uint64
+		pos     = uint64(len(flatBinMagic)) // current logical write position
+	)
+
 	eng := &funcEngine{
 		name: "flatbin-writer",
 		indexFn: func(_ context.Context, docs []Document) error {
@@ -64,8 +77,13 @@ func PackFlatBin(ctx context.Context, markdownDir, packPath string, workers, bat
 				if len(id) > 65535 {
 					id = id[:65535]
 				}
-				binary.LittleEndian.PutUint16(hdr[0:2], uint16(len(id)))
-				binary.LittleEndian.PutUint32(hdr[2:6], uint32(len(doc.Text)))
+				offsets = append(offsets, pos)
+				idLen := uint64(len(id))
+				txtLen := uint64(len(doc.Text))
+				pos += 2 + idLen + 4 + txtLen
+
+				binary.LittleEndian.PutUint16(hdr[0:2], uint16(idLen))
+				binary.LittleEndian.PutUint32(hdr[2:6], uint32(txtLen))
 				if _, err := bw.Write(hdr[:2]); err != nil {
 					return err
 				}
@@ -75,7 +93,7 @@ func PackFlatBin(ctx context.Context, markdownDir, packPath string, workers, bat
 				if _, err := bw.Write(hdr[2:6]); err != nil {
 					return err
 				}
-				if _, err := bw.Write(doc.Text); err != nil { // doc.Text is []byte
+				if _, err := bw.Write(doc.Text); err != nil {
 					return err
 				}
 			}
@@ -90,15 +108,24 @@ func PackFlatBin(ctx context.Context, markdownDir, packPath string, workers, bat
 	}, progress)
 
 	if pipeErr == nil {
-		// Append footer so readers know total record count upfront.
+		// Append index: N × uint64 LE (byte offsets from file start).
+		indexOffset := pos
+		var u8 [8]byte
+		for _, off := range offsets {
+			binary.LittleEndian.PutUint64(u8[:], off)
+			bw.Write(u8[:])
+		}
+		indexSize := uint32(len(offsets) * 8)
+
+		// Append footer.
 		var foot [flatBinFooterSize]byte
-		binary.LittleEndian.PutUint64(foot[0:8], uint64(stats.DocsIndexed.Load()))
-		// foot[8:16]  = index_offset (0 = no index)
-		// foot[16:20] = index_size   (0 = no index)
+		binary.LittleEndian.PutUint64(foot[0:8], uint64(len(offsets)))
+		binary.LittleEndian.PutUint64(foot[8:16], indexOffset)
+		binary.LittleEndian.PutUint32(foot[16:20], indexSize)
 		foot[20] = 1 // version
-		// foot[21]    = flags (0)
+		// foot[21] = flags (0)
 		copy(foot[22:30], flatBinFooterMagic)
-		bw.Write(foot[:]) // flush error caught below
+		bw.Write(foot[:])
 	}
 
 	flushErr := bw.Flush()
@@ -117,11 +144,10 @@ func PackFlatBin(ctx context.Context, markdownDir, packPath string, workers, bat
 
 // RunPipelineFromFlatBin reads a flat binary pack file and feeds documents into engine.
 //
-// If the file contains a footer (written by PackFlatBin), the total record count is used
-// to display percentage progress and the goroutine stops exactly at the footer boundary.
-// Falls back gracefully for files written without a footer (total = 0, reads until EOF).
-//
-// Document.Text slices are allocated fresh per record and passed directly without copying.
+// When an index block is present (written by the current PackFlatBin), the reader
+// loads all record offsets into memory and spawns NumCPU worker goroutines, each
+// opening its own file handle and reading a contiguous slice of records in parallel.
+// Falls back to a single sequential goroutine for files without an index.
 func RunPipelineFromFlatBin(ctx context.Context, engine Engine, packPath string, batchSize int, progress PackProgressFunc) (*PipelineStats, error) {
 	f, err := os.Open(packPath)
 	if err != nil {
@@ -129,9 +155,9 @@ func RunPipelineFromFlatBin(ctx context.Context, engine Engine, packPath string,
 	}
 	defer f.Close()
 
-	// Try to read the footer for total record count.
-	// f.ReadAt uses pread(2) and does not affect the file offset.
+	// Read footer (pread — does not affect the sequential read position).
 	var total int64
+	var offsets []uint64
 	if fi, err := f.Stat(); err == nil {
 		sz := fi.Size()
 		if sz >= int64(len(flatBinMagic)+flatBinFooterSize) {
@@ -139,12 +165,23 @@ func RunPipelineFromFlatBin(ctx context.Context, engine Engine, packPath string,
 			if _, err := f.ReadAt(foot[:], sz-flatBinFooterSize); err == nil {
 				if string(foot[22:30]) == flatBinFooterMagic {
 					total = int64(binary.LittleEndian.Uint64(foot[0:8]))
+					indexOffset := int64(binary.LittleEndian.Uint64(foot[8:16]))
+					indexSize := int32(binary.LittleEndian.Uint32(foot[16:20]))
+					if indexOffset > 0 && indexSize > 0 && total > 0 {
+						indexBuf := make([]byte, indexSize)
+						if _, err := f.ReadAt(indexBuf, indexOffset); err == nil {
+							offsets = make([]uint64, total)
+							for i := range offsets {
+								offsets[i] = binary.LittleEndian.Uint64(indexBuf[i*8:])
+							}
+						}
+					}
 				}
 			}
 		}
 	}
 
-	// Validate magic (reads from position 0, advances to 8).
+	// Validate magic (advances position to 8; workers seek independently).
 	var magic [8]byte
 	if _, err := io.ReadFull(f, magic[:]); err != nil {
 		return nil, fmt.Errorf("read flatbin magic: %w", err)
@@ -153,52 +190,106 @@ func RunPipelineFromFlatBin(ctx context.Context, engine Engine, packPath string,
 		return nil, fmt.Errorf("invalid flatbin magic: %x", magic)
 	}
 
-	docCh := make(chan Document, max(batchSize*2, 1024))
-	go func() {
-		defer close(docCh)
-		br := bufio.NewReaderSize(f, 1<<20)
-		var hdr [6]byte
+	docCh := make(chan Document, max(batchSize*4, 4096))
 
-		var count int64
-		for {
-			if ctx.Err() != nil {
-				return
-			}
-			// When total is known, stop before the footer bytes rather than
-			// letting io.ReadFull misinterpret them as a record header.
-			if total > 0 && count >= total {
-				return
-			}
-			// Read id_len (2 bytes LE)
-			if _, err := io.ReadFull(br, hdr[:2]); err != nil {
-				return // clean EOF or read error — stop
-			}
-			idLen := int(binary.LittleEndian.Uint16(hdr[:2]))
-
-			idBuf := make([]byte, idLen)
-			if _, err := io.ReadFull(br, idBuf); err != nil {
-				return
-			}
-			// Read text_len (4 bytes LE)
-			if _, err := io.ReadFull(br, hdr[2:6]); err != nil {
-				return
-			}
-			textLen := int(binary.LittleEndian.Uint32(hdr[2:6]))
-
-			// Allocate a fresh []byte for the text and pass it directly as
-			// Document.Text — no string conversion, no extra copy.
-			textBuf := make([]byte, textLen)
-			if _, err := io.ReadFull(br, textBuf); err != nil {
-				return
-			}
-			select {
-			case docCh <- Document{DocID: string(idBuf), Text: textBuf}:
-				count++
-			case <-ctx.Done():
-				return
-			}
+	if len(offsets) > 0 {
+		// Parallel path: divide records across NumCPU workers.
+		numWorkers := runtime.NumCPU()
+		if numWorkers > int(total) {
+			numWorkers = int(total)
 		}
-	}()
+		var wg sync.WaitGroup
+		chunkSize := (total + int64(numWorkers) - 1) / int64(numWorkers)
+		for w := 0; w < numWorkers; w++ {
+			start := int64(w) * chunkSize
+			end := min(start+chunkSize, total)
+			if start >= total {
+				break
+			}
+			wg.Add(1)
+			go func(start, end int64, seekOff uint64) {
+				defer wg.Done()
+				wf, err := os.Open(packPath)
+				if err != nil {
+					return
+				}
+				defer wf.Close()
+				if _, err := wf.Seek(int64(seekOff), io.SeekStart); err != nil {
+					return
+				}
+				br := bufio.NewReaderSize(wf, 512*1024)
+				var hdr [6]byte
+				for i := start; i < end; i++ {
+					if ctx.Err() != nil {
+						return
+					}
+					if _, err := io.ReadFull(br, hdr[:2]); err != nil {
+						return
+					}
+					idLen := int(binary.LittleEndian.Uint16(hdr[:2]))
+					idBuf := make([]byte, idLen)
+					if _, err := io.ReadFull(br, idBuf); err != nil {
+						return
+					}
+					if _, err := io.ReadFull(br, hdr[2:6]); err != nil {
+						return
+					}
+					textLen := int(binary.LittleEndian.Uint32(hdr[2:6]))
+					textBuf := make([]byte, textLen)
+					if _, err := io.ReadFull(br, textBuf); err != nil {
+						return
+					}
+					select {
+					case docCh <- Document{DocID: string(idBuf), Text: textBuf}:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}(start, end, offsets[start])
+		}
+		go func() {
+			wg.Wait()
+			close(docCh)
+		}()
+	} else {
+		// Sequential fallback: no index available.
+		go func() {
+			defer close(docCh)
+			br := bufio.NewReaderSize(f, 1<<20)
+			var hdr [6]byte
+			var count int64
+			for {
+				if ctx.Err() != nil {
+					return
+				}
+				if total > 0 && count >= total {
+					return
+				}
+				if _, err := io.ReadFull(br, hdr[:2]); err != nil {
+					return
+				}
+				idLen := int(binary.LittleEndian.Uint16(hdr[:2]))
+				idBuf := make([]byte, idLen)
+				if _, err := io.ReadFull(br, idBuf); err != nil {
+					return
+				}
+				if _, err := io.ReadFull(br, hdr[2:6]); err != nil {
+					return
+				}
+				textLen := int(binary.LittleEndian.Uint32(hdr[2:6]))
+				textBuf := make([]byte, textLen)
+				if _, err := io.ReadFull(br, textBuf); err != nil {
+					return
+				}
+				select {
+				case docCh <- Document{DocID: string(idBuf), Text: textBuf}:
+					count++
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
 
 	return RunPipelineFromChannel(ctx, engine, docCh, total, batchSize, progress)
 }

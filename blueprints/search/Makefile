@@ -34,6 +34,10 @@ CGO_ENABLED ?= 1
 ifeq ($(shell uname -s),Darwin)
 CGO_LDFLAGS ?= -Wl,-no_warn_duplicate_libraries
 endif
+# chdb support: set CHDB_LIB_DIR to the directory containing libchdb.so to
+# enable the chdb build tag. e.g. make build-chdb CHDB_LIB_DIR=$$HOME/lib
+CHDB_LIB_DIR ?= $(HOME)/lib
+CHDB_HEADER_DIR ?= /tmp/libchdb
 # Focal (Ubuntu 20.04) build vars — max compatibility (glibc 2.31)
 LINUX_BASE_IMAGE ?= ubuntu:20.04
 LINUX_GO_VERSION ?= 1.26.0
@@ -81,6 +85,16 @@ build: ## Build search binary (Go only; run frontend-build separately if needed)
 	@mkdir -p $(dir $(BINARY))
 	@CGO_ENABLED=$(CGO_ENABLED) CGO_LDFLAGS="$(CGO_LDFLAGS)" GOWORK=off $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BINARY) $(CMD)
 	@echo "Built: $(BINARY) ($(VERSION))"
+
+.PHONY: build-chdb
+build-chdb: ## Build search binary with chdb support (requires CHDB_LIB_DIR/libchdb.so)
+	@mkdir -p $(dir $(BINARY))
+	@CGO_ENABLED=1 \
+		CGO_LDFLAGS="$(CGO_LDFLAGS) -L$(CHDB_LIB_DIR) -lchdb -Wl,-rpath,$(CHDB_LIB_DIR)" \
+		CGO_CFLAGS="-I$(CHDB_HEADER_DIR)" \
+		DYLD_LIBRARY_PATH="$(CHDB_LIB_DIR):$$DYLD_LIBRARY_PATH" \
+		GOWORK=off $(GO) build -tags chdb -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BINARY) $(CMD)
+	@echo "Built: $(BINARY) ($(VERSION)) [+chdb]"
 
 .PHONY: build-quick
 build-quick: build ## Alias for build (kept for compatibility)
