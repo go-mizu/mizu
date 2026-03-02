@@ -255,6 +255,17 @@ fn render(frame: &mut ratatui::Frame, stats: &Stats, cfg: &TuiConfig, state: &Re
     let net_tx = stats.net_tx_bps.load(Ordering::Relaxed);
     let open_fds = stats.open_fds.load(Ordering::Relaxed);
 
+    // Disk stats
+    let disk_segs      = stats.disk_seg_files.load(Ordering::Relaxed);
+    let disk_seg_mb    = stats.disk_seg_mb.load(Ordering::Relaxed);
+    let disk_db_mb     = stats.disk_duckdb_mb.load(Ordering::Relaxed);
+    let disk_db_rows   = stats.disk_results_rows.load(Ordering::Relaxed);
+    let disk_fail_mb   = stats.disk_failures_mb.load(Ordering::Relaxed);
+    let disk_fail_rows = stats.disk_failed_rows.load(Ordering::Relaxed);
+    let disk_bodies    = stats.disk_bodies_count.load(Ordering::Relaxed);
+    let disk_bod_mb    = stats.disk_bodies_mb.load(Ordering::Relaxed);
+    let disk_total_mb  = stats.disk_total_mb.load(Ordering::Relaxed);
+
     let avg_rps = if elapsed.as_secs_f64() > 0.1 {
         total as f64 / elapsed.as_secs_f64()
     } else {
@@ -326,6 +337,8 @@ fn render(frame: &mut ratatui::Frame, stats: &Stats, cfg: &TuiConfig, state: &Re
         s2xx, s3xx, s4xx, s5xx,
         dom_total, dom_abandoned,
         mem_rss, mem_total, net_rx, net_tx, open_fds,
+        disk_segs, disk_seg_mb, disk_db_mb, disk_db_rows,
+        disk_fail_mb, disk_fail_rows, disk_bodies, disk_bod_mb, disk_total_mb,
         state,
     );
     render_progress(frame, progress_area, ratio, total, total_seeds, eta);
@@ -346,6 +359,8 @@ fn render_main(
     s2xx: u64, s3xx: u64, s4xx: u64, s5xx: u64,
     dom_total: u64, dom_abandoned: u64,
     mem_rss: u64, mem_total: u64, net_rx: u64, net_tx: u64, open_fds: u64,
+    disk_segs: u64, disk_seg_mb: u64, disk_db_mb: u64, disk_db_rows: u64,
+    disk_fail_mb: u64, disk_fail_rows: u64, disk_bodies: u64, disk_bod_mb: u64, disk_total_mb: u64,
     state: &RenderState,
 ) {
     let [left, right] = Layout::horizontal([
@@ -359,6 +374,8 @@ fn render_main(
         s2xx, s3xx, s4xx, s5xx,
         dom_total, dom_abandoned,
         mem_rss, mem_total, net_rx, net_tx, open_fds,
+        disk_segs, disk_seg_mb, disk_db_mb, disk_db_rows,
+        disk_fail_mb, disk_fail_rows, disk_bodies, disk_bod_mb, disk_total_mb,
         state,
     );
 }
@@ -425,6 +442,8 @@ fn render_throughput(
     s2xx: u64, s3xx: u64, s4xx: u64, s5xx: u64,
     dom_total: u64, dom_abandoned: u64,
     mem_rss: u64, mem_total: u64, net_rx: u64, net_tx: u64, open_fds: u64,
+    disk_segs: u64, disk_seg_mb: u64, disk_db_mb: u64, disk_db_rows: u64,
+    disk_fail_mb: u64, disk_fail_rows: u64, disk_bodies: u64, disk_bod_mb: u64, disk_total_mb: u64,
     state: &RenderState,
 ) {
     let dim = Style::default().fg(Color::DarkGray);
@@ -522,6 +541,66 @@ fn render_throughput(
         Line::from(Span::styled(" Sys --", dim))
     };
     metrics.push(sys_line);
+
+    // Data line — only shown when any disk activity detected
+    let any_disk = disk_seg_mb + disk_db_mb + disk_fail_mb + disk_bod_mb > 0;
+    if any_disk {
+        let mut parts: Vec<Span> = vec![Span::styled(" Data ", dim)];
+
+        if disk_segs > 0 {
+            parts.push(Span::styled(
+                format!("{}segs {}MB", disk_segs, disk_seg_mb),
+                Style::default().fg(Color::Yellow),
+            ));
+            parts.push(Span::styled("  ", dim));
+        }
+
+        if disk_db_rows > 0 {
+            parts.push(Span::styled(
+                format!("db {}k/{}MB", disk_db_rows / 1000, disk_db_mb),
+                Style::default().fg(Color::Cyan),
+            ));
+            if disk_db_mb > 0 { parts.push(Span::styled("  ", dim)); }
+        } else if disk_db_mb > 0 {
+            parts.push(Span::styled(
+                format!("db {}MB", disk_db_mb),
+                Style::default().fg(Color::Cyan),
+            ));
+            parts.push(Span::styled("  ", dim));
+        }
+
+        if disk_bod_mb > 0 {
+            parts.push(Span::styled(
+                format!("bodies {}k/{}GB", disk_bodies / 1000, disk_bod_mb / 1024),
+                Style::default().fg(Color::Green),
+            ));
+            parts.push(Span::styled("  ", dim));
+        }
+
+        if disk_fail_mb > 0 {
+            if disk_fail_rows > 0 {
+                parts.push(Span::styled(
+                    format!("fail {}k/{}MB", disk_fail_rows / 1000, disk_fail_mb),
+                    Style::default().fg(Color::Red),
+                ));
+            } else {
+                parts.push(Span::styled(
+                    format!("fail {}MB", disk_fail_mb),
+                    Style::default().fg(Color::Red),
+                ));
+            }
+        }
+
+        if disk_total_mb > 1024 {
+            parts.push(Span::styled("  ", dim));
+            parts.push(Span::styled(
+                format!("total {}GB", disk_total_mb / 1024),
+                Style::default().fg(Color::White),
+            ));
+        }
+
+        metrics.push(Line::from(parts));
+    }
 
     frame.render_widget(Paragraph::new(metrics), metrics_area);
 }
