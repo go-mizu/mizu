@@ -174,7 +174,7 @@ pub struct CcSeedFilter {
 }
 
 /// Load timeout URLs from failed DB for pass-2 retry.
-/// Only loads URLs with reason='http_timeout' detected after `since`.
+/// Loads URLs with reason='http_timeout' or 'domain_http_timeout_killed' detected after `since`.
 pub fn load_retry_seeds(path: &str, since: NaiveDateTime) -> Result<Vec<SeedURL>> {
     let config = duckdb::Config::default()
         .access_mode(duckdb::AccessMode::ReadOnly)?;
@@ -183,7 +183,8 @@ pub fn load_retry_seeds(path: &str, since: NaiveDateTime) -> Result<Vec<SeedURL>
 
     let mut stmt = conn.prepare(
         "SELECT url, COALESCE(domain, '') as domain FROM failed_urls \
-         WHERE reason = 'http_timeout' AND detected_at >= ?"
+         WHERE reason IN ('http_timeout', 'domain_http_timeout_killed') \
+           AND detected_at >= ?"
     )?;
 
     let since_str = since.format("%Y-%m-%d %H:%M:%S").to_string();
@@ -198,4 +199,69 @@ pub fn load_retry_seeds(path: &str, since: NaiveDateTime) -> Result<Vec<SeedURL>
         .collect();
 
     Ok(seeds)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDateTime;
+
+    fn make_failed_db(path: &str) -> duckdb::Connection {
+        let conn = duckdb::Connection::open(path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE failed_urls (
+                url TEXT, domain TEXT, reason TEXT,
+                subcategory TEXT, error TEXT, status_code INTEGER,
+                fetch_time_ms INTEGER, detected_at TIMESTAMP
+             )",
+        )
+        .unwrap();
+        conn
+    }
+
+    fn insert_failed(conn: &duckdb::Connection, url: &str, domain: &str, reason: &str, ts: NaiveDateTime) {
+        conn.execute(
+            "INSERT INTO failed_urls VALUES (?,?,?,'','',0,0,?)",
+            duckdb::params![url, domain, reason, ts.format("%Y-%m-%d %H:%M:%S").to_string()],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn load_retry_seeds_includes_killed_urls() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("failed.duckdb").to_string_lossy().to_string();
+        let conn = make_failed_db(&db_path);
+        let ts = chrono::Utc::now().naive_utc();
+
+        insert_failed(&conn, "https://a.com/1", "a.com", "http_timeout", ts);
+        insert_failed(&conn, "https://b.com/1", "b.com", "domain_http_timeout_killed", ts);
+        drop(conn);
+
+        let since = ts - chrono::Duration::seconds(1);
+        let seeds = load_retry_seeds(&db_path, since).unwrap();
+
+        let urls: Vec<&str> = seeds.iter().map(|s| s.url.as_str()).collect();
+        assert!(urls.contains(&"https://a.com/1"), "should include http_timeout URL");
+        assert!(urls.contains(&"https://b.com/1"), "should include domain_http_timeout_killed URL");
+        assert_eq!(seeds.len(), 2);
+    }
+
+    #[test]
+    fn load_retry_seeds_excludes_before_since() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("failed2.duckdb").to_string_lossy().to_string();
+        let conn = make_failed_db(&db_path);
+        let old_ts = chrono::NaiveDateTime::parse_from_str("2020-01-01 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
+        let new_ts = chrono::Utc::now().naive_utc();
+
+        insert_failed(&conn, "https://old.com/1", "old.com", "http_timeout", old_ts);
+        insert_failed(&conn, "https://new.com/1", "new.com", "http_timeout", new_ts);
+        drop(conn);
+
+        let since = new_ts - chrono::Duration::seconds(1);
+        let seeds = load_retry_seeds(&db_path, since).unwrap();
+        assert_eq!(seeds.len(), 1);
+        assert_eq!(seeds[0].url, "https://new.com/1");
+    }
 }
