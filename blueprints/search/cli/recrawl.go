@@ -30,6 +30,7 @@ type recrawlJobArgs struct {
 	SlowDomainMs int64
 	SegSizeMB    int
 	WarcDir      string
+	WarcCompress bool // write .warc.gz instead of .warc
 	DBShards     int
 	DBMemMB      int
 	SysInfo      crawl.SysInfo
@@ -106,7 +107,7 @@ func runRecrawlJob(ctx context.Context, args recrawlJobArgs) error {
 			}
 			dir = filepath.Join(home, dir[2:])
 		}
-		ws, err := warcstore.Open(dir)
+		ws, err := warcstore.Open(dir, args.WarcCompress)
 		if err != nil {
 			return fmt.Errorf("opening warc store %s: %w", dir, err)
 		}

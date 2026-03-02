@@ -880,8 +880,9 @@ func newCCRecrawl() *cobra.Command {
 		dbMemMB              int
 		dbShards             int
 		chunkMode            string
-		warcDir     string
-		noWarc      bool
+		warcDir      string
+		noWarc       bool
+		warcCompress bool
 	)
 
 	cmd := &cobra.Command{
@@ -976,6 +977,7 @@ Examples:
 				}
 				return warcDir
 			}(),
+			warcCompress: warcCompress,
 		})
 		},
 	}
@@ -1014,8 +1016,9 @@ Examples:
 	cmd.Flags().IntVar(&dbMemMB, "db-mem-mb", 0, "DuckDB memory per shard in MB (0=auto: 15% avail RAM / shards)")
 	cmd.Flags().IntVar(&dbShards, "db-shards", 0, "ResultDB shard count (0=auto: clamp(CPUs×2, 4, 16))")
 	cmd.Flags().StringVar(&chunkMode, "chunk-mode", "stream", "Seed delivery mode: stream|pipeline|batch (stream: sort-then-stream; pipeline: low-memory cursor from seed DB, use for >1M seeds to prevent OOM; batch: N-domain chunks)")
-	cmd.Flags().StringVar(&warcDir, "warc-dir", "~/data/common-crawl/warc", "WARC 1.1 store directory; HTML responses stored as {uuid}.warc files")
+	cmd.Flags().StringVar(&warcDir, "warc-dir", "~/data/common-crawl/warc", "WARC 1.1 store directory; HTML responses stored as {uuid}.warc[.gz] files")
 	cmd.Flags().BoolVar(&noWarc, "no-warc", false, "Disable WARC store (skip saving HTML responses as WARC files)")
+	cmd.Flags().BoolVar(&warcCompress, "warc-compress", false, "Write gzip-compressed .warc.gz files (smaller; requires decompression to read)")
 
 	return cmd
 }
@@ -1056,6 +1059,7 @@ type ccRecrawlOpts struct {
 	seedDBPath           string // set when seeds are pre-materialized for pipeline mode
 	totalSeeds           int64  // pre-extraction count for pipeline mode coverage display
 	warcDir              string // "" = disabled; else path to WARC store
+	warcCompress         bool   // write .warc.gz instead of .warc
 }
 
 func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
@@ -1483,6 +1487,7 @@ func runCCRecrawlV3(ctx context.Context, opts ccRecrawlOpts,
 		TotalSeeds:   totalSeeds,
 		SeedCount:    opts.totalSeeds,
 		WarcDir:      opts.warcDir,
+		WarcCompress: opts.warcCompress,
 	})
 }
 

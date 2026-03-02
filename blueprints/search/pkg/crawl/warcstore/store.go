@@ -25,6 +25,7 @@ package warcstore
 
 import (
 	"bytes"
+	"compress/gzip"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -56,22 +57,29 @@ var (
 )
 
 // Store is a WARC 1.1 store backed by the filesystem.
-// Each URL gets one uncompressed .warc file containing three records
-// (warcinfo, request, response). The file is placed at:
+// Each URL gets one .warc (or .warc.gz when Compress=true) file containing
+// three records (warcinfo, request, response). The file is placed at:
 //
-//	{dir}/{hex[0:2]}/{hex[2:4]}/{hex[4:6]}/{uuid}.warc
+//	{dir}/{hex[0:2]}/{hex[2:4]}/{hex[4:6]}/{uuid}.warc[.gz]
 //
 // where uuid is the deterministic WARC-Record-ID of the response record
 // and hex = uuid.String() with hyphens removed.
-type Store struct{ dir string }
+type Store struct {
+	dir      string
+	compress bool // write gzip-compressed .warc.gz files when true
+}
 
 // Open returns a Store backed by dir, creating it if needed.
-func Open(dir string) (*Store, error) {
+// When compress is true WARC files are written gzip-compressed as {uuid}.warc.gz.
+func Open(dir string, compress bool) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("warcstore: mkdir %s: %w", dir, err)
 	}
-	return &Store{dir: dir}, nil
+	return &Store{dir: dir, compress: compress}, nil
 }
+
+// Compressed reports whether this store writes gzip-compressed .warc.gz files.
+func (s *Store) Compressed() bool { return s.compress }
 
 // Entry holds all the data needed to write one WARC file.
 type Entry struct {
@@ -218,8 +226,26 @@ func (s *Store) Put(e Entry) (warcID string, err error) {
 
 	// ---- Atomic write ----
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, buf.Bytes(), 0o644); err != nil {
-		return "", fmt.Errorf("warcstore: write tmp: %w", err)
+	if s.compress {
+		f, err := os.Create(tmp)
+		if err != nil {
+			return "", fmt.Errorf("warcstore: create tmp: %w", err)
+		}
+		gz := gzip.NewWriter(f)
+		_, werr := gz.Write(buf.Bytes())
+		cerr := gz.Close()
+		ferr := f.Close()
+		if werr != nil || cerr != nil || ferr != nil {
+			os.Remove(tmp)
+			if werr != nil {
+				return "", fmt.Errorf("warcstore: gzip write: %w", werr)
+			}
+			return "", fmt.Errorf("warcstore: gzip close: %w", cerr)
+		}
+	} else {
+		if err := os.WriteFile(tmp, buf.Bytes(), 0o644); err != nil {
+			return "", fmt.Errorf("warcstore: write tmp: %w", err)
+		}
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		os.Remove(tmp)
@@ -259,18 +285,26 @@ func CanonicalURL(rawURL string) string {
 	return u.String()
 }
 
+// ext returns the file extension: ".warc" or ".warc.gz" when compress is set.
+func (s *Store) ext() string {
+	if s.compress {
+		return ".warc.gz"
+	}
+	return ".warc"
+}
+
 // uuidToPath converts a UUID string to a filesystem path under s.dir.
 // hex = uuid with hyphens removed (32 chars).
-// Path: {dir}/{hex[0:2]}/{hex[2:4]}/{hex[4:6]}/{uuid}.warc
+// Path: {dir}/{hex[0:2]}/{hex[2:4]}/{hex[4:6]}/{uuid}.warc[.gz]
 func (s *Store) uuidToPath(warcID string) string {
 	hex := strings.ReplaceAll(warcID, "-", "")
-	return filepath.Join(s.dir, hex[0:2], hex[2:4], hex[4:6], warcID+".warc")
+	return filepath.Join(s.dir, hex[0:2], hex[2:4], hex[4:6], warcID+s.ext())
 }
 
 // relPath returns the path relative to s.dir (for WARC-Filename).
 func (s *Store) relPath(warcID string) string {
 	hex := strings.ReplaceAll(warcID, "-", "")
-	return filepath.Join(hex[0:2], hex[2:4], hex[4:6], warcID+".warc")
+	return filepath.Join(hex[0:2], hex[2:4], hex[4:6], warcID+s.ext())
 }
 
 // warcRecordParams holds the fields for a single WARC record.

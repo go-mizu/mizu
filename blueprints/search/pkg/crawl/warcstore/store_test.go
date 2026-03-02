@@ -2,6 +2,7 @@ package warcstore_test
 
 import (
 	"bufio"
+	"compress/gzip"
 	"fmt"
 	"net/http"
 	"os"
@@ -16,7 +17,7 @@ import (
 
 func newStore(t *testing.T) *warcstore.Store {
 	t.Helper()
-	s, err := warcstore.Open(t.TempDir())
+	s, err := warcstore.Open(t.TempDir(), false)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -442,5 +443,62 @@ func TestPut_NoBodyStore_EmptyIP(t *testing.T) {
 
 	if strings.Contains(content, "WARC-IP-Address") {
 		t.Error("WARC-IP-Address should not be present when IP is empty")
+	}
+}
+
+func TestPut_Compress(t *testing.T) {
+	dir := t.TempDir()
+	s, err := warcstore.Open(dir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.Compressed() {
+		t.Error("Compressed() should be true")
+	}
+
+	e := sampleEntry()
+	id, err := s.Put(e)
+	if err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	// File must have .warc.gz extension.
+	hex := strings.ReplaceAll(id, "-", "")
+	path := filepath.Join(dir, hex[0:2], hex[2:4], hex[4:6], id+".warc.gz")
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("compressed file not found at %s: %v", path, err)
+	}
+	// .warc (uncompressed) must NOT exist.
+	plain := filepath.Join(dir, hex[0:2], hex[2:4], hex[4:6], id+".warc")
+	if _, err := os.Stat(plain); err == nil {
+		t.Error("plain .warc should not exist when compress=true")
+	}
+
+	// Content must decompress to valid WARC.
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatalf("gzip.NewReader: %v", err)
+	}
+	defer gz.Close()
+	var sb strings.Builder
+	buf := make([]byte, 4096)
+	for {
+		n, err := gz.Read(buf)
+		sb.Write(buf[:n])
+		if err != nil {
+			break
+		}
+	}
+	content := sb.String()
+	if !strings.Contains(content, "WARC/1.1") {
+		t.Error("decompressed content missing WARC/1.1")
+	}
+	if !strings.Contains(content, "WARC-Type: response") {
+		t.Error("decompressed content missing response record")
 	}
 }

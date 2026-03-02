@@ -565,6 +565,7 @@ func newHNRecrawl() *cobra.Command {
 		chunkSize           int
 		pprofPort           int
 		warcDir             string
+		warcCompress        bool
 		dbMemMB             int
 		dbShards            int
 		pass2Workers        int
@@ -680,7 +681,7 @@ and adaptive timeouts.`,
 				engine, workers, maxConnsPerDomain, timeoutMs, domainFailThreshold, domainTimeoutMs, domainDeadProbe, domainStallRatio, statusOnly, batchSize, int64(slowDomainMs),
 				dnsWorkers, dnsTimeoutMs,
 				retryTimeoutMs, noRetry, writerMode,
-				chunkMode, chunkSize, warcDir,
+				chunkMode, chunkSize, warcDir, warcCompress,
 				dbMemMB, dbShards, pass2Workers, segSizeMB, printAutoConfig)
 		},
 	}
@@ -713,6 +714,7 @@ and adaptive timeouts.`,
 	cmd.Flags().IntVar(&chunkSize, "chunk-size", 0, "Override batch domain count (0=auto)")
 	cmd.Flags().IntVar(&pprofPort, "pprof-port", 0, "Enable pprof HTTP server on this port (0=off)")
 	cmd.Flags().StringVar(&warcDir, "warc-dir", "", "WARC 1.1 store dir (default: $dataDir/warc)")
+	cmd.Flags().BoolVar(&warcCompress, "warc-compress", false, "Write gzip-compressed .warc.gz files (smaller; requires decompression to read)")
 	cmd.Flags().IntVar(&dbMemMB, "db-mem-mb", 0, "DuckDB memory per shard in MB (0=auto: 15% avail RAM / shards)")
 	cmd.Flags().IntVar(&dbShards, "db-shards", 0, "ResultDB shard count (0=auto: clamp(CPUs×2, 4, 16))")
 	cmd.Flags().IntVar(&pass2Workers, "pass2-workers", 0, "Pass-2 worker count (0=same as pass 1)")
@@ -738,6 +740,7 @@ func runHNRecrawlV3(ctx context.Context,
 	chunkMode string,
 	chunkSize int,
 	warcDir string,
+	warcCompress bool,
 	dbMemMB, dbShards, pass2Workers, segSizeMB int,
 	printAutoConfig bool,
 ) error {
@@ -900,6 +903,7 @@ func runHNRecrawlV3(ctx context.Context,
 		SlowDomainMs: slowDomainMs,
 		SegSizeMB:    segSizeMB,
 		WarcDir:      warcDir,
+		WarcCompress: warcCompress,
 		DBShards:     dbShards,
 		DBMemMB:      dbMemMB,
 		SysInfo:      si,
