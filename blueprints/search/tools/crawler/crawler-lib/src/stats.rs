@@ -22,6 +22,12 @@ pub struct Stats {
     pub pass: AtomicU8,
     /// Seed count for pass 2 (set when pass 2 begins).
     pub pass2_seeds: AtomicU64,
+    /// Cumulative total processed URL count when pass-2 began (0 = still in pass-1).
+    /// Used by GUI to compute pass-2 progress independently of cumulative total.
+    pub pass1_total: AtomicU64,
+    /// Elapsed ms when pass-2 began (0 = still in pass-1).
+    /// Used by GUI to compute accurate pass-2 avg RPS (not diluted by pass-1 duration).
+    pub pass2_start_elapsed_ms: AtomicU64,
 
     // --- Error breakdown (sub-categories of `failed`) ---
     pub err_invalid_url: AtomicU64, // garbage/unparseable URLs (builder error)
@@ -110,6 +116,8 @@ impl Stats {
             done: AtomicBool::new(false),
             pass: AtomicU8::new(1),
             pass2_seeds: AtomicU64::new(0),
+            pass1_total: AtomicU64::new(0),
+            pass2_start_elapsed_ms: AtomicU64::new(0),
             err_invalid_url: AtomicU64::new(0),
             err_dns: AtomicU64::new(0),
             err_conn: AtomicU64::new(0),
