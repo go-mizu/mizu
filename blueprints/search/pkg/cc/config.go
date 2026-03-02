@@ -84,6 +84,13 @@ func (c Config) RecrawlDir() string {
 	return filepath.Join(c.CrawlDir(), "recrawl")
 }
 
+// RecrawlWarcDir returns the WARC output directory for a CC recrawl run.
+// fileNum is typically a zero-padded 5-digit index (e.g. "00000" for --file 0)
+// or "last" for --last mode, or "sample" for legacy --sample mode.
+func (c Config) RecrawlWarcDir(fileNum string) string {
+	return filepath.Join(c.RecrawlDir(), "warc", fileNum)
+}
+
 // DNSCachePath returns the path to the shared DNS cache.
 func (c Config) DNSCachePath() string {
 	return filepath.Join(c.CrawlDir(), "dns.duckdb")

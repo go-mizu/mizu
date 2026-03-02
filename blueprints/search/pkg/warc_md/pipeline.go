@@ -103,12 +103,22 @@ func RunInMemoryPipeline(ctx context.Context, cfg Config, inputFiles []string,
 		return nil, err
 	}
 
-	// Open DuckDB index
-	idx, err := mdpkg.OpenIndex(cfg.IndexPath(), 1000)
-	if err != nil {
-		return nil, fmt.Errorf("open index: %w", err)
+	// Open DuckDB index — or use a caller-provided shared one.
+	// cfg.NoIndex disables index writes entirely (perf benchmarking / parallel runs).
+	var idx *mdpkg.IndexDB
+	switch {
+	case cfg.NoIndex:
+		// idx stays nil; all idx.Add calls below are guarded
+	case cfg.SharedIndex != nil:
+		idx = cfg.SharedIndex // caller owns; don't defer Close
+	default:
+		var err error
+		idx, err = mdpkg.OpenIndex(cfg.IndexPath(), 1000)
+		if err != nil {
+			return nil, fmt.Errorf("open index: %w", err)
+		}
+		defer idx.Close()
 	}
-	defer idx.Close()
 
 	// Channel capacities: each holds ~500 items in flight between stages.
 	const chanCap = 500
@@ -188,19 +198,21 @@ func RunInMemoryPipeline(ctx context.Context, cfg Config, inputFiles []string,
 					if result.HTMLSize > 0 {
 						ratio = float64(result.MarkdownSize) / float64(result.HTMLSize)
 					}
-					idx.Add(mdpkg.IndexRecord{
-						CID:              item.RecordID,
-						HTMLSize:         result.HTMLSize,
-						MarkdownSize:     result.MarkdownSize,
-						HTMLTokens:       result.HTMLTokens,
-						MarkdownTokens:   result.MarkdownTokens,
-						CompressionRatio: ratio,
-						Title:            truncate(result.Title, 500),
-						Language:         result.Language,
-						HasContent:       result.HasContent,
-						ConvertMs:        result.ConvertMs,
-						Error:            result.Error,
-					})
+					if idx != nil {
+						idx.Add(mdpkg.IndexRecord{
+							CID:              item.RecordID,
+							HTMLSize:         result.HTMLSize,
+							MarkdownSize:     result.MarkdownSize,
+							HTMLTokens:       result.HTMLTokens,
+							MarkdownTokens:   result.MarkdownTokens,
+							CompressionRatio: ratio,
+							Title:            truncate(result.Title, 500),
+							Language:         result.Language,
+							HasContent:       result.HasContent,
+							ConvertMs:        result.ConvertMs,
+							Error:            result.Error,
+						})
+					}
 
 					if result.Error != "" || !result.HasContent || result.Markdown == "" {
 						errCount.Add(1)

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use crawler_lib::bodystore::AsyncBodyStore;
+use crawler_lib::warcstore::AsyncWarcStore;
 use crawler_lib::config::{Config, EngineType, WriterType};
 use crawler_lib::job::run_job;
 use crawler_lib::seed::vec_to_receiver;
@@ -33,8 +33,8 @@ pub struct DiskPaths {
     pub failures_dir: Option<PathBuf>,
     /// failed.duckdb path
     pub failed_db: Option<PathBuf>,
-    /// CAS body store dir
-    pub bodies_dir: Option<PathBuf>,
+    /// WARC store dir
+    pub warc_dir: Option<PathBuf>,
 }
 
 /// Recursively sum file sizes and count files in a directory. Returns (file_count, bytes).
@@ -145,7 +145,7 @@ pub fn spawn_disk_sampler(stats: Arc<Stats>, paths: DiskPaths) {
                     let (_, bytes) = scan_dir(d);
                     s.disk_failures_mb.store(bytes_to_mb(bytes), Ordering::Relaxed);
                 }
-                if let Some(ref d) = p.bodies_dir {
+                if let Some(ref d) = p.warc_dir {
                     let (cnt, bytes) = scan_dir(d);
                     s.disk_bodies_count.store(cnt, Ordering::Relaxed);
                     s.disk_bodies_mb.store(bytes_to_mb(bytes), Ordering::Relaxed);
@@ -352,7 +352,8 @@ pub struct CrawlJobParamsStreaming {
     pub db_shards: usize,
     pub db_mem_mb: usize,
     pub no_tui: bool,
-    pub body_store_dir: Option<String>,
+    pub warc_store_dir: Option<String>,
+    pub warc_compress: bool,
     pub gui: bool,
     pub gui_port: u16,
     pub flusher_threads: usize,
@@ -382,9 +383,11 @@ pub struct CrawlJobParams {
     pub db_shards: usize,
     pub db_mem_mb: usize,
     pub no_tui: bool,
-    /// Optional body store directory. When set, HTML bodies are stored in a
-    /// content-addressable store (SHA-256, gzip) and body_cid is populated.
-    pub body_store_dir: Option<String>,
+    /// Optional WARC 1.1 store directory. When set, HTML responses are stored as WARC files
+    /// and warc_id is populated in results.
+    pub warc_store_dir: Option<String>,
+    /// Write gzip-compressed .warc.gz files (default: false).
+    pub warc_compress: bool,
     /// Enable web GUI dashboard (disables TUI).
     pub gui: bool,
     /// GUI server port (default 9111).
@@ -437,11 +440,11 @@ pub async fn run_crawl_job(params: CrawlJobParams) -> Result<()> {
     if params.pass2_workers > 0 {
         cfg.pass2_workers = params.pass2_workers;
     }
-    if let Some(ref dir) = params.body_store_dir {
+    if let Some(ref dir) = params.warc_store_dir {
         let resolved = expand_home(dir);
-        let store = AsyncBodyStore::new(&resolved)?;
-        cfg.body_store = Some(Arc::new(store));
-        println!("Body store: {}", resolved.display());
+        let store = AsyncWarcStore::new(&resolved, params.warc_compress)?;
+        cfg.warc_store = Some(Arc::new(store));
+        println!("WARC store: {}", resolved.display());
     }
 
     // Build disk paths for live disk stats
@@ -461,7 +464,7 @@ pub async fn run_crawl_job(params: CrawlJobParams) -> Result<()> {
         // Only track failed.duckdb when retry is enabled — avoids slow COUNT(*) on
         // the large accumulated file when --no-retry skips the DuckDB drain entirely.
         failed_db: if params.no_retry { None } else { Some(failed_db_path.clone()) },
-        bodies_dir: params.body_store_dir.as_deref().map(expand_home),
+        warc_dir: params.warc_store_dir.as_deref().map(expand_home),
     };
     spawn_disk_sampler(live_stats.clone(), disk_paths.clone());
 
@@ -555,8 +558,8 @@ pub async fn run_crawl_job(params: CrawlJobParams) -> Result<()> {
         None
     };
 
-    // Clone body store handle before cfg is moved into run_job, so we can close it after.
-    let body_store_handle = cfg.body_store.clone();
+    // Clone WARC store handle before cfg is moved into run_job, so we can close it after.
+    let warc_store_handle = cfg.warc_store.clone();
 
     // Convert Vec<SeedURL> to a closed receiver — enables the streaming engine interface.
     let (seed_rx, seed_count) = vec_to_receiver(params.seeds);
@@ -575,8 +578,8 @@ pub async fn run_crawl_job(params: CrawlJobParams) -> Result<()> {
     .await?;
 
     let total_elapsed = job_start.elapsed();
-    // Flush pending async body writes before closing the result writer.
-    if let Some(ref store) = body_store_handle {
+    // Flush pending async WARC writes before closing the result writer.
+    if let Some(ref store) = warc_store_handle {
         store.close()?;
     }
     result_writer.close()?;
@@ -645,11 +648,11 @@ pub async fn run_crawl_job_streaming(params: CrawlJobParamsStreaming) -> Result<
     if params.pass2_workers > 0 {
         cfg.pass2_workers = params.pass2_workers;
     }
-    if let Some(ref dir) = params.body_store_dir {
+    if let Some(ref dir) = params.warc_store_dir {
         let resolved = expand_home(dir);
-        let store = AsyncBodyStore::new(&resolved)?;
-        cfg.body_store = Some(Arc::new(store));
-        println!("Body store: {}", resolved.display());
+        let store = AsyncWarcStore::new(&resolved, params.warc_compress)?;
+        cfg.warc_store = Some(Arc::new(store));
+        println!("WARC store: {}", resolved.display());
     }
 
     let disk_paths = DiskPaths {
@@ -666,7 +669,7 @@ pub async fn run_crawl_job_streaming(params: CrawlJobParamsStreaming) -> Result<
             _ => None,
         },
         failed_db: if params.no_retry { None } else { Some(failed_db_path.clone()) },
-        bodies_dir: params.body_store_dir.as_deref().map(expand_home),
+        warc_dir: params.warc_store_dir.as_deref().map(expand_home),
     };
     spawn_disk_sampler(live_stats.clone(), disk_paths.clone());
 
@@ -755,7 +758,7 @@ pub async fn run_crawl_job_streaming(params: CrawlJobParamsStreaming) -> Result<
         None
     };
 
-    let body_store_handle = cfg.body_store.clone();
+    let warc_store_handle = cfg.warc_store.clone();
 
     let job_result = run_job(
         params.seed_rx,
@@ -770,7 +773,7 @@ pub async fn run_crawl_job_streaming(params: CrawlJobParamsStreaming) -> Result<
     .await?;
 
     let total_elapsed = job_start.elapsed();
-    if let Some(ref store) = body_store_handle {
+    if let Some(ref store) = warc_store_handle {
         store.close()?;
     }
     result_writer.close()?;

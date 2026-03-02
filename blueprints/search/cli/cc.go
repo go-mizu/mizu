@@ -1016,7 +1016,7 @@ Examples:
 	cmd.Flags().IntVar(&dbMemMB, "db-mem-mb", 0, "DuckDB memory per shard in MB (0=auto: 15% avail RAM / shards)")
 	cmd.Flags().IntVar(&dbShards, "db-shards", 0, "ResultDB shard count (0=auto: clamp(CPUs×2, 4, 16))")
 	cmd.Flags().StringVar(&chunkMode, "chunk-mode", "stream", "Seed delivery mode: stream|pipeline|batch (stream: sort-then-stream; pipeline: low-memory cursor from seed DB, use for >1M seeds to prevent OOM; batch: N-domain chunks)")
-	cmd.Flags().StringVar(&warcDir, "warc-dir", "~/data/common-crawl/warc", "WARC 1.1 store directory; HTML responses stored as {uuid}.warc[.gz] files")
+	cmd.Flags().StringVar(&warcDir, "warc-dir", "auto", "WARC 1.1 store directory; 'auto' = {recrawl-dir}/warc/{fileNum}/ (default)")
 	cmd.Flags().BoolVar(&noWarc, "no-warc", false, "Disable WARC store (skip saving HTML responses as WARC files)")
 	cmd.Flags().BoolVar(&warcCompress, "warc-compress", false, "Write gzip-compressed .warc.gz files (smaller; requires decompression to read)")
 
@@ -1097,6 +1097,21 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 		mode = "file"
 	} else if opts.importOnly {
 		mode = "sample" // import-only always uses DuckDB path
+	}
+
+	// Auto-compute WARC dir: {recrawl-dir}/warc/{fileNum}/
+	// "auto" (default) means enabled with an auto-computed path.
+	// "" means disabled (set by --no-warc / --status-only / --head-only via closure).
+	if opts.warcDir == "auto" {
+		fileNum := "last"
+		if mode == "file" {
+			if _, idx, parseErr := ccParseParquetSelector(opts.file); parseErr == nil {
+				fileNum = fmt.Sprintf("%05d", idx)
+			}
+		} else if mode == "sample" {
+			fileNum = "sample"
+		}
+		opts.warcDir = ccCfg.RecrawlWarcDir(fileNum)
 	}
 
 	var seeds []recrawler.SeedURL

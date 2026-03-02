@@ -67,14 +67,18 @@ pub struct RecrawlArgs {
     #[arg(long)]
     pub no_tui: bool,
 
-    /// Body CAS store directory (default: ~/data/hn/bodies).
-    /// HTML bodies are stored as sha256:{hex}.gz; body_cid is populated in results.
-    #[arg(long, default_value = "~/data/hn/bodies")]
-    pub body_store: String,
+    /// WARC 1.1 store directory (default: ~/data/hn/recrawl/warc/).
+    /// HTML responses are stored as WARC files; warc_id is populated in results.
+    #[arg(long, default_value = "auto")]
+    pub warc_dir: String,
 
-    /// Disable body CAS store (skip saving HTML bodies)
+    /// Disable WARC store (skip saving HTML responses as WARC files)
     #[arg(long)]
-    pub no_body_store: bool,
+    pub no_warc: bool,
+
+    /// Write gzip-compressed .warc.gz files (default: uncompressed)
+    #[arg(long)]
+    pub warc_compress: bool,
 
     /// Enable web GUI dashboard (disables TUI)
     #[arg(long)]
@@ -130,7 +134,16 @@ pub async fn run_recrawl(args: RecrawlArgs) -> Result<()> {
     };
     println!("Output directory: {}", output_dir.display());
 
-    // 3. Run crawl job
+    // 3. Resolve WARC store dir: "auto" → ~/data/hn/recrawl/warc/
+    let warc_store_dir = if args.no_warc {
+        None
+    } else if args.warc_dir == "auto" {
+        Some(expand_home("~/data/hn/recrawl/warc").to_string_lossy().into_owned())
+    } else {
+        Some(args.warc_dir)
+    };
+
+    // 4. Run crawl job
     run_crawl_job(CrawlJobParams {
         title: "HN Recrawl".to_string(),
         seeds,
@@ -147,7 +160,8 @@ pub async fn run_recrawl(args: RecrawlArgs) -> Result<()> {
         db_shards: args.db_shards,
         db_mem_mb: args.db_mem_mb,
         no_tui: args.no_tui,
-        body_store_dir: if args.no_body_store { None } else { Some(args.body_store) },
+        warc_store_dir,
+        warc_compress: args.warc_compress,
         gui: args.gui,
         gui_port: args.gui_port,
         flusher_threads: args.flusher_threads,
