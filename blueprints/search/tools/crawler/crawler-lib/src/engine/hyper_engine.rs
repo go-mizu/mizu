@@ -129,34 +129,33 @@ impl super::Engine for HyperEngine {
         let (url_tx, url_rx) =
             async_channel::bounded::<(SeedURL, Arc<DomainEntry>)>(workers * 4);
 
-        // Round-robin producer.
+        // Producer: round-robin interleaving — O(total_seeds), zero wasted iterations.
+        // VecDeque approach: pop front domain, send one URL, push back if more remain.
         let dm = Arc::clone(&domain_map);
         let producer = tokio::spawn(async move {
-            let domain_batches: Vec<(Vec<SeedURL>, Arc<DomainEntry>)> = batches
+            use std::collections::VecDeque;
+            let mut queue: VecDeque<(VecDeque<SeedURL>, Arc<DomainEntry>)> = batches
                 .into_iter()
                 .filter_map(|batch| {
                     dm.get(&batch.domain)
-                        .map(|e| (batch.urls, Arc::clone(e.value())))
+                        .map(|e| (VecDeque::from(batch.urls), Arc::clone(e.value())))
                 })
                 .collect();
 
-            let max_len = domain_batches
-                .iter()
-                .map(|(urls, _)| urls.len())
-                .max()
-                .unwrap_or(0);
-
-            for slot in 0..max_len {
-                for (urls, entry) in &domain_batches {
-                    if let Some(url) = urls.get(slot) {
-                        if url_tx
-                            .send((url.clone(), Arc::clone(entry)))
-                            .await
-                            .is_err()
-                        {
-                            return;
-                        }
-                    }
+            while let Some((mut urls, entry)) = queue.pop_front() {
+                let url = match urls.pop_front() {
+                    Some(u) => u,
+                    None => continue,
+                };
+                if url_tx
+                    .send((url, Arc::clone(&entry)))
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+                if !urls.is_empty() {
+                    queue.push_back((urls, entry));
                 }
             }
         });

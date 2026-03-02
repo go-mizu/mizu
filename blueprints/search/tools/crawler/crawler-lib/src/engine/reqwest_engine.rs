@@ -136,42 +136,36 @@ impl super::Engine for ReqwestEngine {
         let (url_tx, url_rx) =
             async_channel::bounded::<(SeedURL, Arc<DomainEntry>)>(workers * 4);
 
-        // Producer: send URLs in round-robin domain order to prevent semaphore clustering.
+        // Producer: round-robin interleaving — O(total_seeds), zero wasted iterations.
         //
-        // Sorted domain order [A1,A2,A3..An, B1,B2..Bn, ...] causes workers to cluster on
-        // the same domain's semaphore simultaneously. Round-robin order [A1,B1,C1,...,A2,B2,...]
-        // ensures each "wave" of workers hits different domains, eliminating semaphore contention
-        // and spreading DNS resolution across many nameservers simultaneously.
+        // Uses a VecDeque of (remaining_urls, domain_entry): pop front domain, send one
+        // URL, push back if the domain has more. This replaces the old O(max_len × num_domains)
+        // nested loop which wasted ~99% of iterations on None checks with CC p:0 data.
         let dm = Arc::clone(&domain_map);
         let producer = tokio::spawn(async move {
-            // Pair each batch's URL list with its pre-created domain entry.
-            let domain_batches: Vec<(Vec<SeedURL>, Arc<DomainEntry>)> = batches
+            use std::collections::VecDeque;
+            let mut queue: VecDeque<(VecDeque<SeedURL>, Arc<DomainEntry>)> = batches
                 .into_iter()
                 .filter_map(|batch| {
                     dm.get(&batch.domain)
-                        .map(|e| (batch.urls, Arc::clone(e.value())))
+                        .map(|e| (VecDeque::from(batch.urls), Arc::clone(e.value())))
                 })
                 .collect();
 
-            let max_len = domain_batches
-                .iter()
-                .map(|(urls, _)| urls.len())
-                .max()
-                .unwrap_or(0);
-
-            // Send slot[i] from every domain before sending slot[i+1].
-            // Result: [A_slot0, B_slot0, C_slot0, ..., A_slot1, B_slot1, ...]
-            for slot in 0..max_len {
-                for (urls, entry) in &domain_batches {
-                    if let Some(url) = urls.get(slot) {
-                        if url_tx
-                            .send((url.clone(), Arc::clone(entry)))
-                            .await
-                            .is_err()
-                        {
-                            return; // receivers all dropped
-                        }
-                    }
+            while let Some((mut urls, entry)) = queue.pop_front() {
+                let url = match urls.pop_front() {
+                    Some(u) => u,
+                    None => continue,
+                };
+                if url_tx
+                    .send((url, Arc::clone(&entry)))
+                    .await
+                    .is_err()
+                {
+                    return; // receivers all dropped
+                }
+                if !urls.is_empty() {
+                    queue.push_back((urls, entry));
                 }
             }
             // url_tx dropped here → channel closes when all receivers see EOF

@@ -37,6 +37,28 @@ pub fn group_by_domain(mut seeds: Vec<SeedURL>) -> Vec<DomainBatch> {
     batches
 }
 
+/// Interleave URLs from multiple domain batches in round-robin order.
+///
+/// Example: batches A=[1,2], B=[1] → [A1, B1, A2]
+/// This is O(total_urls) — no wasted iterations for exhausted domains.
+pub fn interleave_by_domain(batches: Vec<DomainBatch>) -> Vec<SeedURL> {
+    use std::collections::VecDeque;
+    let mut queue: VecDeque<VecDeque<SeedURL>> = batches
+        .into_iter()
+        .map(|b| VecDeque::from(b.urls))
+        .collect();
+    let mut result = Vec::new();
+    while let Some(mut urls) = queue.pop_front() {
+        if let Some(url) = urls.pop_front() {
+            result.push(url);
+            if !urls.is_empty() {
+                queue.push_back(urls);
+            }
+        }
+    }
+    result
+}
+
 /// Per-domain state tracking during crawl.
 /// Used by engine workers to decide when to abandon a domain.
 pub struct DomainState {
@@ -137,5 +159,46 @@ mod tests {
         state.successes = 5;
         state.timeouts = 3;
         assert!(!state.should_abandon(3, 10, 20, 4));
+    }
+
+    #[test]
+    fn test_interleave_sends_all_urls() {
+        let seeds: Vec<SeedURL> = (0..100)
+            .map(|i| SeedURL {
+                url: format!("https://d{}.com/page{}", i % 5, i),
+                domain: format!("d{}.com", i % 5),
+            })
+            .collect();
+        let batches = group_by_domain(seeds);
+        let result = interleave_by_domain(batches);
+        assert_eq!(result.len(), 100, "all URLs must be delivered");
+    }
+
+    #[test]
+    fn test_interleave_round_robin_order() {
+        // a has 2 URLs, b has 1 URL → round-robin: a0, b0, a1
+        let seeds = vec![
+            SeedURL { url: "https://a.com/1".into(), domain: "a.com".into() },
+            SeedURL { url: "https://a.com/2".into(), domain: "a.com".into() },
+            SeedURL { url: "https://b.com/1".into(), domain: "b.com".into() },
+        ];
+        let batches = group_by_domain(seeds);
+        let result = interleave_by_domain(batches);
+        assert_eq!(result.len(), 3);
+        // First URL from a, first from b, then second from a
+        assert_eq!(result[0].domain, "a.com");
+        assert_eq!(result[1].domain, "b.com");
+        assert_eq!(result[2].domain, "a.com");
+    }
+
+    #[test]
+    fn test_interleave_single_domain() {
+        let seeds = vec![
+            SeedURL { url: "https://only.com/1".into(), domain: "only.com".into() },
+            SeedURL { url: "https://only.com/2".into(), domain: "only.com".into() },
+        ];
+        let batches = group_by_domain(seeds);
+        let result = interleave_by_domain(batches);
+        assert_eq!(result.len(), 2);
     }
 }
