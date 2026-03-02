@@ -250,6 +250,7 @@ fn render(frame: &mut ratatui::Frame, stats: &Stats, cfg: &TuiConfig, state: &Re
 
     // System
     let mem_rss = stats.mem_rss_mb.load(Ordering::Relaxed);
+    let mem_total = stats.mem_total_mb.load(Ordering::Relaxed);
     let net_rx = stats.net_rx_bps.load(Ordering::Relaxed);
     let net_tx = stats.net_tx_bps.load(Ordering::Relaxed);
     let open_fds = stats.open_fds.load(Ordering::Relaxed);
@@ -324,7 +325,7 @@ fn render(frame: &mut ratatui::Frame, stats: &Stats, cfg: &TuiConfig, state: &Re
         avg_rps, peak_rps, elapsed, eta,
         s2xx, s3xx, s4xx, s5xx,
         dom_total, dom_abandoned,
-        mem_rss, net_rx, net_tx, open_fds,
+        mem_rss, mem_total, net_rx, net_tx, open_fds,
         state,
     );
     render_progress(frame, progress_area, ratio, total, total_seeds, eta);
@@ -344,7 +345,7 @@ fn render_main(
     avg_rps: f64, peak_rps: u64, elapsed: Duration, eta: Option<Duration>,
     s2xx: u64, s3xx: u64, s4xx: u64, s5xx: u64,
     dom_total: u64, dom_abandoned: u64,
-    mem_rss: u64, net_rx: u64, net_tx: u64, open_fds: u64,
+    mem_rss: u64, mem_total: u64, net_rx: u64, net_tx: u64, open_fds: u64,
     state: &RenderState,
 ) {
     let [left, right] = Layout::horizontal([
@@ -357,7 +358,7 @@ fn render_main(
         frame, right, avg_rps, peak_rps, elapsed, eta,
         s2xx, s3xx, s4xx, s5xx,
         dom_total, dom_abandoned,
-        mem_rss, net_rx, net_tx, open_fds,
+        mem_rss, mem_total, net_rx, net_tx, open_fds,
         state,
     );
 }
@@ -423,7 +424,7 @@ fn render_throughput(
     avg_rps: f64, peak_rps: u64, elapsed: Duration, eta: Option<Duration>,
     s2xx: u64, s3xx: u64, s4xx: u64, s5xx: u64,
     dom_total: u64, dom_abandoned: u64,
-    mem_rss: u64, net_rx: u64, net_tx: u64, open_fds: u64,
+    mem_rss: u64, mem_total: u64, net_rx: u64, net_tx: u64, open_fds: u64,
     state: &RenderState,
 ) {
     let dim = Style::default().fg(Color::DarkGray);
@@ -501,7 +502,12 @@ fn render_throughput(
     let sys_line = if mem_rss > 0 || open_fds > 0 {
         let mut parts: Vec<Span> = vec![Span::styled(" Sys ", dim)];
         if mem_rss > 0 {
-            parts.push(Span::styled(format!("{}MB", mem_rss), Style::default().fg(Color::Magenta)));
+            let ram_str = if mem_total > 0 {
+                format!("{}/{} MB", mem_rss, mem_total)
+            } else {
+                format!("{} MB", mem_rss)
+            };
+            parts.push(Span::styled(ram_str, Style::default().fg(Color::Magenta)));
             parts.push(Span::styled("  ", dim));
         }
         if open_fds > 0 {

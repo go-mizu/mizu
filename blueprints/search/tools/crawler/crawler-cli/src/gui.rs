@@ -174,6 +174,7 @@ struct StatsPayload {
 
     // System resources
     mem_rss_mb: u64,
+    mem_total_mb: u64,
     net_rx_bps: u64,
     net_tx_bps: u64,
     open_fds: u64,
@@ -227,6 +228,7 @@ fn snapshot_stats(stats: &Stats) -> StatsPayload {
         domains_done: stats.domains_done.load(Ordering::Relaxed),
         domains_abandoned: stats.domains_abandoned.load(Ordering::Relaxed),
         mem_rss_mb: stats.mem_rss_mb.load(Ordering::Relaxed),
+        mem_total_mb: stats.mem_total_mb.load(Ordering::Relaxed),
         net_rx_bps: stats.net_rx_bps.load(Ordering::Relaxed),
         net_tx_bps: stats.net_tx_bps.load(Ordering::Relaxed),
         open_fds: stats.open_fds.load(Ordering::Relaxed),

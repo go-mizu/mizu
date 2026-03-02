@@ -60,6 +60,8 @@ pub struct Stats {
     // --- System resources (updated by sysmon task) ---
     /// RSS memory in MB (of this process)
     pub mem_rss_mb: AtomicU64,
+    /// Total system RAM in MB (set once at startup)
+    pub mem_total_mb: AtomicU64,
     /// Network bytes sent since last sample (per second)
     pub net_tx_bps: AtomicU64,
     /// Network bytes received since last sample (per second)
@@ -109,6 +111,7 @@ impl Stats {
             domains_done: AtomicU64::new(0),
             domains_abandoned: AtomicU64::new(0),
             mem_rss_mb: AtomicU64::new(0),
+            mem_total_mb: AtomicU64::new(0),
             net_tx_bps: AtomicU64::new(0),
             net_rx_bps: AtomicU64::new(0),
             open_fds: AtomicU64::new(0),

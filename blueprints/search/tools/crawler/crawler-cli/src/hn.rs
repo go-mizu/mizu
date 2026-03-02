@@ -67,10 +67,14 @@ pub struct RecrawlArgs {
     #[arg(long)]
     pub no_tui: bool,
 
-    /// Body CAS store directory (e.g. ~/data/hn/bodies).
-    /// When set, HTML bodies are stored as sha256:{hex}.gz and body_cid is populated.
+    /// Body CAS store directory (default: ~/data/hn/bodies).
+    /// HTML bodies are stored as sha256:{hex}.gz; body_cid is populated in results.
+    #[arg(long, default_value = "~/data/hn/bodies")]
+    pub body_store: String,
+
+    /// Disable body CAS store (skip saving HTML bodies)
     #[arg(long)]
-    pub body_store: Option<String>,
+    pub no_body_store: bool,
 
     /// Enable web GUI dashboard (disables TUI)
     #[arg(long)]
@@ -125,7 +129,7 @@ pub async fn run_recrawl(args: RecrawlArgs) -> Result<()> {
         db_shards: args.db_shards,
         db_mem_mb: args.db_mem_mb,
         no_tui: args.no_tui,
-        body_store_dir: args.body_store,
+        body_store_dir: if args.no_body_store { None } else { Some(args.body_store) },
         gui: args.gui,
         gui_port: args.gui_port,
     })

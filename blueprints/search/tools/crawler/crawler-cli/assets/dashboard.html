@@ -726,7 +726,11 @@ es.onmessage = function(e) {
   $('s5xx').textContent = fmt(s.status_5xx);
 
   // System
-  if (s.mem_rss_mb > 0) $('sysRam').textContent = s.mem_rss_mb + ' MB';
+  if (s.mem_rss_mb > 0) {
+    $('sysRam').textContent = s.mem_total_mb > 0
+      ? s.mem_rss_mb + ' / ' + s.mem_total_mb + ' MB'
+      : s.mem_rss_mb + ' MB';
+  }
   if (s.open_fds > 0) $('sysFds').textContent = fmt(s.open_fds);
   const netTotal = s.net_rx_bps + s.net_tx_bps;
   if (netTotal > 0) $('sysNet').textContent = fmtBytesRate(netTotal);

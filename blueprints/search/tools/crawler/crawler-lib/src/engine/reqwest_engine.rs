@@ -526,6 +526,10 @@ pub(crate) async fn spawn_sysmon(stats: Arc<Stats>) {
     let mut interval = tokio::time::interval(Duration::from_millis(500));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+    // Set total RAM once at startup.
+    sys.refresh_memory();
+    stats.mem_total_mb.store(sys.total_memory() / (1024 * 1024), Ordering::Relaxed);
+
     loop {
         interval.tick().await;
         if stats.done.load(Ordering::Relaxed) {

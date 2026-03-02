@@ -198,7 +198,7 @@ pub fn drain_to_duckdb(seg_dir: &Path, cfg: &BinDrainConfig) -> Result<u64> {
 
     let start = std::time::Instant::now();
 
-    // Phase 1: Read all segments sequentially.
+    // Phase 1: Read all segments sequentially (no deletion yet).
     let mut all_records: Vec<CrawlResult> = Vec::new();
     for (i, path) in paths.iter().enumerate() {
         let seg_start = std::time::Instant::now();
@@ -213,8 +213,6 @@ pub fn drain_to_duckdb(seg_dir: &Path, cfg: &BinDrainConfig) -> Result<u64> {
             seg_start.elapsed().as_secs_f64(),
         );
         all_records.append(&mut records);
-        std::fs::remove_file(path)
-            .with_context(|| format!("failed to delete drained segment {:?}", path))?;
     }
 
     let total = all_records.len() as u64;
@@ -264,6 +262,12 @@ pub fn drain_to_duckdb(seg_dir: &Path, cfg: &BinDrainConfig) -> Result<u64> {
 
     if let Some(e) = errors.into_iter().next() {
         return Err(e);
+    }
+
+    // Phase 3: Delete segments only after successful DuckDB write.
+    for path in &paths {
+        std::fs::remove_file(path)
+            .with_context(|| format!("failed to delete drained segment {:?}", path))?;
     }
 
     println!(
