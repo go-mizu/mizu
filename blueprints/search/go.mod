@@ -3,9 +3,11 @@ module github.com/go-mizu/mizu/blueprints/search
 go 1.25.0
 
 require (
+	github.com/ClickHouse/clickhouse-go/v2 v2.43.0
 	github.com/DataDog/zstd v1.5.7
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.0
 	github.com/anacrolix/torrent v1.61.0
+	github.com/anyproto/tantivy-go v1.0.6
 	github.com/bits-and-blooms/bloom/v3 v3.7.1
 	github.com/blevesearch/bleve/v2 v2.5.7
 	github.com/blugelabs/bluge v0.2.2
@@ -56,7 +58,6 @@ require (
 	charm.land/lipgloss/v2 v2.0.0 // indirect
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/ClickHouse/ch-go v0.71.0 // indirect
-	github.com/ClickHouse/clickhouse-go/v2 v2.43.0 // indirect
 	github.com/JohannesKaufmann/dom v0.2.0 // indirect
 	github.com/PuerkitoBio/goquery v1.11.0 // indirect
 	github.com/RadhiFadlillah/whatlanggo v0.0.0-20240916001553-aac1f0f737fc // indirect
@@ -242,7 +243,6 @@ require (
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel v1.40.0 // indirect
 	go.opentelemetry.io/otel/metric v1.40.0 // indirect
-	go.opentelemetry.io/otel/sdk v1.39.0 // indirect
 	go.opentelemetry.io/otel/trace v1.40.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
