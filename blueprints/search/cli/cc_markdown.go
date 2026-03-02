@@ -27,6 +27,7 @@ func newCCMarkdown() *cobra.Command {
 		phases           bool
 		keepIntermediate bool
 		inMemory         bool
+		compress         bool
 	)
 
 	cmd := &cobra.Command{
@@ -66,9 +67,9 @@ Directories (relative to body-store parent):
 				return cmd.Help()
 			}
 			if inMemory {
-				return runCCMarkdownPipeline(cmd.Context(), crawlID, warcDir, workers, force, fast, cpuProfile)
+				return runCCMarkdownPipeline(cmd.Context(), crawlID, warcDir, workers, force, fast, compress, cpuProfile)
 			}
-			return runCCMarkdownPhases(cmd.Context(), crawlID, warcDir, workers, force, fast, keepIntermediate, cpuProfile)
+			return runCCMarkdownPhases(cmd.Context(), crawlID, warcDir, workers, force, fast, keepIntermediate, compress, cpuProfile)
 		},
 	}
 
@@ -81,6 +82,7 @@ Directories (relative to body-store parent):
 	cmd.Flags().BoolVar(&phases, "phases", false, "Run 3-phase pipeline with per-phase stats and worker auto-tune")
 	cmd.Flags().BoolVar(&keepIntermediate, "keep-intermediate", false, "Keep html/ and md/*.md files after pipeline (default: auto-delete)")
 	cmd.Flags().BoolVar(&inMemory, "mem", false, "Streaming pipeline: no intermediate html/ or md/ dirs (fastest)")
+	cmd.Flags().BoolVar(&compress, "compress", false, "Compress output to .md.gz (default: uncompressed .md)")
 
 	return cmd
 }
@@ -231,7 +233,7 @@ func autoTuneWorkers(ctx context.Context, htmlDir string, fast bool) int {
 
 // ─── pipeline ────────────────────────────────────────────────────────────────
 
-func runCCMarkdownPhases(ctx context.Context, crawlID, warcDir string, workers int, force, fast, keepIntermediate bool, cpuProfile string) error {
+func runCCMarkdownPhases(ctx context.Context, crawlID, warcDir string, workers int, force, fast, keepIntermediate, compress bool, cpuProfile string) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("  HTML → Markdown   3-Phase Pipeline"))
 	fmt.Println()
@@ -270,9 +272,15 @@ func runCCMarkdownPhases(ctx context.Context, crawlID, warcDir string, workers i
 
 	base := filepath.Dir(warcDir)
 	htmlDir := filepath.Join(base, "html")
-	mdDir := filepath.Join(base, "md")
-	mdGzDir := filepath.Join(base, "md-gz")
-	indexPath := filepath.Join(mdDir, "index.duckdb")
+	convertOutputDir := filepath.Join(base, "markdown")
+	convertOutputName := "markdown"
+	mdGzDir := ""
+	if compress {
+		convertOutputDir = filepath.Join(base, "md")
+		convertOutputName = "md"
+		mdGzDir = filepath.Join(base, "md-gz")
+	}
+	indexPath := filepath.Join(convertOutputDir, "index.duckdb")
 
 	extractor := "trafilatura (quality)"
 	if fast {
@@ -285,8 +293,12 @@ func runCCMarkdownPhases(ctx context.Context, crawlID, warcDir string, workers i
 
 	fmt.Printf("  warc/     %s\n", labelStyle.Render(warcDir))
 	fmt.Printf("  html/     %s\n", labelStyle.Render(htmlDir))
-	fmt.Printf("  md/       %s\n", labelStyle.Render(mdDir))
-	fmt.Printf("  md-gz/    %s\n", labelStyle.Render(mdGzDir))
+	if compress {
+		fmt.Printf("  md/       %s\n", labelStyle.Render(convertOutputDir))
+		fmt.Printf("  md-gz/    %s\n", labelStyle.Render(mdGzDir))
+	} else {
+		fmt.Printf("  markdown/ %s\n", labelStyle.Render(convertOutputDir))
+	}
 	fmt.Printf("  Engine    %s\n", infoStyle.Render(extractor))
 	fmt.Printf("  Workers   %s\n", infoStyle.Render(workersStr))
 	if force {
@@ -308,7 +320,11 @@ func runCCMarkdownPhases(ctx context.Context, crawlID, warcDir string, workers i
 	// ═══════════════════════════════════════════════════════════════════
 	// Phase 1 — Extract   warc/**/*.warc → html/*.html
 	// ═══════════════════════════════════════════════════════════════════
-	fmt.Println(subtitleStyle.Render("  Phase 1 / 3 — Extract   warc/**/*.warc → html/*.html"))
+	nPhases := "3"
+	if !compress {
+		nPhases = "2"
+	}
+	fmt.Println(subtitleStyle.Render(fmt.Sprintf("  Phase 1 / %s — Extract   warc/**/*.warc → html/*.html", nPhases)))
 	fmt.Println()
 	memBef1 := memSysMB()
 
@@ -344,13 +360,13 @@ func runCCMarkdownPhases(ctx context.Context, crawlID, warcDir string, workers i
 	// ═══════════════════════════════════════════════════════════════════
 	// Phase 2 — Convert   html/*.html → md/*.md
 	// ═══════════════════════════════════════════════════════════════════
-	fmt.Println(subtitleStyle.Render("  Phase 2 / 3 — Convert   html/*.html → md/*.md"))
+	fmt.Println(subtitleStyle.Render(fmt.Sprintf("  Phase 2 / %s — Convert   html/*.html → %s/*.md", nPhases, convertOutputName)))
 	fmt.Println()
 	memBef2 := memSysMB()
 
 	s2, err := markdown.RunConvertPhase(ctx, markdown.ConvertPhaseConfig{
 		InputDir:  htmlDir,
-		OutputDir: mdDir,
+		OutputDir: convertOutputDir,
 		IndexPath: indexPath,
 		Workers:   workers,
 		Force:     force,
@@ -363,34 +379,39 @@ func runCCMarkdownPhases(ctx context.Context, crawlID, warcDir string, workers i
 	if err != nil {
 		return fmt.Errorf("phase 2 convert: %w", err)
 	}
-	disk2 := diskUsageBytes(mdDir)
-	mdPhaseEnd("Convert", s2, memBef2, memSysMB(), disk2, "md")
+	disk2 := diskUsageBytes(convertOutputDir)
+	mdPhaseEnd("Convert", s2, memBef2, memSysMB(), disk2, convertOutputName)
 	rows = append(rows, phaseRow{"Convert", s2, disk2})
 	fmt.Println()
 
-	// ═══════════════════════════════════════════════════════════════════
-	// Phase 3 — Compress   md/*.md → md-gz/*.md.gz
-	// ═══════════════════════════════════════════════════════════════════
-	fmt.Println(subtitleStyle.Render("  Phase 3 / 3 — Compress  md/*.md → md-gz/*.md.gz"))
-	fmt.Println()
-	memBef3 := memSysMB()
+	var s3 *markdown.PhaseStats
+	var disk3 int64
+	if compress {
+		// ═════════════════════════════════════════════════════════════════
+		// Phase 3 — Compress   md/*.md → md-gz/*.md.gz
+		// ═════════════════════════════════════════════════════════════════
+		fmt.Println(subtitleStyle.Render("  Phase 3 / 3 — Compress  md/*.md → md-gz/*.md.gz"))
+		fmt.Println()
+		memBef3 := memSysMB()
 
-	s3, err := markdown.RunCompress(ctx, markdown.CompressConfig{
-		InputDir:  mdDir,
-		OutputDir: mdGzDir,
-		Workers:   workers,
-		Force:     force,
-	}, func(done, total, errors, readBytes, writeBytes int64, elapsed time.Duration, peakMemMB float64) {
-		mdPhaseProgress("Compressing", done, total, errors, readBytes, writeBytes, elapsed, peakMemMB)
-	})
-	fmt.Printf("\r\033[K")
-	if err != nil {
-		return fmt.Errorf("phase 3 compress: %w", err)
+		var err3 error
+		s3, err3 = markdown.RunCompress(ctx, markdown.CompressConfig{
+			InputDir:  convertOutputDir,
+			OutputDir: mdGzDir,
+			Workers:   workers,
+			Force:     force,
+		}, func(done, total, errors, readBytes, writeBytes int64, elapsed time.Duration, peakMemMB float64) {
+			mdPhaseProgress("Compressing", done, total, errors, readBytes, writeBytes, elapsed, peakMemMB)
+		})
+		fmt.Printf("\r\033[K")
+		if err3 != nil {
+			return fmt.Errorf("phase 3 compress: %w", err3)
+		}
+		disk3 = diskUsageBytes(mdGzDir)
+		mdPhaseEnd("Compress", s3, memBef3, memSysMB(), disk3, "md-gz")
+		rows = append(rows, phaseRow{"Compress", s3, disk3})
+		fmt.Println()
 	}
-	disk3 := diskUsageBytes(mdGzDir)
-	mdPhaseEnd("Compress", s3, memBef3, memSysMB(), disk3, "md-gz")
-	rows = append(rows, phaseRow{"Compress", s3, disk3})
-	fmt.Println()
 
 	// ═══════════════════════════════════════════════════════════════════
 	// Final summary
@@ -433,12 +454,18 @@ func runCCMarkdownPhases(ctx context.Context, crawlID, warcDir string, workers i
 	if totalDuration.Seconds() > 0 {
 		overallRate = float64(s1.Files+s1.Skipped) / totalDuration.Seconds()
 	}
+	finalWriteBytes := s2.WriteBytes
+	finalDisk := disk2
+	if compress {
+		finalWriteBytes = s3.WriteBytes
+		finalDisk = disk3
+	}
 	fmt.Printf("  %-10s  %8s  %8s  %8s  %8s  %7.0f/s  %6.0fMB  %s\n",
 		"Total",
 		ccFmtInt64(s1.Files+s1.Skipped),
 		formatBytes(totalRead),
-		formatBytes(s3.WriteBytes),
-		formatBytes(disk3),
+		formatBytes(finalWriteBytes),
+		formatBytes(finalDisk),
 		overallRate,
 		peakRAM,
 		totalDuration.Round(time.Millisecond),
@@ -448,11 +475,18 @@ func runCCMarkdownPhases(ctx context.Context, crawlID, warcDir string, workers i
 
 	// Disk layout
 	fmt.Println(subtitleStyle.Render("  Disk layout:"))
-	fmt.Printf("  html/    %s\n", formatBytes(disk1))
-	fmt.Printf("  md/      %s\n", formatBytes(disk2))
-	fmt.Printf("  md-gz/   %s", formatBytes(disk3))
-	if disk1 > 0 && disk3 > 0 {
-		fmt.Printf("  (-%.1f%% vs html/)", (1.0-float64(disk3)/float64(disk1))*100)
+	fmt.Printf("  html/       %s\n", formatBytes(disk1))
+	if compress {
+		fmt.Printf("  md/         %s\n", formatBytes(disk2))
+		fmt.Printf("  md-gz/      %s", formatBytes(disk3))
+		if disk1 > 0 && disk3 > 0 {
+			fmt.Printf("  (-%.1f%% vs html/)", (1.0-float64(disk3)/float64(disk1))*100)
+		}
+	} else {
+		fmt.Printf("  markdown/   %s", formatBytes(disk2))
+		if disk1 > 0 && disk2 > 0 {
+			fmt.Printf("  (-%.1f%% vs html/)", (1.0-float64(disk2)/float64(disk1))*100)
+		}
 	}
 	fmt.Println()
 	fmt.Println()
@@ -485,21 +519,24 @@ func runCCMarkdownPhases(ctx context.Context, crawlID, warcDir string, workers i
 		} else {
 			fmt.Printf("  %s  removed html/  (%s freed)\n", successStyle.Render("✓"), formatBytes(disk1))
 		}
-		// Remove *.md files in md/ but keep index.duckdb
-		var mdRemoved int64
-		_ = filepath.WalkDir(mdDir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".md") {
+		// When compressing: remove intermediate md/*.md but keep index.duckdb
+		// When not compressing: markdown/ is the final output, keep it as-is
+		if compress {
+			var mdRemoved int64
+			_ = filepath.WalkDir(convertOutputDir, func(path string, d fs.DirEntry, err error) error {
+				if err != nil || d.IsDir() || !strings.HasSuffix(path, ".md") {
+					return nil
+				}
+				if info, e := d.Info(); e == nil {
+					mdRemoved += info.Size()
+				}
+				_ = os.Remove(path)
 				return nil
+			})
+			if mdRemoved > 0 {
+				fmt.Printf("  %s  removed md/*.md (%s freed, index.duckdb kept)\n",
+					successStyle.Render("✓"), formatBytes(mdRemoved))
 			}
-			if info, e := d.Info(); e == nil {
-				mdRemoved += info.Size()
-			}
-			_ = os.Remove(path)
-			return nil
-		})
-		if mdRemoved > 0 {
-			fmt.Printf("  %s  removed md/*.md (%s freed, index.duckdb kept)\n",
-				successStyle.Render("✓"), formatBytes(mdRemoved))
 		}
 		fmt.Println()
 	}
@@ -509,7 +546,7 @@ func runCCMarkdownPhases(ctx context.Context, crawlID, warcDir string, workers i
 
 // ─── streaming pipeline (--mem) ──────────────────────────────────────────────
 
-func runCCMarkdownPipeline(ctx context.Context, crawlID, warcDir string, workers int, force, fast bool, cpuProfile string) error {
+func runCCMarkdownPipeline(ctx context.Context, crawlID, warcDir string, workers int, force, fast, compress bool, cpuProfile string) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("  HTML → Markdown   Streaming Pipeline  (--mem)"))
 	fmt.Println()
@@ -546,8 +583,13 @@ func runCCMarkdownPipeline(ctx context.Context, crawlID, warcDir string, workers
 	}
 
 	base := filepath.Dir(warcDir)
-	mdGzDir := filepath.Join(base, "md-gz")
-	indexPath := filepath.Join(mdGzDir, "index.duckdb")
+	outputDir := filepath.Join(base, "md-gz")
+	outputDirName := "md-gz"
+	if !compress {
+		outputDir = filepath.Join(base, "markdown")
+		outputDirName = "markdown"
+	}
+	indexPath := filepath.Join(outputDir, "index.duckdb")
 
 	extractor := "trafilatura (quality)"
 	if fast {
@@ -559,7 +601,7 @@ func runCCMarkdownPipeline(ctx context.Context, crawlID, warcDir string, workers
 	}
 
 	fmt.Printf("  warc/     %s\n", labelStyle.Render(warcDir))
-	fmt.Printf("  md-gz/    %s\n", labelStyle.Render(mdGzDir))
+	fmt.Printf("  %-9s %s\n", outputDirName+"/", labelStyle.Render(outputDir))
 	fmt.Printf("  Engine    %s\n", infoStyle.Render(extractor))
 	fmt.Printf("  Workers   %s per stage  (3 stages × %d = %d goroutines)\n",
 		infoStyle.Render(fmt.Sprintf("%d", effWorkers)), effWorkers, effWorkers*3)
@@ -570,7 +612,11 @@ func runCCMarkdownPipeline(ctx context.Context, crawlID, warcDir string, workers
 	}
 	fmt.Println()
 
-	fmt.Println(subtitleStyle.Render("  Pipeline  warc/**/*.warc → [htmlCh] → convert → [mdCh] → md-gz/*.md.gz"))
+	outputExt := ".md"
+	if compress {
+		outputExt = ".md.gz"
+	}
+	fmt.Println(subtitleStyle.Render(fmt.Sprintf("  Pipeline  warc/**/*.warc → [htmlCh] → convert → [mdCh] → %s/*%s", outputDirName, outputExt)))
 	fmt.Println()
 
 	diskIn := diskUsageBytes(warcDir)
@@ -578,7 +624,8 @@ func runCCMarkdownPipeline(ctx context.Context, crawlID, warcDir string, workers
 
 	result, err := markdown.RunPipeline(ctx, markdown.PipelineConfig{
 		InputDir:  warcDir,
-		OutputDir: mdGzDir,
+		OutputDir: outputDir,
+		Compress:  compress,
 		IndexPath: indexPath,
 		Workers:   workers,
 		Fast:      fast,
@@ -593,7 +640,7 @@ func runCCMarkdownPipeline(ctx context.Context, crawlID, warcDir string, workers
 	}
 
 	memAft := memSysMB()
-	diskOut := diskUsageBytes(mdGzDir)
+	diskOut := diskUsageBytes(outputDir)
 
 	// ── Summary ───────────────────────────────────────────────────────────────
 	fmt.Printf("\n  %s pipeline done\n", successStyle.Render("✓"))
@@ -619,8 +666,8 @@ func runCCMarkdownPipeline(ctx context.Context, crawlID, warcDir string, workers
 		fmt.Printf("  (%s, %.1f%% extraction errors)", warningStyle.Render(ccFmtInt64(result.Errors)+" skipped"), errPct)
 	}
 	fmt.Println()
-	fmt.Printf("    Written       %s → md-gz/  (%s)\n",
-		infoStyle.Render(ccFmtInt64(result.Written)), formatBytes(diskOut))
+	fmt.Printf("    Written       %s → %s/  (%s)\n",
+		infoStyle.Render(ccFmtInt64(result.Written)), outputDirName, formatBytes(diskOut))
 	if result.Skipped > 0 {
 		fmt.Printf("    Skipped       %s (already exist)\n", ccFmtInt64(result.Skipped))
 	}
@@ -634,7 +681,7 @@ func runCCMarkdownPipeline(ctx context.Context, crawlID, warcDir string, workers
 	// ── Disk comparison ───────────────────────────────────────────────────────
 	fmt.Println(subtitleStyle.Render("  Disk:"))
 	fmt.Printf("  warc/     %s  (input .warc)\n", formatBytes(diskIn))
-	fmt.Printf("  md-gz/    %s", formatBytes(diskOut))
+	fmt.Printf("  %-9s %s", outputDirName+"/", formatBytes(diskOut))
 	if diskIn > 0 && diskOut > 0 {
 		fmt.Printf("  (-%.1f%% vs warc/)", (1.0-float64(diskOut)/float64(diskIn))*100)
 	}

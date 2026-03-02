@@ -1,7 +1,6 @@
 package index
 
 import (
-	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -10,17 +9,19 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"unicode/utf8"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
+
+	kgzip "github.com/klauspost/compress/gzip"
 )
 
 // PipelineConfig controls the indexing pipeline.
 type PipelineConfig struct {
 	SourceDir string // markdown/ directory path
 	BatchSize int    // docs per Engine.Index call (default 5000)
-	Workers   int    // parallel file readers (default 4)
+	Workers   int    // parallel file readers (default NumCPU)
 }
 
 // PipelineStats tracks pipeline progress.
@@ -35,13 +36,16 @@ type PipelineStats struct {
 // ProgressFunc is called periodically with current stats.
 type ProgressFunc func(stats *PipelineStats)
 
+// gzReaderPool pools klauspost gzip readers for reuse across workers.
+var gzReaderPool sync.Pool
+
 // RunPipeline indexes all markdown files from sourceDir into engine.
 func RunPipeline(ctx context.Context, engine Engine, cfg PipelineConfig, progress ProgressFunc) (*PipelineStats, error) {
 	if cfg.BatchSize <= 0 {
 		cfg.BatchSize = 5000
 	}
 	if cfg.Workers <= 0 {
-		cfg.Workers = 4
+		cfg.Workers = runtime.NumCPU()
 	}
 
 	stats := &PipelineStats{StartTime: time.Now()}
@@ -69,10 +73,11 @@ func RunPipeline(ctx context.Context, engine Engine, cfg PipelineConfig, progres
 		}()
 	}
 
-	fileCh := make(chan string, 1000)
-	docCh := make(chan Document, 5000)
+	// Large channel buffers to keep all stages busy without blocking
+	fileCh := make(chan string, 8192)
+	docCh := make(chan Document, cfg.BatchSize*2)
 
-	// Stage 1: Walker
+	// Stage 1: Parallel walker
 	var walkErr error
 	go func() {
 		defer close(fileCh)
@@ -110,28 +115,100 @@ func RunPipeline(ctx context.Context, engine Engine, cfg PipelineConfig, progres
 	return stats, nil
 }
 
+// walkMarkdown walks dir for .md and .md.gz files, sending paths to out.
+// Top-level subdirectories are walked in parallel (up to NumCPU walkers).
 func walkMarkdown(ctx context.Context, dir string, out chan<- string, stats *PipelineStats) error {
-	return filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil // skip unreadable dirs
-		}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("readdir %s: %w", dir, err)
+	}
+
+	// Collect top-level files and subdirs in one pass
+	var subdirs []string
+	for _, e := range entries {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if d.IsDir() {
-			return nil
+		name := e.Name()
+		if e.IsDir() {
+			subdirs = append(subdirs, filepath.Join(dir, name))
+			continue
 		}
-		name := d.Name()
 		if strings.HasSuffix(name, ".md.gz") || strings.HasSuffix(name, ".md") {
 			stats.TotalFiles.Add(1)
 			select {
-			case out <- path:
+			case out <- filepath.Join(dir, name):
 			case <-ctx.Done():
 				return ctx.Err()
 			}
 		}
+	}
+
+	if len(subdirs) == 0 {
 		return nil
-	})
+	}
+
+	// Walk subdirs in parallel with up to NumCPU walkers
+	walkerCount := runtime.NumCPU()
+	if walkerCount > len(subdirs) {
+		walkerCount = len(subdirs)
+	}
+
+	subdirCh := make(chan string, len(subdirs))
+	for _, d := range subdirs {
+		subdirCh <- d
+	}
+	close(subdirCh)
+
+	var wg sync.WaitGroup
+	var firstErrMu sync.Mutex
+	var firstErr error
+
+	for i := 0; i < walkerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for subdir := range subdirCh {
+				if ctx.Err() != nil {
+					return
+				}
+				walkErr := filepath.WalkDir(subdir, func(path string, d fs.DirEntry, err error) error {
+					if err != nil {
+						return nil // skip unreadable entries
+					}
+					if ctx.Err() != nil {
+						return ctx.Err()
+					}
+					if d.IsDir() {
+						return nil
+					}
+					name := d.Name()
+					if strings.HasSuffix(name, ".md.gz") || strings.HasSuffix(name, ".md") {
+						stats.TotalFiles.Add(1)
+						select {
+						case out <- path:
+						case <-ctx.Done():
+							return ctx.Err()
+						}
+					}
+					return nil
+				})
+				if walkErr != nil && ctx.Err() == nil {
+					firstErrMu.Lock()
+					if firstErr == nil {
+						firstErr = walkErr
+					}
+					firstErrMu.Unlock()
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	if firstErr != nil {
+		return firstErr
+	}
+	return ctx.Err()
 }
 
 func readFiles(ctx context.Context, in <-chan string, out chan<- Document, stats *PipelineStats) {
@@ -156,25 +233,45 @@ func readFiles(ctx context.Context, in <-chan string, out chan<- Document, stats
 }
 
 func readMarkdownFile(path string) (Document, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return Document{}, err
-	}
-	defer f.Close()
+	var data []byte
 
-	var r io.Reader = f
 	if strings.HasSuffix(path, ".gz") {
-		gr, err := gzip.NewReader(f)
+		f, err := os.Open(path)
 		if err != nil {
 			return Document{}, err
 		}
-		defer gr.Close()
-		r = gr
-	}
+		defer f.Close()
 
-	data, err := io.ReadAll(r)
-	if err != nil {
-		return Document{}, err
+		// Try to reuse a pooled gzip reader
+		var gr *kgzip.Reader
+		if v := gzReaderPool.Get(); v != nil {
+			gr = v.(*kgzip.Reader)
+			if resetErr := gr.Reset(f); resetErr != nil {
+				gr = nil // reader in bad state, allocate fresh
+			}
+		}
+		if gr == nil {
+			gr, err = kgzip.NewReader(f)
+			if err != nil {
+				return Document{}, err
+			}
+		}
+
+		data, err = io.ReadAll(gr)
+		gr.Close()
+		if err == nil {
+			gzReaderPool.Put(gr)
+		}
+		if err != nil {
+			return Document{}, err
+		}
+	} else {
+		// Plain .md file: fast path using os.ReadFile (preallocates from stat)
+		var err error
+		data, err = os.ReadFile(path)
+		if err != nil {
+			return Document{}, err
+		}
 	}
 
 	// Extract UUID from filename: strip directory and extensions

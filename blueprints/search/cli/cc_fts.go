@@ -1,11 +1,17 @@
 package cli
 
 import (
+	"compress/gzip"
 	"context"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index"
@@ -32,6 +38,7 @@ func newCCFTS() *cobra.Command {
 
 	cmd.AddCommand(newCCFTSIndex())
 	cmd.AddCommand(newCCFTSSearch())
+	cmd.AddCommand(newCCFTSDecompress())
 	return cmd
 }
 
@@ -57,7 +64,7 @@ func newCCFTSIndex() *cobra.Command {
 	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest)")
 	cmd.Flags().StringVar(&engine, "engine", "duckdb", "FTS engine: "+strings.Join(index.List(), ", "))
 	cmd.Flags().IntVar(&batchSize, "batch-size", 5000, "Documents per batch insert")
-	cmd.Flags().IntVar(&workers, "workers", 4, "Parallel file readers")
+	cmd.Flags().IntVar(&workers, "workers", 0, "Parallel file readers (0 = NumCPU)")
 	return cmd
 }
 
@@ -227,6 +234,197 @@ func runCCFTSSearch(ctx context.Context, crawlID, engineName, query string, limi
 	}
 
 	return nil
+}
+
+func newCCFTSDecompress() *cobra.Command {
+	var (
+		crawlID string
+		workers int
+		dryRun  bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "decompress",
+		Short: "Decompress .md.gz → .md (one-time, speeds up indexing)",
+		Long: `Convert all .md.gz files in the markdown/ directory to plain .md files,
+then delete the .gz originals. Run once before indexing to eliminate
+gzip decompression overhead on every subsequent 'fts index' call.`,
+		Example: `  search cc fts decompress                # decompress all .md.gz
+  search cc fts decompress --dry-run      # preview without changes
+  search cc fts decompress --workers 8    # use 8 parallel workers`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCCFTSDecompress(cmd.Context(), crawlID, workers, dryRun)
+		},
+	}
+
+	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest)")
+	cmd.Flags().IntVar(&workers, "workers", 0, "Parallel workers (0 = NumCPU)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would be done without making changes")
+	return cmd
+}
+
+func runCCFTSDecompress(ctx context.Context, crawlID string, workers int, dryRun bool) error {
+	if crawlID == "" {
+		crawlID = detectLatestCrawl()
+	}
+	if workers <= 0 {
+		workers = runtime.NumCPU()
+	}
+
+	homeDir, _ := os.UserHomeDir()
+	markdownDir := filepath.Join(homeDir, "data", "common-crawl", crawlID, "markdown")
+
+	if _, err := os.Stat(markdownDir); os.IsNotExist(err) {
+		return fmt.Errorf("markdown dir not found: %s", markdownDir)
+	}
+
+	fmt.Fprintf(os.Stderr, "scanning %s...\n", markdownDir)
+
+	// Collect all .md.gz files
+	var files []string
+	err := filepath.WalkDir(markdownDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if strings.HasSuffix(d.Name(), ".md.gz") {
+			files = append(files, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("walk: %w", err)
+	}
+
+	total := len(files)
+	if total == 0 {
+		fmt.Fprintf(os.Stderr, "no .md.gz files found in %s\n", markdownDir)
+		return nil
+	}
+
+	fmt.Fprintf(os.Stderr, "found %d .md.gz files\n", total)
+	if dryRun {
+		fmt.Fprintf(os.Stderr, "dry-run: would decompress %d files to .md and remove .gz\n", total)
+		return nil
+	}
+
+	var (
+		done   atomic.Int64
+		errors atomic.Int64
+		readB  atomic.Int64
+		writeB atomic.Int64
+	)
+
+	start := time.Now()
+	fileCh := make(chan string, workers*4)
+
+	// Progress reporter
+	stopProgress := make(chan struct{})
+	go func() {
+		tick := time.NewTicker(500 * time.Millisecond)
+		defer tick.Stop()
+		for {
+			select {
+			case <-tick.C:
+				d := done.Load()
+				elapsed := time.Since(start).Seconds()
+				rate := float64(0)
+				if elapsed > 0 {
+					rate = float64(d) / elapsed
+				}
+				pct := float64(d) / float64(total) * 100
+				fmt.Fprintf(os.Stderr, "\r\033[Kdecompressing: %d/%d (%.1f%%) │ %.0f files/s │ read %s → write %s",
+					d, total, pct, rate, formatBytes(readB.Load()), formatBytes(writeB.Load()))
+			case <-stopProgress:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	// Feed goroutine
+	go func() {
+		defer close(fileCh)
+		for _, f := range files {
+			select {
+			case fileCh <- f:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	// Worker goroutines
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for gzPath := range fileCh {
+				if ctx.Err() != nil {
+					return
+				}
+
+				// Track compressed size
+				fi, statErr := os.Stat(gzPath)
+				if statErr == nil {
+					readB.Add(fi.Size())
+				}
+
+				// Read + decompress
+				f, err := os.Open(gzPath)
+				if err != nil {
+					errors.Add(1)
+					done.Add(1)
+					continue
+				}
+				gr, err := gzip.NewReader(f)
+				if err != nil {
+					f.Close()
+					errors.Add(1)
+					done.Add(1)
+					continue
+				}
+				data, err := io.ReadAll(gr)
+				gr.Close()
+				f.Close()
+				if err != nil {
+					errors.Add(1)
+					done.Add(1)
+					continue
+				}
+
+				writeB.Add(int64(len(data)))
+
+				// Write plain .md
+				mdPath := strings.TrimSuffix(gzPath, ".gz")
+				if err := os.WriteFile(mdPath, data, 0o644); err != nil {
+					errors.Add(1)
+					done.Add(1)
+					continue
+				}
+
+				// Remove .gz
+				os.Remove(gzPath)
+				done.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	close(stopProgress)
+	fmt.Fprintln(os.Stderr) // newline after progress
+
+	elapsed := time.Since(start)
+	fmt.Fprintf(os.Stderr, "\n── Decompress Complete ─────────────────────────────\n")
+	fmt.Fprintf(os.Stderr, "  files:     %d\n", done.Load())
+	fmt.Fprintf(os.Stderr, "  errors:    %d\n", errors.Load())
+	fmt.Fprintf(os.Stderr, "  elapsed:   %s\n", elapsed.Round(time.Millisecond))
+	if elapsed.Seconds() > 0 {
+		fmt.Fprintf(os.Stderr, "  rate:      %.0f files/s\n", float64(done.Load())/elapsed.Seconds())
+	}
+	fmt.Fprintf(os.Stderr, "  read:      %s (.gz compressed)\n", formatBytes(readB.Load()))
+	fmt.Fprintf(os.Stderr, "  written:   %s (plain .md)\n", formatBytes(writeB.Load()))
+	return ctx.Err()
 }
 
 func detectLatestCrawl() string {

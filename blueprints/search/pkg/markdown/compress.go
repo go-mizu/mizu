@@ -139,6 +139,19 @@ func RunCompress(ctx context.Context, cfg CompressConfig, progressFn PhaseProgre
 	return &stats, err
 }
 
+// writePlainMd writes data to path as a plain file, atomically.
+func writePlainMd(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
 // compressToGz writes data to path as a gzip file (BestSpeed), atomically.
 func compressToGz(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

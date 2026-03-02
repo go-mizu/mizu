@@ -24,6 +24,7 @@ type PipelineConfig struct {
 	Fast      bool   // use go-readability instead of trafilatura
 	Force     bool   // re-process even when output already exists
 	BatchSize int    // DuckDB write batch size (0 = 1000)
+	Compress  bool   // write .md.gz output (default: write .md)
 }
 
 // PipelineStats holds aggregate stats for the streaming pipeline.
@@ -176,7 +177,11 @@ func RunPipeline(ctx context.Context, cfg PipelineConfig, progressFn PhaseProgre
 
 					// Incremental: skip if output already exists.
 					if !cfg.Force {
-						outPath := filepath.Join(cfg.OutputDir, relBase+".md.gz")
+						outExt := ".md"
+						if cfg.Compress {
+							outExt = ".md.gz"
+						}
+						outPath := filepath.Join(cfg.OutputDir, relBase+outExt)
 						if _, err := os.Stat(outPath); err == nil {
 							skipCount.Add(1)
 							continue
@@ -265,7 +270,7 @@ func RunPipeline(ctx context.Context, cfg PipelineConfig, progressFn PhaseProgre
 	// Close mdCh once all converters finish.
 	go func() { convWg.Wait(); close(mdCh) }()
 
-	// ── Stage 3: N writers — compress Markdown → md-gz/*.md.gz ───────────────
+	// ── Stage 3: N writers — write Markdown to disk ─────────────────────────────
 	for range workers {
 		g.Go(func() error {
 			for {
@@ -274,13 +279,23 @@ func RunPipeline(ctx context.Context, cfg PipelineConfig, progressFn PhaseProgre
 					if !ok {
 						return nil
 					}
-					outPath := filepath.Join(cfg.OutputDir, item.relBase+".md.gz")
-					if err := compressToGz(outPath, []byte(item.md)); err != nil {
-						errCount.Add(1)
-						continue
-					}
-					if fi, err := os.Stat(outPath); err == nil {
-						writeBytes.Add(fi.Size())
+					data := []byte(item.md)
+					if cfg.Compress {
+						outPath := filepath.Join(cfg.OutputDir, item.relBase+".md.gz")
+						if err := compressToGz(outPath, data); err != nil {
+							errCount.Add(1)
+							continue
+						}
+						if fi, err := os.Stat(outPath); err == nil {
+							writeBytes.Add(fi.Size())
+						}
+					} else {
+						outPath := filepath.Join(cfg.OutputDir, item.relBase+".md")
+						if err := writePlainMd(outPath, data); err != nil {
+							errCount.Add(1)
+							continue
+						}
+						writeBytes.Add(int64(len(data)))
 					}
 					writeCount.Add(1)
 
