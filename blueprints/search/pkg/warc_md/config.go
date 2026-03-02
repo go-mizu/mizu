@@ -8,6 +8,7 @@ package warc_md
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 // Config configures the WARC → Markdown pipeline.
@@ -53,17 +54,41 @@ func (c Config) WARCSingleDir() string {
 	return filepath.Join(c.CrawlDir(), "warc_single")
 }
 
-// MarkdownDir returns the directory for converted markdown files.
+// MarkdownDir returns the directory for converted raw markdown files (Phase 2 temp output).
 func (c Config) MarkdownDir() string {
-	return filepath.Join(c.CrawlDir(), "markdown")
+	return filepath.Join(c.CrawlDir(), "markdown_raw")
 }
 
 // MarkdownGzDir returns the directory for compressed markdown files (final output).
 func (c Config) MarkdownGzDir() string {
-	return filepath.Join(c.CrawlDir(), "markdown_gz")
+	return filepath.Join(c.CrawlDir(), "markdown")
 }
 
-// IndexPath returns the DuckDB index path (inside markdown_gz/).
+// IndexPath returns the DuckDB index path (inside markdown/).
 func (c Config) IndexPath() string {
 	return filepath.Join(c.MarkdownGzDir(), "index.duckdb")
+}
+
+// ConvertWorkers returns the optimal worker count for Phase 2 (HTML→Markdown).
+//
+// Both trafilatura and go-readability are CPU-bound; the optimal is NumCPU.
+// More goroutines than cores adds context-switch overhead with no throughput gain.
+//
+// Workers field overrides the auto value when > 0.
+func (c Config) ConvertWorkers() int {
+	if c.Workers > 0 {
+		return c.Workers
+	}
+	return runtime.NumCPU()
+}
+
+// CompressWorkers returns the optimal worker count for Phase 3 (gzip compress).
+//
+// klauspost gzip BestSpeed is fast but still CPU-bound; NumCPU is the right
+// default. Workers field overrides when > 0.
+func (c Config) CompressWorkers() int {
+	if c.Workers > 0 {
+		return c.Workers
+	}
+	return runtime.NumCPU()
 }

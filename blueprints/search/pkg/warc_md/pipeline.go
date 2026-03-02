@@ -6,9 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -26,10 +24,6 @@ func RunFilePipeline(ctx context.Context, cfg Config, inputFiles []string,
 	p1Fn, p2Fn, p3Fn ProgressFunc) (*PipelineResult, error) {
 
 	start := time.Now()
-	workers := cfg.Workers
-	if workers <= 0 {
-		workers = runtime.NumCPU()
-	}
 
 	// ── Phase 1: Extract ────────────────────────────────────────────────────
 	s1, err := RunExtract(ctx, ExtractConfig{
@@ -50,7 +44,7 @@ func RunFilePipeline(ctx context.Context, cfg Config, inputFiles []string,
 		InputDir:  cfg.WARCSingleDir(),
 		OutputDir: cfg.MarkdownDir(),
 		IndexPath: cfg.IndexPath(),
-		Workers:   workers,
+		Workers:   cfg.ConvertWorkers(),
 		Force:     cfg.Force,
 		BatchSize: 1000,
 		Fast:      cfg.Fast,
@@ -63,7 +57,7 @@ func RunFilePipeline(ctx context.Context, cfg Config, inputFiles []string,
 	s3, err := RunCompress(ctx, CompressConfig{
 		InputDir:  cfg.MarkdownDir(),
 		OutputDir: cfg.MarkdownGzDir(),
-		Workers:   workers,
+		Workers:   cfg.CompressWorkers(),
 		Force:     cfg.Force,
 	}, p3Fn)
 	if err != nil {
@@ -89,14 +83,15 @@ func RunFilePipeline(ctx context.Context, cfg Config, inputFiles []string,
 // RunInMemoryPipeline runs a streaming 3-stage pipeline without any temp files.
 // Stages are connected by buffered channels:
 //
-//	.warc.gz → producer → warcCh → N converters → mdCh → N writers → .md.gz
+//	.warc.gz → producer → warcCh → N converters → mdCh → M writers → .md.gz
+//
+// Worker counts are adaptive via cfg.ConvertWorkers() and cfg.CompressWorkers().
+// Each stage runs its own nested errgroup; the main errgroup manages lifecycle.
 func RunInMemoryPipeline(ctx context.Context, cfg Config, inputFiles []string,
 	progressFn ProgressFunc) (*PipelineResult, error) {
 
-	workers := cfg.Workers
-	if workers <= 0 {
-		workers = runtime.NumCPU()
-	}
+	convertWorkers := cfg.ConvertWorkers()
+	compressWorkers := cfg.CompressWorkers()
 	if cfg.StatusCode == 0 {
 		cfg.StatusCode = 200
 	}
@@ -115,6 +110,7 @@ func RunInMemoryPipeline(ctx context.Context, cfg Config, inputFiles []string,
 	}
 	defer idx.Close()
 
+	// Channel capacities: each holds ~500 items in flight between stages.
 	const chanCap = 500
 	warcCh := make(chan WARCItem, chanCap)
 	mdCh := make(chan MarkdownItem, chanCap)
@@ -157,6 +153,8 @@ func RunInMemoryPipeline(ctx context.Context, cfg Config, inputFiles []string,
 	g, gctx := errgroup.WithContext(ctx)
 
 	// ── Stage 1: Producer ──────────────────────────────────────────────────
+	// One goroutine streams all input files sequentially into warcCh.
+	// On exit (or error), warcCh is closed, unblocking the stage-2 bridge.
 	g.Go(func() error {
 		defer close(warcCh)
 		for _, warcPath := range inputFiles {
@@ -168,18 +166,16 @@ func RunInMemoryPipeline(ctx context.Context, cfg Config, inputFiles []string,
 		return nil
 	})
 
-	// ── Stage 2: Converters ────────────────────────────────────────────────
-	var convWg sync.WaitGroup
-	convWg.Add(workers)
-	for range workers {
-		g.Go(func() error {
-			defer convWg.Done()
-			for {
-				select {
-				case item, ok := <-warcCh:
-					if !ok {
-						return nil
-					}
+	// ── Stage 2 bridge: N converter goroutines ─────────────────────────────
+	// A single bridge goroutine hosts its own nested errgroup of N converters.
+	// Each converter uses "for range warcCh" (exits when warcCh closes) and
+	// sends results to mdCh using a select to respect context cancellation.
+	// When all converters finish, mdCh is closed, unblocking stage-3.
+	g.Go(func() error {
+		eg, ectx := errgroup.WithContext(gctx)
+		for range convertWorkers {
+			eg.Go(func() error {
+				for item := range warcCh {
 					var result mdpkg.Result
 					if cfg.Fast {
 						result = mdpkg.ConvertFast(item.HTMLBody, "")
@@ -219,31 +215,27 @@ func RunInMemoryPipeline(ctx context.Context, cfg Config, inputFiles []string,
 						Language:   result.Language,
 						HasContent: result.HasContent,
 					}:
-					case <-gctx.Done():
-						return nil
+					case <-ectx.Done():
+						return ectx.Err()
 					}
-
-				case <-gctx.Done():
-					return nil
 				}
-			}
-		})
-	}
-	// Close mdCh once all converters are done
-	go func() {
-		convWg.Wait()
-		close(mdCh)
-	}()
+				return nil
+			})
+		}
+		err := eg.Wait()
+		close(mdCh) // always close so writers can drain and exit
+		return err
+	})
 
-	// ── Stage 3: Writers ───────────────────────────────────────────────────
-	for range workers {
-		g.Go(func() error {
-			for {
-				select {
-				case item, ok := <-mdCh:
-					if !ok {
-						return nil
-					}
+	// ── Stage 3 bridge: M writer goroutines ───────────────────────────────
+	// A single bridge goroutine hosts its own nested errgroup of M writers.
+	// Each writer uses "for range mdCh" (exits when mdCh closes).
+	// Context cancellation is checked at each record to allow fast exit.
+	g.Go(func() error {
+		eg, _ := errgroup.WithContext(gctx)
+		for range compressWorkers {
+			eg.Go(func() error {
+				for item := range mdCh {
 					if gctx.Err() != nil {
 						return nil
 					}
@@ -262,13 +254,12 @@ func RunInMemoryPipeline(ctx context.Context, cfg Config, inputFiles []string,
 						writeBytes.Add(fi.Size())
 					}
 					compressed.Add(1)
-
-				case <-gctx.Done():
-					return nil
 				}
-			}
-		})
-	}
+				return nil
+			})
+		}
+		return eg.Wait()
+	})
 
 	gerr := g.Wait()
 
