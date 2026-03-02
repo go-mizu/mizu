@@ -354,6 +354,36 @@ details[open] > summary::before { content: "\25BE "; }
 }
 .detail-sub .sub-row { padding: 1px 0; }
 
+.data-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 0;
+  font-size: 0.82rem;
+}
+.data-label {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  min-width: 90px;
+}
+.data-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+.data-sub {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  margin-left: 6px;
+}
+#dataUpdated {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-align: right;
+  margin-top: 6px;
+}
+
 /* ── Responsive ───────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .grid-main { grid-template-columns: 1fr; }
@@ -493,6 +523,50 @@ details[open] > summary::before { content: "\25BE "; }
       <div class="sub-row"><span class="sub-label">Downloaded</span><span class="sub-value mono" id="sysDown">0 B</span></div>
       <div class="sub-row"><span class="sub-label">Domains</span><span class="sub-value mono" id="sysDomains">--</span></div>
     </div>
+  </div>
+
+  <!-- Data card -->
+  <div class="card" id="dataCard" style="display:none">
+    <div class="card-title">Data</div>
+
+    <div class="data-row" id="dataSegsRow" style="display:none">
+      <span class="data-label">Segments</span>
+      <span class="data-value">
+        <span id="dataSegCount">—</span> files
+        <span class="data-sub" id="dataSegMb"></span>
+      </span>
+    </div>
+
+    <div class="data-row" id="dataDbRow" style="display:none">
+      <span class="data-label">Results DB</span>
+      <span class="data-value">
+        <span id="dataDbRows">—</span>
+        <span class="data-sub" id="dataDbMb"></span>
+      </span>
+    </div>
+
+    <div class="data-row" id="dataBodiesRow" style="display:none">
+      <span class="data-label">Bodies</span>
+      <span class="data-value">
+        <span id="dataBodiesCount">—</span>
+        <span class="data-sub" id="dataBodiesMb"></span>
+      </span>
+    </div>
+
+    <div class="data-row" id="dataFailRow" style="display:none">
+      <span class="data-label">Failures</span>
+      <span class="data-value">
+        <span id="dataFailRows">—</span>
+        <span class="data-sub" id="dataFailMb"></span>
+      </span>
+    </div>
+
+    <div class="data-row" id="dataTotalRow" style="display:none">
+      <span class="data-label">Total disk</span>
+      <span class="data-value" id="dataTotalMb">—</span>
+    </div>
+
+    <div id="dataUpdated"></div>
   </div>
 
   <!-- Progress bar -->
@@ -740,6 +814,62 @@ es.onmessage = function(e) {
     let domStr = fmt(s.domains_total);
     if (s.domains_abandoned > 0) domStr += ' (' + s.domains_abandoned + ' abn)';
     $('sysDomains').textContent = domStr;
+  }
+
+  // Data card
+  const anyDisk = s.disk_seg_mb + s.disk_duckdb_mb + s.disk_failures_mb + s.disk_bodies_mb > 0;
+  $('dataCard').style.display = anyDisk ? '' : 'none';
+
+  if (s.disk_seg_files > 0) {
+    $('dataSegsRow').style.display = '';
+    $('dataSegCount').textContent = fmt(s.disk_seg_files);
+    $('dataSegMb').textContent = s.disk_seg_mb + ' MB';
+  } else {
+    $('dataSegsRow').style.display = 'none';
+  }
+
+  if (s.disk_duckdb_mb > 0) {
+    $('dataDbRow').style.display = '';
+    if (s.disk_results_rows > 0) {
+      $('dataDbRows').textContent = fmt(s.disk_results_rows) + ' rows';
+    } else {
+      $('dataDbRows').textContent = s.done ? 'draining\u2026' : '\u2014';
+    }
+    $('dataDbMb').textContent = fmtBytes(s.disk_duckdb_mb * 1024 * 1024);
+  } else {
+    $('dataDbRow').style.display = 'none';
+  }
+
+  if (s.disk_bodies_mb > 0 || s.disk_bodies_count > 0) {
+    $('dataBodiesRow').style.display = '';
+    $('dataBodiesCount').textContent = fmt(s.disk_bodies_count) + ' files';
+    $('dataBodiesMb').textContent = fmtBytes(s.disk_bodies_mb * 1024 * 1024);
+  } else {
+    $('dataBodiesRow').style.display = 'none';
+  }
+
+  if (s.disk_failures_mb > 0) {
+    $('dataFailRow').style.display = '';
+    if (s.disk_failed_rows > 0) {
+      $('dataFailRows').textContent = fmt(s.disk_failed_rows) + ' rows';
+    } else {
+      $('dataFailRows').textContent = '\u2014';
+    }
+    $('dataFailMb').textContent = fmtBytes(s.disk_failures_mb * 1024 * 1024);
+  } else {
+    $('dataFailRow').style.display = 'none';
+  }
+
+  if (s.disk_total_mb > 0) {
+    $('dataTotalRow').style.display = '';
+    $('dataTotalMb').textContent = fmtBytes(s.disk_total_mb * 1024 * 1024);
+  } else {
+    $('dataTotalRow').style.display = 'none';
+  }
+
+  if (s.disk_last_updated > 0) {
+    const ageSecs = Math.floor(Date.now() / 1000) - s.disk_last_updated;
+    $('dataUpdated').textContent = 'Updated ' + ageSecs + 's ago';
   }
 
   // Progress
