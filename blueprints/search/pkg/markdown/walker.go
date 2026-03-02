@@ -1,7 +1,6 @@
 package markdown
 
 import (
-	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -14,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	kgzip "github.com/klauspost/compress/gzip"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -90,7 +90,7 @@ func Walk(ctx context.Context, cfg WalkConfig, progressFn ProgressFunc) (*WalkSt
 	stats.TotalFiles = totalFiles
 	start := time.Now()
 
-	// Progress ticker
+	// Progress ticker — also exits when the parent context is cancelled (e.g. Ctrl+C)
 	var stopProgress chan struct{}
 	if progressFn != nil {
 		stopProgress = make(chan struct{})
@@ -111,6 +111,8 @@ func Walk(ctx context.Context, cfg WalkConfig, progressFn ProgressFunc) (*WalkSt
 					)
 				case <-stopProgress:
 					return
+				case <-ctx.Done():
+					return
 				}
 			}
 		}()
@@ -123,6 +125,10 @@ func Walk(ctx context.Context, cfg WalkConfig, progressFn ProgressFunc) (*WalkSt
 	var gzPool sync.Pool
 
 	for _, fpath := range files {
+		// Stop queueing new work immediately on cancellation.
+		if gctx.Err() != nil {
+			break
+		}
 		fpath := fpath
 		g.Go(func() error {
 			if gctx.Err() != nil {
@@ -155,13 +161,14 @@ func Walk(ctx context.Context, cfg WalkConfig, progressFn ProgressFunc) (*WalkSt
 			htmlBytes, err := readGzFile(fpath, &gzPool)
 			if err != nil {
 				atomic.AddInt64(&stats.Errors, 1)
-				_ = idx.Add(IndexRecord{CID: cid, Error: "read: " + err.Error()})
+				idx.Add(IndexRecord{CID: cid, Error: "read: " + err.Error()})
 				return nil
 			}
 
 			atomic.AddInt64(&stats.TotalHTMLBytes, int64(len(htmlBytes)))
 
-			// Convert (no URL available from bodystore — bodies are content-addressed by SHA)
+			// Convert — direct call, no per-file goroutine wrapper needed.
+			// Ctrl+C is handled by the for-loop gctx.Err() check above.
 			var result Result
 			if cfg.Fast {
 				result = ConvertFast(htmlBytes, "")
@@ -173,18 +180,18 @@ func Walk(ctx context.Context, cfg WalkConfig, progressFn ProgressFunc) (*WalkSt
 			if result.HasContent && result.Markdown != "" {
 				if err := writeGzFile(outPath, []byte(result.Markdown)); err != nil {
 					atomic.AddInt64(&stats.Errors, 1)
-					_ = idx.Add(IndexRecord{CID: cid, Error: "write: " + err.Error()})
+					idx.Add(IndexRecord{CID: cid, Error: "write: " + err.Error()})
 					return nil
 				}
 				atomic.AddInt64(&stats.TotalMDBytes, int64(result.MarkdownSize))
 			}
 
-			// Record in index
+			// Record in index (non-blocking: sent to background drainer)
 			ratio := float64(0)
 			if result.HTMLSize > 0 {
 				ratio = float64(result.MarkdownSize) / float64(result.HTMLSize)
 			}
-			_ = idx.Add(IndexRecord{
+			idx.Add(IndexRecord{
 				CID:              cid,
 				HTMLSize:         result.HTMLSize,
 				MarkdownSize:     result.MarkdownSize,
@@ -219,7 +226,6 @@ func Walk(ctx context.Context, cfg WalkConfig, progressFn ProgressFunc) (*WalkSt
 // cidFromPath reconstructs CID from bodystore relative path.
 // ab/cd/ef0123456789...rest.gz → sha256:abcdef0123456789...rest
 func cidFromPath(relPath string) string {
-	// Normalize separators
 	relPath = filepath.ToSlash(relPath)
 	parts := strings.Split(relPath, "/")
 	if len(parts) != 3 {
@@ -236,15 +242,15 @@ func readGzFile(path string, pool *sync.Pool) ([]byte, error) {
 	}
 	defer f.Close()
 
-	var gz *gzip.Reader
+	var gz *kgzip.Reader
 	if v := pool.Get(); v != nil {
-		gz = v.(*gzip.Reader)
+		gz = v.(*kgzip.Reader)
 		if err := gz.Reset(f); err != nil {
 			// Discard corrupted reader — do not return to pool
 			return nil, err
 		}
 	} else {
-		gz, err = gzip.NewReader(f)
+		gz, err = kgzip.NewReader(f)
 		if err != nil {
 			return nil, err
 		}
@@ -270,7 +276,7 @@ func writeGzFile(path string, data []byte) error {
 		return err
 	}
 
-	gz, err := gzip.NewWriterLevel(f, gzip.BestSpeed)
+	gz, err := kgzip.NewWriterLevel(f, kgzip.BestSpeed)
 	if err != nil {
 		f.Close()
 		os.Remove(tmp)
