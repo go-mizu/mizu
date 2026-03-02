@@ -322,6 +322,12 @@ async fn process_one_url(
     .await;
     stats.total.fetch_add(1, Ordering::Relaxed);
 
+    // Release domain semaphore permit before any writer call.
+    // When the binary writer channel is full, write() blocks; if the permit
+    // is held during that block, no other worker can fetch from this domain,
+    // serializing all domain fetches behind writer backpressure.
+    drop(_permit);
+
     match fetch_result {
         Err((reqwest_err, fetch_ms)) => {
             // Classify using reqwest's typed error methods + full error chain.
