@@ -3,6 +3,7 @@
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use crawler_lib::bodystore::BodyStore;
@@ -12,13 +13,200 @@ use crawler_lib::stats::Stats;
 use crawler_lib::types::SeedURL;
 use crawler_lib::writer::binary::{BinDrainConfig, BinFailureDrainConfig, BinaryFailureWriter, BinaryResultWriter};
 use crawler_lib::writer::devnull::{DevNullFailureWriter, DevNullResultWriter};
-use crawler_lib::writer::duckdb_writer::{DuckDBFailureWriter, DuckDBResultWriter};
+use crawler_lib::writer::duckdb_writer::{count_failed_rows, count_result_rows, DuckDBFailureWriter, DuckDBResultWriter};
 use crawler_lib::writer::parquet_writer::{ParquetFailureWriter, ParquetResultWriter};
 use crawler_lib::writer::{FailureWriter, ResultWriter};
 
 use crate::display::{format_duration, print_summary};
 use crate::gui;
 use crate::tui;
+
+/// Paths to monitor for live disk stats.
+#[derive(Clone)]
+pub struct DiskPaths {
+    /// results/ subdir — contains seg_*.bin files (binary writer)
+    pub seg_dir: Option<PathBuf>,
+    /// output_dir — contains results_*.duckdb shards
+    pub duckdb_dir: Option<PathBuf>,
+    /// failures/ subdir
+    pub failures_dir: Option<PathBuf>,
+    /// failed.duckdb path
+    pub failed_db: Option<PathBuf>,
+    /// CAS body store dir
+    pub bodies_dir: Option<PathBuf>,
+}
+
+/// Recursively sum file sizes and count files in a directory. Returns (file_count, bytes).
+/// Uses iterative stack to handle large flat CAS dirs without stack overflow.
+fn scan_dir(dir: &Path) -> (u64, u64) {
+    if !dir.exists() {
+        return (0, 0);
+    }
+    let mut count = 0u64;
+    let mut bytes = 0u64;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let rd = match std::fs::read_dir(&d) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        for entry in rd.flatten() {
+            let meta = match entry.metadata() {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            if meta.is_file() {
+                count += 1;
+                bytes += meta.len();
+            } else if meta.is_dir() {
+                stack.push(entry.path());
+            }
+        }
+    }
+    (count, bytes)
+}
+
+/// Count seg_*.bin files and their total size in `dir`.
+fn scan_seg_dir(dir: &Path) -> (u64, u64) {
+    if !dir.exists() {
+        return (0, 0);
+    }
+    let mut count = 0u64;
+    let mut bytes = 0u64;
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for entry in rd.flatten() {
+            let p = entry.path();
+            if p.extension().map_or(false, |e| e == "bin")
+                && p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map_or(false, |n| n.starts_with("seg_"))
+            {
+                if let Ok(m) = entry.metadata() {
+                    count += 1;
+                    bytes += m.len();
+                }
+            }
+        }
+    }
+    (count, bytes)
+}
+
+/// Sum sizes of results_*.duckdb files in `dir`.
+fn scan_duckdb_dir(dir: &Path) -> u64 {
+    if !dir.exists() {
+        return 0;
+    }
+    let mut bytes = 0u64;
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for entry in rd.flatten() {
+            let p = entry.path();
+            if p.extension().map_or(false, |e| e == "duckdb")
+                && p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map_or(false, |n| n.starts_with("results_"))
+            {
+                if let Ok(m) = entry.metadata() {
+                    bytes += m.len();
+                }
+            }
+        }
+    }
+    bytes
+}
+
+fn bytes_to_mb(b: u64) -> u64 {
+    b / (1024 * 1024)
+}
+
+/// Spawn a background tokio task that updates disk stats every 10s.
+/// Stops after stats.done is observed; row counts are filled by finalize_disk_stats.
+pub fn spawn_disk_sampler(stats: Arc<Stats>, paths: DiskPaths) {
+    tokio::spawn(async move {
+        // give engine 2s to start writing before first scan
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let mut interval = tokio::time::interval(Duration::from_secs(10));
+        loop {
+            interval.tick().await;
+
+            let s = stats.clone();
+            let p = paths.clone();
+            tokio::task::spawn_blocking(move || {
+                if let Some(ref d) = p.seg_dir {
+                    let (cnt, bytes) = scan_seg_dir(d);
+                    s.disk_seg_files.store(cnt, Ordering::Relaxed);
+                    s.disk_seg_mb.store(bytes_to_mb(bytes), Ordering::Relaxed);
+                }
+                if let Some(ref d) = p.duckdb_dir {
+                    let bytes = scan_duckdb_dir(d);
+                    s.disk_duckdb_mb.store(bytes_to_mb(bytes), Ordering::Relaxed);
+                }
+                if let Some(ref d) = p.failures_dir {
+                    let (_, bytes) = scan_dir(d);
+                    s.disk_failures_mb.store(bytes_to_mb(bytes), Ordering::Relaxed);
+                }
+                if let Some(ref d) = p.bodies_dir {
+                    let (cnt, bytes) = scan_dir(d);
+                    s.disk_bodies_count.store(cnt, Ordering::Relaxed);
+                    s.disk_bodies_mb.store(bytes_to_mb(bytes), Ordering::Relaxed);
+                }
+                let total = s.disk_seg_mb.load(Ordering::Relaxed)
+                    + s.disk_duckdb_mb.load(Ordering::Relaxed)
+                    + s.disk_failures_mb.load(Ordering::Relaxed)
+                    + s.disk_bodies_mb.load(Ordering::Relaxed);
+                s.disk_total_mb.store(total, Ordering::Relaxed);
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                s.disk_last_updated.store(now, Ordering::Relaxed);
+            })
+            .await
+            .ok();
+
+            if stats.done.load(Ordering::Relaxed) {
+                break;
+            }
+        }
+    });
+}
+
+/// Called AFTER result_writer.close() returns (drain complete).
+/// Does a final filesystem scan + DuckDB row counts (writers closed — safe).
+pub fn finalize_disk_stats(stats: &Stats, paths: &DiskPaths) {
+    if let Some(ref d) = paths.seg_dir {
+        let (cnt, bytes) = scan_seg_dir(d);
+        stats.disk_seg_files.store(cnt, Ordering::Relaxed);
+        stats.disk_seg_mb.store(bytes_to_mb(bytes), Ordering::Relaxed);
+    }
+    if let Some(ref d) = paths.duckdb_dir {
+        let bytes = scan_duckdb_dir(d);
+        stats.disk_duckdb_mb.store(bytes_to_mb(bytes), Ordering::Relaxed);
+    }
+    if let Some(ref d) = paths.failures_dir {
+        let (_, bytes) = scan_dir(d);
+        stats.disk_failures_mb.store(bytes_to_mb(bytes), Ordering::Relaxed);
+    }
+    if let Some(ref d) = paths.bodies_dir {
+        let (cnt, bytes) = scan_dir(d);
+        stats.disk_bodies_count.store(cnt, Ordering::Relaxed);
+        stats.disk_bodies_mb.store(bytes_to_mb(bytes), Ordering::Relaxed);
+    }
+    if let Some(ref d) = paths.duckdb_dir {
+        if let Ok(rows) = count_result_rows(d) {
+            stats.disk_results_rows.store(rows, Ordering::Relaxed);
+        }
+    }
+    if let Some(ref p) = paths.failed_db {
+        if let Ok(rows) = count_failed_rows(p) {
+            stats.disk_failed_rows.store(rows, Ordering::Relaxed);
+        }
+    }
+    let total = stats.disk_seg_mb.load(Ordering::Relaxed)
+        + stats.disk_duckdb_mb.load(Ordering::Relaxed)
+        + stats.disk_failures_mb.load(Ordering::Relaxed)
+        + stats.disk_bodies_mb.load(Ordering::Relaxed);
+    stats.disk_total_mb.store(total, Ordering::Relaxed);
+}
 
 /// Expand `~` in a path string to the user's home directory.
 pub fn expand_home(path: &str) -> PathBuf {
@@ -182,6 +370,25 @@ pub async fn run_crawl_job(params: CrawlJobParams) -> Result<()> {
         println!("Body store: {}", resolved.display());
     }
 
+    // Build disk paths for live disk stats
+    let disk_paths = DiskPaths {
+        seg_dir: match writer_type {
+            WriterType::Binary => Some(output_dir.join("results")),
+            _ => None,
+        },
+        duckdb_dir: match writer_type {
+            WriterType::Binary | WriterType::DuckDB => Some(output_dir.clone()),
+            _ => None,
+        },
+        failures_dir: match writer_type {
+            WriterType::Binary | WriterType::Parquet => Some(output_dir.join("failures")),
+            _ => None,
+        },
+        failed_db: Some(failed_db_path.clone()),
+        bodies_dir: params.body_store_dir.as_deref().map(expand_home),
+    };
+    spawn_disk_sampler(live_stats.clone(), disk_paths.clone());
+
     println!(
         "Config: engine={} writer={} workers={} inner_n={} timeout={}ms retry_timeout={}ms",
         cfg.engine,
@@ -284,6 +491,7 @@ pub async fn run_crawl_job(params: CrawlJobParams) -> Result<()> {
 
     let total_elapsed = job_start.elapsed();
     result_writer.close()?;
+    finalize_disk_stats(&live_stats, &disk_paths);
 
     if let Some(h) = tui_handle {
         h.stop_and_join();
