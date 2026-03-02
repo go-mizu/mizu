@@ -61,3 +61,26 @@ func List() []string {
 	sort.Strings(names)
 	return names
 }
+
+// AddrSetter is implemented by external engines that connect to a remote service.
+// The CLI calls SetAddr before Open when --addr is provided.
+type AddrSetter interface {
+	SetAddr(addr string)
+}
+
+// BaseExternal provides a default SetAddr implementation for external engines.
+// Embed this in external engine structs.
+type BaseExternal struct {
+	Addr string
+}
+
+// SetAddr stores the connection address.
+func (b *BaseExternal) SetAddr(a string) { b.Addr = a }
+
+// EffectiveAddr returns Addr if set, otherwise returns def.
+func (b *BaseExternal) EffectiveAddr(def string) string {
+	if b.Addr != "" {
+		return b.Addr
+	}
+	return def
+}
