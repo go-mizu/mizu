@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
@@ -34,16 +33,16 @@ func newCCWarcMarkdown() *cobra.Command {
 		Short: "Convert WARC HTML records to clean Markdown (3-phase pipeline)",
 		Long: `3-phase pipeline: Extract → Convert → Compress
 
-  Phase 1  warc/*.warc.gz  → warc_single/**/*.warc  (extract HTML records)
-  Phase 2  warc_single/**  → markdown/**/*.md        (HTML → Markdown)
-  Phase 3  markdown/**     → markdown_gz/**/*.md.gz  (gzip compress)
+  Phase 1  warc/*.warc.gz      → warc_single/**/*.warc      (extract HTML records)
+  Phase 2  warc_single/**      → markdown_raw/**/*.md        (HTML → Markdown)
+  Phase 3  markdown_raw/**     → markdown/**/*.md.gz         (gzip compress)
 
-After all phases succeed, warc_single/ and markdown/ are removed.
+After all phases succeed, warc_single/ and markdown_raw/ are removed.
 Use --keep-temp to retain them for inspection.
-Final output: markdown_gz/**/*.md.gz
+Final output: markdown/**/*.md.gz
 
 In-memory mode (--mem): phases run as a streaming pipeline connected by
-channels. No warc_single/ or markdown/ directories are created. Typically
+channels. No warc_single/ or markdown_raw/ directories are created. Typically
 5–15% faster and uses less disk I/O.
 
 WARC record path sharding:
@@ -142,11 +141,9 @@ func runCCWarcMarkdown(ctx context.Context,
 		inputFiles = append(inputFiles, localPath)
 	}
 
-	// Effective worker count for display
-	effWorkers := workers
-	if effWorkers <= 0 {
-		effWorkers = runtime.NumCPU()
-	}
+	// Effective worker counts (adaptive if --workers not specified)
+	effConvert := cfg.ConvertWorkers()
+	effCompress := cfg.CompressWorkers()
 
 	// Print header
 	fmt.Println(Banner())
@@ -166,7 +163,11 @@ func runCCWarcMarkdown(ctx context.Context,
 	fmt.Printf("  Files     %d file(s): %s\n", len(inputFiles), labelStyle.Render(filepath.Base(inputFiles[0])))
 	fmt.Printf("  Mode      %s\n", infoStyle.Render(mode))
 	fmt.Printf("  Engine    %s\n", infoStyle.Render(extractor))
-	fmt.Printf("  Workers   %s\n", infoStyle.Render(fmt.Sprintf("%d", effWorkers)))
+	if workers > 0 {
+		fmt.Printf("  Workers   %s\n", infoStyle.Render(fmt.Sprintf("%d (manual)", workers)))
+	} else {
+		fmt.Printf("  Workers   convert=%d  compress=%d  (adaptive)\n", effConvert, effCompress)
+	}
 	fmt.Printf("  Output    %s\n", labelStyle.Render(cfg.MarkdownGzDir()))
 	if force {
 		fmt.Printf("  Force     %s\n", warningStyle.Render("re-process all files"))
@@ -174,13 +175,13 @@ func runCCWarcMarkdown(ctx context.Context,
 	fmt.Println()
 
 	if inMemory {
-		return runWARCMDInMemory(ctx, cfg, inputFiles, effWorkers)
+		return runWARCMDInMemory(ctx, cfg, inputFiles, effConvert)
 	}
-	return runWARCMDFileMode(ctx, cfg, inputFiles, effWorkers)
+	return runWARCMDFileMode(ctx, cfg, inputFiles, effConvert, effCompress)
 }
 
 // runWARCMDFileMode runs the 3-phase file-based pipeline.
-func runWARCMDFileMode(ctx context.Context, cfg warcmd.Config, inputFiles []string, workers int) error {
+func runWARCMDFileMode(ctx context.Context, cfg warcmd.Config, inputFiles []string, convertWorkers, compressWorkers int) error {
 	var rows []warcMDPhaseRow
 	pipeStart := time.Now()
 
@@ -210,7 +211,7 @@ func runWARCMDFileMode(ctx context.Context, cfg warcmd.Config, inputFiles []stri
 	fmt.Println()
 
 	// ── Phase 2 — Convert ────────────────────────────────────────────────────
-	fmt.Println(subtitleStyle.Render("  Phase 2 / 3 — Convert   warc_single/**/*.warc → markdown/**/*.md"))
+	fmt.Println(subtitleStyle.Render("  Phase 2 / 3 — Convert   warc_single/**/*.warc → markdown_raw/**/*.md"))
 	fmt.Println()
 	memBef2 := memSysMB()
 
@@ -218,7 +219,7 @@ func runWARCMDFileMode(ctx context.Context, cfg warcmd.Config, inputFiles []stri
 		InputDir:  cfg.WARCSingleDir(),
 		OutputDir: cfg.MarkdownDir(),
 		IndexPath: cfg.IndexPath(),
-		Workers:   workers,
+		Workers:   convertWorkers,
 		Force:     cfg.Force,
 		BatchSize: 1000,
 		Fast:      cfg.Fast,
@@ -230,19 +231,19 @@ func runWARCMDFileMode(ctx context.Context, cfg warcmd.Config, inputFiles []stri
 		return fmt.Errorf("phase 2 convert: %w", err)
 	}
 	disk2 := warcmd.DiskUsageBytes(cfg.MarkdownDir())
-	mdPhaseEnd("Convert", toMDPhaseStats(s2), memBef2, memSysMB(), disk2, "markdown")
+	mdPhaseEnd("Convert", toMDPhaseStats(s2), memBef2, memSysMB(), disk2, "markdown_raw")
 	rows = append(rows, warcMDPhaseRow{"Convert", s2, disk2})
 	fmt.Println()
 
 	// ── Phase 3 — Compress ───────────────────────────────────────────────────
-	fmt.Println(subtitleStyle.Render("  Phase 3 / 3 — Compress  markdown/**/*.md → markdown_gz/**/*.md.gz"))
+	fmt.Println(subtitleStyle.Render("  Phase 3 / 3 — Compress  markdown_raw/**/*.md → markdown/**/*.md.gz"))
 	fmt.Println()
 	memBef3 := memSysMB()
 
 	s3, err := warcmd.RunCompress(ctx, warcmd.CompressConfig{
 		InputDir:  cfg.MarkdownDir(),
 		OutputDir: cfg.MarkdownGzDir(),
-		Workers:   workers,
+		Workers:   compressWorkers,
 		Force:     cfg.Force,
 	}, func(done, total, errors, readBytes, writeBytes int64, elapsed time.Duration, peakMemMB float64) {
 		mdPhaseProgress("Compressing", done, total, errors, readBytes, writeBytes, elapsed, peakMemMB)
@@ -252,23 +253,23 @@ func runWARCMDFileMode(ctx context.Context, cfg warcmd.Config, inputFiles []stri
 		return fmt.Errorf("phase 3 compress: %w", err)
 	}
 	disk3 := warcmd.DiskUsageBytes(cfg.MarkdownGzDir())
-	mdPhaseEnd("Compress", toMDPhaseStats(s3), memBef3, memSysMB(), disk3, "markdown_gz")
+	mdPhaseEnd("Compress", toMDPhaseStats(s3), memBef3, memSysMB(), disk3, "markdown")
 	rows = append(rows, warcMDPhaseRow{"Compress", s3, disk3})
 	fmt.Println()
 
 	totalDuration := time.Since(pipeStart)
 
 	// ── Final summary table ───────────────────────────────────────────────────
-	printWarcMDSummary(rows, s1, s3, disk3, totalDuration)
+	printWarcMDSummary(rows, s1, s3, disk1, disk2, disk3, totalDuration)
 
 	// ── Cleanup temp dirs ─────────────────────────────────────────────────────
 	if !cfg.KeepTemp {
 		fmt.Printf("  Cleaning up temp dirs...\n")
 		os.RemoveAll(cfg.WARCSingleDir())
 		os.RemoveAll(cfg.MarkdownDir())
-		fmt.Printf("  %s  removed warc_single/ and markdown/\n", successStyle.Render("✓"))
+		fmt.Printf("  %s  removed warc_single/ and markdown_raw/\n", successStyle.Render("✓"))
 	} else {
-		fmt.Printf("  %s  warc_single/ and markdown/ kept\n", infoStyle.Render("ℹ"))
+		fmt.Printf("  %s  warc_single/ and markdown_raw/ kept\n", infoStyle.Render("ℹ"))
 	}
 	fmt.Println()
 
@@ -293,7 +294,7 @@ func runWARCMDFileMode(ctx context.Context, cfg warcmd.Config, inputFiles []stri
 // runWARCMDInMemory runs the streaming in-memory pipeline.
 func runWARCMDInMemory(ctx context.Context, cfg warcmd.Config, inputFiles []string, workers int) error {
 	cfg.Workers = workers
-	fmt.Println(subtitleStyle.Render("  Pipeline  warc.gz → [warcCh] → convert → [mdCh] → markdown_gz"))
+	fmt.Println(subtitleStyle.Render("  Pipeline  warc.gz → [warcCh] → convert → [mdCh] → markdown/"))
 	fmt.Println()
 	memBef := memSysMB()
 	pipeStart := time.Now()
@@ -311,10 +312,18 @@ func runWARCMDInMemory(ctx context.Context, cfg warcmd.Config, inputFiles []stri
 	totalDuration := time.Since(pipeStart)
 	disk3 := warcmd.DiskUsageBytes(cfg.MarkdownGzDir())
 
+	// In-memory mode has no intermediate disk stages; we know read bytes (HTML)
+	// and write bytes (compressed), but not the plain markdown size.
+	htmlBytes := result.Extract.ReadBytes
+	gzSave := float64(0)
+	if htmlBytes > 0 {
+		gzSave = (1 - float64(disk3)/float64(htmlBytes)) * 100
+	}
+
 	fmt.Printf("\n  %s in-memory pipeline done\n", successStyle.Render("✓"))
 	fmt.Printf("    Extracted  %s HTML records\n", infoStyle.Render(ccFmtInt64(result.Extract.Files)))
 	fmt.Printf("    Converted  %s to Markdown\n", infoStyle.Render(ccFmtInt64(result.Convert.Files)))
-	fmt.Printf("    Compressed %s → %s\n",
+	fmt.Printf("    Compressed %s → markdown/  (%s)\n",
 		infoStyle.Render(ccFmtInt64(result.Compress.Files)), formatBytes(disk3))
 	if result.Extract.Errors > 0 {
 		fmt.Printf("    Errors     %s\n", warningStyle.Render(ccFmtInt64(result.Extract.Errors)))
@@ -324,16 +333,24 @@ func runWARCMDInMemory(ctx context.Context, cfg warcmd.Config, inputFiles []stri
 	writeMBs := float64(0)
 	if totalDuration.Seconds() > 0 {
 		rate = float64(result.Compress.Files) / totalDuration.Seconds()
-		readMBs = float64(result.Extract.ReadBytes) / (1024 * 1024) / totalDuration.Seconds()
+		readMBs = float64(htmlBytes) / (1024 * 1024) / totalDuration.Seconds()
 		writeMBs = float64(result.Compress.WriteBytes) / (1024 * 1024) / totalDuration.Seconds()
 	}
 	fmt.Printf("    Rate       %.0f docs/s  ·  %.1f MB/s read  ·  %.1f MB/s write\n",
 		rate, readMBs, writeMBs)
 	fmt.Printf("    Time       %s\n", totalDuration.Round(time.Millisecond))
-	fmt.Printf("    Disk out   %s\n", formatBytes(disk3))
 	fmt.Printf("    RAM        before %.0f MB → after %.0f MB  (peak %.0f MB)\n",
 		memBef, memAft, result.Compress.PeakMemMB)
-	fmt.Printf("    Output     %s\n", labelStyle.Render(cfg.MarkdownGzDir()))
+	fmt.Println()
+
+	// Compression comparison
+	fmt.Println(subtitleStyle.Render("  Output  markdown/  (" + ccFmtInt64(result.Extract.Files) + " records)"))
+	fmt.Println()
+	fmt.Printf("  %-20s  %10s  %8s\n", "Stage", "Size", "vs HTML")
+	fmt.Printf("  %-20s  %10s  %8s\n", "--------------------", "----------", "--------")
+	fmt.Printf("  %-20s  %10s  %8s\n", "HTML body (read)", formatBytes(htmlBytes), "baseline")
+	fmt.Printf("  %-20s  %10s  %+7.1f%%  (%.1fx smaller)\n",
+		"markdown/ (.md.gz)", formatBytes(disk3), -gzSave, float64(htmlBytes)/float64(disk3))
 	fmt.Println()
 
 	return nil
@@ -358,8 +375,9 @@ func toMDPhaseStats(s *warcmd.PhaseStats) *markdown.PhaseStats {
 	}
 }
 
-// printWarcMDSummary prints the final per-phase table and disk layout.
-func printWarcMDSummary(rows []warcMDPhaseRow, s1, s3 *warcmd.PhaseStats, disk3 int64, totalDuration time.Duration) {
+// printWarcMDSummary prints the final per-phase table, disk compression stats.
+// disk1 = warc_single (raw HTML), disk2 = markdown_raw (plain .md), disk3 = markdown (compressed .md.gz).
+func printWarcMDSummary(rows []warcMDPhaseRow, s1, s3 *warcmd.PhaseStats, disk1, disk2, disk3 int64, totalDuration time.Duration) {
 	fmt.Println(successStyle.Render("  ✓ All phases complete!"))
 	fmt.Println()
 	mdSep()
@@ -393,8 +411,12 @@ func printWarcMDSummary(rows []warcMDPhaseRow, s1, s3 *warcmd.PhaseStats, disk3 
 
 	mdSep()
 	overallRate := float64(0)
-	if totalDuration.Seconds() > 0 && s1 != nil {
-		overallRate = float64(s1.Files+s1.Skipped) / totalDuration.Seconds()
+	totalFiles := int64(0)
+	if s1 != nil {
+		totalFiles = s1.Files + s1.Skipped
+		if totalDuration.Seconds() > 0 {
+			overallRate = float64(totalFiles) / totalDuration.Seconds()
+		}
 	}
 	var s3Write int64
 	if s3 != nil {
@@ -402,12 +424,7 @@ func printWarcMDSummary(rows []warcMDPhaseRow, s1, s3 *warcmd.PhaseStats, disk3 
 	}
 	fmt.Printf("  %-10s  %8s  %8s  %8s  %8s  %7.0f/s  %6.0fMB  %s\n",
 		"Total",
-		func() string {
-			if s1 == nil {
-				return "0"
-			}
-			return ccFmtInt64(s1.Files + s1.Skipped)
-		}(),
+		ccFmtInt64(totalFiles),
 		formatBytes(totalRead),
 		formatBytes(s3Write),
 		formatBytes(disk3),
@@ -418,15 +435,32 @@ func printWarcMDSummary(rows []warcMDPhaseRow, s1, s3 *warcmd.PhaseStats, disk3 
 	mdSep()
 	fmt.Println()
 
-	// Disk layout
-	fmt.Println(subtitleStyle.Render("  Output:"))
-	fmt.Printf("  markdown_gz/   %s  →  %s\n",
-		labelStyle.Render(func() string {
-			if s1 != nil {
-				return ccFmtInt64(s1.Files) + " files"
-			}
-			return "0 files"
-		}()),
-		formatBytes(disk3))
+	// Compression comparison table
+	fmt.Println(subtitleStyle.Render("  Output  markdown/  (" + ccFmtInt64(totalFiles) + " records)"))
 	fmt.Println()
+	if disk1 > 0 {
+		mdRatio := float64(0)
+		gzRatio := float64(0)
+		mdSave := float64(0)
+		gzSave := float64(0)
+		if disk1 > 0 {
+			mdRatio = float64(disk2) / float64(disk1) * 100
+			gzRatio = float64(disk3) / float64(disk1) * 100
+			mdSave = 100 - mdRatio
+			gzSave = 100 - gzRatio
+		}
+		fmt.Printf("  %-20s  %10s  %8s\n", "Stage", "Size", "vs HTML")
+		fmt.Printf("  %-20s  %10s  %8s\n", "--------------------", "----------", "--------")
+		fmt.Printf("  %-20s  %10s  %8s\n", "warc_single/ (HTML)", formatBytes(disk1), "baseline")
+		if disk2 > 0 {
+			fmt.Printf("  %-20s  %10s  %+7.1f%%  (%.1fx smaller)\n",
+				"markdown_raw/ (.md)", formatBytes(disk2), -mdSave, float64(disk1)/float64(disk2))
+		}
+		fmt.Printf("  %-20s  %10s  %+7.1f%%  (%.1fx smaller)\n",
+			"markdown/ (.md.gz)", formatBytes(disk3), -gzSave, float64(disk1)/float64(disk3))
+		fmt.Println()
+	} else {
+		fmt.Printf("  markdown/   %s\n", formatBytes(disk3))
+		fmt.Println()
+	}
 }
