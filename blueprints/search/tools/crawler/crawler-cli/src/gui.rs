@@ -184,6 +184,18 @@ struct StatsPayload {
 
     // Done flag
     done: bool,
+
+    // Disk stats
+    disk_seg_files: u64,
+    disk_seg_mb: u64,
+    disk_duckdb_mb: u64,
+    disk_results_rows: u64,
+    disk_failures_mb: u64,
+    disk_failed_rows: u64,
+    disk_bodies_count: u64,
+    disk_bodies_mb: u64,
+    disk_total_mb: u64,
+    disk_last_updated: u64,
 }
 
 fn snapshot_stats(stats: &Stats) -> StatsPayload {
@@ -234,5 +246,15 @@ fn snapshot_stats(stats: &Stats) -> StatsPayload {
         open_fds: stats.open_fds.load(Ordering::Relaxed),
         warnings,
         done: stats.done.load(Ordering::Relaxed),
+        disk_seg_files:    stats.disk_seg_files.load(Ordering::Relaxed),
+        disk_seg_mb:       stats.disk_seg_mb.load(Ordering::Relaxed),
+        disk_duckdb_mb:    stats.disk_duckdb_mb.load(Ordering::Relaxed),
+        disk_results_rows: stats.disk_results_rows.load(Ordering::Relaxed),
+        disk_failures_mb:  stats.disk_failures_mb.load(Ordering::Relaxed),
+        disk_failed_rows:  stats.disk_failed_rows.load(Ordering::Relaxed),
+        disk_bodies_count: stats.disk_bodies_count.load(Ordering::Relaxed),
+        disk_bodies_mb:    stats.disk_bodies_mb.load(Ordering::Relaxed),
+        disk_total_mb:     stats.disk_total_mb.load(Ordering::Relaxed),
+        disk_last_updated: stats.disk_last_updated.load(Ordering::Relaxed),
     }
 }
