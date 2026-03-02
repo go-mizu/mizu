@@ -14,8 +14,8 @@ import (
 	"time"
 
 	crawl "github.com/go-mizu/mizu/blueprints/search/pkg/crawl"
-	"github.com/go-mizu/mizu/blueprints/search/pkg/crawl/bodystore"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/crawl/store"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/crawl/warcstore"
 )
 
 // recrawlJobArgs holds all arguments for runRecrawlJob.
@@ -29,7 +29,7 @@ type recrawlJobArgs struct {
 	BinShards    int    // parallel write shards (0 = default 4)
 	SlowDomainMs int64
 	SegSizeMB    int
-	BodyStoreDir string
+	WarcDir      string
 	DBShards     int
 	DBMemMB      int
 	SysInfo      crawl.SysInfo
@@ -97,21 +97,21 @@ func runRecrawlJob(ctx context.Context, args recrawlJobArgs) error {
 		ls.binWriter = binWriter
 	}
 
-	if args.BodyStoreDir != "" {
-		dir := args.BodyStoreDir
+	if args.WarcDir != "" {
+		dir := args.WarcDir
 		if strings.HasPrefix(dir, "~/") {
 			home, err := os.UserHomeDir()
 			if err != nil {
-				return fmt.Errorf("resolving home dir for body store: %w", err)
+				return fmt.Errorf("resolving home dir for warc store: %w", err)
 			}
 			dir = filepath.Join(home, dir[2:])
 		}
-		bs, err := bodystore.Open(dir)
+		ws, err := warcstore.Open(dir)
 		if err != nil {
-			return fmt.Errorf("opening body store %s: %w", dir, err)
+			return fmt.Errorf("opening warc store %s: %w", dir, err)
 		}
-		args.JobCfg.BodyStore = bs
-		fmt.Printf("Body store: %s\n", dir)
+		args.JobCfg.WarcStore = ws
+		fmt.Printf("WARC store: %s\n", dir)
 	}
 
 	// Inject storage constructors

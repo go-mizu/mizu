@@ -23,8 +23,8 @@ type Result struct {
 	StatusCode    int
 	ContentType   string
 	ContentLength int64
-	Body          string // always "" (overflow string fix; bodies stored via BodyCID)
-	BodyCID       string // CAS reference e.g. "sha256:{hex64}"; "" = not stored
+	Body          string // always "" (DuckDB overflow string block fix)
+	WarcID        string // WARC response record UUID; "" = not stored
 	Title         string
 	Description   string
 	Language      string

@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"runtime/debug"
 	"time"
+
+	"github.com/go-mizu/mizu/blueprints/search/pkg/crawl/warcstore"
 )
 
 // JobConfig configures a two-pass recrawl job.
@@ -51,11 +53,9 @@ type JobConfig struct {
 	// Logger is used for internal soft errors (nil = slog.Default())
 	Logger *slog.Logger
 
-	// BodyStore is optional. When non-nil, HTML bodies are stored in a CAS store
-	// and Result.BodyCID is populated; Result.Body is left empty.
-	BodyStore interface {
-		Put(body []byte) (cid string, err error)
-	}
+	// WarcStore is optional. When non-nil, HTML responses are stored as WARC 1.1 files
+	// and Result.WarcID is populated; Result.Body is left empty.
+	WarcStore *warcstore.Store
 }
 
 // JobResult holds combined statistics from both passes.
@@ -137,8 +137,8 @@ func RunJob(ctx context.Context, seeds []SeedURL, dns DNSCache, cfg JobConfig) (
 		engCfg.BatchSize = cfg.BatchSize
 	}
 	engCfg.Notifier = cfg.Notifier
-	if cfg.BodyStore != nil {
-		engCfg.BodyStore = cfg.BodyStore
+	if cfg.WarcStore != nil {
+		engCfg.WarcStore = cfg.WarcStore
 	}
 
 	if dns == nil {

@@ -17,7 +17,7 @@
 //	[17:25] fetch_ms    (int64 LE)
 //	[25:33] crawled_ms  (int64 LE)
 //	then 9 string fields, each as: uint16 LE length + bytes (truncated at 65535)
-//	  url, content_type, body_cid, title, description, language, domain, redirect_url, error
+//	  url, content_type, warc_id, title, description, language, domain, redirect_url, error
 package bseg
 
 import (
@@ -57,7 +57,7 @@ type Record struct {
 	CrawledMs   int64
 	URL         string
 	ContentType string
-	BodyCID     string
+	WarcID      string
 	Title       string
 	Description string
 	Language    string

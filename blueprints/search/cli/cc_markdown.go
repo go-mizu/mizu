@@ -19,7 +19,7 @@ import (
 func newCCMarkdown() *cobra.Command {
 	var (
 		crawlID          string
-		bodyStore        string
+		warcDir          string
 		workers          int
 		force            bool
 		fast             bool
@@ -34,9 +34,9 @@ func newCCMarkdown() *cobra.Command {
 		Short: "Convert CC HTML bodies → clean markdown (3-phase pipeline)",
 		Long: `3-phase pipeline: Extract → Convert → Compress
 
-  Phase 1  bodies/*.gz → html/*.html    decompress gzip
-  Phase 2  html/*.html → md/*.md         HTML → Markdown (trafilatura or go-readability)
-  Phase 3  md/*.md     → md-gz/*.md.gz   re-compress with gzip
+  Phase 1  warc/**/*.warc → html/*.html  extract HTML from WARC files
+  Phase 2  html/*.html → md/*.md          HTML → Markdown (trafilatura or go-readability)
+  Phase 3  md/*.md     → md-gz/*.md.gz    re-compress with gzip
 
 Before Phase 2, auto-benchmarks 8 / 16 / 32 / 64 / 128 / 256 workers on a
 200-file sample and selects the fastest count for this machine.
@@ -66,14 +66,14 @@ Directories (relative to body-store parent):
 				return cmd.Help()
 			}
 			if inMemory {
-				return runCCMarkdownPipeline(cmd.Context(), crawlID, bodyStore, workers, force, fast, cpuProfile)
+				return runCCMarkdownPipeline(cmd.Context(), crawlID, warcDir, workers, force, fast, cpuProfile)
 			}
-			return runCCMarkdownPhases(cmd.Context(), crawlID, bodyStore, workers, force, fast, keepIntermediate, cpuProfile)
+			return runCCMarkdownPhases(cmd.Context(), crawlID, warcDir, workers, force, fast, keepIntermediate, cpuProfile)
 		},
 	}
 
 	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest)")
-	cmd.Flags().StringVar(&bodyStore, "body-store", "", "Body store directory (default: ~/data/common-crawl/bodies)")
+	cmd.Flags().StringVar(&warcDir, "warc-dir", "", "WARC store directory (default: ~/data/common-crawl/warc)")
 	cmd.Flags().IntVar(&workers, "workers", 0, "Parallel workers (0 = auto-tune via benchmark)")
 	cmd.Flags().BoolVar(&force, "force", false, "Re-process existing files in all phases")
 	cmd.Flags().BoolVar(&fast, "fast", false, "Use go-readability instead of trafilatura (3–8× faster)")
@@ -231,7 +231,7 @@ func autoTuneWorkers(ctx context.Context, htmlDir string, fast bool) int {
 
 // ─── pipeline ────────────────────────────────────────────────────────────────
 
-func runCCMarkdownPhases(ctx context.Context, crawlID, bodyStore string, workers int, force, fast, keepIntermediate bool, cpuProfile string) error {
+func runCCMarkdownPhases(ctx context.Context, crawlID, warcDir string, workers int, force, fast, keepIntermediate bool, cpuProfile string) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("  HTML → Markdown   3-Phase Pipeline"))
 	fmt.Println()
@@ -255,20 +255,20 @@ func runCCMarkdownPhases(ctx context.Context, crawlID, bodyStore string, workers
 	if crawlID != "" {
 		ccCfg.CrawlID = crawlID
 	}
-	if bodyStore == "" {
-		bodyStore = filepath.Join(ccCfg.DataDir, "bodies")
-	} else if strings.HasPrefix(bodyStore, "~/") {
+	if warcDir == "" {
+		warcDir = filepath.Join(ccCfg.DataDir, "warc")
+	} else if strings.HasPrefix(warcDir, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return fmt.Errorf("resolve home: %w", err)
 		}
-		bodyStore = filepath.Join(home, bodyStore[2:])
+		warcDir = filepath.Join(home, warcDir[2:])
 	}
-	if info, err := os.Stat(bodyStore); err != nil || !info.IsDir() {
-		return fmt.Errorf("body store not found: %s\n  Run 'search cc recrawl' first", bodyStore)
+	if info, err := os.Stat(warcDir); err != nil || !info.IsDir() {
+		return fmt.Errorf("warc store not found: %s\n  Run 'search cc recrawl' first", warcDir)
 	}
 
-	base := filepath.Dir(bodyStore)
+	base := filepath.Dir(warcDir)
 	htmlDir := filepath.Join(base, "html")
 	mdDir := filepath.Join(base, "md")
 	mdGzDir := filepath.Join(base, "md-gz")
@@ -283,7 +283,7 @@ func runCCMarkdownPhases(ctx context.Context, crawlID, bodyStore string, workers
 		workersStr = fmt.Sprintf("%d (fixed, skipping benchmark)", workers)
 	}
 
-	fmt.Printf("  bodies/   %s\n", labelStyle.Render(bodyStore))
+	fmt.Printf("  warc/     %s\n", labelStyle.Render(warcDir))
 	fmt.Printf("  html/     %s\n", labelStyle.Render(htmlDir))
 	fmt.Printf("  md/       %s\n", labelStyle.Render(mdDir))
 	fmt.Printf("  md-gz/    %s\n", labelStyle.Render(mdGzDir))
@@ -306,9 +306,9 @@ func runCCMarkdownPhases(ctx context.Context, crawlID, bodyStore string, workers
 	pipeStart := time.Now()
 
 	// ═══════════════════════════════════════════════════════════════════
-	// Phase 1 — Extract   bodies/*.gz → html/*.html
+	// Phase 1 — Extract   warc/**/*.warc → html/*.html
 	// ═══════════════════════════════════════════════════════════════════
-	fmt.Println(subtitleStyle.Render("  Phase 1 / 3 — Extract   bodies/*.gz → html/*.html"))
+	fmt.Println(subtitleStyle.Render("  Phase 1 / 3 — Extract   warc/**/*.warc → html/*.html"))
 	fmt.Println()
 	memBef1 := memSysMB()
 
@@ -318,7 +318,7 @@ func runCCMarkdownPhases(ctx context.Context, crawlID, bodyStore string, workers
 		p1Workers = runtime.NumCPU()
 	}
 	s1, err := markdown.RunExtract(ctx, markdown.ExtractConfig{
-		InputDir:  bodyStore,
+		InputDir:  warcDir,
 		OutputDir: htmlDir,
 		Workers:   p1Workers,
 		Force:     force,
@@ -509,7 +509,7 @@ func runCCMarkdownPhases(ctx context.Context, crawlID, bodyStore string, workers
 
 // ─── streaming pipeline (--mem) ──────────────────────────────────────────────
 
-func runCCMarkdownPipeline(ctx context.Context, crawlID, bodyStore string, workers int, force, fast bool, cpuProfile string) error {
+func runCCMarkdownPipeline(ctx context.Context, crawlID, warcDir string, workers int, force, fast bool, cpuProfile string) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("  HTML → Markdown   Streaming Pipeline  (--mem)"))
 	fmt.Println()
@@ -532,20 +532,20 @@ func runCCMarkdownPipeline(ctx context.Context, crawlID, bodyStore string, worke
 	if crawlID != "" {
 		ccCfg.CrawlID = crawlID
 	}
-	if bodyStore == "" {
-		bodyStore = filepath.Join(ccCfg.DataDir, "bodies")
-	} else if strings.HasPrefix(bodyStore, "~/") {
+	if warcDir == "" {
+		warcDir = filepath.Join(ccCfg.DataDir, "warc")
+	} else if strings.HasPrefix(warcDir, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return fmt.Errorf("resolve home: %w", err)
 		}
-		bodyStore = filepath.Join(home, bodyStore[2:])
+		warcDir = filepath.Join(home, warcDir[2:])
 	}
-	if info, err := os.Stat(bodyStore); err != nil || !info.IsDir() {
-		return fmt.Errorf("body store not found: %s\n  Run 'search cc recrawl' first", bodyStore)
+	if info, err := os.Stat(warcDir); err != nil || !info.IsDir() {
+		return fmt.Errorf("warc store not found: %s\n  Run 'search cc recrawl' first", warcDir)
 	}
 
-	base := filepath.Dir(bodyStore)
+	base := filepath.Dir(warcDir)
 	mdGzDir := filepath.Join(base, "md-gz")
 	indexPath := filepath.Join(mdGzDir, "index.duckdb")
 
@@ -558,7 +558,7 @@ func runCCMarkdownPipeline(ctx context.Context, crawlID, bodyStore string, worke
 		effWorkers = runtime.NumCPU()
 	}
 
-	fmt.Printf("  bodies/   %s\n", labelStyle.Render(bodyStore))
+	fmt.Printf("  warc/     %s\n", labelStyle.Render(warcDir))
 	fmt.Printf("  md-gz/    %s\n", labelStyle.Render(mdGzDir))
 	fmt.Printf("  Engine    %s\n", infoStyle.Render(extractor))
 	fmt.Printf("  Workers   %s per stage  (3 stages × %d = %d goroutines)\n",
@@ -570,14 +570,14 @@ func runCCMarkdownPipeline(ctx context.Context, crawlID, bodyStore string, worke
 	}
 	fmt.Println()
 
-	fmt.Println(subtitleStyle.Render("  Pipeline  bodies/*.gz → [htmlCh] → convert → [mdCh] → md-gz/*.md.gz"))
+	fmt.Println(subtitleStyle.Render("  Pipeline  warc/**/*.warc → [htmlCh] → convert → [mdCh] → md-gz/*.md.gz"))
 	fmt.Println()
 
-	diskIn := diskUsageBytes(bodyStore)
+	diskIn := diskUsageBytes(warcDir)
 	memBef := memSysMB()
 
 	result, err := markdown.RunPipeline(ctx, markdown.PipelineConfig{
-		InputDir:  bodyStore,
+		InputDir:  warcDir,
 		OutputDir: mdGzDir,
 		IndexPath: indexPath,
 		Workers:   workers,
@@ -633,10 +633,10 @@ func runCCMarkdownPipeline(ctx context.Context, crawlID, bodyStore string, worke
 
 	// ── Disk comparison ───────────────────────────────────────────────────────
 	fmt.Println(subtitleStyle.Render("  Disk:"))
-	fmt.Printf("  bodies/   %s  (input .gz)\n", formatBytes(diskIn))
+	fmt.Printf("  warc/     %s  (input .warc)\n", formatBytes(diskIn))
 	fmt.Printf("  md-gz/    %s", formatBytes(diskOut))
 	if diskIn > 0 && diskOut > 0 {
-		fmt.Printf("  (-%.1f%% vs bodies/)", (1.0-float64(diskOut)/float64(diskIn))*100)
+		fmt.Printf("  (-%.1f%% vs warc/)", (1.0-float64(diskOut)/float64(diskIn))*100)
 	}
 	fmt.Println()
 	fmt.Println()

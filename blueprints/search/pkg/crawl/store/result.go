@@ -141,13 +141,14 @@ func initResultSchema(db *sql.DB, memMB int) error {
 			crawled_at TIMESTAMP,
 			error VARCHAR,
 			status VARCHAR DEFAULT 'done',
-			body_cid VARCHAR DEFAULT ''
+			warc_id VARCHAR DEFAULT ''
 		)
 	`); err != nil {
 		return err
 	}
-	// Add body_cid to existing DBs created before this schema version.
-	_, _ = db.Exec(`ALTER TABLE results ADD COLUMN IF NOT EXISTS body_cid VARCHAR DEFAULT ''`)
+	// Migrate: rename body_cid → warc_id for DBs created before this schema version.
+	_, _ = db.Exec(`ALTER TABLE results RENAME COLUMN body_cid TO warc_id`)
+	_, _ = db.Exec(`ALTER TABLE results ADD COLUMN IF NOT EXISTS warc_id VARCHAR DEFAULT ''`)
 	return nil
 }
 
@@ -229,7 +230,7 @@ func writeBatchValues(db *sql.DB, batch []crawl.Result) int {
 		chunk := batch[i:end]
 
 		var b strings.Builder
-		b.WriteString("INSERT INTO results (url, status_code, content_type, content_length, body, title, description, language, domain, redirect_url, fetch_time_ms, crawled_at, error, status, body_cid) VALUES ")
+		b.WriteString("INSERT INTO results (url, status_code, content_type, content_length, body, title, description, language, domain, redirect_url, fetch_time_ms, crawled_at, error, status, warc_id) VALUES ")
 		args := make([]any, 0, len(chunk)*cols)
 
 		for j, r := range chunk {
@@ -244,7 +245,7 @@ func writeBatchValues(db *sql.DB, batch []crawl.Result) int {
 			args = append(args, sanitizeStr(r.URL), r.StatusCode, sanitizeStr(r.ContentType), r.ContentLength,
 				"", sanitizeStr(r.Title), sanitizeStr(r.Description), sanitizeStr(r.Language),
 				sanitizeStr(r.Domain), sanitizeStr(r.RedirectURL), r.FetchTimeMs, r.CrawledAt,
-				sanitizeStr(r.Error), status, sanitizeStr(r.BodyCID))
+				sanitizeStr(r.Error), status, sanitizeStr(r.WarcID))
 		}
 
 		if _, err := db.Exec(b.String(), args...); err != nil {
