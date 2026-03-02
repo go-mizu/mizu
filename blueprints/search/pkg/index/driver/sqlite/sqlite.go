@@ -95,7 +95,7 @@ func (e *Engine) Index(ctx context.Context, docs []index.Document) error {
 	defer stmt.Close()
 
 	for _, doc := range docs {
-		if _, err := stmt.ExecContext(ctx, doc.DocID, doc.Text); err != nil {
+		if _, err := stmt.ExecContext(ctx, doc.DocID, string(doc.Text)); err != nil {
 			return err
 		}
 	}

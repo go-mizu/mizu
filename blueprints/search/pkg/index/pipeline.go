@@ -221,7 +221,7 @@ func readFiles(ctx context.Context, in <-chan string, out chan<- Document, stats
 			stats.Errors.Add(1)
 			continue
 		}
-		if doc.Text == "" {
+		if len(doc.Text) == 0 {
 			continue
 		}
 		select {
@@ -278,14 +278,13 @@ func readMarkdownFile(path string) (Document, error) {
 	base := filepath.Base(path)
 	docID := strings.TrimSuffix(strings.TrimSuffix(base, ".gz"), ".md")
 
-	text := string(data)
-	if !utf8.ValidString(text) {
-		text = strings.ToValidUTF8(text, "\uFFFD")
+	if !utf8.Valid(data) {
+		data = []byte(strings.ToValidUTF8(string(data), "\uFFFD"))
 	}
 
 	return Document{
 		DocID: docID,
-		Text:  text,
+		Text:  data,
 	}, nil
 }
 

@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sync"
 )
 
 // flatBinMagic is the 8-byte file header for the flat binary pack format.
@@ -28,11 +27,6 @@ const flatBinFooterMagic = "MZFTS1F\n"
 //	[21]    flags         uint8     — reserved, 0
 //	[22:30] footer_magic  [8]byte   — "MZFTS1F\n"
 const flatBinFooterSize = 30
-
-// flatBinTextPool pools []byte values used for text reads in RunPipelineFromFlatBin.
-// Pooling the text buffer avoids one large allocation per document, reducing GC
-// pressure when reading millions of records.
-var flatBinTextPool = sync.Pool{New: func() any { b := make([]byte, 4*1024); return &b }}
 
 // PackFlatBin packs all markdown files from markdownDir into a flat binary file at packPath.
 //
@@ -81,7 +75,7 @@ func PackFlatBin(ctx context.Context, markdownDir, packPath string, workers, bat
 				if _, err := bw.Write(hdr[2:6]); err != nil {
 					return err
 				}
-				if _, err := io.WriteString(bw, doc.Text); err != nil {
+				if _, err := bw.Write(doc.Text); err != nil { // doc.Text is []byte
 					return err
 				}
 			}
@@ -126,6 +120,8 @@ func PackFlatBin(ctx context.Context, markdownDir, packPath string, workers, bat
 // If the file contains a footer (written by PackFlatBin), the total record count is used
 // to display percentage progress and the goroutine stops exactly at the footer boundary.
 // Falls back gracefully for files written without a footer (total = 0, reads until EOF).
+//
+// Document.Text slices are allocated fresh per record and passed directly without copying.
 func RunPipelineFromFlatBin(ctx context.Context, engine Engine, packPath string, batchSize int, progress PackProgressFunc) (*PipelineStats, error) {
 	f, err := os.Open(packPath)
 	if err != nil {
@@ -163,11 +159,6 @@ func RunPipelineFromFlatBin(ctx context.Context, engine Engine, packPath string,
 		br := bufio.NewReaderSize(f, 1<<20)
 		var hdr [6]byte
 
-		// Acquire a pooled buffer for text reads. The buffer is grown as needed
-		// and returned to the pool when the goroutine exits.
-		pbuf := flatBinTextPool.Get().(*[]byte)
-		defer flatBinTextPool.Put(pbuf)
-
 		var count int64
 		for {
 			if ctx.Err() != nil {
@@ -194,19 +185,14 @@ func RunPipelineFromFlatBin(ctx context.Context, engine Engine, packPath string,
 			}
 			textLen := int(binary.LittleEndian.Uint32(hdr[2:6]))
 
-			// Grow the pooled buffer if needed; otherwise reslice in place.
-			// string(*pbuf) below copies the bytes, so the buffer can be
-			// reused immediately for the next record.
-			if cap(*pbuf) < textLen {
-				*pbuf = make([]byte, textLen)
-			} else {
-				*pbuf = (*pbuf)[:textLen]
-			}
-			if _, err := io.ReadFull(br, *pbuf); err != nil {
+			// Allocate a fresh []byte for the text and pass it directly as
+			// Document.Text — no string conversion, no extra copy.
+			textBuf := make([]byte, textLen)
+			if _, err := io.ReadFull(br, textBuf); err != nil {
 				return
 			}
 			select {
-			case docCh <- Document{DocID: string(idBuf), Text: string(*pbuf)}:
+			case docCh <- Document{DocID: string(idBuf), Text: textBuf}:
 				count++
 			case <-ctx.Done():
 				return

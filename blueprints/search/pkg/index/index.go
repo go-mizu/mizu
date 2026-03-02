@@ -74,7 +74,7 @@ type Searcher interface {
 //     or a document body field in an embedded engine).
 type Document struct {
 	DocID string `json:"doc_id"` // required: unique identifier
-	Text  string `json:"text"`   // required: full text content
+	Text  []byte `json:"text"`   // required: full text content
 }
 
 // Query is a full text query.

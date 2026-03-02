@@ -107,7 +107,7 @@ func (e *duckdbRawWriter) Index(ctx context.Context, docs []index.Document) erro
 
 	for _, doc := range docs {
 		id := strings.ReplaceAll(doc.DocID, "'", "''")
-		text := strings.ReplaceAll(doc.Text, "'", "''")
+		text := strings.ReplaceAll(string(doc.Text), "'", "''")
 		sqlStr := fmt.Sprintf("INSERT INTO docs (doc_id, text) VALUES ('%s', '%s')", id, text)
 		if _, err := tx.ExecContext(ctx, sqlStr); err != nil {
 			return err

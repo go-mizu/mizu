@@ -37,7 +37,7 @@ func PackNDJSON(ctx context.Context, markdownDir, packPath string, workers, batc
 		name: "ndjson-writer",
 		indexFn: func(_ context.Context, docs []Document) error {
 			for _, doc := range docs {
-				if err := enc.Encode(ndjsonRec{I: doc.DocID, T: doc.Text}); err != nil {
+				if err := enc.Encode(ndjsonRec{I: doc.DocID, T: string(doc.Text)}); err != nil {
 					return err
 				}
 			}
@@ -91,7 +91,7 @@ func RunPipelineFromNDJSON(ctx context.Context, engine Engine, packPath string, 
 				if len(line) > 0 {
 					if jsonErr := json.Unmarshal(line, &rec); jsonErr == nil {
 						select {
-						case docCh <- Document{DocID: rec.I, Text: rec.T}:
+						case docCh <- Document{DocID: rec.I, Text: []byte(rec.T)}:
 						case <-ctx.Done():
 							return
 						}

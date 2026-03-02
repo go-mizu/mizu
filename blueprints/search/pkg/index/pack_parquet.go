@@ -34,7 +34,7 @@ func PackParquet(ctx context.Context, markdownDir, packPath string, workers, bat
 		indexFn: func(_ context.Context, docs []Document) error {
 			rows := make([]packParquetDoc, len(docs))
 			for i, d := range docs {
-				rows[i] = packParquetDoc{DocID: d.DocID, Text: d.Text}
+				rows[i] = packParquetDoc{DocID: d.DocID, Text: string(d.Text)}
 			}
 			_, err := pw.Write(rows)
 			return err
@@ -95,7 +95,7 @@ func RunPipelineFromParquet(ctx context.Context, engine Engine, packPath string,
 			n, readErr := r.Read(batch)
 			for i := range n {
 				select {
-				case docCh <- Document{DocID: batch[i].DocID, Text: batch[i].Text}:
+				case docCh <- Document{DocID: batch[i].DocID, Text: []byte(batch[i].Text)}:
 				case <-ctx.Done():
 					return
 				}

@@ -78,7 +78,7 @@ func (e *Engine) Index(ctx context.Context, docs []index.Document) error {
 		}
 		// Escape single quotes
 		id := strings.ReplaceAll(doc.DocID, "'", "''")
-		text := strings.ReplaceAll(doc.Text, "'", "''")
+		text := strings.ReplaceAll(string(doc.Text), "'", "''")
 		// Escape backslashes for ClickHouse
 		text = strings.ReplaceAll(text, `\`, `\\`)
 		fmt.Fprintf(&sb, "('%s', '%s')", id, text)
