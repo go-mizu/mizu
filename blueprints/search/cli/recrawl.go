@@ -14,6 +14,7 @@ import (
 	"time"
 
 	crawl "github.com/go-mizu/mizu/blueprints/search/pkg/crawl"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/crawl/bodystore"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/crawl/store"
 )
 
@@ -97,8 +98,20 @@ func runRecrawlJob(ctx context.Context, args recrawlJobArgs) error {
 	}
 
 	if args.BodyStoreDir != "" {
-		// body store setup if needed
-		_ = args.BodyStoreDir
+		dir := args.BodyStoreDir
+		if strings.HasPrefix(dir, "~/") {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return fmt.Errorf("resolving home dir for body store: %w", err)
+			}
+			dir = filepath.Join(home, dir[2:])
+		}
+		bs, err := bodystore.Open(dir)
+		if err != nil {
+			return fmt.Errorf("opening body store %s: %w", dir, err)
+		}
+		args.JobCfg.BodyStore = bs
+		fmt.Printf("Body store: %s\n", dir)
 	}
 
 	// Inject storage constructors

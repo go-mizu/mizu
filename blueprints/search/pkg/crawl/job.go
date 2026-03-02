@@ -50,6 +50,12 @@ type JobConfig struct {
 
 	// Logger is used for internal soft errors (nil = slog.Default())
 	Logger *slog.Logger
+
+	// BodyStore is optional. When non-nil, HTML bodies are stored in a CAS store
+	// and Result.BodyCID is populated; Result.Body is left empty.
+	BodyStore interface {
+		Put(body []byte) (cid string, err error)
+	}
 }
 
 // JobResult holds combined statistics from both passes.
@@ -131,6 +137,9 @@ func RunJob(ctx context.Context, seeds []SeedURL, dns DNSCache, cfg JobConfig) (
 		engCfg.BatchSize = cfg.BatchSize
 	}
 	engCfg.Notifier = cfg.Notifier
+	if cfg.BodyStore != nil {
+		engCfg.BodyStore = cfg.BodyStore
+	}
 
 	if dns == nil {
 		dns = &NoopDNS{}
