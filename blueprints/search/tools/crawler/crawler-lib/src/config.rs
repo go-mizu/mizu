@@ -92,6 +92,8 @@ pub struct Config {
     pub batch_size: usize,
     pub db_shards: usize, // 0 = auto
     pub db_mem_mb: usize, // 0 = auto
+    /// Number of binary writer flusher threads (0 = auto via auto_config).
+    pub num_flushers: usize,
 
     // Retry
     pub retry_timeout: Duration,
@@ -134,6 +136,7 @@ impl Default for Config {
             batch_size: 5000,
             db_shards: 0,
             db_mem_mb: 0,
+            num_flushers: 0,
             retry_timeout: Duration::from_millis(15000),
             no_retry: false,
             pass2_workers: 0,
@@ -264,5 +267,9 @@ pub fn auto_config(si: &SysInfo, full_body: bool) -> Config {
     cfg.inner_n = inner_n;
     cfg.db_shards = db_shards;
     cfg.db_mem_mb = db_mem_mb;
+    // num_flushers: 1 dedicated OS flusher thread per 2 CPUs, clamped [2, 8].
+    // Each thread does rkyv serialize + sequential disk writes independently.
+    let num_flushers = clamp(si.cpu_count / 2, 2, 8);
+    cfg.num_flushers = num_flushers;
     cfg
 }
