@@ -489,3 +489,54 @@ impl PeakTracker {
         self.peak.load(Ordering::Relaxed)
     }
 }
+
+#[cfg(test)]
+mod adaptive_tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn adaptive_floor_never_drops_below_cfg_timeout() {
+        let adaptive = AdaptiveTimeout::new();
+        // Record 20 very fast responses (100 ms) — P95 = 100 ms → raw adaptive = 200 ms
+        for _ in 0..20 {
+            adaptive.record(100);
+        }
+
+        let cfg_timeout = Duration::from_millis(1000);
+        let ceiling = Duration::from_secs(600);
+        let adaptive_val = adaptive.timeout(ceiling).unwrap_or(cfg_timeout);
+
+        // With floor: max(200ms, 1000ms) = 1000ms
+        let effective = adaptive_val
+            .max(cfg_timeout)
+            .min(cfg_timeout.saturating_mul(3));
+
+        assert!(
+            effective >= cfg_timeout,
+            "effective {}ms should be >= cfg {}ms",
+            effective.as_millis(),
+            cfg_timeout.as_millis()
+        );
+    }
+
+    #[test]
+    fn adaptive_extends_for_slow_domains() {
+        let adaptive = AdaptiveTimeout::new();
+        // Record 20 slow responses (3000 ms) — P95 = 3000 ms → raw adaptive = 6000 ms
+        for _ in 0..20 {
+            adaptive.record(3000);
+        }
+
+        let cfg_timeout = Duration::from_millis(1000);
+        let ceiling = Duration::from_secs(600);
+        let adaptive_val = adaptive.timeout(ceiling).unwrap_or(cfg_timeout);
+
+        let effective = adaptive_val
+            .max(cfg_timeout)
+            .min(cfg_timeout.saturating_mul(3));
+
+        // Should be capped at 3× = 3000ms
+        assert_eq!(effective, Duration::from_millis(3000));
+    }
+}

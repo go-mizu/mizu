@@ -270,11 +270,14 @@ async fn process_one_url(
         Err(_) => return,
     };
 
+    // Floor: never drop below cfg.timeout (fast domains must not shrink the timeout).
+    // Ceiling: ×3 (vs old ×5 — still gives slow domains 3× the base).
     let effective_timeout = if !cfg.disable_adaptive_timeout {
         adaptive
             .timeout(cfg.adaptive_timeout_max)
             .unwrap_or(cfg.timeout)
-            .min(cfg.timeout.saturating_mul(5))
+            .max(cfg.timeout)                   // floor: never below configured baseline
+            .min(cfg.timeout.saturating_mul(3)) // tighter ceiling: ×3 not ×5
     } else {
         cfg.timeout
     };
