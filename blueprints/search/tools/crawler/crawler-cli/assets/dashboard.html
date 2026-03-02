@@ -743,7 +743,11 @@ es.onmessage = function(e) {
   $('pctTimeout').textContent = pct(s.timeout, s.total);
   $('pctSkipped').textContent = pct(s.skipped, s.total);
 
-  // Throughput
+  // Throughput — use pass-2 relative totals so avg RPS and ETA are accurate in pass-2
+  const isPass2 = s.pass > 1 && s.pass1_total > 0;
+  const currentTotal     = isPass2 ? s.total - s.pass1_total : s.total;
+  const currentElapsedMs = isPass2 ? s.elapsed_ms - s.pass2_start_elapsed_ms : s.elapsed_ms;
+
   if (prevTotal !== null && prevElapsed !== null) {
     const dt = (s.elapsed_ms - prevElapsed) / 1000;
     if (dt > 0.05) {
@@ -755,16 +759,17 @@ es.onmessage = function(e) {
   prevTotal = s.total;
   prevElapsed = s.elapsed_ms;
 
-  const avgRps = s.elapsed_ms > 100 ? Math.round(s.total / (s.elapsed_ms / 1000)) : 0;
+  const avgRps = currentElapsedMs > 100 ? Math.round(currentTotal / (currentElapsedMs / 1000)) : 0;
   $('avgRps').textContent = fmt(avgRps);
   $('peakRps').textContent = fmt(s.peak_rps);
   $('elapsed').textContent = fmtElapsed(s.elapsed_ms);
 
-  if (avgRps > 0 && s.total_seeds > s.total) {
-    const remaining = s.total_seeds - s.total;
+  const denomSeeds = isPass2 ? s.pass2_seeds : s.total_seeds;
+  if (avgRps > 0 && denomSeeds > currentTotal) {
+    const remaining = denomSeeds - currentTotal;
     const etaMs = (remaining / avgRps) * 1000;
     $('eta').textContent = fmtElapsed(etaMs);
-  } else if (s.total >= s.total_seeds && s.total_seeds > 0) {
+  } else if (currentTotal >= denomSeeds && denomSeeds > 0) {
     $('eta').textContent = 'done';
   } else {
     $('eta').textContent = '--';
@@ -873,11 +878,20 @@ es.onmessage = function(e) {
     $('dataUpdated').textContent = 'Updated ' + ageSecs + 's ago';
   }
 
-  // Progress
-  if (s.total_seeds > 0) {
+  // Progress — in pass-2, show pass-2-relative done/total
+  const isP2 = s.pass > 1 && s.pass1_total > 0 && s.pass2_seeds > 0;
+  if (isP2) {
+    const p2Done = s.total - s.pass1_total;
+    const ratio = Math.min(p2Done / s.pass2_seeds, 1);
+    $('progressFill').style.width = (ratio * 100) + '%';
+    $('progressText').textContent = (ratio * 100).toFixed(1) + '%  '
+      + fmtShort(p2Done) + ' / ' + fmtShort(s.pass2_seeds)
+      + '  (pass 2)';
+  } else if (s.total_seeds > 0) {
     const ratio = Math.min(s.total / s.total_seeds, 1);
     $('progressFill').style.width = (ratio * 100) + '%';
-    $('progressText').textContent = (ratio * 100).toFixed(1) + '%  ' + fmtShort(s.total) + ' / ' + fmtShort(s.total_seeds);
+    $('progressText').textContent = (ratio * 100).toFixed(1) + '%  '
+      + fmtShort(s.total) + ' / ' + fmtShort(s.total_seeds);
   } else if (s.total > 0) {
     $('progressText').textContent = fmt(s.total) + ' fetched';
   }
