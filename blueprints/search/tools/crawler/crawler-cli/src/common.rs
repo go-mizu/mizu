@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use crawler_lib::bodystore::BodyStore;
+use crawler_lib::bodystore::AsyncBodyStore;
 use crawler_lib::config::{Config, EngineType, WriterType};
 use crawler_lib::job::run_job;
 use crawler_lib::stats::Stats;
@@ -389,7 +389,7 @@ pub async fn run_crawl_job(params: CrawlJobParams) -> Result<()> {
     }
     if let Some(ref dir) = params.body_store_dir {
         let resolved = expand_home(dir);
-        let store = BodyStore::open(&resolved)?;
+        let store = AsyncBodyStore::new(&resolved)?;
         cfg.body_store = Some(Arc::new(store));
         println!("Body store: {}", resolved.display());
     }
@@ -505,6 +505,9 @@ pub async fn run_crawl_job(params: CrawlJobParams) -> Result<()> {
         None
     };
 
+    // Clone body store handle before cfg is moved into run_job, so we can close it after.
+    let body_store_handle = cfg.body_store.clone();
+
     // Run job
     let job_result = run_job(
         params.seeds,
@@ -518,6 +521,10 @@ pub async fn run_crawl_job(params: CrawlJobParams) -> Result<()> {
     .await?;
 
     let total_elapsed = job_start.elapsed();
+    // Flush pending async body writes before closing the result writer.
+    if let Some(ref store) = body_store_handle {
+        store.close()?;
+    }
     result_writer.close()?;
     finalize_disk_stats(&live_stats, &disk_paths);
 

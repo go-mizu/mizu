@@ -654,7 +654,7 @@ async fn fetch_one(
     seed: &SeedURL,
     timeout: Duration,
     max_body_bytes: usize,
-    body_store: Option<&crate::bodystore::BodyStore>,
+    body_store: Option<&crate::bodystore::AsyncBodyStore>,
 ) -> Result<CrawlResult, (reqwest::Error, i64)> {
     let start = Instant::now();
 
@@ -748,9 +748,10 @@ async fn fetch_one(
     };
 
     // Store body in CAS when a body store is configured and body was read.
+    // put_async() returns the CID immediately; the actual write is background-threaded.
     let body_cid = if let Some(store) = body_store {
         if should_read_body && !body_bytes.is_empty() {
-            store.put(&body_bytes).unwrap_or_default()
+            store.put_async(&body_bytes)
         } else {
             String::new()
         }

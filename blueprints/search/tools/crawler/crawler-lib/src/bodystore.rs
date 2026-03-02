@@ -87,6 +87,12 @@ pub struct AsyncBodyStore {
     handle: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
+impl std::fmt::Debug for AsyncBodyStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AsyncBodyStore")
+    }
+}
+
 impl AsyncBodyStore {
     pub fn new(dir: impl AsRef<std::path::Path>) -> Result<Self> {
         let inner = Arc::new(BodyStore::open(dir)?);

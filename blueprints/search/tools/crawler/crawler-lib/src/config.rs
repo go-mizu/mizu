@@ -1,4 +1,4 @@
-use crate::bodystore::BodyStore;
+use crate::bodystore::AsyncBodyStore;
 use crate::stats::Stats;
 use std::sync::Arc;
 use std::time::Duration;
@@ -116,7 +116,7 @@ pub struct Config {
     /// Optional content-addressable body store.
     /// When set, HTML bodies are written to the CAS and CrawlResult.body_cid is populated.
     /// Compatible with Go's pkg/crawl/bodystore format: sha256:{hex64} CIDs.
-    pub body_store: Option<Arc<BodyStore>>,
+    pub body_store: Option<Arc<AsyncBodyStore>>,
 }
 
 impl Default for Config {
