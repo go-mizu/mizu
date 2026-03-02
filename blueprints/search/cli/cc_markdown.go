@@ -26,6 +26,7 @@ func newCCMarkdown() *cobra.Command {
 		cpuProfile       string
 		phases           bool
 		keepIntermediate bool
+		inMemory         bool
 	)
 
 	cmd := &cobra.Command{
@@ -57,10 +58,15 @@ Directories (relative to body-store parent):
 		Example: `  search cc markdown --phases
   search cc markdown --phases --fast
   search cc markdown --phases --workers 32     # skip auto-tune, use 32 workers
-  search cc markdown --phases --force          # re-process all files`,
+  search cc markdown --phases --force          # re-process all files
+  search cc markdown --mem                     # streaming, no temp dirs
+  search cc markdown --mem --fast              # streaming + go-readability`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !phases {
+			if !phases && !inMemory {
 				return cmd.Help()
+			}
+			if inMemory {
+				return runCCMarkdownPipeline(cmd.Context(), crawlID, bodyStore, workers, force, fast, cpuProfile)
 			}
 			return runCCMarkdownPhases(cmd.Context(), crawlID, bodyStore, workers, force, fast, keepIntermediate, cpuProfile)
 		},
@@ -74,6 +80,7 @@ Directories (relative to body-store parent):
 	cmd.Flags().StringVar(&cpuProfile, "cpuprofile", "", "Write CPU profile (analyze: go tool pprof <file>)")
 	cmd.Flags().BoolVar(&phases, "phases", false, "Run 3-phase pipeline with per-phase stats and worker auto-tune")
 	cmd.Flags().BoolVar(&keepIntermediate, "keep-intermediate", false, "Keep html/ and md/*.md files after pipeline (default: auto-delete)")
+	cmd.Flags().BoolVar(&inMemory, "mem", false, "Streaming pipeline: no intermediate html/ or md/ dirs (fastest)")
 
 	return cmd
 }
@@ -109,11 +116,9 @@ func mdSep() {
 // ─── per-phase display ───────────────────────────────────────────────────────
 
 // mdPhaseProgress writes a single-line live progress update.
+// When total=0 (unknown), only the done count is shown without percentage.
+// When writeBytes=0, the W: column is omitted to avoid misleading "W:0.0 MB/s".
 func mdPhaseProgress(verb string, done, total, errors, readBytes, writeBytes int64, elapsed time.Duration, peakMemMB float64) {
-	pct := float64(0)
-	if total > 0 {
-		pct = float64(done) / float64(total) * 100
-	}
 	rate := float64(0)
 	readMBs := float64(0)
 	writeMBs := float64(0)
@@ -122,10 +127,22 @@ func mdPhaseProgress(verb string, done, total, errors, readBytes, writeBytes int
 		readMBs = float64(readBytes) / (1024 * 1024) / elapsed.Seconds()
 		writeMBs = float64(writeBytes) / (1024 * 1024) / elapsed.Seconds()
 	}
-	fmt.Printf("\r\033[K  %s: %s/%s (%.1f%%)  %.0f docs/s  R:%.1f MB/s  W:%.1f MB/s  Mem:%.0f MB",
-		verb,
-		ccFmtInt64(done), ccFmtInt64(total), pct,
-		rate, readMBs, writeMBs, peakMemMB)
+
+	var progress string
+	if total > 0 {
+		pct := float64(done) / float64(total) * 100
+		progress = fmt.Sprintf("%s/%s (%.1f%%)", ccFmtInt64(done), ccFmtInt64(total), pct)
+	} else {
+		progress = ccFmtInt64(done)
+	}
+
+	if writeBytes > 0 {
+		fmt.Printf("\r\033[K  %s: %s  %.0f docs/s  R:%.1f MB/s  W:%.1f MB/s  Mem:%.0f MB",
+			verb, progress, rate, readMBs, writeMBs, peakMemMB)
+	} else {
+		fmt.Printf("\r\033[K  %s: %s  %.0f docs/s  R:%.1f MB/s  Mem:%.0f MB",
+			verb, progress, rate, readMBs, peakMemMB)
+	}
 	if errors > 0 {
 		fmt.Printf("  err:%s", ccFmtInt64(errors))
 	}
@@ -486,6 +503,143 @@ func runCCMarkdownPhases(ctx context.Context, crawlID, bodyStore string, workers
 		}
 		fmt.Println()
 	}
+
+	return nil
+}
+
+// ─── streaming pipeline (--mem) ──────────────────────────────────────────────
+
+func runCCMarkdownPipeline(ctx context.Context, crawlID, bodyStore string, workers int, force, fast bool, cpuProfile string) error {
+	fmt.Println(Banner())
+	fmt.Println(subtitleStyle.Render("  HTML → Markdown   Streaming Pipeline  (--mem)"))
+	fmt.Println()
+
+	if cpuProfile != "" {
+		f, err := os.Create(cpuProfile)
+		if err != nil {
+			return fmt.Errorf("create cpu profile: %w", err)
+		}
+		defer f.Close()
+		if err := pprof.StartCPUProfile(f); err != nil {
+			return fmt.Errorf("start cpu profile: %w", err)
+		}
+		defer pprof.StopCPUProfile()
+		fmt.Printf("  Profiling → %s\n\n", labelStyle.Render(cpuProfile))
+	}
+
+	// Resolve body store
+	ccCfg := cc.DefaultConfig()
+	if crawlID != "" {
+		ccCfg.CrawlID = crawlID
+	}
+	if bodyStore == "" {
+		bodyStore = filepath.Join(ccCfg.DataDir, "bodies")
+	} else if strings.HasPrefix(bodyStore, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("resolve home: %w", err)
+		}
+		bodyStore = filepath.Join(home, bodyStore[2:])
+	}
+	if info, err := os.Stat(bodyStore); err != nil || !info.IsDir() {
+		return fmt.Errorf("body store not found: %s\n  Run 'search cc recrawl' first", bodyStore)
+	}
+
+	base := filepath.Dir(bodyStore)
+	mdGzDir := filepath.Join(base, "md-gz")
+	indexPath := filepath.Join(mdGzDir, "index.duckdb")
+
+	extractor := "trafilatura (quality)"
+	if fast {
+		extractor = "go-readability (fast)"
+	}
+	effWorkers := workers
+	if effWorkers <= 0 {
+		effWorkers = runtime.NumCPU()
+	}
+
+	fmt.Printf("  bodies/   %s\n", labelStyle.Render(bodyStore))
+	fmt.Printf("  md-gz/    %s\n", labelStyle.Render(mdGzDir))
+	fmt.Printf("  Engine    %s\n", infoStyle.Render(extractor))
+	fmt.Printf("  Workers   %s per stage  (3 stages × %d = %d goroutines)\n",
+		infoStyle.Render(fmt.Sprintf("%d", effWorkers)), effWorkers, effWorkers*3)
+	if force {
+		fmt.Printf("  Mode      %s\n", warningStyle.Render("force — re-process all files"))
+	} else {
+		fmt.Printf("  Mode      %s\n", infoStyle.Render("incremental — skip existing"))
+	}
+	fmt.Println()
+
+	fmt.Println(subtitleStyle.Render("  Pipeline  bodies/*.gz → [htmlCh] → convert → [mdCh] → md-gz/*.md.gz"))
+	fmt.Println()
+
+	diskIn := diskUsageBytes(bodyStore)
+	memBef := memSysMB()
+
+	result, err := markdown.RunPipeline(ctx, markdown.PipelineConfig{
+		InputDir:  bodyStore,
+		OutputDir: mdGzDir,
+		IndexPath: indexPath,
+		Workers:   workers,
+		Fast:      fast,
+		Force:     force,
+		BatchSize: 1000,
+	}, func(done, total, errors, readBytes, writeBytes int64, elapsed time.Duration, peakMemMB float64) {
+		mdPhaseProgress("Pipeline", done, total, errors, readBytes, writeBytes, elapsed, peakMemMB)
+	})
+	fmt.Printf("\r\033[K")
+	if err != nil {
+		return fmt.Errorf("pipeline: %w", err)
+	}
+
+	memAft := memSysMB()
+	diskOut := diskUsageBytes(mdGzDir)
+
+	// ── Summary ───────────────────────────────────────────────────────────────
+	fmt.Printf("\n  %s pipeline done\n", successStyle.Render("✓"))
+	fmt.Println()
+
+	rate := float64(0)
+	readMBs := float64(0)
+	writeMBs := float64(0)
+	if result.Duration.Seconds() > 0 {
+		rate = float64(result.Written+result.Errors) / result.Duration.Seconds()
+		readMBs = float64(result.ReadBytes) / (1024 * 1024) / result.Duration.Seconds()
+		writeMBs = float64(result.WriteBytes) / (1024 * 1024) / result.Duration.Seconds()
+	}
+
+	fmt.Printf("    Decompressed  %s files\n", infoStyle.Render(ccFmtInt64(result.Read)))
+	fmt.Printf("    Converted     %s to Markdown", infoStyle.Render(ccFmtInt64(result.Converted)))
+	if result.Errors > 0 {
+		denom := result.Read
+		if denom < 1 {
+			denom = 1
+		}
+		errPct := float64(result.Errors) / float64(denom) * 100
+		fmt.Printf("  (%s, %.1f%% extraction errors)", warningStyle.Render(ccFmtInt64(result.Errors)+" skipped"), errPct)
+	}
+	fmt.Println()
+	fmt.Printf("    Written       %s → md-gz/  (%s)\n",
+		infoStyle.Render(ccFmtInt64(result.Written)), formatBytes(diskOut))
+	if result.Skipped > 0 {
+		fmt.Printf("    Skipped       %s (already exist)\n", ccFmtInt64(result.Skipped))
+	}
+	fmt.Printf("    Rate          %.0f docs/s  ·  %.1f MB/s read  ·  %.1f MB/s write\n",
+		rate, readMBs, writeMBs)
+	fmt.Printf("    Time          %s\n", result.Duration.Round(time.Millisecond))
+	fmt.Printf("    RAM           before %.0f MB → after %.0f MB  (peak %.0f MB)\n",
+		memBef, memAft, result.PeakMemMB)
+	fmt.Println()
+
+	// ── Disk comparison ───────────────────────────────────────────────────────
+	fmt.Println(subtitleStyle.Render("  Disk:"))
+	fmt.Printf("  bodies/   %s  (input .gz)\n", formatBytes(diskIn))
+	fmt.Printf("  md-gz/    %s", formatBytes(diskOut))
+	if diskIn > 0 && diskOut > 0 {
+		fmt.Printf("  (-%.1f%% vs bodies/)", (1.0-float64(diskOut)/float64(diskIn))*100)
+	}
+	fmt.Println()
+	fmt.Println()
 
 	return nil
 }
