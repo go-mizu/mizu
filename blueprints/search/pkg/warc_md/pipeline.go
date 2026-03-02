@@ -365,3 +365,19 @@ func DiskUsageBytes(path string) int64 {
 	})
 	return total
 }
+
+// DiskUsageMdGz sums only *.md.gz files under dir, excluding index.duckdb
+// and any other metadata files that live in the same output directory.
+func DiskUsageMdGz(dir string) int64 {
+	var total int64
+	_ = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".md.gz") {
+			return nil
+		}
+		if info, err := d.Info(); err == nil {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total
+}

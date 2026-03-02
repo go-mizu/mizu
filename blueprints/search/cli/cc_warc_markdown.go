@@ -309,7 +309,7 @@ func runWARCMDInMemory(ctx context.Context, cfg warcmd.Config, inputFiles []stri
 
 	memAft := memSysMB()
 	totalDuration := time.Since(pipeStart)
-	disk3 := warcmd.DiskUsageBytes(cfg.MarkdownGzDir())
+	disk3 := warcmd.DiskUsageMdGz(cfg.MarkdownGzDir())
 
 	// In-memory mode has no intermediate disk stages; we know read bytes (HTML)
 	// and write bytes (compressed), but not the plain markdown size.
