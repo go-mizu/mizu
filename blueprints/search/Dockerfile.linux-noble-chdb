@@ -1,0 +1,80 @@
+# syntax=docker/dockerfile:1.7
+#
+# Ubuntu 24.04 (Noble) + chdb build.
+# Builds search with -tags chdb (duckdb excluded) and bundles libchdb.so.
+# Deploy binary + libchdb.so together; binary uses -Wl,-rpath,$ORIGIN to
+# load libchdb.so from the same directory at runtime.
+
+ARG BASE_IMAGE=ubuntu:24.04
+ARG GO_VERSION=1.26.0
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+ARG CHDB_VERSION=v4.0.2
+
+FROM --platform=${TARGETOS}/${TARGETARCH} ${BASE_IMAGE} AS build
+
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+ARG GO_VERSION
+ARG CHDB_VERSION
+
+WORKDIR /src
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates curl xz-utils make pkg-config \
+        gcc g++ libc6-dev libstdc++-14-dev
+
+RUN curl -fsSL "https://dl.google.com/go/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" -o /tmp/go.tgz \
+    && tar -C /usr/local -xzf /tmp/go.tgz \
+    && rm -f /tmp/go.tgz
+
+ENV PATH=/usr/local/go/bin:${PATH}
+ENV CC=gcc
+ENV CXX=g++
+
+# Download libchdb for linux-x86_64 and install to /libchdb/
+RUN mkdir -p /libchdb \
+    && curl -fsSL "https://github.com/chdb-io/chdb/releases/download/${CHDB_VERSION}/linux-x86_64-libchdb.tar.gz" \
+       -o /tmp/libchdb.tar.gz \
+    && tar -xzf /tmp/libchdb.tar.gz -C /libchdb \
+    && rm -f /tmp/libchdb.tar.gz \
+    && ls /libchdb/
+
+ARG CGO_CFLAGS="-O2 -march=x86-64-v3"
+ARG CGO_CXXFLAGS="-O2 -march=x86-64-v3"
+ENV CGO_CFLAGS=${CGO_CFLAGS}
+ENV CGO_CXXFLAGS=${CGO_CXXFLAGS}
+
+COPY go.mod go.sum /src/
+COPY blueprints/search/go.mod blueprints/search/go.sum /src/blueprints/search/
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    cd /src/blueprints/search \
+    && GOWORK=off go mod download
+
+COPY . .
+
+WORKDIR /src/blueprints/search
+
+ARG GO_LDFLAGS=""
+# -Wl,-rpath,$ORIGIN: load libchdb.so from same directory as the binary at runtime.
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=1 GOWORK=off GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    CGO_LDFLAGS="-L/libchdb -lchdb -Wl,-rpath,\$ORIGIN" \
+    CGO_CFLAGS="${CGO_CFLAGS} -I/libchdb" \
+    go build -tags chdb -trimpath \
+        -ldflags "${GO_LDFLAGS} -linkmode external -extldflags '-static-libstdc++ -static-libgcc'" \
+    -o /out/search-linux-noble-chdb ./cmd/search \
+    && chmod +x /out/search-linux-noble-chdb \
+    && cp /libchdb/libchdb.so /out/libchdb.so
+
+FROM --platform=${TARGETOS}/${TARGETARCH} scratch AS artifact
+COPY --from=build /out/search-linux-noble-chdb /search-linux-noble-chdb
+COPY --from=build /out/libchdb.so /libchdb.so

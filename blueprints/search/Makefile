@@ -186,6 +186,58 @@ build-linux-noble: ## Build Ubuntu 24.04 (Noble) binary to $$HOME/bin/search-lin
 		install -m 0755 "$$tmp_out/search-linux-noble" "$(LINUX_BINARY_NOBLE)"
 	@echo "Built Noble binary: $(LINUX_BINARY_NOBLE) ($(VERSION))"
 
+# Noble (Ubuntu 24.04) + chdb build vars
+LINUX_NOBLE_CHDB_DOCKERFILE ?= Dockerfile.linux-noble-chdb
+LINUX_NOBLE_CHDB_IMAGE_TAG  ?= mizu-search-linux-noble-chdb-build:local
+LINUX_BINARY_NOBLE_CHDB     ?= $(HOME)/bin/search-linux-noble-chdb
+LINUX_BINARY_NOBLE_LIBCHDB  ?= $(HOME)/bin/libchdb.so
+
+.PHONY: build-linux-noble-chdb
+build-linux-noble-chdb: ## Build Ubuntu 24.04 binary with chdb support (downloads libchdb.so ~300MB, ~20min under QEMU)
+	@mkdir -p $(dir $(LINUX_BINARY_NOBLE_CHDB))
+	@tmp_out="$$(mktemp -d)"; \
+		img="$(LINUX_NOBLE_CHDB_IMAGE_TAG)"; \
+		cid=""; \
+		set -e; \
+		trap 'test -n "$$cid" && $(LINUX_CONTAINER) rm -f "$$cid" >/dev/null 2>&1 || true; rm -rf "$$tmp_out"' EXIT; \
+		command -v "$(LINUX_CONTAINER)" >/dev/null 2>&1 || { echo "$(LINUX_CONTAINER) not found"; exit 127; }; \
+		if [ "$(LINUX_CONTAINER)" = "podman" ]; then \
+			if ! podman info >/dev/null 2>&1; then podman machine start >/dev/null; fi; \
+			for i in $$(seq 1 30); do podman info >/dev/null 2>&1 && break; sleep 1; done; \
+		fi; \
+		$(LINUX_CONTAINER) build \
+			--layers \
+			--platform "linux/$(LINUX_GOARCH)" \
+			--file "$(LINUX_NOBLE_CHDB_DOCKERFILE)" \
+			--ignorefile "$(LINUX_DOCKERFILE).dockerignore" \
+			--build-arg GO_VERSION="$(LINUX_GO_VERSION)" \
+			--build-arg TARGETARCH="$(LINUX_GOARCH)" \
+			--build-arg GO_LDFLAGS="$(GO_LDFLAGS)" \
+			--target artifact \
+			-t "$$img" \
+			"$(LINUX_BUILD_CONTEXT)"; \
+		cid="$$($(LINUX_CONTAINER) create --platform "linux/$(LINUX_GOARCH)" "$$img")"; \
+		$(LINUX_CONTAINER) cp "$$cid:/search-linux-noble-chdb" "$$tmp_out/search-linux-noble-chdb"; \
+		$(LINUX_CONTAINER) cp "$$cid:/libchdb.so" "$$tmp_out/libchdb.so"; \
+		install -m 0755 "$$tmp_out/search-linux-noble-chdb" "$(LINUX_BINARY_NOBLE_CHDB)"; \
+		install -m 0644 "$$tmp_out/libchdb.so" "$(LINUX_BINARY_NOBLE_LIBCHDB)"
+	@echo "Built Noble+chdb binary: $(LINUX_BINARY_NOBLE_CHDB) ($(VERSION))"
+	@echo "libchdb.so: $(LINUX_BINARY_NOBLE_LIBCHDB)"
+
+.PHONY: deploy-linux-noble-chdb
+deploy-linux-noble-chdb: build-linux-noble-chdb ## Deploy chdb binary + libchdb.so to remote ~/bin/ and install as ~/bin/search-chdb
+	@test -f "$(DEPLOY_KEY)" || { echo "Deploy key not found: $(DEPLOY_KEY)"; exit 1; }
+	@$(SSH) $(REMOTE_SSH) "mkdir -p \$$HOME/bin"
+	@$(SCP) "$(LINUX_BINARY_NOBLE_CHDB)" $(REMOTE_SSH):.search-chdb-upload.tmp
+	@$(SCP) "$(LINUX_BINARY_NOBLE_LIBCHDB)" $(REMOTE_SSH):.libchdb-upload.tmp
+	@$(SSH) $(REMOTE_SSH) 'bash -lc "set -e; \
+		install -m 0755 $$HOME/.search-chdb-upload.tmp $$HOME/bin/search-linux-noble-chdb; \
+		install -m 0644 $$HOME/.libchdb-upload.tmp $$HOME/bin/libchdb.so; \
+		rm -f $$HOME/.search-chdb-upload.tmp $$HOME/.libchdb-upload.tmp; \
+		printf '"'"'#!/usr/bin/env bash\nexec \"$$HOME/bin/search-linux-noble-chdb\" \"\$$@\"\n'"'"' > $$HOME/bin/search-chdb; \
+		chmod +x $$HOME/bin/search-chdb"'
+	@echo "Deployed chdb: $(REMOTE_SSH):~/bin/search-chdb"
+
 # ── Rust crawler (tools/crawler) ─────────────────────────────────────────────
 # Locate cargo: prefer PATH, fall back to rustup default install location.
 CARGO             ?= $(or $(shell command -v cargo 2>/dev/null),$(HOME)/.cargo/bin/cargo)

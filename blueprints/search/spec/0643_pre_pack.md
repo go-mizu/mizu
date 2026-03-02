@@ -169,6 +169,8 @@ inserts rows inside explicit transactions; reader counts rows with
 
 Source: 173,720 `.md.gz` files.  Single `--format all` run.
 
+### macOS ARM64 (Apple M4, NVMe SSD)
+
 | format  | write speed     | disk size | notes                              |
 |---------|-----------------|-----------|-------------------------------------|
 | ndjson  | 20,264 docs/s   | 721.8 MB  | fastest write; bottleneck = JSON enc |
@@ -176,10 +178,19 @@ Source: 173,720 `.md.gz` files.  Single `--format all` run.
 | parquet | 19,516 docs/s   | 746 MB    | columnar compression, slightly slower |
 | duckdb  |  6,777 docs/s   | 1.1 GB    | **3× slower write**; WAL overhead   |
 
-All three text formats write at roughly the same speed (~20 k docs/s); the
-bottleneck is gzip decompression and pipeline I/O, not the serialisation
-format.  DuckDB is an outlier: each batch triggers a WAL append and
-occasional checkpoint.
+### Ubuntu 24.04 Noble (server2, x86_64 6-core, HDD)
+
+| format  | write speed   | disk size | notes                              |
+|---------|---------------|-----------|-------------------------------------|
+| parquet |  9,966 docs/s | 744.9 MB  | fastest write on HDD                |
+| ndjson  |  4,492 docs/s | 721.8 MB  | JSON enc overhead visible on HDD     |
+| bin     |  2,463 docs/s | 710.9 MB  | **smallest**; HDD random-write bound |
+| duckdb  |    570 docs/s | 1.1 GB    | WAL overhead                        |
+
+All three text formats write at roughly the same speed (~20 k docs/s) on
+NVMe; on HDD, sequential NDJSON/parquet outpace the binary format due to
+alignment differences in the write pattern.  DuckDB is an outlier on both:
+each batch triggers a WAL append and occasional checkpoint.
 
 ---
 
@@ -188,7 +199,7 @@ occasional checkpoint.
 `devnull` discards all documents immediately; this isolates deserialisation
 speed from FTS index overhead.
 
-### After `Document.Text []byte` optimisation (final numbers)
+### macOS ARM64 — after `Document.Text []byte` optimisation
 
 | source   | docs/s    | elapsed | peak RSS | speedup vs files |
 |----------|-----------|---------|----------|-----------------|
@@ -197,6 +208,19 @@ speed from FTS index overhead.
 | parquet  | 401,005   | 400 ms  | <1 MB †  | 21×             |
 | duckdb   | 195,841   | 800 ms  | 141 MB   | 10×             |
 | ndjson   |  48,485   | 3.6 s   | 137 MB   | 2.5×            |
+
+### Ubuntu 24.04 Noble (server2, x86_64 6-core, HDD)
+
+| source   | docs/s     | elapsed | speedup vs files |
+|----------|------------|---------|-----------------|
+| files    |  25,151    | 6.9 s   | 1×              |
+| bin      | **86,736** | 2.0 s   | **3.5×**        |
+| parquet  |  24,424    | 7.1 s   | ~1×             |
+| duckdb   |  13,381    | 13.0 s  | 0.5×            |
+| ndjson   |  14,226    | 12.2 s  | 0.6×            |
+
+On HDD the bin parallel-reader speedup collapses from 37× to 3.5× — seek
+latency dominates when multiple goroutines jump to random chunk offsets.
 
 † Runs complete in under 500 ms; the 500 ms RSS sampling interval never
 fires.  Effective working set ≈ `2 × batchSize × avgDocSize`
@@ -260,7 +284,9 @@ gets a pre-zeroed OS page (virtual memory CoW) — the only write is
 
 173,720 documents; 4 FTS engines × 5 sources.
 
-### Ingest speed (docs/s)
+### macOS ARM64 (Apple M4, NVMe SSD)
+
+#### Ingest speed (docs/s)
 
 | source \ engine | devnull      | sqlite FTS5 | duckdb BM25 | chdb FTS    |
 |-----------------|--------------|-------------|-------------|-------------|
@@ -272,7 +298,7 @@ gets a pre-zeroed OS page (virtual memory CoW) — the only write is
 
 ¹ Parallel reader (NumCPU workers, record offset index in footer).
 
-### Elapsed time
+#### Elapsed time
 
 | source \ engine | devnull    | sqlite FTS5  | duckdb BM25   | chdb FTS    |
 |-----------------|------------|--------------|---------------|-------------|
@@ -282,7 +308,7 @@ gets a pre-zeroed OS page (virtual memory CoW) — the only write is
 | ndjson          | 3.6 s      | 1m 13.4 s    | ~2m 36 s      | —           |
 | duckdb raw      | 800 ms     | 54.2 s       | **1m 59.7 s** | —           |
 
-### Final index disk size
+#### Final index disk size (macOS)
 
 | engine      | disk size |
 |-------------|-----------|
@@ -292,26 +318,73 @@ gets a pre-zeroed OS page (virtual memory CoW) — the only write is
 
 ---
 
+### Ubuntu 24.04 Noble (server2, x86_64 6-core, HDD)
+
+#### Ingest speed (docs/s)
+
+| source \ engine | devnull    | sqlite FTS5 | duckdb BM25 | chdb FTS    |
+|-----------------|------------|-------------|-------------|-------------|
+| files           | 25,151     | 539         | 147         | **789**     |
+| bin             | **86,736** | 580         | 157         | 751         |
+| parquet         | 24,424     | **684**     | 148         | 767         |
+| ndjson          | 14,226     | 664         | 148         | 739         |
+| duckdb raw      | 13,381     | 675         | 150         | n/a ²       |
+
+² chdb binary excludes the DuckDB driver (`//go:build !chdb`).
+
+#### Elapsed time
+
+| source \ engine | devnull    | sqlite FTS5   | duckdb BM25    | chdb FTS      |
+|-----------------|------------|---------------|----------------|---------------|
+| files           | 6.9 s      | 5m 22.1 s     | 19m 43.8 s     | **3m 40.1 s** |
+| bin             | **2.0 s**  | 4m 59.7 s     | 18m 27.6 s     | 3m 51.4 s     |
+| parquet         | 7.1 s      | **4m 14.1 s** | 19m 31.9 s     | 3m 46.6 s     |
+| ndjson          | 12.2 s     | 4m 21.5 s     | 19m 35.7 s     | 3m 55.0 s     |
+| duckdb raw      | 13.0 s     | 4m 17.2 s     | **19m 16.0 s** | n/a           |
+
+#### Final index disk size
+
+| engine      | disk size |
+|-------------|-----------|
+| sqlite FTS5 | 1.1 GB    |
+| duckdb BM25 | 1.5 GB    |
+| chdb FTS    | ~865 MB   |
+
+---
+
 ## Analysis
 
 ### Pack format is irrelevant for real FTS engines
 
 For `sqlite` and `duckdb`, the bottleneck is index creation (FTS5 trigger
 overhead / BM25 posting list construction), not deserialisation.  Switching
-from raw files to any pack format saves at most 8 s out of 53–128 s total —
-under 15% of overall build time.  The source format does affect that margin:
+from raw files to any pack format saves at most 8 s out of 53–128 s total
+on macOS NVMe — under 15% of overall build time.
 
-- `bin` and `duckdb raw` consistently lead for both engines (~54 s for
-  sqlite, ~2 m for duckdb).
-- `parquet` and `ndjson` are marginally slower for sqlite but the difference
-  is within IO noise.
+On HDD (server2) the effect is similar: deserialization is ~10 s faster
+via packed sources, but FTS indexing dominates at 4–20 minutes.
+
+Source ordering on server2:
+- `parquet` marginally fastest for sqlite (684 docs/s, 4m14s).
+- `bin` fastest for duckdb (157 docs/s, 18m28s).
+- For chdb, `files` source wins slightly (789 docs/s, 3m40s) — gzip
+  decompression is compute-bound and server2 has spare CPU while ClickHouse
+  inserts serialize through a single session.
 
 ### chdb is the fastest FTS engine for bulk import
 
 chdb (ClickHouse embedded via chdb-go) indexes at **3,992 docs/s** from
-`bin` source — 23% faster than sqlite FTS5 (3,254 docs/s) and 2.9× faster
-than duckdb BM25 (1,386 docs/s).  Index size is also smallest at **821 MB**
-vs 1.1 GB (sqlite) and 1.5 GB (duckdb).
+`bin` source on macOS — 23% faster than sqlite FTS5 (3,254 docs/s) and
+2.9× faster than duckdb BM25 (1,386 docs/s).
+
+On server2, chdb remains the **fastest FTS engine**: ~750–790 docs/s vs
+~540–684 (sqlite) and ~147–157 (duckdb).  chdb also produces the smallest
+index (~865 MB vs 1.1 GB sqlite, 1.5 GB duckdb).
+
+chdb is 5–10× slower on server2 HDD vs macOS NVMe for the same corpus
+(750 vs 3992 docs/s from bin), whereas sqlite degrades ~4–5× (580 vs 3254).
+DuckDB degrades the most (~9×: 157 vs 1451 docs/s), suggesting BM25 posting
+list construction is particularly IO-sensitive.
 
 The bulk-insert path uses `INSERT INTO documents FORMAT JSONEachRow` with
 `json.Encoder` generating NDJSON embedded directly in the query string.
