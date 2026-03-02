@@ -18,24 +18,18 @@ import (
 type ConvertConfig struct {
 	InputDir  string // warc_single/ base directory
 	OutputDir string // markdown/ base directory
-	IndexPath string // DuckDB index path
 	Workers   int    // parallel workers (0 = NumCPU)
 	Force     bool   // re-convert existing files
-	BatchSize int    // DuckDB index batch size (0 = 1000)
 	Fast      bool   // use go-readability instead of trafilatura
 }
 
 // RunConvert reads each .warc file (which contains raw HTML bytes),
-// converts to Markdown, writes .md files, and records stats in DuckDB.
+// converts to Markdown, and writes .md files.
 //
-// Workers process files in parallel. The DuckDB index records per-file
-// conversion metadata (sizes, tokens, errors, etc.).
+// Workers process files in parallel.
 func RunConvert(ctx context.Context, cfg ConvertConfig, progressFn ProgressFunc) (*PhaseStats, error) {
 	if cfg.Workers <= 0 {
 		cfg.Workers = runtime.NumCPU()
-	}
-	if cfg.BatchSize <= 0 {
-		cfg.BatchSize = 1000
 	}
 
 	// Collect all .warc files from input dir
@@ -56,13 +50,6 @@ func RunConvert(ctx context.Context, cfg ConvertConfig, progressFn ProgressFunc)
 	if err := os.MkdirAll(cfg.OutputDir, 0o755); err != nil {
 		return nil, err
 	}
-
-	// Open DuckDB index (non-blocking drainer)
-	idx, err := mdpkg.OpenIndex(cfg.IndexPath, cfg.BatchSize)
-	if err != nil {
-		return nil, err
-	}
-	defer idx.Close()
 
 	var stats PhaseStats
 	totalFiles := int64(len(files))
@@ -120,7 +107,6 @@ func RunConvert(ctx context.Context, cfg ConvertConfig, progressFn ProgressFunc)
 			htmlBytes, err := os.ReadFile(fpath)
 			if err != nil {
 				atomic.AddInt64(&stats.Errors, 1)
-				idx.Add(mdpkg.IndexRecord{CID: recordID, Error: "read: " + err.Error()})
 				return nil
 			}
 			atomic.AddInt64(&stats.ReadBytes, int64(len(htmlBytes)))
@@ -137,30 +123,10 @@ func RunConvert(ctx context.Context, cfg ConvertConfig, progressFn ProgressFunc)
 			if result.HasContent && result.Markdown != "" {
 				if err := writeRawFile(outPath, []byte(result.Markdown)); err != nil {
 					atomic.AddInt64(&stats.Errors, 1)
-					idx.Add(mdpkg.IndexRecord{CID: recordID, Error: "write: " + err.Error()})
 					return nil
 				}
 				atomic.AddInt64(&stats.WriteBytes, int64(result.MarkdownSize))
 			}
-
-			// Record in DuckDB index
-			ratio := float64(0)
-			if result.HTMLSize > 0 {
-				ratio = float64(result.MarkdownSize) / float64(result.HTMLSize)
-			}
-			idx.Add(mdpkg.IndexRecord{
-				CID:              recordID,
-				HTMLSize:         result.HTMLSize,
-				MarkdownSize:     result.MarkdownSize,
-				HTMLTokens:       result.HTMLTokens,
-				MarkdownTokens:   result.MarkdownTokens,
-				CompressionRatio: ratio,
-				Title:            truncate(result.Title, 500),
-				Language:         result.Language,
-				HasContent:       result.HasContent,
-				ConvertMs:        result.ConvertMs,
-				Error:            result.Error,
-			})
 
 			if result.Error != "" {
 				atomic.AddInt64(&stats.Errors, 1)

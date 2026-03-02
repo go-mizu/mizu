@@ -43,10 +43,8 @@ func RunFilePipeline(ctx context.Context, cfg Config, inputFiles []string,
 	s2, err := RunConvert(ctx, ConvertConfig{
 		InputDir:  cfg.WARCSingleDir(),
 		OutputDir: cfg.MarkdownDir(),
-		IndexPath: cfg.IndexPath(),
 		Workers:   cfg.ConvertWorkers(),
 		Force:     cfg.Force,
-		BatchSize: 1000,
 		Fast:      cfg.Fast,
 	}, p2Fn)
 	if err != nil {
@@ -101,23 +99,6 @@ func RunInMemoryPipeline(ctx context.Context, cfg Config, inputFiles []string,
 	outDir := cfg.MarkdownGzDir()
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return nil, err
-	}
-
-	// Open DuckDB index — or use a caller-provided shared one.
-	// cfg.NoIndex disables index writes entirely (perf benchmarking / parallel runs).
-	var idx *mdpkg.IndexDB
-	switch {
-	case cfg.NoIndex:
-		// idx stays nil; all idx.Add calls below are guarded
-	case cfg.SharedIndex != nil:
-		idx = cfg.SharedIndex // caller owns; don't defer Close
-	default:
-		var err error
-		idx, err = mdpkg.OpenIndex(cfg.IndexPath(), 1000)
-		if err != nil {
-			return nil, fmt.Errorf("open index: %w", err)
-		}
-		defer idx.Close()
 	}
 
 	// Channel capacities: each holds ~500 items in flight between stages.
@@ -193,26 +174,6 @@ func RunInMemoryPipeline(ctx context.Context, cfg Config, inputFiles []string,
 						result = mdpkg.Convert(item.HTMLBody, "")
 					}
 					converted.Add(1)
-
-					ratio := float64(0)
-					if result.HTMLSize > 0 {
-						ratio = float64(result.MarkdownSize) / float64(result.HTMLSize)
-					}
-					if idx != nil {
-						idx.Add(mdpkg.IndexRecord{
-							CID:              item.RecordID,
-							HTMLSize:         result.HTMLSize,
-							MarkdownSize:     result.MarkdownSize,
-							HTMLTokens:       result.HTMLTokens,
-							MarkdownTokens:   result.MarkdownTokens,
-							CompressionRatio: ratio,
-							Title:            truncate(result.Title, 500),
-							Language:         result.Language,
-							HasContent:       result.HasContent,
-							ConvertMs:        result.ConvertMs,
-							Error:            result.Error,
-						})
-					}
 
 					if result.Error != "" || !result.HasContent || result.Markdown == "" {
 						errCount.Add(1)
@@ -291,9 +252,9 @@ func RunInMemoryPipeline(ctx context.Context, cfg Config, inputFiles []string,
 			PeakMemMB: peak,
 		},
 		Convert: &PhaseStats{
-			Files:    converted.Load(),
-			Errors:   errCount.Load(),
-			Duration: duration,
+			Files:     converted.Load(),
+			Errors:    errCount.Load(),
+			Duration:  duration,
 			PeakMemMB: peak,
 		},
 		Compress: &PhaseStats{
@@ -378,8 +339,7 @@ func DiskUsageBytes(path string) int64 {
 	return total
 }
 
-// DiskUsageMdGz sums only *.md.gz files under dir, excluding index.duckdb
-// and any other metadata files that live in the same output directory.
+// DiskUsageMdGz sums only *.md.gz files under dir.
 func DiskUsageMdGz(dir string) int64 {
 	var total int64
 	_ = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {

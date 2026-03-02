@@ -9,8 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-
-	mdpkg "github.com/go-mizu/mizu/blueprints/search/pkg/markdown"
 )
 
 // Config configures the WARC → Markdown pipeline.
@@ -25,15 +23,6 @@ type Config struct {
 	MIMEFilter  string // e.g. "text/html" (default)
 	StatusCode  int    // HTTP status filter (default: 200)
 	MaxBodySize int64  // max HTML body bytes (default: 512 KB)
-
-	// SharedIndex is an already-opened IndexDB shared across parallel pipelines.
-	// When non-nil, RunInMemoryPipeline uses it instead of opening its own.
-	// The caller is responsible for closing it after all pipelines finish.
-	SharedIndex *mdpkg.IndexDB
-
-	// NoIndex disables all DuckDB index writes. Useful for perf benchmarking
-	// or when the caller doesn't need the per-document metadata.
-	NoIndex bool
 }
 
 // DefaultConfig returns sensible defaults for a given crawl ID.
@@ -73,11 +62,6 @@ func (c Config) MarkdownDir() string {
 // MarkdownGzDir returns the directory for compressed markdown files (final output).
 func (c Config) MarkdownGzDir() string {
 	return filepath.Join(c.CrawlDir(), "markdown")
-}
-
-// IndexPath returns the DuckDB index path (inside markdown/).
-func (c Config) IndexPath() string {
-	return filepath.Join(c.MarkdownGzDir(), "index.duckdb")
 }
 
 // ConvertWorkers returns the optimal worker count for Phase 2 (HTML→Markdown).
