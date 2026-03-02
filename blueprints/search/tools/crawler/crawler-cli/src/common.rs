@@ -171,26 +171,27 @@ pub fn spawn_disk_sampler(stats: Arc<Stats>, paths: DiskPaths) {
 }
 
 /// Called AFTER result_writer.close() returns (drain complete).
-/// Does a final filesystem scan + DuckDB row counts (writers closed — safe).
+/// Scans fast local dirs (seg, duckdb shards, small failures dir) + queries DuckDB row counts.
+/// Bodies dir is intentionally skipped here — it can contain millions of existing files and
+/// scanning it synchronously would block the tokio runtime. The disk_sampler task handles it.
 pub fn finalize_disk_stats(stats: &Stats, paths: &DiskPaths) {
+    // seg files — small dir, fast
     if let Some(ref d) = paths.seg_dir {
         let (cnt, bytes) = scan_seg_dir(d);
         stats.disk_seg_files.store(cnt, Ordering::Relaxed);
         stats.disk_seg_mb.store(bytes_to_mb(bytes), Ordering::Relaxed);
     }
+    // duckdb shards — just file metadata, fast
     if let Some(ref d) = paths.duckdb_dir {
         let bytes = scan_duckdb_dir(d);
         stats.disk_duckdb_mb.store(bytes_to_mb(bytes), Ordering::Relaxed);
     }
+    // failures dir — small (one segment file), fast
     if let Some(ref d) = paths.failures_dir {
         let (_, bytes) = scan_dir(d);
         stats.disk_failures_mb.store(bytes_to_mb(bytes), Ordering::Relaxed);
     }
-    if let Some(ref d) = paths.bodies_dir {
-        let (cnt, bytes) = scan_dir(d);
-        stats.disk_bodies_count.store(cnt, Ordering::Relaxed);
-        stats.disk_bodies_mb.store(bytes_to_mb(bytes), Ordering::Relaxed);
-    }
+    // row counts via DuckDB (safe — writers are closed)
     if let Some(ref d) = paths.duckdb_dir {
         if let Ok(rows) = count_result_rows(d) {
             stats.disk_results_rows.store(rows, Ordering::Relaxed);

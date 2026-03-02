@@ -816,14 +816,15 @@ es.onmessage = function(e) {
     $('sysDomains').textContent = domStr;
   }
 
-  // Data card
-  const anyDisk = s.disk_seg_mb + s.disk_duckdb_mb + s.disk_failures_mb + s.disk_bodies_mb > 0;
+  // Data card — use file counts too: small crawls (<1 MB) would all round to 0 MB
+  const anyDisk = s.disk_seg_files > 0 || s.disk_duckdb_mb > 0 || s.disk_results_rows > 0
+    || s.disk_bodies_count > 0 || s.disk_failures_mb > 0 || s.disk_failed_rows > 0;
   $('dataCard').style.display = anyDisk ? '' : 'none';
 
   if (s.disk_seg_files > 0) {
     $('dataSegsRow').style.display = '';
     $('dataSegCount').textContent = fmt(s.disk_seg_files);
-    $('dataSegMb').textContent = s.disk_seg_mb + ' MB';
+    $('dataSegMb').textContent = s.disk_seg_mb > 0 ? s.disk_seg_mb + ' MB' : '< 1 MB';
   } else {
     $('dataSegsRow').style.display = 'none';
   }
