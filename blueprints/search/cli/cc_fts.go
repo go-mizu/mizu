@@ -15,10 +15,10 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index"
-	// Import all drivers for registration
+	// Import all drivers for registration.
+	// duckdb registration happens via cli/duckdb_ops.go (excluded when -tags chdb).
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/chdb"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/devnull"
-	duckdbdrv "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/duckdb"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/sqlite"
 	// TODO: uncomment after driver packages are created:
 	// _ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/bleve"
@@ -253,7 +253,7 @@ func runCCFTSIndexFromPack(ctx context.Context, crawlID, engineName, source stri
 	case "ndjson":
 		stats, err = index.RunPipelineFromNDJSON(ctx, eng, packFile, batchSize, progress)
 	case "duckdb":
-		stats, err = duckdbdrv.RunPipelineFromDuckDBRaw(ctx, eng, packFile, batchSize, progress)
+		stats, err = runPipelineFromDuckDBRaw(ctx, eng, packFile, batchSize, progress)
 	default:
 		return fmt.Errorf("unknown source %q (valid: files, parquet, bin, ndjson, duckdb)", source)
 	}
@@ -413,7 +413,7 @@ func runPackFormat(ctx context.Context, format, markdownDir, packFile string, ba
 	case "ndjson":
 		stats, err = index.PackNDJSON(ctx, markdownDir, packFile, workers, batchSize, progress)
 	case "duckdb":
-		stats, err = duckdbdrv.PackDuckDBRaw(ctx, markdownDir, packFile, workers, batchSize, progress)
+		stats, err = packDuckDBRaw(ctx, markdownDir, packFile, workers, batchSize, progress)
 	default:
 		return fmt.Errorf("unknown format %q", format)
 	}
