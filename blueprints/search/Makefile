@@ -76,9 +76,6 @@ build: ## Build search binary (Go only; run frontend-build separately if needed)
 
 .PHONY: build-quick
 build-quick: build ## Alias for build (kept for compatibility)
-	@mkdir -p $(dir $(BINARY))
-	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BINARY) $(CMD)
-	@echo "Built: $(BINARY) ($(VERSION))"
 
 .PHONY: build-linux
 build-linux: ## Build Ubuntu/Linux binary to $$HOME/bin/search-linux (Docker, CGO enabled)
@@ -166,6 +163,33 @@ build-linux-noble: ## Build Ubuntu 24.04 (Noble) binary to $$HOME/bin/search-lin
 		$(LINUX_CONTAINER) cp "$$cid:/search-linux-noble" "$$tmp_out/search-linux-noble"; \
 		install -m 0755 "$$tmp_out/search-linux-noble" "$(LINUX_BINARY_NOBLE)"
 	@echo "Built Noble binary: $(LINUX_BINARY_NOBLE) ($(VERSION))"
+
+# ── Rust crawler (tools/crawler) ─────────────────────────────────────────────
+# Locate cargo: prefer PATH, fall back to rustup default install location.
+CARGO             ?= $(or $(shell command -v cargo 2>/dev/null),$(HOME)/.cargo/bin/cargo)
+CRAWLER_DIR       := tools/crawler
+CRAWLER_BINARY    ?= $(HOME)/bin/crawler
+# Persistent Cargo target cache outside the repo — survives `git clean` and
+# `make clean`, so subsequent builds only recompile changed crates (~seconds).
+CRAWLER_CACHE_DIR ?= $(HOME)/.cache/mizu/crawler-target
+# Set CRAWLER_CLEAN=1 to delete the cache dir after install (reclaims ~3 GB;
+# the next build will be a full recompile). Default=0 keeps cache for fast rebuilds.
+CRAWLER_CLEAN     ?= 0
+# On macOS: wreq-engine uses boring2 (BoringSSL) which fails to link on ARM64.
+# Disable default features so only the reqwest engine is compiled.
+CRAWLER_FEATURES  ?= $(if $(filter Darwin,$(shell uname -s)),--no-default-features,)
+
+.PHONY: build-crawler
+build-crawler: ## Build Rust crawler to $$HOME/bin/crawler; set CRAWLER_CLEAN=1 to wipe cache after
+	@mkdir -p $(dir $(CRAWLER_BINARY)) $(CRAWLER_CACHE_DIR)
+	@echo "Building Rust crawler (cache: $(CRAWLER_CACHE_DIR))..."
+	@cd $(CRAWLER_DIR) && CARGO_TARGET_DIR=$(CRAWLER_CACHE_DIR) $(CARGO) build --release $(CRAWLER_FEATURES)
+	@install -m 0755 $(CRAWLER_CACHE_DIR)/release/crawler $(CRAWLER_BINARY)
+	@echo "Built: $(CRAWLER_BINARY) ($$($(CRAWLER_BINARY) --version 2>/dev/null | head -1 || echo ok))"
+	@if [ "$(CRAWLER_CLEAN)" = "1" ]; then \
+		echo "Cleaning cache: $(CRAWLER_CACHE_DIR)"; \
+		rm -rf $(CRAWLER_CACHE_DIR); \
+	fi
 
 .PHONY: deploy-linux-noble
 deploy-linux-noble: build-linux-noble ## Deploy Ubuntu 24.04 binary to remote $$HOME/bin/search (no bundled libstdc++)
