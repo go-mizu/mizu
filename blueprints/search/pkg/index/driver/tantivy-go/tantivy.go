@@ -27,10 +27,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	tantivy_go "github.com/anyproto/tantivy-go"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index"
 )
+
+// libInitOnce ensures tantivy_go.LibInit is called at most once per process.
+var libInitOnce sync.Once
 
 func init() {
 	index.Register("tantivy", func() index.Engine { return &Engine{} })
@@ -56,9 +60,13 @@ func (e *Engine) Open(_ context.Context, dir string) error {
 	}
 	e.dir = dir
 
-	// Initialise the Rust logging layer once per process (idempotent).
-	if err := tantivy_go.LibInit(false, true, "error"); err != nil {
-		return fmt.Errorf("tantivy LibInit: %w", err)
+	// Initialise the Rust logging layer once per process.
+	var libInitErr error
+	libInitOnce.Do(func() {
+		libInitErr = tantivy_go.LibInit(false, true, "error")
+	})
+	if libInitErr != nil {
+		return fmt.Errorf("tantivy LibInit: %w", libInitErr)
 	}
 
 	sb, err := tantivy_go.NewSchemaBuilder()
@@ -198,6 +206,7 @@ func (e *Engine) Search(_ context.Context, q index.Query) (index.Results, error)
 	if limit <= 0 {
 		limit = 10
 	}
+	// Offset is not supported by the tantivy-go API; pagination requires re-querying.
 
 	sCtx := tantivy_go.NewSearchContextBuilder().
 		SetQuery(q.Text).
@@ -221,7 +230,7 @@ func (e *Engine) Search(_ context.Context, q index.Query) (index.Results, error)
 	for i := uint64(0); i < size; i++ {
 		doc, err := sr.Get(i)
 		if err != nil {
-			break
+			return index.Results{}, fmt.Errorf("tantivy get doc %d: %w", i, err)
 		}
 		jsonStr, err := doc.ToJson(e.tc, fieldID, fieldBody)
 		doc.Free()
