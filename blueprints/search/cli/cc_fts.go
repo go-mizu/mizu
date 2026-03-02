@@ -20,6 +20,13 @@ import (
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/devnull"
 	duckdbdrv "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/duckdb"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/sqlite"
+	// TODO: uncomment after driver packages are created:
+	// _ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/bleve"
+	// _ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/meilisearch"
+	// _ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/clickhouse"
+	// _ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/postgres"
+	// _ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/quickwit"
+	// _ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/tantivy-lnx"
 	"github.com/spf13/cobra"
 )
 
@@ -50,6 +57,7 @@ func newCCFTSIndex() *cobra.Command {
 		source    string
 		batchSize int
 		workers   int
+		addr      string
 	)
 
 	cmd := &cobra.Command{
@@ -61,7 +69,7 @@ func newCCFTSIndex() *cobra.Command {
   search cc fts index --engine devnull --source parquet  # benchmark from parquet pack
   search cc fts index --engine devnull --source bin      # benchmark from flatbin pack`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCCFTSIndex(cmd.Context(), crawlID, engine, source, batchSize, workers)
+			return runCCFTSIndex(cmd.Context(), crawlID, engine, source, batchSize, workers, addr)
 		},
 	}
 
@@ -70,6 +78,7 @@ func newCCFTSIndex() *cobra.Command {
 	cmd.Flags().StringVar(&source, "source", "files", "Source: files, parquet, bin, ndjson, duckdb")
 	cmd.Flags().IntVar(&batchSize, "batch-size", 5000, "Documents per batch insert")
 	cmd.Flags().IntVar(&workers, "workers", 0, "Parallel file readers (0 = NumCPU)")
+	cmd.Flags().StringVar(&addr, "addr", "", "Service address for external engines (e.g. http://localhost:7700)")
 	return cmd
 }
 
@@ -79,6 +88,7 @@ func newCCFTSSearch() *cobra.Command {
 		engine  string
 		limit   int
 		offset  int
+		addr    string
 	)
 
 	cmd := &cobra.Command{
@@ -89,7 +99,7 @@ func newCCFTSSearch() *cobra.Command {
   search cc fts search "climate change" --limit 20`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			query := strings.Join(args, " ")
-			return runCCFTSSearch(cmd.Context(), crawlID, engine, query, limit, offset)
+			return runCCFTSSearch(cmd.Context(), crawlID, engine, query, limit, offset, addr)
 		},
 	}
 
@@ -97,10 +107,11 @@ func newCCFTSSearch() *cobra.Command {
 	cmd.Flags().StringVar(&engine, "engine", "duckdb", "FTS engine")
 	cmd.Flags().IntVar(&limit, "limit", 10, "Max results")
 	cmd.Flags().IntVar(&offset, "offset", 0, "Result offset")
+	cmd.Flags().StringVar(&addr, "addr", "", "Service address for external engines")
 	return cmd
 }
 
-func runCCFTSIndex(ctx context.Context, crawlID, engineName, source string, batchSize, workers int) error {
+func runCCFTSIndex(ctx context.Context, crawlID, engineName, source string, batchSize, workers int, addr string) error {
 	if crawlID == "" {
 		crawlID = detectLatestCrawl()
 	}
@@ -111,6 +122,13 @@ func runCCFTSIndex(ctx context.Context, crawlID, engineName, source string, batc
 	eng, err := index.NewEngine(engineName)
 	if err != nil {
 		return err
+	}
+	if addr != "" {
+		if setter, ok := eng.(index.AddrSetter); ok {
+			setter.SetAddr(addr)
+		} else {
+			fmt.Fprintf(os.Stderr, "warning: engine %q does not support --addr flag\n", engineName)
+		}
 	}
 	if err := eng.Open(ctx, outputDir); err != nil {
 		return fmt.Errorf("open engine: %w", err)
@@ -425,7 +443,7 @@ func runPackFormat(ctx context.Context, format, markdownDir, packFile string, ba
 	return nil
 }
 
-func runCCFTSSearch(ctx context.Context, crawlID, engineName, query string, limit, offset int) error {
+func runCCFTSSearch(ctx context.Context, crawlID, engineName, query string, limit, offset int, addr string) error {
 	if crawlID == "" {
 		crawlID = detectLatestCrawl()
 	}
@@ -436,6 +454,13 @@ func runCCFTSSearch(ctx context.Context, crawlID, engineName, query string, limi
 	eng, err := index.NewEngine(engineName)
 	if err != nil {
 		return err
+	}
+	if addr != "" {
+		if setter, ok := eng.(index.AddrSetter); ok {
+			setter.SetAddr(addr)
+		} else {
+			fmt.Fprintf(os.Stderr, "warning: engine %q does not support --addr flag\n", engineName)
+		}
 	}
 
 	if err := eng.Open(ctx, outputDir); err != nil {
