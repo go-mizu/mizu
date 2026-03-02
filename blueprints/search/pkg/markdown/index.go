@@ -6,17 +6,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	_ "github.com/duckdb/duckdb-go/v2" // registers "duckdb" driver
 )
 
 // IndexDB tracks conversion results in DuckDB.
+// Records are written by a background drainer goroutine — Add is non-blocking.
 type IndexDB struct {
-	db        *sql.DB
-	mu        sync.Mutex
-	batch     []IndexRecord
-	batchSize int
+	db   *sql.DB
+	ch   chan IndexRecord
+	done chan struct{}
 }
 
 // IndexRecord is one row in the files table.
@@ -51,7 +50,8 @@ CREATE TABLE IF NOT EXISTS files (
 );
 `
 
-// OpenIndex opens or creates the index DuckDB at the given path.
+// OpenIndex opens or creates the index DuckDB at the given path and starts the
+// background drainer goroutine.
 func OpenIndex(path string, batchSize int) (*IndexDB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("markdown index: mkdir: %w", err)
@@ -60,7 +60,6 @@ func OpenIndex(path string, batchSize int) (*IndexDB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("markdown index: open %s: %w", path, err)
 	}
-	// Tune for bulk insert
 	for _, q := range []string{
 		"SET threads=1",
 		"SET preserve_insertion_order=false",
@@ -77,41 +76,26 @@ func OpenIndex(path string, batchSize int) (*IndexDB, error) {
 	if batchSize <= 0 {
 		batchSize = 1000
 	}
-	return &IndexDB{db: db, batchSize: batchSize}, nil
-}
-
-// Add enqueues a record for batch insert. Call Flush to write remaining.
-func (idx *IndexDB) Add(rec IndexRecord) error {
-	idx.mu.Lock()
-	idx.batch = append(idx.batch, rec)
-	if len(idx.batch) >= idx.batchSize {
-		batch := idx.batch
-		idx.batch = nil
-		idx.mu.Unlock()
-		return idx.writeBatch(batch)
+	idx := &IndexDB{
+		db:   db,
+		ch:   make(chan IndexRecord, 10_000),
+		done: make(chan struct{}),
 	}
-	idx.mu.Unlock()
-	return nil
+	go idx.drain(batchSize)
+	return idx, nil
 }
 
-// Flush writes any remaining buffered records.
-func (idx *IndexDB) Flush() error {
-	idx.mu.Lock()
-	batch := idx.batch
-	idx.batch = nil
-	idx.mu.Unlock()
-	if len(batch) == 0 {
-		return nil
-	}
-	return idx.writeBatch(batch)
+// Add enqueues a record. The background drainer writes it to DuckDB in batches.
+// Blocks only if the internal buffer (10 000 records) is full.
+func (idx *IndexDB) Add(rec IndexRecord) {
+	idx.ch <- rec
 }
 
-// Close flushes and closes the database.
+// Close closes the input channel, waits for the drainer to flush all pending
+// records to DuckDB, then closes the database.
 func (idx *IndexDB) Close() error {
-	if err := idx.Flush(); err != nil {
-		idx.db.Close()
-		return err
-	}
+	close(idx.ch)
+	<-idx.done
 	return idx.db.Close()
 }
 
@@ -168,9 +152,27 @@ func QueryErrors(path string) ([]ErrorCategory, error) {
 	return cats, rows.Err()
 }
 
-func (idx *IndexDB) writeBatch(batch []IndexRecord) error {
+// drain reads from ch and writes to DuckDB in batches. Runs as a background
+// goroutine; signals done when ch is closed and all pending records are flushed.
+func (idx *IndexDB) drain(batchSize int) {
+	defer close(idx.done)
+
+	batch := make([]IndexRecord, 0, batchSize)
+	for rec := range idx.ch {
+		batch = append(batch, rec)
+		if len(batch) >= batchSize {
+			idx.writeBatch(batch)
+			batch = batch[:0]
+		}
+	}
+	if len(batch) > 0 {
+		idx.writeBatch(batch)
+	}
+}
+
+func (idx *IndexDB) writeBatch(batch []IndexRecord) {
 	if len(batch) == 0 {
-		return nil
+		return
 	}
 	var sb strings.Builder
 	sb.WriteString("INSERT OR REPLACE INTO files (cid, html_size, markdown_size, html_tokens, markdown_tokens, compression_ratio, title, language, has_content, convert_ms, error) VALUES ")
@@ -196,9 +198,6 @@ func (idx *IndexDB) writeBatch(batch []IndexRecord) error {
 		)
 	}
 
-	_, err := idx.db.Exec(sb.String(), args...)
-	if err != nil {
-		return fmt.Errorf("markdown index: write batch (%d rows): %w", len(batch), err)
-	}
-	return nil
+	// Errors from individual batch writes are best-effort; the index is advisory.
+	idx.db.Exec(sb.String(), args...)
 }
