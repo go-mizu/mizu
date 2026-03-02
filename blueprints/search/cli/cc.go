@@ -78,6 +78,7 @@ Subcommands:
 	cmd.AddCommand(newCCVerify())
 	cmd.AddCommand(newCCSite())
 	cmd.AddCommand(newCCMarkdown())
+	cmd.AddCommand(newCCFTS())
 
 	return cmd
 }
