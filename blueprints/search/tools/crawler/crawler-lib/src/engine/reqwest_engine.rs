@@ -807,38 +807,6 @@ async fn read_body_limited(
     Ok(buf.freeze())
 }
 
-// ---------------------------------------------------------------------------
-// Domain timeout helper (used by hyper_engine.rs too)
-// ---------------------------------------------------------------------------
-
-/// Calculate effective domain timeout.
-///
-/// - domain_timeout_ms < 0 (adaptive): len(urls) * timeout / inner_n * 2, clamped [5s, max]
-/// - domain_timeout_ms > 0 (explicit): use as-is
-/// - domain_timeout_ms == 0 (disabled): None
-pub(crate) fn compute_domain_timeout(
-    cfg: &Config,
-    url_count: usize,
-    inner_n: usize,
-) -> Option<Duration> {
-    if cfg.domain_timeout_ms == 0 {
-        return None;
-    }
-
-    if cfg.domain_timeout_ms > 0 {
-        return Some(Duration::from_millis(cfg.domain_timeout_ms as u64));
-    }
-
-    // Adaptive: estimate how long this domain should take
-    // Formula: urls * timeout_ms / inner_n * 2, clamped [5s, adaptive_timeout_max]
-    let timeout_ms = cfg.timeout.as_millis() as u64;
-    let estimated_ms = url_count as u64 * timeout_ms / inner_n.max(1) as u64 * 2;
-    let min_ms = 5_000u64;
-    let max_ms = cfg.adaptive_timeout_max.as_millis() as u64;
-    let clamped_ms = estimated_ms.max(min_ms).min(max_ms);
-
-    Some(Duration::from_millis(clamped_ms))
-}
 
 // ---------------------------------------------------------------------------
 // HTML metadata extraction (simple, no regex, no external parser)

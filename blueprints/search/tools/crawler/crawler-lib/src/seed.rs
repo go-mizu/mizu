@@ -98,6 +98,17 @@ pub fn load_seeds_parquet(path: &str, limit: usize) -> Result<Vec<SeedURL>> {
 pub fn load_seeds_cc_parquet(path: &str, limit: usize, filters: &CcSeedFilter) -> Result<Vec<SeedURL>> {
     let conn = Connection::open_in_memory()?;
 
+    // Cap DuckDB buffer pool to avoid OOM when scanning large CC parquet files
+    // (a single partition is typically 500MB gzipped / 5–15M rows).
+    // Use 40% of total RAM, clamped to [512 MB, 4 GB].
+    {
+        use sysinfo::System;
+        let sys = System::new_all();
+        let total_mb = sys.total_memory() / (1024 * 1024);
+        let limit_mb = ((total_mb * 40 / 100) as usize).max(512).min(4096);
+        conn.execute_batch(&format!("SET memory_limit='{limit_mb}MB'"))?;
+    }
+
     let escaped = path.replace('\'', "''");
     let mut conditions = vec!["warc_filename IS NOT NULL".to_string()];
 
@@ -117,6 +128,22 @@ pub fn load_seeds_cc_parquet(path: &str, limit: usize, filters: &CcSeedFilter) -
 
     let where_clause = conditions.join(" AND ");
     let limit_clause = if limit > 0 { format!(" LIMIT {}", limit) } else { String::new() };
+
+    // Count first so the user knows what's being loaded before the full collect.
+    let count: i64 = {
+        let count_sql = format!(
+            "SELECT COUNT(*) FROM read_parquet('{}') WHERE {}{}",
+            escaped, where_clause, limit_clause
+        );
+        let mut stmt = conn.prepare(&count_sql)?;
+        let mut rows = stmt.query([])?;
+        rows.next()?.and_then(|r| r.get::<_, i64>(0).ok()).unwrap_or(0)
+    };
+    let est_mb = (count as u64 * 150) / (1024 * 1024); // ~150 bytes per SeedURL in heap
+    println!("CC seeds: {count} URLs (~{est_mb} MB heap)");
+    if count > 1_000_000 {
+        println!("  note: large seed set — use --limit N to reduce memory usage");
+    }
 
     let query = format!(
         "SELECT url, COALESCE(url_host_registered_domain, '') as domain \

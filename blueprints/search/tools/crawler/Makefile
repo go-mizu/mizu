@@ -15,11 +15,19 @@ IMAGE_NAME    := crawler-rust-builder
 
 GUI_PORT      ?= 9111
 
+# External Cargo target cache — shared with the root Makefile, survives git clean.
+CARGO             ?= $(or $(shell command -v cargo 2>/dev/null),$(HOME)/.cargo/bin/cargo)
+TARGET_DIR        ?= $(HOME)/.cache/mizu/crawler-target
+
 .PHONY: build build-linux build-on-server deploy deploy-server1 deploy-server2 test remote-test remote-hn-recrawl remote-benchmark tunnel clean
 
 ## Local dev build (macOS — no wreq-engine; wreq uses BoringSSL which doesn't link on macOS ARM64)
+## Uses external cache ($(TARGET_DIR)); installs to ~/bin/crawler automatically.
 build:
-	cargo build --release --no-default-features
+	@mkdir -p $(HOME)/bin $(TARGET_DIR)
+	CARGO_TARGET_DIR=$(TARGET_DIR) $(CARGO) build --release --no-default-features
+	@install -m 0755 $(TARGET_DIR)/release/crawler $(HOME)/bin/crawler
+	@echo "Installed: $$($(HOME)/bin/crawler --version)"
 
 ## Cross-compile for Linux via Docker (Ubuntu 24.04, x86-64-v3/AVX2)
 build-linux:
@@ -92,7 +100,7 @@ deploy-server2:
 
 ## Run tests
 test:
-	cargo test
+	CARGO_TARGET_DIR=$(TARGET_DIR) $(CARGO) test --no-default-features
 
 ## Check remote binary works
 remote-test:

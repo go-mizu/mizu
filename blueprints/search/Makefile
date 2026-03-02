@@ -191,6 +191,14 @@ build-crawler: ## Build Rust crawler to $$HOME/bin/crawler; set CRAWLER_CLEAN=1 
 		rm -rf $(CRAWLER_CACHE_DIR); \
 	fi
 
+.PHONY: build-crawler-server
+build-crawler-server: ## Rsync + build Rust crawler on remote server → ~/bin/crawler (SERVER=1 or 2)
+	$(MAKE) -C $(CRAWLER_DIR) build-on-server SERVER=$(SERVER) DEPLOY_KEY=$(DEPLOY_KEY)
+
+.PHONY: test-crawler
+test-crawler: ## Run Rust crawler unit tests
+	@cd $(CRAWLER_DIR) && CARGO_TARGET_DIR=$(CRAWLER_CACHE_DIR) $(CARGO) test $(CRAWLER_FEATURES)
+
 .PHONY: deploy-linux-noble
 deploy-linux-noble: build-linux-noble ## Deploy Ubuntu 24.04 binary to remote $$HOME/bin/search (no bundled libstdc++)
 	@test -f "$(DEPLOY_KEY)" || { echo "Deploy key not found: $(DEPLOY_KEY)"; exit 1; }
