@@ -9,14 +9,14 @@ use std::fs::File;
 use std::io::{BufWriter, Read as _, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 const DEFAULT_SEG_SIZE_MB: usize = 64;
 const DEFAULT_CHANNEL_CAP: usize = 65536;
 
 /// Opens a new segment file with a BufWriter.
-fn open_segment(dir: &Path, idx: usize) -> Result<BufWriter<File>> {
-    let path = dir.join(format!("seg_{:03}.bin", idx));
+fn open_segment(dir: &Path, thread_id: usize, idx: usize) -> Result<BufWriter<File>> {
+    let path = dir.join(format!("seg_t{:02}_{:03}.bin", thread_id, idx));
     let f = File::create(&path)
         .with_context(|| format!("failed to create segment file: {}", path.display()))?;
     Ok(BufWriter::new(f))
@@ -43,30 +43,40 @@ pub struct BinDrainConfig {
 
 /// Non-blocking result writer that serializes CrawlResults to length-prefixed
 /// rkyv segment files. Workers send results through a bounded crossbeam
-/// channel; a dedicated flusher thread handles all disk I/O.
+/// channel; one or more dedicated flusher threads handle all disk I/O.
 ///
 /// Architecture:
 /// ```text
-/// Workers -> write() -> crossbeam bounded channel -> flusher thread -> seg_NNN.bin files
-///                                                                            |
-///                                                            close() drain (optional)
-///                                                                            |
-///                                                              sharded DuckDB files
+/// Workers -> write() -> crossbeam bounded channel (lock-free MPMC)
+///                           |          |          |
+///                       flusher-0  flusher-1  flusher-N  -> seg_tNN_NNN.bin files
+///                                                                   |
+///                                                   close() drain (optional)
+///                                                                   |
+///                                                     sharded DuckDB files
 /// ```
 ///
-/// When a `BinDrainConfig` is provided, `close()` imports all segments into
-/// DuckDB and then deletes them.
+/// The write path is fully lock-free: crossbeam's MPMC channel handles
+/// concurrent sends without a Mutex. Multiple flusher threads share the
+/// same receiver (crossbeam Receiver is Clone) and each writes to its own
+/// per-thread segment files, eliminating the single-flusher bottleneck.
+///
+/// `close()` sends one `None` sentinel per flusher thread to signal shutdown,
+/// then joins all threads before optionally draining into DuckDB.
 pub struct BinaryResultWriter {
-    /// Wrapped in Option so close() can take and drop it to signal the flusher.
-    tx: Mutex<Option<crossbeam_channel::Sender<CrawlResult>>>,
-    handle: Mutex<Option<std::thread::JoinHandle<()>>>,
+    /// Lock-free write path: send Some(result) directly, no Mutex.
+    tx: crossbeam_channel::Sender<Option<CrawlResult>>,
+    /// Flusher thread handles — only locked in close().
+    handles: Mutex<Vec<std::thread::JoinHandle<()>>>,
+    /// Number of flusher threads (must match how many None sentinels close() sends).
+    num_flushers: usize,
     dir: PathBuf,
     drain_config: Option<BinDrainConfig>,
 }
 
 impl BinaryResultWriter {
-    pub fn new(dir: &Path, channel_cap: usize, seg_size_mb: usize) -> Result<Self> {
-        Self::new_inner(dir, channel_cap, seg_size_mb, None)
+    pub fn new(dir: &Path, channel_cap: usize, seg_size_mb: usize, num_flushers: usize) -> Result<Self> {
+        Self::new_inner(dir, channel_cap, seg_size_mb, num_flushers, None)
     }
 
     /// Create with a drain config: after close(), segments are imported into DuckDB.
@@ -74,23 +84,23 @@ impl BinaryResultWriter {
         dir: &Path,
         channel_cap: usize,
         seg_size_mb: usize,
+        num_flushers: usize,
         drain: BinDrainConfig,
     ) -> Result<Self> {
-        Self::new_inner(dir, channel_cap, seg_size_mb, Some(drain))
+        Self::new_inner(dir, channel_cap, seg_size_mb, num_flushers, Some(drain))
     }
 
     fn new_inner(
         dir: &Path,
         channel_cap: usize,
         seg_size_mb: usize,
+        num_flushers: usize,
         drain_config: Option<BinDrainConfig>,
     ) -> Result<Self> {
         std::fs::create_dir_all(dir)
             .with_context(|| format!("failed to create binary writer dir: {}", dir.display()))?;
 
-        // Remove any stale seg_*.bin files left by a previous failed drain.
-        // If drain succeeded, segments were already deleted; if it failed, leftover
-        // files from a different binary version would corrupt the new run's decode.
+        // Remove stale seg_*.bin files from a previous failed run.
         if let Ok(rd) = std::fs::read_dir(dir) {
             for entry in rd.flatten() {
                 let p = entry.path();
@@ -104,20 +114,35 @@ impl BinaryResultWriter {
             }
         }
 
-        let (tx, rx) = crossbeam_channel::bounded::<CrawlResult>(channel_cap);
+        let n = num_flushers.max(1);
         let seg_size_bytes = seg_size_mb * 1024 * 1024;
-        let dir_path = dir.to_path_buf();
 
-        let handle = std::thread::Builder::new()
-            .name("bin-result-flusher".into())
-            .spawn(move || {
-                result_flusher_loop(&dir_path, &rx, seg_size_bytes);
-            })
-            .context("failed to spawn result flusher thread")?;
+        // crossbeam Receiver is Clone (MPMC), so each flusher gets its own clone.
+        let (tx, rx) = crossbeam_channel::bounded::<Option<CrawlResult>>(channel_cap);
+
+        let mut handles = Vec::with_capacity(n);
+        for thread_id in 0..n {
+            let rx = rx.clone();
+            let dir_path = dir.to_path_buf();
+            let handle = std::thread::Builder::new()
+                .name(format!("bin-result-flusher-{thread_id}"))
+                .spawn(move || {
+                    run_flusher_loop(&dir_path, thread_id, &rx, seg_size_bytes, "result", |item| {
+                        rkyv::to_bytes::<RkyvError>(item)
+                            .map(|v| v.to_vec())
+                            .map_err(|e| anyhow::anyhow!("rkyv encode CrawlResult: {e}"))
+                    });
+                })
+                .context("failed to spawn result flusher thread")?;
+            handles.push(handle);
+        }
+        // Drop the original rx — only the per-thread clones remain.
+        drop(rx);
 
         Ok(Self {
-            tx: Mutex::new(Some(tx)),
-            handle: Mutex::new(Some(handle)),
+            tx,
+            handles: Mutex::new(handles),
+            num_flushers: n,
             dir: dir.to_path_buf(),
             drain_config,
         })
@@ -125,12 +150,12 @@ impl BinaryResultWriter {
 
     /// Create with default channel capacity (65536) and segment size (64 MB), no drain.
     pub fn with_defaults(dir: &Path) -> Result<Self> {
-        Self::new(dir, DEFAULT_CHANNEL_CAP, DEFAULT_SEG_SIZE_MB)
+        Self::new(dir, DEFAULT_CHANNEL_CAP, DEFAULT_SEG_SIZE_MB, 1)
     }
 
     /// Create with defaults and a drain config.
     pub fn with_drain(dir: &Path, drain: BinDrainConfig) -> Result<Self> {
-        Self::new_with_drain(dir, DEFAULT_CHANNEL_CAP, DEFAULT_SEG_SIZE_MB, drain)
+        Self::new_with_drain(dir, DEFAULT_CHANNEL_CAP, DEFAULT_SEG_SIZE_MB, 1, drain)
     }
 
     /// Returns the directory where segment files are written.
@@ -139,27 +164,12 @@ impl BinaryResultWriter {
     }
 }
 
-fn result_flusher_loop(
-    dir: &Path,
-    rx: &crossbeam_channel::Receiver<CrawlResult>,
-    seg_size_bytes: usize,
-) {
-    run_flusher_loop(dir, rx, seg_size_bytes, "result", |item| {
-        rkyv::to_bytes::<RkyvError>(item)
-            .map(|v| v.to_vec())
-            .map_err(|e| anyhow::anyhow!("rkyv encode CrawlResult: {e}"))
-    });
-}
-
 impl ResultWriter for BinaryResultWriter {
     fn write(&self, result: CrawlResult) -> Result<()> {
-        let guard = self.tx.lock().unwrap();
-        match guard.as_ref() {
-            Some(tx) => tx
-                .send(result)
-                .map_err(|e| anyhow::anyhow!("binary result channel closed: {e}")),
-            None => Err(anyhow::anyhow!("binary result writer already closed")),
-        }
+        // Hot path: lock-free send directly through crossbeam channel.
+        self.tx
+            .send(Some(result))
+            .map_err(|_| anyhow::anyhow!("binary result channel closed"))
     }
 
     fn flush(&self) -> Result<()> {
@@ -167,13 +177,16 @@ impl ResultWriter for BinaryResultWriter {
     }
 
     fn close(&self) -> Result<()> {
-        {
-            let mut guard = self.tx.lock().unwrap();
-            guard.take();
+        // Send one None sentinel per flusher thread so each exits its loop.
+        for _ in 0..self.num_flushers {
+            let _ = self.tx.send(None);
         }
 
-        let handle = self.handle.lock().unwrap().take();
-        if let Some(h) = handle {
+        let handles = {
+            let mut guard = self.handles.lock().unwrap();
+            guard.drain(..).collect::<Vec<_>>()
+        };
+        for h in handles {
             h.join()
                 .map_err(|_| anyhow::anyhow!("result flusher thread panicked"))?;
         }
@@ -338,8 +351,8 @@ pub struct BinFailureDrainConfig {
 /// When a `BinFailureDrainConfig` is provided, `close()` also drains the URL
 /// segments into `failed.duckdb` so that pass-2 retry can load them.
 pub struct BinaryFailureWriter {
-    url_tx: Mutex<Option<crossbeam_channel::Sender<FailedURL>>>,
-    domain_tx: Mutex<Option<crossbeam_channel::Sender<FailedDomain>>>,
+    url_tx: Mutex<Option<crossbeam_channel::Sender<Option<FailedURL>>>>,
+    domain_tx: Mutex<Option<crossbeam_channel::Sender<Option<FailedDomain>>>>,
     handles: Mutex<Vec<std::thread::JoinHandle<()>>>,
     dir: PathBuf,
     drain_config: Option<BinFailureDrainConfig>,
@@ -367,7 +380,7 @@ impl BinaryFailureWriter {
         let seg_size_bytes = seg_size_mb * 1024 * 1024;
 
         // URL flusher
-        let (url_tx, url_rx) = crossbeam_channel::bounded::<FailedURL>(channel_cap);
+        let (url_tx, url_rx) = crossbeam_channel::bounded::<Option<FailedURL>>(channel_cap);
         let url_dir = dir.join("failed_urls");
         std::fs::create_dir_all(&url_dir)?;
         let url_handle = std::thread::Builder::new()
@@ -375,7 +388,7 @@ impl BinaryFailureWriter {
             .spawn({
                 let d = url_dir;
                 move || {
-                    run_flusher_loop(&d, &url_rx, seg_size_bytes, "fail-url", |item| {
+                    run_flusher_loop(&d, 0, &url_rx, seg_size_bytes, "fail-url", |item| {
                         rkyv::to_bytes::<RkyvError>(item)
                             .map(|v| v.to_vec())
                             .map_err(|e| anyhow::anyhow!("rkyv encode FailedURL: {e}"))
@@ -385,7 +398,7 @@ impl BinaryFailureWriter {
             .context("failed to spawn URL failure flusher thread")?;
 
         // Domain flusher
-        let (domain_tx, domain_rx) = crossbeam_channel::bounded::<FailedDomain>(channel_cap);
+        let (domain_tx, domain_rx) = crossbeam_channel::bounded::<Option<FailedDomain>>(channel_cap);
         let domain_dir = dir.join("failed_domains");
         std::fs::create_dir_all(&domain_dir)?;
         let domain_handle = std::thread::Builder::new()
@@ -393,7 +406,7 @@ impl BinaryFailureWriter {
             .spawn({
                 let d = domain_dir;
                 move || {
-                    run_flusher_loop(&d, &domain_rx, seg_size_bytes, "fail-domain", |item| {
+                    run_flusher_loop(&d, 0, &domain_rx, seg_size_bytes, "fail-domain", |item| {
                         rkyv::to_bytes::<RkyvError>(item)
                             .map(|v| v.to_vec())
                             .map_err(|e| anyhow::anyhow!("rkyv encode FailedDomain: {e}"))
@@ -427,7 +440,7 @@ impl FailureWriter for BinaryFailureWriter {
         let guard = self.url_tx.lock().unwrap();
         match guard.as_ref() {
             Some(tx) => tx
-                .send(failed)
+                .send(Some(failed))
                 .map_err(|e| anyhow::anyhow!("binary failure URL channel closed: {e}")),
             None => Err(anyhow::anyhow!("binary failure writer already closed")),
         }
@@ -437,7 +450,7 @@ impl FailureWriter for BinaryFailureWriter {
         let guard = self.domain_tx.lock().unwrap();
         match guard.as_ref() {
             Some(tx) => tx
-                .send(failed)
+                .send(Some(failed))
                 .map_err(|e| anyhow::anyhow!("binary failure domain channel closed: {e}")),
             None => Err(anyhow::anyhow!("binary failure writer already closed")),
         }
@@ -449,8 +462,13 @@ impl FailureWriter for BinaryFailureWriter {
 
     fn close(&self) -> Result<()> {
         {
-            self.url_tx.lock().unwrap().take();
-            self.domain_tx.lock().unwrap().take();
+            // Send None sentinels to signal flusher threads to exit.
+            if let Some(tx) = self.url_tx.lock().unwrap().take() {
+                let _ = tx.send(None);
+            }
+            if let Some(tx) = self.domain_tx.lock().unwrap().take() {
+                let _ = tx.send(None);
+            }
         }
 
         let handles: Vec<_> = {
@@ -511,31 +529,38 @@ pub fn read_failed_domain_segments(dir: &Path) -> Result<Vec<FailedDomain>> {
 // Internals
 // ---------------------------------------------------------------------------
 
-/// Generic flusher loop: receives items from `rx`, serialises with `encode`,
-/// writes length-prefixed records to rotating segment files.
+/// Generic flusher loop: receives items from `rx` (wrapped in Option as sentinel),
+/// serialises with `encode`, writes length-prefixed records to rotating segment files.
+/// Receives `None` as a shutdown sentinel — exits when None is received.
 fn run_flusher_loop<T>(
     dir: &Path,
-    rx: &crossbeam_channel::Receiver<T>,
+    thread_id: usize,
+    rx: &crossbeam_channel::Receiver<Option<T>>,
     seg_size_bytes: usize,
     label: &str,
     encode: impl Fn(&T) -> Result<Vec<u8>>,
 ) {
     let mut seg_idx: usize = 0;
-    let mut writer = match open_segment(dir, seg_idx) {
+    let mut writer = match open_segment(dir, thread_id, seg_idx) {
         Ok(w) => w,
         Err(e) => {
-            error!("bin-{label}-flusher: failed to open initial segment: {e}");
+            error!("bin-{label}-flusher-{thread_id}: failed to open initial segment: {e}");
             return;
         }
     };
     let mut seg_bytes: usize = 0;
     let mut total_records: u64 = 0;
 
-    for item in rx.iter() {
+    for msg in rx.iter() {
+        let item = match msg {
+            Some(item) => item,
+            None => break, // sentinel: this thread is done
+        };
+
         let encoded = match encode(&item) {
             Ok(v) => v,
             Err(e) => {
-                error!("bin-{label}-flusher: encode error: {e}");
+                error!("bin-{label}-flusher-{thread_id}: encode error: {e}");
                 continue;
             }
         };
@@ -545,7 +570,7 @@ fn run_flusher_loop<T>(
             .write_all(&len.to_le_bytes())
             .and_then(|_| writer.write_all(&encoded))
         {
-            error!("bin-{label}-flusher: write error on seg_{seg_idx:03}: {e}");
+            error!("bin-{label}-flusher-{thread_id}: write error on seg_t{thread_id:02}_{seg_idx:03}: {e}");
             continue;
         }
 
@@ -554,17 +579,13 @@ fn run_flusher_loop<T>(
 
         if seg_bytes >= seg_size_bytes {
             if let Err(e) = writer.flush() {
-                error!("bin-{label}-flusher: flush error on seg_{seg_idx:03}: {e}");
+                error!("bin-{label}-flusher-{thread_id}: flush error: {e}");
             }
-            debug!(
-                "bin-{label}-flusher: rotated seg_{:03}.bin ({} bytes)",
-                seg_idx, seg_bytes
-            );
             seg_idx += 1;
-            writer = match open_segment(dir, seg_idx) {
+            writer = match open_segment(dir, thread_id, seg_idx) {
                 Ok(w) => w,
                 Err(e) => {
-                    error!("bin-{label}-flusher: failed to open seg_{seg_idx:03}: {e}");
+                    error!("bin-{label}-flusher-{thread_id}: failed to open seg: {e}");
                     return;
                 }
             };
@@ -573,10 +594,10 @@ fn run_flusher_loop<T>(
     }
 
     if let Err(e) = writer.flush() {
-        error!("bin-{label}-flusher: final flush error: {e}");
+        error!("bin-{label}-flusher-{thread_id}: final flush error: {e}");
     }
     info!(
-        "bin-{label}-flusher: done, {total_records} records in {} segments",
+        "bin-{label}-flusher-{thread_id}: done, {total_records} records in {} segments",
         seg_idx + 1
     );
 }
@@ -692,7 +713,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let seg_dir = dir.path().join("results");
 
-        let writer = BinaryResultWriter::new(&seg_dir, 100, 1).unwrap();
+        let writer = BinaryResultWriter::new(&seg_dir, 100, 1, 1).unwrap();
 
         for i in 0..10 {
             writer
@@ -798,7 +819,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let seg_dir = dir.path().join("rotation");
 
-        let writer = BinaryResultWriter::new(&seg_dir, 100, 0).unwrap();
+        let writer = BinaryResultWriter::new(&seg_dir, 100, 0, 1).unwrap();
 
         for i in 0..3 {
             writer
@@ -829,10 +850,38 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let seg_dir = dir.path().join("closed");
 
-        let writer = BinaryResultWriter::new(&seg_dir, 100, 1).unwrap();
+        let writer = BinaryResultWriter::new(&seg_dir, 100, 1, 1).unwrap();
         writer.close().unwrap();
 
         let err = writer.write(make_result("https://example.com/late"));
         assert!(err.is_err());
+    }
+
+    #[test]
+    fn test_concurrent_writes_no_deadlock() {
+        use std::sync::Arc;
+        let dir = tempfile::tempdir().unwrap();
+        let seg_dir = dir.path().join("concurrent");
+
+        // 4 flusher threads, large channel
+        let writer = Arc::new(BinaryResultWriter::new(&seg_dir, 65536, 64, 4).unwrap());
+
+        let mut handles = Vec::new();
+        for t in 0..200usize {
+            let w = Arc::clone(&writer);
+            handles.push(std::thread::spawn(move || {
+                for i in 0..100usize {
+                    let url = format!("https://example.com/t{t}/p{i}");
+                    w.write(make_result(&url)).unwrap();
+                }
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
+        writer.close().unwrap();
+
+        let results = read_result_segments(&seg_dir).unwrap();
+        assert_eq!(results.len(), 20_000, "expected 20_000 records, got {}", results.len());
     }
 }
