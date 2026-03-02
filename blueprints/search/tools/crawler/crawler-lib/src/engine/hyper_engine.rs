@@ -282,6 +282,9 @@ async fn process_one_url(
     let result = hyper_fetch_one(client, &seed, effective_timeout, cfg.max_body_bytes).await;
     stats.total.fetch_add(1, Ordering::Relaxed);
 
+    // Release domain semaphore before any writer call (see reqwest_engine.rs).
+    drop(_permit);
+
     if !result.error.is_empty() {
         let is_timeout = result.error.contains("timeout")
             || result.error.contains("Timeout")
