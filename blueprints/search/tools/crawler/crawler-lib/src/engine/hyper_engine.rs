@@ -72,42 +72,24 @@ impl super::Engine for HyperEngine {
         results: Arc<dyn ResultWriter>,
         failures: Arc<dyn FailureWriter>,
     ) -> Result<StatsSnapshot> {
-        // Collect all seeds from the receiver.
-        let seeds: Vec<SeedURL> = {
-            let mut v = Vec::new();
-            while let Ok(s) = seed_rx.recv().await {
-                v.push(s);
-            }
-            v
-        };
-        let total_seeds = seeds.len();
-        if total_seeds == 0 {
-            return Ok(StatsSnapshot::empty());
-        }
-
         info!(
-            "hyper engine: {} seeds, {} workers, inner_n={}",
-            total_seeds, cfg.workers, cfg.inner_n
+            "hyper engine: workers={} inner_n={} timeout={}ms seed_hint={}",
+            cfg.workers, cfg.inner_n, cfg.timeout.as_millis(), seed_count,
         );
-
-        let batches = group_by_domain(seeds);
-        let domain_count = batches.len();
-        info!("grouped into {} domains", domain_count);
 
         // Shared stats — use caller-provided Arc for live TUI display.
         let stats = cfg.live_stats.clone().unwrap_or_else(|| Arc::new(Stats::new()));
-        let display_total = if seed_count > 0 { seed_count } else { total_seeds as u64 };
-        if stats.total_seeds.load(Ordering::Relaxed) == 0 {
-            stats.total_seeds.store(display_total, Ordering::Relaxed);
+        if seed_count > 0 && stats.total_seeds.load(Ordering::Relaxed) == 0 {
+            stats.total_seeds.store(seed_count, Ordering::Relaxed);
         }
         stats.done.store(false, Ordering::Relaxed);
 
         let adaptive = Arc::new(AdaptiveTimeout::new());
 
-        // Spawn live peak-RPS tracker (same as reqwest engine).
+        // Spawn live peak-RPS tracker.
         let peak_stats = Arc::clone(&stats);
         tokio::spawn(async move {
-            let mut prev_total = 0u64;
+            let mut prev_total = peak_stats.total.load(Ordering::Relaxed);
             let mut interval = tokio::time::interval(Duration::from_millis(100));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
@@ -125,49 +107,75 @@ impl super::Engine for HyperEngine {
         let workers = cfg.workers.max(1);
         let inner_n = cfg.inner_n.max(1);
 
-        // Pre-create per-domain entries.
+        // Domain map: lazily populated as new domains arrive from the streaming channel.
         let domain_map: Arc<DashMap<String, Arc<DomainEntry>>> =
-            Arc::new(DashMap::with_capacity(domain_count));
-        for batch in &batches {
-            domain_map.insert(
-                batch.domain.clone(),
-                Arc::new(DomainEntry::new(inner_n)),
-            );
-        }
+            Arc::new(DashMap::with_capacity(32_768));
 
         // Flat URL channel.
         let (url_tx, url_rx) =
             async_channel::bounded::<(SeedURL, Arc<DomainEntry>)>(workers * 4);
 
-        // Producer: round-robin interleaving — O(total_seeds), zero wasted iterations.
-        // VecDeque approach: pop front domain, send one URL, push back if more remain.
+        // Batch-streaming producer (mirrors reqwest_engine).
+        const BATCH_SIZE: usize = 100_000;
         let dm = Arc::clone(&domain_map);
+        let stats_prod = Arc::clone(&stats);
         let producer = tokio::spawn(async move {
             use std::collections::VecDeque;
-            let mut queue: VecDeque<(VecDeque<SeedURL>, Arc<DomainEntry>)> = batches
-                .into_iter()
-                .filter_map(|batch| {
-                    dm.get(&batch.domain)
-                        .map(|e| (VecDeque::from(batch.urls), Arc::clone(e.value())))
-                })
-                .collect();
+            let mut batch: Vec<SeedURL> = Vec::with_capacity(BATCH_SIZE);
+            let mut total_seen = 0u64;
 
-            while let Some((mut urls, entry)) = queue.pop_front() {
-                let url = match urls.pop_front() {
-                    Some(u) => u,
-                    None => continue,
-                };
-                if url_tx
-                    .send((url, Arc::clone(&entry)))
-                    .await
-                    .is_err()
-                {
-                    return;
+            loop {
+                batch.clear();
+                match seed_rx.recv().await {
+                    Ok(seed) => batch.push(seed),
+                    Err(_) => break,
                 }
-                if !urls.is_empty() {
-                    queue.push_back((urls, entry));
+                while batch.len() < BATCH_SIZE {
+                    match seed_rx.try_recv() {
+                        Ok(seed) => batch.push(seed),
+                        Err(_) => break,
+                    }
+                }
+
+                total_seen += batch.len() as u64;
+                if stats_prod.total_seeds.load(Ordering::Relaxed) == 0 {
+                    stats_prod.total_seeds.store(total_seen, Ordering::Relaxed);
+                }
+
+                let sub_batches = group_by_domain(std::mem::take(&mut batch));
+                stats_prod
+                    .domains_total
+                    .fetch_add(sub_batches.len() as u64, Ordering::Relaxed);
+
+                let mut queue: VecDeque<(VecDeque<SeedURL>, Arc<DomainEntry>)> = sub_batches
+                    .into_iter()
+                    .map(|b| {
+                        let entry = dm
+                            .entry(b.domain.clone())
+                            .or_insert_with(|| Arc::new(DomainEntry::new(inner_n)));
+                        (VecDeque::from(b.urls), Arc::clone(entry.value()))
+                    })
+                    .collect();
+
+                while let Some((mut urls, entry)) = queue.pop_front() {
+                    let url = match urls.pop_front() {
+                        Some(u) => u,
+                        None => continue,
+                    };
+                    if url_tx.send((url, Arc::clone(&entry))).await.is_err() {
+                        return;
+                    }
+                    if !urls.is_empty() {
+                        queue.push_back((urls, entry));
+                    }
                 }
             }
+
+            info!(
+                "hyper producer done: {} seeds dispatched across {} domains",
+                total_seen,
+                dm.len(),
+            );
         });
 
         // Build ONE shared hyper client with rustls+ring and HTTP/2.

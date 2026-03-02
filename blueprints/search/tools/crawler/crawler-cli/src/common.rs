@@ -328,6 +328,36 @@ pub fn create_failure_writer(
     }
 }
 
+/// Streaming variant of `CrawlJobParams`.
+///
+/// Seeds arrive via a pre-created channel + a total-count hint (from COUNT(*));
+/// no `Vec<SeedURL>` is materialised. Used by the CC recrawl command to avoid
+/// loading all 15 M rows into memory at once.
+pub struct CrawlJobParamsStreaming {
+    pub title: String,
+    /// Channel of seeds from the streaming loader.
+    pub seed_rx: async_channel::Receiver<crawler_lib::types::SeedURL>,
+    /// Total seed count (hint for TUI progress %; 0 = unknown).
+    pub seed_count: u64,
+    pub output_dir: PathBuf,
+    pub engine: String,
+    pub writer: String,
+    pub workers: usize,
+    pub inner_n: usize,
+    pub timeout_ms: u64,
+    pub retry_timeout_ms: u64,
+    pub no_retry: bool,
+    pub domain_dead_probe: usize,
+    pub domain_stall_ratio: usize,
+    pub db_shards: usize,
+    pub db_mem_mb: usize,
+    pub no_tui: bool,
+    pub body_store_dir: Option<String>,
+    pub gui: bool,
+    pub gui_port: u16,
+    pub flusher_threads: usize,
+}
+
 /// Shared crawl job configuration. Both HN and CC commands build this,
 /// then call `run_crawl_job()` to execute the two-pass crawl.
 pub struct CrawlJobParams {
@@ -527,6 +557,193 @@ pub async fn run_crawl_job(params: CrawlJobParams) -> Result<()> {
 
     let total_elapsed = job_start.elapsed();
     // Flush pending async body writes before closing the result writer.
+    if let Some(ref store) = body_store_handle {
+        store.close()?;
+    }
+    result_writer.close()?;
+    finalize_disk_stats(&live_stats, &disk_paths);
+
+    if let Some(h) = tui_handle {
+        h.stop_and_join();
+    }
+
+    print_summary(
+        &job_result.pass1,
+        job_result.pass2.as_ref(),
+        &job_result.total,
+        job_result.workers,
+    );
+
+    println!("Wall time: {}", format_duration(total_elapsed));
+
+    if params.gui {
+        println!("Crawl complete. Dashboard available for 30s...");
+        tokio::time::sleep(Duration::from_secs(30)).await;
+    }
+
+    Ok(())
+}
+
+/// Run a two-pass crawl job from a streaming seed channel.
+///
+/// Identical to `run_crawl_job` but takes `CrawlJobParamsStreaming` — seeds arrive
+/// via `seed_rx` (pre-created by `stream_seeds_cc_parquet_async`) so no full
+/// `Vec<SeedURL>` is held in memory.
+pub async fn run_crawl_job_streaming(params: CrawlJobParamsStreaming) -> Result<()> {
+    let output_dir = &params.output_dir;
+    let output_dir_str = output_dir.to_string_lossy().to_string();
+
+    let engine_type = parse_engine(&params.engine)?;
+    let writer_type = parse_writer(&params.writer)?;
+
+    let failed_db_path = output_dir.join("failed.duckdb");
+    let failed_db_str = failed_db_path.to_string_lossy().to_string();
+
+    let live_stats = Arc::new(Stats::new());
+
+    let mut cfg = Config::default();
+    cfg.workers = params.workers;
+    cfg.inner_n = params.inner_n;
+    cfg.timeout = Duration::from_millis(params.timeout_ms);
+    cfg.retry_timeout = Duration::from_millis(params.retry_timeout_ms);
+    cfg.no_retry = params.no_retry;
+    cfg.domain_dead_probe = params.domain_dead_probe;
+    cfg.domain_stall_ratio = params.domain_stall_ratio;
+    cfg.engine = engine_type;
+    cfg.writer = writer_type;
+    cfg.db_shards = params.db_shards;
+    cfg.db_mem_mb = params.db_mem_mb;
+    cfg.output_dir = output_dir_str.clone();
+    cfg.failed_db_path = failed_db_str.clone();
+    cfg.live_stats = Some(live_stats.clone());
+    if params.flusher_threads > 0 {
+        cfg.num_flushers = params.flusher_threads;
+    }
+    if let Some(ref dir) = params.body_store_dir {
+        let resolved = expand_home(dir);
+        let store = AsyncBodyStore::new(&resolved)?;
+        cfg.body_store = Some(Arc::new(store));
+        println!("Body store: {}", resolved.display());
+    }
+
+    let disk_paths = DiskPaths {
+        seg_dir: match writer_type {
+            WriterType::Binary => Some(output_dir.join("results")),
+            _ => None,
+        },
+        duckdb_dir: match writer_type {
+            WriterType::Binary | WriterType::DuckDB => Some(output_dir.clone()),
+            _ => None,
+        },
+        failures_dir: match writer_type {
+            WriterType::Binary | WriterType::Parquet => Some(output_dir.join("failures")),
+            _ => None,
+        },
+        failed_db: if params.no_retry { None } else { Some(failed_db_path.clone()) },
+        bodies_dir: params.body_store_dir.as_deref().map(expand_home),
+    };
+    spawn_disk_sampler(live_stats.clone(), disk_paths.clone());
+
+    println!(
+        "Config: engine={} writer={} workers={} inner_n={} timeout={}ms retry_timeout={}ms",
+        cfg.engine,
+        cfg.writer,
+        if cfg.workers == 0 { "auto".to_string() } else { cfg.workers.to_string() },
+        if cfg.inner_n == 0 { "auto".to_string() } else { cfg.inner_n.to_string() },
+        cfg.timeout.as_millis(),
+        cfg.retry_timeout.as_millis(),
+    );
+
+    let result_writer: Arc<dyn ResultWriter> = create_result_writer(
+        writer_type,
+        output_dir,
+        cfg.db_shards,
+        cfg.db_mem_mb,
+        cfg.batch_size,
+        cfg.num_flushers,
+    )?;
+
+    let failed_db_str2 = failed_db_str.clone();
+    let output_dir2 = output_dir.clone();
+    let mem_mb = cfg.db_mem_mb;
+    let batch_size = cfg.batch_size;
+    let no_retry = params.no_retry;
+
+    let open_failure_writer: Box<dyn Fn() -> Result<Arc<dyn FailureWriter>>> =
+        Box::new(move || {
+            create_failure_writer(writer_type, &failed_db_str2, &output_dir2, mem_mb, batch_size, no_retry)
+        });
+
+    let failed_db_for_retry = failed_db_str.clone();
+    let load_retry: Option<Box<dyn Fn(chrono::NaiveDateTime) -> Result<Vec<crawler_lib::types::SeedURL>>>> =
+        if !params.no_retry {
+            Some(Box::new(move |since| {
+                crawler_lib::seed::load_retry_seeds(&failed_db_for_retry, since)
+            }))
+        } else {
+            None
+        };
+
+    println!("Starting crawl job...");
+    let job_start = std::time::Instant::now();
+
+    let workers_str = if cfg.workers == 0 {
+        "auto".to_string()
+    } else {
+        cfg.workers.to_string()
+    };
+
+    if params.gui {
+        let gui_cfg = gui::GuiConfig {
+            title: params.title.clone(),
+            engine: cfg.engine.to_string(),
+            writer: cfg.writer.to_string(),
+            workers: workers_str.clone(),
+            timeout_ms: cfg.timeout.as_millis() as u64,
+            retry_timeout_ms: cfg.retry_timeout.as_millis() as u64,
+            no_retry: cfg.no_retry,
+        };
+        match gui::spawn(live_stats.clone(), gui_cfg, params.gui_port).await {
+            Ok(addr) => {
+                let host = hostname::get()
+                    .map(|h| h.to_string_lossy().to_string())
+                    .unwrap_or_else(|_| "localhost".to_string());
+                println!("Dashboard: http://{}:{}", host, addr.port());
+            }
+            Err(e) => {
+                eprintln!("GUI server failed to start: {e}");
+            }
+        }
+    }
+
+    let tui_handle = if !params.gui && !params.no_tui {
+        let tui_cfg = tui::TuiConfig {
+            title: params.title,
+            engine: cfg.engine.to_string(),
+            writer: cfg.writer.to_string(),
+            workers: workers_str,
+            timeout_ms: cfg.timeout.as_millis() as u64,
+        };
+        tui::spawn(live_stats.clone(), tui_cfg)
+    } else {
+        None
+    };
+
+    let body_store_handle = cfg.body_store.clone();
+
+    let job_result = run_job(
+        params.seed_rx,
+        params.seed_count,
+        cfg,
+        result_writer.clone(),
+        open_failure_writer.as_ref(),
+        load_retry
+            .as_ref()
+            .map(|f| f.as_ref() as &dyn Fn(chrono::NaiveDateTime) -> Result<Vec<crawler_lib::types::SeedURL>>),
+    )
+    .await?;
+
+    let total_elapsed = job_start.elapsed();
     if let Some(ref store) = body_store_handle {
         store.close()?;
     }

@@ -58,55 +58,25 @@ impl super::Engine for ReqwestEngine {
         results: Arc<dyn ResultWriter>,
         failures: Arc<dyn FailureWriter>,
     ) -> Result<StatsSnapshot> {
-        // Collect all seeds from the receiver into a Vec for grouping.
-        // For CC streaming this is replaced by Task 8's batch producer;
-        // for now we collect first to keep the change minimal.
-        let seeds: Vec<SeedURL> = {
-            let mut v = Vec::new();
-            while let Ok(s) = seed_rx.recv().await {
-                v.push(s);
-            }
-            v
-        };
-        let total_seeds = seeds.len();
-        if total_seeds == 0 {
-            return Ok(StatsSnapshot::empty());
-        }
-
         info!(
-            "reqwest engine: {} seeds, {} workers, inner_n={}",
-            total_seeds, cfg.workers, cfg.inner_n
+            "reqwest engine: workers={} inner_n={} timeout={}ms seed_hint={}",
+            cfg.workers, cfg.inner_n, cfg.timeout.as_millis(), seed_count,
         );
 
-        // Group seeds by domain to create per-domain state entries.
-        let batches = group_by_domain(seeds);
-        let domain_count = batches.len();
-        info!("grouped into {} domains", domain_count);
-
         // Shared stats — use caller-provided Arc for live TUI display, or create fresh.
-        // Use seed_count hint for TUI total if provided; otherwise use actual count.
         let stats = cfg.live_stats.clone().unwrap_or_else(|| Arc::new(Stats::new()));
-        let display_total = if seed_count > 0 { seed_count } else { total_seeds as u64 };
-        if stats.total_seeds.load(Ordering::Relaxed) == 0 {
-            stats.total_seeds.store(display_total, Ordering::Relaxed);
+        // Use seed_count hint (from streaming COUNT(*)) for TUI progress bar.
+        if seed_count > 0 && stats.total_seeds.load(Ordering::Relaxed) == 0 {
+            stats.total_seeds.store(seed_count, Ordering::Relaxed);
         }
         // Reset done flag (may be set from a previous pass)
         stats.done.store(false, Ordering::Relaxed);
-        stats.domains_total.store(domain_count as u64, Ordering::Relaxed);
-
-        // Push a start event to the TUI log.
-        stats.push_warning(format!(
-            "engine: {} seeds, {} domains, {} workers, inner_n={}",
-            total_seeds, domain_count, cfg.workers, cfg.inner_n,
-        ));
 
         let adaptive = Arc::new(AdaptiveTimeout::new());
 
         // Spawn a peak-RPS tracker task: samples total every 100ms, writes live peak_rps.
-        // This replaces PeakTracker (which used try_lock and almost never fired at 16K workers).
         let peak_stats = Arc::clone(&stats);
         tokio::spawn(async move {
-            // Initialize from current total so we don't count prior-pass history on restart.
             let mut prev_total = peak_stats.total.load(Ordering::Relaxed);
             let mut interval = tokio::time::interval(Duration::from_millis(100));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -133,53 +103,96 @@ impl super::Engine for ReqwestEngine {
         let workers = cfg.workers.max(1);
         let inner_n = cfg.inner_n.max(1);
 
-        // Pre-create per-domain entries (semaphore + abandonment state).
+        // Domain map: lazily populated as new domains arrive from the streaming channel.
+        // Initial capacity of 32 K covers most CC partitions without resizing.
         let domain_map: Arc<DashMap<String, Arc<DomainEntry>>> =
-            Arc::new(DashMap::with_capacity(domain_count));
-        for batch in &batches {
-            domain_map.insert(
-                batch.domain.clone(),
-                Arc::new(DomainEntry::new(inner_n)),
-            );
-        }
+            Arc::new(DashMap::with_capacity(32_768));
 
         // Flat URL channel: capacity = workers * 4 so producer never blocks on startup.
-        // Each item carries the URL and a reference to its domain's shared state.
         let (url_tx, url_rx) =
             async_channel::bounded::<(SeedURL, Arc<DomainEntry>)>(workers * 4);
 
-        // Producer: round-robin interleaving — O(total_seeds), zero wasted iterations.
+        // Batch-streaming producer:
         //
-        // Uses a VecDeque of (remaining_urls, domain_entry): pop front domain, send one
-        // URL, push back if the domain has more. This replaces the old O(max_len × num_domains)
-        // nested loop which wasted ~99% of iterations on None checks with CC p:0 data.
+        // Reads seeds from `seed_rx` in batches of BATCH_SIZE (100 K), groups each batch
+        // by domain, then round-robins the batch into `url_tx`. Domain entries are created
+        // lazily on first encounter. Batches overlap — while workers process batch N the
+        // producer is already grouping batch N+1 — so the URL channel stays full.
+        //
+        // Memory: peak ≈ 2 × BATCH_SIZE × ~150 B ≈ 30 MB (one batch in grouping + one
+        // batch in the channel), regardless of total seed count (e.g. 15 M for CC p:0).
+        const BATCH_SIZE: usize = 100_000;
         let dm = Arc::clone(&domain_map);
+        let stats_prod = Arc::clone(&stats);
         let producer = tokio::spawn(async move {
             use std::collections::VecDeque;
-            let mut queue: VecDeque<(VecDeque<SeedURL>, Arc<DomainEntry>)> = batches
-                .into_iter()
-                .filter_map(|batch| {
-                    dm.get(&batch.domain)
-                        .map(|e| (VecDeque::from(batch.urls), Arc::clone(e.value())))
-                })
-                .collect();
+            let mut batch: Vec<SeedURL> = Vec::with_capacity(BATCH_SIZE);
+            let mut total_seen = 0u64;
 
-            while let Some((mut urls, entry)) = queue.pop_front() {
-                let url = match urls.pop_front() {
-                    Some(u) => u,
-                    None => continue,
-                };
-                if url_tx
-                    .send((url, Arc::clone(&entry)))
-                    .await
-                    .is_err()
-                {
-                    return; // receivers all dropped
+            loop {
+                // Wait for the first seed of a new batch (blocks if channel is empty).
+                batch.clear();
+                match seed_rx.recv().await {
+                    Ok(seed) => batch.push(seed),
+                    Err(_) => break, // channel closed — all seeds consumed
                 }
-                if !urls.is_empty() {
-                    queue.push_back((urls, entry));
+                // Greedily drain up to BATCH_SIZE without blocking.
+                while batch.len() < BATCH_SIZE {
+                    match seed_rx.try_recv() {
+                        Ok(seed) => batch.push(seed),
+                        Err(_) => break, // channel empty or closed
+                    }
+                }
+
+                total_seen += batch.len() as u64;
+
+                // Update total_seeds once we know the real count (streaming case where
+                // seed_count hint was 0 or the actual count differs from the hint).
+                if stats_prod.total_seeds.load(Ordering::Relaxed) == 0 {
+                    // We don't know the total yet; at minimum show what we've seen.
+                    stats_prod.total_seeds.store(total_seen, Ordering::Relaxed);
+                }
+
+                // Group this batch by domain.
+                let sub_batches = group_by_domain(std::mem::take(&mut batch));
+                let domain_count = sub_batches.len();
+
+                // Inform TUI of domains discovered so far.
+                stats_prod
+                    .domains_total
+                    .fetch_add(domain_count as u64, Ordering::Relaxed);
+
+                // Build per-batch VecDeque, creating domain entries lazily.
+                let mut queue: VecDeque<(VecDeque<SeedURL>, Arc<DomainEntry>)> = sub_batches
+                    .into_iter()
+                    .map(|b| {
+                        let entry = dm
+                            .entry(b.domain.clone())
+                            .or_insert_with(|| Arc::new(DomainEntry::new(inner_n)));
+                        (VecDeque::from(b.urls), Arc::clone(entry.value()))
+                    })
+                    .collect();
+
+                // Round-robin dispatch for this batch.
+                while let Some((mut urls, entry)) = queue.pop_front() {
+                    let url = match urls.pop_front() {
+                        Some(u) => u,
+                        None => continue,
+                    };
+                    if url_tx.send((url, Arc::clone(&entry))).await.is_err() {
+                        return; // receivers all dropped
+                    }
+                    if !urls.is_empty() {
+                        queue.push_back((urls, entry));
+                    }
                 }
             }
+
+            info!(
+                "reqwest producer done: {} seeds dispatched across {} domains",
+                total_seen,
+                dm.len(),
+            );
             // url_tx dropped here → channel closes when all receivers see EOF
         });
 

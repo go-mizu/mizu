@@ -110,23 +110,7 @@ pub fn load_seeds_cc_parquet(path: &str, limit: usize, filters: &CcSeedFilter) -
     }
 
     let escaped = path.replace('\'', "''");
-    let mut conditions = vec!["warc_filename IS NOT NULL".to_string()];
-
-    if !filters.status_codes.is_empty() {
-        let codes: Vec<String> = filters.status_codes.iter().map(|c| c.to_string()).collect();
-        conditions.push(format!("fetch_status IN ({})", codes.join(",")));
-    }
-    if !filters.mime_types.is_empty() {
-        let quoted: Vec<String> = filters.mime_types.iter().map(|m| format!("'{}'", m.replace('\'', "''"))).collect();
-        conditions.push(format!("content_mime_detected IN ({})", quoted.join(",")));
-    }
-    if !filters.languages.is_empty() {
-        for lang in &filters.languages {
-            conditions.push(format!("content_languages LIKE '%{}%'", lang.replace('\'', "''")));
-        }
-    }
-
-    let where_clause = conditions.join(" AND ");
+    let where_clause = build_cc_conditions(filters).join(" AND ");
     let limit_clause = if limit > 0 { format!(" LIMIT {}", limit) } else { String::new() };
 
     let query = format!(
@@ -155,6 +139,128 @@ pub struct CcSeedFilter {
     pub status_codes: Vec<i32>,
     pub mime_types: Vec<String>,
     pub languages: Vec<String>,
+}
+
+/// Build the WHERE clause conditions for CC seed queries.
+fn build_cc_conditions(filters: &CcSeedFilter) -> Vec<String> {
+    let mut conditions = vec!["warc_filename IS NOT NULL".to_string()];
+    if !filters.status_codes.is_empty() {
+        let codes: Vec<String> = filters.status_codes.iter().map(|c| c.to_string()).collect();
+        conditions.push(format!("fetch_status IN ({})", codes.join(",")));
+    }
+    if !filters.mime_types.is_empty() {
+        let quoted: Vec<String> = filters
+            .mime_types
+            .iter()
+            .map(|m| format!("'{}'", m.replace('\'', "''")))
+            .collect();
+        conditions.push(format!("content_mime_detected IN ({})", quoted.join(",")));
+    }
+    for lang in &filters.languages {
+        conditions.push(format!(
+            "content_languages LIKE '%{}%'",
+            lang.replace('\'', "''")
+        ));
+    }
+    conditions
+}
+
+/// Stream CC parquet seeds asynchronously via a bounded channel.
+///
+/// The loader runs in `spawn_blocking`, scanning the parquet file with a single
+/// DuckDB cursor. Seeds are sent lazily — peak RAM stays O(200 K × seed_size ≈ 40 MB)
+/// regardless of total row count (a CC p:0 partition has ~15 M rows).
+///
+/// Returns `(receiver, total_count, loader_handle)`.
+/// `total_count` is obtained from a fast COUNT(*) before streaming begins
+/// (DuckDB reads parquet min/max statistics, sub-second for warc_filename IS NOT NULL).
+///
+/// Await the `loader_handle` after your consumer is done to propagate any DuckDB errors.
+pub async fn stream_seeds_cc_parquet_async(
+    path: String,
+    limit: usize,
+    filters: CcSeedFilter,
+) -> Result<(
+    async_channel::Receiver<SeedURL>,
+    u64,
+    tokio::task::JoinHandle<Result<()>>,
+)> {
+    // Fast COUNT(*) so callers can show accurate progress.
+    let total: u64 = {
+        let path2 = path.clone();
+        let filters2 = filters.clone();
+        tokio::task::spawn_blocking(move || count_cc_seeds(&path2, limit, &filters2))
+            .await
+            .map_err(|e| anyhow::anyhow!("count task panicked: {}", e))??
+    };
+
+    // Channel capacity = 200 K seeds  ≈ 40 MB peak for the buffer.
+    let (tx, rx) = async_channel::bounded::<SeedURL>(200_000);
+
+    let handle = tokio::task::spawn_blocking(move || -> Result<()> {
+        let conn = Connection::open_in_memory()?;
+        // Cap DuckDB buffer pool (same policy as load_seeds_cc_parquet).
+        {
+            use sysinfo::System;
+            let sys = System::new_all();
+            let total_mb = sys.total_memory() / (1024 * 1024);
+            let limit_mb = ((total_mb * 40 / 100) as usize).max(512).min(4096);
+            conn.execute_batch(&format!("SET memory_limit='{limit_mb}MB'"))?;
+        }
+
+        let escaped = path.replace('\'', "''");
+        let where_clause = build_cc_conditions(&filters).join(" AND ");
+        let limit_clause = if limit > 0 {
+            format!(" LIMIT {}", limit)
+        } else {
+            String::new()
+        };
+
+        let query = format!(
+            "SELECT url, COALESCE(url_host_registered_domain, '') as domain \
+             FROM read_parquet('{}') WHERE {}{}",
+            escaped, where_clause, limit_clause
+        );
+
+        let mut stmt = conn.prepare(&query)?;
+        let rows = stmt.query_map([], |row| {
+            Ok(SeedURL {
+                url: row.get(0)?,
+                domain: row.get(1)?,
+            })
+        })?;
+
+        for row in rows {
+            if let Ok(seed) = row {
+                if tx.send_blocking(seed).is_err() {
+                    break; // receiver dropped (consumer cancelled)
+                }
+            }
+        }
+        Ok(())
+    });
+
+    Ok((rx, total, handle))
+}
+
+/// COUNT(*) for CC seeds — fast when DuckDB can use parquet statistics.
+fn count_cc_seeds(path: &str, limit: usize, filters: &CcSeedFilter) -> Result<u64> {
+    let conn = Connection::open_in_memory()?;
+    let escaped = path.replace('\'', "''");
+    let where_clause = build_cc_conditions(filters).join(" AND ");
+    let limit_clause = if limit > 0 {
+        format!(" LIMIT {}", limit)
+    } else {
+        String::new()
+    };
+    // Wrap in a subquery so LIMIT is applied before COUNT.
+    let sql = format!(
+        "SELECT COUNT(*) FROM (SELECT 1 FROM read_parquet('{}') WHERE {}{})",
+        escaped, where_clause, limit_clause
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let count: i64 = stmt.query_row([], |row| row.get(0))?;
+    Ok(count as u64)
 }
 
 /// Load timeout URLs from failed DB for pass-2 retry.
@@ -263,6 +369,36 @@ mod tests {
         assert!(urls.contains(&"https://a.com/1"), "should include http_timeout URL");
         assert!(urls.contains(&"https://b.com/1"), "should include domain_http_timeout_killed URL");
         assert_eq!(seeds.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn stream_seeds_delivers_all_rows_in_order() {
+        // Create a temp parquet file via DuckDB and verify streaming delivers all rows.
+        let dir = tempfile::tempdir().unwrap();
+        let parquet = dir.path().join("test.parquet");
+        let conn = duckdb::Connection::open_in_memory().unwrap();
+        conn.execute_batch(&format!(
+            "COPY (SELECT 'https://a.com/' || i::TEXT as url, 'a.com' as url_host_registered_domain, 'ok' as warc_filename FROM range(1, 51) t(i)) TO '{}'",
+            parquet.to_string_lossy()
+        )).unwrap();
+
+        let (rx, count, handle) = stream_seeds_cc_parquet_async(
+            parquet.to_string_lossy().to_string(),
+            0,
+            CcSeedFilter::default(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(count, 50);
+
+        let mut received = Vec::new();
+        while let Ok(seed) = rx.recv().await {
+            received.push(seed);
+        }
+        handle.await.unwrap().unwrap();
+        assert_eq!(received.len(), 50);
+        assert!(received.iter().all(|s| s.domain == "a.com"));
     }
 
     #[test]

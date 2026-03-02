@@ -77,6 +77,7 @@ Subcommands:
 	cmd.AddCommand(newCCRecrawlDrone())
 	cmd.AddCommand(newCCVerify())
 	cmd.AddCommand(newCCSite())
+	cmd.AddCommand(newCCMarkdown())
 
 	return cmd
 }
