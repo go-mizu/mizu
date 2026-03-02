@@ -69,6 +69,28 @@ pub struct Stats {
     /// Open file descriptors (this process)
     pub open_fds: AtomicU64,
 
+    // --- Disk stats (updated by disk_sampler every 10s) ---
+    /// Number of live seg_*.bin files
+    pub disk_seg_files: AtomicU64,
+    /// Total MB of seg_*.bin files
+    pub disk_seg_mb: AtomicU64,
+    /// Total MB of results_*.duckdb shards
+    pub disk_duckdb_mb: AtomicU64,
+    /// Row count in result DuckDB shards (set once, post-drain)
+    pub disk_results_rows: AtomicU64,
+    /// Total MB of failures/ dir
+    pub disk_failures_mb: AtomicU64,
+    /// Row count in failed.duckdb (set once, post-drain)
+    pub disk_failed_rows: AtomicU64,
+    /// File count in bodies/ CAS dir
+    pub disk_bodies_count: AtomicU64,
+    /// Total MB of bodies/ dir
+    pub disk_bodies_mb: AtomicU64,
+    /// Grand total disk MB (seg + duckdb + failures + bodies)
+    pub disk_total_mb: AtomicU64,
+    /// Unix seconds of last disk scan
+    pub disk_last_updated: AtomicU64,
+
     /// Recent warning messages (domain timeouts, abandonments). Cap 200.
     pub warnings: Mutex<VecDeque<String>>,
 }
@@ -115,6 +137,16 @@ impl Stats {
             net_tx_bps: AtomicU64::new(0),
             net_rx_bps: AtomicU64::new(0),
             open_fds: AtomicU64::new(0),
+            disk_seg_files: AtomicU64::new(0),
+            disk_seg_mb: AtomicU64::new(0),
+            disk_duckdb_mb: AtomicU64::new(0),
+            disk_results_rows: AtomicU64::new(0),
+            disk_failures_mb: AtomicU64::new(0),
+            disk_failed_rows: AtomicU64::new(0),
+            disk_bodies_count: AtomicU64::new(0),
+            disk_bodies_mb: AtomicU64::new(0),
+            disk_total_mb: AtomicU64::new(0),
+            disk_last_updated: AtomicU64::new(0),
             warnings: Mutex::new(VecDeque::with_capacity(200)),
         }
     }
