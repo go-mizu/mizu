@@ -100,7 +100,7 @@ pub(crate) fn open_result_db(path: &Path, mem_mb: usize) -> Result<Connection> {
             description VARCHAR, language VARCHAR, domain VARCHAR,
             redirect_url VARCHAR, fetch_time_ms BIGINT,
             crawled_at TIMESTAMP, error VARCHAR,
-            status VARCHAR DEFAULT 'done', body_cid VARCHAR DEFAULT ''
+            status VARCHAR DEFAULT 'done', warc_id VARCHAR DEFAULT ''
         );",
     )
     .context("failed to create results table")?;
@@ -117,14 +117,14 @@ pub(crate) fn flush_result_batch(conn: &Connection, batch: &[CrawlResult]) -> Re
     }
 
     // Build multi-row INSERT with placeholders.
-    // 13 columns per row (status and body_cid have defaults, we INSERT explicitly).
+    // 13 columns per row (status and warc_id have defaults, we INSERT explicitly).
     const COLS: usize = 15;
     let row_placeholder = format!("({})", vec!["?"; COLS].join(", "));
     let all_rows = vec![row_placeholder.as_str(); batch.len()].join(", ");
     let sql = format!(
         "INSERT INTO results (url, status_code, content_type, content_length, body, \
          title, description, language, domain, redirect_url, fetch_time_ms, \
-         crawled_at, error, status, body_cid) VALUES {}",
+         crawled_at, error, status, warc_id) VALUES {}",
         all_rows
     );
 
@@ -145,7 +145,7 @@ pub(crate) fn flush_result_batch(conn: &Connection, batch: &[CrawlResult]) -> Re
         params.push(Box::new(r.crawled_at.format("%Y-%m-%d %H:%M:%S").to_string()));
         params.push(Box::new(sanitize_str(&r.error)));
         params.push(Box::new("done".to_string()));
-        params.push(Box::new(sanitize_str(&r.body_cid)));
+        params.push(Box::new(sanitize_str(&r.warc_id)));
     }
 
     let param_refs: Vec<&dyn duckdb::ToSql> = params.iter().map(|p| p.as_ref()).collect();

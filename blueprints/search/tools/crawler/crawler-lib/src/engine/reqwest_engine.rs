@@ -346,7 +346,7 @@ async fn process_one_url(
         &seed,
         effective_timeout,
         cfg.max_body_bytes,
-        cfg.body_store.as_deref(),
+        cfg.warc_store.as_ref().map(|s| s.as_ref()),
     )
     .await;
     stats.total.fetch_add(1, Ordering::Relaxed);
@@ -686,7 +686,7 @@ async fn fetch_one(
     seed: &SeedURL,
     timeout: Duration,
     max_body_bytes: usize,
-    body_store: Option<&crate::bodystore::AsyncBodyStore>,
+    warc_store: Option<&crate::warcstore::AsyncWarcStore>,
 ) -> Result<CrawlResult, (reqwest::Error, i64)> {
     let start = Instant::now();
 
@@ -749,6 +749,8 @@ async fn fetch_one(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_string();
+    // Capture response headers before resp is consumed by read_body_limited.
+    let response_headers = resp.headers().clone();
 
     let is_html =
         content_type.contains("text/html") || content_type.contains("application/xhtml");
@@ -779,11 +781,32 @@ async fn fetch_one(
         (String::new(), String::new(), String::new())
     };
 
-    // Store body in CAS when a body store is configured and body was read.
-    // put_async() returns the CID immediately; the actual write is background-threaded.
-    let body_cid = if let Some(store) = body_store {
+    // Store HTML response as a WARC file when a warc_store is configured.
+    // put_async() returns the warc_id (UUID) immediately; the actual write is background-threaded.
+    let warc_id = if let Some(store) = warc_store {
         if should_read_body && !body_bytes.is_empty() {
-            store.put_async(&body_bytes)
+            let resp_headers: Vec<(String, String)> = response_headers
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
+                .collect();
+            let status_reason = http::StatusCode::from_u16(status)
+                .ok()
+                .and_then(|s| s.canonical_reason())
+                .unwrap_or("");
+            let entry = crate::warcstore::WarcEntry {
+                url: seed.url.clone(),
+                method: "GET".to_string(),
+                proto: "HTTP/1.1".to_string(),
+                req_headers: vec![],
+                status_code: status,
+                status_text: format!("{} {}", status, status_reason),
+                resp_headers,
+                body: body_bytes.to_vec(),
+                ip: String::new(),
+                crawled_at: chrono::Utc::now(),
+                run_id: String::new(),
+            };
+            store.put_async(entry)
         } else {
             String::new()
         }
@@ -805,7 +828,7 @@ async fn fetch_one(
         crawled_at: chrono::Utc::now().naive_utc(),
         error: String::new(),
         body: String::new(), // always empty — avoids DuckDB overflow blocks
-        body_cid,
+        warc_id,
     })
 }
 

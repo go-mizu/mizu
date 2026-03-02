@@ -544,7 +544,7 @@ async fn fetch_one(
         crawled_at: chrono::Utc::now().naive_utc(),
         error: String::new(),
         body: String::new(),
-        body_cid: String::new(), // wreq engine: body store not wired (reqwest engine only)
+        warc_id: String::new(), // wreq engine: warc store not wired (reqwest engine only)
     })
 }
 

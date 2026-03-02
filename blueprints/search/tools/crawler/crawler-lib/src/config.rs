@@ -1,4 +1,4 @@
-use crate::bodystore::AsyncBodyStore;
+use crate::warcstore::AsyncWarcStore;
 use crate::stats::Stats;
 use std::sync::Arc;
 use std::time::Duration;
@@ -121,10 +121,10 @@ pub struct Config {
     #[allow(clippy::type_complexity)]
     pub live_stats: Option<Arc<Stats>>,
 
-    /// Optional content-addressable body store.
-    /// When set, HTML bodies are written to the CAS and CrawlResult.body_cid is populated.
-    /// Compatible with Go's pkg/crawl/bodystore format: sha256:{hex64} CIDs.
-    pub body_store: Option<Arc<AsyncBodyStore>>,
+    /// Optional WARC 1.1 store.
+    /// When set, HTML responses are written as WARC files and CrawlResult.warc_id is populated.
+    /// Compatible with Go's pkg/crawl/warcstore format.
+    pub warc_store: Option<Arc<AsyncWarcStore>>,
 }
 
 impl Default for Config {
@@ -154,7 +154,7 @@ impl Default for Config {
             output_dir: String::new(),
             failed_db_path: String::new(),
             live_stats: None,
-            body_store: None,
+            warc_store: None,
         }
     }
 }

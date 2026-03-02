@@ -703,7 +703,7 @@ mod tests {
             crawled_at: chrono::Utc::now().naive_utc(),
             error: String::new(),
             body: String::new(),
-            body_cid: String::new(),
+            warc_id: String::new(),
         }
     }
 
