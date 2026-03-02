@@ -161,7 +161,8 @@ remote-cc-benchmark:
 tunnel:
 	@echo "Tunneling localhost:$(GUI_PORT) -> $(REMOTE_SSH):$(GUI_PORT)"
 	@echo "Open http://localhost:$(GUI_PORT) in your browser"
-	$(SSH) -N -L $(GUI_PORT):localhost:$(GUI_PORT) $(REMOTE_SSH)
+	$(SSH) -o ServerAliveInterval=5 -o ServerAliveCountMax=120 -o ExitOnForwardFailure=yes \
+	  -N -L $(GUI_PORT):localhost:$(GUI_PORT) $(REMOTE_SSH)
 
 clean:
 	cargo clean
