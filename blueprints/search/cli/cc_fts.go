@@ -18,7 +18,7 @@ import (
 	// Import all drivers for registration
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/chdb"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/devnull"
-	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/duckdb"
+	duckdbdrv "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/duckdb"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/sqlite"
 	"github.com/spf13/cobra"
 )
@@ -39,6 +39,7 @@ func newCCFTS() *cobra.Command {
 	cmd.AddCommand(newCCFTSIndex())
 	cmd.AddCommand(newCCFTSSearch())
 	cmd.AddCommand(newCCFTSDecompress())
+	cmd.AddCommand(newCCFTSPack())
 	return cmd
 }
 
@@ -46,23 +47,27 @@ func newCCFTSIndex() *cobra.Command {
 	var (
 		crawlID   string
 		engine    string
+		source    string
 		batchSize int
 		workers   int
 	)
 
 	cmd := &cobra.Command{
 		Use:   "index",
-		Short: "Build FTS index from CC markdown files",
+		Short: "Build FTS index from CC markdown files or a pre-packed bundle",
 		Example: `  search cc fts index --engine duckdb
   search cc fts index --engine sqlite --crawl CC-MAIN-2026-08
-  search cc fts index --engine devnull  # benchmark I/O only`,
+  search cc fts index --engine devnull  # benchmark I/O only
+  search cc fts index --engine devnull --source parquet  # benchmark from parquet pack
+  search cc fts index --engine devnull --source bin      # benchmark from flatbin pack`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCCFTSIndex(cmd.Context(), crawlID, engine, batchSize, workers)
+			return runCCFTSIndex(cmd.Context(), crawlID, engine, source, batchSize, workers)
 		},
 	}
 
 	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest)")
 	cmd.Flags().StringVar(&engine, "engine", "duckdb", "FTS engine: "+strings.Join(index.List(), ", "))
+	cmd.Flags().StringVar(&source, "source", "files", "Source: files, parquet, bin, ndjson, duckdb")
 	cmd.Flags().IntVar(&batchSize, "batch-size", 5000, "Documents per batch insert")
 	cmd.Flags().IntVar(&workers, "workers", 0, "Parallel file readers (0 = NumCPU)")
 	return cmd
@@ -95,28 +100,31 @@ func newCCFTSSearch() *cobra.Command {
 	return cmd
 }
 
-func runCCFTSIndex(ctx context.Context, crawlID, engineName string, batchSize, workers int) error {
+func runCCFTSIndex(ctx context.Context, crawlID, engineName, source string, batchSize, workers int) error {
 	if crawlID == "" {
 		crawlID = detectLatestCrawl()
 	}
 
 	homeDir, _ := os.UserHomeDir()
-	sourceDir := filepath.Join(homeDir, "data", "common-crawl", crawlID, "markdown")
 	outputDir := filepath.Join(homeDir, "data", "common-crawl", crawlID, "fts", engineName)
-
-	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
-		return fmt.Errorf("markdown dir not found: %s", sourceDir)
-	}
 
 	eng, err := index.NewEngine(engineName)
 	if err != nil {
 		return err
 	}
-
 	if err := eng.Open(ctx, outputDir); err != nil {
 		return fmt.Errorf("open engine: %w", err)
 	}
 	defer eng.Close()
+
+	if source != "files" {
+		return runCCFTSIndexFromPack(ctx, crawlID, engineName, source, eng, outputDir, batchSize)
+	}
+
+	sourceDir := filepath.Join(homeDir, "data", "common-crawl", crawlID, "markdown")
+	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
+		return fmt.Errorf("markdown dir not found: %s", sourceDir)
+	}
 
 	fmt.Fprintf(os.Stderr, "indexing %s → %s (engine=%s, batch=%d, workers=%d)\n",
 		sourceDir, outputDir, engineName, batchSize, workers)
@@ -138,7 +146,6 @@ func runCCFTSIndex(ctx context.Context, crawlID, engineName string, batchSize, w
 		disk := index.DirSizeBytes(outputDir)
 		peakMB := stats.PeakRSSMB.Load()
 
-		// Progress bar
 		pct := float64(0)
 		if total > 0 {
 			pct = float64(done) / float64(total)
@@ -158,23 +165,17 @@ func runCCFTSIndex(ctx context.Context, crawlID, engineName string, batchSize, w
 		return err
 	}
 
-	// Create FTS index for DuckDB (post-insert step)
-	if engineName == "duckdb" {
-		fmt.Fprintf(os.Stderr, "creating FTS index (BM25)...\n")
-		if ddb, ok := eng.(interface{ CreateFTSIndex(context.Context) error }); ok {
-			if err := ddb.CreateFTSIndex(ctx); err != nil {
-				return fmt.Errorf("create FTS index: %w", err)
-			}
-		}
+	if err := ftsCreateDuckDBIndex(ctx, engineName, eng); err != nil {
+		return err
 	}
 
-	// Final summary
 	engineStats, _ := eng.Stats(ctx)
 	elapsed := time.Since(stats.StartTime)
 	avgRate := float64(stats.DocsIndexed.Load()) / elapsed.Seconds()
 
 	fmt.Fprintf(os.Stderr, "\n── FTS Index Complete ──────────────────────────\n")
 	fmt.Fprintf(os.Stderr, "  engine:    %s\n", engineName)
+	fmt.Fprintf(os.Stderr, "  source:    files\n")
 	fmt.Fprintf(os.Stderr, "  docs:      %d\n", engineStats.DocCount)
 	fmt.Fprintf(os.Stderr, "  errors:    %d\n", stats.Errors.Load())
 	fmt.Fprintf(os.Stderr, "  elapsed:   %s\n", elapsed.Round(100*time.Millisecond))
@@ -182,6 +183,244 @@ func runCCFTSIndex(ctx context.Context, crawlID, engineName string, batchSize, w
 	fmt.Fprintf(os.Stderr, "  peak RSS:  %d MB\n", stats.PeakRSSMB.Load())
 	fmt.Fprintf(os.Stderr, "  disk:      %s\n", formatBytes(engineStats.DiskBytes))
 	fmt.Fprintf(os.Stderr, "  path:      %s\n", outputDir)
+
+	return nil
+}
+
+func runCCFTSIndexFromPack(ctx context.Context, crawlID, engineName, source string, eng index.Engine, outputDir string, batchSize int) error {
+	homeDir, _ := os.UserHomeDir()
+	packDir := filepath.Join(homeDir, "data", "common-crawl", crawlID, "fts", "pack")
+
+	packFile, err := packFilePath(packDir, source)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(packFile); os.IsNotExist(err) {
+		return fmt.Errorf("pack file not found: %s\n  run: search cc fts pack --format %s", packFile, source)
+	}
+
+	fmt.Fprintf(os.Stderr, "indexing [%s ← %s] from %s\n", engineName, source, packFile)
+
+	progress := func(done, total int64, elapsed time.Duration) {
+		secs := elapsed.Seconds()
+		rate := float64(0)
+		if secs > 0 {
+			rate = float64(done) / secs
+		}
+		disk := index.DirSizeBytes(outputDir)
+
+		pct := float64(0)
+		if total > 0 {
+			pct = float64(done) / float64(total)
+		}
+		barWidth := 20
+		filled := int(pct * float64(barWidth))
+		bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
+
+		if total > 0 {
+			fmt.Fprintf(os.Stderr, "\r\033[Kindexing [%s←%s] %s %d/%d docs │ %.0f docs/s │ %.1fs │ disk %s",
+				engineName, source, bar, done, total, rate, secs, formatBytes(disk))
+		} else {
+			fmt.Fprintf(os.Stderr, "\r\033[Kindexing [%s←%s] %d docs │ %.0f docs/s │ %.1fs │ disk %s",
+				engineName, source, done, rate, secs, formatBytes(disk))
+		}
+	}
+
+	var stats *index.PipelineStats
+	switch source {
+	case "parquet":
+		stats, err = index.RunPipelineFromParquet(ctx, eng, packFile, batchSize, progress)
+	case "bin":
+		stats, err = index.RunPipelineFromFlatBin(ctx, eng, packFile, batchSize, progress)
+	case "ndjson":
+		stats, err = index.RunPipelineFromNDJSON(ctx, eng, packFile, batchSize, progress)
+	case "duckdb":
+		stats, err = duckdbdrv.RunPipelineFromDuckDBRaw(ctx, eng, packFile, batchSize, progress)
+	default:
+		return fmt.Errorf("unknown source %q (valid: files, parquet, bin, ndjson, duckdb)", source)
+	}
+	fmt.Fprintln(os.Stderr) // newline after progress
+
+	if err != nil {
+		return err
+	}
+
+	if err := ftsCreateDuckDBIndex(ctx, engineName, eng); err != nil {
+		return err
+	}
+
+	engineStats, _ := eng.Stats(ctx)
+	elapsed := time.Since(stats.StartTime)
+	avgRate := float64(stats.DocsIndexed.Load()) / elapsed.Seconds()
+
+	fmt.Fprintf(os.Stderr, "\n── FTS Index Complete ──────────────────────────\n")
+	fmt.Fprintf(os.Stderr, "  engine:    %s\n", engineName)
+	fmt.Fprintf(os.Stderr, "  source:    %s\n", source)
+	fmt.Fprintf(os.Stderr, "  docs:      %d\n", engineStats.DocCount)
+	fmt.Fprintf(os.Stderr, "  elapsed:   %s\n", elapsed.Round(100*time.Millisecond))
+	fmt.Fprintf(os.Stderr, "  avg rate:  %.0f docs/s\n", avgRate)
+	fmt.Fprintf(os.Stderr, "  peak RSS:  %d MB\n", stats.PeakRSSMB.Load())
+	fmt.Fprintf(os.Stderr, "  disk:      %s\n", formatBytes(engineStats.DiskBytes))
+	fmt.Fprintf(os.Stderr, "  path:      %s\n", outputDir)
+
+	return nil
+}
+
+func ftsCreateDuckDBIndex(ctx context.Context, engineName string, eng index.Engine) error {
+	if engineName != "duckdb" {
+		return nil
+	}
+	fmt.Fprintf(os.Stderr, "creating FTS index (BM25)...\n")
+	type ftsIndexer interface{ CreateFTSIndex(context.Context) error }
+	if ddb, ok := eng.(ftsIndexer); ok {
+		if err := ddb.CreateFTSIndex(ctx); err != nil {
+			return fmt.Errorf("create FTS index: %w", err)
+		}
+	}
+	return nil
+}
+
+func packFilePath(packDir, source string) (string, error) {
+	switch source {
+	case "parquet":
+		return filepath.Join(packDir, "docs.parquet"), nil
+	case "bin":
+		return filepath.Join(packDir, "docs.bin"), nil
+	case "ndjson":
+		return filepath.Join(packDir, "docs.ndjson"), nil
+	case "duckdb":
+		return filepath.Join(packDir, "docs.raw.duckdb"), nil
+	default:
+		return "", fmt.Errorf("unknown source %q (valid: parquet, bin, ndjson, duckdb)", source)
+	}
+}
+
+func newCCFTSPack() *cobra.Command {
+	var (
+		crawlID   string
+		format    string
+		batchSize int
+		workers   int
+	)
+
+	cmd := &cobra.Command{
+		Use:   "pack",
+		Short: "Pack CC markdown files into a high-perf bundle for FTS import benchmarking",
+		Long: `Pre-compute markdown files into one or more fast-load formats.
+Packed files are stored in fts/pack/ and can be used with 'fts index --source <format>'.`,
+		Example: `  search cc fts pack --format parquet   # Parquet columnar
+  search cc fts pack --format bin        # flat binary (fastest read)
+  search cc fts pack --format ndjson     # newline-delimited JSON
+  search cc fts pack --format duckdb    # DuckDB raw table
+  search cc fts pack --format all        # all four formats`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCCFTSPack(cmd.Context(), crawlID, format, batchSize, workers)
+		},
+	}
+
+	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest)")
+	cmd.Flags().StringVar(&format, "format", "all", "Format: parquet, bin, ndjson, duckdb, all")
+	cmd.Flags().IntVar(&batchSize, "batch-size", 5000, "Documents per batch")
+	cmd.Flags().IntVar(&workers, "workers", 0, "Parallel file readers (0 = NumCPU)")
+	return cmd
+}
+
+func runCCFTSPack(ctx context.Context, crawlID, format string, batchSize, workers int) error {
+	if crawlID == "" {
+		crawlID = detectLatestCrawl()
+	}
+
+	homeDir, _ := os.UserHomeDir()
+	markdownDir := filepath.Join(homeDir, "data", "common-crawl", crawlID, "markdown")
+	packDir := filepath.Join(homeDir, "data", "common-crawl", crawlID, "fts", "pack")
+
+	if _, err := os.Stat(markdownDir); os.IsNotExist(err) {
+		return fmt.Errorf("markdown dir not found: %s", markdownDir)
+	}
+
+	formats := []string{format}
+	if format == "all" {
+		formats = []string{"parquet", "bin", "ndjson", "duckdb"}
+	}
+
+	for _, fmt_ := range formats {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		packFile, err := packFilePath(packDir, fmt_)
+		if err != nil {
+			return err
+		}
+		if err := runPackFormat(ctx, fmt_, markdownDir, packFile, batchSize, workers); err != nil {
+			return fmt.Errorf("pack %s: %w", fmt_, err)
+		}
+	}
+	return nil
+}
+
+func runPackFormat(ctx context.Context, format, markdownDir, packFile string, batchSize, workers int) error {
+	fmt.Fprintf(os.Stderr, "packing [%s] → %s\n", format, packFile)
+
+	progress := func(stats *index.PipelineStats) {
+		total := stats.TotalFiles.Load()
+		done := stats.DocsIndexed.Load()
+		elapsed := time.Since(stats.StartTime).Seconds()
+		rate := float64(0)
+		if elapsed > 0 {
+			rate = float64(done) / elapsed
+		}
+		peakMB := stats.PeakRSSMB.Load()
+
+		pct := float64(0)
+		if total > 0 {
+			pct = float64(done) / float64(total)
+		}
+		barWidth := 20
+		filled := int(pct * float64(barWidth))
+		bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
+
+		fmt.Fprintf(os.Stderr, "\r\033[Kpacking [%s] %s %d/%d docs │ %.0f docs/s │ %.1fs │ RSS %d MB",
+			format, bar, done, total, rate, elapsed, peakMB)
+	}
+
+	var (
+		stats *index.PipelineStats
+		err   error
+	)
+	switch format {
+	case "parquet":
+		stats, err = index.PackParquet(ctx, markdownDir, packFile, workers, batchSize, progress)
+	case "bin":
+		stats, err = index.PackFlatBin(ctx, markdownDir, packFile, workers, batchSize, progress)
+	case "ndjson":
+		stats, err = index.PackNDJSON(ctx, markdownDir, packFile, workers, batchSize, progress)
+	case "duckdb":
+		stats, err = duckdbdrv.PackDuckDBRaw(ctx, markdownDir, packFile, workers, batchSize, progress)
+	default:
+		return fmt.Errorf("unknown format %q", format)
+	}
+	fmt.Fprintln(os.Stderr) // newline after progress
+
+	if err != nil {
+		return err
+	}
+
+	fi, _ := os.Stat(packFile)
+	fileSize := int64(0)
+	if fi != nil {
+		fileSize = fi.Size()
+	}
+	elapsed := time.Since(stats.StartTime)
+	avgRate := float64(stats.DocsIndexed.Load()) / elapsed.Seconds()
+
+	fmt.Fprintf(os.Stderr, "\n── Pack Complete [%s] ───────────────────────────\n", format)
+	fmt.Fprintf(os.Stderr, "  docs:      %d\n", stats.DocsIndexed.Load())
+	fmt.Fprintf(os.Stderr, "  errors:    %d\n", stats.Errors.Load())
+	fmt.Fprintf(os.Stderr, "  elapsed:   %s\n", elapsed.Round(100*time.Millisecond))
+	fmt.Fprintf(os.Stderr, "  avg rate:  %.0f docs/s\n", avgRate)
+	fmt.Fprintf(os.Stderr, "  peak RSS:  %d MB\n", stats.PeakRSSMB.Load())
+	fmt.Fprintf(os.Stderr, "  file size: %s\n", formatBytes(fileSize))
+	fmt.Fprintf(os.Stderr, "  path:      %s\n\n", packFile)
 
 	return nil
 }
