@@ -26,6 +26,14 @@ SSH           ?= ssh -i $(DEPLOY_KEY) -o BatchMode=yes
 SCP           ?= scp -i $(DEPLOY_KEY)
 
 CGO_ENABLED ?= 1
+# macOS only: Apple ld64 (Xcode 15+) auto-links -lc++ for C++ symbols AND sees the
+# explicit -lc++ from duckdb-go-bindings/lib/darwin-arm64/prebuilt.go, producing:
+#   ld: warning: ignoring duplicate libraries: '-lc++'
+# Pass -no_warn_duplicate_libraries via CGO_LDFLAGS so it reaches the CGo cc step.
+# On Linux, GNU ld doesn't auto-add -lc++ so this flag is not needed.
+ifeq ($(shell uname -s),Darwin)
+CGO_LDFLAGS ?= -Wl,-no_warn_duplicate_libraries
+endif
 # Focal (Ubuntu 20.04) build vars — max compatibility (glibc 2.31)
 LINUX_BASE_IMAGE ?= ubuntu:20.04
 LINUX_GO_VERSION ?= 1.26.0
@@ -71,7 +79,7 @@ frontend-test: ## Run frontend tests
 .PHONY: build
 build: ## Build search binary (Go only; run frontend-build separately if needed)
 	@mkdir -p $(dir $(BINARY))
-	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BINARY) $(CMD)
+	@CGO_ENABLED=$(CGO_ENABLED) CGO_LDFLAGS="$(CGO_LDFLAGS)" GOWORK=off $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BINARY) $(CMD)
 	@echo "Built: $(BINARY) ($(VERSION))"
 
 .PHONY: build-quick
@@ -441,11 +449,11 @@ crawl: ## Run the web crawler
 
 .PHONY: test
 test: ## Run all Go tests
-	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) test $(PKG)
+	@CGO_ENABLED=$(CGO_ENABLED) CGO_LDFLAGS="$(CGO_LDFLAGS)" GOWORK=off $(GO) test $(PKG)
 
 .PHONY: test-v
 test-v: ## Run all tests with verbose output
-	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) test -v $(PKG)
+	@CGO_ENABLED=$(CGO_ENABLED) CGO_LDFLAGS="$(CGO_LDFLAGS)" GOWORK=off $(GO) test -v $(PKG)
 
 .PHONY: clean
 clean: ## Remove binary and data directory
