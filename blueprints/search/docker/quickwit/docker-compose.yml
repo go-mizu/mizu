@@ -1,0 +1,30 @@
+# Quickwit 0.9 — distributed search engine built on Tantivy
+# Usage:
+#   FTS_DATA_DIR=$HOME/data/fts docker compose -f docker/quickwit/docker-compose.yml up -d
+#   search cc fts index --engine quickwit
+
+services:
+  quickwit:
+    image: quickwit/quickwit:0.9
+    container_name: fts-quickwit
+    ports:
+      - "7280:7280"   # REST API
+      - "7281:7281"   # gRPC
+    environment:
+      - NO_COLOR=1
+    command: ["run"]
+    volumes:
+      - ${FTS_DATA_DIR:-${HOME}/data/fts}/quickwit:/quickwit/qwdata
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7280/api/v1/version 2>/dev/null | grep -q version || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 512M

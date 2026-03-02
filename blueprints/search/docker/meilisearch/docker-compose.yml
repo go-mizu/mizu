@@ -1,0 +1,31 @@
+# Meilisearch v1.x — Full-text search engine
+# Usage:
+#   FTS_DATA_DIR=$HOME/data/fts docker compose -f docker/meilisearch/docker-compose.yml up -d
+#   search cc fts index --engine meilisearch
+#   search cc fts search "machine learning" --engine meilisearch
+
+services:
+  meilisearch:
+    image: getmeili/meilisearch:v1.13
+    container_name: fts-meilisearch
+    ports:
+      - "7700:7700"
+    environment:
+      - MEILI_ENV=development
+      - MEILI_NO_ANALYTICS=true
+      - MEILI_DB_PATH=/meili_data
+    volumes:
+      - ${FTS_DATA_DIR:-${HOME}/data/fts}/meilisearch:/meili_data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7700/health 2>/dev/null | grep -q available || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 512M
