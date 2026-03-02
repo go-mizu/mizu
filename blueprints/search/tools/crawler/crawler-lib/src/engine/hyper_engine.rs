@@ -111,9 +111,11 @@ impl super::Engine for HyperEngine {
         let domain_map: Arc<DashMap<String, Arc<DomainEntry>>> =
             Arc::new(DashMap::with_capacity(32_768));
 
-        // Flat URL channel.
+        // Flat URL channel: capacity = workers * 32 (min 65536) so the producer can batch-fill
+        // without blocking. Previously workers*4 caused stop-go patterns at high worker counts.
+        let channel_cap = (workers * 32).max(65_536);
         let (url_tx, url_rx) =
-            async_channel::bounded::<(SeedURL, Arc<DomainEntry>)>(workers * 4);
+            async_channel::bounded::<(SeedURL, Arc<DomainEntry>)>(channel_cap);
 
         // Batch-streaming producer (mirrors reqwest_engine).
         const BATCH_SIZE: usize = 100_000;
@@ -179,7 +181,12 @@ impl super::Engine for HyperEngine {
         });
 
         // Build ONE shared hyper client with rustls+ring and HTTP/2.
-        let shared_client = match build_hyper_client(Duration::from_secs(60)) {
+        let connect_timeout = if cfg.connect_timeout > Duration::ZERO {
+            Some(cfg.connect_timeout)
+        } else {
+            None
+        };
+        let shared_client = match build_hyper_client(Duration::from_secs(60), connect_timeout) {
             Ok(c) => Arc::new(c),
             Err(e) => return Err(anyhow::anyhow!("failed to build hyper client: {}", e)),
         };
@@ -244,13 +251,20 @@ impl super::Engine for HyperEngine {
 /// - HTTP/2 via ALPN negotiation
 /// - HTTP/1.1 fallback
 /// - Connection pool with configurable idle timeout
-fn build_hyper_client(pool_idle: Duration) -> Result<HttpsClient> {
+/// - Optional TCP connect timeout (dead servers fail fast)
+fn build_hyper_client(pool_idle: Duration, connect_timeout: Option<Duration>) -> Result<HttpsClient> {
+    let mut http = HttpConnector::new();
+    http.enforce_http(false);
+    if let Some(ct) = connect_timeout {
+        http.set_connect_timeout(Some(ct));
+    }
+
     let https = hyper_rustls::HttpsConnectorBuilder::new()
         .with_webpki_roots()
         .https_or_http()
         .enable_http1()
         .enable_http2()
-        .build();
+        .wrap_connector(http);
 
     let client = HyperClient::builder(TokioExecutor::new())
         .pool_idle_timeout(pool_idle)

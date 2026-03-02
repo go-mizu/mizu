@@ -87,6 +87,20 @@ pub struct RecrawlArgs {
     /// Binary writer flusher thread count (0 = auto)
     #[arg(long, default_value_t = 0)]
     pub flusher_threads: usize,
+
+    /// TCP connect timeout in ms (0 = use overall timeout; default 500ms).
+    /// Dead servers fail fast, freeing workers 2× sooner.
+    #[arg(long, default_value_t = 500)]
+    pub connect_timeout_ms: u64,
+
+    /// Pass-2 domain stall ratio (0 = disabled, prevents false negatives).
+    /// Default 0: alive-but-slow domains in pass-2 must not be abandoned via stall ratio.
+    #[arg(long, default_value_t = 0)]
+    pub pass2_stall_ratio: usize,
+
+    /// Pass-2 worker count override (0 = use pass-1 workers)
+    #[arg(long, default_value_t = 0)]
+    pub pass2_workers: usize,
 }
 
 pub async fn run_recrawl(args: RecrawlArgs) -> Result<()> {
@@ -137,6 +151,9 @@ pub async fn run_recrawl(args: RecrawlArgs) -> Result<()> {
         gui: args.gui,
         gui_port: args.gui_port,
         flusher_threads: args.flusher_threads,
+        connect_timeout_ms: args.connect_timeout_ms,
+        pass2_stall_ratio: args.pass2_stall_ratio,
+        pass2_workers: args.pass2_workers,
     })
     .await
 }

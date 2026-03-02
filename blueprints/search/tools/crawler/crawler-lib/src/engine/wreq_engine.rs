@@ -101,8 +101,10 @@ impl super::Engine for WreqEngine {
         let domain_map: Arc<DashMap<String, Arc<DomainEntry>>> =
             Arc::new(DashMap::with_capacity(32_768));
 
+        // Flat URL channel: capacity = workers * 32 (min 65536).
+        let channel_cap = (workers * 32).max(65_536);
         let (url_tx, url_rx) =
-            async_channel::bounded::<(SeedURL, Arc<DomainEntry>)>(workers * 4);
+            async_channel::bounded::<(SeedURL, Arc<DomainEntry>)>(channel_cap);
 
         // Batch-streaming producer (mirrors reqwest_engine / hyper_engine).
         const BATCH_SIZE: usize = 100_000;
@@ -169,15 +171,17 @@ impl super::Engine for WreqEngine {
 
         // Build wreq client with Chrome133 TLS impersonation
         let max_timeout = cfg.timeout.saturating_mul(5);
-        let shared_client = match wreq::Client::builder()
+        let mut client_builder = wreq::Client::builder()
             .emulation(Emulation::Chrome133)
             .pool_max_idle_per_host(inner_n)
             .timeout(max_timeout)
             .cert_verification(false)
             .redirect(wreq::redirect::Policy::limited(7))
-            .tcp_keepalive(Duration::from_secs(60))
-            .build()
-        {
+            .tcp_keepalive(Duration::from_secs(60));
+        if cfg.connect_timeout > Duration::ZERO {
+            client_builder = client_builder.connect_timeout(cfg.connect_timeout);
+        }
+        let shared_client = match client_builder.build() {
             Ok(c) => Arc::new(c),
             Err(e) => return Err(anyhow::anyhow!("failed to build wreq client: {}", e)),
         };

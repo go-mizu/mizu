@@ -162,6 +162,32 @@ mod tests {
     }
 
     #[test]
+    fn test_zero_stall_ratio_never_abandons_alive_domain() {
+        let mut state = DomainState::new();
+        state.successes = 1;
+        state.timeouts = 1_000_000; // extreme stall — should NOT abandon if ratio=0
+        // stall_ratio=0 means disabled; only dead_probe can trigger abandonment here
+        // dead_probe=0 → disabled; fail_threshold=0 → disabled
+        assert!(
+            !state.should_abandon(0, 0, 0, 4),
+            "stall_ratio=0 must never abandon regardless of timeout count"
+        );
+    }
+
+    #[test]
+    fn test_zero_stall_ratio_with_dead_probe_still_abandons_dead_domain() {
+        // When stall_ratio=0 but dead_probe is set, truly dead domains ARE abandoned.
+        let mut state = DomainState::new();
+        state.successes = 0;
+        state.timeouts = 2;
+        // dead_probe=2, successes=0 → should abandon (dead domain)
+        assert!(
+            state.should_abandon(0, 2, 0, 4),
+            "dead_probe=2 with 0 successes should still abandon dead domains even with stall_ratio=0"
+        );
+    }
+
+    #[test]
     fn test_interleave_sends_all_urls() {
         let seeds: Vec<SeedURL> = (0..100)
             .map(|i| SeedURL {

@@ -356,6 +356,12 @@ pub struct CrawlJobParamsStreaming {
     pub gui: bool,
     pub gui_port: u16,
     pub flusher_threads: usize,
+    /// TCP connect timeout in ms (0 = use overall timeout).
+    pub connect_timeout_ms: u64,
+    /// Pass-2 domain stall ratio (0 = disabled, prevents false negatives).
+    pub pass2_stall_ratio: usize,
+    /// Pass-2 worker count override (0 = use pass-1 workers).
+    pub pass2_workers: usize,
 }
 
 /// Shared crawl job configuration. Both HN and CC commands build this,
@@ -385,6 +391,12 @@ pub struct CrawlJobParams {
     pub gui_port: u16,
     /// Binary writer flusher thread count (0 = use Config.num_flushers from auto_config).
     pub flusher_threads: usize,
+    /// TCP connect timeout in ms (0 = use overall timeout).
+    pub connect_timeout_ms: u64,
+    /// Pass-2 domain stall ratio (0 = disabled, prevents false negatives).
+    pub pass2_stall_ratio: usize,
+    /// Pass-2 worker count override (0 = use pass-1 workers).
+    pub pass2_workers: usize,
 }
 
 /// Run a two-pass crawl job with TUI, writers, retry logic, and summary.
@@ -417,6 +429,13 @@ pub async fn run_crawl_job(params: CrawlJobParams) -> Result<()> {
     cfg.live_stats = Some(live_stats.clone());
     if params.flusher_threads > 0 {
         cfg.num_flushers = params.flusher_threads;
+    }
+    if params.connect_timeout_ms > 0 {
+        cfg.connect_timeout = Duration::from_millis(params.connect_timeout_ms);
+    }
+    cfg.pass2_stall_ratio = params.pass2_stall_ratio;
+    if params.pass2_workers > 0 {
+        cfg.pass2_workers = params.pass2_workers;
     }
     if let Some(ref dir) = params.body_store_dir {
         let resolved = expand_home(dir);
@@ -618,6 +637,13 @@ pub async fn run_crawl_job_streaming(params: CrawlJobParamsStreaming) -> Result<
     cfg.live_stats = Some(live_stats.clone());
     if params.flusher_threads > 0 {
         cfg.num_flushers = params.flusher_threads;
+    }
+    if params.connect_timeout_ms > 0 {
+        cfg.connect_timeout = Duration::from_millis(params.connect_timeout_ms);
+    }
+    cfg.pass2_stall_ratio = params.pass2_stall_ratio;
+    if params.pass2_workers > 0 {
+        cfg.pass2_workers = params.pass2_workers;
     }
     if let Some(ref dir) = params.body_store_dir {
         let resolved = expand_home(dir);

@@ -108,9 +108,12 @@ impl super::Engine for ReqwestEngine {
         let domain_map: Arc<DashMap<String, Arc<DomainEntry>>> =
             Arc::new(DashMap::with_capacity(32_768));
 
-        // Flat URL channel: capacity = workers * 4 so producer never blocks on startup.
+        // Flat URL channel: capacity = workers * 32 (min 65536) so the producer can batch-fill
+        // without blocking. Previously workers*4 caused stop-go patterns at high worker counts.
+        // Memory: 4000 workers × 32 = 128K slots × ~100 B = 12 MB — negligible.
+        let channel_cap = (workers * 32).max(65_536);
         let (url_tx, url_rx) =
-            async_channel::bounded::<(SeedURL, Arc<DomainEntry>)>(workers * 4);
+            async_channel::bounded::<(SeedURL, Arc<DomainEntry>)>(channel_cap);
 
         // Batch-streaming producer:
         //
@@ -199,14 +202,18 @@ impl super::Engine for ReqwestEngine {
         // Build ONE shared reqwest::Client for all workers.
         // reqwest::Client is Arc-backed internally; cloning just bumps the refcount.
         let max_timeout = cfg.timeout.saturating_mul(5); // adaptive cap ceiling
-        let shared_client = match reqwest::Client::builder()
+        let mut client_builder = reqwest::Client::builder()
             .pool_max_idle_per_host(inner_n)
             .timeout(max_timeout)
             .danger_accept_invalid_certs(true)
             .redirect(reqwest::redirect::Policy::limited(7))
-            .tcp_keepalive(std::time::Duration::from_secs(60))
-            .build()
-        {
+            .tcp_keepalive(std::time::Duration::from_secs(60));
+        // Separate connect timeout: dead servers (TCP SYN-drop) fail in 500ms
+        // instead of waiting for the full request timeout, freeing workers faster.
+        if cfg.connect_timeout > Duration::ZERO {
+            client_builder = client_builder.connect_timeout(cfg.connect_timeout);
+        }
+        let shared_client = match client_builder.build() {
             Ok(c) => Arc::new(c),
             Err(e) => return Err(anyhow::anyhow!("failed to build reqwest client: {}", e)),
         };

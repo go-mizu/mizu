@@ -170,6 +170,10 @@ pub async fn run_job(
                 retry_cfg.domain_timeout_ms = (cfg.retry_timeout.as_millis() as i64) * 3;
                 retry_cfg.disable_adaptive_timeout = true;
                 retry_cfg.domain_dead_probe = 2;
+                // Zero stall ratio in pass-2: stall killing creates false negatives.
+                // Alive-but-slow domains with 1 success + N timeouts must NOT be abandoned —
+                // they proved they can succeed and their remaining URLs deserve a full retry.
+                retry_cfg.domain_stall_ratio = cfg.pass2_stall_ratio; // default=0
                 if cfg.pass2_workers > 0 {
                     retry_cfg.workers = cfg.pass2_workers;
                 }
@@ -318,6 +322,29 @@ mod tests {
             .unwrap();
 
         assert!(result.pass2.is_none());
+    }
+
+    #[test]
+    fn test_pass2_stall_ratio_is_zero_by_default() {
+        let cfg = Config::default();
+        // pass2_stall_ratio must default to 0 — stall killing creates false negatives in pass-2
+        assert_eq!(cfg.pass2_stall_ratio, 0, "pass2_stall_ratio should default to 0");
+    }
+
+    #[tokio::test]
+    async fn test_pass2_config_has_zero_stall_ratio() {
+        // Verify that with stall_ratio=0, a domain with 1 success + many timeouts is NOT abandoned.
+        let cfg = Config::default();
+        assert_eq!(cfg.pass2_stall_ratio, 0);
+
+        let state = crate::domain::DomainState { successes: 1, timeouts: 1_000 };
+        // pass2: fail_threshold=0, dead_probe=2 (probe requires 0 successes), stall_ratio=0
+        // successes=1 → dead_probe check fails (we have a success)
+        // stall_ratio=0 → stall check disabled
+        assert!(
+            !state.should_abandon(0, 2, 0, 4),
+            "with stall_ratio=0 and 1 success, domain should NOT be abandoned regardless of timeouts"
+        );
     }
 
     #[test]

@@ -99,8 +99,16 @@ pub struct Config {
     pub retry_timeout: Duration,
     pub no_retry: bool,
     pub pass2_workers: usize,
+    /// Domain stall ratio for pass-2 retry (0 = disable stall-based abandonment).
+    /// Default 0: in pass-2, stall killing creates false negatives — alive-but-slow
+    /// domains with 1 success + N timeouts get abandoned, permanently losing remaining URLs.
+    pub pass2_stall_ratio: usize,
 
     // Network
+    /// TCP connect+TLS timeout (separate from overall request timeout).
+    /// Default 500ms: dead servers (TCP SYN-drop) fail fast, freeing workers 2× sooner.
+    /// Set to Duration::ZERO to disable (falls back to overall timeout for connect).
+    pub connect_timeout: Duration,
     pub max_body_bytes: usize,
 
     // Paths
@@ -140,6 +148,8 @@ impl Default for Config {
             retry_timeout: Duration::from_millis(15000),
             no_retry: false,
             pass2_workers: 0,
+            pass2_stall_ratio: 0,
+            connect_timeout: Duration::from_millis(500),
             max_body_bytes: 256 * 1024,
             output_dir: String::new(),
             failed_db_path: String::new(),
@@ -248,15 +258,18 @@ pub fn auto_config(si: &SysInfo, full_body: bool) -> Config {
     let inner_n = clamp(si.cpu_count * 2, 4, 16);
 
     // workers: network-bound, not memory-bound.
-    // Cap at 2000 to avoid DNS/TCP contention (see KEY INSIGHT above).
+    // Cap at 8000 — raised from 2000 for CC seeds (higher quality than HN):
+    // CC seeds are pre-validated status=200 (~70% alive), yielding proportionally
+    // fewer slow timeouts per worker. Empirical data: 2000w=47% OK for HN mixed seeds;
+    // CC seeds should sustain high OK rates at higher worker counts.
     // Lower bound: CPU×50 but never more than w_fd/4 to avoid EMFILE.
     //   (cpu_count*100 could exceed fd budget when ulimit is low, e.g. macOS default 256)
-    // Upper bound: min(mem-based, fd-based, 2000).
+    // Upper bound: min(mem-based, fd-based, 8000).
     let w_mem = total_kb * 75 / 100 / body_kb.max(1);
     let w_fd = fd / 2;
     // Ensure the CPU-floor never exceeds the fd safety budget
     let min_workers = (si.cpu_count * 50).min(w_fd / 4).max(4);
-    let workers = clamp(w_mem.min(w_fd).min(2_000), min_workers, 2_000);
+    let workers = clamp(w_mem.min(w_fd).min(8_000), min_workers, 8_000);
 
     let db_shards = clamp(si.cpu_count * 2, 4, 16);
     // 10% of total RAM split across shards; minimum 64MB per shard.
@@ -267,9 +280,15 @@ pub fn auto_config(si: &SysInfo, full_body: bool) -> Config {
     cfg.inner_n = inner_n;
     cfg.db_shards = db_shards;
     cfg.db_mem_mb = db_mem_mb;
-    // num_flushers: 1 dedicated OS flusher thread per 2 CPUs, clamped [2, 8].
-    // Each thread does rkyv serialize + sequential disk writes independently.
-    let num_flushers = clamp(si.cpu_count / 2, 2, 8);
+    // num_flushers: scale with workers so the binary writer can keep pace.
+    // At high worker counts (4000+) a single flusher becomes the bottleneck.
+    // Formula: max(workers/1000, cpu_count/2), clamped to [2, min(cpu_count, 8)].
+    // Server2 (12 CPUs, ~4000 workers): max(4, 6) = 6 flushers.
+    let num_flushers = clamp(
+        (workers / 1000).max(si.cpu_count / 2),
+        2,
+        si.cpu_count.min(8),
+    );
     cfg.num_flushers = num_flushers;
     cfg
 }
