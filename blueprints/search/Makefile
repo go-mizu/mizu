@@ -69,13 +69,13 @@ frontend-test: ## Run frontend tests
 	@cd $(FRONTEND_DIR) && pnpm run test
 
 .PHONY: build
-build: frontend-build ## Build search binary (includes frontend build)
+build: ## Build search binary (Go only; run frontend-build separately if needed)
 	@mkdir -p $(dir $(BINARY))
 	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BINARY) $(CMD)
 	@echo "Built: $(BINARY) ($(VERSION))"
 
 .PHONY: build-quick
-build-quick: ## Build binary without frontend (faster for development)
+build-quick: build ## Alias for build (kept for compatibility)
 	@mkdir -p $(dir $(BINARY))
 	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BINARY) $(CMD)
 	@echo "Built: $(BINARY) ($(VERSION))"
