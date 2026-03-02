@@ -88,6 +88,22 @@ impl BinaryResultWriter {
         std::fs::create_dir_all(dir)
             .with_context(|| format!("failed to create binary writer dir: {}", dir.display()))?;
 
+        // Remove any stale seg_*.bin files left by a previous failed drain.
+        // If drain succeeded, segments were already deleted; if it failed, leftover
+        // files from a different binary version would corrupt the new run's decode.
+        if let Ok(rd) = std::fs::read_dir(dir) {
+            for entry in rd.flatten() {
+                let p = entry.path();
+                if p.extension().map_or(false, |e| e == "bin")
+                    && p.file_name()
+                        .and_then(|n| n.to_str())
+                        .map_or(false, |n| n.starts_with("seg_"))
+                {
+                    let _ = std::fs::remove_file(&p);
+                }
+            }
+        }
+
         let (tx, rx) = crossbeam_channel::bounded::<CrawlResult>(channel_cap);
         let seg_size_bytes = seg_size_mb * 1024 * 1024;
         let dir_path = dir.to_path_buf();
