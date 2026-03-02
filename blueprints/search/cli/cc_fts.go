@@ -20,13 +20,12 @@ import (
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/chdb"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/devnull"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/sqlite"
-	// TODO: uncomment after driver packages are created:
-	// _ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/bleve"
-	// _ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/meilisearch"
-	// _ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/clickhouse"
-	// _ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/postgres"
-	// _ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/quickwit"
-	// _ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/tantivy-lnx"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/bleve"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/clickhouse"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/meilisearch"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/postgres"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/quickwit"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/tantivy-lnx"
 	"github.com/spf13/cobra"
 )
 
