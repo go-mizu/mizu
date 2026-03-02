@@ -142,6 +142,10 @@ struct StatsPayload {
     elapsed_ms: u64,
     pass: u8,
     pass2_seeds: u64,
+    /// Cumulative total at pass-2 start (0 during pass-1). For GUI pass-2 progress.
+    pass1_total: u64,
+    /// Elapsed ms at pass-2 start (0 during pass-1). For GUI pass-2 avg RPS.
+    pass2_start_elapsed_ms: u64,
 
     // Error breakdown
     err_invalid_url: u64,
@@ -218,6 +222,8 @@ fn snapshot_stats(stats: &Stats) -> StatsPayload {
         elapsed_ms: stats.start.elapsed().as_millis() as u64,
         pass: stats.pass.load(Ordering::Relaxed),
         pass2_seeds: stats.pass2_seeds.load(Ordering::Relaxed),
+        pass1_total: stats.pass1_total.load(Ordering::Relaxed),
+        pass2_start_elapsed_ms: stats.pass2_start_elapsed_ms.load(Ordering::Relaxed),
         err_invalid_url: stats.err_invalid_url.load(Ordering::Relaxed),
         err_dns: stats.err_dns.load(Ordering::Relaxed),
         err_conn: stats.err_conn.load(Ordering::Relaxed),
