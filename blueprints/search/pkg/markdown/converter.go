@@ -2,7 +2,6 @@ package markdown
 
 import (
 	"bytes"
-	"fmt"
 	"net/url"
 	"strings"
 	"time"
@@ -69,44 +68,42 @@ func Convert(rawHTML []byte, pageURL string) Result {
 	title := extracted.Metadata.Title
 	lang := extracted.Metadata.Language
 
-	// Step 2: convert the extracted DOM node directly to markdown.
-	// ConvertNode avoids the html.Render → string → html.Parse round-trip that
-	// ConvertString would require. We wrap in recover() because html-to-markdown's
-	// collapse pass can panic on certain partial-document structures produced by
-	// trafilatura; on panic we fall back to the normalize-through-render path.
+	// Step 2: render extracted DOM back to HTML string.
+	// We render rather than calling ConvertNode directly because html-to-markdown's
+	// collapse pass expects a complete normalised document; trafilatura's ContentNode
+	// is a partial fragment that html.Render + html.Parse normalises through Go's
+	// HTML parser. Benchmarks confirm the render+reparse is faster and uses fewer
+	// allocs than passing the raw fragment to ConvertNode.
+	var buf strings.Builder
+	if err := html.Render(&buf, extracted.ContentNode); err != nil {
+		ms := int(time.Since(start).Milliseconds())
+		return Result{
+			HTMLSize:  htmlSize,
+			Title:     title,
+			Language:  lang,
+			ConvertMs: ms,
+			Error:     "html render: " + err.Error(),
+		}
+	}
+
+	// Step 3: convert rendered HTML to markdown
 	var convOpts []converter.ConvertOptionFunc
 	if pageURL != "" {
 		convOpts = append(convOpts, converter.WithDomain(pageURL))
 	}
-	mdBytes, err := convertNodeSafe(extracted.ContentNode, convOpts...)
+	mdBytes, err := htmltomarkdown.ConvertString(buf.String(), convOpts...)
 	if err != nil {
-		// Fallback: normalize the tree through html.Render → html.Parse → convert.
-		var buf strings.Builder
-		if renderErr := html.Render(&buf, extracted.ContentNode); renderErr != nil {
-			ms := int(time.Since(start).Milliseconds())
-			return Result{
-				HTMLSize:  htmlSize,
-				Title:     title,
-				Language:  lang,
-				ConvertMs: ms,
-				Error:     "html render: " + renderErr.Error(),
-			}
+		ms := int(time.Since(start).Milliseconds())
+		return Result{
+			HTMLSize:  htmlSize,
+			Title:     title,
+			Language:  lang,
+			ConvertMs: ms,
+			Error:     "md convert: " + err.Error(),
 		}
-		fb, convErr := htmltomarkdown.ConvertString(buf.String(), convOpts...)
-		if convErr != nil {
-			ms := int(time.Since(start).Milliseconds())
-			return Result{
-				HTMLSize:  htmlSize,
-				Title:     title,
-				Language:  lang,
-				ConvertMs: ms,
-				Error:     "md convert: " + convErr.Error(),
-			}
-		}
-		mdBytes = []byte(fb)
 	}
 
-	md := strings.TrimSpace(string(mdBytes))
+	md := strings.TrimSpace(mdBytes)
 	mdSize := len(md)
 	ms := int(time.Since(start).Milliseconds())
 
@@ -195,13 +192,3 @@ func EstimateTokens(byteLen int) int {
 	return (byteLen + 3) / 4
 }
 
-// convertNodeSafe calls htmltomarkdown.ConvertNode with panic recovery.
-// Returns an error if the converter panics (e.g. on partial-document trees from trafilatura).
-func convertNodeSafe(node *html.Node, opts ...converter.ConvertOptionFunc) (out []byte, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("convertNode panic: %v", r)
-		}
-	}()
-	return htmltomarkdown.ConvertNode(node, opts...)
-}
