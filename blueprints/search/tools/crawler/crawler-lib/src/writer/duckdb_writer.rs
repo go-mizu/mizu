@@ -655,6 +655,45 @@ pub fn load_retry_urls_since(
     Ok(seeds)
 }
 
+/// Count total rows across all results_NNN.duckdb shards in `duckdb_dir`.
+/// Only call after the result writer has been closed (post-drain).
+pub fn count_result_rows(duckdb_dir: &std::path::Path) -> anyhow::Result<u64> {
+    if !duckdb_dir.exists() {
+        return Ok(0);
+    }
+    let mut total: u64 = 0;
+    let mut paths: Vec<std::path::PathBuf> = std::fs::read_dir(duckdb_dir)?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.extension().map_or(false, |ext| ext == "duckdb")
+                && p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map_or(false, |n| n.starts_with("results_"))
+        })
+        .collect();
+    paths.sort();
+    for path in &paths {
+        let conn = Connection::open(path)
+            .with_context(|| format!("failed to open shard {:?}", path))?;
+        let n: u64 = conn.query_row("SELECT COUNT(*) FROM results", [], |r| r.get(0))?;
+        total += n;
+    }
+    Ok(total)
+}
+
+/// Count rows in `failed.duckdb`.
+/// Only call after the failure writer has been closed (post-drain).
+pub fn count_failed_rows(failed_db: &std::path::Path) -> anyhow::Result<u64> {
+    if !failed_db.exists() {
+        return Ok(0);
+    }
+    let conn = Connection::open(failed_db)
+        .with_context(|| format!("failed to open FailedDB {:?}", failed_db))?;
+    let n: u64 = conn.query_row("SELECT COUNT(*) FROM failed_urls", [], |r| r.get(0))?;
+    Ok(n)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
