@@ -5,4 +5,4 @@ ENV PATH="/root/.cargo/bin:$PATH"
 ENV RUSTFLAGS="-C target-cpu=x86-64-v3"
 WORKDIR /build
 COPY . .
-RUN cargo build --release
+RUN cargo build --release --features wreq-engine

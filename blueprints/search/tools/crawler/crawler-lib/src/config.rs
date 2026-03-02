@@ -148,6 +148,40 @@ impl Default for Config {
 
 // --- SysInfo and auto-config ---
 
+/// Try to raise RLIMIT_NOFILE soft limit to the hard limit (capped at 65536).
+///
+/// Call this at process startup before spawning workers or opening segment files.
+/// Returns (old_limit, new_limit). On non-Unix or if the raise fails, both are
+/// the current limit.
+///
+/// macOS: hard limit is typically OPEN_MAX=10240; Linux: typically 65536+.
+#[cfg(unix)]
+pub fn raise_nofile_limit() -> (u64, u64) {
+    unsafe {
+        let mut rlim = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut rlim) != 0 {
+            return (1024, 1024);
+        }
+        let old = rlim.rlim_cur as u64;
+        // Cap at 65536 to avoid issues with RLIM_INFINITY (which is u64::MAX on some platforms)
+        let target = (rlim.rlim_max as u64).min(65536);
+        if old >= target {
+            return (old, old);
+        }
+        rlim.rlim_cur = target as libc::rlim_t;
+        if libc::setrlimit(libc::RLIMIT_NOFILE, &rlim) == 0 {
+            (old, target)
+        } else {
+            (old, old)
+        }
+    }
+}
+
+#[cfg(not(unix))]
+pub fn raise_nofile_limit() -> (u64, u64) {
+    (1024, 1024)
+}
+
 #[derive(Debug, Clone)]
 pub struct SysInfo {
     pub cpu_count: usize,
@@ -158,25 +192,26 @@ pub struct SysInfo {
 
 impl SysInfo {
     pub fn gather() -> Self {
+        // Raise the fd limit first so auto_config uses the higher value.
+        let (_, fd_soft_limit) = raise_nofile_limit();
+
         let sys = sysinfo::System::new_all();
         let cpu_count = sys.cpus().len().max(1);
         let mem_total_mb = sys.total_memory() / (1024 * 1024);
         let mem_available_mb = sys.available_memory() / (1024 * 1024);
 
+        // Use the already-raised limit; fall back to getrlimit if raise_nofile_limit
+        // returned non-Unix default.
         #[cfg(unix)]
         let fd_soft_limit = {
-            let mut rlim = libc::rlimit {
-                rlim_cur: 0,
-                rlim_max: 0,
-            };
+            // Re-read in case raise_nofile_limit changed it
+            let mut rlim = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
             if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut rlim) } == 0 {
                 rlim.rlim_cur as u64
             } else {
-                1024u64
+                fd_soft_limit
             }
         };
-        #[cfg(not(unix))]
-        let fd_soft_limit = 1024u64;
 
         Self {
             cpu_count,
@@ -211,11 +246,14 @@ pub fn auto_config(si: &SysInfo, full_body: bool) -> Config {
 
     // workers: network-bound, not memory-bound.
     // Cap at 2000 to avoid DNS/TCP contention (see KEY INSIGHT above).
-    // Lower bound: CPU×100 (enough parallelism for small machines).
+    // Lower bound: CPU×50 but never more than w_fd/4 to avoid EMFILE.
+    //   (cpu_count*100 could exceed fd budget when ulimit is low, e.g. macOS default 256)
     // Upper bound: min(mem-based, fd-based, 2000).
     let w_mem = total_kb * 75 / 100 / body_kb.max(1);
     let w_fd = fd / 2;
-    let workers = clamp(w_mem.min(w_fd).min(2_000), si.cpu_count * 100, 2_000);
+    // Ensure the CPU-floor never exceeds the fd safety budget
+    let min_workers = (si.cpu_count * 50).min(w_fd / 4).max(4);
+    let workers = clamp(w_mem.min(w_fd).min(2_000), min_workers, 2_000);
 
     let db_shards = clamp(si.cpu_count * 2, 4, 16);
     // 10% of total RAM split across shards; minimum 64MB per shard.

@@ -57,6 +57,19 @@ enum CcAction {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Raise the open-file-descriptor limit as early as possible.
+    // On macOS the default soft limit can be as low as 256; workers need ~2000 fds.
+    let (old_fd, new_fd) = crawler_lib::config::raise_nofile_limit();
+    if new_fd > old_fd {
+        eprintln!("fd limit: {} → {}", old_fd, new_fd);
+    } else if new_fd < 4096 {
+        eprintln!(
+            "Warning: fd limit is only {} (hard limit too). \
+             Run `ulimit -n 65536` before launching for best results.",
+            new_fd
+        );
+    }
+
     // When stdout is a TTY, the TUI uses alternate screen — tracing to stderr
     // would corrupt the display. Suppress INFO logs; WARN+ still visible.
     // When piped/non-TTY, full INFO logging to stderr.

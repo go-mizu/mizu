@@ -8,7 +8,7 @@ name = "crawler"
 path = "src/main.rs"
 
 [features]
-default = ["wreq-engine"]
+default = []
 wreq-engine = ["crawler-lib/wreq-engine"]
 
 [dependencies]

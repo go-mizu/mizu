@@ -17,9 +17,9 @@ GUI_PORT      ?= 9111
 
 .PHONY: build build-linux build-on-server deploy deploy-server1 deploy-server2 test remote-test remote-hn-recrawl remote-benchmark tunnel clean
 
-## Local dev build (macOS)
+## Local dev build (macOS — no wreq-engine; wreq uses BoringSSL which doesn't link on macOS ARM64)
 build:
-	cargo build --release
+	cargo build --release --no-default-features
 
 ## Cross-compile for Linux via Docker (Ubuntu 24.04, x86-64-v3/AVX2)
 build-linux:
@@ -69,7 +69,7 @@ build-on-server:
 	    source ~/.cargo/env; \
 	  fi; \
 	  cd ~/build/crawler; \
-	  RUSTFLAGS=\"-C target-cpu=x86-64-v3\" cargo build --release 2>&1; \
+	  RUSTFLAGS=\"-C target-cpu=x86-64-v3\" cargo build --release --features wreq-engine 2>&1; \
 	  mkdir -p ~/bin && cp target/release/crawler ~/bin/crawler.new && mv ~/bin/crawler.new ~/bin/crawler && chmod +x ~/bin/crawler; \
 	  echo BUILD_OK"'
 	@echo "Built and deployed to $(REMOTE_SSH):~/bin/crawler"
