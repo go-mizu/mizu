@@ -144,6 +144,17 @@ pub async fn run_job(
                 if let Some(ref stats) = cfg.live_stats {
                     stats.pass.store(2, std::sync::atomic::Ordering::Relaxed);
                     stats.pass2_seeds.store(retry_seeds.len() as u64, std::sync::atomic::Ordering::Relaxed);
+                    // Snapshot pass-1 totals so GUI can compute pass-2 progress delta.
+                    // pass1_total: used to compute pass2Done = live_total - pass1_total
+                    // pass2_start_elapsed_ms: used to compute pass-2 avg RPS (not diluted by pass-1 time)
+                    stats.pass1_total.store(
+                        stats.total.load(std::sync::atomic::Ordering::Relaxed),
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                    stats.pass2_start_elapsed_ms.store(
+                        stats.start.elapsed().as_millis() as u64,
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
                     stats.push_warning(format!(
                         "pass 2: {} retry URLs, timeout={}ms",
                         retry_seeds.len(),
