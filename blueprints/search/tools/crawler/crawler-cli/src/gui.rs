@@ -152,6 +152,7 @@ struct StatsPayload {
     err_dns: u64,
     err_conn: u64,
     err_tls: u64,
+    err_http_status: u64,
     err_other: u64,
 
     // Error sub-categories
@@ -225,10 +226,11 @@ fn snapshot_stats(stats: &Stats) -> StatsPayload {
         pass1_total: stats.pass1_total.load(Ordering::Relaxed),
         pass2_start_elapsed_ms: stats.pass2_start_elapsed_ms.load(Ordering::Relaxed),
         err_invalid_url: stats.err_invalid_url.load(Ordering::Relaxed),
-        err_dns: stats.err_dns.load(Ordering::Relaxed),
-        err_conn: stats.err_conn.load(Ordering::Relaxed),
-        err_tls: stats.err_tls.load(Ordering::Relaxed),
-        err_other: stats.err_other.load(Ordering::Relaxed),
+        err_dns:         stats.err_dns.load(Ordering::Relaxed),
+        err_conn:        stats.err_conn.load(Ordering::Relaxed),
+        err_tls:         stats.err_tls.load(Ordering::Relaxed),
+        err_http_status: stats.err_http_status.load(Ordering::Relaxed),
+        err_other:       stats.err_other.load(Ordering::Relaxed),
         dns_nxdomain: stats.dns_nxdomain.load(Ordering::Relaxed),
         dns_malformed: stats.dns_malformed.load(Ordering::Relaxed),
         dns_other: stats.dns_other.load(Ordering::Relaxed),

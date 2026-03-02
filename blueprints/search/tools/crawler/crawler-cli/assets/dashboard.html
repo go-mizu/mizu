@@ -421,10 +421,18 @@ details[open] > summary::before { content: "\25BE "; }
         <div class="counter-label"><span class="counter-dot" style="background:var(--red)"></span> Failed</div>
         <div><span class="counter-value mono" id="cntFailed">0</span><span class="counter-pct mono" id="pctFailed">0%</span></div>
       </div>
-      <div class="counter-row">
-        <div class="counter-label"><span class="counter-dot" style="background:var(--yellow)"></span> Timeout</div>
-        <div><span class="counter-value mono" id="cntTimeout">0</span><span class="counter-pct mono" id="pctTimeout">0%</span></div>
-      </div>
+      <details id="timeoutDetails">
+        <summary>
+          <span class="counter-row" style="display:inline-flex;width:calc(100% - 16px)">
+            <div class="counter-label"><span class="counter-dot" style="background:var(--yellow)"></span> Timeout</div>
+            <div><span class="counter-value mono" id="cntTimeout">0</span><span class="counter-pct mono" id="pctTimeout">0%</span></div>
+          </span>
+        </summary>
+        <div class="detail-sub">
+          <div class="sub-row"><span class="sub-label">Connect</span><span class="sub-value mono" id="toConnect">0</span></div>
+          <div class="sub-row"><span class="sub-label">Response</span><span class="sub-value mono" id="toResponse">0</span></div>
+        </div>
+      </details>
       <div class="counter-row">
         <div class="counter-label"><span class="counter-dot" style="background:var(--gray)"></span> Skipped</div>
         <div><span class="counter-value mono" id="cntSkipped">0</span><span class="counter-pct mono" id="pctSkipped">0%</span></div>
@@ -495,6 +503,7 @@ details[open] > summary::before { content: "\25BE "; }
         </div>
       </details>
       <div class="sub-row"><span class="sub-label">TLS</span><span class="sub-value mono" id="errTls">0</span></div>
+      <div class="sub-row"><span class="sub-label">HTTP Error</span><span class="sub-value mono" id="errHttpStatus">0</span></div>
       <div class="sub-row"><span class="sub-label">Invalid URL</span><span class="sub-value mono" id="errInvalid">0</span></div>
       <div class="sub-row"><span class="sub-label">Other</span><span class="sub-value mono" id="errOther">0</span></div>
     </div>
@@ -546,7 +555,7 @@ details[open] > summary::before { content: "\25BE "; }
     </div>
 
     <div class="data-row" id="dataBodiesRow" style="display:none">
-      <span class="data-label">Bodies</span>
+      <span class="data-label">WARC</span>
       <span class="data-value">
         <span id="dataBodiesCount">—</span>
         <span class="data-sub" id="dataBodiesMb"></span>
@@ -781,6 +790,7 @@ es.onmessage = function(e) {
   $('errDns').textContent = fmt(s.err_dns);
   $('errConn').textContent = fmt(s.err_conn);
   $('errTls').textContent = fmt(s.err_tls);
+  $('errHttpStatus').textContent = fmt(s.err_http_status || 0);
   $('errInvalid').textContent = fmt(s.err_invalid_url);
   $('errOther').textContent = fmt(s.err_other);
   $('dnsNx').textContent = fmt(s.dns_nxdomain);
@@ -790,6 +800,8 @@ es.onmessage = function(e) {
   $('connRst').textContent = fmt(s.conn_reset);
   $('connEof').textContent = fmt(s.conn_eof);
   $('connOther').textContent = fmt(s.conn_other);
+  $('toConnect').textContent = fmt(s.timeout_connect);
+  $('toResponse').textContent = fmt(s.timeout_response);
 
   // HTTP status
   const httpTotal = s.status_2xx + s.status_3xx + s.status_4xx + s.status_5xx;
@@ -816,7 +828,7 @@ es.onmessage = function(e) {
   $('sysDown').textContent = fmtBytes(s.bytes_downloaded);
 
   if (s.domains_total > 0) {
-    let domStr = fmt(s.domains_total);
+    let domStr = fmt(s.domains_done) + ' / ' + fmt(s.domains_total);
     if (s.domains_abandoned > 0) domStr += ' (' + s.domains_abandoned + ' abn)';
     $('sysDomains').textContent = domStr;
   }

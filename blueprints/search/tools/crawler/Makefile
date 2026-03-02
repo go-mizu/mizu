@@ -137,15 +137,13 @@ remote-cc-recrawl:
 	$(SSH) -t $(REMOTE_SSH) "~/bin/crawler cc recrawl \
 	  --file $(CC_FILE) \
 	  --crawl $(CC_CRAWL) \
-	  --gui --gui-port $(GUI_PORT) \
-	  --no-body-store"
+	  --gui --gui-port $(GUI_PORT)"
 
 ## CC recrawl foreground with TUI (no GUI, for direct SSH sessions without port forwarding)
 remote-cc-recrawl-tui:
 	$(SSH) -t $(REMOTE_SSH) "~/bin/crawler cc recrawl \
 	  --file $(CC_FILE) \
-	  --crawl $(CC_CRAWL) \
-	  --no-body-store"
+	  --crawl $(CC_CRAWL)"
 
 ## CC quick benchmark: 50k seeds, devnull writer, no retry — measures raw fetch speed
 remote-cc-benchmark:

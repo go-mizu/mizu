@@ -88,11 +88,11 @@ pub struct Stats {
     pub disk_failures_mb: AtomicU64,
     /// Row count in failed.duckdb (set once, post-drain)
     pub disk_failed_rows: AtomicU64,
-    /// File count in bodies/ CAS dir
+    /// File count in warc/ store dir
     pub disk_bodies_count: AtomicU64,
-    /// Total MB of bodies/ dir
+    /// Total MB of warc/ store dir
     pub disk_bodies_mb: AtomicU64,
-    /// Grand total disk MB (seg + duckdb + failures + bodies)
+    /// Grand total disk MB (seg + duckdb + failures + warc)
     pub disk_total_mb: AtomicU64,
     /// Unix seconds of last disk scan
     pub disk_last_updated: AtomicU64,
