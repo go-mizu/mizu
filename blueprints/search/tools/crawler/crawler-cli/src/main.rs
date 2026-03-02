@@ -9,11 +9,20 @@ mod gui;
 mod hn;
 mod tui;
 
+/// Long version shown by `crawler --version` (verbose form).
+/// Built from env vars set by build.rs at compile time.
+const LONG_VERSION: &str = concat!(
+    env!("CRAWLER_GIT_VERSION"),
+    "\ncommit: ", env!("CRAWLER_GIT_COMMIT"),
+    "\nbuilt:  ", env!("CRAWLER_BUILD_TIME"),
+);
+
 #[derive(Parser)]
 #[command(
     name = "crawler",
     about = "High-throughput multi-domain recrawler",
-    version
+    version = env!("CRAWLER_GIT_VERSION"),
+    long_version = LONG_VERSION,
 )]
 struct Cli {
     #[command(subcommand)]
