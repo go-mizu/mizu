@@ -129,22 +129,6 @@ pub fn load_seeds_cc_parquet(path: &str, limit: usize, filters: &CcSeedFilter) -
     let where_clause = conditions.join(" AND ");
     let limit_clause = if limit > 0 { format!(" LIMIT {}", limit) } else { String::new() };
 
-    // Count first so the user knows what's being loaded before the full collect.
-    let count: i64 = {
-        let count_sql = format!(
-            "SELECT COUNT(*) FROM read_parquet('{}') WHERE {}{}",
-            escaped, where_clause, limit_clause
-        );
-        let mut stmt = conn.prepare(&count_sql)?;
-        let mut rows = stmt.query([])?;
-        rows.next()?.and_then(|r| r.get::<_, i64>(0).ok()).unwrap_or(0)
-    };
-    let est_mb = (count as u64 * 150) / (1024 * 1024); // ~150 bytes per SeedURL in heap
-    println!("CC seeds: {count} URLs (~{est_mb} MB heap)");
-    if count > 1_000_000 {
-        println!("  note: large seed set — use --limit N to reduce memory usage");
-    }
-
     let query = format!(
         "SELECT url, COALESCE(url_host_registered_domain, '') as domain \
          FROM read_parquet('{}') WHERE {}{}",
