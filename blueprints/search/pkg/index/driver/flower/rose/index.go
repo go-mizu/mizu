@@ -191,29 +191,47 @@ func (s *roseEngine) Stats(ctx context.Context) (index.EngineStats, error) {
 	}, nil
 }
 
+// prepDoc holds pre-analyzed data for a single document, ready for lock-held indexing.
+type prepDoc struct {
+	id     string
+	text   []byte
+	tokens []string
+}
+
 // Index ingests a batch of documents into the engine.
+// Phase 1 (analyze) runs outside the write lock; Phase 2 (mem update) holds it.
 func (s *roseEngine) Index(ctx context.Context, docs []index.Document) error {
 	if len(docs) == 0 {
 		return nil
 	}
 
+	// Phase 1: analyze all docs without holding the lock (CPU-heavy, pure).
+	prepared := make([]prepDoc, len(docs))
+	for i, doc := range docs {
+		prepared[i] = prepDoc{
+			id:     doc.DocID,
+			text:   doc.Text,
+			tokens: analyze(string(doc.Text)),
+		}
+	}
+
+	// Phase 2: write-lock for docstore + mem-map updates.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for _, doc := range docs {
-		if err := s.indexOne(doc.DocID, string(doc.Text)); err != nil {
+	for _, p := range prepared {
+		if err := s.indexOneLocked(p.id, p.text, p.tokens); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// indexOne indexes a single document.  Must be called with s.mu held for writing.
-func (s *roseEngine) indexOne(id string, body string) error {
-	tokens := analyze(body)
-
+// indexOneLocked indexes a single pre-analyzed document.
+// Must be called with s.mu held for writing.
+func (s *roseEngine) indexOneLocked(id string, text []byte, tokens []string) error {
 	// Append to docstore.
-	docIdx, err := s.docs.append(id, []byte(body))
+	docIdx, err := s.docs.append(id, text)
 	if err != nil {
 		return fmt.Errorf("rose index %q: docstore: %w", id, err)
 	}
@@ -351,6 +369,11 @@ func (s *roseEngine) Search(ctx context.Context, q index.Query) (index.Results, 
 func (s *roseEngine) flushMem() error {
 	if len(s.mem) == 0 {
 		return nil
+	}
+
+	// Flush buffered docstore writes so segment references are on disk.
+	if err := s.docs.flush(); err != nil {
+		return fmt.Errorf("rose flushMem: docstore flush: %w", err)
 	}
 
 	// Convert mem map[string][]uint32 to map[string][]memPosting.

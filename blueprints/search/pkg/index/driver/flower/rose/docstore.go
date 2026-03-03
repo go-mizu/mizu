@@ -1,6 +1,7 @@
 package rose
 
 import (
+	"bufio"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -22,7 +23,8 @@ type docEntry struct {
 // Entries are stored in insertion order; the 0-based position is the internal docIdx.
 type docStore struct {
 	f       *os.File
-	entries []docEntry // in-memory index; entry[i] is internal docIdx i
+	bw      *bufio.Writer // buffered writer over f; nil until after load()
+	entries []docEntry    // in-memory index; entry[i] is internal docIdx i
 }
 
 // openDocStore opens or creates the file at path and scans all existing entries
@@ -38,6 +40,8 @@ func openDocStore(path string) (*docStore, error) {
 		f.Close()
 		return nil, fmt.Errorf("docstore load %q: %w", path, err)
 	}
+	// Attach buffered writer after load so reads during load use f directly.
+	ds.bw = bufio.NewWriterSize(f, 256*1024)
 	return ds, nil
 }
 
@@ -119,35 +123,30 @@ func (ds *docStore) append(externalID string, text []byte) (uint32, error) {
 	extIDLen := uint32(len(extIDBytes))
 	textLen := uint32(len(text))
 
-	// Seek to end before writing.
-	if _, err := ds.f.Seek(0, io.SeekEnd); err != nil {
-		return 0, fmt.Errorf("docstore seek: %w", err)
-	}
-
 	var lenBuf [4]byte
 
 	// Write ExternalIDLen.
 	binary.LittleEndian.PutUint32(lenBuf[:], extIDLen)
-	if _, err := ds.f.Write(lenBuf[:]); err != nil {
+	if _, err := ds.bw.Write(lenBuf[:]); err != nil {
 		return 0, fmt.Errorf("docstore write ExternalIDLen: %w", err)
 	}
 
 	// Write ExternalID.
 	if len(extIDBytes) > 0 {
-		if _, err := ds.f.Write(extIDBytes); err != nil {
+		if _, err := ds.bw.Write(extIDBytes); err != nil {
 			return 0, fmt.Errorf("docstore write ExternalID: %w", err)
 		}
 	}
 
 	// Write TextLen.
 	binary.LittleEndian.PutUint32(lenBuf[:], textLen)
-	if _, err := ds.f.Write(lenBuf[:]); err != nil {
+	if _, err := ds.bw.Write(lenBuf[:]); err != nil {
 		return 0, fmt.Errorf("docstore write TextLen: %w", err)
 	}
 
 	// Write Text.
 	if textLen > 0 {
-		if _, err := ds.f.Write(text); err != nil {
+		if _, err := ds.bw.Write(text); err != nil {
 			return 0, fmt.Errorf("docstore write Text: %w", err)
 		}
 	}
@@ -172,15 +171,32 @@ func (ds *docStore) get(idx uint32) (docEntry, error) {
 	return ds.entries[idx], nil
 }
 
+// flush flushes any buffered writes to the underlying file.
+// Must be called before reading the file from another process or before
+// segment metadata references docIDs written since the last flush.
+func (ds *docStore) flush() error {
+	if ds == nil || ds.bw == nil {
+		return nil
+	}
+	return ds.bw.Flush()
+}
+
 // close flushes and closes the underlying file.
 // Calling close on a nil docStore or after already closing is safe (no-op / no panic).
 func (ds *docStore) close() error {
 	if ds == nil || ds.f == nil {
 		return nil
 	}
-	err := ds.f.Close()
+	var firstErr error
+	if ds.bw != nil {
+		firstErr = ds.bw.Flush()
+		ds.bw = nil
+	}
+	if err := ds.f.Close(); err != nil && firstErr == nil {
+		firstErr = err
+	}
 	ds.f = nil
-	return err
+	return firstErr
 }
 
 // ---------------------------------------------------------------------------
