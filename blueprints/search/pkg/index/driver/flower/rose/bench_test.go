@@ -26,7 +26,32 @@ var benchQueries = []string{
 
 // BenchmarkRose_Index measures indexing throughput. Each operation indexes
 // one document with ~200 tokens drawn from a 10,000-word vocabulary.
+//
+// Documents are pre-built before b.ResetTimer() to avoid inflating ns/op
+// with string-construction cost. eng.Close() is called explicitly inside the
+// timed region so that the docstore buffer flush to the OS page cache is
+// amortised into the per-op cost — matching the old unbuffered baseline where
+// every f.Write() syscall was paid inside the loop.
 func BenchmarkRose_Index(b *testing.B) {
+	vocab := make([]string, 10000)
+	for i := range vocab {
+		vocab[i] = fmt.Sprintf("word%d", i)
+	}
+	rng := rand.New(rand.NewSource(42))
+
+	// Pre-build all documents outside the timer.
+	docs := make([]index.Document, b.N)
+	for i := range docs {
+		words := make([]string, 200)
+		for j := range words {
+			words[j] = vocab[rng.Intn(len(vocab))]
+		}
+		docs[i] = index.Document{
+			DocID: fmt.Sprintf("doc-%d", i),
+			Text:  []byte(strings.Join(words, " ")),
+		}
+	}
+
 	dir := b.TempDir()
 	eng, err := index.NewEngine("rose")
 	if err != nil {
@@ -35,28 +60,19 @@ func BenchmarkRose_Index(b *testing.B) {
 	if err := eng.Open(context.Background(), dir); err != nil {
 		b.Fatalf("Open: %v", err)
 	}
-	defer eng.Close()
-
-	vocab := make([]string, 10000)
-	for i := range vocab {
-		vocab[i] = fmt.Sprintf("word%d", i)
-	}
-
-	rng := rand.New(rand.NewSource(42))
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		words := make([]string, 200)
-		for j := range words {
-			words[j] = vocab[rng.Intn(len(vocab))]
-		}
-		body := strings.Join(words, " ")
-		if err := eng.Index(context.Background(), []index.Document{
-			{DocID: fmt.Sprintf("doc-%d", i), Text: []byte(body)},
-		}); err != nil {
+		if err := eng.Index(context.Background(), []index.Document{docs[i]}); err != nil {
 			b.Fatalf("Index: %v", err)
 		}
 	}
+	// Flush all buffered data to the OS page cache inside the timed region so
+	// that the amortised I/O cost is included in ns/op.
+	if err := eng.Close(); err != nil {
+		b.Fatalf("Close: %v", err)
+	}
+	b.StopTimer()
 	b.ReportAllocs()
 }
 
