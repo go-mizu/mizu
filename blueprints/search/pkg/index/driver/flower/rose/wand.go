@@ -12,17 +12,25 @@ import (
 // listCursor iterates over one posting list for a single query term.
 // docIDs and impacts are parallel slices; pos is the current index.
 type listCursor struct {
-	docIDs  []uint32 // all docIDs for this term (decoded from all blocks)
-	impacts []uint8  // corresponding quantised BM25+ impacts
-	pos     int      // current position in the list
+	docIDs    []uint32 // all docIDs for this term (decoded from all blocks)
+	impacts   []uint8  // corresponding quantised BM25+ impacts
+	pos       int      // current position in the list
+	cachedMax uint8    // precomputed max of impacts[pos:]; 0 when exhausted
 }
 
 // newListCursor creates a cursor positioned at index 0.
 func newListCursor(docIDs []uint32, impacts []uint8) *listCursor {
+	var initMax uint8
+	for _, imp := range impacts {
+		if imp > initMax {
+			initMax = imp
+		}
+	}
 	return &listCursor{
-		docIDs:  docIDs,
-		impacts: impacts,
-		pos:     0,
+		docIDs:    docIDs,
+		impacts:   impacts,
+		pos:       0,
+		cachedMax: initMax,
 	}
 }
 
@@ -59,21 +67,20 @@ func (c *listCursor) advance(target uint32) {
 		return remaining[i] >= target
 	})
 	c.pos += idx
-}
-
-// maxImpact returns the maximum impact across all remaining postings (from pos onwards).
-// Returns 0 if exhausted. Called infrequently (only during WAND pivot evaluation).
-func (c *listCursor) maxImpact() uint8 {
-	if c.pos >= len(c.impacts) {
-		return 0
-	}
+	// Recompute cachedMax for the new suffix impacts[pos:].
 	var max uint8
 	for _, imp := range c.impacts[c.pos:] {
 		if imp > max {
 			max = imp
 		}
 	}
-	return max
+	c.cachedMax = max
+}
+
+// maxImpact returns the maximum impact across all remaining postings (from pos onwards).
+// Returns 0 if exhausted. O(1): cachedMax is maintained by newListCursor and advance.
+func (c *listCursor) maxImpact() uint8 {
+	return c.cachedMax
 }
 
 // ---------------------------------------------------------------------------
@@ -139,6 +146,7 @@ func heapPush(h []scoreDoc, elem scoreDoc) []scoreDoc {
 
 // heapPop removes and returns the minimum element (root). Returns the shrunken slice.
 func heapPop(h []scoreDoc) (scoreDoc, []scoreDoc) {
+	// heapPop requires len(h) >= 1.
 	min := h[0]
 	last := len(h) - 1
 	h[0] = h[last]
@@ -180,6 +188,8 @@ func wandTopK(cursors []*listCursor, k int) []scoreDoc {
 
 	for {
 		// Step 1: sort cursors by current docID ascending.
+		// Re-sort all cursors by docID. For typical query sizes (T ≤ 5) this
+		// full sort is faster than maintaining a sorted structure in practice.
 		sort.Slice(cursors, func(i, j int) bool {
 			return cursors[i].docID() < cursors[j].docID()
 		})
