@@ -17,9 +17,6 @@ type Config struct {
 	MIMEFilter  string // e.g. "text/html" (default)
 	StatusCode  int    // HTTP status filter (default: 200)
 	MaxBodySize int64  // max HTML body bytes (default: 512 KB)
-	// Deprecated: InMemory is no longer used (phase 3 removed). Will be
-	// removed in Task 10 CLI rewrite.
-	InMemory bool
 }
 
 // DefaultConfig returns sensible defaults for a given crawl ID.
@@ -70,19 +67,3 @@ func (c Config) ConvertWorkers() int {
 	return runtime.NumCPU()
 }
 
-// CompressWorkers is a no-op stub retained for CLI compatibility until Task 10
-// removes all phase-3 references from cc_warc_markdown.go.
-//
-// Deprecated: phase 3 (compress) has been removed. Use ConvertWorkers instead.
-func (c Config) CompressWorkers() int {
-	return runtime.NumCPU()
-}
-
-// MarkdownGzDir is a stub retained for CLI compatibility until Task 10 removes
-// all phase-3 references from cc_warc_markdown.go.
-//
-// Deprecated: phase 3 (compress) has been removed. Output is now plain .md
-// under markdown/{warcIdx}/ via MarkdownWarcDir.
-func (c Config) MarkdownGzDir() string {
-	return filepath.Join(c.CrawlDir(), "markdown")
-}
