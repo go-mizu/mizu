@@ -1196,10 +1196,10 @@ function renderCrawlsContent(crawls) {
         <tbody>
           ${crawls.map((c, i) => `
             <tr class="border-b border-zinc-100 dark:border-zinc-800/60 anim-fade-up" style="animation-delay:${i * 20}ms">
-              <td class="px-4 py-2 font-mono text-xs">${esc(c.ID || c.id || '')}</td>
-              <td class="px-4 py-2 text-xs">${esc(c.Name || c.name || '')}</td>
-              <td class="px-4 py-2 font-mono text-xs text-zinc-500">${formatCrawlDate(c.From || c.from)}</td>
-              <td class="px-4 py-2 font-mono text-xs text-zinc-500">${formatCrawlDate(c.To || c.to)}</td>
+              <td class="px-4 py-2 font-mono text-xs">${esc(c.id || '')}</td>
+              <td class="px-4 py-2 text-xs">${esc(c.name || '')}</td>
+              <td class="px-4 py-2 font-mono text-xs text-zinc-500">${formatCrawlDate(c.from)}</td>
+              <td class="px-4 py-2 font-mono text-xs text-zinc-500">${formatCrawlDate(c.to)}</td>
             </tr>`).join('')}
         </tbody>
       </table>
