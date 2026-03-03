@@ -9,11 +9,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index"
 	// Import all drivers for registration.
 	// duckdb registration happens via cli/duckdb_ops.go (excluded when -tags chdb).
@@ -31,6 +33,22 @@ import (
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/tantivy-lnx"
 	"github.com/spf13/cobra"
 )
+
+// warcIndexFromPath extracts the zero-padded 5-digit WARC file index from a WARC
+// filename. Falls back to fmt.Sprintf("%05d", fallback) if not parseable.
+//
+//	"CC-MAIN-20260206181458-20260206211458-00000.warc.gz" → "00000"
+func warcIndexFromPath(warcPath string, fallback int) string {
+	base := filepath.Base(warcPath)
+	name := strings.TrimSuffix(strings.TrimSuffix(base, ".gz"), ".warc")
+	parts := strings.Split(name, "-")
+	if last := parts[len(parts)-1]; len(last) == 5 {
+		if _, err := strconv.Atoi(last); err == nil {
+			return last
+		}
+	}
+	return fmt.Sprintf("%05d", fallback)
+}
 
 func newCCFTS() *cobra.Command {
 	cmd := &cobra.Command{
@@ -209,9 +227,9 @@ func runCCFTSIndex(ctx context.Context, crawlID, engineName, source string, batc
 
 func runCCFTSIndexFromPack(ctx context.Context, crawlID, engineName, source string, eng index.Engine, outputDir string, batchSize int) error {
 	homeDir, _ := os.UserHomeDir()
-	packDir := filepath.Join(homeDir, "data", "common-crawl", crawlID, "fts", "pack")
+	packDir := filepath.Join(homeDir, "data", "common-crawl", crawlID, "pack")
 
-	packFile, err := packFilePath(packDir, source)
+	packFile, err := packFilePath(packDir, source, "docs")
 	if err != nil {
 		return err
 	}
@@ -319,24 +337,25 @@ func ftsCreateDuckDBIndex(ctx context.Context, eng index.Engine) error {
 	return nil
 }
 
-func packFilePath(packDir, source string) (string, error) {
-	switch source {
+func packFilePath(packDir, format, warcIdx string) (string, error) {
+	switch format {
 	case "parquet":
-		return filepath.Join(packDir, "docs.parquet"), nil
+		return filepath.Join(packDir, "parquet", warcIdx+".parquet"), nil
 	case "bin":
-		return filepath.Join(packDir, "docs.bin"), nil
-	case "ndjson":
-		return filepath.Join(packDir, "docs.ndjson"), nil
+		return filepath.Join(packDir, "bin", warcIdx+".bin"), nil
 	case "duckdb":
-		return filepath.Join(packDir, "docs.raw.duckdb"), nil
+		return filepath.Join(packDir, "duckdb", warcIdx+".duckdb"), nil
+	case "markdown":
+		return filepath.Join(packDir, "markdown", warcIdx+".bin.gz"), nil
 	default:
-		return "", fmt.Errorf("unknown source %q (valid: parquet, bin, ndjson, duckdb)", source)
+		return "", fmt.Errorf("unknown format %q (valid: parquet, bin, duckdb, markdown)", format)
 	}
 }
 
 func newCCFTSPack() *cobra.Command {
 	var (
 		crawlID   string
+		fileIdx   string
 		format    string
 		batchSize int
 		workers   int
@@ -346,52 +365,66 @@ func newCCFTSPack() *cobra.Command {
 		Use:   "pack",
 		Short: "Pack CC markdown files into a high-perf bundle for FTS import benchmarking",
 		Long: `Pre-compute markdown files into one or more fast-load formats.
-Packed files are stored in fts/pack/ and can be used with 'fts index --source <format>'.`,
+Packed files are stored in pack/{format}/{warcIdx}.{ext} and can be used with 'fts index --source <format>'.`,
 		Example: `  search cc fts pack --format parquet   # Parquet columnar
   search cc fts pack --format bin        # flat binary (fastest read)
-  search cc fts pack --format ndjson     # newline-delimited JSON
+  search cc fts pack --format markdown   # concatenated gzip (bin.gz)
   search cc fts pack --format duckdb    # DuckDB raw table
   search cc fts pack --format all        # all four formats`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCCFTSPack(cmd.Context(), crawlID, format, batchSize, workers)
+			return runCCFTSPack(cmd.Context(), crawlID, fileIdx, format, batchSize, workers)
 		},
 	}
 
 	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest)")
-	cmd.Flags().StringVar(&format, "format", "all", "Format: parquet, bin, ndjson, duckdb, all")
+	cmd.Flags().StringVar(&fileIdx, "file", "0", "File index, range (0-9), or all")
+	cmd.Flags().StringVar(&format, "format", "all", "Format: parquet, bin, duckdb, markdown, all")
 	cmd.Flags().IntVar(&batchSize, "batch-size", 5000, "Documents per batch")
 	cmd.Flags().IntVar(&workers, "workers", 0, "Parallel file readers (0 = NumCPU)")
 	return cmd
 }
 
-func runCCFTSPack(ctx context.Context, crawlID, format string, batchSize, workers int) error {
+func runCCFTSPack(ctx context.Context, crawlID, fileIdx, format string, batchSize, workers int) error {
 	if crawlID == "" {
 		crawlID = detectLatestCrawl()
 	}
 
 	homeDir, _ := os.UserHomeDir()
-	markdownDir := filepath.Join(homeDir, "data", "common-crawl", crawlID, "markdown")
-	packDir := filepath.Join(homeDir, "data", "common-crawl", crawlID, "fts", "pack")
+	packDir := filepath.Join(homeDir, "data", "common-crawl", crawlID, "pack")
 
-	if _, err := os.Stat(markdownDir); os.IsNotExist(err) {
-		return fmt.Errorf("markdown dir not found: %s", markdownDir)
+	client := cc.NewClient("", 4)
+	paths, err := client.DownloadManifest(ctx, crawlID, "warc.paths.gz")
+	if err != nil {
+		return fmt.Errorf("manifest: %w", err)
+	}
+	selected, err := ccParseFileSelector(fileIdx, len(paths))
+	if err != nil {
+		return fmt.Errorf("--file: %w", err)
 	}
 
 	formats := []string{format}
 	if format == "all" {
-		formats = []string{"parquet", "bin", "ndjson", "duckdb"}
+		formats = []string{"parquet", "bin", "duckdb", "markdown"}
 	}
 
-	for _, fmt_ := range formats {
-		if ctx.Err() != nil {
-			return ctx.Err()
+	for _, idx := range selected {
+		warcIdx := warcIndexFromPath(paths[idx], idx)
+		markdownDir := filepath.Join(homeDir, "data", "common-crawl", crawlID, "markdown", warcIdx)
+		if _, err := os.Stat(markdownDir); os.IsNotExist(err) {
+			return fmt.Errorf("markdown dir not found: %s\n  run: search cc warc markdown --file %d", markdownDir, idx)
 		}
-		packFile, err := packFilePath(packDir, fmt_)
-		if err != nil {
-			return err
-		}
-		if err := runPackFormat(ctx, fmt_, markdownDir, packFile, batchSize, workers); err != nil {
-			return fmt.Errorf("pack %s: %w", fmt_, err)
+
+		for _, fmt_ := range formats {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			packFile, err := packFilePath(packDir, fmt_, warcIdx)
+			if err != nil {
+				return err
+			}
+			if err := runPackFormat(ctx, fmt_, markdownDir, packFile, batchSize, workers); err != nil {
+				return fmt.Errorf("pack %s: %w", fmt_, err)
+			}
 		}
 	}
 	return nil
@@ -431,8 +464,8 @@ func runPackFormat(ctx context.Context, format, markdownDir, packFile string, ba
 		stats, err = index.PackParquet(ctx, markdownDir, packFile, workers, batchSize, progress)
 	case "bin":
 		stats, err = index.PackFlatBin(ctx, markdownDir, packFile, workers, batchSize, progress)
-	case "ndjson":
-		stats, err = index.PackNDJSON(ctx, markdownDir, packFile, workers, batchSize, progress)
+	case "markdown":
+		stats, err = index.PackFlatBinGz(ctx, markdownDir, packFile, workers, batchSize, progress)
 	case "duckdb":
 		stats, err = packDuckDBRaw(ctx, markdownDir, packFile, workers, batchSize, progress)
 	default:
