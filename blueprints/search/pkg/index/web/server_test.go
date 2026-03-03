@@ -421,6 +421,267 @@ func TestWarcIndexFromPath(t *testing.T) {
 	}
 }
 
+// TestIntegrationDashboardLifecycle exercises the full dashboard HTTP lifecycle
+// through httptest.Server, verifying routing, status codes, and response shapes
+// for all core dashboard endpoints.
+func TestIntegrationDashboardLifecycle(t *testing.T) {
+	root := t.TempDir()
+
+	// Seed minimal data so overview returns non-trivial values.
+	warcDir := filepath.Join(root, "warc")
+	mustMkdir(t, warcDir)
+	writeFile(t, filepath.Join(warcDir, "00000.warc.gz"), 1024)
+
+	mdDir := filepath.Join(root, "markdown", "00000")
+	mustMkdir(t, mdDir)
+	writeFile(t, filepath.Join(mdDir, "doc1.md"), 100)
+
+	srv := NewDashboard("test-engine", "CC-TEST-2026", "", root)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := ts.Client()
+
+	// ── GET / → 200, HTML ────────────────────────────────────────────
+	t.Run("GET / returns HTML", func(t *testing.T) {
+		resp, err := client.Get(ts.URL + "/")
+		if err != nil {
+			t.Fatalf("GET /: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("GET /: expected 200, got %d", resp.StatusCode)
+		}
+		ct := resp.Header.Get("Content-Type")
+		if !strings.Contains(ct, "text/html") {
+			t.Fatalf("GET /: expected text/html content type, got %q", ct)
+		}
+	})
+
+	// ── GET /api/overview → 200, JSON with crawl_id ─────────────────
+	t.Run("GET /api/overview", func(t *testing.T) {
+		resp, err := client.Get(ts.URL + "/api/overview")
+		if err != nil {
+			t.Fatalf("GET /api/overview: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("GET /api/overview: expected 200, got %d", resp.StatusCode)
+		}
+		ct := resp.Header.Get("Content-Type")
+		if !strings.HasPrefix(ct, "application/json") {
+			t.Fatalf("GET /api/overview: expected application/json, got %q", ct)
+		}
+		var result map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("decode JSON: %v", err)
+		}
+		if result["crawl_id"] != "CC-TEST-2026" {
+			t.Fatalf("expected crawl_id=CC-TEST-2026, got %v", result["crawl_id"])
+		}
+	})
+
+	// ── GET /api/engines → 200, JSON with engines array ─────────────
+	t.Run("GET /api/engines", func(t *testing.T) {
+		resp, err := client.Get(ts.URL + "/api/engines")
+		if err != nil {
+			t.Fatalf("GET /api/engines: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("GET /api/engines: expected 200, got %d", resp.StatusCode)
+		}
+		var result map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("decode JSON: %v", err)
+		}
+		engines, ok := result["engines"].([]any)
+		if !ok {
+			t.Fatalf("expected engines array, got %T", result["engines"])
+		}
+		// engines may or may not be empty depending on registered drivers,
+		// but it must be a valid array.
+		_ = engines
+	})
+
+	// ── GET /api/jobs → 200, JSON with empty jobs array ─────────────
+	t.Run("GET /api/jobs empty", func(t *testing.T) {
+		resp, err := client.Get(ts.URL + "/api/jobs")
+		if err != nil {
+			t.Fatalf("GET /api/jobs: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("GET /api/jobs: expected 200, got %d", resp.StatusCode)
+		}
+		var result map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("decode JSON: %v", err)
+		}
+		jobs, ok := result["jobs"].([]any)
+		if !ok {
+			t.Fatalf("expected jobs array, got %T", result["jobs"])
+		}
+		if len(jobs) != 0 {
+			t.Fatalf("expected 0 jobs, got %d", len(jobs))
+		}
+	})
+
+	// ── POST /api/jobs → 201, JSON with id + status=queued ──────────
+	var jobID string
+	t.Run("POST /api/jobs creates job", func(t *testing.T) {
+		body := `{"type":"download","crawl":"CC-MAIN-2026-08","files":"0"}`
+		resp, err := client.Post(ts.URL+"/api/jobs", "application/json", strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("POST /api/jobs: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 201 {
+			t.Fatalf("POST /api/jobs: expected 201, got %d", resp.StatusCode)
+		}
+		var job map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&job); err != nil {
+			t.Fatalf("decode JSON: %v", err)
+		}
+		id, ok := job["id"].(string)
+		if !ok || id == "" {
+			t.Fatalf("expected non-empty job id, got %v", job["id"])
+		}
+		jobID = id
+
+		// Status should be "queued" or "running" (the background goroutine
+		// may have already picked it up by the time we decode the response).
+		status, _ := job["status"].(string)
+		if status != "queued" && status != "running" {
+			t.Fatalf("expected status queued or running, got %q", status)
+		}
+	})
+
+	// ── GET /api/jobs/{id} → 200, JSON with the job ─────────────────
+	t.Run("GET /api/jobs/{id}", func(t *testing.T) {
+		if jobID == "" {
+			t.Skip("no job ID from previous step")
+		}
+		resp, err := client.Get(ts.URL + "/api/jobs/" + jobID)
+		if err != nil {
+			t.Fatalf("GET /api/jobs/%s: %v", jobID, err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("GET /api/jobs/%s: expected 200, got %d", jobID, resp.StatusCode)
+		}
+		var job map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&job); err != nil {
+			t.Fatalf("decode JSON: %v", err)
+		}
+		if job["id"] != jobID {
+			t.Fatalf("expected id=%s, got %v", jobID, job["id"])
+		}
+	})
+
+	// ── DELETE /api/jobs/{id} → 200 ─────────────────────────────────
+	t.Run("DELETE /api/jobs/{id}", func(t *testing.T) {
+		if jobID == "" {
+			t.Skip("no job ID from previous step")
+		}
+		req, err := http.NewRequest("DELETE", ts.URL+"/api/jobs/"+jobID, nil)
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("DELETE /api/jobs/%s: %v", jobID, err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("DELETE /api/jobs/%s: expected 200, got %d", jobID, resp.StatusCode)
+		}
+	})
+
+	// ── GET /api/jobs/{id} after cancel → verify cancelled status ───
+	t.Run("GET /api/jobs/{id} after cancel", func(t *testing.T) {
+		if jobID == "" {
+			t.Skip("no job ID from previous step")
+		}
+		resp, err := client.Get(ts.URL + "/api/jobs/" + jobID)
+		if err != nil {
+			t.Fatalf("GET /api/jobs/%s: %v", jobID, err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("expected 200, got %d", resp.StatusCode)
+		}
+		var job map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&job); err != nil {
+			t.Fatalf("decode JSON: %v", err)
+		}
+		if job["status"] != "cancelled" {
+			t.Fatalf("expected status=cancelled, got %v", job["status"])
+		}
+	})
+}
+
+// TestIntegrationNewNoDashboardRoutes verifies that when using New() (not
+// NewDashboard), dashboard-specific routes are not registered while core
+// routes still work.
+func TestIntegrationNewNoDashboardRoutes(t *testing.T) {
+	root := t.TempDir()
+	srv := New("test-engine", "CC-TEST-2026", "", root)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := ts.Client()
+
+	// ── GET / still returns HTML (core route) ────────────────────────
+	t.Run("GET / returns HTML", func(t *testing.T) {
+		resp, err := client.Get(ts.URL + "/")
+		if err != nil {
+			t.Fatalf("GET /: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("GET /: expected 200, got %d", resp.StatusCode)
+		}
+		ct := resp.Header.Get("Content-Type")
+		if !strings.Contains(ct, "text/html") {
+			t.Fatalf("GET /: expected text/html, got %q", ct)
+		}
+	})
+
+	// ── Dashboard routes fall through to GET / (no JSON) ─────────────
+	for _, path := range []string{"/api/overview", "/api/engines", "/api/jobs"} {
+		t.Run("GET "+path+" no dashboard", func(t *testing.T) {
+			resp, err := client.Get(ts.URL + path)
+			if err != nil {
+				t.Fatalf("GET %s: %v", path, err)
+			}
+			defer resp.Body.Close()
+			// Without dashboard, these paths are not registered. Go's ServeMux
+			// will either 404 or fall through to GET / (returning HTML).
+			// Either way, the response should NOT be application/json.
+			ct := resp.Header.Get("Content-Type")
+			if strings.HasPrefix(ct, "application/json") {
+				t.Fatalf("GET %s should not return application/json without dashboard", path)
+			}
+		})
+	}
+
+	// ── POST /api/jobs should not be registered ──────────────────────
+	t.Run("POST /api/jobs no dashboard", func(t *testing.T) {
+		resp, err := client.Post(ts.URL+"/api/jobs", "application/json", strings.NewReader(`{"type":"download"}`))
+		if err != nil {
+			t.Fatalf("POST /api/jobs: %v", err)
+		}
+		defer resp.Body.Close()
+		// Without dashboard routes, POST /api/jobs is not registered.
+		// Go's ServeMux returns 405 Method Not Allowed for unmatched methods
+		// or the request falls through. Either way, it should not be 201.
+		if resp.StatusCode == 201 {
+			t.Fatal("POST /api/jobs should not return 201 without dashboard")
+		}
+	})
+}
+
 // Compile-time check: ensure handler methods satisfy http.HandlerFunc signature.
 var _ http.HandlerFunc = (*Server)(nil).handleOverview
 var _ http.HandlerFunc = (*Server)(nil).handleEngines
