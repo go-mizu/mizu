@@ -3,9 +3,15 @@ package rose
 import (
 	"sync"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/kljensen/snowball/english"
 )
+
+// tokenPool provides reusable scratch slices for analyze() to avoid per-call
+// []string allocations.  The pool holds *[]string so the slice header itself
+// is heap-stable across GC cycles.
+var tokenPool = sync.Pool{New: func() any { s := make([]string, 0, 64); return &s }}
 
 // stemCache maps lowercase token → stemmed form ("" = rejected by length/stopword filter).
 // english.Stem is deterministic, so caching across calls is always correct.
@@ -109,42 +115,73 @@ func processLower(lower string) string {
 // Pipeline:
 //
 //	Raw text
-//	  → Unicode tokenise  (split on non-letter, non-digit runes)
-//	  → processTok        (lowercase → length check → stopword → stem)
+//	  → Unicode tokenise  (split on non-letter, non-digit runes; range over string)
+//	  → inline lowercase  (stack [64]byte buffer, avoids []rune + string allocs)
+//	  → processLower      (stopword filter → stemCache → english.Stem)
 //	  → return []string
+//
+// Opts applied: F (tokenPool), G (inline lowercase with stack buffer).
 func analyze(text string) []string {
 	if text == "" {
 		return nil
 	}
 
-	var tokens []string
+	// Borrow scratch builder from pool (Opt F).
+	sp := tokenPool.Get().(*[]string)
+	builder := (*sp)[:0]
 
-	runes := []rune(text)
-	n := len(runes)
+	// Stack buffer for lowercasing the current token (Opt G).
+	// maxTokLen+utf8.UTFMax ensures a single rune always fits even at the limit.
+	var lowBuf [maxTokLen + utf8.UTFMax]byte
 	inToken := false
-	start := 0
+	n := 0        // write cursor into lowBuf
+	overflow := false // token exceeded maxTokLen
 
-	for i, r := range runes {
+	for _, r := range text {
 		isWordChar := unicode.IsLetter(r) || unicode.IsDigit(r)
-		if isWordChar && !inToken {
-			start = i
-			inToken = true
-		} else if !isWordChar && inToken {
-			raw := string(runes[start:i])
-			inToken = false
-			if t := processTok(raw); t != "" {
-				tokens = append(tokens, t)
+		if isWordChar {
+			if !inToken {
+				inToken = true
+				n = 0
+				overflow = false
 			}
+			if !overflow {
+				lc := unicode.ToLower(r)
+				sz := utf8.RuneLen(lc)
+				if sz < 0 {
+					sz = utf8.RuneLen(utf8.RuneError)
+				}
+				if n+sz > maxTokLen {
+					overflow = true
+				} else {
+					utf8.EncodeRune(lowBuf[n:], lc)
+					n += sz
+				}
+			}
+		} else if inToken {
+			if !overflow && n >= minTokLen {
+				if t := processLower(string(lowBuf[:n])); t != "" {
+					builder = append(builder, t)
+				}
+			}
+			inToken = false
 		}
 	}
 	// Handle token that reaches end of string.
-	if inToken {
-		raw := string(runes[start:n])
-		if t := processTok(raw); t != "" {
-			tokens = append(tokens, t)
+	if inToken && !overflow && n >= minTokLen {
+		if t := processLower(string(lowBuf[:n])); t != "" {
+			builder = append(builder, t)
 		}
 	}
 
+	// Copy result to a fresh slice so we can return the builder to the pool.
+	var tokens []string
+	if len(builder) > 0 {
+		tokens = make([]string, len(builder))
+		copy(tokens, builder)
+	}
+	*sp = builder
+	tokenPool.Put(sp)
 	return tokens
 }
 
