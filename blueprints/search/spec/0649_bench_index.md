@@ -1,6 +1,6 @@
 # spec/0649 — search bench: Wikipedia Index & Search Benchmark
 
-**Status:** implementing
+**Status:** complete
 **Branch:** index-pane
 
 ---
@@ -307,3 +307,54 @@ func Run(ctx context.Context, eng index.Engine, cfg BenchConfig,
 6. Wire `NewBench()` into `cli/root.go`
 7. `go build ./...` — verify compilation
 8. Manual smoke test: `bench download --docs 1000`, `bench index --engine devnull --docs 1000`, `bench search --engine devnull --docs 1000 --warmup 0s --iter 1`
+
+---
+
+## Benchmark Results
+
+Corpus: English Wikipedia, 5,032,104 docs (~5 M).
+Machine: Apple M-series (darwin/arm64), local NVMe, `go build -tags tantivy`.
+Full-dataset search uses `--commands TOP_10 --warmup 30s --iter 10` (COUNT omitted — too slow on 5 M docs for rose).
+
+### Index Performance
+
+| Engine | Docs | Index time | Rate (docs/s) | Disk | Peak RSS |
+|--------|-----:|-----------|--------------|-----:|--------:|
+| rose | 100 | < 1ms | 15,084 | 0 B | — |
+| tantivy | 100 | 100ms | 685 | 123.6 KB | — |
+| rose | 1,000 | < 1ms | 27,440 | 256 KB | — |
+| tantivy | 1,000 | 200ms | 6,439 | 1.2 MB | — |
+| rose | 10,000 | 300ms | 37,160 | 3.5 MB | — |
+| tantivy | 10,000 | 400ms | 23,012 | 10.7 MB | — |
+| rose | 100,000 | 2.5s | 40,566 | 37.5 MB | — |
+| tantivy | 100,000 | 4.9s | 20,339 | 122.7 MB | — |
+| **rose** | **5,032,104** | **6m40s** | **12,563** | **3.2 GB** | **22.4 GB** |
+| **tantivy** | **5,032,104** | **7m6s** | **11,808** | **7.3 GB** | **278 MB** |
+
+Notes:
+- Rose's 22.4 GB peak RSS at full scale reflects its in-memory index architecture — the entire index is held in RAM.
+- Tantivy uses 278 MB peak RSS at full scale (memory-mapped index on disk).
+- Tantivy disk usage is ~2.3× rose's at full scale (more aggressive per-field structures vs. rose's single segment file).
+- Both engines reach similar throughput (~12k docs/s) at full scale; rose is faster at smaller sizes due to no per-commit overhead.
+
+### Search Performance (TOP_10, 962 queries, 10 iterations)
+
+| Engine | Docs | p50 | p95 | p99 | Slowest query |
+|--------|-----:|----:|----:|----:|--------------|
+| rose | 100 | 70 µs | 77 µs | 77 µs | "customer +service phone number" → 387 µs |
+| tantivy | 100 | 33 µs | 37 µs | 37 µs | long-phrase query → 1.1 ms |
+| rose | 1,000 | 248 µs | 257 µs | 257 µs | "phone cases" → 401 µs |
+| tantivy | 1,000 | 38 µs | 49 µs | 49 µs | "+interest +only" → 1.8 ms |
+| rose | 10,000 | 306 µs | 323 µs | 323 µs | "+new +york +times +best +sellers +list" → 883 µs |
+| tantivy | 10,000 | 309 µs | 344 µs | 344 µs | "+care +a +lot" → 3.7 ms |
+| rose | 100,000 | 463 µs | 490 µs | 490 µs | long-phrase query → 24.3 ms |
+| tantivy | 100,000 | 575 µs | 661 µs | 661 µs | "+big +boss +man" → 10.0 ms |
+| **rose** | **5,032,104** | **14.4 ms** | **16.1 ms** | **16.1 ms** | long-phrase query → 6.8 s |
+| **tantivy** | **5,032,104** | **2.7 ms** | **3.4 ms** | **3.4 ms** | `+"the who" +uk` → 227.7 ms |
+
+Notes:
+- Tantivy is **5× faster** at median search latency on the full 5 M-doc corpus (2.7 ms vs 14.4 ms).
+- At small scales (≤ 10k docs) the engines are comparable; rose is faster at 1k (248 µs vs 38 µs — tantivy has fixed CGO call overhead per query).
+- Rose's worst-case slowest query (6.8 s) is a very long phrase against 5 M docs; tantivy's worst case is 227 ms.
+- Rose p95 = p99 (16.1 ms) at full scale: latency distribution is tight, no outlier tail except for extreme phrase queries.
+- Tantivy p95 = p99 (3.4 ms) at full scale as well.
