@@ -152,6 +152,11 @@ func (s *roseEngine) Open(ctx context.Context, dir string) error {
 func (s *roseEngine) Close() error {
 	var closeErr error
 	s.closeOnce.Do(func() {
+		// Guard against Close() being called on an engine whose Open() failed
+		// before s.done was initialised. Closing a nil channel panics.
+		if s.done == nil {
+			return
+		}
 		// Signal the merge goroutine to stop and wait for it.
 		close(s.done)
 		s.mergeWg.Wait()
@@ -287,11 +292,14 @@ func (s *roseEngine) Search(ctx context.Context, q index.Query) (index.Results, 
 			allImpacts = append(allImpacts, impacts...)
 		}
 
-		// Collect from the in-memory buffer.
+		// Collect from the in-memory buffer. Unflushed docs have not had
+		// BM25+ quantisation applied yet, so we assign a mid-range impact
+		// of 128. This produces slightly inconsistent scores vs. flushed
+		// segments for the same term, but only until the next flush.
 		if memList, ok := s.mem[term]; ok && len(memList) > 0 {
 			for _, did := range memList {
 				allDocIDs = append(allDocIDs, did)
-				allImpacts = append(allImpacts, 128) // mid-range impact for mem hits
+				allImpacts = append(allImpacts, 128)
 			}
 		}
 

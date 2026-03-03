@@ -60,6 +60,9 @@ func (ds *docStore) load() error {
 			return fmt.Errorf("reading ExternalIDLen: %w", err)
 		}
 		extIDLen := binary.LittleEndian.Uint32(lenBuf[:])
+		if extIDLen > 4096 {
+			return fmt.Errorf("reading docstore: externalID length %d exceeds max (4096) — file may be corrupt", extIDLen)
+		}
 
 		// Read ExternalID bytes.
 		extIDBuf := make([]byte, extIDLen)
@@ -72,6 +75,9 @@ func (ds *docStore) load() error {
 			return fmt.Errorf("reading TextLen: %w", err)
 		}
 		textLen := binary.LittleEndian.Uint32(lenBuf[:])
+		if textLen > docStoreMaxText {
+			return fmt.Errorf("reading docstore: text length %d exceeds max (%d) — file may be corrupt", textLen, docStoreMaxText)
+		}
 
 		// Read Text bytes.
 		textBuf := make([]byte, textLen)
