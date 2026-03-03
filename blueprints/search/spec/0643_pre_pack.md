@@ -2,7 +2,7 @@
 
 **Status:** implemented
 **Branch:** index-pane
-**Commits:** `ad6e275c` (initial pack), `86c81f11` (footer + buffer pool), `a1220c6d` (`Document.Text []byte`)
+**Commits:** `ad6e275c` (initial pack), `86c81f11` (footer + buffer pool), `a1220c6d` (`Document.Text []byte`), `8ea2c208` (DuckDB insert modes + server build), `9a6e5095` (parquet BulkLoad + writer optimisation)
 
 ---
 
@@ -322,19 +322,22 @@ gets a pre-zeroed OS page (virtual memory CoW) — the only write is
 
 #### Ingest speed (docs/s)
 
-| source \ engine | devnull    | sqlite FTS5 | duckdb BM25 | chdb FTS    |
-|-----------------|------------|-------------|-------------|-------------|
-| files           | 25,151     | 539         | 147         | **789**     |
-| bin             | **86,736** | 580         | 157         | 751         |
-| parquet         | 24,424     | **684**     | 148         | 767         |
-| ndjson          | 14,226     | 664         | 148         | 739         |
-| duckdb raw      | 13,381     | 675         | 150         | n/a ²       |
+Values for duckdb use naive insert mode; see §DuckDB Insert Mode Comparison for 7.5× improvement.
+
+| source \ engine | devnull    | sqlite FTS5 | duckdb BM25 ³ | chdb FTS    |
+|-----------------|------------|-------------|---------------|-------------|
+| files           | 25,151     | 539         | 147           | **789**     |
+| bin             | **86,736** | 580         | 157           | 751         |
+| parquet         | 24,424     | **684**     | 148           | 767         |
+| ndjson          | 14,226     | 664         | 148           | 739         |
+| duckdb raw      | 13,381     | 675         | 150           | n/a ²       |
 
 ² chdb binary excludes the DuckDB driver (`//go:build !chdb`).
+³ naive insert mode; duckdb-appender reaches 1,015 docs/s, parquet BulkLoad **1,129 docs/s**.
 
 #### Elapsed time
 
-| source \ engine | devnull    | sqlite FTS5   | duckdb BM25    | chdb FTS      |
+| source \ engine | devnull    | sqlite FTS5   | duckdb BM25 ³  | chdb FTS      |
 |-----------------|------------|---------------|----------------|---------------|
 | files           | 6.9 s      | 5m 22.1 s     | 19m 43.8 s     | **3m 40.1 s** |
 | bin             | **2.0 s**  | 4m 59.7 s     | 18m 27.6 s     | 3m 51.4 s     |
@@ -352,6 +355,49 @@ gets a pre-zeroed OS page (virtual memory CoW) — the only write is
 
 ---
 
+## DuckDB Insert Mode Comparison (server2)
+
+DuckDB's default row-insertion path (one `INSERT OR IGNORE` per document
+in a batch transaction) is dominated by WAL fsync latency on HDD.  Four
+insert strategies and a native parquet bulk-load path were benchmarked.
+
+### Results (173,720 docs, server2 HDD)
+
+| engine           | source  | insert    | fts build | total      | docs/s    | speedup |
+|-----------------|---------|-----------|-----------|------------|-----------|---------|
+| duckdb (naive)   | bin     | 17m 8.9s  | 2m 12.8s  | 19m 21.9s  | 150       | 1×      |
+| duckdb-prepared  | bin     | ~12m      | ~2.5m     | 14m 39.6s  | 198       | 1.3×    |
+| duckdb-multirow  | bin     | 35.5s     | 2m 31.1s  | 3m 7.2s    | 928       | 6.2×    |
+| duckdb-appender  | bin     | 3.1s      | 2m 37.1s  | 2m 51.2s   | 1,015     | 6.8×    |
+| **duckdb (bulk)**| parquet | **6.9s**  | 2m 26.8s  | **2m 33.9s** | **1,129** | **7.5×** |
+
+### Insert strategies
+
+| mode      | mechanism                                           | WAL overhead       |
+|-----------|-----------------------------------------------------|--------------------|
+| naive     | `INSERT OR IGNORE` × 1 per doc in transaction       | per-tx fsync       |
+| prepared  | prepared statement reused per batch                 | per-tx fsync       |
+| multirow  | `INSERT … VALUES (?,?),…` per batch                 | per-batch fsync    |
+| appender  | DuckDB Appender API (no SQL parsing)                | buffered until `Close()` |
+| bulk      | `CREATE TABLE AS SELECT … FROM read_parquet(path)` | no row path at all |
+
+### Key observations
+
+- **FTS build dominates**: `PRAGMA create_fts_index` takes ~2.5 min regardless
+  of insert strategy.  All optimisation gains are in reducing insert time.
+- **Prepared mode**: minimal benefit — both naive and prepared pay a per-tx WAL
+  fsync; prepared only eliminates SQL string building (~1.3× speedup).
+- **Multirow**: single `INSERT … VALUES (N rows)` per batch eliminates
+  per-row round-trips; 29× faster inserts vs naive, 6.2× end-to-end.
+- **Appender**: bypasses SQL parser; buffers in memory; no WAL fsync until
+  `Close()`.  Fastest streaming insert (5.5× faster than multirow inserts).
+- **Parquet BulkLoad** (`read_parquet()`): `CREATE TABLE AS SELECT` skips the
+  PRIMARY KEY uniqueness check, uses DuckDB's vectorised columnar reader, and
+  processes all rows in one pass.  **Fastest overall** — insert 148× faster
+  vs naive; 7.5× end-to-end improvement.
+
+---
+
 ## Analysis
 
 ### Pack format is irrelevant for real FTS engines
@@ -364,27 +410,40 @@ on macOS NVMe — under 15% of overall build time.
 On HDD (server2) the effect is similar: deserialization is ~10 s faster
 via packed sources, but FTS indexing dominates at 4–20 minutes.
 
-Source ordering on server2:
+Source ordering on server2 (naive DuckDB):
 - `parquet` marginally fastest for sqlite (684 docs/s, 4m14s).
-- `bin` fastest for duckdb (157 docs/s, 18m28s).
+- `bin` fastest for duckdb naive (157 docs/s, 18m28s); with appender/parquet
+  BulkLoad, duckdb reaches **1,015–1,129 docs/s** (7.5× improvement).
 - For chdb, `files` source wins slightly (789 docs/s, 3m40s) — gzip
   decompression is compute-bound and server2 has spare CPU while ClickHouse
   inserts serialize through a single session.
 
-### chdb is the fastest FTS engine for bulk import
+### DuckDB insert mode is the dominant performance variable
+
+The tables above (§Full Import Matrix) show duckdb with naive inserts.
+With the appender mode or parquet BulkLoad path, duckdb reaches parity
+with chdb (~1,015–1,129 vs ~751–789 docs/s on server2) while maintaining
+full BM25 search quality.  The FTS build (~2.5 min) is now the hard floor
+regardless of insert method — further improvement requires a faster FTS
+index builder.
+
+### chdb is the fastest FTS engine for bulk import (naive inserts baseline)
 
 chdb (ClickHouse embedded via chdb-go) indexes at **3,992 docs/s** from
 `bin` source on macOS — 23% faster than sqlite FTS5 (3,254 docs/s) and
-2.9× faster than duckdb BM25 (1,386 docs/s).
+2.9× faster than duckdb BM25 naive (1,386 docs/s).
 
-On server2, chdb remains the **fastest FTS engine**: ~750–790 docs/s vs
-~540–684 (sqlite) and ~147–157 (duckdb).  chdb also produces the smallest
-index (~865 MB vs 1.1 GB sqlite, 1.5 GB duckdb).
+On server2 with naive inserts, chdb remains faster than duckdb (~750–790
+vs ~147–157 docs/s).  With duckdb-appender or parquet BulkLoad, duckdb
+**surpasses chdb** on server2 (1,015–1,129 vs 751–789 docs/s).  chdb also
+produces the smallest index (~865 MB vs 1.1 GB sqlite, 1.5 GB duckdb).
 
 chdb is 5–10× slower on server2 HDD vs macOS NVMe for the same corpus
 (750 vs 3992 docs/s from bin), whereas sqlite degrades ~4–5× (580 vs 3254).
-DuckDB degrades the most (~9×: 157 vs 1451 docs/s), suggesting BM25 posting
-list construction is particularly IO-sensitive.
+DuckDB naive degrades the most (~9×: 157 vs 1451 docs/s), suggesting BM25
+posting list construction is particularly IO-sensitive.  With appender/bulk,
+DuckDB HDD degradation is reduced to ~4× (1015 vs ~4000 docs/s estimated
+on NVMe) since the bottleneck shifts to the FTS build, not WAL fsyncs.
 
 The bulk-insert path uses `INSERT INTO documents FORMAT JSONEachRow` with
 `json.Encoder` generating NDJSON embedded directly in the query string.
