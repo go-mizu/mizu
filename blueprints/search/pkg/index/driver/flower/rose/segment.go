@@ -175,7 +175,7 @@ func flushSegment(path string, mem map[string][]memPosting, docCount, avgDocLen 
 	}
 
 	// -----------------------------------------------------------------------
-	// 3. Compute postingBase: fixed header (17 bytes) + dict entries.
+	// 3. Compute postingBase: fixed header (21 bytes) + dict entries.
 	// -----------------------------------------------------------------------
 	// Header: 4 (magic) + 1 (version) + 4 (docCount) + 4 (avgDocLen) +
 	//         4 (dictSize) + 4 (postingBase field) = 21 bytes.
@@ -355,6 +355,9 @@ func openSegment(path string) ([]termEntry, []byte, uint32, uint32, error) {
 		if err != nil {
 			return nil, nil, 0, 0, fmt.Errorf("openSegment %q: term %d termLen: %w", path, i, err)
 		}
+		if termLen > 1024 {
+			return nil, nil, 0, 0, fmt.Errorf("openSegment %q: term length %d exceeds max (1024)", path, termLen)
+		}
 		if err := need(int(termLen)); err != nil {
 			return nil, nil, 0, 0, fmt.Errorf("openSegment %q: term %d bytes: %w", path, i, err)
 		}
@@ -439,31 +442,21 @@ func readPostings(postingData []byte, te termEntry) ([]uint32, []uint8, error) {
 		pos++
 
 		if n == 0 {
+			// A zero-count block should never appear on disk (flushSegment always writes n≥1 blocks); treat as corrupt.
 			return nil, nil, fmt.Errorf("readPostings: block %d: n=0 is invalid", b)
 		}
 
 		// Decode VByte deltas + impact bytes.
-		// We need to know how many bytes the VByte section occupies.
 		// unpackBlock reads from data starting at pos=0, so we pass a sub-slice.
-		blockDocIDs, blockImpacts, err := unpackBlock(postingData[pos:], blockBase, n)
+		// bytesConsumed tells us exactly how many bytes were read, eliminating any
+		// need to re-walk the VByte bytes a second time.
+		blockDocIDs, blockImpacts, bytesConsumed, err := unpackBlock(postingData[pos:], blockBase, n)
 		if err != nil {
 			return nil, nil, fmt.Errorf("readPostings: block %d: %w", b, err)
 		}
 
-		// Advance pos past the block data.
-		// VByte section length: we need to re-encode to find the byte count,
-		// or we can decode manually to track position.
-		// Simplest: count VByte bytes by decoding individually.
-		deltaEnd := pos
-		for i := 0; i < n; i++ {
-			_, newDeltaEnd, err := vbyteDecode(postingData, deltaEnd)
-			if err != nil {
-				return nil, nil, fmt.Errorf("readPostings: block %d delta %d advance: %w", b, i, err)
-			}
-			deltaEnd = newDeltaEnd
-		}
-		// After VByte section, n impact bytes follow.
-		pos = deltaEnd + n
+		// Advance pos past the block data using bytesConsumed directly.
+		pos += bytesConsumed
 
 		allDocIDs = append(allDocIDs, blockDocIDs...)
 		allImpacts = append(allImpacts, blockImpacts...)

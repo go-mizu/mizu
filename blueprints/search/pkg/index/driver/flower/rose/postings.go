@@ -99,11 +99,12 @@ func packBlock(docIDs []uint32, impacts []uint8, blockBase uint32) ([]byte, uint
 }
 
 // unpackBlock decodes n postings from data, using blockBase as the delta base.
-// Returns (docIDs, impacts, nil) or (nil, nil, error) on malformed input.
-// Returns (nil, nil, nil) gracefully when n == 0.
-func unpackBlock(data []byte, blockBase uint32, n int) ([]uint32, []uint8, error) {
+// Returns (docIDs, impacts, bytesConsumed, nil) or (nil, nil, 0, error) on malformed input.
+// Returns (nil, nil, 0, nil) gracefully when n == 0.
+// bytesConsumed is the number of bytes read from data (VByte deltas + n impact bytes).
+func unpackBlock(data []byte, blockBase uint32, n int) ([]uint32, []uint8, int, error) {
 	if n == 0 {
-		return nil, nil, nil
+		return nil, nil, 0, nil
 	}
 
 	docIDs := make([]uint32, n)
@@ -111,7 +112,7 @@ func unpackBlock(data []byte, blockBase uint32, n int) ([]uint32, []uint8, error
 	for i := 0; i < n; i++ {
 		delta, newPos, err := vbyteDecode(data, pos)
 		if err != nil {
-			return nil, nil, fmt.Errorf("unpackBlock: delta %d: %w", i, err)
+			return nil, nil, 0, fmt.Errorf("unpackBlock: delta %d: %w", i, err)
 		}
 		docIDs[i] = blockBase + delta
 		pos = newPos
@@ -119,10 +120,10 @@ func unpackBlock(data []byte, blockBase uint32, n int) ([]uint32, []uint8, error
 
 	// Impact bytes follow immediately after the VByte section.
 	if pos+n > len(data) {
-		return nil, nil, fmt.Errorf("unpackBlock: buffer too short for %d impact bytes (have %d)", n, len(data)-pos)
+		return nil, nil, 0, fmt.Errorf("unpackBlock: buffer too short for %d impact bytes (have %d)", n, len(data)-pos)
 	}
 	impacts := make([]uint8, n)
 	copy(impacts, data[pos:pos+n])
 
-	return docIDs, impacts, nil
+	return docIDs, impacts, pos + n, nil
 }

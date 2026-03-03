@@ -71,7 +71,7 @@ func TestBlock_RoundTrip(t *testing.T) {
 	if bmi != 255 {
 		t.Errorf("BlockMaxImpact: got %d, want 255", bmi)
 	}
-	gotIDs, gotImp, err := unpackBlock(data, 0, len(docIDs))
+	gotIDs, gotImp, _, err := unpackBlock(data, 0, len(docIDs))
 	if err != nil {
 		t.Fatalf("unpackBlock: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestBlock_Full128(t *testing.T) {
 		imp[i] = uint8(i + 1)
 	}
 	data, _ := packBlock(ids, imp, 0)
-	gotIDs, gotImp, err := unpackBlock(data, 0, 128)
+	gotIDs, gotImp, _, err := unpackBlock(data, 0, 128)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
@@ -117,7 +117,7 @@ func TestBlock_WithNonZeroBase(t *testing.T) {
 	// blockBase=100, docIDs=[110, 150, 200] → deltas=[10, 40, 50]
 	docIDs := []uint32{110, 150, 200}
 	data, _ := packBlock(docIDs, []uint8{1, 2, 3}, 100)
-	gotIDs, _, err := unpackBlock(data, 100, 3)
+	gotIDs, _, _, err := unpackBlock(data, 100, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,9 +129,9 @@ func TestBlock_WithNonZeroBase(t *testing.T) {
 }
 
 func TestBlock_UnpackZero(t *testing.T) {
-	ids, imp, err := unpackBlock(nil, 0, 0)
-	if err != nil || ids != nil || imp != nil {
-		t.Errorf("unpackBlock n=0: got ids=%v imp=%v err=%v, want nil nil nil", ids, imp, err)
+	ids, imp, consumed, err := unpackBlock(nil, 0, 0)
+	if err != nil || ids != nil || imp != nil || consumed != 0 {
+		t.Errorf("unpackBlock n=0: got ids=%v imp=%v consumed=%d err=%v, want nil nil 0 nil", ids, imp, consumed, err)
 	}
 }
 
@@ -153,7 +153,7 @@ func TestBlock_TruncatedData(t *testing.T) {
 	impacts := []uint8{1, 2, 3}
 	data, _ := packBlock(docIDs, impacts, 0)
 	// Truncate data so that it cannot hold all deltas.
-	_, _, err := unpackBlock(data[:1], 0, len(docIDs))
+	_, _, _, err := unpackBlock(data[:1], 0, len(docIDs))
 	if err == nil {
 		t.Error("expected error on truncated block data, got nil")
 	}
