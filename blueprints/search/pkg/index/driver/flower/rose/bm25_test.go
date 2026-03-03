@@ -118,3 +118,19 @@ func TestQuantise_NeverZero(t *testing.T) {
 		}
 	}
 }
+
+func TestBM25Plus_ZeroAvgdl(t *testing.T) {
+	// avgdl=0 should not panic (div-by-zero guard) and return a valid score
+	score := bm25Plus(1, 10, 100, 0, 10000)
+	if score <= 0 {
+		t.Errorf("expected positive score with avgdl=0 guard, got %f", score)
+	}
+}
+
+func TestBM25Plus_DFExceedsN(t *testing.T) {
+	// df > N is an invariant violation, but should not produce negative scores
+	score := bm25Plus(1, 20000, 400, 400, 10000)
+	if score < 0 {
+		t.Errorf("df>N should not produce negative score, got %f", score)
+	}
+}

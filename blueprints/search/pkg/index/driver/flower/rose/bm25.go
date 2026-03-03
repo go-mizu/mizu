@@ -70,7 +70,11 @@ func bm25Plus(tf, df, dl, avgdl, N uint32) float64 {
 	tfNorm := (bm25K1 + 1) * tfF / norm
 
 	// BM25+ = IDF * TF_norm + delta
-	return idf(df, N)*tfNorm + bm25Delta
+	idfScore := idf(df, N)
+	if idfScore < 0 {
+		idfScore = 0
+	}
+	return idfScore*tfNorm + bm25Delta
 }
 
 // quantise converts a slice of raw BM25+ float64 scores into uint8 impact
@@ -80,8 +84,9 @@ func bm25Plus(tf, df, dl, avgdl, N uint32) float64 {
 //
 // The maximum score maps to 255.  Any score <= 0 (including exact zero) maps
 // to 1, satisfying the BM25+ invariant that every matching term contributes a
-// positive impact.  When all scores are equal (including the all-zero case),
-// all outputs are 255.
+// positive impact.  When all scores are equal and positive, all outputs are 255.
+// When all inputs are zero (or negative), maxScore is clamped to 1 and every
+// round(0/1*255)=0 is then clamped to 1, so all outputs are 1.
 //
 // Returns nil for a nil input and an empty slice for an empty input.
 func quantise(scores []float64) []uint8 {
@@ -97,7 +102,8 @@ func quantise(scores []float64) []uint8 {
 		}
 	}
 
-	// Guard: if maxScore is 0 (or negative), treat as 1 so all values map to 255.
+	// Guard: if maxScore is 0 (or negative), treat as 1 so round(0/1*255)=0 is
+	// then clamped to 1 — all outputs become 1 (not 255).
 	if maxScore <= 0 {
 		maxScore = 1
 	}
