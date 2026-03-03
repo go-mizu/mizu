@@ -1,10 +1,15 @@
 package rose
 
 import (
+	"sync"
 	"unicode"
 
 	"github.com/kljensen/snowball/english"
 )
+
+// stemCache maps lowercase token → stemmed form ("" = rejected by length/stopword filter).
+// english.Stem is deterministic, so caching across calls is always correct.
+var stemCache sync.Map
 
 // ---------------------------------------------------------------------------
 // Stopword list
@@ -57,6 +62,7 @@ const (
 //  4. Snowball English stem.
 //
 // Returns "" when the token should be discarded.
+// Used by snippetFor(); analyze() uses an inlined fast path instead.
 func processTok(tok string) string {
 	// Step 1: lowercase
 	runes := []rune(tok)
@@ -78,6 +84,22 @@ func processTok(tok string) string {
 
 	// Step 4: Snowball English stem (false = don't lowercase again)
 	return english.Stem(lower, false)
+}
+
+// processLower applies steps 3–4 of the normalisation pipeline to an already-
+// lowercased token of known valid length (minTokLen ≤ len(lower) ≤ maxTokLen).
+// Checks stemCache before calling english.Stem; caches the result on miss.
+// Returns "" when the token is a stopword or otherwise rejected.
+func processLower(lower string) string {
+	if v, ok := stemCache.Load(lower); ok {
+		return v.(string)
+	}
+	var result string
+	if _, ok := stopwords[lower]; !ok {
+		result = english.Stem(lower, false)
+	}
+	stemCache.Store(lower, result)
+	return result
 }
 
 // ---------------------------------------------------------------------------
