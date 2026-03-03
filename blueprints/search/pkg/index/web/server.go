@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
@@ -33,6 +34,9 @@ type Server struct {
 	Addr       string // external engine address
 	FTSBase    string // ~/data/common-crawl/{crawlID}/fts/{engine}
 	MDBase     string // ~/data/common-crawl/{crawlID}/markdown
+	CrawlDir   string // ~/data/common-crawl/{crawlID} — set by NewDashboard
+	Hub        *WSHub
+	Jobs       *JobManager
 
 	md goldmark.Markdown
 }
@@ -52,6 +56,17 @@ func New(engineName, crawlID, addr, baseDir string) *Server {
 	}
 }
 
+// NewDashboard creates a Server with dashboard capabilities (WebSocket hub,
+// job manager, and data directory scanning). The baseDir should be the crawl
+// data directory (e.g. ~/data/common-crawl/{crawlID}).
+func NewDashboard(engineName, crawlID, addr, baseDir string) *Server {
+	s := New(engineName, crawlID, addr, baseDir)
+	s.CrawlDir = baseDir
+	s.Hub = NewWSHub()
+	s.Jobs = NewJobManager(s.Hub, baseDir, crawlID)
+	return s
+}
+
 // Handler returns an http.Handler with all routes registered.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -60,6 +75,21 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/doc/{shard}/{docid...}", s.handleDoc)
 	mux.HandleFunc("GET /api/browse", s.handleBrowse)
 	mux.HandleFunc("GET /", s.handleIndex)
+
+	// Dashboard routes — only registered when Hub is non-nil (NewDashboard mode).
+	if s.Hub != nil {
+		mux.HandleFunc("GET /api/overview", s.handleOverview)
+		mux.HandleFunc("GET /api/crawls", s.handleCrawls)
+		mux.HandleFunc("GET /api/crawl/{id}/warcs", s.handleCrawlWarcs)
+		mux.HandleFunc("GET /api/crawl/{id}/data", s.handleCrawlData)
+		mux.HandleFunc("GET /api/engines", s.handleEngines)
+		mux.HandleFunc("GET /api/jobs", s.handleListJobs)
+		mux.HandleFunc("GET /api/jobs/{id}", s.handleGetJob)
+		mux.HandleFunc("POST /api/jobs", s.handleCreateJob)
+		mux.HandleFunc("DELETE /api/jobs/{id}", s.handleCancelJob)
+		mux.HandleFunc("GET /ws", s.Hub.HandleWS)
+	}
+
 	return mux
 }
 
@@ -340,6 +370,136 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, 200, map[string]any{"files": files, "shard": shard, "total": len(files)})
+}
+
+// ── Dashboard Handlers ──────────────────────────────────────────────────
+
+func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
+	ds := ScanDataDir(s.CrawlDir)
+	ds.CrawlID = s.CrawlID
+	writeJSON(w, 200, ds)
+}
+
+func (s *Server) handleCrawls(w http.ResponseWriter, r *http.Request) {
+	client := cc.NewClient("", 4)
+	crawls, err := client.ListCrawls(r.Context())
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"crawls": crawls})
+}
+
+func (s *Server) handleCrawlWarcs(w http.ResponseWriter, r *http.Request) {
+	crawlID := r.PathValue("id")
+	if crawlID == "" {
+		writeJSON(w, 400, map[string]string{"error": "missing crawl id"})
+		return
+	}
+
+	client := cc.NewClient("", 4)
+	paths, err := client.DownloadManifest(r.Context(), crawlID, "warc.paths.gz")
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+
+	// Check which WARCs are downloaded locally.
+	warcDir := filepath.Join(s.CrawlDir, "warc")
+
+	type warcInfo struct {
+		Index      int    `json:"index"`
+		RemotePath string `json:"remote_path"`
+		Filename   string `json:"filename"`
+		Downloaded bool   `json:"downloaded"`
+		LocalSize  int64  `json:"local_size,omitempty"`
+	}
+
+	warcs := make([]warcInfo, 0, len(paths))
+	for i, p := range paths {
+		fname := filepath.Base(p)
+		localPath := filepath.Join(warcDir, fname)
+		info := warcInfo{
+			Index:      i,
+			RemotePath: p,
+			Filename:   fname,
+		}
+		if fi, err := os.Stat(localPath); err == nil {
+			info.Downloaded = true
+			info.LocalSize = fi.Size()
+		}
+		warcs = append(warcs, info)
+	}
+
+	writeJSON(w, 200, map[string]any{
+		"crawl_id": crawlID,
+		"total":    len(paths),
+		"warcs":    warcs,
+	})
+}
+
+func (s *Server) handleCrawlData(w http.ResponseWriter, r *http.Request) {
+	crawlID := r.PathValue("id")
+	if crawlID == "" {
+		writeJSON(w, 400, map[string]string{"error": "missing crawl id"})
+		return
+	}
+
+	// Resolve crawl dir: if the requested crawl matches ours, use s.CrawlDir;
+	// otherwise compute it from the parent directory.
+	crawlDir := s.CrawlDir
+	if crawlID != s.CrawlID {
+		crawlDir = filepath.Join(filepath.Dir(s.CrawlDir), crawlID)
+	}
+
+	ds := ScanDataDir(crawlDir)
+	ds.CrawlID = crawlID
+	writeJSON(w, 200, ds)
+}
+
+func (s *Server) handleEngines(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, map[string]any{"engines": index.List()})
+}
+
+func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, map[string]any{"jobs": s.Jobs.List()})
+}
+
+func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	job := s.Jobs.Get(id)
+	if job == nil {
+		writeJSON(w, 404, map[string]string{"error": "job not found"})
+		return
+	}
+	writeJSON(w, 200, job)
+}
+
+func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
+	var cfg JobConfig
+	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "invalid JSON: " + err.Error()})
+		return
+	}
+	if cfg.Type == "" {
+		writeJSON(w, 400, map[string]string{"error": "missing type field"})
+		return
+	}
+
+	job := s.Jobs.Create(cfg)
+	s.Jobs.RunJob(job)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	json.NewEncoder(w).Encode(job)
+}
+
+func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if ok := s.Jobs.Cancel(id); !ok {
+		writeJSON(w, 404, map[string]string{"error": "job not found"})
+		return
+	}
+	writeJSON(w, 200, map[string]string{"status": "cancelled"})
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
