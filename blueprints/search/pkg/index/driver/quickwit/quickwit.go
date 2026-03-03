@@ -139,10 +139,9 @@ func (e *Engine) Search(ctx context.Context, q index.Query) (index.Results, erro
 		limit = 10
 	}
 	payload := map[string]any{
-		"query":          q.Text,
-		"max_hits":       limit,
-		"start_offset":   q.Offset,
-		"snippet_fields": []string{"text"},
+		"query":        q.Text,
+		"max_hits":     limit,
+		"start_offset": q.Offset,
 	}
 	body, _ := json.Marshal(payload)
 	url := fmt.Sprintf("%s/api/v1/%s/search", e.base, indexID)

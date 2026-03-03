@@ -1,4 +1,4 @@
-# Meilisearch v1.x — Full-text search engine
+# Meilisearch v1.37 — Full-text search engine
 # Usage:
 #   FTS_DATA_DIR=$HOME/data/fts docker compose -f docker/meilisearch/docker-compose.yml up -d
 #   search cc fts index --engine meilisearch
@@ -6,7 +6,7 @@
 
 services:
   meilisearch:
-    image: getmeili/meilisearch:v1.13
+    image: getmeili/meilisearch:v1.37
     container_name: fts-meilisearch
     ports:
       - "7700:7700"
