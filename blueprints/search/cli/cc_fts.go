@@ -23,6 +23,7 @@ import (
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/bleve"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/clickhouse"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/elasticsearch"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/flower/rose"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/meilisearch"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/opensearch"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/postgres"
