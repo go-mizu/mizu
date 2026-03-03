@@ -251,14 +251,14 @@ func runWARCMDParallelFiles(ctx context.Context, cfg warcmd.Config, inputFiles [
 			if result != nil {
 				totalExtract.Add(result.Extract.Files)
 				totalConvert.Add(result.Convert.Files)
-				totalCompress.Add(result.Compress.Files)
+				totalCompress.Add(result.Convert.Files)
 				totalErrors.Add(result.Extract.Errors)
 				totalRead.Add(result.Extract.ReadBytes)
-				totalWrite.Add(result.Compress.WriteBytes)
-				fmt.Printf("  [%d/%d] %s  extract=%-6s  compress=%-6s  %s\n",
+				totalWrite.Add(result.Convert.WriteBytes)
+				fmt.Printf("  [%d/%d] %s  extract=%-6s  convert=%-6s  %s\n",
 					i+1, len(inputFiles), fname,
 					ccFmtInt64(result.Extract.Files),
-					ccFmtInt64(result.Compress.Files),
+					ccFmtInt64(result.Convert.Files),
 					result.Duration.Round(time.Millisecond))
 			}
 			if err != nil {
@@ -427,8 +427,8 @@ func runWARCMDInMemory(ctx context.Context, cfg warcmd.Config, inputFiles []stri
 	fmt.Printf("\n  %s in-memory pipeline done\n", successStyle.Render("✓"))
 	fmt.Printf("    Extracted  %s HTML records\n", infoStyle.Render(ccFmtInt64(result.Extract.Files)))
 	fmt.Printf("    Converted  %s to Markdown\n", infoStyle.Render(ccFmtInt64(result.Convert.Files)))
-	fmt.Printf("    Compressed %s → markdown/  (%s)\n",
-		infoStyle.Render(ccFmtInt64(result.Compress.Files)), formatBytes(disk3))
+	fmt.Printf("    Written    %s → markdown/  (%s)\n",
+		infoStyle.Render(ccFmtInt64(result.Convert.Files)), formatBytes(disk3))
 	if result.Extract.Errors > 0 {
 		fmt.Printf("    Errors     %s\n", warningStyle.Render(ccFmtInt64(result.Extract.Errors)))
 	}
@@ -436,15 +436,15 @@ func runWARCMDInMemory(ctx context.Context, cfg warcmd.Config, inputFiles []stri
 	readMBs := float64(0)
 	writeMBs := float64(0)
 	if totalDuration.Seconds() > 0 {
-		rate = float64(result.Compress.Files) / totalDuration.Seconds()
+		rate = float64(result.Convert.Files) / totalDuration.Seconds()
 		readMBs = float64(htmlBytes) / (1024 * 1024) / totalDuration.Seconds()
-		writeMBs = float64(result.Compress.WriteBytes) / (1024 * 1024) / totalDuration.Seconds()
+		writeMBs = float64(result.Convert.WriteBytes) / (1024 * 1024) / totalDuration.Seconds()
 	}
 	fmt.Printf("    Rate       %.0f docs/s  ·  %.1f MB/s read  ·  %.1f MB/s write\n",
 		rate, readMBs, writeMBs)
 	fmt.Printf("    Time       %s\n", totalDuration.Round(time.Millisecond))
 	fmt.Printf("    RAM        before %.0f MB → after %.0f MB  (peak %.0f MB)\n",
-		memBef, memAft, result.Compress.PeakMemMB)
+		memBef, memAft, result.Convert.PeakMemMB)
 	fmt.Println()
 
 	// Compression comparison

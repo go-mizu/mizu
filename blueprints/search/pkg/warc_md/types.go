@@ -17,11 +17,10 @@ type PhaseStats struct {
 	Duration   time.Duration
 }
 
-// PipelineResult holds stats for all three phases.
+// PipelineResult holds stats for the two pipeline phases.
 type PipelineResult struct {
 	Extract  *PhaseStats
 	Convert  *PhaseStats
-	Compress *PhaseStats
 	Duration time.Duration
 }
 
