@@ -60,3 +60,9 @@ func recordIDFromMarkdownPath(path string) string {
 	base = strings.TrimSuffix(base, ".md")
 	return base
 }
+
+// MarkdownWarcFilePath returns the full path for the final .md output
+// under the per-WARC directory (baseDir = MarkdownWarcDir result).
+func MarkdownWarcFilePath(baseDir, recordID string) string {
+	return filepath.Join(baseDir, RecordIDToRelPath(recordID)+".md")
+}
