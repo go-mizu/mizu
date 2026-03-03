@@ -516,7 +516,7 @@ Dataset: CC-MAIN-2026-08, 173,720 docs, `--source bin`, Apple M-series Mac (ARM6
 | tantivy (CGO) | 34.8 | 4,998 | 327 | 764 |
 | bleve | 75.9 | 2,288 | 3,690 | 3,584 |
 | duckdb | 100.8 | 1,724 | 323 | 1,536 |
-| **rose** | — | — | — | — |
+| **rose** | 98.5 | 1,764 | — | 191 |
 
 Target: >10,000 docs/s (4× bleve); disk ≤ 512 MB (2× tantivy).
 
@@ -530,7 +530,7 @@ Target: >10,000 docs/s (4× bleve); disk ≤ 512 MB (2× tantivy).
 | bleve | 31 | 52 | BM25, returns total hit count |
 | sqlite | 85 | 287 | FTS5 BM25 |
 | duckdb | 218 | 244 | tfidf; full-scan |
-| **rose** | — | — | BM25+, Block-Max WAND |
+| **rose** | 2 | 5 | BM25+, Block-Max WAND; 10K-doc synthetic corpus |
 
 Target: <10ms avg; <30ms P95 on the 10-query standard set.
 
