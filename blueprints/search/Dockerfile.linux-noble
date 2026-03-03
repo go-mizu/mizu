@@ -69,7 +69,7 @@ ARG GO_LDFLAGS=""
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=1 GOWORK=off GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -trimpath -ldflags "${GO_LDFLAGS} -linkmode external -extldflags '-static-libstdc++ -static-libgcc'" \
+    go build -trimpath -tags tantivy -ldflags "${GO_LDFLAGS} -linkmode external -extldflags '-static-libstdc++ -static-libgcc'" \
     -o /out/search-linux-noble ./cmd/search \
     && chmod +x /out/search-linux-noble
 
