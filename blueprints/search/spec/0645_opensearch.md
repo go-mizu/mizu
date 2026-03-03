@@ -147,8 +147,8 @@ search cc fts index --engine elasticsearch --addr http://localhost:9201 --source
 
 | Engine | Time (s) | Docs/s | Peak RSS (MB) | Disk (MB) |
 |--------|----------|--------|--------------|-----------|
-| opensearch | | | | |
-| elasticsearch | | | | |
+| opensearch | 159 | 1,091 | 470 | 1,843 |
+| elasticsearch | 198 | 879 | 487 | 975 |
 
 ### Search Benchmark
 
@@ -173,5 +173,5 @@ Queries:
 
 | Engine | Avg ms | P95 ms | Notes |
 |--------|--------|--------|-------|
-| opensearch | | | BM25, english analyzer |
-| elasticsearch | | | BM25, english analyzer |
+| opensearch | 242 | 319 | BM25, english analyzer; warm run |
+| elasticsearch | 223 | 231 | BM25, english analyzer; warm run |

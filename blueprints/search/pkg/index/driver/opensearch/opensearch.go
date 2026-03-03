@@ -60,10 +60,10 @@ func (e *Engine) Open(ctx context.Context, dir string) error {
 		return fmt.Errorf("opensearch create index: %w", err)
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body) //nolint:errcheck
 	// 200 = created, 400 = already exists — both are fine
 	if resp.StatusCode >= 500 {
-		return fmt.Errorf("opensearch create index HTTP %d", resp.StatusCode)
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("opensearch create index HTTP %d: %s", resp.StatusCode, b)
 	}
 	return nil
 }

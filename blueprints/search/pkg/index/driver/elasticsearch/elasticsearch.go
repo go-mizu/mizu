@@ -58,9 +58,9 @@ func (e *Engine) Open(ctx context.Context, dir string) error {
 		return fmt.Errorf("elasticsearch create index: %w", err)
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body) //nolint:errcheck
 	if resp.StatusCode >= 500 {
-		return fmt.Errorf("elasticsearch create index HTTP %d", resp.StatusCode)
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("elasticsearch create index HTTP %d: %s", resp.StatusCode, b)
 	}
 	return nil
 }
