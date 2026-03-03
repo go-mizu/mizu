@@ -5,7 +5,7 @@
 
 services:
   lnx:
-    image: ghcr.io/lnx-search/lnx:latest
+    image: chillfish8/lnx:latest
     container_name: fts-lnx
     ports:
       - "8000:8000"

@@ -1,11 +1,11 @@
-# Quickwit 0.9 — distributed search engine built on Tantivy
+# Quickwit — distributed search engine built on Tantivy
 # Usage:
 #   FTS_DATA_DIR=$HOME/data/fts docker compose -f docker/quickwit/docker-compose.yml up -d
 #   search cc fts index --engine quickwit
 
 services:
   quickwit:
-    image: quickwit/quickwit:0.9
+    image: quickwit/quickwit:latest
     container_name: fts-quickwit
     ports:
       - "7280:7280"   # REST API

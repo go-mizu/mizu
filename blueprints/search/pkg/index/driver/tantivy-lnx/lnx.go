@@ -42,6 +42,7 @@ func (e *Engine) Open(ctx context.Context, dir string) error {
 	e.dir = dir
 	e.base = e.EffectiveAddr(defaultAddr)
 
+	// lnx v0.9 index creation schema
 	schema := map[string]any{
 		"override_if_exists": false,
 		"index": map[string]any{
@@ -52,6 +53,7 @@ func (e *Engine) Open(ctx context.Context, dir string) error {
 			"max_concurrency":        10,
 			"search_fields":          []string{"text"},
 			"store_records":          true,
+			"storage_type":           "filesystem",
 			"fields": map[string]any{
 				"doc_id": map[string]any{"type": "text", "stored": true},
 				"text":   map[string]any{"type": "text", "stored": false},
@@ -59,7 +61,7 @@ func (e *Engine) Open(ctx context.Context, dir string) error {
 		},
 	}
 	body, _ := json.Marshal(schema)
-	req, _ := http.NewRequestWithContext(ctx, "POST", e.base+"/api/v1/indexes", bytes.NewReader(body))
+	req, _ := http.NewRequestWithContext(ctx, "POST", e.base+"/indexes", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := e.client.Do(req)
 	if err != nil {
@@ -77,21 +79,7 @@ func (e *Engine) Open(ctx context.Context, dir string) error {
 func (e *Engine) Close() error { return nil }
 
 func (e *Engine) Stats(ctx context.Context) (index.EngineStats, error) {
-	if e.client == nil {
-		return index.EngineStats{}, nil
-	}
-	url := fmt.Sprintf("%s/api/v1/indexes/%s/summary", e.base, lnxIndex)
-	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
-	resp, err := e.client.Do(req)
-	if err != nil {
-		return index.EngineStats{}, fmt.Errorf("lnx stats: %w", err)
-	}
-	defer resp.Body.Close()
-	var info struct {
-		NumDocs int64 `json:"num_docs"`
-	}
-	json.NewDecoder(resp.Body).Decode(&info) //nolint:errcheck
-	return index.EngineStats{DocCount: info.NumDocs}, nil
+	return index.EngineStats{}, nil // lnx v0.9 has no doc-count summary endpoint
 }
 
 func (e *Engine) Index(ctx context.Context, docs []index.Document) error {
@@ -106,7 +94,7 @@ func (e *Engine) Index(ctx context.Context, docs []index.Document) error {
 		payload[i] = map[string]string{"doc_id": d.DocID, "text": string(d.Text)}
 	}
 	body, _ := json.Marshal(payload)
-	url := fmt.Sprintf("%s/api/v1/indexes/%s/documents", e.base, lnxIndex)
+	url := fmt.Sprintf("%s/indexes/%s/documents", e.base, lnxIndex)
 	req, _ := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := e.client.Do(req)
@@ -122,7 +110,7 @@ func (e *Engine) Index(ctx context.Context, docs []index.Document) error {
 }
 
 func (e *Engine) commit(ctx context.Context) error {
-	url := fmt.Sprintf("%s/api/v1/indexes/%s/commit", e.base, lnxIndex)
+	url := fmt.Sprintf("%s/indexes/%s/commit", e.base, lnxIndex)
 	req, _ := http.NewRequestWithContext(ctx, "POST", url, nil)
 	resp, err := e.client.Do(req)
 	if err != nil {
@@ -144,13 +132,14 @@ func (e *Engine) Search(ctx context.Context, q index.Query) (index.Results, erro
 	if limit <= 0 {
 		limit = 10
 	}
+	// lnx v0.9 simple string query: {"query": "...", "limit": N, "offset": N}
 	payload := map[string]any{
 		"query":  q.Text,
 		"limit":  limit,
 		"offset": q.Offset,
 	}
 	body, _ := json.Marshal(payload)
-	url := fmt.Sprintf("%s/api/v1/indexes/%s/search", e.base, lnxIndex)
+	url := fmt.Sprintf("%s/indexes/%s/search", e.base, lnxIndex)
 	req, _ := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := e.client.Do(req)
@@ -163,43 +152,30 @@ func (e *Engine) Search(ctx context.Context, q index.Query) (index.Results, erro
 		return index.Results{}, fmt.Errorf("lnx search HTTP %d: %s", resp.StatusCode, b)
 	}
 
-	// lnx response shape: {"data": [...], "count": N} or {"hits": [...], "total": N}
-	// Try to handle both shapes
-	var raw map[string]json.RawMessage
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+	// lnx v0.9 response: {"status":200,"data":{"hits":[{"doc":{"doc_id":"..."},"score":N}],"count":N}}
+	var outer struct {
+		Data struct {
+			Hits []struct {
+				Doc   map[string]string `json:"doc"`
+				Score float64           `json:"score"`
+			} `json:"hits"`
+			Count int `json:"count"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&outer); err != nil {
 		return index.Results{}, fmt.Errorf("lnx decode: %w", err)
 	}
 
-	var results index.Results
-
-	// Try "data" key first (lnx v0.x)
-	if dataRaw, ok := raw["data"]; ok {
-		var hits []map[string]any
-		if err := json.Unmarshal(dataRaw, &hits); err == nil {
-			for _, hit := range hits {
-				h := index.Hit{Score: 1.0}
-				// lnx stores doc fields under "doc" key or directly
-				if doc, ok := hit["doc"].(map[string]any); ok {
-					h.DocID, _ = doc["doc_id"].(string)
-				} else {
-					h.DocID, _ = hit["doc_id"].(string)
-				}
-				if s, ok := hit["_score"].(float64); ok {
-					h.Score = s
-				}
-				results.Hits = append(results.Hits, h)
-			}
-		}
-	}
-
-	// Try to get count
-	if countRaw, ok := raw["count"]; ok {
-		json.Unmarshal(countRaw, &results.Total) //nolint:errcheck
+	results := index.Results{Total: outer.Data.Count}
+	for _, hit := range outer.Data.Hits {
+		results.Hits = append(results.Hits, index.Hit{
+			DocID: hit.Doc["doc_id"],
+			Score: hit.Score,
+		})
 	}
 	if results.Total == 0 {
 		results.Total = len(results.Hits)
 	}
-
 	return results, nil
 }
 
