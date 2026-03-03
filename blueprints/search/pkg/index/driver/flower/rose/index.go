@@ -46,6 +46,11 @@ type roseEngine struct {
 	// Segments (immutable, on-disk).
 	segments []segmentHandle
 
+	// nextSegID is a strictly monotone counter used to generate unique segment
+	// file names.  It is never reset, so merge operations cannot produce names
+	// that clash with previously deleted segment files.
+	nextSegID uint32
+
 	// Document store.
 	docs *docStore
 
@@ -101,6 +106,27 @@ func (s *roseEngine) Open(ctx context.Context, dir string) error {
 			avgDocLen: al,
 		})
 		s.totalDocs += dc
+	}
+
+	// Reconstruct totalLen from per-segment metadata.  This is an approximation
+	// (integer rounding during flush means avg*count != exact original sum), but
+	// it is far better than leaving totalLen=0 which would corrupt BM25+ scores
+	// after reopen.  No new file-format fields are required.
+	s.totalLen = 0
+	for _, seg := range s.segments {
+		s.totalLen += uint64(seg.avgDocLen) * uint64(seg.docCount)
+	}
+
+	// Initialise nextSegID to max(parsed IDs from existing .seg files) + 1 so
+	// that new segments always get names that are strictly greater than any
+	// previously existing name — even after a merge that deleted some of them.
+	s.nextSegID = 0
+	for _, path := range segs {
+		var id uint32
+		fmt.Sscanf(filepath.Base(path), "seg_%08d.seg", &id)
+		if id+1 > s.nextSegID {
+			s.nextSegID = id + 1
+		}
 	}
 
 	// Reconcile totalDocs with the docstore entry count.  The docstore is the
@@ -362,9 +388,13 @@ func (s *roseEngine) flushMem() error {
 }
 
 // nextSegPath returns the path for the next segment file.
+// The returned name is strictly monotone — it never reuses a previously
+// assigned name even after merges shrink s.segments.
 // Must be called with s.mu held.
 func (s *roseEngine) nextSegPath() string {
-	return filepath.Join(s.dir, fmt.Sprintf("seg_%08d.seg", len(s.segments)))
+	id := s.nextSegID
+	s.nextSegID++
+	return filepath.Join(s.dir, fmt.Sprintf("seg_%08d.seg", id))
 }
 
 // findTerm binary-searches termDict for term and returns (entry, true) if found.

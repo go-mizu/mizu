@@ -2,6 +2,7 @@ package rose
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -350,5 +351,115 @@ func TestRoseEngine_MultiSegmentSearch(t *testing.T) {
 	res2 := search(t, e, "skiing", 10)
 	if !containsID(res2, "s4") {
 		t.Errorf("DocID 's4' missing from skiing results: %v", hitIDs(res2))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Test 7: TestRoseEngine_MergeSegments
+// ---------------------------------------------------------------------------
+
+func TestRoseEngine_MergeSegments(t *testing.T) {
+	dir := t.TempDir()
+	eng := &roseEngine{}
+	if err := eng.Open(context.Background(), dir); err != nil {
+		t.Fatal(err)
+	}
+	defer eng.Close()
+
+	// Index a doc, flush — repeat 4 times to create 4 segments.
+	for i := 0; i < 4; i++ {
+		id := fmt.Sprintf("doc-%d", i)
+		body := fmt.Sprintf("merge test document number %d with tropical keyword", i)
+		if err := eng.Index(context.Background(), []index.Document{{DocID: id, Text: []byte(body)}}); err != nil {
+			t.Fatalf("Index %d: %v", i, err)
+		}
+		eng.mu.Lock()
+		if err := eng.flushMem(); err != nil {
+			eng.mu.Unlock()
+			t.Fatalf("flushMem %d: %v", i, err)
+		}
+		eng.mu.Unlock()
+	}
+
+	// Verify 4 segments exist.
+	eng.mu.RLock()
+	nseg := len(eng.segments)
+	eng.mu.RUnlock()
+	if nseg != 4 {
+		t.Fatalf("expected 4 segments before merge, got %d", nseg)
+	}
+
+	// Trigger merge.
+	eng.mu.Lock()
+	if err := eng.doMerge(); err != nil {
+		eng.mu.Unlock()
+		t.Fatalf("doMerge: %v", err)
+	}
+	eng.mu.Unlock()
+
+	// Verify merged to 1 segment.
+	eng.mu.RLock()
+	nseg = len(eng.segments)
+	eng.mu.RUnlock()
+	if nseg != 1 {
+		t.Fatalf("expected 1 segment after merge, got %d", nseg)
+	}
+
+	// Verify search still works across the merged segment.
+	res, err := eng.Search(context.Background(), index.Query{Text: "tropical", Limit: 10})
+	if err != nil {
+		t.Fatalf("Search after merge: %v", err)
+	}
+	if len(res.Hits) != 4 {
+		t.Errorf("expected 4 hits after merge, got %d", len(res.Hits))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Test 8: TestRoseEngine_ReopenIndexing
+// ---------------------------------------------------------------------------
+
+func TestRoseEngine_ReopenIndexing(t *testing.T) {
+	dir := t.TempDir()
+
+	// Session 1: index and flush.
+	eng1 := &roseEngine{}
+	if err := eng1.Open(context.Background(), dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := eng1.Index(context.Background(), []index.Document{{DocID: "a", Text: []byte("quantum computing technology")}}); err != nil {
+		t.Fatal(err)
+	}
+	eng1.mu.Lock()
+	_ = eng1.flushMem()
+	eng1.mu.Unlock()
+	eng1.Close()
+
+	// Session 2: reopen and index more docs.
+	eng2 := &roseEngine{}
+	if err := eng2.Open(context.Background(), dir); err != nil {
+		t.Fatal(err)
+	}
+	defer eng2.Close()
+	if err := eng2.Index(context.Background(), []index.Document{{DocID: "b", Text: []byte("quantum physics experiment")}}); err != nil {
+		t.Fatal(err)
+	}
+	eng2.mu.Lock()
+	_ = eng2.flushMem()
+	eng2.mu.Unlock()
+
+	// Search should find both docs.
+	hits, err := eng2.Search(context.Background(), index.Query{Text: "quantum", Limit: 10})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(hits.Hits) != 2 {
+		t.Errorf("expected 2 hits for 'quantum', got %d: %v", len(hits.Hits), hitIDs(hits))
+	}
+	// Verify scores are non-zero.
+	for _, h := range hits.Hits {
+		if h.Score <= 0 {
+			t.Errorf("hit %s has non-positive score %f", h.DocID, h.Score)
+		}
 	}
 }
