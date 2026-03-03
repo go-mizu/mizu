@@ -105,7 +105,7 @@ func (e *Engine) Index(ctx context.Context, docs []index.Document) error {
 	_, err = conn.Exec(ctx, `CREATE TEMP TABLE IF NOT EXISTS fts_docs_tmp (
 		doc_id TEXT,
 		text   TEXT
-	) ON COMMIT DELETE ROWS`)
+	)`)
 	if err != nil {
 		return fmt.Errorf("postgres: create temp table: %w", err)
 	}
