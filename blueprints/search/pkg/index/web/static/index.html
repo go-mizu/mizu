@@ -115,6 +115,12 @@
 
 <script>
 // ===================================================================
+// Mode: injected by server — "dashboard" or "search"
+// ===================================================================
+const MODE = "__SERVER_MODE__";
+const isDashboard = MODE === 'dashboard';
+
+// ===================================================================
 // State
 // ===================================================================
 const state = {
@@ -234,7 +240,6 @@ class WSClient {
 }
 
 const wsClient = new WSClient();
-wsClient.connect();
 
 // ===================================================================
 // Router
@@ -251,8 +256,8 @@ function route() {
 
   if (path === '/' || path === '') {
     showHeaderSearch(false);
-    renderOverview();
-  } else if (path === '/pipeline') {
+    if (isDashboard) { renderOverview(); } else { renderSearchHome(); }
+  } else if (path === '/pipeline' && isDashboard) {
     showHeaderSearch(false);
     renderPipeline();
   } else if (path === '/search') {
@@ -274,21 +279,22 @@ function route() {
     const docid = parts.slice(3).join('/');
     showHeaderSearch(true, state.query);
     renderDoc(shard, docid);
-  } else if (path === '/crawls') {
+  } else if (path === '/crawls' && isDashboard) {
     showHeaderSearch(false);
     renderCrawls();
   } else {
     showHeaderSearch(false);
-    renderOverview();
+    if (isDashboard) { renderOverview(); } else { renderSearchHome(); }
   }
 }
 
 function updateActiveTab(path) {
-  let activeTab = 'overview';
+  let activeTab = isDashboard ? 'overview' : 'search';
   if (path === '/pipeline') activeTab = 'pipeline';
-  else if (path === '/search' || path.startsWith('/doc/')) activeTab = 'search';
+  else if (path === '/search' || path === '/' && !isDashboard || path.startsWith('/doc/')) activeTab = 'search';
   else if (path.startsWith('/browse')) activeTab = 'browse';
   else if (path === '/crawls') activeTab = 'crawls';
+  else if (path === '/' && isDashboard) activeTab = 'overview';
 
   document.querySelectorAll('#main-nav a[data-tab]').forEach(a => {
     if (a.dataset.tab === activeTab) {
@@ -1258,12 +1264,14 @@ document.addEventListener('keydown', (e) => {
   // Escape — blur active input
   if (e.key === 'Escape') document.activeElement.blur();
 
-  // Number keys 1-5 — switch tabs (when not in input)
+  // Number keys — switch tabs (when not in input)
   if (!isInput && e.key >= '1' && e.key <= '5' && !e.metaKey && !e.ctrlKey && !e.altKey) {
-    e.preventDefault();
-    const tabs = ['/', '/pipeline', '/search', '/browse', '/crawls'];
+    const tabs = isDashboard
+      ? ['/', '/pipeline', '/search', '/browse', '/crawls']
+      : ['/search', '/browse'];
     const idx = parseInt(e.key) - 1;
     if (idx >= 0 && idx < tabs.length) {
+      e.preventDefault();
       navigateTo(tabs[idx]);
     }
   }
@@ -1273,6 +1281,21 @@ document.addEventListener('keydown', (e) => {
 // Init
 // ===================================================================
 applyTheme();
+
+// In search-only mode: hide dashboard tabs, adjust header title, narrow layout.
+if (!isDashboard) {
+  document.querySelectorAll('#main-nav a[data-tab]').forEach(a => {
+    if (['overview', 'pipeline', 'crawls'].includes(a.dataset.tab)) a.style.display = 'none';
+  });
+  const logo = document.querySelector('header a[href="#/"]');
+  if (logo) logo.textContent = 'FTS';
+  const main = document.getElementById('main');
+  if (main) { main.classList.remove('max-w-5xl'); main.classList.add('max-w-3xl'); }
+}
+
+// WebSocket only in dashboard mode.
+if (isDashboard) { wsClient.connect(); }
+
 window.addEventListener('hashchange', route);
 route();
 </script>
