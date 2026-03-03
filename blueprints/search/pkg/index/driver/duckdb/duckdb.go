@@ -222,6 +222,42 @@ func (e *Engine) indexAppender(ctx context.Context, docs []index.Document) error
 	return nil
 }
 
+// ── Bulk load ─────────────────────────────────────────────────────────────
+
+// BulkLoad implements index.BulkLoader for the "parquet" format.
+// It drops and recreates the documents table using DuckDB's native
+// read_parquet() — a vectorized columnar path that bypasses all Go-level
+// row iteration and SQL parsing overhead.
+// Returns the number of rows loaded.
+func (e *Engine) BulkLoad(ctx context.Context, format, path string) (int64, error) {
+	if format != "parquet" {
+		return 0, fmt.Errorf("duckdb BulkLoad: unsupported format %q (only parquet)", format)
+	}
+
+	// Escape single quotes in path (defensive; paths shouldn't have them).
+	safePath := strings.ReplaceAll(path, "'", "''")
+
+	t0 := time.Now()
+
+	// DROP + CREATE TABLE AS SELECT is faster than INSERT INTO … SELECT because
+	// it skips the PRIMARY KEY uniqueness check on every row.
+	_, err := e.db.ExecContext(ctx, fmt.Sprintf(`
+		DROP TABLE IF EXISTS documents;
+		CREATE TABLE documents AS
+		    SELECT doc_id, text FROM read_parquet('%s')`, safePath))
+	if err != nil {
+		return 0, fmt.Errorf("duckdb bulk load parquet: %w", err)
+	}
+
+	e.insertTime = time.Since(t0)
+
+	var count int64
+	if err := e.db.QueryRowContext(ctx, "SELECT count(*) FROM documents").Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 // ── Search ────────────────────────────────────────────────────────────────
 
 func (e *Engine) Search(ctx context.Context, q index.Query) (index.Results, error) {

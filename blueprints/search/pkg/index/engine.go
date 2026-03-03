@@ -62,6 +62,15 @@ func List() []string {
 	return names
 }
 
+// BulkLoader is optionally implemented by engines that can ingest a pack file
+// natively — bypassing the Document streaming pipeline entirely.
+// The CLI checks for this interface before falling back to the row-streaming path.
+// format is the pack format name ("parquet"); path is the absolute file path.
+// Returns the number of docs loaded.
+type BulkLoader interface {
+	BulkLoad(ctx context.Context, format, path string) (int64, error)
+}
+
 // AddrSetter is implemented by external engines that connect to a remote service.
 // The CLI calls SetAddr before Open when --addr is provided.
 type AddrSetter interface {

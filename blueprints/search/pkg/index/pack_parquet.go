@@ -16,8 +16,16 @@ type packParquetDoc struct {
 	Text  string `parquet:"text"`
 }
 
+// ParquetRowGroupRows is the target number of rows per row group written by
+// PackParquet. Larger row groups improve DuckDB's parallel read_parquet()
+// performance (one thread per row group), while staying manageable for RAM.
+// 50 000 rows ≈ 3–4 row groups for our typical 150 000–200 000 doc datasets.
+const ParquetRowGroupRows = 50_000
+
 // PackParquet packs all markdown files from markdownDir into a Parquet file.
 // Schema: doc_id STRING, text STRING.
+// Writes ZSTD-compressed data with ParquetRowGroupRows rows per group so
+// DuckDB's read_parquet() can parallelize across row groups.
 func PackParquet(ctx context.Context, markdownDir, packPath string, workers, batchSize int, progress ProgressFunc) (*PipelineStats, error) {
 	if err := os.MkdirAll(filepath.Dir(packPath), 0o755); err != nil {
 		return nil, err
@@ -27,7 +35,11 @@ func PackParquet(ctx context.Context, markdownDir, packPath string, workers, bat
 		return nil, err
 	}
 
-	pw := parquet.NewGenericWriter[packParquetDoc](f)
+	pw := parquet.NewGenericWriter[packParquetDoc](f,
+		parquet.Compression(&parquet.Zstd),
+		parquet.MaxRowsPerRowGroup(ParquetRowGroupRows),
+		parquet.PageBufferSize(1*1024*1024), // 1 MB pages: fewer page headers, better sequential I/O
+	)
 
 	eng := &funcEngine{
 		name: "parquet-writer",

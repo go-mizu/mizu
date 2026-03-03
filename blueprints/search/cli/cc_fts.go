@@ -185,7 +185,7 @@ func runCCFTSIndex(ctx context.Context, crawlID, engineName, source string, batc
 		return err
 	}
 
-	if err := ftsCreateDuckDBIndex(ctx, engineName, eng); err != nil {
+	if err := ftsCreateDuckDBIndex(ctx, eng); err != nil {
 		return err
 	}
 
@@ -247,25 +247,43 @@ func runCCFTSIndexFromPack(ctx context.Context, crawlID, engineName, source stri
 	}
 
 	var stats *index.PipelineStats
-	switch source {
-	case "parquet":
-		stats, err = index.RunPipelineFromParquet(ctx, eng, packFile, batchSize, progress)
-	case "bin":
-		stats, err = index.RunPipelineFromFlatBin(ctx, eng, packFile, batchSize, progress)
-	case "ndjson":
-		stats, err = index.RunPipelineFromNDJSON(ctx, eng, packFile, batchSize, progress)
-	case "duckdb":
-		stats, err = runPipelineFromDuckDBRaw(ctx, eng, packFile, batchSize, progress)
-	default:
-		return fmt.Errorf("unknown source %q (valid: files, parquet, bin, ndjson, duckdb)", source)
-	}
-	fmt.Fprintln(os.Stderr) // newline after progress
 
-	if err != nil {
-		return err
+	// Fast path: if the engine implements BulkLoader and source is parquet,
+	// bypass the Go streaming pipeline entirely — let the engine ingest the
+	// file natively (e.g. DuckDB's read_parquet() vectorised path).
+	if bl, ok := eng.(index.BulkLoader); ok && source == "parquet" {
+		t0 := time.Now()
+		fmt.Fprintf(os.Stderr, "bulk loading via native read_parquet()...\n")
+		n, bulkErr := bl.BulkLoad(ctx, "parquet", packFile)
+		fmt.Fprintln(os.Stderr)
+		if bulkErr != nil {
+			return fmt.Errorf("bulk load: %w", bulkErr)
+		}
+		stats = &index.PipelineStats{StartTime: t0}
+		stats.DocsIndexed.Store(n)
+		elapsed := time.Since(t0)
+		fmt.Fprintf(os.Stderr, "  bulk load: %d docs in %s (%.0f docs/s)\n",
+			n, elapsed.Round(10*time.Millisecond), float64(n)/elapsed.Seconds())
+	} else {
+		switch source {
+		case "parquet":
+			stats, err = index.RunPipelineFromParquet(ctx, eng, packFile, batchSize, progress)
+		case "bin":
+			stats, err = index.RunPipelineFromFlatBin(ctx, eng, packFile, batchSize, progress)
+		case "ndjson":
+			stats, err = index.RunPipelineFromNDJSON(ctx, eng, packFile, batchSize, progress)
+		case "duckdb":
+			stats, err = runPipelineFromDuckDBRaw(ctx, eng, packFile, batchSize, progress)
+		default:
+			return fmt.Errorf("unknown source %q (valid: files, parquet, bin, ndjson, duckdb)", source)
+		}
+		fmt.Fprintln(os.Stderr) // newline after progress
+		if err != nil {
+			return err
+		}
 	}
 
-	if err := ftsCreateDuckDBIndex(ctx, engineName, eng); err != nil {
+	if err := ftsCreateDuckDBIndex(ctx, eng); err != nil {
 		return err
 	}
 
@@ -286,16 +304,17 @@ func runCCFTSIndexFromPack(ctx context.Context, crawlID, engineName, source stri
 	return nil
 }
 
-func ftsCreateDuckDBIndex(ctx context.Context, engineName string, eng index.Engine) error {
-	if engineName != "duckdb" {
+// ftsCreateDuckDBIndex calls CreateFTSIndex on any engine that implements it
+// (all DuckDB variants). The old name-based "duckdb" check was too narrow.
+func ftsCreateDuckDBIndex(ctx context.Context, eng index.Engine) error {
+	type ftsIndexer interface{ CreateFTSIndex(context.Context) error }
+	ddb, ok := eng.(ftsIndexer)
+	if !ok {
 		return nil
 	}
 	fmt.Fprintf(os.Stderr, "creating FTS index (BM25)...\n")
-	type ftsIndexer interface{ CreateFTSIndex(context.Context) error }
-	if ddb, ok := eng.(ftsIndexer); ok {
-		if err := ddb.CreateFTSIndex(ctx); err != nil {
-			return fmt.Errorf("create FTS index: %w", err)
-		}
+	if err := ddb.CreateFTSIndex(ctx); err != nil {
+		return fmt.Errorf("create FTS index: %w", err)
 	}
 	return nil
 }
