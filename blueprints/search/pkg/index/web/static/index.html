@@ -1,0 +1,1280 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FTS Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Geist', 'system-ui', 'sans-serif'],
+            mono: ['"Geist Mono"', 'monospace'],
+          },
+          borderRadius: {
+            DEFAULT: '0',
+            sm: '0',
+            md: '0',
+            lg: '0',
+            xl: '0',
+            full: '0',
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    * { border-radius: 0 !important; }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    .anim-fade-up {
+      animation: fadeUp 0.25s ease-out forwards;
+      opacity: 0;
+    }
+    .anim-fade-in {
+      animation: fadeIn 0.2s ease-out forwards;
+      opacity: 0;
+    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(161,161,170,0.2); }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(161,161,170,0.4); }
+    mark { background: rgba(250, 204, 21, 0.15); color: inherit; padding: 0 2px; }
+    .light mark { background: rgba(250, 204, 21, 0.25); }
+    .dark .prose pre { background: #18181b; border: 1px solid #27272a; }
+    .dark .prose code { color: #e4e4e7; }
+    .dark .prose blockquote { border-left-color: #3f3f46; color: #a1a1aa; }
+    .dark .prose table th { border-bottom-color: #3f3f46; }
+    .dark .prose table td { border-bottom-color: #27272a; }
+    .dark .prose hr { border-color: #27272a; }
+    .prose pre { border-radius: 0 !important; }
+    .prose img { border-radius: 0 !important; }
+    .result-item { transition: background 0.15s ease; }
+    .result-item:hover { background: rgba(161,161,170,0.04); }
+    .dark .result-item:hover { background: rgba(161,161,170,0.06); }
+    .tab-active { color: #fafafa; border-bottom: 1px solid #fafafa; }
+    .light .tab-active { color: #09090b; border-bottom: 1px solid #09090b; }
+    .tab-inactive { color: #71717a; border-bottom: 1px solid transparent; }
+    .tab-inactive:hover { color: #a1a1aa; }
+    .light .tab-inactive:hover { color: #71717a; }
+    .shard-active { color: #fafafa; }
+    .light .shard-active { color: #09090b; font-weight: 500; }
+    .shard-item { color: #71717a; transition: color 0.1s; }
+    .shard-item:hover { color: #a1a1aa; }
+    .light .shard-item { color: #a1a1aa; }
+    .light .shard-item:hover { color: #71717a; }
+    .file-row { transition: background 0.1s; }
+    .file-row:hover { background: rgba(161,161,170,0.06); }
+    .light .file-row:hover { background: rgba(0,0,0,0.02); }
+    .progress-track { width: 100%; height: 6px; background: #27272a; }
+    .light .progress-track { background: #e4e4e7; }
+    .progress-fill { height: 100%; background: #a1a1aa; transition: width 0.3s ease; }
+    .light .progress-fill { background: #71717a; }
+    .step-card { border: 1px solid #27272a; padding: 1.25rem; margin-bottom: 1rem; }
+    .light .step-card { border-color: #e4e4e7; }
+  </style>
+</head>
+<body class="bg-white dark:bg-zinc-950 text-zinc-950 dark:text-zinc-50 antialiased min-h-screen font-sans">
+  <div id="app">
+    <header class="sticky top-0 z-50 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-sm border-b border-zinc-200 dark:border-zinc-800">
+      <div class="max-w-5xl mx-auto flex items-center h-12 px-6 gap-6">
+        <a href="#/" class="text-sm font-medium tracking-tight shrink-0 hover:opacity-70 transition-opacity">FTS Dashboard</a>
+        <div id="header-search" class="flex-1 hidden">
+          <input id="header-search-input" type="text"
+            placeholder="What are you looking for?"
+            class="w-full h-8 px-0 bg-transparent text-sm placeholder:text-zinc-500 dark:placeholder:text-zinc-500 focus:outline-none border-none"
+            onkeydown="if(event.key==='Enter')doSearch(this.value)">
+        </div>
+        <nav id="main-nav" class="flex items-center gap-5 ml-auto shrink-0">
+          <a href="#/" data-tab="overview" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">Overview</a>
+          <a href="#/pipeline" data-tab="pipeline" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">Pipeline</a>
+          <a href="#/search" data-tab="search" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">Search</a>
+          <a href="#/browse" data-tab="browse" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">Browse</a>
+          <a href="#/crawls" data-tab="crawls" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">Crawls</a>
+          <button onclick="toggleTheme()" class="text-zinc-500 dark:text-zinc-500 hover:text-zinc-950 dark:hover:text-zinc-50 transition-colors" title="Toggle theme">
+            <svg id="icon-sun" class="w-4 h-4 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+            <svg id="icon-moon" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+          </button>
+        </nav>
+      </div>
+    </header>
+    <main id="main" class="max-w-5xl mx-auto px-6"></main>
+  </div>
+
+<script>
+// ===================================================================
+// State
+// ===================================================================
+const state = {
+  query: '',
+  results: null,
+  stats: null,
+  loading: false,
+  currentPage: '',
+  browseShards: null,
+  browseFiles: null,
+  browseShard: '',
+  doc: null,
+  theme: localStorage.getItem('fts-theme') || 'dark',
+  overview: null,
+  jobs: null,
+  engines: null,
+  crawls: null,
+};
+
+// ===================================================================
+// Theme
+// ===================================================================
+function applyTheme() {
+  const html = document.documentElement;
+  if (state.theme === 'dark') {
+    html.classList.add('dark');
+    html.classList.remove('light');
+    document.getElementById('icon-sun').classList.remove('hidden');
+    document.getElementById('icon-moon').classList.add('hidden');
+  } else {
+    html.classList.remove('dark');
+    html.classList.add('light');
+    document.getElementById('icon-sun').classList.add('hidden');
+    document.getElementById('icon-moon').classList.remove('hidden');
+  }
+}
+function toggleTheme() {
+  state.theme = state.theme === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('fts-theme', state.theme);
+  applyTheme();
+}
+
+// ===================================================================
+// WebSocket Client
+// ===================================================================
+class WSClient {
+  constructor() {
+    this.ws = null;
+    this.listeners = new Map();
+    this.connected = false;
+    this.reconnectTimer = null;
+  }
+  connect() {
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    try {
+      this.ws = new WebSocket(`${proto}//${location.host}/ws`);
+    } catch (e) {
+      this.scheduleReconnect();
+      return;
+    }
+    this.ws.onopen = () => {
+      this.connected = true;
+      // Re-subscribe existing listeners
+      for (const [jobId] of this.listeners) {
+        if (jobId !== '*') {
+          this.ws.send(JSON.stringify({ type: 'subscribe', job_ids: [jobId] }));
+        }
+      }
+    };
+    this.ws.onmessage = (e) => {
+      let msg;
+      try { msg = JSON.parse(e.data); } catch { return; }
+      const jobId = msg.job_id;
+      if (jobId) {
+        const cbs = this.listeners.get(jobId);
+        if (cbs) cbs.forEach(cb => cb(msg));
+        const wildcard = this.listeners.get('*');
+        if (wildcard) wildcard.forEach(cb => cb(msg));
+      }
+    };
+    this.ws.onclose = () => {
+      this.connected = false;
+      this.scheduleReconnect();
+    };
+    this.ws.onerror = () => {
+      this.connected = false;
+    };
+  }
+  scheduleReconnect() {
+    if (this.reconnectTimer) return;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect();
+    }, 2000);
+  }
+  subscribe(jobId, cb) {
+    if (!this.listeners.has(jobId)) this.listeners.set(jobId, []);
+    this.listeners.get(jobId).push(cb);
+    if (this.ws && this.ws.readyState === WebSocket.OPEN && jobId !== '*') {
+      this.ws.send(JSON.stringify({ type: 'subscribe', job_ids: [jobId] }));
+    }
+  }
+  unsubscribe(jobId) {
+    this.listeners.delete(jobId);
+    if (this.ws && this.ws.readyState === WebSocket.OPEN && jobId !== '*') {
+      this.ws.send(JSON.stringify({ type: 'unsubscribe', job_ids: [jobId] }));
+    }
+  }
+  unsubscribeAll() {
+    const ids = [...this.listeners.keys()].filter(k => k !== '*');
+    this.listeners.clear();
+    if (this.ws && this.ws.readyState === WebSocket.OPEN && ids.length > 0) {
+      this.ws.send(JSON.stringify({ type: 'unsubscribe', job_ids: ids }));
+    }
+  }
+}
+
+const wsClient = new WSClient();
+wsClient.connect();
+
+// ===================================================================
+// Router
+// ===================================================================
+function navigateTo(path) { location.hash = path; }
+
+function route() {
+  const hash = (location.hash || '#/').slice(1);
+  const qIdx = hash.indexOf('?');
+  const path = qIdx >= 0 ? hash.slice(0, qIdx) : hash;
+  const params = new URLSearchParams(qIdx >= 0 ? hash.slice(qIdx + 1) : '');
+
+  updateActiveTab(path);
+
+  if (path === '/' || path === '') {
+    showHeaderSearch(false);
+    renderOverview();
+  } else if (path === '/pipeline') {
+    showHeaderSearch(false);
+    renderPipeline();
+  } else if (path === '/search') {
+    const q = params.get('q') || '';
+    if (q) {
+      showHeaderSearch(true, q);
+      doSearchWithRender(q, parseInt(params.get('offset') || '0', 10));
+    } else {
+      showHeaderSearch(false);
+      renderSearchHome();
+    }
+  } else if (path.startsWith('/browse')) {
+    const shard = path.split('/')[2] || '';
+    showHeaderSearch(false);
+    renderBrowse(shard);
+  } else if (path.startsWith('/doc/')) {
+    const parts = path.split('/');
+    const shard = parts[2];
+    const docid = parts.slice(3).join('/');
+    showHeaderSearch(true, state.query);
+    renderDoc(shard, docid);
+  } else if (path === '/crawls') {
+    showHeaderSearch(false);
+    renderCrawls();
+  } else {
+    showHeaderSearch(false);
+    renderOverview();
+  }
+}
+
+function updateActiveTab(path) {
+  let activeTab = 'overview';
+  if (path === '/pipeline') activeTab = 'pipeline';
+  else if (path === '/search' || path.startsWith('/doc/')) activeTab = 'search';
+  else if (path.startsWith('/browse')) activeTab = 'browse';
+  else if (path === '/crawls') activeTab = 'crawls';
+
+  document.querySelectorAll('#main-nav a[data-tab]').forEach(a => {
+    if (a.dataset.tab === activeTab) {
+      a.className = 'text-sm pb-1 tab-active transition-colors cursor-pointer';
+    } else {
+      a.className = 'text-sm pb-1 tab-inactive transition-colors cursor-pointer';
+    }
+  });
+}
+
+function showHeaderSearch(visible, value) {
+  const el = document.getElementById('header-search');
+  const input = document.getElementById('header-search-input');
+  if (visible) {
+    el.classList.remove('hidden');
+    if (value !== undefined) input.value = value;
+  } else {
+    el.classList.add('hidden');
+  }
+}
+
+// ===================================================================
+// API Helpers
+// ===================================================================
+async function apiFetch(url) {
+  const res = await fetch(url);
+  if (!res.ok) {
+    const body = await res.text();
+    let msg = `HTTP ${res.status}`;
+    try { const j = JSON.parse(body); if (j.error) msg = j.error; } catch {}
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+async function apiPost(url, data) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    let msg = `HTTP ${res.status}`;
+    try { const j = JSON.parse(body); if (j.error) msg = j.error; } catch {}
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+async function apiDelete(url) {
+  const res = await fetch(url, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+async function apiSearch(q, limit = 20, offset = 0) {
+  return apiFetch(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}`);
+}
+
+async function apiStats() {
+  return apiFetch('/api/stats');
+}
+
+async function apiDoc(shard, docid) {
+  return apiFetch(`/api/doc/${shard}/${encodeURIComponent(docid)}`);
+}
+
+async function apiBrowse(shard = '') {
+  const url = shard ? `/api/browse?shard=${encodeURIComponent(shard)}` : '/api/browse';
+  return apiFetch(url);
+}
+
+async function apiOverview() {
+  return apiFetch('/api/overview');
+}
+
+async function apiEngines() {
+  return apiFetch('/api/engines');
+}
+
+async function apiJobs() {
+  return apiFetch('/api/jobs');
+}
+
+async function apiCrawls() {
+  return apiFetch('/api/crawls');
+}
+
+async function apiCreateJob(cfg) {
+  return apiPost('/api/jobs', cfg);
+}
+
+async function apiCancelJob(id) {
+  return apiDelete(`/api/jobs/${id}`);
+}
+
+// ===================================================================
+// Utilities
+// ===================================================================
+function esc(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+function escRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function highlight(snippet, query) {
+  if (!snippet || !query) return esc(snippet || '');
+  const terms = query.split(/\s+/).filter(t => t.length > 1);
+  let html = esc(snippet);
+  for (const term of terms) {
+    html = html.replace(new RegExp(`(${escRegex(term)})`, 'gi'), '<mark>$1</mark>');
+  }
+  return html;
+}
+
+function fmtBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return (bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
+}
+
+function docTitle(docid) {
+  let name = docid.replace(/\.md$/i, '').replace(/[-_]+/g, ' ');
+  try { name = decodeURIComponent(name); } catch(e) {}
+  return name.length > 80 ? name.slice(0, 80) + '\u2026' : name;
+}
+
+function $(id) { return document.getElementById(id); }
+
+function fmtDuration(startStr, endStr) {
+  const start = new Date(startStr);
+  const end = endStr ? new Date(endStr) : new Date();
+  const ms = end - start;
+  if (ms < 1000) return ms + 'ms';
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  const rs = s % 60;
+  return m + 'm ' + rs + 's';
+}
+
+function statusClass(status) {
+  switch (status) {
+    case 'running': return 'text-zinc-400';
+    case 'completed': return 'text-zinc-500';
+    case 'failed': return 'text-red-400';
+    case 'cancelled': return 'text-zinc-600';
+    case 'queued': return 'text-zinc-600';
+    default: return 'text-zinc-500';
+  }
+}
+
+// ===================================================================
+// Tab 1: Overview
+// ===================================================================
+async function renderOverview() {
+  state.currentPage = 'overview';
+  const main = $('main');
+  main.innerHTML = `
+    <div class="py-8 anim-fade-in">
+      <h1 class="text-2xl font-semibold tracking-tight mb-8">Overview</h1>
+      <div id="overview-content">
+        <div class="text-xs font-mono text-zinc-500">loading...</div>
+      </div>
+    </div>`;
+
+  try {
+    const data = await apiOverview();
+    state.overview = data;
+    renderOverviewContent(data);
+  } catch (e) {
+    $('overview-content').innerHTML = `<div class="text-xs text-red-400">${esc(e.message)}</div>`;
+  }
+}
+
+function renderOverviewContent(d) {
+  const el = $('overview-content');
+  if (!el) return;
+
+  const engineCount = d.fts_engines ? Object.keys(d.fts_engines).length : 0;
+
+  // Stat cards
+  const cards = [
+    { label: 'Crawl ID', value: d.crawl_id || '\u2014' },
+    { label: 'Documents', value: (d.md_doc_estimate || 0).toLocaleString() },
+    { label: 'WARC Files', value: (d.warc_count || 0).toLocaleString() },
+    { label: 'Engines', value: engineCount.toString() },
+  ];
+
+  const cardsHTML = cards.map((c, i) => `
+    <div class="border border-zinc-200 dark:border-zinc-800 p-4 anim-fade-up" style="animation-delay:${i * 30}ms">
+      <div class="text-xs font-mono text-zinc-500 dark:text-zinc-500 mb-1">${esc(c.label)}</div>
+      <div class="text-lg font-medium">${esc(c.value)}</div>
+    </div>`).join('');
+
+  // Data breakdown table
+  const rows = [];
+  // WARC
+  if (d.warc_count > 0) {
+    rows.push({ category: 'WARC Files', count: d.warc_count, size: d.warc_total_size });
+  }
+  // Markdown
+  if (d.md_doc_estimate > 0) {
+    rows.push({ category: 'Markdown Docs', count: d.md_doc_estimate, size: d.md_total_size });
+  }
+  // Pack formats
+  if (d.pack_formats) {
+    for (const [fmt, size] of Object.entries(d.pack_formats)) {
+      rows.push({ category: 'Pack: ' + fmt, count: '\u2014', size: size });
+    }
+  }
+  // FTS engines
+  if (d.fts_engines) {
+    for (const [eng, size] of Object.entries(d.fts_engines)) {
+      const shards = d.fts_shard_count && d.fts_shard_count[eng] ? d.fts_shard_count[eng] : 0;
+      rows.push({ category: 'FTS: ' + eng, count: shards + ' shard' + (shards !== 1 ? 's' : ''), size: size });
+    }
+  }
+
+  const tableHTML = rows.length > 0 ? `
+    <div class="border border-zinc-200 dark:border-zinc-800 mt-8">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-zinc-200 dark:border-zinc-800">
+            <th class="text-left px-4 py-2 text-xs font-mono text-zinc-500 font-normal">Category</th>
+            <th class="text-right px-4 py-2 text-xs font-mono text-zinc-500 font-normal">Count</th>
+            <th class="text-right px-4 py-2 text-xs font-mono text-zinc-500 font-normal">Size</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((r, i) => `
+            <tr class="border-b border-zinc-100 dark:border-zinc-800/60 anim-fade-up" style="animation-delay:${(i + 4) * 30}ms">
+              <td class="px-4 py-2">${esc(r.category)}</td>
+              <td class="text-right px-4 py-2 font-mono text-zinc-500">${typeof r.count === 'number' ? r.count.toLocaleString() : esc(String(r.count))}</td>
+              <td class="text-right px-4 py-2 font-mono text-zinc-500">${typeof r.size === 'number' ? fmtBytes(r.size) : esc(String(r.size || '\u2014'))}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>` : '';
+
+  el.innerHTML = `
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      ${cardsHTML}
+    </div>
+    ${tableHTML}
+    <div class="flex gap-4 mt-8">
+      <a href="#/pipeline" class="border border-zinc-700 dark:border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">Open Pipeline</a>
+      <a href="#/search" class="border border-zinc-700 dark:border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">Search</a>
+    </div>`;
+}
+
+// ===================================================================
+// Tab 2: Pipeline
+// ===================================================================
+let pipelinePollingTimer = null;
+
+async function renderPipeline() {
+  state.currentPage = 'pipeline';
+  const main = $('main');
+  main.innerHTML = `
+    <div class="py-8 anim-fade-in">
+      <h1 class="text-2xl font-semibold tracking-tight mb-8">Pipeline</h1>
+      <div id="pipeline-content">
+        <div class="text-xs font-mono text-zinc-500">loading...</div>
+      </div>
+    </div>`;
+
+  // Stop previous polling
+  if (pipelinePollingTimer) { clearInterval(pipelinePollingTimer); pipelinePollingTimer = null; }
+
+  try {
+    const [overview, enginesData, jobsData] = await Promise.all([
+      apiOverview().catch(() => null),
+      apiEngines().catch(() => ({ engines: [] })),
+      apiJobs().catch(() => ({ jobs: [] })),
+    ]);
+
+    state.overview = overview;
+    state.engines = enginesData.engines || [];
+    state.jobs = jobsData.jobs || [];
+
+    renderPipelineContent();
+    setupPipelineWS();
+  } catch (e) {
+    $('pipeline-content').innerHTML = `<div class="text-xs text-red-400">${esc(e.message)}</div>`;
+  }
+}
+
+function renderPipelineContent() {
+  const el = $('pipeline-content');
+  if (!el) return;
+
+  const engines = state.engines || [];
+  const jobs = state.jobs || [];
+
+  const downloadJobs = jobs.filter(j => j.type === 'download');
+  const markdownJobs = jobs.filter(j => j.type === 'markdown');
+  const packJobs = jobs.filter(j => j.type === 'pack');
+  const indexJobs = jobs.filter(j => j.type === 'index');
+
+  el.innerHTML = `
+    <!-- Step 1: Download WARC -->
+    <div class="step-card anim-fade-up" style="animation-delay:0ms">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-medium">Step 1: Download WARC</h2>
+        <span class="text-xs font-mono text-zinc-500">${countActive(downloadJobs)} active</span>
+      </div>
+      <form id="form-download" class="flex items-end gap-3 mb-3" onsubmit="return submitJob(event, 'download')">
+        <div class="flex-1">
+          <label class="block text-xs font-mono text-zinc-500 mb-1">File range</label>
+          <input type="text" name="files" value="0" placeholder="0, 0-4, all"
+            class="w-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm px-3 py-2 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600">
+        </div>
+        <button type="submit" class="border border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors shrink-0">Start</button>
+      </form>
+      <div id="jobs-download">${renderJobList(downloadJobs)}</div>
+    </div>
+
+    <!-- Step 2: Extract Markdown -->
+    <div class="step-card anim-fade-up" style="animation-delay:30ms">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-medium">Step 2: Extract Markdown</h2>
+        <span class="text-xs font-mono text-zinc-500">${countActive(markdownJobs)} active</span>
+      </div>
+      <form id="form-markdown" class="flex items-end gap-3 mb-3" onsubmit="return submitJob(event, 'markdown')">
+        <div class="flex-1">
+          <label class="block text-xs font-mono text-zinc-500 mb-1">File range</label>
+          <input type="text" name="files" value="0" placeholder="0, 0-4, all"
+            class="w-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm px-3 py-2 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600">
+        </div>
+        <div>
+          <label class="flex items-center gap-2 text-xs font-mono text-zinc-500 py-2">
+            <input type="checkbox" name="fast" class="accent-zinc-500"> --fast
+          </label>
+        </div>
+        <button type="submit" class="border border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors shrink-0">Start</button>
+      </form>
+      <div id="jobs-markdown">${renderJobList(markdownJobs)}</div>
+    </div>
+
+    <!-- Step 3: Pack -->
+    <div class="step-card anim-fade-up" style="animation-delay:60ms">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-medium">Step 3: Pack</h2>
+        <span class="text-xs font-mono text-zinc-500">${countActive(packJobs)} active</span>
+      </div>
+      <form id="form-pack" class="flex items-end gap-3 mb-3" onsubmit="return submitJob(event, 'pack')">
+        <div class="flex-1">
+          <label class="block text-xs font-mono text-zinc-500 mb-1">File range</label>
+          <input type="text" name="files" value="0" placeholder="0, 0-4, all"
+            class="w-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm px-3 py-2 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600">
+        </div>
+        <div>
+          <label class="block text-xs font-mono text-zinc-500 mb-1">Format</label>
+          <select name="format" class="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm px-3 py-2 focus:outline-none">
+            <option value="parquet">parquet</option>
+            <option value="bin">bin</option>
+            <option value="markdown">markdown</option>
+          </select>
+        </div>
+        <button type="submit" class="border border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors shrink-0">Start</button>
+      </form>
+      <div id="jobs-pack">${renderJobList(packJobs)}</div>
+    </div>
+
+    <!-- Step 4: Build Index -->
+    <div class="step-card anim-fade-up" style="animation-delay:90ms">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-medium">Step 4: Build Index</h2>
+        <span class="text-xs font-mono text-zinc-500">${countActive(indexJobs)} active</span>
+      </div>
+      <form id="form-index" class="flex items-end gap-3 mb-3" onsubmit="return submitJob(event, 'index')">
+        <div class="flex-1">
+          <label class="block text-xs font-mono text-zinc-500 mb-1">File range</label>
+          <input type="text" name="files" value="0" placeholder="0, 0-4, all"
+            class="w-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm px-3 py-2 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600">
+        </div>
+        <div>
+          <label class="block text-xs font-mono text-zinc-500 mb-1">Engine</label>
+          <select name="engine" class="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm px-3 py-2 focus:outline-none">
+            ${engines.map(e => `<option value="${esc(e)}">${esc(e)}</option>`).join('')}
+            ${engines.length === 0 ? '<option value="duckdb">duckdb</option>' : ''}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-mono text-zinc-500 mb-1">Source</label>
+          <select name="source" class="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm px-3 py-2 focus:outline-none">
+            <option value="files">files</option>
+            <option value="parquet">parquet</option>
+            <option value="bin">bin</option>
+            <option value="markdown">markdown</option>
+          </select>
+        </div>
+        <button type="submit" class="border border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors shrink-0">Start</button>
+      </form>
+      <div id="jobs-index">${renderJobList(indexJobs)}</div>
+    </div>
+
+    <!-- Job History -->
+    <div class="mt-8 anim-fade-up" style="animation-delay:120ms">
+      <h2 class="text-sm font-medium mb-4">Job History</h2>
+      <div id="job-history">${renderJobHistory(jobs)}</div>
+    </div>`;
+}
+
+function countActive(jobs) {
+  return jobs.filter(j => j.status === 'running' || j.status === 'queued').length;
+}
+
+function renderJobList(jobs) {
+  const active = jobs.filter(j => j.status === 'running' || j.status === 'queued');
+  if (active.length === 0) return '';
+  return active.map(j => renderJobItem(j)).join('');
+}
+
+function renderJobItem(j) {
+  const pct = Math.round((j.progress || 0) * 100);
+  const rateStr = j.rate > 0 ? ` &middot; ${j.rate.toFixed(0)} docs/s` : '';
+  const cancelBtn = (j.status === 'running' || j.status === 'queued')
+    ? `<button onclick="cancelJob('${esc(j.id)}')" class="text-xs text-zinc-500 hover:text-red-400 transition-colors ml-2">cancel</button>`
+    : '';
+  return `
+    <div class="mb-2 py-2 border-b border-zinc-100 dark:border-zinc-800/60" id="job-${esc(j.id)}">
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-xs font-mono text-zinc-500">${esc(j.id)} &middot; <span class="${statusClass(j.status)}">${esc(j.status)}</span>${rateStr}</span>
+        <span class="text-xs font-mono text-zinc-500">${pct}%${cancelBtn}</span>
+      </div>
+      <div class="progress-track mb-1">
+        <div class="progress-fill" style="width:${pct}%"></div>
+      </div>
+      <div class="text-xs text-zinc-500 truncate">${esc(j.message || '')}</div>
+    </div>`;
+}
+
+function renderJobHistory(jobs) {
+  if (!jobs || jobs.length === 0) {
+    return '<div class="text-xs font-mono text-zinc-500">No jobs yet.</div>';
+  }
+
+  return `
+    <div class="border border-zinc-200 dark:border-zinc-800">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-zinc-200 dark:border-zinc-800">
+            <th class="text-left px-4 py-2 text-xs font-mono text-zinc-500 font-normal">ID</th>
+            <th class="text-left px-4 py-2 text-xs font-mono text-zinc-500 font-normal">Type</th>
+            <th class="text-left px-4 py-2 text-xs font-mono text-zinc-500 font-normal">Status</th>
+            <th class="text-left px-4 py-2 text-xs font-mono text-zinc-500 font-normal">Message</th>
+            <th class="text-right px-4 py-2 text-xs font-mono text-zinc-500 font-normal">Elapsed</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${jobs.map(j => `
+            <tr class="border-b border-zinc-100 dark:border-zinc-800/60">
+              <td class="px-4 py-2 font-mono text-xs">${esc(j.id)}</td>
+              <td class="px-4 py-2 text-xs">${esc(j.type)}</td>
+              <td class="px-4 py-2 text-xs ${statusClass(j.status)}">${esc(j.status)}</td>
+              <td class="px-4 py-2 text-xs text-zinc-500 truncate max-w-xs">${esc(j.message || j.error || '')}</td>
+              <td class="px-4 py-2 font-mono text-xs text-right text-zinc-500">${fmtDuration(j.started_at, j.ended_at)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function submitJob(event, type) {
+  event.preventDefault();
+  const form = event.target;
+  const files = form.elements.files ? form.elements.files.value : '0';
+
+  const cfg = { type, files };
+
+  if (type === 'markdown') {
+    cfg.fast = form.elements.fast ? form.elements.fast.checked : false;
+  } else if (type === 'pack') {
+    cfg.format = form.elements.format ? form.elements.format.value : 'parquet';
+  } else if (type === 'index') {
+    cfg.engine = form.elements.engine ? form.elements.engine.value : 'duckdb';
+    cfg.source = form.elements.source ? form.elements.source.value : 'files';
+  }
+
+  startJob(cfg);
+  return false;
+}
+
+async function startJob(cfg) {
+  try {
+    const job = await apiCreateJob(cfg);
+    // Add to state
+    if (!state.jobs) state.jobs = [];
+    state.jobs.unshift(job);
+
+    // Subscribe to updates
+    wsClient.subscribe(job.id, (msg) => onJobUpdate(msg));
+
+    // Re-render the pipeline page if still on it
+    if (state.currentPage === 'pipeline') {
+      renderPipelineContent();
+    }
+  } catch (e) {
+    alert('Failed to start job: ' + e.message);
+  }
+}
+
+async function cancelJob(id) {
+  try {
+    await apiCancelJob(id);
+    // Update local state
+    const job = state.jobs && state.jobs.find(j => j.id === id);
+    if (job) {
+      job.status = 'cancelled';
+      job.ended_at = new Date().toISOString();
+    }
+    if (state.currentPage === 'pipeline') {
+      renderPipelineContent();
+    }
+  } catch (e) {
+    alert('Failed to cancel job: ' + e.message);
+  }
+}
+
+function onJobUpdate(msg) {
+  if (!state.jobs) return;
+  const job = state.jobs.find(j => j.id === msg.job_id);
+  if (!job) return;
+
+  if (msg.type === 'job_progress') {
+    job.progress = msg.progress;
+    job.message = msg.message;
+    job.rate = msg.rate || 0;
+
+    // Update in-place if on pipeline page
+    if (state.currentPage === 'pipeline') {
+      updateJobInPlace(job);
+    }
+  } else if (msg.type === 'job_update') {
+    job.status = msg.status;
+    if (msg.error) job.error = msg.error;
+    if (msg.status === 'completed' || msg.status === 'failed' || msg.status === 'cancelled') {
+      job.ended_at = new Date().toISOString();
+      if (msg.status === 'completed') job.progress = 1.0;
+    }
+
+    if (state.currentPage === 'pipeline') {
+      renderPipelineContent();
+    }
+  }
+}
+
+function updateJobInPlace(job) {
+  const el = $('job-' + job.id);
+  if (!el) return;
+  const pct = Math.round((job.progress || 0) * 100);
+  const rateStr = job.rate > 0 ? ` &middot; ${job.rate.toFixed(0)} docs/s` : '';
+  const cancelBtn = (job.status === 'running' || job.status === 'queued')
+    ? `<button onclick="cancelJob('${esc(job.id)}')" class="text-xs text-zinc-500 hover:text-red-400 transition-colors ml-2">cancel</button>`
+    : '';
+
+  el.innerHTML = `
+    <div class="flex items-center justify-between mb-1">
+      <span class="text-xs font-mono text-zinc-500">${esc(job.id)} &middot; <span class="${statusClass(job.status)}">${esc(job.status)}</span>${rateStr}</span>
+      <span class="text-xs font-mono text-zinc-500">${pct}%${cancelBtn}</span>
+    </div>
+    <div class="progress-track mb-1">
+      <div class="progress-fill" style="width:${pct}%"></div>
+    </div>
+    <div class="text-xs text-zinc-500 truncate">${esc(job.message || '')}</div>`;
+}
+
+function setupPipelineWS() {
+  // Subscribe to all job updates with wildcard
+  wsClient.subscribe('*', (msg) => onJobUpdate(msg));
+}
+
+// ===================================================================
+// Tab 3: Search
+// ===================================================================
+function renderSearchHome() {
+  state.currentPage = 'search';
+  $('main').innerHTML = `
+    <div class="flex flex-col items-center justify-center min-h-[calc(100vh-6rem)] anim-fade-in">
+      <div class="w-full max-w-xl space-y-8">
+        <div class="text-center space-y-3">
+          <h1 class="text-3xl font-semibold tracking-tight">What are you looking for?</h1>
+        </div>
+        <div class="relative">
+          <input id="home-search-input" type="text"
+            placeholder="Type to search\u2026"
+            class="w-full h-12 px-4 bg-zinc-100 dark:bg-zinc-900 text-base placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none border border-zinc-200 dark:border-zinc-800 transition-colors focus:border-zinc-400 dark:focus:border-zinc-600"
+            onkeydown="if(event.key==='Enter')doSearch(this.value)" autofocus>
+          <kbd class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-zinc-400 dark:text-zinc-600 font-mono pointer-events-none"><span class="text-[10px]">&#8984;</span>K</kbd>
+        </div>
+        <div id="home-stats" class="text-center">
+          <span class="text-xs font-mono text-zinc-400 dark:text-zinc-600">loading\u2026</span>
+        </div>
+      </div>
+    </div>`;
+  loadHomeStats();
+  setTimeout(() => { const i = $('home-search-input'); if (i) i.focus(); }, 50);
+}
+
+async function loadHomeStats() {
+  const el = $('home-stats');
+  if (!el) return;
+  try {
+    const d = await apiStats();
+    state.stats = d;
+    el.innerHTML = `<span class="text-xs font-mono text-zinc-400 dark:text-zinc-500">${esc(d.engine)} &middot; ${(d.total_docs||0).toLocaleString()} docs &middot; ${d.shards||0} shards &middot; ${d.total_disk||'\u2014'}</span>`;
+  } catch(e) {
+    el.innerHTML = `<span class="text-xs font-mono text-zinc-400 dark:text-zinc-500">No index yet. Run <code class="text-zinc-300 dark:text-zinc-400">search cc fts index</code> to get started.</span>`;
+  }
+}
+
+function doSearch(query) {
+  if (!query.trim()) return;
+  state.query = query.trim();
+  navigateTo(`/search?q=${encodeURIComponent(state.query)}`);
+}
+
+async function doSearchWithRender(query, offset = 0) {
+  if (!query.trim()) { renderSearchHome(); return; }
+  state.query = query.trim();
+  state.loading = true;
+  state.currentPage = 'search';
+  renderSearchLoading();
+
+  try {
+    const data = await apiSearch(query, 20, offset);
+    state.results = data;
+    state.loading = false;
+    renderSearchResults(data, query, offset);
+  } catch (err) {
+    state.loading = false;
+    renderError('Search failed: ' + err.message);
+  }
+}
+
+function renderSearchLoading() {
+  const lines = Array(6).fill('').map((_, i) => `
+    <div class="py-6 anim-fade-up" style="animation-delay:${i*40}ms">
+      <div class="h-4 w-2/5 bg-zinc-100 dark:bg-zinc-900 mb-2"></div>
+      <div class="h-3 w-1/3 bg-zinc-100 dark:bg-zinc-900 mb-3"></div>
+      <div class="h-3 w-full bg-zinc-50 dark:bg-zinc-900/60 mb-1"></div>
+      <div class="h-3 w-4/5 bg-zinc-50 dark:bg-zinc-900/60"></div>
+    </div>`).join('<div class="border-t border-zinc-100 dark:border-zinc-800/60"></div>');
+  $('main').innerHTML = `<div class="py-8 max-w-3xl mx-auto">${lines}</div>`;
+}
+
+function renderSearchResults(data, query, offset) {
+  if (!data || !data.hits || data.hits.length === 0) {
+    $('main').innerHTML = `
+      <div class="py-20 text-center anim-fade-in max-w-3xl mx-auto">
+        <p class="text-zinc-500 dark:text-zinc-400 text-sm mb-1">Nothing matched <strong class="text-zinc-700 dark:text-zinc-300">&laquo;${esc(query)}&raquo;</strong></p>
+        <p class="text-zinc-400 dark:text-zinc-500 text-xs">Try different terms or broaden your query</p>
+      </div>`;
+    return;
+  }
+
+  const pageSize = 20;
+  const page = Math.floor(offset / pageSize) + 1;
+  const totalPages = Math.ceil((data.total || data.hits.length) / pageSize);
+
+  const results = data.hits.map((hit, i) => `
+    <a href="#/doc/${hit.shard || '00000'}/${encodeURIComponent(hit.doc_id)}"
+       class="block result-item py-6 -mx-2 px-2 cursor-pointer anim-fade-up"
+       style="animation-delay:${i * 30}ms">
+      <div class="flex items-baseline justify-between gap-4 mb-1">
+        <span class="text-base font-medium truncate">${esc(docTitle(hit.doc_id))}</span>
+        <span class="text-xs font-mono text-zinc-500 shrink-0">${hit.score ? hit.score.toFixed(2) : ''}</span>
+      </div>
+      <div class="text-xs font-mono text-zinc-500 dark:text-zinc-600 mb-2">${esc(hit.shard || '')} &middot; ${esc(hit.doc_id)}</div>
+      ${hit.snippet ? `<p class="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed line-clamp-3">${highlight(hit.snippet, query)}</p>` : ''}
+    </a>`).join('<div class="border-t border-zinc-100 dark:border-zinc-800/60"></div>');
+
+  $('main').innerHTML = `
+    <div class="py-8 max-w-3xl mx-auto anim-fade-in">
+      <div class="text-xs font-mono text-zinc-400 dark:text-zinc-500 mb-6">
+        ${(data.total || data.hits.length).toLocaleString()} results${data.elapsed_ms ? ` &middot; ${data.elapsed_ms}ms` : ''}${data.shards ? ` &middot; ${data.shards} shard${data.shards!==1?'s':''}` : ''}
+      </div>
+      <div>${results}</div>
+      ${totalPages > 1 ? renderSearchPagination(page, totalPages, query, pageSize) : ''}
+    </div>`;
+}
+
+function renderSearchPagination(cur, total, query, pageSize) {
+  let pages = [];
+  if (total <= 7) {
+    for (let i = 1; i <= total; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (cur > 3) pages.push('\u2026');
+    for (let i = Math.max(2, cur - 1); i <= Math.min(total - 1, cur + 1); i++) pages.push(i);
+    if (cur < total - 2) pages.push('\u2026');
+    pages.push(total);
+  }
+
+  const btn = (p, active) => {
+    if (p === '\u2026') return `<span class="px-2 py-1 text-xs text-zinc-400">\u2026</span>`;
+    const cls = active
+      ? 'px-2 py-1 text-xs font-mono font-medium text-zinc-950 dark:text-zinc-50'
+      : 'px-2 py-1 text-xs font-mono text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-50 transition-colors';
+    return `<a href="#/search?q=${encodeURIComponent(query)}&offset=${(p-1)*pageSize}" class="${cls}">${p}</a>`;
+  };
+
+  return `
+    <div class="flex items-center justify-center gap-1 pt-8 pb-4">
+      ${cur > 1 ? `<a href="#/search?q=${encodeURIComponent(query)}&offset=${(cur-2)*pageSize}" class="text-xs font-mono text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-50 transition-colors mr-2">&larr; prev</a>` : ''}
+      ${pages.map(p => btn(p, p === cur)).join('')}
+      ${cur < total ? `<a href="#/search?q=${encodeURIComponent(query)}&offset=${cur*pageSize}" class="text-xs font-mono text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-50 transition-colors ml-2">next &rarr;</a>` : ''}
+    </div>`;
+}
+
+// ===================================================================
+// Tab 4: Browse
+// ===================================================================
+async function renderBrowse(shard) {
+  state.currentPage = 'browse';
+  state.browseShard = shard;
+  $('main').innerHTML = `
+    <div class="flex gap-0 py-8 min-h-[calc(100vh-5rem)] anim-fade-in">
+      <aside class="w-44 shrink-0 pr-6 border-r border-zinc-100 dark:border-zinc-800/60">
+        <div class="text-xs font-mono text-zinc-400 dark:text-zinc-500 mb-4 uppercase tracking-wider">Shards</div>
+        <div id="shard-list" class="space-y-1">
+          <div class="text-xs text-zinc-400">loading\u2026</div>
+        </div>
+      </aside>
+      <div class="flex-1 min-w-0 pl-6" id="browse-content">
+        <div class="text-xs text-zinc-400 py-8">loading\u2026</div>
+      </div>
+    </div>`;
+
+  try {
+    const data = await apiBrowse();
+    state.browseShards = data.shards || [];
+    renderShardList(shard);
+    if (shard) {
+      loadShardFiles(shard);
+    } else if (state.browseShards.length > 0) {
+      navigateTo('/browse/' + state.browseShards[0].name);
+    } else {
+      $('browse-content').innerHTML = `<div class="text-xs text-zinc-400 py-8">No index yet. Run <code class="font-mono">search cc fts index</code> to get started.</div>`;
+    }
+  } catch(e) {
+    $('browse-content').innerHTML = `<div class="text-xs text-red-400 py-8">${esc(e.message)}</div>`;
+  }
+}
+
+function renderShardList(active) {
+  const el = $('shard-list');
+  if (!el || !state.browseShards) return;
+  el.innerHTML = state.browseShards.map(s => `
+    <a href="#/browse/${s.name}"
+       class="flex items-center justify-between py-1 text-xs font-mono cursor-pointer ${s.name === active ? 'shard-active font-medium' : 'shard-item'}">
+      <span>${esc(s.name)}</span>
+      <span class="text-zinc-500 dark:text-zinc-600">${(s.file_count || '').toLocaleString()}</span>
+    </a>`).join('');
+}
+
+async function loadShardFiles(shard) {
+  const el = $('browse-content');
+  if (!el) return;
+  el.innerHTML = `<div class="text-xs text-zinc-400 py-4">loading\u2026</div>`;
+
+  try {
+    const data = await apiBrowse(shard);
+    state.browseFiles = data.files || [];
+    el.innerHTML = `
+      <div class="flex items-baseline justify-between mb-4">
+        <span class="text-sm font-medium">${esc(shard)}</span>
+        <span class="text-xs font-mono text-zinc-400 dark:text-zinc-500">${state.browseFiles.length} files</span>
+      </div>
+      <div>
+        ${state.browseFiles.map((f, i) => `
+          <a href="#/doc/${shard}/${encodeURIComponent(f.name)}"
+             class="flex items-center justify-between py-2 px-2 -mx-2 text-sm file-row cursor-pointer anim-fade-up"
+             style="animation-delay:${Math.min(i, 20) * 15}ms">
+            <span class="font-mono text-xs truncate text-zinc-600 dark:text-zinc-400">${esc(f.name)}</span>
+            <span class="text-xs font-mono text-zinc-400 dark:text-zinc-600 shrink-0 ml-4">${f.size ? fmtBytes(f.size) : ''}</span>
+          </a>`).join('')}
+      </div>`;
+  } catch(e) {
+    el.innerHTML = `<div class="text-xs text-red-400 py-4">${esc(e.message)}</div>`;
+  }
+}
+
+// ===================================================================
+// Document Viewer
+// ===================================================================
+async function renderDoc(shard, docid) {
+  state.currentPage = 'doc';
+  const main = $('main');
+  main.innerHTML = `
+    <div class="py-8 max-w-3xl mx-auto anim-fade-in">
+      <a href="#" onclick="history.back();return false" class="text-xs text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-50 transition-colors">&larr; Back</a>
+      <div class="text-xs font-mono text-zinc-500 dark:text-zinc-600 mt-3 mb-8">${esc(shard)} / ${esc(decodeURIComponent(docid))}</div>
+      <div class="space-y-3">
+        <div class="h-5 w-2/3 bg-zinc-100 dark:bg-zinc-900"></div>
+        <div class="h-4 w-full bg-zinc-50 dark:bg-zinc-900/60"></div>
+        <div class="h-4 w-full bg-zinc-50 dark:bg-zinc-900/60"></div>
+        <div class="h-4 w-4/5 bg-zinc-50 dark:bg-zinc-900/60"></div>
+      </div>
+    </div>`;
+
+  try {
+    const data = await apiDoc(shard, docid);
+    state.doc = data;
+    main.innerHTML = `
+      <div class="py-8 max-w-3xl mx-auto anim-fade-in">
+        <a href="#" onclick="history.back();return false" class="text-xs text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-50 transition-colors">&larr; Back</a>
+        <div class="text-xs font-mono text-zinc-500 dark:text-zinc-600 mt-3 mb-6">${esc(data.shard || shard)} / ${esc(data.doc_id || docid)}</div>
+
+        <div class="flex items-center gap-6 mb-8 border-b border-zinc-100 dark:border-zinc-800/60 pb-3">
+          <button id="btn-rendered" onclick="showRendered()" class="text-xs pb-1 tab-active transition-colors">Rendered</button>
+          <button id="btn-source" onclick="showSource()" class="text-xs pb-1 tab-inactive transition-colors">Source</button>
+          <span class="text-xs font-mono text-zinc-400 dark:text-zinc-600 ml-auto">
+            ${data.word_count ? data.word_count.toLocaleString() + ' words' : ''}${data.word_count && data.size ? ' &middot; ' : ''}${data.size ? fmtBytes(data.size) : ''}
+          </span>
+        </div>
+
+        <div id="doc-rendered" class="prose dark:prose-invert max-w-none prose-zinc prose-sm prose-headings:font-semibold prose-headings:tracking-tight prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-code:text-sm prose-code:font-mono prose-pre:bg-zinc-50 dark:prose-pre:bg-zinc-900 prose-img:max-w-full">
+          ${data.html || '<p class="text-zinc-400">No content</p>'}
+        </div>
+        <div id="doc-source" class="hidden">
+          <pre class="p-4 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm font-mono text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-words overflow-auto max-h-[80vh]">${esc(data.markdown || '')}</pre>
+        </div>
+      </div>`;
+  } catch(e) {
+    main.innerHTML = `
+      <div class="py-16 text-center anim-fade-in">
+        <p class="text-red-400 text-sm mb-1">Failed to load document</p>
+        <p class="text-zinc-500 text-xs mb-4">${esc(e.message)}</p>
+        <a href="#" onclick="history.back();return false" class="text-xs text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-50 transition-colors">&larr; Back</a>
+      </div>`;
+  }
+}
+
+function showRendered() {
+  $('doc-rendered').classList.remove('hidden');
+  $('doc-source').classList.add('hidden');
+  $('btn-rendered').className = 'text-xs pb-1 tab-active transition-colors';
+  $('btn-source').className = 'text-xs pb-1 tab-inactive transition-colors';
+}
+
+function showSource() {
+  $('doc-rendered').classList.add('hidden');
+  $('doc-source').classList.remove('hidden');
+  $('btn-source').className = 'text-xs pb-1 tab-active transition-colors';
+  $('btn-rendered').className = 'text-xs pb-1 tab-inactive transition-colors';
+}
+
+// ===================================================================
+// Tab 5: Crawls
+// ===================================================================
+async function renderCrawls() {
+  state.currentPage = 'crawls';
+  const main = $('main');
+  main.innerHTML = `
+    <div class="py-8 anim-fade-in">
+      <h1 class="text-2xl font-semibold tracking-tight mb-8">Crawls</h1>
+      <div id="crawls-content">
+        <div class="text-xs font-mono text-zinc-500">loading...</div>
+      </div>
+    </div>`;
+
+  try {
+    const data = await apiCrawls();
+    state.crawls = data.crawls || [];
+    renderCrawlsContent(state.crawls);
+  } catch (e) {
+    $('crawls-content').innerHTML = `
+      <div class="border border-zinc-200 dark:border-zinc-800 p-6 text-center">
+        <p class="text-sm text-zinc-500 dark:text-zinc-400 mb-1">Could not load crawl list</p>
+        <p class="text-xs font-mono text-red-400">${esc(e.message)}</p>
+        <p class="text-xs text-zinc-500 mt-2">Check your internet connection or try again later.</p>
+      </div>`;
+  }
+}
+
+function renderCrawlsContent(crawls) {
+  const el = $('crawls-content');
+  if (!el) return;
+
+  if (!crawls || crawls.length === 0) {
+    el.innerHTML = '<div class="text-xs font-mono text-zinc-500">No crawls found.</div>';
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="border border-zinc-200 dark:border-zinc-800">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-zinc-200 dark:border-zinc-800">
+            <th class="text-left px-4 py-2 text-xs font-mono text-zinc-500 font-normal">Crawl ID</th>
+            <th class="text-left px-4 py-2 text-xs font-mono text-zinc-500 font-normal">Name</th>
+            <th class="text-left px-4 py-2 text-xs font-mono text-zinc-500 font-normal">From</th>
+            <th class="text-left px-4 py-2 text-xs font-mono text-zinc-500 font-normal">To</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${crawls.map((c, i) => `
+            <tr class="border-b border-zinc-100 dark:border-zinc-800/60 anim-fade-up" style="animation-delay:${i * 20}ms">
+              <td class="px-4 py-2 font-mono text-xs">${esc(c.ID || c.id || '')}</td>
+              <td class="px-4 py-2 text-xs">${esc(c.Name || c.name || '')}</td>
+              <td class="px-4 py-2 font-mono text-xs text-zinc-500">${formatCrawlDate(c.From || c.from)}</td>
+              <td class="px-4 py-2 font-mono text-xs text-zinc-500">${formatCrawlDate(c.To || c.to)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="text-xs font-mono text-zinc-500 mt-3">${crawls.length} crawls total</div>`;
+}
+
+function formatCrawlDate(d) {
+  if (!d) return '\u2014';
+  // d could be ISO string or time.Time JSON
+  try {
+    const dt = new Date(d);
+    if (isNaN(dt.getTime())) return esc(String(d));
+    return dt.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  } catch {
+    return esc(String(d));
+  }
+}
+
+// ===================================================================
+// Error renderer
+// ===================================================================
+function renderError(msg) {
+  $('main').innerHTML = `<div class="py-16 text-center anim-fade-in"><p class="text-red-400 text-sm">${esc(msg)}</p></div>`;
+}
+
+// ===================================================================
+// Keyboard Shortcuts
+// ===================================================================
+document.addEventListener('keydown', (e) => {
+  const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
+
+  // Cmd+K — focus search input
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+    e.preventDefault();
+    const h = $('header-search-input');
+    const home = $('home-search-input');
+    if (home && !home.closest('.hidden')) { home.focus(); home.select(); }
+    else if (h && !h.closest('.hidden')) { h.focus(); h.select(); }
+    else {
+      // Navigate to search tab if not there
+      navigateTo('/search');
+    }
+  }
+
+  // / — focus search (when not in input)
+  if (e.key === '/' && !isInput) {
+    e.preventDefault();
+    const h = $('header-search-input');
+    const home = $('home-search-input');
+    if (home && !home.closest('.hidden')) home.focus();
+    else if (h && !h.closest('.hidden')) h.focus();
+    else navigateTo('/search');
+  }
+
+  // Escape — blur active input
+  if (e.key === 'Escape') document.activeElement.blur();
+
+  // Number keys 1-5 — switch tabs (when not in input)
+  if (!isInput && e.key >= '1' && e.key <= '5' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    e.preventDefault();
+    const tabs = ['/', '/pipeline', '/search', '/browse', '/crawls'];
+    const idx = parseInt(e.key) - 1;
+    if (idx >= 0 && idx < tabs.length) {
+      navigateTo(tabs[idx]);
+    }
+  }
+});
+
+// ===================================================================
+// Init
+// ===================================================================
+applyTheme();
+window.addEventListener('hashchange', route);
+route();
+</script>
+</body>
+</html>
