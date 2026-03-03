@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -108,6 +109,7 @@ func newCCFTSIndex() *cobra.Command {
 func newCCFTSSearch() *cobra.Command {
 	var (
 		crawlID string
+		fileIdx string
 		engine  string
 		limit   int
 		offset  int
@@ -122,11 +124,12 @@ func newCCFTSSearch() *cobra.Command {
   search cc fts search "climate change" --limit 20`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			query := strings.Join(args, " ")
-			return runCCFTSSearch(cmd.Context(), crawlID, engine, query, limit, offset, addr)
+			return runCCFTSSearch(cmd.Context(), crawlID, fileIdx, engine, query, limit, offset, addr)
 		},
 	}
 
 	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest)")
+	cmd.Flags().StringVar(&fileIdx, "file", "", "File index to search (default: all WARCs)")
 	cmd.Flags().StringVar(&engine, "engine", "duckdb", "FTS engine")
 	cmd.Flags().IntVar(&limit, "limit", 10, "Max results")
 	cmd.Flags().IntVar(&offset, "offset", 0, "Result offset")
@@ -505,58 +508,117 @@ func runPackFormat(ctx context.Context, format, markdownDir, packFile string, ba
 	return nil
 }
 
-func runCCFTSSearch(ctx context.Context, crawlID, engineName, query string, limit, offset int, addr string) error {
+func runCCFTSSearch(ctx context.Context, crawlID, fileIdx, engineName, query string, limit, offset int, addr string) error {
 	if crawlID == "" {
 		crawlID = detectLatestCrawl()
 	}
 
 	homeDir, _ := os.UserHomeDir()
-	outputDir := filepath.Join(homeDir, "data", "common-crawl", crawlID, "fts", engineName)
+	ftsBase := filepath.Join(homeDir, "data", "common-crawl", crawlID, "fts", engineName)
 
-	eng, err := index.NewEngine(engineName)
-	if err != nil {
-		return err
-	}
-	if addr != "" {
-		if setter, ok := eng.(index.AddrSetter); ok {
-			setter.SetAddr(addr)
-		} else {
-			fmt.Fprintf(os.Stderr, "warning: engine %q does not support --addr flag\n", engineName)
+	// Collect target directories.
+	var targetDirs []string
+	if fileIdx != "" {
+		// Single WARC mode: resolve via manifest.
+		client := cc.NewClient("", 4)
+		paths, err := client.DownloadManifest(ctx, crawlID, "warc.paths.gz")
+		if err != nil {
+			return err
+		}
+		selected, err := ccParseFileSelector(fileIdx, len(paths))
+		if err != nil {
+			return err
+		}
+		for _, idx := range selected {
+			targetDirs = append(targetDirs, filepath.Join(ftsBase, warcIndexFromPath(paths[idx], idx)))
+		}
+	} else {
+		// Fan-out: discover all per-WARC directories.
+		entries, err := os.ReadDir(ftsBase)
+		if err != nil {
+			return fmt.Errorf("no FTS index at %s — run 'cc fts index' first", ftsBase)
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				targetDirs = append(targetDirs, filepath.Join(ftsBase, e.Name()))
+			}
+		}
+		if len(targetDirs) == 0 {
+			return fmt.Errorf("no per-WARC FTS indices found under %s", ftsBase)
 		}
 	}
 
-	if err := eng.Open(ctx, outputDir); err != nil {
-		return fmt.Errorf("open engine: %w", err)
+	// Search all target dirs in parallel, collect results.
+	type shardResult struct {
+		hits  []index.Hit
+		total int
+		err   error
 	}
-	defer eng.Close()
+	results := make([]shardResult, len(targetDirs))
+	var wg sync.WaitGroup
+	for i, dir := range targetDirs {
+		i, dir := i, dir
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			eng, err := index.NewEngine(engineName)
+			if err != nil {
+				results[i].err = err
+				return
+			}
+			if addr != "" {
+				if setter, ok := eng.(index.AddrSetter); ok {
+					setter.SetAddr(addr)
+				}
+			}
+			if err := eng.Open(ctx, dir); err != nil {
+				results[i].err = fmt.Errorf("open %s: %w", dir, err)
+				return
+			}
+			defer eng.Close()
 
-	start := time.Now()
-	results, err := eng.Search(ctx, index.Query{
-		Text:   query,
-		Limit:  limit,
-		Offset: offset,
+			res, err := eng.Search(ctx, index.Query{Text: query, Limit: limit + offset, Offset: 0})
+			if err != nil {
+				results[i].err = err
+				return
+			}
+			results[i].hits = res.Hits
+			results[i].total = res.Total
+		}()
+	}
+	wg.Wait()
+
+	// Merge: collect all hits, sort by score descending, take top limit after offset.
+	var allHits []index.Hit
+	var totalCount int
+	for _, r := range results {
+		if r.err != nil {
+			fmt.Fprintf(os.Stderr, "warning: shard error: %v\n", r.err)
+			continue
+		}
+		allHits = append(allHits, r.hits...)
+		totalCount += r.total
+	}
+	sort.Slice(allHits, func(i, j int) bool {
+		return allHits[i].Score > allHits[j].Score
 	})
-	elapsed := time.Since(start)
-
-	if err != nil {
-		return fmt.Errorf("search: %w", err)
+	if offset < len(allHits) {
+		allHits = allHits[offset:]
+	} else {
+		allHits = nil
+	}
+	if len(allHits) > limit {
+		allHits = allHits[:limit]
 	}
 
-	fmt.Fprintf(os.Stderr, "── Results for %q (engine: %s, %d hits, %s) ──\n",
-		query, engineName, results.Total, elapsed.Round(time.Microsecond))
-	fmt.Fprintf(os.Stderr, "  %-4s %-8s %-40s %s\n", "#", "Score", "DocID", "Snippet")
-	fmt.Fprintf(os.Stderr, "  %-4s %-8s %-40s %s\n", "──", "────────", strings.Repeat("─", 40), strings.Repeat("─", 40))
-
-	for i, hit := range results.Hits {
-		snippet := hit.Snippet
+	fmt.Fprintf(os.Stderr, "── Results for %q (engine: %s, shards: %d, total: %d) ──\n",
+		query, engineName, len(targetDirs), totalCount)
+	for i, hit := range allHits {
+		snippet := strings.ReplaceAll(hit.Snippet, "\n", " ")
 		if len(snippet) > 80 {
 			snippet = snippet[:80] + "..."
 		}
-		// Replace newlines with spaces for display
-		snippet = strings.ReplaceAll(snippet, "\n", " ")
-		snippet = strings.ReplaceAll(snippet, "\r", "")
-		fmt.Fprintf(os.Stderr, "  %-4d %-8.2f %-40s %s\n",
-			i+1+offset, hit.Score, hit.DocID, snippet)
+		fmt.Fprintf(os.Stderr, "  %-4d %-8.2f %-40s %s\n", i+1+offset, hit.Score, hit.DocID, snippet)
 	}
 
 	return nil
