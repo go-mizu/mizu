@@ -2,6 +2,7 @@ package bench_test
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index/bench"
@@ -69,11 +70,37 @@ func TestNewBenchResults(t *testing.T) {
 
 func TestResultsPath(t *testing.T) {
 	p := bench.ResultsPath("/tmp/bench")
-	if p == "/tmp/bench" {
-		t.Error("ResultsPath should include subdirectory and timestamp")
+	// Must contain the results/ subdirectory
+	if !strings.Contains(p, "/results/") {
+		t.Errorf("path missing /results/: %s", p)
 	}
-	// Must contain "results/" directory
-	if len(p) < len("/tmp/bench/results/") {
-		t.Errorf("path too short: %s", p)
+	// Must end in .json
+	if !strings.HasSuffix(p, ".json") {
+		t.Errorf("path must end in .json: %s", p)
+	}
+}
+
+func TestLoadResults_RoundTrip(t *testing.T) {
+	r := bench.NewBenchResults()
+	r.SetDetails("rose", bench.EngineDetails{Docs: 42, IndexTimeSec: 1.0, DiskMB: 5})
+	r.AddQueryResults("TOP_10", "rose", []bench.QueryResult{
+		{Query: "foo", Tags: []string{"union"}, Count: 1, Duration: []int{100}},
+	})
+
+	tmpDir := t.TempDir()
+	path := tmpDir + "/results/test.json"
+	if err := bench.SaveResults(path, r); err != nil {
+		t.Fatalf("SaveResults: %v", err)
+	}
+
+	got, err := bench.LoadResults(path)
+	if err != nil {
+		t.Fatalf("LoadResults: %v", err)
+	}
+	if got.Details["rose"][0].Docs != 42 {
+		t.Errorf("docs: got %d, want 42", got.Details["rose"][0].Docs)
+	}
+	if len(got.Results["TOP_10"]["rose"]) != 1 {
+		t.Errorf("results count: got %d, want 1", len(got.Results["TOP_10"]["rose"]))
 	}
 }

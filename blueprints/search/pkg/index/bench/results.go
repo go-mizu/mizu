@@ -49,7 +49,7 @@ func (b *BenchResults) SetDetails(engine string, d EngineDetails) {
 	b.Details[engine] = []EngineDetails{d}
 }
 
-// AddQueryResults appends query results for (command, engine).
+// AddQueryResults sets query results for (command, engine), replacing any prior value.
 func (b *BenchResults) AddQueryResults(command, engine string, qrs []QueryResult) {
 	if b.Results[command] == nil {
 		b.Results[command] = make(map[string][]QueryResult)
@@ -68,6 +68,19 @@ func SaveResults(path string, r *BenchResults) error {
 		return err
 	}
 	return os.WriteFile(path, data, 0o644)
+}
+
+// LoadResults reads a BenchResults JSON file from path.
+func LoadResults(path string) (*BenchResults, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var r BenchResults
+	if err := json.Unmarshal(data, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
 }
 
 // ResultsPath returns the default timestamped output path under dir/results/.
