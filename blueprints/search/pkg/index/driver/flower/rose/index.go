@@ -324,6 +324,10 @@ func (s *roseEngine) Search(ctx context.Context, q index.Query) (index.Results, 
 		})
 	}
 
+	// Total is set to len(hits) because WAND terminates after collecting
+	// the top-k candidates — the full corpus match count is not computed.
+	// This is explicitly allowed by the index.Searcher contract: "If not
+	// available, drivers may set Total equal to len(Hits)."
 	return index.Results{
 		Hits:  hits,
 		Total: len(hits),

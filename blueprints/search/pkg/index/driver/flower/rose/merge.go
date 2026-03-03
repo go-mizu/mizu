@@ -2,6 +2,7 @@ package rose
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"sort"
 )
@@ -16,7 +17,9 @@ func (s *roseEngine) runMergeLoop() {
 			return
 		case <-s.mergeCh:
 			s.mu.Lock()
-			_ = s.doMerge()
+			if err := s.doMerge(); err != nil {
+				log.Printf("rose: background merge failed: %v", err)
+			}
 			s.mu.Unlock()
 		}
 	}
