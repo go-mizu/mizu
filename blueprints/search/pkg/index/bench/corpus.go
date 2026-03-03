@@ -84,6 +84,18 @@ func (cr *countingReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// writeCounting wraps a writer and counts bytes written.
+type writeCounting struct {
+	w     io.Writer
+	stats *DownloadStats
+}
+
+func (wc *writeCounting) Write(p []byte) (int, error) {
+	n, err := wc.w.Write(p)
+	wc.stats.BytesWritten.Add(int64(n))
+	return n, err
+}
+
 // Download streams the Wikipedia bzip2 corpus, normalizes, writes corpus.ndjson.
 // progress is called every 200ms; pass nil to disable.
 func Download(ctx context.Context, cfg DownloadConfig, progress func(*DownloadStats)) (*DownloadStats, error) {
@@ -141,7 +153,8 @@ func Download(ctx context.Context, cfg DownloadConfig, progress func(*DownloadSt
 	if err != nil {
 		return nil, fmt.Errorf("create corpus: %w", err)
 	}
-	bw := bufio.NewWriterSize(outFile, 4<<20)
+	wc := &writeCounting{w: outFile, stats: stats}
+	bw := bufio.NewWriterSize(wc, 4<<20)
 	enc := json.NewEncoder(bw)
 	enc.SetEscapeHTML(false)
 
@@ -188,10 +201,6 @@ func Download(ctx context.Context, cfg DownloadConfig, progress func(*DownloadSt
 	if err := outFile.Close(); err != nil {
 		os.Remove(cfg.OutPath)
 		return stats, err
-	}
-	// Record actual bytes written to file.
-	if fi, err := os.Stat(cfg.OutPath); err == nil {
-		stats.BytesWritten.Store(fi.Size())
 	}
 	return stats, nil
 }

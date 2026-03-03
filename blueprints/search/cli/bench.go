@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -143,7 +144,6 @@ func newBenchIndex() *cobra.Command {
 		engineName string
 		docs       int64
 		batchSize  int
-		workers    int
 		addr       string
 	)
 	cmd := &cobra.Command{
@@ -153,20 +153,19 @@ func newBenchIndex() *cobra.Command {
   search bench index --engine devnull --docs 10000
   search bench index --engine rose --docs 200000`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runBenchIndex(cmd.Context(), dir, engineName, docs, batchSize, workers, addr)
+			return runBenchIndex(cmd.Context(), dir, engineName, docs, batchSize, addr)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", defaultBenchDir(), "Bench data directory")
 	cmd.Flags().StringVar(&engineName, "engine", "", "FTS engine: "+strings.Join(index.List(), ", "))
 	cmd.Flags().Int64Var(&docs, "docs", 0, "Index first N docs (0 = all)")
 	cmd.Flags().IntVar(&batchSize, "batch-size", 5000, "Documents per batch")
-	cmd.Flags().IntVar(&workers, "workers", 0, "Indexing workers (0 = NumCPU)")
 	cmd.Flags().StringVar(&addr, "addr", "", "Service address for external engines")
 	_ = cmd.MarkFlagRequired("engine")
 	return cmd
 }
 
-func runBenchIndex(ctx context.Context, dir, engineName string, maxDocs int64, batchSize, workers int, addr string) error {
+func runBenchIndex(ctx context.Context, dir, engineName string, maxDocs int64, batchSize int, addr string) error {
 	corpusPath := filepath.Join(dir, "corpus.ndjson")
 	if _, err := os.Stat(corpusPath); os.IsNotExist(err) {
 		return fmt.Errorf("corpus not found at %s\n  run: search bench download", corpusPath)
@@ -193,11 +192,18 @@ func runBenchIndex(ctx context.Context, dir, engineName string, maxDocs int64, b
 	}
 	defer eng.Close()
 
-	if workers <= 0 {
-		workers = runtime.NumCPU()
-	}
 	if batchSize <= 0 {
 		batchSize = 5000
+	}
+
+	// Pre-count corpus lines for progress display (fast scan, not timed).
+	var totalDocs int64
+	if maxDocs > 0 {
+		totalDocs = maxDocs
+	} else {
+		fmt.Fprintf(os.Stderr, "counting corpus lines...")
+		totalDocs = countCorpusLines(corpusPath)
+		fmt.Fprintf(os.Stderr, " %d docs\n", totalDocs)
 	}
 
 	docCh := make(chan index.Document, batchSize*2)
@@ -224,7 +230,7 @@ func runBenchIndex(ctx context.Context, dir, engineName string, maxDocs int64, b
 	}
 
 	t0 := time.Now()
-	pstats, err := index.RunPipelineFromChannel(ctx, eng, docCh, 0, batchSize, progress)
+	pstats, err := index.RunPipelineFromChannel(ctx, eng, docCh, totalDocs, batchSize, progress)
 	fmt.Fprintln(os.Stderr)
 	if err != nil {
 		return err
@@ -492,4 +498,23 @@ func currentRSSMB() int64 {
 	var ms runtime.MemStats
 	runtime.ReadMemStats(&ms)
 	return int64(ms.Sys >> 20)
+}
+
+// countCorpusLines counts lines in a text file. Returns 0 on error (non-fatal).
+func countCorpusLines(path string) int64 {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	br := bufio.NewReaderSize(f, 1<<20)
+	var count int64
+	for {
+		_, err := br.ReadString('\n')
+		if err != nil {
+			break
+		}
+		count++
+	}
+	return count
 }
