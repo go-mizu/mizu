@@ -73,6 +73,7 @@ func newCCFTS() *cobra.Command {
 func newCCFTSIndex() *cobra.Command {
 	var (
 		crawlID   string
+		fileIdx   string
 		engine    string
 		source    string
 		batchSize int
@@ -87,15 +88,17 @@ func newCCFTSIndex() *cobra.Command {
   search cc fts index --engine sqlite --crawl CC-MAIN-2026-08
   search cc fts index --engine devnull  # benchmark I/O only
   search cc fts index --engine devnull --source parquet  # benchmark from parquet pack
-  search cc fts index --engine devnull --source bin      # benchmark from flatbin pack`,
+  search cc fts index --engine devnull --source bin      # benchmark from flatbin pack
+  search cc fts index --engine devnull --source markdown --file 0  # benchmark from bin.gz pack`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCCFTSIndex(cmd.Context(), crawlID, engine, source, batchSize, workers, addr)
+			return runCCFTSIndex(cmd.Context(), crawlID, fileIdx, engine, source, batchSize, workers, addr)
 		},
 	}
 
 	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest)")
+	cmd.Flags().StringVar(&fileIdx, "file", "0", "File index, range (0-9)")
 	cmd.Flags().StringVar(&engine, "engine", "duckdb", "FTS engine: "+strings.Join(index.List(), ", "))
-	cmd.Flags().StringVar(&source, "source", "files", "Source: files, parquet, bin, ndjson, duckdb")
+	cmd.Flags().StringVar(&source, "source", "files", "Source: files, parquet, bin, markdown, duckdb")
 	cmd.Flags().IntVar(&batchSize, "batch-size", 5000, "Documents per batch insert")
 	cmd.Flags().IntVar(&workers, "workers", 0, "Parallel file readers (0 = NumCPU)")
 	cmd.Flags().StringVar(&addr, "addr", "", "Service address for external engines (e.g. http://localhost:7700)")
@@ -131,49 +134,115 @@ func newCCFTSSearch() *cobra.Command {
 	return cmd
 }
 
-func runCCFTSIndex(ctx context.Context, crawlID, engineName, source string, batchSize, workers int, addr string) error {
+func runCCFTSIndex(ctx context.Context, crawlID, fileIdx, engineName, source string, batchSize, workers int, addr string) error {
 	if crawlID == "" {
 		crawlID = detectLatestCrawl()
 	}
 
 	homeDir, _ := os.UserHomeDir()
-	outputDir := filepath.Join(homeDir, "data", "common-crawl", crawlID, "fts", engineName)
+	baseDir := filepath.Join(homeDir, "data", "common-crawl", crawlID)
 
-	eng, err := index.NewEngine(engineName)
+	client := cc.NewClient("", 4)
+	paths, err := client.DownloadManifest(ctx, crawlID, "warc.paths.gz")
 	if err != nil {
-		return err
+		return fmt.Errorf("manifest: %w", err)
 	}
-	if addr != "" {
-		if setter, ok := eng.(index.AddrSetter); ok {
-			setter.SetAddr(addr)
-		} else {
-			fmt.Fprintf(os.Stderr, "warning: engine %q does not support --addr flag\n", engineName)
+	selected, err := ccParseFileSelector(fileIdx, len(paths))
+	if err != nil {
+		return fmt.Errorf("--file: %w", err)
+	}
+
+	for _, idx := range selected {
+		warcIdx := warcIndexFromPath(paths[idx], idx)
+		outputDir := filepath.Join(baseDir, "fts", engineName, warcIdx)
+
+		eng, err := index.NewEngine(engineName)
+		if err != nil {
+			return err
 		}
-	}
-	if err := eng.Open(ctx, outputDir); err != nil {
-		return fmt.Errorf("open engine: %w", err)
-	}
-	defer eng.Close()
+		if addr != "" {
+			if setter, ok := eng.(index.AddrSetter); ok {
+				setter.SetAddr(addr)
+			} else {
+				fmt.Fprintf(os.Stderr, "warning: engine %q does not support --addr flag\n", engineName)
+			}
+		}
+		if err := eng.Open(ctx, outputDir); err != nil {
+			return fmt.Errorf("open engine: %w", err)
+		}
 
-	if source != "files" {
-		return runCCFTSIndexFromPack(ctx, crawlID, engineName, source, eng, outputDir, batchSize)
+		var stats *index.PipelineStats
+		var pipeErr error
+
+		if source == "files" {
+			sourceDir := filepath.Join(baseDir, "markdown", warcIdx)
+			if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
+				eng.Close()
+				return fmt.Errorf("markdown dir not found: %s", sourceDir)
+			}
+
+			fmt.Fprintf(os.Stderr, "indexing %s → %s (engine=%s, batch=%d, workers=%d)\n",
+				sourceDir, outputDir, engineName, batchSize, workers)
+
+			cfg := index.PipelineConfig{
+				SourceDir: sourceDir,
+				BatchSize: batchSize,
+				Workers:   workers,
+			}
+			progress := makeFTSIndexProgress(engineName, outputDir)
+			stats, pipeErr = index.RunPipeline(ctx, eng, cfg, progress)
+			fmt.Fprintln(os.Stderr) // newline after progress
+		} else {
+			packDir := filepath.Join(baseDir, "pack")
+			packFile, perr := packFilePath(packDir, source, warcIdx)
+			if perr != nil {
+				eng.Close()
+				return perr
+			}
+			if _, err := os.Stat(packFile); os.IsNotExist(err) {
+				eng.Close()
+				return fmt.Errorf("pack file not found: %s\n  run: search cc fts pack --format %s --file %s", packFile, source, fileIdx)
+			}
+			fmt.Fprintf(os.Stderr, "indexing [%s ← %s] from %s\n", engineName, source, packFile)
+			progress := makeFTSPackProgress(engineName, source, outputDir)
+			stats, pipeErr = runCCFTSIndexFromPackFile(ctx, source, eng, packFile, batchSize, progress)
+			fmt.Fprintln(os.Stderr) // newline after progress
+		}
+
+		if pipeErr != nil {
+			eng.Close()
+			return pipeErr
+		}
+
+		if err := ftsCreateDuckDBIndex(ctx, eng); err != nil {
+			eng.Close()
+			return err
+		}
+
+		engineStats, _ := eng.Stats(ctx)
+		elapsed := time.Since(stats.StartTime)
+		avgRate := float64(stats.DocsIndexed.Load()) / elapsed.Seconds()
+
+		fmt.Fprintf(os.Stderr, "\n── FTS Index Complete ──────────────────────────\n")
+		fmt.Fprintf(os.Stderr, "  engine:    %s\n", engineName)
+		fmt.Fprintf(os.Stderr, "  source:    %s\n", source)
+		fmt.Fprintf(os.Stderr, "  warc:      %s\n", warcIdx)
+		fmt.Fprintf(os.Stderr, "  docs:      %d\n", engineStats.DocCount)
+		fmt.Fprintf(os.Stderr, "  errors:    %d\n", stats.Errors.Load())
+		fmt.Fprintf(os.Stderr, "  elapsed:   %s\n", elapsed.Round(100*time.Millisecond))
+		fmt.Fprintf(os.Stderr, "  avg rate:  %.0f docs/s\n", avgRate)
+		fmt.Fprintf(os.Stderr, "  peak RSS:  %d MB\n", stats.PeakRSSMB.Load())
+		fmt.Fprintf(os.Stderr, "  disk:      %s\n", formatBytes(engineStats.DiskBytes))
+		fmt.Fprintf(os.Stderr, "  path:      %s\n", outputDir)
+
+		eng.Close()
 	}
+	return nil
+}
 
-	sourceDir := filepath.Join(homeDir, "data", "common-crawl", crawlID, "markdown")
-	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
-		return fmt.Errorf("markdown dir not found: %s", sourceDir)
-	}
-
-	fmt.Fprintf(os.Stderr, "indexing %s → %s (engine=%s, batch=%d, workers=%d)\n",
-		sourceDir, outputDir, engineName, batchSize, workers)
-
-	cfg := index.PipelineConfig{
-		SourceDir: sourceDir,
-		BatchSize: batchSize,
-		Workers:   workers,
-	}
-
-	progress := func(stats *index.PipelineStats) {
+// makeFTSIndexProgress returns a ProgressFunc for the files pipeline.
+func makeFTSIndexProgress(engineName, outputDir string) index.ProgressFunc {
+	return func(stats *index.PipelineStats) {
 		total := stats.TotalFiles.Load()
 		done := stats.DocsIndexed.Load()
 		elapsed := time.Since(stats.StartTime).Seconds()
@@ -195,51 +264,11 @@ func runCCFTSIndex(ctx context.Context, crawlID, engineName, source string, batc
 		fmt.Fprintf(os.Stderr, "\r\033[Kindexing [%s] %s %d/%d docs │ %.0f docs/s │ %.1fs │ RSS %d MB │ disk %s",
 			engineName, bar, done, total, rate, elapsed, peakMB, formatBytes(disk))
 	}
-
-	stats, err := index.RunPipeline(ctx, eng, cfg, progress)
-	fmt.Fprintln(os.Stderr) // newline after progress
-
-	if err != nil {
-		return err
-	}
-
-	if err := ftsCreateDuckDBIndex(ctx, eng); err != nil {
-		return err
-	}
-
-	engineStats, _ := eng.Stats(ctx)
-	elapsed := time.Since(stats.StartTime)
-	avgRate := float64(stats.DocsIndexed.Load()) / elapsed.Seconds()
-
-	fmt.Fprintf(os.Stderr, "\n── FTS Index Complete ──────────────────────────\n")
-	fmt.Fprintf(os.Stderr, "  engine:    %s\n", engineName)
-	fmt.Fprintf(os.Stderr, "  source:    files\n")
-	fmt.Fprintf(os.Stderr, "  docs:      %d\n", engineStats.DocCount)
-	fmt.Fprintf(os.Stderr, "  errors:    %d\n", stats.Errors.Load())
-	fmt.Fprintf(os.Stderr, "  elapsed:   %s\n", elapsed.Round(100*time.Millisecond))
-	fmt.Fprintf(os.Stderr, "  avg rate:  %.0f docs/s\n", avgRate)
-	fmt.Fprintf(os.Stderr, "  peak RSS:  %d MB\n", stats.PeakRSSMB.Load())
-	fmt.Fprintf(os.Stderr, "  disk:      %s\n", formatBytes(engineStats.DiskBytes))
-	fmt.Fprintf(os.Stderr, "  path:      %s\n", outputDir)
-
-	return nil
 }
 
-func runCCFTSIndexFromPack(ctx context.Context, crawlID, engineName, source string, eng index.Engine, outputDir string, batchSize int) error {
-	homeDir, _ := os.UserHomeDir()
-	packDir := filepath.Join(homeDir, "data", "common-crawl", crawlID, "pack")
-
-	packFile, err := packFilePath(packDir, source, "docs")
-	if err != nil {
-		return err
-	}
-	if _, err := os.Stat(packFile); os.IsNotExist(err) {
-		return fmt.Errorf("pack file not found: %s\n  run: search cc fts pack --format %s", packFile, source)
-	}
-
-	fmt.Fprintf(os.Stderr, "indexing [%s ← %s] from %s\n", engineName, source, packFile)
-
-	progress := func(done, total int64, elapsed time.Duration) {
+// makeFTSPackProgress returns a PackProgressFunc for pack-based pipelines.
+func makeFTSPackProgress(engineName, source, outputDir string) index.PackProgressFunc {
+	return func(done, total int64, elapsed time.Duration) {
 		secs := elapsed.Seconds()
 		rate := float64(0)
 		if secs > 0 {
@@ -263,9 +292,12 @@ func runCCFTSIndexFromPack(ctx context.Context, crawlID, engineName, source stri
 				engineName, source, done, rate, secs, formatBytes(disk))
 		}
 	}
+}
 
-	var stats *index.PipelineStats
-
+// runCCFTSIndexFromPackFile indexes documents from a pre-packed file into eng.
+// The caller is responsible for opening eng before calling and closing it after.
+// source determines which reader is used; packFile is the absolute path to the pack file.
+func runCCFTSIndexFromPackFile(ctx context.Context, source string, eng index.Engine, packFile string, batchSize int, progress index.PackProgressFunc) (*index.PipelineStats, error) {
 	// Fast path: if the engine implements BulkLoader and source is parquet,
 	// bypass the Go streaming pipeline entirely — let the engine ingest the
 	// file natively (e.g. DuckDB's read_parquet() vectorised path).
@@ -273,53 +305,29 @@ func runCCFTSIndexFromPack(ctx context.Context, crawlID, engineName, source stri
 		t0 := time.Now()
 		fmt.Fprintf(os.Stderr, "bulk loading via native read_parquet()...\n")
 		n, bulkErr := bl.BulkLoad(ctx, "parquet", packFile)
-		fmt.Fprintln(os.Stderr)
 		if bulkErr != nil {
-			return fmt.Errorf("bulk load: %w", bulkErr)
+			return nil, fmt.Errorf("bulk load: %w", bulkErr)
 		}
-		stats = &index.PipelineStats{StartTime: t0}
+		stats := &index.PipelineStats{StartTime: t0}
 		stats.DocsIndexed.Store(n)
 		elapsed := time.Since(t0)
 		fmt.Fprintf(os.Stderr, "  bulk load: %d docs in %s (%.0f docs/s)\n",
 			n, elapsed.Round(10*time.Millisecond), float64(n)/elapsed.Seconds())
-	} else {
-		switch source {
-		case "parquet":
-			stats, err = index.RunPipelineFromParquet(ctx, eng, packFile, batchSize, progress)
-		case "bin":
-			stats, err = index.RunPipelineFromFlatBin(ctx, eng, packFile, batchSize, progress)
-		case "ndjson":
-			stats, err = index.RunPipelineFromNDJSON(ctx, eng, packFile, batchSize, progress)
-		case "duckdb":
-			stats, err = runPipelineFromDuckDBRaw(ctx, eng, packFile, batchSize, progress)
-		default:
-			return fmt.Errorf("unknown source %q (valid: files, parquet, bin, ndjson, duckdb)", source)
-		}
-		fmt.Fprintln(os.Stderr) // newline after progress
-		if err != nil {
-			return err
-		}
+		return stats, nil
 	}
 
-	if err := ftsCreateDuckDBIndex(ctx, eng); err != nil {
-		return err
+	switch source {
+	case "parquet":
+		return index.RunPipelineFromParquet(ctx, eng, packFile, batchSize, progress)
+	case "bin":
+		return index.RunPipelineFromFlatBin(ctx, eng, packFile, batchSize, progress)
+	case "markdown":
+		return index.RunPipelineFromFlatBinGz(ctx, eng, packFile, batchSize, progress)
+	case "duckdb":
+		return runPipelineFromDuckDBRaw(ctx, eng, packFile, batchSize, progress)
+	default:
+		return nil, fmt.Errorf("unknown source %q (valid: files, parquet, bin, markdown, duckdb)", source)
 	}
-
-	engineStats, _ := eng.Stats(ctx)
-	elapsed := time.Since(stats.StartTime)
-	avgRate := float64(stats.DocsIndexed.Load()) / elapsed.Seconds()
-
-	fmt.Fprintf(os.Stderr, "\n── FTS Index Complete ──────────────────────────\n")
-	fmt.Fprintf(os.Stderr, "  engine:    %s\n", engineName)
-	fmt.Fprintf(os.Stderr, "  source:    %s\n", source)
-	fmt.Fprintf(os.Stderr, "  docs:      %d\n", engineStats.DocCount)
-	fmt.Fprintf(os.Stderr, "  elapsed:   %s\n", elapsed.Round(100*time.Millisecond))
-	fmt.Fprintf(os.Stderr, "  avg rate:  %.0f docs/s\n", avgRate)
-	fmt.Fprintf(os.Stderr, "  peak RSS:  %d MB\n", stats.PeakRSSMB.Load())
-	fmt.Fprintf(os.Stderr, "  disk:      %s\n", formatBytes(engineStats.DiskBytes))
-	fmt.Fprintf(os.Stderr, "  path:      %s\n", outputDir)
-
-	return nil
 }
 
 // ftsCreateDuckDBIndex calls CreateFTSIndex on any engine that implements it
