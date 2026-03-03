@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"unicode/utf8"
 )
 
 // docStoreMaxText is the maximum number of bytes of document text stored per entry.
@@ -91,6 +92,12 @@ func (ds *docStore) append(externalID string, text []byte) (uint32, error) {
 	// Truncate text to docStoreMaxText bytes.
 	if len(text) > docStoreMaxText {
 		text = text[:docStoreMaxText]
+		// Walk back to the last rune boundary so we don't store a partial
+		// multi-byte sequence. A UTF-8 multi-byte rune is at most 4 bytes,
+		// so this loop runs at most 3 times.
+		for len(text) > 0 && !utf8.Valid(text) {
+			text = text[:len(text)-1]
+		}
 	}
 
 	extIDBytes := []byte(externalID)

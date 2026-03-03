@@ -3,6 +3,7 @@ package rose
 import (
 	"path/filepath"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestDocStore_AppendAndGet(t *testing.T) {
@@ -74,6 +75,29 @@ func TestDocStore_EmptyText(t *testing.T) {
 	e, _ := ds.get(idx)
 	if len(e.text) != 0 {
 		t.Error("empty text should stay empty")
+	}
+}
+
+func TestDocStore_TextTruncationUTF8Safe(t *testing.T) {
+	ds, _ := openDocStore(filepath.Join(t.TempDir(), "rose.docs"))
+	defer ds.close()
+	// Build a 600-byte string where bytes 510-512 are part of a 3-byte rune (€ = 0xE2 0x82 0xAC)
+	// The truncation at 512 would split the rune if not UTF-8-aware
+	base := make([]byte, 510)
+	for i := range base {
+		base[i] = 'a'
+	}
+	euroSign := []byte{0xE2, 0x82, 0xAC} // €
+	text := append(base, euroSign...)     // 513 bytes, € starts at 510
+	text = append(text, make([]byte, 87)...) // pad to > 512
+
+	ds.append("utf8doc", text)
+	e, _ := ds.get(0)
+	if !utf8.Valid(e.text) {
+		t.Errorf("stored text is not valid UTF-8: last bytes %v", e.text[len(e.text)-3:])
+	}
+	if len(e.text) > docStoreMaxText {
+		t.Errorf("text exceeds max: %d", len(e.text))
 	}
 }
 
