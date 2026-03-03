@@ -21,6 +21,7 @@ import (
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/bleve"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/clickhouse"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/elasticsearch"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/flower/dahlia"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/flower/rose"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/meilisearch"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/opensearch"
@@ -62,6 +63,8 @@ func newCCFTS() *cobra.Command {
 	cmd.AddCommand(newCCFTSIndex())
 	cmd.AddCommand(newCCFTSSearch())
 	cmd.AddCommand(newCCFTSPack())
+	cmd.AddCommand(newCCFTSWeb())
+	cmd.AddCommand(newCCFTSDashboard())
 	return cmd
 }
 
