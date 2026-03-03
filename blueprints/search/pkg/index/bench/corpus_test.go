@@ -12,26 +12,15 @@ func TestNormalizeText(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"Hello, World! 123", "hello  world  "},
+		{"", ""},
 		{"machine-learning", "machine learning"},
 		{"New York City", "new york city"},
-		{"", ""},
+		{"HELLO123WORLD", "hello world"},
 	}
 	for _, tc := range cases {
 		got := bench.NormalizeText(tc.input)
-		// NormalizeText lowercases and replaces non-alpha with space.
-		// Check lowercase and that original alpha chars are preserved.
-		lc := strings.ToLower(tc.input)
-		_ = lc
-		if tc.input == "" && got != "" {
-			t.Errorf("NormalizeText(%q) = %q, want empty", tc.input, got)
-		}
-		if tc.input != "" && got == "" {
-			t.Errorf("NormalizeText(%q) = empty, want non-empty", tc.input)
-		}
-		// Must be lowercase
-		if got != strings.ToLower(got) {
-			t.Errorf("NormalizeText(%q) = %q is not lowercase", tc.input, got)
+		if got != tc.want {
+			t.Errorf("NormalizeText(%q) = %q, want %q", tc.input, got, tc.want)
 		}
 	}
 }

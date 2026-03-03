@@ -166,7 +166,6 @@ func Download(ctx context.Context, cfg DownloadConfig, progress func(*DownloadSt
 			return stats, fmt.Errorf("encode: %w", err)
 		}
 		n := stats.DocsWritten.Add(1)
-		stats.BytesWritten.Add(int64(len(doc.Text) + len(doc.DocID) + 20))
 		if cfg.MaxDocs > 0 && n >= cfg.MaxDocs {
 			break
 		}
@@ -175,14 +174,26 @@ func Download(ctx context.Context, cfg DownloadConfig, progress func(*DownloadSt
 		bw.Flush()
 		outFile.Close()
 		os.Remove(cfg.OutPath)
+		if ctx.Err() != nil {
+			return stats, ctx.Err()
+		}
 		return stats, fmt.Errorf("scan: %w", err)
 	}
 
 	if err := bw.Flush(); err != nil {
 		outFile.Close()
+		os.Remove(cfg.OutPath)
 		return stats, err
 	}
-	return stats, outFile.Close()
+	if err := outFile.Close(); err != nil {
+		os.Remove(cfg.OutPath)
+		return stats, err
+	}
+	// Record actual bytes written to file.
+	if fi, err := os.Stat(cfg.OutPath); err == nil {
+		stats.BytesWritten.Store(fi.Size())
+	}
+	return stats, nil
 }
 
 // CorpusReader reads corpus.ndjson and sends index.Document values on docCh.
@@ -198,7 +209,6 @@ func CorpusReader(ctx context.Context, corpusPath string, maxDocs int64, docCh c
 		defer f.Close()
 		defer close(docCh)
 		br := bufio.NewReaderSize(f, 4<<20)
-		var doc corpusDoc
 		var count int64
 		for {
 			if ctx.Err() != nil {
@@ -211,6 +221,7 @@ func CorpusReader(ctx context.Context, corpusPath string, maxDocs int64, docCh c
 					line = line[:len(line)-1]
 				}
 				if len(line) > 0 {
+					var doc corpusDoc  // zero-value each iteration
 					if jsonErr := json.Unmarshal(line, &doc); jsonErr == nil && doc.DocID != "" {
 						select {
 						case docCh <- index.Document{DocID: doc.DocID, Text: []byte(doc.Text)}:
