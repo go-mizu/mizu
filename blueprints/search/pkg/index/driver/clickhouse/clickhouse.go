@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	ch "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -57,11 +58,12 @@ func (e *Engine) CreateTable(ctx context.Context) error {
 	if e.conn == nil {
 		return fmt.Errorf("clickhouse: not connected")
 	}
+	// text index type is GA in ClickHouse 26.2; replaces tokenbf_v1 for FTS.
 	const ddl = `
 CREATE TABLE IF NOT EXISTS fts_docs (
     doc_id String,
     text   String,
-    INDEX  text_idx text TYPE tokenbf_v1(32768, 3, 0) GRANULARITY 1
+    INDEX  text_idx text TYPE text(tokenizer = 'splitByNonAlpha')
 ) ENGINE = MergeTree()
 ORDER BY doc_id
 SETTINGS index_granularity = 8192`
@@ -119,14 +121,21 @@ func (e *Engine) Search(ctx context.Context, q index.Query) (index.Results, erro
 	if limit <= 0 {
 		limit = 10
 	}
+
+	if strings.TrimSpace(q.Text) == "" {
+		return index.Results{}, nil
+	}
+	// hasAllTokens supports multi-word queries and leverages the text index (ClickHouse 26.2+).
+	// lower() on both sides gives case-insensitive matching.
+	args := []any{strings.ToLower(q.Text), limit, q.Offset}
 	const query = `
 SELECT doc_id, substring(text, 1, 200) AS snippet, 1.0 AS score
 FROM fts_docs
-WHERE hasTokenCaseInsensitive(text, ?)
+WHERE hasAllTokens(lower(text), ?)
 ORDER BY doc_id
 LIMIT ? OFFSET ?`
 
-	rows, err := e.conn.Query(ctx, query, q.Text, limit, q.Offset)
+	rows, err := e.conn.Query(ctx, query, args...)
 	if err != nil {
 		return index.Results{}, fmt.Errorf("clickhouse: search query: %w", err)
 	}

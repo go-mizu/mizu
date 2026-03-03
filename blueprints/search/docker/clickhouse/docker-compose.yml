@@ -1,11 +1,11 @@
-# ClickHouse 25.x — OLAP database with inverted/token-bloom FTS
+# ClickHouse 26.x — OLAP database with native text (inverted) index (GA in 26.2)
 # Usage:
 #   FTS_DATA_DIR=$HOME/data/fts docker compose -f docker/clickhouse/docker-compose.yml up -d
 #   search cc fts index --engine clickhouse
 
 services:
   clickhouse:
-    image: clickhouse/clickhouse-server:25.4
+    image: clickhouse/clickhouse-server:26.2
     container_name: fts-clickhouse
     ports:
       - "8123:8123"   # HTTP interface
