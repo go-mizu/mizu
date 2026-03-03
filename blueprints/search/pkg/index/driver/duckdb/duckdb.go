@@ -47,6 +47,10 @@ type Engine struct {
 
 	// cumulative time spent in Index() calls (excludes FTS build).
 	insertTime time.Duration
+
+	// ftsReady is set after Finalize() confirms the FTS index exists.
+	// Skips the per-query INSTALL/LOAD and schema check.
+	ftsReady bool
 }
 
 func (e *Engine) Name() string { return e.name }
@@ -273,14 +277,16 @@ func (e *Engine) Search(ctx context.Context, q index.Query) (index.Results, erro
 }
 
 func (e *Engine) searchFTS(ctx context.Context, query string, limit, offset int) (index.Results, error) {
-	if _, err := e.db.ExecContext(ctx, "INSTALL fts; LOAD fts"); err != nil {
-		return index.Results{}, err
-	}
-	var n int
-	err := e.db.QueryRowContext(ctx,
-		"SELECT count(*) FROM information_schema.schemata WHERE schema_name = 'fts_main_documents'").Scan(&n)
-	if err != nil || n == 0 {
-		return index.Results{}, fmt.Errorf("no FTS index")
+	if !e.ftsReady {
+		if _, err := e.db.ExecContext(ctx, "INSTALL fts; LOAD fts"); err != nil {
+			return index.Results{}, err
+		}
+		var n int
+		if err := e.db.QueryRowContext(ctx,
+			"SELECT count(*) FROM information_schema.schemata WHERE schema_name = 'fts_main_documents'").Scan(&n); err != nil || n == 0 {
+			return index.Results{}, fmt.Errorf("no FTS index")
+		}
+		e.ftsReady = true
 	}
 	sqlStr := `SELECT doc_id, substring(text, 1, 200) AS snippet,
 	        fts_main_documents.match_bm25(doc_id, ?, fields := 'text') AS score
@@ -360,7 +366,13 @@ func (e *Engine) CreateFTSIndex(ctx context.Context) error {
 		return fmt.Errorf("create fts index: %w", err)
 	}
 	fmt.Fprintf(os.Stderr, "  fts build time: %s\n", time.Since(t0).Round(100*time.Millisecond))
+	e.ftsReady = true
 	return nil
 }
 
+// Finalize implements index.Finalizer — builds the BM25 FTS index after all
+// documents have been inserted. Called by the bench CLI before Stats/Search.
+func (e *Engine) Finalize(ctx context.Context) error { return e.CreateFTSIndex(ctx) }
+
 var _ index.Engine = (*Engine)(nil)
+var _ index.Finalizer = (*Engine)(nil)

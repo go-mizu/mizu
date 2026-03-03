@@ -312,49 +312,71 @@ func Run(ctx context.Context, eng index.Engine, cfg BenchConfig,
 
 ## Benchmark Results
 
-Corpus: English Wikipedia, 5,032,104 docs (~5 M).
+Corpus: English Wikipedia (5,032,104 docs full).
 Machine: Apple M-series (darwin/arm64), local NVMe, `go build -tags tantivy`.
-Full-dataset search uses `--commands TOP_10 --warmup 30s --iter 10` (COUNT omitted — too slow on 5 M docs for rose).
+Engines: **sqlite** (FTS5), **duckdb** (FTS extension via Appender API), **rose** (pure Go), **tantivy** (CGO/Rust).
 
 ### Index Performance
 
+| Engine | Docs | Index time | Rate (docs/s) | Disk |
+|--------|-----:|-----------|--------------|-----:|
+| sqlite | 100 | < 1ms | 13,936 | 220 KB |
+| duckdb | 100 | < 1ms | 4,103 | 586 KB |
+| rose | 100 | < 1ms | 20,077 | 0 B |
+| tantivy | 100 | 100ms | 693 | 124 KB |
+| sqlite | 1,000 | 100ms | 13,426 | 1.9 MB |
+| duckdb | 1,000 | 100ms | 11,840 | 5.7 MB |
+| rose | 1,000 | < 1ms | 28,469 | 256 KB |
+| tantivy | 1,000 | 200ms | 5,922 | 1.2 MB |
+| sqlite | 10,000 | 900ms | 11,742 | 16.7 MB |
+| duckdb | 10,000 | 700ms | 14,586 | 37.0 MB |
+| rose | 10,000 | 300ms | 39,224 | 3.5 MB |
+| tantivy | 10,000 | 400ms | 22,879 | 10.7 MB |
+
+Full-dataset results (rose + tantivy only):
+
 | Engine | Docs | Index time | Rate (docs/s) | Disk | Peak RSS |
 |--------|-----:|-----------|--------------|-----:|--------:|
-| rose | 100 | < 1ms | 15,084 | 0 B | — |
-| tantivy | 100 | 100ms | 685 | 123.6 KB | — |
-| rose | 1,000 | < 1ms | 27,440 | 256 KB | — |
-| tantivy | 1,000 | 200ms | 6,439 | 1.2 MB | — |
-| rose | 10,000 | 300ms | 37,160 | 3.5 MB | — |
-| tantivy | 10,000 | 400ms | 23,012 | 10.7 MB | — |
-| rose | 100,000 | 2.5s | 40,566 | 37.5 MB | — |
-| tantivy | 100,000 | 4.9s | 20,339 | 122.7 MB | — |
 | **rose** | **5,032,104** | **6m40s** | **12,563** | **3.2 GB** | **22.4 GB** |
 | **tantivy** | **5,032,104** | **7m6s** | **11,808** | **7.3 GB** | **278 MB** |
 
 Notes:
-- Rose's 22.4 GB peak RSS at full scale reflects its in-memory index architecture — the entire index is held in RAM.
-- Tantivy uses 278 MB peak RSS at full scale (memory-mapped index on disk).
-- Tantivy disk usage is ~2.3× rose's at full scale (more aggressive per-field structures vs. rose's single segment file).
-- Both engines reach similar throughput (~12k docs/s) at full scale; rose is faster at smaller sizes due to no per-commit overhead.
+- **Rose** is fastest at indexing across all sizes (20k–39k docs/s), thanks to in-memory architecture with no per-commit overhead.
+- **Tantivy** has ~200ms fixed startup cost (CGO + Rust runtime init); at 10k+ docs, throughput reaches 23k docs/s.
+- **SQLite** is steady at ~12k docs/s with low disk overhead (FTS5 triggers update the virtual table incrementally).
+- **DuckDB** index rate varies; disk usage is 2–3× larger (FTS extension creates auxiliary BM25 tables via `PRAGMA create_fts_index`).
+- Rose full-scale peak RSS = 22.4 GB (entire index in RAM); tantivy = 278 MB (memory-mapped).
 
-### Search Performance (TOP_10, 962 queries, 10 iterations)
+### Search Performance (TOP_10, 962 queries)
+
+All engines: 10 iterations after warmup. DuckDB: 3 iterations, no warmup (O(n) full-scan per query makes it too slow for more).
 
 | Engine | Docs | p50 | p95 | p99 | Slowest query |
 |--------|-----:|----:|----:|----:|--------------|
-| rose | 100 | 70 µs | 77 µs | 77 µs | "customer +service phone number" → 387 µs |
-| tantivy | 100 | 33 µs | 37 µs | 37 µs | long-phrase query → 1.1 ms |
-| rose | 1,000 | 248 µs | 257 µs | 257 µs | "phone cases" → 401 µs |
-| tantivy | 1,000 | 38 µs | 49 µs | 49 µs | "+interest +only" → 1.8 ms |
-| rose | 10,000 | 306 µs | 323 µs | 323 µs | "+new +york +times +best +sellers +list" → 883 µs |
-| tantivy | 10,000 | 309 µs | 344 µs | 344 µs | "+care +a +lot" → 3.7 ms |
-| rose | 100,000 | 463 µs | 490 µs | 490 µs | long-phrase query → 24.3 ms |
-| tantivy | 100,000 | 575 µs | 661 µs | 661 µs | "+big +boss +man" → 10.0 ms |
+| **sqlite** | **100** | **33 µs** | **36 µs** | **36 µs** | "the garden of eden" → 1.1 ms |
+| duckdb | 100 | 5.5 ms | 5.8 ms | 5.8 ms | "+business +consultants" → 15.8 ms |
+| rose | 100 | 67 µs | 75 µs | 75 µs | "customer +service phone number" → 353 µs |
+| tantivy | 100 | 31 µs | 38 µs | 38 µs | long-phrase query → 988 µs |
+| **sqlite** | **1,000** | **36 µs** | **42 µs** | **42 µs** | long-phrase query → 3.6 ms |
+| duckdb | 1,000 | 7.6 ms | 8.0 ms | 8.0 ms | "+ellen +degeneres +show" → 13.7 ms |
+| rose | 1,000 | 247 µs | 262 µs | 262 µs | `"music videos"` → 513 µs |
+| tantivy | 1,000 | 36 µs | 49 µs | 49 µs | "+interest +only" → 1.7 ms |
+| **sqlite** | **10,000** | **105 µs** | **118 µs** | **118 µs** | long-phrase query → 22.2 ms |
+| duckdb | 10,000 | 13.8 ms | 14.6 ms | 14.6 ms | long-phrase query → 25.5 ms |
+| rose | 10,000 | 297 µs | 315 µs | 315 µs | long-phrase query → 826 µs |
+| tantivy | 10,000 | 291 µs | 335 µs | 335 µs | "+care +a +lot" → 3.4 ms |
+
+Full-dataset search (TOP_10, `--warmup 30s --iter 10`):
+
+| Engine | Docs | p50 | p95 | p99 | Slowest query |
+|--------|-----:|----:|----:|----:|--------------|
 | **rose** | **5,032,104** | **14.4 ms** | **16.1 ms** | **16.1 ms** | long-phrase query → 6.8 s |
 | **tantivy** | **5,032,104** | **2.7 ms** | **3.4 ms** | **3.4 ms** | `+"the who" +uk` → 227.7 ms |
 
 Notes:
-- Tantivy is **5× faster** at median search latency on the full 5 M-doc corpus (2.7 ms vs 14.4 ms).
-- At small scales (≤ 10k docs) the engines are comparable; rose is faster at 1k (248 µs vs 38 µs — tantivy has fixed CGO call overhead per query).
-- Rose's worst-case slowest query (6.8 s) is a very long phrase against 5 M docs; tantivy's worst case is 227 ms.
-- Rose p95 = p99 (16.1 ms) at full scale: latency distribution is tight, no outlier tail except for extreme phrase queries.
-- Tantivy p95 = p99 (3.4 ms) at full scale as well.
+- **SQLite FTS5** is the fastest search engine up to 10k docs — 33–105 µs p50 (inverted index with minimal overhead, pure SQL).
+- **Tantivy** matches SQLite at small scale (31–36 µs) and is **5× faster** than rose at full 5M scale (2.7 ms vs 14.4 ms).
+- **Rose** scales linearly from 67 µs (100 docs) to 297 µs (10k docs) — consistent but slower than SQLite/tantivy due to pure-Go overhead.
+- **DuckDB FTS** is 100–200× slower than SQLite/tantivy. Its `match_bm25()` function does an O(n) full-table scan per query (not an inverted index lookup). At 10k docs: 13.8 ms vs. 105 µs for SQLite.
+- At 10k docs, sqlite (105 µs) < tantivy (291 µs) < rose (297 µs) ≪ duckdb (13.8 ms).
+- Long-phrase queries are the universal worst case across all engines.

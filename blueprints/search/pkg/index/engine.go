@@ -71,6 +71,13 @@ type BulkLoader interface {
 	BulkLoad(ctx context.Context, format, path string) (int64, error)
 }
 
+// Finalizer is optionally implemented by engines that require a post-index step
+// before the index is queryable (e.g., DuckDB building its BM25 FTS index after
+// bulk-insert is complete). The bench CLI calls Finalize after all Index calls.
+type Finalizer interface {
+	Finalize(ctx context.Context) error
+}
+
 // AddrSetter is implemented by external engines that connect to a remote service.
 // The CLI calls SetAddr before Open when --addr is provided.
 type AddrSetter interface {

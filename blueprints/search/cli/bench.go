@@ -172,6 +172,10 @@ func runBenchIndex(ctx context.Context, dir, engineName string, maxDocs int64, b
 	}
 
 	indexDir := filepath.Join(dir, "index", engineName)
+	// Always start from a clean slate so re-runs don't hit duplicate-key errors.
+	if err := os.RemoveAll(indexDir); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(indexDir, 0o755); err != nil {
 		return err
 	}
@@ -234,6 +238,11 @@ func runBenchIndex(ctx context.Context, dir, engineName string, maxDocs int64, b
 	fmt.Fprintln(os.Stderr)
 	if err != nil {
 		return err
+	}
+	if fin, ok := eng.(index.Finalizer); ok {
+		if err := fin.Finalize(ctx); err != nil {
+			return fmt.Errorf("finalize engine: %w", err)
+		}
 	}
 
 	engStats, _ := eng.Stats(ctx)

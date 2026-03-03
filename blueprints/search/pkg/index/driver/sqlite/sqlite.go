@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index"
@@ -102,6 +103,40 @@ func (e *Engine) Index(ctx context.Context, docs []index.Document) error {
 	return tx.Commit()
 }
 
+// luceneToFTS5 translates benchmark query shapes to SQLite FTS5 syntax:
+//   "+term1 +term2"        → "term1 term2"        (AND; FTS5 default)
+//   "+term1 -term2"        → "term1 NOT term2"    (AND NOT)
+//   `"phrase query"`       → `"phrase query"`     (phrase; unchanged)
+//   "term1 term2"          → "term1 OR term2"     (union)
+func luceneToFTS5(q string) string {
+	hasBoolOp := strings.Contains(q, "+") ||
+		strings.HasPrefix(q, "-") ||
+		strings.Contains(q, " -")
+	if hasBoolOp {
+		parts := strings.Fields(q)
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			switch {
+			case strings.HasPrefix(p, "+"):
+				out = append(out, p[1:])
+			case strings.HasPrefix(p, "-"):
+				out = append(out, "NOT "+p[1:])
+			default:
+				out = append(out, p)
+			}
+		}
+		return strings.Join(out, " ")
+	}
+	if strings.HasPrefix(q, `"`) {
+		return q
+	}
+	tokens := strings.Fields(q)
+	if len(tokens) > 1 {
+		return strings.Join(tokens, " OR ")
+	}
+	return q
+}
+
 func (e *Engine) Search(ctx context.Context, q index.Query) (index.Results, error) {
 	limit := q.Limit
 	if limit <= 0 {
@@ -116,7 +151,7 @@ func (e *Engine) Search(ctx context.Context, q index.Query) (index.Results, erro
 	        ORDER BY bm25(documents_fts)
 	        LIMIT ? OFFSET ?`
 
-	rows, err := e.db.QueryContext(ctx, sqlStr, q.Text, limit, q.Offset)
+	rows, err := e.db.QueryContext(ctx, sqlStr, luceneToFTS5(q.Text), limit, q.Offset)
 	if err != nil {
 		return index.Results{}, fmt.Errorf("sqlite search: %w", err)
 	}
