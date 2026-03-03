@@ -1,16 +1,22 @@
 package rose
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 // ---------------------------------------------------------------------------
 // Task 1: VByte codec tests
 // ---------------------------------------------------------------------------
 
 func TestVByte_RoundTrip(t *testing.T) {
-	cases := []uint32{0, 1, 127, 128, 16383, 16384, 2097151, 2097152, 1<<28 - 1}
+	cases := []uint32{0, 1, 127, 128, 16383, 16384, 2097151, 2097152, 1<<28 - 1, math.MaxUint32}
 	for _, v := range cases {
 		buf := vbyteEncode(nil, v)
-		got, _ := vbyteDecode(buf, 0)
+		got, _, err := vbyteDecode(buf, 0)
+		if err != nil {
+			t.Errorf("vbyte(%d): unexpected error: %v", v, err)
+		}
 		if got != v {
 			t.Errorf("vbyte(%d): got %d", v, got)
 		}
@@ -43,7 +49,10 @@ func TestVByte_Sequence(t *testing.T) {
 	}
 	pos := 0
 	for _, want := range vals {
-		got, newPos := vbyteDecode(buf, pos)
+		got, newPos, err := vbyteDecode(buf, pos)
+		if err != nil {
+			t.Fatalf("decode pos %d: unexpected error: %v", pos, err)
+		}
 		if got != want {
 			t.Fatalf("decode pos %d: got %d, want %d", pos, got, want)
 		}
@@ -123,5 +132,29 @@ func TestBlock_UnpackZero(t *testing.T) {
 	ids, imp, err := unpackBlock(nil, 0, 0)
 	if err != nil || ids != nil || imp != nil {
 		t.Errorf("unpackBlock n=0: got ids=%v imp=%v err=%v, want nil nil nil", ids, imp, err)
+	}
+}
+
+func TestVByte_TruncatedDecode(t *testing.T) {
+	// Encode a value that requires 2 bytes (e.g. 128), then pass only 1 byte.
+	full := vbyteEncode(nil, 128)
+	if len(full) != 2 {
+		t.Fatalf("expected 2-byte encoding for 128, got %d bytes", len(full))
+	}
+	// Pass only the first byte (continuation byte with MSB set).
+	_, _, err := vbyteDecode(full[:1], 0)
+	if err == nil {
+		t.Error("expected error on truncated buffer, got nil")
+	}
+}
+
+func TestBlock_TruncatedData(t *testing.T) {
+	docIDs := []uint32{10, 25, 130}
+	impacts := []uint8{1, 2, 3}
+	data, _ := packBlock(docIDs, impacts, 0)
+	// Truncate data so that it cannot hold all deltas.
+	_, _, err := unpackBlock(data[:1], 0, len(docIDs))
+	if err == nil {
+		t.Error("expected error on truncated block data, got nil")
 	}
 }

@@ -31,12 +31,18 @@ func vbyteEncode(buf []byte, v uint32) []byte {
 }
 
 // vbyteDecode reads a VByte-encoded uint32 from buf starting at pos.
-// It returns the decoded value and the position immediately after the last
-// consumed byte.
-func vbyteDecode(buf []byte, pos int) (uint32, int) {
+// It returns the decoded value, the position immediately after the last
+// consumed byte, and an error if the buffer is truncated or the varint overflows.
+func vbyteDecode(buf []byte, pos int) (uint32, int, error) {
 	var v uint32
 	var shift uint
 	for {
+		if pos >= len(buf) {
+			return 0, pos, fmt.Errorf("vbyteDecode: buffer truncated at position %d", pos)
+		}
+		if shift >= 35 {
+			return 0, pos, fmt.Errorf("vbyteDecode: varint overflow")
+		}
 		b := buf[pos]
 		pos++
 		v |= uint32(b&0x7F) << shift
@@ -45,7 +51,7 @@ func vbyteDecode(buf []byte, pos int) (uint32, int) {
 		}
 		shift += 7
 	}
-	return v, pos
+	return v, pos, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -59,20 +65,10 @@ func vbyteDecode(buf []byte, pos int) (uint32, int) {
 //
 // Layout:
 //
-//	[N bytes] VByte-encoded deltas (docID[i] - blockBase for i=0,
-//	          docID[i] - docID[i-1] for i>0 is NOT used; each delta is
-//	          relative to blockBase per the segment format spec)
+//	[N bytes] VByte-encoded deltas (docID[i] - blockBase, parallel to docIDs)
 //	[N bytes] Impact scores (uint8, parallel to docIDs)
 //
-// Wait — re-read spec §2.3: "delta from start of THIS block (first delta =
-// docID[0] - blockBase, where blockBase is the last docID of the previous
-// block, or 0)".  The deltas are docID[i] - blockBase for i=0 and
-// docID[i] - docID[i-1] for i>=1 (standard delta-of-delta within the block).
-//
-// Actually the spec says "VByte delta-encoded relative to blockBase" in the
-// task description, which means each delta[i] = docID[i] - blockBase
-// (absolute deltas from the block base, not chained).  Using that
-// interpretation keeps unpackBlock simple: blockBase + delta[i] = docID[i].
+// DocID deltas are absolute from blockBase (not chained): delta[i] = docID[i] - blockBase
 //
 // Returns (encodedBytes, BlockMaxImpact).
 func packBlock(docIDs []uint32, impacts []uint8, blockBase uint32) ([]byte, uint8) {
@@ -113,10 +109,10 @@ func unpackBlock(data []byte, blockBase uint32, n int) ([]uint32, []uint8, error
 	docIDs := make([]uint32, n)
 	pos := 0
 	for i := 0; i < n; i++ {
-		if pos >= len(data) {
-			return nil, nil, fmt.Errorf("unpackBlock: buffer exhausted decoding delta %d", i)
+		delta, newPos, err := vbyteDecode(data, pos)
+		if err != nil {
+			return nil, nil, fmt.Errorf("unpackBlock: delta %d: %w", i, err)
 		}
-		delta, newPos := vbyteDecode(data, pos)
 		docIDs[i] = blockBase + delta
 		pos = newPos
 	}
