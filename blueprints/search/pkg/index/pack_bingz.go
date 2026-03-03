@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 
 	kgzip "github.com/klauspost/compress/gzip"
@@ -168,6 +169,180 @@ func PackFlatBinGz(ctx context.Context, markdownDir, packPath string, workers, b
 	}
 
 	return stats, nil
+}
+
+// RunPipelineFromFlatBinGz reads a concatenated gzip pack file (written by
+// PackFlatBinGz) and feeds documents into engine using parallel goroutines.
+//
+// It loads (or rebuilds) the companion .idx file to discover member offsets,
+// then spawns min(NumCPU, len(members)) reader goroutines each with their own
+// file handle. Each goroutine decompresses its assigned gzip members and sends
+// the decoded documents to a shared channel that is drained by
+// RunPipelineFromChannel.
+func RunPipelineFromFlatBinGz(ctx context.Context, engine Engine, packPath string, batchSize int, progress PackProgressFunc) (*PipelineStats, error) {
+	members, err := loadOrBuildBinGzIdx(packPath)
+	if err != nil {
+		return nil, err
+	}
+	if len(members) == 0 {
+		return &PipelineStats{}, nil
+	}
+
+	// Compute total docs for progress reporting.
+	var total int64
+	for _, m := range members {
+		total += int64(m.docCount)
+	}
+
+	docCh := make(chan Document, max(batchSize*4, 4096))
+
+	// memberCh distributes work across reader goroutines.
+	memberCh := make(chan memberEntry, len(members))
+	for _, m := range members {
+		memberCh <- m
+	}
+	close(memberCh)
+
+	numWorkers := runtime.NumCPU()
+	if numWorkers > len(members) {
+		numWorkers = len(members)
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			wf, err := os.Open(packPath)
+			if err != nil {
+				return
+			}
+			defer wf.Close()
+
+			var hdr [6]byte
+			for m := range memberCh {
+				if ctx.Err() != nil {
+					return
+				}
+				if _, err := wf.Seek(int64(m.offset), io.SeekStart); err != nil {
+					return
+				}
+				gr, err := kgzip.NewReader(wf)
+				if err != nil {
+					return
+				}
+				br := bufio.NewReaderSize(gr, 512*1024)
+
+				// Read all flatbin records from this member.
+				// If docCount == 0 (rebuilt index), read until EOF.
+				var count uint32
+				for {
+					if ctx.Err() != nil {
+						gr.Close()
+						return
+					}
+					if m.docCount > 0 && count >= m.docCount {
+						break
+					}
+					if _, err := io.ReadFull(br, hdr[:2]); err != nil {
+						break // EOF or error — done with this member
+					}
+					idLen := int(binary.LittleEndian.Uint16(hdr[:2]))
+					idBuf := make([]byte, idLen)
+					if _, err := io.ReadFull(br, idBuf); err != nil {
+						break
+					}
+					if _, err := io.ReadFull(br, hdr[2:6]); err != nil {
+						break
+					}
+					textLen := int(binary.LittleEndian.Uint32(hdr[2:6]))
+					textBuf := make([]byte, textLen)
+					if _, err := io.ReadFull(br, textBuf); err != nil {
+						break
+					}
+					count++
+					select {
+					case docCh <- Document{DocID: string(idBuf), Text: textBuf}:
+					case <-ctx.Done():
+						gr.Close()
+						return
+					}
+				}
+				gr.Close()
+			}
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(docCh)
+	}()
+
+	return RunPipelineFromChannel(ctx, engine, docCh, total, batchSize, progress)
+}
+
+// loadOrBuildBinGzIdx loads the member index from packPath+".idx". If the idx
+// file is missing or unreadable, it falls back to scanBinGzMembers and
+// best-effort writes a new idx file for future calls.
+func loadOrBuildBinGzIdx(packPath string) ([]memberEntry, error) {
+	idxPath := packPath + ".idx"
+	if members, err := readBinGzIdx(idxPath); err == nil && len(members) > 0 {
+		return members, nil
+	}
+	members, err := scanBinGzMembers(packPath)
+	if err != nil {
+		return nil, err
+	}
+	// Best-effort cache: ignore write errors.
+	_ = writeBinGzIdx(idxPath, members)
+	return members, nil
+}
+
+// readBinGzIdx parses a member index written by writeBinGzIdx.
+//
+// Format: N×12-byte entries (uint64 LE offset + uint32 LE docCount) followed
+// by a 4-byte uint32 LE member count footer.
+func readBinGzIdx(path string) ([]memberEntry, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) < 4 {
+		return nil, io.ErrUnexpectedEOF
+	}
+	memberCount := int(binary.LittleEndian.Uint32(data[len(data)-4:]))
+	expected := memberCount*12 + 4
+	if len(data) != expected {
+		return nil, io.ErrUnexpectedEOF
+	}
+	members := make([]memberEntry, memberCount)
+	for i := range members {
+		base := i * 12
+		members[i] = memberEntry{
+			offset:   binary.LittleEndian.Uint64(data[base : base+8]),
+			docCount: binary.LittleEndian.Uint32(data[base+8 : base+12]),
+		}
+	}
+	return members, nil
+}
+
+// scanBinGzMembers scans packPath for gzip magic bytes (0x1f 0x8b) and
+// returns a memberEntry for each found member. docCount is 0 for all entries
+// since it is not known without decompression. This is the fallback path used
+// when the companion .idx file is missing.
+func scanBinGzMembers(packPath string) ([]memberEntry, error) {
+	data, err := os.ReadFile(packPath)
+	if err != nil {
+		return nil, err
+	}
+	var members []memberEntry
+	for i := 0; i+1 < len(data); i++ {
+		if data[i] == 0x1f && data[i+1] == 0x8b {
+			members = append(members, memberEntry{offset: uint64(i)})
+			i++ // skip past the 0x8b byte to avoid re-matching
+		}
+	}
+	return members, nil
 }
 
 // writeBinGzIdx writes a member index to path.
