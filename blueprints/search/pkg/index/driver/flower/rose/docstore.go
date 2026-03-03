@@ -42,6 +42,9 @@ func openDocStore(path string) (*docStore, error) {
 }
 
 // load scans the file from the beginning and populates ds.entries.
+// A partial record at the end of the file (e.g. from a crash mid-write) is
+// silently discarded; the caller receives no signal about the truncation.
+// This is intentional for an append-only store that may be interrupted.
 func (ds *docStore) load() error {
 	if _, err := ds.f.Seek(0, io.SeekStart); err != nil {
 		return err
@@ -89,14 +92,20 @@ func (ds *docStore) load() error {
 // append writes one document to the file and adds it to the in-memory index.
 // Returns the 0-based internal docIdx assigned to this document.
 func (ds *docStore) append(externalID string, text []byte) (uint32, error) {
-	// Truncate text to docStoreMaxText bytes.
+	// Truncate text to docStoreMaxText bytes, then walk back to the last
+	// rune-start boundary so we never store a partial multi-byte sequence.
+	// utf8.RuneStart is O(1) per byte, so the walk-back is O(1) overall
+	// (at most 3 continuation bytes before a rune-start) even for binary input.
 	if len(text) > docStoreMaxText {
 		text = text[:docStoreMaxText]
-		// Walk back to the last rune boundary so we don't store a partial
-		// multi-byte sequence. A UTF-8 multi-byte rune is at most 4 bytes,
-		// so this loop runs at most 3 times.
-		for len(text) > 0 && !utf8.Valid(text) {
+		for len(text) > 0 && !utf8.RuneStart(text[len(text)-1]) {
 			text = text[:len(text)-1]
+		}
+		// If the final rune-start byte heads a sequence longer than our
+		// remaining window (split rune), drop that rune too.
+		if len(text) > 0 && !utf8.Valid(text) {
+			_, size := utf8.DecodeLastRune(text)
+			text = text[:len(text)-size]
 		}
 	}
 

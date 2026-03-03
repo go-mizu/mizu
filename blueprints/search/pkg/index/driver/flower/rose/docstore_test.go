@@ -99,6 +99,11 @@ func TestDocStore_TextTruncationUTF8Safe(t *testing.T) {
 	if len(e.text) > docStoreMaxText {
 		t.Errorf("text exceeds max: %d", len(e.text))
 	}
+	// € starts at byte 510; truncation at 512 must drop the incomplete rune,
+	// landing at exactly 510 bytes.
+	if len(e.text) != 510 {
+		t.Errorf("expected exactly 510 bytes after UTF-8-safe truncation, got %d", len(e.text))
+	}
 }
 
 func TestSnippetFor_Hit(t *testing.T) {
