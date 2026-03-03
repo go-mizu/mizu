@@ -1,6 +1,6 @@
 module github.com/go-mizu/blueprints/social
 
-go 1.25.5
+go 1.26
 
 require (
 	github.com/duckdb/duckdb-go/v2 v2.5.5
