@@ -91,11 +91,15 @@
     <header class="sticky top-0 z-50 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-sm border-b border-zinc-200 dark:border-zinc-800">
       <div class="max-w-5xl mx-auto flex items-center h-12 px-6 gap-6">
         <a href="#/" class="text-sm font-medium tracking-tight shrink-0 hover:opacity-70 transition-opacity">FTS Dashboard</a>
-        <div id="header-search" class="flex-1 hidden">
+        <div id="header-search" class="flex-1 hidden items-center gap-2">
           <input id="header-search-input" type="text"
             placeholder="What are you looking for?"
-            class="w-full h-8 px-0 bg-transparent text-sm placeholder:text-zinc-500 dark:placeholder:text-zinc-500 focus:outline-none border-none"
+            class="flex-1 h-8 px-0 bg-transparent text-sm placeholder:text-zinc-500 dark:placeholder:text-zinc-500 focus:outline-none border-none"
             onkeydown="if(event.key==='Enter')doSearch(this.value)">
+          <select id="header-search-engine"
+            class="h-8 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs px-2 focus:outline-none"
+            onchange="applySearchEngine(this.value)">
+          </select>
         </div>
         <nav id="main-nav" class="flex items-center gap-5 ml-auto shrink-0">
           <a href="#/" data-tab="overview" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">Overview</a>
@@ -103,6 +107,8 @@
           <a href="#/search" data-tab="search" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">Search</a>
           <a href="#/browse" data-tab="browse" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">Browse</a>
           <a href="#/crawls" data-tab="crawls" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">Crawls</a>
+          <button id="header-meta-refresh" onclick="refreshDashboardMeta(false)" class="hidden border border-zinc-200 dark:border-zinc-800 px-2 py-1 text-[11px] font-mono text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">Refresh Meta</button>
+          <span id="header-meta" class="hidden text-[11px] font-mono text-zinc-500 whitespace-nowrap"></span>
           <button onclick="toggleTheme()" class="text-zinc-500 dark:text-zinc-500 hover:text-zinc-950 dark:hover:text-zinc-50 transition-colors" title="Toggle theme">
             <svg id="icon-sun" class="w-4 h-4 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
             <svg id="icon-moon" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
@@ -125,6 +131,7 @@ const isDashboard = MODE === 'dashboard';
 // ===================================================================
 const state = {
   query: '',
+  searchEngine: '',
   results: null,
   stats: null,
   loading: false,
@@ -135,6 +142,8 @@ const state = {
   doc: null,
   theme: localStorage.getItem('fts-theme') || 'dark',
   overview: null,
+  overviewLoadedAt: 0,
+  metaStatus: null,
   jobs: null,
   engines: null,
   crawls: null,
@@ -251,6 +260,9 @@ function route() {
   const qIdx = hash.indexOf('?');
   const path = qIdx >= 0 ? hash.slice(0, qIdx) : hash;
   const params = new URLSearchParams(qIdx >= 0 ? hash.slice(qIdx + 1) : '');
+  if (isDashboard) {
+    refreshDashboardContext().catch(() => {});
+  }
 
   updateActiveTab(path);
 
@@ -262,10 +274,12 @@ function route() {
     renderPipeline();
   } else if (path === '/search') {
     const q = params.get('q') || '';
+    const engine = params.get('engine') || '';
     if (q) {
-      showHeaderSearch(true, q);
-      doSearchWithRender(q, parseInt(params.get('offset') || '0', 10));
+      showHeaderSearch(true, q, engine);
+      doSearchWithRender(q, parseInt(params.get('offset') || '0', 10), engine);
     } else {
+      if (engine) state.searchEngine = engine;
       showHeaderSearch(false);
       renderSearchHome();
     }
@@ -277,7 +291,7 @@ function route() {
     const parts = path.split('/');
     const shard = parts[2];
     const docid = parts.slice(3).join('/');
-    showHeaderSearch(true, state.query);
+    showHeaderSearch(true, state.query, state.searchEngine);
     renderDoc(shard, docid);
   } else if (path === '/crawls' && isDashboard) {
     showHeaderSearch(false);
@@ -305,14 +319,18 @@ function updateActiveTab(path) {
   });
 }
 
-function showHeaderSearch(visible, value) {
+function showHeaderSearch(visible, value, engine) {
   const el = document.getElementById('header-search');
   const input = document.getElementById('header-search-input');
   if (visible) {
     el.classList.remove('hidden');
+    el.classList.add('flex');
     if (value !== undefined) input.value = value;
+    if (engine) state.searchEngine = engine;
+    syncSearchEngineControls();
   } else {
     el.classList.add('hidden');
+    el.classList.remove('flex');
   }
 }
 
@@ -351,12 +369,14 @@ async function apiDelete(url) {
   return res.json();
 }
 
-async function apiSearch(q, limit = 20, offset = 0) {
-  return apiFetch(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}`);
+async function apiSearch(q, limit = 20, offset = 0, engine = '') {
+  const engineQ = engine ? `&engine=${encodeURIComponent(engine)}` : '';
+  return apiFetch(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}${engineQ}`);
 }
 
-async function apiStats() {
-  return apiFetch('/api/stats');
+async function apiStats(engine = '') {
+  const engineQ = engine ? `?engine=${encodeURIComponent(engine)}` : '';
+  return apiFetch('/api/stats' + engineQ);
 }
 
 async function apiDoc(shard, docid) {
@@ -370,6 +390,15 @@ async function apiBrowse(shard = '') {
 
 async function apiOverview() {
   return apiFetch('/api/overview');
+}
+
+async function apiMetaStatus(crawl = '') {
+  const url = crawl ? `/api/meta/status?crawl=${encodeURIComponent(crawl)}` : '/api/meta/status';
+  return apiFetch(url);
+}
+
+async function apiMetaRefresh(crawl = '', force = true) {
+  return apiPost('/api/meta/refresh', { crawl, force });
 }
 
 async function apiEngines() {
@@ -390,6 +419,63 @@ async function apiCreateJob(cfg) {
 
 async function apiCancelJob(id) {
   return apiDelete(`/api/jobs/${id}`);
+}
+
+function currentSearchEngine() {
+  if (state.searchEngine) return state.searchEngine;
+  if (state.stats && state.stats.engine) return state.stats.engine;
+  if (state.engines && state.engines.length > 0) return state.engines[0];
+  return 'duckdb';
+}
+
+function searchEngineOptions() {
+  const engines = (state.engines && state.engines.length > 0) ? state.engines.slice() : [currentSearchEngine()];
+  const selected = currentSearchEngine();
+  return engines.map(e => `<option value="${esc(e)}"${e === selected ? ' selected' : ''}>${esc(e)}</option>`).join('');
+}
+
+function syncSearchEngineControls() {
+  const selected = currentSearchEngine();
+  const ids = ['header-search-engine', 'home-search-engine'];
+  for (const id of ids) {
+    const el = $(id);
+    if (!el) continue;
+    el.innerHTML = searchEngineOptions();
+    el.value = selected;
+  }
+}
+
+async function ensureEnginesLoaded() {
+  if (state.engines !== null) return state.engines;
+  try {
+    const d = await apiEngines();
+    state.engines = d.engines || [];
+  } catch {
+    state.engines = [];
+  }
+  syncSearchEngineControls();
+  return state.engines;
+}
+
+function buildSearchURL(query, offset = 0) {
+  const params = new URLSearchParams();
+  params.set('q', query);
+  if (offset > 0) params.set('offset', String(offset));
+  const engine = currentSearchEngine();
+  if (engine) params.set('engine', engine);
+  return `/search?${params.toString()}`;
+}
+
+function applySearchEngine(engine) {
+  state.searchEngine = (engine || '').trim();
+  syncSearchEngineControls();
+  if (state.query) {
+    navigateTo(buildSearchURL(state.query, 0));
+    return;
+  }
+  if (state.currentPage === 'search') {
+    loadHomeStats();
+  }
 }
 
 // ===================================================================
@@ -453,6 +539,98 @@ function statusClass(status) {
   }
 }
 
+function parseISOTime(s) {
+  if (!s) return null;
+  const t = new Date(s);
+  if (isNaN(t.getTime())) return null;
+  return t;
+}
+
+function fmtRelativeTime(iso) {
+  const t = parseISOTime(iso);
+  if (!t) return '\u2014';
+  const sec = Math.floor((Date.now() - t.getTime()) / 1000);
+  if (sec < 5) return 'just now';
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  return `${day}d ago`;
+}
+
+function metaContext() {
+  const o = state.overview || {};
+  const s = state.metaStatus || {};
+  const generatedAt = o.meta_generated_at || s.finished_at || '';
+  const stale = !!o.meta_stale;
+  const refreshing = !!o.meta_refreshing || !!s.refreshing;
+  const backend = o.meta_backend || s.backend || 'scan-fallback';
+  const ttlMS = s.refresh_ttl_ms || 0;
+  return { generatedAt, stale, refreshing, backend, ttlMS, lastError: o.meta_last_error || s.last_error || '' };
+}
+
+function renderMetaSummaryLine() {
+  const m = metaContext();
+  const bits = [];
+  bits.push(`meta:${m.backend}`);
+  bits.push(`updated:${fmtRelativeTime(m.generatedAt)}`);
+  if (m.ttlMS > 0) bits.push(`ttl:${Math.round(m.ttlMS / 1000)}s`);
+  bits.push(`stale:${m.stale ? 'yes' : 'no'}`);
+  if (m.refreshing) bits.push('refreshing');
+  if (m.lastError) bits.push(`error:${m.lastError}`);
+  return bits.join(' · ');
+}
+
+function updateHeaderMetaChip() {
+  if (!isDashboard) return;
+  const chip = $('header-meta');
+  const btn = $('header-meta-refresh');
+  if (!chip || !btn) return;
+  chip.classList.remove('hidden');
+  btn.classList.remove('hidden');
+  chip.textContent = renderMetaSummaryLine();
+}
+
+async function refreshDashboardMeta(force = false) {
+  if (!isDashboard) return;
+  const crawl = state.overview && state.overview.crawl_id ? state.overview.crawl_id : '';
+  try {
+    await apiMetaRefresh(crawl, force);
+  } catch (_) {
+    // Ignore; status line shows last known error state from /api/meta/status.
+  }
+  await refreshDashboardContext();
+}
+
+async function refreshDashboardContext() {
+  if (!isDashboard) return;
+  const crawl = state.overview && state.overview.crawl_id ? state.overview.crawl_id : '';
+  const [metaStatus, overview] = await Promise.all([
+    apiMetaStatus(crawl).catch(() => null),
+    apiOverview().catch(() => null),
+  ]);
+  if (metaStatus) state.metaStatus = metaStatus;
+  if (overview) {
+    state.overview = overview;
+    state.overviewLoadedAt = Date.now();
+  }
+  if (state.overview && state.overview.meta_stale && !state.overview.meta_refreshing) {
+    await apiMetaRefresh(crawl, false).catch(() => {});
+  }
+  updateHeaderMetaChip();
+}
+
+let metaWatchdogTimer = null;
+function startMetaWatchdog() {
+  if (!isDashboard) return;
+  if (metaWatchdogTimer) clearInterval(metaWatchdogTimer);
+  const tick = () => refreshDashboardContext().catch(() => {});
+  tick();
+  metaWatchdogTimer = setInterval(tick, 20000);
+}
+
 // ===================================================================
 // Tab 1: Overview
 // ===================================================================
@@ -461,14 +639,21 @@ async function renderOverview() {
   const main = $('main');
   main.innerHTML = `
     <div class="py-8 anim-fade-in">
-      <h1 class="text-2xl font-semibold tracking-tight mb-8">Overview</h1>
+      <div class="flex items-center justify-between mb-3 gap-3">
+        <h1 class="text-2xl font-semibold tracking-tight">Overview</h1>
+        <button onclick="refreshOverviewMeta()" class="border border-zinc-700 dark:border-zinc-700 px-3 py-2 text-xs font-mono hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">
+          Refresh Metadata
+        </button>
+      </div>
+      <div id="overview-refresh-msg" class="text-xs font-mono text-zinc-500 mb-5"></div>
       <div id="overview-content">
         <div class="text-xs font-mono text-zinc-500">loading...</div>
       </div>
     </div>`;
 
   try {
-    const data = await apiOverview();
+    await refreshDashboardContext();
+    const data = state.overview || await apiOverview();
     state.overview = data;
     renderOverviewContent(data);
   } catch (e) {
@@ -481,6 +666,7 @@ function renderOverviewContent(d) {
   if (!el) return;
 
   const engineCount = d.fts_engines ? Object.keys(d.fts_engines).length : 0;
+  const statusBits = [renderMetaSummaryLine()];
 
   // Stat cards
   const cards = [
@@ -542,6 +728,9 @@ function renderOverviewContent(d) {
     </div>` : '';
 
   el.innerHTML = `
+    <div class="border border-zinc-200 dark:border-zinc-800 px-4 py-3 mb-4">
+      <div class="text-xs font-mono text-zinc-500">${esc(statusBits.join(' · '))}</div>
+    </div>
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
       ${cardsHTML}
     </div>
@@ -550,6 +739,23 @@ function renderOverviewContent(d) {
       <a href="#/pipeline" class="border border-zinc-700 dark:border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">Open Pipeline</a>
       <a href="#/search" class="border border-zinc-700 dark:border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">Search</a>
     </div>`;
+}
+
+async function refreshOverviewMeta() {
+  const msg = $('overview-refresh-msg');
+  if (msg) msg.textContent = 'requesting metadata refresh...';
+  try {
+    const crawl = state.overview && state.overview.crawl_id ? state.overview.crawl_id : '';
+    const res = await apiMetaRefresh(crawl, true);
+    const accepted = !!(res && res.accepted);
+    if (msg) msg.textContent = accepted ? 'refresh started' : 'refresh already in progress';
+    setTimeout(() => {
+      refreshDashboardContext().catch(() => {});
+      renderOverview();
+    }, 350);
+  } catch (e) {
+    if (msg) msg.textContent = `refresh failed: ${e.message}`;
+  }
 }
 
 // ===================================================================
@@ -562,7 +768,11 @@ async function renderPipeline() {
   const main = $('main');
   main.innerHTML = `
     <div class="py-8 anim-fade-in">
-      <h1 class="text-2xl font-semibold tracking-tight mb-8">Pipeline</h1>
+      <div class="flex items-center justify-between mb-3 gap-3">
+        <h1 class="text-2xl font-semibold tracking-tight">Pipeline</h1>
+        <button onclick="refreshDashboardMeta(true)" class="border border-zinc-700 dark:border-zinc-700 px-3 py-2 text-xs font-mono hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">Refresh Metadata</button>
+      </div>
+      <div id="pipeline-summary" class="text-xs font-mono text-zinc-500 mb-5">loading...</div>
       <div id="pipeline-content">
         <div class="text-xs font-mono text-zinc-500">loading...</div>
       </div>
@@ -579,8 +789,15 @@ async function renderPipeline() {
     ]);
 
     state.overview = overview;
+    state.overviewLoadedAt = Date.now();
     state.engines = enginesData.engines || [];
     state.jobs = jobsData.jobs || [];
+    refreshDashboardContext().catch(() => {});
+
+    const summary = $('pipeline-summary');
+    if (summary && overview) {
+      summary.textContent = `crawl:${overview.crawl_id || '-'} · warc:${(overview.warc_count || 0).toLocaleString()} · markdown:${(overview.md_doc_estimate || 0).toLocaleString()} docs · ${renderMetaSummaryLine()}`;
+    }
 
     renderPipelineContent();
     setupPipelineWS();
@@ -658,6 +875,7 @@ function renderPipelineContent() {
           <select name="format" class="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm px-3 py-2 focus:outline-none">
             <option value="parquet">parquet</option>
             <option value="bin">bin</option>
+            <option value="duckdb">duckdb</option>
             <option value="markdown">markdown</option>
           </select>
         </div>
@@ -691,6 +909,7 @@ function renderPipelineContent() {
             <option value="files">files</option>
             <option value="parquet">parquet</option>
             <option value="bin">bin</option>
+            <option value="duckdb">duckdb</option>
             <option value="markdown">markdown</option>
           </select>
         </div>
@@ -893,12 +1112,30 @@ function renderSearchHome() {
             onkeydown="if(event.key==='Enter')doSearch(this.value)" autofocus>
           <kbd class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-zinc-400 dark:text-zinc-600 font-mono pointer-events-none"><span class="text-[10px]">&#8984;</span>K</kbd>
         </div>
+        <div class="flex items-center justify-center">
+          <label class="text-xs font-mono text-zinc-500 mr-2">Engine</label>
+          <select id="home-search-engine"
+            class="h-8 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs px-2 focus:outline-none"
+            onchange="applySearchEngine(this.value)">
+          </select>
+        </div>
         <div id="home-stats" class="text-center">
           <span class="text-xs font-mono text-zinc-400 dark:text-zinc-600">loading\u2026</span>
         </div>
+        ${isDashboard ? `<div class="text-center"><button onclick="refreshDashboardMeta(true)" class="border border-zinc-700 dark:border-zinc-700 px-3 py-2 text-xs font-mono hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">Refresh Metadata</button></div>` : ''}
+        <div id="home-meta" class="text-center">
+          <span class="text-xs font-mono text-zinc-500">${isDashboard ? 'loading metadata...' : ''}</span>
+        </div>
       </div>
     </div>`;
-  loadHomeStats();
+  syncSearchEngineControls();
+  ensureEnginesLoaded().then(() => loadHomeStats());
+  if (isDashboard) {
+    refreshDashboardContext().then(() => {
+      const m = $('home-meta');
+      if (m) m.innerHTML = `<span class="text-xs font-mono text-zinc-500">${esc(renderMetaSummaryLine())}</span>`;
+    }).catch(() => {});
+  }
   setTimeout(() => { const i = $('home-search-input'); if (i) i.focus(); }, 50);
 }
 
@@ -906,8 +1143,10 @@ async function loadHomeStats() {
   const el = $('home-stats');
   if (!el) return;
   try {
-    const d = await apiStats();
+    const d = await apiStats(currentSearchEngine());
     state.stats = d;
+    if (d.engine) state.searchEngine = d.engine;
+    syncSearchEngineControls();
     el.innerHTML = `<span class="text-xs font-mono text-zinc-400 dark:text-zinc-500">${esc(d.engine)} &middot; ${(d.total_docs||0).toLocaleString()} docs &middot; ${d.shards||0} shards &middot; ${d.total_disk||'\u2014'}</span>`;
   } catch(e) {
     el.innerHTML = `<span class="text-xs font-mono text-zinc-400 dark:text-zinc-500">No index yet. Run <code class="text-zinc-300 dark:text-zinc-400">search cc fts index</code> to get started.</span>`;
@@ -917,18 +1156,23 @@ async function loadHomeStats() {
 function doSearch(query) {
   if (!query.trim()) return;
   state.query = query.trim();
-  navigateTo(`/search?q=${encodeURIComponent(state.query)}`);
+  navigateTo(buildSearchURL(state.query, 0));
 }
 
-async function doSearchWithRender(query, offset = 0) {
+async function doSearchWithRender(query, offset = 0, engine = '') {
   if (!query.trim()) { renderSearchHome(); return; }
+  if (engine) state.searchEngine = engine;
+  await ensureEnginesLoaded();
   state.query = query.trim();
   state.loading = true;
   state.currentPage = 'search';
+  syncSearchEngineControls();
   renderSearchLoading();
 
   try {
-    const data = await apiSearch(query, 20, offset);
+    const data = await apiSearch(query, 20, offset, currentSearchEngine());
+    if (data.engine) state.searchEngine = data.engine;
+    syncSearchEngineControls();
     state.results = data;
     state.loading = false;
     renderSearchResults(data, query, offset);
@@ -978,14 +1222,14 @@ function renderSearchResults(data, query, offset) {
   $('main').innerHTML = `
     <div class="py-8 max-w-3xl mx-auto anim-fade-in">
       <div class="text-xs font-mono text-zinc-400 dark:text-zinc-500 mb-6">
-        ${(data.total || data.hits.length).toLocaleString()} results${data.elapsed_ms ? ` &middot; ${data.elapsed_ms}ms` : ''}${data.shards ? ` &middot; ${data.shards} shard${data.shards!==1?'s':''}` : ''}
+        ${(data.total || data.hits.length).toLocaleString()} results${data.elapsed_ms ? ` &middot; ${data.elapsed_ms}ms` : ''}${data.shards ? ` &middot; ${data.shards} shard${data.shards!==1?'s':''}` : ''}${data.engine ? ` &middot; ${esc(data.engine)}` : ''}
       </div>
       <div>${results}</div>
-      ${totalPages > 1 ? renderSearchPagination(page, totalPages, query, pageSize) : ''}
+      ${totalPages > 1 ? renderSearchPagination(page, totalPages, query, pageSize, data.engine || currentSearchEngine()) : ''}
     </div>`;
 }
 
-function renderSearchPagination(cur, total, query, pageSize) {
+function renderSearchPagination(cur, total, query, pageSize, engine) {
   let pages = [];
   if (total <= 7) {
     for (let i = 1; i <= total; i++) pages.push(i);
@@ -1002,14 +1246,17 @@ function renderSearchPagination(cur, total, query, pageSize) {
     const cls = active
       ? 'px-2 py-1 text-xs font-mono font-medium text-zinc-950 dark:text-zinc-50'
       : 'px-2 py-1 text-xs font-mono text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-50 transition-colors';
-    return `<a href="#/search?q=${encodeURIComponent(query)}&offset=${(p-1)*pageSize}" class="${cls}">${p}</a>`;
+    const params = new URLSearchParams({ q: query, offset: String((p-1)*pageSize), engine: engine || currentSearchEngine() });
+    return `<a href="#/search?${params.toString()}" class="${cls}">${p}</a>`;
   };
 
+  const prevParams = new URLSearchParams({ q: query, offset: String((cur-2)*pageSize), engine: engine || currentSearchEngine() });
+  const nextParams = new URLSearchParams({ q: query, offset: String(cur*pageSize), engine: engine || currentSearchEngine() });
   return `
     <div class="flex items-center justify-center gap-1 pt-8 pb-4">
-      ${cur > 1 ? `<a href="#/search?q=${encodeURIComponent(query)}&offset=${(cur-2)*pageSize}" class="text-xs font-mono text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-50 transition-colors mr-2">&larr; prev</a>` : ''}
+      ${cur > 1 ? `<a href="#/search?${prevParams.toString()}" class="text-xs font-mono text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-50 transition-colors mr-2">&larr; prev</a>` : ''}
       ${pages.map(p => btn(p, p === cur)).join('')}
-      ${cur < total ? `<a href="#/search?q=${encodeURIComponent(query)}&offset=${cur*pageSize}" class="text-xs font-mono text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-50 transition-colors ml-2">next &rarr;</a>` : ''}
+      ${cur < total ? `<a href="#/search?${nextParams.toString()}" class="text-xs font-mono text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-50 transition-colors ml-2">next &rarr;</a>` : ''}
     </div>`;
 }
 
@@ -1020,8 +1267,14 @@ async function renderBrowse(shard) {
   state.currentPage = 'browse';
   state.browseShard = shard;
   $('main').innerHTML = `
-    <div class="flex gap-0 py-8 min-h-[calc(100vh-5rem)] anim-fade-in">
-      <aside class="w-44 shrink-0 pr-6 border-r border-zinc-100 dark:border-zinc-800/60">
+    <div class="py-8 anim-fade-in">
+      <div class="flex items-center justify-between mb-4">
+        <h1 class="text-2xl font-semibold tracking-tight">Browse</h1>
+        ${isDashboard ? `<button onclick="refreshDashboardMeta(true)" class="border border-zinc-700 dark:border-zinc-700 px-3 py-2 text-xs font-mono hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">Refresh Metadata</button>` : ''}
+      </div>
+      ${isDashboard ? `<div class="text-xs font-mono text-zinc-500 mb-5" id="browse-meta">loading metadata...</div>` : ''}
+      <div class="flex gap-0 min-h-[calc(100vh-8rem)]">
+      <aside class="w-52 shrink-0 pr-6 border-r border-zinc-100 dark:border-zinc-800/60">
         <div class="text-xs font-mono text-zinc-400 dark:text-zinc-500 mb-4 uppercase tracking-wider">Shards</div>
         <div id="shard-list" class="space-y-1">
           <div class="text-xs text-zinc-400">loading\u2026</div>
@@ -1030,9 +1283,18 @@ async function renderBrowse(shard) {
       <div class="flex-1 min-w-0 pl-6" id="browse-content">
         <div class="text-xs text-zinc-400 py-8">loading\u2026</div>
       </div>
+      </div>
     </div>`;
 
   try {
+    if (isDashboard) {
+      await refreshDashboardContext().catch(() => {});
+      const meta = $('browse-meta');
+      if (meta) {
+        const docEstimate = (state.overview && state.overview.md_doc_estimate) ? state.overview.md_doc_estimate.toLocaleString() : '0';
+        meta.textContent = `${renderMetaSummaryLine()} · docs:${docEstimate}`;
+      }
+    }
     const data = await apiBrowse();
     state.browseShards = data.shards || [];
     renderShardList(shard);
@@ -1159,13 +1421,25 @@ async function renderCrawls() {
   const main = $('main');
   main.innerHTML = `
     <div class="py-8 anim-fade-in">
-      <h1 class="text-2xl font-semibold tracking-tight mb-8">Crawls</h1>
+      <div class="flex items-center justify-between mb-3 gap-3">
+        <h1 class="text-2xl font-semibold tracking-tight">Crawls</h1>
+        ${isDashboard ? `<button onclick="refreshDashboardMeta(true)" class="border border-zinc-700 dark:border-zinc-700 px-3 py-2 text-xs font-mono hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">Refresh Metadata</button>` : ''}
+      </div>
+      ${isDashboard ? `<div id="crawls-meta" class="text-xs font-mono text-zinc-500 mb-5">loading metadata...</div>` : ''}
       <div id="crawls-content">
         <div class="text-xs font-mono text-zinc-500">loading...</div>
       </div>
     </div>`;
 
   try {
+    if (isDashboard) {
+      await refreshDashboardContext().catch(() => {});
+      const m = $('crawls-meta');
+      if (m) {
+        const crawl = state.overview && state.overview.crawl_id ? state.overview.crawl_id : '-';
+        m.textContent = `active:${crawl} · ${renderMetaSummaryLine()}`;
+      }
+    }
     const data = await apiCrawls();
     state.crawls = data.crawls || [];
     renderCrawlsContent(state.crawls);
@@ -1187,6 +1461,7 @@ function renderCrawlsContent(crawls) {
     el.innerHTML = '<div class="text-xs font-mono text-zinc-500">No crawls found.</div>';
     return;
   }
+  const activeCrawl = state.overview && state.overview.crawl_id ? state.overview.crawl_id : '';
 
   el.innerHTML = `
     <div class="border border-zinc-200 dark:border-zinc-800">
@@ -1197,6 +1472,7 @@ function renderCrawlsContent(crawls) {
             <th class="text-left px-4 py-2 text-xs font-mono text-zinc-500 font-normal">Name</th>
             <th class="text-left px-4 py-2 text-xs font-mono text-zinc-500 font-normal">From</th>
             <th class="text-left px-4 py-2 text-xs font-mono text-zinc-500 font-normal">To</th>
+            <th class="text-right px-4 py-2 text-xs font-mono text-zinc-500 font-normal">Status</th>
           </tr>
         </thead>
         <tbody>
@@ -1206,6 +1482,7 @@ function renderCrawlsContent(crawls) {
               <td class="px-4 py-2 text-xs">${esc(c.name || '')}</td>
               <td class="px-4 py-2 font-mono text-xs text-zinc-500">${formatCrawlDate(c.from)}</td>
               <td class="px-4 py-2 font-mono text-xs text-zinc-500">${formatCrawlDate(c.to)}</td>
+              <td class="px-4 py-2 text-right text-xs font-mono ${c.id === activeCrawl ? 'text-zinc-300' : 'text-zinc-500'}">${c.id === activeCrawl ? 'active' : ''}</td>
             </tr>`).join('')}
         </tbody>
       </table>
@@ -1287,10 +1564,16 @@ if (!isDashboard) {
   document.querySelectorAll('#main-nav a[data-tab]').forEach(a => {
     if (['overview', 'pipeline', 'crawls'].includes(a.dataset.tab)) a.style.display = 'none';
   });
+  const metaChip = $('header-meta');
+  const metaBtn = $('header-meta-refresh');
+  if (metaChip) metaChip.style.display = 'none';
+  if (metaBtn) metaBtn.style.display = 'none';
   const logo = document.querySelector('header a[href="#/"]');
   if (logo) logo.textContent = 'FTS';
   const main = document.getElementById('main');
   if (main) { main.classList.remove('max-w-5xl'); main.classList.add('max-w-3xl'); }
+} else {
+  startMetaWatchdog();
 }
 
 // WebSocket only in dashboard mode.
