@@ -43,6 +43,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/temoto/robotstxt v1.1.2
 	github.com/typesense/typesense-go/v2 v2.0.0
+	github.com/yalue/onnxruntime_go v1.24.0
 	github.com/yuin/goldmark v1.7.16
 	golang.org/x/net v0.51.0
 	golang.org/x/sync v0.19.0
