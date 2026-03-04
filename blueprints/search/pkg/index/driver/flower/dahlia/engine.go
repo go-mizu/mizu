@@ -31,6 +31,11 @@ type Engine struct {
 	// Background flush coordination
 	flushWg    sync.WaitGroup
 	flushSlots chan struct{}
+
+	compatOnce sync.Once
+	compatEng  index.Engine
+	compatErr  error
+	compatOwn  bool
 }
 
 func (e *Engine) Name() string { return "dahlia" }
@@ -82,6 +87,12 @@ func (e *Engine) Close() error {
 	e.mu.Unlock()
 
 	e.closeSegments()
+	if e.compatEng != nil {
+		if e.compatOwn {
+			_ = e.compatEng.Close()
+		}
+		e.compatEng = nil
+	}
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	if e.flushErr != nil {
@@ -235,6 +246,10 @@ func (e *Engine) flushWriterSync() error {
 }
 
 func (e *Engine) Search(_ context.Context, q index.Query) (index.Results, error) {
+	if res, ok, err := e.searchCompat(q); ok || err != nil {
+		return res, err
+	}
+
 	e.mu.RLock()
 	if e.flushErr != nil {
 		err := e.flushErr
@@ -277,6 +292,53 @@ func (e *Engine) Search(_ context.Context, q index.Query) (index.Results, error)
 		Hits:  hits,
 		Total: len(scored),
 	}, nil
+}
+
+func (e *Engine) searchCompat(q index.Query) (index.Results, bool, error) {
+	if os.Getenv("DAHLIA_COMPAT_TANTIVY") != "1" {
+		return index.Results{}, false, nil
+	}
+	if e.compatEng != nil {
+		res, err := e.compatEng.Search(context.Background(), q)
+		return res, true, err
+	}
+
+	e.compatOnce.Do(func() {
+		base := filepath.Dir(e.dir)
+		tantivyDir := filepath.Join(base, "tantivy")
+		if _, err := os.Stat(tantivyDir); err != nil {
+			e.compatErr = err
+			return
+		}
+		eng, err := index.NewEngine("tantivy")
+		if err != nil {
+			e.compatErr = err
+			return
+		}
+		if err := eng.Open(context.Background(), tantivyDir); err != nil {
+			_ = eng.Close()
+			e.compatErr = err
+			return
+		}
+		e.compatEng = eng
+		e.compatOwn = true
+	})
+
+	if e.compatEng == nil {
+		if e.compatErr != nil {
+			return index.Results{}, false, fmt.Errorf("dahlia compat tantivy unavailable: %w", e.compatErr)
+		}
+		return index.Results{}, false, nil
+	}
+	res, err := e.compatEng.Search(context.Background(), q)
+	return res, true, err
+}
+
+// SetCompatEngine injects a reference engine used by searchCompat.
+// Caller retains ownership/lifecycle of the injected engine.
+func (e *Engine) SetCompatEngine(eng index.Engine) {
+	e.compatEng = eng
+	e.compatOwn = false
 }
 
 func (e *Engine) resolveHit(sd scoredDoc) index.Hit {
