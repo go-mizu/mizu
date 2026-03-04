@@ -37,7 +37,7 @@ func TestWandTermQuery(t *testing.T) {
 	defer sr.Close()
 
 	q := parseQuery("machine")
-	eval := newWandEvaluator(sr, 10)
+	eval := newWandEvaluator(sr, 10, 0, 0, nil)
 	results := eval.searchQuery(q)
 
 	if len(results) == 0 {
@@ -60,7 +60,7 @@ func TestWandBooleanShould(t *testing.T) {
 	defer sr.Close()
 
 	q := parseQuery("machine learning")
-	eval := newWandEvaluator(sr, 10)
+	eval := newWandEvaluator(sr, 10, 0, 0, nil)
 	results := eval.searchQuery(q)
 
 	if len(results) == 0 {
@@ -78,7 +78,7 @@ func TestWandBooleanMust(t *testing.T) {
 	defer sr.Close()
 
 	q := parseQuery("+machine +learning")
-	eval := newWandEvaluator(sr, 10)
+	eval := newWandEvaluator(sr, 10, 0, 0, nil)
 	results := eval.searchQuery(q)
 
 	if len(results) == 0 {
@@ -95,7 +95,7 @@ func TestWandMustNot(t *testing.T) {
 	defer sr.Close()
 
 	q := parseQuery("+machine -deep")
-	eval := newWandEvaluator(sr, 10)
+	eval := newWandEvaluator(sr, 10, 0, 0, nil)
 	results := eval.searchQuery(q)
 
 	// Should exclude docs with "deep"
@@ -111,7 +111,7 @@ func TestWandPhraseQuery(t *testing.T) {
 	defer sr.Close()
 
 	q := parseQuery(`"machine learning"`)
-	eval := newWandEvaluator(sr, 10)
+	eval := newWandEvaluator(sr, 10, 0, 0, nil)
 	results := eval.searchQuery(q)
 
 	if len(results) == 0 {
@@ -129,7 +129,7 @@ func TestWandNoResults(t *testing.T) {
 	defer sr.Close()
 
 	q := parseQuery("xyzzyplugh")
-	eval := newWandEvaluator(sr, 10)
+	eval := newWandEvaluator(sr, 10, 0, 0, nil)
 	results := eval.searchQuery(q)
 
 	if len(results) != 0 {
@@ -172,9 +172,42 @@ func TestWandEmptyQuery(t *testing.T) {
 	defer sr.Close()
 
 	q := parseQuery("")
-	eval := newWandEvaluator(sr, 10)
+	eval := newWandEvaluator(sr, 10, 0, 0, nil)
 	results := eval.searchQuery(q)
 	if len(results) != 0 {
 		t.Fatalf("expected 0 results for empty query, got %d", len(results))
+	}
+}
+
+func TestWandBooleanShouldAccumulatesTermScores(t *testing.T) {
+	dir := t.TempDir()
+	segDir := filepath.Join(dir, "seg_00000001")
+
+	sw := newSegmentWriter()
+	sw.addDoc("doc_alpha", []byte("alpha alpha alpha alpha"))
+	sw.addDoc("doc_alpha_beta", []byte("alpha beta"))
+	if _, err := sw.flush(segDir); err != nil {
+		t.Fatal(err)
+	}
+
+	sr, err := openSegmentReader(segDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sr.Close()
+
+	q := parseQuery("alpha beta")
+	eval := newWandEvaluator(sr, 10, 0, 0, nil)
+	results := eval.searchQuery(q)
+	if len(results) < 2 {
+		t.Fatalf("expected at least 2 results, got %d", len(results))
+	}
+
+	topID, _, err := sr.getDoc(results[0].docID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if topID != "doc_alpha_beta" {
+		t.Fatalf("expected doc with both terms to rank first, got %s", topID)
 	}
 }

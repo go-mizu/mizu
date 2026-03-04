@@ -95,8 +95,8 @@ func TestParseQueryStopwordsOnly(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected booleanQuery, got %T", q)
 	}
-	if len(bq.must)+len(bq.should)+len(bq.mustNot) != 0 {
-		t.Fatal("stopwords-only query should have no clauses")
+	if len(bq.should) != 3 {
+		t.Fatalf("expected 3 clauses, got %+v", bq)
 	}
 }
 
@@ -116,5 +116,16 @@ func TestSplitQueryTokens(t *testing.T) {
 		if len(tokens) != tt.want {
 			t.Errorf("splitQueryTokens(%q) = %v (len %d), want len %d", tt.input, tokens, len(tokens), tt.want)
 		}
+	}
+}
+
+func TestParseQueryExpandsAnalyzedTermsPerToken(t *testing.T) {
+	q := parseQuery("wi-fi")
+	bq, ok := q.(booleanQuery)
+	if !ok {
+		t.Fatalf("expected booleanQuery, got %T", q)
+	}
+	if len(bq.should) != 2 {
+		t.Fatalf("expected 2 should clauses for split token, got %d", len(bq.should))
 	}
 }
