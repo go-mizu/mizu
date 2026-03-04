@@ -1,5 +1,9 @@
 // Package llamacpp implements an embed.Driver that calls a llama.cpp server's
 // OpenAI-compatible /v1/embeddings endpoint.
+//
+// Supports multiple server addresses for round-robin load balancing:
+//
+//	cfg.Addr = "http://host1:8087,http://host2:8088"
 package llamacpp
 
 import (
@@ -9,6 +13,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/embed"
@@ -16,7 +22,7 @@ import (
 
 const (
 	defaultAddr      = "http://localhost:8086"
-	defaultBatchSize = 64
+	defaultBatchSize = 16
 )
 
 func init() {
@@ -24,12 +30,14 @@ func init() {
 }
 
 // Driver calls a llama.cpp server for embedding generation.
+// Supports multiple server addresses for round-robin load balancing.
 type Driver struct {
-	addr      string
+	addrs     []string
 	model     string
 	dim       int
 	batchSize int
 	client    *http.Client
+	nextAddr  atomic.Uint64
 }
 
 func (d *Driver) Name() string {
@@ -41,39 +49,73 @@ func (d *Driver) Name() string {
 
 func (d *Driver) Dimension() int { return d.dim }
 
-// Open connects to the llama.cpp server and probes for the embedding dimension.
-func (d *Driver) Open(ctx context.Context, cfg embed.Config) error {
-	d.addr = cfg.Addr
-	if d.addr == "" {
-		d.addr = defaultAddr
+// pickAddr returns the next server address in round-robin order.
+func (d *Driver) pickAddr() string {
+	if len(d.addrs) == 1 {
+		return d.addrs[0]
 	}
+	idx := d.nextAddr.Add(1) - 1
+	return d.addrs[idx%uint64(len(d.addrs))]
+}
+
+// Open connects to the llama.cpp server(s) and probes for the embedding dimension.
+// cfg.Addr supports comma-separated addresses for round-robin: "http://h1:8087,http://h2:8088"
+func (d *Driver) Open(ctx context.Context, cfg embed.Config) error {
+	addr := cfg.Addr
+	if addr == "" {
+		addr = defaultAddr
+	}
+	for _, a := range strings.Split(addr, ",") {
+		a = strings.TrimSpace(a)
+		if a != "" {
+			d.addrs = append(d.addrs, a)
+		}
+	}
+	if len(d.addrs) == 0 {
+		return fmt.Errorf("llamacpp: no server addresses configured")
+	}
+
 	d.model = cfg.Model
 	d.batchSize = cfg.BatchSize
 	if d.batchSize <= 0 {
 		d.batchSize = defaultBatchSize
 	}
-	d.client = &http.Client{Timeout: 120 * time.Second}
-
-	// Health check first — gives a clearer error than a probe failure.
-	if err := d.healthCheck(ctx); err != nil {
-		return fmt.Errorf("llamacpp: server not reachable at %s\n\n"+
-			"  Start the server:\n"+
-			"    cd docker/llamacpp && docker compose up llamacpp-embed -d\n\n"+
-			"  Or manually:\n"+
-			"    llama-server --model <model.gguf> --embedding --pooling mean --port 8080\n\n"+
-			"  Error: %w", d.addr, err)
+	d.client = &http.Client{
+		Timeout: 120 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        64,
+			MaxIdleConnsPerHost: 64,
+			MaxConnsPerHost:     64,
+			IdleConnTimeout:     120 * time.Second,
+		},
 	}
 
-	// Probe to discover dimension.
-	vecs, err := d.embed(ctx, []string{"hello"})
+	// Health check all servers.
+	for _, a := range d.addrs {
+		if err := d.healthCheckAddr(ctx, a); err != nil {
+			return fmt.Errorf("llamacpp: server not reachable at %s\n\n"+
+				"  Start the server:\n"+
+				"    cd docker/llamacpp && docker compose up llamacpp-embed -d\n\n"+
+				"  Or manually:\n"+
+				"    llama-server --model <model.gguf> --embedding --pooling mean --port 8080\n\n"+
+				"  Error: %w", a, err)
+		}
+	}
+
+	// Probe to discover dimension (use first server).
+	vecs, err := d.embedAddr(ctx, d.addrs[0], []string{"hello"})
 	if err != nil {
 		return fmt.Errorf("llamacpp: probe failed at %s: %w\n"+
-			"  Ensure the server was started with --embedding flag", d.addr, err)
+			"  Ensure the server was started with --embedding flag", d.addrs[0], err)
 	}
 	if len(vecs) == 0 || len(vecs[0]) == 0 {
 		return fmt.Errorf("llamacpp: server returned empty embedding — is --embedding flag enabled?")
 	}
 	d.dim = len(vecs[0])
+
+	if len(d.addrs) > 1 {
+		fmt.Fprintf(io.Discard, "llamacpp: %d servers configured\n", len(d.addrs))
+	}
 	return nil
 }
 
@@ -95,7 +137,7 @@ func (d *Driver) Embed(ctx context.Context, inputs []embed.Input) ([]embed.Vecto
 		if end > len(texts) {
 			end = len(texts)
 		}
-		batch, err := d.embed(ctx, texts[i:end])
+		batch, err := d.embedAddr(ctx, d.pickAddr(), texts[i:end])
 		if err != nil {
 			return nil, err
 		}
@@ -109,12 +151,12 @@ func (d *Driver) Embed(ctx context.Context, inputs []embed.Input) ([]embed.Vecto
 	return result, nil
 }
 
-// healthCheck pings /health to verify the server is running.
-func (d *Driver) healthCheck(ctx context.Context) error {
+// healthCheckAddr pings /health on the given server address.
+func (d *Driver) healthCheckAddr(ctx context.Context, addr string) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, d.addr+"/health", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, addr+"/health", nil)
 	if err != nil {
 		return err
 	}
@@ -145,7 +187,7 @@ type embeddingData struct {
 	Index     int       `json:"index"`
 }
 
-func (d *Driver) embed(ctx context.Context, texts []string) ([][]float32, error) {
+func (d *Driver) embedAddr(ctx context.Context, addr string, texts []string) ([][]float32, error) {
 	reqBody := embeddingRequest{
 		Input: texts,
 		Model: d.model,
@@ -155,7 +197,7 @@ func (d *Driver) embed(ctx context.Context, texts []string) ([][]float32, error)
 		return nil, fmt.Errorf("llamacpp: marshal: %w", err)
 	}
 
-	url := d.addr + "/v1/embeddings"
+	url := addr + "/v1/embeddings"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("llamacpp: new request: %w", err)
@@ -164,17 +206,21 @@ func (d *Driver) embed(ctx context.Context, texts []string) ([][]float32, error)
 
 	resp, err := d.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("llamacpp: request: %w", err)
+		return nil, fmt.Errorf("llamacpp: request to %s: %w", addr, err)
 	}
 	defer resp.Body.Close()
 
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("llamacpp: read body: %w", err)
+	}
+
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("llamacpp: HTTP %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("llamacpp: HTTP %d from %s: %s", resp.StatusCode, addr, string(respBody))
 	}
 
 	var embResp embeddingResponse
-	if err := json.NewDecoder(resp.Body).Decode(&embResp); err != nil {
+	if err := json.Unmarshal(respBody, &embResp); err != nil {
 		return nil, fmt.Errorf("llamacpp: decode: %w", err)
 	}
 
