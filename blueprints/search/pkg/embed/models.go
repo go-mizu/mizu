@@ -77,6 +77,17 @@ var Models = []ModelInfo{
 		},
 	},
 
+	{
+		Name:   "qwen3-embedding-0.6b",
+		Driver: "llamacpp",
+		Dim:    1024,
+		SizeMB: 639,
+		Desc:   "Qwen3 Embedding 0.6B (1024-dim, 32K context, multilingual, instruction-aware)",
+		Files: []ModelFile{
+			{URL: "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF/resolve/main/Qwen3-Embedding-0.6B-Q8_0.gguf", Name: "Qwen3-Embedding-0.6B-Q8_0.gguf"},
+		},
+	},
+
 	// --- ONNX models ---
 	{
 		Name:   "all-MiniLM-L6-v2",
