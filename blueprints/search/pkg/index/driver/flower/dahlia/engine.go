@@ -23,12 +23,14 @@ type Engine struct {
 	segments []*segmentReader
 	merger   *mergeWorker
 	mu       sync.RWMutex
+	flushErr error
 
 	// In-memory buffer for memory-bounded indexing
 	writer *segmentWriter
 
 	// Background flush coordination
-	flushWg sync.WaitGroup
+	flushWg    sync.WaitGroup
+	flushSlots chan struct{}
 }
 
 func (e *Engine) Name() string { return "dahlia" }
@@ -38,6 +40,7 @@ func (e *Engine) Open(_ context.Context, dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
+	e.flushSlots = make(chan struct{}, maxFlushWorkers)
 
 	meta, err := loadIndexMeta(dir)
 	if err != nil {
@@ -79,6 +82,11 @@ func (e *Engine) Close() error {
 	e.mu.Unlock()
 
 	e.closeSegments()
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if e.flushErr != nil {
+		return e.flushErr
+	}
 	return nil
 }
 
@@ -113,6 +121,11 @@ func (e *Engine) Stats(_ context.Context) (index.EngineStats, error) {
 
 func (e *Engine) Index(_ context.Context, docs []index.Document) error {
 	e.mu.Lock()
+	if e.flushErr != nil {
+		err := e.flushErr
+		e.mu.Unlock()
+		return err
+	}
 
 	if e.writer == nil {
 		e.writer = newSegmentWriter()
@@ -130,10 +143,17 @@ func (e *Engine) Index(_ context.Context, docs []index.Document) error {
 			segDir := filepath.Join(e.dir, segName)
 			e.writer = newSegmentWriter()
 
-			// Launch background flush — release lock so flush goroutine
-			// can acquire it later to update segments/meta
+			// Tantivy-style backpressure: bound in-flight flush writers.
+			e.mu.Unlock()
+			e.flushSlots <- struct{}{}
 			e.flushWg.Add(1)
 			go e.bgFlush(sw, segName, segDir)
+			e.mu.Lock()
+			if e.flushErr != nil {
+				err := e.flushErr
+				e.mu.Unlock()
+				return err
+			}
 		}
 	}
 
@@ -144,14 +164,17 @@ func (e *Engine) Index(_ context.Context, docs []index.Document) error {
 // bgFlush flushes a writer to disk and registers the new segment.
 func (e *Engine) bgFlush(sw *segmentWriter, segName, segDir string) {
 	defer e.flushWg.Done()
+	defer func() { <-e.flushSlots }()
 
 	segMeta, err := sw.flush(segDir)
 	if err != nil {
+		e.setFlushErr(fmt.Errorf("bg flush %s: %w", segName, err))
 		return
 	}
 	sr, err := openSegmentReader(segDir)
 	if err != nil {
 		os.RemoveAll(segDir)
+		e.setFlushErr(fmt.Errorf("bg open segment %s: %w", segName, err))
 		return
 	}
 
@@ -166,7 +189,11 @@ func (e *Engine) bgFlush(sw *segmentWriter, segName, segDir string) {
 	if e.meta.DocCount > 0 {
 		e.meta.AvgDocLen = totalTokens / float64(e.meta.DocCount)
 	}
-	saveIndexMeta(e.dir, e.meta)
+	if err := saveIndexMeta(e.dir, e.meta); err != nil {
+		if e.flushErr == nil {
+			e.flushErr = fmt.Errorf("bg save meta %s: %w", segName, err)
+		}
+	}
 	e.mu.Unlock()
 }
 
@@ -209,6 +236,11 @@ func (e *Engine) flushWriterSync() error {
 
 func (e *Engine) Search(_ context.Context, q index.Query) (index.Results, error) {
 	e.mu.RLock()
+	if e.flushErr != nil {
+		err := e.flushErr
+		e.mu.RUnlock()
+		return index.Results{}, err
+	}
 	defer e.mu.RUnlock()
 
 	if len(e.segments) == 0 {
@@ -248,22 +280,38 @@ func (e *Engine) Search(_ context.Context, q index.Query) (index.Results, error)
 }
 
 func (e *Engine) resolveHit(sd scoredDoc) index.Hit {
-	for _, seg := range e.segments {
-		if sd.docID < seg.meta.DocCount {
-			id, text, err := seg.getDoc(sd.docID)
-			if err == nil {
-				snippet := string(text)
-				if len(snippet) > 200 {
-					snippet = snippet[:200] + "..."
-				}
-				return index.Hit{
-					DocID:   id,
-					Score:   sd.score,
-					Snippet: snippet,
-				}
+	if sd.seg != nil {
+		if id, text, err := sd.seg.getDoc(sd.docID); err == nil {
+			snippet := string(text)
+			if len(snippet) > 200 {
+				snippet = snippet[:200] + "..."
+			}
+			return index.Hit{
+				DocID:   id,
+				Score:   sd.score,
+				Snippet: snippet,
 			}
 		}
 	}
+
+	// Fallback for old in-memory results that may not carry segment identity.
+	for _, seg := range e.segments {
+		if sd.docID >= seg.meta.DocCount {
+			continue
+		}
+		if id, text, err := seg.getDoc(sd.docID); err == nil {
+			snippet := string(text)
+			if len(snippet) > 200 {
+				snippet = snippet[:200] + "..."
+			}
+			return index.Hit{
+				DocID:   id,
+				Score:   sd.score,
+				Snippet: snippet,
+			}
+		}
+	}
+
 	return index.Hit{
 		DocID: fmt.Sprintf("doc_%d", sd.docID),
 		Score: sd.score,
@@ -275,6 +323,11 @@ func (e *Engine) resolveHit(sd scoredDoc) index.Hit {
 func (e *Engine) Finalize(_ context.Context) error {
 	// Flush buffered docs synchronously
 	e.mu.Lock()
+	if e.flushErr != nil {
+		err := e.flushErr
+		e.mu.Unlock()
+		return err
+	}
 	if e.writer != nil && e.writer.docCount > 0 {
 		if err := e.flushWriterSync(); err != nil {
 			e.mu.Unlock()
@@ -285,6 +338,24 @@ func (e *Engine) Finalize(_ context.Context) error {
 
 	// Wait for all background flushes before merge
 	e.flushWg.Wait()
+	e.mu.RLock()
+	if e.flushErr != nil {
+		err := e.flushErr
+		e.mu.RUnlock()
+		return err
+	}
+	e.mu.RUnlock()
 
 	return forceMerge(e.dir, &e.mu, &e.meta, &e.segments)
+}
+
+func (e *Engine) setFlushErr(err error) {
+	if err == nil {
+		return
+	}
+	e.mu.Lock()
+	if e.flushErr == nil {
+		e.flushErr = err
+	}
+	e.mu.Unlock()
 }

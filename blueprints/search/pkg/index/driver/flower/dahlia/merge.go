@@ -70,31 +70,18 @@ func (mw *mergeWorker) tryMerge() {
 		return
 	}
 
-	// Select segments to merge (smallest first, up to maxMergeSegments)
-	type segIdx struct {
-		idx      int
-		docCount uint32
+	// Keep background merge working set bounded.
+	selected := pickMergeIndices(segments, maxMergeSegments, maxBgMergeDocs, false)
+	if len(selected) < 2 {
+		return
 	}
-	indexed := make([]segIdx, len(segments))
-	for i, seg := range segments {
-		indexed[i] = segIdx{idx: i, docCount: seg.meta.DocCount}
-	}
-	sort.Slice(indexed, func(i, j int) bool {
-		return indexed[i].docCount < indexed[j].docCount
-	})
-
-	mergeCount := len(indexed)
-	if mergeCount > maxMergeSegments {
-		mergeCount = maxMergeSegments
-	}
-	toMerge := indexed[:mergeCount]
 
 	// Collect segment readers for merge
-	mergeReaders := make([]*segmentReader, mergeCount)
-	mergeIndices := make(map[int]bool)
-	for i, si := range toMerge {
-		mergeReaders[i] = segments[si.idx]
-		mergeIndices[si.idx] = true
+	mergeReaders := make([]*segmentReader, len(selected))
+	mergeIndices := make(map[int]struct{}, len(selected))
+	for i, idx := range selected {
+		mergeReaders[i] = segments[idx]
+		mergeIndices[idx] = struct{}{}
 	}
 
 	// Perform N-way merge
@@ -118,7 +105,7 @@ func (mw *mergeWorker) tryMerge() {
 	var newSegments []*segmentReader
 	var newSegNames []string
 	for i, seg := range segments {
-		if !mergeIndices[i] {
+		if _, ok := mergeIndices[i]; !ok {
 			newSegments = append(newSegments, seg)
 			newSegNames = append(newSegNames, meta.Segments[i])
 		}
@@ -145,7 +132,7 @@ func (mw *mergeWorker) tryMerge() {
 
 	// Close old segments and delete their directories
 	for i, seg := range segments {
-		if mergeIndices[i] {
+		if _, ok := mergeIndices[i]; ok {
 			oldDir := seg.dir
 			seg.Close()
 			os.RemoveAll(oldDir)
@@ -188,33 +175,118 @@ func forceMerge(dir string, mu *sync.RWMutex, meta **indexMeta, segments *[]*seg
 	}
 
 	m := *meta
-	segSeq := m.NextSegSeq
-	m.NextSegSeq++
-	segName := fmt.Sprintf(segDirFmt, segSeq)
-	segDir := filepath.Join(dir, segName)
+	segNames := append([]string(nil), m.Segments...)
+	for len(segs) > 1 {
+		selected := pickMergeIndices(segs, maxMergeSegments, maxFMMergeDocs, true)
+		if len(selected) < 2 {
+			return fmt.Errorf("force merge stalled: no eligible segments")
+		}
 
-	if err := mergeSegments(segs, segDir); err != nil {
-		return err
+		mergeReaders := make([]*segmentReader, len(selected))
+		mergeSet := make(map[int]struct{}, len(selected))
+		for i, idx := range selected {
+			mergeReaders[i] = segs[idx]
+			mergeSet[idx] = struct{}{}
+		}
+
+		segSeq := m.NextSegSeq
+		m.NextSegSeq++
+		segName := fmt.Sprintf(segDirFmt, segSeq)
+		segDir := filepath.Join(dir, segName)
+
+		if err := mergeSegments(mergeReaders, segDir); err != nil {
+			return err
+		}
+		newSeg, err := openSegmentReader(segDir)
+		if err != nil {
+			os.RemoveAll(segDir)
+			return err
+		}
+
+		nextSegs := make([]*segmentReader, 0, len(segs)-len(selected)+1)
+		nextNames := make([]string, 0, len(segNames)-len(selected)+1)
+		for i, seg := range segs {
+			if _, ok := mergeSet[i]; ok {
+				oldDir := seg.dir
+				seg.Close()
+				os.RemoveAll(oldDir)
+				continue
+			}
+			nextSegs = append(nextSegs, seg)
+			nextNames = append(nextNames, segNames[i])
+		}
+		nextSegs = append(nextSegs, newSeg)
+		nextNames = append(nextNames, segName)
+		segs = nextSegs
+		segNames = nextNames
 	}
 
-	newSeg, err := openSegmentReader(segDir)
-	if err != nil {
-		os.RemoveAll(segDir)
-		return err
+	m.Segments = segNames
+	if len(segs) == 1 {
+		m.DocCount = uint64(segs[0].meta.DocCount)
+		m.AvgDocLen = segs[0].meta.AvgDocLen
+	} else {
+		var totalDocs uint64
+		var totalTokens float64
+		for _, seg := range segs {
+			totalDocs += uint64(seg.meta.DocCount)
+			totalTokens += seg.meta.AvgDocLen * float64(seg.meta.DocCount)
+		}
+		m.DocCount = totalDocs
+		if totalDocs > 0 {
+			m.AvgDocLen = totalTokens / float64(totalDocs)
+		}
 	}
 
-	// Close and remove old segments
-	for _, seg := range segs {
-		oldDir := seg.dir
-		seg.Close()
-		os.RemoveAll(oldDir)
-	}
-
-	m.Segments = []string{segName}
-	m.DocCount = uint64(newSeg.meta.DocCount)
-	m.AvgDocLen = newSeg.meta.AvgDocLen
-
-	*segments = []*segmentReader{newSeg}
-
+	*segments = segs
 	return saveIndexMeta(dir, m)
+}
+
+type segIdx struct {
+	idx      int
+	docCount uint32
+}
+
+// pickMergeIndices selects small segments first while keeping total docs under maxDocs.
+// If forceProgress is true and budget blocks selection, it still picks 2 smallest segments.
+func pickMergeIndices(segments []*segmentReader, maxSegments int, maxDocs int, forceProgress bool) []int {
+	if len(segments) < 2 || maxSegments < 2 {
+		return nil
+	}
+
+	indexed := make([]segIdx, len(segments))
+	for i, seg := range segments {
+		indexed[i] = segIdx{idx: i, docCount: seg.meta.DocCount}
+	}
+	sort.Slice(indexed, func(i, j int) bool {
+		if indexed[i].docCount != indexed[j].docCount {
+			return indexed[i].docCount < indexed[j].docCount
+		}
+		return indexed[i].idx < indexed[j].idx
+	})
+
+	limit := len(indexed)
+	if limit > maxSegments {
+		limit = maxSegments
+	}
+
+	chosen := make([]int, 0, limit)
+	var total int
+	for i := 0; i < limit; i++ {
+		cand := indexed[i]
+		nextTotal := total + int(cand.docCount)
+		if maxDocs > 0 && len(chosen) > 0 && nextTotal > maxDocs {
+			break
+		}
+		chosen = append(chosen, cand.idx)
+		total = nextTotal
+	}
+
+	if len(chosen) >= 2 {
+		return chosen
+	}
+	if !forceProgress || len(indexed) < 2 {
+		return nil
+	}
+	return []int{indexed[0].idx, indexed[1].idx}
 }
