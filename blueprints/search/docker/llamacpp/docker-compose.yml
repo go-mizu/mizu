@@ -71,11 +71,17 @@ services:
     command: >
       --host 0.0.0.0
       --port 8080
-      --model /models/nomic-embed-text-v1.5.Q8_0.gguf
-      --ctx-size 2048
+      --model /models/all-MiniLM-L6-v2.Q8_0.gguf
+      --ctx-size 8192
+      --batch-size 512
+      --ubatch-size 512
+      --parallel 16
       --embedding
       --pooling mean
       --cont-batching
+      --flash-attn on
+      --threads 8
+      --threads-batch 8
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
