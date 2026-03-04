@@ -50,42 +50,29 @@ impl DomainEntry {
 impl super::Engine for WreqEngine {
     async fn run(
         &self,
-        seeds: Vec<SeedURL>,
+        seed_rx: async_channel::Receiver<SeedURL>,
+        seed_count: u64,
         cfg: &Config,
         results: Arc<dyn ResultWriter>,
         failures: Arc<dyn FailureWriter>,
     ) -> Result<StatsSnapshot> {
-        let total_seeds = seeds.len();
-        if total_seeds == 0 {
-            return Ok(StatsSnapshot::empty());
-        }
-
         info!(
-            "wreq engine (Chrome133 TLS): {} seeds, {} workers, inner_n={}",
-            total_seeds, cfg.workers, cfg.inner_n
+            "wreq engine (Chrome133 TLS): workers={} inner_n={} timeout={}ms seed_hint={}",
+            cfg.workers, cfg.inner_n, cfg.timeout.as_millis(), seed_count,
         );
 
-        let batches = group_by_domain(seeds);
-        let domain_count = batches.len();
-        info!("grouped into {} domains", domain_count);
-
         let stats = cfg.live_stats.clone().unwrap_or_else(|| Arc::new(Stats::new()));
-        if stats.total_seeds.load(Ordering::Relaxed) == 0 {
-            stats.total_seeds.store(total_seeds as u64, Ordering::Relaxed);
+        if seed_count > 0 && stats.total_seeds.load(Ordering::Relaxed) == 0 {
+            stats.total_seeds.store(seed_count, Ordering::Relaxed);
         }
         stats.done.store(false, Ordering::Relaxed);
-        stats.domains_total.store(domain_count as u64, Ordering::Relaxed);
-        stats.push_warning(format!(
-            "wreq(Chrome133): {} seeds, {} domains, {} workers, inner_n={}",
-            total_seeds, domain_count, cfg.workers, cfg.inner_n,
-        ));
 
         let adaptive = Arc::new(AdaptiveTimeout::new());
 
         // Peak-RPS tracker
         let peak_stats = Arc::clone(&stats);
         tokio::spawn(async move {
-            let mut prev_total = 0u64;
+            let mut prev_total = peak_stats.total.load(Ordering::Relaxed);
             let mut interval = tokio::time::interval(Duration::from_millis(100));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
@@ -110,48 +97,91 @@ impl super::Engine for WreqEngine {
         let workers = cfg.workers.max(1);
         let inner_n = cfg.inner_n.max(1);
 
+        // Domain map: lazily populated as new domains arrive from the streaming channel.
         let domain_map: Arc<DashMap<String, Arc<DomainEntry>>> =
-            Arc::new(DashMap::with_capacity(domain_count));
-        for batch in &batches {
-            domain_map.insert(batch.domain.clone(), Arc::new(DomainEntry::new(inner_n)));
-        }
+            Arc::new(DashMap::with_capacity(32_768));
 
+        // Flat URL channel: capacity = workers * 32 (min 65536).
+        let channel_cap = (workers * 32).max(65_536);
         let (url_tx, url_rx) =
-            async_channel::bounded::<(SeedURL, Arc<DomainEntry>)>(workers * 4);
+            async_channel::bounded::<(SeedURL, Arc<DomainEntry>)>(channel_cap);
 
-        // Producer: round-robin domain order
+        // Batch-streaming producer (mirrors reqwest_engine / hyper_engine).
+        const BATCH_SIZE: usize = 100_000;
         let dm = Arc::clone(&domain_map);
+        let stats_prod = Arc::clone(&stats);
         let producer = tokio::spawn(async move {
-            let domain_batches: Vec<(Vec<SeedURL>, Arc<DomainEntry>)> = batches
-                .into_iter()
-                .filter_map(|batch| {
-                    dm.get(&batch.domain)
-                        .map(|e| (batch.urls, Arc::clone(e.value())))
-                })
-                .collect();
-            let max_len = domain_batches.iter().map(|(urls, _)| urls.len()).max().unwrap_or(0);
-            for slot in 0..max_len {
-                for (urls, entry) in &domain_batches {
-                    if let Some(url) = urls.get(slot) {
-                        if url_tx.send((url.clone(), Arc::clone(entry))).await.is_err() {
-                            return;
-                        }
+            use std::collections::VecDeque;
+            let mut batch: Vec<SeedURL> = Vec::with_capacity(BATCH_SIZE);
+            let mut total_seen = 0u64;
+
+            loop {
+                batch.clear();
+                match seed_rx.recv().await {
+                    Ok(seed) => batch.push(seed),
+                    Err(_) => break,
+                }
+                while batch.len() < BATCH_SIZE {
+                    match seed_rx.try_recv() {
+                        Ok(seed) => batch.push(seed),
+                        Err(_) => break,
+                    }
+                }
+
+                total_seen += batch.len() as u64;
+                if stats_prod.total_seeds.load(Ordering::Relaxed) == 0 {
+                    stats_prod.total_seeds.store(total_seen, Ordering::Relaxed);
+                }
+
+                let sub_batches = group_by_domain(std::mem::take(&mut batch));
+                stats_prod
+                    .domains_total
+                    .fetch_add(sub_batches.len() as u64, Ordering::Relaxed);
+
+                let mut queue: VecDeque<(VecDeque<SeedURL>, Arc<DomainEntry>)> = sub_batches
+                    .into_iter()
+                    .map(|b| {
+                        let entry = dm
+                            .entry(b.domain.clone())
+                            .or_insert_with(|| Arc::new(DomainEntry::new(inner_n)));
+                        (VecDeque::from(b.urls), Arc::clone(entry.value()))
+                    })
+                    .collect();
+
+                while let Some((mut urls, entry)) = queue.pop_front() {
+                    let url = match urls.pop_front() {
+                        Some(u) => u,
+                        None => continue,
+                    };
+                    if url_tx.send((url, Arc::clone(&entry))).await.is_err() {
+                        return;
+                    }
+                    if !urls.is_empty() {
+                        queue.push_back((urls, entry));
                     }
                 }
             }
+
+            info!(
+                "wreq producer done: {} seeds dispatched across {} domains",
+                total_seen,
+                dm.len(),
+            );
         });
 
         // Build wreq client with Chrome133 TLS impersonation
         let max_timeout = cfg.timeout.saturating_mul(5);
-        let shared_client = match wreq::Client::builder()
+        let mut client_builder = wreq::Client::builder()
             .emulation(Emulation::Chrome133)
             .pool_max_idle_per_host(inner_n)
             .timeout(max_timeout)
             .cert_verification(false)
             .redirect(wreq::redirect::Policy::limited(7))
-            .tcp_keepalive(Duration::from_secs(60))
-            .build()
-        {
+            .tcp_keepalive(Duration::from_secs(60));
+        if cfg.connect_timeout > Duration::ZERO {
+            client_builder = client_builder.connect_timeout(cfg.connect_timeout);
+        }
+        let shared_client = match client_builder.build() {
             Ok(c) => Arc::new(c),
             Err(e) => return Err(anyhow::anyhow!("failed to build wreq client: {}", e)),
         };
@@ -226,14 +256,23 @@ async fn process_one_url(
         Err(_) => return,
     };
 
+    // Floor: never drop below cfg.timeout; ceiling: ×3 (tight vs old ×5).
     let effective_timeout = if !cfg.disable_adaptive_timeout {
-        adaptive.timeout(cfg.adaptive_timeout_max).unwrap_or(cfg.timeout).min(cfg.timeout.saturating_mul(5))
+        adaptive
+            .timeout(cfg.adaptive_timeout_max)
+            .unwrap_or(cfg.timeout)
+            .max(cfg.timeout)
+            .min(cfg.timeout.saturating_mul(3))
     } else {
         cfg.timeout
     };
 
     let fetch_result = fetch_one(client, &seed, effective_timeout, cfg.max_body_bytes).await;
     stats.total.fetch_add(1, Ordering::Relaxed);
+
+    // Release semaphore before any writer call (avoids fetch goroutines blocking behind
+    // binary writer backpressure while still holding the inner_n permit).
+    drop(_permit);
 
     match fetch_result {
         Err((wreq_err, fetch_ms)) => {
@@ -505,7 +544,7 @@ async fn fetch_one(
         crawled_at: chrono::Utc::now().naive_utc(),
         error: String::new(),
         body: String::new(),
-        body_cid: String::new(), // wreq engine: body store not wired (reqwest engine only)
+        warc_id: String::new(), // wreq engine: warc store not wired (reqwest engine only)
     })
 }
 

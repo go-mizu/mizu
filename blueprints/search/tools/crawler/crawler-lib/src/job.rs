@@ -4,6 +4,7 @@ use crate::engine::reqwest_engine::ReqwestEngine;
 #[cfg(feature = "wreq-engine")]
 use crate::engine::wreq_engine::WreqEngine;
 use crate::engine::Engine;
+use crate::seed::vec_to_receiver;
 use crate::stats::StatsSnapshot;
 use crate::types::SeedURL;
 use crate::writer::{FailureWriter, ResultWriter};
@@ -45,7 +46,8 @@ pub struct JobResult {
 /// * `load_retry_seeds` - Optional closure to load timeout URLs for pass 2;
 ///   receives the job start time so only current-run failures are retried
 pub async fn run_job(
-    seeds: Vec<SeedURL>,
+    seed_rx: async_channel::Receiver<SeedURL>,
+    seed_count: u64,
     mut cfg: Config,
     result_writer: Arc<dyn ResultWriter>,
     open_failure_writer: &dyn Fn() -> Result<Arc<dyn FailureWriter>>,
@@ -94,7 +96,7 @@ pub async fn run_job(
     }
     let failure_writer1 = open_failure_writer()?;
     tracing::info!(
-        seeds = seeds.len(),
+        seed_count,
         timeout_ms = cfg.timeout.as_millis() as u64,
         workers = cfg.workers,
         inner_n = cfg.inner_n,
@@ -102,7 +104,7 @@ pub async fn run_job(
     );
 
     let pass1 = engine
-        .run(seeds, &cfg, result_writer.clone(), failure_writer1.clone())
+        .run(seed_rx, seed_count, &cfg, result_writer.clone(), failure_writer1.clone())
         .await?;
 
     // Close failure writer 1 — release DuckDB lock before loading retry seeds
@@ -142,6 +144,17 @@ pub async fn run_job(
                 if let Some(ref stats) = cfg.live_stats {
                     stats.pass.store(2, std::sync::atomic::Ordering::Relaxed);
                     stats.pass2_seeds.store(retry_seeds.len() as u64, std::sync::atomic::Ordering::Relaxed);
+                    // Snapshot pass-1 totals so GUI can compute pass-2 progress delta.
+                    // pass1_total: used to compute pass2Done = live_total - pass1_total
+                    // pass2_start_elapsed_ms: used to compute pass-2 avg RPS (not diluted by pass-1 time)
+                    stats.pass1_total.store(
+                        stats.total.load(std::sync::atomic::Ordering::Relaxed),
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                    stats.pass2_start_elapsed_ms.store(
+                        stats.start.elapsed().as_millis() as u64,
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
                     stats.push_warning(format!(
                         "pass 2: {} retry URLs, timeout={}ms",
                         retry_seeds.len(),
@@ -168,13 +181,19 @@ pub async fn run_job(
                 retry_cfg.domain_timeout_ms = (cfg.retry_timeout.as_millis() as i64) * 3;
                 retry_cfg.disable_adaptive_timeout = true;
                 retry_cfg.domain_dead_probe = 2;
+                // Zero stall ratio in pass-2: stall killing creates false negatives.
+                // Alive-but-slow domains with 1 success + N timeouts must NOT be abandoned —
+                // they proved they can succeed and their remaining URLs deserve a full retry.
+                retry_cfg.domain_stall_ratio = cfg.pass2_stall_ratio; // default=0
                 if cfg.pass2_workers > 0 {
                     retry_cfg.workers = cfg.pass2_workers;
                 }
 
+                let (retry_rx, retry_count) = vec_to_receiver(retry_seeds);
                 let pass2_cumulative = engine
                     .run(
-                        retry_seeds,
+                        retry_rx,
+                        retry_count,
                         &retry_cfg,
                         result_writer.clone(),
                         failure_writer2.clone(),
@@ -285,7 +304,8 @@ mod tests {
         cfg.workers = 1;
         cfg.inner_n = 1;
 
-        let result = run_job(vec![], cfg, result_writer, &open_failure, None)
+        let (seed_rx, seed_count) = vec_to_receiver(vec![]);
+        let result = run_job(seed_rx, seed_count, cfg, result_writer, &open_failure, None)
             .await
             .unwrap();
 
@@ -307,11 +327,35 @@ mod tests {
         cfg.inner_n = 1;
         cfg.no_retry = true;
 
-        let result = run_job(vec![], cfg, result_writer, &open_failure, None)
+        let (seed_rx, seed_count) = vec_to_receiver(vec![]);
+        let result = run_job(seed_rx, seed_count, cfg, result_writer, &open_failure, None)
             .await
             .unwrap();
 
         assert!(result.pass2.is_none());
+    }
+
+    #[test]
+    fn test_pass2_stall_ratio_is_zero_by_default() {
+        let cfg = Config::default();
+        // pass2_stall_ratio must default to 0 — stall killing creates false negatives in pass-2
+        assert_eq!(cfg.pass2_stall_ratio, 0, "pass2_stall_ratio should default to 0");
+    }
+
+    #[tokio::test]
+    async fn test_pass2_config_has_zero_stall_ratio() {
+        // Verify that with stall_ratio=0, a domain with 1 success + many timeouts is NOT abandoned.
+        let cfg = Config::default();
+        assert_eq!(cfg.pass2_stall_ratio, 0);
+
+        let state = crate::domain::DomainState { successes: 1, timeouts: 1_000 };
+        // pass2: fail_threshold=0, dead_probe=2 (probe requires 0 successes), stall_ratio=0
+        // successes=1 → dead_probe check fails (we have a success)
+        // stall_ratio=0 → stall check disabled
+        assert!(
+            !state.should_abandon(0, 2, 0, 4),
+            "with stall_ratio=0 and 1 success, domain should NOT be abandoned regardless of timeouts"
+        );
     }
 
     #[test]

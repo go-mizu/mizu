@@ -1,0 +1,43 @@
+# PostgreSQL 17 — native tsvector/GIN full-text search
+# Usage:
+#   FTS_DATA_DIR=$HOME/data/fts docker compose -f docker/postgres-fts/docker-compose.yml up -d
+#   search cc fts index --engine postgres
+#   search cc fts search "machine learning" --engine postgres
+
+services:
+  postgres:
+    image: postgres:17
+    container_name: fts-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=fts
+      - POSTGRES_USER=fineweb
+      - POSTGRES_PASSWORD=fineweb
+    command: >
+      postgres
+      -c shared_buffers=1GB
+      -c effective_cache_size=3GB
+      -c maintenance_work_mem=512MB
+      -c work_mem=64MB
+      -c max_parallel_workers_per_gather=4
+      -c max_parallel_workers=8
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c max_wal_size=4GB
+      -c synchronous_commit=off
+    volumes:
+      - ${FTS_DATA_DIR:-${HOME}/data/fts}/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fineweb -d fts"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 512M

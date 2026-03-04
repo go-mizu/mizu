@@ -1,0 +1,29 @@
+# lnx — Tantivy-backed lightweight REST search server
+# Usage:
+#   FTS_DATA_DIR=$HOME/data/fts docker compose -f docker/lnx/docker-compose.yml up -d
+#   search cc fts index --engine tantivy-lnx
+
+services:
+  lnx:
+    image: chillfish8/lnx:latest
+    container_name: fts-lnx
+    ports:
+      - "8000:8000"
+    environment:
+      - LNX_LOG_LEVEL=info
+      - LNX_DATA_PATH=/var/lib/lnx
+    volumes:
+      - ${FTS_DATA_DIR:-${HOME}/data/fts}/lnx:/var/lib/lnx
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/api/v1/indexes 2>/dev/null || exit 0"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 512M

@@ -83,7 +83,7 @@ pub struct CrawlResult {
     pub crawled_at: NaiveDateTime,
     pub error: String,
     pub body: String,    // always "" (DuckDB overflow block fix)
-    pub body_cid: String, // CAS ref "sha256:{hex64}"; "" = not stored
+    pub warc_id: String, // WARC response record UUID; "" = not stored
 }
 
 impl CrawlResult {
@@ -102,7 +102,7 @@ impl CrawlResult {
             crawled_at: chrono::Utc::now().naive_utc(),
             error,
             body: String::new(),
-            body_cid: String::new(),
+            warc_id: String::new(),
         }
     }
 }

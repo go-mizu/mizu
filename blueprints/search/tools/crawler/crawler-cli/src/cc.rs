@@ -11,9 +11,9 @@ use clap::Args;
 use std::io::Read as IoRead;
 use std::path::{Path, PathBuf};
 
-use crawler_lib::seed::{load_seeds_cc_parquet, CcSeedFilter};
+use crawler_lib::seed::{stream_seeds_cc_parquet_async, CcSeedFilter};
 
-use crate::common::{expand_home, run_crawl_job, CrawlJobParams};
+use crate::common::{expand_home, run_crawl_job_streaming, CrawlJobParamsStreaming};
 
 /// Base URL for Common Crawl data.
 const CC_BASE_URL: &str = "https://data.commoncrawl.org";
@@ -102,10 +102,44 @@ pub struct RecrawlArgs {
     #[arg(long)]
     pub mime: Vec<String>,
 
-    /// Body CAS store directory (e.g. ~/data/common-crawl/bodies).
-    /// When set, HTML bodies are stored as sha256:{hex}.gz and body_cid is populated.
+    /// WARC 1.1 store directory (default: {data-dir}/{crawl_id}/recrawl/warc/{part}/).
+    /// HTML responses are stored as WARC files; warc_id is populated in results.
+    #[arg(long, default_value = "auto")]
+    pub warc_dir: String,
+
+    /// Disable WARC store (skip saving HTML responses as WARC files)
     #[arg(long)]
-    pub body_store: Option<String>,
+    pub no_warc: bool,
+
+    /// Write gzip-compressed .warc.gz files (default: uncompressed)
+    #[arg(long)]
+    pub warc_compress: bool,
+
+    /// Enable web GUI dashboard (disables TUI)
+    #[arg(long)]
+    pub gui: bool,
+
+    /// GUI server port
+    #[arg(long, default_value_t = 9111)]
+    pub gui_port: u16,
+
+    /// Binary writer flusher thread count (0 = auto)
+    #[arg(long, default_value_t = 0)]
+    pub flusher_threads: usize,
+
+    /// TCP connect timeout in ms (0 = use overall timeout; default 500ms).
+    /// Dead servers fail fast, freeing workers 2× sooner.
+    #[arg(long, default_value_t = 500)]
+    pub connect_timeout_ms: u64,
+
+    /// Pass-2 domain stall ratio (0 = disabled, prevents false negatives).
+    /// Default 0: alive-but-slow domains in pass-2 must not be abandoned via stall ratio.
+    #[arg(long, default_value_t = 0)]
+    pub pass2_stall_ratio: usize,
+
+    /// Pass-2 worker count override (0 = use pass-1 workers)
+    #[arg(long, default_value_t = 0)]
+    pub pass2_workers: usize,
 }
 
 pub async fn run_recrawl(args: RecrawlArgs) -> Result<()> {
@@ -132,20 +166,21 @@ pub async fn run_recrawl(args: RecrawlArgs) -> Result<()> {
     let parquet_str = parquet_path.to_string_lossy().to_string();
     println!("Parquet file: {} ({})", parquet_str, part_name);
 
-    // 2. Load seeds from CC parquet
+    // 2. Stream seeds from CC parquet (lazy — no full Vec materialised in memory).
     let filter = CcSeedFilter {
         status_codes: args.status.clone(),
         mime_types: args.mime.clone(),
         languages: args.lang.clone(),
     };
-    println!("Loading CC seeds from parquet (warc_filename IS NOT NULL)...");
-    let seeds = load_seeds_cc_parquet(&parquet_str, args.limit, &filter)?;
+    println!("Counting CC seeds from parquet (warc_filename IS NOT NULL)...");
+    let (seed_rx, seed_count, loader_handle) =
+        stream_seeds_cc_parquet_async(parquet_str.clone(), args.limit, filter).await?;
 
-    if seeds.is_empty() {
-        println!("No seeds found, exiting.");
+    if seed_count == 0 {
+        println!("No seeds found (count=0), exiting.");
         return Ok(());
     }
-    println!("Loaded {} seeds", seeds.len());
+    println!("Seed count: {} (streaming, peak RAM ≈ 40 MB)", seed_count);
 
     // 3. Resolve output directory
     let output_dir = if args.output.is_empty() {
@@ -160,16 +195,32 @@ pub async fn run_recrawl(args: RecrawlArgs) -> Result<()> {
     };
     println!("Output directory: {}", output_dir.display());
 
-    // 4. Run crawl job (reuses shared infrastructure)
+    // 4. Resolve WARC store dir: "auto" → {data-dir}/{crawl_id}/recrawl/warc/{part_name}/
+    let warc_store_dir = if args.no_warc {
+        None
+    } else if args.warc_dir == "auto" {
+        let base = expand_home("~/data/common-crawl");
+        let warc_base = if crawl_id.is_empty() {
+            base.join("recrawl").join("warc").join(&part_name)
+        } else {
+            base.join(&crawl_id).join("recrawl").join("warc").join(&part_name)
+        };
+        Some(warc_base.to_string_lossy().into_owned())
+    } else {
+        Some(args.warc_dir)
+    };
+
+    // 5. Run crawl job (streaming variant — no Vec<SeedURL> allocation)
     let title = if crawl_id.is_empty() {
         format!("CC Recrawl — {}", part_name)
     } else {
         format!("CC {} — {}", crawl_id, part_name)
     };
 
-    run_crawl_job(CrawlJobParams {
+    let result = run_crawl_job_streaming(CrawlJobParamsStreaming {
         title,
-        seeds,
+        seed_rx,
+        seed_count,
         output_dir,
         engine: args.engine,
         writer: args.writer,
@@ -183,9 +234,23 @@ pub async fn run_recrawl(args: RecrawlArgs) -> Result<()> {
         db_shards: args.db_shards,
         db_mem_mb: args.db_mem_mb,
         no_tui: args.no_tui,
-        body_store_dir: args.body_store,
+        warc_store_dir,
+        warc_compress: args.warc_compress,
+        gui: args.gui,
+        gui_port: args.gui_port,
+        flusher_threads: args.flusher_threads,
+        connect_timeout_ms: args.connect_timeout_ms,
+        pass2_stall_ratio: args.pass2_stall_ratio,
+        pass2_workers: args.pass2_workers,
     })
-    .await
+    .await;
+
+    // Propagate any DuckDB error from the streaming loader.
+    if let Err(e) = loader_handle.await {
+        eprintln!("Warning: streaming loader task panicked: {}", e);
+    }
+
+    result
 }
 
 // ---------------------------------------------------------------------------

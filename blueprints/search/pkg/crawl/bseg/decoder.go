@@ -107,7 +107,7 @@ func (d *Decoder) Decode(r *Record) error {
 	if r.ContentType, off, err = readStr(buf, off); err != nil {
 		return err
 	}
-	if r.BodyCID, off, err = readStr(buf, off); err != nil {
+	if r.WarcID, off, err = readStr(buf, off); err != nil {
 		return err
 	}
 	if r.Title, off, err = readStr(buf, off); err != nil {

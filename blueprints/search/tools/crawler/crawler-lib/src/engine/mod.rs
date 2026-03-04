@@ -14,7 +14,8 @@ use std::sync::Arc;
 pub trait Engine: Send + Sync {
     async fn run(
         &self,
-        seeds: Vec<SeedURL>,
+        seed_rx: async_channel::Receiver<SeedURL>,
+        seed_count: u64, // hint for TUI progress %; 0 = unknown
         cfg: &Config,
         results: Arc<dyn ResultWriter>,
         failures: Arc<dyn FailureWriter>,

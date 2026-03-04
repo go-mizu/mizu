@@ -22,6 +22,12 @@ pub struct Stats {
     pub pass: AtomicU8,
     /// Seed count for pass 2 (set when pass 2 begins).
     pub pass2_seeds: AtomicU64,
+    /// Cumulative total processed URL count when pass-2 began (0 = still in pass-1).
+    /// Used by GUI to compute pass-2 progress independently of cumulative total.
+    pub pass1_total: AtomicU64,
+    /// Elapsed ms when pass-2 began (0 = still in pass-1).
+    /// Used by GUI to compute accurate pass-2 avg RPS (not diluted by pass-1 duration).
+    pub pass2_start_elapsed_ms: AtomicU64,
 
     // --- Error breakdown (sub-categories of `failed`) ---
     pub err_invalid_url: AtomicU64, // garbage/unparseable URLs (builder error)
@@ -60,12 +66,36 @@ pub struct Stats {
     // --- System resources (updated by sysmon task) ---
     /// RSS memory in MB (of this process)
     pub mem_rss_mb: AtomicU64,
+    /// Total system RAM in MB (set once at startup)
+    pub mem_total_mb: AtomicU64,
     /// Network bytes sent since last sample (per second)
     pub net_tx_bps: AtomicU64,
     /// Network bytes received since last sample (per second)
     pub net_rx_bps: AtomicU64,
     /// Open file descriptors (this process)
     pub open_fds: AtomicU64,
+
+    // --- Disk stats (updated by disk_sampler every 10s) ---
+    /// Number of live seg_*.bin files
+    pub disk_seg_files: AtomicU64,
+    /// Total MB of seg_*.bin files
+    pub disk_seg_mb: AtomicU64,
+    /// Total MB of results_*.duckdb shards
+    pub disk_duckdb_mb: AtomicU64,
+    /// Row count in result DuckDB shards (set once, post-drain)
+    pub disk_results_rows: AtomicU64,
+    /// Total MB of failures/ dir
+    pub disk_failures_mb: AtomicU64,
+    /// Row count in failed.duckdb (set once, post-drain)
+    pub disk_failed_rows: AtomicU64,
+    /// File count in warc/ store dir
+    pub disk_bodies_count: AtomicU64,
+    /// Total MB of warc/ store dir
+    pub disk_bodies_mb: AtomicU64,
+    /// Grand total disk MB (seg + duckdb + failures + warc)
+    pub disk_total_mb: AtomicU64,
+    /// Unix seconds of last disk scan
+    pub disk_last_updated: AtomicU64,
 
     /// Recent warning messages (domain timeouts, abandonments). Cap 200.
     pub warnings: Mutex<VecDeque<String>>,
@@ -86,6 +116,8 @@ impl Stats {
             done: AtomicBool::new(false),
             pass: AtomicU8::new(1),
             pass2_seeds: AtomicU64::new(0),
+            pass1_total: AtomicU64::new(0),
+            pass2_start_elapsed_ms: AtomicU64::new(0),
             err_invalid_url: AtomicU64::new(0),
             err_dns: AtomicU64::new(0),
             err_conn: AtomicU64::new(0),
@@ -109,9 +141,20 @@ impl Stats {
             domains_done: AtomicU64::new(0),
             domains_abandoned: AtomicU64::new(0),
             mem_rss_mb: AtomicU64::new(0),
+            mem_total_mb: AtomicU64::new(0),
             net_tx_bps: AtomicU64::new(0),
             net_rx_bps: AtomicU64::new(0),
             open_fds: AtomicU64::new(0),
+            disk_seg_files: AtomicU64::new(0),
+            disk_seg_mb: AtomicU64::new(0),
+            disk_duckdb_mb: AtomicU64::new(0),
+            disk_results_rows: AtomicU64::new(0),
+            disk_failures_mb: AtomicU64::new(0),
+            disk_failed_rows: AtomicU64::new(0),
+            disk_bodies_count: AtomicU64::new(0),
+            disk_bodies_mb: AtomicU64::new(0),
+            disk_total_mb: AtomicU64::new(0),
+            disk_last_updated: AtomicU64::new(0),
             warnings: Mutex::new(VecDeque::with_capacity(200)),
         }
     }
@@ -452,5 +495,56 @@ impl PeakTracker {
 
     pub fn peak(&self) -> u64 {
         self.peak.load(Ordering::Relaxed)
+    }
+}
+
+#[cfg(test)]
+mod adaptive_tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn adaptive_floor_never_drops_below_cfg_timeout() {
+        let adaptive = AdaptiveTimeout::new();
+        // Record 20 very fast responses (100 ms) — P95 = 100 ms → raw adaptive = 200 ms
+        for _ in 0..20 {
+            adaptive.record(100);
+        }
+
+        let cfg_timeout = Duration::from_millis(1000);
+        let ceiling = Duration::from_secs(600);
+        let adaptive_val = adaptive.timeout(ceiling).unwrap_or(cfg_timeout);
+
+        // With floor: max(200ms, 1000ms) = 1000ms
+        let effective = adaptive_val
+            .max(cfg_timeout)
+            .min(cfg_timeout.saturating_mul(3));
+
+        assert!(
+            effective >= cfg_timeout,
+            "effective {}ms should be >= cfg {}ms",
+            effective.as_millis(),
+            cfg_timeout.as_millis()
+        );
+    }
+
+    #[test]
+    fn adaptive_extends_for_slow_domains() {
+        let adaptive = AdaptiveTimeout::new();
+        // Record 20 slow responses (3000 ms) — P95 = 3000 ms → raw adaptive = 6000 ms
+        for _ in 0..20 {
+            adaptive.record(3000);
+        }
+
+        let cfg_timeout = Duration::from_millis(1000);
+        let ceiling = Duration::from_secs(600);
+        let adaptive_val = adaptive.timeout(ceiling).unwrap_or(cfg_timeout);
+
+        let effective = adaptive_val
+            .max(cfg_timeout)
+            .min(cfg_timeout.saturating_mul(3));
+
+        // Should be capped at 3× = 3000ms
+        assert_eq!(effective, Duration::from_millis(3000));
     }
 }

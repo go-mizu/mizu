@@ -1,0 +1,3 @@
+# Prebuilt static libraries are too large for git.
+# Download from upstream: https://github.com/anyproto/tantivy-go/releases
+*.a

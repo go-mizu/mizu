@@ -1,6 +1,7 @@
-# Context root is the monorepo root (/Users/apple/github/go-mizu/mizu)
+# Build context = monorepo root. Only blueprints/search Go source is needed.
+# Avoid negation (!...) patterns on large dirs — they force full-tree scans.
 
-# VCS / editor
+# ── VCS / editor ──────────────────────────────────────────────────────────────
 .git
 .gitignore
 .DS_Store
@@ -9,41 +10,63 @@
 **/*.swp
 **/*.swo
 
-# Build outputs / local caches
-dist
-bin
-coverage*
-*.log
-tmp
-temp
+# ── Rust/compiled build caches (biggest offenders) ────────────────────────────
+**/target
+
+# ── Top-level monorepo dirs not used by cmd/search ───────────────────────────
+tools
+examples
+docs
+cmd
+middlewares
+contract
+view
+mobile
+frontend
+sync
+live
+openapi
 .turbo
 .cache
-**/target
-**/.gradle
-**/DerivedData
-**/Pods
 
-# Monorepo heavy directories not needed for blueprints/search cmd/search build
-tools
-tools/**
-examples
-examples/**
+# ── Other blueprints (not needed for search binary) ───────────────────────────
+blueprints/taocp
+blueprints/workspace
+blueprints/liteio
+blueprints/table
+blueprints/cms
+blueprints/localbase
+blueprints/localflare
+blueprints/spreadsheet
+blueprints/bi
 
-# Other blueprints (keep only blueprints/search)
-blueprints/*
-!blueprints/search
-!blueprints/search/**
-
-# Search blueprint local heavies not needed for build (keep app/frontend source)
-blueprints/search/**/node_modules
+# ── Search blueprint: runtime/local dirs not needed at build time ──────────────
 blueprints/search/tools
-blueprints/search/tools/**
+blueprints/search/data
 blueprints/search/reports
 blueprints/search/spec
 blueprints/search/test
-blueprints/search/pkg/engine/fineweb/drivers/fts_rust
-blueprints/search/pkg/engine/fineweb/drivers/fts_rust/**
-blueprints/search/pkg/engine/fineweb/benchmark
-blueprints/search/pkg/engine/fineweb/benchmark/**
+blueprints/search/docker
+blueprints/search/app/frontend
 
-# Keep module/workspace metadata and source by default
+# ── tantivy prebuilt: only linux targets needed for linux build ───────────────
+blueprints/search/pkg/index/driver/tantivy-go/libs/darwin-arm64
+blueprints/search/pkg/index/driver/tantivy-go/libs/darwin-amd64
+
+# ── Frontend / build caches ───────────────────────────────────────────────────
+**/node_modules
+**/.pnpm-store
+**/.npm
+**/.yarn
+**/.next
+**/.nuxt
+
+# ── Test / coverage / build outputs ──────────────────────────────────────────
+**/coverage*
+**/*.out
+**/*.test
+**/*.log
+**/tmp
+**/temp
+**/dist
+**/bin

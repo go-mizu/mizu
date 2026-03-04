@@ -67,10 +67,44 @@ pub struct RecrawlArgs {
     #[arg(long)]
     pub no_tui: bool,
 
-    /// Body CAS store directory (e.g. ~/data/hn/bodies).
-    /// When set, HTML bodies are stored as sha256:{hex}.gz and body_cid is populated.
+    /// WARC 1.1 store directory (default: ~/data/hn/recrawl/warc/).
+    /// HTML responses are stored as WARC files; warc_id is populated in results.
+    #[arg(long, default_value = "auto")]
+    pub warc_dir: String,
+
+    /// Disable WARC store (skip saving HTML responses as WARC files)
     #[arg(long)]
-    pub body_store: Option<String>,
+    pub no_warc: bool,
+
+    /// Write gzip-compressed .warc.gz files (default: uncompressed)
+    #[arg(long)]
+    pub warc_compress: bool,
+
+    /// Enable web GUI dashboard (disables TUI)
+    #[arg(long)]
+    pub gui: bool,
+
+    /// GUI server port
+    #[arg(long, default_value_t = 9111)]
+    pub gui_port: u16,
+
+    /// Binary writer flusher thread count (0 = auto)
+    #[arg(long, default_value_t = 0)]
+    pub flusher_threads: usize,
+
+    /// TCP connect timeout in ms (0 = use overall timeout; default 500ms).
+    /// Dead servers fail fast, freeing workers 2× sooner.
+    #[arg(long, default_value_t = 500)]
+    pub connect_timeout_ms: u64,
+
+    /// Pass-2 domain stall ratio (0 = disabled, prevents false negatives).
+    /// Default 0: alive-but-slow domains in pass-2 must not be abandoned via stall ratio.
+    #[arg(long, default_value_t = 0)]
+    pub pass2_stall_ratio: usize,
+
+    /// Pass-2 worker count override (0 = use pass-1 workers)
+    #[arg(long, default_value_t = 0)]
+    pub pass2_workers: usize,
 }
 
 pub async fn run_recrawl(args: RecrawlArgs) -> Result<()> {
@@ -100,7 +134,16 @@ pub async fn run_recrawl(args: RecrawlArgs) -> Result<()> {
     };
     println!("Output directory: {}", output_dir.display());
 
-    // 3. Run crawl job
+    // 3. Resolve WARC store dir: "auto" → ~/data/hn/recrawl/warc/
+    let warc_store_dir = if args.no_warc {
+        None
+    } else if args.warc_dir == "auto" {
+        Some(expand_home("~/data/hn/recrawl/warc").to_string_lossy().into_owned())
+    } else {
+        Some(args.warc_dir)
+    };
+
+    // 4. Run crawl job
     run_crawl_job(CrawlJobParams {
         title: "HN Recrawl".to_string(),
         seeds,
@@ -117,7 +160,14 @@ pub async fn run_recrawl(args: RecrawlArgs) -> Result<()> {
         db_shards: args.db_shards,
         db_mem_mb: args.db_mem_mb,
         no_tui: args.no_tui,
-        body_store_dir: args.body_store,
+        warc_store_dir,
+        warc_compress: args.warc_compress,
+        gui: args.gui,
+        gui_port: args.gui_port,
+        flusher_threads: args.flusher_threads,
+        connect_timeout_ms: args.connect_timeout_ms,
+        pass2_stall_ratio: args.pass2_stall_ratio,
+        pass2_workers: args.pass2_workers,
     })
     .await
 }

@@ -1,6 +1,6 @@
 module workspace-desktop
 
-go 1.25.5
+go 1.26
 
 require (
 	github.com/go-mizu/blueprints/workspace v0.0.0

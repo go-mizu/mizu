@@ -100,7 +100,7 @@ pub(crate) fn open_result_db(path: &Path, mem_mb: usize) -> Result<Connection> {
             description VARCHAR, language VARCHAR, domain VARCHAR,
             redirect_url VARCHAR, fetch_time_ms BIGINT,
             crawled_at TIMESTAMP, error VARCHAR,
-            status VARCHAR DEFAULT 'done', body_cid VARCHAR DEFAULT ''
+            status VARCHAR DEFAULT 'done', warc_id VARCHAR DEFAULT ''
         );",
     )
     .context("failed to create results table")?;
@@ -117,14 +117,14 @@ pub(crate) fn flush_result_batch(conn: &Connection, batch: &[CrawlResult]) -> Re
     }
 
     // Build multi-row INSERT with placeholders.
-    // 13 columns per row (status and body_cid have defaults, we INSERT explicitly).
+    // 13 columns per row (status and warc_id have defaults, we INSERT explicitly).
     const COLS: usize = 15;
     let row_placeholder = format!("({})", vec!["?"; COLS].join(", "));
     let all_rows = vec![row_placeholder.as_str(); batch.len()].join(", ");
     let sql = format!(
         "INSERT INTO results (url, status_code, content_type, content_length, body, \
          title, description, language, domain, redirect_url, fetch_time_ms, \
-         crawled_at, error, status, body_cid) VALUES {}",
+         crawled_at, error, status, warc_id) VALUES {}",
         all_rows
     );
 
@@ -145,7 +145,7 @@ pub(crate) fn flush_result_batch(conn: &Connection, batch: &[CrawlResult]) -> Re
         params.push(Box::new(r.crawled_at.format("%Y-%m-%d %H:%M:%S").to_string()));
         params.push(Box::new(sanitize_str(&r.error)));
         params.push(Box::new("done".to_string()));
-        params.push(Box::new(sanitize_str(&r.body_cid)));
+        params.push(Box::new(sanitize_str(&r.warc_id)));
     }
 
     let param_refs: Vec<&dyn duckdb::ToSql> = params.iter().map(|p| p.as_ref()).collect();
@@ -653,6 +653,45 @@ pub fn load_retry_urls_since(
         since_str
     );
     Ok(seeds)
+}
+
+/// Count total rows across all results_NNN.duckdb shards in `duckdb_dir`.
+/// Only call after the result writer has been closed (post-drain).
+pub fn count_result_rows(duckdb_dir: &std::path::Path) -> anyhow::Result<u64> {
+    if !duckdb_dir.exists() {
+        return Ok(0);
+    }
+    let mut total: u64 = 0;
+    let mut paths: Vec<std::path::PathBuf> = std::fs::read_dir(duckdb_dir)?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.extension().map_or(false, |ext| ext == "duckdb")
+                && p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map_or(false, |n| n.starts_with("results_"))
+        })
+        .collect();
+    paths.sort();
+    for path in &paths {
+        let conn = Connection::open(path)
+            .with_context(|| format!("failed to open shard {:?}", path))?;
+        let n: u64 = conn.query_row("SELECT COUNT(*) FROM results", [], |r| r.get(0))?;
+        total += n;
+    }
+    Ok(total)
+}
+
+/// Count rows in `failed.duckdb`.
+/// Only call after the failure writer has been closed (post-drain).
+pub fn count_failed_rows(failed_db: &std::path::Path) -> anyhow::Result<u64> {
+    if !failed_db.exists() {
+        return Ok(0);
+    }
+    let conn = Connection::open(failed_db)
+        .with_context(|| format!("failed to open FailedDB {:?}", failed_db))?;
+    let n: u64 = conn.query_row("SELECT COUNT(*) FROM failed_urls", [], |r| r.get(0))?;
+    Ok(n)
 }
 
 #[cfg(test)]

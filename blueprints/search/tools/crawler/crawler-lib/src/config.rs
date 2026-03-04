@@ -1,4 +1,4 @@
-use crate::bodystore::BodyStore;
+use crate::warcstore::AsyncWarcStore;
 use crate::stats::Stats;
 use std::sync::Arc;
 use std::time::Duration;
@@ -92,13 +92,23 @@ pub struct Config {
     pub batch_size: usize,
     pub db_shards: usize, // 0 = auto
     pub db_mem_mb: usize, // 0 = auto
+    /// Number of binary writer flusher threads (0 = auto via auto_config).
+    pub num_flushers: usize,
 
     // Retry
     pub retry_timeout: Duration,
     pub no_retry: bool,
     pub pass2_workers: usize,
+    /// Domain stall ratio for pass-2 retry (0 = disable stall-based abandonment).
+    /// Default 0: in pass-2, stall killing creates false negatives — alive-but-slow
+    /// domains with 1 success + N timeouts get abandoned, permanently losing remaining URLs.
+    pub pass2_stall_ratio: usize,
 
     // Network
+    /// TCP connect+TLS timeout (separate from overall request timeout).
+    /// Default 500ms: dead servers (TCP SYN-drop) fail fast, freeing workers 2× sooner.
+    /// Set to Duration::ZERO to disable (falls back to overall timeout for connect).
+    pub connect_timeout: Duration,
     pub max_body_bytes: usize,
 
     // Paths
@@ -111,10 +121,10 @@ pub struct Config {
     #[allow(clippy::type_complexity)]
     pub live_stats: Option<Arc<Stats>>,
 
-    /// Optional content-addressable body store.
-    /// When set, HTML bodies are written to the CAS and CrawlResult.body_cid is populated.
-    /// Compatible with Go's pkg/crawl/bodystore format: sha256:{hex64} CIDs.
-    pub body_store: Option<Arc<BodyStore>>,
+    /// Optional WARC 1.1 store.
+    /// When set, HTML responses are written as WARC files and CrawlResult.warc_id is populated.
+    /// Compatible with Go's pkg/crawl/warcstore format.
+    pub warc_store: Option<Arc<AsyncWarcStore>>,
 }
 
 impl Default for Config {
@@ -134,19 +144,56 @@ impl Default for Config {
             batch_size: 5000,
             db_shards: 0,
             db_mem_mb: 0,
+            num_flushers: 0,
             retry_timeout: Duration::from_millis(15000),
             no_retry: false,
             pass2_workers: 0,
+            pass2_stall_ratio: 0,
+            connect_timeout: Duration::from_millis(500),
             max_body_bytes: 256 * 1024,
             output_dir: String::new(),
             failed_db_path: String::new(),
             live_stats: None,
-            body_store: None,
+            warc_store: None,
         }
     }
 }
 
 // --- SysInfo and auto-config ---
+
+/// Try to raise RLIMIT_NOFILE soft limit to the hard limit (capped at 65536).
+///
+/// Call this at process startup before spawning workers or opening segment files.
+/// Returns (old_limit, new_limit). On non-Unix or if the raise fails, both are
+/// the current limit.
+///
+/// macOS: hard limit is typically OPEN_MAX=10240; Linux: typically 65536+.
+#[cfg(unix)]
+pub fn raise_nofile_limit() -> (u64, u64) {
+    unsafe {
+        let mut rlim = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut rlim) != 0 {
+            return (1024, 1024);
+        }
+        let old = rlim.rlim_cur as u64;
+        // Cap at 65536 to avoid issues with RLIM_INFINITY (which is u64::MAX on some platforms)
+        let target = (rlim.rlim_max as u64).min(65536);
+        if old >= target {
+            return (old, old);
+        }
+        rlim.rlim_cur = target as libc::rlim_t;
+        if libc::setrlimit(libc::RLIMIT_NOFILE, &rlim) == 0 {
+            (old, target)
+        } else {
+            (old, old)
+        }
+    }
+}
+
+#[cfg(not(unix))]
+pub fn raise_nofile_limit() -> (u64, u64) {
+    (1024, 1024)
+}
 
 #[derive(Debug, Clone)]
 pub struct SysInfo {
@@ -158,25 +205,26 @@ pub struct SysInfo {
 
 impl SysInfo {
     pub fn gather() -> Self {
+        // Raise the fd limit first so auto_config uses the higher value.
+        let (_, fd_soft_limit) = raise_nofile_limit();
+
         let sys = sysinfo::System::new_all();
         let cpu_count = sys.cpus().len().max(1);
         let mem_total_mb = sys.total_memory() / (1024 * 1024);
         let mem_available_mb = sys.available_memory() / (1024 * 1024);
 
+        // Use the already-raised limit; fall back to getrlimit if raise_nofile_limit
+        // returned non-Unix default.
         #[cfg(unix)]
         let fd_soft_limit = {
-            let mut rlim = libc::rlimit {
-                rlim_cur: 0,
-                rlim_max: 0,
-            };
+            // Re-read in case raise_nofile_limit changed it
+            let mut rlim = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
             if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut rlim) } == 0 {
                 rlim.rlim_cur as u64
             } else {
-                1024u64
+                fd_soft_limit
             }
         };
-        #[cfg(not(unix))]
-        let fd_soft_limit = 1024u64;
 
         Self {
             cpu_count,
@@ -210,12 +258,18 @@ pub fn auto_config(si: &SysInfo, full_body: bool) -> Config {
     let inner_n = clamp(si.cpu_count * 2, 4, 16);
 
     // workers: network-bound, not memory-bound.
-    // Cap at 2000 to avoid DNS/TCP contention (see KEY INSIGHT above).
-    // Lower bound: CPU×100 (enough parallelism for small machines).
-    // Upper bound: min(mem-based, fd-based, 2000).
+    // Cap at 8000 — raised from 2000 for CC seeds (higher quality than HN):
+    // CC seeds are pre-validated status=200 (~70% alive), yielding proportionally
+    // fewer slow timeouts per worker. Empirical data: 2000w=47% OK for HN mixed seeds;
+    // CC seeds should sustain high OK rates at higher worker counts.
+    // Lower bound: CPU×50 but never more than w_fd/4 to avoid EMFILE.
+    //   (cpu_count*100 could exceed fd budget when ulimit is low, e.g. macOS default 256)
+    // Upper bound: min(mem-based, fd-based, 8000).
     let w_mem = total_kb * 75 / 100 / body_kb.max(1);
     let w_fd = fd / 2;
-    let workers = clamp(w_mem.min(w_fd).min(2_000), si.cpu_count * 100, 2_000);
+    // Ensure the CPU-floor never exceeds the fd safety budget
+    let min_workers = (si.cpu_count * 50).min(w_fd / 4).max(4);
+    let workers = clamp(w_mem.min(w_fd).min(8_000), min_workers, 8_000);
 
     let db_shards = clamp(si.cpu_count * 2, 4, 16);
     // 10% of total RAM split across shards; minimum 64MB per shard.
@@ -226,5 +280,15 @@ pub fn auto_config(si: &SysInfo, full_body: bool) -> Config {
     cfg.inner_n = inner_n;
     cfg.db_shards = db_shards;
     cfg.db_mem_mb = db_mem_mb;
+    // num_flushers: scale with workers so the binary writer can keep pace.
+    // At high worker counts (4000+) a single flusher becomes the bottleneck.
+    // Formula: max(workers/1000, cpu_count/2), clamped to [2, min(cpu_count, 8)].
+    // Server2 (12 CPUs, ~4000 workers): max(4, 6) = 6 flushers.
+    let num_flushers = clamp(
+        (workers / 1000).max(si.cpu_count / 2),
+        2,
+        si.cpu_count.min(8),
+    );
+    cfg.num_flushers = num_flushers;
     cfg
 }

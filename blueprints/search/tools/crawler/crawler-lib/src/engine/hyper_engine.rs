@@ -66,38 +66,30 @@ impl HyperEngine {
 impl super::Engine for HyperEngine {
     async fn run(
         &self,
-        seeds: Vec<SeedURL>,
+        seed_rx: async_channel::Receiver<SeedURL>,
+        seed_count: u64,
         cfg: &Config,
         results: Arc<dyn ResultWriter>,
         failures: Arc<dyn FailureWriter>,
     ) -> Result<StatsSnapshot> {
-        let total_seeds = seeds.len();
-        if total_seeds == 0 {
-            return Ok(StatsSnapshot::empty());
-        }
-
         info!(
-            "hyper engine: {} seeds, {} workers, inner_n={}",
-            total_seeds, cfg.workers, cfg.inner_n
+            "hyper engine: workers={} inner_n={} timeout={}ms seed_hint={}",
+            cfg.workers, cfg.inner_n, cfg.timeout.as_millis(), seed_count,
         );
-
-        let batches = group_by_domain(seeds);
-        let domain_count = batches.len();
-        info!("grouped into {} domains", domain_count);
 
         // Shared stats — use caller-provided Arc for live TUI display.
         let stats = cfg.live_stats.clone().unwrap_or_else(|| Arc::new(Stats::new()));
-        if stats.total_seeds.load(Ordering::Relaxed) == 0 {
-            stats.total_seeds.store(total_seeds as u64, Ordering::Relaxed);
+        if seed_count > 0 && stats.total_seeds.load(Ordering::Relaxed) == 0 {
+            stats.total_seeds.store(seed_count, Ordering::Relaxed);
         }
         stats.done.store(false, Ordering::Relaxed);
 
         let adaptive = Arc::new(AdaptiveTimeout::new());
 
-        // Spawn live peak-RPS tracker (same as reqwest engine).
+        // Spawn live peak-RPS tracker.
         let peak_stats = Arc::clone(&stats);
         tokio::spawn(async move {
-            let mut prev_total = 0u64;
+            let mut prev_total = peak_stats.total.load(Ordering::Relaxed);
             let mut interval = tokio::time::interval(Duration::from_millis(100));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
@@ -115,54 +107,86 @@ impl super::Engine for HyperEngine {
         let workers = cfg.workers.max(1);
         let inner_n = cfg.inner_n.max(1);
 
-        // Pre-create per-domain entries.
+        // Domain map: lazily populated as new domains arrive from the streaming channel.
         let domain_map: Arc<DashMap<String, Arc<DomainEntry>>> =
-            Arc::new(DashMap::with_capacity(domain_count));
-        for batch in &batches {
-            domain_map.insert(
-                batch.domain.clone(),
-                Arc::new(DomainEntry::new(inner_n)),
-            );
-        }
+            Arc::new(DashMap::with_capacity(32_768));
 
-        // Flat URL channel.
+        // Flat URL channel: capacity = workers * 32 (min 65536) so the producer can batch-fill
+        // without blocking. Previously workers*4 caused stop-go patterns at high worker counts.
+        let channel_cap = (workers * 32).max(65_536);
         let (url_tx, url_rx) =
-            async_channel::bounded::<(SeedURL, Arc<DomainEntry>)>(workers * 4);
+            async_channel::bounded::<(SeedURL, Arc<DomainEntry>)>(channel_cap);
 
-        // Round-robin producer.
+        // Batch-streaming producer (mirrors reqwest_engine).
+        const BATCH_SIZE: usize = 100_000;
         let dm = Arc::clone(&domain_map);
+        let stats_prod = Arc::clone(&stats);
         let producer = tokio::spawn(async move {
-            let domain_batches: Vec<(Vec<SeedURL>, Arc<DomainEntry>)> = batches
-                .into_iter()
-                .filter_map(|batch| {
-                    dm.get(&batch.domain)
-                        .map(|e| (batch.urls, Arc::clone(e.value())))
-                })
-                .collect();
+            use std::collections::VecDeque;
+            let mut batch: Vec<SeedURL> = Vec::with_capacity(BATCH_SIZE);
+            let mut total_seen = 0u64;
 
-            let max_len = domain_batches
-                .iter()
-                .map(|(urls, _)| urls.len())
-                .max()
-                .unwrap_or(0);
+            loop {
+                batch.clear();
+                match seed_rx.recv().await {
+                    Ok(seed) => batch.push(seed),
+                    Err(_) => break,
+                }
+                while batch.len() < BATCH_SIZE {
+                    match seed_rx.try_recv() {
+                        Ok(seed) => batch.push(seed),
+                        Err(_) => break,
+                    }
+                }
 
-            for slot in 0..max_len {
-                for (urls, entry) in &domain_batches {
-                    if let Some(url) = urls.get(slot) {
-                        if url_tx
-                            .send((url.clone(), Arc::clone(entry)))
-                            .await
-                            .is_err()
-                        {
-                            return;
-                        }
+                total_seen += batch.len() as u64;
+                if stats_prod.total_seeds.load(Ordering::Relaxed) == 0 {
+                    stats_prod.total_seeds.store(total_seen, Ordering::Relaxed);
+                }
+
+                let sub_batches = group_by_domain(std::mem::take(&mut batch));
+                stats_prod
+                    .domains_total
+                    .fetch_add(sub_batches.len() as u64, Ordering::Relaxed);
+
+                let mut queue: VecDeque<(VecDeque<SeedURL>, Arc<DomainEntry>)> = sub_batches
+                    .into_iter()
+                    .map(|b| {
+                        let entry = dm
+                            .entry(b.domain.clone())
+                            .or_insert_with(|| Arc::new(DomainEntry::new(inner_n)));
+                        (VecDeque::from(b.urls), Arc::clone(entry.value()))
+                    })
+                    .collect();
+
+                while let Some((mut urls, entry)) = queue.pop_front() {
+                    let url = match urls.pop_front() {
+                        Some(u) => u,
+                        None => continue,
+                    };
+                    if url_tx.send((url, Arc::clone(&entry))).await.is_err() {
+                        return;
+                    }
+                    if !urls.is_empty() {
+                        queue.push_back((urls, entry));
                     }
                 }
             }
+
+            info!(
+                "hyper producer done: {} seeds dispatched across {} domains",
+                total_seen,
+                dm.len(),
+            );
         });
 
         // Build ONE shared hyper client with rustls+ring and HTTP/2.
-        let shared_client = match build_hyper_client(Duration::from_secs(60)) {
+        let connect_timeout = if cfg.connect_timeout > Duration::ZERO {
+            Some(cfg.connect_timeout)
+        } else {
+            None
+        };
+        let shared_client = match build_hyper_client(Duration::from_secs(60), connect_timeout) {
             Ok(c) => Arc::new(c),
             Err(e) => return Err(anyhow::anyhow!("failed to build hyper client: {}", e)),
         };
@@ -227,13 +251,20 @@ impl super::Engine for HyperEngine {
 /// - HTTP/2 via ALPN negotiation
 /// - HTTP/1.1 fallback
 /// - Connection pool with configurable idle timeout
-fn build_hyper_client(pool_idle: Duration) -> Result<HttpsClient> {
+/// - Optional TCP connect timeout (dead servers fail fast)
+fn build_hyper_client(pool_idle: Duration, connect_timeout: Option<Duration>) -> Result<HttpsClient> {
+    let mut http = HttpConnector::new();
+    http.enforce_http(false);
+    if let Some(ct) = connect_timeout {
+        http.set_connect_timeout(Some(ct));
+    }
+
     let https = hyper_rustls::HttpsConnectorBuilder::new()
         .with_webpki_roots()
         .https_or_http()
         .enable_http1()
         .enable_http2()
-        .build();
+        .wrap_connector(http);
 
     let client = HyperClient::builder(TokioExecutor::new())
         .pool_idle_timeout(pool_idle)
@@ -270,17 +301,23 @@ async fn process_one_url(
         Err(_) => return,
     };
 
+    // Floor: never drop below cfg.timeout (fast domains must not shrink the timeout).
+    // Ceiling: ×3 (vs old ×5 — still gives slow domains 3× the base).
     let effective_timeout = if !cfg.disable_adaptive_timeout {
         adaptive
             .timeout(cfg.adaptive_timeout_max)
             .unwrap_or(cfg.timeout)
-            .min(cfg.timeout.saturating_mul(5))
+            .max(cfg.timeout)                   // floor: never below configured baseline
+            .min(cfg.timeout.saturating_mul(3)) // tighter ceiling: ×3 not ×5
     } else {
         cfg.timeout
     };
 
     let result = hyper_fetch_one(client, &seed, effective_timeout, cfg.max_body_bytes).await;
     stats.total.fetch_add(1, Ordering::Relaxed);
+
+    // Release domain semaphore before any writer call (see reqwest_engine.rs).
+    drop(_permit);
 
     if !result.error.is_empty() {
         let is_timeout = result.error.contains("timeout")
@@ -514,7 +551,7 @@ async fn hyper_fetch_one(
             crawled_at: chrono::Utc::now().naive_utc(),
             error: String::new(),
             body: String::new(),
-            body_cid: String::new(),
+            warc_id: String::new(), // hyper engine: warc store not wired
         };
     }
 

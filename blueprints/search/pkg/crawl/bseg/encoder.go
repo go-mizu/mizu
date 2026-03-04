@@ -45,7 +45,7 @@ func (e *Encoder) Encode(r *Record) error {
 	recLen := recFixedSize +
 		strEncLen(r.URL) +
 		strEncLen(r.ContentType) +
-		strEncLen(r.BodyCID) +
+		strEncLen(r.WarcID) +
 		strEncLen(r.Title) +
 		strEncLen(r.Description) +
 		strEncLen(r.Language) +
@@ -82,7 +82,7 @@ func (e *Encoder) Encode(r *Record) error {
 	tail := b[33:]
 	tail = appendStr(tail[:0], r.URL)
 	tail = appendStr(tail, r.ContentType)
-	tail = appendStr(tail, r.BodyCID)
+	tail = appendStr(tail, r.WarcID)
 	tail = appendStr(tail, r.Title)
 	tail = appendStr(tail, r.Description)
 	tail = appendStr(tail, r.Language)

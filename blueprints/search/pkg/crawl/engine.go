@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"time"
+
+	"github.com/go-mizu/mizu/blueprints/search/pkg/crawl/warcstore"
 )
 
 // Engine is implemented by all four v3 strategies.
@@ -64,11 +66,9 @@ type Config struct {
 	// ok/failed/timeout totals from all drones. Nil-safe.
 	ProgressFunc func(ok, failed, timeout int64)
 
-	// BodyStore is optional. When set, HTML bodies are written to the CAS store
-	// and Result.BodyCID is populated; Result.Body is left empty.
-	BodyStore interface {
-		Put(body []byte) (cid string, err error)
-	}
+	// WarcStore is optional. When set, HTML responses are written as WARC 1.1 files
+	// and Result.WarcID is populated with the deterministic response record UUID.
+	WarcStore *warcstore.Store
 }
 
 // DomainNotifier receives domain lifecycle events from the engine.

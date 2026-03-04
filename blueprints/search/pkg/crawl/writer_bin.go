@@ -300,7 +300,7 @@ func (w *BinSegWriter) writeOne(s *binWriterShard, r Result) {
 	jr.URL         = binSanitize(r.URL)
 	jr.StatusCode  = int32(r.StatusCode)
 	jr.ContentLen  = r.ContentLength
-	jr.BodyCID     = r.BodyCID
+	jr.WarcID      = r.WarcID
 	jr.Title       = binSanitize(r.Title)
 	jr.Description = binSanitize(r.Description)
 	jr.Language    = binSanitize(r.Language)
@@ -324,7 +324,7 @@ func recEstimatedSize(r *bseg.Record) int64 {
 	const fixed = 4 + 1 + 4 + 8 + 8 + 8 // rec_len + flags + status + content_len + fetch_ms + crawled_ms
 	const strOverhead = 9 * 2             // 9 string fields × 2 bytes each for uint16 length
 	return int64(fixed + strOverhead +
-		len(r.URL) + len(r.ContentType) + len(r.BodyCID) + len(r.Title) +
+		len(r.URL) + len(r.ContentType) + len(r.WarcID) + len(r.Title) +
 		len(r.Description) + len(r.Language) + len(r.Domain) + len(r.RedirectURL) + len(r.Error))
 }
 
@@ -460,7 +460,7 @@ func bsegToResult(r *bseg.Record) Result {
 		StatusCode:    int(r.StatusCode),
 		ContentType:   r.ContentType,
 		ContentLength: r.ContentLen,
-		BodyCID:       r.BodyCID,
+		WarcID:        r.WarcID,
 		Title:         r.Title,
 		Description:   r.Description,
 		Language:      r.Language,
@@ -481,7 +481,7 @@ type binRecord struct {
 	StatusCode    int
 	ContentType   string
 	ContentLength int64
-	BodyCID       string
+	BodyCID       string // legacy field name — mapped to WarcID on decode
 	Title         string
 	Description   string
 	Language      string
@@ -499,7 +499,7 @@ func (r *binRecord) toResult() Result {
 		StatusCode:    r.StatusCode,
 		ContentType:   r.ContentType,
 		ContentLength: r.ContentLength,
-		BodyCID:       r.BodyCID,
+		WarcID:        r.BodyCID,
 		Title:         r.Title,
 		Description:   r.Description,
 		Language:      r.Language,

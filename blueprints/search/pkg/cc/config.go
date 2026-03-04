@@ -84,6 +84,13 @@ func (c Config) RecrawlDir() string {
 	return filepath.Join(c.CrawlDir(), "recrawl")
 }
 
+// RecrawlWarcDir returns the WARC output directory for a CC recrawl run.
+// fileNum is typically a zero-padded 5-digit index (e.g. "00000" for --file 0)
+// or "last" for --last mode, or "sample" for legacy --sample mode.
+func (c Config) RecrawlWarcDir(fileNum string) string {
+	return filepath.Join(c.RecrawlDir(), "warc", fileNum)
+}
+
 // DNSCachePath returns the path to the shared DNS cache.
 func (c Config) DNSCachePath() string {
 	return filepath.Join(c.CrawlDir(), "dns.duckdb")
@@ -102,4 +109,29 @@ func (c Config) VerifyDBPath() string {
 // SiteDir returns the directory for a specific domain's site extraction data.
 func (c Config) SiteDir(domain string) string {
 	return filepath.Join(c.DataDir, "site", domain)
+}
+
+// MarkdownWarcDir returns the markdown output directory for one WARC file.
+// warcIdx is the zero-padded 5-digit file index, e.g. "00000".
+func (c Config) MarkdownWarcDir(warcIdx string) string {
+	return filepath.Join(c.CrawlDir(), "markdown", warcIdx)
+}
+
+// PackFile returns the path for a pre-packed bundle for one WARC file.
+// format is one of: bin, parquet, duckdb, markdown.
+// ext is the file extension, e.g. "bin", "parquet", "duckdb", "bin.gz".
+func (c Config) PackFile(format, warcIdx, ext string) string {
+	return filepath.Join(c.CrawlDir(), "pack", format, warcIdx+"."+ext)
+}
+
+// FTSEngineDir returns the per-WARC directory for a directory-based FTS engine
+// (rose, bleve, tantivy).
+func (c Config) FTSEngineDir(engine, warcIdx string) string {
+	return filepath.Join(c.CrawlDir(), "fts", engine, warcIdx)
+}
+
+// FTSEngineFile returns the per-WARC file path for a file-based FTS engine
+// (duckdb → .duckdb, sqlite → .sqlite).
+func (c Config) FTSEngineFile(engine, warcIdx, ext string) string {
+	return filepath.Join(c.CrawlDir(), "fts", engine, warcIdx+"."+ext)
 }

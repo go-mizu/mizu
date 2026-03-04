@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/crawler"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/crawl/warcstore"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -256,8 +257,9 @@ func processOneDomain(ctx context.Context, urls []SeedURL,
 		IdleConnTimeout:     15 * time.Second,
 		DisableCompression:  cfg.StatusOnly,
 	}
-	if ip, found := dns.Lookup(host); found {
-		transport.DialContext = dialWithIP(ip)
+	domainIP, _ := dns.Lookup(host)
+	if domainIP != "" {
+		transport.DialContext = dialWithIP(domainIP)
 	}
 	defer transport.CloseIdleConnections()
 
@@ -338,7 +340,7 @@ func processOneDomain(ctx context.Context, urls []SeedURL,
 					client.Timeout = cfg.Timeout
 				}
 
-				r := keepaliveFetchOne(domainCtx, client, seed, cfg)
+				r := keepaliveFetchOne(domainCtx, client, seed, cfg, domainIP)
 				total.Add(1)
 				peak.Record()
 				bytesTotal.Add(r.ContentLength)
@@ -396,7 +398,7 @@ func processOneDomain(ctx context.Context, urls []SeedURL,
 }
 
 func keepaliveFetchOne(ctx context.Context, client *http.Client,
-	seed SeedURL, cfg Config) Result {
+	seed SeedURL, cfg Config, ip string) Result {
 
 	start := time.Now()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, seed.URL, nil)
@@ -439,20 +441,31 @@ func keepaliveFetchOne(ctx context.Context, client *http.Client,
 	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
 	bodySize := max(resp.ContentLength, int64(len(bodyBytes)))
 
-	var title, description, language, bodyCID string
+	var title, description, language, warcID string
 	if resp.StatusCode == 200 && isHTML && len(bodyBytes) > 0 {
 		bodyStr := string(bodyBytes)
 		extracted := crawler.Extract(strings.NewReader(bodyStr), seed.URL)
 		title = extracted.Title
 		description = extracted.Description
 		language = extracted.Language
-		if cfg.BodyStore != nil {
-			if cid, err := cfg.BodyStore.Put(bodyBytes); err == nil {
-				bodyCID = cid
+		if cfg.WarcStore != nil {
+			entry := warcstore.Entry{
+				URL:         seed.URL,
+				Proto:       resp.Proto,
+				Method:      req.Method,
+				ReqHeaders:  req.Header,
+				StatusCode:  resp.StatusCode,
+				StatusText:  resp.Status,
+				RespHeaders: resp.Header,
+				Body:        bodyBytes,
+				IP:          ip,
+				CrawledAt:   time.Now(),
+			}
+			if id, err := cfg.WarcStore.Put(entry); err == nil {
+				warcID = id
 			}
 		}
-		// Always discard body from Result (overflow string fix — Result.Body is always "").
-		// Bodies are only accessible via BodyCID when cfg.BodyStore is set.
+		// Always discard body from Result (DuckDB overflow string block fix).
 	}
 
 	return Result{
@@ -461,7 +474,7 @@ func keepaliveFetchOne(ctx context.Context, client *http.Client,
 		StatusCode:    resp.StatusCode,
 		ContentType:   ct,
 		ContentLength: bodySize,
-		BodyCID:       bodyCID,
+		WarcID:        warcID,
 		Title:         title,
 		Description:   description,
 		Language:      language,

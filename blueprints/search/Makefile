@@ -12,6 +12,7 @@ LINUX_BINARY_NOBLE ?= $(HOME)/bin/search-linux-noble
 CMD     ?= ./cmd/search
 DATA_DIR ?= $(HOME)/data/blueprint/search
 DEPLOY_KEY    ?= $(HOME)/.ssh/id_ed25519_deploy
+# Both servers are Ubuntu 24.04 (Noble): server1 upgraded 2026-03, server2 always Noble
 SERVER1_USER  ?= tam
 SERVER1_HOST  ?= server
 SERVER2_USER  ?= root
@@ -25,6 +26,18 @@ SSH           ?= ssh -i $(DEPLOY_KEY) -o BatchMode=yes
 SCP           ?= scp -i $(DEPLOY_KEY)
 
 CGO_ENABLED ?= 1
+# macOS only: Apple ld64 (Xcode 15+) auto-links -lc++ for C++ symbols AND sees the
+# explicit -lc++ from duckdb-go-bindings/lib/darwin-arm64/prebuilt.go, producing:
+#   ld: warning: ignoring duplicate libraries: '-lc++'
+# Pass -no_warn_duplicate_libraries via CGO_LDFLAGS so it reaches the CGo cc step.
+# On Linux, GNU ld doesn't auto-add -lc++ so this flag is not needed.
+ifeq ($(shell uname -s),Darwin)
+CGO_LDFLAGS ?= -Wl,-no_warn_duplicate_libraries
+endif
+# chdb support: set CHDB_LIB_DIR to the directory containing libchdb.so to
+# enable the chdb build tag. e.g. make build-chdb CHDB_LIB_DIR=$$HOME/lib
+CHDB_LIB_DIR ?= $(HOME)/lib
+CHDB_HEADER_DIR ?= /tmp/libchdb
 # Focal (Ubuntu 20.04) build vars — max compatibility (glibc 2.31)
 LINUX_BASE_IMAGE ?= ubuntu:20.04
 LINUX_GO_VERSION ?= 1.26.0
@@ -68,16 +81,23 @@ frontend-test: ## Run frontend tests
 	@cd $(FRONTEND_DIR) && pnpm run test
 
 .PHONY: build
-build: frontend-build ## Build search binary (includes frontend build)
+build: ## Build search binary (Go only; run frontend-build separately if needed)
 	@mkdir -p $(dir $(BINARY))
-	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BINARY) $(CMD)
+	@CGO_ENABLED=$(CGO_ENABLED) CGO_LDFLAGS="$(CGO_LDFLAGS)" GOWORK=off $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BINARY) $(CMD)
 	@echo "Built: $(BINARY) ($(VERSION))"
 
-.PHONY: build-quick
-build-quick: ## Build binary without frontend (faster for development)
+.PHONY: build-chdb
+build-chdb: ## Build search binary with chdb support (requires CHDB_LIB_DIR/libchdb.so)
 	@mkdir -p $(dir $(BINARY))
-	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BINARY) $(CMD)
-	@echo "Built: $(BINARY) ($(VERSION))"
+	@CGO_ENABLED=1 \
+		CGO_LDFLAGS="$(CGO_LDFLAGS) -L$(CHDB_LIB_DIR) -lchdb -Wl,-rpath,$(CHDB_LIB_DIR)" \
+		CGO_CFLAGS="-I$(CHDB_HEADER_DIR)" \
+		DYLD_LIBRARY_PATH="$(CHDB_LIB_DIR):$$DYLD_LIBRARY_PATH" \
+		GOWORK=off $(GO) build -tags chdb -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BINARY) $(CMD)
+	@echo "Built: $(BINARY) ($(VERSION)) [+chdb]"
+
+.PHONY: build-quick
+build-quick: build ## Alias for build (kept for compatibility)
 
 .PHONY: build-linux
 build-linux: ## Build Ubuntu/Linux binary to $$HOME/bin/search-linux (Docker, CGO enabled)
@@ -166,6 +186,134 @@ build-linux-noble: ## Build Ubuntu 24.04 (Noble) binary to $$HOME/bin/search-lin
 		install -m 0755 "$$tmp_out/search-linux-noble" "$(LINUX_BINARY_NOBLE)"
 	@echo "Built Noble binary: $(LINUX_BINARY_NOBLE) ($(VERSION))"
 
+# Noble (Ubuntu 24.04) + chdb build vars
+LINUX_NOBLE_CHDB_DOCKERFILE ?= Dockerfile.linux-noble-chdb
+LINUX_NOBLE_CHDB_IMAGE_TAG  ?= mizu-search-linux-noble-chdb-build:local
+LINUX_BINARY_NOBLE_CHDB     ?= $(HOME)/bin/search-linux-noble-chdb
+LINUX_BINARY_NOBLE_LIBCHDB  ?= $(HOME)/bin/libchdb.so
+
+.PHONY: build-linux-noble-chdb
+build-linux-noble-chdb: ## Build Ubuntu 24.04 binary with chdb support (downloads libchdb.so ~300MB, ~20min under QEMU)
+	@mkdir -p $(dir $(LINUX_BINARY_NOBLE_CHDB))
+	@tmp_out="$$(mktemp -d)"; \
+		img="$(LINUX_NOBLE_CHDB_IMAGE_TAG)"; \
+		cid=""; \
+		set -e; \
+		trap 'test -n "$$cid" && $(LINUX_CONTAINER) rm -f "$$cid" >/dev/null 2>&1 || true; rm -rf "$$tmp_out"' EXIT; \
+		command -v "$(LINUX_CONTAINER)" >/dev/null 2>&1 || { echo "$(LINUX_CONTAINER) not found"; exit 127; }; \
+		if [ "$(LINUX_CONTAINER)" = "podman" ]; then \
+			if ! podman info >/dev/null 2>&1; then podman machine start >/dev/null; fi; \
+			for i in $$(seq 1 30); do podman info >/dev/null 2>&1 && break; sleep 1; done; \
+		fi; \
+		$(LINUX_CONTAINER) build \
+			--layers \
+			--platform "linux/$(LINUX_GOARCH)" \
+			--file "$(LINUX_NOBLE_CHDB_DOCKERFILE)" \
+			--ignorefile "$(LINUX_DOCKERFILE).dockerignore" \
+			--build-arg GO_VERSION="$(LINUX_GO_VERSION)" \
+			--build-arg TARGETARCH="$(LINUX_GOARCH)" \
+			--build-arg GO_LDFLAGS="$(GO_LDFLAGS)" \
+			--target artifact \
+			-t "$$img" \
+			"$(LINUX_BUILD_CONTEXT)"; \
+		cid="$$($(LINUX_CONTAINER) create --platform "linux/$(LINUX_GOARCH)" "$$img")"; \
+		$(LINUX_CONTAINER) cp "$$cid:/search-linux-noble-chdb" "$$tmp_out/search-linux-noble-chdb"; \
+		$(LINUX_CONTAINER) cp "$$cid:/libchdb.so" "$$tmp_out/libchdb.so"; \
+		install -m 0755 "$$tmp_out/search-linux-noble-chdb" "$(LINUX_BINARY_NOBLE_CHDB)"; \
+		install -m 0644 "$$tmp_out/libchdb.so" "$(LINUX_BINARY_NOBLE_LIBCHDB)"
+	@echo "Built Noble+chdb binary: $(LINUX_BINARY_NOBLE_CHDB) ($(VERSION))"
+	@echo "libchdb.so: $(LINUX_BINARY_NOBLE_LIBCHDB)"
+
+.PHONY: deploy-linux-noble-chdb
+deploy-linux-noble-chdb: build-linux-noble-chdb ## Deploy chdb binary + libchdb.so to remote ~/bin/ and install as ~/bin/search-chdb
+	@test -f "$(DEPLOY_KEY)" || { echo "Deploy key not found: $(DEPLOY_KEY)"; exit 1; }
+	@$(SSH) $(REMOTE_SSH) "mkdir -p \$$HOME/bin"
+	@$(SCP) "$(LINUX_BINARY_NOBLE_CHDB)" $(REMOTE_SSH):.search-chdb-upload.tmp
+	@$(SCP) "$(LINUX_BINARY_NOBLE_LIBCHDB)" $(REMOTE_SSH):.libchdb-upload.tmp
+	@$(SSH) $(REMOTE_SSH) 'bash -lc "set -e; \
+		install -m 0755 $$HOME/.search-chdb-upload.tmp $$HOME/bin/search-linux-noble-chdb; \
+		install -m 0644 $$HOME/.libchdb-upload.tmp $$HOME/bin/libchdb.so; \
+		rm -f $$HOME/.search-chdb-upload.tmp $$HOME/.libchdb-upload.tmp; \
+		printf '"'"'#!/usr/bin/env bash\nexec \"$$HOME/bin/search-linux-noble-chdb\" \"\$$@\"\n'"'"' > $$HOME/bin/search-chdb; \
+		chmod +x $$HOME/bin/search-chdb"'
+	@echo "Deployed chdb: $(REMOTE_SSH):~/bin/search-chdb"
+
+# ── Rust crawler (tools/crawler) ─────────────────────────────────────────────
+# Locate cargo: prefer PATH, fall back to rustup default install location.
+CARGO             ?= $(or $(shell command -v cargo 2>/dev/null),$(HOME)/.cargo/bin/cargo)
+CRAWLER_DIR       := tools/crawler
+CRAWLER_BINARY    ?= $(HOME)/bin/crawler
+# Persistent Cargo target cache outside the repo — survives `git clean` and
+# `make clean`, so subsequent builds only recompile changed crates (~seconds).
+CRAWLER_CACHE_DIR ?= $(HOME)/.cache/mizu/crawler-target
+# Set CRAWLER_CLEAN=1 to delete the cache dir after install (reclaims ~3 GB;
+# the next build will be a full recompile). Default=0 keeps cache for fast rebuilds.
+CRAWLER_CLEAN     ?= 0
+# On macOS: wreq-engine uses boring2 (BoringSSL) which fails to link on ARM64.
+# Disable default features so only the reqwest engine is compiled.
+CRAWLER_FEATURES  ?= $(if $(filter Darwin,$(shell uname -s)),--no-default-features,)
+
+.PHONY: build-crawler
+build-crawler: ## Build Rust crawler to $$HOME/bin/crawler; set CRAWLER_CLEAN=1 to wipe cache after
+	@mkdir -p $(dir $(CRAWLER_BINARY)) $(CRAWLER_CACHE_DIR)
+	@echo "Building Rust crawler (cache: $(CRAWLER_CACHE_DIR))..."
+	@cd $(CRAWLER_DIR) && CARGO_TARGET_DIR=$(CRAWLER_CACHE_DIR) $(CARGO) build --release $(CRAWLER_FEATURES)
+	@install -m 0755 $(CRAWLER_CACHE_DIR)/release/crawler $(CRAWLER_BINARY)
+	@echo "Built: $(CRAWLER_BINARY) ($$($(CRAWLER_BINARY) --version 2>/dev/null | head -1 || echo ok))"
+	@if [ "$(CRAWLER_CLEAN)" = "1" ]; then \
+		echo "Cleaning cache: $(CRAWLER_CACHE_DIR)"; \
+		rm -rf $(CRAWLER_CACHE_DIR); \
+	fi
+
+.PHONY: build-crawler-server
+build-crawler-server: ## Rsync + build Rust crawler on remote server → ~/bin/crawler (SERVER=1 or 2)
+	$(MAKE) -C $(CRAWLER_DIR) build-on-server SERVER=$(SERVER) DEPLOY_KEY=$(DEPLOY_KEY)
+
+# build-on-server: build the Go search binary natively on the remote server (no QEMU, fast).
+# Strategy: vendor all deps locally (captures the local replace ../.. for go-mizu/mizu),
+# rsync only Go source + vendor/ to server, build with -mod=vendor (no downloads on server).
+# Installs Go $(LINUX_GO_VERSION) automatically if not present on the server.
+.PHONY: build-on-server
+build-on-server: ## Vendor deps + rsync + build natively on remote server (fast, no QEMU). SERVER=1|2
+	@test -f "$(DEPLOY_KEY)" || { echo "Deploy key not found: $(DEPLOY_KEY)"; exit 1; }
+	@echo "==> Ensuring Go $(LINUX_GO_VERSION) on $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'set -e; \
+		GOBIN=/usr/local/go/bin/go; \
+		if [ ! -x "$$GOBIN" ] || [ "$$($$GOBIN version 2>/dev/null | awk "{print \$$3}")" != "go$(LINUX_GO_VERSION)" ]; then \
+			echo "Installing Go $(LINUX_GO_VERSION)..."; \
+			curl -fsSL "https://dl.google.com/go/go$(LINUX_GO_VERSION).linux-amd64.tar.gz" -o /tmp/go.tgz; \
+			rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tgz && rm /tmp/go.tgz; \
+			echo "Installed: $$($$GOBIN version)"; \
+		else \
+			echo "Already installed: $$($$GOBIN version)"; \
+		fi'
+	@echo "==> Vendoring dependencies locally (captures local replace directives)..."
+	@GOWORK=off go mod vendor
+	@echo "==> Syncing Go source + vendor to $(REMOTE_SSH):~/.search-build/blueprints/search/..."
+	@$(SSH) $(REMOTE_SSH) "mkdir -p ~/.search-build/blueprints/search"
+	@rsync -az --delete -e "ssh -i $(DEPLOY_KEY) -o BatchMode=yes" \
+		--exclude='/.git' --exclude='*.duckdb' --exclude='/result/' \
+		--exclude='/tools/' --exclude='/app/' --exclude='/spec/' \
+		--exclude='/docs/' --exclude='/reports/' --exclude='/feature/' \
+		--exclude='/assets/' --exclude='/markdown.test/' \
+		./ $(REMOTE_SSH):~/.search-build/blueprints/search/
+	@echo "==> Building on $(REMOTE_SSH) (native amd64, -mod=vendor)..."
+	@$(SSH) $(REMOTE_SSH) 'bash -lc "set -e; \
+		export PATH=/usr/local/go/bin:$$PATH; \
+		cd ~/.search-build/blueprints/search; \
+		GOWORK=off CGO_ENABLED=1 go build -mod=vendor -trimpath \
+			-ldflags \"$(GO_LDFLAGS)\" \
+			-o ~/bin/search-linux-noble ./cmd/search; \
+		chmod +x ~/bin/search-linux-noble; \
+		printf '"'"'#!/usr/bin/env bash\nulimit -Hn 131072 2>/dev/null; ulimit -n 131072 2>/dev/null || ulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=2000000000\nexport GODEBUG=netdns=go\nexec \"$$HOME/bin/search-linux-noble\" \"\$$@\"\n'"'"' > ~/bin/search; \
+		chmod +x ~/bin/search; \
+		echo \"Done: $$HOME/bin/search-linux-noble\""'
+	@echo "Built and installed on $(REMOTE_SSH):~/bin/search"
+
+.PHONY: test-crawler
+test-crawler: ## Run Rust crawler unit tests
+	@cd $(CRAWLER_DIR) && CARGO_TARGET_DIR=$(CRAWLER_CACHE_DIR) $(CARGO) test $(CRAWLER_FEATURES)
+
 .PHONY: deploy-linux-noble
 deploy-linux-noble: build-linux-noble ## Deploy Ubuntu 24.04 binary to remote $$HOME/bin/search (no bundled libstdc++)
 	@test -f "$(DEPLOY_KEY)" || { echo "Deploy key not found: $(DEPLOY_KEY)"; exit 1; }
@@ -229,7 +377,10 @@ deploy-linux-noble-browser: build-linux-noble ## Deploy Ubuntu 24.04 binary with
 	@echo "NOTE: Run 'make download-chrome SERVER=$(SERVER)' (no sudo) or 'make install-chrome SERVER=$(SERVER)' (needs sudo) to install Chrome first"
 
 .PHONY: deploy-linux
-deploy-linux: build-linux ## Deploy linux binary to remote $$HOME/bin/search
+deploy-linux: deploy-linux-noble ## Deploy binary to remote $$HOME/bin/search (both servers are Ubuntu 24.04 Noble)
+
+.PHONY: deploy-linux-focal
+deploy-linux-focal: build-linux ## [LEGACY] Deploy Ubuntu 20.04 focal binary with bundled libstdc++ (no longer used)
 	@test -f "$(DEPLOY_KEY)" || { echo "Deploy key not found: $(DEPLOY_KEY)"; exit 1; }
 	@test -f "$(LINUX_RUNTIME_LIBSTDCPP)" || { echo "Missing runtime lib: $(LINUX_RUNTIME_LIBSTDCPP)"; exit 1; }
 	@$(SSH) $(REMOTE_SSH) "mkdir -p \$$HOME/bin \$$HOME/bin/search-libs"
@@ -241,10 +392,13 @@ deploy-linux: build-linux ## Deploy linux binary to remote $$HOME/bin/search
 		rm -f $$HOME/.search-upload.tmp $$HOME/.libstdc++.so.6.tmp; \
 		printf '"'"'#!/usr/bin/env bash\nulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=2000000000\nexport GODEBUG=netdns=go\nexport LD_LIBRARY_PATH=\"$$HOME/bin/search-libs\$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}\"\nexec \"$$HOME/bin/search-linux\" \"\$$@\"\n'"'"' > $$HOME/bin/search; \
 		chmod +x $$HOME/bin/search"'
-	@echo "Deployed: $(REMOTE_SSH):~/bin/search"
+	@echo "Deployed (focal): $(REMOTE_SSH):~/bin/search"
 
 .PHONY: deploy-linux-browser
-deploy-linux-browser: build-linux ## Deploy Ubuntu 20.04 binary with Chrome wrapper (bundled libstdc++, SERVER=1)
+deploy-linux-browser: deploy-linux-noble-browser ## Deploy binary with Chrome wrapper (both servers are Ubuntu 24.04 Noble)
+
+.PHONY: deploy-linux-focal-browser
+deploy-linux-focal-browser: build-linux ## [LEGACY] Deploy Ubuntu 20.04 focal binary with Chrome wrapper (bundled libstdc++)
 	@test -f "$(DEPLOY_KEY)" || { echo "Deploy key not found: $(DEPLOY_KEY)"; exit 1; }
 	@test -f "$(LINUX_RUNTIME_LIBSTDCPP)" || { echo "Missing runtime lib: $(LINUX_RUNTIME_LIBSTDCPP)"; exit 1; }
 	@$(SSH) $(REMOTE_SSH) "mkdir -p \$$HOME/bin \$$HOME/bin/search-libs"
@@ -402,11 +556,11 @@ crawl: ## Run the web crawler
 
 .PHONY: test
 test: ## Run all Go tests
-	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) test $(PKG)
+	@CGO_ENABLED=$(CGO_ENABLED) CGO_LDFLAGS="$(CGO_LDFLAGS)" GOWORK=off $(GO) test $(PKG)
 
 .PHONY: test-v
 test-v: ## Run all tests with verbose output
-	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) test -v $(PKG)
+	@CGO_ENABLED=$(CGO_ENABLED) CGO_LDFLAGS="$(CGO_LDFLAGS)" GOWORK=off $(GO) test -v $(PKG)
 
 .PHONY: clean
 clean: ## Remove binary and data directory
@@ -498,6 +652,14 @@ bench-chunk: ## Run all 3 chunk modes with 200K seeds and compare results
 		echo "--- $$mode ---"; \
 		cat $(DATA_DIR)/hn/recrawl/bench_chunk_$$mode.json 2>/dev/null || echo "(not found)"; \
 	done
+
+GUI_PORT ?= 9111
+
+.PHONY: tunnel
+tunnel: ## SSH tunnel for crawler GUI dashboard (localhost:9111)
+	@echo "Tunneling localhost:$(GUI_PORT) -> $(REMOTE_SSH):$(GUI_PORT)"
+	@echo "Open http://localhost:$(GUI_PORT) in your browser"
+	$(SSH) -N -L $(GUI_PORT):localhost:$(GUI_PORT) $(REMOTE_SSH)
 
 .PHONY: help
 help: ## Show available commands

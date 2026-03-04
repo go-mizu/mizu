@@ -564,7 +564,8 @@ func newHNRecrawl() *cobra.Command {
 		chunkMode           string
 		chunkSize           int
 		pprofPort           int
-		bodyStoreDir        string
+		warcDir             string
+		warcCompress        bool
 		dbMemMB             int
 		dbShards            int
 		pass2Workers        int
@@ -680,7 +681,7 @@ and adaptive timeouts.`,
 				engine, workers, maxConnsPerDomain, timeoutMs, domainFailThreshold, domainTimeoutMs, domainDeadProbe, domainStallRatio, statusOnly, batchSize, int64(slowDomainMs),
 				dnsWorkers, dnsTimeoutMs,
 				retryTimeoutMs, noRetry, writerMode,
-				chunkMode, chunkSize, bodyStoreDir,
+				chunkMode, chunkSize, warcDir, warcCompress,
 				dbMemMB, dbShards, pass2Workers, segSizeMB, printAutoConfig)
 		},
 	}
@@ -712,7 +713,8 @@ and adaptive timeouts.`,
 	cmd.Flags().StringVar(&chunkMode, "chunk-mode", "stream", "Chunk mode: stream|batch|pipeline (stream: sort-then-stream, lower memory; batch: N-domain chunks)")
 	cmd.Flags().IntVar(&chunkSize, "chunk-size", 0, "Override batch domain count (0=auto)")
 	cmd.Flags().IntVar(&pprofPort, "pprof-port", 0, "Enable pprof HTTP server on this port (0=off)")
-	cmd.Flags().StringVar(&bodyStoreDir, "body-store", "", "Body CAS store dir (default: $dataDir/bodies)")
+	cmd.Flags().StringVar(&warcDir, "warc-dir", "auto", "WARC 1.1 store dir; 'auto' = {recrawl-dir}/warc/ (default)")
+	cmd.Flags().BoolVar(&warcCompress, "warc-compress", false, "Write gzip-compressed .warc.gz files (smaller; requires decompression to read)")
 	cmd.Flags().IntVar(&dbMemMB, "db-mem-mb", 0, "DuckDB memory per shard in MB (0=auto: 15% avail RAM / shards)")
 	cmd.Flags().IntVar(&dbShards, "db-shards", 0, "ResultDB shard count (0=auto: clamp(CPUs×2, 4, 16))")
 	cmd.Flags().IntVar(&pass2Workers, "pass2-workers", 0, "Pass-2 worker count (0=same as pass 1)")
@@ -737,10 +739,21 @@ func runHNRecrawlV3(ctx context.Context,
 	writerMode string,
 	chunkMode string,
 	chunkSize int,
-	bodyStoreDir string,
+	warcDir string,
+	warcCompress bool,
 	dbMemMB, dbShards, pass2Workers, segSizeMB int,
 	printAutoConfig bool,
 ) error {
+
+	// Auto-compute WARC dir: {recrawl-dir}/warc/
+	// "auto" (default) means enabled with auto path; "" means disabled.
+	if warcDir == "auto" {
+		if !statusOnly {
+			warcDir = filepath.Join(hnCfg.WithDefaults().RecrawlDir(), "warc")
+		} else {
+			warcDir = ""
+		}
+	}
 
 	// ── Hardware profile ──────────────────────────────────────────────────────
 	siCache := filepath.Join(hnCfg.WithDefaults().RecrawlDir(), ".sysinfo.json")
@@ -899,7 +912,8 @@ func runHNRecrawlV3(ctx context.Context,
 		WriterMode:   writerMode,
 		SlowDomainMs: slowDomainMs,
 		SegSizeMB:    segSizeMB,
-		BodyStoreDir: bodyStoreDir,
+		WarcDir:      warcDir,
+		WarcCompress: warcCompress,
 		DBShards:     dbShards,
 		DBMemMB:      dbMemMB,
 		SysInfo:      si,

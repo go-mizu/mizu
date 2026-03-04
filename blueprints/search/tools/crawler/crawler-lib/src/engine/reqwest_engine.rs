@@ -52,49 +52,31 @@ impl DomainEntry {
 impl super::Engine for ReqwestEngine {
     async fn run(
         &self,
-        seeds: Vec<SeedURL>,
+        seed_rx: async_channel::Receiver<SeedURL>,
+        seed_count: u64,
         cfg: &Config,
         results: Arc<dyn ResultWriter>,
         failures: Arc<dyn FailureWriter>,
     ) -> Result<StatsSnapshot> {
-        let total_seeds = seeds.len();
-        if total_seeds == 0 {
-            return Ok(StatsSnapshot::empty());
-        }
-
         info!(
-            "reqwest engine: {} seeds, {} workers, inner_n={}",
-            total_seeds, cfg.workers, cfg.inner_n
+            "reqwest engine: workers={} inner_n={} timeout={}ms seed_hint={}",
+            cfg.workers, cfg.inner_n, cfg.timeout.as_millis(), seed_count,
         );
 
-        // Group seeds by domain to create per-domain state entries.
-        let batches = group_by_domain(seeds);
-        let domain_count = batches.len();
-        info!("grouped into {} domains", domain_count);
-
         // Shared stats — use caller-provided Arc for live TUI display, or create fresh.
-        // Only set total_seeds if not already populated (pass 1 sets it; pass 2 reuses).
         let stats = cfg.live_stats.clone().unwrap_or_else(|| Arc::new(Stats::new()));
-        if stats.total_seeds.load(Ordering::Relaxed) == 0 {
-            stats.total_seeds.store(total_seeds as u64, Ordering::Relaxed);
+        // Use seed_count hint (from streaming COUNT(*)) for TUI progress bar.
+        if seed_count > 0 && stats.total_seeds.load(Ordering::Relaxed) == 0 {
+            stats.total_seeds.store(seed_count, Ordering::Relaxed);
         }
         // Reset done flag (may be set from a previous pass)
         stats.done.store(false, Ordering::Relaxed);
-        stats.domains_total.store(domain_count as u64, Ordering::Relaxed);
-
-        // Push a start event to the TUI log.
-        stats.push_warning(format!(
-            "engine: {} seeds, {} domains, {} workers, inner_n={}",
-            total_seeds, domain_count, cfg.workers, cfg.inner_n,
-        ));
 
         let adaptive = Arc::new(AdaptiveTimeout::new());
 
         // Spawn a peak-RPS tracker task: samples total every 100ms, writes live peak_rps.
-        // This replaces PeakTracker (which used try_lock and almost never fired at 16K workers).
         let peak_stats = Arc::clone(&stats);
         tokio::spawn(async move {
-            // Initialize from current total so we don't count prior-pass history on restart.
             let mut prev_total = peak_stats.total.load(Ordering::Relaxed);
             let mut interval = tokio::time::interval(Duration::from_millis(100));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -121,73 +103,117 @@ impl super::Engine for ReqwestEngine {
         let workers = cfg.workers.max(1);
         let inner_n = cfg.inner_n.max(1);
 
-        // Pre-create per-domain entries (semaphore + abandonment state).
+        // Domain map: lazily populated as new domains arrive from the streaming channel.
+        // Initial capacity of 32 K covers most CC partitions without resizing.
         let domain_map: Arc<DashMap<String, Arc<DomainEntry>>> =
-            Arc::new(DashMap::with_capacity(domain_count));
-        for batch in &batches {
-            domain_map.insert(
-                batch.domain.clone(),
-                Arc::new(DomainEntry::new(inner_n)),
-            );
-        }
+            Arc::new(DashMap::with_capacity(32_768));
 
-        // Flat URL channel: capacity = workers * 4 so producer never blocks on startup.
-        // Each item carries the URL and a reference to its domain's shared state.
+        // Flat URL channel: capacity = workers * 32 (min 65536) so the producer can batch-fill
+        // without blocking. Previously workers*4 caused stop-go patterns at high worker counts.
+        // Memory: 4000 workers × 32 = 128K slots × ~100 B = 12 MB — negligible.
+        let channel_cap = (workers * 32).max(65_536);
         let (url_tx, url_rx) =
-            async_channel::bounded::<(SeedURL, Arc<DomainEntry>)>(workers * 4);
+            async_channel::bounded::<(SeedURL, Arc<DomainEntry>)>(channel_cap);
 
-        // Producer: send URLs in round-robin domain order to prevent semaphore clustering.
+        // Batch-streaming producer:
         //
-        // Sorted domain order [A1,A2,A3..An, B1,B2..Bn, ...] causes workers to cluster on
-        // the same domain's semaphore simultaneously. Round-robin order [A1,B1,C1,...,A2,B2,...]
-        // ensures each "wave" of workers hits different domains, eliminating semaphore contention
-        // and spreading DNS resolution across many nameservers simultaneously.
+        // Reads seeds from `seed_rx` in batches of BATCH_SIZE (100 K), groups each batch
+        // by domain, then round-robins the batch into `url_tx`. Domain entries are created
+        // lazily on first encounter. Batches overlap — while workers process batch N the
+        // producer is already grouping batch N+1 — so the URL channel stays full.
+        //
+        // Memory: peak ≈ 2 × BATCH_SIZE × ~150 B ≈ 30 MB (one batch in grouping + one
+        // batch in the channel), regardless of total seed count (e.g. 15 M for CC p:0).
+        const BATCH_SIZE: usize = 100_000;
         let dm = Arc::clone(&domain_map);
+        let stats_prod = Arc::clone(&stats);
         let producer = tokio::spawn(async move {
-            // Pair each batch's URL list with its pre-created domain entry.
-            let domain_batches: Vec<(Vec<SeedURL>, Arc<DomainEntry>)> = batches
-                .into_iter()
-                .filter_map(|batch| {
-                    dm.get(&batch.domain)
-                        .map(|e| (batch.urls, Arc::clone(e.value())))
-                })
-                .collect();
+            use std::collections::VecDeque;
+            let mut batch: Vec<SeedURL> = Vec::with_capacity(BATCH_SIZE);
+            let mut total_seen = 0u64;
 
-            let max_len = domain_batches
-                .iter()
-                .map(|(urls, _)| urls.len())
-                .max()
-                .unwrap_or(0);
+            loop {
+                // Wait for the first seed of a new batch (blocks if channel is empty).
+                batch.clear();
+                match seed_rx.recv().await {
+                    Ok(seed) => batch.push(seed),
+                    Err(_) => break, // channel closed — all seeds consumed
+                }
+                // Greedily drain up to BATCH_SIZE without blocking.
+                while batch.len() < BATCH_SIZE {
+                    match seed_rx.try_recv() {
+                        Ok(seed) => batch.push(seed),
+                        Err(_) => break, // channel empty or closed
+                    }
+                }
 
-            // Send slot[i] from every domain before sending slot[i+1].
-            // Result: [A_slot0, B_slot0, C_slot0, ..., A_slot1, B_slot1, ...]
-            for slot in 0..max_len {
-                for (urls, entry) in &domain_batches {
-                    if let Some(url) = urls.get(slot) {
-                        if url_tx
-                            .send((url.clone(), Arc::clone(entry)))
-                            .await
-                            .is_err()
-                        {
-                            return; // receivers all dropped
-                        }
+                total_seen += batch.len() as u64;
+
+                // Update total_seeds once we know the real count (streaming case where
+                // seed_count hint was 0 or the actual count differs from the hint).
+                if stats_prod.total_seeds.load(Ordering::Relaxed) == 0 {
+                    // We don't know the total yet; at minimum show what we've seen.
+                    stats_prod.total_seeds.store(total_seen, Ordering::Relaxed);
+                }
+
+                // Group this batch by domain.
+                let sub_batches = group_by_domain(std::mem::take(&mut batch));
+                let domain_count = sub_batches.len();
+
+                // Inform TUI of domains discovered so far.
+                stats_prod
+                    .domains_total
+                    .fetch_add(domain_count as u64, Ordering::Relaxed);
+
+                // Build per-batch VecDeque, creating domain entries lazily.
+                let mut queue: VecDeque<(VecDeque<SeedURL>, Arc<DomainEntry>)> = sub_batches
+                    .into_iter()
+                    .map(|b| {
+                        let entry = dm
+                            .entry(b.domain.clone())
+                            .or_insert_with(|| Arc::new(DomainEntry::new(inner_n)));
+                        (VecDeque::from(b.urls), Arc::clone(entry.value()))
+                    })
+                    .collect();
+
+                // Round-robin dispatch for this batch.
+                while let Some((mut urls, entry)) = queue.pop_front() {
+                    let url = match urls.pop_front() {
+                        Some(u) => u,
+                        None => continue,
+                    };
+                    if url_tx.send((url, Arc::clone(&entry))).await.is_err() {
+                        return; // receivers all dropped
+                    }
+                    if !urls.is_empty() {
+                        queue.push_back((urls, entry));
                     }
                 }
             }
+
+            info!(
+                "reqwest producer done: {} seeds dispatched across {} domains",
+                total_seen,
+                dm.len(),
+            );
             // url_tx dropped here → channel closes when all receivers see EOF
         });
 
         // Build ONE shared reqwest::Client for all workers.
         // reqwest::Client is Arc-backed internally; cloning just bumps the refcount.
         let max_timeout = cfg.timeout.saturating_mul(5); // adaptive cap ceiling
-        let shared_client = match reqwest::Client::builder()
+        let mut client_builder = reqwest::Client::builder()
             .pool_max_idle_per_host(inner_n)
             .timeout(max_timeout)
             .danger_accept_invalid_certs(true)
             .redirect(reqwest::redirect::Policy::limited(7))
-            .tcp_keepalive(std::time::Duration::from_secs(60))
-            .build()
-        {
+            .tcp_keepalive(std::time::Duration::from_secs(60));
+        // Separate connect timeout: dead servers (TCP SYN-drop) fail in 500ms
+        // instead of waiting for the full request timeout, freeing workers faster.
+        if cfg.connect_timeout > Duration::ZERO {
+            client_builder = client_builder.connect_timeout(cfg.connect_timeout);
+        }
+        let shared_client = match client_builder.build() {
             Ok(c) => Arc::new(c),
             Err(e) => return Err(anyhow::anyhow!("failed to build reqwest client: {}", e)),
         };
@@ -301,12 +327,15 @@ async fn process_one_url(
         Err(_) => return, // semaphore closed (should not happen)
     };
 
-    // Compute effective timeout (adaptive or fixed, capped at 5× base).
+    // Compute effective timeout (adaptive or fixed).
+    // Floor: never drop below cfg.timeout (fast domains must not shrink the timeout).
+    // Ceiling: ×3 (vs old ×5 — still gives slow domains 3× the base).
     let effective_timeout = if !cfg.disable_adaptive_timeout {
         adaptive
             .timeout(cfg.adaptive_timeout_max)
             .unwrap_or(cfg.timeout)
-            .min(cfg.timeout.saturating_mul(5))
+            .max(cfg.timeout)                   // floor: never below configured baseline
+            .min(cfg.timeout.saturating_mul(3)) // tighter ceiling: ×3 not ×5
     } else {
         cfg.timeout
     };
@@ -317,10 +346,16 @@ async fn process_one_url(
         &seed,
         effective_timeout,
         cfg.max_body_bytes,
-        cfg.body_store.as_deref(),
+        cfg.warc_store.as_ref().map(|s| s.as_ref()),
     )
     .await;
     stats.total.fetch_add(1, Ordering::Relaxed);
+
+    // Release domain semaphore permit before any writer call.
+    // When the binary writer channel is full, write() blocks; if the permit
+    // is held during that block, no other worker can fetch from this domain,
+    // serializing all domain fetches behind writer backpressure.
+    drop(_permit);
 
     match fetch_result {
         Err((reqwest_err, fetch_ms)) => {
@@ -526,6 +561,10 @@ pub(crate) async fn spawn_sysmon(stats: Arc<Stats>) {
     let mut interval = tokio::time::interval(Duration::from_millis(500));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+    // Set total RAM once at startup.
+    sys.refresh_memory();
+    stats.mem_total_mb.store(sys.total_memory() / (1024 * 1024), Ordering::Relaxed);
+
     loop {
         interval.tick().await;
         if stats.done.load(Ordering::Relaxed) {
@@ -647,7 +686,7 @@ async fn fetch_one(
     seed: &SeedURL,
     timeout: Duration,
     max_body_bytes: usize,
-    body_store: Option<&crate::bodystore::BodyStore>,
+    warc_store: Option<&crate::warcstore::AsyncWarcStore>,
 ) -> Result<CrawlResult, (reqwest::Error, i64)> {
     let start = Instant::now();
 
@@ -710,6 +749,8 @@ async fn fetch_one(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_string();
+    // Capture response headers before resp is consumed by read_body_limited.
+    let response_headers = resp.headers().clone();
 
     let is_html =
         content_type.contains("text/html") || content_type.contains("application/xhtml");
@@ -740,10 +781,32 @@ async fn fetch_one(
         (String::new(), String::new(), String::new())
     };
 
-    // Store body in CAS when a body store is configured and body was read.
-    let body_cid = if let Some(store) = body_store {
+    // Store HTML response as a WARC file when a warc_store is configured.
+    // put_async() returns the warc_id (UUID) immediately; the actual write is background-threaded.
+    let warc_id = if let Some(store) = warc_store {
         if should_read_body && !body_bytes.is_empty() {
-            store.put(&body_bytes).unwrap_or_default()
+            let resp_headers: Vec<(String, String)> = response_headers
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
+                .collect();
+            let status_reason = http::StatusCode::from_u16(status)
+                .ok()
+                .and_then(|s| s.canonical_reason())
+                .unwrap_or("");
+            let entry = crate::warcstore::WarcEntry {
+                url: seed.url.clone(),
+                method: "GET".to_string(),
+                proto: "HTTP/1.1".to_string(),
+                req_headers: vec![],
+                status_code: status,
+                status_text: format!("{} {}", status, status_reason),
+                resp_headers,
+                body: body_bytes.to_vec(),
+                ip: String::new(),
+                crawled_at: chrono::Utc::now(),
+                run_id: String::new(),
+            };
+            store.put_async(entry)
         } else {
             String::new()
         }
@@ -765,7 +828,7 @@ async fn fetch_one(
         crawled_at: chrono::Utc::now().naive_utc(),
         error: String::new(),
         body: String::new(), // always empty — avoids DuckDB overflow blocks
-        body_cid,
+        warc_id,
     })
 }
 
@@ -803,38 +866,6 @@ async fn read_body_limited(
     Ok(buf.freeze())
 }
 
-// ---------------------------------------------------------------------------
-// Domain timeout helper (used by hyper_engine.rs too)
-// ---------------------------------------------------------------------------
-
-/// Calculate effective domain timeout.
-///
-/// - domain_timeout_ms < 0 (adaptive): len(urls) * timeout / inner_n * 2, clamped [5s, max]
-/// - domain_timeout_ms > 0 (explicit): use as-is
-/// - domain_timeout_ms == 0 (disabled): None
-pub(crate) fn compute_domain_timeout(
-    cfg: &Config,
-    url_count: usize,
-    inner_n: usize,
-) -> Option<Duration> {
-    if cfg.domain_timeout_ms == 0 {
-        return None;
-    }
-
-    if cfg.domain_timeout_ms > 0 {
-        return Some(Duration::from_millis(cfg.domain_timeout_ms as u64));
-    }
-
-    // Adaptive: estimate how long this domain should take
-    // Formula: urls * timeout_ms / inner_n * 2, clamped [5s, adaptive_timeout_max]
-    let timeout_ms = cfg.timeout.as_millis() as u64;
-    let estimated_ms = url_count as u64 * timeout_ms / inner_n.max(1) as u64 * 2;
-    let min_ms = 5_000u64;
-    let max_ms = cfg.adaptive_timeout_max.as_millis() as u64;
-    let clamped_ms = estimated_ms.max(min_ms).min(max_ms);
-
-    Some(Duration::from_millis(clamped_ms))
-}
 
 // ---------------------------------------------------------------------------
 // HTML metadata extraction (simple, no regex, no external parser)

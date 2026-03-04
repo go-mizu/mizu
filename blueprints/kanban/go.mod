@@ -1,6 +1,6 @@
 module github.com/go-mizu/blueprints/kanban
 
-go 1.25.5
+go 1.26
 
 require (
 	github.com/charmbracelet/fang v0.4.4

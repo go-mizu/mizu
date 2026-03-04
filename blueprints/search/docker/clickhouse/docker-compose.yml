@@ -1,0 +1,36 @@
+# ClickHouse 26.x — OLAP database with native text (inverted) index (GA in 26.2)
+# Usage:
+#   FTS_DATA_DIR=$HOME/data/fts docker compose -f docker/clickhouse/docker-compose.yml up -d
+#   search cc fts index --engine clickhouse
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.2
+    container_name: fts-clickhouse
+    ports:
+      - "8123:8123"   # HTTP interface
+      - "9000:9000"   # Native TCP interface
+    environment:
+      - CLICKHOUSE_DB=fts
+      - CLICKHOUSE_USER=fts
+      - CLICKHOUSE_PASSWORD=fts
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+    volumes:
+      - ${FTS_DATA_DIR:-${HOME}/data/fts}/clickhouse:/var/lib/clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user fts --password fts --query 'SELECT 1' 2>/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 512M

@@ -98,24 +98,19 @@ pub fn load_seeds_parquet(path: &str, limit: usize) -> Result<Vec<SeedURL>> {
 pub fn load_seeds_cc_parquet(path: &str, limit: usize, filters: &CcSeedFilter) -> Result<Vec<SeedURL>> {
     let conn = Connection::open_in_memory()?;
 
+    // Cap DuckDB buffer pool to avoid OOM when scanning large CC parquet files
+    // (a single partition is typically 500MB gzipped / 5–15M rows).
+    // Use 40% of total RAM, clamped to [512 MB, 4 GB].
+    {
+        use sysinfo::System;
+        let sys = System::new_all();
+        let total_mb = sys.total_memory() / (1024 * 1024);
+        let limit_mb = ((total_mb * 40 / 100) as usize).max(512).min(4096);
+        conn.execute_batch(&format!("SET memory_limit='{limit_mb}MB'"))?;
+    }
+
     let escaped = path.replace('\'', "''");
-    let mut conditions = vec!["warc_filename IS NOT NULL".to_string()];
-
-    if !filters.status_codes.is_empty() {
-        let codes: Vec<String> = filters.status_codes.iter().map(|c| c.to_string()).collect();
-        conditions.push(format!("fetch_status IN ({})", codes.join(",")));
-    }
-    if !filters.mime_types.is_empty() {
-        let quoted: Vec<String> = filters.mime_types.iter().map(|m| format!("'{}'", m.replace('\'', "''"))).collect();
-        conditions.push(format!("content_mime_detected IN ({})", quoted.join(",")));
-    }
-    if !filters.languages.is_empty() {
-        for lang in &filters.languages {
-            conditions.push(format!("content_languages LIKE '%{}%'", lang.replace('\'', "''")));
-        }
-    }
-
-    let where_clause = conditions.join(" AND ");
+    let where_clause = build_cc_conditions(filters).join(" AND ");
     let limit_clause = if limit > 0 { format!(" LIMIT {}", limit) } else { String::new() };
 
     let query = format!(
@@ -146,8 +141,151 @@ pub struct CcSeedFilter {
     pub languages: Vec<String>,
 }
 
+/// Build the WHERE clause conditions for CC seed queries.
+fn build_cc_conditions(filters: &CcSeedFilter) -> Vec<String> {
+    let mut conditions = vec!["warc_filename IS NOT NULL".to_string()];
+    if !filters.status_codes.is_empty() {
+        let codes: Vec<String> = filters.status_codes.iter().map(|c| c.to_string()).collect();
+        conditions.push(format!("fetch_status IN ({})", codes.join(",")));
+    }
+    if !filters.mime_types.is_empty() {
+        let quoted: Vec<String> = filters
+            .mime_types
+            .iter()
+            .map(|m| format!("'{}'", m.replace('\'', "''")))
+            .collect();
+        conditions.push(format!("content_mime_detected IN ({})", quoted.join(",")));
+    }
+    for lang in &filters.languages {
+        conditions.push(format!(
+            "content_languages LIKE '%{}%'",
+            lang.replace('\'', "''")
+        ));
+    }
+    conditions
+}
+
+/// Stream CC parquet seeds asynchronously via a bounded channel.
+///
+/// The loader runs in `spawn_blocking`, scanning the parquet file with a single
+/// DuckDB cursor. Seeds are sent lazily — peak RAM stays O(200 K × seed_size ≈ 40 MB)
+/// regardless of total row count (a CC p:0 partition has ~15 M rows).
+///
+/// Returns `(receiver, total_count, loader_handle)`.
+/// `total_count` is obtained from a fast COUNT(*) before streaming begins
+/// (DuckDB reads parquet min/max statistics, sub-second for warc_filename IS NOT NULL).
+///
+/// Await the `loader_handle` after your consumer is done to propagate any DuckDB errors.
+pub async fn stream_seeds_cc_parquet_async(
+    path: String,
+    limit: usize,
+    filters: CcSeedFilter,
+) -> Result<(
+    async_channel::Receiver<SeedURL>,
+    u64,
+    tokio::task::JoinHandle<Result<()>>,
+)> {
+    // Fast COUNT(*) so callers can show accurate progress.
+    let total: u64 = {
+        let path2 = path.clone();
+        let filters2 = filters.clone();
+        tokio::task::spawn_blocking(move || count_cc_seeds(&path2, limit, &filters2))
+            .await
+            .map_err(|e| anyhow::anyhow!("count task panicked: {}", e))??
+    };
+
+    // Channel capacity = 200 K seeds  ≈ 40 MB peak for the buffer.
+    let (tx, rx) = async_channel::bounded::<SeedURL>(200_000);
+
+    let handle = tokio::task::spawn_blocking(move || -> Result<()> {
+        let conn = Connection::open_in_memory()?;
+        // Cap DuckDB buffer pool (same policy as load_seeds_cc_parquet).
+        {
+            use sysinfo::System;
+            let sys = System::new_all();
+            let total_mb = sys.total_memory() / (1024 * 1024);
+            let limit_mb = ((total_mb * 40 / 100) as usize).max(512).min(4096);
+            conn.execute_batch(&format!("SET memory_limit='{limit_mb}MB'"))?;
+        }
+
+        let escaped = path.replace('\'', "''");
+        let where_clause = build_cc_conditions(&filters).join(" AND ");
+        let limit_clause = if limit > 0 {
+            format!(" LIMIT {}", limit)
+        } else {
+            String::new()
+        };
+
+        let query = format!(
+            "SELECT url, COALESCE(url_host_registered_domain, '') as domain \
+             FROM read_parquet('{}') WHERE {}{}",
+            escaped, where_clause, limit_clause
+        );
+
+        let mut stmt = conn.prepare(&query)?;
+        let rows = stmt.query_map([], |row| {
+            Ok(SeedURL {
+                url: row.get(0)?,
+                domain: row.get(1)?,
+            })
+        })?;
+
+        for row in rows {
+            if let Ok(seed) = row {
+                if tx.send_blocking(seed).is_err() {
+                    break; // receiver dropped (consumer cancelled)
+                }
+            }
+        }
+        Ok(())
+    });
+
+    Ok((rx, total, handle))
+}
+
+/// COUNT(*) for CC seeds — fast when DuckDB can use parquet statistics.
+fn count_cc_seeds(path: &str, limit: usize, filters: &CcSeedFilter) -> Result<u64> {
+    let conn = Connection::open_in_memory()?;
+    let escaped = path.replace('\'', "''");
+    let where_clause = build_cc_conditions(filters).join(" AND ");
+    let limit_clause = if limit > 0 {
+        format!(" LIMIT {}", limit)
+    } else {
+        String::new()
+    };
+    // Wrap in a subquery so LIMIT is applied before COUNT.
+    let sql = format!(
+        "SELECT COUNT(*) FROM (SELECT 1 FROM read_parquet('{}') WHERE {}{})",
+        escaped, where_clause, limit_clause
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let count: i64 = stmt.query_row([], |row| row.get(0))?;
+    Ok(count as u64)
+}
+
 /// Load timeout URLs from failed DB for pass-2 retry.
-/// Only loads URLs with reason='http_timeout' detected after `since`.
+/// Convert a Vec<SeedURL> into an already-closed async_channel::Receiver.
+///
+/// All seeds are sent immediately (bounded by seeds.len()), then the sender
+/// is dropped so the receiver sees EOF. Used by HN and direct --seed callers
+/// that load the full seed list upfront.
+pub fn vec_to_receiver(seeds: Vec<SeedURL>) -> (async_channel::Receiver<SeedURL>, u64) {
+    let total = seeds.len() as u64;
+    if seeds.is_empty() {
+        let (_tx, rx) = async_channel::bounded(1);
+        // tx dropped immediately → rx sees empty closed channel
+        return (rx, 0);
+    }
+    let (tx, rx) = async_channel::bounded(seeds.len());
+    for seed in seeds {
+        // bounded by seeds.len() — never blocks
+        let _ = tx.try_send(seed);
+    }
+    drop(tx); // close sender → receiver returns Err(Closed) after last item
+    (rx, total)
+}
+
+/// Loads URLs with reason='http_timeout' or 'domain_http_timeout_killed' detected after `since`.
 pub fn load_retry_seeds(path: &str, since: NaiveDateTime) -> Result<Vec<SeedURL>> {
     let config = duckdb::Config::default()
         .access_mode(duckdb::AccessMode::ReadOnly)?;
@@ -156,7 +294,8 @@ pub fn load_retry_seeds(path: &str, since: NaiveDateTime) -> Result<Vec<SeedURL>
 
     let mut stmt = conn.prepare(
         "SELECT url, COALESCE(domain, '') as domain FROM failed_urls \
-         WHERE reason = 'http_timeout' AND detected_at >= ?"
+         WHERE reason IN ('http_timeout', 'domain_http_timeout_killed') \
+           AND detected_at >= ?"
     )?;
 
     let since_str = since.format("%Y-%m-%d %H:%M:%S").to_string();
@@ -171,4 +310,112 @@ pub fn load_retry_seeds(path: &str, since: NaiveDateTime) -> Result<Vec<SeedURL>
         .collect();
 
     Ok(seeds)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDateTime;
+
+    fn make_failed_db(path: &str) -> duckdb::Connection {
+        let conn = duckdb::Connection::open(path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE failed_urls (
+                url TEXT, domain TEXT, reason TEXT,
+                subcategory TEXT, error TEXT, status_code INTEGER,
+                fetch_time_ms INTEGER, detected_at TIMESTAMP
+             )",
+        )
+        .unwrap();
+        conn
+    }
+
+    fn insert_failed(conn: &duckdb::Connection, url: &str, domain: &str, reason: &str, ts: NaiveDateTime) {
+        conn.execute(
+            "INSERT INTO failed_urls VALUES (?,?,?,'','',0,0,?)",
+            duckdb::params![url, domain, reason, ts.format("%Y-%m-%d %H:%M:%S").to_string()],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn vec_to_receiver_delivers_all_seeds_then_closes() {
+        let seeds = vec![
+            SeedURL { url: "https://a.com/1".into(), domain: "a.com".into() },
+            SeedURL { url: "https://b.com/1".into(), domain: "b.com".into() },
+        ];
+        let (rx, count) = vec_to_receiver(seeds);
+        assert_eq!(count, 2);
+        assert_eq!(rx.recv_blocking().unwrap().url, "https://a.com/1");
+        assert_eq!(rx.recv_blocking().unwrap().url, "https://b.com/1");
+        assert!(rx.recv_blocking().is_err(), "channel should be closed after last seed");
+    }
+
+    #[test]
+    fn load_retry_seeds_includes_killed_urls() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("failed.duckdb").to_string_lossy().to_string();
+        let conn = make_failed_db(&db_path);
+        let ts = chrono::Utc::now().naive_utc();
+
+        insert_failed(&conn, "https://a.com/1", "a.com", "http_timeout", ts);
+        insert_failed(&conn, "https://b.com/1", "b.com", "domain_http_timeout_killed", ts);
+        drop(conn);
+
+        let since = ts - chrono::Duration::seconds(1);
+        let seeds = load_retry_seeds(&db_path, since).unwrap();
+
+        let urls: Vec<&str> = seeds.iter().map(|s| s.url.as_str()).collect();
+        assert!(urls.contains(&"https://a.com/1"), "should include http_timeout URL");
+        assert!(urls.contains(&"https://b.com/1"), "should include domain_http_timeout_killed URL");
+        assert_eq!(seeds.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn stream_seeds_delivers_all_rows_in_order() {
+        // Create a temp parquet file via DuckDB and verify streaming delivers all rows.
+        let dir = tempfile::tempdir().unwrap();
+        let parquet = dir.path().join("test.parquet");
+        let conn = duckdb::Connection::open_in_memory().unwrap();
+        conn.execute_batch(&format!(
+            "COPY (SELECT 'https://a.com/' || i::TEXT as url, 'a.com' as url_host_registered_domain, 'ok' as warc_filename FROM range(1, 51) t(i)) TO '{}'",
+            parquet.to_string_lossy()
+        )).unwrap();
+
+        let (rx, count, handle) = stream_seeds_cc_parquet_async(
+            parquet.to_string_lossy().to_string(),
+            0,
+            CcSeedFilter::default(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(count, 50);
+
+        let mut received = Vec::new();
+        while let Ok(seed) = rx.recv().await {
+            received.push(seed);
+        }
+        handle.await.unwrap().unwrap();
+        assert_eq!(received.len(), 50);
+        assert!(received.iter().all(|s| s.domain == "a.com"));
+    }
+
+    #[test]
+    fn load_retry_seeds_excludes_before_since() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("failed2.duckdb").to_string_lossy().to_string();
+        let conn = make_failed_db(&db_path);
+        let old_ts = chrono::NaiveDateTime::parse_from_str("2020-01-01 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
+        let new_ts = chrono::Utc::now().naive_utc();
+
+        insert_failed(&conn, "https://old.com/1", "old.com", "http_timeout", old_ts);
+        insert_failed(&conn, "https://new.com/1", "new.com", "http_timeout", new_ts);
+        drop(conn);
+
+        let since = new_ts - chrono::Duration::seconds(1);
+        let seeds = load_retry_seeds(&db_path, since).unwrap();
+        assert_eq!(seeds.len(), 1);
+        assert_eq!(seeds[0].url, "https://new.com/1");
+    }
 }

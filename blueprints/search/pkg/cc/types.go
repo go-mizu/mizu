@@ -7,12 +7,12 @@ import "time"
 
 // Crawl represents a Common Crawl dataset.
 type Crawl struct {
-	ID      string    // CC-MAIN-2026-04
-	Name    string    // January 2026 Index
-	From    time.Time // Start of crawl window
-	To      time.Time // End of crawl window
-	CDXAPI  string    // CDX API endpoint
-	Gateway string    // Timegate URL
+	ID      string    `json:"id"`      // CC-MAIN-2026-04
+	Name    string    `json:"name"`    // January 2026 Index
+	From    time.Time `json:"from"`    // Start of crawl window
+	To      time.Time `json:"to"`      // End of crawl window
+	CDXAPI  string    `json:"cdx_api"` // CDX API endpoint
+	Gateway string    `json:"gateway"` // Timegate URL
 }
 
 // WARCPointer locates a single record in a WARC file.

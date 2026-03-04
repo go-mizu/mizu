@@ -8,16 +8,26 @@ REMOTE_USER   ?= $(if $(filter 2,$(SERVER)),$(SERVER2_USER),$(SERVER1_USER))
 REMOTE_HOST   ?= $(if $(filter 2,$(SERVER)),$(SERVER2_HOST),$(SERVER1_HOST))
 REMOTE_SSH     = $(REMOTE_USER)@$(REMOTE_HOST)
 SSH           ?= ssh -i $(DEPLOY_KEY) -o BatchMode=yes
-SCP           ?= scp -i $(DEPLOY_KEY)
+SCP           ?= scp -i $(DEPLOY_KEY) -o BatchMode=yes
 
 BINARY        ?= crawler-linux-$(SERVER)
 IMAGE_NAME    := crawler-rust-builder
 
-.PHONY: build build-linux build-on-server deploy deploy-server1 deploy-server2 test remote-test remote-hn-recrawl remote-benchmark clean
+GUI_PORT      ?= 9111
 
-## Local dev build (macOS)
+# External Cargo target cache — shared with the root Makefile, survives git clean.
+CARGO             ?= $(or $(shell command -v cargo 2>/dev/null),$(HOME)/.cargo/bin/cargo)
+TARGET_DIR        ?= $(HOME)/.cache/mizu/crawler-target
+
+.PHONY: build build-linux build-on-server deploy deploy-server1 deploy-server2 test remote-test remote-hn-recrawl remote-benchmark remote-benchmark-all remote-cc-recrawl remote-cc-recrawl-tui remote-cc-benchmark tunnel clean
+
+## Local dev build (macOS — no wreq-engine; wreq uses BoringSSL which doesn't link on macOS ARM64)
+## Uses external cache ($(TARGET_DIR)); installs to ~/bin/crawler automatically.
 build:
-	cargo build --release
+	@mkdir -p $(HOME)/bin $(TARGET_DIR)
+	CARGO_TARGET_DIR=$(TARGET_DIR) $(CARGO) build --release --no-default-features
+	@install -m 0755 $(TARGET_DIR)/release/crawler $(HOME)/bin/crawler
+	@echo "Installed: $$($(HOME)/bin/crawler --version)"
 
 ## Cross-compile for Linux via Docker (Ubuntu 24.04, x86-64-v3/AVX2)
 build-linux:
@@ -29,8 +39,8 @@ build-linux:
 	docker rm crawler-linux-tmp
 	@echo "Linux binary: ./$(BINARY)"
 
-## Build Linux binary on a remote server (no Docker needed)
-## Rsyncs source to ~/build/crawler on the server, installs Rust if needed, builds, downloads binary.
+## Build and deploy on a remote server (no Docker, no download back)
+## Rsyncs source, builds on server, copies binary to ~/bin/crawler.
 build-on-server:
 	@test -f "$(DEPLOY_KEY)" || { echo "Deploy key not found: $(DEPLOY_KEY)"; exit 1; }
 	@echo "Syncing source to $(REMOTE_SSH):~/build/crawler/ ..."
@@ -38,7 +48,7 @@ build-on-server:
 	rsync -av --delete --exclude target/ --exclude '.git/' \
 	  -e "ssh -i $(DEPLOY_KEY) -o BatchMode=yes" \
 	  ./ $(REMOTE_SSH):~/build/crawler/
-	@echo "Building on $(REMOTE_SSH) ..."
+	@echo "Building and deploying on $(REMOTE_SSH) ..."
 	$(SSH) $(REMOTE_SSH) 'bash -lc "set -e; \
 	  SUDO=\"\"; [ \"\$$(id -u)\" != \"0\" ] && SUDO=\"sudo\"; \
 	  NEED_PKGS=\"\"; \
@@ -67,13 +77,13 @@ build-on-server:
 	    source ~/.cargo/env; \
 	  fi; \
 	  cd ~/build/crawler; \
-	  RUSTFLAGS=\"-C target-cpu=x86-64-v3\" cargo build --release 2>&1; \
+	  RUSTFLAGS=\"-C target-cpu=x86-64-v3\" cargo build --release --features wreq-engine 2>&1; \
+	  mkdir -p ~/bin && cp target/release/crawler ~/bin/crawler.new && mv ~/bin/crawler.new ~/bin/crawler && chmod +x ~/bin/crawler; \
 	  echo BUILD_OK"'
-	@echo "Downloading binary from $(REMOTE_SSH) ..."
-	$(SCP) $(REMOTE_SSH):~/build/crawler/target/release/crawler ./$(BINARY)
-	@echo "Linux binary: ./$(BINARY)"
+	@echo "Built and deployed to $(REMOTE_SSH):~/bin/crawler"
+	$(SSH) $(REMOTE_SSH) "~/bin/crawler --help | head -3"
 
-## Deploy to a server (SERVER=1 or SERVER=2)
+## Deploy a local binary to a server (SERVER=1 or SERVER=2)
 deploy: $(BINARY)
 	@test -f "$(DEPLOY_KEY)" || { echo "Deploy key not found: $(DEPLOY_KEY)"; exit 1; }
 	$(SSH) $(REMOTE_SSH) "mkdir -p \$$HOME/bin"
@@ -90,7 +100,7 @@ deploy-server2:
 
 ## Run tests
 test:
-	cargo test
+	CARGO_TARGET_DIR=$(TARGET_DIR) $(CARGO) test --no-default-features
 
 ## Check remote binary works
 remote-test:
@@ -116,6 +126,41 @@ remote-benchmark-all:
 	$(SSH) $(REMOTE_SSH) "~/bin/crawler hn recrawl --seed $(HN_SEED) --limit 10000 --engine reqwest --writer duckdb --no-retry"
 	@echo "=== reqwest + binary ==="
 	$(SSH) $(REMOTE_SSH) "~/bin/crawler hn recrawl --seed $(HN_SEED) --limit 10000 --engine reqwest --writer binary --no-retry"
+
+CC_CRAWL   ?= CC-MAIN-2026-04
+CC_FILE    ?= p:0
+
+## CC recrawl on remote server with GUI dashboard (auto-config, pass-2 retry)
+## Runs in foreground so you see logs; open tunnel in a separate terminal.
+## Access dashboard: make tunnel SERVER=<N> (in another terminal)
+remote-cc-recrawl:
+	$(SSH) -t $(REMOTE_SSH) "~/bin/crawler cc recrawl \
+	  --file $(CC_FILE) \
+	  --crawl $(CC_CRAWL) \
+	  --gui --gui-port $(GUI_PORT)"
+
+## CC recrawl foreground with TUI (no GUI, for direct SSH sessions without port forwarding)
+remote-cc-recrawl-tui:
+	$(SSH) -t $(REMOTE_SSH) "~/bin/crawler cc recrawl \
+	  --file $(CC_FILE) \
+	  --crawl $(CC_CRAWL)"
+
+## CC quick benchmark: 50k seeds, devnull writer, no retry — measures raw fetch speed
+remote-cc-benchmark:
+	$(SSH) $(REMOTE_SSH) "~/bin/crawler cc recrawl \
+	  --file $(CC_FILE) \
+	  --crawl $(CC_CRAWL) \
+	  --limit 50000 \
+	  --writer devnull \
+	  --no-retry \
+	  --no-tui"
+
+## SSH tunnel for GUI dashboard: forwards localhost:9111 -> server:9111
+tunnel:
+	@echo "Tunneling localhost:$(GUI_PORT) -> $(REMOTE_SSH):$(GUI_PORT)"
+	@echo "Open http://localhost:$(GUI_PORT) in your browser"
+	$(SSH) -o ServerAliveInterval=5 -o ServerAliveCountMax=120 -o ExitOnForwardFailure=yes \
+	  -N -L $(GUI_PORT):localhost:$(GUI_PORT) $(REMOTE_SSH)
 
 clean:
 	cargo clean

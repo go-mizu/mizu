@@ -1,6 +1,6 @@
 module github.com/go-mizu/blueprints/table
 
-go 1.25.0
+go 1.26
 
 require (
 	github.com/charmbracelet/fang v0.4.4
