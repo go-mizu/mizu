@@ -106,6 +106,25 @@ func TestWandMustNot(t *testing.T) {
 	}
 }
 
+func TestWandShouldWithMustNot(t *testing.T) {
+	sr := buildTestSegment(t)
+	defer sr.Close()
+
+	q := parseQuery("machine -deep")
+	eval := newWandEvaluator(sr, 10, 0, 0, nil)
+	results := eval.searchQuery(q)
+	if len(results) == 0 {
+		t.Fatal("expected results for 'machine -deep'")
+	}
+
+	for _, r := range results {
+		id, _, _ := sr.getDoc(r.docID)
+		if id == "doc1" || id == "doc6" || id == "doc8" {
+			t.Fatalf("unexpected excluded doc in results: %s", id)
+		}
+	}
+}
+
 func TestWandPhraseQuery(t *testing.T) {
 	sr := buildTestSegment(t)
 	defer sr.Close()

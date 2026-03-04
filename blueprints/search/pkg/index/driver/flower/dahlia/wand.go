@@ -15,7 +15,7 @@ type scoredDoc struct {
 type topKHeap []scoredDoc
 
 func (h topKHeap) Len() int            { return len(h) }
-func (h topKHeap) Less(i, j int) bool  { return h[i].score < h[j].score }
+func (h topKHeap) Less(i, j int) bool  { return scoredDocLess(h[i], h[j]) }
 func (h topKHeap) Swap(i, j int)       { h[i], h[j] = h[j], h[i] }
 func (h *topKHeap) Push(x interface{}) { *h = append(*h, x.(scoredDoc)) }
 func (h *topKHeap) Pop() interface{} {
@@ -24,6 +24,26 @@ func (h *topKHeap) Pop() interface{} {
 	x := old[n-1]
 	*h = old[:n-1]
 	return x
+}
+
+func scoredDocLess(a, b scoredDoc) bool {
+	if a.score != b.score {
+		return a.score < b.score
+	}
+	// For equal scores, make ordering deterministic by segment then local docID.
+	// This comparator is used by the min-heap, so "less" means a worse hit.
+	aSeg := ""
+	bSeg := ""
+	if a.seg != nil {
+		aSeg = a.seg.dir
+	}
+	if b.seg != nil {
+		bSeg = b.seg.dir
+	}
+	if aSeg != bSeg {
+		return aSeg > bSeg
+	}
+	return a.docID > b.docID
 }
 
 // wandEvaluator evaluates queries against a single segment using Block-Max WAND.
@@ -234,6 +254,7 @@ func (w *wandEvaluator) searchBooleanShould(q booleanQuery) []scoredDoc {
 	}
 	var cursors []cursor
 	extraScores := make(map[uint32]float64)
+	mustNotSet := make(map[uint32]struct{})
 
 	for _, sq := range q.should {
 		tq, ok := sq.(termQuery)
@@ -254,6 +275,23 @@ func (w *wandEvaluator) searchBooleanShould(q booleanQuery) []scoredDoc {
 			continue
 		}
 		cursors = append(cursors, cursor{it: it, idf: idf})
+	}
+	for _, nq := range q.mustNot {
+		switch nq := nq.(type) {
+		case termQuery:
+			it, _, found := w.seg.lookupTerm(nq.term)
+			if !found {
+				continue
+			}
+			for it.next() {
+				mustNotSet[it.doc()] = struct{}{}
+			}
+		case phraseQuery:
+			phraseHits := w.searchPhrase(nq)
+			for _, sd := range phraseHits {
+				mustNotSet[sd.docID] = struct{}{}
+			}
+		}
 	}
 
 	if len(cursors) == 0 && len(extraScores) == 0 {
@@ -289,6 +327,11 @@ func (w *wandEvaluator) searchBooleanShould(q booleanQuery) []scoredDoc {
 				score += extra
 			}
 			if score > 0 {
+				if _, excluded := mustNotSet[minDoc]; excluded {
+					score = 0
+				}
+			}
+			if score > 0 {
 				seen[minDoc] = struct{}{}
 				w.addToHeap(h, minDoc, score)
 			}
@@ -316,6 +359,9 @@ func (w *wandEvaluator) searchBooleanShould(q booleanQuery) []scoredDoc {
 	// Include docs from non-term should clauses when term cursors had no hit.
 	for docID, extra := range extraScores {
 		if extra <= 0 {
+			continue
+		}
+		if _, excluded := mustNotSet[docID]; excluded {
 			continue
 		}
 		if _, exists := seen[docID]; exists {
@@ -549,7 +595,7 @@ func multiSegmentSearch(segments []*segmentReader, q query, topK int) []scoredDo
 
 	// Sort by score descending.
 	sort.Slice(allResults, func(i, j int) bool {
-		return allResults[i].score > allResults[j].score
+		return scoredDocLess(allResults[j], allResults[i])
 	})
 
 	if len(allResults) > topK {
