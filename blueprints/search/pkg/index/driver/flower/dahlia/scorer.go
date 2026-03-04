@@ -5,13 +5,13 @@ import "math"
 const (
 	bm25K1    = 1.2
 	bm25B     = 0.75
-	bm25Delta = 1.0
+	bm25Delta = 0.0
 )
 
 // bm25IDF computes the inverse document frequency component.
 // df = document frequency of term, n = total document count.
 func bm25IDF(df, n uint64) float64 {
-	return math.Log(1.0 + float64(n-df+1)/(float64(df)+0.5))
+	return math.Log(1.0 + (float64(n-df)+0.5)/(float64(df)+0.5))
 }
 
 // bm25Score computes the full BM25+ score for a single term occurrence.
@@ -23,8 +23,12 @@ func bm25Score(tf float64, df uint64, dl float64, avgdl float64, n uint64) float
 
 // bm25ScoreWithNormTable uses precomputed norm table for fast scoring.
 func bm25ScoreWithNormTable(tf float64, idf float64, normComponent float32) float64 {
-	tfNorm := (tf * (bm25K1 + 1.0)) / (tf + float64(normComponent))
-	return idf * (tfNorm + bm25Delta)
+	tf32 := float32(tf)
+	idf32 := float32(idf)
+	k1 := float32(bm25K1)
+	delta := float32(bm25Delta)
+	tfNorm := (tf32 * (k1 + 1.0)) / (tf32 + normComponent)
+	return float64(idf32 * (tfNorm + delta))
 }
 
 // quantizeBM25 maps a BM25 score to uint8 (0-255).

@@ -4,14 +4,12 @@ import "testing"
 
 func TestAnalyzeBasic(t *testing.T) {
 	tokens := analyzeWithPositions("The quick brown fox jumps over the lazy dog")
-	// "the" and "over" are stopwords
 	terms := make([]string, len(tokens))
 	for i, tok := range tokens {
 		terms[i] = tok.term
 	}
-	// Should contain stemmed versions of: quick, brown, fox, jumps, lazy, dog
-	if len(tokens) < 5 {
-		t.Fatalf("expected at least 5 tokens, got %d: %v", len(tokens), terms)
+	if len(tokens) < 9 {
+		t.Fatalf("expected all terms to be indexed, got %d: %v", len(tokens), terms)
 	}
 }
 
@@ -28,10 +26,10 @@ func TestAnalyzePositions(t *testing.T) {
 	}
 }
 
-func TestAnalyzeStopwords(t *testing.T) {
+func TestAnalyzeStopwordsAreIndexed(t *testing.T) {
 	tokens := analyzeWithPositions("the and is are")
-	if len(tokens) != 0 {
-		t.Fatalf("expected 0 tokens for all stopwords, got %d", len(tokens))
+	if len(tokens) != 4 {
+		t.Fatalf("expected stopwords to be indexed, got %d", len(tokens))
 	}
 }
 
@@ -53,13 +51,10 @@ func TestAnalyzeUnicode(t *testing.T) {
 	}
 }
 
-func TestAnalyzeLengthFilter(t *testing.T) {
-	// Single char "a" and "I" should be filtered (< 2 chars)
+func TestAnalyzeSingleCharacterTokens(t *testing.T) {
 	tokens := analyzeWithPositions("a x something")
-	for _, tok := range tokens {
-		if len(tok.term) < 2 {
-			t.Fatalf("token %q should be filtered (< 2 chars)", tok.term)
-		}
+	if len(tokens) != 3 {
+		t.Fatalf("expected 3 tokens, got %d", len(tokens))
 	}
 }
 

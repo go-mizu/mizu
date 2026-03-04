@@ -3,11 +3,32 @@ package dahlia
 import "testing"
 
 func TestFieldNormLossless(t *testing.T) {
-	for i := uint32(0); i <= 23; i++ {
+	for i := uint32(0); i <= 40; i++ {
 		enc := encodeFieldNorm(i)
 		dec := decodeFieldNorm(enc)
 		if dec != i {
 			t.Fatalf("lossless range: encode(%d)=%d, decode=%d", i, enc, dec)
+		}
+	}
+}
+
+func TestFieldNormQuantizationMatchesTantivyExamples(t *testing.T) {
+	cases := []struct {
+		dl   uint32
+		want uint32
+	}{
+		{41, 40},
+		{42, 42},
+		{43, 42},
+		{894, 856},
+		{943, 920},
+		{944, 920},
+		{945, 920},
+	}
+	for _, tc := range cases {
+		got := decodeFieldNorm(encodeFieldNorm(tc.dl))
+		if got != tc.want {
+			t.Fatalf("norm(%d)=%d, want %d", tc.dl, got, tc.want)
 		}
 	}
 }
@@ -43,9 +64,9 @@ func TestFieldNormBM25Table(t *testing.T) {
 	if table[0] < 0.29 || table[0] > 0.31 {
 		t.Fatalf("table[0] (dl=0) = %f, want ~0.3", table[0])
 	}
-	// dl=avgdl should give k1 = 1.2
-	normAtAvg := encodeFieldNorm(100)
-	if table[normAtAvg] < 1.1 || table[normAtAvg] > 1.3 {
-		t.Fatalf("table[norm(100)] = %f, want ~1.2", table[normAtAvg])
+	// near avgdl should remain close to k1.
+	normAtAvg := encodeFieldNorm(100) // decodes to 96.
+	if table[normAtAvg] < 1.0 || table[normAtAvg] > 1.3 {
+		t.Fatalf("table[norm(100)] = %f, want near [1.0,1.3]", table[normAtAvg])
 	}
 }
