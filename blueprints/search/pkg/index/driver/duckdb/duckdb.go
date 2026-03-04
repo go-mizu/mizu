@@ -134,7 +134,7 @@ func (e *Engine) Index(ctx context.Context, docs []index.Document) error {
 
 // ── Insert implementations ────────────────────────────────────────────────
 
-// indexNaive: original approach — one fmt.Sprintf INSERT per doc with manual ' escaping.
+// indexNaive: one INSERT execution per doc (no batch SQL construction).
 func (e *Engine) indexNaive(ctx context.Context, docs []index.Document) error {
 	tx, err := e.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -143,10 +143,7 @@ func (e *Engine) indexNaive(ctx context.Context, docs []index.Document) error {
 	defer tx.Rollback() //nolint:errcheck
 
 	for _, doc := range docs {
-		id := strings.ReplaceAll(doc.DocID, "'", "''")
-		text := strings.ReplaceAll(string(doc.Text), "'", "''")
-		sqlStr := fmt.Sprintf("INSERT OR IGNORE INTO documents (doc_id, text) VALUES ('%s', '%s')", id, text)
-		if _, err := tx.ExecContext(ctx, sqlStr); err != nil {
+		if _, err := tx.ExecContext(ctx, "INSERT OR IGNORE INTO documents (doc_id, text) VALUES (?, ?)", doc.DocID, string(doc.Text)); err != nil {
 			return err
 		}
 	}

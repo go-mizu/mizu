@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index"
 )
@@ -20,13 +19,16 @@ func PackDuckDBRaw(ctx context.Context, markdownDir, packPath string, workers, b
 	if err := os.MkdirAll(filepath.Dir(packPath), 0o755); err != nil {
 		return nil, err
 	}
+	if err := os.Remove(packPath); err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
 
 	db, err := sql.Open("duckdb", packPath)
 	if err != nil {
 		return nil, fmt.Errorf("open duckdb raw: %w", err)
 	}
 
-	if _, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS docs (doc_id VARCHAR, text VARCHAR)`); err != nil {
+	if _, err := db.ExecContext(ctx, `CREATE TABLE docs (doc_id VARCHAR PRIMARY KEY, text VARCHAR)`); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("create docs table: %w", err)
 	}
@@ -107,11 +109,14 @@ func (e *duckdbRawWriter) Index(ctx context.Context, docs []index.Document) erro
 	}
 	defer tx.Rollback()
 
+	stmt, err := tx.PrepareContext(ctx, "INSERT INTO docs (doc_id, text) VALUES (?, ?)")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
 	for _, doc := range docs {
-		id := strings.ReplaceAll(doc.DocID, "'", "''")
-		text := strings.ReplaceAll(string(doc.Text), "'", "''")
-		sqlStr := fmt.Sprintf("INSERT INTO docs (doc_id, text) VALUES ('%s', '%s')", id, text)
-		if _, err := tx.ExecContext(ctx, sqlStr); err != nil {
+		if _, err := stmt.ExecContext(ctx, doc.DocID, string(doc.Text)); err != nil {
 			return err
 		}
 	}
