@@ -2,8 +2,8 @@ package web
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -116,7 +116,11 @@ func NewWSHub() *WSHub {
 func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("ws upgrade: %v", err)
+		// Non-websocket probes (e.g. curl/health checks) are expected.
+		if strings.Contains(err.Error(), "client is not using the websocket protocol") {
+			return
+		}
+		logErrorf("ws upgrade failed remote=%s ua=%q err=%v", r.RemoteAddr, r.UserAgent(), err)
 		return
 	}
 
@@ -145,7 +149,7 @@ func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 func (h *WSHub) Broadcast(jobID string, msg any) {
 	data, err := json.Marshal(msg)
 	if err != nil {
-		log.Printf("ws broadcast marshal: %v", err)
+		logErrorf("ws broadcast marshal failed: %v", err)
 		return
 	}
 

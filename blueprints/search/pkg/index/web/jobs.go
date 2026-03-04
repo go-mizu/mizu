@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -12,13 +13,13 @@ import (
 
 // JobConfig describes the parameters for a pipeline job.
 type JobConfig struct {
-	Type    string `json:"type"`    // download, markdown, pack, index
+	Type    string `json:"type"` // download, markdown, pack, index
 	CrawlID string `json:"crawl"`
-	Files   string `json:"files"`   // "0", "0-4", "all"
-	Engine  string `json:"engine"`  // for index jobs
-	Source  string `json:"source"`  // for index jobs (files, parquet, bin, etc.)
-	Format  string `json:"format"`  // for pack jobs
-	Fast    bool   `json:"fast"`    // for markdown jobs
+	Files   string `json:"files"`  // "0", "0-4", "all"
+	Engine  string `json:"engine"` // for index jobs
+	Source  string `json:"source"` // for index jobs (files, parquet, bin, etc.)
+	Format  string `json:"format"` // for pack jobs
+	Fast    bool   `json:"fast"`   // for markdown jobs
 }
 
 // Job represents a single pipeline job tracked by the JobManager.
@@ -27,14 +28,17 @@ type Job struct {
 	Type      string     `json:"type"`
 	Status    string     `json:"status"` // queued, running, completed, failed, cancelled
 	Config    JobConfig  `json:"config"`
-	Progress  float64    `json:"progress"`           // 0.0–1.0
+	Progress  float64    `json:"progress"` // 0.0–1.0
 	Message   string     `json:"message"`
-	Rate      float64    `json:"rate,omitempty"`      // items/sec
+	Rate      float64    `json:"rate,omitempty"` // items/sec
 	StartedAt time.Time  `json:"started_at"`
 	EndedAt   *time.Time `json:"ended_at,omitempty"`
 	Error     string     `json:"error,omitempty"`
 	cancel    context.CancelFunc
 }
+
+// JobCompleteHook is called when a job transitions to completed status.
+type JobCompleteHook func(job *Job, crawlID, crawlDir string)
 
 // ── JobManager ───────────────────────────────────────────────────────────
 
@@ -46,15 +50,27 @@ type JobManager struct {
 	hub     *WSHub
 	baseDir string
 	crawlID string
+
+	onComplete JobCompleteHook
+
+	manifestMu    sync.Mutex
+	manifestCache map[string]manifestCacheEntry
+	manifestFetch func(ctx context.Context, crawlID string) ([]string, error)
+}
+
+type manifestCacheEntry struct {
+	paths     []string
+	fetchedAt time.Time
 }
 
 // NewJobManager creates a new JobManager that broadcasts updates via hub.
 func NewJobManager(hub *WSHub, baseDir, crawlID string) *JobManager {
 	return &JobManager{
-		jobs:    make(map[string]*Job),
-		hub:     hub,
-		baseDir: baseDir,
-		crawlID: crawlID,
+		jobs:          make(map[string]*Job),
+		hub:           hub,
+		baseDir:       baseDir,
+		crawlID:       crawlID,
+		manifestCache: make(map[string]manifestCacheEntry),
 	}
 }
 
@@ -124,6 +140,7 @@ func (m *JobManager) Cancel(id string) bool {
 		"job_id": id,
 		"status": "cancelled",
 	})
+	logInfof("job lifecycle id=%s status=cancelled", id)
 	return true
 }
 
@@ -162,6 +179,9 @@ func (m *JobManager) Complete(id string, msg string) {
 	job.Progress = 1.0
 	job.Message = msg
 	job.EndedAt = &now
+	hook := m.onComplete
+	crawlID := m.resolveCrawlID(job)
+	crawlDir := m.resolveCrawlDir(crawlID)
 	m.mu.Unlock()
 
 	m.hub.Broadcast(id, map[string]any{
@@ -169,6 +189,11 @@ func (m *JobManager) Complete(id string, msg string) {
 		"job_id": id,
 		"status": "completed",
 	})
+	logInfof("job lifecycle id=%s status=completed msg=%q", id, msg)
+
+	if hook != nil {
+		hook(job, crawlID, crawlDir)
+	}
 }
 
 // Fail marks a job as failed with the given error.
@@ -191,6 +216,7 @@ func (m *JobManager) Fail(id string, err error) {
 		"status": "failed",
 		"error":  err.Error(),
 	})
+	logErrorf("job lifecycle id=%s status=failed err=%v", id, err)
 }
 
 // SetRunning marks a job as running and stores its cancel function.
@@ -210,4 +236,32 @@ func (m *JobManager) SetRunning(id string, cancel context.CancelFunc) {
 		"job_id": id,
 		"status": "running",
 	})
+	logInfof("job lifecycle id=%s status=running", id)
+}
+
+// SetCompleteHook sets a callback fired whenever a job completes successfully.
+func (m *JobManager) SetCompleteHook(h JobCompleteHook) {
+	m.mu.Lock()
+	m.onComplete = h
+	m.mu.Unlock()
+}
+
+func (m *JobManager) resolveCrawlID(job *Job) string {
+	if job != nil && job.Config.CrawlID != "" {
+		return job.Config.CrawlID
+	}
+	return m.crawlID
+}
+
+func (m *JobManager) resolveCrawlDir(crawlID string) string {
+	if crawlID == m.crawlID {
+		return m.baseDir
+	}
+	return filepath.Join(filepath.Dir(m.baseDir), crawlID)
+}
+
+func (m *JobManager) setManifestFetcher(fn func(ctx context.Context, crawlID string) ([]string, error)) {
+	m.mu.Lock()
+	m.manifestFetch = fn
+	m.mu.Unlock()
 }

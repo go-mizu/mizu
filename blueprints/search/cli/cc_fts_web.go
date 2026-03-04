@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web"
 	"github.com/spf13/cobra"
@@ -64,11 +65,17 @@ searching the FTS index and browsing/previewing markdown documents.`,
 
 func newCCFTSDashboard() *cobra.Command {
 	var (
-		port    int
-		engine  string
-		crawlID string
-		addr    string
-		open    bool
+		port            int
+		engine          string
+		crawlID         string
+		addr            string
+		open            bool
+		metaDriver      string
+		metaDSN         string
+		metaRefreshTTL  time.Duration
+		metaPrewarm     bool
+		metaBusyTimeout time.Duration
+		metaJournalMode string
 	)
 
 	cmd := &cobra.Command{
@@ -87,7 +94,14 @@ search, and browse documents. Real-time progress via WebSocket.`,
 			homeDir, _ := os.UserHomeDir()
 			baseDir := filepath.Join(homeDir, "data", "common-crawl", crawlID)
 
-			srv := web.NewDashboard(engine, crawlID, addr, baseDir)
+			srv := web.NewDashboardWithOptions(engine, crawlID, addr, baseDir, web.DashboardOptions{
+				MetaDriver:      metaDriver,
+				MetaDSN:         metaDSN,
+				MetaRefreshTTL:  metaRefreshTTL,
+				MetaPrewarm:     metaPrewarm,
+				MetaBusyTimeout: metaBusyTimeout,
+				MetaJournalMode: metaJournalMode,
+			})
 
 			url := fmt.Sprintf("http://localhost:%d", port)
 			fmt.Fprintf(os.Stderr, "FTS Dashboard\n")
@@ -95,6 +109,7 @@ search, and browse documents. Real-time progress via WebSocket.`,
 			fmt.Fprintf(os.Stderr, "  engine:  %s\n", engine)
 			fmt.Fprintf(os.Stderr, "  crawl:   %s\n", crawlID)
 			fmt.Fprintf(os.Stderr, "  data:    %s\n", baseDir)
+			fmt.Fprintf(os.Stderr, "  meta:    driver=%s ttl=%s\n", metaDriver, metaRefreshTTL)
 			fmt.Fprintf(os.Stderr, "\nPress Ctrl+C to stop.\n")
 
 			if open {
@@ -110,6 +125,12 @@ search, and browse documents. Real-time progress via WebSocket.`,
 	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest)")
 	cmd.Flags().StringVar(&addr, "addr", "", "External engine address")
 	cmd.Flags().BoolVar(&open, "open", false, "Open browser on start")
+	cmd.Flags().StringVar(&metaDriver, "meta-driver", "sqlite", "Metadata cache driver: sqlite, duckdb, none")
+	cmd.Flags().StringVar(&metaDSN, "meta-dsn", "", "Metadata cache DB path (default: ~/data/common-crawl/.meta/dashboard_meta.*)")
+	cmd.Flags().DurationVar(&metaRefreshTTL, "meta-refresh-ttl", 30*time.Second, "Metadata stale threshold for background refresh")
+	cmd.Flags().BoolVar(&metaPrewarm, "meta-prewarm", true, "Prewarm metadata cache for active crawl on startup")
+	cmd.Flags().DurationVar(&metaBusyTimeout, "meta-busy-timeout", 5*time.Second, "Metadata DB busy timeout")
+	cmd.Flags().StringVar(&metaJournalMode, "meta-journal-mode", "WAL", "Metadata DB journal mode (sqlite)")
 	return cmd
 }
 

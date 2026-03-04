@@ -30,7 +30,42 @@
     };
   </script>
   <style>
-    * { border-radius: 0 !important; }
+    :root {
+      --bg: #ffffff;
+      --bg-soft: #ffffff;
+      --panel: #ffffff;
+      --panel-soft: #ffffff;
+      --border: #d4d4d8;
+      --text: #09090b;
+      --text-soft: #52525b;
+      --accent: #09090b;
+      --accent-soft: #3f3f46;
+      --success: #16a34a;
+      --danger: #dc2626;
+      --shadow: none;
+    }
+    html.dark {
+      --bg: #0a0a0a;
+      --bg-soft: #0a0a0a;
+      --panel: #0a0a0a;
+      --panel-soft: #0a0a0a;
+      --border: #27272a;
+      --text: #e5e7eb;
+      --text-soft: #9ca3af;
+      --accent: #f3f4f6;
+      --accent-soft: #d1d5db;
+      --success: #22c55e;
+      --danger: #f87171;
+      --shadow: none;
+    }
+    * {
+      border-radius: 0 !important;
+      border-color: var(--border);
+    }
+    body {
+      color: var(--text);
+      background: var(--bg);
+    }
     @keyframes fadeUp {
       from { opacity: 0; transform: translateY(8px); }
       to { opacity: 1; transform: translateY(0); }
@@ -49,74 +84,183 @@
     }
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(161,161,170,0.2); }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(161,161,170,0.4); }
+    ::-webkit-scrollbar-thumb { background: rgba(113,113,122,0.26); }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(113,113,122,0.4); }
     mark { background: rgba(250, 204, 21, 0.15); color: inherit; padding: 0 2px; }
     .light mark { background: rgba(250, 204, 21, 0.25); }
-    .dark .prose pre { background: #18181b; border: 1px solid #27272a; }
-    .dark .prose code { color: #e4e4e7; }
-    .dark .prose blockquote { border-left-color: #3f3f46; color: #a1a1aa; }
-    .dark .prose table th { border-bottom-color: #3f3f46; }
-    .dark .prose table td { border-bottom-color: #27272a; }
-    .dark .prose hr { border-color: #27272a; }
-    .prose pre { border-radius: 0 !important; }
+    .prose pre {
+      border-radius: 0 !important;
+      border: 1px solid var(--border);
+      background: transparent;
+    }
+    .prose code { color: var(--text); }
+    .prose blockquote { border-left-color: var(--border); color: var(--text-soft); }
+    .prose table th, .prose table td, .prose hr { border-color: var(--border); }
     .prose img { border-radius: 0 !important; }
-    .result-item { transition: background 0.15s ease; }
-    .result-item:hover { background: rgba(161,161,170,0.04); }
-    .dark .result-item:hover { background: rgba(161,161,170,0.06); }
-    .tab-active { color: #fafafa; border-bottom: 1px solid #fafafa; }
-    .light .tab-active { color: #09090b; border-bottom: 1px solid #09090b; }
-    .tab-inactive { color: #71717a; border-bottom: 1px solid transparent; }
-    .tab-inactive:hover { color: #a1a1aa; }
-    .light .tab-inactive:hover { color: #71717a; }
-    .shard-active { color: #fafafa; }
-    .light .shard-active { color: #09090b; font-weight: 500; }
-    .shard-item { color: #71717a; transition: color 0.1s; }
-    .shard-item:hover { color: #a1a1aa; }
-    .light .shard-item { color: #a1a1aa; }
-    .light .shard-item:hover { color: #71717a; }
-    .file-row { transition: background 0.1s; }
-    .file-row:hover { background: rgba(161,161,170,0.06); }
-    .light .file-row:hover { background: rgba(0,0,0,0.02); }
-    .progress-track { width: 100%; height: 6px; background: #27272a; }
-    .light .progress-track { background: #e4e4e7; }
-    .progress-fill { height: 100%; background: #a1a1aa; transition: width 0.3s ease; }
-    .light .progress-fill { background: #71717a; }
-    .step-card { border: 1px solid #27272a; padding: 1.25rem; margin-bottom: 1rem; }
-    .light .step-card { border-color: #e4e4e7; }
+    .result-item { transition: background 0.15s ease, border-color 0.15s ease; border: 1px solid transparent; }
+    .result-item:hover { background: transparent; border-color: var(--accent); }
+    .tab-active { color: var(--accent); border-bottom: 1px solid var(--accent); }
+    .tab-inactive { color: var(--text-soft); border-bottom: 1px solid transparent; }
+    .tab-inactive:hover { color: var(--text); }
+    .shard-active { color: var(--accent); font-weight: 500; }
+    .shard-item { color: var(--text-soft); transition: color 0.1s; }
+    .shard-item:hover { color: var(--text); }
+    .file-row { transition: background 0.1s; border: 1px solid transparent; }
+    .file-row:hover { background: transparent; border-color: var(--accent); }
+    .progress-track {
+      width: 100%;
+      height: 6px;
+      background: transparent;
+      border: 1px solid var(--border);
+    }
+    .progress-fill { height: 100%; background: var(--accent); transition: width 0.3s ease; }
+    .dark .progress-fill { background: var(--accent); }
+    .step-card {
+      border: 1px solid var(--border);
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+      background: var(--panel);
+      box-shadow: none;
+    }
+    .surface {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      box-shadow: none;
+    }
+    .surface-soft {
+      border: 1px solid var(--border);
+      background: var(--panel-soft);
+      box-shadow: none;
+    }
+    .ui-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text);
+      transition: all 0.12s ease;
+    }
+    .ui-btn:hover { border-color: var(--accent); color: var(--accent); background: transparent; }
+    .ui-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .ui-btn-primary { border-color: var(--accent); background: var(--accent); color: #fff; }
+    .ui-btn-primary:hover { background: var(--accent-soft); border-color: var(--accent-soft); color: #fff; }
+    .ui-btn-danger { border-color: rgba(220, 38, 38, 0.4); color: var(--danger); }
+    .ui-btn-danger:hover { background: transparent; border-color: var(--danger); }
+    .ui-input, .ui-select {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+    }
+    .ui-input:focus, .ui-select:focus {
+      outline: none;
+      border-color: var(--accent-soft);
+      box-shadow: inset 0 0 0 1px var(--accent-soft);
+    }
+    .ui-input::placeholder { color: var(--text-soft); }
+    .ui-subtle { color: var(--text-soft); }
+    .ui-table th { color: var(--text-soft); font-weight: 400; }
+    .ui-table thead { background: transparent; }
+    .ui-table td, .ui-table th { border-bottom: 1px solid var(--border); }
+    .ui-table tbody tr:last-child td { border-bottom: 0; }
+    .ui-table tbody tr:hover { background: transparent; }
+    .page-shell { padding-top: 2rem; padding-bottom: 2rem; }
+    .page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+    .page-title { font-size: 1.6rem; line-height: 1.9rem; font-weight: 600; letter-spacing: -0.02em; }
+    .meta-line { font-size: 11px; line-height: 1.25rem; font-family: "Geist Mono", monospace; color: var(--text-soft); }
+    .ui-link { color: var(--text-soft); transition: color 0.12s ease; }
+    .ui-link:hover { color: var(--text); }
+    .ui-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.125rem 0.5rem;
+      font-size: 10px;
+      line-height: 1;
+      font-family: "Geist Mono", monospace;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-soft);
+    }
+    .ui-chip-ok { border-color: rgba(22, 163, 74, 0.5); color: #15803d; background: transparent; }
+    .dark .ui-chip-ok { border-color: rgba(34, 197, 94, 0.6); color: #86efac; background: transparent; }
+    .ui-chip-off { color: var(--text-soft); }
+    .ui-empty {
+      border: 1px dashed var(--border);
+      background: transparent;
+      color: var(--text-soft);
+      padding: 1rem;
+      font-size: 12px;
+      font-family: "Geist Mono", monospace;
+    }
+    .ui-border-r { border-right: 1px solid var(--border); }
+    .ui-kbd {
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-soft);
+      padding: 0 0.35rem;
+      font-size: 10px;
+      font-family: "Geist Mono", monospace;
+    }
+    .ui-skeleton { border: 1px solid var(--border); background: var(--border); }
+    .app-header { border-bottom: 1px solid var(--border); background: var(--bg-soft); }
+    .theme-toggle { color: var(--text-soft); transition: color 0.12s ease; }
+    .theme-toggle:hover { color: var(--text); }
+    .status-running { color: #2563eb; }
+    .status-completed { color: #16a34a; }
+    .status-failed { color: #dc2626; }
+    .status-cancelled, .status-queued, .status-default { color: var(--text-soft); }
+    .dark .status-running { color: #93c5fd; }
+    .dark .status-completed { color: #86efac; }
+    .dark .status-failed { color: #fca5a5; }
+    #main-nav {
+      max-width: 100%;
+      overflow-x: auto;
+      white-space: nowrap;
+      scrollbar-width: none;
+    }
+    #main-nav::-webkit-scrollbar { display: none; }
   </style>
 </head>
-<body class="bg-white dark:bg-zinc-950 text-zinc-950 dark:text-zinc-50 antialiased min-h-screen font-sans">
+<body class="antialiased min-h-screen font-sans">
   <div id="app">
-    <header class="sticky top-0 z-50 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-sm border-b border-zinc-200 dark:border-zinc-800">
-      <div class="max-w-5xl mx-auto flex items-center h-12 px-6 gap-6">
+    <header class="sticky top-0 z-50 app-header">
+      <div class="max-w-6xl mx-auto flex items-center min-h-[3.5rem] px-4 md:px-6 gap-4 md:gap-6 flex-wrap md:flex-nowrap py-2">
         <a href="#/" class="text-sm font-medium tracking-tight shrink-0 hover:opacity-70 transition-opacity">FTS Dashboard</a>
         <div id="header-search" class="flex-1 hidden items-center gap-2">
           <input id="header-search-input" type="text"
             placeholder="What are you looking for?"
-            class="flex-1 h-8 px-0 bg-transparent text-sm placeholder:text-zinc-500 dark:placeholder:text-zinc-500 focus:outline-none border-none"
+            class="ui-input flex-1 h-8 px-2 text-sm"
             onkeydown="if(event.key==='Enter')doSearch(this.value)">
           <select id="header-search-engine"
-            class="h-8 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs px-2 focus:outline-none"
+            class="ui-select h-8 text-xs px-2"
             onchange="applySearchEngine(this.value)">
           </select>
         </div>
-        <nav id="main-nav" class="flex items-center gap-5 ml-auto shrink-0">
+        <nav id="main-nav" class="flex items-center gap-4 ml-auto shrink min-w-0">
           <a href="#/" data-tab="overview" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">Overview</a>
           <a href="#/pipeline" data-tab="pipeline" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">Pipeline</a>
+          <a href="#/jobs" data-tab="jobs" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">Jobs</a>
           <a href="#/search" data-tab="search" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">Search</a>
+          <a href="#/warc" data-tab="warc" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">WARC</a>
           <a href="#/browse" data-tab="browse" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">Browse</a>
           <a href="#/crawls" data-tab="crawls" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">Crawls</a>
-          <button id="header-meta-refresh" onclick="refreshDashboardMeta(false)" class="hidden border border-zinc-200 dark:border-zinc-800 px-2 py-1 text-[11px] font-mono text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">Refresh Meta</button>
-          <span id="header-meta" class="hidden text-[11px] font-mono text-zinc-500 whitespace-nowrap"></span>
-          <button onclick="toggleTheme()" class="text-zinc-500 dark:text-zinc-500 hover:text-zinc-950 dark:hover:text-zinc-50 transition-colors" title="Toggle theme">
+          <button id="header-meta-refresh" onclick="refreshDashboardMeta(false)" class="hidden ui-btn px-2 py-1 text-[11px] font-mono ui-subtle">Refresh Meta</button>
+          <span id="header-meta" class="hidden text-[11px] font-mono ui-subtle whitespace-nowrap"></span>
+          <button onclick="toggleTheme()" class="theme-toggle" title="Toggle theme">
             <svg id="icon-sun" class="w-4 h-4 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
             <svg id="icon-moon" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
           </button>
         </nav>
       </div>
     </header>
-    <main id="main" class="max-w-5xl mx-auto px-6"></main>
+    <main id="main" class="max-w-6xl mx-auto px-4 md:px-6"></main>
   </div>
 
 <script>
@@ -145,8 +289,15 @@ const state = {
   overviewLoadedAt: 0,
   metaStatus: null,
   jobs: null,
+  jobsStreamSubscribed: false,
   engines: null,
   crawls: null,
+  warcRows: null,
+  warcDetail: null,
+  warcSummary: null,
+  warcOffset: 0,
+  warcLimit: 100,
+  warcQuery: '',
 };
 
 // ===================================================================
@@ -260,6 +411,10 @@ function route() {
   const qIdx = hash.indexOf('?');
   const path = qIdx >= 0 ? hash.slice(0, qIdx) : hash;
   const params = new URLSearchParams(qIdx >= 0 ? hash.slice(qIdx + 1) : '');
+  if (jobsPollingTimer && path !== '/jobs') {
+    clearInterval(jobsPollingTimer);
+    jobsPollingTimer = null;
+  }
   if (isDashboard) {
     refreshDashboardContext().catch(() => {});
   }
@@ -272,6 +427,9 @@ function route() {
   } else if (path === '/pipeline' && isDashboard) {
     showHeaderSearch(false);
     renderPipeline();
+  } else if (path === '/jobs' && isDashboard) {
+    showHeaderSearch(false);
+    renderJobs();
   } else if (path === '/search') {
     const q = params.get('q') || '';
     const engine = params.get('engine') || '';
@@ -283,6 +441,13 @@ function route() {
       showHeaderSearch(false);
       renderSearchHome();
     }
+  } else if (path === '/warc' && isDashboard) {
+    showHeaderSearch(false);
+    renderWARC();
+  } else if (path.startsWith('/warc/') && isDashboard) {
+    showHeaderSearch(false);
+    const idx = path.split('/')[2] || '';
+    renderWARCDetail(idx);
   } else if (path.startsWith('/browse')) {
     const shard = path.split('/')[2] || '';
     showHeaderSearch(false);
@@ -305,7 +470,9 @@ function route() {
 function updateActiveTab(path) {
   let activeTab = isDashboard ? 'overview' : 'search';
   if (path === '/pipeline') activeTab = 'pipeline';
+  else if (path === '/jobs') activeTab = 'jobs';
   else if (path === '/search' || path === '/' && !isDashboard || path.startsWith('/doc/')) activeTab = 'search';
+  else if (path === '/warc' || path.startsWith('/warc/')) activeTab = 'warc';
   else if (path.startsWith('/browse')) activeTab = 'browse';
   else if (path === '/crawls') activeTab = 'crawls';
   else if (path === '/' && isDashboard) activeTab = 'overview';
@@ -411,6 +578,25 @@ async function apiJobs() {
 
 async function apiCrawls() {
   return apiFetch('/api/crawls');
+}
+
+async function apiWARCList(opts = {}) {
+  const params = new URLSearchParams();
+  if (opts.offset !== undefined) params.set('offset', String(opts.offset));
+  if (opts.limit !== undefined) params.set('limit', String(opts.limit));
+  if (opts.q) params.set('q', opts.q);
+  if (opts.crawl) params.set('crawl', opts.crawl);
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return apiFetch('/api/warc' + suffix);
+}
+
+async function apiWARCDetail(index, crawl = '') {
+  const suffix = crawl ? `?crawl=${encodeURIComponent(crawl)}` : '';
+  return apiFetch(`/api/warc/${encodeURIComponent(index)}${suffix}`);
+}
+
+async function apiWARCAction(index, payload) {
+  return apiPost(`/api/warc/${encodeURIComponent(index)}/action`, payload || {});
 }
 
 async function apiCreateJob(cfg) {
@@ -530,13 +716,38 @@ function fmtDuration(startStr, endStr) {
 
 function statusClass(status) {
   switch (status) {
-    case 'running': return 'text-zinc-400';
-    case 'completed': return 'text-zinc-500';
-    case 'failed': return 'text-red-400';
-    case 'cancelled': return 'text-zinc-600';
-    case 'queued': return 'text-zinc-600';
-    default: return 'text-zinc-500';
+    case 'running': return 'status-running';
+    case 'completed': return 'status-completed';
+    case 'failed': return 'status-failed';
+    case 'cancelled': return 'status-cancelled';
+    case 'queued': return 'status-queued';
+    default: return 'status-default';
   }
+}
+
+function fmtPct(value, total) {
+  if (!total || total <= 0) return '0%';
+  return `${Math.round((value / total) * 100)}%`;
+}
+
+function statusChip(label, ok) {
+  const cls = ok ? 'ui-chip-ok' : 'ui-chip-off';
+  return `<span class="ui-chip ${cls}">${label}</span>`;
+}
+
+function renderBars(rows) {
+  const max = rows.reduce((acc, r) => Math.max(acc, r.value || 0), 0) || 1;
+  return `
+    <div class="space-y-2">
+      ${rows.map(r => `
+        <div class="flex items-center gap-3">
+          <span class="w-24 shrink-0 text-[11px] font-mono ui-subtle">${esc(r.label)}</span>
+          <div class="flex-1 progress-track">
+            <div class="progress-fill" style="width:${Math.max(2, ((r.value || 0) / max) * 100)}%"></div>
+          </div>
+          <span class="w-24 shrink-0 text-right text-[11px] font-mono ui-subtle">${esc(r.text)}</span>
+        </div>`).join('')}
+    </div>`;
 }
 
 function parseISOTime(s) {
@@ -638,16 +849,16 @@ async function renderOverview() {
   state.currentPage = 'overview';
   const main = $('main');
   main.innerHTML = `
-    <div class="py-8 anim-fade-in">
-      <div class="flex items-center justify-between mb-3 gap-3">
-        <h1 class="text-2xl font-semibold tracking-tight">Overview</h1>
-        <button onclick="refreshOverviewMeta()" class="border border-zinc-700 dark:border-zinc-700 px-3 py-2 text-xs font-mono hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">
+    <div class="page-shell anim-fade-in">
+      <div class="page-header">
+        <h1 class="page-title">Overview</h1>
+        <button onclick="refreshOverviewMeta()" class="ui-btn px-3 py-2 text-xs font-mono">
           Refresh Metadata
         </button>
       </div>
-      <div id="overview-refresh-msg" class="text-xs font-mono text-zinc-500 mb-5"></div>
+      <div id="overview-refresh-msg" class="meta-line mb-4"></div>
       <div id="overview-content">
-        <div class="text-xs font-mono text-zinc-500">loading...</div>
+        <div class="ui-empty">loading...</div>
       </div>
     </div>`;
 
@@ -677,8 +888,8 @@ function renderOverviewContent(d) {
   ];
 
   const cardsHTML = cards.map((c, i) => `
-    <div class="border border-zinc-200 dark:border-zinc-800 p-4 anim-fade-up" style="animation-delay:${i * 30}ms">
-      <div class="text-xs font-mono text-zinc-500 dark:text-zinc-500 mb-1">${esc(c.label)}</div>
+    <div class="surface p-4 anim-fade-up" style="animation-delay:${i * 30}ms">
+      <div class="text-xs font-mono ui-subtle mb-1">${esc(c.label)}</div>
       <div class="text-lg font-medium">${esc(c.value)}</div>
     </div>`).join('');
 
@@ -707,37 +918,37 @@ function renderOverviewContent(d) {
   }
 
   const tableHTML = rows.length > 0 ? `
-    <div class="border border-zinc-200 dark:border-zinc-800 mt-8">
-      <table class="w-full text-sm">
+    <div class="surface overflow-x-auto mt-6">
+      <table class="w-full text-sm ui-table">
         <thead>
-          <tr class="border-b border-zinc-200 dark:border-zinc-800">
-            <th class="text-left px-4 py-2 text-xs font-mono text-zinc-500 font-normal">Category</th>
-            <th class="text-right px-4 py-2 text-xs font-mono text-zinc-500 font-normal">Count</th>
-            <th class="text-right px-4 py-2 text-xs font-mono text-zinc-500 font-normal">Size</th>
+          <tr>
+            <th class="text-left px-4 py-2 text-xs font-mono">Category</th>
+            <th class="text-right px-4 py-2 text-xs font-mono">Count</th>
+            <th class="text-right px-4 py-2 text-xs font-mono">Size</th>
           </tr>
         </thead>
         <tbody>
           ${rows.map((r, i) => `
-            <tr class="border-b border-zinc-100 dark:border-zinc-800/60 anim-fade-up" style="animation-delay:${(i + 4) * 30}ms">
+            <tr class="anim-fade-up" style="animation-delay:${(i + 4) * 30}ms">
               <td class="px-4 py-2">${esc(r.category)}</td>
-              <td class="text-right px-4 py-2 font-mono text-zinc-500">${typeof r.count === 'number' ? r.count.toLocaleString() : esc(String(r.count))}</td>
-              <td class="text-right px-4 py-2 font-mono text-zinc-500">${typeof r.size === 'number' ? fmtBytes(r.size) : esc(String(r.size || '\u2014'))}</td>
+              <td class="text-right px-4 py-2 font-mono ui-subtle">${typeof r.count === 'number' ? r.count.toLocaleString() : esc(String(r.count))}</td>
+              <td class="text-right px-4 py-2 font-mono ui-subtle">${typeof r.size === 'number' ? fmtBytes(r.size) : esc(String(r.size || '\u2014'))}</td>
             </tr>`).join('')}
         </tbody>
       </table>
     </div>` : '';
 
   el.innerHTML = `
-    <div class="border border-zinc-200 dark:border-zinc-800 px-4 py-3 mb-4">
-      <div class="text-xs font-mono text-zinc-500">${esc(statusBits.join(' · '))}</div>
+    <div class="surface-soft px-4 py-3 mb-4">
+      <div class="meta-line">${esc(statusBits.join(' · '))}</div>
     </div>
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
       ${cardsHTML}
     </div>
     ${tableHTML}
-    <div class="flex gap-4 mt-8">
-      <a href="#/pipeline" class="border border-zinc-700 dark:border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">Open Pipeline</a>
-      <a href="#/search" class="border border-zinc-700 dark:border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">Search</a>
+    <div class="flex gap-3 mt-6">
+      <a href="#/pipeline" class="ui-btn px-4 py-2 text-sm">Open Pipeline</a>
+      <a href="#/search" class="ui-btn px-4 py-2 text-sm">Search</a>
     </div>`;
 }
 
@@ -762,19 +973,32 @@ async function refreshOverviewMeta() {
 // Tab 2: Pipeline
 // ===================================================================
 let pipelinePollingTimer = null;
+let jobsPollingTimer = null;
+
+function ensureJobStreamSubscribed() {
+  if (state.jobsStreamSubscribed) return;
+  wsClient.subscribe('*', (msg) => onJobUpdate(msg));
+  state.jobsStreamSubscribed = true;
+}
+
+async function reloadJobs() {
+  const jobsData = await apiJobs().catch(() => ({ jobs: [] }));
+  state.jobs = jobsData.jobs || [];
+  return state.jobs;
+}
 
 async function renderPipeline() {
   state.currentPage = 'pipeline';
   const main = $('main');
   main.innerHTML = `
-    <div class="py-8 anim-fade-in">
-      <div class="flex items-center justify-between mb-3 gap-3">
-        <h1 class="text-2xl font-semibold tracking-tight">Pipeline</h1>
-        <button onclick="refreshDashboardMeta(true)" class="border border-zinc-700 dark:border-zinc-700 px-3 py-2 text-xs font-mono hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">Refresh Metadata</button>
+    <div class="page-shell anim-fade-in">
+      <div class="page-header">
+        <h1 class="page-title">Pipeline</h1>
+        <button onclick="refreshDashboardMeta(true)" class="ui-btn px-3 py-2 text-xs font-mono">Refresh Metadata</button>
       </div>
-      <div id="pipeline-summary" class="text-xs font-mono text-zinc-500 mb-5">loading...</div>
+      <div id="pipeline-summary" class="meta-line mb-4">loading...</div>
       <div id="pipeline-content">
-        <div class="text-xs font-mono text-zinc-500">loading...</div>
+        <div class="ui-empty">loading...</div>
       </div>
     </div>`;
 
@@ -782,16 +1006,16 @@ async function renderPipeline() {
   if (pipelinePollingTimer) { clearInterval(pipelinePollingTimer); pipelinePollingTimer = null; }
 
   try {
-    const [overview, enginesData, jobsData] = await Promise.all([
+    const [overview, enginesData, jobs] = await Promise.all([
       apiOverview().catch(() => null),
       apiEngines().catch(() => ({ engines: [] })),
-      apiJobs().catch(() => ({ jobs: [] })),
+      reloadJobs(),
     ]);
 
     state.overview = overview;
     state.overviewLoadedAt = Date.now();
     state.engines = enginesData.engines || [];
-    state.jobs = jobsData.jobs || [];
+    state.jobs = jobs || [];
     refreshDashboardContext().catch(() => {});
 
     const summary = $('pipeline-summary');
@@ -800,7 +1024,7 @@ async function renderPipeline() {
     }
 
     renderPipelineContent();
-    setupPipelineWS();
+    ensureJobStreamSubscribed();
   } catch (e) {
     $('pipeline-content').innerHTML = `<div class="text-xs text-red-400">${esc(e.message)}</div>`;
   }
@@ -823,15 +1047,15 @@ function renderPipelineContent() {
     <div class="step-card anim-fade-up" style="animation-delay:0ms">
       <div class="flex items-center justify-between mb-3">
         <h2 class="text-sm font-medium">Step 1: Download WARC</h2>
-        <span class="text-xs font-mono text-zinc-500">${countActive(downloadJobs)} active</span>
+        <span class="text-xs font-mono ui-subtle">${countActive(downloadJobs)} active</span>
       </div>
       <form id="form-download" class="flex items-end gap-3 mb-3" onsubmit="return submitJob(event, 'download')">
         <div class="flex-1">
-          <label class="block text-xs font-mono text-zinc-500 mb-1">File range</label>
+          <label class="block text-xs font-mono ui-subtle mb-1">File range</label>
           <input type="text" name="files" value="0" placeholder="0, 0-4, all"
-            class="w-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm px-3 py-2 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600">
+            class="ui-input w-full text-sm px-3 py-2">
         </div>
-        <button type="submit" class="border border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors shrink-0">Start</button>
+        <button type="submit" class="ui-btn ui-btn-primary px-4 py-2 text-sm shrink-0">Start</button>
       </form>
       <div id="jobs-download">${renderJobList(downloadJobs)}</div>
     </div>
@@ -840,20 +1064,20 @@ function renderPipelineContent() {
     <div class="step-card anim-fade-up" style="animation-delay:30ms">
       <div class="flex items-center justify-between mb-3">
         <h2 class="text-sm font-medium">Step 2: Extract Markdown</h2>
-        <span class="text-xs font-mono text-zinc-500">${countActive(markdownJobs)} active</span>
+        <span class="text-xs font-mono ui-subtle">${countActive(markdownJobs)} active</span>
       </div>
       <form id="form-markdown" class="flex items-end gap-3 mb-3" onsubmit="return submitJob(event, 'markdown')">
         <div class="flex-1">
-          <label class="block text-xs font-mono text-zinc-500 mb-1">File range</label>
+          <label class="block text-xs font-mono ui-subtle mb-1">File range</label>
           <input type="text" name="files" value="0" placeholder="0, 0-4, all"
-            class="w-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm px-3 py-2 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600">
+            class="ui-input w-full text-sm px-3 py-2">
         </div>
         <div>
-          <label class="flex items-center gap-2 text-xs font-mono text-zinc-500 py-2">
+          <label class="flex items-center gap-2 text-xs font-mono ui-subtle py-2">
             <input type="checkbox" name="fast" class="accent-zinc-500"> --fast
           </label>
         </div>
-        <button type="submit" class="border border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors shrink-0">Start</button>
+        <button type="submit" class="ui-btn ui-btn-primary px-4 py-2 text-sm shrink-0">Start</button>
       </form>
       <div id="jobs-markdown">${renderJobList(markdownJobs)}</div>
     </div>
@@ -862,24 +1086,24 @@ function renderPipelineContent() {
     <div class="step-card anim-fade-up" style="animation-delay:60ms">
       <div class="flex items-center justify-between mb-3">
         <h2 class="text-sm font-medium">Step 3: Pack</h2>
-        <span class="text-xs font-mono text-zinc-500">${countActive(packJobs)} active</span>
+        <span class="text-xs font-mono ui-subtle">${countActive(packJobs)} active</span>
       </div>
       <form id="form-pack" class="flex items-end gap-3 mb-3" onsubmit="return submitJob(event, 'pack')">
         <div class="flex-1">
-          <label class="block text-xs font-mono text-zinc-500 mb-1">File range</label>
+          <label class="block text-xs font-mono ui-subtle mb-1">File range</label>
           <input type="text" name="files" value="0" placeholder="0, 0-4, all"
-            class="w-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm px-3 py-2 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600">
+            class="ui-input w-full text-sm px-3 py-2">
         </div>
         <div>
-          <label class="block text-xs font-mono text-zinc-500 mb-1">Format</label>
-          <select name="format" class="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm px-3 py-2 focus:outline-none">
+          <label class="block text-xs font-mono ui-subtle mb-1">Format</label>
+          <select name="format" class="ui-select text-sm px-3 py-2">
             <option value="parquet">parquet</option>
             <option value="bin">bin</option>
             <option value="duckdb">duckdb</option>
             <option value="markdown">markdown</option>
           </select>
         </div>
-        <button type="submit" class="border border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors shrink-0">Start</button>
+        <button type="submit" class="ui-btn ui-btn-primary px-4 py-2 text-sm shrink-0">Start</button>
       </form>
       <div id="jobs-pack">${renderJobList(packJobs)}</div>
     </div>
@@ -888,24 +1112,24 @@ function renderPipelineContent() {
     <div class="step-card anim-fade-up" style="animation-delay:90ms">
       <div class="flex items-center justify-between mb-3">
         <h2 class="text-sm font-medium">Step 4: Build Index</h2>
-        <span class="text-xs font-mono text-zinc-500">${countActive(indexJobs)} active</span>
+        <span class="text-xs font-mono ui-subtle">${countActive(indexJobs)} active</span>
       </div>
       <form id="form-index" class="flex items-end gap-3 mb-3" onsubmit="return submitJob(event, 'index')">
         <div class="flex-1">
-          <label class="block text-xs font-mono text-zinc-500 mb-1">File range</label>
+          <label class="block text-xs font-mono ui-subtle mb-1">File range</label>
           <input type="text" name="files" value="0" placeholder="0, 0-4, all"
-            class="w-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm px-3 py-2 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600">
+            class="ui-input w-full text-sm px-3 py-2">
         </div>
         <div>
-          <label class="block text-xs font-mono text-zinc-500 mb-1">Engine</label>
-          <select name="engine" class="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm px-3 py-2 focus:outline-none">
+          <label class="block text-xs font-mono ui-subtle mb-1">Engine</label>
+          <select name="engine" class="ui-select text-sm px-3 py-2">
             ${engines.map(e => `<option value="${esc(e)}">${esc(e)}</option>`).join('')}
             ${engines.length === 0 ? '<option value="duckdb">duckdb</option>' : ''}
           </select>
         </div>
         <div>
-          <label class="block text-xs font-mono text-zinc-500 mb-1">Source</label>
-          <select name="source" class="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm px-3 py-2 focus:outline-none">
+          <label class="block text-xs font-mono ui-subtle mb-1">Source</label>
+          <select name="source" class="ui-select text-sm px-3 py-2">
             <option value="files">files</option>
             <option value="parquet">parquet</option>
             <option value="bin">bin</option>
@@ -913,7 +1137,7 @@ function renderPipelineContent() {
             <option value="markdown">markdown</option>
           </select>
         </div>
-        <button type="submit" class="border border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors shrink-0">Start</button>
+        <button type="submit" class="ui-btn ui-btn-primary px-4 py-2 text-sm shrink-0">Start</button>
       </form>
       <div id="jobs-index">${renderJobList(indexJobs)}</div>
     </div>
@@ -939,46 +1163,46 @@ function renderJobItem(j) {
   const pct = Math.round((j.progress || 0) * 100);
   const rateStr = j.rate > 0 ? ` &middot; ${j.rate.toFixed(0)} docs/s` : '';
   const cancelBtn = (j.status === 'running' || j.status === 'queued')
-    ? `<button onclick="cancelJob('${esc(j.id)}')" class="text-xs text-zinc-500 hover:text-red-400 transition-colors ml-2">cancel</button>`
+    ? `<button onclick="cancelJob('${esc(j.id)}')" class="text-xs ui-link ml-2">cancel</button>`
     : '';
   return `
-    <div class="mb-2 py-2 border-b border-zinc-100 dark:border-zinc-800/60" id="job-${esc(j.id)}">
+    <div class="mb-2 py-2 border-b" id="job-${esc(j.id)}">
       <div class="flex items-center justify-between mb-1">
-        <span class="text-xs font-mono text-zinc-500">${esc(j.id)} &middot; <span class="${statusClass(j.status)}">${esc(j.status)}</span>${rateStr}</span>
-        <span class="text-xs font-mono text-zinc-500">${pct}%${cancelBtn}</span>
+        <span class="text-xs font-mono ui-subtle">${esc(j.id)} &middot; <span class="${statusClass(j.status)}">${esc(j.status)}</span>${rateStr}</span>
+        <span class="text-xs font-mono ui-subtle">${pct}%${cancelBtn}</span>
       </div>
       <div class="progress-track mb-1">
         <div class="progress-fill" style="width:${pct}%"></div>
       </div>
-      <div class="text-xs text-zinc-500 truncate">${esc(j.message || '')}</div>
+      <div class="text-xs ui-subtle truncate">${esc(j.message || '')}</div>
     </div>`;
 }
 
 function renderJobHistory(jobs) {
   if (!jobs || jobs.length === 0) {
-    return '<div class="text-xs font-mono text-zinc-500">No jobs yet.</div>';
+    return '<div class="ui-empty">No jobs yet.</div>';
   }
 
   return `
-    <div class="border border-zinc-200 dark:border-zinc-800">
-      <table class="w-full text-sm">
+    <div class="surface overflow-x-auto">
+      <table class="w-full text-sm ui-table">
         <thead>
-          <tr class="border-b border-zinc-200 dark:border-zinc-800">
-            <th class="text-left px-4 py-2 text-xs font-mono text-zinc-500 font-normal">ID</th>
-            <th class="text-left px-4 py-2 text-xs font-mono text-zinc-500 font-normal">Type</th>
-            <th class="text-left px-4 py-2 text-xs font-mono text-zinc-500 font-normal">Status</th>
-            <th class="text-left px-4 py-2 text-xs font-mono text-zinc-500 font-normal">Message</th>
-            <th class="text-right px-4 py-2 text-xs font-mono text-zinc-500 font-normal">Elapsed</th>
+          <tr>
+            <th class="text-left px-4 py-2 text-xs font-mono">ID</th>
+            <th class="text-left px-4 py-2 text-xs font-mono">Type</th>
+            <th class="text-left px-4 py-2 text-xs font-mono">Status</th>
+            <th class="text-left px-4 py-2 text-xs font-mono">Message</th>
+            <th class="text-right px-4 py-2 text-xs font-mono">Elapsed</th>
           </tr>
         </thead>
         <tbody>
           ${jobs.map(j => `
-            <tr class="border-b border-zinc-100 dark:border-zinc-800/60">
+            <tr>
               <td class="px-4 py-2 font-mono text-xs">${esc(j.id)}</td>
               <td class="px-4 py-2 text-xs">${esc(j.type)}</td>
               <td class="px-4 py-2 text-xs ${statusClass(j.status)}">${esc(j.status)}</td>
-              <td class="px-4 py-2 text-xs text-zinc-500 truncate max-w-xs">${esc(j.message || j.error || '')}</td>
-              <td class="px-4 py-2 font-mono text-xs text-right text-zinc-500">${fmtDuration(j.started_at, j.ended_at)}</td>
+              <td class="px-4 py-2 text-xs ui-subtle truncate max-w-xs">${esc(j.message || j.error || '')}</td>
+              <td class="px-4 py-2 font-mono text-xs text-right ui-subtle">${fmtDuration(j.started_at, j.ended_at)}</td>
             </tr>`).join('')}
         </tbody>
       </table>
@@ -1015,9 +1239,13 @@ async function startJob(cfg) {
     // Subscribe to updates
     wsClient.subscribe(job.id, (msg) => onJobUpdate(msg));
 
-    // Re-render the pipeline page if still on it
+    // Re-render job views if visible.
     if (state.currentPage === 'pipeline') {
       renderPipelineContent();
+    } else if (state.currentPage === 'jobs') {
+      const summary = $('jobs-summary');
+      if (summary) summary.textContent = renderJobsSummaryLine(state.jobs || []);
+      renderJobsContent();
     }
   } catch (e) {
     alert('Failed to start job: ' + e.message);
@@ -1035,6 +1263,10 @@ async function cancelJob(id) {
     }
     if (state.currentPage === 'pipeline') {
       renderPipelineContent();
+    } else if (state.currentPage === 'jobs') {
+      const summary = $('jobs-summary');
+      if (summary) summary.textContent = renderJobsSummaryLine(state.jobs || []);
+      renderJobsContent();
     }
   } catch (e) {
     alert('Failed to cancel job: ' + e.message);
@@ -1051,8 +1283,8 @@ function onJobUpdate(msg) {
     job.message = msg.message;
     job.rate = msg.rate || 0;
 
-    // Update in-place if on pipeline page
-    if (state.currentPage === 'pipeline') {
+    // Update in-place for active job rows on pipeline/jobs pages.
+    if (state.currentPage === 'pipeline' || state.currentPage === 'jobs') {
       updateJobInPlace(job);
     }
   } else if (msg.type === 'job_update') {
@@ -1065,6 +1297,10 @@ function onJobUpdate(msg) {
 
     if (state.currentPage === 'pipeline') {
       renderPipelineContent();
+    } else if (state.currentPage === 'jobs') {
+      const summary = $('jobs-summary');
+      if (summary) summary.textContent = renderJobsSummaryLine(state.jobs || []);
+      renderJobsContent();
     }
   }
 }
@@ -1075,27 +1311,111 @@ function updateJobInPlace(job) {
   const pct = Math.round((job.progress || 0) * 100);
   const rateStr = job.rate > 0 ? ` &middot; ${job.rate.toFixed(0)} docs/s` : '';
   const cancelBtn = (job.status === 'running' || job.status === 'queued')
-    ? `<button onclick="cancelJob('${esc(job.id)}')" class="text-xs text-zinc-500 hover:text-red-400 transition-colors ml-2">cancel</button>`
+    ? `<button onclick="cancelJob('${esc(job.id)}')" class="text-xs ui-link ml-2">cancel</button>`
     : '';
 
   el.innerHTML = `
     <div class="flex items-center justify-between mb-1">
-      <span class="text-xs font-mono text-zinc-500">${esc(job.id)} &middot; <span class="${statusClass(job.status)}">${esc(job.status)}</span>${rateStr}</span>
-      <span class="text-xs font-mono text-zinc-500">${pct}%${cancelBtn}</span>
+      <span class="text-xs font-mono ui-subtle">${esc(job.id)} &middot; <span class="${statusClass(job.status)}">${esc(job.status)}</span>${rateStr}</span>
+      <span class="text-xs font-mono ui-subtle">${pct}%${cancelBtn}</span>
     </div>
     <div class="progress-track mb-1">
       <div class="progress-fill" style="width:${pct}%"></div>
     </div>
-    <div class="text-xs text-zinc-500 truncate">${esc(job.message || '')}</div>`;
-}
-
-function setupPipelineWS() {
-  // Subscribe to all job updates with wildcard
-  wsClient.subscribe('*', (msg) => onJobUpdate(msg));
+    <div class="text-xs ui-subtle truncate">${esc(job.message || '')}</div>`;
 }
 
 // ===================================================================
-// Tab 3: Search
+// Tab 3: Jobs
+// ===================================================================
+function jobCounts(jobs) {
+  const counts = { total: 0, queued: 0, running: 0, completed: 0, failed: 0, cancelled: 0 };
+  for (const j of (jobs || [])) {
+    counts.total += 1;
+    if (counts[j.status] !== undefined) counts[j.status] += 1;
+  }
+  return counts;
+}
+
+function renderJobsSummaryLine(jobs) {
+  const c = jobCounts(jobs);
+  return `jobs:${c.total} · running:${c.running} · queued:${c.queued} · completed:${c.completed} · failed:${c.failed} · cancelled:${c.cancelled}`;
+}
+
+function renderJobsContent() {
+  const el = $('jobs-content');
+  if (!el) return;
+  const jobs = state.jobs || [];
+  const active = jobs.filter(j => j.status === 'running' || j.status === 'queued');
+  const c = jobCounts(jobs);
+
+  const cards = [
+    { label: 'Total', value: c.total },
+    { label: 'Running', value: c.running },
+    { label: 'Queued', value: c.queued },
+    { label: 'Failed', value: c.failed },
+  ];
+
+  el.innerHTML = `
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+      ${cards.map(card => `
+        <div class="surface p-4">
+          <div class="text-xs font-mono ui-subtle mb-1">${esc(String(card.label))}</div>
+          <div class="text-lg font-medium">${esc(String(card.value))}</div>
+        </div>`).join('')}
+    </div>
+    <div class="surface p-4 mb-6">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-medium">Active Jobs</h2>
+        <span class="meta-line">${active.length} active</span>
+      </div>
+      ${active.length > 0 ? active.map(j => renderJobItem(j)).join('') : '<div class="ui-empty">No running or queued jobs.</div>'}
+    </div>
+    <div>
+      <h2 class="text-sm font-medium mb-3">All Jobs</h2>
+      ${renderJobHistory(jobs)}
+    </div>`;
+}
+
+async function renderJobs() {
+  state.currentPage = 'jobs';
+  const main = $('main');
+  main.innerHTML = `
+    <div class="page-shell anim-fade-in">
+      <div class="page-header">
+        <h1 class="page-title">Jobs</h1>
+        <button onclick="renderJobs()" class="ui-btn px-3 py-2 text-xs font-mono">Reload</button>
+      </div>
+      <div id="jobs-summary" class="meta-line mb-4">loading...</div>
+      <div id="jobs-content"><div class="ui-empty">loading...</div></div>
+    </div>`;
+
+  try {
+    await Promise.all([
+      ensureEnginesLoaded(),
+      refreshDashboardContext().catch(() => {}),
+      reloadJobs(),
+    ]);
+    ensureJobStreamSubscribed();
+    const summary = $('jobs-summary');
+    if (summary) summary.textContent = renderJobsSummaryLine(state.jobs || []);
+    renderJobsContent();
+
+    if (jobsPollingTimer) clearInterval(jobsPollingTimer);
+    jobsPollingTimer = setInterval(async () => {
+      if (state.currentPage !== 'jobs') return;
+      await reloadJobs();
+      const line = $('jobs-summary');
+      if (line) line.textContent = renderJobsSummaryLine(state.jobs || []);
+      renderJobsContent();
+    }, 5000);
+  } catch (e) {
+    $('jobs-content').innerHTML = `<div class="text-xs text-red-400">${esc(e.message)}</div>`;
+  }
+}
+
+// ===================================================================
+// Tab 4: Search
 // ===================================================================
 function renderSearchHome() {
   state.currentPage = 'search';
@@ -1108,23 +1428,23 @@ function renderSearchHome() {
         <div class="relative">
           <input id="home-search-input" type="text"
             placeholder="Type to search\u2026"
-            class="w-full h-12 px-4 bg-zinc-100 dark:bg-zinc-900 text-base placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none border border-zinc-200 dark:border-zinc-800 transition-colors focus:border-zinc-400 dark:focus:border-zinc-600"
+            class="ui-input w-full h-12 px-4 text-base"
             onkeydown="if(event.key==='Enter')doSearch(this.value)" autofocus>
-          <kbd class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-zinc-400 dark:text-zinc-600 font-mono pointer-events-none"><span class="text-[10px]">&#8984;</span>K</kbd>
+          <kbd class="absolute right-3 top-1/2 -translate-y-1/2 ui-kbd pointer-events-none"><span class="text-[10px]">&#8984;</span>K</kbd>
         </div>
         <div class="flex items-center justify-center">
-          <label class="text-xs font-mono text-zinc-500 mr-2">Engine</label>
+          <label class="text-xs font-mono ui-subtle mr-2">Engine</label>
           <select id="home-search-engine"
-            class="h-8 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs px-2 focus:outline-none"
+            class="ui-select h-8 text-xs px-2"
             onchange="applySearchEngine(this.value)">
           </select>
         </div>
         <div id="home-stats" class="text-center">
-          <span class="text-xs font-mono text-zinc-400 dark:text-zinc-600">loading\u2026</span>
+          <span class="text-xs font-mono ui-subtle">loading\u2026</span>
         </div>
-        ${isDashboard ? `<div class="text-center"><button onclick="refreshDashboardMeta(true)" class="border border-zinc-700 dark:border-zinc-700 px-3 py-2 text-xs font-mono hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">Refresh Metadata</button></div>` : ''}
+        ${isDashboard ? `<div class="text-center"><button onclick="refreshDashboardMeta(true)" class="ui-btn px-3 py-2 text-xs font-mono">Refresh Metadata</button></div>` : ''}
         <div id="home-meta" class="text-center">
-          <span class="text-xs font-mono text-zinc-500">${isDashboard ? 'loading metadata...' : ''}</span>
+          <span class="meta-line">${isDashboard ? 'loading metadata...' : ''}</span>
         </div>
       </div>
     </div>`;
@@ -1133,7 +1453,7 @@ function renderSearchHome() {
   if (isDashboard) {
     refreshDashboardContext().then(() => {
       const m = $('home-meta');
-      if (m) m.innerHTML = `<span class="text-xs font-mono text-zinc-500">${esc(renderMetaSummaryLine())}</span>`;
+      if (m) m.innerHTML = `<span class="meta-line">${esc(renderMetaSummaryLine())}</span>`;
     }).catch(() => {});
   }
   setTimeout(() => { const i = $('home-search-input'); if (i) i.focus(); }, 50);
@@ -1147,9 +1467,9 @@ async function loadHomeStats() {
     state.stats = d;
     if (d.engine) state.searchEngine = d.engine;
     syncSearchEngineControls();
-    el.innerHTML = `<span class="text-xs font-mono text-zinc-400 dark:text-zinc-500">${esc(d.engine)} &middot; ${(d.total_docs||0).toLocaleString()} docs &middot; ${d.shards||0} shards &middot; ${d.total_disk||'\u2014'}</span>`;
+    el.innerHTML = `<span class="meta-line">${esc(d.engine)} &middot; ${(d.total_docs||0).toLocaleString()} docs &middot; ${d.shards||0} shards &middot; ${d.total_disk||'\u2014'}</span>`;
   } catch(e) {
-    el.innerHTML = `<span class="text-xs font-mono text-zinc-400 dark:text-zinc-500">No index yet. Run <code class="text-zinc-300 dark:text-zinc-400">search cc fts index</code> to get started.</span>`;
+    el.innerHTML = `<span class="meta-line">No index yet. Run <code>search cc fts index</code> to get started.</span>`;
   }
 }
 
@@ -1185,11 +1505,11 @@ async function doSearchWithRender(query, offset = 0, engine = '') {
 function renderSearchLoading() {
   const lines = Array(6).fill('').map((_, i) => `
     <div class="py-6 anim-fade-up" style="animation-delay:${i*40}ms">
-      <div class="h-4 w-2/5 bg-zinc-100 dark:bg-zinc-900 mb-2"></div>
-      <div class="h-3 w-1/3 bg-zinc-100 dark:bg-zinc-900 mb-3"></div>
-      <div class="h-3 w-full bg-zinc-50 dark:bg-zinc-900/60 mb-1"></div>
-      <div class="h-3 w-4/5 bg-zinc-50 dark:bg-zinc-900/60"></div>
-    </div>`).join('<div class="border-t border-zinc-100 dark:border-zinc-800/60"></div>');
+      <div class="h-4 w-2/5 ui-skeleton mb-2"></div>
+      <div class="h-3 w-1/3 ui-skeleton mb-3"></div>
+      <div class="h-3 w-full ui-skeleton mb-1"></div>
+      <div class="h-3 w-4/5 ui-skeleton"></div>
+    </div>`).join('<div class="border-t"></div>');
   $('main').innerHTML = `<div class="py-8 max-w-3xl mx-auto">${lines}</div>`;
 }
 
@@ -1197,8 +1517,8 @@ function renderSearchResults(data, query, offset) {
   if (!data || !data.hits || data.hits.length === 0) {
     $('main').innerHTML = `
       <div class="py-20 text-center anim-fade-in max-w-3xl mx-auto">
-        <p class="text-zinc-500 dark:text-zinc-400 text-sm mb-1">Nothing matched <strong class="text-zinc-700 dark:text-zinc-300">&laquo;${esc(query)}&raquo;</strong></p>
-        <p class="text-zinc-400 dark:text-zinc-500 text-xs">Try different terms or broaden your query</p>
+        <p class="ui-subtle text-sm mb-1">Nothing matched <strong>&laquo;${esc(query)}&raquo;</strong></p>
+        <p class="ui-subtle text-xs">Try different terms or broaden your query</p>
       </div>`;
     return;
   }
@@ -1213,15 +1533,15 @@ function renderSearchResults(data, query, offset) {
        style="animation-delay:${i * 30}ms">
       <div class="flex items-baseline justify-between gap-4 mb-1">
         <span class="text-base font-medium truncate">${esc(docTitle(hit.doc_id))}</span>
-        <span class="text-xs font-mono text-zinc-500 shrink-0">${hit.score ? hit.score.toFixed(2) : ''}</span>
+        <span class="text-xs font-mono ui-subtle shrink-0">${hit.score ? hit.score.toFixed(2) : ''}</span>
       </div>
-      <div class="text-xs font-mono text-zinc-500 dark:text-zinc-600 mb-2">${esc(hit.shard || '')} &middot; ${esc(hit.doc_id)}</div>
-      ${hit.snippet ? `<p class="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed line-clamp-3">${highlight(hit.snippet, query)}</p>` : ''}
-    </a>`).join('<div class="border-t border-zinc-100 dark:border-zinc-800/60"></div>');
+      <div class="text-xs font-mono ui-subtle mb-2">${esc(hit.shard || '')} &middot; ${esc(hit.doc_id)}</div>
+      ${hit.snippet ? `<p class="text-sm ui-subtle leading-relaxed line-clamp-3">${highlight(hit.snippet, query)}</p>` : ''}
+    </a>`).join('<div class="border-t"></div>');
 
   $('main').innerHTML = `
     <div class="py-8 max-w-3xl mx-auto anim-fade-in">
-      <div class="text-xs font-mono text-zinc-400 dark:text-zinc-500 mb-6">
+      <div class="meta-line mb-6">
         ${(data.total || data.hits.length).toLocaleString()} results${data.elapsed_ms ? ` &middot; ${data.elapsed_ms}ms` : ''}${data.shards ? ` &middot; ${data.shards} shard${data.shards!==1?'s':''}` : ''}${data.engine ? ` &middot; ${esc(data.engine)}` : ''}
       </div>
       <div>${results}</div>
@@ -1242,10 +1562,10 @@ function renderSearchPagination(cur, total, query, pageSize, engine) {
   }
 
   const btn = (p, active) => {
-    if (p === '\u2026') return `<span class="px-2 py-1 text-xs text-zinc-400">\u2026</span>`;
+    if (p === '\u2026') return `<span class="px-2 py-1 text-xs ui-subtle">\u2026</span>`;
     const cls = active
-      ? 'px-2 py-1 text-xs font-mono font-medium text-zinc-950 dark:text-zinc-50'
-      : 'px-2 py-1 text-xs font-mono text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-50 transition-colors';
+      ? 'px-2 py-1 text-xs font-mono font-medium'
+      : 'px-2 py-1 text-xs font-mono ui-link transition-colors';
     const params = new URLSearchParams({ q: query, offset: String((p-1)*pageSize), engine: engine || currentSearchEngine() });
     return `<a href="#/search?${params.toString()}" class="${cls}">${p}</a>`;
   };
@@ -1254,34 +1574,295 @@ function renderSearchPagination(cur, total, query, pageSize, engine) {
   const nextParams = new URLSearchParams({ q: query, offset: String(cur*pageSize), engine: engine || currentSearchEngine() });
   return `
     <div class="flex items-center justify-center gap-1 pt-8 pb-4">
-      ${cur > 1 ? `<a href="#/search?${prevParams.toString()}" class="text-xs font-mono text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-50 transition-colors mr-2">&larr; prev</a>` : ''}
+      ${cur > 1 ? `<a href="#/search?${prevParams.toString()}" class="text-xs font-mono ui-link transition-colors mr-2">&larr; prev</a>` : ''}
       ${pages.map(p => btn(p, p === cur)).join('')}
-      ${cur < total ? `<a href="#/search?${nextParams.toString()}" class="text-xs font-mono text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-50 transition-colors ml-2">next &rarr;</a>` : ''}
+      ${cur < total ? `<a href="#/search?${nextParams.toString()}" class="text-xs font-mono ui-link transition-colors ml-2">next &rarr;</a>` : ''}
     </div>`;
 }
 
 // ===================================================================
-// Tab 4: Browse
+// Tab 4: WARC
+// ===================================================================
+async function renderWARC(offset = state.warcOffset || 0, query = state.warcQuery || '') {
+  state.currentPage = 'warc';
+  state.warcOffset = offset;
+  state.warcQuery = query;
+  const main = $('main');
+  main.innerHTML = `
+    <div class="page-shell anim-fade-in">
+      <div class="page-header mb-4">
+        <h1 class="page-title">WARC Console</h1>
+        <div class="flex items-center gap-2">
+          <button onclick="refreshDashboardMeta(true)" class="ui-btn px-3 py-2 text-xs font-mono">Refresh Metadata</button>
+          <button onclick="renderWARC(0, state.warcQuery||'')" class="ui-btn px-3 py-2 text-xs font-mono">Reload</button>
+        </div>
+      </div>
+      <div id="warc-meta" class="meta-line mb-5">loading metadata...</div>
+      <div class="surface p-3 mb-4">
+        <input id="warc-q" type="text" value="${esc(query)}" placeholder="Filter by index, filename, or remote path"
+          class="ui-input w-full text-sm px-3 py-2"
+          onkeydown="if(event.key==='Enter')renderWARC(0,this.value)">
+      </div>
+      <div id="warc-content"><div class="ui-empty">loading...</div></div>
+    </div>`;
+
+  try {
+    const data = await apiWARCList({ offset, limit: state.warcLimit || 100, q: query || '' });
+    state.warcRows = data.warcs || [];
+    state.warcSummary = data.summary || null;
+    state.warcOffset = data.offset || 0;
+    state.warcLimit = data.limit || state.warcLimit || 100;
+
+    const meta = $('warc-meta');
+    if (meta) {
+      const parts = [];
+      if (data.meta_backend) parts.push(`meta:${data.meta_backend}`);
+      if (data.meta_generated_at) parts.push(`updated:${fmtRelativeTime(data.meta_generated_at)}`);
+      parts.push(`stale:${data.meta_stale ? 'yes' : 'no'}`);
+      if (data.meta_refreshing) parts.push('refreshing');
+      if (data.meta_last_error) parts.push(`error:${data.meta_last_error}`);
+      if (data.system) {
+        parts.push(`disk:${fmtBytes(data.system.disk_used||0)}/${fmtBytes(data.system.disk_total||0)}`);
+        parts.push(`mem:${fmtBytes(data.system.mem_alloc||0)}`);
+      }
+      meta.textContent = parts.join(' · ');
+    }
+    renderWARCContent(data);
+  } catch (e) {
+    $('warc-content').innerHTML = `<div class="text-xs text-red-400">${esc(e.message)}</div>`;
+  }
+}
+
+function renderWARCContent(data) {
+  const el = $('warc-content');
+  if (!el) return;
+  const summary = data.summary || {};
+  const total = summary.total || 0;
+  const cards = [
+    { label: 'WARCs', value: (summary.total || 0).toLocaleString() },
+    { label: 'Downloaded', value: `${(summary.downloaded || 0).toLocaleString()} (${fmtPct(summary.downloaded || 0, total)})` },
+    { label: 'Markdown', value: `${(summary.markdown_ready || 0).toLocaleString()} (${fmtPct(summary.markdown_ready || 0, total)})` },
+    { label: 'Indexed', value: `${(summary.indexed || 0).toLocaleString()} (${fmtPct(summary.indexed || 0, total)})` },
+  ];
+
+  const phaseBars = renderBars([
+    { label: 'warc', value: summary.warc_bytes || 0, text: fmtBytes(summary.warc_bytes || 0) },
+    { label: 'markdown', value: summary.markdown_bytes || 0, text: fmtBytes(summary.markdown_bytes || 0) },
+    { label: 'pack', value: summary.pack_bytes || 0, text: fmtBytes(summary.pack_bytes || 0) },
+    { label: 'index', value: summary.fts_bytes || 0, text: fmtBytes(summary.fts_bytes || 0) },
+  ]);
+  const coverageBars = renderBars([
+    { label: 'download', value: summary.downloaded || 0, text: `${summary.downloaded || 0}` },
+    { label: 'markdown', value: summary.markdown_ready || 0, text: `${summary.markdown_ready || 0}` },
+    { label: 'pack', value: summary.packed || 0, text: `${summary.packed || 0}` },
+    { label: 'index', value: summary.indexed || 0, text: `${summary.indexed || 0}` },
+  ]);
+
+  const rows = (data.warcs || []).map((w, i) => `
+    <tr class="anim-fade-up" style="animation-delay:${Math.min(i, 20)*15}ms">
+      <td class="px-3 py-2 font-mono text-xs"><a href="#/warc/${encodeURIComponent(w.index)}" class="hover:underline">${esc(w.index)}</a></td>
+      <td class="px-3 py-2 text-xs ui-subtle truncate max-w-[360px]" title="${esc(w.filename || '')}">${esc(w.filename || '\u2014')}</td>
+      <td class="px-3 py-2 text-xs">
+        <div class="flex flex-wrap gap-1">
+          ${statusChip('dl', !!w.has_warc)}
+          ${statusChip('md', !!w.has_markdown)}
+          ${statusChip('pk', !!w.has_pack)}
+          ${statusChip('ix', !!w.has_fts)}
+        </div>
+      </td>
+      <td class="px-3 py-2 text-right text-xs font-mono ui-subtle">${fmtBytes(w.total_bytes || 0)}</td>
+      <td class="px-3 py-2 text-right text-xs font-mono">
+        <button onclick="warcAction('${esc(w.index)}','download')" class="ui-btn px-2 py-1 text-[11px]">dl</button>
+        <button onclick="warcAction('${esc(w.index)}','markdown')" class="ui-btn px-2 py-1 text-[11px] ml-1">md</button>
+        <button onclick="warcAction('${esc(w.index)}','index',{engine:currentSearchEngine(),source:'files'})" class="ui-btn px-2 py-1 text-[11px] ml-1">ix</button>
+      </td>
+    </tr>`).join('');
+
+  const nextOffset = (data.offset || 0) + (data.limit || 0);
+  const prevOffset = Math.max(0, (data.offset || 0) - (data.limit || 0));
+  const canPrev = (data.offset || 0) > 0;
+  const canNext = nextOffset < (data.total || 0);
+
+  el.innerHTML = `
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+      ${cards.map(c => `
+        <div class="surface p-3">
+          <div class="text-[11px] font-mono ui-subtle mb-1">${esc(c.label)}</div>
+          <div class="text-sm font-medium">${esc(c.value)}</div>
+        </div>`).join('')}
+    </div>
+    <div class="grid md:grid-cols-2 gap-4 mb-4">
+      <div class="surface p-3">
+        <div class="text-[11px] font-mono ui-subtle mb-2">Phase Size on Disk</div>
+        ${phaseBars}
+      </div>
+      <div class="surface p-3">
+        <div class="text-[11px] font-mono ui-subtle mb-2">Pipeline Coverage</div>
+        ${coverageBars}
+      </div>
+    </div>
+    <div class="surface overflow-x-auto">
+      <table class="w-full text-sm ui-table">
+        <thead>
+          <tr>
+            <th class="text-left px-3 py-2 text-[11px] font-mono">WARC</th>
+            <th class="text-left px-3 py-2 text-[11px] font-mono">Filename</th>
+            <th class="text-left px-3 py-2 text-[11px] font-mono">Phases</th>
+            <th class="text-right px-3 py-2 text-[11px] font-mono">Total</th>
+            <th class="text-right px-3 py-2 text-[11px] font-mono">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows || `<tr><td colspan="5" class="px-3 py-4 text-xs font-mono ui-subtle">No WARC records</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+    <div class="flex items-center justify-between mt-3">
+      <div class="text-xs font-mono ui-subtle">${(data.total||0).toLocaleString()} rows</div>
+      <div class="flex items-center gap-2">
+        <button ${canPrev ? '' : 'disabled'} onclick="renderWARC(${prevOffset}, state.warcQuery || '')" class="ui-btn px-3 py-1 text-xs font-mono ${canPrev ? '' : 'opacity-40 cursor-not-allowed'}">prev</button>
+        <button ${canNext ? '' : 'disabled'} onclick="renderWARC(${nextOffset}, state.warcQuery || '')" class="ui-btn px-3 py-1 text-xs font-mono ${canNext ? '' : 'opacity-40 cursor-not-allowed'}">next</button>
+      </div>
+    </div>`;
+}
+
+async function renderWARCDetail(index) {
+  state.currentPage = 'warc';
+  state.warcDetail = null;
+  const main = $('main');
+  main.innerHTML = `
+    <div class="page-shell anim-fade-in">
+      <a href="#/warc" class="text-xs font-mono ui-link">&larr; back to WARC list</a>
+      <div id="warc-detail-content" class="mt-4"><div class="ui-empty">loading...</div></div>
+    </div>`;
+  await ensureEnginesLoaded();
+  try {
+    const data = await apiWARCDetail(index);
+    state.warcDetail = data;
+    const w = data.warc || {};
+    const actionMsg = `<div id="warc-action-msg" class="meta-line mb-3"></div>`;
+    const bars = renderBars([
+      { label: 'warc', value: w.warc_bytes || 0, text: fmtBytes(w.warc_bytes || 0) },
+      { label: 'markdown', value: w.markdown_bytes || 0, text: fmtBytes(w.markdown_bytes || 0) },
+      { label: 'pack', value: Object.values(w.pack_bytes || {}).reduce((a,b)=>a+b,0), text: fmtBytes(Object.values(w.pack_bytes || {}).reduce((a,b)=>a+b,0)) },
+      { label: 'index', value: Object.values(w.fts_bytes || {}).reduce((a,b)=>a+b,0), text: fmtBytes(Object.values(w.fts_bytes || {}).reduce((a,b)=>a+b,0)) },
+    ]);
+    $('warc-detail-content').innerHTML = `
+      <div class="page-header mb-3">
+        <h1 class="page-title">WARC ${esc(w.index || index)}</h1>
+        <button onclick="refreshDashboardMeta(true)" class="ui-btn px-3 py-2 text-xs font-mono">Refresh Metadata</button>
+      </div>
+      ${actionMsg}
+      <div class="grid md:grid-cols-3 gap-3 mb-4">
+        <div class="surface p-3">
+          <div class="text-[11px] font-mono ui-subtle mb-1">Filename</div>
+          <div class="text-xs break-all">${esc(w.filename || '\u2014')}</div>
+        </div>
+        <div class="surface p-3">
+          <div class="text-[11px] font-mono ui-subtle mb-1">Remote</div>
+          <div class="text-xs break-all ui-subtle">${esc(w.remote_path || '\u2014')}</div>
+        </div>
+        <div class="surface p-3">
+          <div class="text-[11px] font-mono ui-subtle mb-1">Total on Disk</div>
+          <div class="text-sm font-mono">${fmtBytes(w.total_bytes || 0)}</div>
+        </div>
+      </div>
+      <div class="grid md:grid-cols-2 gap-4 mb-4">
+        <div class="surface p-3">
+          <div class="text-[11px] font-mono ui-subtle mb-2">Phase Size</div>
+          ${bars}
+        </div>
+        <div class="surface p-3">
+          <div class="text-[11px] font-mono ui-subtle mb-2">Phase Status</div>
+          <div class="flex flex-wrap gap-2 mb-2">
+            ${statusChip('download', !!w.has_warc)}
+            ${statusChip('markdown', !!w.has_markdown)}
+            ${statusChip('pack', !!w.has_pack)}
+            ${statusChip('index', !!w.has_fts)}
+          </div>
+          <div class="text-xs font-mono ui-subtle">docs: ${(w.markdown_docs || 0).toLocaleString()} · updated: ${w.updated_at ? fmtRelativeTime(w.updated_at) : '\u2014'}</div>
+        </div>
+      </div>
+      <div class="surface p-3 mb-4">
+        <div class="text-[11px] font-mono ui-subtle mb-3">Actions</div>
+        <div class="grid md:grid-cols-2 gap-3">
+          <div class="space-y-2">
+            <button onclick="warcAction('${esc(w.index)}','download',{},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Download</button>
+            <button onclick="warcAction('${esc(w.index)}','markdown',{fast:false},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Markdown</button>
+            <button onclick="warcAction('${esc(w.index)}','markdown',{fast:true},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Markdown --fast</button>
+          </div>
+          <div class="space-y-2">
+            <div class="flex items-center gap-2">
+              <select id="warc-pack-format" class="ui-select flex-1 text-xs px-2 py-2"><option>parquet</option><option>bin</option><option>duckdb</option><option>markdown</option></select>
+              <button onclick="warcAction('${esc(w.index)}','pack',{format:$('warc-pack-format').value},true)" class="ui-btn px-3 py-2 text-xs font-mono">Pack</button>
+            </div>
+            <div class="flex items-center gap-2">
+              <select id="warc-index-engine" class="ui-select flex-1 text-xs px-2 py-2">${(state.engines||[]).map(e=>`<option value=\"${esc(e)}\">${esc(e)}</option>`).join('') || '<option value=\"duckdb\">duckdb</option>'}</select>
+              <select id="warc-index-source" class="ui-select flex-1 text-xs px-2 py-2"><option value="files">files</option><option value="parquet">parquet</option><option value="bin">bin</option><option value="duckdb">duckdb</option><option value="markdown">markdown</option></select>
+              <button onclick="warcAction('${esc(w.index)}','index',{engine:$('warc-index-engine').value,source:$('warc-index-source').value},true)" class="ui-btn px-3 py-2 text-xs font-mono">Index</button>
+            </div>
+            <div class="flex items-center gap-2">
+              <button onclick="warcAction('${esc(w.index)}','reindex',{engine:$('warc-index-engine').value,source:$('warc-index-source').value},true)" class="ui-btn flex-1 px-3 py-2 text-xs font-mono">Re-index</button>
+              <select id="warc-delete-target" class="ui-select text-xs px-2 py-2"><option value="index">index</option><option value="pack">pack</option><option value="markdown">markdown</option><option value="warc">warc</option><option value="all">all</option></select>
+              <button onclick="warcAction('${esc(w.index)}','delete',{target:$('warc-delete-target').value,format:$('warc-pack-format').value,engine:$('warc-index-engine').value},true)" class="ui-btn ui-btn-danger px-3 py-2 text-xs font-mono">Delete</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="surface p-3">
+        <div class="text-[11px] font-mono ui-subtle mb-2">Related Jobs</div>
+        ${renderJobHistory(data.jobs || [])}
+      </div>`;
+  } catch (e) {
+    $('warc-detail-content').innerHTML = `<div class="text-xs text-red-400">${esc(e.message)}</div>`;
+  }
+}
+
+async function warcAction(index, action, extra = {}, refreshDetail = false) {
+  const msg = $('warc-action-msg');
+  if (msg) msg.textContent = `running ${action} on ${index}...`;
+  try {
+    const res = await apiWARCAction(index, { action, ...extra });
+    if (res && res.job && res.job.id) {
+      if (!state.jobs) state.jobs = [];
+      state.jobs.unshift(res.job);
+      wsClient.subscribe(res.job.id, (m) => onJobUpdate(m));
+      if (msg) msg.textContent = `job ${res.job.id} started: ${action}`;
+    } else {
+      if (msg) msg.textContent = `action ${action} completed`;
+    }
+    if (refreshDetail) {
+      await renderWARCDetail(index);
+    } else if (state.currentPage === 'warc') {
+      await renderWARC(state.warcOffset || 0, state.warcQuery || '');
+    }
+  } catch (e) {
+    if (msg) msg.textContent = `action failed: ${e.message}`;
+  }
+}
+
+// ===================================================================
+// Tab 5: Browse
 // ===================================================================
 async function renderBrowse(shard) {
   state.currentPage = 'browse';
   state.browseShard = shard;
   $('main').innerHTML = `
-    <div class="py-8 anim-fade-in">
-      <div class="flex items-center justify-between mb-4">
-        <h1 class="text-2xl font-semibold tracking-tight">Browse</h1>
-        ${isDashboard ? `<button onclick="refreshDashboardMeta(true)" class="border border-zinc-700 dark:border-zinc-700 px-3 py-2 text-xs font-mono hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">Refresh Metadata</button>` : ''}
+    <div class="page-shell anim-fade-in">
+      <div class="page-header mb-4">
+        <h1 class="page-title">Browse</h1>
+        ${isDashboard ? `<button onclick="refreshDashboardMeta(true)" class="ui-btn px-3 py-2 text-xs font-mono">Refresh Metadata</button>` : ''}
       </div>
-      ${isDashboard ? `<div class="text-xs font-mono text-zinc-500 mb-5" id="browse-meta">loading metadata...</div>` : ''}
-      <div class="flex gap-0 min-h-[calc(100vh-8rem)]">
-      <aside class="w-52 shrink-0 pr-6 border-r border-zinc-100 dark:border-zinc-800/60">
-        <div class="text-xs font-mono text-zinc-400 dark:text-zinc-500 mb-4 uppercase tracking-wider">Shards</div>
+      ${isDashboard ? `<div class="meta-line mb-5" id="browse-meta">loading metadata...</div>` : ''}
+      <div class="surface flex min-h-[calc(100vh-10rem)]">
+      <aside class="w-56 shrink-0 p-4 ui-border-r">
+        <div class="text-xs font-mono ui-subtle mb-4 uppercase tracking-wider">Shards</div>
         <div id="shard-list" class="space-y-1">
-          <div class="text-xs text-zinc-400">loading\u2026</div>
+          <div class="ui-empty">loading\u2026</div>
         </div>
       </aside>
-      <div class="flex-1 min-w-0 pl-6" id="browse-content">
-        <div class="text-xs text-zinc-400 py-8">loading\u2026</div>
+      <div class="flex-1 min-w-0 p-4" id="browse-content">
+        <div class="ui-empty">loading\u2026</div>
       </div>
       </div>
     </div>`;
@@ -1303,7 +1884,7 @@ async function renderBrowse(shard) {
     } else if (state.browseShards.length > 0) {
       navigateTo('/browse/' + state.browseShards[0].name);
     } else {
-      $('browse-content').innerHTML = `<div class="text-xs text-zinc-400 py-8">No index yet. Run <code class="font-mono">search cc fts index</code> to get started.</div>`;
+      $('browse-content').innerHTML = `<div class="ui-empty">No index yet. Run <code>search cc fts index</code> to get started.</div>`;
     }
   } catch(e) {
     $('browse-content').innerHTML = `<div class="text-xs text-red-400 py-8">${esc(e.message)}</div>`;
@@ -1317,14 +1898,14 @@ function renderShardList(active) {
     <a href="#/browse/${s.name}"
        class="flex items-center justify-between py-1 text-xs font-mono cursor-pointer ${s.name === active ? 'shard-active font-medium' : 'shard-item'}">
       <span>${esc(s.name)}</span>
-      <span class="text-zinc-500 dark:text-zinc-600">${(s.file_count || '').toLocaleString()}</span>
+      <span class="ui-subtle">${(s.file_count || '').toLocaleString()}</span>
     </a>`).join('');
 }
 
 async function loadShardFiles(shard) {
   const el = $('browse-content');
   if (!el) return;
-  el.innerHTML = `<div class="text-xs text-zinc-400 py-4">loading\u2026</div>`;
+  el.innerHTML = `<div class="ui-empty">loading\u2026</div>`;
 
   try {
     const data = await apiBrowse(shard);
@@ -1332,15 +1913,15 @@ async function loadShardFiles(shard) {
     el.innerHTML = `
       <div class="flex items-baseline justify-between mb-4">
         <span class="text-sm font-medium">${esc(shard)}</span>
-        <span class="text-xs font-mono text-zinc-400 dark:text-zinc-500">${state.browseFiles.length} files</span>
+        <span class="meta-line">${state.browseFiles.length} files</span>
       </div>
-      <div>
+      <div class="space-y-1">
         ${state.browseFiles.map((f, i) => `
           <a href="#/doc/${shard}/${encodeURIComponent(f.name)}"
              class="flex items-center justify-between py-2 px-2 -mx-2 text-sm file-row cursor-pointer anim-fade-up"
              style="animation-delay:${Math.min(i, 20) * 15}ms">
-            <span class="font-mono text-xs truncate text-zinc-600 dark:text-zinc-400">${esc(f.name)}</span>
-            <span class="text-xs font-mono text-zinc-400 dark:text-zinc-600 shrink-0 ml-4">${f.size ? fmtBytes(f.size) : ''}</span>
+            <span class="font-mono text-xs truncate ui-subtle">${esc(f.name)}</span>
+            <span class="text-xs font-mono ui-subtle shrink-0 ml-4">${f.size ? fmtBytes(f.size) : ''}</span>
           </a>`).join('')}
       </div>`;
   } catch(e) {
@@ -1356,13 +1937,13 @@ async function renderDoc(shard, docid) {
   const main = $('main');
   main.innerHTML = `
     <div class="py-8 max-w-3xl mx-auto anim-fade-in">
-      <a href="#" onclick="history.back();return false" class="text-xs text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-50 transition-colors">&larr; Back</a>
-      <div class="text-xs font-mono text-zinc-500 dark:text-zinc-600 mt-3 mb-8">${esc(shard)} / ${esc(decodeURIComponent(docid))}</div>
+      <a href="#" onclick="history.back();return false" class="text-xs ui-link transition-colors">&larr; Back</a>
+      <div class="meta-line mt-3 mb-8">${esc(shard)} / ${esc(decodeURIComponent(docid))}</div>
       <div class="space-y-3">
-        <div class="h-5 w-2/3 bg-zinc-100 dark:bg-zinc-900"></div>
-        <div class="h-4 w-full bg-zinc-50 dark:bg-zinc-900/60"></div>
-        <div class="h-4 w-full bg-zinc-50 dark:bg-zinc-900/60"></div>
-        <div class="h-4 w-4/5 bg-zinc-50 dark:bg-zinc-900/60"></div>
+        <div class="h-5 w-2/3 ui-skeleton"></div>
+        <div class="h-4 w-full ui-skeleton"></div>
+        <div class="h-4 w-full ui-skeleton"></div>
+        <div class="h-4 w-4/5 ui-skeleton"></div>
       </div>
     </div>`;
 
@@ -1371,30 +1952,30 @@ async function renderDoc(shard, docid) {
     state.doc = data;
     main.innerHTML = `
       <div class="py-8 max-w-3xl mx-auto anim-fade-in">
-        <a href="#" onclick="history.back();return false" class="text-xs text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-50 transition-colors">&larr; Back</a>
-        <div class="text-xs font-mono text-zinc-500 dark:text-zinc-600 mt-3 mb-6">${esc(data.shard || shard)} / ${esc(data.doc_id || docid)}</div>
+        <a href="#" onclick="history.back();return false" class="text-xs ui-link transition-colors">&larr; Back</a>
+        <div class="meta-line mt-3 mb-6">${esc(data.shard || shard)} / ${esc(data.doc_id || docid)}</div>
 
-        <div class="flex items-center gap-6 mb-8 border-b border-zinc-100 dark:border-zinc-800/60 pb-3">
+        <div class="flex items-center gap-6 mb-8 border-b pb-3">
           <button id="btn-rendered" onclick="showRendered()" class="text-xs pb-1 tab-active transition-colors">Rendered</button>
           <button id="btn-source" onclick="showSource()" class="text-xs pb-1 tab-inactive transition-colors">Source</button>
-          <span class="text-xs font-mono text-zinc-400 dark:text-zinc-600 ml-auto">
+          <span class="meta-line ml-auto">
             ${data.word_count ? data.word_count.toLocaleString() + ' words' : ''}${data.word_count && data.size ? ' &middot; ' : ''}${data.size ? fmtBytes(data.size) : ''}
           </span>
         </div>
 
-        <div id="doc-rendered" class="prose dark:prose-invert max-w-none prose-zinc prose-sm prose-headings:font-semibold prose-headings:tracking-tight prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-code:text-sm prose-code:font-mono prose-pre:bg-zinc-50 dark:prose-pre:bg-zinc-900 prose-img:max-w-full">
-          ${data.html || '<p class="text-zinc-400">No content</p>'}
+        <div id="doc-rendered" class="prose dark:prose-invert max-w-none prose-zinc prose-sm prose-headings:font-semibold prose-headings:tracking-tight prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-code:text-sm prose-code:font-mono prose-img:max-w-full">
+          ${data.html || '<p class="ui-subtle">No content</p>'}
         </div>
         <div id="doc-source" class="hidden">
-          <pre class="p-4 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm font-mono text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-words overflow-auto max-h-[80vh]">${esc(data.markdown || '')}</pre>
+          <pre class="p-4 surface-soft text-sm font-mono whitespace-pre-wrap break-words overflow-auto max-h-[80vh]">${esc(data.markdown || '')}</pre>
         </div>
       </div>`;
   } catch(e) {
     main.innerHTML = `
       <div class="py-16 text-center anim-fade-in">
         <p class="text-red-400 text-sm mb-1">Failed to load document</p>
-        <p class="text-zinc-500 text-xs mb-4">${esc(e.message)}</p>
-        <a href="#" onclick="history.back();return false" class="text-xs text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-50 transition-colors">&larr; Back</a>
+        <p class="ui-subtle text-xs mb-4">${esc(e.message)}</p>
+        <a href="#" onclick="history.back();return false" class="text-xs ui-link transition-colors">&larr; Back</a>
       </div>`;
   }
 }
@@ -1414,20 +1995,20 @@ function showSource() {
 }
 
 // ===================================================================
-// Tab 5: Crawls
+// Tab 6: Crawls
 // ===================================================================
 async function renderCrawls() {
   state.currentPage = 'crawls';
   const main = $('main');
   main.innerHTML = `
-    <div class="py-8 anim-fade-in">
-      <div class="flex items-center justify-between mb-3 gap-3">
-        <h1 class="text-2xl font-semibold tracking-tight">Crawls</h1>
-        ${isDashboard ? `<button onclick="refreshDashboardMeta(true)" class="border border-zinc-700 dark:border-zinc-700 px-3 py-2 text-xs font-mono hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">Refresh Metadata</button>` : ''}
+    <div class="page-shell anim-fade-in">
+      <div class="page-header">
+        <h1 class="page-title">Crawls</h1>
+        ${isDashboard ? `<button onclick="refreshDashboardMeta(true)" class="ui-btn px-3 py-2 text-xs font-mono">Refresh Metadata</button>` : ''}
       </div>
-      ${isDashboard ? `<div id="crawls-meta" class="text-xs font-mono text-zinc-500 mb-5">loading metadata...</div>` : ''}
+      ${isDashboard ? `<div id="crawls-meta" class="meta-line mb-5">loading metadata...</div>` : ''}
       <div id="crawls-content">
-        <div class="text-xs font-mono text-zinc-500">loading...</div>
+        <div class="ui-empty">loading...</div>
       </div>
     </div>`;
 
@@ -1445,10 +2026,10 @@ async function renderCrawls() {
     renderCrawlsContent(state.crawls);
   } catch (e) {
     $('crawls-content').innerHTML = `
-      <div class="border border-zinc-200 dark:border-zinc-800 p-6 text-center">
-        <p class="text-sm text-zinc-500 dark:text-zinc-400 mb-1">Could not load crawl list</p>
+      <div class="surface p-6 text-center">
+        <p class="text-sm ui-subtle mb-1">Could not load crawl list</p>
         <p class="text-xs font-mono text-red-400">${esc(e.message)}</p>
-        <p class="text-xs text-zinc-500 mt-2">Check your internet connection or try again later.</p>
+        <p class="text-xs ui-subtle mt-2">Check your internet connection or try again later.</p>
       </div>`;
   }
 }
@@ -1458,36 +2039,36 @@ function renderCrawlsContent(crawls) {
   if (!el) return;
 
   if (!crawls || crawls.length === 0) {
-    el.innerHTML = '<div class="text-xs font-mono text-zinc-500">No crawls found.</div>';
+    el.innerHTML = '<div class="ui-empty">No crawls found.</div>';
     return;
   }
   const activeCrawl = state.overview && state.overview.crawl_id ? state.overview.crawl_id : '';
 
   el.innerHTML = `
-    <div class="border border-zinc-200 dark:border-zinc-800">
-      <table class="w-full text-sm">
+    <div class="surface overflow-x-auto">
+      <table class="w-full text-sm ui-table">
         <thead>
-          <tr class="border-b border-zinc-200 dark:border-zinc-800">
-            <th class="text-left px-4 py-2 text-xs font-mono text-zinc-500 font-normal">Crawl ID</th>
-            <th class="text-left px-4 py-2 text-xs font-mono text-zinc-500 font-normal">Name</th>
-            <th class="text-left px-4 py-2 text-xs font-mono text-zinc-500 font-normal">From</th>
-            <th class="text-left px-4 py-2 text-xs font-mono text-zinc-500 font-normal">To</th>
-            <th class="text-right px-4 py-2 text-xs font-mono text-zinc-500 font-normal">Status</th>
+          <tr>
+            <th class="text-left px-4 py-2 text-xs font-mono">Crawl ID</th>
+            <th class="text-left px-4 py-2 text-xs font-mono">Name</th>
+            <th class="text-left px-4 py-2 text-xs font-mono">From</th>
+            <th class="text-left px-4 py-2 text-xs font-mono">To</th>
+            <th class="text-right px-4 py-2 text-xs font-mono">Status</th>
           </tr>
         </thead>
         <tbody>
           ${crawls.map((c, i) => `
-            <tr class="border-b border-zinc-100 dark:border-zinc-800/60 anim-fade-up" style="animation-delay:${i * 20}ms">
+            <tr class="anim-fade-up" style="animation-delay:${i * 20}ms">
               <td class="px-4 py-2 font-mono text-xs">${esc(c.id || '')}</td>
               <td class="px-4 py-2 text-xs">${esc(c.name || '')}</td>
-              <td class="px-4 py-2 font-mono text-xs text-zinc-500">${formatCrawlDate(c.from)}</td>
-              <td class="px-4 py-2 font-mono text-xs text-zinc-500">${formatCrawlDate(c.to)}</td>
-              <td class="px-4 py-2 text-right text-xs font-mono ${c.id === activeCrawl ? 'text-zinc-300' : 'text-zinc-500'}">${c.id === activeCrawl ? 'active' : ''}</td>
+              <td class="px-4 py-2 font-mono text-xs ui-subtle">${formatCrawlDate(c.from)}</td>
+              <td class="px-4 py-2 font-mono text-xs ui-subtle">${formatCrawlDate(c.to)}</td>
+              <td class="px-4 py-2 text-right text-xs font-mono ${c.id === activeCrawl ? 'status-completed' : 'ui-subtle'}">${c.id === activeCrawl ? 'active' : ''}</td>
             </tr>`).join('')}
         </tbody>
       </table>
     </div>
-    <div class="text-xs font-mono text-zinc-500 mt-3">${crawls.length} crawls total</div>`;
+    <div class="meta-line mt-3">${crawls.length} crawls total</div>`;
 }
 
 function formatCrawlDate(d) {
@@ -1542,9 +2123,9 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') document.activeElement.blur();
 
   // Number keys — switch tabs (when not in input)
-  if (!isInput && e.key >= '1' && e.key <= '5' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+  if (!isInput && e.key >= '1' && e.key <= '7' && !e.metaKey && !e.ctrlKey && !e.altKey) {
     const tabs = isDashboard
-      ? ['/', '/pipeline', '/search', '/browse', '/crawls']
+      ? ['/', '/pipeline', '/jobs', '/search', '/warc', '/browse', '/crawls']
       : ['/search', '/browse'];
     const idx = parseInt(e.key) - 1;
     if (idx >= 0 && idx < tabs.length) {
@@ -1562,7 +2143,7 @@ applyTheme();
 // In search-only mode: hide dashboard tabs, adjust header title, narrow layout.
 if (!isDashboard) {
   document.querySelectorAll('#main-nav a[data-tab]').forEach(a => {
-    if (['overview', 'pipeline', 'crawls'].includes(a.dataset.tab)) a.style.display = 'none';
+    if (['overview', 'pipeline', 'jobs', 'warc', 'crawls'].includes(a.dataset.tab)) a.style.display = 'none';
   });
   const metaChip = $('header-meta');
   const metaBtn = $('header-meta-refresh');
@@ -1571,7 +2152,7 @@ if (!isDashboard) {
   const logo = document.querySelector('header a[href="#/"]');
   if (logo) logo.textContent = 'FTS';
   const main = document.getElementById('main');
-  if (main) { main.classList.remove('max-w-5xl'); main.classList.add('max-w-3xl'); }
+  if (main) { main.classList.remove('max-w-5xl', 'max-w-6xl'); main.classList.add('max-w-3xl'); }
 } else {
   startMetaWatchdog();
 }

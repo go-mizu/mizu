@@ -37,8 +37,19 @@ type Server struct {
 	CrawlDir   string // ~/data/common-crawl/{crawlID} — set by NewDashboard
 	Hub        *WSHub
 	Jobs       *JobManager
+	Meta       *MetaManager
 
 	md goldmark.Markdown
+}
+
+// DashboardOptions configures dashboard-only behavior.
+type DashboardOptions struct {
+	MetaDriver      string
+	MetaDSN         string
+	MetaRefreshTTL  time.Duration
+	MetaPrewarm     bool
+	MetaBusyTimeout time.Duration
+	MetaJournalMode string
 }
 
 // New creates a Server for the given crawl and engine.
@@ -60,10 +71,55 @@ func New(engineName, crawlID, addr, baseDir string) *Server {
 // job manager, and data directory scanning). The baseDir should be the crawl
 // data directory (e.g. ~/data/common-crawl/{crawlID}).
 func NewDashboard(engineName, crawlID, addr, baseDir string) *Server {
+	return NewDashboardWithOptions(engineName, crawlID, addr, baseDir, DashboardOptions{
+		MetaDriver:      defaultMetaDriver,
+		MetaRefreshTTL:  defaultMetaRefreshTTL,
+		MetaPrewarm:     true,
+		MetaBusyTimeout: 5 * time.Second,
+		MetaJournalMode: "WAL",
+	})
+}
+
+// NewDashboardWithOptions creates a dashboard server with metadata cache config.
+func NewDashboardWithOptions(engineName, crawlID, addr, baseDir string, opts DashboardOptions) *Server {
 	s := New(engineName, crawlID, addr, baseDir)
 	s.CrawlDir = baseDir
 	s.Hub = NewWSHub()
 	s.Jobs = NewJobManager(s.Hub, baseDir, crawlID)
+
+	metaCfg := MetaConfig{
+		Driver:      opts.MetaDriver,
+		DSN:         opts.MetaDSN,
+		RefreshTTL:  opts.MetaRefreshTTL,
+		Prewarm:     opts.MetaPrewarm,
+		BusyTimeout: opts.MetaBusyTimeout,
+		JournalMode: opts.MetaJournalMode,
+		ActiveCrawl: crawlID,
+		ActiveDir:   baseDir,
+		CommonCrawl: filepath.Dir(baseDir),
+	}
+	meta, err := NewMetaManager(context.Background(), metaCfg)
+	if err != nil {
+		logErrorf("meta manager init failed driver=%s err=%v; falling back to scan mode", opts.MetaDriver, err)
+		// Fallback to scan mode if metadata store cannot initialize.
+		meta, _ = NewMetaManager(context.Background(), MetaConfig{
+			Driver:      "none",
+			ActiveCrawl: crawlID,
+			ActiveDir:   baseDir,
+			CommonCrawl: filepath.Dir(baseDir),
+		})
+	}
+	s.Meta = meta
+
+	s.Jobs.SetCompleteHook(func(_ *Job, crawlID, crawlDir string) {
+		if s.Meta != nil {
+			s.Meta.TriggerRefresh(crawlID, crawlDir, true)
+		}
+	})
+
+	logInfof("dashboard init crawl=%s engine=%s base_dir=%s meta_driver=%s ttl=%s prewarm=%t",
+		crawlID, engineName, baseDir, opts.MetaDriver, opts.MetaRefreshTTL, opts.MetaPrewarm)
+
 	return s
 }
 
@@ -79,9 +135,14 @@ func (s *Server) Handler() http.Handler {
 	// Dashboard routes — only registered when Hub is non-nil (NewDashboard mode).
 	if s.Hub != nil {
 		mux.HandleFunc("GET /api/overview", s.handleOverview)
+		mux.HandleFunc("GET /api/meta/status", s.handleMetaStatus)
+		mux.HandleFunc("POST /api/meta/refresh", s.handleMetaRefresh)
 		mux.HandleFunc("GET /api/crawls", s.handleCrawls)
 		mux.HandleFunc("GET /api/crawl/{id}/warcs", s.handleCrawlWarcs)
 		mux.HandleFunc("GET /api/crawl/{id}/data", s.handleCrawlData)
+		mux.HandleFunc("GET /api/warc", s.handleWARCList)
+		mux.HandleFunc("GET /api/warc/{index}", s.handleWARCDetail)
+		mux.HandleFunc("POST /api/warc/{index}/action", s.handleWARCAction)
 		mux.HandleFunc("GET /api/engines", s.handleEngines)
 		mux.HandleFunc("GET /api/jobs", s.handleListJobs)
 		mux.HandleFunc("GET /api/jobs/{id}", s.handleGetJob)
@@ -90,11 +151,15 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /ws", s.Hub.HandleWS)
 	}
 
+	if s.Hub != nil {
+		return withRequestLogging(mux)
+	}
 	return mux
 }
 
 // ListenAndServe starts the HTTP server, blocking until ctx is cancelled.
 func (s *Server) ListenAndServe(ctx context.Context, port int) error {
+	logInfof("server listen addr=:%d crawl=%s engine=%s dashboard=%t", port, s.CrawlID, s.EngineName, s.Hub != nil)
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", port),
 		Handler:      s.Handler(),
@@ -108,11 +173,22 @@ func (s *Server) ListenAndServe(ctx context.Context, port int) error {
 
 	select {
 	case err := <-errCh:
+		if err != nil && err != http.ErrServerClosed {
+			logErrorf("server exited with error: %v", err)
+		}
 		return err
 	case <-ctx.Done():
+		logInfof("server shutdown requested")
 		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		return srv.Shutdown(shutCtx)
+		err := srv.Shutdown(shutCtx)
+		if s.Meta != nil {
+			_ = s.Meta.Close()
+		}
+		if err != nil {
+			logErrorf("server shutdown error: %v", err)
+		}
+		return err
 	}
 }
 
@@ -141,6 +217,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": "missing q parameter"})
 		return
 	}
+	engineName := s.searchEngine(r)
 	limit := queryInt(r, "limit", 20)
 	offset := queryInt(r, "offset", 0)
 	if limit > 100 {
@@ -148,7 +225,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Discover per-WARC shard directories.
-	shardDirs, err := discoverShards(s.FTSBase)
+	shardDirs, err := discoverShards(s.resolveFTSBase(engineName))
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "no FTS index: " + err.Error()})
 		return
@@ -168,7 +245,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		wg.Add(1)
 		go func(idx int, dir, shardName string) {
 			defer wg.Done()
-			eng, err := index.NewEngine(s.EngineName)
+			eng, err := index.NewEngine(engineName)
 			if err != nil {
 				results[idx].err = err
 				return
@@ -233,13 +310,14 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		"total":      totalCount,
 		"elapsed_ms": elapsed,
 		"query":      q,
-		"engine":     s.EngineName,
+		"engine":     engineName,
 		"shards":     len(shardDirs),
 	})
 }
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
-	shardDirs, err := discoverShards(s.FTSBase)
+	engineName := s.searchEngine(r)
+	shardDirs, err := discoverShards(s.resolveFTSBase(engineName))
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "no FTS index: " + err.Error()})
 		return
@@ -248,7 +326,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	var totalDocs int64
 	var totalDisk int64
 	for _, sd := range shardDirs {
-		eng, err := index.NewEngine(s.EngineName)
+		eng, err := index.NewEngine(engineName)
 		if err != nil {
 			continue
 		}
@@ -270,7 +348,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, 200, map[string]any{
-		"engine":     s.EngineName,
+		"engine":     engineName,
 		"crawl":      s.CrawlID,
 		"shards":     len(shardDirs),
 		"total_docs": totalDocs,
@@ -381,9 +459,73 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 // ── Dashboard Handlers ──────────────────────────────────────────────────
 
 func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
+	if s.Meta != nil {
+		writeJSON(w, 200, s.Meta.GetSummary(r.Context(), s.CrawlID, s.CrawlDir))
+		return
+	}
 	ds := ScanDataDir(s.CrawlDir)
 	ds.CrawlID = s.CrawlID
 	writeJSON(w, 200, ds)
+}
+
+func (s *Server) handleMetaStatus(w http.ResponseWriter, r *http.Request) {
+	crawlID := r.URL.Query().Get("crawl")
+	if crawlID == "" {
+		crawlID = s.CrawlID
+	}
+	if s.Meta == nil {
+		writeJSON(w, 200, MetaStatus{
+			CrawlID:      crawlID,
+			Backend:      "scan-fallback",
+			Enabled:      false,
+			Status:       "idle",
+			Refreshing:   false,
+			RefreshTTLMS: 0,
+		})
+		return
+	}
+	writeJSON(w, 200, s.Meta.Status(r.Context(), crawlID))
+}
+
+func (s *Server) handleMetaRefresh(w http.ResponseWriter, r *http.Request) {
+	if s.Meta == nil {
+		writeJSON(w, 200, map[string]any{
+			"accepted": false,
+			"status": MetaStatus{
+				CrawlID:      s.CrawlID,
+				Backend:      "scan-fallback",
+				Enabled:      false,
+				Status:       "idle",
+				Refreshing:   false,
+				RefreshTTLMS: 0,
+			},
+		})
+		return
+	}
+
+	type reqBody struct {
+		Crawl string `json:"crawl"`
+		Force bool   `json:"force"`
+	}
+	var body reqBody
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+	}
+	crawlID := body.Crawl
+	if crawlID == "" {
+		crawlID = s.CrawlID
+	}
+	crawlDir := s.resolveCrawlDir(crawlID)
+	accepted := s.Meta.TriggerRefresh(crawlID, crawlDir, body.Force)
+	status := s.Meta.Status(r.Context(), crawlID)
+	code := 200
+	if accepted {
+		code = http.StatusAccepted
+	}
+	writeJSON(w, code, map[string]any{
+		"accepted": accepted,
+		"status":   status,
+	})
 }
 
 func (s *Server) handleCrawls(w http.ResponseWriter, r *http.Request) {
@@ -451,11 +593,10 @@ func (s *Server) handleCrawlData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve crawl dir: if the requested crawl matches ours, use s.CrawlDir;
-	// otherwise compute it from the parent directory.
-	crawlDir := s.CrawlDir
-	if crawlID != s.CrawlID {
-		crawlDir = filepath.Join(filepath.Dir(s.CrawlDir), crawlID)
+	crawlDir := s.resolveCrawlDir(crawlID)
+	if s.Meta != nil {
+		writeJSON(w, 200, s.Meta.GetSummary(r.Context(), crawlID, crawlDir))
+		return
 	}
 
 	ds := ScanDataDir(crawlDir)
@@ -493,6 +634,8 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	job := s.Jobs.Create(cfg)
+	logInfof("job create id=%s type=%s crawl=%s files=%s engine=%s source=%s format=%s fast=%t",
+		job.ID, cfg.Type, cfg.CrawlID, cfg.Files, cfg.Engine, cfg.Source, cfg.Format, cfg.Fast)
 	s.Jobs.RunJob(job)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(201)
@@ -505,6 +648,7 @@ func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 404, map[string]string{"error": "job not found"})
 		return
 	}
+	logInfof("job cancel id=%s", id)
 	writeJSON(w, 200, map[string]string{"status": "cancelled"})
 }
 
@@ -549,6 +693,28 @@ func isNumericName(s string) bool {
 		}
 	}
 	return true
+}
+
+func (s *Server) searchEngine(r *http.Request) string {
+	if r == nil {
+		return s.EngineName
+	}
+	if engine := strings.TrimSpace(r.URL.Query().Get("engine")); engine != "" {
+		return engine
+	}
+	return s.EngineName
+}
+
+func (s *Server) resolveFTSBase(engine string) string {
+	engine = strings.TrimSpace(engine)
+	if engine == "" {
+		engine = s.EngineName
+	}
+	if s.CrawlDir != "" {
+		return filepath.Join(s.CrawlDir, "fts", engine)
+	}
+	// In search-only mode, FTSBase is initialized to {base}/fts/{engine}.
+	return filepath.Join(filepath.Dir(s.FTSBase), engine)
 }
 
 type shardInfo struct {
@@ -666,6 +832,13 @@ func queryInt(r *http.Request, key string, def int) int {
 		return def
 	}
 	return v
+}
+
+func (s *Server) resolveCrawlDir(crawlID string) string {
+	if crawlID == s.CrawlID {
+		return s.CrawlDir
+	}
+	return filepath.Join(filepath.Dir(s.CrawlDir), crawlID)
 }
 
 // Ensure embed.FS satisfies fs.FS at compile time.

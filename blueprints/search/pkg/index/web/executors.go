@@ -5,17 +5,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index"
+	warcmd "github.com/go-mizu/mizu/blueprints/search/pkg/warc_md"
 )
 
 // RunJob dispatches a job to the appropriate executor in a background goroutine.
 func (m *JobManager) RunJob(job *Job) {
 	go func() {
+		logInfof("job run id=%s type=%s crawl=%s files=%s engine=%s source=%s format=%s fast=%t",
+			job.ID, job.Config.Type, job.Config.CrawlID, job.Config.Files, job.Config.Engine, job.Config.Source, job.Config.Format, job.Config.Fast)
 		ctx, cancel := context.WithCancel(context.Background())
 		m.SetRunning(job.ID, cancel)
 		var err error
@@ -33,10 +37,12 @@ func (m *JobManager) RunJob(job *Job) {
 		}
 		if err != nil {
 			if ctx.Err() != nil {
+				logInfof("job run id=%s cancelled via context", job.ID)
 				return
 			}
 			m.Fail(job.ID, err)
 		} else {
+			logInfof("job run id=%s completed successfully", job.ID)
 			m.Complete(job.ID, fmt.Sprintf("%s completed", job.Config.Type))
 		}
 	}()
@@ -49,9 +55,11 @@ func (m *JobManager) execDownload(ctx context.Context, job *Job) error {
 	if crawlID == "" {
 		crawlID = m.crawlID
 	}
+	crawlDir := m.resolveCrawlDir(crawlID)
+	logInfof("pipeline download start job=%s crawl=%s dir=%s", job.ID, crawlID, crawlDir)
 
-	client := cc.NewClient("", 4)
-	paths, err := client.DownloadManifest(ctx, crawlID, "warc.paths.gz")
+	m.UpdateProgress(job.ID, 0, "fetching crawl manifest...", 0)
+	paths, err := m.getManifestPaths(ctx, crawlID)
 	if err != nil {
 		return fmt.Errorf("manifest: %w", err)
 	}
@@ -61,10 +69,11 @@ func (m *JobManager) execDownload(ctx context.Context, job *Job) error {
 		return fmt.Errorf("files: %w", err)
 	}
 
-	warcDir := filepath.Join(m.baseDir, "warc")
+	warcDir := filepath.Join(crawlDir, "warc")
 	if err := os.MkdirAll(warcDir, 0o755); err != nil {
 		return fmt.Errorf("creating warc dir: %w", err)
 	}
+	client := cc.NewClient("", 4)
 
 	for i, idx := range selected {
 		if ctx.Err() != nil {
@@ -73,6 +82,7 @@ func (m *JobManager) execDownload(ctx context.Context, job *Job) error {
 
 		remotePath := paths[idx]
 		localPath := filepath.Join(warcDir, filepath.Base(remotePath))
+		logInfof("pipeline download file-start job=%s crawl=%s idx=%d remote=%s local=%s", job.ID, crawlID, idx, remotePath, localPath)
 
 		m.UpdateProgress(job.ID,
 			float64(i)/float64(len(selected)),
@@ -95,7 +105,9 @@ func (m *JobManager) execDownload(ctx context.Context, job *Job) error {
 		if err != nil {
 			return fmt.Errorf("download %s: %w", filepath.Base(remotePath), err)
 		}
+		logInfof("pipeline download file-done job=%s crawl=%s idx=%d", job.ID, crawlID, idx)
 	}
+	logInfof("pipeline download done job=%s crawl=%s selected=%d", job.ID, crawlID, len(selected))
 
 	return nil
 }
@@ -103,7 +115,86 @@ func (m *JobManager) execDownload(ctx context.Context, job *Job) error {
 // ── Markdown Executor ────────────────────────────────────────────────────
 
 func (m *JobManager) execMarkdown(ctx context.Context, job *Job) error {
-	return fmt.Errorf("not yet implemented via dashboard -- use CLI")
+	crawlID := job.Config.CrawlID
+	if crawlID == "" {
+		crawlID = m.crawlID
+	}
+	crawlDir := m.resolveCrawlDir(crawlID)
+	logInfof("pipeline markdown start job=%s crawl=%s dir=%s fast=%t", job.ID, crawlID, crawlDir, job.Config.Fast)
+
+	m.UpdateProgress(job.ID, 0, "fetching crawl manifest...", 0)
+	paths, err := m.getManifestPaths(ctx, crawlID)
+	if err != nil {
+		return fmt.Errorf("manifest: %w", err)
+	}
+
+	selected, err := parseFileSelector(job.Config.Files, len(paths))
+	if err != nil {
+		return fmt.Errorf("files: %w", err)
+	}
+	if len(selected) == 0 {
+		return nil
+	}
+
+	cfg := warcmd.DefaultConfig(crawlID)
+	cfg.DataDir = filepath.Dir(crawlDir)
+	cfg.Workers = runtime.NumCPU()
+	cfg.Fast = job.Config.Fast
+	cfg.Force = false
+	cfg.KeepTemp = false
+
+	warcDir := filepath.Join(crawlDir, "warc")
+	totalFiles := float64(len(selected))
+
+	for i, idx := range selected {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		warcPath := paths[idx]
+		warcIdx := warcIndexFromPath(warcPath, idx)
+		localPath := filepath.Join(warcDir, filepath.Base(warcPath))
+		logInfof("pipeline markdown file-start job=%s crawl=%s warc_idx=%s local=%s", job.ID, crawlID, warcIdx, localPath)
+		if _, err := os.Stat(localPath); err != nil {
+			return fmt.Errorf("warc file not found: %s (run download step first)", localPath)
+		}
+
+		basePct := float64(i) / totalFiles
+		fileWeight := 1.0 / totalFiles
+		m.UpdateProgress(job.ID, basePct, fmt.Sprintf("markdown [%s] file %d/%d: preparing", warcIdx, i+1, len(selected)), 0)
+
+		p1Fn := func(done, total, errors, readBytes, writeBytes int64, elapsed time.Duration, _ float64) {
+			localPct := phaseProgress(done, total)
+			overall := basePct + fileWeight*(0.5*localPct)
+			rate := phaseRate(done, elapsed)
+			msg := fmt.Sprintf(
+				"markdown [%s] extract %d/%d docs (err=%d, r=%.1fMB/s, w=%.1fMB/s)",
+				warcIdx, done, total, errors, mbPerSec(readBytes, elapsed), mbPerSec(writeBytes, elapsed),
+			)
+			m.UpdateProgress(job.ID, overall, msg, rate)
+		}
+		p2Fn := func(done, total, errors, readBytes, writeBytes int64, elapsed time.Duration, _ float64) {
+			localPct := phaseProgress(done, total)
+			overall := basePct + fileWeight*(0.5+0.5*localPct)
+			rate := phaseRate(done, elapsed)
+			msg := fmt.Sprintf(
+				"markdown [%s] convert %d/%d docs (err=%d, r=%.1fMB/s, w=%.1fMB/s)",
+				warcIdx, done, total, errors, mbPerSec(readBytes, elapsed), mbPerSec(writeBytes, elapsed),
+			)
+			m.UpdateProgress(job.ID, overall, msg, rate)
+		}
+
+		if _, err := warcmd.RunFilePipeline(ctx, cfg, warcIdx, []string{localPath}, p1Fn, p2Fn); err != nil {
+			return fmt.Errorf("markdown file %s: %w", warcIdx, err)
+		}
+		logInfof("pipeline markdown file-done job=%s crawl=%s warc_idx=%s", job.ID, crawlID, warcIdx)
+
+		donePct := float64(i+1) / totalFiles
+		m.UpdateProgress(job.ID, donePct, fmt.Sprintf("markdown [%s] complete (%d/%d)", warcIdx, i+1, len(selected)), 0)
+	}
+	logInfof("pipeline markdown done job=%s crawl=%s selected=%d", job.ID, crawlID, len(selected))
+
+	return nil
 }
 
 // ── Pack Executor ────────────────────────────────────────────────────────
@@ -113,14 +204,16 @@ func (m *JobManager) execPack(ctx context.Context, job *Job) error {
 	if crawlID == "" {
 		crawlID = m.crawlID
 	}
+	crawlDir := m.resolveCrawlDir(crawlID)
 
 	format := job.Config.Format
 	if format == "" {
 		format = "parquet"
 	}
+	logInfof("pipeline pack start job=%s crawl=%s dir=%s format=%s", job.ID, crawlID, crawlDir, format)
 
-	client := cc.NewClient("", 4)
-	paths, err := client.DownloadManifest(ctx, crawlID, "warc.paths.gz")
+	m.UpdateProgress(job.ID, 0, "fetching crawl manifest...", 0)
+	paths, err := m.getManifestPaths(ctx, crawlID)
 	if err != nil {
 		return fmt.Errorf("manifest: %w", err)
 	}
@@ -130,7 +223,7 @@ func (m *JobManager) execPack(ctx context.Context, job *Job) error {
 		return fmt.Errorf("files: %w", err)
 	}
 
-	packDir := filepath.Join(m.baseDir, "pack")
+	packDir := filepath.Join(crawlDir, "pack")
 
 	for i, idx := range selected {
 		if ctx.Err() != nil {
@@ -138,7 +231,8 @@ func (m *JobManager) execPack(ctx context.Context, job *Job) error {
 		}
 
 		warcIdx := warcIndexFromPath(paths[idx], idx)
-		markdownDir := filepath.Join(m.baseDir, "markdown", warcIdx)
+		markdownDir := filepath.Join(crawlDir, "markdown", warcIdx)
+		logInfof("pipeline pack file-start job=%s crawl=%s warc_idx=%s format=%s", job.ID, crawlID, warcIdx, format)
 		if _, err := os.Stat(markdownDir); os.IsNotExist(err) {
 			return fmt.Errorf("markdown dir not found: %s", markdownDir)
 		}
@@ -179,15 +273,19 @@ func (m *JobManager) execPack(ctx context.Context, job *Job) error {
 			_, packErr = index.PackParquet(ctx, markdownDir, packFile, 0, 5000, progress)
 		case "bin":
 			_, packErr = index.PackFlatBin(ctx, markdownDir, packFile, 0, 5000, progress)
+		case "duckdb":
+			_, packErr = packDuckDBRaw(ctx, markdownDir, packFile, 0, 5000, progress)
 		case "markdown":
 			_, packErr = index.PackFlatBinGz(ctx, markdownDir, packFile, 0, 5000, progress)
 		default:
-			return fmt.Errorf("unknown format %q (valid: parquet, bin, markdown)", format)
+			return fmt.Errorf("unknown format %q (valid: parquet, bin, duckdb, markdown)", format)
 		}
 		if packErr != nil {
 			return fmt.Errorf("pack %s: %w", format, packErr)
 		}
+		logInfof("pipeline pack file-done job=%s crawl=%s warc_idx=%s format=%s", job.ID, crawlID, warcIdx, format)
 	}
+	logInfof("pipeline pack done job=%s crawl=%s selected=%d format=%s", job.ID, crawlID, len(selected), format)
 
 	return nil
 }
@@ -199,6 +297,7 @@ func (m *JobManager) execIndex(ctx context.Context, job *Job) error {
 	if crawlID == "" {
 		crawlID = m.crawlID
 	}
+	crawlDir := m.resolveCrawlDir(crawlID)
 
 	engineName := job.Config.Engine
 	if engineName == "" {
@@ -209,9 +308,10 @@ func (m *JobManager) execIndex(ctx context.Context, job *Job) error {
 	if source == "" {
 		source = "files"
 	}
+	logInfof("pipeline index start job=%s crawl=%s dir=%s engine=%s source=%s", job.ID, crawlID, crawlDir, engineName, source)
 
-	client := cc.NewClient("", 4)
-	paths, err := client.DownloadManifest(ctx, crawlID, "warc.paths.gz")
+	m.UpdateProgress(job.ID, 0, "fetching crawl manifest...", 0)
+	paths, err := m.getManifestPaths(ctx, crawlID)
 	if err != nil {
 		return fmt.Errorf("manifest: %w", err)
 	}
@@ -227,7 +327,8 @@ func (m *JobManager) execIndex(ctx context.Context, job *Job) error {
 		}
 
 		warcIdx := warcIndexFromPath(paths[idx], idx)
-		outputDir := filepath.Join(m.baseDir, "fts", engineName, warcIdx)
+		outputDir := filepath.Join(crawlDir, "fts", engineName, warcIdx)
+		logInfof("pipeline index file-start job=%s crawl=%s warc_idx=%s engine=%s source=%s", job.ID, crawlID, warcIdx, engineName, source)
 
 		eng, err := index.NewEngine(engineName)
 		if err != nil {
@@ -245,7 +346,7 @@ func (m *JobManager) execIndex(ctx context.Context, job *Job) error {
 
 		var pipeErr error
 		if source == "files" {
-			sourceDir := filepath.Join(m.baseDir, "markdown", warcIdx)
+			sourceDir := filepath.Join(crawlDir, "markdown", warcIdx)
 			if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
 				eng.Close()
 				return fmt.Errorf("markdown dir not found: %s", sourceDir)
@@ -275,7 +376,7 @@ func (m *JobManager) execIndex(ctx context.Context, job *Job) error {
 			}
 			_, pipeErr = index.RunPipeline(ctx, eng, cfg, progress)
 		} else {
-			packDir := filepath.Join(m.baseDir, "pack")
+			packDir := filepath.Join(crawlDir, "pack")
 			packFile, perr := packFilePath(packDir, source, warcIdx)
 			if perr != nil {
 				eng.Close()
@@ -307,11 +408,13 @@ func (m *JobManager) execIndex(ctx context.Context, job *Job) error {
 				_, pipeErr = index.RunPipelineFromParquet(ctx, eng, packFile, 5000, progress)
 			case "bin":
 				_, pipeErr = index.RunPipelineFromFlatBin(ctx, eng, packFile, 5000, progress)
+			case "duckdb":
+				_, pipeErr = runPipelineFromDuckDBRaw(ctx, eng, packFile, 5000, progress)
 			case "markdown":
 				_, pipeErr = index.RunPipelineFromFlatBinGz(ctx, eng, packFile, 5000, progress)
 			default:
 				eng.Close()
-				return fmt.Errorf("unknown source %q (valid: files, parquet, bin, markdown)", source)
+				return fmt.Errorf("unknown source %q (valid: files, parquet, bin, duckdb, markdown)", source)
 			}
 		}
 
@@ -329,7 +432,9 @@ func (m *JobManager) execIndex(ctx context.Context, job *Job) error {
 		}
 
 		eng.Close()
+		logInfof("pipeline index file-done job=%s crawl=%s warc_idx=%s engine=%s source=%s", job.ID, crawlID, warcIdx, engineName, source)
 	}
+	logInfof("pipeline index done job=%s crawl=%s selected=%d engine=%s source=%s", job.ID, crawlID, len(selected), engineName, source)
 
 	return nil
 }
@@ -360,10 +465,12 @@ func packFilePath(packDir, format, warcIdx string) (string, error) {
 		return filepath.Join(packDir, "parquet", warcIdx+".parquet"), nil
 	case "bin":
 		return filepath.Join(packDir, "bin", warcIdx+".bin"), nil
+	case "duckdb":
+		return filepath.Join(packDir, "duckdb", warcIdx+".duckdb"), nil
 	case "markdown":
 		return filepath.Join(packDir, "markdown", warcIdx+".bin.gz"), nil
 	default:
-		return "", fmt.Errorf("unknown format %q (valid: parquet, bin, markdown)", format)
+		return "", fmt.Errorf("unknown format %q (valid: parquet, bin, duckdb, markdown)", format)
 	}
 }
 
@@ -404,4 +511,76 @@ func parseFileSelector(s string, total int) ([]int, error) {
 		return nil, fmt.Errorf("file index %d out of bounds (total: %d)", n, total)
 	}
 	return []int{n}, nil
+}
+
+func (m *JobManager) getManifestPaths(ctx context.Context, crawlID string) ([]string, error) {
+	const manifestTTL = 10 * time.Minute
+
+	now := time.Now()
+	m.manifestMu.Lock()
+	if entry, ok := m.manifestCache[crawlID]; ok && now.Sub(entry.fetchedAt) < manifestTTL && len(entry.paths) > 0 {
+		cached := append([]string(nil), entry.paths...)
+		m.manifestMu.Unlock()
+		logInfof("manifest cache hit crawl=%s entries=%d age=%s", crawlID, len(cached), now.Sub(entry.fetchedAt).Round(time.Second))
+		return cached, nil
+	}
+	m.manifestMu.Unlock()
+
+	m.mu.RLock()
+	fetchFn := m.manifestFetch
+	m.mu.RUnlock()
+	if fetchFn == nil {
+		client := cc.NewClient("", 4)
+		fetchFn = func(ctx context.Context, crawlID string) ([]string, error) {
+			return client.DownloadManifest(ctx, crawlID, "warc.paths.gz")
+		}
+	}
+
+	logInfof("manifest cache miss crawl=%s fetching remote manifest", crawlID)
+	paths, err := fetchFn(ctx, crawlID)
+	if err != nil {
+		logErrorf("manifest fetch failed crawl=%s err=%v", crawlID, err)
+		return nil, err
+	}
+
+	m.manifestMu.Lock()
+	m.manifestCache[crawlID] = manifestCacheEntry{
+		paths:     append([]string(nil), paths...),
+		fetchedAt: now,
+	}
+	m.manifestMu.Unlock()
+	logInfof("manifest fetched crawl=%s entries=%d", crawlID, len(paths))
+
+	return paths, nil
+}
+
+func phaseProgress(done, total int64) float64 {
+	if total <= 0 {
+		if done > 0 {
+			return 0.95
+		}
+		return 0
+	}
+	p := float64(done) / float64(total)
+	if p < 0 {
+		return 0
+	}
+	if p > 1 {
+		return 1
+	}
+	return p
+}
+
+func phaseRate(done int64, elapsed time.Duration) float64 {
+	if elapsed <= 0 {
+		return 0
+	}
+	return float64(done) / elapsed.Seconds()
+}
+
+func mbPerSec(bytes int64, elapsed time.Duration) float64 {
+	if elapsed <= 0 {
+		return 0
+	}
+	return float64(bytes) / (1024 * 1024) / elapsed.Seconds()
 }

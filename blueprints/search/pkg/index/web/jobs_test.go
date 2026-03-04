@@ -2,6 +2,9 @@ package web
 
 import (
 	"context"
+	"fmt"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -246,5 +249,125 @@ func TestJobManager_Fail(t *testing.T) {
 	}
 	if got.EndedAt == nil {
 		t.Fatal("expected EndedAt to be set after failure")
+	}
+}
+
+func TestJobManager_CompleteHook_DefaultCrawl(t *testing.T) {
+	hub := NewWSHub()
+	defer hub.Close()
+
+	baseDir := filepath.Join(t.TempDir(), "CC-MAIN-2026-04")
+	jm := NewJobManager(hub, baseDir, "CC-MAIN-2026-04")
+
+	var called bool
+	var gotCrawlID, gotCrawlDir string
+	jm.SetCompleteHook(func(_ *Job, crawlID, crawlDir string) {
+		called = true
+		gotCrawlID = crawlID
+		gotCrawlDir = crawlDir
+	})
+
+	job := jm.Create(JobConfig{Type: "pack"})
+	jm.SetRunning(job.ID, func() {})
+	jm.Complete(job.ID, "done")
+
+	if !called {
+		t.Fatal("expected complete hook to be called")
+	}
+	if gotCrawlID != "CC-MAIN-2026-04" {
+		t.Fatalf("hook crawlID=%q, want %q", gotCrawlID, "CC-MAIN-2026-04")
+	}
+	if gotCrawlDir != baseDir {
+		t.Fatalf("hook crawlDir=%q, want %q", gotCrawlDir, baseDir)
+	}
+}
+
+func TestJobManager_CompleteHook_JobCrawlOverride(t *testing.T) {
+	hub := NewWSHub()
+	defer hub.Close()
+
+	commonRoot := t.TempDir()
+	baseDir := filepath.Join(commonRoot, "CC-MAIN-2026-04")
+	jm := NewJobManager(hub, baseDir, "CC-MAIN-2026-04")
+
+	var gotCrawlID, gotCrawlDir string
+	jm.SetCompleteHook(func(_ *Job, crawlID, crawlDir string) {
+		gotCrawlID = crawlID
+		gotCrawlDir = crawlDir
+	})
+
+	job := jm.Create(JobConfig{Type: "index", CrawlID: "CC-MAIN-2026-08"})
+	jm.SetRunning(job.ID, func() {})
+	jm.Complete(job.ID, "done")
+
+	if gotCrawlID != "CC-MAIN-2026-08" {
+		t.Fatalf("hook crawlID=%q, want %q", gotCrawlID, "CC-MAIN-2026-08")
+	}
+	wantDir := filepath.Join(commonRoot, "CC-MAIN-2026-08")
+	if gotCrawlDir != wantDir {
+		t.Fatalf("hook crawlDir=%q, want %q", gotCrawlDir, wantDir)
+	}
+}
+
+func TestJobManager_GetManifestPaths_Cache(t *testing.T) {
+	hub := NewWSHub()
+	defer hub.Close()
+
+	jm := NewJobManager(hub, t.TempDir(), "CC-MAIN-2026-04")
+
+	calls := 0
+	jm.setManifestFetcher(func(ctx context.Context, crawlID string) ([]string, error) {
+		calls++
+		return []string{
+			fmt.Sprintf("crawl-data/%s/segments/x/warc/CC-MAIN-20260206181458-20260206211458-00000.warc.gz", crawlID),
+		}, nil
+	})
+
+	got1, err := jm.getManifestPaths(context.Background(), "CC-MAIN-2026-04")
+	if err != nil {
+		t.Fatalf("getManifestPaths #1: %v", err)
+	}
+	got2, err := jm.getManifestPaths(context.Background(), "CC-MAIN-2026-04")
+	if err != nil {
+		t.Fatalf("getManifestPaths #2: %v", err)
+	}
+
+	if calls != 1 {
+		t.Fatalf("manifest fetch calls=%d, want 1 (cached)", calls)
+	}
+	if len(got1) != 1 || len(got2) != 1 {
+		t.Fatalf("unexpected cached manifest lens: %d, %d", len(got1), len(got2))
+	}
+}
+
+func TestExecMarkdown_ReturnsActionableErrorWhenWARCMissing(t *testing.T) {
+	hub := NewWSHub()
+	defer hub.Close()
+
+	base := filepath.Join(t.TempDir(), "CC-MAIN-2026-04")
+	jm := NewJobManager(hub, base, "CC-MAIN-2026-04")
+	jm.setManifestFetcher(func(ctx context.Context, crawlID string) ([]string, error) {
+		return []string{
+			"crawl-data/CC-MAIN-2026-04/segments/1738964620578.15/warc/CC-MAIN-20260206181458-20260206211458-00000.warc.gz",
+		}, nil
+	})
+
+	job := jm.Create(JobConfig{
+		Type:    "markdown",
+		CrawlID: "CC-MAIN-2026-04",
+		Files:   "0",
+		Fast:    true,
+	})
+
+	err := jm.execMarkdown(context.Background(), job)
+	if err == nil {
+		t.Fatal("expected error for missing local warc file")
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "not yet implemented") {
+		t.Fatalf("unexpected legacy error, got: %v", err)
+	}
+	if !strings.Contains(msg, "warc file not found") {
+		t.Fatalf("expected actionable missing-file error, got: %v", err)
 	}
 }

@@ -2,12 +2,37 @@ package web
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestSearchEngineAndFTSBaseResolve(t *testing.T) {
+	root := t.TempDir()
+	srv := NewDashboard("bleve", "CC-TEST-2026", "", root)
+
+	req := httptest.NewRequest("GET", "/api/search?q=test&engine=duckdb", nil)
+	if got := srv.searchEngine(req); got != "duckdb" {
+		t.Fatalf("searchEngine() = %q, want duckdb", got)
+	}
+	if got := srv.resolveFTSBase("duckdb"); got != filepath.Join(root, "fts", "duckdb") {
+		t.Fatalf("resolveFTSBase(duckdb) = %q", got)
+	}
+
+	reqDefault := httptest.NewRequest("GET", "/api/search?q=test", nil)
+	if got := srv.searchEngine(reqDefault); got != "bleve" {
+		t.Fatalf("searchEngine() default = %q, want bleve", got)
+	}
+
+	searchOnly := New("bleve", "CC-TEST-2026", "", root)
+	if got := searchOnly.resolveFTSBase("tantivy"); got != filepath.Join(root, "fts", "tantivy") {
+		t.Fatalf("search-only resolveFTSBase(tantivy) = %q", got)
+	}
+}
 
 func TestHandleOverview(t *testing.T) {
 	root := t.TempDir()
@@ -202,6 +227,108 @@ func TestHandleCrawlData(t *testing.T) {
 	}
 }
 
+func TestHandleWARCListAndDetail_Fallback(t *testing.T) {
+	root := t.TempDir()
+	warcDir := filepath.Join(root, "warc")
+	markdownDir := filepath.Join(root, "markdown", "00000")
+	packDir := filepath.Join(root, "pack", "parquet")
+	ftsDir := filepath.Join(root, "fts", "duckdb", "00000")
+	mustMkdir(t, warcDir)
+	mustMkdir(t, markdownDir)
+	mustMkdir(t, packDir)
+	mustMkdir(t, ftsDir)
+
+	writeFile(t, filepath.Join(warcDir, "CC-MAIN-x-00000.warc.gz"), 2048)
+	writeFile(t, filepath.Join(markdownDir, "doc1.md"), 100)
+	writeFile(t, filepath.Join(packDir, "00000.parquet"), 1500)
+	writeFile(t, filepath.Join(ftsDir, "seg.bin"), 700)
+
+	srv := NewDashboard("duckdb", "CC-TEST-2026", "", root)
+	srv.Meta = nil // deterministic scan fallback for this test
+
+	reqList := httptest.NewRequest("GET", "/api/warc", nil)
+	wList := httptest.NewRecorder()
+	srv.handleWARCList(wList, reqList)
+	if wList.Code != 200 {
+		t.Fatalf("GET /api/warc expected 200, got %d: %s", wList.Code, wList.Body.String())
+	}
+	var listResp map[string]any
+	if err := json.Unmarshal(wList.Body.Bytes(), &listResp); err != nil {
+		t.Fatalf("decode list JSON: %v", err)
+	}
+	warcs, ok := listResp["warcs"].([]any)
+	if !ok || len(warcs) != 1 {
+		t.Fatalf("expected exactly 1 warc row, got %#v", listResp["warcs"])
+	}
+
+	reqDetail := httptest.NewRequest("GET", "/api/warc/0", nil)
+	reqDetail.SetPathValue("index", "0")
+	wDetail := httptest.NewRecorder()
+	srv.handleWARCDetail(wDetail, reqDetail)
+	if wDetail.Code != 200 {
+		t.Fatalf("GET /api/warc/0 expected 200, got %d: %s", wDetail.Code, wDetail.Body.String())
+	}
+	var detail map[string]any
+	if err := json.Unmarshal(wDetail.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("decode detail JSON: %v", err)
+	}
+	warcObj, ok := detail["warc"].(map[string]any)
+	if !ok {
+		t.Fatalf("detail warc object missing, got %#v", detail["warc"])
+	}
+	if warcObj["index"] != "00000" {
+		t.Fatalf("expected detail index=00000, got %v", warcObj["index"])
+	}
+}
+
+func TestHandleWARCAction_DeletePack(t *testing.T) {
+	root := t.TempDir()
+	packDir := filepath.Join(root, "pack", "parquet")
+	mustMkdir(t, packDir)
+	target := filepath.Join(packDir, "00000.parquet")
+	writeFile(t, target, 1234)
+
+	srv := NewDashboard("duckdb", "CC-TEST-2026", "", root)
+	srv.Meta = nil
+
+	body := `{"action":"delete","target":"pack","format":"parquet"}`
+	req := httptest.NewRequest("POST", "/api/warc/0/action", strings.NewReader(body))
+	req.SetPathValue("index", "0")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.handleWARCAction(w, req)
+	if w.Code != 200 {
+		t.Fatalf("POST /api/warc/0/action delete expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("expected pack file to be deleted, stat err=%v", err)
+	}
+}
+
+func TestHandleWARCAction_CreateIndexJob(t *testing.T) {
+	root := t.TempDir()
+	srv := NewDashboard("duckdb", "CC-TEST-2026", "", root)
+	srv.Meta = nil
+
+	body := `{"action":"index","engine":"duckdb","source":"files"}`
+	req := httptest.NewRequest("POST", "/api/warc/0/action", strings.NewReader(body))
+	req.SetPathValue("index", "0")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.handleWARCAction(w, req)
+	if w.Code != 200 {
+		t.Fatalf("POST /api/warc/0/action index expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode action JSON: %v", err)
+	}
+	job, ok := resp["job"].(map[string]any)
+	if !ok || job["id"] == "" {
+		t.Fatalf("expected created job in response, got %#v", resp["job"])
+	}
+}
+
 func TestDashboardRoutes_Registered(t *testing.T) {
 	root := t.TempDir()
 	srv := NewDashboard("test-engine", "CC-TEST-2026", "", root)
@@ -215,6 +342,13 @@ func TestDashboardRoutes_Registered(t *testing.T) {
 
 	if w.Code != 200 {
 		t.Fatalf("GET /api/overview: expected 200, got %d", w.Code)
+	}
+
+	req2 := httptest.NewRequest("GET", "/api/meta/status", nil)
+	w2 := httptest.NewRecorder()
+	handler.ServeHTTP(w2, req2)
+	if w2.Code != 200 {
+		t.Fatalf("GET /api/meta/status: expected 200, got %d", w2.Code)
 	}
 }
 
@@ -264,6 +398,9 @@ func TestNewDashboard_SetsFields(t *testing.T) {
 	if srv.Jobs == nil {
 		t.Fatal("expected Jobs to be non-nil")
 	}
+	if srv.Meta == nil {
+		t.Fatal("expected Meta to be non-nil")
+	}
 	if srv.Addr != "http://localhost:7700" {
 		t.Fatalf("expected Addr=http://localhost:7700, got %q", srv.Addr)
 	}
@@ -308,6 +445,55 @@ func TestHandleOverview_EmptyDir(t *testing.T) {
 	}
 	if result.FTSEngines == nil {
 		t.Fatal("expected FTSEngines to be non-nil")
+	}
+}
+
+func TestHandleMetaStatusAndRefresh(t *testing.T) {
+	root := t.TempDir()
+	warcDir := filepath.Join(root, "warc")
+	mustMkdir(t, warcDir)
+	writeFile(t, filepath.Join(warcDir, "00000.warc.gz"), 1024)
+
+	srv := NewDashboard("test-engine", "CC-TEST-2026", "", root)
+	if srv.Meta == nil {
+		t.Fatal("expected meta manager to be initialized")
+	}
+
+	// Trigger a synchronous read first so cache exists.
+	reqOverview := httptest.NewRequest("GET", "/api/overview", nil)
+	wOverview := httptest.NewRecorder()
+	srv.handleOverview(wOverview, reqOverview)
+	if wOverview.Code != 200 {
+		t.Fatalf("GET /api/overview: expected 200, got %d", wOverview.Code)
+	}
+
+	reqStatus := httptest.NewRequest("GET", "/api/meta/status", nil)
+	wStatus := httptest.NewRecorder()
+	srv.handleMetaStatus(wStatus, reqStatus)
+	if wStatus.Code != 200 {
+		t.Fatalf("GET /api/meta/status: expected 200, got %d", wStatus.Code)
+	}
+	var statusResp map[string]any
+	if err := json.Unmarshal(wStatus.Body.Bytes(), &statusResp); err != nil {
+		t.Fatalf("decode status JSON: %v", err)
+	}
+	if statusResp["crawl_id"] != "CC-TEST-2026" {
+		t.Fatalf("expected crawl_id=CC-TEST-2026, got %v", statusResp["crawl_id"])
+	}
+
+	reqRefresh := httptest.NewRequest("POST", "/api/meta/refresh", strings.NewReader(`{"force":true}`))
+	reqRefresh.Header.Set("Content-Type", "application/json")
+	wRefresh := httptest.NewRecorder()
+	srv.handleMetaRefresh(wRefresh, reqRefresh)
+	if wRefresh.Code != http.StatusAccepted && wRefresh.Code != 200 {
+		t.Fatalf("POST /api/meta/refresh: expected 202 or 200, got %d", wRefresh.Code)
+	}
+	var refreshResp map[string]any
+	if err := json.Unmarshal(wRefresh.Body.Bytes(), &refreshResp); err != nil {
+		t.Fatalf("decode refresh JSON: %v", err)
+	}
+	if _, ok := refreshResp["accepted"]; !ok {
+		t.Fatalf("expected accepted field in refresh response, got %v", refreshResp)
 	}
 }
 
@@ -400,6 +586,47 @@ func TestParseFileSelector(t *testing.T) {
 	}
 }
 
+func TestPackFilePath(t *testing.T) {
+	packDir := "/tmp/pack"
+	warcIdx := "00042"
+
+	got, err := packFilePath(packDir, "parquet", warcIdx)
+	if err != nil {
+		t.Fatalf("parquet: unexpected err: %v", err)
+	}
+	if got != "/tmp/pack/parquet/00042.parquet" {
+		t.Fatalf("parquet: got %q", got)
+	}
+
+	got, err = packFilePath(packDir, "bin", warcIdx)
+	if err != nil {
+		t.Fatalf("bin: unexpected err: %v", err)
+	}
+	if got != "/tmp/pack/bin/00042.bin" {
+		t.Fatalf("bin: got %q", got)
+	}
+
+	got, err = packFilePath(packDir, "duckdb", warcIdx)
+	if err != nil {
+		t.Fatalf("duckdb: unexpected err: %v", err)
+	}
+	if got != "/tmp/pack/duckdb/00042.duckdb" {
+		t.Fatalf("duckdb: got %q", got)
+	}
+
+	got, err = packFilePath(packDir, "markdown", warcIdx)
+	if err != nil {
+		t.Fatalf("markdown: unexpected err: %v", err)
+	}
+	if got != "/tmp/pack/markdown/00042.bin.gz" {
+		t.Fatalf("markdown: got %q", got)
+	}
+
+	if _, err := packFilePath(packDir, "invalid", warcIdx); err == nil {
+		t.Fatal("invalid format: expected error")
+	}
+}
+
 // TestWarcIndexFromPath verifies the helper function used by executors.
 func TestWarcIndexFromPath(t *testing.T) {
 	tests := []struct {
@@ -456,6 +683,13 @@ func TestIntegrationDashboardLifecycle(t *testing.T) {
 		if !strings.Contains(ct, "text/html") {
 			t.Fatalf("GET /: expected text/html content type, got %q", ct)
 		}
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatalf("GET /: read body: %v", err)
+		}
+		if !strings.Contains(string(body), "Refresh Metadata") {
+			t.Fatal("GET /: expected dashboard UI to include Refresh Metadata action")
+		}
 	})
 
 	// ── GET /api/overview → 200, JSON with crawl_id ─────────────────
@@ -481,6 +715,44 @@ func TestIntegrationDashboardLifecycle(t *testing.T) {
 		}
 	})
 
+	// ── GET /api/meta/status → 200 ───────────────────────────────────
+	t.Run("GET /api/meta/status", func(t *testing.T) {
+		resp, err := client.Get(ts.URL + "/api/meta/status")
+		if err != nil {
+			t.Fatalf("GET /api/meta/status: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("GET /api/meta/status: expected 200, got %d", resp.StatusCode)
+		}
+		var result map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("decode JSON: %v", err)
+		}
+		if result["crawl_id"] != "CC-TEST-2026" {
+			t.Fatalf("expected crawl_id=CC-TEST-2026, got %v", result["crawl_id"])
+		}
+	})
+
+	// ── POST /api/meta/refresh → 202|200 ─────────────────────────────
+	t.Run("POST /api/meta/refresh", func(t *testing.T) {
+		resp, err := client.Post(ts.URL+"/api/meta/refresh", "application/json", strings.NewReader(`{"force":true}`))
+		if err != nil {
+			t.Fatalf("POST /api/meta/refresh: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusAccepted && resp.StatusCode != 200 {
+			t.Fatalf("POST /api/meta/refresh: expected 202 or 200, got %d", resp.StatusCode)
+		}
+		var result map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("decode JSON: %v", err)
+		}
+		if _, ok := result["accepted"]; !ok {
+			t.Fatalf("expected accepted field, got %v", result)
+		}
+	})
+
 	// ── GET /api/engines → 200, JSON with engines array ─────────────
 	t.Run("GET /api/engines", func(t *testing.T) {
 		resp, err := client.Get(ts.URL + "/api/engines")
@@ -502,6 +774,25 @@ func TestIntegrationDashboardLifecycle(t *testing.T) {
 		// engines may or may not be empty depending on registered drivers,
 		// but it must be a valid array.
 		_ = engines
+	})
+
+	// ── GET /api/warc → 200, JSON with warcs array ───────────────────
+	t.Run("GET /api/warc", func(t *testing.T) {
+		resp, err := client.Get(ts.URL + "/api/warc")
+		if err != nil {
+			t.Fatalf("GET /api/warc: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("GET /api/warc: expected 200, got %d", resp.StatusCode)
+		}
+		var result map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("decode JSON: %v", err)
+		}
+		if _, ok := result["warcs"].([]any); !ok {
+			t.Fatalf("expected warcs array, got %T", result["warcs"])
+		}
 	})
 
 	// ── GET /api/jobs → 200, JSON with empty jobs array ─────────────
@@ -649,7 +940,7 @@ func TestIntegrationNewNoDashboardRoutes(t *testing.T) {
 	})
 
 	// ── Dashboard routes fall through to GET / (no JSON) ─────────────
-	for _, path := range []string{"/api/overview", "/api/engines", "/api/jobs"} {
+	for _, path := range []string{"/api/overview", "/api/meta/status", "/api/engines", "/api/jobs", "/api/warc"} {
 		t.Run("GET "+path+" no dashboard", func(t *testing.T) {
 			resp, err := client.Get(ts.URL + path)
 			if err != nil {
@@ -684,6 +975,8 @@ func TestIntegrationNewNoDashboardRoutes(t *testing.T) {
 
 // Compile-time check: ensure handler methods satisfy http.HandlerFunc signature.
 var _ http.HandlerFunc = (*Server)(nil).handleOverview
+var _ http.HandlerFunc = (*Server)(nil).handleMetaStatus
+var _ http.HandlerFunc = (*Server)(nil).handleMetaRefresh
 var _ http.HandlerFunc = (*Server)(nil).handleEngines
 var _ http.HandlerFunc = (*Server)(nil).handleListJobs
 var _ http.HandlerFunc = (*Server)(nil).handleGetJob
@@ -692,3 +985,6 @@ var _ http.HandlerFunc = (*Server)(nil).handleCancelJob
 var _ http.HandlerFunc = (*Server)(nil).handleCrawlData
 var _ http.HandlerFunc = (*Server)(nil).handleCrawlWarcs
 var _ http.HandlerFunc = (*Server)(nil).handleCrawls
+var _ http.HandlerFunc = (*Server)(nil).handleWARCList
+var _ http.HandlerFunc = (*Server)(nil).handleWARCDetail
+var _ http.HandlerFunc = (*Server)(nil).handleWARCAction
