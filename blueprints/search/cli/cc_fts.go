@@ -65,6 +65,8 @@ func newCCFTS() *cobra.Command {
 	cmd.AddCommand(newCCFTSPack())
 	cmd.AddCommand(newCCFTSWeb())
 	cmd.AddCommand(newCCFTSDashboard())
+	cmd.AddCommand(newCCFTSEmbed())
+	cmd.AddCommand(newCCFTSVector())
 	return cmd
 }
 

@@ -115,7 +115,8 @@ type Results struct {
 //   - Distance is optional. Drivers may leave Distance at zero if unsupported
 //     or if Score already represents the distance.
 type Hit struct {
-	ID       string  `json:"id"`                  // required: matched item id
-	Score    float64 `json:"score,omitempty"`     // similarity score
-	Distance float64 `json:"distance,omitempty"`  // optional distance
+	ID       string            `json:"id"`                  // required: matched item id
+	Score    float64           `json:"score,omitempty"`     // similarity score
+	Distance float64           `json:"distance,omitempty"`  // optional distance
+	Metadata map[string]string `json:"metadata,omitempty"`  // optional: returned payload
 }
