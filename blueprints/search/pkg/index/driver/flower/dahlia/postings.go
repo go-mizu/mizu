@@ -146,8 +146,8 @@ func (pw *postingsWriter) writePositions(positions []uint32) {
 }
 
 func (pw *postingsWriter) docBytes() []byte  { return pw.docBuf.Bytes() }
-func (pw *postingsWriter) freqBytes() []byte  { return pw.freqBuf.Bytes() }
-func (pw *postingsWriter) posBytes() []byte   { return pw.posBuf.Bytes() }
+func (pw *postingsWriter) freqBytes() []byte { return pw.freqBuf.Bytes() }
+func (pw *postingsWriter) posBytes() []byte  { return pw.posBuf.Bytes() }
 
 // postingIterator iterates over a term's posting list using mmap'd data.
 type postingIterator struct {
@@ -188,6 +188,12 @@ type postingIterator struct {
 	tailDocs  []uint32
 	tailFreqs []uint32
 	exhausted bool
+
+	// Position-state tracking for current doc.
+	// posReadOff is forward-only; this ensures one doc's positions are consumed
+	// exactly once (read or skipped) before moving on.
+	curPosLoaded bool
+	curPositions []uint32
 }
 
 // newPostingIterator creates an iterator for a term's posting list.
@@ -234,6 +240,7 @@ func (it *postingIterator) next() bool {
 	if it.exhausted {
 		return false
 	}
+	it.skipCurrentPositions()
 
 	it.inBlock++
 
@@ -248,6 +255,8 @@ func (it *postingIterator) next() bool {
 		it.curDoc = it.blockDocs[it.inBlock]
 		it.curFreq = it.blockFreqs[it.inBlock]
 	}
+	it.curPosLoaded = false
+	it.curPositions = nil
 	return true
 }
 
@@ -278,6 +287,8 @@ func (it *postingIterator) nextBlock() bool {
 		it.inTail = false
 		it.curDoc = it.blockDocs[0]
 		it.curFreq = it.blockFreqs[0]
+		it.curPosLoaded = false
+		it.curPositions = nil
 		return true
 	}
 
@@ -290,12 +301,16 @@ func (it *postingIterator) nextBlock() bool {
 			it.inBlock = 0
 			it.curDoc = it.tailDocs[0]
 			it.curFreq = it.tailFreqs[0]
+			it.curPosLoaded = false
+			it.curPositions = nil
 			return true
 		}
 	}
 
 	it.exhausted = true
 	it.curDoc = noMoreDocs
+	it.curPosLoaded = false
+	it.curPositions = nil
 	return false
 }
 
@@ -368,6 +383,10 @@ func (it *postingIterator) seekToBlock(idx int) {
 	it.inBlock = blockSize
 	it.blockLen = 0
 	it.inTail = false
+	it.curDoc = noMoreDocs
+	it.curFreq = 0
+	it.curPosLoaded = false
+	it.curPositions = nil
 }
 
 // blockMaxImpact returns the upper-bound BM25 TF+norm score for the current block.
@@ -386,11 +405,21 @@ func (it *postingIterator) blockMaxImpact(idf float64, normTable [256]float32) f
 
 // positions returns the positions for the current document.
 func (it *postingIterator) positions() []uint32 {
+	if it.curDoc == noMoreDocs {
+		return nil
+	}
+	if it.curPosLoaded {
+		return it.curPositions
+	}
 	if it.posData == nil || len(it.posData) == 0 {
+		it.curPosLoaded = true
+		it.curPositions = nil
 		return nil
 	}
 	off := it.posBase + it.posReadOff
 	if int(off) >= len(it.posData) {
+		it.curPosLoaded = true
+		it.curPositions = nil
 		return nil
 	}
 	count, n := vintGet(it.posData[off:])
@@ -406,17 +435,29 @@ func (it *postingIterator) positions() []uint32 {
 	}
 	// Advance posReadOff past what we just read
 	it.posReadOff = off - it.posBase
+	it.curPosLoaded = true
+	it.curPositions = positions
 	return positions
 }
 
 // skipPositions advances the position read offset past the current doc's positions
 // without allocating. Call this for docs you score but don't need positions for.
 func (it *postingIterator) skipPositions() {
+	if it.curDoc == noMoreDocs {
+		return
+	}
+	if it.curPosLoaded {
+		return
+	}
 	if it.posData == nil || len(it.posData) == 0 {
+		it.curPosLoaded = true
+		it.curPositions = nil
 		return
 	}
 	off := it.posBase + it.posReadOff
 	if int(off) >= len(it.posData) {
+		it.curPosLoaded = true
+		it.curPositions = nil
 		return
 	}
 	count, n := vintGet(it.posData[off:])
@@ -426,7 +467,16 @@ func (it *postingIterator) skipPositions() {
 		off += uint32(dn)
 	}
 	it.posReadOff = off - it.posBase
+	it.curPosLoaded = true
+	it.curPositions = nil
 }
 
 func (it *postingIterator) doc() uint32  { return it.curDoc }
 func (it *postingIterator) freq() uint32 { return it.curFreq }
+
+func (it *postingIterator) skipCurrentPositions() {
+	if it.curDoc == noMoreDocs {
+		return
+	}
+	it.skipPositions()
+}
