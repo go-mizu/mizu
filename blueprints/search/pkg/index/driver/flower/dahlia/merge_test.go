@@ -46,7 +46,7 @@ func TestMergeSegments(t *testing.T) {
 
 	// Verify we can search the merged segment
 	q := parseQuery("document")
-	eval := newWandEvaluator(merged, 10)
+	eval := newWandEvaluator(merged, 10, 0, 0, nil)
 	results := eval.searchQuery(q)
 	if len(results) == 0 {
 		t.Fatal("expected results from merged segment")
@@ -70,5 +70,35 @@ func TestMergeEmpty(t *testing.T) {
 	err := mergeSegments(nil, mergedDir)
 	if err == nil {
 		t.Fatal("expected error merging empty")
+	}
+}
+
+func TestPickMergeIndicesRespectsBudget(t *testing.T) {
+	segs := []*segmentReader{
+		{meta: segmentMeta{DocCount: 1000}},
+		{meta: segmentMeta{DocCount: 1200}},
+		{meta: segmentMeta{DocCount: 2000}},
+		{meta: segmentMeta{DocCount: 5000}},
+	}
+
+	idx := pickMergeIndices(segs, 10, 2500, false)
+	if len(idx) != 2 {
+		t.Fatalf("picked=%v, want 2 segments under budget", idx)
+	}
+	if idx[0] != 0 || idx[1] != 1 {
+		t.Fatalf("picked=%v, want [0 1]", idx)
+	}
+}
+
+func TestPickMergeIndicesForceProgress(t *testing.T) {
+	segs := []*segmentReader{
+		{meta: segmentMeta{DocCount: 10_000}},
+		{meta: segmentMeta{DocCount: 11_000}},
+		{meta: segmentMeta{DocCount: 12_000}},
+	}
+
+	idx := pickMergeIndices(segs, 10, 1, true)
+	if len(idx) != 2 {
+		t.Fatalf("picked=%v, want fallback 2 segments", idx)
 	}
 }
