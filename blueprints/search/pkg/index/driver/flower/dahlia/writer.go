@@ -40,18 +40,11 @@ func newSegmentWriter() *segmentWriter {
 }
 
 // addDoc analyzes and indexes a single document.
-// Text is truncated before analysis (indexMaxTextBytes) and storage (storeMaxTextBytes)
-// to keep index small and memory low.
 func (sw *segmentWriter) addDoc(docID string, text []byte) {
 	localID := sw.docCount
 	sw.docCount++
 
-	// Truncate for indexing — first 512 bytes covers title + headers + first paragraph
-	indexText := text
-	if len(indexText) > indexMaxTextBytes {
-		indexText = indexText[:indexMaxTextBytes]
-	}
-	tokens := analyzeWithPositions(string(indexText))
+	tokens := analyzeWithPositions(string(text))
 	docLen := uint32(len(tokens))
 	normByte := encodeFieldNorm(docLen)
 	sw.norms = append(sw.norms, normByte)
@@ -88,13 +81,8 @@ func (sw *segmentWriter) addDoc(docID string, text []byte) {
 		sw.memEstimate += 16 + len(td.positions)*4
 	}
 
-	// Truncate for storage — only need first 256 bytes for snippets
-	storeText := text
-	if len(storeText) > storeMaxTextBytes {
-		storeText = storeText[:storeMaxTextBytes]
-	}
-	sw.store.addDoc(localID, docID, storeText)
-	sw.memEstimate += len(docID) + len(storeText)
+	sw.store.addDoc(localID, docID, text)
+	sw.memEstimate += len(docID) + len(text)
 }
 
 // estimatedMemory returns the approximate memory usage of buffered data.

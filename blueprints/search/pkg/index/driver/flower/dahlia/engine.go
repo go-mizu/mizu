@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index"
@@ -59,9 +60,11 @@ func (e *Engine) Open(_ context.Context, dir string) error {
 		e.segments = append(e.segments, sr)
 	}
 
-	// Start background merge worker
-	e.merger = newMergeWorker(dir, &e.mu, &e.meta, &e.segments)
-	e.merger.start()
+	// Optional background merge worker. Disabled by default for lower RSS.
+	if dahliaBgMergeEnabled() {
+		e.merger = newMergeWorker(dir, &e.mu, &e.meta, &e.segments)
+		e.merger.start()
+	}
 
 	return nil
 }
@@ -171,12 +174,7 @@ func (e *Engine) bgFlush(sw *segmentWriter, segName, segDir string) {
 		e.setFlushErr(fmt.Errorf("bg flush %s: %w", segName, err))
 		return
 	}
-	sr, err := openSegmentReader(segDir)
-	if err != nil {
-		os.RemoveAll(segDir)
-		e.setFlushErr(fmt.Errorf("bg open segment %s: %w", segName, err))
-		return
-	}
+	sr := newLazySegmentReader(segDir, *segMeta)
 
 	e.mu.Lock()
 	e.segments = append(e.segments, sr)
@@ -213,10 +211,7 @@ func (e *Engine) flushWriterSync() error {
 		return fmt.Errorf("flush segment: %w", err)
 	}
 
-	sr, err := openSegmentReader(segDir)
-	if err != nil {
-		return fmt.Errorf("open new segment: %w", err)
-	}
+	sr := newLazySegmentReader(segDir, *segMeta)
 
 	e.segments = append(e.segments, sr)
 	e.meta.Segments = append(e.meta.Segments, segName)
@@ -318,8 +313,9 @@ func (e *Engine) resolveHit(sd scoredDoc) index.Hit {
 	}
 }
 
-// Finalize implements index.Finalizer. Forces a merge of all segments
-// and flushes any buffered documents.
+// Finalize implements index.Finalizer.
+// Default behavior is memory-bounded: flush pending data and keep segments as-is.
+// Set DAHLIA_FORCE_MERGE=1 to force a full merge to one segment.
 func (e *Engine) Finalize(_ context.Context) error {
 	// Flush buffered docs synchronously
 	e.mu.Lock()
@@ -336,7 +332,7 @@ func (e *Engine) Finalize(_ context.Context) error {
 	}
 	e.mu.Unlock()
 
-	// Wait for all background flushes before merge
+	// Wait for all background flushes
 	e.flushWg.Wait()
 	e.mu.RLock()
 	if e.flushErr != nil {
@@ -345,6 +341,10 @@ func (e *Engine) Finalize(_ context.Context) error {
 		return err
 	}
 	e.mu.RUnlock()
+
+	if !dahliaForceMergeEnabled() {
+		return nil
+	}
 
 	return forceMerge(e.dir, &e.mu, &e.meta, &e.segments)
 }
@@ -358,4 +358,14 @@ func (e *Engine) setFlushErr(err error) {
 		e.flushErr = err
 	}
 	e.mu.Unlock()
+}
+
+func dahliaForceMergeEnabled() bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv("DAHLIA_FORCE_MERGE")))
+	return v == "1" || v == "true" || v == "yes" || v == "on"
+}
+
+func dahliaBgMergeEnabled() bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv("DAHLIA_BG_MERGE")))
+	return v == "1" || v == "true" || v == "yes" || v == "on"
 }
