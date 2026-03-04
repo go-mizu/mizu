@@ -6,6 +6,7 @@ import (
 )
 
 type scoredDoc struct {
+	seg   *segmentReader
 	docID uint32
 	score float64
 }
@@ -14,9 +15,9 @@ type scoredDoc struct {
 type topKHeap []scoredDoc
 
 func (h topKHeap) Len() int            { return len(h) }
-func (h topKHeap) Less(i, j int) bool   { return h[i].score < h[j].score }
-func (h topKHeap) Swap(i, j int)        { h[i], h[j] = h[j], h[i] }
-func (h *topKHeap) Push(x interface{})   { *h = append(*h, x.(scoredDoc)) }
+func (h topKHeap) Less(i, j int) bool  { return h[i].score < h[j].score }
+func (h topKHeap) Swap(i, j int)       { h[i], h[j] = h[j], h[i] }
+func (h *topKHeap) Push(x interface{}) { *h = append(*h, x.(scoredDoc)) }
 func (h *topKHeap) Pop() interface{} {
 	old := *h
 	n := len(old)
@@ -30,14 +31,42 @@ type wandEvaluator struct {
 	seg       *segmentReader
 	normTable [256]float32
 	topK      int
+	docCount  uint64
+	termDF    map[string]uint64
 }
 
-func newWandEvaluator(seg *segmentReader, topK int) *wandEvaluator {
+func newWandEvaluator(seg *segmentReader, topK int, avgDocLen float64, docCount uint64, termDF map[string]uint64) *wandEvaluator {
+	if avgDocLen <= 0 {
+		avgDocLen = seg.meta.AvgDocLen
+	}
+	if docCount == 0 {
+		docCount = uint64(seg.meta.DocCount)
+	}
 	return &wandEvaluator{
 		seg:       seg,
-		normTable: buildFieldNormBM25Table(seg.meta.AvgDocLen),
+		normTable: buildFieldNormBM25Table(avgDocLen),
 		topK:      topK,
+		docCount:  docCount,
+		termDF:    termDF,
 	}
+}
+
+func (w *wandEvaluator) idf(term string, localDocFreq uint32) float64 {
+	n := w.docCount
+	if n == 0 {
+		n = uint64(w.seg.meta.DocCount)
+	}
+	df := uint64(localDocFreq)
+	if gdf, ok := w.termDF[term]; ok && gdf > 0 {
+		df = gdf
+	}
+	if df == 0 {
+		df = 1
+	}
+	if df > n {
+		df = n
+	}
+	return bm25IDF(df, n)
 }
 
 // searchQuery dispatches to the appropriate search method based on query type.
@@ -59,7 +88,7 @@ func (w *wandEvaluator) searchTerm(q termQuery) []scoredDoc {
 	if !found {
 		return nil
 	}
-	idf := bm25IDF(uint64(ti.docFreq), uint64(w.seg.meta.DocCount))
+	idf := w.idf(q.term, ti.docFreq)
 
 	h := &topKHeap{}
 	for it.next() {
@@ -88,7 +117,7 @@ func (w *wandEvaluator) searchPhrase(q phraseQuery) []scoredDoc {
 		if !found {
 			return nil // ALL terms must exist for phrase
 		}
-		idf := bm25IDF(uint64(ti.docFreq), uint64(w.seg.meta.DocCount))
+		idf := w.idf(term, ti.docFreq)
 		iters = append(iters, termIter{it: it, ti: ti, idf: idf})
 	}
 
@@ -133,15 +162,16 @@ func (w *wandEvaluator) searchPhrase(q phraseQuery) []scoredDoc {
 		for i := range iters {
 			phraseIts[i] = iters[i].it
 		}
-		if checkPhrasePositions(phraseIts) {
-			// Score using sum of term scores
-			var totalScore float64
+		if phraseTF := countPhraseMatches(phraseIts); phraseTF > 0 {
+			// Approximate Lucene/Tantivy phrase scoring: use phrase frequency as TF
+			// and sum term IDFs for the phrase weight.
+			var phraseIDF float64
 			for _, ti := range iters {
-				tf := float64(ti.it.freq())
-				normComp := w.normTable[w.seg.fieldNorm(maxDoc)]
-				totalScore += bm25ScoreWithNormTable(tf, ti.idf, normComp)
+				phraseIDF += ti.idf
 			}
-			w.addToHeap(h, maxDoc, totalScore)
+			normComp := w.normTable[w.seg.fieldNorm(maxDoc)]
+			score := bm25ScoreWithNormTable(float64(phraseTF), phraseIDF, normComp)
+			w.addToHeap(h, maxDoc, score)
 		}
 
 		// Advance first iterator
@@ -151,20 +181,20 @@ func (w *wandEvaluator) searchPhrase(q phraseQuery) []scoredDoc {
 	}
 }
 
-func checkPhrasePositions(iters []*postingIterator) bool {
+func countPhraseMatches(iters []*postingIterator) int {
 	// Get positions for each term
 	allPositions := make([][]uint32, len(iters))
 	for i, it := range iters {
 		allPositions[i] = it.positions()
 		if len(allPositions[i]) == 0 {
-			return false
+			return 0
 		}
 	}
 
-	// Check if any position sequence p[0], p[0]+1, p[0]+2, ... exists
-	// For each position of the first term, check subsequent terms
+	// Count position sequences p[0], p[0]+1, p[0]+2, ... .
+	matches := 0
 	for _, p0 := range allPositions[0] {
-		match := true
+		ok := true
 		for k := 1; k < len(iters); k++ {
 			target := p0 + uint32(k)
 			found := false
@@ -175,15 +205,15 @@ func checkPhrasePositions(iters []*postingIterator) bool {
 				}
 			}
 			if !found {
-				match = false
+				ok = false
 				break
 			}
 		}
-		if match {
-			return true
+		if ok {
+			matches++
 		}
 	}
-	return false
+	return matches
 }
 
 func (w *wandEvaluator) searchBoolean(q booleanQuery) []scoredDoc {
@@ -196,48 +226,84 @@ func (w *wandEvaluator) searchBoolean(q booleanQuery) []scoredDoc {
 	return nil
 }
 
-// searchBooleanShould implements OR semantics with Block-Max WAND pruning.
+// searchBooleanShould implements OR semantics with exact additive BM25 scoring.
 func (w *wandEvaluator) searchBooleanShould(q booleanQuery) []scoredDoc {
 	type cursor struct {
 		it  *postingIterator
 		idf float64
 	}
 	var cursors []cursor
+	extraScores := make(map[uint32]float64)
 
 	for _, sq := range q.should {
 		tq, ok := sq.(termQuery)
 		if !ok {
-			// For non-term sub-queries, evaluate separately and merge
+			// Evaluate non-term sub-queries and merge by docID.
 			results := w.searchQuery(sq)
-			// Just use term queries for WAND
-			_ = results
+			for _, sd := range results {
+				extraScores[sd.docID] += sd.score
+			}
 			continue
 		}
 		it, ti, found := w.seg.lookupTerm(tq.term)
 		if !found {
 			continue
 		}
-		idf := bm25IDF(uint64(ti.docFreq), uint64(w.seg.meta.DocCount))
+		idf := w.idf(tq.term, ti.docFreq)
 		if !it.next() {
 			continue
 		}
 		cursors = append(cursors, cursor{it: it, idf: idf})
 	}
 
-	if len(cursors) == 0 {
+	if len(cursors) == 0 && len(extraScores) == 0 {
 		return nil
 	}
 
 	h := &topKHeap{}
-	threshold := float64(0)
+	seen := make(map[uint32]struct{}, w.topK*2)
 
-	for {
-		// Sort cursors by current docID
-		sort.Slice(cursors, func(i, j int) bool {
-			return cursors[i].it.doc() < cursors[j].it.doc()
-		})
+	for len(cursors) > 0 {
+		// Find the next candidate doc as the minimum current posting doc.
+		minDoc := noMoreDocs
+		for _, c := range cursors {
+			if d := c.it.doc(); d < minDoc {
+				minDoc = d
+			}
+		}
+		if minDoc == noMoreDocs {
+			break
+		}
 
-		// Remove exhausted cursors
+		if _, exists := seen[minDoc]; !exists {
+			var score float64
+			for i := range cursors {
+				if cursors[i].it.doc() != minDoc {
+					continue
+				}
+				tf := float64(cursors[i].it.freq())
+				normComp := w.normTable[w.seg.fieldNorm(minDoc)]
+				score += bm25ScoreWithNormTable(tf, cursors[i].idf, normComp)
+			}
+			if extra, ok := extraScores[minDoc]; ok {
+				score += extra
+			}
+			if score > 0 {
+				seen[minDoc] = struct{}{}
+				w.addToHeap(h, minDoc, score)
+			}
+		}
+
+		// Advance all posting cursors positioned at the scored doc.
+		for i := range cursors {
+			if cursors[i].it.doc() == minDoc {
+				if !cursors[i].it.next() {
+					cursors[i].it.curDoc = noMoreDocs
+				}
+			}
+		}
+
+		// Remove exhausted cursors.
 		active := cursors[:0]
 		for _, c := range cursors {
 			if c.it.doc() != noMoreDocs {
@@ -245,59 +311,17 @@ func (w *wandEvaluator) searchBooleanShould(q booleanQuery) []scoredDoc {
 			}
 		}
 		cursors = active
-		if len(cursors) == 0 {
-			break
-		}
+	}
 
-		// Find pivot: first position where sum of upper bounds >= threshold
-		pivotIdx := -1
-		if threshold > 0 {
-			var cumUB float64
-			for i, c := range cursors {
-				cumUB += c.it.blockMaxImpact(c.idf, w.normTable)
-				if cumUB >= threshold {
-					pivotIdx = i
-					break
-				}
-			}
-			if pivotIdx < 0 {
-				// No combination can beat threshold — try advancing
-				// the cursor with the smallest upper bound
-				if !cursors[0].it.next() {
-					cursors[0].it.curDoc = noMoreDocs
-				}
-				continue
-			}
-		} else {
-			pivotIdx = 0
+	// Include docs from non-term should clauses when term cursors had no hit.
+	for docID, extra := range extraScores {
+		if extra <= 0 {
+			continue
 		}
-
-		pivotDoc := cursors[pivotIdx].it.doc()
-
-		// Score all cursors at pivotDoc
-		var score float64
-		for i := range cursors {
-			if cursors[i].it.doc() == pivotDoc {
-				tf := float64(cursors[i].it.freq())
-				normComp := w.normTable[w.seg.fieldNorm(pivotDoc)]
-				score += bm25ScoreWithNormTable(tf, cursors[i].idf, normComp)
-			}
+		if _, exists := seen[docID]; exists {
+			continue
 		}
-		if score > 0 {
-			w.addToHeap(h, pivotDoc, score)
-			if h.Len() >= w.topK {
-				threshold = (*h)[0].score
-			}
-		}
-
-		// Advance all cursors that were at pivotDoc
-		for i := range cursors {
-			if cursors[i].it.doc() == pivotDoc {
-				if !cursors[i].it.next() {
-					cursors[i].it.curDoc = noMoreDocs
-				}
-			}
-		}
+		w.addToHeap(h, docID, extra)
 	}
 
 	return heapToSorted(h)
@@ -311,6 +335,7 @@ func (w *wandEvaluator) searchBooleanMust(q booleanQuery) []scoredDoc {
 	}
 
 	var mustCursors []cursor
+	var phraseMustScores []map[uint32]float64
 	for _, mq := range q.must {
 		switch mq := mq.(type) {
 		case termQuery:
@@ -318,11 +343,18 @@ func (w *wandEvaluator) searchBooleanMust(q booleanQuery) []scoredDoc {
 			if !found {
 				return nil
 			}
-			idf := bm25IDF(uint64(ti.docFreq), uint64(w.seg.meta.DocCount))
+			idf := w.idf(mq.term, ti.docFreq)
 			mustCursors = append(mustCursors, cursor{it: it, idf: idf})
 		case phraseQuery:
-			// Evaluate phrase separately
-			return w.searchPhrase(mq)
+			phraseHits := w.searchPhrase(mq)
+			if len(phraseHits) == 0 {
+				return nil
+			}
+			scoreByDoc := make(map[uint32]float64, len(phraseHits))
+			for _, sd := range phraseHits {
+				scoreByDoc[sd.docID] = sd.score
+			}
+			phraseMustScores = append(phraseMustScores, scoreByDoc)
 		}
 	}
 
@@ -337,7 +369,7 @@ func (w *wandEvaluator) searchBooleanMust(q booleanQuery) []scoredDoc {
 		if !found {
 			continue
 		}
-		idf := bm25IDF(uint64(ti.docFreq), uint64(w.seg.meta.DocCount))
+		idf := w.idf(tq.term, ti.docFreq)
 		shouldCursors = append(shouldCursors, cursor{it: it, idf: idf})
 	}
 
@@ -358,6 +390,50 @@ func (w *wandEvaluator) searchBooleanMust(q booleanQuery) []scoredDoc {
 	}
 
 	if len(mustCursors) == 0 {
+		// Phrase-only MUST: intersect phrase results.
+		if len(phraseMustScores) == 0 {
+			return nil
+		}
+		h := &topKHeap{}
+		for docID, score := range phraseMustScores[0] {
+			if mustNotSet[docID] {
+				continue
+			}
+			ok := true
+			for i := 1; i < len(phraseMustScores); i++ {
+				v, exists := phraseMustScores[i][docID]
+				if !exists {
+					ok = false
+					break
+				}
+				score += v
+			}
+			if !ok {
+				continue
+			}
+			w.addToHeap(h, docID, score)
+		}
+		return heapToSorted(h)
+	}
+
+	containsAllMustPhrases := func(docID uint32) bool {
+		for _, scoreByDoc := range phraseMustScores {
+			if _, ok := scoreByDoc[docID]; !ok {
+				return false
+			}
+		}
+		return true
+	}
+
+	phraseScore := func(docID uint32) float64 {
+		var total float64
+		for _, scoreByDoc := range phraseMustScores {
+			total += scoreByDoc[docID]
+		}
+		return total
+	}
+
+	if len(mustCursors) == 0 && len(phraseMustScores) == 0 {
 		return nil
 	}
 
@@ -372,6 +448,7 @@ func (w *wandEvaluator) searchBooleanMust(q booleanQuery) []scoredDoc {
 	}
 
 	h := &topKHeap{}
+	seen := make(map[uint32]struct{}, w.topK*2)
 
 	for {
 		// Find max docID among must cursors
@@ -399,8 +476,14 @@ func (w *wandEvaluator) searchBooleanMust(q booleanQuery) []scoredDoc {
 			continue
 		}
 
-		// Check mustNot
-		if !mustNotSet[maxDoc] {
+		// Check phrase MUST and mustNot.
+		if containsAllMustPhrases(maxDoc) && !mustNotSet[maxDoc] {
+			if _, exists := seen[maxDoc]; exists {
+				if !mustCursors[0].it.next() {
+					return heapToSorted(h)
+				}
+				continue
+			}
 			// Score
 			var score float64
 			for _, c := range mustCursors {
@@ -408,6 +491,7 @@ func (w *wandEvaluator) searchBooleanMust(q booleanQuery) []scoredDoc {
 				normComp := w.normTable[w.seg.fieldNorm(maxDoc)]
 				score += bm25ScoreWithNormTable(tf, c.idf, normComp)
 			}
+			score += phraseScore(maxDoc)
 			// Add should contributions
 			for i := range shouldCursors {
 				if shouldCursors[i].it.doc() != noMoreDocs {
@@ -419,6 +503,7 @@ func (w *wandEvaluator) searchBooleanMust(q booleanQuery) []scoredDoc {
 					}
 				}
 			}
+			seen[maxDoc] = struct{}{}
 			w.addToHeap(h, maxDoc, score)
 		}
 
@@ -431,9 +516,9 @@ func (w *wandEvaluator) searchBooleanMust(q booleanQuery) []scoredDoc {
 
 func (w *wandEvaluator) addToHeap(h *topKHeap, docID uint32, score float64) {
 	if h.Len() < w.topK {
-		heap.Push(h, scoredDoc{docID: docID, score: score})
+		heap.Push(h, scoredDoc{seg: w.seg, docID: docID, score: score})
 	} else if score > (*h)[0].score {
-		(*h)[0] = scoredDoc{docID: docID, score: score}
+		(*h)[0] = scoredDoc{seg: w.seg, docID: docID, score: score}
 		heap.Fix(h, 0)
 	}
 }
@@ -448,14 +533,21 @@ func heapToSorted(h *topKHeap) []scoredDoc {
 
 // multiSegmentSearch searches all segments and merges results.
 func multiSegmentSearch(segments []*segmentReader, q query, topK int) []scoredDoc {
+	if topK <= 0 {
+		topK = 10
+	}
+
+	globalDocCount, globalAvgDocLen := globalSearchStats(segments)
+	termDF := globalTermDocFreq(segments, q, globalDocCount)
+
 	var allResults []scoredDoc
 	for _, seg := range segments {
-		eval := newWandEvaluator(seg, topK)
+		eval := newWandEvaluator(seg, topK, globalAvgDocLen, globalDocCount, termDF)
 		results := eval.searchQuery(q)
 		allResults = append(allResults, results...)
 	}
 
-	// Sort by score descending
+	// Sort by score descending.
 	sort.Slice(allResults, func(i, j int) bool {
 		return allResults[i].score > allResults[j].score
 	})
@@ -464,4 +556,70 @@ func multiSegmentSearch(segments []*segmentReader, q query, topK int) []scoredDo
 		allResults = allResults[:topK]
 	}
 	return allResults
+}
+
+func globalSearchStats(segments []*segmentReader) (docCount uint64, avgDocLen float64) {
+	var totalLen float64
+	for _, seg := range segments {
+		n := uint64(seg.meta.DocCount)
+		docCount += n
+		totalLen += seg.meta.AvgDocLen * float64(seg.meta.DocCount)
+	}
+	if docCount > 0 {
+		avgDocLen = totalLen / float64(docCount)
+	}
+	return docCount, avgDocLen
+}
+
+func globalTermDocFreq(segments []*segmentReader, q query, globalDocCount uint64) map[string]uint64 {
+	terms := make(map[string]struct{})
+	collectQueryTerms(q, terms)
+	if len(terms) == 0 {
+		return nil
+	}
+
+	out := make(map[string]uint64, len(terms))
+	for term := range terms {
+		var df uint64
+		for _, seg := range segments {
+			ti, ok := seg.lookupTermInfo(term)
+			if !ok {
+				continue
+			}
+			df += uint64(ti.docFreq)
+			if globalDocCount > 0 && df >= globalDocCount {
+				df = globalDocCount
+				break
+			}
+		}
+		if df > 0 {
+			out[term] = df
+		}
+	}
+	return out
+}
+
+func collectQueryTerms(q query, out map[string]struct{}) {
+	switch qq := q.(type) {
+	case termQuery:
+		if qq.term != "" {
+			out[qq.term] = struct{}{}
+		}
+	case phraseQuery:
+		for _, t := range qq.terms {
+			if t != "" {
+				out[t] = struct{}{}
+			}
+		}
+	case booleanQuery:
+		for _, sq := range qq.must {
+			collectQueryTerms(sq, out)
+		}
+		for _, sq := range qq.should {
+			collectQueryTerms(sq, out)
+		}
+		for _, sq := range qq.mustNot {
+			collectQueryTerms(sq, out)
+		}
+	}
 }

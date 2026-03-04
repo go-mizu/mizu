@@ -52,7 +52,7 @@ func parseQuery(input string) query {
 			tok = tok[1:]
 		}
 
-		var q query
+		var queries []query
 		if strings.HasPrefix(tok, "\"") && strings.HasSuffix(tok, "\"") && len(tok) > 2 {
 			// Phrase query
 			inner := tok[1 : len(tok)-1]
@@ -61,25 +61,27 @@ func parseQuery(input string) query {
 				continue
 			}
 			if len(terms) == 1 {
-				q = termQuery{term: terms[0]}
+				queries = append(queries, termQuery{term: terms[0]})
 			} else {
-				q = phraseQuery{terms: terms}
+				queries = append(queries, phraseQuery{terms: terms})
 			}
 		} else {
 			terms := analyze(tok)
 			if len(terms) == 0 {
 				continue
 			}
-			q = termQuery{term: terms[0]}
+			for _, term := range terms {
+				queries = append(queries, termQuery{term: term})
+			}
 		}
 
 		switch prefix {
 		case '+':
-			must = append(must, q)
+			must = append(must, queries...)
 		case '-':
-			mustNot = append(mustNot, q)
+			mustNot = append(mustNot, queries...)
 		default:
-			should = append(should, q)
+			should = append(should, queries...)
 		}
 	}
 
