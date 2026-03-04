@@ -6,6 +6,9 @@
 // runs inference using the yalue/onnxruntime_go bindings. The ONNX Runtime
 // shared library must be installed on the system.
 //
+// Supports CoreML execution provider on macOS for GPU/ANE acceleration.
+// Enable via Config.Addr = "coreml".
+//
 // Build with: go build -tags onnx
 package onnx
 
@@ -16,6 +19,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"sync"
 
 	ort "github.com/yalue/onnxruntime_go"
 
@@ -42,6 +47,18 @@ type Driver struct {
 	maxSeqLen int
 	batchSize int
 	modelName string
+	coreml    bool
+
+	// Mutex protects session — ONNX Runtime session.Run() is not thread-safe.
+	mu sync.Mutex
+
+	// Reusable session components (created once in Open, reused in Embed).
+	session      *ort.AdvancedSession
+	inputIDs     *ort.Tensor[int64]
+	attMask      *ort.Tensor[int64]
+	typeIDs      *ort.Tensor[int64]
+	outputTensor *ort.Tensor[float32]
+	sessionBatch int // batch size the session was created for
 }
 
 func (d *Driver) Name() string {
@@ -55,6 +72,8 @@ func (d *Driver) Dimension() int { return d.dim }
 
 // Open initializes the ONNX runtime, downloads the model if needed, and
 // creates the inference session.
+//
+// Set cfg.Addr = "coreml" to enable CoreML execution provider on macOS.
 func (d *Driver) Open(ctx context.Context, cfg embed.Config) error {
 	d.dim = defaultDim
 	d.maxSeqLen = defaultMaxSeqLen
@@ -66,6 +85,7 @@ func (d *Driver) Open(ctx context.Context, cfg embed.Config) error {
 	if d.modelName == "" {
 		d.modelName = defaultModelName
 	}
+	d.coreml = strings.EqualFold(cfg.Addr, "coreml")
 
 	// Determine model directory.
 	dir := cfg.Dir
@@ -97,10 +117,99 @@ func (d *Driver) Open(ctx context.Context, cfg embed.Config) error {
 		return fmt.Errorf("onnx: init runtime: %w", err)
 	}
 
+	// Create a reusable session for the default batch size.
+	if err := d.createSession(d.batchSize); err != nil {
+		return fmt.Errorf("onnx: create session: %w", err)
+	}
+
 	return nil
 }
 
+// createSession creates or recreates the ONNX session for the given batch size.
+func (d *Driver) createSession(batchSize int) error {
+	// Destroy previous session if any.
+	d.destroySession()
+
+	seqLen := int64(d.maxSeqLen)
+	bs := int64(batchSize)
+	shape := ort.NewShape(bs, seqLen)
+
+	var err error
+	d.inputIDs, err = ort.NewEmptyTensor[int64](shape)
+	if err != nil {
+		return fmt.Errorf("create input_ids tensor: %w", err)
+	}
+	d.attMask, err = ort.NewEmptyTensor[int64](shape)
+	if err != nil {
+		return fmt.Errorf("create attention_mask tensor: %w", err)
+	}
+	d.typeIDs, err = ort.NewEmptyTensor[int64](shape)
+	if err != nil {
+		return fmt.Errorf("create token_type_ids tensor: %w", err)
+	}
+
+	outputShape := ort.NewShape(bs, seqLen, int64(d.dim))
+	d.outputTensor, err = ort.NewEmptyTensor[float32](outputShape)
+	if err != nil {
+		return fmt.Errorf("create output tensor: %w", err)
+	}
+
+	// Session options.
+	var opts *ort.SessionOptions
+	if d.coreml {
+		opts, err = ort.NewSessionOptions()
+		if err != nil {
+			return fmt.Errorf("create session options: %w", err)
+		}
+		defer opts.Destroy()
+		if err := opts.AppendExecutionProviderCoreMLV2(map[string]string{
+			"EnableOnSubgraphs": "1",
+		}); err != nil {
+			return fmt.Errorf("append CoreML EP: %w", err)
+		}
+	}
+
+	d.session, err = ort.NewAdvancedSession(
+		d.modelPath,
+		[]string{"input_ids", "attention_mask", "token_type_ids"},
+		[]string{"last_hidden_state"},
+		[]ort.ArbitraryTensor{d.inputIDs, d.attMask, d.typeIDs},
+		[]ort.ArbitraryTensor{d.outputTensor},
+		opts,
+	)
+	if err != nil {
+		return fmt.Errorf("create session: %w", err)
+	}
+
+	d.sessionBatch = batchSize
+	return nil
+}
+
+func (d *Driver) destroySession() {
+	if d.session != nil {
+		d.session.Destroy()
+		d.session = nil
+	}
+	if d.inputIDs != nil {
+		d.inputIDs.Destroy()
+		d.inputIDs = nil
+	}
+	if d.attMask != nil {
+		d.attMask.Destroy()
+		d.attMask = nil
+	}
+	if d.typeIDs != nil {
+		d.typeIDs.Destroy()
+		d.typeIDs = nil
+	}
+	if d.outputTensor != nil {
+		d.outputTensor.Destroy()
+		d.outputTensor = nil
+	}
+}
+
 func (d *Driver) Close() error {
+	d.destroySession()
 	if err := ort.DestroyEnvironment(); err != nil {
 		return fmt.Errorf("onnx: destroy env: %w", err)
 	}
@@ -130,73 +239,46 @@ func (d *Driver) Embed(ctx context.Context, inputs []embed.Input) ([]embed.Vecto
 }
 
 func (d *Driver) embedBatch(texts []string) ([]embed.Vector, error) {
-	batchSize := int64(len(texts))
-	seqLen := int64(d.maxSeqLen)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	actualBatch := len(texts)
+	seqLen := d.maxSeqLen
+
+	// Pad texts to session batch size (avoid resizing session which is not thread-safe).
+	paddedTexts := texts
+	if actualBatch < d.sessionBatch {
+		paddedTexts = make([]string, d.sessionBatch)
+		copy(paddedTexts, texts)
+		// Remaining entries are empty strings — tokenizer handles them fine.
+	} else if actualBatch > d.sessionBatch {
+		// Should not happen if batchSize is set correctly in Embed(), but handle gracefully.
+		return nil, fmt.Errorf("onnx: batch %d exceeds session capacity %d", actualBatch, d.sessionBatch)
+	}
 
 	// Tokenize.
-	encoded := d.tok.EncodeBatch(texts)
+	encoded := d.tok.EncodeBatch(paddedTexts)
 
-	// Flatten into contiguous arrays.
-	inputIDs := make([]int64, batchSize*seqLen)
-	attentionMask := make([]int64, batchSize*seqLen)
-	tokenTypeIDs := make([]int64, batchSize*seqLen)
+	// Fill pre-allocated tensor data.
+	ids := d.inputIDs.GetData()
+	mask := d.attMask.GetData()
+	types := d.typeIDs.GetData()
 
 	for b, enc := range encoded {
-		off := int64(b) * seqLen
-		copy(inputIDs[off:off+seqLen], enc.InputIDs)
-		copy(attentionMask[off:off+seqLen], enc.AttentionMask)
-		copy(tokenTypeIDs[off:off+seqLen], enc.TokenTypeIDs)
+		off := b * seqLen
+		copy(ids[off:off+seqLen], enc.InputIDs)
+		copy(mask[off:off+seqLen], enc.AttentionMask)
+		copy(types[off:off+seqLen], enc.TokenTypeIDs)
 	}
 
-	shape := ort.NewShape(batchSize, seqLen)
-
-	inputIDsTensor, err := ort.NewTensor(shape, inputIDs)
-	if err != nil {
-		return nil, fmt.Errorf("onnx: create input_ids tensor: %w", err)
-	}
-	defer inputIDsTensor.Destroy()
-
-	attMaskTensor, err := ort.NewTensor(shape, attentionMask)
-	if err != nil {
-		return nil, fmt.Errorf("onnx: create attention_mask tensor: %w", err)
-	}
-	defer attMaskTensor.Destroy()
-
-	typeIDsTensor, err := ort.NewTensor(shape, tokenTypeIDs)
-	if err != nil {
-		return nil, fmt.Errorf("onnx: create token_type_ids tensor: %w", err)
-	}
-	defer typeIDsTensor.Destroy()
-
-	// Output tensor: [batch, seq_len, dim]
-	outputShape := ort.NewShape(batchSize, seqLen, int64(d.dim))
-	outputTensor, err := ort.NewEmptyTensor[float32](outputShape)
-	if err != nil {
-		return nil, fmt.Errorf("onnx: create output tensor: %w", err)
-	}
-	defer outputTensor.Destroy()
-
-	// Create session and run.
-	session, err := ort.NewAdvancedSession(
-		d.modelPath,
-		[]string{"input_ids", "attention_mask", "token_type_ids"},
-		[]string{"last_hidden_state"},
-		[]ort.ArbitraryTensor{inputIDsTensor, attMaskTensor, typeIDsTensor},
-		[]ort.ArbitraryTensor{outputTensor},
-		nil,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("onnx: create session: %w", err)
-	}
-	defer session.Destroy()
-
-	if err := session.Run(); err != nil {
+	if err := d.session.Run(); err != nil {
 		return nil, fmt.Errorf("onnx: run: %w", err)
 	}
 
-	// Mean pooling + L2 normalization.
-	hidden := outputTensor.GetData()
-	vecs := meanPool(hidden, attentionMask, int(batchSize), int(seqLen), d.dim)
+	// Mean pooling + L2 normalization — only for actual (non-padded) inputs.
+	hidden := d.outputTensor.GetData()
+	maskData := d.attMask.GetData()
+	vecs := meanPool(hidden, maskData, actualBatch, seqLen, d.dim)
 
 	result := make([]embed.Vector, len(vecs))
 	for i, v := range vecs {
