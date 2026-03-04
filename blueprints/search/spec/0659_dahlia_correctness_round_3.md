@@ -49,17 +49,17 @@ Changes:
 2. Introduced deterministic score tie behavior in scorer heap/sort path.
 3. Added regression test: `TestWandShouldWithMustNot`.
 
-### Step-1 full result
+### Step-1 full result (rerun on current tree)
 
 - artifact: `/Users/apple/data/search/bench/full/results/0659_step1_full_dahlia_vs_tantivy.json`
-- full exact top-10: **164 / 962 (17.05%)**
-- full avg overlap@10: **9.561**
+- full exact top-10: **156 / 962 (16.22%)**
+- full avg overlap@10: **9.483**
 - different hit count: **0**
 
 Delta vs Step 0:
 
-- exact top-10: **+12 queries** (152 -> 164)
-- overlap unchanged, indicating this step primarily improved **ordering/boolean exclusion correctness**.
+- exact top-10: **+4 queries** (152 -> 156)
+- overlap is slightly lower than step-0 baseline, so Step 1 is only a small net gain in exactness.
 
 ### Step-1 small-set checkpoints
 
@@ -72,10 +72,27 @@ Artifacts:
 
 Summary:
 
-- `n10`: exact-hit 99, exact-all 951, avg-overlap 3.455
-- `n100`: exact-hit 197, exact-all 878, avg-overlap 5.060
-- `n1k`: exact-hit 286, exact-all 800, avg-overlap 6.835
-- `n10k`: exact-hit 271, exact-all 620, avg-overlap 7.372
+- `n10`: exact-hit 95, exact-all 947, avg-overlap 3.455
+- `n100`: exact-hit 167, exact-all 848, avg-overlap 4.986
+- `n1k`: exact-hit 201, exact-all 715, avg-overlap 6.297
+- `n10k`: exact-hit 210, exact-all 559, avg-overlap 6.426
+
+---
+
+## Step 2 — Experiments attempted and reverted
+
+### Attempted changes
+
+1. BM25 numeric precision alignment to f32-like arithmetic.
+2. Phrase `mustNot` handling inside MUST-flow.
+3. Default conjunction parser experiment (plain terms as MUST).
+
+### Outcome
+
+- These changes did not improve full exact@10 and in aggregate regressed overlap/exactness.
+- They were reverted from runtime code.
+
+Current round-3 code state remains the Step-1 runtime implementation.
 
 ---
 
@@ -83,7 +100,7 @@ Summary:
 
 After Step 1, remaining non-exact queries on full:
 
-- `962 - 164 = 798`
+- `962 - 156 = 806`
 
 Key signal:
 
