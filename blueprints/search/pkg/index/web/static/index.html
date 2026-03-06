@@ -594,6 +594,10 @@ async function apiMetaScanDocs() {
   return apiPost('/api/meta/scan-docs', {});
 }
 
+async function apiBrowseStats(shard) {
+  return apiFetch(`/api/browse/stats?shard=${encodeURIComponent(shard)}`);
+}
+
 async function apiOverview() {
   return apiFetch('/api/overview');
 }
@@ -1713,9 +1717,9 @@ async function doSearchWithRender(query, offset = 0, engine = '') {
 
 function renderSearchLoading() {
   const lines = Array(6).fill('').map((_, i) => `
-    <div class="py-6 anim-fade-up" style="animation-delay:${i*40}ms">
+    <div class="py-5 anim-fade-up" style="animation-delay:${i*40}ms">
+      <div class="h-3 w-48 ui-skeleton mb-2"></div>
       <div class="h-4 w-2/5 ui-skeleton mb-2"></div>
-      <div class="h-3 w-1/3 ui-skeleton mb-3"></div>
       <div class="h-3 w-full ui-skeleton mb-1"></div>
       <div class="h-3 w-4/5 ui-skeleton"></div>
     </div>`).join('<div class="border-t"></div>');
@@ -1736,22 +1740,35 @@ function renderSearchResults(data, query, offset) {
   const page = Math.floor(offset / pageSize) + 1;
   const totalPages = Math.ceil((data.total || data.hits.length) / pageSize);
 
-  const results = data.hits.map((hit, i) => `
+  const results = data.hits.map((hit, i) => {
+    const title = hit.title || docTitle(hit.doc_id);
+    const url = hit.url || '';
+    const domain = url ? (() => { try { return new URL(url).hostname; } catch { return ''; } })() : '';
+    const chips = [];
+    if (hit.crawl_date) chips.push(`<span>${fmtDate(hit.crawl_date)}</span>`);
+    if (hit.size_bytes) chips.push(`<span>${fmtBytes(hit.size_bytes)}</span>`);
+    if (hit.word_count) chips.push(`<span>${hit.word_count.toLocaleString()} words</span>`);
+    if (hit.score) chips.push(`<span class="opacity-50">score ${hit.score.toFixed(2)}</span>`);
+
+    return `
     <a href="#/doc/${hit.shard || '00000'}/${encodeURIComponent(hit.doc_id)}"
-       class="block result-item py-6 -mx-2 px-2 cursor-pointer anim-fade-up"
+       class="block result-item py-5 -mx-2 px-2 cursor-pointer anim-fade-up"
        style="animation-delay:${i * 30}ms">
-      <div class="flex items-baseline justify-between gap-4 mb-1">
-        <span class="text-base font-medium truncate">${esc(docTitle(hit.doc_id))}</span>
-        <span class="text-xs font-mono ui-subtle shrink-0">${hit.score ? hit.score.toFixed(2) : ''}</span>
-      </div>
-      <div class="text-xs font-mono ui-subtle mb-2">${esc(hit.shard || '')} &middot; ${esc(hit.doc_id)}</div>
-      ${hit.snippet ? `<p class="text-sm ui-subtle leading-relaxed line-clamp-3">${highlight(hit.snippet, query)}</p>` : ''}
-    </a>`).join('<div class="border-t"></div>');
+      ${domain ? `<div class="flex items-center gap-1.5 mb-1">
+        <span class="text-[10px] font-mono ui-subtle">${esc(domain)}</span>
+        ${url ? `<span class="text-[10px] font-mono ui-subtle opacity-50">·</span>
+        <span class="text-[10px] font-mono ui-subtle truncate max-w-sm">${truncateURL(url, 60)}</span>` : ''}
+      </div>` : `<div class="text-[10px] font-mono ui-subtle mb-1">${esc(hit.shard || '')} · ${esc(hit.doc_id)}</div>`}
+      <div class="text-base font-medium leading-snug mb-1.5">${esc(title)}</div>
+      ${hit.snippet ? `<p class="text-sm ui-subtle leading-relaxed line-clamp-3 mb-2">${highlight(hit.snippet, query)}</p>` : ''}
+      ${chips.length ? `<div class="flex items-center gap-3 text-[10px] font-mono ui-subtle flex-wrap">${chips.join('')}</div>` : ''}
+    </a>`;
+  }).join('<div class="border-t"></div>');
 
   $('main').innerHTML = `
     <div class="py-8 max-w-3xl mx-auto anim-fade-in">
       <div class="meta-line mb-6">
-        ${(data.total || data.hits.length).toLocaleString()} results${data.elapsed_ms ? ` &middot; ${data.elapsed_ms}ms` : ''}${data.shards ? ` &middot; ${data.shards} shard${data.shards!==1?'s':''}` : ''}${data.engine ? ` &middot; ${esc(data.engine)}` : ''}
+        ${(data.total || data.hits.length).toLocaleString()} results${data.elapsed_ms ? ` · ${data.elapsed_ms}ms` : ''}${data.shards ? ` · ${data.shards} shard${data.shards!==1?'s':''}` : ''}${data.engine ? ` · ${esc(data.engine)}` : ''}
       </div>
       <div>${results}</div>
       ${totalPages > 1 ? renderSearchPagination(page, totalPages, query, pageSize, data.engine || currentSearchEngine()) : ''}
@@ -1884,8 +1901,8 @@ function renderWARCContent(data) {
       </div>
       ${hasSizes ? `
         <div class="flex items-center gap-4 mt-3 pt-3 border-t text-[11px] font-mono ui-subtle">
-          ${summary.warc_bytes ? `<span>warc ${fmtBytes(summary.warc_bytes)}</span>` : ''}
-          ${summary.markdown_bytes ? `<span>md ${fmtBytes(summary.markdown_bytes)}</span>` : ''}
+          ${summary.warc_bytes ? `<span>.warc.gz ${fmtBytes(summary.warc_bytes)}</span>` : ''}
+          ${summary.markdown_bytes ? `<span>.md.warc.gz ${fmtBytes(summary.markdown_bytes)}</span>` : ''}
           ${summary.pack_bytes ? `<span>pk ${fmtBytes(summary.pack_bytes)}</span>` : ''}
           ${summary.fts_bytes ? `<span>ix ${fmtBytes(summary.fts_bytes)}</span>` : ''}
         </div>` : ''}
@@ -1895,11 +1912,13 @@ function renderWARCContent(data) {
   const rows = (data.warcs || []).map((w, i) => {
     const next = !w.has_warc ? 'dl' : !w.has_markdown ? 'md' : !w.has_pack ? 'pk' : !w.has_fts ? 'ix' : '';
     const done = (w.has_warc ? 1 : 0) + (w.has_markdown ? 1 : 0) + (w.has_pack ? 1 : 0) + (w.has_fts ? 1 : 0);
-    const docsStr = w.markdown_docs > 0 ? w.markdown_docs.toLocaleString() : '\u2014';
+    const docsStr = (w.warc_md_docs || 0) > 0 ? (w.warc_md_docs).toLocaleString() : '\u2014';
+    const warcSz = w.warc_bytes > 0 ? fmtBytes(w.warc_bytes) : '\u2014';
+    const mdSz = w.warc_md_bytes > 0 ? fmtBytes(w.warc_md_bytes) : '\u2014';
     return `
     <tr class="anim-fade-up" style="animation-delay:${Math.min(i, 20)*15}ms">
       <td class="px-3 py-2 font-mono text-xs"><a href="#/warc/${encodeURIComponent(w.index)}" class="hover:underline">${esc(w.index)}</a></td>
-      <td class="px-3 py-2 text-xs ui-subtle truncate max-w-[260px]" title="${esc(w.filename || '')}">${esc(w.filename || '\u2014')}</td>
+      <td class="px-3 py-2 text-xs ui-subtle truncate max-w-[200px]" title="${esc(w.filename || '')}">${esc(w.filename || '\u2014')}</td>
       <td class="px-3 py-2 text-xs">
         <div class="flex items-center gap-2">
           <div class="flex gap-1">
@@ -1914,7 +1933,8 @@ function renderWARCContent(data) {
         </div>
       </td>
       <td class="px-3 py-2 text-right text-xs font-mono ui-subtle">${docsStr}</td>
-      <td class="px-3 py-2 text-right text-xs font-mono ui-subtle">${fmtBytes(w.total_bytes || 0)}</td>
+      <td class="px-3 py-2 text-right text-xs font-mono ui-subtle whitespace-nowrap">${warcSz}</td>
+      <td class="px-3 py-2 text-right text-xs font-mono ui-subtle whitespace-nowrap">${mdSz}</td>
       <td class="px-3 py-2 text-right text-xs font-mono whitespace-nowrap">
         <button onclick="warcAction('${esc(w.index)}','download')" class="ui-btn px-2 py-1 text-[11px] ${next==='dl'?'ui-btn-primary':''}" title="Download WARC">dl</button>
         <button onclick="warcAction('${esc(w.index)}','markdown')" class="ui-btn px-2 py-1 text-[11px] ml-1 ${next==='md'?'ui-btn-primary':''}" title="Extract markdown">md</button>
@@ -1949,12 +1969,13 @@ function renderWARCContent(data) {
             <th class="text-left px-3 py-2 text-[11px] font-mono">Filename</th>
             <th class="text-left px-3 py-2 text-[11px] font-mono">Phases</th>
             <th class="text-right px-3 py-2 text-[11px] font-mono">Docs</th>
-            <th class="text-right px-3 py-2 text-[11px] font-mono">Size</th>
+            <th class="text-right px-3 py-2 text-[11px] font-mono">.warc.gz</th>
+            <th class="text-right px-3 py-2 text-[11px] font-mono">.md.warc.gz</th>
             <th class="text-right px-3 py-2 text-[11px] font-mono">Actions</th>
           </tr>
         </thead>
         <tbody>
-          ${rows || `<tr><td colspan="6" class="px-3 py-4 text-xs font-mono ui-subtle">No WARC records</td></tr>`}
+          ${rows || `<tr><td colspan="7" class="px-3 py-4 text-xs font-mono ui-subtle">No WARC records</td></tr>`}
         </tbody>
       </table>
     </div>
@@ -2241,17 +2262,19 @@ async function renderBrowse(shard) {
   state.browsePage = 1;
   state.browseQ = '';
   state.browseSort = 'date';
+  state.browseView = state.browseView || 'docs';
   $('main').innerHTML = `
     <div class="page-shell anim-fade-in">
       <div class="page-header mb-4">
         <h1 class="page-title">Browse</h1>
-        <div class="flex items-center gap-2">
-          ${isDashboard ? `<button onclick="apiMetaScanDocs().then(()=>renderBrowse(state.browseShard))" class="ui-btn px-3 py-2 text-xs font-mono">Scan Docs</button>` : ''}
-          ${isDashboard ? `<button onclick="refreshDashboardMeta(true)" class="ui-btn px-3 py-2 text-xs font-mono">Refresh Meta</button>` : ''}
-        </div>
+        ${isDashboard ? `
+        <div class="flex items-center gap-3">
+          <span id="browse-refreshed-at" class="text-[11px] font-mono ui-subtle"></span>
+          <button id="browse-refresh-btn" onclick="browseRefresh()" class="ui-btn px-3 py-2 text-xs font-mono">Refresh</button>
+        </div>` : ''}
       </div>
       <div class="surface flex min-h-[calc(100vh-10rem)]">
-        <aside class="w-52 shrink-0 p-3 ui-border-r">
+        <aside class="w-56 shrink-0 p-3 ui-border-r overflow-y-auto">
           <div class="text-xs font-mono ui-subtle mb-3 uppercase tracking-wider">Shards</div>
           <div id="shard-list" class="space-y-0.5">
             <div class="ui-empty">loading\u2026</div>
@@ -2269,43 +2292,130 @@ async function renderBrowse(shard) {
     }
     const data = await apiBrowse();
     state.browseShards = data.shards || [];
-    state.browseHasDocMeta = !!data.has_doc_meta;
     renderShardList(shard);
+    updateBrowseRefreshedAt();
     if (shard) {
-      loadShardDocs(shard);
+      loadShardView(shard);
     } else if (state.browseShards.length > 0) {
       navigateTo('/browse/' + state.browseShards[0].name);
     } else {
-      $('browse-content').innerHTML = `<div class="ui-empty">No markdown documents found. Run the download and markdown pipeline steps first.</div>`;
+      $('browse-content').innerHTML = `<div class="ui-empty">No WARC shards found. Run the download pipeline steps first.</div>`;
     }
   } catch(e) {
     $('browse-content').innerHTML = `<div class="text-xs text-red-400 py-8">${esc(e.message)}</div>`;
   }
 }
 
+function updateBrowseRefreshedAt() {
+  const el = $('browse-refreshed-at');
+  if (!el) return;
+  // Find the most recently scanned shard
+  const shards = state.browseShards || [];
+  let latest = '';
+  for (const s of shards) {
+    if (s.last_scanned_at && (!latest || s.last_scanned_at > latest)) latest = s.last_scanned_at;
+  }
+  el.textContent = latest ? `Refreshed ${fmtRelativeTime(latest)}` : '';
+}
+
+async function browseRefresh() {
+  const btn = $('browse-refresh-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Refreshing…'; }
+  try {
+    await Promise.all([
+      refreshDashboardMeta(true),
+      apiMetaScanDocs(),
+    ]);
+  } catch(_) {}
+  // Reload shard list
+  try {
+    const data = await apiBrowse();
+    state.browseShards = data.shards || [];
+    renderShardList(state.browseShard);
+    updateBrowseRefreshedAt();
+  } catch(_) {}
+  if (btn) { btn.disabled = false; btn.textContent = 'Refresh'; }
+}
+
 function renderShardList(active) {
   const el = $('shard-list');
   if (!el || !state.browseShards) return;
+  if (state.browseShards.length === 0) {
+    el.innerHTML = `<div class="ui-empty">No shards</div>`;
+    return;
+  }
   el.innerHTML = state.browseShards.map(s => {
     const isActive = s.name === active;
+    const hasPack = !!s.has_pack;
+    const hasScan = !!s.has_scan;
+    const scanning = !!s.scanning;
     const count = (s.file_count ?? 0).toLocaleString();
-    const sizeStr = s.total_size ? ` · ${fmtBytes(s.total_size)}` : '';
-    const staleChip = s.meta_stale ? ` <span class="text-amber-400 text-[9px]">●</span>` : '';
+
+    const chips = [];
+    if (hasPack) chips.push(`<span class="ui-chip ui-chip-ok">packed</span>`);
+    else chips.push(`<span class="ui-chip ui-chip-off">raw</span>`);
+    if (scanning) chips.push(`<span class="ui-chip" style="border-color:rgba(96,165,250,0.6);color:#93c5fd">scanning</span>`);
+    else if (hasScan) chips.push(`<span class="ui-chip ui-chip-ok">indexed</span>`);
+
+    const packBtn = !hasPack && isDashboard
+      ? `<button onclick="event.preventDefault();triggerPackShard('${esc(s.name)}')" class="ml-1 text-[9px] font-mono px-1.5 py-0.5 ui-btn">Pack</button>`
+      : '';
+
     return `<a href="#/browse/${s.name}"
-       class="block py-1.5 px-2 rounded text-xs font-mono cursor-pointer transition-colors ${isActive ? 'shard-active font-semibold' : 'shard-item'}">
-      <div class="flex items-center justify-between">
-        <span>${esc(s.name)}${staleChip}</span>
-        <span class="ui-subtle">${count}</span>
+       class="block py-1.5 px-2 text-xs font-mono cursor-pointer transition-colors ${isActive ? 'shard-active' : 'shard-item'}">
+      <div class="flex items-center justify-between gap-1">
+        <span class="truncate">${esc(s.name)}</span>
+        <span class="ui-subtle shrink-0">${count}</span>
       </div>
-      ${s.total_size || s.last_doc_date ? `<div class="ui-subtle text-[10px] mt-0.5">${sizeStr ? sizeStr.slice(3) : ''}${s.last_doc_date ? ' · ' + fmtDate(s.last_doc_date) : ''}</div>` : ''}
+      <div class="flex items-center gap-1 mt-1 flex-wrap">
+        ${chips.join('')}${packBtn}
+        ${s.total_size ? `<span class="text-[9px] font-mono ui-subtle ml-auto">${fmtBytes(s.total_size)}</span>` : ''}
+      </div>
     </a>`;
   }).join('');
+}
+
+async function triggerPackShard(shard) {
+  // shard is "00000", "00001", etc. — parseInt gives the manifest index.
+  const fileIdx = parseInt(shard, 10);
+  try {
+    await apiPost('/api/jobs', {type: 'markdown', files: String(fileIdx)});
+  } catch(e) {
+    alert('Failed to start pack job: ' + e.message);
+    return;
+  }
+  // Reload shard list so the new job shows up in the sidebar.
+  try {
+    const data = await apiBrowse();
+    state.browseShards = data.shards || [];
+    renderShardList(state.browseShard);
+  } catch(_) {}
 }
 
 // Browse filter debounce timer
 let browseFilterTimer = null;
 
+function loadShardView(shard) {
+  state.browseShard = shard;
+  if (state.browseView === 'stats') {
+    loadShardStats(shard);
+  } else {
+    loadShardDocs(shard, 1);
+  }
+}
+
+function renderBrowseViewTabs(shard, activeView) {
+  return `
+    <div class="flex items-center gap-4 border-b mb-4 pb-0">
+      <button onclick="state.browseView='docs';loadShardDocs('${esc(shard)}',1)"
+        class="text-xs pb-2 transition-colors ${activeView==='docs' ? 'tab-active' : 'tab-inactive'}">Docs</button>
+      <button onclick="state.browseView='stats';loadShardStats('${esc(shard)}')"
+        class="text-xs pb-2 transition-colors ${activeView==='stats' ? 'tab-active' : 'tab-inactive'}">Stats</button>
+    </div>`;
+}
+
 async function loadShardDocs(shard, page = 1) {
+  state.browseView = 'docs';
   const el = $('browse-content');
   if (!el) return;
   el.innerHTML = `<div class="ui-empty">loading\u2026</div>`;
@@ -2316,11 +2426,16 @@ async function loadShardDocs(shard, page = 1) {
   try {
     const data = await apiBrowse(shard, {page, pageSize: 100, q, sort});
 
-    if (data.has_doc_meta && data.docs) {
-      renderDocTable(shard, data, page);
-    } else {
-      renderFileFallback(shard, data);
+    if (data.not_scanned) {
+      el.innerHTML = renderBrowseViewTabs(shard, 'docs') + `
+        <div class="ui-empty mt-6 text-center">
+          <div class="mb-3">Shard not yet indexed.</div>
+          ${isDashboard ? `<button onclick="apiMetaScanDocs().then(()=>loadShardDocs('${esc(shard)}',1))" class="ui-btn px-4 py-2 text-xs font-mono">Scan Docs</button>` : ''}
+        </div>`;
+      return;
     }
+
+    renderDocTable(shard, data, page);
   } catch(e) {
     el.innerHTML = `<div class="text-xs text-red-400 py-4">${esc(e.message)}</div>`;
   }
@@ -2338,9 +2453,9 @@ function renderDocTable(shard, data, page) {
   const stale = data.meta_stale;
 
   el.innerHTML = `
-    ${stale ? `<div class="mb-3 px-3 py-2 rounded text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400">Refreshing document metadata in the background…</div>` : ''}
+    ${renderBrowseViewTabs(shard, 'docs')}
+    ${stale ? `<div class="mb-3 px-3 py-2 text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400 border border-amber-200 dark:border-amber-900">Refreshing document metadata in the background…</div>` : ''}
     <div class="flex items-center gap-3 mb-4 flex-wrap">
-      <span class="text-sm font-semibold">${esc(shard)}</span>
       <span class="meta-line">${start}–${end} of ${total.toLocaleString()}</span>
       <input id="browse-filter" type="search" placeholder="Filter by title or URL…" value="${esc(state.browseQ || '')}"
         class="ml-auto ui-input text-xs px-2 py-1 w-56" oninput="debounceBrowseFilter(this.value, '${esc(shard)}')">
@@ -2353,9 +2468,9 @@ function renderDocTable(shard, data, page) {
       </select>
     </div>
     <div class="overflow-x-auto">
-    <table class="w-full text-xs">
+    <table class="w-full text-xs ui-table">
       <thead>
-        <tr class="ui-border-b text-left ui-subtle">
+        <tr class="text-left">
           <th class="pb-2 pr-3 font-medium w-2/5">Title</th>
           <th class="pb-2 pr-3 font-medium">URL</th>
           <th class="pb-2 pr-3 font-medium text-right whitespace-nowrap">Date</th>
@@ -2365,7 +2480,7 @@ function renderDocTable(shard, data, page) {
       </thead>
       <tbody>
         ${docs.map((d, i) => `
-          <tr class="file-row anim-fade-up border-b border-transparent" style="animation-delay:${Math.min(i,20)*10}ms">
+          <tr class="file-row anim-fade-up" style="animation-delay:${Math.min(i,20)*10}ms">
             <td class="py-2 pr-3">
               <a href="#/doc/${shard}/${encodeURIComponent(d.doc_id)}" class="ui-link font-medium truncate block max-w-xs" title="${esc(d.title||d.doc_id)}">
                 ${esc(d.title || d.doc_id)}
@@ -2383,29 +2498,129 @@ function renderDocTable(shard, data, page) {
     </div>
     ${totalPages > 1 ? `
     <div class="flex items-center justify-between mt-4 text-xs">
-      <button onclick="loadShardDocs('${esc(shard)}', ${page - 1})" ${page <= 1 ? 'disabled' : ''} class="ui-btn px-3 py-1.5 disabled:opacity-40">&larr; Prev</button>
+      <button onclick="loadShardDocs('${esc(shard)}', ${page - 1})" ${page <= 1 ? 'disabled' : ''} class="ui-btn px-3 py-1.5">&larr; Prev</button>
       <span class="ui-subtle">Page ${page} of ${totalPages}</span>
-      <button onclick="loadShardDocs('${esc(shard)}', ${page + 1})" ${page >= totalPages ? 'disabled' : ''} class="ui-btn px-3 py-1.5 disabled:opacity-40">Next &rarr;</button>
+      <button onclick="loadShardDocs('${esc(shard)}', ${page + 1})" ${page >= totalPages ? 'disabled' : ''} class="ui-btn px-3 py-1.5">Next &rarr;</button>
     </div>` : ''}`;
 }
 
-function renderFileFallback(shard, data) {
+async function loadShardStats(shard) {
+  state.browseView = 'stats';
   const el = $('browse-content');
   if (!el) return;
-  const files = data.files || [];
+  el.innerHTML = renderBrowseViewTabs(shard, 'stats') + `<div class="ui-empty">loading stats\u2026</div>`;
+  try {
+    const stats = await apiBrowseStats(shard);
+    renderShardStats(shard, stats);
+  } catch(e) {
+    el.innerHTML = renderBrowseViewTabs(shard, 'stats') + `<div class="text-xs text-red-400 py-4">${esc(e.message)}</div>`;
+  }
+}
+
+function renderShardStats(shard, stats) {
+  const el = $('browse-content');
+  if (!el) return;
+
+  const s = stats || {};
+  const totalDocs = (s.total_docs || 0).toLocaleString();
+  const totalSize = s.total_size ? fmtBytes(s.total_size) : '—';
+  const avgSize = s.avg_size ? fmtBytes(Math.round(s.avg_size)) : '—';
+  const minSize = s.min_size ? fmtBytes(s.min_size) : '—';
+  const maxSize = s.max_size ? fmtBytes(s.max_size) : '—';
+  const dateFrom = s.date_from ? fmtDate(s.date_from) : '—';
+  const dateTo = s.date_to ? fmtDate(s.date_to) : '—';
+
+  // Summary stat cards
+  const statCards = [
+    {label: 'Documents', value: totalDocs},
+    {label: 'Total Size', value: totalSize},
+    {label: 'Avg Size', value: avgSize},
+    {label: 'Size Range', value: `${minSize} – ${maxSize}`},
+    {label: 'Date Range', value: dateFrom === dateTo ? dateFrom : `${dateFrom} – ${dateTo}`},
+  ];
+
+  // Top domains bar chart
+  const domains = (s.top_domains || []).slice(0, 20);
+  const domainMax = domains.reduce((m, d) => Math.max(m, d.count || 0), 0) || 1;
+
+  // Size buckets
+  const buckets = s.size_buckets || [];
+  const bucketTotal = buckets.reduce((m, b) => m + (b.count || 0), 0) || 1;
+  const bucketColors = ['ov-c2', 'ov-c4', 'ov-c3', 'ov-c1', 'ov-c5'];
+
+  // Date histogram
+  const histogram = (s.date_histogram || []).slice(-60);
+  const histMax = histogram.reduce((m, h) => Math.max(m, h.count || 0), 0) || 1;
+
   el.innerHTML = `
-    <div class="flex items-baseline justify-between mb-4">
-      <span class="text-sm font-semibold">${esc(shard)}</span>
-      <span class="meta-line">${files.length} files</span>
+    ${renderBrowseViewTabs(shard, 'stats')}
+
+    <!-- Stat cards -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-px border border-[var(--border)] mb-6" style="background:var(--border)">
+      ${statCards.map(c => `
+        <div class="bg-[var(--panel)] px-4 py-3">
+          <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider mb-1">${esc(c.label)}</div>
+          <div class="text-base font-semibold tracking-tight">${esc(c.value)}</div>
+        </div>`).join('')}
     </div>
-    <div class="space-y-0.5">
-      ${files.map((f, i) => `
-        <a href="#/doc/${shard}/${encodeURIComponent(f.name)}"
-           class="flex items-center justify-between py-2 px-2 -mx-2 text-xs file-row cursor-pointer anim-fade-up"
-           style="animation-delay:${Math.min(i,20)*15}ms">
-          <span class="font-mono ui-subtle truncate">${esc(f.name)}</span>
-          <span class="font-mono ui-subtle shrink-0 ml-4">${f.size ? fmtBytes(f.size) : ''}</span>
-        </a>`).join('')}
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      <!-- Top Domains -->
+      <div class="surface p-4">
+        <div class="text-xs font-semibold mb-4 uppercase tracking-wider ui-subtle">Top Domains by Doc Count</div>
+        ${domains.length === 0
+          ? `<div class="ui-empty">No data</div>`
+          : `<div class="space-y-1.5">
+            ${domains.map(d => `
+              <div class="flex items-center gap-2 text-xs">
+                <span class="w-32 shrink-0 font-mono ui-subtle truncate" title="${esc(d.domain)}">${esc(d.domain)}</span>
+                <div class="flex-1 progress-track" style="height:4px">
+                  <div class="progress-fill" style="width:${Math.max(2, (d.count/domainMax)*100).toFixed(1)}%"></div>
+                </div>
+                <span class="w-10 shrink-0 text-right font-mono ui-subtle">${(d.count||0).toLocaleString()}</span>
+              </div>`).join('')}
+          </div>`}
+      </div>
+
+      <!-- Size Distribution -->
+      <div class="surface p-4">
+        <div class="text-xs font-semibold mb-4 uppercase tracking-wider ui-subtle">Size Distribution</div>
+        ${buckets.length === 0
+          ? `<div class="ui-empty">No data</div>`
+          : `
+          <div class="ov-stacked mb-4">
+            ${buckets.map((b, i) => `
+              <div class="${bucketColors[i%bucketColors.length]} ov-stacked-seg" style="width:${Math.max(1,(b.count/bucketTotal)*100).toFixed(1)}%" title="${esc(b.label)}: ${(b.count||0).toLocaleString()}"></div>`).join('')}
+          </div>
+          <div class="space-y-2">
+            ${buckets.map((b, i) => `
+              <div class="flex items-center gap-2 text-xs">
+                <div class="ov-legend-dot ${bucketColors[i%bucketColors.length]}"></div>
+                <span class="flex-1 font-mono ui-subtle">${esc(b.label)}</span>
+                <span class="font-mono ui-subtle">${(b.count||0).toLocaleString()}</span>
+                <span class="font-mono ui-subtle w-10 text-right">${((b.count/bucketTotal)*100).toFixed(0)}%</span>
+              </div>`).join('')}
+          </div>`}
+      </div>
+    </div>
+
+    <!-- Date Histogram -->
+    <div class="surface p-4">
+      <div class="text-xs font-semibold mb-4 uppercase tracking-wider ui-subtle">Documents by Crawl Date (last 60 days)</div>
+      ${histogram.length === 0
+        ? `<div class="ui-empty">No date data</div>`
+        : `
+        <div class="flex items-end gap-px" style="height:80px">
+          ${histogram.map(h => {
+            const pct = Math.max(2, ((h.count||0) / histMax) * 100);
+            return `<div class="flex-1 bg-[var(--accent)] opacity-70 hover:opacity-100 transition-opacity cursor-default"
+              style="height:${pct.toFixed(1)}%" title="${esc(h.date)}: ${(h.count||0).toLocaleString()}"></div>`;
+          }).join('')}
+        </div>
+        <div class="flex justify-between mt-1 text-[9px] font-mono ui-subtle">
+          <span>${histogram[0] ? esc(histogram[0].date) : ''}</span>
+          <span>${histogram[histogram.length-1] ? esc(histogram[histogram.length-1].date) : ''}</span>
+        </div>`}
     </div>`;
 }
 
