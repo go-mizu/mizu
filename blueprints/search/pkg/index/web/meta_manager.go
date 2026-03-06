@@ -212,6 +212,20 @@ func (m *MetaManager) TriggerRefresh(crawlID, crawlDir string, force bool) bool 
 	return true
 }
 
+// Backend returns the configured backend name without hitting the database.
+func (m *MetaManager) Backend() string {
+	return m.backend
+}
+
+// IsRefreshing returns true if a refresh goroutine is active for the given crawl.
+// This reads only in-memory state and never touches the database.
+func (m *MetaManager) IsRefreshing(crawlID string) bool {
+	crawlID, _ = m.resolveCrawl(crawlID, "")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.refreshing[crawlID]
+}
+
 // Status returns the current refresh state for a crawl.
 func (m *MetaManager) Status(ctx context.Context, crawlID string) MetaStatus {
 	crawlID, _ = m.resolveCrawl(crawlID, "")

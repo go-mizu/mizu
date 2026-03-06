@@ -1,13 +1,45 @@
 package web
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 )
+
+// crawlSizeCache caches the result of dirSize(crawlDir) so the overview
+// endpoint returns instantly instead of walking 250K+ files synchronously.
+type crawlSizeCache struct {
+	bytes   atomic.Int64
+	running atomic.Bool
+	mu      sync.Mutex
+	dir     string
+}
+
+func newCrawlSizeCache(dir string) *crawlSizeCache {
+	c := &crawlSizeCache{dir: dir}
+	c.refresh() // kick off first background scan
+	return c
+}
+
+func (c *crawlSizeCache) get() int64 {
+	return c.bytes.Load()
+}
+
+func (c *crawlSizeCache) refresh() {
+	if !c.running.CompareAndSwap(false, true) {
+		return // already running
+	}
+	go func() {
+		defer c.running.Store(false)
+		c.bytes.Store(dirSize(c.dir))
+	}()
+}
 
 // hostMemInfo is filled by platform-specific sysinfo_*.go files.
 // Returns (total, available) bytes. Returns zeros if unavailable.
@@ -123,7 +155,7 @@ type OverviewMeta struct {
 
 // buildOverviewResponse scans the crawl directory and assembles a structured
 // overview with pipeline stage stats, storage info, and runtime metrics.
-func buildOverviewResponse(crawlID, crawlDir string, manifestTotal int, docs *DocStore) OverviewResponse {
+func buildOverviewResponse(crawlID, crawlDir string, manifestTotal int, docs *DocStore, crawlBytes int64) OverviewResponse {
 	resp := OverviewResponse{
 		CrawlID: crawlID,
 	}
@@ -156,7 +188,7 @@ func buildOverviewResponse(crawlID, crawlDir string, manifestTotal int, docs *Do
 	resp.Indexed.TotalWARCs = resp.Downloaded.Count
 
 	// Storage
-	resp.Storage = collectStorageInfo(crawlDir, manifestTotal, resp.Downloaded.AvgWARCBytes)
+	resp.Storage = collectStorageInfo(crawlDir, manifestTotal, resp.Downloaded.AvgWARCBytes, crawlBytes)
 
 	// System
 	resp.System = collectSystemInfo()
@@ -223,7 +255,7 @@ func scanMarkdownStage(crawlDir string, docs *DocStore) MarkdownStage {
 			if !isNumericName(shard) {
 				continue
 			}
-			meta, ok, _ := docs.GetShardMeta(nil, "", shard)
+			meta, ok, _ := docs.GetShardMeta(context.Background(), "", shard)
 			if ok {
 				stage.TotalDocs += meta.TotalDocs
 			}
@@ -359,11 +391,11 @@ func collectSystemInfo() SystemInfo {
 	return si
 }
 
-func collectStorageInfo(crawlDir string, manifestTotal int, avgWARCBytes int64) StorageInfo {
+func collectStorageInfo(crawlDir string, manifestTotal int, avgWARCBytes int64, crawlBytes int64) StorageInfo {
 	info := StorageInfo{}
 
-	// Total crawl bytes on disk
-	info.CrawlBytes = dirSize(crawlDir)
+	// Total crawl bytes on disk (pre-computed by background cache)
+	info.CrawlBytes = crawlBytes
 
 	// Disk usage from statfs
 	info.DiskTotal, info.DiskFree = diskUsage(crawlDir)

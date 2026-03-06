@@ -22,7 +22,7 @@ func TestBuildOverviewResponse(t *testing.T) {
 	mustMkdir(t, filepath.Join(root, "fts", "dahlia", "00000"))
 	writeFile(t, filepath.Join(root, "fts", "dahlia", "00000", "seg.bin"), 128*1024)
 
-	resp := buildOverviewResponse("CC-TEST-2026", root, 1000, nil)
+	resp := buildOverviewResponse("CC-TEST-2026", root, 1000, nil, dirSize(root))
 
 	// Manifest
 	if resp.Manifest.TotalWARCs != 1000 {
@@ -83,7 +83,7 @@ func TestBuildOverviewResponse(t *testing.T) {
 
 func TestBuildOverviewResponse_EmptyDir(t *testing.T) {
 	root := t.TempDir()
-	resp := buildOverviewResponse("CC-TEST-2026", root, 0, nil)
+	resp := buildOverviewResponse("CC-TEST-2026", root, 0, nil, 0)
 
 	if resp.CrawlID != "CC-TEST-2026" {
 		t.Fatalf("crawl_id: got %q", resp.CrawlID)
@@ -102,7 +102,7 @@ func TestBuildOverviewResponse_ProjectedSize(t *testing.T) {
 	// 1 WARC of 1 GB, manifest says 100K WARCs
 	writeFile(t, filepath.Join(root, "warc", "CC-MAIN-x-00000.warc.gz"), 1024*1024*1024)
 
-	resp := buildOverviewResponse("CC-TEST-2026", root, 100000, nil)
+	resp := buildOverviewResponse("CC-TEST-2026", root, 100000, nil, dirSize(root))
 
 	// projected = avg_warc * total = 1GB * 100K = 100 TB
 	expected := int64(1024) * 1024 * 1024 * 100000

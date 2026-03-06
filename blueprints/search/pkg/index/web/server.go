@@ -194,7 +194,8 @@ type Server struct {
 	Meta       *MetaManager
 	Docs       *DocStore // per-document browse metadata (dashboard only)
 
-	manifestTotal int // cached count of WARCs in CC manifest
+	manifestTotal int              // cached count of WARCs in CC manifest
+	crawlSize     *crawlSizeCache  // async-cached dirSize(crawlDir)
 
 	md goldmark.Markdown
 }
@@ -283,6 +284,9 @@ func NewDashboardWithOptions(engineName, crawlID, addr, baseDir string, opts Das
 			}()
 		}
 	})
+
+	// Start async crawl dir size cache (avoids blocking overview on 250K+ file walk).
+	s.crawlSize = newCrawlSizeCache(baseDir)
 
 	// Initialize per-document browse metadata store (per-shard DuckDB + in-memory cache).
 	if docs, err := NewDocStore(s.WARCMdBase); err != nil {
@@ -792,15 +796,19 @@ func (s *Server) handleBrowseDocs(c *mizu.Ctx, shard string) error {
 // ── Dashboard Handlers ──────────────────────────────────────────────────
 
 func (s *Server) handleOverview(c *mizu.Ctx) error {
-	resp := buildOverviewResponse(s.CrawlID, s.CrawlDir, s.manifestTotal, s.Docs)
+	var crawlBytes int64
+	if s.crawlSize != nil {
+		crawlBytes = s.crawlSize.get()
+		s.crawlSize.refresh() // schedule background update for next request
+	}
+	resp := buildOverviewResponse(s.CrawlID, s.CrawlDir, s.manifestTotal, s.Docs, crawlBytes)
 	if s.Meta != nil {
-		// Use the fast Status() read (single DB row) instead of GetSummary(),
-		// which triggers a synchronous manifest fetch from S3 on cache miss
-		// and blocks the response for 10-30 seconds on first load.
-		st := s.Meta.Status(c.Context(), s.CrawlID)
-		resp.Meta.Backend = st.Backend
+		// Use in-memory state only — never hit SQLite from the overview handler.
+		// The prewarm TriggerRefresh on startup holds a long SQLite write transaction
+		// (100K WARC inserts) which blocks all reads in modernc.org/sqlite.
+		resp.Meta.Backend = s.Meta.Backend()
 		resp.Meta.Stale = true
-		resp.Meta.Refreshing = st.Refreshing
+		resp.Meta.Refreshing = s.Meta.IsRefreshing(s.CrawlID)
 		// Schedule async refresh so the meta cache is populated for subsequent calls.
 		s.Meta.TriggerRefresh(s.CrawlID, s.CrawlDir, false)
 	}
