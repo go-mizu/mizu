@@ -115,13 +115,14 @@ function fmtRelativeTime(iso) {
 
 function metaContext() {
   const o = state.overview || {};
+  const m = o.meta || {};      // OverviewResponse.Meta nested object
   const s = state.metaStatus || {};
-  const generatedAt = o.meta_generated_at || s.finished_at || '';
-  const stale = !!o.meta_stale;
-  const refreshing = !!o.meta_refreshing || !!s.refreshing;
-  const backend = o.meta_backend || s.backend || 'scan-fallback';
+  const generatedAt = m.generated_at || s.finished_at || '';
+  const stale = !!m.stale;
+  const refreshing = !!m.refreshing || !!s.refreshing;
+  const backend = m.backend || s.backend || 'scan-fallback';
   const ttlMS = s.refresh_ttl_ms || 0;
-  return { generatedAt, stale, refreshing, backend, ttlMS, lastError: o.meta_last_error || s.last_error || '' };
+  return { generatedAt, stale, refreshing, backend, ttlMS, lastError: s.last_error || '' };
 }
 
 function renderMetaSummaryLine() {

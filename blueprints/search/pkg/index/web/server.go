@@ -5,6 +5,7 @@ package web
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -27,6 +28,33 @@ import (
 
 //go:embed static
 var staticFS embed.FS
+
+// jsHashOnce / jsHashMap cache 8-char SHA-256 fingerprints for each JS file.
+// Used to append ?v=<hash> to <script src> tags so browsers invalidate stale
+// files after a deploy while allowing max-age=immutable caching.
+var (
+	jsHashOnce sync.Once
+	jsHashMap  map[string]string // basename → 8 hex chars
+)
+
+func buildJSHashes() {
+	jsHashMap = make(map[string]string)
+	entries, err := fs.ReadDir(staticFS, "static/js")
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".js") {
+			continue
+		}
+		data, err := staticFS.ReadFile("static/js/" + e.Name())
+		if err != nil {
+			continue
+		}
+		h := sha256.Sum256(data)
+		jsHashMap[e.Name()] = fmt.Sprintf("%x", h[:4]) // 8 hex chars
+	}
+}
 
 // ── Response types ──────────────────────────────────────────────────────
 
@@ -292,6 +320,10 @@ func (s *Server) Handler() http.Handler {
 	router.Get("/api/doc/{shard}/{docid...}", s.handleDoc)
 	router.Get("/api/browse", s.handleBrowse)
 	router.Get("/static/{path...}", func(c *mizu.Ctx) error {
+		// Fingerprinted requests (have ?v=) get long-lived immutable caching.
+		if c.Request().URL.Query().Get("v") != "" {
+			c.Header().Set("Cache-Control", "max-age=31536000, immutable")
+		}
 		http.FileServer(http.FS(staticFS)).ServeHTTP(c.Writer(), c.Request())
 		return nil
 	})
@@ -379,6 +411,16 @@ func (s *Server) handleIndex(c *mizu.Ctx) error {
 	}
 	data = bytes.Replace(data, []byte(`"__SERVER_MODE__"`), []byte(`"`+mode+`"`), 1)
 	data = bytes.Replace(data, []byte(`"__DEFAULT_ENGINE__"`), []byte(`"`+s.EngineName+`"`), 1)
+
+	// Append content-hash fingerprints to JS script src URLs so browsers
+	// can safely cache them with max-age=immutable.
+	jsHashOnce.Do(buildJSHashes)
+	for name, hash := range jsHashMap {
+		old := fmt.Sprintf(`src="/static/js/%s"`, name)
+		neu := fmt.Sprintf(`src="/static/js/%s?v=%s"`, name, hash)
+		data = bytes.ReplaceAll(data, []byte(old), []byte(neu))
+	}
+
 	c.Header().Set("Content-Type", "text/html; charset=utf-8")
 	c.Header().Set("Cache-Control", "no-cache")
 	_, err = c.Writer().Write(data)
@@ -752,10 +794,15 @@ func (s *Server) handleBrowseDocs(c *mizu.Ctx, shard string) error {
 func (s *Server) handleOverview(c *mizu.Ctx) error {
 	resp := buildOverviewResponse(s.CrawlID, s.CrawlDir, s.manifestTotal, s.Docs)
 	if s.Meta != nil {
-		summary := s.Meta.GetSummary(c.Context(), s.CrawlID, s.CrawlDir)
-		resp.Meta.Backend = summary.MetaBackend
-		resp.Meta.Stale = summary.MetaStale
-		resp.Meta.Refreshing = summary.MetaRefreshing
+		// Use the fast Status() read (single DB row) instead of GetSummary(),
+		// which triggers a synchronous manifest fetch from S3 on cache miss
+		// and blocks the response for 10-30 seconds on first load.
+		st := s.Meta.Status(c.Context(), s.CrawlID)
+		resp.Meta.Backend = st.Backend
+		resp.Meta.Stale = true
+		resp.Meta.Refreshing = st.Refreshing
+		// Schedule async refresh so the meta cache is populated for subsequent calls.
+		s.Meta.TriggerRefresh(s.CrawlID, s.CrawlDir, false)
 	}
 	return c.JSON(200, resp)
 }
