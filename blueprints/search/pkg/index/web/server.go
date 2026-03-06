@@ -313,15 +313,16 @@ func (s *Server) Handler() http.Handler {
 		router.Delete("/api/jobs/{id}", s.handleCancelJob)
 		router.Post("/api/meta/scan-docs", s.handleMetaScanDocs)
 		router.Get("/api/browse/stats", s.handleBrowseStats)
-		// WebSocket endpoint — delegate to raw http handler.
-		router.Get("/ws", func(c *mizu.Ctx) error {
-			s.Hub.HandleWS(c.Writer(), c.Request())
-			return nil
-		})
 	}
 
 	if s.Hub != nil {
-		return withRequestLogging(router)
+		// Register /ws directly on a plain ServeMux so the raw http.ResponseWriter
+		// (which implements http.Hijacker) reaches the WebSocket upgrader.
+		// Mizu wraps ResponseWriter in its own type that doesn't forward Hijacker.
+		mux := http.NewServeMux()
+		mux.HandleFunc("/ws", s.Hub.HandleWS)
+		mux.Handle("/", withRequestLogging(router))
+		return mux
 	}
 	return router
 }
