@@ -1120,35 +1120,6 @@ func (s *Server) handleBrowseStats(c *mizu.Ctx) error {
 	return c.JSON(200, stats)
 }
 
-// listWARCShards returns sorted 5-digit shard names from downloaded warc/ files.
-func listWARCShards(warcBase string) []string {
-	entries, err := os.ReadDir(warcBase)
-	if err != nil {
-		return nil
-	}
-	seen := make(map[string]bool)
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".warc.gz") {
-			continue
-		}
-		// Extract 5-digit index from filename like CC-MAIN-*-00000.warc.gz
-		name := e.Name()
-		// Find the last occurrence of "-" before ".warc.gz" to extract index.
-		base := strings.TrimSuffix(name, ".warc.gz")
-		if idx := strings.LastIndex(base, "-"); idx >= 0 {
-			shard := base[idx+1:]
-			if len(shard) == 5 {
-				seen[shard] = true
-			}
-		}
-	}
-	shards := make([]string, 0, len(seen))
-	for s := range seen {
-		shards = append(shards, s)
-	}
-	sort.Strings(shards)
-	return shards
-}
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")

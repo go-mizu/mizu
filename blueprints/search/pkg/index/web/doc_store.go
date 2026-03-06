@@ -725,17 +725,3 @@ func readDocFromWARCMd(warcMdPath, docID string) ([]byte, bool, error) {
 	return nil, false, nil
 }
 
-func listWARCMdShards(warcMdBase string) []string {
-	entries, err := os.ReadDir(warcMdBase)
-	if err != nil {
-		return nil
-	}
-	var shards []string
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md.warc.gz") {
-			shards = append(shards, strings.TrimSuffix(e.Name(), ".md.warc.gz"))
-		}
-	}
-	sort.Strings(shards)
-	return shards
-}
