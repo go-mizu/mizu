@@ -33,7 +33,6 @@ function renderOverviewContent(d, jobs) {
   const mf = d.manifest || {};
   const dl = d.downloaded || {};
   const md = d.markdown || {};
-  const pk = d.pack || {};
   const ix = d.indexed || {};
   const activeJobs = (jobs || []).filter(j => j.status === 'running' || j.status === 'queued');
 
@@ -115,8 +114,7 @@ function renderOverviewContent(d, jobs) {
     { label: 'Manifest', done: mf.total_warcs || 0, total: mf.total_warcs || 0, cls: 'ov-c1' },
     { label: 'Downloaded', done: dl.count || 0, total: mf.total_warcs || 0, cls: 'ov-c2' },
     { label: 'Markdown', done: md.count || 0, total: dl.count || 0, cls: 'ov-c3' },
-    { label: 'Pack', done: pk.count || 0, total: dl.count || 0, cls: 'ov-c4' },
-    { label: 'FTS Index', done: ix.count || 0, total: dl.count || 0, cls: 'ov-c6' },
+    { label: 'Indexed', done: ix.count || 0, total: dl.count || 0, cls: 'ov-c4' },
   ];
   const pipelineHTML = `
     <div class="surface p-4 mb-4 anim-fade-up" style="animation-delay:50ms">
@@ -183,9 +181,9 @@ function renderOverviewContent(d, jobs) {
       </div>
     </div>`;
 
-  // ── Row 4: Markdown, Pack, FTS Index ──
+  // ── Row 4: Markdown + Index ──
   const row4HTML = `
-    <div class="grid md:grid-cols-3 gap-4 mb-4 anim-fade-up" style="animation-delay:150ms">
+    <div class="grid md:grid-cols-2 gap-4 mb-4 anim-fade-up" style="animation-delay:150ms">
       <div class="surface p-4" style="border-left:3px solid ${stageColor(md.count, dl.count)}">
         <div class="flex items-center justify-between mb-2">
           <div class="text-[11px] font-mono ui-subtle">Stage 3: Markdown</div>
@@ -201,26 +199,13 @@ function renderOverviewContent(d, jobs) {
           <div class="flex justify-between text-[10px] font-mono"><span class="ui-subtle">Avg doc</span><span>${fmtBytes(md.avg_doc_bytes || 0)}</span></div>
         </div>
       </div>
-      <div class="surface p-4" style="border-left:3px solid ${stageColor(pk.count, dl.count)}">
-        <div class="flex items-center justify-between mb-2">
-          <div class="text-[11px] font-mono ui-subtle">Stage 4: Pack</div>
-          <div class="text-[10px] font-mono ${pk.count > 0 ? '' : 'ui-subtle'}">${pk.count || 0} / ${dl.count || 0}</div>
-        </div>
-        <div class="progress-track mb-3" style="height:4px">
-          <div class="ov-c4" style="height:100%;width:${pct(pk.count, dl.count)}%;transition:width 0.4s ease"></div>
-        </div>
-        <div class="space-y-1">
-          <div class="flex justify-between text-[10px] font-mono"><span class="ui-subtle">Parquet</span><span>${fmtBytes(pk.parquet_bytes || 0)}</span></div>
-          <div class="flex justify-between text-[10px] font-mono"><span class="ui-subtle">.md.warc.gz</span><span>${fmtBytes(pk.warc_md_bytes || 0)}</span></div>
-        </div>
-      </div>
       <div class="surface p-4" style="border-left:3px solid ${stageColor(ix.count, dl.count)}">
         <div class="flex items-center justify-between mb-2">
-          <div class="text-[11px] font-mono ui-subtle">Stage 5: FTS Index</div>
+          <div class="text-[11px] font-mono ui-subtle">Stage 4: Index</div>
           <div class="text-[10px] font-mono ${ix.count > 0 ? '' : 'ui-subtle'}">${ix.count || 0} / ${dl.count || 0}</div>
         </div>
         <div class="progress-track mb-3" style="height:4px">
-          <div class="ov-c6" style="height:100%;width:${pct(ix.count, dl.count)}%;transition:width 0.4s ease"></div>
+          <div class="ov-c4" style="height:100%;width:${pct(ix.count, dl.count)}%;transition:width 0.4s ease"></div>
         </div>
         <div class="space-y-1">
           <div class="flex justify-between text-[10px] font-mono"><span class="ui-subtle">Dahlia</span><span>${fmtBytes(ix.dahlia_bytes || 0)} (${ix.dahlia_shards || 0} sh)</span></div>
@@ -252,18 +237,13 @@ function renderOverviewContent(d, jobs) {
       }).join('')}
     </div>` : '';
 
-  // ── Assemble ──
+  // ── Assemble: Pipeline → Stages → Jobs → Storage/System ──
   el.innerHTML = `
-    ${storageHTML}
     ${pipelineHTML}
     ${row3HTML}
     ${row4HTML}
     ${jobsHTML}
-    <div class="flex gap-3 mt-2 anim-fade-up" style="animation-delay:250ms">
-      <a href="#/search" class="ui-btn px-4 py-2 text-sm">Search</a>
-      <a href="#/warc" class="ui-btn px-4 py-2 text-sm">WARC Console</a>
-      <a href="#/jobs" class="ui-btn px-4 py-2 text-sm">Jobs</a>
-    </div>`;
+    ${storageHTML}`;
 }
 
 async function refreshOverviewMeta() {
