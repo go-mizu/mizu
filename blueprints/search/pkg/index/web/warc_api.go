@@ -306,6 +306,18 @@ func (s *Server) handleWARCAction(c *mizu.Ctx) error {
 	crawlDir := s.resolveCrawlDir(crawlID)
 	fileToken := strconv.Itoa(n)
 
+	// localIdx is the 5-digit filename suffix used for local disk paths
+	// (markdown/, fts/, pack/ directories). warcIndex is the manifest-position
+	// key (e.g. "99000") which differs from the local suffix (e.g. "00000").
+	localIdx := warcIndex
+	if s.Meta != nil {
+		if rec, ok, _, _ := s.Meta.GetWARC(c.Context(), crawlID, crawlDir, warcIndex); ok && rec.Filename != "" {
+			if s, ok2 := warcIndexFromPathStrict(rec.Filename); ok2 {
+				localIdx = s
+			}
+		}
+	}
+
 	var (
 		job          *Job
 		deletedPaths []string
@@ -336,7 +348,7 @@ func (s *Server) handleWARCAction(c *mizu.Ctx) error {
 		if engine == "" {
 			engine = s.EngineName
 		}
-		if deletedPaths, err = deleteWARCArtifacts(crawlDir, warcIndex, "index", "", engine); err != nil {
+		if deletedPaths, err = deleteWARCArtifacts(crawlDir, localIdx, "index", "", engine); err != nil {
 			return c.JSON(500, errResp{err.Error()})
 		}
 		source := strings.TrimSpace(req.Source)
@@ -349,7 +361,7 @@ func (s *Server) handleWARCAction(c *mizu.Ctx) error {
 		if target == "" {
 			target = "all"
 		}
-		if deletedPaths, err = deleteWARCArtifacts(crawlDir, warcIndex, target, req.Format, req.Engine); err != nil {
+		if deletedPaths, err = deleteWARCArtifacts(crawlDir, localIdx, target, req.Format, req.Engine); err != nil {
 			return c.JSON(500, errResp{err.Error()})
 		}
 	default:
@@ -469,15 +481,26 @@ func toWARCAPIRecord(rec metastore.WARCRecord) warcAPIRecord {
 
 // enrichWARCAPIRecord fills WARCMdBytes, WARCMdDocs, and HasMarkdown from live disk
 // and DocStore for a single warcAPIRecord. crawlDir is the crawl root directory.
+//
+// WARCIndex is the manifest position key (e.g. "99000"), but local disk paths
+// use the 5-digit filename suffix (e.g. "00000"). We derive the local suffix from
+// r.Filename; if not available, we fall back to r.Index.
 func enrichWARCAPIRecord(ctx context.Context, r *warcAPIRecord, crawlDir string, docs *DocStore) {
-	// Check new format: warc_md/{index}.md.warc.gz
-	mdPath := filepath.Join(crawlDir, "warc_md", r.Index+".md.warc.gz")
+	localIdx := r.Index
+	if r.Filename != "" {
+		if s, ok := warcIndexFromPathStrict(r.Filename); ok {
+			localIdx = s
+		}
+	}
+
+	// Check new format: warc_md/{localIdx}.md.warc.gz
+	mdPath := filepath.Join(crawlDir, "warc_md", localIdx+".md.warc.gz")
 	if info, err := os.Stat(mdPath); err == nil {
 		r.WARCMdBytes = info.Size()
 	}
-	// Check old format: markdown/{index}/ directory with individual .md files
+	// Check old format: markdown/{localIdx}/ directory with individual .md files
 	if r.WARCMdBytes == 0 {
-		markdownDir := filepath.Join(crawlDir, "markdown", r.Index)
+		markdownDir := filepath.Join(crawlDir, "markdown", localIdx)
 		if entries, err := os.ReadDir(markdownDir); err == nil && len(entries) > 0 {
 			var totalDocs int64
 			var totalBytes int64
@@ -497,7 +520,7 @@ func enrichWARCAPIRecord(ctx context.Context, r *warcAPIRecord, crawlDir string,
 		}
 	}
 	if docs != nil {
-		if meta, ok, _ := docs.GetShardMeta(ctx, "", r.Index); ok {
+		if meta, ok, _ := docs.GetShardMeta(ctx, "", localIdx); ok {
 			r.WARCMdDocs = meta.TotalDocs
 		}
 	}

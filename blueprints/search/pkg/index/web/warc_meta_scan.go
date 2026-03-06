@@ -15,8 +15,12 @@ import (
 
 // buildWARCRecords scans local crawl artifacts and merges manifest identity into
 // per-WARC records for dashboard list/detail pages.
+//
+// Key design: WARCIndex is the manifest position (formatWARCIndex(i)), ensuring
+// all 100K manifest entries are unique even though CC segment filenames reuse
+// 00000–00999 across segments. Local disk data is linked via filename lookup.
 func buildWARCRecords(crawlID, crawlDir string, manifestPaths []string, updatedAt time.Time) []metastore.WARCRecord {
-	records := make(map[string]*metastore.WARCRecord, len(manifestPaths))
+	records := make(map[string]*metastore.WARCRecord, max(len(manifestPaths), 64))
 	ensure := func(idx string) *metastore.WARCRecord {
 		if rec, ok := records[idx]; ok {
 			return rec
@@ -33,18 +37,22 @@ func buildWARCRecords(crawlID, crawlDir string, manifestPaths []string, updatedA
 		return rec
 	}
 
+	// filenameToKey maps WARC filename → manifest-position key ("99000" etc.)
+	filenameToKey := make(map[string]string, len(manifestPaths))
 	for i, p := range manifestPaths {
-		idx, ok := warcIndexFromPathStrict(p)
-		if !ok {
-			idx = formatWARCIndex(i)
-		}
+		idx := formatWARCIndex(i) // manifest position is the unique key
 		rec := ensure(idx)
 		rec.ManifestIndex = int64(i)
 		rec.RemotePath = p
 		if rec.Filename == "" {
 			rec.Filename = filepath.Base(p)
 		}
+		filenameToKey[filepath.Base(p)] = idx
 	}
+
+	// localSuffixToKey maps the 5-digit filename suffix ("00000") to the
+	// manifest-position key for the local WARC file. Built from the warc/ scan.
+	localSuffixToKey := make(map[string]string)
 
 	warcDir := filepath.Join(crawlDir, "warc")
 	if entries, err := os.ReadDir(warcDir); err == nil {
@@ -52,18 +60,35 @@ func buildWARCRecords(crawlID, crawlDir string, manifestPaths []string, updatedA
 			if e.IsDir() {
 				continue
 			}
-			idx, ok := warcIndexFromPathStrict(e.Name())
+			// Find the manifest key for this filename, or fall back to local suffix.
+			key, ok := filenameToKey[e.Name()]
 			if !ok {
-				continue
+				key, ok = warcIndexFromPathStrict(e.Name())
+				if !ok {
+					continue
+				}
 			}
-			rec := ensure(idx)
+			rec := ensure(key)
 			if rec.Filename == "" {
 				rec.Filename = e.Name()
 			}
 			if info, err := e.Info(); err == nil {
 				rec.WARCBytes = info.Size()
 			}
+			// Record local suffix → manifest key for subdirectory linkage.
+			if localSuffix, ok2 := warcIndexFromPathStrict(e.Name()); ok2 {
+				localSuffixToKey[localSuffix] = key
+			}
 		}
+	}
+
+	// resolveLocalKey returns the record key for a local-suffix-keyed artifact
+	// (markdown, fts, pack directories). Prefers manifest-position key when known.
+	resolveLocalKey := func(localSuffix string) string {
+		if key, ok := localSuffixToKey[localSuffix]; ok {
+			return key
+		}
+		return localSuffix
 	}
 
 	// Scan warc_md/ for .md.warc.gz packed files (new format).
@@ -77,8 +102,7 @@ func buildWARCRecords(crawlID, crawlDir string, manifestPaths []string, updatedA
 			if !isNumericName(shard) {
 				continue
 			}
-			idx := normalizeWARCIndex(shard)
-			rec := ensure(idx)
+			rec := ensure(resolveLocalKey(normalizeWARCIndex(shard)))
 			if info, err := e.Info(); err == nil {
 				rec.MarkdownBytes = info.Size()
 			}
@@ -93,8 +117,7 @@ func buildWARCRecords(crawlID, crawlDir string, manifestPaths []string, updatedA
 			if !shard.IsDir() || !isNumericName(shard.Name()) {
 				continue
 			}
-			idx := normalizeWARCIndex(shard.Name())
-			rec := ensure(idx)
+			rec := ensure(resolveLocalKey(normalizeWARCIndex(shard.Name())))
 			if rec.MarkdownBytes > 0 {
 				continue // already detected via warc_md/
 			}
@@ -118,11 +141,11 @@ func buildWARCRecords(crawlID, crawlDir string, manifestPaths []string, updatedA
 				if walkErr != nil || d.IsDir() {
 					return nil
 				}
-				idx, ok := warcIndexFromPackFile(d.Name())
+				localSuffix, ok := warcIndexFromPackFile(d.Name())
 				if !ok {
 					return nil
 				}
-				rec := ensure(idx)
+				rec := ensure(resolveLocalKey(localSuffix))
 				if info, err := d.Info(); err == nil {
 					rec.PackBytes[format] += info.Size()
 				}
@@ -147,8 +170,7 @@ func buildWARCRecords(crawlID, crawlDir string, manifestPaths []string, updatedA
 				if !shard.IsDir() || !isNumericName(shard.Name()) {
 					continue
 				}
-				idx := normalizeWARCIndex(shard.Name())
-				rec := ensure(idx)
+				rec := ensure(resolveLocalKey(normalizeWARCIndex(shard.Name())))
 				rec.FTSBytes[engine] += dirSize(filepath.Join(engineDir, shard.Name()))
 			}
 		}
