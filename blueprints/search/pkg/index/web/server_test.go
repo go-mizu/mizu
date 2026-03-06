@@ -40,11 +40,10 @@ func TestHandleOverview(t *testing.T) {
 	// Create a minimal data directory layout.
 	warcDir := filepath.Join(root, "warc")
 	mustMkdir(t, warcDir)
-	writeFile(t, filepath.Join(warcDir, "00000.warc.gz"), 1024)
+	writeFile(t, filepath.Join(warcDir, "CC-MAIN-x-00000.warc.gz"), 1024)
 
-	mdDir := filepath.Join(root, "markdown", "00000")
-	mustMkdir(t, mdDir)
-	writeFile(t, filepath.Join(mdDir, "doc1.md"), 100)
+	mustMkdir(t, filepath.Join(root, "warc_md"))
+	writeFile(t, filepath.Join(root, "warc_md", "00000.md.warc.gz"), 512)
 
 	srv := NewDashboard("test-engine", "CC-TEST-2026", "", root)
 
@@ -61,16 +60,19 @@ func TestHandleOverview(t *testing.T) {
 		t.Fatalf("expected application/json content type, got %q", ct)
 	}
 
-	var result map[string]any
-	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+	var resp OverviewResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode JSON: %v", err)
 	}
 
-	if result["crawl_id"] != "CC-TEST-2026" {
-		t.Fatalf("expected crawl_id=CC-TEST-2026, got %v", result["crawl_id"])
+	if resp.CrawlID != "CC-TEST-2026" {
+		t.Fatalf("expected crawl_id=CC-TEST-2026, got %v", resp.CrawlID)
 	}
-	if result["warc_count"].(float64) != 1 {
-		t.Fatalf("expected warc_count=1, got %v", result["warc_count"])
+	if resp.Downloaded.Count != 1 {
+		t.Fatalf("expected downloaded.count=1, got %d", resp.Downloaded.Count)
+	}
+	if resp.Markdown.Count != 1 {
+		t.Fatalf("expected markdown.count=1, got %d", resp.Markdown.Count)
 	}
 }
 
@@ -428,23 +430,19 @@ func TestHandleOverview_EmptyDir(t *testing.T) {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
 
-	var result DataSummary
-	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+	var resp OverviewResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode JSON: %v", err)
 	}
 
-	if result.CrawlID != "CC-TEST-2026" {
-		t.Fatalf("expected crawl_id=CC-TEST-2026, got %q", result.CrawlID)
+	if resp.CrawlID != "CC-TEST-2026" {
+		t.Fatalf("expected crawl_id=CC-TEST-2026, got %q", resp.CrawlID)
 	}
-	if result.WARCCount != 0 {
-		t.Fatalf("expected warc_count=0, got %d", result.WARCCount)
+	if resp.Downloaded.Count != 0 {
+		t.Fatalf("expected downloaded.count=0, got %d", resp.Downloaded.Count)
 	}
-	// Maps should be non-nil for clean JSON.
-	if result.PackFormats == nil {
-		t.Fatal("expected PackFormats to be non-nil")
-	}
-	if result.FTSEngines == nil {
-		t.Fatal("expected FTSEngines to be non-nil")
+	if resp.System.GoVersion == "" {
+		t.Fatal("expected go version")
 	}
 }
 
@@ -706,12 +704,15 @@ func TestIntegrationDashboardLifecycle(t *testing.T) {
 		if !strings.HasPrefix(ct, "application/json") {
 			t.Fatalf("GET /api/overview: expected application/json, got %q", ct)
 		}
-		var result map[string]any
+		var result OverviewResponse
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			t.Fatalf("decode JSON: %v", err)
 		}
-		if result["crawl_id"] != "CC-TEST-2026" {
-			t.Fatalf("expected crawl_id=CC-TEST-2026, got %v", result["crawl_id"])
+		if result.CrawlID != "CC-TEST-2026" {
+			t.Fatalf("expected crawl_id=CC-TEST-2026, got %v", result.CrawlID)
+		}
+		if result.System.GoVersion == "" {
+			t.Fatal("expected go version in overview response")
 		}
 	})
 
@@ -983,8 +984,6 @@ var _ http.HandlerFunc = (*Server)(nil).handleGetJob
 var _ http.HandlerFunc = (*Server)(nil).handleCreateJob
 var _ http.HandlerFunc = (*Server)(nil).handleCancelJob
 var _ http.HandlerFunc = (*Server)(nil).handleCrawlData
-var _ http.HandlerFunc = (*Server)(nil).handleCrawlWarcs
-var _ http.HandlerFunc = (*Server)(nil).handleCrawls
 var _ http.HandlerFunc = (*Server)(nil).handleWARCList
 var _ http.HandlerFunc = (*Server)(nil).handleWARCDetail
 var _ http.HandlerFunc = (*Server)(nil).handleWARCAction

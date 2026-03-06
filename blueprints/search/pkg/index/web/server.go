@@ -41,6 +41,8 @@ type Server struct {
 	Meta       *MetaManager
 	Docs       *DocStore // per-document browse metadata (dashboard only)
 
+	manifestTotal int // cached count of WARCs in CC manifest
+
 	md goldmark.Markdown
 }
 
@@ -137,6 +139,18 @@ func NewDashboardWithOptions(engineName, crawlID, addr, baseDir string, opts Das
 		logInfof("doc_store: opened dir=%s (per-shard duckdb)", s.WARCMdBase)
 	}
 
+	// Fetch manifest total in background for overview pipeline progress.
+	go func() {
+		client := cc.NewClient("", 4)
+		paths, err := client.DownloadManifest(context.Background(), crawlID, "warc.paths.gz")
+		if err != nil {
+			logErrorf("manifest fetch failed crawl=%s err=%v", crawlID, err)
+			return
+		}
+		s.manifestTotal = len(paths)
+		logInfof("manifest fetched crawl=%s total=%d", crawlID, len(paths))
+	}()
+
 	logInfof("dashboard init crawl=%s engine=%s base_dir=%s meta_driver=%s ttl=%s prewarm=%t",
 		crawlID, engineName, baseDir, opts.MetaDriver, opts.MetaRefreshTTL, opts.MetaPrewarm)
 
@@ -157,8 +171,6 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /api/overview", s.handleOverview)
 		mux.HandleFunc("GET /api/meta/status", s.handleMetaStatus)
 		mux.HandleFunc("POST /api/meta/refresh", s.handleMetaRefresh)
-		mux.HandleFunc("GET /api/crawls", s.handleCrawls)
-		mux.HandleFunc("GET /api/crawl/{id}/warcs", s.handleCrawlWarcs)
 		mux.HandleFunc("GET /api/crawl/{id}/data", s.handleCrawlData)
 		mux.HandleFunc("GET /api/warc", s.handleWARCList)
 		mux.HandleFunc("GET /api/warc/{index}", s.handleWARCDetail)
@@ -647,13 +659,14 @@ func (s *Server) handleBrowseDocs(w http.ResponseWriter, r *http.Request, shard 
 // ── Dashboard Handlers ──────────────────────────────────────────────────
 
 func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
+	resp := buildOverviewResponse(s.CrawlID, s.CrawlDir, s.manifestTotal, s.Docs)
 	if s.Meta != nil {
-		writeJSON(w, 200, s.Meta.GetSummary(r.Context(), s.CrawlID, s.CrawlDir))
-		return
+		summary := s.Meta.GetSummary(r.Context(), s.CrawlID, s.CrawlDir)
+		resp.Meta.Backend = summary.MetaBackend
+		resp.Meta.Stale = summary.MetaStale
+		resp.Meta.Refreshing = summary.MetaRefreshing
 	}
-	ds := ScanDataDir(s.CrawlDir)
-	ds.CrawlID = s.CrawlID
-	writeJSON(w, 200, ds)
+	writeJSON(w, 200, resp)
 }
 
 func (s *Server) handleMetaStatus(w http.ResponseWriter, r *http.Request) {
