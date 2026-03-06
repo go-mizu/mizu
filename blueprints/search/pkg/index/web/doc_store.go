@@ -525,24 +525,50 @@ func (ds *DocStore) GetDoc(ctx context.Context, _, shard, docID string) (DocReco
 
 // ── ShardStats (DuckDB aggregation query, not cached) ────────────────────────
 
+// ShardStatsResponse holds aggregated statistics for a shard.
+type ShardStatsResponse struct {
+	Shard         string      `json:"shard"`
+	TotalDocs     int64       `json:"total_docs"`
+	TotalSize     int64       `json:"total_size"`
+	AvgSize       int64       `json:"avg_size"`
+	MinSize       int64       `json:"min_size"`
+	MaxSize       int64       `json:"max_size"`
+	DateFrom      string      `json:"date_from"`
+	DateTo        string      `json:"date_to"`
+	TopDomains    []domainRow `json:"top_domains"`
+	SizeBuckets   []sizeRow   `json:"size_buckets"`
+	DateHistogram []dateRow   `json:"date_histogram"`
+}
+
+type domainRow struct {
+	Domain string `json:"domain"`
+	Count  int64  `json:"count"`
+}
+
+type sizeRow struct {
+	Label string `json:"label"`
+	Count int64  `json:"count"`
+}
+
+type dateRow struct {
+	Date  string `json:"date"`
+	Count int64  `json:"count"`
+}
+
 // ShardStats returns aggregated statistics for a shard.
-func (ds *DocStore) ShardStats(ctx context.Context, _, shard string) (map[string]any, error) {
+func (ds *DocStore) ShardStats(ctx context.Context, _, shard string) (ShardStatsResponse, error) {
 	dbPath := ds.shardDBPath(shard)
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		return map[string]any{"shard": shard, "total_docs": 0}, nil
+		return ShardStatsResponse{Shard: shard, TotalDocs: 0}, nil
 	}
 
 	db, err := openShardDB(dbPath + "?access_mode=read_only")
 	if err != nil {
-		return nil, err
+		return ShardStatsResponse{Shard: shard}, err
 	}
 	defer db.Close()
 
 	// Top domains by doc count.
-	type domainRow struct {
-		Domain string `json:"domain"`
-		Count  int64  `json:"count"`
-	}
 	drows, err := db.QueryContext(ctx, `
 		SELECT
 			regexp_extract(url, 'https?://(?:www\.)?([^/:?#]+)', 1) AS domain,
@@ -554,7 +580,7 @@ func (ds *DocStore) ShardStats(ctx context.Context, _, shard string) (map[string
 		LIMIT 20
 	`)
 	if err != nil {
-		return nil, fmt.Errorf("domain stats: %w", err)
+		return ShardStatsResponse{Shard: shard}, fmt.Errorf("domain stats: %w", err)
 	}
 	defer drows.Close()
 	var domains []domainRow
@@ -568,10 +594,6 @@ func (ds *DocStore) ShardStats(ctx context.Context, _, shard string) (map[string
 	}
 
 	// Size distribution buckets.
-	type sizeRow struct {
-		Label string `json:"label"`
-		Count int64  `json:"count"`
-	}
 	srows, err := db.QueryContext(ctx, `
 		SELECT
 			CASE
@@ -587,7 +609,7 @@ func (ds *DocStore) ShardStats(ctx context.Context, _, shard string) (map[string
 		ORDER BY MIN(size_bytes)
 	`)
 	if err != nil {
-		return nil, fmt.Errorf("size buckets: %w", err)
+		return ShardStatsResponse{}, fmt.Errorf("size buckets: %w", err)
 	}
 	defer srows.Close()
 	var sizeBuckets []sizeRow
@@ -598,10 +620,6 @@ func (ds *DocStore) ShardStats(ctx context.Context, _, shard string) (map[string
 	}
 
 	// Date histogram: docs per day (last 60 days).
-	type dateRow struct {
-		Date  string `json:"date"`
-		Count int64  `json:"count"`
-	}
 	hrows, err := db.QueryContext(ctx, `
 		SELECT LEFT(crawl_date, 10) AS day, COUNT(*) AS cnt
 		FROM doc_records
@@ -611,7 +629,7 @@ func (ds *DocStore) ShardStats(ctx context.Context, _, shard string) (map[string
 		LIMIT 60
 	`)
 	if err != nil {
-		return nil, fmt.Errorf("date histogram: %w", err)
+		return ShardStatsResponse{}, fmt.Errorf("date histogram: %w", err)
 	}
 	defer hrows.Close()
 	var histogram []dateRow
@@ -635,18 +653,18 @@ func (ds *DocStore) ShardStats(ctx context.Context, _, shard string) (map[string
 		avgSize = totalSize / totalDocs
 	}
 
-	return map[string]any{
-		"shard":          shard,
-		"total_docs":     totalDocs,
-		"total_size":     totalSize,
-		"avg_size":       avgSize,
-		"min_size":       minSize,
-		"max_size":       maxSize,
-		"date_from":      minDate,
-		"date_to":        maxDate,
-		"top_domains":    domains,
-		"size_buckets":   sizeBuckets,
-		"date_histogram": histogram,
+	return ShardStatsResponse{
+		Shard:         shard,
+		TotalDocs:     totalDocs,
+		TotalSize:     totalSize,
+		AvgSize:       avgSize,
+		MinSize:       minSize,
+		MaxSize:       maxSize,
+		DateFrom:      minDate,
+		DateTo:        maxDate,
+		TopDomains:    domains,
+		SizeBuckets:   sizeBuckets,
+		DateHistogram: histogram,
 	}, nil
 }
 

@@ -40,6 +40,23 @@ type Job struct {
 // JobCompleteHook is called when a job transitions to completed status.
 type JobCompleteHook func(job *Job, crawlID, crawlDir string)
 
+// ── WebSocket event types ────────────────────────────────────────────────
+
+type wsJobUpdate struct {
+	Type   string `json:"type"`
+	JobID  string `json:"job_id"`
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
+}
+
+type wsJobProgress struct {
+	Type     string  `json:"type"`
+	JobID    string  `json:"job_id"`
+	Progress float64 `json:"progress"`
+	Message  string  `json:"message"`
+	Rate     float64 `json:"rate"`
+}
+
 // ── JobManager ───────────────────────────────────────────────────────────
 
 // JobManager manages pipeline jobs in-memory. It is safe for concurrent use.
@@ -135,11 +152,7 @@ func (m *JobManager) Cancel(id string) bool {
 		cancelFn()
 	}
 
-	m.hub.Broadcast(id, map[string]any{
-		"type":   "job_update",
-		"job_id": id,
-		"status": "cancelled",
-	})
+	m.hub.Broadcast(id, wsJobUpdate{Type: "job_update", JobID: id, Status: "cancelled"})
 	logInfof("job lifecycle id=%s status=cancelled", id)
 	return true
 }
@@ -157,13 +170,7 @@ func (m *JobManager) UpdateProgress(id string, pct float64, msg string, rate flo
 	job.Rate = rate
 	m.mu.Unlock()
 
-	m.hub.Broadcast(id, map[string]any{
-		"type":     "job_progress",
-		"job_id":   id,
-		"progress": pct,
-		"message":  msg,
-		"rate":     rate,
-	})
+	m.hub.Broadcast(id, wsJobProgress{Type: "job_progress", JobID: id, Progress: pct, Message: msg, Rate: rate})
 }
 
 // Complete marks a job as completed with a final message.
@@ -184,11 +191,7 @@ func (m *JobManager) Complete(id string, msg string) {
 	crawlDir := m.resolveCrawlDir(crawlID)
 	m.mu.Unlock()
 
-	m.hub.Broadcast(id, map[string]any{
-		"type":   "job_update",
-		"job_id": id,
-		"status": "completed",
-	})
+	m.hub.Broadcast(id, wsJobUpdate{Type: "job_update", JobID: id, Status: "completed"})
 	logInfof("job lifecycle id=%s status=completed msg=%q", id, msg)
 
 	if hook != nil {
@@ -210,12 +213,7 @@ func (m *JobManager) Fail(id string, err error) {
 	job.EndedAt = &now
 	m.mu.Unlock()
 
-	m.hub.Broadcast(id, map[string]any{
-		"type":   "job_update",
-		"job_id": id,
-		"status": "failed",
-		"error":  err.Error(),
-	})
+	m.hub.Broadcast(id, wsJobUpdate{Type: "job_update", JobID: id, Status: "failed", Error: err.Error()})
 	logErrorf("job lifecycle id=%s status=failed err=%v", id, err)
 }
 
@@ -231,11 +229,7 @@ func (m *JobManager) SetRunning(id string, cancel context.CancelFunc) {
 	job.cancel = cancel
 	m.mu.Unlock()
 
-	m.hub.Broadcast(id, map[string]any{
-		"type":   "job_update",
-		"job_id": id,
-		"status": "running",
-	})
+	m.hub.Broadcast(id, wsJobUpdate{Type: "job_update", JobID: id, Status: "running"})
 	logInfof("job lifecycle id=%s status=running", id)
 }
 

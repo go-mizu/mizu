@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	mizu "github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index"
 	"github.com/yuin/goldmark"
@@ -24,8 +25,132 @@ import (
 	"github.com/yuin/goldmark/renderer/html"
 )
 
-//go:embed static/index.html
+//go:embed static
 var staticFS embed.FS
+
+// ── Response types ──────────────────────────────────────────────────────
+
+// errResp is the standard JSON error shape.
+type errResp struct {
+	Error string `json:"error"`
+}
+
+// SearchResponse is returned by GET /api/search.
+type SearchResponse struct {
+	Hits      []searchHit `json:"hits"`
+	Total     int         `json:"total"`
+	ElapsedMs int64       `json:"elapsed_ms"`
+	Query     string      `json:"query"`
+	Engine    string      `json:"engine"`
+	Shards    int         `json:"shards"`
+}
+
+type searchHit struct {
+	DocID     string     `json:"doc_id"`
+	Shard     string     `json:"shard"`
+	Score     float64    `json:"score,omitempty"`
+	Snippet   string     `json:"snippet,omitempty"`
+	URL       string     `json:"url,omitempty"`
+	Title     string     `json:"title,omitempty"`
+	CrawlDate *time.Time `json:"crawl_date,omitempty"`
+	SizeBytes int64      `json:"size_bytes,omitempty"`
+	WordCount int        `json:"word_count,omitempty"`
+}
+
+// StatsResponse is returned by GET /api/stats.
+type StatsResponse struct {
+	Engine    string `json:"engine"`
+	Crawl     string `json:"crawl"`
+	Shards    int    `json:"shards"`
+	TotalDocs int64  `json:"total_docs"`
+	TotalDisk string `json:"total_disk"`
+}
+
+// DocResponse is returned by GET /api/doc/{shard}/{docid}.
+type DocResponse struct {
+	DocID        string `json:"doc_id"`
+	Shard        string `json:"shard"`
+	URL          string `json:"url"`
+	Title        string `json:"title"`
+	CrawlDate    string `json:"crawl_date"`
+	SizeBytes    int64  `json:"size_bytes"`
+	WordCount    int    `json:"word_count"`
+	WARCRecordID string `json:"warc_record_id"`
+	RefersTo     string `json:"refers_to"`
+	Markdown     string `json:"markdown"`
+	HTML         string `json:"html"`
+}
+
+// BrowseShardsResponse is returned by GET /api/browse (no shard param).
+type BrowseShardsResponse struct {
+	Shards     []shardEntry `json:"shards"`
+	HasDocMeta bool         `json:"has_doc_meta"`
+}
+
+type shardEntry struct {
+	Name          string `json:"name"`
+	HasPack       bool   `json:"has_pack"`
+	HasScan       bool   `json:"has_scan"`
+	Scanning      bool   `json:"scanning"`
+	FileCount     int    `json:"file_count"`
+	TotalSize     int64  `json:"total_size,omitempty"`
+	LastDocDate   string `json:"last_doc_date,omitempty"`
+	MetaStale     bool   `json:"meta_stale"`
+	LastScannedAt string `json:"last_scanned_at,omitempty"`
+}
+
+// BrowseDocsResponse is returned by GET /api/browse?shard=xxx.
+type BrowseDocsResponse struct {
+	Shard         string    `json:"shard"`
+	Docs          []docJSON `json:"docs"`
+	Total         int       `json:"total"`
+	Page          int       `json:"page"`
+	PageSize      int       `json:"page_size,omitempty"`
+	MetaStale     bool      `json:"meta_stale,omitempty"`
+	Scanning      bool      `json:"scanning"`
+	NotScanned    bool      `json:"not_scanned,omitempty"`
+	LastScannedAt string    `json:"last_scanned_at,omitempty"`
+}
+
+type docJSON struct {
+	DocID     string `json:"doc_id"`
+	Shard     string `json:"shard"`
+	URL       string `json:"url"`
+	Title     string `json:"title"`
+	CrawlDate string `json:"crawl_date,omitempty"`
+	SizeBytes int64  `json:"size_bytes"`
+	WordCount int    `json:"word_count"`
+}
+
+// MetaScanDocsResponse is returned by POST /api/meta/scan-docs.
+type MetaScanDocsResponse struct {
+	Accepted bool   `json:"accepted"`
+	CrawlID  string `json:"crawl_id,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+// MetaRefreshResponse is returned by POST /api/meta/refresh.
+type MetaRefreshResponse struct {
+	Accepted bool       `json:"accepted"`
+	Status   MetaStatus `json:"status"`
+}
+
+// EnginesResponse is returned by GET /api/engines.
+type EnginesResponse struct {
+	Engines []string `json:"engines"`
+}
+
+// JobsListResponse is returned by GET /api/jobs.
+type JobsListResponse struct {
+	Jobs []*Job `json:"jobs"`
+}
+
+// CancelJobResponse is returned by DELETE /api/jobs/{id}.
+type CancelJobResponse struct {
+	Status string `json:"status"`
+}
+
+// ── Server ──────────────────────────────────────────────────────────────
 
 // Server serves the FTS web GUI and JSON API.
 type Server struct {
@@ -157,38 +282,48 @@ func NewDashboardWithOptions(engineName, crawlID, addr, baseDir string, opts Das
 	return s
 }
 
-// Handler returns an http.Handler with all routes registered.
+// Handler returns an http.Handler with all routes registered via mizu Router.
 func (s *Server) Handler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/search", s.handleSearch)
-	mux.HandleFunc("GET /api/stats", s.handleStats)
-	mux.HandleFunc("GET /api/doc/{shard}/{docid...}", s.handleDoc)
-	mux.HandleFunc("GET /api/browse", s.handleBrowse)
-	mux.HandleFunc("GET /", s.handleIndex)
+	router := mizu.NewRouter()
+	router.ClearMiddleware() // use our own logging middleware
+
+	router.Get("/api/search", s.handleSearch)
+	router.Get("/api/stats", s.handleStats)
+	router.Get("/api/doc/{shard}/{docid...}", s.handleDoc)
+	router.Get("/api/browse", s.handleBrowse)
+	router.Get("/static/{path...}", func(c *mizu.Ctx) error {
+		http.FileServer(http.FS(staticFS)).ServeHTTP(c.Writer(), c.Request())
+		return nil
+	})
+	router.Get("/", s.handleIndex)
 
 	// Dashboard routes — only registered when Hub is non-nil (NewDashboard mode).
 	if s.Hub != nil {
-		mux.HandleFunc("GET /api/overview", s.handleOverview)
-		mux.HandleFunc("GET /api/meta/status", s.handleMetaStatus)
-		mux.HandleFunc("POST /api/meta/refresh", s.handleMetaRefresh)
-		mux.HandleFunc("GET /api/crawl/{id}/data", s.handleCrawlData)
-		mux.HandleFunc("GET /api/warc", s.handleWARCList)
-		mux.HandleFunc("GET /api/warc/{index}", s.handleWARCDetail)
-		mux.HandleFunc("POST /api/warc/{index}/action", s.handleWARCAction)
-		mux.HandleFunc("GET /api/engines", s.handleEngines)
-		mux.HandleFunc("GET /api/jobs", s.handleListJobs)
-		mux.HandleFunc("GET /api/jobs/{id}", s.handleGetJob)
-		mux.HandleFunc("POST /api/jobs", s.handleCreateJob)
-		mux.HandleFunc("DELETE /api/jobs/{id}", s.handleCancelJob)
-		mux.HandleFunc("POST /api/meta/scan-docs", s.handleMetaScanDocs)
-		mux.HandleFunc("GET /api/browse/stats", s.handleBrowseStats)
-		mux.HandleFunc("GET /ws", s.Hub.HandleWS)
+		router.Get("/api/overview", s.handleOverview)
+		router.Get("/api/meta/status", s.handleMetaStatus)
+		router.Post("/api/meta/refresh", s.handleMetaRefresh)
+		router.Get("/api/crawl/{id}/data", s.handleCrawlData)
+		router.Get("/api/warc", s.handleWARCList)
+		router.Get("/api/warc/{index}", s.handleWARCDetail)
+		router.Post("/api/warc/{index}/action", s.handleWARCAction)
+		router.Get("/api/engines", s.handleEngines)
+		router.Get("/api/jobs", s.handleListJobs)
+		router.Get("/api/jobs/{id}", s.handleGetJob)
+		router.Post("/api/jobs", s.handleCreateJob)
+		router.Delete("/api/jobs/{id}", s.handleCancelJob)
+		router.Post("/api/meta/scan-docs", s.handleMetaScanDocs)
+		router.Get("/api/browse/stats", s.handleBrowseStats)
+		// WebSocket endpoint — delegate to raw http handler.
+		router.Get("/ws", func(c *mizu.Ctx) error {
+			s.Hub.HandleWS(c.Writer(), c.Request())
+			return nil
+		})
 	}
 
 	if s.Hub != nil {
-		return withRequestLogging(mux)
+		return withRequestLogging(router)
 	}
-	return mux
+	return router
 }
 
 // ListenAndServe starts the HTTP server, blocking until ctx is cancelled.
@@ -231,11 +366,10 @@ func (s *Server) ListenAndServe(ctx context.Context, port int) error {
 
 // ── API Handlers ────────────────────────────────────────────────────────
 
-func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleIndex(c *mizu.Ctx) error {
 	data, err := staticFS.ReadFile("static/index.html")
 	if err != nil {
-		http.Error(w, "internal error", 500)
-		return
+		return c.Text(500, "internal error")
 	}
 	// Inject server mode so the SPA can adapt its UI.
 	mode := "search"
@@ -244,20 +378,20 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	data = bytes.Replace(data, []byte(`"__SERVER_MODE__"`), []byte(`"`+mode+`"`), 1)
 	data = bytes.Replace(data, []byte(`"__DEFAULT_ENGINE__"`), []byte(`"`+s.EngineName+`"`), 1)
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Write(data)
+	c.Header().Set("Content-Type", "text/html; charset=utf-8")
+	c.Header().Set("Cache-Control", "no-cache")
+	_, err = c.Writer().Write(data)
+	return err
 }
 
-func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query().Get("q")
+func (s *Server) handleSearch(c *mizu.Ctx) error {
+	q := c.Query("q")
 	if q == "" {
-		writeJSON(w, 400, map[string]string{"error": "missing q parameter"})
-		return
+		return c.JSON(400, errResp{"missing q parameter"})
 	}
-	engineName := s.searchEngine(r)
-	limit := queryInt(r, "limit", 20)
-	offset := queryInt(r, "offset", 0)
+	engineName := s.searchEngineFromCtx(c)
+	limit := queryIntCtx(c, "limit", 20)
+	offset := queryIntCtx(c, "offset", 0)
 	if limit > 100 {
 		limit = 100
 	}
@@ -265,8 +399,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	// Discover per-WARC shard directories.
 	shardDirs, err := discoverShards(s.resolveFTSBase(engineName))
 	if err != nil {
-		writeJSON(w, 500, map[string]string{"error": "no FTS index: " + err.Error()})
-		return
+		return c.JSON(500, errResp{"no FTS index: " + err.Error()})
 	}
 
 	type shardResult struct {
@@ -293,13 +426,13 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 					setter.SetAddr(s.Addr)
 				}
 			}
-			if err := eng.Open(r.Context(), dir); err != nil {
+			if err := eng.Open(c.Context(), dir); err != nil {
 				results[idx].err = err
 				return
 			}
 			defer eng.Close()
 
-			res, err := eng.Search(r.Context(), index.Query{Text: q, Limit: limit + offset})
+			res, err := eng.Search(c.Context(), index.Query{Text: q, Limit: limit + offset})
 			if err != nil {
 				results[idx].err = err
 				return
@@ -310,18 +443,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	wg.Wait()
 
 	// Merge results.
-	type apiHit struct {
-		DocID     string     `json:"doc_id"`
-		Shard     string     `json:"shard"`
-		Score     float64    `json:"score,omitempty"`
-		Snippet   string     `json:"snippet,omitempty"`
-		URL       string     `json:"url,omitempty"`
-		Title     string     `json:"title,omitempty"`
-		CrawlDate *time.Time `json:"crawl_date,omitempty"`
-		SizeBytes int64      `json:"size_bytes,omitempty"`
-		WordCount int        `json:"word_count,omitempty"`
-	}
-	var allHits []apiHit
+	var allHits []searchHit
 	totalCount := 0
 	for _, sr := range results {
 		if sr.err != nil {
@@ -329,7 +451,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		}
 		totalCount += sr.total
 		for _, h := range sr.hits {
-			allHits = append(allHits, apiHit{
+			allHits = append(allHits, searchHit{
 				DocID:   h.DocID,
 				Shard:   sr.shard,
 				Score:   h.Score,
@@ -355,7 +477,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 			wg2.Add(1)
 			go func(idx int) {
 				defer wg2.Done()
-				rec, ok, _ := s.Docs.GetDoc(r.Context(), s.CrawlID, allHits[idx].Shard, allHits[idx].DocID)
+				rec, ok, _ := s.Docs.GetDoc(c.Context(), s.CrawlID, allHits[idx].Shard, allHits[idx].DocID)
 				if !ok {
 					return
 				}
@@ -375,22 +497,21 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	elapsed := time.Since(t0).Milliseconds()
-	writeJSON(w, 200, map[string]any{
-		"hits":       allHits,
-		"total":      totalCount,
-		"elapsed_ms": elapsed,
-		"query":      q,
-		"engine":     engineName,
-		"shards":     len(shardDirs),
+	return c.JSON(200, SearchResponse{
+		Hits:      allHits,
+		Total:     totalCount,
+		ElapsedMs: elapsed,
+		Query:     q,
+		Engine:    engineName,
+		Shards:    len(shardDirs),
 	})
 }
 
-func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
-	engineName := s.searchEngine(r)
+func (s *Server) handleStats(c *mizu.Ctx) error {
+	engineName := s.searchEngineFromCtx(c)
 	shardDirs, err := discoverShards(s.resolveFTSBase(engineName))
 	if err != nil {
-		writeJSON(w, 500, map[string]string{"error": "no FTS index: " + err.Error()})
-		return
+		return c.JSON(500, errResp{"no FTS index: " + err.Error()})
 	}
 
 	var totalDocs int64
@@ -405,10 +526,10 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 				setter.SetAddr(s.Addr)
 			}
 		}
-		if err := eng.Open(r.Context(), sd.path); err != nil {
+		if err := eng.Open(c.Context(), sd.path); err != nil {
 			continue
 		}
-		stats, err := eng.Stats(r.Context())
+		stats, err := eng.Stats(c.Context())
 		eng.Close()
 		if err != nil {
 			continue
@@ -417,21 +538,20 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		totalDisk += stats.DiskBytes
 	}
 
-	writeJSON(w, 200, map[string]any{
-		"engine":     engineName,
-		"crawl":      s.CrawlID,
-		"shards":     len(shardDirs),
-		"total_docs": totalDocs,
-		"total_disk": FormatBytes(totalDisk),
+	return c.JSON(200, StatsResponse{
+		Engine:    engineName,
+		Crawl:     s.CrawlID,
+		Shards:    len(shardDirs),
+		TotalDocs: totalDocs,
+		TotalDisk: FormatBytes(totalDisk),
 	})
 }
 
-func (s *Server) handleDoc(w http.ResponseWriter, r *http.Request) {
-	shard := r.PathValue("shard")
-	docid := r.PathValue("docid")
+func (s *Server) handleDoc(c *mizu.Ctx) error {
+	shard := c.Param("shard")
+	docid := c.Param("docid")
 	if shard == "" || docid == "" {
-		writeJSON(w, 400, map[string]string{"error": "missing shard or docid"})
-		return
+		return c.JSON(400, errResp{"missing shard or docid"})
 	}
 
 	var raw []byte
@@ -441,18 +561,16 @@ func (s *Server) handleDoc(w http.ResponseWriter, r *http.Request) {
 	warcMdPath := filepath.Join(s.WARCMdBase, shard+".md.warc.gz")
 	body, found, err := readDocFromWARCMd(warcMdPath, docid)
 	if err != nil {
-		writeJSON(w, 500, map[string]string{"error": "read error: " + err.Error()})
-		return
+		return c.JSON(500, errResp{"read error: " + err.Error()})
 	}
 	if !found {
-		writeJSON(w, 404, map[string]string{"error": "document not found"})
-		return
+		return c.JSON(404, errResp{"document not found"})
 	}
 	raw = body
 
 	// Enrich with stored metadata if DocStore available.
 	if s.Docs != nil {
-		if rec, ok, _ := s.Docs.GetDoc(r.Context(), s.CrawlID, shard, docid); ok {
+		if rec, ok, _ := s.Docs.GetDoc(c.Context(), s.CrawlID, shard, docid); ok {
 			meta = rec
 		}
 	}
@@ -468,8 +586,7 @@ func (s *Server) handleDoc(w http.ResponseWriter, r *http.Request) {
 	// Render markdown to HTML.
 	var buf bytes.Buffer
 	if err := s.md.Convert(raw, &buf); err != nil {
-		writeJSON(w, 500, map[string]string{"error": "markdown render failed"})
-		return
+		return c.JSON(500, errResp{"markdown render failed"})
 	}
 
 	wordCount := len(strings.Fields(string(raw)))
@@ -479,44 +596,30 @@ func (s *Server) handleDoc(w http.ResponseWriter, r *http.Request) {
 		crawlDateStr = meta.CrawlDate.UTC().Format(time.RFC3339)
 	}
 
-	writeJSON(w, 200, map[string]any{
-		"doc_id":         docid,
-		"shard":          shard,
-		"url":            meta.URL,
-		"title":          meta.Title,
-		"crawl_date":     crawlDateStr,
-		"size_bytes":     int64(len(raw)),
-		"word_count":     wordCount,
-		"warc_record_id": meta.WARCRecordID,
-		"refers_to":      meta.RefersTo,
-		"markdown":       string(raw),
-		"html":           buf.String(),
+	return c.JSON(200, DocResponse{
+		DocID:        docid,
+		Shard:        shard,
+		URL:          meta.URL,
+		Title:        meta.Title,
+		CrawlDate:    crawlDateStr,
+		SizeBytes:    int64(len(raw)),
+		WordCount:    wordCount,
+		WARCRecordID: meta.WARCRecordID,
+		RefersTo:     meta.RefersTo,
+		Markdown:     string(raw),
+		HTML:         buf.String(),
 	})
 }
 
-func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
-	shard := r.URL.Query().Get("shard")
-
+func (s *Server) handleBrowse(c *mizu.Ctx) error {
+	shard := c.Query("shard")
 	if shard == "" {
-		s.handleBrowseShards(w, r)
-		return
+		return s.handleBrowseShards(c)
 	}
-	s.handleBrowseDocs(w, r, shard)
+	return s.handleBrowseDocs(c, shard)
 }
 
-func (s *Server) handleBrowseShards(w http.ResponseWriter, r *http.Request) {
-	type shardEntry struct {
-		Name          string `json:"name"`
-		HasPack       bool   `json:"has_pack"`   // .md.warc.gz exists
-		HasScan       bool   `json:"has_scan"`   // DocStore metadata populated
-		Scanning      bool   `json:"scanning"`   // scan in progress
-		FileCount     int    `json:"file_count"` // 0 if not scanned
-		TotalSize     int64  `json:"total_size,omitempty"`
-		LastDocDate   string `json:"last_doc_date,omitempty"`
-		MetaStale     bool   `json:"meta_stale"` // scanned >1h ago
-		LastScannedAt string `json:"last_scanned_at,omitempty"`
-	}
-
+func (s *Server) handleBrowseShards(c *mizu.Ctx) error {
 	// Collect all downloaded WARC shard indexes from warc/ directory.
 	allShards := listWARCShards(s.WARCBase)
 
@@ -529,7 +632,7 @@ func (s *Server) handleBrowseShards(w http.ResponseWriter, r *http.Request) {
 	// Collect DocStore scan metadata.
 	var metas []DocShardMeta
 	if s.Docs != nil {
-		metas, _ = s.Docs.ListShardMetas(r.Context(), s.CrawlID)
+		metas, _ = s.Docs.ListShardMetas(c.Context(), s.CrawlID)
 	}
 	metaByName := make(map[string]DocShardMeta, len(metas))
 	for _, m := range metas {
@@ -559,51 +662,47 @@ func (s *Server) handleBrowseShards(w http.ResponseWriter, r *http.Request) {
 		entries = append(entries, e)
 	}
 
-	writeJSON(w, 200, map[string]any{
-		"shards":       entries,
-		"has_doc_meta": s.Docs != nil,
+	return c.JSON(200, BrowseShardsResponse{
+		Shards:     entries,
+		HasDocMeta: s.Docs != nil,
 	})
 }
 
-func (s *Server) handleBrowseDocs(w http.ResponseWriter, r *http.Request, shard string) {
-	page := queryInt(r, "page", 1)
-	pageSize := queryInt(r, "page_size", 100)
+func (s *Server) handleBrowseDocs(c *mizu.Ctx, shard string) error {
+	page := queryIntCtx(c, "page", 1)
+	pageSize := queryIntCtx(c, "page_size", 100)
 	if pageSize > 500 {
 		pageSize = 500
 	}
-	q := r.URL.Query().Get("q")
-	sortBy := r.URL.Query().Get("sort")
+	q := c.Query("q")
+	sortBy := c.Query("sort")
 
 	if s.Docs == nil {
-		writeJSON(w, 503, map[string]string{"error": "doc store not available"})
-		return
+		return c.JSON(503, errResp{"doc store not available"})
 	}
 
-	meta, hasMeta, _ := s.Docs.GetShardMeta(r.Context(), s.CrawlID, shard)
+	meta, hasMeta, _ := s.Docs.GetShardMeta(c.Context(), s.CrawlID, shard)
 	scanning := s.Docs.IsScanning(s.CrawlID, shard)
 
 	if !hasMeta {
 		// Not scanned yet — check if .md.warc.gz exists.
 		warcMdPath := filepath.Join(s.WARCMdBase, shard+".md.warc.gz")
 		if _, err := os.Stat(warcMdPath); err != nil {
-			writeJSON(w, 404, map[string]string{"error": "shard not packed yet"})
-			return
+			return c.JSON(404, errResp{"shard not packed yet"})
 		}
-		writeJSON(w, 200, map[string]any{
-			"shard":    shard,
-			"docs":     []any{},
-			"total":    0,
-			"page":     1,
-			"scanning": scanning,
-			"not_scanned": true,
+		return c.JSON(200, BrowseDocsResponse{
+			Shard:      shard,
+			Docs:       []docJSON{},
+			Total:      0,
+			Page:       1,
+			Scanning:   scanning,
+			NotScanned: true,
 		})
-		return
 	}
 
-	docs, total, err := s.Docs.ListDocs(r.Context(), s.CrawlID, shard, page, pageSize, q, sortBy)
+	docs, total, err := s.Docs.ListDocs(c.Context(), s.CrawlID, shard, page, pageSize, q, sortBy)
 	if err != nil {
-		writeJSON(w, 500, map[string]string{"error": err.Error()})
-		return
+		return c.JSON(500, errResp{err.Error()})
 	}
 
 	metaStale := time.Since(meta.LastScannedAt) > time.Hour
@@ -616,15 +715,6 @@ func (s *Server) handleBrowseDocs(w http.ResponseWriter, r *http.Request, shard 
 		}()
 	}
 
-	type docJSON struct {
-		DocID     string `json:"doc_id"`
-		Shard     string `json:"shard"`
-		URL       string `json:"url"`
-		Title     string `json:"title"`
-		CrawlDate string `json:"crawl_date,omitempty"`
-		SizeBytes int64  `json:"size_bytes"`
-		WordCount int    `json:"word_count"`
-	}
 	docsOut := make([]docJSON, len(docs))
 	for i, d := range docs {
 		docsOut[i] = docJSON{
@@ -644,38 +734,38 @@ func (s *Server) handleBrowseDocs(w http.ResponseWriter, r *http.Request, shard 
 	if !meta.LastScannedAt.IsZero() {
 		lastScannedAt = meta.LastScannedAt.UTC().Format(time.RFC3339)
 	}
-	writeJSON(w, 200, map[string]any{
-		"shard":           shard,
-		"docs":            docsOut,
-		"total":           total,
-		"page":            page,
-		"page_size":       pageSize,
-		"meta_stale":      metaStale,
-		"scanning":        scanning,
-		"last_scanned_at": lastScannedAt,
+	return c.JSON(200, BrowseDocsResponse{
+		Shard:         shard,
+		Docs:          docsOut,
+		Total:         int(total),
+		Page:          page,
+		PageSize:      pageSize,
+		MetaStale:     metaStale,
+		Scanning:      scanning,
+		LastScannedAt: lastScannedAt,
 	})
 }
 
 // ── Dashboard Handlers ──────────────────────────────────────────────────
 
-func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleOverview(c *mizu.Ctx) error {
 	resp := buildOverviewResponse(s.CrawlID, s.CrawlDir, s.manifestTotal, s.Docs)
 	if s.Meta != nil {
-		summary := s.Meta.GetSummary(r.Context(), s.CrawlID, s.CrawlDir)
+		summary := s.Meta.GetSummary(c.Context(), s.CrawlID, s.CrawlDir)
 		resp.Meta.Backend = summary.MetaBackend
 		resp.Meta.Stale = summary.MetaStale
 		resp.Meta.Refreshing = summary.MetaRefreshing
 	}
-	writeJSON(w, 200, resp)
+	return c.JSON(200, resp)
 }
 
-func (s *Server) handleMetaStatus(w http.ResponseWriter, r *http.Request) {
-	crawlID := r.URL.Query().Get("crawl")
+func (s *Server) handleMetaStatus(c *mizu.Ctx) error {
+	crawlID := c.Query("crawl")
 	if crawlID == "" {
 		crawlID = s.CrawlID
 	}
 	if s.Meta == nil {
-		writeJSON(w, 200, MetaStatus{
+		return c.JSON(200, MetaStatus{
 			CrawlID:      crawlID,
 			Backend:      "scan-fallback",
 			Enabled:      false,
@@ -683,15 +773,13 @@ func (s *Server) handleMetaStatus(w http.ResponseWriter, r *http.Request) {
 			Refreshing:   false,
 			RefreshTTLMS: 0,
 		})
-		return
 	}
-	writeJSON(w, 200, s.Meta.Status(r.Context(), crawlID))
+	return c.JSON(200, s.Meta.Status(c.Context(), crawlID))
 }
 
-func (s *Server) handleMetaScanDocs(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleMetaScanDocs(c *mizu.Ctx) error {
 	if s.Docs == nil {
-		writeJSON(w, 200, map[string]any{"accepted": false, "reason": "doc store not available"})
-		return
+		return c.JSON(200, MetaScanDocsResponse{Accepted: false, Reason: "doc store not available"})
 	}
 	crawlID := s.CrawlID
 	warcMdBase := s.WARCMdBase
@@ -703,14 +791,14 @@ func (s *Server) handleMetaScanDocs(w http.ResponseWriter, r *http.Request) {
 		}
 		logInfof("doc_store: manual scan-all crawl=%s total=%d", crawlID, total)
 	}()
-	writeJSON(w, http.StatusAccepted, map[string]any{"accepted": true, "crawl_id": crawlID})
+	return c.JSON(http.StatusAccepted, MetaScanDocsResponse{Accepted: true, CrawlID: crawlID})
 }
 
-func (s *Server) handleMetaRefresh(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleMetaRefresh(c *mizu.Ctx) error {
 	if s.Meta == nil {
-		writeJSON(w, 200, map[string]any{
-			"accepted": false,
-			"status": MetaStatus{
+		return c.JSON(200, MetaRefreshResponse{
+			Accepted: false,
+			Status: MetaStatus{
 				CrawlID:      s.CrawlID,
 				Backend:      "scan-fallback",
 				Enabled:      false,
@@ -719,7 +807,6 @@ func (s *Server) handleMetaRefresh(w http.ResponseWriter, r *http.Request) {
 				RefreshTTLMS: 0,
 			},
 		})
-		return
 	}
 
 	type reqBody struct {
@@ -727,8 +814,8 @@ func (s *Server) handleMetaRefresh(w http.ResponseWriter, r *http.Request) {
 		Force bool   `json:"force"`
 	}
 	var body reqBody
-	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&body)
+	if c.Request().Body != nil {
+		_ = json.NewDecoder(c.Request().Body).Decode(&body)
 	}
 	crawlID := body.Crawl
 	if crawlID == "" {
@@ -736,39 +823,35 @@ func (s *Server) handleMetaRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 	crawlDir := s.resolveCrawlDir(crawlID)
 	accepted := s.Meta.TriggerRefresh(crawlID, crawlDir, body.Force)
-	status := s.Meta.Status(r.Context(), crawlID)
+	status := s.Meta.Status(c.Context(), crawlID)
 	code := 200
 	if accepted {
 		code = http.StatusAccepted
 	}
-	writeJSON(w, code, map[string]any{
-		"accepted": accepted,
-		"status":   status,
-	})
+	return c.JSON(code, MetaRefreshResponse{Accepted: accepted, Status: status})
 }
 
-func (s *Server) handleCrawls(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleCrawls(c *mizu.Ctx) error {
 	client := cc.NewClient("", 4)
-	crawls, err := client.ListCrawls(r.Context())
+	crawls, err := client.ListCrawls(c.Context())
 	if err != nil {
-		writeJSON(w, 500, map[string]string{"error": err.Error()})
-		return
+		return c.JSON(500, errResp{err.Error()})
 	}
-	writeJSON(w, 200, map[string]any{"crawls": crawls})
+	return c.JSON(200, struct {
+		Crawls any `json:"crawls"`
+	}{Crawls: crawls})
 }
 
-func (s *Server) handleCrawlWarcs(w http.ResponseWriter, r *http.Request) {
-	crawlID := r.PathValue("id")
+func (s *Server) handleCrawlWarcs(c *mizu.Ctx) error {
+	crawlID := c.Param("id")
 	if crawlID == "" {
-		writeJSON(w, 400, map[string]string{"error": "missing crawl id"})
-		return
+		return c.JSON(400, errResp{"missing crawl id"})
 	}
 
 	client := cc.NewClient("", 4)
-	paths, err := client.DownloadManifest(r.Context(), crawlID, "warc.paths.gz")
+	paths, err := client.DownloadManifest(c.Context(), crawlID, "warc.paths.gz")
 	if err != nil {
-		writeJSON(w, 500, map[string]string{"error": err.Error()})
-		return
+		return c.JSON(500, errResp{err.Error()})
 	}
 
 	// Check which WARCs are downloaded locally.
@@ -798,77 +881,69 @@ func (s *Server) handleCrawlWarcs(w http.ResponseWriter, r *http.Request) {
 		warcs = append(warcs, info)
 	}
 
-	writeJSON(w, 200, map[string]any{
-		"crawl_id": crawlID,
-		"total":    len(paths),
-		"warcs":    warcs,
-	})
+	return c.JSON(200, struct {
+		CrawlID string    `json:"crawl_id"`
+		Total   int       `json:"total"`
+		WARCs   []warcInfo `json:"warcs"`
+	}{CrawlID: crawlID, Total: len(paths), WARCs: warcs})
 }
 
-func (s *Server) handleCrawlData(w http.ResponseWriter, r *http.Request) {
-	crawlID := r.PathValue("id")
+func (s *Server) handleCrawlData(c *mizu.Ctx) error {
+	crawlID := c.Param("id")
 	if crawlID == "" {
-		writeJSON(w, 400, map[string]string{"error": "missing crawl id"})
-		return
+		return c.JSON(400, errResp{"missing crawl id"})
 	}
 
 	crawlDir := s.resolveCrawlDir(crawlID)
 	if s.Meta != nil {
-		writeJSON(w, 200, s.Meta.GetSummary(r.Context(), crawlID, crawlDir))
-		return
+		return c.JSON(200, s.Meta.GetSummary(c.Context(), crawlID, crawlDir))
 	}
 
 	ds := ScanDataDir(crawlDir)
 	ds.CrawlID = crawlID
-	writeJSON(w, 200, ds)
+	return c.JSON(200, ds)
 }
 
-func (s *Server) handleEngines(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{"engines": index.List()})
+func (s *Server) handleEngines(c *mizu.Ctx) error {
+	return c.JSON(200, EnginesResponse{Engines: index.List()})
 }
 
-func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{"jobs": s.Jobs.List()})
+func (s *Server) handleListJobs(c *mizu.Ctx) error {
+	return c.JSON(200, JobsListResponse{Jobs: s.Jobs.List()})
 }
 
-func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
+func (s *Server) handleGetJob(c *mizu.Ctx) error {
+	id := c.Param("id")
 	job := s.Jobs.Get(id)
 	if job == nil {
-		writeJSON(w, 404, map[string]string{"error": "job not found"})
-		return
+		return c.JSON(404, errResp{"job not found"})
 	}
-	writeJSON(w, 200, job)
+	return c.JSON(200, job)
 }
 
-func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleCreateJob(c *mizu.Ctx) error {
 	var cfg JobConfig
-	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
-		writeJSON(w, 400, map[string]string{"error": "invalid JSON: " + err.Error()})
-		return
+	if err := json.NewDecoder(c.Request().Body).Decode(&cfg); err != nil {
+		return c.JSON(400, errResp{"invalid JSON: " + err.Error()})
 	}
 	if cfg.Type == "" {
-		writeJSON(w, 400, map[string]string{"error": "missing type field"})
-		return
+		return c.JSON(400, errResp{"missing type field"})
 	}
 
 	job := s.Jobs.Create(cfg)
 	logInfof("job create id=%s type=%s crawl=%s files=%s engine=%s source=%s format=%s fast=%t",
 		job.ID, cfg.Type, cfg.CrawlID, cfg.Files, cfg.Engine, cfg.Source, cfg.Format, cfg.Fast)
 	s.Jobs.RunJob(job)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(201)
-	json.NewEncoder(w).Encode(job)
+	return c.JSON(201, job)
 }
 
-func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
+func (s *Server) handleCancelJob(c *mizu.Ctx) error {
+	id := c.Param("id")
 	if ok := s.Jobs.Cancel(id); !ok {
-		writeJSON(w, 404, map[string]string{"error": "job not found"})
-		return
+		return c.JSON(404, errResp{"job not found"})
 	}
 	logInfof("job cancel id=%s", id)
-	writeJSON(w, 200, map[string]string{"status": "cancelled"})
+	return c.JSON(200, CancelJobResponse{Status: "cancelled"})
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -914,6 +989,14 @@ func isNumericName(s string) bool {
 	return true
 }
 
+func (s *Server) searchEngineFromCtx(c *mizu.Ctx) string {
+	if engine := strings.TrimSpace(c.Query("engine")); engine != "" {
+		return engine
+	}
+	return s.EngineName
+}
+
+// searchEngine is kept for test compatibility where a raw *http.Request is available.
 func (s *Server) searchEngine(r *http.Request) string {
 	if r == nil {
 		return s.EngineName
@@ -937,22 +1020,19 @@ func (s *Server) resolveFTSBase(engine string) string {
 }
 
 // handleBrowseStats returns shard-level statistics for the browse summary page.
-func (s *Server) handleBrowseStats(w http.ResponseWriter, r *http.Request) {
-	shard := r.URL.Query().Get("shard")
+func (s *Server) handleBrowseStats(c *mizu.Ctx) error {
+	shard := c.Query("shard")
 	if shard == "" {
-		writeJSON(w, 400, map[string]string{"error": "shard required"})
-		return
+		return c.JSON(400, errResp{"shard required"})
 	}
 	if s.Docs == nil {
-		writeJSON(w, 503, map[string]string{"error": "doc store not available"})
-		return
+		return c.JSON(503, errResp{"doc store not available"})
 	}
-	stats, err := s.Docs.ShardStats(r.Context(), s.CrawlID, shard)
+	stats, err := s.Docs.ShardStats(c.Context(), s.CrawlID, shard)
 	if err != nil {
-		writeJSON(w, 500, map[string]string{"error": err.Error()})
-		return
+		return c.JSON(500, errResp{err.Error()})
 	}
-	writeJSON(w, 200, stats)
+	return c.JSON(200, stats)
 }
 
 // listWARCShards returns sorted 5-digit shard names from downloaded warc/ files.
@@ -993,6 +1073,18 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 func queryInt(r *http.Request, key string, def int) int {
 	s := r.URL.Query().Get(key)
+	if s == "" {
+		return def
+	}
+	var v int
+	if _, err := fmt.Sscanf(s, "%d", &v); err != nil {
+		return def
+	}
+	return v
+}
+
+func queryIntCtx(c *mizu.Ctx, key string, def int) int {
+	s := c.Query(key)
 	if s == "" {
 		return def
 	}

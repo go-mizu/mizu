@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -14,10 +13,51 @@ import (
 	"syscall"
 	"time"
 
+	mizu "github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/metastore"
 )
 
 var knownPackFormats = []string{"parquet", "bin", "duckdb", "markdown"}
+
+// WARCListResponse is returned by GET /api/warc.
+type WARCListResponse struct {
+	CrawlID         string           `json:"crawl_id"`
+	Offset          int              `json:"offset"`
+	Limit           int              `json:"limit"`
+	Total           int              `json:"total"`
+	Summary         warcSummaryStats `json:"summary"`
+	WARCs           []warcAPIRecord  `json:"warcs"`
+	System          warcSystemStats  `json:"system"`
+	MetaBackend     string           `json:"meta_backend"`
+	MetaGeneratedAt string           `json:"meta_generated_at"`
+	MetaStale       bool             `json:"meta_stale"`
+	MetaRefreshing  bool             `json:"meta_refreshing"`
+	MetaLastError   string           `json:"meta_last_error"`
+}
+
+// WARCDetailResponse is returned by GET /api/warc/{index}.
+type WARCDetailResponse struct {
+	CrawlID         string          `json:"crawl_id"`
+	WARC            warcAPIRecord   `json:"warc"`
+	Jobs            []*Job          `json:"jobs"`
+	System          warcSystemStats `json:"system"`
+	MetaBackend     string          `json:"meta_backend"`
+	MetaGeneratedAt string          `json:"meta_generated_at"`
+	MetaStale       bool            `json:"meta_stale"`
+	MetaRefreshing  bool            `json:"meta_refreshing"`
+	MetaLastError   string          `json:"meta_last_error"`
+}
+
+// WARCActionResponse is returned by POST /api/warc/{index}/action.
+type WARCActionResponse struct {
+	OK              bool     `json:"ok"`
+	Action          string   `json:"action"`
+	CrawlID         string   `json:"crawl_id"`
+	WARCIndex       string   `json:"warc_index"`
+	Job             *Job     `json:"job"`
+	DeletedPaths    []string `json:"deleted_paths"`
+	RefreshAccepted bool     `json:"refresh_accepted"`
+}
 
 type warcSummaryStats struct {
 	Total         int   `json:"total"`
@@ -62,21 +102,21 @@ type warcAPIRecord struct {
 	UpdatedAt     string           `json:"updated_at,omitempty"`
 }
 
-func (s *Server) handleWARCList(w http.ResponseWriter, r *http.Request) {
-	crawlID := strings.TrimSpace(r.URL.Query().Get("crawl"))
+func (s *Server) handleWARCList(c *mizu.Ctx) error {
+	crawlID := strings.TrimSpace(c.Query("crawl"))
 	if crawlID == "" {
 		crawlID = s.CrawlID
 	}
 	crawlDir := s.resolveCrawlDir(crawlID)
-	offset := queryInt(r, "offset", 0)
-	limit := queryInt(r, "limit", 200)
+	offset := queryIntCtx(c, "offset", 0)
+	limit := queryIntCtx(c, "limit", 200)
 	if limit <= 0 {
 		limit = 200
 	}
 	if limit > 1000 {
 		limit = 1000
 	}
-	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	q := strings.ToLower(strings.TrimSpace(c.Query("q")))
 
 	var (
 		recs        []metastore.WARCRecord
@@ -84,11 +124,10 @@ func (s *Server) handleWARCList(w http.ResponseWriter, r *http.Request) {
 		err         error
 	)
 	if s.Meta != nil {
-		recs, summaryMeta, err = s.Meta.ListWARCs(r.Context(), crawlID, crawlDir)
+		recs, summaryMeta, err = s.Meta.ListWARCs(c.Context(), crawlID, crawlDir)
 		if err != nil {
 			logErrorf("warc list meta lookup failed crawl=%s err=%v", crawlID, err)
-			writeJSON(w, 500, map[string]string{"error": err.Error()})
-			return
+			return c.JSON(500, errResp{err.Error()})
 		}
 	} else {
 		recs = buildWARCRecords(crawlID, crawlDir, nil, time.Now().UTC())
@@ -127,37 +166,36 @@ func (s *Server) handleWARCList(w http.ResponseWriter, r *http.Request) {
 	rows := make([]warcAPIRecord, 0, len(page))
 	for _, rec := range page {
 		row := toWARCAPIRecord(rec)
-		enrichWARCAPIRecord(r.Context(), &row, filepath.Join(crawlDir, "warc_md"), s.Docs)
+		enrichWARCAPIRecord(c.Context(), &row, filepath.Join(crawlDir, "warc_md"), s.Docs)
 		rows = append(rows, row)
 	}
 	sys := collectWARCSystemStats(crawlDir)
 	logInfof("warc list crawl=%s total=%d offset=%d limit=%d query=%q", crawlID, total, offset, limit, q)
 
-	writeJSON(w, 200, map[string]any{
-		"crawl_id":          crawlID,
-		"offset":            offset,
-		"limit":             limit,
-		"total":             total,
-		"summary":           stats,
-		"warcs":             rows,
-		"system":            sys,
-		"meta_backend":      summaryMeta.MetaBackend,
-		"meta_generated_at": summaryMeta.MetaGeneratedAt,
-		"meta_stale":        summaryMeta.MetaStale,
-		"meta_refreshing":   summaryMeta.MetaRefreshing,
-		"meta_last_error":   summaryMeta.MetaLastError,
+	return c.JSON(200, WARCListResponse{
+		CrawlID:         crawlID,
+		Offset:          offset,
+		Limit:           limit,
+		Total:           total,
+		Summary:         stats,
+		WARCs:           rows,
+		System:          sys,
+		MetaBackend:     summaryMeta.MetaBackend,
+		MetaGeneratedAt: summaryMeta.MetaGeneratedAt,
+		MetaStale:       summaryMeta.MetaStale,
+		MetaRefreshing:  summaryMeta.MetaRefreshing,
+		MetaLastError:   summaryMeta.MetaLastError,
 	})
 }
 
-func (s *Server) handleWARCDetail(w http.ResponseWriter, r *http.Request) {
-	crawlID := strings.TrimSpace(r.URL.Query().Get("crawl"))
+func (s *Server) handleWARCDetail(c *mizu.Ctx) error {
+	crawlID := strings.TrimSpace(c.Query("crawl"))
 	if crawlID == "" {
 		crawlID = s.CrawlID
 	}
-	warcIndex, _, err := normalizeWARCIndexParam(r.PathValue("index"))
+	warcIndex, _, err := normalizeWARCIndexParam(c.Param("index"))
 	if err != nil {
-		writeJSON(w, 400, map[string]string{"error": err.Error()})
-		return
+		return c.JSON(400, errResp{err.Error()})
 	}
 	crawlDir := s.resolveCrawlDir(crawlID)
 
@@ -167,10 +205,9 @@ func (s *Server) handleWARCDetail(w http.ResponseWriter, r *http.Request) {
 		summaryMeta DataSummaryWithMeta
 	)
 	if s.Meta != nil {
-		rec, ok, summaryMeta, err = s.Meta.GetWARC(r.Context(), crawlID, crawlDir, warcIndex)
+		rec, ok, summaryMeta, err = s.Meta.GetWARC(c.Context(), crawlID, crawlDir, warcIndex)
 		if err != nil {
-			writeJSON(w, 500, map[string]string{"error": err.Error()})
-			return
+			return c.JSON(500, errResp{err.Error()})
 		}
 	} else {
 		rows := buildWARCRecords(crawlID, crawlDir, nil, time.Now().UTC())
@@ -187,24 +224,23 @@ func (s *Server) handleWARCDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !ok {
-		writeJSON(w, 404, map[string]string{"error": "warc not found"})
-		return
+		return c.JSON(404, errResp{"warc not found"})
 	}
 
 	filesToken := strconv.Itoa(parseWARCInt(warcIndex))
 	related := relatedWARCJobs(s.Jobs.List(), filesToken, crawlID)
 	warcRow := toWARCAPIRecord(rec)
-	enrichWARCAPIRecord(r.Context(), &warcRow, filepath.Join(crawlDir, "warc_md"), s.Docs)
-	writeJSON(w, 200, map[string]any{
-		"crawl_id":          crawlID,
-		"warc":              warcRow,
-		"jobs":              related,
-		"system":            collectWARCSystemStats(crawlDir),
-		"meta_backend":      summaryMeta.MetaBackend,
-		"meta_generated_at": summaryMeta.MetaGeneratedAt,
-		"meta_stale":        summaryMeta.MetaStale,
-		"meta_refreshing":   summaryMeta.MetaRefreshing,
-		"meta_last_error":   summaryMeta.MetaLastError,
+	enrichWARCAPIRecord(c.Context(), &warcRow, filepath.Join(crawlDir, "warc_md"), s.Docs)
+	return c.JSON(200, WARCDetailResponse{
+		CrawlID:         crawlID,
+		WARC:            warcRow,
+		Jobs:            related,
+		System:          collectWARCSystemStats(crawlDir),
+		MetaBackend:     summaryMeta.MetaBackend,
+		MetaGeneratedAt: summaryMeta.MetaGeneratedAt,
+		MetaStale:       summaryMeta.MetaStale,
+		MetaRefreshing:  summaryMeta.MetaRefreshing,
+		MetaLastError:   summaryMeta.MetaLastError,
 	})
 }
 
@@ -218,20 +254,18 @@ type warcActionRequest struct {
 	Crawl  string `json:"crawl"`
 }
 
-func (s *Server) handleWARCAction(w http.ResponseWriter, r *http.Request) {
-	warcIndex, n, err := normalizeWARCIndexParam(r.PathValue("index"))
+func (s *Server) handleWARCAction(c *mizu.Ctx) error {
+	warcIndex, n, err := normalizeWARCIndexParam(c.Param("index"))
 	if err != nil {
-		writeJSON(w, 400, map[string]string{"error": err.Error()})
-		return
+		return c.JSON(400, errResp{err.Error()})
 	}
 	var req warcActionRequest
-	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&req)
+	if c.Request().Body != nil {
+		_ = json.NewDecoder(c.Request().Body).Decode(&req)
 	}
 	action := strings.ToLower(strings.TrimSpace(req.Action))
 	if action == "" {
-		writeJSON(w, 400, map[string]string{"error": "missing action"})
-		return
+		return c.JSON(400, errResp{"missing action"})
 	}
 
 	crawlID := strings.TrimSpace(req.Crawl)
@@ -272,8 +306,7 @@ func (s *Server) handleWARCAction(w http.ResponseWriter, r *http.Request) {
 			engine = s.EngineName
 		}
 		if deletedPaths, err = deleteWARCArtifacts(crawlDir, warcIndex, "index", "", engine); err != nil {
-			writeJSON(w, 500, map[string]string{"error": err.Error()})
-			return
+			return c.JSON(500, errResp{err.Error()})
 		}
 		source := strings.TrimSpace(req.Source)
 		if source == "" {
@@ -286,12 +319,10 @@ func (s *Server) handleWARCAction(w http.ResponseWriter, r *http.Request) {
 			target = "all"
 		}
 		if deletedPaths, err = deleteWARCArtifacts(crawlDir, warcIndex, target, req.Format, req.Engine); err != nil {
-			writeJSON(w, 500, map[string]string{"error": err.Error()})
-			return
+			return c.JSON(500, errResp{err.Error()})
 		}
 	default:
-		writeJSON(w, 400, map[string]string{"error": fmt.Sprintf("unknown action %q", action)})
-		return
+		return c.JSON(400, errResp{fmt.Sprintf("unknown action %q", action)})
 	}
 
 	refreshAccepted := false
@@ -299,14 +330,14 @@ func (s *Server) handleWARCAction(w http.ResponseWriter, r *http.Request) {
 		refreshAccepted = s.Meta.TriggerRefresh(crawlID, crawlDir, true)
 	}
 	logInfof("warc action crawl=%s warc=%s action=%s deleted=%d job=%s", crawlID, warcIndex, action, len(deletedPaths), jobID(job))
-	writeJSON(w, 200, map[string]any{
-		"ok":               true,
-		"action":           action,
-		"crawl_id":         crawlID,
-		"warc_index":       warcIndex,
-		"job":              job,
-		"deleted_paths":    deletedPaths,
-		"refresh_accepted": refreshAccepted,
+	return c.JSON(200, WARCActionResponse{
+		OK:              true,
+		Action:          action,
+		CrawlID:         crawlID,
+		WARCIndex:       warcIndex,
+		Job:             job,
+		DeletedPaths:    deletedPaths,
+		RefreshAccepted: refreshAccepted,
 	})
 }
 
