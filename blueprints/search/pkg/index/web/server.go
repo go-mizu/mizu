@@ -743,10 +743,11 @@ func (s *Server) handleBrowseShards(c *mizu.Ctx) error {
 			}
 		}
 
+		hasFTS := sumInt64Map(rec.FTSBytes) > 0
 		e := shardEntry{
 			Name:    localIdx,
-			HasPack: hasMarkdown,
-			HasFTS:  sumInt64Map(rec.FTSBytes) > 0,
+			HasPack: hasMarkdown || hasFTS,
+			HasFTS:  hasFTS,
 		}
 
 		if m, ok := metaByName[localIdx]; ok {

@@ -16,23 +16,14 @@ async function renderOverview() {
       </div>
     </div>`;
 
-  // If we have cached data, render immediately — no flash.
-  if (state.central.overview) {
-    main.innerHTML = shell;
-    renderOverviewContent(state.central.overview, state.central.jobs);
-    refreshCentralState().then(() => {
-      if (state.currentPage === 'overview') renderOverviewContent(state.central.overview, state.central.jobs);
-    }).catch(() => {});
-    return;
-  }
-
   main.innerHTML = shell;
-  try {
-    await refreshCentralState(true);
-    renderOverviewContent(state.central.overview, state.central.jobs);
-  } catch (e) {
-    $('overview-content').innerHTML = `<div class="text-xs text-red-400">${esc(e.message)}</div>`;
-  }
+  // Always render immediately — cached data from localStorage means no "loading..." flash.
+  // Falls back to zeros/empty if first ever visit.
+  renderOverviewContent(state.central.overview || {}, state.central.jobs || []);
+  // Refresh in background; update when fresh data arrives.
+  refreshCentralState().then(() => {
+    if (state.currentPage === 'overview') renderOverviewContent(state.central.overview, state.central.jobs);
+  }).catch(() => {});
 }
 
 function renderOverviewContent(d, jobs) {

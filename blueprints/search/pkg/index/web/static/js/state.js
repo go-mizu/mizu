@@ -18,13 +18,14 @@ const state = {
   doc: null,
   theme: localStorage.getItem('fts-theme') || 'dark',
   // Central state — single source of truth shared across all pages
-  central: {
-    overview: null,   // OverviewResponse from /api/overview
-    jobs: null,       // []*Job from /api/jobs
-    meta: null,       // MetaStatus from /api/meta/status
-    loadedAt: 0,      // timestamp of last successful refresh
-    loading: false,   // currently refreshing
-  },
+  // Restored from localStorage so overview renders instantly without any loading state
+  central: (() => {
+    try {
+      const v = JSON.parse(localStorage.getItem('fts-central') || 'null');
+      if (v) return { overview: v.overview || null, jobs: v.jobs || null, meta: v.meta || null, loadedAt: v.loadedAt || 0, loading: false };
+    } catch (_) {}
+    return { overview: null, jobs: null, meta: null, loadedAt: 0, loading: false };
+  })(),
   // Legacy aliases — kept for backward compat during migration
   get overview() { return this.central.overview; },
   set overview(v) { this.central.overview = v; },

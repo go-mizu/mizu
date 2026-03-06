@@ -213,6 +213,7 @@ async function refreshCentralState(force = false) {
     state.central.loadedAt = Date.now();
     state.central.loading = false;
     _centralRefreshPromise = null;
+    try { localStorage.setItem('fts-central', JSON.stringify({ overview: state.central.overview, jobs: state.central.jobs, meta: state.central.meta, loadedAt: state.central.loadedAt })); } catch (_) {}
     updateHeaderStatus();
   }).catch(() => {
     state.central.loading = false;
