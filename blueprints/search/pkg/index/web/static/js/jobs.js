@@ -575,6 +575,14 @@ async function refreshAfterJobComplete(completedJob) {
       if ($('warc-summary')) renderWARCSummary(state.warcSummary);
       if ($('warc-tabs')) renderWARCTabs(state.warcSummary, state.warcTotal);
       if ($('warc-content')) renderWARCTable(data);
+    } else if (state.currentPage === 'browse') {
+      try {
+        const data = await apiBrowse();
+        state.browseShards = data.shards || [];
+        renderShardList(state.browseShard);
+        updateBrowseRefreshedAt();
+        if (state.browseShard) loadShardDocs(state.browseShard, state.browsePage || 1);
+      } catch (_) {}
     } else if (state.currentPage === 'overview') {
       if ($('overview-content')) renderOverviewContent(state.central.overview, state.central.jobs);
     }
