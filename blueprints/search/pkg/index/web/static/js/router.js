@@ -45,7 +45,12 @@ function route() {
   } else if (path.startsWith('/browse')) {
     const shard = path.split('/')[2] || '';
     showHeaderSearch(false);
-    renderBrowse(shard);
+    // Avoid full re-render if already on browse page — just switch shard.
+    if (state.currentPage === 'browse' && shard && state.browseShards) {
+      switchBrowseShard(shard);
+    } else {
+      renderBrowse(shard);
+    }
   } else if (path.startsWith('/doc/')) {
     const parts = path.split('/');
     const shard = parts[2];

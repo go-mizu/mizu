@@ -6,8 +6,7 @@ async function renderBrowse(shard) {
   state.browseShard = shard;
   state.browsePage = 1;
   state.browseQ = '';
-  state.browseSort = 'date';
-  state.browseView = state.browseView || 'docs';
+  state.browseView = 'docs'; // reset view on page entry (BUG-9)
   $('main').innerHTML = `
     <div class="page-shell anim-fade-in">
       <div class="page-header mb-4">
@@ -18,14 +17,17 @@ async function renderBrowse(shard) {
           <button id="browse-refresh-btn" onclick="browseRefresh()" class="ui-btn px-3 py-2 text-xs font-mono">Refresh</button>
         </div>` : ''}
       </div>
-      <div class="surface flex min-h-[calc(100vh-10rem)]">
-        <aside class="w-56 shrink-0 p-3 ui-border-r overflow-y-auto">
+      <div class="surface flex flex-col sm:flex-row min-h-[calc(100vh-10rem)]">
+        <button id="browse-sidebar-toggle" onclick="toggleBrowseSidebar()" class="sm:hidden flex items-center gap-2 px-3 py-2 text-xs font-mono ui-subtle border-b border-[var(--border)]">
+          <span id="browse-sidebar-arrow">&#9654;</span> Shards <span id="browse-sidebar-shard-label" class="font-medium" style="color:var(--text)"></span>
+        </button>
+        <aside id="browse-sidebar" class="hidden sm:block w-full sm:w-56 shrink-0 p-3 ui-border-r overflow-y-auto sm:max-h-[calc(100vh-10rem)]">
           <div class="text-xs font-mono ui-subtle mb-3 uppercase tracking-wider">Shards</div>
           <div id="shard-list" class="space-y-0.5">
-            <div class="ui-empty">loading\u2026</div>
+            ${renderShardListSkeleton()}
           </div>
         </aside>
-        <div class="flex-1 min-w-0 p-4" id="browse-content">
+        <div class="flex-1 min-w-0 p-3 sm:p-4" id="browse-content">
           <div class="ui-empty">loading\u2026</div>
         </div>
       </div>
@@ -40,7 +42,11 @@ async function renderBrowse(shard) {
     renderShardList(shard);
     updateBrowseRefreshedAt();
     if (shard) {
-      loadShardView(shard);
+      if (!state.browseShards.find(s => s.name === shard)) {
+        $('browse-content').innerHTML = `<div class="ui-empty">Shard "${esc(shard)}" not found.</div>`;
+      } else {
+        loadShardView(shard);
+      }
     } else if (state.browseShards.length > 0) {
       navigateTo('/browse/' + state.browseShards[0].name);
     } else {
@@ -51,10 +57,64 @@ async function renderBrowse(shard) {
   }
 }
 
+// Switch shard without full page re-render (BUG-1 fix).
+function switchBrowseShard(shard) {
+  if (state.browseShard === shard) return;
+  state.browseShard = shard;
+  state.browsePage = 1;
+  state.browseQ = '';
+  // Keep browseSort — it's a user preference.
+  renderShardList(shard);
+  if (!state.browseShards.find(s => s.name === shard)) {
+    $('browse-content').innerHTML = `<div class="ui-empty">Shard "${esc(shard)}" not found.</div>`;
+    return;
+  }
+  loadShardView(shard);
+  // Collapse mobile sidebar after selecting.
+  const sidebar = $('browse-sidebar');
+  if (sidebar && window.innerWidth < 640) {
+    sidebar.classList.add('hidden');
+    sidebar.classList.remove('sm:block');
+    // Re-add sm:block after hiding so it stays visible on desktop.
+    sidebar.classList.add('sm:block');
+    const arrow = $('browse-sidebar-arrow');
+    if (arrow) arrow.innerHTML = '&#9654;';
+  }
+  updateMobileSidebarLabel(shard);
+}
+
+// Mobile sidebar toggle (BUG-5 fix).
+function toggleBrowseSidebar() {
+  const sidebar = $('browse-sidebar');
+  const arrow = $('browse-sidebar-arrow');
+  if (!sidebar) return;
+  const isHidden = sidebar.classList.contains('hidden') && window.innerWidth < 640;
+  if (isHidden) {
+    sidebar.classList.remove('hidden');
+    if (arrow) arrow.innerHTML = '&#9660;';
+  } else if (window.innerWidth < 640) {
+    sidebar.classList.add('hidden');
+    sidebar.classList.add('sm:block');
+    if (arrow) arrow.innerHTML = '&#9654;';
+  }
+}
+
+function updateMobileSidebarLabel(shard) {
+  const label = $('browse-sidebar-shard-label');
+  if (label) label.textContent = shard ? `(${shard})` : '';
+}
+
+function renderShardListSkeleton() {
+  return Array.from({length: 5}, () => `
+    <div class="py-1.5 px-2">
+      <div class="h-3.5 w-16 ui-skeleton mb-1"></div>
+      <div class="h-2.5 w-24 ui-skeleton"></div>
+    </div>`).join('');
+}
+
 function updateBrowseRefreshedAt() {
   const el = $('browse-refreshed-at');
   if (!el) return;
-  // Find the most recently scanned shard
   const shards = state.browseShards || [];
   let latest = '';
   for (const s of shards) {
@@ -65,14 +125,13 @@ function updateBrowseRefreshedAt() {
 
 async function browseRefresh() {
   const btn = $('browse-refresh-btn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Refreshing…'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Refreshing\u2026'; }
   try {
     await Promise.all([
       refreshDashboardMeta(true),
       apiMetaScanDocs(),
     ]);
   } catch(_) {}
-  // Reload shard list
   try {
     const data = await apiBrowse();
     state.browseShards = data.shards || [];
@@ -103,7 +162,7 @@ function renderShardList(active) {
     else if (hasScan) chips.push(`<span class="ui-chip ui-chip-ok">indexed</span>`);
 
     const packBtn = !hasPack && isDashboard
-      ? `<button onclick="event.preventDefault();triggerPackShard('${esc(s.name)}')" class="ml-1 text-[9px] font-mono px-1.5 py-0.5 ui-btn">Pack</button>`
+      ? `<button onclick="event.preventDefault();event.stopPropagation();triggerPackShard('${esc(s.name)}')" class="ml-1 text-[9px] font-mono px-1.5 py-0.5 ui-btn">Pack</button>`
       : '';
 
     return `<a href="#/browse/${s.name}"
@@ -118,10 +177,10 @@ function renderShardList(active) {
       </div>
     </a>`;
   }).join('');
+  updateMobileSidebarLabel(active);
 }
 
 async function triggerPackShard(shard) {
-  // shard is "00000", "00001", etc. — parseInt gives the manifest index.
   const fileIdx = parseInt(shard, 10);
   try {
     await apiPost('/api/jobs', {type: 'markdown', files: String(fileIdx)});
@@ -129,7 +188,6 @@ async function triggerPackShard(shard) {
     alert('Failed to start pack job: ' + e.message);
     return;
   }
-  // Reload shard list so the new job shows up in the sidebar.
   try {
     const data = await apiBrowse();
     state.browseShards = data.shards || [];
@@ -156,11 +214,13 @@ function renderBrowseViewTabs(shard, activeView) {
         class="text-xs pb-2 transition-colors ${activeView==='docs' ? 'tab-active' : 'tab-inactive'}">Docs</button>
       <button onclick="state.browseView='stats';loadShardStats('${esc(shard)}')"
         class="text-xs pb-2 transition-colors ${activeView==='stats' ? 'tab-active' : 'tab-inactive'}">Stats</button>
+      <span class="ml-auto text-xs font-mono ui-subtle">${esc(shard)}</span>
     </div>`;
 }
 
 async function loadShardDocs(shard, page = 1) {
   state.browseView = 'docs';
+  state.browsePage = page;
   const el = $('browse-content');
   if (!el) return;
   el.innerHTML = `<div class="ui-empty">loading\u2026</div>`;
@@ -182,7 +242,7 @@ async function loadShardDocs(shard, page = 1) {
 
     renderDocTable(shard, data, page);
   } catch(e) {
-    el.innerHTML = `<div class="text-xs text-red-400 py-4">${esc(e.message)}</div>`;
+    el.innerHTML = renderBrowseViewTabs(shard, 'docs') + `<div class="text-xs text-red-400 py-4">${esc(e.message)}</div>`;
   }
 }
 
@@ -196,47 +256,57 @@ function renderDocTable(shard, data, page) {
   const start = (page - 1) * pageSize + 1;
   const end = Math.min(page * pageSize, total);
   const stale = data.meta_stale;
+  const scanning = data.scanning;
 
   el.innerHTML = `
     ${renderBrowseViewTabs(shard, 'docs')}
-    ${stale ? `<div class="mb-3 px-3 py-2 text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400 border border-amber-200 dark:border-amber-900">Refreshing document metadata in the background…</div>` : ''}
+    ${scanning ? `<div class="mb-3 px-3 py-2 text-xs border" style="border-color:rgba(96,165,250,0.4);color:#93c5fd;background:rgba(96,165,250,0.05)">Scanning shard in background\u2026 new documents may appear.</div>` : ''}
+    ${stale ? `<div class="mb-3 px-3 py-2 text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400 border border-amber-200 dark:border-amber-900">Refreshing document metadata in the background\u2026</div>` : ''}
+    ${total === 0 ? `
+      <div class="ui-empty mt-4">${state.browseQ ? 'No documents match filter.' : 'No documents in this shard.'}</div>
+      <div class="flex items-center gap-3 mt-4">
+        <input id="browse-filter" type="search" placeholder="Filter by title or URL\u2026" value="${esc(state.browseQ || '')}"
+          class="ui-input text-xs px-2 py-1 w-56" oninput="debounceBrowseFilter(this.value, '${esc(shard)}')">
+      </div>
+    ` : `
     <div class="flex items-center gap-3 mb-4 flex-wrap">
-      <span class="meta-line">${start}–${end} of ${total.toLocaleString()}</span>
-      <input id="browse-filter" type="search" placeholder="Filter by title or URL…" value="${esc(state.browseQ || '')}"
-        class="ml-auto ui-input text-xs px-2 py-1 w-56" oninput="debounceBrowseFilter(this.value, '${esc(shard)}')">
+      <span class="meta-line">${start}\u2013${end} of ${total.toLocaleString()}</span>
+      <input id="browse-filter" type="search" placeholder="Filter by title or URL\u2026" value="${esc(state.browseQ || '')}"
+        class="ml-auto ui-input text-xs px-2 py-1 w-40 sm:w-56" oninput="debounceBrowseFilter(this.value, '${esc(shard)}')">
       <select id="browse-sort" class="ui-input text-xs px-2 py-1" onchange="state.browseSort=this.value;loadShardDocs('${esc(shard)}',1)">
-        <option value="date" ${(state.browseSort||'date')==='date'?'selected':''}>Date ↓</option>
-        <option value="size" ${state.browseSort==='size'?'selected':''}>Size ↓</option>
-        <option value="words" ${state.browseSort==='words'?'selected':''}>Words ↓</option>
-        <option value="title" ${state.browseSort==='title'?'selected':''}>Title A–Z</option>
-        <option value="url" ${state.browseSort==='url'?'selected':''}>URL A–Z</option>
+        <option value="date" ${(state.browseSort||'date')==='date'?'selected':''}>Date \u2193</option>
+        <option value="size" ${state.browseSort==='size'?'selected':''}>Size \u2193</option>
+        <option value="words" ${state.browseSort==='words'?'selected':''}>Words \u2193</option>
+        <option value="title" ${state.browseSort==='title'?'selected':''}>Title A\u2013Z</option>
+        <option value="url" ${state.browseSort==='url'?'selected':''}>URL A\u2013Z</option>
       </select>
     </div>
     <div class="overflow-x-auto">
     <table class="w-full text-xs ui-table">
       <thead>
         <tr class="text-left">
-          <th class="pb-2 pr-3 font-medium w-2/5">Title</th>
-          <th class="pb-2 pr-3 font-medium">URL</th>
+          <th class="pb-2 pr-3 font-medium">Title</th>
+          <th class="pb-2 pr-3 font-medium hidden sm:table-cell">URL</th>
           <th class="pb-2 pr-3 font-medium text-right whitespace-nowrap">Date</th>
-          <th class="pb-2 pr-3 font-medium text-right">Size</th>
-          <th class="pb-2 font-medium text-right">Words</th>
+          <th class="pb-2 pr-3 font-medium text-right hidden sm:table-cell">Size</th>
+          <th class="pb-2 font-medium text-right hidden md:table-cell">Words</th>
         </tr>
       </thead>
       <tbody>
         ${docs.map((d, i) => `
           <tr class="file-row anim-fade-up" style="animation-delay:${Math.min(i,20)*10}ms">
             <td class="py-2 pr-3">
-              <a href="#/doc/${shard}/${encodeURIComponent(d.doc_id)}" class="ui-link font-medium truncate block max-w-xs" title="${esc(d.title||d.doc_id)}">
+              <a href="#/doc/${shard}/${encodeURIComponent(d.doc_id)}" class="ui-link font-medium truncate block max-w-[200px] sm:max-w-xs" title="${esc(d.title||d.doc_id)}">
                 ${esc(d.title || d.doc_id)}
               </a>
+              <div class="sm:hidden text-[10px] font-mono ui-subtle truncate mt-0.5">${d.url ? truncateURL(d.url, 35) : ''}</div>
             </td>
-            <td class="py-2 pr-3 max-w-[240px]">
+            <td class="py-2 pr-3 hidden sm:table-cell max-w-[240px]">
               ${d.url ? `<a href="${esc(d.url)}" target="_blank" rel="noopener noreferrer" class="ui-subtle hover:text-[var(--accent)] font-mono truncate block" title="${esc(d.url)}">${truncateURL(d.url, 40)}</a>` : ''}
             </td>
             <td class="py-2 pr-3 ui-subtle text-right whitespace-nowrap">${d.crawl_date ? fmtDate(d.crawl_date) : ''}</td>
-            <td class="py-2 pr-3 ui-subtle text-right whitespace-nowrap">${d.size_bytes ? fmtBytes(d.size_bytes) : ''}</td>
-            <td class="py-2 ui-subtle text-right whitespace-nowrap">${d.word_count ? d.word_count.toLocaleString() : ''}</td>
+            <td class="py-2 pr-3 ui-subtle text-right whitespace-nowrap hidden sm:table-cell">${d.size_bytes ? fmtBytes(d.size_bytes) : ''}</td>
+            <td class="py-2 ui-subtle text-right whitespace-nowrap hidden md:table-cell">${d.word_count ? d.word_count.toLocaleString() : ''}</td>
           </tr>`).join('')}
       </tbody>
     </table>
@@ -246,7 +316,14 @@ function renderDocTable(shard, data, page) {
       <button onclick="loadShardDocs('${esc(shard)}', ${page - 1})" ${page <= 1 ? 'disabled' : ''} class="ui-btn px-3 py-1.5">&larr; Prev</button>
       <span class="ui-subtle">Page ${page} of ${totalPages}</span>
       <button onclick="loadShardDocs('${esc(shard)}', ${page + 1})" ${page >= totalPages ? 'disabled' : ''} class="ui-btn px-3 py-1.5">Next &rarr;</button>
-    </div>` : ''}`;
+    </div>` : ''}
+    `}`;
+
+  // Focus filter input if user was filtering.
+  if (state.browseQ) {
+    const input = $('browse-filter');
+    if (input) { input.focus(); input.selectionStart = input.selectionEnd = input.value.length; }
+  }
 }
 
 async function loadShardStats(shard) {
@@ -268,32 +345,28 @@ function renderShardStats(shard, stats) {
 
   const s = stats || {};
   const totalDocs = (s.total_docs || 0).toLocaleString();
-  const totalSize = s.total_size ? fmtBytes(s.total_size) : '—';
-  const avgSize = s.avg_size ? fmtBytes(Math.round(s.avg_size)) : '—';
-  const minSize = s.min_size ? fmtBytes(s.min_size) : '—';
-  const maxSize = s.max_size ? fmtBytes(s.max_size) : '—';
-  const dateFrom = s.date_from ? fmtDate(s.date_from) : '—';
-  const dateTo = s.date_to ? fmtDate(s.date_to) : '—';
+  const totalSize = s.total_size ? fmtBytes(s.total_size) : '\u2014';
+  const avgSize = s.avg_size ? fmtBytes(Math.round(s.avg_size)) : '\u2014';
+  const minSize = s.min_size ? fmtBytes(s.min_size) : '\u2014';
+  const maxSize = s.max_size ? fmtBytes(s.max_size) : '\u2014';
+  const dateFrom = s.date_from ? fmtDate(s.date_from) : '\u2014';
+  const dateTo = s.date_to ? fmtDate(s.date_to) : '\u2014';
 
-  // Summary stat cards
   const statCards = [
     {label: 'Documents', value: totalDocs},
     {label: 'Total Size', value: totalSize},
     {label: 'Avg Size', value: avgSize},
-    {label: 'Size Range', value: `${minSize} – ${maxSize}`},
-    {label: 'Date Range', value: dateFrom === dateTo ? dateFrom : `${dateFrom} – ${dateTo}`},
+    {label: 'Size Range', value: `${minSize} \u2013 ${maxSize}`},
+    {label: 'Date Range', value: dateFrom === dateTo ? dateFrom : `${dateFrom} \u2013 ${dateTo}`},
   ];
 
-  // Top domains bar chart
   const domains = (s.top_domains || []).slice(0, 20);
   const domainMax = domains.reduce((m, d) => Math.max(m, d.count || 0), 0) || 1;
 
-  // Size buckets
   const buckets = s.size_buckets || [];
   const bucketTotal = buckets.reduce((m, b) => m + (b.count || 0), 0) || 1;
   const bucketColors = ['ov-c2', 'ov-c4', 'ov-c3', 'ov-c1', 'ov-c5'];
 
-  // Date histogram
   const histogram = (s.date_histogram || []).slice(-60);
   const histMax = histogram.reduce((m, h) => Math.max(m, h.count || 0), 0) || 1;
 
@@ -303,9 +376,9 @@ function renderShardStats(shard, stats) {
     <!-- Stat cards -->
     <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-px border border-[var(--border)] mb-6" style="background:var(--border)">
       ${statCards.map(c => `
-        <div class="bg-[var(--panel)] px-4 py-3">
+        <div class="bg-[var(--panel)] px-3 sm:px-4 py-3">
           <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider mb-1">${esc(c.label)}</div>
-          <div class="text-base font-semibold tracking-tight">${esc(c.value)}</div>
+          <div class="text-sm sm:text-base font-semibold tracking-tight">${esc(c.value)}</div>
         </div>`).join('')}
     </div>
 
@@ -318,7 +391,7 @@ function renderShardStats(shard, stats) {
           : `<div class="space-y-1.5">
             ${domains.map(d => `
               <div class="flex items-center gap-2 text-xs">
-                <span class="w-32 shrink-0 font-mono ui-subtle truncate" title="${esc(d.domain)}">${esc(d.domain)}</span>
+                <span class="w-24 sm:w-32 shrink-0 font-mono ui-subtle truncate" title="${esc(d.domain)}">${esc(d.domain)}</span>
                 <div class="flex-1 progress-track" style="height:4px">
                   <div class="progress-fill" style="width:${Math.max(2, (d.count/domainMax)*100).toFixed(1)}%"></div>
                 </div>
@@ -387,5 +460,5 @@ function fmtDate(isoStr) {
 function truncateURL(url, maxLen) {
   if (!url || url.length <= maxLen) return esc(url);
   const half = Math.floor((maxLen - 3) / 2);
-  return esc(url.slice(0, half) + '…' + url.slice(-half));
+  return esc(url.slice(0, half) + '\u2026' + url.slice(-half));
 }
