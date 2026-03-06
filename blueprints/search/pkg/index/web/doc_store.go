@@ -619,14 +619,14 @@ func (ds *DocStore) ShardStats(ctx context.Context, _, shard string) (ShardStats
 		sizeBuckets = append(sizeBuckets, b)
 	}
 
-	// Date histogram: docs per day (last 60 days).
+	// Date histogram: docs per day. Return all days ordered ascending;
+	// the frontend slices the last 60.
 	hrows, err := db.QueryContext(ctx, `
 		SELECT LEFT(crawl_date, 10) AS day, COUNT(*) AS cnt
 		FROM doc_records
 		WHERE crawl_date != ''
 		GROUP BY 1
 		ORDER BY 1
-		LIMIT 60
 	`)
 	if err != nil {
 		return ShardStatsResponse{}, fmt.Errorf("date histogram: %w", err)

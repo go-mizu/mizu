@@ -153,27 +153,35 @@ function renderShardList(active) {
     const hasPack = !!s.has_pack;
     const hasScan = !!s.has_scan;
     const scanning = !!s.scanning;
-    const count = (s.file_count ?? 0).toLocaleString();
+    const ready = hasPack && hasScan;
 
     const chips = [];
-    if (hasPack) chips.push(`<span class="ui-chip ui-chip-ok">packed</span>`);
-    else chips.push(`<span class="ui-chip ui-chip-off">raw</span>`);
-    if (scanning) chips.push(`<span class="ui-chip" style="border-color:rgba(96,165,250,0.6);color:#93c5fd">scanning</span>`);
-    else if (hasScan) chips.push(`<span class="ui-chip ui-chip-ok">indexed</span>`);
+    if (scanning) {
+      chips.push(`<span class="ui-chip" style="border-color:rgba(96,165,250,0.6);color:#93c5fd">scanning</span>`);
+    } else if (ready) {
+      chips.push(`<span class="ui-chip ui-chip-ok">indexed</span>`);
+    } else if (hasPack) {
+      chips.push(`<span class="ui-chip ui-chip-ok">packed</span>`);
+    } else {
+      chips.push(`<span class="ui-chip ui-chip-off">downloaded</span>`);
+    }
 
+    // For ready shards, show doc count + size. For unready, show Pack button.
+    const countLabel = ready ? (s.file_count ?? 0).toLocaleString() : '';
+    const sizeLabel = ready && s.total_size ? fmtBytes(s.total_size) : '';
     const packBtn = !hasPack && isDashboard
-      ? `<button onclick="event.preventDefault();event.stopPropagation();triggerPackShard('${esc(s.name)}')" class="ml-1 text-[9px] font-mono px-1.5 py-0.5 ui-btn">Pack</button>`
+      ? `<button onclick="event.preventDefault();event.stopPropagation();triggerPackShard('${esc(s.name)}')" class="text-[9px] font-mono px-1.5 py-0.5 ui-btn">Pack</button>`
       : '';
 
     return `<a href="#/browse/${s.name}"
-       class="block py-1.5 px-2 text-xs font-mono cursor-pointer transition-colors ${isActive ? 'shard-active' : 'shard-item'}">
+       class="block py-1.5 px-2 text-xs font-mono cursor-pointer transition-colors ${isActive ? 'shard-active' : 'shard-item'}" ${!ready && !hasPack ? 'style="opacity:0.55"' : ''}>
       <div class="flex items-center justify-between gap-1">
         <span class="truncate">${esc(s.name)}</span>
-        <span class="ui-subtle shrink-0">${count}</span>
+        ${countLabel ? `<span class="ui-subtle shrink-0">${countLabel}</span>` : ''}
       </div>
       <div class="flex items-center gap-1 mt-1 flex-wrap">
         ${chips.join('')}${packBtn}
-        ${s.total_size ? `<span class="text-[9px] font-mono ui-subtle ml-auto">${fmtBytes(s.total_size)}</span>` : ''}
+        ${sizeLabel ? `<span class="text-[9px] font-mono ui-subtle ml-auto">${sizeLabel}</span>` : ''}
       </div>
     </a>`;
   }).join('');
@@ -228,6 +236,13 @@ async function loadShardDocs(shard, page = 1) {
   const q = state.browseQ || '';
   const sort = state.browseSort || 'date';
 
+  // Check if shard is packed before fetching docs.
+  const shardInfo = (state.browseShards || []).find(s => s.name === shard);
+  if (shardInfo && !shardInfo.has_pack) {
+    el.innerHTML = renderBrowseViewTabs(shard, 'docs') + renderNotPackedState(shard);
+    return;
+  }
+
   try {
     const data = await apiBrowse(shard, {page, pageSize: 100, q, sort});
 
@@ -242,7 +257,12 @@ async function loadShardDocs(shard, page = 1) {
 
     renderDocTable(shard, data, page);
   } catch(e) {
-    el.innerHTML = renderBrowseViewTabs(shard, 'docs') + `<div class="text-xs text-red-400 py-4">${esc(e.message)}</div>`;
+    // Handle "shard not packed yet" 404 gracefully.
+    if (e.message && e.message.includes('not packed')) {
+      el.innerHTML = renderBrowseViewTabs(shard, 'docs') + renderNotPackedState(shard);
+    } else {
+      el.innerHTML = renderBrowseViewTabs(shard, 'docs') + `<div class="text-xs text-red-400 py-4">${esc(e.message)}</div>`;
+    }
   }
 }
 
@@ -330,6 +350,14 @@ async function loadShardStats(shard) {
   state.browseView = 'stats';
   const el = $('browse-content');
   if (!el) return;
+
+  // Don't attempt stats for unpacked shards.
+  const shardInfo = (state.browseShards || []).find(s => s.name === shard);
+  if (shardInfo && !shardInfo.has_pack) {
+    el.innerHTML = renderBrowseViewTabs(shard, 'stats') + renderNotPackedState(shard);
+    return;
+  }
+
   el.innerHTML = renderBrowseViewTabs(shard, 'stats') + `<div class="ui-empty">loading stats\u2026</div>`;
   try {
     const stats = await apiBrowseStats(shard);
@@ -439,6 +467,15 @@ function renderShardStats(shard, stats) {
           <span>${histogram[0] ? esc(histogram[0].date) : ''}</span>
           <span>${histogram[histogram.length-1] ? esc(histogram[histogram.length-1].date) : ''}</span>
         </div>`}
+    </div>`;
+}
+
+function renderNotPackedState(shard) {
+  return `
+    <div class="mt-6 text-center py-8">
+      <div class="text-sm mb-2">Raw WARC downloaded</div>
+      <div class="text-xs ui-subtle mb-5 max-w-sm mx-auto">This shard has been downloaded but not yet converted to markdown. Pack it to extract documents for browsing and search indexing.</div>
+      ${isDashboard ? `<button onclick="triggerPackShard('${esc(shard)}')" class="ui-btn px-5 py-2 text-xs font-mono">Pack Shard</button>` : `<div class="text-xs ui-subtle">Run the dashboard to pack this shard.</div>`}
     </div>`;
 }
 
