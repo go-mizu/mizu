@@ -34,6 +34,20 @@ type SummaryRecord struct {
 	ScanDuration  time.Duration
 }
 
+// JobRecord is a persisted job snapshot for dashboard history.
+type JobRecord struct {
+	ID        string
+	Type      string
+	Status    string
+	Config    string // JSON-encoded JobConfig
+	Progress  float64
+	Message   string
+	Rate      float64
+	Error     string
+	StartedAt time.Time
+	EndedAt   *time.Time
+}
+
 // RefreshState tracks metadata refresh lifecycle for one crawl.
 type RefreshState struct {
 	CrawlID    string

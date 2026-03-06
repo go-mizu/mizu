@@ -115,6 +115,18 @@ func (s *store) Init(ctx context.Context) error {
 			last_error TEXT,
 			generation INTEGER NOT NULL DEFAULT 0
 		)`,
+		`CREATE TABLE IF NOT EXISTS jobs (
+			id TEXT PRIMARY KEY,
+			type TEXT NOT NULL,
+			status TEXT NOT NULL,
+			config_json TEXT NOT NULL DEFAULT '{}',
+			progress REAL NOT NULL DEFAULT 0,
+			message TEXT NOT NULL DEFAULT '',
+			rate REAL NOT NULL DEFAULT 0,
+			error TEXT NOT NULL DEFAULT '',
+			started_at TEXT NOT NULL,
+			ended_at TEXT
+		)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
@@ -516,6 +528,72 @@ func (s *store) SetRefreshState(ctx context.Context, st metastore.RefreshState) 
 	`, st.CrawlID, st.Status, startedAt, finishedAt, st.LastError, st.Generation)
 	if err != nil {
 		return fmt.Errorf("sqlite: upsert refresh_state: %w", err)
+	}
+	return nil
+}
+
+func (s *store) ListJobs(ctx context.Context) ([]metastore.JobRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, type, status, config_json, progress, message, rate, error, started_at, ended_at
+		FROM jobs ORDER BY started_at DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: list jobs: %w", err)
+	}
+	defer rows.Close()
+
+	var out []metastore.JobRecord
+	for rows.Next() {
+		var rec metastore.JobRecord
+		var startedAt string
+		var endedAt sql.NullString
+		if err := rows.Scan(
+			&rec.ID, &rec.Type, &rec.Status, &rec.Config,
+			&rec.Progress, &rec.Message, &rec.Rate, &rec.Error,
+			&startedAt, &endedAt,
+		); err != nil {
+			return nil, fmt.Errorf("sqlite: scan job: %w", err)
+		}
+		if t, pErr := time.Parse(time.RFC3339Nano, startedAt); pErr == nil {
+			rec.StartedAt = t
+		}
+		if endedAt.Valid && endedAt.String != "" {
+			if t, pErr := time.Parse(time.RFC3339Nano, endedAt.String); pErr == nil {
+				rec.EndedAt = &t
+			}
+		}
+		out = append(out, rec)
+	}
+	return out, rows.Err()
+}
+
+func (s *store) PutJob(ctx context.Context, rec metastore.JobRecord) error {
+	endedAt := ""
+	if rec.EndedAt != nil {
+		endedAt = rec.EndedAt.UTC().Format(time.RFC3339Nano)
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO jobs (id, type, status, config_json, progress, message, rate, error, started_at, ended_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			status = excluded.status,
+			progress = excluded.progress,
+			message = excluded.message,
+			rate = excluded.rate,
+			error = excluded.error,
+			ended_at = excluded.ended_at
+	`, rec.ID, rec.Type, rec.Status, rec.Config, rec.Progress, rec.Message, rec.Rate, rec.Error,
+		rec.StartedAt.UTC().Format(time.RFC3339Nano), endedAt)
+	if err != nil {
+		return fmt.Errorf("sqlite: put job: %w", err)
+	}
+	return nil
+}
+
+func (s *store) DeleteAllJobs(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM jobs`)
+	if err != nil {
+		return fmt.Errorf("sqlite: delete all jobs: %w", err)
 	}
 	return nil
 }

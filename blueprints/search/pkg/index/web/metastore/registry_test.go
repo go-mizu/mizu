@@ -25,6 +25,9 @@ func (testStore) GetRefreshState(context.Context, string) (RefreshState, bool, e
 	return RefreshState{}, false, nil
 }
 func (testStore) SetRefreshState(context.Context, RefreshState) error { return nil }
+func (testStore) ListJobs(context.Context) ([]JobRecord, error)       { return nil, nil }
+func (testStore) PutJob(context.Context, JobRecord) error             { return nil }
+func (testStore) DeleteAllJobs(context.Context) error                 { return nil }
 func (testStore) Close() error                                        { return nil }
 
 type testDriver struct{}
