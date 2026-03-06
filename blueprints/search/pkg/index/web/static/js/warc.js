@@ -145,12 +145,14 @@ function renderWARCContent(data) {
       </div>`;
 
     const nextBtnLabel = next || 'done';
-    const nextBtnCls = next ? 'ui-btn-primary' : 'ui-btn';
+    const isRunning = warcRunning.has(w.index);
+    const nextBtnCls = next ? (isRunning ? 'ui-btn' : 'ui-btn-primary') : 'ui-btn';
     const nextAction = next === 'download' ? `warcAction('${esc(w.index)}','download')`
       : next === 'markdown' ? `warcAction('${esc(w.index)}','markdown')`
       : next === 'pack' ? `warcAction('${esc(w.index)}','pack',{format:'parquet'})`
       : next === 'index' ? `warcAction('${esc(w.index)}','index',{engine:currentSearchEngine(),source:'files'})`
       : '';
+    const btnId = warcBtnId(w.index);
 
     return `
     <tr class="anim-fade-up" style="animation-delay:${Math.min(i, 20)*12}ms">
@@ -164,7 +166,7 @@ function renderWARCContent(data) {
       <td class="px-3 py-2 text-right text-xs font-mono ui-subtle">${docsStr}</td>
       <td class="px-3 py-2 text-right text-xs font-mono ui-subtle whitespace-nowrap hidden sm:table-cell">${sizeStr}</td>
       <td class="px-3 py-2 text-right text-xs font-mono whitespace-nowrap">
-        ${next ? `<button onclick="${nextAction}" class="${nextBtnCls} px-2.5 py-1 text-[11px]">${esc(nextBtnLabel)}</button>` : `<span class="text-[11px] status-completed">\u2713 done</span>`}
+        ${next ? `<button id="${btnId}" onclick="${nextAction}" ${isRunning ? 'disabled' : ''} class="${nextBtnCls} px-2.5 py-1 text-[11px]">${isRunning ? 'running\u2026' : esc(nextBtnLabel)}</button>` : `<span class="text-[11px] status-completed">\u2713 done</span>`}
       </td>
     </tr>`;
   }).join('');
@@ -218,7 +220,7 @@ function renderWARCContent(data) {
     ${isDashboard && incomplete.length > 0 ? `
       <div class="flex items-center gap-2 mb-3">
         <span class="text-[11px] font-mono ui-subtle">${incomplete.length} incomplete${filter !== 'all' ? ' (filtered)' : ''}</span>
-        <button onclick="warcBatchNext()" class="ui-btn px-3 py-1 text-[11px] font-mono">Run next step (${incomplete.length})</button>
+        <button id="warc-batch-btn" onclick="warcBatchNext()" class="ui-btn px-3 py-1 text-[11px] font-mono">Run next step (${incomplete.length})</button>
       </div>` : ''}
     <div class="surface overflow-x-auto">
       <table class="w-full text-sm ui-table">
@@ -259,6 +261,9 @@ async function warcBatchNext() {
   const incomplete = warcs.filter(w => !w.has_warc || !w.has_markdown || !w.has_pack || !w.has_fts);
   if (incomplete.length === 0) return;
   if (!confirm(`Run the next pipeline step on ${incomplete.length} incomplete WARC${incomplete.length !== 1 ? 's' : ''}?`)) return;
+
+  const batchBtn = $('warc-batch-btn');
+  if (batchBtn) { batchBtn.disabled = true; batchBtn.textContent = 'running\u2026'; }
 
   for (const w of incomplete) {
     if (!w.has_warc) {
@@ -612,11 +617,31 @@ async function warcRunAll(index) {
 }
 
 let warcActionMessage = '';
+const warcRunning = new Set(); // track indices with in-flight actions
+
+function warcBtnId(index) { return 'warc-btn-' + index.replace(/\W/g, '_'); }
+
+function setWarcBtnRunning(index, running) {
+  if (running) warcRunning.add(index); else warcRunning.delete(index);
+  const btn = $(warcBtnId(index));
+  if (!btn) return;
+  if (running) {
+    btn.disabled = true;
+    btn.dataset.origLabel = btn.textContent;
+    btn.textContent = 'running\u2026';
+    btn.classList.remove('ui-btn-primary');
+    btn.classList.add('ui-btn');
+  } else {
+    btn.disabled = false;
+    if (btn.dataset.origLabel) btn.textContent = btn.dataset.origLabel;
+  }
+}
 
 async function warcAction(index, action, extra = {}, refreshDetail = false) {
   const msg = $('warc-action-msg');
   if (msg) msg.textContent = `running ${action} on ${index}\u2026`;
   warcActionMessage = '';
+  setWarcBtnRunning(index, true);
   try {
     const res = await apiWARCAction(index, { action, ...extra });
     if (res && res.job && res.job.id) {
@@ -636,5 +661,6 @@ async function warcAction(index, action, extra = {}, refreshDetail = false) {
   } catch (e) {
     warcActionMessage = `failed: ${e.message}`;
     if (msg) msg.textContent = warcActionMessage;
+    setWarcBtnRunning(index, false);
   }
 }
