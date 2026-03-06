@@ -792,10 +792,18 @@ func (s *Server) handleBrowseDocs(c *mizu.Ctx, shard string) error {
 	scanning := s.Docs.IsScanning(s.CrawlID, shard)
 
 	if !hasMeta {
-		// Not scanned yet — check if .md.warc.gz exists.
 		warcMdPath := filepath.Join(s.WARCMdBase, shard+".md.warc.gz")
 		if _, err := os.Stat(warcMdPath); err != nil {
 			return c.JSON(404, errResp{"shard not packed yet"})
+		}
+		// Auto-trigger scan in background.
+		if !scanning {
+			scanning = true
+			go func() {
+				if _, err := s.Docs.ScanShard(context.Background(), s.CrawlID, shard, warcMdPath); err != nil {
+					logErrorf("doc_store: auto-scan shard=%s err=%v", shard, err)
+				}
+			}()
 		}
 		return c.JSON(200, BrowseDocsResponse{
 			Shard:      shard,
@@ -803,7 +811,7 @@ func (s *Server) handleBrowseDocs(c *mizu.Ctx, shard string) error {
 			Total:      0,
 			Page:       1,
 			Scanning:   scanning,
-			NotScanned: true,
+			NotScanned: !scanning,
 		})
 	}
 
