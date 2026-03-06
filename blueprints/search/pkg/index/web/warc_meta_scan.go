@@ -66,17 +66,23 @@ func buildWARCRecords(crawlID, crawlDir string, manifestPaths []string, updatedA
 		}
 	}
 
-	mdRoot := filepath.Join(crawlDir, "markdown")
-	if entries, err := os.ReadDir(mdRoot); err == nil {
+	// Scan warc_md/ for .md.warc.gz packed files (new format).
+	warcMdRoot := filepath.Join(crawlDir, "warc_md")
+	if entries, err := os.ReadDir(warcMdRoot); err == nil {
 		for _, e := range entries {
-			if !e.IsDir() || !isNumericName(e.Name()) {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md.warc.gz") {
 				continue
 			}
-			idx := normalizeWARCIndex(e.Name())
+			shard := strings.TrimSuffix(e.Name(), ".md.warc.gz")
+			if !isNumericName(shard) {
+				continue
+			}
+			idx := normalizeWARCIndex(shard)
 			rec := ensure(idx)
-			docs, bytes := scanMarkdownShard(filepath.Join(mdRoot, e.Name()))
-			rec.MarkdownDocs = docs
-			rec.MarkdownBytes = bytes
+			if info, err := e.Info(); err == nil {
+				rec.MarkdownBytes = info.Size()
+			}
+			// MarkdownDocs left as 0 here; enriched from DocStore in handleWARCList.
 		}
 	}
 

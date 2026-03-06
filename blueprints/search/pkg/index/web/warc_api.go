@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -46,14 +47,16 @@ type warcAPIRecord struct {
 	ManifestIndex int64            `json:"manifest_index"`
 	Filename      string           `json:"filename"`
 	RemotePath    string           `json:"remote_path"`
-	WARCBytes     int64            `json:"warc_bytes"`
-	MarkdownDocs  int64            `json:"markdown_docs"`
-	MarkdownBytes int64            `json:"markdown_bytes"`
+	WARCBytes     int64            `json:"warc_bytes"`     // warc/*.warc.gz size
+	WARCMdBytes   int64            `json:"warc_md_bytes"`  // warc_md/*.md.warc.gz size
+	WARCMdDocs    int64            `json:"warc_md_docs"`   // doc count from DocStore or scan
+	MarkdownDocs  int64            `json:"markdown_docs"`  // deprecated: old markdown/ dir count
+	MarkdownBytes int64            `json:"markdown_bytes"` // deprecated: old markdown/ dir size
 	PackBytes     map[string]int64 `json:"pack_bytes"`
 	FTSBytes      map[string]int64 `json:"fts_bytes"`
 	TotalBytes    int64            `json:"total_bytes"`
 	HasWARC       bool             `json:"has_warc"`
-	HasMarkdown   bool             `json:"has_markdown"`
+	HasMarkdown   bool             `json:"has_markdown"` // true when warc_md_bytes > 0
 	HasPack       bool             `json:"has_pack"`
 	HasFTS        bool             `json:"has_fts"`
 	UpdatedAt     string           `json:"updated_at,omitempty"`
@@ -123,7 +126,9 @@ func (s *Server) handleWARCList(w http.ResponseWriter, r *http.Request) {
 
 	rows := make([]warcAPIRecord, 0, len(page))
 	for _, rec := range page {
-		rows = append(rows, toWARCAPIRecord(rec))
+		row := toWARCAPIRecord(rec)
+		enrichWARCAPIRecord(r.Context(), &row, filepath.Join(crawlDir, "warc_md"), s.Docs)
+		rows = append(rows, row)
 	}
 	sys := collectWARCSystemStats(crawlDir)
 	logInfof("warc list crawl=%s total=%d offset=%d limit=%d query=%q", crawlID, total, offset, limit, q)
@@ -188,9 +193,11 @@ func (s *Server) handleWARCDetail(w http.ResponseWriter, r *http.Request) {
 
 	filesToken := strconv.Itoa(parseWARCInt(warcIndex))
 	related := relatedWARCJobs(s.Jobs.List(), filesToken, crawlID)
+	warcRow := toWARCAPIRecord(rec)
+	enrichWARCAPIRecord(r.Context(), &warcRow, filepath.Join(crawlDir, "warc_md"), s.Docs)
 	writeJSON(w, 200, map[string]any{
 		"crawl_id":          crawlID,
-		"warc":              toWARCAPIRecord(rec),
+		"warc":              warcRow,
 		"jobs":              related,
 		"system":            collectWARCSystemStats(crawlDir),
 		"meta_backend":      summaryMeta.MetaBackend,
@@ -387,7 +394,6 @@ func toWARCAPIRecord(rec metastore.WARCRecord) warcAPIRecord {
 		FTSBytes:      fts,
 		TotalBytes:    total,
 		HasWARC:       rec.WARCBytes > 0,
-		HasMarkdown:   rec.MarkdownDocs > 0 || rec.MarkdownBytes > 0,
 		HasPack:       packTotal > 0,
 		HasFTS:        ftsTotal > 0,
 	}
@@ -395,6 +401,21 @@ func toWARCAPIRecord(rec metastore.WARCRecord) warcAPIRecord {
 		out.UpdatedAt = rec.UpdatedAt.UTC().Format(time.RFC3339)
 	}
 	return out
+}
+
+// enrichWARCAPIRecord fills WARCMdBytes, WARCMdDocs, and HasMarkdown from live disk
+// and DocStore for a single warcAPIRecord. warcMdBase is the warc_md/ directory.
+func enrichWARCAPIRecord(ctx context.Context, r *warcAPIRecord, warcMdBase string, docs *DocStore) {
+	mdPath := filepath.Join(warcMdBase, r.Index+".md.warc.gz")
+	if info, err := os.Stat(mdPath); err == nil {
+		r.WARCMdBytes = info.Size()
+	}
+	if docs != nil {
+		if meta, ok, _ := docs.GetShardMeta(ctx, "", r.Index); ok {
+			r.WARCMdDocs = meta.TotalDocs
+		}
+	}
+	r.HasMarkdown = r.WARCMdBytes > 0
 }
 
 func cloneMap(in map[string]int64) map[string]int64 {
