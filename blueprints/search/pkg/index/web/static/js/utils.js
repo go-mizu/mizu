@@ -179,9 +179,7 @@ async function refreshDashboardContext() {
     state.overview = overview;
     state.overviewLoadedAt = Date.now();
   }
-  if (state.overview && state.overview.meta_stale && !state.overview.meta_refreshing) {
-    await apiMetaRefresh(crawl, false).catch(() => {});
-  }
+  // Backend triggers refresh when stale — no need to trigger from frontend.
   updateHeaderMetaChip();
 }
 

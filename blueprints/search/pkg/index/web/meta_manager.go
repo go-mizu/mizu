@@ -65,9 +65,11 @@ type MetaManager struct {
 	activeDir   string
 	commonCrawl string
 
-	mu            sync.Mutex
-	refreshing    map[string]bool
-	manifestMu    sync.Mutex
+	mu              sync.Mutex
+	refreshing      map[string]bool
+	lastRefreshAt   map[string]time.Time // in-memory cache of last successful refresh
+	lastScanDur     map[string]time.Duration
+	manifestMu      sync.Mutex
 	manifestCache map[string]metaManifestCacheEntry
 }
 
@@ -99,6 +101,8 @@ func NewMetaManager(ctx context.Context, cfg MetaConfig) (*MetaManager, error) {
 		activeDir:     cfg.ActiveDir,
 		commonCrawl:   commonCrawl,
 		refreshing:    make(map[string]bool),
+		lastRefreshAt: make(map[string]time.Time),
+		lastScanDur:   make(map[string]time.Duration),
 		manifestCache: make(map[string]metaManifestCacheEntry),
 	}
 
@@ -215,6 +219,25 @@ func (m *MetaManager) TriggerRefresh(crawlID, crawlDir string, force bool) bool 
 // Backend returns the configured backend name without hitting the database.
 func (m *MetaManager) Backend() string {
 	return m.backend
+}
+
+// Store returns the underlying metastore, or nil if not configured.
+func (m *MetaManager) Store() metastore.Store {
+	return m.store
+}
+
+// IsStale returns true if the cached data for the given crawl is stale.
+// This reads only in-memory state and never touches the database.
+func (m *MetaManager) IsStale(crawlID string) bool {
+	crawlID, _ = m.resolveCrawl(crawlID, "")
+	m.mu.Lock()
+	t, ok := m.lastRefreshAt[crawlID]
+	dur := m.lastScanDur[crawlID]
+	m.mu.Unlock()
+	if !ok {
+		return true // never refreshed
+	}
+	return m.isStale(t, dur)
 }
 
 // IsRefreshing returns true if a refresh goroutine is active for the given crawl.
@@ -359,6 +382,13 @@ func (m *MetaManager) refreshSync(ctx context.Context, crawlID, crawlDir string)
 		logErrorf("meta refresh state-update-failed crawl=%s generation=%d err=%v", crawlID, nextGen, err)
 		return DataSummaryWithMeta{}, fmt.Errorf("set idle state: %w", err)
 	}
+
+	// Cache refresh timestamp in memory so handleOverview can check staleness
+	// without touching the database.
+	m.mu.Lock()
+	m.lastRefreshAt[crawlID] = fin
+	m.lastScanDur[crawlID] = scanDuration
+	m.mu.Unlock()
 
 	return m.summaryFromRecord(rec, false, false, ""), nil
 }
