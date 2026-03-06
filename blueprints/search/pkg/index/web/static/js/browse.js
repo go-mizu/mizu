@@ -201,32 +201,19 @@ async function triggerPackShard(shard) {
   const el = $('browse-content');
   if (!el) return;
 
-  // Show queued state immediately — don't leave user with no feedback.
   el.innerHTML = `
     <div class="mt-6 py-8">
       <div class="text-sm font-medium mb-1">Starting pipeline for ${esc(shard)}\u2026</div>
-      <div id="pack-status-msg" class="text-xs ui-subtle mb-5">Queueing jobs\u2026</div>
+      <div id="pack-status-msg" class="text-xs ui-subtle mb-5">Queueing markdown extraction\u2026</div>
       <div id="pack-progress-area" class="max-w-sm space-y-4"></div>
     </div>`;
 
   const fileIdx = parseInt(shard, 10);
   const filesStr = String(fileIdx);
-  let mdJobId = null, indexJobId = null;
 
-  try {
-    const mdRes = await apiPost('/api/jobs', { type: 'markdown', files: filesStr });
-    mdJobId = mdRes && mdRes.job && mdRes.job.id;
-    const idxRes = await apiPost('/api/jobs', { type: 'index', files: filesStr, source: 'files' });
-    indexJobId = idxRes && idxRes.job && idxRes.job.id;
-  } catch(e) {
-    if (el) el.innerHTML = `<div class="text-xs text-red-400 py-8">${esc('Failed to queue jobs: ' + e.message)}</div>`;
-    return;
-  }
-
-  // Track progress for each job.
   const progress = {
-    md: { status: 'queued', pct: 0, msg: '' },
-    idx: { status: 'queued', pct: 0, msg: '' },
+    md:  { id: null, status: 'queued', pct: 0, msg: '' },
+    idx: { id: null, status: 'queued', pct: 0, msg: '' },
   };
 
   function renderPackProgress() {
@@ -234,21 +221,21 @@ async function triggerPackShard(shard) {
     const areaEl = $('pack-progress-area');
     if (!areaEl) return;
 
-    const mdDone = progress.md.status === 'completed';
+    const mdDone  = progress.md.status === 'completed';
     const idxDone = progress.idx.status === 'completed';
-    const mdFailed = progress.md.status === 'failed';
+    const mdFailed  = progress.md.status === 'failed';
     const idxFailed = progress.idx.status === 'failed';
 
     if (msgEl) {
       if (mdFailed) msgEl.textContent = 'Markdown extraction failed.';
       else if (idxFailed) msgEl.textContent = 'Index build failed.';
       else if (mdDone && idxDone) msgEl.textContent = 'Pipeline complete \u2014 loading documents\u2026';
-      else if (mdDone) msgEl.textContent = 'Markdown done \u2014 building index\u2026';
+      else if (mdDone && progress.idx.id) msgEl.textContent = 'Markdown done \u2014 building index\u2026';
+      else if (mdDone) msgEl.textContent = 'Markdown done \u2014 starting index\u2026';
       else msgEl.textContent = 'Extracting markdown\u2026';
     }
 
     areaEl.innerHTML = `
-      ${mdJobId ? `
       <div>
         <div class="flex items-center justify-between mb-1">
           <span class="text-[11px] font-mono ui-subtle">1. Extract Markdown</span>
@@ -258,20 +245,18 @@ async function triggerPackShard(shard) {
           <div class="${mdDone ? 'ov-c2' : 'progress-fill'}" style="width:${mdDone ? 100 : progress.md.pct}%;height:100%"></div>
         </div>
         ${progress.md.msg ? `<div class="text-[10px] font-mono ui-subtle mt-1 truncate">${esc(progress.md.msg)}</div>` : ''}
-      </div>` : ''}
-      ${indexJobId ? `
+      </div>
       <div>
         <div class="flex items-center justify-between mb-1">
           <span class="text-[11px] font-mono ui-subtle">2. Build Index</span>
-          <span class="text-[11px] font-mono ${idxDone ? 'status-completed' : idxFailed ? 'text-red-400' : ''}">${idxDone ? '\u2713 done' : idxFailed ? 'failed' : progress.idx.pct + '%'}</span>
+          <span class="text-[11px] font-mono ${idxDone ? 'status-completed' : idxFailed ? 'text-red-400' : ''}">${!progress.idx.id && !mdDone ? 'waiting' : idxDone ? '\u2713 done' : idxFailed ? 'failed' : progress.idx.pct + '%'}</span>
         </div>
         <div class="progress-track" style="height:4px">
           <div class="${idxDone ? 'ov-c4' : 'progress-fill'}" style="width:${idxDone ? 100 : progress.idx.pct}%;height:100%"></div>
         </div>
         ${progress.idx.msg ? `<div class="text-[10px] font-mono ui-subtle mt-1 truncate">${esc(progress.idx.msg)}</div>` : ''}
-      </div>` : ''}`;
+      </div>`;
 
-    // When both complete, reload the shard content automatically.
     if (mdDone && idxDone) {
       setTimeout(() => {
         apiBrowse().then(data => {
@@ -284,23 +269,46 @@ async function triggerPackShard(shard) {
     }
   }
 
-  // Subscribe to WebSocket job updates.
-  if (mdJobId) {
-    wsClient.subscribe(mdJobId, m => {
-      if (m.progress !== undefined) progress.md.pct = Math.round((m.progress || 0) * 100);
-      if (m.status) progress.md.status = m.status;
-      if (m.message) progress.md.msg = m.message;
-      renderPackProgress();
-    });
+  // Step 1: Create markdown job.
+  let mdRes;
+  try {
+    mdRes = await apiPost('/api/jobs', { type: 'markdown', files: filesStr });
+  } catch(e) {
+    el.innerHTML = `<div class="text-xs text-red-400 py-8">${esc('Failed to queue markdown job: ' + e.message)}</div>`;
+    return;
   }
-  if (indexJobId) {
-    wsClient.subscribe(indexJobId, m => {
-      if (m.progress !== undefined) progress.idx.pct = Math.round((m.progress || 0) * 100);
-      if (m.status) progress.idx.status = m.status;
-      if (m.message) progress.idx.msg = m.message;
-      renderPackProgress();
-    });
+  progress.md.id = mdRes && mdRes.job && mdRes.job.id;
+  if (!progress.md.id) {
+    el.innerHTML = `<div class="text-xs text-red-400 py-8">Failed to create markdown job.</div>`;
+    return;
   }
+
+  // Step 2: Subscribe to markdown job — chain index job on completion.
+  wsClient.subscribe(progress.md.id, async (m) => {
+    if (m.progress !== undefined) progress.md.pct = Math.round((m.progress || 0) * 100);
+    if (m.status) progress.md.status = m.status;
+    if (m.message) progress.md.msg = m.message;
+    renderPackProgress();
+
+    if (m.status === 'completed' && !progress.idx.id) {
+      try {
+        const idxRes = await apiPost('/api/jobs', { type: 'index', files: filesStr, source: 'files' });
+        progress.idx.id = idxRes && idxRes.job && idxRes.job.id;
+        if (progress.idx.id) {
+          wsClient.subscribe(progress.idx.id, (m2) => {
+            if (m2.progress !== undefined) progress.idx.pct = Math.round((m2.progress || 0) * 100);
+            if (m2.status) progress.idx.status = m2.status;
+            if (m2.message) progress.idx.msg = m2.message;
+            renderPackProgress();
+          });
+        }
+      } catch(e) {
+        progress.idx.status = 'failed';
+        progress.idx.msg = e.message;
+      }
+      renderPackProgress();
+    }
+  });
 
   renderPackProgress();
 }
