@@ -231,7 +231,8 @@ function onJobUpdate(msg) {
   } else if (msg.type === 'job_update') {
     job.status = msg.status;
     if (msg.error) job.error = msg.error;
-    if (msg.status === 'completed' || msg.status === 'failed' || msg.status === 'cancelled') {
+    const isDone = msg.status === 'completed' || msg.status === 'failed' || msg.status === 'cancelled';
+    if (isDone) {
       job.ended_at = new Date().toISOString();
       if (msg.status === 'completed') job.progress = 1.0;
     }
@@ -245,6 +246,10 @@ function onJobUpdate(msg) {
     if (state.currentPage === 'job-detail') {
       const el = $('job-detail-content');
       if (el) renderJobDetailContent(job);
+    }
+    // When a pipeline job completes, refresh stats on visible pages.
+    if (isDone && msg.status === 'completed') {
+      setTimeout(() => refreshAfterJobComplete(), 800);
     }
   }
 }
@@ -536,4 +541,28 @@ function renderJobDetailContent(job) {
     </div>` : ''}
 
     <div class="mt-4 text-xs font-mono ui-subtle">ID: ${esc(job.id)}</div>`;
+}
+
+// Refresh stats on whichever page is currently visible after a job completes.
+async function refreshAfterJobComplete() {
+  try {
+    await refreshCentralState(true);
+    if (state.currentPage === 'warc') {
+      // Re-fetch WARC list to get updated summary counts.
+      const data = await apiWARCList({
+        offset: state.warcOffset || 0,
+        limit: state.warcLimit || 200,
+        q: state.warcQuery || '',
+        phase: state.warcPhase || '',
+      });
+      state.warcSummary = data.summary || state.warcSummary;
+      state.warcTotal = data.total || state.warcTotal;
+      state.warcRows = data.warcs || state.warcRows;
+      renderWARCSummary(state.warcSummary);
+      renderWARCTabs(state.warcSummary, state.warcTotal);
+      renderWARCTable(data);
+    } else if (state.currentPage === 'overview') {
+      renderOverviewContent(state.central.overview, state.central.jobs);
+    }
+  } catch (_) {}
 }
