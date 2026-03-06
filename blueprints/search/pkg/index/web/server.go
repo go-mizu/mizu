@@ -178,6 +178,11 @@ type CancelJobResponse struct {
 	Status string `json:"status"`
 }
 
+// ClearJobsResponse is returned by DELETE /api/jobs.
+type ClearJobsResponse struct {
+	Cleared int `json:"cleared"`
+}
+
 // ── Server ──────────────────────────────────────────────────────────────
 
 // Server serves the FTS web GUI and JSON API.
@@ -270,6 +275,12 @@ func NewDashboardWithOptions(engineName, crawlID, addr, baseDir string, opts Das
 	}
 	s.Meta = meta
 
+	// Wire persistence store to JobManager and load history.
+	if store := meta.Store(); store != nil {
+		s.Jobs.SetStore(store)
+		s.Jobs.LoadHistory(context.Background())
+	}
+
 	s.Jobs.SetCompleteHook(func(_ *Job, crawlID, crawlDir string) {
 		if s.Meta != nil {
 			s.Meta.TriggerRefresh(crawlID, crawlDir, true)
@@ -347,6 +358,7 @@ func (s *Server) Handler() http.Handler {
 		router.Get("/api/jobs/{id}", s.handleGetJob)
 		router.Post("/api/jobs", s.handleCreateJob)
 		router.Delete("/api/jobs/{id}", s.handleCancelJob)
+		router.Delete("/api/jobs", s.handleClearJobs)
 		router.Post("/api/meta/scan-docs", s.handleMetaScanDocs)
 		router.Get("/api/browse/stats", s.handleBrowseStats)
 	}
@@ -388,6 +400,9 @@ func (s *Server) ListenAndServe(ctx context.Context, port int) error {
 		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		err := srv.Shutdown(shutCtx)
+		if s.Jobs != nil {
+			s.Jobs.StopPersist()
+		}
 		if s.Meta != nil {
 			_ = s.Meta.Close()
 		}
@@ -807,10 +822,12 @@ func (s *Server) handleOverview(c *mizu.Ctx) error {
 		// The prewarm TriggerRefresh on startup holds a long SQLite write transaction
 		// (100K WARC inserts) which blocks all reads in modernc.org/sqlite.
 		resp.Meta.Backend = s.Meta.Backend()
-		resp.Meta.Stale = true
+		resp.Meta.Stale = s.Meta.IsStale(s.CrawlID)
 		resp.Meta.Refreshing = s.Meta.IsRefreshing(s.CrawlID)
 		// Schedule async refresh so the meta cache is populated for subsequent calls.
-		s.Meta.TriggerRefresh(s.CrawlID, s.CrawlDir, false)
+		if resp.Meta.Stale && !resp.Meta.Refreshing {
+			s.Meta.TriggerRefresh(s.CrawlID, s.CrawlDir, false)
+		}
 	}
 	return c.JSON(200, resp)
 }
@@ -965,7 +982,15 @@ func (s *Server) handleEngines(c *mizu.Ctx) error {
 }
 
 func (s *Server) handleListJobs(c *mizu.Ctx) error {
-	return c.JSON(200, JobsListResponse{Jobs: s.Jobs.List()})
+	jobs := s.Jobs.List()
+	// Snapshot to avoid race with concurrent job updates.
+	snapshots := make([]Job, len(jobs))
+	for i, j := range jobs {
+		snapshots[i] = *j
+	}
+	return c.JSON(200, struct {
+		Jobs []Job `json:"jobs"`
+	}{Jobs: snapshots})
 }
 
 func (s *Server) handleGetJob(c *mizu.Ctx) error {
@@ -974,7 +999,8 @@ func (s *Server) handleGetJob(c *mizu.Ctx) error {
 	if job == nil {
 		return c.JSON(404, errResp{"job not found"})
 	}
-	return c.JSON(200, job)
+	snapshot := *job
+	return c.JSON(200, &snapshot)
 }
 
 func (s *Server) handleCreateJob(c *mizu.Ctx) error {
@@ -989,8 +1015,10 @@ func (s *Server) handleCreateJob(c *mizu.Ctx) error {
 	job := s.Jobs.Create(cfg)
 	logInfof("job create id=%s type=%s crawl=%s files=%s engine=%s source=%s format=%s fast=%t",
 		job.ID, cfg.Type, cfg.CrawlID, cfg.Files, cfg.Engine, cfg.Source, cfg.Format, cfg.Fast)
+	// Snapshot before RunJob starts a goroutine that modifies job concurrently.
+	snapshot := *job
 	s.Jobs.RunJob(job)
-	return c.JSON(201, job)
+	return c.JSON(201, &snapshot)
 }
 
 func (s *Server) handleCancelJob(c *mizu.Ctx) error {
@@ -1000,6 +1028,11 @@ func (s *Server) handleCancelJob(c *mizu.Ctx) error {
 	}
 	logInfof("job cancel id=%s", id)
 	return c.JSON(200, CancelJobResponse{Status: "cancelled"})
+}
+
+func (s *Server) handleClearJobs(c *mizu.Ctx) error {
+	cleared := s.Jobs.Clear()
+	return c.JSON(200, ClearJobsResponse{Cleared: cleared})
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────

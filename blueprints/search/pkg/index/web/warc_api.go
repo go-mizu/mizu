@@ -366,7 +366,7 @@ func (s *Server) handleWARCAction(c *mizu.Ctx) error {
 		Action:          action,
 		CrawlID:         crawlID,
 		WARCIndex:       warcIndex,
-		Job:             job,
+		Job:             job, // already a snapshot from createAndRunJob
 		DeletedPaths:    deletedPaths,
 		RefreshAccepted: refreshAccepted,
 	})
@@ -376,8 +376,10 @@ func (s *Server) createAndRunJob(cfg JobConfig) *Job {
 	job := s.Jobs.Create(cfg)
 	logInfof("warc action created job id=%s type=%s crawl=%s files=%s engine=%s source=%s format=%s fast=%t",
 		job.ID, cfg.Type, cfg.CrawlID, cfg.Files, cfg.Engine, cfg.Source, cfg.Format, cfg.Fast)
+	// Snapshot before RunJob starts a goroutine that modifies job concurrently.
+	snap := *job
 	s.Jobs.RunJob(job)
-	return job
+	return &snap
 }
 
 func jobID(j *Job) string {
