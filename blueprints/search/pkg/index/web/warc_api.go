@@ -149,6 +149,37 @@ func (s *Server) handleWARCList(c *mizu.Ctx) error {
 		}
 	}
 
+	// Phase filter: show only WARCs at a specific pipeline stage.
+	// Three user-facing phases: download → markdown → index.
+	// Pack is an internal detail exposed only in advanced actions.
+	phase := strings.ToLower(strings.TrimSpace(c.Query("phase")))
+	if phase != "" {
+		phased := make([]metastore.WARCRecord, 0, len(filtered))
+		for _, rec := range filtered {
+			hasFTS := sumInt64Map(rec.FTSBytes) > 0
+			hasMD := rec.MarkdownDocs > 0 || rec.MarkdownBytes > 0
+			switch phase {
+			case "download":
+				if rec.WARCBytes <= 0 {
+					phased = append(phased, rec)
+				}
+			case "markdown":
+				if rec.WARCBytes > 0 && !hasMD {
+					phased = append(phased, rec)
+				}
+			case "index":
+				if hasMD && !hasFTS {
+					phased = append(phased, rec)
+				}
+			case "complete":
+				if rec.WARCBytes > 0 && hasMD && hasFTS {
+					phased = append(phased, rec)
+				}
+			}
+		}
+		filtered = phased
+	}
+
 	stats := summarizeWARCRecords(recs)
 	total := len(filtered)
 	if offset < 0 {

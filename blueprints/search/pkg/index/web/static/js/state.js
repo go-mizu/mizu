@@ -30,7 +30,9 @@ const state = {
   warcOffset: 0,
   warcLimit: 100,
   warcQuery: '',
-  warcFilter: 'all',
+  warcPhase: '',
+  warcPageSize: 100,
+  warcTotal: 0,
   warcSystem: null,
 };
 

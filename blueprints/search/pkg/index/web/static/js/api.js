@@ -89,6 +89,7 @@ async function apiWARCList(opts = {}) {
   if (opts.offset !== undefined) params.set('offset', String(opts.offset));
   if (opts.limit !== undefined) params.set('limit', String(opts.limit));
   if (opts.q) params.set('q', opts.q);
+  if (opts.phase) params.set('phase', opts.phase);
   if (opts.crawl) params.set('crawl', opts.crawl);
   const suffix = params.toString() ? `?${params.toString()}` : '';
   return apiFetch('/api/warc' + suffix);
