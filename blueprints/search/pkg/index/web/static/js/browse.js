@@ -19,10 +19,10 @@ async function renderBrowse(shard) {
       </div>
       <div class="surface flex flex-col sm:flex-row min-h-[calc(100vh-10rem)]">
         <button id="browse-sidebar-toggle" onclick="toggleBrowseSidebar()" class="sm:hidden flex items-center gap-2 px-3 py-2 text-xs font-mono ui-subtle border-b border-[var(--border)]">
-          <span id="browse-sidebar-arrow">&#9654;</span> Shards <span id="browse-sidebar-shard-label" class="font-medium" style="color:var(--text)"></span>
+          <span id="browse-sidebar-arrow">&#9654;</span> Indexes <span id="browse-sidebar-shard-label" class="font-medium" style="color:var(--text)"></span>
         </button>
         <aside id="browse-sidebar" class="hidden sm:block w-full sm:w-56 shrink-0 p-3 ui-border-r overflow-y-auto sm:max-h-[calc(100vh-10rem)]">
-          <div class="text-xs font-mono ui-subtle mb-3 uppercase tracking-wider">Shards</div>
+          <div class="text-xs font-mono ui-subtle mb-3 uppercase tracking-wider">Indexes</div>
           <div id="shard-list" class="space-y-0.5">
             ${renderShardListSkeleton()}
           </div>
@@ -35,7 +35,7 @@ async function renderBrowse(shard) {
 
   try {
     if (isDashboard) {
-      await refreshDashboardContext().catch(() => {});
+      await refreshCentralState().catch(() => {});
     }
     const data = await apiBrowse();
     state.browseShards = data.shards || [];
@@ -50,7 +50,7 @@ async function renderBrowse(shard) {
     } else if (state.browseShards.length > 0) {
       navigateTo('/browse/' + state.browseShards[0].name);
     } else {
-      $('browse-content').innerHTML = `<div class="ui-empty">No WARC shards found. Run the download pipeline steps first.</div>`;
+      $('browse-content').innerHTML = `<div class="ui-empty">No indexes found. Download and process WARCs first.</div>`;
     }
   } catch(e) {
     $('browse-content').innerHTML = `<div class="text-xs text-red-400 py-8">${esc(e.message)}</div>`;
@@ -128,7 +128,7 @@ async function browseRefresh() {
   if (btn) { btn.disabled = true; btn.textContent = 'Refreshing\u2026'; }
   try {
     await Promise.all([
-      refreshDashboardMeta(true),
+      refreshCentralState(true),
       apiMetaScanDocs(),
     ]);
   } catch(_) {}
@@ -161,16 +161,16 @@ function renderShardList(active) {
     } else if (ready) {
       chips.push(`<span class="ui-chip ui-chip-ok">indexed</span>`);
     } else if (hasPack) {
-      chips.push(`<span class="ui-chip ui-chip-ok">packed</span>`);
+      chips.push(`<span class="ui-chip ui-chip-ok">markdown</span>`);
     } else {
       chips.push(`<span class="ui-chip ui-chip-off">downloaded</span>`);
     }
 
-    // For ready shards, show doc count + size. For unready, show Pack button.
+    // For ready shards, show doc count + size. For unready, show Extract Markdown button.
     const countLabel = ready ? (s.file_count ?? 0).toLocaleString() : '';
     const sizeLabel = ready && s.total_size ? fmtBytes(s.total_size) : '';
     const packBtn = !hasPack && isDashboard
-      ? `<button onclick="event.preventDefault();event.stopPropagation();triggerPackShard('${esc(s.name)}')" class="text-[9px] font-mono px-1.5 py-0.5 ui-btn">Pack</button>`
+      ? `<button onclick="event.preventDefault();event.stopPropagation();triggerPackShard('${esc(s.name)}')" class="text-[9px] font-mono px-1.5 py-0.5 ui-btn">Markdown</button>`
       : '';
 
     return `<a href="#/browse/${s.name}"
@@ -193,7 +193,7 @@ async function triggerPackShard(shard) {
   try {
     await apiPost('/api/jobs', {type: 'markdown', files: String(fileIdx)});
   } catch(e) {
-    alert('Failed to start pack job: ' + e.message);
+    alert('Failed to start markdown extraction: ' + e.message);
     return;
   }
   try {
@@ -473,9 +473,9 @@ function renderShardStats(shard, stats) {
 function renderNotPackedState(shard) {
   return `
     <div class="mt-6 text-center py-8">
-      <div class="text-sm mb-2">Raw WARC downloaded</div>
-      <div class="text-xs ui-subtle mb-5 max-w-sm mx-auto">This shard has been downloaded but not yet converted to markdown. Pack it to extract documents for browsing and search indexing.</div>
-      ${isDashboard ? `<button onclick="triggerPackShard('${esc(shard)}')" class="ui-btn px-5 py-2 text-xs font-mono">Pack Shard</button>` : `<div class="text-xs ui-subtle">Run the dashboard to pack this shard.</div>`}
+      <div class="text-sm mb-2">WARC downloaded</div>
+      <div class="text-xs ui-subtle mb-5 max-w-sm mx-auto">This index has the raw WARC but markdown has not been extracted yet. Extract markdown to browse documents and build the search index.</div>
+      ${isDashboard ? `<button onclick="triggerPackShard('${esc(shard)}')" class="ui-btn px-5 py-2 text-xs font-mono">Extract Markdown</button>` : `<div class="text-xs ui-subtle">Run the dashboard to extract markdown.</div>`}
     </div>`;
 }
 
