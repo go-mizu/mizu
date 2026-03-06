@@ -275,14 +275,7 @@ function jobCounts(jobs) {
   return counts;
 }
 
-function renderJobsSummaryLine(jobs) {
-  const c = jobCounts(jobs);
-  return `jobs:${c.total} · running:${c.running} · queued:${c.queued} · completed:${c.completed} · failed:${c.failed} · cancelled:${c.cancelled}`;
-}
-
 function refreshJobsUI() {
-  const summary = $('jobs-summary');
-  if (summary) summary.textContent = renderJobsSummaryLine(state.central.jobs || []);
   renderJobsContent();
 }
 
@@ -295,10 +288,11 @@ function renderJobsContent() {
   const c = jobCounts(jobs);
 
   const cards = [
-    { label: 'Total', value: c.total, cls: '' },
-    { label: 'Running', value: c.running, cls: c.running > 0 ? 'text-blue-400' : '' },
-    { label: 'Completed', value: c.completed, cls: c.completed > 0 ? 'text-green-400' : '' },
-    { label: 'Failed', value: c.failed, cls: c.failed > 0 ? 'text-red-400' : '' },
+    { label: 'Total', value: c.total, cls: '', border: 'var(--border)' },
+    { label: 'Running', value: c.running, cls: c.running > 0 ? 'text-blue-400' : '', border: '#3b82f6' },
+    { label: 'Queued', value: c.queued, cls: c.queued > 0 ? 'text-amber-400' : '', border: '#f59e0b' },
+    { label: 'Completed', value: c.completed, cls: c.completed > 0 ? 'text-green-400' : '', border: '#10b981' },
+    { label: 'Failed', value: c.failed, cls: c.failed > 0 ? 'text-red-400' : '', border: '#ef4444' },
   ];
 
   // Group history by type
@@ -313,11 +307,11 @@ function renderJobsContent() {
   );
 
   el.innerHTML = `
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-px border border-[var(--border)] mb-5" style="background:var(--border)">
       ${cards.map(card => `
-        <div class="surface p-4">
-          <div class="text-xs font-mono ui-subtle mb-1">${esc(String(card.label))}</div>
-          <div class="text-lg font-medium ${card.cls}">${esc(String(card.value))}</div>
+        <div class="bg-[var(--panel)] px-3 py-2.5" style="border-left:3px solid ${card.value > 0 ? card.border : 'transparent'}">
+          <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">${esc(String(card.label))}</div>
+          <div class="text-lg font-semibold font-mono ${card.cls}">${esc(String(card.value))}</div>
         </div>`).join('')}
     </div>
 
@@ -382,11 +376,10 @@ async function renderJobs() {
   const main = $('main');
   main.innerHTML = `
     <div class="page-shell anim-fade-in">
-      <div class="page-header">
+      <div class="page-header mb-4">
         <h1 class="page-title">Jobs</h1>
         <button onclick="renderJobs()" class="ui-btn px-3 py-2 text-xs font-mono">Reload</button>
       </div>
-      <div id="jobs-summary" class="meta-line mb-4">loading...</div>
       <div id="jobs-content"><div class="ui-empty">loading...</div></div>
     </div>`;
 
