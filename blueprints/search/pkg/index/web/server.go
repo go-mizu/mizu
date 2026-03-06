@@ -34,10 +34,12 @@ type Server struct {
 	Addr       string // external engine address
 	FTSBase    string // ~/data/common-crawl/{crawlID}/fts/{engine}
 	MDBase     string // ~/data/common-crawl/{crawlID}/markdown
+	WARCMdBase string // ~/data/common-crawl/{crawlID}/warc_md
 	CrawlDir   string // ~/data/common-crawl/{crawlID} — set by NewDashboard
 	Hub        *WSHub
 	Jobs       *JobManager
 	Meta       *MetaManager
+	Docs       *DocStore // per-document browse metadata (dashboard only)
 
 	md goldmark.Markdown
 }
@@ -60,6 +62,7 @@ func New(engineName, crawlID, addr, baseDir string) *Server {
 		Addr:       addr,
 		FTSBase:    filepath.Join(baseDir, "fts", engineName),
 		MDBase:     filepath.Join(baseDir, "markdown"),
+		WARCMdBase: filepath.Join(baseDir, "warc_md"),
 		md: goldmark.New(
 			goldmark.WithExtensions(extension.GFM),
 			goldmark.WithRendererOptions(html.WithUnsafe()),
@@ -115,7 +118,28 @@ func NewDashboardWithOptions(engineName, crawlID, addr, baseDir string, opts Das
 		if s.Meta != nil {
 			s.Meta.TriggerRefresh(crawlID, crawlDir, true)
 		}
+		// Trigger doc scan after pack/index jobs complete.
+		if s.Docs != nil {
+			go func() {
+				warcMdBase := filepath.Join(crawlDir, "warc_md")
+				if _, err := s.Docs.ScanAll(context.Background(), crawlID, warcMdBase); err != nil {
+					logErrorf("doc_store: post-job scan failed crawl=%s err=%v", crawlID, err)
+				}
+			}()
+		}
 	})
+
+	// Initialize per-document browse metadata store.
+	docDBPath := filepath.Join(filepath.Dir(baseDir), ".meta", "doc_records.sqlite")
+	if docs, err := NewDocStore(docDBPath); err != nil {
+		logErrorf("doc_store: init failed path=%s err=%v (browse metadata disabled)", docDBPath, err)
+	} else if err := docs.Init(context.Background()); err != nil {
+		logErrorf("doc_store: schema init failed err=%v (browse metadata disabled)", err)
+		docs.Close()
+	} else {
+		s.Docs = docs
+		logInfof("doc_store: opened path=%s", docDBPath)
+	}
 
 	logInfof("dashboard init crawl=%s engine=%s base_dir=%s meta_driver=%s ttl=%s prewarm=%t",
 		crawlID, engineName, baseDir, opts.MetaDriver, opts.MetaRefreshTTL, opts.MetaPrewarm)
@@ -148,6 +172,7 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /api/jobs/{id}", s.handleGetJob)
 		mux.HandleFunc("POST /api/jobs", s.handleCreateJob)
 		mux.HandleFunc("DELETE /api/jobs/{id}", s.handleCancelJob)
+		mux.HandleFunc("POST /api/meta/scan-docs", s.handleMetaScanDocs)
 		mux.HandleFunc("GET /ws", s.Hub.HandleWS)
 	}
 
@@ -185,6 +210,9 @@ func (s *Server) ListenAndServe(ctx context.Context, port int) error {
 		if s.Meta != nil {
 			_ = s.Meta.Close()
 		}
+		if s.Docs != nil {
+			_ = s.Docs.Close()
+		}
 		if err != nil {
 			logErrorf("server shutdown error: %v", err)
 		}
@@ -206,6 +234,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		mode = "dashboard"
 	}
 	data = bytes.Replace(data, []byte(`"__SERVER_MODE__"`), []byte(`"`+mode+`"`), 1)
+	data = bytes.Replace(data, []byte(`"__DEFAULT_ENGINE__"`), []byte(`"`+s.EngineName+`"`), 1)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Write(data)
@@ -364,23 +393,44 @@ func (s *Server) handleDoc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve the document path. Files are stored in nested UUID directories:
-	// {shard}/{xx}/{yy}/{zz}/{uuid}.md where xx/yy/zz are the first 6 hex chars.
-	resolved := resolveDocPath(s.MDBase, shard, docid)
-	if resolved == "" {
-		writeJSON(w, 404, map[string]string{"error": "document not found"})
-		return
-	}
-	// Security: ensure resolved path stays under MDBase.
-	if !strings.HasPrefix(resolved, s.MDBase) {
-		writeJSON(w, 400, map[string]string{"error": "invalid path"})
-		return
-	}
+	var raw []byte
+	var meta DocRecord
 
-	raw, err := os.ReadFile(resolved)
-	if err != nil {
-		writeJSON(w, 404, map[string]string{"error": "document not found"})
-		return
+	// Try .md.warc.gz first (new format: preserves URL/date metadata).
+	warcMdPath := filepath.Join(s.WARCMdBase, shard+".md.warc.gz")
+	if body, found, err := readDocFromWARCMd(warcMdPath, docid); found && err == nil {
+		raw = body
+		// Enrich with stored metadata if DocStore available.
+		if s.Docs != nil {
+			if rec, ok, _ := s.Docs.GetDoc(r.Context(), s.CrawlID, shard, docid); ok {
+				meta = rec
+			}
+		}
+		// If metadata not in store yet, extract title from body.
+		if meta.Title == "" && len(raw) > 0 {
+			head := raw
+			if len(head) > 256 {
+				head = head[:256]
+			}
+			meta.Title = extractDocTitle(head, meta.URL)
+		}
+	} else {
+		// Fall back to legacy .md file path.
+		resolved := resolveDocPath(s.MDBase, shard, docid)
+		if resolved == "" {
+			writeJSON(w, 404, map[string]string{"error": "document not found"})
+			return
+		}
+		if !strings.HasPrefix(resolved, s.MDBase) {
+			writeJSON(w, 400, map[string]string{"error": "invalid path"})
+			return
+		}
+		body, err := os.ReadFile(resolved)
+		if err != nil {
+			writeJSON(w, 404, map[string]string{"error": "document not found"})
+			return
+		}
+		raw = body
 	}
 
 	// Render markdown to HTML.
@@ -391,19 +441,24 @@ func (s *Server) handleDoc(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wordCount := len(strings.Fields(string(raw)))
-	fi, _ := os.Stat(resolved)
-	var size int64
-	if fi != nil {
-		size = fi.Size()
+
+	crawlDateStr := ""
+	if !meta.CrawlDate.IsZero() {
+		crawlDateStr = meta.CrawlDate.UTC().Format(time.RFC3339)
 	}
 
 	writeJSON(w, 200, map[string]any{
-		"doc_id":     docid,
-		"shard":      shard,
-		"markdown":   string(raw),
-		"html":       buf.String(),
-		"word_count": wordCount,
-		"size":       size,
+		"doc_id":         docid,
+		"shard":          shard,
+		"url":            meta.URL,
+		"title":          meta.Title,
+		"crawl_date":     crawlDateStr,
+		"size_bytes":     int64(len(raw)),
+		"word_count":     wordCount,
+		"warc_record_id": meta.WARCRecordID,
+		"refers_to":      meta.RefersTo,
+		"markdown":       string(raw),
+		"html":           buf.String(),
 	})
 }
 
@@ -411,13 +466,159 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 	shard := r.URL.Query().Get("shard")
 
 	if shard == "" {
-		// List shards: check both FTS index dirs and markdown dirs.
-		shards := listShards(s.MDBase)
-		writeJSON(w, 200, map[string]any{"shards": shards})
+		s.handleBrowseShards(w, r)
 		return
 	}
+	s.handleBrowseDocs(w, r, shard)
+}
 
-	// List markdown files in shard by walking the nested UUID directory tree.
+func (s *Server) handleBrowseShards(w http.ResponseWriter, r *http.Request) {
+	// Build shard list preferring warc_md/ (new format), falling back to markdown/ (legacy).
+	type shardEntry struct {
+		Name          string `json:"name"`
+		FileCount     int    `json:"file_count"`
+		TotalSize     int64  `json:"total_size,omitempty"`
+		LastDocDate   string `json:"last_doc_date,omitempty"`
+		MetaStale     bool   `json:"meta_stale"`
+		LastScannedAt string `json:"last_scanned_at,omitempty"`
+	}
+
+	warcMdShards := listWARCMdShards(s.WARCMdBase)
+	hasDocMeta := s.Docs != nil && len(warcMdShards) > 0
+
+	var entries []shardEntry
+	if len(warcMdShards) > 0 {
+		// Prefer warc_md shards enriched with DocStore metadata.
+		var metas []DocShardMeta
+		if s.Docs != nil {
+			metas, _ = s.Docs.ListShardMetas(r.Context(), s.CrawlID)
+		}
+		metaByName := make(map[string]DocShardMeta, len(metas))
+		for _, m := range metas {
+			metaByName[m.Shard] = m
+		}
+		for _, name := range warcMdShards {
+			e := shardEntry{Name: name}
+			if m, ok := metaByName[name]; ok {
+				e.FileCount = int(m.TotalDocs)
+				e.TotalSize = m.TotalSizeBytes
+				if !m.LastDocDate.IsZero() {
+					e.LastDocDate = m.LastDocDate.UTC().Format(time.RFC3339)
+				}
+				e.MetaStale = time.Since(m.LastScannedAt) > time.Hour
+				if !m.LastScannedAt.IsZero() {
+					e.LastScannedAt = m.LastScannedAt.UTC().Format(time.RFC3339)
+				}
+				// Trigger background scan if stale.
+				if e.MetaStale && s.Docs != nil {
+					go func(sh string) {
+						path := filepath.Join(s.WARCMdBase, sh+".md.warc.gz")
+						if _, err := s.Docs.ScanShard(r.Context(), s.CrawlID, sh, path); err != nil {
+							logErrorf("doc_store: bg scan shard=%s err=%v", sh, err)
+						}
+					}(name)
+				}
+			} else {
+				// Not yet scanned — trigger background scan.
+				e.MetaStale = true
+				if s.Docs != nil {
+					go func(sh string) {
+						path := filepath.Join(s.WARCMdBase, sh+".md.warc.gz")
+						if _, err := s.Docs.ScanShard(context.Background(), s.CrawlID, sh, path); err != nil {
+							logErrorf("doc_store: initial scan shard=%s err=%v", sh, err)
+						}
+					}(name)
+				}
+			}
+			entries = append(entries, e)
+		}
+	} else {
+		// Legacy: list from markdown/ directory.
+		for _, si := range listShards(s.MDBase) {
+			entries = append(entries, shardEntry{Name: si.Name, FileCount: si.FileCount})
+		}
+	}
+
+	writeJSON(w, 200, map[string]any{
+		"shards":       entries,
+		"has_doc_meta": hasDocMeta,
+	})
+}
+
+func (s *Server) handleBrowseDocs(w http.ResponseWriter, r *http.Request, shard string) {
+	page := queryInt(r, "page", 1)
+	pageSize := queryInt(r, "page_size", 100)
+	q := r.URL.Query().Get("q")
+	sortBy := r.URL.Query().Get("sort")
+
+	if pageSize > 500 {
+		pageSize = 500
+	}
+
+	// Try DocStore (warc_md format) first.
+	if s.Docs != nil {
+		meta, hasMeta, _ := s.Docs.GetShardMeta(r.Context(), s.CrawlID, shard)
+		if hasMeta {
+			docs, total, err := s.Docs.ListDocs(r.Context(), s.CrawlID, shard, page, pageSize, q, sortBy)
+			if err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+
+			metaStale := time.Since(meta.LastScannedAt) > time.Hour
+			if metaStale {
+				go func() {
+					path := filepath.Join(s.WARCMdBase, shard+".md.warc.gz")
+					if _, err := s.Docs.ScanShard(context.Background(), s.CrawlID, shard, path); err != nil {
+						logErrorf("doc_store: bg rescan shard=%s err=%v", shard, err)
+					}
+				}()
+			}
+
+			// Serialize crawl_date as string for JSON.
+			type docJSON struct {
+				DocID     string `json:"doc_id"`
+				Shard     string `json:"shard"`
+				URL       string `json:"url"`
+				Title     string `json:"title"`
+				CrawlDate string `json:"crawl_date,omitempty"`
+				SizeBytes int64  `json:"size_bytes"`
+				WordCount int    `json:"word_count"`
+			}
+			docsOut := make([]docJSON, len(docs))
+			for i, d := range docs {
+				docsOut[i] = docJSON{
+					DocID:     d.DocID,
+					Shard:     d.Shard,
+					URL:       d.URL,
+					Title:     d.Title,
+					SizeBytes: d.SizeBytes,
+					WordCount: d.WordCount,
+				}
+				if !d.CrawlDate.IsZero() {
+					docsOut[i].CrawlDate = d.CrawlDate.UTC().Format(time.RFC3339)
+				}
+			}
+
+			lastScannedAt := ""
+			if !meta.LastScannedAt.IsZero() {
+				lastScannedAt = meta.LastScannedAt.UTC().Format(time.RFC3339)
+			}
+			writeJSON(w, 200, map[string]any{
+				"shard":          shard,
+				"docs":           docsOut,
+				"total":          total,
+				"page":           page,
+				"page_size":      pageSize,
+				"has_doc_meta":   true,
+				"meta_stale":     metaStale,
+				"last_scanned_at": lastScannedAt,
+			})
+			return
+		}
+	}
+
+	// Fallback: legacy .md file listing.
 	dir := filepath.Join(s.MDBase, shard)
 	resolved, err := filepath.Abs(dir)
 	if err != nil || !strings.HasPrefix(resolved, s.MDBase) {
@@ -442,18 +643,19 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 		if info != nil {
 			sz = info.Size()
 		}
-		// Use the UUID filename (without .md extension is confusing; keep full name).
 		files = append(files, fileInfo{Name: d.Name(), Size: sz})
 		return nil
 	})
 	sort.Slice(files, func(i, j int) bool { return files[i].Name < files[j].Name })
-
-	// Cap at 500 files for the API response.
 	if len(files) > 500 {
 		files = files[:500]
 	}
-
-	writeJSON(w, 200, map[string]any{"files": files, "shard": shard, "total": len(files)})
+	writeJSON(w, 200, map[string]any{
+		"shard":        shard,
+		"files":        files,
+		"total":        len(files),
+		"has_doc_meta": false,
+	})
 }
 
 // ── Dashboard Handlers ──────────────────────────────────────────────────
@@ -485,6 +687,24 @@ func (s *Server) handleMetaStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, s.Meta.Status(r.Context(), crawlID))
+}
+
+func (s *Server) handleMetaScanDocs(w http.ResponseWriter, r *http.Request) {
+	if s.Docs == nil {
+		writeJSON(w, 200, map[string]any{"accepted": false, "reason": "doc store not available"})
+		return
+	}
+	crawlID := s.CrawlID
+	warcMdBase := s.WARCMdBase
+	go func() {
+		total, err := s.Docs.ScanAll(context.Background(), crawlID, warcMdBase)
+		if err != nil {
+			logErrorf("doc_store: manual scan-all crawl=%s err=%v", crawlID, err)
+			return
+		}
+		logInfof("doc_store: manual scan-all crawl=%s total=%d", crawlID, total)
+	}()
+	writeJSON(w, http.StatusAccepted, map[string]any{"accepted": true, "crawl_id": crawlID})
 }
 
 func (s *Server) handleMetaRefresh(w http.ResponseWriter, r *http.Request) {
