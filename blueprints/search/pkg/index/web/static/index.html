@@ -240,7 +240,7 @@
       font-family: "Geist Mono", monospace;
     }
     .ui-skeleton { border: 1px solid var(--border); background: var(--border); }
-    .app-header { border-bottom: 1px solid var(--border); background: var(--bg-soft); }
+    .app-header { background: var(--bg-soft); }
     .theme-toggle { color: var(--text-soft); transition: color 0.12s ease; }
     .theme-toggle:hover { color: var(--text); }
     .status-running { color: #2563eb; }
@@ -262,7 +262,7 @@
 <body class="antialiased min-h-screen font-sans">
   <div id="app">
     <header class="sticky top-0 z-50 app-header">
-      <div class="max-w-6xl mx-auto flex items-center min-h-[3.5rem] px-4 md:px-6 gap-4 md:gap-6 flex-wrap md:flex-nowrap py-2">
+      <div class="flex items-center min-h-[3.5rem] px-4 md:px-6 gap-4 md:gap-6 flex-wrap md:flex-nowrap py-2">
         <a href="#/" class="text-sm font-medium tracking-tight shrink-0 hover:opacity-70 transition-opacity">FTS Dashboard</a>
         <div id="header-search" class="flex-1 hidden items-center gap-2">
           <input id="header-search-input" type="text"
@@ -276,12 +276,10 @@
         </div>
         <nav id="main-nav" class="flex items-center gap-4 ml-auto shrink min-w-0">
           <a href="#/" data-tab="overview" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">Overview</a>
-          <a href="#/pipeline" data-tab="pipeline" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">Pipeline</a>
-          <a href="#/jobs" data-tab="jobs" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">Jobs</a>
           <a href="#/search" data-tab="search" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">Search</a>
-          <a href="#/warc" data-tab="warc" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">WARC</a>
           <a href="#/browse" data-tab="browse" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">Browse</a>
-          <a href="#/crawls" data-tab="crawls" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">Crawls</a>
+          <a href="#/warc" data-tab="warc" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">WARC</a>
+          <a href="#/jobs" data-tab="jobs" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">Jobs</a>
           <button id="header-meta-refresh" onclick="refreshDashboardMeta(false)" class="hidden ui-btn px-2 py-1 text-[11px] font-mono ui-subtle">Refresh Meta</button>
           <span id="header-meta" class="hidden text-[11px] font-mono ui-subtle whitespace-nowrap"></span>
           <button onclick="toggleTheme()" class="theme-toggle" title="Toggle theme">
@@ -456,9 +454,6 @@ function route() {
   if (path === '/' || path === '') {
     showHeaderSearch(false);
     if (isDashboard) { renderOverview(); } else { renderSearchHome(); }
-  } else if (path === '/pipeline' && isDashboard) {
-    showHeaderSearch(false);
-    renderPipeline();
   } else if (path === '/jobs' && isDashboard) {
     showHeaderSearch(false);
     renderJobs();
@@ -490,9 +485,6 @@ function route() {
     const docid = parts.slice(3).join('/');
     showHeaderSearch(true, state.query, state.searchEngine);
     renderDoc(shard, docid);
-  } else if (path === '/crawls' && isDashboard) {
-    showHeaderSearch(false);
-    renderCrawls();
   } else {
     showHeaderSearch(false);
     if (isDashboard) { renderOverview(); } else { renderSearchHome(); }
@@ -501,12 +493,10 @@ function route() {
 
 function updateActiveTab(path) {
   let activeTab = isDashboard ? 'overview' : 'search';
-  if (path === '/pipeline') activeTab = 'pipeline';
-  else if (path === '/jobs') activeTab = 'jobs';
+  if (path === '/jobs') activeTab = 'jobs';
   else if (path === '/search' || path === '/' && !isDashboard || path.startsWith('/doc/')) activeTab = 'search';
   else if (path === '/warc' || path.startsWith('/warc/')) activeTab = 'warc';
   else if (path.startsWith('/browse')) activeTab = 'browse';
-  else if (path === '/crawls') activeTab = 'crawls';
   else if (path === '/' && isDashboard) activeTab = 'overview';
 
   document.querySelectorAll('#main-nav a[data-tab]').forEach(a => {
@@ -617,10 +607,6 @@ async function apiEngines() {
 
 async function apiJobs() {
   return apiFetch('/api/jobs');
-}
-
-async function apiCrawls() {
-  return apiFetch('/api/crawls');
 }
 
 async function apiWARCList(opts = {}) {
@@ -745,16 +731,29 @@ function docTitle(docid) {
 
 function $(id) { return document.getElementById(id); }
 
-function fmtDuration(startStr, endStr) {
-  const start = new Date(startStr);
-  const end = endStr ? new Date(endStr) : new Date();
-  const ms = end - start;
-  if (ms < 1000) return ms + 'ms';
-  const s = Math.floor(ms / 1000);
+function fmtDuration(startOrSecs, endStr) {
+  let s;
+  if (typeof startOrSecs === 'number') {
+    s = Math.floor(startOrSecs);
+  } else {
+    const start = new Date(startOrSecs);
+    const end = endStr ? new Date(endStr) : new Date();
+    const ms = end - start;
+    if (ms < 1000) return ms + 'ms';
+    s = Math.floor(ms / 1000);
+  }
   if (s < 60) return s + 's';
   const m = Math.floor(s / 60);
   const rs = s % 60;
-  return m + 'm ' + rs + 's';
+  if (m < 60) return m + 'm ' + rs + 's';
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return h + 'h ' + rm + 'm';
+}
+
+function fmtNum(n) {
+  if (n == null || n === 0) return '0';
+  return n.toLocaleString();
 }
 
 function statusClass(status) {
@@ -901,231 +900,257 @@ async function renderOverview() {
     </div>`;
 
   try {
-    const [_, warcData, jobsData] = await Promise.all([
-      refreshDashboardContext(),
-      apiWARCList({ limit: 1 }).catch(() => null),
+    const [jobsData] = await Promise.all([
       apiJobs().catch(() => ({ jobs: [] })),
     ]);
-    if (!state.overview) {
-      state.overview = await apiOverview();
-      state.overviewLoadedAt = Date.now();
-    }
+    state.overview = await apiOverview();
+    state.overviewLoadedAt = Date.now();
     state.jobs = (jobsData && jobsData.jobs) || [];
-    renderOverviewContent(state.overview, warcData, state.jobs);
+    renderOverviewContent(state.overview, state.jobs);
   } catch (e) {
     $('overview-content').innerHTML = `<div class="text-xs text-red-400">${esc(e.message)}</div>`;
   }
 }
 
-function renderOverviewContent(d, warcData, jobs) {
+function renderOverviewContent(d, jobs) {
   const el = $('overview-content');
   if (!el) return;
 
-  const summary = (warcData && warcData.summary) || {};
-  const sys = (warcData && warcData.system) || {};
-  const engineCount = d.fts_engines ? Object.keys(d.fts_engines).length : 0;
-  const packCount = d.pack_formats ? Object.keys(d.pack_formats).length : 0;
-  const totalDisk = (d.warc_total_size || 0) + (d.md_total_size || 0)
-    + Object.values(d.pack_formats || {}).reduce((a, b) => a + b, 0)
-    + Object.values(d.fts_engines || {}).reduce((a, b) => a + b, 0);
+  const sys = d.system || {};
+  const sto = d.storage || {};
+  const mf = d.manifest || {};
+  const dl = d.downloaded || {};
+  const md = d.markdown || {};
+  const pk = d.pack || {};
+  const ix = d.indexed || {};
   const activeJobs = (jobs || []).filter(j => j.status === 'running' || j.status === 'queued');
 
-  // ── Section 1: Key Metrics ──
-  const cards = [
-    { label: 'Crawl', value: d.crawl_id || '\u2014', mono: true },
-    { label: 'Total Disk', value: fmtBytes(totalDisk) },
-    { label: 'WARC Files', value: (d.warc_count || 0).toLocaleString() },
-    { label: 'Documents', value: (d.md_doc_estimate || 0).toLocaleString() },
-    { label: 'MD Shards', value: (d.md_shards || 0).toLocaleString() },
-    { label: 'Active Jobs', value: activeJobs.length.toString(), link: '#/jobs' },
-  ];
-  const cardsHTML = cards.map((c, i) => {
-    const inner = `
-      <div class="text-[11px] font-mono ui-subtle mb-1">${esc(c.label)}</div>
-      <div class="text-lg font-medium ${c.mono ? 'text-sm' : ''}">${esc(c.value)}</div>`;
-    if (c.link) return `<a href="${c.link}" class="surface p-4 anim-fade-up block hover:border-[var(--accent)] transition-colors" style="animation-delay:${i*25}ms">${inner}</a>`;
-    return `<div class="surface p-4 anim-fade-up" style="animation-delay:${i*25}ms">${inner}</div>`;
-  }).join('');
+  function pct(a, b) { return b > 0 ? Math.round((a / b) * 100) : 0; }
+  function stageColor(done, total) {
+    if (done === 0) return 'var(--border)';
+    if (done >= total && total > 0) return 'var(--success)';
+    return '#f59e0b';
+  }
 
-  // ── Section 2: Pipeline Progress ──
-  const pipeTotal = summary.total || d.warc_count || 0;
-  const steps = [
-    { label: 'Downloaded', done: summary.downloaded || 0, total: pipeTotal, cls: 'ov-c1' },
-    { label: 'Markdown', done: summary.markdown_ready || 0, total: pipeTotal, cls: 'ov-c2' },
-    { label: 'Packed', done: summary.packed || 0, total: pipeTotal, cls: 'ov-c3' },
-    { label: 'Indexed', done: summary.indexed || 0, total: pipeTotal, cls: 'ov-c4' },
+  // ── Row 1: Storage + System ──
+  const storageHTML = `
+    <div class="grid md:grid-cols-2 gap-4 mb-4 anim-fade-up">
+      <div class="surface p-4">
+        <div class="text-[11px] font-mono ui-subtle mb-3">Storage</div>
+        <div class="grid grid-cols-2 gap-3 mb-3">
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Crawl Data</div>
+            <div class="text-sm font-mono font-medium">${fmtBytes(sto.crawl_bytes || 0)}</div>
+          </div>
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Projected Full</div>
+            <div class="text-sm font-mono font-medium">${fmtBytes(sto.projected_full_bytes || 0)}</div>
+          </div>
+        </div>
+        ${sto.disk_total ? `
+          <div class="border-t pt-3">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-[10px] font-mono ui-subtle">Disk</span>
+              <span class="text-[10px] font-mono ui-subtle">${fmtBytes(sto.disk_used || 0)} / ${fmtBytes(sto.disk_total)}</span>
+            </div>
+            <div class="progress-track" style="height:6px">
+              <div class="ov-c5" style="height:100%;width:${pct(sto.disk_used || 0, sto.disk_total)};opacity:0.6"></div>
+            </div>
+            <div class="text-[10px] font-mono ui-subtle mt-1">${fmtBytes(sto.disk_free || 0)} free</div>
+          </div>` : ''}
+      </div>
+      <div class="surface p-4">
+        <div class="text-[11px] font-mono ui-subtle mb-3">System</div>
+        <div class="grid grid-cols-2 gap-x-4 gap-y-2">
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Heap Alloc</div>
+            <div class="text-xs font-mono">${fmtBytes(sys.heap_alloc || 0)}</div>
+          </div>
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Heap Sys</div>
+            <div class="text-xs font-mono">${fmtBytes(sys.heap_sys || 0)}</div>
+          </div>
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Stack</div>
+            <div class="text-xs font-mono">${fmtBytes(sys.stack_inuse || 0)}</div>
+          </div>
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">GC Cycles</div>
+            <div class="text-xs font-mono">${(sys.num_gc || 0).toLocaleString()}</div>
+          </div>
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Goroutines</div>
+            <div class="text-xs font-mono">${(sys.goroutines || 0).toLocaleString()}</div>
+          </div>
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">GOMEMLIMIT</div>
+            <div class="text-xs font-mono">${sys.gomemlimit > 0 ? fmtBytes(sys.gomemlimit) : '\u2014'}</div>
+          </div>
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Go / PID</div>
+            <div class="text-xs font-mono">${esc(sys.go_version || '')} / ${sys.pid || ''}</div>
+          </div>
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Uptime</div>
+            <div class="text-xs font-mono">${fmtDuration(sys.uptime_seconds || 0)}</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  // ── Row 2: Pipeline Summary Bar ──
+  const stages = [
+    { label: 'Manifest', done: mf.total_warcs || 0, total: mf.total_warcs || 0, cls: 'ov-c1' },
+    { label: 'Downloaded', done: dl.count || 0, total: mf.total_warcs || 0, cls: 'ov-c2' },
+    { label: 'Markdown', done: md.count || 0, total: dl.count || 0, cls: 'ov-c3' },
+    { label: 'Pack', done: pk.count || 0, total: dl.count || 0, cls: 'ov-c4' },
+    { label: 'FTS Index', done: ix.count || 0, total: dl.count || 0, cls: 'ov-c6' },
   ];
-  const pipelineHTML = pipeTotal > 0 ? `
-    <div class="surface p-4 anim-fade-up" style="animation-delay:200ms">
-      <div class="text-[11px] font-mono ui-subtle mb-3">Pipeline Coverage</div>
+  const pipelineHTML = `
+    <div class="surface p-4 mb-4 anim-fade-up" style="animation-delay:50ms">
+      <div class="flex items-center justify-between mb-2">
+        <div class="text-[11px] font-mono ui-subtle">Pipeline: ${esc(d.crawl_id || '')}</div>
+        <div class="text-[10px] font-mono ui-subtle">${d.crawl_from ? formatCrawlDate(d.crawl_from) + ' \u2013 ' + formatCrawlDate(d.crawl_to) : ''}</div>
+      </div>
       <div class="flex items-stretch gap-0">
-        ${steps.map((s, i) => {
-          const pct = s.total > 0 ? Math.round((s.done / s.total) * 100) : 0;
+        ${stages.map((s, i) => {
+          const p = pct(s.done, s.total);
           return `
             ${i > 0 ? '<div class="ov-pipeline-arrow">\u2192</div>' : ''}
             <div class="ov-pipeline-step">
               <div class="flex items-baseline justify-between mb-1">
                 <span class="text-[11px] font-mono ui-subtle">${esc(s.label)}</span>
-                <span class="text-[11px] font-mono ${pct === 100 ? 'status-completed' : pct > 0 ? '' : 'ui-subtle'}">${pct}%</span>
+                <span class="text-[11px] font-mono ${p === 100 ? 'status-completed' : p > 0 ? '' : 'ui-subtle'}">${s.done.toLocaleString()}</span>
               </div>
-              <div class="progress-track" style="height:8px">
-                <div class="${s.cls}" style="height:100%;width:${pct}%;transition:width 0.4s ease"></div>
+              <div class="progress-track" style="height:6px">
+                <div class="${s.cls}" style="height:100%;width:${p}%;transition:width 0.4s ease"></div>
               </div>
-              <div class="text-[10px] font-mono ui-subtle mt-1">${s.done.toLocaleString()} / ${s.total.toLocaleString()}</div>
             </div>`;
         }).join('')}
       </div>
-    </div>` : '';
+    </div>`;
 
-  // ── Section 3: Storage Breakdown ──
-  const storageSegs = [
-    { label: 'WARC', value: d.warc_total_size || 0, cls: 'ov-c1' },
-    { label: 'Markdown', value: d.md_total_size || 0, cls: 'ov-c2' },
-    { label: 'Pack', value: Object.values(d.pack_formats || {}).reduce((a, b) => a + b, 0), cls: 'ov-c3' },
-    { label: 'FTS Index', value: Object.values(d.fts_engines || {}).reduce((a, b) => a + b, 0), cls: 'ov-c4' },
-  ].filter(s => s.value > 0);
-  const storageTotal = storageSegs.reduce((a, s) => a + s.value, 0) || 1;
-
-  const donutGradient = storageSegs.length > 0 ? (() => {
-    let angle = 0;
-    const stops = [];
-    for (const s of storageSegs) {
-      const deg = (s.value / storageTotal) * 360;
-      const clsMap = { 'ov-c1': 'var(--accent)', 'ov-c2': '#6366f1', 'ov-c3': '#f59e0b', 'ov-c4': '#10b981' };
-      const color = clsMap[s.cls] || 'var(--border)';
-      stops.push(`${color} ${angle}deg ${angle + deg}deg`);
-      angle += deg;
-    }
-    return `conic-gradient(${stops.join(', ')})`;
-  })() : 'var(--border)';
-
-  const storageHTML = storageSegs.length > 0 ? `
-    <div class="grid md:grid-cols-2 gap-4 anim-fade-up" style="animation-delay:250ms">
-      <div class="surface p-4">
-        <div class="text-[11px] font-mono ui-subtle mb-3">Storage Breakdown</div>
-        <div class="flex items-center gap-6">
-          <div class="ov-donut shrink-0" style="background:${donutGradient}">
-            <div class="ov-donut-hole">
-              <span class="text-xs font-mono font-medium">${fmtBytes(storageTotal)}</span>
-              <span class="text-[9px] font-mono ui-subtle">total</span>
-            </div>
+  // ── Row 3: Manifest + Downloaded ──
+  const row3HTML = `
+    <div class="grid md:grid-cols-2 gap-4 mb-4 anim-fade-up" style="animation-delay:100ms">
+      <div class="surface p-4" style="border-left:3px solid ${stageColor(mf.total_warcs, mf.total_warcs)}">
+        <div class="text-[11px] font-mono ui-subtle mb-2">Stage 1: Manifest (Source)</div>
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Total WARCs</div>
+            <div class="text-sm font-mono font-medium">${fmtNum(mf.total_warcs || 0)}</div>
           </div>
-          <div class="flex-1 space-y-2">
-            ${storageSegs.map(s => `
-              <div class="flex items-center gap-2">
-                <div class="ov-legend-dot ${s.cls}"></div>
-                <span class="text-[11px] font-mono ui-subtle flex-1">${esc(s.label)}</span>
-                <span class="text-[11px] font-mono">${fmtBytes(s.value)}</span>
-                <span class="text-[10px] font-mono ui-subtle w-10 text-right">${Math.round((s.value / storageTotal) * 100)}%</span>
-              </div>`).join('')}
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Est. URLs</div>
+            <div class="text-sm font-mono font-medium">${fmtNum(mf.est_total_urls || 0)}</div>
+          </div>
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Est. Size</div>
+            <div class="text-sm font-mono font-medium">${fmtBytes(mf.est_total_size_bytes || 0)}</div>
           </div>
         </div>
       </div>
-      <div class="surface p-4">
-        <div class="text-[11px] font-mono ui-subtle mb-3">Phase Size on Disk</div>
-        ${renderBars(storageSegs.map(s => ({ label: s.label.toLowerCase(), value: s.value, text: fmtBytes(s.value) })))}
-        ${sys.disk_total ? `
-          <div class="mt-4 pt-3 border-t">
-            <div class="flex items-center justify-between mb-1">
-              <span class="text-[11px] font-mono ui-subtle">Disk Usage</span>
-              <span class="text-[11px] font-mono ui-subtle">${fmtBytes(sys.disk_used || 0)} / ${fmtBytes(sys.disk_total)}</span>
-            </div>
-            <div class="progress-track" style="height:8px">
-              <div class="ov-c5" style="height:100%;width:${Math.round(((sys.disk_used||0)/(sys.disk_total||1))*100)}%;opacity:0.6"></div>
-            </div>
-            <div class="text-[10px] font-mono ui-subtle mt-1">${fmtBytes(sys.disk_free || 0)} free</div>
-          </div>` : ''}
+      <div class="surface p-4" style="border-left:3px solid ${stageColor(dl.count, mf.total_warcs)}">
+        <div class="flex items-center justify-between mb-2">
+          <div class="text-[11px] font-mono ui-subtle">Stage 2: Downloaded</div>
+          <div class="text-[10px] font-mono ${dl.count > 0 ? '' : 'ui-subtle'}">${fmtNum(dl.count || 0)} / ${fmtNum(mf.total_warcs || 0)}</div>
+        </div>
+        <div class="progress-track mb-3" style="height:4px">
+          <div class="ov-c2" style="height:100%;width:${pct(dl.count, mf.total_warcs)}%;transition:width 0.4s ease"></div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Total Size</div>
+            <div class="text-xs font-mono">${fmtBytes(dl.size_bytes || 0)}</div>
+          </div>
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Avg / WARC</div>
+            <div class="text-xs font-mono">${fmtBytes(dl.avg_warc_bytes || 0)}</div>
+          </div>
+        </div>
       </div>
-    </div>` : '';
+    </div>`;
 
-  // ── Section 4: FTS Engines + Pack Formats ──
-  const ftsEntries = Object.entries(d.fts_engines || {});
-  const packEntries = Object.entries(d.pack_formats || {});
-  const hasDetails = ftsEntries.length > 0 || packEntries.length > 0;
+  // ── Row 4: Markdown, Pack, FTS Index ──
+  const row4HTML = `
+    <div class="grid md:grid-cols-3 gap-4 mb-4 anim-fade-up" style="animation-delay:150ms">
+      <div class="surface p-4" style="border-left:3px solid ${stageColor(md.count, dl.count)}">
+        <div class="flex items-center justify-between mb-2">
+          <div class="text-[11px] font-mono ui-subtle">Stage 3: Markdown</div>
+          <div class="text-[10px] font-mono ${md.count > 0 ? '' : 'ui-subtle'}">${md.count || 0} / ${dl.count || 0}</div>
+        </div>
+        <div class="progress-track mb-3" style="height:4px">
+          <div class="ov-c3" style="height:100%;width:${pct(md.count, dl.count)}%;transition:width 0.4s ease"></div>
+        </div>
+        <div class="space-y-1">
+          <div class="flex justify-between text-[10px] font-mono"><span class="ui-subtle">Docs</span><span>${fmtNum(md.total_docs || 0)}</span></div>
+          <div class="flex justify-between text-[10px] font-mono"><span class="ui-subtle">Size</span><span>${fmtBytes(md.size_bytes || 0)}</span></div>
+          <div class="flex justify-between text-[10px] font-mono"><span class="ui-subtle">Avg/WARC</span><span>${fmtNum(md.avg_docs_per_warc || 0)} docs</span></div>
+          <div class="flex justify-between text-[10px] font-mono"><span class="ui-subtle">Avg doc</span><span>${fmtBytes(md.avg_doc_bytes || 0)}</span></div>
+        </div>
+      </div>
+      <div class="surface p-4" style="border-left:3px solid ${stageColor(pk.count, dl.count)}">
+        <div class="flex items-center justify-between mb-2">
+          <div class="text-[11px] font-mono ui-subtle">Stage 4: Pack</div>
+          <div class="text-[10px] font-mono ${pk.count > 0 ? '' : 'ui-subtle'}">${pk.count || 0} / ${dl.count || 0}</div>
+        </div>
+        <div class="progress-track mb-3" style="height:4px">
+          <div class="ov-c4" style="height:100%;width:${pct(pk.count, dl.count)}%;transition:width 0.4s ease"></div>
+        </div>
+        <div class="space-y-1">
+          <div class="flex justify-between text-[10px] font-mono"><span class="ui-subtle">Parquet</span><span>${fmtBytes(pk.parquet_bytes || 0)}</span></div>
+          <div class="flex justify-between text-[10px] font-mono"><span class="ui-subtle">.md.warc.gz</span><span>${fmtBytes(pk.warc_md_bytes || 0)}</span></div>
+        </div>
+      </div>
+      <div class="surface p-4" style="border-left:3px solid ${stageColor(ix.count, dl.count)}">
+        <div class="flex items-center justify-between mb-2">
+          <div class="text-[11px] font-mono ui-subtle">Stage 5: FTS Index</div>
+          <div class="text-[10px] font-mono ${ix.count > 0 ? '' : 'ui-subtle'}">${ix.count || 0} / ${dl.count || 0}</div>
+        </div>
+        <div class="progress-track mb-3" style="height:4px">
+          <div class="ov-c6" style="height:100%;width:${pct(ix.count, dl.count)}%;transition:width 0.4s ease"></div>
+        </div>
+        <div class="space-y-1">
+          <div class="flex justify-between text-[10px] font-mono"><span class="ui-subtle">Dahlia</span><span>${fmtBytes(ix.dahlia_bytes || 0)} (${ix.dahlia_shards || 0} sh)</span></div>
+          <div class="flex justify-between text-[10px] font-mono"><span class="ui-subtle">Tantivy</span><span>${fmtBytes(ix.tantivy_bytes || 0)} (${ix.tantivy_shards || 0} sh)</span></div>
+        </div>
+      </div>
+    </div>`;
 
-  const detailsHTML = hasDetails ? `
-    <div class="grid md:grid-cols-2 gap-4 anim-fade-up" style="animation-delay:300ms">
-      ${ftsEntries.length > 0 ? `
-        <div class="surface p-4">
-          <div class="text-[11px] font-mono ui-subtle mb-3">FTS Engines (${ftsEntries.length})</div>
-          ${renderBars(ftsEntries.map(([eng, size]) => {
-            const shards = d.fts_shard_count && d.fts_shard_count[eng] ? d.fts_shard_count[eng] : 0;
-            return { label: eng, value: size, text: `${fmtBytes(size)} \u00b7 ${shards}sh` };
-          }))}
-        </div>` : ''}
-      ${packEntries.length > 0 ? `
-        <div class="surface p-4">
-          <div class="text-[11px] font-mono ui-subtle mb-3">Pack Formats (${packEntries.length})</div>
-          ${renderBars(packEntries.map(([fmt, size]) => ({ label: fmt, value: size, text: fmtBytes(size) })))}
-        </div>` : ''}
-      ${ftsEntries.length > 0 && packEntries.length === 0 ? '<div></div>' : ''}
-      ${packEntries.length > 0 && ftsEntries.length === 0 ? '<div></div>' : ''}
-    </div>` : '';
-
-  // ── Section 5: Active Jobs ──
+  // ── Active Jobs ──
   const jobsHTML = activeJobs.length > 0 ? `
-    <div class="surface p-4 anim-fade-up" style="animation-delay:350ms">
+    <div class="surface p-4 mb-4 anim-fade-up" style="animation-delay:200ms">
       <div class="flex items-center justify-between mb-3">
         <div class="text-[11px] font-mono ui-subtle">Active Jobs (${activeJobs.length})</div>
         <a href="#/jobs" class="text-[11px] font-mono ui-link">all jobs \u2192</a>
       </div>
       ${activeJobs.slice(0, 5).map(j => {
-        const pct = Math.round((j.progress || 0) * 100);
+        const p = Math.round((j.progress || 0) * 100);
         const rateStr = j.rate > 0 ? ` \u00b7 ${j.rate.toFixed(0)}/s` : '';
         return `
           <div class="mb-2 last:mb-0">
             <div class="flex items-center justify-between mb-1">
               <span class="text-[11px] font-mono ui-subtle">${esc(j.id)} \u00b7 ${esc(j.type)} \u00b7 <span class="${statusClass(j.status)}">${esc(j.status)}</span>${rateStr}</span>
-              <span class="text-[11px] font-mono">${pct}%</span>
+              <span class="text-[11px] font-mono">${p}%</span>
             </div>
             <div class="progress-track" style="height:4px">
-              <div class="progress-fill" style="width:${pct}%"></div>
+              <div class="progress-fill" style="width:${p}%"></div>
             </div>
           </div>`;
       }).join('')}
     </div>` : '';
 
-  // ── Section 6: System ──
-  const memHTML = sys.mem_alloc ? `
-    <div class="surface p-4 anim-fade-up" style="animation-delay:400ms">
-      <div class="text-[11px] font-mono ui-subtle mb-3">Process</div>
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div>
-          <div class="text-[10px] font-mono ui-subtle">Heap Alloc</div>
-          <div class="text-xs font-mono">${fmtBytes(sys.mem_alloc)}</div>
-        </div>
-        <div>
-          <div class="text-[10px] font-mono ui-subtle">Heap Sys</div>
-          <div class="text-xs font-mono">${fmtBytes(sys.mem_heap_sys)}</div>
-        </div>
-        <div>
-          <div class="text-[10px] font-mono ui-subtle">Stack</div>
-          <div class="text-xs font-mono">${fmtBytes(sys.mem_stack_inuse)}</div>
-        </div>
-        <div>
-          <div class="text-[10px] font-mono ui-subtle">Goroutines</div>
-          <div class="text-xs font-mono">${(sys.goroutines || 0).toLocaleString()}</div>
-        </div>
-      </div>
-    </div>` : '';
-
   // ── Assemble ──
   el.innerHTML = `
-    <div class="surface-soft px-4 py-3 mb-4">
-      <div class="meta-line">${esc(renderMetaSummaryLine())}</div>
-    </div>
-    <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
-      ${cardsHTML}
-    </div>
-    ${pipelineHTML ? `<div class="mb-4">${pipelineHTML}</div>` : ''}
-    ${storageHTML ? `<div class="mb-4">${storageHTML}</div>` : ''}
-    ${detailsHTML ? `<div class="mb-4">${detailsHTML}</div>` : ''}
-    ${jobsHTML ? `<div class="mb-4">${jobsHTML}</div>` : ''}
-    ${memHTML ? `<div class="mb-4">${memHTML}</div>` : ''}
-    <div class="flex gap-3 mt-2 anim-fade-up" style="animation-delay:450ms">
-      <a href="#/pipeline" class="ui-btn px-4 py-2 text-sm">Open Pipeline</a>
+    ${storageHTML}
+    ${pipelineHTML}
+    ${row3HTML}
+    ${row4HTML}
+    ${jobsHTML}
+    <div class="flex gap-3 mt-2 anim-fade-up" style="animation-delay:250ms">
       <a href="#/search" class="ui-btn px-4 py-2 text-sm">Search</a>
       <a href="#/warc" class="ui-btn px-4 py-2 text-sm">WARC Console</a>
+      <a href="#/jobs" class="ui-btn px-4 py-2 text-sm">Jobs</a>
     </div>`;
 }
 
@@ -1147,7 +1172,7 @@ async function refreshOverviewMeta() {
 }
 
 // ===================================================================
-// Tab 2: Pipeline
+// Job utilities (shared by Overview + Jobs)
 // ===================================================================
 let pipelinePollingTimer = null;
 let jobsPollingTimer = null;
@@ -1164,170 +1189,7 @@ async function reloadJobs() {
   return state.jobs;
 }
 
-async function renderPipeline() {
-  state.currentPage = 'pipeline';
-  const main = $('main');
-  main.innerHTML = `
-    <div class="page-shell anim-fade-in">
-      <div class="page-header">
-        <h1 class="page-title">Pipeline</h1>
-        <button onclick="refreshDashboardMeta(true)" class="ui-btn px-3 py-2 text-xs font-mono">Refresh Metadata</button>
-      </div>
-      <div id="pipeline-summary" class="meta-line mb-4">loading...</div>
-      <div id="pipeline-content">
-        <div class="ui-empty">loading...</div>
-      </div>
-    </div>`;
-
-  // Stop previous polling
-  if (pipelinePollingTimer) { clearInterval(pipelinePollingTimer); pipelinePollingTimer = null; }
-
-  try {
-    const [overview, enginesData, jobs] = await Promise.all([
-      apiOverview().catch(() => null),
-      apiEngines().catch(() => ({ engines: [] })),
-      reloadJobs(),
-    ]);
-
-    state.overview = overview;
-    state.overviewLoadedAt = Date.now();
-    state.engines = enginesData.engines || [];
-    state.jobs = jobs || [];
-    refreshDashboardContext().catch(() => {});
-
-    const summary = $('pipeline-summary');
-    if (summary && overview) {
-      summary.textContent = `crawl:${overview.crawl_id || '-'} · warc:${(overview.warc_count || 0).toLocaleString()} · markdown:${(overview.md_doc_estimate || 0).toLocaleString()} docs · ${renderMetaSummaryLine()}`;
-    }
-
-    renderPipelineContent();
-    ensureJobStreamSubscribed();
-  } catch (e) {
-    $('pipeline-content').innerHTML = `<div class="text-xs text-red-400">${esc(e.message)}</div>`;
-  }
-}
-
-function renderPipelineContent() {
-  const el = $('pipeline-content');
-  if (!el) return;
-
-  const engines = state.engines || [];
-  const jobs = state.jobs || [];
-
-  const downloadJobs = jobs.filter(j => j.type === 'download');
-  const markdownJobs = jobs.filter(j => j.type === 'markdown');
-  const packJobs = jobs.filter(j => j.type === 'pack');
-  const indexJobs = jobs.filter(j => j.type === 'index');
-
-  el.innerHTML = `
-    <!-- Step 1: Download WARC -->
-    <div class="step-card anim-fade-up" style="animation-delay:0ms">
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="text-sm font-medium">Step 1: Download WARC</h2>
-        <span class="text-xs font-mono ui-subtle">${countActive(downloadJobs)} active</span>
-      </div>
-      <form id="form-download" class="flex items-end gap-3 mb-3" onsubmit="return submitJob(event, 'download')">
-        <div class="flex-1">
-          <label class="block text-xs font-mono ui-subtle mb-1">File range</label>
-          <input type="text" name="files" value="0" placeholder="0, 0-4, all"
-            class="ui-input w-full text-sm px-3 py-2">
-        </div>
-        <button type="submit" class="ui-btn ui-btn-primary px-4 py-2 text-sm shrink-0">Start</button>
-      </form>
-      <div id="jobs-download">${renderJobList(downloadJobs)}</div>
-    </div>
-
-    <!-- Step 2: Extract Markdown -->
-    <div class="step-card anim-fade-up" style="animation-delay:30ms">
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="text-sm font-medium">Step 2: Extract Markdown</h2>
-        <span class="text-xs font-mono ui-subtle">${countActive(markdownJobs)} active</span>
-      </div>
-      <form id="form-markdown" class="flex items-end gap-3 mb-3" onsubmit="return submitJob(event, 'markdown')">
-        <div class="flex-1">
-          <label class="block text-xs font-mono ui-subtle mb-1">File range</label>
-          <input type="text" name="files" value="0" placeholder="0, 0-4, all"
-            class="ui-input w-full text-sm px-3 py-2">
-        </div>
-        <div>
-          <label class="flex items-center gap-2 text-xs font-mono ui-subtle py-2">
-            <input type="checkbox" name="fast" class="accent-zinc-500"> --fast
-          </label>
-        </div>
-        <button type="submit" class="ui-btn ui-btn-primary px-4 py-2 text-sm shrink-0">Start</button>
-      </form>
-      <div id="jobs-markdown">${renderJobList(markdownJobs)}</div>
-    </div>
-
-    <!-- Step 3: Pack -->
-    <div class="step-card anim-fade-up" style="animation-delay:60ms">
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="text-sm font-medium">Step 3: Pack</h2>
-        <span class="text-xs font-mono ui-subtle">${countActive(packJobs)} active</span>
-      </div>
-      <form id="form-pack" class="flex items-end gap-3 mb-3" onsubmit="return submitJob(event, 'pack')">
-        <div class="flex-1">
-          <label class="block text-xs font-mono ui-subtle mb-1">File range</label>
-          <input type="text" name="files" value="0" placeholder="0, 0-4, all"
-            class="ui-input w-full text-sm px-3 py-2">
-        </div>
-        <div>
-          <label class="block text-xs font-mono ui-subtle mb-1">Format</label>
-          <select name="format" class="ui-select text-sm px-3 py-2">
-            <option value="parquet">parquet</option>
-            <option value="bin">bin</option>
-            <option value="duckdb">duckdb</option>
-            <option value="markdown">markdown</option>
-          </select>
-        </div>
-        <button type="submit" class="ui-btn ui-btn-primary px-4 py-2 text-sm shrink-0">Start</button>
-      </form>
-      <div id="jobs-pack">${renderJobList(packJobs)}</div>
-    </div>
-
-    <!-- Step 4: Build Index -->
-    <div class="step-card anim-fade-up" style="animation-delay:90ms">
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="text-sm font-medium">Step 4: Build Index</h2>
-        <span class="text-xs font-mono ui-subtle">${countActive(indexJobs)} active</span>
-      </div>
-      <form id="form-index" class="flex items-end gap-3 mb-3" onsubmit="return submitJob(event, 'index')">
-        <div class="flex-1">
-          <label class="block text-xs font-mono ui-subtle mb-1">File range</label>
-          <input type="text" name="files" value="0" placeholder="0, 0-4, all"
-            class="ui-input w-full text-sm px-3 py-2">
-        </div>
-        <div>
-          <label class="block text-xs font-mono ui-subtle mb-1">Engine</label>
-          <select name="engine" class="ui-select text-sm px-3 py-2">
-            ${engines.map(e => `<option value="${esc(e)}">${esc(e)}</option>`).join('')}
-            ${engines.length === 0 ? `<option value="${esc(DEFAULT_ENGINE)}">${esc(DEFAULT_ENGINE)}</option>` : ''}
-          </select>
-        </div>
-        <div>
-          <label class="block text-xs font-mono ui-subtle mb-1">Source</label>
-          <select name="source" class="ui-select text-sm px-3 py-2">
-            <option value="files">files</option>
-            <option value="parquet">parquet</option>
-            <option value="bin">bin</option>
-            <option value="duckdb">duckdb</option>
-            <option value="markdown">markdown</option>
-          </select>
-        </div>
-        <button type="submit" class="ui-btn ui-btn-primary px-4 py-2 text-sm shrink-0">Start</button>
-      </form>
-      <div id="jobs-index">${renderJobList(indexJobs)}</div>
-    </div>
-
-    <!-- Recent Jobs -->
-    <div class="mt-8 anim-fade-up" style="animation-delay:120ms">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-sm font-medium">Recent Jobs</h2>
-        <a href="#/jobs" class="text-xs font-mono ui-link">View all jobs &rarr;</a>
-      </div>
-      <div id="job-history">${renderRecentJobs(jobs)}</div>
-    </div>`;
-}
+// renderPipeline removed — pipeline is now integrated into overview page
 
 function countActive(jobs) {
   return jobs.filter(j => j.status === 'running' || j.status === 'queued').length;
@@ -1451,9 +1313,7 @@ async function startJob(cfg) {
     wsClient.subscribe(job.id, (msg) => onJobUpdate(msg));
 
     // Re-render job views if visible.
-    if (state.currentPage === 'pipeline') {
-      renderPipelineContent();
-    } else if (state.currentPage === 'jobs') {
+    if (state.currentPage === 'jobs') {
       const summary = $('jobs-summary');
       if (summary) summary.textContent = renderJobsSummaryLine(state.jobs || []);
       renderJobsContent();
@@ -1472,9 +1332,7 @@ async function cancelJob(id) {
       job.status = 'cancelled';
       job.ended_at = new Date().toISOString();
     }
-    if (state.currentPage === 'pipeline') {
-      renderPipelineContent();
-    } else if (state.currentPage === 'jobs') {
+    if (state.currentPage === 'jobs') {
       const summary = $('jobs-summary');
       if (summary) summary.textContent = renderJobsSummaryLine(state.jobs || []);
       renderJobsContent();
@@ -1494,8 +1352,8 @@ function onJobUpdate(msg) {
     job.message = msg.message;
     job.rate = msg.rate || 0;
 
-    // Update in-place for active job rows on pipeline/jobs pages.
-    if (state.currentPage === 'pipeline' || state.currentPage === 'jobs') {
+    // Update in-place for active job rows on jobs page.
+    if (state.currentPage === 'jobs') {
       updateJobInPlace(job);
     }
   } else if (msg.type === 'job_update') {
@@ -1506,9 +1364,7 @@ function onJobUpdate(msg) {
       if (msg.status === 'completed') job.progress = 1.0;
     }
 
-    if (state.currentPage === 'pipeline') {
-      renderPipelineContent();
-    } else if (state.currentPage === 'jobs') {
+    if (state.currentPage === 'jobs') {
       const summary = $('jobs-summary');
       if (summary) summary.textContent = renderJobsSummaryLine(state.jobs || []);
       renderJobsContent();
@@ -2724,83 +2580,6 @@ function showSource() {
   $('btn-rendered').className = 'text-xs pb-1 tab-inactive transition-colors';
 }
 
-// ===================================================================
-// Tab 7: Crawls
-// ===================================================================
-async function renderCrawls() {
-  state.currentPage = 'crawls';
-  const main = $('main');
-  main.innerHTML = `
-    <div class="page-shell anim-fade-in">
-      <div class="page-header">
-        <h1 class="page-title">Crawls</h1>
-        ${isDashboard ? `<button onclick="refreshDashboardMeta(true)" class="ui-btn px-3 py-2 text-xs font-mono">Refresh Metadata</button>` : ''}
-      </div>
-      ${isDashboard ? `<div id="crawls-meta" class="meta-line mb-5">loading metadata...</div>` : ''}
-      <div id="crawls-content">
-        <div class="ui-empty">loading...</div>
-      </div>
-    </div>`;
-
-  try {
-    if (isDashboard) {
-      await refreshDashboardContext().catch(() => {});
-      const m = $('crawls-meta');
-      if (m) {
-        const crawl = state.overview && state.overview.crawl_id ? state.overview.crawl_id : '-';
-        m.textContent = `active:${crawl} · ${renderMetaSummaryLine()}`;
-      }
-    }
-    const data = await apiCrawls();
-    state.crawls = data.crawls || [];
-    renderCrawlsContent(state.crawls);
-  } catch (e) {
-    $('crawls-content').innerHTML = `
-      <div class="surface p-6 text-center">
-        <p class="text-sm ui-subtle mb-1">Could not load crawl list</p>
-        <p class="text-xs font-mono text-red-400">${esc(e.message)}</p>
-        <p class="text-xs ui-subtle mt-2">Check your internet connection or try again later.</p>
-      </div>`;
-  }
-}
-
-function renderCrawlsContent(crawls) {
-  const el = $('crawls-content');
-  if (!el) return;
-
-  if (!crawls || crawls.length === 0) {
-    el.innerHTML = '<div class="ui-empty">No crawls found.</div>';
-    return;
-  }
-  const activeCrawl = state.overview && state.overview.crawl_id ? state.overview.crawl_id : '';
-
-  el.innerHTML = `
-    <div class="surface overflow-x-auto">
-      <table class="w-full text-sm ui-table">
-        <thead>
-          <tr>
-            <th class="text-left px-4 py-2 text-xs font-mono">Crawl ID</th>
-            <th class="text-left px-4 py-2 text-xs font-mono">Name</th>
-            <th class="text-left px-4 py-2 text-xs font-mono">From</th>
-            <th class="text-left px-4 py-2 text-xs font-mono">To</th>
-            <th class="text-right px-4 py-2 text-xs font-mono">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${crawls.map((c, i) => `
-            <tr class="anim-fade-up" style="animation-delay:${i * 20}ms">
-              <td class="px-4 py-2 font-mono text-xs">${esc(c.id || '')}</td>
-              <td class="px-4 py-2 text-xs">${esc(c.name || '')}</td>
-              <td class="px-4 py-2 font-mono text-xs ui-subtle">${formatCrawlDate(c.from)}</td>
-              <td class="px-4 py-2 font-mono text-xs ui-subtle">${formatCrawlDate(c.to)}</td>
-              <td class="px-4 py-2 text-right text-xs font-mono ${c.id === activeCrawl ? 'status-completed' : 'ui-subtle'}">${c.id === activeCrawl ? 'active' : ''}</td>
-            </tr>`).join('')}
-        </tbody>
-      </table>
-    </div>
-    <div class="meta-line mt-3">${crawls.length} crawls total</div>`;
-}
-
 function formatCrawlDate(d) {
   if (!d) return '\u2014';
   // d could be ISO string or time.Time JSON
@@ -2855,7 +2634,7 @@ document.addEventListener('keydown', (e) => {
   // Number keys — switch tabs (when not in input)
   if (!isInput && e.key >= '1' && e.key <= '7' && !e.metaKey && !e.ctrlKey && !e.altKey) {
     const tabs = isDashboard
-      ? ['/', '/pipeline', '/jobs', '/search', '/warc', '/browse', '/crawls']
+      ? ['/', '/search', '/browse', '/warc', '/jobs']
       : ['/search', '/browse'];
     const idx = parseInt(e.key) - 1;
     if (idx >= 0 && idx < tabs.length) {
@@ -2873,7 +2652,7 @@ applyTheme();
 // In search-only mode: hide dashboard tabs, adjust header title, narrow layout.
 if (!isDashboard) {
   document.querySelectorAll('#main-nav a[data-tab]').forEach(a => {
-    if (['overview', 'pipeline', 'jobs', 'warc', 'crawls'].includes(a.dataset.tab)) a.style.display = 'none';
+    if (['overview', 'jobs', 'warc'].includes(a.dataset.tab)) a.style.display = 'none';
   });
   const metaChip = $('header-meta');
   const metaBtn = $('header-meta-refresh');
