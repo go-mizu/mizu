@@ -170,18 +170,22 @@ function renderWARCSummary(summary) {
         <div class="text-base font-semibold font-mono">${total.toLocaleString()}</div>
       </div>
       <div class="bg-[var(--panel)] px-3 py-2.5">
-        <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Tracked</div>
-        <div class="text-base font-semibold font-mono">${t.toLocaleString()}</div>
-      </div>
-      <div class="bg-[var(--panel)] px-3 py-2.5">
         <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Downloaded</div>
         <div class="text-base font-semibold font-mono">${dl.toLocaleString()}</div>
+        <div class="text-[9px] font-mono ui-subtle">${pctOf(dl, total)}% of total</div>
         <div class="progress-track mt-1" style="height:4px"><div class="ov-c1" style="height:100%;width:${pctOf(dl, total)}%"></div></div>
+      </div>
+      <div class="bg-[var(--panel)] px-3 py-2.5">
+        <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Markdown</div>
+        <div class="text-base font-semibold font-mono">${md.toLocaleString()}</div>
+        <div class="text-[9px] font-mono ui-subtle">${pctOf(md, dl)}% of downloaded</div>
+        <div class="progress-track mt-1" style="height:4px"><div class="ov-c2" style="height:100%;width:${pctOf(md, dl)}%"></div></div>
       </div>
       <div class="bg-[var(--panel)] px-3 py-2.5">
         <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Indexed</div>
         <div class="text-base font-semibold font-mono">${ix.toLocaleString()}</div>
-        <div class="progress-track mt-1" style="height:4px"><div class="ov-c4" style="height:100%;width:${pctOf(ix, total)}%"></div></div>
+        <div class="text-[9px] font-mono ui-subtle">${pctOf(ix, dl)}% of downloaded</div>
+        <div class="progress-track mt-1" style="height:4px"><div class="ov-c4" style="height:100%;width:${pctOf(ix, dl)}%"></div></div>
       </div>
       <div class="bg-[var(--panel)] px-3 py-2.5">
         <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Disk</div>

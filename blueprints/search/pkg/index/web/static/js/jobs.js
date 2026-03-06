@@ -30,20 +30,32 @@ function renderJobList(jobs) {
 
 function renderJobItem(j) {
   const pct = Math.round((j.progress || 0) * 100);
-  const rateStr = j.rate > 0 ? ` &middot; ${j.rate.toFixed(0)} docs/s` : '';
+  const rateStr = j.rate > 0 ? ` &middot; ${j.rate.toFixed(0)}/s` : '';
+  const elapsed = j.started_at ? fmtDuration(j.started_at, j.ended_at) : '';
+  const startedStr = j.started_at ? fmtRelativeTime(j.started_at) : '';
   const cancelBtn = (j.status === 'running' || j.status === 'queued')
     ? `<button onclick="cancelJob('${esc(j.id)}')" class="text-xs ui-link ml-2">cancel</button>`
     : '';
+  const cfg = j.config || {};
+  const cfgParts = [];
+  if (cfg.files && cfg.files !== '0') cfgParts.push(`files:${esc(cfg.files)}`);
+  if (cfg.engine) cfgParts.push(`engine:${esc(cfg.engine)}`);
+  if (cfg.format) cfgParts.push(`fmt:${esc(cfg.format)}`);
+  if (cfg.fast) cfgParts.push('fast');
+  const cfgStr = cfgParts.length > 0 ? ` &middot; ${cfgParts.join(' ')}` : '';
   return `
     <div class="mb-2 py-2 border-b" id="job-${esc(j.id)}">
       <div class="flex items-center justify-between mb-1">
-        <span class="text-xs font-mono ui-subtle">${esc(j.id)} &middot; <span class="${statusClass(j.status)}">${esc(j.status)}</span>${rateStr}</span>
-        <span class="text-xs font-mono ui-subtle">${pct}%${cancelBtn}</span>
+        <span class="text-xs font-mono ui-subtle">${esc(j.id)} &middot; ${jobTypeBadge(j.type)} &middot; <span class="${statusClass(j.status)}">${esc(j.status)}</span>${rateStr}${cfgStr}</span>
+        <span class="text-xs font-mono ui-subtle">${pct}%${elapsed ? ' &middot; ' + elapsed : ''}${cancelBtn}</span>
       </div>
       <div class="progress-track mb-1">
         <div class="progress-fill" style="width:${pct}%"></div>
       </div>
-      <div class="text-xs ui-subtle truncate">${esc(j.message || '')}</div>
+      <div class="flex items-center justify-between">
+        <div class="text-xs ui-subtle truncate">${esc(j.message || '')}</div>
+        ${startedStr ? `<div class="text-[10px] font-mono ui-subtle shrink-0 ml-2">${startedStr}</div>` : ''}
+      </div>
     </div>`;
 }
 
@@ -59,20 +71,31 @@ function renderJobHistory(jobs) {
           <tr>
             <th class="text-left px-4 py-2 text-xs font-mono">ID</th>
             <th class="text-left px-4 py-2 text-xs font-mono">Type</th>
+            <th class="text-left px-4 py-2 text-xs font-mono hidden sm:table-cell">Started</th>
             <th class="text-left px-4 py-2 text-xs font-mono">Status</th>
-            <th class="text-left px-4 py-2 text-xs font-mono">Message</th>
-            <th class="text-right px-4 py-2 text-xs font-mono">Elapsed</th>
+            <th class="text-left px-4 py-2 text-xs font-mono">Message / Config</th>
+            <th class="text-right px-4 py-2 text-xs font-mono">Duration</th>
           </tr>
         </thead>
         <tbody>
-          ${jobs.map(j => `
+          ${jobs.map(j => {
+            const cfg = j.config || {};
+            const cfgParts = [];
+            if (cfg.files && cfg.files !== '0') cfgParts.push(`files:${esc(cfg.files)}`);
+            if (cfg.engine) cfgParts.push(`engine:${esc(cfg.engine)}`);
+            if (cfg.format) cfgParts.push(`fmt:${esc(cfg.format)}`);
+            if (cfg.fast) cfgParts.push('fast');
+            const detail = [j.message || j.error || '', cfgParts.join(' ')].filter(Boolean).join(' · ');
+            return `
             <tr class="cursor-pointer hover:bg-white/5" onclick="navigateTo('/jobs/${esc(j.id)}')">
               <td class="px-4 py-2 font-mono text-xs">${esc(j.id)}</td>
               <td class="px-4 py-2 text-xs">${jobTypeBadge(j.type)}</td>
+              <td class="px-4 py-2 font-mono text-xs ui-subtle hidden sm:table-cell">${j.started_at ? fmtRelativeTime(j.started_at) : '—'}</td>
               <td class="px-4 py-2 text-xs ${statusClass(j.status)}">${esc(j.status)}</td>
-              <td class="px-4 py-2 text-xs ui-subtle truncate max-w-xs">${esc(j.message || j.error || '')}</td>
+              <td class="px-4 py-2 text-xs ui-subtle truncate max-w-xs">${detail}</td>
               <td class="px-4 py-2 font-mono text-xs text-right ui-subtle">${fmtDuration(j.started_at, j.ended_at)}</td>
-            </tr>`).join('')}
+            </tr>`;
+          }).join('')}
         </tbody>
       </table>
     </div>`;
@@ -90,9 +113,10 @@ function renderRecentJobs(jobs) {
           <tr>
             <th class="text-left px-4 py-2 text-xs font-mono">ID</th>
             <th class="text-left px-4 py-2 text-xs font-mono">Type</th>
+            <th class="text-left px-4 py-2 text-xs font-mono hidden sm:table-cell">Started</th>
             <th class="text-left px-4 py-2 text-xs font-mono">Status</th>
             <th class="text-left px-4 py-2 text-xs font-mono">Message</th>
-            <th class="text-right px-4 py-2 text-xs font-mono">Elapsed</th>
+            <th class="text-right px-4 py-2 text-xs font-mono">Duration</th>
           </tr>
         </thead>
         <tbody>
@@ -100,6 +124,7 @@ function renderRecentJobs(jobs) {
             <tr class="cursor-pointer hover:bg-white/5" onclick="navigateTo('/jobs/${esc(j.id)}')">
               <td class="px-4 py-2 font-mono text-xs">${esc(j.id)}</td>
               <td class="px-4 py-2 text-xs">${jobTypeBadge(j.type)}</td>
+              <td class="px-4 py-2 font-mono text-xs ui-subtle hidden sm:table-cell">${j.started_at ? fmtRelativeTime(j.started_at) : '—'}</td>
               <td class="px-4 py-2 text-xs ${statusClass(j.status)}">${esc(j.status)}</td>
               <td class="px-4 py-2 text-xs ui-subtle truncate max-w-xs">${esc(j.message || j.error || '')}</td>
               <td class="px-4 py-2 font-mono text-xs text-right ui-subtle">${fmtDuration(j.started_at, j.ended_at)}</td>
@@ -227,21 +252,10 @@ function onJobUpdate(msg) {
 function updateJobInPlace(job) {
   const el = $('job-' + job.id);
   if (!el) return;
-  const pct = Math.round((job.progress || 0) * 100);
-  const rateStr = job.rate > 0 ? ` &middot; ${job.rate.toFixed(0)} docs/s` : '';
-  const cancelBtn = (job.status === 'running' || job.status === 'queued')
-    ? `<button onclick="cancelJob('${esc(job.id)}')" class="text-xs ui-link ml-2">cancel</button>`
-    : '';
-
-  el.innerHTML = `
-    <div class="flex items-center justify-between mb-1">
-      <span class="text-xs font-mono ui-subtle">${esc(job.id)} &middot; <span class="${statusClass(job.status)}">${esc(job.status)}</span>${rateStr}</span>
-      <span class="text-xs font-mono ui-subtle">${pct}%${cancelBtn}</span>
-    </div>
-    <div class="progress-track mb-1">
-      <div class="progress-fill" style="width:${pct}%"></div>
-    </div>
-    <div class="text-xs ui-subtle truncate">${esc(job.message || '')}</div>`;
+  const tmp = document.createElement('div');
+  tmp.innerHTML = renderJobItem(job);
+  const newEl = tmp.firstElementChild;
+  if (newEl) el.replaceWith(newEl);
 }
 
 // ===================================================================
@@ -352,19 +366,30 @@ function renderJobTypeGroup(type, jobs) {
           <thead>
             <tr>
               <th class="text-left px-3 py-1.5 text-xs font-mono">ID</th>
+              <th class="text-left px-3 py-1.5 text-xs font-mono hidden sm:table-cell">Started</th>
               <th class="text-left px-3 py-1.5 text-xs font-mono">Status</th>
-              <th class="text-left px-3 py-1.5 text-xs font-mono">Message</th>
-              <th class="text-right px-3 py-1.5 text-xs font-mono">Elapsed</th>
+              <th class="text-left px-3 py-1.5 text-xs font-mono">Message / Config</th>
+              <th class="text-right px-3 py-1.5 text-xs font-mono">Duration</th>
             </tr>
           </thead>
           <tbody>
-            ${jobs.map(j => `
+            ${jobs.map(j => {
+              const cfg = j.config || {};
+              const cfgParts = [];
+              if (cfg.files && cfg.files !== '0') cfgParts.push(`files:${esc(cfg.files)}`);
+              if (cfg.engine) cfgParts.push(`engine:${esc(cfg.engine)}`);
+              if (cfg.format) cfgParts.push(`fmt:${esc(cfg.format)}`);
+              if (cfg.fast) cfgParts.push('fast');
+              const detail = [j.message || j.error || '', cfgParts.join(' ')].filter(Boolean).join(' &middot; ');
+              return `
               <tr class="cursor-pointer hover:bg-white/5" onclick="navigateTo('/jobs/${esc(j.id)}')">
                 <td class="px-3 py-1.5 font-mono text-xs">${esc(j.id)}</td>
+                <td class="px-3 py-1.5 font-mono text-xs ui-subtle hidden sm:table-cell">${j.started_at ? fmtRelativeTime(j.started_at) : '—'}</td>
                 <td class="px-3 py-1.5 text-xs ${statusClass(j.status)}">${esc(j.status)}</td>
-                <td class="px-3 py-1.5 text-xs ui-subtle truncate max-w-xs">${esc(j.message || j.error || '')}</td>
+                <td class="px-3 py-1.5 text-xs ui-subtle truncate max-w-xs">${detail}</td>
                 <td class="px-3 py-1.5 font-mono text-xs text-right ui-subtle">${fmtDuration(j.started_at, j.ended_at)}</td>
-              </tr>`).join('')}
+              </tr>`;
+            }).join('')}
           </tbody>
         </table>
       </div>

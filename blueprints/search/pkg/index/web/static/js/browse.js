@@ -170,7 +170,7 @@ function renderShardList(active) {
     const countLabel = ready ? (s.file_count ?? 0).toLocaleString() : '';
     const sizeLabel = ready && s.total_size ? fmtBytes(s.total_size) : '';
     const packBtn = !hasPack && isDashboard
-      ? `<button onclick="event.preventDefault();event.stopPropagation();triggerPackShard('${esc(s.name)}')" class="text-[9px] font-mono px-1.5 py-0.5 ui-btn">Markdown</button>`
+      ? `<button onclick="event.preventDefault();event.stopPropagation();triggerPackShard('${esc(s.name)}')" class="text-[9px] font-mono px-1.5 py-0.5 ui-btn">Index</button>`
       : '';
 
     return `<a href="#/browse/${s.name}"
@@ -190,10 +190,14 @@ function renderShardList(active) {
 
 async function triggerPackShard(shard) {
   const fileIdx = parseInt(shard, 10);
+  const filesStr = String(fileIdx);
   try {
-    await apiPost('/api/jobs', {type: 'markdown', files: String(fileIdx)});
+    // Step 1: Extract markdown
+    await apiPost('/api/jobs', {type: 'markdown', files: filesStr});
+    // Step 2: Build search index (queued after markdown completes)
+    await apiPost('/api/jobs', {type: 'index', files: filesStr, source: 'files'});
   } catch(e) {
-    alert('Failed to start markdown extraction: ' + e.message);
+    alert('Failed to start indexing: ' + e.message);
     return;
   }
   try {
@@ -473,9 +477,9 @@ function renderShardStats(shard, stats) {
 function renderNotPackedState(shard) {
   return `
     <div class="mt-6 text-center py-8">
-      <div class="text-sm mb-2">WARC downloaded</div>
-      <div class="text-xs ui-subtle mb-5 max-w-sm mx-auto">This index has the raw WARC but markdown has not been extracted yet. Extract markdown to browse documents and build the search index.</div>
-      ${isDashboard ? `<button onclick="triggerPackShard('${esc(shard)}')" class="ui-btn px-5 py-2 text-xs font-mono">Extract Markdown</button>` : `<div class="text-xs ui-subtle">Run the dashboard to extract markdown.</div>`}
+      <div class="text-sm font-medium mb-2">WARC ready to index</div>
+      <div class="text-xs ui-subtle mb-5 max-w-sm mx-auto">Extract documents from the WARC and build a full-text search index. Two jobs will run sequentially: markdown extraction then Dahlia indexing.</div>
+      ${isDashboard ? `<button onclick="triggerPackShard('${esc(shard)}')" class="ui-btn px-5 py-2 text-xs font-mono">Index this WARC</button>` : `<div class="text-xs ui-subtle">Run the dashboard to index this WARC.</div>`}
     </div>`;
 }
 
