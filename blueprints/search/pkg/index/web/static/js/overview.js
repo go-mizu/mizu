@@ -66,7 +66,7 @@ function renderOverviewContent(d, jobs) {
               <span class="text-[10px] font-mono ui-subtle">${fmtBytes(sto.disk_used || 0)} / ${fmtBytes(sto.disk_total)}</span>
             </div>
             <div class="progress-track" style="height:6px">
-              <div class="ov-c5" style="height:100%;width:${pct(sto.disk_used || 0, sto.disk_total)};opacity:0.6"></div>
+              <div class="ov-c5" style="height:100%;width:${pct(sto.disk_used || 0, sto.disk_total)}%;opacity:0.6"></div>
             </div>
             <div class="text-[10px] font-mono ui-subtle mt-1">${fmtBytes(sto.disk_free || 0)} free</div>
           </div>` : ''}
