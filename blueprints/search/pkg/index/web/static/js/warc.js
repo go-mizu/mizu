@@ -12,10 +12,11 @@ async function renderWARC(offset = state.warcOffset || 0, query = state.warcQuer
         <h1 class="page-title">WARC Console</h1>
         <button onclick="renderWARC(0, state.warcQuery||'')" class="ui-btn px-3 py-2 text-xs font-mono">Reload</button>
       </div>
-      <div class="surface p-3 mb-4">
+      <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mb-4">
         <input id="warc-q" type="text" value="${esc(query)}" placeholder="Filter by index or filename\u2026"
-          class="ui-input w-full text-sm px-3 py-2"
+          class="ui-input flex-1 text-sm px-3 py-2"
           onkeydown="if(event.key==='Enter')renderWARC(0,this.value)">
+        <div id="warc-filter-chips" class="flex items-center gap-1.5"></div>
       </div>
       <div id="warc-content"><div class="ui-empty">loading\u2026</div></div>
     </div>`;
@@ -24,12 +25,31 @@ async function renderWARC(offset = state.warcOffset || 0, query = state.warcQuer
     const data = await apiWARCList({ offset, limit: state.warcLimit || 100, q: query || '' });
     state.warcRows = data.warcs || [];
     state.warcSummary = data.summary || null;
+    state.warcSystem = data.system || null;
     state.warcOffset = data.offset || 0;
     state.warcLimit = data.limit || state.warcLimit || 100;
+    if (!state.warcFilter) state.warcFilter = 'all';
+    renderWARCFilterChips();
     renderWARCContent(data);
   } catch (e) {
     $('warc-content').innerHTML = `<div class="text-xs text-red-400">${esc(e.message)}</div>`;
   }
+}
+
+function renderWARCFilterChips() {
+  const el = $('warc-filter-chips');
+  if (!el) return;
+  const filter = state.warcFilter || 'all';
+  const filters = [
+    { key: 'all', label: 'All' },
+    { key: 'incomplete', label: 'Incomplete' },
+    { key: 'complete', label: 'Complete' },
+  ];
+  el.innerHTML = filters.map(f => {
+    const active = f.key === filter;
+    return `<button onclick="state.warcFilter='${f.key}';renderWARCContent({warcs:state.warcRows,summary:state.warcSummary,offset:state.warcOffset,limit:state.warcLimit,total:(state.warcRows||[]).length})"
+      class="ui-btn px-2 py-1 text-[10px] font-mono ${active ? 'ui-btn-primary' : ''}">${f.label}</button>`;
+  }).join('');
 }
 
 function renderWARCContent(data) {
@@ -65,7 +85,7 @@ function renderWARCContent(data) {
       </div>
     </div>` : '';
 
-  // ── Pipeline waterfall (like overview) ──
+  // ── Pipeline waterfall ──
   const stages = [
     { label: 'Downloaded', count: dl, cls: 'ov-c1' },
     { label: 'Markdown', count: md, cls: 'ov-c2' },
@@ -99,12 +119,30 @@ function renderWARCContent(data) {
         </div>` : ''}
     </div>` : '';
 
-  // ── Table rows — simplified ──
-  const rows = (data.warcs || []).map((w, i) => {
+  // ── Apply client-side filter ──
+  const filter = state.warcFilter || 'all';
+  let visibleRows = data.warcs || [];
+  if (filter === 'incomplete') {
+    visibleRows = visibleRows.filter(w => !w.has_warc || !w.has_markdown || !w.has_pack || !w.has_fts);
+  } else if (filter === 'complete') {
+    visibleRows = visibleRows.filter(w => w.has_warc && w.has_markdown && w.has_pack && w.has_fts);
+  }
+
+  // ── Table rows ──
+  const rows = visibleRows.map((w, i) => {
     const next = !w.has_warc ? 'download' : !w.has_markdown ? 'markdown' : !w.has_pack ? 'pack' : !w.has_fts ? 'index' : '';
     const done = (w.has_warc ? 1 : 0) + (w.has_markdown ? 1 : 0) + (w.has_pack ? 1 : 0) + (w.has_fts ? 1 : 0);
     const docsStr = (w.warc_md_docs || 0) > 0 ? (w.warc_md_docs).toLocaleString() : '\u2014';
     const sizeStr = w.total_bytes > 0 ? fmtBytes(w.total_bytes) : '\u2014';
+
+    // Stacked progress bar segments
+    const stackedBar = `
+      <div class="ov-stacked" style="width:48px;height:6px">
+        <div class="ov-stacked-seg ${w.has_warc ? 'ov-c1' : ''}" style="width:25%;${!w.has_warc ? 'background:transparent' : ''}"></div>
+        <div class="ov-stacked-seg ${w.has_markdown ? 'ov-c2' : ''}" style="width:25%;${!w.has_markdown ? 'background:transparent' : ''}"></div>
+        <div class="ov-stacked-seg ${w.has_pack ? 'ov-c3' : ''}" style="width:25%;${!w.has_pack ? 'background:transparent' : ''}"></div>
+        <div class="ov-stacked-seg ${w.has_fts ? 'ov-c4' : ''}" style="width:25%;${!w.has_fts ? 'background:transparent' : ''}"></div>
+      </div>`;
 
     const nextBtnLabel = next || 'done';
     const nextBtnCls = next ? 'ui-btn-primary' : 'ui-btn';
@@ -119,21 +157,14 @@ function renderWARCContent(data) {
       <td class="px-3 py-2 font-mono text-xs"><a href="#/warc/${encodeURIComponent(w.index)}" class="ui-link hover:text-[var(--accent)]">${esc(w.index)}</a></td>
       <td class="px-3 py-2 text-xs">
         <div class="flex items-center gap-2">
-          <div class="flex gap-0.5">
-            ${statusChip('dl', !!w.has_warc)}
-            ${statusChip('md', !!w.has_markdown)}
-            ${statusChip('pk', !!w.has_pack)}
-            ${statusChip('ix', !!w.has_fts)}
-          </div>
-          <div class="progress-track hidden sm:block" style="width:40px;height:4px">
-            <div class="${done === 4 ? 'ov-c4' : 'progress-fill'}" style="height:100%;width:${done * 25}%"></div>
-          </div>
+          ${stackedBar}
+          <span class="text-[10px] font-mono ui-subtle">${done}/4</span>
         </div>
       </td>
       <td class="px-3 py-2 text-right text-xs font-mono ui-subtle">${docsStr}</td>
       <td class="px-3 py-2 text-right text-xs font-mono ui-subtle whitespace-nowrap hidden sm:table-cell">${sizeStr}</td>
       <td class="px-3 py-2 text-right text-xs font-mono whitespace-nowrap">
-        ${next ? `<button onclick="${nextAction}" class="${nextBtnCls} px-2.5 py-1 text-[11px]">${esc(nextBtnLabel)}</button>` : `<span class="text-[11px] status-completed">done</span>`}
+        ${next ? `<button onclick="${nextAction}" class="${nextBtnCls} px-2.5 py-1 text-[11px]">${esc(nextBtnLabel)}</button>` : `<span class="text-[11px] status-completed">\u2713 done</span>`}
       </td>
     </tr>`;
   }).join('');
@@ -146,14 +177,47 @@ function renderWARCContent(data) {
   const showTo = Math.min((data.offset || 0) + (data.limit || 0), data.total || 0);
 
   // Incomplete count for batch actions
-  const incomplete = (data.warcs || []).filter(w => !w.has_warc || !w.has_markdown || !w.has_pack || !w.has_fts);
+  const incomplete = visibleRows.filter(w => !w.has_warc || !w.has_markdown || !w.has_pack || !w.has_fts);
+
+  // System stats from API response
+  const sys = state.warcSystem || {};
+  const sysHTML = (sys.disk_total || sys.mem_alloc) ? `
+    <details class="mt-4">
+      <summary class="text-[11px] font-mono ui-subtle cursor-pointer select-none">System</summary>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
+        ${sys.disk_total ? `
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Disk</div>
+            <div class="text-xs font-mono">${fmtBytes(sys.disk_used || 0)} / ${fmtBytes(sys.disk_total)}</div>
+            <div class="progress-track mt-1" style="height:4px">
+              <div class="ov-c5" style="height:100%;width:${sys.disk_total > 0 ? Math.round(((sys.disk_used||0)/sys.disk_total)*100) : 0}%;opacity:0.6"></div>
+            </div>
+            <div class="text-[10px] font-mono ui-subtle mt-0.5">${fmtBytes(sys.disk_free || 0)} free</div>
+          </div>` : ''}
+        ${sys.mem_alloc ? `
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Heap Alloc</div>
+            <div class="text-xs font-mono">${fmtBytes(sys.mem_alloc)}</div>
+          </div>` : ''}
+        ${sys.mem_heap_sys ? `
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Heap Sys</div>
+            <div class="text-xs font-mono">${fmtBytes(sys.mem_heap_sys)}</div>
+          </div>` : ''}
+        ${sys.goroutines ? `
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Goroutines</div>
+            <div class="text-xs font-mono">${sys.goroutines.toLocaleString()}</div>
+          </div>` : ''}
+      </div>
+    </details>` : '';
 
   el.innerHTML = `
     ${statCards}
     ${pipelineHTML}
     ${isDashboard && incomplete.length > 0 ? `
       <div class="flex items-center gap-2 mb-3">
-        <span class="text-[11px] font-mono ui-subtle">${incomplete.length} incomplete on this page</span>
+        <span class="text-[11px] font-mono ui-subtle">${incomplete.length} incomplete${filter !== 'all' ? ' (filtered)' : ''}</span>
         <button onclick="warcBatchNext()" class="ui-btn px-3 py-1 text-[11px] font-mono">Run next step (${incomplete.length})</button>
       </div>` : ''}
     <div class="surface overflow-x-auto">
@@ -179,34 +243,41 @@ function renderWARCContent(data) {
         <span class="text-[11px] font-mono ui-subtle">${total > 0 ? `page ${Math.floor((data.offset||0)/(data.limit||100))+1}` : ''}</span>
         <button ${canNext ? '' : 'disabled'} onclick="renderWARC(${nextOffset}, state.warcQuery || '')" class="ui-btn px-3 py-1 text-xs font-mono">next \u2192</button>
       </div>
-    </div>`;
+    </div>
+    ${sysHTML}`;
 }
 
 // Batch: run next missing step on all visible incomplete WARCs
 async function warcBatchNext() {
-  const warcs = state.warcRows || [];
+  const filter = state.warcFilter || 'all';
+  let warcs = state.warcRows || [];
+  if (filter === 'incomplete') {
+    warcs = warcs.filter(w => !w.has_warc || !w.has_markdown || !w.has_pack || !w.has_fts);
+  } else if (filter === 'complete') {
+    warcs = warcs.filter(w => w.has_warc && w.has_markdown && w.has_pack && w.has_fts);
+  }
   const incomplete = warcs.filter(w => !w.has_warc || !w.has_markdown || !w.has_pack || !w.has_fts);
   if (incomplete.length === 0) return;
   if (!confirm(`Run the next pipeline step on ${incomplete.length} incomplete WARC${incomplete.length !== 1 ? 's' : ''}?`)) return;
 
-  let started = 0;
   for (const w of incomplete) {
     if (!w.has_warc) {
-      warcAction(w.index, 'download'); started++;
+      warcAction(w.index, 'download');
     } else if (!w.has_markdown) {
-      warcAction(w.index, 'markdown'); started++;
+      warcAction(w.index, 'markdown');
     } else if (!w.has_pack) {
-      warcAction(w.index, 'pack', { format: 'parquet' }); started++;
+      warcAction(w.index, 'pack', { format: 'parquet' });
     } else if (!w.has_fts) {
-      warcAction(w.index, 'index', { engine: currentSearchEngine(), source: 'files' }); started++;
+      warcAction(w.index, 'index', { engine: currentSearchEngine(), source: 'files' });
     }
   }
 }
 
+// ── Detail page ──
 async function renderWARCDetail(index) {
   state.currentPage = 'warc';
   state.warcDetail = null;
-  warcActionMessage = ''; // clear stale messages
+  warcActionMessage = '';
   const main = $('main');
   main.innerHTML = `
     <div class="page-shell anim-fade-in">
@@ -217,219 +288,327 @@ async function renderWARCDetail(index) {
   try {
     const data = await apiWARCDetail(index);
     state.warcDetail = data;
-    const w = data.warc || {};
-
-    // Phase size breakdown
-    const packTotal = Object.values(w.pack_bytes || {}).reduce((a,b)=>a+b,0);
-    const ftsTotal = Object.values(w.fts_bytes || {}).reduce((a,b)=>a+b,0);
-    const phases = [
-      { label: 'warc', value: w.warc_bytes || 0, cls: 'ov-c1' },
-      { label: 'markdown', value: w.warc_md_bytes || 0, cls: 'ov-c2' },
-      { label: 'pack', value: packTotal, cls: 'ov-c3' },
-      { label: 'index', value: ftsTotal, cls: 'ov-c4' },
-    ];
-    const diskTotal = phases.reduce((a, p) => a + p.value, 0) || 1;
-
-    // Donut
-    let donutAngle = 0;
-    const donutStops = [];
-    const clsColorMap = { 'ov-c1': 'var(--accent)', 'ov-c2': '#6366f1', 'ov-c3': '#f59e0b', 'ov-c4': '#10b981' };
-    for (const p of phases) {
-      if (p.value <= 0) continue;
-      const deg = (p.value / diskTotal) * 360;
-      donutStops.push(`${clsColorMap[p.cls] || 'var(--border)'} ${donutAngle}deg ${donutAngle + deg}deg`);
-      donutAngle += deg;
-    }
-    const donutGrad = donutStops.length > 0 ? `conic-gradient(${donutStops.join(', ')})` : 'var(--border)';
-
-    // Per-format/engine breakdown
-    const packEntries = Object.entries(w.pack_bytes || {});
-    const ftsEntries = Object.entries(w.fts_bytes || {});
-    const breakdownHTML = (packEntries.length > 0 || ftsEntries.length > 0) ? `
-      <div class="mt-3 pt-3 border-t space-y-3">
-        ${packEntries.length > 0 ? `
-          <div>
-            <div class="text-[10px] font-mono ui-subtle mb-1">Pack formats</div>
-            ${renderBars(packEntries.map(([fmt, b]) => ({ label: fmt, value: b, text: fmtBytes(b) })))}
-          </div>` : ''}
-        ${ftsEntries.length > 0 ? `
-          <div>
-            <div class="text-[10px] font-mono ui-subtle mb-1">FTS engines</div>
-            ${renderBars(ftsEntries.map(([eng, b]) => ({ label: eng, value: b, text: fmtBytes(b) })))}
-          </div>` : ''}
-      </div>` : '';
-
-    const nextStep = !w.has_warc ? 'download' : !w.has_markdown ? 'markdown' : !w.has_pack ? 'pack' : !w.has_fts ? 'index' : '';
-    const done = (w.has_warc ? 1 : 0) + (w.has_markdown ? 1 : 0) + (w.has_pack ? 1 : 0) + (w.has_fts ? 1 : 0);
-
-    const enginesOpts = (state.engines||[]).map(e=>`<option value="${esc(e)}">${esc(e)}</option>`).join('') ||
-      `<option value="${DEFAULT_ENGINE}">${DEFAULT_ENGINE}</option>`;
-
-    // Active jobs
-    const relatedJobs = data.jobs || [];
-    const activeJobs = relatedJobs.filter(j => j.status === 'running' || j.status === 'queued');
-
-    // Compression ratio
-    const compressionRatio = (w.warc_bytes > 0 && (w.warc_md_bytes || 0) > 0) ? ((w.warc_md_bytes / w.warc_bytes) * 100).toFixed(1) + '%' : '\u2014';
-    const docsCount = w.warc_md_docs || 0;
-
-    $('warc-detail-content').innerHTML = `
-      <div class="page-header mb-3">
-        <h1 class="page-title">WARC ${esc(w.index || index)}</h1>
-        <button onclick="renderWARCDetail('${esc(w.index || index)}')" class="ui-btn px-3 py-2 text-xs font-mono">Reload</button>
-      </div>
-      <div id="warc-action-msg" class="meta-line mb-3">${esc(warcActionMessage)}</div>
-
-      <!-- Info cards -->
-      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-px border border-[var(--border)] mb-4" style="background:var(--border)">
-        <div class="bg-[var(--panel)] px-3 py-2.5 col-span-2 sm:col-span-1">
-          <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Index</div>
-          <div class="text-sm font-mono font-semibold">${esc(w.index || index)}</div>
-        </div>
-        <div class="bg-[var(--panel)] px-3 py-2.5">
-          <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Documents</div>
-          <div class="text-sm font-mono font-semibold">${docsCount.toLocaleString()}</div>
-        </div>
-        <div class="bg-[var(--panel)] px-3 py-2.5">
-          <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Total on Disk</div>
-          <div class="text-sm font-mono font-semibold">${fmtBytes(w.total_bytes || 0)}</div>
-        </div>
-        <div class="bg-[var(--panel)] px-3 py-2.5">
-          <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">MD / WARC</div>
-          <div class="text-sm font-mono font-semibold">${compressionRatio}</div>
-        </div>
-        <div class="bg-[var(--panel)] px-3 py-2.5">
-          <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Progress</div>
-          <div class="text-sm font-mono font-semibold">${done}/4</div>
-          <div class="progress-track mt-1" style="height:4px">
-            <div class="${done === 4 ? 'ov-c4' : 'progress-fill'}" style="height:100%;width:${done * 25}%"></div>
-          </div>
-        </div>
-      </div>
-
-      ${w.filename ? `
-      <div class="text-[11px] font-mono ui-subtle mb-4 break-all">${esc(w.filename)}${w.remote_path ? ` \u00b7 ${esc(w.remote_path)}` : ''}</div>` : ''}
-
-      ${activeJobs.length > 0 ? `
-        <div class="surface p-3 mb-4 border-l-2" style="border-left-color:#2563eb">
-          <div class="text-[11px] font-mono mb-2" style="color:#2563eb">Active Jobs (${activeJobs.length})</div>
-          ${activeJobs.map(j => {
-            const pct = Math.round((j.progress || 0) * 100);
-            return `
-              <div class="mb-2 last:mb-0">
-                <div class="flex items-center justify-between mb-1">
-                  <span class="text-[11px] font-mono ui-subtle">${esc(j.id)} \u00b7 ${esc(j.type)} \u00b7 <span class="status-running">${esc(j.status)}</span></span>
-                  <span class="text-[11px] font-mono">${pct}%</span>
-                </div>
-                <div class="progress-track" style="height:4px">
-                  <div class="progress-fill" style="width:${pct}%"></div>
-                </div>
-                ${j.message ? `<div class="text-[10px] font-mono ui-subtle mt-1 truncate">${esc(j.message)}</div>` : ''}
-              </div>`;
-          }).join('')}
-        </div>` : ''}
-
-      <!-- Phase status + disk breakdown -->
-      <div class="grid md:grid-cols-2 gap-4 mb-4">
-        <div class="surface p-3">
-          <div class="text-[11px] font-mono ui-subtle mb-2">Phase Status</div>
-          <div class="flex flex-wrap gap-2 mb-3">
-            ${statusChip('download', !!w.has_warc)}
-            ${statusChip('markdown', !!w.has_markdown)}
-            ${statusChip('pack', !!w.has_pack)}
-            ${statusChip('index', !!w.has_fts)}
-          </div>
-          <div class="text-[11px] font-mono ui-subtle">
-            ${nextStep ? `next: <span class="font-medium" style="color:var(--text)">${nextStep}</span>` : '<span class="status-completed">all phases complete</span>'}
-            ${w.updated_at ? ` \u00b7 updated ${fmtRelativeTime(w.updated_at)}` : ''}
-          </div>
-        </div>
-        <div class="surface p-3">
-          <div class="text-[11px] font-mono ui-subtle mb-2">Disk Breakdown</div>
-          <div class="flex items-start gap-4">
-            <div class="ov-donut shrink-0" style="width:100px;height:100px;background:${donutGrad}">
-              <div class="ov-donut-hole">
-                <span class="text-[10px] font-mono font-medium">${fmtBytes(w.total_bytes || 0)}</span>
-              </div>
-            </div>
-            <div class="flex-1 space-y-1.5">
-              ${phases.filter(p => p.value > 0).map(p => `
-                <div class="flex items-center gap-2">
-                  <div class="ov-legend-dot ${p.cls}"></div>
-                  <span class="text-[11px] font-mono ui-subtle flex-1">${esc(p.label)}</span>
-                  <span class="text-[11px] font-mono">${fmtBytes(p.value)}</span>
-                  <span class="text-[10px] font-mono ui-subtle w-8 text-right">${Math.round((p.value / diskTotal) * 100)}%</span>
-                </div>`).join('')}
-              ${phases.every(p => p.value <= 0) ? '<div class="text-[11px] font-mono ui-subtle">no data on disk</div>' : ''}
-            </div>
-          </div>
-          ${breakdownHTML}
-        </div>
-      </div>
-
-      <!-- Actions: primary flow + advanced -->
-      <div class="surface p-3 mb-4">
-        <div class="text-[11px] font-mono ui-subtle mb-3">Actions</div>
-
-        <!-- Primary next-step action -->
-        ${nextStep ? `
-        <div class="mb-4">
-          ${nextStep === 'download' ? `<button onclick="warcAction('${esc(w.index)}','download',{},true)" class="ui-btn-primary ui-btn px-4 py-2 text-xs font-mono w-full sm:w-auto">Download WARC</button>` : ''}
-          ${nextStep === 'markdown' ? `<button onclick="warcAction('${esc(w.index)}','markdown',{fast:false},true)" class="ui-btn-primary ui-btn px-4 py-2 text-xs font-mono w-full sm:w-auto">Extract Markdown</button>` : ''}
-          ${nextStep === 'pack' ? `<button onclick="warcAction('${esc(w.index)}','pack',{format:'parquet'},true)" class="ui-btn-primary ui-btn px-4 py-2 text-xs font-mono w-full sm:w-auto">Pack (parquet)</button>` : ''}
-          ${nextStep === 'index' ? `<button onclick="warcAction('${esc(w.index)}','index',{engine:currentSearchEngine(),source:'files'},true)" class="ui-btn-primary ui-btn px-4 py-2 text-xs font-mono w-full sm:w-auto">Build Index (${esc(currentSearchEngine())})</button>` : ''}
-        </div>` : ''}
-
-        <!-- Advanced actions (collapsed) -->
-        <details class="text-xs">
-          <summary class="text-[11px] font-mono ui-subtle cursor-pointer mb-3 select-none">Advanced actions</summary>
-          <div class="grid md:grid-cols-2 gap-4">
-            <div class="space-y-2">
-              <div class="text-[10px] font-mono ui-subtle mb-1 uppercase tracking-wider">Fetch &amp; Extract</div>
-              <button onclick="warcAction('${esc(w.index)}','download',{},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Download WARC</button>
-              <button onclick="warcAction('${esc(w.index)}','markdown',{fast:false},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Extract Markdown</button>
-              <button onclick="warcAction('${esc(w.index)}','markdown',{fast:true},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Extract Markdown --fast</button>
-            </div>
-            <div class="space-y-2">
-              <div class="text-[10px] font-mono ui-subtle mb-1 uppercase tracking-wider">Pack &amp; Index</div>
-              <div class="flex items-center gap-2">
-                <select id="warc-pack-format" class="ui-select flex-1 text-xs px-2 py-2">
-                  <option value="parquet">parquet</option><option value="bin">bin</option><option value="duckdb">duckdb</option><option value="markdown">markdown</option>
-                </select>
-                <button onclick="warcAction('${esc(w.index)}','pack',{format:$('warc-pack-format').value},true)" class="ui-btn px-3 py-2 text-xs font-mono shrink-0">Pack</button>
-              </div>
-              <div class="flex items-center gap-2">
-                <select id="warc-index-engine" class="ui-select flex-1 text-xs px-2 py-2">${enginesOpts}</select>
-                <select id="warc-index-source" class="ui-select text-xs px-2 py-2">
-                  <option value="files">files</option><option value="parquet">parquet</option><option value="bin">bin</option><option value="duckdb">duckdb</option><option value="markdown">markdown</option>
-                </select>
-                <button onclick="warcAction('${esc(w.index)}','index',{engine:$('warc-index-engine').value,source:$('warc-index-source').value},true)" class="ui-btn px-3 py-2 text-xs font-mono shrink-0">Index</button>
-              </div>
-              <button onclick="warcAction('${esc(w.index)}','reindex',{engine:$('warc-index-engine').value,source:$('warc-index-source').value},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Re-index</button>
-              <div class="pt-2 mt-2 border-t">
-                <div class="flex items-center gap-2">
-                  <select id="warc-delete-target" class="ui-select flex-1 text-xs px-2 py-2">
-                    <option value="index">index</option><option value="pack">pack</option><option value="markdown">markdown</option><option value="warc">warc</option><option value="all">all</option>
-                  </select>
-                  <button onclick="if(confirm('Delete '+$('warc-delete-target').value+' for WARC ${esc(w.index)}?'))warcAction('${esc(w.index)}','delete',{target:$('warc-delete-target').value,format:$('warc-pack-format').value,engine:$('warc-index-engine').value},true)" class="ui-btn ui-btn-danger px-3 py-2 text-xs font-mono shrink-0">Delete</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </details>
-      </div>
-
-      <!-- Related Jobs -->
-      <div class="surface p-3">
-        <div class="flex items-center justify-between mb-2">
-          <div class="text-[11px] font-mono ui-subtle">Related Jobs (${relatedJobs.length})</div>
-          ${relatedJobs.length > 5 ? `<span class="text-[10px] font-mono ui-subtle">last ${Math.min(relatedJobs.length, 20)}</span>` : ''}
-        </div>
-        ${renderJobHistory(relatedJobs.slice(0, 20))}
-      </div>`;
+    renderWARCDetailContent(data, index);
   } catch (e) {
     $('warc-detail-content').innerHTML = `<div class="text-xs text-red-400">${esc(e.message)}</div>`;
   }
+}
+
+function renderWARCDetailContent(data, index) {
+  const w = data.warc || {};
+
+  // Phase size breakdown
+  const packTotal = Object.values(w.pack_bytes || {}).reduce((a,b)=>a+b,0);
+  const ftsTotal = Object.values(w.fts_bytes || {}).reduce((a,b)=>a+b,0);
+  const phases = [
+    { label: 'warc', value: w.warc_bytes || 0, cls: 'ov-c1' },
+    { label: 'markdown', value: w.warc_md_bytes || 0, cls: 'ov-c2' },
+    { label: 'pack', value: packTotal, cls: 'ov-c3' },
+    { label: 'index', value: ftsTotal, cls: 'ov-c4' },
+  ];
+  const diskTotal = phases.reduce((a, p) => a + p.value, 0) || 1;
+
+  // Donut
+  let donutAngle = 0;
+  const donutStops = [];
+  const clsColorMap = { 'ov-c1': 'var(--accent)', 'ov-c2': '#6366f1', 'ov-c3': '#f59e0b', 'ov-c4': '#10b981' };
+  for (const p of phases) {
+    if (p.value <= 0) continue;
+    const deg = (p.value / diskTotal) * 360;
+    donutStops.push(`${clsColorMap[p.cls] || 'var(--border)'} ${donutAngle}deg ${donutAngle + deg}deg`);
+    donutAngle += deg;
+  }
+  const donutGrad = donutStops.length > 0 ? `conic-gradient(${donutStops.join(', ')})` : 'var(--border)';
+
+  // Per-format/engine breakdown
+  const packEntries = Object.entries(w.pack_bytes || {});
+  const ftsEntries = Object.entries(w.fts_bytes || {});
+  const breakdownHTML = (packEntries.length > 0 || ftsEntries.length > 0) ? `
+    <div class="mt-3 pt-3 border-t space-y-3">
+      ${packEntries.length > 0 ? `
+        <div>
+          <div class="text-[10px] font-mono ui-subtle mb-1">Pack formats</div>
+          ${renderBars(packEntries.map(([fmt, b]) => ({ label: fmt, value: b, text: fmtBytes(b) })))}
+        </div>` : ''}
+      ${ftsEntries.length > 0 ? `
+        <div>
+          <div class="text-[10px] font-mono ui-subtle mb-1">FTS engines</div>
+          ${renderBars(ftsEntries.map(([eng, b]) => ({ label: eng, value: b, text: fmtBytes(b) })))}
+        </div>` : ''}
+    </div>` : '';
+
+  const stepsAll = [
+    { key: 'download', label: 'Download', done: !!w.has_warc, action: 'download', cls: 'ov-c1' },
+    { key: 'markdown', label: 'Markdown', done: !!w.has_markdown, action: 'markdown', cls: 'ov-c2' },
+    { key: 'pack', label: 'Pack', done: !!w.has_pack, action: 'pack', cls: 'ov-c3' },
+    { key: 'index', label: 'Index', done: !!w.has_fts, action: 'index', cls: 'ov-c4' },
+  ];
+  const nextStep = stepsAll.find(s => !s.done);
+  const done = stepsAll.filter(s => s.done).length;
+
+  const enginesOpts = (state.engines||[]).map(e=>`<option value="${esc(e)}">${esc(e)}</option>`).join('') ||
+    `<option value="${DEFAULT_ENGINE}">${DEFAULT_ENGINE}</option>`;
+
+  // Active jobs
+  const relatedJobs = data.jobs || [];
+  const activeJobs = relatedJobs.filter(j => j.status === 'running' || j.status === 'queued');
+
+  // Compression ratio
+  const compressionRatio = (w.warc_bytes > 0 && (w.warc_md_bytes || 0) > 0) ? ((w.warc_md_bytes / w.warc_bytes) * 100).toFixed(1) + '%' : '\u2014';
+  const docsCount = w.warc_md_docs || 0;
+
+  // System stats
+  const sys = data.system || {};
+
+  // Step timeline - visual stepper
+  const timelineHTML = `
+    <div class="surface p-4 mb-4">
+      <div class="text-[11px] font-mono ui-subtle mb-3">Pipeline Progress</div>
+      <div class="flex items-center gap-0">
+        ${stepsAll.map((s, i) => {
+          const isNext = nextStep && nextStep.key === s.key;
+          const dotBg = s.done ? clsColorMap[s.cls] || 'var(--accent)' : isNext ? 'var(--border)' : 'transparent';
+          const dotBorder = s.done ? 'transparent' : 'var(--border)';
+          const textCls = s.done ? 'status-completed' : isNext ? '' : 'ui-subtle';
+          const checkmark = s.done ? '\u2713' : isNext ? '\u25CB' : '';
+          return `
+            ${i > 0 ? `<div class="flex-1 h-px" style="background:${stepsAll[i-1].done ? clsColorMap[stepsAll[i-1].cls] : 'var(--border)'}"></div>` : ''}
+            <div class="flex flex-col items-center gap-1 shrink-0" style="min-width:56px">
+              <div class="w-6 h-6 flex items-center justify-center text-[10px] font-mono font-medium"
+                style="border:2px solid ${dotBorder};background:${dotBg};color:${s.done ? '#fff' : 'var(--text)'};border-radius:50%!important">
+                ${checkmark}
+              </div>
+              <span class="text-[10px] font-mono ${textCls}">${s.label}</span>
+            </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+
+  // Primary action buttons
+  let primaryActionHTML = '';
+  if (nextStep) {
+    const actionMap = {
+      download: { label: 'Download WARC', extra: '{}' },
+      markdown: { label: 'Extract Markdown', extra: '{fast:false}' },
+      pack: { label: 'Pack (parquet)', extra: "{format:'parquet'}" },
+      index: { label: `Build Index (${esc(currentSearchEngine())})`, extra: `{engine:currentSearchEngine(),source:'files'}` },
+    };
+    const a = actionMap[nextStep.key];
+    const remaining = stepsAll.filter(s => !s.done).length;
+    primaryActionHTML = `
+      <div class="surface p-4 mb-4">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+          <div class="flex-1">
+            <div class="text-[11px] font-mono ui-subtle mb-1">Next Step</div>
+            <div class="text-sm font-mono font-medium">${esc(nextStep.label)}</div>
+            ${remaining > 1 ? `<div class="text-[10px] font-mono ui-subtle mt-0.5">${remaining} steps remaining</div>` : ''}
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="warcAction('${esc(w.index)}','${nextStep.action}',${a.extra},true)" class="ui-btn ui-btn-primary px-4 py-2 text-xs font-mono">${a.label}</button>
+            ${remaining > 1 ? `<button onclick="warcRunAll('${esc(w.index)}')" class="ui-btn px-3 py-2 text-xs font-mono" title="Run all remaining steps sequentially">Run All</button>` : ''}
+          </div>
+        </div>
+      </div>`;
+  } else {
+    primaryActionHTML = `
+      <div class="surface p-4 mb-4">
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-mono status-completed">\u2713 All pipeline steps complete</span>
+        </div>
+      </div>`;
+  }
+
+  // Active jobs section
+  const activeJobsHTML = activeJobs.length > 0 ? `
+    <div class="surface p-4 mb-4 border-l-2" style="border-left-color:#2563eb">
+      <div class="text-[11px] font-mono mb-2" style="color:#2563eb">Active Jobs (${activeJobs.length})</div>
+      ${activeJobs.map(j => {
+        const pct = Math.round((j.progress || 0) * 100);
+        return `
+          <div class="mb-2 last:mb-0">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-[11px] font-mono ui-subtle">${esc(j.id)} \u00b7 ${esc(j.type)} \u00b7 <span class="status-running">${esc(j.status)}</span></span>
+              <span class="text-[11px] font-mono">${pct}%</span>
+            </div>
+            <div class="progress-track" style="height:4px">
+              <div class="progress-fill" style="width:${pct}%"></div>
+            </div>
+            ${j.message ? `<div class="text-[10px] font-mono ui-subtle mt-1 truncate">${esc(j.message)}</div>` : ''}
+          </div>`;
+      }).join('')}
+    </div>` : '';
+
+  $('warc-detail-content').innerHTML = `
+    <div class="page-header mb-3">
+      <h1 class="page-title">WARC ${esc(w.index || index)}</h1>
+      <button onclick="renderWARCDetail('${esc(w.index || index)}')" class="ui-btn px-3 py-2 text-xs font-mono">Reload</button>
+    </div>
+    <div id="warc-action-msg" class="meta-line mb-3">${esc(warcActionMessage)}</div>
+
+    ${activeJobsHTML}
+    ${timelineHTML}
+    ${primaryActionHTML}
+
+    <!-- Info + Disk side by side -->
+    <div class="grid md:grid-cols-2 gap-4 mb-4">
+      <div class="surface p-4">
+        <div class="text-[11px] font-mono ui-subtle mb-3">Info</div>
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-mono ui-subtle">Index</span>
+            <span class="text-xs font-mono font-medium">${esc(w.index || index)}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-mono ui-subtle">Documents</span>
+            <span class="text-xs font-mono font-medium">${docsCount.toLocaleString()}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-mono ui-subtle">Total on Disk</span>
+            <span class="text-xs font-mono font-medium">${fmtBytes(w.total_bytes || 0)}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-mono ui-subtle">MD / WARC Ratio</span>
+            <span class="text-xs font-mono font-medium">${compressionRatio}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-mono ui-subtle">Progress</span>
+            <span class="text-xs font-mono font-medium">${done}/4</span>
+          </div>
+          ${w.updated_at ? `
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-mono ui-subtle">Updated</span>
+            <span class="text-xs font-mono">${fmtRelativeTime(w.updated_at)}</span>
+          </div>` : ''}
+        </div>
+        ${w.filename ? `
+        <div class="mt-3 pt-3 border-t">
+          <div class="text-[10px] font-mono ui-subtle mb-1">File</div>
+          <div class="text-[11px] font-mono break-all">${esc(w.filename)}</div>
+          ${w.remote_path ? `<div class="text-[10px] font-mono ui-subtle break-all mt-1">${esc(w.remote_path)}</div>` : ''}
+        </div>` : ''}
+      </div>
+
+      <div class="surface p-4">
+        <div class="text-[11px] font-mono ui-subtle mb-3">Disk Breakdown</div>
+        <div class="flex items-start gap-4">
+          <div class="ov-donut shrink-0" style="width:100px;height:100px;background:${donutGrad}">
+            <div class="ov-donut-hole">
+              <span class="text-[10px] font-mono font-medium">${fmtBytes(w.total_bytes || 0)}</span>
+            </div>
+          </div>
+          <div class="flex-1 space-y-1.5">
+            ${phases.filter(p => p.value > 0).map(p => `
+              <div class="flex items-center gap-2">
+                <div class="ov-legend-dot ${p.cls}"></div>
+                <span class="text-[11px] font-mono ui-subtle flex-1">${esc(p.label)}</span>
+                <span class="text-[11px] font-mono">${fmtBytes(p.value)}</span>
+                <span class="text-[10px] font-mono ui-subtle w-8 text-right">${Math.round((p.value / diskTotal) * 100)}%</span>
+              </div>`).join('')}
+            ${phases.every(p => p.value <= 0) ? '<div class="text-[11px] font-mono ui-subtle">no data on disk</div>' : ''}
+          </div>
+        </div>
+        ${breakdownHTML}
+      </div>
+    </div>
+
+    <!-- Advanced actions -->
+    <details class="surface mb-4">
+      <summary class="p-4 text-[11px] font-mono ui-subtle cursor-pointer select-none">Advanced Actions</summary>
+      <div class="px-4 pb-4">
+        <div class="grid md:grid-cols-2 gap-4">
+          <div class="space-y-2">
+            <div class="text-[10px] font-mono ui-subtle mb-1 uppercase tracking-wider">Fetch &amp; Extract</div>
+            <button onclick="warcAction('${esc(w.index)}','download',{},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Download WARC</button>
+            <button onclick="warcAction('${esc(w.index)}','markdown',{fast:false},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Extract Markdown</button>
+            <button onclick="warcAction('${esc(w.index)}','markdown',{fast:true},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Extract Markdown --fast</button>
+          </div>
+          <div class="space-y-2">
+            <div class="text-[10px] font-mono ui-subtle mb-1 uppercase tracking-wider">Pack &amp; Index</div>
+            <div class="flex items-center gap-2">
+              <select id="warc-pack-format" class="ui-select flex-1 text-xs px-2 py-2">
+                <option value="parquet">parquet</option><option value="bin">bin</option><option value="duckdb">duckdb</option><option value="markdown">markdown</option>
+              </select>
+              <button onclick="warcAction('${esc(w.index)}','pack',{format:$('warc-pack-format').value},true)" class="ui-btn px-3 py-2 text-xs font-mono shrink-0">Pack</button>
+            </div>
+            <div class="flex items-center gap-2">
+              <select id="warc-index-engine" class="ui-select flex-1 text-xs px-2 py-2">${enginesOpts}</select>
+              <select id="warc-index-source" class="ui-select text-xs px-2 py-2">
+                <option value="files">files</option><option value="parquet">parquet</option><option value="bin">bin</option><option value="duckdb">duckdb</option><option value="markdown">markdown</option>
+              </select>
+              <button onclick="warcAction('${esc(w.index)}','index',{engine:$('warc-index-engine').value,source:$('warc-index-source').value},true)" class="ui-btn px-3 py-2 text-xs font-mono shrink-0">Index</button>
+            </div>
+            <button onclick="warcAction('${esc(w.index)}','reindex',{engine:$('warc-index-engine').value,source:$('warc-index-source').value},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Re-index</button>
+            <div class="pt-2 mt-2 border-t">
+              <div class="flex items-center gap-2">
+                <select id="warc-delete-target" class="ui-select flex-1 text-xs px-2 py-2">
+                  <option value="index">index</option><option value="pack">pack</option><option value="markdown">markdown</option><option value="warc">warc</option><option value="all">all</option>
+                </select>
+                <button onclick="if(confirm('Delete '+$('warc-delete-target').value+' for WARC ${esc(w.index)}?'))warcAction('${esc(w.index)}','delete',{target:$('warc-delete-target').value,format:$('warc-pack-format').value,engine:$('warc-index-engine').value},true)" class="ui-btn ui-btn-danger px-3 py-2 text-xs font-mono shrink-0">Delete</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <!-- System info -->
+    ${(sys.disk_total || sys.mem_alloc) ? `
+    <details class="surface mb-4">
+      <summary class="p-4 text-[11px] font-mono ui-subtle cursor-pointer select-none">System</summary>
+      <div class="px-4 pb-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+        ${sys.disk_total ? `
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Disk</div>
+            <div class="text-xs font-mono">${fmtBytes(sys.disk_used || 0)} / ${fmtBytes(sys.disk_total)}</div>
+            <div class="progress-track mt-1" style="height:4px">
+              <div class="ov-c5" style="height:100%;width:${sys.disk_total > 0 ? Math.round(((sys.disk_used||0)/sys.disk_total)*100) : 0}%;opacity:0.6"></div>
+            </div>
+          </div>` : ''}
+        ${sys.mem_alloc ? `
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Heap</div>
+            <div class="text-xs font-mono">${fmtBytes(sys.mem_alloc)}</div>
+          </div>` : ''}
+        ${sys.mem_stack_inuse ? `
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Stack</div>
+            <div class="text-xs font-mono">${fmtBytes(sys.mem_stack_inuse)}</div>
+          </div>` : ''}
+        ${sys.goroutines ? `
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Goroutines</div>
+            <div class="text-xs font-mono">${sys.goroutines.toLocaleString()}</div>
+          </div>` : ''}
+      </div>
+    </details>` : ''}
+
+    <!-- Related Jobs -->
+    <div class="surface p-4">
+      <div class="flex items-center justify-between mb-2">
+        <div class="text-[11px] font-mono ui-subtle">Related Jobs (${relatedJobs.length})</div>
+        ${relatedJobs.length > 5 ? `<span class="text-[10px] font-mono ui-subtle">last ${Math.min(relatedJobs.length, 20)}</span>` : ''}
+      </div>
+      ${renderJobHistory(relatedJobs.slice(0, 20))}
+    </div>`;
+}
+
+// Run all remaining pipeline steps sequentially
+async function warcRunAll(index) {
+  const data = state.warcDetail;
+  if (!data) return;
+  const w = data.warc || {};
+  const steps = [];
+  if (!w.has_warc) steps.push({ action: 'download', extra: {} });
+  if (!w.has_markdown) steps.push({ action: 'markdown', extra: { fast: false } });
+  if (!w.has_pack) steps.push({ action: 'pack', extra: { format: 'parquet' } });
+  if (!w.has_fts) steps.push({ action: 'index', extra: { engine: currentSearchEngine(), source: 'files' } });
+  if (steps.length === 0) return;
+  if (!confirm(`Run ${steps.length} remaining pipeline step${steps.length !== 1 ? 's' : ''} for WARC ${index}?`)) return;
+
+  for (const step of steps) {
+    await warcAction(index, step.action, step.extra, false);
+  }
+  setTimeout(() => renderWARCDetail(index), 500);
 }
 
 let warcActionMessage = '';

@@ -30,6 +30,8 @@ const state = {
   warcOffset: 0,
   warcLimit: 100,
   warcQuery: '',
+  warcFilter: 'all',
+  warcSystem: null,
 };
 
 // ===================================================================
