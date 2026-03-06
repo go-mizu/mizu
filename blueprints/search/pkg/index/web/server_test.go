@@ -673,7 +673,7 @@ func TestIntegrationDashboardLifecycle(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GET /: read body: %v", err)
 		}
-		if !strings.Contains(string(body), "FTS Dashboard") {
+		if !strings.Contains(string(body), "OpenIndex") {
 			t.Fatal("GET /: expected dashboard UI HTML")
 		}
 	})

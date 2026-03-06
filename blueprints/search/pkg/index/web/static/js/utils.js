@@ -139,12 +139,21 @@ function renderMetaSummaryLine() {
 
 function updateHeaderMetaChip() {
   if (!isDashboard) return;
-  const chip = $('header-meta');
-  const btn = $('header-meta-refresh');
-  if (!chip || !btn) return;
-  chip.classList.remove('hidden');
-  btn.classList.remove('hidden');
-  chip.textContent = renderMetaSummaryLine();
+  const el = $('header-status');
+  if (!el) return;
+  el.classList.remove('hidden');
+  el.style.display = 'inline-flex';
+  const dot = $('header-status-dot');
+  const text = $('header-status-text');
+  const m = metaContext();
+  if (dot) {
+    if (m.refreshing) dot.style.background = '#f59e0b';
+    else if (m.lastError) dot.style.background = 'var(--danger)';
+    else dot.style.background = 'var(--success)';
+  }
+  if (text) {
+    text.textContent = m.refreshing ? 'syncing' : fmtRelativeTime(m.generatedAt);
+  }
 }
 
 async function refreshDashboardMeta(force = false) {

@@ -19,7 +19,6 @@ document.addEventListener('keydown', (e) => {
     if (home && !home.closest('.hidden')) { home.focus(); home.select(); }
     else if (h && !h.closest('.hidden')) { h.focus(); h.select(); }
     else {
-      // Navigate to search tab if not there
       navigateTo('/search');
     }
   }
@@ -55,17 +54,13 @@ document.addEventListener('keydown', (e) => {
 // ===================================================================
 applyTheme();
 
-// In search-only mode: hide dashboard tabs, adjust header title, narrow layout.
+// In search-only mode: hide dashboard tabs, narrow layout.
 if (!isDashboard) {
   document.querySelectorAll('#main-nav a[data-tab]').forEach(a => {
     if (['overview', 'jobs', 'warc'].includes(a.dataset.tab)) a.style.display = 'none';
   });
-  const metaChip = $('header-meta');
-  const metaBtn = $('header-meta-refresh');
-  if (metaChip) metaChip.style.display = 'none';
-  if (metaBtn) metaBtn.style.display = 'none';
-  const logo = document.querySelector('header a[href="#/"]');
-  if (logo) logo.textContent = 'FTS';
+  const statusEl = $('header-status');
+  if (statusEl) statusEl.style.display = 'none';
   const main = document.getElementById('main');
   if (main) { main.classList.remove('max-w-5xl', 'max-w-6xl'); main.classList.add('max-w-3xl'); }
 } else {

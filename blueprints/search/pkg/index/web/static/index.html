@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FTS Dashboard</title>
+  <title>OpenIndex</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -263,7 +263,10 @@
   <div id="app">
     <header class="sticky top-0 z-50 app-header">
       <div class="flex items-center min-h-[3.5rem] px-4 md:px-6 gap-4 md:gap-6 flex-wrap md:flex-nowrap py-2">
-        <a href="#/" class="text-sm font-medium tracking-tight shrink-0 hover:opacity-70 transition-opacity">FTS Dashboard</a>
+        <a href="#/" class="flex items-center gap-1.5 text-sm font-medium tracking-tight shrink-0 hover:opacity-70 transition-opacity">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/><circle cx="19" cy="19" r="3"/><path d="m21.5 21.5-1-1"/></svg>
+          OpenIndex
+        </a>
         <div id="header-search" class="flex-1 hidden items-center gap-2">
           <input id="header-search-input" type="text"
             placeholder="What are you looking for?"
@@ -280,8 +283,10 @@
           <a href="#/browse" data-tab="browse" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">Browse</a>
           <a href="#/warc" data-tab="warc" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">WARC</a>
           <a href="#/jobs" data-tab="jobs" class="text-sm pb-1 tab-inactive transition-colors cursor-pointer">Jobs</a>
-          <button id="header-meta-refresh" onclick="refreshDashboardMeta(false)" class="hidden ui-btn px-2 py-1 text-[11px] font-mono ui-subtle">Refresh Meta</button>
-          <span id="header-meta" class="hidden text-[11px] font-mono ui-subtle whitespace-nowrap"></span>
+          <span id="header-status" class="hidden items-center gap-1.5 text-[11px] font-mono ui-subtle whitespace-nowrap cursor-default">
+            <span id="header-status-dot" class="inline-block w-1.5 h-1.5" style="border-radius:50%!important;background:var(--success)"></span>
+            <span id="header-status-text"></span>
+          </span>
           <button onclick="toggleTheme()" class="theme-toggle" title="Toggle theme">
             <svg id="icon-sun" class="w-4 h-4 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
             <svg id="icon-moon" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>

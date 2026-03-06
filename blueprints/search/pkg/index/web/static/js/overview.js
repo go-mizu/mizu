@@ -8,9 +8,7 @@ async function renderOverview() {
     <div class="page-shell anim-fade-in">
       <div class="page-header">
         <h1 class="page-title">Overview</h1>
-        <button onclick="refreshOverviewMeta()" class="ui-btn px-3 py-2 text-xs font-mono">
-          Refresh Metadata
-        </button>
+        <button onclick="refreshOverviewMeta()" class="ui-btn px-3 py-2 text-xs font-mono">Reload</button>
       </div>
       <div id="overview-refresh-msg" class="meta-line mb-4"></div>
       <div id="overview-content">
