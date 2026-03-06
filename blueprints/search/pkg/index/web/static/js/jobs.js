@@ -160,6 +160,7 @@ async function cancelJob(id) {
       job.status = 'cancelled';
       job.ended_at = new Date().toISOString();
     }
+    updateHeaderStatus();
     if (state.currentPage === 'jobs') {
       refreshJobsUI();
     }
