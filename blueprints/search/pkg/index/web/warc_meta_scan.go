@@ -86,6 +86,26 @@ func buildWARCRecords(crawlID, crawlDir string, manifestPaths []string, updatedA
 		}
 	}
 
+	// Scan markdown/ for individual .md files (old format).
+	markdownRoot := filepath.Join(crawlDir, "markdown")
+	if shards, err := os.ReadDir(markdownRoot); err == nil {
+		for _, shard := range shards {
+			if !shard.IsDir() || !isNumericName(shard.Name()) {
+				continue
+			}
+			idx := normalizeWARCIndex(shard.Name())
+			rec := ensure(idx)
+			if rec.MarkdownBytes > 0 {
+				continue // already detected via warc_md/
+			}
+			docs, bytes := scanMarkdownShard(filepath.Join(markdownRoot, shard.Name()))
+			if docs > 0 {
+				rec.MarkdownDocs = docs
+				rec.MarkdownBytes = bytes
+			}
+		}
+	}
+
 	packRoot := filepath.Join(crawlDir, "pack")
 	if formats, err := os.ReadDir(packRoot); err == nil {
 		for _, formatEntry := range formats {

@@ -226,10 +226,7 @@ func scanDownloadedStage(crawlDir string) DownloadedStage {
 func scanMarkdownStage(crawlDir string, docs *DocStore) MarkdownStage {
 	var stage MarkdownStage
 	warcMdDir := filepath.Join(crawlDir, "warc_md")
-	entries, err := os.ReadDir(warcMdDir)
-	if err != nil {
-		return stage
-	}
+	entries, _ := os.ReadDir(warcMdDir) // nil entries is fine — loop is skipped
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md.warc.gz") {
 			continue
@@ -258,6 +255,38 @@ func scanMarkdownStage(crawlDir string, docs *DocStore) MarkdownStage {
 			meta, ok, _ := docs.GetShardMeta(context.Background(), "", shard)
 			if ok {
 				stage.TotalDocs += meta.TotalDocs
+			}
+		}
+	}
+
+	// Build set of indices already counted via warc_md/.
+	warcMdSeen := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md.warc.gz") {
+			continue
+		}
+		s := strings.TrimSuffix(e.Name(), ".md.warc.gz")
+		if isNumericName(s) {
+			warcMdSeen[normalizeWARCIndex(s)] = true
+		}
+	}
+
+	// Also scan markdown/ for individual .md files (old format).
+	markdownRoot := filepath.Join(crawlDir, "markdown")
+	if shards, err := os.ReadDir(markdownRoot); err == nil {
+		for _, shard := range shards {
+			if !shard.IsDir() || !isNumericName(shard.Name()) {
+				continue
+			}
+			idx := normalizeWARCIndex(shard.Name())
+			if warcMdSeen[idx] {
+				continue
+			}
+			docs2, bytes := scanMarkdownShard(filepath.Join(markdownRoot, shard.Name()))
+			if docs2 > 0 {
+				stage.Count++
+				stage.SizeBytes += bytes
+				stage.TotalDocs += docs2
 			}
 		}
 	}

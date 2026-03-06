@@ -197,7 +197,7 @@ func (s *Server) handleWARCList(c *mizu.Ctx) error {
 	rows := make([]warcAPIRecord, 0, len(page))
 	for _, rec := range page {
 		row := toWARCAPIRecord(rec)
-		enrichWARCAPIRecord(c.Context(), &row, filepath.Join(crawlDir, "warc_md"), s.Docs)
+		enrichWARCAPIRecord(c.Context(), &row, crawlDir, s.Docs)
 		rows = append(rows, row)
 	}
 	sys := collectWARCSystemStats(crawlDir)
@@ -261,7 +261,7 @@ func (s *Server) handleWARCDetail(c *mizu.Ctx) error {
 	filesToken := strconv.Itoa(parseWARCInt(warcIndex))
 	related := relatedWARCJobs(s.Jobs.List(), filesToken, crawlID)
 	warcRow := toWARCAPIRecord(rec)
-	enrichWARCAPIRecord(c.Context(), &warcRow, filepath.Join(crawlDir, "warc_md"), s.Docs)
+	enrichWARCAPIRecord(c.Context(), &warcRow, crawlDir, s.Docs)
 	return c.JSON(200, WARCDetailResponse{
 		CrawlID:         crawlID,
 		WARC:            warcRow,
@@ -468,18 +468,40 @@ func toWARCAPIRecord(rec metastore.WARCRecord) warcAPIRecord {
 }
 
 // enrichWARCAPIRecord fills WARCMdBytes, WARCMdDocs, and HasMarkdown from live disk
-// and DocStore for a single warcAPIRecord. warcMdBase is the warc_md/ directory.
-func enrichWARCAPIRecord(ctx context.Context, r *warcAPIRecord, warcMdBase string, docs *DocStore) {
-	mdPath := filepath.Join(warcMdBase, r.Index+".md.warc.gz")
+// and DocStore for a single warcAPIRecord. crawlDir is the crawl root directory.
+func enrichWARCAPIRecord(ctx context.Context, r *warcAPIRecord, crawlDir string, docs *DocStore) {
+	// Check new format: warc_md/{index}.md.warc.gz
+	mdPath := filepath.Join(crawlDir, "warc_md", r.Index+".md.warc.gz")
 	if info, err := os.Stat(mdPath); err == nil {
 		r.WARCMdBytes = info.Size()
+	}
+	// Check old format: markdown/{index}/ directory with individual .md files
+	if r.WARCMdBytes == 0 {
+		markdownDir := filepath.Join(crawlDir, "markdown", r.Index)
+		if entries, err := os.ReadDir(markdownDir); err == nil && len(entries) > 0 {
+			var totalDocs int64
+			var totalBytes int64
+			for _, e := range entries {
+				if e.IsDir() {
+					continue
+				}
+				totalDocs++
+				if info, err := e.Info(); err == nil {
+					totalBytes += info.Size()
+				}
+			}
+			if totalDocs > 0 {
+				r.MarkdownDocs = totalDocs
+				r.MarkdownBytes = totalBytes
+			}
+		}
 	}
 	if docs != nil {
 		if meta, ok, _ := docs.GetShardMeta(ctx, "", r.Index); ok {
 			r.WARCMdDocs = meta.TotalDocs
 		}
 	}
-	r.HasMarkdown = r.WARCMdBytes > 0
+	r.HasMarkdown = r.WARCMdBytes > 0 || r.MarkdownDocs > 0 || r.MarkdownBytes > 0
 }
 
 func cloneMap(in map[string]int64) map[string]int64 {
