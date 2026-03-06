@@ -21,6 +21,7 @@ import (
 	mizu "github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/metastore"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/renderer/html"
@@ -118,6 +119,7 @@ type BrowseShardsResponse struct {
 type shardEntry struct {
 	Name          string `json:"name"`
 	HasPack       bool   `json:"has_pack"`
+	HasFTS        bool   `json:"has_fts"`
 	HasScan       bool   `json:"has_scan"`
 	Scanning      bool   `json:"scanning"`
 	FileCount     int    `json:"file_count"`
@@ -697,19 +699,23 @@ func (s *Server) handleBrowse(c *mizu.Ctx) error {
 }
 
 func (s *Server) handleBrowseShards(c *mizu.Ctx) error {
-	// Collect all downloaded WARC shard indexes from warc/ directory.
-	allShards := listWARCShards(s.WARCBase)
+	crawlID := s.CrawlID
+	crawlDir := s.CrawlDir
 
-	// Collect packed shard names from warc_md/.
-	packedSet := make(map[string]bool)
-	for _, s := range listWARCMdShards(s.WARCMdBase) {
-		packedSet[s] = true
+	// Get WARC records from MetaManager (same source as WARC console).
+	var recs []metastore.WARCRecord
+	if s.Meta != nil {
+		var err error
+		recs, _, err = s.Meta.ListWARCs(c.Context(), crawlID, crawlDir)
+		if err != nil {
+			return c.JSON(500, errResp{err.Error()})
+		}
 	}
 
 	// Collect DocStore scan metadata.
 	var metas []DocShardMeta
 	if s.Docs != nil {
-		metas, _ = s.Docs.ListShardMetas(c.Context(), s.CrawlID)
+		metas, _ = s.Docs.ListShardMetas(c.Context(), crawlID)
 	}
 	metaByName := make(map[string]DocShardMeta, len(metas))
 	for _, m := range metas {
@@ -717,9 +723,33 @@ func (s *Server) handleBrowseShards(c *mizu.Ctx) error {
 	}
 
 	var entries []shardEntry
-	for _, name := range allShards {
-		e := shardEntry{Name: name, HasPack: packedSet[name]}
-		if m, ok := metaByName[name]; ok {
+	for _, rec := range recs {
+		if rec.WARCBytes <= 0 {
+			continue // not downloaded
+		}
+		// Derive local shard name from filename.
+		localIdx := rec.WARCIndex
+		if rec.Filename != "" {
+			if s, ok := warcIndexFromPathStrict(rec.Filename); ok {
+				localIdx = s
+			}
+		}
+
+		hasMarkdown := rec.MarkdownDocs > 0 || rec.MarkdownBytes > 0
+		if !hasMarkdown {
+			mdPath := filepath.Join(crawlDir, "warc_md", localIdx+".md.warc.gz")
+			if _, err := os.Stat(mdPath); err == nil {
+				hasMarkdown = true
+			}
+		}
+
+		e := shardEntry{
+			Name:    localIdx,
+			HasPack: hasMarkdown,
+			HasFTS:  sumInt64Map(rec.FTSBytes) > 0,
+		}
+
+		if m, ok := metaByName[localIdx]; ok {
 			e.HasScan = true
 			e.FileCount = int(m.TotalDocs)
 			e.TotalSize = m.TotalSizeBytes
@@ -731,10 +761,10 @@ func (s *Server) handleBrowseShards(c *mizu.Ctx) error {
 				e.LastScannedAt = m.LastScannedAt.UTC().Format(time.RFC3339)
 			}
 			if e.HasPack && e.MetaStale && s.Docs != nil {
-				e.Scanning = s.Docs.IsScanning(s.CrawlID, name)
+				e.Scanning = s.Docs.IsScanning(crawlID, localIdx)
 			}
 		} else if e.HasPack && s.Docs != nil {
-			e.Scanning = s.Docs.IsScanning(s.CrawlID, name)
+			e.Scanning = s.Docs.IsScanning(crawlID, localIdx)
 		}
 		entries = append(entries, e)
 	}
