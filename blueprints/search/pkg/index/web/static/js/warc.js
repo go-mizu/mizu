@@ -44,7 +44,7 @@ async function renderWARC(offset = state.warcOffset || 0, query = state.warcQuer
   state.warcOffset = offset;
   state.warcQuery = query;
   const phase = state.warcPhase || '';
-  const pageSize = state.warcPageSize || 100;
+  const pageSize = 200;
   const main = $('main');
   main.innerHTML = `
     <div class="page-shell anim-fade-in">
@@ -54,13 +54,10 @@ async function renderWARC(offset = state.warcOffset || 0, query = state.warcQuer
       </div>
       <div id="warc-summary"></div>
       <div id="warc-tabs" class="mb-3"></div>
-      <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mb-3">
+      <div class="mb-3">
         <input id="warc-q" type="text" value="${esc(query)}" placeholder="Filter by index or filename\u2026"
-          class="ui-input flex-1 text-sm px-3 py-2"
+          class="ui-input w-full text-sm px-3 py-2"
           onkeydown="if(event.key==='Enter'){state.warcOffset=0;renderWARC(0,this.value)}">
-        <select id="warc-page-size" class="ui-select text-xs px-2 py-1.5 w-auto" onchange="state.warcPageSize=+this.value;state.warcOffset=0;renderWARC(0,state.warcQuery)">
-          ${[50,100,200,500].map(n => `<option value="${n}"${n === pageSize ? ' selected' : ''}>${n} / page</option>`).join('')}
-        </select>
       </div>
       <div id="warc-content"><div class="ui-empty">loading\u2026</div></div>
     </div>`;
@@ -98,17 +95,17 @@ function renderWARCSummary(summary) {
   // Get manifest total from central state for accurate total
   const ov = state.central.overview || {};
   const mf = ov.manifest || {};
-  const manifestTotal = mf.total_warcs || t;
-  const hasManifest = manifestTotal > 0 && manifestTotal !== t;
+  const manifestTotal = mf.total_warcs || 0;
+  const total = manifestTotal > 0 ? manifestTotal : t;
 
-  if (t <= 0 && manifestTotal <= 0) { el.innerHTML = ''; return; }
+  if (total <= 0) { el.innerHTML = ''; return; }
 
-  function pct(n) { return t > 0 ? Math.round((n / t) * 100) : 0; }
+  function pctOf(n, base) { return base > 0 ? Math.round((n / base) * 100) : 0; }
 
   const stages = [
-    { label: 'Downloaded', count: dl, cls: 'ov-c1', bytes: summary.warc_bytes || 0, byteLabel: '.warc.gz' },
-    { label: 'Markdown', count: md, cls: 'ov-c2', bytes: summary.markdown_bytes || 0, byteLabel: '.md.warc.gz' },
-    { label: 'Indexed', count: ix, cls: 'ov-c4', bytes: summary.fts_bytes || 0, byteLabel: 'index' },
+    { label: 'Downloaded', count: dl, cls: 'ov-c1', bytes: summary.warc_bytes || 0 },
+    { label: 'Markdown', count: md, cls: 'ov-c2', bytes: summary.markdown_bytes || 0 },
+    { label: 'Indexed', count: ix, cls: 'ov-c4', bytes: summary.fts_bytes || 0 },
   ];
 
   // Active jobs from central state
@@ -136,10 +133,10 @@ function renderWARCSummary(summary) {
 
   // Full crawl estimation
   const dlStage = ov.downloaded || {};
-  const mdStage = ov.markdown || {};
-  const ixStage = ov.indexed || {};
   const avgWARC = dlStage.avg_warc_bytes || 0;
+  const mdStage = ov.markdown || {};
   const avgDocs = mdStage.avg_docs_per_warc || 0;
+  const ixStage = ov.indexed || {};
   const estHTML = (manifestTotal > 0 && dl > 0 && avgWARC > 0) ? `
     <details class="surface mb-4">
       <summary class="p-3 text-[11px] font-mono ui-subtle cursor-pointer select-none">Full Crawl Estimate (${manifestTotal.toLocaleString()} WARCs)</summary>
@@ -167,26 +164,27 @@ function renderWARCSummary(summary) {
 
   el.innerHTML = `
     ${activeJobsHTML}
-    <div class="grid grid-cols-2 sm:grid-cols-${hasManifest ? '5' : '4'} gap-px border border-[var(--border)] mb-4" style="background:var(--border)">
-      ${hasManifest ? `<div class="bg-[var(--panel)] px-3 py-2.5">
-        <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Manifest</div>
-        <div class="text-base font-semibold font-mono">${manifestTotal.toLocaleString()}</div>
-      </div>` : ''}
+    <div class="grid grid-cols-2 sm:grid-cols-5 gap-px border border-[var(--border)] mb-4" style="background:var(--border)">
       <div class="bg-[var(--panel)] px-3 py-2.5">
-        <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">${hasManifest ? 'Known' : 'Total'} WARCs</div>
+        <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Total WARCs</div>
+        <div class="text-base font-semibold font-mono">${total.toLocaleString()}</div>
+      </div>
+      <div class="bg-[var(--panel)] px-3 py-2.5">
+        <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Tracked</div>
         <div class="text-base font-semibold font-mono">${t.toLocaleString()}</div>
       </div>
       <div class="bg-[var(--panel)] px-3 py-2.5">
-        <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Fully Indexed</div>
-        <div class="text-base font-semibold font-mono">${ix.toLocaleString()} <span class="text-xs ui-subtle font-normal">/ ${t.toLocaleString()}</span></div>
-        <div class="progress-track mt-1" style="height:4px"><div class="ov-c4" style="height:100%;width:${pct(ix)}%"></div></div>
+        <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Downloaded</div>
+        <div class="text-base font-semibold font-mono">${dl.toLocaleString()}</div>
+        <div class="progress-track mt-1" style="height:4px"><div class="ov-c1" style="height:100%;width:${pctOf(dl, total)}%"></div></div>
       </div>
       <div class="bg-[var(--panel)] px-3 py-2.5">
-        <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Remaining</div>
-        <div class="text-base font-semibold font-mono">${(t - ix).toLocaleString()}</div>
+        <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Indexed</div>
+        <div class="text-base font-semibold font-mono">${ix.toLocaleString()}</div>
+        <div class="progress-track mt-1" style="height:4px"><div class="ov-c4" style="height:100%;width:${pctOf(ix, total)}%"></div></div>
       </div>
       <div class="bg-[var(--panel)] px-3 py-2.5">
-        <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Disk Usage</div>
+        <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Disk</div>
         <div class="text-base font-semibold font-mono">${fmtBytes(totalBytes)}</div>
       </div>
     </div>
@@ -198,13 +196,13 @@ function renderWARCSummary(summary) {
           <div class="ov-pipeline-step">
             <div class="flex items-baseline justify-between mb-1">
               <span class="text-[11px] font-mono ui-subtle">${esc(s.label)}</span>
-              <span class="text-[11px] font-mono ${pct(s.count) === 100 ? 'status-completed' : pct(s.count) > 0 ? '' : 'ui-subtle'}">${s.count.toLocaleString()} / ${t.toLocaleString()}</span>
+              <span class="text-[11px] font-mono ${pctOf(s.count, total) === 100 ? 'status-completed' : s.count > 0 ? '' : 'ui-subtle'}">${s.count.toLocaleString()} / ${total.toLocaleString()}</span>
             </div>
             <div class="progress-track" style="height:6px">
-              <div class="${s.cls}" style="height:100%;width:${pct(s.count)}%;transition:width 0.4s ease"></div>
+              <div class="${s.cls}" style="height:100%;width:${pctOf(s.count, total)}%;transition:width 0.4s ease"></div>
             </div>
             <div class="flex items-center justify-between mt-1">
-              <span class="text-[10px] font-mono ui-subtle">${pct(s.count)}%</span>
+              <span class="text-[10px] font-mono ui-subtle">${pctOf(s.count, total)}%</span>
               ${s.bytes > 0 ? `<span class="text-[10px] font-mono ui-subtle">${fmtBytes(s.bytes)}</span>` : ''}
             </div>
           </div>`).join('')}
@@ -237,11 +235,9 @@ function renderWARCTable(data) {
   const warcs = data.warcs || [];
   const pageTotal = data.total || 0;
   const offset = data.offset || 0;
-  const limit = data.limit || state.warcPageSize || 100;
+  const limit = data.limit || 200;
   const summary = data.summary || state.warcSummary || {};
   const globalTotal = summary.total || 0;
-
-  const incomplete = warcs.filter(w => warcNextStep(w) !== '');
 
   const rows = warcs.map((w, i) => {
     const next = warcNextStep(w);
@@ -307,11 +303,6 @@ function renderWARCTable(data) {
     </details>` : '';
 
   el.innerHTML = `
-    ${isDashboard && incomplete.length > 0 ? `
-      <div class="flex items-center gap-2 mb-3">
-        <span class="text-[11px] font-mono ui-subtle">${incomplete.length} incomplete on this page</span>
-        <button id="warc-batch-btn" onclick="warcBatchNext()" class="ui-btn px-3 py-1 text-[11px] font-mono">Run next step (${incomplete.length})</button>
-      </div>` : ''}
     <div class="surface overflow-x-auto">
       <table class="w-full text-sm ui-table">
         <thead>
@@ -379,24 +370,6 @@ function warcActionLabel(step) {
   }
 }
 
-// Batch
-async function warcBatchNext() {
-  const warcs = state.warcRows || [];
-  const incomplete = warcs.filter(w => warcNextStep(w) !== '');
-  if (incomplete.length === 0) return;
-  if (!confirm(`Run the next pipeline step on ${incomplete.length} WARC${incomplete.length !== 1 ? 's' : ''}?`)) return;
-
-  const batchBtn = $('warc-batch-btn');
-  if (batchBtn) { batchBtn.disabled = true; batchBtn.textContent = 'running\u2026'; }
-
-  for (const w of incomplete) {
-    const next = warcNextStep(w);
-    if (next === 'download') warcAction(w.index, 'download');
-    else if (next === 'markdown') warcAction(w.index, 'markdown');
-    else if (next === 'index') warcAction(w.index, 'index', { engine: currentSearchEngine(), source: 'files' });
-  }
-}
-
 // ── Detail page ──
 async function renderWARCDetail(index) {
   state.currentPage = 'warc';
@@ -408,7 +381,6 @@ async function renderWARCDetail(index) {
       <a href="#/warc" class="text-xs font-mono ui-link">\u2190 WARC Console</a>
       <div id="warc-detail-content" class="mt-4"><div class="ui-empty">loading\u2026</div></div>
     </div>`;
-  await ensureEnginesLoaded();
   try {
     const data = await apiWARCDetail(index);
     state.warcDetail = data;
@@ -462,15 +434,11 @@ function renderWARCDetailContent(data, index) {
   const nextStep = stepsAll.find(s => !s.done);
   const done = stepsAll.filter(s => s.done).length;
 
-  const enginesOpts = (state.engines||[]).map(e=>`<option value="${esc(e)}">${esc(e)}</option>`).join('') ||
-    `<option value="${DEFAULT_ENGINE}">${DEFAULT_ENGINE}</option>`;
-
   const relatedJobs = data.jobs || [];
   const activeJobs = relatedJobs.filter(j => j.status === 'running' || j.status === 'queued');
 
   const compressionRatio = (w.warc_bytes > 0 && (w.warc_md_bytes || 0) > 0) ? ((w.warc_md_bytes / w.warc_bytes) * 100).toFixed(1) + '%' : '\u2014';
   const docsCount = w.warc_md_docs || 0;
-  const sys = data.system || {};
 
   // Step timeline (3 steps)
   const timelineHTML = `
@@ -614,58 +582,30 @@ function renderWARCDetailContent(data, index) {
       </div>
     </div>
 
-    <!-- Advanced actions -->
+    <!-- Advanced Actions -->
     <details class="surface mb-4">
       <summary class="p-4 text-[11px] font-mono ui-subtle cursor-pointer select-none">Advanced Actions</summary>
       <div class="px-4 pb-4">
         <div class="grid md:grid-cols-2 gap-4">
           <div class="space-y-2">
-            <div class="text-[10px] font-mono ui-subtle mb-1 uppercase tracking-wider">Pipeline Steps</div>
+            <div class="text-[10px] font-mono ui-subtle mb-1 uppercase tracking-wider">Run Pipeline Step</div>
             <button onclick="warcAction('${esc(w.index)}','download',{},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Download WARC</button>
             <button onclick="warcAction('${esc(w.index)}','markdown',{fast:false},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Extract Markdown</button>
-            <button onclick="warcAction('${esc(w.index)}','markdown',{fast:true},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Extract Markdown (fast)</button>
-            <div class="flex items-center gap-2">
-              <select id="warc-pack-format" class="ui-select flex-1 text-xs px-2 py-2">
-                <option value="parquet">parquet</option><option value="bin">bin</option><option value="duckdb">duckdb</option><option value="markdown">markdown</option>
-              </select>
-              <button onclick="warcAction('${esc(w.index)}','pack',{format:$('warc-pack-format').value},true)" class="ui-btn px-3 py-2 text-xs font-mono shrink-0">Pack</button>
-            </div>
+            <button onclick="warcAction('${esc(w.index)}','index',{engine:currentSearchEngine(),source:'files'},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Build Index</button>
+            <button onclick="warcAction('${esc(w.index)}','reindex',{engine:currentSearchEngine(),source:'files'},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Re-index (delete + rebuild)</button>
           </div>
           <div class="space-y-2">
-            <div class="text-[10px] font-mono ui-subtle mb-1 uppercase tracking-wider">Index</div>
+            <div class="text-[10px] font-mono ui-subtle mb-1 uppercase tracking-wider">Danger Zone</div>
             <div class="flex items-center gap-2">
-              <select id="warc-index-engine" class="ui-select flex-1 text-xs px-2 py-2">${enginesOpts}</select>
-              <select id="warc-index-source" class="ui-select text-xs px-2 py-2">
-                <option value="files">files</option><option value="parquet">parquet</option><option value="bin">bin</option><option value="duckdb">duckdb</option><option value="markdown">markdown</option>
+              <select id="warc-delete-target" class="ui-select flex-1 text-xs px-2 py-2">
+                <option value="index">index</option><option value="markdown">markdown</option><option value="warc">warc</option><option value="all">all data</option>
               </select>
-              <button onclick="warcAction('${esc(w.index)}','index',{engine:$('warc-index-engine').value,source:$('warc-index-source').value},true)" class="ui-btn px-3 py-2 text-xs font-mono shrink-0">Index</button>
-            </div>
-            <button onclick="warcAction('${esc(w.index)}','reindex',{engine:$('warc-index-engine').value,source:$('warc-index-source').value},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Re-index</button>
-            <div class="pt-2 mt-2 border-t">
-              <div class="text-[10px] font-mono ui-subtle mb-1 uppercase tracking-wider">Danger Zone</div>
-              <div class="flex items-center gap-2">
-                <select id="warc-delete-target" class="ui-select flex-1 text-xs px-2 py-2">
-                  <option value="index">index</option><option value="pack">pack</option><option value="markdown">markdown</option><option value="warc">warc</option><option value="all">all</option>
-                </select>
-                <button onclick="if(confirm('Delete '+$('warc-delete-target').value+' for WARC ${esc(w.index)}?'))warcAction('${esc(w.index)}','delete',{target:$('warc-delete-target').value,format:($('warc-pack-format')||{}).value||'parquet',engine:($('warc-index-engine')||{}).value||currentSearchEngine()},true)" class="ui-btn ui-btn-danger px-3 py-2 text-xs font-mono shrink-0">Delete</button>
-              </div>
+              <button onclick="if(confirm('Delete '+$('warc-delete-target').value+' for WARC ${esc(w.index)}?'))warcAction('${esc(w.index)}','delete',{target:$('warc-delete-target').value,engine:currentSearchEngine()},true)" class="ui-btn ui-btn-danger px-3 py-2 text-xs font-mono shrink-0">Delete</button>
             </div>
           </div>
         </div>
       </div>
     </details>
-
-    <!-- System -->
-    ${(sys.disk_total || sys.mem_alloc) ? `
-    <details class="surface mb-4">
-      <summary class="p-4 text-[11px] font-mono ui-subtle cursor-pointer select-none">System</summary>
-      <div class="px-4 pb-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-        ${sys.disk_total ? `<div><div class="text-[10px] font-mono ui-subtle">Disk</div><div class="text-xs font-mono">${fmtBytes(sys.disk_used || 0)} / ${fmtBytes(sys.disk_total)}</div><div class="progress-track mt-1" style="height:4px"><div class="ov-c5" style="height:100%;width:${sys.disk_total > 0 ? Math.round(((sys.disk_used||0)/sys.disk_total)*100) : 0}%;opacity:0.6"></div></div></div>` : ''}
-        ${sys.mem_alloc ? `<div><div class="text-[10px] font-mono ui-subtle">Heap</div><div class="text-xs font-mono">${fmtBytes(sys.mem_alloc)}</div></div>` : ''}
-        ${sys.mem_stack_inuse ? `<div><div class="text-[10px] font-mono ui-subtle">Stack</div><div class="text-xs font-mono">${fmtBytes(sys.mem_stack_inuse)}</div></div>` : ''}
-        ${sys.goroutines ? `<div><div class="text-[10px] font-mono ui-subtle">Goroutines</div><div class="text-xs font-mono">${sys.goroutines.toLocaleString()}</div></div>` : ''}
-      </div>
-    </details>` : ''}
 
     <!-- Related Jobs -->
     <div class="surface p-4">
