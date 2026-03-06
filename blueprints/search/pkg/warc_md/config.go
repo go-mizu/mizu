@@ -59,6 +59,11 @@ func (c Config) MarkdownWarcDir(warcIdx string) string {
 	return filepath.Join(c.CrawlDir(), "markdown", warcIdx)
 }
 
+// WARCMdDir returns the directory for packed .md.warc.gz files.
+func (c Config) WARCMdDir() string {
+	return filepath.Join(c.CrawlDir(), "warc_md")
+}
+
 // ConvertWorkers returns the optimal worker count for Phase 2 (HTML→Markdown).
 func (c Config) ConvertWorkers() int {
 	if c.Workers > 0 {
