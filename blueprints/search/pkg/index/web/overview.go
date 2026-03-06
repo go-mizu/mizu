@@ -9,6 +9,16 @@ import (
 	"time"
 )
 
+// hostMemInfo is filled by platform-specific sysinfo_*.go files.
+// Returns (total, available) bytes. Returns zeros if unavailable.
+var hostMemInfo func() (total, avail int64)
+
+// hostNetBytes returns cumulative (recv, sent) bytes across all interfaces.
+var hostNetBytes func() (recv, sent int64)
+
+// hostDiskBytes returns cumulative (read, written) bytes across all block devices.
+var hostDiskBytes func() (read, written int64)
+
 var startTime = time.Now()
 
 // OverviewResponse is the structured /api/overview payload with pipeline stages.
@@ -76,6 +86,7 @@ type StorageInfo struct {
 }
 
 type SystemInfo struct {
+	// Go runtime
 	HeapAlloc  int64  `json:"heap_alloc"`
 	HeapSys    int64  `json:"heap_sys"`
 	StackInuse int64  `json:"stack_inuse"`
@@ -85,6 +96,22 @@ type SystemInfo struct {
 	Uptime     int64  `json:"uptime_seconds"`
 	PID        int    `json:"pid"`
 	GOMEMLIMIT int64  `json:"gomemlimit"`
+
+	// Host hardware
+	CPUs          int    `json:"cpus"`
+	GOOS          string `json:"goos"`
+	GOARCH        string `json:"goarch"`
+	MemTotalBytes int64  `json:"mem_total_bytes"`
+	MemAvailBytes int64  `json:"mem_avail_bytes"`
+	MemUsedBytes  int64  `json:"mem_used_bytes"`
+
+	// Network (cumulative, since boot)
+	NetBytesRecv int64 `json:"net_bytes_recv"`
+	NetBytesSent int64 `json:"net_bytes_sent"`
+
+	// Disk I/O (cumulative, since boot)
+	DiskReadBytes  int64 `json:"disk_read_bytes"`
+	DiskWriteBytes int64 `json:"disk_write_bytes"`
 }
 
 type OverviewMeta struct {
@@ -300,11 +327,10 @@ func collectSystemInfo() SystemInfo {
 		goVersion = bi.GoVersion
 	}
 
-	var memlimit int64
-	// GOMEMLIMIT from debug.SetMemoryLimit(-1) returns current limit without changing it
-	memlimit = debug.SetMemoryLimit(-1)
+	// GOMEMLIMIT from debug.SetMemoryLimit(-1) returns current limit without changing it.
+	memlimit := debug.SetMemoryLimit(-1)
 
-	return SystemInfo{
+	si := SystemInfo{
 		HeapAlloc:  int64(ms.HeapAlloc),
 		HeapSys:    int64(ms.HeapSys),
 		StackInuse: int64(ms.StackInuse),
@@ -314,7 +340,23 @@ func collectSystemInfo() SystemInfo {
 		Uptime:     int64(time.Since(startTime).Seconds()),
 		PID:        os.Getpid(),
 		GOMEMLIMIT: memlimit,
+		CPUs:       runtime.NumCPU(),
+		GOOS:       runtime.GOOS,
+		GOARCH:     runtime.GOARCH,
 	}
+
+	if hostMemInfo != nil {
+		si.MemTotalBytes, si.MemAvailBytes = hostMemInfo()
+		si.MemUsedBytes = si.MemTotalBytes - si.MemAvailBytes
+	}
+	if hostNetBytes != nil {
+		si.NetBytesRecv, si.NetBytesSent = hostNetBytes()
+	}
+	if hostDiskBytes != nil {
+		si.DiskReadBytes, si.DiskWriteBytes = hostDiskBytes()
+	}
+
+	return si
 }
 
 func collectStorageInfo(crawlDir string, manifestTotal int, avgWARCBytes int64) StorageInfo {
