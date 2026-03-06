@@ -405,14 +405,14 @@ func TestNewDashboard_SetsFields(t *testing.T) {
 		t.Fatalf("expected Addr=http://localhost:7700, got %q", srv.Addr)
 	}
 
-	// FTSBase and MDBase should still be set via New().
+	// FTSBase and WARCMdBase should still be set via New().
 	expectedFTS := filepath.Join(root, "fts", "bleve")
 	if srv.FTSBase != expectedFTS {
 		t.Fatalf("expected FTSBase=%s, got %s", expectedFTS, srv.FTSBase)
 	}
-	expectedMD := filepath.Join(root, "markdown")
-	if srv.MDBase != expectedMD {
-		t.Fatalf("expected MDBase=%s, got %s", expectedMD, srv.MDBase)
+	expectedWARCMd := filepath.Join(root, "warc_md")
+	if srv.WARCMdBase != expectedWARCMd {
+		t.Fatalf("expected WARCMdBase=%s, got %s", expectedWARCMd, srv.WARCMdBase)
 	}
 }
 
