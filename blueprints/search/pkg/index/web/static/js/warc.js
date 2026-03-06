@@ -66,7 +66,11 @@ async function renderWARC(offset = state.warcOffset || 0, query = state.warcQuer
     </div>`;
 
   try {
-    const data = await apiWARCList({ offset, limit: pageSize, q: query || '', phase });
+    // Fetch WARC list and ensure central state is available
+    const [data] = await Promise.all([
+      apiWARCList({ offset, limit: pageSize, q: query || '', phase }),
+      refreshCentralState(),
+    ]);
     state.warcRows = data.warcs || [];
     state.warcSummary = data.summary || null;
     state.warcSystem = data.system || null;
@@ -91,7 +95,13 @@ function renderWARCSummary(summary) {
   const ix = summary.indexed || 0;
   const totalBytes = (summary.warc_bytes || 0) + (summary.markdown_bytes || 0) + (summary.pack_bytes || 0) + (summary.fts_bytes || 0);
 
-  if (t <= 0) { el.innerHTML = ''; return; }
+  // Get manifest total from central state for accurate total
+  const ov = state.central.overview || {};
+  const mf = ov.manifest || {};
+  const manifestTotal = mf.total_warcs || t;
+  const hasManifest = manifestTotal > 0 && manifestTotal !== t;
+
+  if (t <= 0 && manifestTotal <= 0) { el.innerHTML = ''; return; }
 
   function pct(n) { return t > 0 ? Math.round((n / t) * 100) : 0; }
 
@@ -101,10 +111,69 @@ function renderWARCSummary(summary) {
     { label: 'Indexed', count: ix, cls: 'ov-c4', bytes: summary.fts_bytes || 0, byteLabel: 'index' },
   ];
 
+  // Active jobs from central state
+  const activeJobs = (state.central.jobs || []).filter(j => j.status === 'running' || j.status === 'queued');
+  const activeJobsHTML = activeJobs.length > 0 ? `
+    <div class="surface p-4 mb-4 border-l-2" style="border-left-color:#3b82f6">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-[11px] font-mono" style="color:#3b82f6">Active Jobs (${activeJobs.length})</span>
+        <a href="#/jobs" class="text-[11px] font-mono ui-link">view all &rarr;</a>
+      </div>
+      ${activeJobs.slice(0, 3).map(j => {
+        const p = Math.round((j.progress || 0) * 100);
+        const rateStr = j.rate > 0 ? ` &middot; ${j.rate.toFixed(0)}/s` : '';
+        return `
+          <div class="mb-2 last:mb-0">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-[10px] font-mono ui-subtle">${esc(j.id)} &middot; ${esc(j.type)} &middot; <span class="status-running">${esc(j.status)}</span>${rateStr}</span>
+              <span class="text-[10px] font-mono">${p}%</span>
+            </div>
+            <div class="progress-track" style="height:4px"><div class="progress-fill" style="width:${p}%"></div></div>
+          </div>`;
+      }).join('')}
+      ${activeJobs.length > 3 ? `<div class="text-[10px] font-mono ui-subtle mt-1">+${activeJobs.length - 3} more</div>` : ''}
+    </div>` : '';
+
+  // Full crawl estimation
+  const dlStage = ov.downloaded || {};
+  const mdStage = ov.markdown || {};
+  const ixStage = ov.indexed || {};
+  const avgWARC = dlStage.avg_warc_bytes || 0;
+  const avgDocs = mdStage.avg_docs_per_warc || 0;
+  const estHTML = (manifestTotal > 0 && dl > 0 && avgWARC > 0) ? `
+    <details class="surface mb-4">
+      <summary class="p-3 text-[11px] font-mono ui-subtle cursor-pointer select-none">Full Crawl Estimate (${manifestTotal.toLocaleString()} WARCs)</summary>
+      <div class="px-3 pb-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div>
+          <div class="text-[10px] font-mono ui-subtle">Est. Download</div>
+          <div class="text-xs font-mono font-medium">${fmtBytes(manifestTotal * avgWARC)}</div>
+          <div class="text-[9px] font-mono ui-subtle">${fmtBytes(avgWARC)}/WARC avg</div>
+        </div>
+        ${avgDocs > 0 ? `<div>
+          <div class="text-[10px] font-mono ui-subtle">Est. Documents</div>
+          <div class="text-xs font-mono font-medium">${fmtNum(manifestTotal * avgDocs)}</div>
+          <div class="text-[9px] font-mono ui-subtle">${fmtNum(avgDocs)}/WARC avg</div>
+        </div>` : ''}
+        ${ixStage.count > 0 ? `<div>
+          <div class="text-[10px] font-mono ui-subtle">Est. Index Size</div>
+          <div class="text-xs font-mono font-medium">${fmtBytes(Math.round(((ixStage.dahlia_bytes || 0) + (ixStage.tantivy_bytes || 0)) / ixStage.count * manifestTotal))}</div>
+        </div>` : ''}
+        <div>
+          <div class="text-[10px] font-mono ui-subtle">Est. Total Disk</div>
+          <div class="text-xs font-mono font-medium">${fmtBytes(ov.storage && ov.storage.projected_full_bytes || manifestTotal * avgWARC)}</div>
+        </div>
+      </div>
+    </details>` : '';
+
   el.innerHTML = `
-    <div class="grid grid-cols-2 sm:grid-cols-4 gap-px border border-[var(--border)] mb-4" style="background:var(--border)">
+    ${activeJobsHTML}
+    <div class="grid grid-cols-2 sm:grid-cols-${hasManifest ? '5' : '4'} gap-px border border-[var(--border)] mb-4" style="background:var(--border)">
+      ${hasManifest ? `<div class="bg-[var(--panel)] px-3 py-2.5">
+        <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Manifest</div>
+        <div class="text-base font-semibold font-mono">${manifestTotal.toLocaleString()}</div>
+      </div>` : ''}
       <div class="bg-[var(--panel)] px-3 py-2.5">
-        <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Total WARCs</div>
+        <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">${hasManifest ? 'Known' : 'Total'} WARCs</div>
         <div class="text-base font-semibold font-mono">${t.toLocaleString()}</div>
       </div>
       <div class="bg-[var(--panel)] px-3 py-2.5">
@@ -140,7 +209,8 @@ function renderWARCSummary(summary) {
             </div>
           </div>`).join('')}
       </div>
-    </div>`;
+    </div>
+    ${estHTML}`;
 }
 
 // ── Phase tabs ──
@@ -655,8 +725,9 @@ async function warcAction(index, action, extra = {}, refreshDetail = false) {
   try {
     const res = await apiWARCAction(index, { action, ...extra });
     if (res && res.job && res.job.id) {
-      if (!state.jobs) state.jobs = [];
-      state.jobs.unshift(res.job);
+      if (!state.central.jobs) state.central.jobs = [];
+      state.central.jobs.unshift(res.job);
+      updateHeaderStatus();
       wsClient.subscribe(res.job.id, (m) => onJobUpdate(m));
       warcActionMessage = `job ${res.job.id} started: ${action}`;
     } else {

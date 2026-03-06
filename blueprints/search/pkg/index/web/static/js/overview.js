@@ -17,13 +17,8 @@ async function renderOverview() {
     </div>`;
 
   try {
-    const [jobsData] = await Promise.all([
-      apiJobs().catch(() => ({ jobs: [] })),
-    ]);
-    state.overview = await apiOverview();
-    state.overviewLoadedAt = Date.now();
-    state.jobs = (jobsData && jobsData.jobs) || [];
-    renderOverviewContent(state.overview, state.jobs);
+    await refreshCentralState(true);
+    renderOverviewContent(state.central.overview, state.central.jobs);
   } catch (e) {
     $('overview-content').innerHTML = `<div class="text-xs text-red-400">${esc(e.message)}</div>`;
   }
@@ -275,12 +270,12 @@ async function refreshOverviewMeta() {
   const msg = $('overview-refresh-msg');
   if (msg) msg.textContent = 'requesting metadata refresh...';
   try {
-    const crawl = state.overview && state.overview.crawl_id ? state.overview.crawl_id : '';
+    const crawl = (state.central.overview && state.central.overview.crawl_id) || '';
     const res = await apiMetaRefresh(crawl, true);
     const accepted = !!(res && res.accepted);
     if (msg) msg.textContent = accepted ? 'refresh started' : 'refresh already in progress';
     setTimeout(() => {
-      refreshDashboardContext().catch(() => {});
+      refreshCentralState(true).catch(() => {});
       renderOverview();
     }, 350);
   } catch (e) {

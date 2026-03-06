@@ -64,7 +64,7 @@ if (!isDashboard) {
   const main = document.getElementById('main');
   if (main) { main.classList.remove('max-w-5xl', 'max-w-6xl'); main.classList.add('max-w-3xl'); }
 } else {
-  startMetaWatchdog();
+  startCentralRefresh();
 }
 
 // WebSocket only in dashboard mode.

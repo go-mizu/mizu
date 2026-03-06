@@ -114,9 +114,9 @@ function fmtRelativeTime(iso) {
 }
 
 function metaContext() {
-  const o = state.overview || {};
+  const o = state.central.overview || {};
   const m = o.meta || {};      // OverviewResponse.Meta nested object
-  const s = state.metaStatus || {};
+  const s = state.central.meta || {};
   const generatedAt = m.generated_at || s.finished_at || '';
   const stale = !!m.stale;
   const refreshing = !!m.refreshing || !!s.refreshing;
@@ -137,7 +137,12 @@ function renderMetaSummaryLine() {
   return bits.join(' · ');
 }
 
-function updateHeaderMetaChip() {
+function activeJobCount() {
+  const jobs = state.central.jobs || [];
+  return jobs.filter(j => j.status === 'running' || j.status === 'queued').length;
+}
+
+function updateHeaderStatus() {
   if (!isDashboard) return;
   const el = $('header-status');
   if (!el) return;
@@ -146,48 +151,92 @@ function updateHeaderMetaChip() {
   const dot = $('header-status-dot');
   const text = $('header-status-text');
   const m = metaContext();
+  const active = activeJobCount();
   if (dot) {
-    if (m.refreshing) dot.style.background = '#f59e0b';
+    if (active > 0) dot.style.background = '#3b82f6';
+    else if (m.refreshing) dot.style.background = '#f59e0b';
     else if (m.lastError) dot.style.background = 'var(--danger)';
     else dot.style.background = 'var(--success)';
   }
   if (text) {
-    text.textContent = m.refreshing ? 'syncing' : fmtRelativeTime(m.generatedAt);
+    const parts = [];
+    if (active > 0) parts.push(`${active} job${active !== 1 ? 's' : ''}`);
+    if (m.refreshing) parts.push('syncing');
+    if (parts.length === 0) parts.push(fmtRelativeTime(m.generatedAt));
+    text.textContent = parts.join(' · ');
+  }
+  // Update Jobs tab badge
+  updateJobsBadge(active);
+}
+
+function updateJobsBadge(count) {
+  const badge = $('jobs-tab-badge');
+  if (!badge) return;
+  if (count > 0) {
+    badge.textContent = count;
+    badge.style.display = 'inline-flex';
+  } else {
+    badge.style.display = 'none';
   }
 }
 
+// Backward compat alias
+const updateHeaderMetaChip = updateHeaderStatus;
+
+// ── Central State Refresh ──
+let _centralRefreshPromise = null;
+const CENTRAL_DEBOUNCE_MS = 2000;
+
+async function refreshCentralState(force = false) {
+  if (!isDashboard) return;
+  // Debounce: skip if last refresh was recent (unless forced)
+  if (!force && state.central.loadedAt > 0 && (Date.now() - state.central.loadedAt) < CENTRAL_DEBOUNCE_MS) {
+    return;
+  }
+  // Deduplicate: reuse in-flight promise
+  if (_centralRefreshPromise) {
+    if (!force) return _centralRefreshPromise;
+  }
+  state.central.loading = true;
+  const crawl = (state.central.overview && state.central.overview.crawl_id) || '';
+  _centralRefreshPromise = Promise.all([
+    apiOverview().catch(() => null),
+    apiJobs().catch(() => ({ jobs: [] })),
+    apiMetaStatus(crawl).catch(() => null),
+  ]).then(([overview, jobsData, metaStatus]) => {
+    if (overview) {
+      state.central.overview = overview;
+      state.overviewLoadedAt = Date.now();
+    }
+    if (jobsData) state.central.jobs = jobsData.jobs || [];
+    if (metaStatus) state.central.meta = metaStatus;
+    state.central.loadedAt = Date.now();
+    state.central.loading = false;
+    _centralRefreshPromise = null;
+    updateHeaderStatus();
+  }).catch(() => {
+    state.central.loading = false;
+    _centralRefreshPromise = null;
+  });
+  return _centralRefreshPromise;
+}
+
+// Backward compat aliases
+async function refreshDashboardContext() { return refreshCentralState(); }
 async function refreshDashboardMeta(force = false) {
   if (!isDashboard) return;
-  const crawl = state.overview && state.overview.crawl_id ? state.overview.crawl_id : '';
-  try {
-    await apiMetaRefresh(crawl, force);
-  } catch (_) {
-    // Ignore; status line shows last known error state from /api/meta/status.
-  }
-  await refreshDashboardContext();
+  const crawl = (state.central.overview && state.central.overview.crawl_id) || '';
+  try { await apiMetaRefresh(crawl, force); } catch (_) {}
+  await refreshCentralState(true);
 }
 
-async function refreshDashboardContext() {
+let centralRefreshTimer = null;
+function startCentralRefresh() {
   if (!isDashboard) return;
-  const crawl = state.overview && state.overview.crawl_id ? state.overview.crawl_id : '';
-  const [metaStatus, overview] = await Promise.all([
-    apiMetaStatus(crawl).catch(() => null),
-    apiOverview().catch(() => null),
-  ]);
-  if (metaStatus) state.metaStatus = metaStatus;
-  if (overview) {
-    state.overview = overview;
-    state.overviewLoadedAt = Date.now();
-  }
-  // Backend triggers refresh when stale — no need to trigger from frontend.
-  updateHeaderMetaChip();
+  if (centralRefreshTimer) clearInterval(centralRefreshTimer);
+  refreshCentralState(true);
+  centralRefreshTimer = setInterval(() => refreshCentralState().catch(() => {}), 20000);
 }
 
-let metaWatchdogTimer = null;
-function startMetaWatchdog() {
-  if (!isDashboard) return;
-  if (metaWatchdogTimer) clearInterval(metaWatchdogTimer);
-  const tick = () => refreshDashboardContext().catch(() => {});
-  tick();
-  metaWatchdogTimer = setInterval(tick, 20000);
-}
+// Legacy alias
+const startMetaWatchdog = startCentralRefresh;

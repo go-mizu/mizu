@@ -13,7 +13,7 @@ function route() {
     jobsPollingTimer = null;
   }
   if (isDashboard) {
-    refreshDashboardContext().catch(() => {});
+    refreshCentralState().catch(() => {});
   }
 
   updateActiveTab(path);

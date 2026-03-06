@@ -12,8 +12,8 @@ function ensureJobStreamSubscribed() {
 
 async function reloadJobs() {
   const jobsData = await apiJobs().catch(() => ({ jobs: [] }));
-  state.jobs = jobsData.jobs || [];
-  return state.jobs;
+  state.central.jobs = jobsData.jobs || [];
+  return state.central.jobs;
 }
 
 // renderPipeline removed — pipeline is now integrated into overview page
@@ -132,12 +132,15 @@ function submitJob(event, type) {
 async function startJob(cfg) {
   try {
     const job = await apiCreateJob(cfg);
-    // Add to state
-    if (!state.jobs) state.jobs = [];
-    state.jobs.unshift(job);
+    // Add to central state
+    if (!state.central.jobs) state.central.jobs = [];
+    state.central.jobs.unshift(job);
 
     // Subscribe to updates
     wsClient.subscribe(job.id, (msg) => onJobUpdate(msg));
+
+    // Update header badge
+    updateHeaderStatus();
 
     // Re-render job views if visible.
     if (state.currentPage === 'jobs') {
@@ -151,8 +154,8 @@ async function startJob(cfg) {
 async function cancelJob(id) {
   try {
     await apiCancelJob(id);
-    // Update local state
-    const job = state.jobs && state.jobs.find(j => j.id === id);
+    // Update central state
+    const job = state.central.jobs && state.central.jobs.find(j => j.id === id);
     if (job) {
       job.status = 'cancelled';
       job.ended_at = new Date().toISOString();
@@ -183,8 +186,8 @@ async function clearJobHistory() {
 }
 
 function onJobUpdate(msg) {
-  if (!state.jobs) return;
-  const job = state.jobs.find(j => j.id === msg.job_id);
+  if (!state.central.jobs) return;
+  const job = state.central.jobs.find(j => j.id === msg.job_id);
   if (!job) return;
 
   if (msg.type === 'job_progress') {
@@ -206,6 +209,9 @@ function onJobUpdate(msg) {
       job.ended_at = new Date().toISOString();
       if (msg.status === 'completed') job.progress = 1.0;
     }
+
+    // Update header badge on status change
+    updateHeaderStatus();
 
     if (state.currentPage === 'jobs') {
       refreshJobsUI();
@@ -275,14 +281,14 @@ function renderJobsSummaryLine(jobs) {
 
 function refreshJobsUI() {
   const summary = $('jobs-summary');
-  if (summary) summary.textContent = renderJobsSummaryLine(state.jobs || []);
+  if (summary) summary.textContent = renderJobsSummaryLine(state.central.jobs || []);
   renderJobsContent();
 }
 
 function renderJobsContent() {
   const el = $('jobs-content');
   if (!el) return;
-  const jobs = state.jobs || [];
+  const jobs = state.central.jobs || [];
   const active = jobs.filter(j => j.status === 'running' || j.status === 'queued');
   const history = jobs.filter(j => j.status !== 'running' && j.status !== 'queued');
   const c = jobCounts(jobs);
@@ -386,7 +392,7 @@ async function renderJobs() {
   try {
     await Promise.all([
       ensureEnginesLoaded(),
-      refreshDashboardContext().catch(() => {}),
+      refreshCentralState(true).catch(() => {}),
       reloadJobs(),
     ]);
     ensureJobStreamSubscribed();
@@ -423,8 +429,8 @@ async function renderJobDetail(jobId) {
     </div>`;
 
   try {
-    // Try local state first, then API
-    let job = (state.jobs || []).find(j => j.id === jobId);
+    // Try central state first, then API
+    let job = (state.central.jobs || []).find(j => j.id === jobId);
     if (!job) {
       job = await apiGetJob(jobId);
     }

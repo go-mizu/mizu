@@ -17,10 +17,22 @@ const state = {
   browseView: 'docs',
   doc: null,
   theme: localStorage.getItem('fts-theme') || 'dark',
-  overview: null,
+  // Central state — single source of truth shared across all pages
+  central: {
+    overview: null,   // OverviewResponse from /api/overview
+    jobs: null,       // []*Job from /api/jobs
+    meta: null,       // MetaStatus from /api/meta/status
+    loadedAt: 0,      // timestamp of last successful refresh
+    loading: false,   // currently refreshing
+  },
+  // Legacy aliases — kept for backward compat during migration
+  get overview() { return this.central.overview; },
+  set overview(v) { this.central.overview = v; },
+  get jobs() { return this.central.jobs; },
+  set jobs(v) { this.central.jobs = v; },
+  get metaStatus() { return this.central.meta; },
+  set metaStatus(v) { this.central.meta = v; },
   overviewLoadedAt: 0,
-  metaStatus: null,
-  jobs: null,
   jobsStreamSubscribed: false,
   engines: null,
   crawls: null,
