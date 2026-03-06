@@ -97,7 +97,7 @@ func newCCFTSIndex() *cobra.Command {
 
 	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest)")
 	cmd.Flags().StringVar(&fileIdx, "file", "0", "File index, range (0-9)")
-	cmd.Flags().StringVar(&engine, "engine", "duckdb", "FTS engine: "+strings.Join(index.List(), ", "))
+	cmd.Flags().StringVar(&engine, "engine", "rose", "FTS engine: "+strings.Join(index.List(), ", "))
 	cmd.Flags().StringVar(&source, "source", "files", "Source: files, parquet, bin, markdown, duckdb")
 	cmd.Flags().IntVar(&batchSize, "batch-size", 5000, "Documents per batch insert")
 	cmd.Flags().IntVar(&workers, "workers", 0, "Parallel file readers (0 = NumCPU)")
@@ -129,7 +129,7 @@ func newCCFTSSearch() *cobra.Command {
 
 	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest)")
 	cmd.Flags().StringVar(&fileIdx, "file", "", "File index to search (default: all WARCs)")
-	cmd.Flags().StringVar(&engine, "engine", "duckdb", "FTS engine")
+	cmd.Flags().StringVar(&engine, "engine", "rose", "FTS engine")
 	cmd.Flags().IntVar(&limit, "limit", 10, "Max results")
 	cmd.Flags().IntVar(&offset, "offset", 0, "Result offset")
 	cmd.Flags().StringVar(&addr, "addr", "", "Service address for external engines")

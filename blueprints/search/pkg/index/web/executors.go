@@ -301,7 +301,7 @@ func (m *JobManager) execIndex(ctx context.Context, job *Job) error {
 
 	engineName := job.Config.Engine
 	if engineName == "" {
-		engineName = "duckdb"
+		engineName = "rose"
 	}
 
 	source := job.Config.Source
