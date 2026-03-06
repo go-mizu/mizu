@@ -200,6 +200,37 @@
       font-family: "Geist Mono", monospace;
     }
     .ui-border-r { border-right: 1px solid var(--border); }
+    .ov-donut {
+      width: 120px; height: 120px;
+      border-radius: 50% !important;
+      position: relative;
+    }
+    .ov-donut-hole {
+      position: absolute; inset: 20%; border-radius: 50% !important;
+      background: var(--panel);
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column;
+    }
+    .ov-stacked { display: flex; height: 20px; border: 1px solid var(--border); overflow: hidden; }
+    .ov-stacked-seg { height: 100%; transition: width 0.4s ease; min-width: 1px; }
+    .ov-pipeline-step { flex: 1; min-width: 0; }
+    .ov-pipeline-arrow {
+      width: 24px; display: flex; align-items: center; justify-content: center;
+      color: var(--text-soft); font-size: 14px; flex-shrink: 0;
+    }
+    .ov-legend-dot { width: 8px; height: 8px; flex-shrink: 0; }
+    .ov-c1 { background: var(--accent); }
+    .ov-c2 { background: #6366f1; }
+    .ov-c3 { background: #f59e0b; }
+    .ov-c4 { background: #10b981; }
+    .ov-c5 { background: #ef4444; }
+    .ov-c6 { background: #8b5cf6; }
+    .light .ov-c1 { background: #18181b; }
+    .light .ov-c2 { background: #4f46e5; }
+    .light .ov-c3 { background: #d97706; }
+    .light .ov-c4 { background: #059669; }
+    .light .ov-c5 { background: #dc2626; }
+    .light .ov-c6 { background: #7c3aed; }
     .ui-kbd {
       border: 1px solid var(--border);
       background: transparent;
@@ -269,6 +300,7 @@
 // ===================================================================
 const MODE = "__SERVER_MODE__";
 const isDashboard = MODE === 'dashboard';
+const DEFAULT_ENGINE = "__DEFAULT_ENGINE__";
 
 // ===================================================================
 // State
@@ -550,9 +582,16 @@ async function apiDoc(shard, docid) {
   return apiFetch(`/api/doc/${shard}/${encodeURIComponent(docid)}`);
 }
 
-async function apiBrowse(shard = '') {
-  const url = shard ? `/api/browse?shard=${encodeURIComponent(shard)}` : '/api/browse';
+async function apiBrowse(shard = '', {page = 1, pageSize = 100, q = '', sort = ''} = {}) {
+  if (!shard) return apiFetch('/api/browse');
+  let url = `/api/browse?shard=${encodeURIComponent(shard)}&page=${page}&page_size=${pageSize}`;
+  if (q) url += `&q=${encodeURIComponent(q)}`;
+  if (sort) url += `&sort=${encodeURIComponent(sort)}`;
   return apiFetch(url);
+}
+
+async function apiMetaScanDocs() {
+  return apiPost('/api/meta/scan-docs', {});
 }
 
 async function apiOverview() {
@@ -611,7 +650,7 @@ function currentSearchEngine() {
   if (state.searchEngine) return state.searchEngine;
   if (state.stats && state.stats.engine) return state.stats.engine;
   if (state.engines && state.engines.length > 0) return state.engines[0];
-  return 'duckdb';
+  return DEFAULT_ENGINE;
 }
 
 function searchEngineOptions() {
@@ -688,7 +727,7 @@ function highlight(snippet, query) {
 }
 
 function fmtBytes(bytes) {
-  if (bytes === 0) return '0 B';
+  if (!bytes || bytes <= 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
   return (bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
@@ -723,11 +762,6 @@ function statusClass(status) {
     case 'queued': return 'status-queued';
     default: return 'status-default';
   }
-}
-
-function fmtPct(value, total) {
-  if (!total || total <= 0) return '0%';
-  return `${Math.round((value / total) * 100)}%`;
 }
 
 function statusChip(label, ok) {
@@ -863,92 +897,231 @@ async function renderOverview() {
     </div>`;
 
   try {
-    await refreshDashboardContext();
-    const data = state.overview || await apiOverview();
-    state.overview = data;
-    renderOverviewContent(data);
+    const [_, warcData, jobsData] = await Promise.all([
+      refreshDashboardContext(),
+      apiWARCList({ limit: 1 }).catch(() => null),
+      apiJobs().catch(() => ({ jobs: [] })),
+    ]);
+    if (!state.overview) {
+      state.overview = await apiOverview();
+      state.overviewLoadedAt = Date.now();
+    }
+    state.jobs = (jobsData && jobsData.jobs) || [];
+    renderOverviewContent(state.overview, warcData, state.jobs);
   } catch (e) {
     $('overview-content').innerHTML = `<div class="text-xs text-red-400">${esc(e.message)}</div>`;
   }
 }
 
-function renderOverviewContent(d) {
+function renderOverviewContent(d, warcData, jobs) {
   const el = $('overview-content');
   if (!el) return;
 
+  const summary = (warcData && warcData.summary) || {};
+  const sys = (warcData && warcData.system) || {};
   const engineCount = d.fts_engines ? Object.keys(d.fts_engines).length : 0;
-  const statusBits = [renderMetaSummaryLine()];
+  const packCount = d.pack_formats ? Object.keys(d.pack_formats).length : 0;
+  const totalDisk = (d.warc_total_size || 0) + (d.md_total_size || 0)
+    + Object.values(d.pack_formats || {}).reduce((a, b) => a + b, 0)
+    + Object.values(d.fts_engines || {}).reduce((a, b) => a + b, 0);
+  const activeJobs = (jobs || []).filter(j => j.status === 'running' || j.status === 'queued');
 
-  // Stat cards
+  // ── Section 1: Key Metrics ──
   const cards = [
-    { label: 'Crawl ID', value: d.crawl_id || '\u2014' },
-    { label: 'Documents', value: (d.md_doc_estimate || 0).toLocaleString() },
+    { label: 'Crawl', value: d.crawl_id || '\u2014', mono: true },
+    { label: 'Total Disk', value: fmtBytes(totalDisk) },
     { label: 'WARC Files', value: (d.warc_count || 0).toLocaleString() },
-    { label: 'Engines', value: engineCount.toString() },
+    { label: 'Documents', value: (d.md_doc_estimate || 0).toLocaleString() },
+    { label: 'MD Shards', value: (d.md_shards || 0).toLocaleString() },
+    { label: 'Active Jobs', value: activeJobs.length.toString(), link: '#/jobs' },
   ];
+  const cardsHTML = cards.map((c, i) => {
+    const inner = `
+      <div class="text-[11px] font-mono ui-subtle mb-1">${esc(c.label)}</div>
+      <div class="text-lg font-medium ${c.mono ? 'text-sm' : ''}">${esc(c.value)}</div>`;
+    if (c.link) return `<a href="${c.link}" class="surface p-4 anim-fade-up block hover:border-[var(--accent)] transition-colors" style="animation-delay:${i*25}ms">${inner}</a>`;
+    return `<div class="surface p-4 anim-fade-up" style="animation-delay:${i*25}ms">${inner}</div>`;
+  }).join('');
 
-  const cardsHTML = cards.map((c, i) => `
-    <div class="surface p-4 anim-fade-up" style="animation-delay:${i * 30}ms">
-      <div class="text-xs font-mono ui-subtle mb-1">${esc(c.label)}</div>
-      <div class="text-lg font-medium">${esc(c.value)}</div>
-    </div>`).join('');
-
-  // Data breakdown table
-  const rows = [];
-  // WARC
-  if (d.warc_count > 0) {
-    rows.push({ category: 'WARC Files', count: d.warc_count, size: d.warc_total_size });
-  }
-  // Markdown
-  if (d.md_doc_estimate > 0) {
-    rows.push({ category: 'Markdown Docs', count: d.md_doc_estimate, size: d.md_total_size });
-  }
-  // Pack formats
-  if (d.pack_formats) {
-    for (const [fmt, size] of Object.entries(d.pack_formats)) {
-      rows.push({ category: 'Pack: ' + fmt, count: '\u2014', size: size });
-    }
-  }
-  // FTS engines
-  if (d.fts_engines) {
-    for (const [eng, size] of Object.entries(d.fts_engines)) {
-      const shards = d.fts_shard_count && d.fts_shard_count[eng] ? d.fts_shard_count[eng] : 0;
-      rows.push({ category: 'FTS: ' + eng, count: shards + ' shard' + (shards !== 1 ? 's' : ''), size: size });
-    }
-  }
-
-  const tableHTML = rows.length > 0 ? `
-    <div class="surface overflow-x-auto mt-6">
-      <table class="w-full text-sm ui-table">
-        <thead>
-          <tr>
-            <th class="text-left px-4 py-2 text-xs font-mono">Category</th>
-            <th class="text-right px-4 py-2 text-xs font-mono">Count</th>
-            <th class="text-right px-4 py-2 text-xs font-mono">Size</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows.map((r, i) => `
-            <tr class="anim-fade-up" style="animation-delay:${(i + 4) * 30}ms">
-              <td class="px-4 py-2">${esc(r.category)}</td>
-              <td class="text-right px-4 py-2 font-mono ui-subtle">${typeof r.count === 'number' ? r.count.toLocaleString() : esc(String(r.count))}</td>
-              <td class="text-right px-4 py-2 font-mono ui-subtle">${typeof r.size === 'number' ? fmtBytes(r.size) : esc(String(r.size || '\u2014'))}</td>
-            </tr>`).join('')}
-        </tbody>
-      </table>
+  // ── Section 2: Pipeline Progress ──
+  const pipeTotal = summary.total || d.warc_count || 0;
+  const steps = [
+    { label: 'Downloaded', done: summary.downloaded || 0, total: pipeTotal, cls: 'ov-c1' },
+    { label: 'Markdown', done: summary.markdown_ready || 0, total: pipeTotal, cls: 'ov-c2' },
+    { label: 'Packed', done: summary.packed || 0, total: pipeTotal, cls: 'ov-c3' },
+    { label: 'Indexed', done: summary.indexed || 0, total: pipeTotal, cls: 'ov-c4' },
+  ];
+  const pipelineHTML = pipeTotal > 0 ? `
+    <div class="surface p-4 anim-fade-up" style="animation-delay:200ms">
+      <div class="text-[11px] font-mono ui-subtle mb-3">Pipeline Coverage</div>
+      <div class="flex items-stretch gap-0">
+        ${steps.map((s, i) => {
+          const pct = s.total > 0 ? Math.round((s.done / s.total) * 100) : 0;
+          return `
+            ${i > 0 ? '<div class="ov-pipeline-arrow">\u2192</div>' : ''}
+            <div class="ov-pipeline-step">
+              <div class="flex items-baseline justify-between mb-1">
+                <span class="text-[11px] font-mono ui-subtle">${esc(s.label)}</span>
+                <span class="text-[11px] font-mono ${pct === 100 ? 'status-completed' : pct > 0 ? '' : 'ui-subtle'}">${pct}%</span>
+              </div>
+              <div class="progress-track" style="height:8px">
+                <div class="${s.cls}" style="height:100%;width:${pct}%;transition:width 0.4s ease"></div>
+              </div>
+              <div class="text-[10px] font-mono ui-subtle mt-1">${s.done.toLocaleString()} / ${s.total.toLocaleString()}</div>
+            </div>`;
+        }).join('')}
+      </div>
     </div>` : '';
 
+  // ── Section 3: Storage Breakdown ──
+  const storageSegs = [
+    { label: 'WARC', value: d.warc_total_size || 0, cls: 'ov-c1' },
+    { label: 'Markdown', value: d.md_total_size || 0, cls: 'ov-c2' },
+    { label: 'Pack', value: Object.values(d.pack_formats || {}).reduce((a, b) => a + b, 0), cls: 'ov-c3' },
+    { label: 'FTS Index', value: Object.values(d.fts_engines || {}).reduce((a, b) => a + b, 0), cls: 'ov-c4' },
+  ].filter(s => s.value > 0);
+  const storageTotal = storageSegs.reduce((a, s) => a + s.value, 0) || 1;
+
+  const donutGradient = storageSegs.length > 0 ? (() => {
+    let angle = 0;
+    const stops = [];
+    for (const s of storageSegs) {
+      const deg = (s.value / storageTotal) * 360;
+      const clsMap = { 'ov-c1': 'var(--accent)', 'ov-c2': '#6366f1', 'ov-c3': '#f59e0b', 'ov-c4': '#10b981' };
+      const color = clsMap[s.cls] || 'var(--border)';
+      stops.push(`${color} ${angle}deg ${angle + deg}deg`);
+      angle += deg;
+    }
+    return `conic-gradient(${stops.join(', ')})`;
+  })() : 'var(--border)';
+
+  const storageHTML = storageSegs.length > 0 ? `
+    <div class="grid md:grid-cols-2 gap-4 anim-fade-up" style="animation-delay:250ms">
+      <div class="surface p-4">
+        <div class="text-[11px] font-mono ui-subtle mb-3">Storage Breakdown</div>
+        <div class="flex items-center gap-6">
+          <div class="ov-donut shrink-0" style="background:${donutGradient}">
+            <div class="ov-donut-hole">
+              <span class="text-xs font-mono font-medium">${fmtBytes(storageTotal)}</span>
+              <span class="text-[9px] font-mono ui-subtle">total</span>
+            </div>
+          </div>
+          <div class="flex-1 space-y-2">
+            ${storageSegs.map(s => `
+              <div class="flex items-center gap-2">
+                <div class="ov-legend-dot ${s.cls}"></div>
+                <span class="text-[11px] font-mono ui-subtle flex-1">${esc(s.label)}</span>
+                <span class="text-[11px] font-mono">${fmtBytes(s.value)}</span>
+                <span class="text-[10px] font-mono ui-subtle w-10 text-right">${Math.round((s.value / storageTotal) * 100)}%</span>
+              </div>`).join('')}
+          </div>
+        </div>
+      </div>
+      <div class="surface p-4">
+        <div class="text-[11px] font-mono ui-subtle mb-3">Phase Size on Disk</div>
+        ${renderBars(storageSegs.map(s => ({ label: s.label.toLowerCase(), value: s.value, text: fmtBytes(s.value) })))}
+        ${sys.disk_total ? `
+          <div class="mt-4 pt-3 border-t">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-[11px] font-mono ui-subtle">Disk Usage</span>
+              <span class="text-[11px] font-mono ui-subtle">${fmtBytes(sys.disk_used || 0)} / ${fmtBytes(sys.disk_total)}</span>
+            </div>
+            <div class="progress-track" style="height:8px">
+              <div class="ov-c5" style="height:100%;width:${Math.round(((sys.disk_used||0)/(sys.disk_total||1))*100)}%;opacity:0.6"></div>
+            </div>
+            <div class="text-[10px] font-mono ui-subtle mt-1">${fmtBytes(sys.disk_free || 0)} free</div>
+          </div>` : ''}
+      </div>
+    </div>` : '';
+
+  // ── Section 4: FTS Engines + Pack Formats ──
+  const ftsEntries = Object.entries(d.fts_engines || {});
+  const packEntries = Object.entries(d.pack_formats || {});
+  const hasDetails = ftsEntries.length > 0 || packEntries.length > 0;
+
+  const detailsHTML = hasDetails ? `
+    <div class="grid md:grid-cols-2 gap-4 anim-fade-up" style="animation-delay:300ms">
+      ${ftsEntries.length > 0 ? `
+        <div class="surface p-4">
+          <div class="text-[11px] font-mono ui-subtle mb-3">FTS Engines (${ftsEntries.length})</div>
+          ${renderBars(ftsEntries.map(([eng, size]) => {
+            const shards = d.fts_shard_count && d.fts_shard_count[eng] ? d.fts_shard_count[eng] : 0;
+            return { label: eng, value: size, text: `${fmtBytes(size)} \u00b7 ${shards}sh` };
+          }))}
+        </div>` : ''}
+      ${packEntries.length > 0 ? `
+        <div class="surface p-4">
+          <div class="text-[11px] font-mono ui-subtle mb-3">Pack Formats (${packEntries.length})</div>
+          ${renderBars(packEntries.map(([fmt, size]) => ({ label: fmt, value: size, text: fmtBytes(size) })))}
+        </div>` : ''}
+      ${ftsEntries.length > 0 && packEntries.length === 0 ? '<div></div>' : ''}
+      ${packEntries.length > 0 && ftsEntries.length === 0 ? '<div></div>' : ''}
+    </div>` : '';
+
+  // ── Section 5: Active Jobs ──
+  const jobsHTML = activeJobs.length > 0 ? `
+    <div class="surface p-4 anim-fade-up" style="animation-delay:350ms">
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-[11px] font-mono ui-subtle">Active Jobs (${activeJobs.length})</div>
+        <a href="#/jobs" class="text-[11px] font-mono ui-link">all jobs \u2192</a>
+      </div>
+      ${activeJobs.slice(0, 5).map(j => {
+        const pct = Math.round((j.progress || 0) * 100);
+        const rateStr = j.rate > 0 ? ` \u00b7 ${j.rate.toFixed(0)}/s` : '';
+        return `
+          <div class="mb-2 last:mb-0">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-[11px] font-mono ui-subtle">${esc(j.id)} \u00b7 ${esc(j.type)} \u00b7 <span class="${statusClass(j.status)}">${esc(j.status)}</span>${rateStr}</span>
+              <span class="text-[11px] font-mono">${pct}%</span>
+            </div>
+            <div class="progress-track" style="height:4px">
+              <div class="progress-fill" style="width:${pct}%"></div>
+            </div>
+          </div>`;
+      }).join('')}
+    </div>` : '';
+
+  // ── Section 6: System ──
+  const memHTML = sys.mem_alloc ? `
+    <div class="surface p-4 anim-fade-up" style="animation-delay:400ms">
+      <div class="text-[11px] font-mono ui-subtle mb-3">Process</div>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div>
+          <div class="text-[10px] font-mono ui-subtle">Heap Alloc</div>
+          <div class="text-xs font-mono">${fmtBytes(sys.mem_alloc)}</div>
+        </div>
+        <div>
+          <div class="text-[10px] font-mono ui-subtle">Heap Sys</div>
+          <div class="text-xs font-mono">${fmtBytes(sys.mem_heap_sys)}</div>
+        </div>
+        <div>
+          <div class="text-[10px] font-mono ui-subtle">Stack</div>
+          <div class="text-xs font-mono">${fmtBytes(sys.mem_stack_inuse)}</div>
+        </div>
+        <div>
+          <div class="text-[10px] font-mono ui-subtle">Goroutines</div>
+          <div class="text-xs font-mono">${(sys.goroutines || 0).toLocaleString()}</div>
+        </div>
+      </div>
+    </div>` : '';
+
+  // ── Assemble ──
   el.innerHTML = `
     <div class="surface-soft px-4 py-3 mb-4">
-      <div class="meta-line">${esc(statusBits.join(' · '))}</div>
+      <div class="meta-line">${esc(renderMetaSummaryLine())}</div>
     </div>
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
       ${cardsHTML}
     </div>
-    ${tableHTML}
-    <div class="flex gap-3 mt-6">
+    ${pipelineHTML ? `<div class="mb-4">${pipelineHTML}</div>` : ''}
+    ${storageHTML ? `<div class="mb-4">${storageHTML}</div>` : ''}
+    ${detailsHTML ? `<div class="mb-4">${detailsHTML}</div>` : ''}
+    ${jobsHTML ? `<div class="mb-4">${jobsHTML}</div>` : ''}
+    ${memHTML ? `<div class="mb-4">${memHTML}</div>` : ''}
+    <div class="flex gap-3 mt-2 anim-fade-up" style="animation-delay:450ms">
       <a href="#/pipeline" class="ui-btn px-4 py-2 text-sm">Open Pipeline</a>
       <a href="#/search" class="ui-btn px-4 py-2 text-sm">Search</a>
+      <a href="#/warc" class="ui-btn px-4 py-2 text-sm">WARC Console</a>
     </div>`;
 }
 
@@ -1124,7 +1297,7 @@ function renderPipelineContent() {
           <label class="block text-xs font-mono ui-subtle mb-1">Engine</label>
           <select name="engine" class="ui-select text-sm px-3 py-2">
             ${engines.map(e => `<option value="${esc(e)}">${esc(e)}</option>`).join('')}
-            ${engines.length === 0 ? '<option value="duckdb">duckdb</option>' : ''}
+            ${engines.length === 0 ? `<option value="${esc(DEFAULT_ENGINE)}">${esc(DEFAULT_ENGINE)}</option>` : ''}
           </select>
         </div>
         <div>
@@ -1142,10 +1315,13 @@ function renderPipelineContent() {
       <div id="jobs-index">${renderJobList(indexJobs)}</div>
     </div>
 
-    <!-- Job History -->
+    <!-- Recent Jobs -->
     <div class="mt-8 anim-fade-up" style="animation-delay:120ms">
-      <h2 class="text-sm font-medium mb-4">Job History</h2>
-      <div id="job-history">${renderJobHistory(jobs)}</div>
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-sm font-medium">Recent Jobs</h2>
+        <a href="#/jobs" class="text-xs font-mono ui-link">View all jobs &rarr;</a>
+      </div>
+      <div id="job-history">${renderRecentJobs(jobs)}</div>
     </div>`;
 }
 
@@ -1209,6 +1385,37 @@ function renderJobHistory(jobs) {
     </div>`;
 }
 
+function renderRecentJobs(jobs) {
+  if (!jobs || jobs.length === 0) {
+    return '<div class="ui-empty">No jobs yet.</div>';
+  }
+  const recent = jobs.slice(0, 5);
+  return `
+    <div class="surface overflow-x-auto">
+      <table class="w-full text-sm ui-table">
+        <thead>
+          <tr>
+            <th class="text-left px-4 py-2 text-xs font-mono">ID</th>
+            <th class="text-left px-4 py-2 text-xs font-mono">Type</th>
+            <th class="text-left px-4 py-2 text-xs font-mono">Status</th>
+            <th class="text-left px-4 py-2 text-xs font-mono">Message</th>
+            <th class="text-right px-4 py-2 text-xs font-mono">Elapsed</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${recent.map(j => `
+            <tr>
+              <td class="px-4 py-2 font-mono text-xs">${esc(j.id)}</td>
+              <td class="px-4 py-2 text-xs">${esc(j.type)}</td>
+              <td class="px-4 py-2 text-xs ${statusClass(j.status)}">${esc(j.status)}</td>
+              <td class="px-4 py-2 text-xs ui-subtle truncate max-w-xs">${esc(j.message || j.error || '')}</td>
+              <td class="px-4 py-2 font-mono text-xs text-right ui-subtle">${fmtDuration(j.started_at, j.ended_at)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
 function submitJob(event, type) {
   event.preventDefault();
   const form = event.target;
@@ -1221,7 +1428,7 @@ function submitJob(event, type) {
   } else if (type === 'pack') {
     cfg.format = form.elements.format ? form.elements.format.value : 'parquet';
   } else if (type === 'index') {
-    cfg.engine = form.elements.engine ? form.elements.engine.value : 'duckdb';
+    cfg.engine = form.elements.engine ? form.elements.engine.value : DEFAULT_ENGINE;
     cfg.source = form.elements.source ? form.elements.source.value : 'files';
   }
 
@@ -1404,6 +1611,8 @@ async function renderJobs() {
     if (jobsPollingTimer) clearInterval(jobsPollingTimer);
     jobsPollingTimer = setInterval(async () => {
       if (state.currentPage !== 'jobs') return;
+      // Only poll when WebSocket is disconnected — WS handles real-time updates
+      if (wsClient.connected) return;
       await reloadJobs();
       const line = $('jobs-summary');
       if (line) line.textContent = renderJobsSummaryLine(state.jobs || []);
@@ -1581,7 +1790,7 @@ function renderSearchPagination(cur, total, query, pageSize, engine) {
 }
 
 // ===================================================================
-// Tab 4: WARC
+// Tab 5: WARC
 // ===================================================================
 async function renderWARC(offset = state.warcOffset || 0, query = state.warcQuery || '') {
   state.currentPage = 'warc';
@@ -1618,13 +1827,9 @@ async function renderWARC(offset = state.warcOffset || 0, query = state.warcQuer
       const parts = [];
       if (data.meta_backend) parts.push(`meta:${data.meta_backend}`);
       if (data.meta_generated_at) parts.push(`updated:${fmtRelativeTime(data.meta_generated_at)}`);
-      parts.push(`stale:${data.meta_stale ? 'yes' : 'no'}`);
-      if (data.meta_refreshing) parts.push('refreshing');
+      if (data.meta_stale) parts.push('stale');
+      if (data.meta_refreshing) parts.push('refreshing\u2026');
       if (data.meta_last_error) parts.push(`error:${data.meta_last_error}`);
-      if (data.system) {
-        parts.push(`disk:${fmtBytes(data.system.disk_used||0)}/${fmtBytes(data.system.disk_total||0)}`);
-        parts.push(`mem:${fmtBytes(data.system.mem_alloc||0)}`);
-      }
       meta.textContent = parts.join(' · ');
     }
     renderWARCContent(data);
@@ -1638,69 +1843,104 @@ function renderWARCContent(data) {
   if (!el) return;
   const summary = data.summary || {};
   const total = summary.total || 0;
-  const cards = [
-    { label: 'WARCs', value: (summary.total || 0).toLocaleString() },
-    { label: 'Downloaded', value: `${(summary.downloaded || 0).toLocaleString()} (${fmtPct(summary.downloaded || 0, total)})` },
-    { label: 'Markdown', value: `${(summary.markdown_ready || 0).toLocaleString()} (${fmtPct(summary.markdown_ready || 0, total)})` },
-    { label: 'Indexed', value: `${(summary.indexed || 0).toLocaleString()} (${fmtPct(summary.indexed || 0, total)})` },
+  const dl = summary.downloaded || 0;
+  const md = summary.markdown_ready || 0;
+  const pk = summary.packed || 0;
+  const ix = summary.indexed || 0;
+
+  // ── Pipeline Funnel — stacked bar + step counts ──
+  const funnelSteps = [
+    { label: 'Downloaded', count: dl, cls: 'ov-c1' },
+    { label: 'Markdown', count: md, cls: 'ov-c2' },
+    { label: 'Packed', count: pk, cls: 'ov-c3' },
+    { label: 'Indexed', count: ix, cls: 'ov-c4' },
   ];
+  const hasSizes = summary.warc_bytes || summary.markdown_bytes || summary.pack_bytes || summary.fts_bytes;
+  const totalBytes = (summary.warc_bytes || 0) + (summary.markdown_bytes || 0) + (summary.pack_bytes || 0) + (summary.fts_bytes || 0);
+  const funnelHTML = total > 0 ? `
+    <div class="surface p-4 mb-4">
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-[11px] font-mono ui-subtle">${total.toLocaleString()} WARC files${hasSizes ? ` \u00b7 ${fmtBytes(totalBytes)} total` : ''}</div>
+        <div class="text-[11px] font-mono ui-subtle">${ix === total ? 'all indexed' : `${(total - ix).toLocaleString()} remaining`}</div>
+      </div>
+      <div class="ov-stacked mb-3">
+        ${funnelSteps.map(s => {
+          const w = total > 0 ? Math.max(s.count > 0 ? 1 : 0, (s.count / total) * 100) : 0;
+          return `<div class="ov-stacked-seg ${s.cls}" style="width:${w}%" title="${s.label}: ${s.count}/${total}"></div>`;
+        }).join('')}
+      </div>
+      <div class="grid grid-cols-4 gap-3">
+        ${funnelSteps.map(s => {
+          const pct = total > 0 ? Math.round((s.count / total) * 100) : 0;
+          return `
+            <div class="flex items-center gap-2">
+              <div class="ov-legend-dot ${s.cls}"></div>
+              <div>
+                <div class="text-[11px] font-mono">${s.count.toLocaleString()} <span class="ui-subtle">${esc(s.label.toLowerCase())}</span></div>
+                <div class="text-[10px] font-mono ui-subtle">${pct}%</div>
+              </div>
+            </div>`;
+        }).join('')}
+      </div>
+      ${hasSizes ? `
+        <div class="flex items-center gap-4 mt-3 pt-3 border-t text-[11px] font-mono ui-subtle">
+          ${summary.warc_bytes ? `<span>warc ${fmtBytes(summary.warc_bytes)}</span>` : ''}
+          ${summary.markdown_bytes ? `<span>md ${fmtBytes(summary.markdown_bytes)}</span>` : ''}
+          ${summary.pack_bytes ? `<span>pk ${fmtBytes(summary.pack_bytes)}</span>` : ''}
+          ${summary.fts_bytes ? `<span>ix ${fmtBytes(summary.fts_bytes)}</span>` : ''}
+        </div>` : ''}
+    </div>` : '';
 
-  const phaseBars = renderBars([
-    { label: 'warc', value: summary.warc_bytes || 0, text: fmtBytes(summary.warc_bytes || 0) },
-    { label: 'markdown', value: summary.markdown_bytes || 0, text: fmtBytes(summary.markdown_bytes || 0) },
-    { label: 'pack', value: summary.pack_bytes || 0, text: fmtBytes(summary.pack_bytes || 0) },
-    { label: 'index', value: summary.fts_bytes || 0, text: fmtBytes(summary.fts_bytes || 0) },
-  ]);
-  const coverageBars = renderBars([
-    { label: 'download', value: summary.downloaded || 0, text: `${summary.downloaded || 0}` },
-    { label: 'markdown', value: summary.markdown_ready || 0, text: `${summary.markdown_ready || 0}` },
-    { label: 'pack', value: summary.packed || 0, text: `${summary.packed || 0}` },
-    { label: 'index', value: summary.indexed || 0, text: `${summary.indexed || 0}` },
-  ]);
-
-  const rows = (data.warcs || []).map((w, i) => `
+  // ── Table rows with smart next-step highlighting + mini progress ──
+  const rows = (data.warcs || []).map((w, i) => {
+    const next = !w.has_warc ? 'dl' : !w.has_markdown ? 'md' : !w.has_pack ? 'pk' : !w.has_fts ? 'ix' : '';
+    const done = (w.has_warc ? 1 : 0) + (w.has_markdown ? 1 : 0) + (w.has_pack ? 1 : 0) + (w.has_fts ? 1 : 0);
+    const docsStr = w.markdown_docs > 0 ? w.markdown_docs.toLocaleString() : '\u2014';
+    return `
     <tr class="anim-fade-up" style="animation-delay:${Math.min(i, 20)*15}ms">
       <td class="px-3 py-2 font-mono text-xs"><a href="#/warc/${encodeURIComponent(w.index)}" class="hover:underline">${esc(w.index)}</a></td>
-      <td class="px-3 py-2 text-xs ui-subtle truncate max-w-[360px]" title="${esc(w.filename || '')}">${esc(w.filename || '\u2014')}</td>
+      <td class="px-3 py-2 text-xs ui-subtle truncate max-w-[260px]" title="${esc(w.filename || '')}">${esc(w.filename || '\u2014')}</td>
       <td class="px-3 py-2 text-xs">
-        <div class="flex flex-wrap gap-1">
-          ${statusChip('dl', !!w.has_warc)}
-          ${statusChip('md', !!w.has_markdown)}
-          ${statusChip('pk', !!w.has_pack)}
-          ${statusChip('ix', !!w.has_fts)}
+        <div class="flex items-center gap-2">
+          <div class="flex gap-1">
+            ${statusChip('dl', !!w.has_warc)}
+            ${statusChip('md', !!w.has_markdown)}
+            ${statusChip('pk', !!w.has_pack)}
+            ${statusChip('ix', !!w.has_fts)}
+          </div>
+          <div class="progress-track" style="width:40px;height:4px">
+            <div class="${done === 4 ? 'ov-c4' : 'progress-fill'}" style="height:100%;width:${done * 25}%"></div>
+          </div>
         </div>
       </td>
+      <td class="px-3 py-2 text-right text-xs font-mono ui-subtle">${docsStr}</td>
       <td class="px-3 py-2 text-right text-xs font-mono ui-subtle">${fmtBytes(w.total_bytes || 0)}</td>
-      <td class="px-3 py-2 text-right text-xs font-mono">
-        <button onclick="warcAction('${esc(w.index)}','download')" class="ui-btn px-2 py-1 text-[11px]">dl</button>
-        <button onclick="warcAction('${esc(w.index)}','markdown')" class="ui-btn px-2 py-1 text-[11px] ml-1">md</button>
-        <button onclick="warcAction('${esc(w.index)}','index',{engine:currentSearchEngine(),source:'files'})" class="ui-btn px-2 py-1 text-[11px] ml-1">ix</button>
+      <td class="px-3 py-2 text-right text-xs font-mono whitespace-nowrap">
+        <button onclick="warcAction('${esc(w.index)}','download')" class="ui-btn px-2 py-1 text-[11px] ${next==='dl'?'ui-btn-primary':''}" title="Download WARC">dl</button>
+        <button onclick="warcAction('${esc(w.index)}','markdown')" class="ui-btn px-2 py-1 text-[11px] ml-1 ${next==='md'?'ui-btn-primary':''}" title="Extract markdown">md</button>
+        <button onclick="warcAction('${esc(w.index)}','pack',{format:'parquet'})" class="ui-btn px-2 py-1 text-[11px] ml-1 ${next==='pk'?'ui-btn-primary':''}" title="Pack (parquet)">pk</button>
+        <button onclick="warcAction('${esc(w.index)}','index',{engine:currentSearchEngine(),source:'files'})" class="ui-btn px-2 py-1 text-[11px] ml-1 ${next==='ix'?'ui-btn-primary':''}" title="Build FTS index">ix</button>
       </td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 
   const nextOffset = (data.offset || 0) + (data.limit || 0);
   const prevOffset = Math.max(0, (data.offset || 0) - (data.limit || 0));
   const canPrev = (data.offset || 0) > 0;
   const canNext = nextOffset < (data.total || 0);
+  const showFrom = total > 0 ? (data.offset || 0) + 1 : 0;
+  const showTo = Math.min((data.offset || 0) + (data.limit || 0), data.total || 0);
+
+  // Incomplete count for batch actions
+  const incomplete = (data.warcs || []).filter(w => !w.has_warc || !w.has_markdown || !w.has_pack || !w.has_fts);
 
   el.innerHTML = `
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-      ${cards.map(c => `
-        <div class="surface p-3">
-          <div class="text-[11px] font-mono ui-subtle mb-1">${esc(c.label)}</div>
-          <div class="text-sm font-medium">${esc(c.value)}</div>
-        </div>`).join('')}
-    </div>
-    <div class="grid md:grid-cols-2 gap-4 mb-4">
-      <div class="surface p-3">
-        <div class="text-[11px] font-mono ui-subtle mb-2">Phase Size on Disk</div>
-        ${phaseBars}
-      </div>
-      <div class="surface p-3">
-        <div class="text-[11px] font-mono ui-subtle mb-2">Pipeline Coverage</div>
-        ${coverageBars}
-      </div>
-    </div>
+    ${funnelHTML}
+    ${isDashboard && incomplete.length > 0 ? `
+      <div class="flex items-center gap-2 mb-3">
+        <span class="text-[11px] font-mono ui-subtle">${incomplete.length} incomplete on this page</span>
+        <button onclick="warcBatchNext()" class="ui-btn px-3 py-1 text-[11px] font-mono" title="Run the next missing step on all visible incomplete WARCs">Run next step (all)</button>
+      </div>` : ''}
     <div class="surface overflow-x-auto">
       <table class="w-full text-sm ui-table">
         <thead>
@@ -1708,22 +1948,43 @@ function renderWARCContent(data) {
             <th class="text-left px-3 py-2 text-[11px] font-mono">WARC</th>
             <th class="text-left px-3 py-2 text-[11px] font-mono">Filename</th>
             <th class="text-left px-3 py-2 text-[11px] font-mono">Phases</th>
-            <th class="text-right px-3 py-2 text-[11px] font-mono">Total</th>
+            <th class="text-right px-3 py-2 text-[11px] font-mono">Docs</th>
+            <th class="text-right px-3 py-2 text-[11px] font-mono">Size</th>
             <th class="text-right px-3 py-2 text-[11px] font-mono">Actions</th>
           </tr>
         </thead>
         <tbody>
-          ${rows || `<tr><td colspan="5" class="px-3 py-4 text-xs font-mono ui-subtle">No WARC records</td></tr>`}
+          ${rows || `<tr><td colspan="6" class="px-3 py-4 text-xs font-mono ui-subtle">No WARC records</td></tr>`}
         </tbody>
       </table>
     </div>
     <div class="flex items-center justify-between mt-3">
-      <div class="text-xs font-mono ui-subtle">${(data.total||0).toLocaleString()} rows</div>
+      <div class="text-xs font-mono ui-subtle">${showFrom > 0 ? `showing ${showFrom}\u2013${showTo} of ${(data.total||0).toLocaleString()}` : 'no results'}</div>
       <div class="flex items-center gap-2">
         <button ${canPrev ? '' : 'disabled'} onclick="renderWARC(${prevOffset}, state.warcQuery || '')" class="ui-btn px-3 py-1 text-xs font-mono ${canPrev ? '' : 'opacity-40 cursor-not-allowed'}">prev</button>
+        <span class="text-[11px] font-mono ui-subtle">${total > 0 ? `page ${Math.floor((data.offset||0)/(data.limit||100))+1}` : ''}</span>
         <button ${canNext ? '' : 'disabled'} onclick="renderWARC(${nextOffset}, state.warcQuery || '')" class="ui-btn px-3 py-1 text-xs font-mono ${canNext ? '' : 'opacity-40 cursor-not-allowed'}">next</button>
       </div>
     </div>`;
+}
+
+// Batch: run next missing step on all visible incomplete WARCs
+async function warcBatchNext() {
+  const warcs = state.warcRows || [];
+  let started = 0;
+  for (const w of warcs) {
+    if (!w.has_warc) {
+      warcAction(w.index, 'download'); started++;
+    } else if (!w.has_markdown) {
+      warcAction(w.index, 'markdown'); started++;
+    } else if (!w.has_pack) {
+      warcAction(w.index, 'pack', { format: 'parquet' }); started++;
+    } else if (!w.has_fts) {
+      warcAction(w.index, 'index', { engine: currentSearchEngine(), source: 'files' }); started++;
+    }
+  }
+  const msg = $('warc-meta');
+  if (msg) msg.textContent = `started ${started} job${started !== 1 ? 's' : ''} (next step for each incomplete WARC)`;
 }
 
 async function renderWARCDetail(index) {
@@ -1740,151 +2001,282 @@ async function renderWARCDetail(index) {
     const data = await apiWARCDetail(index);
     state.warcDetail = data;
     const w = data.warc || {};
-    const actionMsg = `<div id="warc-action-msg" class="meta-line mb-3"></div>`;
-    const bars = renderBars([
-      { label: 'warc', value: w.warc_bytes || 0, text: fmtBytes(w.warc_bytes || 0) },
-      { label: 'markdown', value: w.markdown_bytes || 0, text: fmtBytes(w.markdown_bytes || 0) },
-      { label: 'pack', value: Object.values(w.pack_bytes || {}).reduce((a,b)=>a+b,0), text: fmtBytes(Object.values(w.pack_bytes || {}).reduce((a,b)=>a+b,0)) },
-      { label: 'index', value: Object.values(w.fts_bytes || {}).reduce((a,b)=>a+b,0), text: fmtBytes(Object.values(w.fts_bytes || {}).reduce((a,b)=>a+b,0)) },
-    ]);
+    const actionMsg = `<div id="warc-action-msg" class="meta-line mb-3">${esc(warcActionMessage)}</div>`;
+
+    // Phase size breakdown
+    const packTotal = Object.values(w.pack_bytes || {}).reduce((a,b)=>a+b,0);
+    const ftsTotal = Object.values(w.fts_bytes || {}).reduce((a,b)=>a+b,0);
+    const phases = [
+      { label: 'warc', value: w.warc_bytes || 0, cls: 'ov-c1' },
+      { label: 'markdown', value: w.markdown_bytes || 0, cls: 'ov-c2' },
+      { label: 'pack', value: packTotal, cls: 'ov-c3' },
+      { label: 'index', value: ftsTotal, cls: 'ov-c4' },
+    ];
+    const diskTotal = phases.reduce((a, p) => a + p.value, 0) || 1;
+
+    // Mini donut for phase proportions
+    let donutAngle = 0;
+    const donutStops = [];
+    const clsColorMap = { 'ov-c1': 'var(--accent)', 'ov-c2': '#6366f1', 'ov-c3': '#f59e0b', 'ov-c4': '#10b981' };
+    for (const p of phases) {
+      if (p.value <= 0) continue;
+      const deg = (p.value / diskTotal) * 360;
+      donutStops.push(`${clsColorMap[p.cls] || 'var(--border)'} ${donutAngle}deg ${donutAngle + deg}deg`);
+      donutAngle += deg;
+    }
+    const donutGrad = donutStops.length > 0 ? `conic-gradient(${donutStops.join(', ')})` : 'var(--border)';
+
+    // Per-format/engine breakdown
+    const packEntries = Object.entries(w.pack_bytes || {});
+    const ftsEntries = Object.entries(w.fts_bytes || {});
+    const breakdownHTML = (packEntries.length > 0 || ftsEntries.length > 0) ? `
+      <div class="mt-3 pt-3 border-t space-y-3">
+        ${packEntries.length > 0 ? `
+          <div>
+            <div class="text-[10px] font-mono ui-subtle mb-1">Pack formats (${packEntries.length})</div>
+            ${renderBars(packEntries.map(([fmt, b]) => ({ label: fmt, value: b, text: fmtBytes(b) })))}
+          </div>` : ''}
+        ${ftsEntries.length > 0 ? `
+          <div>
+            <div class="text-[10px] font-mono ui-subtle mb-1">FTS engines (${ftsEntries.length})</div>
+            ${renderBars(ftsEntries.map(([eng, b]) => ({ label: eng, value: b, text: fmtBytes(b) })))}
+          </div>` : ''}
+      </div>` : '';
+
+    // Next action suggestion
+    const nextStep = !w.has_warc ? 'download' : !w.has_markdown ? 'markdown' : !w.has_pack ? 'pack' : !w.has_fts ? 'index' : '';
+    const done = (w.has_warc ? 1 : 0) + (w.has_markdown ? 1 : 0) + (w.has_pack ? 1 : 0) + (w.has_fts ? 1 : 0);
+
+    const enginesOpts = (state.engines||[]).map(e=>`<option value="${esc(e)}">${esc(e)}</option>`).join('') ||
+      `<option value="${DEFAULT_ENGINE}">${DEFAULT_ENGINE}</option>`;
+
+    // Active jobs for this WARC
+    const relatedJobs = data.jobs || [];
+    const activeJobs = relatedJobs.filter(j => j.status === 'running' || j.status === 'queued');
+
     $('warc-detail-content').innerHTML = `
       <div class="page-header mb-3">
         <h1 class="page-title">WARC ${esc(w.index || index)}</h1>
-        <button onclick="refreshDashboardMeta(true)" class="ui-btn px-3 py-2 text-xs font-mono">Refresh Metadata</button>
+        <div class="flex items-center gap-2">
+          <button onclick="refreshDashboardMeta(true)" class="ui-btn px-3 py-2 text-xs font-mono">Refresh</button>
+          <button onclick="renderWARCDetail('${esc(w.index || index)}')" class="ui-btn px-3 py-2 text-xs font-mono">Reload</button>
+        </div>
       </div>
       ${actionMsg}
-      <div class="grid md:grid-cols-3 gap-3 mb-4">
-        <div class="surface p-3">
+
+      <!-- Info cards: 5 columns -->
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+        <div class="surface p-3 col-span-2">
           <div class="text-[11px] font-mono ui-subtle mb-1">Filename</div>
-          <div class="text-xs break-all">${esc(w.filename || '\u2014')}</div>
-        </div>
-        <div class="surface p-3">
-          <div class="text-[11px] font-mono ui-subtle mb-1">Remote</div>
-          <div class="text-xs break-all ui-subtle">${esc(w.remote_path || '\u2014')}</div>
+          <div class="text-xs break-all font-mono">${esc(w.filename || '\u2014')}</div>
+          ${w.remote_path ? `<div class="text-[10px] break-all font-mono ui-subtle mt-1">${esc(w.remote_path)}</div>` : ''}
         </div>
         <div class="surface p-3">
           <div class="text-[11px] font-mono ui-subtle mb-1">Total on Disk</div>
           <div class="text-sm font-mono">${fmtBytes(w.total_bytes || 0)}</div>
         </div>
-      </div>
-      <div class="grid md:grid-cols-2 gap-4 mb-4">
         <div class="surface p-3">
-          <div class="text-[11px] font-mono ui-subtle mb-2">Phase Size</div>
-          ${bars}
+          <div class="text-[11px] font-mono ui-subtle mb-1">Documents</div>
+          <div class="text-sm font-mono">${(w.markdown_docs || 0).toLocaleString()}</div>
         </div>
         <div class="surface p-3">
+          <div class="text-[11px] font-mono ui-subtle mb-1">Progress</div>
+          <div class="text-sm font-mono">${done}/4</div>
+          <div class="progress-track mt-1" style="height:4px">
+            <div class="${done === 4 ? 'ov-c4' : 'progress-fill'}" style="height:100%;width:${done * 25}%"></div>
+          </div>
+        </div>
+      </div>
+
+      ${activeJobs.length > 0 ? `
+        <div class="surface p-3 mb-4 border-l-2" style="border-left-color:#2563eb">
+          <div class="text-[11px] font-mono mb-2" style="color:#2563eb">Active Jobs (${activeJobs.length})</div>
+          ${activeJobs.map(j => {
+            const pct = Math.round((j.progress || 0) * 100);
+            return `
+              <div class="mb-2 last:mb-0">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-[11px] font-mono ui-subtle">${esc(j.id)} \u00b7 ${esc(j.type)} \u00b7 <span class="status-running">${esc(j.status)}</span></span>
+                  <span class="text-[11px] font-mono">${pct}%</span>
+                </div>
+                <div class="progress-track" style="height:4px">
+                  <div class="progress-fill" style="width:${pct}%"></div>
+                </div>
+                ${j.message ? `<div class="text-[10px] font-mono ui-subtle mt-1 truncate">${esc(j.message)}</div>` : ''}
+              </div>`;
+          }).join('')}
+        </div>` : ''}
+
+      <!-- Phase status + sizes with donut -->
+      <div class="grid md:grid-cols-2 gap-4 mb-4">
+        <div class="surface p-3">
           <div class="text-[11px] font-mono ui-subtle mb-2">Phase Status</div>
-          <div class="flex flex-wrap gap-2 mb-2">
+          <div class="flex flex-wrap gap-2 mb-3">
             ${statusChip('download', !!w.has_warc)}
             ${statusChip('markdown', !!w.has_markdown)}
             ${statusChip('pack', !!w.has_pack)}
             ${statusChip('index', !!w.has_fts)}
           </div>
-          <div class="text-xs font-mono ui-subtle">docs: ${(w.markdown_docs || 0).toLocaleString()} · updated: ${w.updated_at ? fmtRelativeTime(w.updated_at) : '\u2014'}</div>
+          <div class="text-[11px] font-mono ui-subtle">
+            ${nextStep ? `next: <span class="font-medium" style="color:var(--text)">${nextStep}</span> &middot; ` : '<span class="status-completed">all phases complete</span> &middot; '}
+            updated: ${w.updated_at ? fmtRelativeTime(w.updated_at) : '\u2014'}
+          </div>
+        </div>
+        <div class="surface p-3">
+          <div class="text-[11px] font-mono ui-subtle mb-2">Phase Size on Disk</div>
+          <div class="flex items-start gap-4">
+            <div class="ov-donut shrink-0" style="width:80px;height:80px;background:${donutGrad}">
+              <div class="ov-donut-hole">
+                <span class="text-[10px] font-mono font-medium">${fmtBytes(w.total_bytes || 0)}</span>
+              </div>
+            </div>
+            <div class="flex-1 space-y-1">
+              ${phases.filter(p => p.value > 0).map(p => `
+                <div class="flex items-center gap-2">
+                  <div class="ov-legend-dot ${p.cls}"></div>
+                  <span class="text-[11px] font-mono ui-subtle flex-1">${esc(p.label)}</span>
+                  <span class="text-[11px] font-mono">${fmtBytes(p.value)}</span>
+                  <span class="text-[10px] font-mono ui-subtle w-8 text-right">${Math.round((p.value / diskTotal) * 100)}%</span>
+                </div>`).join('')}
+              ${phases.every(p => p.value <= 0) ? '<div class="text-[11px] font-mono ui-subtle">no data on disk</div>' : ''}
+            </div>
+          </div>
+          ${breakdownHTML}
         </div>
       </div>
+
+      <!-- Actions -->
       <div class="surface p-3 mb-4">
         <div class="text-[11px] font-mono ui-subtle mb-3">Actions</div>
-        <div class="grid md:grid-cols-2 gap-3">
+        <div class="grid md:grid-cols-2 gap-4">
+          <!-- Left: download + markdown -->
           <div class="space-y-2">
-            <button onclick="warcAction('${esc(w.index)}','download',{},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Download</button>
-            <button onclick="warcAction('${esc(w.index)}','markdown',{fast:false},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Markdown</button>
-            <button onclick="warcAction('${esc(w.index)}','markdown',{fast:true},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Markdown --fast</button>
+            <div class="text-[10px] font-mono ui-subtle mb-1 uppercase tracking-wider">Fetch &amp; Extract</div>
+            <button onclick="warcAction('${esc(w.index)}','download',{},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono ${nextStep==='download'?'ui-btn-primary':''}">Download WARC</button>
+            <button onclick="warcAction('${esc(w.index)}','markdown',{fast:false},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono ${nextStep==='markdown'?'ui-btn-primary':''}">Extract Markdown</button>
+            <button onclick="warcAction('${esc(w.index)}','markdown',{fast:true},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Extract Markdown --fast</button>
           </div>
+          <!-- Right: pack + index + delete -->
           <div class="space-y-2">
+            <div class="text-[10px] font-mono ui-subtle mb-1 uppercase tracking-wider">Pack &amp; Index</div>
             <div class="flex items-center gap-2">
-              <select id="warc-pack-format" class="ui-select flex-1 text-xs px-2 py-2"><option>parquet</option><option>bin</option><option>duckdb</option><option>markdown</option></select>
-              <button onclick="warcAction('${esc(w.index)}','pack',{format:$('warc-pack-format').value},true)" class="ui-btn px-3 py-2 text-xs font-mono">Pack</button>
+              <label class="text-[11px] font-mono ui-subtle w-14 shrink-0">format</label>
+              <select id="warc-pack-format" class="ui-select flex-1 text-xs px-2 py-2">
+                <option value="parquet">parquet</option><option value="bin">bin</option><option value="duckdb">duckdb</option><option value="markdown">markdown</option>
+              </select>
+              <button onclick="warcAction('${esc(w.index)}','pack',{format:$('warc-pack-format').value},true)" class="ui-btn px-3 py-2 text-xs font-mono shrink-0 ${nextStep==='pack'?'ui-btn-primary':''}">Pack</button>
             </div>
             <div class="flex items-center gap-2">
-              <select id="warc-index-engine" class="ui-select flex-1 text-xs px-2 py-2">${(state.engines||[]).map(e=>`<option value=\"${esc(e)}\">${esc(e)}</option>`).join('') || '<option value=\"duckdb\">duckdb</option>'}</select>
-              <select id="warc-index-source" class="ui-select flex-1 text-xs px-2 py-2"><option value="files">files</option><option value="parquet">parquet</option><option value="bin">bin</option><option value="duckdb">duckdb</option><option value="markdown">markdown</option></select>
-              <button onclick="warcAction('${esc(w.index)}','index',{engine:$('warc-index-engine').value,source:$('warc-index-source').value},true)" class="ui-btn px-3 py-2 text-xs font-mono">Index</button>
+              <label class="text-[11px] font-mono ui-subtle w-14 shrink-0">engine</label>
+              <select id="warc-index-engine" class="ui-select flex-1 text-xs px-2 py-2">${enginesOpts}</select>
+              <select id="warc-index-source" class="ui-select text-xs px-2 py-2">
+                <option value="files">files</option><option value="parquet">parquet</option><option value="bin">bin</option><option value="duckdb">duckdb</option><option value="markdown">markdown</option>
+              </select>
+              <button onclick="warcAction('${esc(w.index)}','index',{engine:$('warc-index-engine').value,source:$('warc-index-source').value},true)" class="ui-btn px-3 py-2 text-xs font-mono shrink-0 ${nextStep==='index'?'ui-btn-primary':''}">Index</button>
             </div>
             <div class="flex items-center gap-2">
+              <label class="text-[11px] font-mono ui-subtle w-14 shrink-0">re-index</label>
               <button onclick="warcAction('${esc(w.index)}','reindex',{engine:$('warc-index-engine').value,source:$('warc-index-source').value},true)" class="ui-btn flex-1 px-3 py-2 text-xs font-mono">Re-index</button>
-              <select id="warc-delete-target" class="ui-select text-xs px-2 py-2"><option value="index">index</option><option value="pack">pack</option><option value="markdown">markdown</option><option value="warc">warc</option><option value="all">all</option></select>
-              <button onclick="warcAction('${esc(w.index)}','delete',{target:$('warc-delete-target').value,format:$('warc-pack-format').value,engine:$('warc-index-engine').value},true)" class="ui-btn ui-btn-danger px-3 py-2 text-xs font-mono">Delete</button>
+            </div>
+            <div class="text-[10px] font-mono ui-subtle mt-2 mb-1 uppercase tracking-wider pt-2 border-t" style="color:var(--danger)">Danger Zone</div>
+            <div class="flex items-center gap-2">
+              <label class="text-[11px] font-mono ui-subtle w-14 shrink-0">target</label>
+              <select id="warc-delete-target" class="ui-select flex-1 text-xs px-2 py-2">
+                <option value="index">index</option><option value="pack">pack</option><option value="markdown">markdown</option><option value="warc">warc</option><option value="all">all</option>
+              </select>
+              <button onclick="if(confirm('Delete '+$('warc-delete-target').value+' for WARC ${esc(w.index)}?'))warcAction('${esc(w.index)}','delete',{target:$('warc-delete-target').value,format:$('warc-pack-format').value,engine:$('warc-index-engine').value},true)" class="ui-btn ui-btn-danger px-3 py-2 text-xs font-mono shrink-0">Delete</button>
             </div>
           </div>
         </div>
       </div>
+
+      <!-- Related Jobs -->
       <div class="surface p-3">
-        <div class="text-[11px] font-mono ui-subtle mb-2">Related Jobs</div>
-        ${renderJobHistory(data.jobs || [])}
+        <div class="flex items-center justify-between mb-2">
+          <div class="text-[11px] font-mono ui-subtle">Related Jobs (${relatedJobs.length})</div>
+          ${relatedJobs.length > 5 ? `<span class="text-[10px] font-mono ui-subtle">showing last ${Math.min(relatedJobs.length, 20)}</span>` : ''}
+        </div>
+        ${renderJobHistory(relatedJobs.slice(0, 20))}
       </div>`;
   } catch (e) {
     $('warc-detail-content').innerHTML = `<div class="text-xs text-red-400">${esc(e.message)}</div>`;
   }
 }
 
+let warcActionMessage = '';
+
 async function warcAction(index, action, extra = {}, refreshDetail = false) {
   const msg = $('warc-action-msg');
   if (msg) msg.textContent = `running ${action} on ${index}...`;
+  warcActionMessage = '';
   try {
     const res = await apiWARCAction(index, { action, ...extra });
     if (res && res.job && res.job.id) {
       if (!state.jobs) state.jobs = [];
       state.jobs.unshift(res.job);
       wsClient.subscribe(res.job.id, (m) => onJobUpdate(m));
-      if (msg) msg.textContent = `job ${res.job.id} started: ${action}`;
+      warcActionMessage = `job ${res.job.id} started: ${action}`;
     } else {
-      if (msg) msg.textContent = `action ${action} completed`;
+      warcActionMessage = `action ${action} completed`;
     }
+    if (msg) msg.textContent = warcActionMessage;
     if (refreshDetail) {
-      await renderWARCDetail(index);
+      // Delay re-render so user sees the feedback message
+      setTimeout(() => renderWARCDetail(index), 400);
     } else if (state.currentPage === 'warc') {
-      await renderWARC(state.warcOffset || 0, state.warcQuery || '');
+      setTimeout(() => renderWARC(state.warcOffset || 0, state.warcQuery || ''), 400);
     }
   } catch (e) {
-    if (msg) msg.textContent = `action failed: ${e.message}`;
+    warcActionMessage = `action failed: ${e.message}`;
+    if (msg) msg.textContent = warcActionMessage;
   }
 }
 
 // ===================================================================
-// Tab 5: Browse
+// Tab 6: Browse
 // ===================================================================
 async function renderBrowse(shard) {
   state.currentPage = 'browse';
   state.browseShard = shard;
+  state.browsePage = 1;
+  state.browseQ = '';
+  state.browseSort = 'date';
   $('main').innerHTML = `
     <div class="page-shell anim-fade-in">
       <div class="page-header mb-4">
         <h1 class="page-title">Browse</h1>
-        ${isDashboard ? `<button onclick="refreshDashboardMeta(true)" class="ui-btn px-3 py-2 text-xs font-mono">Refresh Metadata</button>` : ''}
+        <div class="flex items-center gap-2">
+          ${isDashboard ? `<button onclick="apiMetaScanDocs().then(()=>renderBrowse(state.browseShard))" class="ui-btn px-3 py-2 text-xs font-mono">Scan Docs</button>` : ''}
+          ${isDashboard ? `<button onclick="refreshDashboardMeta(true)" class="ui-btn px-3 py-2 text-xs font-mono">Refresh Meta</button>` : ''}
+        </div>
       </div>
-      ${isDashboard ? `<div class="meta-line mb-5" id="browse-meta">loading metadata...</div>` : ''}
       <div class="surface flex min-h-[calc(100vh-10rem)]">
-      <aside class="w-56 shrink-0 p-4 ui-border-r">
-        <div class="text-xs font-mono ui-subtle mb-4 uppercase tracking-wider">Shards</div>
-        <div id="shard-list" class="space-y-1">
+        <aside class="w-52 shrink-0 p-3 ui-border-r">
+          <div class="text-xs font-mono ui-subtle mb-3 uppercase tracking-wider">Shards</div>
+          <div id="shard-list" class="space-y-0.5">
+            <div class="ui-empty">loading\u2026</div>
+          </div>
+        </aside>
+        <div class="flex-1 min-w-0 p-4" id="browse-content">
           <div class="ui-empty">loading\u2026</div>
         </div>
-      </aside>
-      <div class="flex-1 min-w-0 p-4" id="browse-content">
-        <div class="ui-empty">loading\u2026</div>
-      </div>
       </div>
     </div>`;
 
   try {
     if (isDashboard) {
       await refreshDashboardContext().catch(() => {});
-      const meta = $('browse-meta');
-      if (meta) {
-        const docEstimate = (state.overview && state.overview.md_doc_estimate) ? state.overview.md_doc_estimate.toLocaleString() : '0';
-        meta.textContent = `${renderMetaSummaryLine()} · docs:${docEstimate}`;
-      }
     }
     const data = await apiBrowse();
     state.browseShards = data.shards || [];
+    state.browseHasDocMeta = !!data.has_doc_meta;
     renderShardList(shard);
     if (shard) {
-      loadShardFiles(shard);
+      loadShardDocs(shard);
     } else if (state.browseShards.length > 0) {
       navigateTo('/browse/' + state.browseShards[0].name);
     } else {
-      $('browse-content').innerHTML = `<div class="ui-empty">No index yet. Run <code>search cc fts index</code> to get started.</div>`;
+      $('browse-content').innerHTML = `<div class="ui-empty">No markdown documents found. Run the download and markdown pipeline steps first.</div>`;
     }
   } catch(e) {
     $('browse-content').innerHTML = `<div class="text-xs text-red-400 py-8">${esc(e.message)}</div>`;
@@ -1894,39 +2286,148 @@ async function renderBrowse(shard) {
 function renderShardList(active) {
   const el = $('shard-list');
   if (!el || !state.browseShards) return;
-  el.innerHTML = state.browseShards.map(s => `
-    <a href="#/browse/${s.name}"
-       class="flex items-center justify-between py-1 text-xs font-mono cursor-pointer ${s.name === active ? 'shard-active font-medium' : 'shard-item'}">
-      <span>${esc(s.name)}</span>
-      <span class="ui-subtle">${(s.file_count || '').toLocaleString()}</span>
-    </a>`).join('');
+  el.innerHTML = state.browseShards.map(s => {
+    const isActive = s.name === active;
+    const count = (s.file_count ?? 0).toLocaleString();
+    const sizeStr = s.total_size ? ` · ${fmtBytes(s.total_size)}` : '';
+    const staleChip = s.meta_stale ? ` <span class="text-amber-400 text-[9px]">●</span>` : '';
+    return `<a href="#/browse/${s.name}"
+       class="block py-1.5 px-2 rounded text-xs font-mono cursor-pointer transition-colors ${isActive ? 'shard-active font-semibold' : 'shard-item'}">
+      <div class="flex items-center justify-between">
+        <span>${esc(s.name)}${staleChip}</span>
+        <span class="ui-subtle">${count}</span>
+      </div>
+      ${s.total_size || s.last_doc_date ? `<div class="ui-subtle text-[10px] mt-0.5">${sizeStr ? sizeStr.slice(3) : ''}${s.last_doc_date ? ' · ' + fmtDate(s.last_doc_date) : ''}</div>` : ''}
+    </a>`;
+  }).join('');
 }
 
-async function loadShardFiles(shard) {
+// Browse filter debounce timer
+let browseFilterTimer = null;
+
+async function loadShardDocs(shard, page = 1) {
   const el = $('browse-content');
   if (!el) return;
   el.innerHTML = `<div class="ui-empty">loading\u2026</div>`;
 
+  const q = state.browseQ || '';
+  const sort = state.browseSort || 'date';
+
   try {
-    const data = await apiBrowse(shard);
-    state.browseFiles = data.files || [];
-    el.innerHTML = `
-      <div class="flex items-baseline justify-between mb-4">
-        <span class="text-sm font-medium">${esc(shard)}</span>
-        <span class="meta-line">${state.browseFiles.length} files</span>
-      </div>
-      <div class="space-y-1">
-        ${state.browseFiles.map((f, i) => `
-          <a href="#/doc/${shard}/${encodeURIComponent(f.name)}"
-             class="flex items-center justify-between py-2 px-2 -mx-2 text-sm file-row cursor-pointer anim-fade-up"
-             style="animation-delay:${Math.min(i, 20) * 15}ms">
-            <span class="font-mono text-xs truncate ui-subtle">${esc(f.name)}</span>
-            <span class="text-xs font-mono ui-subtle shrink-0 ml-4">${f.size ? fmtBytes(f.size) : ''}</span>
-          </a>`).join('')}
-      </div>`;
+    const data = await apiBrowse(shard, {page, pageSize: 100, q, sort});
+
+    if (data.has_doc_meta && data.docs) {
+      renderDocTable(shard, data, page);
+    } else {
+      renderFileFallback(shard, data);
+    }
   } catch(e) {
     el.innerHTML = `<div class="text-xs text-red-400 py-4">${esc(e.message)}</div>`;
   }
+}
+
+function renderDocTable(shard, data, page) {
+  const el = $('browse-content');
+  if (!el) return;
+  const docs = data.docs || [];
+  const total = data.total || 0;
+  const pageSize = data.page_size || 100;
+  const totalPages = Math.ceil(total / pageSize);
+  const start = (page - 1) * pageSize + 1;
+  const end = Math.min(page * pageSize, total);
+  const stale = data.meta_stale;
+
+  el.innerHTML = `
+    ${stale ? `<div class="mb-3 px-3 py-2 rounded text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400">Refreshing document metadata in the background…</div>` : ''}
+    <div class="flex items-center gap-3 mb-4 flex-wrap">
+      <span class="text-sm font-semibold">${esc(shard)}</span>
+      <span class="meta-line">${start}–${end} of ${total.toLocaleString()}</span>
+      <input id="browse-filter" type="search" placeholder="Filter by title or URL…" value="${esc(state.browseQ || '')}"
+        class="ml-auto ui-input text-xs px-2 py-1 w-56" oninput="debounceBrowseFilter(this.value, '${esc(shard)}')">
+      <select id="browse-sort" class="ui-input text-xs px-2 py-1" onchange="state.browseSort=this.value;loadShardDocs('${esc(shard)}',1)">
+        <option value="date" ${(state.browseSort||'date')==='date'?'selected':''}>Date ↓</option>
+        <option value="size" ${state.browseSort==='size'?'selected':''}>Size ↓</option>
+        <option value="words" ${state.browseSort==='words'?'selected':''}>Words ↓</option>
+        <option value="title" ${state.browseSort==='title'?'selected':''}>Title A–Z</option>
+        <option value="url" ${state.browseSort==='url'?'selected':''}>URL A–Z</option>
+      </select>
+    </div>
+    <div class="overflow-x-auto">
+    <table class="w-full text-xs">
+      <thead>
+        <tr class="ui-border-b text-left ui-subtle">
+          <th class="pb-2 pr-3 font-medium w-2/5">Title</th>
+          <th class="pb-2 pr-3 font-medium">URL</th>
+          <th class="pb-2 pr-3 font-medium text-right whitespace-nowrap">Date</th>
+          <th class="pb-2 pr-3 font-medium text-right">Size</th>
+          <th class="pb-2 font-medium text-right">Words</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${docs.map((d, i) => `
+          <tr class="file-row anim-fade-up border-b border-transparent" style="animation-delay:${Math.min(i,20)*10}ms">
+            <td class="py-2 pr-3">
+              <a href="#/doc/${shard}/${encodeURIComponent(d.doc_id)}" class="ui-link font-medium truncate block max-w-xs" title="${esc(d.title||d.doc_id)}">
+                ${esc(d.title || d.doc_id)}
+              </a>
+            </td>
+            <td class="py-2 pr-3 max-w-[240px]">
+              ${d.url ? `<a href="${esc(d.url)}" target="_blank" rel="noopener noreferrer" class="ui-subtle hover:text-[var(--accent)] font-mono truncate block" title="${esc(d.url)}">${truncateURL(d.url, 40)}</a>` : ''}
+            </td>
+            <td class="py-2 pr-3 ui-subtle text-right whitespace-nowrap">${d.crawl_date ? fmtDate(d.crawl_date) : ''}</td>
+            <td class="py-2 pr-3 ui-subtle text-right whitespace-nowrap">${d.size_bytes ? fmtBytes(d.size_bytes) : ''}</td>
+            <td class="py-2 ui-subtle text-right whitespace-nowrap">${d.word_count ? d.word_count.toLocaleString() : ''}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    </div>
+    ${totalPages > 1 ? `
+    <div class="flex items-center justify-between mt-4 text-xs">
+      <button onclick="loadShardDocs('${esc(shard)}', ${page - 1})" ${page <= 1 ? 'disabled' : ''} class="ui-btn px-3 py-1.5 disabled:opacity-40">&larr; Prev</button>
+      <span class="ui-subtle">Page ${page} of ${totalPages}</span>
+      <button onclick="loadShardDocs('${esc(shard)}', ${page + 1})" ${page >= totalPages ? 'disabled' : ''} class="ui-btn px-3 py-1.5 disabled:opacity-40">Next &rarr;</button>
+    </div>` : ''}`;
+}
+
+function renderFileFallback(shard, data) {
+  const el = $('browse-content');
+  if (!el) return;
+  const files = data.files || [];
+  el.innerHTML = `
+    <div class="flex items-baseline justify-between mb-4">
+      <span class="text-sm font-semibold">${esc(shard)}</span>
+      <span class="meta-line">${files.length} files</span>
+    </div>
+    <div class="space-y-0.5">
+      ${files.map((f, i) => `
+        <a href="#/doc/${shard}/${encodeURIComponent(f.name)}"
+           class="flex items-center justify-between py-2 px-2 -mx-2 text-xs file-row cursor-pointer anim-fade-up"
+           style="animation-delay:${Math.min(i,20)*15}ms">
+          <span class="font-mono ui-subtle truncate">${esc(f.name)}</span>
+          <span class="font-mono ui-subtle shrink-0 ml-4">${f.size ? fmtBytes(f.size) : ''}</span>
+        </a>`).join('')}
+    </div>`;
+}
+
+function debounceBrowseFilter(val, shard) {
+  state.browseQ = val;
+  clearTimeout(browseFilterTimer);
+  browseFilterTimer = setTimeout(() => loadShardDocs(shard, 1), 300);
+}
+
+// ── Browse helpers ────────────────────────────────────────────────────────────
+
+function fmtDate(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  if (isNaN(d)) return isoStr;
+  return d.toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
+}
+
+function truncateURL(url, maxLen) {
+  if (!url || url.length <= maxLen) return esc(url);
+  const half = Math.floor((maxLen - 3) / 2);
+  return esc(url.slice(0, half) + '…' + url.slice(-half));
 }
 
 // ===================================================================
@@ -1950,17 +2451,31 @@ async function renderDoc(shard, docid) {
   try {
     const data = await apiDoc(shard, docid);
     state.doc = data;
+    const hasUrl = !!(data.url);
+    const hasTitle = !!(data.title);
     main.innerHTML = `
       <div class="py-8 max-w-3xl mx-auto anim-fade-in">
         <a href="#" onclick="history.back();return false" class="text-xs ui-link transition-colors">&larr; Back</a>
-        <div class="meta-line mt-3 mb-6">${esc(data.shard || shard)} / ${esc(data.doc_id || docid)}</div>
 
-        <div class="flex items-center gap-6 mb-8 border-b pb-3">
+        ${hasTitle || hasUrl ? `
+        <div class="mt-4 mb-6 pl-4 border-l-2 border-[var(--accent)]">
+          ${hasTitle ? `<h2 class="text-base font-semibold mb-1">${esc(data.title)}</h2>` : ''}
+          ${hasUrl ? `<a href="${esc(data.url)}" target="_blank" rel="noopener noreferrer"
+              class="text-xs font-mono ui-link break-all">${esc(data.url)}</a>` : ''}
+          <div class="meta-line text-[11px] mt-2 flex flex-wrap gap-3">
+            ${data.crawl_date ? `<span>Crawled ${fmtDate(data.crawl_date)}</span>` : ''}
+            ${data.size_bytes ? `<span>${fmtBytes(data.size_bytes)}</span>` : ''}
+            ${data.word_count ? `<span>${data.word_count.toLocaleString()} words</span>` : ''}
+            ${data.warc_record_id ? `<span class="font-mono text-[10px] opacity-60">${esc(data.warc_record_id)}</span>` : ''}
+          </div>
+        </div>` : `<div class="meta-line mt-3 mb-6">${esc(data.shard || shard)} / ${esc(data.doc_id || docid)}</div>`}
+
+        <div class="flex items-center gap-6 mb-6 border-b pb-3">
           <button id="btn-rendered" onclick="showRendered()" class="text-xs pb-1 tab-active transition-colors">Rendered</button>
           <button id="btn-source" onclick="showSource()" class="text-xs pb-1 tab-inactive transition-colors">Source</button>
-          <span class="meta-line ml-auto">
-            ${data.word_count ? data.word_count.toLocaleString() + ' words' : ''}${data.word_count && data.size ? ' &middot; ' : ''}${data.size ? fmtBytes(data.size) : ''}
-          </span>
+          ${!(hasTitle || hasUrl) ? `<span class="meta-line ml-auto">
+            ${data.word_count ? data.word_count.toLocaleString() + ' words' : ''}${data.word_count && data.size_bytes ? ' &middot; ' : ''}${data.size_bytes ? fmtBytes(data.size_bytes) : ''}
+          </span>` : ''}
         </div>
 
         <div id="doc-rendered" class="prose dark:prose-invert max-w-none prose-zinc prose-sm prose-headings:font-semibold prose-headings:tracking-tight prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-code:text-sm prose-code:font-mono prose-img:max-w-full">
@@ -1995,7 +2510,7 @@ function showSource() {
 }
 
 // ===================================================================
-// Tab 6: Crawls
+// Tab 7: Crawls
 // ===================================================================
 async function renderCrawls() {
   state.currentPage = 'crawls';
