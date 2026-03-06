@@ -4,7 +4,7 @@
 async function renderOverview() {
   state.currentPage = 'overview';
   const main = $('main');
-  main.innerHTML = `
+  const shell = `
     <div class="page-shell anim-fade-in">
       <div class="page-header">
         <h1 class="page-title">Overview</h1>
@@ -16,6 +16,17 @@ async function renderOverview() {
       </div>
     </div>`;
 
+  // If we have cached data, render immediately — no flash.
+  if (state.central.overview) {
+    main.innerHTML = shell;
+    renderOverviewContent(state.central.overview, state.central.jobs);
+    refreshCentralState().then(() => {
+      if (state.currentPage === 'overview') renderOverviewContent(state.central.overview, state.central.jobs);
+    }).catch(() => {});
+    return;
+  }
+
+  main.innerHTML = shell;
   try {
     await refreshCentralState(true);
     renderOverviewContent(state.central.overview, state.central.jobs);
@@ -45,7 +56,7 @@ function renderOverviewContent(d, jobs) {
 
   // ── Row 1: Storage + System ──
   const storageHTML = `
-    <div class="grid md:grid-cols-2 gap-4 mb-4 anim-fade-up">
+    <div class="grid md:grid-cols-2 gap-4 mb-4">
       <div class="surface p-4">
         <div class="text-[11px] font-mono ui-subtle mb-3">Storage</div>
         <div class="grid grid-cols-2 gap-3 mb-3">
@@ -117,7 +128,7 @@ function renderOverviewContent(d, jobs) {
     { label: 'Indexed', done: ix.count || 0, total: dl.count || 0, cls: 'ov-c4' },
   ];
   const pipelineHTML = `
-    <div class="surface p-4 mb-4 anim-fade-up" style="animation-delay:50ms">
+    <div class="surface p-4 mb-4" style="animation-delay:50ms">
       <div class="flex items-center justify-between mb-2">
         <div class="text-[11px] font-mono ui-subtle">Pipeline: ${esc(d.crawl_id || '')}</div>
         <div class="text-[10px] font-mono ui-subtle">${d.crawl_from ? formatCrawlDate(d.crawl_from) + ' \u2013 ' + formatCrawlDate(d.crawl_to) : ''}</div>
@@ -142,7 +153,7 @@ function renderOverviewContent(d, jobs) {
 
   // ── Row 3: Manifest + Downloaded ──
   const row3HTML = `
-    <div class="grid md:grid-cols-2 gap-4 mb-4 anim-fade-up" style="animation-delay:100ms">
+    <div class="grid md:grid-cols-2 gap-4 mb-4" style="animation-delay:100ms">
       <div class="surface p-4" style="border-left:3px solid ${stageColor(mf.total_warcs, mf.total_warcs)}">
         <div class="text-[11px] font-mono ui-subtle mb-2">Stage 1: Manifest (Source)</div>
         <div class="grid grid-cols-3 gap-3">
@@ -183,7 +194,7 @@ function renderOverviewContent(d, jobs) {
 
   // ── Row 4: Markdown + Index ──
   const row4HTML = `
-    <div class="grid md:grid-cols-2 gap-4 mb-4 anim-fade-up" style="animation-delay:150ms">
+    <div class="grid md:grid-cols-2 gap-4 mb-4" style="animation-delay:150ms">
       <div class="surface p-4" style="border-left:3px solid ${stageColor(md.count, dl.count)}">
         <div class="flex items-center justify-between mb-2">
           <div class="text-[11px] font-mono ui-subtle">Stage 3: Markdown</div>
@@ -216,7 +227,7 @@ function renderOverviewContent(d, jobs) {
 
   // ── Active Jobs ──
   const jobsHTML = activeJobs.length > 0 ? `
-    <div class="surface p-4 mb-4 anim-fade-up" style="animation-delay:200ms">
+    <div class="surface p-4 mb-4" style="animation-delay:200ms">
       <div class="flex items-center justify-between mb-3">
         <div class="text-[11px] font-mono ui-subtle">Active Jobs (${activeJobs.length})</div>
         <a href="#/jobs" class="text-[11px] font-mono ui-link">all jobs \u2192</a>

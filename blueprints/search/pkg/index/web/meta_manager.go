@@ -202,10 +202,7 @@ func (m *MetaManager) TriggerRefresh(crawlID, crawlDir string, force bool) bool 
 		return false
 	}
 	crawlID, crawlDir = m.resolveCrawl(crawlID, crawlDir)
-	if !force && !m.acquireRefresh(crawlID) {
-		return false
-	}
-	if force && !m.acquireRefresh(crawlID) {
+	if !m.acquireRefresh(crawlID, force) {
 		return false
 	}
 
@@ -511,10 +508,10 @@ func (m *MetaManager) isStale(generatedAt time.Time, scanDuration time.Duration)
 	return time.Since(generatedAt) > threshold
 }
 
-func (m *MetaManager) acquireRefresh(crawlID string) bool {
+func (m *MetaManager) acquireRefresh(crawlID string, force bool) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.refreshing[crawlID] {
+	if !force && m.refreshing[crawlID] {
 		return false
 	}
 	m.refreshing[crawlID] = true

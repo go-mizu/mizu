@@ -227,6 +227,8 @@ func scanMarkdownStage(crawlDir string, docs *DocStore) MarkdownStage {
 	var stage MarkdownStage
 	warcMdDir := filepath.Join(crawlDir, "warc_md")
 	entries, _ := os.ReadDir(warcMdDir) // nil entries is fine — loop is skipped
+	// Single pass: count shards, sizes, docs, and build seen set.
+	warcMdSeen := make(map[string]bool, len(entries))
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md.warc.gz") {
 			continue
@@ -239,36 +241,12 @@ func scanMarkdownStage(crawlDir string, docs *DocStore) MarkdownStage {
 		if info, err := e.Info(); err == nil {
 			stage.SizeBytes += info.Size()
 		}
-	}
-
-	// Get total docs from DocStore if available
-	if docs != nil && stage.Count > 0 {
-		// Sum docs across all scanned shards
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md.warc.gz") {
-				continue
-			}
-			shard := strings.TrimSuffix(e.Name(), ".md.warc.gz")
-			if !isNumericName(shard) {
-				continue
-			}
-			meta, ok, _ := docs.GetShardMeta(context.Background(), "", shard)
-			if ok {
+		if docs != nil {
+			if meta, ok, _ := docs.GetShardMeta(context.Background(), "", shard); ok {
 				stage.TotalDocs += meta.TotalDocs
 			}
 		}
-	}
-
-	// Build set of indices already counted via warc_md/.
-	warcMdSeen := make(map[string]bool, len(entries))
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md.warc.gz") {
-			continue
-		}
-		s := strings.TrimSuffix(e.Name(), ".md.warc.gz")
-		if isNumericName(s) {
-			warcMdSeen[normalizeWARCIndex(s)] = true
-		}
+		warcMdSeen[normalizeWARCIndex(shard)] = true
 	}
 
 	// Also scan markdown/ for individual .md files (old format).

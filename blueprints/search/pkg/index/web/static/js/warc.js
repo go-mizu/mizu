@@ -4,10 +4,9 @@
 
 const WARC_PHASES = [
   { key: '', label: 'All' },
-  { key: 'download', label: 'Download' },
+  { key: 'downloaded', label: 'Downloaded' },
   { key: 'markdown', label: 'Markdown' },
-  { key: 'index', label: 'Index' },
-  { key: 'complete', label: 'Complete' },
+  { key: 'indexed', label: 'Indexed' },
 ];
 
 function warcPhaseCount(summary, key) {
@@ -18,10 +17,9 @@ function warcPhaseCount(summary, key) {
   const ix = summary.indexed || 0;
   switch (key) {
     case '': return t;
-    case 'download': return t - dl;
-    case 'markdown': return dl - md;
-    case 'index': return md - ix;
-    case 'complete': return ix;
+    case 'downloaded': return dl;
+    case 'markdown': return md;
+    case 'indexed': return ix;
     default: return 0;
   }
 }
@@ -46,8 +44,9 @@ async function renderWARC(offset = state.warcOffset || 0, query = state.warcQuer
   const phase = state.warcPhase || '';
   const pageSize = 200;
   const main = $('main');
+  const hasCache = !!(state.warcRows && state.warcSummary);
   main.innerHTML = `
-    <div class="page-shell anim-fade-in">
+    <div class="page-shell${hasCache ? '' : ' anim-fade-in'}">
       <div class="page-header mb-4">
         <h1 class="page-title">WARC Console</h1>
         <button onclick="renderWARC(0)" class="ui-btn px-3 py-2 text-xs font-mono">Reload</button>
@@ -59,11 +58,18 @@ async function renderWARC(offset = state.warcOffset || 0, query = state.warcQuer
           class="ui-input w-full text-sm px-3 py-2"
           onkeydown="if(event.key==='Enter'){state.warcOffset=0;renderWARC(0,this.value)}">
       </div>
-      <div id="warc-content"><div class="ui-empty">loading\u2026</div></div>
+      <div id="warc-content"></div>
     </div>`;
 
+  // Render cached data immediately — no flash.
+  if (hasCache) {
+    renderWARCSummary(state.warcSummary);
+    renderWARCTabs(state.warcSummary, state.warcTotal);
+    renderWARCTable({ warcs: state.warcRows, summary: state.warcSummary, total: state.warcTotal,
+      offset: state.warcOffset, limit: state.warcLimit });
+  }
+
   try {
-    // Fetch WARC list and ensure central state is available
     const [data] = await Promise.all([
       apiWARCList({ offset, limit: pageSize, q: query || '', phase }),
       refreshCentralState(),
@@ -74,11 +80,13 @@ async function renderWARC(offset = state.warcOffset || 0, query = state.warcQuer
     state.warcOffset = data.offset || 0;
     state.warcLimit = data.limit || pageSize;
     state.warcTotal = data.total || 0;
-    renderWARCSummary(data.summary);
-    renderWARCTabs(data.summary, data.total);
-    renderWARCTable(data);
+    if (state.currentPage === 'warc') {
+      renderWARCSummary(data.summary);
+      renderWARCTabs(data.summary, data.total);
+      renderWARCTable(data);
+    }
   } catch (e) {
-    $('warc-content').innerHTML = `<div class="text-xs text-red-400">${esc(e.message)}</div>`;
+    if ($('warc-content')) $('warc-content').innerHTML = `<div class="text-xs text-red-400">${esc(e.message)}</div>`;
   }
 }
 
@@ -131,76 +139,24 @@ function renderWARCSummary(summary) {
       ${activeJobs.length > 3 ? `<div class="text-[10px] font-mono ui-subtle mt-1">+${activeJobs.length - 3} more</div>` : ''}
     </div>` : '';
 
-  // Full crawl estimation
-  const dlStage = ov.downloaded || {};
-  const avgWARC = dlStage.avg_warc_bytes || 0;
-  const mdStage = ov.markdown || {};
-  const avgDocs = mdStage.avg_docs_per_warc || 0;
-  const ixStage = ov.indexed || {};
-  const estHTML = (manifestTotal > 0 && dl > 0 && avgWARC > 0) ? `
-    <details class="surface mb-4">
-      <summary class="p-3 text-[11px] font-mono ui-subtle cursor-pointer select-none">Full Crawl Estimate (${manifestTotal.toLocaleString()} WARCs)</summary>
-      <div class="px-3 pb-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div>
-          <div class="text-[10px] font-mono ui-subtle">Est. Download</div>
-          <div class="text-xs font-mono font-medium">${fmtBytes(manifestTotal * avgWARC)}</div>
-          <div class="text-[9px] font-mono ui-subtle">${fmtBytes(avgWARC)}/WARC avg</div>
-        </div>
-        ${avgDocs > 0 ? `<div>
-          <div class="text-[10px] font-mono ui-subtle">Est. Documents</div>
-          <div class="text-xs font-mono font-medium">${fmtNum(manifestTotal * avgDocs)}</div>
-          <div class="text-[9px] font-mono ui-subtle">${fmtNum(avgDocs)}/WARC avg</div>
-        </div>` : ''}
-        ${ixStage.count > 0 ? `<div>
-          <div class="text-[10px] font-mono ui-subtle">Est. Index Size</div>
-          <div class="text-xs font-mono font-medium">${fmtBytes(Math.round(((ixStage.dahlia_bytes || 0) + (ixStage.tantivy_bytes || 0)) / ixStage.count * manifestTotal))}</div>
-        </div>` : ''}
-        <div>
-          <div class="text-[10px] font-mono ui-subtle">Est. Total Disk</div>
-          <div class="text-xs font-mono font-medium">${fmtBytes(ov.storage && ov.storage.projected_full_bytes || manifestTotal * avgWARC)}</div>
-        </div>
-      </div>
-    </details>` : '';
-
   el.innerHTML = `
     ${activeJobsHTML}
-    <div class="grid grid-cols-2 sm:grid-cols-5 gap-px border border-[var(--border)] mb-4" style="background:var(--border)">
-      <div class="bg-[var(--panel)] px-3 py-2.5">
-        <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Total WARCs</div>
-        <div class="text-base font-semibold font-mono">${total.toLocaleString()}</div>
-      </div>
-      <div class="bg-[var(--panel)] px-3 py-2.5">
-        <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Downloaded</div>
-        <div class="text-base font-semibold font-mono">${dl.toLocaleString()}</div>
-        <div class="text-[9px] font-mono ui-subtle">${pctOf(dl, total)}% of total</div>
-        <div class="progress-track mt-1" style="height:4px"><div class="ov-c1" style="height:100%;width:${pctOf(dl, total)}%"></div></div>
-      </div>
-      <div class="bg-[var(--panel)] px-3 py-2.5">
-        <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Markdown</div>
-        <div class="text-base font-semibold font-mono">${md.toLocaleString()}</div>
-        <div class="text-[9px] font-mono ui-subtle">${pctOf(md, dl)}% of downloaded</div>
-        <div class="progress-track mt-1" style="height:4px"><div class="ov-c2" style="height:100%;width:${pctOf(md, dl)}%"></div></div>
-      </div>
-      <div class="bg-[var(--panel)] px-3 py-2.5">
-        <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Indexed</div>
-        <div class="text-base font-semibold font-mono">${ix.toLocaleString()}</div>
-        <div class="text-[9px] font-mono ui-subtle">${pctOf(ix, dl)}% of downloaded</div>
-        <div class="progress-track mt-1" style="height:4px"><div class="ov-c4" style="height:100%;width:${pctOf(ix, dl)}%"></div></div>
-      </div>
-      <div class="bg-[var(--panel)] px-3 py-2.5">
-        <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider">Disk</div>
-        <div class="text-base font-semibold font-mono">${fmtBytes(totalBytes)}</div>
-      </div>
-    </div>
-
     <div class="surface p-4 mb-4">
       <div class="flex items-stretch gap-0">
+        <div class="ov-pipeline-step">
+          <div class="flex items-baseline justify-between mb-1">
+            <span class="text-[11px] font-mono ui-subtle">Total</span>
+            <span class="text-[11px] font-mono">${total.toLocaleString()}</span>
+          </div>
+          <div class="progress-track" style="height:6px"><div class="ov-c1" style="height:100%;width:100%"></div></div>
+          <div class="text-[10px] font-mono ui-subtle mt-1">${fmtBytes(totalBytes)} on disk</div>
+        </div>
         ${stages.map((s, i) => `
-          ${i > 0 ? '<div class="ov-pipeline-arrow">\u2192</div>' : ''}
+          <div class="ov-pipeline-arrow">\u2192</div>
           <div class="ov-pipeline-step">
             <div class="flex items-baseline justify-between mb-1">
               <span class="text-[11px] font-mono ui-subtle">${esc(s.label)}</span>
-              <span class="text-[11px] font-mono ${pctOf(s.count, total) === 100 ? 'status-completed' : s.count > 0 ? '' : 'ui-subtle'}">${s.count.toLocaleString()} / ${total.toLocaleString()}</span>
+              <span class="text-[11px] font-mono ${pctOf(s.count, total) === 100 ? 'status-completed' : s.count > 0 ? '' : 'ui-subtle'}">${s.count.toLocaleString()}</span>
             </div>
             <div class="progress-track" style="height:6px">
               <div class="${s.cls}" style="height:100%;width:${pctOf(s.count, total)}%;transition:width 0.4s ease"></div>
@@ -211,8 +167,7 @@ function renderWARCSummary(summary) {
             </div>
           </div>`).join('')}
       </div>
-    </div>
-    ${estHTML}`;
+    </div>`;
 }
 
 // ── Phase tabs ──
@@ -246,8 +201,11 @@ function renderWARCTable(data) {
   const rows = warcs.map((w, i) => {
     const next = warcNextStep(w);
     const done = warcDoneCount(w);
-    const docsStr = (w.warc_md_docs || 0) > 0 ? (w.warc_md_docs).toLocaleString() : '\u2014';
-    const sizeStr = w.total_bytes > 0 ? fmtBytes(w.total_bytes) : '\u2014';
+    const docsCount = w.warc_md_docs || w.markdown_docs || 0;
+    const mdBytes = w.warc_md_bytes || w.markdown_bytes || 0;
+    const docsStr = docsCount > 0 ? docsCount.toLocaleString() : (w.has_markdown ? '\u2014' : '');
+    const warcSizeStr = w.warc_bytes > 0 ? fmtBytes(w.warc_bytes) : '\u2014';
+    const mdSizeStr = mdBytes > 0 ? fmtBytes(mdBytes) : (w.has_markdown ? '\u2014' : '');
 
     // 3-segment stacked bar
     const stackedBar = `
@@ -264,7 +222,7 @@ function renderWARCTable(data) {
     const btnLabel = next === 'download' ? 'download' : next === 'markdown' ? 'markdown' : next === 'index' ? 'index' : '';
 
     return `
-    <tr class="anim-fade-up" style="animation-delay:${Math.min(i, 20)*12}ms">
+    <tr>
       <td class="px-3 py-2 font-mono text-xs"><a href="#/warc/${encodeURIComponent(w.index)}" class="ui-link hover:text-[var(--accent)]">${esc(w.index)}</a></td>
       <td class="px-3 py-2 text-xs">
         <div class="flex items-center gap-2">
@@ -273,7 +231,8 @@ function renderWARCTable(data) {
         </div>
       </td>
       <td class="px-3 py-2 text-right text-xs font-mono ui-subtle hidden sm:table-cell">${docsStr}</td>
-      <td class="px-3 py-2 text-right text-xs font-mono ui-subtle whitespace-nowrap hidden md:table-cell">${sizeStr}</td>
+      <td class="px-3 py-2 text-right text-xs font-mono ui-subtle whitespace-nowrap hidden md:table-cell">${warcSizeStr}</td>
+      <td class="px-3 py-2 text-right text-xs font-mono ui-subtle whitespace-nowrap hidden lg:table-cell">${mdSizeStr}</td>
       <td class="px-3 py-2 text-right text-xs font-mono whitespace-nowrap">
         ${next ? `<button id="${btnId}" onclick="${nextAction}" ${isRunning ? 'disabled' : ''} class="${nextBtnCls} px-2.5 py-1 text-[11px]">${isRunning ? 'running\u2026' : esc(btnLabel)}</button>` : `<span class="text-[11px] status-completed">\u2713 done</span>`}
       </td>
@@ -314,12 +273,13 @@ function renderWARCTable(data) {
             <th class="text-left px-3 py-2 text-[11px] font-mono">Index</th>
             <th class="text-left px-3 py-2 text-[11px] font-mono">Pipeline</th>
             <th class="text-right px-3 py-2 text-[11px] font-mono hidden sm:table-cell">Docs</th>
-            <th class="text-right px-3 py-2 text-[11px] font-mono hidden md:table-cell">Size</th>
+            <th class="text-right px-3 py-2 text-[11px] font-mono hidden md:table-cell">warc.gz</th>
+            <th class="text-right px-3 py-2 text-[11px] font-mono hidden lg:table-cell">md.warc.gz</th>
             <th class="text-right px-3 py-2 text-[11px] font-mono">Action</th>
           </tr>
         </thead>
         <tbody>
-          ${rows || `<tr><td colspan="5" class="px-3 py-4 text-xs font-mono ui-subtle">No WARC records</td></tr>`}
+          ${rows || `<tr><td colspan="6" class="px-3 py-4 text-xs font-mono ui-subtle">No WARC records</td></tr>`}
         </tbody>
       </table>
     </div>
@@ -383,7 +343,7 @@ async function renderWARCDetail(index) {
   main.innerHTML = `
     <div class="page-shell anim-fade-in">
       <a href="#/warc" class="text-xs font-mono ui-link">\u2190 WARC Console</a>
-      <div id="warc-detail-content" class="mt-4"><div class="ui-empty">loading\u2026</div></div>
+      <div id="warc-detail-content" class="mt-4"></div>
     </div>`;
   try {
     const data = await apiWARCDetail(index);
@@ -400,9 +360,10 @@ function renderWARCDetailContent(data, index) {
   // Sizes
   const packTotal = Object.values(w.pack_bytes || {}).reduce((a,b)=>a+b,0);
   const ftsTotal = Object.values(w.fts_bytes || {}).reduce((a,b)=>a+b,0);
+  const mdBytes = w.warc_md_bytes || w.markdown_bytes || 0;
   const diskPhases = [
     { label: 'warc', value: w.warc_bytes || 0, cls: 'ov-c1' },
-    { label: 'markdown', value: w.warc_md_bytes || 0, cls: 'ov-c2' },
+    { label: 'markdown', value: mdBytes, cls: 'ov-c2' },
     { label: 'pack', value: packTotal, cls: 'ov-c3' },
     { label: 'index', value: ftsTotal, cls: 'ov-c4' },
   ];
@@ -435,22 +396,36 @@ function renderWARCDetailContent(data, index) {
     { key: 'markdown', label: 'Markdown', done: !!w.has_markdown, cls: 'ov-c2' },
     { key: 'index', label: 'Index', done: !!w.has_fts, cls: 'ov-c4' },
   ];
-  const nextStep = stepsAll.find(s => !s.done);
   const done = stepsAll.filter(s => s.done).length;
 
   const relatedJobs = data.jobs || [];
   const activeJobs = relatedJobs.filter(j => j.status === 'running' || j.status === 'queued');
 
-  const compressionRatio = (w.warc_bytes > 0 && (w.warc_md_bytes || 0) > 0) ? ((w.warc_md_bytes / w.warc_bytes) * 100).toFixed(1) + '%' : '\u2014';
-  const docsCount = w.warc_md_docs || 0;
+  const compressionRatio = (w.warc_bytes > 0 && mdBytes > 0) ? ((mdBytes / w.warc_bytes) * 100).toFixed(1) + '%' : '\u2014';
+  const docsCount = w.warc_md_docs || w.markdown_docs || 0;
+  // If markdown exists but no doc count yet, trigger a scan and reload after.
+  if (w.has_markdown && docsCount === 0 && isDashboard && !w._scanTriggered) {
+    w._scanTriggered = true;
+    apiMetaScanDocs().then(() => {
+      setTimeout(() => {
+        if (state.currentPage === 'warc' && state.warcDetail) {
+          apiWARCDetail(index).then(d => { state.warcDetail = d; if ($('warc-detail-content')) renderWARCDetailContent(d, index); }).catch(() => {});
+        }
+      }, 1500);
+    }).catch(() => {});
+  }
 
   // Step timeline (3 steps)
+  const remainingSteps = stepsAll.filter(s => !s.done).length;
   const timelineHTML = `
     <div class="surface p-4 mb-4">
-      <div class="text-[11px] font-mono ui-subtle mb-3">Pipeline ${done} / 3</div>
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-[11px] font-mono ui-subtle">Pipeline ${done} / 3</div>
+        ${remainingSteps > 1 ? `<button onclick="warcRunAll('${esc(w.index || index)}')" class="ui-btn px-3 py-1.5 text-xs font-mono">Run All Remaining</button>` : ''}
+      </div>
       <div class="flex items-center gap-0">
         ${stepsAll.map((s, i) => {
-          const isNext = nextStep && nextStep.key === s.key;
+          const isNext = !s.done && stepsAll.slice(0, i).every(prev => prev.done);
           const dotBg = s.done ? clsColorMap[s.cls] || 'var(--accent)' : isNext ? 'var(--border)' : 'transparent';
           const dotBorder = s.done ? 'transparent' : 'var(--border)';
           const textCls = s.done ? 'status-completed' : isNext ? '' : 'ui-subtle';
@@ -467,31 +442,6 @@ function renderWARCDetailContent(data, index) {
         }).join('')}
       </div>
     </div>`;
-
-  // Primary action
-  let primaryActionHTML = '';
-  if (nextStep) {
-    const remaining = stepsAll.filter(s => !s.done).length;
-    primaryActionHTML = `
-      <div class="surface p-4 mb-4">
-        <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-          <div class="flex-1">
-            <div class="text-[11px] font-mono ui-subtle mb-1">Next Step</div>
-            <div class="text-sm font-mono font-medium">${esc(nextStep.label)}</div>
-            ${remaining > 1 ? `<div class="text-[10px] font-mono ui-subtle mt-0.5">${remaining} steps remaining</div>` : ''}
-          </div>
-          <div class="flex items-center gap-2">
-            <button onclick="${warcActionCall(w.index, nextStep.key).replace(/\)$/, ',{},true)')}" class="ui-btn ui-btn-primary px-4 py-2 text-xs font-mono">${warcActionLabel(nextStep.key)}</button>
-            ${remaining > 1 ? `<button onclick="warcRunAll('${esc(w.index)}')" class="ui-btn px-3 py-2 text-xs font-mono" title="Run all remaining">Run All</button>` : ''}
-          </div>
-        </div>
-      </div>`;
-  } else {
-    primaryActionHTML = `
-      <div class="surface p-4 mb-4">
-        <span class="text-sm font-mono status-completed">\u2713 All pipeline steps complete</span>
-      </div>`;
-  }
 
   // Active jobs
   const activeJobsHTML = activeJobs.length > 0 ? `
@@ -511,6 +461,107 @@ function renderWARCDetailContent(data, index) {
       }).join('')}
     </div>` : '';
 
+  // Three pipeline step panels
+  const stepsHTML = `
+    <div class="mb-4">
+      <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider mb-2">Pipeline Steps</div>
+
+      <!-- Step 1: Download -->
+      <div class="surface p-4 mb-2" style="border-left:3px solid ${w.has_warc ? 'var(--success)' : 'var(--border)'}">
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-0.5">
+              <span class="text-[10px] font-mono ui-subtle">1.</span>
+              <span class="text-xs font-mono font-medium ${w.has_warc ? 'status-completed' : ''}">Download WARC${w.has_warc ? ' \u2713' : ''}</span>
+            </div>
+            ${w.warc_bytes > 0 ? `<div class="text-[10px] font-mono ui-subtle">${fmtBytes(w.warc_bytes)}</div>` : '<div class="text-[10px] font-mono ui-subtle">Not downloaded yet</div>'}
+          </div>
+          <button onclick="warcAction('${esc(w.index)}','download',{},true)"
+            class="ui-btn ${!w.has_warc ? 'ui-btn-primary' : ''} px-3 py-1.5 text-xs font-mono shrink-0">
+            ${w.has_warc ? 'Re-download' : 'Download'}
+          </button>
+        </div>
+      </div>
+
+      <!-- Step 2: Markdown -->
+      <div class="surface p-4 mb-2" style="border-left:3px solid ${w.has_markdown ? 'var(--success)' : w.has_warc ? '#6366f1' : 'var(--border)'}; ${!w.has_warc ? 'opacity:0.6' : ''}">
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-0.5">
+              <span class="text-[10px] font-mono ui-subtle">2.</span>
+              <span class="text-xs font-mono font-medium ${w.has_markdown ? 'status-completed' : ''}">Extract Markdown${w.has_markdown ? ' \u2713' : ''}</span>
+            </div>
+            ${mdBytes > 0
+              ? `<div class="text-[10px] font-mono ui-subtle">${fmtBytes(mdBytes)} extracted${compressionRatio !== '\u2014' ? ` (${compressionRatio} of WARC)` : ''}</div>`
+              : `<div class="text-[10px] font-mono ui-subtle">${w.has_warc ? 'Ready to extract' : 'Download first'}</div>`}
+          </div>
+          <button onclick="warcAction('${esc(w.index)}','markdown',{},true)" ${!w.has_warc ? 'disabled' : ''}
+            class="ui-btn ${w.has_warc && !w.has_markdown ? 'ui-btn-primary' : ''} px-3 py-1.5 text-xs font-mono shrink-0">
+            ${w.has_markdown ? 'Re-extract' : 'Extract'}
+          </button>
+        </div>
+      </div>
+
+      <!-- Step 3: Index -->
+      <div class="surface p-4" style="border-left:3px solid ${w.has_fts ? 'var(--success)' : w.has_markdown ? '#10b981' : 'var(--border)'}; ${!w.has_markdown ? 'opacity:0.6' : ''}">
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-0.5">
+              <span class="text-[10px] font-mono ui-subtle">3.</span>
+              <span class="text-xs font-mono font-medium ${w.has_fts ? 'status-completed' : ''}">Build Index${w.has_fts ? ' \u2713' : ''}</span>
+            </div>
+            ${ftsTotal > 0
+              ? `<div class="text-[10px] font-mono ui-subtle">${fmtBytes(ftsTotal)} index &middot; ${currentSearchEngine()}</div>`
+              : `<div class="text-[10px] font-mono ui-subtle">${w.has_markdown ? 'Ready to index' : 'Extract markdown first'}</div>`}
+          </div>
+          <button onclick="warcAction('${esc(w.index)}','index',{engine:currentSearchEngine(),source:'files'},true)" ${!w.has_markdown ? 'disabled' : ''}
+            class="ui-btn ${w.has_markdown && !w.has_fts ? 'ui-btn-primary' : ''} px-3 py-1.5 text-xs font-mono shrink-0">
+            ${w.has_fts ? 'Re-index' : 'Build Index'}
+          </button>
+        </div>
+      </div>
+    </div>`;
+
+  // Danger Zone
+  const diskSummary = [
+    w.warc_bytes > 0 ? `warc.gz ${fmtBytes(w.warc_bytes)}` : '',
+    mdBytes > 0 ? `markdown ${fmtBytes(mdBytes)}` : '',
+    ftsTotal > 0 ? `index ${fmtBytes(ftsTotal)}` : '',
+    packTotal > 0 ? `pack ${fmtBytes(packTotal)}` : '',
+  ].filter(Boolean).join(' · ');
+  const dangerHTML = `
+    <div class="surface p-4 mb-4" style="border:1px solid rgba(239,68,68,0.4)">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="text-[11px] font-mono font-medium" style="color:#f87171">\u26a0 Danger Zone</span>
+        <span class="text-[10px] font-mono ui-subtle">\u2014 permanent, cannot be undone</span>
+      </div>
+      <div class="text-[10px] font-mono ui-subtle mb-3">
+        WARC <span class="font-medium" style="color:var(--text)">${esc(w.index)}</span>
+        ${diskSummary ? `\u00b7 ${diskSummary}` : ''}
+        \u00b7 total ${fmtBytes(w.total_bytes || 0)} on disk
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        ${[
+          { target: 'index', label: 'Delete Index', size: ftsTotal, color: '#10b981' },
+          { target: 'markdown', label: 'Delete Markdown', size: mdBytes, color: '#6366f1' },
+          { target: 'warc', label: 'Delete WARC', size: w.warc_bytes || 0, color: 'var(--accent)' },
+        ].map(d => `
+          <div class="p-3" style="border:1px solid rgba(239,68,68,0.25);border-radius:var(--radius)">
+            <div class="text-[10px] font-mono font-medium mb-0.5" style="color:#f87171">${esc(d.label)}</div>
+            <div class="text-[10px] font-mono ui-subtle mb-2">${d.size > 0 ? fmtBytes(d.size) + ' freed' : 'nothing on disk'}</div>
+            <button onclick="warcConfirmDelete('${esc(w.index)}','${d.target}')"
+              ${d.size <= 0 ? 'disabled' : ''}
+              class="ui-btn ui-btn-danger w-full px-2 py-1.5 text-[11px] font-mono">Delete ${esc(d.target)}\u2026</button>
+          </div>`).join('')}
+      </div>
+      <div class="mt-2 p-3" style="border:1px solid rgba(239,68,68,0.4);border-radius:var(--radius);background:rgba(239,68,68,0.05)">
+        <div class="text-[10px] font-mono font-medium mb-0.5" style="color:#f87171">\u26a0 Delete All Data</div>
+        <div class="text-[10px] font-mono ui-subtle mb-2">${fmtBytes(w.total_bytes || 0)} total \u2014 WARC + markdown + index + pack</div>
+        <button onclick="warcConfirmDelete('${esc(w.index)}','all')"
+          class="ui-btn ui-btn-danger px-3 py-1.5 text-[11px] font-mono">Delete all\u2026</button>
+      </div>
+    </div>`;
+
   $('warc-detail-content').innerHTML = `
     <div class="page-header mb-3">
       <h1 class="page-title">WARC ${esc(w.index || index)}</h1>
@@ -520,7 +571,7 @@ function renderWARCDetailContent(data, index) {
 
     ${activeJobsHTML}
     ${timelineHTML}
-    ${primaryActionHTML}
+    ${stepsHTML}
 
     <!-- Info + Disk -->
     <div class="grid md:grid-cols-2 gap-4 mb-4">
@@ -533,26 +584,22 @@ function renderWARCDetailContent(data, index) {
           </div>
           <div class="flex items-center justify-between">
             <span class="text-[10px] font-mono ui-subtle">Documents</span>
-            <span class="text-xs font-mono font-medium">${docsCount.toLocaleString()}</span>
+            <span class="text-xs font-mono font-medium">${docsCount > 0 ? docsCount.toLocaleString() : (w.has_markdown ? '\u2014 scanning\u2026' : '\u2014')}</span>
           </div>
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-mono ui-subtle">warc.gz</span>
+            <span class="text-xs font-mono">${w.warc_bytes > 0 ? fmtBytes(w.warc_bytes) : '\u2014'}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-mono ui-subtle">md${w.warc_md_bytes > 0 ? '.warc.gz' : ''}</span>
+            <span class="text-xs font-mono">${mdBytes > 0 ? fmtBytes(mdBytes) : '\u2014'}${compressionRatio !== '\u2014' ? ` <span class="ui-subtle">(${compressionRatio} of WARC)</span>` : ''}</span>
+          </div>
+          ${packTotal > 0 ? `<div class="flex items-center justify-between"><span class="text-[10px] font-mono ui-subtle">Pack</span><span class="text-xs font-mono">${fmtBytes(packTotal)}</span></div>` : ''}
+          ${ftsTotal > 0 ? `<div class="flex items-center justify-between"><span class="text-[10px] font-mono ui-subtle">Index</span><span class="text-xs font-mono">${fmtBytes(ftsTotal)}</span></div>` : ''}
           <div class="flex items-center justify-between">
             <span class="text-[10px] font-mono ui-subtle">Total on Disk</span>
             <span class="text-xs font-mono font-medium">${fmtBytes(w.total_bytes || 0)}</span>
           </div>
-          <div class="flex items-center justify-between">
-            <span class="text-[10px] font-mono ui-subtle">WARC Size</span>
-            <span class="text-xs font-mono">${fmtBytes(w.warc_bytes || 0)}</span>
-          </div>
-          <div class="flex items-center justify-between">
-            <span class="text-[10px] font-mono ui-subtle">Markdown Size</span>
-            <span class="text-xs font-mono">${fmtBytes(w.warc_md_bytes || 0)}</span>
-          </div>
-          <div class="flex items-center justify-between">
-            <span class="text-[10px] font-mono ui-subtle">MD / WARC Ratio</span>
-            <span class="text-xs font-mono">${compressionRatio}</span>
-          </div>
-          ${packTotal > 0 ? `<div class="flex items-center justify-between"><span class="text-[10px] font-mono ui-subtle">Pack Size</span><span class="text-xs font-mono">${fmtBytes(packTotal)}</span></div>` : ''}
-          ${ftsTotal > 0 ? `<div class="flex items-center justify-between"><span class="text-[10px] font-mono ui-subtle">Index Size</span><span class="text-xs font-mono">${fmtBytes(ftsTotal)}</span></div>` : ''}
           ${w.updated_at ? `<div class="flex items-center justify-between"><span class="text-[10px] font-mono ui-subtle">Updated</span><span class="text-xs font-mono">${fmtRelativeTime(w.updated_at)}</span></div>` : ''}
         </div>
         ${w.filename ? `
@@ -586,30 +633,7 @@ function renderWARCDetailContent(data, index) {
       </div>
     </div>
 
-    <!-- Advanced Actions -->
-    <details class="surface mb-4">
-      <summary class="p-4 text-[11px] font-mono ui-subtle cursor-pointer select-none">Advanced Actions</summary>
-      <div class="px-4 pb-4">
-        <div class="grid md:grid-cols-2 gap-4">
-          <div class="space-y-2">
-            <div class="text-[10px] font-mono ui-subtle mb-1 uppercase tracking-wider">Run Pipeline Step</div>
-            <button onclick="warcAction('${esc(w.index)}','download',{},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Download WARC</button>
-            <button onclick="warcAction('${esc(w.index)}','markdown',{fast:false},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Extract Markdown</button>
-            <button onclick="warcAction('${esc(w.index)}','index',{engine:currentSearchEngine(),source:'files'},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Build Index</button>
-            <button onclick="warcAction('${esc(w.index)}','reindex',{engine:currentSearchEngine(),source:'files'},true)" class="ui-btn w-full px-3 py-2 text-xs font-mono">Re-index (delete + rebuild)</button>
-          </div>
-          <div class="space-y-2">
-            <div class="text-[10px] font-mono ui-subtle mb-1 uppercase tracking-wider">Danger Zone</div>
-            <div class="flex items-center gap-2">
-              <select id="warc-delete-target" class="ui-select flex-1 text-xs px-2 py-2">
-                <option value="index">index</option><option value="markdown">markdown</option><option value="warc">warc</option><option value="all">all data</option>
-              </select>
-              <button onclick="if(confirm('Delete '+$('warc-delete-target').value+' for WARC ${esc(w.index)}?'))warcAction('${esc(w.index)}','delete',{target:$('warc-delete-target').value,engine:currentSearchEngine()},true)" class="ui-btn ui-btn-danger px-3 py-2 text-xs font-mono shrink-0">Delete</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </details>
+    ${dangerHTML}
 
     <!-- Related Jobs -->
     <div class="surface p-4">
@@ -628,7 +652,7 @@ async function warcRunAll(index) {
   const w = data.warc || {};
   const steps = [];
   if (!w.has_warc) steps.push({ action: 'download', extra: {} });
-  if (!w.has_markdown) steps.push({ action: 'markdown', extra: { fast: false } });
+  if (!w.has_markdown) steps.push({ action: 'markdown', extra: {} });
   if (!w.has_fts) steps.push({ action: 'index', extra: { engine: currentSearchEngine(), source: 'files' } });
   if (steps.length === 0) return;
   if (!confirm(`Run ${steps.length} remaining step${steps.length !== 1 ? 's' : ''} for WARC ${index}?`)) return;
@@ -659,6 +683,61 @@ function setWarcBtnRunning(index, running) {
     btn.disabled = false;
     if (btn.dataset.origLabel) btn.textContent = btn.dataset.origLabel;
   }
+}
+
+// GitHub-style typed-confirmation delete for WARC danger zone.
+async function warcConfirmDelete(index, target) {
+  const confirmWord = target === 'all' ? index : target;
+  const what = target === 'all' ? `ALL data for WARC ${index}` : `${target} for WARC ${index}`;
+
+  // Build a modal overlay with typed confirmation.
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:1rem';
+  overlay.innerHTML = `
+    <div style="background:var(--panel);border:1px solid rgba(239,68,68,0.5);border-radius:var(--radius);padding:1.5rem;max-width:420px;width:100%">
+      <div style="font-size:13px;font-weight:600;color:#f87171;margin-bottom:0.75rem">\u26a0 Confirm Deletion</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:1rem;line-height:1.5">
+        This will permanently delete <strong style="color:var(--text)">${esc(what)}</strong>.<br>
+        This action <strong>cannot be undone</strong>.
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:0.5rem;font-family:monospace">
+        Type <strong style="color:var(--text)">${esc(confirmWord)}</strong> to confirm:
+      </div>
+      <input id="danger-confirm-input" type="text" autocomplete="off" spellcheck="false"
+        placeholder="${esc(confirmWord)}"
+        style="width:100%;box-sizing:border-box;padding:0.5rem 0.75rem;font-family:monospace;font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);margin-bottom:1rem;outline:none">
+      <div style="display:flex;gap:0.5rem;justify-content:flex-end">
+        <button id="danger-cancel-btn" style="padding:0.4rem 1rem;font-size:12px;font-family:monospace;background:transparent;border:1px solid var(--border);border-radius:var(--radius);color:var(--text-muted);cursor:pointer">Cancel</button>
+        <button id="danger-confirm-btn" disabled
+          style="padding:0.4rem 1rem;font-size:12px;font-family:monospace;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.5);border-radius:var(--radius);color:#f87171;cursor:pointer;opacity:0.5">
+          Delete ${esc(target)}
+        </button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const input = overlay.querySelector('#danger-confirm-input');
+  const confirmBtn = overlay.querySelector('#danger-confirm-btn');
+  const cancelBtn = overlay.querySelector('#danger-cancel-btn');
+
+  function close() { document.body.removeChild(overlay); }
+
+  input.addEventListener('input', () => {
+    const match = input.value === confirmWord;
+    confirmBtn.disabled = !match;
+    confirmBtn.style.opacity = match ? '1' : '0.5';
+    confirmBtn.style.cursor = match ? 'pointer' : 'not-allowed';
+  });
+  input.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+  cancelBtn.addEventListener('click', close);
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  confirmBtn.addEventListener('click', () => {
+    if (confirmBtn.disabled) return;
+    close();
+    warcAction(index, 'delete', { target, engine: currentSearchEngine() }, true);
+  });
+
+  requestAnimationFrame(() => input.focus());
 }
 
 async function warcAction(index, action, extra = {}, refreshDetail = false) {

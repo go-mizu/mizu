@@ -84,7 +84,6 @@ function renderJobHistory(jobs) {
             if (cfg.files && cfg.files !== '0') cfgParts.push(`files:${esc(cfg.files)}`);
             if (cfg.engine) cfgParts.push(`engine:${esc(cfg.engine)}`);
             if (cfg.format) cfgParts.push(`fmt:${esc(cfg.format)}`);
-            if (cfg.fast) cfgParts.push('fast');
             const detail = [j.message || j.error || '', cfgParts.join(' ')].filter(Boolean).join(' · ');
             return `
             <tr class="cursor-pointer hover:bg-white/5" onclick="navigateTo('/jobs/${esc(j.id)}')">
@@ -141,9 +140,7 @@ function submitJob(event, type) {
 
   const cfg = { type, files };
 
-  if (type === 'markdown') {
-    cfg.fast = form.elements.fast ? form.elements.fast.checked : false;
-  } else if (type === 'pack') {
+  if (type === 'pack') {
     cfg.format = form.elements.format ? form.elements.format.value : 'parquet';
   } else if (type === 'index') {
     cfg.engine = form.elements.engine ? form.elements.engine.value : DEFAULT_ENGINE;
@@ -249,7 +246,7 @@ function onJobUpdate(msg) {
     }
     // When a pipeline job completes, refresh stats on visible pages.
     if (isDone && msg.status === 'completed') {
-      setTimeout(() => refreshAfterJobComplete(), 800);
+      setTimeout(() => refreshAfterJobComplete(job), 800);
     }
   }
 }
@@ -384,8 +381,7 @@ function renderJobTypeGroup(type, jobs) {
               if (cfg.files && cfg.files !== '0') cfgParts.push(`files:${esc(cfg.files)}`);
               if (cfg.engine) cfgParts.push(`engine:${esc(cfg.engine)}`);
               if (cfg.format) cfgParts.push(`fmt:${esc(cfg.format)}`);
-              if (cfg.fast) cfgParts.push('fast');
-              const detail = [j.message || j.error || '', cfgParts.join(' ')].filter(Boolean).join(' &middot; ');
+                const detail = [j.message || j.error || '', cfgParts.join(' ')].filter(Boolean).join(' &middot; ');
               return `
               <tr class="cursor-pointer hover:bg-white/5" onclick="navigateTo('/jobs/${esc(j.id)}')">
                 <td class="px-3 py-1.5 font-mono text-xs">${esc(j.id)}</td>
@@ -404,14 +400,20 @@ function renderJobTypeGroup(type, jobs) {
 async function renderJobs() {
   state.currentPage = 'jobs';
   const main = $('main');
+  const hasCache = !!(state.central.jobs);
   main.innerHTML = `
-    <div class="page-shell anim-fade-in">
+    <div class="page-shell${hasCache ? '' : ' anim-fade-in'}">
       <div class="page-header mb-4">
         <h1 class="page-title">Jobs</h1>
         <button onclick="renderJobs()" class="ui-btn px-3 py-2 text-xs font-mono">Reload</button>
       </div>
-      <div id="jobs-content"><div class="ui-empty">loading...</div></div>
+      <div id="jobs-content"></div>
     </div>`;
+
+  // Render cached state immediately — no loading flash.
+  if (hasCache) {
+    refreshJobsUI();
+  }
 
   try {
     await Promise.all([
@@ -441,20 +443,25 @@ async function renderJobs() {
 async function renderJobDetail(jobId) {
   state.currentPage = 'job-detail';
   const main = $('main');
+  // Try central state first — avoids loading flash for known jobs.
+  const cachedJob = (state.central.jobs || []).find(j => j.id === jobId);
   main.innerHTML = `
-    <div class="page-shell anim-fade-in">
+    <div class="page-shell${cachedJob ? '' : ' anim-fade-in'}">
       <div class="page-header">
         <div class="flex items-center gap-3">
           <a href="#/jobs" class="ui-link text-sm">&larr; Jobs</a>
           <h1 class="page-title">Job ${esc(jobId)}</h1>
         </div>
       </div>
-      <div id="job-detail-content"><div class="ui-empty">loading...</div></div>
+      <div id="job-detail-content"></div>
     </div>`;
 
+  if (cachedJob) {
+    renderJobDetailContent(cachedJob);
+  }
+
   try {
-    // Try central state first, then API
-    let job = (state.central.jobs || []).find(j => j.id === jobId);
+    let job = cachedJob;
     if (!job) {
       job = await apiGetJob(jobId);
     }
@@ -481,7 +488,6 @@ function renderJobDetailContent(job) {
   if (cfg.engine) configRows.push(['Engine', cfg.engine]);
   if (cfg.source) configRows.push(['Source', cfg.source]);
   if (cfg.format) configRows.push(['Format', cfg.format]);
-  if (cfg.fast) configRows.push(['Fast', 'true']);
 
   el.innerHTML = `
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
@@ -544,11 +550,19 @@ function renderJobDetailContent(job) {
 }
 
 // Refresh stats on whichever page is currently visible after a job completes.
-async function refreshAfterJobComplete() {
+async function refreshAfterJobComplete(completedJob) {
   try {
     await refreshCentralState(true);
-    if (state.currentPage === 'warc') {
-      // Re-fetch WARC list to get updated summary counts.
+    if (state.currentPage === 'warc' && state.warcDetail) {
+      // On WARC detail: reload the detail to get updated metadata.
+      const detailIndex = (state.warcDetail.warc || {}).index;
+      if (detailIndex) {
+        const data = await apiWARCDetail(detailIndex);
+        state.warcDetail = data;
+        if ($('warc-detail-content')) renderWARCDetailContent(data, detailIndex);
+      }
+    } else if (state.currentPage === 'warc') {
+      // On WARC list: re-fetch to get updated summary counts (no animation replay).
       const data = await apiWARCList({
         offset: state.warcOffset || 0,
         limit: state.warcLimit || 200,
@@ -558,11 +572,11 @@ async function refreshAfterJobComplete() {
       state.warcSummary = data.summary || state.warcSummary;
       state.warcTotal = data.total || state.warcTotal;
       state.warcRows = data.warcs || state.warcRows;
-      renderWARCSummary(state.warcSummary);
-      renderWARCTabs(state.warcSummary, state.warcTotal);
-      renderWARCTable(data);
+      if ($('warc-summary')) renderWARCSummary(state.warcSummary);
+      if ($('warc-tabs')) renderWARCTabs(state.warcSummary, state.warcTotal);
+      if ($('warc-content')) renderWARCTable(data);
     } else if (state.currentPage === 'overview') {
-      renderOverviewContent(state.central.overview, state.central.jobs);
+      if ($('overview-content')) renderOverviewContent(state.central.overview, state.central.jobs);
     }
   } catch (_) {}
 }

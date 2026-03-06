@@ -356,7 +356,6 @@ func TestExecMarkdown_ReturnsActionableErrorWhenWARCMissing(t *testing.T) {
 		Type:    "markdown",
 		CrawlID: "CC-MAIN-2026-04",
 		Files:   "0",
-		Fast:    true,
 	})
 
 	err := jm.execMarkdown(context.Background(), job)

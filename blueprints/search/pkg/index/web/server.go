@@ -576,28 +576,43 @@ func (s *Server) handleStats(c *mizu.Ctx) error {
 		return c.JSON(500, errResp{"no FTS index: " + err.Error()})
 	}
 
+	type shardStats struct {
+		docs int64
+		disk int64
+	}
+	results := make([]shardStats, len(shardDirs))
+	var wg sync.WaitGroup
+	for i, sd := range shardDirs {
+		wg.Add(1)
+		go func(idx int, dir string) {
+			defer wg.Done()
+			eng, err := index.NewEngine(engineName)
+			if err != nil {
+				return
+			}
+			if s.Addr != "" {
+				if setter, ok := eng.(index.AddrSetter); ok {
+					setter.SetAddr(s.Addr)
+				}
+			}
+			if err := eng.Open(c.Context(), dir); err != nil {
+				return
+			}
+			st, err := eng.Stats(c.Context())
+			eng.Close()
+			if err != nil {
+				return
+			}
+			results[idx] = shardStats{docs: st.DocCount, disk: st.DiskBytes}
+		}(i, sd.path)
+	}
+	wg.Wait()
+
 	var totalDocs int64
 	var totalDisk int64
-	for _, sd := range shardDirs {
-		eng, err := index.NewEngine(engineName)
-		if err != nil {
-			continue
-		}
-		if s.Addr != "" {
-			if setter, ok := eng.(index.AddrSetter); ok {
-				setter.SetAddr(s.Addr)
-			}
-		}
-		if err := eng.Open(c.Context(), sd.path); err != nil {
-			continue
-		}
-		stats, err := eng.Stats(c.Context())
-		eng.Close()
-		if err != nil {
-			continue
-		}
-		totalDocs += stats.DocCount
-		totalDisk += stats.DiskBytes
+	for _, r := range results {
+		totalDocs += r.docs
+		totalDisk += r.disk
 	}
 
 	return c.JSON(200, StatsResponse{
@@ -904,63 +919,6 @@ func (s *Server) handleMetaRefresh(c *mizu.Ctx) error {
 	return c.JSON(code, MetaRefreshResponse{Accepted: accepted, Status: status})
 }
 
-func (s *Server) handleCrawls(c *mizu.Ctx) error {
-	client := cc.NewClient("", 4)
-	crawls, err := client.ListCrawls(c.Context())
-	if err != nil {
-		return c.JSON(500, errResp{err.Error()})
-	}
-	return c.JSON(200, struct {
-		Crawls any `json:"crawls"`
-	}{Crawls: crawls})
-}
-
-func (s *Server) handleCrawlWarcs(c *mizu.Ctx) error {
-	crawlID := c.Param("id")
-	if crawlID == "" {
-		return c.JSON(400, errResp{"missing crawl id"})
-	}
-
-	client := cc.NewClient("", 4)
-	paths, err := client.DownloadManifest(c.Context(), crawlID, "warc.paths.gz")
-	if err != nil {
-		return c.JSON(500, errResp{err.Error()})
-	}
-
-	// Check which WARCs are downloaded locally.
-	warcDir := filepath.Join(s.CrawlDir, "warc")
-
-	type warcInfo struct {
-		Index      int    `json:"index"`
-		RemotePath string `json:"remote_path"`
-		Filename   string `json:"filename"`
-		Downloaded bool   `json:"downloaded"`
-		LocalSize  int64  `json:"local_size,omitempty"`
-	}
-
-	warcs := make([]warcInfo, 0, len(paths))
-	for i, p := range paths {
-		fname := filepath.Base(p)
-		localPath := filepath.Join(warcDir, fname)
-		info := warcInfo{
-			Index:      i,
-			RemotePath: p,
-			Filename:   fname,
-		}
-		if fi, err := os.Stat(localPath); err == nil {
-			info.Downloaded = true
-			info.LocalSize = fi.Size()
-		}
-		warcs = append(warcs, info)
-	}
-
-	return c.JSON(200, struct {
-		CrawlID string    `json:"crawl_id"`
-		Total   int       `json:"total"`
-		WARCs   []warcInfo `json:"warcs"`
-	}{CrawlID: crawlID, Total: len(paths), WARCs: warcs})
-}
-
 func (s *Server) handleCrawlData(c *mizu.Ctx) error {
 	crawlID := c.Param("id")
 	if crawlID == "" {
@@ -1013,8 +971,8 @@ func (s *Server) handleCreateJob(c *mizu.Ctx) error {
 	}
 
 	job := s.Jobs.Create(cfg)
-	logInfof("job create id=%s type=%s crawl=%s files=%s engine=%s source=%s format=%s fast=%t",
-		job.ID, cfg.Type, cfg.CrawlID, cfg.Files, cfg.Engine, cfg.Source, cfg.Format, cfg.Fast)
+	logInfof("job create id=%s type=%s crawl=%s files=%s engine=%s source=%s format=%s",
+		job.ID, cfg.Type, cfg.CrawlID, cfg.Files, cfg.Engine, cfg.Source, cfg.Format)
 	// Snapshot before RunJob starts a goroutine that modifies job concurrently.
 	snapshot := *job
 	s.Jobs.RunJob(job)
@@ -1158,18 +1116,6 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(v)
-}
-
-func queryInt(r *http.Request, key string, def int) int {
-	s := r.URL.Query().Get(key)
-	if s == "" {
-		return def
-	}
-	var v int
-	if _, err := fmt.Sscanf(s, "%d", &v); err != nil {
-		return def
-	}
-	return v
 }
 
 func queryIntCtx(c *mizu.Ctx, key string, def int) int {

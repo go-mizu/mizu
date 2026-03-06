@@ -149,9 +149,8 @@ func (s *Server) handleWARCList(c *mizu.Ctx) error {
 		}
 	}
 
-	// Phase filter: show only WARCs at a specific pipeline stage.
-	// Three user-facing phases: download → markdown → index.
-	// Pack is an internal detail exposed only in advanced actions.
+	// Phase filter: show only WARCs that have completed a given stage.
+	// Tabs show completed counts: downloaded / markdown / indexed.
 	phase := strings.ToLower(strings.TrimSpace(c.Query("phase")))
 	if phase != "" {
 		phased := make([]metastore.WARCRecord, 0, len(filtered))
@@ -159,20 +158,16 @@ func (s *Server) handleWARCList(c *mizu.Ctx) error {
 			hasFTS := sumInt64Map(rec.FTSBytes) > 0
 			hasMD := rec.MarkdownDocs > 0 || rec.MarkdownBytes > 0
 			switch phase {
-			case "download":
-				if rec.WARCBytes <= 0 {
+			case "downloaded":
+				if rec.WARCBytes > 0 {
 					phased = append(phased, rec)
 				}
 			case "markdown":
-				if rec.WARCBytes > 0 && !hasMD {
+				if hasMD {
 					phased = append(phased, rec)
 				}
-			case "index":
-				if hasMD && !hasFTS {
-					phased = append(phased, rec)
-				}
-			case "complete":
-				if rec.WARCBytes > 0 && hasMD && hasFTS {
+			case "indexed":
+				if hasFTS {
 					phased = append(phased, rec)
 				}
 			}
@@ -277,7 +272,6 @@ func (s *Server) handleWARCDetail(c *mizu.Ctx) error {
 
 type warcActionRequest struct {
 	Action string `json:"action"`
-	Fast   bool   `json:"fast"`
 	Format string `json:"format"`
 	Engine string `json:"engine"`
 	Source string `json:"source"`
@@ -326,7 +320,7 @@ func (s *Server) handleWARCAction(c *mizu.Ctx) error {
 	case "download":
 		job = s.createAndRunJob(JobConfig{Type: "download", CrawlID: crawlID, Files: fileToken})
 	case "markdown":
-		job = s.createAndRunJob(JobConfig{Type: "markdown", CrawlID: crawlID, Files: fileToken, Fast: req.Fast})
+		job = s.createAndRunJob(JobConfig{Type: "markdown", CrawlID: crawlID, Files: fileToken})
 	case "pack":
 		format := strings.TrimSpace(req.Format)
 		if format == "" {
@@ -386,8 +380,8 @@ func (s *Server) handleWARCAction(c *mizu.Ctx) error {
 
 func (s *Server) createAndRunJob(cfg JobConfig) *Job {
 	job := s.Jobs.Create(cfg)
-	logInfof("warc action created job id=%s type=%s crawl=%s files=%s engine=%s source=%s format=%s fast=%t",
-		job.ID, cfg.Type, cfg.CrawlID, cfg.Files, cfg.Engine, cfg.Source, cfg.Format, cfg.Fast)
+	logInfof("warc action created job id=%s type=%s crawl=%s files=%s engine=%s source=%s format=%s",
+		job.ID, cfg.Type, cfg.CrawlID, cfg.Files, cfg.Engine, cfg.Source, cfg.Format)
 	// Snapshot before RunJob starts a goroutine that modifies job concurrently.
 	snap := *job
 	s.Jobs.RunJob(job)

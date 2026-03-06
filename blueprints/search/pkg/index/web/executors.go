@@ -18,8 +18,8 @@ import (
 // RunJob dispatches a job to the appropriate executor in a background goroutine.
 func (m *JobManager) RunJob(job *Job) {
 	go func() {
-		logInfof("job run id=%s type=%s crawl=%s files=%s engine=%s source=%s format=%s fast=%t",
-			job.ID, job.Config.Type, job.Config.CrawlID, job.Config.Files, job.Config.Engine, job.Config.Source, job.Config.Format, job.Config.Fast)
+		logInfof("job run id=%s type=%s crawl=%s files=%s engine=%s source=%s format=%s",
+			job.ID, job.Config.Type, job.Config.CrawlID, job.Config.Files, job.Config.Engine, job.Config.Source, job.Config.Format)
 		ctx, cancel := context.WithCancel(context.Background())
 		m.SetRunning(job.ID, cancel)
 		var err error
@@ -51,11 +51,7 @@ func (m *JobManager) RunJob(job *Job) {
 // ── Download Executor ────────────────────────────────────────────────────
 
 func (m *JobManager) execDownload(ctx context.Context, job *Job) error {
-	crawlID := job.Config.CrawlID
-	if crawlID == "" {
-		crawlID = m.crawlID
-	}
-	crawlDir := m.resolveCrawlDir(crawlID)
+	crawlID, crawlDir := m.resolveJobCrawl(job)
 	logInfof("pipeline download start job=%s crawl=%s dir=%s", job.ID, crawlID, crawlDir)
 
 	m.UpdateProgress(job.ID, 0, "fetching crawl manifest...", 0)
@@ -115,12 +111,8 @@ func (m *JobManager) execDownload(ctx context.Context, job *Job) error {
 // ── Markdown Executor ────────────────────────────────────────────────────
 
 func (m *JobManager) execMarkdown(ctx context.Context, job *Job) error {
-	crawlID := job.Config.CrawlID
-	if crawlID == "" {
-		crawlID = m.crawlID
-	}
-	crawlDir := m.resolveCrawlDir(crawlID)
-	logInfof("pipeline markdown start job=%s crawl=%s dir=%s fast=%t", job.ID, crawlID, crawlDir, job.Config.Fast)
+	crawlID, crawlDir := m.resolveJobCrawl(job)
+	logInfof("pipeline markdown start job=%s crawl=%s dir=%s", job.ID, crawlID, crawlDir)
 
 	m.UpdateProgress(job.ID, 0, "fetching crawl manifest...", 0)
 	paths, err := m.getManifestPaths(ctx, crawlID)
@@ -139,7 +131,6 @@ func (m *JobManager) execMarkdown(ctx context.Context, job *Job) error {
 	cfg := warcmd.DefaultConfig(crawlID)
 	cfg.DataDir = filepath.Dir(crawlDir)
 	cfg.Workers = runtime.NumCPU()
-	cfg.Fast = job.Config.Fast
 	cfg.Force = false
 	cfg.KeepTemp = false
 
@@ -200,11 +191,7 @@ func (m *JobManager) execMarkdown(ctx context.Context, job *Job) error {
 // ── Pack Executor ────────────────────────────────────────────────────────
 
 func (m *JobManager) execPack(ctx context.Context, job *Job) error {
-	crawlID := job.Config.CrawlID
-	if crawlID == "" {
-		crawlID = m.crawlID
-	}
-	crawlDir := m.resolveCrawlDir(crawlID)
+	crawlID, crawlDir := m.resolveJobCrawl(job)
 
 	format := job.Config.Format
 	if format == "" {
@@ -293,11 +280,7 @@ func (m *JobManager) execPack(ctx context.Context, job *Job) error {
 // ── Index Executor ───────────────────────────────────────────────────────
 
 func (m *JobManager) execIndex(ctx context.Context, job *Job) error {
-	crawlID := job.Config.CrawlID
-	if crawlID == "" {
-		crawlID = m.crawlID
-	}
-	crawlDir := m.resolveCrawlDir(crawlID)
+	crawlID, crawlDir := m.resolveJobCrawl(job)
 
 	engineName := job.Config.Engine
 	if engineName == "" {
@@ -437,6 +420,17 @@ func (m *JobManager) execIndex(ctx context.Context, job *Job) error {
 	logInfof("pipeline index done job=%s crawl=%s selected=%d engine=%s source=%s", job.ID, crawlID, len(selected), engineName, source)
 
 	return nil
+}
+
+// resolveJobCrawl returns the effective crawlID and crawlDir for a job,
+// falling back to the JobManager's configured crawl when the job has none.
+func (m *JobManager) resolveJobCrawl(job *Job) (crawlID, crawlDir string) {
+	crawlID = job.Config.CrawlID
+	if crawlID == "" {
+		crawlID = m.crawlID
+	}
+	crawlDir = m.resolveCrawlDir(crawlID)
+	return
 }
 
 // ── Helper Functions ─────────────────────────────────────────────────────

@@ -27,33 +27,42 @@ async function renderBrowse(shard) {
             ${renderShardListSkeleton()}
           </div>
         </aside>
-        <div class="flex-1 min-w-0 p-3 sm:p-4" id="browse-content">
-          <div class="ui-empty">loading\u2026</div>
-        </div>
+        <div class="flex-1 min-w-0 p-3 sm:p-4" id="browse-content"></div>
       </div>
     </div>`;
 
-  try {
-    if (isDashboard) {
-      await refreshCentralState().catch(() => {});
-    }
-    const data = await apiBrowse();
-    state.browseShards = data.shards || [];
+  // Render cached shard list immediately — no flash when switching tabs.
+  if (state.browseShards) {
     renderShardList(shard);
     updateBrowseRefreshedAt();
     if (shard) {
-      if (!state.browseShards.find(s => s.name === shard)) {
-        $('browse-content').innerHTML = `<div class="ui-empty">Shard "${esc(shard)}" not found.</div>`;
-      } else {
+      if (state.browseShards.find(s => s.name === shard)) {
         loadShardView(shard);
+      } else {
+        $('browse-content').innerHTML = `<div class="ui-empty">Shard "${esc(shard)}" not found.</div>`;
       }
     } else if (state.browseShards.length > 0) {
       navigateTo('/browse/' + state.browseShards[0].name);
-    } else {
+    }
+  }
+
+  try {
+    if (isDashboard) refreshCentralState().catch(() => {});
+    const data = await apiBrowse();
+    state.browseShards = data.shards || [];
+    if (state.currentPage !== 'browse') return;
+    renderShardList(shard || state.browseShard);
+    updateBrowseRefreshedAt();
+    // Only load shard content on first render (no cached data yet).
+    if (!shard && !state.browseShard && state.browseShards.length > 0) {
+      navigateTo('/browse/' + state.browseShards[0].name);
+    } else if (!state.browseShard && state.browseShards.length === 0) {
       $('browse-content').innerHTML = `<div class="ui-empty">No indexes found. Download and process WARCs first.</div>`;
     }
   } catch(e) {
-    $('browse-content').innerHTML = `<div class="text-xs text-red-400 py-8">${esc(e.message)}</div>`;
+    if ($('browse-content') && !state.browseShards) {
+      $('browse-content').innerHTML = `<div class="text-xs text-red-400 py-8">${esc(e.message)}</div>`;
+    }
   }
 }
 
@@ -159,18 +168,18 @@ function renderShardList(active) {
     if (scanning) {
       chips.push(`<span class="ui-chip" style="border-color:rgba(96,165,250,0.6);color:#93c5fd">scanning</span>`);
     } else if (ready) {
-      chips.push(`<span class="ui-chip ui-chip-ok">indexed</span>`);
+      chips.push(`<span class="ui-chip ui-chip-ok">ready</span>`);
     } else if (hasPack) {
-      chips.push(`<span class="ui-chip ui-chip-ok">markdown</span>`);
+      chips.push(`<span class="ui-chip" style="border-color:rgba(99,102,241,0.6);color:#a5b4fc">markdown</span>`);
     } else {
       chips.push(`<span class="ui-chip ui-chip-off">downloaded</span>`);
     }
 
-    // For ready shards, show doc count + size. For unready, show Extract Markdown button.
-    const countLabel = ready ? (s.file_count ?? 0).toLocaleString() : '';
-    const sizeLabel = ready && s.total_size ? fmtBytes(s.total_size) : '';
+    // For ready shards, show doc count + size. For unready, show Extract & Index button.
+    const countLabel = hasScan ? (s.file_count ?? 0).toLocaleString() : '';
+    const sizeLabel = hasScan && s.total_size ? fmtBytes(s.total_size) : '';
     const packBtn = !hasPack && isDashboard
-      ? `<button onclick="event.preventDefault();event.stopPropagation();triggerPackShard('${esc(s.name)}')" class="text-[9px] font-mono px-1.5 py-0.5 ui-btn">Index</button>`
+      ? `<button onclick="event.preventDefault();event.stopPropagation();triggerPackShard('${esc(s.name)}')" class="text-[9px] font-mono px-1.5 py-0.5 ui-btn">Extract</button>`
       : '';
 
     return `<a href="#/browse/${s.name}"
@@ -189,22 +198,111 @@ function renderShardList(active) {
 }
 
 async function triggerPackShard(shard) {
+  const el = $('browse-content');
+  if (!el) return;
+
+  // Show queued state immediately — don't leave user with no feedback.
+  el.innerHTML = `
+    <div class="mt-6 py-8">
+      <div class="text-sm font-medium mb-1">Starting pipeline for ${esc(shard)}\u2026</div>
+      <div id="pack-status-msg" class="text-xs ui-subtle mb-5">Queueing jobs\u2026</div>
+      <div id="pack-progress-area" class="max-w-sm space-y-4"></div>
+    </div>`;
+
   const fileIdx = parseInt(shard, 10);
   const filesStr = String(fileIdx);
+  let mdJobId = null, indexJobId = null;
+
   try {
-    // Step 1: Extract markdown
-    await apiPost('/api/jobs', {type: 'markdown', files: filesStr});
-    // Step 2: Build search index (queued after markdown completes)
-    await apiPost('/api/jobs', {type: 'index', files: filesStr, source: 'files'});
+    const mdRes = await apiPost('/api/jobs', { type: 'markdown', files: filesStr });
+    mdJobId = mdRes && mdRes.job && mdRes.job.id;
+    const idxRes = await apiPost('/api/jobs', { type: 'index', files: filesStr, source: 'files' });
+    indexJobId = idxRes && idxRes.job && idxRes.job.id;
   } catch(e) {
-    alert('Failed to start indexing: ' + e.message);
+    if (el) el.innerHTML = `<div class="text-xs text-red-400 py-8">${esc('Failed to queue jobs: ' + e.message)}</div>`;
     return;
   }
-  try {
-    const data = await apiBrowse();
-    state.browseShards = data.shards || [];
-    renderShardList(state.browseShard);
-  } catch(_) {}
+
+  // Track progress for each job.
+  const progress = {
+    md: { status: 'queued', pct: 0, msg: '' },
+    idx: { status: 'queued', pct: 0, msg: '' },
+  };
+
+  function renderPackProgress() {
+    const msgEl = $('pack-status-msg');
+    const areaEl = $('pack-progress-area');
+    if (!areaEl) return;
+
+    const mdDone = progress.md.status === 'completed';
+    const idxDone = progress.idx.status === 'completed';
+    const mdFailed = progress.md.status === 'failed';
+    const idxFailed = progress.idx.status === 'failed';
+
+    if (msgEl) {
+      if (mdFailed) msgEl.textContent = 'Markdown extraction failed.';
+      else if (idxFailed) msgEl.textContent = 'Index build failed.';
+      else if (mdDone && idxDone) msgEl.textContent = 'Pipeline complete \u2014 loading documents\u2026';
+      else if (mdDone) msgEl.textContent = 'Markdown done \u2014 building index\u2026';
+      else msgEl.textContent = 'Extracting markdown\u2026';
+    }
+
+    areaEl.innerHTML = `
+      ${mdJobId ? `
+      <div>
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-[11px] font-mono ui-subtle">1. Extract Markdown</span>
+          <span class="text-[11px] font-mono ${mdDone ? 'status-completed' : mdFailed ? 'text-red-400' : ''}">${mdDone ? '\u2713 done' : mdFailed ? 'failed' : progress.md.pct + '%'}</span>
+        </div>
+        <div class="progress-track" style="height:4px">
+          <div class="${mdDone ? 'ov-c2' : 'progress-fill'}" style="width:${mdDone ? 100 : progress.md.pct}%;height:100%"></div>
+        </div>
+        ${progress.md.msg ? `<div class="text-[10px] font-mono ui-subtle mt-1 truncate">${esc(progress.md.msg)}</div>` : ''}
+      </div>` : ''}
+      ${indexJobId ? `
+      <div>
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-[11px] font-mono ui-subtle">2. Build Index</span>
+          <span class="text-[11px] font-mono ${idxDone ? 'status-completed' : idxFailed ? 'text-red-400' : ''}">${idxDone ? '\u2713 done' : idxFailed ? 'failed' : progress.idx.pct + '%'}</span>
+        </div>
+        <div class="progress-track" style="height:4px">
+          <div class="${idxDone ? 'ov-c4' : 'progress-fill'}" style="width:${idxDone ? 100 : progress.idx.pct}%;height:100%"></div>
+        </div>
+        ${progress.idx.msg ? `<div class="text-[10px] font-mono ui-subtle mt-1 truncate">${esc(progress.idx.msg)}</div>` : ''}
+      </div>` : ''}`;
+
+    // When both complete, reload the shard content automatically.
+    if (mdDone && idxDone) {
+      setTimeout(() => {
+        apiBrowse().then(data => {
+          state.browseShards = data.shards || [];
+          renderShardList(state.browseShard);
+          updateBrowseRefreshedAt();
+          loadShardDocs(shard, 1);
+        }).catch(() => loadShardDocs(shard, 1));
+      }, 800);
+    }
+  }
+
+  // Subscribe to WebSocket job updates.
+  if (mdJobId) {
+    wsClient.subscribe(mdJobId, m => {
+      if (m.progress !== undefined) progress.md.pct = Math.round((m.progress || 0) * 100);
+      if (m.status) progress.md.status = m.status;
+      if (m.message) progress.md.msg = m.message;
+      renderPackProgress();
+    });
+  }
+  if (indexJobId) {
+    wsClient.subscribe(indexJobId, m => {
+      if (m.progress !== undefined) progress.idx.pct = Math.round((m.progress || 0) * 100);
+      if (m.status) progress.idx.status = m.status;
+      if (m.message) progress.idx.msg = m.message;
+      renderPackProgress();
+    });
+  }
+
+  renderPackProgress();
 }
 
 // Browse filter debounce timer
@@ -235,7 +333,6 @@ async function loadShardDocs(shard, page = 1) {
   state.browsePage = page;
   const el = $('browse-content');
   if (!el) return;
-  el.innerHTML = `<div class="ui-empty">loading\u2026</div>`;
 
   const q = state.browseQ || '';
   const sort = state.browseSort || 'date';
@@ -362,7 +459,7 @@ async function loadShardStats(shard) {
     return;
   }
 
-  el.innerHTML = renderBrowseViewTabs(shard, 'stats') + `<div class="ui-empty">loading stats\u2026</div>`;
+  el.innerHTML = renderBrowseViewTabs(shard, 'stats');
   try {
     const stats = await apiBrowseStats(shard);
     renderShardStats(shard, stats);
@@ -476,10 +573,12 @@ function renderShardStats(shard, stats) {
 
 function renderNotPackedState(shard) {
   return `
-    <div class="mt-6 text-center py-8">
-      <div class="text-sm font-medium mb-2">WARC ready to index</div>
-      <div class="text-xs ui-subtle mb-5 max-w-sm mx-auto">Extract documents from the WARC and build a full-text search index. Two jobs will run sequentially: markdown extraction then Dahlia indexing.</div>
-      ${isDashboard ? `<button onclick="triggerPackShard('${esc(shard)}')" class="ui-btn px-5 py-2 text-xs font-mono">Index this WARC</button>` : `<div class="text-xs ui-subtle">Run the dashboard to index this WARC.</div>`}
+    <div class="mt-6 py-8">
+      <div class="text-sm font-medium mb-2">WARC downloaded \u2014 not yet extracted</div>
+      <div class="text-xs ui-subtle mb-5 max-w-sm">Two steps: (1) Extract Markdown from the WARC file, (2) Build full-text search index. If the WARC hasn\u2019t been downloaded yet, go to the <a href="#/warc" class="ui-link">WARC Console</a> first.</div>
+      ${isDashboard
+        ? `<button onclick="triggerPackShard('${esc(shard)}')" class="ui-btn ui-btn-primary px-5 py-2 text-xs font-mono">Extract &amp; Index</button>`
+        : `<div class="text-xs ui-subtle">Run the dashboard to process this WARC.</div>`}
     </div>`;
 }
 

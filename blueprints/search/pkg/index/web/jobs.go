@@ -21,7 +21,6 @@ type JobConfig struct {
 	Engine  string `json:"engine"` // for index jobs
 	Source  string `json:"source"` // for index jobs (files, parquet, bin, etc.)
 	Format  string `json:"format"` // for pack jobs
-	Fast    bool   `json:"fast"`   // for markdown jobs
 }
 
 // Job represents a single pipeline job tracked by the JobManager.
