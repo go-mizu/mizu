@@ -112,6 +112,14 @@ async function apiCancelJob(id) {
   return apiDelete(`/api/jobs/${id}`);
 }
 
+async function apiClearJobs() {
+  return apiDelete('/api/jobs');
+}
+
+async function apiGetJob(id) {
+  return apiFetch(`/api/jobs/${encodeURIComponent(id)}`);
+}
+
 function currentSearchEngine() {
   if (state.searchEngine) return state.searchEngine;
   if (state.stats && state.stats.engine) return state.stats.engine;

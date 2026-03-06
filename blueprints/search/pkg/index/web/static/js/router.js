@@ -24,6 +24,10 @@ function route() {
   } else if (path === '/jobs' && isDashboard) {
     showHeaderSearch(false);
     renderJobs();
+  } else if (path.startsWith('/jobs/') && isDashboard) {
+    showHeaderSearch(false);
+    const jobId = path.split('/')[2] || '';
+    renderJobDetail(jobId);
   } else if (path === '/search') {
     const q = params.get('q') || '';
     const engine = params.get('engine') || '';
@@ -65,7 +69,7 @@ function route() {
 
 function updateActiveTab(path) {
   let activeTab = isDashboard ? 'overview' : 'search';
-  if (path === '/jobs') activeTab = 'jobs';
+  if (path === '/jobs' || path.startsWith('/jobs/')) activeTab = 'jobs';
   else if (path === '/search' || path === '/' && !isDashboard || path.startsWith('/doc/')) activeTab = 'search';
   else if (path === '/warc' || path.startsWith('/warc/')) activeTab = 'warc';
   else if (path.startsWith('/browse')) activeTab = 'browse';

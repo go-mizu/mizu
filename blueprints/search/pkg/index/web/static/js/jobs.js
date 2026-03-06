@@ -66,9 +66,9 @@ function renderJobHistory(jobs) {
         </thead>
         <tbody>
           ${jobs.map(j => `
-            <tr>
+            <tr class="cursor-pointer hover:bg-white/5" onclick="navigateTo('/jobs/${esc(j.id)}')">
               <td class="px-4 py-2 font-mono text-xs">${esc(j.id)}</td>
-              <td class="px-4 py-2 text-xs">${esc(j.type)}</td>
+              <td class="px-4 py-2 text-xs">${jobTypeBadge(j.type)}</td>
               <td class="px-4 py-2 text-xs ${statusClass(j.status)}">${esc(j.status)}</td>
               <td class="px-4 py-2 text-xs ui-subtle truncate max-w-xs">${esc(j.message || j.error || '')}</td>
               <td class="px-4 py-2 font-mono text-xs text-right ui-subtle">${fmtDuration(j.started_at, j.ended_at)}</td>
@@ -97,9 +97,9 @@ function renderRecentJobs(jobs) {
         </thead>
         <tbody>
           ${recent.map(j => `
-            <tr>
+            <tr class="cursor-pointer hover:bg-white/5" onclick="navigateTo('/jobs/${esc(j.id)}')">
               <td class="px-4 py-2 font-mono text-xs">${esc(j.id)}</td>
-              <td class="px-4 py-2 text-xs">${esc(j.type)}</td>
+              <td class="px-4 py-2 text-xs">${jobTypeBadge(j.type)}</td>
               <td class="px-4 py-2 text-xs ${statusClass(j.status)}">${esc(j.status)}</td>
               <td class="px-4 py-2 text-xs ui-subtle truncate max-w-xs">${esc(j.message || j.error || '')}</td>
               <td class="px-4 py-2 font-mono text-xs text-right ui-subtle">${fmtDuration(j.started_at, j.ended_at)}</td>
@@ -141,9 +141,7 @@ async function startJob(cfg) {
 
     // Re-render job views if visible.
     if (state.currentPage === 'jobs') {
-      const summary = $('jobs-summary');
-      if (summary) summary.textContent = renderJobsSummaryLine(state.jobs || []);
-      renderJobsContent();
+      refreshJobsUI();
     }
   } catch (e) {
     alert('Failed to start job: ' + e.message);
@@ -160,12 +158,27 @@ async function cancelJob(id) {
       job.ended_at = new Date().toISOString();
     }
     if (state.currentPage === 'jobs') {
-      const summary = $('jobs-summary');
-      if (summary) summary.textContent = renderJobsSummaryLine(state.jobs || []);
-      renderJobsContent();
+      refreshJobsUI();
+    }
+    if (state.currentPage === 'job-detail') {
+      const el = $('job-detail-content');
+      if (el) renderJobDetailContent(job || { id, status: 'cancelled' });
     }
   } catch (e) {
     alert('Failed to cancel job: ' + e.message);
+  }
+}
+
+async function clearJobHistory() {
+  if (!confirm('Clear all completed/failed/cancelled jobs?')) return;
+  try {
+    await apiClearJobs();
+    await reloadJobs();
+    if (state.currentPage === 'jobs') {
+      refreshJobsUI();
+    }
+  } catch (e) {
+    alert('Failed to clear: ' + e.message);
   }
 }
 
@@ -179,9 +192,12 @@ function onJobUpdate(msg) {
     job.message = msg.message;
     job.rate = msg.rate || 0;
 
-    // Update in-place for active job rows on jobs page.
     if (state.currentPage === 'jobs') {
       updateJobInPlace(job);
+    }
+    if (state.currentPage === 'job-detail') {
+      const el = $('job-detail-content');
+      if (el) renderJobDetailContent(job);
     }
   } else if (msg.type === 'job_update') {
     job.status = msg.status;
@@ -192,9 +208,11 @@ function onJobUpdate(msg) {
     }
 
     if (state.currentPage === 'jobs') {
-      const summary = $('jobs-summary');
-      if (summary) summary.textContent = renderJobsSummaryLine(state.jobs || []);
-      renderJobsContent();
+      refreshJobsUI();
+    }
+    if (state.currentPage === 'job-detail') {
+      const el = $('job-detail-content');
+      if (el) renderJobDetailContent(job);
     }
   }
 }
@@ -220,7 +238,26 @@ function updateJobInPlace(job) {
 }
 
 // ===================================================================
-// Tab 3: Jobs
+// Job type helpers
+// ===================================================================
+const JOB_TYPE_ICONS = {
+  download: { icon: '&#8595;', color: 'text-blue-400', label: 'Download' },
+  markdown: { icon: '&#9998;', color: 'text-green-400', label: 'Markdown' },
+  pack:     { icon: '&#9635;', color: 'text-purple-400', label: 'Pack' },
+  index:    { icon: '&#9733;', color: 'text-amber-400', label: 'Index' },
+};
+
+function jobTypeBadge(type) {
+  const t = JOB_TYPE_ICONS[type] || { icon: '?', color: 'ui-subtle', label: type };
+  return `<span class="${t.color} font-mono">${t.icon}</span> ${esc(t.label)}`;
+}
+
+function jobTypeLabel(type) {
+  return (JOB_TYPE_ICONS[type] || { label: type }).label;
+}
+
+// ===================================================================
+// Jobs page
 // ===================================================================
 function jobCounts(jobs) {
   const counts = { total: 0, queued: 0, running: 0, completed: 0, failed: 0, cancelled: 0 };
@@ -236,39 +273,101 @@ function renderJobsSummaryLine(jobs) {
   return `jobs:${c.total} · running:${c.running} · queued:${c.queued} · completed:${c.completed} · failed:${c.failed} · cancelled:${c.cancelled}`;
 }
 
+function refreshJobsUI() {
+  const summary = $('jobs-summary');
+  if (summary) summary.textContent = renderJobsSummaryLine(state.jobs || []);
+  renderJobsContent();
+}
+
 function renderJobsContent() {
   const el = $('jobs-content');
   if (!el) return;
   const jobs = state.jobs || [];
   const active = jobs.filter(j => j.status === 'running' || j.status === 'queued');
+  const history = jobs.filter(j => j.status !== 'running' && j.status !== 'queued');
   const c = jobCounts(jobs);
 
   const cards = [
-    { label: 'Total', value: c.total },
-    { label: 'Running', value: c.running },
-    { label: 'Queued', value: c.queued },
-    { label: 'Failed', value: c.failed },
+    { label: 'Total', value: c.total, cls: '' },
+    { label: 'Running', value: c.running, cls: c.running > 0 ? 'text-blue-400' : '' },
+    { label: 'Completed', value: c.completed, cls: c.completed > 0 ? 'text-green-400' : '' },
+    { label: 'Failed', value: c.failed, cls: c.failed > 0 ? 'text-red-400' : '' },
   ];
+
+  // Group history by type
+  const grouped = {};
+  for (const j of history) {
+    if (!grouped[j.type]) grouped[j.type] = [];
+    grouped[j.type].push(j);
+  }
+  const typeOrder = ['download', 'markdown', 'pack', 'index'];
+  const sortedTypes = typeOrder.filter(t => grouped[t]).concat(
+    Object.keys(grouped).filter(t => !typeOrder.includes(t))
+  );
 
   el.innerHTML = `
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
       ${cards.map(card => `
         <div class="surface p-4">
           <div class="text-xs font-mono ui-subtle mb-1">${esc(String(card.label))}</div>
-          <div class="text-lg font-medium">${esc(String(card.value))}</div>
+          <div class="text-lg font-medium ${card.cls}">${esc(String(card.value))}</div>
         </div>`).join('')}
     </div>
+
+    ${active.length > 0 ? `
     <div class="surface p-4 mb-6">
       <div class="flex items-center justify-between mb-3">
         <h2 class="text-sm font-medium">Active Jobs</h2>
         <span class="meta-line">${active.length} active</span>
       </div>
-      ${active.length > 0 ? active.map(j => renderJobItem(j)).join('') : '<div class="ui-empty">No running or queued jobs.</div>'}
-    </div>
-    <div>
-      <h2 class="text-sm font-medium mb-3">All Jobs</h2>
-      ${renderJobHistory(jobs)}
+      ${active.map(j => renderJobItem(j)).join('')}
+    </div>` : ''}
+
+    <div class="mb-4">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-medium">Job History</h2>
+        ${history.length > 0 ? `<button onclick="clearJobHistory()" class="ui-btn px-3 py-1.5 text-xs font-mono">Clear History</button>` : ''}
+      </div>
+      ${sortedTypes.length === 0 ? '<div class="ui-empty">No completed jobs.</div>' : ''}
+      ${sortedTypes.map(type => renderJobTypeGroup(type, grouped[type])).join('')}
     </div>`;
+}
+
+function renderJobTypeGroup(type, jobs) {
+  const t = JOB_TYPE_ICONS[type] || { icon: '?', color: 'ui-subtle', label: type };
+  const counts = jobCounts(jobs);
+  return `
+    <details class="surface mb-3" open>
+      <summary class="p-3 cursor-pointer flex items-center justify-between">
+        <span class="text-sm font-medium">${t.icon} ${esc(t.label)} <span class="ui-subtle font-normal">(${jobs.length})</span></span>
+        <span class="text-xs font-mono ui-subtle">
+          ${counts.completed > 0 ? `<span class="text-green-400">${counts.completed} ok</span>` : ''}
+          ${counts.failed > 0 ? ` <span class="text-red-400">${counts.failed} fail</span>` : ''}
+          ${counts.cancelled > 0 ? ` <span class="ui-subtle">${counts.cancelled} cancel</span>` : ''}
+        </span>
+      </summary>
+      <div class="px-3 pb-3 overflow-x-auto">
+        <table class="w-full text-sm ui-table">
+          <thead>
+            <tr>
+              <th class="text-left px-3 py-1.5 text-xs font-mono">ID</th>
+              <th class="text-left px-3 py-1.5 text-xs font-mono">Status</th>
+              <th class="text-left px-3 py-1.5 text-xs font-mono">Message</th>
+              <th class="text-right px-3 py-1.5 text-xs font-mono">Elapsed</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${jobs.map(j => `
+              <tr class="cursor-pointer hover:bg-white/5" onclick="navigateTo('/jobs/${esc(j.id)}')">
+                <td class="px-3 py-1.5 font-mono text-xs">${esc(j.id)}</td>
+                <td class="px-3 py-1.5 text-xs ${statusClass(j.status)}">${esc(j.status)}</td>
+                <td class="px-3 py-1.5 text-xs ui-subtle truncate max-w-xs">${esc(j.message || j.error || '')}</td>
+                <td class="px-3 py-1.5 font-mono text-xs text-right ui-subtle">${fmtDuration(j.started_at, j.ended_at)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </details>`;
 }
 
 async function renderJobs() {
@@ -291,9 +390,7 @@ async function renderJobs() {
       reloadJobs(),
     ]);
     ensureJobStreamSubscribed();
-    const summary = $('jobs-summary');
-    if (summary) summary.textContent = renderJobsSummaryLine(state.jobs || []);
-    renderJobsContent();
+    refreshJobsUI();
 
     if (jobsPollingTimer) clearInterval(jobsPollingTimer);
     jobsPollingTimer = setInterval(async () => {
@@ -301,11 +398,117 @@ async function renderJobs() {
       // Only poll when WebSocket is disconnected — WS handles real-time updates
       if (wsClient.connected) return;
       await reloadJobs();
-      const line = $('jobs-summary');
-      if (line) line.textContent = renderJobsSummaryLine(state.jobs || []);
-      renderJobsContent();
+      refreshJobsUI();
     }, 5000);
   } catch (e) {
     $('jobs-content').innerHTML = `<div class="text-xs text-red-400">${esc(e.message)}</div>`;
   }
+}
+
+// ===================================================================
+// Single job detail page
+// ===================================================================
+async function renderJobDetail(jobId) {
+  state.currentPage = 'job-detail';
+  const main = $('main');
+  main.innerHTML = `
+    <div class="page-shell anim-fade-in">
+      <div class="page-header">
+        <div class="flex items-center gap-3">
+          <a href="#/jobs" class="ui-link text-sm">&larr; Jobs</a>
+          <h1 class="page-title">Job ${esc(jobId)}</h1>
+        </div>
+      </div>
+      <div id="job-detail-content"><div class="ui-empty">loading...</div></div>
+    </div>`;
+
+  try {
+    // Try local state first, then API
+    let job = (state.jobs || []).find(j => j.id === jobId);
+    if (!job) {
+      job = await apiGetJob(jobId);
+    }
+    ensureJobStreamSubscribed();
+    wsClient.subscribe(jobId, (msg) => onJobUpdate(msg));
+    renderJobDetailContent(job);
+  } catch (e) {
+    $('job-detail-content').innerHTML = `<div class="text-xs text-red-400">${esc(e.message)}</div>`;
+  }
+}
+
+function renderJobDetailContent(job) {
+  const el = $('job-detail-content');
+  if (!el) return;
+
+  const pct = Math.round((job.progress || 0) * 100);
+  const isActive = job.status === 'running' || job.status === 'queued';
+  const t = JOB_TYPE_ICONS[job.type] || { icon: '?', color: 'ui-subtle', label: job.type };
+  const cfg = job.config || {};
+
+  const configRows = [];
+  if (cfg.crawl) configRows.push(['Crawl', cfg.crawl]);
+  if (cfg.files) configRows.push(['Files', cfg.files]);
+  if (cfg.engine) configRows.push(['Engine', cfg.engine]);
+  if (cfg.source) configRows.push(['Source', cfg.source]);
+  if (cfg.format) configRows.push(['Format', cfg.format]);
+  if (cfg.fast) configRows.push(['Fast', 'true']);
+
+  el.innerHTML = `
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+      <div class="surface p-4">
+        <div class="text-xs font-mono ui-subtle mb-2">Status</div>
+        <div class="flex items-center gap-3">
+          <span class="text-2xl ${t.color}">${t.icon}</span>
+          <div>
+            <div class="text-sm font-medium">${esc(t.label)}</div>
+            <span class="text-xs ${statusClass(job.status)} font-medium">${esc(job.status)}</span>
+            ${job.rate > 0 ? `<span class="text-xs ui-subtle ml-2">${job.rate.toFixed(1)} docs/s</span>` : ''}
+          </div>
+        </div>
+      </div>
+      <div class="surface p-4">
+        <div class="text-xs font-mono ui-subtle mb-2">Progress</div>
+        <div class="text-2xl font-medium mb-2">${pct}%</div>
+        <div class="progress-track">
+          <div class="progress-fill" style="width:${pct}%"></div>
+        </div>
+      </div>
+    </div>
+
+    ${job.message ? `
+    <div class="surface p-4 mb-4">
+      <div class="text-xs font-mono ui-subtle mb-1">Message</div>
+      <div class="text-sm font-mono">${esc(job.message)}</div>
+    </div>` : ''}
+
+    ${job.error ? `
+    <div class="surface p-4 mb-4 border border-red-500/30">
+      <div class="text-xs font-mono text-red-400 mb-1">Error</div>
+      <div class="text-sm font-mono text-red-300">${esc(job.error)}</div>
+    </div>` : ''}
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+      <div class="surface p-4">
+        <div class="text-xs font-mono ui-subtle mb-2">Timing</div>
+        <table class="text-xs w-full">
+          <tr><td class="py-1 ui-subtle">Started</td><td class="py-1 text-right font-mono">${job.started_at ? fmtRelativeTime(job.started_at) : '-'}</td></tr>
+          <tr><td class="py-1 ui-subtle">Ended</td><td class="py-1 text-right font-mono">${job.ended_at ? fmtRelativeTime(job.ended_at) : (isActive ? 'running...' : '-')}</td></tr>
+          <tr><td class="py-1 ui-subtle">Duration</td><td class="py-1 text-right font-mono">${fmtDuration(job.started_at, job.ended_at)}</td></tr>
+        </table>
+      </div>
+      ${configRows.length > 0 ? `
+      <div class="surface p-4">
+        <div class="text-xs font-mono ui-subtle mb-2">Configuration</div>
+        <table class="text-xs w-full">
+          ${configRows.map(([k, v]) => `<tr><td class="py-1 ui-subtle">${esc(k)}</td><td class="py-1 text-right font-mono">${esc(v)}</td></tr>`).join('')}
+        </table>
+      </div>` : ''}
+    </div>
+
+    ${isActive ? `
+    <div class="flex gap-2">
+      <button onclick="cancelJob('${esc(job.id)}')" class="ui-btn px-4 py-2 text-xs font-mono border-red-500/30 text-red-400">Cancel Job</button>
+    </div>` : ''}
+
+    <div class="mt-4 text-xs font-mono ui-subtle">ID: ${esc(job.id)}</div>`;
 }
