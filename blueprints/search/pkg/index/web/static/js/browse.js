@@ -160,6 +160,7 @@ function renderShardList(active) {
   el.innerHTML = state.browseShards.map(s => {
     const isActive = s.name === active;
     const hasPack = !!s.has_pack;
+    const hasFTS  = !!s.has_fts;
     const hasScan = !!s.has_scan;
     const scanning = !!s.scanning;
     const ready = hasPack && hasScan;
@@ -169,21 +170,22 @@ function renderShardList(active) {
       chips.push(`<span class="ui-chip" style="border-color:rgba(96,165,250,0.6);color:#93c5fd">scanning</span>`);
     } else if (ready) {
       chips.push(`<span class="ui-chip ui-chip-ok">ready</span>`);
+    } else if (hasFTS) {
+      chips.push(`<span class="ui-chip" style="border-color:rgba(52,211,153,0.6);color:#6ee7b7">indexed</span>`);
     } else if (hasPack) {
       chips.push(`<span class="ui-chip" style="border-color:rgba(99,102,241,0.6);color:#a5b4fc">markdown</span>`);
     } else {
       chips.push(`<span class="ui-chip ui-chip-off">downloaded</span>`);
     }
 
-    // For ready shards, show doc count + size. For unready, show Extract & Index button.
     const countLabel = hasScan ? (s.file_count ?? 0).toLocaleString() : '';
     const sizeLabel = hasScan && s.total_size ? fmtBytes(s.total_size) : '';
     const packBtn = !hasPack && isDashboard
-      ? `<button onclick="event.preventDefault();event.stopPropagation();triggerPackShard('${esc(s.name)}')" class="text-[9px] font-mono px-1.5 py-0.5 ui-btn">Extract</button>`
+      ? `<button onclick="event.preventDefault();event.stopPropagation();triggerPackShard('${esc(s.name)}')" class="text-[9px] font-mono px-1.5 py-0.5 ui-btn">Extract &amp; Index</button>`
       : '';
 
     return `<a href="#/browse/${s.name}"
-       class="block py-1.5 px-2 text-xs font-mono cursor-pointer transition-colors ${isActive ? 'shard-active' : 'shard-item'}" ${!ready && !hasPack ? 'style="opacity:0.55"' : ''}>
+       class="block py-1.5 px-2 text-xs font-mono cursor-pointer transition-colors ${isActive ? 'shard-active' : 'shard-item'}" ${!hasPack ? 'style="opacity:0.55"' : ''}>
       <div class="flex items-center justify-between gap-1">
         <span class="truncate">${esc(s.name)}</span>
         ${countLabel ? `<span class="ui-subtle shrink-0">${countLabel}</span>` : ''}
