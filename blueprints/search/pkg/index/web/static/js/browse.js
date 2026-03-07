@@ -1,12 +1,30 @@
 // ===================================================================
 // Tab 6: Browse
 // ===================================================================
+
+// Listen for shard_scan WebSocket events for auto-refresh.
+// Uses wildcard subscription so it receives all broadcasts including shard_scan.
+(function initBrowseWSListener() {
+  if (typeof wsClient === 'undefined' || !isDashboard) return;
+  // Subscribe to '*' so we receive BroadcastAll messages.
+  wsClient.subscribe('*', (msg) => {
+    if (msg.type !== 'shard_scan') return;
+    if (state.currentPage !== 'browse') return;
+    // Refresh shard list and reload current shard docs.
+    apiBrowse().then(data => {
+      state.browseShards = data.shards || [];
+      renderShardList(state.browseShard);
+      updateBrowseRefreshedAt();
+      if (state.browseShard) loadShardView(state.browseShard);
+    }).catch(() => {});
+  });
+})();
+
 async function renderBrowse(shard) {
   state.currentPage = 'browse';
   state.browseShard = shard;
   state.browsePage = 1;
   state.browseQ = '';
-  state.browseView = 'docs'; // reset view on page entry (BUG-9)
   $('main').innerHTML = `
     <div class="page-shell anim-fade-in">
       <div class="page-header mb-4">
@@ -260,6 +278,9 @@ async function triggerPackShard(shard) {
       </div>`;
 
     if (mdDone && idxDone) {
+      // Wait briefly for the onComplete hook to trigger shard scan,
+      // then refresh. The shard_scan WS event will auto-refresh again
+      // when the scan finishes.
       setTimeout(() => {
         apiBrowse().then(data => {
           state.browseShards = data.shards || [];
@@ -267,7 +288,7 @@ async function triggerPackShard(shard) {
           updateBrowseRefreshedAt();
           loadShardDocs(shard, 1);
         }).catch(() => loadShardDocs(shard, 1));
-      }, 800);
+      }, 1200);
     }
   }
 
@@ -347,9 +368,9 @@ async function loadShardDocs(shard, page = 1) {
   const q = state.browseQ || '';
   const sort = state.browseSort || 'date';
 
-  // Check if shard is packed before fetching docs.
+  // Check if shard has markdown before fetching docs.
   const shardInfo = (state.browseShards || []).find(s => s.name === shard);
-  if (shardInfo && !shardInfo.has_pack) {
+  if (shardInfo && !shardInfo.has_pack && !shardInfo.has_fts) {
     el.innerHTML = renderBrowseViewTabs(shard, 'docs') + renderNotPackedState(shard);
     return;
   }
@@ -357,11 +378,11 @@ async function loadShardDocs(shard, page = 1) {
   try {
     const data = await apiBrowse(shard, {page, pageSize: 100, q, sort});
 
-    if (data.not_scanned) {
+    if (data.not_scanned || data.scanning) {
       el.innerHTML = renderBrowseViewTabs(shard, 'docs') + `
         <div class="ui-empty mt-6 text-center">
-          <div class="mb-3">Shard not yet indexed.</div>
-          ${isDashboard ? `<button onclick="apiMetaScanDocs().then(()=>loadShardDocs('${esc(shard)}',1))" class="ui-btn px-4 py-2 text-xs font-mono">Scan Docs</button>` : ''}
+          <div class="mb-3">${data.scanning ? 'Scanning documents\u2026 this may take a moment.' : 'Documents not yet scanned.'}</div>
+          ${!data.scanning && isDashboard ? `<button onclick="apiMetaScanDocs().then(()=>setTimeout(()=>loadShardDocs('${esc(shard)}',1),2000))" class="ui-btn px-4 py-2 text-xs font-mono">Scan Now</button>` : ''}
         </div>`;
       return;
     }
@@ -417,6 +438,7 @@ function renderDocTable(shard, data, page) {
       <thead>
         <tr class="text-left">
           <th class="pb-2 pr-3 font-medium">Title</th>
+          <th class="pb-2 pr-3 font-medium hidden lg:table-cell">Host</th>
           <th class="pb-2 pr-3 font-medium hidden sm:table-cell">URL</th>
           <th class="pb-2 pr-3 font-medium text-right whitespace-nowrap">Date</th>
           <th class="pb-2 pr-3 font-medium text-right hidden sm:table-cell">Size</th>
@@ -430,7 +452,10 @@ function renderDocTable(shard, data, page) {
               <a href="#/doc/${shard}/${encodeURIComponent(d.doc_id)}" class="ui-link font-medium truncate block max-w-[200px] sm:max-w-xs" title="${esc(d.title||d.doc_id)}">
                 ${esc(d.title || d.doc_id)}
               </a>
-              <div class="sm:hidden text-[10px] font-mono ui-subtle truncate mt-0.5">${d.url ? truncateURL(d.url, 35) : ''}</div>
+              <div class="sm:hidden text-[10px] font-mono ui-subtle truncate mt-0.5">${d.host || (d.url ? truncateURL(d.url, 35) : '')}</div>
+            </td>
+            <td class="py-2 pr-3 hidden lg:table-cell max-w-[160px]">
+              <span class="font-mono ui-subtle truncate block" title="${esc(d.host||'')}">${esc(d.host||'')}</span>
             </td>
             <td class="py-2 pr-3 hidden sm:table-cell max-w-[240px]">
               ${d.url ? `<a href="${esc(d.url)}" target="_blank" rel="noopener noreferrer" class="ui-subtle hover:text-[var(--accent)] font-mono truncate block" title="${esc(d.url)}">${truncateURL(d.url, 40)}</a>` : ''}
@@ -464,7 +489,7 @@ async function loadShardStats(shard) {
 
   // Don't attempt stats for unpacked shards.
   const shardInfo = (state.browseShards || []).find(s => s.name === shard);
-  if (shardInfo && !shardInfo.has_pack) {
+  if (shardInfo && !shardInfo.has_pack && !shardInfo.has_fts) {
     el.innerHTML = renderBrowseViewTabs(shard, 'stats') + renderNotPackedState(shard);
     return;
   }
