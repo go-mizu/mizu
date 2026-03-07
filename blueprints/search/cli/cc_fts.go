@@ -14,21 +14,10 @@ import (
 	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index"
 	indexpack "github.com/go-mizu/mizu/blueprints/search/pkg/index/pack"
-	// Import all drivers for registration.
-	// duckdb registration happens via cli/duckdb_ops.go (excluded when -tags chdb).
-	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/bleve"
-	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/chdb"
-	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/clickhouse"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web"
+	// Register FTS engine drivers: dahlia (default) and tantivy.
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/devnull"
-	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/elasticsearch"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/flower/dahlia"
-	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/flower/rose"
-	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/meilisearch"
-	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/opensearch"
-	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/postgres"
-	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/quickwit"
-	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/sqlite"
-	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/tantivy-lnx"
 	"github.com/spf13/cobra"
 )
 
@@ -98,7 +87,7 @@ func newCCFTSIndex() *cobra.Command {
 
 	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest)")
 	cmd.Flags().StringVar(&fileIdx, "file", "0", "File index, range (0-9)")
-	cmd.Flags().StringVar(&engine, "engine", "rose", "FTS engine: "+strings.Join(index.List(), ", "))
+	cmd.Flags().StringVar(&engine, "engine", "dahlia", "FTS engine: "+strings.Join(index.List(), ", "))
 	cmd.Flags().StringVar(&source, "source", "files", "Source: files, parquet, bin, markdown, duckdb")
 	cmd.Flags().IntVar(&batchSize, "batch-size", 5000, "Documents per batch insert")
 	cmd.Flags().IntVar(&workers, "workers", 0, "Parallel file readers (0 = NumCPU)")
@@ -130,7 +119,7 @@ func newCCFTSSearch() *cobra.Command {
 
 	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest)")
 	cmd.Flags().StringVar(&fileIdx, "file", "", "File index to search (default: all WARCs)")
-	cmd.Flags().StringVar(&engine, "engine", "rose", "FTS engine")
+	cmd.Flags().StringVar(&engine, "engine", "dahlia", "FTS engine")
 	cmd.Flags().IntVar(&limit, "limit", 10, "Max results")
 	cmd.Flags().IntVar(&offset, "offset", 0, "Result offset")
 	cmd.Flags().StringVar(&addr, "addr", "", "Service address for external engines")
@@ -178,22 +167,27 @@ func runCCFTSIndex(ctx context.Context, crawlID, fileIdx, engineName, source str
 		var pipeErr error
 
 		if source == "files" {
-			sourceDir := filepath.Join(baseDir, "markdown", warcIdx)
-			if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
+			warcMdPath := filepath.Join(baseDir, "warc_md", warcIdx+".md.warc.gz")
+			if _, err := os.Stat(warcMdPath); os.IsNotExist(err) {
 				eng.Close()
-				return fmt.Errorf("markdown dir not found: %s", sourceDir)
+				return fmt.Errorf("warc_md file not found: %s\n  run: search cc warc pack --file %s", warcMdPath, fileIdx)
 			}
 
-			fmt.Fprintf(os.Stderr, "indexing %s → %s (engine=%s, batch=%d, workers=%d)\n",
-				sourceDir, outputDir, engineName, batchSize, workers)
+			fmt.Fprintf(os.Stderr, "indexing %s → %s (engine=%s, batch=%d)\n",
+				warcMdPath, outputDir, engineName, batchSize)
 
-			cfg := indexpack.PipelineConfig{
-				SourceDir: sourceDir,
-				BatchSize: batchSize,
-				Workers:   workers,
-			}
-			progress := makeFTSIndexProgress(engineName, outputDir)
-			stats, pipeErr = indexpack.RunPipeline(ctx, eng, cfg, progress)
+			startTime := time.Now()
+			docs, indexErr := web.IndexFromWARCMd(ctx, eng, warcMdPath, batchSize, func(done, total int64, elapsed time.Duration) {
+				rate := float64(0)
+				if elapsed.Seconds() > 0 {
+					rate = float64(done) / elapsed.Seconds()
+				}
+				fmt.Fprintf(os.Stderr, "\r\033[K  indexing  docs=%d  %.0f/s  %s",
+					done, rate, elapsed.Round(time.Millisecond))
+			})
+			pipeErr = indexErr
+			stats = &indexpack.PipelineStats{StartTime: startTime}
+			stats.DocsIndexed.Store(docs)
 			fmt.Fprintln(os.Stderr) // newline after progress
 		} else {
 			packDir := filepath.Join(baseDir, "pack")

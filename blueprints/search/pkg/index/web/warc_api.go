@@ -156,7 +156,7 @@ func (s *Server) handleWARCList(c *mizu.Ctx) error {
 		phased := make([]metastore.WARCRecord, 0, len(filtered))
 		for _, rec := range filtered {
 			hasFTS := sumInt64Map(rec.FTSBytes) > 0
-			hasMD := rec.MarkdownDocs > 0 || rec.MarkdownBytes > 0
+			hasMD := rec.MarkdownBytes > 0
 			switch phase {
 			case "downloaded":
 				if rec.WARCBytes > 0 {
@@ -301,7 +301,7 @@ func (s *Server) handleWARCAction(c *mizu.Ctx) error {
 	fileToken := strconv.Itoa(n)
 
 	// localIdx is the 5-digit filename suffix used for local disk paths
-	// (markdown/, fts/, pack/ directories). warcIndex is the manifest-position
+	// (warc_md/, fts/, pack/ directories). warcIndex is the manifest-position
 	// key (e.g. "99000") which differs from the local suffix (e.g. "00000").
 	localIdx := warcIndex
 	if s.Meta != nil {
@@ -430,7 +430,7 @@ func summarizeWARCRecords(recs []metastore.WARCRecord) warcSummaryStats {
 		if rec.WARCBytes > 0 {
 			out.Downloaded++
 		}
-		if rec.MarkdownDocs > 0 || rec.MarkdownBytes > 0 {
+		if rec.MarkdownBytes > 0 {
 			out.MarkdownReady++
 		}
 		if packBytes > 0 {
@@ -487,38 +487,17 @@ func enrichWARCAPIRecord(ctx context.Context, r *warcAPIRecord, crawlDir string,
 		}
 	}
 
-	// Check new format: warc_md/{localIdx}.md.warc.gz
+	// Check warc_md/{localIdx}.md.warc.gz
 	mdPath := filepath.Join(crawlDir, "warc_md", localIdx+".md.warc.gz")
 	if info, err := os.Stat(mdPath); err == nil {
 		r.WARCMdBytes = info.Size()
-	}
-	// Check old format: markdown/{localIdx}/ directory with individual .md files
-	if r.WARCMdBytes == 0 {
-		markdownDir := filepath.Join(crawlDir, "markdown", localIdx)
-		if entries, err := os.ReadDir(markdownDir); err == nil && len(entries) > 0 {
-			var totalDocs int64
-			var totalBytes int64
-			for _, e := range entries {
-				if e.IsDir() {
-					continue
-				}
-				totalDocs++
-				if info, err := e.Info(); err == nil {
-					totalBytes += info.Size()
-				}
-			}
-			if totalDocs > 0 {
-				r.MarkdownDocs = totalDocs
-				r.MarkdownBytes = totalBytes
-			}
-		}
 	}
 	if docs != nil {
 		if meta, ok, _ := docs.GetShardMeta(ctx, "", localIdx); ok {
 			r.WARCMdDocs = meta.TotalDocs
 		}
 	}
-	r.HasMarkdown = r.WARCMdBytes > 0 || r.MarkdownDocs > 0 || r.MarkdownBytes > 0
+	r.HasMarkdown = r.WARCMdBytes > 0 || r.MarkdownBytes > 0
 }
 
 func cloneMap(in map[string]int64) map[string]int64 {
@@ -627,10 +606,14 @@ func deleteWARCArtifacts(crawlDir, warcIndex, target, format, engine string) ([]
 	}
 
 	if target == "markdown" || target == "all" {
-		path := filepath.Join(crawlDir, "markdown", warcIndex)
-		if err := deleteDirIfExists(path); err != nil {
-			return nil, fmt.Errorf("delete markdown shard %s: %w", warcIndex, err)
+		path := filepath.Join(crawlDir, "warc_md", warcIndex+".md.warc.gz")
+		if err := deleteFileIfExists(path); err != nil {
+			return nil, fmt.Errorf("delete warc_md %s: %w", warcIndex, err)
 		}
+		// Also delete per-shard DocStore metadata.
+		metaPath := filepath.Join(crawlDir, "warc_md", warcIndex+".meta.duckdb")
+		_ = deleteFileIfExists(metaPath)
+		_ = deleteFileIfExists(metaPath + ".wal")
 	}
 
 	if target == "pack" || target == "all" {
@@ -639,7 +622,7 @@ func deleteWARCArtifacts(crawlDir, warcIndex, target, format, engine string) ([]
 			formats = []string{format}
 		}
 		for _, fmtName := range formats {
-			path, err := packFilePath(filepath.Join(crawlDir, "pack"), fmtName, warcIndex)
+			path, err := packPath(filepath.Join(crawlDir, "pack"), fmtName, warcIndex)
 			if err != nil {
 				if format != "" {
 					return nil, err

@@ -199,7 +199,7 @@ type Server struct {
 	WARCMdBase string // ~/data/common-crawl/{crawlID}/warc_md
 	CrawlDir   string // ~/data/common-crawl/{crawlID} — set by NewDashboard
 	Hub        *WSHub
-	Jobs       *JobManager
+	Jobs       *Manager
 	Meta       *MetaManager
 	Docs       *DocStore // per-document browse metadata (dashboard only)
 
@@ -253,7 +253,7 @@ func NewDashboardWithOptions(engineName, crawlID, addr, baseDir string, opts Das
 	s := New(engineName, crawlID, addr, baseDir)
 	s.CrawlDir = baseDir
 	s.Hub = NewWSHub()
-	s.Jobs = NewJobManager(s.Hub, baseDir, crawlID)
+	s.Jobs = NewManager(s.Hub, baseDir, crawlID)
 
 	metaCfg := MetaConfig{
 		Driver:      opts.MetaDriver,
@@ -279,7 +279,7 @@ func NewDashboardWithOptions(engineName, crawlID, addr, baseDir string, opts Das
 	}
 	s.Meta = meta
 
-	// Wire persistence store to JobManager and load history.
+	// Wire persistence store to Manager and load history.
 	if store := meta.Store(); store != nil {
 		s.Jobs.SetStore(store)
 		s.Jobs.LoadHistory(context.Background())
@@ -750,7 +750,7 @@ func (s *Server) handleBrowseShards(c *mizu.Ctx) error {
 			}
 		}
 
-		hasMarkdown := rec.MarkdownDocs > 0 || rec.MarkdownBytes > 0
+		hasMarkdown := rec.MarkdownBytes > 0
 		if !hasMarkdown {
 			warcMdPath := filepath.Join(crawlDir, "warc_md", localIdx+".md.warc.gz")
 			if _, err := os.Stat(warcMdPath); err == nil {
@@ -1008,8 +1008,24 @@ func (s *Server) handleCrawlData(c *mizu.Ctx) error {
 	return c.JSON(200, ds)
 }
 
+// dashboardEngines are the engines exposed in the dashboard UI.
+var dashboardEngines = []string{"dahlia", "tantivy"}
+
 func (s *Server) handleEngines(c *mizu.Ctx) error {
-	return c.JSON(200, EnginesResponse{Engines: index.List()})
+	all := index.List()
+	var engines []string
+	for _, e := range all {
+		for _, want := range dashboardEngines {
+			if e == want {
+				engines = append(engines, e)
+				break
+			}
+		}
+	}
+	if len(engines) == 0 {
+		engines = all // fallback: show all if none match
+	}
+	return c.JSON(200, EnginesResponse{Engines: engines})
 }
 
 func (s *Server) handleListJobs(c *mizu.Ctx) error {

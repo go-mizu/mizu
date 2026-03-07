@@ -110,25 +110,6 @@ func buildWARCRecords(crawlID, crawlDir string, manifestPaths []string, updatedA
 		}
 	}
 
-	// Scan markdown/ for individual .md files (old format).
-	markdownRoot := filepath.Join(crawlDir, "markdown")
-	if shards, err := os.ReadDir(markdownRoot); err == nil {
-		for _, shard := range shards {
-			if !shard.IsDir() || !isNumericName(shard.Name()) {
-				continue
-			}
-			rec := ensure(resolveLocalKey(normalizeWARCIndex(shard.Name())))
-			if rec.MarkdownBytes > 0 {
-				continue // already detected via warc_md/
-			}
-			docs, bytes := scanMarkdownShard(filepath.Join(markdownRoot, shard.Name()))
-			if docs > 0 {
-				rec.MarkdownDocs = docs
-				rec.MarkdownBytes = bytes
-			}
-		}
-	}
-
 	packRoot := filepath.Join(crawlDir, "pack")
 	if formats, err := os.ReadDir(packRoot); err == nil {
 		for _, formatEntry := range formats {
@@ -183,23 +164,6 @@ func buildWARCRecords(crawlID, crawlDir string, manifestPaths []string, updatedA
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].WARCIndex < out[j].WARCIndex })
 	return out
-}
-
-func scanMarkdownShard(dir string) (docs int64, bytes int64) {
-	filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		if !strings.HasSuffix(d.Name(), ".md") {
-			return nil
-		}
-		docs++
-		if info, err := d.Info(); err == nil {
-			bytes += info.Size()
-		}
-		return nil
-	})
-	return docs, bytes
 }
 
 func dirSize(dir string) int64 {

@@ -9,10 +9,10 @@ import (
 
 func TestScanDataDir(t *testing.T) {
 	// Create a temporary directory tree that mimics the crawl data layout:
-	//   {crawlDir}/warc/          → WARC files
-	//   {crawlDir}/markdown/{n}/  → markdown shards with .md files
-	//   {crawlDir}/pack/{fmt}/    → packed bundles per format
-	//   {crawlDir}/fts/{eng}/{n}/ → FTS index shards per engine
+	//   {crawlDir}/warc/                         → WARC files
+	//   {crawlDir}/warc_md/{n}.md.warc.gz        → Extracted markdown (WARC format)
+	//   {crawlDir}/pack/{fmt}/                   → packed bundles per format
+	//   {crawlDir}/fts/{eng}/{n}/                → FTS index shards per engine
 	root := t.TempDir()
 
 	// ── warc/ ────────────────────────────────────────
@@ -23,16 +23,10 @@ func TestScanDataDir(t *testing.T) {
 	writeFile(t, filepath.Join(warcDir, "00002.warc.gz"), 512*1024)      // 512 KB
 
 	// ── markdown/ ────────────────────────────────────
-	md0 := filepath.Join(root, "markdown", "00000")
-	md1 := filepath.Join(root, "markdown", "00001")
-	mustMkdir(t, md0)
-	mustMkdir(t, md1)
-	// 3 docs in shard 00000, 2 in shard 00001
-	writeFile(t, filepath.Join(md0, "aaa.md"), 500)
-	writeFile(t, filepath.Join(md0, "bbb.md"), 600)
-	writeFile(t, filepath.Join(md0, "ccc.md"), 700)
-	writeFile(t, filepath.Join(md1, "ddd.md"), 400)
-	writeFile(t, filepath.Join(md1, "eee.md"), 800)
+	warcMdDir := filepath.Join(root, "warc_md")
+	mustMkdir(t, warcMdDir)
+	writeFile(t, filepath.Join(warcMdDir, "00000.md.warc.gz"), 1500)
+	writeFile(t, filepath.Join(warcMdDir, "00001.md.warc.gz"), 1200)
 
 	// ── pack/ ────────────────────────────────────────
 	packPQ := filepath.Join(root, "pack", "parquet")
@@ -68,16 +62,13 @@ func TestScanDataDir(t *testing.T) {
 		t.Errorf("WARCTotalSize = %d, want %d", ds.WARCTotalSize, wantWARCSize)
 	}
 
-	// Markdown assertions
+	// Markdown assertions (warc_md/*.md.warc.gz)
 	if ds.MDShards != 2 {
 		t.Errorf("MDShards = %d, want 2", ds.MDShards)
 	}
-	wantMDSize := int64(500 + 600 + 700 + 400 + 800)
+	wantMDSize := int64(1500 + 1200)
 	if ds.MDTotalSize != wantMDSize {
 		t.Errorf("MDTotalSize = %d, want %d", ds.MDTotalSize, wantMDSize)
-	}
-	if ds.MDDocEstimate != 5 {
-		t.Errorf("MDDocEstimate = %d, want 5", ds.MDDocEstimate)
 	}
 
 	// Pack assertions

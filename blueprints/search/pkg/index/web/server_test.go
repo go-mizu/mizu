@@ -238,16 +238,16 @@ func TestHandleCrawlData(t *testing.T) {
 func TestHandleWARCListAndDetail_Fallback(t *testing.T) {
 	root := t.TempDir()
 	warcDir := filepath.Join(root, "warc")
-	markdownDir := filepath.Join(root, "markdown", "00000")
+	warcMdDir := filepath.Join(root, "warc_md")
 	packDir := filepath.Join(root, "pack", "parquet")
 	ftsDir := filepath.Join(root, "fts", "duckdb", "00000")
 	mustMkdir(t, warcDir)
-	mustMkdir(t, markdownDir)
+	mustMkdir(t, warcMdDir)
 	mustMkdir(t, packDir)
 	mustMkdir(t, ftsDir)
 
 	writeFile(t, filepath.Join(warcDir, "CC-MAIN-x-00000.warc.gz"), 2048)
-	writeFile(t, filepath.Join(markdownDir, "doc1.md"), 100)
+	writeFile(t, filepath.Join(warcMdDir, "00000.md.warc.gz"), 100)
 	writeFile(t, filepath.Join(packDir, "00000.parquet"), 1500)
 	writeFile(t, filepath.Join(ftsDir, "seg.bin"), 700)
 
@@ -493,7 +493,7 @@ func TestHandleListJobs_WithJobs(t *testing.T) {
 	root := t.TempDir()
 	srv := NewDashboard("test-engine", "CC-TEST-2026", "", root)
 
-	// Create two jobs via the JobManager directly.
+	// Create two jobs via the Manager directly.
 	srv.Jobs.Create(JobConfig{Type: "download", Files: "0"})
 	srv.Jobs.Create(JobConfig{Type: "index", Engine: "bleve"})
 
@@ -572,11 +572,11 @@ func TestParseFileSelector(t *testing.T) {
 	}
 }
 
-func TestPackFilePath(t *testing.T) {
+func TestPackPath(t *testing.T) {
 	packDir := "/tmp/pack"
 	warcIdx := "00042"
 
-	got, err := packFilePath(packDir, "parquet", warcIdx)
+	got, err := packPath(packDir, "parquet", warcIdx)
 	if err != nil {
 		t.Fatalf("parquet: unexpected err: %v", err)
 	}
@@ -584,7 +584,7 @@ func TestPackFilePath(t *testing.T) {
 		t.Fatalf("parquet: got %q", got)
 	}
 
-	got, err = packFilePath(packDir, "bin", warcIdx)
+	got, err = packPath(packDir, "bin", warcIdx)
 	if err != nil {
 		t.Fatalf("bin: unexpected err: %v", err)
 	}
@@ -592,7 +592,7 @@ func TestPackFilePath(t *testing.T) {
 		t.Fatalf("bin: got %q", got)
 	}
 
-	got, err = packFilePath(packDir, "duckdb", warcIdx)
+	got, err = packPath(packDir, "duckdb", warcIdx)
 	if err != nil {
 		t.Fatalf("duckdb: unexpected err: %v", err)
 	}
@@ -600,7 +600,7 @@ func TestPackFilePath(t *testing.T) {
 		t.Fatalf("duckdb: got %q", got)
 	}
 
-	got, err = packFilePath(packDir, "markdown", warcIdx)
+	got, err = packPath(packDir, "markdown", warcIdx)
 	if err != nil {
 		t.Fatalf("markdown: unexpected err: %v", err)
 	}
@@ -608,13 +608,13 @@ func TestPackFilePath(t *testing.T) {
 		t.Fatalf("markdown: got %q", got)
 	}
 
-	if _, err := packFilePath(packDir, "invalid", warcIdx); err == nil {
+	if _, err := packPath(packDir, "invalid", warcIdx); err == nil {
 		t.Fatal("invalid format: expected error")
 	}
 }
 
-// TestWarcIndexFromPath verifies the helper function used by executors.
-func TestWarcIndexFromPath(t *testing.T) {
+// TestWarcFileIndex verifies the helper function used by executors.
+func TestWarcFileIndex(t *testing.T) {
 	tests := []struct {
 		path     string
 		fallback int
@@ -627,9 +627,9 @@ func TestWarcIndexFromPath(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		got := warcIndexFromPath(tc.path, tc.fallback)
+		got := warcFileIndex(tc.path, tc.fallback)
 		if got != tc.want {
-			t.Errorf("warcIndexFromPath(%q, %d) = %q, want %q", tc.path, tc.fallback, got, tc.want)
+			t.Errorf("warcFileIndex(%q, %d) = %q, want %q", tc.path, tc.fallback, got, tc.want)
 		}
 	}
 }
@@ -645,9 +645,9 @@ func TestIntegrationDashboardLifecycle(t *testing.T) {
 	mustMkdir(t, warcDir)
 	writeFile(t, filepath.Join(warcDir, "00000.warc.gz"), 1024)
 
-	mdDir := filepath.Join(root, "markdown", "00000")
-	mustMkdir(t, mdDir)
-	writeFile(t, filepath.Join(mdDir, "doc1.md"), 100)
+	warcMdDir := filepath.Join(root, "warc_md")
+	mustMkdir(t, warcMdDir)
+	writeFile(t, filepath.Join(warcMdDir, "00000.md.warc.gz"), 100)
 
 	srv := NewDashboard("test-engine", "CC-TEST-2026", "", root)
 	ts := httptest.NewServer(srv.Handler())

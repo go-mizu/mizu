@@ -23,7 +23,7 @@ type JobConfig struct {
 	Format  string `json:"format"` // for pack jobs
 }
 
-// Job represents a single pipeline job tracked by the JobManager.
+// Job represents a single pipeline job tracked by the Manager.
 type Job struct {
 	ID        string     `json:"id"`
 	Type      string     `json:"type"`
@@ -58,11 +58,11 @@ type wsJobProgress struct {
 	Rate     float64 `json:"rate"`
 }
 
-// ── JobManager ───────────────────────────────────────────────────────────
+// ── Manager ──────────────────────────────────────────────────────────
 
-// JobManager manages pipeline jobs with in-memory caching and optional
+// Manager manages pipeline jobs with in-memory state and optional
 // persistence via metastore. It is safe for concurrent use.
-type JobManager struct {
+type Manager struct {
 	mu      sync.RWMutex
 	jobs    map[string]*Job
 	order   []string // job IDs in creation order
@@ -86,9 +86,9 @@ type manifestCacheEntry struct {
 	fetchedAt time.Time
 }
 
-// NewJobManager creates a new JobManager that broadcasts updates via hub.
-func NewJobManager(hub *WSHub, baseDir, crawlID string) *JobManager {
-	return &JobManager{
+// NewManager creates a Manager that broadcasts job updates via hub.
+func NewManager(hub *WSHub, baseDir, crawlID string) *Manager {
+	return &Manager{
 		jobs:          make(map[string]*Job),
 		hub:           hub,
 		baseDir:       baseDir,
@@ -99,7 +99,7 @@ func NewJobManager(hub *WSHub, baseDir, crawlID string) *JobManager {
 
 // SetStore configures persistence and starts the async flush goroutine.
 // Call before LoadHistory.
-func (m *JobManager) SetStore(s metastore.Store) {
+func (m *Manager) SetStore(s metastore.Store) {
 	m.mu.Lock()
 	m.store = s
 	m.persistCh = make(chan metastore.JobRecord, 256)
@@ -108,7 +108,7 @@ func (m *JobManager) SetStore(s metastore.Store) {
 }
 
 // persistFlusher drains the persist channel in batches.
-func (m *JobManager) persistFlusher(s metastore.Store) {
+func (m *Manager) persistFlusher(s metastore.Store) {
 	for rec := range m.persistCh {
 		// Drain any additional queued records into a batch.
 		batch := []metastore.JobRecord{rec}
@@ -139,7 +139,7 @@ func (m *JobManager) persistFlusher(s metastore.Store) {
 }
 
 // StopPersist closes the persist channel and flushes remaining records.
-func (m *JobManager) StopPersist() {
+func (m *Manager) StopPersist() {
 	m.stopOnce.Do(func() {
 		m.mu.RLock()
 		ch := m.persistCh
@@ -152,7 +152,7 @@ func (m *JobManager) StopPersist() {
 
 // LoadHistory loads completed/failed/cancelled jobs from the store into memory.
 // Running/queued jobs are not restored (they can't resume after restart).
-func (m *JobManager) LoadHistory(ctx context.Context) {
+func (m *Manager) LoadHistory(ctx context.Context) {
 	m.mu.RLock()
 	s := m.store
 	m.mu.RUnlock()
@@ -196,7 +196,7 @@ func (m *JobManager) LoadHistory(ctx context.Context) {
 }
 
 // Create adds a new job with a unique short ID in "queued" status.
-func (m *JobManager) Create(cfg JobConfig) *Job {
+func (m *Manager) Create(cfg JobConfig) *Job {
 	id := uuid.New().String()[:8]
 
 	job := &Job{
@@ -219,14 +219,14 @@ func (m *JobManager) Create(cfg JobConfig) *Job {
 }
 
 // Get returns the job with the given ID, or nil if not found.
-func (m *JobManager) Get(id string) *Job {
+func (m *Manager) Get(id string) *Job {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.jobs[id]
 }
 
 // List returns all jobs, newest first.
-func (m *JobManager) List() []*Job {
+func (m *Manager) List() []*Job {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -240,7 +240,7 @@ func (m *JobManager) List() []*Job {
 }
 
 // Cancel cancels a job. Returns false if the job ID is not found.
-func (m *JobManager) Cancel(id string) bool {
+func (m *Manager) Cancel(id string) bool {
 	m.mu.Lock()
 	job, ok := m.jobs[id]
 	if !ok {
@@ -266,7 +266,7 @@ func (m *JobManager) Cancel(id string) bool {
 }
 
 // UpdateProgress updates a job's progress and broadcasts the change.
-func (m *JobManager) UpdateProgress(id string, pct float64, msg string, rate float64) {
+func (m *Manager) UpdateProgress(id string, pct float64, msg string, rate float64) {
 	m.mu.Lock()
 	job, ok := m.jobs[id]
 	if !ok {
@@ -282,7 +282,7 @@ func (m *JobManager) UpdateProgress(id string, pct float64, msg string, rate flo
 }
 
 // Complete marks a job as completed with a final message.
-func (m *JobManager) Complete(id string, msg string) {
+func (m *Manager) Complete(id string, msg string) {
 	m.mu.Lock()
 	job, ok := m.jobs[id]
 	if !ok {
@@ -311,7 +311,7 @@ func (m *JobManager) Complete(id string, msg string) {
 }
 
 // Fail marks a job as failed with the given error.
-func (m *JobManager) Fail(id string, err error) {
+func (m *Manager) Fail(id string, err error) {
 	m.mu.Lock()
 	job, ok := m.jobs[id]
 	if !ok {
@@ -332,7 +332,7 @@ func (m *JobManager) Fail(id string, err error) {
 }
 
 // SetRunning marks a job as running and stores its cancel function.
-func (m *JobManager) SetRunning(id string, cancel context.CancelFunc) {
+func (m *Manager) SetRunning(id string, cancel context.CancelFunc) {
 	m.mu.Lock()
 	job, ok := m.jobs[id]
 	if !ok {
@@ -351,7 +351,7 @@ func (m *JobManager) SetRunning(id string, cancel context.CancelFunc) {
 }
 
 // Clear removes all non-active jobs from memory and store.
-func (m *JobManager) Clear() int {
+func (m *Manager) Clear() int {
 	m.mu.Lock()
 	var kept []string
 	var activeRecs []metastore.JobRecord
@@ -392,27 +392,27 @@ func (m *JobManager) Clear() int {
 }
 
 // SetCompleteHook sets a callback fired whenever a job completes successfully.
-func (m *JobManager) SetCompleteHook(h JobCompleteHook) {
+func (m *Manager) SetCompleteHook(h JobCompleteHook) {
 	m.mu.Lock()
 	m.onComplete = h
 	m.mu.Unlock()
 }
 
-func (m *JobManager) resolveCrawlID(job *Job) string {
+func (m *Manager) resolveCrawlID(job *Job) string {
 	if job != nil && job.Config.CrawlID != "" {
 		return job.Config.CrawlID
 	}
 	return m.crawlID
 }
 
-func (m *JobManager) resolveCrawlDir(crawlID string) string {
+func (m *Manager) resolveCrawlDir(crawlID string) string {
 	if crawlID == m.crawlID {
 		return m.baseDir
 	}
 	return filepath.Join(filepath.Dir(m.baseDir), crawlID)
 }
 
-func (m *JobManager) setManifestFetcher(fn func(ctx context.Context, crawlID string) ([]string, error)) {
+func (m *Manager) setManifestFetcher(fn func(ctx context.Context, crawlID string) ([]string, error)) {
 	m.mu.Lock()
 	m.manifestFetch = fn
 	m.mu.Unlock()
