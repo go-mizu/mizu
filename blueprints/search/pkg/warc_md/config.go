@@ -12,7 +12,6 @@ type Config struct {
 	DataDir     string // base: $HOME/data/common-crawl
 	Workers     int    // parallel workers for convert (0 = NumCPU)
 	Force       bool   // re-process existing files
-	Fast        bool   // use go-readability instead of trafilatura
 	KeepTemp    bool   // keep warc_single/ and markdown_raw/ after pipeline
 	MIMEFilter  string // e.g. "text/html" (default)
 	StatusCode  int    // HTTP status filter (default: 200)
@@ -57,6 +56,11 @@ func (c Config) MarkdownDir() string {
 // Files inside are plain .md (uncompressed), sharded by UUID.
 func (c Config) MarkdownWarcDir(warcIdx string) string {
 	return filepath.Join(c.CrawlDir(), "markdown", warcIdx)
+}
+
+// WARCMdDir returns the directory for packed .md.warc.gz files.
+func (c Config) WARCMdDir() string {
+	return filepath.Join(c.CrawlDir(), "warc_md")
 }
 
 // ConvertWorkers returns the optimal worker count for Phase 2 (HTML→Markdown).

@@ -26,10 +26,10 @@ type DataSummary struct {
 // ScanDataDir walks a crawl data directory and computes summary statistics
 // without opening DuckDB files. The expected layout is:
 //
-//	{crawlDir}/warc/                       WARC files
-//	{crawlDir}/markdown/{shardIdx}/*.md    Extracted markdown
-//	{crawlDir}/pack/{format}/*             Packed bundles per format
-//	{crawlDir}/fts/{engine}/{shardIdx}/    FTS index shards per engine
+//	{crawlDir}/warc/                           WARC files
+//	{crawlDir}/warc_md/{shardIdx}.md.warc.gz   Extracted markdown (WARC format)
+//	{crawlDir}/pack/{format}/*                 Packed bundles per format
+//	{crawlDir}/fts/{engine}/{shardIdx}/        FTS index shards per engine
 func ScanDataDir(crawlDir string) DataSummary {
 	ds := DataSummary{
 		PackFormats:   make(map[string]int64),
@@ -38,7 +38,7 @@ func ScanDataDir(crawlDir string) DataSummary {
 	}
 
 	scanWARC(crawlDir, &ds)
-	scanMarkdown(crawlDir, &ds)
+	scanWARCMdDir(crawlDir, &ds)
 	scanPack(crawlDir, &ds)
 	scanFTS(crawlDir, &ds)
 
@@ -63,32 +63,21 @@ func scanWARC(crawlDir string, ds *DataSummary) {
 	}
 }
 
-// scanMarkdown counts shards, estimates docs, and sums sizes in
-// {crawlDir}/markdown/{shardIdx}/.
-func scanMarkdown(crawlDir string, ds *DataSummary) {
-	mdDir := filepath.Join(crawlDir, "markdown")
-	shards, err := os.ReadDir(mdDir)
+// scanWARCMdDir counts shards and sums sizes in {crawlDir}/warc_md/*.md.warc.gz.
+func scanWARCMdDir(crawlDir string, ds *DataSummary) {
+	mdDir := filepath.Join(crawlDir, "warc_md")
+	entries, err := os.ReadDir(mdDir)
 	if err != nil {
 		return
 	}
-	for _, shard := range shards {
-		if !shard.IsDir() {
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md.warc.gz") {
 			continue
 		}
 		ds.MDShards++
-		shardPath := filepath.Join(mdDir, shard.Name())
-		filepath.WalkDir(shardPath, func(path string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return nil
-			}
-			if strings.HasSuffix(d.Name(), ".md") {
-				ds.MDDocEstimate++
-			}
-			if info, err := d.Info(); err == nil {
-				ds.MDTotalSize += info.Size()
-			}
-			return nil
-		})
+		if info, err := e.Info(); err == nil {
+			ds.MDTotalSize += info.Size()
+		}
 	}
 }
 

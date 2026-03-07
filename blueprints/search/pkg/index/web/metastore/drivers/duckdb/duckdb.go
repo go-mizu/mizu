@@ -103,6 +103,18 @@ func (s *store) Init(ctx context.Context) error {
 			last_error VARCHAR,
 			generation BIGINT NOT NULL DEFAULT 0
 		)`,
+		`CREATE TABLE IF NOT EXISTS jobs (
+			id VARCHAR PRIMARY KEY,
+			type VARCHAR NOT NULL,
+			status VARCHAR NOT NULL,
+			config_json VARCHAR NOT NULL DEFAULT '{}',
+			progress DOUBLE NOT NULL DEFAULT 0,
+			message VARCHAR NOT NULL DEFAULT '',
+			rate DOUBLE NOT NULL DEFAULT 0,
+			error VARCHAR NOT NULL DEFAULT '',
+			started_at VARCHAR NOT NULL,
+			ended_at VARCHAR
+		)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
@@ -496,6 +508,69 @@ func (s *store) SetRefreshState(ctx context.Context, st metastore.RefreshState) 
 	`, st.CrawlID, st.Status, startedAt, finishedAt, st.LastError, st.Generation)
 	if err != nil {
 		return fmt.Errorf("duckdb: insert refresh_state: %w", err)
+	}
+	return nil
+}
+
+func (s *store) ListJobs(ctx context.Context) ([]metastore.JobRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, type, status, config_json, progress, message, rate, error, started_at, ended_at
+		FROM jobs ORDER BY started_at DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("duckdb: list jobs: %w", err)
+	}
+	defer rows.Close()
+
+	var out []metastore.JobRecord
+	for rows.Next() {
+		var rec metastore.JobRecord
+		var startedAt string
+		var endedAt sql.NullString
+		if err := rows.Scan(
+			&rec.ID, &rec.Type, &rec.Status, &rec.Config,
+			&rec.Progress, &rec.Message, &rec.Rate, &rec.Error,
+			&startedAt, &endedAt,
+		); err != nil {
+			return nil, fmt.Errorf("duckdb: scan job: %w", err)
+		}
+		if t, pErr := time.Parse(time.RFC3339Nano, startedAt); pErr == nil {
+			rec.StartedAt = t
+		}
+		if endedAt.Valid && endedAt.String != "" {
+			if t, pErr := time.Parse(time.RFC3339Nano, endedAt.String); pErr == nil {
+				rec.EndedAt = &t
+			}
+		}
+		out = append(out, rec)
+	}
+	return out, rows.Err()
+}
+
+func (s *store) PutJob(ctx context.Context, rec metastore.JobRecord) error {
+	endedAt := ""
+	if rec.EndedAt != nil {
+		endedAt = rec.EndedAt.UTC().Format(time.RFC3339Nano)
+	}
+	// DuckDB doesn't support ON CONFLICT ... DO UPDATE, so delete+insert.
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM jobs WHERE id = ?`, rec.ID); err != nil {
+		return fmt.Errorf("duckdb: delete job: %w", err)
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO jobs (id, type, status, config_json, progress, message, rate, error, started_at, ended_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, rec.ID, rec.Type, rec.Status, rec.Config, rec.Progress, rec.Message, rec.Rate, rec.Error,
+		rec.StartedAt.UTC().Format(time.RFC3339Nano), endedAt)
+	if err != nil {
+		return fmt.Errorf("duckdb: insert job: %w", err)
+	}
+	return nil
+}
+
+func (s *store) DeleteAllJobs(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM jobs`)
+	if err != nil {
+		return fmt.Errorf("duckdb: delete all jobs: %w", err)
 	}
 	return nil
 }

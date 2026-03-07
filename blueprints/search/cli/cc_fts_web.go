@@ -56,7 +56,7 @@ searching the FTS index and browsing/previewing markdown documents.`,
 	}
 
 	cmd.Flags().IntVarP(&port, "port", "p", 3456, "Listen port")
-	cmd.Flags().StringVar(&engine, "engine", "tantivy", "FTS engine")
+	cmd.Flags().StringVar(&engine, "engine", "dahlia", "FTS engine")
 	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest)")
 	cmd.Flags().StringVar(&addr, "addr", "", "External engine address")
 	cmd.Flags().BoolVar(&open, "open", false, "Open browser on start")
@@ -121,7 +121,7 @@ search, and browse documents. Real-time progress via WebSocket.`,
 	}
 
 	cmd.Flags().IntVarP(&port, "port", "p", 3456, "Listen port")
-	cmd.Flags().StringVar(&engine, "engine", "duckdb", "Default FTS engine")
+	cmd.Flags().StringVar(&engine, "engine", "dahlia", "Default FTS engine")
 	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest)")
 	cmd.Flags().StringVar(&addr, "addr", "", "External engine address")
 	cmd.Flags().BoolVar(&open, "open", false, "Open browser on start")

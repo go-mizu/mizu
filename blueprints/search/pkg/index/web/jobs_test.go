@@ -8,11 +8,11 @@ import (
 	"testing"
 )
 
-func TestJobManager_CreateAndList(t *testing.T) {
+func TestManager_CreateAndList(t *testing.T) {
 	hub := NewWSHub()
 	defer hub.Close()
 
-	jm := NewJobManager(hub, "/tmp/test-base", "CC-MAIN-2026-04")
+	jm := NewManager(hub, "/tmp/test-base", "CC-MAIN-2026-04")
 
 	cfg := JobConfig{
 		Type:    "download",
@@ -49,11 +49,11 @@ func TestJobManager_CreateAndList(t *testing.T) {
 	}
 }
 
-func TestJobManager_ListNewestFirst(t *testing.T) {
+func TestManager_ListNewestFirst(t *testing.T) {
 	hub := NewWSHub()
 	defer hub.Close()
 
-	jm := NewJobManager(hub, "/tmp/test-base", "CC-MAIN-2026-04")
+	jm := NewManager(hub, "/tmp/test-base", "CC-MAIN-2026-04")
 
 	j1 := jm.Create(JobConfig{Type: "download"})
 	j2 := jm.Create(JobConfig{Type: "markdown"})
@@ -75,11 +75,11 @@ func TestJobManager_ListNewestFirst(t *testing.T) {
 	}
 }
 
-func TestJobManager_GetNonexistent(t *testing.T) {
+func TestManager_GetNonexistent(t *testing.T) {
 	hub := NewWSHub()
 	defer hub.Close()
 
-	jm := NewJobManager(hub, "/tmp/test-base", "CC-MAIN-2026-04")
+	jm := NewManager(hub, "/tmp/test-base", "CC-MAIN-2026-04")
 
 	got := jm.Get("nonexistent")
 	if got != nil {
@@ -87,11 +87,11 @@ func TestJobManager_GetNonexistent(t *testing.T) {
 	}
 }
 
-func TestJobManager_GetExisting(t *testing.T) {
+func TestManager_GetExisting(t *testing.T) {
 	hub := NewWSHub()
 	defer hub.Close()
 
-	jm := NewJobManager(hub, "/tmp/test-base", "CC-MAIN-2026-04")
+	jm := NewManager(hub, "/tmp/test-base", "CC-MAIN-2026-04")
 
 	job := jm.Create(JobConfig{Type: "pack", Format: "jsonl"})
 	got := jm.Get(job.ID)
@@ -106,11 +106,11 @@ func TestJobManager_GetExisting(t *testing.T) {
 	}
 }
 
-func TestJobManager_CancelJob(t *testing.T) {
+func TestManager_CancelJob(t *testing.T) {
 	hub := NewWSHub()
 	defer hub.Close()
 
-	jm := NewJobManager(hub, "/tmp/test-base", "CC-MAIN-2026-04")
+	jm := NewManager(hub, "/tmp/test-base", "CC-MAIN-2026-04")
 
 	job := jm.Create(JobConfig{Type: "index", Engine: "bleve"})
 
@@ -148,11 +148,11 @@ func TestJobManager_CancelJob(t *testing.T) {
 	}
 }
 
-func TestJobManager_CancelNonexistent(t *testing.T) {
+func TestManager_CancelNonexistent(t *testing.T) {
 	hub := NewWSHub()
 	defer hub.Close()
 
-	jm := NewJobManager(hub, "/tmp/test-base", "CC-MAIN-2026-04")
+	jm := NewManager(hub, "/tmp/test-base", "CC-MAIN-2026-04")
 
 	ok := jm.Cancel("nonexistent")
 	if ok {
@@ -160,11 +160,11 @@ func TestJobManager_CancelNonexistent(t *testing.T) {
 	}
 }
 
-func TestJobManager_CancelQueuedJob(t *testing.T) {
+func TestManager_CancelQueuedJob(t *testing.T) {
 	hub := NewWSHub()
 	defer hub.Close()
 
-	jm := NewJobManager(hub, "/tmp/test-base", "CC-MAIN-2026-04")
+	jm := NewManager(hub, "/tmp/test-base", "CC-MAIN-2026-04")
 
 	job := jm.Create(JobConfig{Type: "download"})
 
@@ -180,11 +180,11 @@ func TestJobManager_CancelQueuedJob(t *testing.T) {
 	}
 }
 
-func TestJobManager_UpdateProgress(t *testing.T) {
+func TestManager_UpdateProgress(t *testing.T) {
 	hub := NewWSHub()
 	defer hub.Close()
 
-	jm := NewJobManager(hub, "/tmp/test-base", "CC-MAIN-2026-04")
+	jm := NewManager(hub, "/tmp/test-base", "CC-MAIN-2026-04")
 
 	job := jm.Create(JobConfig{Type: "download"})
 	jm.SetRunning(job.ID, func() {})
@@ -203,11 +203,11 @@ func TestJobManager_UpdateProgress(t *testing.T) {
 	}
 }
 
-func TestJobManager_Complete(t *testing.T) {
+func TestManager_Complete(t *testing.T) {
 	hub := NewWSHub()
 	defer hub.Close()
 
-	jm := NewJobManager(hub, "/tmp/test-base", "CC-MAIN-2026-04")
+	jm := NewManager(hub, "/tmp/test-base", "CC-MAIN-2026-04")
 
 	job := jm.Create(JobConfig{Type: "markdown"})
 	jm.SetRunning(job.ID, func() {})
@@ -229,11 +229,11 @@ func TestJobManager_Complete(t *testing.T) {
 	}
 }
 
-func TestJobManager_Fail(t *testing.T) {
+func TestManager_Fail(t *testing.T) {
 	hub := NewWSHub()
 	defer hub.Close()
 
-	jm := NewJobManager(hub, "/tmp/test-base", "CC-MAIN-2026-04")
+	jm := NewManager(hub, "/tmp/test-base", "CC-MAIN-2026-04")
 
 	job := jm.Create(JobConfig{Type: "index", Engine: "bleve"})
 	jm.SetRunning(job.ID, func() {})
@@ -252,12 +252,12 @@ func TestJobManager_Fail(t *testing.T) {
 	}
 }
 
-func TestJobManager_CompleteHook_DefaultCrawl(t *testing.T) {
+func TestManager_CompleteHook_DefaultCrawl(t *testing.T) {
 	hub := NewWSHub()
 	defer hub.Close()
 
 	baseDir := filepath.Join(t.TempDir(), "CC-MAIN-2026-04")
-	jm := NewJobManager(hub, baseDir, "CC-MAIN-2026-04")
+	jm := NewManager(hub, baseDir, "CC-MAIN-2026-04")
 
 	var called bool
 	var gotCrawlID, gotCrawlDir string
@@ -282,13 +282,13 @@ func TestJobManager_CompleteHook_DefaultCrawl(t *testing.T) {
 	}
 }
 
-func TestJobManager_CompleteHook_JobCrawlOverride(t *testing.T) {
+func TestManager_CompleteHook_JobCrawlOverride(t *testing.T) {
 	hub := NewWSHub()
 	defer hub.Close()
 
 	commonRoot := t.TempDir()
 	baseDir := filepath.Join(commonRoot, "CC-MAIN-2026-04")
-	jm := NewJobManager(hub, baseDir, "CC-MAIN-2026-04")
+	jm := NewManager(hub, baseDir, "CC-MAIN-2026-04")
 
 	var gotCrawlID, gotCrawlDir string
 	jm.SetCompleteHook(func(_ *Job, crawlID, crawlDir string) {
@@ -309,11 +309,11 @@ func TestJobManager_CompleteHook_JobCrawlOverride(t *testing.T) {
 	}
 }
 
-func TestJobManager_GetManifestPaths_Cache(t *testing.T) {
+func TestManager_GetManifestPaths_Cache(t *testing.T) {
 	hub := NewWSHub()
 	defer hub.Close()
 
-	jm := NewJobManager(hub, t.TempDir(), "CC-MAIN-2026-04")
+	jm := NewManager(hub, t.TempDir(), "CC-MAIN-2026-04")
 
 	calls := 0
 	jm.setManifestFetcher(func(ctx context.Context, crawlID string) ([]string, error) {
@@ -345,7 +345,7 @@ func TestExecMarkdown_ReturnsActionableErrorWhenWARCMissing(t *testing.T) {
 	defer hub.Close()
 
 	base := filepath.Join(t.TempDir(), "CC-MAIN-2026-04")
-	jm := NewJobManager(hub, base, "CC-MAIN-2026-04")
+	jm := NewManager(hub, base, "CC-MAIN-2026-04")
 	jm.setManifestFetcher(func(ctx context.Context, crawlID string) ([]string, error) {
 		return []string{
 			"crawl-data/CC-MAIN-2026-04/segments/1738964620578.15/warc/CC-MAIN-20260206181458-20260206211458-00000.warc.gz",
@@ -356,7 +356,6 @@ func TestExecMarkdown_ReturnsActionableErrorWhenWARCMissing(t *testing.T) {
 		Type:    "markdown",
 		CrawlID: "CC-MAIN-2026-04",
 		Files:   "0",
-		Fast:    true,
 	})
 
 	err := jm.execMarkdown(context.Background(), job)

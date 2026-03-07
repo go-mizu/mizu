@@ -12,5 +12,8 @@ type Store interface {
 	GetWARC(ctx context.Context, crawlID, warcIndex string) (WARCRecord, bool, error)
 	GetRefreshState(ctx context.Context, crawlID string) (RefreshState, bool, error)
 	SetRefreshState(ctx context.Context, st RefreshState) error
+	ListJobs(ctx context.Context) ([]JobRecord, error)
+	PutJob(ctx context.Context, rec JobRecord) error
+	DeleteAllJobs(ctx context.Context) error
 	Close() error
 }

@@ -1,0 +1,49 @@
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.0.0
+    container_name: fts-elasticsearch
+    ports:
+      - "9201:9200"
+      - "9301:9300"
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - bootstrap.memory_lock=true
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - ${FTS_DATA_DIR:-${HOME}/data/fts}/elasticsearch:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health | grep -qE '\"status\":\"(green|yellow)\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:9.0.0
+    container_name: fts-kibana
+    profiles: [full]
+    ports:
+      - "5602:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
