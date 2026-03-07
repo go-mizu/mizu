@@ -80,6 +80,7 @@ type searchHit struct {
 	Score     float64    `json:"score,omitempty"`
 	Snippet   string     `json:"snippet,omitempty"`
 	URL       string     `json:"url,omitempty"`
+	Host      string     `json:"host,omitempty"`
 	Title     string     `json:"title,omitempty"`
 	CrawlDate *time.Time `json:"crawl_date,omitempty"`
 	SizeBytes int64      `json:"size_bytes,omitempty"`
@@ -146,6 +147,7 @@ type docJSON struct {
 	DocID     string `json:"doc_id"`
 	Shard     string `json:"shard"`
 	URL       string `json:"url"`
+	Host      string `json:"host"`
 	Title     string `json:"title"`
 	CrawlDate string `json:"crawl_date,omitempty"`
 	SizeBytes int64  `json:"size_bytes"`
@@ -290,10 +292,10 @@ func NewDashboardWithOptions(engineName, crawlID, addr, baseDir string, opts Das
 		// Trigger doc scan after pack/index jobs complete.
 		if s.Docs != nil {
 			go func() {
-				warcMdBase := filepath.Join(crawlDir, "warc_md")
-				if _, err := s.Docs.ScanAll(context.Background(), crawlID, warcMdBase); err != nil {
+				if _, err := s.Docs.ScanAll(context.Background(), crawlID, crawlDir); err != nil {
 					logErrorf("doc_store: post-job scan failed crawl=%s err=%v", crawlID, err)
 				}
+				s.broadcastShardScan("*")
 			}()
 		}
 	})
@@ -547,6 +549,7 @@ func (s *Server) handleSearch(c *mizu.Ctx) error {
 				}
 				mu.Lock()
 				allHits[idx].URL = rec.URL
+				allHits[idx].Host = rec.Host
 				allHits[idx].Title = rec.Title
 				if !rec.CrawlDate.IsZero() {
 					t := rec.CrawlDate
@@ -636,28 +639,40 @@ func (s *Server) handleDoc(c *mizu.Ctx) error {
 	var raw []byte
 	var meta DocRecord
 
-	// Read from .md.warc.gz (canonical format preserving URL/date metadata).
-	warcMdPath := filepath.Join(s.WARCMdBase, shard+".md.warc.gz")
-	body, found, err := readDocFromWARCMd(warcMdPath, docid)
-	if err != nil {
-		return c.JSON(500, errResp{"read error: " + err.Error()})
-	}
-	if !found {
-		return c.JSON(404, errResp{"document not found"})
-	}
-	raw = body
-
-	// Enrich with stored metadata if DocStore available.
+	// Lookup stored metadata (includes gzip offset for fast access).
 	if s.Docs != nil {
 		if rec, ok, _ := s.Docs.GetDoc(c.Context(), s.CrawlID, shard, docid); ok {
 			meta = rec
 		}
 	}
-	// If metadata not in store yet, extract title from body.
+
+	warcMdPath := filepath.Join(s.WARCMdBase, shard+".md.warc.gz")
+
+	// Fast path: use stored gzip offset for O(1) random-access read.
+	if meta.GzipOffset > 0 && meta.GzipSize > 0 {
+		body, err := ReadDocByOffset(warcMdPath, meta.GzipOffset, meta.GzipSize)
+		if err == nil {
+			raw = body
+		}
+	}
+
+	// Fallback: sequential scan (for records without stored offsets).
+	if raw == nil {
+		body, found, err := readDocFromWARCMd(warcMdPath, docid)
+		if err == nil && found {
+			raw = body
+		}
+	}
+
+	if raw == nil {
+		return c.JSON(404, errResp{"document not found"})
+	}
+
+	// Extract title from body if not in metadata.
 	if meta.Title == "" && len(raw) > 0 {
 		head := raw
-		if len(head) > 256 {
-			head = head[:256]
+		if len(head) > 2048 {
+			head = head[:2048]
 		}
 		meta.Title = extractDocTitle(head, meta.URL)
 	}
@@ -737,8 +752,8 @@ func (s *Server) handleBrowseShards(c *mizu.Ctx) error {
 
 		hasMarkdown := rec.MarkdownDocs > 0 || rec.MarkdownBytes > 0
 		if !hasMarkdown {
-			mdPath := filepath.Join(crawlDir, "warc_md", localIdx+".md.warc.gz")
-			if _, err := os.Stat(mdPath); err == nil {
+			warcMdPath := filepath.Join(crawlDir, "warc_md", localIdx+".md.warc.gz")
+			if _, err := os.Stat(warcMdPath); err == nil {
 				hasMarkdown = true
 			}
 		}
@@ -804,6 +819,7 @@ func (s *Server) handleBrowseDocs(c *mizu.Ctx, shard string) error {
 				if _, err := s.Docs.ScanShard(context.Background(), s.CrawlID, shard, warcMdPath); err != nil {
 					logErrorf("doc_store: auto-scan shard=%s err=%v", shard, err)
 				}
+				s.broadcastShardScan(shard)
 			}()
 		}
 		return c.JSON(200, BrowseDocsResponse{
@@ -824,10 +840,14 @@ func (s *Server) handleBrowseDocs(c *mizu.Ctx, shard string) error {
 	metaStale := time.Since(meta.LastScannedAt) > time.Hour
 	if metaStale && !scanning {
 		go func() {
-			path := filepath.Join(s.WARCMdBase, shard+".md.warc.gz")
-			if _, err := s.Docs.ScanShard(context.Background(), s.CrawlID, shard, path); err != nil {
+			warcMdPath := filepath.Join(s.WARCMdBase, shard+".md.warc.gz")
+			if _, err := os.Stat(warcMdPath); err != nil {
+				return
+			}
+			if _, err := s.Docs.ScanShard(context.Background(), s.CrawlID, shard, warcMdPath); err != nil {
 				logErrorf("doc_store: bg rescan shard=%s err=%v", shard, err)
 			}
+			s.broadcastShardScan(shard)
 		}()
 	}
 
@@ -837,6 +857,7 @@ func (s *Server) handleBrowseDocs(c *mizu.Ctx, shard string) error {
 			DocID:     d.DocID,
 			Shard:     d.Shard,
 			URL:       d.URL,
+			Host:      d.Host,
 			Title:     d.Title,
 			SizeBytes: d.SizeBytes,
 			WordCount: d.WordCount,
@@ -859,6 +880,18 @@ func (s *Server) handleBrowseDocs(c *mizu.Ctx, shard string) error {
 		MetaStale:     metaStale,
 		Scanning:      scanning,
 		LastScannedAt: lastScannedAt,
+	})
+}
+
+// broadcastShardScan sends a shard_scan WebSocket event so connected
+// browse pages know to refresh their shard list and doc table.
+func (s *Server) broadcastShardScan(shard string) {
+	if s.Hub == nil {
+		return
+	}
+	s.Hub.BroadcastAll(map[string]string{
+		"type":  "shard_scan",
+		"shard": shard,
 	})
 }
 
@@ -909,14 +942,15 @@ func (s *Server) handleMetaScanDocs(c *mizu.Ctx) error {
 		return c.JSON(200, MetaScanDocsResponse{Accepted: false, Reason: "doc store not available"})
 	}
 	crawlID := s.CrawlID
-	warcMdBase := s.WARCMdBase
+	crawlDir := s.CrawlDir
 	go func() {
-		total, err := s.Docs.ScanAll(context.Background(), crawlID, warcMdBase)
+		total, err := s.Docs.ScanAll(context.Background(), crawlID, crawlDir)
 		if err != nil {
 			logErrorf("doc_store: manual scan-all crawl=%s err=%v", crawlID, err)
 			return
 		}
 		logInfof("doc_store: manual scan-all crawl=%s total=%d", crawlID, total)
+		s.broadcastShardScan("*")
 	}()
 	return c.JSON(http.StatusAccepted, MetaScanDocsResponse{Accepted: true, CrawlID: crawlID})
 }
