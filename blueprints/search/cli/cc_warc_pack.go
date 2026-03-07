@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web"
 	warcmd "github.com/go-mizu/mizu/blueprints/search/pkg/warc_md"
 	"github.com/spf13/cobra"
 )
@@ -21,7 +22,6 @@ func newCCWarcPack() *cobra.Command {
 		to         int
 		workers    int
 		force      bool
-		fast       bool
 		statusCode int
 		mimeFilter string
 		maxBody    int64
@@ -36,21 +36,17 @@ Each output record is a WARC conversion record with Content-Type: text/markdown.
 Each record is wrapped in its own gzip member, producing a seekable concatenated-gzip
 file identical to Common Crawl's format.
 
-Output: warc_md/{warcIdx}.md.warc.gz (one file per input .warc.gz)
+Output: warc_md/{warcIdx}.md.warc.gz + {warcIdx}.meta.duckdb (one per input .warc.gz)
 
 Pipeline architecture:
   reader (sequential) → N converter workers (parallel) → writer (sequential)
-
-Converters:
-  default:  trafilatura (quality, F1=0.91)   ~200–600 docs/s
-  --fast:   go-readability (3–8× faster)     ~800–2,000 docs/s`,
+  After writing, per-shard metadata (meta.duckdb) is built automatically.`,
 		Example: `  search cc warc pack --file 0
-  search cc warc pack --file 0 --fast
   search cc warc pack --file 0-4 --workers 8
   search cc warc pack --from 0 --to 9 --workers 16`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCCWarcPack(cmd.Context(),
-				crawlID, fileIdx, from, to, workers, force, fast,
+				crawlID, fileIdx, from, to, workers, force,
 				statusCode, mimeFilter, maxBody)
 		},
 	}
@@ -61,7 +57,6 @@ Converters:
 	cmd.Flags().IntVar(&to, "to", -1, "Last file index (inclusive) for parallel range")
 	cmd.Flags().IntVar(&workers, "workers", 0, "Converter goroutines (0 = NumCPU)")
 	cmd.Flags().BoolVar(&force, "force", false, "Re-process existing files")
-	cmd.Flags().BoolVar(&fast, "fast", false, "Use go-readability instead of trafilatura")
 	cmd.Flags().IntVar(&statusCode, "status", 200, "HTTP status filter (0 = all)")
 	cmd.Flags().StringVar(&mimeFilter, "mime", "text/html", "MIME type filter")
 	cmd.Flags().Int64Var(&maxBody, "max-body", 512*1024, "Max HTML body bytes per record")
@@ -70,7 +65,7 @@ Converters:
 }
 
 func runCCWarcPack(ctx context.Context,
-	crawlID, fileIdx string, from, to, workers int, force, fast bool,
+	crawlID, fileIdx string, from, to, workers int, force bool,
 	statusCode int, mimeFilter string, maxBody int64) error {
 
 	if from >= 0 && to >= 0 {
@@ -116,14 +111,9 @@ func runCCWarcPack(ctx context.Context,
 	fmt.Println(subtitleStyle.Render("  WARC → Markdown WARC   Pack Pipeline"))
 	fmt.Println()
 
-	extractor := "trafilatura (quality)"
-	if fast {
-		extractor = "go-readability (fast)"
-	}
-
 	fmt.Printf("  Crawl     %s\n", labelStyle.Render(crawlID))
 	fmt.Printf("  Files     %d\n", len(inputFiles))
-	fmt.Printf("  Engine    %s\n", infoStyle.Render(extractor))
+	fmt.Printf("  Engine    %s\n", infoStyle.Render("trafilatura"))
 	fmt.Printf("  Output    %s\n", labelStyle.Render(cfg.WARCMdDir()))
 	fmt.Println()
 
@@ -144,7 +134,6 @@ func runCCWarcPack(ctx context.Context,
 			OutputPath:  outPath,
 			Workers:     workers,
 			Force:       force,
-			Fast:        fast,
 			StatusCode:  statusCode,
 			MIMEFilter:  mimeFilter,
 			MaxBodySize: maxBody,
@@ -190,6 +179,23 @@ func runCCWarcPack(ctx context.Context,
 				rate,
 				formatBytes(int64(result.PeakMemMB*1024*1024)),
 			)
+		}
+
+		// Build per-shard meta.duckdb for fast browse/search metadata.
+		if result.Skipped == 0 && result.OutputRecords > 0 {
+			ds, dsErr := web.NewDocStore(cfg.WARCMdDir())
+			if dsErr == nil {
+				metaStart := time.Now()
+				n, scanErr := ds.ScanShard(ctx, "", warcIdx, outPath)
+				if scanErr != nil {
+					fmt.Printf("  %s  meta.duckdb: %v\n", warningStyle.Render("warn"), scanErr)
+				} else {
+					fmt.Printf("  %s  meta.duckdb: %s docs  %s\n",
+						infoStyle.Render("meta"),
+						ccFmtInt64(n),
+						time.Since(metaStart).Round(time.Millisecond))
+				}
+			}
 		}
 
 		totalIn += result.InputRecords

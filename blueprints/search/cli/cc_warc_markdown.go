@@ -26,7 +26,6 @@ func newCCWarcMarkdown() *cobra.Command {
 		to         int
 		workers    int
 		force      bool
-		fast       bool
 		keepTemp   bool
 		statusCode int
 		mimeFilter string
@@ -48,25 +47,18 @@ Final output: markdown/{warcIdx}/**/*.md
 Parallel mode (--from/--to + --workers N): processes N files concurrently.
 Each pipeline uses max(1, NumCPU/N) goroutines for HTML→Markdown conversion.
 
-WARC record path sharding:
-  <urn:uuid:5d0e2270-...ab> → 5d/0e/22/5d0e2270-...ab.warc
-  (first 6 hex chars → 3-level directory nesting, ~256 files per leaf dir)
-
-Converters:
-  default:  trafilatura (quality, F1=0.91)   ~200–600 docs/s
-  --fast:   go-readability (3–8× faster)     ~800–2,000 docs/s
+Note: prefer "cc warc pack" which produces seekable .md.warc.gz files directly.
 
 Progress (every 500ms): docs/s · MB/s read · MB/s write · peak RAM
 Summary: disk before/after · RAM before/after/peak · per-phase table
 `,
 		Example: `  search cc warc markdown --file 0
-  search cc warc markdown --file 0 --fast
   search cc warc markdown --file 0-4 --workers 16
   search cc warc markdown --from 1 --to 20 --workers 10   # 10 parallel files
   search cc warc markdown --file 0 --keep-temp            # inspect warc_single/`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCCWarcMarkdown(cmd.Context(),
-				crawlID, fileIdx, from, to, workers, force, fast, keepTemp,
+				crawlID, fileIdx, from, to, workers, force, keepTemp,
 				statusCode, mimeFilter, maxBody)
 		},
 	}
@@ -77,7 +69,6 @@ Summary: disk before/after · RAM before/after/peak · per-phase table
 	cmd.Flags().IntVar(&to, "to", -1, "Last file index (inclusive) for parallel range")
 	cmd.Flags().IntVar(&workers, "workers", 0, "Goroutines per file (single-file) or parallel files (multi-file, 0 = NumCPU)")
 	cmd.Flags().BoolVar(&force, "force", false, "Re-process existing files in all phases")
-	cmd.Flags().BoolVar(&fast, "fast", false, "Use go-readability instead of trafilatura")
 	cmd.Flags().BoolVar(&keepTemp, "keep-temp", false, "Keep warc_single/ after pipeline")
 	cmd.Flags().IntVar(&statusCode, "status", 200, "HTTP status filter (0 = all)")
 	cmd.Flags().StringVar(&mimeFilter, "mime", "text/html", "MIME type filter")
@@ -94,7 +85,7 @@ type warcMDPhaseRow struct {
 }
 
 func runCCWarcMarkdown(ctx context.Context,
-	crawlID, fileIdx string, from, to, workers int, force, fast, keepTemp bool,
+	crawlID, fileIdx string, from, to, workers int, force, keepTemp bool,
 	statusCode int, mimeFilter string, maxBody int64) error {
 
 	// --from/--to overrides --file when both indices are provided
@@ -116,7 +107,6 @@ func runCCWarcMarkdown(ctx context.Context,
 	cfg := warcmd.DefaultConfig(crawlID)
 	cfg.Workers = workers
 	cfg.Force = force
-	cfg.Fast = fast
 	cfg.KeepTemp = keepTemp
 	cfg.StatusCode = statusCode
 	cfg.MIMEFilter = mimeFilter
@@ -157,11 +147,6 @@ func runCCWarcMarkdown(ctx context.Context,
 	fmt.Println(subtitleStyle.Render("  WARC → Markdown   2-Phase Pipeline"))
 	fmt.Println()
 
-	extractor := "trafilatura (quality)"
-	if fast {
-		extractor = "go-readability (fast)"
-	}
-
 	fmt.Printf("  Crawl     %s\n", labelStyle.Render(crawlID))
 	if len(inputFiles) == 1 {
 		fmt.Printf("  Files     1 file: %s\n", labelStyle.Render(filepath.Base(inputFiles[0])))
@@ -171,7 +156,7 @@ func runCCWarcMarkdown(ctx context.Context,
 			labelStyle.Render(filepath.Base(inputFiles[0])),
 			labelStyle.Render(filepath.Base(inputFiles[len(inputFiles)-1])))
 	}
-	fmt.Printf("  Engine    %s\n", infoStyle.Render(extractor))
+	fmt.Printf("  Engine    %s\n", infoStyle.Render("trafilatura"))
 	if force {
 		fmt.Printf("  Force     %s\n", warningStyle.Render("re-process all files"))
 	}

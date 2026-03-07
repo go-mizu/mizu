@@ -25,7 +25,6 @@ type PackConfig struct {
 	OutputPath  string   // output .md.warc.gz file path
 	Workers     int      // parallel converter goroutines (0 = NumCPU)
 	Force       bool     // overwrite existing output
-	Fast        bool     // use go-readability instead of trafilatura
 	StatusCode  int      // HTTP status filter (default: 200)
 	MIMEFilter  string   // MIME type filter (default: "text/html")
 	MaxBodySize int64    // max HTML body bytes per record (default: 512 KB)
@@ -160,12 +159,7 @@ func RunPack(ctx context.Context, cfg PackConfig, progressFn ProgressFunc) (*Pac
 			go func(it packItem) {
 				defer func() { <-sem }()
 
-				var res mdpkg.Result
-				if cfg.Fast {
-					res = mdpkg.ConvertFast(it.htmlBody, "")
-				} else {
-					res = mdpkg.Convert(it.htmlBody, "")
-				}
+				res := mdpkg.Convert(it.htmlBody, "")
 
 				if res.HasContent && res.Markdown != "" {
 					resultCh <- packResult{

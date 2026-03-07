@@ -45,7 +45,6 @@ func RunFilePipeline(ctx context.Context, cfg Config, warcIdx string, inputFiles
 		OutputDir: outDir,
 		Workers:   cfg.ConvertWorkers(),
 		Force:     cfg.Force,
-		Fast:      cfg.Fast,
 	}, p2Fn)
 	if err != nil {
 		return nil, fmt.Errorf("phase 2 convert: %w", err)

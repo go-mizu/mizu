@@ -12,7 +12,6 @@ type Config struct {
 	DataDir     string // base: $HOME/data/common-crawl
 	Workers     int    // parallel workers for convert (0 = NumCPU)
 	Force       bool   // re-process existing files
-	Fast        bool   // use go-readability instead of trafilatura
 	KeepTemp    bool   // keep warc_single/ and markdown_raw/ after pipeline
 	MIMEFilter  string // e.g. "text/html" (default)
 	StatusCode  int    // HTTP status filter (default: 200)
