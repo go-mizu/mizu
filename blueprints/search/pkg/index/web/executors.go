@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index"
+	indexpack "github.com/go-mizu/mizu/blueprints/search/pkg/index/pack"
 	warcmd "github.com/go-mizu/mizu/blueprints/search/pkg/warc_md"
 )
 
@@ -235,7 +236,7 @@ func (m *JobManager) execPack(ctx context.Context, job *Job) error {
 			0,
 		)
 
-		progress := func(stats *index.PipelineStats) {
+		progress := func(stats *indexpack.PipelineStats) {
 			total := stats.TotalFiles.Load()
 			done := stats.DocsIndexed.Load()
 			pct := float64(0)
@@ -257,13 +258,13 @@ func (m *JobManager) execPack(ctx context.Context, job *Job) error {
 		var packErr error
 		switch format {
 		case "parquet":
-			_, packErr = index.PackParquet(ctx, markdownDir, packFile, 0, 5000, progress)
+			_, packErr = indexpack.PackParquet(ctx, markdownDir, packFile, 0, 5000, progress)
 		case "bin":
-			_, packErr = index.PackFlatBin(ctx, markdownDir, packFile, 0, 5000, progress)
+			_, packErr = indexpack.PackFlatBin(ctx, markdownDir, packFile, 0, 5000, progress)
 		case "duckdb":
 			_, packErr = packDuckDBRaw(ctx, markdownDir, packFile, 0, 5000, progress)
 		case "markdown":
-			_, packErr = index.PackFlatBinGz(ctx, markdownDir, packFile, 0, 5000, progress)
+			_, packErr = indexpack.PackFlatBinGz(ctx, markdownDir, packFile, 0, 5000, progress)
 		default:
 			return fmt.Errorf("unknown format %q (valid: parquet, bin, duckdb, markdown)", format)
 		}
@@ -335,11 +336,11 @@ func (m *JobManager) execIndex(ctx context.Context, job *Job) error {
 				return fmt.Errorf("markdown dir not found: %s", sourceDir)
 			}
 
-			cfg := index.PipelineConfig{
+			cfg := indexpack.PipelineConfig{
 				SourceDir: sourceDir,
 				BatchSize: 5000,
 			}
-			progress := func(stats *index.PipelineStats) {
+			progress := func(stats *indexpack.PipelineStats) {
 				total := stats.TotalFiles.Load()
 				done := stats.DocsIndexed.Load()
 				pct := float64(0)
@@ -357,7 +358,7 @@ func (m *JobManager) execIndex(ctx context.Context, job *Job) error {
 					rate,
 				)
 			}
-			_, pipeErr = index.RunPipeline(ctx, eng, cfg, progress)
+			_, pipeErr = indexpack.RunPipeline(ctx, eng, cfg, progress)
 		} else {
 			packDir := filepath.Join(crawlDir, "pack")
 			packFile, perr := packFilePath(packDir, source, warcIdx)
@@ -388,13 +389,13 @@ func (m *JobManager) execIndex(ctx context.Context, job *Job) error {
 
 			switch source {
 			case "parquet":
-				_, pipeErr = index.RunPipelineFromParquet(ctx, eng, packFile, 5000, progress)
+				_, pipeErr = indexpack.RunPipelineFromParquet(ctx, eng, packFile, 5000, progress)
 			case "bin":
-				_, pipeErr = index.RunPipelineFromFlatBin(ctx, eng, packFile, 5000, progress)
+				_, pipeErr = indexpack.RunPipelineFromFlatBin(ctx, eng, packFile, 5000, progress)
 			case "duckdb":
 				_, pipeErr = runPipelineFromDuckDBRaw(ctx, eng, packFile, 5000, progress)
 			case "markdown":
-				_, pipeErr = index.RunPipelineFromFlatBinGz(ctx, eng, packFile, 5000, progress)
+				_, pipeErr = indexpack.RunPipelineFromFlatBinGz(ctx, eng, packFile, 5000, progress)
 			default:
 				eng.Close()
 				return fmt.Errorf("unknown source %q (valid: files, parquet, bin, duckdb, markdown)", source)
