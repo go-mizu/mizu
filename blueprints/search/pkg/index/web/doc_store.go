@@ -1,7 +1,9 @@
 package web
 
 import (
+	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"database/sql"
 	"database/sql/driver"
@@ -25,12 +27,15 @@ type DocRecord struct {
 	DocID        string    `json:"doc_id"`
 	Shard        string    `json:"shard"`
 	URL          string    `json:"url"`
+	Host         string    `json:"host"`
 	Title        string    `json:"title"`
 	CrawlDate    time.Time `json:"crawl_date,omitempty"`
 	SizeBytes    int64     `json:"size_bytes"`
 	WordCount    int       `json:"word_count"`
 	WARCRecordID string    `json:"warc_record_id,omitempty"`
 	RefersTo     string    `json:"refers_to,omitempty"`
+	GzipOffset   int64     `json:"gzip_offset,omitempty"`
+	GzipSize     int64     `json:"gzip_size,omitempty"`
 }
 
 // DocShardMeta holds per-shard scan statistics.
@@ -97,12 +102,15 @@ const createDocRecords = `
 CREATE TABLE IF NOT EXISTS doc_records (
 	doc_id         TEXT PRIMARY KEY,
 	url            TEXT NOT NULL DEFAULT '',
+	host           TEXT NOT NULL DEFAULT '',
 	title          TEXT NOT NULL DEFAULT '',
 	crawl_date     TEXT NOT NULL DEFAULT '',
 	size_bytes     BIGINT DEFAULT 0,
 	word_count     INTEGER DEFAULT 0,
 	warc_record_id TEXT NOT NULL DEFAULT '',
 	refers_to      TEXT NOT NULL DEFAULT '',
+	gzip_offset    BIGINT DEFAULT 0,
+	gzip_size      BIGINT DEFAULT 0,
 	scanned_at     TEXT NOT NULL DEFAULT ''
 )`
 
@@ -116,6 +124,25 @@ CREATE TABLE IF NOT EXISTS doc_scan_meta (
 )`
 
 func initShardSchema(ctx context.Context, db *sql.DB) error {
+	// Migrate: if the table exists but lacks new columns (host, gzip_offset),
+	// drop and recreate. Full rescan will repopulate.
+	var hasHost int
+	err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM information_schema.columns
+		WHERE table_name='doc_records' AND column_name='host'
+	`).Scan(&hasHost)
+	if err == nil && hasHost == 0 {
+		// Old schema — check if table exists at all.
+		var tableExists int
+		db.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM information_schema.tables
+			WHERE table_name='doc_records'
+		`).Scan(&tableExists)
+		if tableExists > 0 {
+			db.ExecContext(ctx, `DROP TABLE doc_records`)
+		}
+	}
+
 	if _, err := db.ExecContext(ctx, createDocRecords); err != nil {
 		return fmt.Errorf("create doc_records: %w", err)
 	}
@@ -175,11 +202,13 @@ func (ds *DocStore) warmShard(ctx context.Context, shard string) (*shardCache, e
 	defer db.Close()
 
 	rows, err := db.QueryContext(ctx, `
-		SELECT doc_id, url, title, crawl_date, size_bytes, word_count, warc_record_id, refers_to
+		SELECT doc_id, url, host, title, crawl_date, size_bytes, word_count,
+		       warc_record_id, refers_to, gzip_offset, gzip_size
 		FROM doc_records ORDER BY crawl_date DESC
 	`)
 	if err != nil {
-		return nil, fmt.Errorf("warm query %s: %w", shard, err)
+		// Old schema without new columns — return empty cache so rescan is triggered.
+		return nil, nil
 	}
 	defer rows.Close()
 
@@ -192,8 +221,9 @@ func (ds *DocStore) warmShard(ctx context.Context, shard string) (*shardCache, e
 	for rows.Next() {
 		var d DocRecord
 		var crawlDate string
-		if err := rows.Scan(&d.DocID, &d.URL, &d.Title, &crawlDate,
-			&d.SizeBytes, &d.WordCount, &d.WARCRecordID, &d.RefersTo); err != nil {
+		if err := rows.Scan(&d.DocID, &d.URL, &d.Host, &d.Title, &crawlDate,
+			&d.SizeBytes, &d.WordCount, &d.WARCRecordID, &d.RefersTo,
+			&d.GzipOffset, &d.GzipSize); err != nil {
 			return nil, fmt.Errorf("warm scan %s: %w", shard, err)
 		}
 		d.Shard = shard
@@ -254,15 +284,37 @@ func (ds *DocStore) getOrWarm(ctx context.Context, shard string) (*shardCache, e
 
 // ── ScanShard ─────────────────────────────────────────────────────────────────
 
-// ScanShard scans a single .md.warc.gz file and writes DocRecords to its DuckDB.
-// Returns (0, nil) if a scan for this shard is already in progress (idempotent guard).
+// ScanShard scans a .md.warc.gz file and writes DocRecords (with gzip offsets)
+// to the shard's DuckDB. Returns (0, nil) if a scan is already in progress.
 func (ds *DocStore) ScanShard(ctx context.Context, _, shard, warcMdPath string) (int64, error) {
 	if !ds.acquireScan(shard) {
 		logInfof("doc_store: scan already in progress shard=%s, skipping", shard)
 		return 0, nil
 	}
 	defer ds.releaseScan(shard)
+	return ds.scanWARCMd(ctx, shard, warcMdPath)
+}
 
+// countingReader wraps an io.Reader and tracks the total bytes read.
+type countingReader struct {
+	r io.Reader
+	n int64
+}
+
+func (cr *countingReader) Read(p []byte) (int, error) {
+	n, err := cr.r.Read(p)
+	cr.n += int64(n)
+	return n, err
+}
+
+// scanWARCMd scans a .md.warc.gz file. For each conversion record it extracts
+// URL, host, date, title, and records the gzip member byte offset/size for
+// fast random-access retrieval later.
+//
+// Gzip member tracking: we wrap the file in a countingReader, then a bufio.Reader.
+// The gzip reader reads from the bufio. After each member is fully consumed,
+// (cr.n - br.Buffered()) gives the exact byte offset in the file.
+func (ds *DocStore) scanWARCMd(ctx context.Context, shard, warcMdPath string) (int64, error) {
 	f, err := os.Open(warcMdPath)
 	if err != nil {
 		return 0, fmt.Errorf("doc_store scan open: %w", err)
@@ -293,11 +345,17 @@ func (ds *DocStore) ScanShard(ctx context.Context, _, shard, warcMdPath string) 
 	var totalSizeBytes int64
 	var lastDocDate time.Time
 
-	// Use DuckDB Appender for bulk insert (avoids SQL parameter binding issues).
+	// Use DuckDB Appender for bulk insert.
 	sqlConn, err := db.Conn(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("doc_store conn: %w", err)
 	}
+
+	// Wrap the file in countingReader → bufio.Reader.
+	// gzip.NewReader(br) won't re-wrap because bufio implements io.ByteReader.
+	// After each member: filePos = cr.n - int64(br.Buffered()).
+	cr := &countingReader{r: f}
+	br := bufio.NewReaderSize(cr, 64*1024)
 
 	err = sqlConn.Raw(func(anyConn any) error {
 		driverConn, ok := anyConn.(driver.Conn)
@@ -309,15 +367,53 @@ func (ds *DocStore) ScanShard(ctx context.Context, _, shard, warcMdPath string) 
 			return fmt.Errorf("doc_store appender: %w", err)
 		}
 
-		r := warcpkg.NewReader(f)
-		for r.Next() {
+		first := true
+		var gz *gzip.Reader
+
+		for {
 			if ctx.Err() != nil {
 				appender.Close()
 				return ctx.Err()
 			}
-			rec := r.Record()
+
+			// Record file offset of this gzip member's start.
+			memberStart := cr.n - int64(br.Buffered())
+
+			// Check for gzip magic bytes (EOF detection).
+			peek, peekErr := br.Peek(2)
+			if peekErr != nil {
+				break // EOF or error
+			}
+			if peek[0] != 0x1f || peek[1] != 0x8b {
+				break // not a gzip member
+			}
+
+			// Open gzip member.
+			if first {
+				gz, err = gzip.NewReader(br)
+				if err != nil {
+					break
+				}
+				first = false
+			} else {
+				if err := gz.Reset(br); err != nil {
+					break
+				}
+			}
+			gz.Multistream(false)
+
+			// Parse the WARC record from the decompressed gzip member.
+			// NewReader on a non-gzip stream parses it as plain WARC text.
+			wr := warcpkg.NewReader(gz)
+			if !wr.Next() {
+				// Drain and continue to next member.
+				io.Copy(io.Discard, gz)
+				continue
+			}
+			rec := wr.Record()
 			if rec.Header.Type() != warcpkg.TypeConversion {
 				io.Copy(io.Discard, rec.Body)
+				io.Copy(io.Discard, gz)
 				continue
 			}
 
@@ -325,6 +421,7 @@ func (ds *DocStore) ScanShard(ctx context.Context, _, shard, warcMdPath string) 
 			docID := warcRecordIDtoDocID(recordID)
 			if docID == "" {
 				io.Copy(io.Discard, rec.Body)
+				io.Copy(io.Discard, gz)
 				continue
 			}
 
@@ -333,31 +430,37 @@ func (ds *DocStore) ScanShard(ctx context.Context, _, shard, warcMdPath string) 
 			refersTo := rec.Header.RefersTo()
 			sizeBytes := rec.Header.ContentLength()
 
-			head := make([]byte, 256)
+			// Read first 2KB for title extraction.
+			head := make([]byte, 2048)
 			n, _ := rec.Body.Read(head)
 			io.Copy(io.Discard, rec.Body)
+			io.Copy(io.Discard, gz) // drain any trailing bytes in the member
 			head = head[:n]
 
 			title := extractDocTitle(head, targetURI)
+			host := extractHost(targetURI)
 
 			if t, err := time.Parse(time.RFC3339, dateStr); err == nil && t.After(lastDocDate) {
 				lastDocDate = t
 			}
+
+			// Compute gzip member size after fully draining the member.
+			memberEnd := cr.n - int64(br.Buffered())
+			gzipSize := memberEnd - memberStart
+
 			totalSizeBytes += sizeBytes
 			totalDocs++
 
 			if err := appender.AppendRow(
-				docID, targetURI, title, dateStr,
+				docID, targetURI, host, title, dateStr,
 				sizeBytes, int32(sizeBytes/5),
-				recordID, refersTo, nowStr,
+				recordID, refersTo,
+				memberStart, gzipSize,
+				nowStr,
 			); err != nil {
 				appender.Close()
 				return fmt.Errorf("doc_store append: %w", err)
 			}
-		}
-		if err := r.Err(); err != nil {
-			appender.Close()
-			return fmt.Errorf("doc_store scan: %w", err)
 		}
 		return appender.Close()
 	})
@@ -382,20 +485,23 @@ func (ds *DocStore) ScanShard(ctx context.Context, _, shard, warcMdPath string) 
 	// Invalidate cache so next read re-warms from DuckDB.
 	ds.invalidateCache(shard)
 
-	logInfof("doc_store: scanned shard=%s docs=%d size=%d", shard, totalDocs, totalSizeBytes)
+	logInfof("doc_store: scanned shard=%s docs=%d size=%d (warc_md)", shard, totalDocs, totalSizeBytes)
 	return totalDocs, nil
 }
 
-// ScanAll scans all .md.warc.gz files in warcMdBase.
-func (ds *DocStore) ScanAll(ctx context.Context, _, warcMdBase string) (int64, error) {
-	entries, err := os.ReadDir(warcMdBase)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return 0, nil
-		}
-		return 0, err
-	}
+// ScanAll scans all .md.warc.gz files in the warc_md/ directory.
+// crawlBase should be the crawl directory (e.g. ~/data/common-crawl/{crawlID}).
+func (ds *DocStore) ScanAll(ctx context.Context, _, crawlBase string) (int64, error) {
 	var total int64
+
+	warcMdDir := crawlBase
+	if !strings.HasSuffix(filepath.Base(crawlBase), "warc_md") {
+		warcMdDir = filepath.Join(crawlBase, "warc_md")
+	}
+	entries, err := os.ReadDir(warcMdDir)
+	if err != nil {
+		return 0, nil // no warc_md dir yet
+	}
 	for _, e := range entries {
 		if ctx.Err() != nil {
 			return total, ctx.Err()
@@ -404,7 +510,7 @@ func (ds *DocStore) ScanAll(ctx context.Context, _, warcMdBase string) (int64, e
 			continue
 		}
 		shard := strings.TrimSuffix(e.Name(), ".md.warc.gz")
-		n, err := ds.ScanShard(ctx, "", shard, filepath.Join(warcMdBase, e.Name()))
+		n, err := ds.ScanShard(ctx, "", shard, filepath.Join(warcMdDir, e.Name()))
 		if err != nil {
 			logErrorf("doc_store: scan shard=%s err=%v", shard, err)
 			continue
@@ -477,7 +583,8 @@ func (ds *DocStore) ListDocs(ctx context.Context, _, shard string, page, pageSiz
 	for _, d := range sc.docs {
 		if qLower != "" {
 			if !strings.Contains(strings.ToLower(d.URL), qLower) &&
-				!strings.Contains(strings.ToLower(d.Title), qLower) {
+				!strings.Contains(strings.ToLower(d.Title), qLower) &&
+				!strings.Contains(strings.ToLower(d.Host), qLower) {
 				continue
 			}
 		}
@@ -568,13 +675,11 @@ func (ds *DocStore) ShardStats(ctx context.Context, _, shard string) (ShardStats
 	}
 	defer db.Close()
 
-	// Top domains by doc count.
+	// Top domains by doc count (uses pre-extracted host column).
 	drows, err := db.QueryContext(ctx, `
-		SELECT
-			regexp_extract(url, 'https?://(?:www\.)?([^/:?#]+)', 1) AS domain,
-			COUNT(*) AS cnt
+		SELECT host, COUNT(*) AS cnt
 		FROM doc_records
-		WHERE url != ''
+		WHERE host != ''
 		GROUP BY 1
 		ORDER BY 2 DESC
 		LIMIT 20
@@ -698,7 +803,57 @@ func extractDocTitle(head []byte, fallbackURL string) string {
 	return fallbackURL
 }
 
-// readDocFromWARCMd scans warcMdPath for a record matching docID and returns the body.
+// extractHost returns the hostname from a URL, stripping the www. prefix.
+func extractHost(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	h := u.Hostname()
+	h = strings.TrimPrefix(h, "www.")
+	return h
+}
+
+// ReadDocByOffset reads a single WARC record from warcMdPath at the given
+// gzip member offset/size. Returns the markdown body.
+// This is O(1) random access vs O(N) sequential scan.
+func ReadDocByOffset(warcMdPath string, offset, size int64) ([]byte, error) {
+	f, err := os.Open(warcMdPath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	if _, err := f.Seek(offset, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("seek to offset %d: %w", offset, err)
+	}
+
+	var r io.Reader = f
+	if size > 0 {
+		r = io.LimitReader(f, size)
+	}
+
+	gz, err := gzip.NewReader(r)
+	if err != nil {
+		return nil, fmt.Errorf("gzip open at offset %d: %w", offset, err)
+	}
+	defer gz.Close()
+
+	wr := warcpkg.NewReader(gz)
+	if !wr.Next() {
+		if err := wr.Err(); err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("no WARC record at offset %d", offset)
+	}
+	return io.ReadAll(wr.Record().Body)
+}
+
+// readDocFromWARCMd scans warcMdPath sequentially for a record matching docID.
+// Fallback for records without stored offsets.
 func readDocFromWARCMd(warcMdPath, docID string) ([]byte, bool, error) {
 	f, err := os.Open(warcMdPath)
 	if err != nil {
