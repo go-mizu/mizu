@@ -227,7 +227,7 @@ func (ds *DocStore) warmShard(ctx context.Context, shard string) (*shardCache, e
 			return nil, fmt.Errorf("warm scan %s: %w", shard, err)
 		}
 		d.Shard = shard
-		if t, err := time.Parse(time.RFC3339, crawlDate); err == nil {
+		if t, ok := parseDocTime(crawlDate); ok {
 			d.CrawlDate = t
 			if t.After(lastDate) {
 				lastDate = t
@@ -430,18 +430,40 @@ func (ds *DocStore) scanWARCMd(ctx context.Context, shard, warcMdPath string) (i
 			refersTo := rec.Header.RefersTo()
 			sizeBytes := rec.Header.ContentLength()
 
-			// Read first 2KB for title extraction.
-			head := make([]byte, 2048)
+			// Read first chunk for metadata extraction from markdown content.
+			head := make([]byte, 8192)
 			n, _ := rec.Body.Read(head)
 			io.Copy(io.Discard, rec.Body)
 			io.Copy(io.Discard, gz) // drain any trailing bytes in the member
 			head = head[:n]
 
-			title := extractDocTitle(head, targetURI)
+			meta := extractDocMetadata(head)
+			if strings.TrimSpace(targetURI) == "" {
+				targetURI = meta.URL
+			}
 			host := extractHost(targetURI)
-
-			if t, err := time.Parse(time.RFC3339, dateStr); err == nil && t.After(lastDocDate) {
-				lastDocDate = t
+			if host == "" {
+				host = meta.Host
+			}
+			title := extractDocTitle(head, targetURI)
+			if title == "" {
+				title = meta.Title
+			}
+			if strings.TrimSpace(dateStr) == "" {
+				dateStr = meta.Date
+			}
+			if t, ok := parseDocTime(dateStr); ok {
+				dateStr = t.UTC().Format(time.RFC3339)
+				if t.After(lastDocDate) {
+					lastDocDate = t
+				}
+			} else if strings.TrimSpace(meta.Date) != "" && meta.Date != dateStr {
+				if t, ok := parseDocTime(meta.Date); ok {
+					dateStr = t.UTC().Format(time.RFC3339)
+					if t.After(lastDocDate) {
+						lastDocDate = t
+					}
+				}
 			}
 
 			// Compute gzip member size after fully draining the member.
@@ -786,6 +808,11 @@ func warcRecordIDtoDocID(recordID string) string {
 }
 
 func extractDocTitle(head []byte, fallbackURL string) string {
+	meta := extractDocMetadata(head)
+	if meta.Title != "" {
+		return meta.Title
+	}
+
 	for _, line := range bytes.Split(head, []byte("\n")) {
 		line = bytes.TrimSpace(line)
 		if bytes.HasPrefix(line, []byte("# ")) {
@@ -803,6 +830,102 @@ func extractDocTitle(head []byte, fallbackURL string) string {
 	return fallbackURL
 }
 
+type docMetaExtract struct {
+	Title string
+	URL   string
+	Host  string
+	Date  string
+}
+
+// extractDocMetadata extracts best-effort metadata from markdown text.
+// Supports simple "Key: Value" lines and link-first documents.
+func extractDocMetadata(head []byte) docMetaExtract {
+	var out docMetaExtract
+	lines := bytes.Split(head, []byte("\n"))
+
+	for _, rawLine := range lines {
+		line := strings.TrimSpace(string(rawLine))
+		if line == "" {
+			continue
+		}
+		lower := strings.ToLower(line)
+		switch {
+		case strings.HasPrefix(lower, "title:"):
+			v := cleanInlineValue(line[len("title:"):])
+			if v != "" && out.Title == "" {
+				out.Title = v
+			}
+		case strings.HasPrefix(lower, "date:"):
+			v := cleanInlineValue(line[len("date:"):])
+			if v != "" && out.Date == "" {
+				out.Date = v
+			}
+		case strings.HasPrefix(lower, "url:"):
+			v := cleanInlineValue(line[len("url:"):])
+			if v != "" && out.URL == "" {
+				out.URL = strings.Trim(v, "<>")
+			}
+		case strings.HasPrefix(lower, "host:"):
+			v := cleanInlineValue(line[len("host:"):])
+			if v != "" && out.Host == "" {
+				out.Host = strings.Trim(strings.Trim(v, "<>"), "/")
+			}
+		}
+		if out.URL == "" {
+			if title, linkURL, ok := parseMarkdownLinkLine(line); ok {
+				out.URL = linkURL
+				if out.Title == "" {
+					out.Title = title
+				}
+			}
+		}
+		if out.Title != "" && out.URL != "" && out.Date != "" && out.Host != "" {
+			break
+		}
+	}
+
+	if out.Host == "" && out.URL != "" {
+		out.Host = extractHost(out.URL)
+	}
+	return out
+}
+
+func cleanInlineValue(v string) string {
+	s := strings.TrimSpace(v)
+	s = strings.Trim(s, `"'`)
+	return strings.TrimSpace(s)
+}
+
+func parseMarkdownLinkLine(line string) (title, linkURL string, ok bool) {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "[") {
+		return "", "", false
+	}
+	endText := strings.Index(line, "](")
+	if endText <= 1 {
+		return "", "", false
+	}
+	endURL := strings.Index(line[endText+2:], ")")
+	if endURL <= 0 {
+		return "", "", false
+	}
+	title = strings.TrimSpace(line[1:endText])
+	linkURL = strings.TrimSpace(line[endText+2 : endText+2+endURL])
+	linkURL = strings.Trim(linkURL, "<>")
+	linkURL = strings.Fields(linkURL)[0]
+	if title == "" || linkURL == "" {
+		return "", "", false
+	}
+	u, err := url.Parse(linkURL)
+	if err != nil {
+		return "", "", false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", "", false
+	}
+	return title, linkURL, true
+}
+
 // extractHost returns the hostname from a URL, stripping the www. prefix.
 func extractHost(rawURL string) string {
 	if rawURL == "" {
@@ -815,6 +938,28 @@ func extractHost(rawURL string) string {
 	h := u.Hostname()
 	h = strings.TrimPrefix(h, "www.")
 	return h
+}
+
+func parseDocTime(raw string) (time.Time, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, false
+	}
+	layouts := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02T15:04:05Z0700",
+		"2006-01-02 15:04:05",
+		"2006-01-02",
+		"20060102150405",
+		"20060102",
+	}
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, raw); err == nil {
+			return t.UTC(), true
+		}
+	}
+	return time.Time{}, false
 }
 
 // ReadDocByOffset reads a single WARC record from warcMdPath at the given
@@ -879,4 +1024,3 @@ func readDocFromWARCMd(warcMdPath, docID string) ([]byte, bool, error) {
 	}
 	return nil, false, nil
 }
-

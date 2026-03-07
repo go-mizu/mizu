@@ -66,6 +66,42 @@ func createTestWARCMd(t *testing.T, path string, count int) []string {
 	return docIDs
 }
 
+func createTestWARCMdMissingHeaders(t *testing.T, path string) string {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create %s: %v", path, err)
+	}
+	defer f.Close()
+
+	docID := "11111111-2222-3333-4444-555555555555"
+	body := "Title: Sample Metadata Title\nDate: 2026-03-02T14:00:00Z\nURL: https://example-meta.com/path\nHost: example-meta.com\n\n[Sample Metadata Title](https://example-meta.com/path)\n\ncontent body\n"
+	hdr := warcpkg.Header{
+		"WARC-Type":      warcpkg.TypeConversion,
+		"WARC-Record-ID": fmt.Sprintf("<urn:uuid:%s>", docID),
+		"WARC-Date":      "not-a-date",
+		"Content-Type":   "text/markdown",
+		"Content-Length": strconv.Itoa(len(body)),
+	}
+	rec := &warcpkg.Record{Header: hdr, Body: bytes.NewReader([]byte(body))}
+
+	gz, err := gzip.NewWriterLevel(f, gzip.BestSpeed)
+	if err != nil {
+		t.Fatalf("gzip writer: %v", err)
+	}
+	w := warcpkg.NewWriter(gz)
+	if err := w.WriteRecord(rec); err != nil {
+		t.Fatalf("write record: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatalf("close gzip: %v", err)
+	}
+	return docID
+}
+
 func TestDocStoreScanAndList(t *testing.T) {
 	root := t.TempDir()
 	warcMdDir := filepath.Join(root, "warc_md")
@@ -459,5 +495,73 @@ func TestHandleBrowseStats_TopDomains(t *testing.T) {
 	}
 	if len(stats.SizeBuckets) == 0 {
 		t.Fatal("expected non-empty SizeBuckets")
+	}
+}
+
+func TestDocStoreScan_MissingHeaderFallback(t *testing.T) {
+	root := t.TempDir()
+	warcMdDir := filepath.Join(root, "warc_md")
+	mustMkdir(t, warcMdDir)
+
+	warcMdPath := filepath.Join(warcMdDir, "00000.md.warc.gz")
+	docID := createTestWARCMdMissingHeaders(t, warcMdPath)
+
+	ds, err := NewDocStore(warcMdDir)
+	if err != nil {
+		t.Fatalf("NewDocStore: %v", err)
+	}
+	defer ds.Close()
+
+	ctx := context.Background()
+	n, err := ds.ScanShard(ctx, "", "00000", warcMdPath)
+	if err != nil {
+		t.Fatalf("ScanShard: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 doc, got %d", n)
+	}
+
+	doc, ok, err := ds.GetDoc(ctx, "", "00000", docID)
+	if err != nil {
+		t.Fatalf("GetDoc: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected doc to exist")
+	}
+	if doc.URL != "https://example-meta.com/path" {
+		t.Fatalf("expected URL fallback from markdown, got %q", doc.URL)
+	}
+	if doc.Host != "example-meta.com" {
+		t.Fatalf("expected Host fallback from markdown, got %q", doc.Host)
+	}
+	if doc.Title != "Sample Metadata Title" {
+		t.Fatalf("expected Title fallback from markdown, got %q", doc.Title)
+	}
+	if doc.CrawlDate.IsZero() || doc.CrawlDate.UTC().Format(time.RFC3339) != "2026-03-02T14:00:00Z" {
+		t.Fatalf("expected CrawlDate fallback from markdown, got %q", doc.CrawlDate.UTC().Format(time.RFC3339))
+	}
+}
+
+func TestParseDocTime(t *testing.T) {
+	tests := []struct {
+		raw  string
+		want string
+		ok   bool
+	}{
+		{raw: "2026-03-01T12:00:00Z", want: "2026-03-01T12:00:00Z", ok: true},
+		{raw: "2026-03-01 12:00:00", want: "2026-03-01T12:00:00Z", ok: true},
+		{raw: "20260301120000", want: "2026-03-01T12:00:00Z", ok: true},
+		{raw: "bad-date", ok: false},
+	}
+	for _, tc := range tests {
+		got, ok := parseDocTime(tc.raw)
+		if ok != tc.ok {
+			t.Fatalf("parseDocTime(%q) ok=%v, want %v", tc.raw, ok, tc.ok)
+		}
+		if ok {
+			if got.UTC().Format(time.RFC3339) != tc.want {
+				t.Fatalf("parseDocTime(%q) = %q, want %q", tc.raw, got.UTC().Format(time.RFC3339), tc.want)
+			}
+		}
 	}
 }
