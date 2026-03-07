@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index/bench"
+	indexpack "github.com/go-mizu/mizu/blueprints/search/pkg/index/pack"
 	"github.com/spf13/cobra"
 )
 
@@ -240,7 +241,7 @@ func runBenchIndex(ctx context.Context, dir, engineName string, maxDocs int64, b
 	}
 
 	t0 := time.Now()
-	pstats, err := index.RunPipelineFromChannel(ctx, eng, docCh, totalDocs, batchSize, progress)
+	pstats, err := indexpack.RunPipelineFromChannel(ctx, eng, docCh, totalDocs, batchSize, progress)
 	fmt.Fprintln(os.Stderr)
 	if err != nil {
 		return err

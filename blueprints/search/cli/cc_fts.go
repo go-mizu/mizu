@@ -13,13 +13,13 @@ import (
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index"
+	indexpack "github.com/go-mizu/mizu/blueprints/search/pkg/index/pack"
 	// Import all drivers for registration.
 	// duckdb registration happens via cli/duckdb_ops.go (excluded when -tags chdb).
-	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/chdb"
-	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/devnull"
-	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/sqlite"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/bleve"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/chdb"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/clickhouse"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/devnull"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/elasticsearch"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/flower/dahlia"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/flower/rose"
@@ -27,6 +27,7 @@ import (
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/opensearch"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/postgres"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/quickwit"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/sqlite"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/tantivy-lnx"
 	"github.com/spf13/cobra"
 )
@@ -173,7 +174,7 @@ func runCCFTSIndex(ctx context.Context, crawlID, fileIdx, engineName, source str
 			return fmt.Errorf("open engine: %w", err)
 		}
 
-		var stats *index.PipelineStats
+		var stats *indexpack.PipelineStats
 		var pipeErr error
 
 		if source == "files" {
@@ -186,13 +187,13 @@ func runCCFTSIndex(ctx context.Context, crawlID, fileIdx, engineName, source str
 			fmt.Fprintf(os.Stderr, "indexing %s → %s (engine=%s, batch=%d, workers=%d)\n",
 				sourceDir, outputDir, engineName, batchSize, workers)
 
-			cfg := index.PipelineConfig{
+			cfg := indexpack.PipelineConfig{
 				SourceDir: sourceDir,
 				BatchSize: batchSize,
 				Workers:   workers,
 			}
 			progress := makeFTSIndexProgress(engineName, outputDir)
-			stats, pipeErr = index.RunPipeline(ctx, eng, cfg, progress)
+			stats, pipeErr = indexpack.RunPipeline(ctx, eng, cfg, progress)
 			fmt.Fprintln(os.Stderr) // newline after progress
 		} else {
 			packDir := filepath.Join(baseDir, "pack")
@@ -243,8 +244,8 @@ func runCCFTSIndex(ctx context.Context, crawlID, fileIdx, engineName, source str
 }
 
 // makeFTSIndexProgress returns a ProgressFunc for the files pipeline.
-func makeFTSIndexProgress(engineName, outputDir string) index.ProgressFunc {
-	return func(stats *index.PipelineStats) {
+func makeFTSIndexProgress(engineName, outputDir string) indexpack.ProgressFunc {
+	return func(stats *indexpack.PipelineStats) {
 		total := stats.TotalFiles.Load()
 		done := stats.DocsIndexed.Load()
 		elapsed := time.Since(stats.StartTime).Seconds()
@@ -269,7 +270,7 @@ func makeFTSIndexProgress(engineName, outputDir string) index.ProgressFunc {
 }
 
 // makeFTSPackProgress returns a PackProgressFunc for pack-based pipelines.
-func makeFTSPackProgress(engineName, source, outputDir string) index.PackProgressFunc {
+func makeFTSPackProgress(engineName, source, outputDir string) indexpack.PackProgressFunc {
 	return func(done, total int64, elapsed time.Duration) {
 		secs := elapsed.Seconds()
 		rate := float64(0)
@@ -299,7 +300,7 @@ func makeFTSPackProgress(engineName, source, outputDir string) index.PackProgres
 // runCCFTSIndexFromPackFile indexes documents from a pre-packed file into eng.
 // The caller is responsible for opening eng before calling and closing it after.
 // source determines which reader is used; packFile is the absolute path to the pack file.
-func runCCFTSIndexFromPackFile(ctx context.Context, source string, eng index.Engine, packFile string, batchSize int, progress index.PackProgressFunc) (*index.PipelineStats, error) {
+func runCCFTSIndexFromPackFile(ctx context.Context, source string, eng index.Engine, packFile string, batchSize int, progress indexpack.PackProgressFunc) (*indexpack.PipelineStats, error) {
 	// Fast path: if the engine implements BulkLoader and source is parquet,
 	// bypass the Go streaming pipeline entirely — let the engine ingest the
 	// file natively (e.g. DuckDB's read_parquet() vectorised path).
@@ -310,7 +311,7 @@ func runCCFTSIndexFromPackFile(ctx context.Context, source string, eng index.Eng
 		if bulkErr != nil {
 			return nil, fmt.Errorf("bulk load: %w", bulkErr)
 		}
-		stats := &index.PipelineStats{StartTime: t0}
+		stats := &indexpack.PipelineStats{StartTime: t0}
 		stats.DocsIndexed.Store(n)
 		elapsed := time.Since(t0)
 		fmt.Fprintf(os.Stderr, "  bulk load: %d docs in %s (%.0f docs/s)\n",
@@ -320,11 +321,11 @@ func runCCFTSIndexFromPackFile(ctx context.Context, source string, eng index.Eng
 
 	switch source {
 	case "parquet":
-		return index.RunPipelineFromParquet(ctx, eng, packFile, batchSize, progress)
+		return indexpack.RunPipelineFromParquet(ctx, eng, packFile, batchSize, progress)
 	case "bin":
-		return index.RunPipelineFromFlatBin(ctx, eng, packFile, batchSize, progress)
+		return indexpack.RunPipelineFromFlatBin(ctx, eng, packFile, batchSize, progress)
 	case "markdown":
-		return index.RunPipelineFromFlatBinGz(ctx, eng, packFile, batchSize, progress)
+		return indexpack.RunPipelineFromFlatBinGz(ctx, eng, packFile, batchSize, progress)
 	case "duckdb":
 		return runPipelineFromDuckDBRaw(ctx, eng, packFile, batchSize, progress)
 	default:
@@ -443,7 +444,7 @@ func runCCFTSPack(ctx context.Context, crawlID, fileIdx, format string, batchSiz
 func runPackFormat(ctx context.Context, format, markdownDir, packFile string, batchSize, workers int) error {
 	fmt.Fprintf(os.Stderr, "packing [%s] → %s\n", format, packFile)
 
-	progress := func(stats *index.PipelineStats) {
+	progress := func(stats *indexpack.PipelineStats) {
 		total := stats.TotalFiles.Load()
 		done := stats.DocsIndexed.Load()
 		elapsed := time.Since(stats.StartTime).Seconds()
@@ -466,16 +467,16 @@ func runPackFormat(ctx context.Context, format, markdownDir, packFile string, ba
 	}
 
 	var (
-		stats *index.PipelineStats
+		stats *indexpack.PipelineStats
 		err   error
 	)
 	switch format {
 	case "parquet":
-		stats, err = index.PackParquet(ctx, markdownDir, packFile, workers, batchSize, progress)
+		stats, err = indexpack.PackParquet(ctx, markdownDir, packFile, workers, batchSize, progress)
 	case "bin":
-		stats, err = index.PackFlatBin(ctx, markdownDir, packFile, workers, batchSize, progress)
+		stats, err = indexpack.PackFlatBin(ctx, markdownDir, packFile, workers, batchSize, progress)
 	case "markdown":
-		stats, err = index.PackFlatBinGz(ctx, markdownDir, packFile, workers, batchSize, progress)
+		stats, err = indexpack.PackFlatBinGz(ctx, markdownDir, packFile, workers, batchSize, progress)
 	case "duckdb":
 		stats, err = packDuckDBRaw(ctx, markdownDir, packFile, workers, batchSize, progress)
 	default:
