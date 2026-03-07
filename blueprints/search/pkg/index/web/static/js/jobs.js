@@ -225,6 +225,19 @@ function onJobUpdate(msg) {
       const el = $('job-detail-content');
       if (el) renderJobDetailContent(job);
     }
+    // Live progress on Overview: re-render the active-jobs pane (pure in-memory, fast).
+    if (state.currentPage === 'overview' && $('overview-content')) {
+      renderOverviewContent(state.central.overview, state.central.jobs);
+    }
+    // Live progress on WARC detail: update the matching job entry and re-render.
+    if (state.currentPage === 'warc' && state.warcDetail && $('warc-detail-content')) {
+      const wdJob = (state.warcDetail.jobs || []).find(j => j.id === msg.job_id);
+      if (wdJob) {
+        wdJob.progress = msg.progress;
+        wdJob.message = msg.message;
+        renderWARCDetailContent(state.warcDetail, (state.warcDetail.warc || {}).index);
+      }
+    }
   } else if (msg.type === 'job_update') {
     job.status = msg.status;
     if (msg.error) job.error = msg.error;
@@ -243,6 +256,10 @@ function onJobUpdate(msg) {
     if (state.currentPage === 'job-detail') {
       const el = $('job-detail-content');
       if (el) renderJobDetailContent(job);
+    }
+    // Keep overview active-jobs pane in sync on any status change.
+    if (state.currentPage === 'overview' && $('overview-content')) {
+      renderOverviewContent(state.central.overview, state.central.jobs);
     }
     // When a pipeline job completes, refresh stats on visible pages.
     if (isDone && msg.status === 'completed') {
@@ -405,7 +422,7 @@ async function renderJobs() {
     <div class="page-shell${hasCache ? '' : ' anim-fade-in'}">
       <div class="page-header mb-4">
         <h1 class="page-title">Jobs</h1>
-        <button onclick="renderJobs()" class="ui-btn px-3 py-2 text-xs font-mono">Reload</button>
+        <span id="jobs-live" class="text-[10px] font-mono ui-subtle">● live</span>
       </div>
       <div id="jobs-content"></div>
     </div>`;
@@ -552,6 +569,12 @@ function renderJobDetailContent(job) {
 // Refresh stats on whichever page is currently visible after a job completes.
 async function refreshAfterJobComplete(completedJob) {
   try {
+    // For pipeline jobs, force a metadata recalc before fetching fresh state.
+    const pipelineTypes = ['download', 'markdown', 'pack', 'index'];
+    if (completedJob && pipelineTypes.includes(completedJob.type)) {
+      const crawl = (state.central.overview && state.central.overview.crawl_id) || '';
+      apiMetaRefresh(crawl, true).catch(() => {});
+    }
     await refreshCentralState(true);
     if (state.currentPage === 'warc' && state.warcDetail) {
       // On WARC detail: reload the detail to get updated metadata.

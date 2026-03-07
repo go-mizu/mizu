@@ -300,7 +300,7 @@ async function triggerPackShard(shard) {
     el.innerHTML = `<div class="text-xs text-red-400 py-8">${esc('Failed to queue markdown job: ' + e.message)}</div>`;
     return;
   }
-  progress.md.id = mdRes && mdRes.job && mdRes.job.id;
+  progress.md.id = mdRes && (mdRes.id || (mdRes.job && mdRes.job.id));
   if (!progress.md.id) {
     el.innerHTML = `<div class="text-xs text-red-400 py-8">Failed to create markdown job.</div>`;
     return;
@@ -316,7 +316,7 @@ async function triggerPackShard(shard) {
     if (m.status === 'completed' && !progress.idx.id) {
       try {
         const idxRes = await apiPost('/api/jobs', { type: 'index', files: filesStr, source: 'files' });
-        progress.idx.id = idxRes && idxRes.job && idxRes.job.id;
+        progress.idx.id = idxRes && (idxRes.id || (idxRes.job && idxRes.job.id));
         if (progress.idx.id) {
           wsClient.subscribe(progress.idx.id, (m2) => {
             if (m2.progress !== undefined) progress.idx.pct = Math.round((m2.progress || 0) * 100);

@@ -8,9 +8,8 @@ async function renderOverview() {
     <div class="page-shell anim-fade-in">
       <div class="page-header">
         <h1 class="page-title">Overview</h1>
-        <button onclick="refreshOverviewMeta()" class="ui-btn px-3 py-2 text-xs font-mono">Reload</button>
+        <span id="overview-live" class="text-[10px] font-mono ui-subtle">● live</span>
       </div>
-      <div id="overview-refresh-msg" class="meta-line mb-4"></div>
       <div id="overview-content">
         <div class="ui-empty">loading...</div>
       </div>
@@ -20,6 +19,8 @@ async function renderOverview() {
   // Always render immediately — cached data from localStorage means no "loading..." flash.
   // Falls back to zeros/empty if first ever visit.
   renderOverviewContent(state.central.overview || {}, state.central.jobs || []);
+  // Subscribe to WS job updates so the page auto-refreshes when jobs complete.
+  ensureJobStreamSubscribed();
   // Refresh in background; update when fresh data arrives.
   refreshCentralState().then(() => {
     if (state.currentPage === 'overview') renderOverviewContent(state.central.overview, state.central.jobs);
@@ -248,19 +249,3 @@ function renderOverviewContent(d, jobs) {
     ${storageHTML}`;
 }
 
-async function refreshOverviewMeta() {
-  const msg = $('overview-refresh-msg');
-  if (msg) msg.textContent = 'requesting metadata refresh...';
-  try {
-    const crawl = (state.central.overview && state.central.overview.crawl_id) || '';
-    const res = await apiMetaRefresh(crawl, true);
-    const accepted = !!(res && res.accepted);
-    if (msg) msg.textContent = accepted ? 'refresh started' : 'refresh already in progress';
-    setTimeout(() => {
-      refreshCentralState(true).catch(() => {});
-      renderOverview();
-    }, 350);
-  } catch (e) {
-    if (msg) msg.textContent = `refresh failed: ${e.message}`;
-  }
-}

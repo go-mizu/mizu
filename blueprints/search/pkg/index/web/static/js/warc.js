@@ -49,7 +49,7 @@ async function renderWARC(offset = state.warcOffset || 0, query = state.warcQuer
     <div class="page-shell${hasCache ? '' : ' anim-fade-in'}">
       <div class="page-header mb-4">
         <h1 class="page-title">WARC Console</h1>
-        <button onclick="renderWARC(0)" class="ui-btn px-3 py-2 text-xs font-mono">Reload</button>
+        <span id="warc-live" class="text-[10px] font-mono ui-subtle">● live</span>
       </div>
       <div id="warc-summary"></div>
       <div id="warc-tabs" class="mb-3"></div>
@@ -68,6 +68,9 @@ async function renderWARC(offset = state.warcOffset || 0, query = state.warcQuer
     renderWARCTable({ warcs: state.warcRows, summary: state.warcSummary, total: state.warcTotal,
       offset: state.warcOffset, limit: state.warcLimit });
   }
+
+  // Subscribe to WS job updates so the table auto-refreshes when jobs complete.
+  ensureJobStreamSubscribed();
 
   try {
     const [data] = await Promise.all([
@@ -565,7 +568,7 @@ function renderWARCDetailContent(data, index) {
   $('warc-detail-content').innerHTML = `
     <div class="page-header mb-3">
       <h1 class="page-title">WARC ${esc(w.index || index)}</h1>
-      <button onclick="renderWARCDetail('${esc(w.index || index)}')" class="ui-btn px-3 py-2 text-xs font-mono">Reload</button>
+      <span class="text-[10px] font-mono ui-subtle">● live</span>
     </div>
     <div id="warc-action-msg" class="meta-line mb-3">${esc(warcActionMessage)}</div>
 
