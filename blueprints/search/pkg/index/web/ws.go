@@ -144,6 +144,24 @@ func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 	go client.readPump()
 }
 
+// BroadcastAll sends a JSON-encoded message to ALL connected clients
+// regardless of their subscription set.
+func (h *WSHub) BroadcastAll(msg any) {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		logErrorf("ws broadcast-all marshal failed: %v", err)
+		return
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for c := range h.clients {
+		select {
+		case c.send <- data:
+		default:
+		}
+	}
+}
+
 // Broadcast sends a JSON-encoded message to all clients subscribed to jobID.
 // Clients subscribed to "*" receive all broadcasts.
 func (h *WSHub) Broadcast(jobID string, msg any) {

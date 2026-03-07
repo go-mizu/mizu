@@ -33,9 +33,10 @@ class WSClient {
       if (jobId) {
         const cbs = this.listeners.get(jobId);
         if (cbs) cbs.forEach(cb => cb(msg));
-        const wildcard = this.listeners.get('*');
-        if (wildcard) wildcard.forEach(cb => cb(msg));
       }
+      // Wildcard listeners receive ALL messages (with or without job_id).
+      const wildcard = this.listeners.get('*');
+      if (wildcard) wildcard.forEach(cb => cb(msg));
     };
     this.ws.onclose = () => {
       this.connected = false;
