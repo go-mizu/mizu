@@ -150,18 +150,27 @@ search serp rotate
 search serp signup jina --verbose
 ```
 
-### Server deployment
+### Server deployment (headless Linux)
 
 ```bash
 # Deploy binary
 make build-on-server SERVER=2
 
-# On server: install patchright dependencies
+# On server: install all dependencies
 ~/bin/search serp install
 
 # On server: auto-provision and search
 ~/bin/search serp search "query" --auto
 ```
+
+On Linux without a display (`$DISPLAY` unset), the Go wrapper automatically
+uses `xvfb-run` to provide a virtual framebuffer. Turnstile requires a
+visible browser context — headless Chrome cannot solve it.
+
+Chrome flags added on Linux:
+- `--no-sandbox` (required as root)
+- `--use-angle=swiftshader` (software GL, prevents crash under xvfb)
+- `--disable-dev-shm-usage` (avoids /dev/shm exhaustion)
 
 ## Dependencies
 
@@ -171,6 +180,7 @@ make build-on-server SERVER=2
 | patchright | Undetected Playwright fork | `pip install patchright` |
 | chromium | Browser for Turnstile solving | `python3 -m patchright install chromium` |
 | system libs | libcups, libnss, etc. | `python3 -m patchright install-deps chromium` |
+| xvfb | Virtual framebuffer (Linux) | `apt install xvfb` |
 
 The `search serp install` command handles all of the above automatically.
 
