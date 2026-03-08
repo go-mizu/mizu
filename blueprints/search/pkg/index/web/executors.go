@@ -34,6 +34,8 @@ func (m *Manager) RunJob(job *Job) {
 			err = m.runPackJob(ctx, job)
 		case "index":
 			err = m.runIndexJob(ctx, job)
+		case "parquet_download":
+			err = m.runParquetDownloadJob(ctx, job)
 		default:
 			m.Fail(job.ID, fmt.Errorf("unknown job type: %s", job.Config.Type))
 			return
@@ -229,6 +231,75 @@ func (m *Manager) getManifestPaths(ctx context.Context, crawlID string) ([]strin
 	return paths, nil
 }
 
+func (m *Manager) runParquetDownloadJob(ctx context.Context, job *Job) error {
+	cfg := cc.DefaultConfig()
+	cfg.CrawlID = m.crawlID
+	cfg.DataDir = filepath.Dir(m.baseDir)
+
+	client := cc.NewClient(cfg.BaseURL, cfg.TransportShards)
+
+	// Parse requested manifest indices from Config.Files (comma-separated).
+	var idxSet map[int]bool
+	if job.Config.Files != "" && job.Config.Files != "all" {
+		parts := strings.Split(job.Config.Files, ",")
+		idxSet = make(map[int]bool, len(parts))
+		for _, p := range parts {
+			if n, err := strconv.Atoi(strings.TrimSpace(p)); err == nil {
+				idxSet[n] = true
+			}
+		}
+	}
+
+	opts := cc.ParquetListOptions{}
+	if job.Config.Source != "" && job.Config.Source != "all" {
+		opts.Subset = job.Config.Source
+	}
+
+	files, err := cc.ListParquetFiles(ctx, client, cfg, opts)
+	if err != nil {
+		return fmt.Errorf("parquet manifest: %w", err)
+	}
+
+	if idxSet != nil {
+		filtered := files[:0]
+		for _, f := range files {
+			if idxSet[f.ManifestIndex] {
+				filtered = append(filtered, f)
+			}
+		}
+		files = filtered
+	}
+
+	// Skip already-downloaded files.
+	toDownload := files[:0]
+	for _, f := range files {
+		localPath := cc.LocalParquetPathForRemote(cfg, f.RemotePath)
+		if _, serr := os.Stat(localPath); serr != nil {
+			toDownload = append(toDownload, f)
+		}
+	}
+
+	if len(toDownload) == 0 {
+		return nil
+	}
+
+	emit := nonBlockingEmit(func(p *cc.DownloadProgress) {
+		if p.TotalFiles <= 0 {
+			return
+		}
+		pct := float64(p.FileIndex) / float64(p.TotalFiles)
+		if p.Done || p.Skipped {
+			pct = float64(p.FileIndex+1) / float64(p.TotalFiles)
+		}
+		msg := fmt.Sprintf("[%d/%d] %s", p.FileIndex+1, p.TotalFiles, p.File)
+		m.UpdateProgress(job.ID, pct, msg, 0)
+	})
+
+	return cc.DownloadParquetFiles(ctx, client, cfg, toDownload, cfg.IndexWorkers, func(p cc.DownloadProgress) {
+		emit(&p)
+	})
+}
+
 // ── Compatibility wrappers ───────────────────────────────────────────────
 
 // execTask is a compatibility wrapper for tests and call-sites that need
@@ -243,6 +314,8 @@ func (m *Manager) execTask(ctx context.Context, job *Job) error {
 		return m.runPackJob(ctx, job)
 	case "index":
 		return m.runIndexJob(ctx, job)
+	case "parquet_download":
+		return m.runParquetDownloadJob(ctx, job)
 	default:
 		return fmt.Errorf("unknown job type: %s", job.Config.Type)
 	}

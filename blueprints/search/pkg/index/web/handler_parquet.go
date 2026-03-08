@@ -81,6 +81,7 @@ type parquetDownloadResponse struct {
 	Started   bool   `json:"started"`
 	Message   string `json:"message"`
 	FileCount int    `json:"file_count"`
+	JobID     string `json:"job_id,omitempty"`
 }
 
 type parquetFileDetailResponse struct {
@@ -131,6 +132,15 @@ type parquetSubsetStatsResponse struct {
 	DiskBytes int64                     `json:"disk_bytes"`
 	ElapsedMs int64                     `json:"elapsed_ms"`
 	Charts    map[string][]chartEntry   `json:"charts"`
+}
+
+type parquetFileStatsResponse struct {
+	ManifestIndex int                     `json:"manifest_index"`
+	Subset        string                  `json:"subset"`
+	RowCount      int64                   `json:"row_count"`
+	ElapsedMs     int64                   `json:"elapsed_ms"`
+	KPIs          map[string]float64      `json:"kpis,omitempty"`
+	Charts        map[string][]chartEntry `json:"charts"`
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -459,17 +469,24 @@ func (s *Server) handleParquetDownload(c *mizu.Ctx) error {
 		})
 	}
 
-	// Start background download.
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
-		defer cancel()
-		_ = cc.DownloadParquetFiles(ctx, client, cfg, toDownload, cfg.IndexWorkers, nil)
-	}()
+	// Encode manifest indices so the executor can filter the parquet manifest.
+	idxStrs := make([]string, len(toDownload))
+	for i, f := range toDownload {
+		idxStrs[i] = strconv.Itoa(f.ManifestIndex)
+	}
+
+	job := s.Jobs.Create(JobConfig{
+		Type:   "parquet_download",
+		Source: req.Subset,
+		Files:  strings.Join(idxStrs, ","),
+	})
+	s.Jobs.RunJob(job)
 
 	return c.JSON(200, parquetDownloadResponse{
 		Started:   true,
-		Message:   fmt.Sprintf("downloading %d parquet files in background", len(toDownload)),
+		Message:   fmt.Sprintf("downloading %d parquet files", len(toDownload)),
 		FileCount: len(toDownload),
+		JobID:     job.ID,
 	})
 }
 
@@ -723,38 +740,69 @@ func (s *Server) handleParquetStats(c *mizu.Ctx) error {
 	return c.JSON(200, resp)
 }
 
+// subsetKPIQueries defines scalar metric queries per subset (returns a single float64 row).
+var subsetKPIQueries = map[string][]struct {
+	Key   string
+	Query string
+}{
+	"warc": {
+		{Key: "unique_domains", Query: "SELECT COUNT(DISTINCT url_host_registered_domain) FROM ccindex WHERE url_host_registered_domain IS NOT NULL"},
+		{Key: "unique_tlds", Query: "SELECT COUNT(DISTINCT url_host_tld) FROM ccindex WHERE url_host_tld IS NOT NULL"},
+		{Key: "https_pct", Query: "SELECT COALESCE(ROUND(100.0 * SUM(CASE WHEN url_protocol = 'https' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 1), 0) FROM ccindex"},
+	},
+	"non200responses": {
+		{Key: "unique_domains", Query: "SELECT COUNT(DISTINCT url_host_registered_domain) FROM ccindex WHERE url_host_registered_domain IS NOT NULL"},
+		{Key: "redirect_pct", Query: "SELECT COALESCE(ROUND(100.0 * SUM(CASE WHEN fetch_redirect IS NOT NULL AND fetch_redirect != '' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 1), 0) FROM ccindex"},
+		{Key: "unique_statuses", Query: "SELECT COUNT(DISTINCT fetch_status) FROM ccindex"},
+	},
+	"robotstxt": {
+		{Key: "unique_domains", Query: "SELECT COUNT(DISTINCT url_host_registered_domain) FROM ccindex WHERE url_host_registered_domain IS NOT NULL"},
+		{Key: "unique_tlds", Query: "SELECT COUNT(DISTINCT url_host_tld) FROM ccindex WHERE url_host_tld IS NOT NULL"},
+		{Key: "https_pct", Query: "SELECT COALESCE(ROUND(100.0 * SUM(CASE WHEN url_protocol = 'https' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 1), 0) FROM ccindex"},
+	},
+	"crawldiagnostics": {
+		{Key: "unique_domains", Query: "SELECT COUNT(DISTINCT url_host_registered_domain) FROM ccindex WHERE url_host_registered_domain IS NOT NULL"},
+		{Key: "unique_statuses", Query: "SELECT COUNT(DISTINCT fetch_status) FROM ccindex"},
+		{Key: "unique_mimes", Query: "SELECT COUNT(DISTINCT content_mime_detected) FROM ccindex WHERE content_mime_detected IS NOT NULL"},
+	},
+}
+
 // subsetChartQueries defines which distribution queries to run per subset.
 var subsetChartQueries = map[string][]struct {
 	Key   string
 	Query string
 }{
 	"warc": {
-		{Key: "tld", Query: "SELECT url_host_tld AS label, COUNT(*) AS value FROM ccindex WHERE url_host_tld IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
-		{Key: "domain", Query: "SELECT url_host_registered_domain AS label, COUNT(*) AS value FROM ccindex WHERE url_host_registered_domain IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
+		{Key: "tld", Query: "SELECT url_host_tld AS label, COUNT(*) AS value FROM ccindex WHERE url_host_tld IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 25"},
+		{Key: "domain", Query: "SELECT url_host_registered_domain AS label, COUNT(*) AS value FROM ccindex WHERE url_host_registered_domain IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 25"},
 		{Key: "mime", Query: "SELECT content_mime_detected AS label, COUNT(*) AS value FROM ccindex WHERE content_mime_detected IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
 		{Key: "language", Query: "SELECT content_languages AS label, COUNT(*) AS value FROM ccindex WHERE content_languages IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
+		{Key: "status", Query: "SELECT CAST(fetch_status AS VARCHAR) AS label, COUNT(*) AS value FROM ccindex GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
 		{Key: "charset", Query: "SELECT content_charset AS label, COUNT(*) AS value FROM ccindex WHERE content_charset IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 15"},
-		{Key: "protocol", Query: "SELECT url_protocol AS label, COUNT(*) AS value FROM ccindex WHERE url_protocol IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 10"},
-		{Key: "status", Query: "SELECT CAST(fetch_status AS VARCHAR) AS label, COUNT(*) AS value FROM ccindex GROUP BY 1 ORDER BY 2 DESC LIMIT 15"},
+		{Key: "protocol", Query: "SELECT url_protocol AS label, COUNT(*) AS value FROM ccindex WHERE url_protocol IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 5"},
+		{Key: "segment", Query: "SELECT warc_segment AS label, COUNT(*) AS value FROM ccindex WHERE warc_segment IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 10"},
 	},
 	"non200responses": {
 		{Key: "status", Query: "SELECT CAST(fetch_status AS VARCHAR) AS label, COUNT(*) AS value FROM ccindex GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
-		{Key: "domain", Query: "SELECT url_host_registered_domain AS label, COUNT(*) AS value FROM ccindex WHERE url_host_registered_domain IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
+		{Key: "domain", Query: "SELECT url_host_registered_domain AS label, COUNT(*) AS value FROM ccindex WHERE url_host_registered_domain IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 25"},
 		{Key: "tld", Query: "SELECT url_host_tld AS label, COUNT(*) AS value FROM ccindex WHERE url_host_tld IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
 		{Key: "redirect", Query: "SELECT fetch_redirect AS label, COUNT(*) AS value FROM ccindex WHERE fetch_redirect IS NOT NULL AND fetch_redirect != '' GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
 		{Key: "mime", Query: "SELECT content_mime_detected AS label, COUNT(*) AS value FROM ccindex WHERE content_mime_detected IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 15"},
-	},
-	"robotstxt": {
-		{Key: "domain", Query: "SELECT url_host_registered_domain AS label, COUNT(*) AS value FROM ccindex WHERE url_host_registered_domain IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
-		{Key: "tld", Query: "SELECT url_host_tld AS label, COUNT(*) AS value FROM ccindex WHERE url_host_tld IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
-		{Key: "status", Query: "SELECT CAST(fetch_status AS VARCHAR) AS label, COUNT(*) AS value FROM ccindex GROUP BY 1 ORDER BY 2 DESC LIMIT 10"},
 		{Key: "protocol", Query: "SELECT url_protocol AS label, COUNT(*) AS value FROM ccindex WHERE url_protocol IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 5"},
 	},
-	"crawldiagnostics": {
-		{Key: "domain", Query: "SELECT url_host_registered_domain AS label, COUNT(*) AS value FROM ccindex WHERE url_host_registered_domain IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
+	"robotstxt": {
+		{Key: "domain", Query: "SELECT url_host_registered_domain AS label, COUNT(*) AS value FROM ccindex WHERE url_host_registered_domain IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 25"},
+		{Key: "tld", Query: "SELECT url_host_tld AS label, COUNT(*) AS value FROM ccindex WHERE url_host_tld IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 25"},
 		{Key: "status", Query: "SELECT CAST(fetch_status AS VARCHAR) AS label, COUNT(*) AS value FROM ccindex GROUP BY 1 ORDER BY 2 DESC LIMIT 15"},
-		{Key: "mime", Query: "SELECT content_mime_detected AS label, COUNT(*) AS value FROM ccindex WHERE content_mime_detected IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 15"},
+		{Key: "protocol", Query: "SELECT url_protocol AS label, COUNT(*) AS value FROM ccindex WHERE url_protocol IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 5"},
+		{Key: "segment", Query: "SELECT warc_segment AS label, COUNT(*) AS value FROM ccindex WHERE warc_segment IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 10"},
+	},
+	"crawldiagnostics": {
+		{Key: "domain", Query: "SELECT url_host_registered_domain AS label, COUNT(*) AS value FROM ccindex WHERE url_host_registered_domain IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 25"},
 		{Key: "tld", Query: "SELECT url_host_tld AS label, COUNT(*) AS value FROM ccindex WHERE url_host_tld IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
+		{Key: "status", Query: "SELECT CAST(fetch_status AS VARCHAR) AS label, COUNT(*) AS value FROM ccindex GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
+		{Key: "mime", Query: "SELECT content_mime_detected AS label, COUNT(*) AS value FROM ccindex WHERE content_mime_detected IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 15"},
+		{Key: "segment", Query: "SELECT warc_segment AS label, COUNT(*) AS value FROM ccindex WHERE warc_segment IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 10"},
 	},
 }
 
@@ -836,5 +884,102 @@ func (s *Server) handleParquetSubsetStats(c *mizu.Ctx) error {
 		DiskBytes: diskBytes,
 		ElapsedMs: time.Since(start).Milliseconds(),
 		Charts:    charts,
+	})
+}
+
+// handleParquetFileStats returns distribution charts and KPI metrics for a single parquet file.
+func (s *Server) handleParquetFileStats(c *mizu.Ctx) error {
+	idxStr := c.Param("index")
+	idx, err := strconv.Atoi(idxStr)
+	if err != nil {
+		return c.JSON(400, errResp{"invalid manifest index"})
+	}
+
+	cfg := s.ccConfig()
+	client := cc.NewClient(cfg.BaseURL, cfg.TransportShards)
+	files, err := cc.ListParquetFiles(c.Request().Context(), client, cfg, cc.ParquetListOptions{})
+	if err != nil {
+		return c.JSON(500, errResp{fmt.Sprintf("manifest: %v", err)})
+	}
+
+	var found *cc.ParquetFile
+	for i := range files {
+		if files[i].ManifestIndex == idx {
+			found = &files[i]
+			break
+		}
+	}
+	if found == nil {
+		return c.JSON(404, errResp{"parquet file not found in manifest"})
+	}
+
+	localPath := cc.LocalParquetPathForRemote(cfg, found.RemotePath)
+	if _, statErr := os.Stat(localPath); statErr != nil {
+		return c.JSON(400, errResp{"file not downloaded locally"})
+	}
+
+	chartQueries := subsetChartQueries[found.Subset]
+	kpiQueries := subsetKPIQueries[found.Subset]
+
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return c.JSON(500, errResp{fmt.Sprintf("duckdb: %v", err)})
+	}
+	defer db.Close()
+
+	viewSQL := fmt.Sprintf(
+		"CREATE VIEW ccindex AS SELECT * FROM read_parquet(%s, hive_partitioning=true)",
+		duckQuotePath(localPath),
+	)
+	if _, err := db.Exec(viewSQL); err != nil {
+		return c.JSON(500, errResp{fmt.Sprintf("view: %v", err)})
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request().Context(), 60*time.Second)
+	defer cancel()
+
+	start := time.Now()
+
+	var rowCount int64
+	_ = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ccindex").Scan(&rowCount)
+
+	// KPI scalars.
+	kpis := make(map[string]float64, len(kpiQueries))
+	for _, q := range kpiQueries {
+		var val float64
+		if db.QueryRowContext(ctx, q.Query).Scan(&val) == nil {
+			kpis[q.Key] = val
+		}
+	}
+
+	// Distribution charts.
+	charts := make(map[string][]chartEntry, len(chartQueries))
+	for _, q := range chartQueries {
+		rows, qErr := db.QueryContext(ctx, q.Query)
+		if qErr != nil {
+			charts[q.Key] = []chartEntry{}
+			continue
+		}
+		var entries []chartEntry
+		for rows.Next() {
+			var e chartEntry
+			if rows.Scan(&e.Label, &e.Value) == nil {
+				entries = append(entries, e)
+			}
+		}
+		rows.Close()
+		if entries == nil {
+			entries = []chartEntry{}
+		}
+		charts[q.Key] = entries
+	}
+
+	return c.JSON(200, parquetFileStatsResponse{
+		ManifestIndex: idx,
+		Subset:        found.Subset,
+		RowCount:      rowCount,
+		ElapsedMs:     time.Since(start).Milliseconds(),
+		KPIs:          kpis,
+		Charts:        charts,
 	})
 }
