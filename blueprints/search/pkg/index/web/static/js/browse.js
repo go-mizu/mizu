@@ -349,6 +349,9 @@ function loadShardView(shard) {
 }
 
 function renderBrowseViewTabs(shard, activeView) {
+  const status = state.browseExportMessage
+    ? `<span class="text-[10px] font-mono ui-subtle truncate max-w-[280px]" title="${esc(state.browseExportMessage)}">${esc(state.browseExportMessage)}</span>`
+    : '';
   return `
     <div class="flex items-center gap-4 border-b mb-4 pb-0">
       <button onclick="state.browseView='docs';loadShardDocs('${esc(shard)}',1)"
@@ -356,7 +359,30 @@ function renderBrowseViewTabs(shard, activeView) {
       <button onclick="state.browseView='stats';loadShardStats('${esc(shard)}')"
         class="text-xs pb-2 transition-colors ${activeView==='stats' ? 'tab-active' : 'tab-inactive'}">Stats</button>
       <span class="ml-auto text-xs font-mono ui-subtle">${esc(shard)}</span>
+      <button onclick="browseExportShard('${esc(shard)}', false)" class="ui-btn px-2 py-1 text-[10px] font-mono" ${state.browseExportRunning ? 'disabled' : ''}>Export parquet</button>
+      <button onclick="browseExportShard('${esc(shard)}', true)" class="ui-btn px-2 py-1 text-[10px] font-mono" ${state.browseExportRunning ? 'disabled' : ''}>Export + body</button>
+      ${status}
     </div>`;
+}
+
+async function browseExportShard(shard, includeMarkdownBody) {
+  if (state.browseExportRunning) return;
+  state.browseExportRunning = true;
+  state.browseExportMessage = includeMarkdownBody ? 'Exporting parquet with markdown body…' : 'Exporting parquet (metadata only)…';
+  state.browseExportPath = '';
+  state.browseExportRows = 0;
+  loadShardView(shard);
+  try {
+    const out = await apiBrowseExportParquet(shard, includeMarkdownBody, true);
+    state.browseExportPath = out.output_path || '';
+    state.browseExportRows = out.rows || 0;
+    state.browseExportMessage = `Exported ${state.browseExportRows.toLocaleString()} rows → ${state.browseExportPath || 'parquet file'}`;
+  } catch (e) {
+    state.browseExportMessage = `Export failed: ${e.message}`;
+  } finally {
+    state.browseExportRunning = false;
+    loadShardView(shard);
+  }
 }
 
 async function loadShardDocs(shard, page = 1) {

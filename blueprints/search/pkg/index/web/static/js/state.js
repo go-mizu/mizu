@@ -15,6 +15,10 @@ const state = {
   browseQ: '',
   browseSort: 'date',
   browseView: 'docs',
+  browseExportRunning: false,
+  browseExportMessage: '',
+  browseExportPath: '',
+  browseExportRows: 0,
   doc: null,
   theme: localStorage.getItem('fts-theme') || 'dark',
   // Central state — single source of truth shared across all pages

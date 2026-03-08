@@ -63,6 +63,14 @@ async function apiBrowseStats(shard) {
   return apiFetch(`/api/browse/stats?shard=${encodeURIComponent(shard)}`);
 }
 
+async function apiBrowseExportParquet(shard, includeMarkdownBody = false, overwrite = true) {
+  return apiPost('/api/browse/export-parquet', {
+    shard,
+    include_markdown_body: !!includeMarkdownBody,
+    overwrite: !!overwrite,
+  });
+}
+
 async function apiOverview() {
   return apiFetch('/api/overview');
 }
