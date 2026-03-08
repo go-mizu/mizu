@@ -7,12 +7,18 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index"
 	indexpack "github.com/go-mizu/mizu/blueprints/search/pkg/index/pack"
 	warcpkg "github.com/go-mizu/mizu/blueprints/search/pkg/warc"
 )
+
+// indexConcurrency is the number of shards indexed in parallel.
+const indexConcurrency = 2
 
 // IndexTask builds FTS indexes from packed or raw markdown data.
 // It is a self-contained core.Task with no dependency on Manager.
@@ -58,53 +64,61 @@ func NewIndexTask(crawlDir string, paths []string, selected []int, engine, sourc
 func (t *IndexTask) Run(ctx context.Context, emit func(*IndexState)) (IndexMetric, error) {
 	start := time.Now()
 	total := len(t.Selected)
-	var totalDocs int64
+	var totalDocs atomic.Int64
+
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(indexConcurrency)
 
 	for i, idx := range t.Selected {
-		if ctx.Err() != nil {
-			return IndexMetric{}, ctx.Err()
-		}
-		warcIdx := warcFileIndex(t.Paths[idx], idx)
-		outputDir := filepath.Join(t.CrawlDir, "fts", t.Engine, warcIdx)
+		i, idx := i, idx
+		g.Go(func() error {
+			warcIdx := warcFileIndex(t.Paths[idx], idx)
+			outputDir := filepath.Join(t.CrawlDir, "fts", t.Engine, warcIdx)
 
-		eng, err := openEngine(ctx, t.Engine, outputDir)
-		if err != nil {
-			return IndexMetric{}, err
-		}
-
-		emitIndexProgress(emit, i, total, warcIdx, t.Engine, t.Source, 0, 0, start)
-
-		var docs int64
-		if t.Source == "files" {
-			docs, err = indexFromWARCMd(ctx, eng, t.CrawlDir, warcIdx, func(done, docTotal int64, elapsed time.Duration) {
-				totalDocs = done
-				emitIndexProgress(emit, i, total, warcIdx, t.Engine, t.Source, done, docTotal, start)
-			})
-		} else {
-			docs, err = indexFromPack(ctx, eng, t.CrawlDir, t.Source, warcIdx, func(done, docTotal int64, elapsed time.Duration) {
-				totalDocs = done
-				emitIndexProgress(emit, i, total, warcIdx, t.Engine, t.Source, done, docTotal, start)
-			})
-		}
-
-		if err != nil {
-			eng.Close()
-			return IndexMetric{}, err
-		}
-		totalDocs = docs
-
-		if fin, ok := eng.(index.Finalizer); ok {
-			if err := fin.Finalize(ctx); err != nil {
-				eng.Close()
-				return IndexMetric{}, fmt.Errorf("finalize: %w", err)
+			eng, err := openEngine(gctx, t.Engine, outputDir)
+			if err != nil {
+				return err
 			}
-		}
-		eng.Close()
+
+			emitIndexProgress(emit, i, total, warcIdx, t.Engine, t.Source, 0, 0, start)
+
+			var docs int64
+			if t.Source == "files" {
+				docs, err = indexFromWARCMd(gctx, eng, t.CrawlDir, warcIdx, func(done, docTotal int64, elapsed time.Duration) {
+					totalDocs.Store(done)
+					emitIndexProgress(emit, i, total, warcIdx, t.Engine, t.Source, done, docTotal, start)
+				})
+			} else {
+				docs, err = indexFromPack(gctx, eng, t.CrawlDir, t.Source, warcIdx, func(done, docTotal int64, elapsed time.Duration) {
+					totalDocs.Store(done)
+					emitIndexProgress(emit, i, total, warcIdx, t.Engine, t.Source, done, docTotal, start)
+				})
+			}
+
+			if err != nil {
+				eng.Close()
+				return err
+			}
+			totalDocs.Add(docs)
+
+			if fin, ok := eng.(index.Finalizer); ok {
+				if err := fin.Finalize(gctx); err != nil {
+					eng.Close()
+					return fmt.Errorf("finalize: %w", err)
+				}
+			}
+			eng.Close()
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return IndexMetric{}, err
 	}
 
 	return IndexMetric{
 		Files:   total,
-		Docs:    totalDocs,
+		Docs:    totalDocs.Load(),
 		Elapsed: time.Since(start),
 	}, nil
 }

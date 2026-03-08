@@ -5,12 +5,20 @@ import (
 	"fmt"
 	"path/filepath"
 	"runtime"
+	"sync/atomic"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	warcmd "github.com/go-mizu/mizu/blueprints/search/pkg/warc_md"
 )
 
-// MarkdownTask converts downloaded WARC files to markdown.
+// markdownConcurrency is the number of WARC files converted in parallel.
+const markdownConcurrency = 2
+
+// MarkdownTask converts downloaded WARC files to .md.warc.gz (markdown WARC).
+// Uses warcmd.RunPack which goes directly from .warc.gz → .md.warc.gz,
+// preserving WARC-Target-URI, WARC-Date, and other headers.
 // It is a self-contained core.Task with no dependency on Manager.
 type MarkdownTask struct {
 	CrawlID  string   `json:"crawl_id"`
@@ -54,52 +62,69 @@ func (t *MarkdownTask) Run(ctx context.Context, emit func(*MarkdownState)) (Mark
 		return MarkdownMetric{Elapsed: time.Since(start)}, nil
 	}
 
-	cfg := markdownConfig(t.CrawlID, filepath.Dir(t.CrawlDir))
 	warcDir := filepath.Join(t.CrawlDir, "warc")
-	var totalDocs int64
+	warcMdDir := filepath.Join(t.CrawlDir, "warc_md")
+	var totalDocs atomic.Int64
+
+	// Oversubscribe: NumCPU*2 workers per shard (goroutines are cheap;
+	// oversubscription hides GC pauses and keeps all cores busy).
+	workersPerShard := runtime.NumCPU() * 2
+
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(markdownConcurrency)
 
 	for i, idx := range t.Selected {
-		if ctx.Err() != nil {
-			return MarkdownMetric{}, ctx.Err()
-		}
-		warcPath := t.Paths[idx]
-		warcIdx := warcFileIndex(warcPath, idx)
-		localPath := filepath.Join(warcDir, filepath.Base(warcPath))
-		if !fileExists(localPath) {
-			return MarkdownMetric{}, fmt.Errorf("warc file not found: %s (run download first)", localPath)
-		}
+		i, idx := i, idx
+		g.Go(func() error {
+			warcPath := t.Paths[idx]
+			warcIdx := warcFileIndex(warcPath, idx)
+			localPath := filepath.Join(warcDir, filepath.Base(warcPath))
+			if !fileExists(localPath) {
+				return fmt.Errorf("warc file not found: %s (run download first)", localPath)
+			}
 
-		extractCb := func(done, total, errors, readBytes, writeBytes int64, elapsed time.Duration, _ float64) {
-			totalDocs = done
-			emitMarkdownProgress(emit, i, len(t.Selected), warcIdx, "extract",
-				done, total, errors, readBytes, writeBytes, elapsed)
-		}
-		convertCb := func(done, total, errors, readBytes, writeBytes int64, elapsed time.Duration, _ float64) {
-			totalDocs = done
-			emitMarkdownProgress(emit, i, len(t.Selected), warcIdx, "convert",
-				done, total, errors, readBytes, writeBytes, elapsed)
-		}
+			outputPath := filepath.Join(warcMdDir, warcIdx+".md.warc.gz")
 
-		if _, err := warcmd.RunFilePipeline(ctx, cfg, warcIdx, []string{localPath}, extractCb, convertCb); err != nil {
-			return MarkdownMetric{}, fmt.Errorf("markdown %s: %w", warcIdx, err)
-		}
+			progressCb := func(done, total, errors, readBytes, writeBytes int64, elapsed time.Duration, _ float64) {
+				totalDocs.Store(done)
+				phase := "extract"
+				if total > 0 && done >= total {
+					phase = "convert"
+				}
+				emitMarkdownProgress(emit, i, len(t.Selected), warcIdx, phase,
+					done, total, errors, readBytes, writeBytes, elapsed)
+			}
+
+			cfg := warcmd.PackConfig{
+				InputFiles:  []string{localPath},
+				OutputPath:  outputPath,
+				Workers:     workersPerShard,
+				Force:       true,
+				StatusCode:  200,
+				MIMEFilter:  "text/html",
+				MaxBodySize: 512 * 1024,
+			}
+
+			stats, err := warcmd.RunPack(gctx, cfg, progressCb)
+			if err != nil {
+				return fmt.Errorf("markdown %s: %w", warcIdx, err)
+			}
+			if stats != nil {
+				totalDocs.Store(stats.OutputRecords)
+			}
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return MarkdownMetric{}, err
 	}
 
 	return MarkdownMetric{
 		Files:   total,
-		Docs:    totalDocs,
+		Docs:    totalDocs.Load(),
 		Elapsed: time.Since(start),
 	}, nil
-}
-
-// markdownConfig builds a warc_md pipeline configuration.
-func markdownConfig(crawlID, dataDir string) warcmd.Config {
-	cfg := warcmd.DefaultConfig(crawlID)
-	cfg.DataDir = dataDir
-	cfg.Workers = runtime.NumCPU()
-	cfg.Force = false
-	cfg.KeepTemp = false
-	return cfg
 }
 
 // emitMarkdownProgress emits a detailed markdown conversion state.

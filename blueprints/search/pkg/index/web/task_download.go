@@ -5,10 +5,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
 )
+
+// downloadConcurrency is the number of WARC files downloaded in parallel.
+const downloadConcurrency = 3
 
 // DownloadTask downloads WARC files from Common Crawl S3.
 // It is a self-contained core.Task with no dependency on Manager.
@@ -52,32 +58,40 @@ func (t *DownloadTask) Run(ctx context.Context, emit func(*DownloadState)) (Down
 
 	client := cc.NewClient("", 4)
 	total := len(t.Selected)
-	var totalBytes int64
+	var totalBytes atomic.Int64
+
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(downloadConcurrency)
 
 	for i, idx := range t.Selected {
-		if ctx.Err() != nil {
-			return DownloadMetric{}, ctx.Err()
-		}
-		remotePath := t.Paths[idx]
-		fileName := filepath.Base(remotePath)
-		warcIdx := warcFileIndex(remotePath, idx)
-		localPath := filepath.Join(warcDir, fileName)
-		fileStart := time.Now()
+		i, idx := i, idx
+		g.Go(func() error {
+			remotePath := t.Paths[idx]
+			fileName := filepath.Base(remotePath)
+			warcIdx := warcFileIndex(remotePath, idx)
+			localPath := filepath.Join(warcDir, fileName)
+			fileStart := time.Now()
 
-		emitDownloadProgress(emit, i, total, warcIdx, fileName, 0, 0, fileStart)
+			emitDownloadProgress(emit, i, total, warcIdx, fileName, 0, 0, fileStart)
 
-		err := client.DownloadFile(ctx, remotePath, localPath, func(received, bytesTotal int64) {
-			totalBytes = received
-			emitDownloadProgress(emit, i, total, warcIdx, fileName, received, bytesTotal, fileStart)
+			err := client.DownloadFile(gctx, remotePath, localPath, func(received, bytesTotal int64) {
+				totalBytes.Store(received)
+				emitDownloadProgress(emit, i, total, warcIdx, fileName, received, bytesTotal, fileStart)
+			})
+			if err != nil {
+				return fmt.Errorf("download %s: %w", fileName, err)
+			}
+			return nil
 		})
-		if err != nil {
-			return DownloadMetric{}, fmt.Errorf("download %s: %w", fileName, err)
-		}
+	}
+
+	if err := g.Wait(); err != nil {
+		return DownloadMetric{}, err
 	}
 
 	return DownloadMetric{
 		Files:   total,
-		Bytes:   totalBytes,
+		Bytes:   totalBytes.Load(),
 		Elapsed: time.Since(start),
 	}, nil
 }
