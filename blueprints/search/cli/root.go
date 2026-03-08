@@ -78,6 +78,7 @@ Get started:
 	root.AddCommand(NewX())
 	root.AddCommand(NewPerplexity())
 	root.AddCommand(NewQQ())
+	root.AddCommand(NewApify())
 	root.AddCommand(NewHN())
 	root.AddCommand(NewLocal())
 	root.AddCommand(NewRSS())
