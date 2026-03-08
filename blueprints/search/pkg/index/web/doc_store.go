@@ -656,17 +656,18 @@ func (ds *DocStore) GetDoc(ctx context.Context, _, shard, docID string) (DocReco
 
 // ShardStatsResponse holds aggregated statistics for a shard.
 type ShardStatsResponse struct {
-	Shard         string      `json:"shard"`
-	TotalDocs     int64       `json:"total_docs"`
-	TotalSize     int64       `json:"total_size"`
-	AvgSize       int64       `json:"avg_size"`
-	MinSize       int64       `json:"min_size"`
-	MaxSize       int64       `json:"max_size"`
-	DateFrom      string      `json:"date_from"`
-	DateTo        string      `json:"date_to"`
-	TopDomains    []domainRow `json:"top_domains"`
-	SizeBuckets   []sizeRow   `json:"size_buckets"`
-	DateHistogram []dateRow   `json:"date_histogram"`
+	Shard              string      `json:"shard"`
+	TotalDocs          int64       `json:"total_docs"`
+	TotalSize          int64       `json:"total_size"`
+	AvgSize            int64       `json:"avg_size"`
+	MinSize            int64       `json:"min_size"`
+	MaxSize            int64       `json:"max_size"`
+	DateFrom           string      `json:"date_from"`
+	DateTo             string      `json:"date_to"`
+	TotalDomains       int64       `json:"total_domains"`
+	TopDomains         []domainRow `json:"top_domains"`
+	SizeBuckets        []sizeRow   `json:"size_buckets"`
+	DomainSizeBuckets  []sizeRow   `json:"domain_size_buckets"`
 }
 
 type domainRow struct {
@@ -676,11 +677,6 @@ type domainRow struct {
 
 type sizeRow struct {
 	Label string `json:"label"`
-	Count int64  `json:"count"`
-}
-
-type dateRow struct {
-	Date  string `json:"date"`
 	Count int64  `json:"count"`
 }
 
@@ -746,24 +742,40 @@ func (ds *DocStore) ShardStats(ctx context.Context, _, shard string) (ShardStats
 		sizeBuckets = append(sizeBuckets, b)
 	}
 
-	// Date histogram: docs per day. Return all days ordered ascending;
-	// the frontend slices the last 60.
-	hrows, err := db.QueryContext(ctx, `
-		SELECT LEFT(crawl_date, 10) AS day, COUNT(*) AS cnt
-		FROM doc_records
-		WHERE crawl_date != ''
+	// Domain count.
+	var totalDomains int64
+	db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT host) FROM doc_records WHERE host != ''`).Scan(&totalDomains)
+
+	// Pages-per-domain distribution (how many domains have 1 page, 2-5 pages, etc.)
+	dprows, err := db.QueryContext(ctx, `
+		WITH domain_counts AS (
+			SELECT host, COUNT(*) AS cnt
+			FROM doc_records
+			WHERE host != ''
+			GROUP BY host
+		)
+		SELECT
+			CASE
+				WHEN cnt = 1           THEN '1 page'
+				WHEN cnt BETWEEN 2 AND 5   THEN '2–5'
+				WHEN cnt BETWEEN 6 AND 20  THEN '6–20'
+				WHEN cnt BETWEEN 21 AND 100 THEN '21–100'
+				ELSE '>100'
+			END AS bucket,
+			COUNT(*) AS domains
+		FROM domain_counts
 		GROUP BY 1
-		ORDER BY 1
+		ORDER BY MIN(cnt)
 	`)
 	if err != nil {
-		return ShardStatsResponse{}, fmt.Errorf("date histogram: %w", err)
+		return ShardStatsResponse{}, fmt.Errorf("domain size buckets: %w", err)
 	}
-	defer hrows.Close()
-	var histogram []dateRow
-	for hrows.Next() {
-		var d dateRow
-		hrows.Scan(&d.Date, &d.Count)
-		histogram = append(histogram, d)
+	defer dprows.Close()
+	var domainSizeBuckets []sizeRow
+	for dprows.Next() {
+		var b sizeRow
+		dprows.Scan(&b.Label, &b.Count)
+		domainSizeBuckets = append(domainSizeBuckets, b)
 	}
 
 	// Summary totals.
@@ -781,17 +793,18 @@ func (ds *DocStore) ShardStats(ctx context.Context, _, shard string) (ShardStats
 	}
 
 	return ShardStatsResponse{
-		Shard:         shard,
-		TotalDocs:     totalDocs,
-		TotalSize:     totalSize,
-		AvgSize:       avgSize,
-		MinSize:       minSize,
-		MaxSize:       maxSize,
-		DateFrom:      minDate,
-		DateTo:        maxDate,
-		TopDomains:    domains,
-		SizeBuckets:   sizeBuckets,
-		DateHistogram: histogram,
+		Shard:             shard,
+		TotalDocs:         totalDocs,
+		TotalSize:         totalSize,
+		AvgSize:           avgSize,
+		MinSize:           minSize,
+		MaxSize:           maxSize,
+		DateFrom:          minDate,
+		DateTo:            maxDate,
+		TotalDomains:      totalDomains,
+		TopDomains:        domains,
+		SizeBuckets:       sizeBuckets,
+		DomainSizeBuckets: domainSizeBuckets,
 	}, nil
 }
 

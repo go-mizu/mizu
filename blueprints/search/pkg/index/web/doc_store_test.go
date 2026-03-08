@@ -330,9 +330,9 @@ func TestDocStoreShardStats(t *testing.T) {
 		t.Fatal("expected non-empty size buckets")
 	}
 
-	// Date histogram should be populated.
-	if len(stats.DateHistogram) == 0 {
-		t.Fatal("expected non-empty date histogram")
+	// Domain size buckets should be populated.
+	if len(stats.DomainSizeBuckets) == 0 {
+		t.Fatal("expected non-empty domain size buckets")
 	}
 }
 

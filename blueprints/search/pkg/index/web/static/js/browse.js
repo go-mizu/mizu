@@ -516,12 +516,14 @@ function renderShardStats(shard, stats) {
   const dateFrom = s.date_from ? fmtDate(s.date_from) : '\u2014';
   const dateTo = s.date_to ? fmtDate(s.date_to) : '\u2014';
 
+  const totalDomains = (s.total_domains || 0).toLocaleString();
+
   const statCards = [
     {label: 'Documents', value: totalDocs},
+    {label: 'Domains', value: totalDomains},
     {label: 'Total Size', value: totalSize},
     {label: 'Avg Size', value: avgSize},
     {label: 'Size Range', value: `${minSize} \u2013 ${maxSize}`},
-    {label: 'Date Range', value: dateFrom === dateTo ? dateFrom : `${dateFrom} \u2013 ${dateTo}`},
   ];
 
   const domains = (s.top_domains || []).slice(0, 20);
@@ -531,14 +533,16 @@ function renderShardStats(shard, stats) {
   const bucketTotal = buckets.reduce((m, b) => m + (b.count || 0), 0) || 1;
   const bucketColors = ['ov-c2', 'ov-c4', 'ov-c3', 'ov-c1', 'ov-c5'];
 
-  const histogram = (s.date_histogram || []).slice(-60);
-  const histMax = histogram.reduce((m, h) => Math.max(m, h.count || 0), 0) || 1;
+  const domBuckets = s.domain_size_buckets || [];
+  const domBucketTotal = domBuckets.reduce((m, b) => m + (b.count || 0), 0) || 1;
+  const domBucketMax = domBuckets.reduce((m, b) => Math.max(m, b.count || 0), 0) || 1;
+  const domBucketColors = ['ov-c3', 'ov-c4', 'ov-c2', 'ov-c1', 'ov-c5'];
 
   el.innerHTML = `
     ${renderBrowseViewTabs(shard, 'stats')}
 
     <!-- Stat cards -->
-    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-px border border-[var(--border)] mb-6" style="background:var(--border)">
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-px mb-6" style="border:1px solid var(--border);background:var(--border)">
       ${statCards.map(c => `
         <div class="bg-[var(--panel)] px-3 sm:px-4 py-3">
           <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider mb-1">${esc(c.label)}</div>
@@ -586,22 +590,24 @@ function renderShardStats(shard, stats) {
       </div>
     </div>
 
-    <!-- Date Histogram -->
+    <!-- Pages per Domain Distribution -->
     <div class="surface p-4">
-      <div class="text-xs font-semibold mb-4 uppercase tracking-wider ui-subtle">Documents by Crawl Date (last 60 days)</div>
-      ${histogram.length === 0
-        ? `<div class="ui-empty">No date data</div>`
+      <div class="text-xs font-semibold mb-4 uppercase tracking-wider ui-subtle">Pages per Domain</div>
+      ${domBuckets.length === 0
+        ? `<div class="ui-empty">No domain data</div>`
         : `
-        <div class="flex items-end gap-px" style="height:80px">
-          ${histogram.map(h => {
-            const pct = Math.max(2, ((h.count||0) / histMax) * 100);
-            return `<div class="flex-1 bg-[var(--accent)] opacity-70 hover:opacity-100 transition-opacity cursor-default"
-              style="height:${pct.toFixed(1)}%" title="${esc(h.date)}: ${(h.count||0).toLocaleString()}"></div>`;
-          }).join('')}
+        <div class="ov-stacked mb-4">
+          ${domBuckets.map((b, i) => `
+            <div class="${domBucketColors[i%domBucketColors.length]} ov-stacked-seg" style="width:${Math.max(1,(b.count/domBucketTotal)*100).toFixed(1)}%" title="${esc(b.label)}: ${(b.count||0).toLocaleString()} domains"></div>`).join('')}
         </div>
-        <div class="flex justify-between mt-1 text-[9px] font-mono ui-subtle">
-          <span>${histogram[0] ? esc(histogram[0].date) : ''}</span>
-          <span>${histogram[histogram.length-1] ? esc(histogram[histogram.length-1].date) : ''}</span>
+        <div class="space-y-2">
+          ${domBuckets.map((b, i) => `
+            <div class="flex items-center gap-2 text-xs">
+              <div class="ov-legend-dot ${domBucketColors[i%domBucketColors.length]}"></div>
+              <span class="flex-1 font-mono ui-subtle">${esc(b.label)} pages</span>
+              <span class="font-mono ui-subtle">${(b.count||0).toLocaleString()} domains</span>
+              <span class="font-mono ui-subtle w-10 text-right">${((b.count/domBucketTotal)*100).toFixed(0)}%</span>
+            </div>`).join('')}
         </div>`}
     </div>`;
 }
