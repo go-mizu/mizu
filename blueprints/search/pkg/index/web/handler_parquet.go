@@ -722,3 +722,119 @@ func (s *Server) handleParquetStats(c *mizu.Ctx) error {
 
 	return c.JSON(200, resp)
 }
+
+// subsetChartQueries defines which distribution queries to run per subset.
+var subsetChartQueries = map[string][]struct {
+	Key   string
+	Query string
+}{
+	"warc": {
+		{Key: "tld", Query: "SELECT url_host_tld AS label, COUNT(*) AS value FROM ccindex WHERE url_host_tld IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
+		{Key: "domain", Query: "SELECT url_host_registered_domain AS label, COUNT(*) AS value FROM ccindex WHERE url_host_registered_domain IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
+		{Key: "mime", Query: "SELECT content_mime_detected AS label, COUNT(*) AS value FROM ccindex WHERE content_mime_detected IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
+		{Key: "language", Query: "SELECT content_languages AS label, COUNT(*) AS value FROM ccindex WHERE content_languages IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
+		{Key: "charset", Query: "SELECT content_charset AS label, COUNT(*) AS value FROM ccindex WHERE content_charset IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 15"},
+		{Key: "protocol", Query: "SELECT url_protocol AS label, COUNT(*) AS value FROM ccindex WHERE url_protocol IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 10"},
+		{Key: "status", Query: "SELECT CAST(fetch_status AS VARCHAR) AS label, COUNT(*) AS value FROM ccindex GROUP BY 1 ORDER BY 2 DESC LIMIT 15"},
+	},
+	"non200responses": {
+		{Key: "status", Query: "SELECT CAST(fetch_status AS VARCHAR) AS label, COUNT(*) AS value FROM ccindex GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
+		{Key: "domain", Query: "SELECT url_host_registered_domain AS label, COUNT(*) AS value FROM ccindex WHERE url_host_registered_domain IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
+		{Key: "tld", Query: "SELECT url_host_tld AS label, COUNT(*) AS value FROM ccindex WHERE url_host_tld IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
+		{Key: "redirect", Query: "SELECT fetch_redirect AS label, COUNT(*) AS value FROM ccindex WHERE fetch_redirect IS NOT NULL AND fetch_redirect != '' GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
+		{Key: "mime", Query: "SELECT content_mime_detected AS label, COUNT(*) AS value FROM ccindex WHERE content_mime_detected IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 15"},
+	},
+	"robotstxt": {
+		{Key: "domain", Query: "SELECT url_host_registered_domain AS label, COUNT(*) AS value FROM ccindex WHERE url_host_registered_domain IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
+		{Key: "tld", Query: "SELECT url_host_tld AS label, COUNT(*) AS value FROM ccindex WHERE url_host_tld IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
+		{Key: "status", Query: "SELECT CAST(fetch_status AS VARCHAR) AS label, COUNT(*) AS value FROM ccindex GROUP BY 1 ORDER BY 2 DESC LIMIT 10"},
+		{Key: "protocol", Query: "SELECT url_protocol AS label, COUNT(*) AS value FROM ccindex WHERE url_protocol IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 5"},
+	},
+	"crawldiagnostics": {
+		{Key: "domain", Query: "SELECT url_host_registered_domain AS label, COUNT(*) AS value FROM ccindex WHERE url_host_registered_domain IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
+		{Key: "status", Query: "SELECT CAST(fetch_status AS VARCHAR) AS label, COUNT(*) AS value FROM ccindex GROUP BY 1 ORDER BY 2 DESC LIMIT 15"},
+		{Key: "mime", Query: "SELECT content_mime_detected AS label, COUNT(*) AS value FROM ccindex WHERE content_mime_detected IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 15"},
+		{Key: "tld", Query: "SELECT url_host_tld AS label, COUNT(*) AS value FROM ccindex WHERE url_host_tld IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 20"},
+	},
+}
+
+// handleParquetSubsetStats returns distribution charts for a subset.
+func (s *Server) handleParquetSubsetStats(c *mizu.Ctx) error {
+	subset := c.Param("subset")
+	queries, ok := subsetChartQueries[subset]
+	if !ok {
+		return c.JSON(400, errResp{fmt.Sprintf("unknown subset: %s", subset)})
+	}
+
+	cfg := s.ccConfig()
+	locals, err := cc.LocalParquetFilesBySubset(cfg, subset)
+	if err != nil {
+		return c.JSON(500, errResp{fmt.Sprintf("local files: %v", err)})
+	}
+	if len(locals) == 0 {
+		return c.JSON(400, errResp{fmt.Sprintf("no local parquet files for subset %q — download some first", subset)})
+	}
+
+	var diskBytes int64
+	for _, p := range locals {
+		if info, statErr := os.Stat(p); statErr == nil {
+			diskBytes += info.Size()
+		}
+	}
+
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return c.JSON(500, errResp{fmt.Sprintf("duckdb: %v", err)})
+	}
+	defer db.Close()
+
+	quoted := make([]string, len(locals))
+	for i, p := range locals {
+		quoted[i] = duckQuotePath(p)
+	}
+	viewSQL := fmt.Sprintf(
+		"CREATE VIEW ccindex AS SELECT * FROM read_parquet([%s], union_by_name=true, hive_partitioning=true)",
+		strings.Join(quoted, ", "),
+	)
+	if _, err := db.Exec(viewSQL); err != nil {
+		return c.JSON(500, errResp{fmt.Sprintf("view: %v", err)})
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request().Context(), 60*time.Second)
+	defer cancel()
+
+	start := time.Now()
+
+	var totalRows int64
+	_ = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ccindex").Scan(&totalRows)
+
+	charts := make(map[string][]chartEntry, len(queries))
+	for _, q := range queries {
+		rows, qErr := db.QueryContext(ctx, q.Query)
+		if qErr != nil {
+			charts[q.Key] = []chartEntry{}
+			continue
+		}
+		var entries []chartEntry
+		for rows.Next() {
+			var e chartEntry
+			if rows.Scan(&e.Label, &e.Value) == nil {
+				entries = append(entries, e)
+			}
+		}
+		rows.Close()
+		if entries == nil {
+			entries = []chartEntry{}
+		}
+		charts[q.Key] = entries
+	}
+
+	return c.JSON(200, parquetSubsetStatsResponse{
+		Subset:    subset,
+		TotalRows: totalRows,
+		FileCount: len(locals),
+		DiskBytes: diskBytes,
+		ElapsedMs: time.Since(start).Milliseconds(),
+		Charts:    charts,
+	})
+}

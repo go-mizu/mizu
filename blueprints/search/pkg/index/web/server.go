@@ -374,6 +374,7 @@ func (s *Server) Handler() http.Handler {
 		router.Get("/api/parquet/stats", s.handleParquetStats)
 		router.Get("/api/parquet/file/{index}", s.handleParquetFileDetail)
 		router.Get("/api/parquet/file/{index}/data", s.handleParquetFileData)
+		router.Get("/api/parquet/subset/{subset}/stats", s.handleParquetSubsetStats)
 	}
 
 	if s.Hub != nil {
