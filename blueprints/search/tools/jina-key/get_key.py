@@ -50,7 +50,9 @@ def get_jina_key(headless=False, timeout=90, verbose=False):
 
     with sync_playwright() as p:
         launch_args = ["--disable-blink-features=AutomationControlled", "--window-size=1920,1080"]
-        if headless:
+        # --no-sandbox required when running as root on Linux
+        import platform
+        if platform.system() == "Linux":
             launch_args.extend(["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"])
         browser = p.chromium.launch(
             headless=headless,
