@@ -4,16 +4,30 @@ import (
 	"bytes"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
-	htmltomarkdown "github.com/JohannesKaufmann/html-to-markdown/v2"
 	"github.com/JohannesKaufmann/html-to-markdown/v2/converter"
+	"github.com/JohannesKaufmann/html-to-markdown/v2/plugin/base"
+	"github.com/JohannesKaufmann/html-to-markdown/v2/plugin/commonmark"
 	readability "github.com/go-shiori/go-readability"
 	"github.com/markusmobius/go-trafilatura"
 	"golang.org/x/net/html"
 	htmlcharset "golang.org/x/net/html/charset"
 	"golang.org/x/text/transform"
 )
+
+// mdConverterPool reuses html-to-markdown converters to cut per-call allocation.
+var mdConverterPool = sync.Pool{
+	New: func() any {
+		return converter.NewConverter(
+			converter.WithPlugins(
+				base.NewBasePlugin(),
+				commonmark.NewCommonmarkPlugin(),
+			),
+		)
+	},
+}
 
 // Result holds the output of a single HTML → Markdown conversion.
 type Result struct {
@@ -43,6 +57,10 @@ func Convert(rawHTML []byte, pageURL string) Result {
 	opts.IncludeImages = false
 	opts.Focus = trafilatura.FavorRecall
 	opts.Deduplicate = true
+	// Skip htmldate extraction entirely — we already have WARC-Date from
+	// Common Crawl headers. htmldate (with go-dateparser regex) accounts for
+	// ~40% of trafilatura time; disabling it is the single biggest speedup.
+	opts.HtmlDateMode = trafilatura.Disabled
 
 	if pageURL != "" {
 		if u, err := url.Parse(pageURL); err == nil {
@@ -81,12 +99,11 @@ func Convert(rawHTML []byte, pageURL string) Result {
 	title := extracted.Metadata.Title
 	lang := extracted.Metadata.Language
 
-	// Step 2: render extracted DOM back to HTML string.
-	// We render rather than calling ConvertNode directly because html-to-markdown's
-	// collapse pass expects a complete normalised document; trafilatura's ContentNode
-	// is a partial fragment that html.Render + html.Parse normalises through Go's
-	// HTML parser. Benchmarks confirm the render+reparse is faster and uses fewer
-	// allocs than passing the raw fragment to ConvertNode.
+	// Step 2: render extracted DOM back to HTML, reparse, then convert to markdown.
+	// trafilatura's ContentNode is a partial fragment; html-to-markdown's collapse
+	// pass panics on non-normalised trees. Render → reparse normalises the fragment.
+	// We then use ConvertNode (pooled) to avoid the extra string→reader→parse in
+	// ConvertString.
 	var buf strings.Builder
 	if err := html.Render(&buf, extracted.ContentNode); err != nil {
 		ms := int(time.Since(start).Milliseconds())
@@ -98,13 +115,18 @@ func Convert(rawHTML []byte, pageURL string) Result {
 			Error:     "html render: " + err.Error(),
 		}
 	}
-
-	// Step 3: convert rendered HTML to markdown
-	var convOpts []converter.ConvertOptionFunc
-	if pageURL != "" {
-		convOpts = append(convOpts, converter.WithDomain(pageURL))
+	reparsed, err := html.Parse(strings.NewReader(buf.String()))
+	if err != nil {
+		ms := int(time.Since(start).Milliseconds())
+		return Result{
+			HTMLSize:  htmlSize,
+			Title:     title,
+			Language:  lang,
+			ConvertMs: ms,
+			Error:     "html reparse: " + err.Error(),
+		}
 	}
-	mdBytes, err := htmltomarkdown.ConvertString(buf.String(), convOpts...)
+	md, err := convertNodeToMarkdown(reparsed, pageURL)
 	if err != nil {
 		ms := int(time.Since(start).Milliseconds())
 		return Result{
@@ -116,7 +138,6 @@ func Convert(rawHTML []byte, pageURL string) Result {
 		}
 	}
 
-	md := strings.TrimSpace(mdBytes)
 	mdSize := len(md)
 	ms := int(time.Since(start).Milliseconds())
 
@@ -165,13 +186,7 @@ func ConvertFast(rawHTML []byte, pageURL string) Result {
 	title := article.Title
 	lang := article.Language
 
-	// article.Content is already a normalised HTML string produced by go-readability,
-	// so we can feed it directly to ConvertString without an extra html.Render pass.
-	var convOpts []converter.ConvertOptionFunc
-	if pageURL != "" {
-		convOpts = append(convOpts, converter.WithDomain(pageURL))
-	}
-	mdBytes, err := htmltomarkdown.ConvertString(article.Content, convOpts...)
+	md, err := convertStringToMarkdown(article.Content, pageURL)
 	if err != nil {
 		ms := int(time.Since(start).Milliseconds())
 		return Result{
@@ -183,7 +198,6 @@ func ConvertFast(rawHTML []byte, pageURL string) Result {
 		}
 	}
 
-	md := strings.TrimSpace(mdBytes)
 	mdSize := len(md)
 	ms := int(time.Since(start).Milliseconds())
 
@@ -198,6 +212,40 @@ func ConvertFast(rawHTML []byte, pageURL string) Result {
 		MarkdownTokens: EstimateTokens(mdSize),
 		ConvertMs:      ms,
 	}
+}
+
+// convertNodeToMarkdown converts an *html.Node to trimmed markdown string
+// using a pooled converter to reduce allocations.
+func convertNodeToMarkdown(node *html.Node, pageURL string) (string, error) {
+	conv := mdConverterPool.Get().(*converter.Converter)
+	defer mdConverterPool.Put(conv)
+
+	var opts []converter.ConvertOptionFunc
+	if pageURL != "" {
+		opts = append(opts, converter.WithDomain(pageURL))
+	}
+	mdBytes, err := conv.ConvertNode(node, opts...)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(mdBytes)), nil
+}
+
+// convertStringToMarkdown converts an HTML string to trimmed markdown string
+// using a pooled converter to reduce allocations.
+func convertStringToMarkdown(htmlStr string, pageURL string) (string, error) {
+	conv := mdConverterPool.Get().(*converter.Converter)
+	defer mdConverterPool.Put(conv)
+
+	var opts []converter.ConvertOptionFunc
+	if pageURL != "" {
+		opts = append(opts, converter.WithDomain(pageURL))
+	}
+	mdStr, err := conv.ConvertString(htmlStr, opts...)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(mdStr), nil
 }
 
 // EstimateTokens approximates token count: ~4 bytes per token for English text.
