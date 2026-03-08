@@ -57,6 +57,13 @@ function route() {
     showHeaderSearch(false);
     const idx = path.split('/')[2] || '';
     renderWARCDetail(idx);
+  } else if (path === '/domains' && isDashboard) {
+    showHeaderSearch(false);
+    renderDomains();
+  } else if (path.startsWith('/domains/') && isDashboard) {
+    showHeaderSearch(false);
+    const domain = decodeURIComponent(path.slice('/domains/'.length));
+    renderDomainDetail(domain);
   } else if (path.startsWith('/browse')) {
     const shard = path.split('/')[2] || '';
     showHeaderSearch(false);
@@ -83,6 +90,7 @@ function updateActiveTab(path) {
   if (path === '/jobs' || path.startsWith('/jobs/')) activeTab = 'jobs';
   else if (path === '/search' || path === '/' && !isDashboard || path.startsWith('/doc/')) activeTab = 'search';
   else if (path === '/parquet' || path.startsWith('/parquet/')) activeTab = 'parquet';
+  else if (path === '/domains' || path.startsWith('/domains/')) activeTab = 'domains';
   else if (path === '/warc' || path.startsWith('/warc/')) activeTab = 'warc';
   else if (path.startsWith('/browse')) activeTab = 'browse';
   else if (path === '/' && isDashboard) activeTab = 'overview';

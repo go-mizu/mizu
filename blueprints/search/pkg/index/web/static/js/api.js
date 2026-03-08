@@ -120,6 +120,25 @@ async function apiGetJob(id) {
   return apiFetch(`/api/jobs/${encodeURIComponent(id)}`);
 }
 
+async function apiDomains(opts = {}) {
+  const p = new URLSearchParams();
+  if (opts.sort) p.set('sort', opts.sort);
+  if (opts.page) p.set('page', String(opts.page));
+  if (opts.pageSize) p.set('page_size', String(opts.pageSize));
+  if (opts.q) p.set('q', opts.q);
+  const qs = p.toString();
+  return apiFetch('/api/domains' + (qs ? '?' + qs : ''));
+}
+
+async function apiDomainDetail(domain, opts = {}) {
+  const p = new URLSearchParams();
+  if (opts.sort) p.set('sort', opts.sort);
+  if (opts.page) p.set('page', String(opts.page));
+  if (opts.pageSize) p.set('page_size', String(opts.pageSize));
+  const qs = p.toString();
+  return apiFetch('/api/domains/' + encodeURIComponent(domain) + (qs ? '?' + qs : ''));
+}
+
 function currentSearchEngine() {
   if (state.searchEngine) return state.searchEngine;
   if (state.stats && state.stats.engine) return state.stats.engine;

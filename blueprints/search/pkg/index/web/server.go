@@ -201,7 +201,8 @@ type Server struct {
 	Hub        *WSHub
 	Jobs       *Manager
 	Meta       *MetaManager
-	Docs       *DocStore // per-document browse metadata (dashboard only)
+	Docs        *DocStore    // per-document browse metadata (dashboard only)
+	DomainStore *DomainStore // cross-shard domain count cache (dashboard only)
 
 	manifestTotal int              // cached count of WARCs in CC manifest
 	crawlSize     *crawlSizeCache  // async-cached dirSize(crawlDir)
@@ -311,6 +312,9 @@ func NewDashboardWithOptions(engineName, crawlID, addr, baseDir string, opts Das
 		logInfof("doc_store: opened dir=%s (per-shard duckdb)", s.WARCMdBase)
 	}
 
+	// Initialize domain count cache (lazily syncs from parquet files).
+	s.DomainStore = NewDomainStore(baseDir)
+
 	// Fetch manifest total in background for overview pipeline progress.
 	go func() {
 		client := cc.NewClient("", 4)
@@ -365,6 +369,8 @@ func (s *Server) Handler() http.Handler {
 		router.Delete("/api/jobs", s.handleClearJobs)
 		router.Post("/api/meta/scan-docs", s.handleMetaScanDocs)
 		router.Get("/api/browse/stats", s.handleBrowseStats)
+		router.Get("/api/domains", s.handleDomainList)
+		router.Get("/api/domains/{domain}", s.handleDomainDetail)
 
 		// Parquet index management
 		router.Get("/api/parquet/manifest", s.handleParquetManifest)
@@ -1182,6 +1188,47 @@ func (s *Server) handleBrowseStats(c *mizu.Ctx) error {
 	return c.JSON(200, stats)
 }
 
+
+// handleDomainList returns a paginated list of domains with URL counts, aggregated from CC parquet files.
+func (s *Server) handleDomainList(c *mizu.Ctx) error {
+	if s.DomainStore == nil {
+		return c.JSON(503, errResp{"domain store not available"})
+	}
+	if err := s.DomainStore.EnsureFresh(c.Context()); err != nil {
+		return c.JSON(500, errResp{err.Error()})
+	}
+	page := queryIntCtx(c, "page", 1)
+	pageSize := queryIntCtx(c, "page_size", 100)
+	sortBy := c.Query("sort")
+	q := c.Query("q")
+	resp, err := s.DomainStore.ListDomains(c.Context(), sortBy, q, page, pageSize)
+	if err != nil {
+		return c.JSON(500, errResp{err.Error()})
+	}
+	return c.JSON(200, resp)
+}
+
+// handleDomainDetail returns paginated URLs for a single domain, queried directly from parquet files.
+func (s *Server) handleDomainDetail(c *mizu.Ctx) error {
+	if s.DomainStore == nil {
+		return c.JSON(503, errResp{"domain store not available"})
+	}
+	domain := c.Param("domain")
+	if domain == "" {
+		return c.JSON(400, errResp{"domain required"})
+	}
+	if err := s.DomainStore.EnsureFresh(c.Context()); err != nil {
+		return c.JSON(500, errResp{err.Error()})
+	}
+	page := queryIntCtx(c, "page", 1)
+	pageSize := queryIntCtx(c, "page_size", 100)
+	sortBy := c.Query("sort")
+	resp, err := s.DomainStore.ListDomainURLs(c.Context(), domain, sortBy, page, pageSize)
+	if err != nil {
+		return c.JSON(500, errResp{err.Error()})
+	}
+	return c.JSON(200, resp)
+}
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
