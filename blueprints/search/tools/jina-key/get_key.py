@@ -50,10 +50,10 @@ def get_jina_key(headless=False, timeout=90, verbose=False):
 
     with sync_playwright() as p:
         launch_args = ["--disable-blink-features=AutomationControlled", "--window-size=1920,1080"]
-        # --no-sandbox required when running as root on Linux
+        # Linux: --no-sandbox (root), --use-angle=swiftshader (software GL for xvfb)
         import platform
         if platform.system() == "Linux":
-            launch_args.extend(["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"])
+            launch_args.extend(["--no-sandbox", "--disable-dev-shm-usage", "--use-angle=swiftshader"])
         browser = p.chromium.launch(
             headless=headless,
             args=launch_args,
@@ -107,6 +107,10 @@ def get_jina_key(headless=False, timeout=90, verbose=False):
             except Exception as e:
                 if verbose:
                     print(f"  keygen error: {e}", file=sys.stderr)
+                # "Request context disposed" = browser closing during fetch
+                # Token was already captured — fall through to proxy replay
+                if "disposed" in str(e).lower() and captured_tokens:
+                    rate_limited = True  # force proxy replay path
                 try:
                     route.continue_(url=fetch_url)
                 except Exception:
@@ -119,23 +123,26 @@ def get_jina_key(headless=False, timeout=90, verbose=False):
             print("  loading jina.ai/?newKey...", file=sys.stderr)
 
         try:
-            page.goto("https://jina.ai/?newKey", wait_until="domcontentloaded", timeout=30000)
+            page.goto("https://jina.ai/?newKey", wait_until="load", timeout=60000)
         except Exception as e:
             browser.close()
             raise RuntimeError(f"Failed to load jina.ai: {e}")
         time.sleep(3)
 
-        # Dismiss cookie banner
-        page.evaluate("""() => {
-            const aside = document.querySelector('#usercentrics-cmp-ui');
-            if (aside && aside.shadowRoot) {
-                for (const b of aside.shadowRoot.querySelectorAll('button')) {
-                    const t = (b.textContent || '').toLowerCase();
-                    if (t.includes('deny') || t.includes('reject')) { b.click(); return; }
+        # Dismiss cookie banner (may fail in headless — non-critical)
+        try:
+            page.evaluate("""() => {
+                const aside = document.querySelector('#usercentrics-cmp-ui');
+                if (aside && aside.shadowRoot) {
+                    for (const b of aside.shadowRoot.querySelectorAll('button')) {
+                        const t = (b.textContent || '').toLowerCase();
+                        if (t.includes('deny') || t.includes('reject')) { b.click(); return; }
+                    }
                 }
-            }
-            if (aside) aside.remove();
-        }""")
+                if (aside) aside.remove();
+            }""")
+        except Exception:
+            pass  # Page may have crashed — route intercept still works
 
         # Wait for keygen request to fire
         deadline = time.time() + min(timeout, 30)
