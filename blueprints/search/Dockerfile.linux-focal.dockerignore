@@ -42,7 +42,7 @@ blueprints/bi
 
 # ── Search blueprint: runtime/local dirs not needed at build time ──────────────
 blueprints/search/tools
-blueprints/search/data
+# Note: blueprints/search/data/ is a Go package (embedded queries), keep it.
 blueprints/search/reports
 blueprints/search/spec
 blueprints/search/test
@@ -62,7 +62,10 @@ blueprints/search/pkg/index/driver/tantivy-go/libs/darwin-amd64
 **/.nuxt
 
 # ── Test / coverage / build outputs ──────────────────────────────────────────
-**/coverage*
+# Note: avoid **/coverage* — it matches vendor/golang.org/x/text/language/coverage.go
+coverage/
+coverage.out
+coverage.html
 **/*.out
 **/*.test
 **/*.log

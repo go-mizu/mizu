@@ -24,7 +24,9 @@ reports
 store
 spec
 test
-coverage*
+coverage/
+coverage.out
+coverage.html
 *.log
 
 # Frontend deps/build cache (keep source; backend build may embed frontend assets)
@@ -34,7 +36,8 @@ coverage*
 **/.yarn
 
 # Large local datasets / exports (if present under repo)
-data
+# Note: blueprints/search/data/ is a Go package (embedded queries), not a dataset.
+# Only exclude top-level /data (datasets), not the Go source package.
 /data
 /tools
 /tools/**
