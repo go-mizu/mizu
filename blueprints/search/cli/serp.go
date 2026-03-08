@@ -22,10 +22,21 @@ func NewSerp() *cobra.Command {
 func newSerpRegister() *cobra.Command {
 	var count int
 	var verbose bool
+	var proxy string
 	cmd := &cobra.Command{
 		Use:   "register",
 		Short: "Register SerpAPI accounts via mail.tm",
+		Long: `Register SerpAPI accounts using temporary mail.tm emails.
+
+Opens a browser to fill the SerpAPI signup form. You must solve the
+reCAPTCHA manually (or set TWOCAPTCHA_KEY for auto-solving).
+
+If SerpAPI blocks your IP, use --proxy to route through a different IP:
+  search serp register --proxy socks5://host:port --verbose`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if proxy != "" {
+				os.Setenv("SERP_PROXY", proxy)
+			}
 			store, err := serp.LoadStore(serp.DefaultStorePath())
 			if err != nil {
 				return err
@@ -48,6 +59,7 @@ func newSerpRegister() *cobra.Command {
 	}
 	cmd.Flags().IntVarP(&count, "count", "n", 1, "number of accounts to register")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
+	cmd.Flags().StringVar(&proxy, "proxy", "", "proxy URL for browser (e.g. socks5://host:port)")
 	return cmd
 }
 

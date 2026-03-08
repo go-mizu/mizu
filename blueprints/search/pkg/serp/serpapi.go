@@ -4,15 +4,18 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"regexp"
+	"strings"
 	"time"
 )
 
 const serpAPIBase = "https://serpapi.com"
 
 var verificationLinkRe = regexp.MustCompile(`https://serpapi\.com/users/confirmation\?confirmation_token=[^\s"<']+`)
+var csrfTokenRe = regexp.MustCompile(`name="authenticity_token"[^>]*value="([^"]+)"`)
 
 type SerpAPIClient struct {
 	hc *http.Client
@@ -28,26 +31,59 @@ func NewSerpAPIClient() *SerpAPIClient {
 }
 
 // RegisterHTTP attempts to register an account via HTTP POST.
-// Returns nil on success (2xx), or error if blocked/failed.
+// SerpAPI uses a Rails form with CSRF + reCAPTCHA — HTTP registration rarely works.
+// Returns nil on success, or error if blocked/failed.
 func (c *SerpAPIClient) RegisterHTTP(email, password string) error {
-	body, _ := json.Marshal(map[string]any{
-		"user": map[string]string{
-			"email":                 email,
-			"password":              password,
-			"password_confirmation": password,
-		},
-	})
-	req, _ := http.NewRequest("POST", serpAPIBase+"/users", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
-	resp, err := c.hc.Do(req)
+	// Step 1: GET the signup page to extract CSRF token
+	hc := &http.Client{Timeout: 20 * time.Second}
+	resp, err := hc.Get(serpAPIBase + "/users/sign_up")
 	if err != nil {
-		return err
+		return fmt.Errorf("GET sign_up: %w", err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("serpapi register HTTP %d", resp.StatusCode)
+	pageBody, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	// Extract CSRF token
+	csrfMatch := csrfTokenRe.FindSubmatch(pageBody)
+	if len(csrfMatch) < 2 {
+		return fmt.Errorf("no CSRF token found on signup page")
+	}
+	csrfToken := string(csrfMatch[1])
+
+	// Step 2: POST form-encoded data
+	formData := url.Values{
+		"authenticity_token":         {csrfToken},
+		"user[full_name]":            {email[:6]}, // use prefix as name
+		"user[email]":                {email},
+		"user[password]":             {password},
+		"user[password_confirmation]": {password},
+		"commit":                     {"Sign Up"},
+	}
+	req, _ := http.NewRequest("POST", serpAPIBase+"/users", strings.NewReader(formData.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
+	req.Header.Set("Referer", serpAPIBase+"/users/sign_up")
+	// Copy cookies from the GET response
+	for _, c := range resp.Cookies() {
+		req.AddCookie(c)
+	}
+
+	resp2, err := hc.Do(req)
+	if err != nil {
+		return fmt.Errorf("POST /users: %w", err)
+	}
+	respBody, _ := io.ReadAll(resp2.Body)
+	resp2.Body.Close()
+
+	// Check for success indicators
+	bodyStr := string(respBody)
+	if resp2.StatusCode >= 400 {
+		return fmt.Errorf("serpapi register HTTP %d", resp2.StatusCode)
+	}
+	// A successful registration redirects or shows "confirmation" message
+	// If we get the signup page back with reCAPTCHA errors, it failed
+	if strings.Contains(bodyStr, "recaptcha") || strings.Contains(bodyStr, "sign_up") {
+		return fmt.Errorf("serpapi register blocked (likely reCAPTCHA required)")
 	}
 	return nil
 }
