@@ -48,6 +48,10 @@ async function apiParquetStats() {
   return apiFetch('/api/parquet/stats');
 }
 
+async function apiParquetSubsetStats(subset) {
+  return apiFetch(`/api/parquet/subset/${encodeURIComponent(subset)}/stats`);
+}
+
 // ── Main entry ──
 async function renderParquet() {
   state.currentPage = 'parquet';
@@ -183,13 +187,13 @@ function renderParquetFilesTable(data) {
 
   const rows = files.map(f => `
     <tr class="file-row">
-      <td class="px-3 py-2 text-xs font-mono">${f.manifest_index}</td>
+      <td class="px-3 py-2 text-xs font-mono"><a href="#/parquet/${f.manifest_index}" class="ui-link hover:text-[var(--accent)]">${f.manifest_index}</a></td>
       <td class="px-3 py-2 text-xs font-mono truncate max-w-xs" title="${esc(f.remote_path)}"><a href="#/parquet/${f.manifest_index}" class="ui-link hover:text-[var(--accent)]">${esc(f.filename)}</a></td>
-      <td class="px-3 py-2 text-xs font-mono ui-subtle hidden sm:table-cell">${esc(f.subset)}</td>
+      <td class="px-3 py-2 text-xs font-mono hidden sm:table-cell"><a href="#/parquet/subset/${esc(f.subset)}" class="ui-link hover:text-[var(--accent)]">${esc(f.subset)}</a></td>
       <td class="px-3 py-2 text-xs font-mono text-right hidden md:table-cell">${f.downloaded ? fmtBytes(f.local_size) : '\u2014'}</td>
       <td class="px-3 py-2 text-xs font-mono text-right">
         ${f.downloaded
-          ? '<span class="status-completed">\u2713 local</span>'
+          ? `<a href="#/parquet/${f.manifest_index}" class="status-completed ui-link">\u2713 local</a>`
           : `<button onclick="parquetDownloadOne(${f.manifest_index})" class="ui-btn px-2 py-1 text-[10px]">download</button>`}
       </td>
     </tr>`).join('');
@@ -598,6 +602,93 @@ async function parquetDownloadAndRefreshDetail(manifestIndex) {
   } catch (e) {
     alert('Download failed: ' + e.message);
   }
+}
+
+// ── Subset stats page ──
+async function renderParquetSubsetStats(subset) {
+  state.currentPage = 'parquet';
+  const main = $('main');
+  const label = (PARQUET_SUBSETS.find(s => s.key === subset) || {}).label || subset;
+  main.innerHTML = `
+    <div class="page-shell anim-fade-in">
+      <a href="#/parquet" class="text-xs font-mono ui-link">\u2190 Parquet Index</a>
+      <div class="page-header mt-4 mb-4">
+        <h1 class="page-title">Subset: ${esc(label)}</h1>
+      </div>
+      <div id="pq-subset-summary" class="mb-4"></div>
+      <div id="pq-subset-charts">
+        <div class="text-xs font-mono ui-subtle py-4">Loading stats\u2026</div>
+      </div>
+      <div class="mt-4">
+        <a href="#/parquet" onclick="state.parquetSubset='${esc(subset)}';return true" class="ui-btn px-4 py-2 text-xs font-mono">View files</a>
+        <button onclick="navigateTo('/search');setTimeout(()=>{const ta=$('parquet-sql');if(ta)ta.value='SELECT * FROM ccindex WHERE subset=\\'${esc(subset)}\\' LIMIT 100'},100)" class="ui-btn px-4 py-2 text-xs font-mono ml-2">Query console</button>
+      </div>
+    </div>`;
+
+  try {
+    const data = await apiParquetSubsetStats(subset);
+    renderSubsetSummary(data);
+    renderSubsetCharts(data);
+  } catch (e) {
+    $('pq-subset-charts').innerHTML = `<div class="ui-empty">${esc(e.message)}</div>`;
+  }
+}
+
+function renderSubsetSummary(data) {
+  const el = $('pq-subset-summary');
+  if (!el) return;
+  el.innerHTML = `
+    <div class="surface p-4">
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div>
+          <div class="text-[10px] font-mono ui-subtle">Subset</div>
+          <div class="text-sm font-mono font-medium">${esc(data.subset)}</div>
+        </div>
+        <div>
+          <div class="text-[10px] font-mono ui-subtle">Total Rows</div>
+          <div class="text-sm font-mono font-medium">${fmtNum(data.total_rows)}</div>
+        </div>
+        <div>
+          <div class="text-[10px] font-mono ui-subtle">Files</div>
+          <div class="text-sm font-mono font-medium">${fmtNum(data.file_count)}</div>
+        </div>
+        <div>
+          <div class="text-[10px] font-mono ui-subtle">Query Time</div>
+          <div class="text-sm font-mono font-medium">${fmtNum(data.elapsed_ms)}ms</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderSubsetCharts(data) {
+  const el = $('pq-subset-charts');
+  if (!el) return;
+  const charts = data.charts || {};
+  const keys = Object.keys(charts);
+  if (keys.length === 0) {
+    el.innerHTML = '<div class="ui-empty">No chart data available. Download some parquet files first.</div>';
+    return;
+  }
+
+  const chartNames = {
+    tld: 'Top TLDs', domain: 'Top Domains', mime: 'MIME Types',
+    language: 'Languages', charset: 'Charsets', protocol: 'Protocol',
+    status: 'Status Codes', redirect: 'Redirect Targets',
+  };
+
+  el.innerHTML = `
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      ${keys.map(key => {
+        const entries = charts[key] || [];
+        if (entries.length === 0) return '';
+        const rows = entries.map(e => ({ label: String(e.label), value: e.value, text: fmtNum(e.value) }));
+        return `
+          <div class="surface p-4">
+            <div class="text-[11px] font-mono font-medium mb-3">${esc(chartNames[key] || key)}</div>
+            ${renderBars(rows)}
+          </div>`;
+      }).join('')}
+    </div>`;
 }
 
 async function parquetRunQuery() {

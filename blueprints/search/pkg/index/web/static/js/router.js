@@ -42,6 +42,10 @@ function route() {
   } else if (path === '/parquet' && isDashboard) {
     showHeaderSearch(false);
     renderParquet();
+  } else if (path.startsWith('/parquet/subset/') && isDashboard) {
+    showHeaderSearch(false);
+    const subset = path.split('/')[3] || '';
+    renderParquetSubsetStats(subset);
   } else if (path.startsWith('/parquet/') && isDashboard) {
     showHeaderSearch(false);
     const idx = path.split('/')[2] || '';
