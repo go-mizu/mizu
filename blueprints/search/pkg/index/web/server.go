@@ -369,6 +369,7 @@ func (s *Server) Handler() http.Handler {
 		router.Delete("/api/jobs", s.handleClearJobs)
 		router.Post("/api/meta/scan-docs", s.handleMetaScanDocs)
 		router.Get("/api/browse/stats", s.handleBrowseStats)
+		router.Post("/api/browse/export-parquet", s.handleBrowseExportParquet)
 		router.Get("/api/domains", s.handleDomainList)
 		router.Get("/api/domains/{domain}", s.handleDomainDetail)
 
