@@ -9,8 +9,9 @@ import (
 
 type Account struct {
 	Email        string    `json:"email"`
-	Password     string    `json:"password"`
+	Password     string    `json:"password,omitempty"`
 	APIKey       string    `json:"api_key"`
+	Provider     string    `json:"provider,omitempty"` // serper, zenserp, searchapi, serpstack, serply, serpapi
 	RegisteredAt time.Time `json:"registered_at"`
 	SearchesLeft int       `json:"searches_left"`
 	LastChecked  time.Time `json:"last_checked"`
@@ -76,6 +77,17 @@ func (s *Store) PruneExhausted() (removed int) {
 	}
 	s.Accounts = kept
 	return
+}
+
+// ByProvider returns accounts for a specific provider.
+func (s *Store) ByProvider(provider string) []Account {
+	var out []Account
+	for _, a := range s.Accounts {
+		if a.Provider == provider {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // UpdateSearchesLeft finds account by api_key and updates searches_left.

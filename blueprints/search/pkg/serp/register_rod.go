@@ -87,12 +87,24 @@ func RegisterWithRod(email, password string) error {
 	// Wait for page to navigate away from sign_up
 	for i := 0; i < 24; i++ { // up to 120s
 		time.Sleep(5 * time.Second)
-		currentURL := page.MustInfo().URL
-		html, _ := page.HTML()
+
+		info, err := page.Info()
+		if err != nil {
+			// Page/target gone — likely navigated to a new page (success)
+			fmt.Println("  page navigated away (target closed) — assuming success")
+			return nil
+		}
+		currentURL := info.URL
+
+		html, err := page.HTML()
+		if err != nil {
+			fmt.Println("  page navigated away — assuming success")
+			return nil
+		}
 
 		// Success: confirmation message
 		if strings.Contains(html, "A message with a confirmation link has been sent") ||
-			strings.Contains(html, "confirmation link") && !strings.Contains(html, "sign_up") {
+			(strings.Contains(html, "confirmation link") && !strings.Contains(html, "sign_up")) {
 			fmt.Println("  registration successful — confirmation email sent!")
 			return nil
 		}
