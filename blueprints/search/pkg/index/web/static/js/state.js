@@ -62,6 +62,10 @@ const state = {
   parquetDetailPage: 1,
   parquetDetailFilter: '',
   parquetDetailSort: '',
+  ccDomainPage: 1,
+  ccDomainSort: 'url',
+  ccDomainQ: '',
+  ccDomainCrawl: '',
 };
 
 // ===================================================================

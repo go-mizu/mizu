@@ -32,12 +32,14 @@ type parquetFileEntry struct {
 	Filename      string `json:"filename"`
 	Subset        string `json:"subset"`
 	Downloaded    bool   `json:"downloaded"`
+	Invalid       bool   `json:"invalid,omitempty"` // file exists but is truncated/corrupt
 	LocalSize     int64  `json:"local_size,omitempty"`
 }
 
 type parquetManifestSummary struct {
 	Total      int                      `json:"total"`
 	Downloaded int                      `json:"downloaded"`
+	Invalid    int                      `json:"invalid,omitempty"` // present but truncated/corrupt
 	DiskBytes  int64                    `json:"disk_bytes"`
 	BySubset   map[string]subsetSummary `json:"by_subset"`
 }
@@ -223,11 +225,15 @@ func (s *Server) handleParquetManifest(c *mizu.Ctx) error {
 	summary := parquetManifestSummary{BySubset: make(map[string]subsetSummary)}
 	for i, f := range files {
 		localPath := cc.LocalParquetPathForRemote(cfg, f.RemotePath)
-		var downloaded bool
+		var downloaded, invalid bool
 		var localSize int64
 		if info, err := os.Stat(localPath); err == nil {
-			downloaded = true
 			localSize = info.Size()
+			if cc.IsValidParquetFile(localPath) {
+				downloaded = true
+			} else {
+				invalid = true // file exists but is truncated/corrupt — needs re-download
+			}
 		}
 		entries[i] = parquetFileEntry{
 			ManifestIndex: f.ManifestIndex,
@@ -235,11 +241,15 @@ func (s *Server) handleParquetManifest(c *mizu.Ctx) error {
 			Filename:      f.Filename,
 			Subset:        f.Subset,
 			Downloaded:    downloaded,
+			Invalid:       invalid,
 			LocalSize:     localSize,
 		}
 		summary.Total++
 		if downloaded {
 			summary.Downloaded++
+			summary.DiskBytes += localSize
+		} else if invalid {
+			summary.Invalid++
 			summary.DiskBytes += localSize
 		}
 		ss := summary.BySubset[f.Subset]

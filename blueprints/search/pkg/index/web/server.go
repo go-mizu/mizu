@@ -8,9 +8,11 @@ import (
 	"crypto/sha256"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -191,21 +193,22 @@ type ClearJobsResponse struct {
 
 // Server serves the FTS web GUI and JSON API.
 type Server struct {
-	EngineName string
-	CrawlID    string
-	Addr       string // external engine address
-	FTSBase    string // ~/data/common-crawl/{crawlID}/fts/{engine}
-	WARCBase   string // ~/data/common-crawl/{crawlID}/warc
-	WARCMdBase string // ~/data/common-crawl/{crawlID}/warc_md
-	CrawlDir   string // ~/data/common-crawl/{crawlID} — set by NewDashboard
-	Hub        *WSHub
-	Jobs       *Manager
-	Meta       *MetaManager
-	Docs        *DocStore    // per-document browse metadata (dashboard only)
-	DomainStore *DomainStore // cross-shard domain count cache (dashboard only)
+	EngineName    string
+	CrawlID       string
+	Addr          string // external engine address
+	FTSBase       string // ~/data/common-crawl/{crawlID}/fts/{engine}
+	WARCBase      string // ~/data/common-crawl/{crawlID}/warc
+	WARCMdBase    string // ~/data/common-crawl/{crawlID}/warc_md
+	CrawlDir      string // ~/data/common-crawl/{crawlID} — set by NewDashboard
+	Hub           *WSHub
+	Jobs          *Manager
+	Meta          *MetaManager
+	Docs          *DocStore      // per-document browse metadata (dashboard only)
+	DomainStore   *DomainStore   // cross-shard domain count cache (dashboard only)
+	CCDomainStore *CCDomainStore // Common Crawl CDX domain cache (separate DB)
 
-	manifestTotal int              // cached count of WARCs in CC manifest
-	crawlSize     *crawlSizeCache  // async-cached dirSize(crawlDir)
+	manifestTotal int             // cached count of WARCs in CC manifest
+	crawlSize     *crawlSizeCache // async-cached dirSize(crawlDir)
 
 	md goldmark.Markdown
 }
@@ -314,6 +317,7 @@ func NewDashboardWithOptions(engineName, crawlID, addr, baseDir string, opts Das
 
 	// Initialize domain count cache (lazily syncs from parquet files).
 	s.DomainStore = NewDomainStore(baseDir)
+	s.CCDomainStore = NewCCDomainStore(baseDir)
 
 	// Fetch manifest total in background for overview pipeline progress.
 	go func() {
@@ -371,6 +375,9 @@ func (s *Server) Handler() http.Handler {
 		router.Get("/api/browse/stats", s.handleBrowseStats)
 		router.Post("/api/browse/export-parquet", s.handleBrowseExportParquet)
 		router.Get("/api/domains", s.handleDomainList)
+		router.Get("/api/domains/overview", s.handleDomainOverview)
+		router.Post("/api/domains/cc/fetch", s.handleCCDomainFetch)
+		router.Get("/api/domains/cc/{domain}", s.handleCCDomainDetail)
 		router.Get("/api/domains/{domain}", s.handleDomainDetail)
 
 		// Parquet index management
@@ -430,6 +437,9 @@ func (s *Server) ListenAndServe(ctx context.Context, port int) error {
 		}
 		if s.Docs != nil {
 			_ = s.Docs.Close()
+		}
+		if s.CCDomainStore != nil {
+			_ = s.CCDomainStore.Close()
 		}
 		if err != nil {
 			logErrorf("server shutdown error: %v", err)
@@ -1189,7 +1199,6 @@ func (s *Server) handleBrowseStats(c *mizu.Ctx) error {
 	return c.JSON(200, stats)
 }
 
-
 // handleDomainList returns a paginated list of domains with URL counts, aggregated from CC parquet files.
 func (s *Server) handleDomainList(c *mizu.Ctx) error {
 	if s.DomainStore == nil {
@@ -1209,6 +1218,23 @@ func (s *Server) handleDomainList(c *mizu.Ctx) error {
 	return c.JSON(200, resp)
 }
 
+// handleDomainOverview returns only aggregate stats + syncing status, without the domain list.
+// Used by the frontend polling loop to refresh the stats pane without flickering the table.
+func (s *Server) handleDomainOverview(c *mizu.Ctx) error {
+	if s.DomainStore == nil {
+		return c.JSON(503, errResp{"domain store not available"})
+	}
+	if err := s.DomainStore.EnsureFresh(c.Context()); err != nil {
+		return c.JSON(500, errResp{err.Error()})
+	}
+	ov, syncing, locked := s.DomainStore.GetOverviewStats(c.Context())
+	return c.JSON(200, map[string]any{
+		"overview": ov,
+		"syncing":  syncing,
+		"locked":   locked,
+	})
+}
+
 // handleDomainDetail returns paginated URLs for a single domain, queried directly from parquet files.
 func (s *Server) handleDomainDetail(c *mizu.Ctx) error {
 	if s.DomainStore == nil {
@@ -1224,11 +1250,80 @@ func (s *Server) handleDomainDetail(c *mizu.Ctx) error {
 	page := queryIntCtx(c, "page", 1)
 	pageSize := queryIntCtx(c, "page_size", 100)
 	sortBy := c.Query("sort")
-	resp, err := s.DomainStore.ListDomainURLs(c.Context(), domain, sortBy, page, pageSize)
+	statusGroup := c.Query("status_group")
+	resp, err := s.DomainStore.ListDomainURLs(c.Context(), domain, sortBy, statusGroup, page, pageSize)
 	if err != nil {
 		return c.JSON(500, errResp{err.Error()})
 	}
 	return c.JSON(200, resp)
+}
+
+func (s *Server) handleCCDomainFetch(c *mizu.Ctx) error {
+	if s.CCDomainStore == nil {
+		return c.JSON(503, errResp{"cc domain store not available"})
+	}
+	type reqBody struct {
+		Domain  string `json:"domain"`
+		CrawlID string `json:"crawl_id"`
+		MaxURLs int    `json:"max_urls"`
+	}
+	var body reqBody
+	if err := json.NewDecoder(c.Request().Body).Decode(&body); err != nil {
+		return c.JSON(400, errResp{"invalid JSON: " + err.Error()})
+	}
+	domain := normalizeDomainInput(body.Domain)
+	if domain == "" {
+		return c.JSON(400, errResp{"domain required"})
+	}
+	resp, err := s.CCDomainStore.FetchAndCache(c.Context(), domain, strings.TrimSpace(body.CrawlID), body.MaxURLs)
+	if err != nil {
+		return c.JSON(500, errResp{err.Error()})
+	}
+	return c.JSON(200, resp)
+}
+
+func (s *Server) handleCCDomainDetail(c *mizu.Ctx) error {
+	if s.CCDomainStore == nil {
+		return c.JSON(503, errResp{"cc domain store not available"})
+	}
+	domain := normalizeDomainInput(c.Param("domain"))
+	if domain == "" {
+		return c.JSON(400, errResp{"domain required"})
+	}
+	page := queryIntCtx(c, "page", 1)
+	pageSize := queryIntCtx(c, "page_size", 100)
+	sortBy := c.Query("sort")
+	q := c.Query("q")
+	crawlID := strings.TrimSpace(c.Query("crawl"))
+
+	resp, err := s.CCDomainStore.GetDomainURLs(c.Context(), domain, crawlID, sortBy, q, page, pageSize)
+	if err != nil {
+		if errors.Is(err, ErrCCDomainNotFound) {
+			return c.JSON(404, errResp{"domain not found in Common Crawl cache; fetch it first"})
+		}
+		return c.JSON(500, errResp{err.Error()})
+	}
+	return c.JSON(200, resp)
+}
+
+func normalizeDomainInput(raw string) string {
+	s := strings.TrimSpace(strings.ToLower(raw))
+	if s == "" {
+		return ""
+	}
+	if strings.Contains(s, "://") {
+		if u, err := url.Parse(s); err == nil && u.Host != "" {
+			s = strings.ToLower(strings.TrimSpace(u.Host))
+		}
+	}
+	s = strings.TrimPrefix(s, "www.")
+	if i := strings.IndexByte(s, '/'); i >= 0 {
+		s = s[:i]
+	}
+	if i := strings.IndexByte(s, ':'); i >= 0 {
+		s = s[:i]
+	}
+	return strings.TrimSpace(s)
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

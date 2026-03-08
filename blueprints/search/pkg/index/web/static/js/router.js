@@ -60,6 +60,11 @@ function route() {
   } else if (path === '/domains' && isDashboard) {
     showHeaderSearch(false);
     renderDomains();
+  } else if (path.startsWith('/domains/cc/') && isDashboard) {
+    showHeaderSearch(false);
+    const domain = decodeURIComponent(path.slice('/domains/cc/'.length));
+    const crawl = params.get('crawl') || '';
+    renderCCDomainDetail(domain, crawl);
   } else if (path.startsWith('/domains/') && isDashboard) {
     showHeaderSearch(false);
     const domain = decodeURIComponent(path.slice('/domains/'.length));

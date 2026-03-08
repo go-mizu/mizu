@@ -67,6 +67,7 @@ async function renderParquet() {
       </div>
       <div id="parquet-stats" class="mb-4"></div>
       <div id="parquet-tabs" class="mb-3"></div>
+      <div id="parquet-banner"></div>
       <div class="flex items-center gap-2 mb-3">
         <input id="parquet-q" type="text" value="${esc(state.parquetQuery || '')}"
           placeholder="Filter by filename\u2026"
@@ -97,6 +98,7 @@ async function renderParquet() {
     const data = manifestData.value;
     state.parquetManifest = data;
     renderParquetSubsetTabs(data.summary);
+    renderParquetInvalidBanner(data.summary);
     renderParquetFilesTable(data);
   } else {
     $('parquet-files').innerHTML = `<div class="ui-empty">${esc(manifestData.reason?.message || 'Failed to load manifest')}</div>`;
@@ -137,6 +139,20 @@ function renderParquetStats(stats) {
     </div>`;
 }
 
+// ── Invalid files banner ──
+function renderParquetInvalidBanner(summary) {
+  const el = $('parquet-banner');
+  if (!el) return;
+  const n = summary?.invalid || 0;
+  if (n === 0) { el.innerHTML = ''; return; }
+  el.innerHTML = `
+    <div class="mb-3 px-4 py-3 text-xs font-mono rounded border flex items-center gap-3"
+      style="border-color:rgba(248,113,113,0.4);background:rgba(248,113,113,0.07);color:#f87171">
+      <span>\u26a0 ${n} file${n !== 1 ? 's are' : ' is'} truncated or corrupt (interrupted download).
+        Click <strong>\u26a0 re-download</strong> on the affected row${n !== 1 ? 's' : ''} to fix.</span>
+    </div>`;
+}
+
 // ── Subset tabs ──
 function renderParquetSubsetTabs(summary) {
   const el = $('parquet-tabs');
@@ -174,6 +190,7 @@ async function renderParquetFiles() {
     });
     state.parquetManifest = data;
     renderParquetSubsetTabs(data.summary);
+    renderParquetInvalidBanner(data.summary);
     renderParquetFilesTable(data);
   } catch (e) {
     el.innerHTML = `<div class="ui-empty">${esc(e.message)}</div>`;
@@ -194,11 +211,13 @@ function renderParquetFilesTable(data) {
       <td class="px-3 py-2 text-xs font-mono"><a href="#/parquet/${f.manifest_index}" class="ui-link hover:text-[var(--accent)]">${f.manifest_index}</a></td>
       <td class="px-3 py-2 text-xs font-mono truncate max-w-xs" title="${esc(f.remote_path)}"><a href="#/parquet/${f.manifest_index}" class="ui-link hover:text-[var(--accent)]">${esc(f.filename)}</a></td>
       <td class="px-3 py-2 text-xs font-mono hidden sm:table-cell"><a href="#/parquet/subset/${esc(f.subset)}" class="ui-link hover:text-[var(--accent)]">${esc(f.subset)}</a></td>
-      <td class="px-3 py-2 text-xs font-mono text-right hidden md:table-cell">${f.downloaded ? fmtBytes(f.local_size) : '\u2014'}</td>
+      <td class="px-3 py-2 text-xs font-mono text-right hidden md:table-cell">${(f.downloaded || f.invalid) ? fmtBytes(f.local_size) : '\u2014'}</td>
       <td class="px-3 py-2 text-xs font-mono text-right">
         ${f.downloaded
           ? `<a href="#/parquet/${f.manifest_index}" class="status-completed ui-link">\u2713 local</a>`
-          : `<button data-dl-idx="${f.manifest_index}" onclick="parquetDownloadOne(${f.manifest_index})" class="ui-btn px-2 py-1 text-[10px]">download</button>`}
+          : f.invalid
+            ? `<button data-dl-idx="${f.manifest_index}" onclick="parquetDownloadOne(${f.manifest_index})" class="ui-btn px-2 py-1 text-[10px]" style="color:#f87171;border-color:rgba(248,113,113,0.4)" title="File is truncated or corrupt \u2014 re-download to fix">\u26a0 re-download</button>`
+            : `<button data-dl-idx="${f.manifest_index}" onclick="parquetDownloadOne(${f.manifest_index})" class="ui-btn px-2 py-1 text-[10px]">download</button>`}
       </td>
     </tr>`).join('');
 

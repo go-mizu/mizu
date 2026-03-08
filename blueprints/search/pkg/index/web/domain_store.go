@@ -10,6 +10,9 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
 )
 
 // DomainStore maintains a lightweight domains.duckdb that caches
@@ -20,12 +23,16 @@ import (
 //
 // EnsureFresh is non-blocking: the first call starts a background goroutine
 // and returns immediately. Callers get stale-but-fast results while sync runs.
+// syncCooldown is the minimum time between background syncs.
+const syncCooldown = 60 * time.Second
+
 type DomainStore struct {
-	crawlDir string // ~/data/common-crawl/{crawlID}
-	mu       sync.Mutex
-	db       *sql.DB // lazily opened domains.duckdb
-	syncing  bool    // background sync in progress
-	synced   bool    // at least one sync completed
+	crawlDir   string // ~/data/common-crawl/{crawlID}
+	mu         sync.Mutex
+	db         *sql.DB   // lazily opened domains.duckdb
+	dbLocked   bool      // true when another process holds the DB lock
+	syncing    bool      // background sync in progress
+	lastSyncAt time.Time // when the last sync completed
 }
 
 // NewDomainStore creates a DomainStore rooted at crawlDir.
@@ -85,9 +92,18 @@ func (ds *DomainStore) EnsureFresh(ctx context.Context) error {
 		}
 		db, err := ds.openDB()
 		if err != nil {
+			// Lock conflict: another process has the DB open.
+			// Mark it so callers can surface a friendly message, and retry next call.
+			if strings.Contains(err.Error(), "Could not set lock") ||
+				strings.Contains(err.Error(), "Conflicting lock") {
+				ds.dbLocked = true
+				ds.mu.Unlock()
+				return nil
+			}
 			ds.mu.Unlock()
 			return fmt.Errorf("domain_store: open: %w", err)
 		}
+		ds.dbLocked = false
 		if err := ds.initSchema(ctx, db); err != nil {
 			db.Close()
 			ds.mu.Unlock()
@@ -102,6 +118,12 @@ func (ds *DomainStore) EnsureFresh(ctx context.Context) error {
 		return nil
 	}
 
+	// Respect cooldown: don't re-sync if last sync completed recently.
+	if !ds.lastSyncAt.IsZero() && time.Since(ds.lastSyncAt) < syncCooldown {
+		ds.mu.Unlock()
+		return nil
+	}
+
 	ds.syncing = true
 	ds.mu.Unlock()
 
@@ -110,7 +132,7 @@ func (ds *DomainStore) EnsureFresh(ctx context.Context) error {
 		ds.runSync()
 		ds.mu.Lock()
 		ds.syncing = false
-		ds.synced = true
+		ds.lastSyncAt = time.Now()
 		ds.mu.Unlock()
 	}()
 
@@ -122,6 +144,21 @@ func (ds *DomainStore) IsSyncing() bool {
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
 	return ds.syncing
+}
+
+// GetOverviewStats returns aggregate stats, syncing status, and locked status
+// without querying the domain list. Used by the lightweight poll endpoint to
+// refresh the stats pane without re-rendering the full domain table.
+func (ds *DomainStore) GetOverviewStats(ctx context.Context) (ov *DomainsOverview, syncing, locked bool) {
+	ds.mu.Lock()
+	db := ds.db
+	syncing = ds.syncing
+	locked = ds.dbLocked
+	ds.mu.Unlock()
+	if db == nil {
+		return nil, syncing, locked
+	}
+	return ds.queryOverview(ctx, db), syncing, locked
 }
 
 // runSync performs the full idempotent sync — called from a background goroutine.
@@ -180,6 +217,11 @@ func (ds *DomainStore) runSync() {
 		mtime := info.ModTime().UTC().Format("2006-01-02T15:04:05Z")
 		size := info.Size()
 		if v, ok := knownVersions[path]; ok && v.mtime == mtime && v.size == size {
+			continue
+		}
+		// Skip files that are truncated or otherwise invalid (e.g. interrupted download).
+		// They will be picked up on the next sync once the download completes.
+		if !cc.IsValidParquetFile(path) {
 			continue
 		}
 		_ = ds.syncParquetFile(ctx, db, path, mtime, size)
@@ -276,13 +318,27 @@ type DomainRow struct {
 	Syncing bool   `json:"syncing,omitempty"`
 }
 
+// DomainsOverview holds aggregate stats shown at the top of the domain list.
+type DomainsOverview struct {
+	TotalDomains int64      `json:"total_domains"`
+	TotalURLs    int64      `json:"total_urls"`
+	SizeBuckets  []sizeItem `json:"size_buckets"` // pages-per-domain distribution
+}
+
+type sizeItem struct {
+	Label string `json:"label"`
+	Count int64  `json:"count"`
+}
+
 // DomainsResponse is returned by GET /api/domains.
 type DomainsResponse struct {
-	Domains  []DomainRow `json:"domains"`
-	Total    int64       `json:"total"`
-	Page     int         `json:"page"`
-	PageSize int         `json:"page_size"`
-	Syncing  bool        `json:"syncing,omitempty"`
+	Domains  []DomainRow      `json:"domains"`
+	Total    int64            `json:"total"`
+	Page     int              `json:"page"`
+	PageSize int              `json:"page_size"`
+	Overview *DomainsOverview `json:"overview,omitempty"` // only on page 1
+	Syncing  bool             `json:"syncing,omitempty"`
+	Locked   bool             `json:"locked,omitempty"` // domains.duckdb held by another process
 }
 
 // ListDomains returns a paginated list of domains with total URL counts.
@@ -312,10 +368,11 @@ func (ds *DomainStore) ListDomains(ctx context.Context, sortBy, q string, page, 
 	ds.mu.Lock()
 	db := ds.db
 	syncing := ds.syncing
+	locked := ds.dbLocked
 	ds.mu.Unlock()
 
 	if db == nil {
-		return DomainsResponse{Syncing: syncing, Domains: []DomainRow{}}, nil
+		return DomainsResponse{Syncing: syncing, Locked: locked, Domains: []DomainRow{}}, nil
 	}
 
 	var total int64
@@ -346,7 +403,52 @@ func (ds *DomainStore) ListDomains(ctx context.Context, sortBy, q string, page, 
 		rows.Scan(&d.Domain, &d.Count)
 		domains = append(domains, d)
 	}
-	return DomainsResponse{Domains: domains, Total: total, Page: page, PageSize: pageSize, Syncing: syncing}, nil
+
+	// Overview stats — only on first page to avoid double work.
+	var overview *DomainsOverview
+	if page == 1 {
+		overview = ds.queryOverview(ctx, db)
+	}
+
+	return DomainsResponse{Domains: domains, Total: total, Page: page, PageSize: pageSize, Overview: overview, Syncing: syncing, Locked: locked}, nil
+}
+
+// queryOverview computes aggregate stats from domain_counts (fast — no parquet scan).
+func (ds *DomainStore) queryOverview(ctx context.Context, db *sql.DB) *DomainsOverview {
+	var totalURLs int64
+	db.QueryRowContext(ctx, `SELECT COALESCE(SUM(count),0) FROM domain_counts`).Scan(&totalURLs)
+
+	// Pages-per-domain distribution.
+	rows, err := db.QueryContext(ctx, `
+		WITH dc AS (
+			SELECT domain, SUM(count) AS cnt FROM domain_counts GROUP BY domain
+		)
+		SELECT
+			CASE
+				WHEN cnt = 1            THEN '1 page'
+				WHEN cnt BETWEEN 2 AND 5   THEN '2–5'
+				WHEN cnt BETWEEN 6 AND 20  THEN '6–20'
+				WHEN cnt BETWEEN 21 AND 100 THEN '21–100'
+				ELSE '100+'
+			END AS bucket,
+			COUNT(*) AS domains
+		FROM dc
+		GROUP BY bucket
+		ORDER BY MIN(cnt)
+	`)
+	if err != nil {
+		return &DomainsOverview{TotalURLs: totalURLs}
+	}
+	defer rows.Close()
+	var buckets []sizeItem
+	var totalDomains int64
+	for rows.Next() {
+		var b sizeItem
+		rows.Scan(&b.Label, &b.Count)
+		buckets = append(buckets, b)
+		totalDomains += b.Count
+	}
+	return &DomainsOverview{TotalDomains: totalDomains, TotalURLs: totalURLs, SizeBuckets: buckets}
 }
 
 // DomainDocRow is one URL entry in the domain detail page.
@@ -356,20 +458,35 @@ type DomainDocRow struct {
 	FetchStatus int    `json:"fetch_status,omitempty"`
 }
 
+// StatusBucket is one row in the status distribution.
+type StatusBucket struct {
+	Code  int   `json:"code"`  // 0 = unknown/null
+	Count int64 `json:"count"`
+}
+
+// DomainStats holds aggregate statistics for a single domain.
+type DomainStats struct {
+	Total         int64          `json:"total"`
+	StatusBuckets []StatusBucket `json:"status_buckets"`
+}
+
 // DomainDetailResponse is returned by GET /api/domains/{domain}.
 type DomainDetailResponse struct {
-	Domain   string         `json:"domain"`
-	Total    int64          `json:"total"`
-	Page     int            `json:"page"`
-	PageSize int            `json:"page_size"`
-	Docs     []DomainDocRow `json:"docs"`
-	Syncing  bool           `json:"syncing,omitempty"`
+	Domain      string         `json:"domain"`
+	Total       int64          `json:"total"`
+	Page        int            `json:"page"`
+	PageSize    int            `json:"page_size"`
+	StatusGroup string         `json:"status_group,omitempty"` // active filter
+	Stats       *DomainStats   `json:"stats,omitempty"`        // only on page 1
+	Docs        []DomainDocRow `json:"docs"`
+	Syncing     bool           `json:"syncing,omitempty"`
 }
 
 // ListDomainURLs queries parquet files directly for all URLs under a domain.
 // LIMIT/OFFSET are pushed to DuckDB for efficiency — no full scan in Go memory.
 // sortBy: "url" (default, asc) | "status".
-func (ds *DomainStore) ListDomainURLs(ctx context.Context, domain, sortBy string, page, pageSize int) (DomainDetailResponse, error) {
+// statusGroup: "" (all) | "2xx" | "3xx" | "4xx" | "5xx" | "other".
+func (ds *DomainStore) ListDomainURLs(ctx context.Context, domain, sortBy, statusGroup string, page, pageSize int) (DomainDetailResponse, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -427,31 +544,15 @@ func (ds *DomainStore) ListDomainURLs(ctx context.Context, domain, sortBy string
 		orderClause = "ORDER BY fetch_status ASC, url ASC"
 	}
 
-	// Count total matching rows.
-	countSQL := fmt.Sprintf(`
-		SELECT COUNT(*) FROM read_parquet([%s], union_by_name=true, hive_partitioning=true)
-		WHERE url_host_registered_domain = ?
-	`, fileList)
-	var total int64
-	tmpDB.QueryRowContext(ctx, countSQL, domain).Scan(&total)
-
-	// Fetch the page — push LIMIT/OFFSET to DuckDB.
-	// Note: crawl_date does not exist in CC parquet; omit it to avoid binder errors.
-	pageSQL := fmt.Sprintf(`
-		SELECT url, fetch_status
-		FROM read_parquet([%s], union_by_name=true, hive_partitioning=true)
-		WHERE url_host_registered_domain = ?
-		%s
-		LIMIT ? OFFSET ?
-	`, fileList, orderClause)
-
-	qrows, err := tmpDB.QueryContext(ctx, pageSQL, domain, pageSize, offset)
-	if err != nil {
-		return DomainDetailResponse{}, fmt.Errorf("domain_store: query parquet: %w", err)
+	// Build WHERE clause for optional status group filter.
+	domainFilter := "url_host_registered_domain = ?"
+	statusFilter := statusGroupSQL(statusGroup)
+	whereClause := domainFilter
+	if statusFilter != "" {
+		whereClause += " AND " + statusFilter
 	}
-	defer qrows.Close()
 
-	// Determine shard label (combine unique shards when multiple files involved).
+	// Shard label (combine unique shards when multiple files involved).
 	shardLabel := refs[0].shard
 	if len(refs) > 1 {
 		seen := make(map[string]bool)
@@ -466,6 +567,54 @@ func (ds *DomainStore) ListDomainURLs(ctx context.Context, domain, sortBy string
 		shardLabel = strings.Join(names, ",")
 	}
 
+	// Count total for the active filter.
+	countSQL := fmt.Sprintf(`
+		SELECT COUNT(*) FROM read_parquet([%s], union_by_name=true, hive_partitioning=true)
+		WHERE %s
+	`, fileList, whereClause)
+	var total int64
+	tmpDB.QueryRowContext(ctx, countSQL, domain).Scan(&total)
+
+	// Stats (status distribution) — only on page 1 to avoid double work.
+	var stats *DomainStats
+	if page == 1 {
+		statsSQL := fmt.Sprintf(`
+			SELECT COALESCE(fetch_status, 0) AS code, COUNT(*) AS cnt
+			FROM read_parquet([%s], union_by_name=true, hive_partitioning=true)
+			WHERE url_host_registered_domain = ?
+			GROUP BY code
+			ORDER BY code
+		`, fileList)
+		srows, err2 := tmpDB.QueryContext(ctx, statsSQL, domain)
+		if err2 == nil {
+			var buckets []StatusBucket
+			var statsTotal int64
+			for srows.Next() {
+				var b StatusBucket
+				srows.Scan(&b.Code, &b.Count)
+				buckets = append(buckets, b)
+				statsTotal += b.Count
+			}
+			srows.Close()
+			stats = &DomainStats{Total: statsTotal, StatusBuckets: buckets}
+		}
+	}
+
+	// Fetch the page — LIMIT/OFFSET pushed to DuckDB.
+	pageSQL := fmt.Sprintf(`
+		SELECT url, fetch_status
+		FROM read_parquet([%s], union_by_name=true, hive_partitioning=true)
+		WHERE %s
+		%s
+		LIMIT ? OFFSET ?
+	`, fileList, whereClause, orderClause)
+
+	qrows, err := tmpDB.QueryContext(ctx, pageSQL, domain, pageSize, offset)
+	if err != nil {
+		return DomainDetailResponse{}, fmt.Errorf("domain_store: query parquet: %w", err)
+	}
+	defer qrows.Close()
+
 	docs := make([]DomainDocRow, 0, pageSize)
 	for qrows.Next() {
 		var url string
@@ -479,13 +628,34 @@ func (ds *DomainStore) ListDomainURLs(ctx context.Context, domain, sortBy string
 	}
 
 	return DomainDetailResponse{
-		Domain:   domain,
-		Total:    total,
-		Page:     page,
-		PageSize: pageSize,
-		Docs:     docs,
-		Syncing:  syncing,
+		Domain:      domain,
+		Total:       total,
+		Page:        page,
+		PageSize:    pageSize,
+		StatusGroup: statusGroup,
+		Stats:       stats,
+		Docs:        docs,
+		Syncing:     syncing,
 	}, nil
+}
+
+// statusGroupSQL returns a SQL fragment for filtering by status group.
+// Returns empty string for "all" / unknown groups.
+func statusGroupSQL(group string) string {
+	switch group {
+	case "2xx":
+		return "fetch_status >= 200 AND fetch_status < 300"
+	case "3xx":
+		return "fetch_status >= 300 AND fetch_status < 400"
+	case "4xx":
+		return "fetch_status >= 400 AND fetch_status < 500"
+	case "5xx":
+		return "fetch_status >= 500 AND fetch_status < 600"
+	case "other":
+		return "(fetch_status IS NULL OR fetch_status < 200 OR fetch_status >= 600)"
+	default:
+		return ""
+	}
 }
 
 // Close releases the underlying DuckDB connection.

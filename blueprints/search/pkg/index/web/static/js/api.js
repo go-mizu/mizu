@@ -138,13 +138,33 @@ async function apiDomains(opts = {}) {
   return apiFetch('/api/domains' + (qs ? '?' + qs : ''));
 }
 
+async function apiDomainsOverview() {
+  return apiFetch('/api/domains/overview');
+}
+
 async function apiDomainDetail(domain, opts = {}) {
   const p = new URLSearchParams();
   if (opts.sort) p.set('sort', opts.sort);
   if (opts.page) p.set('page', String(opts.page));
   if (opts.pageSize) p.set('page_size', String(opts.pageSize));
+  if (opts.statusGroup) p.set('status_group', opts.statusGroup);
   const qs = p.toString();
   return apiFetch('/api/domains/' + encodeURIComponent(domain) + (qs ? '?' + qs : ''));
+}
+
+async function apiCCDomainFetch(payload) {
+  return apiPost('/api/domains/cc/fetch', payload || {});
+}
+
+async function apiCCDomainDetail(domain, opts = {}) {
+  const p = new URLSearchParams();
+  if (opts.crawl) p.set('crawl', opts.crawl);
+  if (opts.sort) p.set('sort', opts.sort);
+  if (opts.page) p.set('page', String(opts.page));
+  if (opts.pageSize) p.set('page_size', String(opts.pageSize));
+  if (opts.q) p.set('q', opts.q);
+  const qs = p.toString();
+  return apiFetch('/api/domains/cc/' + encodeURIComponent(domain) + (qs ? '?' + qs : ''));
 }
 
 function currentSearchEngine() {

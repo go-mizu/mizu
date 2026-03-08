@@ -270,11 +270,12 @@ func (m *Manager) runParquetDownloadJob(ctx context.Context, job *Job) error {
 		files = filtered
 	}
 
-	// Skip already-downloaded files.
+	// Skip already-downloaded files that are complete valid parquet files.
+	// Truncated or missing files are included for (re-)download.
 	toDownload := files[:0]
 	for _, f := range files {
 		localPath := cc.LocalParquetPathForRemote(cfg, f.RemotePath)
-		if _, serr := os.Stat(localPath); serr != nil {
+		if !cc.IsValidParquetFile(localPath) {
 			toDownload = append(toDownload, f)
 		}
 	}
