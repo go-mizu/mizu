@@ -49,9 +49,12 @@ def get_jina_key(headless=False, timeout=90, verbose=False):
     rate_limited = False
 
     with sync_playwright() as p:
+        launch_args = ["--disable-blink-features=AutomationControlled", "--window-size=1920,1080"]
+        if headless:
+            launch_args.extend(["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"])
         browser = p.chromium.launch(
             headless=headless,
-            args=["--disable-blink-features=AutomationControlled", "--window-size=1920,1080"],
+            args=launch_args,
         )
         ctx = browser.new_context(viewport={"width": 1920, "height": 1080})
 
