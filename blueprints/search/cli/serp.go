@@ -664,6 +664,25 @@ func newSerpInstall() *cobra.Command {
 				fmt.Println(successStyle.Render("OK"))
 			}
 
+			// Check xvfb on Linux (needed for Turnstile — headless can't solve it)
+			if runtime.GOOS == "linux" {
+				fmt.Print("checking xvfb... ")
+				_, err = exec.LookPath("xvfb-run")
+				if err != nil {
+					fmt.Println(warningStyle.Render("not installed"))
+					fmt.Print("installing xvfb... ")
+					out, err = exec.Command("apt-get", "install", "-y", "xvfb").CombinedOutput()
+					if err != nil {
+						fmt.Println(warningStyle.Render("may need sudo"))
+						fmt.Println("  Run manually: apt install xvfb")
+					} else {
+						fmt.Println(successStyle.Render("OK"))
+					}
+				} else {
+					fmt.Println(successStyle.Render("OK"))
+				}
+			}
+
 			fmt.Println()
 			fmt.Println(successStyle.Render("All dependencies installed!"))
 			fmt.Println("  Run: search serp signup jina --verbose")

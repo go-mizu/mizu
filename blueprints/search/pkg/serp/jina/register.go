@@ -46,21 +46,30 @@ func (r *registrar) Register(email, password string, verbose bool) (string, erro
 		return "", fmt.Errorf("write script: %w", err)
 	}
 
-	args := []string{scriptPath}
-	// Headless on Linux (no display server)
-	if runtime.GOOS == "linux" {
-		args = append(args, "--headless")
-	}
+	pyArgs := []string{scriptPath}
 	if verbose {
-		args = append(args, "--verbose")
+		pyArgs = append(pyArgs, "--verbose")
 	}
-	args = append(args, "--timeout", "90")
+	pyArgs = append(pyArgs, "--timeout", "90")
 
-	if verbose {
-		fmt.Printf("  running: python3 %s\n", strings.Join(args, " "))
+	// On Linux without DISPLAY, use xvfb-run for virtual framebuffer.
+	// Turnstile challenge requires a visible browser context — headless
+	// Chromium cannot solve it.
+	var cmd *exec.Cmd
+	if runtime.GOOS == "linux" && os.Getenv("DISPLAY") == "" {
+		// xvfb-run provides a virtual X display
+		xvfbArgs := []string{"-a", "--server-args=-screen 0 1920x1080x24", "python3"}
+		xvfbArgs = append(xvfbArgs, pyArgs...)
+		cmd = exec.Command("xvfb-run", xvfbArgs...)
+		if verbose {
+			fmt.Printf("  running: xvfb-run python3 %s\n", strings.Join(pyArgs, " "))
+		}
+	} else {
+		cmd = exec.Command("python3", pyArgs...)
+		if verbose {
+			fmt.Printf("  running: python3 %s\n", strings.Join(pyArgs, " "))
+		}
 	}
-
-	cmd := exec.Command("python3", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		outStr := string(output)
