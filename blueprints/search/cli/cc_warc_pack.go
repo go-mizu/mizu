@@ -16,15 +16,16 @@ import (
 // newCCWarcPack returns the `cc warc pack` command.
 func newCCWarcPack() *cobra.Command {
 	var (
-		crawlID    string
-		fileIdx    string
-		from       int
-		to         int
-		workers    int
-		force      bool
-		statusCode int
-		mimeFilter string
-		maxBody    int64
+		crawlID     string
+		fileIdx     string
+		from        int
+		to          int
+		workers     int
+		force       bool
+		fastConvert bool
+		statusCode  int
+		mimeFilter  string
+		maxBody     int64
 	)
 
 	cmd := &cobra.Command{
@@ -46,7 +47,7 @@ Pipeline architecture:
   search cc warc pack --from 0 --to 9 --workers 16`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCCWarcPack(cmd.Context(),
-				crawlID, fileIdx, from, to, workers, force,
+				crawlID, fileIdx, from, to, workers, force, fastConvert,
 				statusCode, mimeFilter, maxBody)
 		},
 	}
@@ -57,6 +58,7 @@ Pipeline architecture:
 	cmd.Flags().IntVar(&to, "to", -1, "Last file index (inclusive) for parallel range")
 	cmd.Flags().IntVar(&workers, "workers", 0, "Converter goroutines (0 = NumCPU)")
 	cmd.Flags().BoolVar(&force, "force", false, "Re-process existing files")
+	cmd.Flags().BoolVar(&fastConvert, "fast", false, "Use go-readability (3-8x faster) instead of trafilatura")
 	cmd.Flags().IntVar(&statusCode, "status", 200, "HTTP status filter (0 = all)")
 	cmd.Flags().StringVar(&mimeFilter, "mime", "text/html", "MIME type filter")
 	cmd.Flags().Int64Var(&maxBody, "max-body", 512*1024, "Max HTML body bytes per record")
@@ -65,7 +67,7 @@ Pipeline architecture:
 }
 
 func runCCWarcPack(ctx context.Context,
-	crawlID, fileIdx string, from, to, workers int, force bool,
+	crawlID, fileIdx string, from, to, workers int, force, fastConvert bool,
 	statusCode int, mimeFilter string, maxBody int64) error {
 
 	if from >= 0 && to >= 0 {
@@ -134,6 +136,7 @@ func runCCWarcPack(ctx context.Context,
 			OutputPath:  outPath,
 			Workers:     workers,
 			Force:       force,
+			FastConvert: fastConvert,
 			StatusCode:  statusCode,
 			MIMEFilter:  mimeFilter,
 			MaxBodySize: maxBody,

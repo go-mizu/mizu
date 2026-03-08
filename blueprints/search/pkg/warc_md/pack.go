@@ -1,6 +1,7 @@
 package warc_md
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -23,8 +24,9 @@ import (
 type PackConfig struct {
 	InputFiles  []string // .warc.gz source files
 	OutputPath  string   // output .md.warc.gz file path
-	Workers     int      // parallel converter goroutines (0 = NumCPU)
+	Workers     int      // parallel converter goroutines (0 = NumCPU*2)
 	Force       bool     // overwrite existing output
+	FastConvert bool     // use go-readability (3-8x faster) instead of trafilatura
 	StatusCode  int      // HTTP status filter (default: 200)
 	MIMEFilter  string   // MIME type filter (default: "text/html")
 	MaxBodySize int64    // max HTML body bytes per record (default: 512 KB)
@@ -68,7 +70,7 @@ func RunPack(ctx context.Context, cfg PackConfig, progressFn ProgressFunc) (*Pac
 		return &PackStats{}, nil
 	}
 	if cfg.Workers <= 0 {
-		cfg.Workers = runtime.NumCPU()
+		cfg.Workers = runtime.NumCPU() * 2
 	}
 	if cfg.StatusCode == 0 {
 		cfg.StatusCode = 200
@@ -145,6 +147,11 @@ func RunPack(ctx context.Context, cfg PackConfig, progressFn ProgressFunc) (*Pac
 	}()
 
 	// ── Converter workers ───────────────────────────────────────────────────
+	convertFn := mdpkg.Convert
+	if cfg.FastConvert {
+		convertFn = mdpkg.ConvertFast
+	}
+
 	converterDone := make(chan struct{})
 	go func() {
 		defer close(resultCh)
@@ -159,7 +166,7 @@ func RunPack(ctx context.Context, cfg PackConfig, progressFn ProgressFunc) (*Pac
 			go func(it packItem) {
 				defer func() { <-sem }()
 
-				res := mdpkg.Convert(it.htmlBody, "")
+				res := convertFn(it.htmlBody, "")
 
 				if res.HasContent && res.Markdown != "" {
 					resultCh <- packResult{
@@ -288,6 +295,8 @@ func packWriteFile(outputPath string, results <-chan packResult, stats *PackStat
 		os.Remove(tmpPath) // cleanup on error
 	}()
 
+	bw := bufio.NewWriterSize(f, 1024*1024) // 1 MB write buffer
+
 	for res := range results {
 		if !res.hasContent || len(res.markdown) == 0 {
 			continue
@@ -313,7 +322,7 @@ func packWriteFile(outputPath string, results <-chan packResult, stats *PackStat
 		}
 
 		// Each record in its own gzip member
-		gz, err := kgzip.NewWriterLevel(f, kgzip.BestSpeed)
+		gz, err := kgzip.NewWriterLevel(bw, kgzip.BestSpeed)
 		if err != nil {
 			return err
 		}
@@ -335,6 +344,9 @@ func packWriteFile(outputPath string, results <-chan packResult, stats *PackStat
 		atomic.AddInt64(&stats.WriteBytes, int64(len(res.markdown)))
 	}
 
+	if err := bw.Flush(); err != nil {
+		return err
+	}
 	if err := f.Close(); err != nil {
 		return err
 	}
