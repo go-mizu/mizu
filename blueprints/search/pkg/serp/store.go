@@ -100,3 +100,14 @@ func (s *Store) UpdateSearchesLeft(apiKey string, left int) {
 		}
 	}
 }
+
+// RemoveKey removes an account by API key.
+func (s *Store) RemoveKey(apiKey string) {
+	kept := s.Accounts[:0]
+	for _, a := range s.Accounts {
+		if a.APIKey != apiKey {
+			kept = append(kept, a)
+		}
+	}
+	s.Accounts = kept
+}

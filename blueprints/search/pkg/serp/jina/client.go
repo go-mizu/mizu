@@ -66,3 +66,43 @@ func (p *Provider) Search(apiKey, query string) (*serp.SearchResult, error) {
 	}
 	return result, nil
 }
+
+// KeyInfo holds Jina API key balance information.
+type KeyInfo struct {
+	TotalBalance int64 // negative = tokens used beyond trial
+	TrialBalance int64
+	Valid        bool
+}
+
+// CheckBalance queries the Jina dashboard API for key balance.
+func CheckBalance(apiKey string) (*KeyInfo, error) {
+	u := "https://dash.jina.ai/api/v1/api_key/fe_user?api_key=" + apiKey
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Get(u)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == 401 {
+		return &KeyInfo{Valid: false}, nil
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("jina balance API: HTTP %d: %s", resp.StatusCode, data)
+	}
+
+	var raw struct {
+		Wallet struct {
+			TotalBalance   int64 `json:"total_balance"`
+			TrialBalance   int64 `json:"trial_balance"`
+			RegularBalance int64 `json:"regular_balance"`
+		} `json:"wallet"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("jina balance: decode: %w", err)
+	}
+	return &KeyInfo{
+		TotalBalance: raw.Wallet.TotalBalance,
+		TrialBalance: raw.Wallet.TrialBalance,
+		Valid:        true,
+	}, nil
+}

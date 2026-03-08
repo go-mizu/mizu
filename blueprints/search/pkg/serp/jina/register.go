@@ -1,7 +1,9 @@
 package jina
 
 import (
+	_ "embed"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -11,6 +13,9 @@ import (
 	"github.com/go-mizu/mizu/blueprints/search/pkg/serp"
 )
 
+//go:embed get_key.py
+var getKeyScript []byte
+
 func init() {
 	serp.RegisterRegistrar("jina", &registrar{})
 }
@@ -19,26 +24,33 @@ type registrar struct{}
 
 var jinaKeyRe = regexp.MustCompile(`jina_[a-f0-9]{32}[a-zA-Z0-9_-]+`)
 
-// Register gets a Jina AI API key by running the Python patchright script.
+// Register gets a Jina AI API key by running the embedded Python patchright script.
 //
-// Strategy (implemented in tools/jina-key/get_key.py):
+// Strategy:
 //  1. Launch patchright browser, navigate to jina.ai/?newKey
 //  2. context.route() intercepts keygen.jina.ai POST, captures cf-turnstile-response
 //  3. If rate-limited (429), replays keygen POST through SOCKS5 proxies
 //  4. Returns key with 10M tokens (10-year trial)
 //
-// Rod's CDP Fetch domain cannot intercept the keygen request (Turnstile makes it
-// through a mechanism CDP doesn't capture). Patchright's Playwright-based route
-// intercept works at the browser process level and captures all requests.
-//
 // Requirements: python3 + patchright (pip install patchright)
 func (r *registrar) Register(email, password string, verbose bool) (string, error) {
-	// Find the Python script relative to the Go source
-	_, thisFile, _, _ := runtime.Caller(0)
-	scriptDir := filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "tools", "jina-key")
-	scriptPath := filepath.Join(scriptDir, "get_key.py")
+	// Write embedded script to temp file
+	tmpDir, err := os.MkdirTemp("", "jina-key-*")
+	if err != nil {
+		return "", fmt.Errorf("create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	scriptPath := filepath.Join(tmpDir, "get_key.py")
+	if err := os.WriteFile(scriptPath, getKeyScript, 0700); err != nil {
+		return "", fmt.Errorf("write script: %w", err)
+	}
 
 	args := []string{scriptPath}
+	// Headless on Linux (no display server)
+	if runtime.GOOS == "linux" {
+		args = append(args, "--headless")
+	}
 	if verbose {
 		args = append(args, "--verbose")
 	}
