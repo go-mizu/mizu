@@ -47,6 +47,17 @@ const state = {
   warcPageSize: 100,
   warcTotal: 0,
   warcSystem: null,
+  // Parquet tab state
+  parquetSubset: '',
+  parquetQuery: '',
+  parquetOffset: 0,
+  parquetManifest: null,
+  parquetSQL: '',
+  parquetDetail: null,
+  parquetDetailIdx: null,
+  parquetDetailPage: 1,
+  parquetDetailFilter: '',
+  parquetDetailSort: '',
 };
 
 // ===================================================================

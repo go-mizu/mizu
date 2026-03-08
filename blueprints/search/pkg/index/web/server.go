@@ -365,6 +365,15 @@ func (s *Server) Handler() http.Handler {
 		router.Delete("/api/jobs", s.handleClearJobs)
 		router.Post("/api/meta/scan-docs", s.handleMetaScanDocs)
 		router.Get("/api/browse/stats", s.handleBrowseStats)
+
+		// Parquet index management
+		router.Get("/api/parquet/manifest", s.handleParquetManifest)
+		router.Get("/api/parquet/schema", s.handleParquetSchema)
+		router.Post("/api/parquet/query", s.handleParquetQuery)
+		router.Post("/api/parquet/download", s.handleParquetDownload)
+		router.Get("/api/parquet/stats", s.handleParquetStats)
+		router.Get("/api/parquet/file/{index}", s.handleParquetFileDetail)
+		router.Get("/api/parquet/file/{index}/data", s.handleParquetFileData)
 	}
 
 	if s.Hub != nil {

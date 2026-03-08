@@ -39,7 +39,7 @@ document.addEventListener('keydown', (e) => {
   // Number keys — switch tabs (when not in input)
   if (!isInput && e.key >= '1' && e.key <= '7' && !e.metaKey && !e.ctrlKey && !e.altKey) {
     const tabs = isDashboard
-      ? ['/', '/search', '/browse', '/warc', '/jobs']
+      ? ['/', '/search', '/browse', '/warc', '/parquet', '/jobs']
       : ['/search', '/browse'];
     const idx = parseInt(e.key) - 1;
     if (idx >= 0 && idx < tabs.length) {
@@ -57,7 +57,7 @@ applyTheme();
 // In search-only mode: hide dashboard tabs, narrow layout.
 if (!isDashboard) {
   document.querySelectorAll('#main-nav a[data-tab]').forEach(a => {
-    if (['overview', 'jobs', 'warc'].includes(a.dataset.tab)) a.style.display = 'none';
+    if (['overview', 'jobs', 'warc', 'parquet'].includes(a.dataset.tab)) a.style.display = 'none';
   });
   const statusEl = $('header-status');
   if (statusEl) statusEl.style.display = 'none';

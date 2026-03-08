@@ -39,6 +39,13 @@ function route() {
       showHeaderSearch(false);
       renderSearchHome();
     }
+  } else if (path === '/parquet' && isDashboard) {
+    showHeaderSearch(false);
+    renderParquet();
+  } else if (path.startsWith('/parquet/') && isDashboard) {
+    showHeaderSearch(false);
+    const idx = path.split('/')[2] || '';
+    renderParquetDetail(idx);
   } else if (path === '/warc' && isDashboard) {
     showHeaderSearch(false);
     renderWARC();
@@ -71,6 +78,7 @@ function updateActiveTab(path) {
   let activeTab = isDashboard ? 'overview' : 'search';
   if (path === '/jobs' || path.startsWith('/jobs/')) activeTab = 'jobs';
   else if (path === '/search' || path === '/' && !isDashboard || path.startsWith('/doc/')) activeTab = 'search';
+  else if (path === '/parquet' || path.startsWith('/parquet/')) activeTab = 'parquet';
   else if (path === '/warc' || path.startsWith('/warc/')) activeTab = 'warc';
   else if (path.startsWith('/browse')) activeTab = 'browse';
   else if (path === '/' && isDashboard) activeTab = 'overview';
