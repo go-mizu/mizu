@@ -11,7 +11,7 @@ import (
 	"github.com/JohannesKaufmann/html-to-markdown/v2/plugin/base"
 	"github.com/JohannesKaufmann/html-to-markdown/v2/plugin/commonmark"
 	readability "github.com/go-shiori/go-readability"
-	"github.com/markusmobius/go-trafilatura"
+	trafilatura "github.com/go-mizu/mizu/blueprints/search/pkg/trafilatura"
 	"golang.org/x/net/html"
 	htmlcharset "golang.org/x/net/html/charset"
 	"golang.org/x/text/transform"
@@ -99,44 +99,10 @@ func Convert(rawHTML []byte, pageURL string) Result {
 	title := extracted.Metadata.Title
 	lang := extracted.Metadata.Language
 
-	// Step 2: render extracted DOM back to HTML, reparse, then convert to markdown.
-	// trafilatura's ContentNode is a partial fragment; html-to-markdown's collapse
-	// pass panics on non-normalised trees. Render → reparse normalises the fragment.
-	// We then use ConvertNode (pooled) to avoid the extra string→reader→parse in
-	// ConvertString.
-	var buf strings.Builder
-	if err := html.Render(&buf, extracted.ContentNode); err != nil {
-		ms := int(time.Since(start).Milliseconds())
-		return Result{
-			HTMLSize:  htmlSize,
-			Title:     title,
-			Language:  lang,
-			ConvertMs: ms,
-			Error:     "html render: " + err.Error(),
-		}
-	}
-	reparsed, err := html.Parse(strings.NewReader(buf.String()))
-	if err != nil {
-		ms := int(time.Since(start).Milliseconds())
-		return Result{
-			HTMLSize:  htmlSize,
-			Title:     title,
-			Language:  lang,
-			ConvertMs: ms,
-			Error:     "html reparse: " + err.Error(),
-		}
-	}
-	md, err := convertNodeToMarkdown(reparsed, pageURL)
-	if err != nil {
-		ms := int(time.Since(start).Milliseconds())
-		return Result{
-			HTMLSize:  htmlSize,
-			Title:     title,
-			Language:  lang,
-			ConvertMs: ms,
-			Error:     "md convert: " + err.Error(),
-		}
-	}
+	// Step 2: convert extracted DOM directly to markdown using fastMarkdown.
+	// This replaces the previous render → reparse → html-to-markdown pipeline,
+	// eliminating two full DOM traversals and the html-to-markdown plugin overhead.
+	md := fastMarkdown(extracted.ContentNode)
 
 	mdSize := len(md)
 	ms := int(time.Since(start).Milliseconds())
