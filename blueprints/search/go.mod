@@ -40,6 +40,7 @@ require (
 	github.com/parquet-go/parquet-go v0.28.0
 	github.com/phuslu/fastdns v0.16.7
 	github.com/refraction-networking/utls v1.8.2
+	github.com/scigolib/hdf5 v0.13.5
 	github.com/spf13/cobra v1.10.2
 	github.com/temoto/robotstxt v1.1.2
 	github.com/typesense/typesense-go/v2 v2.0.0
@@ -222,7 +223,6 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rs/dnscache v0.0.0-20230804202142-fc85eb664529 // indirect
 	github.com/rs/zerolog v1.34.0 // indirect
-	github.com/scigolib/hdf5 v0.13.5 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/sony/gobreaker v1.0.0 // indirect

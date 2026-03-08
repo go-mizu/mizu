@@ -1,12 +1,11 @@
 # FTS Pipeline
 
-Data flows through 4 stages. Each stage depends on the previous one.
+Data flows through 3 stages. Each stage depends on the previous one.
 
 ```
 .warc.gz ──1:download──► warc/
-warc/    ──2:pack──────► warc_md/*.md.warc.gz + *.meta.duckdb
+warc/    ──2:markdown──► warc_md/*.md.warc.gz  (HTML→Markdown, preserves WARC headers)
 warc_md/ ──3:index─────► fts/{engine}/{shard}/
-fts/     ──4:dashboard─► localhost:3457
 ```
 
 ## Storage layout

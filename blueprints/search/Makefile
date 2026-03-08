@@ -672,12 +672,13 @@ bench-chunk: ## Run all 3 chunk modes with 200K seeds and compare results
 	done
 
 GUI_PORT ?= 9111
+DASHBOARD_PORT ?= 3457
 
 .PHONY: tunnel
-tunnel: ## SSH tunnel for crawler GUI dashboard (localhost:9111)
-	@echo "Tunneling localhost:$(GUI_PORT) -> $(REMOTE_SSH):$(GUI_PORT)"
-	@echo "Open http://localhost:$(GUI_PORT) in your browser"
-	$(SSH) -N -L $(GUI_PORT):localhost:$(GUI_PORT) $(REMOTE_SSH)
+tunnel: ## SSH tunnel for crawler GUI + FTS dashboard (localhost:9111 + localhost:3457)
+	@echo "Tunneling localhost:$(GUI_PORT) + localhost:$(DASHBOARD_PORT) -> $(REMOTE_SSH)"
+	@echo "Open http://localhost:$(GUI_PORT) (crawler) or http://localhost:$(DASHBOARD_PORT) (dashboard)"
+	$(SSH) -N -L $(GUI_PORT):localhost:$(GUI_PORT) -L $(DASHBOARD_PORT):localhost:$(DASHBOARD_PORT) $(REMOTE_SSH)
 
 .PHONY: help
 help: ## Show available commands
