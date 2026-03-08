@@ -3,12 +3,14 @@
 // ===================================================================
 
 let domainsFilterTimer = null;
+let domainsSyncPollTimer = null;
 
 async function renderDomains() {
   state.currentPage = 'domains';
   if (!state.domainPage) state.domainPage = 1;
   if (!state.domainSort) state.domainSort = 'count';
   if (state.domainQ === undefined) state.domainQ = '';
+  clearTimeout(domainsSyncPollTimer);
 
   $('main').innerHTML = `
     <div class="page-shell anim-fade-in">
@@ -36,6 +38,10 @@ async function loadDomains(page) {
     });
     if (state.currentPage !== 'domains') return;
     renderDomainsTable(data);
+    // Auto-poll while a background sync is in progress.
+    if (data.syncing) {
+      domainsSyncPollTimer = setTimeout(() => loadDomains(), 3000);
+    }
   } catch(e) {
     const el2 = $('domains-content');
     if (el2) el2.innerHTML = `<div class="text-xs text-red-400 py-4">${esc(e.message)}</div>`;
@@ -55,7 +61,11 @@ function renderDomainsTable(data) {
   const end = Math.min(page * pageSize, total);
   const maxCount = domains.reduce((m, d) => Math.max(m, d.count || 0), 0) || 1;
 
+  const syncing = !!data.syncing;
   el.innerHTML = `
+    ${syncing ? `<div class="mb-3 px-3 py-2 text-xs border" style="border-color:rgba(96,165,250,0.4);color:#93c5fd;background:rgba(96,165,250,0.05)">
+      Indexing domains from parquet files\u2026 results will update automatically.
+    </div>` : ''}
     <div class="flex items-center gap-3 mb-4 flex-wrap">
       <span class="meta-line">${total.toLocaleString()} domain${total !== 1 ? 's' : ''}</span>
       <input id="domains-filter" type="search" placeholder="Filter domains\u2026"

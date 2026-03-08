@@ -1,11 +1,10 @@
 package jina
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
+	"net"
+	"os"
+	"os/exec"
 	"regexp"
 	"strings"
 	"time"
@@ -24,40 +23,25 @@ type registrar struct{}
 
 var jinaKeyRe = regexp.MustCompile(`jina_[a-f0-9]{32}[a-zA-Z0-9_-]+`)
 
-const firebaseAPIKey = "AIzaSyAwnOlP9TIbmc672C695yWwtiLhK1rTAKY"
-
-// Register creates a Firebase account, then logs in to jina.ai via the
-// "Continue with your Email" flow, and extracts the API key.
+// Register navigates to jina.ai/?newKey in a visible browser.
+// The page auto-generates a key via Cloudflare Turnstile.
+// In headless mode, Turnstile may not solve automatically —
+// the browser is shown so the user can click the checkbox if needed.
 func (r *registrar) Register(email, password string, verbose bool) (string, error) {
-	// Step 1: Create Firebase account via REST API
-	if verbose {
-		fmt.Println("  creating Firebase account...")
-	}
-	fbResp, err := firebaseSignUp(email, password)
+	// Try launching Chrome manually (bypasses rod launcher detection)
+	browser, cleanup, err := launchCleanChrome(verbose)
 	if err != nil {
-		return "", fmt.Errorf("firebase signup: %w", err)
+		return "", fmt.Errorf("browser launch: %w", err)
 	}
-	if verbose {
-		fmt.Printf("  Firebase account created (uid: %s)\n", fbResp.LocalID)
-	}
-
-	// Step 2: Launch browser
-	l := launcher.New().
-		Headless(false).
-		Set("disable-blink-features", "AutomationControlled").
-		Set("window-size", "1920,1080").
-		Delete("enable-automation")
-	controlURL := l.MustLaunch()
-	browser := rod.New().ControlURL(controlURL).MustConnect()
-	defer browser.MustClose()
+	defer cleanup()
 
 	page := stealth.MustPage(browser)
-	page = page.Timeout(120 * time.Second)
+	page = page.Timeout(300 * time.Second)
 	page.MustEvalOnNewDocument(`() => {
 		Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
 	}`)
 
-	// Step 3: Navigate to jina.ai/api-dashboard
+	// Navigate to jina.ai/api-dashboard and click "Create API Key"
 	if verbose {
 		fmt.Println("  navigating to jina.ai/api-dashboard...")
 	}
@@ -78,7 +62,7 @@ func (r *registrar) Register(email, password string, verbose bool) (string, erro
 	}`)
 	time.Sleep(1 * time.Second)
 
-	// Step 4: Click the "person" / login icon to open dialog
+	// Click person/login icon to open dialog
 	if verbose {
 		fmt.Println("  clicking login icon...")
 	}
@@ -92,314 +76,189 @@ func (r *registrar) Register(email, password string, verbose bool) (string, erro
 	}`)
 	time.Sleep(2 * time.Second)
 
-	// Step 5: First dialog: click "Log in" (not "Create API Key")
+	// Click "Create API Key" in the dialog
 	if verbose {
-		fmt.Println("  clicking 'Log in' in dialog...")
+		fmt.Println("  clicking 'Create API Key'...")
 	}
 	page.Eval(`() => {
 		const dialogs = document.querySelectorAll('.q-dialog, [role="dialog"]');
 		for (const d of dialogs) {
 			for (const el of d.querySelectorAll('button, a, div')) {
 				const t = (el.textContent || '').trim();
-				if (t === 'Log in' || t === 'loginLog in') {
-					el.click(); return 'clicked_login';
-				}
-			}
-		}
-	}`)
-	time.Sleep(2 * time.Second)
-
-	// Step 6: Check the "agree to Terms" checkbox first
-	if verbose {
-		fmt.Println("  checking Terms checkbox...")
-	}
-	page.Eval(`() => {
-		const dialogs = document.querySelectorAll('.q-dialog, [role="dialog"]');
-		for (const d of dialogs) {
-			// Click checkbox or its label
-			const checkboxes = d.querySelectorAll('input[type="checkbox"], .q-checkbox, [role="checkbox"]');
-			for (const cb of checkboxes) {
-				cb.click();
-				return 'clicked_checkbox';
-			}
-			// Also try clicking the label text
-			for (const el of d.querySelectorAll('*')) {
-				const t = (el.textContent || '').trim();
-				if (t.includes('agree') || t.includes('Terms')) {
-					if (el.tagName === 'LABEL' || el.closest('label') || el.querySelector('input')) {
-						el.click(); return 'clicked_label';
-					}
-				}
-			}
-		}
-	}`)
-	time.Sleep(1 * time.Second)
-
-	// Click "Continue with your Email" — must match Email specifically, not Google/GitHub
-	if verbose {
-		fmt.Println("  clicking 'Continue with your Email'...")
-	}
-	page.Eval(`() => {
-		const dialogs = document.querySelectorAll('.q-dialog, [role="dialog"]');
-		for (const d of dialogs) {
-			const btns = d.querySelectorAll('button, a, div[role="button"]');
-			for (const el of btns) {
-				const t = (el.textContent || '').trim().toLowerCase();
-				// Must contain "email" but NOT "google" or "github"
-				if (t.includes('email') && !t.includes('google') && !t.includes('github')) {
-					el.click(); return 'clicked_email';
+				if (t.includes('Create API Key') || t.includes('Create') || t.includes('Get API Key')) {
+					el.click(); return 'clicked_create';
 				}
 			}
 		}
 	}`)
 	time.Sleep(3 * time.Second)
 
-	// Check for new popup/page
-	pages, _ := browser.Pages()
 	if verbose {
-		fmt.Printf("  open pages: %d\n", len(pages))
-		for i, p := range pages {
-			info, _ := p.Info()
-			if info != nil {
-				fmt.Printf("    page %d: %s\n", i, info.URL)
-			}
-		}
-	}
-
-	// If a popup opened, switch to it
-	if len(pages) > 1 {
-		for _, p := range pages {
-			info, _ := p.Info()
-			if info != nil && !strings.Contains(info.URL, "jina.ai") {
-				if verbose {
-					fmt.Printf("  switching to popup: %s\n", info.URL)
-				}
-				page = p
-				time.Sleep(2 * time.Second)
-				break
-			}
-		}
-	}
-
-	// Step 7: Find and fill the email/password form
-	if verbose {
-		val, _ := page.Eval(`() => {
-			const dialogs = document.querySelectorAll('.q-dialog, [role="dialog"]');
-			const result = [];
-			dialogs.forEach(d => {
-				const inputs = [];
-				d.querySelectorAll('input').forEach(inp => {
-					inputs.push({ type: inp.type, name: inp.name, placeholder: inp.placeholder, visible: inp.offsetParent !== null });
-				});
-				const btns = [];
-				d.querySelectorAll('button').forEach(b => btns.push(b.textContent.trim()));
-				result.push({ text: d.innerText.substring(0, 500).replace(/\n/g, ' | '), inputs: inputs, buttons: btns });
-			});
-			// Also check for inputs outside dialogs (in case form appeared on page)
-			const allInputs = [];
-			document.querySelectorAll('input[type="email"], input[type="password"], input[name="email"]').forEach(inp => {
-				allInputs.push({ type: inp.type, name: inp.name, placeholder: inp.placeholder, visible: inp.offsetParent !== null, inDialog: !!inp.closest('.q-dialog') });
-			});
-			return JSON.stringify({ dialogs: result, authInputs: allInputs, url: location.href });
-		}`)
+		val, _ := page.Eval(`() => JSON.stringify({
+			url: location.href,
+			text: document.body.innerText.substring(0, 500).replace(/\n/g, ' | '),
+			hasTurnstile: !!document.querySelector('iframe[src*="turnstile"], [data-turnstile-callback]'),
+			hasKey: /jina_[a-f0-9]{32}/.test(document.body.innerText)
+		})`)
 		if val != nil {
-			fmt.Printf("  form state: %s\n", fmt.Sprint(val.Value))
+			fmt.Printf("  after create click: %s\n", fmt.Sprint(val.Value))
 		}
 	}
 
-	// Fill email using rod's native Input() for proper Vue/Quasar reactivity
-	if verbose {
-		fmt.Println("  filling email + password via keyboard input...")
-	}
-
-	// Use rod's element selectors within the dialog
-	emailEl, err := page.Element(".q-dialog input[type='text']")
-	if err != nil {
-		return "", fmt.Errorf("email input not found: %w", err)
-	}
-	emailEl.MustSelectAllText().MustInput(email)
-	time.Sleep(500 * time.Millisecond)
-
-	pwdEl, err := page.Element(".q-dialog input[type='password']")
-	if err != nil {
-		return "", fmt.Errorf("password input not found: %w", err)
-	}
-	pwdEl.MustSelectAllText().MustInput(password)
-	time.Sleep(500 * time.Millisecond)
-
-	if verbose {
-		// Verify inputs were filled
-		val, _ := page.Eval(`() => {
-			const d = document.querySelector('.q-dialog');
-			if (!d) return 'no dialog';
-			const t = d.querySelector('input[type="text"]');
-			const p = d.querySelector('input[type="password"]');
-			return JSON.stringify({email: t ? t.value : 'nil', pwdLen: p ? p.value.length : -1});
-		}`)
-		if val != nil {
-			fmt.Printf("  input values: %s\n", fmt.Sprint(val.Value))
+	// Also try navigating to ?newKey if we're still on the dashboard
+	info, _ := page.Info()
+	if info != nil && strings.Contains(info.URL, "api-dashboard") {
+		if verbose {
+			fmt.Println("  navigating to jina.ai/?newKey...")
 		}
+		page.MustNavigate("https://jina.ai/?newKey")
+		if err := page.WaitLoad(); err != nil {
+			return "", fmt.Errorf("newKey page load: %w", err)
+		}
+		time.Sleep(5 * time.Second)
 	}
 
-	// Click "Log in" button in the email login dialog
-	if verbose {
-		fmt.Println("  clicking 'Log in' button...")
-	}
-	loginBtn, err := page.Element(".q-dialog button")
-	if err == nil {
-		// Find the right button — skip "chevron_left", find "Log in"
-		buttons, _ := page.Elements(".q-dialog button")
-		for _, btn := range buttons {
-			text, _ := btn.Text()
-			text = strings.TrimSpace(text)
-			if text == "Log in" {
-				// Check this button is in the "Log in with Email" dialog
-				inEmailDialog, _ := btn.Eval(`() => {
-					const dialog = this.closest('.q-dialog');
-					return dialog && dialog.innerText.includes('Log in with Email');
-				}`)
-				if inEmailDialog != nil && inEmailDialog.Value.Bool() {
-					btn.MustClick()
-					if verbose {
-						fmt.Println("  clicked 'Log in' button")
-					}
-					break
-				}
+	// Scan for API key (wait up to ~2 minutes for Turnstile to solve)
+	for i := 0; i < 60; i++ {
+		key := extractJinaKey(page)
+		if key != "" {
+			if verbose {
+				fmt.Printf("  found key: %s...%s\n", key[:12], key[len(key)-4:])
 			}
+			return key, nil
 		}
-	} else {
-		// Fallback to JS click
-		page.Eval(`() => {
-			const dialogs = document.querySelectorAll('.q-dialog');
-			for (const d of dialogs) {
-				if (!d.innerText.includes('Log in with Email')) continue;
-				for (const b of d.querySelectorAll('button')) {
-					if (b.textContent.trim() === 'Log in') { b.click(); return; }
-				}
-			}
-		}`)
-	}
-	_ = loginBtn
-	time.Sleep(8 * time.Second)
 
-	// Step 8: Check if logged in
-	if verbose {
-		val, _ := page.Eval(`() => {
-			return JSON.stringify({
+		if verbose && i%10 == 0 {
+			val, _ := page.Eval(`() => JSON.stringify({
 				url: location.href,
-				bodyText: document.body.innerText.substring(0, 500).replace(/\n/g, ' | ')
-			});
-		}`)
-		if val != nil {
-			fmt.Printf("  after sign in: %s\n", fmt.Sprint(val.Value))
-		}
-	}
-
-	// Step 9: Navigate to jina.ai/?newKey as authenticated user to generate key
-	if verbose {
-		fmt.Println("  navigating to jina.ai/?newKey to generate key...")
-	}
-	page.MustNavigate("https://jina.ai/?newKey")
-	if err := page.WaitLoad(); err != nil {
-		return "", fmt.Errorf("newKey page load: %w", err)
-	}
-	time.Sleep(5 * time.Second)
-
-	// Scan for API key on the ?newKey page
-	for i := 0; i < 30; i++ {
-		val, err := page.Eval(`() => {
-			// Check visible text
-			const text = document.body.innerText;
-			const m = text.match(/jina_[a-f0-9]{32}[a-zA-Z0-9_-]+/);
-			if (m) return JSON.stringify({key: m[0], source: 'innerText'});
-			// Check input values, code blocks, spans
-			for (const el of document.querySelectorAll('input, code, pre, span, div')) {
-				const v = el.value || el.textContent || '';
-				const m2 = v.match(/jina_[a-f0-9]{32}[a-zA-Z0-9_-]+/);
-				if (m2) {
-					// Skip keys embedded in JS source code (minified scripts)
-					const parent = el.closest('script');
-					if (parent) continue;
-					// Check if this is visible content
-					if (el.offsetParent !== null || el.tagName === 'INPUT') {
-						return JSON.stringify({key: m2[0], source: el.tagName + ':' + (el.className || '').substring(0, 50)});
-					}
-				}
-			}
-			return '';
-		}`)
-		if err == nil {
-			s := fmt.Sprint(val.Value)
-			if strings.Contains(s, "jina_") {
-				var found struct {
-					Key    string `json:"key"`
-					Source string `json:"source"`
-				}
-				if json.Unmarshal([]byte(s), &found) == nil && jinaKeyRe.MatchString(found.Key) {
-					if verbose {
-						fmt.Printf("  found key: %s...%s (from %s)\n", found.Key[:12], found.Key[len(found.Key)-4:], found.Source)
-					}
-					return found.Key, nil
-				}
-			}
-		}
-
-		if verbose && i%5 == 0 {
-			// Log page state for debugging
-			val2, _ := page.Eval(`() => {
-				return JSON.stringify({
-					url: location.href,
-					text: document.body.innerText.substring(0, 300).replace(/\n/g, ' | '),
-					hasKeyReady: document.body.innerText.includes('API key is ready'),
-					hasTurnstile: !!document.querySelector('[data-turnstile-callback], iframe[src*="turnstile"]')
-				});
-			}`)
-			if val2 != nil {
-				fmt.Printf("  scan %d: %s\n", i, fmt.Sprint(val2.Value))
+				hasKeyReady: document.body.innerText.includes('key is ready') || document.body.innerText.includes('Free API Key'),
+				hasTurnstile: !!document.querySelector('iframe[src*="turnstile"]'),
+				hasError: document.body.innerText.includes('cannot generate') || document.body.innerText.includes('verify'),
+				text: document.body.innerText.substring(0, 400).replace(/\n/g, ' | ')
+			})`)
+			if val != nil {
+				fmt.Printf("  scan %d: %s\n", i, fmt.Sprint(val.Value))
 			}
 		}
 		time.Sleep(2 * time.Second)
 	}
 
-	return "", fmt.Errorf("could not find jina API key after login")
+	return "", fmt.Errorf("could not find jina API key (Turnstile may not have solved)")
 }
 
-type firebaseResponse struct {
-	IDToken      string `json:"idToken"`
-	RefreshToken string `json:"refreshToken"`
-	LocalID      string `json:"localId"`
-	Email        string `json:"email"`
-}
-
-func firebaseSignUp(email, password string) (*firebaseResponse, error) {
-	payload, _ := json.Marshal(map[string]interface{}{
-		"email":             email,
-		"password":          password,
-		"returnSecureToken": true,
-	})
-	resp, err := http.Post(
-		"https://identitytoolkit.googleapis.com/v1/accounts:signUp?key="+firebaseAPIKey,
-		"application/json",
-		bytes.NewReader(payload),
-	)
+// extractJinaKey looks for a jina API key in visible page content.
+func extractJinaKey(page *rod.Page) string {
+	val, err := page.Eval(`() => {
+		// Check visible text only (not script source)
+		const text = document.body.innerText;
+		const m = text.match(/jina_[a-f0-9]{32}[a-zA-Z0-9_-]+/);
+		if (m) return m[0];
+		// Check input values
+		for (const el of document.querySelectorAll('input')) {
+			const v = el.value || '';
+			const m2 = v.match(/jina_[a-f0-9]{32}[a-zA-Z0-9_-]+/);
+			if (m2) return m2[0];
+		}
+		// Check code blocks and pre elements
+		for (const el of document.querySelectorAll('code, pre')) {
+			const v = el.textContent || '';
+			const m2 = v.match(/jina_[a-f0-9]{32}[a-zA-Z0-9_-]+/);
+			if (m2 && el.offsetParent !== null) return m2[0];
+		}
+		return '';
+	}`)
 	if err != nil {
-		return nil, err
+		return ""
 	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
+	s := fmt.Sprint(val.Value)
+	if strings.HasPrefix(s, "jina_") && jinaKeyRe.MatchString(s) {
+		return s
 	}
-	var result firebaseResponse
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, err
+	return ""
+}
+
+// launchCleanChrome launches Chrome directly via os/exec with a fresh profile,
+// avoiding rod's launcher which adds detectable automation flags.
+func launchCleanChrome(verbose bool) (*rod.Browser, func(), error) {
+	// Find Chrome binary
+	chromePath := launcher.NewBrowser().MustGet()
+
+	// Find a free port for debugging
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, nil, err
 	}
-	if result.IDToken == "" {
-		return nil, fmt.Errorf("no idToken in response")
+	port := listener.Addr().(*net.TCPAddr).Port
+	listener.Close()
+
+	// Create temp profile dir
+	tmpDir, err := os.MkdirTemp("", "jina-chrome-*")
+	if err != nil {
+		return nil, nil, err
 	}
-	return &result, nil
+
+	args := []string{
+		fmt.Sprintf("--remote-debugging-port=%d", port),
+		fmt.Sprintf("--user-data-dir=%s", tmpDir),
+		"--no-first-run",
+		"--no-default-browser-check",
+		"--disable-background-networking",
+		"--disable-default-apps",
+		"--disable-extensions",
+		"--disable-sync",
+		"--disable-translate",
+		"--metrics-recording-only",
+		"--disable-blink-features=AutomationControlled",
+		"--window-size=1920,1080",
+		"about:blank",
+	}
+
+	cmd := exec.Command(chromePath, args...)
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	if err := cmd.Start(); err != nil {
+		os.RemoveAll(tmpDir)
+		return nil, nil, fmt.Errorf("chrome start: %w", err)
+	}
+
+	if verbose {
+		fmt.Printf("  Chrome launched (pid=%d, port=%d)\n", cmd.Process.Pid, port)
+	}
+
+	// Wait for Chrome to be ready
+	wsURL := ""
+	for i := 0; i < 30; i++ {
+		time.Sleep(500 * time.Millisecond)
+		u, err := launcher.ResolveURL(fmt.Sprintf("127.0.0.1:%d", port))
+		if err == nil {
+			wsURL = u
+			break
+		}
+	}
+	if wsURL == "" {
+		cmd.Process.Kill()
+		os.RemoveAll(tmpDir)
+		return nil, nil, fmt.Errorf("chrome did not start (port %d)", port)
+	}
+
+	browser := rod.New().ControlURL(wsURL).MustConnect()
+	cleanup := func() {
+		browser.MustClose()
+		cmd.Process.Kill()
+		cmd.Wait()
+		os.RemoveAll(tmpDir)
+	}
+
+	return browser, cleanup, nil
 }
 
 func (r *registrar) VerifyAndGetKey(email, password, emailBody string, verbose bool) (string, error) {
 	return "", fmt.Errorf("jina does not require email verification")
+}
+
+// keyInfo checks the balance of a Jina API key.
+func keyInfo(apiKey string) (map[string]interface{}, error) {
+	// TODO: implement via dash.jina.ai/api/v1/api_key/fe_user?api_key=<key>
+	_ = apiKey
+	return nil, fmt.Errorf("not implemented")
 }

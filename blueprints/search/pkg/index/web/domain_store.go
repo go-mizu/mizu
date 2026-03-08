@@ -18,12 +18,14 @@ import (
 // Domain detail queries are served by querying the parquet files directly
 // via DuckDB read_parquet() — no per-parquet .meta.duckdb files needed.
 //
-// EnsureFresh is idempotent: it re-syncs only parquet files whose mtime or
-// size has changed since the last sync.
+// EnsureFresh is non-blocking: the first call starts a background goroutine
+// and returns immediately. Callers get stale-but-fast results while sync runs.
 type DomainStore struct {
 	crawlDir string // ~/data/common-crawl/{crawlID}
 	mu       sync.Mutex
 	db       *sql.DB // lazily opened domains.duckdb
+	syncing  bool    // background sync in progress
+	synced   bool    // at least one sync completed
 }
 
 // NewDomainStore creates a DomainStore rooted at crawlDir.
@@ -69,30 +71,65 @@ func (ds *DomainStore) initSchema(ctx context.Context, db *sql.DB) error {
 	return err
 }
 
-// EnsureFresh syncs stale or new parquet files into domains.duckdb.
-// Removed parquet files are cleaned up. Safe to call concurrently.
+// EnsureFresh checks whether a sync is needed and, if so, starts one in the
+// background. Returns immediately — callers always get fast access to whatever
+// cached data exists. The first call also initialises the DB.
 func (ds *DomainStore) EnsureFresh(ctx context.Context) error {
 	ds.mu.Lock()
-	defer ds.mu.Unlock()
 
-	// Lazy-open DB.
+	// Lazy-open DB on first call.
 	if ds.db == nil {
 		if err := os.MkdirAll(ds.crawlDir, 0o755); err != nil {
+			ds.mu.Unlock()
 			return fmt.Errorf("domain_store: mkdir: %w", err)
 		}
 		db, err := ds.openDB()
 		if err != nil {
+			ds.mu.Unlock()
 			return fmt.Errorf("domain_store: open: %w", err)
 		}
 		if err := ds.initSchema(ctx, db); err != nil {
 			db.Close()
+			ds.mu.Unlock()
 			return fmt.Errorf("domain_store: schema: %w", err)
 		}
 		ds.db = db
 	}
 
+	// If a sync is already running, return immediately — don't pile up goroutines.
+	if ds.syncing {
+		ds.mu.Unlock()
+		return nil
+	}
+
+	ds.syncing = true
+	ds.mu.Unlock()
+
+	// Run sync in background so API calls are never blocked.
+	go func() {
+		ds.runSync()
+		ds.mu.Lock()
+		ds.syncing = false
+		ds.synced = true
+		ds.mu.Unlock()
+	}()
+
+	return nil
+}
+
+// IsSyncing reports whether a background sync is in progress.
+func (ds *DomainStore) IsSyncing() bool {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	return ds.syncing
+}
+
+// runSync performs the full idempotent sync — called from a background goroutine.
+func (ds *DomainStore) runSync() {
+	ctx := context.Background()
+
 	// Find all local parquet files.
-	presentFiles := make(map[string]os.FileInfo) // path → stat
+	presentFiles := make(map[string]os.FileInfo)
 	_ = filepath.WalkDir(ds.indexDir(), func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
@@ -105,12 +142,22 @@ func (ds *DomainStore) EnsureFresh(ctx context.Context) error {
 		return nil
 	})
 
-	// Load known versions.
-	rows, err := ds.db.QueryContext(ctx, `SELECT parquet_path, file_mtime, file_size FROM parquet_file_versions`)
-	if err != nil {
-		return nil // non-fatal
+	ds.mu.Lock()
+	db := ds.db
+	ds.mu.Unlock()
+	if db == nil {
+		return
 	}
-	type versionRow struct{ mtime string; size int64 }
+
+	// Load known versions.
+	rows, err := db.QueryContext(ctx, `SELECT parquet_path, file_mtime, file_size FROM parquet_file_versions`)
+	if err != nil {
+		return
+	}
+	type versionRow struct {
+		mtime string
+		size  int64
+	}
 	knownVersions := make(map[string]versionRow)
 	for rows.Next() {
 		var path, mtime string
@@ -123,8 +170,8 @@ func (ds *DomainStore) EnsureFresh(ctx context.Context) error {
 	// Remove deleted parquet files from cache.
 	for path := range knownVersions {
 		if _, ok := presentFiles[path]; !ok {
-			ds.db.ExecContext(ctx, `DELETE FROM domain_counts WHERE parquet_path = ?`, path)
-			ds.db.ExecContext(ctx, `DELETE FROM parquet_file_versions WHERE parquet_path = ?`, path)
+			db.ExecContext(ctx, `DELETE FROM domain_counts WHERE parquet_path = ?`, path)
+			db.ExecContext(ctx, `DELETE FROM parquet_file_versions WHERE parquet_path = ?`, path)
 		}
 	}
 
@@ -133,19 +180,17 @@ func (ds *DomainStore) EnsureFresh(ctx context.Context) error {
 		mtime := info.ModTime().UTC().Format("2006-01-02T15:04:05Z")
 		size := info.Size()
 		if v, ok := knownVersions[path]; ok && v.mtime == mtime && v.size == size {
-			continue // up to date
+			continue
 		}
-		_ = ds.syncParquetFile(ctx, path, mtime, size)
+		_ = ds.syncParquetFile(ctx, db, path, mtime, size)
 	}
-	return nil
 }
 
 // syncParquetFile aggregates domain counts from one parquet file into domains.duckdb.
-func (ds *DomainStore) syncParquetFile(ctx context.Context, parquetPath, mtime string, size int64) error {
-	// Extract shard name from hive partition or filename.
+func (ds *DomainStore) syncParquetFile(ctx context.Context, cacheDB *sql.DB, parquetPath, mtime string, size int64) error {
 	shard := parquetShardName(parquetPath)
 
-	// Open a throwaway DuckDB to read the parquet file.
+	// Open a throwaway in-memory DuckDB to read the parquet file.
 	tmpDB, err := sql.Open("duckdb", "")
 	if err != nil {
 		return err
@@ -166,7 +211,6 @@ func (ds *DomainStore) syncParquetFile(ctx context.Context, parquetPath, mtime s
 	if err != nil {
 		return fmt.Errorf("domain_store: aggregate %s: %w", filepath.Base(parquetPath), err)
 	}
-	defer rows.Close()
 
 	type aggRow struct {
 		domain string
@@ -183,7 +227,7 @@ func (ds *DomainStore) syncParquetFile(ctx context.Context, parquetPath, mtime s
 	rows.Close()
 
 	// Replace old data for this parquet file.
-	ds.db.ExecContext(ctx, `DELETE FROM domain_counts WHERE parquet_path = ?`, parquetPath)
+	cacheDB.ExecContext(ctx, `DELETE FROM domain_counts WHERE parquet_path = ?`, parquetPath)
 
 	const batchSize = 500
 	for i := 0; i < len(agg); i += batchSize {
@@ -200,10 +244,10 @@ func (ds *DomainStore) syncParquetFile(ctx context.Context, parquetPath, mtime s
 		}
 		q := `INSERT OR REPLACE INTO domain_counts (domain, parquet_path, shard, count) VALUES ` +
 			strings.Join(placeholders, ",")
-		ds.db.ExecContext(ctx, q, args...)
+		cacheDB.ExecContext(ctx, q, args...)
 	}
 
-	ds.db.ExecContext(ctx,
+	cacheDB.ExecContext(ctx,
 		`INSERT OR REPLACE INTO parquet_file_versions (parquet_path, file_mtime, file_size) VALUES (?,?,?)`,
 		parquetPath, mtime, size,
 	)
@@ -227,8 +271,9 @@ func parquetShardName(path string) string {
 
 // DomainRow is one entry in the domain list.
 type DomainRow struct {
-	Domain string `json:"domain"`
-	Count  int64  `json:"count"`
+	Domain  string `json:"domain"`
+	Count   int64  `json:"count"`
+	Syncing bool   `json:"syncing,omitempty"`
 }
 
 // DomainsResponse is returned by GET /api/domains.
@@ -237,6 +282,7 @@ type DomainsResponse struct {
 	Total    int64       `json:"total"`
 	Page     int         `json:"page"`
 	PageSize int         `json:"page_size"`
+	Syncing  bool        `json:"syncing,omitempty"`
 }
 
 // ListDomains returns a paginated list of domains with total URL counts.
@@ -263,9 +309,18 @@ func (ds *DomainStore) ListDomains(ctx context.Context, sortBy, q string, page, 
 		filterArgs = append(filterArgs, "%"+q+"%")
 	}
 
+	ds.mu.Lock()
+	db := ds.db
+	syncing := ds.syncing
+	ds.mu.Unlock()
+
+	if db == nil {
+		return DomainsResponse{Syncing: syncing, Domains: []DomainRow{}}, nil
+	}
+
 	var total int64
 	countSQL := fmt.Sprintf(`SELECT COUNT(DISTINCT domain) FROM domain_counts %s`, whereClause)
-	if err := ds.db.QueryRowContext(ctx, countSQL, filterArgs...).Scan(&total); err != nil {
+	if err := db.QueryRowContext(ctx, countSQL, filterArgs...).Scan(&total); err != nil {
 		return DomainsResponse{}, err
 	}
 
@@ -279,7 +334,7 @@ func (ds *DomainStore) ListDomains(ctx context.Context, sortBy, q string, page, 
 	`, whereClause, orderClause)
 	listArgs := append(filterArgs, pageSize, offset)
 
-	rows, err := ds.db.QueryContext(ctx, listSQL, listArgs...)
+	rows, err := db.QueryContext(ctx, listSQL, listArgs...)
 	if err != nil {
 		return DomainsResponse{}, err
 	}
@@ -291,7 +346,7 @@ func (ds *DomainStore) ListDomains(ctx context.Context, sortBy, q string, page, 
 		rows.Scan(&d.Domain, &d.Count)
 		domains = append(domains, d)
 	}
-	return DomainsResponse{Domains: domains, Total: total, Page: page, PageSize: pageSize}, nil
+	return DomainsResponse{Domains: domains, Total: total, Page: page, PageSize: pageSize, Syncing: syncing}, nil
 }
 
 // DomainDocRow is one URL entry in the domain detail page.
@@ -299,7 +354,6 @@ type DomainDocRow struct {
 	URL         string `json:"url"`
 	Shard       string `json:"shard"`
 	FetchStatus int    `json:"fetch_status,omitempty"`
-	CrawlDate   string `json:"crawl_date,omitempty"`
 }
 
 // DomainDetailResponse is returned by GET /api/domains/{domain}.
@@ -309,9 +363,11 @@ type DomainDetailResponse struct {
 	Page     int            `json:"page"`
 	PageSize int            `json:"page_size"`
 	Docs     []DomainDocRow `json:"docs"`
+	Syncing  bool           `json:"syncing,omitempty"`
 }
 
 // ListDomainURLs queries parquet files directly for all URLs under a domain.
+// LIMIT/OFFSET are pushed to DuckDB for efficiency — no full scan in Go memory.
 // sortBy: "url" (default, asc) | "status".
 func (ds *DomainStore) ListDomainURLs(ctx context.Context, domain, sortBy string, page, pageSize int) (DomainDetailResponse, error) {
 	if page < 1 {
@@ -320,9 +376,19 @@ func (ds *DomainStore) ListDomainURLs(ctx context.Context, domain, sortBy string
 	if pageSize < 1 || pageSize > 500 {
 		pageSize = 100
 	}
+	offset := (page - 1) * pageSize
+
+	ds.mu.Lock()
+	db := ds.db
+	syncing := ds.syncing
+	ds.mu.Unlock()
+
+	if db == nil {
+		return DomainDetailResponse{Domain: domain, Page: page, PageSize: pageSize, Syncing: syncing, Docs: []DomainDocRow{}}, nil
+	}
 
 	// Find which parquet files contain this domain.
-	rows, err := ds.db.QueryContext(ctx,
+	prows, err := db.QueryContext(ctx,
 		`SELECT parquet_path, shard FROM domain_counts WHERE domain = ? AND count > 0`,
 		domain,
 	)
@@ -331,18 +397,18 @@ func (ds *DomainStore) ListDomainURLs(ctx context.Context, domain, sortBy string
 	}
 	type parquetRef struct{ path, shard string }
 	var refs []parquetRef
-	for rows.Next() {
+	for prows.Next() {
 		var r parquetRef
-		rows.Scan(&r.path, &r.shard)
+		prows.Scan(&r.path, &r.shard)
 		refs = append(refs, r)
 	}
-	rows.Close()
+	prows.Close()
 
 	if len(refs) == 0 {
-		return DomainDetailResponse{Domain: domain, Page: page, PageSize: pageSize, Docs: []DomainDocRow{}}, nil
+		return DomainDetailResponse{Domain: domain, Page: page, PageSize: pageSize, Syncing: syncing, Docs: []DomainDocRow{}}, nil
 	}
 
-	// Query all parquet files for this domain in a single DuckDB session.
+	// Query parquet files directly using an in-memory DuckDB session.
 	tmpDB, err := sql.Open("duckdb", "")
 	if err != nil {
 		return DomainDetailResponse{}, err
@@ -350,7 +416,6 @@ func (ds *DomainStore) ListDomainURLs(ctx context.Context, domain, sortBy string
 	defer tmpDB.Close()
 	tmpDB.SetMaxOpenConns(1)
 
-	// Build quoted list.
 	quoted := make([]string, len(refs))
 	for i, r := range refs {
 		quoted[i] = duckQuotePath(r.path)
@@ -362,92 +427,55 @@ func (ds *DomainStore) ListDomainURLs(ctx context.Context, domain, sortBy string
 		orderClause = "ORDER BY fetch_status ASC, url ASC"
 	}
 
-	// Collect all matching docs (for a single domain the count is manageable).
-	// We query with LIMIT/OFFSET pushed down when possible.
-	type rawRow struct {
-		url         string
-		fetchStatus int
-		crawlDate   string
-		shard       string
-	}
+	// Count total matching rows.
+	countSQL := fmt.Sprintf(`
+		SELECT COUNT(*) FROM read_parquet([%s], union_by_name=true, hive_partitioning=true)
+		WHERE url_host_registered_domain = ?
+	`, fileList)
+	var total int64
+	tmpDB.QueryRowContext(ctx, countSQL, domain).Scan(&total)
 
-	// Build a shard lookup by path.
-	shardByPath := make(map[string]string, len(refs))
-	for _, r := range refs {
-		shardByPath[r.path] = r.shard
-	}
-
-	// Use hive_partitioning to get subset column automatically if available,
-	// otherwise fall back to the shard we already know.
-	selectSQL := fmt.Sprintf(`
-		SELECT url, COALESCE(fetch_status, 0) AS fetch_status, COALESCE(crawl_date, '') AS crawl_date
+	// Fetch the page — push LIMIT/OFFSET to DuckDB.
+	// Note: crawl_date does not exist in CC parquet; omit it to avoid binder errors.
+	pageSQL := fmt.Sprintf(`
+		SELECT url, fetch_status
 		FROM read_parquet([%s], union_by_name=true, hive_partitioning=true)
 		WHERE url_host_registered_domain = ?
 		%s
+		LIMIT ? OFFSET ?
 	`, fileList, orderClause)
 
-	qrows, err := tmpDB.QueryContext(ctx, selectSQL, domain)
+	qrows, err := tmpDB.QueryContext(ctx, pageSQL, domain, pageSize, offset)
 	if err != nil {
 		return DomainDetailResponse{}, fmt.Errorf("domain_store: query parquet: %w", err)
 	}
 	defer qrows.Close()
 
-	var all []rawRow
-	for qrows.Next() {
-		var r rawRow
-		qrows.Scan(&r.url, &r.fetchStatus, &r.crawlDate)
-		all = append(all, r)
-	}
-	qrows.Close()
-
-	total := int64(len(all))
-	offset := (page - 1) * pageSize
-
-	// Apply pagination.
-	if offset >= len(all) {
-		return DomainDetailResponse{Domain: domain, Total: total, Page: page, PageSize: pageSize, Docs: []DomainDocRow{}}, nil
-	}
-	end := offset + pageSize
-	if end > len(all) {
-		end = len(all)
-	}
-	slice := all[offset:end]
-
-	// For each URL, determine shard by matching against parquet refs.
-	// Since we query multiple files with union, use the first shard as fallback.
-	defaultShard := ""
-	if len(refs) > 0 {
-		defaultShard = refs[0].shard
-	}
-
-	docs := make([]DomainDocRow, len(slice))
-	for i, r := range slice {
-		docs[i] = DomainDocRow{
-			URL:         r.url,
-			Shard:       defaultShard,
-			FetchStatus: r.fetchStatus,
-			CrawlDate:   r.crawlDate,
-		}
-	}
-
-	// Sort shard list for stable shard labelling when refs > 1.
+	// Determine shard label (combine unique shards when multiple files involved).
+	shardLabel := refs[0].shard
 	if len(refs) > 1 {
-		// Assign shard based on URL prefix match — best effort.
-		// Build a sorted list of (urlPrefix, shard) from each parquet file.
-		// For simplicity, label shard as comma-joined unique shard names.
-		shardNames := make([]string, 0, len(refs))
 		seen := make(map[string]bool)
+		var names []string
 		for _, r := range refs {
 			if !seen[r.shard] {
 				seen[r.shard] = true
-				shardNames = append(shardNames, r.shard)
+				names = append(names, r.shard)
 			}
 		}
-		sort.Strings(shardNames)
-		combined := strings.Join(shardNames, ",")
-		for i := range docs {
-			docs[i].Shard = combined
-		}
+		sort.Strings(names)
+		shardLabel = strings.Join(names, ",")
+	}
+
+	docs := make([]DomainDocRow, 0, pageSize)
+	for qrows.Next() {
+		var url string
+		var status sql.NullInt64
+		qrows.Scan(&url, &status)
+		docs = append(docs, DomainDocRow{
+			URL:         url,
+			Shard:       shardLabel,
+			FetchStatus: int(status.Int64),
+		})
 	}
 
 	return DomainDetailResponse{
@@ -456,6 +484,7 @@ func (ds *DomainStore) ListDomainURLs(ctx context.Context, domain, sortBy string
 		Page:     page,
 		PageSize: pageSize,
 		Docs:     docs,
+		Syncing:  syncing,
 	}, nil
 }
 
