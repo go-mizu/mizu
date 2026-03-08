@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -495,6 +496,74 @@ func TestHandleBrowseStats_TopDomains(t *testing.T) {
 	}
 	if len(stats.SizeBuckets) == 0 {
 		t.Fatal("expected non-empty SizeBuckets")
+	}
+}
+
+func TestHandleBrowseExportParquet_WithoutMarkdownBody(t *testing.T) {
+	root := t.TempDir()
+	warcMdDir := filepath.Join(root, "warc_md")
+	mustMkdir(t, warcMdDir)
+
+	warcMdPath := filepath.Join(warcMdDir, "00000.md.warc.gz")
+	createTestWARCMd(t, warcMdPath, 4)
+
+	srv := NewDashboard("test-engine", "CC-TEST-2026", "", root)
+	if _, err := srv.Docs.ScanShard(context.Background(), "", "00000", warcMdPath); err != nil {
+		t.Fatalf("ScanShard: %v", err)
+	}
+
+	req := httptest.NewRequest("POST", "/api/browse/export-parquet", strings.NewReader(`{"shard":"00000","include_markdown_body":false}`))
+	w := callHandler(t, srv.handleBrowseExportParquet, req)
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp browseExportParquetResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Rows != 4 {
+		t.Fatalf("expected 4 rows, got %d", resp.Rows)
+	}
+	if resp.OutputPath == "" {
+		t.Fatal("expected output_path")
+	}
+	if _, err := os.Stat(resp.OutputPath); err != nil {
+		t.Fatalf("expected parquet file to exist: %v", err)
+	}
+}
+
+func TestHandleBrowseExportParquet_WithMarkdownBody(t *testing.T) {
+	root := t.TempDir()
+	warcMdDir := filepath.Join(root, "warc_md")
+	mustMkdir(t, warcMdDir)
+
+	warcMdPath := filepath.Join(warcMdDir, "00000.md.warc.gz")
+	createTestWARCMd(t, warcMdPath, 2)
+
+	srv := NewDashboard("test-engine", "CC-TEST-2026", "", root)
+	if _, err := srv.Docs.ScanShard(context.Background(), "", "00000", warcMdPath); err != nil {
+		t.Fatalf("ScanShard: %v", err)
+	}
+
+	req := httptest.NewRequest("POST", "/api/browse/export-parquet", strings.NewReader(`{"shard":"00000","include_markdown_body":true}`))
+	w := callHandler(t, srv.handleBrowseExportParquet, req)
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp browseExportParquetResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Rows != 2 {
+		t.Fatalf("expected 2 rows, got %d", resp.Rows)
+	}
+	if !strings.HasSuffix(resp.OutputPath, ".meta.with_body.parquet") {
+		t.Fatalf("expected with_body parquet suffix, got %q", resp.OutputPath)
+	}
+	if _, err := os.Stat(resp.OutputPath); err != nil {
+		t.Fatalf("expected parquet file to exist: %v", err)
 	}
 }
 
