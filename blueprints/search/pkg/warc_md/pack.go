@@ -9,7 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -24,10 +26,11 @@ import (
 type PackConfig struct {
 	InputFiles  []string // .warc.gz source files
 	OutputPath  string   // output .md.warc.gz file path
-	Workers     int      // parallel converter goroutines (0 = NumCPU*2)
+	Workers     int      // parallel converter goroutines (0 = NumCPU*4)
 	Force       bool     // overwrite existing output
-	FastConvert bool     // use go-readability (3-8x faster) instead of trafilatura
-	StatusCode  int      // HTTP status filter (default: 200)
+	FastConvert  bool // use go-readability instead of trafilatura
+	LightConvert bool // use lightweight extractor (fastest, less precise)
+	StatusCode   int  // HTTP status filter (default: 200)
 	MIMEFilter  string   // MIME type filter (default: "text/html")
 	MaxBodySize int64    // max HTML body bytes per record (default: 512 KB)
 }
@@ -45,7 +48,7 @@ type packResult struct {
 	targetURI  string
 	date       string
 	refersTo   string // original WARC-Record-ID
-	markdown   []byte
+	markdown   string
 	hasContent bool
 }
 
@@ -70,7 +73,7 @@ func RunPack(ctx context.Context, cfg PackConfig, progressFn ProgressFunc) (*Pac
 		return &PackStats{}, nil
 	}
 	if cfg.Workers <= 0 {
-		cfg.Workers = runtime.NumCPU() * 2
+		cfg.Workers = runtime.NumCPU() * 4
 	}
 	if cfg.StatusCode == 0 {
 		cfg.StatusCode = 200
@@ -91,6 +94,10 @@ func RunPack(ctx context.Context, cfg PackConfig, progressFn ProgressFunc) (*Pac
 	if err := os.MkdirAll(filepath.Dir(cfg.OutputPath), 0o755); err != nil {
 		return nil, err
 	}
+
+	// Reduce GC frequency during bulk conversion — short-lived per-doc allocs.
+	prevGOGC := debug.SetGCPercent(400)
+	defer debug.SetGCPercent(prevGOGC)
 
 	var stats PackStats
 	start := time.Now()
@@ -148,7 +155,9 @@ func RunPack(ctx context.Context, cfg PackConfig, progressFn ProgressFunc) (*Pac
 
 	// ── Converter workers ───────────────────────────────────────────────────
 	convertFn := mdpkg.Convert
-	if cfg.FastConvert {
+	if cfg.LightConvert {
+		convertFn = mdpkg.ConvertLight
+	} else if cfg.FastConvert {
 		convertFn = mdpkg.ConvertFast
 	}
 
@@ -173,7 +182,7 @@ func RunPack(ctx context.Context, cfg PackConfig, progressFn ProgressFunc) (*Pac
 						targetURI:  it.targetURI,
 						date:       it.date,
 						refersTo:   it.recordID,
-						markdown:   []byte(res.Markdown),
+						markdown:   res.Markdown,
 						hasContent: true,
 					}
 				} else {
@@ -248,17 +257,17 @@ func packReadFile(ctx context.Context, warcPath string, cfg PackConfig, stats *P
 		}
 		atomic.AddInt64(&stats.ReadBytes, int64(len(bodyBytes)))
 
-		status, mime, htmlBody := parseHTTPResponse(bodyBytes)
+		status, mime, htmlBody := parseHTTPResponseFast(bodyBytes)
 		if cfg.StatusCode != 0 && status != cfg.StatusCode {
 			continue
 		}
-		if cfg.MIMEFilter != "" {
-			wantType := cfg.MIMEFilter
-			if idx := bytes.IndexByte([]byte(wantType), '/'); idx >= 0 {
-				// Check if mime starts with the type prefix
-				if mime == "" || (mime != wantType && !bytes.HasPrefix([]byte(mime), []byte(wantType[:idx]))) {
+		if cfg.MIMEFilter != "" && mime != cfg.MIMEFilter {
+			if idx := strings.IndexByte(cfg.MIMEFilter, '/'); idx >= 0 {
+				if !strings.HasPrefix(mime, cfg.MIMEFilter[:idx]) {
 					continue
 				}
+			} else {
+				continue
 			}
 		}
 
@@ -318,7 +327,7 @@ func packWriteFile(outputPath string, results <-chan packResult, stats *PackStat
 
 		rec := &warcpkg.Record{
 			Header: hdr,
-			Body:   bytes.NewReader(res.markdown),
+			Body:   strings.NewReader(res.markdown),
 		}
 
 		// Each record in its own gzip member
@@ -351,4 +360,58 @@ func packWriteFile(outputPath string, results <-chan packResult, stats *PackStat
 		return err
 	}
 	return os.Rename(tmpPath, outputPath)
+}
+
+// parseHTTPResponseFast is a zero-allocation HTTP response parser for the pack
+// hot path. It scans data in-place without creating bufio/textproto readers.
+// Returns (statusCode, mimeType, bodySlice). bodySlice is a sub-slice of data.
+func parseHTTPResponseFast(data []byte) (status int, mime string, body []byte) {
+	// Find end of status line
+	nl := bytes.IndexByte(data, '\n')
+	if nl < 0 {
+		return 0, "", nil
+	}
+	// Parse status code from "HTTP/1.x NNN ..."
+	statusLine := data[:nl]
+	if sp := bytes.IndexByte(statusLine, ' '); sp >= 0 {
+		rest := statusLine[sp+1:]
+		for i := 0; i < len(rest) && i < 3; i++ {
+			c := rest[i]
+			if c < '0' || c > '9' {
+				break
+			}
+			status = status*10 + int(c-'0')
+		}
+	}
+	pos := nl + 1
+
+	// Scan headers for Content-Type and end-of-headers
+	for pos < len(data) {
+		lineEnd := bytes.IndexByte(data[pos:], '\n')
+		if lineEnd < 0 {
+			return status, mime, nil
+		}
+		line := data[pos : pos+lineEnd]
+		line = bytes.TrimRight(line, "\r")
+		pos += lineEnd + 1
+
+		if len(line) == 0 {
+			// Empty line = end of headers
+			body = data[pos:]
+			return
+		}
+
+		// Check for Content-Type header (case-insensitive first char)
+		if len(line) > 14 && (line[0] == 'C' || line[0] == 'c') {
+			lower := bytes.ToLower(line[:13])
+			if bytes.Equal(lower, []byte("content-type:")) {
+				val := bytes.TrimSpace(line[13:])
+				if sc := bytes.IndexByte(val, ';'); sc >= 0 {
+					val = bytes.TrimSpace(val[:sc])
+				}
+				mime = string(val)
+			}
+		}
+	}
+	return status, mime, nil
 }

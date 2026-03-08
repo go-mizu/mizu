@@ -925,7 +925,11 @@ func parseMarkdownLinkLine(line string) (title, linkURL string, ok bool) {
 	title = strings.TrimSpace(line[1:endText])
 	linkURL = strings.TrimSpace(line[endText+2 : endText+2+endURL])
 	linkURL = strings.Trim(linkURL, "<>")
-	linkURL = strings.Fields(linkURL)[0]
+	fields := strings.Fields(linkURL)
+	if len(fields) == 0 {
+		return "", "", false
+	}
+	linkURL = fields[0]
 	if title == "" || linkURL == "" {
 		return "", "", false
 	}

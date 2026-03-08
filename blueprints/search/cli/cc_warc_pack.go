@@ -22,8 +22,9 @@ func newCCWarcPack() *cobra.Command {
 		to          int
 		workers     int
 		force       bool
-		fastConvert bool
-		statusCode  int
+		fastConvert  bool
+		lightConvert bool
+		statusCode   int
 		mimeFilter  string
 		maxBody     int64
 	)
@@ -47,7 +48,7 @@ Pipeline architecture:
   search cc warc pack --from 0 --to 9 --workers 16`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCCWarcPack(cmd.Context(),
-				crawlID, fileIdx, from, to, workers, force, fastConvert,
+				crawlID, fileIdx, from, to, workers, force, fastConvert, lightConvert,
 				statusCode, mimeFilter, maxBody)
 		},
 	}
@@ -58,7 +59,8 @@ Pipeline architecture:
 	cmd.Flags().IntVar(&to, "to", -1, "Last file index (inclusive) for parallel range")
 	cmd.Flags().IntVar(&workers, "workers", 0, "Converter goroutines (0 = NumCPU)")
 	cmd.Flags().BoolVar(&force, "force", false, "Re-process existing files")
-	cmd.Flags().BoolVar(&fastConvert, "fast", false, "Use go-readability (3-8x faster) instead of trafilatura")
+	cmd.Flags().BoolVar(&fastConvert, "fast", false, "Use go-readability instead of trafilatura")
+	cmd.Flags().BoolVar(&lightConvert, "light", false, "Use lightweight extractor (fastest, less precise)")
 	cmd.Flags().IntVar(&statusCode, "status", 200, "HTTP status filter (0 = all)")
 	cmd.Flags().StringVar(&mimeFilter, "mime", "text/html", "MIME type filter")
 	cmd.Flags().Int64Var(&maxBody, "max-body", 512*1024, "Max HTML body bytes per record")
@@ -67,7 +69,7 @@ Pipeline architecture:
 }
 
 func runCCWarcPack(ctx context.Context,
-	crawlID, fileIdx string, from, to, workers int, force, fastConvert bool,
+	crawlID, fileIdx string, from, to, workers int, force, fastConvert, lightConvert bool,
 	statusCode int, mimeFilter string, maxBody int64) error {
 
 	if from >= 0 && to >= 0 {
@@ -115,7 +117,13 @@ func runCCWarcPack(ctx context.Context,
 
 	fmt.Printf("  Crawl     %s\n", labelStyle.Render(crawlID))
 	fmt.Printf("  Files     %d\n", len(inputFiles))
-	fmt.Printf("  Engine    %s\n", infoStyle.Render("trafilatura"))
+	engineName := "trafilatura"
+	if lightConvert {
+		engineName = "light"
+	} else if fastConvert {
+		engineName = "readability"
+	}
+	fmt.Printf("  Engine    %s\n", infoStyle.Render(engineName))
 	fmt.Printf("  Output    %s\n", labelStyle.Render(cfg.WARCMdDir()))
 	fmt.Println()
 
@@ -136,27 +144,39 @@ func runCCWarcPack(ctx context.Context,
 			OutputPath:  outPath,
 			Workers:     workers,
 			Force:       force,
-			FastConvert: fastConvert,
+			FastConvert:  fastConvert,
+			LightConvert: lightConvert,
 			StatusCode:  statusCode,
 			MIMEFilter:  mimeFilter,
 			MaxBodySize: maxBody,
 		}
 
-		result, err := warcmd.RunPack(ctx, packCfg,
-			func(done, total, errors, readBytes, writeBytes int64, elapsed time.Duration, peakMemMB float64) {
-				rate := float64(0)
-				if elapsed.Seconds() > 0 {
-					rate = float64(done) / elapsed.Seconds()
-				}
-				fmt.Printf("\r\033[K  %s  in=%s  out=%s  err=%s  %.0f/s  %s",
-					infoStyle.Render("packing"),
-					ccFmtInt64(total),
-					ccFmtInt64(done),
-					ccFmtInt64(errors),
-					rate,
-					elapsed.Round(time.Millisecond))
-			},
-		)
+		progressFn := func(done, total, errors, readBytes, writeBytes int64, elapsed time.Duration, peakMemMB float64) {
+			rate := float64(0)
+			if elapsed.Seconds() > 0 {
+				rate = float64(done) / elapsed.Seconds()
+			}
+			fmt.Printf("\r\033[K  %s  in=%s  out=%s  err=%s  %.0f/s  %s",
+				infoStyle.Render("packing"),
+				ccFmtInt64(total),
+				ccFmtInt64(done),
+				ccFmtInt64(errors),
+				rate,
+				elapsed.Round(time.Millisecond))
+		}
+
+		// Try parallel path: scan gzip member offsets then process in parallel.
+		// Falls back to sequential if offset scan fails.
+		var result *warcmd.PackStats
+		var err error
+
+		offsets, scanErr := warcmd.ScanGzipOffsets(localPath)
+		if scanErr == nil && len(offsets) > 0 {
+			fmt.Printf("  %s  %s offsets scanned\n", infoStyle.Render("parallel"), ccFmtInt64(int64(len(offsets))))
+			result, err = warcmd.RunPackParallel(ctx, packCfg, offsets, progressFn)
+		} else {
+			result, err = warcmd.RunPack(ctx, packCfg, progressFn)
+		}
 		fmt.Printf("\r\033[K")
 		if err != nil {
 			return fmt.Errorf("pack %s: %w", fname, err)
