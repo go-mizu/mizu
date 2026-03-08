@@ -52,6 +52,10 @@ async function apiParquetSubsetStats(subset) {
   return apiFetch(`/api/parquet/subset/${encodeURIComponent(subset)}/stats`);
 }
 
+async function apiParquetFileStats(idx) {
+  return apiFetch(`/api/parquet/file/${idx}/stats`);
+}
+
 // ── Main entry ──
 async function renderParquet() {
   state.currentPage = 'parquet';
@@ -194,7 +198,7 @@ function renderParquetFilesTable(data) {
       <td class="px-3 py-2 text-xs font-mono text-right">
         ${f.downloaded
           ? `<a href="#/parquet/${f.manifest_index}" class="status-completed ui-link">\u2713 local</a>`
-          : `<button onclick="parquetDownloadOne(${f.manifest_index})" class="ui-btn px-2 py-1 text-[10px]">download</button>`}
+          : `<button data-dl-idx="${f.manifest_index}" onclick="parquetDownloadOne(${f.manifest_index})" class="ui-btn px-2 py-1 text-[10px]">download</button>`}
       </td>
     </tr>`).join('');
 
@@ -242,13 +246,42 @@ function renderParquetFilesTable(data) {
 }
 
 // ── Download helpers ──
+
+// Poll GET /api/jobs/{id} until the job reaches a terminal state.
+// Calls onProgress(job) on each poll (optional).
+async function waitForJob(jobId, onProgress) {
+  for (;;) {
+    await new Promise(r => setTimeout(r, 1500));
+    try {
+      const job = await apiFetch(`/api/jobs/${jobId}`);
+      if (onProgress) onProgress(job);
+      if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+        return job;
+      }
+    } catch (_) {
+      // ignore transient errors and keep polling
+    }
+  }
+}
+
 async function parquetDownloadOne(manifestIndex) {
+  const btn = document.querySelector(`[data-dl-idx="${manifestIndex}"]`);
+  if (btn) { btn.disabled = true; btn.textContent = 'downloading\u2026'; }
   try {
     const res = await apiParquetDownload({ indices: [manifestIndex] });
-    if (res.started) {
-      setTimeout(renderParquetFiles, 2000);
+    if (res.job_id) {
+      const job = await waitForJob(res.job_id);
+      if (job.status === 'completed') {
+        renderParquetFiles();
+      } else {
+        if (btn) { btn.disabled = false; btn.textContent = 'download'; }
+        alert('Download failed: ' + (job.error || 'unknown error'));
+      }
+    } else if (!res.started) {
+      if (btn) { btn.disabled = false; btn.textContent = 'download'; }
     }
   } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'download'; }
     alert('Download failed: ' + e.message);
   }
 }
@@ -263,11 +296,18 @@ async function parquetDownloadSubset() {
       subset: subset || '',
       sample: n > 0 ? n : 0,
     });
-    if (res.started) {
+    if (!res.started) {
       alert(res.message);
-      setTimeout(renderParquetFiles, 3000);
+      return;
+    }
+    if (res.job_id) {
+      // Poll in background; refresh table when done.
+      waitForJob(res.job_id).then(job => {
+        if (job.status === 'completed') renderParquetFiles();
+        else if (job.status === 'failed') alert('Download failed: ' + (job.error || 'unknown error'));
+      });
     } else {
-      alert(res.message);
+      setTimeout(renderParquetFiles, 3000);
     }
   } catch (e) {
     alert('Download failed: ' + e.message);
@@ -372,13 +412,33 @@ async function apiParquetFileData(idx, opts = {}) {
   return apiFetch(`/api/parquet/file/${idx}/data${suffix}`);
 }
 
+// ── Chart / KPI label maps ──
+const CHART_LABELS = {
+  tld: 'Top TLDs', domain: 'Top Domains', mime: 'MIME Types',
+  language: 'Languages', status: 'HTTP Status Codes', charset: 'Charsets',
+  protocol: 'Protocol', redirect: 'Redirect Targets', segment: 'WARC Segments',
+};
+const KPI_LABELS = {
+  unique_domains: 'Unique Domains', unique_tlds: 'Unique TLDs',
+  https_pct: 'HTTPS', redirect_pct: 'Has Redirect',
+  unique_statuses: 'Status Codes', unique_mimes: 'MIME Types',
+};
+function fmtKPI(key, val) {
+  if (key.endsWith('_pct')) return val.toFixed(1) + '%';
+  return fmtNum(Math.round(val));
+}
+
 // ── Detail page ──
 async function renderParquetDetail(idx) {
   state.currentPage = 'parquet';
+  // Reset per-file state when navigating to a different file.
+  if (state.parquetDetailIdx !== idx) {
+    state.parquetDetailPage = 1;
+    state.parquetDetailFilter = '';
+    state.parquetDetailSort = '';
+    state.parquetDetailTab = 'overview';
+  }
   state.parquetDetailIdx = idx;
-  state.parquetDetailPage = state.parquetDetailPage || 1;
-  state.parquetDetailFilter = state.parquetDetailFilter || '';
-  state.parquetDetailSort = state.parquetDetailSort || '';
 
   const main = $('main');
   main.innerHTML = `
@@ -403,16 +463,104 @@ function renderParquetDetailContent(detail) {
   if (!el) return;
 
   const cols = detail.columns || [];
-  const schemaHTML = cols.length > 0 ? `
-    <details class="mt-4">
-      <summary class="text-[11px] font-mono ui-subtle cursor-pointer select-none mb-2">Schema (${cols.length} columns)</summary>
+  const isDownloaded = detail.downloaded;
+  const activeTab = state.parquetDetailTab || 'overview';
+
+  el.innerHTML = `
+    <div class="mb-4">
+      <div class="flex items-start justify-between gap-4 mb-3">
+        <h1 class="page-title flex-1 min-w-0 break-all">${esc(detail.filename)}</h1>
+        <span class="ui-chip shrink-0 text-[10px]" style="margin-top:4px">${esc(detail.subset)}</span>
+      </div>
+
+      <div class="surface p-4">
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-4">
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Manifest #</div>
+            <div class="text-sm font-mono font-medium">${detail.manifest_index}</div>
+          </div>
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Status</div>
+            <div class="text-sm font-mono font-medium">${isDownloaded
+              ? '<span class="status-completed">\u2713 local</span>'
+              : '<span class="ui-subtle">remote</span>'}</div>
+          </div>
+          ${isDownloaded ? `
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Rows</div>
+            <div class="text-sm font-mono font-medium">${fmtNum(detail.row_count)}</div>
+          </div>
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Size</div>
+            <div class="text-sm font-mono font-medium">${fmtBytes(detail.local_size)}</div>
+          </div>
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Columns</div>
+            <div class="text-sm font-mono font-medium">${fmtNum(cols.length)}</div>
+          </div>` : `
+          <div class="col-span-3">
+            <div class="text-[10px] font-mono ui-subtle">Remote Path</div>
+            <div class="text-[11px] font-mono break-all ui-subtle">${esc(detail.remote_path)}</div>
+          </div>`}
+        </div>
+        ${isDownloaded ? `
+        <div class="mt-3 pt-3 border-t border-[var(--border)]">
+          <div class="text-[10px] font-mono ui-subtle break-all">${esc(detail.remote_path)}</div>
+        </div>` : `
+        <div class="mt-3 pt-3 border-t border-[var(--border)]">
+          <button onclick="parquetDownloadAndRefreshDetail(${detail.manifest_index})" class="ui-btn ui-btn-primary px-4 py-2 text-xs font-mono">Download this file</button>
+        </div>`}
+      </div>
+    </div>
+
+    ${isDownloaded ? `
+    <div class="mb-4">
+      <div class="flex gap-0 border-b border-[var(--border)]">
+        <button id="pq-tabBtn-overview" onclick="switchParquetDetailTab('overview')"
+          class="px-4 py-2 text-[11px] font-mono transition-colors ${activeTab === 'overview' ? 'tab-active' : 'tab-inactive'}">Overview</button>
+        <button id="pq-tabBtn-data" onclick="switchParquetDetailTab('data')"
+          class="px-4 py-2 text-[11px] font-mono transition-colors ${activeTab === 'data' ? 'tab-active' : 'tab-inactive'}">Data Browser</button>
+        <button id="pq-tabBtn-schema" onclick="switchParquetDetailTab('schema')"
+          class="px-4 py-2 text-[11px] font-mono transition-colors ${activeTab === 'schema' ? 'tab-active' : 'tab-inactive'}">Schema</button>
+      </div>
+    </div>
+
+    <div id="pq-tab-overview" ${activeTab !== 'overview' ? 'style="display:none"' : ''}>
+      <div id="pq-charts-content">
+        <div class="text-xs font-mono ui-subtle py-6 text-center">Computing statistics\u2026 this may take a moment.</div>
+      </div>
+    </div>
+
+    <div id="pq-tab-data" ${activeTab !== 'data' ? 'style="display:none"' : ''}>
+      <div class="flex items-center gap-2 mb-3">
+        <input id="pq-data-filter" type="text" value="${esc(state.parquetDetailFilter || '')}"
+          placeholder="WHERE clause \u2014 e.g. fetch_status = 200 or url_host_tld = 'org'"
+          class="ui-input text-xs px-2 py-1 flex-1"
+          onkeydown="if(event.key==='Enter'){state.parquetDetailFilter=this.value;state.parquetDetailPage=1;loadParquetData()}">
+        <select id="pq-data-sort" onchange="state.parquetDetailSort=this.value;loadParquetData()"
+          class="ui-select text-xs px-2 py-1">
+          <option value="">Default order</option>
+          ${cols.map(c => `<option value="${esc(c.name)}" ${state.parquetDetailSort === c.name ? 'selected' : ''}>${esc(c.name)} \u2191</option>`).join('')}
+          ${cols.map(c => `<option value="${esc(c.name)} DESC" ${state.parquetDetailSort === c.name + ' DESC' ? 'selected' : ''}>${esc(c.name)} \u2193</option>`).join('')}
+        </select>
+      </div>
+      <div id="pq-data-content">
+        <div class="text-xs font-mono ui-subtle py-4">Loading data\u2026</div>
+      </div>
+    </div>
+
+    <div id="pq-tab-schema" ${activeTab !== 'schema' ? 'style="display:none"' : ''}>
+      ${cols.length > 0 ? `
       <div class="surface overflow-x-auto">
+        <div class="text-[10px] font-mono ui-subtle px-3 py-2">${cols.length} columns \u00b7 ${esc(detail.filename)}</div>
         <table class="w-full text-sm ui-table">
-          <thead><tr>
-            <th class="text-left px-3 py-1 text-[10px] font-mono w-12">#</th>
-            <th class="text-left px-3 py-1 text-[10px] font-mono">Column</th>
-            <th class="text-left px-3 py-1 text-[10px] font-mono">Type</th>
-          </tr></thead>
+          <thead>
+            <tr>
+              <th class="text-left px-3 py-1 text-[10px] font-mono w-12">#</th>
+              <th class="text-left px-3 py-1 text-[10px] font-mono">Column</th>
+              <th class="text-left px-3 py-1 text-[10px] font-mono">Type</th>
+            </tr>
+          </thead>
           <tbody>
             ${cols.map(c => `<tr>
               <td class="px-3 py-1 text-[10px] font-mono ui-subtle">${c.order}</td>
@@ -421,81 +569,90 @@ function renderParquetDetailContent(detail) {
             </tr>`).join('')}
           </tbody>
         </table>
-      </div>
-    </details>` : '';
-
-  el.innerHTML = `
-    <div class="page-header mb-3">
-      <h1 class="page-title">${esc(detail.filename)}</h1>
-    </div>
-
-    <div class="surface p-4 mb-4">
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div>
-          <div class="text-[10px] font-mono ui-subtle">Subset</div>
-          <div class="text-sm font-mono font-medium">${esc(detail.subset)}</div>
-        </div>
-        <div>
-          <div class="text-[10px] font-mono ui-subtle">Manifest #</div>
-          <div class="text-sm font-mono font-medium">${detail.manifest_index}</div>
-        </div>
-        <div>
-          <div class="text-[10px] font-mono ui-subtle">Status</div>
-          <div class="text-sm font-mono font-medium">${detail.downloaded ? '<span class="status-completed">\u2713 Downloaded</span>' : '<span class="ui-subtle">Remote</span>'}</div>
-        </div>
-        <div>
-          <div class="text-[10px] font-mono ui-subtle">${detail.downloaded ? 'Size' : ''}</div>
-          <div class="text-sm font-mono font-medium">${detail.downloaded ? fmtBytes(detail.local_size) : ''}</div>
-        </div>
-      </div>
-      ${detail.downloaded && detail.row_count > 0 ? `
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-3 pt-3 border-t">
-        <div>
-          <div class="text-[10px] font-mono ui-subtle">Rows</div>
-          <div class="text-sm font-mono font-medium">${fmtNum(detail.row_count)}</div>
-        </div>
-        <div>
-          <div class="text-[10px] font-mono ui-subtle">Columns</div>
-          <div class="text-sm font-mono font-medium">${fmtNum(cols.length)}</div>
-        </div>
-      </div>` : ''}
-      <div class="mt-3 pt-3 border-t">
-        <div class="text-[10px] font-mono ui-subtle mb-1">Remote Path</div>
-        <div class="text-[11px] font-mono break-all">${esc(detail.remote_path)}</div>
-      </div>
-      ${!detail.downloaded ? `
-      <div class="mt-3 pt-3 border-t">
-        <button onclick="parquetDownloadAndRefreshDetail(${detail.manifest_index})" class="ui-btn ui-btn-primary px-4 py-2 text-xs font-mono">Download this file</button>
-      </div>` : ''}
-    </div>
-
-    ${schemaHTML}
-
-    ${detail.downloaded ? `
-    <div class="mt-4">
-      <div class="flex items-center justify-between mb-3">
-        <div class="text-[11px] font-mono font-medium">Data</div>
-        <div class="flex items-center gap-2">
-          <input id="pq-data-filter" type="text" value="${esc(state.parquetDetailFilter || '')}"
-            placeholder="WHERE clause (e.g. fetch_status = 200)"
-            class="ui-input text-xs px-2 py-1 w-64"
-            onkeydown="if(event.key==='Enter'){state.parquetDetailFilter=this.value;state.parquetDetailPage=1;loadParquetData()}">
-          <select id="pq-data-sort" onchange="state.parquetDetailSort=this.value;loadParquetData()"
-            class="ui-select text-xs px-2 py-1">
-            <option value="">Default order</option>
-            ${cols.map(c => `<option value="${esc(c.name)}" ${state.parquetDetailSort === c.name ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
-            ${cols.map(c => `<option value="${esc(c.name)} DESC" ${state.parquetDetailSort === c.name + ' DESC' ? 'selected' : ''}>${esc(c.name)} DESC</option>`).join('')}
-          </select>
-        </div>
-      </div>
-      <div id="pq-data-content">
-        <div class="text-xs font-mono ui-subtle py-4">Loading data\u2026</div>
-      </div>
+      </div>` : '<div class="ui-empty">No schema available</div>'}
     </div>` : ''}`;
 
-  if (detail.downloaded) {
+  if (isDownloaded) {
+    // Always start stats load (feeds the overview tab).
+    loadParquetFileStats();
+    if (activeTab === 'data') {
+      loadParquetData();
+    }
+  }
+}
+
+// ── Detail tab switching ──
+function switchParquetDetailTab(tab) {
+  state.parquetDetailTab = tab;
+  ['overview', 'data', 'schema'].forEach(t => {
+    const panel = $(`pq-tab-${t}`);
+    if (panel) panel.style.display = t === tab ? '' : 'none';
+    const btn = $(`pq-tabBtn-${t}`);
+    if (btn) btn.className = `px-4 py-2 text-[11px] font-mono transition-colors ${t === tab ? 'tab-active' : 'tab-inactive'}`;
+  });
+  if (tab === 'data') {
     loadParquetData();
   }
+}
+
+// ── File stats (overview tab) ──
+async function loadParquetFileStats() {
+  const el = $('pq-charts-content');
+  if (!el) return;
+  try {
+    const data = await apiParquetFileStats(state.parquetDetailIdx);
+    renderParquetFileCharts(data);
+  } catch (e) {
+    const content = $('pq-charts-content');
+    if (content) content.innerHTML = `<div class="ui-empty">${esc(e.message)}</div>`;
+  }
+}
+
+function renderParquetFileCharts(data) {
+  const el = $('pq-charts-content');
+  if (!el) return;
+  const charts = data.charts || {};
+  const kpis = data.kpis || {};
+  const keys = Object.keys(charts);
+
+  // KPI summary row.
+  const kpiEntries = Object.entries(kpis);
+  const kpiCols = Math.min(kpiEntries.length + 1, 5); // +1 for query time
+  const kpiHTML = kpiEntries.length > 0 ? `
+    <div class="surface p-4 mb-4">
+      <div class="grid grid-cols-2 sm:grid-cols-${kpiCols} gap-4">
+        ${kpiEntries.map(([k, v]) => `
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">${esc(KPI_LABELS[k] || k)}</div>
+            <div class="text-sm font-mono font-medium">${fmtKPI(k, v)}</div>
+          </div>`).join('')}
+        <div>
+          <div class="text-[10px] font-mono ui-subtle">Query Time</div>
+          <div class="text-sm font-mono font-medium">${fmtNum(data.elapsed_ms)}ms</div>
+        </div>
+      </div>
+    </div>` : '';
+
+  if (keys.length === 0) {
+    el.innerHTML = kpiHTML + '<div class="ui-empty">No chart data available.</div>';
+    return;
+  }
+
+  // Render chart cards — full-width if odd last item.
+  const cards = keys.map((key, i) => {
+    const entries = charts[key] || [];
+    if (entries.length === 0) return '';
+    const isLast = i === keys.length - 1;
+    const isOdd = keys.length % 2 !== 0;
+    const rows = entries.map(e => ({ label: String(e.label), value: e.value, text: fmtNum(e.value) }));
+    return `
+      <div class="surface p-4 ${isLast && isOdd ? 'md:col-span-2' : ''}">
+        <div class="text-[11px] font-mono font-medium mb-3">${esc(CHART_LABELS[key] || key)}</div>
+        ${renderBars(rows)}
+      </div>`;
+  }).filter(Boolean).join('');
+
+  el.innerHTML = kpiHTML + `<div class="grid grid-cols-1 md:grid-cols-2 gap-4">${cards}</div>`;
 }
 
 async function loadParquetData() {
@@ -595,8 +752,24 @@ function renderParquetDataTable(data, pageSize) {
 async function parquetDownloadAndRefreshDetail(manifestIndex) {
   try {
     const res = await apiParquetDownload({ indices: [manifestIndex] });
-    if (res.started) {
-      $('pq-detail-content').innerHTML = '<div class="text-xs font-mono ui-subtle py-4">Downloading\u2026 refresh in a few seconds.</div>';
+    if (!res.started) return;
+    const content = $('pq-detail-content');
+    if (content) content.innerHTML = '<div class="text-xs font-mono ui-subtle py-4">Downloading\u2026</div>';
+    if (res.job_id) {
+      const job = await waitForJob(res.job_id, j => {
+        const el = $('pq-detail-content');
+        if (el && j.message) {
+          const pct = j.progress ? Math.round(j.progress * 100) : 0;
+          el.innerHTML = `<div class="text-xs font-mono ui-subtle py-4">Downloading\u2026 ${esc(j.message)} (${pct}%)</div>`;
+        }
+      });
+      if (job.status === 'completed') {
+        renderParquetDetail(manifestIndex);
+      } else {
+        const el = $('pq-detail-content');
+        if (el) el.innerHTML = `<div class="ui-empty">Download failed: ${esc(job.error || 'unknown error')}</div>`;
+      }
+    } else {
       setTimeout(() => renderParquetDetail(manifestIndex), 5000);
     }
   } catch (e) {
