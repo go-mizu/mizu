@@ -156,6 +156,42 @@ async function apiCCDomainFetch(payload) {
   return apiPost('/api/domains/cc/fetch', payload || {});
 }
 
+// ── Scrape API ──────────────────────────────────────────────────────────
+
+async function apiScrapeStart(payload) {
+  return apiPost('/api/scrape', payload);
+}
+
+async function apiScrapeList() {
+  return apiFetch('/api/scrape/list');
+}
+
+async function apiScrapeStop(domain) {
+  return apiDelete(`/api/scrape/${encodeURIComponent(domain)}`);
+}
+
+async function apiScrapeResume(domain) {
+  return apiPost(`/api/scrape/${encodeURIComponent(domain)}/resume`, {});
+}
+
+async function apiScrapeStatus(domain) {
+  return apiFetch(`/api/scrape/${encodeURIComponent(domain)}/status`);
+}
+
+async function apiScrapePages(domain, opts = {}) {
+  const p = new URLSearchParams();
+  if (opts.page) p.set('page', String(opts.page));
+  if (opts.pageSize) p.set('page_size', String(opts.pageSize));
+  if (opts.q) p.set('q', opts.q);
+  if (opts.sort) p.set('sort', opts.sort);
+  const qs = p.toString();
+  return apiFetch(`/api/scrape/${encodeURIComponent(domain)}/pages` + (qs ? '?' + qs : ''));
+}
+
+async function apiScrapePipeline(domain, steps) {
+  return apiPost(`/api/scrape/${encodeURIComponent(domain)}/pipeline`, { steps: steps || ['markdown'] });
+}
+
 async function apiCCDomainDetail(domain, opts = {}) {
   const p = new URLSearchParams();
   if (opts.crawl) p.set('crawl', opts.crawl);

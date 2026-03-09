@@ -57,6 +57,13 @@ function route() {
     showHeaderSearch(false);
     const idx = path.split('/')[2] || '';
     renderWARCDetail(idx);
+  } else if (path === '/scrape' && isDashboard) {
+    showHeaderSearch(false);
+    renderScrape();
+  } else if (path.startsWith('/scrape/') && isDashboard) {
+    showHeaderSearch(false);
+    const domain = decodeURIComponent(path.slice('/scrape/'.length));
+    renderScrapeDomain(domain);
   } else if (path === '/domains' && isDashboard) {
     showHeaderSearch(false);
     renderDomains();
@@ -95,6 +102,7 @@ function updateActiveTab(path) {
   if (path === '/jobs' || path.startsWith('/jobs/')) activeTab = 'jobs';
   else if (path === '/search' || path === '/' && !isDashboard || path.startsWith('/doc/')) activeTab = 'search';
   else if (path === '/parquet' || path.startsWith('/parquet/')) activeTab = 'parquet';
+  else if (path === '/scrape' || path.startsWith('/scrape/')) activeTab = 'scrape';
   else if (path === '/domains' || path.startsWith('/domains/')) activeTab = 'domains';
   else if (path === '/warc' || path.startsWith('/warc/')) activeTab = 'warc';
   else if (path.startsWith('/browse')) activeTab = 'browse';

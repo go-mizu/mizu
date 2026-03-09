@@ -359,8 +359,8 @@ function renderBrowseViewTabs(shard, activeView) {
       <button onclick="state.browseView='stats';loadShardStats('${esc(shard)}')"
         class="text-xs pb-2 transition-colors ${activeView==='stats' ? 'tab-active' : 'tab-inactive'}">Stats</button>
       <span class="ml-auto text-xs font-mono ui-subtle">${esc(shard)}</span>
-      <button onclick="browseExportShard('${esc(shard)}', false)" class="ui-btn px-2 py-1 text-[10px] font-mono" ${state.browseExportRunning ? 'disabled' : ''}>Export parquet</button>
-      <button onclick="browseExportShard('${esc(shard)}', true)" class="ui-btn px-2 py-1 text-[10px] font-mono" ${state.browseExportRunning ? 'disabled' : ''}>Export + body</button>
+      <button onclick="browseExportShard('${esc(shard)}', true)" class="ui-btn px-2 py-1 text-[10px] font-mono" ${state.browseExportRunning ? 'disabled' : ''}>Export parquet</button>
+      <button onclick="browseExportShard('${esc(shard)}', false)" class="ui-btn px-2 py-1 text-[10px] font-mono" ${state.browseExportRunning ? 'disabled' : ''}>Export metadata only</button>
       ${status}
     </div>`;
 }

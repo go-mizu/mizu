@@ -67,6 +67,11 @@ const state = {
   ccDomainStatusGroup: '',
   ccDomainQ: '',
   ccDomainCrawl: '',
+  // Scrape tab state
+  scrapeDomain: '',
+  scrapePage: 1,
+  scrapeSort: 'crawled_at',
+  scrapeQ: '',
 };
 
 // ===================================================================
