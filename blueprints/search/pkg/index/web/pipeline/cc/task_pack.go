@@ -1,4 +1,4 @@
-package web
+package cc
 
 import (
 	"bytes"
@@ -16,20 +16,21 @@ import (
 	"github.com/google/uuid"
 	"github.com/parquet-go/parquet-go"
 
+	"github.com/go-mizu/mizu/blueprints/search/pkg/core"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/pipeline/util"
 	warcpkg "github.com/go-mizu/mizu/blueprints/search/pkg/warc"
 )
 
+// Compile-time check.
+var _ core.Task[PackState, PackMetric] = (*PackTask)(nil)
+
 // PackTask packs markdown files into a distributable format.
-// Supported formats:
-//   - "warc_md": .md files → single .md.warc.gz (concatenated gzip WARC)
-//   - "parquet": .md files → .parquet (ZSTD-compressed, doc_id+text schema)
-//
-// It is a self-contained core.Task with no dependency on Manager.
+// Supported formats: "warc_md", "parquet".
 type PackTask struct {
-	CrawlDir string   `json:"crawl_dir"`
-	Paths    []string `json:"paths"`    // manifest paths
-	Selected []int    `json:"selected"` // indices into Paths
-	Format   string   `json:"format"`   // "warc_md" or "parquet"
+	crawlDir string
+	paths    []string
+	selected []int
+	format   string
 }
 
 // PackState is emitted during packing with per-file detail.
@@ -59,25 +60,25 @@ func NewPackTask(crawlDir string, paths []string, selected []int, format string)
 	if format == "" {
 		format = "parquet"
 	}
-	return &PackTask{CrawlDir: crawlDir, Paths: paths, Selected: selected, Format: format}
+	return &PackTask{crawlDir: crawlDir, paths: paths, selected: selected, format: format}
 }
 
 func (t *PackTask) Run(ctx context.Context, emit func(*PackState)) (PackMetric, error) {
 	start := time.Now()
-	total := len(t.Selected)
+	total := len(t.selected)
 	var totalDocs, totalBytes int64
 
-	for i, idx := range t.Selected {
+	for i, idx := range t.selected {
 		if ctx.Err() != nil {
 			return PackMetric{}, ctx.Err()
 		}
-		warcIdx := warcFileIndex(t.Paths[idx], idx)
-		markdownDir := filepath.Join(t.CrawlDir, "markdown", warcIdx)
-		if !fileExists(markdownDir) {
+		warcIdx := util.WARCFileIndex(t.paths[idx], idx)
+		markdownDir := filepath.Join(t.crawlDir, "markdown", warcIdx)
+		if !util.FileExists(markdownDir) {
 			return PackMetric{}, fmt.Errorf("markdown dir not found: %s", markdownDir)
 		}
 
-		outPath, err := packOutputPath(t.CrawlDir, t.Format, warcIdx)
+		outPath, err := packOutputPath(t.crawlDir, t.format, warcIdx)
 		if err != nil {
 			return PackMetric{}, err
 		}
@@ -85,19 +86,19 @@ func (t *PackTask) Run(ctx context.Context, emit func(*PackState)) (PackMetric, 
 		progress := func(docs, docsTotal, bytesRead, bytesWritten int64) {
 			totalDocs = docs
 			totalBytes = bytesWritten
-			emitPackProgress(emit, i, total, warcIdx, t.Format, docs, docsTotal, bytesRead, bytesWritten, start)
+			emitPackProgress(emit, i, total, warcIdx, t.format, docs, docsTotal, bytesRead, bytesWritten, start)
 		}
 
-		switch t.Format {
+		switch t.format {
 		case "warc_md":
 			err = packToWARCMd(ctx, markdownDir, outPath, progress)
 		case "parquet":
 			err = packToParquet(ctx, markdownDir, outPath, progress)
 		default:
-			return PackMetric{}, fmt.Errorf("unknown format %q (valid: warc_md, parquet)", t.Format)
+			return PackMetric{}, fmt.Errorf("unknown format %q (valid: warc_md, parquet)", t.format)
 		}
 		if err != nil {
-			return PackMetric{}, fmt.Errorf("pack [%s] %s: %w", t.Format, warcIdx, err)
+			return PackMetric{}, fmt.Errorf("pack [%s] %s: %w", t.format, warcIdx, err)
 		}
 	}
 
@@ -109,7 +110,6 @@ func (t *PackTask) Run(ctx context.Context, emit func(*PackState)) (PackMetric, 
 	}, nil
 }
 
-// packOutputPath returns the output file path for a given format and WARC index.
 func packOutputPath(crawlDir, format, warcIdx string) (string, error) {
 	switch format {
 	case "warc_md":
@@ -121,14 +121,13 @@ func packOutputPath(crawlDir, format, warcIdx string) (string, error) {
 	}
 }
 
-// emitPackProgress emits a detailed pack state snapshot.
 func emitPackProgress(emit func(*PackState), fileIdx, fileTotal int, warcIdx, format string,
 	docs, docsTotal, bytesRead, bytesWritten int64, start time.Time) {
 	if emit == nil {
 		return
 	}
-	pct := phaseProgress(docs, docsTotal)
-	overall := fileProgress(fileIdx, fileTotal, pct)
+	pct := util.PhaseProgress(docs, docsTotal)
+	overall := util.FileProgress(fileIdx, fileTotal, pct)
 	var dps float64
 	if elapsed := time.Since(start); elapsed > 0 && docs > 0 {
 		dps = float64(docs) / elapsed.Seconds()
@@ -147,11 +146,8 @@ func emitPackProgress(emit func(*PackState), fileIdx, fileTotal int, warcIdx, fo
 	})
 }
 
-// ── Pack to WARC-MD (.md.warc.gz) ────────────────────────────────────────────
+// ── Pack to WARC-MD ──────────────────────────────────────────────────────────
 
-// packToWARCMd walks a markdown directory and writes all .md files as WARC
-// conversion records into a single concatenated-gzip file. Each record is its
-// own gzip member for random-access reading.
 func packToWARCMd(ctx context.Context, markdownDir, outPath string, progress func(docs, total, bytesRead, bytesWritten int64)) error {
 	files, err := collectMarkdownFiles(markdownDir)
 	if err != nil {
@@ -181,7 +177,6 @@ func packToWARCMd(ctx context.Context, markdownDir, outPath string, progress fun
 		}
 		bytesRead += int64(len(body))
 
-		// Each record in its own gzip member for random-access reads.
 		gz, err := gzip.NewWriterLevel(f, gzip.BestSpeed)
 		if err != nil {
 			return err
@@ -222,7 +217,6 @@ func packToWARCMd(ctx context.Context, markdownDir, outPath string, progress fun
 
 // ── Pack to Parquet ──────────────────────────────────────────────────────────
 
-// parquetDoc is the schema for the pack parquet file.
 type parquetDoc struct {
 	DocID string `parquet:"doc_id"`
 	Text  string `parquet:"text"`
@@ -230,8 +224,6 @@ type parquetDoc struct {
 
 const parquetRowGroupRows = 50_000
 
-// packToParquet walks a markdown directory and writes all .md files to a
-// ZSTD-compressed Parquet file with doc_id+text schema.
 func packToParquet(ctx context.Context, markdownDir, outPath string, progress func(docs, total, bytesRead, bytesWritten int64)) error {
 	files, err := collectMarkdownFiles(markdownDir)
 	if err != nil {
@@ -289,7 +281,6 @@ func packToParquet(ctx context.Context, markdownDir, outPath string, progress fu
 		}
 	}
 
-	// Flush remaining batch.
 	if len(batch) > 0 {
 		if _, err := pw.Write(batch); err != nil {
 			pw.Close()
@@ -309,14 +300,11 @@ func packToParquet(ctx context.Context, markdownDir, outPath string, progress fu
 
 // ── Shared helpers ───────────────────────────────────────────────────────────
 
-// mdFileEntry holds a discovered markdown file's path and derived doc ID.
 type mdFileEntry struct {
 	path  string
 	docID string
 }
 
-// collectMarkdownFiles walks a directory for .md files and returns entries
-// with doc IDs derived from the filename (UUID or sanitized base).
 func collectMarkdownFiles(dir string) ([]mdFileEntry, error) {
 	var files []mdFileEntry
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
@@ -333,15 +321,12 @@ func collectMarkdownFiles(dir string) ([]mdFileEntry, error) {
 	return files, err
 }
 
-// docIDFromFilename extracts a doc ID from a markdown filename.
-// "abc123.md" → "abc123", "abc123.md.gz" → "abc123".
 func docIDFromFilename(name string) string {
 	name = strings.TrimSuffix(name, ".gz")
 	name = strings.TrimSuffix(name, ".md")
 	return name
 }
 
-// sanitizeUTF8 replaces invalid UTF-8 sequences with the replacement character.
 func sanitizeUTF8(s string) string {
 	if utf8.ValidString(s) {
 		return s

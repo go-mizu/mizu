@@ -1,4 +1,4 @@
-package web
+package cc
 
 import (
 	"context"
@@ -10,21 +10,22 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/go-mizu/mizu/blueprints/search/pkg/core"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/pipeline/util"
 	warcmd "github.com/go-mizu/mizu/blueprints/search/pkg/warc_md"
 )
 
-// markdownConcurrency is the number of WARC files converted in parallel.
+// Compile-time check.
+var _ core.Task[MarkdownState, MarkdownMetric] = (*MarkdownTask)(nil)
+
 const markdownConcurrency = 2
 
 // MarkdownTask converts downloaded WARC files to .md.warc.gz (markdown WARC).
-// Uses warcmd.RunPack which goes directly from .warc.gz → .md.warc.gz,
-// preserving WARC-Target-URI, WARC-Date, and other headers.
-// It is a self-contained core.Task with no dependency on Manager.
 type MarkdownTask struct {
-	CrawlID  string   `json:"crawl_id"`
-	CrawlDir string   `json:"crawl_dir"`
-	Paths    []string `json:"paths"`    // manifest paths
-	Selected []int    `json:"selected"` // indices into Paths
+	crawlID  string
+	crawlDir string
+	paths    []string
+	selected []int
 }
 
 // MarkdownState is emitted during markdown conversion with per-phase detail.
@@ -52,34 +53,32 @@ type MarkdownMetric struct {
 
 // NewMarkdownTask creates a markdown conversion task.
 func NewMarkdownTask(crawlID, crawlDir string, paths []string, selected []int) *MarkdownTask {
-	return &MarkdownTask{CrawlID: crawlID, CrawlDir: crawlDir, Paths: paths, Selected: selected}
+	return &MarkdownTask{crawlID: crawlID, crawlDir: crawlDir, paths: paths, selected: selected}
 }
 
 func (t *MarkdownTask) Run(ctx context.Context, emit func(*MarkdownState)) (MarkdownMetric, error) {
 	start := time.Now()
-	total := len(t.Selected)
+	total := len(t.selected)
 	if total == 0 {
 		return MarkdownMetric{Elapsed: time.Since(start)}, nil
 	}
 
-	warcDir := filepath.Join(t.CrawlDir, "warc")
-	warcMdDir := filepath.Join(t.CrawlDir, "warc_md")
+	warcDir := filepath.Join(t.crawlDir, "warc")
+	warcMdDir := filepath.Join(t.crawlDir, "warc_md")
 	var totalDocs atomic.Int64
 
-	// Oversubscribe: NumCPU*2 workers per shard (goroutines are cheap;
-	// oversubscription hides GC pauses and keeps all cores busy).
 	workersPerShard := runtime.NumCPU() * 2
 
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(markdownConcurrency)
 
-	for i, idx := range t.Selected {
+	for i, idx := range t.selected {
 		i, idx := i, idx
 		g.Go(func() error {
-			warcPath := t.Paths[idx]
-			warcIdx := warcFileIndex(warcPath, idx)
+			warcPath := t.paths[idx]
+			warcIdx := util.WARCFileIndex(warcPath, idx)
 			localPath := filepath.Join(warcDir, filepath.Base(warcPath))
-			if !fileExists(localPath) {
+			if !util.FileExists(localPath) {
 				return fmt.Errorf("warc file not found: %s (run download first)", localPath)
 			}
 
@@ -91,7 +90,7 @@ func (t *MarkdownTask) Run(ctx context.Context, emit func(*MarkdownState)) (Mark
 				if total > 0 && done >= total {
 					phase = "convert"
 				}
-				emitMarkdownProgress(emit, i, len(t.Selected), warcIdx, phase,
+				emitMarkdownProgress(emit, i, len(t.selected), warcIdx, phase,
 					done, total, errors, readBytes, writeBytes, elapsed)
 			}
 
@@ -127,19 +126,18 @@ func (t *MarkdownTask) Run(ctx context.Context, emit func(*MarkdownState)) (Mark
 	}, nil
 }
 
-// emitMarkdownProgress emits a detailed markdown conversion state.
 func emitMarkdownProgress(emit func(*MarkdownState), fileIdx, fileTotal int, warcIdx, phase string,
 	done, total, errors, readBytes, writeBytes int64, elapsed time.Duration) {
 	if emit == nil {
 		return
 	}
-	localPct := phaseProgress(done, total)
+	localPct := util.PhaseProgress(done, total)
 	var overall float64
 	switch phase {
 	case "extract":
-		overall = fileProgress(fileIdx, fileTotal, 0.5*localPct)
+		overall = util.FileProgress(fileIdx, fileTotal, 0.5*localPct)
 	case "convert":
-		overall = fileProgress(fileIdx, fileTotal, 0.5+0.5*localPct)
+		overall = util.FileProgress(fileIdx, fileTotal, 0.5+0.5*localPct)
 	}
 	emit(&MarkdownState{
 		FileIndex:     fileIdx,
@@ -151,8 +149,8 @@ func emitMarkdownProgress(emit func(*MarkdownState), fileIdx, fileTotal int, war
 		DocsErrors:    errors,
 		ReadBytes:     readBytes,
 		WriteBytes:    writeBytes,
-		ReadRate:      mbPerSec(readBytes, elapsed),
-		WriteRate:     mbPerSec(writeBytes, elapsed),
+		ReadRate:      util.MBPerSec(readBytes, elapsed),
+		WriteRate:     util.MBPerSec(writeBytes, elapsed),
 		Progress:      overall,
 	})
 }

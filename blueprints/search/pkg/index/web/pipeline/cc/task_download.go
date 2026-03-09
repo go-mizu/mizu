@@ -1,4 +1,6 @@
-package web
+// Package cc implements Common Crawl pipeline tasks: download, markdown,
+// pack, and index. Each task implements core.Task[State, Metric].
+package cc
 
 import (
 	"context"
@@ -10,18 +12,21 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/core"
+	ccpkg "github.com/go-mizu/mizu/blueprints/search/pkg/cc"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/pipeline/util"
 )
 
-// downloadConcurrency is the number of WARC files downloaded in parallel.
+// Compile-time check.
+var _ core.Task[DownloadState, DownloadMetric] = (*DownloadTask)(nil)
+
 const downloadConcurrency = 3
 
 // DownloadTask downloads WARC files from Common Crawl S3.
-// It is a self-contained core.Task with no dependency on Manager.
 type DownloadTask struct {
-	CrawlDir string   `json:"crawl_dir"`
-	Paths    []string `json:"paths"`    // manifest paths
-	Selected []int    `json:"selected"` // indices into Paths
+	crawlDir string
+	paths    []string
+	selected []int
 }
 
 // DownloadState is emitted during download with per-file detail.
@@ -45,30 +50,30 @@ type DownloadMetric struct {
 
 // NewDownloadTask creates a download task for the given WARC files.
 func NewDownloadTask(crawlDir string, paths []string, selected []int) *DownloadTask {
-	return &DownloadTask{CrawlDir: crawlDir, Paths: paths, Selected: selected}
+	return &DownloadTask{crawlDir: crawlDir, paths: paths, selected: selected}
 }
 
 func (t *DownloadTask) Run(ctx context.Context, emit func(*DownloadState)) (DownloadMetric, error) {
 	start := time.Now()
 
-	warcDir := filepath.Join(t.CrawlDir, "warc")
+	warcDir := filepath.Join(t.crawlDir, "warc")
 	if err := os.MkdirAll(warcDir, 0o755); err != nil {
 		return DownloadMetric{}, fmt.Errorf("create warc dir: %w", err)
 	}
 
-	client := cc.NewClient("", 4)
-	total := len(t.Selected)
+	client := ccpkg.NewClient("", 4)
+	total := len(t.selected)
 	var totalBytes atomic.Int64
 
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(downloadConcurrency)
 
-	for i, idx := range t.Selected {
+	for i, idx := range t.selected {
 		i, idx := i, idx
 		g.Go(func() error {
-			remotePath := t.Paths[idx]
+			remotePath := t.paths[idx]
 			fileName := filepath.Base(remotePath)
-			warcIdx := warcFileIndex(remotePath, idx)
+			warcIdx := util.WARCFileIndex(remotePath, idx)
 			localPath := filepath.Join(warcDir, fileName)
 			fileStart := time.Now()
 
@@ -96,13 +101,12 @@ func (t *DownloadTask) Run(ctx context.Context, emit func(*DownloadState)) (Down
 	}, nil
 }
 
-// emitDownloadProgress emits a detailed download state snapshot.
 func emitDownloadProgress(emit func(*DownloadState), fileIdx, fileTotal int, warcIdx, fileName string, received, bytesTotal int64, fileStart time.Time) {
 	if emit == nil {
 		return
 	}
 	filePct := downloadFraction(received, bytesTotal)
-	overall := fileProgress(fileIdx, fileTotal, filePct)
+	overall := util.FileProgress(fileIdx, fileTotal, filePct)
 	var bps float64
 	if elapsed := time.Since(fileStart); elapsed > 0 && received > 0 {
 		bps = float64(received) / elapsed.Seconds()
@@ -119,18 +123,9 @@ func emitDownloadProgress(emit func(*DownloadState), fileIdx, fileTotal int, war
 	})
 }
 
-// downloadFraction returns the fraction of bytes received.
 func downloadFraction(received, total int64) float64 {
 	if total <= 0 {
 		return 0
 	}
 	return float64(received) / float64(total)
-}
-
-// fileProgress computes overall progress across a multi-file loop.
-func fileProgress(fileIdx, fileTotal int, fileFraction float64) float64 {
-	if fileTotal <= 0 {
-		return 0
-	}
-	return (float64(fileIdx) + fileFraction) / float64(fileTotal)
 }

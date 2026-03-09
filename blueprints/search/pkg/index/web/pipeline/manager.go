@@ -1,4 +1,4 @@
-package web
+package pipeline
 
 import (
 	"context"
@@ -11,70 +11,21 @@ import (
 	"github.com/google/uuid"
 )
 
-// ── Job Types ────────────────────────────────────────────────────────────
-
-// JobConfig describes the parameters for a pipeline job.
-type JobConfig struct {
-	Type    string `json:"type"` // download, markdown, pack, index
-	CrawlID string `json:"crawl"`
-	Files   string `json:"files"`  // "0", "0-4", "all"
-	Engine  string `json:"engine"` // for index jobs
-	Source  string `json:"source"` // for index jobs (files, parquet, bin, etc.)
-	Format  string `json:"format"` // for pack jobs
-}
-
-// Job represents a single pipeline job tracked by the Manager.
-type Job struct {
-	ID        string     `json:"id"`
-	Type      string     `json:"type"`
-	Status    string     `json:"status"` // queued, running, completed, failed, cancelled
-	Config    JobConfig  `json:"config"`
-	Progress  float64    `json:"progress"` // 0.0–1.0
-	Message   string     `json:"message"`
-	Rate      float64    `json:"rate,omitempty"` // items/sec
-	StartedAt time.Time  `json:"started_at"`
-	EndedAt   *time.Time `json:"ended_at,omitempty"`
-	Error     string     `json:"error,omitempty"`
-	cancel    context.CancelFunc
-}
-
-// JobCompleteHook is called when a job transitions to completed status.
-type JobCompleteHook func(job *Job, crawlID, crawlDir string)
-
-// ── WebSocket event types ────────────────────────────────────────────────
-
-type wsJobUpdate struct {
-	Type   string `json:"type"`
-	JobID  string `json:"job_id"`
-	Status string `json:"status"`
-	Error  string `json:"error,omitempty"`
-}
-
-type wsJobProgress struct {
-	Type     string  `json:"type"`
-	JobID    string  `json:"job_id"`
-	Progress float64 `json:"progress"`
-	Message  string  `json:"message"`
-	Rate     float64 `json:"rate"`
-}
-
-// ── Manager ──────────────────────────────────────────────────────────
-
 // Manager manages pipeline jobs with in-memory state and optional
 // persistence via metastore. It is safe for concurrent use.
 type Manager struct {
 	mu      sync.RWMutex
 	jobs    map[string]*Job
 	order   []string // job IDs in creation order
-	hub     *WSHub
+	bc      Broadcaster
 	baseDir string
 	crawlID string
 	store   metastore.Store // optional persistence
 
-	persistCh chan metastore.JobRecord // batched persist channel
+	persistCh chan metastore.JobRecord
 	stopOnce  sync.Once
 
-	onComplete JobCompleteHook
+	onComplete CompleteHook
 
 	manifestMu    sync.Mutex
 	manifestCache map[string]manifestCacheEntry
@@ -86,11 +37,11 @@ type manifestCacheEntry struct {
 	fetchedAt time.Time
 }
 
-// NewManager creates a Manager that broadcasts job updates via hub.
-func NewManager(hub *WSHub, baseDir, crawlID string) *Manager {
+// NewManager creates a Manager that broadcasts job updates via bc.
+func NewManager(bc Broadcaster, baseDir, crawlID string) *Manager {
 	return &Manager{
 		jobs:          make(map[string]*Job),
-		hub:           hub,
+		bc:            bc,
 		baseDir:       baseDir,
 		crawlID:       crawlID,
 		manifestCache: make(map[string]manifestCacheEntry),
@@ -104,38 +55,7 @@ func (m *Manager) SetStore(s metastore.Store) {
 	m.store = s
 	m.persistCh = make(chan metastore.JobRecord, 256)
 	m.mu.Unlock()
-	go m.persistFlusher(s)
-}
-
-// persistFlusher drains the persist channel in batches.
-func (m *Manager) persistFlusher(s metastore.Store) {
-	for rec := range m.persistCh {
-		// Drain any additional queued records into a batch.
-		batch := []metastore.JobRecord{rec}
-		drain := true
-		for drain {
-			select {
-			case r, ok := <-m.persistCh:
-				if !ok {
-					drain = false
-				} else {
-					batch = append(batch, r)
-				}
-			default:
-				drain = false
-			}
-		}
-		// Deduplicate: keep last record per job ID.
-		seen := make(map[string]int, len(batch))
-		for i, r := range batch {
-			seen[r.ID] = i
-		}
-		for _, idx := range seen {
-			if err := s.PutJob(context.Background(), batch[idx]); err != nil {
-				logErrorf("jobs persist id=%s err=%v", batch[idx].ID, err)
-			}
-		}
-	}
+	go persistFlusher(s, m.persistCh)
 }
 
 // StopPersist closes the persist channel and flushes remaining records.
@@ -198,7 +118,6 @@ func (m *Manager) LoadHistory(ctx context.Context) {
 // Create adds a new job with a unique short ID in "queued" status.
 func (m *Manager) Create(cfg JobConfig) *Job {
 	id := uuid.New().String()[:8]
-
 	job := &Job{
 		ID:        id,
 		Type:      cfg.Type,
@@ -250,7 +169,7 @@ func (m *Manager) Cancel(id string) bool {
 	now := time.Now()
 	job.Status = "cancelled"
 	job.EndedAt = &now
-	cancelFn := job.cancel
+	cancelFn := job.Cancel
 	rec := snapshotJob(job)
 	ch := m.persistCh
 	m.mu.Unlock()
@@ -260,7 +179,7 @@ func (m *Manager) Cancel(id string) bool {
 	}
 
 	enqueuePersist(ch, rec)
-	m.hub.Broadcast(id, wsJobUpdate{Type: "job_update", JobID: id, Status: "cancelled"})
+	m.bc.Broadcast(id, jobUpdate{Type: "job_update", JobID: id, Status: "cancelled"})
 	logInfof("job lifecycle id=%s status=cancelled", id)
 	return true
 }
@@ -278,7 +197,7 @@ func (m *Manager) UpdateProgress(id string, pct float64, msg string, rate float6
 	job.Rate = rate
 	m.mu.Unlock()
 
-	m.hub.Broadcast(id, wsJobProgress{Type: "job_progress", JobID: id, Progress: pct, Message: msg, Rate: rate})
+	m.bc.Broadcast(id, jobProgress{Type: "job_progress", JobID: id, Progress: pct, Message: msg, Rate: rate})
 }
 
 // Complete marks a job as completed with a final message.
@@ -295,14 +214,14 @@ func (m *Manager) Complete(id string, msg string) {
 	job.Message = msg
 	job.EndedAt = &now
 	hook := m.onComplete
-	crawlID := m.resolveCrawlID(job)
-	crawlDir := m.resolveCrawlDir(crawlID)
+	crawlID := resolveCrawlID(job, m.crawlID)
+	crawlDir := resolveCrawlDir(crawlID, m.crawlID, m.baseDir)
 	rec := snapshotJob(job)
 	ch := m.persistCh
 	m.mu.Unlock()
 
 	enqueuePersist(ch, rec)
-	m.hub.Broadcast(id, wsJobUpdate{Type: "job_update", JobID: id, Status: "completed"})
+	m.bc.Broadcast(id, jobUpdate{Type: "job_update", JobID: id, Status: "completed"})
 	logInfof("job lifecycle id=%s status=completed msg=%q", id, msg)
 
 	if hook != nil {
@@ -327,7 +246,7 @@ func (m *Manager) Fail(id string, err error) {
 	m.mu.Unlock()
 
 	enqueuePersist(ch, rec)
-	m.hub.Broadcast(id, wsJobUpdate{Type: "job_update", JobID: id, Status: "failed", Error: err.Error()})
+	m.bc.Broadcast(id, jobUpdate{Type: "job_update", JobID: id, Status: "failed", Error: err.Error()})
 	logErrorf("job lifecycle id=%s status=failed err=%v", id, err)
 }
 
@@ -340,13 +259,13 @@ func (m *Manager) SetRunning(id string, cancel context.CancelFunc) {
 		return
 	}
 	job.Status = "running"
-	job.cancel = cancel
+	job.Cancel = cancel
 	rec := snapshotJob(job)
 	ch := m.persistCh
 	m.mu.Unlock()
 
 	enqueuePersist(ch, rec)
-	m.hub.Broadcast(id, wsJobUpdate{Type: "job_update", JobID: id, Status: "running"})
+	m.bc.Broadcast(id, jobUpdate{Type: "job_update", JobID: id, Status: "running"})
 	logInfof("job lifecycle id=%s status=running", id)
 }
 
@@ -392,33 +311,41 @@ func (m *Manager) Clear() int {
 }
 
 // SetCompleteHook sets a callback fired whenever a job completes successfully.
-func (m *Manager) SetCompleteHook(h JobCompleteHook) {
+func (m *Manager) SetCompleteHook(h CompleteHook) {
 	m.mu.Lock()
 	m.onComplete = h
 	m.mu.Unlock()
 }
 
-func (m *Manager) resolveCrawlID(job *Job) string {
-	if job != nil && job.Config.CrawlID != "" {
-		return job.Config.CrawlID
-	}
-	return m.crawlID
-}
-
-func (m *Manager) resolveCrawlDir(crawlID string) string {
-	if crawlID == m.crawlID {
-		return m.baseDir
-	}
-	return filepath.Join(filepath.Dir(m.baseDir), crawlID)
-}
-
-func (m *Manager) setManifestFetcher(fn func(ctx context.Context, crawlID string) ([]string, error)) {
+// SetManifestFetcher sets the function used to fetch WARC manifest paths.
+func (m *Manager) SetManifestFetcher(fn func(ctx context.Context, crawlID string) ([]string, error)) {
 	m.mu.Lock()
 	m.manifestFetch = fn
 	m.mu.Unlock()
 }
 
-// snapshotJob creates a JobRecord snapshot. Must be called while holding m.mu.
+// BaseDir returns the crawl base directory.
+func (m *Manager) BaseDir() string { return m.baseDir }
+
+// CrawlID returns the default crawl ID.
+func (m *Manager) CrawlID() string { return m.crawlID }
+
+// ── private helpers ───────────────────────────────────────────────────────
+
+func resolveCrawlID(job *Job, defaultCrawlID string) string {
+	if job != nil && job.Config.CrawlID != "" {
+		return job.Config.CrawlID
+	}
+	return defaultCrawlID
+}
+
+func resolveCrawlDir(crawlID, defaultCrawlID, baseDir string) string {
+	if crawlID == defaultCrawlID {
+		return baseDir
+	}
+	return filepath.Join(filepath.Dir(baseDir), crawlID)
+}
+
 func snapshotJob(job *Job) metastore.JobRecord {
 	cfgJSON, _ := json.Marshal(job.Config)
 	rec := metastore.JobRecord{
@@ -439,7 +366,6 @@ func snapshotJob(job *Job) metastore.JobRecord {
 	return rec
 }
 
-// enqueuePersist sends a job record to the persist channel. No-op if channel is nil.
 func enqueuePersist(ch chan metastore.JobRecord, rec metastore.JobRecord) {
 	if ch == nil {
 		return
@@ -448,5 +374,34 @@ func enqueuePersist(ch chan metastore.JobRecord, rec metastore.JobRecord) {
 	case ch <- rec:
 	default:
 		logErrorf("jobs persist queue full, dropping id=%s", rec.ID)
+	}
+}
+
+func persistFlusher(s metastore.Store, ch chan metastore.JobRecord) {
+	for rec := range ch {
+		batch := []metastore.JobRecord{rec}
+		drain := true
+		for drain {
+			select {
+			case r, ok := <-ch:
+				if !ok {
+					drain = false
+				} else {
+					batch = append(batch, r)
+				}
+			default:
+				drain = false
+			}
+		}
+		// Deduplicate: keep last record per job ID.
+		seen := make(map[string]int, len(batch))
+		for i, r := range batch {
+			seen[r.ID] = i
+		}
+		for _, idx := range seen {
+			if err := s.PutJob(context.Background(), batch[idx]); err != nil {
+				logErrorf("jobs persist id=%s err=%v", batch[idx].ID, err)
+			}
+		}
 	}
 }

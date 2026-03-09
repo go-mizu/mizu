@@ -1,4 +1,4 @@
-package web
+package cc
 
 import (
 	"context"
@@ -12,22 +12,26 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/go-mizu/mizu/blueprints/search/pkg/core"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index"
 	indexpack "github.com/go-mizu/mizu/blueprints/search/pkg/index/pack"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/pipeline/util"
 	warcpkg "github.com/go-mizu/mizu/blueprints/search/pkg/warc"
 )
+
+// Compile-time check.
+var _ core.Task[IndexState, IndexMetric] = (*IndexTask)(nil)
 
 // indexConcurrency is the number of shards indexed in parallel.
 const indexConcurrency = 2
 
 // IndexTask builds FTS indexes from packed or raw markdown data.
-// It is a self-contained core.Task with no dependency on Manager.
 type IndexTask struct {
-	CrawlDir string   `json:"crawl_dir"`
-	Paths    []string `json:"paths"`    // manifest paths
-	Selected []int    `json:"selected"` // indices into Paths
-	Engine   string   `json:"engine"`   // FTS engine name (e.g. "dahlia", "tantivy")
-	Source   string   `json:"source"`   // "files", "parquet", "bin", "duckdb", "markdown"
+	crawlDir string
+	paths    []string
+	selected []int
+	engine   string
+	source   string
 }
 
 // IndexState is emitted during indexing with per-shard detail.
@@ -58,40 +62,40 @@ func NewIndexTask(crawlDir string, paths []string, selected []int, engine, sourc
 	if source == "" {
 		source = "files"
 	}
-	return &IndexTask{CrawlDir: crawlDir, Paths: paths, Selected: selected, Engine: engine, Source: source}
+	return &IndexTask{crawlDir: crawlDir, paths: paths, selected: selected, engine: engine, source: source}
 }
 
 func (t *IndexTask) Run(ctx context.Context, emit func(*IndexState)) (IndexMetric, error) {
 	start := time.Now()
-	total := len(t.Selected)
+	total := len(t.selected)
 	var totalDocs atomic.Int64
 
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(indexConcurrency)
 
-	for i, idx := range t.Selected {
+	for i, idx := range t.selected {
 		i, idx := i, idx
 		g.Go(func() error {
-			warcIdx := warcFileIndex(t.Paths[idx], idx)
-			outputDir := filepath.Join(t.CrawlDir, "fts", t.Engine, warcIdx)
+			warcIdx := util.WARCFileIndex(t.paths[idx], idx)
+			outputDir := filepath.Join(t.crawlDir, "fts", t.engine, warcIdx)
 
-			eng, err := openEngine(gctx, t.Engine, outputDir)
+			eng, err := openEngine(gctx, t.engine, outputDir)
 			if err != nil {
 				return err
 			}
 
-			emitIndexProgress(emit, i, total, warcIdx, t.Engine, t.Source, 0, 0, start)
+			emitIndexProgress(emit, i, total, warcIdx, t.engine, t.source, 0, 0, start)
 
 			var docs int64
-			if t.Source == "files" {
-				docs, err = indexFromWARCMd(gctx, eng, t.CrawlDir, warcIdx, func(done, docTotal int64, elapsed time.Duration) {
+			if t.source == "files" {
+				docs, err = indexFromWARCMd(gctx, eng, t.crawlDir, warcIdx, func(done, docTotal int64, _ time.Duration) {
 					totalDocs.Store(done)
-					emitIndexProgress(emit, i, total, warcIdx, t.Engine, t.Source, done, docTotal, start)
+					emitIndexProgress(emit, i, total, warcIdx, t.engine, t.source, done, docTotal, start)
 				})
 			} else {
-				docs, err = indexFromPack(gctx, eng, t.CrawlDir, t.Source, warcIdx, func(done, docTotal int64, elapsed time.Duration) {
+				docs, err = indexFromPack(gctx, eng, t.crawlDir, t.source, warcIdx, func(done, docTotal int64, _ time.Duration) {
 					totalDocs.Store(done)
-					emitIndexProgress(emit, i, total, warcIdx, t.Engine, t.Source, done, docTotal, start)
+					emitIndexProgress(emit, i, total, warcIdx, t.engine, t.source, done, docTotal, start)
 				})
 			}
 
@@ -123,21 +127,8 @@ func (t *IndexTask) Run(ctx context.Context, emit func(*IndexState)) (IndexMetri
 	}, nil
 }
 
-// openEngine creates and opens an FTS engine at the given directory.
-func openEngine(ctx context.Context, name, dir string) (index.Engine, error) {
-	eng, err := index.NewEngine(name)
-	if err != nil {
-		return nil, fmt.Errorf("create engine %s: %w", name, err)
-	}
-	if err := eng.Open(ctx, dir); err != nil {
-		return nil, fmt.Errorf("open engine %s at %s: %w", name, dir, err)
-	}
-	return eng, nil
-}
-
 // IndexFromWARCMd indexes documents from a .md.warc.gz file into an engine.
-// The warcMdPath is the full path to the .md.warc.gz file.
-// progress is called periodically with (docsIndexed, docsTotal, elapsed).
+// Exported for use by CLI (cli/cc_fts.go).
 func IndexFromWARCMd(ctx context.Context, eng index.Engine, warcMdPath string, batchSize int, progress func(done, total int64, elapsed time.Duration)) (int64, error) {
 	if _, err := os.Stat(warcMdPath); os.IsNotExist(err) {
 		return 0, fmt.Errorf("warc_md file not found: %s", warcMdPath)
@@ -152,9 +143,6 @@ func IndexFromWARCMd(ctx context.Context, eng index.Engine, warcMdPath string, b
 	docCh := make(chan indexpack.Document, 256)
 	errCh := make(chan error, 1)
 
-	// Producer: iterate WARC conversion records using the package reader which
-	// correctly manages the concat-gzip format (reuses the same internal bufio
-	// across member advances, avoiding the over-read bug of manual gz.Reset).
 	go func() {
 		defer close(docCh)
 		wr := warcpkg.NewReader(f)
@@ -202,7 +190,6 @@ func IndexFromWARCMd(ctx context.Context, eng index.Engine, warcMdPath string, b
 		batchSize = 5000
 	}
 	stats, err := indexpack.RunPipelineFromChannel(ctx, eng, docCh, 0, batchSize, adaptProgress)
-	// Check for producer errors.
 	select {
 	case pErr := <-errCh:
 		if err == nil {
@@ -216,6 +203,18 @@ func IndexFromWARCMd(ctx context.Context, eng index.Engine, warcMdPath string, b
 	return stats.DocsIndexed.Load(), nil
 }
 
+// openEngine creates and opens an FTS engine at the given directory.
+func openEngine(ctx context.Context, name, dir string) (index.Engine, error) {
+	eng, err := index.NewEngine(name)
+	if err != nil {
+		return nil, fmt.Errorf("create engine %s: %w", name, err)
+	}
+	if err := eng.Open(ctx, dir); err != nil {
+		return nil, fmt.Errorf("open engine %s at %s: %w", name, dir, err)
+	}
+	return eng, nil
+}
+
 // indexFromWARCMd indexes documents from a warc_md/{shard}.md.warc.gz file into an engine.
 func indexFromWARCMd(ctx context.Context, eng index.Engine, crawlDir, warcIdx string, progress func(done, total int64, elapsed time.Duration)) (int64, error) {
 	warcMdPath := filepath.Join(crawlDir, "warc_md", warcIdx+".md.warc.gz")
@@ -225,7 +224,7 @@ func indexFromWARCMd(ctx context.Context, eng index.Engine, crawlDir, warcIdx st
 // indexFromPack indexes documents from a packed source file into an engine.
 func indexFromPack(ctx context.Context, eng index.Engine, crawlDir, source, warcIdx string, progress func(done, total int64, elapsed time.Duration)) (int64, error) {
 	packDir := filepath.Join(crawlDir, "pack")
-	packFile, err := packPath(packDir, source, warcIdx)
+	packFile, err := util.PackPath(packDir, source, warcIdx)
 	if err != nil {
 		return 0, err
 	}
@@ -258,14 +257,13 @@ func indexFromPack(ctx context.Context, eng index.Engine, crawlDir, source, warc
 	return stats.DocsIndexed.Load(), nil
 }
 
-// emitIndexProgress emits a detailed index state snapshot.
 func emitIndexProgress(emit func(*IndexState), fileIdx, fileTotal int, warcIdx, engine, source string,
 	docsIndexed, docsTotal int64, start time.Time) {
 	if emit == nil {
 		return
 	}
-	pct := phaseProgress(docsIndexed, docsTotal)
-	overall := fileProgress(fileIdx, fileTotal, pct)
+	pct := util.PhaseProgress(docsIndexed, docsTotal)
+	overall := util.FileProgress(fileIdx, fileTotal, pct)
 	var dps float64
 	if elapsed := time.Since(start); elapsed > 0 && docsIndexed > 0 {
 		dps = float64(docsIndexed) / elapsed.Seconds()

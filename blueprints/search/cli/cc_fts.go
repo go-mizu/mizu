@@ -14,7 +14,7 @@ import (
 	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index"
 	indexpack "github.com/go-mizu/mizu/blueprints/search/pkg/index/pack"
-	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web"
+	pipcc "github.com/go-mizu/mizu/blueprints/search/pkg/index/web/pipeline/cc"
 	// Register FTS engine drivers: dahlia (default) and tantivy.
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/devnull"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/driver/flower/dahlia"
@@ -177,7 +177,7 @@ func runCCFTSIndex(ctx context.Context, crawlID, fileIdx, engineName, source str
 				warcMdPath, outputDir, engineName, batchSize)
 
 			startTime := time.Now()
-			docs, indexErr := web.IndexFromWARCMd(ctx, eng, warcMdPath, batchSize, func(done, total int64, elapsed time.Duration) {
+			docs, indexErr := pipcc.IndexFromWARCMd(ctx, eng, warcMdPath, batchSize, func(done, total int64, elapsed time.Duration) {
 				rate := float64(0)
 				if elapsed.Seconds() > 0 {
 					rate = float64(done) / elapsed.Seconds()
