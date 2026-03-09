@@ -10,9 +10,9 @@ import (
 
 	mizu "github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
-	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/metastore"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/pipeline"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/pipeline/scrape"
+	webstore "github.com/go-mizu/mizu/blueprints/search/pkg/index/web/store"
 )
 
 // ── Interfaces for web-package store dependencies ────────────────────────────
@@ -25,9 +25,9 @@ type MetaProvider interface {
 	TriggerRefresh(crawlID, crawlDir string, force bool) bool
 	Status(ctx context.Context, crawlID string) MetaStatus
 	GetSummary(ctx context.Context, crawlID, crawlDir string) DataSummaryWithMeta
-	ListWARCs(ctx context.Context, crawlID, crawlDir string) ([]metastore.WARCRecord, DataSummaryWithMeta, error)
-	GetWARC(ctx context.Context, crawlID, crawlDir, warcIndex string) (metastore.WARCRecord, bool, DataSummaryWithMeta, error)
-	Store() metastore.Store
+	ListWARCs(ctx context.Context, crawlID, crawlDir string) ([]webstore.WARCRecord, DataSummaryWithMeta, error)
+	GetWARC(ctx context.Context, crawlID, crawlDir, warcIndex string) (webstore.WARCRecord, bool, DataSummaryWithMeta, error)
+	Store() *webstore.Store
 	Close() error
 }
 
@@ -296,7 +296,7 @@ type MetaRefreshResponse struct {
 type Deps struct {
 	// Pipeline
 	Jobs   *pipeline.Manager
-	Scrape *scrape.Store
+	Scrape scrape.Store
 
 	// Core identity
 	CrawlID    string
@@ -341,9 +341,9 @@ type Deps struct {
 	NormalizeDomainInput func(raw string) string
 
 	// Helpers for WARC console handlers (provided by web.Server)
-	ListWARCsFallback  func(ctx context.Context, crawlID, crawlDir string) ([]metastore.WARCRecord, DataSummaryWithMeta)
-	SummarizeWARCs     func(recs []metastore.WARCRecord) WARCSummary
-	BuildWARCRow       func(ctx context.Context, rec metastore.WARCRecord, crawlDir string) WARCAPIRecord
+	ListWARCsFallback  func(ctx context.Context, crawlID, crawlDir string) ([]webstore.WARCRecord, DataSummaryWithMeta)
+	SummarizeWARCs     func(recs []webstore.WARCRecord) WARCSummary
+	BuildWARCRow       func(ctx context.Context, rec webstore.WARCRecord, crawlDir string) WARCAPIRecord
 	CollectSystemStats func(crawlDir string) WARCSystemStats
 	DeleteWARCArtifacts func(crawlDir, localIdx, target, format, engine string) ([]string, error)
 

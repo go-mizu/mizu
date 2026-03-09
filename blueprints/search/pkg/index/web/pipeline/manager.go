@@ -7,12 +7,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/metastore"
+	webstore "github.com/go-mizu/mizu/blueprints/search/pkg/index/web/store"
 	"github.com/google/uuid"
 )
 
 // Manager manages pipeline jobs with in-memory state and optional
-// persistence via metastore. It is safe for concurrent use.
+// persistence via webstore. It is safe for concurrent use.
 type Manager struct {
 	mu      sync.RWMutex
 	jobs    map[string]*Job
@@ -20,9 +20,9 @@ type Manager struct {
 	bc      Broadcaster
 	baseDir string
 	crawlID string
-	store   metastore.Store // optional persistence
+	store   *webstore.Store // optional persistence
 
-	persistCh chan metastore.JobRecord
+	persistCh chan webstore.JobRecord
 	stopOnce  sync.Once
 
 	onComplete    CompleteHook
@@ -51,10 +51,10 @@ func NewManager(bc Broadcaster, baseDir, crawlID string) *Manager {
 
 // SetStore configures persistence and starts the async flush goroutine.
 // Call before LoadHistory.
-func (m *Manager) SetStore(s metastore.Store) {
+func (m *Manager) SetStore(s *webstore.Store) {
 	m.mu.Lock()
 	m.store = s
-	m.persistCh = make(chan metastore.JobRecord, 256)
+	m.persistCh = make(chan webstore.JobRecord, 256)
 	m.mu.Unlock()
 	go persistFlusher(s, m.persistCh)
 }
@@ -274,7 +274,7 @@ func (m *Manager) SetRunning(id string, cancel context.CancelFunc) {
 func (m *Manager) Clear() int {
 	m.mu.Lock()
 	var kept []string
-	var activeRecs []metastore.JobRecord
+	var activeRecs []webstore.JobRecord
 	removed := 0
 	for _, id := range m.order {
 		job, ok := m.jobs[id]
@@ -364,9 +364,9 @@ func resolveCrawlDir(crawlID, defaultCrawlID, baseDir string) string {
 	return filepath.Join(filepath.Dir(baseDir), crawlID)
 }
 
-func snapshotJob(job *Job) metastore.JobRecord {
+func snapshotJob(job *Job) webstore.JobRecord {
 	cfgJSON, _ := json.Marshal(job.Config)
-	rec := metastore.JobRecord{
+	rec := webstore.JobRecord{
 		ID:        job.ID,
 		Type:      job.Type,
 		Status:    job.Status,
@@ -384,7 +384,7 @@ func snapshotJob(job *Job) metastore.JobRecord {
 	return rec
 }
 
-func enqueuePersist(ch chan metastore.JobRecord, rec metastore.JobRecord) {
+func enqueuePersist(ch chan webstore.JobRecord, rec webstore.JobRecord) {
 	if ch == nil {
 		return
 	}
@@ -395,9 +395,9 @@ func enqueuePersist(ch chan metastore.JobRecord, rec metastore.JobRecord) {
 	}
 }
 
-func persistFlusher(s metastore.Store, ch chan metastore.JobRecord) {
+func persistFlusher(s *webstore.Store, ch chan webstore.JobRecord) {
 	for rec := range ch {
-		batch := []metastore.JobRecord{rec}
+		batch := []webstore.JobRecord{rec}
 		drain := true
 		for drain {
 			select {

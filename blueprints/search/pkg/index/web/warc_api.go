@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/api"
-	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/metastore"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/pipeline"
+	webstore "github.com/go-mizu/mizu/blueprints/search/pkg/index/web/store"
 )
 
 // Type aliases - these types are now defined in api/
@@ -46,7 +46,7 @@ func parseWARCInt(idx string) int {
 	return n
 }
 
-func summarizeWARCRecords(recs []metastore.WARCRecord) warcSummaryStats {
+func summarizeWARCRecords(recs []webstore.WARCRecord) warcSummaryStats {
 	var out warcSummaryStats
 	out.Total = len(recs)
 	for _, rec := range recs {
@@ -74,7 +74,7 @@ func summarizeWARCRecords(recs []metastore.WARCRecord) warcSummaryStats {
 	return out
 }
 
-func toWARCAPIRecord(rec metastore.WARCRecord) warcAPIRecord {
+func toWARCAPIRecord(rec webstore.WARCRecord) warcAPIRecord {
 	pack := cloneMap(rec.PackBytes)
 	fts := cloneMap(rec.FTSBytes)
 	packTotal := sumInt64Map(pack)

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/metastore"
+	webstore "github.com/go-mizu/mizu/blueprints/search/pkg/index/web/store"
 )
 
 // buildWARCRecords scans local crawl artifacts and merges manifest identity into
@@ -19,13 +19,13 @@ import (
 // Key design: WARCIndex is the manifest position (formatWARCIndex(i)), ensuring
 // all 100K manifest entries are unique even though CC segment filenames reuse
 // 00000–00999 across segments. Local disk data is linked via filename lookup.
-func buildWARCRecords(crawlID, crawlDir string, manifestPaths []string, updatedAt time.Time) []metastore.WARCRecord {
-	records := make(map[string]*metastore.WARCRecord, max(len(manifestPaths), 64))
-	ensure := func(idx string) *metastore.WARCRecord {
+func buildWARCRecords(crawlID, crawlDir string, manifestPaths []string, updatedAt time.Time) []webstore.WARCRecord {
+	records := make(map[string]*webstore.WARCRecord, max(len(manifestPaths), 64))
+	ensure := func(idx string) *webstore.WARCRecord {
 		if rec, ok := records[idx]; ok {
 			return rec
 		}
-		rec := &metastore.WARCRecord{
+		rec := &webstore.WARCRecord{
 			CrawlID:       crawlID,
 			WARCIndex:     idx,
 			PackBytes:     make(map[string]int64),
@@ -157,7 +157,7 @@ func buildWARCRecords(crawlID, crawlDir string, manifestPaths []string, updatedA
 		}
 	}
 
-	out := make([]metastore.WARCRecord, 0, len(records))
+	out := make([]webstore.WARCRecord, 0, len(records))
 	for _, rec := range records {
 		rec.TotalBytes = rec.WARCBytes + rec.MarkdownBytes + sumInt64Map(rec.PackBytes) + sumInt64Map(rec.FTSBytes)
 		out = append(out, *rec)

@@ -22,9 +22,9 @@ import (
 	mizu "github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/api"
-	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/metastore"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/pipeline"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/pipeline/scrape"
+	webstore "github.com/go-mizu/mizu/blueprints/search/pkg/index/web/store"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/renderer/html"
@@ -101,7 +101,7 @@ type Server struct {
 	Docs          *DocStore      // per-document browse metadata (dashboard only)
 	DomainStore   *DomainStore   // cross-shard domain count cache (dashboard only)
 	CCDomainStore *CCDomainStore // Common Crawl CDX domain cache (separate DB)
-	Scrape        *scrape.Store  // per-domain crawler result store (dashboard only)
+	Scrape        scrape.Store   // per-domain crawler result store (dashboard only)
 
 	manifestTotal int             // cached count of WARCs in CC manifest
 	crawlSize     *crawlSizeCache // async-cached dirSize(crawlDir)
@@ -116,7 +116,6 @@ type DashboardOptions struct {
 	MetaRefreshTTL  time.Duration
 	MetaPrewarm     bool
 	MetaBusyTimeout time.Duration
-	MetaJournalMode string
 }
 
 // New creates a Server for the given crawl and engine.
@@ -144,7 +143,6 @@ func NewDashboard(engineName, crawlID, addr, baseDir string) *Server {
 		MetaRefreshTTL:  defaultMetaRefreshTTL,
 		MetaPrewarm:     true,
 		MetaBusyTimeout: 5 * time.Second,
-		MetaJournalMode: "WAL",
 	})
 }
 
@@ -161,7 +159,6 @@ func NewDashboardWithOptions(engineName, crawlID, addr, baseDir string, opts Das
 		RefreshTTL:  opts.MetaRefreshTTL,
 		Prewarm:     opts.MetaPrewarm,
 		BusyTimeout: opts.MetaBusyTimeout,
-		JournalMode: opts.MetaJournalMode,
 		ActiveCrawl: crawlID,
 		ActiveDir:   baseDir,
 		CommonCrawl: filepath.Dir(baseDir),
@@ -295,7 +292,7 @@ func (s *Server) Handler() http.Handler {
 		FormatBytes:          FormatBytes,
 		NormalizeDomainInput: normalizeDomainInput,
 		// WARC helpers
-		ListWARCsFallback: func(ctx context.Context, crawlID, crawlDir string) ([]metastore.WARCRecord, api.DataSummaryWithMeta) {
+		ListWARCsFallback: func(ctx context.Context, crawlID, crawlDir string) ([]webstore.WARCRecord, api.DataSummaryWithMeta) {
 			recs := buildWARCRecords(crawlID, crawlDir, nil, time.Now().UTC())
 			return recs, api.DataSummaryWithMeta{
 				MetaBackend:     "scan-fallback",
@@ -303,7 +300,7 @@ func (s *Server) Handler() http.Handler {
 			}
 		},
 		SummarizeWARCs: summarizeWARCRecords,
-		BuildWARCRow: func(ctx context.Context, rec metastore.WARCRecord, crawlDir string) api.WARCAPIRecord {
+		BuildWARCRow: func(ctx context.Context, rec webstore.WARCRecord, crawlDir string) api.WARCAPIRecord {
 			row := toWARCAPIRecord(rec)
 			enrichWARCAPIRecord(ctx, &row, crawlDir, s.Docs)
 			return row

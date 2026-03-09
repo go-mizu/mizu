@@ -8,8 +8,8 @@ import (
 	"time"
 
 	mizu "github.com/go-mizu/mizu"
-	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/metastore"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/pipeline"
+	webstore "github.com/go-mizu/mizu/blueprints/search/pkg/index/web/store"
 )
 
 func handleWARCList(d *Deps) mizu.Handler {
@@ -32,7 +32,7 @@ func handleWARCList(d *Deps) mizu.Handler {
 		}
 		q := strings.ToLower(strings.TrimSpace(c.Query("q")))
 
-		var recs []metastore.WARCRecord
+		var recs []webstore.WARCRecord
 		var summaryMeta DataSummaryWithMeta
 
 		if d.Meta != nil {
@@ -53,7 +53,7 @@ func handleWARCList(d *Deps) mizu.Handler {
 		// Text filter.
 		filtered := recs
 		if q != "" {
-			filtered = make([]metastore.WARCRecord, 0, len(recs))
+			filtered = make([]webstore.WARCRecord, 0, len(recs))
 			for _, rec := range recs {
 				if strings.Contains(strings.ToLower(rec.WARCIndex), q) ||
 					strings.Contains(strings.ToLower(rec.Filename), q) ||
@@ -70,7 +70,7 @@ func handleWARCList(d *Deps) mizu.Handler {
 			if sumMap == nil {
 				sumMap = defaultSumInt64Map
 			}
-			phased := make([]metastore.WARCRecord, 0, len(filtered))
+			phased := make([]webstore.WARCRecord, 0, len(filtered))
 			for _, rec := range filtered {
 				hasFTS := sumMap(rec.FTSBytes) > 0
 				hasMD := rec.MarkdownBytes > 0
@@ -163,7 +163,7 @@ func handleWARCDetail(d *Deps) mizu.Handler {
 			crawlDir = d.ResolveCrawlDir(crawlID)
 		}
 
-		var rec metastore.WARCRecord
+		var rec webstore.WARCRecord
 		var ok bool
 		var summaryMeta DataSummaryWithMeta
 
@@ -173,7 +173,7 @@ func handleWARCDetail(d *Deps) mizu.Handler {
 				return c.JSON(500, errResp{err.Error()})
 			}
 		} else if d.ListWARCsFallback != nil {
-			var rows []metastore.WARCRecord
+			var rows []webstore.WARCRecord
 			rows, summaryMeta = d.ListWARCsFallback(c.Context(), crawlID, crawlDir)
 			for _, r := range rows {
 				if r.WARCIndex == warcIndex {
@@ -392,9 +392,9 @@ func parseWARCInt(idx string) int {
 	return n
 }
 
-// warcRecordToAPIRecord converts a metastore.WARCRecord to a WARCAPIRecord
+// warcRecordToAPIRecord converts a webstore.WARCRecord to a WARCAPIRecord
 // without enrichment (used as fallback when BuildWARCRow is nil).
-func warcRecordToAPIRecord(rec metastore.WARCRecord) WARCAPIRecord {
+func warcRecordToAPIRecord(rec webstore.WARCRecord) WARCAPIRecord {
 	sumMap := defaultSumInt64Map
 	return WARCAPIRecord{
 		Index:         rec.WARCIndex,
