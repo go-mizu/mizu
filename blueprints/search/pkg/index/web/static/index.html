@@ -263,9 +263,15 @@
   <div id="app">
     <header class="sticky top-0 z-50 app-header">
       <div class="flex items-center min-h-[3.5rem] px-4 md:px-6 gap-4 md:gap-6 flex-wrap md:flex-nowrap py-2">
-        <a href="#/" class="flex items-center gap-1.5 text-sm font-medium tracking-tight shrink-0 hover:opacity-70 transition-opacity">
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/><circle cx="19" cy="19" r="3"/><path d="m21.5 21.5-1-1"/></svg>
-          OpenIndex
+        <a href="#/" class="flex items-center gap-2 shrink-0 hover:opacity-75 transition-opacity" style="text-decoration:none">
+          <svg style="width:18px;height:18px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 6h9"/>
+            <path d="M4 10h7"/>
+            <path d="M4 14h4"/>
+            <circle cx="17" cy="15" r="4"/>
+            <path d="m21.5 19.5-1.5-1.5"/>
+          </svg>
+          <span class="text-sm tracking-tight leading-none" style="letter-spacing:-0.025em"><span style="font-weight:400;color:var(--text-soft)">Open</span><span style="font-weight:600;color:var(--text)">Index</span></span>
         </a>
         <div id="header-search" class="flex-1 hidden items-center gap-2">
           <input id="header-search-input" type="text"

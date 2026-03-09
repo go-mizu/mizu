@@ -457,11 +457,13 @@ func (s *Server) handleParquetDownload(c *mizu.Ctx) error {
 		files = filtered
 	}
 
-	// Filter out already-downloaded files.
+	// Filter out already-downloaded valid files.
+	// Truncated/corrupt files (exist but fail PAR1 footer check) are included
+	// so the job executor can re-download them.
 	var toDownload []cc.ParquetFile
 	for _, f := range files {
 		localPath := cc.LocalParquetPathForRemote(cfg, f.RemotePath)
-		if _, err := os.Stat(localPath); err != nil {
+		if !cc.IsValidParquetFile(localPath) {
 			toDownload = append(toDownload, f)
 		}
 	}

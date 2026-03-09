@@ -1,5 +1,5 @@
 // ===================================================================
-// Tab 5: WARC Console  (3-phase pipeline: Download → Markdown → Index)
+// Tab 5: WARC Console  (4-phase pipeline: Download → Markdown → Index → Export)
 // ===================================================================
 
 const WARC_PHASES = [
@@ -7,6 +7,7 @@ const WARC_PHASES = [
   { key: 'downloaded', label: 'Downloaded' },
   { key: 'markdown', label: 'Markdown' },
   { key: 'indexed', label: 'Indexed' },
+  { key: 'exported', label: 'Exported' },
 ];
 
 function warcPhaseCount(summary, key) {
@@ -15,25 +16,32 @@ function warcPhaseCount(summary, key) {
   const dl = summary.downloaded || 0;
   const md = summary.markdown_ready || 0;
   const ix = summary.indexed || 0;
+  const ex = summary.packed || 0;
   switch (key) {
     case '': return t;
     case 'downloaded': return dl;
     case 'markdown': return md;
     case 'indexed': return ix;
+    case 'exported': return ex;
     default: return 0;
   }
 }
 
-// What does this WARC need next? (3-phase)
+function hasParquetExport(w) {
+  return ((w.pack_bytes || {}).parquet || 0) > 0;
+}
+
+// What does this WARC need next? (4-phase)
 function warcNextStep(w) {
   if (!w.has_warc) return 'download';
   if (!w.has_markdown) return 'markdown';
   if (!w.has_fts) return 'index';
+  if (!hasParquetExport(w)) return 'export';
   return '';
 }
 
 function warcDoneCount(w) {
-  return (w.has_warc ? 1 : 0) + (w.has_markdown ? 1 : 0) + (w.has_fts ? 1 : 0);
+  return (w.has_warc ? 1 : 0) + (w.has_markdown ? 1 : 0) + (w.has_fts ? 1 : 0) + (hasParquetExport(w) ? 1 : 0);
 }
 
 // ── Main entry ──
@@ -93,7 +101,7 @@ async function renderWARC(offset = state.warcOffset || 0, query = state.warcQuer
   }
 }
 
-// ── Summary: global stats + 3-phase pipeline ──
+// ── Summary: global stats + 4-phase pipeline ──
 function renderWARCSummary(summary) {
   const el = $('warc-summary');
   if (!el || !summary) return;
@@ -101,6 +109,7 @@ function renderWARCSummary(summary) {
   const dl = summary.downloaded || 0;
   const md = summary.markdown_ready || 0;
   const ix = summary.indexed || 0;
+  const ex = summary.packed || 0;
   const totalBytes = (summary.warc_bytes || 0) + (summary.markdown_bytes || 0) + (summary.pack_bytes || 0) + (summary.fts_bytes || 0);
 
   // Get manifest total from central state for accurate total
@@ -117,6 +126,7 @@ function renderWARCSummary(summary) {
     { label: 'Downloaded', count: dl, cls: 'ov-c1', bytes: summary.warc_bytes || 0 },
     { label: 'Markdown', count: md, cls: 'ov-c2', bytes: summary.markdown_bytes || 0 },
     { label: 'Indexed', count: ix, cls: 'ov-c4', bytes: summary.fts_bytes || 0 },
+    { label: 'Exported', count: ex, cls: 'ov-c3', bytes: summary.pack_bytes || 0 },
   ];
 
   // Active jobs from central state
@@ -207,22 +217,25 @@ function renderWARCTable(data) {
     const docsCount = w.warc_md_docs || w.markdown_docs || 0;
     const mdBytes = w.warc_md_bytes || w.markdown_bytes || 0;
     const docsStr = docsCount > 0 ? docsCount.toLocaleString() : (w.has_markdown ? '\u2014' : '');
+    const parquetBytes = (w.pack_bytes || {}).parquet || 0;
+    const parquetSizeStr = parquetBytes > 0 ? fmtBytes(parquetBytes) : '\u2014';
     const warcSizeStr = w.warc_bytes > 0 ? fmtBytes(w.warc_bytes) : '\u2014';
     const mdSizeStr = mdBytes > 0 ? fmtBytes(mdBytes) : (w.has_markdown ? '\u2014' : '');
 
-    // 3-segment stacked bar
+    // 4-segment stacked bar
     const stackedBar = `
-      <div class="ov-stacked" style="width:42px;height:6px">
-        <div class="ov-stacked-seg ${w.has_warc ? 'ov-c1' : ''}" style="width:33.3%;${!w.has_warc ? 'background:transparent' : ''}"></div>
-        <div class="ov-stacked-seg ${w.has_markdown ? 'ov-c2' : ''}" style="width:33.4%;${!w.has_markdown ? 'background:transparent' : ''}"></div>
-        <div class="ov-stacked-seg ${w.has_fts ? 'ov-c4' : ''}" style="width:33.3%;${!w.has_fts ? 'background:transparent' : ''}"></div>
+      <div class="ov-stacked" style="width:56px;height:6px">
+        <div class="ov-stacked-seg ${w.has_warc ? 'ov-c1' : ''}" style="width:25%;${!w.has_warc ? 'background:transparent' : ''}"></div>
+        <div class="ov-stacked-seg ${w.has_markdown ? 'ov-c2' : ''}" style="width:25%;${!w.has_markdown ? 'background:transparent' : ''}"></div>
+        <div class="ov-stacked-seg ${w.has_fts ? 'ov-c4' : ''}" style="width:25%;${!w.has_fts ? 'background:transparent' : ''}"></div>
+        <div class="ov-stacked-seg ${hasParquetExport(w) ? 'ov-c3' : ''}" style="width:25%;${!hasParquetExport(w) ? 'background:transparent' : ''}"></div>
       </div>`;
 
     const isRunning = warcRunning.has(w.index);
     const nextBtnCls = next ? (isRunning ? 'ui-btn' : 'ui-btn-primary') : 'ui-btn';
     const nextAction = warcActionCall(w.index, next);
     const btnId = warcBtnId(w.index);
-    const btnLabel = next === 'download' ? 'download' : next === 'markdown' ? 'markdown' : next === 'index' ? 'index' : '';
+    const btnLabel = next === 'download' ? 'download' : next === 'markdown' ? 'markdown' : next === 'index' ? 'index' : next === 'export' ? 'export' : '';
 
     return `
     <tr>
@@ -230,12 +243,13 @@ function renderWARCTable(data) {
       <td class="px-3 py-2 text-xs">
         <div class="flex items-center gap-2">
           ${stackedBar}
-          <span class="text-[10px] font-mono ui-subtle">${done}/3</span>
+          <span class="text-[10px] font-mono ui-subtle">${done}/4</span>
         </div>
       </td>
       <td class="px-3 py-2 text-right text-xs font-mono ui-subtle hidden sm:table-cell">${docsStr}</td>
       <td class="px-3 py-2 text-right text-xs font-mono ui-subtle whitespace-nowrap hidden md:table-cell">${warcSizeStr}</td>
       <td class="px-3 py-2 text-right text-xs font-mono ui-subtle whitespace-nowrap hidden lg:table-cell">${mdSizeStr}</td>
+      <td class="px-3 py-2 text-right text-xs font-mono ui-subtle whitespace-nowrap hidden lg:table-cell">${parquetSizeStr}</td>
       <td class="px-3 py-2 text-right text-xs font-mono whitespace-nowrap">
         ${next ? `<button id="${btnId}" onclick="${nextAction}" ${isRunning ? 'disabled' : ''} class="${nextBtnCls} px-2.5 py-1 text-[11px]">${isRunning ? 'running\u2026' : esc(btnLabel)}</button>` : `<span class="text-[11px] status-completed">\u2713 done</span>`}
       </td>
@@ -278,11 +292,12 @@ function renderWARCTable(data) {
             <th class="text-right px-3 py-2 text-[11px] font-mono hidden sm:table-cell">Docs</th>
             <th class="text-right px-3 py-2 text-[11px] font-mono hidden md:table-cell">warc.gz</th>
             <th class="text-right px-3 py-2 text-[11px] font-mono hidden lg:table-cell">md.warc.gz</th>
+            <th class="text-right px-3 py-2 text-[11px] font-mono hidden lg:table-cell">parquet</th>
             <th class="text-right px-3 py-2 text-[11px] font-mono">Action</th>
           </tr>
         </thead>
         <tbody>
-          ${rows || `<tr><td colspan="6" class="px-3 py-4 text-xs font-mono ui-subtle">No WARC records</td></tr>`}
+          ${rows || `<tr><td colspan="7" class="px-3 py-4 text-xs font-mono ui-subtle">No WARC records</td></tr>`}
         </tbody>
       </table>
     </div>
@@ -318,12 +333,13 @@ function buildPageNumbers(current, total) {
   return pages;
 }
 
-// ── Action helpers (3-phase) ──
+// ── Action helpers (4-phase) ──
 function warcActionCall(index, step) {
   switch (step) {
     case 'download': return `warcAction('${esc(index)}','download')`;
     case 'markdown': return `warcAction('${esc(index)}','markdown')`;
     case 'index': return `warcAction('${esc(index)}','index',{engine:currentSearchEngine(),source:'files'})`;
+    case 'export': return `warcAction('${esc(index)}','pack',{format:'parquet'})`;
     default: return '';
   }
 }
@@ -333,6 +349,7 @@ function warcActionLabel(step) {
     case 'download': return 'Download WARC';
     case 'markdown': return 'Extract Markdown';
     case 'index': return `Build Index (${currentSearchEngine()})`;
+    case 'export': return 'Export Parquet';
     default: return '';
   }
 }
@@ -393,11 +410,12 @@ function renderWARCDetailContent(data, index) {
       ${ftsEntries.length > 0 ? `<div><div class="text-[10px] font-mono ui-subtle mb-1">Index engines</div>${renderBars(ftsEntries.map(([eng, b]) => ({ label: eng, value: b, text: fmtBytes(b) })))}</div>` : ''}
     </div>` : '';
 
-  // 3-phase steps
+  // 4-phase steps
   const stepsAll = [
     { key: 'download', label: 'Download', done: !!w.has_warc, cls: 'ov-c1' },
     { key: 'markdown', label: 'Markdown', done: !!w.has_markdown, cls: 'ov-c2' },
     { key: 'index', label: 'Index', done: !!w.has_fts, cls: 'ov-c4' },
+    { key: 'export', label: 'Export', done: hasParquetExport(w), cls: 'ov-c3' },
   ];
   const done = stepsAll.filter(s => s.done).length;
 
@@ -418,12 +436,12 @@ function renderWARCDetailContent(data, index) {
     }).catch(() => {});
   }
 
-  // Step timeline (3 steps)
+  // Step timeline (4 steps)
   const remainingSteps = stepsAll.filter(s => !s.done).length;
   const timelineHTML = `
     <div class="surface p-4 mb-4">
       <div class="flex items-center justify-between mb-3">
-        <div class="text-[11px] font-mono ui-subtle">Pipeline ${done} / 3</div>
+        <div class="text-[11px] font-mono ui-subtle">Pipeline ${done} / 4</div>
         ${remainingSteps > 1 ? `<button onclick="warcRunAll('${esc(w.index || index)}')" class="ui-btn px-3 py-1.5 text-xs font-mono">Run All Remaining</button>` : ''}
       </div>
       <div class="flex items-center gap-0">
@@ -464,7 +482,7 @@ function renderWARCDetailContent(data, index) {
       }).join('')}
     </div>` : '';
 
-  // Three pipeline step panels
+  // Four pipeline step panels
   const stepsHTML = `
     <div class="mb-4">
       <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider mb-2">Pipeline Steps</div>
@@ -506,7 +524,7 @@ function renderWARCDetailContent(data, index) {
       </div>
 
       <!-- Step 3: Index -->
-      <div class="surface p-4" style="border-left:3px solid ${w.has_fts ? 'var(--success)' : w.has_markdown ? '#10b981' : 'var(--border)'}; ${!w.has_markdown ? 'opacity:0.6' : ''}">
+      <div class="surface p-4 mb-2" style="border-left:3px solid ${w.has_fts ? 'var(--success)' : w.has_markdown ? '#10b981' : 'var(--border)'}; ${!w.has_markdown ? 'opacity:0.6' : ''}">
         <div class="flex items-center justify-between gap-3">
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 mb-0.5">
@@ -520,6 +538,25 @@ function renderWARCDetailContent(data, index) {
           <button onclick="warcAction('${esc(w.index)}','index',{engine:currentSearchEngine(),source:'files'},true)" ${!w.has_markdown ? 'disabled' : ''}
             class="ui-btn ${w.has_markdown && !w.has_fts ? 'ui-btn-primary' : ''} px-3 py-1.5 text-xs font-mono shrink-0">
             ${w.has_fts ? 'Re-index' : 'Build Index'}
+          </button>
+        </div>
+      </div>
+
+      <!-- Step 4: Export -->
+      <div class="surface p-4" style="border-left:3px solid ${hasParquetExport(w) ? 'var(--success)' : w.has_fts ? '#f59e0b' : 'var(--border)'}; ${!w.has_fts ? 'opacity:0.6' : ''}">
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-0.5">
+              <span class="text-[10px] font-mono ui-subtle">4.</span>
+              <span class="text-xs font-mono font-medium ${hasParquetExport(w) ? 'status-completed' : ''}">Export Parquet${hasParquetExport(w) ? ' \u2713' : ''}</span>
+            </div>
+            ${((w.pack_bytes || {}).parquet || 0) > 0
+              ? `<div class="text-[10px] font-mono ui-subtle">${fmtBytes((w.pack_bytes || {}).parquet || 0)} parquet exported</div>`
+              : `<div class="text-[10px] font-mono ui-subtle">${w.has_fts ? 'Ready to export parquet' : 'Build index first'}</div>`}
+          </div>
+          <button onclick="warcAction('${esc(w.index)}','pack',{format:'parquet'},true)" ${!w.has_fts ? 'disabled' : ''}
+            class="ui-btn ${w.has_fts && !hasParquetExport(w) ? 'ui-btn-primary' : ''} px-3 py-1.5 text-xs font-mono shrink-0">
+            ${hasParquetExport(w) ? 'Re-export' : 'Export'}
           </button>
         </div>
       </div>
@@ -648,7 +685,7 @@ function renderWARCDetailContent(data, index) {
     </div>`;
 }
 
-// Run all remaining steps sequentially (3-phase)
+// Run all remaining steps sequentially (4-phase)
 async function warcRunAll(index) {
   const data = state.warcDetail;
   if (!data) return;
@@ -657,6 +694,7 @@ async function warcRunAll(index) {
   if (!w.has_warc) steps.push({ action: 'download', extra: {} });
   if (!w.has_markdown) steps.push({ action: 'markdown', extra: {} });
   if (!w.has_fts) steps.push({ action: 'index', extra: { engine: currentSearchEngine(), source: 'files' } });
+  if (!hasParquetExport(w)) steps.push({ action: 'pack', extra: { format: 'parquet' } });
   if (steps.length === 0) return;
   if (!confirm(`Run ${steps.length} remaining step${steps.length !== 1 ? 's' : ''} for WARC ${index}?`)) return;
 

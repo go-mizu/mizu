@@ -157,6 +157,7 @@ func (s *Server) handleWARCList(c *mizu.Ctx) error {
 		for _, rec := range filtered {
 			hasFTS := sumInt64Map(rec.FTSBytes) > 0
 			hasMD := rec.MarkdownBytes > 0
+			hasParquet := rec.PackBytes["parquet"] > 0
 			switch phase {
 			case "downloaded":
 				if rec.WARCBytes > 0 {
@@ -168,6 +169,10 @@ func (s *Server) handleWARCList(c *mizu.Ctx) error {
 				}
 			case "indexed":
 				if hasFTS {
+					phased = append(phased, rec)
+				}
+			case "exported":
+				if hasParquet {
 					phased = append(phased, rec)
 				}
 			}
@@ -433,7 +438,7 @@ func summarizeWARCRecords(recs []metastore.WARCRecord) warcSummaryStats {
 		if rec.MarkdownBytes > 0 {
 			out.MarkdownReady++
 		}
-		if packBytes > 0 {
+		if rec.PackBytes["parquet"] > 0 {
 			out.Packed++
 		}
 		if ftsBytes > 0 {
