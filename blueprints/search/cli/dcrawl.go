@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/dcrawler"
@@ -40,6 +41,10 @@ func NewCrawlDomain() *cobra.Command {
 		noRenderWait     bool
 		proxyURL         string
 		proxyFile        string
+		useWorker        bool
+		workerURL        string
+		workerToken      string
+		workerBrowser    bool
 	)
 
 	cmd := &cobra.Command{
@@ -124,6 +129,18 @@ Browser mode (JS-rendered pages, bypasses Cloudflare):
 			cfg.ProxyURL = proxyURL
 			cfg.ProxyFile = proxyFile
 
+			// Worker mode
+			cfg.UseWorker = useWorker
+			cfg.WorkerURL = workerURL
+			cfg.WorkerBrowser = workerBrowser
+			cfg.WorkerToken = workerToken
+			if cfg.WorkerToken == "" {
+				cfg.WorkerToken = os.Getenv("CRAWLER_WORKER_TOKEN")
+			}
+			if cfg.UseWorker && cfg.WorkerToken == "" {
+				return fmt.Errorf("--worker requires --worker-token or CRAWLER_WORKER_TOKEN env var")
+			}
+
 			return runCrawlDomain(cmd, cfg, downloadImages)
 		},
 	}
@@ -157,6 +174,12 @@ Browser mode (JS-rendered pages, bypasses Cloudflare):
 	cmd.Flags().StringSliceVar(&domainAliases, "domain-alias", nil, "Additional domains to treat as same-domain (e.g., --domain-alias new.qq.com)")
 	cmd.Flags().StringVar(&proxyURL, "proxy-url", "", "HTTP/SOCKS5 proxy for Chrome (e.g. http://user:pass@host:port or socks5://host:port)")
 	cmd.Flags().StringVar(&proxyFile, "proxy-file", "", "File with one proxy URL per line (enables one Chrome instance per proxy, round-robin)")
+
+	// Worker mode
+	cmd.Flags().BoolVar(&useWorker, "worker", false, "Proxy fetches through CF Worker (returns HTML + markdown)")
+	cmd.Flags().StringVar(&workerURL, "worker-url", "", "Worker endpoint (default https://crawler.go-mizu.workers.dev)")
+	cmd.Flags().StringVar(&workerToken, "worker-token", "", "Worker auth token (default $CRAWLER_WORKER_TOKEN)")
+	cmd.Flags().BoolVar(&workerBrowser, "worker-browser", false, "Enable CF Browser Rendering on worker side")
 
 	return cmd
 }
