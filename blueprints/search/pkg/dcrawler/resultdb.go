@@ -94,12 +94,18 @@ func initPageSchema(db *sql.DB) error {
 			link_count       INTEGER DEFAULT 0,
 			fetch_time_ms    BIGINT,
 			crawled_at       TIMESTAMP NOT NULL,
-			error            VARCHAR
+			error            VARCHAR,
+			html             BLOB,
+			markdown         VARCHAR
 		)
 	`)
 	if err != nil {
 		return err
 	}
+	// Migrations: add columns for worker mode (html + markdown storage)
+	db.Exec(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS html BLOB`)
+	db.Exec(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS markdown VARCHAR`)
+
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS links (
 			source_hash  BIGINT NOT NULL,
@@ -217,7 +223,7 @@ func (s *resultShard) flusher(flushed *atomic.Int64) {
 }
 
 func writePageBatch(db *sql.DB, batch []Result) {
-	const cols = 20
+	const cols = 22
 	const maxPerStmt = 250
 
 	for i := 0; i < len(batch); i += maxPerStmt {
@@ -225,20 +231,21 @@ func writePageBatch(db *sql.DB, batch []Result) {
 		chunk := batch[i:end]
 
 		var b strings.Builder
-		b.WriteString("INSERT OR REPLACE INTO pages (url, url_hash, depth, status_code, content_type, content_length, body_hash, body, title, description, language, canonical, etag, last_modified, server, redirect_url, link_count, fetch_time_ms, crawled_at, error) VALUES ")
+		b.WriteString("INSERT OR REPLACE INTO pages (url, url_hash, depth, status_code, content_type, content_length, body_hash, body, title, description, language, canonical, etag, last_modified, server, redirect_url, link_count, fetch_time_ms, crawled_at, error, html, markdown) VALUES ")
 		args := make([]any, 0, len(chunk)*cols)
 
 		for j, r := range chunk {
 			if j > 0 {
 				b.WriteByte(',')
 			}
-			b.WriteString("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+			b.WriteString("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
 			// Cast uint64 to int64: Go's database/sql rejects uint64 with high bit set.
 			args = append(args, r.URL, int64(r.URLHash), r.Depth, r.StatusCode,
 				r.ContentType, r.ContentLength, int64(r.BodyHash), r.BodyCompressed,
 				r.Title, r.Description, r.Language, r.Canonical,
 				r.ETag, r.LastModified, r.Server, r.RedirectURL,
-				r.LinkCount, r.FetchTimeMs, r.CrawledAt, r.Error)
+				r.LinkCount, r.FetchTimeMs, r.CrawledAt, r.Error,
+				r.HTML, r.Markdown)
 		}
 		db.Exec(b.String(), args...)
 	}

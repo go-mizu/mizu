@@ -53,6 +53,12 @@ type Config struct {
 	UserDataDir       string        // Chrome user-data-dir for persistent cookies/localStorage across restarts
 	ProxyURL          string        // HTTP or SOCKS5 proxy URL for Chrome, e.g. "http://user:pass@host:port"
 	ProxyFile         string        // File with one proxy URL per line; enables multi-browser-instance mode
+	UseWorker         bool          // Proxy fetches through CF Worker (tools/crawler)
+	WorkerURL         string        // Worker endpoint (default https://crawler.go-mizu.workers.dev)
+	WorkerToken       string        // Bearer token for worker auth
+	WorkerBrowser     bool          // Enable CF Browser Rendering on worker side
+	WorkerBatch       int           // URLs per batch request (default 10)
+	WorkerParallel    int           // Concurrent batch requests (default 20)
 }
 
 // DefaultConfig returns optimal defaults for high-throughput single-domain crawling.

@@ -61,6 +61,12 @@ func urlClass(rawURL string) string {
 	if err != nil {
 		return ""
 	}
+	host := strings.ToLower(u.Hostname())
+	// Adaptive URL-class filtering was tuned for QQ/Tencent anti-bot patterns.
+	// Keep it scoped there so other domains (openai.com, duckdb.org, etc.) are not over-pruned.
+	if !strings.Contains(host, "qq.com") && !strings.Contains(host, "tencent") {
+		return ""
+	}
 	path := u.Path
 	// Find runs of 8+ consecutive digits followed by a letter
 	digits := 0
@@ -406,7 +412,13 @@ func (c *Crawler) Run(ctx context.Context) error {
 	c.loadSeeds()
 
 	c.logInit("Frontier: %s seed URLs", fmtInt(c.frontier.Len()))
-	if c.config.UseRod || c.config.UseLightpanda {
+	if c.config.UseWorker {
+		workerURL := c.config.WorkerURL
+		if workerURL == "" {
+			workerURL = defaultWorkerURL
+		}
+		c.logInit("Worker: %s (browser=%v)", workerURL, c.config.WorkerBrowser)
+	} else if c.config.UseRod || c.config.UseLightpanda {
 		c.logInit("Browser: %d tabs", c.config.RodWorkers)
 	}
 
@@ -419,6 +431,23 @@ func (c *Crawler) Run(ctx context.Context) error {
 
 	// errgroup: workers + coordinator + sitemap discovery
 	g, gctx := errgroup.WithContext(ctx)
+
+	// Periodically flush result batches so dashboard pages/stats are visible
+	// during active crawls (not only at shutdown).
+	g.Go(func() error {
+		t := time.NewTicker(2 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-gctx.Done():
+				return nil
+			case <-t.C:
+				if c.resultDB != nil {
+					c.resultDB.Flush()
+				}
+			}
+		}
+	})
 
 	// Sitemap discovery runs in background: workers start immediately with seed URLs,
 	// and sitemap URLs are added to the frontier as they're discovered.
@@ -468,7 +497,11 @@ func (c *Crawler) Run(ctx context.Context) error {
 		})
 	}
 
-	if c.config.UseLightpanda {
+	if c.config.UseWorker {
+		g.Go(func() error {
+			return c.runWorkerMode(gctx)
+		})
+	} else if c.config.UseLightpanda {
 		lp, err := newLightpandaPool(c.config)
 		if err != nil {
 			return fmt.Errorf("lightpanda: %w", err)
@@ -578,13 +611,16 @@ func (c *Crawler) restoreState() {
 		c.logInit("Resume: %s pending links re-fed to frontier", fmtInt(pendingAdded))
 	}
 
-	// Phase 3: Re-attempt ALL previously failed URLs.
-	// Browser errors (rod pool, page info, get html, deadline exceeded) are almost always
-	// transient — Chrome tab state, timing, resource pressure. Retry them all.
-	// Permanent errors (DNS, SSL) will fail again quickly and won't waste much time.
+	// Phase 3: Re-attempt retryable failures.
+	// Include explicit errors plus transient HTTP statuses that are often WAF/rate-limit
+	// or temporary upstream conditions. Notably, status=403 rows may have empty `error`
+	// and would otherwise never be retried.
 	var retryAdded int
 	c.restoreFromShards(dir,
-		"SELECT url FROM pages WHERE error != ''",
+		`SELECT url FROM pages
+		WHERE error != ''
+		   OR status_code IN (403, 429)
+		   OR status_code >= 500`,
 		func(u string) {
 			if c.frontier.TryAdd(u, 1) {
 				retryAdded++
@@ -592,7 +628,7 @@ func (c *Crawler) restoreState() {
 		},
 	)
 	if retryAdded > 0 {
-		c.logInit("Resume: %s failed URLs queued for retry", fmtInt(retryAdded))
+		c.logInit("Resume: %s retryable failed URLs queued for retry", fmtInt(retryAdded))
 	}
 
 	// Phase 4: Delete error-only rows for URLs being retried.
@@ -1019,7 +1055,7 @@ func (c *Crawler) fetchAndProcess(ctx context.Context, client *http.Client, item
 		server := strings.ToLower(resp.Header.Get("Server"))
 		if server == "cloudfront" || server == "akamaighost" || strings.Contains(server, "awselb") {
 			io.Copy(io.Discard, resp.Body)
-			c.recordBlocked(item, fmt.Sprintf("HTTP 403 from %s (WAF/geo-block)", resp.Header.Get("Server")), fetchMs)
+			c.recordBlockedHTTP(item, resp.StatusCode, fmt.Sprintf("WAF/%s", resp.Header.Get("Server")), fetchMs)
 			return
 		}
 	}
@@ -1051,41 +1087,45 @@ func (c *Crawler) fetchAndProcess(ctx context.Context, client *http.Client, item
 		result.RedirectURL = resp.Request.URL.String()
 	}
 
-	if isHTML(result.ContentType) && resp.StatusCode >= 200 && resp.StatusCode < 400 && len(body) > 0 {
+	if isHTML(result.ContentType) && len(body) > 0 {
 		baseURL := resp.Request.URL
 		if baseURL == nil {
 			baseURL, _ = url.Parse(item.URL)
 		}
 		meta := ExtractLinksAndMeta(body, baseURL, c.config.Domain, c.config.ExtractImages)
+		// Extract title/description from all HTML responses (incl. 403, 404, 5xx)
+		// so the dashboard can show meaningful names for error pages.
 		result.Title = meta.Title
 		result.Description = meta.Description
 		result.Language = meta.Language
 		result.Canonical = meta.Canonical
 
-		// Detect soft 404 / anti-bot pages before extracting links.
-		if blocked, reason := isBlockedPage(body, meta.Title, item.URL); blocked {
-			c.recordBlocked(item, reason, fetchMs)
-			return
-		}
-
-		result.LinkCount = len(meta.Links)
-		c.stats.RecordLinks(len(meta.Links))
-
-		if c.config.StoreBody {
-			if compressed, err := zstd.Compress(nil, body); err == nil {
-				result.BodyCompressed = compressed
+		if resp.StatusCode >= 200 && resp.StatusCode < 400 {
+			// Detect soft 404 / anti-bot pages before extracting links.
+			if blocked, reason := isBlockedPage(body, meta.Title, item.URL); blocked {
+				c.recordBlockedHTTP(item, resp.StatusCode, reason, fetchMs)
+				return
 			}
-		}
-		hasAliases := len(c.config.DomainAliases) > 0
-		if c.config.MaxDepth == 0 || item.Depth < c.config.MaxDepth {
-			for _, link := range meta.Links {
-				if link.IsInternal || hasAliases {
-					c.frontier.TryAdd(link.TargetURL, item.Depth+1)
+
+			result.LinkCount = len(meta.Links)
+			c.stats.RecordLinks(len(meta.Links))
+
+			if c.config.StoreBody {
+				if compressed, err := zstd.Compress(nil, body); err == nil {
+					result.BodyCompressed = compressed
 				}
 			}
-		}
-		if c.config.StoreLinks && len(meta.Links) > 0 {
-			c.resultDB.AddLinks(result.URLHash, meta.Links)
+			hasAliases := len(c.config.DomainAliases) > 0
+			if c.config.MaxDepth == 0 || item.Depth < c.config.MaxDepth {
+				for _, link := range meta.Links {
+					if link.IsInternal || hasAliases {
+						c.frontier.TryAdd(link.TargetURL, item.Depth+1)
+					}
+				}
+			}
+			if c.config.StoreLinks && len(meta.Links) > 0 {
+				c.resultDB.AddLinks(result.URLHash, meta.Links)
+			}
 		}
 	}
 
@@ -1100,13 +1140,20 @@ func (c *Crawler) fetchAndProcess(ctx context.Context, client *http.Client, item
 }
 
 func (c *Crawler) recordBlocked(item CrawlItem, reason string, fetchMs int64) {
+	c.recordBlockedHTTP(item, 0, reason, fetchMs)
+}
+
+func (c *Crawler) recordBlockedHTTP(item CrawlItem, statusCode int, reason string, fetchMs int64) {
 	c.stats.RecordBlocked()
 	c.stats.RecordDepth(item.Depth)
 	c.recordURLClass(item.URL, true)
 	c.stats.fetchMs.Add(fetchMs)
+	if statusCode > 0 {
+		c.stats.recordStatus(statusCode)
+	}
 	c.resultDB.AddPage(Result{
 		URL: item.URL, URLHash: xxhash.Sum64String(item.URL),
-		Depth: item.Depth, FetchTimeMs: fetchMs,
+		Depth: item.Depth, StatusCode: statusCode, FetchTimeMs: fetchMs,
 		CrawledAt: time.Now(), Error: "blocked: " + reason,
 	})
 }

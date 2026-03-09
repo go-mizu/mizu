@@ -15,3 +15,12 @@ func (s *Stats) FrontierLen() int {
 	}
 	return s.frontierLen()
 }
+
+func (s *Stats) PeakSpeed() float64 { return s.peakSpeed }
+
+func (s *Stats) RetryQLen() int {
+	if s.retryQLen == nil {
+		return 0
+	}
+	return s.retryQLen()
+}

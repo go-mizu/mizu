@@ -33,6 +33,8 @@ type Result struct {
 	FetchTimeMs    int64
 	CrawledAt      time.Time
 	Error          string
+	HTML           []byte // zstd-compressed raw HTML (worker mode)
+	Markdown       string // clean markdown text (worker mode)
 }
 
 // Link represents an extracted link from a page.
