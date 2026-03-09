@@ -19,7 +19,7 @@ type Engine struct {
 	*engines.BaseEngine
 
 	config   Config
-	stores   map[string]*Store
+	stores   map[string]Store
 	mu       sync.RWMutex
 	ftsReady map[string]bool
 }
@@ -56,7 +56,7 @@ func NewEngine(cfg Config) (*Engine, error) {
 	e := &Engine{
 		BaseEngine: base,
 		config:     cfg,
-		stores:     make(map[string]*Store),
+		stores:     make(map[string]Store),
 		ftsReady:   make(map[string]bool),
 	}
 
@@ -99,7 +99,7 @@ func (e *Engine) initStores() error {
 		}
 
 		// Initialize store
-		store, err := NewStore(lang, e.config.DataDir)
+		store, err := OpenStore(lang, e.config.DataDir)
 		if err != nil {
 			return fmt.Errorf("initializing store for %s: %w", lang, err)
 		}
@@ -259,7 +259,7 @@ func (e *Engine) ImportLanguage(ctx context.Context, lang string, progress func(
 	store, ok := e.stores[lang]
 	if !ok {
 		var err error
-		store, err = NewStore(lang, e.config.DataDir)
+		store, err = OpenStore(lang, e.config.DataDir)
 		if err != nil {
 			return fmt.Errorf("creating store: %w", err)
 		}
