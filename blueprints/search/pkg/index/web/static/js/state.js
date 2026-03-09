@@ -64,6 +64,7 @@ const state = {
   parquetDetailSort: '',
   ccDomainPage: 1,
   ccDomainSort: 'url',
+  ccDomainStatusGroup: '',
   ccDomainQ: '',
   ccDomainCrawl: '',
 };

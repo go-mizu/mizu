@@ -90,24 +90,47 @@ type CCDomainFetchResponse struct {
 }
 
 type CCDomainURLRow struct {
-	URL         string `json:"url"`
-	FetchStatus int    `json:"fetch_status,omitempty"`
-	Mime        string `json:"mime,omitempty"`
-	Timestamp   string `json:"timestamp,omitempty"`
-	Filename    string `json:"filename,omitempty"`
+	URL          string `json:"url"`
+	FetchStatus  int    `json:"fetch_status,omitempty"`
+	Mime         string `json:"mime,omitempty"`
+	Timestamp    string `json:"timestamp,omitempty"`
+	Filename     string `json:"filename,omitempty"`
+	RecordLength int64  `json:"record_length,omitempty"`
+	RecordOffset int64  `json:"record_offset,omitempty"`
+	Digest       string `json:"digest,omitempty"`
+	Language     string `json:"language,omitempty"`
+	Encoding     string `json:"encoding,omitempty"`
 }
 
 type CCDomainDetailResponse struct {
-	Domain    string           `json:"domain"`
-	CrawlID   string           `json:"crawl_id"`
-	Total     int64            `json:"total"`
-	Page      int              `json:"page"`
-	PageSize  int              `json:"page_size"`
-	Query     string           `json:"query,omitempty"`
-	Sort      string           `json:"sort,omitempty"`
-	CachedAt  string           `json:"cached_at,omitempty"`
-	Truncated bool             `json:"truncated,omitempty"`
-	Docs      []CCDomainURLRow `json:"docs"`
+	Domain      string           `json:"domain"`
+	CrawlID     string           `json:"crawl_id"`
+	Total       int64            `json:"total"`
+	Page        int              `json:"page"`
+	PageSize    int              `json:"page_size"`
+	Query       string           `json:"query,omitempty"`
+	Sort        string           `json:"sort,omitempty"`
+	StatusGroup string           `json:"status_group,omitempty"`
+	CachedAt    string           `json:"cached_at,omitempty"`
+	Truncated   bool             `json:"truncated,omitempty"`
+	Stats       CCDomainStats    `json:"stats"`
+	Docs        []CCDomainURLRow `json:"docs"`
+}
+
+type CCDomainStats struct {
+	Total       int64            `json:"total"`
+	StatusCodes []CCStatusBucket `json:"status_codes"`
+	MimeTypes   []CCStringBucket `json:"mime_types"`
+}
+
+type CCStatusBucket struct {
+	Code  int   `json:"code"`
+	Count int64 `json:"count"`
+}
+
+type CCStringBucket struct {
+	Key   string `json:"key"`
+	Count int64  `json:"count"`
 }
 
 // FetchAndCache queries Common Crawl CDX API for a domain and stores results in domains_cc.duckdb.
@@ -223,7 +246,7 @@ func (cs *CCDomainStore) FetchAndCache(ctx context.Context, domain, crawlID stri
 	}, nil
 }
 
-func (cs *CCDomainStore) GetDomainURLs(ctx context.Context, domain, crawlID, sortBy, q string, page, pageSize int) (CCDomainDetailResponse, error) {
+func (cs *CCDomainStore) GetDomainURLs(ctx context.Context, domain, crawlID, sortBy, statusGroup, q string, page, pageSize int) (CCDomainDetailResponse, error) {
 	db, err := cs.open(ctx)
 	if err != nil {
 		return CCDomainDetailResponse{}, err
@@ -257,11 +280,38 @@ func (cs *CCDomainStore) GetDomainURLs(ctx context.Context, domain, crawlID, sor
 		orderClause = "ORDER BY ts DESC, url ASC"
 	}
 
-	where := "WHERE domain = ? AND crawl_id = ?"
+	whereBase := "WHERE domain = ? AND crawl_id = ?"
 	args := []any{domain, crawlID}
+	switch strings.TrimSpace(strings.ToLower(statusGroup)) {
+	case "2xx":
+		statusGroup = "2xx"
+	case "3xx":
+		statusGroup = "3xx"
+	case "4xx":
+		statusGroup = "4xx"
+	case "5xx":
+		statusGroup = "5xx"
+	case "other":
+		statusGroup = "other"
+	default:
+		statusGroup = ""
+	}
 	if strings.TrimSpace(q) != "" {
-		where += " AND url ILIKE ?"
+		whereBase += " AND url ILIKE ?"
 		args = append(args, "%"+q+"%")
+	}
+	where := whereBase
+	switch statusGroup {
+	case "2xx":
+		where += " AND fetch_status BETWEEN 200 AND 299"
+	case "3xx":
+		where += " AND fetch_status BETWEEN 300 AND 399"
+	case "4xx":
+		where += " AND fetch_status BETWEEN 400 AND 499"
+	case "5xx":
+		where += " AND fetch_status BETWEEN 500 AND 599"
+	case "other":
+		where += " AND (fetch_status < 200 OR fetch_status >= 600)"
 	}
 
 	var total int64
@@ -291,7 +341,7 @@ func (cs *CCDomainStore) GetDomainURLs(ctx context.Context, domain, crawlID, sor
 
 	offset := (page - 1) * pageSize
 	pageSQL := `
-		SELECT url, fetch_status, mime, ts, filename
+		SELECT url, fetch_status, mime, ts, filename, rec_length, rec_offset, digest, language, encoding
 		FROM cc_domain_urls
 		` + where + `
 		` + orderClause + `
@@ -307,20 +357,76 @@ func (cs *CCDomainStore) GetDomainURLs(ctx context.Context, domain, crawlID, sor
 	docs := make([]CCDomainURLRow, 0, pageSize)
 	for rows.Next() {
 		var r CCDomainURLRow
-		_ = rows.Scan(&r.URL, &r.FetchStatus, &r.Mime, &r.Timestamp, &r.Filename)
+		_ = rows.Scan(
+			&r.URL,
+			&r.FetchStatus,
+			&r.Mime,
+			&r.Timestamp,
+			&r.Filename,
+			&r.RecordLength,
+			&r.RecordOffset,
+			&r.Digest,
+			&r.Language,
+			&r.Encoding,
+		)
 		docs = append(docs, r)
 	}
+
+	var statsTotal int64
+	countAllSQL := `SELECT COUNT(*) FROM cc_domain_urls ` + whereBase
+	if err := db.QueryRowContext(ctx, countAllSQL, args...).Scan(&statsTotal); err != nil {
+		return CCDomainDetailResponse{}, err
+	}
+	stats := CCDomainStats{Total: statsTotal}
+	statusRows, err := db.QueryContext(ctx, `
+		SELECT fetch_status, COUNT(*) AS cnt
+		FROM cc_domain_urls
+		`+whereBase+`
+		GROUP BY fetch_status
+		ORDER BY cnt DESC, fetch_status ASC
+	`, args...)
+	if err != nil {
+		return CCDomainDetailResponse{}, err
+	}
+	for statusRows.Next() {
+		var b CCStatusBucket
+		_ = statusRows.Scan(&b.Code, &b.Count)
+		stats.StatusCodes = append(stats.StatusCodes, b)
+	}
+	_ = statusRows.Close()
+
+	mimeRows, err := db.QueryContext(ctx, `
+		SELECT mime, COUNT(*) AS cnt
+		FROM cc_domain_urls
+		`+whereBase+`
+		AND mime != ''
+		GROUP BY mime
+		ORDER BY cnt DESC, mime ASC
+		LIMIT 12
+	`, args...)
+	if err != nil {
+		return CCDomainDetailResponse{}, err
+	}
+	for mimeRows.Next() {
+		var b CCStringBucket
+		_ = mimeRows.Scan(&b.Key, &b.Count)
+		stats.MimeTypes = append(stats.MimeTypes, b)
+	}
+	_ = mimeRows.Close()
+
 	return CCDomainDetailResponse{
-		Domain:    domain,
-		CrawlID:   crawlID,
-		Total:     total,
-		Page:      page,
-		PageSize:  pageSize,
-		Query:     q,
-		Sort:      sortBy,
-		CachedAt:  cachedAt.UTC().Format(time.RFC3339),
-		Truncated: truncated,
-		Docs:      docs,
+		Domain:      domain,
+		CrawlID:     crawlID,
+		Total:       total,
+		Page:        page,
+		PageSize:    pageSize,
+		Query:       q,
+		Sort:        sortBy,
+		StatusGroup: statusGroup,
+		CachedAt:    cachedAt.UTC().Format(time.RFC3339),
+		Truncated:   truncated,
+		Stats:       stats,
+		Docs:        docs,
 	}, nil
 }
 

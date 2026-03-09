@@ -310,11 +310,17 @@ async function submitCCDomainFetch(ev) {
 
 async function renderCCDomainDetail(domain, crawl) {
   state.currentPage = 'domain-cc-detail';
+  const hash = (location.hash || '#/').slice(1);
+  const qIdx = hash.indexOf('?');
+  const params = new URLSearchParams(qIdx >= 0 ? hash.slice(qIdx + 1) : '');
   state.ccDomain = domain;
   state.ccDomainCrawl = crawl || state.ccDomainCrawl || '';
   state.ccDomainPage = 1;
   if (!state.ccDomainSort) state.ccDomainSort = 'url';
+  if (state.ccDomainStatusGroup === undefined) state.ccDomainStatusGroup = '';
   if (state.ccDomainQ === undefined) state.ccDomainQ = '';
+  if (params.has('status_group')) state.ccDomainStatusGroup = params.get('status_group') || '';
+  if (params.has('q')) state.ccDomainQ = params.get('q') || '';
 
   $('main').innerHTML = `
     <div class="page-shell anim-fade-in">
@@ -347,6 +353,7 @@ async function renderCCDomainDetail(domain, crawl) {
           </div>
         </div>
       </div>
+      <div id="cc-domain-stats-pane" class="mb-4">${domainsSkeleton(3)}</div>
       <div class="surface p-4">
         <div id="cc-domain-detail-content">${domainsSkeleton()}</div>
       </div>
@@ -363,7 +370,11 @@ function searchCCDomainFromDetail() {
   const crawl = c && c.value ? c.value.trim() : '';
   state.ccDomainQ = q && q.value ? q.value.trim() : '';
   if (!domain) return;
-  navigateTo(`/domains/cc/${encodeURIComponent(domain)}?crawl=${encodeURIComponent(crawl)}`);
+  const p = new URLSearchParams();
+  if (crawl) p.set('crawl', crawl);
+  if (state.ccDomainStatusGroup) p.set('status_group', state.ccDomainStatusGroup);
+  if (state.ccDomainQ) p.set('q', state.ccDomainQ);
+  navigateTo(`/domains/cc/${encodeURIComponent(domain)}${p.toString() ? '?' + p.toString() : ''}`);
 }
 
 async function loadCCDomainDetail(page) {
@@ -375,13 +386,111 @@ async function loadCCDomainDetail(page) {
       crawl: state.ccDomainCrawl,
       page: state.ccDomainPage,
       sort: state.ccDomainSort || 'url',
+      statusGroup: state.ccDomainStatusGroup || '',
       q: state.ccDomainQ || '',
     });
     if (state.currentPage !== 'domain-cc-detail') return;
+    renderCCDomainStats(data);
     renderCCDomainDetailTable(data);
   } catch (e) {
     el.innerHTML = `<div class="text-xs text-red-400 py-4">${esc(e.message)}</div>`;
   }
+}
+
+function renderCCDomainStats(data) {
+  const el = $('cc-domain-stats-pane');
+  if (!el) return;
+  const stats = data && data.stats ? data.stats : null;
+  if (!stats) {
+    el.innerHTML = '';
+    return;
+  }
+
+  const total = stats.total || 0;
+  const statuses = stats.status_codes || [];
+  const mimes = stats.mime_types || [];
+
+  const groupCounts = { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0, other: 0 };
+  for (const b of statuses) {
+    const c = b.code || 0;
+    const n = b.count || 0;
+    if (c >= 200 && c < 300) groupCounts['2xx'] += n;
+    else if (c >= 300 && c < 400) groupCounts['3xx'] += n;
+    else if (c >= 400 && c < 500) groupCounts['4xx'] += n;
+    else if (c >= 500 && c < 600) groupCounts['5xx'] += n;
+    else groupCounts.other += n;
+  }
+
+  const groups = STATUS_GROUPS.map(g => ({
+    ...g,
+    count: groupCounts[g.key] || 0,
+  })).filter(g => g.count > 0);
+
+  const barSegs = groups.map(g => {
+    const pct = total > 0 ? (g.count / total) * 100 : 0;
+    return `<div title="${esc(g.label)}: ${fmtBigNum(g.count)}" style="width:${Math.max(0.4, pct).toFixed(2)}%;background:${g.color};height:100%"></div>`;
+  }).join('');
+
+  const topCodes = statuses.slice(0, 8);
+  const topCodeMax = topCodes.reduce((m, b) => Math.max(m, b.count || 0), 0) || 1;
+  const mimeMax = mimes.reduce((m, b) => Math.max(m, b.count || 0), 0) || 1;
+
+  el.innerHTML = `
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+      <div class="surface p-4 lg:col-span-2">
+        <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider mb-3">Status Distribution</div>
+        <div class="flex overflow-hidden mb-4" style="height:10px;border-radius:5px;background:var(--border);gap:1px">
+          ${total > 0 ? barSegs : ''}
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          <div class="px-3 py-2 border rounded" style="border-color:var(--border)">
+            <div class="text-[10px] font-mono ui-subtle">Total</div>
+            <div class="text-base font-semibold">${fmtBigNum(total)}</div>
+          </div>
+          ${STATUS_GROUPS.map(g => {
+            const cnt = groupCounts[g.key] || 0;
+            const pct = total > 0 ? (cnt / total) * 100 : 0;
+            return `<div class="px-3 py-2 border rounded" style="border-color:var(--border)">
+              <div class="text-[10px] font-mono" style="color:${g.color}">${esc(g.label)}</div>
+              <div class="text-base font-semibold">${fmtBigNum(cnt)}</div>
+              <div class="text-[10px] font-mono ui-subtle">${pct.toFixed(0)}%</div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+      <div class="surface p-4">
+        <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider mb-3">Top Status Codes</div>
+        ${topCodes.length === 0 ? `<div class="ui-empty">No status data</div>` : `
+          <div class="space-y-2">
+            ${topCodes.map(b => `
+              <div class="flex items-center gap-2 text-[11px]">
+                <span class="font-mono w-10 text-right">${b.code || '?'}</span>
+                <div class="flex-1 h-1.5 rounded-full" style="background:var(--border)">
+                  <div class="h-full rounded-full" style="width:${((b.count || 0) / topCodeMax * 100).toFixed(1)}%;background:#60a5fa"></div>
+                </div>
+                <span class="font-mono ui-subtle w-16 text-right">${fmtBigNum(b.count || 0)}</span>
+              </div>
+            `).join('')}
+          </div>
+        `}
+      </div>
+    </div>
+    <div class="surface p-4 mt-3">
+      <div class="text-[10px] font-mono ui-subtle uppercase tracking-wider mb-3">Top MIME Types</div>
+      ${mimes.length === 0 ? `<div class="ui-empty">No MIME data</div>` : `
+        <div class="space-y-2">
+          ${mimes.map(m => `
+            <div class="flex items-center gap-2 text-[11px]">
+              <span class="font-mono ui-subtle truncate" style="min-width:180px;max-width:260px" title="${esc(m.key || '')}">${esc(m.key || '(unknown)')}</span>
+              <div class="flex-1 h-1.5 rounded-full" style="background:var(--border)">
+                <div class="h-full rounded-full" style="width:${((m.count || 0) / mimeMax * 100).toFixed(1)}%;background:#34d399"></div>
+              </div>
+              <span class="font-mono ui-subtle w-16 text-right">${fmtBigNum(m.count || 0)}</span>
+            </div>
+          `).join('')}
+        </div>
+      `}
+    </div>`;
 }
 
 function renderCCDomainDetailTable(data) {
@@ -395,6 +504,25 @@ function renderCCDomainDetailTable(data) {
   const start = total > 0 ? (page - 1) * pageSize + 1 : 0;
   const end = Math.min(page * pageSize, total);
   const crawlID = data.crawl_id || state.ccDomainCrawl || '';
+  const statuses = (data.stats && data.stats.status_codes) ? data.stats.status_codes : [];
+  const groupCounts = { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0, other: 0 };
+  for (const b of statuses) {
+    const c = b.code || 0;
+    const n = b.count || 0;
+    if (c >= 200 && c < 300) groupCounts['2xx'] += n;
+    else if (c >= 300 && c < 400) groupCounts['3xx'] += n;
+    else if (c >= 400 && c < 500) groupCounts['4xx'] += n;
+    else if (c >= 500 && c < 600) groupCounts['5xx'] += n;
+    else groupCounts.other += n;
+  }
+  const statusTabs = [
+    { key: '', label: 'All', count: total },
+    { key: '2xx', label: '2xx', count: groupCounts['2xx'] || 0 },
+    { key: '3xx', label: '3xx', count: groupCounts['3xx'] || 0 },
+    { key: '4xx', label: '4xx', count: groupCounts['4xx'] || 0 },
+    { key: '5xx', label: '5xx', count: groupCounts['5xx'] || 0 },
+    { key: 'other', label: 'Other', count: groupCounts.other || 0 },
+  ];
 
   el.innerHTML = `
     <div class="flex items-center gap-3 mb-4 flex-wrap">
@@ -408,6 +536,15 @@ function renderCCDomainDetailTable(data) {
         <option value="newest" ${state.ccDomainSort==='newest'?'selected':''}>Newest</option>
       </select>
     </div>
+    <div class="flex items-center gap-1 border-b border-[var(--border)] mb-3 overflow-x-auto" style="scrollbar-width:none">
+      ${statusTabs.map(t => `
+        <button
+          onclick="state.ccDomainStatusGroup='${t.key}';loadCCDomainDetail(1)"
+          class="px-3 py-1.5 text-[11px] font-mono whitespace-nowrap ${state.ccDomainStatusGroup === t.key ? 'tab-active' : 'tab-inactive'}">
+          ${esc(t.label)} <span class="ui-subtle">${fmtBigNum(t.count || 0)}</span>
+        </button>
+      `).join('')}
+    </div>
     ${docs.length === 0 ? `<div class="ui-empty">No cached URLs for this query.</div>` : `
       <div class="space-y-0 divide-y" style="border-top:1px solid var(--border)">
         ${docs.map((d, i) => `
@@ -415,7 +552,18 @@ function renderCCDomainDetailTable(data) {
             <div class="shrink-0 pt-0.5">${statusBadge(d.fetch_status)}</div>
             <div class="min-w-0 flex-1">
               ${d.url ? `<a href="${esc(d.url)}" target="_blank" rel="noopener noreferrer" class="font-mono text-xs hover:text-[var(--accent)] transition-colors leading-relaxed break-all">${esc(d.url)}</a>` : '<span class="ui-subtle text-xs">\u2014</span>'}
-              <div class="text-[10px] ui-subtle mt-0.5">${esc(d.mime || '')}${d.timestamp ? ` \u00b7 ${esc(d.timestamp)}` : ''}${d.filename ? ` \u00b7 ${esc(d.filename)}` : ''}</div>
+              <div class="text-[10px] ui-subtle mt-0.5">
+                ${esc(d.mime || '')}
+                ${d.record_length ? ` \u00b7 ${fmtBytes(d.record_length)}` : ''}
+                ${d.timestamp ? ` \u00b7 ${esc(d.timestamp)}` : ''}
+                ${d.filename ? ` \u00b7 ${esc(d.filename)}` : ''}
+              </div>
+              <div class="text-[10px] ui-subtle mt-0.5">
+                ${d.record_offset ? `offset ${Number(d.record_offset).toLocaleString()}` : ''}
+                ${d.digest ? `${d.record_offset ? ' \u00b7 ' : ''}digest ${esc(d.digest)}` : ''}
+                ${d.language ? ` \u00b7 lang ${esc(d.language)}` : ''}
+                ${d.encoding ? ` \u00b7 ${esc(d.encoding)}` : ''}
+              </div>
             </div>
           </div>
         `).join('')}

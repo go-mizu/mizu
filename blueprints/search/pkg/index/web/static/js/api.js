@@ -63,7 +63,7 @@ async function apiBrowseStats(shard) {
   return apiFetch(`/api/browse/stats?shard=${encodeURIComponent(shard)}`);
 }
 
-async function apiBrowseExportParquet(shard, includeMarkdownBody = false, overwrite = true) {
+async function apiBrowseExportParquet(shard, includeMarkdownBody = true, overwrite = true) {
   return apiPost('/api/browse/export-parquet', {
     shard,
     include_markdown_body: !!includeMarkdownBody,
@@ -160,6 +160,7 @@ async function apiCCDomainDetail(domain, opts = {}) {
   const p = new URLSearchParams();
   if (opts.crawl) p.set('crawl', opts.crawl);
   if (opts.sort) p.set('sort', opts.sort);
+  if (opts.statusGroup) p.set('status_group', opts.statusGroup);
   if (opts.page) p.set('page', String(opts.page));
   if (opts.pageSize) p.set('page_size', String(opts.pageSize));
   if (opts.q) p.set('q', opts.q);

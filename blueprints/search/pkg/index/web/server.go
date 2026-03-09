@@ -1293,10 +1293,11 @@ func (s *Server) handleCCDomainDetail(c *mizu.Ctx) error {
 	page := queryIntCtx(c, "page", 1)
 	pageSize := queryIntCtx(c, "page_size", 100)
 	sortBy := c.Query("sort")
+	statusGroup := c.Query("status_group")
 	q := c.Query("q")
 	crawlID := strings.TrimSpace(c.Query("crawl"))
 
-	resp, err := s.CCDomainStore.GetDomainURLs(c.Context(), domain, crawlID, sortBy, q, page, pageSize)
+	resp, err := s.CCDomainStore.GetDomainURLs(c.Context(), domain, crawlID, sortBy, statusGroup, q, page, pageSize)
 	if err != nil {
 		if errors.Is(err, ErrCCDomainNotFound) {
 			return c.JSON(404, errResp{"domain not found in Common Crawl cache; fetch it first"})
