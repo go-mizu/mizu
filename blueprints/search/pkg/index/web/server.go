@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -218,6 +219,7 @@ func NewDashboardWithOptions(engineName, crawlID, addr, baseDir string, opts Das
 	{
 		home, _ := os.UserHomeDir()
 		s.Scrape = scrape.NewStore(filepath.Join(home, "data", "crawler"))
+		s.Jobs.SetScrapeInvalidator(s.Scrape.InvalidateCache)
 	}
 
 	// Fetch manifest total in background for overview pipeline progress.
@@ -360,8 +362,9 @@ func (s *Server) ListenAndServe(ctx context.Context, port int) error {
 		Addr:         fmt.Sprintf(":%d", port),
 		Handler:      s.Handler(),
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
+		WriteTimeout: 0,           // Disabled for SSE/WebSocket long-lived connections
 		IdleTimeout:  120 * time.Second,
+		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)), // Disable HTTP/2
 	}
 
 	errCh := make(chan error, 1)

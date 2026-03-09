@@ -11,14 +11,24 @@ import (
 )
 
 type startRequest struct {
-	Domain    string `json:"domain"`
-	Mode      string `json:"mode"`
-	MaxPages  int    `json:"max_pages"`
-	MaxDepth  int    `json:"max_depth"`
-	Workers   int    `json:"workers"`
-	TimeoutS  int    `json:"timeout_s"`
-	StoreBody bool   `json:"store_body"`
-	Resume    bool   `json:"resume"`
+	Domain           string `json:"domain"`
+	Mode             string `json:"mode"`
+	MaxPages         int    `json:"max_pages"`
+	MaxDepth         int    `json:"max_depth"`
+	Workers          int    `json:"workers"`
+	TimeoutS         int    `json:"timeout_s"`
+	StoreBody        bool   `json:"store_body"`
+	Resume           bool   `json:"resume"`
+	NoRobots         bool   `json:"no_robots"`
+	NoSitemap        bool   `json:"no_sitemap"`
+	IncludeSubdomain bool   `json:"include_subdomain"`
+	ScrollCount      int    `json:"scroll_count"`
+	Continuous       bool   `json:"continuous"`
+	StaleHours       int    `json:"stale_hours"`
+	SeedURL          string `json:"seed_url"`
+	WorkerToken      string `json:"worker_token"`
+	WorkerURL        string `json:"worker_url"`
+	WorkerBrowser    bool   `json:"worker_browser"`
 }
 
 func startScrape(d *Deps) mizu.Handler {
@@ -38,11 +48,29 @@ func startScrape(d *Deps) mizu.Handler {
 			return c.JSON(409, errResp{fmt.Sprintf("scrape already running: job %s", job.ID)})
 		}
 
+		sourceBytes, _ := json.Marshal(scrape.StartParams{
+			Mode:             req.Mode,
+			MaxPages:         req.MaxPages,
+			MaxDepth:         req.MaxDepth,
+			Workers:          req.Workers,
+			TimeoutS:         req.TimeoutS,
+			StoreBody:        req.StoreBody,
+			Resume:           req.Resume,
+			NoRobots:         req.NoRobots,
+			NoSitemap:        req.NoSitemap,
+			IncludeSubdomain: req.IncludeSubdomain,
+			ScrollCount:      req.ScrollCount,
+			Continuous:       req.Continuous,
+			StaleHours:       req.StaleHours,
+			SeedURL:          req.SeedURL,
+			WorkerToken:      req.WorkerToken,
+			WorkerURL:        req.WorkerURL,
+			WorkerBrowser:    req.WorkerBrowser,
+		})
 		cfg := pipeline.JobConfig{
 			Type:   "scrape",
 			Domain: domain,
-			Source: fmt.Sprintf(`{"mode":%q,"max_pages":%d,"max_depth":%d,"workers":%d,"timeout_s":%d,"store_body":%t,"resume":%t}`,
-				req.Mode, req.MaxPages, req.MaxDepth, req.Workers, req.TimeoutS, req.StoreBody, req.Resume),
+			Source: string(sourceBytes),
 		}
 		job := d.Jobs.Create(cfg)
 		snap := *job
@@ -126,11 +154,27 @@ func scrapeStatus(d *Deps) mizu.Handler {
 			}
 		}
 
+		// Also check recently completed scrape jobs for stats.
+		if activeJob == nil {
+			for _, job := range d.Jobs.List() {
+				if job.Config.Domain == domain && job.Config.Type == "scrape" &&
+					(job.Status == "completed" || job.Status == "failed" || job.Status == "cancelled") {
+					activeJob = &scrape.JobInfo{
+						ID:       job.ID,
+						Status:   job.Status,
+						Progress: job.Progress,
+						Message:  job.Message,
+					}
+					break
+				}
+			}
+		}
+
 		return c.JSON(200, scrape.DomainStatus{
 			Domain:    domain,
 			Stats:     stats,
 			ActiveJob: activeJob,
-			HasData:   stats != nil,
+			HasData:   stats != nil || activeJob != nil,
 		})
 	}
 }
@@ -148,8 +192,9 @@ func scrapePages(d *Deps) mizu.Handler {
 		}
 		q := c.Query("q")
 		sort := c.Query("sort")
+		statusFilter := c.Query("status")
 
-		resp, err := d.Scrape.GetPages(domain, page, pageSize, q, sort)
+		resp, err := d.Scrape.GetPages(domain, page, pageSize, q, sort, statusFilter)
 		if err != nil {
 			return c.JSON(500, errResp{err.Error()})
 		}
@@ -174,6 +219,27 @@ func scrapePipeline(d *Deps) mizu.Handler {
 			JobID string `json:"job_id"`
 			Type  string `json:"type"`
 		}{snap.ID, "scrape_markdown"})
+	}
+}
+
+func scrapeIndex(d *Deps) mizu.Handler {
+	return func(c *mizu.Ctx) error {
+		domain := dcrawler.NormalizeDomain(c.Param("domain"))
+		if domain == "" {
+			return c.JSON(400, errResp{"invalid domain"})
+		}
+		cfg := pipeline.JobConfig{
+			Type:   "scrape_index",
+			Domain: domain,
+			Engine: "dahlia",
+		}
+		job := d.Jobs.Create(cfg)
+		snap := *job
+		d.Jobs.RunJob(job)
+		return c.JSON(201, struct {
+			JobID string `json:"job_id"`
+			Type  string `json:"type"`
+		}{snap.ID, "scrape_index"})
 	}
 }
 

@@ -415,6 +415,20 @@ deploy-linux-focal: build-linux ## [LEGACY] Deploy Ubuntu 20.04 focal binary wit
 .PHONY: deploy-linux-browser
 deploy-linux-browser: deploy-linux-noble-browser ## Deploy binary with Chrome wrapper (both servers are Ubuntu 24.04 Noble)
 
+DASHBOARD_PORT ?= 3457
+
+.PHONY: deploy-dashboard
+deploy-dashboard: deploy-linux-noble-browser ## Build, deploy, and (re)start FTS dashboard in a screen session (SERVER=2 for server2)
+	@echo "==> Stopping existing dashboard on $(REMOTE_SSH)..."
+	-@$(SSH) $(REMOTE_SSH) 'screen -X -S dashboard quit 2>/dev/null; true'
+	-@$(SSH) $(REMOTE_SSH) 'pkill -f "cc fts dashboard" 2>/dev/null; true'
+	@sleep 1
+	@echo "==> Starting dashboard on $(REMOTE_SSH):$(DASHBOARD_PORT) in screen session 'dashboard'..."
+	@$(SSH) $(REMOTE_SSH) 'screen -dmS dashboard bash -lc "exec $$HOME/bin/search cc fts dashboard --port $(DASHBOARD_PORT) >> /tmp/dashboard.log 2>&1"'
+	@sleep 3
+	@echo "==> Verifying dashboard is responding..."
+	@$(SSH) $(REMOTE_SSH) 'curl -sf http://localhost:$(DASHBOARD_PORT)/api/scrape/list > /dev/null && echo "Dashboard running on port $(DASHBOARD_PORT)" || { echo "ERROR: dashboard not responding"; tail -20 /tmp/dashboard.log; exit 1; }'
+
 .PHONY: deploy-linux-focal-browser
 deploy-linux-focal-browser: build-linux ## [LEGACY] Deploy Ubuntu 20.04 focal binary with Chrome wrapper (bundled libstdc++)
 	@test -f "$(DEPLOY_KEY)" || { echo "Deploy key not found: $(DEPLOY_KEY)"; exit 1; }

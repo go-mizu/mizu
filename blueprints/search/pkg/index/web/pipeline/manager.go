@@ -25,7 +25,8 @@ type Manager struct {
 	persistCh chan metastore.JobRecord
 	stopOnce  sync.Once
 
-	onComplete CompleteHook
+	onComplete    CompleteHook
+	scrapeInvalid func() // called to invalidate scrape list cache
 
 	manifestMu    sync.Mutex
 	manifestCache map[string]manifestCacheEntry
@@ -315,6 +316,23 @@ func (m *Manager) SetCompleteHook(h CompleteHook) {
 	m.mu.Lock()
 	m.onComplete = h
 	m.mu.Unlock()
+}
+
+// SetScrapeInvalidator sets a callback to invalidate the scrape list cache.
+func (m *Manager) SetScrapeInvalidator(fn func()) {
+	m.mu.Lock()
+	m.scrapeInvalid = fn
+	m.mu.Unlock()
+}
+
+// InvalidateScrapeCache calls the scrape invalidator if set.
+func (m *Manager) InvalidateScrapeCache() {
+	m.mu.RLock()
+	fn := m.scrapeInvalid
+	m.mu.RUnlock()
+	if fn != nil {
+		fn()
+	}
 }
 
 // SetManifestFetcher sets the function used to fetch WARC manifest paths.

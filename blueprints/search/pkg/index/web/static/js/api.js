@@ -184,12 +184,17 @@ async function apiScrapePages(domain, opts = {}) {
   if (opts.pageSize) p.set('page_size', String(opts.pageSize));
   if (opts.q) p.set('q', opts.q);
   if (opts.sort) p.set('sort', opts.sort);
+  if (opts.status) p.set('status', opts.status);
   const qs = p.toString();
   return apiFetch(`/api/scrape/${encodeURIComponent(domain)}/pages` + (qs ? '?' + qs : ''));
 }
 
 async function apiScrapePipeline(domain, steps) {
   return apiPost(`/api/scrape/${encodeURIComponent(domain)}/pipeline`, { steps: steps || ['markdown'] });
+}
+
+async function apiScrapeIndex(domain) {
+  return apiPost(`/api/scrape/${encodeURIComponent(domain)}/index`, {});
 }
 
 async function apiCCDomainDetail(domain, opts = {}) {

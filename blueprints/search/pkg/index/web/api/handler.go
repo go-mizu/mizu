@@ -378,6 +378,7 @@ func RegisterScrapeRoutes(router *mizu.Router, d *Deps) {
 	router.Get("/api/scrape/{domain}/status", scrapeStatus(d))
 	router.Get("/api/scrape/{domain}/pages", scrapePages(d))
 	router.Post("/api/scrape/{domain}/pipeline", scrapePipeline(d))
+	router.Post("/api/scrape/{domain}/index", scrapeIndex(d))
 }
 
 // RegisterDashboardRoutes mounts all dashboard (non-job) routes.

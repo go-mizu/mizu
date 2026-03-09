@@ -2,7 +2,9 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -42,6 +44,8 @@ func (m *Manager) RunJob(job *Job) {
 			err = runScrapeJob(ctx, m, job)
 		case "scrape_markdown":
 			err = runScrapeMarkdownJob(ctx, m, job)
+		case "scrape_index":
+			err = runScrapeIndexJob(ctx, m, job)
 		default:
 			m.Fail(job.ID, fmt.Errorf("unknown job type: %s", job.Config.Type))
 			return
@@ -144,11 +148,11 @@ func runScrapeJob(ctx context.Context, m *Manager, job *Job) error {
 
 	task := scrape.NewScrapeTask(cfg)
 	emit := NonBlockingEmit(func(s *scrape.ScrapeState) {
-		msg := fmt.Sprintf("%s pages=%d frontier=%d speed=%.0f/s",
-			domain, s.Pages, s.Frontier, s.PagesPerSec)
-		m.UpdateProgress(job.ID, s.Progress, msg, s.PagesPerSec)
+		b, _ := json.Marshal(s)
+		m.UpdateProgress(job.ID, s.Progress, string(b), s.PagesPerSec)
 	})
 	_, err := task.Run(ctx, emit)
+	m.InvalidateScrapeCache()
 	return err
 }
 
@@ -169,6 +173,32 @@ func runScrapeMarkdownJob(ctx context.Context, m *Manager, job *Job) error {
 	if err == nil {
 		m.Complete(job.ID, fmt.Sprintf("converted %d pages to markdown", metric.Docs))
 	}
+	m.InvalidateScrapeCache()
+	return err
+}
+
+func runScrapeIndexJob(ctx context.Context, m *Manager, job *Job) error {
+	domain := job.Config.Domain
+	if domain == "" {
+		return fmt.Errorf("scrape_index job missing domain")
+	}
+	dataDir := scrapeDataDir(m.baseDir)
+	engine := job.Config.Engine
+	if engine == "" {
+		engine = "dahlia"
+	}
+	task := scrape.NewScrapeIndexTask(domain, dataDir, engine)
+
+	emit := NonBlockingEmit(func(s *scrape.ScrapeIndexState) {
+		msg := fmt.Sprintf("%s indexed=%d/%d speed=%.0f/s",
+			domain, s.DocsIndexed, s.DocsTotal, s.DocsPerSec)
+		m.UpdateProgress(job.ID, s.Progress, msg, s.DocsPerSec)
+	})
+	metric, err := task.Run(ctx, emit)
+	if err == nil {
+		m.Complete(job.ID, fmt.Sprintf("indexed %d docs with %s", metric.Docs, engine))
+	}
+	m.InvalidateScrapeCache()
 	return err
 }
 
@@ -333,6 +363,12 @@ func buildDCrawlerConfig(domain, dataDir string, params scrape.StartParams) dcra
 	if params.Mode == "browser" {
 		cfg.UseRod = true
 		cfg.RodHeadless = true
+		cfg.RodBlockResources = true
+		// Flush more frequently so dashboard pages/stats reflect progress during active crawls.
+		cfg.BatchSize = 50
+		// Prefer throughput in dashboard browser crawls; most modern sites (including
+		// Next.js/SSG) expose useful links before full visual stabilization.
+		cfg.RodNoRenderWait = true
 	}
 	if params.MaxPages > 0 {
 		cfg.MaxPages = params.MaxPages
@@ -341,12 +377,52 @@ func buildDCrawlerConfig(domain, dataDir string, params scrape.StartParams) dcra
 		cfg.MaxDepth = params.MaxDepth
 	}
 	if params.Workers > 0 {
-		cfg.Workers = params.Workers
+		// Browser mode uses RodWorkers (tab count), HTTP mode uses Workers.
+		if cfg.UseRod || cfg.UseLightpanda {
+			cfg.RodWorkers = params.Workers
+		} else {
+			cfg.Workers = params.Workers
+		}
 	}
 	if params.TimeoutS > 0 {
 		cfg.Timeout = time.Duration(params.TimeoutS) * time.Second
+	} else if cfg.UseRod || cfg.UseLightpanda {
+		// Browser mode needs a longer default deadline for challenge pages and JS-heavy apps.
+		cfg.Timeout = 30 * time.Second
 	}
 	cfg.StoreBody = true
 	cfg.Resume = params.Resume
+
+	// Advanced options — match CLI crawl-domain flags.
+	if params.NoRobots {
+		cfg.RespectRobots = false
+	}
+	if params.NoSitemap {
+		cfg.FollowSitemap = false
+	}
+	cfg.IncludeSubdomain = params.IncludeSubdomain
+	if params.ScrollCount > 0 {
+		cfg.ScrollCount = params.ScrollCount
+	}
+	cfg.Continuous = params.Continuous
+	if params.StaleHours > 0 {
+		cfg.StaleHours = params.StaleHours
+	}
+	if params.SeedURL != "" {
+		cfg.SeedURLs = []string{params.SeedURL}
+	}
+
+	// Worker mode — proxy fetches through CF Worker.
+	if params.Mode == "worker" {
+		cfg.UseWorker = true
+		cfg.WorkerToken = params.WorkerToken
+		if cfg.WorkerToken == "" {
+			cfg.WorkerToken = os.Getenv("CRAWLER_WORKER_TOKEN")
+		}
+		if params.WorkerURL != "" {
+			cfg.WorkerURL = params.WorkerURL
+		}
+		cfg.WorkerBrowser = params.WorkerBrowser
+	}
 	return cfg
 }

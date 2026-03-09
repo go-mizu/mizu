@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"os"
@@ -74,6 +75,7 @@ func runServe(ctx context.Context, port int, devMode bool) error {
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 0, // Disabled for SSE streams
 		IdleTimeout:  120 * time.Second,
+		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)), // Disable HTTP/2
 	}
 
 	// Start server in goroutine
