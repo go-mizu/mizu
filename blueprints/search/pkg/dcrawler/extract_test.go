@@ -621,6 +621,20 @@ func TestInlineJSExtraction(t *testing.T) {
 	}
 }
 
+func TestInlineJSExtraction_NumericPathPrefix(t *testing.T) {
+	base, _ := url.Parse("https://duckdb.org/")
+	links := extractInlineJSLinks(`const p = "/2026/01/26/announcing-duckdb-144.html";`, base, "duckdb.org")
+	if len(links) != 1 {
+		t.Fatalf("expected 1 link, got %d", len(links))
+	}
+	if links[0].TargetURL != "https://duckdb.org/2026/01/26/announcing-duckdb-144.html" {
+		t.Fatalf("unexpected target: %s", links[0].TargetURL)
+	}
+	if !links[0].IsInternal {
+		t.Fatalf("expected internal link")
+	}
+}
+
 func TestInlineJSSkipsAssets(t *testing.T) {
 	html := `<html><body>
 		<script>

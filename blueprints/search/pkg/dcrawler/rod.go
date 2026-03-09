@@ -521,8 +521,8 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 				browserDead = true
 			}
 		} else {
-			close(pageClosed)    // stop watchdog before returning page to pool
-			rp.putPage(page)     // page is healthy, recycle it
+			close(pageClosed) // stop watchdog before returning page to pool
+			rp.putPage(page)  // page is healthy, recycle it
 			browserDead = false
 			return
 		}
@@ -539,20 +539,7 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 	// New approach: listen for DOMContentLoaded event (zero CPU overhead, Chrome notifies us).
 	c.stats.SetRodPhase(workerID, "nav")
 
-	// Set up DOMContentLoaded listener BEFORE sending navigate command.
-	// This ensures we never miss the event even if the page loads instantly.
 	domReady := false
-	dclCh := make(chan struct{}, 1)
-	go func() {
-		defer func() { recover() }() // safety: don't crash if Chrome disconnects
-		p.EachEvent(func(e *proto.PageDomContentEventFired) (stop bool) {
-			return true
-		})()
-		select {
-		case dclCh <- struct{}{}:
-		default:
-		}
-	}()
 
 	// Human-like timing: random delay before navigation to avoid exact-interval
 	// patterns that CF bot scoring detects when many tabs hit the same domain at
@@ -588,22 +575,24 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		}
 	}
 
-	// Wait for DOMContentLoaded event — zero CPU overhead, Chrome does all the work.
-	select {
-	case <-dclCh:
-		domReady = true
-	case <-time.After(timeout):
-		// Event didn't fire within timeout. Do one final readyState check —
-		// maybe we missed the event or Chrome is being slow.
-		if rs, evalErr := p.Timeout(2 * time.Second).Eval(
-			`() => document.readyState`); evalErr == nil && rs != nil {
+	// Wait for DOM readiness via readyState polling. This is more robust across
+	// Chrome/CDP variants than relying on a single DOMContentLoaded event hook.
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) && fetchCtx.Err() == nil {
+		if rs, evalErr := p.Timeout(2 * time.Second).Eval(`() => document.readyState`); evalErr == nil && rs != nil {
 			state := rs.Value.Str()
-			if state == "interactive" || state == "complete" || state == "loading" {
-				// Page has navigated (even if still loading) — accept it.
+			if state == "interactive" || state == "complete" {
 				domReady = true
+				break
+			}
+			if state == "loading" {
+				if html, htmlErr := p.Timeout(1 * time.Second).HTML(); htmlErr == nil && len(html) > 500 {
+					domReady = true
+					break
+				}
 			}
 		}
-	case <-fetchCtx.Done():
+		time.Sleep(200 * time.Millisecond)
 	}
 
 	if !domReady {
@@ -613,11 +602,9 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		// Last resort: try to extract whatever HTML Chrome has.
 		partialHTML, htmlErr := p.Timeout(5 * time.Second).HTML()
 		if htmlErr != nil || len(partialHTML) < 100 {
-			errMsg := "navigate: timeout waiting for DOM ready"
-			if navErrorText != "" {
-				errMsg = "navigate: " + navErrorText
-			}
-			c.recordError(item, fmt.Errorf("%s", errMsg), time.Since(start).Milliseconds())
+			// Browser stalled before DOM ready. Keep retry in browser mode:
+			// HTTP fallback often triggers WAF 403 on JS-gated sites.
+			c.recordError(item, fmt.Errorf("timeout waiting for DOM"), time.Since(start).Milliseconds())
 			return
 		}
 		// Substantial server-rendered content — proceed with partial extraction.
@@ -664,7 +651,7 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 			} else if strings.Contains(titleLower, "the request could not be satisfied") {
 				// CloudFront WAF — not solvable via JS, record as blocked immediately
 				fetchMs := time.Since(start).Milliseconds()
-				c.recordBlocked(item, "CloudFront WAF block", fetchMs)
+				c.recordBlockedHTTP(item, 403, "CloudFront WAF block", fetchMs)
 				return
 			}
 		}
@@ -686,26 +673,24 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 				if solveErr == nil && len(solvedCookies) > 0 {
 					rp.jar.store(domain, solvedCookies)
 					_ = page.SetCookies(cookiesToParams(solvedCookies))
-					// Set up a fresh DOMContentLoaded listener for re-navigation (dclCh is already consumed).
-					renavDCLCh := make(chan struct{}, 1)
-					go func() {
-						defer func() { recover() }()
-						p.EachEvent(func(e *proto.PageDomContentEventFired) (stop bool) {
-							return true
-						})()
-						select {
-						case renavDCLCh <- struct{}{}:
-						default:
-						}
-					}()
 					// Re-navigate with clearance cookies — CF should skip challenge.
 					renavCmd := proto.PageNavigate{URL: item.URL}
 					if _, renavErr := renavCmd.Call(p); renavErr == nil {
 						// Wait for DOM ready after re-navigation.
-						select {
-						case <-renavDCLCh:
-						case <-time.After(timeout):
-						case <-fetchCtx.Done():
+						renavDeadline := time.Now().Add(timeout)
+						for time.Now().Before(renavDeadline) && fetchCtx.Err() == nil {
+							if rs, evalErr := p.Timeout(2 * time.Second).Eval(`() => document.readyState`); evalErr == nil && rs != nil {
+								state := rs.Value.Str()
+								if state == "interactive" || state == "complete" {
+									break
+								}
+								if state == "loading" {
+									if html, htmlErr := p.Timeout(1 * time.Second).HTML(); htmlErr == nil && len(html) > 500 {
+										break
+									}
+								}
+							}
+							time.Sleep(200 * time.Millisecond)
 						}
 					}
 				} else {
@@ -713,19 +698,6 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 					c.recordBlocked(item, "CF challenge: solver failed or no cookies", time.Since(start).Milliseconds())
 					return
 				}
-			}
-		}
-	}
-
-	// Early blocked-page detection: check title BEFORE scrolling to avoid wasting
-	// 10-15s scrolling a blocked page. Real pages have descriptive titles after render;
-	// anti-bot pages keep the URL path as title.
-	if fetchCtx.Err() == nil {
-		if info, ie := p.Info(); ie == nil && info != nil && info.Title != "" {
-			if blocked, reason := isBlockedPage(nil, info.Title, item.URL); blocked {
-				fetchMs := time.Since(start).Milliseconds()
-				c.recordBlocked(item, reason, fetchMs)
-				return
 			}
 		}
 	}
@@ -802,7 +774,8 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		if ctx.Err() != nil {
 			return
 		}
-		c.recordError(item, fmt.Errorf("get html: empty content"), fetchMs)
+		// Empty DOM snapshot is usually transient in browser mode; retry.
+		c.recordError(item, fmt.Errorf("get html: empty html from browser"), fetchMs)
 		return
 	}
 	body := []byte(htmlContent)
@@ -943,12 +916,16 @@ func isBlockedPage(body []byte, title, requestURL string) (bool, string) {
 	// while raw HTML has titles like "/rain/a/20260218A0xxxx" (path only).
 	// Normal pages have descriptive titles like "Article Title_腾讯新闻".
 	if title != "" {
-		// Extract path from request URL for comparison
+		// Extract path from request URL for comparison.
 		if u, err := url.Parse(requestURL); err == nil && u.Path != "" && u.Path != "/" {
-			urlPath := u.Path           // e.g., "/rain/a/20260218A0xxxx"
-			hostPath := u.Host + u.Path // e.g., "news.qq.com/rain/a/20260218A0xxxx"
-			if title == urlPath || title == urlPath[1:] || title == hostPath {
-				return true, "title matches URL path (anti-bot placeholder)"
+			host := strings.ToLower(u.Hostname())
+			// Keep this heuristic scoped to known QQ/Tencent anti-bot patterns.
+			if strings.Contains(host, "qq.com") || strings.Contains(host, "tencent") {
+				urlPath := u.Path           // e.g., "/rain/a/20260218A0xxxx"
+				hostPath := u.Host + u.Path // e.g., "news.qq.com/rain/a/20260218A0xxxx"
+				if title == urlPath || title == urlPath[1:] || title == hostPath {
+					return true, "title matches URL path (anti-bot placeholder)"
+				}
 			}
 		}
 	}
@@ -1050,7 +1027,7 @@ func (c *Crawler) extractDOMLinks(page *rod.Page, baseURL *url.URL) []Link {
 					if (depth > 8 || !obj) return;
 					if (typeof obj === 'string') {
 						if (obj.length > 1 && obj.length < 300 && obj.startsWith('/') &&
-							/^\/[a-zA-Z]/.test(obj) &&
+							/^\/[a-zA-Z0-9]/.test(obj) &&
 							!/\.(js|css|png|jpg|svg|woff|map)$/i.test(obj) &&
 							!obj.startsWith('/_next/') && !obj.startsWith('/_nuxt/')) {
 							add(location.origin + obj, '', 'next-data');
@@ -1061,7 +1038,7 @@ func (c *Crawler) extractDOMLinks(page *rod.Page, baseURL *url.URL) []Link {
 						for (const val of Object.values(obj)) walk(val, depth + 1);
 					}
 				};
-				walk(data.props, 0);
+				walk(data, 0);
 				// Extract page route itself
 				if (data.page && data.page !== '/') add(location.origin + data.page, '', 'next-page');
 			} catch(e) {}

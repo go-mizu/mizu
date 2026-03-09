@@ -638,8 +638,8 @@ func extractURLsFromJSON(v any, base *url.URL, domain string, seen map[string]bo
 	}
 }
 
-// inlineJSPathRe matches quoted internal paths in JavaScript: "/blog/some-post"
-var inlineJSPathRe = regexp.MustCompile(`["'](/[a-zA-Z][^"'\\]{1,200})["']`)
+// inlineJSPathRe matches quoted internal paths in JavaScript: "/blog/some-post", "/2026/post"
+var inlineJSPathRe = regexp.MustCompile(`["'](/[a-zA-Z0-9][^"'\\]{1,200})["']`)
 
 // extractInlineJSLinks extracts internal URL paths from inline JavaScript.
 func extractInlineJSLinks(content string, base *url.URL, domain string) []Link {
@@ -680,9 +680,9 @@ func isInternalPath(s string) bool {
 	if s[0] != '/' || s[1] == '/' { // skip "//cdn.example.com"
 		return false
 	}
-	// Must start with a letter after /
+	// Must start with an alphanumeric after /
 	c := s[1]
-	if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+	if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
 		return false
 	}
 	// Skip asset paths
