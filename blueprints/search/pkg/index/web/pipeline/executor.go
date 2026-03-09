@@ -423,6 +423,9 @@ func buildDCrawlerConfig(domain, dataDir string, params scrape.StartParams) dcra
 			cfg.WorkerURL = params.WorkerURL
 		}
 		cfg.WorkerBrowser = params.WorkerBrowser
+		// Limit concurrency to avoid CF Worker 1102 (CPU/subrequest limit).
+		// 3 parallel × 10 URLs = 30 concurrent fetches — safe for paid plan.
+		cfg.WorkerParallel = 3
 	}
 	return cfg
 }

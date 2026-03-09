@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/DataDog/zstd"
@@ -160,11 +161,27 @@ func (c *Crawler) runWorkerMode(ctx context.Context) error {
 				urls[i] = it.URL
 			}
 
-			// Use a separate timeout context so the worker HTTP call
-			// completes even when the coordinator cancels the crawl.
-			fetchCtx, fetchCancel := context.WithTimeout(context.Background(), 60*time.Second)
-			results, err := wc.FetchBatch(fetchCtx, urls)
-			fetchCancel()
+			// Retry on 503 (CF Worker overload / error 1102) with backoff.
+			var results []workerResult
+			var err error
+			for attempt := 0; attempt < 5; attempt++ {
+				if ctx.Err() != nil {
+					return nil
+				}
+				if attempt > 0 {
+					time.Sleep(time.Duration(1<<attempt) * time.Second) // 2s, 4s, 8s, 16s
+				}
+				fetchCtx, fetchCancel := context.WithTimeout(context.Background(), 60*time.Second)
+				results, err = wc.FetchBatch(fetchCtx, urls)
+				fetchCancel()
+				if err == nil {
+					break
+				}
+				// Only retry on 503 (worker overload); other errors are permanent.
+				if !strings.Contains(err.Error(), "503") {
+					break
+				}
+			}
 			if err != nil {
 				// If the parent context was canceled (crawl stopped),
 				// silently drop — don't record as errors.
