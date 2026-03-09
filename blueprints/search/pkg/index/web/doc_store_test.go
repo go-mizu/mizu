@@ -400,7 +400,8 @@ func TestHandleBrowseDocs_WithWARCMd(t *testing.T) {
 
 	// Test browse docs endpoint.
 	req := httptest.NewRequest("GET", "/api/browse?shard=00000", nil)
-	w := callHandler(t, srv.handleBrowse, req)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
 
 	if w.Code != 200 {
 		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
@@ -435,9 +436,8 @@ func TestHandleBrowseDocs_WithWARCMd(t *testing.T) {
 
 	// Test doc endpoint with offset-based read.
 	docReq := httptest.NewRequest("GET", "/api/doc/00000/"+docIDs[1], nil)
-	docReq.SetPathValue("shard", "00000")
-	docReq.SetPathValue("docid", docIDs[1])
-	dw := callHandler(t, srv.handleDoc, docReq)
+	dw := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(dw, docReq)
 
 	if dw.Code != 200 {
 		t.Fatalf("GET /api/doc: expected 200, got %d; body: %s", dw.Code, dw.Body.String())
@@ -478,7 +478,8 @@ func TestHandleBrowseStats_TopDomains(t *testing.T) {
 	srv.Docs.ScanShard(ctx, "", "00000", warcMdPath)
 
 	req := httptest.NewRequest("GET", "/api/browse/stats?shard=00000", nil)
-	w := callHandler(t, srv.handleBrowseStats, req)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
 
 	if w.Code != 200 {
 		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
@@ -513,12 +514,13 @@ func TestHandleBrowseExportParquet_WithoutMarkdownBody(t *testing.T) {
 	}
 
 	req := httptest.NewRequest("POST", "/api/browse/export-parquet", strings.NewReader(`{"shard":"00000","include_markdown_body":false}`))
-	w := callHandler(t, srv.handleBrowseExportParquet, req)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
 	if w.Code != 200 {
 		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
 	}
 
-	var resp browseExportParquetResponse
+	var resp BrowseExportParquetResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
@@ -547,12 +549,13 @@ func TestHandleBrowseExportParquet_WithMarkdownBody(t *testing.T) {
 	}
 
 	req := httptest.NewRequest("POST", "/api/browse/export-parquet", strings.NewReader(`{"shard":"00000","include_markdown_body":true}`))
-	w := callHandler(t, srv.handleBrowseExportParquet, req)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
 	if w.Code != 200 {
 		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
 	}
 
-	var resp browseExportParquetResponse
+	var resp BrowseExportParquetResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}

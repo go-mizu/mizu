@@ -3,29 +3,19 @@ package web
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
-	"time"
+	"strings"
+	"unicode/utf8"
 
-	mizu "github.com/go-mizu/mizu"
 	"github.com/parquet-go/parquet-go"
 )
 
-type browseExportParquetRequest struct {
-	Shard               string `json:"shard"`
-	IncludeMarkdownBody *bool  `json:"include_markdown_body,omitempty"`
-	Overwrite           bool   `json:"overwrite,omitempty"`
-}
-
-type browseExportParquetResponse struct {
-	Shard               string `json:"shard"`
-	IncludeMarkdownBody bool   `json:"include_markdown_body"`
-	OutputPath          string `json:"output_path"`
-	Rows                int64  `json:"rows"`
-	SizeBytes           int64  `json:"size_bytes"`
-	ElapsedMs           int64  `json:"elapsed_ms"`
+func sanitizeUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	return strings.ToValidUTF8(s, "\uFFFD")
 }
 
 type browseExportRow struct {
@@ -59,76 +49,6 @@ type browseExportRowWithBody struct {
 
 const exportParquetRowGroupRows = 100_000
 const exportParquetPageBufferSize = 8 * 1024 * 1024
-
-func (s *Server) handleBrowseExportParquet(c *mizu.Ctx) error {
-	if s.Docs == nil {
-		return c.JSON(503, errResp{"doc store not available"})
-	}
-
-	var req browseExportParquetRequest
-	if err := json.NewDecoder(c.Request().Body).Decode(&req); err != nil {
-		return c.JSON(400, errResp{"invalid JSON: " + err.Error()})
-	}
-	shard := filepath.Base(req.Shard)
-	if shard == "" || shard == "." || shard == "/" {
-		return c.JSON(400, errResp{"shard required"})
-	}
-
-	includeMarkdownBody := true
-	if req.IncludeMarkdownBody != nil {
-		includeMarkdownBody = *req.IncludeMarkdownBody
-	}
-
-	metaPath := filepath.Join(s.WARCMdBase, shard+".meta.duckdb")
-	if _, err := os.Stat(metaPath); err != nil {
-		return c.JSON(404, errResp{"shard metadata not found"})
-	}
-	warcMdPath := filepath.Join(s.WARCMdBase, shard+".md.warc.gz")
-	if includeMarkdownBody {
-		if _, err := os.Stat(warcMdPath); err != nil {
-			return c.JSON(404, errResp{"shard markdown WARC not found"})
-		}
-	}
-
-	outBase := s.CrawlDir
-	if outBase == "" {
-		outBase = filepath.Dir(s.WARCMdBase)
-	}
-	outDir := filepath.Join(outBase, "pack", "parquet_export")
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		return c.JSON(500, errResp{"mkdir output: " + err.Error()})
-	}
-
-	outName := shard + ".meta.parquet"
-	if includeMarkdownBody {
-		outName = shard + ".meta.with_body.parquet"
-	}
-	outPath := filepath.Join(outDir, outName)
-	if !req.Overwrite {
-		if _, err := os.Stat(outPath); err == nil {
-			return c.JSON(409, errResp{"output already exists; pass overwrite=true"})
-		}
-	}
-
-	start := time.Now()
-	rows, err := exportShardMetaParquet(c.Context(), metaPath, warcMdPath, outPath, includeMarkdownBody)
-	if err != nil {
-		return c.JSON(500, errResp{err.Error()})
-	}
-	info, _ := os.Stat(outPath)
-	var sz int64
-	if info != nil {
-		sz = info.Size()
-	}
-	return c.JSON(200, browseExportParquetResponse{
-		Shard:               shard,
-		IncludeMarkdownBody: includeMarkdownBody,
-		OutputPath:          outPath,
-		Rows:                rows,
-		SizeBytes:           sz,
-		ElapsedMs:           time.Since(start).Milliseconds(),
-	})
-}
 
 func exportShardMetaParquet(ctx context.Context, metaPath, warcMdPath, outPath string, includeMarkdownBody bool) (int64, error) {
 	db, err := openShardDB(metaPath + "?access_mode=read_only")

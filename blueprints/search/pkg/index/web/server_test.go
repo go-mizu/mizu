@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	mizu "github.com/go-mizu/mizu"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/pipeline"
 )
 
 // callHandler is a helper to invoke a mizu handler through httptest machinery.
@@ -59,9 +60,11 @@ func TestHandleOverview(t *testing.T) {
 	writeFile(t, filepath.Join(root, "warc_md", "00000.md.warc.gz"), 512)
 
 	srv := NewDashboard("test-engine", "CC-TEST-2026", "", root)
+	handler := srv.Handler()
 
 	req := httptest.NewRequest("GET", "/api/overview", nil)
-	w := callHandler(t, srv.handleOverview, req)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
 
 	if w.Code != 200 {
 		t.Fatalf("expected 200, got %d", w.Code)
@@ -91,9 +94,11 @@ func TestHandleOverview(t *testing.T) {
 func TestHandleEngines(t *testing.T) {
 	root := t.TempDir()
 	srv := NewDashboard("test-engine", "CC-TEST-2026", "", root)
+	handler := srv.Handler()
 
 	req := httptest.NewRequest("GET", "/api/engines", nil)
-	w := callHandler(t, srv.handleEngines, req)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
 
 	if w.Code != 200 {
 		t.Fatalf("expected 200, got %d", w.Code)
@@ -114,15 +119,19 @@ func TestHandleEngines(t *testing.T) {
 func TestHandleJobs_Empty(t *testing.T) {
 	root := t.TempDir()
 	srv := NewDashboard("test-engine", "CC-TEST-2026", "", root)
+	handler := srv.Handler()
 
 	req := httptest.NewRequest("GET", "/api/jobs", nil)
-	w := callHandler(t, srv.handleListJobs, req)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
 
 	if w.Code != 200 {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
 
-	var result JobsListResponse
+	var result struct {
+		Jobs []pipeline.Job `json:"jobs"`
+	}
 	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
 		t.Fatalf("failed to decode JSON: %v", err)
 	}
@@ -134,12 +143,11 @@ func TestHandleJobs_Empty(t *testing.T) {
 func TestHandleGetJob_NotFound(t *testing.T) {
 	root := t.TempDir()
 	srv := NewDashboard("test-engine", "CC-TEST-2026", "", root)
+	handler := srv.Handler()
 
 	req := httptest.NewRequest("GET", "/api/jobs/nonexistent", nil)
-	req.SetPathValue("id", "nonexistent")
 	w := httptest.NewRecorder()
-	c := mizu.NewCtx(w, req, nil)
-	_ = srv.handleGetJob(c) // returns error JSON, not a Go error
+	handler.ServeHTTP(w, req)
 
 	if w.Code != 404 {
 		t.Fatalf("expected 404, got %d", w.Code)
@@ -149,17 +157,19 @@ func TestHandleGetJob_NotFound(t *testing.T) {
 func TestHandleCreateJob(t *testing.T) {
 	root := t.TempDir()
 	srv := NewDashboard("test-engine", "CC-TEST-2026", "", root)
+	handler := srv.Handler()
 
 	body := `{"type":"download","crawl":"CC-MAIN-2026-08","files":"0"}`
 	req := httptest.NewRequest("POST", "/api/jobs", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	w := callHandler(t, srv.handleCreateJob, req)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
 
 	if w.Code != 201 {
 		t.Fatalf("expected 201, got %d; body: %s", w.Code, w.Body.String())
 	}
 
-	var job Job
+	var job pipeline.Job
 	if err := json.Unmarshal(w.Body.Bytes(), &job); err != nil {
 		t.Fatalf("failed to decode job JSON: %v", err)
 	}
@@ -177,13 +187,13 @@ func TestHandleCreateJob(t *testing.T) {
 func TestHandleCreateJob_MissingType(t *testing.T) {
 	root := t.TempDir()
 	srv := NewDashboard("test-engine", "CC-TEST-2026", "", root)
+	handler := srv.Handler()
 
 	body := `{"crawl":"CC-MAIN-2026-08"}`
 	req := httptest.NewRequest("POST", "/api/jobs", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
-	c := mizu.NewCtx(w, req, nil)
-	_ = srv.handleCreateJob(c)
+	handler.ServeHTTP(w, req)
 
 	if w.Code != 400 {
 		t.Fatalf("expected 400, got %d; body: %s", w.Code, w.Body.String())
@@ -193,12 +203,11 @@ func TestHandleCreateJob_MissingType(t *testing.T) {
 func TestHandleCancelJob_NotFound(t *testing.T) {
 	root := t.TempDir()
 	srv := NewDashboard("test-engine", "CC-TEST-2026", "", root)
+	handler := srv.Handler()
 
 	req := httptest.NewRequest("DELETE", "/api/jobs/nonexistent", nil)
-	req.SetPathValue("id", "nonexistent")
 	w := httptest.NewRecorder()
-	c := mizu.NewCtx(w, req, nil)
-	_ = srv.handleCancelJob(c)
+	handler.ServeHTTP(w, req)
 
 	if w.Code != 404 {
 		t.Fatalf("expected 404, got %d", w.Code)
@@ -214,10 +223,11 @@ func TestHandleCrawlData(t *testing.T) {
 	writeFile(t, filepath.Join(warcDir, "00000.warc.gz"), 2048)
 
 	srv := NewDashboard("test-engine", "CC-TEST-2026", "", root)
+	handler := srv.Handler()
 
 	req := httptest.NewRequest("GET", "/api/crawl/CC-TEST-2026/data", nil)
-	req.SetPathValue("id", "CC-TEST-2026")
-	w := callHandler(t, srv.handleCrawlData, req)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
 
 	if w.Code != 200 {
 		t.Fatalf("expected 200, got %d", w.Code)
@@ -253,9 +263,11 @@ func TestHandleWARCListAndDetail_Fallback(t *testing.T) {
 
 	srv := NewDashboard("duckdb", "CC-TEST-2026", "", root)
 	srv.Meta = nil // deterministic scan fallback for this test
+	handler := srv.Handler()
 
 	reqList := httptest.NewRequest("GET", "/api/warc", nil)
-	wList := callHandler(t, srv.handleWARCList, reqList)
+	wList := httptest.NewRecorder()
+	handler.ServeHTTP(wList, reqList)
 	if wList.Code != 200 {
 		t.Fatalf("GET /api/warc expected 200, got %d: %s", wList.Code, wList.Body.String())
 	}
@@ -267,9 +279,10 @@ func TestHandleWARCListAndDetail_Fallback(t *testing.T) {
 		t.Fatalf("expected exactly 1 warc row, got %d", len(listResp.WARCs))
 	}
 
+	// Use the full HTTP handler for detail - mizu router parses path params from URL
 	reqDetail := httptest.NewRequest("GET", "/api/warc/0", nil)
-	reqDetail.SetPathValue("index", "0")
-	wDetail := callHandler(t, srv.handleWARCDetail, reqDetail)
+	wDetail := httptest.NewRecorder()
+	handler.ServeHTTP(wDetail, reqDetail)
 	if wDetail.Code != 200 {
 		t.Fatalf("GET /api/warc/0 expected 200, got %d: %s", wDetail.Code, wDetail.Body.String())
 	}
@@ -291,12 +304,13 @@ func TestHandleWARCAction_DeletePack(t *testing.T) {
 
 	srv := NewDashboard("duckdb", "CC-TEST-2026", "", root)
 	srv.Meta = nil
+	handler := srv.Handler()
 
 	body := `{"action":"delete","target":"pack","format":"parquet"}`
 	req := httptest.NewRequest("POST", "/api/warc/0/action", strings.NewReader(body))
-	req.SetPathValue("index", "0")
 	req.Header.Set("Content-Type", "application/json")
-	w := callHandler(t, srv.handleWARCAction, req)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
 	if w.Code != 200 {
 		t.Fatalf("POST /api/warc/0/action delete expected 200, got %d: %s", w.Code, w.Body.String())
 	}
@@ -309,12 +323,13 @@ func TestHandleWARCAction_CreateIndexJob(t *testing.T) {
 	root := t.TempDir()
 	srv := NewDashboard("duckdb", "CC-TEST-2026", "", root)
 	srv.Meta = nil
+	handler := srv.Handler()
 
 	body := `{"action":"index","engine":"duckdb","source":"files"}`
 	req := httptest.NewRequest("POST", "/api/warc/0/action", strings.NewReader(body))
-	req.SetPathValue("index", "0")
 	req.Header.Set("Content-Type", "application/json")
-	w := callHandler(t, srv.handleWARCAction, req)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
 	if w.Code != 200 {
 		t.Fatalf("POST /api/warc/0/action index expected 200, got %d: %s", w.Code, w.Body.String())
 	}
@@ -417,9 +432,11 @@ func TestNewDashboard_SetsFields(t *testing.T) {
 func TestHandleOverview_EmptyDir(t *testing.T) {
 	root := t.TempDir()
 	srv := NewDashboard("test-engine", "CC-TEST-2026", "", root)
+	handler := srv.Handler()
 
 	req := httptest.NewRequest("GET", "/api/overview", nil)
-	w := callHandler(t, srv.handleOverview, req)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
 
 	if w.Code != 200 {
 		t.Fatalf("expected 200, got %d", w.Code)
@@ -451,16 +468,19 @@ func TestHandleMetaStatusAndRefresh(t *testing.T) {
 	if srv.Meta == nil {
 		t.Fatal("expected meta manager to be initialized")
 	}
+	handler := srv.Handler()
 
 	// Trigger a synchronous read first so cache exists.
 	reqOverview := httptest.NewRequest("GET", "/api/overview", nil)
-	wOverview := callHandler(t, srv.handleOverview, reqOverview)
+	wOverview := httptest.NewRecorder()
+	handler.ServeHTTP(wOverview, reqOverview)
 	if wOverview.Code != 200 {
 		t.Fatalf("GET /api/overview: expected 200, got %d", wOverview.Code)
 	}
 
 	reqStatus := httptest.NewRequest("GET", "/api/meta/status", nil)
-	wStatus := callHandler(t, srv.handleMetaStatus, reqStatus)
+	wStatus := httptest.NewRecorder()
+	handler.ServeHTTP(wStatus, reqStatus)
 	if wStatus.Code != 200 {
 		t.Fatalf("GET /api/meta/status: expected 200, got %d", wStatus.Code)
 	}
@@ -475,8 +495,7 @@ func TestHandleMetaStatusAndRefresh(t *testing.T) {
 	reqRefresh := httptest.NewRequest("POST", "/api/meta/refresh", strings.NewReader(`{"force":true}`))
 	reqRefresh.Header.Set("Content-Type", "application/json")
 	wRefresh := httptest.NewRecorder()
-	c := mizu.NewCtx(wRefresh, reqRefresh, nil)
-	_ = srv.handleMetaRefresh(c)
+	handler.ServeHTTP(wRefresh, reqRefresh)
 	if wRefresh.Code != http.StatusAccepted && wRefresh.Code != 200 {
 		t.Fatalf("POST /api/meta/refresh: expected 202 or 200, got %d", wRefresh.Code)
 	}
@@ -492,19 +511,23 @@ func TestHandleMetaStatusAndRefresh(t *testing.T) {
 func TestHandleListJobs_WithJobs(t *testing.T) {
 	root := t.TempDir()
 	srv := NewDashboard("test-engine", "CC-TEST-2026", "", root)
+	handler := srv.Handler()
 
 	// Create two jobs via the Manager directly.
-	srv.Jobs.Create(JobConfig{Type: "download", Files: "0"})
-	srv.Jobs.Create(JobConfig{Type: "index", Engine: "bleve"})
+	srv.Jobs.Create(pipeline.JobConfig{Type: "download", Files: "0"})
+	srv.Jobs.Create(pipeline.JobConfig{Type: "index", Engine: "bleve"})
 
 	req := httptest.NewRequest("GET", "/api/jobs", nil)
-	w := callHandler(t, srv.handleListJobs, req)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
 
 	if w.Code != 200 {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
 
-	var result JobsListResponse
+	var result struct {
+		Jobs []pipeline.Job `json:"jobs"`
+	}
 	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
 		t.Fatalf("failed to decode JSON: %v", err)
 	}
@@ -517,12 +540,12 @@ func TestHandleListJobs_WithJobs(t *testing.T) {
 func TestHandleCreateJob_InvalidJSON(t *testing.T) {
 	root := t.TempDir()
 	srv := NewDashboard("test-engine", "CC-TEST-2026", "", root)
+	handler := srv.Handler()
 
 	req := httptest.NewRequest("POST", "/api/jobs", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
-	c := mizu.NewCtx(w, req, nil)
-	_ = srv.handleCreateJob(c)
+	handler.ServeHTTP(w, req)
 
 	if w.Code != 400 {
 		t.Fatalf("expected 400, got %d; body: %s", w.Code, w.Body.String())
@@ -550,7 +573,7 @@ func TestParseFileSelector(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := parseFileSelector(tc.input, tc.total)
+			got, err := pipeline.ParseFileSelector(tc.input, tc.total)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("expected error, got nil")
@@ -576,7 +599,7 @@ func TestPackPath(t *testing.T) {
 	packDir := "/tmp/pack"
 	warcIdx := "00042"
 
-	got, err := packPath(packDir, "parquet", warcIdx)
+	got, err := pipeline.PackPath(packDir, "parquet", warcIdx)
 	if err != nil {
 		t.Fatalf("parquet: unexpected err: %v", err)
 	}
@@ -584,7 +607,7 @@ func TestPackPath(t *testing.T) {
 		t.Fatalf("parquet: got %q", got)
 	}
 
-	got, err = packPath(packDir, "bin", warcIdx)
+	got, err = pipeline.PackPath(packDir, "bin", warcIdx)
 	if err != nil {
 		t.Fatalf("bin: unexpected err: %v", err)
 	}
@@ -592,7 +615,7 @@ func TestPackPath(t *testing.T) {
 		t.Fatalf("bin: got %q", got)
 	}
 
-	got, err = packPath(packDir, "duckdb", warcIdx)
+	got, err = pipeline.PackPath(packDir, "duckdb", warcIdx)
 	if err != nil {
 		t.Fatalf("duckdb: unexpected err: %v", err)
 	}
@@ -600,7 +623,7 @@ func TestPackPath(t *testing.T) {
 		t.Fatalf("duckdb: got %q", got)
 	}
 
-	got, err = packPath(packDir, "markdown", warcIdx)
+	got, err = pipeline.PackPath(packDir, "markdown", warcIdx)
 	if err != nil {
 		t.Fatalf("markdown: unexpected err: %v", err)
 	}
@@ -608,7 +631,7 @@ func TestPackPath(t *testing.T) {
 		t.Fatalf("markdown: got %q", got)
 	}
 
-	if _, err := packPath(packDir, "invalid", warcIdx); err == nil {
+	if _, err := pipeline.PackPath(packDir, "invalid", warcIdx); err == nil {
 		t.Fatal("invalid format: expected error")
 	}
 }
@@ -627,9 +650,9 @@ func TestWarcFileIndex(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		got := warcFileIndex(tc.path, tc.fallback)
+		got := pipeline.WARCFileIndex(tc.path, tc.fallback)
 		if got != tc.want {
-			t.Errorf("warcFileIndex(%q, %d) = %q, want %q", tc.path, tc.fallback, got, tc.want)
+			t.Errorf("pipeline.WARCFileIndex(%q, %d) = %q, want %q", tc.path, tc.fallback, got, tc.want)
 		}
 	}
 }
@@ -789,7 +812,9 @@ func TestIntegrationDashboardLifecycle(t *testing.T) {
 		if resp.StatusCode != 200 {
 			t.Fatalf("GET /api/jobs: expected 200, got %d", resp.StatusCode)
 		}
-		var result JobsListResponse
+		var result struct {
+			Jobs []pipeline.Job `json:"jobs"`
+		}
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			t.Fatalf("decode JSON: %v", err)
 		}
@@ -810,7 +835,7 @@ func TestIntegrationDashboardLifecycle(t *testing.T) {
 		if resp.StatusCode != 201 {
 			t.Fatalf("POST /api/jobs: expected 201, got %d", resp.StatusCode)
 		}
-		var job Job
+		var job pipeline.Job
 		if err := json.NewDecoder(resp.Body).Decode(&job); err != nil {
 			t.Fatalf("decode JSON: %v", err)
 		}
@@ -838,7 +863,7 @@ func TestIntegrationDashboardLifecycle(t *testing.T) {
 		if resp.StatusCode != 200 {
 			t.Fatalf("GET /api/jobs/%s: expected 200, got %d", jobID, resp.StatusCode)
 		}
-		var job Job
+		var job pipeline.Job
 		if err := json.NewDecoder(resp.Body).Decode(&job); err != nil {
 			t.Fatalf("decode JSON: %v", err)
 		}
@@ -879,7 +904,7 @@ func TestIntegrationDashboardLifecycle(t *testing.T) {
 		if resp.StatusCode != 200 {
 			t.Fatalf("expected 200, got %d", resp.StatusCode)
 		}
-		var job Job
+		var job pipeline.Job
 		if err := json.NewDecoder(resp.Body).Decode(&job); err != nil {
 			t.Fatalf("decode JSON: %v", err)
 		}
@@ -947,7 +972,3 @@ func TestIntegrationNewNoDashboardRoutes(t *testing.T) {
 		}
 	})
 }
-
-// Compile-time check: ensure handler methods satisfy mizu.Handler signature.
-var _ func(*mizu.Ctx) error = (*Server)(nil).handleOverview
-var _ func(*mizu.Ctx) error = (*Server)(nil).handleMetaStatus
