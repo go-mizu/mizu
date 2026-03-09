@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/api"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/metastore"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/web/metastore/drivers/duckdb"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/web/metastore/drivers/sqlite"
@@ -33,28 +34,10 @@ type MetaConfig struct {
 }
 
 // DataSummaryWithMeta is the /api/overview payload with cache metadata.
-type DataSummaryWithMeta struct {
-	DataSummary
-	MetaBackend     string `json:"meta_backend,omitempty"`
-	MetaGeneratedAt string `json:"meta_generated_at,omitempty"`
-	MetaStale       bool   `json:"meta_stale"`
-	MetaRefreshing  bool   `json:"meta_refreshing"`
-	MetaLastError   string `json:"meta_last_error,omitempty"`
-}
+type DataSummaryWithMeta = api.DataSummaryWithMeta
 
 // MetaStatus is returned by /api/meta/status and /api/meta/refresh.
-type MetaStatus struct {
-	CrawlID      string `json:"crawl_id"`
-	Backend      string `json:"backend"`
-	Enabled      bool   `json:"enabled"`
-	Status       string `json:"status"`
-	Refreshing   bool   `json:"refreshing"`
-	Generation   int64  `json:"generation"`
-	StartedAt    string `json:"started_at,omitempty"`
-	FinishedAt   string `json:"finished_at,omitempty"`
-	LastError    string `json:"last_error,omitempty"`
-	RefreshTTLMS int64  `json:"refresh_ttl_ms"`
-}
+type MetaStatus = api.MetaStatus
 
 // MetaManager handles cache read/refresh policy around a metastore.Store.
 type MetaManager struct {

@@ -6,22 +6,20 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/api"
 )
+
+// duckQuotePath wraps a file path in DuckDB single-quoted string syntax,
+// escaping any embedded single quotes.
+func duckQuotePath(p string) string {
+	return "'" + strings.ReplaceAll(filepath.ToSlash(p), "'", "''") + "'"
+}
 
 // DataSummary holds statistics about a crawl's local data directory.
 // All map fields are always initialized (never nil) so that JSON
 // marshaling produces {} rather than null for empty maps.
-type DataSummary struct {
-	CrawlID       string           `json:"crawl_id"`
-	WARCCount     int              `json:"warc_count"`
-	WARCTotalSize int64            `json:"warc_total_size"`
-	MDShards      int              `json:"md_shards"`
-	MDTotalSize   int64            `json:"md_total_size"`
-	MDDocEstimate int              `json:"md_doc_estimate"`
-	PackFormats   map[string]int64 `json:"pack_formats"`
-	FTSEngines    map[string]int64 `json:"fts_engines"`
-	FTSShardCount map[string]int   `json:"fts_shard_count"`
-}
+type DataSummary = api.DataSummary
 
 // ScanDataDir walks a crawl data directory and computes summary statistics
 // without opening DuckDB files. The expected layout is:

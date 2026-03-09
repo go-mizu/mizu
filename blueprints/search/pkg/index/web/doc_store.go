@@ -19,33 +19,15 @@ import (
 
 	duckdb "github.com/duckdb/duckdb-go/v2"
 
+	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/api"
 	warcpkg "github.com/go-mizu/mizu/blueprints/search/pkg/warc"
 )
 
 // DocRecord is per-document metadata derived from a .md.warc.gz WARC record header.
-type DocRecord struct {
-	DocID        string    `json:"doc_id"`
-	Shard        string    `json:"shard"`
-	URL          string    `json:"url"`
-	Host         string    `json:"host"`
-	Title        string    `json:"title"`
-	CrawlDate    time.Time `json:"crawl_date,omitempty"`
-	SizeBytes    int64     `json:"size_bytes"`
-	WordCount    int       `json:"word_count"`
-	WARCRecordID string    `json:"warc_record_id,omitempty"`
-	RefersTo     string    `json:"refers_to,omitempty"`
-	GzipOffset   int64     `json:"gzip_offset,omitempty"`
-	GzipSize     int64     `json:"gzip_size,omitempty"`
-}
+type DocRecord = api.DocRecord
 
 // DocShardMeta holds per-shard scan statistics.
-type DocShardMeta struct {
-	Shard          string
-	TotalDocs      int64
-	TotalSizeBytes int64
-	LastDocDate    time.Time
-	LastScannedAt  time.Time
-}
+type DocShardMeta = api.DocShardMeta
 
 // shardCache holds all DocRecords for one shard loaded into memory.
 type shardCache struct {
@@ -655,30 +637,11 @@ func (ds *DocStore) GetDoc(ctx context.Context, _, shard, docID string) (DocReco
 // ── ShardStats (DuckDB aggregation query, not cached) ────────────────────────
 
 // ShardStatsResponse holds aggregated statistics for a shard.
-type ShardStatsResponse struct {
-	Shard              string      `json:"shard"`
-	TotalDocs          int64       `json:"total_docs"`
-	TotalSize          int64       `json:"total_size"`
-	AvgSize            int64       `json:"avg_size"`
-	MinSize            int64       `json:"min_size"`
-	MaxSize            int64       `json:"max_size"`
-	DateFrom           string      `json:"date_from"`
-	DateTo             string      `json:"date_to"`
-	TotalDomains       int64       `json:"total_domains"`
-	TopDomains         []domainRow `json:"top_domains"`
-	SizeBuckets        []sizeRow   `json:"size_buckets"`
-	DomainSizeBuckets  []sizeRow   `json:"domain_size_buckets"`
-}
+type ShardStatsResponse = api.ShardStatsResponse
 
-type domainRow struct {
-	Domain string `json:"domain"`
-	Count  int64  `json:"count"`
-}
+type domainRow = api.DomainRow
 
-type sizeRow struct {
-	Label string `json:"label"`
-	Count int64  `json:"count"`
-}
+type sizeRow = api.SizeBucket
 
 // ShardStats returns aggregated statistics for a shard.
 func (ds *DocStore) ShardStats(ctx context.Context, _, shard string) (ShardStatsResponse, error) {

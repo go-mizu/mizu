@@ -12,9 +12,10 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/api"
 )
 
-var ErrCCDomainNotFound = errors.New("cc domain not found in cache")
+var ErrCCDomainNotFound = api.ErrCCDomainNotFound
 
 // CCDomainStore caches Common Crawl CDX URL lists in a dedicated DuckDB file.
 // This is intentionally separate from domains.duckdb (parquet-derived cache).
@@ -79,59 +80,17 @@ CREATE INDEX IF NOT EXISTS idx_cc_domain_urls_domain_crawl ON cc_domain_urls(dom
 CREATE INDEX IF NOT EXISTS idx_cc_domain_urls_status ON cc_domain_urls(fetch_status);
 `
 
-type CCDomainFetchResponse struct {
-	Domain      string `json:"domain"`
-	CrawlID     string `json:"crawl_id"`
-	TotalURLs   int64  `json:"total_urls"`
-	Truncated   bool   `json:"truncated"`
-	FetchedAt   string `json:"fetched_at"`
-	TotalPages  int    `json:"total_pages"`
-	FetchedPage int    `json:"fetched_pages"`
-}
+type CCDomainFetchResponse = api.CCDomainFetchResponse
 
-type CCDomainURLRow struct {
-	URL          string `json:"url"`
-	FetchStatus  int    `json:"fetch_status,omitempty"`
-	Mime         string `json:"mime,omitempty"`
-	Timestamp    string `json:"timestamp,omitempty"`
-	Filename     string `json:"filename,omitempty"`
-	RecordLength int64  `json:"record_length,omitempty"`
-	RecordOffset int64  `json:"record_offset,omitempty"`
-	Digest       string `json:"digest,omitempty"`
-	Language     string `json:"language,omitempty"`
-	Encoding     string `json:"encoding,omitempty"`
-}
+type CCDomainURLRow = api.CCDomainURLRow
 
-type CCDomainDetailResponse struct {
-	Domain      string           `json:"domain"`
-	CrawlID     string           `json:"crawl_id"`
-	Total       int64            `json:"total"`
-	Page        int              `json:"page"`
-	PageSize    int              `json:"page_size"`
-	Query       string           `json:"query,omitempty"`
-	Sort        string           `json:"sort,omitempty"`
-	StatusGroup string           `json:"status_group,omitempty"`
-	CachedAt    string           `json:"cached_at,omitempty"`
-	Truncated   bool             `json:"truncated,omitempty"`
-	Stats       CCDomainStats    `json:"stats"`
-	Docs        []CCDomainURLRow `json:"docs"`
-}
+type CCDomainDetailResponse = api.CCDomainDetailResponse
 
-type CCDomainStats struct {
-	Total       int64            `json:"total"`
-	StatusCodes []CCStatusBucket `json:"status_codes"`
-	MimeTypes   []CCStringBucket `json:"mime_types"`
-}
+type CCDomainStats = api.CCDomainStats
 
-type CCStatusBucket struct {
-	Code  int   `json:"code"`
-	Count int64 `json:"count"`
-}
+type CCStatusBucket = api.CCStatusBucket
 
-type CCStringBucket struct {
-	Key   string `json:"key"`
-	Count int64  `json:"count"`
-}
+type CCStringBucket = api.CCStringBucket
 
 // FetchAndCache queries Common Crawl CDX API for a domain and stores results in domains_cc.duckdb.
 // crawlID may be empty to auto-resolve the latest crawl from collinfo.json.

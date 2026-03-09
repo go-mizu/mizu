@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/api"
 )
 
 // DomainStore maintains a lightweight domains.duckdb that caches
@@ -312,34 +313,15 @@ func parquetShardName(path string) string {
 // ── Query methods ─────────────────────────────────────────────────────────────
 
 // DomainRow is one entry in the domain list.
-type DomainRow struct {
-	Domain  string `json:"domain"`
-	Count   int64  `json:"count"`
-	Syncing bool   `json:"syncing,omitempty"`
-}
+type DomainRow = api.DomainURLRow
 
 // DomainsOverview holds aggregate stats shown at the top of the domain list.
-type DomainsOverview struct {
-	TotalDomains int64      `json:"total_domains"`
-	TotalURLs    int64      `json:"total_urls"`
-	SizeBuckets  []sizeItem `json:"size_buckets"` // pages-per-domain distribution
-}
+type DomainsOverview = api.DomainsOverview
 
-type sizeItem struct {
-	Label string `json:"label"`
-	Count int64  `json:"count"`
-}
+type sizeItem = api.SizeItem
 
 // DomainsResponse is returned by GET /api/domains.
-type DomainsResponse struct {
-	Domains  []DomainRow      `json:"domains"`
-	Total    int64            `json:"total"`
-	Page     int              `json:"page"`
-	PageSize int              `json:"page_size"`
-	Overview *DomainsOverview `json:"overview,omitempty"` // only on page 1
-	Syncing  bool             `json:"syncing,omitempty"`
-	Locked   bool             `json:"locked,omitempty"` // domains.duckdb held by another process
-}
+type DomainsResponse = api.DomainsResponse
 
 // ListDomains returns a paginated list of domains with total URL counts.
 // sortBy: "count" (default, desc) | "alpha" (domain A→Z).
@@ -452,35 +434,16 @@ func (ds *DomainStore) queryOverview(ctx context.Context, db *sql.DB) *DomainsOv
 }
 
 // DomainDocRow is one URL entry in the domain detail page.
-type DomainDocRow struct {
-	URL         string `json:"url"`
-	Shard       string `json:"shard"`
-	FetchStatus int    `json:"fetch_status,omitempty"`
-}
+type DomainDocRow = api.DomainDocURLRow
 
 // StatusBucket is one row in the status distribution.
-type StatusBucket struct {
-	Code  int   `json:"code"`  // 0 = unknown/null
-	Count int64 `json:"count"`
-}
+type StatusBucket = api.StatusBucket
 
 // DomainStats holds aggregate statistics for a single domain.
-type DomainStats struct {
-	Total         int64          `json:"total"`
-	StatusBuckets []StatusBucket `json:"status_buckets"`
-}
+type DomainStats = api.DomainStats
 
 // DomainDetailResponse is returned by GET /api/domains/{domain}.
-type DomainDetailResponse struct {
-	Domain      string         `json:"domain"`
-	Total       int64          `json:"total"`
-	Page        int            `json:"page"`
-	PageSize    int            `json:"page_size"`
-	StatusGroup string         `json:"status_group,omitempty"` // active filter
-	Stats       *DomainStats   `json:"stats,omitempty"`        // only on page 1
-	Docs        []DomainDocRow `json:"docs"`
-	Syncing     bool           `json:"syncing,omitempty"`
-}
+type DomainDetailResponse = api.DomainDetailResponse
 
 // ListDomainURLs queries parquet files directly for all URLs under a domain.
 // LIMIT/OFFSET are pushed to DuckDB for efficiency — no full scan in Go memory.
