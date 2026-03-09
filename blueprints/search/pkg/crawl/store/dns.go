@@ -123,6 +123,8 @@ func (d *DNSResolver) LoadCache(dbPath string) (int, error) {
 		return 0, nil
 	}
 	defer db.Close()
+	db.SetMaxOpenConns(2)
+	db.SetMaxIdleConns(1)
 
 	var count int
 	err = db.QueryRow("SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'dns'").Scan(&count)
@@ -195,6 +197,8 @@ func (d *DNSResolver) SaveCache(dbPath string) error {
 		return fmt.Errorf("opening dns cache db: %w", err)
 	}
 	defer db.Close()
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 
 	db.Exec("DROP TABLE IF EXISTS dns")
 	_, err = db.Exec(`
