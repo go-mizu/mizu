@@ -60,7 +60,7 @@ func TestStoreGetPages_NullableFieldsDoNotDropRows(t *testing.T) {
 	}
 
 	s := NewStore(base)
-	resp, err := s.GetPages(domain, 1, 50, "", "crawled_at")
+	resp, err := s.GetPages(domain, 1, 50, "", "crawled_at", "")
 	if err != nil {
 		t.Fatalf("GetPages: %v", err)
 	}

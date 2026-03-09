@@ -17,11 +17,18 @@ type ScrapeState struct {
 	Pages       int64   `json:"pages"`
 	Success     int64   `json:"success"`
 	Failed      int64   `json:"failed"`
+	Timeout     int64   `json:"timeout"`
+	Blocked     int64   `json:"blocked"`
+	Skipped     int64   `json:"skipped"`
 	Frontier    int     `json:"frontier"`
 	InFlight    int64   `json:"in_flight"`
 	BytesRecv   int64   `json:"bytes_recv"`
 	LinksFound  int64   `json:"links_found"`
 	PagesPerSec float64 `json:"pages_per_sec"`
+	BytesPerSec float64 `json:"bytes_per_sec"`
+	PeakSpeed   float64 `json:"peak_speed"`
+	AvgFetchMs  float64 `json:"avg_fetch_ms"`
+	RetryQueue  int     `json:"retry_queue"`
 	ElapsedMs   int64   `json:"elapsed_ms"`
 	Progress    float64 `json:"progress"`
 }
@@ -75,6 +82,7 @@ func (t *ScrapeTask) Run(ctx context.Context, emit func(*ScrapeState)) (ScrapeMe
 
 func snapshot(cfg dcrawler.Config, c *dcrawler.Crawler) *ScrapeState {
 	stats := c.Stats()
+	speed := stats.Speed() // must call before ByteSpeed/PeakSpeed (updates rolling window)
 	progress := float64(0)
 	if cfg.MaxPages > 0 {
 		progress = float64(stats.Done()) / float64(cfg.MaxPages)
@@ -87,11 +95,18 @@ func snapshot(cfg dcrawler.Config, c *dcrawler.Crawler) *ScrapeState {
 		Pages:       stats.Done(),
 		Success:     stats.Success(),
 		Failed:      stats.Failed(),
+		Timeout:     stats.Timeout(),
+		Blocked:     stats.Blocked(),
+		Skipped:     stats.Skipped(),
 		Frontier:    stats.FrontierLen(),
 		InFlight:    stats.InFlight(),
 		BytesRecv:   stats.Bytes(),
 		LinksFound:  stats.LinksFound(),
-		PagesPerSec: stats.Speed(),
+		PagesPerSec: speed,
+		BytesPerSec: stats.ByteSpeed(),
+		PeakSpeed:   stats.PeakSpeed(),
+		AvgFetchMs:  stats.AvgFetchMs(),
+		RetryQueue:  stats.RetryQLen(),
 		ElapsedMs:   stats.Elapsed().Milliseconds(),
 		Progress:    progress,
 	}

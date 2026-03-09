@@ -4,8 +4,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
@@ -13,25 +14,49 @@ import (
 )
 
 // Store reads per-domain crawl metadata from dcrawler result databases.
+// Stats are materialized in a DuckDB meta file and served from memory.
 type Store struct {
-	dataDir string
+	dataDir   string
+	mu        sync.RWMutex
+	domains   []Domain      // in-memory cache, populated by background refresh
+	ready     bool          // true after first load/refresh
+	triggerCh chan struct{}  // signal immediate refresh
 }
 
-// NewStore creates a Store that reads from the crawl data directory.
+// NewStore creates a Store and starts background stat refresh.
 func NewStore(dataDir string) *Store {
-	return &Store{dataDir: dataDir}
+	s := &Store{
+		dataDir:   dataDir,
+		triggerCh: make(chan struct{}, 1),
+	}
+	// Load persisted stats from meta DB for instant startup.
+	loadFromMeta(s)
+	// Start background goroutine to refresh stats every 60s.
+	startBackground(s)
+	return s
+}
+
+// InvalidateCache triggers an immediate background refresh.
+func (s *Store) InvalidateCache() {
+	select {
+	case s.triggerCh <- struct{}{}:
+	default:
+	}
 }
 
 // Domain holds summary stats for a scraped domain.
 type Domain struct {
-	Domain    string    `json:"domain"`
-	Pages     int64     `json:"pages"`
-	Success   int64     `json:"success"`
-	Failed    int64     `json:"failed"`
-	Links     int64     `json:"links"`
-	LastCrawl time.Time `json:"last_crawl"`
-	HasMD     bool      `json:"has_markdown"`
-	HasIndex  bool      `json:"has_index"`
+	Domain     string    `json:"domain"`
+	Pages      int64     `json:"pages"`
+	Success    int64     `json:"success"`
+	Failed     int64     `json:"failed"`
+	Links      int64     `json:"links"`
+	HtmlBytes  int64     `json:"html_bytes"`
+	MdBytes    int64     `json:"md_bytes"`
+	IndexBytes int64     `json:"index_bytes"`
+	LastCrawl  time.Time `json:"last_crawl"`
+	HasMD      bool      `json:"has_markdown"`
+	HasIndex   bool      `json:"has_index"`
 }
 
 // Page represents a single scraped page for the dashboard.
@@ -83,13 +108,24 @@ type JobInfo struct {
 
 // StartParams holds per-request scrape configuration packed into JobConfig.Source as JSON.
 type StartParams struct {
-	Mode      string `json:"mode"`
-	MaxPages  int    `json:"max_pages"`
-	MaxDepth  int    `json:"max_depth"`
-	Workers   int    `json:"workers"`
-	TimeoutS  int    `json:"timeout_s"`
-	StoreBody bool   `json:"store_body"`
-	Resume    bool   `json:"resume"`
+	Mode             string `json:"mode"`
+	MaxPages         int    `json:"max_pages"`
+	MaxDepth         int    `json:"max_depth"`
+	Workers          int    `json:"workers"`
+	TimeoutS         int    `json:"timeout_s"`
+	StoreBody        bool   `json:"store_body"`
+	Resume           bool   `json:"resume"`
+	NoRobots         bool   `json:"no_robots"`
+	NoSitemap        bool   `json:"no_sitemap"`
+	IncludeSubdomain bool   `json:"include_subdomain"`
+	ScrollCount      int    `json:"scroll_count"`
+	Continuous       bool   `json:"continuous"`
+	StaleHours       int    `json:"stale_hours"`
+	SeedURL          string `json:"seed_url"`
+	// Worker mode — proxy fetches through CF Worker.
+	WorkerToken   string `json:"worker_token,omitempty"`
+	WorkerURL     string `json:"worker_url,omitempty"`
+	WorkerBrowser bool   `json:"worker_browser,omitempty"`
 }
 
 // ParseStartParams decodes a JSON-encoded StartParams from JobConfig.Source.
@@ -101,47 +137,14 @@ func ParseStartParams(source string) StartParams {
 	return p
 }
 
-// ListDomains discovers scraped domains by scanning the data directory.
+// ListDomains returns cached domain stats from memory (instant).
 func (s *Store) ListDomains() (*ListResponse, error) {
-	entries, err := os.ReadDir(s.dataDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return &ListResponse{Domains: []Domain{}}, nil
-		}
-		return nil, err
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if !s.ready {
+		return &ListResponse{Domains: []Domain{}}, nil
 	}
-
-	var domains []Domain
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		domainDir := filepath.Join(s.dataDir, e.Name())
-		resultDir := filepath.Join(domainDir, "results")
-
-		shards, _ := filepath.Glob(filepath.Join(resultDir, "results_*.duckdb"))
-		if len(shards) == 0 {
-			continue
-		}
-
-		d := Domain{Domain: e.Name()}
-		stats := quickStats(shards)
-		d.Pages = stats.pages
-		d.Success = stats.success
-		d.Failed = stats.failed
-		d.Links = stats.links
-		d.LastCrawl = stats.lastCrawl
-
-		if ents, _ := os.ReadDir(filepath.Join(domainDir, "markdown")); len(ents) > 0 {
-			d.HasMD = true
-		}
-		if ents, _ := os.ReadDir(filepath.Join(domainDir, "fts")); len(ents) > 0 {
-			d.HasIndex = true
-		}
-
-		domains = append(domains, d)
-	}
-
+	domains := s.domains
 	if domains == nil {
 		domains = []Domain{}
 	}
@@ -149,8 +152,23 @@ func (s *Store) ListDomains() (*ListResponse, error) {
 }
 
 // GetDomainStats returns aggregate stats for a domain.
+// Uses the in-memory cache when available, falls back to shard queries.
 func (s *Store) GetDomainStats(domain string) (*Domain, error) {
-	domainDir := filepath.Join(s.dataDir, dcrawler.NormalizeDomain(domain))
+	norm := dcrawler.NormalizeDomain(domain)
+
+	// Try in-memory cache first.
+	s.mu.RLock()
+	for i := range s.domains {
+		if s.domains[i].Domain == norm {
+			d := s.domains[i]
+			s.mu.RUnlock()
+			return &d, nil
+		}
+	}
+	s.mu.RUnlock()
+
+	// Fallback: query shards directly.
+	domainDir := filepath.Join(s.dataDir, norm)
 	resultDir := filepath.Join(domainDir, "results")
 
 	shards, _ := filepath.Glob(filepath.Join(resultDir, "results_*.duckdb"))
@@ -158,26 +176,13 @@ func (s *Store) GetDomainStats(domain string) (*Domain, error) {
 		return nil, fmt.Errorf("no data for %s", domain)
 	}
 
-	stats := quickStats(shards)
-	d := &Domain{
-		Domain:    domain,
-		Pages:     stats.pages,
-		Success:   stats.success,
-		Failed:    stats.failed,
-		Links:     stats.links,
-		LastCrawl: stats.lastCrawl,
-	}
-	if ents, _ := os.ReadDir(filepath.Join(domainDir, "markdown")); len(ents) > 0 {
-		d.HasMD = true
-	}
-	if ents, _ := os.ReadDir(filepath.Join(domainDir, "fts")); len(ents) > 0 {
-		d.HasIndex = true
-	}
-	return d, nil
+	d := computeDomainStats(domainDir, norm)
+	return &d, nil
 }
 
 // GetPages returns paginated pages for a domain.
-func (s *Store) GetPages(domain string, page, pageSize int, q, sortBy string) (*PagesResponse, error) {
+// statusFilter: "2xx", "3xx", "4xx", "5xx", "error", or "" for all.
+func (s *Store) GetPages(domain string, page, pageSize int, q, sortBy, statusFilter string) (*PagesResponse, error) {
 	domainDir := filepath.Join(s.dataDir, dcrawler.NormalizeDomain(domain))
 	resultDir := filepath.Join(domainDir, "results")
 
@@ -208,27 +213,31 @@ func (s *Store) GetPages(domain string, page, pageSize int, q, sortBy string) (*
 	}
 
 	view := joinUnions(unions)
+	statusCond := statusCondition(statusFilter)
+
+	var whereParts []string
+	var args []any
+	if statusCond != "" {
+		whereParts = append(whereParts, statusCond)
+	}
+	if q != "" {
+		whereParts = append(whereParts, fmt.Sprintf("(url ILIKE '%%' || $%d || '%%' OR title ILIKE '%%' || $%d || '%%')", len(args)+1, len(args)+1))
+		args = append(args, q)
+	}
+	whereClause := ""
+	if len(whereParts) > 0 {
+		whereClause = " WHERE " + strings.Join(whereParts, " AND ")
+	}
 
 	var total int64
-	if q != "" {
-		db.QueryRow(fmt.Sprintf("SELECT count(*) FROM (%s) WHERE url ILIKE '%%' || $1 || '%%' OR title ILIKE '%%' || $1 || '%%'", view), q).Scan(&total)
-	} else {
-		db.QueryRow(fmt.Sprintf("SELECT count(*) FROM (%s)", view)).Scan(&total)
-	}
+	db.QueryRow(fmt.Sprintf("SELECT count(*) FROM (%s)%s", view, whereClause), args...).Scan(&total)
 
 	orderCol, orderDir := sortColumn(sortBy)
 	offset := (page - 1) * pageSize
 
-	var dataRows *sql.Rows
-	if q != "" {
-		dataRows, err = db.Query(fmt.Sprintf(
-			"SELECT url, url_hash, status_code, content_type, content_length, title, description, language, fetch_time_ms, crawled_at::VARCHAR, error FROM (%s) WHERE url ILIKE '%%' || $1 || '%%' OR title ILIKE '%%' || $1 || '%%' ORDER BY %s %s LIMIT %d OFFSET %d",
-			view, orderCol, orderDir, pageSize, offset), q)
-	} else {
-		dataRows, err = db.Query(fmt.Sprintf(
-			"SELECT url, url_hash, status_code, content_type, content_length, title, description, language, fetch_time_ms, crawled_at::VARCHAR, error FROM (%s) ORDER BY %s %s LIMIT %d OFFSET %d",
-			view, orderCol, orderDir, pageSize, offset))
-	}
+	dataRows, err := db.Query(fmt.Sprintf(
+		"SELECT url, url_hash, status_code, content_type, content_length, title, description, language, fetch_time_ms, crawled_at::VARCHAR, error FROM (%s)%s ORDER BY %s %s LIMIT %d OFFSET %d",
+		view, whereClause, orderCol, orderDir, pageSize, offset), args...)
 	if err != nil {
 		return nil, fmt.Errorf("query pages: %w", err)
 	}
@@ -258,50 +267,6 @@ func (s *Store) GetPages(domain string, page, pageSize int, q, sortBy string) (*
 
 // ── private helpers ───────────────────────────────────────────────────────────
 
-type quickStatsResult struct {
-	pages     int64
-	success   int64
-	failed    int64
-	links     int64
-	lastCrawl time.Time
-}
-
-func quickStats(shards []string) quickStatsResult {
-	var r quickStatsResult
-	for _, shard := range shards {
-		db, err := sql.Open("duckdb", shard+"?access_mode=read_only")
-		if err != nil {
-			continue
-		}
-		var total, success, failed int64
-		var lastCrawl sql.NullString
-		row := db.QueryRow(`SELECT
-			count(*),
-			count(*) FILTER (WHERE status_code >= 200 AND status_code < 400),
-			count(*) FILTER (WHERE status_code >= 400 OR error != ''),
-			max(crawled_at)::VARCHAR
-		FROM pages`)
-		if row.Scan(&total, &success, &failed, &lastCrawl) == nil {
-			r.pages += total
-			r.success += success
-			r.failed += failed
-			if lastCrawl.Valid && len(lastCrawl.String) >= 19 {
-				if t, err := time.Parse("2006-01-02 15:04:05", lastCrawl.String[:19]); err == nil {
-					if t.After(r.lastCrawl) {
-						r.lastCrawl = t
-					}
-				}
-			}
-		}
-		var links int64
-		if db.QueryRow(`SELECT count(*) FROM links`).Scan(&links) == nil {
-			r.links += links
-		}
-		db.Close()
-	}
-	return r
-}
-
 func joinUnions(parts []string) string {
 	s := ""
 	for i, p := range parts {
@@ -325,5 +290,22 @@ func sortColumn(sortBy string) (col, dir string) {
 		return "content_length", "DESC"
 	default:
 		return "crawled_at", "DESC"
+	}
+}
+
+func statusCondition(filter string) string {
+	switch filter {
+	case "2xx":
+		return "status_code >= 200 AND status_code < 300"
+	case "3xx":
+		return "status_code >= 300 AND status_code < 400"
+	case "4xx":
+		return "status_code >= 400 AND status_code < 500"
+	case "5xx":
+		return "status_code >= 500 AND status_code < 600"
+	case "error":
+		return "(status_code = 0 OR error != '')"
+	default:
+		return ""
 	}
 }
