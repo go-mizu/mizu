@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"github.com/DataDog/zstd"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/cespare/xxhash/v2"
+	tea "github.com/charmbracelet/bubbletea"
 	_ "github.com/duckdb/duckdb-go/v2"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
@@ -36,9 +36,9 @@ type Crawler struct {
 	robots        *RobotsChecker
 	limiter       *rate.Limiter
 	retryQ        *retryQueue
-	retryAttempts sync.Map // URL -> int: per-URL retry attempt counter
-	rodPool       *rodPool // browser page pool (nil if not in rod mode)
-	urlClasses    sync.Map // string → *urlClassStats: adaptive block rate per URL class
+	retryAttempts sync.Map      // URL -> int: per-URL retry attempt counter
+	rodPool       *rodPool      // browser page pool (nil if not in rod mode)
+	urlClasses    sync.Map      // string → *urlClassStats: adaptive block rate per URL class
 	sitemapDone   chan struct{} // closed when background sitemap discovery completes
 }
 
@@ -625,7 +625,7 @@ func (c *Crawler) restoreState() {
 }
 
 // deleteErrorRows removes error-only rows from result shards so they don't accumulate.
-// Only deletes rows that have error != '' — successful rows are preserved.
+// Only deletes rows that have error != ” — successful rows are preserved.
 func (c *Crawler) deleteErrorRows(dir string) int {
 	count := 0
 	for i := range c.config.ShardCount {
@@ -772,9 +772,9 @@ func (c *Crawler) coordinator(ctx context.Context, cancel context.CancelFunc) {
 	// Browser watchdog state
 	lastDone := c.stats.Done()
 	lastDoneAt := time.Now()
-	var lastRestartDone int64 // pages at last periodic restart
-	const stallTimeout = 60 * time.Second   // restart after 60s of zero progress
-	const restartEvery = int64(2000)         // restart every 2000 pages for memory
+	var lastRestartDone int64             // pages at last periodic restart
+	const stallTimeout = 60 * time.Second // restart after 60s of zero progress
+	const restartEvery = int64(2000)      // restart every 2000 pages for memory
 
 	for {
 		select {
@@ -1032,14 +1032,18 @@ func (c *Crawler) fetchAndProcess(ctx context.Context, client *http.Client, item
 		}
 	}
 	body, _ := io.ReadAll(io.LimitReader(reader, c.config.MaxBodySize))
+	contentLength := resp.ContentLength
+	if contentLength <= 0 {
+		contentLength = int64(len(body))
+	}
 
 	result := Result{
 		URL: item.URL, URLHash: xxhash.Sum64String(item.URL),
 		Depth: item.Depth, StatusCode: resp.StatusCode,
-		ContentType: resp.Header.Get("Content-Type"),
-		ContentLength: resp.ContentLength,
-		BodyHash: xxhash.Sum64(body),
-		ETag: resp.Header.Get("ETag"), LastModified: resp.Header.Get("Last-Modified"),
+		ContentType:   resp.Header.Get("Content-Type"),
+		ContentLength: contentLength,
+		BodyHash:      xxhash.Sum64(body),
+		ETag:          resp.Header.Get("ETag"), LastModified: resp.Header.Get("Last-Modified"),
 		Server: resp.Header.Get("Server"), FetchTimeMs: fetchMs,
 		CrawledAt: time.Now(),
 	}
@@ -1134,14 +1138,14 @@ func isRetryableError(err error) bool {
 
 	// Permanent navigation errors — never retry these
 	permanentPrefixes := []string{
-		"net::ERR_NAME_NOT_RESOLVED",       // DNS failure
-		"net::ERR_CONNECTION_REFUSED",      // server not listening
-		"net::ERR_CERT_",                   // any SSL cert error
-		"net::ERR_SSL_",                    // SSL protocol errors
-		"net::ERR_BLOCKED_BY_RESPONSE",     // CORS/CSP blocked
-		"net::ERR_ABORTED",                 // intentionally cancelled
-		"net::ERR_INVALID_URL",             // malformed URL
-		"net::ERR_TOO_MANY_REDIRECTS",      // redirect loop
+		"net::ERR_NAME_NOT_RESOLVED",   // DNS failure
+		"net::ERR_CONNECTION_REFUSED",  // server not listening
+		"net::ERR_CERT_",               // any SSL cert error
+		"net::ERR_SSL_",                // SSL protocol errors
+		"net::ERR_BLOCKED_BY_RESPONSE", // CORS/CSP blocked
+		"net::ERR_ABORTED",             // intentionally cancelled
+		"net::ERR_INVALID_URL",         // malformed URL
+		"net::ERR_TOO_MANY_REDIRECTS",  // redirect loop
 	}
 	for _, prefix := range permanentPrefixes {
 		if strings.Contains(s, prefix) {
@@ -1207,7 +1211,7 @@ func (c *Crawler) retryFeeder(ctx context.Context) {
 	}
 }
 
-func (c *Crawler) Stats() *Stats      { return c.stats }
+func (c *Crawler) Stats() *Stats       { return c.stats }
 func (c *Crawler) ResultDB() *ResultDB { return c.resultDB }
 func (c *Crawler) DataDir() string     { return c.config.DomainDir() }
 
