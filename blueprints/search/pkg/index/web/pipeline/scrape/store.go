@@ -72,6 +72,18 @@ type Page struct {
 	FetchTimeMs   int64  `json:"fetch_time_ms"`
 	CrawledAt     string `json:"crawled_at"`
 	Error         string `json:"error,omitempty"`
+	MdSize        int64  `json:"md_size"`
+}
+
+// DomainSummary holds per-status-group counts and size averages for a domain.
+type DomainSummary struct {
+	Status2xx int64 `json:"status_2xx"`
+	Status3xx int64 `json:"status_3xx"`
+	Status4xx int64 `json:"status_4xx"`
+	Status5xx int64 `json:"status_5xx"`
+	StatusErr int64 `json:"status_error"`
+	AvgSize   int64 `json:"avg_size"`
+	AvgMdSize int64 `json:"avg_md_size"`
 }
 
 // ListResponse is the response body for listing scraped domains.
@@ -91,10 +103,11 @@ type PagesResponse struct {
 
 // DomainStatus is the response body for a domain status query.
 type DomainStatus struct {
-	Domain    string   `json:"domain"`
-	Stats     *Domain  `json:"stats,omitempty"`
-	ActiveJob *JobInfo `json:"active_job,omitempty"`
-	HasData   bool     `json:"has_data"`
+	Domain    string         `json:"domain"`
+	Stats     *Domain        `json:"stats,omitempty"`
+	Summary   *DomainSummary `json:"summary,omitempty"`
+	ActiveJob *JobInfo       `json:"active_job,omitempty"`
+	HasData   bool           `json:"has_data"`
 }
 
 // JobInfo is an embedded active-job summary in DomainStatus.
@@ -203,9 +216,13 @@ func (s *Store) GetPages(domain string, page, pageSize int, q, sortBy, statusFil
 		if _, err := db.Exec(fmt.Sprintf("ATTACH '%s' AS %s (READ_ONLY)", shard, alias)); err != nil {
 			continue
 		}
+		mdExpr := "0"
+		if shardHasColumn(db, alias, "markdown") {
+			mdExpr = "COALESCE(length(markdown), 0)"
+		}
 		unions = append(unions, fmt.Sprintf(
-			"SELECT url, url_hash, status_code, COALESCE(content_type, '') AS content_type, COALESCE(content_length, 0) AS content_length, COALESCE(title, '') AS title, COALESCE(description, '') AS description, COALESCE(language, '') AS language, COALESCE(fetch_time_ms, 0) AS fetch_time_ms, crawled_at, COALESCE(error, '') AS error FROM %s.pages",
-			alias,
+			"SELECT url, url_hash, status_code, COALESCE(content_type, '') AS content_type, COALESCE(content_length, 0) AS content_length, COALESCE(title, '') AS title, COALESCE(description, '') AS description, COALESCE(language, '') AS language, COALESCE(fetch_time_ms, 0) AS fetch_time_ms, crawled_at, COALESCE(error, '') AS error, %s AS md_size FROM %s.pages",
+			mdExpr, alias,
 		))
 	}
 	if len(unions) == 0 {
@@ -236,7 +253,7 @@ func (s *Store) GetPages(domain string, page, pageSize int, q, sortBy, statusFil
 	offset := (page - 1) * pageSize
 
 	dataRows, err := db.Query(fmt.Sprintf(
-		"SELECT url, url_hash, status_code, content_type, content_length, title, description, language, fetch_time_ms, crawled_at::VARCHAR, error FROM (%s)%s ORDER BY %s %s LIMIT %d OFFSET %d",
+		"SELECT url, url_hash, status_code, content_type, content_length, title, description, language, fetch_time_ms, crawled_at::VARCHAR, error, md_size FROM (%s)%s ORDER BY %s %s LIMIT %d OFFSET %d",
 		view, whereClause, orderCol, orderDir, pageSize, offset), args...)
 	if err != nil {
 		return nil, fmt.Errorf("query pages: %w", err)
@@ -247,7 +264,7 @@ func (s *Store) GetPages(domain string, page, pageSize int, q, sortBy, statusFil
 	for dataRows.Next() {
 		var p Page
 		if err := dataRows.Scan(&p.URL, &p.URLHash, &p.StatusCode, &p.ContentType, &p.ContentLength,
-			&p.Title, &p.Description, &p.Language, &p.FetchTimeMs, &p.CrawledAt, &p.Error); err != nil {
+			&p.Title, &p.Description, &p.Language, &p.FetchTimeMs, &p.CrawledAt, &p.Error, &p.MdSize); err != nil {
 			continue
 		}
 		pages = append(pages, p)
@@ -265,7 +282,84 @@ func (s *Store) GetPages(domain string, page, pageSize int, q, sortBy, statusFil
 	}, nil
 }
 
+// GetDomainSummary returns per-status-group counts and size averages for a domain.
+// Queries shards directly (not cached) — call only for domain detail views.
+func (s *Store) GetDomainSummary(domain string) *DomainSummary {
+	domainDir := filepath.Join(s.dataDir, dcrawler.NormalizeDomain(domain))
+	resultDir := filepath.Join(domainDir, "results")
+	shards, _ := filepath.Glob(filepath.Join(resultDir, "results_*.duckdb"))
+	if len(shards) == 0 {
+		return nil
+	}
+
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return nil
+	}
+	defer db.Close()
+
+	var unions []string
+	hasMD := false
+	for i, shard := range shards {
+		alias := fmt.Sprintf("s%d", i)
+		if _, err := db.Exec(fmt.Sprintf("ATTACH '%s' AS %s (READ_ONLY)", shard, alias)); err != nil {
+			// Retry without read_only for active crawl shards.
+			if _, err := db.Exec(fmt.Sprintf("ATTACH '%s' AS %s", shard, alias)); err != nil {
+				continue
+			}
+		}
+		if shardHasColumn(db, alias, "markdown") {
+			hasMD = true
+		}
+		unions = append(unions, fmt.Sprintf(
+			"SELECT status_code, COALESCE(content_length, 0) AS content_length, COALESCE(error, '') AS error FROM %s.pages", alias))
+	}
+	if len(unions) == 0 {
+		return nil
+	}
+
+	view := joinUnions(unions)
+	var sum DomainSummary
+	db.QueryRow(fmt.Sprintf(`SELECT
+		count(*) FILTER (WHERE status_code >= 200 AND status_code < 300),
+		count(*) FILTER (WHERE status_code >= 300 AND status_code < 400),
+		count(*) FILTER (WHERE status_code >= 400 AND status_code < 500),
+		count(*) FILTER (WHERE status_code >= 500 AND status_code < 600),
+		count(*) FILTER (WHERE status_code = 0 OR error != ''),
+		COALESCE(AVG(content_length) FILTER (WHERE content_length > 0), 0)::BIGINT
+	FROM (%s)`, view)).Scan(&sum.Status2xx, &sum.Status3xx, &sum.Status4xx, &sum.Status5xx, &sum.StatusErr, &sum.AvgSize)
+
+	// Query avg markdown size if any shard has the column.
+	if hasMD {
+		var mdUnions []string
+		for i := range shards {
+			alias := fmt.Sprintf("s%d", i)
+			if shardHasColumn(db, alias, "markdown") {
+				mdUnions = append(mdUnions, fmt.Sprintf(
+					"SELECT length(markdown) AS md_len FROM %s.pages WHERE markdown IS NOT NULL AND length(markdown) > 0", alias))
+			}
+		}
+		if len(mdUnions) > 0 {
+			mdView := joinUnions(mdUnions)
+			db.QueryRow(fmt.Sprintf("SELECT COALESCE(AVG(md_len), 0)::BIGINT FROM (%s)", mdView)).Scan(&sum.AvgMdSize)
+		}
+	}
+
+	return &sum
+}
+
 // ── private helpers ───────────────────────────────────────────────────────────
+
+// shardHasColumn checks if a column exists in the pages table of an attached shard.
+func shardHasColumn(db *sql.DB, alias, column string) bool {
+	var cnt int
+	if db.QueryRow(
+		"SELECT count(*) FROM duckdb_columns() WHERE database_name=$1 AND table_name='pages' AND column_name=$2",
+		alias, column).Scan(&cnt) == nil {
+		return cnt > 0
+	}
+	return false
+}
 
 func joinUnions(parts []string) string {
 	s := ""

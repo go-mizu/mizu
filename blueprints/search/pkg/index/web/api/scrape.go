@@ -170,9 +170,15 @@ func scrapeStatus(d *Deps) mizu.Handler {
 			}
 		}
 
+		var summary *scrape.DomainSummary
+		if stats != nil {
+			summary = d.Scrape.GetDomainSummary(domain)
+		}
+
 		return c.JSON(200, scrape.DomainStatus{
 			Domain:    domain,
 			Stats:     stats,
+			Summary:   summary,
 			ActiveJob: activeJob,
 			HasData:   stats != nil || activeJob != nil,
 		})

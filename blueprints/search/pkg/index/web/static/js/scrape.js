@@ -17,6 +17,7 @@ async function renderScrape() {
         <p class="page-subtitle ui-subtle text-sm mt-1">Crawl any domain and browse scraped pages</p>
       </div>
       <div id="scrape-start-pane" class="mb-4"></div>
+      <div id="scrape-summary-pane" class="mb-4"></div>
       <div id="scrape-list-pane"></div>
     </div>`;
 
@@ -62,23 +63,21 @@ function renderScrapeStartForm() {
           <option value="browser">Browser</option>
           <option value="worker">Worker</option>
         </select>
-        <input id="scrape-max-pages" class="ui-input text-sm px-3 py-1.5 w-24"
-          placeholder="Pages" type="number" min="0" value="0">
-        <input id="scrape-max-depth" class="ui-input text-sm px-3 py-1.5 w-20"
-          placeholder="Depth" type="number" min="0" value="0">
-        <input id="scrape-workers" class="ui-input text-sm px-3 py-1.5 w-20"
-          placeholder="Workers" type="number" min="0" value="0">
-        <label class="flex items-center gap-1.5 text-xs ui-subtle cursor-pointer">
-          <input id="scrape-store-body" type="checkbox" checked class="w-4 h-4 cursor-pointer">
-          Store HTML
-        </label>
         <button onclick="startScrape()" class="ui-btn ui-btn-primary text-sm px-4 py-1.5">
           Scrape
         </button>
-        <button onclick="toggleScrapeAdvancedPanel()" class="ui-btn text-xs px-2 py-1.5 ui-subtle">Advanced \u25BC</button>
+        <button onclick="toggleScrapeAdvancedPanel()" class="ui-btn text-xs px-2 py-1.5 ui-subtle">Options \u25BC</button>
       </div>
       <div id="scrape-advanced" class="hidden mt-3 pt-3 border-t border-[var(--border)]">
         <div class="flex flex-wrap gap-x-4 gap-y-2 items-center text-xs">
+          <div class="flex items-center gap-1.5">
+            <label class="ui-subtle">Max pages</label>
+            <input id="scrape-max-pages" class="ui-input text-xs px-2 py-1 w-20" type="number" min="0" placeholder="0">
+          </div>
+          <div class="flex items-center gap-1.5">
+            <label class="ui-subtle">Depth</label>
+            <input id="scrape-max-depth" class="ui-input text-xs px-2 py-1 w-16" type="number" min="0" placeholder="0">
+          </div>
           <div class="flex items-center gap-1.5">
             <label class="ui-subtle">Timeout(s)</label>
             <input id="scrape-timeout" class="ui-input text-xs px-2 py-1 w-16" type="number" min="0" value="0" placeholder="10">
@@ -114,7 +113,7 @@ function renderScrapeStartForm() {
           <div id="scrape-worker-opts" class="flex items-center gap-3 hidden">
             <div class="flex items-center gap-1.5">
               <label class="ui-subtle">Token</label>
-              <input id="scrape-worker-token" class="ui-input text-xs px-2 py-1 w-40" type="password" placeholder="from env if empty">
+              <input id="scrape-worker-token" class="ui-input text-xs px-2 py-1 w-40" type="password" placeholder="Token (optional)">
             </div>
             <div class="flex items-center gap-1.5">
               <label class="ui-subtle">Worker URL</label>
@@ -164,9 +163,8 @@ async function startScrape() {
     mode: $('scrape-mode')?.value || 'http',
     max_pages: parseInt($('scrape-max-pages')?.value || '0', 10) || 0,
     max_depth: parseInt($('scrape-max-depth')?.value || '0', 10) || 0,
-    workers: parseInt($('scrape-workers')?.value || '0', 10) || 0,
     timeout_s: parseInt($('scrape-timeout')?.value || '0', 10) || 0,
-    store_body: !!$('scrape-store-body')?.checked,
+    store_body: true,
     resume: false,
     no_robots: !!$('scrape-no-robots')?.checked,
     no_sitemap: !!$('scrape-no-sitemap')?.checked,
@@ -196,10 +194,46 @@ async function loadScrapeList() {
   try {
     const data = await apiScrapeList();
     if (state.currentPage !== 'scrape') return;
+    renderScrapeSummary(data);
     renderScrapeList(data);
   } catch (e) {
     if (el) el.innerHTML = `<div class="surface p-4 text-sm" style="color:var(--error)">${esc(e.message)}</div>`;
   }
+}
+
+function renderScrapeSummary(data) {
+  const el = $('scrape-summary-pane');
+  if (!el) return;
+  const domains = (data && data.domains) || [];
+  if (domains.length === 0) { el.innerHTML = ''; return; }
+
+  let totalPages = 0, totalHtml = 0, totalMd = 0, totalIndex = 0, withMd = 0, withIndex = 0;
+  for (const d of domains) {
+    totalPages += d.pages || 0;
+    totalHtml += d.html_bytes || 0;
+    totalMd += d.md_bytes || 0;
+    totalIndex += d.index_bytes || 0;
+    if (d.has_markdown) withMd++;
+    if (d.has_index) withIndex++;
+  }
+
+  const stat = (label, value) => `<div class="flex flex-col items-center">
+    <span class="text-lg font-semibold">${value}</span>
+    <span class="text-xs ui-subtle">${label}</span>
+  </div>`;
+
+  el.innerHTML = `
+    <div class="surface p-4">
+      <div class="flex flex-wrap gap-x-8 gap-y-3 justify-center">
+        ${stat('Domains', fmtNum(domains.length))}
+        ${stat('Pages', fmtNum(totalPages))}
+        ${stat('HTML', fmtBytes(totalHtml))}
+        ${stat('Markdown', totalMd > 0 ? fmtBytes(totalMd) : '\u2014')}
+        ${stat('Index', totalIndex > 0 ? fmtBytes(totalIndex) : '\u2014')}
+        ${stat('With MD', withMd + '/' + domains.length)}
+        ${stat('With Index', withIndex + '/' + domains.length)}
+      </div>
+    </div>`;
 }
 
 function renderScrapeList(data) {
@@ -215,33 +249,33 @@ function renderScrapeList(data) {
     if (!v) return '\u2014';
     const dt = new Date(v);
     if (dt.getFullYear() <= 1970) return '\u2014';
+    const diff = Math.floor((Date.now() - dt.getTime()) / 1000);
+    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+    if (diff < 86400 * 7) return Math.floor(diff / 86400) + 'd ago';
     return dt.toLocaleDateString();
   };
 
   const fmtSizeCol = (n) => (n > 0 ? fmtBytes(n) : '\u2014');
+  const okPct = (d) => d.pages > 0 ? ((d.success / d.pages) * 100).toFixed(0) + '%' : '\u2014';
 
   const rows = domains.map(d => {
-    // Action buttons
-    let actions = `<button onclick="event.stopPropagation();startScrapeDomain('${esc(d.domain)}')" class="ui-btn text-xs px-2 py-0.5">Scrape</button>`;
-    if (d.pages > 0) {
-      actions += ` <button onclick="event.stopPropagation();triggerScrapePipeline('${esc(d.domain)}')" class="ui-btn text-xs px-2 py-0.5">\u2192 MD</button>`;
-    }
-    if (d.has_markdown) {
-      actions += ` <button onclick="event.stopPropagation();triggerScrapeIndex('${esc(d.domain)}')" class="ui-btn text-xs px-2 py-0.5">\u2192 Index</button>`;
-    }
+    const pct = d.pages > 0 ? (d.success / d.pages) * 100 : 0;
+    const pctColor = pct >= 90 ? 'var(--success)' : pct >= 50 ? 'var(--warning)' : 'var(--error)';
+    // Pipeline status indicators
+    const mdBadge = d.has_markdown ? `<span class="text-xs px-1.5 py-0.5 rounded" style="background:rgba(34,197,94,0.15);color:var(--success)">MD</span>` : '';
+    const idxBadge = d.has_index ? `<span class="text-xs px-1.5 py-0.5 rounded" style="background:rgba(59,130,246,0.15);color:var(--accent)">IDX</span>` : '';
 
     return `
     <tr class="border-t border-[var(--border)] hover:bg-[var(--surface-hover)] cursor-pointer"
         onclick="navigateTo('#/scrape/${encodeURIComponent(d.domain)}')">
       <td class="px-4 py-2.5 text-sm font-mono font-medium">${esc(d.domain)}</td>
       <td class="px-4 py-2.5 text-sm text-right">${fmtNum(d.pages)}</td>
-      <td class="px-4 py-2.5 text-sm text-right" style="color:var(--success)">${fmtNum(d.success)}</td>
-      <td class="px-4 py-2.5 text-sm text-right" style="color:var(--error)">${fmtNum(d.failed)}</td>
+      <td class="px-4 py-2.5 text-sm text-right" style="color:${pctColor}">${okPct(d)}</td>
       <td class="px-4 py-2.5 text-sm text-right">${fmtSizeCol(d.html_bytes)}</td>
       <td class="px-4 py-2.5 text-sm text-right">${fmtSizeCol(d.md_bytes)}</td>
-      <td class="px-4 py-2.5 text-sm text-right">${fmtSizeCol(d.index_bytes)}</td>
       <td class="px-4 py-2.5 text-sm text-right">${fmtDate(d.last_crawl)}</td>
-      <td class="px-4 py-2.5 text-sm text-right whitespace-nowrap">${actions}</td>
+      <td class="px-4 py-2.5 text-right whitespace-nowrap">${mdBadge} ${idxBadge}</td>
     </tr>`;
   }).join('');
 
@@ -252,13 +286,11 @@ function renderScrapeList(data) {
           <tr class="text-xs ui-subtle">
             <th class="px-4 py-2.5 text-left font-medium">Domain</th>
             <th class="px-4 py-2.5 text-right font-medium">Pages</th>
-            <th class="px-4 py-2.5 text-right font-medium">OK</th>
-            <th class="px-4 py-2.5 text-right font-medium">Failed</th>
-            <th class="px-4 py-2.5 text-right font-medium">HTML Size</th>
-            <th class="px-4 py-2.5 text-right font-medium">MD Size</th>
-            <th class="px-4 py-2.5 text-right font-medium">Index Size</th>
+            <th class="px-4 py-2.5 text-right font-medium">OK %</th>
+            <th class="px-4 py-2.5 text-right font-medium">HTML</th>
+            <th class="px-4 py-2.5 text-right font-medium">MD</th>
             <th class="px-4 py-2.5 text-right font-medium">Last Crawl</th>
-            <th class="px-4 py-2.5 text-right font-medium">Actions</th>
+            <th class="px-4 py-2.5 text-right font-medium">Pipeline</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -285,6 +317,7 @@ function renderScrapeDomainStatus(domain, data) {
   if (!el) return;
 
   const stats = data.stats;
+  const summary = data.summary;
   const active = data.active_job;
   const isRunning = active && (active.status === 'running' || active.status === 'queued');
 
@@ -294,29 +327,82 @@ function renderScrapeDomainStatus(domain, data) {
     try { live = JSON.parse(active.message); } catch {}
   }
 
-  // ── DB Stats Panel ──────────────────────────────────────────────────
-  const fmtDate = (v) => {
-    if (!v) return '\u2014';
-    const dt = new Date(v);
-    if (dt.getFullYear() <= 1970) return '\u2014';
-    return dt.toLocaleString();
-  };
+  // ── Stat Cards ────────────────────────────────────────────────────────
   const fmtSz = (n) => (n > 0 ? fmtBytes(n) : '\u2014');
 
-  const dbHTML = stats ? `
-    <div class="mb-3">
-      <div class="text-xs font-medium ui-subtle mb-2 uppercase tracking-wide">DB Stats</div>
-      <div class="flex flex-wrap gap-x-6 gap-y-2 text-sm">
-        <div><span class="ui-subtle text-xs">Pages</span><br><strong>${fmtNum(stats.pages)}</strong></div>
-        <div><span class="ui-subtle text-xs">Success</span><br><strong style="color:var(--success)">${fmtNum(stats.success)}</strong></div>
-        <div><span class="ui-subtle text-xs">Failed</span><br><strong style="color:var(--error)">${fmtNum(stats.failed)}</strong></div>
-        <div><span class="ui-subtle text-xs">Links</span><br><strong>${fmtNum(stats.links)}</strong></div>
-        <div><span class="ui-subtle text-xs">HTML</span><br><strong>${fmtSz(stats.html_bytes)}</strong></div>
-        ${stats.md_bytes > 0 ? `<div><span class="ui-subtle text-xs">MD</span><br><strong>${fmtSz(stats.md_bytes)}</strong></div>` : ''}
-        ${stats.index_bytes > 0 ? `<div><span class="ui-subtle text-xs">Index</span><br><strong>${fmtSz(stats.index_bytes)}</strong></div>` : ''}
-        <div><span class="ui-subtle text-xs">Last Crawl</span><br><strong>${fmtDate(stats.last_crawl)}</strong></div>
-      </div>
-    </div>` : (!isRunning ? `<div class="text-sm ui-subtle mb-3">No crawl data yet.</div>` : '');
+  const statCard = (label, value, color) => `
+    <div class="flex flex-col items-center px-4 py-2">
+      <span class="text-xl font-bold" ${color ? `style="color:${color}"` : ''}>${value}</span>
+      <span class="text-xs ui-subtle mt-0.5">${label}</span>
+    </div>`;
+
+  let cardsHTML = '';
+  if (stats) {
+    const okPct = stats.pages > 0 ? ((stats.success / stats.pages) * 100).toFixed(1) + '%' : '\u2014';
+    const pctColor = stats.pages > 0 ? ((stats.success / stats.pages) >= 0.9 ? 'var(--success)' : (stats.success / stats.pages) >= 0.5 ? 'var(--warning)' : 'var(--error)') : '';
+    cardsHTML = `
+      <div class="flex flex-wrap gap-1 justify-center mb-3">
+        ${statCard('Pages', fmtNum(stats.pages))}
+        ${statCard('OK Rate', okPct, pctColor)}
+        ${statCard('Links', fmtNum(stats.links))}
+        ${statCard('HTML', fmtSz(stats.html_bytes))}
+        ${statCard('Markdown', fmtSz(stats.md_bytes))}
+        ${stats.index_bytes > 0 ? statCard('Index', fmtSz(stats.index_bytes)) : ''}
+      </div>`;
+  }
+
+  // ── Status Distribution Bar ───────────────────────────────────────────
+  let statusBarHTML = '';
+  if (summary) {
+    const total = summary.status_2xx + summary.status_3xx + summary.status_4xx + summary.status_5xx + summary.status_error;
+    if (total > 0) {
+      const pct = (n) => ((n / total) * 100).toFixed(1);
+      const w = (n) => Math.max(n > 0 ? 0.5 : 0, (n / total) * 100);
+      const segments = [
+        { n: summary.status_2xx, color: 'var(--success)', label: '2xx' },
+        { n: summary.status_3xx, color: 'var(--accent)', label: '3xx' },
+        { n: summary.status_4xx, color: 'var(--warning)', label: '4xx' },
+        { n: summary.status_5xx, color: 'var(--error)', label: '5xx' },
+        { n: summary.status_error, color: 'var(--muted)', label: 'Error' },
+      ];
+      const bar = segments.map(s => s.n > 0 ?
+        `<div style="width:${w(s.n)}%;background:${s.color};min-width:3px" class="h-full" title="${s.label}: ${fmtNum(s.n)} (${pct(s.n)}%)"></div>` : ''
+      ).join('');
+      const legend = segments.filter(s => s.n > 0).map(s =>
+        `<span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:${s.color}"></span>${s.label}: ${fmtNum(s.n)}</span>`
+      ).join('');
+
+      statusBarHTML = `
+        <div class="mb-3">
+          <div class="text-xs font-medium ui-subtle mb-1.5 uppercase tracking-wide">Status Distribution</div>
+          <div class="h-3 rounded-full overflow-hidden flex" style="background:var(--border)">${bar}</div>
+          <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs mt-1.5">${legend}</div>
+        </div>`;
+    }
+  }
+
+  // ── Size Summary ──────────────────────────────────────────────────────
+  let sizeSummaryHTML = '';
+  if (stats && stats.html_bytes > 0) {
+    const parts = [];
+    if (stats.md_bytes > 0 && stats.html_bytes > 0) {
+      const saving = ((1 - stats.md_bytes / stats.html_bytes) * 100).toFixed(0);
+      parts.push(`<span class="text-sm">HTML ${fmtBytes(stats.html_bytes)} \u2192 MD ${fmtBytes(stats.md_bytes)} <span class="ui-subtle">(${saving}% reduction)</span></span>`);
+    }
+    if (summary) {
+      const avgParts = [];
+      if (summary.avg_size > 0) avgParts.push(`${fmtBytes(summary.avg_size)} HTML`);
+      if (summary.avg_md_size > 0) avgParts.push(`${fmtBytes(summary.avg_md_size)} MD`);
+      if (avgParts.length > 0) parts.push(`<span class="text-xs ui-subtle">Avg per page: ${avgParts.join(', ')}</span>`);
+    }
+    if (parts.length > 0) {
+      sizeSummaryHTML = `
+        <div class="mb-3">
+          <div class="text-xs font-medium ui-subtle mb-1.5 uppercase tracking-wide">Size</div>
+          <div class="flex flex-col gap-0.5">${parts.join('')}</div>
+        </div>`;
+    }
+  }
 
   // ── Live Stats Panel ────────────────────────────────────────────────
   let liveHTML = '';
@@ -339,7 +425,6 @@ function renderScrapeDomainStatus(domain, data) {
     const pct = Math.round((active.progress || 0) * 100);
     const rps = live ? live.pages_per_sec : active.rate;
 
-    // Build extra metrics row (timeout, blocked, skipped, bytes/sec, peak, retry, avg fetch)
     let extraMetrics = '';
     if (live) {
       const extras = [];
@@ -397,10 +482,8 @@ function renderScrapeDomainStatus(domain, data) {
         <option value="browser">Browser</option>
         <option value="worker">Worker</option>
       </select>
-      <input id="sd-max-pages" class="ui-input text-xs px-2 py-1.5 w-20" placeholder="Pages" type="number" min="0" value="0">
-      <input id="sd-workers" class="ui-input text-xs px-2 py-1.5 w-20" placeholder="Workers" type="number" min="0" value="0">
       <span id="sd-worker-opts" class="hidden flex items-center gap-2">
-        <input id="sd-worker-token" class="ui-input text-xs px-2 py-1 w-36" type="password" placeholder="from env if empty">
+        <input id="sd-worker-token" class="ui-input text-xs px-2 py-1 w-36" type="password" placeholder="Token (optional)">
         <label class="flex items-center gap-1 cursor-pointer"><input id="sd-worker-browser" type="checkbox" class="w-3.5 h-3.5 cursor-pointer"><span class="ui-subtle text-xs">CF Browser</span></label>
       </span>
       <button onclick="startScrapeDomainFull('${esc(domain)}')" class="ui-btn ui-btn-primary text-xs px-3 py-1.5">New Crawl</button>
@@ -411,7 +494,9 @@ function renderScrapeDomainStatus(domain, data) {
 
   el.innerHTML = `
     <div class="surface p-4">
-      ${dbHTML}
+      ${cardsHTML}
+      ${statusBarHTML}
+      ${sizeSummaryHTML}
       ${liveHTML}
       ${controlsHTML}
       <div id="scrape-action-msg" class="text-xs mt-2 hidden"></div>
@@ -491,13 +576,12 @@ function renderScrapePagesTable(domain, data) {
   };
 
   const rows = pages.length === 0
-    ? `<tr><td colspan="7" class="px-4 py-8 text-center text-sm ui-subtle">No pages found</td></tr>`
+    ? `<tr><td colspan="8" class="px-4 py-8 text-center text-sm ui-subtle">No pages found</td></tr>`
     : pages.map(p => {
         const sc = p.status_code;
         const isBlocked = p.error && p.error.startsWith('blocked:');
         const statusStyle = sc >= 500 ? 'color:var(--error)' : sc >= 400 ? 'color:var(--warning)' : sc >= 300 ? 'color:var(--accent)' : sc >= 200 ? (isBlocked ? 'color:var(--warning)' : 'color:var(--success)') : (p.error ? 'color:var(--error)' : 'color:var(--muted)');
         const statusLabel = sc > 0 ? String(sc) : (p.error ? 'ERR' : '\u2014');
-        // For blocked pages, show a short tag instead of full error in title column
         const titleDisplay = p.title && !isBlocked ? p.title : (isBlocked ? '' : (p.error || ''));
         const blockedTag = isBlocked ? `<span class="text-xs px-1.5 py-0.5 rounded" style="background:var(--warning-bg,rgba(234,179,8,0.15));color:var(--warning)">blocked</span>` : '';
         return `<tr class="border-t border-[var(--border)] hover:bg-[var(--surface-hover)]">
@@ -506,8 +590,8 @@ function renderScrapePagesTable(domain, data) {
             <a href="${esc(p.url)}" target="_blank" rel="noopener" class="hover:underline" style="color:var(--link)">${esc(p.url)}</a>
           </td>
           <td class="px-4 py-2 text-sm max-w-xs truncate" title="${esc(p.error || p.title || '')}">${blockedTag}${titleDisplay ? ' ' + esc(titleDisplay) : (blockedTag ? '' : '\u2014')}</td>
-          <td class="px-4 py-2 text-xs ui-subtle">${esc(p.content_type ? p.content_type.split(';')[0] : '\u2014')}</td>
           <td class="px-4 py-2 text-xs ui-subtle text-right">${p.content_length > 0 ? fmtBytes(p.content_length) : '\u2014'}</td>
+          <td class="px-4 py-2 text-xs ui-subtle text-right">${p.md_size > 0 ? fmtBytes(p.md_size) : '\u2014'}</td>
           <td class="px-4 py-2 text-xs ui-subtle text-right">${fmtFetch(p.fetch_time_ms)}</td>
           <td class="px-4 py-2 text-xs ui-subtle text-right" title="${esc(p.crawled_at || '')}">${fmtRelTime(p.crawled_at)}</td>
         </tr>`;
@@ -531,8 +615,8 @@ function renderScrapePagesTable(domain, data) {
             <th class="px-4 py-2 text-left font-medium w-16">Status</th>
             <th class="px-4 py-2 text-left font-medium">URL</th>
             <th class="px-4 py-2 text-left font-medium">Title</th>
-            <th class="px-4 py-2 text-left font-medium">Type</th>
             <th class="px-4 py-2 text-right font-medium">Size</th>
+            <th class="px-4 py-2 text-right font-medium">MD</th>
             <th class="px-4 py-2 text-right font-medium">Fetch</th>
             <th class="px-4 py-2 text-right font-medium">Crawled</th>
           </tr>
@@ -571,9 +655,7 @@ async function resumeScrape(domain) {
 async function startScrapeDomainFull(domain) {
   try {
     const mode = $('sd-mode')?.value || 'http';
-    const maxPages = parseInt($('sd-max-pages')?.value || '0', 10) || 0;
-    const workers = parseInt($('sd-workers')?.value || '0', 10) || 0;
-    const payload = { domain, mode, max_pages: maxPages, workers, store_body: true, resume: false };
+    const payload = { domain, mode, store_body: true, resume: false };
     if (mode === 'worker') {
       payload.worker_token = ($('sd-worker-token')?.value || '').trim();
       payload.worker_browser = !!$('sd-worker-browser')?.checked;
@@ -607,7 +689,6 @@ async function triggerScrapeIndex(domain) {
   try {
     const res = await apiScrapeIndex(domain);
     showScrapeActionMsg(`Started index job ${res.job_id}`, 'ok');
-    // Reload list after brief delay
     setTimeout(() => loadScrapeList(), 1000);
   } catch (e) {
     showScrapeActionMsg(e.message, 'error');
@@ -628,5 +709,11 @@ function showScrapeActionMsg(msg, type) {
 function fmtBytes(n) {
   if (n < 1024) return n + 'B';
   if (n < 1024 * 1024) return (n / 1024).toFixed(1) + 'KB';
-  return (n / (1024 * 1024)).toFixed(1) + 'MB';
+  if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + 'MB';
+  return (n / (1024 * 1024 * 1024)).toFixed(2) + 'GB';
+}
+
+// Quick action from list — navigate to domain and start immediately
+async function startScrapeDomain(domain) {
+  navigateTo(`#/scrape/${encodeURIComponent(domain)}`);
 }
