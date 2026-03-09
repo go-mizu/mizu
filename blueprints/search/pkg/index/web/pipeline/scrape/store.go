@@ -14,20 +14,35 @@ import (
 )
 
 // Store reads per-domain crawl metadata from dcrawler result databases.
+type Store interface {
+	ListDomains() (*ListResponse, error)
+	GetDomainStats(domain string) (*Domain, error)
+	GetPages(domain string, page, pageSize int, q, sortBy, statusFilter string) (*PagesResponse, error)
+	GetDomainSummary(domain string) *DomainSummary
+	InvalidateCache()
+	Close()
+}
+
+// Compile-time check.
+var _ Store = (*store)(nil)
+
+// store is the concrete implementation of Store.
 // Stats are materialized in a DuckDB meta file and served from memory.
-type Store struct {
+type store struct {
 	dataDir   string
 	mu        sync.RWMutex
-	domains   []Domain      // in-memory cache, populated by background refresh
-	ready     bool          // true after first load/refresh
-	triggerCh chan struct{}  // signal immediate refresh
+	domains   []Domain     // in-memory cache, populated by background refresh
+	ready     bool         // true after first load/refresh
+	triggerCh chan struct{} // signal immediate refresh
+	stopCh    chan struct{} // signal goroutine to stop
 }
 
 // NewStore creates a Store and starts background stat refresh.
-func NewStore(dataDir string) *Store {
-	s := &Store{
+func NewStore(dataDir string) Store {
+	s := &store{
 		dataDir:   dataDir,
 		triggerCh: make(chan struct{}, 1),
+		stopCh:    make(chan struct{}),
 	}
 	// Load persisted stats from meta DB for instant startup.
 	loadFromMeta(s)
@@ -36,8 +51,17 @@ func NewStore(dataDir string) *Store {
 	return s
 }
 
+// Close stops the background goroutine.
+func (s *store) Close() {
+	select {
+	case <-s.stopCh:
+	default:
+		close(s.stopCh)
+	}
+}
+
 // InvalidateCache triggers an immediate background refresh.
-func (s *Store) InvalidateCache() {
+func (s *store) InvalidateCache() {
 	select {
 	case s.triggerCh <- struct{}{}:
 	default:
@@ -151,7 +175,7 @@ func ParseStartParams(source string) StartParams {
 }
 
 // ListDomains returns cached domain stats from memory (instant).
-func (s *Store) ListDomains() (*ListResponse, error) {
+func (s *store) ListDomains() (*ListResponse, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if !s.ready {
@@ -166,7 +190,7 @@ func (s *Store) ListDomains() (*ListResponse, error) {
 
 // GetDomainStats returns aggregate stats for a domain.
 // Uses the in-memory cache when available, falls back to shard queries.
-func (s *Store) GetDomainStats(domain string) (*Domain, error) {
+func (s *store) GetDomainStats(domain string) (*Domain, error) {
 	norm := dcrawler.NormalizeDomain(domain)
 
 	// Try in-memory cache first.
@@ -195,7 +219,7 @@ func (s *Store) GetDomainStats(domain string) (*Domain, error) {
 
 // GetPages returns paginated pages for a domain.
 // statusFilter: "2xx", "3xx", "4xx", "5xx", "error", or "" for all.
-func (s *Store) GetPages(domain string, page, pageSize int, q, sortBy, statusFilter string) (*PagesResponse, error) {
+func (s *store) GetPages(domain string, page, pageSize int, q, sortBy, statusFilter string) (*PagesResponse, error) {
 	domainDir := filepath.Join(s.dataDir, dcrawler.NormalizeDomain(domain))
 	resultDir := filepath.Join(domainDir, "results")
 
@@ -284,7 +308,7 @@ func (s *Store) GetPages(domain string, page, pageSize int, q, sortBy, statusFil
 
 // GetDomainSummary returns per-status-group counts and size averages for a domain.
 // Queries shards directly (not cached) — call only for domain detail views.
-func (s *Store) GetDomainSummary(domain string) *DomainSummary {
+func (s *store) GetDomainSummary(domain string) *DomainSummary {
 	domainDir := filepath.Join(s.dataDir, dcrawler.NormalizeDomain(domain))
 	resultDir := filepath.Join(domainDir, "results")
 	shards, _ := filepath.Glob(filepath.Join(resultDir, "results_*.duckdb"))

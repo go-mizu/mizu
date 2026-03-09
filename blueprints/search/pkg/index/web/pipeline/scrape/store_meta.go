@@ -16,14 +16,15 @@ const metaFile = "scrape_meta.duckdb"
 
 // startBackground launches a goroutine that refreshes domain stats every 60s
 // or immediately when s.triggerCh is signaled.
-func startBackground(s *Store) {
+func startBackground(s *store) {
 	go func() {
 		ticker := time.NewTicker(60 * time.Second)
 		defer ticker.Stop()
-		// Initial refresh.
 		refreshDomains(s)
 		for {
 			select {
+			case <-s.stopCh:
+				return
 			case <-ticker.C:
 				refreshDomains(s)
 			case <-s.triggerCh:
@@ -35,7 +36,7 @@ func startBackground(s *Store) {
 
 // loadFromMeta reads the meta DuckDB on startup to populate the in-memory
 // domain cache. This is fast because it reads a single small file.
-func loadFromMeta(s *Store) {
+func loadFromMeta(s *store) {
 	metaPath := filepath.Join(s.dataDir, metaFile)
 	if _, err := os.Stat(metaPath); err != nil {
 		return
@@ -86,7 +87,7 @@ func loadFromMeta(s *Store) {
 
 // refreshDomains scans the data directory, computes stats for every domain
 // in parallel, persists results to the meta DuckDB, and updates the in-memory cache.
-func refreshDomains(s *Store) {
+func refreshDomains(s *store) {
 	entries, err := os.ReadDir(s.dataDir)
 	if err != nil {
 		if os.IsNotExist(err) {
