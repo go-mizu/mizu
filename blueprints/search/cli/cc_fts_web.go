@@ -75,7 +75,6 @@ func newCCFTSDashboard() *cobra.Command {
 		metaRefreshTTL  time.Duration
 		metaPrewarm     bool
 		metaBusyTimeout time.Duration
-		metaJournalMode string
 	)
 
 	cmd := &cobra.Command{
@@ -100,7 +99,6 @@ search, and browse documents. Real-time progress via WebSocket.`,
 				MetaRefreshTTL:  metaRefreshTTL,
 				MetaPrewarm:     metaPrewarm,
 				MetaBusyTimeout: metaBusyTimeout,
-				MetaJournalMode: metaJournalMode,
 			})
 
 			url := fmt.Sprintf("http://localhost:%d", port)
@@ -130,7 +128,6 @@ search, and browse documents. Real-time progress via WebSocket.`,
 	cmd.Flags().DurationVar(&metaRefreshTTL, "meta-refresh-ttl", 30*time.Second, "Metadata stale threshold for background refresh")
 	cmd.Flags().BoolVar(&metaPrewarm, "meta-prewarm", true, "Prewarm metadata cache for active crawl on startup")
 	cmd.Flags().DurationVar(&metaBusyTimeout, "meta-busy-timeout", 5*time.Second, "Metadata DB busy timeout")
-	cmd.Flags().StringVar(&metaJournalMode, "meta-journal-mode", "WAL", "Metadata DB journal mode (sqlite)")
 	return cmd
 }
 
