@@ -67,6 +67,12 @@ function renderOverviewContent(d, jobs) {
     : 0;
 
   function pct(a, b) { return b > 0 ? Math.round((a / b) * 100) : 0; }
+  function fmtTB(bytes) {
+    return `${((bytes || 0) / 1e12).toFixed(3)} TB`;
+  }
+  function fmtGB(bytes) {
+    return `${((bytes || 0) / 1e9).toFixed(3)} GB`;
+  }
   function stageColor(done, total) {
     if (done === 0) return 'var(--border)';
     if (done >= total && total > 0) return 'var(--success)';
@@ -81,11 +87,11 @@ function renderOverviewContent(d, jobs) {
         <div class="grid grid-cols-2 gap-3 mb-3">
           <div>
             <div class="text-[10px] font-mono ui-subtle">Current Downloaded</div>
-            <div class="text-sm font-mono font-medium">${fmtBytes(dl.size_bytes || 0)}</div>
+            <div class="text-sm font-mono font-medium">${fmtGB(dl.size_bytes || 0)}</div>
           </div>
           <div>
             <div class="text-[10px] font-mono ui-subtle">Full WARC Expected</div>
-            <div class="text-sm font-mono font-medium">${expectedWARCSizeReady ? fmtBytes(expectedWARCSize) : '<span class="ui-subtle">syncing...</span>'}</div>
+            <div class="text-sm font-mono font-medium">${expectedWARCSizeReady ? fmtTB(expectedWARCSize) : '<span class="ui-subtle">syncing...</span>'}</div>
           </div>
         </div>
         <div class="grid grid-cols-2 gap-3 mb-3">
@@ -102,12 +108,12 @@ function renderOverviewContent(d, jobs) {
           <div class="border-t pt-3 mb-3">
             <div class="flex items-center justify-between mb-1">
               <span class="text-[10px] font-mono ui-subtle">WARC Download Progress</span>
-              <span class="text-[10px] font-mono ui-subtle">${currentDownloadPct}% (${fmtBytes(dl.size_bytes || 0)} / ${fmtBytes(expectedWARCSize)})</span>
+              <span class="text-[10px] font-mono ui-subtle">${currentDownloadPct}% (${fmtGB(dl.size_bytes || 0)} / ${fmtTB(expectedWARCSize)})</span>
             </div>
             <div class="progress-track" style="height:6px">
               <div class="ov-c2" style="height:100%;width:${currentDownloadPct}%;opacity:0.7"></div>
             </div>
-            <div class="text-[10px] font-mono ui-subtle mt-1">${fmtBytes(Math.max(0, expectedWARCSize - (dl.size_bytes || 0)))} remaining</div>
+            <div class="text-[10px] font-mono ui-subtle mt-1">${fmtTB(Math.max(0, expectedWARCSize - (dl.size_bytes || 0)))} remaining</div>
           </div>` : `
           <div class="border-t pt-3 mb-3">
             <div class="flex items-center justify-between mb-1">
@@ -216,7 +222,7 @@ function renderOverviewContent(d, jobs) {
           </div>
           <div>
             <div class="text-[10px] font-mono ui-subtle">Full Expected WARC Size</div>
-            <div class="text-sm font-mono font-medium">${expectedWARCSizeReady ? fmtBytes(expectedWARCSize) : '<span class="ui-subtle">syncing...</span>'}</div>
+            <div class="text-sm font-mono font-medium">${expectedWARCSizeReady ? fmtTB(expectedWARCSize) : '<span class="ui-subtle">syncing...</span>'}</div>
           </div>
         </div>
         <div class="text-[10px] font-mono ui-subtle mt-2">
