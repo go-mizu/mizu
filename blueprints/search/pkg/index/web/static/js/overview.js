@@ -1,6 +1,19 @@
 // ===================================================================
 // Tab 1: Overview
 // ===================================================================
+function updateLiveIndicator() {
+  const el = $('overview-live');
+  if (!el) return;
+  const connected = wsClient && wsClient.connected;
+  if (connected) {
+    el.className = 'text-[10px] font-mono live-blink';
+    el.style.color = '#22c55e';
+  } else {
+    el.className = 'text-[10px] font-mono ui-subtle';
+    el.style.color = '';
+  }
+}
+
 async function renderOverview() {
   state.currentPage = 'overview';
   const main = $('main');
@@ -16,6 +29,10 @@ async function renderOverview() {
     </div>`;
 
   main.innerHTML = shell;
+  updateLiveIndicator();
+  // Poll live indicator every second (clears itself when element is gone).
+  if (state._liveTimer) clearInterval(state._liveTimer);
+  state._liveTimer = setInterval(updateLiveIndicator, 1000);
   // Always render immediately — cached data from localStorage means no "loading..." flash.
   // Falls back to zeros/empty if first ever visit.
   renderOverviewContent(state.central.overview || {}, state.central.jobs || []);
