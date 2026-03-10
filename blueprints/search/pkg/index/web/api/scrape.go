@@ -249,6 +249,41 @@ func scrapeIndex(d *Deps) mizu.Handler {
 	}
 }
 
+func scrapeExport(d *Deps) mizu.Handler {
+	return func(c *mizu.Ctx) error {
+		domain := dcrawler.NormalizeDomain(c.Param("domain"))
+		if domain == "" {
+			return c.JSON(400, errResp{"invalid domain"})
+		}
+		var req struct {
+			Format string `json:"format"`
+		}
+		if err := json.NewDecoder(c.Request().Body).Decode(&req); err != nil {
+			return c.JSON(400, errResp{"invalid JSON: " + err.Error()})
+		}
+		format := req.Format
+		if format == "" {
+			format = "html"
+		}
+		if format != "html" && format != "raw" && format != "markdown" {
+			return c.JSON(400, errResp{"format must be html, raw, or markdown"})
+		}
+		cfg := pipeline.JobConfig{
+			Type:   "scrape_export",
+			Domain: domain,
+			Format: format,
+		}
+		job := d.Jobs.Create(cfg)
+		snap := *job
+		d.Jobs.RunJob(job)
+		return c.JSON(201, struct {
+			JobID  string `json:"job_id"`
+			Type   string `json:"type"`
+			Format string `json:"format"`
+		}{snap.ID, "scrape_export", format})
+	}
+}
+
 // findActiveScrapeJob returns the running/queued scrape job for a domain, or nil.
 func findActiveScrapeJob(d *Deps, domain string) *pipeline.Job {
 	for _, job := range d.Jobs.List() {

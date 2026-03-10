@@ -197,6 +197,10 @@ async function apiScrapeIndex(domain) {
   return apiPost(`/api/scrape/${encodeURIComponent(domain)}/index`, {});
 }
 
+async function apiScrapeExport(domain, format) {
+  return apiPost(`/api/scrape/${encodeURIComponent(domain)}/export`, { format: format || 'html' });
+}
+
 async function apiCCDomainDetail(domain, opts = {}) {
   const p = new URLSearchParams();
   if (opts.crawl) p.set('crawl', opts.crawl);
