@@ -275,7 +275,14 @@ func (s *Server) Handler() http.Handler {
 			}
 		},
 		ScanDataDir:       ScanDataDir,
-		CCConfig:          nil,
+		CCConfig: func() cc.Config {
+			cfg := cc.DefaultConfig()
+			cfg.CrawlID = s.CrawlID
+			if s.CrawlDir != "" {
+				cfg.DataDir = filepath.Dir(s.CrawlDir)
+			}
+			return cfg
+		},
 		ReadDocByOffset:   ReadDocByOffset,
 		ReadDocFromWARCMd: readDocFromWARCMd,
 		ExtractDocTitle:   extractDocTitle,

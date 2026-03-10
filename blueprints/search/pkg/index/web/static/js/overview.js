@@ -55,6 +55,8 @@ function renderOverviewContent(d, jobs) {
   const md = d.markdown || {};
   const ix = d.indexed || {};
   const activeJobs = (jobs || []).filter(j => j.status === 'running' || j.status === 'queued');
+  const exactURLReady = (mf.real_total_urls || 0) > 0;
+  const exactSizeReady = (mf.real_total_size_bytes || 0) > 0;
 
   function pct(a, b) { return b > 0 ? Math.round((a / b) * 100) : 0; }
   function stageColor(done, total) {
@@ -74,8 +76,8 @@ function renderOverviewContent(d, jobs) {
             <div class="text-sm font-mono font-medium">${fmtBytes(sto.crawl_bytes || 0)}</div>
           </div>
           <div>
-            <div class="text-[10px] font-mono ui-subtle">Projected Full</div>
-            <div class="text-sm font-mono font-medium">${fmtBytes(sto.projected_full_bytes || 0)}</div>
+            <div class="text-[10px] font-mono ui-subtle">CC Total Size</div>
+            <div class="text-sm font-mono font-medium">${exactSizeReady ? fmtBytes(mf.real_total_size_bytes) : '<span class="ui-subtle">syncing…</span>'}</div>
           </div>
         </div>
         ${sto.disk_total ? `
@@ -171,12 +173,12 @@ function renderOverviewContent(d, jobs) {
             <div class="text-sm font-mono font-medium">${fmtNum(mf.total_warcs || 0)}</div>
           </div>
           <div>
-            <div class="text-[10px] font-mono ui-subtle">${mf.real_total_urls > 0 ? 'URLs' : 'Est. URLs'}</div>
-            <div class="text-sm font-mono font-medium">${fmtNum(mf.real_total_urls > 0 ? mf.real_total_urls : (mf.est_total_urls || 0))}</div>
+            <div class="text-[10px] font-mono ui-subtle">URLs (CC exact)</div>
+            <div class="text-sm font-mono font-medium">${exactURLReady ? fmtNum(mf.real_total_urls) : '<span class="ui-subtle">syncing…</span>'}</div>
           </div>
           <div>
-            <div class="text-[10px] font-mono ui-subtle">${mf.real_total_size_bytes > 0 ? 'Size' : 'Est. Size'}</div>
-            <div class="text-sm font-mono font-medium">${fmtBytes(mf.real_total_size_bytes > 0 ? mf.real_total_size_bytes : (mf.est_total_size_bytes || 0))}</div>
+            <div class="text-[10px] font-mono ui-subtle">Size (CC exact)</div>
+            <div class="text-sm font-mono font-medium">${exactSizeReady ? fmtBytes(mf.real_total_size_bytes) : '<span class="ui-subtle">syncing…</span>'}</div>
           </div>
         </div>
       </div>
@@ -265,4 +267,3 @@ function renderOverviewContent(d, jobs) {
     ${jobsHTML}
     ${storageHTML}`;
 }
-

@@ -138,7 +138,7 @@ func handleOverview(d *Deps) mizu.Handler {
 			d.RefreshCrawlSize()
 		}
 
-		resp := buildOverviewResponse(d, crawlBytes)
+		resp := buildOverviewResponse(c.Request().Context(), d, crawlBytes)
 		if d.Meta != nil {
 			resp.Meta.Backend = d.Meta.Backend()
 			resp.Meta.Stale = d.Meta.IsStale(d.CrawlID)
@@ -151,7 +151,7 @@ func handleOverview(d *Deps) mizu.Handler {
 	}
 }
 
-func buildOverviewResponse(d *Deps, crawlBytes int64) OverviewResponse {
+func buildOverviewResponse(ctx context.Context, d *Deps, crawlBytes int64) OverviewResponse {
 	crawlID := d.CrawlID
 	crawlDir := d.CrawlDir
 	manifestTotal := 0
@@ -170,16 +170,12 @@ func buildOverviewResponse(d *Deps, crawlBytes int64) OverviewResponse {
 		EstTotalURLs: int64(manifestTotal) * 30_000,
 	}
 
-	// Populate real CC stats from parquet cache.
-	if d.CCConfig != nil {
-		cfg := d.CCConfig()
-		cache := cc.NewCache(cfg.DataDir)
-		if cd := cache.Load(); cd != nil {
-			for _, pm := range cd.ParquetMeta {
-				resp.Manifest.RealTotalURLs += pm.URLCount
-				resp.Manifest.RealTotalSizeBytes += pm.SizeBytes
-			}
-		}
+	// Populate exact CC stats from parquet metadata cache.
+	// Only report "real" totals when metadata exists for all parquet files in
+	// this crawl's WARC subset (to avoid mixed/partial numbers).
+	if urls, size, ok := exactManifestTotalsFromCache(ctx, getCCConfig(d)); ok {
+		resp.Manifest.RealTotalURLs = urls
+		resp.Manifest.RealTotalSizeBytes = size
 	}
 
 	resp.Downloaded = scanDownloadedStage(crawlDir)
@@ -210,6 +206,30 @@ func buildOverviewResponse(d *Deps, crawlBytes int64) OverviewResponse {
 	resp.Meta = OverviewMeta{GeneratedAt: time.Now().UTC().Format(time.RFC3339)}
 
 	return resp
+}
+
+func exactManifestTotalsFromCache(ctx context.Context, cfg cc.Config) (totalURLs, totalSize int64, ok bool) {
+	cache := cc.NewCache(cfg.DataDir)
+	cd := cache.Load()
+	if cd == nil || len(cd.ParquetMeta) == 0 {
+		return 0, 0, false
+	}
+
+	client := cc.NewClient(cfg.BaseURL, cfg.TransportShards)
+	files, err := cc.ListParquetFiles(ctx, client, cfg, cc.ParquetListOptions{Subset: "warc"})
+	if err != nil || len(files) == 0 {
+		return 0, 0, false
+	}
+
+	for _, f := range files {
+		meta, found := cache.GetParquetMeta(cd, f.RemotePath)
+		if !found || meta.SizeBytes <= 0 || meta.URLCount <= 0 {
+			return 0, 0, false
+		}
+		totalURLs += meta.URLCount
+		totalSize += meta.SizeBytes
+	}
+	return totalURLs, totalSize, true
 }
 
 func scanDownloadedStage(crawlDir string) DownloadedStage {
