@@ -144,9 +144,10 @@ def register_via_browser(
             log("opening app.motherduck.com...")
             try:
                 page.goto("https://app.motherduck.com", timeout=30000)
-                page.wait_for_load_state("networkidle", timeout=10000)
+                # Wait for the Auth0 redirect to complete (JS-based redirect)
+                page.wait_for_url("**/auth.motherduck.com/**", timeout=15000)
             except Exception as e:
-                log(f"landing warn: {e}")
+                log(f"landing/redirect warn: {e}")
             _wait(2, log)
             log(f"landed on: {page.url}")
 
