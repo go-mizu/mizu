@@ -4,7 +4,6 @@
 package export
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"html"
 	"net/url"
@@ -33,12 +32,10 @@ type Config struct {
 
 // Exporter writes crawled pages as a browsable offline site.
 type Exporter struct {
-	cfg       Config
-	domain    string
-	siteDir   string
-	assetDir  string
-	written   map[string]bool   // URL path → written
-	assetMap  map[string]string // original asset URL → local relative path from siteDir
+	cfg     Config
+	domain  string
+	siteDir string
+	written map[string]bool // URL path → written
 }
 
 // New creates an Exporter with the given config.
@@ -51,28 +48,14 @@ func New(cfg Config) (*Exporter, error) {
 		cfg.Format = "html"
 	}
 	siteDir := filepath.Join(cfg.OutDir, cfg.Format, cfg.Domain)
-	assetDir := filepath.Join(siteDir, "_assets")
-	if cfg.Format != "raw" {
-		if err := os.MkdirAll(assetDir, 0o755); err != nil {
-			return nil, fmt.Errorf("export: create output dir: %w", err)
-		}
-		for _, sub := range []string{"css", "js", "img"} {
-			if err := os.MkdirAll(filepath.Join(assetDir, sub), 0o755); err != nil {
-				return nil, fmt.Errorf("export: create asset dir %s: %w", sub, err)
-			}
-		}
-	} else {
-		if err := os.MkdirAll(siteDir, 0o755); err != nil {
-			return nil, fmt.Errorf("export: create output dir: %w", err)
-		}
+	if err := os.MkdirAll(siteDir, 0o755); err != nil {
+		return nil, fmt.Errorf("export: create output dir: %w", err)
 	}
 	return &Exporter{
-		cfg:      cfg,
-		domain:   cfg.Domain,
-		siteDir:  siteDir,
-		assetDir: assetDir,
-		written:  make(map[string]bool),
-		assetMap: make(map[string]string),
+		cfg:     cfg,
+		domain:  cfg.Domain,
+		siteDir: siteDir,
+		written: make(map[string]bool),
 	}, nil
 }
 
@@ -285,7 +268,9 @@ func (e *Exporter) rewriteLink(href string, pageURL *url.URL, pageDir string) st
 	return rel
 }
 
-// rewriteAssetRef rewrites a CSS/JS/image reference to a local asset path.
+// rewriteAssetRef resolves a CSS/JS/image reference to an absolute URL.
+// We don't download assets (they're not in the crawl DB), so we keep them
+// as absolute URLs pointing to the original server for correct rendering.
 func (e *Exporter) rewriteAssetRef(ref string, pageURL *url.URL, pageDir, assetType string) string {
 	if isSpecialURL(ref) {
 		return ref
@@ -296,14 +281,8 @@ func (e *Exporter) rewriteAssetRef(ref string, pageURL *url.URL, pageDir, assetT
 		return ref
 	}
 
-	// Generate asset local path
-	assetLocal := e.assetLocalPath(resolved.String(), assetType, resolved.Path)
-
-	rel, err := filepath.Rel(pageDir, assetLocal)
-	if err != nil {
-		return ref
-	}
-	return filepath.ToSlash(rel)
+	// Return the fully-resolved absolute URL so the browser fetches from origin.
+	return resolved.String()
 }
 
 // rewriteSrcset rewrites srcset attribute values.
@@ -343,34 +322,6 @@ func (e *Exporter) rewriteCSSURLs(css string, pageURL *url.URL, pageDir string) 
 		rewritten := e.rewriteAssetRef(rawURL, pageURL, pageDir, "img")
 		return fmt.Sprintf("url(%s%s%s)", quote, rewritten, quote)
 	})
-}
-
-// assetLocalPath returns a local path for an asset, deduped by content hash of the URL.
-func (e *Exporter) assetLocalPath(assetURL, assetType, urlPath string) string {
-	if existing, ok := e.assetMap[assetURL]; ok {
-		return existing
-	}
-
-	ext := path.Ext(urlPath)
-	if ext == "" {
-		switch assetType {
-		case "css":
-			ext = ".css"
-		case "js":
-			ext = ".js"
-		case "img":
-			ext = ".png"
-		}
-	}
-	// Clean ext — remove query strings
-	if idx := strings.IndexByte(ext, '?'); idx >= 0 {
-		ext = ext[:idx]
-	}
-
-	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(assetURL)))[:12]
-	localPath := filepath.Join("_assets", assetType, hash+ext)
-	e.assetMap[assetURL] = localPath
-	return localPath
 }
 
 // URLToLocalPath converts a URL path to a local file path.

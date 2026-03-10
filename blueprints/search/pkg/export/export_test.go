@@ -87,12 +87,12 @@ func TestExporterWritePage(t *testing.T) {
 		t.Errorf("expected external link preserved, got:\n%s", out)
 	}
 
-	// Asset references should point to _assets/
-	if !strings.Contains(out, `_assets/img/`) {
-		t.Errorf("expected img rewritten to _assets/img/, got:\n%s", out)
+	// Asset references should be absolute URLs (not downloaded, fetched from origin)
+	if !strings.Contains(out, `src="https://example.com/images/logo.png"`) {
+		t.Errorf("expected img resolved to absolute URL, got:\n%s", out)
 	}
-	if !strings.Contains(out, `_assets/css/`) {
-		t.Errorf("expected css rewritten to _assets/css/, got:\n%s", out)
+	if !strings.Contains(out, `href="https://example.com/css/main.css"`) {
+		t.Errorf("expected css resolved to absolute URL, got:\n%s", out)
 	}
 }
 
@@ -196,7 +196,11 @@ body { background: url(/images/bg.png); }
 	}
 	out := string(content)
 
-	if !strings.Contains(out, `_assets/img/`) {
-		t.Errorf("expected CSS url() rewritten to _assets/img/, got:\n%s", out)
+	if !strings.Contains(out, `url(https://example.com/images/bg.png)`) {
+		t.Errorf("expected CSS url() resolved to absolute URL, got:\n%s", out)
+	}
+	// goquery HTML-encodes quotes inside <style>, so check for &#39; variant
+	if !strings.Contains(out, `https://example.com/images/hero.jpg`) {
+		t.Errorf("expected quoted CSS url() resolved to absolute URL, got:\n%s", out)
 	}
 }

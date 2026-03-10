@@ -60,7 +60,9 @@ func NewExportTask(domain, dataDir, format string) *ExportTask {
 func (t *ExportTask) Run(ctx context.Context, emit func(*ExportState)) (ExportMetric, error) {
 	norm := dcrawler.NormalizeDomain(t.domain)
 	resultDir := filepath.Join(t.dataDir, norm, "results")
-	outDir := filepath.Join(t.dataDir, norm, "export")
+	// Output to $HOME/data/export/ (shared across all sources).
+	home, _ := os.UserHomeDir()
+	outDir := filepath.Join(home, "data", "export")
 
 	shards, err := filepath.Glob(filepath.Join(resultDir, "results_*.duckdb"))
 	if err != nil || len(shards) == 0 {
@@ -181,9 +183,6 @@ func (t *ExportTask) Run(ctx context.Context, emit func(*ExportState)) (ExportMe
 	})
 
 	siteDir := filepath.Join(outDir, t.format, norm)
-	if t.format == "markdown" {
-		siteDir = filepath.Join(outDir, "markdown", norm)
-	}
 	return ExportMetric{
 		Domain:  norm,
 		Format:  t.format,

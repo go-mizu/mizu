@@ -35,8 +35,7 @@ Source:
   Use --cc to export from Common Crawl recrawl data instead.
 
 Output:
-  Scrape:  $HOME/data/crawler/<domain>/export/<format>/
-  CC:      $HOME/data/common-crawl/export/<format>/<domain>/
+  $HOME/data/export/<format>/<domain>/
 
 Examples:
   search export example.com

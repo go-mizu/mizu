@@ -57,8 +57,9 @@ func NewCCExportTask(domain, crawlDir, format string) *CCExportTask {
 // Run reads HTML from CC result DuckDB shards, rewrites links, writes browsable site.
 func (t *CCExportTask) Run(ctx context.Context, emit func(*CCExportState)) (CCExportMetric, error) {
 	recrawlDir := filepath.Join(t.crawlDir, "recrawl")
-	// crawlDir = ~/data/common-crawl/CC-MAIN-2026-04/ → exportDir = ~/data/common-crawl/export/
-	exportDir := filepath.Join(filepath.Dir(filepath.Dir(t.crawlDir)), "export")
+	// Output to $HOME/data/export/ (shared across all sources).
+	home, _ := os.UserHomeDir()
+	exportDir := filepath.Join(home, "data", "export")
 
 	// Find result shards
 	shards, err := filepath.Glob(filepath.Join(recrawlDir, "results_*.duckdb"))
@@ -178,9 +179,6 @@ func (t *CCExportTask) Run(ctx context.Context, emit func(*CCExportState)) (CCEx
 	})
 
 	siteDir := filepath.Join(exportDir, t.format, domain)
-	if t.format == "markdown" {
-		siteDir = filepath.Join(exportDir, "markdown", domain)
-	}
 	return CCExportMetric{
 		Domain:  domain,
 		Format:  t.format,
