@@ -38,6 +38,7 @@ type Profile struct {
 type Tweet struct {
 	ID             string    `json:"id"`
 	ConversationID string    `json:"conversation_id"`
+	Title          string    `json:"title"`           // Note tweet / X Article title
 	Text           string    `json:"text"`
 	HTML           string    `json:"html"`
 	Username       string    `json:"username"`
