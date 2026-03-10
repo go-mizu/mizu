@@ -58,11 +58,16 @@ func newLauncher(cfg Config) *launcher.Launcher {
 	}
 
 	// Renderer process limit: Chrome spawns one process per tab by default.
-	// With 80 tabs that's 80 processes × 200-500MB = memory explosion.
-	// Cap at 8 processes: Chrome reuses them across tabs (safe for single-domain crawling).
-	rendererLimit := 8
-	if cfg.RodWorkers > 0 && cfg.RodWorkers <= 20 {
-		rendererLimit = max(cfg.RodWorkers/3, 2)
+	// Always compute proportionally: ~4 tabs per renderer process.
+	// With --js-flags=--max-old-space-size=256, each renderer × 4 tabs = ~1 GB V8.
+	// Clamped: min 4 (avoid single-process mode), max 16 (avoid too many processes).
+	workers := cfg.RodWorkers
+	if workers <= 0 {
+		workers = 40
+	}
+	rendererLimit := max(workers/4, 4)
+	if rendererLimit > 16 {
+		rendererLimit = 16
 	}
 
 	l := launcher.New().
