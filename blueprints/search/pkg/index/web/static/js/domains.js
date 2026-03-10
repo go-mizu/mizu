@@ -348,8 +348,16 @@ async function renderCCDomainDetail(domain, crawl) {
             <div class="text-[10px] font-mono ui-subtle mb-1">Filter URL</div>
             <input id="cc-detail-filter" type="search" class="ui-input text-xs px-2 py-2 w-full" value="${esc(state.ccDomainQ || '')}" placeholder="/path or query">
           </label>
-          <div class="sm:col-span-2">
-            <button class="ui-btn px-3 py-2 w-full" onclick="searchCCDomainFromDetail()">Search</button>
+          <div class="sm:col-span-2 flex gap-1">
+            <button class="ui-btn px-3 py-2 flex-1" onclick="searchCCDomainFromDetail()">Search</button>
+            <span class="relative inline-block">
+              <button onclick="toggleCCExportMenu()" class="ui-btn px-2 py-2" title="Export">Export &#9660;</button>
+              <div id="cc-export-menu" class="hidden absolute right-0 top-full mt-1 z-50 surface text-xs min-w-[120px]">
+                <button onclick="triggerCCDomainExport('${esc(domain)}','html')" class="block w-full text-left px-3 py-2 hover:bg-[var(--border)] transition-colors">HTML</button>
+                <button onclick="triggerCCDomainExport('${esc(domain)}','markdown')" class="block w-full text-left px-3 py-2 hover:bg-[var(--border)] transition-colors">Markdown</button>
+                <button onclick="triggerCCDomainExport('${esc(domain)}','raw')" class="block w-full text-left px-3 py-2 hover:bg-[var(--border)] transition-colors">Raw HTML</button>
+              </div>
+            </span>
           </div>
         </div>
       </div>
@@ -976,6 +984,22 @@ function urlPath(url, domain) {
 function urlScheme(url) {
   if (!url) return '';
   try { return new URL(url).protocol + '//'; } catch { return ''; }
+}
+
+function toggleCCExportMenu() {
+  const el = $('cc-export-menu');
+  if (el) el.classList.toggle('hidden');
+}
+
+async function triggerCCDomainExport(domain, format) {
+  const el = $('cc-export-menu');
+  if (el) el.classList.add('hidden');
+  try {
+    const res = await apiCreateJob({ type: 'cc_export', domain, format: format || 'html' });
+    alert(`Started ${format} export job ${res.id || res.job_id || '(queued)'}`);
+  } catch (e) {
+    alert('Export failed: ' + (e.message || e));
+  }
 }
 
 function domainsSkeleton(rows = 6) {

@@ -273,7 +273,7 @@ function renderScrapeList(data) {
       <td class="px-4 py-2.5 text-sm text-right">${fmtNum(d.pages)}</td>
       <td class="px-4 py-2.5 text-sm text-right" style="color:${pctColor}">${okPct(d)}</td>
       <td class="px-4 py-2.5 text-sm text-right">${fmtSizeCol(d.html_bytes)}</td>
-      <td class="px-4 py-2.5 text-sm text-right">${fmtSizeCol(d.md_bytes)}</td>
+      <td class="px-4 py-2.5 text-sm text-right">${d.md_bytes > 0 ? fmtMdCell(d.md_bytes, d.html_bytes) : '\u2014'}</td>
       <td class="px-4 py-2.5 text-sm text-right">${fmtDate(d.last_crawl)}</td>
       <td class="px-4 py-2.5 text-right whitespace-nowrap">${mdBadge} ${idxBadge}</td>
     </tr>`;
@@ -288,7 +288,7 @@ function renderScrapeList(data) {
             <th class="px-4 py-2.5 text-right font-medium">Pages</th>
             <th class="px-4 py-2.5 text-right font-medium">OK %</th>
             <th class="px-4 py-2.5 text-right font-medium">HTML</th>
-            <th class="px-4 py-2.5 text-right font-medium">MD</th>
+            <th class="px-4 py-2.5 text-right font-medium">Markdown</th>
             <th class="px-4 py-2.5 text-right font-medium">Last Crawl</th>
             <th class="px-4 py-2.5 text-right font-medium">Pipeline</th>
           </tr>
@@ -490,6 +490,15 @@ function renderScrapeDomainStatus(domain, data) {
       <button onclick="resumeScrape('${esc(domain)}')" class="ui-btn text-xs px-3 py-1.5">Resume</button>
       ${totalPages > 0 ? `<button onclick="triggerScrapePipeline('${esc(domain)}')" class="ui-btn text-xs px-3 py-1.5">\u2192 Markdown</button>` : ''}
       ${stats && stats.has_markdown ? `<button onclick="triggerScrapeIndex('${esc(domain)}')" class="ui-btn text-xs px-3 py-1.5">\u2192 Index</button>` : ''}
+      ${totalPages > 0 ? `
+        <span class="relative inline-block">
+          <button onclick="toggleExportMenu('${esc(domain)}')" class="ui-btn text-xs px-3 py-1.5">Export \u25BC</button>
+          <div id="export-menu" class="hidden absolute left-0 top-full mt-1 z-50 surface text-xs min-w-[120px]">
+            <button onclick="triggerScrapeExport('${esc(domain)}','html')" class="block w-full text-left px-3 py-2 hover:bg-[var(--border)] transition-colors">HTML</button>
+            <button onclick="triggerScrapeExport('${esc(domain)}','markdown')" class="block w-full text-left px-3 py-2 hover:bg-[var(--border)] transition-colors">Markdown</button>
+            <button onclick="triggerScrapeExport('${esc(domain)}','raw')" class="block w-full text-left px-3 py-2 hover:bg-[var(--border)] transition-colors">Raw HTML</button>
+          </div>
+        </span>` : ''}
     </div>`;
 
   el.innerHTML = `
@@ -591,7 +600,7 @@ function renderScrapePagesTable(domain, data) {
           </td>
           <td class="px-4 py-2 text-sm max-w-xs truncate" title="${esc(p.error || p.title || '')}">${blockedTag}${titleDisplay ? ' ' + esc(titleDisplay) : (blockedTag ? '' : '\u2014')}</td>
           <td class="px-4 py-2 text-xs ui-subtle text-right">${p.content_length > 0 ? fmtBytes(p.content_length) : '\u2014'}</td>
-          <td class="px-4 py-2 text-xs ui-subtle text-right">${p.md_size > 0 ? fmtBytes(p.md_size) : '\u2014'}</td>
+          <td class="px-4 py-2 text-xs ui-subtle text-right">${p.md_size > 0 ? fmtMdCell(p.md_size, p.content_length) : '\u2014'}</td>
           <td class="px-4 py-2 text-xs ui-subtle text-right">${fmtFetch(p.fetch_time_ms)}</td>
           <td class="px-4 py-2 text-xs ui-subtle text-right" title="${esc(p.crawled_at || '')}">${fmtRelTime(p.crawled_at)}</td>
         </tr>`;
@@ -616,7 +625,7 @@ function renderScrapePagesTable(domain, data) {
             <th class="px-4 py-2 text-left font-medium">URL</th>
             <th class="px-4 py-2 text-left font-medium">Title</th>
             <th class="px-4 py-2 text-right font-medium">Size</th>
-            <th class="px-4 py-2 text-right font-medium">MD</th>
+            <th class="px-4 py-2 text-right font-medium">Markdown</th>
             <th class="px-4 py-2 text-right font-medium">Fetch</th>
             <th class="px-4 py-2 text-right font-medium">Crawled</th>
           </tr>
@@ -711,6 +720,40 @@ function fmtBytes(n) {
   if (n < 1024 * 1024) return (n / 1024).toFixed(1) + 'KB';
   if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + 'MB';
   return (n / (1024 * 1024 * 1024)).toFixed(2) + 'GB';
+}
+
+function fmtMdCell(mdSize, htmlSize) {
+  const s = fmtBytes(mdSize);
+  if (htmlSize > 0 && mdSize < htmlSize) {
+    const pct = Math.round((1 - mdSize / htmlSize) * 100);
+    return `${s}<span class="ui-subtle" style="font-size:10px"> (-${pct}%)</span>`;
+  }
+  return s;
+}
+
+function toggleExportMenu(domain) {
+  const el = $('export-menu');
+  if (el) el.classList.toggle('hidden');
+}
+
+async function triggerScrapeExport(domain, format) {
+  const el = $('export-menu');
+  if (el) el.classList.add('hidden');
+  try {
+    const res = await apiScrapeExport(domain, format);
+    showScrapeActionMsg(`Started ${format} export job ${res.job_id}`, 'ok');
+  } catch (e) {
+    showScrapeActionMsg(e.message, 'error');
+  }
+}
+
+async function triggerCCExport(domain, format) {
+  try {
+    const res = await apiCreateJob({ type: 'cc_export', domain, format: format || 'html' });
+    showScrapeActionMsg(`Started CC ${format} export job ${res.id}`, 'ok');
+  } catch (e) {
+    showScrapeActionMsg(e.message, 'error');
+  }
 }
 
 // Quick action from list — navigate to domain and start immediately
