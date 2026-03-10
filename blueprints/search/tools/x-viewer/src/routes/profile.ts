@@ -1,11 +1,9 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types'
-import { Cache } from '../cache'
+import { DB } from '../cache'
 import { parseUserResult } from '../parse'
 import { renderLayout, renderProfileHeader, renderTweetCard, renderMediaGrid, renderPagination, renderError } from '../html'
-import {
-  CACHE_PROFILE, CACHE_TIMELINE,
-} from '../config'
+import { CACHE_PROFILE, CACHE_TIMELINE } from '../config'
 import { fetchProfileWithFallback, fetchUserTimelineWithFallback } from '../fallback-fetch'
 import { isRateLimitedError } from '../rate-limit'
 
@@ -17,39 +15,34 @@ app.get('/:username', async (c) => {
 
   const cursor = c.req.query('cursor') || ''
   const tab = c.req.query('tab') || 'tweets'
-  const cache = new Cache(c.env.KV)
+  const db = new DB(c.env.DB)
 
   try {
-    const profileKey = `profile:${username.toLowerCase()}`
-    let profile = await cache.get<ReturnType<typeof parseUserResult>>(profileKey)
+    let profile = await db.getProfile<ReturnType<typeof parseUserResult>>(username)
     if (!profile) {
       profile = await fetchProfileWithFallback(c.env, username)
-      if (profile) await cache.set(profileKey, profile, CACHE_PROFILE)
+      if (profile) await db.setProfile(username, profile, CACHE_PROFILE)
     }
 
     if (!profile) {
       return c.html(renderError('User not found', `@${username} doesn't exist or may have been suspended.`), 404)
     }
 
-    const cacheKey = `tweets:${username.toLowerCase()}:${tab}:${cursor}`
-    let timelineData = await cache.get<{ tweets: unknown[]; cursor: string }>(cacheKey)
-
+    let timelineData = await db.getTimeline<{ tweets: unknown[]; cursor: string }>(username, tab, cursor)
     if (!timelineData) {
       const result = await fetchUserTimelineWithFallback(c.env, username, tab, cursor, profile.id || '')
       timelineData = { tweets: result.tweets, cursor: result.cursor }
-      await cache.set(cacheKey, timelineData, CACHE_TIMELINE)
+      await db.setTimeline(username, tab, cursor, timelineData, CACHE_TIMELINE)
     }
 
     const tweets = (timelineData.tweets || []) as Parameters<typeof renderTweetCard>[0][]
     const nextCursor = timelineData.cursor as string
 
-    // Mark pinned tweets on the Posts tab (first page only)
     if (tab === 'tweets' && !cursor && profile.pinnedTweetIDs.length > 0) {
       const pinnedSet = new Set(profile.pinnedTweetIDs)
       for (const tweet of tweets) {
         if (pinnedSet.has(tweet.id)) tweet.isPin = true
       }
-      // Sort pinned tweets to the top
       tweets.sort((a, b) => (a.isPin === b.isPin ? 0 : a.isPin ? -1 : 1))
     }
 

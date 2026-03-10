@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
-import type { HonoEnv } from '../types'
-import { Cache } from '../cache'
+import type { HonoEnv, Tweet } from '../types'
+import { DB } from '../cache'
 import { renderLayout, renderTweetDetail, renderError } from '../html'
 import { CACHE_TWEET } from '../config'
 import { fetchTweetConversation } from '../tweet-fetch'
@@ -8,24 +8,34 @@ import { isRateLimitedError } from '../rate-limit'
 
 const app = new Hono<HonoEnv>()
 
+function tweetToMarkdown(t: Tweet): string {
+  const lines: string[] = []
+  lines.push(`**${t.name}** (@${t.username})`)
+  lines.push('')
+  lines.push(t.text)
+  if (t.photos.length) { lines.push(''); for (const p of t.photos) lines.push(`![](${p})`) }
+  lines.push('')
+  lines.push(`---`)
+  lines.push(`${t.likes} Likes · ${t.retweets} Reposts · ${t.views} Views · ${t.postedAt}`)
+  lines.push(`https://x.com/${t.username}/status/${t.id}`)
+  return lines.join('\n')
+}
+
 app.get('/:username/status/:id', async (c) => {
   const tweetID = c.req.param('id')
   const username = c.req.param('username')
   const cursor = c.req.query('cursor') || ''
-  const cache = new Cache(c.env.KV)
+  const db = new DB(c.env.DB)
 
   try {
-    const cacheKey = cursor ? `tweet:${tweetID}:${cursor}` : `tweet:${tweetID}`
-    let cached = await cache.get<{ mainTweet: unknown; replies: unknown[]; cursor: string }>(cacheKey)
+    let cached = await db.getTweet<{ mainTweet: unknown; replies: unknown[]; cursor: string }>(tweetID, cursor)
 
     if (!cached) {
       const result = await fetchTweetConversation(c.env, tweetID, cursor, true)
 
       // If paginated and mainTweet missing, try first-page cache
       if (cursor && !result.mainTweet) {
-        const firstPage = await cache.get<{ mainTweet: unknown }>(
-          `tweet:${tweetID}`
-        )
+        const firstPage = await db.getTweet<{ mainTweet: unknown }>(tweetID, '')
         if (firstPage?.mainTweet) {
           cached = { mainTweet: firstPage.mainTweet, replies: result.replies, cursor: result.cursor }
         }
@@ -36,7 +46,7 @@ app.get('/:username/status/:id', async (c) => {
       }
 
       if (cached) {
-        await cache.set(cacheKey, cached, CACHE_TWEET)
+        await db.setTweet(tweetID, cursor, cached, CACHE_TWEET)
       }
     }
 
@@ -55,6 +65,30 @@ app.get('/:username/status/:id', async (c) => {
     const msg = e instanceof Error ? e.message : String(e)
     if (isRateLimitedError(e)) return c.html(renderError('Rate Limited', 'Too many requests. Please try again later.'), 429)
     return c.html(renderError('Error', msg), 500)
+  }
+})
+
+// Raw markdown for tweet
+app.get('/:username/status/:id/raw', async (c) => {
+  const tweetID = c.req.param('id')
+  const db = new DB(c.env.DB)
+
+  try {
+    let cached = await db.getTweet<{ mainTweet: Tweet }>(tweetID, '')
+    if (!cached) {
+      const result = await fetchTweetConversation(c.env, tweetID, '', true)
+      if (result.mainTweet) {
+        cached = { mainTweet: result.mainTweet as Tweet }
+        await db.setTweet(tweetID, '', { mainTweet: result.mainTweet, replies: result.replies, cursor: result.cursor }, CACHE_TWEET)
+      }
+    }
+    if (!cached?.mainTweet) return c.text('Tweet not found', 404)
+
+    return new Response(tweetToMarkdown(cached.mainTweet), {
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+    })
+  } catch (e) {
+    return c.text(e instanceof Error ? e.message : String(e), 500)
   }
 })
 

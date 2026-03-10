@@ -1,15 +1,16 @@
 import { cssURL } from './asset'
 import type { Profile, Tweet } from './types'
 
-// Bold geometric Z logo (same style as X's logo)
-const Z = 'M2 2H22V8L8 18H22V22H2V16L16 6H2Z'
-
+// Z logo — two diagonal strokes like X logo, forming Z shape
+// Stroke 1: top bar sweeping diagonally down-left to center
+// Stroke 2: center sweeping diagonally down-left to bottom bar
+const Z_LOGO = 'M2.5 2.25H21.5L20.2 4.08H8.8L15 11L13.2 12.8L2.5 4.08V2.25zm19 19.5H2.5L3.8 19.92H15.2L9 13L10.8 11.2L21.5 19.92V21.75z'
 // X logo (official path)
 const X_LOGO = 'M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z'
 
 const svg = {
-  logo: `<svg width="32" height="32" viewBox="0 0 24 24"><path d="${Z}"/></svg>`,
-  logoBig: `<svg width="56" height="56" viewBox="0 0 24 24"><path d="${Z}"/></svg>`,
+  logo: `<svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><path d="${Z_LOGO}"/></svg>`,
+  logoBig: `<svg width="56" height="56" viewBox="0 0 24 24" fill="currentColor"><path d="${Z_LOGO}"/></svg>`,
   xLogo: `<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="${X_LOGO}"/></svg>`,
   reply: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M1.751 10c0-4.42 3.584-8 8.005-8h4.366c4.49 0 8.129 3.64 8.129 8.13 0 2.96-1.607 5.68-4.196 7.11l-8.054 4.46v-3.69h-.067c-4.49.1-8.183-3.51-8.183-8.01zm8.005-6c-3.317 0-6.005 2.69-6.005 6 0 3.37 2.77 6.08 6.138 6.01l.351-.01h1.761v2.3l5.087-2.81c1.951-1.08 3.163-3.13 3.163-5.36 0-3.39-2.744-6.13-6.129-6.13H9.756z"/></svg>',
   rt: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4.5 3.88l4.432 4.14-1.364 1.46L5.5 7.55V16c0 1.1.896 2 2 2H13v2H7.5c-2.209 0-4-1.79-4-4V7.55L1.432 9.48.068 8.02 4.5 3.88zM16.5 6H11V4h5.5c2.209 0 4 1.79 4 4v8.45l2.068-1.93 1.364 1.46-4.432 4.14-4.432-4.14 1.364-1.46 2.068 1.93V8c0-1.1-.896-2-2-2z"/></svg>',
@@ -161,9 +162,163 @@ export function renderMediaGrid(tweets: Tweet[]): string {
 export function renderTweetDetail(tweet: Tweet, replies: Tweet[], cursor?: string, tweetPath?: string): string {
   const avi = tweet.avatar || defaultAvi
   const xURL = `https://x.com/${esc(tweet.username)}/status/${esc(tweet.id)}`
-  let h = `<div class="td"><div class="td-top"><a href="/${esc(tweet.username)}"><img src="${esc(avi)}" alt="" loading="lazy"></a><div class="td-info"><a href="/${esc(tweet.username)}" class="td-name">${esc(tweet.name)} ${badge(tweet.isBlueVerified, tweet.verifiedType)}</a><span class="td-user">@${esc(tweet.username)}</span></div><a href="${xURL}" class="td-xlink" target="_blank" rel="noopener" title="View on X">${svg.xLogo}</a></div>${tweet.isReply && tweet.replyToUser ? `<div class="tweet-reply" style="margin-top:12px">Replying to <a href="/${esc(tweet.replyToUser)}">@${esc(tweet.replyToUser)}</a></div>` : ''}<div class="td-text">${linkify(tweet.text, tweet.urls)}</div>${renderMedia(tweet)}${tweet.isQuote && tweet.quotedTweet ? renderQt(tweet.quotedTweet) : ''}<div class="td-time">${fullDate(tweet.postedAt)}</div><div class="td-stats"><span><strong>${fmtNum(tweet.retweets)}</strong> Reposts</span><span><strong>${fmtNum(tweet.quotes)}</strong> Quotes</span><span><strong>${fmtNum(tweet.likes)}</strong> Likes</span><span><strong>${fmtNum(tweet.bookmarks)}</strong> Bookmarks</span>${tweet.views > 0 ? `<span><strong>${fmtNum(tweet.views)}</strong> Views</span>` : ''}</div></div>`
+  const mdURL = `/${esc(tweet.username)}/status/${esc(tweet.id)}/raw`
+  const jsonURL = `/api/tweet/${esc(tweet.id)}`
+  let h = `<div class="td"><div class="td-top"><a href="/${esc(tweet.username)}"><img src="${esc(avi)}" alt="" loading="lazy"></a><div class="td-info"><a href="/${esc(tweet.username)}" class="td-name">${esc(tweet.name)} ${badge(tweet.isBlueVerified, tweet.verifiedType)}</a><span class="td-user">@${esc(tweet.username)}</span></div><a href="${xURL}" class="td-xlink" target="_blank" rel="noopener" title="View on X">${svg.xLogo}</a></div>${tweet.isReply && tweet.replyToUser ? `<div class="tweet-reply" style="margin-top:12px">Replying to <a href="/${esc(tweet.replyToUser)}">@${esc(tweet.replyToUser)}</a></div>` : ''}<div class="td-text">${linkify(tweet.text, tweet.urls)}</div>${renderMedia(tweet)}${tweet.isQuote && tweet.quotedTweet ? renderQt(tweet.quotedTweet) : ''}<div class="td-time">${fullDate(tweet.postedAt)}</div><div class="td-stats"><span><strong>${fmtNum(tweet.retweets)}</strong> Reposts</span><span><strong>${fmtNum(tweet.quotes)}</strong> Quotes</span><span><strong>${fmtNum(tweet.likes)}</strong> Likes</span><span><strong>${fmtNum(tweet.bookmarks)}</strong> Bookmarks</span>${tweet.views > 0 ? `<span><strong>${fmtNum(tweet.views)}</strong> Views</span>` : ''}</div><div class="td-actions"><a href="${mdURL}" class="btn-action" target="_blank">Markdown</a><a href="${jsonURL}" class="btn-action" target="_blank">JSON</a></div></div>`
   for (const r of replies) h += renderTweetCard(r)
   if (cursor && tweetPath) h += renderPagination(cursor, tweetPath)
+  return h
+}
+
+// ---- Article page ----
+
+function articleBodyToHtml(body: string): string {
+  const lines = body.split('\n')
+  const out: string[] = []
+  let i = 0
+
+  while (i < lines.length) {
+    const line = lines[i]
+
+    // Fenced code block
+    if (line.startsWith('```')) {
+      const lang = line.slice(3).trim()
+      const codeLines: string[] = []
+      i++
+      while (i < lines.length && !lines[i].startsWith('```')) {
+        codeLines.push(lines[i])
+        i++
+      }
+      i++ // skip closing ```
+      const langLabel = lang ? `<span class="code-lang">${esc(lang)}</span>` : ''
+      const langClass = lang ? ` class="language-${esc(lang)}"` : ''
+      out.push(`<div class="code-block">${langLabel}<pre${langClass}><code${langClass}>${esc(codeLines.join('\n'))}</code></pre></div>`)
+      continue
+    }
+
+    // Headers
+    const hm = line.match(/^(#{1,3})\s+(.+)/)
+    if (hm) {
+      const level = hm[1].length
+      out.push(`<h${level + 1}>${inlineFormat(hm[2])}</h${level + 1}>`)
+      i++
+      continue
+    }
+
+    // Image
+    const imgMatch = line.match(/^!\[([^\]]*)\]\(([^)]+)\)/)
+    if (imgMatch) {
+      out.push(`<figure class="article-figure"><img src="${esc(imgMatch[2])}" alt="${esc(imgMatch[1])}" loading="lazy"></figure>`)
+      i++
+      continue
+    }
+
+    // Blockquote
+    if (line.startsWith('> ')) {
+      const quoteLines: string[] = []
+      while (i < lines.length && lines[i].startsWith('> ')) {
+        quoteLines.push(lines[i].slice(2))
+        i++
+      }
+      out.push(`<blockquote>${quoteLines.map(l => `<p>${inlineFormat(l)}</p>`).join('')}</blockquote>`)
+      continue
+    }
+
+    // Unordered list
+    if (line.startsWith('- ')) {
+      const items: string[] = []
+      while (i < lines.length && lines[i].startsWith('- ')) {
+        items.push(lines[i].slice(2))
+        i++
+      }
+      out.push(`<ul>${items.map(t => `<li>${inlineFormat(t)}</li>`).join('')}</ul>`)
+      continue
+    }
+
+    // Ordered list
+    const olMatch = line.match(/^\d+\.\s+(.+)/)
+    if (olMatch) {
+      const items: string[] = []
+      while (i < lines.length && /^\d+\.\s+/.test(lines[i])) {
+        items.push(lines[i].replace(/^\d+\.\s+/, ''))
+        i++
+      }
+      out.push(`<ol>${items.map(t => `<li>${inlineFormat(t)}</li>`).join('')}</ol>`)
+      continue
+    }
+
+    // Empty line
+    if (!line.trim()) {
+      i++
+      continue
+    }
+
+    // Regular paragraph
+    out.push(`<p>${inlineFormat(line)}</p>`)
+    i++
+  }
+
+  return out.join('\n')
+}
+
+function inlineFormat(text: string): string {
+  let s = esc(text)
+  // Bold
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+  // Italic
+  s = s.replace(/\*(.+?)\*/g, '<em>$1</em>')
+  // Inline code
+  s = s.replace(/`([^`]+)`/g, '<code>$1</code>')
+  // Links [text](url)
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+  // Bare URLs
+  s = s.replace(/(^|[^"=])(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>')
+  return s
+}
+
+export function renderArticlePage(tweet: Tweet): string {
+  const avi = tweet.avatar || defaultAvi
+  const xURL = `https://x.com/${esc(tweet.username)}/article/${esc(tweet.id)}`
+  const body = tweet.articleBody || tweet.text || ''
+
+  let h = `<div class="article">`
+  // Header
+  h += `<div class="article-header">`
+  if (tweet.title) {
+    h += `<h1 class="article-title">${esc(tweet.title)}</h1>`
+  }
+  h += `<div class="article-author">`
+  h += `<a href="/${esc(tweet.username)}"><img class="article-avi" src="${esc(avi)}" alt="" loading="lazy"></a>`
+  h += `<div class="article-author-info">`
+  h += `<a href="/${esc(tweet.username)}" class="article-name">${esc(tweet.name)} ${badge(tweet.isBlueVerified, tweet.verifiedType)}</a>`
+  h += `<span class="article-user">@${esc(tweet.username)}</span>`
+  h += `</div>`
+  h += `<a href="${xURL}" class="td-xlink" target="_blank" rel="noopener" title="View on X">${svg.xLogo}</a>`
+  h += `</div>`
+  h += `<div class="article-meta">${fullDate(tweet.postedAt)}</div>`
+  h += `</div>`
+
+  // Body
+  if (body) {
+    const rawURL = `/${esc(tweet.username)}/article/${esc(tweet.id)}/raw`
+    const jsonURL = `/${esc(tweet.username)}/article/${esc(tweet.id)}?debug=1`
+    h += `<div class="article-actions"><a href="${rawURL}" class="btn-action" target="_blank">Markdown</a><a href="${jsonURL}" class="btn-action" target="_blank">JSON</a></div>`
+    h += `<div class="article-body">${articleBodyToHtml(body)}</div>`
+  } else {
+    h += `<div class="article-body"><p style="color:var(--text-secondary);font-style:italic">Article body is not available via the API. Read the full article on X:</p><p><a href="${xURL}" target="_blank" rel="noopener" style="color:var(--link);font-size:18px;font-weight:600">Read on X &rarr;</a></p></div>`
+  }
+
+  // Stats
+  h += `<div class="td-stats">`
+  h += `<span><strong>${fmtNum(tweet.retweets)}</strong> Reposts</span>`
+  h += `<span><strong>${fmtNum(tweet.likes)}</strong> Likes</span>`
+  if (tweet.views > 0) h += `<span><strong>${fmtNum(tweet.views)}</strong> Views</span>`
+  h += `</div>`
+
+  // Media (images from the article tweet)
+  h += renderMedia(tweet)
+
+  h += `</div>`
   return h
 }
 
@@ -177,7 +332,7 @@ export function renderProfileHeader(profile: Profile): string {
     const mo = ['January','February','March','April','May','June','July','August','September','October','November','December']
     return mo[d.getMonth()] + ' ' + d.getFullYear()
   })() : ''
-  return `<div class="p-banner">${profile.banner ? `<img src="${esc(profile.banner + '/1500x500')}" alt="">` : ''}</div><div class="p-info"><div class="p-avi"><img src="${esc(avi)}" alt=""></div><div class="p-name">${esc(profile.name)} ${v}${profile.isPrivate ? ` ${svg.lock}` : ''}</div><div class="p-user">@${esc(profile.username)}</div>${profile.biography ? `<div class="p-bio">${linkify(profile.biography, profile.website ? [profile.website] : [])}</div>` : ''}<div class="p-meta">${profile.location ? `<span>${svg.location}${esc(profile.location)}</span>` : ''}${profile.website ? `<span>${svg.link}<a href="${esc(profile.website)}" target="_blank" rel="noopener">${esc(profile.website.replace(/^https?:\/\//, '').slice(0, 30))}</a></span>` : ''}${joined ? `<span>${svg.calendar}Joined ${joined}</span>` : ''}</div><div class="p-stats"><span><strong>${fmtNum(profile.tweetsCount)}</strong> <span>Posts</span></span><a href="/${esc(profile.username)}/following"><strong>${fmtNum(profile.followingCount)}</strong> <span>Following</span></a><a href="/${esc(profile.username)}/followers"><strong>${fmtNum(profile.followersCount)}</strong> <span>Followers</span></a></div><div class="p-orig"><a href="https://x.com/${esc(profile.username)}" target="_blank" rel="noopener">View on x.com ${svg.xLogo}</a></div></div>`
+  return `<div class="p-banner">${profile.banner ? `<img src="${esc(profile.banner + '/1500x500')}" alt="">` : ''}</div><div class="p-info"><div class="p-avi"><img src="${esc(avi)}" alt=""></div><div class="p-name">${esc(profile.name)} ${v}${profile.isPrivate ? ` ${svg.lock}` : ''}</div><div class="p-user">@${esc(profile.username)}</div>${profile.biography ? `<div class="p-bio">${linkify(profile.biography, profile.website ? [profile.website] : [])}</div>` : ''}<div class="p-meta">${profile.location ? `<span>${svg.location}${esc(profile.location)}</span>` : ''}${profile.website ? `<span>${svg.link}<a href="${esc(profile.website)}" target="_blank" rel="noopener">${esc(profile.website.replace(/^https?:\/\//, '').slice(0, 30))}</a></span>` : ''}${joined ? `<span>${svg.calendar}Joined ${joined}</span>` : ''}</div><div class="p-stats"><span><strong>${fmtNum(profile.tweetsCount)}</strong> <span>Posts</span></span><a href="/${esc(profile.username)}/following"><strong>${fmtNum(profile.followingCount)}</strong> <span>Following</span></a><a href="/${esc(profile.username)}/followers"><strong>${fmtNum(profile.followersCount)}</strong> <span>Followers</span></a></div><div class="p-orig"><a href="https://x.com/${esc(profile.username)}" target="_blank" rel="noopener">View on x.com ${svg.xLogo}</a></div><div class="td-actions"><a href="/api/profile/${esc(profile.username)}" class="btn-action" target="_blank">JSON</a></div></div>`
 }
 
 // ---- User card (followers/following) ----
@@ -205,7 +360,7 @@ export function renderFollowPage(profile: Profile, users: Profile[], tab: 'follo
 // ---- Home page ----
 
 export function renderHomePage(): string {
-  return `<div class="home"><div class="home-logo">${svg.logoBig}</div><div class="home-sub">the X/Twitter Viewer</div><div class="home-box"><form action="/search" method="get"><input class="home-input" type="text" name="q" placeholder="Search posts or @username" autocomplete="off" autofocus></form><div class="home-hint">Type @username to view a profile</div><div class="home-links"><a href="/karpathy">@karpathy</a><a href="/mitchellh">@mitchellh</a><a href="/search/ai">#ai</a><a href="/search/golang">#golang</a><a href="/openai">@openai</a><a href="/search/typescript">#typescript</a></div></div><div class="home-theme"><button class="theme-toggle" onclick="T()" title="Toggle theme">${svg.moon}${svg.sun}</button></div></div>`
+  return `<div class="home"><div class="home-logo">${svg.logoBig}</div><div class="home-sub">X Viewer</div><div class="home-box"><form action="/search" method="get"><input class="home-input" type="text" name="q" placeholder="Search, @username, or paste an X URL" autocomplete="off" autofocus></form><div class="home-hint">Paste any x.com URL to view profiles, tweets, or articles</div><div class="home-section"><div class="home-section-title">Profiles</div><div class="home-links"><a href="/karpathy">@karpathy</a><a href="/mitchellh">@mitchellh</a><a href="/openai">@openai</a></div></div><div class="home-section"><div class="home-section-title">Articles</div><div class="home-links"><a href="/browser_use/article/2031045678411981115">How to Authenticate AI Web Agents</a></div></div><div class="home-section"><div class="home-section-title">Search</div><div class="home-links"><a href="/search/ai">#ai</a><a href="/search/golang">#golang</a><a href="/search/typescript">#typescript</a></div></div></div><div class="home-theme"><button class="theme-toggle" onclick="T()" title="Toggle theme">${svg.moon}${svg.sun}</button></div></div>`
 }
 
 // ---- Pagination (auto-scroll) ----
@@ -219,7 +374,7 @@ export function renderPagination(cursor: string, currentPath: string): string {
 
 // ---- Layout ----
 
-const themeScript = `<script>(function(){var t=localStorage.getItem('t');if(!t)t=matchMedia('(prefers-color-scheme:dark)').matches?'d':'l';document.documentElement.dataset.t=t})();function T(){var h=document.documentElement,n=h.dataset.t==='d'?'l':'d';h.dataset.t=n;localStorage.setItem('t',n)}</script>`
+const themeScript = `<script>(function(){var t=localStorage.getItem('t');if(!t)t=matchMedia('(prefers-color-scheme:dark)').matches?'d':'l';document.documentElement.dataset.t=t;P(t)})();function P(t){var l=document.getElementById('prism-light'),d=document.getElementById('prism-dark');if(l&&d){l.disabled=t!=='l';d.disabled=t!=='d'}}function T(){var h=document.documentElement,n=h.dataset.t==='d'?'l':'d';h.dataset.t=n;localStorage.setItem('t',n);P(n)}</script>`
 
 const scrollScript = `<script>(function(){var loading=false;function observe(){var el=document.querySelector('.more[data-href]');if(!el)return;var io=new IntersectionObserver(function(entries){if(!entries[0].isIntersecting||loading)return;loading=true;var href=el.getAttribute('data-href');fetch(href).then(function(r){return r.text()}).then(function(html){var doc=new DOMParser().parseFromString(html,'text/html');var wrap=doc.querySelector('.wrap');if(!wrap)return;var items=wrap.querySelectorAll('.tweet,.user-card,.rt-label,.pin-label,.media-grid');var parent=el.parentNode;items.forEach(function(n){parent.insertBefore(n.cloneNode(true),el)});var next=wrap.querySelector('.more[data-href]');if(next){el.setAttribute('data-href',next.getAttribute('data-href'))}else{el.remove()}loading=false}).catch(function(){el.innerHTML='<a href="'+href+'" class="more-fallback">Show more</a>';el.removeAttribute('data-href');loading=false})},{rootMargin:'600px'});io.observe(el)}observe();new MutationObserver(observe).observe(document.querySelector('.wrap'),{childList:true,subtree:true})})()</script>`
 
@@ -228,21 +383,25 @@ function renderTopBar(query?: string): string {
 }
 
 export function renderLayout(title: string, content: string, opts: { isHome?: boolean; query?: string } = {}): string {
-  const fav = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%230f1419'><path d='${Z}'/></svg>`
+  const fav = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%230f1419'><path d='${Z_LOGO}'/></svg>`
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title>
-<meta name="description" content="Z - the X/Twitter Viewer">
+<meta name="description" content="X Viewer">
 <link rel="stylesheet" href="${cssURL}">
 <link rel="icon" href="${fav}">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.30.0/themes/prism.min.css" id="prism-light" disabled>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.30.0/themes/prism-tomorrow.min.css" id="prism-dark" disabled>
 ${themeScript}
 </head>
 <body>
 <div class="wrap">${opts.isHome ? '' : renderTopBar(opts.query)}${content}</div>
 ${opts.isHome ? '' : scrollScript}
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.30.0/prism.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.30.0/plugins/autoloader/prism-autoloader.min.js" defer></script>
 </body>
 </html>`
 }

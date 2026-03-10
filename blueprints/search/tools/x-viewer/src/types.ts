@@ -1,5 +1,6 @@
 export interface Env {
-  KV: KVNamespace
+  DB: D1Database
+  BROWSER: Fetcher
   X_AUTH_TOKEN: string
   X_CT0: string
   X_BEARER_TOKEN: string
@@ -42,6 +43,8 @@ export interface Tweet {
   id: string
   conversationID: string
   text: string
+  title: string
+  articleBody: string
   username: string
   userID: string
   name: string

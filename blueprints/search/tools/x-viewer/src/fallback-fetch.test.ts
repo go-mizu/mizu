@@ -6,7 +6,7 @@ import {
 import type { Env } from './types'
 
 const env: Env = {
-  KV: {} as KVNamespace,
+  DB: {} as D1Database,
   X_AUTH_TOKEN: 'x_auth',
   X_CT0: 'x_ct0',
   X_BEARER_TOKEN: 'Bearer token',

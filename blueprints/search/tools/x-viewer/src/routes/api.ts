@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import type { HonoEnv } from '../types'
 import { GraphQLClient } from '../graphql'
-import { Cache } from '../cache'
+import { DB } from '../cache'
 import { fetchTweetConversation } from '../tweet-fetch'
 import {
   fetchProfileWithFallback, fetchUserTimelineWithFallback,
@@ -27,20 +27,16 @@ app.use('*', cors())
 function gql(c: any) {
   return new GraphQLClient(c.env.X_AUTH_TOKEN, c.env.X_CT0, c.env.X_BEARER_TOKEN)
 }
-function kv(c: any) {
-  return new Cache(c.env.KV)
-}
 
 // GET /api/profile/:username
 app.get('/profile/:username', async (c) => {
   const username = c.req.param('username')
-  const cache = kv(c)
+  const db = new DB(c.env.DB)
 
-  const profileKey = `profile:${username.toLowerCase()}`
-  let profile = await cache.get<any>(profileKey)
+  let profile = await db.getProfile<any>(username)
   if (!profile) {
     profile = await fetchProfileWithFallback(c.env, username)
-    if (profile) await cache.set(profileKey, profile, CACHE_PROFILE)
+    if (profile) await db.setProfile(username, profile, CACHE_PROFILE)
   }
 
   if (!profile) return c.json({ error: 'User not found' }, 404)
@@ -52,23 +48,20 @@ app.get('/tweets/:username', async (c) => {
   const username = c.req.param('username')
   const tab = c.req.query('tab') || 'tweets'
   const cursor = c.req.query('cursor') || ''
-  const cache = kv(c)
+  const db = new DB(c.env.DB)
 
-  // Get profile for user ID
-  const profileKey = `profile:${username.toLowerCase()}`
-  let profile = await cache.get<any>(profileKey)
+  let profile = await db.getProfile<any>(username)
   if (!profile) {
     profile = await fetchProfileWithFallback(c.env, username)
-    if (profile) await cache.set(profileKey, profile, CACHE_PROFILE)
+    if (profile) await db.setProfile(username, profile, CACHE_PROFILE)
   }
   if (!profile) return c.json({ error: 'User not found' }, 404)
 
-  const cacheKey = `tweets:${username.toLowerCase()}:${tab}:${cursor}`
-  let timelineData = await cache.get<any>(cacheKey)
+  let timelineData = await db.getTimeline<any>(username, tab, cursor)
   if (!timelineData) {
     const result = await fetchUserTimelineWithFallback(c.env, username, tab, cursor, profile.id || '')
     timelineData = { tweets: result.tweets, cursor: result.cursor }
-    await cache.set(cacheKey, timelineData, CACHE_TIMELINE)
+    await db.setTimeline(username, tab, cursor, timelineData, CACHE_TIMELINE)
   }
 
   return c.json(timelineData)
@@ -78,15 +71,14 @@ app.get('/tweets/:username', async (c) => {
 app.get('/tweet/:id', async (c) => {
   const tweetID = c.req.param('id')
   const cursor = c.req.query('cursor') || ''
-  const cache = kv(c)
+  const db = new DB(c.env.DB)
 
-  const cacheKey = cursor ? `tweet:${tweetID}:${cursor}` : `tweet:${tweetID}`
-  let cached = await cache.get<any>(cacheKey)
+  let cached = await db.getTweet<any>(tweetID, cursor)
   if (!cached) {
     const result = await fetchTweetConversation(c.env, tweetID, cursor, false)
 
     if (cursor && !result.mainTweet) {
-      const firstPage = await cache.get<any>(`tweet:${tweetID}`)
+      const firstPage = await db.getTweet<any>(tweetID, '')
       if (firstPage?.mainTweet) {
         cached = { mainTweet: firstPage.mainTweet, replies: result.replies, cursor: result.cursor }
       }
@@ -94,7 +86,7 @@ app.get('/tweet/:id', async (c) => {
     if (!cached && result.mainTweet) {
       cached = { mainTweet: result.mainTweet, replies: result.replies, cursor: result.cursor }
     }
-    if (cached) await cache.set(cacheKey, cached, CACHE_TWEET)
+    if (cached) await db.setTweet(tweetID, cursor, cached, CACHE_TWEET)
   }
 
   if (!cached || !cached.mainTweet) return c.json({ error: 'Tweet not found' }, 404)
@@ -108,58 +100,49 @@ app.get('/search', async (c) => {
   const cursor = c.req.query('cursor') || ''
   if (!query) return c.json({ error: 'Query required' }, 400)
 
-  const cache = kv(c)
-  const cacheKey = `search:${query}:${mode}:${cursor}`
+  const db = new DB(c.env.DB)
 
   if (mode === SearchPeople) {
-    let usersData = await cache.get<any>(cacheKey)
+    let usersData = await db.getSearch<any>(query, mode, cursor)
     if (!usersData) {
       const result = await fetchSearchUsersWithFallback(c.env, query, cursor)
       usersData = { users: result.users, cursor: result.cursor }
-      await cache.set(cacheKey, usersData, CACHE_SEARCH)
+      await db.setSearch(query, mode, cursor, usersData, CACHE_SEARCH)
     }
     return c.json(usersData)
   } else {
-    let searchData = await cache.get<any>(cacheKey)
+    let searchData = await db.getSearch<any>(query, mode, cursor)
     if (!searchData) {
       const result = await fetchSearchTweetsWithFallback(c.env, query, mode, cursor)
       searchData = { tweets: result.tweets, cursor: result.cursor }
-      await cache.set(cacheKey, searchData, CACHE_SEARCH)
+      await db.setSearch(query, mode, cursor, searchData, CACHE_SEARCH)
     }
     return c.json(searchData)
   }
 })
 
 // GET /api/followers/:username?cursor=
-app.get('/followers/:username', async (c) => {
-  return handleFollow(c, 'followers')
-})
-
-// GET /api/following/:username?cursor=
-app.get('/following/:username', async (c) => {
-  return handleFollow(c, 'following')
-})
+app.get('/followers/:username', async (c) => handleFollow(c, 'followers'))
+app.get('/following/:username', async (c) => handleFollow(c, 'following'))
 
 async function handleFollow(c: any, type: 'followers' | 'following') {
   const username = c.req.param('username')
   const cursor = c.req.query('cursor') || ''
   const client = gql(c)
-  const cache = kv(c)
+  const db = new DB(c.env.DB)
 
-  const profileKey = `profile:${username.toLowerCase()}`
-  let profile = await cache.get<any>(profileKey)
+  let profile = await db.getProfile<any>(username)
   if (!profile) {
     const data = await client.doGraphQL(gqlUserByScreenName, {
       screen_name: username, withSafetyModeUserFields: true,
     }, userFieldToggles)
     profile = parseUserResult(data)
-    if (profile) await cache.set(profileKey, profile, CACHE_PROFILE)
+    if (profile) await db.setProfile(username, profile, CACHE_PROFILE)
   }
   if (!profile) return c.json({ error: 'User not found' }, 404)
 
   const endpoint = type === 'followers' ? gqlFollowers : gqlFollowing
-  const cacheKey = `${type}:${username.toLowerCase()}:${cursor}`
-  let followData = await cache.get<any>(cacheKey)
+  let followData = await db.getFollow<any>(username, type, cursor)
   if (!followData) {
     const vars: Record<string, unknown> = {
       userId: profile.id, count: 50, includePromotedContent: false,
@@ -168,7 +151,7 @@ async function handleFollow(c: any, type: 'followers' | 'following') {
     const data = await client.doGraphQL(endpoint, vars, '')
     const result = parseFollowList(data)
     followData = { users: result.users, cursor: result.cursor }
-    await cache.set(cacheKey, followData, CACHE_FOLLOW)
+    await db.setFollow(username, type, cursor, followData, CACHE_FOLLOW)
   }
 
   return c.json(followData)
@@ -180,39 +163,36 @@ app.get('/list/:id', async (c) => {
   const tab = c.req.query('tab') || 'tweets'
   const cursor = c.req.query('cursor') || ''
   const client = gql(c)
-  const cache = kv(c)
+  const db = new DB(c.env.DB)
 
-  const listKey = `list:${listID}`
-  let list = await cache.get<any>(listKey)
+  let list = await db.getList<any>(listID)
   if (!list) {
     const data = await client.doGraphQL(gqlListById, { listId: listID }, '')
     list = parseGraphList(data)
-    if (list) await cache.set(listKey, list, CACHE_LIST)
+    if (list) await db.setList(listID, list, CACHE_LIST)
   }
   if (!list) return c.json({ error: 'List not found' }, 404)
 
   if (tab === 'members') {
-    const membersKey = `list-members:${listID}:${cursor}`
-    let membersData = await cache.get<any>(membersKey)
+    let membersData = await db.getListContent<any>(listID, 'members', cursor)
     if (!membersData) {
       const vars: Record<string, unknown> = { listId: listID, count: 200 }
       if (cursor) vars.cursor = cursor
       const data = await client.doGraphQL(gqlListMembers, vars, '')
       const result = parseListMembers(data)
       membersData = { users: result.users, cursor: result.cursor }
-      await cache.set(membersKey, membersData, CACHE_LIST)
+      await db.setListContent(listID, 'members', cursor, membersData, CACHE_LIST)
     }
     return c.json({ list, ...membersData })
   } else {
-    const tweetsKey = `list-tweets:${listID}:${cursor}`
-    let tweetsData = await cache.get<any>(tweetsKey)
+    let tweetsData = await db.getListContent<any>(listID, 'tweets', cursor)
     if (!tweetsData) {
       const vars: Record<string, unknown> = { rest_id: listID, count: 40 }
       if (cursor) vars.cursor = cursor
       const data = await client.doGraphQL(gqlListTweets, vars, '')
       const result = parseListTimeline(data)
       tweetsData = { tweets: result.tweets, cursor: result.cursor }
-      await cache.set(tweetsKey, tweetsData, CACHE_LIST)
+      await db.setListContent(listID, 'tweets', cursor, tweetsData, CACHE_LIST)
     }
     return c.json({ list, ...tweetsData })
   }

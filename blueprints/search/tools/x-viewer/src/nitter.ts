@@ -203,6 +203,8 @@ function buildTweetFromBlock(block: string, baseURL: string): Tweet | null {
     id,
     conversationID: id,
     text,
+    title: '',
+    articleBody: '',
     username,
     userID: '',
     name,
