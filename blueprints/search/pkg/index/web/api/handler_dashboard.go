@@ -43,6 +43,8 @@ type ManifestStage struct {
 	EstTotalURLs      int64 `json:"est_total_urls"`
 	RealTotalURLs     int64 `json:"real_total_urls"`
 	RealTotalSizeBytes int64 `json:"real_total_size_bytes"`
+	MetaReadyFiles     int   `json:"meta_ready_files"`
+	MetaTotalFiles     int   `json:"meta_total_files"`
 }
 
 // DownloadedStage holds download-stage stats.
@@ -173,9 +175,13 @@ func buildOverviewResponse(ctx context.Context, d *Deps, crawlBytes int64) Overv
 	// Populate exact CC stats from parquet metadata cache.
 	// Only report "real" totals when metadata exists for all parquet files in
 	// this crawl's WARC subset (to avoid mixed/partial numbers).
-	if urls, size, ok := exactManifestTotalsFromCache(ctx, getCCConfig(d)); ok {
-		resp.Manifest.RealTotalURLs = urls
-		resp.Manifest.RealTotalSizeBytes = size
+	if totals, ok := manifestTotalsFromCache(ctx, getCCConfig(d)); ok {
+		resp.Manifest.MetaReadyFiles = totals.ReadyFiles
+		resp.Manifest.MetaTotalFiles = totals.TotalFiles
+		if totals.Ready {
+			resp.Manifest.RealTotalURLs = totals.TotalURLs
+			resp.Manifest.RealTotalSizeBytes = totals.TotalSize
+		}
 	}
 
 	resp.Downloaded = scanDownloadedStage(crawlDir)
@@ -208,28 +214,40 @@ func buildOverviewResponse(ctx context.Context, d *Deps, crawlBytes int64) Overv
 	return resp
 }
 
-func exactManifestTotalsFromCache(ctx context.Context, cfg cc.Config) (totalURLs, totalSize int64, ok bool) {
+type manifestTotals struct {
+	TotalURLs  int64
+	TotalSize  int64
+	ReadyFiles int
+	TotalFiles int
+	Ready      bool
+}
+
+func manifestTotalsFromCache(ctx context.Context, cfg cc.Config) (manifestTotals, bool) {
 	cache := cc.NewCache(cfg.DataDir)
 	cd := cache.Load()
 	if cd == nil || len(cd.ParquetMeta) == 0 {
-		return 0, 0, false
+		return manifestTotals{}, false
 	}
 
 	client := cc.NewClient(cfg.BaseURL, cfg.TransportShards)
 	files, err := cc.ListParquetFiles(ctx, client, cfg, cc.ParquetListOptions{Subset: "warc"})
 	if err != nil || len(files) == 0 {
-		return 0, 0, false
+		return manifestTotals{}, false
 	}
 
+	var out manifestTotals
+	out.TotalFiles = len(files)
 	for _, f := range files {
 		meta, found := cache.GetParquetMeta(cd, f.RemotePath)
 		if !found || meta.SizeBytes <= 0 || meta.URLCount <= 0 {
-			return 0, 0, false
+			continue
 		}
-		totalURLs += meta.URLCount
-		totalSize += meta.SizeBytes
+		out.ReadyFiles++
+		out.TotalURLs += meta.URLCount
+		out.TotalSize += meta.SizeBytes
 	}
-	return totalURLs, totalSize, true
+	out.Ready = out.ReadyFiles == out.TotalFiles && out.TotalFiles > 0
+	return out, true
 }
 
 func scanDownloadedStage(crawlDir string) DownloadedStage {
