@@ -181,9 +181,12 @@ def register_via_browser(
     user_data = tempfile.mkdtemp(prefix="ch_reg_")
 
     with sync_playwright() as p:
+        # Use system Chrome if available, otherwise fall back to bundled Chromium
+        import shutil
+        channel = "chrome" if shutil.which("google-chrome") or shutil.which("google-chrome-stable") else None
         ctx = p.chromium.launch_persistent_context(
             user_data_dir=user_data,
-            channel="chrome",
+            channel=channel,
             headless=headless,
             args=_browser_args(),
             viewport={"width": 1280, "height": 900},
