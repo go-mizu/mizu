@@ -55,7 +55,7 @@ function renderScrapeStartForm() {
   el.innerHTML = `
     <div class="surface p-3">
       <div class="flex flex-wrap gap-2 items-center">
-        <input id="scrape-domain-input" class="ui-input text-sm px-3 py-1.5 w-56"
+        <input id="scrape-domain-input" class="ui-input text-sm px-3 py-1.5 w-full sm:w-56"
           placeholder="domain.com" type="text"
           onkeydown="if(event.key==='Enter') startScrape()">
         <select id="scrape-mode" class="ui-select text-sm px-2 py-1.5" onchange="toggleScrapeAdvanced()">

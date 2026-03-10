@@ -68,10 +68,10 @@ async function renderParquet() {
       <div id="parquet-stats" class="mb-4"></div>
       <div id="parquet-tabs" class="mb-3"></div>
       <div id="parquet-banner"></div>
-      <div class="flex items-center gap-2 mb-3">
+      <div class="flex flex-wrap items-center gap-2 mb-3">
         <input id="parquet-q" type="text" value="${esc(state.parquetQuery || '')}"
           placeholder="Filter by filename\u2026"
-          class="ui-input flex-1 text-sm px-3 py-2"
+          class="ui-input flex-1 min-w-[220px] text-sm px-3 py-2"
           onkeydown="if(event.key==='Enter'){state.parquetOffset=0;state.parquetQuery=this.value;renderParquetFiles()}">
         <button onclick="parquetDownloadSubset()" class="ui-btn px-3 py-2 text-xs font-mono">Download subset</button>
       </div>

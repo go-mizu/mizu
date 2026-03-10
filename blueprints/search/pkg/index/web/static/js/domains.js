@@ -203,31 +203,33 @@ function renderDomainsTable(data) {
     ${domains.length === 0 ? `
       <div class="ui-empty">${state.domainQ ? 'No domains match filter.' : 'No domain data yet \u2014 download parquet files first.'}</div>
     ` : `
-    <table class="w-full text-xs ui-table">
-      <thead>
-        <tr class="text-left">
-          <th class="pb-2 pr-3 font-medium">Domain</th>
-          <th class="pb-2 font-medium text-right">URLs</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${domains.map((d, i) => `
-          <tr class="file-row anim-fade-up" style="animation-delay:${Math.min(i,20)*8}ms">
-            <td class="py-2 pr-3">
-              <div class="flex items-center gap-2">
-                <a href="#/domains/${encodeURIComponent(d.domain)}"
-                  class="ui-link font-mono font-medium shrink-0">${esc(d.domain)}</a>
-              </div>
-              <div class="mt-1.5 progress-track" style="height:2px">
-                <div class="progress-fill" style="width:${Math.max(1,(d.count/maxCount)*100).toFixed(1)}%"></div>
-              </div>
-            </td>
-            <td class="py-2 text-right font-mono ui-subtle whitespace-nowrap align-top">
-              ${(d.count||0).toLocaleString()}
-            </td>
-          </tr>`).join('')}
-      </tbody>
-    </table>
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs ui-table">
+        <thead>
+          <tr class="text-left">
+            <th class="pb-2 pr-3 font-medium">Domain</th>
+            <th class="pb-2 font-medium text-right">URLs</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${domains.map((d, i) => `
+            <tr class="file-row anim-fade-up" style="animation-delay:${Math.min(i,20)*8}ms">
+              <td class="py-2 pr-3">
+                <div class="flex items-center gap-2">
+                  <a href="#/domains/${encodeURIComponent(d.domain)}"
+                    class="ui-link font-mono font-medium shrink-0">${esc(d.domain)}</a>
+                </div>
+                <div class="mt-1.5 progress-track" style="height:2px">
+                  <div class="progress-fill" style="width:${Math.max(1,(d.count/maxCount)*100).toFixed(1)}%"></div>
+                </div>
+              </td>
+              <td class="py-2 text-right font-mono ui-subtle whitespace-nowrap align-top">
+                ${(d.count||0).toLocaleString()}
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
     ${totalPages > 1 ? `
     <div class="flex items-center justify-between mt-4 text-xs">
       <button onclick="loadDomains(${page-1})" ${page<=1?'disabled':''} class="ui-btn px-3 py-1.5">&larr; Prev</button>

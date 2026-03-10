@@ -155,7 +155,7 @@ function renderWARCSummary(summary) {
   el.innerHTML = `
     ${activeJobsHTML}
     <div class="surface p-4 mb-4">
-      <div class="flex items-stretch gap-0">
+      <div class="ov-pipeline-flow flex items-stretch gap-0">
         <div class="ov-pipeline-step">
           <div class="flex items-baseline justify-between mb-1">
             <span class="text-[11px] font-mono ui-subtle">Total</span>

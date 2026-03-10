@@ -81,10 +81,10 @@ function renderOverviewContent(d, jobs) {
 
   // ── Row 1: Storage + System ──
   const storageHTML = `
-    <div class="grid md:grid-cols-2 gap-4 mb-4">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
       <div class="surface p-4">
         <div class="text-[11px] font-mono ui-subtle mb-3">Storage</div>
-        <div class="grid grid-cols-2 gap-3 mb-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
           <div>
             <div class="text-[10px] font-mono ui-subtle">Current Downloaded</div>
             <div class="text-sm font-mono font-medium">${fmtGB(dl.size_bytes || 0)}</div>
@@ -94,7 +94,7 @@ function renderOverviewContent(d, jobs) {
             <div class="text-sm font-mono font-medium">${expectedWARCSizeReady ? fmtTB(expectedWARCSize) : '<span class="ui-subtle">syncing...</span>'}</div>
           </div>
         </div>
-        <div class="grid grid-cols-2 gap-3 mb-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
           <div>
             <div class="text-[10px] font-mono ui-subtle">CC URLs Expected</div>
             <div class="text-xs font-mono">${exactURLReady ? fmtNum(mf.real_total_urls) : '<span class="ui-subtle">syncing...</span>'}</div>
@@ -138,7 +138,7 @@ function renderOverviewContent(d, jobs) {
       </div>
       <div class="surface p-4">
         <div class="text-[11px] font-mono ui-subtle mb-3">System</div>
-        <div class="grid grid-cols-2 gap-x-4 gap-y-2">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
           <div>
             <div class="text-[10px] font-mono ui-subtle">Heap Alloc</div>
             <div class="text-xs font-mono">${fmtBytes(sys.heap_alloc || 0)}</div>
@@ -188,7 +188,7 @@ function renderOverviewContent(d, jobs) {
         <div class="text-[11px] font-mono ui-subtle">Pipeline: ${esc(d.crawl_id || '')}</div>
         <div class="text-[10px] font-mono ui-subtle">${d.crawl_from ? formatCrawlDate(d.crawl_from) + ' \u2013 ' + formatCrawlDate(d.crawl_to) : ''}</div>
       </div>
-      <div class="flex items-stretch gap-0">
+      <div class="ov-pipeline-flow flex items-stretch gap-0">
         ${stages.map((s, i) => {
           const p = pct(s.done, s.total);
           return `
@@ -208,10 +208,10 @@ function renderOverviewContent(d, jobs) {
 
   // ── Row 3: Manifest + Downloaded ──
   const row3HTML = `
-    <div class="grid md:grid-cols-2 gap-4 mb-4" style="animation-delay:100ms">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4" style="animation-delay:100ms">
       <div class="surface p-4" style="border-left:3px solid ${stageColor(mf.total_warcs, mf.total_warcs)}">
         <div class="text-[11px] font-mono ui-subtle mb-2">Stage 1: Manifest (Source)</div>
-        <div class="grid grid-cols-3 gap-3">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <div class="text-[10px] font-mono ui-subtle">Total WARCs</div>
             <div class="text-sm font-mono font-medium">${fmtNum(mf.total_warcs || 0)}</div>
@@ -238,7 +238,7 @@ function renderOverviewContent(d, jobs) {
         <div class="progress-track mb-3" style="height:4px">
           <div class="ov-c2" style="height:100%;width:${pct(dl.count, mf.total_warcs)}%;transition:width 0.4s ease"></div>
         </div>
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <div class="text-[10px] font-mono ui-subtle">Total Size</div>
             <div class="text-xs font-mono">${fmtBytes(dl.size_bytes || 0)}</div>
@@ -253,7 +253,7 @@ function renderOverviewContent(d, jobs) {
 
   // ── Row 4: Markdown + Index ──
   const row4HTML = `
-    <div class="grid md:grid-cols-2 gap-4 mb-4" style="animation-delay:150ms">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4" style="animation-delay:150ms">
       <div class="surface p-4" style="border-left:3px solid ${stageColor(md.count, dl.count)}">
         <div class="flex items-center justify-between mb-2">
           <div class="text-[11px] font-mono ui-subtle">Stage 3: Markdown</div>

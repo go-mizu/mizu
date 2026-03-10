@@ -262,12 +262,65 @@
       scrollbar-width: none;
     }
     #main-nav::-webkit-scrollbar { display: none; }
+    @media (max-width: 1024px) {
+      #main .grid[class*="grid-cols-3"],
+      #main .grid[class*="grid-cols-4"],
+      #main .grid[class*="grid-cols-5"],
+      #main .grid[class*="grid-cols-6"],
+      #main .grid[class*="grid-cols-12"] {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      }
+      .ov-pipeline-flow { flex-direction: column; gap: 0.5rem; }
+      .ov-pipeline-arrow { display: none; }
+    }
+    @media (max-width: 768px) {
+      #app-header-inner {
+        gap: 0.5rem;
+        padding: 0.5rem 0.75rem;
+      }
+      #header-search {
+        order: 2;
+        width: 100%;
+      }
+      #main-nav {
+        order: 3;
+        width: 100%;
+        margin-left: 0 !important;
+      }
+      #main {
+        padding-left: 0.75rem !important;
+        padding-right: 0.75rem !important;
+      }
+      .page-shell {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+      }
+      .page-title {
+        font-size: 1.25rem;
+        line-height: 1.5rem;
+      }
+      .ui-table td,
+      .ui-table th {
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+      }
+    }
+    @media (max-width: 640px) {
+      #main .grid[class*="grid-cols-2"],
+      #main .grid[class*="grid-cols-3"],
+      #main .grid[class*="grid-cols-4"],
+      #main .grid[class*="grid-cols-5"],
+      #main .grid[class*="grid-cols-6"],
+      #main .grid[class*="grid-cols-12"] {
+        grid-template-columns: minmax(0, 1fr) !important;
+      }
+    }
   </style>
 </head>
 <body class="antialiased min-h-screen font-sans">
   <div id="app">
     <header class="sticky top-0 z-50 app-header">
-      <div class="flex items-center min-h-[3.5rem] px-4 md:px-6 gap-4 md:gap-6 flex-wrap md:flex-nowrap py-2">
+      <div id="app-header-inner" class="flex items-center min-h-[3.5rem] px-4 md:px-6 gap-4 md:gap-6 flex-wrap md:flex-nowrap py-2">
         <a href="#/" class="flex items-center gap-2 shrink-0 hover:opacity-75 transition-opacity" style="text-decoration:none">
           <svg style="width:18px;height:18px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
             <path d="M4 6h9"/>
