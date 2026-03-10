@@ -46,6 +46,10 @@ func (m *Manager) RunJob(job *Job) {
 			err = runScrapeMarkdownJob(ctx, m, job)
 		case "scrape_index":
 			err = runScrapeIndexJob(ctx, m, job)
+		case "scrape_export":
+			err = runScrapeExportJob(ctx, m, job)
+		case "cc_export":
+			err = runCCExportJob(ctx, m, job)
 		default:
 			m.Fail(job.ID, fmt.Errorf("unknown job type: %s", job.Config.Type))
 			return
@@ -353,6 +357,54 @@ func getManifestPaths(ctx context.Context, m *Manager, crawlID string) ([]string
 // Dashboard base dir is ~/data/common-crawl/{crawlID}; crawler data is ~/data/crawler.
 func scrapeDataDir(baseDir string) string {
 	return filepath.Join(filepath.Dir(filepath.Dir(baseDir)), "crawler")
+}
+
+func runScrapeExportJob(ctx context.Context, m *Manager, job *Job) error {
+	domain := job.Config.Domain
+	if domain == "" {
+		return fmt.Errorf("scrape_export job missing domain")
+	}
+	dataDir := scrapeDataDir(m.baseDir)
+	format := job.Config.Format
+	if format == "" {
+		format = "html"
+	}
+	task := scrape.NewExportTask(domain, dataDir, format)
+
+	emit := NonBlockingEmit(func(s *scrape.ExportState) {
+		msg := fmt.Sprintf("%s export=%d/%d speed=%.0f/s",
+			domain, s.PagesExported, s.PagesTotal, s.PagesPerSec)
+		m.UpdateProgress(job.ID, s.Progress, msg, s.PagesPerSec)
+	})
+	metric, err := task.Run(ctx, emit)
+	if err == nil {
+		m.Complete(job.ID, fmt.Sprintf("exported %d pages to %s", metric.Pages, metric.OutDir))
+	}
+	return err
+}
+
+func runCCExportJob(ctx context.Context, m *Manager, job *Job) error {
+	domain := job.Config.Domain
+	if domain == "" {
+		return fmt.Errorf("cc_export job missing domain")
+	}
+	crawlDir := resolveJobCrawlDir(m, job)
+	format := job.Config.Format
+	if format == "" {
+		format = "html"
+	}
+	task := cc.NewCCExportTask(domain, crawlDir, format)
+
+	emit := NonBlockingEmit(func(s *cc.CCExportState) {
+		msg := fmt.Sprintf("%s export=%d/%d speed=%.0f/s",
+			domain, s.PagesExported, s.PagesTotal, s.PagesPerSec)
+		m.UpdateProgress(job.ID, s.Progress, msg, s.PagesPerSec)
+	})
+	metric, err := task.Run(ctx, emit)
+	if err == nil {
+		m.Complete(job.ID, fmt.Sprintf("exported %d pages to %s", metric.Pages, metric.OutDir))
+	}
+	return err
 }
 
 func buildDCrawlerConfig(domain, dataDir string, params scrape.StartParams) dcrawler.Config {
