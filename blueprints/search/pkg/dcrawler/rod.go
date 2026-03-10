@@ -47,7 +47,24 @@ func detectChromeBin() string {
 }
 
 // newLauncher creates a rod launcher with Chrome path and server-safe flags.
+// Includes aggressive memory optimization: renderer process limit, V8 heap cap,
+// GPU disabled, and background activity suppressed.
 func newLauncher(cfg Config) *launcher.Launcher {
+	// Cap V8 old-gen heap per renderer. Default is ~1.7GB which explodes with 80+ tabs.
+	// 256MB is enough for most SPAs (React/Next.js bundles are ~50-100MB parsed).
+	jsMaxOldSpace := 256
+	if cfg.RodBlockResources {
+		jsMaxOldSpace = 128 // less JS to execute when resources are blocked
+	}
+
+	// Renderer process limit: Chrome spawns one process per tab by default.
+	// With 80 tabs that's 80 processes × 200-500MB = memory explosion.
+	// Cap at 8 processes: Chrome reuses them across tabs (safe for single-domain crawling).
+	rendererLimit := 8
+	if cfg.RodWorkers > 0 && cfg.RodWorkers <= 20 {
+		rendererLimit = max(cfg.RodWorkers/3, 2)
+	}
+
 	l := launcher.New().
 		Headless(cfg.RodHeadless).
 		Set("disable-blink-features", "AutomationControlled").
@@ -56,7 +73,21 @@ func newLauncher(cfg Config) *launcher.Launcher {
 		Set("no-sandbox", "").            // required when running as root on servers
 		Set("window-size", "1920,1080").  // match fingerprintJS screen dimensions
 		Set("lang", "en-US").             // consistent locale
-		Set("accept-lang", "en-US,en;q=0.9")
+		Set("accept-lang", "en-US,en;q=0.9").
+		// Memory optimization flags:
+		Set("disable-gpu", "").                                                    // no GPU process (~100-200MB saved)
+		Set("disable-background-networking", "").                                  // no background prefetch/updates
+		Set("disable-extensions", "").                                             // no extension processes
+		Set("disable-sync", "").                                                   // no Chrome Sync overhead
+		Set("disable-translate", "").                                              // no translation service
+		Set("disable-default-apps", "").                                           // no default app processes
+		Set("disable-component-update", "").                                       // no component updater
+		Set("disable-backgrounding-occluded-windows", "").                         // don't throttle background tabs
+		Set("disable-renderer-backgrounding", "").                                 // keep renderers active (faster crawl)
+		Set("disable-ipc-flooding-protection", "").                                // allow fast CDP messages
+		Set("renderer-process-limit", fmt.Sprintf("%d", rendererLimit)).           // cap renderer processes
+		Set("js-flags", fmt.Sprintf("--max-old-space-size=%d", jsMaxOldSpace)).    // cap V8 heap per renderer
+		Set("metrics-recording-only", "")                                          // disable metrics reporting
 	if bin := detectChromeBin(); bin != "" {
 		l = l.Bin(bin)
 	}
