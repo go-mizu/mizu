@@ -19,7 +19,7 @@ func NewScrape() *cobra.Command {
 		timeout          int
 		rateLimit        int
 		transportShards  int
-		storeBody        bool
+		noBody           bool
 		noLinks          bool
 		noRobots         bool
 		noSitemap        bool
@@ -61,7 +61,7 @@ Results are stored in $HOME/data/crawler/<domain>/results/
 Examples:
   search scrape kenh14.vn --continuous
   search scrape dantri.com.vn --max-pages 100000 --workers 200
-  search scrape dantri.com.vn --store-body --max-depth 3
+  search scrape dantri.com.vn --max-depth 3
   search scrape dantri.com.vn --resume
 
 Pinterest (auto-detected, uses internal API - no browser needed):
@@ -92,7 +92,7 @@ Browser mode (JS-rendered pages, bypasses Cloudflare):
 			cfg.MaxPages = maxPages
 			cfg.Timeout = time.Duration(timeout) * time.Second
 			cfg.RateLimit = rateLimit
-			cfg.StoreBody = storeBody
+			cfg.StoreBody = !noBody
 			cfg.StoreLinks = !noLinks
 			cfg.RespectRobots = !noRobots
 			cfg.FollowSitemap = !noSitemap
@@ -152,7 +152,7 @@ Browser mode (JS-rendered pages, bypasses Cloudflare):
 	cmd.Flags().IntVar(&maxPages, "max-pages", 0, "Max pages to crawl (0=unlimited)")
 	cmd.Flags().IntVar(&timeout, "timeout", 10, "Per-request timeout in seconds")
 	cmd.Flags().IntVar(&rateLimit, "rate-limit", 0, "Max requests/sec (0=unlimited)")
-	cmd.Flags().BoolVar(&storeBody, "store-body", false, "Store compressed HTML body")
+	cmd.Flags().BoolVar(&noBody, "no-body", false, "Don't store compressed HTML body")
 	cmd.Flags().BoolVar(&noLinks, "no-links", false, "Don't store extracted links")
 	cmd.Flags().BoolVar(&noRobots, "no-robots", false, "Don't obey robots.txt")
 	cmd.Flags().BoolVar(&noSitemap, "no-sitemap", false, "Don't parse sitemap.xml")

@@ -74,6 +74,7 @@ func DefaultConfig() Config {
 		DataDir:         defaultDataDir(),
 		ShardCount:      8,
 		BatchSize:       500,
+		StoreBody:       true,
 		StoreLinks:      true,
 		RespectRobots:   true,
 		FollowSitemap:   true,
