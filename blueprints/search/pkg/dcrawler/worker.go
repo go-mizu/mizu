@@ -280,6 +280,11 @@ func (c *Crawler) processWorkerResult(item CrawlItem, wr workerResult) {
 		htmlBytes := []byte(*wr.HTML)
 		result.BodyHash = xxhash.Sum64(htmlBytes)
 
+		// Worker may not report content_length; use actual HTML size.
+		if result.ContentLength <= 0 {
+			result.ContentLength = int64(len(htmlBytes))
+		}
+
 		if compressed, err := zstd.Compress(nil, htmlBytes); err == nil {
 			result.HTML = compressed
 		}

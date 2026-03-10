@@ -14,19 +14,21 @@ import (
 
 const metaFile = "scrape_meta.duckdb"
 
-// startBackground launches a goroutine that refreshes domain stats every 60s
-// or immediately when s.triggerCh is signaled.
+// startBackground launches a goroutine that refreshes domain stats on demand
+// (when triggerCh is signaled by InvalidateCache or lazy read staleness).
 func startBackground(s *store) {
 	go func() {
-		ticker := time.NewTicker(60 * time.Second)
-		defer ticker.Stop()
-		refreshDomains(s)
+		// Initial refresh if meta DB was empty.
+		s.mu.RLock()
+		needsInit := !s.ready
+		s.mu.RUnlock()
+		if needsInit {
+			refreshDomains(s)
+		}
 		for {
 			select {
 			case <-s.stopCh:
 				return
-			case <-ticker.C:
-				refreshDomains(s)
 			case <-s.triggerCh:
 				refreshDomains(s)
 			}
@@ -80,6 +82,7 @@ func loadFromMeta(s *store) {
 	s.mu.Lock()
 	s.domains = domains
 	s.ready = true
+	s.lastRefresh = time.Now()
 	s.mu.Unlock()
 
 	log.Printf("[scrape-meta] loaded %d domains from meta DB", len(domains))
@@ -134,6 +137,7 @@ func refreshDomains(s *store) {
 	s.mu.Lock()
 	s.domains = domains
 	s.ready = true
+	s.lastRefresh = time.Now()
 	s.mu.Unlock()
 }
 
@@ -202,10 +206,14 @@ func computeDomainStats(domainDir, name string) Domain {
 				sr.mdBytes = mdBytes.Int64
 			}
 
-			// If html column has data (worker mode), use that for htmlBytes instead of content_length.
-			var htmlColBytes sql.NullInt64
-			if db.QueryRow(`SELECT COALESCE(SUM(octet_length(html)), 0) FROM pages WHERE html IS NOT NULL AND octet_length(html) > 0`).Scan(&htmlColBytes) == nil && htmlColBytes.Valid && htmlColBytes.Int64 > 0 {
-				sr.htmlBytes = htmlColBytes.Int64
+			// Fallback: if content_length is 0 (legacy worker data), estimate from HTML column.
+			// Note: html column stores zstd-compressed BLOBs, so octet_length gives compressed size.
+			// Only use as fallback when content_length is unavailable.
+			if sr.htmlBytes == 0 {
+				var htmlColBytes sql.NullInt64
+				if db.QueryRow(`SELECT COALESCE(SUM(octet_length(html)), 0) FROM pages WHERE html IS NOT NULL AND octet_length(html) > 0`).Scan(&htmlColBytes) == nil && htmlColBytes.Valid && htmlColBytes.Int64 > 0 {
+					sr.htmlBytes = htmlColBytes.Int64
+				}
 			}
 
 			var links int64
