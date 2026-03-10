@@ -16,5 +16,9 @@ fallthrough = true
 [browser]
 binding = "BROWSER"
 
+# Secret: wrangler secret put API_TOKEN
+# All /api/* routes require Authorization: Bearer <API_TOKEN>
+# If API_TOKEN is not set, all requests are allowed (backward compat)
+
 [vars]
 ENVIRONMENT = "production"

@@ -365,12 +365,19 @@ func (c *Client) doGuestFirst(endpoint string, vars map[string]any, toggles stri
 		if guestErr == nil {
 			return data, nil
 		}
-		// On rate limit: rotate token and retry once before falling through to auth
+		// On rate limit: rotate token and retry once; then try proxy pool before auth fallback
 		if rle := asRateLimitError(guestErr); rle != nil {
+			_ = rle
 			invalidateGuestToken()
 			if token2, err2 := fetchGuestToken(); err2 == nil {
 				if data2, guestErr2 := doGuestGraphQL(token2, endpoint, vars, toggles); guestErr2 == nil {
 					return data2, nil
+				}
+			}
+			// Proxy pool: try a guest token from a different IP's rate-limit bucket
+			if poolToken, poolErr := FetchGuestTokenFromPool(); poolErr == nil {
+				if data3, err3 := doGuestGraphQL(poolToken, endpoint, vars, toggles); err3 == nil {
+					return data3, nil
 				}
 			}
 		}

@@ -417,6 +417,7 @@ func newXTweets() *cobra.Command {
 		all       bool
 		order     string
 		session   string
+		workerURL string
 	)
 
 	cmd := &cobra.Command{
@@ -443,7 +444,7 @@ Examples:
 			if all {
 				maxTweets = 0
 			}
-			return runXTweets(cmd.Context(), username, maxTweets, order, session)
+			return runXTweets(cmd.Context(), username, maxTweets, order, session, workerURL)
 		},
 	}
 
@@ -451,17 +452,74 @@ Examples:
 	cmd.Flags().BoolVar(&all, "all", false, "Fetch all available tweets (overrides --max-tweets)")
 	cmd.Flags().StringVar(&order, "order", "oldest", "Fetch order: oldest or newest first")
 	cmd.Flags().StringVar(&session, "session", "", "Session username for auth fallback")
+	cmd.Flags().StringVar(&workerURL, "worker", "", "Use x-viewer worker API URL instead of direct X API (e.g. https://x-viewer.go-mizu.workers.dev)")
 	return cmd
 }
 
-func runXTweets(ctx context.Context, username string, maxTweets int, order, session string) error {
+// fetchTweetsFromWorker calls the x-viewer worker API to fetch tweets for a user.
+// Requires X_VIEWER_TOKEN env var for authentication.
+// Returns tweets and cache meta (fromCache, age/duration).
+func fetchTweetsFromWorker(ctx context.Context, workerURL, username, tab string) ([]x.Tweet, bool, string, error) {
+	token := os.Getenv("X_VIEWER_TOKEN")
+	apiURL := strings.TrimRight(workerURL, "/") + "/api/tweets/" + username
+	if tab != "" && tab != "tweets" {
+		apiURL += "?tab=" + tab
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		return nil, false, "", err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	req.Header.Set("User-Agent", "search-cli/1.0")
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, false, "", fmt.Errorf("worker request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 401 {
+		return nil, false, "", fmt.Errorf("worker returned 401: set X_VIEWER_TOKEN env var")
+	}
+	if resp.StatusCode != 200 {
+		return nil, false, "", fmt.Errorf("worker HTTP %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Tweets []x.Tweet `json:"tweets"`
+		Meta   struct {
+			FromCache bool    `json:"fromCache"`
+			Age       float64 `json:"age"`
+			Duration  float64 `json:"duration"`
+			CachedAt  int64   `json:"cachedAt"`
+		} `json:"meta"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, false, "", fmt.Errorf("decode response: %w", err)
+	}
+
+	// Build human-readable cache status
+	var cacheInfo string
+	if result.Meta.FromCache {
+		cacheInfo = fmt.Sprintf("cached %ds ago", int(result.Meta.Age))
+	} else {
+		cacheInfo = fmt.Sprintf("fetched in %dms", int(result.Meta.Duration))
+	}
+
+	return result.Tweets, result.Meta.FromCache, cacheInfo, nil
+}
+
+func runXTweets(ctx context.Context, username string, maxTweets int, order, session, workerURL string) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("X/Twitter Tweets"))
 	fmt.Println()
 
 	cfg := x.DefaultConfig()
-	// Guest token is used per-page; session is optional (only needed as fallback)
-	client := initXClientOptional(cfg, session)
 
 	fmt.Printf("  Fetching tweets for %s\n", infoStyle.Render("@"+username))
 	if maxTweets > 0 {
@@ -470,7 +528,57 @@ func runXTweets(ctx context.Context, username string, maxTweets int, order, sess
 		fmt.Printf("  Max tweets: %s\n", infoStyle.Render("unlimited (--all)"))
 	}
 	fmt.Printf("  Data:       %s\n", labelStyle.Render(cfg.UserDir(username)))
+
+	// Worker mode: use x-viewer API instead of direct X API
+	if workerURL != "" {
+		fmt.Printf("  Worker:     %s\n", labelStyle.Render(workerURL))
+		fmt.Println()
+
+		tweets, fromCache, cacheInfo, err := fetchTweetsFromWorker(ctx, workerURL, username, "tweets")
+		if err != nil {
+			return fmt.Errorf("worker fetch: %w", err)
+		}
+
+		fmt.Printf("  Source:     %s\n", labelStyle.Render(cacheInfo))
+		fmt.Printf("  Tweets:     %s\n", infoStyle.Render(formatLargeNumber(int64(len(tweets)))))
+		_ = fromCache
+		fmt.Println()
+
+		if len(tweets) == 0 {
+			fmt.Println(warningStyle.Render("  No tweets returned"))
+			return nil
+		}
+
+		// Save to DB
+		db, err := x.OpenDB(cfg.UserDBPath(username))
+		if err != nil {
+			return fmt.Errorf("open db: %w", err)
+		}
+		defer db.Close()
+
+		if err := db.InsertTweets(tweets); err != nil {
+			fmt.Printf("  Warning: save failed: %v\n", err)
+		}
+
+		fmt.Println(subtitleStyle.Render("  Top tweets by likes:"))
+		top := tweets
+		if len(top) > 5 {
+			top = top[:5]
+		}
+		for i, t := range top {
+			text := strings.ReplaceAll(t.Text, "\n", " ")
+			if len(text) > 60 {
+				text = text[:60] + "..."
+			}
+			fmt.Printf("  %d. %s likes  %s\n", i+1, infoStyle.Render(formatLargeNumber(int64(t.Likes))), text)
+		}
+		return nil
+	}
+
 	fmt.Println()
+
+	// Guest token is used per-page; session is optional (only needed as fallback)
+	client := initXClientOptional(cfg, session)
 
 	// Open DB early for incremental saves
 	db, err := x.OpenDB(cfg.UserDBPath(username))

@@ -29,10 +29,10 @@ export const SearchPeople = 'People'
 export const SearchMedia = 'Media'
 
 // Cache TTLs in seconds
-export const CACHE_PROFILE = 300      // 5 min
+export const CACHE_PROFILE = 86400    // 24 hours
 export const CACHE_TIMELINE = 120     // 2 min
 export const CACHE_TWEET = 3600       // 1 hour
-export const CACHE_SEARCH = 120       // 2 min
+export const CACHE_SEARCH = 900       // 15 min
 export const CACHE_TRENDS = 300       // 5 min
 export const CACHE_LIST = 120         // 2 min
 export const CACHE_FOLLOW = 300       // 5 min

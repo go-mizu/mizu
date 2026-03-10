@@ -2,6 +2,7 @@
 CREATE TABLE IF NOT EXISTS profiles (
   username TEXT PRIMARY KEY,
   data TEXT NOT NULL,
+  fetched_at INTEGER NOT NULL DEFAULT 0,
   expires_at INTEGER NOT NULL
 );
 
@@ -10,6 +11,7 @@ CREATE TABLE IF NOT EXISTS tweets (
   tweet_id TEXT NOT NULL,
   cursor TEXT NOT NULL DEFAULT '',
   data TEXT NOT NULL,
+  fetched_at INTEGER NOT NULL DEFAULT 0,
   expires_at INTEGER NOT NULL,
   PRIMARY KEY (tweet_id, cursor)
 );
@@ -19,6 +21,7 @@ CREATE TABLE IF NOT EXISTS articles (
   tweet_id TEXT PRIMARY KEY,
   tweet_data TEXT NOT NULL,
   body TEXT NOT NULL DEFAULT '',
+  fetched_at INTEGER NOT NULL DEFAULT 0,
   expires_at INTEGER NOT NULL
 );
 
@@ -28,6 +31,7 @@ CREATE TABLE IF NOT EXISTS timelines (
   tab TEXT NOT NULL DEFAULT 'tweets',
   cursor TEXT NOT NULL DEFAULT '',
   data TEXT NOT NULL,
+  fetched_at INTEGER NOT NULL DEFAULT 0,
   expires_at INTEGER NOT NULL,
   PRIMARY KEY (username, tab, cursor)
 );
@@ -38,6 +42,7 @@ CREATE TABLE IF NOT EXISTS searches (
   mode TEXT NOT NULL,
   cursor TEXT NOT NULL DEFAULT '',
   data TEXT NOT NULL,
+  fetched_at INTEGER NOT NULL DEFAULT 0,
   expires_at INTEGER NOT NULL,
   PRIMARY KEY (query, mode, cursor)
 );
@@ -46,6 +51,7 @@ CREATE TABLE IF NOT EXISTS searches (
 CREATE TABLE IF NOT EXISTS lists (
   list_id TEXT PRIMARY KEY,
   data TEXT NOT NULL,
+  fetched_at INTEGER NOT NULL DEFAULT 0,
   expires_at INTEGER NOT NULL
 );
 
@@ -55,6 +61,7 @@ CREATE TABLE IF NOT EXISTS list_content (
   content_type TEXT NOT NULL,
   cursor TEXT NOT NULL DEFAULT '',
   data TEXT NOT NULL,
+  fetched_at INTEGER NOT NULL DEFAULT 0,
   expires_at INTEGER NOT NULL,
   PRIMARY KEY (list_id, content_type, cursor)
 );
@@ -65,9 +72,20 @@ CREATE TABLE IF NOT EXISTS follows (
   follow_type TEXT NOT NULL,
   cursor TEXT NOT NULL DEFAULT '',
   data TEXT NOT NULL,
+  fetched_at INTEGER NOT NULL DEFAULT 0,
   expires_at INTEGER NOT NULL,
   PRIMARY KEY (username, follow_type, cursor)
 );
 
 -- Drop old generic cache table
 DROP TABLE IF EXISTS cache;
+
+-- Migration: add fetched_at to existing tables (safe to run multiple times via try/catch in code)
+-- ALTER TABLE profiles ADD COLUMN fetched_at INTEGER NOT NULL DEFAULT 0;
+-- ALTER TABLE tweets ADD COLUMN fetched_at INTEGER NOT NULL DEFAULT 0;
+-- ALTER TABLE articles ADD COLUMN fetched_at INTEGER NOT NULL DEFAULT 0;
+-- ALTER TABLE timelines ADD COLUMN fetched_at INTEGER NOT NULL DEFAULT 0;
+-- ALTER TABLE searches ADD COLUMN fetched_at INTEGER NOT NULL DEFAULT 0;
+-- ALTER TABLE lists ADD COLUMN fetched_at INTEGER NOT NULL DEFAULT 0;
+-- ALTER TABLE list_content ADD COLUMN fetched_at INTEGER NOT NULL DEFAULT 0;
+-- ALTER TABLE follows ADD COLUMN fetched_at INTEGER NOT NULL DEFAULT 0;
