@@ -1,16 +1,19 @@
 """Patchright-based MotherDuck account registration.
 
 Flow:
-  1. Open app.motherduck.com
-  2. Click "Sign up" / "Continue with email"
-  3. Enter mail.tm address → submit
+  1. Open app.motherduck.com → auto-redirects to Auth0 (auth.motherduck.com)
+  2. On Auth0 login page: enter email in input[name="username"], click Continue
+  3. Auth0 sends a passwordless magic link to the email
   4. Poll mail.tm for magic link → navigate to it
   5. Click through onboarding prompts
   6. Navigate to Settings > Tokens → generate + extract token
 
+Note: MotherDuck uses Auth0 Universal Login (passwordless email).
+There is no separate sign-up page — new accounts are created automatically
+when an unrecognised email is submitted on the Auth0 login page.
+
 Note on Linux xvfb re-exec: When _maybe_reexec_xvfb triggers, the parent exits via
-sys.exit() after the child finishes. The child browser subprocess returns the token
-via stdout. On headless Linux (the default), xvfb re-exec is never triggered.
+sys.exit() after the child finishes. On headless Linux (the default), never triggered.
 """
 from __future__ import annotations
 
@@ -89,58 +92,56 @@ def register_via_browser(
             page.on("pageerror", lambda e: log(f"[page-error] {e}"))
 
         try:
-            # ---- Step 1: Load landing page ----
-            log("opening app.motherduck.com...")
+            # ---- Step 1: Open app — auto-redirects to Auth0 ----
+            log("opening app.motherduck.com (will redirect to Auth0)...")
             try:
                 page.goto("https://app.motherduck.com", timeout=30000)
+                page.wait_for_load_state("networkidle", timeout=10000)
             except Exception as e:
                 log(f"landing warn: {e}")
-            _wait(3, log, "page load")
+            _wait(2, log)
+            log(f"landed on: {page.url}")
 
-            # ---- Step 2: Click "Sign up" or "Continue with email" ----
-            log("clicking sign-up entry...")
-            for sel in [
-                'button:has-text("Sign up")',
-                'a:has-text("Sign up")',
-                'button:has-text("Continue with email")',
-                '[href*="signup"]',
-                'button:has-text("Get started")',
-            ]:
-                btn = page.locator(sel)
-                if btn.count() > 0:
-                    btn.first.click()
-                    log(f"clicked: {sel}")
-                    _wait(2, log)
-                    break
-
-            log(f"url after signup click: {page.url}")
-
-            # ---- Step 3: Enter email ----
+            # ---- Step 2: Enter email on Auth0 login page ----
+            # Auth0 Universal Login uses input[name="username"] for the email field.
+            # MotherDuck uses passwordless flow — entering any email triggers a magic link.
             log(f"entering email: {mailbox.address}")
+            email_filled = False
             for sel in [
+                'input[name="username"]',    # Auth0 identifier-first
                 'input[type="email"]',
                 'input[name="email"]',
                 'input[placeholder*="email" i]',
+                'input[placeholder*="address" i]',
             ]:
-                inp = page.locator(sel)
-                if inp.count() > 0:
-                    _fill(page, sel, mailbox.address)
-                    log(f"filled email via: {sel}")
-                    break
+                try:
+                    inp = page.locator(sel)
+                    if inp.count() > 0:
+                        _fill(page, sel, mailbox.address)
+                        log(f"filled email via: {sel}")
+                        email_filled = True
+                        break
+                except Exception:
+                    continue
 
-            # Submit email form
+            if not email_filled:
+                log(f"WARNING: no email input found on {page.url}")
+
+            # Submit — Auth0 uses button[name="action"] or button[value="default"]
             for sel in [
+                'button[name="action"]',          # Auth0 primary
+                'button[value="default"]',         # Auth0 fallback
                 'button[type="submit"]',
                 'button:has-text("Continue")',
                 'button:has-text("Send magic link")',
                 'button:has-text("Sign in")',
-                'button:has-text("Submit")',
+                '[data-action-button-primary="true"]',
             ]:
                 btn = page.locator(sel)
                 if btn.count() > 0:
                     btn.first.click()
                     log(f"submitted via: {sel}")
-                    _wait(2, log)
+                    _wait(3, log)
                     break
 
             log(f"url after email submit: {page.url}")
