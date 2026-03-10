@@ -135,6 +135,9 @@ func (e *Exporter) rewriteHTML(html []byte, pageURL *url.URL) ([]byte, error) {
 		return nil, err
 	}
 
+	// Remove all <script> tags — JS can't work offline (CORS, hydration failures).
+	doc.Find("script").Remove()
+
 	pageLocalPath := URLToLocalPath(pageURL.Path)
 	pageDir := path.Dir(pageLocalPath)
 
