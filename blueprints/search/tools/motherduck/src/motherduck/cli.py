@@ -57,6 +57,7 @@ def register(
         token = register_via_browser(
             mailbox=mailbox,
             mail_client=mail_client,
+            password=identity.password,  # MotherDuck account password
             headless=not no_headless,
             verbose=verbose,
         )
@@ -69,7 +70,7 @@ def register(
     store = _store()
     store.add_account(
         email=mailbox.address,
-        password=mailbox.password,
+        password=identity.password,  # store MotherDuck account password
         token=token,
     )
 

@@ -2,15 +2,15 @@
 
 Flow:
   1. Open app.motherduck.com → auto-redirects to Auth0 (auth.motherduck.com)
-  2. On Auth0 login page: enter email in input[name="username"], click Continue
-  3. Auth0 sends a passwordless magic link to the email
-  4. Poll mail.tm for magic link → navigate to it
-  5. Click through onboarding prompts
+  2. On Auth0 identifier-first page: enter email → click Continue
+  3. Auth0 advances to password step (same URL, SPA-style)
+  4. If new user: enter password → click Continue → redirected to sign-up confirmation
+     OR Auth0 navigates to auth.motherduck.com/u/signup
+  5. On signup page (if separate): fill password → submit → account created
   6. Navigate to Settings > Tokens → generate + extract token
 
-Note: MotherDuck uses Auth0 Universal Login (passwordless email).
-There is no separate sign-up page — new accounts are created automatically
-when an unrecognised email is submitted on the Auth0 login page.
+Note: MotherDuck uses Auth0 password-based login (not passwordless).
+After entering email, Auth0 shows a password field on the same page.
 
 Note on Linux xvfb re-exec: When _maybe_reexec_xvfb triggers, the parent exits via
 sys.exit() after the child finishes. On headless Linux (the default), never triggered.
@@ -61,6 +61,7 @@ def _fill(page, selector: str, text: str, delay: int = 55) -> None:
 def register_via_browser(
     mailbox: Mailbox,
     mail_client: MailTmClient,
+    password: str,
     headless: bool = True,
     verbose: bool = False,
 ) -> str:
@@ -145,31 +146,74 @@ def register_via_browser(
                     break
 
             log(f"url after email submit: {page.url}")
+            _wait(2, log)
 
-            # Log page state to diagnose success/error
+            # ---- Step 3b: Password step (Auth0 identifier-first) ----
+            # After entering email, Auth0 shows a password field on the same page.
+            # For new users this sets the account password; for existing users it logs in.
+            pwd_input = page.locator('input[name="password"], input[type="password"]')
+            if pwd_input.count() > 0:
+                log("password field detected — filling...")
+                _fill(page, 'input[name="password"], input[type="password"]', password)
+
+                # Click Continue / Submit
+                for sel in [
+                    'button[name="action"]',
+                    'button[value="default"]',
+                    'button[type="submit"]',
+                    'button:has-text("Continue")',
+                    'button:has-text("Sign up")',
+                ]:
+                    btn = page.locator(sel)
+                    if btn.count() > 0:
+                        btn.first.click()
+                        log(f"password submitted via: {sel}")
+                        _wait(3, log)
+                        break
+                log(f"url after password submit: {page.url}")
+            else:
+                log("no password field — assuming passwordless flow")
+
+            # ---- Step 3c: Handle Auth0 signup page if redirected ----
+            # Auth0 may redirect to /u/signup for new users
+            if "signup" in page.url:
+                log(f"on signup page: {page.url}")
+                # Fill password if shown again
+                pwd2 = page.locator('input[name="password"], input[type="password"]')
+                if pwd2.count() > 0:
+                    _fill(page, 'input[name="password"], input[type="password"]', password)
+                    for sel in ['button[name="action"]', 'button[type="submit"]', 'button:has-text("Sign up")', 'button:has-text("Continue")']:
+                        btn = page.locator(sel)
+                        if btn.count() > 0:
+                            btn.first.click()
+                            log(f"signup submitted via: {sel}")
+                            _wait(3, log)
+                            break
+                log(f"url after signup submit: {page.url}")
+
+            # ---- Step 4: Handle email verification if required ----
+            # Some Auth0 configs send a verification email
+            body_text = ""
             try:
-                page.wait_for_load_state("networkidle", timeout=5000)
+                body_text = page.inner_text("body")[:800]
+                log(f"page state: {body_text[:200]!r}")
             except Exception:
                 pass
-            try:
-                body_text = page.inner_text("body")[:600]
-                log(f"page text after submit: {body_text!r}")
-            except Exception as e:
-                log(f"page text read warn: {e}")
 
-            # ---- Step 4: Poll mail.tm for magic link ----
-            log("polling mail.tm for magic link...")
-            magic_link = mail_client.poll_for_magic_link(mailbox, timeout=120)
-            log(f"got magic link: {magic_link[:60]}...")
-
-            # ---- Step 5: Navigate to magic link ----
-            log("navigating to magic link...")
-            try:
-                page.goto(magic_link, timeout=30000)
-            except Exception as e:
-                log(f"magic link nav warn: {e}")
-            _wait(4, log, "post-magic-link load")
-            log(f"url after magic link: {page.url}")
+            # If Auth0 requires email verification / magic link
+            needs_verification = any(kw in body_text.lower() for kw in [
+                "verify", "check your email", "confirmation", "magic link", "link has been sent"
+            ])
+            if needs_verification:
+                log("email verification required — polling mail.tm...")
+                magic_link = mail_client.poll_for_magic_link(mailbox, timeout=120)
+                log(f"got magic link: {magic_link[:60]}...")
+                try:
+                    page.goto(magic_link, timeout=30000)
+                except Exception as e:
+                    log(f"magic link nav warn: {e}")
+                _wait(4, log, "post-magic-link load")
+                log(f"url after magic link: {page.url}")
 
             # ---- Step 6: Click through onboarding ----
             log("clicking through onboarding...")
