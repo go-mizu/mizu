@@ -72,7 +72,7 @@ Get started:
 	root.AddCommand(NewFW1())
 	root.AddCommand(NewFW2())
 	root.AddCommand(NewCC())
-	root.AddCommand(NewCrawlDomain())
+	root.AddCommand(NewScrape())
 	root.AddCommand(NewReddit())
 	root.AddCommand(NewInsta())
 	root.AddCommand(NewX())

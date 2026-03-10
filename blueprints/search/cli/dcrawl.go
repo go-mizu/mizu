@@ -9,8 +9,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// NewCrawlDomain creates the crawl-domain CLI command.
-func NewCrawlDomain() *cobra.Command {
+// NewScrape creates the scrape CLI command (formerly crawl-domain).
+func NewScrape() *cobra.Command {
 	var (
 		workers          int
 		maxConns         int
@@ -48,8 +48,9 @@ func NewCrawlDomain() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "crawl-domain <domain>",
-		Short: "Crawl all pages from a single domain",
+		Use:     "scrape <domain>",
+		Aliases: []string{"crawl-domain"},
+		Short:   "Crawl all pages from a single domain",
 		Long: `High-throughput single-domain web crawler targeting 10K+ pages/second.
 
 Uses HTTP/2 multiplexing, bloom filter URL dedup, BFS frontier,
@@ -58,19 +59,19 @@ and sharded DuckDB storage for maximum throughput.
 Results are stored in $HOME/data/crawler/<domain>/results/
 
 Examples:
-  search crawl-domain kenh14.vn --continuous
-  search crawl-domain dantri.com.vn --max-pages 100000 --workers 200
-  search crawl-domain dantri.com.vn --store-body --max-depth 3
-  search crawl-domain dantri.com.vn --resume
+  search scrape kenh14.vn --continuous
+  search scrape dantri.com.vn --max-pages 100000 --workers 200
+  search scrape dantri.com.vn --store-body --max-depth 3
+  search scrape dantri.com.vn --resume
 
 Pinterest (auto-detected, uses internal API - no browser needed):
-  search crawl-domain 'https://www.pinterest.com/search/pins/?q=gouache' --download-images
-  search crawl-domain 'https://www.pinterest.com/search/pins/?q=watercolor' --max-pages 200
+  search scrape 'https://www.pinterest.com/search/pins/?q=gouache' --download-images
+  search scrape 'https://www.pinterest.com/search/pins/?q=watercolor' --max-pages 200
 
 Browser mode (JS-rendered pages, bypasses Cloudflare):
-  search crawl-domain openai.com --browser
-  search crawl-domain openai.com --browser --no-render-wait   # faster for SSG/Next.js sites
-  search crawl-domain openai.com --browser --browser-pages 80 # explicit tab count`,
+  search scrape openai.com --browser
+  search scrape openai.com --browser --no-render-wait   # faster for SSG/Next.js sites
+  search scrape openai.com --browser --browser-pages 80 # explicit tab count`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if useRod && useLightpanda {
