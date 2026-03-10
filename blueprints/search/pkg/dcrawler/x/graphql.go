@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -16,6 +17,12 @@ type graphqlClient struct {
 	http      *http.Client
 	authToken string
 	ct0       string
+
+	// Rate limit state (updated from response headers)
+	mu             sync.Mutex
+	rlRemaining    int       // x-rate-limit-remaining
+	rlReset        time.Time // x-rate-limit-reset
+	rlLastUpdated  time.Time
 }
 
 func newGraphQLClient(authToken, ct0 string, timeout time.Duration) *graphqlClient {
@@ -34,6 +41,27 @@ func newGraphQLClient(authToken, ct0 string, timeout time.Duration) *graphqlClie
 		authToken: authToken,
 		ct0:       ct0,
 	}
+}
+
+// PacedDelay returns the optimal delay between requests based on rate limit state.
+// Spreads remaining requests evenly across the rate limit window.
+// Returns minDelay if rate limit info is unavailable.
+func (g *graphqlClient) PacedDelay(minDelay time.Duration) time.Duration {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if g.rlReset.IsZero() || g.rlRemaining <= 0 {
+		return minDelay
+	}
+	timeLeft := time.Until(g.rlReset)
+	if timeLeft <= 0 {
+		return minDelay
+	}
+	paced := timeLeft / time.Duration(g.rlRemaining)
+	if paced < minDelay {
+		return minDelay
+	}
+	return paced
 }
 
 // doGraphQL makes a GET request to a GraphQL endpoint and returns parsed JSON.
@@ -120,17 +148,32 @@ func (g *graphqlClient) doGraphQL(endpoint string, variables map[string]any, fie
 		return nil, fmt.Errorf("read body: %w", err)
 	}
 
+	// Parse rate limit headers (present on all responses, not just 429)
+	var rateLimitReset time.Time
+	if resetStr := resp.Header.Get("x-rate-limit-reset"); resetStr != "" {
+		var resetEpoch int64
+		fmt.Sscanf(resetStr, "%d", &resetEpoch)
+		if resetEpoch > 0 {
+			rateLimitReset = time.Unix(resetEpoch, 0)
+		}
+	}
+	// Update rate limit state for pacing
+	if remainStr := resp.Header.Get("x-rate-limit-remaining"); remainStr != "" {
+		var remaining int
+		fmt.Sscanf(remainStr, "%d", &remaining)
+		g.mu.Lock()
+		g.rlRemaining = remaining
+		if !rateLimitReset.IsZero() {
+			g.rlReset = rateLimitReset
+		}
+		g.rlLastUpdated = time.Now()
+		g.mu.Unlock()
+	}
+
 	if resp.StatusCode == 429 {
-		resetStr := resp.Header.Get("x-rate-limit-reset")
-		if resetStr != "" {
-			var resetEpoch int64
-			fmt.Sscanf(resetStr, "%d", &resetEpoch)
-			if resetEpoch > 0 {
-				resetAt := time.Unix(resetEpoch, 0)
-				wait := time.Until(resetAt)
-				if wait > 0 {
-					return nil, &RateLimitError{ResetAt: resetAt, Wait: wait}
-				}
+		if !rateLimitReset.IsZero() {
+			if wait := time.Until(rateLimitReset); wait > 0 {
+				return nil, &RateLimitError{ResetAt: rateLimitReset, Wait: wait}
 			}
 		}
 		return nil, &RateLimitError{Wait: 15 * time.Minute} // fallback: 15min window
@@ -158,7 +201,14 @@ func (g *graphqlClient) doGraphQL(endpoint string, variables map[string]any, fie
 			code := asInt(first["code"])
 			switch code {
 			case 88:
-				return nil, &RateLimitError{Wait: 15 * time.Minute}
+				rle := &RateLimitError{Wait: 15 * time.Minute}
+				if !rateLimitReset.IsZero() {
+					if wait := time.Until(rateLimitReset); wait > 0 {
+						rle.ResetAt = rateLimitReset
+						rle.Wait = wait
+					}
+				}
+				return nil, rle
 			case 89:
 				return nil, fmt.Errorf("expired token: %s", msg)
 			case 239:

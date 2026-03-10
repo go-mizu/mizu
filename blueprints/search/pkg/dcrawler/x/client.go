@@ -212,7 +212,7 @@ func (c *Client) SearchProfiles(ctx context.Context, query string, maxUsers int,
 		}
 		cursor = nextCursor
 
-		time.Sleep(c.cfg.Delay)
+		time.Sleep(c.gql.PacedDelay(c.cfg.Delay))
 	}
 
 	return users, nil
@@ -328,7 +328,7 @@ func (c *Client) getUserTimeline(ctx context.Context, username, endpoint, phase 
 		}
 		cursor = result.Cursor
 
-		time.Sleep(c.cfg.Delay)
+		time.Sleep(c.gql.PacedDelay(c.cfg.Delay))
 	}
 
 	if cb != nil {
@@ -374,7 +374,11 @@ func (c *Client) doGraphQLRetry(ctx context.Context, endpoint string, vars map[s
 			wait = 16 * time.Minute // cap at 16 min
 		}
 		if cb != nil {
-			cb(Progress{Phase: phase, Current: current, Message: fmt.Sprintf("rate limited, waiting %s...", wait.Truncate(time.Second))})
+			msg := fmt.Sprintf("rate limited, waiting %s", wait.Truncate(time.Second))
+			if !rle.ResetAt.IsZero() {
+				msg += fmt.Sprintf(" (resets %s)", rle.ResetAt.Format("15:04:05"))
+			}
+			cb(Progress{Phase: phase, Current: current, Message: msg})
 		}
 		select {
 		case <-ctx.Done():
@@ -527,7 +531,7 @@ func (c *Client) GetTweetReplies(id string) ([]Tweet, error) {
 		}
 		cursor = nextCursor
 
-		time.Sleep(c.cfg.Delay)
+		time.Sleep(c.gql.PacedDelay(c.cfg.Delay))
 	}
 
 	return allReplies, nil
@@ -639,7 +643,7 @@ func (c *Client) searchTweetsInternal(ctx context.Context, query string, maxTwee
 		}
 		cursor = result.Cursor
 
-		time.Sleep(c.cfg.Delay)
+		time.Sleep(c.gql.PacedDelay(c.cfg.Delay))
 	}
 
 	if cb != nil {
@@ -707,7 +711,7 @@ func (c *Client) getFollowList(ctx context.Context, username, endpoint, phase st
 		}
 		cursor = nextCursor
 
-		time.Sleep(c.cfg.Delay)
+		time.Sleep(c.gql.PacedDelay(c.cfg.Delay))
 	}
 
 	return users, nil
@@ -768,7 +772,7 @@ func (c *Client) GetBookmarks(ctx context.Context, maxTweets int, cb ProgressCal
 		}
 		cursor = result.Cursor
 
-		time.Sleep(c.cfg.Delay)
+		time.Sleep(c.gql.PacedDelay(c.cfg.Delay))
 	}
 
 	if cb != nil {
@@ -841,7 +845,7 @@ func (c *Client) getTimeline(ctx context.Context, endpoint, phase string, maxTwe
 		}
 		cursor = result.Cursor
 
-		time.Sleep(c.cfg.Delay)
+		time.Sleep(c.gql.PacedDelay(c.cfg.Delay))
 	}
 
 	if cb != nil {
@@ -935,7 +939,7 @@ func (c *Client) GetListTweets(ctx context.Context, listID string, maxTweets int
 		}
 		cursor = result.Cursor
 
-		time.Sleep(c.cfg.Delay)
+		time.Sleep(c.gql.PacedDelay(c.cfg.Delay))
 	}
 
 	if cb != nil {
@@ -986,7 +990,7 @@ func (c *Client) GetListMembers(ctx context.Context, listID string, maxUsers int
 		}
 		cursor = nextCursor
 
-		time.Sleep(c.cfg.Delay)
+		time.Sleep(c.gql.PacedDelay(c.cfg.Delay))
 	}
 
 	return users, nil
