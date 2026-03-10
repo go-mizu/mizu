@@ -134,6 +134,28 @@ func initXClient(cfg x.Config, session string) (*x.Client, error) {
 	return client, nil
 }
 
+// initXClientOptional loads a session if available but returns a working client even without one.
+// Commands that only need public data (profile, tweet, timeline) use this — guest token handles reads.
+// Commands that need auth (bookmarks, home, search) should use initXClient instead.
+func initXClientOptional(cfg x.Config, session string) *x.Client {
+	client := x.NewClient(cfg)
+
+	if session == "" {
+		session = "default"
+	}
+	sessionPath := cfg.SessionPath(session)
+	sess, err := client.LoadSessionFile(sessionPath)
+	if err != nil {
+		// No session — client still works via guest token for public data
+		return client
+	}
+	fmt.Printf("  Session: %s\n", infoStyle.Render("@"+sess.Username))
+	if !client.Activate() {
+		fmt.Println(warningStyle.Render("  Warning: session may be expired"))
+	}
+	return client
+}
+
 // ── login ───────────────────────────────────────────────
 
 func newXLogin() *cobra.Command {
@@ -291,7 +313,6 @@ func runXImportSession(username string) error {
 
 func newXProfile() *cobra.Command {
 	var session string
-	var noAuth bool
 
 	cmd := &cobra.Command{
 		Use:   "profile <username>",
@@ -301,62 +322,36 @@ func newXProfile() *cobra.Command {
 Displays username, bio, follower/following counts, tweet count, and more.
 Profile data is saved to $HOME/data/x/{username}/profile.json
 
-By default, uses cookie-based session auth. Use --no-auth to fetch via guest
-token without any session (avoids rate limits, works for public profiles).
+Uses guest token for fetching (no session rate limit consumed).
+Session is used as fallback if guest token fails.
 
 Examples:
-  search x profile karpathy --session myuser
-  search x profile elonmusk --no-auth`,
+  search x profile karpathy
+  search x profile elonmusk --session myuser`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			username := strings.TrimPrefix(args[0], "@")
-			return runXProfile(username, session, noAuth)
+			return runXProfile(username, session)
 		},
 	}
 
-	cmd.Flags().StringVar(&session, "session", "", "Session username to load")
-	cmd.Flags().BoolVar(&noAuth, "no-auth", false, "Fetch via guest token without session auth")
+	cmd.Flags().StringVar(&session, "session", "", "Session username for auth fallback")
 	return cmd
 }
 
-func runXProfile(username, session string, noAuth bool) error {
+func runXProfile(username, session string) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("X/Twitter Profile"))
 	fmt.Println()
 
 	cfg := x.DefaultConfig()
+	client := initXClientOptional(cfg, session)
 
 	fmt.Printf("  Fetching profile for %s\n", infoStyle.Render("@"+username))
 
-	var profile *x.Profile
-	var err error
-
-	if noAuth {
-		// Guest token path — no session needed
-		fmt.Println(labelStyle.Render("  Mode: guest token (no auth)"))
-		profile, err = x.GetProfileGuest(username)
-		if err != nil {
-			return fmt.Errorf("get profile @%s (no-auth): %w", username, err)
-		}
-	} else {
-		client, clientErr := initXClient(cfg, session)
-		if clientErr != nil {
-			// Auto-fallback to no-auth when no session is configured
-			if session == "" {
-				fmt.Println(warningStyle.Render("  No session found — falling back to guest token (use --session to authenticate)"))
-				profile, err = x.GetProfileGuest(username)
-				if err != nil {
-					return fmt.Errorf("get profile @%s (no-auth fallback): %w", username, err)
-				}
-			} else {
-				return clientErr
-			}
-		} else {
-			profile, err = client.GetProfile(username)
-			if err != nil {
-				return err
-			}
-		}
+	profile, err := client.GetProfile(username)
+	if err != nil {
+		return err
 	}
 
 	// Save profile
@@ -455,7 +450,7 @@ Examples:
 	cmd.Flags().IntVar(&maxTweets, "max-tweets", 200, "Max tweets to fetch (0 = unlimited)")
 	cmd.Flags().BoolVar(&all, "all", false, "Fetch all available tweets (overrides --max-tweets)")
 	cmd.Flags().StringVar(&order, "order", "oldest", "Fetch order: oldest or newest first")
-	cmd.Flags().StringVar(&session, "session", "", "Session username to load (required)")
+	cmd.Flags().StringVar(&session, "session", "", "Session username for auth fallback")
 	return cmd
 }
 
@@ -465,10 +460,8 @@ func runXTweets(ctx context.Context, username string, maxTweets int, order, sess
 	fmt.Println()
 
 	cfg := x.DefaultConfig()
-	client, err := initXClient(cfg, session)
-	if err != nil {
-		return err
-	}
+	// Guest token is used per-page; session is optional (only needed as fallback)
+	client := initXClientOptional(cfg, session)
 
 	fmt.Printf("  Fetching tweets for %s\n", infoStyle.Render("@"+username))
 	if maxTweets > 0 {
@@ -688,7 +681,6 @@ func fetchAllTweetsByDate(ctx context.Context, client *x.Client, db *x.DB, usern
 
 func newXTweet() *cobra.Command {
 	var session, format string
-	var noAuth bool
 
 	cmd := &cobra.Command{
 		Use:   "tweet <id_or_url>",
@@ -699,26 +691,25 @@ Accepts tweet ID or full URL:
   search x tweet 1234567890
   search x tweet https://x.com/user/status/1234567890
 
-Use --no-auth to fetch via the syndication/embed API (no session needed):
-  search x tweet 1234567890 --no-auth
+Fetches via syndication API first (no auth), falls back to guest token, then
+to cookie auth. Session is optional — useful for replies and non-public content.
 
 Use --format markdown to save the thread as a markdown article:
-  search x tweet https://x.com/LangChain/status/2031055593360990358 --format markdown --session myuser
+  search x tweet https://x.com/LangChain/status/2031055593360990358 --format markdown
 
 Examples:
-  search x tweet 1234567890 --no-auth
+  search x tweet 1234567890
   search x tweet 1234567890 --session myuser
-  search x tweet https://x.com/user/status/123 --format markdown --session myuser`,
+  search x tweet https://x.com/user/status/123 --format markdown`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := extractTweetID(args[0])
-			return runXTweet(cmd.Context(), id, session, format, noAuth)
+			return runXTweet(cmd.Context(), id, session, format)
 		},
 	}
 
-	cmd.Flags().StringVar(&session, "session", "", "Session username to load")
+	cmd.Flags().StringVar(&session, "session", "", "Session username for auth fallback and replies")
 	cmd.Flags().StringVar(&format, "format", "", "Output format: markdown")
-	cmd.Flags().BoolVar(&noAuth, "no-auth", false, "Fetch via syndication/guest token without session auth")
 	return cmd
 }
 
@@ -738,67 +729,29 @@ func extractTweetID(input string) string {
 	return input
 }
 
-func runXTweet(ctx context.Context, id, session, format string, noAuth bool) error {
+func runXTweet(ctx context.Context, id, session, format string) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("X/Twitter Tweet"))
 	fmt.Println()
 
 	cfg := x.DefaultConfig()
+	client := initXClientOptional(cfg, session)
 
 	fmt.Printf("  Fetching tweet %s\n", infoStyle.Render(id))
 
-	var client *x.Client
-	var tweet *x.Tweet
-
-	if noAuth {
-		// No-auth path: syndication API first, guest token fallback
-		fmt.Println(labelStyle.Render("  Mode: no-auth (syndication → guest token)"))
-		var err error
-		tweet, err = x.GetTweetNoAuth(id)
-		if err != nil {
-			return fmt.Errorf("get tweet %s (no-auth): %w", id, err)
-		}
-		// no-auth doesn't support replies — create a minimal client for display only
-		client = x.NewClient(cfg)
-	} else {
-		var clientErr error
-		client, clientErr = initXClient(cfg, session)
-		if clientErr != nil {
-			// Auto-fallback when no session configured
-			if session == "" {
-				fmt.Println(warningStyle.Render("  No session found — falling back to no-auth (syndication → guest token)"))
-				var err error
-				tweet, err = x.GetTweetNoAuth(id)
-				if err != nil {
-					return fmt.Errorf("get tweet %s (no-auth fallback): %w", id, err)
-				}
-				client = x.NewClient(cfg)
-			} else {
-				return clientErr
-			}
-		} else {
-			var err error
-			tweet, err = client.GetTweet(id)
-			if err != nil {
-				return err
-			}
-		}
+	tweet, err := client.GetTweet(id)
+	if err != nil {
+		return err
 	}
 
 	fmt.Println()
 	displayTweet(tweet)
 
-	// Fetch replies (requires auth; skipped in no-auth mode)
-	var replies []x.Tweet
-	if client.HasAuth() {
-		fmt.Println(labelStyle.Render("  Fetching replies..."))
-		var repliesErr error
-		replies, repliesErr = client.GetTweetReplies(id)
-		if repliesErr != nil {
-			fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: %v", repliesErr)))
-		}
-	} else {
-		fmt.Println(labelStyle.Render("  Replies skipped (no-auth mode)"))
+	// Fetch replies via guest token (or auth fallback)
+	fmt.Println(labelStyle.Render("  Fetching replies..."))
+	replies, repliesErr := client.GetTweetReplies(id)
+	if repliesErr != nil {
+		fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: %v", repliesErr)))
 	}
 
 	// Always store tweet + replies in DuckDB

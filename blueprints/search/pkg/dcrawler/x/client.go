@@ -149,11 +149,11 @@ func (c *Client) DoGraphQL(endpoint string, variables map[string]any, fieldToggl
 // ── Profile ──────────────────────────────────────────────
 
 // GetProfile fetches a user profile by username.
+// Tries guest token first (no session rate limit consumed), falls back to cookie auth.
 func (c *Client) GetProfile(username string) (*Profile, error) {
-	data, err := c.gql.doGraphQL(gqlUserByScreenName, map[string]any{
-		"screen_name":                 username,
-		"withSafetyModeUserFields":    true,
-		"withSuperFollowsUserFields":  true,
+	data, err := c.doGuestFirst(gqlUserByScreenName, map[string]any{
+		"screen_name":              username,
+		"withSafetyModeUserFields": true,
 	}, userFieldToggles)
 	if err != nil {
 		return nil, fmt.Errorf("get profile @%s: %w", username, err)
@@ -353,10 +353,41 @@ func asRateLimitError(err error) *RateLimitError {
 	return nil
 }
 
-// doGraphQLRetry wraps doGraphQL with rate limit retry.
-// On rate limit, waits for the API reset time (from x-rate-limit-reset header).
+// doGuestFirst attempts the GraphQL call via guest token first (no session rate limit consumed).
+// Falls back to cookie auth if:
+//   - guest token fetch fails
+//   - guest returns rate limit (token rotated once, then auth fallback)
+//   - guest returns 401/403 (auth-only endpoint)
+func (c *Client) doGuestFirst(endpoint string, vars map[string]any, toggles string) (map[string]any, error) {
+	token, tokenErr := fetchGuestToken()
+	if tokenErr == nil {
+		data, guestErr := doGuestGraphQL(token, endpoint, vars, toggles)
+		if guestErr == nil {
+			return data, nil
+		}
+		// On rate limit: rotate token and retry once before falling through to auth
+		if rle := asRateLimitError(guestErr); rle != nil {
+			invalidateGuestToken()
+			if token2, err2 := fetchGuestToken(); err2 == nil {
+				if data2, guestErr2 := doGuestGraphQL(token2, endpoint, vars, toggles); guestErr2 == nil {
+					return data2, nil
+				}
+			}
+		}
+		// 401/403 (auth-only endpoint) or other error — fall through to cookie auth
+	}
+	// Cookie auth fallback
+	if c.gql == nil {
+		return nil, fmt.Errorf("guest token failed (%v) and no session configured", tokenErr)
+	}
+	return c.gql.doGraphQL(endpoint, vars, toggles)
+}
+
+// doGraphQLRetry calls doGuestFirst then retries on rate limit.
+// On guest rate limit: tries cookie auth immediately before waiting.
+// On cookie rate limit: waits for reset (up to 3 retries).
 func (c *Client) doGraphQLRetry(ctx context.Context, endpoint string, vars map[string]any, toggles string, cb ProgressCallback, phase string, current int64) (map[string]any, error) {
-	data, err := c.gql.doGraphQL(endpoint, vars, toggles)
+	data, err := c.doGuestFirst(endpoint, vars, toggles)
 	if err == nil {
 		return data, nil
 	}
@@ -385,7 +416,7 @@ func (c *Client) doGraphQLRetry(ctx context.Context, endpoint string, vars map[s
 			return nil, ctx.Err()
 		case <-time.After(wait):
 		}
-		data, err = c.gql.doGraphQL(endpoint, vars, toggles)
+		data, err = c.doGuestFirst(endpoint, vars, toggles)
 		if err == nil {
 			return data, nil
 		}
@@ -398,22 +429,28 @@ func (c *Client) doGraphQLRetry(ctx context.Context, endpoint string, vars map[s
 }
 
 // GetTweet fetches a single tweet by ID.
-// Uses ConversationTimeline endpoint (same as Nitter for cookie auth).
+// Strategy: syndication API (no auth) → guest token GraphQL → cookie auth.
 func (c *Client) GetTweet(id string) (*Tweet, error) {
-	vars := map[string]any{
-		"focalTweetId":                        id,
-		"referrer":                            "tweet",
-		"with_rux_injections":                 false,
-		"rankingMode":                         "Relevance",
-		"includePromotedContent":              true,
-		"withCommunity":                       true,
-		"withQuickPromoteEligibilityTweetFields": true,
-		"withBirdwatchNotes":                  true,
-		"withVoice":                           true,
-		"withV2Timeline":                      true,
+	// 1. Syndication API — fastest, no auth, generous limits
+	if t, err := GetTweetSyndication(id); err == nil {
+		return t, nil
 	}
 
-	data, err := c.gql.doGraphQL(gqlConversationTimeline, vars, tweetDetailFieldToggles)
+	// 2. Guest token + TweetDetail GraphQL — full data including views
+	vars := map[string]any{
+		"focalTweetId":                           id,
+		"referrer":                               "tweet",
+		"with_rux_injections":                    false,
+		"rankingMode":                            "Relevance",
+		"includePromotedContent":                 true,
+		"withCommunity":                          true,
+		"withQuickPromoteEligibilityTweetFields": true,
+		"withBirdwatchNotes":                     true,
+		"withVoice":                              true,
+		"withV2Timeline":                         true,
+	}
+
+	data, err := c.doGuestFirst(gqlConversationTimeline, vars, tweetDetailFieldToggles)
 	if err != nil {
 		return nil, fmt.Errorf("get tweet %s: %w", id, err)
 	}
@@ -559,7 +596,7 @@ func (c *Client) GetTweetReplies(id string) ([]Tweet, error) {
 			vars["cursor"] = cursor
 		}
 
-		data, err := c.gql.doGraphQL(gqlConversationTimeline, vars, tweetDetailFieldToggles)
+		data, err := c.doGuestFirst(gqlConversationTimeline, vars, tweetDetailFieldToggles)
 		if err != nil {
 			if len(allReplies) > 0 {
 				return allReplies, err
@@ -575,7 +612,7 @@ func (c *Client) GetTweetReplies(id string) ([]Tweet, error) {
 		}
 		cursor = nextCursor
 
-		time.Sleep(c.gql.PacedDelay(c.cfg.Delay))
+		time.Sleep(c.cfg.Delay)
 	}
 
 	return allReplies, nil
