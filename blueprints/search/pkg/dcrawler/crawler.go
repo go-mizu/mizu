@@ -810,7 +810,7 @@ func (c *Crawler) coordinator(ctx context.Context, cancel context.CancelFunc) {
 	lastDoneAt := time.Now()
 	var lastRestartDone int64             // pages at last periodic restart
 	const stallTimeout = 60 * time.Second // restart after 60s of zero progress
-	const restartEvery = int64(2000)      // restart every 2000 pages for memory
+	const restartEvery = int64(500)       // restart every 500 pages to prevent Chrome memory bloat (was 2000)
 
 	for {
 		select {
