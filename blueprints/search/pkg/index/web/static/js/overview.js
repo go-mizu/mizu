@@ -56,12 +56,14 @@ function renderOverviewContent(d, jobs) {
   const ix = d.indexed || {};
   const activeJobs = (jobs || []).filter(j => j.status === 'running' || j.status === 'queued');
   const exactURLReady = (mf.real_total_urls || 0) > 0;
-  const exactSizeReady = (mf.real_total_size_bytes || 0) > 0;
+  const expectedWARCSize = mf.est_total_size_bytes || 0;
+  const expectedWARCSizeReady = expectedWARCSize > 0;
+  const parquetIndexSizeReady = (mf.real_total_size_bytes || 0) > 0;
   const metaReadyFiles = mf.meta_ready_files || 0;
   const metaTotalFiles = mf.meta_total_files || 0;
   const expectedReadyPct = metaTotalFiles > 0 ? Math.round((metaReadyFiles / metaTotalFiles) * 100) : 0;
-  const currentDownloadPct = exactSizeReady && mf.real_total_size_bytes > 0
-    ? Math.round(((dl.size_bytes || 0) / mf.real_total_size_bytes) * 100)
+  const currentDownloadPct = expectedWARCSizeReady && expectedWARCSize > 0
+    ? Math.round(((dl.size_bytes || 0) / expectedWARCSize) * 100)
     : 0;
 
   function pct(a, b) { return b > 0 ? Math.round((a / b) * 100) : 0; }
@@ -82,24 +84,34 @@ function renderOverviewContent(d, jobs) {
             <div class="text-sm font-mono font-medium">${fmtBytes(dl.size_bytes || 0)}</div>
           </div>
           <div>
-            <div class="text-[10px] font-mono ui-subtle">Full Expected Size</div>
-            <div class="text-sm font-mono font-medium">${exactSizeReady ? fmtBytes(mf.real_total_size_bytes) : '<span class="ui-subtle">syncing...</span>'}</div>
+            <div class="text-[10px] font-mono ui-subtle">Full WARC Expected</div>
+            <div class="text-sm font-mono font-medium">${expectedWARCSizeReady ? fmtBytes(expectedWARCSize) : '<span class="ui-subtle">syncing...</span>'}</div>
           </div>
         </div>
-        ${exactSizeReady ? `
+        <div class="grid grid-cols-2 gap-3 mb-3">
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">CC URLs Expected</div>
+            <div class="text-xs font-mono">${exactURLReady ? fmtNum(mf.real_total_urls) : '<span class="ui-subtle">syncing...</span>'}</div>
+          </div>
+          <div>
+            <div class="text-[10px] font-mono ui-subtle">Parquet Index Size</div>
+            <div class="text-xs font-mono">${parquetIndexSizeReady ? fmtBytes(mf.real_total_size_bytes) : '<span class="ui-subtle">syncing...</span>'}</div>
+          </div>
+        </div>
+        ${expectedWARCSizeReady ? `
           <div class="border-t pt-3 mb-3">
             <div class="flex items-center justify-between mb-1">
-              <span class="text-[10px] font-mono ui-subtle">Download Progress</span>
-              <span class="text-[10px] font-mono ui-subtle">${currentDownloadPct}% (${fmtBytes(dl.size_bytes || 0)} / ${fmtBytes(mf.real_total_size_bytes)})</span>
+              <span class="text-[10px] font-mono ui-subtle">WARC Download Progress</span>
+              <span class="text-[10px] font-mono ui-subtle">${currentDownloadPct}% (${fmtBytes(dl.size_bytes || 0)} / ${fmtBytes(expectedWARCSize)})</span>
             </div>
             <div class="progress-track" style="height:6px">
               <div class="ov-c2" style="height:100%;width:${currentDownloadPct}%;opacity:0.7"></div>
             </div>
-            <div class="text-[10px] font-mono ui-subtle mt-1">${fmtBytes(Math.max(0, (mf.real_total_size_bytes || 0) - (dl.size_bytes || 0)))} remaining</div>
+            <div class="text-[10px] font-mono ui-subtle mt-1">${fmtBytes(Math.max(0, expectedWARCSize - (dl.size_bytes || 0)))} remaining</div>
           </div>` : `
           <div class="border-t pt-3 mb-3">
             <div class="flex items-center justify-between mb-1">
-              <span class="text-[10px] font-mono ui-subtle">Preparing expected totals</span>
+              <span class="text-[10px] font-mono ui-subtle">Preparing CC metadata</span>
               <span class="text-[10px] font-mono ui-subtle">${metaReadyFiles}/${metaTotalFiles || 0} parquet files</span>
             </div>
             <div class="progress-track" style="height:6px">
@@ -203,13 +215,13 @@ function renderOverviewContent(d, jobs) {
             <div class="text-sm font-mono font-medium">${exactURLReady ? fmtNum(mf.real_total_urls) : '<span class="ui-subtle">syncing...</span>'}</div>
           </div>
           <div>
-            <div class="text-[10px] font-mono ui-subtle">Full Expected Size</div>
-            <div class="text-sm font-mono font-medium">${exactSizeReady ? fmtBytes(mf.real_total_size_bytes) : '<span class="ui-subtle">syncing...</span>'}</div>
+            <div class="text-[10px] font-mono ui-subtle">Full Expected WARC Size</div>
+            <div class="text-sm font-mono font-medium">${expectedWARCSizeReady ? fmtBytes(expectedWARCSize) : '<span class="ui-subtle">syncing...</span>'}</div>
           </div>
         </div>
         <div class="text-[10px] font-mono ui-subtle mt-2">
-          Computed from CC parquet metadata (no full WARC download required).
-          ${!exactSizeReady ? ` Progress: ${metaReadyFiles}/${metaTotalFiles || 0}.` : ''}
+          URLs are exact from CC parquet metadata; WARC total size is expected from current average WARC bytes.
+          ${!exactURLReady ? ` Progress: ${metaReadyFiles}/${metaTotalFiles || 0}.` : ''}
         </div>
       </div>
       <div class="surface p-4" style="border-left:3px solid ${stageColor(dl.count, mf.total_warcs)}">
