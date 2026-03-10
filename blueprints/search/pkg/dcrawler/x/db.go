@@ -39,11 +39,72 @@ func OpenDB(path string) (*DB, error) {
 	return d, nil
 }
 
+// Article represents an assembled tweet thread stored as an article.
+type Article struct {
+	ID         string    `json:"id"`
+	Username   string    `json:"username"`
+	Name       string    `json:"name"`
+	Title      string    `json:"title"`
+	ContentMD  string    `json:"content_md"`
+	TweetCount int       `json:"tweet_count"`
+	Likes      int       `json:"likes"`
+	Retweets   int       `json:"retweets"`
+	Replies    int       `json:"replies"`
+	Views      int       `json:"views"`
+	PostedAt   time.Time `json:"posted_at"`
+	FetchedAt  time.Time `json:"fetched_at"`
+}
+
+// InsertArticle inserts or replaces an article in the database.
+func (d *DB) InsertArticle(a Article) error {
+	_, err := d.db.Exec(`INSERT OR REPLACE INTO articles
+		(id, username, name, title, content_md, tweet_count, likes, retweets, replies, views, posted_at, fetched_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+		a.ID, a.Username, nullStr(a.Name), nullStr(a.Title), a.ContentMD,
+		a.TweetCount, a.Likes, a.Retweets, a.Replies, a.Views,
+		nullTime(a.PostedAt), time.Now(),
+	)
+	return err
+}
+
+// GetArticleByID retrieves an article by its tweet ID.
+func (d *DB) GetArticleByID(id string) (*Article, error) {
+	row := d.db.QueryRow(`SELECT id, username, name, content_md, tweet_count, likes, retweets, replies, views, posted_at, fetched_at
+		FROM articles WHERE id = ?`, id)
+	var a Article
+	var name sql.NullString
+	if err := row.Scan(&a.ID, &a.Username, &name, &a.ContentMD,
+		&a.TweetCount, &a.Likes, &a.Retweets, &a.Replies, &a.Views,
+		&a.PostedAt, &a.FetchedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	a.Name = name.String
+	return &a, nil
+}
+
 func (d *DB) initSchema() error {
 	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS articles (
+			id          VARCHAR PRIMARY KEY,
+			username    VARCHAR NOT NULL,
+			name        VARCHAR,
+			title       VARCHAR,
+			content_md  VARCHAR,
+			tweet_count INTEGER DEFAULT 1,
+			likes       INTEGER DEFAULT 0,
+			retweets    INTEGER DEFAULT 0,
+			replies     INTEGER DEFAULT 0,
+			views       INTEGER DEFAULT 0,
+			posted_at   TIMESTAMP,
+			fetched_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
 		`CREATE TABLE IF NOT EXISTS tweets (
 			id              VARCHAR PRIMARY KEY,
 			conversation_id VARCHAR,
+			title           VARCHAR,
 			text            VARCHAR,
 			html            VARCHAR,
 			username        VARCHAR NOT NULL,
@@ -125,6 +186,8 @@ func (d *DB) initSchema() error {
 		"ALTER TABLE tweets ADD COLUMN IF NOT EXISTS source VARCHAR",
 		"ALTER TABLE tweets ADD COLUMN IF NOT EXISTS place VARCHAR",
 		"ALTER TABLE tweets ADD COLUMN IF NOT EXISTS is_edited BOOLEAN DEFAULT FALSE",
+		"ALTER TABLE tweets ADD COLUMN IF NOT EXISTS title VARCHAR",
+		"ALTER TABLE articles ADD COLUMN IF NOT EXISTS title VARCHAR",
 		"ALTER TABLE users ADD COLUMN IF NOT EXISTS url VARCHAR",
 		"ALTER TABLE users ADD COLUMN IF NOT EXISTS pinned_tweet_ids VARCHAR",
 		"ALTER TABLE users ADD COLUMN IF NOT EXISTS professional_type VARCHAR",
@@ -142,7 +205,7 @@ func (d *DB) initSchema() error {
 }
 
 // tweetColumns is the canonical column list for tweet queries.
-const tweetColumns = `id, conversation_id, text, html, username, user_id, name, permanent_url,
+const tweetColumns = `id, conversation_id, title, text, html, username, user_id, name, permanent_url,
 	is_retweet, is_reply, is_quote, is_pin,
 	reply_to_id, reply_to_user, quoted_id, retweeted_id,
 	likes, retweets, replies, views, bookmarks, quotes,
@@ -163,7 +226,7 @@ func (d *DB) InsertTweets(tweets []Tweet) error {
 	defer tx.Rollback()
 
 	const batchSize = 500
-	const nCols = 35
+	const nCols = 36
 	placeholders := "(" + strings.Repeat("?,", nCols-1) + "?)"
 
 	for i := 0; i < len(tweets); i += batchSize {
@@ -181,7 +244,7 @@ func (d *DB) InsertTweets(tweets []Tweet) error {
 			sb.WriteString(placeholders)
 
 			args = append(args,
-				t.ID, nullStr(t.ConversationID), t.Text, nullStr(t.HTML),
+				t.ID, nullStr(t.ConversationID), nullStr(t.Title), t.Text, nullStr(t.HTML),
 				t.Username, nullStr(t.UserID), nullStr(t.Name), nullStr(t.PermanentURL),
 				t.IsRetweet, t.IsReply, t.IsQuote, t.IsPin,
 				nullStr(t.ReplyToID), nullStr(t.ReplyToUser), nullStr(t.QuotedID), nullStr(t.RetweetedID),
@@ -312,12 +375,12 @@ func (d *DB) queryTweets(query string, args ...any) ([]Tweet, error) {
 	var tweets []Tweet
 	for rows.Next() {
 		var t Tweet
-		var convID, html, userID, name, permURL sql.NullString
+		var convID, title, html, userID, name, permURL sql.NullString
 		var replyTo, replyToUser, quotedID, retweetedID sql.NullString
 		var photosJSON, videosJSON, gifsJSON, hashtagsJSON, mentionsJSON, urlsJSON sql.NullString
 		var lang, source, place sql.NullString
 		err := rows.Scan(
-			&t.ID, &convID, &t.Text, &html,
+			&t.ID, &convID, &title, &t.Text, &html,
 			&t.Username, &userID, &name, &permURL,
 			&t.IsRetweet, &t.IsReply, &t.IsQuote, &t.IsPin,
 			&replyTo, &replyToUser, &quotedID, &retweetedID,
@@ -330,6 +393,7 @@ func (d *DB) queryTweets(query string, args ...any) ([]Tweet, error) {
 			return tweets, err
 		}
 		t.ConversationID = convID.String
+		t.Title = title.String
 		t.HTML = html.String
 		t.UserID = userID.String
 		t.Name = name.String
