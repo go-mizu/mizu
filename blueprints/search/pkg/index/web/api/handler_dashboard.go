@@ -12,6 +12,7 @@ import (
 	"time"
 
 	mizu "github.com/go-mizu/mizu"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index"
 )
 
@@ -40,6 +41,8 @@ type ManifestStage struct {
 	TotalWARCs        int   `json:"total_warcs"`
 	EstTotalSizeBytes int64 `json:"est_total_size_bytes"`
 	EstTotalURLs      int64 `json:"est_total_urls"`
+	RealTotalURLs     int64 `json:"real_total_urls"`
+	RealTotalSizeBytes int64 `json:"real_total_size_bytes"`
 }
 
 // DownloadedStage holds download-stage stats.
@@ -165,6 +168,18 @@ func buildOverviewResponse(d *Deps, crawlBytes int64) OverviewResponse {
 	resp.Manifest = ManifestStage{
 		TotalWARCs:   manifestTotal,
 		EstTotalURLs: int64(manifestTotal) * 30_000,
+	}
+
+	// Populate real CC stats from parquet cache.
+	if d.CCConfig != nil {
+		cfg := d.CCConfig()
+		cache := cc.NewCache(cfg.DataDir)
+		if cd := cache.Load(); cd != nil {
+			for _, pm := range cd.ParquetMeta {
+				resp.Manifest.RealTotalURLs += pm.URLCount
+				resp.Manifest.RealTotalSizeBytes += pm.SizeBytes
+			}
+		}
 	}
 
 	resp.Downloaded = scanDownloadedStage(crawlDir)
