@@ -10,8 +10,47 @@ import httpx
 BASE = "https://api.mail.tm"
 # MotherDuck sends a URL containing their domain
 MAGIC_LINK_RE = re.compile(r"https://[^\s\"'<>]*motherduck\.com[^\s\"'<>]*")
+ALL_URLS_RE = re.compile(r"https?://[^\s\"'<>]+")
 POLL_INTERVAL = 3
 POLL_TIMEOUT = 120
+
+
+def _pick_verification_link(urls: list[str]) -> str:
+    """Pick the actual verification link from all URLs in the email.
+
+    Auth0 verification links typically contain parameters like ticket=, token=,
+    or are on auth.motherduck.com / auth0.com domains.
+    """
+    cleaned = [u.rstrip(".") for u in urls]
+
+    # Priority 1: Auth0 domain links (auth.motherduck.com or *.auth0.com)
+    for u in cleaned:
+        if "auth.motherduck.com" in u or "auth0.com" in u:
+            return u
+
+    # Priority 2: Links with verification-related query params
+    for u in cleaned:
+        lower = u.lower()
+        if any(kw in lower for kw in ["ticket=", "verify", "confirm", "email-verification"]):
+            return u
+
+    # Priority 3: Long links with query parameters (likely not just branding)
+    for u in cleaned:
+        if "?" in u and len(u) > 60 and "motherduck" in u:
+            return u
+
+    # Priority 4: Any long link with query params
+    for u in cleaned:
+        if "?" in u and len(u) > 60:
+            return u
+
+    # Fallback: first motherduck link that isn't just the homepage
+    for u in cleaned:
+        if "motherduck" in u and u.rstrip("/") != "https://motherduck.com":
+            return u
+
+    # Last resort: first link
+    return cleaned[0] if cleaned else ""
 
 
 @dataclass
@@ -94,14 +133,29 @@ class MailTmClient:
                             f"{BASE}/messages/{msg_id}", headers=headers
                         )
                         body = full.json()
-                        text = body.get("text", "") + " " + body.get("html", "") + " " + intro
-                    except Exception:
-                        pass
+                        text_part = body.get("text", "")
+                        html_parts = body.get("html", [])
+                        # html can be a list of strings in mail.tm API
+                        if isinstance(html_parts, list):
+                            html_str = " ".join(html_parts)
+                        else:
+                            html_str = str(html_parts)
+                        text = text_part + " " + html_str + " " + intro
+                        self._log(f"  text body ({len(text_part)} chars): {text_part[:300]!r}")
+                        self._log(f"  html body ({len(html_str)} chars): {html_str[:500]!r}")
+                    except Exception as e:
+                        self._log(f"  body fetch error: {e}")
 
-                    m = MAGIC_LINK_RE.search(text)
-                    if m:
-                        link = m.group(0).rstrip(".")
-                        self._log(f"  magic link found: {link[:60]}...")
+                    # Find ALL URLs in email body
+                    all_urls = ALL_URLS_RE.findall(text)
+                    for lnk in all_urls:
+                        self._log(f"  url found: {lnk[:200]}")
+
+                    # Filter to motherduck-related links and pick verification one
+                    md_links = MAGIC_LINK_RE.findall(text)
+                    link = _pick_verification_link(all_urls)
+                    if link:
+                        self._log(f"  magic link found: {link[:200]}")
                         return link
             except Exception as e:
                 self._log(f"  poll error: {e}")

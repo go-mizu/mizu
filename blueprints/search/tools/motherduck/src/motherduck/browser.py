@@ -78,6 +78,27 @@ def _click_first(page, selectors: list[str], log=None) -> str | None:
     return None
 
 
+def _clear_and_fill(page, selectors: list[str], text: str, log=None) -> str | None:
+    """Try each selector, clear then fill the first match."""
+    for sel in selectors:
+        try:
+            inp = page.locator(sel)
+            if inp.count() > 0:
+                el = inp.first
+                el.click()
+                time.sleep(0.2)
+                el.fill("")  # clear existing text
+                time.sleep(0.1)
+                el.type(text, delay=55)
+                time.sleep(0.3)
+                if log:
+                    log(f"filled (clear+type) via: {sel}")
+                return sel
+        except Exception:
+            continue
+    return None
+
+
 def _fill_first(page, selectors: list[str], text: str, log=None) -> str | None:
     """Try each selector, fill the first match. Returns the matched selector or None."""
     for sel in selectors:
@@ -93,12 +114,12 @@ def _fill_first(page, selectors: list[str], text: str, log=None) -> str | None:
     return None
 
 
-def _log_page_state(page, log, label: str = "") -> str:
+def _log_page_state(page, log, label: str = "", max_chars: int = 500) -> str:
     """Log current URL and page text for diagnostics."""
     try:
-        body = page.inner_text("body")[:500]
+        body = page.inner_text("body")[:max_chars]
         log(f"{label}url={page.url}")
-        log(f"{label}text={body[:200]!r}")
+        log(f"{label}text={body[:400]!r}")
         return body
     except Exception as e:
         log(f"{label}page read error: {e}")
@@ -254,15 +275,30 @@ def register_via_browser(
                 log("email verification required — polling mail.tm...")
                 magic_link = mail_client.poll_for_magic_link(mailbox, timeout=120)
                 log(f"got verification link: {magic_link[:60]}...")
+                log(f"full verification link: {magic_link}")
                 try:
                     page.goto(magic_link, timeout=30000)
                 except Exception as e:
                     log(f"verification link nav warn: {e}")
                 _wait(4, log, "post-verification load")
                 log(f"url after verification: {page.url}")
+                _log_page_state(page, log, "verify-page: ")
 
-                # After email verification, log in with the new credentials
-                log("email verified — now logging in...")
+                # After email verification, clear stale Auth0 session then login
+                log("email verified — clearing session and logging in...")
+
+                # Click "Log out" if visible (clears Auth0 session)
+                _click_first(page, [
+                    'a:has-text("Log out")',
+                    'button:has-text("Log out")',
+                    'a:has-text("Logout")',
+                ], log)
+                _wait(2, log, "post-logout")
+
+                # Clear Auth0 cookies to ensure fresh login
+                ctx.clear_cookies()
+                _wait(1, log)
+
                 try:
                     page.goto("https://app.motherduck.com", timeout=30000)
                     page.wait_for_url("**/auth.motherduck.com/**", timeout=15000)
@@ -302,6 +338,7 @@ def register_via_browser(
                 ], log)
                 _wait(5, log, "waiting for login")
                 log(f"url after login: {page.url}")
+                _log_page_state(page, log, "login-result: ")
 
             # ---- Step 5: Click through onboarding (ONLY on app.motherduck.com) ----
             if _on_app(page):
@@ -342,14 +379,34 @@ def register_via_browser(
 
             # ---- Step 7: Generate token ----
             log("generating token...")
-            _click_first(page, [
+            _log_page_state(page, log, "token-page: ", max_chars=800)
+
+            create_sel = _click_first(page, [
                 'button:has-text("Generate token")',
                 'button:has-text("Create token")',
                 'button:has-text("New token")',
                 'button:has-text("Generate")',
                 'button:has-text("Create")',
             ], log)
-            _wait(3, log, "token generation")
+            _wait(2, log, "token dialog")
+
+            # Handle token creation dialog/modal (may ask for token name)
+            _log_page_state(page, log, "after-create: ", max_chars=800)
+            name_input = page.locator('input[placeholder*="token" i], input[placeholder*="name" i], input[name*="token" i], input[name*="name" i]')
+            if name_input.count() > 0:
+                log("  filling token name...")
+                name_input.first.fill("api-token")
+                time.sleep(0.5)
+                _click_first(page, [
+                    'button:has-text("Create")',
+                    'button:has-text("Generate")',
+                    'button:has-text("Save")',
+                    'button:has-text("Confirm")',
+                    'button[type="submit"]',
+                ], log)
+                _wait(3, log, "token creation")
+            else:
+                _wait(2, log, "token generation")
 
             # ---- Step 8: Extract token ----
             log("extracting token...")
@@ -365,10 +422,13 @@ def register_via_browser(
             ctx.close()
 
 
-def _skip_onboarding(page, log, max_attempts: int = 10) -> None:
+def _skip_onboarding(page, log, display_name: str = "", max_attempts: int = 10) -> None:
     """Click through MotherDuck onboarding prompts.
     Only runs when on app.motherduck.com (NOT auth.motherduck.com).
     """
+    from faker import Faker
+    fake = Faker()
+
     for attempt in range(max_attempts):
         time.sleep(2)
         url = page.url
@@ -383,21 +443,112 @@ def _skip_onboarding(page, log, max_attempts: int = 10) -> None:
             log(f"onboarding done at attempt {attempt}")
             return
 
+        # Fill user-information form if present
+        if "user-information" in url:
+            body_text = _log_page_state(page, log, "  onboard-page: ")
+            first = display_name.split()[0] if display_name else fake.first_name()
+            last = display_name.split()[-1] if display_name and len(display_name.split()) > 1 else fake.last_name()
+
+            # Only fill the form once (check if already filled)
+            first_input = page.locator('input[name="firstName"]')
+            if first_input.count() > 0 and not first_input.input_value():
+                # Fill all visible input fields
+                inputs = page.locator("input:visible")
+                count = inputs.count()
+                log(f"  found {count} visible inputs")
+                for i in range(count):
+                    inp = inputs.nth(i)
+                    name = inp.get_attribute("name") or ""
+                    inp_type = inp.get_attribute("type") or ""
+                    current_val = inp.input_value()
+                    log(f"  input[{i}]: name={name!r} type={inp_type!r} value={current_val!r}")
+
+                # Clear and fill first/last name fields
+                _clear_and_fill(page, [
+                    'input[name="firstName"]',
+                    'input[name*="first" i]',
+                ], first, log)
+                _clear_and_fill(page, [
+                    'input[name="lastName"]',
+                    'input[name*="last" i]',
+                ], last, log)
+                time.sleep(0.5)
+
+            # Select region if "Pick a region" is present
+            region_trigger = page.locator('text="Pick a region"')
+            if region_trigger.count() > 0:
+                log(f"  selecting region...")
+                region_trigger.first.click()
+                time.sleep(1)
+                # Try to select US East (most common)
+                region_sel = _click_first(page, [
+                    'text="US East (Ohio)"',
+                    'text="US East"',
+                    '[data-value*="us-east"]',
+                    'li:has-text("US East")',
+                    'div[role="option"]:has-text("US East")',
+                    'div[role="option"]:first-child',
+                    'li:first-child',
+                ], log)
+                if not region_sel:
+                    # Fallback: just click the first option in any dropdown
+                    options = page.locator('[role="option"], [role="listbox"] > *, select option')
+                    if options.count() > 0:
+                        log(f"  clicking first dropdown option")
+                        options.first.click()
+                time.sleep(0.5)
+
+            # Check for and click any unchecked checkboxes (TOS, consent, etc.)
+            checkboxes = page.locator('input[type="checkbox"]:visible')
+            for i in range(checkboxes.count()):
+                cb = checkboxes.nth(i)
+                if not cb.is_checked():
+                    log(f"  checking checkbox {i}")
+                    cb.check()
+                    time.sleep(0.3)
+
+        # Handle survey page — select options for any visible question
+        if "survey" in url:
+            log(f"  on survey page, selecting options...")
+            # Click first unselected radio button or option for each question
+            for option_text in ["Software engineer", "Data engineer", "Other",
+                                "Personal project", "Evaluation", "Company"]:
+                opt = page.locator(f'text="{option_text}"')
+                if opt.count() > 0:
+                    try:
+                        opt.first.click()
+                        log(f"  selected: {option_text}")
+                        time.sleep(0.3)
+                        break
+                    except Exception:
+                        pass
+            # Also try clicking radio buttons directly
+            radios = page.locator('input[type="radio"]:visible')
+            if radios.count() > 0 and not any(
+                radios.nth(i).is_checked() for i in range(min(radios.count(), 10))
+            ):
+                radios.first.click()
+                time.sleep(0.3)
+
         clicked = False
         for sel in [
             'button:has-text("Skip")',
             'button:has-text("Next")',
             'button:has-text("Get started")',
             'button:has-text("Done")',
-            'button:has-text("Continue")',
+            'button:has-text("Continue"):not([disabled])',
             '[role="button"]:has-text("Skip")',
         ]:
             btn = page.locator(sel)
             if btn.count() > 0:
-                log(f"  onboarding click: {sel}")
-                btn.first.click()
-                clicked = True
-                break
+                try:
+                    log(f"  onboarding click: {sel}")
+                    btn.first.click(timeout=5000)
+                    clicked = True
+                    break
+                except Exception as e:
+                    log(f"  click failed: {e}")
+                    continue
 
         if not clicked:
             log(f"  no onboarding button at attempt {attempt}, url={url}")
