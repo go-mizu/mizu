@@ -9,12 +9,14 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 )
 
-// MarkdownExporter writes crawled pages as navigable markdown files.
+// MarkdownExporter writes crawled pages as navigable markdown files. Thread-safe.
 type MarkdownExporter struct {
 	domain  string
 	siteDir string
+	mu      sync.Mutex
 	written map[string]bool // URL path → written
 
 	// ConvertFn converts raw HTML to markdown. Caller injects this to avoid
@@ -56,8 +58,9 @@ func (e *MarkdownExporter) WritePage(p Page) (string, error) {
 
 	title, md := e.ConvertFn(p.HTML, p.URL)
 	if md == "" {
-		// Still record it to maintain coverage
+		e.mu.Lock()
 		e.written[u.Path] = true
+		e.mu.Unlock()
 		return localPath, nil
 	}
 
@@ -78,7 +81,9 @@ func (e *MarkdownExporter) WritePage(p Page) (string, error) {
 	if err := os.WriteFile(fullPath, []byte(sb.String()), 0o644); err != nil {
 		return "", fmt.Errorf("write: %w", err)
 	}
+	e.mu.Lock()
 	e.written[u.Path] = true
+	e.mu.Unlock()
 	return localPath, nil
 }
 

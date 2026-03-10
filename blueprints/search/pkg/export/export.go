@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/PuerkitoBio/goquery"
 )
@@ -30,11 +31,12 @@ type Config struct {
 	Format  string // "html" (rewrite links) or "raw" (original HTML)
 }
 
-// Exporter writes crawled pages as a browsable offline site.
+// Exporter writes crawled pages as a browsable offline site. Thread-safe.
 type Exporter struct {
 	cfg     Config
 	domain  string
 	siteDir string
+	mu      sync.Mutex
 	written map[string]bool // URL path → written
 }
 
@@ -74,29 +76,24 @@ func (e *Exporter) WritePage(p Page) (string, error) {
 		return "", fmt.Errorf("mkdir: %w", err)
 	}
 
+	var data []byte
 	if e.cfg.Format == "raw" {
-		if err := os.WriteFile(fullPath, p.HTML, 0o644); err != nil {
-			return "", fmt.Errorf("write: %w", err)
+		data = p.HTML
+	} else {
+		rewritten, err := e.rewriteHTML(p.HTML, u)
+		if err != nil {
+			data = p.HTML // fallback: write original on parse failure
+		} else {
+			data = rewritten
 		}
-		e.written[u.Path] = true
-		return localPath, nil
 	}
 
-	// HTML format: rewrite links
-	rewritten, err := e.rewriteHTML(p.HTML, u)
-	if err != nil {
-		// Fallback: write original HTML on parse failure
-		if err2 := os.WriteFile(fullPath, p.HTML, 0o644); err2 != nil {
-			return "", fmt.Errorf("write fallback: %w", err2)
-		}
-		e.written[u.Path] = true
-		return localPath, nil
-	}
-
-	if err := os.WriteFile(fullPath, rewritten, 0o644); err != nil {
+	if err := os.WriteFile(fullPath, data, 0o644); err != nil {
 		return "", fmt.Errorf("write: %w", err)
 	}
+	e.mu.Lock()
 	e.written[u.Path] = true
+	e.mu.Unlock()
 	return localPath, nil
 }
 
