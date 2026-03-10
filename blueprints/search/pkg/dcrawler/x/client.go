@@ -493,6 +493,50 @@ func (c *Client) GetTweetByRestID(id string) (*Tweet, error) {
 	return t, nil
 }
 
+// ── No-auth fetch (syndication + guest token) ────────────
+
+// GetTweetNoAuth fetches a single tweet without cookie authentication.
+// Strategy (in order):
+//  1. Syndication API (cdn.syndication.twimg.com) — no auth, embed endpoint
+//  2. Guest token GraphQL — anonymous session, same GraphQL API
+//
+// Use this when no session is configured or as a rate-limit bypass.
+// Note: returns less data than cookie-auth (no replies, no home timeline).
+func (c *Client) GetTweetNoAuth(id string) (*Tweet, error) {
+	return GetTweetNoAuth(id)
+}
+
+// GetTweetNoAuth fetches a single tweet without any authentication.
+// Tries the syndication/embed API first, then falls back to guest token GraphQL.
+func GetTweetNoAuth(id string) (*Tweet, error) {
+	// Try syndication first (fastest, no token rotation needed)
+	t, err := GetTweetSyndication(id)
+	if err == nil {
+		return t, nil
+	}
+	syndErr := err
+
+	// Fall back to guest token GraphQL
+	t, err = GetTweetGuest(id)
+	if err == nil {
+		return t, nil
+	}
+
+	return nil, fmt.Errorf("no-auth tweet fetch failed — syndication: %v; guest: %v", syndErr, err)
+}
+
+// GetProfileNoAuth fetches a public user profile without cookie authentication.
+// Uses the guest token GraphQL endpoint — returns the same fields as cookie auth
+// for public profiles (followers, bio, stats, etc.).
+func (c *Client) GetProfileNoAuth(username string) (*Profile, error) {
+	return GetProfileGuest(username)
+}
+
+// HasAuth reports whether this client has cookie credentials configured.
+func (c *Client) HasAuth() bool {
+	return c.authToken != "" && c.ct0 != ""
+}
+
 // GetTweetReplies fetches replies to a tweet.
 func (c *Client) GetTweetReplies(id string) ([]Tweet, error) {
 	var allReplies []Tweet
