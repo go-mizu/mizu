@@ -410,38 +410,45 @@ def _handle_onboarding(page, log, max_attempts: int = 25) -> tuple[str, str]:
         # On the service creation page: select AWS + create
         if "onboard" in url and ("Configure your cloud service" in body
                                   or "Create service" in body):
-            # Prefer AWS as provider (most reliable for free tier)
-            if "AWS" not in body[:200] or "Azure" in body[:200] or "GCP" in body[:200]:
-                aws_btn = page.locator('text="AWS"')
+            # Always click AWS as provider (most reliable for free tier)
+            for aws_sel in ['text="AWS"', 'button:has-text("AWS")',
+                            '[data-testid*="aws" i]', '[data-testid*="AWS"]']:
+                aws_btn = page.locator(aws_sel)
                 if aws_btn.count() > 0:
                     try:
                         aws_btn.first.click()
-                        log("  switched to AWS provider")
+                        log(f"  selected AWS provider via {aws_sel}")
                         _wait(1, log)
+                        break
                     except Exception:
-                        pass
+                        continue
+
+            # Dismiss any overlay (cookie consent, etc.)
+            _click_first(page, [
+                'button:has-text("Accept")', 'button:has-text("Got it")',
+                'button:has-text("OK")', 'button:has-text("Dismiss")',
+                '[data-testid*="cookie"] button', '[data-testid*="consent"] button',
+            ], log)
 
             create_btn = page.locator('button:has-text("Create service"):not([disabled])')
             if create_btn.count() > 0:
-                create_btn.first.click()
+                # Inject a DOM observer BEFORE clicking Create to catch any popup
+                _inject_popup_watcher(page, log)
+                try:
+                    create_btn.first.click(timeout=10000)
+                except Exception:
+                    # Fallback: force click bypassing overlay check
+                    create_btn.first.click(force=True)
                 log("  clicked Create service")
                 clicked = True
             elif _click_first(page, ['button:has-text("Create"):not([disabled])'], log):
                 clicked = True
 
             if clicked:
-                _wait(5, log, "service creation + credentials popup")
-                pw = _check_credentials_popup(page, log)
+                # Aggressive polling — check every 500ms for up to 30s
+                pw = _poll_for_credentials(page, log, max_seconds=30)
                 if pw:
                     db_password = pw
-                else:
-                    # Poll a few more times — popup may take a moment
-                    for _ in range(3):
-                        _wait(3, log, "waiting for credentials popup")
-                        pw = _check_credentials_popup(page, log)
-                        if pw:
-                            db_password = pw
-                            break
                 # Check if still on onboard page (creation may have failed)
                 if "onboard" in page.url:
                     check_body = page.inner_text("body")[:500]
@@ -497,6 +504,131 @@ def _handle_onboarding(page, log, max_attempts: int = 25) -> tuple[str, str]:
     return service_id, db_password
 
 
+def _inject_popup_watcher(page, log) -> None:
+    """Inject a MutationObserver that captures any modal/dialog content the instant it appears."""
+    try:
+        page.evaluate("""() => {
+            window.__chPopupCaptures = [];
+            const observer = new MutationObserver((mutations) => {
+                for (const m of mutations) {
+                    for (const node of m.addedNodes) {
+                        if (node.nodeType !== 1) continue;
+                        // Check if it's a modal/dialog/overlay
+                        const el = node;
+                        const role = el.getAttribute('role') || '';
+                        const cls = el.className || '';
+                        const tag = el.tagName.toLowerCase();
+                        const isModal = role === 'dialog' || role === 'alertdialog'
+                            || tag === 'dialog'
+                            || /modal|dialog|overlay|popup|drawer/i.test(cls)
+                            || el.querySelector('[role="dialog"]');
+                        if (isModal || el.querySelectorAll('input[readonly], code, pre').length > 0) {
+                            const text = el.innerText || '';
+                            const html = el.innerHTML || '';
+                            window.__chPopupCaptures.push({
+                                time: Date.now(),
+                                text: text.substring(0, 3000),
+                                html: html.substring(0, 5000),
+                                role: role,
+                                cls: cls.substring(0, 200)
+                            });
+                        }
+                    }
+                }
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
+            window.__chPopupObserver = observer;
+        }""")
+        log("  injected popup watcher")
+    except Exception as e:
+        log(f"  popup watcher injection failed: {e}")
+
+
+def _poll_for_credentials(page, log, max_seconds: int = 30) -> str:
+    """Aggressively poll for credentials popup every 500ms."""
+    start = time.time()
+    last_url = page.url
+    poll_count = 0
+
+    while time.time() - start < max_seconds:
+        time.sleep(0.5)
+        poll_count += 1
+
+        # Check MutationObserver captures first
+        try:
+            captures = page.evaluate("window.__chPopupCaptures || []")
+            if captures:
+                for cap in captures:
+                    log(f"  [popup-watcher] role={cap.get('role','')!r} "
+                        f"cls={cap.get('cls','')[:60]!r}")
+                    log(f"  [popup-watcher] text={cap['text'][:300]!r}")
+                    # Search captured text for password
+                    pw = _extract_password_from_text(cap["text"], log)
+                    if pw:
+                        return pw
+                    # Search captured HTML
+                    pw = _extract_password_from_html(cap["html"], log)
+                    if pw:
+                        return pw
+                # Clear captures to avoid re-processing
+                page.evaluate("window.__chPopupCaptures = []")
+        except Exception:
+            pass  # Page may have navigated
+
+        # Check for modal/dialog elements directly
+        pw = _check_credentials_popup(page, log if poll_count <= 3 or poll_count % 5 == 0 else lambda _: None)
+        if pw:
+            return pw
+
+        # Log URL changes
+        curr_url = page.url
+        if curr_url != last_url:
+            log(f"  page navigated: {curr_url[:80]}")
+            last_url = curr_url
+
+        # If we've left the onboard page, the popup window has passed
+        if "onboard" not in curr_url and poll_count > 6:
+            log(f"  left onboard page after {poll_count} polls, stopping credential search")
+            break
+
+    log(f"  credential polling done ({poll_count} polls, {int(time.time()-start)}s)")
+    return ""
+
+
+def _extract_password_from_text(text: str, log) -> str:
+    """Extract a password-like value from popup text."""
+    # Look for lines after "password" keyword
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
+        if "password" in line.lower():
+            # Check next few lines for a password value
+            for j in range(i, min(i + 4, len(lines))):
+                candidate = lines[j].strip()
+                if (len(candidate) > 8 and " " not in candidate
+                        and not candidate.lower().startswith("password")
+                        and re.match(r'^[A-Za-z0-9!@#$%^&*_+=-]+$', candidate)):
+                    log(f"  password from popup text: {candidate[:15]}...")
+                    return candidate
+    return ""
+
+
+def _extract_password_from_html(html: str, log) -> str:
+    """Extract a password-like value from popup HTML."""
+    # Look for password in value attributes or between tags near "password"
+    patterns = [
+        r'value="([A-Za-z0-9!@#$%^&*_+=-]{12,64})"',
+        r'(?:password|Password|credential)[^>]*?>([A-Za-z0-9!@#$%^&*_+=-]{12,64})<',
+        r'data-testid="[^"]*password[^"]*"[^>]*>([^<]{12,64})<',
+        r'<code[^>]*>([A-Za-z0-9!@#$%^&*_+=-]{12,64})</code>',
+    ]
+    for pat in patterns:
+        m = re.search(pat, html)
+        if m:
+            log(f"  password from popup HTML: {m.group(1)[:15]}...")
+            return m.group(1)
+    return ""
+
+
 def _check_credentials_popup(page, log) -> str:
     """Check for a credentials popup after service creation. Returns password if found."""
     try:
@@ -549,13 +681,24 @@ def _check_credentials_popup(page, log) -> str:
     return ""
 
 
-def _wait_for_service_ready(page, service_id: str, log, timeout: int = 180) -> str:
+def _wait_for_service_ready(page, service_id: str, log, timeout: int = 300) -> str:
     """Poll the service page until the service is running. Returns host."""
     # Use the service overview page — it often contains the host in the HTML
     overview_url = f"https://console.clickhouse.cloud/services/{service_id}"
     log(f"waiting for service {service_id[:12]}... to be ready (timeout={timeout}s)")
 
+    # Inject popup watcher on the current page to catch any late-appearing credentials popup
+    _inject_popup_watcher(page, log)
+
+    # Log the full body on first visit to see if credentials are shown
+    try:
+        first_body = page.inner_text("body")[:3000]
+        log(f"  FULL BODY on landing: {first_body!r}")
+    except Exception:
+        pass
+
     start = time.time()
+    first_check = True
     while time.time() - start < timeout:
         try:
             page.goto(overview_url, timeout=15000)
@@ -574,21 +717,33 @@ def _wait_for_service_ready(page, service_id: str, log, timeout: int = 180) -> s
         body_lower = body.lower()
         log(f"  service check ({elapsed}s): {body[:150]!r}")
 
-        # Still provisioning — wait
+        # Check for popup captures
+        try:
+            captures = page.evaluate("window.__chPopupCaptures || []")
+            if captures:
+                for cap in captures:
+                    log(f"  [popup] role={cap.get('role','')} text={cap['text'][:300]!r}")
+                    pw = _extract_password_from_text(cap["text"], log)
+                    if pw:
+                        log(f"  PASSWORD from popup: {pw[:15]}...")
+                page.evaluate("window.__chPopupCaptures = []")
+        except Exception:
+            pass
+
+        # On first check, log full body to see all page content
+        if first_check:
+            first_check = False
+            log(f"  FULL first poll body: {body!r}")
+
+        # Still provisioning — the banner "Provisioning service..." appears above the SQL console
         if "provisioning" in body_lower:
             log("  still provisioning...")
             _wait(10, log, "polling interval")
             continue
 
-        # Service is ready: either explicit status or SQL console loaded
-        # (console transitions from "Provisioning..." to SQL editor once ready)
-        is_ready = (
-            "running" in body_lower
-            or "idle" in body_lower
-            or "sql" in body_lower  # SQL console appeared
-            or "tables" in body_lower  # Tables view appeared
-            or "queries" in body_lower  # Queries view appeared
-        )
+        # Service is ready when the "Provisioning" banner disappears
+        # The body will still have SQL console content (tables/queries) but no "provisioning" text
+        is_ready = bool(body.strip())  # any content without "provisioning" = ready
 
         if is_ready:
             log("service is ready!")
@@ -623,17 +778,7 @@ def _get_host_via_internal_api(page, log) -> str:
 
 
 def _reset_service_password(page, service_id: str, log) -> str:
-    """Attempt to capture the service password.
-
-    Note: ClickHouse Cloud's internal API does not expose the password
-    through any accessible endpoint. The password is shown once during
-    service creation in the console but cannot be reliably captured
-    via browser automation.
-    """
-    # Try network-intercepted password (if captured during service creation)
-    # The password would have been captured by the response listener
-
-    # Try clicking "Reset password" and watching for network response
+    """Reset the service password via Settings page and capture the new one."""
     settings_url = f"https://console.clickhouse.cloud/services/{service_id}/settings"
     try:
         page.goto(settings_url, timeout=15000)
@@ -642,32 +787,206 @@ def _reset_service_password(page, service_id: str, log) -> str:
         pass
     _wait(3, log, "settings page")
 
+    _log_page_state(page, log, "settings: ", max_chars=1000)
+
+    # Intercept network response for password (backup approach)
     captured_pw = {"value": ""}
 
     def _on_reset_response(response):
         try:
-            ct = response.headers.get("content-type", "")
-            if "json" not in ct:
+            url = response.url
+            if "control-plane-internal" not in url:
                 return
-            text = response.text()
-            if "password" in text.lower():
-                log(f"  [reset-net] {response.url[:60]} → {text[:200]}")
+            try:
+                text = response.text()
+            except Exception:
+                text = ""
+            if text:
                 pw_match = re.search(r'"password"\s*:\s*"([^"]+)"', text)
                 if pw_match and len(pw_match.group(1)) > 8:
                     captured_pw["value"] = pw_match.group(1)
+                    log(f"  [reset-net] PASSWORD FOUND: {captured_pw['value'][:15]}...")
         except Exception:
             pass
 
     page.on("response", _on_reset_response)
 
-    clicked = _click_first(page, ['button:has-text("Reset password")'], log)
-    if clicked:
-        _wait(5, log, "password reset response")
-        if captured_pw["value"]:
-            log(f"password captured from reset: {captured_pw['value'][:10]}...")
-            return captured_pw["value"]
+    # Find "Reset password" under "Service actions" section on settings page
+    clicked = _click_first(page, [
+        'text="Reset password"',
+        'button:has-text("Reset password")',
+        ':text("Reset password")',
+    ], log)
+    if not clicked:
+        log("  'Reset password' button not found on settings page")
+        return ""
 
-    log("password not captured — user must get it from console")
+    log("  clicked Reset password, waiting for confirmation dialog...")
+    _wait(3, log, "reset dialog")
+
+    # Click "Reset password" button WITHIN the confirmation dialog
+    confirm_clicked = _click_first(page, [
+        '[role="dialog"] button:has-text("Reset password")',
+        '[role="dialog"] button:has-text("Confirm")',
+        '[role="dialog"] button:has-text("Reset")',
+    ], log)
+
+    if not confirm_clicked:
+        log("  confirmation button not found in dialog")
+        return ""
+
+    log("  clicked confirmation, waiting for new password...")
+    _wait(5, log, "password generation")
+
+    # Check network-captured password first
+    if captured_pw["value"]:
+        log(f"password captured from reset API: {captured_pw['value'][:10]}...")
+        return captured_pw["value"]
+
+    # --- Primary approach: click eye icon to reveal password ---
+    # The dialog shows masked password (•••). Click eye icon to reveal it.
+    pw = _read_password_via_eye_icon(page, log)
+    if pw:
+        return pw
+
+    log("password not captured from reset flow")
+    return ""
+
+
+def _read_password_via_eye_icon(page, log) -> str:
+    """Click the eye icon in the reset dialog to reveal and read the password."""
+    try:
+        # Find the reset dialog
+        reset_dialog = page.locator('[role="dialog"]')
+        if reset_dialog.count() == 0:
+            log("  no dialog found for password reveal")
+            return ""
+
+        # Try the specific reset dialog first
+        specific = page.locator('[role="dialog"]:has-text("password")')
+        if specific.count() > 0:
+            reset_dialog = specific.first
+        else:
+            reset_dialog = reset_dialog.first
+
+        log(f"  found dialog, looking for eye icon...")
+
+        # Click eye icon to reveal masked password
+        eye_btn = reset_dialog.locator('[data-testid="password-display-eye-icon"]')
+        if eye_btn.count() == 0:
+            eye_btn = reset_dialog.locator(
+                'button[aria-label="eye"], button[aria-label*="show"], '
+                'button[aria-label*="reveal"]'
+            )
+        if eye_btn.count() == 0:
+            # Broader search: any button with an eye-like SVG in the dialog
+            eye_btn = page.locator('[data-testid="password-display-eye-icon"]')
+
+        if eye_btn.count() > 0:
+            eye_btn.first.click()
+            log("  clicked eye icon to reveal password")
+            _wait(1, log, "password reveal")
+
+            # Read the revealed password from the dialog
+            text = reset_dialog.inner_text()
+            log(f"  dialog text after reveal: {text[:500]!r}")
+
+            pw = _extract_revealed_password(text, log)
+            if pw:
+                return pw
+        else:
+            log("  eye icon not found in dialog")
+            # Log dialog HTML for debugging
+            try:
+                html = reset_dialog.inner_html()
+                log(f"  dialog HTML: {html[:800]!r}")
+            except Exception:
+                pass
+
+        # Fallback: try clipboard via copy button
+        pw = _try_clipboard_password(page, reset_dialog, log)
+        if pw:
+            return pw
+
+    except Exception as e:
+        log(f"  eye icon error: {e}")
+
+    return ""
+
+
+def _extract_revealed_password(text: str, log) -> str:
+    """Extract password from dialog text after eye icon reveal."""
+    lines = text.split("\n")
+
+    # Look for password value after "Password" label
+    for i, line in enumerate(lines):
+        if "password" in line.lower() and "reset" not in line.lower():
+            for j in range(i + 1, min(i + 4, len(lines))):
+                candidate = lines[j].strip()
+                if _looks_like_password(candidate):
+                    log(f"  password revealed: {candidate[:15]}...")
+                    return candidate
+
+    # Fallback: any line that looks like a password
+    for line in lines:
+        candidate = line.strip()
+        if _looks_like_password(candidate):
+            log(f"  password (fallback): {candidate[:15]}...")
+            return candidate
+
+    return ""
+
+
+def _looks_like_password(s: str) -> bool:
+    """Check if a string looks like a generated password."""
+    if not s or len(s) < 8 or len(s) > 64:
+        return False
+    skip = {"cancel", "reset password", "username", "default", "reset",
+            "reset service user password"}
+    if s.lower() in skip:
+        return False
+    if " " in s or "•" in s:
+        return False
+    if s.startswith(("curl", "http", "Cannot", "You", "--")):
+        return False
+    # Must have mixed case or special chars
+    if re.search(r'[A-Z]', s) and re.search(r'[a-z]', s):
+        return True
+    if re.search(r'[~!@#$%^&*]', s):
+        return True
+    return False
+
+
+def _try_clipboard_password(page, dialog, log) -> str:
+    """Try to get password via clipboard by clicking copy button."""
+    try:
+        page.evaluate("""() => {
+            window.__lastClipboard = '';
+            const origWrite = navigator.clipboard.writeText.bind(navigator.clipboard);
+            navigator.clipboard.writeText = (text) => {
+                window.__lastClipboard = text;
+                return origWrite(text);
+            };
+        }""")
+
+        # Only try explicit copy buttons, not generic 'button svg'
+        copy_btn = dialog.locator(
+            'button[aria-label*="Copy"], button[aria-label*="copy"], '
+            '[data-testid*="copy"]'
+        )
+        if copy_btn.count() > 0:
+            for i in range(min(copy_btn.count(), 3)):
+                try:
+                    copy_btn.nth(i).click()
+                    _wait(0.5, log)
+                    clip = page.evaluate("window.__lastClipboard")
+                    if clip and len(clip) > 8 and " " not in clip:
+                        log(f"  password from clipboard: {clip[:15]}...")
+                        return clip
+                except Exception:
+                    continue
+    except Exception as e:
+        log(f"  clipboard error: {e}")
     return ""
 
 
@@ -683,6 +1002,33 @@ def _extract_host_from_html(page, log) -> str:
     return ""
 
 
+def _dismiss_survey(page, log) -> None:
+    """Dismiss the 'Tell us about your use case' survey popup if present."""
+    try:
+        body = page.inner_text("body")[:1500]
+        if "use case" in body.lower() or "reason for signing up" in body.lower():
+            log("  survey popup detected, dismissing...")
+            # Click a survey option to dismiss it
+            for opt in ["Learning ClickHouse", "Starting a new project",
+                        "Personal project", "Other"]:
+                btn = page.locator(f'text="{opt}"')
+                if btn.count() > 0:
+                    btn.first.click()
+                    log(f"  survey: selected '{opt}'")
+                    _wait(1, log)
+                    break
+            # Click submit/continue if present
+            _click_first(page, [
+                'button:has-text("Submit")',
+                'button:has-text("Continue")',
+                'button:has-text("Done")',
+                'button:has-text("Skip")',
+            ], log)
+            _wait(2, log, "survey dismissed")
+    except Exception as e:
+        log(f"  survey dismiss error: {e}")
+
+
 def _get_host_from_connect_page(page, service_id: str, log) -> str:
     """Navigate to the Connect page and extract the host from connection details."""
     connect_url = f"https://console.clickhouse.cloud/services/{service_id}/connect"
@@ -695,28 +1041,40 @@ def _get_host_from_connect_page(page, service_id: str, log) -> str:
         log(f"connect page navigation warn: {e}")
     _wait(3, log, "connect page load")
 
-    # Dismiss any survey/modal popup
+    # Dismiss survey popup and close buttons
+    _dismiss_survey(page, log)
     _click_first(page, [
         'button[aria-label="Close"]',
         'button[aria-label="close"]',
         '[data-testid="close-button"]',
         'button:has-text("×")',
-        'button:has-text("Close")',
     ], log)
     _wait(1, log)
 
     # Log page state for debugging
     _log_page_state(page, log, "connect-page: ", max_chars=800)
 
-    # Try to expand connection details by clicking tabs/buttons
+    # First try extracting host from HTML directly (it may already be there)
+    host = _extract_host_from_html(page, log)
+    if host:
+        log(f"host from connect page HTML: {host}")
+        return host
+
+    # Click on the Connect sidebar link (the page may have redirected to /console/connect)
     _click_first(page, [
-        '[data-testid*="connect"]',
+        'a:has-text("Connect")',
+        'nav a:has-text("Connect")',
+    ], log)
+    _wait(3, log, "connect sidebar click")
+
+    # Try connection method tabs to reveal the host
+    _click_first(page, [
         'button:has-text("Native")',
         'button:has-text("HTTPS")',
+        '[data-testid*="connect"]',
     ], log)
     _wait(2, log, "connection tab expand")
 
-    # Try extracting from HTML
     host = _extract_host_from_html(page, log)
     if host:
         log(f"host from connect page HTML: {host}")
@@ -732,7 +1090,7 @@ def _get_host_from_connect_page(page, service_id: str, log) -> str:
     except Exception as e:
         log(f"connect page text extraction error: {e}")
 
-    # Retry once after waiting (page JS may still be rendering)
+    # Retry after a wait (page JS may still be rendering)
     log("host not found on connect page, retrying after 5s...")
     _wait(5, log, "connect page retry")
     host = _extract_host_from_html(page, log)
