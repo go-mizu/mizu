@@ -261,6 +261,48 @@ def register_via_browser(
                 _wait(4, log, "post-verification load")
                 log(f"url after verification: {page.url}")
 
+                # After email verification, log in with the new credentials
+                log("email verified — now logging in...")
+                try:
+                    page.goto("https://app.motherduck.com", timeout=30000)
+                    page.wait_for_url("**/auth.motherduck.com/**", timeout=15000)
+                except Exception as e:
+                    log(f"login redirect warn: {e}")
+                _wait(2, log)
+                log(f"login page: {page.url}")
+
+                # Fill email
+                _fill_first(page, [
+                    'input[name="username"]',
+                    'input[name="email"]',
+                    'input[type="email"]',
+                ], mailbox.address, log)
+
+                # Submit email
+                _click_first(page, [
+                    'button[name="action"]',
+                    'button[value="default"]',
+                    'button[type="submit"]',
+                    'button:has-text("Continue")',
+                ], log)
+                _wait(3, log, "waiting for password step")
+
+                # Fill password
+                _fill_first(page, [
+                    'input[name="password"]',
+                    'input[type="password"]',
+                ], password, log)
+
+                # Submit password
+                _click_first(page, [
+                    'button[name="action"]',
+                    'button[value="default"]',
+                    'button[type="submit"]',
+                    'button:has-text("Continue")',
+                ], log)
+                _wait(5, log, "waiting for login")
+                log(f"url after login: {page.url}")
+
             # ---- Step 5: Click through onboarding (ONLY on app.motherduck.com) ----
             if _on_app(page):
                 log("on MotherDuck app — clicking through onboarding...")
