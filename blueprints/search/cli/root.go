@@ -84,6 +84,7 @@ Get started:
 	root.AddCommand(NewRSS())
 	root.AddCommand(NewBench())
 	root.AddCommand(NewSerp())
+	root.AddCommand(NewExport())
 
 	if err := fang.Execute(ctx, root,
 		fang.WithVersion(Version),
