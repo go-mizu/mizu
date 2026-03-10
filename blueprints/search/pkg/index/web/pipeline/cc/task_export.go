@@ -7,7 +7,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
@@ -15,6 +17,7 @@ import (
 	"github.com/go-mizu/mizu/blueprints/search/pkg/export"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/pipeline/util"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/markdown"
+	"golang.org/x/sync/errgroup"
 )
 
 // Compile-time check.
@@ -122,59 +125,120 @@ func (t *CCExportTask) Run(ctx context.Context, emit func(*CCExportState)) (CCEx
 	}
 	defer rows.Close()
 
+	// Pipeline: reader → channel → worker pool.
+	workers := runtime.NumCPU()
+	if workers < 4 {
+		workers = 4
+	}
+	if workers > 32 {
+		workers = 32
+	}
+
+	type ccExportItem struct {
+		url  string
+		html string
+	}
+	ch := make(chan ccExportItem, workers*4)
+
+	var exported atomic.Int64
 	start := time.Now()
-	var exported int64
 
-	for rows.Next() {
-		if ctx.Err() != nil {
-			return CCExportMetric{}, ctx.Err()
+	// Progress reporter.
+	stopProgress := make(chan struct{})
+	progressDone := make(chan struct{})
+	go func() {
+		defer close(progressDone)
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-stopProgress:
+				return
+			case <-ticker.C:
+				n := exported.Load()
+				if n == 0 {
+					continue
+				}
+				elapsed := time.Since(start)
+				emit(&CCExportState{
+					Domain:        domain,
+					Format:        t.format,
+					PagesExported: n,
+					PagesTotal:    total,
+					PagesPerSec:   float64(n) / elapsed.Seconds(),
+					Progress:      util.PhaseProgress(n, total),
+				})
+			}
 		}
+	}()
 
-		var pageURL, body, contentType string
-		if err := rows.Scan(&pageURL, &body, &contentType); err != nil {
-			log.Printf("[cc-export] ERROR scan row: %v", err)
-			continue
+	// Worker pool.
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(workers)
+
+	// Reader: scan rows, send to channel.
+	var readErr error
+	go func() {
+		defer close(ch)
+		for rows.Next() {
+			if gctx.Err() != nil {
+				return
+			}
+			var pageURL, body, contentType string
+			if err := rows.Scan(&pageURL, &body, &contentType); err != nil {
+				log.Printf("[cc-export] ERROR scan row: %v", err)
+				continue
+			}
+			if !strings.Contains(strings.ToLower(contentType), "html") {
+				continue
+			}
+			select {
+			case ch <- ccExportItem{url: pageURL, html: body}:
+			case <-gctx.Done():
+				return
+			}
 		}
-
-		if !strings.Contains(strings.ToLower(contentType), "html") {
-			continue
+		if err := rows.Err(); err != nil {
+			readErr = fmt.Errorf("iterate rows: %w", err)
 		}
+	}()
 
-		if _, err := writer.writePage(export.Page{URL: pageURL, HTML: []byte(body)}); err != nil {
-			log.Printf("[cc-export] ERROR write %s: %v", pageURL, err)
-			continue
-		}
-
-		exported++
-
-		if exported%20 == 0 {
-			elapsed := time.Since(start)
-			emit(&CCExportState{
-				Domain:        domain,
-				Format:        t.format,
-				PagesExported: exported,
-				PagesTotal:    total,
-				PagesPerSec:   float64(exported) / elapsed.Seconds(),
-				Progress:      util.PhaseProgress(exported, total),
-			})
-		}
+	// Consume items from channel with worker pool.
+	for item := range ch {
+		item := item
+		g.Go(func() error {
+			if _, err := writer.writePage(export.Page{URL: item.url, HTML: []byte(item.html)}); err != nil {
+				log.Printf("[cc-export] ERROR write %s: %v", item.url, err)
+			}
+			exported.Add(1)
+			return nil
+		})
 	}
 
-	if err := rows.Err(); err != nil {
-		return CCExportMetric{}, fmt.Errorf("iterate rows: %w", err)
+	if err := g.Wait(); err != nil {
+		return CCExportMetric{}, err
 	}
+	if readErr != nil {
+		return CCExportMetric{}, readErr
+	}
+
+	close(stopProgress)
+	<-progressDone
 
 	if err := writer.writeIndex(); err != nil {
 		log.Printf("[cc-export] ERROR write index: %v", err)
 	}
 
 	elapsed := time.Since(start)
+	n := exported.Load()
 	emit(&CCExportState{
 		Domain:        domain,
 		Format:        t.format,
-		PagesExported: exported,
+		PagesExported: n,
 		PagesTotal:    total,
-		PagesPerSec:   float64(exported) / elapsed.Seconds(),
+		PagesPerSec:   float64(n) / elapsed.Seconds(),
 		Progress:      1.0,
 	})
 
@@ -182,7 +246,7 @@ func (t *CCExportTask) Run(ctx context.Context, emit func(*CCExportState)) (CCEx
 	return CCExportMetric{
 		Domain:  domain,
 		Format:  t.format,
-		Pages:   exported,
+		Pages:   n,
 		OutDir:  siteDir,
 		Elapsed: elapsed,
 	}, nil

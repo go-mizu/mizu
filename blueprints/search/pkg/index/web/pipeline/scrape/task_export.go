@@ -7,7 +7,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/zstd"
@@ -17,6 +19,7 @@ import (
 	"github.com/go-mizu/mizu/blueprints/search/pkg/export"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/pipeline/util"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/markdown"
+	"golang.org/x/sync/errgroup"
 )
 
 // Compile-time check.
@@ -56,11 +59,16 @@ func NewExportTask(domain, dataDir, format string) *ExportTask {
 	return &ExportTask{domain: domain, dataDir: dataDir, format: format}
 }
 
-// Run reads HTML from DuckDB shards, rewrites links, writes browsable site.
+// exportItem is sent from the reader goroutine to the worker pool.
+type exportItem struct {
+	url  string
+	body []byte // zstd-compressed; workers decompress in parallel
+}
+
+// Run reads HTML from DuckDB shards, decompresses and converts in parallel.
 func (t *ExportTask) Run(ctx context.Context, emit func(*ExportState)) (ExportMetric, error) {
 	norm := dcrawler.NormalizeDomain(t.domain)
 	resultDir := filepath.Join(t.dataDir, norm, "results")
-	// Output to $HOME/data/export/ (shared across all sources).
 	home, _ := os.UserHomeDir()
 	outDir := filepath.Join(home, "data", "export")
 
@@ -78,8 +86,7 @@ func (t *ExportTask) Run(ctx context.Context, emit func(*ExportState)) (ExportMe
 	var unions []string
 	for i, shard := range shards {
 		alias := fmt.Sprintf("s%d", i)
-		_, err := db.Exec(fmt.Sprintf("ATTACH '%s' AS %s (READ_ONLY)", shard, alias))
-		if err != nil {
+		if _, err := db.Exec(fmt.Sprintf("ATTACH '%s' AS %s (READ_ONLY)", shard, alias)); err != nil {
 			log.Printf("[export] ERROR attach shard %s: %v", shard, err)
 			continue
 		}
@@ -91,7 +98,7 @@ func (t *ExportTask) Run(ctx context.Context, emit func(*ExportState)) (ExportMe
 		return ExportMetric{}, fmt.Errorf("no readable shards")
 	}
 
-	// Count total HTML pages
+	// Count total HTML pages.
 	var total int64
 	for i := range shards {
 		alias := fmt.Sprintf("s%d", i)
@@ -104,7 +111,7 @@ func (t *ExportTask) Run(ctx context.Context, emit func(*ExportState)) (ExportMe
 		}
 	}
 
-	// Create the appropriate exporter
+	// Create thread-safe exporter.
 	cfg := export.Config{Domain: norm, OutDir: outDir, Format: t.format}
 	writer, err := newPageWriter(cfg)
 	if err != nil {
@@ -118,67 +125,126 @@ func (t *ExportTask) Run(ctx context.Context, emit func(*ExportState)) (ExportMe
 	}
 	defer rows.Close()
 
+	// Pipeline: reader → channel → worker pool.
+	workers := runtime.NumCPU()
+	if workers < 4 {
+		workers = 4
+	}
+	if workers > 32 {
+		workers = 32
+	}
+	ch := make(chan exportItem, workers*4)
+
+	var exported atomic.Int64
 	start := time.Now()
-	var exported int64
 
-	for rows.Next() {
-		if ctx.Err() != nil {
-			return ExportMetric{}, ctx.Err()
+	// Progress reporter.
+	stopProgress := make(chan struct{})
+	progressDone := make(chan struct{})
+	go func() {
+		defer close(progressDone)
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-stopProgress:
+				return
+			case <-ticker.C:
+				n := exported.Load()
+				if n == 0 {
+					continue
+				}
+				elapsed := time.Since(start)
+				emit(&ExportState{
+					Domain:        norm,
+					Format:        t.format,
+					PagesExported: n,
+					PagesTotal:    total,
+					PagesPerSec:   float64(n) / elapsed.Seconds(),
+					Progress:      util.PhaseProgress(n, total),
+				})
+			}
 		}
+	}()
 
-		var pageURL string
-		var body []byte
-		var contentType string
-		if err := rows.Scan(&pageURL, &body, &contentType); err != nil {
-			log.Printf("[export] ERROR scan row: %v", err)
-			continue
+	// Worker pool: decompress + convert + write in parallel.
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(workers)
+
+	// Reader: scan rows, send compressed body to channel.
+	var readErr error
+	go func() {
+		defer close(ch)
+		for rows.Next() {
+			if gctx.Err() != nil {
+				return
+			}
+			var pageURL string
+			var body []byte
+			var contentType string
+			if err := rows.Scan(&pageURL, &body, &contentType); err != nil {
+				log.Printf("[export] ERROR scan row: %v", err)
+				continue
+			}
+			if !strings.Contains(strings.ToLower(contentType), "html") {
+				continue
+			}
+			// Copy body — DuckDB row buffer is reused.
+			raw := make([]byte, len(body))
+			copy(raw, body)
+			select {
+			case ch <- exportItem{url: pageURL, body: raw}:
+			case <-gctx.Done():
+				return
+			}
 		}
-
-		if !strings.Contains(strings.ToLower(contentType), "html") {
-			continue
+		if err := rows.Err(); err != nil {
+			readErr = fmt.Errorf("iterate rows: %w", err)
 		}
+	}()
 
-		html, err := zstd.Decompress(nil, body)
-		if err != nil {
-			log.Printf("[export] ERROR decompress %s: %v", pageURL, err)
-			continue
-		}
-
-		if _, err := writer.writePage(export.Page{URL: pageURL, HTML: html}); err != nil {
-			log.Printf("[export] ERROR write %s: %v", pageURL, err)
-			continue
-		}
-
-		exported++
-
-		if exported%20 == 0 {
-			elapsed := time.Since(start)
-			emit(&ExportState{
-				Domain:        norm,
-				Format:        t.format,
-				PagesExported: exported,
-				PagesTotal:    total,
-				PagesPerSec:   float64(exported) / elapsed.Seconds(),
-				Progress:      util.PhaseProgress(exported, total),
-			})
-		}
+	// Consume items from channel with worker pool.
+	// Each worker decompresses + converts + writes in parallel.
+	for item := range ch {
+		item := item
+		g.Go(func() error {
+			html, err := zstd.Decompress(nil, item.body)
+			if err != nil {
+				log.Printf("[export] ERROR decompress %s: %v", item.url, err)
+				return nil
+			}
+			if _, err := writer.writePage(export.Page{URL: item.url, HTML: html}); err != nil {
+				log.Printf("[export] ERROR write %s: %v", item.url, err)
+			}
+			exported.Add(1)
+			return nil
+		})
 	}
 
-	if err := rows.Err(); err != nil {
-		return ExportMetric{}, fmt.Errorf("iterate rows: %w", err)
+	if err := g.Wait(); err != nil {
+		return ExportMetric{}, err
 	}
+	if readErr != nil {
+		return ExportMetric{}, readErr
+	}
+
+	close(stopProgress)
+	<-progressDone
 
 	if err := writer.writeIndex(); err != nil {
 		log.Printf("[export] ERROR write index: %v", err)
 	}
 
 	elapsed := time.Since(start)
+	n := exported.Load()
 	emit(&ExportState{
 		Domain:        norm,
 		Format:        t.format,
-		PagesExported: exported,
+		PagesExported: n,
 		PagesTotal:    total,
-		PagesPerSec:   float64(exported) / elapsed.Seconds(),
+		PagesPerSec:   float64(n) / elapsed.Seconds(),
 		Progress:      1.0,
 	})
 
@@ -186,7 +252,7 @@ func (t *ExportTask) Run(ctx context.Context, emit func(*ExportState)) (ExportMe
 	return ExportMetric{
 		Domain:  norm,
 		Format:  t.format,
-		Pages:   exported,
+		Pages:   n,
 		OutDir:  siteDir,
 		Elapsed: elapsed,
 	}, nil
@@ -202,7 +268,7 @@ func RemoveExport(dataDir, domain string) error {
 	return os.RemoveAll(exportDir)
 }
 
-// pageWriter abstracts over HTML and Markdown exporters.
+// pageWriter abstracts over HTML and Markdown exporters. Thread-safe.
 type pageWriter struct {
 	htmlExp *export.Exporter
 	mdExp   *export.MarkdownExporter
