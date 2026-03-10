@@ -28,14 +28,24 @@ def _browser_args() -> list[str]:
     return args
 
 
-def _maybe_reexec_xvfb(headless: bool) -> None:
-    if platform.system() != "Linux" or headless or os.environ.get("DISPLAY"):
+def _ensure_display() -> None:
+    """On Linux without DISPLAY, start Xvfb. Needed even for headless Chromium on some VPS."""
+    if platform.system() != "Linux" or os.environ.get("DISPLAY"):
         return
     import shutil
     import subprocess
-    xvfb = shutil.which("xvfb-run")
+    xvfb = shutil.which("Xvfb")
     if xvfb:
-        sys.exit(subprocess.call([xvfb, "-a", sys.executable] + sys.argv))
+        # Pick a display number unlikely to conflict
+        display = ":99"
+        proc = subprocess.Popen(
+            [xvfb, display, "-screen", "0", "1280x900x24"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        import atexit
+        atexit.register(proc.kill)
+        import time; time.sleep(0.5)
+        os.environ["DISPLAY"] = display
 
 
 def _wait(seconds: float, log=None, msg: str = "") -> None:
@@ -170,7 +180,7 @@ def register_via_browser(
     """Drive ClickHouse Cloud signup, return dict with service connection info."""
     from patchright.sync_api import sync_playwright
 
-    _maybe_reexec_xvfb(headless)
+    _ensure_display()
 
     def log(msg: str) -> None:
         if verbose:
