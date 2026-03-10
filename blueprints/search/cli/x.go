@@ -2,13 +2,20 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/dcrawler/x"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/markdown"
+	"github.com/go-rod/rod"
+	"github.com/go-rod/rod/lib/launcher"
+	"github.com/go-rod/rod/lib/proto"
 	"github.com/spf13/cobra"
 )
 
@@ -490,7 +497,7 @@ func runXTweets(ctx context.Context, username string, maxTweets int, session str
 // ── tweet ───────────────────────────────────────────────
 
 func newXTweet() *cobra.Command {
-	var session string
+	var session, format string
 
 	cmd := &cobra.Command{
 		Use:   "tweet <id_or_url>",
@@ -501,16 +508,21 @@ Accepts tweet ID or full URL:
   search x tweet 1234567890
   search x tweet https://x.com/user/status/1234567890
 
+Use --format markdown to save the thread as a markdown article:
+  search x tweet https://x.com/LangChain/status/2031055593360990358 --format markdown --session myuser
+
 Examples:
-  search x tweet 1234567890 --session myuser`,
+  search x tweet 1234567890 --session myuser
+  search x tweet https://x.com/user/status/123 --format markdown --session myuser`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := extractTweetID(args[0])
-			return runXTweet(cmd.Context(), id, session)
+			return runXTweet(cmd.Context(), id, session, format)
 		},
 	}
 
 	cmd.Flags().StringVar(&session, "session", "", "Session username to load (required)")
+	cmd.Flags().StringVar(&format, "format", "", "Output format: markdown")
 	return cmd
 }
 
@@ -530,7 +542,7 @@ func extractTweetID(input string) string {
 	return input
 }
 
-func runXTweet(ctx context.Context, id, session string) error {
+func runXTweet(ctx context.Context, id, session, format string) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("X/Twitter Tweet"))
 	fmt.Println()
@@ -558,16 +570,15 @@ func runXTweet(ctx context.Context, id, session string) error {
 		fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: %v", err)))
 	}
 
+	// Always store tweet + replies in DuckDB
+	db, dbErr := x.OpenDB(cfg.UserDBPath(tweet.Username))
+	if dbErr == nil {
+		allTweets := append([]x.Tweet{*tweet}, replies...)
+		db.InsertTweets(allTweets)
+	}
+
 	if len(replies) > 0 {
 		fmt.Printf("  %d replies found\n\n", len(replies))
-
-		// Store tweet + replies
-		db, err := x.OpenDB(cfg.UserDBPath(tweet.Username))
-		if err == nil {
-			allTweets := append([]x.Tweet{*tweet}, replies...)
-			db.InsertTweets(allTweets)
-			db.Close()
-		}
 
 		showN := min(5, len(replies))
 		fmt.Println(subtitleStyle.Render("  Top replies:"))
@@ -584,6 +595,86 @@ func runXTweet(ctx context.Context, id, session string) error {
 		}
 	} else {
 		fmt.Println(labelStyle.Render("  No replies found"))
+	}
+
+	// Markdown export
+	if strings.ToLower(format) == "markdown" {
+		thread := x.ExtractThread(*tweet, replies)
+
+		// If the tweet is just a link, follow it and extract the full article body
+		if isTweetJustALink(*tweet) || (tweet.Text == "" && len(tweet.URLs) > 0) {
+			linkedURL := extractFirstURL(*tweet)
+			if linkedURL != "" {
+				fmt.Printf("  Fetching linked article: %s\n", infoStyle.Render(linkedURL))
+
+				if extractXArticleID(linkedURL) != "" {
+					// X Article — render with headless browser (public URL, no auth needed)
+					articleURL := fmt.Sprintf("https://x.com/%s/article/%s", tweet.Username, tweet.ID)
+					fmt.Println(labelStyle.Render("  Rendering with headless browser..."))
+					artTitle, artBody, rodErr := fetchXArticleWithRod(ctx, articleURL, client.AuthToken(), client.CT0())
+					if rodErr == nil && artBody != "" {
+						if artTitle != "" && thread[0].Title == "" {
+							thread[0].Title = artTitle
+						}
+						thread[0].Text = artBody
+						thread[0].PermanentURL = articleURL
+						fmt.Printf("  Article: %d chars (via headless browser)\n", len(artBody))
+					} else {
+						fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: X Article not accessible (%v)", rodErr)))
+					}
+				} else {
+					// External URL — fetch HTML and extract with trafilatura
+					artTitle, artBody, finalURL := fetchLinkedArticle(linkedURL)
+					if artBody != "" {
+						if artTitle != "" && thread[0].Title == "" {
+							thread[0].Title = artTitle
+						}
+						thread[0].Text = artBody
+						if finalURL != "" {
+							thread[0].PermanentURL = finalURL
+						}
+						fmt.Printf("  Article: %d chars extracted\n", len(artBody))
+					} else {
+						fmt.Println(warningStyle.Render("  Warning: could not extract article body from linked URL"))
+					}
+				}
+			}
+		}
+
+		mdPath := filepath.Join(cfg.UserDir(tweet.Username), id+".md")
+		if err := x.ExportMarkdown(thread, mdPath); err != nil {
+			fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: export markdown: %v", err)))
+		} else {
+			fmt.Println()
+			fmt.Printf("  Thread: %d tweets\n", len(thread))
+			fmt.Println(successStyle.Render(fmt.Sprintf("  Saved markdown: %s", mdPath)))
+		}
+
+		// Store assembled article in DuckDB
+		if dbErr == nil {
+			article := x.Article{
+				ID:         tweet.ID,
+				Username:   tweet.Username,
+				Name:       tweet.Name,
+				Title:      thread[0].Title,
+				ContentMD:  x.TweetThreadToMarkdown(thread),
+				TweetCount: len(thread),
+				Likes:      tweet.Likes,
+				Retweets:   tweet.Retweets,
+				Replies:    tweet.Replies,
+				Views:      tweet.Views,
+				PostedAt:   tweet.PostedAt,
+			}
+			if err := db.InsertArticle(article); err != nil {
+				fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: store article: %v", err)))
+			} else {
+				fmt.Println(successStyle.Render("  Saved article to database"))
+			}
+		}
+	}
+
+	if dbErr == nil {
+		db.Close()
 	}
 
 	return nil
@@ -2261,4 +2352,337 @@ func sanitizeXDirName(s string) string {
 		return "_"
 	}
 	return string(b)
+}
+
+// fetchLinkedArticle follows a URL (including t.co redirects), fetches the HTML,
+// and extracts the article title + markdown body using trafilatura.
+// Returns empty strings on failure.
+func fetchLinkedArticle(rawURL string) (title, body, finalURL string) {
+	client := &http.Client{
+		Timeout: 20 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) > 10 {
+				return http.ErrUseLastResponse
+			}
+			return nil
+		},
+	}
+
+	req, err := http.NewRequest("GET", rawURL, nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+
+	finalURL = resp.Request.URL.String()
+
+	htmlBytes, err := io.ReadAll(io.LimitReader(resp.Body, 5*1024*1024)) // 5 MB cap
+	if err != nil || len(htmlBytes) == 0 {
+		return
+	}
+
+	result := markdown.Convert(htmlBytes, finalURL)
+	if result.Error != "" || result.Markdown == "" {
+		return
+	}
+
+	title = result.Title
+	body = result.Markdown
+	return
+}
+
+// extractFirstURL returns the first HTTP(S) URL found in tweet text or URLs list.
+func extractFirstURL(t x.Tweet) string {
+	// Prefer URLs from the entities list (already expanded from t.co)
+	for _, u := range t.URLs {
+		if strings.HasPrefix(u, "http") {
+			return u
+		}
+	}
+	// Fallback: scan text for t.co or other URLs
+	for _, word := range strings.Fields(t.Text) {
+		if strings.HasPrefix(word, "http") {
+			return strings.TrimRight(word, ".,;)")
+		}
+	}
+	return ""
+}
+
+// extractXArticleID returns the article tweet ID from an x.com/i/article/<id> URL,
+// or empty string if it's not an X Article URL.
+func extractXArticleID(rawURL string) string {
+	if !strings.Contains(rawURL, "/i/article/") {
+		return ""
+	}
+	parts := strings.SplitN(rawURL, "/i/article/", 2)
+	if len(parts) != 2 {
+		return ""
+	}
+	id := parts[1]
+	if idx := strings.IndexAny(id, "/?#"); idx >= 0 {
+		id = id[:idx]
+	}
+	return strings.TrimSpace(id)
+}
+
+// fetchXArticleWithRod uses a headless Chrome browser to render an X Article page
+// and extract its content. Auth cookies are needed to bypass the login wall.
+func fetchXArticleWithRod(ctx context.Context, articleURL, authToken, ct0 string) (title, body string, err error) {
+	chromeBin := detectChromeBinForX()
+
+	l := launcher.New().
+		Headless(true).
+		Set("disable-blink-features", "AutomationControlled").
+		Set("disable-dev-shm-usage", "").
+		Set("no-sandbox", "").
+		Set("window-size", "1280,800")
+	if chromeBin != "" {
+		l = l.Bin(chromeBin)
+	}
+
+	u, launchErr := l.Launch()
+	if launchErr != nil {
+		return "", "", fmt.Errorf("rod launch: %w", launchErr)
+	}
+
+	browser := rod.New().ControlURL(u)
+	if err := browser.Connect(); err != nil {
+		return "", "", fmt.Errorf("rod connect: %w", err)
+	}
+	defer browser.Close()
+
+	page, err := browser.Page(proto.TargetCreateTarget{})
+	if err != nil {
+		return "", "", fmt.Errorf("rod page: %w", err)
+	}
+
+	pageCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+
+	// Set auth cookies at browser level before navigation
+	if authToken != "" && ct0 != "" {
+		if err := browser.SetCookies([]*proto.NetworkCookieParam{
+			{Name: "auth_token", Value: authToken, Domain: ".x.com", Path: "/"},
+			{Name: "ct0", Value: ct0, Domain: ".x.com", Path: "/"},
+		}); err != nil {
+			return "", "", fmt.Errorf("rod set cookies: %w", err)
+		}
+	}
+
+	if err := page.Context(pageCtx).Navigate(articleURL); err != nil {
+		return "", "", fmt.Errorf("rod navigate: %w", err)
+	}
+	_ = page.Context(pageCtx).WaitLoad()
+
+	// Wait specifically for the X Article content element to appear.
+	for i := range 20 {
+		time.Sleep(1 * time.Second)
+		rendered, evalErr := page.Eval(`() => {
+			const article = document.querySelector('[data-testid="twitterArticleRichTextView"]');
+			if (article) return article.innerText.length;
+			return 0;
+		}`)
+		if evalErr == nil && rendered.Value.Int() > 100 {
+			break
+		}
+		if i == 19 {
+			fmt.Fprintf(os.Stderr, "  Rod: twitterArticleRichTextView not found after 20s\n")
+		}
+	}
+
+	html, err := page.HTML()
+	if err != nil {
+		return "", "", fmt.Errorf("rod get html: %w", err)
+	}
+	// Extract article content from X Article DOM and convert to markdown.
+	// X Articles use Draft.js rendering with specific class names and data-testid attributes.
+	extracted, _ := page.Eval(`() => {
+		const titleEl = document.querySelector('[data-testid="twitter-article-title"]');
+		const bodyEl = document.querySelector('[data-testid="twitterArticleReadView"]')
+			|| document.querySelector('[data-testid="twitterArticleRichTextView"]');
+		if (!bodyEl || bodyEl.innerText.length < 100) return '';
+
+		const lines = [];
+
+		function processNode(node) {
+			// Code blocks: data-testid="markdown-code-block"
+			if (node.dataset && node.dataset.testid === 'markdown-code-block') {
+				// First child span contains the language label
+				const langEl = node.querySelector('span');
+				const lang = langEl ? langEl.textContent.trim() : '';
+				// The code text is everything after the language + copy button
+				const allText = node.innerText.trim();
+				// Remove the language label and "Copy" button text from the start
+				let code = allText;
+				if (lang && code.startsWith(lang)) code = code.slice(lang.length).trim();
+				if (code.startsWith('Copy')) code = code.slice(4).trim();
+				if (code) {
+					lines.push('');
+					lines.push('` + "```" + `' + lang);
+					lines.push(code);
+					lines.push('` + "```" + `');
+					lines.push('');
+				}
+				return;
+			}
+
+			// Images
+			if (node.dataset && node.dataset.testid === 'tweetPhoto') {
+				const img = node.querySelector('img[src]');
+				if (img) {
+					let src = img.src;
+					// Use original size instead of small
+					src = src.replace(/name=small/, 'name=large');
+					const alt = img.alt || 'Image';
+					lines.push('');
+					lines.push('![' + alt + '](' + src + ')');
+					lines.push('');
+				}
+				return;
+			}
+
+			// Videos
+			if (node.tagName === 'VIDEO' || (node.dataset && node.dataset.testid === 'videoPlayer')) {
+				const src = node.querySelector('source')?.src || node.querySelector('video')?.src;
+				if (src) {
+					lines.push('');
+					lines.push('[Video](' + src + ')');
+					lines.push('');
+				}
+				return;
+			}
+
+			// Headers (h1-h3)
+			if (/^H[123]$/.test(node.tagName)) {
+				const level = node.tagName[1];
+				const prefix = '#'.repeat(parseInt(level)) + ' ';
+				lines.push('');
+				lines.push(prefix + node.innerText.trim());
+				lines.push('');
+				return;
+			}
+
+			// Regular text blocks (Draft.js unstyled blocks)
+			if (node.classList && node.classList.contains('longform-unstyled') && node.dataset && node.dataset.block === 'true') {
+				const text = processInlineContent(node);
+				if (text.trim()) {
+					lines.push('');
+					lines.push(text.trim());
+				}
+				return;
+			}
+
+			// Ordered/unordered list items
+			if (node.classList && (node.classList.contains('longform-ordered-list-item') || node.classList.contains('longform-unordered-list-item'))) {
+				const text = processInlineContent(node);
+				const prefix = node.classList.contains('longform-ordered-list-item') ? '1. ' : '- ';
+				if (text.trim()) lines.push(prefix + text.trim());
+				return;
+			}
+
+			// Blockquotes
+			if (node.classList && node.classList.contains('longform-blockquote')) {
+				const text = node.innerText.trim();
+				if (text) {
+					lines.push('');
+					lines.push('> ' + text.replace(/\n/g, '\n> '));
+					lines.push('');
+				}
+				return;
+			}
+
+			// Recurse into children
+			for (const child of node.children || []) {
+				processNode(child);
+			}
+		}
+
+		function processInlineContent(node) {
+			let result = '';
+			for (const child of node.querySelectorAll('[data-text="true"]')) {
+				result += child.textContent;
+			}
+			// Also pick up links
+			if (!result) result = node.innerText;
+			// Inline links: find <a> tags and convert to markdown links
+			const links = node.querySelectorAll('a[href]');
+			for (const a of links) {
+				const text = a.innerText;
+				const href = a.href;
+				if (text && href && !href.startsWith('javascript:')) {
+					result = result.replace(text, '[' + text + '](' + href + ')');
+				}
+			}
+			return result;
+		}
+
+		processNode(bodyEl);
+
+		const title = titleEl ? titleEl.innerText.trim() : '';
+		const body = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+		return JSON.stringify({ title, body });
+	}`)
+
+	if extracted != nil && extracted.Value.Str() != "" {
+		var result struct {
+			Title string `json:"title"`
+			Body  string `json:"body"`
+		}
+		if json.Unmarshal([]byte(extracted.Value.Str()), &result) == nil && len(result.Body) > 100 {
+			return result.Title, result.Body, nil
+		}
+	}
+
+	// Article element not found — likely a login wall or rate limit
+	return "", "", fmt.Errorf("article content not found in rendered page (html=%d bytes)", len(html))
+}
+
+// detectChromeBinForX finds the Chrome binary path (reuses dcrawler's detection logic).
+func detectChromeBinForX() string {
+	if p := os.Getenv("CHROME_BIN"); p != "" {
+		return p
+	}
+	candidates := []string{
+		"/usr/bin/chromium",
+		"/usr/bin/chromium-browser",
+		"/usr/bin/google-chrome",
+		"/usr/bin/google-chrome-stable",
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		candidates = append([]string{
+			home + "/bin/chromium",
+			home + "/.local/bin/chromium",
+		}, candidates...)
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	return ""
+}
+
+// isTweetJustALink returns true when a tweet's text is essentially only a URL.
+func isTweetJustALink(t x.Tweet) bool {
+	text := strings.TrimSpace(t.Text)
+	// Strip any URL at the end
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return false
+	}
+	// Count non-URL words
+	nonURL := 0
+	for _, w := range words {
+		if !strings.HasPrefix(w, "http") {
+			nonURL++
+		}
+	}
+	return nonURL == 0
 }
