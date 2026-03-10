@@ -2,18 +2,14 @@
 
 Flow:
   1. Open app.motherduck.com → auto-redirects to Auth0 (auth.motherduck.com)
-  2. On Auth0 identifier-first page: enter email → click Continue
-  3. Auth0 advances to password step (same URL, SPA-style)
-  4. If new user: enter password → click Continue → redirected to sign-up confirmation
-     OR Auth0 navigates to auth.motherduck.com/u/signup
-  5. On signup page (if separate): fill password → submit → account created
+  2. On Auth0 login page: find "Sign up" link → click to go to signup page
+  3. On signup page: enter email + password → submit
+  4. If email verification required: poll mail.tm for verification link
+  5. Click through any onboarding prompts (only on app.motherduck.com)
   6. Navigate to Settings > Tokens → generate + extract token
 
-Note: MotherDuck uses Auth0 password-based login (not passwordless).
-After entering email, Auth0 shows a password field on the same page.
-
-Note on Linux xvfb re-exec: When _maybe_reexec_xvfb triggers, the parent exits via
-sys.exit() after the child finishes. On headless Linux (the default), never triggered.
+Note: MotherDuck uses Auth0 password-based auth. New accounts are created
+via the /u/signup page, NOT the /u/login page.
 """
 from __future__ import annotations
 
@@ -58,6 +54,57 @@ def _fill(page, selector: str, text: str, delay: int = 55) -> None:
     time.sleep(0.4)
 
 
+def _on_auth0(page) -> bool:
+    return "auth.motherduck.com" in page.url
+
+
+def _on_app(page) -> bool:
+    url = page.url
+    return "app.motherduck.com" in url and "auth." not in url
+
+
+def _click_first(page, selectors: list[str], log=None) -> str | None:
+    """Try each selector, click the first match. Returns the matched selector or None."""
+    for sel in selectors:
+        try:
+            btn = page.locator(sel)
+            if btn.count() > 0:
+                btn.first.click()
+                if log:
+                    log(f"clicked: {sel}")
+                return sel
+        except Exception:
+            continue
+    return None
+
+
+def _fill_first(page, selectors: list[str], text: str, log=None) -> str | None:
+    """Try each selector, fill the first match. Returns the matched selector or None."""
+    for sel in selectors:
+        try:
+            inp = page.locator(sel)
+            if inp.count() > 0:
+                _fill(page, sel, text)
+                if log:
+                    log(f"filled via: {sel}")
+                return sel
+        except Exception:
+            continue
+    return None
+
+
+def _log_page_state(page, log, label: str = "") -> str:
+    """Log current URL and page text for diagnostics."""
+    try:
+        body = page.inner_text("body")[:500]
+        log(f"{label}url={page.url}")
+        log(f"{label}text={body[:200]!r}")
+        return body
+    except Exception as e:
+        log(f"{label}page read error: {e}")
+        return ""
+
+
 def register_via_browser(
     mailbox: Mailbox,
     mail_client: MailTmClient,
@@ -94,7 +141,7 @@ def register_via_browser(
 
         try:
             # ---- Step 1: Open app — auto-redirects to Auth0 ----
-            log("opening app.motherduck.com (will redirect to Auth0)...")
+            log("opening app.motherduck.com...")
             try:
                 page.goto("https://app.motherduck.com", timeout=30000)
                 page.wait_for_load_state("networkidle", timeout=10000)
@@ -103,151 +150,147 @@ def register_via_browser(
             _wait(2, log)
             log(f"landed on: {page.url}")
 
-            # ---- Step 2: Enter email on Auth0 login page ----
-            # Auth0 Universal Login uses input[name="username"] for the email field.
-            # MotherDuck uses passwordless flow — entering any email triggers a magic link.
-            log(f"entering email: {mailbox.address}")
-            email_filled = False
-            for sel in [
-                'input[name="username"]',    # Auth0 identifier-first
-                'input[type="email"]',
+            # ---- Step 2: Navigate to signup page ----
+            # Auth0 login page has a "Sign up" link. Click it to reach /u/signup.
+            if _on_auth0(page) and "signup" not in page.url:
+                log("on Auth0 login — looking for Sign up link...")
+                signup_clicked = _click_first(page, [
+                    'a:has-text("Sign up")',
+                    'a[href*="signup"]',
+                    'button:has-text("Sign up")',
+                    'a:has-text("Create account")',
+                    'a:has-text("Don\'t have an account")',
+                ], log)
+                if signup_clicked:
+                    _wait(3, log, "navigating to signup")
+                else:
+                    log("no signup link found — trying direct URL")
+                    try:
+                        # Construct signup URL from current login URL
+                        current = page.url
+                        signup_url = current.replace("/u/login/identifier", "/u/signup")
+                        if signup_url == current:
+                            signup_url = current.replace("/u/login/password", "/u/signup")
+                        page.goto(signup_url, timeout=15000)
+                        _wait(2, log)
+                    except Exception as e:
+                        log(f"direct signup URL warn: {e}")
+                log(f"url: {page.url}")
+
+            # ---- Step 3: Fill signup form ----
+            log(f"filling signup form with {mailbox.address}")
+
+            # Fill email
+            email_sel = _fill_first(page, [
                 'input[name="email"]',
+                'input[name="username"]',
+                'input[type="email"]',
                 'input[placeholder*="email" i]',
                 'input[placeholder*="address" i]',
-            ]:
-                try:
-                    inp = page.locator(sel)
-                    if inp.count() > 0:
-                        _fill(page, sel, mailbox.address)
-                        log(f"filled email via: {sel}")
-                        email_filled = True
-                        break
-                except Exception:
-                    continue
+            ], mailbox.address, log)
+            if not email_sel:
+                log("WARNING: no email input found!")
+                _log_page_state(page, log, "  ")
 
-            if not email_filled:
-                log(f"WARNING: no email input found on {page.url}")
+            # Fill password
+            _wait(0.5, log)
+            pwd_sel = _fill_first(page, [
+                'input[name="password"]',
+                'input[type="password"]',
+            ], password, log)
+            if not pwd_sel:
+                log("WARNING: no password input found!")
+                _log_page_state(page, log, "  ")
 
-            # Submit — Auth0 uses button[name="action"] or button[value="default"]
-            for sel in [
-                'button[name="action"]',          # Auth0 primary
-                'button[value="default"]',         # Auth0 fallback
+            # Submit signup form
+            _wait(0.5, log)
+            submit_sel = _click_first(page, [
+                'button[name="action"]',
+                'button[value="default"]',
                 'button[type="submit"]',
+                'button:has-text("Sign up")',
                 'button:has-text("Continue")',
-                'button:has-text("Send magic link")',
-                'button:has-text("Sign in")',
-                '[data-action-button-primary="true"]',
-            ]:
-                btn = page.locator(sel)
-                if btn.count() > 0:
-                    btn.first.click()
-                    log(f"submitted via: {sel}")
-                    _wait(3, log)
-                    break
+                'button:has-text("Create account")',
+            ], log)
+            if submit_sel:
+                _wait(4, log, "waiting for signup response")
+            log(f"url after signup submit: {page.url}")
 
-            log(f"url after email submit: {page.url}")
-            _wait(2, log)
+            # ---- Step 4: Handle post-signup ----
+            body_text = _log_page_state(page, log, "post-signup: ")
 
-            # ---- Step 3b: Password step (Auth0 identifier-first) ----
-            # After entering email, Auth0 shows a password field on the same page.
-            # For new users this sets the account password; for existing users it logs in.
-            pwd_input = page.locator('input[name="password"], input[type="password"]')
-            if pwd_input.count() > 0:
-                log("password field detected — filling...")
-                _fill(page, 'input[name="password"], input[type="password"]', password)
+            # Check for errors
+            error_keywords = ["error", "wrong", "invalid", "already exists", "try again"]
+            if any(kw in body_text.lower() for kw in error_keywords):
+                log(f"WARNING: possible error on page")
 
-                # Click Continue / Submit
-                for sel in [
-                    'button[name="action"]',
-                    'button[value="default"]',
-                    'button[type="submit"]',
-                    'button:has-text("Continue")',
-                    'button:has-text("Sign up")',
-                ]:
-                    btn = page.locator(sel)
-                    if btn.count() > 0:
-                        btn.first.click()
-                        log(f"password submitted via: {sel}")
-                        _wait(3, log)
-                        break
-                log(f"url after password submit: {page.url}")
-            else:
-                log("no password field — assuming passwordless flow")
-
-            # ---- Step 3c: Handle Auth0 signup page if redirected ----
-            # Auth0 may redirect to /u/signup for new users
-            if "signup" in page.url:
-                log(f"on signup page: {page.url}")
-                # Fill password if shown again
-                pwd2 = page.locator('input[name="password"], input[type="password"]')
-                if pwd2.count() > 0:
-                    _fill(page, 'input[name="password"], input[type="password"]', password)
-                    for sel in ['button[name="action"]', 'button[type="submit"]', 'button:has-text("Sign up")', 'button:has-text("Continue")']:
-                        btn = page.locator(sel)
-                        if btn.count() > 0:
-                            btn.first.click()
-                            log(f"signup submitted via: {sel}")
-                            _wait(3, log)
-                            break
-                log(f"url after signup submit: {page.url}")
-
-            # ---- Step 4: Handle email verification if required ----
-            # Some Auth0 configs send a verification email
-            body_text = ""
-            try:
-                body_text = page.inner_text("body")[:800]
-                log(f"page state: {body_text[:200]!r}")
-            except Exception:
-                pass
-
-            # If Auth0 requires email verification / magic link
-            needs_verification = any(kw in body_text.lower() for kw in [
-                "verify", "check your email", "confirmation", "magic link", "link has been sent"
-            ])
-            if needs_verification:
+            # Check for email verification requirement
+            verify_keywords = ["verify", "check your email", "confirmation",
+                             "magic link", "link has been sent", "we sent"]
+            if any(kw in body_text.lower() for kw in verify_keywords):
                 log("email verification required — polling mail.tm...")
                 magic_link = mail_client.poll_for_magic_link(mailbox, timeout=120)
-                log(f"got magic link: {magic_link[:60]}...")
+                log(f"got verification link: {magic_link[:60]}...")
                 try:
                     page.goto(magic_link, timeout=30000)
                 except Exception as e:
-                    log(f"magic link nav warn: {e}")
-                _wait(4, log, "post-magic-link load")
-                log(f"url after magic link: {page.url}")
+                    log(f"verification link nav warn: {e}")
+                _wait(4, log, "post-verification load")
+                log(f"url after verification: {page.url}")
 
-            # ---- Step 6: Click through onboarding ----
-            log("clicking through onboarding...")
-            _skip_onboarding(page, log, max_attempts=10)
-            log(f"url after onboarding: {page.url}")
+            # ---- Step 5: Click through onboarding (ONLY on app.motherduck.com) ----
+            if _on_app(page):
+                log("on MotherDuck app — clicking through onboarding...")
+                _skip_onboarding(page, log, max_attempts=10)
+            elif _on_auth0(page):
+                log(f"still on Auth0 after signup: {page.url}")
+                # Try navigating directly to the app
+                try:
+                    page.goto("https://app.motherduck.com", timeout=20000)
+                    page.wait_for_load_state("networkidle", timeout=10000)
+                except Exception as e:
+                    log(f"app redirect warn: {e}")
+                _wait(3, log)
+                log(f"url after app redirect: {page.url}")
+                if _on_app(page):
+                    _skip_onboarding(page, log, max_attempts=10)
 
-            # ---- Step 7: Go to Settings > Tokens ----
+            log(f"url before token extraction: {page.url}")
+
+            # ---- Step 6: Go to Settings > Tokens ----
             log("navigating to token settings...")
             try:
                 page.goto("https://app.motherduck.com/settings/tokens", timeout=20000)
+                page.wait_for_load_state("networkidle", timeout=10000)
             except Exception as e:
                 log(f"settings nav warn: {e}")
             _wait(3, log, "settings load")
             log(f"url: {page.url}")
 
-            # ---- Step 8: Generate token ----
+            # If redirected back to Auth0, we're not logged in
+            if _on_auth0(page):
+                _log_page_state(page, log, "NOT LOGGED IN: ")
+                raise RuntimeError(
+                    f"Not logged in — Auth0 redirect after signup. "
+                    f"URL: {page.url}"
+                )
+
+            # ---- Step 7: Generate token ----
             log("generating token...")
-            for sel in [
+            _click_first(page, [
                 'button:has-text("Generate token")',
                 'button:has-text("Create token")',
                 'button:has-text("New token")',
                 'button:has-text("Generate")',
-            ]:
-                btn = page.locator(sel)
-                if btn.count() > 0:
-                    btn.first.click()
-                    log(f"clicked: {sel}")
-                    _wait(2, log)
-                    break
+                'button:has-text("Create")',
+            ], log)
+            _wait(3, log, "token generation")
 
-            # ---- Step 9: Extract token ----
+            # ---- Step 8: Extract token ----
             log("extracting token...")
             token = _extract_token(page, ctx, log)
             if not token:
+                _log_page_state(page, log, "token-fail: ")
                 raise RuntimeError("Failed to extract MotherDuck token from settings page")
 
             log(f"token extracted (len={len(token)})")
@@ -258,22 +301,30 @@ def register_via_browser(
 
 
 def _skip_onboarding(page, log, max_attempts: int = 10) -> None:
-    """Click through MotherDuck onboarding prompts until done."""
+    """Click through MotherDuck onboarding prompts.
+    Only runs when on app.motherduck.com (NOT auth.motherduck.com).
+    """
     for attempt in range(max_attempts):
         time.sleep(2)
         url = page.url
+
+        # Only onboard on the app domain
+        if "auth.motherduck.com" in url:
+            log(f"  still on Auth0, stopping onboarding")
+            return
+
         # Consider done if on main app page
-        if any(x in url for x in ["/editor", "/home", "/settings", "?onboarding=done"]):
+        if any(x in url for x in ["/editor", "/home", "/settings", "/query"]):
             log(f"onboarding done at attempt {attempt}")
             return
 
         clicked = False
         for sel in [
             'button:has-text("Skip")',
-            'button:has-text("Continue")',
             'button:has-text("Next")',
             'button:has-text("Get started")',
             'button:has-text("Done")',
+            'button:has-text("Continue")',
             '[role="button"]:has-text("Skip")',
         ]:
             btn = page.locator(sel)
@@ -292,12 +343,14 @@ def _extract_token(page, ctx, log) -> str:
     """Try multiple strategies to extract the MotherDuck API token."""
     import re
 
-    # Strategy 1: look for token displayed in a <code> or input element
+    # Strategy 1: look for token displayed in a <code>, input, or textarea element
     for sel in [
         'code',
         'input[readonly]',
+        'textarea[readonly]',
         '[data-testid*="token"]',
         'pre',
+        '.token',
     ]:
         try:
             el = page.locator(sel).first
@@ -310,7 +363,6 @@ def _extract_token(page, ctx, log) -> str:
             pass
 
     # Strategy 2: scan entire page text for MotherDuck token pattern
-    # MotherDuck tokens are JWT-like: "eyJ..." or long alphanumeric strings
     try:
         body = page.inner_text("body")
         for pat in [
@@ -327,18 +379,19 @@ def _extract_token(page, ctx, log) -> str:
 
     # Strategy 3: localStorage
     try:
-        token = page.evaluate(
-            "() => localStorage.getItem('motherduck_token') || localStorage.getItem('token')"
-        )
-        if token and len(token) > 20:
-            log(f"token via localStorage: {token[:20]}...")
-            return token
+        for key in ["motherduck_token", "token", "md_token", "access_token"]:
+            token = page.evaluate(
+                f"() => localStorage.getItem('{key}')"
+            )
+            if token and len(token) > 20:
+                log(f"token via localStorage[{key!r}]: {token[:20]}...")
+                return token
     except Exception:
         pass
 
     # Strategy 4: cookies
     cookies = {c["name"]: c["value"] for c in ctx.cookies()}
-    for key in ["motherduck_token", "token", "auth_token"]:
+    for key in ["motherduck_token", "token", "auth_token", "md_token"]:
         if key in cookies and len(cookies[key]) > 20:
             log(f"token via cookie {key!r}")
             return cookies[key]
