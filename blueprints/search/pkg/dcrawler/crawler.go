@@ -1301,6 +1301,63 @@ func RunWithDisplay(ctx context.Context, c *Crawler) error {
 	return crawlErr
 }
 
+// RunWithProgress runs the crawler with a simple line-based progress display.
+// Does not require a TTY — works in non-interactive shells, pipes, CI, etc.
+func RunWithProgress(ctx context.Context, c *Crawler) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- c.Run(ctx)
+	}()
+
+	s := c.stats
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	var lastDone int64
+	for {
+		select {
+		case err := <-done:
+			s.Freeze()
+			return err
+		case <-ticker.C:
+			speed := s.Speed()
+			total := s.Done()
+			ok := s.success.Load()
+			fail := s.failed.Load()
+			tmout := s.timeout.Load()
+			blocked := s.blocked.Load()
+			elapsed := s.Elapsed().Truncate(time.Second)
+
+			if total == lastDone {
+				continue
+			}
+			lastDone = total
+
+			// Colorful ANSI progress line
+			fmt.Printf("\033[1;36m%s\033[0m  ", elapsed)                                                         // cyan elapsed
+			fmt.Printf("\033[1;32m%s ok\033[0m", fmtInt64(ok))                                                   // green ok
+			if fail > 0 {
+				fmt.Printf("  \033[1;31m%s err\033[0m", fmtInt64(fail)) // red errors
+			}
+			if tmout > 0 {
+				fmt.Printf("  \033[1;33m%s timeout\033[0m", fmtInt64(tmout)) // yellow timeouts
+			}
+			if blocked > 0 {
+				fmt.Printf("  \033[1;35m%s blocked\033[0m", fmtInt64(blocked)) // magenta blocked
+			}
+			fmt.Printf("  \033[1;37m%.0f p/s\033[0m", speed) // white speed
+			if s.frontierLen != nil {
+				fmt.Printf("  \033[0;90mfrontier:%s\033[0m", fmtInt(s.frontierLen()))
+			}
+			fmt.Printf("  \033[0;90m%s\033[0m", fmtBytes(s.bytes.Load()))
+			fmt.Println()
+		}
+	}
+}
+
 func isTimeoutError(err error) bool {
 	if err == nil {
 		return false

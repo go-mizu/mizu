@@ -45,6 +45,7 @@ func NewScrape() *cobra.Command {
 		workerURL        string
 		workerToken      string
 		workerBrowser    bool
+		useTUI           bool
 	)
 
 	cmd := &cobra.Command{
@@ -142,7 +143,7 @@ Browser mode (JS-rendered pages, bypasses Cloudflare):
 				return fmt.Errorf("--worker requires --worker-token or CRAWLER_WORKER_TOKEN env var")
 			}
 
-			return runCrawlDomain(cmd, cfg, downloadImages)
+			return runCrawlDomain(cmd, cfg, downloadImages, useTUI)
 		},
 	}
 
@@ -181,11 +182,12 @@ Browser mode (JS-rendered pages, bypasses Cloudflare):
 	cmd.Flags().StringVar(&workerURL, "worker-url", "", "Worker endpoint (default https://crawler.go-mizu.workers.dev)")
 	cmd.Flags().StringVar(&workerToken, "worker-token", "", "Worker auth token (default $CRAWLER_WORKER_TOKEN)")
 	cmd.Flags().BoolVar(&workerBrowser, "worker-browser", false, "Enable CF Browser Rendering on worker side")
+	cmd.Flags().BoolVar(&useTUI, "tui", false, "Use full-screen TUI dashboard (requires terminal)")
 
 	return cmd
 }
 
-func runCrawlDomain(cmd *cobra.Command, cfg dcrawler.Config, downloadImages bool) error {
+func runCrawlDomain(cmd *cobra.Command, cfg dcrawler.Config, downloadImages, useTUI bool) error {
 	c, err := dcrawler.New(cfg)
 	if err != nil {
 		return err
@@ -205,7 +207,16 @@ func runCrawlDomain(cmd *cobra.Command, cfg dcrawler.Config, downloadImages bool
 		}
 	}
 
-	err = dcrawler.RunWithDisplay(cmd.Context(), c)
+	if useTUI {
+		err = dcrawler.RunWithDisplay(cmd.Context(), c)
+	} else {
+		fmt.Println(subtitleStyle.Render("Scraping " + cfg.Domain))
+		fmt.Println(infoStyle.Render(fmt.Sprintf("  Workers: %d  |  Conns: %d  |  Timeout: %s",
+			cfg.Workers, cfg.MaxConns, cfg.Timeout)))
+		fmt.Println(infoStyle.Render(fmt.Sprintf("  Data:    %s", cfg.DomainDir())))
+		fmt.Println()
+		err = dcrawler.RunWithProgress(cmd.Context(), c)
+	}
 
 	// After TUI exits (alt screen restored), print final summary
 	fmt.Println()
