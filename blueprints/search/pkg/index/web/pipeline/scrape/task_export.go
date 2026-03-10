@@ -33,6 +33,11 @@ type ExportState struct {
 	PagesTotal    int64   `json:"pages_total"`
 	PagesPerSec   float64 `json:"pages_per_sec"`
 	Progress      float64 `json:"progress"`
+	Phase         string  `json:"phase,omitempty"`          // "pages" or "assets"
+	AssetsTotal   int     `json:"assets_total,omitempty"`   // total asset URLs discovered
+	AssetsDown    int64   `json:"assets_down,omitempty"`    // downloaded so far
+	AssetsFailed  int64   `json:"assets_failed,omitempty"`  // failed downloads
+	AssetsBytes   int64   `json:"assets_bytes,omitempty"`   // total bytes downloaded
 }
 
 // ExportMetric is the final result of a site export.
@@ -40,6 +45,7 @@ type ExportMetric struct {
 	Domain  string
 	Format  string
 	Pages   int64
+	Assets  int64
 	OutDir  string
 	Elapsed time.Duration
 }
@@ -237,22 +243,57 @@ func (t *ExportTask) Run(ctx context.Context, emit func(*ExportState)) (ExportMe
 		log.Printf("[export] ERROR write index: %v", err)
 	}
 
-	elapsed := time.Since(start)
 	n := exported.Load()
 	emit(&ExportState{
 		Domain:        norm,
 		Format:        t.format,
+		Phase:         "pages",
 		PagesExported: n,
 		PagesTotal:    total,
-		PagesPerSec:   float64(n) / elapsed.Seconds(),
+		PagesPerSec:   float64(n) / time.Since(start).Seconds(),
 		Progress:      1.0,
 	})
 
+	// Download assets (CSS, images) for offline viewing.
+	var assetCount int64
+	if ac := writer.assets(); ac != nil && ac.Count() > 0 {
+		sd := writer.siteDir()
+		assetWorkers := workers
+		if assetWorkers > 16 {
+			assetWorkers = 16
+		}
+		if err := export.DownloadAssets(ctx, ac, sd, assetWorkers, func(stats export.AssetDownloadStats) {
+			emit(&ExportState{
+				Domain:        norm,
+				Format:        t.format,
+				Phase:         "assets",
+				PagesExported: n,
+				PagesTotal:    total,
+				AssetsTotal:   stats.Total,
+				AssetsDown:    stats.Downloaded,
+				AssetsFailed:  stats.Failed,
+				AssetsBytes:   stats.Bytes,
+			})
+		}); err != nil {
+			log.Printf("[export] ERROR download assets: %v", err)
+		}
+
+		// Rewrite CSS files to use local paths for nested url() references.
+		for absURL, localPath := range ac.URLs() {
+			if isCSS := strings.HasSuffix(strings.ToLower(localPath), ".css"); isCSS {
+				export.RewriteDownloadedCSS(filepath.Join(sd, localPath), absURL, sd, ac)
+			}
+		}
+		assetCount = int64(ac.Count())
+	}
+
+	elapsed := time.Since(start)
 	siteDir := filepath.Join(outDir, t.format, norm)
 	return ExportMetric{
 		Domain:  norm,
 		Format:  t.format,
 		Pages:   n,
+		Assets:  assetCount,
 		OutDir:  siteDir,
 		Elapsed: elapsed,
 	}, nil
@@ -304,4 +345,18 @@ func (w *pageWriter) writeIndex() error {
 		return w.mdExp.WriteIndex()
 	}
 	return w.htmlExp.WriteIndex()
+}
+
+func (w *pageWriter) assets() *export.AssetCollector {
+	if w.htmlExp != nil {
+		return w.htmlExp.Assets
+	}
+	return nil
+}
+
+func (w *pageWriter) siteDir() string {
+	if w.htmlExp != nil {
+		return w.htmlExp.SiteDir()
+	}
+	return ""
 }

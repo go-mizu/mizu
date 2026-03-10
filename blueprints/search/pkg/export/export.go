@@ -38,6 +38,7 @@ type Exporter struct {
 	siteDir string
 	mu      sync.Mutex
 	written map[string]bool // URL path → written
+	Assets  *AssetCollector // tracks discovered asset URLs for offline download
 }
 
 // New creates an Exporter with the given config.
@@ -58,6 +59,7 @@ func New(cfg Config) (*Exporter, error) {
 		domain:  cfg.Domain,
 		siteDir: siteDir,
 		written: make(map[string]bool),
+		Assets:  NewAssetCollector(),
 	}, nil
 }
 
@@ -126,6 +128,11 @@ func (e *Exporter) WriteIndex() error {
 // Pages returns the number of pages written.
 func (e *Exporter) Pages() int {
 	return len(e.written)
+}
+
+// SiteDir returns the output directory for this export.
+func (e *Exporter) SiteDir() string {
+	return e.siteDir
 }
 
 // rewriteHTML parses HTML, rewrites internal links and asset references.
@@ -268,9 +275,8 @@ func (e *Exporter) rewriteLink(href string, pageURL *url.URL, pageDir string) st
 	return rel
 }
 
-// rewriteAssetRef resolves a CSS/JS/image reference to an absolute URL.
-// We don't download assets (they're not in the crawl DB), so we keep them
-// as absolute URLs pointing to the original server for correct rendering.
+// rewriteAssetRef resolves a CSS/JS/image reference, records it for download,
+// and returns a relative path to the local copy under _assets/.
 func (e *Exporter) rewriteAssetRef(ref string, pageURL *url.URL, pageDir, assetType string) string {
 	if isSpecialURL(ref) {
 		return ref
@@ -281,8 +287,20 @@ func (e *Exporter) rewriteAssetRef(ref string, pageURL *url.URL, pageDir, assetT
 		return ref
 	}
 
-	// Return the fully-resolved absolute URL so the browser fetches from origin.
-	return resolved.String()
+	// Only download http(s) assets.
+	if resolved.Scheme != "http" && resolved.Scheme != "https" {
+		return ref
+	}
+
+	absURL := resolved.String()
+	localPath := e.Assets.Add(absURL)
+
+	// Return path relative to the page's directory.
+	rel, err := filepath.Rel(pageDir, localPath)
+	if err != nil {
+		return absURL // fallback to absolute URL
+	}
+	return filepath.ToSlash(rel)
 }
 
 // rewriteSrcset rewrites srcset attribute values.

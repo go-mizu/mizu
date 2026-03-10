@@ -38,6 +38,7 @@ type CCExportMetric struct {
 	Domain  string
 	Format  string
 	Pages   int64
+	Assets  int64
 	OutDir  string
 	Elapsed time.Duration
 }
@@ -231,22 +232,42 @@ func (t *CCExportTask) Run(ctx context.Context, emit func(*CCExportState)) (CCEx
 		log.Printf("[cc-export] ERROR write index: %v", err)
 	}
 
-	elapsed := time.Since(start)
 	n := exported.Load()
 	emit(&CCExportState{
 		Domain:        domain,
 		Format:        t.format,
 		PagesExported: n,
 		PagesTotal:    total,
-		PagesPerSec:   float64(n) / elapsed.Seconds(),
+		PagesPerSec:   float64(n) / time.Since(start).Seconds(),
 		Progress:      1.0,
 	})
 
+	// Download assets for offline viewing.
+	var assetCount int64
+	if ac := writer.assets(); ac != nil && ac.Count() > 0 {
+		sd := writer.siteDir()
+		assetWorkers := workers
+		if assetWorkers > 16 {
+			assetWorkers = 16
+		}
+		if err := export.DownloadAssets(ctx, ac, sd, assetWorkers, nil); err != nil {
+			log.Printf("[cc-export] ERROR download assets: %v", err)
+		}
+		for absURL, localPath := range ac.URLs() {
+			if strings.HasSuffix(strings.ToLower(localPath), ".css") {
+				export.RewriteDownloadedCSS(filepath.Join(sd, localPath), absURL, sd, ac)
+			}
+		}
+		assetCount = int64(ac.Count())
+	}
+
+	elapsed := time.Since(start)
 	siteDir := filepath.Join(exportDir, t.format, domain)
 	return CCExportMetric{
 		Domain:  domain,
 		Format:  t.format,
 		Pages:   n,
+		Assets:  assetCount,
 		OutDir:  siteDir,
 		Elapsed: elapsed,
 	}, nil
@@ -294,6 +315,20 @@ func (w *ccPageWriter) writePage(p export.Page) (string, error) {
 		return w.mdExp.WritePage(p)
 	}
 	return w.htmlExp.WritePage(p)
+}
+
+func (w *ccPageWriter) assets() *export.AssetCollector {
+	if w.htmlExp != nil {
+		return w.htmlExp.Assets
+	}
+	return nil
+}
+
+func (w *ccPageWriter) siteDir() string {
+	if w.htmlExp != nil {
+		return w.htmlExp.SiteDir()
+	}
+	return ""
 }
 
 func (w *ccPageWriter) writeIndex() error {

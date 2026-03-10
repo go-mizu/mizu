@@ -78,8 +78,18 @@ func runScrapeExportCLI(ctx context.Context, domain, format string) error {
 	start := time.Now()
 
 	emit := func(s *scrape.ExportState) {
-		fmt.Printf("  \033[1;36m[%d/%d]\033[0m \033[1;32m%.0f pages/s\033[0m (%.0f%%)\n",
-			s.PagesExported, s.PagesTotal, s.PagesPerSec, s.Progress*100)
+		switch s.Phase {
+		case "assets":
+			fmt.Printf("  \033[1;35m[assets %d/%d]\033[0m \033[1;32m%s\033[0m",
+				s.AssetsDown+s.AssetsFailed, s.AssetsTotal, fmtExportBytes(s.AssetsBytes))
+			if s.AssetsFailed > 0 {
+				fmt.Printf(" \033[1;31m%d failed\033[0m", s.AssetsFailed)
+			}
+			fmt.Println()
+		default:
+			fmt.Printf("  \033[1;36m[%d/%d]\033[0m \033[1;32m%.0f pages/s\033[0m (%.0f%%)\n",
+				s.PagesExported, s.PagesTotal, s.PagesPerSec, s.Progress*100)
+		}
 	}
 
 	metric, err := task.Run(ctx, emit)
@@ -89,7 +99,12 @@ func runScrapeExportCLI(ctx context.Context, domain, format string) error {
 	}
 
 	fmt.Println()
-	fmt.Println(successStyle.Render(fmt.Sprintf("  Exported %d pages in %s", metric.Pages, time.Since(start).Truncate(time.Second))))
+	summary := fmt.Sprintf("  Exported %d pages", metric.Pages)
+	if metric.Assets > 0 {
+		summary += fmt.Sprintf(" + %d assets", metric.Assets)
+	}
+	summary += fmt.Sprintf(" in %s", time.Since(start).Truncate(time.Second))
+	fmt.Println(successStyle.Render(summary))
 	fmt.Println(infoStyle.Render(fmt.Sprintf("  Output:  %s", metric.OutDir)))
 	return nil
 }
@@ -138,5 +153,18 @@ func runCCExportCLI(ctx context.Context, domain, format string) error {
 	fmt.Println(successStyle.Render(fmt.Sprintf("  Exported %d pages in %s", metric.Pages, time.Since(start).Truncate(time.Second))))
 	fmt.Println(infoStyle.Render(fmt.Sprintf("  Output:  %s", metric.OutDir)))
 	return nil
+}
+
+func fmtExportBytes(b int64) string {
+	switch {
+	case b < 1024:
+		return fmt.Sprintf("%d B", b)
+	case b < 1024*1024:
+		return fmt.Sprintf("%.1f KB", float64(b)/1024)
+	case b < 1024*1024*1024:
+		return fmt.Sprintf("%.1f MB", float64(b)/(1024*1024))
+	default:
+		return fmt.Sprintf("%.2f GB", float64(b)/(1024*1024*1024))
+	}
 }
 

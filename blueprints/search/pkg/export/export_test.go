@@ -87,12 +87,16 @@ func TestExporterWritePage(t *testing.T) {
 		t.Errorf("expected external link preserved, got:\n%s", out)
 	}
 
-	// Asset references should be absolute URLs (not downloaded, fetched from origin)
-	if !strings.Contains(out, `src="https://example.com/images/logo.png"`) {
-		t.Errorf("expected img resolved to absolute URL, got:\n%s", out)
+	// Asset references should be rewritten to local _assets/ paths
+	if !strings.Contains(out, `src="_assets/example.com/images/logo.png"`) {
+		t.Errorf("expected img rewritten to local path, got:\n%s", out)
 	}
-	if !strings.Contains(out, `href="https://example.com/css/main.css"`) {
-		t.Errorf("expected css resolved to absolute URL, got:\n%s", out)
+	if !strings.Contains(out, `href="_assets/example.com/css/main.css"`) {
+		t.Errorf("expected css rewritten to local path, got:\n%s", out)
+	}
+	// Verify assets were collected
+	if exp.Assets.Count() != 2 {
+		t.Errorf("expected 2 assets collected, got %d", exp.Assets.Count())
 	}
 }
 
@@ -196,11 +200,10 @@ body { background: url(/images/bg.png); }
 	}
 	out := string(content)
 
-	if !strings.Contains(out, `url(https://example.com/images/bg.png)`) {
-		t.Errorf("expected CSS url() resolved to absolute URL, got:\n%s", out)
+	if !strings.Contains(out, `_assets/example.com/images/bg.png`) {
+		t.Errorf("expected CSS url() rewritten to local path, got:\n%s", out)
 	}
-	// goquery HTML-encodes quotes inside <style>, so check for &#39; variant
-	if !strings.Contains(out, `https://example.com/images/hero.jpg`) {
-		t.Errorf("expected quoted CSS url() resolved to absolute URL, got:\n%s", out)
+	if !strings.Contains(out, `_assets/example.com/images/hero.jpg`) {
+		t.Errorf("expected quoted CSS url() rewritten to local path, got:\n%s", out)
 	}
 }
