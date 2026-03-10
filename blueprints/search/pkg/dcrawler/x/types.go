@@ -1,6 +1,22 @@
 package x
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
+
+// RateLimitError is returned when the API rate limit is hit.
+type RateLimitError struct {
+	ResetAt time.Time     // when the rate limit resets (zero if unknown)
+	Wait    time.Duration // how long to wait
+}
+
+func (e *RateLimitError) Error() string {
+	if !e.ResetAt.IsZero() {
+		return fmt.Sprintf("rate limited (429), resets at %s (wait %s)", e.ResetAt.Format("15:04:05"), e.Wait.Truncate(time.Second))
+	}
+	return fmt.Sprintf("rate limited (429), wait %s", e.Wait.Truncate(time.Second))
+}
 
 // Profile represents an X/Twitter user profile.
 type Profile struct {
@@ -92,10 +108,15 @@ type Progress struct {
 	Total   int64
 	Current int64
 	Done    bool
+	Message string // optional status message (e.g. "rate limited, waiting...")
 }
 
 // ProgressCallback is called with progress updates.
 type ProgressCallback func(Progress)
+
+// BatchCallback is called with each batch of new tweets as they're fetched.
+// This allows incremental saving so progress is not lost on rate limit/interrupt.
+type BatchCallback func(tweets []Tweet)
 
 // List represents an X/Twitter list.
 type List struct {

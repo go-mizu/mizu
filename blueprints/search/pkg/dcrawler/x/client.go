@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -119,6 +120,9 @@ func (c *Client) LoadSessionFile(path string) (*Session, error) {
 	return sess, nil
 }
 
+// SearchMode returns the current search mode.
+func (c *Client) SearchMode() string { return c.searchMode }
+
 // SetSearchMode sets the search mode (Top, Latest, Photos, Videos, People).
 func (c *Client) SetSearchMode(mode string) {
 	c.searchMode = mode
@@ -218,21 +222,26 @@ func (c *Client) SearchProfiles(ctx context.Context, query string, maxUsers int,
 
 // GetTweets fetches user timeline tweets.
 func (c *Client) GetTweets(ctx context.Context, username string, maxTweets int, cb ProgressCallback) ([]Tweet, error) {
-	return c.getUserTimeline(ctx, username, gqlUserTweetsV2, "tweets", maxTweets, cb)
+	return c.getUserTimeline(ctx, username, gqlUserTweetsV2, "tweets", maxTweets, cb, nil)
+}
+
+// GetTweetsWithBatch fetches user timeline tweets, calling batchCb with each page for incremental saving.
+func (c *Client) GetTweetsWithBatch(ctx context.Context, username string, maxTweets int, cb ProgressCallback, batchCb BatchCallback) ([]Tweet, error) {
+	return c.getUserTimeline(ctx, username, gqlUserTweetsV2, "tweets", maxTweets, cb, batchCb)
 }
 
 // GetTweetsAndReplies fetches user timeline tweets including replies.
 func (c *Client) GetTweetsAndReplies(ctx context.Context, username string, maxTweets int, cb ProgressCallback) ([]Tweet, error) {
-	return c.getUserTimeline(ctx, username, gqlUserTweetsAndRepliesV2, "tweets+replies", maxTweets, cb)
+	return c.getUserTimeline(ctx, username, gqlUserTweetsAndRepliesV2, "tweets+replies", maxTweets, cb, nil)
 }
 
 // GetMediaTweets fetches user media timeline (photos/videos only).
 // Uses legacy UserMedia endpoint with userId (cookie auth compatibility).
 func (c *Client) GetMediaTweets(ctx context.Context, username string, maxTweets int, cb ProgressCallback) ([]Tweet, error) {
-	return c.getUserTimeline(ctx, username, gqlUserMedia, "media", maxTweets, cb)
+	return c.getUserTimeline(ctx, username, gqlUserMedia, "media", maxTweets, cb, nil)
 }
 
-func (c *Client) getUserTimeline(ctx context.Context, username, endpoint, phase string, maxTweets int, cb ProgressCallback) ([]Tweet, error) {
+func (c *Client) getUserTimeline(ctx context.Context, username, endpoint, phase string, maxTweets int, cb ProgressCallback, batchCb BatchCallback) ([]Tweet, error) {
 	userID, err := c.resolveUserID(username)
 	if err != nil {
 		return nil, err
@@ -241,6 +250,10 @@ func (c *Client) getUserTimeline(ctx context.Context, username, endpoint, phase 
 	var tweets []Tweet
 	cursor := ""
 	emptyPages := 0
+	maxEmpty := 3
+	if maxTweets == 0 {
+		maxEmpty = 10 // more tolerance for unlimited fetches
+	}
 
 	// All endpoints now use "userId". UserMedia has different field toggles.
 	isMedia := endpoint == gqlUserMedia
@@ -269,9 +282,8 @@ func (c *Client) getUserTimeline(ctx context.Context, username, endpoint, phase 
 			vars["cursor"] = cursor
 		}
 
-		data, err := c.gql.doGraphQL(endpoint, vars, toggles)
+		data, err := c.doGraphQLRetry(ctx, endpoint, vars, toggles, cb, phase, int64(len(tweets)))
 		if err != nil {
-			// Fatal error (rate limit, expired token, etc.) — stop
 			if len(tweets) > 0 {
 				return tweets, err
 			}
@@ -279,7 +291,13 @@ func (c *Client) getUserTimeline(ctx context.Context, username, endpoint, phase 
 		}
 
 		result := parseTimeline(data)
-		tweets = append(tweets, result.Tweets...)
+		newTweets := result.Tweets
+		tweets = append(tweets, newTweets...)
+
+		// Incremental save via batch callback
+		if batchCb != nil && len(newTweets) > 0 {
+			batchCb(newTweets)
+		}
 
 		if cb != nil {
 			cb(Progress{Phase: phase, Current: int64(len(tweets))})
@@ -292,11 +310,17 @@ func (c *Client) getUserTimeline(ctx context.Context, username, endpoint, phase 
 
 		// Stop if no cursor or too many empty pages
 		if result.Cursor == "" {
+			if cb != nil {
+				cb(Progress{Phase: phase, Current: int64(len(tweets)), Message: "no more pages (cursor empty)"})
+			}
 			break
 		}
-		if len(result.Tweets) == 0 {
+		if len(newTweets) == 0 {
 			emptyPages++
-			if emptyPages >= 3 {
+			if cb != nil {
+				cb(Progress{Phase: phase, Current: int64(len(tweets)), Message: fmt.Sprintf("empty page %d/%d", emptyPages, maxEmpty)})
+			}
+			if emptyPages >= maxEmpty {
 				break
 			}
 		} else {
@@ -311,6 +335,62 @@ func (c *Client) getUserTimeline(ctx context.Context, username, endpoint, phase 
 		cb(Progress{Phase: phase, Current: int64(len(tweets)), Done: true})
 	}
 	return tweets, nil
+}
+
+// asRateLimitError extracts a RateLimitError from an error.
+func asRateLimitError(err error) *RateLimitError {
+	if err == nil {
+		return nil
+	}
+	if rle, ok := err.(*RateLimitError); ok {
+		return rle
+	}
+	// Fallback: check message for older error formats
+	msg := err.Error()
+	if strings.Contains(msg, "rate limit") || strings.Contains(msg, "429") {
+		return &RateLimitError{Wait: 15 * time.Minute}
+	}
+	return nil
+}
+
+// doGraphQLRetry wraps doGraphQL with rate limit retry.
+// On rate limit, waits for the API reset time (from x-rate-limit-reset header).
+func (c *Client) doGraphQLRetry(ctx context.Context, endpoint string, vars map[string]any, toggles string, cb ProgressCallback, phase string, current int64) (map[string]any, error) {
+	data, err := c.gql.doGraphQL(endpoint, vars, toggles)
+	if err == nil {
+		return data, nil
+	}
+	rle := asRateLimitError(err)
+	if rle == nil {
+		return nil, err
+	}
+	// Rate limited — wait for reset, retry up to 3 times
+	for retry := 0; retry < 3; retry++ {
+		wait := rle.Wait
+		if wait < 10*time.Second {
+			wait = 10 * time.Second
+		}
+		if wait > 16*time.Minute {
+			wait = 16 * time.Minute // cap at 16 min
+		}
+		if cb != nil {
+			cb(Progress{Phase: phase, Current: current, Message: fmt.Sprintf("rate limited, waiting %s...", wait.Truncate(time.Second))})
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(wait):
+		}
+		data, err = c.gql.doGraphQL(endpoint, vars, toggles)
+		if err == nil {
+			return data, nil
+		}
+		rle = asRateLimitError(err)
+		if rle == nil {
+			return nil, err // different error
+		}
+	}
+	return nil, err // exhausted retries
 }
 
 // GetTweet fetches a single tweet by ID.
@@ -489,9 +569,22 @@ func (c *Client) GetFavoriters(tweetID string, maxUsers int) ([]FollowUser, erro
 
 // SearchTweets searches for tweets matching a query.
 func (c *Client) SearchTweets(ctx context.Context, query string, maxTweets int, cb ProgressCallback) ([]Tweet, error) {
+	return c.searchTweetsInternal(ctx, query, maxTweets, cb, nil)
+}
+
+// SearchTweetsWithBatch searches for tweets, calling batchCb with each page for incremental saving.
+func (c *Client) SearchTweetsWithBatch(ctx context.Context, query string, maxTweets int, cb ProgressCallback, batchCb BatchCallback) ([]Tweet, error) {
+	return c.searchTweetsInternal(ctx, query, maxTweets, cb, batchCb)
+}
+
+func (c *Client) searchTweetsInternal(ctx context.Context, query string, maxTweets int, cb ProgressCallback, batchCb BatchCallback) ([]Tweet, error) {
 	var tweets []Tweet
 	cursor := ""
 	emptyPages := 0
+	maxEmpty := 3
+	if maxTweets == 0 {
+		maxEmpty = 5
+	}
 
 	for {
 		if ctx.Err() != nil {
@@ -508,7 +601,7 @@ func (c *Client) SearchTweets(ctx context.Context, query string, maxTweets int, 
 			vars["cursor"] = cursor
 		}
 
-		data, err := c.gql.doGraphQL(gqlSearchTimeline, vars, "")
+		data, err := c.doGraphQLRetry(ctx, gqlSearchTimeline, vars, "", cb, "search", int64(len(tweets)))
 		if err != nil {
 			if len(tweets) > 0 {
 				return tweets, err
@@ -517,7 +610,12 @@ func (c *Client) SearchTweets(ctx context.Context, query string, maxTweets int, 
 		}
 
 		result := parseSearchTweets(data)
-		tweets = append(tweets, result.Tweets...)
+		newTweets := result.Tweets
+		tweets = append(tweets, newTweets...)
+
+		if batchCb != nil && len(newTweets) > 0 {
+			batchCb(newTweets)
+		}
 
 		if cb != nil {
 			cb(Progress{Phase: "search", Current: int64(len(tweets))})
@@ -531,9 +629,9 @@ func (c *Client) SearchTweets(ctx context.Context, query string, maxTweets int, 
 		if result.Cursor == "" {
 			break
 		}
-		if len(result.Tweets) == 0 {
+		if len(newTweets) == 0 {
 			emptyPages++
-			if emptyPages >= 3 {
+			if emptyPages >= maxEmpty {
 				break
 			}
 		} else {

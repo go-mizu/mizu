@@ -121,13 +121,19 @@ func (g *graphqlClient) doGraphQL(endpoint string, variables map[string]any, fie
 	}
 
 	if resp.StatusCode == 429 {
-		// Rate limited — check reset header
 		resetStr := resp.Header.Get("x-rate-limit-reset")
 		if resetStr != "" {
-			resetTime, _ := fmt.Sscanf(resetStr, "%d", new(int))
-			_ = resetTime
+			var resetEpoch int64
+			fmt.Sscanf(resetStr, "%d", &resetEpoch)
+			if resetEpoch > 0 {
+				resetAt := time.Unix(resetEpoch, 0)
+				wait := time.Until(resetAt)
+				if wait > 0 {
+					return nil, &RateLimitError{ResetAt: resetAt, Wait: wait}
+				}
+			}
 		}
-		return nil, fmt.Errorf("rate limited (429)")
+		return nil, &RateLimitError{Wait: 15 * time.Minute} // fallback: 15min window
 	}
 
 	if resp.StatusCode != 200 {
@@ -152,7 +158,7 @@ func (g *graphqlClient) doGraphQL(endpoint string, variables map[string]any, fie
 			code := asInt(first["code"])
 			switch code {
 			case 88:
-				return nil, fmt.Errorf("rate limited: %s", msg)
+				return nil, &RateLimitError{Wait: 15 * time.Minute}
 			case 89:
 				return nil, fmt.Errorf("expired token: %s", msg)
 			case 239:

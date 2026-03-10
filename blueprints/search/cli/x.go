@@ -392,6 +392,7 @@ func displayXProfile(p *x.Profile) {
 func newXTweets() *cobra.Command {
 	var (
 		maxTweets int
+		all       bool
 		session   string
 	)
 
@@ -401,19 +402,24 @@ func newXTweets() *cobra.Command {
 		Long: `Fetch timeline tweets for an X/Twitter user.
 
 Tweets are stored in a DuckDB database at $HOME/data/x/{username}/tweets.duckdb
-Max ~3,200 tweets per user (Twitter API limitation).
+Use --all or --max-tweets 0 to fetch all available tweets.
 
 Examples:
   search x tweets karpathy --session myuser
-  search x tweets karpathy --max-tweets 100 --session myuser`,
+  search x tweets karpathy --max-tweets 100 --session myuser
+  search x tweets karpathy --all --session myuser`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			username := strings.TrimPrefix(args[0], "@")
+			if all {
+				maxTweets = 0
+			}
 			return runXTweets(cmd.Context(), username, maxTweets, session)
 		},
 	}
 
-	cmd.Flags().IntVar(&maxTweets, "max-tweets", 200, "Max tweets to fetch (max ~3200)")
+	cmd.Flags().IntVar(&maxTweets, "max-tweets", 200, "Max tweets to fetch (0 = unlimited)")
+	cmd.Flags().BoolVar(&all, "all", false, "Fetch all available tweets (overrides --max-tweets)")
 	cmd.Flags().StringVar(&session, "session", "", "Session username to load (required)")
 	return cmd
 }
@@ -430,42 +436,95 @@ func runXTweets(ctx context.Context, username string, maxTweets int, session str
 	}
 
 	fmt.Printf("  Fetching tweets for %s\n", infoStyle.Render("@"+username))
-	fmt.Printf("  Max tweets: %s\n", labelStyle.Render(fmt.Sprintf("%d", maxTweets)))
+	if maxTweets > 0 {
+		fmt.Printf("  Max tweets: %s\n", labelStyle.Render(fmt.Sprintf("%d", maxTweets)))
+	} else {
+		fmt.Printf("  Max tweets: %s\n", infoStyle.Render("unlimited (--all)"))
+	}
 	fmt.Printf("  Data:       %s\n", labelStyle.Render(cfg.UserDir(username)))
 	fmt.Println()
 
-	start := time.Now()
-	tweets, err := client.GetTweets(ctx, username, maxTweets, func(p x.Progress) {
-		if !p.Done {
-			fmt.Printf("\r  Fetching tweets: %s",
-				infoStyle.Render(formatLargeNumber(p.Current)))
-		}
-	})
-
-	fmt.Println()
-	if err != nil {
-		fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: %v (got %d tweets)", err, len(tweets))))
-	}
-
-	if len(tweets) == 0 {
-		fmt.Println(warningStyle.Render("  No tweets found"))
-		return nil
-	}
-
-	// Store in DuckDB
+	// Open DB early for incremental saves
 	db, err := x.OpenDB(cfg.UserDBPath(username))
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
 	defer db.Close()
 
-	if err := db.InsertTweets(tweets); err != nil {
-		return fmt.Errorf("insert tweets: %w", err)
+	// Check existing tweet count
+	stats, _ := db.GetStats()
+	if stats.Tweets > 0 {
+		fmt.Printf("  Existing:   %s tweets in DB\n", infoStyle.Render(formatLargeNumber(stats.Tweets)))
 	}
+
+	start := time.Now()
+	var savedCount int64
+	batchSave := func(batch []x.Tweet) {
+		if err := db.InsertTweets(batch); err != nil {
+			fmt.Printf("\n  Warning: batch save failed: %v\n", err)
+		} else {
+			savedCount += int64(len(batch))
+		}
+	}
+
+	progressCb := func(p x.Progress) {
+		if !p.Done {
+			if p.Message != "" {
+				fmt.Printf("\r  %s: %s  %s                    ",
+					p.Phase,
+					infoStyle.Render(formatLargeNumber(p.Current)),
+					warningStyle.Render(p.Message))
+			} else {
+				fmt.Printf("\r  %s: %s          ",
+					p.Phase,
+					infoStyle.Render(formatLargeNumber(p.Current)))
+			}
+		}
+	}
+
+	// Phase 1: Timeline API (fast but limited to ~800 tweets)
+	tweets, err := client.GetTweetsWithBatch(ctx, username, maxTweets, progressCb, batchSave)
+	fmt.Println()
+	if err != nil {
+		fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: %v (got %d tweets)", err, len(tweets))))
+	}
+
+	timelineTweets := len(tweets)
+	remaining := 0
+	if maxTweets > 0 {
+		remaining = maxTweets - len(tweets)
+	}
+
+	// Phase 2: Search "from:username" for older tweets (if --all or still below limit)
+	if (maxTweets == 0 || remaining > 0) && err == nil {
+		fmt.Printf("  Timeline returned %d tweets, searching for more...\n", timelineTweets)
+
+		oldMode := client.SearchMode()
+		client.SetSearchMode(x.SearchLatest)
+
+		searchTweets, searchErr := client.SearchTweetsWithBatch(ctx,
+			"from:"+username, remaining, progressCb, batchSave)
+
+		client.SetSearchMode(oldMode)
+
+		fmt.Println()
+		if searchErr != nil {
+			fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: search stopped: %v (got %d more)", searchErr, len(searchTweets))))
+		}
+		tweets = append(tweets, searchTweets...)
+	} else if err != nil && len(tweets) > 0 {
+		// Rate limited during timeline — tweets already saved via batchSave
+	}
+
+	// Get final DB stats (includes previously stored tweets)
+	finalStats, _ := db.GetStats()
 
 	fmt.Println()
 	fmt.Println(successStyle.Render(fmt.Sprintf("  Fetched %d tweets in %s",
 		len(tweets), time.Since(start).Truncate(time.Second))))
+	if finalStats.Tweets > int64(len(tweets)) {
+		fmt.Printf("  Total in DB: %s tweets\n", infoStyle.Render(formatLargeNumber(finalStats.Tweets)))
+	}
 	fmt.Printf("  Database: %s\n", labelStyle.Render(cfg.UserDBPath(username)))
 
 	// Count media
