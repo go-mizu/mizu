@@ -3,6 +3,7 @@ package x
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -69,6 +70,12 @@ func (c *Client) SetCookies(cookies []*http.Cookie) {
 		c.SetAuthToken(authToken, ct0)
 	}
 }
+
+// AuthToken returns the current auth_token value.
+func (c *Client) AuthToken() string { return c.authToken }
+
+// CT0 returns the current ct0 (CSRF token) value.
+func (c *Client) CT0() string { return c.ct0 }
 
 // GetCookies returns the current auth as cookies (for backward compatibility).
 func (c *Client) GetCookies() []*http.Cookie {
@@ -332,6 +339,74 @@ func (c *Client) GetTweet(id string) (*Tweet, error) {
 		return nil, fmt.Errorf("get tweet %s: not found", id)
 	}
 	return mainTweet, nil
+}
+
+// FetchURL performs an authenticated HTTP GET with the current session cookies.
+// Useful for fetching X Article pages or other X content that requires auth.
+func (c *Client) FetchURL(rawURL string) ([]byte, error) {
+	req, err := http.NewRequest("GET", rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	// Standard browser headers + session cookies
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+
+	if c.authToken != "" {
+		req.AddCookie(&http.Cookie{Name: "auth_token", Value: c.authToken})
+		req.AddCookie(&http.Cookie{Name: "ct0", Value: c.ct0})
+	}
+
+	httpClient := &http.Client{
+		Timeout: 20 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			// Forward cookies on redirect
+			if c.authToken != "" {
+				req.AddCookie(&http.Cookie{Name: "auth_token", Value: c.authToken})
+				req.AddCookie(&http.Cookie{Name: "ct0", Value: c.ct0})
+			}
+			if len(via) > 10 {
+				return http.ErrUseLastResponse
+			}
+			return nil
+		},
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	return io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024))
+}
+
+// GetTweetByRestID fetches a tweet (or X Article) by ID using TweetResultByRestId endpoint.
+// This works for X Articles where the ConversationTimeline endpoint returns "not found".
+func (c *Client) GetTweetByRestID(id string) (*Tweet, error) {
+	vars := map[string]any{
+		"tweetId":                id,
+		"withCommunity":          true,
+		"includePromotedContent": false,
+		"withBirdwatchNotes":     true,
+		"withVoice":              true,
+	}
+
+	data, err := c.gql.doGraphQL(gqlUserById, vars, tweetDetailFieldToggles)
+	if err != nil {
+		return nil, fmt.Errorf("get tweet by rest id %s: %w", id, err)
+	}
+
+	t, debugMsg := parseTweetResultByIDDebug(data)
+	if t == nil {
+		// Fallback: try ConversationTimeline (some articles are accessible this way)
+		if t2, err2 := c.GetTweet(id); err2 == nil && t2 != nil {
+			return t2, nil
+		}
+		return nil, fmt.Errorf("get tweet by rest id %s: not found (%s)", id, debugMsg)
+	}
+	return t, nil
 }
 
 // GetTweetReplies fetches replies to a tweet.
