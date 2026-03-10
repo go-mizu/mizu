@@ -78,10 +78,8 @@ func runScrapeExportCLI(ctx context.Context, domain, format string) error {
 	start := time.Now()
 
 	emit := func(s *scrape.ExportState) {
-		if s.PagesExported%50 == 0 || s.Progress >= 1.0 {
-			fmt.Printf("  [%d/%d] %.0f pages/s (%.0f%%)\n",
-				s.PagesExported, s.PagesTotal, s.PagesPerSec, s.Progress*100)
-		}
+		fmt.Printf("  \033[1;36m[%d/%d]\033[0m \033[1;32m%.0f pages/s\033[0m (%.0f%%)\n",
+			s.PagesExported, s.PagesTotal, s.PagesPerSec, s.Progress*100)
 	}
 
 	metric, err := task.Run(ctx, emit)
@@ -126,10 +124,8 @@ func runCCExportCLI(ctx context.Context, domain, format string) error {
 	start := time.Now()
 
 	emit := func(s *cc.CCExportState) {
-		if s.PagesExported%50 == 0 || s.Progress >= 1.0 {
-			fmt.Printf("  [%d/%d] %.0f pages/s (%.0f%%)\n",
-				s.PagesExported, s.PagesTotal, s.PagesPerSec, s.Progress*100)
-		}
+		fmt.Printf("  \033[1;36m[%d/%d]\033[0m \033[1;32m%.0f pages/s\033[0m (%.0f%%)\n",
+			s.PagesExported, s.PagesTotal, s.PagesPerSec, s.Progress*100)
 	}
 
 	metric, err := task.Run(ctx, emit)

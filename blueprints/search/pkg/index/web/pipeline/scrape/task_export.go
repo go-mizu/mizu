@@ -143,7 +143,7 @@ func (t *ExportTask) Run(ctx context.Context, emit func(*ExportState)) (ExportMe
 	progressDone := make(chan struct{})
 	go func() {
 		defer close(progressDone)
-		ticker := time.NewTicker(500 * time.Millisecond)
+		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
