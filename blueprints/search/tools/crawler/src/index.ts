@@ -118,7 +118,7 @@ async function crawlOne(
       markdown: md,
       title: extractTitle(cached.html),
       content_type: cached.contentType,
-      content_length: cached.html.length,
+      content_length: new Blob([cached.html]).size,
       redirect_url: cached.redirectUrl,
       fetch_time_ms: Date.now() - start,
       error: null,
@@ -192,10 +192,10 @@ async function crawlOne(
         markdown: null,
         title: null,
         content_type: contentType,
-        content_length: html.length,
+        content_length: new Blob([html]).size,
         redirect_url: resp.url !== url ? resp.url : null,
         fetch_time_ms: Date.now() - start,
-        error: `Response too large: ${html.length} bytes`,
+        error: `Response too large: ${html.length} chars`,
       };
     }
 
@@ -227,7 +227,7 @@ async function crawlOne(
       markdown,
       title: extractTitle(html),
       content_type: contentType,
-      content_length: html.length,
+      content_length: new Blob([html]).size,
       redirect_url: redirectUrl,
       fetch_time_ms: Date.now() - start,
       error: null,
