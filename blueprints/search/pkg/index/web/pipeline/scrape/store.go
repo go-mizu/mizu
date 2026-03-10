@@ -27,18 +27,23 @@ type Store interface {
 // Compile-time check.
 var _ Store = (*store)(nil)
 
+// staleAfter is how long cached stats remain fresh before a read triggers a refresh.
+const staleAfter = 30 * time.Second
+
 // store is the concrete implementation of Store.
 // Stats are materialized in a DuckDB meta file and served from memory.
 type store struct {
-	dataDir   string
-	mu        sync.RWMutex
-	domains   []Domain     // in-memory cache, populated by background refresh
-	ready     bool         // true after first load/refresh
-	triggerCh chan struct{} // signal immediate refresh
-	stopCh    chan struct{} // signal goroutine to stop
+	dataDir     string
+	mu          sync.RWMutex
+	domains     []Domain  // in-memory cache, populated by background refresh
+	ready       bool      // true after first load/refresh
+	lastRefresh time.Time // when the cache was last computed
+	triggerCh   chan struct{}
+	stopCh      chan struct{}
 }
 
-// NewStore creates a Store and starts background stat refresh.
+// NewStore creates a Store backed by a DuckDB meta file.
+// Stats are loaded from disk on startup and lazily refreshed on read.
 func NewStore(dataDir string) Store {
 	s := &store{
 		dataDir:   dataDir,
@@ -47,7 +52,7 @@ func NewStore(dataDir string) Store {
 	}
 	// Load persisted stats from meta DB for instant startup.
 	loadFromMeta(s)
-	// Start background goroutine to refresh stats every 60s.
+	// Background goroutine handles explicit invalidations and lazy refresh requests.
 	startBackground(s)
 	return s
 }
@@ -176,13 +181,21 @@ func ParseStartParams(source string) StartParams {
 }
 
 // ListDomains returns cached domain stats from memory (instant).
+// If the cache is stale, an async refresh is triggered.
 func (s *store) ListDomains() (*ListResponse, error) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if !s.ready {
+	stale := s.ready && time.Since(s.lastRefresh) > staleAfter
+	domains := s.domains
+	ready := s.ready
+	s.mu.RUnlock()
+
+	if stale {
+		s.InvalidateCache()
+	}
+
+	if !ready {
 		return &ListResponse{Domains: []Domain{}}, nil
 	}
-	domains := s.domains
 	if domains == nil {
 		domains = []Domain{}
 	}
