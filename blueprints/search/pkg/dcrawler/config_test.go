@@ -8,11 +8,12 @@ func TestAutoBrowserPages(t *testing.T) {
 		want    int
 	}{
 		{500, 8},    // clamp at min 8
-		{1000, 10},  // 1000/100=10
-		{3500, 35},  // server1
-		{4000, 40},  // macOS fallback
-		{9000, 80},  // server2 → clamp at max 80
-		{20000, 80}, // large RAM → still capped
+		{1000, 8},   // 1000/150=6 → clamp to 8
+		{1500, 10},  // 1500/150=10
+		{3600, 24},  // server1 (~3.6GB avail) → 3600/150=24
+		{4000, 24},  // macOS fallback → 4000/150=26 → clamp at 24
+		{9000, 24},  // server2 → clamp at max 24
+		{20000, 24}, // large RAM → still capped at 24
 	}
 	for _, tc := range cases {
 		got := AutoBrowserPages(tc.availMB)

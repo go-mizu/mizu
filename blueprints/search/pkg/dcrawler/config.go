@@ -86,26 +86,29 @@ func DefaultConfig() Config {
 }
 
 // AutoBrowserPages returns the optimal number of concurrent browser tabs
-// based on available RAM. Formula: clamp(availRAMMB / 100, 8, 80).
+// based on available RAM. Formula: clamp(availRAMMB / 150, 8, 24).
 //
-// Budget: ~100MB per tab (Chrome renderer overhead + V8 heap + DOM).
-// With --renderer-process-limit=8 and --js-flags=--max-old-space-size=256,
-// actual per-tab cost is lower, but conservative sizing prevents OS swapping
-// which tanks throughput to <1 p/s on heavy SPA sites (React/Next.js).
+// Budget: ~150MB per tab (conservative: Chrome renderer overhead + V8 heap + DOM).
+// With --renderer-process-limit and --js-flags=--max-old-space-size=256, each
+// renderer process handles ~4 tabs, keeping total V8 heap well below available RAM.
 //
-// Benchmarks (openai.com --no-render-wait --scroll 0, Cloudflare+Next.js):
+// Max is capped at 24 to prevent Chrome OOM on servers with large RAM:
+//   - At 80 tabs on a 12 GB server: 80/8 renderers × 256MB × 10 tabs = 20 GB V8 heap
+//     → Linux OOM kills renderers → CDP returns empty HTML → all pages fail.
+//   - At 24 tabs on a 12 GB server: 24/6 renderers × 256MB × 4 tabs = 6 GB V8 heap
+//     → Chrome stays stable, CDP calls return valid HTML consistently.
 //
-//	server2 (~11 GB avail) → 80 tabs → ~6 pages/s (1012 pages / 173s)
+// Benchmarks:
 //
-// Note: openai.com is rate-limited by Cloudflare and heavy JS (~25s/page).
-// Lighter sites without anti-bot will achieve much higher throughput.
+//	server2 (~11 GB avail) → 24 tabs (new) vs 80 tabs (old, OOM)
+//	server1 (~4 GB avail)  → 24 tabs (capped) vs 40 tabs (old)
 func AutoBrowserPages(availRAMMB int) int {
-	n := availRAMMB / 100
+	n := availRAMMB / 150
 	if n < 8 {
 		n = 8
 	}
-	if n > 80 {
-		n = 80
+	if n > 24 {
+		n = 24
 	}
 	return n
 }
