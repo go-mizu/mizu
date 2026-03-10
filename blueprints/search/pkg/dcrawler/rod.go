@@ -798,8 +798,10 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 	}
 
 	// HTML extraction with fallback: try p.HTML() first, then Eval as backup.
+	// Also try Eval when HTML() returns empty string (not just on error):
+	// a killed/restarted renderer may return ("", nil) before CDP recovers.
 	htmlContent, err := ep.HTML()
-	if err != nil {
+	if err != nil || htmlContent == "" {
 		// Fallback: extract via JavaScript evaluation
 		if rs, evalErr := ep.Timeout(5 * time.Second).Eval(
 			`() => document.documentElement.outerHTML`); evalErr == nil && rs != nil {
