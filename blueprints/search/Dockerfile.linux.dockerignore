@@ -1,40 +1,17 @@
 # Context root is the monorepo root (/Users/apple/github/go-mizu/mizu)
+# Whitelist approach: exclude everything, then allow only what the build needs.
 
-# VCS / editor
-.git
-.gitignore
-.DS_Store
-.idea
-.vscode
-**/*.swp
-**/*.swo
+# Exclude everything by default
+*
 
-# Build outputs / local caches
-dist
-bin
-coverage*
-*.log
-tmp
-temp
-.turbo
-.cache
-**/target
-**/.gradle
-**/DerivedData
-**/Pods
+# Allow root module files (needed for go mod download)
+!go.mod
+!go.sum
 
-# Monorepo heavy directories not needed for blueprints/search cmd/search build
-tools
-tools/**
-examples
-examples/**
-
-# Other blueprints (keep only blueprints/search)
-blueprints/*
+# Allow blueprints/search source
 !blueprints/search
-!blueprints/search/**
 
-# Search blueprint local heavies not needed for build (keep app/frontend source)
+# Re-exclude heavies inside blueprints/search
 blueprints/search/**/node_modules
 blueprints/search/tools
 blueprints/search/tools/**
@@ -45,5 +22,3 @@ blueprints/search/pkg/engine/fineweb/drivers/fts_rust
 blueprints/search/pkg/engine/fineweb/drivers/fts_rust/**
 blueprints/search/pkg/engine/fineweb/benchmark
 blueprints/search/pkg/engine/fineweb/benchmark/**
-
-# Keep module/workspace metadata and source by default
