@@ -24,7 +24,10 @@ from .email import MailTmClient, Mailbox
 def _browser_args() -> list[str]:
     args = ["--window-size=1280,900", "--lang=en-US"]
     if platform.system() == "Linux":
-        args += ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+        args += [
+            "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage",
+            "--single-process",  # prevents renderer crash on VPS without GPU
+        ]
     return args
 
 
