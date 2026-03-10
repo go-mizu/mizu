@@ -189,7 +189,7 @@ func computeDomainStats(domainDir, name string) Domain {
 				count(*),
 				count(*) FILTER (WHERE status_code >= 200 AND status_code < 400),
 				count(*) FILTER (WHERE status_code >= 400 OR error != ''),
-				COALESCE(SUM(content_length), 0),
+				COALESCE(SUM(content_length) FILTER (WHERE content_type LIKE 'text/html%' OR content_type LIKE 'application/xhtml%'), 0),
 				max(crawled_at)::VARCHAR
 			FROM pages`)
 			if row.Scan(&sr.pages, &sr.success, &sr.failed, &sr.htmlBytes, &lastCrawl) == nil {
@@ -211,7 +211,7 @@ func computeDomainStats(domainDir, name string) Domain {
 			// Only use as fallback when content_length is unavailable.
 			if sr.htmlBytes == 0 {
 				var htmlColBytes sql.NullInt64
-				if db.QueryRow(`SELECT COALESCE(SUM(octet_length(html)), 0) FROM pages WHERE html IS NOT NULL AND octet_length(html) > 0`).Scan(&htmlColBytes) == nil && htmlColBytes.Valid && htmlColBytes.Int64 > 0 {
+				if db.QueryRow(`SELECT COALESCE(SUM(octet_length(html)), 0) FROM pages WHERE html IS NOT NULL AND octet_length(html) > 0 AND (content_type LIKE 'text/html%' OR content_type LIKE 'application/xhtml%')`).Scan(&htmlColBytes) == nil && htmlColBytes.Valid && htmlColBytes.Int64 > 0 {
 					sr.htmlBytes = htmlColBytes.Int64
 				}
 			}

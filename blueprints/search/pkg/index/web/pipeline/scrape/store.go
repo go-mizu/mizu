@@ -363,7 +363,7 @@ func (s *store) GetDomainSummary(domain string) *DomainSummary {
 			hasMD = true
 		}
 		unions = append(unions, fmt.Sprintf(
-			"SELECT status_code, COALESCE(content_length, 0) AS content_length, COALESCE(error, '') AS error FROM %s.pages", alias))
+			"SELECT status_code, COALESCE(content_type, '') AS content_type, COALESCE(content_length, 0) AS content_length, COALESCE(error, '') AS error FROM %s.pages", alias))
 	}
 	if len(unions) == 0 {
 		return nil
@@ -377,7 +377,7 @@ func (s *store) GetDomainSummary(domain string) *DomainSummary {
 		count(*) FILTER (WHERE status_code >= 400 AND status_code < 500),
 		count(*) FILTER (WHERE status_code >= 500 AND status_code < 600),
 		count(*) FILTER (WHERE status_code = 0 OR error != ''),
-		COALESCE(AVG(content_length) FILTER (WHERE content_length > 0), 0)::BIGINT
+		COALESCE(AVG(content_length) FILTER (WHERE content_length > 0 AND (content_type LIKE 'text/html%%' OR content_type LIKE 'application/xhtml%%')), 0)::BIGINT
 	FROM (%s)`, view)).Scan(&sum.Status2xx, &sum.Status3xx, &sum.Status4xx, &sum.Status5xx, &sum.StatusErr, &sum.AvgSize)
 
 	// Query avg markdown size if any shard has the column.
