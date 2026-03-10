@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -295,6 +296,19 @@ func (s *store) GetPages(domain string, page, pageSize int, q, sortBy, statusFil
 	}
 	if pages == nil {
 		pages = []Page{}
+	}
+
+	// If no in-DB markdown column, try to get md_size from markdown files on disk.
+	mdDir := filepath.Join(domainDir, "markdown")
+	if _, err := os.Stat(mdDir); err == nil {
+		for i := range pages {
+			if pages[i].MdSize == 0 && pages[i].URLHash != 0 {
+				mdPath := filepath.Join(mdDir, fmt.Sprintf("%d.md", uint64(pages[i].URLHash)))
+				if fi, err := os.Stat(mdPath); err == nil {
+					pages[i].MdSize = fi.Size()
+				}
+			}
+		}
 	}
 
 	return &PagesResponse{
