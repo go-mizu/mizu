@@ -393,6 +393,7 @@ func newXTweets() *cobra.Command {
 	var (
 		maxTweets int
 		all       bool
+		order     string
 		session   string
 	)
 
@@ -404,27 +405,34 @@ func newXTweets() *cobra.Command {
 Tweets are stored in a DuckDB database at $HOME/data/x/{username}/tweets.duckdb
 Use --all or --max-tweets 0 to fetch all available tweets.
 
+Order controls which date windows are fetched first:
+  oldest  - Start from account creation date (good for first full fetch)
+  newest  - Start from today going backwards (good for catching up)
+
+Windows that already have tweets in the DB are skipped by default.
+
 Examples:
   search x tweets karpathy --session myuser
-  search x tweets karpathy --max-tweets 100 --session myuser
-  search x tweets karpathy --all --session myuser`,
+  search x tweets karpathy --all --session myuser
+  search x tweets karpathy --all --order newest --session myuser`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			username := strings.TrimPrefix(args[0], "@")
 			if all {
 				maxTweets = 0
 			}
-			return runXTweets(cmd.Context(), username, maxTweets, session)
+			return runXTweets(cmd.Context(), username, maxTweets, order, session)
 		},
 	}
 
 	cmd.Flags().IntVar(&maxTweets, "max-tweets", 200, "Max tweets to fetch (0 = unlimited)")
 	cmd.Flags().BoolVar(&all, "all", false, "Fetch all available tweets (overrides --max-tweets)")
+	cmd.Flags().StringVar(&order, "order", "oldest", "Fetch order: oldest or newest first")
 	cmd.Flags().StringVar(&session, "session", "", "Session username to load (required)")
 	return cmd
 }
 
-func runXTweets(ctx context.Context, username string, maxTweets int, session string) error {
+func runXTweets(ctx context.Context, username string, maxTweets int, order, session string) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("X/Twitter Tweets"))
 	fmt.Println()
@@ -458,96 +466,192 @@ func runXTweets(ctx context.Context, username string, maxTweets int, session str
 	}
 
 	start := time.Now()
-	var savedCount int64
+	var totalFetched int64
 	batchSave := func(batch []x.Tweet) {
 		if err := db.InsertTweets(batch); err != nil {
 			fmt.Printf("\n  Warning: batch save failed: %v\n", err)
 		} else {
-			savedCount += int64(len(batch))
+			totalFetched += int64(len(batch))
 		}
 	}
 
-	progressCb := func(p x.Progress) {
-		if !p.Done {
-			if p.Message != "" {
-				fmt.Printf("\r  %s: %s  %s                    ",
-					p.Phase,
-					infoStyle.Render(formatLargeNumber(p.Current)),
-					warningStyle.Render(p.Message))
-			} else {
-				fmt.Printf("\r  %s: %s          ",
-					p.Phase,
-					infoStyle.Render(formatLargeNumber(p.Current)))
-			}
-		}
-	}
-
-	// Phase 1: Timeline API (fast but limited to ~800 tweets)
-	tweets, err := client.GetTweetsWithBatch(ctx, username, maxTweets, progressCb, batchSave)
-	fmt.Println()
-	if err != nil {
-		fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: %v (got %d tweets)", err, len(tweets))))
-	}
-
-	timelineTweets := len(tweets)
-	remaining := 0
 	if maxTweets > 0 {
-		remaining = maxTweets - len(tweets)
-	}
-
-	// Phase 2: Search "from:username" for older tweets (if --all or still below limit)
-	if (maxTweets == 0 || remaining > 0) && err == nil {
-		fmt.Printf("  Timeline returned %d tweets, searching for more...\n", timelineTweets)
-
-		oldMode := client.SearchMode()
-		client.SetSearchMode(x.SearchLatest)
-
-		searchTweets, searchErr := client.SearchTweetsWithBatch(ctx,
-			"from:"+username, remaining, progressCb, batchSave)
-
-		client.SetSearchMode(oldMode)
-
+		// Limited fetch: use timeline API (fast, up to ~800 tweets)
+		tweets, err := client.GetTweetsWithBatch(ctx, username, maxTweets,
+			func(p x.Progress) {
+				if !p.Done {
+					if p.Message != "" {
+						fmt.Printf("\r  tweets: %s  %s                    ",
+							infoStyle.Render(formatLargeNumber(p.Current)),
+							warningStyle.Render(p.Message))
+					} else {
+						fmt.Printf("\r  tweets: %s          ",
+							infoStyle.Render(formatLargeNumber(p.Current)))
+					}
+				}
+			}, batchSave)
 		fmt.Println()
-		if searchErr != nil {
-			fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: search stopped: %v (got %d more)", searchErr, len(searchTweets))))
+		if err != nil {
+			fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: %v (got %d tweets)", err, len(tweets))))
 		}
-		tweets = append(tweets, searchTweets...)
-	} else if err != nil && len(tweets) > 0 {
-		// Rate limited during timeline — tweets already saved via batchSave
+	} else {
+		// --all: date-windowed search to get full history
+		if err := fetchAllTweetsByDate(ctx, client, db, username, order, batchSave); err != nil {
+			fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: %v", err)))
+		}
 	}
 
-	// Get final DB stats (includes previously stored tweets)
+	// Get final DB stats
 	finalStats, _ := db.GetStats()
 
 	fmt.Println()
-	fmt.Println(successStyle.Render(fmt.Sprintf("  Fetched %d tweets in %s",
-		len(tweets), time.Since(start).Truncate(time.Second))))
-	if finalStats.Tweets > int64(len(tweets)) {
-		fmt.Printf("  Total in DB: %s tweets\n", infoStyle.Render(formatLargeNumber(finalStats.Tweets)))
-	}
-	fmt.Printf("  Database: %s\n", labelStyle.Render(cfg.UserDBPath(username)))
+	fmt.Println(successStyle.Render(fmt.Sprintf("  Fetched %d new tweets in %s",
+		totalFetched, time.Since(start).Truncate(time.Second))))
+	fmt.Printf("  Total in DB: %s tweets\n", infoStyle.Render(formatLargeNumber(finalStats.Tweets)))
+	fmt.Printf("  Database:    %s\n", labelStyle.Render(cfg.UserDBPath(username)))
 
-	// Count media
-	photoCount, videoCount := countMedia(tweets)
-	fmt.Printf("  Photos: %d  |  Videos: %d\n", photoCount, videoCount)
-
-	// Show top 5 tweets
-	if len(tweets) > 0 {
-		fmt.Println()
-		fmt.Println(subtitleStyle.Render("  Top tweets by likes:"))
-		top, _ := db.TopTweets(5)
-		for i, t := range top {
-			text := strings.ReplaceAll(t.Text, "\n", " ")
-			if len(text) > 60 {
-				text = text[:60] + "..."
-			}
-			fmt.Printf("  %d. %s likes  %s RT  %s views  %s\n",
-				i+1,
-				infoStyle.Render(formatLargeNumber(int64(t.Likes))),
-				labelStyle.Render(formatLargeNumber(int64(t.Retweets))),
-				labelStyle.Render(formatLargeNumber(int64(t.Views))),
-				text)
+	// Show top 5 tweets from DB
+	fmt.Println()
+	fmt.Println(subtitleStyle.Render("  Top tweets by likes:"))
+	top, _ := db.TopTweets(5)
+	for i, t := range top {
+		text := strings.ReplaceAll(t.Text, "\n", " ")
+		if len(text) > 60 {
+			text = text[:60] + "..."
 		}
+		fmt.Printf("  %d. %s likes  %s RT  %s views  %s\n",
+			i+1,
+			infoStyle.Render(formatLargeNumber(int64(t.Likes))),
+			labelStyle.Render(formatLargeNumber(int64(t.Retweets))),
+			labelStyle.Render(formatLargeNumber(int64(t.Views))),
+			text)
+	}
+
+	return nil
+}
+
+// fetchAllTweetsByDate fetches all tweets using date-windowed search.
+// Uses "from:username since:YYYY-MM-DD until:YYYY-MM-DD" queries in monthly windows.
+// order: "oldest" (join date → today) or "newest" (today → join date).
+// Windows that already have tweets in the DB are skipped.
+func fetchAllTweetsByDate(ctx context.Context, client *x.Client, db *x.DB, username, order string, batchSave x.BatchCallback) error {
+	// Get profile for join date and tweet count
+	profile, err := client.GetProfile(username)
+	if err != nil {
+		return fmt.Errorf("get profile: %w", err)
+	}
+
+	joinDate := profile.Joined
+	if joinDate.IsZero() {
+		joinDate = time.Date(2006, 3, 1, 0, 0, 0, 0, time.UTC) // Twitter launch date
+	}
+
+	now := time.Now().UTC()
+	fmt.Printf("  Profile:    %s (@%s), joined %s, %s tweets\n",
+		infoStyle.Render(profile.Name), username,
+		labelStyle.Render(joinDate.Format("Jan 2006")),
+		infoStyle.Render(formatLargeNumber(int64(profile.TweetsCount))))
+
+	// Build monthly windows (always oldest→newest internally)
+	type window struct {
+		since, until time.Time
+	}
+	var windows []window
+
+	tomorrow := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, time.UTC)
+	cur := time.Date(joinDate.Year(), joinDate.Month(), 1, 0, 0, 0, 0, time.UTC)
+	for cur.Before(tomorrow) {
+		until := cur.AddDate(0, 1, 0)
+		if until.After(tomorrow) {
+			until = tomorrow
+		}
+		windows = append(windows, window{since: cur, until: until})
+		cur = until
+	}
+
+	// Reverse for newest-first order
+	if order == "newest" {
+		for i, j := 0, len(windows)-1; i < j; i, j = i+1, j-1 {
+			windows[i], windows[j] = windows[j], windows[i]
+		}
+	}
+
+	fmt.Printf("  Windows:    %d months (%s → %s), order: %s\n",
+		len(windows),
+		joinDate.Format("2006-01"),
+		now.Format("2006-01"),
+		order)
+
+	// Check existing date range
+	dbOldest, dbNewest, _ := db.TweetDateRange()
+	if !dbOldest.IsZero() {
+		fmt.Printf("  DB range:   %s → %s\n",
+			labelStyle.Render(dbOldest.Format("2006-01-02")),
+			labelStyle.Render(dbNewest.Format("2006-01-02")))
+	}
+	fmt.Println()
+
+	oldMode := client.SearchMode()
+	client.SetSearchMode(x.SearchLatest)
+	defer client.SetSearchMode(oldMode)
+
+	var grandTotal int64
+	var skipped int
+	for i, w := range windows {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		label := w.since.Format("Jan 2006")
+
+		// Skip windows that already have tweets in DB
+		existing := db.TweetCountInRange(w.since, w.until)
+		if existing > 0 {
+			skipped++
+			grandTotal += existing
+			fmt.Printf("  [%d/%d] %s: %s tweets (cached)          \n",
+				i+1, len(windows), label,
+				labelStyle.Render(formatLargeNumber(existing)))
+			continue
+		}
+
+		sinceStr := w.since.Format("2006-01-02")
+		untilStr := w.until.Format("2006-01-02")
+		query := fmt.Sprintf("from:%s since:%s until:%s", username, sinceStr, untilStr)
+
+		tweets, err := client.SearchTweetsWithBatch(ctx, query, 0,
+			func(p x.Progress) {
+				if !p.Done {
+					if p.Message != "" {
+						fmt.Printf("\r  [%d/%d] %s: %s  (total: %s)  %s                    ",
+							i+1, len(windows), label,
+							infoStyle.Render(formatLargeNumber(p.Current)),
+							labelStyle.Render(formatLargeNumber(grandTotal+p.Current)),
+							warningStyle.Render(p.Message))
+					} else {
+						fmt.Printf("\r  [%d/%d] %s: %s  (total: %s)          ",
+							i+1, len(windows), label,
+							infoStyle.Render(formatLargeNumber(p.Current)),
+							labelStyle.Render(formatLargeNumber(grandTotal+p.Current)))
+					}
+				}
+			}, batchSave)
+
+		windowCount := int64(len(tweets))
+		grandTotal += windowCount
+
+		if err != nil {
+			fmt.Printf("\n  Warning: %s: %v (got %d)\n", label, err, windowCount)
+		}
+
+		fmt.Printf("\r  [%d/%d] %s: %s tweets  (total: %s)          \n",
+			i+1, len(windows), label,
+			infoStyle.Render(formatLargeNumber(windowCount)),
+			labelStyle.Render(formatLargeNumber(grandTotal)))
+	}
+
+	if skipped > 0 {
+		fmt.Printf("\n  Skipped %d windows with existing data\n", skipped)
 	}
 
 	return nil

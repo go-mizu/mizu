@@ -348,6 +348,30 @@ func (d *DB) GetStats() (DBStats, error) {
 	return stats, nil
 }
 
+// TweetDateRange returns the oldest and newest posted_at timestamps in the DB.
+// Returns zero times if no tweets exist.
+func (d *DB) TweetDateRange() (oldest, newest time.Time, err error) {
+	row := d.db.QueryRow("SELECT MIN(posted_at), MAX(posted_at) FROM tweets WHERE posted_at IS NOT NULL")
+	var minT, maxT sql.NullTime
+	if err = row.Scan(&minT, &maxT); err != nil {
+		return
+	}
+	if minT.Valid {
+		oldest = minT.Time
+	}
+	if maxT.Valid {
+		newest = maxT.Time
+	}
+	return
+}
+
+// TweetCountInRange returns the number of tweets between since and until.
+func (d *DB) TweetCountInRange(since, until time.Time) int64 {
+	var count int64
+	d.db.QueryRow("SELECT COUNT(*) FROM tweets WHERE posted_at >= ? AND posted_at < ?", since, until).Scan(&count)
+	return count
+}
+
 // TopTweets returns the top N tweets by likes.
 func (d *DB) TopTweets(limit int) ([]Tweet, error) {
 	return d.queryTweets("SELECT "+tweetColumns+" FROM tweets ORDER BY likes DESC LIMIT ?", limit)
