@@ -27,7 +27,7 @@ def _browser_args() -> list[str]:
     if platform.system() == "Linux":
         args += [
             "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage",
-            "--single-process",  # prevents renderer crash on VPS without GPU
+            "--disable-gpu",
         ]
     return args
 
@@ -162,6 +162,7 @@ def register_via_browser(
         # Use system Chrome if available, otherwise fall back to bundled Chromium
         import shutil
         channel = "chrome" if shutil.which("google-chrome") or shutil.which("google-chrome-stable") else None
+
         ctx = p.chromium.launch_persistent_context(
             user_data_dir=user_data,
             channel=channel,
@@ -184,6 +185,46 @@ def register_via_browser(
                 page.wait_for_url("**/auth.motherduck.com/**", timeout=15000)
             except Exception as e:
                 log(f"landing/redirect warn: {e}")
+                # If SPA didn't redirect (e.g., --single-process mode), try
+                # extracting the Auth0 redirect URL from page source or use authorize endpoint
+                if "auth.motherduck.com" not in page.url:
+                    log("SPA redirect failed, trying to extract Auth0 redirect...")
+                    # Check if the page source has a redirect URL
+                    auth0_url = ""
+                    try:
+                        html = page.evaluate("document.documentElement.innerHTML")
+                        log(f"  page HTML length: {len(html)}")
+                        log(f"  page HTML preview: {html[:500]!r}")
+                        import re as _re
+                        import html as _html_mod
+                        m = _re.search(r'(https://auth\.motherduck\.com/[^"\'>\s]+)', html)
+                        if m:
+                            auth0_url = _html_mod.unescape(m.group(1))
+                            # Change screen_hint from login to signup
+                            auth0_url = auth0_url.replace("screen_hint=login", "screen_hint=signup")
+                            # Remove prompt=none (causes silent auth, breaks signup)
+                            auth0_url = _re.sub(r'[&?]prompt=none', '', auth0_url)
+                            log(f"  found Auth0 URL in HTML: {auth0_url[:120]}")
+                    except Exception as ex:
+                        log(f"  HTML extraction error: {ex}")
+
+                    if not auth0_url:
+                        # Use the Auth0 authorize endpoint directly
+                        auth0_url = (
+                            "https://auth.motherduck.com/authorize"
+                            "?response_type=code"
+                            "&client_id=bza3KWQpxRAFlTlRFXUo29AOg9xD7zcp"
+                            "&redirect_uri=https%3A%2F%2Fapp.motherduck.com"
+                            "&scope=openid+profile+email"
+                            "&screen_hint=signup"
+                        )
+                        log(f"  using authorize endpoint: {auth0_url[:80]}")
+
+                    try:
+                        page.goto(auth0_url, timeout=30000)
+                        page.wait_for_load_state("networkidle", timeout=15000)
+                    except Exception as e2:
+                        log(f"Auth0 redirect warn: {e2}")
             _wait(2, log)
             log(f"landed on: {page.url}")
 
@@ -312,51 +353,72 @@ def register_via_browser(
                 ctx.clear_cookies()
                 _wait(1, log)
 
+                # Navigate to app → Auth0 redirect for login
                 try:
-                    page.goto("https://app.motherduck.com", timeout=30000)
-                    page.wait_for_url("**/auth.motherduck.com/**", timeout=15000)
+                    page.goto("https://app.motherduck.com", timeout=60000)
+                    page.wait_for_url("**/auth.motherduck.com/**", timeout=30000)
                 except Exception as e:
                     log(f"login redirect warn: {e}")
+                    # If SPA didn't redirect, extract Auth0 URL from HTML (same as step 1)
+                    if "auth.motherduck.com" not in page.url:
+                        log("SPA redirect failed for login, extracting Auth0 URL...")
+                        import re as _re
+                        import html as _html_mod
+                        try:
+                            html = page.evaluate("document.documentElement.innerHTML")
+                            m = _re.search(r'(https://auth\.motherduck\.com/[^"\'>\s]+)', html)
+                            if m:
+                                auth0_url = _html_mod.unescape(m.group(1))
+                                log(f"  using Auth0 URL: {auth0_url[:100]}")
+                                page.goto(auth0_url, timeout=30000)
+                                page.wait_for_load_state("networkidle", timeout=15000)
+                        except Exception as e2:
+                            log(f"  Auth0 URL extraction failed: {e2}")
                 _wait(2, log)
                 log(f"login page: {page.url}")
 
-                # Fill email
-                _fill_first(page, [
-                    'input[name="username"]',
-                    'input[name="email"]',
-                    'input[type="email"]',
-                ], mailbox.address, log)
+                # Only fill login if we're on Auth0
+                if _on_auth0(page):
+                    # Fill email
+                    _fill_first(page, [
+                        'input[name="username"]',
+                        'input[name="email"]',
+                        'input[type="email"]',
+                    ], mailbox.address, log)
 
-                # Submit email
-                _click_first(page, [
-                    'button[name="action"]',
-                    'button[value="default"]',
-                    'button[type="submit"]',
-                    'button:has-text("Continue")',
-                ], log)
-                _wait(3, log, "waiting for password step")
+                    # Submit email
+                    _click_first(page, [
+                        'button[name="action"]',
+                        'button[value="default"]',
+                        'button[type="submit"]',
+                        'button:has-text("Continue")',
+                    ], log)
+                    _wait(3, log, "waiting for password step")
 
-                # Fill password
-                _fill_first(page, [
-                    'input[name="password"]',
-                    'input[type="password"]',
-                ], password, log)
+                    # Fill password
+                    _fill_first(page, [
+                        'input[name="password"]',
+                        'input[type="password"]',
+                    ], password, log)
 
-                # Submit password
-                _click_first(page, [
-                    'button[name="action"]',
-                    'button[value="default"]',
-                    'button[type="submit"]',
-                    'button:has-text("Continue")',
-                ], log)
-                _wait(5, log, "waiting for login")
-                log(f"url after login: {page.url}")
-                _log_page_state(page, log, "login-result: ")
+                    # Submit password
+                    _click_first(page, [
+                        'button[name="action"]',
+                        'button[value="default"]',
+                        'button[type="submit"]',
+                        'button:has-text("Continue")',
+                    ], log)
+                    _wait(5, log, "waiting for login")
+                    log(f"url after login: {page.url}")
+                    _log_page_state(page, log, "login-result: ")
+                else:
+                    log(f"not on Auth0 after redirect, url={page.url}")
+                    _log_page_state(page, log, "login-redirect-fail: ")
 
             # ---- Step 5: Click through onboarding (ONLY on app.motherduck.com) ----
             if _on_app(page):
                 log("on MotherDuck app — clicking through onboarding...")
-                _skip_onboarding(page, log, max_attempts=10)
+                _skip_onboarding(page, log, max_attempts=15)
             elif _on_auth0(page):
                 log(f"still on Auth0 after signup: {page.url}")
                 # Try navigating directly to the app
@@ -392,7 +454,13 @@ def register_via_browser(
 
             # ---- Step 7: Generate token ----
             log("generating token...")
-            _log_page_state(page, log, "token-page: ", max_chars=800)
+
+            # Wait for the page to fully render (SPA may need 30s+ to initialize)
+            for wait_attempt in range(12):
+                body_text = _log_page_state(page, log, "token-page: ", max_chars=800)
+                if body_text.strip():
+                    break
+                _wait(5, log, f"waiting for page render ({wait_attempt+1}/12)")
 
             create_sel = _click_first(page, [
                 'button:has-text("Generate token")',
@@ -424,6 +492,22 @@ def register_via_browser(
             # ---- Step 8: Extract token ----
             log("extracting token...")
             token = _extract_token(page, ctx, log)
+
+            # If no token found, retry a few times — SPA may need time to store token
+            if not token:
+                for retry in range(5):
+                    _wait(5, log, f"token retry {retry+1}/5")
+                    # Reload to trigger SPA re-initialization
+                    try:
+                        page.reload(timeout=15000)
+                        page.wait_for_load_state("networkidle", timeout=10000)
+                    except Exception:
+                        pass
+                    _wait(3, log)
+                    token = _extract_token(page, ctx, log)
+                    if token:
+                        break
+
             if not token:
                 _log_page_state(page, log, "token-fail: ")
                 raise RuntimeError("Failed to extract MotherDuck token from settings page")
@@ -595,8 +679,11 @@ def _extract_token(page, ctx, log) -> str:
     except Exception:
         pass
 
-    # Strategy 3: localStorage
+    # Strategy 3: localStorage — check all keys for token-like values
     try:
+        all_keys = page.evaluate("() => Object.keys(localStorage)")
+        log(f"localStorage keys: {all_keys}")
+        # First check known keys
         for key in ["motherduck_token", "token", "md_token", "access_token"]:
             token = page.evaluate(
                 f"() => localStorage.getItem('{key}')"
@@ -604,14 +691,52 @@ def _extract_token(page, ctx, log) -> str:
             if token and len(token) > 20:
                 log(f"token via localStorage[{key!r}]: {token[:20]}...")
                 return token
-    except Exception:
-        pass
+        # Then scan all keys for JWT-like values
+        for key in all_keys:
+            val = page.evaluate(f"() => localStorage.getItem('{key}')")
+            if val and len(val) > 30:
+                # Check for JWT pattern
+                m = re.search(r"eyJ[A-Za-z0-9\-_]{30,}\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+", val)
+                if m:
+                    log(f"JWT token in localStorage[{key!r}]: {m.group(0)[:30]}...")
+                    return m.group(0)
+                # Check for MotherDuck token pattern
+                if val.startswith("motherduck_token_") or val.startswith("v0_"):
+                    log(f"token in localStorage[{key!r}]: {val[:30]}...")
+                    return val
+    except Exception as ex:
+        log(f"localStorage scan error: {ex}")
 
     # Strategy 4: cookies
     cookies = {c["name"]: c["value"] for c in ctx.cookies()}
+    log(f"cookie names: {list(cookies.keys())}")
     for key in ["motherduck_token", "token", "auth_token", "md_token"]:
         if key in cookies and len(cookies[key]) > 20:
             log(f"token via cookie {key!r}")
             return cookies[key]
+    # Scan all cookies for token-like values
+    for key, val in cookies.items():
+        if len(val) > 30:
+            m = re.search(r"eyJ[A-Za-z0-9\-_]{30,}\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+", val)
+            if m:
+                log(f"JWT token in cookie {key!r}")
+                return m.group(0)
+
+    # Strategy 5: check page HTML for token patterns (SPA might not have rendered text but HTML might have data)
+    try:
+        html = page.evaluate("document.documentElement.innerHTML")
+        if html:
+            for pat in [
+                r"eyJ[A-Za-z0-9\-_]{30,}\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+",
+                r"motherduck_token_[A-Za-z0-9_\-]{20,}",
+                r'"token"\s*:\s*"([^"]{20,})"',
+            ]:
+                m = re.search(pat, html)
+                if m:
+                    token = m.group(1) if m.lastindex else m.group(0)
+                    log(f"token via HTML regex: {token[:30]}...")
+                    return token
+    except Exception:
+        pass
 
     return ""
