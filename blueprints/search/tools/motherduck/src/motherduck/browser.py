@@ -146,6 +146,17 @@ def register_via_browser(
 
             log(f"url after email submit: {page.url}")
 
+            # Log page state to diagnose success/error
+            try:
+                page.wait_for_load_state("networkidle", timeout=5000)
+            except Exception:
+                pass
+            try:
+                body_text = page.inner_text("body")[:600]
+                log(f"page text after submit: {body_text!r}")
+            except Exception as e:
+                log(f"page text read warn: {e}")
+
             # ---- Step 4: Poll mail.tm for magic link ----
             log("polling mail.tm for magic link...")
             magic_link = mail_client.poll_for_magic_link(mailbox, timeout=120)
