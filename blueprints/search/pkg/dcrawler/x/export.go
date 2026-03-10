@@ -138,6 +138,92 @@ func ExportRSS(tweets []Tweet, title, link, path string) error {
 	return os.WriteFile(path, append([]byte(xml.Header), data...), 0o644)
 }
 
+// ExportMarkdown exports a tweet thread to a markdown file.
+func ExportMarkdown(thread []Tweet, path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(TweetThreadToMarkdown(thread)), 0o644)
+}
+
+// TweetThreadToMarkdown renders a tweet thread (root + self-replies) as a markdown document.
+func TweetThreadToMarkdown(thread []Tweet) string {
+	if len(thread) == 0 {
+		return ""
+	}
+
+	root := thread[0]
+	var sb strings.Builder
+
+	// Header: use note tweet title if available, else author
+	if root.Title != "" {
+		sb.WriteString(fmt.Sprintf("# %s\n\n", root.Title))
+		if root.Name != "" {
+			sb.WriteString(fmt.Sprintf("**%s** (@%s)\n\n", root.Name, root.Username))
+		} else {
+			sb.WriteString(fmt.Sprintf("@%s\n\n", root.Username))
+		}
+	} else if root.Name != "" {
+		sb.WriteString(fmt.Sprintf("# %s (@%s)\n\n", root.Name, root.Username))
+	} else {
+		sb.WriteString(fmt.Sprintf("# @%s\n\n", root.Username))
+	}
+
+	sb.WriteString(fmt.Sprintf("*%s*\n\n", root.PostedAt.UTC().Format("2006-01-02 15:04 UTC")))
+
+	sb.WriteString(fmt.Sprintf("👍 %s · 🔄 %s · 💬 %s",
+		fmtNum(root.Likes), fmtNum(root.Retweets), fmtNum(root.Replies)))
+	if root.Views > 0 {
+		sb.WriteString(fmt.Sprintf(" · 👁 %s", fmtNum(root.Views)))
+	}
+	sb.WriteString("\n\n---\n\n")
+
+	// Thread body
+	for i, t := range thread {
+		if i > 0 {
+			sb.WriteString("\n\n---\n\n")
+		}
+		// Render body: preserve paragraphs (double newlines → markdown paragraphs)
+		body := strings.TrimSpace(t.Text)
+		sb.WriteString(body)
+		sb.WriteString("\n")
+		for _, p := range t.Photos {
+			sb.WriteString(fmt.Sprintf("\n![image](%s)\n", p))
+		}
+		for j, v := range t.Videos {
+			sb.WriteString(fmt.Sprintf("\n[Video %d](%s)\n", j+1, v))
+		}
+	}
+
+	sb.WriteString("\n\n---\n\n")
+	if root.PermanentURL != "" {
+		sb.WriteString(fmt.Sprintf("*Source: [%s](%s)*\n", root.PermanentURL, root.PermanentURL))
+	}
+
+	return sb.String()
+}
+
+// ExtractThread returns the root tweet followed by the author's self-replies in order.
+func ExtractThread(root Tweet, replies []Tweet) []Tweet {
+	thread := []Tweet{root}
+	for _, r := range replies {
+		if r.Username == root.Username {
+			thread = append(thread, r)
+		}
+	}
+	return thread
+}
+
+func fmtNum(n int) string {
+	if n >= 1_000_000 {
+		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+	}
+	if n >= 1_000 {
+		return fmt.Sprintf("%.1fK", float64(n)/1_000)
+	}
+	return fmt.Sprint(n)
+}
+
 func truncate(s string, n int) string {
 	s = strings.ReplaceAll(s, "\n", " ")
 	if len(s) <= n {
