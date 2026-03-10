@@ -141,18 +141,11 @@ class MailTmClient:
                         else:
                             html_str = str(html_parts)
                         text = text_part + " " + html_str + " " + intro
-                        self._log(f"  text body ({len(text_part)} chars): {text_part[:300]!r}")
-                        self._log(f"  html body ({len(html_str)} chars): {html_str[:500]!r}")
                     except Exception as e:
                         self._log(f"  body fetch error: {e}")
 
-                    # Find ALL URLs in email body
+                    # Find ALL URLs in email body and pick the verification link
                     all_urls = ALL_URLS_RE.findall(text)
-                    for lnk in all_urls:
-                        self._log(f"  url found: {lnk[:200]}")
-
-                    # Filter to motherduck-related links and pick verification one
-                    md_links = MAGIC_LINK_RE.findall(text)
                     link = _pick_verification_link(all_urls)
                     if link:
                         self._log(f"  magic link found: {link[:200]}")

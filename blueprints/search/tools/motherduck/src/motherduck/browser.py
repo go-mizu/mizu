@@ -275,14 +275,12 @@ def register_via_browser(
                 log("email verification required — polling mail.tm...")
                 magic_link = mail_client.poll_for_magic_link(mailbox, timeout=120)
                 log(f"got verification link: {magic_link[:60]}...")
-                log(f"full verification link: {magic_link}")
                 try:
                     page.goto(magic_link, timeout=30000)
                 except Exception as e:
                     log(f"verification link nav warn: {e}")
                 _wait(4, log, "post-verification load")
                 log(f"url after verification: {page.url}")
-                _log_page_state(page, log, "verify-page: ")
 
                 # After email verification, clear stale Auth0 session then login
                 log("email verified — clearing session and logging in...")
@@ -445,24 +443,13 @@ def _skip_onboarding(page, log, display_name: str = "", max_attempts: int = 10) 
 
         # Fill user-information form if present
         if "user-information" in url:
-            body_text = _log_page_state(page, log, "  onboard-page: ")
             first = display_name.split()[0] if display_name else fake.first_name()
             last = display_name.split()[-1] if display_name and len(display_name.split()) > 1 else fake.last_name()
 
             # Only fill the form once (check if already filled)
             first_input = page.locator('input[name="firstName"]')
             if first_input.count() > 0 and not first_input.input_value():
-                # Fill all visible input fields
-                inputs = page.locator("input:visible")
-                count = inputs.count()
-                log(f"  found {count} visible inputs")
-                for i in range(count):
-                    inp = inputs.nth(i)
-                    name = inp.get_attribute("name") or ""
-                    inp_type = inp.get_attribute("type") or ""
-                    current_val = inp.input_value()
-                    log(f"  input[{i}]: name={name!r} type={inp_type!r} value={current_val!r}")
-
+                log(f"  filling user info: {first} {last}")
                 # Clear and fill first/last name fields
                 _clear_and_fill(page, [
                     'input[name="firstName"]',
