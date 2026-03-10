@@ -481,6 +481,42 @@ func isHTML(contentType string) bool {
 	return strings.Contains(ct, "text/html") || strings.Contains(ct, "application/xhtml")
 }
 
+// binaryExts lists file extensions that are never HTML pages.
+// Checked in the frontier to avoid fetching binary content.
+var binaryExts = map[string]bool{
+	".zip": true, ".tar": true, ".gz": true, ".tgz": true, ".bz2": true, ".xz": true, ".zst": true, ".7z": true, ".rar": true,
+	".exe": true, ".msi": true, ".dmg": true, ".pkg": true, ".deb": true, ".rpm": true, ".appimage": true, ".snap": true,
+	".pdf": true, ".doc": true, ".docx": true, ".xls": true, ".xlsx": true, ".ppt": true, ".pptx": true, ".odt": true,
+	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".svg": true, ".ico": true, ".webp": true, ".avif": true, ".bmp": true, ".tiff": true,
+	".mp3": true, ".mp4": true, ".avi": true, ".mov": true, ".wmv": true, ".flv": true, ".mkv": true, ".webm": true, ".wav": true, ".ogg": true, ".flac": true,
+	".woff": true, ".woff2": true, ".ttf": true, ".eot": true, ".otf": true,
+	".iso": true, ".img": true, ".bin": true, ".apk": true, ".aab": true,
+	".jar": true, ".war": true, ".ear": true, ".class": true,
+	".so": true, ".dylib": true, ".dll": true, ".lib": true, ".a": true, ".o": true,
+	".whl": true, ".egg": true, ".gem": true,
+	".csv": true, ".tsv": true, ".parquet": true, ".sqlite": true, ".db": true,
+}
+
+// isBinaryURL returns true if the URL path has a known binary file extension.
+func isBinaryURL(path string) bool {
+	// Strip query/fragment if present (path should already be clean, but be safe).
+	if i := strings.IndexAny(path, "?#"); i >= 0 {
+		path = path[:i]
+	}
+	// Find the last dot in the last path segment.
+	slash := strings.LastIndexByte(path, '/')
+	segment := path
+	if slash >= 0 {
+		segment = path[slash:]
+	}
+	dot := strings.LastIndexByte(segment, '.')
+	if dot < 0 {
+		return false
+	}
+	ext := strings.ToLower(segment[dot:])
+	return binaryExts[ext]
+}
+
 // parseMetaRefreshURL extracts the URL from a meta refresh content attribute.
 // Format: "seconds; url=URL" or "seconds;URL='quoted'" or just "seconds; url=URL"
 func parseMetaRefreshURL(content string) string {

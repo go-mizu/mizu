@@ -1060,6 +1060,28 @@ func (c *Crawler) fetchAndProcess(ctx context.Context, client *http.Client, item
 		}
 	}
 
+	contentType := resp.Header.Get("Content-Type")
+
+	// Skip body download for non-HTML responses to save bandwidth.
+	// Record metadata only (status, content-type, URL).
+	if !isHTML(contentType) {
+		io.Copy(io.Discard, resp.Body)
+		result := Result{
+			URL: item.URL, URLHash: xxhash.Sum64String(item.URL),
+			Depth: item.Depth, StatusCode: resp.StatusCode,
+			ContentType: contentType, ContentLength: resp.ContentLength,
+			Server: resp.Header.Get("Server"), FetchTimeMs: fetchMs,
+			CrawledAt: time.Now(),
+		}
+		if resp.Request != nil && resp.Request.URL.String() != item.URL {
+			result.RedirectURL = resp.Request.URL.String()
+		}
+		c.resultDB.AddPage(result)
+		c.stats.RecordSuccess(result.StatusCode, 0, fetchMs)
+		c.stats.RecordDepth(item.Depth)
+		return
+	}
+
 	var reader io.Reader = resp.Body
 	if resp.Header.Get("Content-Encoding") == "gzip" {
 		if gr, e := gzip.NewReader(resp.Body); e == nil {
@@ -1076,7 +1098,7 @@ func (c *Crawler) fetchAndProcess(ctx context.Context, client *http.Client, item
 	result := Result{
 		URL: item.URL, URLHash: xxhash.Sum64String(item.URL),
 		Depth: item.Depth, StatusCode: resp.StatusCode,
-		ContentType:   resp.Header.Get("Content-Type"),
+		ContentType:   contentType,
 		ContentLength: contentLength,
 		BodyHash:      xxhash.Sum64(body),
 		ETag:          resp.Header.Get("ETag"), LastModified: resp.Header.Get("Last-Modified"),

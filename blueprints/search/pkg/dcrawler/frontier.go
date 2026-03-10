@@ -60,6 +60,10 @@ func (f *Frontier) TryAdd(rawURL string, depth int) bool {
 		f.rejected.Add(1)
 		return false
 	}
+	if isBinaryURL(u.Path) {
+		f.rejected.Add(1)
+		return false
+	}
 	f.mu.Lock()
 	if f.filter.TestString(normalized) {
 		f.mu.Unlock()
