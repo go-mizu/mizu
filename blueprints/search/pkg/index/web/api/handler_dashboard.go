@@ -199,6 +199,13 @@ func buildOverviewResponse(d *Deps, crawlBytes int64) OverviewResponse {
 	resp.Indexed.TotalWARCs = resp.Downloaded.Count
 
 	resp.Storage = collectStorageInfoAPI(crawlDir, manifestTotal, resp.Downloaded.AvgWARCBytes, crawlBytes)
+	// Populate disk usage via CollectSystemStats (provided by web package).
+	if d.CollectSystemStats != nil {
+		sysStats := d.CollectSystemStats(crawlDir)
+		resp.Storage.DiskTotal = sysStats.DiskTotal
+		resp.Storage.DiskUsed = sysStats.DiskUsed
+		resp.Storage.DiskFree = sysStats.DiskFree
+	}
 	resp.System = collectSystemInfoAPI()
 	resp.Meta = OverviewMeta{GeneratedAt: time.Now().UTC().Format(time.RFC3339)}
 
