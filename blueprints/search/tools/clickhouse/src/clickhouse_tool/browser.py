@@ -334,9 +334,19 @@ def register_via_browser(
                 if not host:
                     host = _wait_for_service_ready(page, service_id, log, timeout=180)
 
+                # Check network-captured host after page navigation
+                if not host and captured.get("host"):
+                    host = captured["host"]
+                    log(f"using network-captured host (post-ready): {host}")
+
                 # Reset password only if we didn't capture it during onboarding
                 if host and not db_password:
                     db_password = _reset_service_password(page, service_id, log)
+
+                # Final check for network-captured password
+                if not db_password and captured.get("password"):
+                    db_password = captured["password"]
+                    log(f"using network-captured password (final): {db_password[:10]}...")
 
             return {
                 "service_id": service_id,
@@ -540,14 +550,15 @@ def _check_credentials_popup(page, log) -> str:
 
 
 def _wait_for_service_ready(page, service_id: str, log, timeout: int = 180) -> str:
-    """Poll the service health page until the service is running. Returns host."""
-    health_url = f"https://console.clickhouse.cloud/services/{service_id}/health"
+    """Poll the service page until the service is running. Returns host."""
+    # Use the service overview page — it often contains the host in the HTML
+    overview_url = f"https://console.clickhouse.cloud/services/{service_id}"
     log(f"waiting for service {service_id[:12]}... to be ready (timeout={timeout}s)")
 
     start = time.time()
     while time.time() - start < timeout:
         try:
-            page.goto(health_url, timeout=15000)
+            page.goto(overview_url, timeout=15000)
             page.wait_for_load_state("networkidle", timeout=10000)
         except Exception:
             pass
@@ -560,48 +571,41 @@ def _wait_for_service_ready(page, service_id: str, log, timeout: int = 180) -> s
             pass
 
         elapsed = int(time.time() - start)
-        log(f"  health check ({elapsed}s): {body[:150]!r}")
+        body_lower = body.lower()
+        log(f"  service check ({elapsed}s): {body[:150]!r}")
 
-        # Check if service is running
-        if "running" in body.lower() or "idle" in body.lower():
+        # Still provisioning — wait
+        if "provisioning" in body_lower:
+            log("  still provisioning...")
+            _wait(10, log, "polling interval")
+            continue
+
+        # Service is ready: either explicit status or SQL console loaded
+        # (console transitions from "Provisioning..." to SQL editor once ready)
+        is_ready = (
+            "running" in body_lower
+            or "idle" in body_lower
+            or "sql" in body_lower  # SQL console appeared
+            or "tables" in body_lower  # Tables view appeared
+            or "queries" in body_lower  # Queries view appeared
+        )
+
+        if is_ready:
             log("service is ready!")
 
-            # Method 1: Internal API (most reliable)
-            host = _get_host_via_internal_api(page, log)
-            if host:
-                return host
-
-            # Method 2: Extract from current page HTML
+            # Method 1: Extract from overview page HTML (may have host)
             host = _extract_host_from_html(page, log)
             if host:
+                log(f"host from overview page: {host}")
                 return host
 
-            # Method 3: Navigate to connect page
+            # Method 2: Navigate to connect page via direct URL
             host = _get_host_from_connect_page(page, service_id, log)
-            if host:
-                return host
-
-            # Method 4: Direct connect URL
-            try:
-                page.goto(
-                    f"https://console.clickhouse.cloud/services/{service_id}/connect",
-                    timeout=15000,
-                )
-                page.wait_for_load_state("networkidle", timeout=10000)
-            except Exception:
-                pass
-            _wait(3, log, "direct connect URL")
-            host = _extract_host_from_html(page, log)
             if host:
                 return host
 
             log("host not found, but service is running")
             return ""
-
-        if "provisioning" in body.lower():
-            log("  still provisioning...")
-            _wait(10, log, "polling interval")
-            continue
 
         _wait(10, log, "polling interval")
 
@@ -680,8 +684,18 @@ def _extract_host_from_html(page, log) -> str:
 
 
 def _get_host_from_connect_page(page, service_id: str, log) -> str:
-    """Navigate to the Connect tab and extract the host from connection details."""
-    # First dismiss any survey popup
+    """Navigate to the Connect page and extract the host from connection details."""
+    connect_url = f"https://console.clickhouse.cloud/services/{service_id}/connect"
+    log(f"navigating to connect page: {connect_url}")
+
+    try:
+        page.goto(connect_url, timeout=15000)
+        page.wait_for_load_state("networkidle", timeout=10000)
+    except Exception as e:
+        log(f"connect page navigation warn: {e}")
+    _wait(3, log, "connect page load")
+
+    # Dismiss any survey/modal popup
     _click_first(page, [
         'button[aria-label="Close"]',
         'button[aria-label="close"]',
@@ -691,24 +705,42 @@ def _get_host_from_connect_page(page, service_id: str, log) -> str:
     ], log)
     _wait(1, log)
 
-    # Click the "Connect" link in the sidebar
-    clicked = _click_first(page, [
-        'a:has-text("Connect")',
-        '[data-testid*="connect"]',
-        'nav a:has-text("Connect")',
-    ], log)
+    # Log page state for debugging
+    _log_page_state(page, log, "connect-page: ", max_chars=800)
 
-    if clicked:
-        _wait(3, log, "connect page load")
-        # Look for host in the connection details
-        host = _extract_host_from_html(page, log)
-        if host:
-            return host
-        body = _log_page_state(page, log, "connect-page: ", max_chars=1000)
+    # Try to expand connection details by clicking tabs/buttons
+    _click_first(page, [
+        '[data-testid*="connect"]',
+        'button:has-text("Native")',
+        'button:has-text("HTTPS")',
+    ], log)
+    _wait(2, log, "connection tab expand")
+
+    # Try extracting from HTML
+    host = _extract_host_from_html(page, log)
+    if host:
+        log(f"host from connect page HTML: {host}")
+        return host
+
+    # Try visible text
+    try:
+        body = page.inner_text("body")[:3000]
         host = _extract_host_from_text(body, log)
         if host:
+            log(f"host from connect page text: {host}")
             return host
+    except Exception as e:
+        log(f"connect page text extraction error: {e}")
 
+    # Retry once after waiting (page JS may still be rendering)
+    log("host not found on connect page, retrying after 5s...")
+    _wait(5, log, "connect page retry")
+    host = _extract_host_from_html(page, log)
+    if host:
+        log(f"host from connect page HTML (retry): {host}")
+        return host
+
+    log("host NOT found on connect page after retry")
     return ""
 
 
@@ -718,7 +750,8 @@ def _extract_host_from_text(text: str, log) -> str:
     exclude = {"console.clickhouse.cloud", "auth.clickhouse.cloud",
                "api.clickhouse.cloud", "statuspage.clickhouse.cloud",
                "console-api-internal.clickhouse.cloud",
-               "console-api.clickhouse.cloud"}
+               "console-api.clickhouse.cloud",
+               "control-plane-internal.clickhouse.cloud"}
 
     # ClickHouse Cloud service hosts: xxx.region.provider.clickhouse.cloud
     for match in re.finditer(r'([a-z0-9-]+\.[a-z0-9-]+\.(?:aws|gcp|azure)\.clickhouse\.cloud)', text):
