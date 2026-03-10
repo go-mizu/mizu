@@ -344,6 +344,9 @@ def register_via_browser(
                 if svc_match:
                     service_id = svc_match.group(1)
                     log(f"service_id from URL: {service_id}")
+            if not service_id and captured.get("service_id"):
+                service_id = captured["service_id"]
+                log(f"service_id from network capture: {service_id}")
 
             if service_id:
                 # Wait for service to finish provisioning (skip if already have host)
@@ -375,7 +378,7 @@ def register_via_browser(
             ctx.close()
 
 
-def _handle_onboarding(page, log, max_attempts: int = 25) -> tuple[str, str]:
+def _handle_onboarding(page, log, max_attempts: int = 35) -> tuple[str, str]:
     """Handle ClickHouse Cloud onboarding. Returns (service_id, db_password)."""
     service_id = ""
     db_password = ""
@@ -447,30 +450,57 @@ def _handle_onboarding(page, log, max_attempts: int = 25) -> tuple[str, str]:
             ], log)
 
             create_btn = page.locator('button:has-text("Create service"):not([disabled])')
+            if create_btn.count() == 0:
+                create_btn = page.locator('button:has-text("Create"):not([disabled])')
             if create_btn.count() > 0:
                 # Inject a DOM observer BEFORE clicking Create to catch any popup
                 _inject_popup_watcher(page, log)
+                # Try multiple click strategies — --single-process mode can swallow events
                 try:
-                    create_btn.first.click(timeout=10000)
+                    create_btn.first.click(timeout=5000)
+                    log("  clicked Create service (normal)")
                 except Exception:
-                    # Fallback: force click bypassing overlay check
-                    create_btn.first.click(force=True)
-                log("  clicked Create service")
-                clicked = True
-            elif _click_first(page, ['button:has-text("Create"):not([disabled])'], log):
+                    create_btn.first.click(force=True, timeout=5000)
+                    log("  clicked Create service (force)")
+                # Also fire via JS to ensure React handler triggers
+                try:
+                    create_btn.first.dispatch_event("click")
+                    log("  dispatched click event via JS")
+                except Exception:
+                    pass
+                # Ultimate fallback: JS querySelector + click
+                try:
+                    page.evaluate("""() => {
+                        const btns = document.querySelectorAll('button');
+                        for (const b of btns) {
+                            if (b.textContent.includes('Create service') && !b.disabled) {
+                                b.click();
+                                break;
+                            }
+                        }
+                    }""")
+                    log("  clicked via JS querySelector")
+                except Exception:
+                    pass
                 clicked = True
 
             if clicked:
-                # Aggressive polling — check every 500ms for up to 30s
+                # Wait a moment for the API call to fire, then check if page changed
+                _wait(5, log, "waiting for service creation API")
+                check_body = ""
+                try:
+                    check_body = page.inner_text("body")[:500]
+                except Exception:
+                    pass
+                # If still on configure page, creation didn't fire — retry quickly
+                if "onboard" in page.url and ("Configure" in check_body or "Create service" in check_body):
+                    log("  service creation didn't trigger, will retry...")
+                    no_progress_count = 0
+                    continue
+                # Service creation triggered — poll for credentials
                 pw = _poll_for_credentials(page, log, max_seconds=30)
                 if pw:
                     db_password = pw
-                # Check if still on onboard page (creation may have failed)
-                if "onboard" in page.url:
-                    check_body = page.inner_text("body")[:500]
-                    if "Configure" in check_body or "Create service" in check_body:
-                        log("  service creation may have failed, retrying...")
-                        no_progress_count = 0  # Reset stall counter
                 continue
 
         # Try clicking survey/onboarding options
@@ -511,8 +541,8 @@ def _handle_onboarding(page, log, max_attempts: int = 25) -> tuple[str, str]:
         if not clicked:
             no_progress_count += 1
             log(f"  no action at attempt {attempt} (stall={no_progress_count})")
-            if no_progress_count >= 5:
-                log("  giving up on onboarding after 5 stalls")
+            if no_progress_count >= 8:
+                log("  giving up on onboarding after 8 stalls")
                 break
         else:
             no_progress_count = 0
@@ -751,15 +781,28 @@ def _wait_for_service_ready(page, service_id: str, log, timeout: int = 300) -> s
             first_check = False
             log(f"  FULL first poll body: {body!r}")
 
+        # Verify we're actually on the service page, not redirected to onboarding
+        current_url = page.url
+        if "onboard" in current_url or "signUp" in current_url:
+            log(f"  redirected away from service page: {current_url[:80]}")
+            # Try navigating back to service page
+            try:
+                page.goto(overview_url, timeout=15000)
+                page.wait_for_load_state("networkidle", timeout=10000)
+            except Exception:
+                pass
+            _wait(5, log, "redirect recovery")
+            continue
+
         # Still provisioning — the banner "Provisioning service..." appears above the SQL console
         if "provisioning" in body_lower:
             log("  still provisioning...")
             _wait(10, log, "polling interval")
             continue
 
-        # Service is ready when the "Provisioning" banner disappears
-        # The body will still have SQL console content (tables/queries) but no "provisioning" text
-        is_ready = bool(body.strip())  # any content without "provisioning" = ready
+        # Service is ready when on the correct service URL and "Provisioning" banner is gone
+        on_service_page = f"/services/{service_id}" in current_url
+        is_ready = bool(body.strip()) and on_service_page
 
         if is_ready:
             log("service is ready!")
