@@ -192,17 +192,14 @@ def register_via_browser(
                 log("WARNING: no email input found!")
                 _log_page_state(page, log, "  ")
 
-            # Fill password
+            # Password might be on the same page or a separate step
             _wait(0.5, log)
             pwd_sel = _fill_first(page, [
                 'input[name="password"]',
                 'input[type="password"]',
             ], password, log)
-            if not pwd_sel:
-                log("WARNING: no password input found!")
-                _log_page_state(page, log, "  ")
 
-            # Submit signup form
+            # Submit (email only or email+password)
             _wait(0.5, log)
             submit_sel = _click_first(page, [
                 'button[name="action"]',
@@ -214,7 +211,32 @@ def register_via_browser(
             ], log)
             if submit_sel:
                 _wait(4, log, "waiting for signup response")
-            log(f"url after signup submit: {page.url}")
+            log(f"url after first submit: {page.url}")
+
+            # ---- Step 3b: Auth0 multi-step signup — password page ----
+            # Auth0 may advance to /u/signup/password as a second step
+            if "signup/password" in page.url or (
+                _on_auth0(page) and not pwd_sel
+            ):
+                log("on Auth0 password step — filling password...")
+                pwd_sel2 = _fill_first(page, [
+                    'input[name="password"]',
+                    'input[type="password"]',
+                ], password, log)
+                if pwd_sel2:
+                    _wait(0.5, log)
+                    _click_first(page, [
+                        'button[name="action"]',
+                        'button[value="default"]',
+                        'button[type="submit"]',
+                        'button:has-text("Sign up")',
+                        'button:has-text("Continue")',
+                    ], log)
+                    _wait(5, log, "waiting for account creation")
+                else:
+                    log("WARNING: no password input on password page!")
+                    _log_page_state(page, log, "  ")
+                log(f"url after password submit: {page.url}")
 
             # ---- Step 4: Handle post-signup ----
             body_text = _log_page_state(page, log, "post-signup: ")
