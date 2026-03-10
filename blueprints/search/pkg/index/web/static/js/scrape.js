@@ -386,7 +386,8 @@ function renderScrapeDomainStatus(domain, data) {
   if (stats && stats.html_bytes > 0) {
     const parts = [];
     if (stats.md_bytes > 0 && stats.html_bytes > 0) {
-      const saving = ((1 - stats.md_bytes / stats.html_bytes) * 100).toFixed(0);
+      const savingRaw = (1 - stats.md_bytes / stats.html_bytes) * 100;
+      const saving = savingRaw >= 99.95 ? '>99.9' : savingRaw >= 99 ? savingRaw.toFixed(1) : savingRaw.toFixed(0);
       parts.push(`<span class="text-sm">HTML ${fmtBytes(stats.html_bytes)} \u2192 MD ${fmtBytes(stats.md_bytes)} <span class="ui-subtle">(${saving}% reduction)</span></span>`);
     }
     if (summary) {
@@ -725,7 +726,8 @@ function fmtBytes(n) {
 function fmtMdCell(mdSize, htmlSize) {
   const s = fmtBytes(mdSize);
   if (htmlSize > 0 && mdSize < htmlSize) {
-    const pct = Math.round((1 - mdSize / htmlSize) * 100);
+    const pctRaw = (1 - mdSize / htmlSize) * 100;
+    const pct = pctRaw >= 99.5 ? '>99' : Math.round(pctRaw);
     return `${s}<span class="ui-subtle" style="font-size:10px"> (-${pct}%)</span>`;
   }
   return s;
