@@ -140,6 +140,26 @@ def _do_auth0_login(page, email: str, password: str, log) -> None:
     _wait(5, log, "waiting for login completion")
 
 
+def _search_json_for_credentials(obj, captured: dict, log) -> None:
+    """Recursively search JSON for password and host fields."""
+    if isinstance(obj, dict):
+        for key, val in obj.items():
+            if key == "password" and isinstance(val, str) and len(val) > 8:
+                captured["password"] = val
+                log(f"  [net] CAPTURED password: {val[:10]}...")
+            elif key == "host" and isinstance(val, str) and "clickhouse.cloud" in val:
+                captured["host"] = val
+                log(f"  [net] CAPTURED host: {val}")
+            elif key == "id" and isinstance(val, str) and len(val) == 36 and "-" in val:
+                captured["service_id"] = val
+            elif isinstance(val, (dict, list)):
+                _search_json_for_credentials(val, captured, log)
+    elif isinstance(obj, list):
+        for item in obj:
+            if isinstance(item, (dict, list)):
+                _search_json_for_credentials(item, captured, log)
+
+
 def register_via_browser(
     mailbox: Mailbox,
     mail_client: MailTmClient,
@@ -253,14 +273,54 @@ def register_via_browser(
             log("handling onboarding...")
             _wait(5, log, "console load after login")
             _log_page_state(page, log, "pre-onboard: ")
-            service_id = _handle_onboarding(page, log)
+
+            # Set up network interceptor to capture password from API response
+            captured = {"password": "", "service_id": "", "host": ""}
+
+            def _on_response(response):
+                try:
+                    url = response.url
+                    if response.status < 200 or response.status >= 300:
+                        return
+                    ct = response.headers.get("content-type", "")
+                    if "json" not in ct:
+                        return
+                    # Log ALL control-plane-internal responses
+                    is_internal = "control-plane-internal" in url
+                    text = response.text()
+                    if is_internal:
+                        log(f"  [net-api] {url.split('?')[-1][:40]} → {text[:300]}")
+                    elif "clickhouse.cloud" in text or "password" in text.lower():
+                        log(f"  [net] {url[:80]} → {text[:200]}")
+                    try:
+                        body = response.json()
+                        _search_json_for_credentials(body, captured, log)
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+
+            page.on("response", _on_response)
+
+            service_id, db_password = _handle_onboarding(page, log)
+
+            # Use network-captured values if onboarding didn't get them
+            if not db_password and captured["password"]:
+                db_password = captured["password"]
+                log(f"using network-captured password: {db_password[:10]}...")
+            if not service_id and captured["service_id"]:
+                service_id = captured["service_id"]
+                log(f"using network-captured service_id: {service_id}")
             log(f"url after onboarding: {page.url}")
             log(f"service_id from onboarding: {service_id}")
+            if db_password:
+                log(f"password captured during onboarding: {db_password[:10]}...")
 
             # ---- Step 5: Wait for service provisioning + extract credentials ----
-            host = ""
+            host = captured.get("host", "")
+            if host:
+                log(f"using network-captured host: {host}")
             port = 8443
-            db_password = ""
 
             # Extract service_id from URL if not found during onboarding
             if not service_id:
@@ -270,11 +330,12 @@ def register_via_browser(
                     log(f"service_id from URL: {service_id}")
 
             if service_id:
-                # Wait for service to finish provisioning
-                host = _wait_for_service_ready(page, service_id, log, timeout=180)
+                # Wait for service to finish provisioning (skip if already have host)
+                if not host:
+                    host = _wait_for_service_ready(page, service_id, log, timeout=180)
 
-                # Reset password to get known credentials
-                if host:
+                # Reset password only if we didn't capture it during onboarding
+                if host and not db_password:
                     db_password = _reset_service_password(page, service_id, log)
 
             return {
@@ -288,9 +349,10 @@ def register_via_browser(
             ctx.close()
 
 
-def _handle_onboarding(page, log, max_attempts: int = 25) -> str:
-    """Handle ClickHouse Cloud onboarding. Returns service_id if a service is created."""
+def _handle_onboarding(page, log, max_attempts: int = 25) -> tuple[str, str]:
+    """Handle ClickHouse Cloud onboarding. Returns (service_id, db_password)."""
     service_id = ""
+    db_password = ""
     no_progress_count = 0
 
     for attempt in range(max_attempts):
@@ -306,7 +368,7 @@ def _handle_onboarding(page, log, max_attempts: int = 25) -> str:
         if any(x in url for x in ["/services", "/settings", "/sql-console"]):
             if "/onboard" not in url:
                 log(f"onboarding done at attempt {attempt}")
-                return service_id
+                return service_id, db_password
 
         body = ""
         try:
@@ -335,17 +397,47 @@ def _handle_onboarding(page, log, max_attempts: int = 25) -> str:
             if clicked:
                 continue
 
-        # On the service creation page: just let it create (default settings are fine)
+        # On the service creation page: select AWS + create
         if "onboard" in url and ("Configure your cloud service" in body
                                   or "Create service" in body):
-            if _click_first(page, ['button:has-text("Create service")'], log):
+            # Prefer AWS as provider (most reliable for free tier)
+            if "AWS" not in body[:200] or "Azure" in body[:200] or "GCP" in body[:200]:
+                aws_btn = page.locator('text="AWS"')
+                if aws_btn.count() > 0:
+                    try:
+                        aws_btn.first.click()
+                        log("  switched to AWS provider")
+                        _wait(1, log)
+                    except Exception:
+                        pass
+
+            create_btn = page.locator('button:has-text("Create service"):not([disabled])')
+            if create_btn.count() > 0:
+                create_btn.first.click()
+                log("  clicked Create service")
                 clicked = True
             elif _click_first(page, ['button:has-text("Create"):not([disabled])'], log):
                 clicked = True
 
             if clicked:
-                _wait(3, log, "service creation")
-                _check_credentials_popup(page, log)
+                _wait(5, log, "service creation + credentials popup")
+                pw = _check_credentials_popup(page, log)
+                if pw:
+                    db_password = pw
+                else:
+                    # Poll a few more times — popup may take a moment
+                    for _ in range(3):
+                        _wait(3, log, "waiting for credentials popup")
+                        pw = _check_credentials_popup(page, log)
+                        if pw:
+                            db_password = pw
+                            break
+                # Check if still on onboard page (creation may have failed)
+                if "onboard" in page.url:
+                    check_body = page.inner_text("body")[:500]
+                    if "Configure" in check_body or "Create service" in check_body:
+                        log("  service creation may have failed, retrying...")
+                        no_progress_count = 0  # Reset stall counter
                 continue
 
         # Try clicking survey/onboarding options
@@ -386,32 +478,65 @@ def _handle_onboarding(page, log, max_attempts: int = 25) -> str:
         if not clicked:
             no_progress_count += 1
             log(f"  no action at attempt {attempt} (stall={no_progress_count})")
-            if no_progress_count >= 3:
-                log("  giving up on onboarding after 3 stalls")
+            if no_progress_count >= 5:
+                log("  giving up on onboarding after 5 stalls")
                 break
         else:
             no_progress_count = 0
 
-    return service_id
+    return service_id, db_password
 
 
-def _check_credentials_popup(page, log) -> dict:
-    """Check for a credentials popup after service creation."""
+def _check_credentials_popup(page, log) -> str:
+    """Check for a credentials popup after service creation. Returns password if found."""
     try:
-        body = page.inner_text("body")[:1000]
-        if "password" in body.lower() and ("copy" in body.lower() or "credential" in body.lower()):
-            log(f"credentials popup detected: {body[:300]!r}")
-            # Try to find password in code/input elements
-            for sel in ['code', 'input[readonly]', 'pre', '[data-testid*="password"]']:
-                els = page.locator(sel)
-                for i in range(min(els.count(), 10)):
-                    text = els.nth(i).inner_text() or els.nth(i).get_attribute("value") or ""
-                    text = text.strip()
-                    if len(text) > 8 and " " not in text:
-                        log(f"  credential value: {text[:20]}...")
-    except Exception:
-        pass
-    return {}
+        body = page.inner_text("body")[:2000]
+        log(f"credentials check: {body[:300]!r}")
+
+        # Always search for password, even without explicit "password" keyword
+        # The popup may show credentials in various formats
+
+        # Search code/readonly/pre elements for password-like values
+        for sel in ['code', 'input[readonly]', 'pre', '[data-testid*="password"]',
+                    'input[type="text"][readonly]', '[data-testid*="credential"]']:
+            els = page.locator(sel)
+            for i in range(min(els.count(), 10)):
+                text = (els.nth(i).inner_text() or
+                        els.nth(i).get_attribute("value") or "").strip()
+                if len(text) > 8 and " " not in text and "\n" not in text:
+                    log(f"  credential found: {text[:15]}...")
+                    return text
+
+        # Search HTML for password near relevant context
+        html = page.evaluate("document.documentElement.innerHTML")
+        # Look for values in elements after "password" labels
+        pw_patterns = re.findall(
+            r'(?:password|Password|credential)[^>]*?>([A-Za-z0-9!@#$%^&*_+=-]{12,64})<',
+            html
+        )
+        if pw_patterns:
+            log(f"  password from HTML: {pw_patterns[0][:15]}...")
+            return pw_patterns[0]
+
+        # Look for copy-button adjacent values
+        copy_els = page.locator('[data-testid*="copy"], [data-clipboard], button[aria-label*="Copy"]')
+        for i in range(min(copy_els.count(), 5)):
+            try:
+                # Check sibling/parent text
+                parent = copy_els.nth(i).locator("..")
+                text = parent.inner_text().strip()
+                # Extract the longest non-space token
+                tokens = [t for t in text.split() if len(t) > 8]
+                for t in tokens:
+                    if re.match(r'^[A-Za-z0-9!@#$%^&*_+=-]+$', t) and len(t) >= 12:
+                        log(f"  password from copy-btn: {t[:15]}...")
+                        return t
+            except Exception:
+                pass
+
+    except Exception as e:
+        log(f"credentials popup check error: {e}")
+    return ""
 
 
 def _wait_for_service_ready(page, service_id: str, log, timeout: int = 180) -> str:
@@ -441,18 +566,32 @@ def _wait_for_service_ready(page, service_id: str, log, timeout: int = 180) -> s
         if "running" in body.lower() or "idle" in body.lower():
             log("service is ready!")
 
-            # Try internal API via browser cookies (most reliable)
-            host = _get_host_via_api(page, service_id, log)
+            # Method 1: Internal API (most reliable)
+            host = _get_host_via_internal_api(page, log)
             if host:
                 return host
 
-            # Try extracting host from HTML source
+            # Method 2: Extract from current page HTML
             host = _extract_host_from_html(page, log)
             if host:
                 return host
 
-            # Try the connect page with survey dismissal
+            # Method 3: Navigate to connect page
             host = _get_host_from_connect_page(page, service_id, log)
+            if host:
+                return host
+
+            # Method 4: Direct connect URL
+            try:
+                page.goto(
+                    f"https://console.clickhouse.cloud/services/{service_id}/connect",
+                    timeout=15000,
+                )
+                page.wait_for_load_state("networkidle", timeout=10000)
+            except Exception:
+                pass
+            _wait(3, log, "direct connect URL")
+            host = _extract_host_from_html(page, log)
             if host:
                 return host
 
@@ -470,124 +609,61 @@ def _wait_for_service_ready(page, service_id: str, log, timeout: int = 180) -> s
     return ""
 
 
+def _get_host_via_internal_api(page, log) -> str:
+    """Extract host from network responses captured during page navigation."""
+    # The internal API (control-plane-internal.clickhouse.cloud) can't be called
+    # directly — it requires console-session cookies. Instead, we rely on the
+    # network interceptor that captures responses as the console makes its own calls.
+    # This function is a no-op; host extraction happens via HTML parsing.
+    return ""
+
+
 def _reset_service_password(page, service_id: str, log) -> str:
-    """Navigate to service settings and reset the password."""
+    """Attempt to capture the service password.
+
+    Note: ClickHouse Cloud's internal API does not expose the password
+    through any accessible endpoint. The password is shown once during
+    service creation in the console but cannot be reliably captured
+    via browser automation.
+    """
+    # Try network-intercepted password (if captured during service creation)
+    # The password would have been captured by the response listener
+
+    # Try clicking "Reset password" and watching for network response
     settings_url = f"https://console.clickhouse.cloud/services/{service_id}/settings"
     try:
         page.goto(settings_url, timeout=15000)
         page.wait_for_load_state("networkidle", timeout=10000)
     except Exception:
         pass
-    _wait(3, log, "settings page for password reset")
+    _wait(3, log, "settings page")
 
-    # Click "Reset password"
-    clicked = _click_first(page, [
-        'button:has-text("Reset password")',
-        'a:has-text("Reset password")',
-    ], log)
+    captured_pw = {"value": ""}
 
-    if not clicked:
-        log("Reset password button not found")
-        return ""
-
-    _wait(2, log, "password reset dialog")
-
-    # Look for a modal/dialog that appeared
-    body = ""
-    try:
-        body = page.inner_text("body")[:2000]
-    except Exception:
-        pass
-    log(f"reset-dialog: {body[:400]!r}")
-
-    # Look for confirmation dialog — check for modal/dialog elements
-    dialog = page.locator('[role="dialog"], [role="alertdialog"], .modal, [data-testid*="modal"]')
-    if dialog.count() > 0:
-        dialog_text = dialog.first.inner_text()[:500]
-        log(f"dialog found: {dialog_text[:200]!r}")
-
-    # Click confirmation buttons — might need multiple clicks through dialog steps
-    for attempt in range(3):
-        for sel in [
-            '[role="dialog"] button:has-text("Generate")',
-            '[role="dialog"] button:has-text("Reset")',
-            '[role="dialog"] button:has-text("Confirm")',
-            'button:has-text("Generate new password")',
-            'button:has-text("Reset password")',
-            'button:has-text("Confirm")',
-            'button:has-text("Yes, reset")',
-            'button:has-text("Yes")',
-        ]:
-            try:
-                btn = page.locator(sel)
-                if btn.count() > 0:
-                    btn.first.click()
-                    log(f"reset confirm[{attempt}]: clicked {sel}")
-                    _wait(3, log, "password dialog step")
-                    break
-            except Exception:
-                continue
-
-        # Check if password is now visible
+    def _on_reset_response(response):
         try:
-            body = page.inner_text("body")[:2000]
-        except Exception:
-            body = ""
-        log(f"after-reset[{attempt}]: {body[:400]!r}")
-
-        # Check dialog content specifically
-        dialog = page.locator('[role="dialog"], [role="alertdialog"], .modal')
-        if dialog.count() > 0:
-            try:
-                dialog_text = dialog.first.inner_text()[:500]
-                log(f"dialog[{attempt}]: {dialog_text[:300]!r}")
-            except Exception:
-                pass
-
-        # Search for password in HTML (might be in data attributes or hidden elements)
-        try:
-            html = page.evaluate("document.documentElement.innerHTML")
-            # Look for password-like strings near "password" context
-            pw_patterns = re.findall(
-                r'(?:password|Password|credential)[^>]*?>([A-Za-z0-9!@#$%^&*_-]{12,64})<',
-                html
-            )
-            if pw_patterns:
-                log(f"password from HTML: {pw_patterns[0][:10]}...")
-                return pw_patterns[0]
-
-            # Look for copy-able elements with long alphanumeric values
-            copy_els = page.locator('[data-testid*="copy"], [data-clipboard], .copy-text, code')
-            for i in range(min(copy_els.count(), 10)):
-                text = copy_els.nth(i).inner_text().strip()
-                if len(text) > 8 and " " not in text and "\n" not in text:
-                    log(f"copy-able value: {text[:15]}...")
-                    return text
-        except Exception as e:
-            log(f"HTML password search error: {e}")
-
-    # Look for password in code/readonly elements
-    for sel in ['code', 'input[readonly]', 'pre', '[data-testid*="password"]',
-                'input[type="text"][readonly]']:
-        try:
-            els = page.locator(sel)
-            for i in range(min(els.count(), 10)):
-                text = els.nth(i).inner_text() or els.nth(i).get_attribute("value") or ""
-                text = text.strip()
-                if len(text) > 8 and " " not in text and "\n" not in text:
-                    log(f"password candidate: {text[:10]}...")
-                    return text
+            ct = response.headers.get("content-type", "")
+            if "json" not in ct:
+                return
+            text = response.text()
+            if "password" in text.lower():
+                log(f"  [reset-net] {response.url[:60]} → {text[:200]}")
+                pw_match = re.search(r'"password"\s*:\s*"([^"]+)"', text)
+                if pw_match and len(pw_match.group(1)) > 8:
+                    captured_pw["value"] = pw_match.group(1)
         except Exception:
             pass
 
-    # Try to find password-like string in body
-    # ClickHouse generates passwords like random alphanumeric strings
-    pw_match = re.search(r'(?:password|Password)[\s:]*([A-Za-z0-9!@#$%^&*]{12,})', body)
-    if pw_match:
-        log(f"password from text: {pw_match.group(1)[:10]}...")
-        return pw_match.group(1)
+    page.on("response", _on_reset_response)
 
-    log("could not extract reset password")
+    clicked = _click_first(page, ['button:has-text("Reset password")'], log)
+    if clicked:
+        _wait(5, log, "password reset response")
+        if captured_pw["value"]:
+            log(f"password captured from reset: {captured_pw['value'][:10]}...")
+            return captured_pw["value"]
+
+    log("password not captured — user must get it from console")
     return ""
 
 
@@ -636,110 +712,6 @@ def _get_host_from_connect_page(page, service_id: str, log) -> str:
     return ""
 
 
-def _get_host_via_api(page, service_id: str, log) -> str:
-    """Use the browser's authenticated session to call internal API for service details."""
-    try:
-        # ClickHouse Cloud console makes API calls to its own backend
-        # Try fetching service details via the internal API
-        result = page.evaluate(f"""
-            (async () => {{
-                try {{
-                    const resp = await fetch('/api/services/{service_id}');
-                    if (resp.ok) {{
-                        const data = await resp.json();
-                        return JSON.stringify(data);
-                    }}
-                    return 'status:' + resp.status;
-                }} catch (e) {{
-                    return 'error:' + e.message;
-                }}
-            }})()
-        """)
-        log(f"internal API response: {str(result)[:200]}")
-
-        if isinstance(result, str) and "clickhouse.cloud" in result:
-            host = _extract_host_from_text(result, log)
-            if host:
-                return host
-
-        # Try the cloud API endpoint
-        result = page.evaluate(f"""
-            (async () => {{
-                try {{
-                    const resp = await fetch('https://api.clickhouse.cloud/v1/organizations');
-                    if (!resp.ok) return 'org-status:' + resp.status;
-                    const orgs = await resp.json();
-                    const orgId = orgs.result?.[0]?.id;
-                    if (!orgId) return 'no-org';
-
-                    const svcResp = await fetch('https://api.clickhouse.cloud/v1/organizations/' + orgId + '/services/{service_id}');
-                    if (!svcResp.ok) return 'svc-status:' + svcResp.status;
-                    const svc = await svcResp.json();
-                    return JSON.stringify(svc);
-                }} catch (e) {{
-                    return 'error:' + e.message;
-                }}
-            }})()
-        """)
-        log(f"cloud API response: {str(result)[:200]}")
-
-        if isinstance(result, str) and "clickhouse.cloud" in result:
-            host = _extract_host_from_text(result, log)
-            if host:
-                return host
-
-    except Exception as e:
-        log(f"API extraction error: {e}")
-
-    return ""
-
-
-def _get_service_host(page, service_id: str, log) -> str:
-    """Navigate to service page and extract connection host."""
-    # Try the service settings page
-    settings_url = f"https://console.clickhouse.cloud/services/{service_id}/settings"
-    try:
-        page.goto(settings_url, timeout=15000)
-        page.wait_for_load_state("networkidle", timeout=10000)
-    except Exception:
-        pass
-    _wait(3, log, "service settings load")
-
-    body = _log_page_state(page, log, "service-settings: ", max_chars=1000)
-
-    # Look for host in the page text
-    host = _extract_host_from_text(body, log)
-    if host:
-        return host
-
-    # Try the service connection/connect page
-    connect_url = f"https://console.clickhouse.cloud/services/{service_id}/connect"
-    try:
-        page.goto(connect_url, timeout=10000)
-        page.wait_for_load_state("networkidle", timeout=8000)
-    except Exception:
-        pass
-    _wait(2, log, "service connect load")
-
-    body = _log_page_state(page, log, "service-connect: ", max_chars=1000)
-    host = _extract_host_from_text(body, log)
-    if host:
-        return host
-
-    # Try the main service page
-    svc_url = f"https://console.clickhouse.cloud/services/{service_id}"
-    try:
-        page.goto(svc_url, timeout=10000)
-        page.wait_for_load_state("networkidle", timeout=8000)
-    except Exception:
-        pass
-    _wait(2, log, "service page load")
-
-    body = _log_page_state(page, log, "service-main: ", max_chars=1000)
-    host = _extract_host_from_text(body, log)
-    return host or ""
-
-
 def _extract_host_from_text(text: str, log) -> str:
     """Extract ClickHouse Cloud service hostname from text."""
     # Exclude known non-service hosts
@@ -765,20 +737,3 @@ def _extract_host_from_text(text: str, log) -> str:
     return ""
 
 
-def _find_host_in_page(page, log) -> str:
-    """Search current page for ClickHouse host."""
-    try:
-        # Look in code blocks and inputs
-        for sel in ['code', 'input[readonly]', 'input[value*="clickhouse"]', 'pre']:
-            els = page.locator(sel)
-            for i in range(min(els.count(), 10)):
-                text = els.nth(i).inner_text() or els.nth(i).get_attribute("value") or ""
-                host = _extract_host_from_text(text, log)
-                if host:
-                    return host
-
-        # Search entire page body
-        body = page.inner_text("body")
-        return _extract_host_from_text(body, log)
-    except Exception:
-        return ""
