@@ -447,14 +447,63 @@ func parseGraphTweet(node map[string]any) *Tweet {
 		}
 	}
 
-	// Note tweet (long tweets)
+	// Note tweet / X Article (long-form content with optional title)
 	if noteTweet := asMap(dig(node, "note_tweet", "note_tweet_results", "result")); noteTweet != nil {
 		if noteText := asStr(noteTweet["text"]); noteText != "" {
 			t.Text = noteText
 		}
+		if noteTitle := asStr(noteTweet["title"]); noteTitle != "" {
+			t.Title = noteTitle
+		}
+	}
+
+	// X Article: article.article_results.result
+	// Returned when withArticleRichContentState:true or withArticlePlainText:true
+	if article := asMap(dig(node, "article", "article_results", "result")); article != nil {
+		if title := asStr(article["title"]); title != "" && t.Title == "" {
+			t.Title = title
+		}
+		// Try plain text body first
+		if plainText := asStr(article["article_plain_text"]); plainText != "" && t.Text == "" {
+			t.Text = plainText
+		}
+		// Try rich content blocks: content.items[].content.text
+		if t.Text == "" {
+			if body := extractArticleRichText(article); body != "" {
+				t.Text = body
+			}
+		}
 	}
 
 	return t
+}
+
+// extractArticleRichText assembles plain text from an X Article's rich content blocks.
+func extractArticleRichText(article map[string]any) string {
+	items := asSlice(dig(article, "content", "items"))
+	if len(items) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	for _, item := range items {
+		im := asMap(item)
+		if im == nil {
+			continue
+		}
+		// Each item has a content field with text
+		if text := asStr(dig(im, "content", "text")); text != "" {
+			sb.WriteString(text)
+			sb.WriteString("\n\n")
+			continue
+		}
+		// Fallback: text directly
+		if text := asStr(im["text"]); text != "" {
+			sb.WriteString(text)
+			sb.WriteString("\n\n")
+		}
+	}
+	return strings.TrimSpace(sb.String())
 }
 
 // parseMediaFromLegacy extracts media from legacy.extended_entities.media
@@ -812,7 +861,7 @@ func parseConversation(data map[string]any, tweetID string) (*Tweet, []Tweet, st
 					}
 				}
 			} else if strings.HasPrefix(entryID, "conversationthread") {
-				// Thread replies
+				// Thread replies (and sometimes the focal tweet itself is here)
 				items := asSlice(dig(em, "content", "items"))
 				for _, item := range items {
 					itemMap := asMap(item)
@@ -832,7 +881,11 @@ func parseConversation(data map[string]any, tweetID string) (*Tweet, []Tweet, st
 					} else if strings.Contains(itemEntryID, "tweet") {
 						tr := extractTweetFromItem(itemMap, "item")
 						if tr != nil {
-							replies = append(replies, *tr)
+							if tr.ID == tweetID {
+								mainTweet = tr
+							} else {
+								replies = append(replies, *tr)
+							}
 						}
 					}
 				}
@@ -844,6 +897,18 @@ func parseConversation(data map[string]any, tweetID string) (*Tweet, []Tweet, st
 				if cursor == "" {
 					cursor = val
 				}
+			}
+		}
+	}
+
+	// Fallback: if mainTweet still not found, check if it ended up in replies
+	// (happens when the focal tweet is embedded in context above the conversation)
+	if mainTweet == nil {
+		for i, r := range replies {
+			if r.ID == tweetID {
+				mainTweet = &replies[i]
+				replies = append(replies[:i], replies[i+1:]...)
+				break
 			}
 		}
 	}
@@ -1144,6 +1209,63 @@ func parseListMembers(data map[string]any) ([]FollowUser, string) {
 	}
 
 	return users, cursor
+}
+
+// parseTweetResultByID extracts a tweet from a TweetResultByRestId response.
+func parseTweetResultByID(data map[string]any) *Tweet {
+	t, _ := parseTweetResultByIDDebug(data)
+	return t
+}
+
+// parseTweetResultByIDDebug is like parseTweetResultByID but also returns a debug string.
+func parseTweetResultByIDDebug(data map[string]any) (*Tweet, string) {
+	tweetResult := asMap(dig(data, "data", "tweetResult"))
+	if tweetResult == nil {
+		return nil, fmt.Sprintf("no data.tweetResult; data keys=%v", keysOf(asMap(data["data"])))
+	}
+
+	result := asMap(tweetResult["result"])
+	if result == nil {
+		return nil, fmt.Sprintf("no result; tweetResult keys=%v", keysOf(tweetResult))
+	}
+
+	typeName := asStr(result["__typename"])
+	resultKeys := keysOf(result)
+
+	t := parseGraphTweet(result)
+	if t != nil {
+		return t, ""
+	}
+
+	// X Article path
+	if article := asMap(dig(result, "article", "article_results", "result")); article != nil {
+		title := asStr(article["title"])
+		body := asStr(article["article_plain_text"])
+		if body == "" {
+			body = extractArticleRichText(article)
+		}
+		if body != "" || title != "" {
+			return &Tweet{
+				ID:        asStr(result["rest_id"]),
+				Title:     title,
+				Text:      body,
+				FetchedAt: time.Now(),
+			}, ""
+		}
+	}
+
+	return nil, fmt.Sprintf("__typename=%q result_keys=%v", typeName, resultKeys)
+}
+
+func keysOf(m map[string]any) []string {
+	if m == nil {
+		return nil
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // parseUserResult extracts a Profile from a UserByScreenName response.
