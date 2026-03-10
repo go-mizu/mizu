@@ -86,21 +86,26 @@ func DefaultConfig() Config {
 }
 
 // AutoBrowserPages returns the optimal number of concurrent browser tabs
-// based on available RAM. Formula: clamp(availRAMMB / 50, 20, 150).
+// based on available RAM. Formula: clamp(availRAMMB / 100, 8, 80).
+//
+// Budget: ~100MB per tab (Chrome renderer overhead + V8 heap + DOM).
+// With --renderer-process-limit=8 and --js-flags=--max-old-space-size=256,
+// actual per-tab cost is lower, but conservative sizing prevents OS swapping
+// which tanks throughput to <1 p/s on heavy SPA sites (React/Next.js).
 //
 // Benchmarks (openai.com --no-render-wait --scroll 0, Cloudflare+Next.js):
 //
-//	server2 (~11 GB avail) → 150 tabs → ~6 pages/s (1012 pages / 173s)
+//	server2 (~11 GB avail) → 80 tabs → ~6 pages/s (1012 pages / 173s)
 //
 // Note: openai.com is rate-limited by Cloudflare and heavy JS (~25s/page).
 // Lighter sites without anti-bot will achieve much higher throughput.
 func AutoBrowserPages(availRAMMB int) int {
-	n := availRAMMB / 50
-	if n < 20 {
-		n = 20
+	n := availRAMMB / 100
+	if n < 8 {
+		n = 8
 	}
-	if n > 150 {
-		n = 150
+	if n > 80 {
+		n = 80
 	}
 	return n
 }
@@ -126,7 +131,7 @@ func readProcMemAvailMB() int {
 			}
 		}
 	}
-	return 4000 // fallback: 4 GB → AutoBrowserPages(4000) = 80 tabs (dev/macOS default)
+	return 4000 // fallback: 4 GB → AutoBrowserPages(4000) = 40 tabs (dev/macOS default)
 }
 
 func defaultDataDir() string {
