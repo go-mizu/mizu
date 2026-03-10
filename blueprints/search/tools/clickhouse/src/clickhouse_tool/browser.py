@@ -506,33 +506,65 @@ def _reset_service_password(page, service_id: str, log) -> str:
         dialog_text = dialog.first.inner_text()[:500]
         log(f"dialog found: {dialog_text[:200]!r}")
 
-    # Click confirmation buttons in the dialog
-    for sel in [
-        '[role="dialog"] button:has-text("Generate")',
-        '[role="dialog"] button:has-text("Reset")',
-        '[role="dialog"] button:has-text("Confirm")',
-        'button:has-text("Generate new password")',
-        'button:has-text("Reset password")',
-        'button:has-text("Confirm")',
-        'button:has-text("Yes, reset")',
-    ]:
+    # Click confirmation buttons — might need multiple clicks through dialog steps
+    for attempt in range(3):
+        for sel in [
+            '[role="dialog"] button:has-text("Generate")',
+            '[role="dialog"] button:has-text("Reset")',
+            '[role="dialog"] button:has-text("Confirm")',
+            'button:has-text("Generate new password")',
+            'button:has-text("Reset password")',
+            'button:has-text("Confirm")',
+            'button:has-text("Yes, reset")',
+            'button:has-text("Yes")',
+        ]:
+            try:
+                btn = page.locator(sel)
+                if btn.count() > 0:
+                    btn.first.click()
+                    log(f"reset confirm[{attempt}]: clicked {sel}")
+                    _wait(3, log, "password dialog step")
+                    break
+            except Exception:
+                continue
+
+        # Check if password is now visible
         try:
-            btn = page.locator(sel)
-            if btn.count() > 0:
-                btn.first.click()
-                log(f"reset confirm: clicked {sel}")
-                break
+            body = page.inner_text("body")[:2000]
         except Exception:
-            continue
+            body = ""
+        log(f"after-reset[{attempt}]: {body[:400]!r}")
 
-    _wait(3, log, "password generation")
+        # Check dialog content specifically
+        dialog = page.locator('[role="dialog"], [role="alertdialog"], .modal')
+        if dialog.count() > 0:
+            try:
+                dialog_text = dialog.first.inner_text()[:500]
+                log(f"dialog[{attempt}]: {dialog_text[:300]!r}")
+            except Exception:
+                pass
 
-    # Check for new password in the dialog/page
-    try:
-        body = page.inner_text("body")[:2000]
-    except Exception:
-        pass
-    log(f"after-reset: {body[:400]!r}")
+        # Search for password in HTML (might be in data attributes or hidden elements)
+        try:
+            html = page.evaluate("document.documentElement.innerHTML")
+            # Look for password-like strings near "password" context
+            pw_patterns = re.findall(
+                r'(?:password|Password|credential)[^>]*?>([A-Za-z0-9!@#$%^&*_-]{12,64})<',
+                html
+            )
+            if pw_patterns:
+                log(f"password from HTML: {pw_patterns[0][:10]}...")
+                return pw_patterns[0]
+
+            # Look for copy-able elements with long alphanumeric values
+            copy_els = page.locator('[data-testid*="copy"], [data-clipboard], .copy-text, code')
+            for i in range(min(copy_els.count(), 10)):
+                text = copy_els.nth(i).inner_text().strip()
+                if len(text) > 8 and " " not in text and "\n" not in text:
+                    log(f"copy-able value: {text[:15]}...")
+                    return text
+        except Exception as e:
+            log(f"HTML password search error: {e}")
 
     # Look for password in code/readonly elements
     for sel in ['code', 'input[readonly]', 'pre', '[data-testid*="password"]',
