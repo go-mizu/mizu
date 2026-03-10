@@ -70,14 +70,36 @@ def register(
     store.add_account(
         email=mailbox.address,
         password=identity.password,
-        org_id=result.get("org_id", ""),
-        api_key_id=result.get("api_key_id", ""),
-        api_key_secret=result.get("api_key_secret", ""),
     )
 
+    # If a service was created during onboarding, store it
+    service_id = result.get("service_id", "")
+    host = result.get("host", "")
+    if service_id and host:
+        acc = store.get_account_by_email(mailbox.address)
+        if acc:
+            # Use a unique alias based on email prefix
+            alias = mailbox.address.split("@")[0][:20]
+            # Remove existing service with same alias if any
+            if store.get_service(alias):
+                store.remove_service(alias)
+            store.add_service(
+                account_id=acc["id"],
+                name="default-service",
+                alias=alias,
+                cloud_id=service_id,
+                host=host,
+                port=result.get("port", 8443),
+                db_password=result.get("db_password", ""),
+            )
+            store.set_default(alias)
+
     console.print(f"\n[bold green]Registered:[/bold green] {mailbox.address}")
-    console.print(f"[dim]Org ID:[/dim] {result.get('org_id', 'N/A')}")
-    console.print(f"[dim]API Key:[/dim] {result.get('api_key_id', '')[:20]}...")
+    if host:
+        console.print(f"[dim]Service host:[/dim] {host}")
+        console.print(f"[dim]Service ID:[/dim] {service_id}")
+    else:
+        console.print("[yellow]No service host found. Create one with: clickhouse-tool service create[/yellow]")
     console.print(f"[dim]Stored in:[/dim] {DEFAULT_DB_PATH}")
 
 
