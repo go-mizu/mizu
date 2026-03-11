@@ -1,0 +1,23 @@
+name = "browser"
+main = "src/index.ts"
+compatibility_date = "2026-03-11"
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "browser-db"
+database_id = "42b1509d-88f1-474e-b36f-ca6ef375ef81"
+
+[[queues.producers]]
+binding = "CRAWL_QUEUE"
+queue = "browser-crawl"
+
+[[queues.consumers]]
+queue = "browser-crawl"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 2
+dead_letter_queue = "browser-crawl-dlq"
