@@ -176,6 +176,44 @@ def _on_dash(page) -> bool:
     return "dash.cloudflare.com" in page.url
 
 
+def _handle_turnstile(page, log) -> None:
+    """Wait for Turnstile to solve. Patchright patches make CF Turnstile auto-solve.
+
+    Strategy: just wait for the submit button to become enabled, which happens
+    when Turnstile has been satisfied. No manual clicking needed.
+    """
+    log("waiting for Turnstile / submit button to be enabled (up to 60s)...")
+    try:
+        page.wait_for_function(
+            "() => !document.querySelector('button[type=\"submit\"]')?.disabled",
+            timeout=60000,
+        )
+        log("submit button enabled — Turnstile solved")
+        return
+    except Exception:
+        log("submit button still disabled after 60s — trying Turnstile click...")
+
+    # Fallback: try clicking inside the Turnstile iframe
+    try:
+        ts_iframe = page.locator('iframe[src*="challenges.cloudflare.com"]').first
+        box = ts_iframe.bounding_box()
+        if box:
+            cx = box["x"] + box["width"] / 2
+            cy = box["y"] + box["height"] / 2
+            page.mouse.move(cx, cy, steps=10)
+            time.sleep(0.3)
+            page.mouse.click(cx, cy)
+            log(f"clicked Turnstile ({cx:.0f}, {cy:.0f})")
+        # Wait another 15s after click
+        page.wait_for_function(
+            "() => !document.querySelector('button[type=\"submit\"]')?.disabled",
+            timeout=15000,
+        )
+        log("submit button enabled after click")
+    except Exception as e:
+        log(f"Turnstile click fallback: {e} — continuing anyway")
+
+
 # ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
@@ -186,8 +224,14 @@ def register_via_browser(
     password: str,
     headless: bool = True,
     verbose: bool = False,
-) -> str:
-    """Drive Cloudflare signup. Returns account_id string."""
+    extract_api_key: bool = True,
+) -> tuple[str, str]:
+    """Drive Cloudflare signup. Returns (account_id, global_api_key).
+
+    If extract_api_key=True, stays logged in after signup to extract the
+    Global API Key from /profile/api-tokens (handles verification code via
+    mail.tm while the mailbox is still active).
+    """
     from patchright.sync_api import sync_playwright
 
     _ensure_display()
@@ -249,36 +293,8 @@ def register_via_browser(
                 confirm_inputs.nth(1).type(password, delay=55)
                 time.sleep(0.3)
 
-            # Interact with Turnstile — click center of iframe via mouse coords (more natural)
-            log("interacting with Turnstile...")
-            try:
-                ts_iframe = page.locator('iframe[src*="challenges.cloudflare.com"]').first
-                ts_iframe.wait_for(state="visible", timeout=10000)
-                box = ts_iframe.bounding_box()
-                if box:
-                    cx = box["x"] + box["width"] / 2
-                    cy = box["y"] + box["height"] / 2
-                    # Slow mouse move then click (human-like)
-                    page.mouse.move(cx, cy, steps=10)
-                    time.sleep(0.3)
-                    page.mouse.click(cx, cy)
-                    log(f"clicked Turnstile iframe center ({cx:.0f}, {cy:.0f})")
-                else:
-                    log("Turnstile iframe has no bounding box")
-            except Exception as e:
-                log(f"Turnstile click: {e}")
-
-            # Wait up to 30s for cf_challenge_response to be populated
-            log("waiting for Turnstile to solve...")
-            try:
-                page.wait_for_function(
-                    "() => (document.querySelector('input[name=\"cf_challenge_response\"]')"
-                    "?.value?.length ?? 0) > 0",
-                    timeout=30000,
-                )
-                log("Turnstile solved")
-            except Exception as e:
-                log(f"Turnstile solve timeout: {e} — submitting anyway")
+            # Handle Turnstile challenge
+            _handle_turnstile(page, log)
 
             # Submit
             _wait(0.5, log)
@@ -319,12 +335,7 @@ def register_via_browser(
                 log("email verification required — polling mail.tm...")
                 verify_link = mail_client.poll_for_magic_link(mailbox, timeout=120)
                 log(f"got verification link: {verify_link[:60]}...")
-                try:
-                    page.goto(verify_link, timeout=30000)
-                    page.wait_for_load_state("networkidle", timeout=15000)
-                except Exception as e:
-                    log(f"verification nav warn: {e}")
-                _wait(4, log, "post-verification")
+                _complete_email_verification(page, verify_link, log, email=mailbox.address, password=password)
                 log(f"url after verification: {page.url}")
 
             # ---- Step 3: Onboarding — skip domain setup ----
@@ -354,7 +365,46 @@ def register_via_browser(
                 )
 
             log(f"account_id: {account_id}")
-            return account_id
+
+            # ---- Step 5: Verify email (required before creating tokens) ----
+            log("verifying email via mail.tm (step 5)...")
+            try:
+                verify_link = mail_client.poll_for_magic_link(mailbox, timeout=60)
+                log(f"verification link: {verify_link[:80]}...")
+                _complete_email_verification(page, verify_link, log, email=mailbox.address, password=password)
+            except Exception as e:
+                log(f"email verification failed: {e}")
+
+            # ---- Step 6: Create API token via fetch (while logged in) ----
+            api_key = ""
+            if extract_api_key:
+                log("creating API token via dashboard proxy...")
+                try:
+                    api_key = _create_token_via_fetch(
+                        page, account_id, "global-api-key", log,
+                    )
+                    log(f"API token created: {api_key[:10]}...")
+                except Exception as e:
+                    log(f"API token creation failed: {e}")
+                    # If email not verified, wait and retry
+                    if "verify" in str(e).lower():
+                        log("email verification may need more time, waiting 10s...")
+                        _wait(10, log, "verification propagation")
+                        try:
+                            page.goto("https://dash.cloudflare.com/", timeout=20000)
+                            page.wait_for_load_state("networkidle", timeout=15000)
+                        except Exception:
+                            pass
+                        _wait(3, log)
+                        try:
+                            api_key = _create_token_via_fetch(
+                                page, account_id, "global-api-key", log,
+                            )
+                            log(f"API token created on retry: {api_key[:10]}...")
+                        except Exception as e2:
+                            log(f"API token retry also failed: {e2}")
+
+            return account_id, api_key
 
         finally:
             ctx.close()
@@ -439,7 +489,750 @@ def _extract_account_id(page, log) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Token creation
+# Email verification helper
+# ---------------------------------------------------------------------------
+
+def _complete_email_verification(page, verify_link: str, log, email: str = "", password: str = "") -> bool:
+    """Complete email verification by navigating to the link while logged in.
+
+    CF's verification page triggers a managed challenge (~25-30s) that runs
+    client-side JS.  After the challenge resolves, CF marks email_verified=True.
+
+    The page MUST be in a logged-in session — the token is processed
+    server-side once the challenge passes.
+
+    Returns True if email_verified becomes True.
+    """
+    import httpx as _httpx
+
+    log("completing email verification (navigate while logged in)...")
+
+    # Navigate to the verification link in the current (logged-in) context
+    try:
+        page.goto(verify_link, timeout=30000, wait_until="domcontentloaded")
+    except Exception as e:
+        log(f"  nav warn: {e}")
+
+    # CF shows a managed challenge page ("Performing security verification").
+    # Wait up to 60s for the challenge to auto-resolve.
+    log("waiting for CF challenge to resolve (up to 60s)...")
+    for tick in range(20):
+        time.sleep(3)
+        try:
+            body = page.inner_text("body", timeout=2000) or ""
+        except Exception:
+            body = ""
+        if "no longer valid" in body.lower():
+            log("  token expired — link no longer valid")
+            return False
+        if "security" not in body.lower() and body.strip():
+            log(f"  challenge resolved at {tick * 3}s")
+            break
+        if tick % 5 == 4:
+            log(f"  still waiting ({tick * 3}s)...")
+    else:
+        log("  challenge timeout (60s)")
+
+    # Check email_verified — poll a few times for propagation
+    cookies = {c["name"]: c["value"] for c in page.context.cookies()
+               if "cloudflare.com" in c.get("domain", "")}
+    client = _httpx.Client(cookies=cookies, timeout=20.0)
+    try:
+        for attempt in range(6):
+            r = client.get("https://dash.cloudflare.com/api/v4/user")
+            data = r.json()
+            if data.get("success"):
+                verified = data["result"].get("email_verified", False)
+                log(f"  email_verified check {attempt + 1}: {verified}")
+                if verified:
+                    return True
+            if attempt < 5:
+                time.sleep(5)
+    except Exception as e:
+        log(f"  status check failed: {e}")
+    finally:
+        client.close()
+
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Shared login helper
+# ---------------------------------------------------------------------------
+
+def _login_to_dashboard(page, email: str, password: str, log) -> None:
+    """Login to CF dashboard. Handles Turnstile + bot interstitial. Raises on failure."""
+    log("logging in...")
+    try:
+        page.goto("https://dash.cloudflare.com/login", timeout=30000)
+        page.wait_for_load_state("networkidle", timeout=15000)
+    except Exception as e:
+        log(f"login nav warn: {e}")
+    _wait(2, log)
+
+    _fill_first(page, [
+        'input[name="email"]',
+        'input[type="email"]',
+    ], email, log)
+    _wait(0.5, log)
+    _fill_first(page, [
+        'input[name="password"]',
+        'input[type="password"]',
+    ], password, log)
+    _wait(0.5, log)
+
+    _handle_turnstile(page, log)
+
+    log("clicking submit...")
+    try:
+        submit = page.locator('button[type="submit"]').first
+        submit.click(timeout=5000)
+        log("submit clicked")
+    except Exception as e:
+        log(f"submit click note: {e}")
+        _click_first(page, [
+            'button:has-text("Log in")',
+            'button:has-text("Sign in")',
+            'button:has-text("Continue")',
+        ], log)
+
+    # Wait for login to redirect away from /login page (up to 90s)
+    log("waiting for login redirect...")
+    for tick in range(30):
+        time.sleep(3)
+        current_url = page.url
+        log(f"  login check {tick}: url={current_url}")
+        if "login" not in current_url.lower():
+            log("login redirect detected")
+            break
+        try:
+            body_text = page.inner_text("body", timeout=3000) or ""
+        except Exception:
+            body_text = ""
+        if "incorrect" in body_text.lower() or "invalid" in body_text.lower():
+            raise RuntimeError(f"Login failed: {body_text[:200]}")
+        bot_keywords = ["performing security verification", "ray id", "security service"]
+        if any(kw in body_text.lower() for kw in bot_keywords):
+            log("CF bot interstitial — waiting for resolve...")
+            continue
+        # Try re-clicking submit if still on login
+        if tick == 10:
+            log("retrying Turnstile + submit...")
+            _handle_turnstile(page, log)
+            _wait(0.5, log)
+            try:
+                page.locator('button[type="submit"]').first.click(timeout=5000)
+            except Exception:
+                pass
+    else:
+        log("login did not redirect after 90s")
+
+    if "login" in page.url.lower():
+        raise RuntimeError(f"Login failed — still on login page: {page.url}")
+
+    log(f"logged in: {page.url}")
+
+
+# ---------------------------------------------------------------------------
+# Email verification for existing accounts
+# ---------------------------------------------------------------------------
+
+def verify_email_via_browser(
+    email: str,
+    password: str,
+    headless: bool = True,
+    verbose: bool = False,
+) -> bool:
+    """Login to CF dashboard, resend verification email, complete via mail.tm.
+
+    Returns True if email_verified becomes True.
+    """
+    from patchright.sync_api import sync_playwright
+
+    _ensure_display()
+
+    def log(msg: str) -> None:
+        if verbose:
+            ts = time.strftime("%H:%M:%S")
+            print(f"[{ts}] [browser] {msg}", flush=True)
+
+    channel = _detect_chrome_channel()
+    local = email.split("@")[0]
+    mail_pass = f"Cf{local[:6]}!9xQ"
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            channel=channel,
+            headless=headless,
+            args=_browser_args(headless),
+        )
+        ctx = browser.new_context(
+            viewport={"width": 1920, "height": 1080},
+            locale="en-US",
+        )
+        page = ctx.new_page()
+        if verbose:
+            page.on("pageerror", lambda e: log(f"[page-error] {e}"))
+
+        try:
+            _login_to_dashboard(page, email, password, log)
+            return _verify_email_flow(page, email, mail_pass, log)
+        finally:
+            ctx.close()
+            browser.close()
+
+
+def _verify_email_flow(page, email: str, mail_password: str, log, cf_password: str = "") -> bool:
+    """Complete email verification from a logged-in dashboard session.
+
+    1. Check current email_verified status via /api/v4/user
+    2. Navigate to /email-verification?token=invalid to trigger "Resend link"
+    3. Click "Resend link" → CF sends new verification email
+    4. Poll mail.tm for the NEW verification email
+    5. Navigate to the fresh link while still logged in
+    6. Wait ~30s for CF's managed challenge to auto-resolve
+    7. Confirm email_verified is now True
+    """
+    import httpx as _httpx
+    from .email import MailTmClient, Mailbox
+
+    # Check current status
+    cookie_dict = {
+        c["name"]: c["value"]
+        for c in page.context.cookies()
+        if "cloudflare.com" in c.get("domain", "")
+    }
+    client = _httpx.Client(cookies=cookie_dict, timeout=30.0)
+    try:
+        r = client.get("https://dash.cloudflare.com/api/v4/user")
+        user_data = r.json()
+        if user_data.get("success"):
+            user = user_data.get("result", {})
+            verified = user.get("email_verified", False)
+            log(f"email_verified={verified} for {user.get('email', '?')}")
+            if verified:
+                log("already verified!")
+                return True
+    except Exception as e:
+        log(f"user check failed: {e}")
+    finally:
+        client.close()
+
+    # Connect to mail.tm BEFORE triggering resend (so we don't miss it)
+    mail_client = MailTmClient(verbose=True)
+    mailbox = Mailbox(address=email, password=mail_password, id="")
+    try:
+        mail_client.reconnect(mailbox)
+        log("reconnected to mail.tm")
+    except Exception as e:
+        log(f"mail.tm reconnect failed: {e}")
+        mail_client.close()
+        return False
+
+    # Drain existing messages so we only get the NEW verification email
+    import re as _re
+    _ALL_URLS_RE = _re.compile(r"https?://[^\s\"'<>]+")
+    headers = {"Authorization": f"Bearer {mail_client._token}"}
+    try:
+        r = mail_client._client.get("https://api.mail.tm/messages", headers=headers)
+        old_ids = {m.get("id") for m in r.json().get("hydra:member", [])}
+        log(f"drained {len(old_ids)} existing messages")
+    except Exception:
+        old_ids = set()
+
+    # Navigate to /email-verification?token=invalid to get the "Resend link" page
+    log("navigating to email-verification page to trigger resend...")
+    try:
+        page.goto(
+            "https://dash.cloudflare.com/email-verification?token=invalid",
+            timeout=20000, wait_until="domcontentloaded",
+        )
+    except Exception as e:
+        log(f"nav warn: {e}")
+    _wait(8, log, "waiting for React to render")
+
+    # Click "Resend link"
+    resent = False
+    try:
+        el = page.locator('a:has-text("Resend link")').first
+        if el.is_visible(timeout=3000):
+            el.click(timeout=3000)
+            resent = True
+            log("clicked 'Resend link'")
+            _wait(2, log)
+    except Exception as e:
+        log(f"Resend link click: {e}")
+
+    if not resent:
+        log("Resend link not found — polling for existing verification email")
+
+    # Poll mail.tm for the NEW verification link (skip old messages)
+    log("polling mail.tm for new verification email...")
+    deadline = time.time() + 90
+    verify_link = None
+    while time.time() < deadline:
+        try:
+            r = mail_client._client.get("https://api.mail.tm/messages", headers=headers)
+            for msg in r.json().get("hydra:member", []):
+                mid = msg.get("id", "")
+                if mid in old_ids:
+                    continue
+                log(f"  new email: {msg.get('subject', '')!r}")
+                full = mail_client._client.get(
+                    f"https://api.mail.tm/messages/{mid}", headers=headers
+                )
+                body = full.json()
+                text = body.get("text", "") + " " + str(body.get("html", ""))
+                for u in _ALL_URLS_RE.findall(text):
+                    if "email-verification" in u and "token=" in u:
+                        verify_link = u.rstrip(".")
+                        break
+                if verify_link:
+                    break
+        except Exception as e:
+            log(f"  poll error: {e}")
+        if verify_link:
+            break
+        time.sleep(3)
+
+    mail_client.close()
+
+    if not verify_link:
+        log("no verification email found")
+        return False
+
+    log(f"got verification link (len={len(verify_link)})")
+
+    # Navigate to the link while STILL logged in and wait for CF challenge
+    return _complete_email_verification(page, verify_link, log)
+
+
+def verify_and_create_token(
+    email: str,
+    password: str,
+    account_id: str,
+    token_name: str = "global-api-key",
+    headless: bool = True,
+    verbose: bool = False,
+) -> tuple[bool, str]:
+    """Login, verify email if needed, then create API token. Returns (verified, token_value)."""
+    from patchright.sync_api import sync_playwright
+
+    _ensure_display()
+
+    def log(msg: str) -> None:
+        if verbose:
+            ts = time.strftime("%H:%M:%S")
+            print(f"[{ts}] [browser] {msg}", flush=True)
+
+    channel = _detect_chrome_channel()
+    local = email.split("@")[0]
+    mail_pass = f"Cf{local[:6]}!9xQ"
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            channel=channel,
+            headless=headless,
+            args=_browser_args(headless),
+        )
+        ctx = browser.new_context(
+            viewport={"width": 1920, "height": 1080},
+            locale="en-US",
+        )
+        page = ctx.new_page()
+        if verbose:
+            page.on("pageerror", lambda e: log(f"[page-error] {e}"))
+
+        try:
+            _login_to_dashboard(page, email, password, log)
+
+            # Step 1: Verify email
+            verified = _verify_email_flow(page, email, mail_pass, log, cf_password=password)
+            if not verified:
+                log("email verification failed — cannot create token")
+                return False, ""
+
+            # Step 2: Create token
+            log("email verified — creating token...")
+            token = _create_token_via_fetch(page, account_id, token_name, log)
+            return True, token
+        except Exception as e:
+            log(f"verify_and_create_token failed: {e}")
+            return False, ""
+        finally:
+            ctx.close()
+            browser.close()
+
+
+# ---------------------------------------------------------------------------
+# Token creation via in-browser fetch (no UI automation needed)
+# ---------------------------------------------------------------------------
+
+def create_token_via_browser_fetch(
+    email: str,
+    password: str,
+    account_id: str,
+    token_name: str = "global-api-key",
+    headless: bool = True,
+    verbose: bool = False,
+) -> str:
+    """Login to CF dashboard and create an API token via fetch(). Returns token value.
+
+    Uses the browser's session cookies to call the CF API directly — avoids
+    the complex permission UI entirely.
+    """
+    from patchright.sync_api import sync_playwright
+
+    _ensure_display()
+
+    def log(msg: str) -> None:
+        if verbose:
+            ts = time.strftime("%H:%M:%S")
+            print(f"[{ts}] [browser] {msg}", flush=True)
+
+    channel = _detect_chrome_channel()
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            channel=channel,
+            headless=headless,
+            args=_browser_args(headless),
+        )
+        ctx = browser.new_context(
+            viewport={"width": 1920, "height": 1080},
+            locale="en-US",
+        )
+        page = ctx.new_page()
+        if verbose:
+            page.on("pageerror", lambda e: log(f"[page-error] {e}"))
+
+        try:
+            _login_to_dashboard(page, email, password, log)
+            return _create_token_via_fetch(page, account_id, token_name, log)
+        finally:
+            ctx.close()
+            browser.close()
+
+
+def _create_token_via_fetch(page, account_id: str, token_name: str, log) -> str:
+    """Create an API token using session cookies extracted from the logged-in browser.
+
+    Extracts cookies from the browser context, then uses httpx to call the CF
+    API directly (bypasses CORS restrictions of in-page fetch).
+    """
+    import httpx as _httpx
+    import json as _json
+
+    # Step 1: Extract session cookies from the browser
+    log("extracting session cookies...")
+    ctx = page.context
+    all_cookies = ctx.cookies()
+    # Build a cookie jar for api.cloudflare.com
+    cookie_dict = {}
+    for c in all_cookies:
+        domain = c.get("domain", "")
+        if "cloudflare.com" in domain:
+            cookie_dict[c["name"]] = c["value"]
+
+    log(f"extracted {len(cookie_dict)} cloudflare cookies")
+    if not cookie_dict:
+        raise RuntimeError("No cloudflare cookies found in browser context")
+
+    headers = {"Content-Type": "application/json"}
+    client = _httpx.Client(cookies=cookie_dict, headers=headers, timeout=30.0)
+
+    try:
+        # Step 2: Check email verification status and existing tokens
+        log("checking account status...")
+        try:
+            r = client.get("https://dash.cloudflare.com/api/v4/user")
+            user_data = r.json()
+            if user_data.get("success"):
+                user = user_data.get("result", {})
+                log(f"  email: {user.get('email', '?')}")
+                log(f"  user keys: {list(user.keys())}")
+                # Print ALL user data to find verification status
+                log(f"  email_verified: {user.get('email_verified', '?')}")
+                log(f"  suspended: {user.get('suspended', '?')}")
+        except Exception as e:
+            log(f"  user check failed: {e}")
+
+        # Check if we can list existing tokens (requires email verification)
+        try:
+            r = client.get("https://dash.cloudflare.com/api/v4/user/tokens")
+            tokens_data = r.json()
+            log(f"  GET /user/tokens success={tokens_data.get('success')}")
+            if not tokens_data.get("success"):
+                log(f"  GET /user/tokens errors: {tokens_data.get('errors', [])}")
+        except Exception as e:
+            log(f"  tokens check failed: {e}")
+
+        # Step 3: Fetch permission groups
+        # Try dashboard proxy first (uses session auth), then direct API
+        log("fetching permission groups via CF API...")
+        perm_data = None
+        for base in [
+            "https://dash.cloudflare.com/api/v4",
+            "https://api.cloudflare.com/client/v4",
+        ]:
+            url = f"{base}/user/tokens/permission_groups"
+            log(f"  trying {url}...")
+            r = client.get(url)
+            perm_data = r.json()
+            if perm_data.get("success"):
+                log(f"  success via {base}")
+                break
+            log(f"  failed: {str(perm_data.get('errors', []))[:200]}")
+
+        if not perm_data or not perm_data.get("success"):
+            raise RuntimeError(f"Failed to fetch permission groups: {perm_data.get('errors', []) if perm_data else 'no response'}")
+
+        groups = perm_data.get("result", [])
+        log(f"got {len(groups)} permission groups")
+
+        # Step 3: Select key permissions (keep it small — large lists may trigger anti-abuse)
+        target_perms = [
+            "Workers Scripts Write",
+            "Workers KV Storage Write",
+            "Workers R2 Storage Write",
+            "Workers Routes Write",
+            "D1 Write",
+            "Account Settings Read",
+        ]
+        group_by_name = {g["name"]: g["id"] for g in groups}
+        selected_ids = []
+        for name in target_perms:
+            if name in group_by_name:
+                selected_ids.append(group_by_name[name])
+                log(f"  + {name}")
+
+        # If none found, fall back to any Workers-related
+        if not selected_ids:
+            for g in groups:
+                name = g.get("name", "")
+                if "Workers" in name and "Write" in name:
+                    selected_ids.append(g["id"])
+                    log(f"  fallback + {name}")
+                    if len(selected_ids) >= 5:
+                        break
+
+        log(f"selected {len(selected_ids)} permission groups")
+
+        # Step 4: Create the token
+        policy = {
+            "effect": "allow",
+            "resources": {f"com.cloudflare.api.account.{account_id}": "*"},
+            "permission_groups": [{"id": pid} for pid in selected_ids],
+        }
+        body = {"name": token_name, "policies": [policy]}
+
+        log(f"creating token '{token_name}'...")
+        result = None
+        for base in [
+            "https://dash.cloudflare.com/api/v4",
+            "https://api.cloudflare.com/client/v4",
+        ]:
+            url = f"{base}/user/tokens"
+            log(f"  trying POST {url}...")
+            r = client.post(url, json=body)
+            result = r.json()
+            if result.get("success"):
+                log(f"  success via {base}")
+                break
+            log(f"  failed: {str(result.get('errors', []))[:200]}")
+
+        if not result or not result.get("success"):
+            raise RuntimeError(f"Failed to create token: {result.get('errors', []) if result else 'no response'}")
+
+        token_value = result.get("result", {}).get("value", "")
+        if not token_value:
+            raise RuntimeError("Token created but no value returned")
+
+        log(f"token created (len={len(token_value)})")
+        return token_value
+
+    finally:
+        client.close()
+
+
+def _extract_global_api_key_from_session(page, password, mail_client, mailbox, log) -> str:
+    """Extract Global API Key from an already-logged-in browser session.
+
+    Handles identity verification (email code) using the active mail_client/mailbox.
+    """
+    # Navigate to API tokens page
+    log("navigating to /profile/api-tokens...")
+    try:
+        page.goto("https://dash.cloudflare.com/profile/api-tokens", timeout=20000)
+        page.wait_for_load_state("networkidle", timeout=15000)
+    except Exception as e:
+        log(f"api-tokens nav warn: {e}")
+    _wait(3, log)
+    _log_page(page, log, "api-tokens: ", max_chars=800)
+
+    # Scroll down and click "View" for Global API Key
+    log("clicking 'View' for Global API Key...")
+    view_clicked = False
+    for sel in [
+        'button:has-text("View"):right-of(:text("Global API Key"))',
+        'button:has-text("View")',
+    ]:
+        try:
+            btns = page.locator(sel)
+            if btns.count() > 0:
+                target = btns.last if sel == 'button:has-text("View")' else btns.first
+                target.scroll_into_view_if_needed()
+                _wait(0.5, log)
+                target.click()
+                view_clicked = True
+                log("clicked 'View'")
+                break
+        except Exception as e:
+            log(f"  '{sel}' failed: {e}")
+
+    if not view_clicked:
+        raise RuntimeError("Could not find Global API Key 'View' button")
+
+    _wait(2, log)
+
+    # Handle identity verification if CF asks for it
+    body_text = page.inner_text("body") or ""
+    if any(kw in body_text.lower() for kw in [
+        "verify your identity", "verification code", "send a verification",
+        "send code", "receive the code",
+    ]):
+        log("identity verification required — sending code...")
+        _click_first(page, [
+            'button:has-text("Send")',
+            'button:has-text("Send code")',
+            'button:has-text("Send verification")',
+            'button:has-text("Receive")',
+        ], log)
+        _wait(2, log)
+
+        # Poll mail.tm for the code
+        log("polling mail.tm for verification code...")
+        code = mail_client.poll_for_verification_code(mailbox, timeout=120)
+        log(f"got verification code: {code}")
+
+        # Enter the code
+        _fill_first(page, [
+            'input[type="text"]',
+            'input[type="number"]',
+            'input[name*="code" i]',
+            'input[placeholder*="code" i]',
+        ], code, log)
+        _wait(0.5, log)
+
+        _click_first(page, [
+            'button:has-text("Verify")',
+            'button:has-text("Confirm")',
+            'button:has-text("Submit")',
+            'button[type="submit"]',
+        ], log)
+        _wait(3, log, "post-verify")
+        _log_page(page, log, "post-verify: ", max_chars=500)
+
+        # After verification, need to click "View" again for Global API Key
+        log("re-clicking 'View' after verification...")
+        for sel in [
+            'button:has-text("View"):right-of(:text("Global API Key"))',
+            'button:has-text("View")',
+        ]:
+            try:
+                btns = page.locator(sel)
+                if btns.count() > 0:
+                    target = btns.last if sel == 'button:has-text("View")' else btns.first
+                    target.scroll_into_view_if_needed()
+                    _wait(0.5, log)
+                    target.click()
+                    log("re-clicked 'View'")
+                    break
+            except Exception as e:
+                log(f"  re-click '{sel}' failed: {e}")
+        _wait(2, log)
+
+    # Handle password confirmation modal
+    body_text = page.inner_text("body") or ""
+    if page.locator('input[type="password"]').count() > 0:
+        log("entering password for key reveal...")
+        _fill_first(page, [
+            'input[type="password"]',
+        ], password, log)
+        _wait(0.5, log)
+        _click_first(page, [
+            'button:has-text("View")',
+            'button[type="submit"]',
+            'button:has-text("Confirm")',
+        ], log)
+        _wait(3, log, "waiting for key")
+
+    # Extract the key
+    api_key = _extract_global_api_key(page, log)
+    if not api_key:
+        for retry in range(5):
+            _wait(2, log, f"key retry {retry + 1}/5")
+            api_key = _extract_global_api_key(page, log)
+            if api_key:
+                break
+
+    if not api_key:
+        _log_page(page, log, "key-fail: ", max_chars=2000)
+        raise RuntimeError("Failed to extract Global API Key from page")
+
+    return api_key
+
+
+def _extract_global_api_key(page, log) -> str:
+    """Extract the Global API Key value from the page after clicking View."""
+    # Strategy 1: input with the key value (usually readonly input shown after View)
+    for sel in [
+        'input[readonly][type="text"]',
+        'input[type="text"][value]',
+        'code',
+        'pre',
+        '[data-testid*="api-key"]',
+        '[data-testid*="global"]',
+    ]:
+        try:
+            els = page.locator(sel)
+            if els.count() > 0:
+                for i in range(els.count()):
+                    el = els.nth(i)
+                    text = el.get_attribute("value") or el.inner_text() or ""
+                    text = text.strip()
+                    # Global API Key is a 37-char hex string
+                    if re.match(r"^[a-f0-9]{37}$", text):
+                        log(f"key via {sel!r}: {text[:10]}...")
+                        return text
+        except Exception:
+            pass
+
+    # Strategy 2: broader text search — 37-char hex pattern
+    try:
+        body = page.inner_text("body")
+        m = re.search(r"\b([a-f0-9]{37})\b", body)
+        if m:
+            log(f"key via body regex: {m.group(1)[:10]}...")
+            return m.group(1)
+    except Exception:
+        pass
+
+    # Strategy 3: any long hex string (32-40 chars)
+    try:
+        body = page.inner_text("body")
+        m = re.search(r"\b([a-f0-9]{32,40})\b", body)
+        if m:
+            log(f"key via broad regex: {m.group(1)[:10]}...")
+            return m.group(1)
+    except Exception:
+        pass
+
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# Token creation (via browser UI — Custom Token)
 # ---------------------------------------------------------------------------
 
 def create_token_via_browser(
@@ -480,38 +1273,9 @@ def create_token_via_browser(
             page.on("pageerror", lambda e: log(f"[page-error] {e}"))
 
         try:
-            # ---- Step 1: Login ----
-            log("logging in...")
-            try:
-                page.goto("https://dash.cloudflare.com/login", timeout=30000)
-                page.wait_for_load_state("networkidle", timeout=15000)
-            except Exception as e:
-                log(f"login nav warn: {e}")
-            _wait(2, log)
+            _login_to_dashboard(page, email, password, log)
 
-            _fill_first(page, [
-                'input[name="email"]',
-                'input[type="email"]',
-            ], email, log)
-            _wait(0.5, log)
-            _fill_first(page, [
-                'input[name="password"]',
-                'input[type="password"]',
-            ], password, log)
-            _wait(0.5, log)
-            _click_first(page, [
-                'button[type="submit"]',
-                'button:has-text("Log in")',
-                'button:has-text("Sign in")',
-                'button:has-text("Continue")',
-            ], log)
-            _wait(5, log, "waiting for login")
-            log(f"url after login: {page.url}")
-
-            # Check for 2FA / unusual login prompts
-            body = _log_page(page, log, "post-login: ")
-
-            # ---- Step 2: Navigate to API Tokens ----
+            # ---- Navigate to API Tokens ----
             log("navigating to API tokens...")
             try:
                 page.goto(
@@ -524,12 +1288,12 @@ def create_token_via_browser(
             _wait(3, log)
             log(f"url: {page.url}")
 
-            if "login" in page.url.lower() or "sign-in" in page.url.lower():
+            if "login" in page.url.lower():
                 raise RuntimeError(
                     f"Not logged in — redirected to login page. URL: {page.url}"
                 )
 
-            # ---- Step 3: Create Custom Token ----
+            # ---- Create Custom Token ----
             log("clicking 'Create Token'...")
             _click_first(page, [
                 'button:has-text("Create Token")',
@@ -538,7 +1302,6 @@ def create_token_via_browser(
             ], log)
             _wait(2, log)
 
-            # Select "Custom Token" (vs templates)
             log("selecting 'Custom Token'...")
             _click_first(page, [
                 'button:has-text("Get started"):near(:text("Custom token"))',
@@ -550,7 +1313,7 @@ def create_token_via_browser(
             _wait(2, log)
             log(f"url: {page.url}")
 
-            # ---- Step 4: Fill token name ----
+            # ---- Fill token name ----
             log(f"filling token name: {token_name}")
             _fill_first(page, [
                 'input[name*="token" i]',
@@ -561,11 +1324,11 @@ def create_token_via_browser(
             ], token_name, log)
             _wait(0.5, log)
 
-            # ---- Step 5: Add permissions ----
+            # ---- Add permissions ----
             log(f"adding {len(permissions)} permissions...")
             _add_token_permissions(page, permissions, log)
 
-            # ---- Step 6: Submit ----
+            # ---- Submit ----
             _wait(1, log)
             log("submitting token creation form...")
             _click_first(page, [
@@ -584,7 +1347,7 @@ def create_token_via_browser(
             _wait(3, log, "token creation")
             log(f"url after create: {page.url}")
 
-            # ---- Step 7: Extract token value ----
+            # ---- Extract token value ----
             log("extracting token value...")
             token_value = _extract_token_value(page, log)
 
@@ -614,7 +1377,6 @@ def _add_token_permissions(page, permissions: list[tuple[str, str, str]], log) -
     for i, (resource_type, resource, permission) in enumerate(permissions):
         log(f"  adding permission: {resource_type} > {resource} > {permission}")
 
-        # Click "Add more" or "+" button for rows after the first
         if i > 0:
             _click_first(page, [
                 'button:has-text("Add more")',
@@ -624,42 +1386,30 @@ def _add_token_permissions(page, permissions: list[tuple[str, str, str]], log) -
             ], log)
             _wait(0.5, log)
 
-        # Each permission row has two dropdowns: category and level
-        # The new row is typically the last row in the permissions table
         rows = page.locator('[data-testid*="permission-row"], .permission-row, tr:has(select)')
         row = rows.last if rows.count() > 0 else page
 
-        # Select resource type (Account/Zone)
+        # React Select comboboxes — scroll into view before interacting
         type_selects = row.locator('select, [role="combobox"]')
-        if type_selects.count() >= 1:
-            try:
-                type_selects.first.select_option(label=resource_type)
-                _wait(0.3, log)
-            except Exception:
-                # Try clicking and selecting from dropdown
-                type_selects.first.click()
-                _wait(0.3, log)
-                _click_first(page, [f'[role="option"]:has-text("{resource_type}")'], log)
 
-        # Select specific resource (e.g., "Workers Scripts")
-        if type_selects.count() >= 2:
+        for idx, (label, val) in enumerate([(None, resource_type), (None, resource), (None, permission)]):
+            if type_selects.count() <= idx:
+                break
+            el = type_selects.nth(idx)
             try:
-                type_selects.nth(1).select_option(label=resource)
+                el.scroll_into_view_if_needed()
+                _wait(0.2, log)
+                el.select_option(label=val)
                 _wait(0.3, log)
             except Exception:
-                type_selects.nth(1).click()
-                _wait(0.3, log)
-                _click_first(page, [f'[role="option"]:has-text("{resource}")'], log)
-
-        # Select permission level (Edit/Read)
-        if type_selects.count() >= 3:
-            try:
-                type_selects.nth(2).select_option(label=permission)
-                _wait(0.3, log)
-            except Exception:
-                type_selects.nth(2).click()
-                _wait(0.3, log)
-                _click_first(page, [f'[role="option"]:has-text("{permission}")'], log)
+                try:
+                    el.scroll_into_view_if_needed()
+                    el.click(force=True)
+                    _wait(0.3, log)
+                    _click_first(page, [f'[role="option"]:has-text("{val}")'], log)
+                    _wait(0.3, log)
+                except Exception as e:
+                    log(f"  permission select failed for {val}: {e}")
 
 
 def _extract_token_value(page, log) -> str:
