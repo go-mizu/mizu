@@ -56,32 +56,18 @@ type ProxyConfig struct {
 	Token string // AUTH_TOKEN secret
 }
 
-// LoadProxyConfig reads BROWSER_API_TOKEN from $HOME/data/.local.env and
-// returns a ProxyConfig using DefaultProxyURL.
+// LoadProxyConfig reads BROWSER_API_TOKEN from the environment and returns a
+// ProxyConfig using DefaultProxyURL. Set BROWSER_PROXY_URL to override the URL.
 func LoadProxyConfig() (ProxyConfig, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ProxyConfig{}, fmt.Errorf("get home dir: %w", err)
+	token := os.Getenv("BROWSER_API_TOKEN")
+	if token == "" {
+		return ProxyConfig{}, fmt.Errorf("BROWSER_API_TOKEN env var not set")
 	}
-	path := filepath.Join(home, "data", ".local.env")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ProxyConfig{}, fmt.Errorf("read %s: %w", path, err)
+	u := os.Getenv("BROWSER_PROXY_URL")
+	if u == "" {
+		u = DefaultProxyURL
 	}
-	// Search raw content for BROWSER_API_TOKEN= — it may appear mid-line.
-	const key = "BROWSER_API_TOKEN="
-	if idx := strings.Index(string(data), key); idx >= 0 {
-		rest := string(data)[idx+len(key):]
-		// Value ends at whitespace or end of string.
-		end := strings.IndexAny(rest, " \t\r\n\"'")
-		if end < 0 {
-			end = len(rest)
-		}
-		if token := rest[:end]; token != "" {
-			return ProxyConfig{URL: DefaultProxyURL, Token: token}, nil
-		}
-	}
-	return ProxyConfig{}, fmt.Errorf("BROWSER_API_TOKEN not found in %s", path)
+	return ProxyConfig{URL: u, Token: token}, nil
 }
 
 // Client sends requests to the CF Browser Rendering REST API.
