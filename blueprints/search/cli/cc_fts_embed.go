@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/embed"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/embed/driver/gemini"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/embed/driver/llamacpp"
 )
 
@@ -44,6 +45,10 @@ Drivers:
   onnx       Local ONNX Runtime inference (build with -tags onnx)
              Requires: ONNX Runtime library (brew install onnxruntime)
              Models auto-download to ~/data/models/onnx/
+
+  gemini     Google Gemini Embedding API (zero local infrastructure)
+             Requires: GEMINI_API_KEY in env or $HOME/data/.local.env
+             Model: gemini-embedding-exp-03-07 (3072-dim Matryoshka; free tier: 5 RPM / 100 RPD)
 
 Output:
   vectors.bin   Raw float32 vectors (N x dim x 4 bytes, little-endian)
