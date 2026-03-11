@@ -1,6 +1,7 @@
 """Local DuckDB state: schema init, CRUD for accounts/tokens/workers/op_log."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -189,6 +190,8 @@ class Store:
         ))
 
     def set_default_token(self, name: str) -> None:
+        if not self.get_token_by_name(name):
+            raise ValueError(f"Token not found: {name!r}")
         self.con.execute("BEGIN")
         try:
             self.con.execute("UPDATE tokens SET is_default = false")
@@ -211,7 +214,6 @@ class Store:
         self, *, account_id: str, token_id: str | None, name: str,
         alias: str, url: str = ""
     ) -> str:
-        from datetime import datetime, timezone
         row = self.con.execute(
             "INSERT INTO workers (account_id, token_id, name, alias, url, deployed_at) "
             "VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
@@ -283,6 +285,8 @@ class Store:
         ))
 
     def set_default_worker(self, alias: str) -> None:
+        if not self.get_worker(alias):
+            raise ValueError(f"Worker not found: {alias!r}")
         self.con.execute("BEGIN")
         try:
             self.con.execute("UPDATE workers SET is_default = false")
