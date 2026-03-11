@@ -422,6 +422,50 @@ def token_verify_all(
                     break
 
 
+@token_app.command("verify")
+def token_verify(
+    account: Annotated[Optional[str], typer.Option("--account")] = None,
+    no_headless: Annotated[bool, typer.Option("--no-headless")] = True,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+) -> None:
+    """Verify email via resend flow (login → resend → poll mail.tm → open link → check Profile)."""
+    from .browser import verify_email_via_browser
+
+    store = _store()
+    if account:
+        acc = store.get_account_by_email(account)
+        if not acc:
+            err_console.print(f"[bold red]Account not found:[/bold red] {account}")
+            raise typer.Exit(1)
+    else:
+        acc = store.get_first_active_account()
+        if not acc:
+            err_console.print("[bold red]No active accounts. Run:[/bold red] cloudflare-tool register")
+            raise typer.Exit(1)
+
+    console.print(f"[bold green]Verifying email for {acc['email']}...[/bold green]")
+    mail_password = f"Cf{acc['email'].split('@')[0][:6]}!9xQ"
+
+    try:
+        verified = verify_email_via_browser(
+            email=acc["email"],
+            password=acc["password"],
+            mail_password=mail_password,
+            headless=not no_headless,
+            verbose=verbose,
+        )
+    except Exception as e:
+        err_console.print(f"[bold red]Verification failed:[/bold red] {e}")
+        raise typer.Exit(1)
+
+    if verified:
+        console.print(f"[bold green]✓ Email verified:[/bold green] {acc['email']}")
+    else:
+        console.print(f"[bold yellow]Email verification incomplete.[/bold yellow]")
+        console.print("[dim]Try running again or verify manually.[/dim]")
+        raise typer.Exit(1)
+
+
 @token_app.command("ls")
 def token_ls() -> None:
     """List all tokens."""

@@ -320,116 +320,67 @@ def register_via_browser(
             log("opening dash.cloudflare.com/sign-up...")
             try:
                 page.goto("https://dash.cloudflare.com/sign-up", timeout=30000)
-                page.wait_for_load_state("networkidle", timeout=15000)
+                page.wait_for_load_state("domcontentloaded", timeout=15000)
             except Exception as e:
                 log(f"nav warn: {e}")
-            _wait(2, log)
-            log(f"url: {page.url}")
 
-            # Fill email
+            # Wait for email input to be visible
+            try:
+                page.locator('input[name="email"], input[type="email"]').first.wait_for(
+                    state="visible", timeout=15000
+                )
+            except Exception as e:
+                log(f"email input wait warn: {e}")
+            _wait(0.5, log)
+
+            # Fill form quickly
             _fill_first(page, [
                 'input[name="email"]',
                 'input[type="email"]',
                 'input[placeholder*="email" i]',
             ], mailbox.address, log)
-
-            # Fill password
-            _wait(0.5, log)
             _fill_first(page, [
                 'input[name="password"]',
                 'input[type="password"]',
             ], password, log)
 
             # Confirm password (CF sign-up has confirm field)
-            _wait(0.3, log)
             confirm_inputs = page.locator('input[type="password"]')
             if confirm_inputs.count() >= 2:
                 log("filling confirm password...")
-                confirm_inputs.nth(1).click()
-                time.sleep(0.2)
-                confirm_inputs.nth(1).type(password, delay=55)
-                time.sleep(0.3)
-
-            # Capture ALL network responses after submit for debugging
-            _signup_responses = []
-            def _on_response(resp):
-                try:
-                    method = resp.request.method
-                    if method == "POST":
-                        status = resp.status
-                        try:
-                            body = resp.text()[:300]
-                        except Exception:
-                            body = ""
-                        _signup_responses.append((method, resp.url[:120], status, body))
-                except Exception:
-                    pass
-            page.on("response", _on_response)
+                confirm_inputs.nth(1).fill(password)
 
             # Validate form values before submit
             _verify_form_values(page, mailbox.address, password, log)
 
-            # Handle Turnstile challenge + Submit (with retry)
-            for submit_attempt in range(3):
-                _signup_responses.clear()
-                _handle_turnstile(page, log)
+            print("\n>>> Solve CAPTCHA and click 'Sign up' <<<\n", flush=True)
 
-                _wait(0.5, log)
-                # Click submit button
-                _click_first(page, [
-                    'button[type="submit"]',
-                    'button:has-text("Sign up")',
-                    'button:has-text("Create account")',
-                    'button:has-text("Continue")',
-                    'input[type="submit"]',
-                ], log)
-                # Also try Enter key as backup
+            # Loop-check if signup form was submitted (redirected away from /sign-up)
+            for tick in range(60):  # up to 3 min
+                time.sleep(3)
+                cur_url = page.url
+                if "sign-up" not in cur_url:
+                    log(f"signup redirect detected → {cur_url}")
+                    break
+                if tick % 5 == 0:
+                    log(f"  waiting for signup submit... ({tick * 3}s)")
+                # Check for error text
                 try:
-                    page.keyboard.press("Enter")
-                    log("pressed Enter key")
+                    err_text = page.inner_text("body", timeout=2000) or ""
+                    err_lower = err_text.lower()
+                    if "already registered" in err_lower or "account already exists" in err_lower:
+                        raise RuntimeError("Email already registered")
+                    if "this email" in err_lower and "cannot" in err_lower:
+                        raise RuntimeError(f"Signup blocked: {err_text[:200]}")
+                except RuntimeError:
+                    raise
                 except Exception:
                     pass
+            else:
+                log("signup did not redirect after 3 min")
 
-                # Wait for URL to change (AJAX signup navigates on success)
-                log("waiting for signup to complete...")
-                signup_done = False
-                for tick in range(10):
-                    time.sleep(2)
-                    cur_url = page.url
-                    if "sign-up" not in cur_url:
-                        log(f"signup navigated: {cur_url}")
-                        signup_done = True
-                        break
-                    # Check for error text
-                    try:
-                        err_text = page.inner_text("body", timeout=2000) or ""
-                        err_lower = err_text.lower()
-                        if "already registered" in err_lower or "account already exists" in err_lower:
-                            log(f"signup error: email already registered")
-                            raise RuntimeError("Email already registered")
-                        if "this email" in err_lower and "cannot" in err_lower:
-                            log(f"signup error: {err_text[:200]}")
-                            raise RuntimeError(f"Signup blocked: {err_text[:200]}")
-                    except RuntimeError:
-                        raise
-                    except Exception:
-                        pass
-
-                if signup_done:
-                    break
-
-                log(f"still on sign-up page after submit attempt {submit_attempt + 1}")
-                # Log captured network responses for debugging
-                if _signup_responses:
-                    for method, url, status, body in _signup_responses:
-                        log(f"  {method} {status} {url}")
-                        if body:
-                            log(f"    body: {body[:200]}")
-                else:
-                    log("  no POST requests captured after submit")
-                if submit_attempt < 2:
-                    log("retrying Turnstile + submit...")
-                    _wait(3, log)
+            if "sign-up" in page.url:
+                raise RuntimeError(f"Signup failed — still on sign-up page: {page.url}")
 
             log(f"url after submit: {page.url}")
 
@@ -491,61 +442,122 @@ def register_via_browser(
 
             log(f"account_id: {account_id}")
 
-            # ---- Step 5: Verify email (navigate fresh link while logged in) ----
-            log("checking email_verified status...")
-            verified = False
+            # ---- Step 5: Verify email ----
+            # Poll mail.tm for verify link, open NEW TAB in same browser,
+            # navigate to verify link there (shares session cookies)
+            log("polling mail.tm for verification link...")
+            verify_link = None
             try:
-                import httpx as _httpx
-                cookies = {c["name"]: c["value"] for c in ctx.cookies()
-                           if "cloudflare.com" in c.get("domain", "")}
-                hc = _httpx.Client(cookies=cookies, timeout=20.0)
-                r = hc.get("https://dash.cloudflare.com/api/v4/user")
-                verified = r.json().get("result", {}).get("email_verified", False)
-                hc.close()
-                log(f"email_verified={verified}")
+                verify_link = mail_client.poll_for_magic_link(mailbox, timeout=60)
+                log(f"verification link: {verify_link[:80]}...")
             except Exception as e:
-                log(f"email_verified check: {e}")
+                log(f"no verification link found: {e}")
 
-            if not verified:
-                log("trying verification via mail.tm (step 5)...")
+            verified = False
+            if verify_link:
+                # Open new tab in same context (shares cookies with original tab)
+                log("opening verify link in new tab (same browser)...")
+                verify_tab = ctx.new_page()
+                if verbose:
+                    verify_tab.on("pageerror", lambda e: log(f"[page-error] {e}"))
+
                 try:
-                    verify_link = mail_client.poll_for_magic_link(mailbox, timeout=60)
-                    log(f"verification link: {verify_link[:80]}...")
-                    _complete_email_verification(page, verify_link, log, email=mailbox.address, password=password)
-                    log(f"url after verification: {page.url}")
-                except Exception as e:
-                    log(f"email verification failed: {e}")
+                    try:
+                        verify_tab.goto(verify_link, timeout=30000, wait_until="domcontentloaded")
+                    except Exception as e:
+                        log(f"verify nav warn: {e}")
 
-            # ---- Step 6: Create API token via fetch (while logged in) ----
-            api_key = ""
-            if extract_api_key:
-                log("creating API token via dashboard proxy...")
-                try:
-                    api_key = _create_token_via_fetch(
-                        page, account_id, "global-api-key", log,
-                    )
-                    log(f"API token created: {api_key[:10]}...")
-                except Exception as e:
-                    log(f"API token creation failed: {e}")
-                    # If email not verified, wait and retry
-                    if "verify" in str(e).lower():
-                        log("email verification may need more time, waiting 10s...")
-                        _wait(10, log, "verification propagation")
-                        try:
-                            page.goto("https://dash.cloudflare.com/", timeout=20000)
-                            page.wait_for_load_state("networkidle", timeout=15000)
-                        except Exception:
-                            pass
-                        _wait(3, log)
-                        try:
-                            api_key = _create_token_via_fetch(
-                                page, account_id, "global-api-key", log,
-                            )
-                            log(f"API token created on retry: {api_key[:10]}...")
-                        except Exception as e2:
-                            log(f"API token retry also failed: {e2}")
+                    # Wait and see what happens — might auto-verify since we're logged in,
+                    # or show login form
+                    _wait(3, log)
+                    cur = verify_tab.url
+                    log(f"verify tab url: {cur}")
+                    try:
+                        body = verify_tab.inner_text("body", timeout=3000) or ""
+                        log(f"verify tab body: {body[:300]}")
+                    except Exception:
+                        body = ""
 
-            return account_id, api_key
+                    # If login form appeared, fill it
+                    has_login = verify_tab.locator('input[name="email"], input[type="email"]').count() > 0
+                    if has_login:
+                        log("login form on verify tab — filling...")
+                        _fill_first(verify_tab, [
+                            'input[name="email"]',
+                            'input[type="email"]',
+                        ], mailbox.address, log)
+                        _fill_first(verify_tab, [
+                            'input[name="password"]',
+                            'input[type="password"]',
+                        ], password, log)
+                        _verify_form_values(verify_tab, mailbox.address, password, log)
+
+                        print("\n>>> Solve CAPTCHA and click 'Log in' to verify email <<<\n", flush=True)
+
+                        # Loop-check for redirect
+                        for tick in range(60):
+                            time.sleep(3)
+                            try:
+                                cur = verify_tab.url
+                                if ("login" not in cur.lower()
+                                        and "email-verification" not in cur
+                                        and "sign-up" not in cur):
+                                    log(f"verify tab logged in → {cur}")
+                                    break
+                            except Exception:
+                                pass
+                            try:
+                                vb = verify_tab.inner_text("body", timeout=2000) or ""
+                                if any(kw in vb.lower() for kw in ["welcome", "add a website", "get started", "workers"]):
+                                    log(f"dashboard content on verify tab, url={verify_tab.url}")
+                                    break
+                            except Exception:
+                                pass
+                            if tick % 5 == 0 and tick > 0:
+                                log(f"  waiting for verify login... ({tick * 3}s)")
+                        else:
+                            log("verify login timeout (3 min)")
+                    else:
+                        # No login form — might have auto-redirected
+                        log("no login form — waiting for redirect...")
+                        for tick in range(10):
+                            time.sleep(3)
+                            cur = verify_tab.url
+                            log(f"  verify tick {tick}: url={cur}")
+                            if re.search(r"/[0-9a-f]{32}(/|$)", cur) or "/welcome" in cur:
+                                log("  redirected to dashboard")
+                                break
+
+                    # Close verify tab, check Profile on ORIGINAL tab
+                    verify_tab.close()
+                    _wait(2, log)
+
+                    log("checking Profile on original tab...")
+                    try:
+                        page.goto("https://dash.cloudflare.com/profile", timeout=20000,
+                                  wait_until="domcontentloaded")
+                    except Exception as e:
+                        log(f"profile nav warn: {e}")
+                    _wait(3, log)
+                    try:
+                        profile_text = page.inner_text("body", timeout=5000) or ""
+                        log(f"profile text: {profile_text[:500]}")
+                        if "verified" in profile_text.lower():
+                            log("VERIFIED on Profile page!")
+                            verified = True
+                        else:
+                            log("'Verified' NOT found on Profile page")
+                    except Exception as e:
+                        log(f"profile check error: {e}")
+                except Exception as e:
+                    log(f"verify tab error: {e}")
+                    try:
+                        verify_tab.close()
+                    except Exception:
+                        pass
+
+            log(f"verification result: verified={verified}")
+            return account_id, ""
 
         finally:
             ctx.close()
@@ -759,25 +771,34 @@ def _complete_email_verification(page, verify_link: str, log, email: str = "", p
             except Exception as e:
                 log(f"  form fill error: {e}")
 
-            log("")
-            log("  >>> Solve CAPTCHA and click 'Log in' <<<")
-            log("")
+            print("\n>>> Solve CAPTCHA and click 'Log in' <<<\n", flush=True)
 
-            # Wait for page to navigate (up to 2 min)
-            verify_url = verify_page.url
-            for tick in range(24):
-                time.sleep(5)
+            # Loop-check if login submitted (redirected away from login/verify page)
+            for tick in range(60):  # up to 3 min
+                time.sleep(3)
                 try:
                     cur = verify_page.url
-                    if cur != verify_url and "email-verification" not in cur:
+                    # Detect redirect: no longer on login or email-verification page
+                    if ("login" not in cur.lower()
+                            and "email-verification" not in cur
+                            and "sign-up" not in cur):
                         log(f"  logged in → {cur}")
                         break
                 except Exception:
                     pass
-                if tick % 4 == 3:
-                    log(f"  waiting... ({(tick+1)*5}s)")
+                # Also check page content for dashboard/welcome indicators
+                try:
+                    body = verify_page.inner_text("body", timeout=2000) or ""
+                    body_lower = body.lower()
+                    if any(kw in body_lower for kw in ["welcome", "add a website", "get started", "workers"]):
+                        log(f"  dashboard/welcome content detected, url={verify_page.url}")
+                        break
+                except Exception:
+                    pass
+                if tick % 5 == 0 and tick > 0:
+                    log(f"  waiting for login submit... ({tick * 3}s)")
             else:
-                log("  timeout (2 min) — no navigation detected")
+                log("  timeout (3 min) — no navigation detected")
                 fresh_ctx.close()
                 return False
 
@@ -983,6 +1004,297 @@ def _login_to_dashboard(page, email: str, password: str, log) -> None:
 
 
 
+
+
+# ---------------------------------------------------------------------------
+# Email verification via resend flow
+# ---------------------------------------------------------------------------
+
+
+def verify_email_via_browser(
+    email: str,
+    password: str,
+    mail_password: str,
+    headless: bool = True,
+    verbose: bool = False,
+) -> bool:
+    """Verify email via resend flow: login → resend → poll mail.tm → open link → check Profile.
+
+    Strategy for the resend page redirect issue:
+    - Navigate to /email-verification BEFORE login — CF redirects to login with
+      return_to parameter, so after CAPTCHA + login, CF redirects back to the
+      verification page (not the dashboard).
+    - If that fails, look for verification banner/link on the dashboard itself.
+
+    Returns True if email was verified.
+    """
+    from patchright.sync_api import sync_playwright
+    from .email import MailTmClient, Mailbox
+
+    _ensure_display()
+
+    def log(msg: str) -> None:
+        if verbose:
+            ts = time.strftime("%H:%M:%S")
+            print(f"[{ts}] [verify] {msg}", flush=True)
+
+    channel = _detect_chrome_channel()
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            channel=channel,
+            headless=headless,
+            args=["--no-sandbox"],
+        )
+        ctx = browser.new_context(
+            viewport={"width": 1440, "height": 900},
+            locale="en-US",
+        )
+        page = ctx.new_page()
+        if verbose:
+            page.on("pageerror", lambda e: log(f"[page-error] {e}"))
+
+        try:
+            # Connect to mail.tm first
+            mail_client = MailTmClient(verbose=verbose)
+            mailbox = Mailbox(address=email, password=mail_password, id="")
+            try:
+                mail_client.reconnect(mailbox)
+            except Exception as e:
+                log(f"mail.tm reconnect failed: {e}")
+                raise
+
+            # Snapshot existing message IDs so we only look at new emails
+            headers = {"Authorization": f"Bearer {mail_client._token}"}
+            try:
+                r = mail_client._client.get("https://api.mail.tm/messages", headers=headers)
+                old_ids = {m.get("id") for m in r.json().get("hydra:member", [])}
+            except Exception:
+                old_ids = set()
+            log(f"existing mail.tm messages: {len(old_ids)}")
+
+            try:
+                # Step 1: Login to dashboard
+                _login_to_dashboard(page, email, password, log)
+
+                _wait(3, log)
+
+                # Step 2: Check where we are after login
+                current = page.url
+                log(f"post-login URL: {current}")
+                try:
+                    body = page.inner_text("body", timeout=5000) or ""
+                except Exception:
+                    body = ""
+                log(f"PAGE TEXT (first 500): {body[:500]}")
+
+                # Quick check — already verified?
+                log("checking Profile for verification status...")
+                try:
+                    page.goto("https://dash.cloudflare.com/profile", timeout=20000,
+                              wait_until="domcontentloaded")
+                except Exception:
+                    pass
+                _wait(3, log)
+                try:
+                    profile_text = page.inner_text("body", timeout=5000) or ""
+                    if "verified" in profile_text.lower():
+                        log("already verified!")
+                        print("Email is already verified.", flush=True)
+                        return True
+                except Exception:
+                    pass
+
+                # Step 3: Navigate to notifications page to click "Resend email"
+                # The real resend button lives at /profile/managed-profile/notifications
+                resend_url = "https://dash.cloudflare.com/profile/managed-profile/notifications"
+                log(f"navigating to resend page: {resend_url}")
+                try:
+                    page.goto(resend_url, timeout=20000, wait_until="domcontentloaded")
+                except Exception as e:
+                    log(f"nav warn: {e}")
+                _wait(3, log)
+
+                current = page.url
+                log(f"landed: {current}")
+                try:
+                    body = page.inner_text("body", timeout=5000) or ""
+                except Exception:
+                    body = ""
+                log(f"PAGE TEXT (first 500): {body[:500]}")
+
+                # Click "Resend email" button
+                resend_clicked = False
+                for sel in ['button:has-text("Resend email")', 'a:has-text("Resend email")',
+                            'button:has-text("Resend")', 'a:has-text("Resend")']:
+                    try:
+                        el = page.locator(sel).first
+                        if el.is_visible(timeout=2000):
+                            el.click(timeout=3000)
+                            log(f"clicked: {sel}")
+                            print("Clicked 'Resend email' — waiting for new verification email...", flush=True)
+                            resend_clicked = True
+                            _wait(3, log)
+                            break
+                    except Exception:
+                        continue
+
+                if not resend_clicked:
+                    log("could not find Resend button")
+                    print(
+                        "\nCould not find 'Resend email' button.\n"
+                        ">>> Click 'Resend email' manually <<<\n",
+                        flush=True,
+                    )
+                    # Wait for user to click resend manually
+                    for tick in range(30):
+                        time.sleep(3)
+                        if tick % 5 == 0 and tick > 0:
+                            log(f"  waiting for user... ({tick * 3}s)")
+                    print("Proceeding to check for email...", flush=True)
+
+                print("\nWaiting for verification email from Cloudflare...", flush=True)
+
+                # Step 4: Poll mail.tm for new verification email
+                _ALL_URLS_RE = re.compile(r"https?://[^\s\"'<>]+")
+                new_verify_link = None
+                deadline = time.time() + 120  # 2 min
+                while time.time() < deadline:
+                    try:
+                        r = mail_client._client.get("https://api.mail.tm/messages", headers=headers)
+                        for msg in r.json().get("hydra:member", []):
+                            mid = msg.get("id", "")
+                            if mid in old_ids:
+                                continue
+                            log(f"new email: {msg.get('subject', '')!r}")
+                            full = mail_client._client.get(
+                                f"https://api.mail.tm/messages/{mid}", headers=headers
+                            )
+                            body_data = full.json()
+                            text = body_data.get("text", "") + " " + str(body_data.get("html", ""))
+                            for u in _ALL_URLS_RE.findall(text):
+                                if "email-verification" in u and "token=" in u:
+                                    new_verify_link = u.rstrip(".")
+                                    break
+                            if new_verify_link:
+                                break
+                    except Exception as e:
+                        log(f"poll error: {e}")
+                    if new_verify_link:
+                        break
+                    time.sleep(5)
+
+                if not new_verify_link:
+                    log("no verification email received within 2 min")
+                    print("No verification email received. Try again or check mail.tm manually.", flush=True)
+                    return False
+
+                log(f"got verification link: {new_verify_link[:80]}...")
+                print("Verification email received! Opening link...", flush=True)
+
+                # Step 5: Open verify link in fresh context
+                # Use _complete_email_verification's proven _try_verify_link pattern
+                fresh_ctx = browser.new_context(
+                    viewport={"width": 1920, "height": 1080},
+                    locale="en-US",
+                )
+                verify_page = fresh_ctx.new_page()
+                verified = False
+                try:
+                    try:
+                        verify_page.goto(new_verify_link, timeout=30000,
+                                         wait_until="domcontentloaded")
+                    except Exception as e:
+                        log(f"verify nav warn: {e}")
+
+                    # Wait for interstitial
+                    for tick in range(6):
+                        _wait(5, log)
+                        try:
+                            body = verify_page.inner_text("body", timeout=5000) or ""
+                        except Exception:
+                            body = ""
+                        if any(kw in body.lower() for kw in ["performing security", "ray id"]):
+                            log(f"interstitial ({tick})...")
+                            continue
+                        break
+
+                    # Fill login form
+                    try:
+                        verify_page.locator(
+                            'input[name="email"], input[type="email"]'
+                        ).first.wait_for(state="visible", timeout=10000)
+                        _fill_first(verify_page, ['input[name="email"]', 'input[type="email"]'], email, log)
+                        _wait(0.3, log)
+                        _fill_first(verify_page, ['input[name="password"]', 'input[type="password"]'], password, log)
+                        _wait(0.3, log)
+                        _verify_form_values(verify_page, email, password, log)
+                    except Exception as e:
+                        log(f"form fill: {e}")
+
+                    print("\n>>> Solve CAPTCHA and click 'Log in' <<<\n", flush=True)
+
+                    # Wait for login redirect
+                    for tick in range(60):
+                        time.sleep(3)
+                        try:
+                            cur = verify_page.url
+                            if ("login" not in cur.lower()
+                                    and "email-verification" not in cur
+                                    and "sign-up" not in cur):
+                                log(f"logged in → {cur}")
+                                break
+                        except Exception:
+                            pass
+                        try:
+                            body = verify_page.inner_text("body", timeout=2000) or ""
+                            if any(kw in body.lower() for kw in [
+                                "welcome", "add a website", "get started", "workers"
+                            ]):
+                                log(f"dashboard content detected, url={verify_page.url}")
+                                break
+                        except Exception:
+                            pass
+                        if tick % 5 == 0 and tick > 0:
+                            log(f"waiting for login submit... ({tick * 3}s)")
+                    else:
+                        log("timeout (3 min)")
+
+                    _wait(3, log)
+
+                    # Check Profile page for "Verified"
+                    log("navigating to Profile page to check verification...")
+                    try:
+                        verify_page.goto("https://dash.cloudflare.com/profile",
+                                         timeout=15000)
+                        _wait(5, log, "profile load")
+                        body = verify_page.inner_text("body", timeout=5000) or ""
+                        if "verified" in body.lower():
+                            log("VERIFIED!")
+                            verified = True
+                        else:
+                            log("not verified on Profile page")
+                    except Exception as e:
+                        log(f"profile error: {e}")
+                finally:
+                    try:
+                        fresh_ctx.close()
+                    except Exception:
+                        pass
+
+                if verified:
+                    print("Email verified successfully!", flush=True)
+                else:
+                    print("Verification check: 'Verified' not found on Profile page.", flush=True)
+                return verified
+            finally:
+                mail_client.close()
+        except Exception as e:
+            log(f"verify_email_via_browser failed: {e}")
+            raise
+        finally:
+            ctx.close()
+            browser.close()
 
 
 # ---------------------------------------------------------------------------

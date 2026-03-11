@@ -161,5 +161,57 @@ class MailTmClient:
             f"Magic link not received within {timeout}s at {mailbox.address}"
         )
 
+    def reconnect(self, mailbox: Mailbox) -> None:
+        """Reconnect to an existing mailbox (re-authenticate)."""
+        self._token = self._get_token(mailbox.address, mailbox.password)
+
+    def poll_for_verification_code(self, mailbox: Mailbox, timeout: int = POLL_TIMEOUT) -> str:
+        """Poll inbox for a CF verification code (numeric). Returns the code string."""
+        headers = {"Authorization": f"Bearer {self._token}"}
+        deadline = time.time() + timeout
+        seen: set[str] = set()
+        code_re = re.compile(r"\b(\d{6,8})\b")
+
+        self._log(f"polling {mailbox.address} for verification code (timeout={timeout}s)")
+        while time.time() < deadline:
+            try:
+                resp = self._client.get(f"{BASE}/messages", headers=headers)
+                resp.raise_for_status()
+                messages = resp.json().get("hydra:member", [])
+                for msg in messages:
+                    msg_id = msg.get("id", "")
+                    if msg_id in seen:
+                        continue
+                    seen.add(msg_id)
+                    subject = msg.get("subject", "")
+                    self._log(f"  msg: subject={subject!r}")
+
+                    # Check subject for code
+                    m = code_re.search(subject)
+                    if m:
+                        self._log(f"  code from subject: {m.group(1)}")
+                        return m.group(1)
+
+                    # Fetch full message
+                    try:
+                        full = self._client.get(
+                            f"{BASE}/messages/{msg_id}", headers=headers
+                        )
+                        body = full.json()
+                        text = body.get("text", "") + " " + body.get("intro", "")
+                        m = code_re.search(text)
+                        if m:
+                            self._log(f"  code from body: {m.group(1)}")
+                            return m.group(1)
+                    except Exception as e:
+                        self._log(f"  body fetch error: {e}")
+            except Exception as e:
+                self._log(f"  poll error: {e}")
+            time.sleep(POLL_INTERVAL)
+
+        raise MailTmError(
+            f"Verification code not received within {timeout}s at {mailbox.address}"
+        )
+
     def close(self) -> None:
         self._client.close()

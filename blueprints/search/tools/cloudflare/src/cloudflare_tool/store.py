@@ -11,13 +11,14 @@ DEFAULT_DB_PATH = Path.home() / "data" / "cloudflare" / "cloudflare.duckdb"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS accounts (
-    id          VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::VARCHAR,
-    email       VARCHAR NOT NULL UNIQUE,
-    password    VARCHAR NOT NULL,
-    account_id  VARCHAR NOT NULL,
-    subdomain   VARCHAR DEFAULT '',
-    is_active   BOOLEAN DEFAULT true,
-    created_at  TIMESTAMP DEFAULT now()
+    id              VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::VARCHAR,
+    email           VARCHAR NOT NULL UNIQUE,
+    password        VARCHAR NOT NULL,
+    account_id      VARCHAR NOT NULL,
+    global_api_key  VARCHAR DEFAULT '',
+    subdomain       VARCHAR DEFAULT '',
+    is_active       BOOLEAN DEFAULT true,
+    created_at      TIMESTAMP DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS tokens (
@@ -60,18 +61,29 @@ class Store:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.con = duckdb.connect(str(path))
         self.con.execute(_SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Run schema migrations for existing databases."""
+        try:
+            self.con.execute(
+                "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS global_api_key VARCHAR DEFAULT ''"
+            )
+        except Exception:
+            pass  # Column already exists or table doesn't exist yet
 
     # ------------------------------------------------------------------
     # Accounts
     # ------------------------------------------------------------------
 
     def add_account(
-        self, *, email: str, password: str, account_id: str, subdomain: str = ""
+        self, *, email: str, password: str, account_id: str,
+        global_api_key: str = "", subdomain: str = "",
     ) -> str:
         row = self.con.execute(
-            "INSERT INTO accounts (email, password, account_id, subdomain) "
-            "VALUES (?, ?, ?, ?) RETURNING id",
-            [email, password, account_id, subdomain],
+            "INSERT INTO accounts (email, password, account_id, global_api_key, subdomain) "
+            "VALUES (?, ?, ?, ?, ?) RETURNING id",
+            [email, password, account_id, global_api_key, subdomain],
         ).fetchone()
         return row[0]
 
@@ -99,22 +111,27 @@ class Store:
 
     def get_first_active_account(self) -> dict[str, Any] | None:
         row = self.con.execute(
-            "SELECT id, email, password, account_id, subdomain "
+            "SELECT id, email, password, account_id, global_api_key, subdomain "
             "FROM accounts WHERE is_active = true ORDER BY created_at LIMIT 1"
         ).fetchone()
         if not row:
             return None
-        return dict(zip(["id", "email", "password", "account_id", "subdomain"], row))
+        return dict(zip(["id", "email", "password", "account_id", "global_api_key", "subdomain"], row))
 
     def get_account_by_email(self, email: str) -> dict[str, Any] | None:
         row = self.con.execute(
-            "SELECT id, email, password, account_id, subdomain "
+            "SELECT id, email, password, account_id, global_api_key, subdomain "
             "FROM accounts WHERE email = ? AND is_active = true",
             [email],
         ).fetchone()
         if not row:
             return None
-        return dict(zip(["id", "email", "password", "account_id", "subdomain"], row))
+        return dict(zip(["id", "email", "password", "account_id", "global_api_key", "subdomain"], row))
+
+    def update_global_api_key(self, email: str, api_key: str) -> None:
+        self.con.execute(
+            "UPDATE accounts SET global_api_key = ? WHERE email = ?", [api_key, email]
+        )
 
     def update_subdomain(self, email: str, subdomain: str) -> None:
         self.con.execute(
