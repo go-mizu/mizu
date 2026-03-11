@@ -20,9 +20,9 @@ import (
 )
 
 const (
-	// gemini-embedding-exp-03-07 is the current best Gemini embedding model (3072-dim,
+	// gemini-embedding-2-preview is the current best Gemini embedding model (3072-dim,
 	// Matryoshka-capable). Free-tier limits: 5 RPM and 100 RPD.
-	defaultModel     = "gemini-embedding-exp-03-07"
+	defaultModel     = "gemini-embedding-2-preview"
 	defaultBatchSize = 100 // batchEmbedContents maximum; use max to minimise RPM consumption
 	apiBase          = "https://generativelanguage.googleapis.com/v1beta"
 	localEnvRelPath  = ".local.env" // relative to $HOME/data/
@@ -78,7 +78,7 @@ func (d *Driver) Open(ctx context.Context, cfg embed.Config) error {
 	if d.batchSize <= 0 || d.batchSize > defaultBatchSize {
 		// Cap at API maximum: batchEmbedContents accepts at most 100 requests per call.
 		// Use max batch size (100) to minimise the number of API calls and stay within
-		// free-tier RPM limits (5 RPM / 100 RPD for gemini-embedding-exp-03-07).
+		// free-tier RPM limits (5 RPM / 100 RPD for gemini-embedding-2-preview).
 		d.batchSize = defaultBatchSize
 	}
 

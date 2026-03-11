@@ -33,7 +33,7 @@ func DefaultModelName(driver string) string {
 	case "onnx":
 		return "all-MiniLM-L6-v2"
 	case "gemini":
-		return "gemini-embedding-exp-03-07"
+		return "gemini-embedding-2-preview"
 	default:
 		return ""
 	}
@@ -105,11 +105,18 @@ var Models = []ModelInfo{
 
 	// --- Gemini API models (no local files — API only) ---
 	{
-		Name:   "gemini-embedding-exp-03-07",
+		Name:   "gemini-embedding-2-preview",
 		Driver: "gemini",
 		Dim:    3072,
 		SizeMB: 0,
-		Desc:   "Gemini Embedding Exp (3072-dim Matryoshka, best quality; free tier: 5 RPM / 100 RPD)",
+		Desc:   "Gemini Embedding 2 Preview (3072-dim Matryoshka, best quality; free tier: 5 RPM / 100 RPD)",
+	},
+	{
+		Name:   "gemini-embedding-001",
+		Driver: "gemini",
+		Dim:    3072,
+		SizeMB: 0,
+		Desc:   "Gemini Embedding 001 (3072-dim Matryoshka, stable)",
 	},
 }
 
