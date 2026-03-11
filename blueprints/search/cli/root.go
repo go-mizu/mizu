@@ -86,6 +86,7 @@ Get started:
 	root.AddCommand(NewSerp())
 	root.AddCommand(NewExport())
 	root.AddCommand(NewClickHouse())
+	root.AddCommand(NewMotherDuck())
 
 	if err := fang.Execute(ctx, root,
 		fang.WithVersion(Version),

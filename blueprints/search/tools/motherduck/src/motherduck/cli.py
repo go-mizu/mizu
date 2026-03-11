@@ -38,26 +38,30 @@ def _store() -> Store:
 def register(
     no_headless: Annotated[bool, typer.Option("--no-headless", help="Show browser window")] = False,
     verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+    json_out: Annotated[bool, typer.Option("--json", help="Print JSON to stdout, skip DuckDB")] = False,
 ) -> None:
     """Auto-register a new MotherDuck account via browser + mail.tm."""
     from .email import MailTmClient
     from .identity import generate
     from .browser import register_via_browser
 
+    # When --json: redirect rich output to stderr so stdout stays clean
+    status_console = Console(stderr=True) if json_out else console
+
     identity = generate()
     mail_client = MailTmClient(verbose=verbose)
 
-    with console.status("[bold green]Creating mail.tm mailbox..."):
+    with status_console.status("[bold green]Creating mail.tm mailbox..."):
         mailbox = mail_client.create_mailbox(identity.email_local)
 
-    console.print(f"[green]Mailbox:[/green] {mailbox.address}")
-    console.print("[bold green]Opening browser for MotherDuck signup...[/bold green]")
+    status_console.print(f"[green]Mailbox:[/green] {mailbox.address}")
+    status_console.print("[bold green]Opening browser for MotherDuck signup...[/bold green]")
 
     try:
         token = register_via_browser(
             mailbox=mailbox,
             mail_client=mail_client,
-            password=identity.password,  # MotherDuck account password
+            password=identity.password,
             headless=not no_headless,
             verbose=verbose,
         )
@@ -67,10 +71,20 @@ def register(
     finally:
         mail_client.close()
 
+    if json_out:
+        # Output structured result; caller (Go CLI) stores in its own DuckDB
+        output = {
+            "email": mailbox.address,
+            "password": identity.password,
+            "token": token,
+        }
+        print(json.dumps(output))
+        return
+
     store = _store()
     store.add_account(
         email=mailbox.address,
-        password=identity.password,  # store MotherDuck account password
+        password=identity.password,
         token=token,
     )
 
@@ -299,3 +313,7 @@ def query(
 
 def app_entry() -> None:
     app()
+
+
+if __name__ == "__main__":
+    app_entry()
