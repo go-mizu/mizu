@@ -233,8 +233,17 @@ def register_via_browser(
                 confirm_inputs.nth(1).type(password, delay=55)
                 time.sleep(0.3)
 
+            # Wait for Turnstile widget to render/pass (embedded in sign-up form)
+            _wait(2, log, "waiting for Turnstile to render")
+            # Scroll to bottom so Turnstile iframe is visible
+            try:
+                page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
+                time.sleep(1)
+            except Exception:
+                pass
+
             # Submit
-            _wait(0.5, log)
+            _wait(1, log)
             _click_first(page, [
                 'button[type="submit"]',
                 'button:has-text("Sign up")',
@@ -242,14 +251,31 @@ def register_via_browser(
                 'button:has-text("Continue")',
                 'input[type="submit"]',
             ], log)
-            _wait(4, log, "waiting for signup response")
+            _wait(5, log, "waiting for signup response")
             log(f"url after submit: {page.url}")
 
-            # ---- Step 2: Email verification ----
+            # ---- Step 1b: Handle CF bot/Turnstile interstitial ----
+            # CF may show a "Performing security verification" managed challenge.
+            # With real Chrome it auto-resolves; wait up to 30s for it to clear.
             body_text = _log_page(page, log, "post-signup: ")
+            bot_keywords = ["performing security verification", "ray id", "security service"]
+            if any(kw in body_text.lower() for kw in bot_keywords):
+                log("CF bot interstitial detected — waiting up to 30s for auto-resolve...")
+                for _ in range(10):
+                    time.sleep(3)
+                    body_text = page.inner_text("body") or ""
+                    log(f"interstitial check: url={page.url}")
+                    if not any(kw in body_text.lower() for kw in bot_keywords):
+                        log("interstitial resolved")
+                        break
+                else:
+                    log("interstitial did not resolve after 30s — continuing anyway")
+                body_text = page.inner_text("body") or ""
+
+            # ---- Step 2: Email verification ----
             verify_keywords = [
-                "verify", "check your email", "confirmation",
-                "we sent", "email sent", "verification",
+                "check your email", "we sent", "email sent",
+                "verify your email", "confirmation email",
             ]
             if any(kw in body_text.lower() for kw in verify_keywords):
                 log("email verification required — polling mail.tm...")
