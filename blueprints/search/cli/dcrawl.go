@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/scrape"
@@ -46,6 +47,19 @@ func NewScrape() *cobra.Command {
 		workerToken      string
 		workerBrowser    bool
 		useTUI           bool
+		useCloudflare       bool
+		cfLimit             int
+		cfDepth             int
+		cfSource            string
+		cfRender            bool
+		cfSubdomains        bool
+		cfInclude           []string
+		cfExclude           []string
+		cfRejectResources   []string
+		cfWaitSelector      string
+		cfGotoWaitUntil     string
+		cfGotoTimeout       int
+		cfUserAgent         string
 	)
 
 	cmd := &cobra.Command{
@@ -77,6 +91,25 @@ Browser mode (JS-rendered pages, bypasses Cloudflare):
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if useRod && useLightpanda {
 				return fmt.Errorf("--browser and --lightpanda are mutually exclusive")
+			}
+			if useCloudflare {
+				opts := scrape.CFOptions{
+					Source:              cfSource,
+					IncludeSubdomains:   cfSubdomains,
+					IncludePatterns:     cfInclude,
+					ExcludePatterns:     cfExclude,
+					RejectResourceTypes: cfRejectResources,
+					WaitForSelector:     cfWaitSelector,
+					GotoWaitUntil:       cfGotoWaitUntil,
+					GotoTimeout:         cfGotoTimeout,
+					UserAgent:           cfUserAgent,
+				}
+				if cfRender {
+					t := true
+					opts.Render = &t
+				}
+				// default: opts.Render == nil → buildCFRequest sets render=false
+				return runCloudflareScrape(cmd, args[0], cfLimit, cfDepth, crawlerDataDir, opts)
 			}
 			if (proxyURL != "" || proxyFile != "") && !useRod && !useLightpanda {
 				return fmt.Errorf("--proxy-url and --proxy-file require --browser (or --lightpanda) mode")
@@ -184,6 +217,21 @@ Browser mode (JS-rendered pages, bypasses Cloudflare):
 	cmd.Flags().BoolVar(&workerBrowser, "worker-browser", false, "Enable CF Browser Rendering on worker side")
 	cmd.Flags().BoolVar(&useTUI, "tui", false, "Use full-screen TUI dashboard (requires terminal)")
 
+	// Cloudflare Browser Rendering REST API mode
+	cmd.Flags().BoolVar(&useCloudflare, "cloudflare", false, "Use Cloudflare Browser Rendering /crawl API (credentials from ~/data/cloudflare/cloudflare.json)")
+	cmd.Flags().IntVar(&cfLimit, "cf-limit", 0, "Max pages for CF crawl (0=CF default of 10)")
+	cmd.Flags().IntVar(&cfDepth, "cf-depth", 0, "Max link depth for CF crawl (0=CF default unlimited)")
+	cmd.Flags().StringVar(&cfSource, "cf-source", "", "Link discovery: all (default), sitemaps, links")
+	cmd.Flags().BoolVar(&cfRender, "cf-render", false, "Enable JS rendering via CF Browser (default: static HTML fetch, faster)")
+	cmd.Flags().BoolVar(&cfSubdomains, "cf-subdomains", false, "Follow links to subdomains")
+	cmd.Flags().StringSliceVar(&cfInclude, "cf-include", nil, "Wildcard URL patterns to include (e.g. '*/blog/*')")
+	cmd.Flags().StringSliceVar(&cfExclude, "cf-exclude", nil, "Wildcard URL patterns to exclude (e.g. '*/tag/*')")
+	cmd.Flags().StringSliceVar(&cfRejectResources, "cf-reject-resources", nil, "Block resource types: image, media, font, stylesheet")
+	cmd.Flags().StringVar(&cfWaitSelector, "cf-wait-selector", "", "CSS selector to wait for before extracting content")
+	cmd.Flags().StringVar(&cfGotoWaitUntil, "cf-goto-wait", "", "Navigation event: load, domcontentloaded, networkidle0, networkidle2")
+	cmd.Flags().IntVar(&cfGotoTimeout, "cf-goto-timeout", 0, "Per-page navigation timeout in ms (0=CF default)")
+	cmd.Flags().StringVar(&cfUserAgent, "cf-user-agent", "", "Custom User-Agent for CF crawl requests")
+
 	return cmd
 }
 
@@ -239,6 +287,26 @@ func runCrawlDomain(cmd *cobra.Command, cfg scrape.Config, downloadImages, useTU
 	}
 
 	return nil
+}
+
+func runCloudflareScrape(cmd *cobra.Command, domain string, limit, depth int, dataDir string, opts scrape.CFOptions) error {
+	cfg := scrape.DefaultConfig()
+	cfg.Domain = domain
+	if dataDir != "" {
+		cfg.DataDir = dataDir
+	}
+
+	// Build seed URL
+	seedURL := domain
+	if !strings.HasPrefix(seedURL, "http://") && !strings.HasPrefix(seedURL, "https://") {
+		seedURL = "https://" + seedURL
+	}
+
+	fmt.Println(subtitleStyle.Render("Scraping " + domain + " via Cloudflare Browser Rendering"))
+	fmt.Println(infoStyle.Render(fmt.Sprintf("  Data: %s", cfg.DomainDir())))
+	fmt.Println()
+
+	return scrape.RunCloudflareCrawl(cmd.Context(), cfg, seedURL, limit, depth, opts)
 }
 
 func runPinterestSearch(cmd *cobra.Command, c *scrape.Crawler, cfg scrape.Config, query string, downloadImages bool) error {
