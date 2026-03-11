@@ -597,8 +597,9 @@ def _extract_token_value(page, log) -> str:
         '[aria-label*="token" i] input',
     ]:
         try:
-            el = page.locator(sel).first
-            if el.count() > 0:
+            els = page.locator(sel)
+            if els.count() > 0:
+                el = els.first
                 text = el.get_attribute("value") or el.inner_text() or ""
                 text = text.strip()
                 if len(text) > 20 and " " not in text:
@@ -609,27 +610,26 @@ def _extract_token_value(page, log) -> str:
 
     # Strategy 2: page text regex for CF token patterns
     # CF tokens look like: abc123_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    _CF_TOKEN_RE = re.compile(r"[a-zA-Z0-9]{8}_[a-zA-Z0-9_\-]{30,}")
     try:
         body = page.inner_text("body")
-        for pat in [
-            r"[A-Za-z0-9_\-]{40,}",          # generic long token
-            r"[a-zA-Z0-9]{8}_[a-zA-Z0-9_\-]{30,}",  # CF token format
-        ]:
-            m = re.search(pat, body)
-            if m:
-                candidate = m.group(0)
-                if len(candidate) > 30:
-                    log(f"token via body regex: {candidate[:20]}...")
-                    return candidate
+        m = _CF_TOKEN_RE.search(body)
+        if m:
+            candidate = m.group(0)
+            log(f"token via body regex: {candidate[:20]}...")
+            return candidate
     except Exception:
         pass
 
-    # Strategy 3: localStorage
+    # Strategy 3: localStorage (targeted keys only)
+    _TOKEN_KEYS = {"token", "api_token", "cf_token", "apiToken", "cfToken"}
     try:
         keys = page.evaluate("() => Object.keys(localStorage)")
         for key in keys:
-            val = page.evaluate(f"() => localStorage.getItem('{key}')")
-            if val and len(val) > 30 and " " not in val:
+            if key not in _TOKEN_KEYS:
+                continue
+            val = page.evaluate("(k) => localStorage.getItem(k)", key)
+            if val and _CF_TOKEN_RE.search(val):
                 log(f"token via localStorage[{key!r}]")
                 return val
     except Exception:
