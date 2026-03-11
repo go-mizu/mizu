@@ -45,18 +45,6 @@ func DefaultModelDir() string {
 	return filepath.Join(home, "data", "models")
 }
 
-// GeminiModels lists the supported Gemini API embedding models (no local download required).
-// Free tier: 5 RPM and 100 RPD for gemini-embedding-exp-03-07.
-var GeminiModels = []ModelInfo{
-	{
-		Name:   "gemini-embedding-exp-03-07",
-		Driver: "gemini",
-		Dim:    3072,
-		SizeMB: 0, // API model — no local download
-		Desc:   "Gemini Embedding Exp 03-07 (3072-dim, Matryoshka, best quality; free tier: 5 RPM / 100 RPD)",
-	},
-}
-
 // Models lists all known downloadable embedding models.
 var Models = []ModelInfo{
 	// --- llamacpp (GGUF) models ---
@@ -113,6 +101,15 @@ var Models = []ModelInfo{
 			{URL: "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx", Name: "model.onnx"},
 			{URL: "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/vocab.txt", Name: "vocab.txt"},
 		},
+	},
+
+	// --- Gemini API models (no local files — API only) ---
+	{
+		Name:   "gemini-embedding-exp-03-07",
+		Driver: "gemini",
+		Dim:    3072,
+		SizeMB: 0,
+		Desc:   "Gemini Embedding Exp (3072-dim Matryoshka, best quality; free tier: 5 RPM / 100 RPD)",
 	},
 }
 
