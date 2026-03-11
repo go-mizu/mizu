@@ -603,29 +603,48 @@ func runXTweets(ctx context.Context, username string, maxTweets int, order, sess
 		}
 	}
 
+	tweetsProgressCb := func(p x.Progress) {
+		if !p.Done {
+			if p.Message != "" {
+				fmt.Printf("\r  tweets: %s  %s                    ",
+					infoStyle.Render(formatLargeNumber(p.Current)),
+					warningStyle.Render(p.Message))
+			} else {
+				fmt.Printf("\r  tweets: %s          ",
+					infoStyle.Render(formatLargeNumber(p.Current)))
+			}
+		}
+	}
+
 	if maxTweets > 0 {
 		// Limited fetch: use timeline API (fast, up to ~800 tweets)
-		tweets, err := client.GetTweetsWithBatch(ctx, username, maxTweets,
-			func(p x.Progress) {
-				if !p.Done {
-					if p.Message != "" {
-						fmt.Printf("\r  tweets: %s  %s                    ",
-							infoStyle.Render(formatLargeNumber(p.Current)),
-							warningStyle.Render(p.Message))
-					} else {
-						fmt.Printf("\r  tweets: %s          ",
-							infoStyle.Render(formatLargeNumber(p.Current)))
-					}
-				}
-			}, batchSave)
+		tweets, err := client.GetTweetsWithBatch(ctx, username, maxTweets, tweetsProgressCb, batchSave)
 		fmt.Println()
 		if err != nil {
 			fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: %v (got %d tweets)", err, len(tweets))))
 		}
 	} else {
-		// --all: date-windowed search to get full history
+		// --all phase 1: timeline endpoint (guest token — no session rate limit consumed).
+		// gqlUserTweetsV2 works without auth for public accounts.
+		fmt.Printf("  Phase 1: timeline (guest token, no rate limit)...\n")
+		_, err := client.GetTweetsWithBatch(ctx, username, 0, tweetsProgressCb, batchSave)
+		fmt.Println()
+		if err != nil {
+			fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: timeline phase: %v", err)))
+		}
+
+		// --all phase 2: date-windowed search for any gap before the timeline horizon.
+		// The timeline API may stop before the account's oldest tweets (~3200 tweet limit).
+		// Search uses session auth but only covers the uncached gap.
+		dbOldest, _, _ := db.TweetDateRange()
+		if !dbOldest.IsZero() {
+			fmt.Printf("  Phase 2: gap fill via search (oldest in DB: %s)...\n",
+				labelStyle.Render(dbOldest.Format("2006-01-02")))
+		} else {
+			fmt.Printf("  Phase 2: gap fill via search...\n")
+		}
 		if err := fetchAllTweetsByDate(ctx, client, db, username, order, batchSave); err != nil {
-			fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: %v", err)))
+			fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: search phase: %v", err)))
 		}
 	}
 
@@ -776,6 +795,12 @@ func fetchAllTweetsByDate(ctx context.Context, client *x.Client, db *x.DB, usern
 			i+1, len(windows), label,
 			infoStyle.Render(formatLargeNumber(windowCount)),
 			labelStyle.Render(formatLargeNumber(grandTotal)))
+
+		// Pace between windows — single-page windows skip the in-loop sleep,
+		// so apply it here to avoid rapid-fire requests across 200+ windows.
+		if i < len(windows)-1 {
+			time.Sleep(client.PacedDelay())
+		}
 	}
 
 	if skipped > 0 {

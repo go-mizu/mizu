@@ -6,8 +6,14 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
+
+// authOnlyEndpoints tracks endpoints where guest tokens always fail (401/403).
+// After the first failure, guest is skipped entirely for that endpoint — avoiding
+// one wasted activate + one wasted 403 request on every single search page.
+var authOnlyEndpoints sync.Map // endpoint string → struct{}
 
 // Client wraps the X/Twitter GraphQL API with cookie-based auth.
 type Client struct {
@@ -87,6 +93,15 @@ func (c *Client) GetCookies() []*http.Cookie {
 		{Name: "auth_token", Value: c.authToken, Domain: ".x.com", Path: "/"},
 		{Name: "ct0", Value: c.ct0, Domain: ".x.com", Path: "/"},
 	}
+}
+
+// PacedDelay returns the appropriate delay before the next API request based on
+// current rate limit state. Use between successive API calls (e.g. between windows).
+func (c *Client) PacedDelay() time.Duration {
+	if c.gql == nil {
+		return c.cfg.Delay
+	}
+	return c.gql.PacedDelay(c.cfg.Delay)
 }
 
 // SaveSessionFile saves the current session to disk.
@@ -212,7 +227,7 @@ func (c *Client) SearchProfiles(ctx context.Context, query string, maxUsers int,
 		}
 		cursor = nextCursor
 
-		time.Sleep(c.gql.PacedDelay(c.cfg.Delay))
+		time.Sleep(c.PacedDelay())
 	}
 
 	return users, nil
@@ -308,10 +323,16 @@ func (c *Client) getUserTimeline(ctx context.Context, username, endpoint, phase 
 			break
 		}
 
-		// Stop if no cursor or too many empty pages
+		// Stop if no cursor, cursor didn't advance (loop), or too many empty pages
 		if result.Cursor == "" {
 			if cb != nil {
 				cb(Progress{Phase: phase, Current: int64(len(tweets)), Message: "no more pages (cursor empty)"})
+			}
+			break
+		}
+		if result.Cursor == cursor {
+			if cb != nil {
+				cb(Progress{Phase: phase, Current: int64(len(tweets)), Message: "no more pages (cursor stuck)"})
 			}
 			break
 		}
@@ -328,7 +349,7 @@ func (c *Client) getUserTimeline(ctx context.Context, username, endpoint, phase 
 		}
 		cursor = result.Cursor
 
-		time.Sleep(c.gql.PacedDelay(c.cfg.Delay))
+		time.Sleep(c.PacedDelay())
 	}
 
 	if cb != nil {
@@ -359,33 +380,40 @@ func asRateLimitError(err error) *RateLimitError {
 //   - guest returns rate limit (token rotated once, then auth fallback)
 //   - guest returns 401/403 (auth-only endpoint)
 func (c *Client) doGuestFirst(endpoint string, vars map[string]any, toggles string) (map[string]any, error) {
-	token, tokenErr := fetchGuestToken()
-	if tokenErr == nil {
-		data, guestErr := doGuestGraphQL(token, endpoint, vars, toggles)
-		if guestErr == nil {
-			return data, nil
-		}
-		// On rate limit: rotate token and retry once; then try proxy pool before auth fallback
-		if rle := asRateLimitError(guestErr); rle != nil {
-			_ = rle
-			invalidateGuestToken()
-			if token2, err2 := fetchGuestToken(); err2 == nil {
-				if data2, guestErr2 := doGuestGraphQL(token2, endpoint, vars, toggles); guestErr2 == nil {
-					return data2, nil
+	// Skip guest for endpoints known to require auth (learned from first 401/403 response).
+	// Avoids one guest-activate + one failed 403 request on every page for auth-only endpoints.
+	if _, authOnly := authOnlyEndpoints.Load(endpoint); !authOnly {
+		token, tokenErr := fetchGuestToken()
+		if tokenErr == nil {
+			data, guestErr := doGuestGraphQL(token, endpoint, vars, toggles)
+			if guestErr == nil {
+				return data, nil
+			}
+			// On rate limit: rotate token and retry once; then try proxy pool before auth fallback
+			if rle := asRateLimitError(guestErr); rle != nil {
+				_ = rle
+				invalidateGuestToken()
+				if token2, err2 := fetchGuestToken(); err2 == nil {
+					if data2, guestErr2 := doGuestGraphQL(token2, endpoint, vars, toggles); guestErr2 == nil {
+						return data2, nil
+					}
+				}
+				// Proxy pool: try a guest token from a different IP's rate-limit bucket
+				if poolToken, poolErr := FetchGuestTokenFromPool(); poolErr == nil {
+					if data3, err3 := doGuestGraphQL(poolToken, endpoint, vars, toggles); err3 == nil {
+						return data3, nil
+					}
 				}
 			}
-			// Proxy pool: try a guest token from a different IP's rate-limit bucket
-			if poolToken, poolErr := FetchGuestTokenFromPool(); poolErr == nil {
-				if data3, err3 := doGuestGraphQL(poolToken, endpoint, vars, toggles); err3 == nil {
-					return data3, nil
-				}
+			// 401/403: mark endpoint as auth-only so future calls skip the guest attempt
+			if strings.Contains(guestErr.Error(), "rejected (HTTP 4") {
+				authOnlyEndpoints.Store(endpoint, struct{}{})
 			}
 		}
-		// 401/403 (auth-only endpoint) or other error — fall through to cookie auth
 	}
 	// Cookie auth fallback
 	if c.gql == nil {
-		return nil, fmt.Errorf("guest token failed (%v) and no session configured", tokenErr)
+		return nil, fmt.Errorf("guest token failed and no session configured")
 	}
 	return c.gql.doGraphQL(endpoint, vars, toggles)
 }
@@ -675,7 +703,7 @@ func (c *Client) searchTweetsInternal(ctx context.Context, query string, maxTwee
 	emptyPages := 0
 	maxEmpty := 3
 	if maxTweets == 0 {
-		maxEmpty = 5
+		maxEmpty = 2 // date-windowed search: 2 empty pages is sufficient to declare a window empty
 	}
 
 	for {
@@ -718,7 +746,7 @@ func (c *Client) searchTweetsInternal(ctx context.Context, query string, maxTwee
 			break
 		}
 
-		if result.Cursor == "" {
+		if result.Cursor == "" || result.Cursor == cursor {
 			break
 		}
 		if len(newTweets) == 0 {
@@ -731,7 +759,7 @@ func (c *Client) searchTweetsInternal(ctx context.Context, query string, maxTwee
 		}
 		cursor = result.Cursor
 
-		time.Sleep(c.gql.PacedDelay(c.cfg.Delay))
+		time.Sleep(c.PacedDelay())
 	}
 
 	if cb != nil {
@@ -799,7 +827,7 @@ func (c *Client) getFollowList(ctx context.Context, username, endpoint, phase st
 		}
 		cursor = nextCursor
 
-		time.Sleep(c.gql.PacedDelay(c.cfg.Delay))
+		time.Sleep(c.PacedDelay())
 	}
 
 	return users, nil
@@ -860,7 +888,7 @@ func (c *Client) GetBookmarks(ctx context.Context, maxTweets int, cb ProgressCal
 		}
 		cursor = result.Cursor
 
-		time.Sleep(c.gql.PacedDelay(c.cfg.Delay))
+		time.Sleep(c.PacedDelay())
 	}
 
 	if cb != nil {
@@ -933,7 +961,7 @@ func (c *Client) getTimeline(ctx context.Context, endpoint, phase string, maxTwe
 		}
 		cursor = result.Cursor
 
-		time.Sleep(c.gql.PacedDelay(c.cfg.Delay))
+		time.Sleep(c.PacedDelay())
 	}
 
 	if cb != nil {
@@ -1027,7 +1055,7 @@ func (c *Client) GetListTweets(ctx context.Context, listID string, maxTweets int
 		}
 		cursor = result.Cursor
 
-		time.Sleep(c.gql.PacedDelay(c.cfg.Delay))
+		time.Sleep(c.PacedDelay())
 	}
 
 	if cb != nil {
@@ -1078,7 +1106,7 @@ func (c *Client) GetListMembers(ctx context.Context, listID string, maxUsers int
 		}
 		cursor = nextCursor
 
-		time.Sleep(c.gql.PacedDelay(c.cfg.Delay))
+		time.Sleep(c.PacedDelay())
 	}
 
 	return users, nil

@@ -11,6 +11,7 @@ package x
 //   - GetTweetGuest(id) — fetch a single tweet by ID
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -107,16 +108,30 @@ func doGuestGraphQL(guestToken, endpoint string, variables map[string]any, field
 		return nil, fmt.Errorf("guest graphql request: %w", err)
 	}
 
-	req.Header.Set("Authorization", bearerToken)
+	req.Header.Set("accept", "*/*")
+	req.Header.Set("accept-encoding", "gzip")
+	req.Header.Set("accept-language", "en-US,en;q=0.9")
+	req.Header.Set("authorization", bearerToken)
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set("origin", "https://x.com")
+	req.Header.Set("referer", "https://x.com/")
+	req.Header.Set("user-agent", userAgent)
 	req.Header.Set("x-guest-token", guestToken)
-	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("Accept", "*/*")
-	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Origin", "https://x.com")
-	req.Header.Set("Referer", "https://x.com/")
 	req.Header.Set("x-twitter-active-user", "yes")
 	req.Header.Set("x-twitter-client-language", "en")
+	req.Header.Set("sec-ch-ua", `"Google Chrome";v="142", "Chromium";v="142", "Not A(Brand";v="24"`)
+	req.Header.Set("sec-ch-ua-mobile", "?0")
+	req.Header.Set("sec-ch-ua-platform", `"Windows"`)
+	req.Header.Set("sec-fetch-dest", "empty")
+	req.Header.Set("sec-fetch-mode", "cors")
+	req.Header.Set("sec-fetch-site", "same-site")
+	req.Header.Set("priority", "u=1, i")
+
+	// Generate x-client-transaction-id (same as authenticated requests)
+	parsedURL, _ := url.Parse(fullURL)
+	if tid, err := generateTID(parsedURL.Path); err == nil && tid != "" {
+		req.Header.Set("x-client-transaction-id", tid)
+	}
 
 	client := &http.Client{Timeout: 20 * time.Second}
 	resp, err := client.Do(req)
@@ -125,7 +140,17 @@ func doGuestGraphQL(guestToken, endpoint string, variables map[string]any, field
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	var reader io.Reader = resp.Body
+	if resp.Header.Get("Content-Encoding") == "gzip" {
+		gz, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("guest graphql gzip: %w", err)
+		}
+		defer gz.Close()
+		reader = gz
+	}
+
+	body, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, fmt.Errorf("guest graphql read: %w", err)
 	}
