@@ -21,3 +21,14 @@ max_batch_size = 10
 max_batch_timeout = 5
 max_retries = 2
 dead_letter_queue = "browser-crawl-dlq"
+
+# Optional: CF Browser Rendering credentials for L3 proxy
+# Set with: wrangler secret put CF_ACCOUNT_ID
+#            wrangler secret put CF_API_TOKEN
+# Token must have "Browser Rendering > Edit" permission.
+# When absent, all endpoints use L4 own-fallback only.
+
+# Optional: Workers AI binding for /api/json AI extraction fallback
+# Uncomment to enable:
+# [ai]
+# binding = "AI"
