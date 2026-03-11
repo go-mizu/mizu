@@ -37,20 +37,24 @@ def _store() -> Store:
 def register(
     no_headless: Annotated[bool, typer.Option("--no-headless", help="Show browser window")] = False,
     verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+    json_out: Annotated[bool, typer.Option("--json", help="Print JSON to stdout, skip DuckDB")] = False,
 ) -> None:
     """Auto-register a new ClickHouse Cloud account via browser + mail.tm."""
     from .email import MailTmClient
     from .identity import generate
     from .browser import register_via_browser
 
+    # When --json is set, redirect rich output to stderr so stdout stays clean for JSON
+    status_console = Console(stderr=True) if json_out else console
+
     identity = generate()
     mail_client = MailTmClient(verbose=verbose)
 
-    with console.status("[bold green]Creating mail.tm mailbox..."):
+    with status_console.status("[bold green]Creating mail.tm mailbox..."):
         mailbox = mail_client.create_mailbox(identity.email_local)
 
-    console.print(f"[green]Mailbox:[/green] {mailbox.address}")
-    console.print("[bold green]Opening browser for ClickHouse Cloud signup...[/bold green]")
+    status_console.print(f"[green]Mailbox:[/green] {mailbox.address}")
+    status_console.print("[bold green]Opening browser for ClickHouse Cloud signup...[/bold green]")
 
     try:
         result = register_via_browser(
@@ -66,6 +70,25 @@ def register(
     finally:
         mail_client.close()
 
+    service_id = result.get("service_id", "")
+    host = result.get("host", "")
+
+    if json_out:
+        # Output structured result to stdout; caller (Go CLI) stores in its own DuckDB
+        output = {
+            "email": mailbox.address,
+            "password": identity.password,
+            "org_id": result.get("org_id", ""),
+            "api_key_id": result.get("api_key_id", ""),
+            "api_key_secret": result.get("api_key_secret", ""),
+            "service_id": service_id,
+            "host": host,
+            "port": result.get("port", 8443),
+            "db_password": result.get("db_password", ""),
+        }
+        print(json.dumps(output))
+        return
+
     store = _store()
     store.add_account(
         email=mailbox.address,
@@ -73,8 +96,6 @@ def register(
     )
 
     # If a service was created during onboarding, store it
-    service_id = result.get("service_id", "")
-    host = result.get("host", "")
     if service_id and host:
         acc = store.get_account_by_email(mailbox.address)
         if acc:
@@ -344,3 +365,7 @@ def query(
 
 def app_entry() -> None:
     app()
+
+
+if __name__ == "__main__":
+    app_entry()

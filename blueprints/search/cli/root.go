@@ -85,6 +85,7 @@ Get started:
 	root.AddCommand(NewBench())
 	root.AddCommand(NewSerp())
 	root.AddCommand(NewExport())
+	root.AddCommand(NewClickHouse())
 
 	if err := fang.Execute(ctx, root,
 		fang.WithVersion(Version),
