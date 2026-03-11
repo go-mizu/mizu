@@ -233,17 +233,20 @@ def register_via_browser(
                 confirm_inputs.nth(1).type(password, delay=55)
                 time.sleep(0.3)
 
-            # Wait for Turnstile widget to render/pass (embedded in sign-up form)
-            _wait(2, log, "waiting for Turnstile to render")
-            # Scroll to bottom so Turnstile iframe is visible
+            # Wait for Turnstile to solve: cf_challenge_response gets populated when Turnstile passes
+            log("waiting for Turnstile to solve...")
             try:
-                page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
-                time.sleep(1)
-            except Exception:
-                pass
+                page.wait_for_function(
+                    "() => (document.querySelector('input[name=\"cf_challenge_response\"]')"
+                    "?.value?.length ?? 0) > 0",
+                    timeout=30000,
+                )
+                log("Turnstile solved")
+            except Exception as e:
+                log(f"Turnstile wait: {e} — submitting anyway")
 
             # Submit
-            _wait(1, log)
+            _wait(0.5, log)
             _click_first(page, [
                 'button[type="submit"]',
                 'button:has-text("Sign up")',

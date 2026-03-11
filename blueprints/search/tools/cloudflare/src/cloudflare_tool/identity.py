@@ -25,5 +25,17 @@ def generate() -> Identity:
     display_name = f"{first} {last}"
     raw_local = f"{first.lower()}{last.lower()}{secrets.randbelow(9999)}"
     email_local = raw_local[:20]
-    password = "".join(secrets.choice(_PWD_CHARS) for _ in range(14))
+    # Guarantee CF password requirements: ≥8 chars, 1 uppercase, 1 digit, 1 special char
+    required = [
+        secrets.choice(string.ascii_uppercase),
+        secrets.choice(string.ascii_lowercase),
+        secrets.choice(string.digits),
+        secrets.choice("!@#$%^&*"),
+    ]
+    rest = [secrets.choice(_PWD_CHARS) for _ in range(10)]
+    pool = required + rest
+    # Fisher-Yates shuffle via SystemRandom (secrets-backed)
+    rng = secrets.SystemRandom()
+    rng.shuffle(pool)
+    password = "".join(pool)
     return Identity(display_name=display_name, email_local=email_local, password=password)
