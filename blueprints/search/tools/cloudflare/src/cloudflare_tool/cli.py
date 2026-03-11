@@ -330,11 +330,9 @@ def worker_deploy(
         store.update_worker_url(worker_alias, url)
         w_id = existing["id"]
     else:
-        # Get token DB id
-        tok_row = store.get_token_by_name(tok["name"])
         w_id = store.add_worker(
             account_id=tok["account_db_id"],
-            token_id=tok_row["id"] if tok_row else None,
+            token_id=tok["id"],
             name=worker_name,
             alias=worker_alias,
             url=url,
@@ -395,12 +393,13 @@ def worker_rm(
         err_console.print(f"[bold red]Worker not found:[/bold red] {alias}")
         raise typer.Exit(1)
 
-    tok = store.get_default_token()
-    if tok:
+    # Use the worker's own account/token; fall back to default token if no token linked
+    api_token = w.get("token_value") or (store.get_default_token() or {}).get("token_value")
+    if w.get("account_id") and api_token:
         try:
             client = CloudflareClient(
-                account_id=tok["account_id"],
-                api_token=tok["token_value"],
+                account_id=w["account_id"],
+                api_token=api_token,
             )
             client.delete_worker(w["name"])
             client.close()
@@ -455,11 +454,8 @@ def worker_invoke(
     store = _store()
     w = store.get_worker(alias)
     if not w:
-        # Try default worker
-        w = store.get_default_worker()
-        if not w:
-            err_console.print(f"[bold red]Worker not found:[/bold red] {alias}")
-            raise typer.Exit(1)
+        err_console.print(f"[bold red]Worker not found:[/bold red] {alias}")
+        raise typer.Exit(1)
 
     if not w.get("url"):
         err_console.print(f"[bold red]Worker has no URL:[/bold red] {alias}")
