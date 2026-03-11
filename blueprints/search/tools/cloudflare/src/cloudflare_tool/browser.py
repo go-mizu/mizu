@@ -61,6 +61,20 @@ PRESETS: dict[str, list[tuple[str, str, str]]] = {
 # Browser helpers
 # ---------------------------------------------------------------------------
 
+def _detect_chrome_channel() -> str | None:
+    """Return 'chrome' if system Chrome is available, else None (Chromium)."""
+    import shutil
+    # Linux: chrome is usually in PATH
+    if shutil.which("google-chrome") or shutil.which("google-chrome-stable"):
+        return "chrome"
+    # macOS: Chrome at default install path
+    if platform.system() == "Darwin":
+        mac_chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        if os.path.exists(mac_chrome):
+            return "chrome"
+    return None
+
+
 def _browser_args() -> list[str]:
     args = ["--window-size=1280,900", "--lang=en-US"]
     if platform.system() == "Linux":
@@ -159,7 +173,6 @@ def register_via_browser(
 ) -> str:
     """Drive Cloudflare signup. Returns account_id string."""
     from patchright.sync_api import sync_playwright
-    import shutil
 
     _ensure_display()
 
@@ -170,7 +183,7 @@ def register_via_browser(
 
     log(f"registering {mailbox.address}")
     user_data = tempfile.mkdtemp(prefix="cf_reg_")
-    channel = "chrome" if shutil.which("google-chrome") or shutil.which("google-chrome-stable") else None
+    channel = _detect_chrome_channel()
 
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(
@@ -374,7 +387,6 @@ def create_token_via_browser(
 ) -> str:
     """Login to CF dashboard and create a named API token. Returns token value."""
     from patchright.sync_api import sync_playwright
-    import shutil
 
     _ensure_display()
 
@@ -387,7 +399,7 @@ def create_token_via_browser(
     log(f"creating token '{token_name}' with preset '{preset}' ({len(permissions)} permissions)")
 
     user_data = tempfile.mkdtemp(prefix="cf_tok_")
-    channel = "chrome" if shutil.which("google-chrome") or shutil.which("google-chrome-stable") else None
+    channel = _detect_chrome_channel()
 
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(
