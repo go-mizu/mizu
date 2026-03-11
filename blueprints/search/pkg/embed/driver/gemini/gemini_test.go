@@ -158,9 +158,9 @@ func TestDriverName(t *testing.T) {
 	if d.Name() != "gemini" {
 		t.Errorf("Name() = %q, want %q", d.Name(), "gemini")
 	}
-	d.model = "text-embedding-004"
-	if d.Name() != "gemini/text-embedding-004" {
-		t.Errorf("Name() = %q, want %q", d.Name(), "gemini/text-embedding-004")
+	d.model = "gemini-embedding-exp-03-07"
+	if d.Name() != "gemini/gemini-embedding-exp-03-07" {
+		t.Errorf("Name() = %q, want %q", d.Name(), "gemini/gemini-embedding-exp-03-07")
 	}
 }
 
@@ -211,36 +211,11 @@ OTHER=something
 }
 
 func TestDriverEmbedCountMismatch(t *testing.T) {
-	// Server returns n-1 embeddings for an n-text request.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req batchEmbedRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		// Return one fewer embedding than requested.
-		count := len(req.Requests) - 1
-		if count < 0 {
-			count = 0
-		}
-		resp := batchEmbedResponse{
-			Embeddings: make([]embeddingValue, count),
-		}
-		for i := range resp.Embeddings {
-			resp.Embeddings[i] = embeddingValue{Values: []float32{0.1, 0.2, 0.3, 0.4}}
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
-	}))
-	defer srv.Close()
-
-	ctx := context.Background()
-	// Open with a batch size larger than 3 so the probe (1 text → 0 returned) would fail.
-	// Use batch size 10 so Open's probe sends 1 text and gets 0 back → Open itself fails.
-	// Instead, open with a server that returns correct count for the probe (1 text → 1 embedding),
-	// then switch to the mismatch server for Embed. We achieve this by using a counter.
+	// A single server with a request counter: the first request (Open's probe) returns
+	// the correct number of embeddings so Open succeeds; subsequent requests return n-1
+	// embeddings to trigger the count-mismatch error path in callBatch.
 	var callCount atomic.Int32
-	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req batchEmbedRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -252,7 +227,7 @@ func TestDriverEmbedCountMismatch(t *testing.T) {
 			// First call is the probe — return correct count so Open succeeds.
 			count = len(req.Requests)
 		} else {
-			// Subsequent calls return n-1 embeddings.
+			// Subsequent calls return n-1 embeddings to trigger the mismatch error.
 			count = len(req.Requests) - 1
 			if count < 0 {
 				count = 0
@@ -267,10 +242,10 @@ func TestDriverEmbedCountMismatch(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	}))
-	defer srv2.Close()
-	_ = srv // unused but kept to avoid lint noise on the first server definition above
+	defer srv.Close()
 
-	d := &Driver{baseURL: srv2.URL}
+	ctx := context.Background()
+	d := &Driver{baseURL: srv.URL}
 	if err := d.Open(ctx, embed.Config{Addr: "fake-key"}); err != nil {
 		t.Fatalf("Open: %v", err)
 	}

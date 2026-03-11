@@ -20,8 +20,10 @@ import (
 )
 
 const (
-	defaultModel     = "text-embedding-004"
-	defaultBatchSize = 100
+	// gemini-embedding-exp-03-07 is the current best Gemini embedding model (3072-dim,
+	// Matryoshka-capable). Free-tier limits: 5 RPM and 100 RPD.
+	defaultModel     = "gemini-embedding-exp-03-07"
+	defaultBatchSize = 100 // batchEmbedContents maximum; use max to minimise RPM consumption
 	apiBase          = "https://generativelanguage.googleapis.com/v1beta"
 	localEnvRelPath  = ".local.env" // relative to $HOME/data/
 )
@@ -74,6 +76,9 @@ func (d *Driver) Open(ctx context.Context, cfg embed.Config) error {
 
 	d.batchSize = cfg.BatchSize
 	if d.batchSize <= 0 || d.batchSize > defaultBatchSize {
+		// Cap at API maximum: batchEmbedContents accepts at most 100 requests per call.
+		// Use max batch size (100) to minimise the number of API calls and stay within
+		// free-tier RPM limits (5 RPM / 100 RPD for gemini-embedding-exp-03-07).
 		d.batchSize = defaultBatchSize
 	}
 
@@ -162,8 +167,11 @@ func (d *Driver) callBatch(ctx context.Context, texts []string) ([]embed.Vector,
 	reqs := make([]embedContentRequest, len(texts))
 	for i, t := range texts {
 		r := embedContentRequest{
-			Model:    "models/" + d.model,
-			Content:  embedContent{Parts: []embedPart{{Text: t}}},
+			Model:   "models/" + d.model,
+			Content: embedContent{Parts: []embedPart{{Text: t}}},
+			// RETRIEVAL_DOCUMENT is the correct task type for offline indexing.
+			// For query-time use, callers should use a separate driver instance configured
+			// with taskType RETRIEVAL_QUERY via a future Config extension.
 			TaskType: "RETRIEVAL_DOCUMENT",
 		}
 		if d.outputDim > 0 {
@@ -177,12 +185,15 @@ func (d *Driver) callBatch(ctx context.Context, texts []string) ([]embed.Vector,
 		return nil, fmt.Errorf("gemini: marshal: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/models/%s:batchEmbedContents?key=%s", d.baseURL, d.model, d.apiKey)
+	// Pass the API key as a header rather than a URL query parameter so that
+	// the key is never exposed in HTTP error messages or server access logs.
+	url := fmt.Sprintf("%s/models/%s:batchEmbedContents", d.baseURL, d.model)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("gemini: new request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-goog-api-key", d.apiKey)
 
 	resp, err := d.client.Do(req)
 	if err != nil {

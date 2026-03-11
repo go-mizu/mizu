@@ -32,6 +32,8 @@ func DefaultModelName(driver string) string {
 		return "nomic-embed-text-v1.5"
 	case "onnx":
 		return "all-MiniLM-L6-v2"
+	case "gemini":
+		return "gemini-embedding-exp-03-07"
 	default:
 		return ""
 	}
@@ -41,6 +43,18 @@ func DefaultModelName(driver string) string {
 func DefaultModelDir() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, "data", "models")
+}
+
+// GeminiModels lists the supported Gemini API embedding models (no local download required).
+// Free tier: 5 RPM and 100 RPD for gemini-embedding-exp-03-07.
+var GeminiModels = []ModelInfo{
+	{
+		Name:   "gemini-embedding-exp-03-07",
+		Driver: "gemini",
+		Dim:    3072,
+		SizeMB: 0, // API model — no local download
+		Desc:   "Gemini Embedding Exp 03-07 (3072-dim, Matryoshka, best quality; free tier: 5 RPM / 100 RPD)",
+	},
 }
 
 // Models lists all known downloadable embedding models.
