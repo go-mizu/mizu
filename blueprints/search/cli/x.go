@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/dcrawler/x"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/scrape/x"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/markdown"
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"

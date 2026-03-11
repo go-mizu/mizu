@@ -1,4 +1,4 @@
-package dcrawler
+package scrape
 
 import (
 	"bufio"
@@ -59,6 +59,10 @@ type Config struct {
 	WorkerBrowser     bool          // Enable CF Browser Rendering on worker side
 	WorkerBatch       int           // URLs per batch request (default 10)
 	WorkerParallel    int           // Concurrent batch requests (default 20)
+	UseCloudflare   bool      // Use Cloudflare Browser Rendering REST API /crawl endpoint
+	CloudflareLimit int       // Max pages for CF crawl (0=CF default of 10)
+	CloudflareDepth int       // Max link depth for CF crawl (0=CF default unlimited)
+	CFOptions       CFOptions // Extended CF crawl options (source, render, patterns, etc.)
 }
 
 // DefaultConfig returns optimal defaults for high-throughput single-domain crawling.

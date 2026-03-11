@@ -1,7 +1,7 @@
 // Package dcrawler provides a high-throughput single-domain web crawler.
 // It uses HTTP/2 multiplexing, bloom filter dedup, BFS frontier,
 // and sharded DuckDB storage to achieve 10K+ pages/second.
-package dcrawler
+package scrape
 
 import "time"
 

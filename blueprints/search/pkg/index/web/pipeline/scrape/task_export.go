@@ -15,7 +15,7 @@ import (
 	"github.com/DataDog/zstd"
 	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/core"
-	"github.com/go-mizu/mizu/blueprints/search/pkg/dcrawler"
+	crawler "github.com/go-mizu/mizu/blueprints/search/pkg/scrape"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/export"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/pipeline/util"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/markdown"
@@ -73,7 +73,7 @@ type exportItem struct {
 
 // Run reads HTML from DuckDB shards, decompresses and converts in parallel.
 func (t *ExportTask) Run(ctx context.Context, emit func(*ExportState)) (ExportMetric, error) {
-	norm := dcrawler.NormalizeDomain(t.domain)
+	norm := crawler.NormalizeDomain(t.domain)
 	resultDir := filepath.Join(t.dataDir, norm, "results")
 	home, _ := os.UserHomeDir()
 	outDir := filepath.Join(home, "data", "export")
@@ -301,7 +301,7 @@ func (t *ExportTask) Run(ctx context.Context, emit func(*ExportState)) (ExportMe
 
 // RemoveExport removes an existing export directory for a domain.
 func RemoveExport(dataDir, domain string) error {
-	norm := dcrawler.NormalizeDomain(domain)
+	norm := crawler.NormalizeDomain(domain)
 	exportDir := filepath.Join(dataDir, norm, "export")
 	if _, err := os.Stat(exportDir); os.IsNotExist(err) {
 		return nil

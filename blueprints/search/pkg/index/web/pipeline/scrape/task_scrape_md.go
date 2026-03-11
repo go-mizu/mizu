@@ -13,7 +13,7 @@ import (
 	"github.com/DataDog/zstd"
 	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/core"
-	"github.com/go-mizu/mizu/blueprints/search/pkg/dcrawler"
+	crawler "github.com/go-mizu/mizu/blueprints/search/pkg/scrape"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/pipeline/util"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/markdown"
 )
@@ -50,7 +50,7 @@ func NewScrapeMarkdownTask(domain, dataDir string) *ScrapeMarkdownTask {
 
 // Run reads HTML from DuckDB shards, converts to markdown, writes files.
 func (t *ScrapeMarkdownTask) Run(ctx context.Context, emit func(*ScrapeMarkdownState)) (ScrapeMarkdownMetric, error) {
-	domainDir := filepath.Join(t.dataDir, dcrawler.NormalizeDomain(t.domain))
+	domainDir := filepath.Join(t.dataDir, crawler.NormalizeDomain(t.domain))
 	resultDir := filepath.Join(domainDir, "results")
 	mdDir := filepath.Join(domainDir, "markdown")
 

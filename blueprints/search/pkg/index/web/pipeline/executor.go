@@ -11,7 +11,7 @@ import (
 	"time"
 
 	ccpkg "github.com/go-mizu/mizu/blueprints/search/pkg/cc"
-	"github.com/go-mizu/mizu/blueprints/search/pkg/dcrawler"
+	crawler "github.com/go-mizu/mizu/blueprints/search/pkg/scrape"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/pipeline/cc"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/pipeline/scrape"
 )
@@ -407,8 +407,8 @@ func runCCExportJob(ctx context.Context, m *Manager, job *Job) error {
 	return err
 }
 
-func buildDCrawlerConfig(domain, dataDir string, params scrape.StartParams) dcrawler.Config {
-	cfg := dcrawler.DefaultConfig()
+func buildDCrawlerConfig(domain, dataDir string, params scrape.StartParams) crawler.Config {
+	cfg := crawler.DefaultConfig()
 	cfg.Domain = domain
 	cfg.DataDir = dataDir
 

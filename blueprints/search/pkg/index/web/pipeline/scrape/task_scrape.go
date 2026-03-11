@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/core"
-	"github.com/go-mizu/mizu/blueprints/search/pkg/dcrawler"
+	crawler "github.com/go-mizu/mizu/blueprints/search/pkg/scrape"
 )
 
 // Compile-time check.
@@ -44,19 +44,19 @@ type ScrapeMetric struct {
 	Elapsed time.Duration
 }
 
-// ScrapeTask wraps dcrawler.Crawler as a core.Task[ScrapeState, ScrapeMetric].
+// ScrapeTask wraps crawler.Crawler as a core.Task[ScrapeState, ScrapeMetric].
 type ScrapeTask struct {
-	cfg dcrawler.Config
+	cfg crawler.Config
 }
 
 // NewScrapeTask creates a ScrapeTask from the given dcrawler config.
-func NewScrapeTask(cfg dcrawler.Config) *ScrapeTask {
+func NewScrapeTask(cfg crawler.Config) *ScrapeTask {
 	return &ScrapeTask{cfg: cfg}
 }
 
 // Run starts the domain crawl, polls stats, and emits progress updates.
 func (t *ScrapeTask) Run(ctx context.Context, emit func(*ScrapeState)) (ScrapeMetric, error) {
-	crawler, err := dcrawler.New(t.cfg)
+	crawler, err := crawler.New(t.cfg)
 	if err != nil {
 		return ScrapeMetric{}, err
 	}
@@ -80,7 +80,7 @@ func (t *ScrapeTask) Run(ctx context.Context, emit func(*ScrapeState)) (ScrapeMe
 	}
 }
 
-func snapshot(cfg dcrawler.Config, c *dcrawler.Crawler) *ScrapeState {
+func snapshot(cfg crawler.Config, c *crawler.Crawler) *ScrapeState {
 	stats := c.Stats()
 	speed := stats.Speed() // must call before ByteSpeed/PeakSpeed (updates rolling window)
 	progress := float64(0)
@@ -112,7 +112,7 @@ func snapshot(cfg dcrawler.Config, c *dcrawler.Crawler) *ScrapeState {
 	}
 }
 
-func metric(cfg dcrawler.Config, c *dcrawler.Crawler) ScrapeMetric {
+func metric(cfg crawler.Config, c *crawler.Crawler) ScrapeMetric {
 	stats := c.Stats()
 	stats.Freeze()
 	return ScrapeMetric{

@@ -11,7 +11,7 @@ import (
 	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
-	"github.com/go-mizu/mizu/blueprints/search/pkg/dcrawler"
+	crawler "github.com/go-mizu/mizu/blueprints/search/pkg/scrape"
 )
 
 // Store reads per-domain crawl metadata from dcrawler result databases.
@@ -205,7 +205,7 @@ func (s *store) ListDomains() (*ListResponse, error) {
 // GetDomainStats returns aggregate stats for a domain.
 // Uses the in-memory cache when available, falls back to shard queries.
 func (s *store) GetDomainStats(domain string) (*Domain, error) {
-	norm := dcrawler.NormalizeDomain(domain)
+	norm := crawler.NormalizeDomain(domain)
 
 	// Try in-memory cache first.
 	s.mu.RLock()
@@ -234,7 +234,7 @@ func (s *store) GetDomainStats(domain string) (*Domain, error) {
 // GetPages returns paginated pages for a domain.
 // statusFilter: "2xx", "3xx", "4xx", "5xx", "error", or "" for all.
 func (s *store) GetPages(domain string, page, pageSize int, q, sortBy, statusFilter string) (*PagesResponse, error) {
-	domainDir := filepath.Join(s.dataDir, dcrawler.NormalizeDomain(domain))
+	domainDir := filepath.Join(s.dataDir, crawler.NormalizeDomain(domain))
 	resultDir := filepath.Join(domainDir, "results")
 
 	shards, _ := filepath.Glob(filepath.Join(resultDir, "results_*.duckdb"))
@@ -336,7 +336,7 @@ func (s *store) GetPages(domain string, page, pageSize int, q, sortBy, statusFil
 // GetDomainSummary returns per-status-group counts and size averages for a domain.
 // Queries shards directly (not cached) — call only for domain detail views.
 func (s *store) GetDomainSummary(domain string) *DomainSummary {
-	domainDir := filepath.Join(s.dataDir, dcrawler.NormalizeDomain(domain))
+	domainDir := filepath.Join(s.dataDir, crawler.NormalizeDomain(domain))
 	resultDir := filepath.Join(domainDir, "results")
 	shards, _ := filepath.Glob(filepath.Join(resultDir, "results_*.duckdb"))
 	if len(shards) == 0 {

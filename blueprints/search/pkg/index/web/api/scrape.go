@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	mizu "github.com/go-mizu/mizu"
-	"github.com/go-mizu/mizu/blueprints/search/pkg/dcrawler"
+	crawler "github.com/go-mizu/mizu/blueprints/search/pkg/scrape"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/pipeline"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/pipeline/scrape"
 )
@@ -40,7 +40,7 @@ func startScrape(d *Deps) mizu.Handler {
 		if req.Domain == "" {
 			return c.JSON(400, errResp{"domain is required"})
 		}
-		domain := dcrawler.NormalizeDomain(req.Domain)
+		domain := crawler.NormalizeDomain(req.Domain)
 		if domain == "" {
 			return c.JSON(400, errResp{"invalid domain"})
 		}
@@ -84,7 +84,7 @@ func startScrape(d *Deps) mizu.Handler {
 
 func resumeScrape(d *Deps) mizu.Handler {
 	return func(c *mizu.Ctx) error {
-		domain := dcrawler.NormalizeDomain(c.Param("domain"))
+		domain := crawler.NormalizeDomain(c.Param("domain"))
 		if domain == "" {
 			return c.JSON(400, errResp{"invalid domain"})
 		}
@@ -109,7 +109,7 @@ func resumeScrape(d *Deps) mizu.Handler {
 
 func stopScrape(d *Deps) mizu.Handler {
 	return func(c *mizu.Ctx) error {
-		domain := dcrawler.NormalizeDomain(c.Param("domain"))
+		domain := crawler.NormalizeDomain(c.Param("domain"))
 		job := findActiveScrapeJob(d, domain)
 		if job == nil {
 			return c.JSON(404, errResp{"no active scrape for domain"})
@@ -140,7 +140,7 @@ func scrapeStatus(d *Deps) mizu.Handler {
 		if d.Scrape == nil {
 			return c.JSON(503, errResp{"scrape store not available"})
 		}
-		domain := dcrawler.NormalizeDomain(c.Param("domain"))
+		domain := crawler.NormalizeDomain(c.Param("domain"))
 		stats, _ := d.Scrape.GetDomainStats(domain)
 
 		var activeJob *scrape.JobInfo
@@ -190,7 +190,7 @@ func scrapePages(d *Deps) mizu.Handler {
 		if d.Scrape == nil {
 			return c.JSON(503, errResp{"scrape store not available"})
 		}
-		domain := dcrawler.NormalizeDomain(c.Param("domain"))
+		domain := crawler.NormalizeDomain(c.Param("domain"))
 		page := queryInt(c, "page", 1)
 		pageSize := queryInt(c, "page_size", 50)
 		if pageSize > 200 {
@@ -210,7 +210,7 @@ func scrapePages(d *Deps) mizu.Handler {
 
 func scrapePipeline(d *Deps) mizu.Handler {
 	return func(c *mizu.Ctx) error {
-		domain := dcrawler.NormalizeDomain(c.Param("domain"))
+		domain := crawler.NormalizeDomain(c.Param("domain"))
 		if domain == "" {
 			return c.JSON(400, errResp{"invalid domain"})
 		}
@@ -230,7 +230,7 @@ func scrapePipeline(d *Deps) mizu.Handler {
 
 func scrapeIndex(d *Deps) mizu.Handler {
 	return func(c *mizu.Ctx) error {
-		domain := dcrawler.NormalizeDomain(c.Param("domain"))
+		domain := crawler.NormalizeDomain(c.Param("domain"))
 		if domain == "" {
 			return c.JSON(400, errResp{"invalid domain"})
 		}
@@ -251,7 +251,7 @@ func scrapeIndex(d *Deps) mizu.Handler {
 
 func scrapeExport(d *Deps) mizu.Handler {
 	return func(c *mizu.Ctx) error {
-		domain := dcrawler.NormalizeDomain(c.Param("domain"))
+		domain := crawler.NormalizeDomain(c.Param("domain"))
 		if domain == "" {
 			return c.JSON(400, errResp{"invalid domain"})
 		}

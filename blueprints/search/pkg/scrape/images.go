@@ -1,4 +1,4 @@
-package dcrawler
+package scrape
 
 import (
 	"context"

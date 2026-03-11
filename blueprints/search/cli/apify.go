@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/dcrawler/apify"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/scrape/apify"
 	"github.com/spf13/cobra"
 )
 

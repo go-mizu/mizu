@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/dcrawler"
+	crawler "github.com/go-mizu/mizu/blueprints/search/pkg/scrape"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/pipeline/cc"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/pipeline/scrape"
 	"github.com/spf13/cobra"
@@ -43,7 +43,7 @@ Examples:
   search export example.com --cc --format html`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			domain := dcrawler.NormalizeDomain(args[0])
+			domain := crawler.NormalizeDomain(args[0])
 			if domain == "" {
 				return fmt.Errorf("invalid domain: %s", args[0])
 			}

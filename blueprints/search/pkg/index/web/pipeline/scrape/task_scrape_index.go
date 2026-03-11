@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/core"
-	"github.com/go-mizu/mizu/blueprints/search/pkg/dcrawler"
+	crawler "github.com/go-mizu/mizu/blueprints/search/pkg/scrape"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index"
 	indexpack "github.com/go-mizu/mizu/blueprints/search/pkg/index/pack"
 )
@@ -50,7 +50,7 @@ func NewScrapeIndexTask(domain, dataDir, engine string) *ScrapeIndexTask {
 
 func (t *ScrapeIndexTask) Run(ctx context.Context, emit func(*ScrapeIndexState)) (ScrapeIndexMetric, error) {
 	start := time.Now()
-	norm := dcrawler.NormalizeDomain(t.domain)
+	norm := crawler.NormalizeDomain(t.domain)
 	mdDir := filepath.Join(t.dataDir, norm, "markdown")
 	outputDir := filepath.Join(t.dataDir, norm, "fts", t.engine)
 

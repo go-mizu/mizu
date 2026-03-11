@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/dcrawler/insta"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/scrape/insta"
 	"github.com/spf13/cobra"
 )
 

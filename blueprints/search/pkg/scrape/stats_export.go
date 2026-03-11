@@ -1,4 +1,4 @@
-package dcrawler
+package scrape
 
 // Exported accessors for Stats fields used by the dashboard scrape pipeline.
 
