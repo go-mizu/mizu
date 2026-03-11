@@ -17,7 +17,7 @@ from __future__ import annotations
 import os
 import platform
 import re
-import tempfile
+
 import time
 
 from .email import MailTmClient, Mailbox
@@ -75,12 +75,28 @@ def _detect_chrome_channel() -> str | None:
     return None
 
 
-def _browser_args() -> list[str]:
-    args = ["--window-size=1280,900", "--lang=en-US"]
+def _browser_args(headless: bool = True) -> list[str]:
+    args = [
+        "--disable-blink-features=AutomationControlled",
+        "--window-size=1920,1080",
+        "--lang=en-US",
+    ]
     if platform.system() == "Linux":
         args += [
             "--no-sandbox", "--disable-setuid-sandbox",
-            "--disable-dev-shm-usage", "--disable-gpu",
+            "--disable-dev-shm-usage",
+            "--use-angle=swiftshader",
+            "--enable-webgl",
+            "--ignore-gpu-blocklist",
+            "--enable-unsafe-swiftshader",
+        ]
+    elif platform.system() == "Darwin" and headless:
+        # macOS headless: SwiftShader for WebGL (GPU not available in headless)
+        args += [
+            "--use-angle=swiftshader",
+            "--enable-webgl",
+            "--ignore-gpu-blocklist",
+            "--enable-unsafe-swiftshader",
         ]
     return args
 
@@ -182,19 +198,19 @@ def register_via_browser(
             print(f"[{ts}] [browser] {msg}", flush=True)
 
     log(f"registering {mailbox.address}")
-    user_data = tempfile.mkdtemp(prefix="cf_reg_")
     channel = _detect_chrome_channel()
 
     with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(
-            user_data_dir=user_data,
+        browser = p.chromium.launch(
             channel=channel,
             headless=headless,
-            args=_browser_args(),
-            viewport={"width": 1280, "height": 900},
+            args=_browser_args(headless),
+        )
+        ctx = browser.new_context(
+            viewport={"width": 1920, "height": 1080},
             locale="en-US",
         )
-        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        page = ctx.new_page()
         if verbose:
             page.on("pageerror", lambda e: log(f"[page-error] {e}"))
 
@@ -233,19 +249,22 @@ def register_via_browser(
                 confirm_inputs.nth(1).type(password, delay=55)
                 time.sleep(0.3)
 
-            # Interact with Turnstile widget — click its checkbox iframe then wait for solution
+            # Interact with Turnstile — click center of iframe via mouse coords (more natural)
             log("interacting with Turnstile...")
             try:
-                # The Turnstile widget lives inside an iframe at challenges.cloudflare.com
-                ts_frame = page.frame_locator('iframe[src*="challenges.cloudflare.com"]')
-                ts_checkbox = ts_frame.locator('input[type="checkbox"]')
-                if ts_checkbox.count() > 0:
-                    ts_checkbox.first.click(timeout=5000)
-                    log("clicked Turnstile checkbox")
+                ts_iframe = page.locator('iframe[src*="challenges.cloudflare.com"]').first
+                ts_iframe.wait_for(state="visible", timeout=10000)
+                box = ts_iframe.bounding_box()
+                if box:
+                    cx = box["x"] + box["width"] / 2
+                    cy = box["y"] + box["height"] / 2
+                    # Slow mouse move then click (human-like)
+                    page.mouse.move(cx, cy, steps=10)
+                    time.sleep(0.3)
+                    page.mouse.click(cx, cy)
+                    log(f"clicked Turnstile iframe center ({cx:.0f}, {cy:.0f})")
                 else:
-                    # Try clicking the iframe body to trigger managed challenge
-                    ts_frame.locator("body").click(timeout=5000)
-                    log("clicked Turnstile body")
+                    log("Turnstile iframe has no bounding box")
             except Exception as e:
                 log(f"Turnstile click: {e}")
 
@@ -339,6 +358,7 @@ def register_via_browser(
 
         finally:
             ctx.close()
+            browser.close()
 
 
 def _skip_onboarding(page, log, max_attempts: int = 15) -> None:
@@ -443,19 +463,19 @@ def create_token_via_browser(
     permissions = PRESETS.get(preset, PRESETS["all"])
     log(f"creating token '{token_name}' with preset '{preset}' ({len(permissions)} permissions)")
 
-    user_data = tempfile.mkdtemp(prefix="cf_tok_")
     channel = _detect_chrome_channel()
 
     with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(
-            user_data_dir=user_data,
+        browser = p.chromium.launch(
             channel=channel,
             headless=headless,
-            args=_browser_args(),
-            viewport={"width": 1280, "height": 900},
+            args=_browser_args(headless),
+        )
+        ctx = browser.new_context(
+            viewport={"width": 1920, "height": 1080},
             locale="en-US",
         )
-        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        page = ctx.new_page()
         if verbose:
             page.on("pageerror", lambda e: log(f"[page-error] {e}"))
 
@@ -586,6 +606,7 @@ def create_token_via_browser(
 
         finally:
             ctx.close()
+            browser.close()
 
 
 def _add_token_permissions(page, permissions: list[tuple[str, str, str]], log) -> None:
