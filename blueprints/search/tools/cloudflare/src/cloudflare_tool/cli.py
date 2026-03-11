@@ -40,7 +40,7 @@ def _store() -> Store:
 
 @app.command()
 def register(
-    no_headless: Annotated[bool, typer.Option("--no-headless")] = False,
+    no_headless: Annotated[bool, typer.Option("--no-headless")] = True,
     verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
     json_out: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
@@ -61,12 +61,13 @@ def register(
     status_console.print("[bold green]Opening browser for Cloudflare signup...[/bold green]")
 
     try:
-        account_id = register_via_browser(
+        account_id, api_key = register_via_browser(
             mailbox=mailbox,
             mail_client=mail_client,
             password=identity.password,
             headless=not no_headless,
             verbose=verbose,
+            extract_api_key=True,
         )
     except Exception as e:
         err_console.print(f"[bold red]Registration failed:[/bold red] {e}")
@@ -79,18 +80,42 @@ def register(
             "email": mailbox.address,
             "password": identity.password,
             "account_id": account_id,
+            "api_key": api_key,
         }))
         return
 
     store = _store()
-    store.add_account(
+    acc_db_id = store.add_account(
         email=mailbox.address,
         password=identity.password,
         account_id=account_id,
+        global_api_key=api_key,
     )
+
+    # Store Global API Key as token if extracted
+    if api_key:
+        token_name = "global-api-key"
+        store.add_token(
+            account_id=acc_db_id,
+            name=token_name,
+            token_value=api_key,
+            preset="global-api-key",
+        )
+        store.set_default_token(token_name)
+        # Write cloudflare.json
+        _CF_JSON.parent.mkdir(parents=True, exist_ok=True)
+        _CF_JSON.write_text(json.dumps({
+            "account_id": account_id,
+            "api_token": api_key,
+            "auth_email": mailbox.address,
+            "auth_type": "global-api-key",
+        }, indent=2))
+        console.print(f"[bold green]✓ Global API Key extracted and stored[/bold green]")
 
     console.print(f"\n[bold green]✓ Registered:[/bold green] {mailbox.address}")
     console.print(f"[dim]Account ID:[/dim] {account_id}")
+    if api_key:
+        console.print(f"[dim]API Key:[/dim] {api_key[:10]}...")
     console.print(f"[dim]Stored in:[/dim] {DEFAULT_DB_PATH}")
 
 
@@ -205,6 +230,196 @@ def token_create(
     console.print(f"[dim]Preset:[/dim] {preset}")
     if set_default:
         console.print(f"[green]Set as default. cloudflare.json updated.[/green]")
+
+
+@token_app.command("get-key")
+def token_get_key(
+    name: Annotated[str, typer.Argument(help="Token name")] = "global-api-key",
+    account: Annotated[Optional[str], typer.Option("--account")] = None,
+    no_headless: Annotated[bool, typer.Option("--no-headless")] = False,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+    set_default: Annotated[bool, typer.Option("--default")] = True,
+) -> None:
+    """Extract Global API Key via browser (login → /profile/api-tokens → View → copy key)."""
+    from .browser import extract_global_api_key_via_browser
+
+    store = _store()
+    if account:
+        acc = store.get_account_by_email(account)
+        if not acc:
+            err_console.print(f"[bold red]Account not found:[/bold red] {account}")
+            raise typer.Exit(1)
+    else:
+        acc = store.get_first_active_account()
+        if not acc:
+            err_console.print("[bold red]No active accounts. Run:[/bold red] cloudflare-tool register")
+            raise typer.Exit(1)
+
+    console.print(f"[bold green]Extracting Global API Key for {acc['email']}...[/bold green]")
+    console.print("[dim]Opening browser to login and navigate to API tokens page...[/dim]")
+
+    # mail.tm password follows the pattern used during registration
+    mail_password = f"Cf{acc['email'].split('@')[0][:6]}!9xQ"
+
+    try:
+        token_value = extract_global_api_key_via_browser(
+            email=acc["email"],
+            password=acc["password"],
+            mail_password=mail_password,
+            headless=not no_headless,
+            verbose=verbose,
+        )
+    except Exception as e:
+        err_console.print(f"[bold red]Failed:[/bold red] {e}")
+        raise typer.Exit(1)
+
+    # Remove existing token with same name if any
+    if store.get_token_by_name(name):
+        store.remove_token(name)
+    store.add_token(
+        account_id=acc["id"],
+        name=name,
+        token_value=token_value,
+        preset="all",
+    )
+    if set_default:
+        store.set_default_token(name)
+        _write_cf_json(store, name)
+
+    # Also store in account
+    store.update_global_api_key(acc["email"], token_value)
+
+    console.print(f"[bold green]✓ Global API Key extracted:[/bold green] {name}")
+    console.print(f"[dim]Value:[/dim] {token_value[:10]}...")
+    console.print(f"[dim]Account:[/dim] {acc['email']}")
+    if set_default:
+        console.print(f"[green]Set as default. cloudflare.json updated.[/green]")
+
+
+@token_app.command("verify-all")
+def token_verify_all(
+    no_headless: Annotated[bool, typer.Option("--no-headless")] = False,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+    account: Annotated[Optional[str], typer.Option("--account")] = None,
+) -> None:
+    """Verify email, extract Global API Key, and create tokens for account(s).
+
+    Strict workflow per account:
+    1. Login → verify email (if not already verified) → confirm "Verified" on profile
+    2. Extract Global API Key via browser (Dialog 1 code + Dialog 2 Turnstile)
+    3. Use Global API Key to create a scoped API token via Cloudflare API
+    """
+    from .browser import extract_global_api_key_via_browser, create_token_with_global_api_key
+
+    store = _store()
+
+    if account:
+        accounts = [store.get_account_by_email(account)]
+        if not accounts[0]:
+            err_console.print(f"[bold red]Account not found:[/bold red] {account}")
+            raise typer.Exit(1)
+    else:
+        accounts = [
+            store.get_account_by_email(a["email"])
+            for a in store.list_accounts()
+            if a["is_active"]
+        ]
+
+    if not accounts:
+        err_console.print("[bold red]No active accounts.[/bold red]")
+        raise typer.Exit(1)
+
+    results: list[tuple[str, bool, str]] = []
+
+    for acc in accounts:
+        email = acc["email"]
+        console.print(f"\n[bold cyan]{'='*60}[/bold cyan]")
+        console.print(f"[bold]Account:[/bold] {email}")
+        console.print(f"[dim]Account ID:[/dim] {acc['account_id']}")
+
+        # Skip if already has a token
+        existing_tokens = [t for t in store.list_tokens() if t["email"] == email]
+        if existing_tokens:
+            console.print(f"[green]Already has {len(existing_tokens)} token(s) — skipping[/green]")
+            results.append((email, True, "already has token"))
+            continue
+
+        local = email.split("@")[0]
+        mail_pass = f"Cf{local[:6]}!9xQ"
+        token_name = f"api-{local[:12]}"
+
+        # Step 1: Check if we already have a valid Global API Key stored
+        import re as _re
+        global_api_key = acc.get("global_api_key", "")
+        if global_api_key and not _re.match(r"^[a-f0-9]{32,40}$", global_api_key):
+            console.print(f"[yellow]Stored key invalid ({global_api_key[:20]!r}…), re-extracting[/yellow]")
+            global_api_key = ""
+        if not global_api_key:
+            console.print(f"[cyan]Extracting Global API Key via browser...[/cyan]")
+            try:
+                global_api_key = extract_global_api_key_via_browser(
+                    email=email,
+                    password=acc["password"],
+                    mail_password=mail_pass,
+                    headless=not no_headless,
+                    verbose=verbose,
+                )
+                store.update_global_api_key(email, global_api_key)
+                console.print(f"[green]Global API Key extracted: {global_api_key[:10]}...[/green]")
+            except Exception as e:
+                err_console.print(f"[bold red]Global API Key extraction failed:[/bold red] {e}")
+                results.append((email, False, f"key-fail: {e}"))
+                continue
+        else:
+            console.print(f"[dim]Using stored Global API Key: {global_api_key[:10]}...[/dim]")
+
+        # Step 2: Create scoped API token using Global API Key
+        console.print(f"[cyan]Creating API token '{token_name}'...[/cyan]")
+        try:
+            token_value = create_token_with_global_api_key(
+                email=email,
+                global_api_key=global_api_key,
+                account_id=acc["account_id"],
+                token_name=token_name,
+                preset="all",
+            )
+        except Exception as e:
+            err_console.print(f"[bold red]Token creation failed:[/bold red] {e}")
+            results.append((email, False, f"token-fail: {e}"))
+            continue
+
+        # Store the token
+        if store.get_token_by_name(token_name):
+            store.remove_token(token_name)
+        store.add_token(
+            account_id=acc["id"],
+            name=token_name,
+            token_value=token_value,
+            preset="all",
+        )
+        console.print(f"[bold green]Token created:[/bold green] {token_name}")
+        console.print(f"[dim]Value:[/dim] {token_value[:10]}...")
+        results.append((email, True, token_value[:10]))
+
+    # Summary
+    console.print(f"\n[bold cyan]{'='*60}[/bold cyan]")
+    console.print("[bold]Summary:[/bold]")
+    ok = sum(1 for _, success, _ in results if success)
+    console.print(f"  {ok}/{len(results)} accounts ready")
+    for email, success, detail in results:
+        status = "[green]OK[/green]" if success else "[red]FAIL[/red]"
+        console.print(f"  {status} {email}: {detail}")
+
+    # Set the first new token as default
+    if ok > 0:
+        for email, success, detail in results:
+            if success and detail not in ("already has token",):
+                tok_name = f"api-{email.split('@')[0][:12]}"
+                if store.get_token_by_name(tok_name):
+                    store.set_default_token(tok_name)
+                    _write_cf_json(store, tok_name)
+                    console.print(f"\n[green]Default token set:[/green] {tok_name}")
+                    break
 
 
 @token_app.command("ls")
