@@ -210,6 +210,82 @@ OTHER=something
 	}
 }
 
+func TestDriverEmbedCountMismatch(t *testing.T) {
+	// Server returns n-1 embeddings for an n-text request.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req batchEmbedRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		// Return one fewer embedding than requested.
+		count := len(req.Requests) - 1
+		if count < 0 {
+			count = 0
+		}
+		resp := batchEmbedResponse{
+			Embeddings: make([]embeddingValue, count),
+		}
+		for i := range resp.Embeddings {
+			resp.Embeddings[i] = embeddingValue{Values: []float32{0.1, 0.2, 0.3, 0.4}}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	ctx := context.Background()
+	// Open with a batch size larger than 3 so the probe (1 text → 0 returned) would fail.
+	// Use batch size 10 so Open's probe sends 1 text and gets 0 back → Open itself fails.
+	// Instead, open with a server that returns correct count for the probe (1 text → 1 embedding),
+	// then switch to the mismatch server for Embed. We achieve this by using a counter.
+	var callCount atomic.Int32
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req batchEmbedRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		n := callCount.Add(1)
+		var count int
+		if n == 1 {
+			// First call is the probe — return correct count so Open succeeds.
+			count = len(req.Requests)
+		} else {
+			// Subsequent calls return n-1 embeddings.
+			count = len(req.Requests) - 1
+			if count < 0 {
+				count = 0
+			}
+		}
+		resp := batchEmbedResponse{
+			Embeddings: make([]embeddingValue, count),
+		}
+		for i := range resp.Embeddings {
+			resp.Embeddings[i] = embeddingValue{Values: []float32{0.1, 0.2, 0.3, 0.4}}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv2.Close()
+	_ = srv // unused but kept to avoid lint noise on the first server definition above
+
+	d := &Driver{baseURL: srv2.URL}
+	if err := d.Open(ctx, embed.Config{Addr: "fake-key"}); err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer d.Close()
+
+	_, err := d.Embed(ctx, []embed.Input{
+		{Text: "a"},
+		{Text: "b"},
+		{Text: "c"},
+	})
+	if err == nil {
+		t.Fatal("expected error for count mismatch, got nil")
+	}
+}
+
 func TestParseModelName(t *testing.T) {
 	tests := []struct {
 		input    string

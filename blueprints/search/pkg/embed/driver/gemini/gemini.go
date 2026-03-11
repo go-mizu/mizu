@@ -26,11 +26,6 @@ const (
 	localEnvRelPath  = ".local.env" // relative to $HOME/data/
 )
 
-var modelDims = map[string]int{
-	"text-embedding-004":         768,
-	"gemini-embedding-exp-03-07": 3072,
-}
-
 func init() {
 	embed.Register("gemini", func() embed.Driver { return &Driver{} })
 }
