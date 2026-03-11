@@ -26,4 +26,5 @@ packages = ["src/cloudflare_tool"]
 dev = [
     "pytest>=8.0",
     "pytest-mock>=3.14",
+    "pyinstaller>=6.0",
 ]
