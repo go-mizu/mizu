@@ -233,7 +233,23 @@ def register_via_browser(
                 confirm_inputs.nth(1).type(password, delay=55)
                 time.sleep(0.3)
 
-            # Wait for Turnstile to solve: cf_challenge_response gets populated when Turnstile passes
+            # Interact with Turnstile widget — click its checkbox iframe then wait for solution
+            log("interacting with Turnstile...")
+            try:
+                # The Turnstile widget lives inside an iframe at challenges.cloudflare.com
+                ts_frame = page.frame_locator('iframe[src*="challenges.cloudflare.com"]')
+                ts_checkbox = ts_frame.locator('input[type="checkbox"]')
+                if ts_checkbox.count() > 0:
+                    ts_checkbox.first.click(timeout=5000)
+                    log("clicked Turnstile checkbox")
+                else:
+                    # Try clicking the iframe body to trigger managed challenge
+                    ts_frame.locator("body").click(timeout=5000)
+                    log("clicked Turnstile body")
+            except Exception as e:
+                log(f"Turnstile click: {e}")
+
+            # Wait up to 30s for cf_challenge_response to be populated
             log("waiting for Turnstile to solve...")
             try:
                 page.wait_for_function(
@@ -243,7 +259,7 @@ def register_via_browser(
                 )
                 log("Turnstile solved")
             except Exception as e:
-                log(f"Turnstile wait: {e} — submitting anyway")
+                log(f"Turnstile solve timeout: {e} — submitting anyway")
 
             # Submit
             _wait(0.5, log)
