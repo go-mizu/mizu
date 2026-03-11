@@ -8,10 +8,16 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
 	"time"
 )
 
-const baseURLTemplate = "https://api.cloudflare.com/client/v4/accounts/%s/browser-rendering"
+const (
+	cfBaseURLTemplate = "https://api.cloudflare.com/client/v4/accounts/%s/browser-rendering"
+	DefaultProxyURL   = "https://browser.go-mizu.workers.dev/api"
+)
 
 // Credentials holds CF account credentials.
 type Credentials struct {
@@ -43,23 +49,99 @@ func LoadCredentials() (Credentials, error) {
 	return creds, nil
 }
 
-// Client sends requests to the CF Browser Rendering REST API.
-type Client struct {
-	creds   Credentials
-	http    *http.Client
-	baseURL string
+// ProxyConfig holds configuration for the self-hosted browser worker proxy
+// (tools/browser deployed at DefaultProxyURL).
+type ProxyConfig struct {
+	URL   string // worker base URL, e.g. DefaultProxyURL
+	Token string // AUTH_TOKEN secret
 }
 
-// NewClient creates a new Client.
+// LoadProxyConfig reads BROWSER_API_TOKEN from $HOME/data/.local.env and
+// returns a ProxyConfig using DefaultProxyURL.
+func LoadProxyConfig() (ProxyConfig, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ProxyConfig{}, fmt.Errorf("get home dir: %w", err)
+	}
+	path := filepath.Join(home, "data", ".local.env")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ProxyConfig{}, fmt.Errorf("read %s: %w", path, err)
+	}
+	// Search raw content for BROWSER_API_TOKEN= — it may appear mid-line.
+	const key = "BROWSER_API_TOKEN="
+	if idx := strings.Index(string(data), key); idx >= 0 {
+		rest := string(data)[idx+len(key):]
+		// Value ends at whitespace or end of string.
+		end := strings.IndexAny(rest, " \t\r\n\"'")
+		if end < 0 {
+			end = len(rest)
+		}
+		if token := rest[:end]; token != "" {
+			return ProxyConfig{URL: DefaultProxyURL, Token: token}, nil
+		}
+	}
+	return ProxyConfig{}, fmt.Errorf("BROWSER_API_TOKEN not found in %s", path)
+}
+
+// Client sends requests to the CF Browser Rendering REST API.
+//
+// When a ProxyConfig is set (via NewClientWithProxy), every request is routed
+// through the self-hosted worker first. The worker caches results in D1 and
+// has its own fallback layer — so most calls never reach CF.
+//
+// If the proxy fails or is unavailable for an endpoint, the client falls back
+// to the direct CF API. When CF returns 429 the reset time is cached in-memory
+// and subsequent calls skip CF until the window expires.
+type Client struct {
+	creds     Credentials
+	proxy     ProxyConfig
+	http      *http.Client
+	cfBaseURL string
+
+	mu               sync.RWMutex
+	cfRateLimitUntil time.Time
+}
+
+// NewClient creates a Client that calls CF directly (no proxy).
 func NewClient(creds Credentials) *Client {
 	return &Client{
-		creds:   creds,
-		http:    &http.Client{Timeout: 60 * time.Second},
-		baseURL: fmt.Sprintf(baseURLTemplate, creds.AccountID),
+		creds:     creds,
+		http:      &http.Client{Timeout: 60 * time.Second},
+		cfBaseURL: fmt.Sprintf(cfBaseURLTemplate, creds.AccountID),
 	}
 }
 
-// apiResponse is the CF envelope for JSON endpoints.
+// NewClientWithProxy creates a Client that routes all requests through the
+// proxy worker first, falling back to CF when the proxy cannot serve a request.
+func NewClientWithProxy(creds Credentials, proxy ProxyConfig) *Client {
+	c := NewClient(creds)
+	c.proxy = proxy
+	return c
+}
+
+// CFRateLimitUntil returns when direct CF calls can resume (zero = not limited).
+func (c *Client) CFRateLimitUntil() time.Time {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.cfRateLimitUntil
+}
+
+func (c *Client) setCFRateLimit(d time.Duration) {
+	c.mu.Lock()
+	c.cfRateLimitUntil = time.Now().Add(d)
+	c.mu.Unlock()
+}
+
+func (c *Client) cfIsRateLimited() bool {
+	c.mu.RLock()
+	until := c.cfRateLimitUntil
+	c.mu.RUnlock()
+	return !until.IsZero() && time.Now().Before(until)
+}
+
+// ── apiResponse envelope ──────────────────────────────────────────────────────
+
 type apiResponse struct {
 	Success bool            `json:"success"`
 	Result  json.RawMessage `json:"result"`
@@ -71,115 +153,137 @@ type apiError struct {
 	Message string `json:"message"`
 }
 
-// postJSON POSTs JSON and decodes the envelope, placing result into out.
-func (c *Client) postJSON(path string, req, out any) error {
+// ── Low-level HTTP helpers ────────────────────────────────────────────────────
+
+// doPostJSON POSTs to baseURL+path using token, decodes the CF envelope.
+// Returns retryAfter > 0 when the server responds with 429.
+func (c *Client) doPostJSON(baseURL, token, path string, req, out any) (retryAfter time.Duration, err error) {
 	body, err := json.Marshal(req)
 	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
+		return 0, fmt.Errorf("marshal request: %w", err)
 	}
-	httpReq, err := http.NewRequest(http.MethodPost, c.baseURL+path, bytes.NewReader(body))
+	httpReq, err := http.NewRequest(http.MethodPost, baseURL+path, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return 0, err
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+c.creds.APIToken)
+	httpReq.Header.Set("Authorization", "Bearer "+token)
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
-		return fmt.Errorf("POST %s: %w", path, err)
+		return 0, fmt.Errorf("POST %s%s: %w", baseURL, path, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 429 {
-		return fmt.Errorf("rate limited (429); retry after %s", resp.Header.Get("Retry-After"))
+		ra := parseRetryAfter(resp.Header.Get("Retry-After"))
+		return ra, fmt.Errorf("rate limited (429); retry after %s", resp.Header.Get("Retry-After"))
 	}
 
 	var env apiResponse
 	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
-		return fmt.Errorf("decode response: %w", err)
+		return 0, fmt.Errorf("decode response (HTTP %d): %w", resp.StatusCode, err)
 	}
 	if !env.Success {
 		if len(env.Errors) > 0 {
-			return fmt.Errorf("API error %d: %s", env.Errors[0].Code, env.Errors[0].Message)
+			return 0, fmt.Errorf("API error %d: %s", env.Errors[0].Code, env.Errors[0].Message)
 		}
-		return fmt.Errorf("API returned success=false")
+		return 0, fmt.Errorf("API returned success=false (HTTP %d)", resp.StatusCode)
 	}
 	if out != nil {
-		return json.Unmarshal(env.Result, out)
+		return 0, json.Unmarshal(env.Result, out)
 	}
-	return nil
+	return 0, nil
 }
 
-// postBinary POSTs JSON and returns the raw binary response body.
-func (c *Client) postBinary(path string, req any) ([]byte, error) {
+// doPostBinary POSTs to baseURL+path using token.
+// If the response Content-Type is binary (image/* or application/pdf) the raw
+// bytes are returned. Otherwise the response is decoded as a JSON error envelope.
+// Returns retryAfter > 0 on 429.
+func (c *Client) doPostBinary(baseURL, token, path string, req any) (data []byte, retryAfter time.Duration, err error) {
 	body, err := json.Marshal(req)
 	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
+		return nil, 0, fmt.Errorf("marshal request: %w", err)
 	}
-	httpReq, err := http.NewRequest(http.MethodPost, c.baseURL+path, bytes.NewReader(body))
+	httpReq, err := http.NewRequest(http.MethodPost, baseURL+path, bytes.NewReader(body))
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+c.creds.APIToken)
+	httpReq.Header.Set("Authorization", "Bearer "+token)
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("POST %s: %w", path, err)
+		return nil, 0, fmt.Errorf("POST %s%s: %w", baseURL, path, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 429 {
-		return nil, fmt.Errorf("rate limited (429); retry after %s", resp.Header.Get("Retry-After"))
+		ra := parseRetryAfter(resp.Header.Get("Retry-After"))
+		return nil, ra, fmt.Errorf("rate limited (429); retry after %s", resp.Header.Get("Retry-After"))
 	}
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("POST %s: HTTP %d: %s", path, resp.StatusCode, b)
+
+	if isBinaryContentType(resp.Header.Get("Content-Type")) {
+		b, err := io.ReadAll(resp.Body)
+		return b, 0, err
 	}
-	return io.ReadAll(resp.Body)
+
+	// JSON response — decode as error envelope.
+	var env apiResponse
+	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
+		return nil, 0, fmt.Errorf("unexpected response (HTTP %d): %w", resp.StatusCode, err)
+	}
+	if !env.Success {
+		if len(env.Errors) > 0 {
+			return nil, 0, fmt.Errorf("API error %d: %s", env.Errors[0].Code, env.Errors[0].Message)
+		}
+		return nil, 0, fmt.Errorf("API returned success=false (HTTP %d)", resp.StatusCode)
+	}
+	return nil, 0, fmt.Errorf("expected binary response, got JSON success (HTTP %d)", resp.StatusCode)
 }
 
-// getJSON sends GET to rawURL and decodes the envelope into out.
-func (c *Client) getJSON(rawURL string, out any) error {
+// doGetJSON sends GET to rawURL with token and decodes the CF envelope.
+func (c *Client) doGetJSON(rawURL, token string, out any) (retryAfter time.Duration, err error) {
 	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.creds.APIToken)
+	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("GET %s: %w", rawURL, err)
+		return 0, fmt.Errorf("GET %s: %w", rawURL, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 429 {
-		return fmt.Errorf("rate limited (429); retry after %s", resp.Header.Get("Retry-After"))
+		ra := parseRetryAfter(resp.Header.Get("Retry-After"))
+		return ra, fmt.Errorf("rate limited (429); retry after %s", resp.Header.Get("Retry-After"))
 	}
 
 	var env apiResponse
 	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
-		return fmt.Errorf("decode response: %w", err)
+		return 0, fmt.Errorf("decode response (HTTP %d): %w", resp.StatusCode, err)
 	}
 	if !env.Success {
 		if len(env.Errors) > 0 {
-			return fmt.Errorf("API error %d: %s", env.Errors[0].Code, env.Errors[0].Message)
+			return 0, fmt.Errorf("API error %d: %s", env.Errors[0].Code, env.Errors[0].Message)
 		}
-		return fmt.Errorf("API returned success=false")
+		return 0, fmt.Errorf("API returned success=false (HTTP %d)", resp.StatusCode)
 	}
 	if out != nil {
-		return json.Unmarshal(env.Result, out)
+		return 0, json.Unmarshal(env.Result, out)
 	}
-	return nil
+	return 0, nil
 }
 
-// doDelete sends DELETE to rawURL.
-func (c *Client) doDelete(rawURL string) error {
+// doDeleteHTTP sends DELETE to rawURL with token.
+func (c *Client) doDeleteHTTP(rawURL, token string) error {
 	req, err := http.NewRequest(http.MethodDelete, rawURL, nil)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.creds.APIToken)
+	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -194,7 +298,86 @@ func (c *Client) doDelete(rawURL string) error {
 	return nil
 }
 
-// --- Shared option types ---
+// ── Routing helpers (proxy → CF with rate-limit cache) ────────────────────────
+
+// postJSON routes to proxy first, then CF.
+func (c *Client) postJSON(path string, req, out any) error {
+	if c.proxy.URL != "" {
+		if _, err := c.doPostJSON(c.proxy.URL, c.proxy.Token, path, req, out); err == nil {
+			return nil
+		}
+		// proxy error → fall through to CF
+	}
+	if c.cfIsRateLimited() {
+		until := c.CFRateLimitUntil()
+		return fmt.Errorf("CF rate limited until %s (%.0f min remaining)",
+			until.Format(time.RFC3339), time.Until(until).Minutes())
+	}
+	ra, err := c.doPostJSON(c.cfBaseURL, c.creds.APIToken, path, req, out)
+	if ra > 0 {
+		c.setCFRateLimit(ra)
+	}
+	return err
+}
+
+// postBinary routes to proxy first (accepts binary response), then CF.
+func (c *Client) postBinary(path string, req any) ([]byte, error) {
+	if c.proxy.URL != "" {
+		if data, _, err := c.doPostBinary(c.proxy.URL, c.proxy.Token, path, req); err == nil {
+			return data, nil
+		}
+		// proxy error (e.g. 503 "no browser") → fall through to CF
+	}
+	if c.cfIsRateLimited() {
+		until := c.CFRateLimitUntil()
+		return nil, fmt.Errorf("CF rate limited until %s (%.0f min remaining)",
+			until.Format(time.RFC3339), time.Until(until).Minutes())
+	}
+	data, ra, err := c.doPostBinary(c.cfBaseURL, c.creds.APIToken, path, req)
+	if ra > 0 {
+		c.setCFRateLimit(ra)
+	}
+	return data, err
+}
+
+// crawlBase returns the base URL + token for crawl GET/DELETE operations.
+// Proxy is preferred when configured.
+func (c *Client) crawlBase() (baseURL, token string) {
+	if c.proxy.URL != "" {
+		return c.proxy.URL, c.proxy.Token
+	}
+	return c.cfBaseURL, c.creds.APIToken
+}
+
+// getJSON and doDelete are called from crawl.go with full URLs built via crawlBase.
+func (c *Client) getJSON(rawURL string, out any) error {
+	_, token := c.crawlBase()
+	_, err := c.doGetJSON(rawURL, token, out)
+	return err
+}
+
+func (c *Client) doDelete(rawURL string) error {
+	_, token := c.crawlBase()
+	return c.doDeleteHTTP(rawURL, token)
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+
+func parseRetryAfter(s string) time.Duration {
+	s = strings.TrimSpace(s)
+	secs, err := strconv.Atoi(s)
+	if err != nil || secs <= 0 {
+		return 60 * time.Second
+	}
+	return time.Duration(secs) * time.Second
+}
+
+func isBinaryContentType(ct string) bool {
+	ct = strings.ToLower(strings.SplitN(ct, ";", 2)[0])
+	return strings.HasPrefix(ct, "image/") || ct == "application/pdf"
+}
+
+// ── Shared option types ───────────────────────────────────────────────────────
 
 // GotoOptions controls page navigation behaviour.
 type GotoOptions struct {
@@ -252,11 +435,11 @@ type CommonRequest struct {
 	GotoOptions          *GotoOptions      `json:"gotoOptions,omitempty"`
 	WaitForSelector      *WaitForSelector  `json:"waitForSelector,omitempty"`
 	SetExtraHTTPHeaders  map[string]string `json:"setExtraHTTPHeaders,omitempty"`
-	RejectResourceTypes  []string          `json:"rejectResourceTypes,omitempty"`  // image|media|font|stylesheet
-	RejectRequestPattern []string          `json:"rejectRequestPattern,omitempty"` // regex
+	RejectResourceTypes  []string          `json:"rejectResourceTypes,omitempty"`
+	RejectRequestPattern []string          `json:"rejectRequestPattern,omitempty"`
 }
 
-// --- Endpoint request/response types ---
+// ── Endpoint request/response types ──────────────────────────────────────────
 
 // ContentRequest fetches rendered HTML.
 type ContentRequest struct{ CommonRequest }
@@ -292,7 +475,7 @@ type ScreenshotRequest struct {
 
 // PDFOptions controls PDF rendering.
 type PDFOptions struct {
-	Format          string  `json:"format,omitempty"` // A4|Letter|etc
+	Format          string  `json:"format,omitempty"`
 	Landscape       bool    `json:"landscape,omitempty"`
 	Scale           float64 `json:"scale,omitempty"`
 	PrintBackground bool    `json:"printBackground,omitempty"`
@@ -366,7 +549,7 @@ type JSONRequest struct {
 	ResponseFormat map[string]any `json:"response_format,omitempty"`
 }
 
-// --- Synchronous endpoint methods ---
+// ── Synchronous endpoint methods ─────────────────────────────────────────────
 
 // Content fetches the rendered HTML of a page.
 func (c *Client) Content(req ContentRequest) (string, error) {

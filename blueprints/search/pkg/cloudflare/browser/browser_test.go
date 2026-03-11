@@ -10,13 +10,28 @@ import (
 
 const testURL = "https://sqlite.org"
 
+// newTestClient loads proxy config first (preferred), falls back to direct CF.
+// Skips the test when neither is available.
 func newTestClient(t *testing.T) *browser.Client {
 	t.Helper()
-	creds, err := browser.LoadCredentials()
-	if err != nil {
-		t.Skipf("no CF credentials (%v); skipping integration test", err)
+
+	proxy, proxyErr := browser.LoadProxyConfig()
+	creds, credsErr := browser.LoadCredentials()
+
+	switch {
+	case proxyErr == nil && credsErr == nil:
+		t.Logf("using proxy %s with CF fallback", proxy.URL)
+		return browser.NewClientWithProxy(creds, proxy)
+	case proxyErr == nil:
+		t.Logf("using proxy %s (no CF creds)", proxy.URL)
+		return browser.NewClientWithProxy(browser.Credentials{}, proxy)
+	case credsErr == nil:
+		t.Logf("using CF directly (no proxy)")
+		return browser.NewClient(creds)
+	default:
+		t.Skipf("no proxy (%v) and no CF credentials (%v); skipping integration test", proxyErr, credsErr)
+		return nil
 	}
-	return browser.NewClient(creds)
 }
 
 func TestContent(t *testing.T) {
