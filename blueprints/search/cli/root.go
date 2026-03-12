@@ -87,6 +87,7 @@ Get started:
 	root.AddCommand(NewExport())
 	root.AddCommand(NewClickHouse())
 	root.AddCommand(NewMotherDuck())
+	root.AddCommand(NewGoodread())
 
 	if err := fang.Execute(ctx, root,
 		fang.WithVersion(Version),
