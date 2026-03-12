@@ -88,6 +88,8 @@ Get started:
 	root.AddCommand(NewClickHouse())
 	root.AddCommand(NewMotherDuck())
 	root.AddCommand(NewGoodread())
+	root.AddCommand(NewAmazon())
+	root.AddCommand(NewPinterest())
 
 	if err := fang.Execute(ctx, root,
 		fang.WithVersion(Version),
