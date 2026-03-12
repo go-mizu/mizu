@@ -72,16 +72,21 @@ Get started:
 	root.AddCommand(NewFW1())
 	root.AddCommand(NewFW2())
 	root.AddCommand(NewCC())
-	root.AddCommand(NewCrawlDomain())
+	root.AddCommand(NewScrape())
 	root.AddCommand(NewReddit())
 	root.AddCommand(NewInsta())
 	root.AddCommand(NewX())
 	root.AddCommand(NewPerplexity())
 	root.AddCommand(NewQQ())
+	root.AddCommand(NewApify())
 	root.AddCommand(NewHN())
 	root.AddCommand(NewLocal())
 	root.AddCommand(NewRSS())
 	root.AddCommand(NewBench())
+	root.AddCommand(NewSerp())
+	root.AddCommand(NewExport())
+	root.AddCommand(NewClickHouse())
+	root.AddCommand(NewMotherDuck())
 
 	if err := fang.Execute(ctx, root,
 		fang.WithVersion(Version),

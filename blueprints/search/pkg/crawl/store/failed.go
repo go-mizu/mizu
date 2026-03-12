@@ -38,6 +38,8 @@ func NewFailedDB(path string) (*FailedDB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening failed db: %w", err)
 	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	if err := initFailedSchema(db); err != nil {
 		db.Close()
 		return nil, err
@@ -350,6 +352,8 @@ func LoadFailedDomains(dbPath string) ([]crawl.FailedDomain, error) {
 		return nil, fmt.Errorf("opening failed db: %w", err)
 	}
 	defer db.Close()
+	db.SetMaxOpenConns(2)
+	db.SetMaxIdleConns(1)
 
 	rows, err := db.Query(`
 		SELECT domain, reason, COALESCE(error_msg, ''), COALESCE(ips, ''),
@@ -380,6 +384,8 @@ func FailedDomainSummary(dbPath string) (map[string]int, int, error) {
 		return nil, 0, err
 	}
 	defer db.Close()
+	db.SetMaxOpenConns(2)
+	db.SetMaxIdleConns(1)
 
 	rows, err := db.Query("SELECT reason, COUNT(*) FROM failed_domains GROUP BY reason ORDER BY COUNT(*) DESC")
 	if err != nil {
@@ -412,6 +418,8 @@ func LoadRetryURLs(dbPath string) ([]crawl.SeedURL, error) {
 		return nil, fmt.Errorf("opening failed db: %w", err)
 	}
 	defer db.Close()
+	db.SetMaxOpenConns(2)
+	db.SetMaxIdleConns(1)
 
 	rows, err := db.Query(`
 		SELECT url, domain
@@ -448,6 +456,8 @@ func LoadRetryURLsSince(dbPath string, since time.Time) ([]crawl.SeedURL, error)
 		return nil, fmt.Errorf("opening failed db: %w", err)
 	}
 	defer db.Close()
+	db.SetMaxOpenConns(2)
+	db.SetMaxIdleConns(1)
 
 	rows, err := db.Query(`
 		SELECT url, domain
@@ -484,6 +494,8 @@ func FailedURLSummary(dbPath string) (map[string]int, int, error) {
 		return nil, 0, err
 	}
 	defer db.Close()
+	db.SetMaxOpenConns(2)
+	db.SetMaxIdleConns(1)
 
 	rows, err := db.Query("SELECT reason, COUNT(*) FROM failed_urls GROUP BY reason ORDER BY COUNT(*) DESC")
 	if err != nil {
@@ -515,6 +527,8 @@ func FailedURLTopDomains(dbPath string, n int) ([][2]string, error) {
 		return nil, err
 	}
 	defer db.Close()
+	db.SetMaxOpenConns(2)
+	db.SetMaxIdleConns(1)
 
 	rows, err := db.Query(
 		`SELECT domain, COUNT(*) AS c FROM failed_urls

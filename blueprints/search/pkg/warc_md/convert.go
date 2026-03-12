@@ -20,7 +20,6 @@ type ConvertConfig struct {
 	OutputDir string // markdown/ base directory
 	Workers   int    // parallel workers (0 = NumCPU)
 	Force     bool   // re-convert existing files
-	Fast      bool   // use go-readability instead of trafilatura
 }
 
 // RunConvert reads each .warc file (which contains raw HTML bytes),
@@ -112,12 +111,7 @@ func RunConvert(ctx context.Context, cfg ConvertConfig, progressFn ProgressFunc)
 			atomic.AddInt64(&stats.ReadBytes, int64(len(htmlBytes)))
 
 			// Convert HTML → Markdown
-			var result mdpkg.Result
-			if cfg.Fast {
-				result = mdpkg.ConvertFast(htmlBytes, "")
-			} else {
-				result = mdpkg.Convert(htmlBytes, "")
-			}
+			result := mdpkg.Convert(htmlBytes, "")
 
 			// Write .md file (only if content was extracted)
 			if result.HasContent && result.Markdown != "" {

@@ -469,6 +469,8 @@ button { font: inherit; border: 0; background: none; cursor: pointer; color: inh
   transition: background .2s;
 }
 .home-links a:hover { background: var(--border); text-decoration: none; }
+.home-section { margin-top: 20px; }
+.home-section-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary); margin-bottom: 8px; }
 .home-theme {
   margin-top: 32px;
   color: var(--text-secondary);
@@ -546,6 +548,45 @@ button { font: inherit; border: 0; background: none; cursor: pointer; color: inh
   width: 100%; height: 100%;
   background: var(--bg-placeholder);
 }
+
+/* === Article === */
+.article { padding: 16px 20px; }
+.article-header { margin-bottom: 24px; }
+.article-title { font-size: 28px; font-weight: 800; line-height: 1.3; margin: 0 0 16px; color: var(--text); }
+.article-author { display: flex; align-items: center; gap: 12px; }
+.article-avi { width: 40px; height: 40px; border-radius: 50%; }
+.article-author-info { display: flex; flex-direction: column; flex: 1; }
+.article-name { font-weight: 700; color: var(--text); text-decoration: none; font-size: 15px; }
+.article-name:hover { text-decoration: underline; }
+.article-user { color: var(--text-secondary); font-size: 14px; }
+.article-meta { color: var(--text-secondary); font-size: 14px; margin-top: 8px; }
+.article-actions { display: flex; gap: 12px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+.btn-action { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 20px; font-size: 14px; font-weight: 600; color: var(--text); background: var(--bg-hover); text-decoration: none; transition: background 0.15s; }
+.btn-action:hover { background: var(--border); text-decoration: none; }
+.td-actions { display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.article-body { font-size: 17px; line-height: 1.8; color: var(--text); }
+.article-body p { margin: 0 0 18px; }
+.article-body a { color: var(--link); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--link) 40%, transparent); text-underline-offset: 2px; }
+.article-body a:hover { text-decoration-color: var(--link); }
+.article-body h2 { font-size: 22px; font-weight: 700; margin: 32px 0 12px; color: var(--text); }
+.article-body h3 { font-size: 18px; font-weight: 700; margin: 28px 0 10px; color: var(--text); }
+.article-body h4 { font-size: 16px; font-weight: 700; margin: 24px 0 8px; color: var(--text); }
+.article-body strong { font-weight: 700; }
+.article-body em { font-style: italic; }
+.article-body code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-size: 0.88em; padding: 2px 6px; border-radius: 4px; background: var(--bg-hover); }
+.article-body .code-block { position: relative; margin: 20px 0; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
+.article-body .code-block .code-lang { position: absolute; top: 8px; right: 12px; font-size: 11px; font-weight: 600; color: #999; text-transform: uppercase; letter-spacing: 0.5px; z-index: 1; }
+.article-body .code-block pre { margin: 0 !important; padding: 16px 20px !important; overflow-x: auto; border-radius: 10px !important; }
+.article-body .code-block pre[class*="language-"] { margin: 0 !important; background: var(--bg-hover) !important; }
+.article-body .code-block code { padding: 0 !important; background: none !important; font-size: 14px; line-height: 1.6; }
+.article-body .code-block code[class*="language-"] { text-shadow: none !important; }
+.article-body blockquote { margin: 20px 0; padding: 12px 20px; border-left: 3px solid var(--link); background: var(--bg-hover); border-radius: 0 8px 8px 0; }
+.article-body blockquote p { margin: 0 0 8px; }
+.article-body blockquote p:last-child { margin: 0; }
+.article-body ul, .article-body ol { margin: 0 0 18px; padding-left: 24px; }
+.article-body li { margin: 0 0 8px; }
+.article-body .article-figure { margin: 24px 0; text-align: center; }
+.article-body .article-figure img { max-width: 100%; border-radius: 12px; }
 
 /* === Responsive === */
 @media (max-width: 620px) {

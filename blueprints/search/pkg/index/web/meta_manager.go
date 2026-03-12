@@ -9,13 +9,12 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
-	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/metastore"
-	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/web/metastore/drivers/duckdb"
-	_ "github.com/go-mizu/mizu/blueprints/search/pkg/index/web/metastore/drivers/sqlite"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/api"
+	webstore "github.com/go-mizu/mizu/blueprints/search/pkg/index/web/store"
 )
 
 const (
-	defaultMetaDriver     = "sqlite"
+	defaultMetaDriver     = "duckdb"
 	defaultMetaRefreshTTL = 30 * time.Second
 )
 
@@ -26,48 +25,31 @@ type MetaConfig struct {
 	RefreshTTL  time.Duration
 	Prewarm     bool
 	BusyTimeout time.Duration
-	JournalMode string
 	ActiveCrawl string
 	ActiveDir   string
 	CommonCrawl string // parent dir containing crawl directories
 }
 
 // DataSummaryWithMeta is the /api/overview payload with cache metadata.
-type DataSummaryWithMeta struct {
-	DataSummary
-	MetaBackend     string `json:"meta_backend,omitempty"`
-	MetaGeneratedAt string `json:"meta_generated_at,omitempty"`
-	MetaStale       bool   `json:"meta_stale"`
-	MetaRefreshing  bool   `json:"meta_refreshing"`
-	MetaLastError   string `json:"meta_last_error,omitempty"`
-}
+type DataSummaryWithMeta = api.DataSummaryWithMeta
 
 // MetaStatus is returned by /api/meta/status and /api/meta/refresh.
-type MetaStatus struct {
-	CrawlID      string `json:"crawl_id"`
-	Backend      string `json:"backend"`
-	Enabled      bool   `json:"enabled"`
-	Status       string `json:"status"`
-	Refreshing   bool   `json:"refreshing"`
-	Generation   int64  `json:"generation"`
-	StartedAt    string `json:"started_at,omitempty"`
-	FinishedAt   string `json:"finished_at,omitempty"`
-	LastError    string `json:"last_error,omitempty"`
-	RefreshTTLMS int64  `json:"refresh_ttl_ms"`
-}
+type MetaStatus = api.MetaStatus
 
-// MetaManager handles cache read/refresh policy around a metastore.Store.
+// MetaManager handles cache read/refresh policy around a webstore.Store.
 type MetaManager struct {
-	store       metastore.Store
+	metaDB      *webstore.Store
 	backend     string
 	refreshTTL  time.Duration
 	activeCrawl string
 	activeDir   string
 	commonCrawl string
 
-	mu            sync.Mutex
-	refreshing    map[string]bool
-	manifestMu    sync.Mutex
+	mu              sync.Mutex
+	refreshing      map[string]bool
+	lastRefreshAt   map[string]time.Time // in-memory cache of last successful refresh
+	lastScanDur     map[string]time.Duration
+	manifestMu      sync.Mutex
 	manifestCache map[string]metaManifestCacheEntry
 }
 
@@ -99,6 +81,8 @@ func NewMetaManager(ctx context.Context, cfg MetaConfig) (*MetaManager, error) {
 		activeDir:     cfg.ActiveDir,
 		commonCrawl:   commonCrawl,
 		refreshing:    make(map[string]bool),
+		lastRefreshAt: make(map[string]time.Time),
+		lastScanDur:   make(map[string]time.Duration),
 		manifestCache: make(map[string]metaManifestCacheEntry),
 	}
 
@@ -110,21 +94,14 @@ func NewMetaManager(ctx context.Context, cfg MetaConfig) (*MetaManager, error) {
 
 	dsn := cfg.DSN
 	if dsn == "" {
-		dsn = defaultMetaDSN(commonCrawl, driver)
+		dsn = defaultMetaDSN(commonCrawl)
 	}
 
-	store, err := metastore.Open(driver, dsn, metastore.Options{
-		BusyTimeout: cfg.BusyTimeout,
-		JournalMode: cfg.JournalMode,
-	})
+	metaDB, err := webstore.Open(dsn, webstore.WithBusyTimeout(cfg.BusyTimeout))
 	if err != nil {
 		return nil, fmt.Errorf("open metastore: %w", err)
 	}
-	if err := store.Init(ctx); err != nil {
-		store.Close()
-		return nil, fmt.Errorf("init metastore: %w", err)
-	}
-	m.store = store
+	m.metaDB = metaDB
 	logInfof("meta manager configured backend=%s dsn=%s ttl=%s", driver, dsn, refreshTTL)
 
 	if cfg.Prewarm && cfg.ActiveCrawl != "" {
@@ -133,25 +110,18 @@ func NewMetaManager(ctx context.Context, cfg MetaConfig) (*MetaManager, error) {
 	return m, nil
 }
 
-func defaultMetaDSN(commonCrawl, driver string) string {
+func defaultMetaDSN(commonCrawl string) string {
 	metaDir := filepath.Join(commonCrawl, ".meta")
-	switch driver {
-	case "duckdb":
-		return filepath.Join(metaDir, "dashboard_meta.duckdb")
-	case "sqlite":
-		fallthrough
-	default:
-		return filepath.Join(metaDir, "dashboard_meta.sqlite")
-	}
+	return filepath.Join(metaDir, "dashboard_meta.duckdb")
 }
 
-// Close closes the underlying metastore if enabled.
+// Close closes the underlying store if enabled.
 func (m *MetaManager) Close() error {
-	if m == nil || m.store == nil {
+	if m == nil || m.metaDB == nil {
 		return nil
 	}
 	logInfof("meta manager close backend=%s", m.backend)
-	return m.store.Close()
+	return m.metaDB.Close()
 }
 
 // GetSummary returns cached summary if available and schedules refresh when
@@ -160,18 +130,18 @@ func (m *MetaManager) GetSummary(ctx context.Context, crawlID, crawlDir string) 
 	crawlID, crawlDir = m.resolveCrawl(crawlID, crawlDir)
 
 	// No store configured: direct scan mode.
-	if m.store == nil {
+	if m.metaDB == nil {
 		return m.scanFallback(crawlID, crawlDir, "")
 	}
 
-	rec, ok, err := m.store.GetSummary(ctx, crawlID)
+	rec, ok, err := m.metaDB.GetSummary(ctx, crawlID)
 	if err != nil {
 		return m.scanFallback(crawlID, crawlDir, err.Error())
 	}
-	st, hasState, stErr := m.store.GetRefreshState(ctx, crawlID)
+	st, hasState, stErr := m.metaDB.GetRefreshState(ctx, crawlID)
 	if stErr != nil {
 		// State lookup failure is non-fatal; continue with summary.
-		st = metastore.RefreshState{}
+		st = webstore.RefreshState{}
 		hasState = false
 	}
 
@@ -194,14 +164,11 @@ func (m *MetaManager) GetSummary(ctx context.Context, crawlID, crawlDir string) 
 
 // TriggerRefresh starts an async refresh if one is not already running.
 func (m *MetaManager) TriggerRefresh(crawlID, crawlDir string, force bool) bool {
-	if m == nil || m.store == nil {
+	if m == nil || m.metaDB == nil {
 		return false
 	}
 	crawlID, crawlDir = m.resolveCrawl(crawlID, crawlDir)
-	if !force && !m.acquireRefresh(crawlID) {
-		return false
-	}
-	if force && !m.acquireRefresh(crawlID) {
+	if !m.acquireRefresh(crawlID, force) {
 		return false
 	}
 
@@ -212,21 +179,54 @@ func (m *MetaManager) TriggerRefresh(crawlID, crawlDir string, force bool) bool 
 	return true
 }
 
+// Backend returns the configured backend name without hitting the database.
+func (m *MetaManager) Backend() string {
+	return m.backend
+}
+
+// Store returns the underlying store, or nil if not configured.
+func (m *MetaManager) Store() *webstore.Store {
+	return m.metaDB
+}
+
+// IsStale returns true if the cached data for the given crawl is stale.
+// This reads only in-memory state and never touches the database.
+func (m *MetaManager) IsStale(crawlID string) bool {
+	crawlID, _ = m.resolveCrawl(crawlID, "")
+	m.mu.Lock()
+	t, ok := m.lastRefreshAt[crawlID]
+	dur := m.lastScanDur[crawlID]
+	m.mu.Unlock()
+	if !ok {
+		return true // never refreshed
+	}
+	return m.isStale(t, dur)
+}
+
+// IsRefreshing returns true if a refresh goroutine is active for the given crawl.
+// This reads only in-memory state and never touches the database.
+func (m *MetaManager) IsRefreshing(crawlID string) bool {
+	crawlID, _ = m.resolveCrawl(crawlID, "")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.refreshing[crawlID]
+}
+
 // Status returns the current refresh state for a crawl.
 func (m *MetaManager) Status(ctx context.Context, crawlID string) MetaStatus {
 	crawlID, _ = m.resolveCrawl(crawlID, "")
 	status := MetaStatus{
 		CrawlID:      crawlID,
 		Backend:      m.backend,
-		Enabled:      m.store != nil,
+		Enabled:      m.metaDB != nil,
 		Status:       "idle",
 		Refreshing:   false,
 		RefreshTTLMS: m.refreshTTL.Milliseconds(),
 	}
-	if m.store == nil {
+	if m.metaDB == nil {
 		return status
 	}
-	st, ok, err := m.store.GetRefreshState(ctx, crawlID)
+	st, ok, err := m.metaDB.GetRefreshState(ctx, crawlID)
 	if err != nil || !ok {
 		return status
 	}
@@ -244,15 +244,15 @@ func (m *MetaManager) Status(ctx context.Context, crawlID string) MetaStatus {
 }
 
 // ListWARCs returns cached per-WARC metadata rows for a crawl.
-func (m *MetaManager) ListWARCs(ctx context.Context, crawlID, crawlDir string) ([]metastore.WARCRecord, DataSummaryWithMeta, error) {
+func (m *MetaManager) ListWARCs(ctx context.Context, crawlID, crawlDir string) ([]webstore.WARCRecord, DataSummaryWithMeta, error) {
 	crawlID, crawlDir = m.resolveCrawl(crawlID, crawlDir)
 	summary := m.GetSummary(ctx, crawlID, crawlDir)
 
-	if m.store == nil {
+	if m.metaDB == nil {
 		return buildWARCRecords(crawlID, crawlDir, nil, time.Now().UTC()), summary, nil
 	}
 
-	recs, err := m.store.ListWARCs(ctx, crawlID)
+	recs, err := m.metaDB.ListWARCs(ctx, crawlID)
 	if err != nil {
 		return nil, summary, err
 	}
@@ -263,23 +263,23 @@ func (m *MetaManager) ListWARCs(ctx context.Context, crawlID, crawlDir string) (
 }
 
 // GetWARC returns cached per-WARC metadata row for a crawl/index.
-func (m *MetaManager) GetWARC(ctx context.Context, crawlID, crawlDir, warcIndex string) (metastore.WARCRecord, bool, DataSummaryWithMeta, error) {
+func (m *MetaManager) GetWARC(ctx context.Context, crawlID, crawlDir, warcIndex string) (webstore.WARCRecord, bool, DataSummaryWithMeta, error) {
 	crawlID, crawlDir = m.resolveCrawl(crawlID, crawlDir)
 	summary := m.GetSummary(ctx, crawlID, crawlDir)
 
-	if m.store == nil {
+	if m.metaDB == nil {
 		recs := buildWARCRecords(crawlID, crawlDir, nil, time.Now().UTC())
 		for _, rec := range recs {
 			if rec.WARCIndex == warcIndex {
 				return rec, true, summary, nil
 			}
 		}
-		return metastore.WARCRecord{}, false, summary, nil
+		return webstore.WARCRecord{}, false, summary, nil
 	}
 
-	rec, ok, err := m.store.GetWARC(ctx, crawlID, warcIndex)
+	rec, ok, err := m.metaDB.GetWARC(ctx, crawlID, warcIndex)
 	if err != nil {
-		return metastore.WARCRecord{}, false, summary, err
+		return webstore.WARCRecord{}, false, summary, err
 	}
 	if !ok && !summary.MetaRefreshing {
 		m.TriggerRefresh(crawlID, crawlDir, false)
@@ -288,16 +288,16 @@ func (m *MetaManager) GetWARC(ctx context.Context, crawlID, crawlDir, warcIndex 
 }
 
 func (m *MetaManager) refreshSync(ctx context.Context, crawlID, crawlDir string) (DataSummaryWithMeta, error) {
-	if m.store == nil {
+	if m.metaDB == nil {
 		return m.scanFallback(crawlID, crawlDir, ""), nil
 	}
 
 	now := time.Now().UTC()
-	prev, _, _ := m.store.GetRefreshState(ctx, crawlID)
+	prev, _, _ := m.metaDB.GetRefreshState(ctx, crawlID)
 	nextGen := prev.Generation + 1
 
 	start := now
-	if err := m.store.SetRefreshState(ctx, metastore.RefreshState{
+	if err := m.metaDB.SetRefreshState(ctx, webstore.RefreshState{
 		CrawlID:    crawlID,
 		Status:     "refreshing",
 		StartedAt:  &start,
@@ -320,10 +320,10 @@ func (m *MetaManager) refreshSync(ctx context.Context, crawlID, crawlDir string)
 
 	fin := time.Now().UTC()
 	rec := summaryToRecord(ds, warcs, fin, scanDuration)
-	if err := m.store.PutSummary(ctx, rec); err != nil {
+	if err := m.metaDB.PutSummary(ctx, rec); err != nil {
 		logErrorf("meta refresh write-failed crawl=%s generation=%d err=%v", crawlID, nextGen, err)
 		finErr := time.Now().UTC()
-		_ = m.store.SetRefreshState(ctx, metastore.RefreshState{
+		_ = m.metaDB.SetRefreshState(ctx, webstore.RefreshState{
 			CrawlID:    crawlID,
 			Status:     "error",
 			StartedAt:  &start,
@@ -334,7 +334,7 @@ func (m *MetaManager) refreshSync(ctx context.Context, crawlID, crawlDir string)
 		return DataSummaryWithMeta{}, fmt.Errorf("put summary: %w", err)
 	}
 
-	if err := m.store.SetRefreshState(ctx, metastore.RefreshState{
+	if err := m.metaDB.SetRefreshState(ctx, webstore.RefreshState{
 		CrawlID:    crawlID,
 		Status:     "idle",
 		StartedAt:  &start,
@@ -345,6 +345,13 @@ func (m *MetaManager) refreshSync(ctx context.Context, crawlID, crawlDir string)
 		logErrorf("meta refresh state-update-failed crawl=%s generation=%d err=%v", crawlID, nextGen, err)
 		return DataSummaryWithMeta{}, fmt.Errorf("set idle state: %w", err)
 	}
+
+	// Cache refresh timestamp in memory so handleOverview can check staleness
+	// without touching the database.
+	m.mu.Lock()
+	m.lastRefreshAt[crawlID] = fin
+	m.lastScanDur[crawlID] = scanDuration
+	m.mu.Unlock()
 
 	return m.summaryFromRecord(rec, false, false, ""), nil
 }
@@ -363,7 +370,7 @@ func (m *MetaManager) scanFallback(crawlID, crawlDir, lastErr string) DataSummar
 	return resp
 }
 
-func (m *MetaManager) summaryFromRecord(rec metastore.SummaryRecord, stale, refreshing bool, lastErr string) DataSummaryWithMeta {
+func (m *MetaManager) summaryFromRecord(rec webstore.SummaryRecord, stale, refreshing bool, lastErr string) DataSummaryWithMeta {
 	ds := DataSummary{
 		CrawlID:       rec.CrawlID,
 		WARCCount:     int(rec.WARCCount),
@@ -395,8 +402,8 @@ func (m *MetaManager) summaryFromRecord(rec metastore.SummaryRecord, stale, refr
 	}
 }
 
-func summaryToRecord(ds DataSummary, warcs []metastore.WARCRecord, generatedAt time.Time, scanDuration time.Duration) metastore.SummaryRecord {
-	rec := metastore.SummaryRecord{
+func summaryToRecord(ds DataSummary, warcs []webstore.WARCRecord, generatedAt time.Time, scanDuration time.Duration) webstore.SummaryRecord {
+	rec := webstore.SummaryRecord{
 		CrawlID:       ds.CrawlID,
 		WARCCount:     int64(ds.WARCCount),
 		WARCTotalSize: ds.WARCTotalSize,
@@ -467,10 +474,10 @@ func (m *MetaManager) isStale(generatedAt time.Time, scanDuration time.Duration)
 	return time.Since(generatedAt) > threshold
 }
 
-func (m *MetaManager) acquireRefresh(crawlID string) bool {
+func (m *MetaManager) acquireRefresh(crawlID string, force bool) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.refreshing[crawlID] {
+	if !force && m.refreshing[crawlID] {
 		return false
 	}
 	m.refreshing[crawlID] = true

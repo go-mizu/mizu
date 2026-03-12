@@ -40,9 +40,11 @@ require (
 	github.com/parquet-go/parquet-go v0.28.0
 	github.com/phuslu/fastdns v0.16.7
 	github.com/refraction-networking/utls v1.8.2
+	github.com/scigolib/hdf5 v0.13.5
 	github.com/spf13/cobra v1.10.2
 	github.com/temoto/robotstxt v1.1.2
 	github.com/typesense/typesense-go/v2 v2.0.0
+	github.com/yalue/onnxruntime_go v1.24.0
 	github.com/yuin/goldmark v1.7.16
 	golang.org/x/net v0.51.0
 	golang.org/x/sync v0.19.0

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -112,6 +113,25 @@ func LocalParquetPathForRemote(cfg Config, remotePath string) string {
 	return filepath.Join(cfg.IndexDir(), filepath.FromSlash(rel))
 }
 
+// IsValidParquetFile checks whether path has the PAR1 magic bytes at the end
+// of the file, indicating a complete (non-truncated) parquet file.
+// Returns false if the file does not exist, is too small, or is truncated.
+func IsValidParquetFile(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	var buf [4]byte
+	if _, err := f.Seek(-4, io.SeekEnd); err != nil {
+		return false
+	}
+	if _, err := f.Read(buf[:]); err != nil {
+		return false
+	}
+	return buf == [4]byte{'P', 'A', 'R', '1'}
+}
+
 // LocalParquetFiles recursively finds parquet files under the crawl's local index directory.
 func LocalParquetFiles(cfg Config) ([]string, error) {
 	var files []string
@@ -210,7 +230,7 @@ func DownloadParquetFiles(ctx context.Context, client *Client, cfg Config, files
 		localPath := LocalParquetPathForRemote(cfg, file.RemotePath)
 		fileIndex := i + 1
 
-		if fi, err := os.Stat(localPath); err == nil && fi.Size() > 0 {
+		if fi, err := os.Stat(localPath); err == nil && fi.Size() > 0 && IsValidParquetFile(localPath) {
 			_ = completed.Add(1)
 			if progress != nil {
 				progress(DownloadProgress{

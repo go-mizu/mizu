@@ -69,6 +69,8 @@ func NewResultDB(dir string, shardCount, batchSize, duckMemPerShardMB int) (*Res
 			rdb.closeOpenShards(i)
 			return nil, fmt.Errorf("opening shard %d: %w", i, err)
 		}
+		db.SetMaxOpenConns(1)
+		db.SetMaxIdleConns(1)
 
 		s := &resultShard{
 			db:      db,
@@ -315,6 +317,8 @@ func (rdb *ResultDB) ReopenShards() error {
 		if err != nil {
 			return fmt.Errorf("reopen shard %d: %w", i, err)
 		}
+		db.SetMaxOpenConns(1)
+		db.SetMaxIdleConns(1)
 		if err := applyShardSettings(db, rdb.memPerShardMB); err != nil {
 			db.Close()
 			return fmt.Errorf("reopen shard %d settings: %w", i, err)

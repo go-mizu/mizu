@@ -374,6 +374,8 @@ export function parseGraphTweet(node: Record<string, unknown>): Tweet | null {
     id: restID,
     conversationID: asStr(legacy['conversation_id_str']),
     text: asStr(legacy['full_text']),
+    title: '',
+    articleBody: '',
     username,
     userID,
     name,
@@ -498,6 +500,34 @@ export function parseGraphTweet(node: Record<string, unknown>): Tweet | null {
   if (noteTweet) {
     const noteText = asStr(noteTweet['text'])
     if (noteText) t.text = noteText
+    const noteTitle = asStr(noteTweet['title'])
+    if (noteTitle) t.title = noteTitle
+  }
+
+  // X Article: article.article_results.result
+  const article = asMap(dig(node, 'article', 'article_results', 'result'))
+  if (article) {
+    const artTitle = asStr(article['title'])
+    if (artTitle && !t.title) t.title = artTitle
+    const plainText = asStr(article['article_plain_text'])
+    if (plainText) {
+      t.articleBody = plainText
+    } else {
+      // Try rich content blocks: content.items[].content.text
+      const items = asSlice(dig(article, 'content', 'items'))
+      if (items) {
+        const parts: string[] = []
+        for (const item of items) {
+          const im = asMap(item)
+          if (!im) continue
+          const content = asMap(im['content'])
+          if (!content) continue
+          const text = asStr(content['text'])
+          if (text) parts.push(text)
+        }
+        if (parts.length > 0) t.articleBody = parts.join('\n\n')
+      }
+    }
   }
 
   return t

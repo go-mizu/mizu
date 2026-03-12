@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/dcrawler/perplexity"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/scrape/perplexity"
 	"github.com/spf13/cobra"
 )
 

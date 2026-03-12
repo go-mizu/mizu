@@ -1,0 +1,15 @@
+services:
+  typesense:
+    image: typesense/typesense:28.0
+    ports:
+      - "8108:8108"
+    command: '--data-dir /data --api-key mizu-typesense-key --enable-cors'
+    volumes:
+      - typesense_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8108/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+volumes:
+  typesense_data:

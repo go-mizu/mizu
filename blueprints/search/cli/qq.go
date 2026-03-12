@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/dcrawler/qq"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/scrape/qq"
 	"github.com/spf13/cobra"
 )
 

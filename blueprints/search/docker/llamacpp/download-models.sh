@@ -57,6 +57,12 @@ download_model \
     "gemma-3-4b-it.gguf" \
     "Gemma 3 4B (Research mode, ~2.5GB)"
 
+# Nomic Embed Text v1.5 (Embedding model) - ~137MB
+download_model \
+    "${HF_BASE}/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q8_0.gguf" \
+    "nomic-embed-text-v1.5.Q8_0.gguf" \
+    "Nomic Embed Text v1.5 Q8_0 (Embedding, ~137MB)"
+
 # GPT-OSS 20B (Large reasoning model) - ~12GB
 download_model \
     "${HF_BASE}/ggml-org/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-mxfp4.gguf" \

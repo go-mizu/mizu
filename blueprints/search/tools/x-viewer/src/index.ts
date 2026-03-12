@@ -7,6 +7,7 @@ import apiRoutes from './routes/api'
 import searchRoutes from './routes/search'
 import hashtagRoutes from './routes/hashtag'
 import listRoutes from './routes/list'
+import articleRoutes from './routes/article'
 import tweetRoutes from './routes/tweet'
 import followRoutes from './routes/follow'
 import profileRoutes from './routes/profile'
@@ -25,7 +26,7 @@ app.get('/api/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISO
 
 // Home page — Google-inspired single search box
 app.get('/', (c) => {
-  return c.html(renderLayout('Z - the X/Twitter Viewer', renderHomePage(), { isHome: true }))
+  return c.html(renderLayout('X Viewer', renderHomePage(), { isHome: true }))
 })
 
 // JSON API for mobile app
@@ -35,6 +36,9 @@ app.route('/api', apiRoutes)
 app.route('/search', searchRoutes)
 app.route('/hashtag', hashtagRoutes)
 app.route('/i/lists', listRoutes)
+
+// Article: /:username/article/:id  (must be before tweet and profile catch-all)
+app.route('/', articleRoutes)
 
 // Tweet detail: /:username/status/:id  (must be before profile catch-all)
 app.route('/', tweetRoutes)

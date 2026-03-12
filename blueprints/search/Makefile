@@ -83,18 +83,24 @@ frontend-test: ## Run frontend tests
 .PHONY: build
 build: ## Build search binary (Go only; run frontend-build separately if needed)
 	@mkdir -p $(dir $(BINARY))
-	@CGO_ENABLED=$(CGO_ENABLED) CGO_LDFLAGS="$(CGO_LDFLAGS)" GOWORK=off $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BINARY) $(CMD)
-	@echo "Built: $(BINARY) ($(VERSION))"
+	@echo "==> Compiling $(CMD) → $(BINARY)"
+	@echo "    CGO_ENABLED=$(CGO_ENABLED)  version=$(VERSION)"
+	@echo "    (CGO+DuckDB static link — first build may take 1-2 min)"
+	CGO_ENABLED=$(CGO_ENABLED) CGO_LDFLAGS="$(CGO_LDFLAGS)" GOWORK=off $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BINARY) $(CMD)
+	@echo "==> Built: $(BINARY) ($(VERSION))"
 
 .PHONY: build-chdb
 build-chdb: ## Build search binary with chdb support (requires CHDB_LIB_DIR/libchdb.so)
 	@mkdir -p $(dir $(BINARY))
-	@CGO_ENABLED=1 \
+	@echo "==> Compiling $(CMD) → $(BINARY) [+chdb]"
+	@echo "    CHDB_LIB_DIR=$(CHDB_LIB_DIR)  version=$(VERSION)"
+	@echo "    (CGO+DuckDB+chdb static link — may take 1-2 min)"
+	CGO_ENABLED=1 \
 		CGO_LDFLAGS="$(CGO_LDFLAGS) -L$(CHDB_LIB_DIR) -lchdb -Wl,-rpath,$(CHDB_LIB_DIR)" \
 		CGO_CFLAGS="-I$(CHDB_HEADER_DIR)" \
 		DYLD_LIBRARY_PATH="$(CHDB_LIB_DIR):$$DYLD_LIBRARY_PATH" \
 		GOWORK=off $(GO) build -tags chdb -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BINARY) $(CMD)
-	@echo "Built: $(BINARY) ($(VERSION)) [+chdb]"
+	@echo "==> Built: $(BINARY) ($(VERSION)) [+chdb]"
 
 .PHONY: build-quick
 build-quick: build ## Alias for build (kept for compatibility)
@@ -102,6 +108,9 @@ build-quick: build ## Alias for build (kept for compatibility)
 .PHONY: build-linux
 build-linux: ## Build Ubuntu/Linux binary to $$HOME/bin/search-linux (Docker, CGO enabled)
 	@mkdir -p $(dir $(LINUX_BINARY))
+	@echo "==> Building Linux (focal) binary via $(LINUX_CONTAINER)"
+	@echo "    image=$(LINUX_IMAGE_TAG)  arch=$(LINUX_GOARCH)  version=$(VERSION)"
+	@echo "    (QEMU cross-compile — may take 15-20 min on cold cache)"
 	@tmp_out="$$(mktemp -d)"; \
 		img="$(LINUX_IMAGE_TAG)"; \
 		cid=""; \
@@ -123,6 +132,7 @@ build-linux: ## Build Ubuntu/Linux binary to $$HOME/bin/search-linux (Docker, CG
 			done; \
 			podman info >/dev/null 2>&1 || { echo "podman not ready"; exit 1; }; \
 		fi; \
+		echo "==> [1/3] Building container image $$img ..."; \
 		$(LINUX_CONTAINER) build \
 			--layers \
 			--platform "linux/$(LINUX_GOARCH)" \
@@ -135,20 +145,25 @@ build-linux: ## Build Ubuntu/Linux binary to $$HOME/bin/search-linux (Docker, CG
 			--target artifact \
 			-t "$$img" \
 			"$(LINUX_BUILD_CONTEXT)"; \
+		echo "==> [2/3] Extracting binary from container..."; \
 		cid="$$($(LINUX_CONTAINER) create --platform "linux/$(LINUX_GOARCH)" "$$img")"; \
 		$(LINUX_CONTAINER) cp "$$cid:/search-linux" "$$tmp_out/search-linux"; \
 		$(LINUX_CONTAINER) cp "$$cid:/libstdc++.so.6" "$$tmp_out/libstdc++.so.6" 2>/dev/null || true; \
+		echo "==> [3/3] Installing binary → $(LINUX_BINARY)"; \
 		install -m 0755 "$$tmp_out/search-linux" "$(LINUX_BINARY)"; \
 		if [ -f "$$tmp_out/libstdc++.so.6" ]; then \
 			mkdir -p "$(LINUX_RUNTIME_LIB_DIR)"; \
 			install -m 0644 "$$tmp_out/libstdc++.so.6" "$(LINUX_RUNTIME_LIBSTDCPP)"; \
-			echo "Extracted libstdc++.so.6 → $(LINUX_RUNTIME_LIBSTDCPP)"; \
+			echo "    Extracted libstdc++.so.6 → $(LINUX_RUNTIME_LIBSTDCPP)"; \
 		fi
-	@echo "Built Linux binary: $(LINUX_BINARY) ($(VERSION))"
+	@echo "==> Built Linux binary: $(LINUX_BINARY) ($(VERSION))"
 
 .PHONY: build-linux-noble
 build-linux-noble: ## Build Ubuntu 24.04 (Noble) binary to $$HOME/bin/search-linux-noble (Docker, CGO enabled)
 	@mkdir -p $(dir $(LINUX_BINARY_NOBLE))
+	@echo "==> Building Linux Noble (Ubuntu 24.04) binary via $(LINUX_CONTAINER)"
+	@echo "    image=$(LINUX_NOBLE_IMAGE_TAG)  arch=$(LINUX_GOARCH)  version=$(VERSION)"
+	@echo "    (QEMU cross-compile — may take 15-20 min on cold cache)"
 	@tmp_out="$$(mktemp -d)"; \
 		img="$(LINUX_NOBLE_IMAGE_TAG)"; \
 		cid=""; \
@@ -170,6 +185,7 @@ build-linux-noble: ## Build Ubuntu 24.04 (Noble) binary to $$HOME/bin/search-lin
 			done; \
 			podman info >/dev/null 2>&1 || { echo "podman not ready"; exit 1; }; \
 		fi; \
+		echo "==> [1/3] Building container image $$img ..."; \
 		$(LINUX_CONTAINER) build \
 			--layers \
 			--platform "linux/$(LINUX_GOARCH)" \
@@ -181,10 +197,12 @@ build-linux-noble: ## Build Ubuntu 24.04 (Noble) binary to $$HOME/bin/search-lin
 			--target artifact \
 			-t "$$img" \
 			"$(LINUX_BUILD_CONTEXT)"; \
+		echo "==> [2/3] Extracting binary from container..."; \
 		cid="$$($(LINUX_CONTAINER) create --platform "linux/$(LINUX_GOARCH)" "$$img")"; \
 		$(LINUX_CONTAINER) cp "$$cid:/search-linux-noble" "$$tmp_out/search-linux-noble"; \
+		echo "==> [3/3] Installing binary → $(LINUX_BINARY_NOBLE)"; \
 		install -m 0755 "$$tmp_out/search-linux-noble" "$(LINUX_BINARY_NOBLE)"
-	@echo "Built Noble binary: $(LINUX_BINARY_NOBLE) ($(VERSION))"
+	@echo "==> Built Noble binary: $(LINUX_BINARY_NOBLE) ($(VERSION))"
 
 # Noble (Ubuntu 24.04) + chdb build vars
 LINUX_NOBLE_CHDB_DOCKERFILE ?= Dockerfile.linux-noble-chdb
@@ -396,6 +414,20 @@ deploy-linux-focal: build-linux ## [LEGACY] Deploy Ubuntu 20.04 focal binary wit
 
 .PHONY: deploy-linux-browser
 deploy-linux-browser: deploy-linux-noble-browser ## Deploy binary with Chrome wrapper (both servers are Ubuntu 24.04 Noble)
+
+DASHBOARD_PORT ?= 3457
+
+.PHONY: deploy-dashboard
+deploy-dashboard: deploy-linux-noble-browser ## Build, deploy, and (re)start FTS dashboard in a screen session (SERVER=2 for server2)
+	@echo "==> Stopping existing dashboard on $(REMOTE_SSH)..."
+	-@$(SSH) $(REMOTE_SSH) 'screen -X -S dashboard quit 2>/dev/null; true'
+	-@$(SSH) $(REMOTE_SSH) 'pkill -f "cc fts dashboard" 2>/dev/null; true'
+	@sleep 1
+	@echo "==> Starting dashboard on $(REMOTE_SSH):$(DASHBOARD_PORT) in screen session 'dashboard'..."
+	@$(SSH) $(REMOTE_SSH) 'screen -dmS dashboard bash -lc "exec $$HOME/bin/search cc fts dashboard --port $(DASHBOARD_PORT) >> /tmp/dashboard.log 2>&1"'
+	@sleep 3
+	@echo "==> Verifying dashboard is responding..."
+	@$(SSH) $(REMOTE_SSH) 'curl -sf http://localhost:$(DASHBOARD_PORT)/api/scrape/list > /dev/null && echo "Dashboard running on port $(DASHBOARD_PORT)" || { echo "ERROR: dashboard not responding"; tail -20 /tmp/dashboard.log; exit 1; }'
 
 .PHONY: deploy-linux-focal-browser
 deploy-linux-focal-browser: build-linux ## [LEGACY] Deploy Ubuntu 20.04 focal binary with Chrome wrapper (bundled libstdc++)
@@ -654,12 +686,13 @@ bench-chunk: ## Run all 3 chunk modes with 200K seeds and compare results
 	done
 
 GUI_PORT ?= 9111
+DASHBOARD_PORT ?= 3457
 
 .PHONY: tunnel
-tunnel: ## SSH tunnel for crawler GUI dashboard (localhost:9111)
-	@echo "Tunneling localhost:$(GUI_PORT) -> $(REMOTE_SSH):$(GUI_PORT)"
-	@echo "Open http://localhost:$(GUI_PORT) in your browser"
-	$(SSH) -N -L $(GUI_PORT):localhost:$(GUI_PORT) $(REMOTE_SSH)
+tunnel: ## SSH tunnel for crawler GUI + FTS dashboard (localhost:9111 + localhost:3457)
+	@echo "Tunneling localhost:$(GUI_PORT) + localhost:$(DASHBOARD_PORT) -> $(REMOTE_SSH)"
+	@echo "Open http://localhost:$(GUI_PORT) (crawler) or http://localhost:$(DASHBOARD_PORT) (dashboard)"
+	$(SSH) -N -L $(GUI_PORT):localhost:$(GUI_PORT) -L $(DASHBOARD_PORT):localhost:$(DASHBOARD_PORT) $(REMOTE_SSH)
 
 .PHONY: help
 help: ## Show available commands

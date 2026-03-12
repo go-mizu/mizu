@@ -56,7 +56,7 @@ searching the FTS index and browsing/previewing markdown documents.`,
 	}
 
 	cmd.Flags().IntVarP(&port, "port", "p", 3456, "Listen port")
-	cmd.Flags().StringVar(&engine, "engine", "tantivy", "FTS engine")
+	cmd.Flags().StringVar(&engine, "engine", "dahlia", "FTS engine")
 	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest)")
 	cmd.Flags().StringVar(&addr, "addr", "", "External engine address")
 	cmd.Flags().BoolVar(&open, "open", false, "Open browser on start")
@@ -75,7 +75,6 @@ func newCCFTSDashboard() *cobra.Command {
 		metaRefreshTTL  time.Duration
 		metaPrewarm     bool
 		metaBusyTimeout time.Duration
-		metaJournalMode string
 	)
 
 	cmd := &cobra.Command{
@@ -100,7 +99,6 @@ search, and browse documents. Real-time progress via WebSocket.`,
 				MetaRefreshTTL:  metaRefreshTTL,
 				MetaPrewarm:     metaPrewarm,
 				MetaBusyTimeout: metaBusyTimeout,
-				MetaJournalMode: metaJournalMode,
 			})
 
 			url := fmt.Sprintf("http://localhost:%d", port)
@@ -121,7 +119,7 @@ search, and browse documents. Real-time progress via WebSocket.`,
 	}
 
 	cmd.Flags().IntVarP(&port, "port", "p", 3456, "Listen port")
-	cmd.Flags().StringVar(&engine, "engine", "duckdb", "Default FTS engine")
+	cmd.Flags().StringVar(&engine, "engine", "dahlia", "Default FTS engine")
 	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest)")
 	cmd.Flags().StringVar(&addr, "addr", "", "External engine address")
 	cmd.Flags().BoolVar(&open, "open", false, "Open browser on start")
@@ -130,7 +128,6 @@ search, and browse documents. Real-time progress via WebSocket.`,
 	cmd.Flags().DurationVar(&metaRefreshTTL, "meta-refresh-ttl", 30*time.Second, "Metadata stale threshold for background refresh")
 	cmd.Flags().BoolVar(&metaPrewarm, "meta-prewarm", true, "Prewarm metadata cache for active crawl on startup")
 	cmd.Flags().DurationVar(&metaBusyTimeout, "meta-busy-timeout", 5*time.Second, "Metadata DB busy timeout")
-	cmd.Flags().StringVar(&metaJournalMode, "meta-journal-mode", "WAL", "Metadata DB journal mode (sqlite)")
 	return cmd
 }
 

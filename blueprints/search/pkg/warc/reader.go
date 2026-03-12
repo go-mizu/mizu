@@ -2,7 +2,7 @@ package warc
 
 import (
 	"bufio"
-	"compress/gzip"
+	gzip "github.com/klauspost/compress/gzip"
 	"fmt"
 	"io"
 	"strings"

@@ -1,16 +1,16 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types'
-import { Cache } from '../cache'
+import { DB } from '../cache'
 import { renderLayout, renderTweetCard, renderMediaGrid, renderUserCard, renderPagination, renderError } from '../html'
 import { SearchTop, SearchPeople, SearchMedia, CACHE_SEARCH } from '../config'
 import { fetchSearchTweetsWithFallback, fetchSearchUsersWithFallback } from '../fallback-fetch'
 import { isRateLimitedError } from '../rate-limit'
+import { detectXURL } from '../url-detect'
 
 const app = new Hono<HonoEnv>()
 
 const tabs = ['Top', 'Latest', 'People', 'Media'] as const
 
-// Permanent search path: /search/golang -> search for "golang"
 app.get('/:keyword', async (c) => {
   const keyword = c.req.param('keyword')
   const mode = c.req.query('mode') || SearchTop
@@ -22,6 +22,10 @@ app.get('/', async (c) => {
   const query = c.req.query('q') || ''
   const mode = c.req.query('mode') || SearchTop
   const cursor = c.req.query('cursor') || ''
+
+  // Detect pasted X/Twitter URLs
+  const redirect = detectXURL(query)
+  if (redirect) return c.redirect(redirect)
 
   if (query.startsWith('@')) {
     const username = query.slice(1).trim()
@@ -36,15 +40,18 @@ app.get('/', async (c) => {
 })
 
 async function handleSearch(c: any, query: string, mode: string, cursor: string) {
+  // Detect pasted X/Twitter URLs
+  const redirect = detectXURL(query)
+  if (redirect) return c.redirect(redirect)
+
   if (query.startsWith('@')) {
     const username = query.slice(1).trim()
     if (username) return c.redirect(`/${username}`)
   }
 
-  const cache = new Cache(c.env.KV)
+  const db = new DB(c.env.DB)
   const baseQ = encodeURIComponent(query)
 
-  // Render tabs
   let content = '<div class="tabs">'
   for (const t of tabs) {
     content += `<a href="/search/${baseQ}?mode=${t}" class="${mode === t ? 'active' : ''}">${t}</a>`
@@ -52,17 +59,14 @@ async function handleSearch(c: any, query: string, mode: string, cursor: string)
   content += '</div>'
 
   try {
-    const cacheKey = `search:${query}:${mode}:${cursor}`
-
-    // Map "Media" tab to "Photos" API product
     const apiProduct = mode === SearchMedia ? 'Photos' : mode
 
     if (mode === SearchPeople) {
-      let usersData = await cache.get<{ users: unknown[]; cursor: string }>(cacheKey)
+      let usersData = await db.getSearch<{ users: unknown[]; cursor: string }>(query, mode, cursor)
       if (!usersData) {
         const result = await fetchSearchUsersWithFallback(c.env, query, cursor)
         usersData = { users: result.users, cursor: result.cursor }
-        await cache.set(cacheKey, usersData, CACHE_SEARCH)
+        await db.setSearch(query, mode, cursor, usersData, CACHE_SEARCH)
       }
 
       const users = (usersData.users || []) as Parameters<typeof renderUserCard>[0][]
@@ -75,11 +79,11 @@ async function handleSearch(c: any, query: string, mode: string, cursor: string)
       }
       content += renderPagination(nextCursor, `/search/${baseQ}?mode=${mode}`)
     } else {
-      let searchData = await cache.get<{ tweets: unknown[]; cursor: string }>(cacheKey)
+      let searchData = await db.getSearch<{ tweets: unknown[]; cursor: string }>(query, mode, cursor)
       if (!searchData) {
         const result = await fetchSearchTweetsWithFallback(c.env, query, apiProduct, cursor)
         searchData = { tweets: result.tweets, cursor: result.cursor }
-        await cache.set(cacheKey, searchData, CACHE_SEARCH)
+        await db.setSearch(query, mode, cursor, searchData, CACHE_SEARCH)
       }
 
       const tweets = (searchData.tweets || []) as Parameters<typeof renderTweetCard>[0][]

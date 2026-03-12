@@ -10,12 +10,13 @@ import (
 	"path/filepath"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/index"
+	indexpack "github.com/go-mizu/mizu/blueprints/search/pkg/index/pack"
 )
 
 // PackDuckDBRaw packs all markdown files from markdownDir into a DuckDB database
 // with a raw docs table (no FTS index). This is the fastest DuckDB baseline for
 // bulk import benchmarking.
-func PackDuckDBRaw(ctx context.Context, markdownDir, packPath string, workers, batchSize int, progress index.ProgressFunc) (*index.PipelineStats, error) {
+func PackDuckDBRaw(ctx context.Context, markdownDir, packPath string, workers, batchSize int, progress indexpack.ProgressFunc) (*indexpack.PipelineStats, error) {
 	if err := os.MkdirAll(filepath.Dir(packPath), 0o755); err != nil {
 		return nil, err
 	}
@@ -35,7 +36,7 @@ func PackDuckDBRaw(ctx context.Context, markdownDir, packPath string, workers, b
 
 	eng := &duckdbRawWriter{db: db}
 
-	stats, pipeErr := index.RunPipeline(ctx, eng, index.PipelineConfig{
+	stats, pipeErr := indexpack.RunPipeline(ctx, eng, indexpack.PipelineConfig{
 		SourceDir: markdownDir,
 		BatchSize: batchSize,
 		Workers:   workers,
@@ -52,7 +53,7 @@ func PackDuckDBRaw(ctx context.Context, markdownDir, packPath string, workers, b
 
 // RunPipelineFromDuckDBRaw reads a DuckDB raw pack and feeds documents into engine.
 // Counts total rows upfront so progress can show percentage.
-func RunPipelineFromDuckDBRaw(ctx context.Context, engine index.Engine, packPath string, batchSize int, progress index.PackProgressFunc) (*index.PipelineStats, error) {
+func RunPipelineFromDuckDBRaw(ctx context.Context, engine index.Engine, packPath string, batchSize int, progress indexpack.PackProgressFunc) (*indexpack.PipelineStats, error) {
 	db, err := sql.Open("duckdb", packPath)
 	if err != nil {
 		return nil, fmt.Errorf("open duckdb raw: %w", err)
@@ -86,7 +87,7 @@ func RunPipelineFromDuckDBRaw(ctx context.Context, engine index.Engine, packPath
 		}
 	}()
 
-	return index.RunPipelineFromChannel(ctx, engine, docCh, total, batchSize, progress)
+	return indexpack.RunPipelineFromChannel(ctx, engine, docCh, total, batchSize, progress)
 }
 
 // duckdbRawWriter implements index.Engine for writing into the raw docs table.
@@ -94,10 +95,12 @@ type duckdbRawWriter struct {
 	db *sql.DB
 }
 
-func (e *duckdbRawWriter) Name() string                                         { return "duckdb-raw-writer" }
-func (e *duckdbRawWriter) Open(_ context.Context, _ string) error               { return nil }
-func (e *duckdbRawWriter) Close() error                                         { return nil }
-func (e *duckdbRawWriter) Stats(_ context.Context) (index.EngineStats, error)   { return index.EngineStats{}, nil }
+func (e *duckdbRawWriter) Name() string                           { return "duckdb-raw-writer" }
+func (e *duckdbRawWriter) Open(_ context.Context, _ string) error { return nil }
+func (e *duckdbRawWriter) Close() error                           { return nil }
+func (e *duckdbRawWriter) Stats(_ context.Context) (index.EngineStats, error) {
+	return index.EngineStats{}, nil
+}
 func (e *duckdbRawWriter) Search(_ context.Context, _ index.Query) (index.Results, error) {
 	return index.Results{}, nil
 }

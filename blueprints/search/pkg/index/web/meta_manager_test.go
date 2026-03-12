@@ -32,22 +32,21 @@ func TestMetaManager_ScanFallback(t *testing.T) {
 	}
 }
 
-func TestMetaManager_SQLiteCacheAndRefresh(t *testing.T) {
+func TestMetaManager_DuckDBCacheAndRefresh(t *testing.T) {
 	root := t.TempDir()
 	warcDir := filepath.Join(root, "warc")
 	mustMkdir(t, warcDir)
 	writeFile(t, filepath.Join(warcDir, "00000.warc.gz"), 1024)
 
 	m, err := NewMetaManager(context.Background(), MetaConfig{
-		Driver:      "sqlite",
-		DSN:         filepath.Join(t.TempDir(), "meta.sqlite"),
+		Driver:      "duckdb",
+		DSN:         filepath.Join(t.TempDir(), "meta.duckdb"),
 		RefreshTTL:  time.Hour,
 		Prewarm:     false,
 		ActiveCrawl: "CC-TEST-2026",
 		ActiveDir:   root,
 		CommonCrawl: filepath.Dir(root),
 		BusyTimeout: 3 * time.Second,
-		JournalMode: "WAL",
 	})
 	if err != nil {
 		t.Fatalf("NewMetaManager: %v", err)
@@ -56,8 +55,8 @@ func TestMetaManager_SQLiteCacheAndRefresh(t *testing.T) {
 
 	// First read: cache miss -> sync refresh.
 	first := m.GetSummary(context.Background(), "CC-TEST-2026", root)
-	if first.MetaBackend != "sqlite" {
-		t.Fatalf("meta_backend = %q, want sqlite", first.MetaBackend)
+	if first.MetaBackend != "duckdb" {
+		t.Fatalf("meta_backend = %q, want duckdb", first.MetaBackend)
 	}
 	if first.WARCCount != 1 {
 		t.Fatalf("first warc_count = %d, want 1", first.WARCCount)

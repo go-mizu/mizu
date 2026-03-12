@@ -1,72 +1,27 @@
-# Build context = monorepo root. Only blueprints/search Go source is needed.
-# Avoid negation (!...) patterns on large dirs — they force full-tree scans.
+# Build context = monorepo root. Only root go.mod/go.sum + blueprints/search needed.
+# Whitelist approach: exclude everything, then allow only what the build needs.
 
-# ── VCS / editor ──────────────────────────────────────────────────────────────
-.git
-.gitignore
-.DS_Store
-.idea
-.vscode
-**/*.swp
-**/*.swo
+# Exclude everything by default
+*
 
-# ── Rust/compiled build caches (biggest offenders) ────────────────────────────
-**/target
+# Allow root module files (needed for go mod download)
+!go.mod
+!go.sum
 
-# ── Top-level monorepo dirs not used by cmd/search ───────────────────────────
-tools
-examples
-docs
-cmd
-middlewares
-contract
-view
-mobile
-frontend
-sync
-live
-openapi
-.turbo
-.cache
+# Allow blueprints/search source
+!blueprints/search
 
-# ── Other blueprints (not needed for search binary) ───────────────────────────
-blueprints/taocp
-blueprints/workspace
-blueprints/liteio
-blueprints/table
-blueprints/cms
-blueprints/localbase
-blueprints/localflare
-blueprints/spreadsheet
-blueprints/bi
-
-# ── Search blueprint: runtime/local dirs not needed at build time ──────────────
+# Re-exclude heavies inside blueprints/search
+blueprints/search/**/node_modules
 blueprints/search/tools
-blueprints/search/data
 blueprints/search/reports
 blueprints/search/spec
 blueprints/search/test
 blueprints/search/docker
 blueprints/search/app/frontend
+blueprints/search/pkg/engine/fineweb/drivers/fts_rust
+blueprints/search/pkg/engine/fineweb/benchmark
 
-# ── tantivy prebuilt: only linux targets needed for linux build ───────────────
+# tantivy: only keep linux libs needed for build
 blueprints/search/pkg/index/driver/tantivy-go/libs/darwin-arm64
 blueprints/search/pkg/index/driver/tantivy-go/libs/darwin-amd64
-
-# ── Frontend / build caches ───────────────────────────────────────────────────
-**/node_modules
-**/.pnpm-store
-**/.npm
-**/.yarn
-**/.next
-**/.nuxt
-
-# ── Test / coverage / build outputs ──────────────────────────────────────────
-**/coverage*
-**/*.out
-**/*.test
-**/*.log
-**/tmp
-**/temp
-**/dist
-**/bin

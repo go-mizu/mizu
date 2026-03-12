@@ -13,6 +13,47 @@ import (
 	_ "github.com/duckdb/duckdb-go/v2"
 )
 
+// Store manages FineWeb document import and full-text search.
+type Store interface {
+	Import(ctx context.Context, parquetDir string, progress func(file string, rows int64)) error
+	CreateFTSIndex(ctx context.Context) error
+	CreateFTSIndexWithConfig(ctx context.Context, cfg FTSConfig) error
+	HasFTSIndex(ctx context.Context) bool
+	DropFTSIndex(ctx context.Context) error
+	Search(ctx context.Context, query string, limit, offset int) ([]Document, error)
+	SearchFTS(ctx context.Context, query string, limit, offset int) (*SearchResult, error)
+	SearchSimple(ctx context.Context, query string, limit, offset int) ([]Document, error)
+	Count(ctx context.Context) (int64, error)
+	GetImportState(ctx context.Context) ([]ImportState, error)
+	Close() error
+}
+
+// Compile-time check.
+var _ Store = (*store)(nil)
+
+// Option configures a store.
+type Option func(*options)
+
+type options struct {
+	memoryLimitMB int
+	threads       int
+}
+
+// WithMemoryLimitMB sets the DuckDB memory limit in MB.
+func WithMemoryLimitMB(mb int) Option { return func(o *options) { o.memoryLimitMB = mb } }
+
+// WithThreads sets the DuckDB thread count.
+func WithThreads(n int) Option { return func(o *options) { o.threads = n } }
+
+// OpenStore creates a DuckDB-backed Store for a language.
+func OpenStore(lang, dataDir string, opts ...Option) (Store, error) {
+	o := &options{}
+	for _, opt := range opts {
+		opt(o)
+	}
+	return newStore(lang, dataDir, o)
+}
+
 // FTSConfig contains configuration for FTS index creation.
 type FTSConfig struct {
 	// Stemmer algorithm: porter, arabic, german, etc. or "none"
@@ -58,16 +99,16 @@ type SearchResult struct {
 	Total     int64         `json:"total"`  // Total matching documents (if known)
 }
 
-// Store manages DuckDB connection and queries for a language.
-type Store struct {
+// store manages DuckDB connection and queries for a language.
+type store struct {
 	db      *sql.DB
 	lang    string
 	dataDir string
 	dbPath  string
 }
 
-// NewStore creates a store for a language.
-func NewStore(lang, dataDir string) (*Store, error) {
+// newStore is the internal constructor.
+func newStore(lang, dataDir string, o *options) (*store, error) {
 	// Ensure directory exists
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return nil, fmt.Errorf("creating data directory: %w", err)
@@ -80,7 +121,11 @@ func NewStore(lang, dataDir string) (*Store, error) {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
 
-	store := &Store{
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(0)
+
+	s := &store{
 		db:      db,
 		lang:    lang,
 		dataDir: dataDir,
@@ -88,15 +133,15 @@ func NewStore(lang, dataDir string) (*Store, error) {
 	}
 
 	// Initialize schema
-	if err := store.initSchema(); err != nil {
+	if err := s.initSchema(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("initializing schema: %w", err)
 	}
 
-	return store, nil
+	return s, nil
 }
 
-func (s *Store) initSchema() error {
+func (s *store) initSchema() error {
 	// Create documents table
 	_, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS documents (
@@ -129,7 +174,7 @@ func (s *Store) initSchema() error {
 }
 
 // Import imports parquet files into DuckDB.
-func (s *Store) Import(ctx context.Context, parquetDir string, progress func(file string, rows int64)) error {
+func (s *store) Import(ctx context.Context, parquetDir string, progress func(file string, rows int64)) error {
 	// Find parquet files
 	entries, err := os.ReadDir(parquetDir)
 	if err != nil {
@@ -195,7 +240,7 @@ func (s *Store) Import(ctx context.Context, parquetDir string, progress func(fil
 	return nil
 }
 
-func (s *Store) importParquetFile(ctx context.Context, parquetPath string) (int64, error) {
+func (s *store) importParquetFile(ctx context.Context, parquetPath string) (int64, error) {
 	// Use INSERT INTO ... SELECT to append data
 	query := fmt.Sprintf(`
 		INSERT INTO documents (id, url, text, dump, date, language, language_score)
@@ -221,7 +266,7 @@ func (s *Store) importParquetFile(ctx context.Context, parquetPath string) (int6
 }
 
 // CreateFTSIndex creates the full-text search index with default config.
-func (s *Store) CreateFTSIndex(ctx context.Context) error {
+func (s *store) CreateFTSIndex(ctx context.Context) error {
 	return s.CreateFTSIndexWithConfig(ctx, DefaultFTSConfig())
 }
 
@@ -230,7 +275,7 @@ func (s *Store) CreateFTSIndex(ctx context.Context) error {
 // - Setting memory limits and thread count
 // - Configuring temp directory for disk spilling
 // - Using appropriate stemmer and stopwords
-func (s *Store) CreateFTSIndexWithConfig(ctx context.Context, cfg FTSConfig) error {
+func (s *store) CreateFTSIndexWithConfig(ctx context.Context, cfg FTSConfig) error {
 	// Configure DuckDB for large dataset handling
 	if err := s.configureDuckDB(ctx, cfg); err != nil {
 		return fmt.Errorf("configuring DuckDB: %w", err)
@@ -279,7 +324,7 @@ func (s *Store) CreateFTSIndexWithConfig(ctx context.Context, cfg FTSConfig) err
 }
 
 // configureDuckDB sets up DuckDB configuration for large dataset processing.
-func (s *Store) configureDuckDB(ctx context.Context, cfg FTSConfig) error {
+func (s *store) configureDuckDB(ctx context.Context, cfg FTSConfig) error {
 	// Set memory limit
 	if cfg.MemoryLimit != "" {
 		if _, err := s.db.ExecContext(ctx, fmt.Sprintf("SET memory_limit = '%s'", cfg.MemoryLimit)); err != nil {
@@ -324,7 +369,7 @@ func (s *Store) configureDuckDB(ctx context.Context, cfg FTSConfig) error {
 }
 
 // HasFTSIndex checks if the FTS index exists and is functional for this store.
-func (s *Store) HasFTSIndex(ctx context.Context) bool {
+func (s *store) HasFTSIndex(ctx context.Context) bool {
 	// Load FTS extension first
 	if _, err := s.db.ExecContext(ctx, "LOAD fts"); err != nil {
 		return false
@@ -357,7 +402,7 @@ func (s *Store) HasFTSIndex(ctx context.Context) bool {
 }
 
 // DropFTSIndex removes the FTS index if it exists.
-func (s *Store) DropFTSIndex(ctx context.Context) error {
+func (s *store) DropFTSIndex(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, "LOAD fts")
 	if err != nil {
 		return nil // FTS not loaded, nothing to drop
@@ -371,7 +416,7 @@ func (s *Store) DropFTSIndex(ctx context.Context) error {
 }
 
 // Search performs full-text search using BM25.
-func (s *Store) Search(ctx context.Context, query string, limit, offset int) ([]Document, error) {
+func (s *store) Search(ctx context.Context, query string, limit, offset int) ([]Document, error) {
 	result, err := s.SearchFTS(ctx, query, limit, offset)
 	if err != nil {
 		return nil, err
@@ -380,7 +425,7 @@ func (s *Store) Search(ctx context.Context, query string, limit, offset int) ([]
 }
 
 // SearchFTS performs full-text search with BM25 scoring and returns timing info.
-func (s *Store) SearchFTS(ctx context.Context, query string, limit, offset int) (*SearchResult, error) {
+func (s *store) SearchFTS(ctx context.Context, query string, limit, offset int) (*SearchResult, error) {
 	return s.SearchFTSWithParams(ctx, query, limit, offset, 1.2, 0.75, false)
 }
 
@@ -388,7 +433,7 @@ func (s *Store) SearchFTS(ctx context.Context, query string, limit, offset int) 
 // k controls term frequency saturation (default 1.2)
 // b controls length normalization (default 0.75)
 // conjunctive requires all query terms when true
-func (s *Store) SearchFTSWithParams(ctx context.Context, query string, limit, offset int, k, b float64, conjunctive bool) (*SearchResult, error) {
+func (s *store) SearchFTSWithParams(ctx context.Context, query string, limit, offset int, k, b float64, conjunctive bool) (*SearchResult, error) {
 	start := time.Now()
 
 	// Load FTS extension
@@ -459,7 +504,7 @@ func (s *Store) SearchFTSWithParams(ctx context.Context, query string, limit, of
 }
 
 // SearchSimple performs simple LIKE-based search (fallback if FTS not available).
-func (s *Store) SearchSimple(ctx context.Context, query string, limit, offset int) ([]Document, error) {
+func (s *store) SearchSimple(ctx context.Context, query string, limit, offset int) ([]Document, error) {
 	result, err := s.SearchLike(ctx, query, limit, offset)
 	if err != nil {
 		return nil, err
@@ -468,7 +513,7 @@ func (s *Store) SearchSimple(ctx context.Context, query string, limit, offset in
 }
 
 // SearchLike performs LIKE-based search with timing info.
-func (s *Store) SearchLike(ctx context.Context, query string, limit, offset int) (*SearchResult, error) {
+func (s *store) SearchLike(ctx context.Context, query string, limit, offset int) (*SearchResult, error) {
 	start := time.Now()
 
 	// Simple LIKE search
@@ -534,7 +579,7 @@ type SearchComparison struct {
 }
 
 // CompareSearch runs both FTS and LIKE search and compares results.
-func (s *Store) CompareSearch(ctx context.Context, query string, limit int) (*SearchComparison, error) {
+func (s *store) CompareSearch(ctx context.Context, query string, limit int) (*SearchComparison, error) {
 	comp := &SearchComparison{
 		Query: query,
 	}
@@ -581,14 +626,14 @@ func calculateOverlap(ftsResults, likeResults []Document) int {
 }
 
 // Count returns the number of documents.
-func (s *Store) Count(ctx context.Context) (int64, error) {
+func (s *store) Count(ctx context.Context) (int64, error) {
 	var count int64
 	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM documents").Scan(&count)
 	return count, err
 }
 
 // GetImportState returns the import state.
-func (s *Store) GetImportState(ctx context.Context) ([]ImportState, error) {
+func (s *store) GetImportState(ctx context.Context) ([]ImportState, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT parquet_file, imported_at, row_count
 		FROM import_state
@@ -611,6 +656,6 @@ func (s *Store) GetImportState(ctx context.Context) ([]ImportState, error) {
 }
 
 // Close closes the database connection.
-func (s *Store) Close() error {
+func (s *store) Close() error {
 	return s.db.Close()
 }

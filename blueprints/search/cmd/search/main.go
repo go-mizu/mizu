@@ -7,6 +7,11 @@ import (
 	"syscall"
 
 	"github.com/go-mizu/mizu/blueprints/search/cli"
+
+	// Register sub-package providers via init()
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/serp/firecrawl"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/serp/jina"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/serp/parallel"
 )
 
 // Version information (set via ldflags)

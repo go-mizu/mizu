@@ -6,30 +6,28 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/api"
 )
+
+// duckQuotePath wraps a file path in DuckDB single-quoted string syntax,
+// escaping any embedded single quotes.
+func duckQuotePath(p string) string {
+	return "'" + strings.ReplaceAll(filepath.ToSlash(p), "'", "''") + "'"
+}
 
 // DataSummary holds statistics about a crawl's local data directory.
 // All map fields are always initialized (never nil) so that JSON
 // marshaling produces {} rather than null for empty maps.
-type DataSummary struct {
-	CrawlID       string           `json:"crawl_id"`
-	WARCCount     int              `json:"warc_count"`
-	WARCTotalSize int64            `json:"warc_total_size"`
-	MDShards      int              `json:"md_shards"`
-	MDTotalSize   int64            `json:"md_total_size"`
-	MDDocEstimate int              `json:"md_doc_estimate"`
-	PackFormats   map[string]int64 `json:"pack_formats"`
-	FTSEngines    map[string]int64 `json:"fts_engines"`
-	FTSShardCount map[string]int   `json:"fts_shard_count"`
-}
+type DataSummary = api.DataSummary
 
 // ScanDataDir walks a crawl data directory and computes summary statistics
 // without opening DuckDB files. The expected layout is:
 //
-//	{crawlDir}/warc/                       WARC files
-//	{crawlDir}/markdown/{shardIdx}/*.md    Extracted markdown
-//	{crawlDir}/pack/{format}/*             Packed bundles per format
-//	{crawlDir}/fts/{engine}/{shardIdx}/    FTS index shards per engine
+//	{crawlDir}/warc/                           WARC files
+//	{crawlDir}/warc_md/{shardIdx}.md.warc.gz   Extracted markdown (WARC format)
+//	{crawlDir}/pack/{format}/*                 Packed bundles per format
+//	{crawlDir}/fts/{engine}/{shardIdx}/        FTS index shards per engine
 func ScanDataDir(crawlDir string) DataSummary {
 	ds := DataSummary{
 		PackFormats:   make(map[string]int64),
@@ -38,7 +36,7 @@ func ScanDataDir(crawlDir string) DataSummary {
 	}
 
 	scanWARC(crawlDir, &ds)
-	scanMarkdown(crawlDir, &ds)
+	scanWARCMdDir(crawlDir, &ds)
 	scanPack(crawlDir, &ds)
 	scanFTS(crawlDir, &ds)
 
@@ -63,32 +61,21 @@ func scanWARC(crawlDir string, ds *DataSummary) {
 	}
 }
 
-// scanMarkdown counts shards, estimates docs, and sums sizes in
-// {crawlDir}/markdown/{shardIdx}/.
-func scanMarkdown(crawlDir string, ds *DataSummary) {
-	mdDir := filepath.Join(crawlDir, "markdown")
-	shards, err := os.ReadDir(mdDir)
+// scanWARCMdDir counts shards and sums sizes in {crawlDir}/warc_md/*.md.warc.gz.
+func scanWARCMdDir(crawlDir string, ds *DataSummary) {
+	mdDir := filepath.Join(crawlDir, "warc_md")
+	entries, err := os.ReadDir(mdDir)
 	if err != nil {
 		return
 	}
-	for _, shard := range shards {
-		if !shard.IsDir() {
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md.warc.gz") {
 			continue
 		}
 		ds.MDShards++
-		shardPath := filepath.Join(mdDir, shard.Name())
-		filepath.WalkDir(shardPath, func(path string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return nil
-			}
-			if strings.HasSuffix(d.Name(), ".md") {
-				ds.MDDocEstimate++
-			}
-			if info, err := d.Info(); err == nil {
-				ds.MDTotalSize += info.Size()
-			}
-			return nil
-		})
+		if info, err := e.Info(); err == nil {
+			ds.MDTotalSize += info.Size()
+		}
 	}
 }
 

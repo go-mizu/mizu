@@ -1,16 +1,24 @@
 name = "x-viewer"
 main = "src/index.ts"
-compatibility_date = "2026-02-09"
+compatibility_date = "2026-03-10"
 compatibility_flags = ["nodejs_compat"]
 
-[[kv_namespaces]]
-binding = "KV"
-id = "2ddba76decc84c75b20fbf1748d25f49"
+[[d1_databases]]
+binding = "DB"
+database_name = "x-viewer-cache"
+database_id = "2e26feed-afff-4080-bc09-a5bfef037fc4"
 
 [[rules]]
 type = "Text"
 globs = ["**/*.css"]
 fallthrough = true
+
+[browser]
+binding = "BROWSER"
+
+# Secret: wrangler secret put API_TOKEN
+# All /api/* routes require Authorization: Bearer <API_TOKEN>
+# If API_TOKEN is not set, all requests are allowed (backward compat)
 
 [vars]
 ENVIRONMENT = "production"

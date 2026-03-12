@@ -2,13 +2,20 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/dcrawler/x"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/scrape/x"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/markdown"
+	"github.com/go-rod/rod"
+	"github.com/go-rod/rod/lib/launcher"
+	"github.com/go-rod/rod/lib/proto"
 	"github.com/spf13/cobra"
 )
 
@@ -125,6 +132,28 @@ func initXClient(cfg x.Config, session string) (*x.Client, error) {
 	}
 
 	return client, nil
+}
+
+// initXClientOptional loads a session if available but returns a working client even without one.
+// Commands that only need public data (profile, tweet, timeline) use this — guest token handles reads.
+// Commands that need auth (bookmarks, home, search) should use initXClient instead.
+func initXClientOptional(cfg x.Config, session string) *x.Client {
+	client := x.NewClient(cfg)
+
+	if session == "" {
+		session = "default"
+	}
+	sessionPath := cfg.SessionPath(session)
+	sess, err := client.LoadSessionFile(sessionPath)
+	if err != nil {
+		// No session — client still works via guest token for public data
+		return client
+	}
+	fmt.Printf("  Session: %s\n", infoStyle.Render("@"+sess.Username))
+	if !client.Activate() {
+		fmt.Println(warningStyle.Render("  Warning: session may be expired"))
+	}
+	return client
 }
 
 // ── login ───────────────────────────────────────────────
@@ -293,8 +322,11 @@ func newXProfile() *cobra.Command {
 Displays username, bio, follower/following counts, tweet count, and more.
 Profile data is saved to $HOME/data/x/{username}/profile.json
 
+Uses guest token for fetching (no session rate limit consumed).
+Session is used as fallback if guest token fails.
+
 Examples:
-  search x profile karpathy --session myuser
+  search x profile karpathy
   search x profile elonmusk --session myuser`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -303,7 +335,7 @@ Examples:
 		},
 	}
 
-	cmd.Flags().StringVar(&session, "session", "", "Session username to load (required)")
+	cmd.Flags().StringVar(&session, "session", "", "Session username for auth fallback")
 	return cmd
 }
 
@@ -313,10 +345,7 @@ func runXProfile(username, session string) error {
 	fmt.Println()
 
 	cfg := x.DefaultConfig()
-	client, err := initXClient(cfg, session)
-	if err != nil {
-		return err
-	}
+	client := initXClientOptional(cfg, session)
 
 	fmt.Printf("  Fetching profile for %s\n", infoStyle.Render("@"+username))
 
@@ -385,7 +414,10 @@ func displayXProfile(p *x.Profile) {
 func newXTweets() *cobra.Command {
 	var (
 		maxTweets int
+		all       bool
+		order     string
 		session   string
+		workerURL string
 	)
 
 	cmd := &cobra.Command{
@@ -394,94 +426,385 @@ func newXTweets() *cobra.Command {
 		Long: `Fetch timeline tweets for an X/Twitter user.
 
 Tweets are stored in a DuckDB database at $HOME/data/x/{username}/tweets.duckdb
-Max ~3,200 tweets per user (Twitter API limitation).
+Use --all or --max-tweets 0 to fetch all available tweets.
+
+Order controls which date windows are fetched first:
+  oldest  - Start from account creation date (good for first full fetch)
+  newest  - Start from today going backwards (good for catching up)
+
+Windows that already have tweets in the DB are skipped by default.
 
 Examples:
   search x tweets karpathy --session myuser
-  search x tweets karpathy --max-tweets 100 --session myuser`,
+  search x tweets karpathy --all --session myuser
+  search x tweets karpathy --all --order newest --session myuser`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			username := strings.TrimPrefix(args[0], "@")
-			return runXTweets(cmd.Context(), username, maxTweets, session)
+			if all {
+				maxTweets = 0
+			}
+			return runXTweets(cmd.Context(), username, maxTweets, order, session, workerURL)
 		},
 	}
 
-	cmd.Flags().IntVar(&maxTweets, "max-tweets", 200, "Max tweets to fetch (max ~3200)")
-	cmd.Flags().StringVar(&session, "session", "", "Session username to load (required)")
+	cmd.Flags().IntVar(&maxTweets, "max-tweets", 200, "Max tweets to fetch (0 = unlimited)")
+	cmd.Flags().BoolVar(&all, "all", false, "Fetch all available tweets (overrides --max-tweets)")
+	cmd.Flags().StringVar(&order, "order", "oldest", "Fetch order: oldest or newest first")
+	cmd.Flags().StringVar(&session, "session", "", "Session username for auth fallback")
+	cmd.Flags().StringVar(&workerURL, "worker", "", "Use x-viewer worker API URL instead of direct X API (e.g. https://x-viewer.go-mizu.workers.dev)")
 	return cmd
 }
 
-func runXTweets(ctx context.Context, username string, maxTweets int, session string) error {
+// fetchTweetsFromWorker calls the x-viewer worker API to fetch tweets for a user.
+// Requires X_VIEWER_TOKEN env var for authentication.
+// Returns tweets and cache meta (fromCache, age/duration).
+func fetchTweetsFromWorker(ctx context.Context, workerURL, username, tab string) ([]x.Tweet, bool, string, error) {
+	token := os.Getenv("X_VIEWER_TOKEN")
+	apiURL := strings.TrimRight(workerURL, "/") + "/api/tweets/" + username
+	if tab != "" && tab != "tweets" {
+		apiURL += "?tab=" + tab
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		return nil, false, "", err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	req.Header.Set("User-Agent", "search-cli/1.0")
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, false, "", fmt.Errorf("worker request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 401 {
+		return nil, false, "", fmt.Errorf("worker returned 401: set X_VIEWER_TOKEN env var")
+	}
+	if resp.StatusCode != 200 {
+		return nil, false, "", fmt.Errorf("worker HTTP %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Tweets []x.Tweet `json:"tweets"`
+		Meta   struct {
+			FromCache bool    `json:"fromCache"`
+			Age       float64 `json:"age"`
+			Duration  float64 `json:"duration"`
+			CachedAt  int64   `json:"cachedAt"`
+		} `json:"meta"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, false, "", fmt.Errorf("decode response: %w", err)
+	}
+
+	// Build human-readable cache status
+	var cacheInfo string
+	if result.Meta.FromCache {
+		cacheInfo = fmt.Sprintf("cached %ds ago", int(result.Meta.Age))
+	} else {
+		cacheInfo = fmt.Sprintf("fetched in %dms", int(result.Meta.Duration))
+	}
+
+	return result.Tweets, result.Meta.FromCache, cacheInfo, nil
+}
+
+func runXTweets(ctx context.Context, username string, maxTweets int, order, session, workerURL string) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("X/Twitter Tweets"))
 	fmt.Println()
 
 	cfg := x.DefaultConfig()
-	client, err := initXClient(cfg, session)
-	if err != nil {
-		return err
-	}
 
 	fmt.Printf("  Fetching tweets for %s\n", infoStyle.Render("@"+username))
-	fmt.Printf("  Max tweets: %s\n", labelStyle.Render(fmt.Sprintf("%d", maxTweets)))
-	fmt.Printf("  Data:       %s\n", labelStyle.Render(cfg.UserDir(username)))
-	fmt.Println()
-
-	start := time.Now()
-	tweets, err := client.GetTweets(ctx, username, maxTweets, func(p x.Progress) {
-		if !p.Done {
-			fmt.Printf("\r  Fetching tweets: %s",
-				infoStyle.Render(formatLargeNumber(p.Current)))
-		}
-	})
-
-	fmt.Println()
-	if err != nil {
-		fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: %v (got %d tweets)", err, len(tweets))))
+	if maxTweets > 0 {
+		fmt.Printf("  Max tweets: %s\n", labelStyle.Render(fmt.Sprintf("%d", maxTweets)))
+	} else {
+		fmt.Printf("  Max tweets: %s\n", infoStyle.Render("unlimited (--all)"))
 	}
+	fmt.Printf("  Data:       %s\n", labelStyle.Render(cfg.UserDir(username)))
 
-	if len(tweets) == 0 {
-		fmt.Println(warningStyle.Render("  No tweets found"))
+	// Worker mode: use x-viewer API instead of direct X API
+	if workerURL != "" {
+		fmt.Printf("  Worker:     %s\n", labelStyle.Render(workerURL))
+		fmt.Println()
+
+		tweets, fromCache, cacheInfo, err := fetchTweetsFromWorker(ctx, workerURL, username, "tweets")
+		if err != nil {
+			return fmt.Errorf("worker fetch: %w", err)
+		}
+
+		fmt.Printf("  Source:     %s\n", labelStyle.Render(cacheInfo))
+		fmt.Printf("  Tweets:     %s\n", infoStyle.Render(formatLargeNumber(int64(len(tweets)))))
+		_ = fromCache
+		fmt.Println()
+
+		if len(tweets) == 0 {
+			fmt.Println(warningStyle.Render("  No tweets returned"))
+			return nil
+		}
+
+		// Save to DB
+		db, err := x.OpenDB(cfg.UserDBPath(username))
+		if err != nil {
+			return fmt.Errorf("open db: %w", err)
+		}
+		defer db.Close()
+
+		if err := db.InsertTweets(tweets); err != nil {
+			fmt.Printf("  Warning: save failed: %v\n", err)
+		}
+
+		fmt.Println(subtitleStyle.Render("  Top tweets by likes:"))
+		top := tweets
+		if len(top) > 5 {
+			top = top[:5]
+		}
+		for i, t := range top {
+			text := strings.ReplaceAll(t.Text, "\n", " ")
+			if len(text) > 60 {
+				text = text[:60] + "..."
+			}
+			fmt.Printf("  %d. %s likes  %s\n", i+1, infoStyle.Render(formatLargeNumber(int64(t.Likes))), text)
+		}
 		return nil
 	}
 
-	// Store in DuckDB
+	fmt.Println()
+
+	// Guest token is used per-page; session is optional (only needed as fallback)
+	client := initXClientOptional(cfg, session)
+
+	// Open DB early for incremental saves
 	db, err := x.OpenDB(cfg.UserDBPath(username))
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
 	defer db.Close()
 
-	if err := db.InsertTweets(tweets); err != nil {
-		return fmt.Errorf("insert tweets: %w", err)
+	// Check existing tweet count
+	stats, _ := db.GetStats()
+	if stats.Tweets > 0 {
+		fmt.Printf("  Existing:   %s tweets in DB\n", infoStyle.Render(formatLargeNumber(stats.Tweets)))
 	}
 
-	fmt.Println()
-	fmt.Println(successStyle.Render(fmt.Sprintf("  Fetched %d tweets in %s",
-		len(tweets), time.Since(start).Truncate(time.Second))))
-	fmt.Printf("  Database: %s\n", labelStyle.Render(cfg.UserDBPath(username)))
-
-	// Count media
-	photoCount, videoCount := countMedia(tweets)
-	fmt.Printf("  Photos: %d  |  Videos: %d\n", photoCount, videoCount)
-
-	// Show top 5 tweets
-	if len(tweets) > 0 {
-		fmt.Println()
-		fmt.Println(subtitleStyle.Render("  Top tweets by likes:"))
-		top, _ := db.TopTweets(5)
-		for i, t := range top {
-			text := strings.ReplaceAll(t.Text, "\n", " ")
-			if len(text) > 60 {
-				text = text[:60] + "..."
-			}
-			fmt.Printf("  %d. %s likes  %s RT  %s views  %s\n",
-				i+1,
-				infoStyle.Render(formatLargeNumber(int64(t.Likes))),
-				labelStyle.Render(formatLargeNumber(int64(t.Retweets))),
-				labelStyle.Render(formatLargeNumber(int64(t.Views))),
-				text)
+	start := time.Now()
+	var totalFetched int64
+	batchSave := func(batch []x.Tweet) {
+		if err := db.InsertTweets(batch); err != nil {
+			fmt.Printf("\n  Warning: batch save failed: %v\n", err)
+		} else {
+			totalFetched += int64(len(batch))
 		}
+	}
+
+	tweetsProgressCb := func(p x.Progress) {
+		if !p.Done {
+			if p.Message != "" {
+				fmt.Printf("\r  tweets: %s  %s                    ",
+					infoStyle.Render(formatLargeNumber(p.Current)),
+					warningStyle.Render(p.Message))
+			} else {
+				fmt.Printf("\r  tweets: %s          ",
+					infoStyle.Render(formatLargeNumber(p.Current)))
+			}
+		}
+	}
+
+	if maxTweets > 0 {
+		// Limited fetch: use timeline API (fast, up to ~800 tweets)
+		tweets, err := client.GetTweetsWithBatch(ctx, username, maxTweets, tweetsProgressCb, batchSave)
+		fmt.Println()
+		if err != nil {
+			fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: %v (got %d tweets)", err, len(tweets))))
+		}
+	} else {
+		// --all phase 1: timeline endpoint (guest token — no session rate limit consumed).
+		// gqlUserTweetsV2 works without auth for public accounts.
+		fmt.Printf("  Phase 1: timeline (guest token, no rate limit)...\n")
+		_, err := client.GetTweetsWithBatch(ctx, username, 0, tweetsProgressCb, batchSave)
+		fmt.Println()
+		if err != nil {
+			fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: timeline phase: %v", err)))
+		}
+
+		// --all phase 2: date-windowed search for any gap before the timeline horizon.
+		// The timeline API may stop before the account's oldest tweets (~3200 tweet limit).
+		// Search uses session auth but only covers the uncached gap.
+		dbOldest, _, _ := db.TweetDateRange()
+		if !dbOldest.IsZero() {
+			fmt.Printf("  Phase 2: gap fill via search (oldest in DB: %s)...\n",
+				labelStyle.Render(dbOldest.Format("2006-01-02")))
+		} else {
+			fmt.Printf("  Phase 2: gap fill via search...\n")
+		}
+		if err := fetchAllTweetsByDate(ctx, client, db, username, order, batchSave); err != nil {
+			fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: search phase: %v", err)))
+		}
+	}
+
+	// Get final DB stats
+	finalStats, _ := db.GetStats()
+
+	fmt.Println()
+	fmt.Println(successStyle.Render(fmt.Sprintf("  Fetched %d new tweets in %s",
+		totalFetched, time.Since(start).Truncate(time.Second))))
+	fmt.Printf("  Total in DB: %s tweets\n", infoStyle.Render(formatLargeNumber(finalStats.Tweets)))
+	fmt.Printf("  Database:    %s\n", labelStyle.Render(cfg.UserDBPath(username)))
+
+	// Show top 5 tweets from DB
+	fmt.Println()
+	fmt.Println(subtitleStyle.Render("  Top tweets by likes:"))
+	top, _ := db.TopTweets(5)
+	for i, t := range top {
+		text := strings.ReplaceAll(t.Text, "\n", " ")
+		if len(text) > 60 {
+			text = text[:60] + "..."
+		}
+		fmt.Printf("  %d. %s likes  %s RT  %s views  %s\n",
+			i+1,
+			infoStyle.Render(formatLargeNumber(int64(t.Likes))),
+			labelStyle.Render(formatLargeNumber(int64(t.Retweets))),
+			labelStyle.Render(formatLargeNumber(int64(t.Views))),
+			text)
+	}
+
+	return nil
+}
+
+// fetchAllTweetsByDate fetches all tweets using date-windowed search.
+// Uses "from:username since:YYYY-MM-DD until:YYYY-MM-DD" queries in monthly windows.
+// order: "oldest" (join date → today) or "newest" (today → join date).
+// Windows that already have tweets in the DB are skipped.
+func fetchAllTweetsByDate(ctx context.Context, client *x.Client, db *x.DB, username, order string, batchSave x.BatchCallback) error {
+	// Get profile for join date and tweet count
+	profile, err := client.GetProfile(username)
+	if err != nil {
+		return fmt.Errorf("get profile: %w", err)
+	}
+
+	joinDate := profile.Joined
+	if joinDate.IsZero() {
+		joinDate = time.Date(2006, 3, 1, 0, 0, 0, 0, time.UTC) // Twitter launch date
+	}
+
+	now := time.Now().UTC()
+	fmt.Printf("  Profile:    %s (@%s), joined %s, %s tweets\n",
+		infoStyle.Render(profile.Name), username,
+		labelStyle.Render(joinDate.Format("Jan 2006")),
+		infoStyle.Render(formatLargeNumber(int64(profile.TweetsCount))))
+
+	// Build monthly windows (always oldest→newest internally)
+	type window struct {
+		since, until time.Time
+	}
+	var windows []window
+
+	tomorrow := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, time.UTC)
+	cur := time.Date(joinDate.Year(), joinDate.Month(), 1, 0, 0, 0, 0, time.UTC)
+	for cur.Before(tomorrow) {
+		until := cur.AddDate(0, 1, 0)
+		if until.After(tomorrow) {
+			until = tomorrow
+		}
+		windows = append(windows, window{since: cur, until: until})
+		cur = until
+	}
+
+	// Reverse for newest-first order
+	if order == "newest" {
+		for i, j := 0, len(windows)-1; i < j; i, j = i+1, j-1 {
+			windows[i], windows[j] = windows[j], windows[i]
+		}
+	}
+
+	fmt.Printf("  Windows:    %d months (%s → %s), order: %s\n",
+		len(windows),
+		joinDate.Format("2006-01"),
+		now.Format("2006-01"),
+		order)
+
+	// Check existing date range
+	dbOldest, dbNewest, _ := db.TweetDateRange()
+	if !dbOldest.IsZero() {
+		fmt.Printf("  DB range:   %s → %s\n",
+			labelStyle.Render(dbOldest.Format("2006-01-02")),
+			labelStyle.Render(dbNewest.Format("2006-01-02")))
+	}
+	fmt.Println()
+
+	oldMode := client.SearchMode()
+	client.SetSearchMode(x.SearchLatest)
+	defer client.SetSearchMode(oldMode)
+
+	var grandTotal int64
+	var skipped int
+	for i, w := range windows {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		label := w.since.Format("Jan 2006")
+
+		// Skip windows that already have tweets in DB
+		existing := db.TweetCountInRange(w.since, w.until)
+		if existing > 0 {
+			skipped++
+			grandTotal += existing
+			fmt.Printf("  [%d/%d] %s: %s tweets (cached)          \n",
+				i+1, len(windows), label,
+				labelStyle.Render(formatLargeNumber(existing)))
+			continue
+		}
+
+		sinceStr := w.since.Format("2006-01-02")
+		untilStr := w.until.Format("2006-01-02")
+		query := fmt.Sprintf("from:%s since:%s until:%s", username, sinceStr, untilStr)
+
+		tweets, err := client.SearchTweetsWithBatch(ctx, query, 0,
+			func(p x.Progress) {
+				if !p.Done {
+					if p.Message != "" {
+						fmt.Printf("\r  [%d/%d] %s: %s  (total: %s)  %s                    ",
+							i+1, len(windows), label,
+							infoStyle.Render(formatLargeNumber(p.Current)),
+							labelStyle.Render(formatLargeNumber(grandTotal+p.Current)),
+							warningStyle.Render(p.Message))
+					} else {
+						fmt.Printf("\r  [%d/%d] %s: %s  (total: %s)          ",
+							i+1, len(windows), label,
+							infoStyle.Render(formatLargeNumber(p.Current)),
+							labelStyle.Render(formatLargeNumber(grandTotal+p.Current)))
+					}
+				}
+			}, batchSave)
+
+		windowCount := int64(len(tweets))
+		grandTotal += windowCount
+
+		if err != nil {
+			fmt.Printf("\n  Warning: %s: %v (got %d)\n", label, err, windowCount)
+		}
+
+		fmt.Printf("\r  [%d/%d] %s: %s tweets  (total: %s)          \n",
+			i+1, len(windows), label,
+			infoStyle.Render(formatLargeNumber(windowCount)),
+			labelStyle.Render(formatLargeNumber(grandTotal)))
+
+		// Pace between windows — single-page windows skip the in-loop sleep,
+		// so apply it here to avoid rapid-fire requests across 200+ windows.
+		if i < len(windows)-1 {
+			time.Sleep(client.PacedDelay())
+		}
+	}
+
+	if skipped > 0 {
+		fmt.Printf("\n  Skipped %d windows with existing data\n", skipped)
 	}
 
 	return nil
@@ -490,7 +813,7 @@ func runXTweets(ctx context.Context, username string, maxTweets int, session str
 // ── tweet ───────────────────────────────────────────────
 
 func newXTweet() *cobra.Command {
-	var session string
+	var session, format string
 
 	cmd := &cobra.Command{
 		Use:   "tweet <id_or_url>",
@@ -501,16 +824,25 @@ Accepts tweet ID or full URL:
   search x tweet 1234567890
   search x tweet https://x.com/user/status/1234567890
 
+Fetches via syndication API first (no auth), falls back to guest token, then
+to cookie auth. Session is optional — useful for replies and non-public content.
+
+Use --format markdown to save the thread as a markdown article:
+  search x tweet https://x.com/LangChain/status/2031055593360990358 --format markdown
+
 Examples:
-  search x tweet 1234567890 --session myuser`,
+  search x tweet 1234567890
+  search x tweet 1234567890 --session myuser
+  search x tweet https://x.com/user/status/123 --format markdown`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := extractTweetID(args[0])
-			return runXTweet(cmd.Context(), id, session)
+			return runXTweet(cmd.Context(), id, session, format)
 		},
 	}
 
-	cmd.Flags().StringVar(&session, "session", "", "Session username to load (required)")
+	cmd.Flags().StringVar(&session, "session", "", "Session username for auth fallback and replies")
+	cmd.Flags().StringVar(&format, "format", "", "Output format: markdown")
 	return cmd
 }
 
@@ -530,16 +862,13 @@ func extractTweetID(input string) string {
 	return input
 }
 
-func runXTweet(ctx context.Context, id, session string) error {
+func runXTweet(ctx context.Context, id, session, format string) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("X/Twitter Tweet"))
 	fmt.Println()
 
 	cfg := x.DefaultConfig()
-	client, err := initXClient(cfg, session)
-	if err != nil {
-		return err
-	}
+	client := initXClientOptional(cfg, session)
 
 	fmt.Printf("  Fetching tweet %s\n", infoStyle.Render(id))
 
@@ -551,23 +880,22 @@ func runXTweet(ctx context.Context, id, session string) error {
 	fmt.Println()
 	displayTweet(tweet)
 
-	// Fetch replies
+	// Fetch replies via guest token (or auth fallback)
 	fmt.Println(labelStyle.Render("  Fetching replies..."))
-	replies, err := client.GetTweetReplies(id)
-	if err != nil {
-		fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: %v", err)))
+	replies, repliesErr := client.GetTweetReplies(id)
+	if repliesErr != nil {
+		fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: %v", repliesErr)))
+	}
+
+	// Always store tweet + replies in DuckDB
+	db, dbErr := x.OpenDB(cfg.UserDBPath(tweet.Username))
+	if dbErr == nil {
+		allTweets := append([]x.Tweet{*tweet}, replies...)
+		db.InsertTweets(allTweets)
 	}
 
 	if len(replies) > 0 {
 		fmt.Printf("  %d replies found\n\n", len(replies))
-
-		// Store tweet + replies
-		db, err := x.OpenDB(cfg.UserDBPath(tweet.Username))
-		if err == nil {
-			allTweets := append([]x.Tweet{*tweet}, replies...)
-			db.InsertTweets(allTweets)
-			db.Close()
-		}
 
 		showN := min(5, len(replies))
 		fmt.Println(subtitleStyle.Render("  Top replies:"))
@@ -584,6 +912,86 @@ func runXTweet(ctx context.Context, id, session string) error {
 		}
 	} else {
 		fmt.Println(labelStyle.Render("  No replies found"))
+	}
+
+	// Markdown export
+	if strings.ToLower(format) == "markdown" {
+		thread := x.ExtractThread(*tweet, replies)
+
+		// If the tweet is just a link, follow it and extract the full article body
+		if isTweetJustALink(*tweet) || (tweet.Text == "" && len(tweet.URLs) > 0) {
+			linkedURL := extractFirstURL(*tweet)
+			if linkedURL != "" {
+				fmt.Printf("  Fetching linked article: %s\n", infoStyle.Render(linkedURL))
+
+				if extractXArticleID(linkedURL) != "" {
+					// X Article — render with headless browser (public URL, no auth needed)
+					articleURL := fmt.Sprintf("https://x.com/%s/article/%s", tweet.Username, tweet.ID)
+					fmt.Println(labelStyle.Render("  Rendering with headless browser..."))
+					artTitle, artBody, rodErr := fetchXArticleWithRod(ctx, articleURL, client.AuthToken(), client.CT0())
+					if rodErr == nil && artBody != "" {
+						if artTitle != "" && thread[0].Title == "" {
+							thread[0].Title = artTitle
+						}
+						thread[0].Text = artBody
+						thread[0].PermanentURL = articleURL
+						fmt.Printf("  Article: %d chars (via headless browser)\n", len(artBody))
+					} else {
+						fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: X Article not accessible (%v)", rodErr)))
+					}
+				} else {
+					// External URL — fetch HTML and extract with trafilatura
+					artTitle, artBody, finalURL := fetchLinkedArticle(linkedURL)
+					if artBody != "" {
+						if artTitle != "" && thread[0].Title == "" {
+							thread[0].Title = artTitle
+						}
+						thread[0].Text = artBody
+						if finalURL != "" {
+							thread[0].PermanentURL = finalURL
+						}
+						fmt.Printf("  Article: %d chars extracted\n", len(artBody))
+					} else {
+						fmt.Println(warningStyle.Render("  Warning: could not extract article body from linked URL"))
+					}
+				}
+			}
+		}
+
+		mdPath := filepath.Join(cfg.UserDir(tweet.Username), id+".md")
+		if err := x.ExportMarkdown(thread, mdPath); err != nil {
+			fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: export markdown: %v", err)))
+		} else {
+			fmt.Println()
+			fmt.Printf("  Thread: %d tweets\n", len(thread))
+			fmt.Println(successStyle.Render(fmt.Sprintf("  Saved markdown: %s", mdPath)))
+		}
+
+		// Store assembled article in DuckDB
+		if dbErr == nil {
+			article := x.Article{
+				ID:         tweet.ID,
+				Username:   tweet.Username,
+				Name:       tweet.Name,
+				Title:      thread[0].Title,
+				ContentMD:  x.TweetThreadToMarkdown(thread),
+				TweetCount: len(thread),
+				Likes:      tweet.Likes,
+				Retweets:   tweet.Retweets,
+				Replies:    tweet.Replies,
+				Views:      tweet.Views,
+				PostedAt:   tweet.PostedAt,
+			}
+			if err := db.InsertArticle(article); err != nil {
+				fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: store article: %v", err)))
+			} else {
+				fmt.Println(successStyle.Render("  Saved article to database"))
+			}
+		}
+	}
+
+	if dbErr == nil {
+		db.Close()
 	}
 
 	return nil
@@ -2261,4 +2669,337 @@ func sanitizeXDirName(s string) string {
 		return "_"
 	}
 	return string(b)
+}
+
+// fetchLinkedArticle follows a URL (including t.co redirects), fetches the HTML,
+// and extracts the article title + markdown body using trafilatura.
+// Returns empty strings on failure.
+func fetchLinkedArticle(rawURL string) (title, body, finalURL string) {
+	client := &http.Client{
+		Timeout: 20 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) > 10 {
+				return http.ErrUseLastResponse
+			}
+			return nil
+		},
+	}
+
+	req, err := http.NewRequest("GET", rawURL, nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+
+	finalURL = resp.Request.URL.String()
+
+	htmlBytes, err := io.ReadAll(io.LimitReader(resp.Body, 5*1024*1024)) // 5 MB cap
+	if err != nil || len(htmlBytes) == 0 {
+		return
+	}
+
+	result := markdown.Convert(htmlBytes, finalURL)
+	if result.Error != "" || result.Markdown == "" {
+		return
+	}
+
+	title = result.Title
+	body = result.Markdown
+	return
+}
+
+// extractFirstURL returns the first HTTP(S) URL found in tweet text or URLs list.
+func extractFirstURL(t x.Tweet) string {
+	// Prefer URLs from the entities list (already expanded from t.co)
+	for _, u := range t.URLs {
+		if strings.HasPrefix(u, "http") {
+			return u
+		}
+	}
+	// Fallback: scan text for t.co or other URLs
+	for _, word := range strings.Fields(t.Text) {
+		if strings.HasPrefix(word, "http") {
+			return strings.TrimRight(word, ".,;)")
+		}
+	}
+	return ""
+}
+
+// extractXArticleID returns the article tweet ID from an x.com/i/article/<id> URL,
+// or empty string if it's not an X Article URL.
+func extractXArticleID(rawURL string) string {
+	if !strings.Contains(rawURL, "/i/article/") {
+		return ""
+	}
+	parts := strings.SplitN(rawURL, "/i/article/", 2)
+	if len(parts) != 2 {
+		return ""
+	}
+	id := parts[1]
+	if idx := strings.IndexAny(id, "/?#"); idx >= 0 {
+		id = id[:idx]
+	}
+	return strings.TrimSpace(id)
+}
+
+// fetchXArticleWithRod uses a headless Chrome browser to render an X Article page
+// and extract its content. Auth cookies are needed to bypass the login wall.
+func fetchXArticleWithRod(ctx context.Context, articleURL, authToken, ct0 string) (title, body string, err error) {
+	chromeBin := detectChromeBinForX()
+
+	l := launcher.New().
+		Headless(true).
+		Set("disable-blink-features", "AutomationControlled").
+		Set("disable-dev-shm-usage", "").
+		Set("no-sandbox", "").
+		Set("window-size", "1280,800")
+	if chromeBin != "" {
+		l = l.Bin(chromeBin)
+	}
+
+	u, launchErr := l.Launch()
+	if launchErr != nil {
+		return "", "", fmt.Errorf("rod launch: %w", launchErr)
+	}
+
+	browser := rod.New().ControlURL(u)
+	if err := browser.Connect(); err != nil {
+		return "", "", fmt.Errorf("rod connect: %w", err)
+	}
+	defer browser.Close()
+
+	page, err := browser.Page(proto.TargetCreateTarget{})
+	if err != nil {
+		return "", "", fmt.Errorf("rod page: %w", err)
+	}
+
+	pageCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+
+	// Set auth cookies at browser level before navigation
+	if authToken != "" && ct0 != "" {
+		if err := browser.SetCookies([]*proto.NetworkCookieParam{
+			{Name: "auth_token", Value: authToken, Domain: ".x.com", Path: "/"},
+			{Name: "ct0", Value: ct0, Domain: ".x.com", Path: "/"},
+		}); err != nil {
+			return "", "", fmt.Errorf("rod set cookies: %w", err)
+		}
+	}
+
+	if err := page.Context(pageCtx).Navigate(articleURL); err != nil {
+		return "", "", fmt.Errorf("rod navigate: %w", err)
+	}
+	_ = page.Context(pageCtx).WaitLoad()
+
+	// Wait specifically for the X Article content element to appear.
+	for i := range 20 {
+		time.Sleep(1 * time.Second)
+		rendered, evalErr := page.Eval(`() => {
+			const article = document.querySelector('[data-testid="twitterArticleRichTextView"]');
+			if (article) return article.innerText.length;
+			return 0;
+		}`)
+		if evalErr == nil && rendered.Value.Int() > 100 {
+			break
+		}
+		if i == 19 {
+			fmt.Fprintf(os.Stderr, "  Rod: twitterArticleRichTextView not found after 20s\n")
+		}
+	}
+
+	html, err := page.HTML()
+	if err != nil {
+		return "", "", fmt.Errorf("rod get html: %w", err)
+	}
+	// Extract article content from X Article DOM and convert to markdown.
+	// X Articles use Draft.js rendering with specific class names and data-testid attributes.
+	extracted, _ := page.Eval(`() => {
+		const titleEl = document.querySelector('[data-testid="twitter-article-title"]');
+		const bodyEl = document.querySelector('[data-testid="twitterArticleReadView"]')
+			|| document.querySelector('[data-testid="twitterArticleRichTextView"]');
+		if (!bodyEl || bodyEl.innerText.length < 100) return '';
+
+		const lines = [];
+
+		function processNode(node) {
+			// Code blocks: data-testid="markdown-code-block"
+			if (node.dataset && node.dataset.testid === 'markdown-code-block') {
+				// First child span contains the language label
+				const langEl = node.querySelector('span');
+				const lang = langEl ? langEl.textContent.trim() : '';
+				// The code text is everything after the language + copy button
+				const allText = node.innerText.trim();
+				// Remove the language label and "Copy" button text from the start
+				let code = allText;
+				if (lang && code.startsWith(lang)) code = code.slice(lang.length).trim();
+				if (code.startsWith('Copy')) code = code.slice(4).trim();
+				if (code) {
+					lines.push('');
+					lines.push('` + "```" + `' + lang);
+					lines.push(code);
+					lines.push('` + "```" + `');
+					lines.push('');
+				}
+				return;
+			}
+
+			// Images
+			if (node.dataset && node.dataset.testid === 'tweetPhoto') {
+				const img = node.querySelector('img[src]');
+				if (img) {
+					let src = img.src;
+					// Use original size instead of small
+					src = src.replace(/name=small/, 'name=large');
+					const alt = img.alt || 'Image';
+					lines.push('');
+					lines.push('![' + alt + '](' + src + ')');
+					lines.push('');
+				}
+				return;
+			}
+
+			// Videos
+			if (node.tagName === 'VIDEO' || (node.dataset && node.dataset.testid === 'videoPlayer')) {
+				const src = node.querySelector('source')?.src || node.querySelector('video')?.src;
+				if (src) {
+					lines.push('');
+					lines.push('[Video](' + src + ')');
+					lines.push('');
+				}
+				return;
+			}
+
+			// Headers (h1-h3)
+			if (/^H[123]$/.test(node.tagName)) {
+				const level = node.tagName[1];
+				const prefix = '#'.repeat(parseInt(level)) + ' ';
+				lines.push('');
+				lines.push(prefix + node.innerText.trim());
+				lines.push('');
+				return;
+			}
+
+			// Regular text blocks (Draft.js unstyled blocks)
+			if (node.classList && node.classList.contains('longform-unstyled') && node.dataset && node.dataset.block === 'true') {
+				const text = processInlineContent(node);
+				if (text.trim()) {
+					lines.push('');
+					lines.push(text.trim());
+				}
+				return;
+			}
+
+			// Ordered/unordered list items
+			if (node.classList && (node.classList.contains('longform-ordered-list-item') || node.classList.contains('longform-unordered-list-item'))) {
+				const text = processInlineContent(node);
+				const prefix = node.classList.contains('longform-ordered-list-item') ? '1. ' : '- ';
+				if (text.trim()) lines.push(prefix + text.trim());
+				return;
+			}
+
+			// Blockquotes
+			if (node.classList && node.classList.contains('longform-blockquote')) {
+				const text = node.innerText.trim();
+				if (text) {
+					lines.push('');
+					lines.push('> ' + text.replace(/\n/g, '\n> '));
+					lines.push('');
+				}
+				return;
+			}
+
+			// Recurse into children
+			for (const child of node.children || []) {
+				processNode(child);
+			}
+		}
+
+		function processInlineContent(node) {
+			let result = '';
+			for (const child of node.querySelectorAll('[data-text="true"]')) {
+				result += child.textContent;
+			}
+			// Also pick up links
+			if (!result) result = node.innerText;
+			// Inline links: find <a> tags and convert to markdown links
+			const links = node.querySelectorAll('a[href]');
+			for (const a of links) {
+				const text = a.innerText;
+				const href = a.href;
+				if (text && href && !href.startsWith('javascript:')) {
+					result = result.replace(text, '[' + text + '](' + href + ')');
+				}
+			}
+			return result;
+		}
+
+		processNode(bodyEl);
+
+		const title = titleEl ? titleEl.innerText.trim() : '';
+		const body = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+		return JSON.stringify({ title, body });
+	}`)
+
+	if extracted != nil && extracted.Value.Str() != "" {
+		var result struct {
+			Title string `json:"title"`
+			Body  string `json:"body"`
+		}
+		if json.Unmarshal([]byte(extracted.Value.Str()), &result) == nil && len(result.Body) > 100 {
+			return result.Title, result.Body, nil
+		}
+	}
+
+	// Article element not found — likely a login wall or rate limit
+	return "", "", fmt.Errorf("article content not found in rendered page (html=%d bytes)", len(html))
+}
+
+// detectChromeBinForX finds the Chrome binary path (reuses dcrawler's detection logic).
+func detectChromeBinForX() string {
+	if p := os.Getenv("CHROME_BIN"); p != "" {
+		return p
+	}
+	candidates := []string{
+		"/usr/bin/chromium",
+		"/usr/bin/chromium-browser",
+		"/usr/bin/google-chrome",
+		"/usr/bin/google-chrome-stable",
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		candidates = append([]string{
+			home + "/bin/chromium",
+			home + "/.local/bin/chromium",
+		}, candidates...)
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	return ""
+}
+
+// isTweetJustALink returns true when a tweet's text is essentially only a URL.
+func isTweetJustALink(t x.Tweet) bool {
+	text := strings.TrimSpace(t.Text)
+	// Strip any URL at the end
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return false
+	}
+	// Count non-URL words
+	nonURL := 0
+	for _, w := range words {
+		if !strings.HasPrefix(w, "http") {
+			nonURL++
+		}
+	}
+	return nonURL == 0
 }

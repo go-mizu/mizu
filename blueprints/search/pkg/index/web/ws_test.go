@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-mizu/mizu/blueprints/search/pkg/index/web/pipeline"
 	"github.com/gorilla/websocket"
 )
 
@@ -68,7 +69,7 @@ func readJSON(t *testing.T, conn *websocket.Conn, timeout time.Duration) (map[st
 }
 
 func TestWSHub_BroadcastToSubscriber(t *testing.T) {
-	hub := NewWSHub()
+	hub := pipeline.NewHub()
 	defer hub.Close()
 
 	mux := http.NewServeMux()
@@ -99,7 +100,7 @@ func TestWSHub_BroadcastToSubscriber(t *testing.T) {
 }
 
 func TestWSHub_UnsubscribedClientDoesNotReceive(t *testing.T) {
-	hub := NewWSHub()
+	hub := pipeline.NewHub()
 	defer hub.Close()
 
 	mux := http.NewServeMux()
@@ -127,7 +128,7 @@ func TestWSHub_UnsubscribedClientDoesNotReceive(t *testing.T) {
 }
 
 func TestWSHub_WildcardSubscription(t *testing.T) {
-	hub := NewWSHub()
+	hub := pipeline.NewHub()
 	defer hub.Close()
 
 	mux := http.NewServeMux()
@@ -156,7 +157,7 @@ func TestWSHub_WildcardSubscription(t *testing.T) {
 }
 
 func TestWSHub_Unsubscribe(t *testing.T) {
-	hub := NewWSHub()
+	hub := pipeline.NewHub()
 	defer hub.Close()
 
 	mux := http.NewServeMux()
@@ -184,7 +185,7 @@ func TestWSHub_Unsubscribe(t *testing.T) {
 }
 
 func TestWSHub_MultipleClients(t *testing.T) {
-	hub := NewWSHub()
+	hub := pipeline.NewHub()
 	defer hub.Close()
 
 	mux := http.NewServeMux()

@@ -1,0 +1,1 @@
+"""Gmail account auto-registrar."""
