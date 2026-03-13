@@ -6,7 +6,7 @@ Flow:
   3. Fill name, email, password, confirm password
   4. Submit → Amazon may show a CVF bot-challenge page (auto-resolves in ~10s)
      Then may show OTP verification page (email code)
-  5. Poll mail.tm for OTP code; enter it
+  5. poll_otp_fn() is called in background to get OTP; enter it
   6. Extract session cookies
 
 Alternative: goodread-tool login (manual login, no bot detection risk)
@@ -21,8 +21,7 @@ import platform
 import re
 import tempfile
 import time
-
-from .email import MailTmClient, Mailbox
+from typing import Callable
 
 
 # ---------------------------------------------------------------------------
@@ -141,12 +140,14 @@ def register_via_browser(
     name: str,
     email: str,
     password: str,
-    mail_client: MailTmClient,
-    mailbox: Mailbox,
+    poll_otp_fn: Callable[[], str],
     headless: bool = False,
     verbose: bool = False,
 ) -> list[dict]:
     """Register a Goodreads account and return session cookies.
+
+    poll_otp_fn: callable that blocks until an OTP code is available and
+    returns it as a string (e.g. "123456"). Called in a background thread.
 
     headless=False is default — Goodreads blocks headless Chrome.
     Returns list of Playwright-format cookie dicts.
@@ -255,14 +256,14 @@ def register_via_browser(
             # We wait up to 30s for the CVF page to auto-advance.
             cvf_wait_max = 60  # seconds
             cvf_start = time.time()
-            log("starting mail.tm OTP poll in background while waiting for CVF...")
+            log("starting Proton Mail OTP poll in background while waiting for CVF...")
 
             # Start OTP poll in background thread
             otp_result: list[str] = []
             import threading
             def _poll_otp():
                 try:
-                    otp = mail_client.poll_for_otp(mailbox, timeout=120)
+                    otp = poll_otp_fn()
                     otp_result.append(otp)
                     log(f"OTP received: {otp}")
                 except Exception as e:
@@ -396,12 +397,23 @@ def login_via_browser(
         deadline = time.time() + timeout
         while time.time() < deadline:
             cur_url = page.url
-            # Logged in if we're on goodreads.com without sign_in in the URL
+            log(f"  url={cur_url[:80]}")
+            # Logged in if we're on goodreads.com without sign_in/ap/ in the URL
             if "goodreads.com" in cur_url and "sign_in" not in cur_url and "/ap/" not in cur_url:
-                body = _body_text(page, 500)
-                if "Sign out" in body or "My Books" in body:
-                    log(f"logged in! url={cur_url}")
+                # Give the page a moment to render
+                time.sleep(2)
+                body = _body_text(page, 1000)
+                log(f"  body snippet: {body[:200]!r}")
+                # Accept if we see any logged-in indicators OR just if URL looks right
+                logged_in_signals = ["Sign out", "My Books", "my-books", "profile", "shelf"]
+                if any(s.lower() in body.lower() for s in logged_in_signals):
+                    log(f"logged in (signal found)! url={cur_url}")
                     break
+                # Fallback: if URL is on goodreads.com main pages, assume logged in
+                if any(p in cur_url for p in ["/home", "/review/list", "/user/show", "goodreads.com/"]):
+                    if len(body) > 500:  # page has real content
+                        log(f"logged in (url heuristic)! url={cur_url}")
+                        break
             time.sleep(2)
         else:
             raise TimeoutError(f"Login not detected within {timeout}s")
