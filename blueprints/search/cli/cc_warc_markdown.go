@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -407,69 +408,125 @@ func printWarcMDSummary(rows []warcMDPhaseRow, totalDuration time.Duration) {
 
 // ── download progress ─────────────────────────────────────────────────────────
 
-// downloadWithProgress downloads a WARC file and prints a live progress line:
+// downloadWithProgress downloads a WARC file with a live progress bar.
+// Retries up to 3 times on HTTP 503 or download stall (no bytes for 10 min).
 //
 //	↓ filename.warc.gz  [████████░░░░░░░░░░░░]  45.3%  234.5/512.0 MB  12.3 MB/s  ETA 23s
 func downloadWithProgress(ctx context.Context, client *cc.Client, remotePath, localPath string) error {
+	const maxAttempts = 3
+	const stallTimeout = 10 * time.Minute
+	const barWidth = 20
+
 	name := filepath.Base(localPath)
 	fmt.Printf("  %s  %s\n", labelStyle.Render("↓"), name)
 
-	start := time.Now()
-
-	// Bar geometry: fixed 20-cell width.
-	const barWidth = 20
-
-	progress := func(received, total int64) {
-		elapsed := time.Since(start).Seconds()
-		speedMBs := float64(received) / (1024 * 1024) / elapsed
-
-		var bar, pctStr, etaStr string
-		if total > 0 {
-			pct := float64(received) / float64(total)
-			filled := int(pct * barWidth)
-			if filled > barWidth {
-				filled = barWidth
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if attempt > 0 {
+			// Delete partial file so next attempt starts fresh.
+			os.Remove(localPath)
+			backoff := time.Duration(attempt*30) * time.Second
+			fmt.Printf("  %s attempt %d/%d in %s: %v\n",
+				warningStyle.Render("↻"), attempt+1, maxAttempts, backoff, lastErr)
+			select {
+			case <-time.After(backoff):
+			case <-ctx.Done():
+				return ctx.Err()
 			}
-			bar = "[" + repeatChar('█', filled) + repeatChar('░', barWidth-filled) + "]"
-			pctStr = fmt.Sprintf("%5.1f%%", pct*100)
-			remaining := float64(total-received) / (1024 * 1024) / speedMBs
-			if speedMBs > 0 {
-				etaStr = "  ETA " + fmtDuration(remaining)
-			}
-		} else {
-			// Unknown total: show spinner + bytes received
-			bar = "[" + repeatChar('█', barWidth) + "]"
-			pctStr = "  ?  "
 		}
 
-		recvMB := float64(received) / (1024 * 1024)
-		totMB := float64(total) / (1024 * 1024)
-		var sizeStr string
-		if total > 0 {
-			sizeStr = fmt.Sprintf("  %6.1f/%6.1f MB", recvMB, totMB)
-		} else {
-			sizeStr = fmt.Sprintf("  %6.1f MB", recvMB)
+		// Stall detector: cancel download if no bytes received for stallTimeout.
+		stallCtx, cancelStall := context.WithCancel(ctx)
+		var stallMu sync.Mutex
+		lastActivity := time.Now()
+		var lastBytes int64
+		go func() {
+			ticker := time.NewTicker(30 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-stallCtx.Done():
+					return
+				case <-ticker.C:
+					stallMu.Lock()
+					stalled := time.Since(lastActivity) > stallTimeout
+					stallMu.Unlock()
+					if stalled {
+						fmt.Printf("\r\033[K  %s stalled (%s no progress), cancelling\n",
+							warningStyle.Render("↻"), stallTimeout)
+						cancelStall()
+						return
+					}
+				}
+			}
+		}()
+
+		start := time.Now()
+		progress := func(received, total int64) {
+			stallMu.Lock()
+			if received > lastBytes {
+				lastBytes = received
+				lastActivity = time.Now()
+			}
+			stallMu.Unlock()
+
+			elapsed := time.Since(start).Seconds()
+			speedMBs := float64(received) / (1024 * 1024) / elapsed
+			var bar, pctStr, etaStr string
+			if total > 0 {
+				pct := float64(received) / float64(total)
+				filled := int(pct * barWidth)
+				if filled > barWidth {
+					filled = barWidth
+				}
+				bar = "[" + repeatChar('█', filled) + repeatChar('░', barWidth-filled) + "]"
+				pctStr = fmt.Sprintf("%5.1f%%", pct*100)
+				if speedMBs > 0 {
+					remaining := float64(total-received) / (1024 * 1024) / speedMBs
+					etaStr = "  ETA " + fmtDuration(remaining)
+				}
+			} else {
+				bar = "[" + repeatChar('█', barWidth) + "]"
+				pctStr = "  ?  "
+			}
+			recvMB := float64(received) / (1024 * 1024)
+			totMB := float64(total) / (1024 * 1024)
+			var sizeStr string
+			if total > 0 {
+				sizeStr = fmt.Sprintf("  %6.1f/%6.1f MB", recvMB, totMB)
+			} else {
+				sizeStr = fmt.Sprintf("  %6.1f MB", recvMB)
+			}
+			fmt.Printf("\r\033[K  %s %s  %6.1f MB/s%s%s", bar, pctStr, speedMBs, sizeStr, etaStr)
 		}
 
-		fmt.Printf("\r\033[K  %s %s  %6.1f MB/s%s%s",
-			bar, pctStr, speedMBs, sizeStr, etaStr)
+		err := client.DownloadFile(stallCtx, remotePath, localPath, progress)
+		cancelStall()
+
+		if err == nil {
+			elapsed := time.Since(start)
+			if fi, statErr := os.Stat(localPath); statErr == nil {
+				avgMBs := float64(fi.Size()) / (1024 * 1024) / elapsed.Seconds()
+				fmt.Printf("\r\033[K  %s %s  (%s  avg %.1f MB/s  %s)\n",
+					successStyle.Render("✓"), name,
+					formatBytes(fi.Size()), avgMBs, elapsed.Round(time.Millisecond))
+			} else {
+				fmt.Printf("\r\033[K  %s %s\n", successStyle.Render("✓"), name)
+			}
+			return nil
+		}
+
+		lastErr = err
+		// Retry on 503 or stall (context cancelled by stall detector, not by caller).
+		isRetryable := strings.Contains(err.Error(), "HTTP 503") ||
+			(stallCtx.Err() != nil && ctx.Err() == nil)
+		if !isRetryable {
+			break
+		}
 	}
 
-	if err := client.DownloadFile(ctx, remotePath, localPath, progress); err != nil {
-		fmt.Printf("\r\033[K  %s %s\n", warningStyle.Render("✗"), name)
-		return err
-	}
-
-	elapsed := time.Since(start)
-	if fi, err := os.Stat(localPath); err == nil {
-		avgMBs := float64(fi.Size()) / (1024 * 1024) / elapsed.Seconds()
-		fmt.Printf("\r\033[K  %s %s  (%s  avg %.1f MB/s  %s)\n",
-			successStyle.Render("✓"), name,
-			formatBytes(fi.Size()), avgMBs, elapsed.Round(time.Millisecond))
-	} else {
-		fmt.Printf("\r\033[K  %s %s\n", successStyle.Render("✓"), name)
-	}
-	return nil
+	fmt.Printf("\r\033[K  %s %s\n", warningStyle.Render("✗"), name)
+	return lastErr
 }
 
 // repeatChar returns a string of n copies of ch.

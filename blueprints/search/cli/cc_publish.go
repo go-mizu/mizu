@@ -31,6 +31,7 @@ func newCCPublish() *cobra.Command {
 		cleanup      bool
 		lightConvert bool
 		commitBatch  int
+		skipErrors   bool
 	)
 
 	cmd := &cobra.Command{
@@ -51,7 +52,7 @@ to save disk space.`,
   search cc publish --file 0 --republish
   search cc publish --file 11-90 --pipeline --cleanup`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCCPublish(cmd.Context(), crawlID, fileIdx, repoRoot, repoID, republish, private, pipeline, cleanup, lightConvert, commitBatch)
+			return runCCPublish(cmd.Context(), crawlID, fileIdx, repoRoot, repoID, republish, private, pipeline, cleanup, lightConvert, commitBatch, skipErrors)
 		},
 	}
 
@@ -65,10 +66,11 @@ to save disk space.`,
 	cmd.Flags().BoolVar(&cleanup, "cleanup", false, "Delete raw .warc.gz after packing (requires --pipeline)")
 	cmd.Flags().BoolVar(&lightConvert, "light", true, "Use lightweight HTML→Markdown converter (~10x faster than trafilatura, --no-light for trafilatura)")
 	cmd.Flags().IntVar(&commitBatch, "commit-batch", 1, "Batch N parquets per HF commit (default 1; use 10 for ~5x faster publish)")
+	cmd.Flags().BoolVar(&skipErrors, "skip-errors", false, "Skip shards that fail pack/export instead of aborting (log error and continue)")
 	return cmd
 }
 
-func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string, republish, private, pipeline, cleanup, lightConvert bool, commitBatch int) error {
+func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string, republish, private, pipeline, cleanup, lightConvert bool, commitBatch int, skipErrors bool) error {
 	resolvedID, note, err := ccResolveCrawlID(ctx, crawlID)
 	if err != nil {
 		return fmt.Errorf("resolving crawl: %w", err)
@@ -87,7 +89,7 @@ func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string
 		if commitBatch < 1 {
 			commitBatch = 1
 		}
-		return ccRunPipelineWithCommits(ctx, crawlID, fileIdx, repoRoot, repoID, republish, private, cleanup, lightConvert, commitBatch)
+		return ccRunPipelineWithCommits(ctx, crawlID, fileIdx, repoRoot, repoID, republish, private, cleanup, lightConvert, commitBatch, skipErrors)
 	}
 
 	// ── Collect stats from all exported parquet files ───────────────────────
@@ -219,7 +221,7 @@ func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string
 // ccRunPipelineWithCommits processes each selected shard end-to-end:
 // download → pack → export → upsert stats → update README → HF commit.
 // Each shard is committed to HuggingFace individually so progress is saved after every file.
-func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string, republish, private, cleanup, lightConvert bool, commitBatch int) error {
+func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string, republish, private, cleanup, lightConvert bool, commitBatch int, skipErrors bool) error {
 	indices, err := ccParseOpenFileSelector(fileIdx)
 	if err != nil {
 		return fmt.Errorf("--file: %w", err)
@@ -281,6 +283,11 @@ func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, r
 				fmt.Printf("  [%s] packing...\n", labelStyle.Render(shard))
 				t0 := time.Now()
 				if packErr := runCCWarcPack(ctx, crawlID, strconv.Itoa(idx), -1, -1, 0, false, false, lightConvert, 200, "text/html", 512*1024, shard); packErr != nil {
+					if skipErrors {
+						fmt.Printf("  [%s] %s pack error (skipping): %v\n", labelStyle.Render(shard), warningStyle.Render("⚠"), packErr)
+						fmt.Println()
+						continue
+					}
 					return fmt.Errorf("pack %d: %w", idx, packErr)
 				}
 				elapsed := int64(time.Since(t0).Seconds())
@@ -319,6 +326,11 @@ func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, r
 			})
 			if exportErr != nil {
 				fmt.Println()
+				if skipErrors {
+					fmt.Printf("  [%s] %s export error (skipping): %v\n", labelStyle.Render(shard), warningStyle.Render("⚠"), exportErr)
+					fmt.Println()
+					continue
+				}
 				return fmt.Errorf("export %d: %w", idx, exportErr)
 			}
 			durExportS = int64(time.Since(t0).Seconds())
