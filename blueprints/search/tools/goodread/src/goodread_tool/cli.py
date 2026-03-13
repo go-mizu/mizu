@@ -73,54 +73,35 @@ def _get_protonmail_account(pm_email: str | None) -> dict:
 @app.command()
 def register(
     db: DB_OPT = DEFAULT_DB_PATH,
-    pm_email: Annotated[Optional[str], typer.Option("--pm-email", help="Proton Mail account to use for OTP")] = None,
     headless: Annotated[bool, typer.Option("--headless", help="Run browser headless (WARNING: Goodreads blocks headless Chrome)")] = False,
     verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
 ) -> None:
-    """Auto-register a new Goodreads account via browser + Proton Mail OTP.
+    """Auto-register a new Goodreads account via browser + mail.tm OTP.
 
-    Uses a stored Proton Mail account to receive the Amazon OTP email.
+    Uses a temporary mail.tm address to receive the Amazon OTP email.
     A browser window will open (headed mode) — Goodreads blocks headless Chrome.
     """
-    import subprocess
+    from .email import MailTmClient
     from .identity import generate
     from .browser import register_via_browser
 
-    pm_acct = _get_protonmail_account(pm_email)
     identity = generate()
+    mail_client = MailTmClient(verbose=verbose)
 
-    console.print(f"[green]Proton Mail:[/green] {pm_acct['email']}")
+    with console.status("[bold green]Creating mail.tm mailbox..."):
+        mailbox = mail_client.create_mailbox(identity.email_local)
+
+    console.print(f"[green]Mailbox:[/green] {mailbox.address}")
     console.print(f"[green]Name:[/green] {identity.name}")
     console.print("[bold green]Opening browser for Goodreads signup...[/bold green]")
 
     def poll_otp() -> str:
-        """Call protonmail-tool wait-otp as subprocess and return the code."""
-        import shutil
-        pm_tool = shutil.which("protonmail-tool")
-        if not pm_tool:
-            # Try uv run from protonmail tool dir
-            pm_dir = Path(__file__).parent.parent.parent.parent.parent / "protonmail"
-            cmd = ["uv", "run", "protonmail-tool", "wait-otp", pm_acct["email"],
-                   "--timeout", "120", "--no-verbose"]
-            cwd = str(pm_dir) if pm_dir.exists() else None
-        else:
-            cmd = [pm_tool, "wait-otp", pm_acct["email"], "--timeout", "120", "--no-verbose"]
-            cwd = None
-        if verbose:
-            ts = __import__("time").strftime("%H:%M:%S")
-            print(f"[{ts}] [goodread-otp] running: {' '.join(cmd)}", flush=True)
-        result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, timeout=150)
-        output = result.stdout.strip()
-        # Last non-empty line is the bare code
-        lines = [l.strip() for l in output.splitlines() if l.strip()]
-        if not lines:
-            raise RuntimeError(f"protonmail-tool wait-otp returned no output. stderr: {result.stderr[:200]}")
-        return lines[-1]
+        return mail_client.poll_for_otp(mailbox, timeout=220)
 
     try:
         cookies = register_via_browser(
             name=identity.name,
-            email=pm_acct["email"],
+            email=mailbox.address,
             password=identity.password,
             poll_otp_fn=poll_otp,
             headless=headless,
@@ -129,15 +110,17 @@ def register(
     except Exception as e:
         err_console.print(f"[bold red]Registration failed:[/bold red] {e}")
         raise typer.Exit(1)
+    finally:
+        mail_client.close()
 
     store = _store(db)
     try:
-        store.add_account(email=pm_acct["email"], password=identity.password)
-        store.update_cookies(pm_acct["email"], cookies)
+        store.add_account(email=mailbox.address, password=identity.password)
+        store.update_cookies(mailbox.address, cookies)
     finally:
         store.close()
 
-    console.print(f"\n[bold green]✓ Registered:[/bold green] {pm_acct['email']}")
+    console.print(f"\n[bold green]✓ Registered:[/bold green] {mailbox.address}")
     console.print(f"[dim]Cookies:[/dim] {len(cookies)} extracted")
     console.print(f"[dim]Stored in:[/dim] {db}")
     console.print(f"\nExport cookies: [cyan]goodread-tool cookies export[/cyan]")
