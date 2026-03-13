@@ -222,20 +222,22 @@ func ccRunCharts(statsCSV, repoRoot, crawlID string) []string {
 		return nil
 	}
 
-	// Write embedded script to a temp file.
-	tmp, err := os.CreateTemp("", "chart_stats_*.py")
-	if err != nil {
+	// Write embedded script to a stable cache path; only update if content changed.
+	home, _ := os.UserHomeDir()
+	cacheDir := filepath.Join(home, ".cache", "open-index")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return nil
 	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(chartStatsPy); err != nil {
-		tmp.Close()
-		return nil
+	scriptPath := filepath.Join(cacheDir, "chart_stats.py")
+	existing, _ := os.ReadFile(scriptPath)
+	if string(existing) != string(chartStatsPy) {
+		if err := os.WriteFile(scriptPath, chartStatsPy, 0o755); err != nil {
+			return nil
+		}
 	}
-	tmp.Close()
 
-	// Run: uv run <tmp_script> <statsCSV> --out <chartsDir> [--crawl <crawlID>]
-	args := []string{"run", tmp.Name(), statsCSV, "--out", chartsDir}
+	// Run: uv run <script> <statsCSV> --out <chartsDir> [--crawl <crawlID>]
+	args := []string{"run", scriptPath, statsCSV, "--out", chartsDir}
 	if crawlID != "" {
 		args = append(args, "--crawl", crawlID)
 	}
