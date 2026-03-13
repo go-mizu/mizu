@@ -66,6 +66,12 @@ func (t *ReviewTask) Run(ctx context.Context, emit func(*ReviewState)) (ReviewMe
 			return m, nil
 		}
 		if code == 404 {
+			m.Skipped++
+			state.Status = "not_found"
+			emit(state)
+			if t.StateDB != nil {
+				t.StateDB.Done(t.URL, EntityReview, code)
+			}
 			break
 		}
 		if doc == nil {
@@ -108,6 +114,10 @@ func (t *ReviewTask) Run(ctx context.Context, emit func(*ReviewState)) (ReviewMe
 			break
 		}
 		currentURL = nextURL
+	}
+
+	if m.Skipped > 0 && m.Pages == 0 {
+		return m, nil
 	}
 
 	// Mark first URL done

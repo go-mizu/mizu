@@ -9,11 +9,11 @@ import (
 
 // QAState is the observable state for a QATask.
 type QAState struct {
-	URL     string
-	ASIN    string
-	Status  string
-	Error   string
-	Pages   int
+	URL      string
+	ASIN     string
+	Status   string
+	Error    string
+	Pages    int
 	QAsFound int
 }
 
@@ -66,6 +66,12 @@ func (t *QATask) Run(ctx context.Context, emit func(*QAState)) (QAMetric, error)
 			return m, nil
 		}
 		if code == 404 {
+			m.Skipped++
+			state.Status = "not_found"
+			emit(state)
+			if t.StateDB != nil {
+				t.StateDB.Done(t.URL, EntityQA, code)
+			}
 			break
 		}
 		if doc == nil {
@@ -108,6 +114,10 @@ func (t *QATask) Run(ctx context.Context, emit func(*QAState)) (QAMetric, error)
 			break
 		}
 		currentURL = nextURL
+	}
+
+	if m.Skipped > 0 && m.Pages == 0 {
+		return m, nil
 	}
 
 	// Mark first URL done
