@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,7 +29,7 @@ type ccWARCExportRow struct {
 	WARCRecordID    string `parquet:"warc_record_id"`
 	WARCRefersTo    string `parquet:"warc_refers_to"`
 	ContentType     string `parquet:"content_type"`
-	ContentLength   int64  `parquet:"content_length"`
+	HTMLLength      int64  `parquet:"html_length"`
 	MarkdownLength  int64  `parquet:"markdown_length"`
 	WARCHeadersJSON string `parquet:"warc_headers_json"`
 	MarkdownBody    string `parquet:"markdown_body"`
@@ -86,7 +87,7 @@ func runCCWarcExport(ctx context.Context, crawlID, fileIdx string, force bool) e
 
 	cfg := warcmd.DefaultConfig(crawlID)
 	repoRoot := ccDefaultExportRepoRoot(crawlID)
-	dataDir := filepath.Join(repoRoot, "data")
+	dataDir := filepath.Join(repoRoot, "data", crawlID)
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return fmt.Errorf("create export data dir: %w", err)
 	}
@@ -207,7 +208,7 @@ func exportWARCMdShardToParquet(inPath, outPath string, fileIndex int) (int64, e
 			WARCRecordID:    rec.Header.RecordID(),
 			WARCRefersTo:    rec.Header.RefersTo(),
 			ContentType:     rec.Header.Get("Content-Type"),
-			ContentLength:   rec.Header.ContentLength(),
+			HTMLLength:      ccParseHTMLLength(rec.Header.Get("X-HTML-Length")),
 			MarkdownLength:  int64(len(body)),
 			WARCHeadersJSON: sanitizeUTF8(headersJSON),
 			MarkdownBody:    sanitizeUTF8(string(body)),
@@ -276,6 +277,17 @@ func ccWARCRecordIDToDocID(recordID string) string {
 		return ""
 	}
 	return s
+}
+
+func ccParseHTMLLength(s string) int64 {
+	if s == "" {
+		return 0
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 func ccHostFromURL(raw string) string {

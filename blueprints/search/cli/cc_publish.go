@@ -161,7 +161,7 @@ func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string
 		return err
 	}
 
-	files, err := ccResolvePublishUploadFiles(repoRoot, fileIdx)
+	files, err := ccResolvePublishUploadFiles(repoRoot, crawlID, fileIdx)
 	if err != nil {
 		return err
 	}
@@ -228,23 +228,26 @@ func ccEnsurePublishRepoFiles(repoRoot, crawlID string) error {
 	return nil
 }
 
-func ccResolvePublishUploadFiles(repoRoot, selector string) ([]ccPublishUploadFile, error) {
+func ccResolvePublishUploadFiles(repoRoot, crawlID, selector string) ([]ccPublishUploadFile, error) {
 	dataDir := filepath.Join(repoRoot, "data")
+	crawlDataDir := filepath.Join(dataDir, crawlID)
 	if selector == "" || selector == "all" {
-		entries, err := os.ReadDir(dataDir)
-		if err != nil {
-			return nil, fmt.Errorf("read data dir: %w", err)
-		}
-		files := make([]ccPublishUploadFile, 0, len(entries))
-		for _, entry := range entries {
-			if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".parquet") {
-				continue
+		// Walk all crawl subdirs under data/
+		var files []ccPublishUploadFile
+		_ = filepath.WalkDir(dataDir, func(path string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
 			}
+			if !strings.HasSuffix(strings.ToLower(d.Name()), ".parquet") {
+				return nil
+			}
+			rel, _ := filepath.Rel(repoRoot, path)
 			files = append(files, ccPublishUploadFile{
-				LocalPath:  filepath.Join(dataDir, entry.Name()),
-				PathInRepo: filepath.ToSlash(filepath.Join("data", entry.Name())),
+				LocalPath:  path,
+				PathInRepo: filepath.ToSlash(rel),
 			})
-		}
+			return nil
+		})
 		sort.Slice(files, func(i, j int) bool { return files[i].PathInRepo < files[j].PathInRepo })
 		return files, nil
 	}
@@ -256,13 +259,13 @@ func ccResolvePublishUploadFiles(repoRoot, selector string) ([]ccPublishUploadFi
 	files := make([]ccPublishUploadFile, 0, len(indices))
 	for _, idx := range indices {
 		name := fmt.Sprintf("%05d.parquet", idx)
-		localPath := filepath.Join(dataDir, name)
+		localPath := filepath.Join(crawlDataDir, name)
 		if !fileExists(localPath) {
 			return nil, fmt.Errorf("selected parquet file not found: %s", localPath)
 		}
 		files = append(files, ccPublishUploadFile{
 			LocalPath:  localPath,
-			PathInRepo: filepath.ToSlash(filepath.Join("data", name)),
+			PathInRepo: filepath.ToSlash(filepath.Join("data", crawlID, name)),
 		})
 	}
 	return files, nil
@@ -328,50 +331,156 @@ func ccRunPublishPython(ctx context.Context, payload ccPublishPayload) ([]byte, 
 }
 
 func ccPublishREADME(crawlID string) string {
+	c := crawlID
 	return fmt.Sprintf(`---
-license: other
-pretty_name: Open Index Draft
+license: odc-by
+pretty_name: Open Index
+language:
+- en
+tags:
+- common-crawl
+- web-crawl
+- markdown
+- text
+size_categories:
+- 10B<n<100B
 ---
 
-# Open Index Draft
+# Open Index
 
-This dataset contains markdown exports derived from Common Crawl shard %s.
+**Open Index** is a large-scale web text dataset derived from [Common Crawl](https://commoncrawl.org) with HTML converted to clean Markdown. Designed for language model training, information retrieval research, and web-scale NLP.
 
-Layout:
+This snapshot is built from crawl **%s**.
 
-- data/*.parquet: one parquet file per packed markdown WARC shard
-- README.md: dataset description
-- LICENSE: Common Crawl licensing and usage notice
+---
 
-Parquet schema:
+## Dataset Summary
 
-- doc_id, url, host, crawl_date
-- warc_type, warc_record_id, warc_refers_to
-- content_type, content_length, markdown_length
-- warc_headers_json: all WARC header metadata serialized as JSON
-- markdown_body: markdown body extracted from the packed WARC record
+| Property | Value |
+|---|---|
+| Source | Common Crawl (%s) |
+| Format | Apache Parquet (Zstd compressed) |
+| Content | Markdown-converted web pages |
+| License | [ODC-By 1.0](https://opendatacommons.org/licenses/by/1-0/) |
 
-Source:
+---
+
+## Dataset Structure
+
+Parquet files are organised by crawl ID:
+
+`+"`"+`
+data/
+└── %s/
+    ├── 00000.parquet
+    ├── 00001.parquet
+    └── ...
+`+"`"+`
+
+Each file corresponds to one packed WARC shard (~1 GB source WARC).
+
+### Data Fields
+
+| Field | Type | Description |
+|---|---|---|
+| `+"`doc_id`"+` | string | UUID derived from the WARC-Record-ID |
+| `+"`url`"+` | string | Original URL of the crawled page |
+| `+"`host`"+` | string | Lowercase hostname extracted from the URL |
+| `+"`crawl_date`"+` | string | RFC3339 timestamp from the WARC record |
+| `+"`warc_type`"+` | string | WARC record type (conversion, response, …) |
+| `+"`warc_record_id`"+` | string | Original `+"`<urn:uuid:…>`"+` WARC record identifier |
+| `+"`warc_refers_to`"+` | string | Record ID of the source response record |
+| `+"`content_type`"+` | string | HTTP Content-Type of the original response |
+| `+"`html_length`"+` | int64 | Byte length of the original HTML body |
+| `+"`markdown_length`"+` | int64 | Byte length of the converted Markdown body |
+| `+"`warc_headers_json`"+` | string | All WARC headers as stable-key JSON |
+| `+"`markdown_body`"+` | string | Clean Markdown text converted from HTML |
+| `+"`source_warc_file`"+` | string | Source packed .md.warc.gz shard filename |
+| `+"`source_file_index`"+` | int32 | Index of the source file in the crawl manifest |
+
+---
+
+## Usage
+
+### Hugging Face datasets
+
+`+"`"+`python
+from datasets import load_dataset
+
+# Stream the full snapshot
+ds = load_dataset("open-index/draft", split="train", streaming=True)
+for doc in ds:
+    print(doc["url"], doc["markdown_body"][:200])
+
+# Load a single shard
+ds = load_dataset(
+    "open-index/draft",
+    data_files="data/%s/00000.parquet",
+    split="train",
+)
+`+"`"+`
+
+### DuckDB
+
+`+"`"+`sql
+SELECT url, host, markdown_length
+FROM read_parquet('hf://datasets/open-index/draft/data/%s/*.parquet')
+WHERE host LIKE '%%wikipedia.org'
+LIMIT 10;
+`+"`"+`
+
+### pandas
+
+`+"`"+`python
+import pandas as pd
+
+df = pd.read_parquet(
+    "hf://datasets/open-index/draft/data/%s/00000.parquet",
+    columns=["url", "host", "crawl_date", "markdown_body"],
+)
+`+"`"+`
+
+---
+
+## Data Processing Pipeline
+
+1. **Download** — Raw .warc.gz files from Common Crawl S3.
+2. **Filter** — HTTP 200 responses with text/html content only.
+3. **Convert** — HTML → Markdown via [trafilatura](https://github.com/adbar/trafilatura) (removes boilerplate, navigation, ads).
+4. **Pack** — Seekable .md.warc.gz files (one gzip member per record, CC-compatible format).
+5. **Export** — Parquet with Zstd compression, 100K rows per row group.
+
+---
+
+## Source & License
 
 - Common Crawl: [https://commoncrawl.org](https://commoncrawl.org)
-`, crawlID)
+- Terms of Use: [https://commoncrawl.org/terms-of-use](https://commoncrawl.org/terms-of-use)
+- This dataset is released under the [Open Data Commons Attribution License (ODC-By) v1.0](https://opendatacommons.org/licenses/by/1-0/)
+`, c, c, c, c, c, c)
 }
 
 func ccPublishLicense() string {
-	return `Common Crawl License Notice
+	return `Open Data Commons Attribution License (ODC-By) v1.0
 
-This repository contains data derived from Common Crawl.
+This dataset is made available under the Open Data Commons Attribution License:
+https://opendatacommons.org/licenses/by/1-0/
 
-Common Crawl makes its datasets publicly available subject to its Terms of Use:
-https://commoncrawl.org/terms-of-use
+You are free to share, create, and adapt this data — even for commercial purposes —
+as long as you attribute the source.
 
-Important:
+Attribution requirements:
+- Cite "Open Index, derived from Common Crawl (https://commoncrawl.org)"
+- Include a link to this dataset when used in publications or products
 
-1. Common Crawl is an archive of third-party web content.
-2. The original content remains subject to the rights and terms of its respective publishers.
-3. You are responsible for complying with applicable law, downstream licensing obligations,
-   robots restrictions, privacy requirements, and content removal requests.
+Additional notices:
 
-Refer to the Common Crawl Terms of Use for the governing terms for the crawl data itself.
+1. This dataset contains data derived from Common Crawl, which archives third-party
+   web content. The original content remains subject to the rights of its respective
+   publishers and the Common Crawl Terms of Use: https://commoncrawl.org/terms-of-use
+
+2. You are responsible for complying with applicable law including downstream licensing
+   obligations, robots.txt restrictions, privacy requirements, and content removal
+   requests from original publishers.
 `
 }
