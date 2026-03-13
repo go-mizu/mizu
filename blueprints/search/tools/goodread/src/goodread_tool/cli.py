@@ -41,10 +41,14 @@ def _store(db: Path) -> Store:
 @app.command()
 def register(
     db: DB_OPT = DEFAULT_DB_PATH,
-    no_headless: Annotated[bool, typer.Option("--no-headless", help="Show browser window")] = False,
+    headless: Annotated[bool, typer.Option("--headless", help="Run browser headless (WARNING: Goodreads blocks headless Chrome)")] = False,
     verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
 ) -> None:
-    """Auto-register a new Goodreads account via browser + mail.tm."""
+    """Auto-register a new Goodreads account via browser + mail.tm.
+
+    A browser window will open (headed mode by default) because Goodreads
+    actively blocks headless Chrome — the page loads empty without it.
+    """
     from .email import MailTmClient
     from .identity import generate
     from .browser import register_via_browser
@@ -66,7 +70,7 @@ def register(
             password=identity.password,
             mail_client=mail_client,
             mailbox=mailbox,
-            headless=not no_headless,
+            headless=headless,
             verbose=verbose,
         )
     except Exception as e:
@@ -83,6 +87,50 @@ def register(
         store.close()
 
     console.print(f"\n[bold green]✓ Registered:[/bold green] {mailbox.address}")
+    console.print(f"[dim]Cookies:[/dim] {len(cookies)} extracted")
+    console.print(f"[dim]Stored in:[/dim] {db}")
+    console.print(f"\nExport cookies: [cyan]goodread-tool cookies export[/cyan]")
+
+
+# ---------------------------------------------------------------------------
+# login (manual — reliable, no bot detection risk)
+# ---------------------------------------------------------------------------
+
+@app.command()
+def login(
+    email: Annotated[Optional[str], typer.Argument(help="Account email to store cookies under (optional)")] = None,
+    password: Annotated[Optional[str], typer.Option("--password", "-p", help="Account password (optional)")] = None,
+    db: DB_OPT = DEFAULT_DB_PATH,
+    timeout: Annotated[int, typer.Option("--timeout", help="Seconds to wait for login")] = 300,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+) -> None:
+    """Open a browser window — log in manually, cookies are saved automatically.
+
+    This is the most reliable approach (no bot detection risk).
+    If --email is provided, cookies are stored under that account.
+    Otherwise a new account entry is created from whatever email you log in with.
+    """
+    from .browser import login_via_browser
+
+    console.print("[bold green]Opening browser for manual Goodreads login...[/bold green]")
+
+    try:
+        cookies = login_via_browser(verbose=verbose, timeout=timeout)
+    except Exception as e:
+        err_console.print(f"[bold red]Login failed:[/bold red] {e}")
+        raise typer.Exit(1)
+
+    store = _store(db)
+    try:
+        used_email = email or "manual@goodreads.com"
+        acct = store.get_by_email(used_email)
+        if not acct:
+            store.add_account(email=used_email, password=password or "")
+        store.update_cookies(used_email, cookies)
+    finally:
+        store.close()
+
+    console.print(f"\n[bold green]✓ Logged in:[/bold green] {used_email}")
     console.print(f"[dim]Cookies:[/dim] {len(cookies)} extracted")
     console.print(f"[dim]Stored in:[/dim] {db}")
     console.print(f"\nExport cookies: [cyan]goodread-tool cookies export[/cyan]")

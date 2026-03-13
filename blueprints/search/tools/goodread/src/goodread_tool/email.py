@@ -142,5 +142,68 @@ class MailTmClient:
             f"Goodreads verification link not received within {timeout}s at {mailbox.address}"
         )
 
+    def poll_for_otp(self, mailbox: Mailbox, timeout: int = POLL_TIMEOUT) -> str:
+        """Poll inbox for an OTP/verification code from Amazon/Goodreads.
+
+        Amazon sends emails with 6-digit OTP codes for account verification.
+        Returns the code string (e.g. "123456").
+        """
+        headers = {"Authorization": f"Bearer {mailbox.token}"}
+        deadline = time.time() + timeout
+        seen: set[str] = set()
+
+        self._log(f"polling {mailbox.address} for OTP (timeout={timeout}s)")
+        while time.time() < deadline:
+            try:
+                resp = self._client.get(f"{BASE}/messages", headers=headers)
+                resp.raise_for_status()
+                messages = resp.json().get("hydra:member", [])
+                for msg in messages:
+                    msg_id = msg.get("id", "")
+                    if msg_id in seen:
+                        continue
+                    seen.add(msg_id)
+                    subject = msg.get("subject", "")
+                    intro = msg.get("intro", "")
+                    self._log(f"  msg: subject={subject!r}")
+
+                    # Fetch full message
+                    text = intro
+                    try:
+                        full = self._client.get(f"{BASE}/messages/{msg_id}", headers=headers)
+                        body = full.json()
+                        text_part = body.get("text", "")
+                        html_parts = body.get("html", [])
+                        if isinstance(html_parts, list):
+                            html_str = " ".join(html_parts)
+                        else:
+                            html_str = str(html_parts)
+                        text = text_part + " " + html_str + " " + intro
+                    except Exception as e:
+                        self._log(f"  body fetch error: {e}")
+
+                    # Look for a 6-digit OTP code (common Amazon pattern)
+                    otp_match = re.search(r'\b(\d{6})\b', text)
+                    if otp_match:
+                        code = otp_match.group(1)
+                        self._log(f"  OTP found: {code}")
+                        return code
+
+                    # Also check for 4-digit or 8-digit codes
+                    for pattern in [r'\b(\d{8})\b', r'\b(\d{4})\b']:
+                        m = re.search(pattern, text)
+                        if m:
+                            code = m.group(1)
+                            self._log(f"  code found ({len(code)}-digit): {code}")
+                            return code
+
+            except Exception as e:
+                self._log(f"  poll error: {e}")
+            time.sleep(POLL_INTERVAL)
+
+        raise MailTmError(
+            f"OTP not received within {timeout}s at {mailbox.address}"
+        )
+
     def close(self) -> None:
         self._client.close()

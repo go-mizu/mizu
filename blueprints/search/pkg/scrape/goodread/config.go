@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	BaseURL        = "https://www.goodreads.com"
-	SitemapURL     = "https://www.goodreads.com/sitemap.xml"
+	BaseURL    = "https://www.goodreads.com"
+	RobotsTxtURL = "https://www.goodreads.com/robots.txt"
 	DefaultDelay   = 2 * time.Second
 	DefaultWorkers = 2
 	DefaultTimeout = 30 * time.Second

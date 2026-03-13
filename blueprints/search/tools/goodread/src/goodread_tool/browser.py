@@ -2,18 +2,23 @@
 
 Flow:
   1. Open https://www.goodreads.com/user/sign_up
-  2. Fill name, email, password
-  3. Submit — Goodreads sends a confirmation email via mail.tm
-  4. Poll mail.tm for the confirmation link
-  5. Navigate to confirmation link in browser (logs the account in)
-  6. Extract and return session cookies
+  2. Click "Sign up with email" → Amazon AP /ap/register
+  3. Fill name, email, password, confirm password
+  4. Submit → Amazon may show a CVF bot-challenge page (auto-resolves in ~10s)
+     Then may show OTP verification page (email code)
+  5. Poll mail.tm for OTP code; enter it
+  6. Extract session cookies
 
-Cookie format returned: list of dicts with name/value/domain/path/expires/...
+Alternative: goodread-tool login (manual login, no bot detection risk)
+
+NOTE: Goodreads blocks headless Chrome entirely (returns empty body).
+Always use headless=False.
 """
 from __future__ import annotations
 
 import os
 import platform
+import re
 import tempfile
 import time
 
@@ -21,7 +26,7 @@ from .email import MailTmClient, Mailbox
 
 
 # ---------------------------------------------------------------------------
-# Helpers (shared with motherduck / protonmail pattern)
+# Helpers
 # ---------------------------------------------------------------------------
 
 def _browser_args() -> list[str]:
@@ -57,23 +62,24 @@ def _wait(s: float, log=None, msg: str = "") -> None:
     time.sleep(s)
 
 
-def _fill(page, selector: str, text: str, delay: int = 55) -> None:
+def _fill_input(page, selector: str, text: str, log=None) -> None:
     el = page.locator(selector).first
     el.wait_for(state="visible", timeout=12000)
     el.click()
     time.sleep(0.3)
     el.fill("")
-    el.type(text, delay=delay)
-    time.sleep(0.4)
+    el.type(text, delay=60)
+    time.sleep(0.5)
+    if log:
+        log(f"filled {selector!r}")
 
 
 def _fill_first(page, selectors: list[str], text: str, log=None) -> str | None:
     for sel in selectors:
         try:
-            if page.locator(sel).count() > 0 and page.locator(sel).first.is_visible():
-                _fill(page, sel, text)
-                if log:
-                    log(f"filled via: {sel}")
+            loc = page.locator(sel)
+            if loc.count() > 0 and loc.first.is_visible():
+                _fill_input(page, sel, text, log)
                 return sel
         except Exception:
             continue
@@ -94,7 +100,7 @@ def _click_first(page, selectors: list[str], log=None) -> str | None:
     return None
 
 
-def _body_text(page, max_chars: int = 500) -> str:
+def _body_text(page, max_chars: int = 800) -> str:
     try:
         return page.inner_text("body")[:max_chars]
     except Exception:
@@ -102,12 +108,21 @@ def _body_text(page, max_chars: int = 500) -> str:
 
 
 def _open_context(p, headless: bool, user_data: str):
-    import shutil
-    channel = (
-        "chrome"
-        if shutil.which("google-chrome") or shutil.which("google-chrome-stable")
-        else None
-    )
+    """Open Chromium context using system Chrome on macOS.
+
+    NOTE: Goodreads blocks headless browsers — use headless=False.
+    """
+    if platform.system() == "Darwin":
+        chrome_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        channel = "chrome" if os.path.exists(chrome_path) else None
+    else:
+        import shutil
+        channel = (
+            "chrome"
+            if shutil.which("google-chrome") or shutil.which("google-chrome-stable")
+            else None
+        )
+
     return p.chromium.launch_persistent_context(
         user_data_dir=user_data,
         channel=channel,
@@ -128,13 +143,13 @@ def register_via_browser(
     password: str,
     mail_client: MailTmClient,
     mailbox: Mailbox,
-    headless: bool = True,
+    headless: bool = False,
     verbose: bool = False,
 ) -> list[dict]:
     """Register a Goodreads account and return session cookies.
 
-    Returns list of cookie dicts (Playwright format):
-        [{"name": "...", "value": "...", "domain": "...", "path": "...", ...}]
+    headless=False is default — Goodreads blocks headless Chrome.
+    Returns list of Playwright-format cookie dicts.
     """
     from patchright.sync_api import sync_playwright
 
@@ -145,7 +160,7 @@ def register_via_browser(
             ts = time.strftime("%H:%M:%S")
             print(f"[{ts}] [goodread-browser] {msg}", flush=True)
 
-    log(f"registering {email}")
+    log(f"registering {email} (headless={headless})")
     user_data = tempfile.mkdtemp(prefix="gr_reg_")
 
     with sync_playwright() as p:
@@ -156,7 +171,7 @@ def register_via_browser(
             page.on("pageerror", lambda e: log(f"[page-error] {e}"))
 
         try:
-            # ── Step 1: Open signup page ──────────────────────────────────
+            # ── Step 1: Open sign_up page ─────────────────────────────────
             log("opening goodreads.com/user/sign_up ...")
             page.goto("https://www.goodreads.com/user/sign_up", timeout=60000)
             try:
@@ -166,149 +181,171 @@ def register_via_browser(
             _wait(2, log)
             log(f"url: {page.url}")
 
-            # If redirected to sign_in (already logged in?), bail early
-            if "sign_in" in page.url:
-                log("redirected to sign_in — maybe already logged in?")
+            body = _body_text(page)
+            if not body.strip():
+                raise RuntimeError(
+                    "Goodreads sign_up page returned empty body — "
+                    "Goodreads blocks headless Chrome. Use headless=False."
+                )
 
-            # ── Step 2: Fill signup form ──────────────────────────────────
-            log(f"filling name: {name}")
-            name_sel = _fill_first(page, [
-                'input[name="user[name]"]',
-                'input[id="user_name"]',
-                'input[name="name"]',
-                'input[placeholder*="name" i]',
-                'input[autocomplete="name"]',
-            ], name, log)
-            if not name_sel:
-                log("WARNING: name field not found")
-
-            _wait(0.5, log)
-            log(f"filling email: {email}")
-            email_sel = _fill_first(page, [
-                'input[name="user[email]"]',
-                'input[id="user_email"]',
-                'input[type="email"]',
-                'input[name="email"]',
-                'input[placeholder*="email" i]',
-            ], email, log)
-            if not email_sel:
-                log("WARNING: email field not found")
-
-            _wait(0.5, log)
-            log("filling password")
-            pwd_sel = _fill_first(page, [
-                'input[name="user[password]"]',
-                'input[id="user_password"]',
-                'input[type="password"]',
-                'input[name="password"]',
-            ], password, log)
-            if not pwd_sel:
-                log("WARNING: password field not found")
-
-            _wait(0.5, log)
-
-            # ── Step 3: Submit ────────────────────────────────────────────
-            log("submitting signup form...")
-            _click_first(page, [
-                'input[type="submit"]',
-                'button[type="submit"]',
-                'button:has-text("Sign up")',
-                'button:has-text("Create account")',
-                'button:has-text("Join")',
-                'input[value*="Sign up" i]',
-                'input[value*="Create" i]',
-            ], log)
-            _wait(5, log, "form submission")
-            log(f"url after submit: {page.url}")
-
-            # Log page state
-            body = _body_text(page, 600)
-            log(f"page body: {body[:300]!r}")
-
-            # Check for error messages
-            if any(kw in body.lower() for kw in ["already taken", "already registered", "invalid"]):
-                raise RuntimeError(f"Signup error: {body[:200]}")
-
-            # ── Step 4: Poll mail.tm for confirmation email ───────────────
-            # Goodreads sends a "confirm your email" message
-            check_email_keywords = [
-                "confirm", "check your email", "verification", "sent you",
-                "email has been sent", "activate",
-            ]
-            if any(kw in body.lower() for kw in check_email_keywords):
-                log("email confirmation required — polling mail.tm...")
-            else:
-                log("no confirmation message detected — polling mail.tm anyway...")
-
-            verify_link = mail_client.poll_for_verification_link(mailbox, timeout=120)
-            log(f"verification link: {verify_link[:80]}...")
-
-            # ── Step 5: Navigate to confirmation link ─────────────────────
-            log("navigating to confirmation link...")
-            try:
-                page.goto(verify_link, timeout=30000)
+            # ── Step 2: Navigate to Amazon AP registration form ───────────
+            # "Sign up with email" is an <a> link, not a form button
+            signup_href = ""
+            for i in range(page.locator("a").count()):
                 try:
-                    page.wait_for_load_state("networkidle", timeout=15000)
+                    el = page.locator("a").nth(i)
+                    if "sign up with email" in el.inner_text().lower():
+                        signup_href = el.get_attribute("href") or ""
+                        break
                 except Exception:
                     pass
-            except Exception as e:
-                log(f"confirmation nav warn: {e}")
-            _wait(3, log, "post-confirmation load")
-            log(f"url after confirmation: {page.url}")
 
-            # After confirmation, Goodreads may redirect to the homepage or dashboard
-            # Check if we're logged in
-            body_after = _body_text(page, 400)
-            log(f"post-confirm body: {body_after[:200]!r}")
+            if signup_href:
+                log(f"navigating to AP register: {signup_href[:80]}")
+                page.goto(signup_href, timeout=30000)
+            else:
+                _click_first(page, ['a:has-text("Sign up with email")'], log)
+            try:
+                page.wait_for_load_state("networkidle", timeout=15000)
+            except Exception:
+                pass
+            _wait(2, log)
+            log(f"url: {page.url}")
 
-            if "sign_in" in page.url:
-                # Not logged in — try logging in manually
-                log("not logged in after confirmation — attempting login...")
-                page.goto("https://www.goodreads.com/user/sign_in", timeout=30000)
+            # ── Step 3: Fill Amazon AP form ───────────────────────────────
+            # Fields: #ap_customer_name, #ap_email, #ap_password,
+            #         #ap_password_check, input#continue (submit)
+            body = _body_text(page)
+            log(f"AP page body: {body[:150]!r}")
+
+            _fill_first(page, [
+                'input#ap_customer_name', 'input[name="customerName"]',
+                'input[placeholder*="name" i]',
+            ], name, log)
+            _wait(0.5, log)
+
+            _fill_first(page, [
+                'input#ap_email', 'input[name="email"]', 'input[type="email"]',
+            ], email, log)
+            _wait(0.5, log)
+
+            _fill_first(page, [
+                'input#ap_password', 'input[name="password"]',
+            ], password, log)
+            _wait(0.5, log)
+
+            _fill_first(page, [
+                'input#ap_password_check', 'input[name="passwordCheck"]',
+            ], password, log)
+            _wait(0.8, log)
+
+            # ── Step 4: Submit ────────────────────────────────────────────
+            log("submitting AP form...")
+            _click_first(page, [
+                'input#continue', 'input[type="submit"]',
+                'button[type="submit"]',
+            ], log)
+            _wait(3, log, "post-submit")
+            log(f"url after submit: {page.url}")
+
+            # ── Step 5: Handle CVF (Amazon bot-challenge) ─────────────────
+            # /ap/cvf/ is Amazon's Contact Verification Flow — it may be:
+            #   a) Bot challenge that auto-resolves (aamation JS runs, redirects)
+            #   b) OTP verification page
+            # We wait up to 30s for the CVF page to auto-advance.
+            cvf_wait_max = 60  # seconds
+            cvf_start = time.time()
+            log("starting mail.tm OTP poll in background while waiting for CVF...")
+
+            # Start OTP poll in background thread
+            otp_result: list[str] = []
+            import threading
+            def _poll_otp():
                 try:
-                    page.wait_for_load_state("networkidle", timeout=15000)
+                    otp = mail_client.poll_for_otp(mailbox, timeout=120)
+                    otp_result.append(otp)
+                    log(f"OTP received: {otp}")
+                except Exception as e:
+                    log(f"OTP poll ended: {e}")
+            otp_thread = threading.Thread(target=_poll_otp, daemon=True)
+            otp_thread.start()
+
+            while time.time() - cvf_start < cvf_wait_max:
+                cur_url = page.url
+                log(f"  CVF wait: url={cur_url[:60]}")
+
+                # Success: no longer on CVF or AP, landed on Goodreads
+                if "/ap/cvf/" not in cur_url and "/ap/" not in cur_url:
+                    log("left CVF/AP pages — continuing")
+                    break
+
+                # Check if OTP input appeared on page
+                body = _body_text(page, 500)
+                otp_inputs = page.locator(
+                    'input[name="code"], input[id="auth-mfa-otpcode"], '
+                    'input[autocomplete="one-time-code"], '
+                    'input[type="text"][maxlength="6"]'
+                )
+                if otp_inputs.count() > 0 and otp_inputs.first.is_visible():
+                    log("OTP input appeared on page!")
+                    # Wait for OTP from mail.tm
+                    for _ in range(60):
+                        if otp_result:
+                            break
+                        time.sleep(1)
+
+                    if otp_result:
+                        _fill_first(page, [
+                            'input[name="code"]',
+                            'input[id="auth-mfa-otpcode"]',
+                            'input[autocomplete="one-time-code"]',
+                            'input[type="text"][maxlength="6"]',
+                        ], otp_result[0], log)
+                        _wait(0.5, log)
+                        _click_first(page, [
+                            'input[type="submit"]',
+                            'button[type="submit"]',
+                            'button:has-text("Verify")',
+                            'button:has-text("Continue")',
+                        ], log)
+                        _wait(5, log, "OTP submit")
+                        log(f"url after OTP: {page.url}")
+                    else:
+                        log("WARNING: no OTP received — manual verification needed")
+                    break
+
+                time.sleep(3)
+
+            # ── Step 6: Navigate to Goodreads after AP flow ───────────────
+            final_url = page.url
+            if "goodreads.com" not in final_url or "/ap/" in final_url:
+                log(f"navigating to goodreads.com from {final_url[:60]}")
+                page.goto("https://www.goodreads.com/", timeout=30000)
+                try:
+                    page.wait_for_load_state("networkidle", timeout=10000)
                 except Exception:
                     pass
                 _wait(2, log)
 
-                _fill_first(page, [
-                    'input[name="user[email]"]',
-                    'input[id="user_email"]',
-                    'input[type="email"]',
-                    'input[name="email"]',
-                ], email, log)
-                _wait(0.5, log)
-                _fill_first(page, [
-                    'input[name="user[password]"]',
-                    'input[id="user_password"]',
-                    'input[type="password"]',
-                    'input[name="password"]',
-                ], password, log)
-                _wait(0.5, log)
-                _click_first(page, [
-                    'input[type="submit"]',
-                    'button[type="submit"]',
-                    'button:has-text("Sign in")',
-                    'input[value*="Sign in" i]',
-                ], log)
-                _wait(5, log, "login")
-                log(f"url after manual login: {page.url}")
+            log(f"final url: {page.url}")
+            body = _body_text(page, 400)
+            log(f"final body: {body[:200]!r}")
 
-            # ── Step 6: Extract cookies ───────────────────────────────────
+            # ── Step 7: Extract cookies ───────────────────────────────────
             log("extracting cookies...")
             all_cookies = ctx.cookies()
-            # Keep only goodreads.com cookies
             gr_cookies = [
                 c for c in all_cookies
-                if "goodreads" in c.get("domain", "").lower()
+                if any(d in c.get("domain", "").lower()
+                       for d in ["goodreads", "amazon"])
             ]
             if not gr_cookies:
-                # If no domain-filtered cookies, keep all (may be needed)
                 gr_cookies = all_cookies
+
             log(f"extracted {len(gr_cookies)} cookies: {[c['name'] for c in gr_cookies]}")
 
             if not gr_cookies:
-                raise RuntimeError("No cookies extracted — registration may have failed")
+                raise RuntimeError("No cookies extracted after registration")
 
             return gr_cookies
 
@@ -317,14 +354,77 @@ def register_via_browser(
 
 
 # ---------------------------------------------------------------------------
-# Cookie test — verify cookies can authenticate a protected request
+# Manual login — open browser, user logs in themselves
+# ---------------------------------------------------------------------------
+
+def login_via_browser(
+    verbose: bool = False,
+    timeout: int = 300,
+) -> list[dict]:
+    """Open a browser to goodreads.com/user/sign_in and wait for the user to log in.
+
+    Returns session cookies once login is detected.
+    This is the most reliable approach — no bot detection risk.
+    """
+    from patchright.sync_api import sync_playwright
+
+    _ensure_display()
+
+    def log(msg: str) -> None:
+        if verbose:
+            ts = time.strftime("%H:%M:%S")
+            print(f"[{ts}] [goodread-login] {msg}", flush=True)
+
+    print(
+        "\n[LOGIN] A browser window will open — log in to your Goodreads account.\n"
+        "        The tool will automatically detect when you're logged in.\n",
+        flush=True,
+    )
+
+    user_data = tempfile.mkdtemp(prefix="gr_login_")
+    with sync_playwright() as p:
+        ctx = _open_context(p, headless=False, user_data=user_data)
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+
+        page.goto("https://www.goodreads.com/user/sign_in", timeout=30000)
+        try:
+            page.wait_for_load_state("networkidle", timeout=10000)
+        except Exception:
+            pass
+
+        log("waiting for login (checking URL every 2s)...")
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            cur_url = page.url
+            # Logged in if we're on goodreads.com without sign_in in the URL
+            if "goodreads.com" in cur_url and "sign_in" not in cur_url and "/ap/" not in cur_url:
+                body = _body_text(page, 500)
+                if "Sign out" in body or "My Books" in body:
+                    log(f"logged in! url={cur_url}")
+                    break
+            time.sleep(2)
+        else:
+            raise TimeoutError(f"Login not detected within {timeout}s")
+
+        _wait(2, log, "post-login stabilize")
+        all_cookies = ctx.cookies()
+        gr_cookies = [
+            c for c in all_cookies
+            if any(d in c.get("domain", "").lower() for d in ["goodreads", "amazon"])
+        ]
+        if not gr_cookies:
+            gr_cookies = all_cookies
+        log(f"extracted {len(gr_cookies)} cookies")
+        ctx.close()
+        return gr_cookies
+
+
+# ---------------------------------------------------------------------------
+# Cookie test — verify cookies authenticate with Goodreads
 # ---------------------------------------------------------------------------
 
 def test_cookies(cookies: list[dict], verbose: bool = False) -> str | None:
-    """Open a browser with stored cookies, fetch a login-gated page.
-
-    Returns user_id string if logged in, or None on failure.
-    """
+    """Test that stored cookies authenticate with Goodreads. Returns user_id or None."""
     import httpx
 
     def log(msg: str) -> None:
@@ -332,14 +432,7 @@ def test_cookies(cookies: list[dict], verbose: bool = False) -> str | None:
             ts = time.strftime("%H:%M:%S")
             print(f"[{ts}] [goodread-test] {msg}", flush=True)
 
-    # Convert cookie dicts to httpx cookie format
-    jar = {}
-    for c in cookies:
-        name = c.get("name", "")
-        value = c.get("value", "")
-        if name:
-            jar[name] = value
-
+    jar = {c["name"]: c["value"] for c in cookies if c.get("name")}
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -348,31 +441,33 @@ def test_cookies(cookies: list[dict], verbose: bool = False) -> str | None:
 
     try:
         client = httpx.Client(
-            cookies=jar,
-            headers=headers,
-            follow_redirects=True,
-            timeout=20,
+            cookies=jar, headers=headers, follow_redirects=True, timeout=20,
         )
-        resp = client.get("https://www.goodreads.com/")
-        client.close()
-        log(f"GET / -> {resp.status_code}, final_url={resp.url}")
+        # Test a page that requires login
+        resp = client.get("https://www.goodreads.com/review/list/me")
+        log(f"GET /review/list/me -> {resp.status_code}, url={resp.url}")
 
-        body = resp.text
-        # If we're logged in, Goodreads homepage shows the user's name or nav links
-        if "sign_in" in str(resp.url) or "Sign in" in body[:2000]:
+        if "sign_in" in str(resp.url):
             log("not authenticated — cookies rejected")
+            client.close()
             return None
 
-        # Try to extract user_id from page
-        import re
+        # Also try the homepage to extract user_id
+        resp2 = client.get("https://www.goodreads.com/")
+        client.close()
+        log(f"GET / -> {resp2.status_code}")
+
+        body = resp2.text
         m = re.search(r'/user/show/(\d+)', body)
         if m:
             user_id = m.group(1)
             log(f"logged in as user_id={user_id}")
             return user_id
 
-        # Logged in but couldn't extract user_id
-        log("appears logged in (no sign_in redirect)")
+        if "sign_in" in str(resp2.url):
+            return None
+
+        log("appears logged in")
         return "unknown"
 
     except Exception as e:
