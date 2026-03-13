@@ -586,22 +586,52 @@ def wait_for_link(
             deadline = time.time() + timeout
 
             def _dismiss_modals(pg) -> None:
-                """Dismiss any overlay modals blocking the inbox."""
-                for sel in [
-                    'button[data-testid="modal-close-button"]',
-                    'button:has-text("Got it")',
-                    'button:has-text("Dismiss")',
-                    'button:has-text("Close")',
-                    'button:has-text("Skip")',
-                    'button[aria-label="Close"]',
-                ]:
+                """Dismiss any overlay modals blocking the inbox — loop until all gone."""
+                for _attempt in range(8):
+                    # Check if any modal overlay is present
                     try:
-                        btn = pg.locator(sel)
-                        if btn.count() > 0 and btn.first.is_visible():
-                            btn.first.click()
-                            time.sleep(0.5)
+                        modal = pg.locator('div.modal-two')
+                        if modal.count() == 0 or not modal.first.is_visible():
+                            break
                     except Exception:
-                        pass
+                        break
+
+                    dismissed = False
+                    # Try close/skip buttons first (avoid "Next" which advances wizards)
+                    for sel in [
+                        'button[data-testid="modal-close-button"]',
+                        'button[aria-label="Close"]',
+                        'button[aria-label="Close modal"]',
+                        'button:has-text("Skip")',
+                        'button:has-text("Maybe later")',
+                        'button:has-text("No, thanks")',
+                        'button:has-text("No thanks")',
+                        'button:has-text("Got it")',
+                        'button:has-text("Dismiss")',
+                        'button:has-text("Close")',
+                        'button:has-text("Let\'s get started")',
+                    ]:
+                        try:
+                            btn = pg.locator(sel)
+                            if btn.count() > 0 and btn.first.is_visible():
+                                btn.first.click()
+                                log(f"  dismissed modal: {sel}")
+                                time.sleep(0.8)
+                                dismissed = True
+                                break
+                        except Exception:
+                            pass
+                    if not dismissed:
+                        # Escape as fallback for wizard/tour modals
+                        try:
+                            pg.keyboard.press("Escape")
+                            log("  dismissed modal via Escape")
+                            time.sleep(0.5)
+                        except Exception:
+                            break
+
+            # Dismiss any onboarding modals immediately after login
+            _dismiss_modals(page)
 
             # Try multiple selectors for both old (mail.proton.me) and new (account.proton.me/mail) UI
             ROW_SEL = (
@@ -666,12 +696,31 @@ def wait_for_link(
                             row.click(timeout=8000)
                         except Exception:
                             row.click(force=True)
-                        _wait(3, log)
-                        body_html = page.inner_text("body")
-                        urls = re.findall(r"https?://\S+", body_html)
-                        for url in urls:
+                        _wait(5, log)
+
+                        # Dismiss any modals triggered by opening the email
+                        _dismiss_modals(page)
+
+                        # Extract URLs from all frames (Proton renders email
+                        # in an about:blank iframe with allow-same-origin sandbox)
+                        all_urls: list[str] = []
+                        for frame in page.frames:
+                            try:
+                                hrefs = frame.evaluate(
+                                    "() => Array.from(document.querySelectorAll('a[href]')).map(a => a.href)"
+                                )
+                                all_urls += [h for h in hrefs if h.startswith("http")]
+                            except Exception:
+                                pass
+                        # Also check visible text for URLs
+                        try:
+                            body_text = page.inner_text("body")
+                            all_urls += re.findall(r"https?://\S+", body_text)
+                        except Exception:
+                            pass
+                        for url in all_urls:
                             url = url.rstrip(".,;)")
-                            if not keyword or keyword.lower() in url.lower():
+                            if keyword and keyword.lower() in url.lower():
                                 log(f"found link: {url[:80]}")
                                 return url
                         if rid:
@@ -689,13 +738,13 @@ def wait_for_link(
                 return ""
 
             if "account.proton.me" in _base:
-                # New Proton web app — inbox and spam both accessible via
-                # mail.proton.me/u/0/{folder} which redirects correctly.
+                # New Proton web app — check inbox, spam, all-mail, newsletters
                 FOLDERS = [
-                    _base,                                  # inbox
-                    "https://mail.proton.me/u/0/spam",     # spam
-                    "https://mail.proton.me/u/0/all-mail", # all mail
-                    _base,                                  # inbox reload
+                    _base,                                          # inbox
+                    "https://mail.proton.me/u/0/spam",             # spam
+                    "https://mail.proton.me/u/0/newsletters",      # newsletters (transactional)
+                    "https://mail.proton.me/u/0/all-mail",         # all mail
+                    _base,                                          # inbox reload
                 ]
             else:
                 FOLDERS = [

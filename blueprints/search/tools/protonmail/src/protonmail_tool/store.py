@@ -6,7 +6,11 @@ from typing import Any
 
 import duckdb
 
-DEFAULT_DB_PATH = Path.home() / "data" / "protonmail" / "accounts.duckdb"
+_DATA_DIR = Path.home() / "data" / "protonmail"
+_OLD_DB = _DATA_DIR / "accounts.duckdb"
+_NEW_DB = _DATA_DIR / "protonmail.duckdb"
+# Use old path if it already exists (migration); otherwise use new canonical name.
+DEFAULT_DB_PATH = _OLD_DB if _OLD_DB.exists() else _NEW_DB
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS accounts (
