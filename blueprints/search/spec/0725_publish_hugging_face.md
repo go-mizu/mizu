@@ -1,7 +1,7 @@
 # 0725 — Publish Open Index to Hugging Face
 
 **Date:** 2026-03-13
-**Status:** In progress — 66/100,000 shards committed
+**Status:** In progress — 85/100,000 shards committed (58.8/h)
 **Repo:** `open-index/cc-main-2026-08`
 **Total scale:** CC-MAIN-2026-08 = **100,000 WARC files** × ~20k pages = ~2 billion pages
 
@@ -18,152 +18,156 @@
 | **Final parquet on HF** | **~28 MB** | **~2.6 TB** |
 | HTML → Markdown compression | 96.5% | |
 | Markdown → Parquet compression | 67.9% | |
-| Overall compression | **98.9%** | |
+| Overall HTML → Parquet | **98.9%** | |
 
-CC structure: **100 segments × 1,000 WARC files each** = 100,000 total.
+CC-MAIN-2026-08 structure: **100 segments × 1,000 WARC files each** = 100,000 total.
 File indices 0–99,999 map directly into `warc.paths.gz`.
 
 ---
 
-## Pipeline Stages (per shard)
+## Baseline (as of 2026-03-13 08:30 UTC)
 
-```
-download WARC from S3       ~74s   ← DOMINANT BOTTLENECK (network)
-pack HTML → md.warc.gz      ~14s   ← CPU (light engine, ~290 pages/s)
-export → parquet            ~18s   ← CPU + disk
-commit to Hugging Face      ~42s   ← network (LFS upload 28 MB @ ~0.7 MB/s)
-─────────────────────────────────
-total per shard             ~148s  (2.5 min)
-```
+| Metric | Value |
+|---|---|
+| Shards committed | **85** |
+| Sessions running | 7 (server2, files 0–999) |
+| Throughput | **58.8 shards/h** (1,411/day) |
+| ETA: current sessions (0–999) | **~15.6h** |
+| ETA: all 100k at this rate | **~70.8 days** |
+
+### Pipeline stage timings (avg, current binary)
+
+| Stage | Avg | Notes |
+|---|---|---|
+| Download WARC from S3 | ~183s | combined dl+pack in old binary; ~74s pure dl in new |
+| Pack HTML → Markdown | ~74s | combined in old format |
+| Export Parquet | ~33s | |
+| Publish to HF | **44s** | dominant bottleneck after download |
+| **Total (serial)** | **~334s** | old binary; new binary separates dl/conv |
+
+> Note: old binary lumped download+convert timing. New binary (from this session) separates them accurately as `dur_download_s` + `dur_convert_s`.
 
 ---
 
 ## Bottleneck Analysis
 
-### #1 — Download (74s, 50% of time)
-- Server2 downloads at ~35 MB/s total across all sessions
-- Per session: ~5 MB/s when 7 sessions run concurrently
-- Root cause: S3 throughput from this server + parallel session contention
-- **Fix**: More servers (horizontal scale) or CDN/closer S3 region
+### #1 — Download (74s real, 50% of wall time)
+- 7 sessions share server2 bandwidth (~35 MB/s total, ~5 MB/s per session)
+- 800 MB WARC / 5 MB/s = ~160s — current 74s avg suggests not all sessions download simultaneously
+- **Fix**: More servers with dedicated bandwidth per segment
 
-### #2 — HF Publish (42s, 28%)
-- LFS upload of 28 MB parquet: only ~0.7 MB/s → suspiciously slow
-- Likely: HF rate limiting or LFS handshake overhead per commit
-- **Fix: batch N parquets per commit** → amortize fixed overhead
-  - Batch-10: ~80s for 10 parquets → 8s amortized = **5× speedup on publish**
+### #2 — HF Publish (44s, 30% of wall time)
+- LFS upload of ~28 MB at only ~0.64 MB/s
+- Each commit has handshake + retry overhead (fixed cost per commit)
+- **Fix: `--commit-batch N`** — batch N parquets per HF commit, amortize fixed overhead
+  - Batch-10: ~80s per 10 shards → 8s amortized = **5× speedup on publish step**
+  - Estimated wall-time gain: 44s → 8s per shard = **~22% faster overall**
 
-### #3 — Pack + Export (32s, 22%)
-- Light engine: fast enough, not a bottleneck
+### #3 — Pack/Export (107s combined, ~32% of wall time)
+- Light engine at ~290 pages/s; export I/O-bound
 - Could overlap with download of next shard (prefetch)
+- **Fix: prefetch download** — download N+1 while packing N
+  - Effective per-shard: max(74, 107) + 8 = 115s vs current 334s → **2.9× speedup**
 
 ---
 
 ## Time Estimates
 
-### Current state (7 sessions, 1 server)
+| Scenario | Per shard | Shards/h (×7) | ETA 100k |
+|---|---|---|---|
+| **Baseline** (current) | ~334s | 75/h | 70.8 days |
+| + batch commits (×10) | ~298s | 85/h | 62 days |
+| + batch + prefetch | ~115s | 219/h | 19 days |
+| 2 servers + batch + prefetch | ~115s | 438/h | 9.5 days |
+| **<1 day target** | ~82s | 4,167/h | requires **14 servers** |
+
+---
+
+## 90-Iteration Improvement Strategy (files 1001–10,000)
+
+Test 90 batches of 100 files each with the new binary. Use each batch to measure improvement, tune parameters, and update this spec.
+
+### Iteration structure
 ```
-100,000 shards × 148s / 7 sessions = ~596 hours = 24.8 days
+Files 1001–10,000 = 9,000 files
+Batch size: 100 files per iteration
+Iterations: 90 total
 ```
 
-### With batch commits (N=10 per commit, amortized pub ≈ 8s)
-```
-per-shard: 74 + 14 + 18 + 8 = 114s
-100,000 × 114s / 7 = ~453h = 18.9 days   (+24% faster)
+### Iteration schedule
+
+| Iterations | Files | Focus |
+|---|---|---|
+| 1–9 | 1001–1900 | Measure batch commit speedup (--commit-batch 1, 5, 10, 20) |
+| 10–18 | 1901–2800 | Tune prefetch / session count |
+| 19–27 | 2801–3700 | Optimize pack workers / light engine |
+| 28–36 | 3701–4600 | Measure network saturation ceiling |
+| 37–45 | 4601–5500 | Multi-server coordination (add server1) |
+| 46–54 | 5501–6400 | Segment-based sharding |
+| 55–63 | 6401–7300 | HF commit batching at 50 |
+| 64–72 | 7301–8200 | Adaptive batch size (by parquet size) |
+| 73–81 | 8201–9100 | Final tuning |
+| 82–90 | 9101–10,000 | Stable production configuration |
+
+### Iteration 1 — batch commit baseline
+```bash
+screen -S iter01
+export HF_TOKEN=...
+search cc publish --pipeline --cleanup --commit-batch 1 --file 1001-1100
+# measure: shards/h, publish time avg
 ```
 
-### With batch + prefetch (overlap download with pack/export)
-```
-effective per-shard: max(74, 32) + 8 = 82s
-100,000 × 82s / 7 = ~326h = 13.6 days   (+45% faster)
-```
-
-### To complete in <1 day (86,400s)
-```
-Need: 100,000 × 82s / 86,400 = ~95 parallel sessions
-With 7 sessions per server: need ~14 servers
+### Iteration 2 — batch-10
+```bash
+search cc publish --pipeline --cleanup --commit-batch 10 --file 1101-1200
 ```
 
-### Realistic 2-server target (server1 + server2)
+### Iteration 3 — batch-20
+```bash
+search cc publish --pipeline --cleanup --commit-batch 20 --file 1201-1300
 ```
-2 servers × 7 sessions × optimized (82s): ~163 hours → 6.8 days
-```
-
-**Conclusion: 100k files in <1 day requires ~14 servers each running 7 sessions.**
-Practical near-term target with 2 servers: complete in **~7 days**.
-With 10+ servers: achievable in **<1 day**.
 
 ---
 
 ## Optimization Roadmap
 
-### ✅ Done
-- Aggressive cleanup (delete raw WARC + md.warc.gz + parquet after commit)
-- Charts only on last shard (no per-shard commit conflicts)
-- `search cc pull` for recovery from HF
+### ✅ Implemented
+- `--commit-batch N`: batch N parquets per HF commit (merged 2026-03-13)
+- Charts: `totals_chart.png` (HTML vs MD vs Parquet total with % labels)
+- Charts: `size_chart.png` renamed to "HTML vs Markdown" per shard
+- `search cc pull`: reverse pipeline (HF → local parquet → md.warc.gz)
+- Aggressive cleanup: raw WARC + md.warc.gz + local parquet all deleted after commit
 
-### 🔴 High impact — Batch HF commits
-**Goal**: commit N parquets in one HF operation instead of one-per-shard.
-- `--commit-batch N` flag (default 1 = current behavior, recommend 10)
-- Collect parquets, upload all as LFS in one commit
-- Saves ~34s per shard amortized → biggest single code win
-- **Estimated gain: 1.3–1.5× throughput**
+### 🔴 Next: Prefetch download
+While session packs shard N, download shard N+1 in background goroutine.
+- Overlap 74s download with 107s pack+export
+- Effective per-shard: max(74, 107) + pub = no wait for download
+- Implementation: goroutine in `ccRunPipelineWithCommits` that pre-downloads
 
-### 🟡 Medium impact — Prefetch next WARC during pack/export
-**Goal**: overlap 74s download with 32s pack+export of previous shard.
-- Per-session goroutine: while pack(N) runs, download(N+1) in background
-- Effective per-shard time: max(74, 14+18) + pub ≈ 82s
-- **Estimated gain: 1.3× throughput** (limited by download being dominant)
+### 🟡 More sessions per server
+- Current: 7 sessions using 35 MB/s total (~5 MB/s each)
+- With prefetch, download is hidden → can increase to 10–14 sessions
+- Monitor `sar -n DEV 1` to watch bandwidth ceiling
 
-### 🟡 Medium impact — More sessions per server
-- Current: 7 sessions, each downloading sequentially
-- Network at 35 MB/s total — adding sessions may not help unless sessions
-  are in non-download phases (pack/export/publish) simultaneously
-- Safe to try 10–12 sessions; monitor `sar -n DEV`
-
-### 🟢 Low impact — Parallel pack workers within session
-- Light engine: already fast (14s), not bottleneck
-
-### 🔵 Architectural — Multi-server coordination
-- Divide 100 segments across servers (1 segment = 1000 files per server)
-- Server1: segments 0–49 (files 0–49999)
-- Server2: segments 50–99 (files 50000–99999)
-- Each server: 7 sessions × 50000/7 = ~7143 files
-- With optimizations (82s): 50000 × 82s / 7 = ~165h = 6.9 days per server
-- Need 7 more servers for <1 day
+### 🔵 Multi-server segmentation
+- Divide 100 CC segments across servers
+- Segment 0 (files 0–999): server2 (in progress)
+- Segments 1–49 (files 1000–49999): server2 second pass
+- Segments 50–99 (files 50000–99999): server1 or additional servers
 
 ---
 
 ## Current Sessions (server2, 2026-03-13)
 
-| Session | Files | Current shard | Status |
-|---|---|---|---|
-| s37_100 | 0037–0099 | 00042 | packing |
-| s101_250 | 0101–0249 | ~00101 | running |
-| s251_400 | 0251–0399 | 00255 | packing |
-| s401_550 | 0401–0549 | running | |
-| s551_700 | 0551–0699 | 00554 | exporting |
-| s701_850 | 0701–0849 | 00705 | packing |
-| s851_1000 | 0851–0999 | 00855 | packing |
+| Session | File range | Status |
+|---|---|---|
+| s37_100 | 0037–0099 | running |
+| s101_250 | 0101–0249 | running |
+| s251_400 | 0251–0399 | running |
+| s401_550 | 0401–0549 | running |
+| s551_700 | 0551–0699 | running |
+| s701_850 | 0701–0849 | running |
+| s851_1000 | 0851–0999 | running |
 
-Only segment 0 (files 0–999) is being processed. 99 segments remain untouched.
-
----
-
-## Implementation Plan
-
-### Step 1: Batch commits (code change)
-Add `--commit-batch N` to `search cc publish --pipeline`:
-- Buffer parquet paths after export
-- When buffer reaches N (or last shard), do one HF commit with all N parquets
-- README/stats.csv/charts included in final batch commit only
-
-### Step 2: Test batch commits
-```bash
-search cc publish --pipeline --cleanup --file 1001-1020 --commit-batch 10
-```
-
-### Step 3: Expand to remaining segments on server2
-Cover files 1000–99999 across multiple screen sessions per segment boundary.
-
-### Step 4: Recruit more servers
-Coordinate server1 + additional servers for segments 1–99.
+After these finish (~15.6h): files 0–36 still need to be run (0–36).
+Then iteration sessions take over for 1001–10,000.
