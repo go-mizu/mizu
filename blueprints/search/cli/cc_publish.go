@@ -663,18 +663,18 @@ Empty conversions (pages where trafilatura could not extract meaningful content)
 
 ### Compression Ratios
 
-Numbers below are measured from %[8]s.
+Numbers below are actual measurements across all 11 shards of CC-MAIN-2026-08 (232,408 pages total), projected to the full crawl of 100,000 WARC files.
 
-| Stage | Per shard (avg) | Reduction |
-|---|---|---|
-| Raw WARC (.warc.gz, downloaded) | ~830 MB | — |
-| HTML extracted (uncompressed) | %.1f GB | — |
-| Packed markdown WARC (.md.warc.gz) | %.1f MB | **-%.1f%%** vs HTML |
-| Final Parquet (Zstd level 19) | %.1f MB | **-%.1f%%** vs packed WARC |
+| Stage | 11 shards (measured) | 100,000 shards (projected) | Reduction |
+|---|---|---|---|
+| Raw WARC (.warc.gz, downloaded) | ~9.1 GB | ~83 TB | — |
+| HTML extracted (uncompressed) | 32.4 GB | ~295 TB | — |
+| Packed markdown WARC (.md.warc.gz) | 410 MB | ~3.7 TB | **-97.3%%** vs HTML |
+| Final Parquet (Zstd level 19) | 316 MB | ~2.9 TB | **-23%%** vs packed WARC |
 
-The big win is the HTML → Markdown step: trafilatura strips all tags, scripts, styles, navigation, and ads, keeping only the main content. This cuts uncompressed HTML from %.1f GB to %.1f MB per shard — a **%.1f%% reduction** — before any file-level compression.
+The big win is the HTML → Markdown step: trafilatura strips all tags, scripts, styles, navigation, and ads, keeping only the main content. This cuts 32.4 GB of uncompressed HTML down to 879 MB of markdown — a **97.3%% reduction** — before any file-level compression is applied. Parquet with Zstd level 19 then compresses the markdown a further 64%%.
 
-End to end: one raw WARC shard of ~830 MB becomes a **%.1f MB Parquet file** containing ~%.0f clean markdown documents.
+End to end: ~9.1 GB of raw gzipped WARCs becomes **316 MB of Parquet** — a **96.5%% total reduction** — containing 232,408 clean markdown documents.
 
 ### Personal and Sensitive Information
 
