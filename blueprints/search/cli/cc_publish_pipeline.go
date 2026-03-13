@@ -2,16 +2,18 @@ package cli
 
 import (
 	"encoding/csv"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/parquet-go/parquet-go"
 )
 
-// ccShardStats holds per-shard export statistics.
+// ccShardStats holds per-shard export statistics including pipeline timings.
 type ccShardStats struct {
 	CrawlID      string
 	FileIdx      int
@@ -19,6 +21,11 @@ type ccShardStats struct {
 	HTMLBytes    int64
 	MDBytes      int64
 	ParquetBytes int64
+	// Timing and metadata (zero-valued for rows loaded from old CSV format)
+	CreatedAt    string // RFC3339
+	DurPackS     int64  // seconds: download + HTML→Markdown conversion
+	DurExportS   int64  // seconds: Parquet export
+	DurPublishS  int64  // seconds: HuggingFace commit
 }
 
 // ccTotals is the aggregate across all shards for a crawl.
@@ -28,10 +35,18 @@ type ccTotals struct {
 	HTMLBytes    int64
 	MDBytes      int64
 	ParquetBytes int64
+	DurPackS     int64
+	DurExportS   int64
+	DurPublishS  int64
 }
 
 func ccStatsCSVPath(repoRoot string) string {
 	return filepath.Join(repoRoot, "stats.csv")
+}
+
+var ccStatsCSVHeader = []string{
+	"crawl_id", "file_idx", "rows", "html_bytes", "md_bytes", "parquet_bytes",
+	"created_at", "dur_pack_s", "dur_export_s", "dur_publish_s",
 }
 
 func ccReadStatsCSV(csvPath string) ([]ccShardStats, error) {
@@ -59,10 +74,24 @@ func ccReadStatsCSV(csvPath string) ([]ccShardStats, error) {
 		htmlBytes, _ := strconv.ParseInt(row[3], 10, 64)
 		mdBytes, _ := strconv.ParseInt(row[4], 10, 64)
 		parquetBytes, _ := strconv.ParseInt(row[5], 10, 64)
-		stats = append(stats, ccShardStats{
+		s := ccShardStats{
 			CrawlID: row[0], FileIdx: idx,
 			Rows: rows, HTMLBytes: htmlBytes, MDBytes: mdBytes, ParquetBytes: parquetBytes,
-		})
+		}
+		// New timing columns (backward compat: may be absent in old CSVs)
+		if len(row) > 6 {
+			s.CreatedAt = row[6]
+		}
+		if len(row) > 7 {
+			s.DurPackS, _ = strconv.ParseInt(row[7], 10, 64)
+		}
+		if len(row) > 8 {
+			s.DurExportS, _ = strconv.ParseInt(row[8], 10, 64)
+		}
+		if len(row) > 9 {
+			s.DurPublishS, _ = strconv.ParseInt(row[9], 10, 64)
+		}
+		stats = append(stats, s)
 	}
 	return stats, nil
 }
@@ -74,7 +103,7 @@ func ccWriteStatsCSV(csvPath string, allStats []ccShardStats) error {
 	}
 	defer f.Close()
 	w := csv.NewWriter(f)
-	_ = w.Write([]string{"crawl_id", "file_idx", "rows", "html_bytes", "md_bytes", "parquet_bytes"})
+	_ = w.Write(ccStatsCSVHeader)
 	for _, s := range allStats {
 		_ = w.Write([]string{
 			s.CrawlID,
@@ -83,6 +112,10 @@ func ccWriteStatsCSV(csvPath string, allStats []ccShardStats) error {
 			strconv.FormatInt(s.HTMLBytes, 10),
 			strconv.FormatInt(s.MDBytes, 10),
 			strconv.FormatInt(s.ParquetBytes, 10),
+			s.CreatedAt,
+			strconv.FormatInt(s.DurPackS, 10),
+			strconv.FormatInt(s.DurExportS, 10),
+			strconv.FormatInt(s.DurPublishS, 10),
 		})
 	}
 	w.Flush()
@@ -123,8 +156,29 @@ func ccComputeTotals(stats []ccShardStats, crawlID string) ccTotals {
 		t.HTMLBytes += s.HTMLBytes
 		t.MDBytes += s.MDBytes
 		t.ParquetBytes += s.ParquetBytes
+		t.DurPackS += s.DurPackS
+		t.DurExportS += s.DurExportS
+		t.DurPublishS += s.DurPublishS
 	}
 	return t
+}
+
+// ccFmtDuration formats seconds as a human-readable duration string.
+func ccFmtDuration(secs int64) string {
+	if secs <= 0 {
+		return "—"
+	}
+	d := time.Duration(secs) * time.Second
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	s := int(d.Seconds()) % 60
+	if h > 0 {
+		return fmt.Sprintf("%dh %dm %ds", h, m, s)
+	}
+	if m > 0 {
+		return fmt.Sprintf("%dm %ds", m, s)
+	}
+	return fmt.Sprintf("%ds", s)
 }
 
 // ccParquetStatsRow is the minimal row struct for scanning parquet stats.

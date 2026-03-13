@@ -258,14 +258,17 @@ func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, r
 		fmt.Printf("  ── [%d/%d] %s ──\n", i+1, len(indices), labelStyle.Render(shard))
 
 		var rows, htmlBytes, mdBytes int64
+		var durPackS, durExportS, durPublishS int64
 
 		if !fileExists(parquetPath) {
 			// Need to pack (and possibly download) before exporting.
 			if !fileExists(mdWARCPath) {
 				fmt.Printf("  [%s] packing...\n", labelStyle.Render(shard))
+				t0 := time.Now()
 				if packErr := runCCWarcPack(ctx, crawlID, strconv.Itoa(idx), -1, -1, 0, false, false, lightConvert, 200, "text/html", 512*1024); packErr != nil {
 					return fmt.Errorf("pack %d: %w", idx, packErr)
 				}
+				durPackS = int64(time.Since(t0).Seconds())
 				if cleanup {
 					if rawPath := ccFindRawWARC(crawlID, idx); rawPath != "" {
 						_ = os.Remove(rawPath)
@@ -277,6 +280,7 @@ func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, r
 			}
 
 			fmt.Printf("  [%s] exporting  ", labelStyle.Render(shard))
+			t0 := time.Now()
 			var exportErr error
 			rows, htmlBytes, mdBytes, exportErr = exportWARCMdShardToParquet(mdWARCPath, parquetPath, func(n int64, elapsed time.Duration) {
 				secs := elapsed.Seconds()
@@ -295,6 +299,7 @@ func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, r
 				fmt.Println()
 				return fmt.Errorf("export %d: %w", idx, exportErr)
 			}
+			durExportS = int64(time.Since(t0).Seconds())
 			fmt.Printf("\r  [%s] exported   %s docs  %s\n",
 				labelStyle.Render(shard),
 				infoStyle.Render(ccFmtInt64(rows)),
@@ -319,6 +324,8 @@ func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, r
 		if upsertErr := ccUpsertShardStats(statsCSV, ccShardStats{
 			CrawlID: crawlID, FileIdx: idx,
 			Rows: rows, HTMLBytes: htmlBytes, MDBytes: mdBytes, ParquetBytes: pqBytes,
+			CreatedAt: time.Now().UTC().Format(time.RFC3339),
+			DurPackS: durPackS, DurExportS: durExportS,
 		}); upsertErr != nil {
 			return fmt.Errorf("upsert stats %d: %w", idx, upsertErr)
 		}
@@ -349,10 +356,21 @@ func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, r
 		}
 
 		commitMsg := fmt.Sprintf("Publish shard %s/%s", crawlID, shard)
+		t0 := time.Now()
 		commitURL, commitErr := hf.createCommit(ctx, repoID, "main", commitMsg, ops)
 		if commitErr != nil {
 			return fmt.Errorf("commit %d: %w", idx, commitErr)
 		}
+		durPublishS = int64(time.Since(t0).Seconds())
+
+		// Back-fill publish duration into stats.csv.
+		_ = ccUpsertShardStats(statsCSV, ccShardStats{
+			CrawlID: crawlID, FileIdx: idx,
+			Rows: rows, HTMLBytes: htmlBytes, MDBytes: mdBytes, ParquetBytes: pqBytes,
+			CreatedAt: time.Now().UTC().Format(time.RFC3339),
+			DurPackS: durPackS, DurExportS: durExportS, DurPublishS: durPublishS,
+		})
+
 		if uploadParquet {
 			fmt.Printf("  [%s] %s  %s\n", labelStyle.Render(shard), successStyle.Render("published"), labelStyle.Render(commitURL))
 		} else {
@@ -590,6 +608,8 @@ func ccPublishREADME(crawlID string, totals *ccTotals) string {
 		totalMDStr      = "79.2 MB"
 		pctMDToPQStr    = "64.7"
 		endToEndPctStr  = "96.5"
+		// Timing table defaults (shown only when we have timing data)
+		timingSection = ""
 	)
 
 	if totals != nil && totals.Shards > 0 {
@@ -625,6 +645,33 @@ func ccPublishREADME(crawlID string, totals *ccTotals) string {
 		if rawWARCBytes > totals.ParquetBytes {
 			pct := float64(rawWARCBytes-totals.ParquetBytes) / float64(rawWARCBytes) * 100
 			endToEndPctStr = fmt.Sprintf("%.1f", pct)
+		}
+
+		// Timing section — only shown when at least one shard has timing data.
+		if totals.DurPackS+totals.DurExportS+totals.DurPublishS > 0 {
+			avgPackS, avgExportS, avgPublishS := int64(0), int64(0), int64(0)
+			if totals.Shards > 0 {
+				avgPackS = totals.DurPackS / int64(totals.Shards)
+				avgExportS = totals.DurExportS / int64(totals.Shards)
+				avgPublishS = totals.DurPublishS / int64(totals.Shards)
+			}
+			timingSection = fmt.Sprintf(`
+### Processing Times
+
+Pipeline timings summed across all %s shards of %s:
+
+| Stage | Total (%s shards) | Avg per shard |
+|---|---|---|
+| Download + Pack (HTML→Markdown) | %s | %s |
+| Export (Parquet) | %s | %s |
+| Publish (HuggingFace) | %s | %s |
+`,
+				shardsCountStr, crawlID,
+				shardsCountStr,
+				ccFmtDuration(totals.DurPackS), ccFmtDuration(avgPackS),
+				ccFmtDuration(totals.DurExportS), ccFmtDuration(avgExportS),
+				ccFmtDuration(totals.DurPublishS), ccFmtDuration(avgPublishS),
+			)
 		}
 	}
 
@@ -808,7 +855,7 @@ Numbers below are actual measurements summed across all %[8]s files of %[1]s (%[
 The big win is the HTML → Markdown step: trafilatura strips all tags, scripts, styles, navigation, and ads, keeping only the main content. This cuts %[11]s of uncompressed HTML down to %[16]s of markdown — a **%[13]s%% reduction** — before any file-level compression is applied. Parquet with Zstd level 19 then compresses the markdown a further %[17]s%%.
 
 End to end: %[10]s of raw gzipped WARCs becomes **%[14]s of Parquet** — a **%[18]s%% total reduction** — containing %[9]s clean markdown documents.
-
+%[19]s
 ### Personal and Sensitive Information
 
 No additional PII filtering is applied beyond what Common Crawl provides. As the dataset is sourced from the public web, it is likely that some personally identifiable information is present. If you find your own PII in the dataset and would like it removed, please open an issue on the repository.
@@ -855,6 +902,7 @@ Please open a discussion on the [Community tab](https://huggingface.co/datasets/
 		totalMDStr,      // [16] total uncompressed markdown
 		pctMDToPQStr,    // [17] markdown → parquet compression %
 		endToEndPctStr,  // [18] raw WARC → parquet end-to-end %
+		timingSection,   // [19] optional processing times table
 	)
 }
 
