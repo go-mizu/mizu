@@ -47,14 +47,47 @@ def register(
 
     identity = generate()
     console.print(f"[bold]Registering Discord account[/bold]")
-    console.print(f"  Email:    {identity.email_local}@mail.tm (via mail.tm)")
-    console.print(f"  Username: {identity.username}")
+    console.print(f"  Username: [cyan]{identity.username}[/cyan]")
+    console.print(f"  Password: [cyan]{identity.password}[/cyan]")
     console.print(f"  DOB:      {identity.birth_year}-{identity.birth_month:02d}-{identity.birth_day:02d}")
+    console.print(f"  Email:    (will be assigned via mail.tm)")
 
+    from .email import MailTmClient, create_maildrop_mailbox, create_1sec_mailbox, _ONESEC_DOMAINS
     mail_client = MailTmClient()
-    console.print("  Creating mail.tm mailbox...")
-    mailbox = mail_client.create_mailbox(identity.email_local, identity.password)
-    console.print(f"  Mailbox:  {mailbox.address}")
+
+    # Provider priority: maildrop.cc → mail.tm → 1secmail
+    mailbox = None
+    console.print("  Creating temporary mailbox...")
+    try:
+        mailbox = create_maildrop_mailbox(identity.email_local, identity.password)
+        console.print(f"  Provider: maildrop.cc ({mailbox.address})")
+    except Exception as e:
+        console.print(f"  [yellow]maildrop failed ({e})[/yellow]")
+
+    if mailbox is None:
+        try:
+            mailbox = mail_client.create_mailbox(identity.email_local, identity.password)
+            console.print(f"  Provider: mail.tm  ({mailbox.address})")
+        except Exception as e:
+            console.print(f"  [yellow]mail.tm failed ({e}) — using 1secmail[/yellow]")
+
+    if mailbox is None:
+        for domain in _ONESEC_DOMAINS:
+            try:
+                mailbox = create_1sec_mailbox(identity.email_local, identity.password, domain)
+                console.print(f"  Provider: 1secmail ({mailbox.address})")
+                break
+            except Exception:
+                continue
+
+    if mailbox is None:
+        err_console.print("Could not create any temporary mailbox.")
+        raise typer.Exit(1)
+
+    console.print(f"  Email:    [cyan]{mailbox.address}[/cyan]")
+    console.print(f"\n  [dim]Save these credentials:[/dim]")
+    console.print(f"  [dim]  Email:    {mailbox.address}[/dim]")
+    console.print(f"  [dim]  Password: {identity.password}[/dim]")
 
     console.print("  Launching browser...")
     try:
@@ -195,6 +228,62 @@ def account_rm(
     store.remove(email)
     store.close()
     console.print(f"[green]✓ Removed[/green] {email}")
+
+
+# ---------------------------------------------------------------------------
+# extract-token
+# ---------------------------------------------------------------------------
+
+@app.command("extract-token")
+def extract_token(
+    login_email: Annotated[Optional[str], typer.Option("--login-email", help="Discord account email to pre-fill")] = None,
+    login_password: Annotated[Optional[str], typer.Option("--login-password", help="Discord account password to pre-fill")] = None,
+    save_email: Annotated[Optional[str], typer.Option("--email", help="Email to save in DB (optional)")] = None,
+    db: DB_OPT = DEFAULT_DB_PATH,
+    wait: int = typer.Option(300, help="Seconds to wait for login"),
+    verbose: bool = typer.Option(True, "--verbose/--no-verbose", "-v"),
+) -> None:
+    """Open Discord login in a browser, pre-fill credentials, capture token automatically.
+
+    Provide --login-email and --login-password to auto-fill the form.
+    You only need to solve the captcha (if shown) — everything else is automatic.
+    """
+    from .browser import extract_token_manual
+
+    console.print("[bold]Token extraction via browser[/bold]")
+    if login_email:
+        console.print(f"  Pre-filling: [cyan]{login_email}[/cyan]")
+        console.print("  Solve captcha if prompted, then token is captured automatically.")
+    else:
+        console.print("  Browser opens at discord.com/login — fill credentials manually.")
+    console.print(f"  Waiting up to [bold]{wait}s[/bold]...\n")
+
+    try:
+        token = extract_token_manual(
+            headless=False,
+            verbose=verbose,
+            wait=wait,
+            email=login_email or "",
+            password=login_password or "",
+        )
+    except Exception as e:
+        err_console.print(f"Token extraction failed: {e}")
+        raise typer.Exit(1)
+
+    console.print(f"\n[green]✓ Token captured![/green]  {token[:20]}...")
+
+    store = _store(db)
+    if email:
+        acct = store.get_account(email)
+        if acct:
+            store.update_token(email, token)
+            console.print(f"  Updated token for {email}")
+        else:
+            store.add_account(email=email, username=email.split("@")[0], password="", token=token)
+            console.print(f"  Saved new account for {email}")
+    store.close()
+
+    console.print(f"\n[dim]Export token:[/dim]  export DISCORD_TOKEN='{token}'")
 
 
 # ---------------------------------------------------------------------------
