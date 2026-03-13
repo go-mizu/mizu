@@ -350,13 +350,14 @@ func newAmazonSearch() *cobra.Command {
 			fmt.Printf("Searching: %s\n", searchURL)
 
 			task := &amazon.SearchTask{
-				URL:      searchURL,
-				Query:    query,
-				Page:     page,
-				Client:   client,
-				DB:       db,
-				StateDB:  stateDB,
-				MaxPages: maxResults,
+				URL:        searchURL,
+				Query:      query,
+				Page:       page,
+				Client:     client,
+				DB:         db,
+				StateDB:    stateDB,
+				MaxPages:   maxPages,
+				MaxResults: maxResults,
 			}
 			m, err := task.Run(cmd.Context(), func(s *amazon.SearchState) {
 				fmt.Printf("  [%s] %s (results=%d)\n", s.Status, s.URL, s.ResultsFound)
@@ -632,7 +633,8 @@ func newAmazonCrawl() *cobra.Command {
 			}
 
 			fmt.Printf("Starting crawl with %d workers, delay=%s ...\n", workers, cfg.Delay)
-			stateDB.CreateJob("crawl-"+fmt.Sprintf("%d", time.Now().Unix()), "bulk-crawl", "crawl")
+			jobID := "crawl-" + fmt.Sprintf("%d", time.Now().Unix())
+			stateDB.CreateJob(jobID, "bulk-crawl", "crawl")
 
 			task := &amazon.CrawlTask{
 				Config:  cfg,
@@ -644,8 +646,10 @@ func newAmazonCrawl() *cobra.Command {
 				amazon.PrintCrawlProgress(s)
 			})
 			if err != nil {
+				_ = stateDB.UpdateJob(jobID, "failed", err.Error())
 				return err
 			}
+			_ = stateDB.UpdateJob(jobID, "done", fmt.Sprintf("done=%d failed=%d duration=%s", m.Done, m.Failed, m.Duration.Round(time.Second)))
 
 			fmt.Printf("\nCrawl complete: done=%d failed=%d duration=%s\n",
 				m.Done, m.Failed, m.Duration.Round(time.Second))

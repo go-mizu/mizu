@@ -74,6 +74,17 @@ func ParseProduct(doc *goquery.Document, asin, pageURL string) (*Product, error)
 	if p.Title == "" {
 		p.Title = strings.TrimSpace(doc.Find("#productTitle").Text())
 	}
+	if p.Brand == "" {
+		p.Brand = strings.TrimSpace(doc.Find("#bylineInfo").Text())
+	}
+	if p.BrandID == "" {
+		if href, exists := doc.Find("#bylineInfo").Attr("href"); exists {
+			p.BrandID = extractPathSegmentAfter(href, "/stores/")
+			if p.BrandID == "" {
+				p.BrandID = extractQueryParam(href, "me")
+			}
+		}
+	}
 
 	if p.Price == 0 {
 		priceStr := strings.TrimSpace(doc.Find(".a-price .a-offscreen").First().Text())
@@ -181,6 +192,10 @@ func ParseProduct(doc *goquery.Document, asin, pageURL string) (*Product, error)
 		if t != "" {
 			p.CategoryPath = append(p.CategoryPath, t)
 		}
+		href, _ := s.Attr("href")
+		if nodeID := extractNodeID(href); nodeID != "" {
+			p.BrowseNodeIDs = append(p.BrowseNodeIDs, nodeID)
+		}
 	})
 
 	// Seller info
@@ -189,6 +204,14 @@ func ParseProduct(doc *goquery.Document, asin, pageURL string) (*Product, error)
 	if href, exists := sellerSel.Attr("href"); exists {
 		p.SellerID = extractQueryParam(href, "seller")
 	}
+	if p.SellerID == "" {
+		if href, exists := doc.Find("#merchant-info a[href*='seller=']").First().Attr("href"); exists {
+			p.SellerID = extractQueryParam(href, "seller")
+			if p.SellerName == "" {
+				p.SellerName = strings.TrimSpace(doc.Find("#merchant-info a[href*='seller=']").First().Text())
+			}
+		}
+	}
 
 	// SoldBy / FulfilledBy
 	soldByText := strings.TrimSpace(doc.Find("#merchant-info").Text())
@@ -196,6 +219,12 @@ func ParseProduct(doc *goquery.Document, asin, pageURL string) (*Product, error)
 		soldByText = strings.TrimSpace(doc.Find("#shipsFromSoldBy").Text())
 	}
 	p.SoldBy = soldByText
+	if p.FulfilledBy == "" {
+		p.FulfilledBy = strings.TrimSpace(doc.Find("#fulfillerInfoFeature_feature_div").Text())
+		if p.FulfilledBy == "" {
+			p.FulfilledBy = strings.TrimSpace(doc.Find("#deliveryBlockMessage").Text())
+		}
+	}
 
 	// Best sellers rank
 	doc.Find("#SalesRank").Each(func(_ int, s *goquery.Selection) {
@@ -250,7 +279,7 @@ func ParseProduct(doc *goquery.Document, asin, pageURL string) (*Product, error)
 
 	// BrowseNodeIDs from nav-subnav
 	if nodeAttr, exists := doc.Find("#nav-subnav").Attr("data-node"); exists && nodeAttr != "" {
-		p.BrowseNodeIDs = []string{nodeAttr}
+		p.BrowseNodeIDs = append(p.BrowseNodeIDs, nodeAttr)
 	}
 
 	// ASIN fallback from page itself
@@ -263,6 +292,12 @@ func ParseProduct(doc *goquery.Document, asin, pageURL string) (*Product, error)
 	if p.Title == "" && p.ASIN == "" {
 		return nil, fmt.Errorf("product page: both title and ASIN are empty")
 	}
+
+	p.Images = dedup(p.Images)
+	p.CategoryPath = dedup(p.CategoryPath)
+	p.BrowseNodeIDs = dedup(p.BrowseNodeIDs)
+	p.VariantASINs = dedup(p.VariantASINs)
+	p.SimilarASINs = dedup(p.SimilarASINs)
 
 	return p, nil
 }

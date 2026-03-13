@@ -10,6 +10,18 @@ Two DuckDB files: `amazon.duckdb` for all scraped data, `state.duckdb` for the j
 
 Anti-bot strategy: plain `net/http` first with rotating browser User-Agents and realistic headers; rod headless Chrome fallback on 503, 429, or CAPTCHA detection. Default delay: 3s (more aggressive than Goodreads).
 
+## Implementation Status
+
+`pkg/scrape/amazon` and `cli/amazon.go` are implemented in-tree. As of March 13, 2026, the implementation covers products, brands, authors, categories, sellers, search result pages, bestseller lists, review pagination, and Q&A pagination.
+
+Recent correctness fixes that must remain true:
+
+- Crawl dispatch extracts ASINs from product, review, and Q&A URLs, not only `/dp/<ASIN>`.
+- Category frontier expansion enqueues canonical browse-node URLs (`/b?node=<id>`), not search URLs.
+- `search amazon search --max-results N` limits queued product URLs while still storing the full search page snapshot.
+- Q&A row IDs are content-stable across pagination so later pages do not overwrite earlier records.
+- Product parsing keeps richer graph fields when present: brand/store ID, seller ID/name, breadcrumb node IDs, fulfillment text, deduplicated image and relation arrays.
+
 ## Package Layout
 
 ```
@@ -40,8 +52,8 @@ blueprints/search/
 │   ├── task_product.go      # ProductTask — fetches product, enqueues reviews+Q&A at priority 1
 │   ├── task_brand.go        # BrandTask
 │   ├── task_author.go       # AuthorTask
-│   ├── task_category.go     # CategoryTask — enqueues products at priority 10
-│   ├── task_search.go       # SearchTask — enqueues products at priority 10
+│   ├── task_category.go     # CategoryTask — enqueues child browse nodes + products
+│   ├── task_search.go       # SearchTask — stores search snapshot, enqueues capped product set
 │   ├── task_bestseller.go   # BestsellerTask — enqueues products at priority 10
 │   ├── task_review.go       # ReviewTask — exhausts all review pages for an ASIN
 │   ├── task_qa.go           # QATask — exhausts all Q&A pages for an ASIN

@@ -26,35 +26,35 @@ const (
 
 // Product represents an Amazon product page.
 type Product struct {
-	ASIN           string            `json:"asin"`
-	Title          string            `json:"title"`
-	Brand          string            `json:"brand"`
-	BrandID        string            `json:"brand_id"`
-	Price          float64           `json:"price"`
-	Currency       string            `json:"currency"`
-	ListPrice      float64           `json:"list_price"`
-	Rating         float64           `json:"rating"`
-	RatingsCount   int64             `json:"ratings_count"`
-	ReviewsCount   int64             `json:"reviews_count"`
-	AnsweredQs     int               `json:"answered_qs"`
-	Availability   string            `json:"availability"`
-	Description    string            `json:"description"`
-	BulletPoints   []string          `json:"bullet_points"`
-	Specs          map[string]string `json:"specs"`
-	Images         []string          `json:"images"`
-	CategoryPath   []string          `json:"category_path"`
-	BrowseNodeIDs  []string          `json:"browse_node_ids"`
-	SellerID       string            `json:"seller_id"`
-	SellerName     string            `json:"seller_name"`
-	SoldBy         string            `json:"sold_by"`
-	FulfilledBy    string            `json:"fulfilled_by"`
-	VariantASINs   []string          `json:"variant_asins"`
-	ParentASIN     string            `json:"parent_asin"`
-	SimilarASINs   []string          `json:"similar_asins"`
-	Rank           int               `json:"rank"`
-	RankCategory   string            `json:"rank_category"`
-	URL            string            `json:"url"`
-	FetchedAt      time.Time         `json:"fetched_at"`
+	ASIN          string            `json:"asin"`
+	Title         string            `json:"title"`
+	Brand         string            `json:"brand"`
+	BrandID       string            `json:"brand_id"`
+	Price         float64           `json:"price"`
+	Currency      string            `json:"currency"`
+	ListPrice     float64           `json:"list_price"`
+	Rating        float64           `json:"rating"`
+	RatingsCount  int64             `json:"ratings_count"`
+	ReviewsCount  int64             `json:"reviews_count"`
+	AnsweredQs    int               `json:"answered_qs"`
+	Availability  string            `json:"availability"`
+	Description   string            `json:"description"`
+	BulletPoints  []string          `json:"bullet_points"`
+	Specs         map[string]string `json:"specs"`
+	Images        []string          `json:"images"`
+	CategoryPath  []string          `json:"category_path"`
+	BrowseNodeIDs []string          `json:"browse_node_ids"`
+	SellerID      string            `json:"seller_id"`
+	SellerName    string            `json:"seller_name"`
+	SoldBy        string            `json:"sold_by"`
+	FulfilledBy   string            `json:"fulfilled_by"`
+	VariantASINs  []string          `json:"variant_asins"`
+	ParentASIN    string            `json:"parent_asin"`
+	SimilarASINs  []string          `json:"similar_asins"`
+	Rank          int               `json:"rank"`
+	RankCategory  string            `json:"rank_category"`
+	URL           string            `json:"url"`
+	FetchedAt     time.Time         `json:"fetched_at"`
 }
 
 // Brand represents an Amazon brand/store page.
@@ -120,21 +120,21 @@ type BestsellerEntry struct {
 
 // Review represents an Amazon product review.
 type Review struct {
-	ReviewID        string            `json:"review_id"`
-	ASIN            string            `json:"asin"`
-	ReviewerID      string            `json:"reviewer_id"`
-	ReviewerName    string            `json:"reviewer_name"`
-	Rating          int               `json:"rating"`
-	Title           string            `json:"title"`
-	Text            string            `json:"text"`
-	DatePosted      time.Time         `json:"date_posted"`
-	VerifiedPurchase bool             `json:"verified_purchase"`
-	HelpfulVotes    int               `json:"helpful_votes"`
-	TotalVotes      int               `json:"total_votes"`
-	Images          []string          `json:"images"`
-	VariantAttrs    map[string]string `json:"variant_attrs"`
-	URL             string            `json:"url"`
-	FetchedAt       time.Time         `json:"fetched_at"`
+	ReviewID         string            `json:"review_id"`
+	ASIN             string            `json:"asin"`
+	ReviewerID       string            `json:"reviewer_id"`
+	ReviewerName     string            `json:"reviewer_name"`
+	Rating           int               `json:"rating"`
+	Title            string            `json:"title"`
+	Text             string            `json:"text"`
+	DatePosted       time.Time         `json:"date_posted"`
+	VerifiedPurchase bool              `json:"verified_purchase"`
+	HelpfulVotes     int               `json:"helpful_votes"`
+	TotalVotes       int               `json:"total_votes"`
+	Images           []string          `json:"images"`
+	VariantAttrs     map[string]string `json:"variant_attrs"`
+	URL              string            `json:"url"`
+	FetchedAt        time.Time         `json:"fetched_at"`
 }
 
 // QA represents a question-and-answer pair for an Amazon product.
@@ -196,6 +196,9 @@ type JobRecord struct {
 // ExtractASIN extracts an ASIN from an Amazon product URL (/dp/XXXXXXXXXX).
 // Returns empty string if not found.
 func ExtractASIN(rawURL string) string {
+	if asin := extractAmazonASIN(rawURL); asin != "" {
+		return asin
+	}
 	const marker = "/dp/"
 	idx := strings.Index(rawURL, marker)
 	if idx == -1 {

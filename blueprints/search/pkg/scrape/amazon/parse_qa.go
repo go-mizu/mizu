@@ -1,6 +1,7 @@
 package amazon
 
 import (
+	"crypto/md5"
 	"fmt"
 	"log"
 	"strings"
@@ -17,10 +18,11 @@ func ParseQA(doc *goquery.Document, asin, pageURL string) ([]QA, string, error) 
 
 	// Each question is in a div with id starting "question-"
 	doc.Find(`[id^="question-"]`).Each(func(i int, s *goquery.Selection) {
-		qa := QA{
-			QAID:      fmt.Sprintf("%s-%d", asin, i),
-			ASIN:      asin,
-			FetchedAt: now,
+		qa := QA{ASIN: asin, FetchedAt: now}
+		if id, exists := s.Attr("id"); exists && strings.TrimSpace(id) != "" {
+			qa.QAID = strings.TrimSpace(id)
+		} else {
+			qa.QAID = fmt.Sprintf("%s-%d", asin, i)
 		}
 
 		// Question text
@@ -92,6 +94,8 @@ func ParseQA(doc *goquery.Document, asin, pageURL string) ([]QA, string, error) 
 		}
 
 		if qa.Question != "" || qa.Answer != "" {
+			sum := md5.Sum([]byte(asin + "|" + qa.Question + "|" + qa.Answer))
+			qa.QAID = fmt.Sprintf("%x", sum)
 			qas = append(qas, qa)
 		}
 	})

@@ -104,7 +104,7 @@ func (t *CategoryTask) Run(ctx context.Context, emit func(*CategoryState)) (Cate
 		// Child nodes as categories
 		for _, nodeID := range cat.ChildNodeIDs {
 			items = append(items, QueueItem{
-				URL:        BaseURL + "/s?rh=n%3A" + nodeID,
+				URL:        BaseURL + "/b?node=" + nodeID,
 				EntityType: EntityCategory,
 				Priority:   5,
 			})

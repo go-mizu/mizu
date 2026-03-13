@@ -25,13 +25,14 @@ type SearchMetric struct {
 
 // SearchTask fetches and stores an Amazon search results page.
 type SearchTask struct {
-	URL      string
-	Query    string
-	Page     int
-	Client   *Client
-	DB       *DB
-	StateDB  *State
-	MaxPages int // 0 = unlimited
+	URL        string
+	Query      string
+	Page       int
+	Client     *Client
+	DB         *DB
+	StateDB    *State
+	MaxPages   int // 0 = unlimited
+	MaxResults int
 }
 
 var _ core.Task[SearchState, SearchMetric] = (*SearchTask)(nil)
@@ -104,7 +105,11 @@ func (t *SearchTask) Run(ctx context.Context, emit func(*SearchState)) (SearchMe
 		var items []QueueItem
 
 		// Product URLs
-		for _, pURL := range productURLs {
+		productLimit := len(productURLs)
+		if t.MaxResults > 0 && t.MaxResults < productLimit {
+			productLimit = t.MaxResults
+		}
+		for _, pURL := range productURLs[:productLimit] {
 			items = append(items, QueueItem{
 				URL:        pURL,
 				EntityType: EntityProduct,
@@ -125,6 +130,10 @@ func (t *SearchTask) Run(ctx context.Context, emit func(*SearchState)) (SearchMe
 	}
 
 	m.Fetched++
-	emit(&SearchState{URL: t.URL, Query: t.Query, Status: "done", ResultsFound: len(productURLs)})
+	resultsFound := len(productURLs)
+	if t.MaxResults > 0 && t.MaxResults < resultsFound {
+		resultsFound = t.MaxResults
+	}
+	emit(&SearchState{URL: t.URL, Query: t.Query, Status: "done", ResultsFound: resultsFound})
 	return m, nil
 }

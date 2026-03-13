@@ -126,6 +126,23 @@ func absoluteURL(base, href string) string {
 	return strings.TrimRight(base, "/") + "/" + strings.TrimLeft(href, "/")
 }
 
+// extractAmazonASIN extracts an ASIN from common Amazon URL patterns.
+func extractAmazonASIN(rawURL string) string {
+	patterns := []string{
+		"/dp/",
+		"/gp/product/",
+		"/product-reviews/",
+		"/ask/questions/asin/",
+		"/ask/",
+	}
+	for _, pattern := range patterns {
+		if asin := extractPathSegmentAfter(rawURL, pattern); len(asin) == 10 {
+			return asin
+		}
+	}
+	return ""
+}
+
 // dedup returns a new slice with duplicates removed, preserving order.
 func dedup(in []string) []string {
 	seen := make(map[string]bool, len(in))

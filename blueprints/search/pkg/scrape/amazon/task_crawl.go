@@ -144,6 +144,9 @@ func (t *CrawlTask) Run(ctx context.Context, emit func(*CrawlState)) (CrawlMetri
 
 	wg.Wait()
 
+	_, _, _, failedCount := t.StateDB.QueueStats()
+	failed.Store(failedCount)
+
 	return CrawlMetric{
 		Done:     done.Load(),
 		Failed:   failed.Load(),
@@ -167,10 +170,10 @@ func runEntityTask(ctx context.Context, item QueueItem, cfg Config, client *Clie
 	case EntityBestseller:
 		(&BestsellerTask{URL: item.URL, Client: client, DB: db, StateDB: stateDB}).Run(ctx, func(*BestsellerState) {})
 	case EntityReview:
-		asin := ExtractASIN(item.URL)
+		asin := extractAmazonASIN(item.URL)
 		(&ReviewTask{URL: item.URL, ASIN: asin, Client: client, DB: db, StateDB: stateDB, MaxPages: cfg.MaxPages}).Run(ctx, func(*ReviewState) {})
 	case EntityQA:
-		asin := ExtractASIN(item.URL)
+		asin := extractAmazonASIN(item.URL)
 		(&QATask{URL: item.URL, ASIN: asin, Client: client, DB: db, StateDB: stateDB, MaxPages: cfg.MaxPages}).Run(ctx, func(*QAState) {})
 	case EntitySeller:
 		(&SellerTask{URL: item.URL, Client: client, DB: db, StateDB: stateDB}).Run(ctx, func(*SellerState) {})

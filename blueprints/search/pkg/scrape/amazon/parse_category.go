@@ -72,6 +72,20 @@ func ParseCategory(doc *goquery.Document, pageURL string) (*Category, error) {
 			c.TopASINs = append(c.TopASINs, asin)
 		}
 	})
+	if len(c.TopASINs) == 0 {
+		doc.Find(`#zg-ordered-list a[href*="/dp/"], div[id^="gridItemRoot"] a[href*="/dp/"]`).Each(func(_ int, s *goquery.Selection) {
+			if len(c.TopASINs) >= 12 {
+				return
+			}
+			href, _ := s.Attr("href")
+			if asin := ExtractASIN(href); asin != "" {
+				c.TopASINs = append(c.TopASINs, asin)
+			}
+		})
+	}
+	c.Breadcrumb = dedup(c.Breadcrumb)
+	c.ChildNodeIDs = dedup(c.ChildNodeIDs)
+	c.TopASINs = dedup(c.TopASINs)
 
 	return c, nil
 }
