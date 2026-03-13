@@ -1093,14 +1093,15 @@ func enqueueGzSitemap(gzURL string, stateDB *goodread.State, entityType, cacheDi
 
 		// Download to disk if not cached yet.
 		if _, err := os.Stat(localPath); os.IsNotExist(err) {
-			if err := downloadFileProgress(gzURL, localPath, func(bytes, total int64) {
-				if total > 0 {
+			nFiles := total // capture outer file-count before inner closure shadows it
+			if err := downloadFileProgress(gzURL, localPath, func(bytes, contentLen int64) {
+				if contentLen > 0 {
 					fmt.Printf("\r  [%d/%d] %s — downloading %.1f/%.1f MB  ",
-						fileIdx, total, fname,
-						float64(bytes)/1e6, float64(total)/1e6)
+						fileIdx, nFiles, fname,
+						float64(bytes)/1e6, float64(contentLen)/1e6)
 				} else {
 					fmt.Printf("\r  [%d/%d] %s — downloading %.1f MB ...  ",
-						fileIdx, total, fname, float64(bytes)/1e6)
+						fileIdx, nFiles, fname, float64(bytes)/1e6)
 				}
 			}); err != nil {
 				return 0, false, fmt.Errorf("download: %w", err)
