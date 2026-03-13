@@ -402,90 +402,6 @@ def _fill_dob(page, birth_month: int, birth_day: int, birth_year: int, log) -> N
         log(f"  WARNING: DOB incomplete (month={month_done} day={day_done} year={year_done}) — fill manually")
 
 
-def _poll_yopmail(yopmail_user: str, keyword: str, timeout: int, log) -> str:
-    """Poll a yopmail.com inbox for a link containing keyword. Returns the URL or ''."""
-    from patchright.sync_api import sync_playwright
-    import tempfile
-
-    user_data = tempfile.mkdtemp(prefix="yop_inbox_")
-    with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(
-            user_data_dir=user_data,
-            headless=True,
-            args=["--window-size=1280,900"],
-            viewport={"width": 1280, "height": 900},
-            locale="en-US",
-        )
-        page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        try:
-            inbox_url = f"https://yopmail.com/en/?login={yopmail_user}&p=inbox"
-            log(f"opening yopmail inbox: {inbox_url}")
-            page.goto(inbox_url, timeout=20000)
-            time.sleep(5)
-
-            seen_emails: set[str] = set()
-            deadline = time.time() + timeout
-
-            while time.time() < deadline:
-                try:
-                    # Access the inbox iframe (#ibx)
-                    ibx = page.frame_locator("#ibx")
-                    try:
-                        email_rows = ibx.locator(".m, [id^='m'], .lm").all()
-                        log(f"yopmail inbox rows: {len(email_rows)}")
-                    except Exception:
-                        email_rows = []
-
-                    for row in email_rows[:10]:
-                        try:
-                            row_id = row.get_attribute("id", timeout=2000) or row.inner_text(timeout=2000)[:30]
-                            if row_id in seen_emails:
-                                continue
-                            row.click(timeout=5000)
-                            time.sleep(3)
-
-                            # Read email from #mail iframe
-                            mail_frame = page.frame_locator("#mail")
-                            try:
-                                mail_html = mail_frame.locator("html").inner_html(timeout=8000)
-                                for url in re.findall(r"https?://[^\s\"'<>]+", mail_html):
-                                    url = url.rstrip(".,;)\"'")
-                                    if keyword.lower() in url.lower() and len(url) > 40:
-                                        log(f"found link in yopmail: {url[:100]}")
-                                        return url
-                            except Exception:
-                                pass
-
-                            # Try anchor hrefs
-                            try:
-                                hrefs = mail_frame.locator("a[href]").evaluate_all("els => els.map(e => e.href)")
-                                for url in hrefs:
-                                    if keyword.lower() in url.lower() and len(url) > 40:
-                                        log(f"found href in yopmail: {url[:100]}")
-                                        return url
-                            except Exception:
-                                pass
-
-                            seen_emails.add(row_id)
-                        except Exception as e:
-                            log(f"  yopmail row warn: {e}")
-
-                    log(f"no {keyword} link in yopmail yet, waiting 10s...")
-                    time.sleep(10)
-                    try:
-                        page.reload(timeout=10000)
-                        time.sleep(3)
-                    except Exception:
-                        pass
-
-                except Exception as ex:
-                    log(f"yopmail poll warn: {ex}")
-                    time.sleep(5)
-        finally:
-            ctx.close()
-    return ""
-
-
 def register_via_browser(
     email: str,
     username: str,
@@ -497,13 +413,11 @@ def register_via_browser(
     verbose: bool = True,
     proton_username: str = "",
     proton_password: str = "",
-    yopmail_user: str = "",
 ) -> str:
     """Drive Discord registration, return the user token.
 
-    email           — the email to use (e.g. user@proton.me or user@yopmail.com)
-    yopmail_user    — if set, poll yopmail inbox and use route interception for verification
-    proton_username / proton_password — if set, poll Proton Mail inbox for verification link
+    email            — the email to use (must be @proton.me)
+    proton_username / proton_password — poll Proton Mail inbox for verification link
     """
     from patchright.sync_api import sync_playwright
 
@@ -543,26 +457,6 @@ def register_via_browser(
 
         page.on("request", on_request)
 
-        # If yopmail: intercept the registration API call and swap the email in the payload
-        if yopmail_user and email.endswith("@yopmail.com"):
-            real_email = email
-
-            def _swap_email_in_register(route):
-                req = route.request
-                try:
-                    body = json.loads(req.post_data or "{}")
-                    if "email" in body and body.get("email", "").endswith("@gmail.com"):
-                        body["email"] = real_email
-                        log(f"intercepted register call — swapped email to {real_email}")
-                        route.continue_(post_data=json.dumps(body).encode())
-                        return
-                except Exception:
-                    pass
-                route.continue_()
-
-            page.route("**/api/v*/auth/register", _swap_email_in_register)
-            log(f"route interceptor set for email swap ({email})")
-
         try:
             # Step 1: Open registration page
             log("opening discord.com/register...")
@@ -573,17 +467,11 @@ def register_via_browser(
             # Step 2: Fill registration form
             log("filling registration form...")
 
-            # Email — for yopmail, fill a gmail-style address to pass client-side validation;
-            # the route interceptor will swap it to the real yopmail address in the HTTP request.
-            fill_email = email
-            if yopmail_user and email.endswith("@yopmail.com"):
-                fill_email = email.replace("@yopmail.com", "@gmail.com")
-                log(f"yopmail trick: filling {fill_email!r} (route interceptor will swap to {email!r})")
             _fill_first(page, [
                 'input[name="email"]',
                 'input[type="email"]',
                 'input[placeholder*="email" i]',
-            ], fill_email, log)
+            ], email, log)
             _wait(1, log)
 
             # Warn if Discord shows email invalid
@@ -694,7 +582,7 @@ def register_via_browser(
                     pass
                 time.sleep(3)
 
-            # Step 5: Verification email
+            # Step 5: Verification email (Proton Mail only)
             if proton_username and proton_password:
                 log("polling Proton Mail inbox for Discord verification link...")
                 try:
@@ -703,7 +591,6 @@ def register_via_browser(
                                              "../../../protonmail/src")
                     sys.path.insert(0, _os.path.abspath(_pm_src))
                     from protonmail_tool.browser import wait_for_link as pm_wait
-                    # Run in thread to avoid sync-inside-async-loop conflict
                     _result: list = [None, None]
                     def _pm_thread():
                         try:
@@ -735,39 +622,8 @@ def register_via_browser(
                     log(f"url after verification: {page.url}")
                 except Exception as e:
                     log(f"Proton Mail verification warn: {e}")
-            elif yopmail_user:
-                log(f"polling yopmail inbox for Discord verification link ({yopmail_user}@yopmail.com)...")
-                try:
-                    import threading
-                    _yop_result: list = [None, None]
-
-                    def _yop_thread():
-                        try:
-                            _yop_result[0] = _poll_yopmail(yopmail_user, "discord", timeout=180, log=log)
-                        except Exception as e:
-                            _yop_result[1] = e
-
-                    t = threading.Thread(target=_yop_thread, daemon=True)
-                    t.start()
-                    t.join(timeout=200)
-                    if _yop_result[1]:
-                        raise _yop_result[1]
-                    verify_link = _yop_result[0] or ""
-                    if verify_link:
-                        log(f"verification link: {verify_link[:80]}")
-                        page.goto(verify_link, timeout=30000)
-                        try:
-                            page.wait_for_load_state("networkidle", timeout=15000)
-                        except Exception:
-                            pass
-                        _wait(4, log, "post-verification load")
-                        log(f"url after verification: {page.url}")
-                    else:
-                        log("no verification link found in yopmail within timeout")
-                except Exception as e:
-                    log(f"yopmail verification warn: {e}")
             else:
-                log("no email credentials provided — skipping auto-verification")
+                log("no Proton Mail credentials — skipping auto-verification")
 
             # Step 6: Extract token — try intercepted tokens first (captured since page load)
             _wait(3, log, "app load")

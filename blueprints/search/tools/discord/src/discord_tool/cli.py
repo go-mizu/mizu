@@ -36,58 +36,49 @@ def _store(db: Path) -> Store:
 
 @app.command()
 def register(
-    email: Annotated[Optional[str], typer.Option("--email", help="Email to use. If omitted, auto-generates a yopmail.com address.")] = None,
+    email: Annotated[Optional[str], typer.Option("--email", help="Email to use (must be @proton.me). If omitted, auto-generates.")] = None,
     proton_username: Annotated[Optional[str], typer.Option("--proton-user", help="Proton Mail username for auto-verification", envvar="PROTON_USERNAME")] = None,
     proton_password: Annotated[Optional[str], typer.Option("--proton-pass", help="Proton Mail password for auto-verification", envvar="PROTON_PASSWORD")] = None,
-    yopmail: bool = typer.Option(True, "--yopmail/--no-yopmail", help="Use yopmail.com for auto email verification (default: True)"),
     db: DB_OPT = DEFAULT_DB_PATH,
     headless: bool = typer.Option(False, help="Run browser in headless mode"),
     verbose: bool = typer.Option(True, "--verbose/--no-verbose", "-v"),
 ) -> None:
     """Register a new Discord account via browser automation and store the token.
 
-    By default uses yopmail.com for instant email verification (no registration needed).
-    Use --email to provide a specific email, --proton-user/--proton-pass for Proton Mail.
+    Uses Proton Mail (@proton.me) for email verification.
+    Auto-loads Proton credentials from protonmail-tool store if available.
 
     Examples:
-      discord-tool register                          # auto yopmail (recommended)
       discord-tool register --email user@proton.me --proton-user user --proton-pass 'pass'
+      discord-tool register --email user@proton.me   # auto-loads creds from protonmail-tool store
     """
     from .identity import generate
     from .browser import register_via_browser
 
     identity = generate()
-    yopmail_user_local = ""
+    reg_email = email or f"{identity.email_local}@proton.me"
 
-    if email:
-        reg_email = email
-        # Auto-load Proton creds from protonmail-tool store if it's a proton.me address
-        if not proton_username and reg_email.endswith("@proton.me"):
-            _pm_user = reg_email.split("@")[0]
-            _pm_pass = proton_password or ""
-            if not _pm_pass:
-                try:
-                    import sys, os as _os
-                    _pm_src = _os.path.join(_os.path.dirname(__file__),
-                                             "../../../protonmail/src")
-                    sys.path.insert(0, _os.path.abspath(_pm_src))
-                    from protonmail_tool.store import Store as PmStore, DEFAULT_DB_PATH as PM_DB
-                    ps = PmStore(PM_DB)
-                    acct = ps.get(_pm_user)
-                    ps.close()
-                    if acct:
-                        _pm_pass = acct["password"]
-                        proton_username = _pm_user
-                        proton_password = _pm_pass
-                        console.print(f"  [dim]Loaded Proton creds from store for {reg_email}[/dim]")
-                except Exception:
-                    pass
-    elif yopmail:
-        yopmail_user_local = identity.email_local
-        reg_email = f"{yopmail_user_local}@yopmail.com"
-        console.print(f"  [dim]Using yopmail for auto-verification[/dim]")
-    else:
-        reg_email = f"{identity.email_local}@proton.me"
+    # Auto-load Proton creds from protonmail-tool store
+    if not proton_username and reg_email.endswith("@proton.me"):
+        _pm_user = reg_email.split("@")[0]
+        _pm_pass = proton_password or ""
+        if not _pm_pass:
+            try:
+                import sys, os as _os
+                _pm_src = _os.path.join(_os.path.dirname(__file__),
+                                         "../../../protonmail/src")
+                sys.path.insert(0, _os.path.abspath(_pm_src))
+                from protonmail_tool.store import Store as PmStore, DEFAULT_DB_PATH as PM_DB
+                ps = PmStore(PM_DB)
+                acct = ps.get(_pm_user)
+                ps.close()
+                if acct:
+                    _pm_pass = acct["password"]
+                    proton_username = _pm_user
+                    proton_password = _pm_pass
+                    console.print(f"  [dim]Loaded Proton creds from store for {reg_email}[/dim]")
+            except Exception:
+                pass
 
     console.print(f"[bold]Registering Discord account[/bold]")
     console.print(f"  Email:    [cyan]{reg_email}[/cyan]")
@@ -96,8 +87,6 @@ def register(
     console.print(f"  DOB:      {identity.birth_year}-{identity.birth_month:02d}-{identity.birth_day:02d}")
     if proton_username:
         console.print(f"  Proton:   will auto-verify via {proton_username}@proton.me inbox")
-    elif yopmail_user_local:
-        console.print(f"  Yopmail:  will auto-verify via {reg_email}")
     console.print()
 
     console.print("  Launching browser...")
@@ -113,7 +102,6 @@ def register(
             verbose=verbose,
             proton_username=proton_username or "",
             proton_password=proton_password or "",
-            yopmail_user=yopmail_user_local,
         )
     except Exception as e:
         err_console.print(f"Registration failed: {e}")
