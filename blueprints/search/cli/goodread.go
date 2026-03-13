@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -819,7 +820,7 @@ func enqueueGzSitemapWithLimit(gzURL string, stateDB *goodread.State, limit int)
 // ── crawl ─────────────────────────────────────────────────────────────────────
 
 func newGoodreadCrawl() *cobra.Command {
-	var dbPath, statePath string
+	var dbPath, statePath, sitemapCache string
 	var delay, workers, maxPages int
 	var seed, typeFilter string
 
@@ -856,7 +857,10 @@ func newGoodreadCrawl() *cobra.Command {
 			// ── Phase 1: seed from sitemaps ──────────────────────────────
 			if seed == "sitemap" {
 				fmt.Println("── Seeding from Goodreads sitemaps ──")
-				newURLs, skipped, err := seedFromSitemaps(cmd.Context(), stateDB, typeFilter)
+				if sitemapCache == "" {
+					sitemapCache = filepath.Join(filepath.Dir(statePath), "sitemaps")
+				}
+				newURLs, skipped, err := seedFromSitemaps(cmd.Context(), stateDB, typeFilter, sitemapCache)
 				if err != nil {
 					fmt.Printf("Warning: sitemap seed error: %v\n", err)
 				}
@@ -925,12 +929,14 @@ func newGoodreadCrawl() *cobra.Command {
 	cmd.Flags().IntVar(&maxPages, "max-pages", 0, "Max pages per entity (0 = unlimited)")
 	cmd.Flags().StringVar(&seed, "seed", "", "Seed strategy before crawling: sitemap")
 	cmd.Flags().StringVar(&typeFilter, "type", "", "Comma-separated entity types to seed/crawl: book,author,series,list,quote,user,genre (default: all)")
+	cmd.Flags().StringVar(&sitemapCache, "sitemap-cache", "", "Directory to cache .gz sitemap files (default: <state-dir>/sitemaps)")
 	return cmd
 }
 
 // seedFromSitemaps discovers all Goodreads URLs from sitemaps and enqueues them.
+// cacheDir is used to cache downloaded .gz files; pass "" to disable.
 // Returns (newlyEnqueued, skipped, error).
-func seedFromSitemaps(ctx context.Context, stateDB *goodread.State, typeFilter string) (int, int, error) {
+func seedFromSitemaps(ctx context.Context, stateDB *goodread.State, typeFilter, cacheDir string) (int, int, error) {
 	// Parse allowed types filter
 	allowedTypes := map[string]bool{}
 	if typeFilter != "" {
@@ -956,7 +962,7 @@ func seedFromSitemaps(ctx context.Context, stateDB *goodread.State, typeFilter s
 	}
 	fmt.Printf("  Found %d siteindex files in robots.txt\n", len(siteindexes))
 
-	var totalNew int
+	var totalNew, totalSkipped int
 
 	for _, si := range siteindexes {
 		if ctx.Err() != nil {
@@ -979,6 +985,15 @@ func seedFromSitemaps(ctx context.Context, stateDB *goodread.State, typeFilter s
 			continue
 		}
 
+		typeCache := ""
+		if cacheDir != "" {
+			typeCache = filepath.Join(cacheDir, entityType)
+			if err := os.MkdirAll(typeCache, 0o755); err != nil {
+				fmt.Printf("    Warning: can't create cache dir: %v\n", err)
+				typeCache = ""
+			}
+		}
+
 		total := len(gzURLs)
 		for i, gzURL := range gzURLs {
 			if ctx.Err() != nil {
@@ -987,7 +1002,7 @@ func seedFromSitemaps(ctx context.Context, stateDB *goodread.State, typeFilter s
 
 			fileIdx := i + 1
 			fileURLs := 0
-			newN, err := enqueueGzSitemap(gzURL, stateDB, entityType, func(n int) {
+			newN, skipped, err := enqueueGzSitemap(gzURL, stateDB, entityType, typeCache, func(n int) {
 				fileURLs = n
 				fmt.Printf("\r  [%s] file %d/%d — %s (file: %d URLs, total: %d)   ",
 					entityType, fileIdx, total, shortURL(gzURL), fileURLs, totalNew+fileURLs)
@@ -996,36 +1011,85 @@ func seedFromSitemaps(ctx context.Context, stateDB *goodread.State, typeFilter s
 				fmt.Printf("\n    Warning (%s): %v\n", gzURL, err)
 				continue
 			}
+			if skipped {
+				totalSkipped++
+				fmt.Printf("\r  [%s] file %d/%d — %s (cached, skipped)   \n",
+					entityType, fileIdx, total, shortURL(gzURL))
+				continue
+			}
 			totalNew += newN
 			fmt.Printf("\r  [%s] file %d/%d done — total %d URLs   \n",
 				entityType, fileIdx, total, totalNew)
 		}
 	}
 
-	return totalNew, 0, nil
+	return totalNew, totalSkipped, nil
 }
 
-// enqueueGzSitemap downloads a gzipped sitemap, streams XML parsing, and batch-enqueues
-// URLs in chunks of batchSize. progress(n) is called after each batch with the running total.
-// Returns (newly enqueued, error).
-func enqueueGzSitemap(gzURL string, stateDB *goodread.State, entityType string, progress func(n int)) (int, error) {
+// enqueueGzSitemap downloads (or loads from cache) a gzipped sitemap, streams XML parsing,
+// and batch-enqueues URLs in chunks of batchSize.
+// cacheDir: if non-empty, the .gz is saved to cacheDir/<filename>; a .done sentinel skips
+// already-imported files entirely.
+// Returns (newly enqueued, skipped-as-cached, error).
+func enqueueGzSitemap(gzURL string, stateDB *goodread.State, entityType, cacheDir string, progress func(n int)) (int, bool, error) {
 	const batchSize = 5000
 
-	resp, err := http.Get(gzURL)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
+	// ── disk cache logic ─────────────────────────────────────────────────────
+	var localPath string
+	if cacheDir != "" {
+		localPath = filepath.Join(cacheDir, shortURL(gzURL))
+		donePath := localPath + ".done"
 
-	var reader io.Reader = resp.Body
-	if strings.HasSuffix(gzURL, ".gz") {
-		gz, err := gzip.NewReader(resp.Body)
-		if err != nil {
-			return 0, fmt.Errorf("gzip: %w", err)
+		// Already fully imported? Skip entirely.
+		if _, err := os.Stat(donePath); err == nil {
+			return 0, true, nil
 		}
-		defer gz.Close()
-		reader = gz
+
+		// Download to disk if not cached yet.
+		if _, err := os.Stat(localPath); os.IsNotExist(err) {
+			fmt.Printf("\r  downloading %s ...  ", shortURL(gzURL))
+			if err := downloadFile(gzURL, localPath); err != nil {
+				return 0, false, fmt.Errorf("download: %w", err)
+			}
+		}
 	}
+
+	// ── open reader (local file or direct HTTP) ───────────────────────────────
+	var reader io.Reader
+	var cleanup func()
+
+	if localPath != "" {
+		f, err := os.Open(localPath)
+		if err != nil {
+			return 0, false, err
+		}
+		gz, err := gzip.NewReader(f)
+		if err != nil {
+			f.Close()
+			return 0, false, fmt.Errorf("gzip: %w", err)
+		}
+		cleanup = func() { gz.Close(); f.Close() }
+		reader = gz
+	} else {
+		resp, err := http.Get(gzURL)
+		if err != nil {
+			return 0, false, err
+		}
+		var r io.Reader = resp.Body
+		if strings.HasSuffix(gzURL, ".gz") {
+			gz, err := gzip.NewReader(resp.Body)
+			if err != nil {
+				resp.Body.Close()
+				return 0, false, fmt.Errorf("gzip: %w", err)
+			}
+			cleanup = func() { gz.Close(); resp.Body.Close() }
+			r = gz
+		} else {
+			cleanup = func() { resp.Body.Close() }
+		}
+		reader = r
+	}
+	defer cleanup()
 
 	dec := xml.NewDecoder(reader)
 	batch := make([]goodread.QueueItem, 0, batchSize)
@@ -1035,8 +1099,8 @@ func enqueueGzSitemap(gzURL string, stateDB *goodread.State, entityType string, 
 		if len(batch) == 0 {
 			return nil
 		}
-		if err := stateDB.EnqueueBatch(batch); err != nil {
-			return err
+		if err2 := stateDB.EnqueueBatch(batch); err2 != nil {
+			return err2
 		}
 		total += len(batch)
 		batch = batch[:0]
@@ -1052,7 +1116,7 @@ func enqueueGzSitemap(gzURL string, stateDB *goodread.State, entityType string, 
 			break
 		}
 		if err != nil {
-			return total, err
+			return total, false, err
 		}
 		se, ok := tok.(xml.StartElement)
 		if !ok || se.Name.Local != "loc" {
@@ -1068,14 +1132,42 @@ func enqueueGzSitemap(gzURL string, stateDB *goodread.State, entityType string, 
 		batch = append(batch, goodread.QueueItem{URL: loc, EntityType: entityType, Priority: 1})
 		if len(batch) >= batchSize {
 			if err := flush(); err != nil {
-				return total, err
+				return total, false, err
 			}
 		}
 	}
 	if err := flush(); err != nil {
-		return total, err
+		return total, false, err
 	}
-	return total, nil
+
+	// Mark as fully imported so next run skips this file entirely.
+	if localPath != "" {
+		os.WriteFile(localPath+".done", []byte{}, 0o644)
+	}
+
+	return total, false, nil
+}
+
+// downloadFile fetches url and saves it to dest atomically (via temp file + rename).
+func downloadFile(url, dest string) error {
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	tmp := dest + ".tmp"
+	f, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	f.Close()
+	return os.Rename(tmp, dest)
 }
 
 // ── info ─────────────────────────────────────────────────────────────────────
