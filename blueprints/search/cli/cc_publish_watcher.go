@@ -80,7 +80,7 @@ func ccRunWatcher(ctx context.Context, crawlID, repoRoot, repoID string, private
 
 	// Flush immediately on startup (handles leftovers from previous runs), then tick.
 	flush := func() {
-		if err := ccWatcherFlush(ctx, hf, crawlID, repoRoot, repoID, statsCSV, dataDir,
+		if err := ccWatcherFlush(ctx, hf, crawlID, repoRoot, repoID, statsCSV, dataDir, warcMdDir,
 			committed, &lastChartTime, chartsEvery); err != nil {
 			fmt.Printf("  [watcher] flush: %v\n", err)
 		}
@@ -102,7 +102,7 @@ func ccRunWatcher(ctx context.Context, crawlID, repoRoot, repoID string, private
 // ccWatcherFlush finds uncommitted parquets, pushes them to HF, deletes local copies.
 // Retries up to 3 times on commit error, re-merging stats from HF each attempt
 // so that concurrent commits from two servers don't clobber each other's stats.csv rows.
-func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID, statsCSV, dataDir string,
+func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID, statsCSV, dataDir, warcMdDir string,
 	committed map[int]bool, lastChartTime *time.Time, chartsEvery time.Duration) error {
 
 	newFiles := ccFindUncommittedParquets(dataDir, crawlID, committed)
@@ -220,7 +220,7 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 		*lastChartTime = time.Now()
 	}
 
-	// Step 5: Update publish timing, delete local parquets, mark committed.
+	// Step 5: Update publish timing, delete all local intermediates, mark committed.
 	durPublishS := int64(elapsed.Seconds())
 	if len(newFiles) > 1 {
 		durPublishS = int64(elapsed.Seconds()) / int64(len(newFiles))
@@ -237,6 +237,11 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 		}
 		_ = os.Remove(f.localPath)
 		_ = os.Remove(filepath.Join(dataDir, f.shard+".meta"))
+		// Also delete intermediate pipeline files to keep disk free.
+		_ = os.Remove(filepath.Join(warcMdDir, f.shard+".md.warc.gz"))
+		if rawPath := ccFindRawWARC(crawlID, f.fileIdx); rawPath != "" {
+			_ = os.Remove(rawPath)
+		}
 		committed[f.fileIdx] = true
 		fmt.Printf("  [watcher] deleted local %s.parquet\n", f.shard)
 	}
