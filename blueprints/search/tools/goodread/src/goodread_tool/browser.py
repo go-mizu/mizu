@@ -487,21 +487,34 @@ def register_via_browser(
                             'button:has-text("Verify")',
                             'button:has-text("Continue")',
                         ], log)
-                        _wait(2, log, "OTP submit")
-                        log(f"url after OTP: {page.url}")
-                        # Wait for natural redirect first (up to 10s)
-                        for _ in range(10):
-                            cur = page.url
-                            if "goodreads.com" in cur and "/ap/" not in cur:
-                                log(f"auto-redirected to goodreads: {cur[:60]}")
-                                break
-                            time.sleep(1)
-                        # If still on /ap/cvf/verify, navigate to ap-handler to complete registration
-                        if "/ap/" in page.url:
-                            log("navigating to ap-handler/register to complete account creation...")
-                            page.goto("https://www.goodreads.com/ap-handler/register", timeout=30000)
+                        _wait(1, log, "OTP submit")
+                        log(f"url after OTP click: {page.url}")
+
+                        # Wait for Amazon to verify OTP and redirect:
+                        # /ap/cvf/verify → 302 → /ap-handler/register?openid.sig=...&... → goodreads.com/
+                        # We MUST NOT manually navigate to ap-handler/register — it requires the
+                        # Amazon OpenID query params to establish a Goodreads session.
+                        log("waiting for Amazon post-OTP redirect chain (up to 40s)...")
+                        try:
+                            page.wait_for_url(
+                                lambda url: (
+                                    "ap-handler" in url or
+                                    ("goodreads.com" in url and "/ap/" not in url and "ap-handler" not in url)
+                                ),
+                                timeout=40000,
+                            )
+                        except Exception:
+                            pass
+                        log(f"url after redirect: {page.url}")
+
+                        # If on ap-handler (intermediate), wait for it to finish
+                        if "ap-handler" in page.url:
+                            log("on ap-handler, waiting for final goodreads redirect...")
                             try:
-                                page.wait_for_load_state("networkidle", timeout=15000)
+                                page.wait_for_url(
+                                    lambda url: "goodreads.com" in url and "ap-handler" not in url,
+                                    timeout=15000,
+                                )
                             except Exception:
                                 pass
                         _wait(3, log, "post-OTP settle")
