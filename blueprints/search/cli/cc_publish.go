@@ -402,6 +402,10 @@ func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, r
 
 		if uploadParquet {
 			fmt.Printf("  [%s] %s  %s\n", labelStyle.Render(shard), successStyle.Render("published"), labelStyle.Render(commitURL))
+			// Always delete local parquet after successful HF commit (recoverable via 'search cc pull').
+			if err := os.Remove(parquetPath); err == nil {
+				fmt.Printf("  [%s] deleted local parquet (uploaded to HF)\n", labelStyle.Render(shard))
+			}
 		} else {
 			fmt.Printf("  [%s] %s  %s\n", labelStyle.Render(shard), warningStyle.Render("metadata only"), labelStyle.Render(commitURL))
 		}
@@ -827,7 +831,6 @@ The following is an example row from the dataset:
   "warc_refers_to": "<urn:uuid:f9e8d7c6-b5a4-3210-fedc-ba0987654321>",
   "html_length": 48210,
   "markdown_length": 3847,
-  "warc_headers_json": "{\"Content-Length\": \"3847\", ...}",
   "markdown": "# Interesting Topic\n\nThis is the main content of the page..."
 }
 %[2]s
@@ -840,11 +843,10 @@ The following is an example row from the dataset:
 | %[3]surl%[3]s | string | Original URL of the crawled page |
 | %[3]shost%[3]s | string | Lowercase hostname extracted from the URL |
 | %[3]scrawl_date%[3]s | string | RFC 3339 timestamp from the WARC record |
-| %[3]swarc_record_id%[3]s | string | Full WARC-Record-ID of the conversion record (%[3]s<urn:uuid:...>%[3]s) |
+| %[3]swarc_record_id%[3]s | string | Full WARC-Record-ID of this conversion record (%[3]s<urn:uuid:...>%[3]s) |
 | %[3]swarc_refers_to%[3]s | string | WARC-Record-ID of the original HTTP response this was converted from |
 | %[3]shtml_length%[3]s | int64 | Byte length of the original HTML body before conversion |
 | %[3]smarkdown_length%[3]s | int64 | Byte length of the converted markdown body |
-| %[3]swarc_headers_json%[3]s | string | All WARC headers as a sorted-key JSON object — full provenance in one column |
 | %[3]smarkdown%[3]s | string | Clean markdown content extracted from the page |
 
 ### Data Splits

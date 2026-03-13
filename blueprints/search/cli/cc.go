@@ -80,6 +80,7 @@ Subcommands:
 	cmd.AddCommand(newCCMarkdown())
 	cmd.AddCommand(newCCFTS())
 	cmd.AddCommand(newCCPublish())
+	cmd.AddCommand(newCCPull())
 
 	return cmd
 }
