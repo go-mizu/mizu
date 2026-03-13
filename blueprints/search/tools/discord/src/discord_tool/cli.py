@@ -36,64 +36,66 @@ def _store(db: Path) -> Store:
 
 @app.command()
 def register(
+    email: Annotated[Optional[str], typer.Option("--email", help="Email to use (e.g. user@proton.me). If omitted a temp address is generated.")] = None,
+    proton_username: Annotated[Optional[str], typer.Option("--proton-user", help="Proton Mail username for auto-verification", envvar="PROTON_USERNAME")] = None,
+    proton_password: Annotated[Optional[str], typer.Option("--proton-pass", help="Proton Mail password for auto-verification", envvar="PROTON_PASSWORD")] = None,
     db: DB_OPT = DEFAULT_DB_PATH,
-    headless: bool = typer.Option(True, help="Run browser in headless mode"),
-    verbose: bool = typer.Option(False, "--verbose", "-v"),
+    headless: bool = typer.Option(False, help="Run browser in headless mode"),
+    verbose: bool = typer.Option(True, "--verbose/--no-verbose", "-v"),
 ) -> None:
-    """Register a new Discord account via browser automation and store the token."""
+    """Register a new Discord account via browser automation and store the token.
+
+    Use --email to provide a real email (e.g. from protonmail-tool).
+    Use --proton-user/--proton-pass to auto-verify the email via Proton Mail inbox.
+
+    Example:
+      discord-tool register --email brianbrown5153@proton.me \\
+        --proton-user brianbrown5153 --proton-pass '@D)jMZxGdbe9uv'
+    """
     from .identity import generate
-    from .email import MailTmClient
     from .browser import register_via_browser
 
     identity = generate()
+
+    # Use provided email or fall back to generated identity email_local
+    reg_email = email or f"{identity.email_local}@proton.me"
+
+    # Auto-load Proton creds from protonmail-tool store if not given
+    if not proton_username and reg_email.endswith("@proton.me"):
+        _pm_user = reg_email.split("@")[0]
+        _pm_pass = proton_password or ""
+        if not _pm_pass:
+            # Try reading from protonmail-tool store
+            try:
+                import sys, os as _os
+                _pm_src = _os.path.join(_os.path.dirname(__file__),
+                                         "../../../protonmail/src")
+                sys.path.insert(0, _os.path.abspath(_pm_src))
+                from protonmail_tool.store import Store as PmStore, DEFAULT_DB_PATH as PM_DB
+                ps = PmStore(PM_DB)
+                acct = ps.get(_pm_user)
+                ps.close()
+                if acct:
+                    _pm_pass = acct["password"]
+                    proton_username = _pm_user
+                    proton_password = _pm_pass
+                    console.print(f"  [dim]Loaded Proton creds from store for {reg_email}[/dim]")
+            except Exception:
+                pass
+
     console.print(f"[bold]Registering Discord account[/bold]")
+    console.print(f"  Email:    [cyan]{reg_email}[/cyan]")
     console.print(f"  Username: [cyan]{identity.username}[/cyan]")
     console.print(f"  Password: [cyan]{identity.password}[/cyan]")
     console.print(f"  DOB:      {identity.birth_year}-{identity.birth_month:02d}-{identity.birth_day:02d}")
-    console.print(f"  Email:    (will be assigned via mail.tm)")
-
-    from .email import MailTmClient, create_maildrop_mailbox, create_1sec_mailbox, _ONESEC_DOMAINS
-    mail_client = MailTmClient()
-
-    # Provider priority: maildrop.cc → mail.tm → 1secmail
-    mailbox = None
-    console.print("  Creating temporary mailbox...")
-    try:
-        mailbox = create_maildrop_mailbox(identity.email_local, identity.password)
-        console.print(f"  Provider: maildrop.cc ({mailbox.address})")
-    except Exception as e:
-        console.print(f"  [yellow]maildrop failed ({e})[/yellow]")
-
-    if mailbox is None:
-        try:
-            mailbox = mail_client.create_mailbox(identity.email_local, identity.password)
-            console.print(f"  Provider: mail.tm  ({mailbox.address})")
-        except Exception as e:
-            console.print(f"  [yellow]mail.tm failed ({e}) — using 1secmail[/yellow]")
-
-    if mailbox is None:
-        for domain in _ONESEC_DOMAINS:
-            try:
-                mailbox = create_1sec_mailbox(identity.email_local, identity.password, domain)
-                console.print(f"  Provider: 1secmail ({mailbox.address})")
-                break
-            except Exception:
-                continue
-
-    if mailbox is None:
-        err_console.print("Could not create any temporary mailbox.")
-        raise typer.Exit(1)
-
-    console.print(f"  Email:    [cyan]{mailbox.address}[/cyan]")
-    console.print(f"\n  [dim]Save these credentials:[/dim]")
-    console.print(f"  [dim]  Email:    {mailbox.address}[/dim]")
-    console.print(f"  [dim]  Password: {identity.password}[/dim]")
+    if proton_username:
+        console.print(f"  Proton:   will auto-verify via {proton_username}@proton.me inbox")
+    console.print()
 
     console.print("  Launching browser...")
     try:
         token = register_via_browser(
-            mailbox=mailbox,
-            mail_client=mail_client,
+            email=reg_email,
             username=identity.username,
             password=identity.password,
             birth_year=identity.birth_year,
@@ -101,6 +103,8 @@ def register(
             birth_day=identity.birth_day,
             headless=headless,
             verbose=verbose,
+            proton_username=proton_username or "",
+            proton_password=proton_password or "",
         )
     except Exception as e:
         err_console.print(f"Registration failed: {e}")
@@ -108,7 +112,7 @@ def register(
 
     store = _store(db)
     store.add_account(
-        email=mailbox.address,
+        email=reg_email,
         username=identity.username,
         password=identity.password,
         token=token,
@@ -116,7 +120,7 @@ def register(
     store.close()
 
     console.print(f"\n[green]✓ Account registered[/green]")
-    console.print(f"  Email:  {mailbox.address}")
+    console.print(f"  Email:  {reg_email}")
     console.print(f"  Token:  {token[:20]}...")
     console.print(f"\n[dim]Export token:[/dim]  export DISCORD_TOKEN='{token}'")
 

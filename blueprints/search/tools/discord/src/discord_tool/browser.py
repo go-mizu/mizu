@@ -291,18 +291,86 @@ def _intercept_token(page, log, timeout: int = 30) -> str:
     return ""
 
 
+def _fill_dob(page, birth_month: int, birth_day: int, birth_year: int, log) -> None:
+    """Fill Discord date-of-birth selects robustly."""
+    _MONTHS = ["January","February","March","April","May","June",
+               "July","August","September","October","November","December"]
+    month_name = _MONTHS[birth_month - 1]
+    log(f"filling DOB: {month_name} {birth_day}, {birth_year}")
+
+    # Dump select count + first few options for debugging
+    try:
+        all_selects = page.locator('select')
+        n = all_selects.count()
+        log(f"  total <select> elements on page: {n}")
+        for i in range(min(n, 5)):
+            try:
+                opts = all_selects.nth(i).locator('option').all_inner_texts()
+                log(f"  select[{i}] options[:4]: {opts[:4]}")
+            except Exception:
+                pass
+    except Exception as e:
+        log(f"  select dump warn: {e}")
+
+    def _do_select(locator, value_str: str, label_str: str = "", name: str = "") -> bool:
+        try:
+            if locator.count() == 0:
+                return False
+            sel = locator.first
+            if label_str:
+                try:
+                    sel.select_option(label=label_str)
+                    log(f"  {name} set via label={label_str!r}")
+                    return True
+                except Exception:
+                    pass
+            sel.select_option(value_str)
+            log(f"  {name} set via value={value_str!r}")
+            return True
+        except Exception as e:
+            log(f"  {name} select failed: {e}")
+            return False
+
+    # Try aria-label first, then nth index fallback
+    month_done = (
+        _do_select(page.locator('select[aria-label="Month"]'), str(birth_month), month_name, "Month") or
+        _do_select(page.locator('select').nth(0), str(birth_month), month_name, "Month-nth0")
+    )
+    time.sleep(0.4)
+
+    day_done = (
+        _do_select(page.locator('select[aria-label="Day"]'), str(birth_day), "", "Day") or
+        _do_select(page.locator('select').nth(1), str(birth_day), "", "Day-nth1")
+    )
+    time.sleep(0.4)
+
+    year_done = (
+        _do_select(page.locator('select[aria-label="Year"]'), str(birth_year), "", "Year") or
+        _do_select(page.locator('select').nth(2), str(birth_year), "", "Year-nth2")
+    )
+    time.sleep(0.4)
+
+    if not (month_done and day_done and year_done):
+        log(f"  WARNING: DOB incomplete (month={month_done} day={day_done} year={year_done}) — fill manually")
+
+
 def register_via_browser(
-    mailbox: Mailbox,
-    mail_client: MailTmClient,
+    email: str,
     username: str,
     password: str,
     birth_year: int,
     birth_month: int,
     birth_day: int,
-    headless: bool = True,
-    verbose: bool = False,
+    headless: bool = False,
+    verbose: bool = True,
+    proton_username: str = "",
+    proton_password: str = "",
 ) -> str:
-    """Drive Discord registration, return the user token."""
+    """Drive Discord registration, return the user token.
+
+    email           — the email to use (e.g. user@proton.me)
+    proton_username / proton_password — if set, poll Proton Mail inbox for verification link
+    """
     from patchright.sync_api import sync_playwright
 
     _ensure_display()
@@ -312,7 +380,7 @@ def register_via_browser(
             ts = time.strftime("%H:%M:%S")
             print(f"[{ts}] [browser] {msg}", flush=True)
 
-    log(f"registering {mailbox.address} / {username}")
+    log(f"registering email={email} username={username}")
     user_data = tempfile.mkdtemp(prefix="dc_reg_")
 
     with sync_playwright() as p:
@@ -339,49 +407,23 @@ def register_via_browser(
             # Step 2: Fill registration form
             log("filling registration form...")
 
-            # Email — try current domain; if Discord marks it invalid, retry with others
+            # Email
             _fill_first(page, [
                 'input[name="email"]',
                 'input[type="email"]',
                 'input[placeholder*="email" i]',
-            ], mailbox.address, log)
+            ], email, log)
             _wait(1, log)
 
-            # Check for invalid email error; if found, cycle through 1secmail domains
+            # Warn if Discord shows email invalid
             try:
-                _wait(1, log)
-                err_text = page.inner_text("body")[:400].lower()
-                if "invalid email" in err_text or "valid email" in err_text or "not valid" in err_text:
-                    log(f"domain rejected — trying maildrop.cc then 1secmail domains")
-                    from .email import create_maildrop_mailbox, create_1sec_mailbox, _ONESEC_DOMAINS
-                    local = mailbox.address.split("@")[0]
-                    candidate_domains = [("maildrop.cc", "maildrop")] + \
-                                        [(d, "1secmail") for d in _ONESEC_DOMAINS]
-                    accepted = False
-                    for domain, provider in candidate_domains:
-                        new_addr = f"{local}@{domain}"
-                        log(f"  trying: {new_addr}")
-                        inp = page.locator('input[name="email"], input[type="email"]').first
-                        inp.click()
-                        inp.fill("")
-                        time.sleep(0.2)
-                        inp.type(new_addr, delay=55)
-                        _wait(1.5, log)
-                        err_text = page.inner_text("body")[:400].lower()
-                        if "invalid email" not in err_text and "valid email" not in err_text and "not valid" not in err_text:
-                            log(f"  accepted: {new_addr}")
-                            if provider == "maildrop":
-                                mailbox = create_maildrop_mailbox(local, mailbox.password)
-                            else:
-                                mailbox = create_1sec_mailbox(local, mailbox.password, domain)
-                            accepted = True
-                            break
-                    if not accepted:
-                        log("WARNING: all domains rejected — continuing anyway")
-            except Exception as e:
-                log(f"email validation check warn: {e}")
+                err = page.inner_text("body")[:300].lower()
+                if "invalid email" in err or "valid email" in err:
+                    log(f"WARNING: Discord may have rejected the email domain — check browser")
+            except Exception:
+                pass
 
-            # Display name (optional, may not appear)
+            # Display name (optional field, appears on some Discord versions)
             _fill_first(page, [
                 'input[name="global_name"]',
                 'input[placeholder*="display" i]',
@@ -400,47 +442,19 @@ def register_via_browser(
                 'input[name="password"]',
                 'input[type="password"]',
             ], password, log)
-            _wait(0.3, log)
+            _wait(0.5, log)
 
-            # Date of birth — Discord uses 3 native <select> elements with labels Month/Day/Year.
-            # Month options have text values like "January", "February" etc.
-            _MONTHS = ["January","February","March","April","May","June",
-                       "July","August","September","October","November","December"]
-            log(f"filling date of birth: {_MONTHS[birth_month-1]} {birth_day}, {birth_year}")
-            try:
-                # Find selects by their placeholder/aria-label or by position
-                selects = page.locator('select')
-                count = selects.count()
-                log(f"  found {count} select elements")
-                if count >= 3:
-                    # Discord order: Month (0), Day (1), Year (2)
-                    selects.nth(0).select_option(label=_MONTHS[birth_month - 1])
-                    _wait(0.3, log)
-                    selects.nth(1).select_option(str(birth_day))
-                    _wait(0.3, log)
-                    selects.nth(2).select_option(str(birth_year))
-                    _wait(0.3, log)
-                    log("  DOB filled")
-                elif count > 0:
-                    # Fewer selects — try to identify by visible label text
-                    for i in range(count):
-                        sel = selects.nth(i)
-                        # Check options to determine type
-                        opts = sel.locator('option').all_inner_texts()
-                        if any(m in opts for m in _MONTHS):
-                            sel.select_option(label=_MONTHS[birth_month - 1])
-                            log(f"  month select at nth({i})")
-                        elif any(str(d) == o for d in range(1, 32) for o in opts[:5]):
-                            sel.select_option(str(birth_day))
-                            log(f"  day select at nth({i})")
-                        elif any(str(y) in opts for y in range(birth_year - 2, birth_year + 3)):
-                            sel.select_option(str(birth_year))
-                            log(f"  year select at nth({i})")
-                        _wait(0.2, log)
-                else:
-                    log("  WARNING: no <select> elements found for DOB — may need manual fill")
-            except Exception as e:
-                log(f"DOB fill warn: {e}")
+            # Date of birth — wait for selects to render (Discord SPA may be slow)
+            log("waiting for DOB selects to appear...")
+            dob_deadline = time.time() + 15
+            while time.time() < dob_deadline:
+                try:
+                    if page.locator('select').count() >= 1:
+                        break
+                except Exception:
+                    pass
+                time.sleep(0.5)
+            _fill_dob(page, birth_month, birth_day, birth_year, log)
 
             # Step 3: Submit
             _wait(0.5, log)
@@ -453,35 +467,57 @@ def register_via_browser(
             _wait(5, log, "waiting for registration response")
             log(f"url after submit: {page.url}")
 
-            # Step 4: Wait for captcha solve / page state change (up to 3 min)
-            # Discord shows hCaptcha which must be solved manually in --no-headless mode.
-            # We watch for the URL to leave /register OR body to show email sent message.
-            log("waiting for captcha solve (up to 3 min) — solve manually if prompted...")
-            deadline_captcha = time.time() + 180
+            # Step 4: Wait for captcha + page progression (up to 5 min)
+            log("waiting for captcha solve (up to 5 min) — solve manually if shown...")
+            deadline_captcha = time.time() + 300
             while time.time() < deadline_captcha:
                 try:
                     cur_url = page.url
                     cur_body = page.inner_text("body")[:300].lower()
-                    email_sent = any(k in cur_body for k in ["check your email", "verify", "sent", "we sent"])
-                    left_register = "discord.com/register" not in cur_url
-                    if email_sent or left_register:
-                        log(f"captcha done (url={cur_url}, email_sent={email_sent})")
+                    done = (
+                        "discord.com/register" not in cur_url
+                        or any(k in cur_body for k in [
+                            "check your email", "we sent you an email",
+                            "check email", "email sent", "sent to your email",
+                        ])
+                    )
+                    if done:
+                        log(f"captcha done — url={cur_url}")
                         break
                 except Exception:
                     pass
                 time.sleep(3)
 
-            # Step 5: Poll mail.tm for verification email
-            log("polling mail.tm for verification email (up to 90s)...")
-            try:
-                verify_link = mail_client.poll_for_link(mailbox, timeout=90, keyword="discord")
-                log(f"got verification link: {verify_link[:80]}...")
-                page.goto(verify_link, timeout=30000)
-                page.wait_for_load_state("networkidle", timeout=15000)
-                _wait(4, log, "post-verification load")
-                log(f"url after verification: {page.url}")
-            except TimeoutError:
-                log("no verification email received — proceeding without it")
+            # Step 5: Verification email
+            if proton_username and proton_password:
+                log("polling Proton Mail inbox for Discord verification link...")
+                try:
+                    import sys, os as _os
+                    # Import protonmail_tool from sibling package
+                    _pm_src = _os.path.join(_os.path.dirname(__file__),
+                                             "../../../protonmail/src")
+                    sys.path.insert(0, _os.path.abspath(_pm_src))
+                    from protonmail_tool.browser import wait_for_link as pm_wait
+                    verify_link = pm_wait(
+                        username=proton_username,
+                        password=proton_password,
+                        keyword="discord",
+                        timeout=120,
+                        headless=False,
+                        verbose=verbose,
+                    )
+                    log(f"verification link: {verify_link[:80]}")
+                    page.goto(verify_link, timeout=30000)
+                    try:
+                        page.wait_for_load_state("networkidle", timeout=15000)
+                    except Exception:
+                        pass
+                    _wait(4, log, "post-verification load")
+                    log(f"url after verification: {page.url}")
+                except Exception as e:
+                    log(f"Proton Mail verification warn: {e}")
+            else:
+                log("no Proton credentials provided — skipping auto-verification")
 
             # Step 6: Extract token
             _wait(3, log, "app load")
