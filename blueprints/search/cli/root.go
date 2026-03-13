@@ -88,6 +88,7 @@ Get started:
 	root.AddCommand(NewClickHouse())
 	root.AddCommand(NewMotherDuck())
 	root.AddCommand(NewGoodread())
+	root.AddCommand(NewHuggingFace())
 	root.AddCommand(NewAmazon())
 	root.AddCommand(NewPinterest())
 	root.AddCommand(NewSoundcloud())
