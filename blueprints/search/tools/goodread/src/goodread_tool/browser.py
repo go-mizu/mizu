@@ -16,6 +16,8 @@ Always use headless=False.
 """
 from __future__ import annotations
 
+import base64
+import json
 import os
 import platform
 import re
@@ -130,6 +132,158 @@ def _open_context(p, headless: bool, user_data: str):
         viewport={"width": 1280, "height": 900},
         locale="en-US",
     )
+
+
+# ---------------------------------------------------------------------------
+# Amazon image CAPTCHA auto-solver
+# ---------------------------------------------------------------------------
+
+def _solve_amazon_puzzle(page, log=None) -> bool:
+    """Auto-solve Amazon image-selection CAPTCHA using Claude vision API.
+
+    Amazon shows a grid of images with instructions like "Choose all the curtains".
+    This function screenshots the puzzle, asks Claude which images match,
+    clicks them, and submits.
+
+    Returns True if a puzzle was detected and attempted, False if no puzzle found.
+    """
+    body = _body_text(page, 600)
+    if "Solve this puzzle" not in body:
+        return False
+
+    # Extract instruction (e.g., "Choose all the curtains")
+    m = re.search(r'Choose all (?:the )?(.+?)(?:\n|$)', body, re.IGNORECASE)
+    category = m.group(0).strip() if m else "the matching items"
+    if log:
+        log(f"CAPTCHA puzzle detected: {category!r}")
+
+    # Take a full-page screenshot for Claude
+    screenshot_bytes = page.screenshot(full_page=False)
+    b64_img = base64.standard_b64encode(screenshot_bytes).decode()
+
+    # Find clickable image grid elements — try several selector patterns
+    grid_locator = None
+    for sel in [
+        'div[class*="puzzle"] img',
+        'div[class*="captcha"] img',
+        'img[src*="captcha"]',
+        'img[src*="puzzle"]',
+        '[role="checkbox"] img',
+        'div[tabindex="0"] img',
+        'div[onclick] img',
+        # Amazon's own widget often puts images inside clickable containers
+        'div.a-box img',
+        'table img',
+        'td img',
+    ]:
+        loc = page.locator(sel)
+        if loc.count() >= 2:
+            grid_locator = loc
+            if log:
+                log(f"found {loc.count()} puzzle images via selector: {sel!r}")
+            break
+
+    # Fallback: any image smaller than 200x200 (typical puzzle tile size)
+    if grid_locator is None:
+        all_imgs = page.locator("img")
+        candidates = []
+        for i in range(min(all_imgs.count(), 30)):
+            try:
+                box = all_imgs.nth(i).bounding_box()
+                if box and 20 < box["width"] < 300 and 20 < box["height"] < 300:
+                    candidates.append(i)
+            except Exception:
+                pass
+        if candidates:
+            if log:
+                log(f"fallback: found {len(candidates)} candidate images by size")
+            # Rebuild locator from the candidate indices
+            grid_locator = all_imgs  # we'll index manually
+
+    # Ask Claude which images match the instruction
+    try:
+        import anthropic
+        client = anthropic.Anthropic()
+        response = client.messages.create(
+            model="claude-opus-4-6",
+            max_tokens=256,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",
+                            "data": b64_img,
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": (
+                            f"This is an Amazon image CAPTCHA. "
+                            f"The instruction says: '{category}'. "
+                            f"The page shows a grid of images. "
+                            f"Count the images in the grid from left-to-right, "
+                            f"top-to-bottom starting at 1. "
+                            f"Return ONLY a JSON array of 1-based positions that match "
+                            f"the instruction. Example: [2, 5]. "
+                            f"If no images match, return []. "
+                            f"Return ONLY the JSON array, nothing else."
+                        ),
+                    },
+                ],
+            }],
+        )
+        positions_text = response.content[0].text.strip()
+        if log:
+            log(f"Claude response: {positions_text}")
+
+        pm = re.search(r'\[[\d,\s]*\]', positions_text)
+        positions = json.loads(pm.group()) if pm else []
+    except Exception as e:
+        if log:
+            log(f"Claude API call failed: {e} — leaving puzzle for manual solve")
+        return True  # puzzle was detected, even if unsolved
+
+    if not positions:
+        if log:
+            log("Claude found no matching images in grid")
+    else:
+        if log:
+            log(f"clicking grid positions: {positions}")
+        if grid_locator is not None:
+            total = grid_locator.count()
+            for pos in positions:
+                idx = pos - 1
+                if 0 <= idx < total:
+                    try:
+                        el = grid_locator.nth(idx)
+                        # Click the parent container if the img itself isn't directly clickable
+                        try:
+                            el.click(timeout=3000)
+                        except Exception:
+                            el.locator("..").click(timeout=3000)
+                        time.sleep(0.4)
+                        if log:
+                            log(f"  clicked position {pos}")
+                    except Exception as e:
+                        if log:
+                            log(f"  failed to click position {pos}: {e}")
+
+    # Click Confirm / Submit
+    time.sleep(0.5)
+    clicked = _click_first(page, [
+        'button:has-text("Confirm")',
+        'input[value="Confirm"]',
+        'input[type="submit"]',
+        'button[type="submit"]',
+        'a:has-text("Confirm")',
+    ], log)
+    if log:
+        log(f"puzzle submit: {clicked!r}")
+    time.sleep(2)
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -254,7 +408,7 @@ def register_via_browser(
             #   a) Bot challenge that auto-resolves (aamation JS runs, redirects)
             #   b) OTP verification page
             # We wait up to 30s for the CVF page to auto-advance.
-            cvf_wait_max = 60  # seconds
+            cvf_wait_max = 270  # seconds — must exceed protonmail-tool startup + poll time
             cvf_start = time.time()
             log("starting Proton Mail OTP poll in background while waiting for CVF...")
 
@@ -273,12 +427,21 @@ def register_via_browser(
 
             while time.time() - cvf_start < cvf_wait_max:
                 cur_url = page.url
-                log(f"  CVF wait: url={cur_url[:60]}")
+                body_snippet = _body_text(page, 300)
+                log(f"  CVF wait: url={cur_url[:60]} body={body_snippet[:120]!r}")
 
                 # Success: no longer on CVF or AP, landed on Goodreads
                 if "/ap/cvf/" not in cur_url and "/ap/" not in cur_url:
                     log("left CVF/AP pages — continuing")
                     break
+
+                # Check for image CAPTCHA puzzle and auto-solve it
+                if "Solve this puzzle" in body_snippet:
+                    if log:
+                        log("image CAPTCHA detected — attempting auto-solve...")
+                    _solve_amazon_puzzle(page, log)
+                    _wait(2, log, "post-puzzle")
+                    continue
 
                 # Check if OTP input appeared on page
                 body = _body_text(page, 500)
@@ -289,10 +452,25 @@ def register_via_browser(
                 )
                 if otp_inputs.count() > 0 and otp_inputs.first.is_visible():
                     log("OTP input appeared on page!")
-                    # Wait for OTP from mail.tm
-                    for _ in range(60):
+                    # Click "Resend code" to trigger another email send (helps with delays)
+                    resend_clicked = _click_first(page, [
+                        'a:has-text("Resend")', 'button:has-text("Resend")',
+                        'a:has-text("resend")', 'span:has-text("Resend")',
+                        'a[id*="resend"]', 'button[id*="resend"]',
+                    ], log)
+                    if resend_clicked:
+                        log("clicked Resend — Amazon will resend the OTP email")
+                    # Wait up to 240s — protonmail-tool needs time to start + poll inbox
+                    for i in range(240):
                         if otp_result:
                             break
+                        # Click resend every 60s if still waiting
+                        if i > 0 and i % 60 == 0:
+                            _click_first(page, [
+                                'a:has-text("Resend")', 'button:has-text("Resend")',
+                                'a:has-text("resend")',
+                            ], log)
+                            log(f"re-clicked Resend at t={i}s")
                         time.sleep(1)
 
                     if otp_result:
@@ -309,8 +487,25 @@ def register_via_browser(
                             'button:has-text("Verify")',
                             'button:has-text("Continue")',
                         ], log)
-                        _wait(5, log, "OTP submit")
+                        _wait(2, log, "OTP submit")
                         log(f"url after OTP: {page.url}")
+                        # Wait for natural redirect first (up to 10s)
+                        for _ in range(10):
+                            cur = page.url
+                            if "goodreads.com" in cur and "/ap/" not in cur:
+                                log(f"auto-redirected to goodreads: {cur[:60]}")
+                                break
+                            time.sleep(1)
+                        # If still on /ap/cvf/verify, navigate to ap-handler to complete registration
+                        if "/ap/" in page.url:
+                            log("navigating to ap-handler/register to complete account creation...")
+                            page.goto("https://www.goodreads.com/ap-handler/register", timeout=30000)
+                            try:
+                                page.wait_for_load_state("networkidle", timeout=15000)
+                            except Exception:
+                                pass
+                        _wait(3, log, "post-OTP settle")
+                        log(f"url after settle: {page.url}")
                     else:
                         log("WARNING: no OTP received — manual verification needed")
                     break
