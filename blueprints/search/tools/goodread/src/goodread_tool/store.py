@@ -34,6 +34,15 @@ class Store:
     # ------------------------------------------------------------------
 
     def add_account(self, *, email: str, password: str) -> str:
+        existing = self.con.execute(
+            "SELECT id FROM accounts WHERE email = ?", [email]
+        ).fetchone()
+        if existing:
+            self.con.execute(
+                "UPDATE accounts SET password = ?, is_active = true WHERE email = ?",
+                [password, email],
+            )
+            return existing[0]
         row = self.con.execute(
             "INSERT INTO accounts (email, password) VALUES (?, ?) RETURNING id",
             [email, password],
