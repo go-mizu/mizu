@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -21,17 +22,20 @@ type ccPublishUploadFile struct {
 
 func newCCPublish() *cobra.Command {
 	var (
-		crawlID      string
-		fileIdx      string
-		repoRoot     string
-		repoID       string
-		republish    bool
-		private      bool
-		pipeline     bool
-		cleanup      bool
-		lightConvert bool
-		commitBatch  int
-		skipErrors   bool
+		crawlID       string
+		fileIdx       string
+		repoRoot      string
+		repoID        string
+		republish     bool
+		private       bool
+		pipeline      bool
+		watch         bool
+		list          bool
+		cleanup       bool
+		lightConvert  bool
+		skipErrors    bool
+		watchInterval int
+		chartsEvery   int
 	)
 
 	cmd := &cobra.Command{
@@ -39,38 +43,49 @@ func newCCPublish() *cobra.Command {
 		Short: "Publish exported Common Crawl parquet shards to Hugging Face",
 		Long: `Publish $HOME/data/common-crawl/{crawl}/export/repo to a Hugging Face dataset repo.
 
-The command creates the dataset repo if needed, ensures README.md and LICENSE
-exist locally, uploads only missing parquet files by default, and supports
-targeting one shard with --file 0.
+With --pipeline: download, pack, export shards as .parquet files (no HF push).
+With --watch:    watch the parquet folder and push new files to HF in real-time.
+Run both modes as separate processes for decoupled, reliable publishing.
 
-With --pipeline, automatically downloads, packs and exports any missing shards
-before uploading. Use --cleanup to delete raw .warc.gz files after packing
-to save disk space.`,
-		Example: `  search cc publish
-  search cc publish --file 0
-  search cc publish --crawl CC-MAIN-2026-08 --repo open-index/draft
-  search cc publish --file 0 --republish
-  search cc publish --file 11-90 --pipeline --cleanup`,
+The watcher flushes any leftover parquets from prior runs on startup,
+then polls for new files and commits them to HF one batch at a time.
+Local parquets are deleted after a successful HF push.`,
+		Example: `  # Watch-only (one per server):
+  search cc publish --watch
+
+  # Pipeline-only (multiple per server, no HF push):
+  search cc publish --pipeline --file 68-300 --cleanup --skip-errors
+
+  # Manual one-shot publish (legacy):
+  search cc publish --file 0 --republish`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCCPublish(cmd.Context(), crawlID, fileIdx, repoRoot, repoID, republish, private, pipeline, cleanup, lightConvert, commitBatch, skipErrors)
+			return runCCPublish(cmd.Context(), crawlID, fileIdx, repoRoot, repoID,
+				republish, private, pipeline, watch, list, cleanup, lightConvert, skipErrors,
+				watchInterval, chartsEvery)
 		},
 	}
 
 	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest)")
-	cmd.Flags().StringVar(&fileIdx, "file", "all", "File index, range (0-9), or all")
+	cmd.Flags().StringVar(&fileIdx, "file", "all", "File index, range (0-9), or all (pipeline mode)")
 	cmd.Flags().StringVar(&repoRoot, "repo-root", "", "Local export repo root (default: $HOME/data/common-crawl/{crawl}/export/repo)")
 	cmd.Flags().StringVar(&repoID, "repo", "open-index/draft", "Hugging Face dataset repo ID")
-	cmd.Flags().BoolVar(&republish, "republish", false, "Upload even if the remote path already exists")
+	cmd.Flags().BoolVar(&republish, "republish", false, "Upload even if the remote path already exists (manual mode only)")
 	cmd.Flags().BoolVar(&private, "private", false, "Create the Hugging Face dataset repo as private")
-	cmd.Flags().BoolVar(&pipeline, "pipeline", false, "Auto-download, pack, and export missing shards before publishing")
-	cmd.Flags().BoolVar(&cleanup, "cleanup", false, "Delete raw .warc.gz after packing (requires --pipeline)")
-	cmd.Flags().BoolVar(&lightConvert, "light", true, "Use lightweight HTML→Markdown converter (~10x faster than trafilatura, --no-light for trafilatura)")
-	cmd.Flags().IntVar(&commitBatch, "commit-batch", 1, "Batch N parquets per HF commit (default 1; use 10 for ~5x faster publish)")
-	cmd.Flags().BoolVar(&skipErrors, "skip-errors", false, "Skip shards that fail pack/export instead of aborting (log error and continue)")
+	cmd.Flags().BoolVar(&pipeline, "pipeline", false, "Download, pack, export shards (writes parquets locally; use --watch to push)")
+	cmd.Flags().BoolVar(&watch, "watch", false, "Watch parquet folder and push new files to HuggingFace in real-time")
+	cmd.Flags().BoolVar(&list, "list", false, "List committed shards as ranges (from stats.csv / HF)")
+	cmd.Flags().BoolVar(&cleanup, "cleanup", false, "Delete raw .warc.gz after packing (--pipeline only)")
+	cmd.Flags().BoolVar(&lightConvert, "light", true, "Use lightweight HTML→Markdown converter (~10x faster, --no-light for trafilatura)")
+	cmd.Flags().BoolVar(&skipErrors, "skip-errors", false, "Skip shards that fail pack/export instead of aborting (--pipeline only)")
+	cmd.Flags().IntVar(&watchInterval, "watch-interval", 15, "Watcher poll interval in seconds (--watch only)")
+	cmd.Flags().IntVar(&chartsEvery, "charts-every", 30, "Regenerate charts every N minutes (--watch only, 0=disable)")
 	return cmd
 }
 
-func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string, republish, private, pipeline, cleanup, lightConvert bool, commitBatch int, skipErrors bool) error {
+func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string,
+	republish, private, pipeline, watch, list, cleanup, lightConvert, skipErrors bool,
+	watchInterval, chartsEvery int) error {
+
 	resolvedID, note, err := ccResolveCrawlID(ctx, crawlID)
 	if err != nil {
 		return fmt.Errorf("resolving crawl: %w", err)
@@ -84,12 +99,25 @@ func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string
 		repoRoot = ccDefaultExportRepoRoot(crawlID)
 	}
 
-	// ── Pipeline mode: per-file pack → export → commit ───────────────────────
-	if pipeline {
-		if commitBatch < 1 {
-			commitBatch = 1
+	// ── List mode: show committed shards as ranges ────────────────────────────
+	if list {
+		return ccListCommittedShards(ctx, crawlID, repoRoot, repoID)
+	}
+
+	// ── Watch mode: poll parquet folder → push to HF ─────────────────────────
+	if watch {
+		if watchInterval < 1 {
+			watchInterval = 15
 		}
-		return ccRunPipelineWithCommits(ctx, crawlID, fileIdx, repoRoot, repoID, republish, private, cleanup, lightConvert, commitBatch, skipErrors)
+		return ccRunWatcher(ctx, crawlID, repoRoot, repoID, private,
+			time.Duration(watchInterval)*time.Second,
+			time.Duration(chartsEvery)*time.Minute,
+		)
+	}
+
+	// ── Pipeline mode: download → pack → export (no HF push) ─────────────────
+	if pipeline {
+		return ccRunPipeline(ctx, crawlID, fileIdx, repoRoot, cleanup, lightConvert, skipErrors)
 	}
 
 	// ── Collect stats from all exported parquet files ───────────────────────
@@ -218,10 +246,11 @@ func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string
 	return nil
 }
 
-// ccRunPipelineWithCommits processes each selected shard end-to-end:
-// download → pack → export → upsert stats → update README → HF commit.
-// Each shard is committed to HuggingFace individually so progress is saved after every file.
-func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string, republish, private, cleanup, lightConvert bool, commitBatch int, skipErrors bool) error {
+// ccRunPipeline downloads, packs, and exports shards to local .parquet files.
+// It does NOT push to HuggingFace — run `--watch` in a separate session for that.
+// Parquets are written atomically (via .parquet.tmp → rename) so the watcher
+// only sees fully-written files. A .meta sidecar carries timing info to the watcher.
+func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, cleanup, lightConvert, skipErrors bool) error {
 	indices, err := ccParseOpenFileSelector(fileIdx)
 	if err != nil {
 		return fmt.Errorf("--file: %w", err)
@@ -234,32 +263,16 @@ func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, r
 	}
 	statsCSV := ccStatsCSVPath(repoRoot)
 
-	token := strings.TrimSpace(os.Getenv("HF_TOKEN"))
-	if token == "" {
-		return fmt.Errorf("HF_TOKEN environment variable is not set")
-	}
-	hf := newHFClient(token)
-
 	fmt.Println(Banner())
-	fmt.Println(subtitleStyle.Render("CC Pipeline: download → pack → export → publish"))
+	fmt.Println(subtitleStyle.Render("CC Pipeline: download → pack → export"))
 	fmt.Println()
 	fmt.Printf("  Crawl     %s\n", labelStyle.Render(crawlID))
 	fmt.Printf("  Files     %s\n", infoStyle.Render(strconv.Itoa(len(indices))))
-	fmt.Printf("  HF repo   %s\n", infoStyle.Render(repoID))
+	fmt.Printf("  Output    %s\n", labelStyle.Render(dataDir))
 	fmt.Println()
 
-	// Create repo once before the per-file loop.
-	if err := hf.createDatasetRepo(ctx, repoID, private); err != nil {
-		return fmt.Errorf("create repo: %w", err)
-	}
-
-	// Batch commit state: accumulate parquet ops until batch is full.
-	type pendingParquet struct {
-		localPath  string
-		remotePath string
-		shard      string
-	}
-	var batchQueue []pendingParquet
+	// Load committed set once at startup (watcher maintains this via stats.csv).
+	committed := ccLoadCommittedSet(statsCSV, crawlID)
 
 	for i, idx := range indices {
 		if ctx.Err() != nil {
@@ -269,228 +282,172 @@ func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, r
 		shard := fmt.Sprintf("%05d", idx)
 		mdWARCPath := filepath.Join(warcMdDir, shard+".md.warc.gz")
 		parquetPath := filepath.Join(dataDir, shard+".parquet")
+		tmpPath := parquetPath + ".tmp"
 
 		fmt.Printf("  ── [%d/%d] %s ──\n", i+1, len(indices), labelStyle.Render(shard))
 
-		var rows, htmlBytes, mdBytes int64
-		var durDownloadS, durConvertS, durExportS, durPublishS int64
+		// Skip: already committed to HF (watcher updated stats.csv).
+		if committed[idx] {
+			fmt.Printf("  [%s] already committed, skipping\n", labelStyle.Render(shard))
+			fmt.Println()
+			continue
+		}
 
-		if !fileExists(parquetPath) {
-			// Need to pack (and possibly download) before exporting.
-			if !fileExists(mdWARCPath) {
-				// Check if raw WARC already exists to separate download vs convert timing.
-				rawWARCExists := ccFindRawWARC(crawlID, idx) != ""
-				fmt.Printf("  [%s] packing...\n", labelStyle.Render(shard))
-				t0 := time.Now()
-				if packErr := runCCWarcPack(ctx, crawlID, strconv.Itoa(idx), -1, -1, 0, false, false, lightConvert, 200, "text/html", 512*1024, shard); packErr != nil {
-					if skipErrors {
-						fmt.Printf("  [%s] %s pack error (skipping): %v\n", labelStyle.Render(shard), warningStyle.Render("⚠"), packErr)
-						fmt.Println()
-						continue
-					}
-					return fmt.Errorf("pack %d: %w", idx, packErr)
-				}
-				elapsed := int64(time.Since(t0).Seconds())
-				if rawWARCExists {
-					// Raw WARC was present: only conversion happened.
-					durConvertS = elapsed
-				} else {
-					// Raw WARC was absent: pack downloaded then converted.
-					durDownloadS = elapsed
-				}
-				if cleanup {
-					if rawPath := ccFindRawWARC(crawlID, idx); rawPath != "" {
-						_ = os.Remove(rawPath)
-						fmt.Printf("  [%s] cleaned up %s\n", labelStyle.Render(shard), filepath.Base(rawPath))
-					}
-				}
-			} else {
-				fmt.Printf("  [%s] md.warc.gz exists, skipping pack\n", labelStyle.Render(shard))
-			}
+		// Skip: parquet already exported and waiting for watcher to push.
+		if fileExists(parquetPath) {
+			fmt.Printf("  [%s] parquet ready, waiting for watcher\n", labelStyle.Render(shard))
+			fmt.Println()
+			continue
+		}
 
-			fmt.Printf("  [%s] exporting  ", labelStyle.Render(shard))
+		// Clean up orphaned .tmp from a previous crash.
+		if fileExists(tmpPath) {
+			_ = os.Remove(tmpPath)
+		}
+
+		var durDownloadS, durConvertS, durExportS int64
+
+		// Pack if md.warc.gz is missing.
+		if !fileExists(mdWARCPath) {
+			rawWARCExists := ccFindRawWARC(crawlID, idx) != ""
+			fmt.Printf("  [%s] packing...\n", labelStyle.Render(shard))
 			t0 := time.Now()
-			var exportErr error
-			rows, htmlBytes, mdBytes, exportErr = exportWARCMdShardToParquet(mdWARCPath, parquetPath, func(n int64, elapsed time.Duration) {
-				secs := elapsed.Seconds()
-				rate := float64(n) / secs
-				if secs < 0.1 {
-					rate = 0
-				}
-				fmt.Printf("\r  [%s] exporting  %s docs  %s/s  %s",
-					labelStyle.Render(shard),
-					infoStyle.Render(ccFmtInt64(n)),
-					infoStyle.Render(fmt.Sprintf("%.0f", rate)),
-					elapsed.Round(time.Second),
-				)
-			})
-			if exportErr != nil {
-				fmt.Println()
+			if packErr := runCCWarcPack(ctx, crawlID, strconv.Itoa(idx), -1, -1, 0, false, false, lightConvert, 200, "text/html", 512*1024, shard); packErr != nil {
 				if skipErrors {
-					fmt.Printf("  [%s] %s export error (skipping): %v\n", labelStyle.Render(shard), warningStyle.Render("⚠"), exportErr)
+					fmt.Printf("  [%s] %s pack error (skipping): %v\n", labelStyle.Render(shard), warningStyle.Render("⚠"), packErr)
 					fmt.Println()
 					continue
 				}
-				return fmt.Errorf("export %d: %w", idx, exportErr)
+				return fmt.Errorf("pack %d: %w", idx, packErr)
 			}
-			durExportS = int64(time.Since(t0).Seconds())
-			fmt.Printf("\r  [%s] exported   %s docs  %s\n",
-				labelStyle.Render(shard),
-				infoStyle.Render(ccFmtInt64(rows)),
-				successStyle.Render("done"),
-			)
-			// Aggressive cleanup: delete md.warc.gz after successful parquet export.
+			elapsed := int64(time.Since(t0).Seconds())
+			if rawWARCExists {
+				durConvertS = elapsed
+			} else {
+				durDownloadS = elapsed
+			}
 			if cleanup {
-				_ = os.Remove(mdWARCPath)
-			}
-		} else {
-			fmt.Printf("  [%s] parquet exists, scanning stats\n", labelStyle.Render(shard))
-			var scanErr error
-			rows, htmlBytes, mdBytes, scanErr = ccScanParquetStats(parquetPath)
-			if scanErr != nil {
-				return fmt.Errorf("scan parquet stats %d: %w", idx, scanErr)
-			}
-			fmt.Printf("  [%s] %s docs\n", labelStyle.Render(shard), infoStyle.Render(ccFmtInt64(rows)))
-		}
-
-		// Upsert this shard's stats into stats.csv (safe: only touches this file's row).
-		pqFI, _ := os.Stat(parquetPath)
-		pqBytes := int64(0)
-		if pqFI != nil {
-			pqBytes = pqFI.Size()
-		}
-		if upsertErr := ccUpsertShardStats(statsCSV, ccShardStats{
-			CrawlID: crawlID, FileIdx: idx,
-			Rows: rows, HTMLBytes: htmlBytes, MDBytes: mdBytes, ParquetBytes: pqBytes,
-			CreatedAt: time.Now().UTC().Format(time.RFC3339),
-			DurDownloadS: durDownloadS, DurConvertS: durConvertS, DurExportS: durExportS,
-		}); upsertErr != nil {
-			return fmt.Errorf("upsert stats %d: %w", idx, upsertErr)
-		}
-
-		// Decide whether to upload the parquet (--republish or not yet on HF).
-		parquetRemotePath := filepath.ToSlash(filepath.Join("data", crawlID, shard+".parquet"))
-		uploadParquet := republish
-		if !uploadParquet {
-			existing, pathErr := hf.pathsExist(ctx, repoID, []string{parquetRemotePath})
-			if pathErr != nil {
-				return fmt.Errorf("check remote %d: %w", idx, pathErr)
-			}
-			uploadParquet = !existing[parquetRemotePath]
-		}
-
-		if uploadParquet {
-			batchQueue = append(batchQueue, pendingParquet{
-				localPath:  parquetPath,
-				remotePath: parquetRemotePath,
-				shard:      shard,
-			})
-		}
-
-		// Flush batch when full or on last shard.
-		isLastShard := i == len(indices)-1
-		shouldFlush := len(batchQueue) >= commitBatch || isLastShard
-		if !shouldFlush {
-			fmt.Printf("  [%s] %s  (batch %d/%d)\n", labelStyle.Render(shard), infoStyle.Render("buffered"), len(batchQueue), commitBatch)
-			fmt.Println()
-			continue
-		}
-		if len(batchQueue) == 0 {
-			// Nothing new to commit; still write metadata-only commit.
-			fmt.Printf("  [%s] %s\n", labelStyle.Render(shard), warningStyle.Render("metadata only"))
-			fmt.Println()
-			continue
-		}
-
-		// Pull latest stats.csv from HF and merge — HF is the single source of truth
-		// so all servers (server1, server2, …) contribute their rows.
-		ccMergeStatsFromHF(ctx, hf, repoID, statsCSV)
-
-		// Build commit operations: always include README/LICENSE/stats.csv.
-		if repoErr := ccEnsurePublishRepoFiles(repoRoot, crawlID, statsCSV); repoErr != nil {
-			return fmt.Errorf("write repo files: %w", repoErr)
-		}
-		chartRelPaths := ccRunCharts(statsCSV, repoRoot, crawlID)
-		if len(chartRelPaths) > 0 {
-			fmt.Printf("  charts   %s\n", infoStyle.Render(fmt.Sprintf("%d PNGs", len(chartRelPaths))))
-		}
-
-		ops := []hfOperation{
-			{LocalPath: filepath.Join(repoRoot, "README.md"), PathInRepo: "README.md"},
-			{LocalPath: filepath.Join(repoRoot, "LICENSE"), PathInRepo: "LICENSE"},
-			{LocalPath: statsCSV, PathInRepo: "stats.csv"},
-		}
-		for _, rel := range chartRelPaths {
-			ops = append(ops, hfOperation{LocalPath: filepath.Join(repoRoot, rel), PathInRepo: filepath.ToSlash(rel)})
-		}
-		shardLabels := make([]string, len(batchQueue))
-		for k, p := range batchQueue {
-			ops = append(ops, hfOperation{LocalPath: p.localPath, PathInRepo: p.remotePath})
-			shardLabels[k] = p.shard
-		}
-
-		var commitMsg string
-		if len(batchQueue) == 1 {
-			commitMsg = fmt.Sprintf("Publish shard %s/%s", crawlID, batchQueue[0].shard)
-		} else {
-			commitMsg = fmt.Sprintf("Publish shards %s/%s–%s (%d files)", crawlID, batchQueue[0].shard, batchQueue[len(batchQueue)-1].shard, len(batchQueue))
-		}
-		t0 := time.Now()
-		commitURL, commitErr := hf.createCommit(ctx, repoID, "main", commitMsg, ops)
-		if commitErr != nil {
-			return fmt.Errorf("commit batch ending at %d: %w", idx, commitErr)
-		}
-		batchPublishS := int64(time.Since(t0).Seconds())
-		// Amortize publish time across batch.
-		durPublishS = batchPublishS / int64(len(batchQueue))
-
-		// Back-fill publish duration for all shards in this batch.
-		for _, p := range batchQueue {
-			var s ccShardStats
-			// find existing stats for this shard to fill in all fields
-			if all, _ := ccReadStatsCSV(statsCSV); all != nil {
-				for _, ex := range all {
-					if ex.CrawlID == crawlID && fmt.Sprintf("%05d", ex.FileIdx) == p.shard {
-						s = ex
-						break
-					}
+				if rawPath := ccFindRawWARC(crawlID, idx); rawPath != "" {
+					_ = os.Remove(rawPath)
+					fmt.Printf("  [%s] cleaned up %s\n", labelStyle.Render(shard), filepath.Base(rawPath))
 				}
 			}
-			s.DurPublishS = durPublishS
-			_ = ccUpsertShardStats(statsCSV, s)
+		} else {
+			fmt.Printf("  [%s] md.warc.gz exists, skipping pack\n", labelStyle.Render(shard))
 		}
 
-		fmt.Printf("  %s  %s  (%d shards in %s)\n",
-			successStyle.Render("published"),
-			labelStyle.Render(commitURL),
-			len(batchQueue),
-			ccFmtDuration(batchPublishS),
+		// Export to .tmp then atomically rename to .parquet.
+		fmt.Printf("  [%s] exporting  ", labelStyle.Render(shard))
+		t0 := time.Now()
+		rows, _, _, exportErr := exportWARCMdShardToParquet(mdWARCPath, tmpPath, func(n int64, elapsed time.Duration) {
+			secs := elapsed.Seconds()
+			rate := float64(n) / secs
+			if secs < 0.1 {
+				rate = 0
+			}
+			fmt.Printf("\r  [%s] exporting  %s docs  %s/s  %s",
+				labelStyle.Render(shard),
+				infoStyle.Render(ccFmtInt64(n)),
+				infoStyle.Render(fmt.Sprintf("%.0f", rate)),
+				elapsed.Round(time.Second),
+			)
+		})
+		if exportErr != nil {
+			_ = os.Remove(tmpPath)
+			fmt.Println()
+			if skipErrors {
+				fmt.Printf("  [%s] %s export error (skipping): %v\n", labelStyle.Render(shard), warningStyle.Render("⚠"), exportErr)
+				fmt.Println()
+				continue
+			}
+			return fmt.Errorf("export %d: %w", idx, exportErr)
+		}
+		durExportS = int64(time.Since(t0).Seconds())
+
+		// Atomic rename: watcher only sees complete files.
+		if renameErr := os.Rename(tmpPath, parquetPath); renameErr != nil {
+			_ = os.Remove(tmpPath)
+			if skipErrors {
+				fmt.Printf("  [%s] %s rename error (skipping): %v\n", labelStyle.Render(shard), warningStyle.Render("⚠"), renameErr)
+				fmt.Println()
+				continue
+			}
+			return fmt.Errorf("rename %d: %w", idx, renameErr)
+		}
+
+		fmt.Printf("\r  [%s] exported   %s docs  %s\n",
+			labelStyle.Render(shard),
+			infoStyle.Render(ccFmtInt64(rows)),
+			successStyle.Render("done"),
 		)
 
-		// Delete local parquets after successful commit.
-		for _, p := range batchQueue {
-			if err := os.Remove(p.localPath); err == nil {
-				fmt.Printf("  [%s] deleted local parquet\n", labelStyle.Render(p.shard))
-			}
+		// Write .meta sidecar with timing for the watcher.
+		metaData, _ := json.Marshal(ccShardMeta{
+			DurDownloadS: durDownloadS,
+			DurConvertS:  durConvertS,
+			DurExportS:   durExportS,
+		})
+		_ = os.WriteFile(filepath.Join(dataDir, shard+".meta"), metaData, 0o644)
+
+		// Aggressive cleanup: delete md.warc.gz after successful export.
+		if cleanup {
+			_ = os.Remove(mdWARCPath)
 		}
-		batchQueue = batchQueue[:0]
+
 		fmt.Println()
 	}
+	return nil
+}
 
-	// Print final cumulative stats.
-	if allStats, readErr := ccReadStatsCSV(statsCSV); readErr == nil && len(allStats) > 0 {
-		t := ccComputeTotals(allStats, crawlID)
-		if t.Shards > 0 {
-			fmt.Printf("  ── Cumulative stats (%s) ──\n", crawlID)
-			fmt.Printf("  Shards     %s\n", infoStyle.Render(strconv.Itoa(t.Shards)))
-			fmt.Printf("  Documents  %s\n", infoStyle.Render(ccFmtInt64(t.Rows)))
-			fmt.Printf("  HTML       %s\n", infoStyle.Render(ccFmtBytes(t.HTMLBytes)))
-			fmt.Printf("  Markdown   %s  (-%s%%)\n",
-				infoStyle.Render(ccFmtBytes(t.MDBytes)),
-				infoStyle.Render(ccPctReduction(t.HTMLBytes, t.MDBytes)))
-			fmt.Printf("  Parquet    %s\n", infoStyle.Render(ccFmtBytes(t.ParquetBytes)))
+// ccListCommittedShards prints committed shards as compact ranges from stats.csv (synced from HF).
+func ccListCommittedShards(ctx context.Context, crawlID, repoRoot, repoID string) error {
+	statsCSV := ccStatsCSVPath(repoRoot)
+	token := strings.TrimSpace(os.Getenv("HF_TOKEN"))
+	if token != "" {
+		hf := newHFClient(token)
+		ccMergeStatsFromHF(ctx, hf, repoID, statsCSV)
+	}
+	all, err := ccReadStatsCSV(statsCSV)
+	if err != nil {
+		return err
+	}
+	var indices []int
+	for _, s := range all {
+		if s.CrawlID == crawlID {
+			indices = append(indices, s.FileIdx)
 		}
 	}
+	sort.Ints(indices)
+
+	fmt.Printf("  Crawl    %s\n", labelStyle.Render(crawlID))
+	fmt.Printf("  Shards   %s committed\n", infoStyle.Render(strconv.Itoa(len(indices))))
+	if len(indices) == 0 {
+		return nil
+	}
+
+	// Collapse into ranges.
+	type rng struct{ lo, hi int }
+	var ranges []rng
+	lo, hi := indices[0], indices[0]
+	for _, n := range indices[1:] {
+		if n == hi+1 {
+			hi = n
+		} else {
+			ranges = append(ranges, rng{lo, hi})
+			lo, hi = n, n
+		}
+	}
+	ranges = append(ranges, rng{lo, hi})
+
+	var parts []string
+	for _, r := range ranges {
+		if r.lo == r.hi {
+			parts = append(parts, strconv.Itoa(r.lo))
+		} else {
+			parts = append(parts, fmt.Sprintf("%d–%d (%d)", r.lo, r.hi, r.hi-r.lo+1))
+		}
+	}
+	fmt.Printf("  Ranges   %s\n", strings.Join(parts, ",  "))
 	return nil
 }
 
