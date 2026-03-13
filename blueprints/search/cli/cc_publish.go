@@ -334,85 +334,69 @@ func ccPublishREADME(crawlID string) string {
 	c := crawlID
 	return fmt.Sprintf(`---
 license: odc-by
-pretty_name: Open Index
+task_categories:
+- text-generation
+- feature-extraction
 language:
 - en
+pretty_name: Open Index
+size_categories:
+- 1M<n<10M
 tags:
 - common-crawl
 - web-crawl
 - markdown
 - text
-size_categories:
-- 10B<n<100B
+configs:
+- config_name: default
+  data_files:
+  - split: train
+    path: data/*/*
+- config_name: %s
+  data_files:
+  - split: train
+    path: data/%s/*
 ---
 
 # Open Index
 
-**Open Index** is a large-scale web text dataset derived from [Common Crawl](https://commoncrawl.org) with HTML converted to clean Markdown. Designed for language model training, information retrieval research, and web-scale NLP.
+> Clean markdown from the web, ready for training and retrieval
 
-This snapshot is built from crawl **%s**.
+## What is it?
 
----
+Open Index is a large-scale web text dataset built from [Common Crawl](https://commoncrawl.org). Every page goes through a pipeline that extracts the main content from raw HTML, converts it to clean Markdown using [trafilatura](https://github.com/adbar/trafilatura), and packages the result into Parquet files with full WARC metadata preserved.
 
-## Dataset Summary
+The dataset currently includes crawl **%s**. We plan to add more snapshots over time.
 
-| Property | Value |
-|---|---|
-| Source | Common Crawl (%s) |
-| Format | Apache Parquet (Zstd compressed) |
-| Content | Markdown-converted web pages |
-| License | [ODC-By 1.0](https://opendatacommons.org/licenses/by/1-0/) |
+Open Index is released under the **Open Data Commons Attribution License (ODC-By) v1.0**, the same license used by Common Crawl.
 
----
+## What is being released?
 
-## Dataset Structure
-
-Parquet files are organised by crawl ID:
+Each Common Crawl WARC file (~1 GB of compressed HTML) becomes one Parquet shard. The shards live under a crawl-specific directory so multiple snapshots can coexist:
 
 `+"`"+`
 data/
-└── %s/
-    ├── 00000.parquet
-    ├── 00001.parquet
-    └── ...
+  %s/
+    00000.parquet
+    00001.parquet
+    ...
 `+"`"+`
 
-Each file corresponds to one packed WARC shard (~1 GB source WARC).
+Every row in a Parquet file is one web page. Along with the markdown body, we preserve the original WARC headers as a JSON column so you can always trace a document back to its source record.
 
-### Data Fields
+## How to download and use Open Index
 
-| Field | Type | Description |
-|---|---|---|
-| `+"`doc_id`"+` | string | UUID derived from the WARC-Record-ID |
-| `+"`url`"+` | string | Original URL of the crawled page |
-| `+"`host`"+` | string | Lowercase hostname extracted from the URL |
-| `+"`crawl_date`"+` | string | RFC3339 timestamp from the WARC record |
-| `+"`warc_type`"+` | string | WARC record type (conversion, response, …) |
-| `+"`warc_record_id`"+` | string | Original `+"`<urn:uuid:…>`"+` WARC record identifier |
-| `+"`warc_refers_to`"+` | string | Record ID of the source response record |
-| `+"`content_type`"+` | string | HTTP Content-Type of the original response |
-| `+"`html_length`"+` | int64 | Byte length of the original HTML body |
-| `+"`markdown_length`"+` | int64 | Byte length of the converted Markdown body |
-| `+"`warc_headers_json`"+` | string | All WARC headers as stable-key JSON |
-| `+"`markdown_body`"+` | string | Clean Markdown text converted from HTML |
-| `+"`source_warc_file`"+` | string | Source packed .md.warc.gz shard filename |
-| `+"`source_file_index`"+` | int32 | Index of the source file in the crawl manifest |
-
----
-
-## Usage
-
-### Hugging Face datasets
+### Using `+"`datasets`"+`
 
 `+"`"+`python
 from datasets import load_dataset
 
-# Stream the full snapshot
-ds = load_dataset("open-index/draft", split="train", streaming=True)
+# stream the entire dataset
+ds = load_dataset("open-index/draft", name="%s", split="train", streaming=True)
 for doc in ds:
-    print(doc["url"], doc["markdown_body"][:200])
+    print(doc["url"], len(doc["markdown_body"]))
 
-# Load a single shard
+# load a single shard into memory
 ds = load_dataset(
     "open-index/draft",
     data_files="data/%s/00000.parquet",
@@ -420,67 +404,145 @@ ds = load_dataset(
 )
 `+"`"+`
 
-### DuckDB
+### Using `+"`huggingface_hub`"+`
+
+`+"`"+`python
+from huggingface_hub import snapshot_download
+
+folder = snapshot_download(
+    "open-index/draft",
+    repo_type="dataset",
+    local_dir="./open-index/",
+    allow_patterns="data/%s/*",
+)
+`+"`"+`
+
+For faster downloads, install `+"`pip install huggingface_hub[hf_transfer]`"+` and set `+"`HF_HUB_ENABLE_HF_TRANSFER=1`"+`.
+
+### Using DuckDB
 
 `+"`"+`sql
 SELECT url, host, markdown_length
 FROM read_parquet('hf://datasets/open-index/draft/data/%s/*.parquet')
-WHERE host LIKE '%%wikipedia.org'
+WHERE host = 'en.wikipedia.org'
 LIMIT 10;
 `+"`"+`
 
-### pandas
+# Dataset card for Open Index
 
-`+"`"+`python
-import pandas as pd
+## Dataset Structure
 
-df = pd.read_parquet(
-    "hf://datasets/open-index/draft/data/%s/00000.parquet",
-    columns=["url", "host", "crawl_date", "markdown_body"],
-)
+### Data Instance
+
+The following is an example row from the dataset:
+
+`+"`"+`json
+{
+  "doc_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "url": "https://example.com/article/interesting-topic",
+  "host": "example.com",
+  "crawl_date": "2026-02-06T18:14:58Z",
+  "warc_type": "conversion",
+  "warc_record_id": "<urn:uuid:a1b2c3d4-e5f6-7890-abcd-ef1234567890>",
+  "warc_refers_to": "<urn:uuid:f9e8d7c6-b5a4-3210-fedc-ba0987654321>",
+  "content_type": "text/markdown",
+  "html_length": 48210,
+  "markdown_length": 3847,
+  "warc_headers_json": "{\"Content-Length\": \"3847\", \"Content-Type\": \"text/markdown\", ...}",
+  "markdown_body": "# Interesting Topic\n\nThis is the main content of the page...",
+  "source_warc_file": "00000.md.warc.gz",
+  "source_file_index": 0
+}
 `+"`"+`
 
----
+### Data Fields
 
-## Data Processing Pipeline
+- `+"`doc_id`"+` (string): unique identifier derived from the WARC-Record-ID (UUID format)
+- `+"`url`"+` (string): original URL of the crawled page
+- `+"`host`"+` (string): lowercase hostname extracted from the URL
+- `+"`crawl_date`"+` (string): RFC 3339 timestamp from the WARC record
+- `+"`warc_type`"+` (string): WARC record type, typically "conversion" for markdown output
+- `+"`warc_record_id`"+` (string): full WARC-Record-ID in the urn:uuid format
+- `+"`warc_refers_to`"+` (string): WARC-Record-ID of the original HTTP response record this was converted from
+- `+"`content_type`"+` (string): content type of the converted record (text/markdown)
+- `+"`html_length`"+` (int64): byte length of the original HTML body before conversion
+- `+"`markdown_length`"+` (int64): byte length of the converted markdown body
+- `+"`warc_headers_json`"+` (string): all WARC headers serialized as a JSON object with sorted keys, preserving every header from the packed record for full provenance
+- `+"`markdown_body`"+` (string): the cleaned markdown content extracted from the HTML page
+- `+"`source_warc_file`"+` (string): filename of the packed .md.warc.gz shard this record came from
+- `+"`source_file_index`"+` (int32): zero-based index of the source file in the crawl manifest
 
-1. **Download** — Raw .warc.gz files from Common Crawl S3.
-2. **Filter** — HTTP 200 responses with text/html content only.
-3. **Convert** — HTML → Markdown via [trafilatura](https://github.com/adbar/trafilatura) (removes boilerplate, navigation, ads).
-4. **Pack** — Seekable .md.warc.gz files (one gzip member per record, CC-compatible format).
-5. **Export** — Parquet with Zstd compression, 100K rows per row group.
+### Data Splits
 
----
+The default subset includes all available data across all crawl snapshots. You can also load a specific crawl by using its ID as the config name (e.g. `+"`%s`"+`).
 
-## Source & License
+## Dataset Creation
 
-- Common Crawl: [https://commoncrawl.org](https://commoncrawl.org)
-- Terms of Use: [https://commoncrawl.org/terms-of-use](https://commoncrawl.org/terms-of-use)
-- This dataset is released under the [Open Data Commons Attribution License (ODC-By) v1.0](https://opendatacommons.org/licenses/by/1-0/)
-`, c, c, c, c, c, c)
+### Curation Rationale
+
+Most open web datasets either release raw text without structure or keep the HTML and leave parsing to the user. Open Index sits in between: it converts every page to Markdown so the content is immediately usable for training, while preserving the full WARC headers so you can always go back to the source if you need to.
+
+### Source Data
+
+The source data consists of web pages crawled by the [Common Crawl](https://commoncrawl.org) foundation. Common Crawl archives billions of pages across the public web and makes the raw WARC files freely available on Amazon S3.
+
+### Data Processing Steps
+
+The processing pipeline runs in five stages:
+
+1. **Download** raw .warc.gz files from Common Crawl S3 (each file is roughly 1 GB compressed)
+2. **Filter** to keep only HTTP 200 responses with a text/html content type, discarding images, scripts, redirects, and error pages
+3. **Convert** HTML to Markdown using [trafilatura](https://github.com/adbar/trafilatura), which extracts the main content and strips boilerplate, navigation, sidebars, footers, and ads
+4. **Pack** converted records into seekable .md.warc.gz files where each record is wrapped in its own gzip member, matching Common Crawl's concatenated-gzip format
+5. **Export** each shard to Apache Parquet with Zstd compression, 100,000 rows per row group, and an 8 MB page buffer
+
+Empty conversions (pages where trafilatura could not extract meaningful content) are dropped.
+
+### Personal and Sensitive Information
+
+No additional PII filtering is applied beyond what Common Crawl provides. As the dataset is sourced from the public web, it is likely that some personally identifiable information is present. If you find your own PII in the dataset and would like it removed, please open an issue on the repository.
+
+## Considerations for Using the Data
+
+### Social Impact
+
+By releasing both the dataset and the full processing pipeline, we aim to lower the barrier to training and evaluating language models on high quality web data. Researchers and practitioners who cannot afford to run their own Common Crawl processing pipelines can use Open Index directly.
+
+### Discussion of Biases
+
+Open Index inherits the biases present in Common Crawl and the public web at large. The trafilatura extraction step favors article-like pages and may underrepresent content from forums, social media, and non-standard page layouts. We have not applied any machine-learning-based quality or toxicity filters, as such filters have been shown to disproportionately remove content from certain dialects and communities.
+
+### Known Limitations
+
+Code-heavy pages may not convert well to Markdown. If you are training a model that needs strong code performance, consider supplementing Open Index with a dedicated code dataset such as [The Stack v2](https://huggingface.co/datasets/bigcode/the-stack-v2). Similarly, highly structured pages like Wikipedia may have better formatting in dedicated Wikipedia dumps than in their Common Crawl versions.
+
+## Additional Information
+
+### Licensing
+
+The dataset is released under the **Open Data Commons Attribution License (ODC-By) v1.0**. The use of this dataset is also subject to [Common Crawl's Terms of Use](https://commoncrawl.org/terms-of-use). The original content remains subject to the rights and terms of its respective publishers.
+
+### Contact
+
+Please open a discussion on the [Community tab](https://huggingface.co/datasets/open-index/draft/discussions) for questions, feedback, or issues.
+`, c, c, c, c, c, c, c, c, c)
 }
 
 func ccPublishLicense() string {
 	return `Open Data Commons Attribution License (ODC-By) v1.0
 
-This dataset is made available under the Open Data Commons Attribution License:
-https://opendatacommons.org/licenses/by/1-0/
+Full text: https://opendatacommons.org/licenses/by/1-0/
 
-You are free to share, create, and adapt this data — even for commercial purposes —
-as long as you attribute the source.
+You are free to copy, distribute, use, modify, transform, and build upon
+this database, as long as you attribute the source.
 
-Attribution requirements:
-- Cite "Open Index, derived from Common Crawl (https://commoncrawl.org)"
-- Include a link to this dataset when used in publications or products
+Attribution: "Open Index, derived from Common Crawl (https://commoncrawl.org)"
 
-Additional notices:
-
-1. This dataset contains data derived from Common Crawl, which archives third-party
-   web content. The original content remains subject to the rights of its respective
-   publishers and the Common Crawl Terms of Use: https://commoncrawl.org/terms-of-use
-
-2. You are responsible for complying with applicable law including downstream licensing
-   obligations, robots.txt restrictions, privacy requirements, and content removal
-   requests from original publishers.
+Note: This dataset contains data derived from Common Crawl, which archives
+third-party web content. The original content remains subject to the rights
+of its respective publishers. You are responsible for complying with applicable
+law including downstream licensing obligations, robots.txt restrictions, privacy
+requirements, and content removal requests. See Common Crawl's Terms of Use:
+https://commoncrawl.org/terms-of-use
 `
 }
