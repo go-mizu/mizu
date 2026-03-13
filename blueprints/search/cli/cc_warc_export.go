@@ -17,6 +17,7 @@ import (
 	warcpkg "github.com/go-mizu/mizu/blueprints/search/pkg/warc"
 	warcmd "github.com/go-mizu/mizu/blueprints/search/pkg/warc_md"
 	"github.com/parquet-go/parquet-go"
+	"github.com/parquet-go/parquet-go/compress/zstd"
 	"github.com/spf13/cobra"
 )
 
@@ -102,6 +103,7 @@ func runCCWarcExport(ctx context.Context, crawlID, fileIdx string, force bool) e
 	fmt.Println()
 
 	var exported, skipped int64
+	var totalHTMLBytes, totalMdBytes int64
 	for i, idx := range selected {
 		shard := warcIndexFromPath(paths[idx], idx)
 		inPath := filepath.Join(cfg.WARCMdDir(), shard+".md.warc.gz")
@@ -116,15 +118,31 @@ func runCCWarcExport(ctx context.Context, crawlID, fileIdx string, force bool) e
 			continue
 		}
 
-		rows, err := exportWARCMdShardToParquet(inPath, outPath, idx)
+		rows, htmlBytes, mdBytes, err := exportWARCMdShardToParquet(inPath, outPath, idx)
 		if err != nil {
 			return fmt.Errorf("export shard %s: %w", shard, err)
 		}
-		fmt.Printf("  [%d/%d] %s  %s rows  %s\n",
+		totalHTMLBytes += htmlBytes
+		totalMdBytes += mdBytes
+
+		// Get parquet file size
+		pqSize := int64(0)
+		if fi, err := os.Stat(outPath); err == nil {
+			pqSize = fi.Size()
+		}
+		warcSize := int64(0)
+		if fi, err := os.Stat(inPath); err == nil {
+			warcSize = fi.Size()
+		}
+
+		fmt.Printf("  [%d/%d] %s  %s rows  %s  warc %s -> parquet %s (-%s%%)\n",
 			i+1, len(selected),
 			labelStyle.Render(shard),
 			infoStyle.Render(ccFmtInt64(rows)),
-			successStyle.Render(filepath.Base(outPath)))
+			successStyle.Render(filepath.Base(outPath)),
+			infoStyle.Render(ccFmtBytes(warcSize)),
+			infoStyle.Render(ccFmtBytes(pqSize)),
+			infoStyle.Render(ccPctReduction(warcSize, pqSize)))
 		exported++
 	}
 
@@ -133,18 +151,27 @@ func runCCWarcExport(ctx context.Context, crawlID, fileIdx string, force bool) e
 	if skipped > 0 {
 		fmt.Printf("  Skipped   %s\n", warningStyle.Render(ccFmtInt64(skipped)))
 	}
+	if totalHTMLBytes > 0 {
+		reduction := float64(totalHTMLBytes-totalMdBytes) / float64(totalHTMLBytes) * 100
+		fmt.Printf("  HTML      %s -> Markdown %s  (-%s%%)\n",
+			infoStyle.Render(ccFmtBytes(totalHTMLBytes)),
+			infoStyle.Render(ccFmtBytes(totalMdBytes)),
+			infoStyle.Render(fmt.Sprintf("%.1f", reduction)))
+	}
 	fmt.Printf("  Repo root %s\n", labelStyle.Render(repoRoot))
 	return nil
 }
 
-func exportWARCMdShardToParquet(inPath, outPath string, fileIndex int) (int64, error) {
+func exportWARCMdShardToParquet(inPath, outPath string, fileIndex int) (rows int64, htmlBytes int64, mdBytes int64, err error) {
+	fail := func(e error) (int64, int64, int64, error) { return 0, 0, 0, e }
+
 	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
-		return 0, fmt.Errorf("mkdir parquet dir: %w", err)
+		return fail(fmt.Errorf("mkdir parquet dir: %w", err))
 	}
 
 	in, err := os.Open(inPath)
 	if err != nil {
-		return 0, fmt.Errorf("open input: %w", err)
+		return fail(fmt.Errorf("open input: %w", err))
 	}
 	defer in.Close()
 
@@ -152,18 +179,18 @@ func exportWARCMdShardToParquet(inPath, outPath string, fileIndex int) (int64, e
 	_ = os.Remove(tmpPath)
 	out, err := os.Create(tmpPath)
 	if err != nil {
-		return 0, fmt.Errorf("create parquet: %w", err)
+		return fail(fmt.Errorf("create parquet: %w", err))
 	}
 
 	pw := parquet.NewGenericWriter[ccWARCExportRow](out,
-		parquet.Compression(&parquet.Zstd),
+		parquet.Compression(&zstd.Codec{Level: zstd.SpeedBestCompression}),
 		parquet.MaxRowsPerRowGroup(100_000),
 		parquet.PageBufferSize(8*1024*1024),
 	)
 
 	reader := warcpkg.NewReader(in)
 	batch := make([]ccWARCExportRow, 0, 1000)
-	var rowsWritten int64
+	var rowsWritten, totalHTML, totalMd int64
 
 	flush := func() error {
 		if len(batch) == 0 {
@@ -176,22 +203,24 @@ func exportWARCMdShardToParquet(inPath, outPath string, fileIndex int) (int64, e
 		return nil
 	}
 
+	cleanup := func() {
+		pw.Close()
+		out.Close()
+		_ = os.Remove(tmpPath)
+	}
+
 	for reader.Next() {
 		rec := reader.Record()
 		body, err := io.ReadAll(rec.Body)
 		if err != nil {
-			pw.Close()
-			out.Close()
-			_ = os.Remove(tmpPath)
-			return 0, fmt.Errorf("read record body: %w", err)
+			cleanup()
+			return fail(fmt.Errorf("read record body: %w", err))
 		}
 
 		headersJSON, err := ccMarshalStableHeaderJSON(rec.Header)
 		if err != nil {
-			pw.Close()
-			out.Close()
-			_ = os.Remove(tmpPath)
-			return 0, fmt.Errorf("marshal headers: %w", err)
+			cleanup()
+			return fail(fmt.Errorf("marshal headers: %w", err))
 		}
 
 		targetURL := strings.TrimSpace(rec.Header.TargetURI())
@@ -199,6 +228,9 @@ func exportWARCMdShardToParquet(inPath, outPath string, fileIndex int) (int64, e
 		if ts := rec.Header.Date(); !ts.IsZero() {
 			crawlDate = ts.Format(time.RFC3339)
 		}
+		htmlLen := ccParseHTMLLength(rec.Header.Get("X-HTML-Length"))
+		totalHTML += htmlLen
+		totalMd += int64(len(body))
 		batch = append(batch, ccWARCExportRow{
 			DocID:           ccWARCRecordIDToDocID(rec.Header.RecordID()),
 			URL:             targetURL,
@@ -208,7 +240,7 @@ func exportWARCMdShardToParquet(inPath, outPath string, fileIndex int) (int64, e
 			WARCRecordID:    rec.Header.RecordID(),
 			WARCRefersTo:    rec.Header.RefersTo(),
 			ContentType:     rec.Header.Get("Content-Type"),
-			HTMLLength:      ccParseHTMLLength(rec.Header.Get("X-HTML-Length")),
+			HTMLLength:      htmlLen,
 			MarkdownLength:  int64(len(body)),
 			WARCHeadersJSON: sanitizeUTF8(headersJSON),
 			Markdown:        sanitizeUTF8(string(body)),
@@ -218,39 +250,33 @@ func exportWARCMdShardToParquet(inPath, outPath string, fileIndex int) (int64, e
 		rowsWritten++
 		if len(batch) >= 1000 {
 			if err := flush(); err != nil {
-				pw.Close()
-				out.Close()
-				_ = os.Remove(tmpPath)
-				return 0, fmt.Errorf("write parquet: %w", err)
+				cleanup()
+				return fail(fmt.Errorf("write parquet: %w", err))
 			}
 		}
 	}
 	if err := reader.Err(); err != nil {
-		pw.Close()
-		out.Close()
-		_ = os.Remove(tmpPath)
-		return 0, fmt.Errorf("read warc: %w", err)
+		cleanup()
+		return fail(fmt.Errorf("read warc: %w", err))
 	}
 	if err := flush(); err != nil {
-		pw.Close()
-		out.Close()
-		_ = os.Remove(tmpPath)
-		return 0, fmt.Errorf("write parquet: %w", err)
+		cleanup()
+		return fail(fmt.Errorf("write parquet: %w", err))
 	}
 	if err := pw.Close(); err != nil {
 		out.Close()
 		_ = os.Remove(tmpPath)
-		return 0, fmt.Errorf("close parquet writer: %w", err)
+		return fail(fmt.Errorf("close parquet writer: %w", err))
 	}
 	if err := out.Close(); err != nil {
 		_ = os.Remove(tmpPath)
-		return 0, fmt.Errorf("close parquet file: %w", err)
+		return fail(fmt.Errorf("close parquet file: %w", err))
 	}
 	if err := os.Rename(tmpPath, outPath); err != nil {
 		_ = os.Remove(tmpPath)
-		return 0, fmt.Errorf("finalize parquet: %w", err)
+		return fail(fmt.Errorf("finalize parquet: %w", err))
 	}
-	return rowsWritten, nil
+	return rowsWritten, totalHTML, totalMd, nil
 }
 
 func ccMarshalStableHeaderJSON(h warcpkg.Header) (string, error) {
@@ -306,4 +332,11 @@ func sanitizeUTF8(s string) string {
 		return s
 	}
 	return strings.ToValidUTF8(s, "\uFFFD")
+}
+
+func ccPctReduction(from, to int64) string {
+	if from <= 0 {
+		return "0"
+	}
+	return fmt.Sprintf("%.0f", float64(from-to)/float64(from)*100)
 }
