@@ -90,6 +90,10 @@ Get started:
 	root.AddCommand(NewGoodread())
 	root.AddCommand(NewAmazon())
 	root.AddCommand(NewPinterest())
+	root.AddCommand(NewSoundcloud())
+	root.AddCommand(NewYouTube())
+	root.AddCommand(NewSpotify())
+	root.AddCommand(NewEbay())
 
 	if err := fang.Execute(ctx, root,
 		fang.WithVersion(Version),
