@@ -168,10 +168,32 @@ func (d *DB) UpsertAlbum(a Album) error {
 
 func (d *DB) UpsertArtist(a Artist) error {
 	linksJSON, _ := json.Marshal(a.ExternalLinks)
-	_, err := d.db.Exec(`INSERT OR REPLACE INTO artists (
+	_, err := d.db.Exec(`INSERT INTO artists (
 		artist_id, name, biography, followers, monthly_listeners, avatar_url,
 		external_links_json, url, spotify_uri, source_title, source_description, fetched_at
 	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+		a.ArtistID, nullStr(a.Name), nullStr(a.Biography), nullInt64(a.Followers), nullInt64(a.MonthlyListeners), nullStr(a.AvatarURL),
+		nullBytes(linksJSON), nullStr(a.URL), nullStr(a.SpotifyURI), nullStr(a.SourceTitle), nullStr(a.SourceDescription), nullTime(a.FetchedAt),
+	)
+	if err == nil {
+		return nil
+	}
+	_, err = d.db.Exec(`INSERT INTO artists (
+		artist_id, name, biography, followers, monthly_listeners, avatar_url,
+		external_links_json, url, spotify_uri, source_title, source_description, fetched_at
+	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+	ON CONFLICT (artist_id) DO UPDATE SET
+		name = COALESCE(excluded.name, artists.name),
+		biography = COALESCE(excluded.biography, artists.biography),
+		followers = COALESCE(excluded.followers, artists.followers),
+		monthly_listeners = COALESCE(excluded.monthly_listeners, artists.monthly_listeners),
+		avatar_url = COALESCE(excluded.avatar_url, artists.avatar_url),
+		external_links_json = COALESCE(excluded.external_links_json, artists.external_links_json),
+		url = COALESCE(excluded.url, artists.url),
+		spotify_uri = COALESCE(excluded.spotify_uri, artists.spotify_uri),
+		source_title = COALESCE(excluded.source_title, artists.source_title),
+		source_description = COALESCE(excluded.source_description, artists.source_description),
+		fetched_at = COALESCE(excluded.fetched_at, artists.fetched_at)`,
 		a.ArtistID, nullStr(a.Name), nullStr(a.Biography), nullInt64(a.Followers), nullInt64(a.MonthlyListeners), nullStr(a.AvatarURL),
 		nullBytes(linksJSON), nullStr(a.URL), nullStr(a.SpotifyURI), nullStr(a.SourceTitle), nullStr(a.SourceDescription), nullTime(a.FetchedAt),
 	)
