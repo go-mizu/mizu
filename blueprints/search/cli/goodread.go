@@ -699,6 +699,14 @@ func parseSitemapsFromRobots(robotsURL string) ([]string, error) {
 	return urls, scanner.Err()
 }
 
+// shortURL returns just the filename portion of a URL for display.
+func shortURL(u string) string {
+	if i := strings.LastIndex(u, "/"); i >= 0 {
+		return u[i+1:]
+	}
+	return u
+}
+
 // inferSiteindexType guesses the entity type from a siteindex URL filename.
 // e.g. "https://www.goodreads.com/siteindex.author.xml" → "author"
 func inferSiteindexType(u string) string {
@@ -717,6 +725,7 @@ func inferSiteindexType(u string) string {
 }
 
 // fetchSitemapIndex fetches a siteindex XML and returns the list of .gz sitemap URLs.
+// Streams the response so it can show live progress.
 func fetchSitemapIndex(siteindexURL string) ([]string, error) {
 	resp, err := http.Get(siteindexURL)
 	if err != nil {
@@ -724,26 +733,38 @@ func fetchSitemapIndex(siteindexURL string) ([]string, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
+	sizeHint := ""
+	if resp.ContentLength > 0 {
+		sizeHint = fmt.Sprintf(" (%.0f KB)", float64(resp.ContentLength)/1024)
 	}
-
-	var idx struct {
-		Sitemaps []struct {
-			Loc string `xml:"loc"`
-		} `xml:"sitemap"`
-	}
-	if err := xml.Unmarshal(body, &idx); err != nil {
-		return nil, err
-	}
+	fmt.Printf("\r    streaming index%s ...  ", sizeHint)
 
 	var urls []string
-	for _, sm := range idx.Sitemaps {
-		if sm.Loc != "" {
-			urls = append(urls, sm.Loc)
+	dec := xml.NewDecoder(resp.Body)
+	for {
+		tok, err := dec.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return urls, err
+		}
+		se, ok := tok.(xml.StartElement)
+		if !ok || se.Name.Local != "loc" {
+			continue
+		}
+		var loc string
+		if err := dec.DecodeElement(&loc, &se); err != nil {
+			continue
+		}
+		if loc != "" {
+			urls = append(urls, loc)
+			if len(urls)%50 == 0 {
+				fmt.Printf("\r    streaming index%s — %d files  ", sizeHint, len(urls))
+			}
 		}
 	}
+	fmt.Printf("\r    streaming index%s — %d files  \n", sizeHint, len(urls))
 	return urls, nil
 }
 
@@ -935,7 +956,7 @@ func seedFromSitemaps(ctx context.Context, stateDB *goodread.State, typeFilter s
 	}
 	fmt.Printf("  Found %d siteindex files in robots.txt\n", len(siteindexes))
 
-	var totalNew, totalSkipped int
+	var totalNew int
 
 	for _, si := range siteindexes {
 		if ctx.Err() != nil {
@@ -964,29 +985,35 @@ func seedFromSitemaps(ctx context.Context, stateDB *goodread.State, typeFilter s
 				break
 			}
 
-			newN, skipN, err := enqueueGzSitemap(gzURL, stateDB, entityType)
+			fileIdx := i + 1
+			fileURLs := 0
+			newN, err := enqueueGzSitemap(gzURL, stateDB, entityType, func(n int) {
+				fileURLs = n
+				fmt.Printf("\r  [%s] file %d/%d — %s (file: %d URLs, total: %d)   ",
+					entityType, fileIdx, total, shortURL(gzURL), fileURLs, totalNew+fileURLs)
+			})
 			if err != nil {
 				fmt.Printf("\n    Warning (%s): %v\n", gzURL, err)
 				continue
 			}
 			totalNew += newN
-			totalSkipped += skipN
-
-			fmt.Printf("\r  [%s] file %d/%d — %d new, %d total  ",
-				entityType, i+1, total, totalNew, totalNew+totalSkipped)
+			fmt.Printf("\r  [%s] file %d/%d done — total %d URLs   \n",
+				entityType, fileIdx, total, totalNew)
 		}
-		fmt.Println()
 	}
 
-	return totalNew, totalSkipped, nil
+	return totalNew, 0, nil
 }
 
-// enqueueGzSitemap downloads a gzipped sitemap, decompresses it, and batch-enqueues URLs.
-// Returns (newly enqueued, skipped as duplicates).
-func enqueueGzSitemap(gzURL string, stateDB *goodread.State, entityType string) (int, int, error) {
+// enqueueGzSitemap downloads a gzipped sitemap, streams XML parsing, and batch-enqueues
+// URLs in chunks of batchSize. progress(n) is called after each batch with the running total.
+// Returns (newly enqueued, error).
+func enqueueGzSitemap(gzURL string, stateDB *goodread.State, entityType string, progress func(n int)) (int, error) {
+	const batchSize = 5000
+
 	resp, err := http.Get(gzURL)
 	if err != nil {
-		return 0, 0, err
+		return 0, err
 	}
 	defer resp.Body.Close()
 
@@ -994,38 +1021,61 @@ func enqueueGzSitemap(gzURL string, stateDB *goodread.State, entityType string) 
 	if strings.HasSuffix(gzURL, ".gz") {
 		gz, err := gzip.NewReader(resp.Body)
 		if err != nil {
-			return 0, 0, fmt.Errorf("gzip: %w", err)
+			return 0, fmt.Errorf("gzip: %w", err)
 		}
 		defer gz.Close()
 		reader = gz
 	}
 
-	body, err := io.ReadAll(reader)
-	if err != nil {
-		return 0, 0, err
+	dec := xml.NewDecoder(reader)
+	batch := make([]goodread.QueueItem, 0, batchSize)
+	total := 0
+
+	flush := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+		if err := stateDB.EnqueueBatch(batch); err != nil {
+			return err
+		}
+		total += len(batch)
+		batch = batch[:0]
+		if progress != nil {
+			progress(total)
+		}
+		return nil
 	}
 
-	var urlSet struct {
-		URLs []struct {
-			Loc string `xml:"loc"`
-		} `xml:"url"`
-	}
-	if err := xml.Unmarshal(body, &urlSet); err != nil {
-		return 0, 0, err
-	}
-
-	// Batch insert — one transaction per .gz file instead of one per URL.
-	items := make([]goodread.QueueItem, 0, len(urlSet.URLs))
-	for _, u := range urlSet.URLs {
-		if u.Loc != "" {
-			items = append(items, goodread.QueueItem{URL: u.Loc, EntityType: entityType, Priority: 1})
+	for {
+		tok, err := dec.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return total, err
+		}
+		se, ok := tok.(xml.StartElement)
+		if !ok || se.Name.Local != "loc" {
+			continue
+		}
+		var loc string
+		if err := dec.DecodeElement(&loc, &se); err != nil {
+			continue
+		}
+		if loc == "" {
+			continue
+		}
+		batch = append(batch, goodread.QueueItem{URL: loc, EntityType: entityType, Priority: 1})
+		if len(batch) >= batchSize {
+			if err := flush(); err != nil {
+				return total, err
+			}
 		}
 	}
-	if err := stateDB.EnqueueBatch(items); err != nil {
-		return 0, 0, err
+	if err := flush(); err != nil {
+		return total, err
 	}
-	// EnqueueBatch silently ignores duplicates; treat all as new for progress display.
-	return len(items), 0, nil
+	return total, nil
 }
 
 // ── info ─────────────────────────────────────────────────────────────────────
