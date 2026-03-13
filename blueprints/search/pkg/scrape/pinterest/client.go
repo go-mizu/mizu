@@ -119,28 +119,7 @@ func (c *Client) SearchPins(ctx context.Context, query string, maxPins int) ([]P
 
 // FetchBoardPage fetches the board HTML page and extracts the board ID.
 func (c *Client) FetchBoardPage(ctx context.Context, boardURL string) (string, error) {
-	c.rateLimit()
-	req, err := http.NewRequestWithContext(ctx, "GET", boardURL, nil)
-	if err != nil {
-		return "", err
-	}
-	c.setBaseHeaders(req, boardURL)
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == 404 {
-		return "", fmt.Errorf("board not found (HTTP 404)")
-	}
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("HTTP %d fetching board page", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
+	body, _, err := c.fetchPageHTML(ctx, boardURL)
 	if err != nil {
 		return "", err
 	}
@@ -150,6 +129,16 @@ func (c *Client) FetchBoardPage(ctx context.Context, boardURL string) (string, e
 		return "", fmt.Errorf("could not extract board_id from %s", boardURL)
 	}
 	return boardID, nil
+}
+
+// FetchBoardBootstrap fetches board metadata and the SSR bootstrap feed embedded
+// in the public board page.
+func (c *Client) FetchBoardBootstrap(ctx context.Context, boardURL string) (*Board, []Pin, error) {
+	body, _, err := c.fetchPageHTML(ctx, boardURL)
+	if err != nil {
+		return nil, nil, err
+	}
+	return parseBoardBootstrap(body, boardURL)
 }
 
 // FetchBoardPins fetches one page of pins from a board.
@@ -205,103 +194,26 @@ func (c *Client) FetchBoardPins(ctx context.Context, boardID, sourceURL, bookmar
 
 // FetchUser fetches a Pinterest user profile by username.
 func (c *Client) FetchUser(ctx context.Context, username string) (*User, error) {
-	options := map[string]any{
-		"username":      username,
-		"field_set_key": "profile",
-	}
-	data := map[string]any{
-		"options": options,
-		"context": map[string]any{},
-	}
-	dataJSON, _ := json.Marshal(data)
-
-	params := url.Values{}
-	params.Set("data", string(dataJSON))
-	params.Set("_", fmt.Sprintf("%d", time.Now().UnixMilli()))
-
-	apiURL := "https://www.pinterest.com/resource/UserResource/get/?" + params.Encode()
-	sourceURL := "/" + username + "/"
-
-	c.rateLimit()
-	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	c.setAPIHeaders(req, sourceURL)
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == 404 {
-		return nil, fmt.Errorf("user %q not found (HTTP 404)", username)
-	}
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("HTTP %d fetching user %q", resp.StatusCode, username)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
-	if err != nil {
-		return nil, err
-	}
-
-	return parseUserResponse(body, username)
+	user, _, err := c.FetchUserBootstrap(ctx, username)
+	return user, err
 }
 
 // FetchUserBoards fetches one page of boards for a user.
 // Returns (boards, nextBookmark, error).
 func (c *Client) FetchUserBoards(ctx context.Context, username, bookmark string) ([]Board, string, error) {
-	sourceURL := "/" + username + "/boards/"
+	_, boards, err := c.FetchUserBootstrap(ctx, username)
+	return boards, "", err
+}
 
-	options := map[string]any{
-		"username":       username,
-		"page_size":      50,
-		"privacy_filter": "all",
-		"field_set_key":  "profile_grid_item",
-	}
-	if bookmark != "" {
-		options["bookmarks"] = []string{bookmark}
-	}
-
-	data := map[string]any{
-		"options": options,
-		"context": map[string]any{},
-	}
-	dataJSON, _ := json.Marshal(data)
-
-	params := url.Values{}
-	params.Set("source_url", sourceURL)
-	params.Set("data", string(dataJSON))
-	params.Set("_", fmt.Sprintf("%d", time.Now().UnixMilli()))
-
-	apiURL := "https://www.pinterest.com/resource/BoardsResource/get/?" + params.Encode()
-
-	c.rateLimit()
-	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+// FetchUserBootstrap fetches a user's public profile page and extracts the
+// embedded SSR bootstrap data, including the visible board list.
+func (c *Client) FetchUserBootstrap(ctx context.Context, username string) (*User, []Board, error) {
+	userURL := NormalizeUserURL(username)
+	body, _, err := c.fetchPageHTML(ctx, userURL)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
-	c.setAPIHeaders(req, sourceURL)
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 5*1024*1024))
-	if err != nil {
-		return nil, "", err
-	}
-
-	return parseUserBoardsResponse(body, username)
+	return parseUserBootstrap(body, username)
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -338,6 +250,7 @@ func (c *Client) searchPage(ctx context.Context, query, bookmark string) ([]Pin,
 		return nil, "", err
 	}
 	c.setAPIHeaders(req, sourceURL)
+	req.Header.Set("X-Pinterest-Pws-Handler", "www/search/[scope].js")
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -356,6 +269,34 @@ func (c *Client) searchPage(ctx context.Context, query, bookmark string) ([]Pin,
 	}
 
 	return parseSearchResponse(body)
+}
+
+func (c *Client) fetchPageHTML(ctx context.Context, pageURL string) ([]byte, int, error) {
+	c.rateLimit()
+	req, err := http.NewRequestWithContext(ctx, "GET", pageURL, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	c.setBaseHeaders(req, pageURL)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8*1024*1024))
+	if err != nil {
+		return nil, resp.StatusCode, err
+	}
+	if resp.StatusCode == 404 {
+		return nil, resp.StatusCode, fmt.Errorf("not found (HTTP 404)")
+	}
+	if resp.StatusCode != 200 {
+		return nil, resp.StatusCode, fmt.Errorf("HTTP %d fetching %s", resp.StatusCode, pageURL)
+	}
+	return body, resp.StatusCode, nil
 }
 
 func (c *Client) setBaseHeaders(req *http.Request, path string) {
@@ -403,20 +344,58 @@ type pinterestImage struct {
 	Height int    `json:"height"`
 }
 
+type rawBoard struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	URL           string `json:"url"`
+	Description   string `json:"description"`
+	PinCount      int    `json:"pin_count"`
+	FollowerCount int    `json:"follower_count"`
+	Privacy       string `json:"privacy"`
+	Category      string `json:"category"`
+	ImageCoverHD  string `json:"image_cover_hd_url"`
+	Owner         struct {
+		ID       string `json:"id"`
+		Username string `json:"username"`
+	} `json:"owner"`
+	Header *struct {
+		LargeImageURL  string `json:"large_image_url"`
+		XLargeImageURL string `json:"xlarge_image_url"`
+		SmallImageURL  string `json:"small_image_url"`
+	} `json:"header"`
+	CoverPin *struct {
+		ImageURL string `json:"image_url"`
+	} `json:"cover_pin"`
+}
+
+type rawUserProfile struct {
+	ID             string `json:"id"`
+	Username       string `json:"username"`
+	FullName       string `json:"full_name"`
+	About          string `json:"about"`
+	WebsiteURL     string `json:"website_url"`
+	FollowerCount  int    `json:"follower_count"`
+	FollowingCount int    `json:"following_count"`
+	BoardCount     int    `json:"board_count"`
+	PinCount       int    `json:"pin_count"`
+	MonthlyViews   int64  `json:"monthly_views"`
+	ImageMediumURL string `json:"image_medium_url"`
+}
+
 // rawPin is the raw pin shape shared by search and board feed responses.
 type rawPin struct {
-	ID          string                    `json:"id"`
-	Type        string                    `json:"type"`
-	Title       string                    `json:"title"`
-	GridTitle   string                    `json:"grid_title"`
-	Description string                    `json:"description"`
-	AutoAltText string                    `json:"auto_alt_text"`
-	Link        string                    `json:"link"`
-	SaveCount   int                       `json:"save_count"`
-	CommentCount int                      `json:"comment_count"`
-	CreatedAt   string                    `json:"created_at"`
-	Images      map[string]pinterestImage `json:"images"`
-	Board       struct {
+	ID           string                    `json:"id"`
+	Type         string                    `json:"type"`
+	Title        string                    `json:"title"`
+	GridTitle    string                    `json:"grid_title"`
+	Description  string                    `json:"description"`
+	AutoAltText  string                    `json:"auto_alt_text"`
+	Link         string                    `json:"link"`
+	SaveCount    int                       `json:"save_count"`
+	CommentCount int                       `json:"comment_count"`
+	CreatedAt    string                    `json:"created_at"`
+	Images       map[string]pinterestImage `json:"images"`
+	Board        struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
 	} `json:"board"`
@@ -579,6 +558,207 @@ func parseUserBoardsResponse(body []byte, ownerUsername string) ([]Board, string
 		})
 	}
 	return boards, resp.ResourceResponse.Bookmark, nil
+}
+
+type boardBootstrap struct {
+	InitialReduxState struct {
+		Boards map[string]rawBoard `json:"boards"`
+		Pins   map[string]rawPin   `json:"pins"`
+	} `json:"initialReduxState"`
+	BoardFeedResource map[string]struct {
+		Data         []rawPin `json:"data"`
+		NextBookmark string   `json:"nextBookmark"`
+	} `json:"BoardFeedResource"`
+}
+
+func parseBoardBootstrap(body []byte, boardURL string) (*Board, []Pin, error) {
+	payload, err := extractScriptJSON(body, "__PWS_INITIAL_PROPS__")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var bootstrap boardBootstrap
+	if err := json.Unmarshal(payload, &bootstrap); err != nil {
+		return nil, nil, fmt.Errorf("parse board bootstrap: %w", err)
+	}
+
+	var board *Board
+	for _, rb := range bootstrap.InitialReduxState.Boards {
+		b := convertBoard(rb)
+		if board == nil || b.URL == boardURL {
+			candidate := b
+			board = &candidate
+			if b.URL == boardURL {
+				break
+			}
+		}
+	}
+	if board == nil {
+		return nil, nil, fmt.Errorf("board metadata not found in bootstrap")
+	}
+
+	var pins []Pin
+	for _, resource := range bootstrap.BoardFeedResource {
+		pins = append(pins, convertPins(resource.Data)...)
+	}
+	if len(pins) == 0 && len(bootstrap.InitialReduxState.Pins) > 0 {
+		rawPins := make([]rawPin, 0, len(bootstrap.InitialReduxState.Pins))
+		for _, pin := range bootstrap.InitialReduxState.Pins {
+			rawPins = append(rawPins, pin)
+		}
+		pins = convertPins(rawPins)
+	}
+
+	return board, dedupePins(pins), nil
+}
+
+type userBootstrap struct {
+	InitialReduxState struct {
+		Boards map[string]rawBoard       `json:"boards"`
+		Users  map[string]rawUserProfile `json:"users"`
+	} `json:"initialReduxState"`
+	Resources struct {
+		UserResource map[string]struct {
+			Data rawUserProfile `json:"data"`
+		} `json:"UserResource"`
+	} `json:"resources"`
+}
+
+func parseUserBootstrap(body []byte, username string) (*User, []Board, error) {
+	payload, err := extractScriptJSON(body, "__PWS_INITIAL_PROPS__")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var bootstrap userBootstrap
+	if err := json.Unmarshal(payload, &bootstrap); err != nil {
+		return nil, nil, fmt.Errorf("parse user bootstrap: %w", err)
+	}
+
+	var rawUser *rawUserProfile
+	for _, u := range bootstrap.InitialReduxState.Users {
+		if u.Username == username {
+			u := u
+			rawUser = &u
+			break
+		}
+	}
+	if rawUser == nil {
+		for _, u := range bootstrap.Resources.UserResource {
+			if u.Data.Username == username {
+				user := u.Data
+				rawUser = &user
+				break
+			}
+		}
+	}
+	if rawUser == nil {
+		return nil, nil, fmt.Errorf("user %q not found in bootstrap", username)
+	}
+
+	boards := make([]Board, 0, len(bootstrap.InitialReduxState.Boards))
+	for _, rb := range bootstrap.InitialReduxState.Boards {
+		board := convertBoard(rb)
+		if board.Username == username {
+			boards = append(boards, board)
+		}
+	}
+
+	user := &User{
+		UserID:         rawUser.ID,
+		Username:       rawUser.Username,
+		FullName:       rawUser.FullName,
+		Bio:            rawUser.About,
+		Website:        rawUser.WebsiteURL,
+		FollowerCount:  rawUser.FollowerCount,
+		FollowingCount: rawUser.FollowingCount,
+		BoardCount:     rawUser.BoardCount,
+		PinCount:       rawUser.PinCount,
+		MonthlyViews:   rawUser.MonthlyViews,
+		AvatarURL:      rawUser.ImageMediumURL,
+		URL:            NormalizeUserURL(rawUser.Username),
+		FetchedAt:      time.Now(),
+	}
+
+	return user, boards, nil
+}
+
+func convertBoard(rb rawBoard) Board {
+	boardURL := rb.URL
+	if boardURL != "" && !strings.HasPrefix(boardURL, "http") {
+		boardURL = BaseURL + boardURL
+	}
+	username, slug := ExtractBoardSlug(boardURL)
+	coverURL := rb.ImageCoverHD
+	if coverURL == "" && rb.Header != nil {
+		coverURL = rb.Header.XLargeImageURL
+		if coverURL == "" {
+			coverURL = rb.Header.LargeImageURL
+		}
+		if coverURL == "" {
+			coverURL = rb.Header.SmallImageURL
+		}
+	}
+	if coverURL == "" && rb.CoverPin != nil {
+		coverURL = rb.CoverPin.ImageURL
+	}
+	return Board{
+		BoardID:       rb.ID,
+		Name:          rb.Name,
+		Slug:          slug,
+		Description:   rb.Description,
+		UserID:        rb.Owner.ID,
+		Username:      firstNonEmpty(rb.Owner.Username, username),
+		PinCount:      rb.PinCount,
+		FollowerCount: rb.FollowerCount,
+		CoverURL:      coverURL,
+		Category:      rb.Category,
+		IsSecret:      rb.Privacy == "secret",
+		URL:           boardURL,
+		FetchedAt:     time.Now(),
+	}
+}
+
+func extractScriptJSON(body []byte, scriptID string) ([]byte, error) {
+	startMarker := `<script id="` + scriptID + `" type="application/json">`
+	start := strings.Index(string(body), startMarker)
+	if start < 0 {
+		return nil, fmt.Errorf("%s not found in HTML", scriptID)
+	}
+	start += len(startMarker)
+	end := strings.Index(string(body[start:]), "</script>")
+	if end < 0 {
+		return nil, fmt.Errorf("closing script tag not found for %s", scriptID)
+	}
+	return body[start : start+end], nil
+}
+
+func dedupePins(pins []Pin) []Pin {
+	if len(pins) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(pins))
+	out := make([]Pin, 0, len(pins))
+	for _, pin := range pins {
+		if pin.PinID == "" {
+			continue
+		}
+		if _, ok := seen[pin.PinID]; ok {
+			continue
+		}
+		seen[pin.PinID] = struct{}{}
+		out = append(out, pin)
+	}
+	return out
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // convertPins converts rawPin slices to Pin domain objects.

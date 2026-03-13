@@ -3,6 +3,7 @@ package pinterest
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/core"
 )
@@ -27,7 +28,7 @@ type SearchMetric struct {
 // SearchTask fetches pins from a Pinterest search query and stores them in the DB.
 type SearchTask struct {
 	Query   string
-	MaxPins int    // 0 = use DefaultMaxPins
+	MaxPins int // 0 = use DefaultMaxPins
 	Client  *Client
 	DB      *DB
 	StateDB *State // optional; marks search URL as visited
@@ -47,7 +48,7 @@ func (t *SearchTask) Run(ctx context.Context, emit func(*SearchState)) (SearchMe
 		}
 	}
 
-	searchURL := fmt.Sprintf("%s/search/pins/?q=%s", BaseURL, t.Query)
+	searchURL := fmt.Sprintf("%s/search/pins/?q=%s", BaseURL, url.QueryEscape(t.Query))
 
 	emit(&SearchState{Query: t.Query, Status: "searching"})
 
@@ -91,7 +92,8 @@ func (t *SearchTask) Run(ctx context.Context, emit func(*SearchState)) (SearchMe
 		Query:     t.Query,
 		Status:    "done",
 		PinsFound: len(pins),
-		Page:      len(pins) / 25,
+		Page:      (len(pins) + 24) / 25,
 	})
+	m.Pages = (len(pins) + 24) / 25
 	return m, nil
 }

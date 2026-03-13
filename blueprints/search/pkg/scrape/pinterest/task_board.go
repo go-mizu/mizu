@@ -2,8 +2,6 @@ package pinterest
 
 import (
 	"context"
-	"fmt"
-	"strings"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/core"
 )
@@ -47,8 +45,7 @@ func (t *BoardTask) Run(ctx context.Context, emit func(*BoardState)) (BoardMetri
 
 	emit(&BoardState{URL: t.URL, Status: "fetching_board"})
 
-	// Extract board ID from the HTML page
-	boardID, err := t.Client.FetchBoardPage(ctx, t.URL)
+	board, pins, err := t.Client.FetchBoardBootstrap(ctx, t.URL)
 	if err != nil {
 		m.Failed++
 		emit(&BoardState{URL: t.URL, Status: "failed", Error: err.Error()})
@@ -58,71 +55,35 @@ func (t *BoardTask) Run(ctx context.Context, emit func(*BoardState)) (BoardMetri
 		return m, nil
 	}
 
-	emit(&BoardState{URL: t.URL, BoardID: boardID, Status: "fetching_pins"})
-
-	// Derive source_url for API headers (path only: /username/board-slug/)
-	sourceURL := t.URL
-	if strings.HasPrefix(sourceURL, "https://www.pinterest.com") {
-		sourceURL = sourceURL[len("https://www.pinterest.com"):]
-	}
-	if !strings.HasSuffix(sourceURL, "/") {
-		sourceURL += "/"
+	if err := t.DB.UpsertBoard(*board); err != nil {
+		m.Failed++
+		emit(&BoardState{URL: t.URL, BoardID: board.BoardID, Status: "failed", Error: err.Error()})
+		return m, nil
 	}
 
-	// Upsert a minimal board record — will be enriched if UserTask runs later
-	username, slug := ExtractBoardSlug(t.URL)
-	board := Board{
-		BoardID:  boardID,
-		Slug:     slug,
-		Username: username,
-		URL:      t.URL,
-	}
-	t.DB.UpsertBoard(board)
+	emit(&BoardState{URL: t.URL, BoardID: board.BoardID, Status: "fetching_pins"})
 
-	// Paginate through board feed
-	var bookmark string
 	var totalPins int
-
-	for page := 1; ; page++ {
+	for _, pin := range pins {
 		if ctx.Err() != nil {
 			break
 		}
-
-		pins, next, err := t.Client.FetchBoardPins(ctx, boardID, sourceURL, bookmark)
-		if err != nil {
-			// Non-fatal: store what we have
-			fmt.Printf("\n  board page %d error: %v\n", page, err)
-			break
-		}
-
-		for _, pin := range pins {
-			if ctx.Err() != nil {
-				break
-			}
-			if err := t.DB.UpsertPin(pin); err != nil {
-				m.Failed++
-				continue
-			}
-			m.Fetched++
-			totalPins++
-		}
-
-		m.Pages++
-		emit(&BoardState{URL: t.URL, BoardID: boardID, Status: "fetching_pins", PinsFound: totalPins})
-
 		if t.MaxPins > 0 && totalPins >= t.MaxPins {
 			break
 		}
-		if isEndBookmark(next) || len(pins) == 0 {
-			break
+		if err := t.DB.UpsertPin(pin); err != nil {
+			m.Failed++
+			continue
 		}
-		bookmark = next
+		m.Fetched++
+		totalPins++
 	}
+	m.Pages = 1
 
 	if t.StateDB != nil {
 		t.StateDB.Done(t.URL, 200, EntityBoard)
 	}
 
-	emit(&BoardState{URL: t.URL, BoardID: boardID, Status: "done", PinsFound: totalPins})
+	emit(&BoardState{URL: t.URL, BoardID: board.BoardID, Status: "done", PinsFound: totalPins})
 	return m, nil
 }

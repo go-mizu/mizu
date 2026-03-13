@@ -47,8 +47,7 @@ func (t *UserTask) Run(ctx context.Context, emit func(*UserState)) (UserMetric, 
 
 	emit(&UserState{URL: userURL, Username: username, Status: "fetching_profile"})
 
-	// Fetch user profile
-	user, err := t.Client.FetchUser(ctx, username)
+	user, boards, err := t.Client.FetchUserBootstrap(ctx, username)
 	if err != nil {
 		m.Failed++
 		emit(&UserState{URL: userURL, Username: username, Status: "failed", Error: err.Error()})
@@ -67,37 +66,22 @@ func (t *UserTask) Run(ctx context.Context, emit func(*UserState)) (UserMetric, 
 
 	emit(&UserState{URL: userURL, Username: username, Status: "fetching_boards"})
 
-	// Fetch all boards for this user
-	var bookmark string
 	var totalBoards int
-
-	for {
+	for _, board := range boards {
 		if ctx.Err() != nil {
 			break
 		}
-		boards, next, err := t.Client.FetchUserBoards(ctx, username, bookmark)
-		if err != nil {
-			break
+		if board.IsSecret {
+			continue
 		}
-
-		for _, board := range boards {
-			if board.IsSecret {
-				continue // skip secret boards
-			}
-			if err := t.DB.UpsertBoard(board); err != nil {
-				continue
-			}
-			totalBoards++
-
-			if t.StateDB != nil && t.IncludeBoards && board.URL != "" {
-				t.StateDB.Enqueue(board.URL, EntityBoard, 10)
-			}
+		if err := t.DB.UpsertBoard(board); err != nil {
+			continue
 		}
+		totalBoards++
 
-		if isEndBookmark(next) || len(boards) == 0 {
-			break
+		if t.StateDB != nil && t.IncludeBoards && board.URL != "" {
+			t.StateDB.Enqueue(board.URL, EntityBoard, 10)
 		}
-		bookmark = next
 	}
 
 	if t.StateDB != nil {
