@@ -981,7 +981,7 @@ func seedFromSitemaps(ctx context.Context, stateDB *goodread.State, typeFilter s
 	return totalNew, totalSkipped, nil
 }
 
-// enqueueGzSitemap downloads a gzipped sitemap, decompresses it, and enqueues URLs.
+// enqueueGzSitemap downloads a gzipped sitemap, decompresses it, and batch-enqueues URLs.
 // Returns (newly enqueued, skipped as duplicates).
 func enqueueGzSitemap(gzURL string, stateDB *goodread.State, entityType string) (int, int, error) {
 	resp, err := http.Get(gzURL)
@@ -1014,18 +1014,18 @@ func enqueueGzSitemap(gzURL string, stateDB *goodread.State, entityType string) 
 		return 0, 0, err
 	}
 
-	newN, skipN := 0, 0
+	// Batch insert — one transaction per .gz file instead of one per URL.
+	items := make([]goodread.QueueItem, 0, len(urlSet.URLs))
 	for _, u := range urlSet.URLs {
-		if u.Loc == "" {
-			continue
-		}
-		if err := stateDB.Enqueue(u.Loc, entityType, 1); err == nil {
-			newN++
-		} else {
-			skipN++
+		if u.Loc != "" {
+			items = append(items, goodread.QueueItem{URL: u.Loc, EntityType: entityType, Priority: 1})
 		}
 	}
-	return newN, skipN, nil
+	if err := stateDB.EnqueueBatch(items); err != nil {
+		return 0, 0, err
+	}
+	// EnqueueBatch silently ignores duplicates; treat all as new for progress display.
+	return len(items), 0, nil
 }
 
 // ── info ─────────────────────────────────────────────────────────────────────
