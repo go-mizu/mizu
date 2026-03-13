@@ -94,6 +94,8 @@ func ccRunWatcher(ctx context.Context, crawlID, repoRoot, repoID string, private
 }
 
 // ccWatcherFlush finds uncommitted parquets, pushes them to HF, deletes local copies.
+// Retries up to 3 times on commit error, re-merging stats from HF each attempt
+// so that concurrent commits from two servers don't clobber each other's stats.csv rows.
 func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID, statsCSV, dataDir string,
 	committed map[int]bool, lastChartTime *time.Time, chartsEvery time.Duration) error {
 
@@ -104,10 +106,7 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 
 	fmt.Printf("  [watcher] %d new parquet(s) — committing to HF...\n", len(newFiles))
 
-	// Merge HF stats so multi-server contributions are visible in stats.csv.
-	ccMergeStatsFromHF(ctx, hf, repoID, statsCSV)
-
-	// Write stats rows for each new shard (timing from .meta sidecar if present).
+	// Step 1: Write our stats rows first (local wins in later merge).
 	for _, f := range newFiles {
 		meta := ccReadShardMeta(dataDir, f.shard)
 		rows, htmlBytes, mdBytes, _ := ccScanParquetStats(f.localPath)
@@ -130,12 +129,14 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 		})
 	}
 
-	// Regenerate README + LICENSE (with updated stats).
+	// Step 2: Merge from HF AFTER writing local rows (merge keeps local wins,
+	// so our rows survive; we also pick up the other server's latest rows).
+	ccMergeStatsFromHF(ctx, hf, repoID, statsCSV)
+
+	// Step 3: Regenerate README + charts with merged stats.
 	if err := ccEnsurePublishRepoFiles(repoRoot, crawlID, statsCSV); err != nil {
 		return fmt.Errorf("write repo files: %w", err)
 	}
-
-	// Regenerate charts if scheduled.
 	var chartRelPaths []string
 	if chartsEvery > 0 && time.Since(*lastChartTime) >= chartsEvery {
 		chartRelPaths = ccRunCharts(statsCSV, repoRoot, crawlID)
@@ -144,24 +145,11 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 		}
 	}
 
-	// Build commit operations: metadata + charts + new parquets.
-	ops := []hfOperation{
-		{LocalPath: filepath.Join(repoRoot, "README.md"), PathInRepo: "README.md"},
-		{LocalPath: filepath.Join(repoRoot, "LICENSE"), PathInRepo: "LICENSE"},
-		{LocalPath: statsCSV, PathInRepo: "stats.csv"},
-	}
-	for _, rel := range chartRelPaths {
-		ops = append(ops, hfOperation{
-			LocalPath:  filepath.Join(repoRoot, rel),
-			PathInRepo: filepath.ToSlash(rel),
-		})
-	}
+	// Build commit operations.
 	shards := make([]string, len(newFiles))
 	for i, f := range newFiles {
-		ops = append(ops, hfOperation{LocalPath: f.localPath, PathInRepo: f.remotePath})
 		shards[i] = f.shard
 	}
-
 	var commitMsg string
 	if len(newFiles) == 1 {
 		commitMsg = fmt.Sprintf("Publish shard %s/%s", crawlID, newFiles[0].shard)
@@ -169,17 +157,64 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 		commitMsg = fmt.Sprintf("Publish %d shards %s/%s–%s", len(newFiles), crawlID, shards[0], shards[len(shards)-1])
 	}
 
-	t0 := time.Now()
-	commitURL, err := hf.createCommit(ctx, repoID, "main", commitMsg, ops)
-	elapsed := time.Since(t0)
-	if err != nil {
-		return fmt.Errorf("HF commit: %w", err)
+	buildOps := func() []hfOperation {
+		ops := []hfOperation{
+			{LocalPath: filepath.Join(repoRoot, "README.md"), PathInRepo: "README.md"},
+			{LocalPath: filepath.Join(repoRoot, "LICENSE"), PathInRepo: "LICENSE"},
+			{LocalPath: statsCSV, PathInRepo: "stats.csv"},
+		}
+		for _, rel := range chartRelPaths {
+			ops = append(ops, hfOperation{
+				LocalPath:  filepath.Join(repoRoot, rel),
+				PathInRepo: filepath.ToSlash(rel),
+			})
+		}
+		for _, f := range newFiles {
+			ops = append(ops, hfOperation{LocalPath: f.localPath, PathInRepo: f.remotePath})
+		}
+		return ops
+	}
+
+	// Step 4: Commit with retry — on failure re-merge stats so we don't lose
+	// the other server's rows, then retry (handles transient HF errors too).
+	const maxAttempts = 3
+	var (
+		commitURL string
+		elapsed   time.Duration
+		commitErr error
+	)
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if attempt > 0 {
+			backoff := time.Duration(attempt*attempt) * 10 * time.Second
+			fmt.Printf("  [watcher] retrying in %s (attempt %d/%d)...\n", backoff, attempt+1, maxAttempts)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(backoff):
+			}
+			// Re-merge from HF so we include any commits from the other server
+			// that happened while we were preparing our commit.
+			ccMergeStatsFromHF(ctx, hf, repoID, statsCSV)
+			if err := ccEnsurePublishRepoFiles(repoRoot, crawlID, statsCSV); err != nil {
+				fmt.Printf("  [watcher] retry repo files: %v\n", err)
+			}
+		}
+		t0 := time.Now()
+		commitURL, commitErr = hf.createCommit(ctx, repoID, "main", commitMsg, buildOps())
+		elapsed = time.Since(t0)
+		if commitErr == nil {
+			break
+		}
+		fmt.Printf("  [watcher] commit error (attempt %d): %v\n", attempt+1, commitErr)
+	}
+	if commitErr != nil {
+		return fmt.Errorf("HF commit after %d attempts: %w", maxAttempts, commitErr)
 	}
 	if len(chartRelPaths) > 0 {
 		*lastChartTime = time.Now()
 	}
 
-	// Amortize publish time, update stats, delete local files, mark committed.
+	// Step 5: Update publish timing, delete local parquets, mark committed.
 	durPublishS := int64(elapsed.Seconds())
 	if len(newFiles) > 1 {
 		durPublishS = int64(elapsed.Seconds()) / int64(len(newFiles))
