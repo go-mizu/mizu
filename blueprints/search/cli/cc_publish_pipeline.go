@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"context"
 	_ "embed"
 	"encoding/csv"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -156,6 +158,90 @@ func ccUpsertShardStats(csvPath string, stat ccShardStats) error {
 		return updated[i].FileIdx < updated[j].FileIdx
 	})
 	return ccWriteStatsCSV(csvPath, updated)
+}
+
+// ccMergeStatsFromHF downloads stats.csv from HF and merges it into the local
+// file, with local rows winning on conflict (same crawl_id+file_idx). This
+// makes HF the single source of truth: all servers contribute their rows and
+// every session sees the global view before each commit.
+func ccMergeStatsFromHF(ctx context.Context, hf *hfClient, repoID, statsCSV string) {
+	url := "https://huggingface.co/datasets/" + repoID + "/resolve/main/stats.csv"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+hf.token)
+	resp, err := hf.http.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		if resp != nil {
+			resp.Body.Close()
+		}
+		return // HF not reachable or file doesn't exist yet — skip silently
+	}
+	defer resp.Body.Close()
+
+	r := csv.NewReader(resp.Body)
+	r.Read() // skip header
+	var remote []ccShardStats
+	for {
+		row, err := r.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil || len(row) < 6 {
+			continue
+		}
+		idx, _ := strconv.Atoi(row[1])
+		rows, _ := strconv.ParseInt(row[2], 10, 64)
+		htmlB, _ := strconv.ParseInt(row[3], 10, 64)
+		mdB, _ := strconv.ParseInt(row[4], 10, 64)
+		pqB, _ := strconv.ParseInt(row[5], 10, 64)
+		s := ccShardStats{CrawlID: row[0], FileIdx: idx, Rows: rows, HTMLBytes: htmlB, MDBytes: mdB, ParquetBytes: pqB}
+		if len(row) > 6 {
+			s.CreatedAt = row[6]
+		}
+		if len(row) >= 11 {
+			s.DurDownloadS, _ = strconv.ParseInt(row[7], 10, 64)
+			s.DurConvertS, _ = strconv.ParseInt(row[8], 10, 64)
+			s.DurExportS, _ = strconv.ParseInt(row[9], 10, 64)
+			s.DurPublishS, _ = strconv.ParseInt(row[10], 10, 64)
+		}
+		remote = append(remote, s)
+	}
+	if len(remote) == 0 {
+		return
+	}
+
+	// Merge: start with remote as base, upsert local rows on top.
+	local, _ := ccReadStatsCSV(statsCSV)
+	localIdx := make(map[string]ccShardStats, len(local))
+	for _, s := range local {
+		localIdx[fmt.Sprintf("%s/%d", s.CrawlID, s.FileIdx)] = s
+	}
+	merged := make([]ccShardStats, 0, len(remote)+len(local))
+	seen := make(map[string]bool)
+	for _, s := range remote {
+		key := fmt.Sprintf("%s/%d", s.CrawlID, s.FileIdx)
+		if l, ok := localIdx[key]; ok {
+			merged = append(merged, l) // local wins
+		} else {
+			merged = append(merged, s)
+		}
+		seen[key] = true
+	}
+	for _, s := range local {
+		key := fmt.Sprintf("%s/%d", s.CrawlID, s.FileIdx)
+		if !seen[key] {
+			merged = append(merged, s) // local-only rows
+		}
+	}
+	sort.Slice(merged, func(i, j int) bool {
+		if merged[i].CrawlID != merged[j].CrawlID {
+			return merged[i].CrawlID < merged[j].CrawlID
+		}
+		return merged[i].FileIdx < merged[j].FileIdx
+	})
+	_ = ccWriteStatsCSV(statsCSV, merged)
 }
 
 // ccComputeTotals sums all shard stats for a given crawl (empty = all crawls).

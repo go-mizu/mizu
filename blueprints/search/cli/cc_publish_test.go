@@ -49,7 +49,7 @@ func TestExportWARCMdShardToParquet(t *testing.T) {
 		t.Fatalf("close file: %v", err)
 	}
 
-	rows, err := exportWARCMdShardToParquet(inPath, outPath, 0)
+	rows, _, _, err := exportWARCMdShardToParquet(inPath, outPath, nil)
 	if err != nil {
 		t.Fatalf("export shard: %v", err)
 	}
@@ -81,17 +81,15 @@ func TestExportWARCMdShardToParquet(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("expected 1 row read, got %d", n)
 	}
-	if got[0].DocID != "11111111-1111-1111-1111-111111111111" {
+	// doc_id is UUID5(NamespaceURL, url) — deterministic from the canonical URL.
+	if got[0].DocID != "026d694d-fb00-50d6-a348-4051b8ece183" {
 		t.Fatalf("unexpected doc_id: %q", got[0].DocID)
 	}
 	if got[0].Host != "example.com" {
 		t.Fatalf("unexpected host: %q", got[0].Host)
 	}
-	if got[0].MarkdownBody != "# Hello\nBody" {
-		t.Fatalf("unexpected markdown body: %q", got[0].MarkdownBody)
-	}
-	if !strings.Contains(got[0].WARCHeadersJSON, `"X-Test":"value"`) {
-		t.Fatalf("expected headers json to contain X-Test, got %q", got[0].WARCHeadersJSON)
+	if got[0].Markdown != "# Hello\nBody" {
+		t.Fatalf("unexpected markdown: %q", got[0].Markdown)
 	}
 }
 
@@ -107,7 +105,7 @@ func TestCCResolvePublishUploadFiles(t *testing.T) {
 		}
 	}
 
-	all, err := ccResolvePublishUploadFiles(repoRoot, "all")
+	all, err := ccResolvePublishUploadFiles(repoRoot, "", "all")
 	if err != nil {
 		t.Fatalf("resolve all: %v", err)
 	}
@@ -115,7 +113,7 @@ func TestCCResolvePublishUploadFiles(t *testing.T) {
 		t.Fatalf("expected 2 files, got %d", len(all))
 	}
 
-	one, err := ccResolvePublishUploadFiles(repoRoot, "0")
+	one, err := ccResolvePublishUploadFiles(repoRoot, "", "0")
 	if err != nil {
 		t.Fatalf("resolve file 0: %v", err)
 	}

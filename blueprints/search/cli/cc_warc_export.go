@@ -14,6 +14,7 @@ import (
 	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
 	warcpkg "github.com/go-mizu/mizu/blueprints/search/pkg/warc"
 	warcmd "github.com/go-mizu/mizu/blueprints/search/pkg/warc_md"
+	"github.com/google/uuid"
 	"github.com/parquet-go/parquet-go"
 	"github.com/parquet-go/parquet-go/compress/zstd"
 	"github.com/spf13/cobra"
@@ -244,7 +245,7 @@ func exportWARCMdShardToParquet(inPath, outPath string, progressFn exportProgres
 		totalHTML += htmlLen
 		totalMd += int64(len(body))
 		batch = append(batch, ccWARCExportRow{
-			DocID:          ccWARCRecordIDToDocID(rec.Header.RecordID()),
+			DocID:          ccURLToDocID(targetURL),
 			URL:            targetURL,
 			Host:           ccHostFromURL(targetURL),
 			CrawlDate:      crawlDate,
@@ -290,13 +291,14 @@ func exportWARCMdShardToParquet(inPath, outPath string, progressFn exportProgres
 	return rowsWritten, totalHTML, totalMd, nil
 }
 
-func ccWARCRecordIDToDocID(recordID string) string {
-	s := strings.TrimPrefix(strings.TrimSpace(recordID), "<urn:uuid:")
-	s = strings.TrimSuffix(s, ">")
-	if strings.ContainsAny(s, ":<>") {
-		return ""
-	}
-	return s
+// ccURLToDocID returns a deterministic UUID v5 (SHA-1, URL namespace) for the
+// canonical URL. This makes doc_id stable and deduplication-friendly: the same
+// URL always produces the same doc_id regardless of crawl date or WARC shard.
+//
+// Formula: doc_id = UUID5(NamespaceURL, canonicalURL)
+// Example: "https://example.com/page" → "5a3d2b1c-..."
+func ccURLToDocID(rawURL string) string {
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(rawURL)).String()
 }
 
 func ccParseHTMLLength(s string) int64 {

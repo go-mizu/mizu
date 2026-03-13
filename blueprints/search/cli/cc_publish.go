@@ -391,6 +391,10 @@ func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, r
 			continue
 		}
 
+		// Pull latest stats.csv from HF and merge — HF is the single source of truth
+		// so all servers (server1, server2, …) contribute their rows.
+		ccMergeStatsFromHF(ctx, hf, repoID, statsCSV)
+
 		// Build commit operations: always include README/LICENSE/stats.csv.
 		if repoErr := ccEnsurePublishRepoFiles(repoRoot, crawlID, statsCSV); repoErr != nil {
 			return fmt.Errorf("write repo files: %w", repoErr)
@@ -877,7 +881,7 @@ The following is an example row from the dataset:
 
 %[2]sjson
 {
-  "doc_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "doc_id": "6aaa5be7-a917-5105-aa60-e39ea1d087fc",
   "url": "https://example.com/article/interesting-topic",
   "host": "example.com",
   "crawl_date": "2026-02-06T18:14:58Z",
@@ -893,7 +897,7 @@ The following is an example row from the dataset:
 
 | Column | Type | Description |
 |---|---|---|
-| %[3]sdoc_id%[3]s | string | Unique identifier derived from the WARC-Record-ID (UUID) |
+| %[3]sdoc_id%[3]s | string | Deterministic UUID v5 derived from the canonical URL: %[3]sdoc_id = UUID5(NamespaceURL, url)%[3]s — identical URLs always produce the same %[3]sdoc_id%[3]s across crawls |
 | %[3]surl%[3]s | string | Original URL of the crawled page |
 | %[3]shost%[3]s | string | Lowercase hostname extracted from the URL |
 | %[3]scrawl_date%[3]s | string | RFC 3339 timestamp from the WARC record |
