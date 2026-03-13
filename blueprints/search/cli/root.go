@@ -95,6 +95,7 @@ Get started:
 	root.AddCommand(NewYouTube())
 	root.AddCommand(NewSpotify())
 	root.AddCommand(NewEbay())
+	root.AddCommand(NewKaggle())
 
 	if err := fang.Execute(ctx, root,
 		fang.WithVersion(Version),
