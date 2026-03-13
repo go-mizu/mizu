@@ -64,3 +64,12 @@ func BenchmarkConvertFast(b *testing.B) {
 		md.ConvertFast(html, "")
 	}
 }
+
+func BenchmarkConvertLight(b *testing.B) {
+	loadSamples(b)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		html := sampleHTML[i%len(sampleHTML)]
+		md.ConvertLight(html, "")
+	}
+}

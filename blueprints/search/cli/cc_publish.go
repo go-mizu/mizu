@@ -20,14 +20,15 @@ type ccPublishUploadFile struct {
 
 func newCCPublish() *cobra.Command {
 	var (
-		crawlID   string
-		fileIdx   string
-		repoRoot  string
-		repoID    string
-		republish bool
-		private   bool
-		pipeline  bool
-		cleanup   bool
+		crawlID      string
+		fileIdx      string
+		repoRoot     string
+		repoID       string
+		republish    bool
+		private      bool
+		pipeline     bool
+		cleanup      bool
+		lightConvert bool
 	)
 
 	cmd := &cobra.Command{
@@ -48,7 +49,7 @@ to save disk space.`,
   search cc publish --file 0 --republish
   search cc publish --file 11-90 --pipeline --cleanup`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCCPublish(cmd.Context(), crawlID, fileIdx, repoRoot, repoID, republish, private, pipeline, cleanup)
+			return runCCPublish(cmd.Context(), crawlID, fileIdx, repoRoot, repoID, republish, private, pipeline, cleanup, lightConvert)
 		},
 	}
 
@@ -60,10 +61,11 @@ to save disk space.`,
 	cmd.Flags().BoolVar(&private, "private", false, "Create the Hugging Face dataset repo as private")
 	cmd.Flags().BoolVar(&pipeline, "pipeline", false, "Auto-download, pack, and export missing shards before publishing")
 	cmd.Flags().BoolVar(&cleanup, "cleanup", false, "Delete raw .warc.gz after packing (requires --pipeline)")
+	cmd.Flags().BoolVar(&lightConvert, "light", true, "Use lightweight HTML→Markdown converter (~10x faster than trafilatura, --no-light for trafilatura)")
 	return cmd
 }
 
-func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string, republish, private, pipeline, cleanup bool) error {
+func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string, republish, private, pipeline, cleanup, lightConvert bool) error {
 	resolvedID, note, err := ccResolveCrawlID(ctx, crawlID)
 	if err != nil {
 		return fmt.Errorf("resolving crawl: %w", err)
@@ -79,7 +81,7 @@ func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string
 
 	// ── Pipeline: auto-pack+export missing shards ───────────────────────────
 	if pipeline {
-		if err := ccRunPipeline(ctx, crawlID, fileIdx, repoRoot, cleanup); err != nil {
+		if err := ccRunPipeline(ctx, crawlID, fileIdx, repoRoot, cleanup, lightConvert); err != nil {
 			return err
 		}
 	}
@@ -211,7 +213,7 @@ func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string
 }
 
 // ccRunPipeline downloads, packs, and exports any missing shards in the selected range.
-func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, cleanup bool) error {
+func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, cleanup, lightConvert bool) error {
 	indices, err := ccParseOpenFileSelector(fileIdx)
 	if err != nil {
 		return fmt.Errorf("--file: %w", err)
@@ -246,7 +248,7 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 		// Pack if md.warc.gz missing (pack auto-downloads the raw WARC)
 		if !fileExists(mdWARCPath) {
 			fmt.Printf("packing...\n")
-			if err := runCCWarcPack(ctx, crawlID, strconv.Itoa(idx), -1, -1, 0, false, false, false, 200, "text/html", 512*1024); err != nil {
+			if err := runCCWarcPack(ctx, crawlID, strconv.Itoa(idx), -1, -1, 0, false, false, lightConvert, 200, "text/html", 512*1024); err != nil {
 				return fmt.Errorf("pack %d: %w", idx, err)
 			}
 			// Cleanup raw WARC if requested
