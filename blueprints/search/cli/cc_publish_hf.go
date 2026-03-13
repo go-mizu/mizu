@@ -133,7 +133,7 @@ func (c *hfClient) uploadLFS(ctx context.Context, repoID, localPath string) (hfL
 	// LFS batch — discover whether and how to upload
 	batchBody, _ := json.Marshal(map[string]interface{}{
 		"operation": "upload",
-		"transfers": []string{"basic", "multipart"},
+		"transfers": []string{"basic"},
 		"objects":   []map[string]interface{}{{"oid": info.SHA256, "size": info.Size}},
 		"ref":       map[string]string{"name": "main"},
 	})
