@@ -6,11 +6,11 @@ Scrape all public Pinterest data (pins, boards, users, and search results) into 
 
 Architecture follows the established pattern (`pkg/scrape/goodread`, `pkg/scrape/amazon`): entity-specific Task structs implementing `pkg/core.Task[State, Metric]`, a shared HTTP client with session/CSRF handling, and CLI subcommands wired into `cli/pinterest.go`.
 
-Pinterest's internal Resource API is used throughout — no browser required for public content. The existing `pkg/scrape/pinterest.go` (used by `search scrape`) is unchanged; this package is a standalone dedicated scraper that stores results in its own `pinterest.duckdb`.
+Pinterest's live public surface is split: search still works through the internal Resource API, while user and board pages expose the needed public data through SSR bootstrap JSON in `__PWS_DATA__` / `__PWS_INITIAL_PROPS__`. Direct unauthenticated replay of `UserResource`, `BoardsResource`, and `BoardFeedResource` now returns `403 Invalid Resource Request`. The implementation follows the live-compatible mix: Resource API for search, SSR bootstrap extraction for users and boards. The existing `pkg/scrape/pinterest.go` (used by `search scrape`) is unchanged; this package is a standalone dedicated scraper that stores results in its own `pinterest.duckdb`.
 
 Two DuckDB files: `pinterest.duckdb` for all scraped data, `state.duckdb` for the job queue and crawl state.
 
-Anti-bot strategy: session warm-up on startup (GET pinterest.com → collect cookies + CSRF token), rotating browser User-Agents, 200ms default delay between API requests. No rod fallback needed — all public content is accessible via the JSON Resource API.
+Anti-bot strategy: session warm-up on startup (GET pinterest.com → collect cookies + CSRF token), rotating browser User-Agents, 200ms default delay between requests. No rod fallback needed.
 
 ## Package Layout
 
@@ -139,12 +139,13 @@ CREATE TABLE IF NOT EXISTS visited (
 | 5  | user |
 | 3  | search |
 
-## Pinterest Resource API
+## Pinterest Public JSON Surfaces
 
-All endpoints use the same host (`https://www.pinterest.com`) and require:
+Search API requests use the same host (`https://www.pinterest.com`) and require:
 - `User-Agent`: rotating browser UA string
 - `X-Requested-With: XMLHttpRequest`
 - `X-Pinterest-Appstate: active`
+- `X-Pinterest-Pws-Handler: www/search/[scope].js`
 - `X-CSRFToken: <value from csrftoken cookie>`
 - `Referer: https://www.pinterest.com<source_url>`
 
@@ -170,40 +171,30 @@ Response: resource_response.data.results[] (array of pins)
 
 ### Board Pins
 
-```
-GET /resource/BoardFeedResource/get/
-  ?source_url=/{username}/{board-slug}/
-  &data={"options":{"board_id":"12345678","page_size":25,"field_set_key":"react_grid_pin","bookmarks":["..."]}}
-  &_={timestamp_ms}
+Direct unauthenticated replay of `BoardFeedResource` now returns `403 Invalid Resource Request`.
 
-Response: resource_response.data[] (array of pins)
-          resource_response.bookmark
-```
-
-Board ID extraction: `GET https://www.pinterest.com/{username}/{board-slug}/`
-→ parse HTML for `"board_id":"(\d+)"` or `"id":"(\d+)"` inside `<script id="__PWS_INITIAL_PROPS__">` or `window.__initialReduxState__`.
+Implementation path:
+1. `GET https://www.pinterest.com/{username}/{board-slug}/`
+2. Parse `<script id="__PWS_INITIAL_PROPS__" type="application/json">`
+3. Extract:
+   - `initialReduxState.boards` for board metadata
+   - `BoardFeedResource.*.data[]` for the SSR pin batch
+   - fallback to `initialReduxState.pins` when needed
 
 ### User Boards
 
-```
-GET /resource/BoardsResource/get/
-  ?source_url=/{username}/boards/
-  &data={"options":{"username":"...","page_size":50,"privacy_filter":"all","field_set_key":"profile_grid_item","bookmarks":["..."]}}
-  &_={timestamp_ms}
+Direct unauthenticated replay of `BoardsResource` now returns `403 Invalid Resource Request`.
 
-Response: resource_response.data[] (array of board objects)
-          resource_response.bookmark
-```
+Implementation path:
+1. `GET https://www.pinterest.com/{username}/`
+2. Parse `<script id="__PWS_INITIAL_PROPS__" type="application/json">`
+3. Extract the visible board list from `initialReduxState.boards`
 
 ### User Profile
 
-```
-GET /resource/UserResource/get/
-  ?data={"options":{"username":"...","field_set_key":"profile"}}
-  &_={timestamp_ms}
-
-Response: resource_response.data (single user object)
-```
+User profile fields are extracted from SSR bootstrap JSON on the public profile page:
+- `initialReduxState.users`
+- fallback `resources.UserResource`
 
 ### API Response Shapes
 
@@ -305,15 +296,13 @@ var _ core.Task[SearchState, SearchMetric] = (*SearchTask)(nil)
 4. Emit progress every 50 pins
 
 ### BoardTask.Run flow:
-1. `Client.FetchBoardPage(ctx, url)` — fetches HTML, extracts board_id
-2. `Client.FetchBoardInfo(ctx, username, boardSlug)` — user boards API to find board metadata
-3. `DB.UpsertBoard(board)`
-4. `Client.FetchBoardPins(ctx, boardID, bookmark)` — loop all pages
-5. `DB.UpsertPin(pin)` for each pin
+1. `Client.FetchBoardBootstrap(ctx, url)` — fetches HTML and extracts SSR bootstrap JSON
+2. `DB.UpsertBoard(board)`
+3. `DB.UpsertPin(pin)` for each bootstrap pin
 
 ### UserTask.Run flow:
-1. `Client.FetchUser(ctx, username)` → `DB.UpsertUser(user)`
-2. `Client.FetchUserBoards(ctx, username)` — loop all pages → `DB.UpsertBoard(board)`
+1. `Client.FetchUserBootstrap(ctx, username)` → `DB.UpsertUser(user)`
+2. Store visible SSR boards from `initialReduxState.boards` via `DB.UpsertBoard(board)`
 3. For each board: `StateDB.Enqueue(boardURL, EntityBoard, 10)` if StateDB != nil
 
 ### CrawlTask dispatch:
@@ -360,16 +349,18 @@ type Client struct {
 func NewClient(cfg Config) (*Client, error)        // warms up session
 func (c *Client) SearchPins(ctx, query string, maxPins int) ([]Pin, error)
 func (c *Client) FetchBoardPage(ctx, boardURL string) (boardID string, err error)
+func (c *Client) FetchBoardBootstrap(ctx, boardURL string) (*Board, []Pin, error)
 func (c *Client) FetchBoardPins(ctx, boardID, bookmark string) ([]Pin, string, error)
 func (c *Client) FetchUser(ctx, username string) (*User, error)
+func (c *Client) FetchUserBootstrap(ctx, username string) (*User, []Board, error)
 func (c *Client) FetchUserBoards(ctx, username, bookmark string) ([]Board, string, error)
 ```
 
-`SearchPins` is a pagination loop over `searchPage()` (mirrors existing `pkg/scrape/pinterest.go`).
+`SearchPins` is a pagination loop over `searchPage()` (mirrors existing `pkg/scrape/pinterest.go`) and includes the live-required `X-Pinterest-Pws-Handler` header.
 
 `FetchBoardPage` fetches the board HTML and extracts the board_id using `extractBoardID(html []byte) string` which searches for `"board_id":"(\d+)"` and `"id":"(\d+)"` patterns in the embedded JSON state.
 
-All API calls: `rateLimit()` before request, `X-CSRFToken` from cookie jar.
+All network calls: `rateLimit()` before request. Search API calls also require `X-CSRFToken` from the cookie jar.
 
 ### db.go
 
@@ -436,8 +427,9 @@ func openPinterestDBs(dbPath, statePath string, delay int) (*pinterest.DB, *pint
 ## Key Lessons (inherited + Pinterest-specific)
 
 - Session warm-up is mandatory: `GET pinterest.com` first to collect `csrftoken` cookie.
-- CSRF token must be in `X-CSRFToken` header AND cookie jar on every API request.
-- Board ID is not in the URL — must be extracted from embedded HTML JSON state.
+- Search API requests require `X-CSRFToken` and `X-Pinterest-Pws-Handler`.
+- Board and user public data are now more reliable in SSR bootstrap JSON than by replaying internal resources unauthenticated.
+- Board ID is not in the URL and must be extracted from embedded HTML JSON state.
 - Search bookmark ending: `""`, `"-end-"`, or base64 prefix `"Y2JOb25l"`.
 - `INSERT OR REPLACE INTO` for upserts; arrays as JSON VARCHAR.
 - DuckDB single-connection per file — do not open same file from two goroutines.
