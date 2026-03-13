@@ -6,6 +6,8 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"net/http/cookiejar"
+	"net/url"
 	"strings"
 	"time"
 
@@ -19,6 +21,34 @@ type Client struct {
 	userAgents []string
 	delay      time.Duration
 	lastReq    time.Time
+}
+
+// NewClientWithCookies creates an authenticated Goodreads client pre-loaded with
+// session cookies (typically exported by goodread-tool via LoadCookiesFromFile).
+func NewClientWithCookies(cfg Config, cookies []*http.Cookie) (*Client, error) {
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return nil, err
+	}
+	u, _ := url.Parse("https://www.goodreads.com")
+	jar.SetCookies(u, cookies)
+
+	transport := &http.Transport{
+		MaxIdleConns:        10,
+		MaxConnsPerHost:     cfg.Workers + 2,
+		IdleConnTimeout:     90 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+		DisableCompression:  false,
+	}
+	return &Client{
+		http: &http.Client{
+			Timeout:   cfg.Timeout,
+			Transport: transport,
+			Jar:       jar,
+		},
+		userAgents: userAgents,
+		delay:      cfg.Delay,
+	}, nil
 }
 
 // NewClient creates a new Goodreads HTTP client.
@@ -51,8 +81,8 @@ func (c *Client) Fetch(ctx context.Context, url string) ([]byte, int, error) {
 
 		body, code, err := c.doGet(ctx, url)
 		if err != nil {
-			if attempt == maxAttempts {
-				return nil, 0, err
+			if code == 401 || attempt == maxAttempts {
+				return nil, code, err
 			}
 			time.Sleep(time.Duration(attempt) * time.Second)
 			continue
@@ -124,6 +154,13 @@ func (c *Client) doGet(ctx context.Context, url string) ([]byte, int, error) {
 	}
 	defer resp.Body.Close()
 
+	// Detect login redirect: http.Client follows 302→/sign_in automatically,
+	// so check the final URL after redirect following.
+	finalURL := resp.Request.URL.String()
+	if strings.Contains(finalURL, "/sign_in") || strings.Contains(finalURL, "/user/login") {
+		return nil, 401, fmt.Errorf("login required: %s is access-restricted (redirected to %s)", url, finalURL)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, resp.StatusCode, err
@@ -132,6 +169,9 @@ func (c *Client) doGet(ctx context.Context, url string) ([]byte, int, error) {
 	// Follow Goodreads HTML soft-redirect: "You are being redirected"
 	if resp.StatusCode == 200 && strings.Contains(string(body), "You are being") {
 		if redirectURL := extractHTMLRedirect(string(body)); redirectURL != "" && redirectURL != url {
+			if strings.Contains(redirectURL, "/sign_in") || strings.Contains(redirectURL, "/login") {
+				return nil, 401, fmt.Errorf("login required: %s redirected to sign-in page", url)
+			}
 			time.Sleep(500 * time.Millisecond)
 			return c.doGet(ctx, redirectURL)
 		}

@@ -1,10 +1,13 @@
 package cli
 
 import (
+	"bufio"
+	"compress/gzip"
 	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -377,31 +380,58 @@ func newGoodreadGenre() *cobra.Command {
 func newGoodreadShelf() *cobra.Command {
 	var dbPath, statePath string
 	var delay, maxPages int
-	var shelf string
+	var shelf, cookiesFile string
+	var auth bool
 
 	cmd := &cobra.Command{
 		Use:   "shelf <user_id>",
 		Short: "Fetch a Goodreads user shelf",
 		Args:  cobra.ExactArgs(1),
 		Example: `  search goodread shelf 12345678 --shelf read
-  search goodread shelf 12345678 --shelf to-read`,
+  search goodread shelf 12345678 --shelf to-read
+  search goodread shelf 12345678 --auth`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			db, stateDB, client, err := openDBs(dbPath, statePath, delay)
+			cfg := goodread.DefaultConfig()
+			cfg.DBPath = dbPath
+			cfg.StatePath = statePath
+			cfg.Delay = time.Duration(delay) * time.Millisecond
+
+			db, err := goodread.OpenDB(dbPath)
 			if err != nil {
-				return err
+				return fmt.Errorf("open db: %w", err)
 			}
 			defer db.Close()
+
+			stateDB, err := goodread.OpenState(statePath)
+			if err != nil {
+				return fmt.Errorf("open state: %w", err)
+			}
 			defer stateDB.Close()
+
+			var client *goodread.Client
+			if auth {
+				cookies, err := goodread.LoadCookiesFromFile(cookiesFile)
+				if err != nil {
+					return fmt.Errorf("load cookies: %w", err)
+				}
+				client, err = goodread.NewClientWithCookies(cfg, cookies)
+				if err != nil {
+					return fmt.Errorf("create auth client: %w", err)
+				}
+				fmt.Printf("Using authenticated client (%d cookies)\n", len(cookies))
+			} else {
+				client = goodread.NewClient(cfg)
+			}
 
 			userID := args[0]
 			shelfName := shelf
 			if shelfName == "" {
 				shelfName = "read"
 			}
-			url := goodread.BaseURL + "/review/list/" + userID + "?shelf=" + shelfName
+			shelfURL := goodread.BaseURL + "/review/list/" + userID + "?shelf=" + shelfName
 
 			task := &goodread.ShelfTask{
-				URL:       url,
+				URL:       shelfURL,
 				UserID:    userID,
 				ShelfName: shelfName,
 				Client:    client,
@@ -423,6 +453,8 @@ func newGoodreadShelf() *cobra.Command {
 	addDBFlags(cmd, &dbPath, &statePath, &delay)
 	cmd.Flags().StringVar(&shelf, "shelf", "read", "Shelf name (read, to-read, currently-reading, or custom)")
 	cmd.Flags().IntVar(&maxPages, "max-pages", 0, "Max pages to fetch (0 = unlimited)")
+	cmd.Flags().BoolVar(&auth, "auth", false, "Use authenticated client with cookies from --cookies-file")
+	cmd.Flags().StringVar(&cookiesFile, "cookies-file", "", "Path to cookies.json (default: ~/data/goodread/cookies.json)")
 	return cmd
 }
 
@@ -430,57 +462,116 @@ func newGoodreadShelf() *cobra.Command {
 
 func newGoodreadSearch() *cobra.Command {
 	var dbPath, statePath string
-	var delay, maxResults int
-	var entityType string
+	var delay, maxPages int
+	var auth bool
+	var cookiesFile string
 
 	cmd := &cobra.Command{
 		Use:   "search <query>",
 		Short: "Search Goodreads and enqueue results",
-		Args:  cobra.ExactArgs(1),
+		Long: `Search Goodreads and enqueue results.
+
+Without --auth: uses GET /book/auto_complete?format=json&q=<query> (no login required,
+up to ~20 results, no pagination).
+
+With --auth: uses the full HTML search page (login-gated, SSR-rendered, with pagination).
+Requires cookies exported by: goodread-tool cookies export`,
+		Args: cobra.ExactArgs(1),
+		Example: `  search goodread search "Dune"
+  search goodread search "Frank Herbert"
+  search goodread search "Dune" --auth
+  search goodread search "Dune" --auth --max-pages 5`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			db, stateDB, client, err := openDBs(dbPath, statePath, delay)
+			cfg := goodread.DefaultConfig()
+			cfg.DBPath = dbPath
+			cfg.StatePath = statePath
+			cfg.Delay = time.Duration(delay) * time.Millisecond
+
+			stateDB, err := goodread.OpenState(statePath)
 			if err != nil {
-				return err
+				return fmt.Errorf("open state: %w", err)
 			}
-			defer db.Close()
 			defer stateDB.Close()
 
 			query := args[0]
-			searchType := entityType
-			if searchType == "" {
-				searchType = "books"
-			}
 
-			url := goodread.BaseURL + "/search?q=" + encodeQuery(query) + "&search[field]=" + searchType
-			fmt.Printf("Searching: %s\n", url)
+			if !auth {
+				// Unauthenticated: autocomplete API
+				client := goodread.NewClient(cfg)
+				apiURL := goodread.BaseURL + "/book/auto_complete?format=json&q=" + url.QueryEscape(query)
+				fmt.Printf("Searching (autocomplete): %s\n", apiURL)
 
-			total := 0
-			for page := 1; total < maxResults; page++ {
-				pageURL := url + "&page=" + fmt.Sprintf("%d", page)
-				doc, code, err := client.FetchHTML(cmd.Context(), pageURL)
-				if err != nil || code != 200 || doc == nil {
-					break
+				body, code, err := client.Fetch(cmd.Context(), apiURL)
+				if err != nil {
+					return fmt.Errorf("fetch: %w", err)
+				}
+				if code != 200 {
+					return fmt.Errorf("unexpected HTTP %d", code)
 				}
 
-				results := goodread.ParseSearch(doc)
+				results := goodread.ParseSearchAutocomplete(body)
 				if len(results) == 0 {
-					break
+					fmt.Println("No results found.")
+					return nil
 				}
 
+				total := 0
 				for _, r := range results {
-					if total >= maxResults {
-						break
-					}
 					if err := stateDB.Enqueue(r.URL, r.EntityType, 5); err == nil {
 						fmt.Printf("  Enqueued [%s] %s\n", r.EntityType, r.Title)
 						total++
 					}
 				}
+				fmt.Printf("Enqueued %d URLs\n", total)
+				return nil
+			}
 
-				next := goodread.ParseSearchNextPage(doc)
-				if next == "" {
+			// Authenticated: HTML search with pagination
+			cookies, err := goodread.LoadCookiesFromFile(cookiesFile)
+			if err != nil {
+				return fmt.Errorf("load cookies (run: goodread-tool cookies export): %w", err)
+			}
+			client, err := goodread.NewClientWithCookies(cfg, cookies)
+			if err != nil {
+				return fmt.Errorf("create auth client: %w", err)
+			}
+			fmt.Printf("Searching (authenticated, %d cookies): %q\n", len(cookies), query)
+
+			searchURL := goodread.BaseURL + "/search?q=" + url.QueryEscape(query) + "&search[field]=books"
+			total := 0
+			page := 1
+
+			for searchURL != "" {
+				if maxPages > 0 && page > maxPages {
 					break
 				}
+				fmt.Printf("  Page %d: %s\n", page, searchURL)
+
+				doc, code, err := client.FetchHTML(cmd.Context(), searchURL)
+				if err != nil {
+					return fmt.Errorf("fetch page %d: %w", page, err)
+				}
+				if code == 401 {
+					return fmt.Errorf("login required: cookies may be expired (run: goodread-tool cookies export)")
+				}
+				if code != 200 {
+					return fmt.Errorf("unexpected HTTP %d on page %d", code, page)
+				}
+
+				results := goodread.ParseSearchHTML(doc)
+				if len(results) == 0 {
+					fmt.Printf("  No results on page %d (may be last page or login-gated)\n", page)
+					break
+				}
+				for _, r := range results {
+					if err := stateDB.Enqueue(r.URL, r.EntityType, 5); err == nil {
+						total++
+					}
+				}
+				fmt.Printf("  Page %d: found %d results (total=%d)\n", page, len(results), total)
+
+				searchURL = goodread.ParseSearchHTMLNextPage(doc)
+				page++
 			}
 
 			fmt.Printf("Enqueued %d URLs\n", total)
@@ -489,8 +580,9 @@ func newGoodreadSearch() *cobra.Command {
 	}
 
 	addDBFlags(cmd, &dbPath, &statePath, &delay)
-	cmd.Flags().StringVar(&entityType, "type", "books", "Search type: books, authors, users, lists")
-	cmd.Flags().IntVar(&maxResults, "max-results", 50, "Maximum results to enqueue")
+	cmd.Flags().BoolVar(&auth, "auth", false, "Use authenticated HTML search with pagination (requires cookies)")
+	cmd.Flags().StringVar(&cookiesFile, "cookies-file", "", "Path to cookies.json (default: ~/data/goodread/cookies.json)")
+	cmd.Flags().IntVar(&maxPages, "max-pages", 0, "Max pages to fetch in --auth mode (0 = unlimited)")
 	return cmd
 }
 
@@ -499,11 +591,19 @@ func newGoodreadSearch() *cobra.Command {
 func newGoodreadSitemap() *cobra.Command {
 	var dbPath, statePath string
 	var delay, limit int
+	var entityFilter string
 
 	cmd := &cobra.Command{
 		Use:   "sitemap",
-		Short: "Seed the queue from Goodreads sitemap",
-		Args:  cobra.NoArgs,
+		Short: "Seed the queue from Goodreads sitemaps",
+		Long: `Seed the crawl queue by parsing Goodreads sitemaps discovered from robots.txt.
+
+Goodreads publishes per-type siteindex files (author, list, quote, etc.) each
+pointing to gzipped sitemap files. URLs are filtered by entity type and
+enqueued for later crawling.`,
+		Args: cobra.NoArgs,
+		Example: `  search goodread sitemap --limit 1000
+  search goodread sitemap --limit 500 --type author`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_, stateDB, _, err := openDBs(dbPath, statePath, delay)
 			if err != nil {
@@ -511,66 +611,156 @@ func newGoodreadSitemap() *cobra.Command {
 			}
 			defer stateDB.Close()
 
-			fmt.Printf("Fetching sitemap index from %s ...\n", goodread.SitemapURL)
-
-			resp, err := http.Get(goodread.SitemapURL)
+			// Discover siteindex URLs from robots.txt.
+			fmt.Printf("Reading %s ...\n", goodread.RobotsTxtURL)
+			siteindexes, err := parseSitemapsFromRobots(goodread.RobotsTxtURL)
 			if err != nil {
-				return fmt.Errorf("fetch sitemap: %w", err)
+				return fmt.Errorf("parse robots.txt: %w", err)
 			}
-			defer resp.Body.Close()
+			fmt.Printf("Found %d siteindex files\n", len(siteindexes))
 
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return err
-			}
-
-			// Parse sitemap index
-			var idx struct {
-				Sitemaps []struct {
-					Loc string `xml:"loc"`
-				} `xml:"sitemap"`
-			}
-			xml.Unmarshal(body, &idx)
-
-			if len(idx.Sitemaps) == 0 {
-				// Maybe it's a direct urlset
-				_, err := enqueueSitemapURLs(body, stateDB, limit)
-				return err
-			}
+			// Filter by entity type if requested.
+			filter := strings.ToLower(strings.TrimSpace(entityFilter))
 
 			total := 0
-			for _, sm := range idx.Sitemaps {
+			for _, si := range siteindexes {
 				if limit > 0 && total >= limit {
 					break
 				}
-				fmt.Printf("  Fetching %s ...\n", sm.Loc)
-				smResp, err := http.Get(sm.Loc)
-				if err != nil {
+				// Infer entity type from siteindex filename.
+				siType := inferSiteindexType(si)
+				if filter != "" && !strings.Contains(siType, filter) {
 					continue
 				}
-				smBody, _ := io.ReadAll(smResp.Body)
-				smResp.Body.Close()
 
-				n, err := enqueueSitemapURLs(smBody, stateDB, limit-total)
+				fmt.Printf("  Siteindex [%s] %s ...\n", siType, si)
+				gzURLs, err := fetchSitemapIndex(si)
 				if err != nil {
 					fmt.Printf("    Warning: %v\n", err)
+					continue
 				}
-				total += n
-				fmt.Printf("    Enqueued %d (total=%d)\n", n, total)
-				time.Sleep(500 * time.Millisecond)
+
+				for _, gzURL := range gzURLs {
+					if limit > 0 && total >= limit {
+						break
+					}
+					n, err := fetchAndEnqueueGzSitemap(gzURL, stateDB, limit-total)
+					if err != nil {
+						fmt.Printf("    Warning (%s): %v\n", gzURL, err)
+						continue
+					}
+					total += n
+					if n > 0 {
+						fmt.Printf("    %s → enqueued %d (total=%d)\n", gzURL, n, total)
+					}
+					time.Sleep(200 * time.Millisecond)
+				}
 			}
 
-			fmt.Printf("Total enqueued from sitemap: %d\n", total)
+			fmt.Printf("Total enqueued from sitemaps: %d\n", total)
 			return nil
 		},
 	}
 
 	addDBFlags(cmd, &dbPath, &statePath, &delay)
 	cmd.Flags().IntVar(&limit, "limit", 0, "Max URLs to enqueue (0 = unlimited)")
+	cmd.Flags().StringVar(&entityFilter, "type", "", "Filter by entity type: book, author, list, quote, user (default: all)")
 	return cmd
 }
 
-func enqueueSitemapURLs(body []byte, stateDB *goodread.State, limit int) (int, error) {
+// parseSitemapsFromRobots fetches robots.txt and extracts all Sitemap: lines.
+func parseSitemapsFromRobots(robotsURL string) ([]string, error) {
+	resp, err := http.Get(robotsURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var urls []string
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if after, ok := strings.CutPrefix(line, "Sitemap:"); ok {
+			u := strings.TrimSpace(after)
+			if u != "" {
+				urls = append(urls, u)
+			}
+		}
+	}
+	return urls, scanner.Err()
+}
+
+// inferSiteindexType guesses the entity type from a siteindex URL filename.
+// e.g. "https://www.goodreads.com/siteindex.author.xml" → "author"
+func inferSiteindexType(u string) string {
+	lastSlash := strings.LastIndex(u, "/")
+	if lastSlash < 0 {
+		return "unknown"
+	}
+	filename := u[lastSlash+1:] // "siteindex.author.xml"
+	parts := strings.Split(filename, ".")
+	for i, p := range parts {
+		if p == "siteindex" && i+1 < len(parts) {
+			return parts[i+1]
+		}
+	}
+	return "unknown"
+}
+
+// fetchSitemapIndex fetches a siteindex XML and returns the list of .gz sitemap URLs.
+func fetchSitemapIndex(siteindexURL string) ([]string, error) {
+	resp, err := http.Get(siteindexURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var idx struct {
+		Sitemaps []struct {
+			Loc string `xml:"loc"`
+		} `xml:"sitemap"`
+	}
+	if err := xml.Unmarshal(body, &idx); err != nil {
+		return nil, err
+	}
+
+	var urls []string
+	for _, sm := range idx.Sitemaps {
+		if sm.Loc != "" {
+			urls = append(urls, sm.Loc)
+		}
+	}
+	return urls, nil
+}
+
+// fetchAndEnqueueGzSitemap downloads a gzipped sitemap, decompresses it, and enqueues URLs.
+func fetchAndEnqueueGzSitemap(gzURL string, stateDB *goodread.State, limit int) (int, error) {
+	resp, err := http.Get(gzURL)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	var reader io.Reader = resp.Body
+	if strings.HasSuffix(gzURL, ".gz") {
+		gz, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return 0, fmt.Errorf("gzip: %w", err)
+		}
+		defer gz.Close()
+		reader = gz
+	}
+
+	body, err := io.ReadAll(reader)
+	if err != nil {
+		return 0, err
+	}
+
 	var urlSet struct {
 		URLs []struct {
 			Loc string `xml:"loc"`
@@ -586,7 +776,7 @@ func enqueueSitemapURLs(body []byte, stateDB *goodread.State, limit int) (int, e
 			break
 		}
 		entityType := goodread.InferEntityType(u.Loc)
-		if err := stateDB.Enqueue(u.Loc, entityType, 1); err == nil {
+		if stateDB.Enqueue(u.Loc, entityType, 1) == nil {
 			n++
 		}
 	}
@@ -816,7 +1006,3 @@ func normalizeUserURL(s string) string {
 	return goodread.BaseURL + "/user/show/" + s
 }
 
-func encodeQuery(q string) string {
-	q = strings.ReplaceAll(q, " ", "+")
-	return q
-}
