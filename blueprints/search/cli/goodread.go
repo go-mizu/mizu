@@ -474,8 +474,9 @@ func newGoodreadSearch() *cobra.Command {
 Without --auth: uses GET /book/auto_complete?format=json&q=<query> (no login required,
 up to ~20 results, no pagination).
 
-With --auth: uses the full HTML search page (login-gated, SSR-rendered, with pagination).
-Requires cookies exported by: goodread-tool cookies export`,
+With --auth: uses the full HTML search page (/search?q=...&tab=books) with pagination,
+returning 10 results per page. Works with or without cookies.
+Cookies improve rate limits. Export with: goodread-tool cookies export`,
 		Args: cobra.ExactArgs(1),
 		Example: `  search goodread search "Dune"
   search goodread search "Frank Herbert"
@@ -537,7 +538,7 @@ Requires cookies exported by: goodread-tool cookies export`,
 			}
 			fmt.Printf("Searching (authenticated, %d cookies): %q\n", len(cookies), query)
 
-			searchURL := goodread.BaseURL + "/search?q=" + url.QueryEscape(query) + "&search[field]=books"
+			searchURL := goodread.BaseURL + "/search?q=" + url.QueryEscape(query) + "&tab=books"
 			total := 0
 			page := 1
 

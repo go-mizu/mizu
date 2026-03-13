@@ -66,14 +66,16 @@ func ParseSearchAutocomplete(body []byte) []SearchResult {
 	return results
 }
 
-// ParseSearchHTML parses book search results from an authenticated Goodreads
-// search HTML page. Requires session cookies — unauthenticated requests get
-// a React interstitial with no tr.bookContainer elements.
+// ParseSearchHTML parses book search results from a Goodreads search HTML page.
+// Works with or without authentication.
+//
+// Goodreads uses tr[itemtype="http://schema.org/Book"] for result rows.
+// The old tr.bookContainer selector is no longer used.
 func ParseSearchHTML(doc *goquery.Document) []SearchResult {
 	seen := map[string]bool{}
 	var results []SearchResult
 
-	doc.Find("tr.bookContainer").Each(func(_ int, s *goquery.Selection) {
+	doc.Find(`tr[itemtype="http://schema.org/Book"]`).Each(func(_ int, s *goquery.Selection) {
 		a := s.Find("a.bookTitle")
 		href, _ := a.Attr("href")
 		title := strings.TrimSpace(a.Text())
@@ -114,8 +116,7 @@ func ParseSearchHTML(doc *goquery.Document) []SearchResult {
 	return results
 }
 
-// ParseSearchHTMLNextPage extracts the "next page" URL from an authenticated
-// Goodreads search results page.
+// ParseSearchHTMLNextPage extracts the "next page" URL from a Goodreads search results page.
 func ParseSearchHTMLNextPage(doc *goquery.Document) string {
 	href, exists := doc.Find("a.next_page").Attr("href")
 	if !exists || href == "" {
