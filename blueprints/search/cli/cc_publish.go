@@ -314,6 +314,10 @@ func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, r
 				infoStyle.Render(ccFmtInt64(rows)),
 				successStyle.Render("done"),
 			)
+			// Aggressive cleanup: delete md.warc.gz after successful parquet export.
+			if cleanup {
+				_ = os.Remove(mdWARCPath)
+			}
 		} else {
 			fmt.Printf("  [%s] parquet exists, scanning stats\n", labelStyle.Render(shard))
 			var scanErr error
@@ -344,10 +348,14 @@ func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, r
 			return fmt.Errorf("write repo files %d: %w", idx, repoErr)
 		}
 
-		// Generate PNG charts from stats.csv (requires uv + chart_stats.py).
-		chartRelPaths := ccRunCharts(statsCSV, repoRoot, crawlID)
-		if len(chartRelPaths) > 0 {
-			fmt.Printf("  [%s] charts   %s\n", labelStyle.Render(shard), infoStyle.Render(fmt.Sprintf("%d PNGs", len(chartRelPaths))))
+		// Generate PNG charts only on the last shard (expensive; no need per-shard).
+		isLastShard := i == len(indices)-1
+		var chartRelPaths []string
+		if isLastShard {
+			chartRelPaths = ccRunCharts(statsCSV, repoRoot, crawlID)
+			if len(chartRelPaths) > 0 {
+				fmt.Printf("  [%s] charts   %s\n", labelStyle.Render(shard), infoStyle.Render(fmt.Sprintf("%d PNGs", len(chartRelPaths))))
+			}
 		}
 
 		// Decide whether to upload the parquet (--republish or not yet on HF).
