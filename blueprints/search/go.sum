@@ -510,8 +510,6 @@ github.com/markusmobius/go-domdistiller v0.0.0-20240926050704-25b8d046ffb4 h1:+7
 github.com/markusmobius/go-domdistiller v0.0.0-20240926050704-25b8d046ffb4/go.mod h1:E7PoeC3nd4GqtxP1A64v7JDBxpAbpTSnhlq9/DHmQ28=
 github.com/markusmobius/go-htmldate v1.9.3 h1:7k5xOTFxxuYx3BR6MZasdhfNN1Fr2hHJ6EHhh3J+Ff4=
 github.com/markusmobius/go-htmldate v1.9.3/go.mod h1:UIXXDtMLJUvIRxrAg1IDGeNC3XDe3Px+qW2wPq8ilnU=
-github.com/markusmobius/go-trafilatura v1.12.2 h1:JgEto0kDjwTuyXFl6TB+psrs1QGJqTdYJEbLhDy1vrw=
-github.com/markusmobius/go-trafilatura v1.12.2/go.mod h1:2WnYLuvGBgJAarHaAQnsvofihEojt2xDDrtVJU5UXZI=
 github.com/mattn/go-colorable v0.1.13/go.mod h1:7S9/ev0klgBDR4GtXTXX8a3vIGJpMovkB8vQcUbaXHg=
 github.com/mattn/go-colorable v0.1.14 h1:9A9LHSqF/7dyVVX6g0U9cwm9pG3kP9gSzcuIPHPsaIE=
 github.com/mattn/go-colorable v0.1.14/go.mod h1:6LmQG8QLFO4G5z1gPvYEzlUgJ2wF+stgPZH1UqBm1s8=

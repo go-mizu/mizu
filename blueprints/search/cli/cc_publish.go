@@ -356,8 +356,6 @@ func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, r
 			return fmt.Errorf("upsert stats %d: %w", idx, upsertErr)
 		}
 
-		isLastShard := i == len(indices)-1
-
 		// Decide whether to upload the parquet (--republish or not yet on HF).
 		parquetRemotePath := filepath.ToSlash(filepath.Join("data", crawlID, shard+".parquet"))
 		uploadParquet := republish
@@ -378,6 +376,7 @@ func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, r
 		}
 
 		// Flush batch when full or on last shard.
+		isLastShard := i == len(indices)-1
 		shouldFlush := len(batchQueue) >= commitBatch || isLastShard
 		if !shouldFlush {
 			fmt.Printf("  [%s] %s  (batch %d/%d)\n", labelStyle.Render(shard), infoStyle.Render("buffered"), len(batchQueue), commitBatch)
@@ -399,12 +398,9 @@ func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, r
 		if repoErr := ccEnsurePublishRepoFiles(repoRoot, crawlID, statsCSV); repoErr != nil {
 			return fmt.Errorf("write repo files: %w", repoErr)
 		}
-		var chartRelPaths []string
-		if isLastShard {
-			chartRelPaths = ccRunCharts(statsCSV, repoRoot, crawlID)
-			if len(chartRelPaths) > 0 {
-				fmt.Printf("  charts   %s\n", infoStyle.Render(fmt.Sprintf("%d PNGs", len(chartRelPaths))))
-			}
+		chartRelPaths := ccRunCharts(statsCSV, repoRoot, crawlID)
+		if len(chartRelPaths) > 0 {
+			fmt.Printf("  charts   %s\n", infoStyle.Render(fmt.Sprintf("%d PNGs", len(chartRelPaths))))
 		}
 
 		ops := []hfOperation{

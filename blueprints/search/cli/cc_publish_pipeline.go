@@ -331,12 +331,18 @@ func ccRunCharts(statsCSV, repoRoot, crawlID string) []string {
 		}
 	}
 
+	uvBin := resolveUV()
+	if uvBin == "" {
+		fmt.Printf("  [charts] skipped: uv not found\n")
+		return nil
+	}
+
 	// Run: uv run <script> <statsCSV> --out <chartsDir> [--crawl <crawlID>]
 	args := []string{"run", scriptPath, statsCSV, "--out", chartsDir}
 	if crawlID != "" {
 		args = append(args, "--crawl", crawlID)
 	}
-	cmd := exec.Command("uv", args...)
+	cmd := exec.Command(uvBin, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		fmt.Printf("  [charts] skipped: %v\n%s\n", err, string(out))
