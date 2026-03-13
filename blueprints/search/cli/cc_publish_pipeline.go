@@ -1,6 +1,7 @@
 package cli
 
 import (
+	_ "embed"
 	"encoding/csv"
 	"fmt"
 	"io"
@@ -14,6 +15,9 @@ import (
 
 	"github.com/parquet-go/parquet-go"
 )
+
+//go:embed embed/chart_stats.py
+var chartStatsPy []byte
 
 // ccShardStats holds per-shard export statistics including pipeline timings.
 type ccShardStats struct {
@@ -209,25 +213,29 @@ func ccFmtDuration(secs int64) string {
 	return fmt.Sprintf("%ds", s)
 }
 
-// ccRunCharts runs chart_stats.py (if available) to generate PNG charts from stats.csv.
-// Charts are written to repoRoot/charts/. Returns the list of generated PNG paths (relative to repoRoot).
-// Returns nil silently if the script or uv is not found.
+// ccRunCharts runs the embedded chart_stats.py via uv to generate PNG charts from stats.csv.
+// Charts are written to repoRoot/charts/. Returns the paths of generated PNGs (relative to repoRoot).
+// Returns nil silently if uv is not installed or chart generation fails.
 func ccRunCharts(statsCSV, repoRoot, crawlID string) []string {
-	// Locate the chart script: check well-known repo location.
-	home, _ := os.UserHomeDir()
-	scriptPath := filepath.Join(home, "github", "go-mizu", "mizu",
-		"blueprints", "search", "tools", "open-index", "chart_stats.py")
-	if _, err := os.Stat(scriptPath); err != nil {
-		return nil // script not found, skip silently
-	}
-
 	chartsDir := filepath.Join(repoRoot, "charts")
 	if err := os.MkdirAll(chartsDir, 0o755); err != nil {
 		return nil
 	}
 
-	// Run: uv run <script> <statsCSV> --out <chartsDir> --crawl <crawlID>
-	args := []string{"run", scriptPath, statsCSV, "--out", chartsDir}
+	// Write embedded script to a temp file.
+	tmp, err := os.CreateTemp("", "chart_stats_*.py")
+	if err != nil {
+		return nil
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(chartStatsPy); err != nil {
+		tmp.Close()
+		return nil
+	}
+	tmp.Close()
+
+	// Run: uv run <tmp_script> <statsCSV> --out <chartsDir> [--crawl <crawlID>]
+	args := []string{"run", tmp.Name(), statsCSV, "--out", chartsDir}
 	if crawlID != "" {
 		args = append(args, "--crawl", crawlID)
 	}
