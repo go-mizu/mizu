@@ -963,6 +963,14 @@ func seedFromSitemaps(ctx context.Context, stateDB *goodread.State, typeFilter, 
 	fmt.Printf("  Found %d siteindex files in robots.txt\n", len(siteindexes))
 
 	var totalNew, totalSkipped int
+	type typeSummary struct {
+		name    string
+		files   int
+		urls    int
+		skipped int
+		dur     time.Duration
+	}
+	var summaries []typeSummary
 
 	for _, si := range siteindexes {
 		if ctx.Err() != nil {
@@ -978,22 +986,25 @@ func seedFromSitemaps(ctx context.Context, stateDB *goodread.State, typeFilter, 
 			continue
 		}
 
-		fmt.Printf("  [%s] fetching file list: %s\n", entityType, si)
+		typeStart := time.Now()
+		fmt.Printf("\n── [%s] fetching index: %s\n", entityType, si)
 		gzURLs, err := fetchSitemapIndex(si)
 		if err != nil {
-			fmt.Printf("    Warning: %v\n", err)
+			fmt.Printf("  Warning: %v\n", err)
 			continue
 		}
+		fmt.Printf("  %d files to process\n", len(gzURLs))
 
 		typeCache := ""
 		if cacheDir != "" {
 			typeCache = filepath.Join(cacheDir, entityType)
 			if err := os.MkdirAll(typeCache, 0o755); err != nil {
-				fmt.Printf("    Warning: can't create cache dir: %v\n", err)
+				fmt.Printf("  Warning: can't create cache dir: %v\n", err)
 				typeCache = ""
 			}
 		}
 
+		var typeNew, typeSkipped int
 		total := len(gzURLs)
 		for i, gzURL := range gzURLs {
 			if ctx.Err() != nil {
@@ -1001,29 +1012,64 @@ func seedFromSitemaps(ctx context.Context, stateDB *goodread.State, typeFilter, 
 			}
 
 			fileIdx := i + 1
+			fname := shortURL(gzURL)
 			fileURLs := 0
-			newN, skipped, err := enqueueGzSitemap(gzURL, stateDB, entityType, typeCache, func(n int) {
+			fileStart := time.Now()
+
+			newN, skipped, err := enqueueGzSitemap(gzURL, stateDB, entityType, typeCache, fname, fileIdx, total, func(n int) {
 				fileURLs = n
-				fmt.Printf("\r  [%s] file %d/%d — %s (file: %d URLs, total: %d)   ",
-					entityType, fileIdx, total, shortURL(gzURL), fileURLs, totalNew+fileURLs)
+				fmt.Printf("\r  [%d/%d] %s — importing %s URLs ...   ",
+					fileIdx, total, fname, fmtInt(fileURLs))
 			})
 			if err != nil {
-				fmt.Printf("\n    Warning (%s): %v\n", gzURL, err)
+				fmt.Printf("\r  [%d/%d] %s — ERROR: %v\n", fileIdx, total, fname, err)
 				continue
 			}
+			elapsed := time.Since(fileStart).Round(time.Millisecond)
 			if skipped {
-				totalSkipped++
-				fmt.Printf("\r  [%s] file %d/%d — %s (cached, skipped)   \n",
-					entityType, fileIdx, total, shortURL(gzURL))
-				continue
+				typeSkipped++
+				fmt.Printf("\r  [%d/%d] %s — [cached] skip\n", fileIdx, total, fname)
+			} else {
+				typeNew += newN
+				fmt.Printf("\r  [%d/%d] %s — %s URLs  (%s)\n",
+					fileIdx, total, fname, fmtInt(newN), elapsed)
 			}
-			totalNew += newN
-			fmt.Printf("\r  [%s] file %d/%d done — total %d URLs   \n",
-				entityType, fileIdx, total, totalNew)
 		}
+
+		typeDur := time.Since(typeStart).Round(time.Second)
+		totalNew += typeNew
+		totalSkipped += typeSkipped
+		summaries = append(summaries, typeSummary{entityType, total, typeNew, typeSkipped, typeDur})
+		fmt.Printf("── [%s] done: %d files, %s URLs, %d cached  (%s)\n",
+			entityType, total, fmtInt(typeNew), typeSkipped, typeDur)
 	}
 
+	// Overall summary
+	fmt.Printf("\n── Seed summary ──\n")
+	for _, s := range summaries {
+		fmt.Printf("  %-8s %s URLs  (%d files, %d cached, %s)\n",
+			s.name+":", fmtInt(s.urls), s.files, s.skipped, s.dur)
+	}
+	fmt.Printf("  %-8s %s URLs new,  %d files skipped (cached)\n",
+		"total:", fmtInt(totalNew), totalSkipped)
+
 	return totalNew, totalSkipped, nil
+}
+
+// fmtInt formats an integer with comma thousands separators.
+func fmtInt(n int) string {
+	s := fmt.Sprintf("%d", n)
+	if len(s) <= 3 {
+		return s
+	}
+	var b []byte
+	for i, c := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			b = append(b, ',')
+		}
+		b = append(b, byte(c))
+	}
+	return string(b)
 }
 
 // enqueueGzSitemap downloads (or loads from cache) a gzipped sitemap, streams XML parsing,
@@ -1031,13 +1077,13 @@ func seedFromSitemaps(ctx context.Context, stateDB *goodread.State, typeFilter, 
 // cacheDir: if non-empty, the .gz is saved to cacheDir/<filename>; a .done sentinel skips
 // already-imported files entirely.
 // Returns (newly enqueued, skipped-as-cached, error).
-func enqueueGzSitemap(gzURL string, stateDB *goodread.State, entityType, cacheDir string, progress func(n int)) (int, bool, error) {
+func enqueueGzSitemap(gzURL string, stateDB *goodread.State, entityType, cacheDir, fname string, fileIdx, total int, progress func(n int)) (int, bool, error) {
 	const batchSize = 5000
 
 	// ── disk cache logic ─────────────────────────────────────────────────────
 	var localPath string
 	if cacheDir != "" {
-		localPath = filepath.Join(cacheDir, shortURL(gzURL))
+		localPath = filepath.Join(cacheDir, fname)
 		donePath := localPath + ".done"
 
 		// Already fully imported? Skip entirely.
@@ -1047,8 +1093,16 @@ func enqueueGzSitemap(gzURL string, stateDB *goodread.State, entityType, cacheDi
 
 		// Download to disk if not cached yet.
 		if _, err := os.Stat(localPath); os.IsNotExist(err) {
-			fmt.Printf("\r  downloading %s ...  ", shortURL(gzURL))
-			if err := downloadFile(gzURL, localPath); err != nil {
+			if err := downloadFileProgress(gzURL, localPath, func(bytes, total int64) {
+				if total > 0 {
+					fmt.Printf("\r  [%d/%d] %s — downloading %.1f/%.1f MB  ",
+						fileIdx, total, fname,
+						float64(bytes)/1e6, float64(total)/1e6)
+				} else {
+					fmt.Printf("\r  [%d/%d] %s — downloading %.1f MB ...  ",
+						fileIdx, total, fname, float64(bytes)/1e6)
+				}
+			}); err != nil {
 				return 0, false, fmt.Errorf("download: %w", err)
 			}
 		}
@@ -1093,7 +1147,7 @@ func enqueueGzSitemap(gzURL string, stateDB *goodread.State, entityType, cacheDi
 
 	dec := xml.NewDecoder(reader)
 	batch := make([]goodread.QueueItem, 0, batchSize)
-	total := 0
+	count := 0
 
 	flush := func() error {
 		if len(batch) == 0 {
@@ -1102,10 +1156,10 @@ func enqueueGzSitemap(gzURL string, stateDB *goodread.State, entityType, cacheDi
 		if err2 := stateDB.EnqueueBatch(batch); err2 != nil {
 			return err2
 		}
-		total += len(batch)
+		count += len(batch)
 		batch = batch[:0]
 		if progress != nil {
-			progress(total)
+			progress(count)
 		}
 		return nil
 	}
@@ -1116,7 +1170,7 @@ func enqueueGzSitemap(gzURL string, stateDB *goodread.State, entityType, cacheDi
 			break
 		}
 		if err != nil {
-			return total, false, err
+			return count, false, err
 		}
 		se, ok := tok.(xml.StartElement)
 		if !ok || se.Name.Local != "loc" {
@@ -1132,12 +1186,12 @@ func enqueueGzSitemap(gzURL string, stateDB *goodread.State, entityType, cacheDi
 		batch = append(batch, goodread.QueueItem{URL: loc, EntityType: entityType, Priority: 1})
 		if len(batch) >= batchSize {
 			if err := flush(); err != nil {
-				return total, false, err
+				return count, false, err
 			}
 		}
 	}
 	if err := flush(); err != nil {
-		return total, false, err
+		return count, false, err
 	}
 
 	// Mark as fully imported so next run skips this file entirely.
@@ -1145,11 +1199,12 @@ func enqueueGzSitemap(gzURL string, stateDB *goodread.State, entityType, cacheDi
 		os.WriteFile(localPath+".done", []byte{}, 0o644)
 	}
 
-	return total, false, nil
+	return count, false, nil
 }
 
-// downloadFile fetches url and saves it to dest atomically (via temp file + rename).
-func downloadFile(url, dest string) error {
+// downloadFileProgress fetches url, saves to dest atomically, and calls progress(downloaded, total)
+// periodically. total is -1 if Content-Length is unknown.
+func downloadFileProgress(url, dest string, progress func(downloaded, total int64)) error {
 	resp, err := http.Get(url)
 	if err != nil {
 		return err
@@ -1161,10 +1216,31 @@ func downloadFile(url, dest string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(f, resp.Body); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return err
+
+	contentLen := resp.ContentLength // -1 if unknown
+	var downloaded int64
+	buf := make([]byte, 32*1024)
+	for {
+		n, readErr := resp.Body.Read(buf)
+		if n > 0 {
+			if _, werr := f.Write(buf[:n]); werr != nil {
+				f.Close()
+				os.Remove(tmp)
+				return werr
+			}
+			downloaded += int64(n)
+			if progress != nil && downloaded%(256*1024) < int64(n) {
+				progress(downloaded, contentLen)
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			f.Close()
+			os.Remove(tmp)
+			return readErr
+		}
 	}
 	f.Close()
 	return os.Rename(tmp, dest)
