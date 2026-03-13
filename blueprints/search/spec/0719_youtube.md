@@ -191,9 +191,9 @@ Minimum verification for this change:
 - `go test ./pkg/scrape/youtube/...` if tests exist
 - `go test ./cli/...` or at least compile the root package
 - `go test ./...` only if the workspace is stable enough
+- run DuckDB-backed smoke commands serially, not in parallel, because the DB/state files take exclusive locks
 - manual smoke checks:
   - `search youtube video dQw4w9WgXcQ`
   - `search youtube channel @GoogleDevelopers`
   - `search youtube playlist PL590L5WQmH8fJ54F1L7aRQlQ-Qc8-ND8B`
   - `search youtube search golang --max-results 20 --enqueue`
-
