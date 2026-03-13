@@ -78,7 +78,7 @@ Local parquets are deleted after a successful HF push.`,
 	cmd.Flags().BoolVar(&lightConvert, "light", true, "Use lightweight HTML→Markdown converter (~10x faster, --no-light for trafilatura)")
 	cmd.Flags().BoolVar(&skipErrors, "skip-errors", false, "Skip shards that fail pack/export instead of aborting (--pipeline only)")
 	cmd.Flags().IntVar(&watchInterval, "watch-interval", 15, "Watcher poll interval in seconds (--watch only)")
-	cmd.Flags().IntVar(&chartsEvery, "charts-every", 30, "Regenerate charts every N minutes (--watch only, 0=disable)")
+	cmd.Flags().IntVar(&chartsEvery, "charts-every", 15, "Regenerate charts every N minutes (--watch only, 0=disable)")
 	return cmd
 }
 

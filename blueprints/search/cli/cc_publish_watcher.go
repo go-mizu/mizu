@@ -76,7 +76,9 @@ func ccRunWatcher(ctx context.Context, crawlID, repoRoot, repoID string, private
 	}
 	fmt.Println()
 
-	var lastChartTime time.Time
+	// Seed lastChartTime from the newest chart PNG on disk so a restart doesn't
+	// redundantly regenerate charts that were just produced by the previous run.
+	lastChartTime := ccNewestChartTime(repoRoot)
 
 	// Flush immediately on startup (handles leftovers from previous runs), then tick.
 	flush := func() {
@@ -343,6 +345,26 @@ func ccPurgeCommittedLocals(crawlID, dataDir, warcMdDir string, committed map[in
 		}
 	}
 	return n
+}
+
+// ccNewestChartTime returns the mtime of the most recently modified PNG in repoRoot/charts/,
+// or the zero time if no charts exist. Used to seed lastChartTime on startup so a restart
+// doesn't regenerate charts that are still fresh.
+func ccNewestChartTime(repoRoot string) time.Time {
+	entries, err := os.ReadDir(filepath.Join(repoRoot, "charts"))
+	if err != nil {
+		return time.Time{}
+	}
+	var newest time.Time
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".png") {
+			continue
+		}
+		if fi, err := e.Info(); err == nil && fi.ModTime().After(newest) {
+			newest = fi.ModTime()
+		}
+	}
+	return newest
 }
 
 // ccReadShardMeta reads the .meta sidecar file written by the pipeline for timing info.
