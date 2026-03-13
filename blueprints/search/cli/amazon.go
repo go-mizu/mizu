@@ -706,9 +706,9 @@ func newAmazonJobs() *cobra.Command {
 		Short: "List recent crawl jobs",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, stateDB, _, err := openAmazonDBs(dbPath, statePath, delay, maxPages)
+			stateDB, err := amazon.OpenState(statePath)
 			if err != nil {
-				return err
+				return fmt.Errorf("open state: %w", err)
 			}
 			defer stateDB.Close()
 
@@ -753,9 +753,9 @@ func newAmazonQueue() *cobra.Command {
 		Short: "Inspect queue items",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, stateDB, _, err := openAmazonDBs(dbPath, statePath, delay, maxPages)
+			stateDB, err := amazon.OpenState(statePath)
 			if err != nil {
-				return err
+				return fmt.Errorf("open state: %w", err)
 			}
 			defer stateDB.Close()
 
