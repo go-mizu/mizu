@@ -10,9 +10,8 @@ Usage:
     python chart_stats.py stats.csv [--out charts/]
 
 Outputs PNG images suitable for embedding in README / HuggingFace model cards:
-  - size_chart.png      grouped bar: HTML vs Markdown bytes per shard
   - totals_chart.png    horizontal bar: total HTML / Markdown / Parquet with reductions
-  - timing_chart.png    stacked bar: download / convert / export / publish per shard
+  - timing_chart.png    box plot: distribution of pipeline stage durations per shard
 """
 
 import argparse
@@ -64,33 +63,6 @@ def load(path):
 
 # ── charts ───────────────────────────────────────────────────────────────────
 
-def chart_sizes(df, out):
-    """Grouped bar: HTML vs Markdown bytes per shard."""
-    plot_df = pd.DataFrame({
-        "shard": list(df["shard"]) * 2,
-        "bytes_mb": list(df["html_bytes"] / 1e6) + list(df["md_bytes"] / 1e6),
-        "type": ["Raw HTML"] * len(df) + ["Markdown"] * len(df),
-    })
-    fig = px.bar(
-        plot_df, x="shard", y="bytes_mb", color="type", barmode="group",
-        color_discrete_sequence=[COLORS[0], COLORS[1]],
-        title="Size per Shard: HTML vs Markdown (MB)",
-        labels={"bytes_mb": "Size (MB)", "shard": "", "type": ""},
-        height=450, width=max(900, len(df) * 26),
-    )
-    fig.update_layout(**LAYOUT,
-        margin=dict(l=56, r=24, t=56, b=72),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
-                    font_size=10, bgcolor="rgba(255,255,255,0.9)"),
-        xaxis=dict(tickangle=-45, tickfont_size=9, gridcolor="#f0f0f0", linecolor="#e5e7eb"),
-        yaxis=dict(gridcolor="#f0f0f0", zeroline=False, linecolor="#e5e7eb"),
-    )
-    fig.update_traces(marker_line_width=0)
-    p = Path(out) / "size_chart.png"
-    fig.write_image(str(p), scale=2)
-    print(f"  Wrote {p}")
-
-
 def chart_totals(df, out):
     """Horizontal bar: total HTML / Markdown / Parquet with % reduction labels."""
     total_html = df["html_bytes"].sum()
@@ -133,34 +105,37 @@ def chart_totals(df, out):
 
 
 def chart_timings(df, out):
-    """Stacked bar: pipeline time per shard."""
+    """Box plot: distribution of each pipeline stage duration across all shards."""
     cols = ["dur_download_s", "dur_convert_s", "dur_export_s", "dur_publish_s"]
     names = ["Download", "Convert (HTML→MD)", "Export Parquet", "Publish HF"]
     if sum(df[c].sum() for c in cols) == 0:
         print("  Skipping timing chart (no timing data)")
         return
 
+    # Only include shards that have timing data (non-zero total)
+    timed = df[df[cols].sum(axis=1) > 0]
+    if timed.empty:
+        print("  Skipping timing chart (all zeros)")
+        return
+
     plot_df = pd.DataFrame({
-        "shard": df["shard"].tolist() * len(cols),
-        "minutes": [v for col in cols for v in (df[col] / 60).tolist()],
-        "stage": [name for name in names for _ in range(len(df))],
+        "seconds": [v for col in cols for v in timed[col].tolist()],
+        "stage": [name for name in names for _ in range(len(timed))],
     })
-    fig = px.bar(
-        plot_df, x="shard", y="minutes", color="stage", barmode="stack",
+    fig = px.box(
+        plot_df, x="stage", y="seconds", color="stage",
         color_discrete_sequence=COLORS[:len(cols)],
-        title="Pipeline Time per Shard",
-        labels={"minutes": "Time (minutes)", "shard": "", "stage": ""},
-        height=450, width=max(900, len(df) * 26),
+        title=f"Pipeline Stage Durations ({len(timed)} shards)",
+        labels={"seconds": "Duration (seconds)", "stage": ""},
         category_orders={"stage": names},
+        height=420, width=700,
     )
     fig.update_layout(**LAYOUT,
-        margin=dict(l=56, r=24, t=56, b=72),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
-                    font_size=10, bgcolor="rgba(255,255,255,0.9)"),
-        xaxis=dict(tickangle=-45, tickfont_size=9, gridcolor="#f0f0f0", linecolor="#e5e7eb"),
+        margin=dict(l=56, r=24, t=56, b=56),
+        showlegend=False,
+        xaxis=dict(gridcolor="#f0f0f0", linecolor="#e5e7eb"),
         yaxis=dict(gridcolor="#f0f0f0", zeroline=False, linecolor="#e5e7eb"),
     )
-    fig.update_traces(marker_line_width=0)
     p = Path(out) / "timing_chart.png"
     fig.write_image(str(p), scale=2)
     print(f"  Wrote {p}")
@@ -184,7 +159,6 @@ def main():
     Path(args.out).mkdir(parents=True, exist_ok=True)
     print(f"Generating charts for {len(df)} shards -> {args.out}/")
 
-    chart_sizes(df, args.out)
     chart_totals(df, args.out)
     chart_timings(df, args.out)
 

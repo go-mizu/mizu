@@ -759,8 +759,7 @@ func ccPublishREADME(crawlID string, totals *ccTotals) string {
 				"```\n" +
 				"\n### Dataset Charts\n\n" +
 				"![Total size: HTML vs Markdown vs Parquet](charts/totals_chart.png)\n\n" +
-				"![Size per shard: HTML vs Markdown](charts/size_chart.png)\n\n" +
-				"![Pipeline time per shard](charts/timing_chart.png)\n"
+				"![Pipeline stage durations](charts/timing_chart.png)\n"
 		}
 	}
 
