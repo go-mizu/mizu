@@ -32,7 +32,7 @@ type ccWARCExportRow struct {
 	HTMLLength      int64  `parquet:"html_length"`
 	MarkdownLength  int64  `parquet:"markdown_length"`
 	WARCHeadersJSON string `parquet:"warc_headers_json"`
-	MarkdownBody    string `parquet:"markdown_body"`
+	Markdown        string `parquet:"markdown"`
 	SourceWARCFile  string `parquet:"source_warc_file"`
 	SourceFileIndex int32  `parquet:"source_file_index"`
 }
@@ -211,7 +211,7 @@ func exportWARCMdShardToParquet(inPath, outPath string, fileIndex int) (int64, e
 			HTMLLength:      ccParseHTMLLength(rec.Header.Get("X-HTML-Length")),
 			MarkdownLength:  int64(len(body)),
 			WARCHeadersJSON: sanitizeUTF8(headersJSON),
-			MarkdownBody:    sanitizeUTF8(string(body)),
+			Markdown:        sanitizeUTF8(string(body)),
 			SourceWARCFile:  filepath.Base(inPath),
 			SourceFileIndex: int32(fileIndex),
 		})

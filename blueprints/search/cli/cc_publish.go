@@ -332,6 +332,8 @@ func ccRunPublishPython(ctx context.Context, payload ccPublishPayload) ([]byte, 
 
 func ccPublishREADME(crawlID string) string {
 	c := crawlID
+	cb := "```" // fenced code block delimiter
+	bt := "`"  // inline code delimiter
 	return fmt.Sprintf(`---
 license: odc-by
 task_categories:
@@ -352,10 +354,10 @@ configs:
   data_files:
   - split: train
     path: data/*/*
-- config_name: %s
+- config_name: %[1]s
   data_files:
   - split: train
-    path: data/%s/*
+    path: data/%[1]s/*
 ---
 
 # Open Index
@@ -366,7 +368,7 @@ configs:
 
 Open Index is a large-scale web text dataset built from [Common Crawl](https://commoncrawl.org). Every page goes through a pipeline that extracts the main content from raw HTML, converts it to clean Markdown using [trafilatura](https://github.com/adbar/trafilatura), and packages the result into Parquet files with full WARC metadata preserved.
 
-The dataset currently includes crawl **%s**. We plan to add more snapshots over time.
+The dataset currently includes crawl **%[1]s**. We plan to add more snapshots over time.
 
 Open Index is released under the **Open Data Commons Attribution License (ODC-By) v1.0**, the same license used by Common Crawl.
 
@@ -374,61 +376,67 @@ Open Index is released under the **Open Data Commons Attribution License (ODC-By
 
 Each Common Crawl WARC file (~1 GB of compressed HTML) becomes one Parquet shard. The shards live under a crawl-specific directory so multiple snapshots can coexist:
 
-`+"`"+`
+%[2]s
 data/
-  %s/
+  %[1]s/
     00000.parquet
     00001.parquet
     ...
-`+"`"+`
+%[2]s
 
 Every row in a Parquet file is one web page. Along with the markdown body, we preserve the original WARC headers as a JSON column so you can always trace a document back to its source record.
 
 ## How to download and use Open Index
 
-### Using `+"`datasets`"+`
+### Using %[3]sdatasets%[3]s
 
-`+"`"+`python
+%[2]spython
 from datasets import load_dataset
 
 # stream the entire dataset
-ds = load_dataset("open-index/draft", name="%s", split="train", streaming=True)
+ds = load_dataset("open-index/draft", name="%[1]s", split="train", streaming=True)
 for doc in ds:
-    print(doc["url"], len(doc["markdown_body"]))
+    print(doc["url"], len(doc["markdown"]))
 
 # load a single shard into memory
 ds = load_dataset(
     "open-index/draft",
-    data_files="data/%s/00000.parquet",
+    data_files="data/%[1]s/00000.parquet",
     split="train",
 )
-`+"`"+`
+%[2]s
 
-### Using `+"`huggingface_hub`"+`
+### Using %[3]shuggingface_hub%[3]s
 
-`+"`"+`python
+%[2]spython
 from huggingface_hub import snapshot_download
 
 folder = snapshot_download(
     "open-index/draft",
     repo_type="dataset",
     local_dir="./open-index/",
-    allow_patterns="data/%s/*",
+    allow_patterns="data/%[1]s/*",
 )
-`+"`"+`
+%[2]s
 
-For faster downloads, install `+"`pip install huggingface_hub[hf_transfer]`"+` and set `+"`HF_HUB_ENABLE_HF_TRANSFER=1`"+`.
+For faster downloads, install %[3]spip install huggingface_hub[hf_transfer]%[3]s and set %[3]sHF_HUB_ENABLE_HF_TRANSFER=1%[3]s.
 
 ### Using DuckDB
 
-`+"`"+`sql
+%[2]ssql
 SELECT url, host, markdown_length
-FROM read_parquet('hf://datasets/open-index/draft/data/%s/*.parquet')
+FROM read_parquet('hf://datasets/open-index/draft/data/%[1]s/*.parquet')
 WHERE host = 'en.wikipedia.org'
 LIMIT 10;
-`+"`"+`
+%[2]s
 
 # Dataset card for Open Index
+
+## Dataset Description
+
+- **Homepage and Repository:** [https://huggingface.co/datasets/open-index/draft](https://huggingface.co/datasets/open-index/draft)
+- **Point of Contact:** please create a discussion on the Community tab
+- **License:** Open Data Commons Attribution License (ODC-By) v1.0
 
 ## Dataset Structure
 
@@ -436,7 +444,7 @@ LIMIT 10;
 
 The following is an example row from the dataset:
 
-`+"`"+`json
+%[2]sjson
 {
   "doc_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "url": "https://example.com/article/interesting-topic",
@@ -448,33 +456,33 @@ The following is an example row from the dataset:
   "content_type": "text/markdown",
   "html_length": 48210,
   "markdown_length": 3847,
-  "warc_headers_json": "{\"Content-Length\": \"3847\", \"Content-Type\": \"text/markdown\", ...}",
-  "markdown_body": "# Interesting Topic\n\nThis is the main content of the page...",
+  "warc_headers_json": "{\"Content-Length\": \"3847\", ...}",
+  "markdown": "# Interesting Topic\n\nThis is the main content of the page...",
   "source_warc_file": "00000.md.warc.gz",
   "source_file_index": 0
 }
-`+"`"+`
+%[2]s
 
 ### Data Fields
 
-- `+"`doc_id`"+` (string): unique identifier derived from the WARC-Record-ID (UUID format)
-- `+"`url`"+` (string): original URL of the crawled page
-- `+"`host`"+` (string): lowercase hostname extracted from the URL
-- `+"`crawl_date`"+` (string): RFC 3339 timestamp from the WARC record
-- `+"`warc_type`"+` (string): WARC record type, typically "conversion" for markdown output
-- `+"`warc_record_id`"+` (string): full WARC-Record-ID in the urn:uuid format
-- `+"`warc_refers_to`"+` (string): WARC-Record-ID of the original HTTP response record this was converted from
-- `+"`content_type`"+` (string): content type of the converted record (text/markdown)
-- `+"`html_length`"+` (int64): byte length of the original HTML body before conversion
-- `+"`markdown_length`"+` (int64): byte length of the converted markdown body
-- `+"`warc_headers_json`"+` (string): all WARC headers serialized as a JSON object with sorted keys, preserving every header from the packed record for full provenance
-- `+"`markdown_body`"+` (string): the cleaned markdown content extracted from the HTML page
-- `+"`source_warc_file`"+` (string): filename of the packed .md.warc.gz shard this record came from
-- `+"`source_file_index`"+` (int32): zero-based index of the source file in the crawl manifest
+- %[3]sdoc_id%[3]s (string): unique identifier derived from the WARC-Record-ID (UUID format)
+- %[3]surl%[3]s (string): original URL of the crawled page
+- %[3]shost%[3]s (string): lowercase hostname extracted from the URL
+- %[3]scrawl_date%[3]s (string): RFC 3339 timestamp from the WARC record
+- %[3]swarc_type%[3]s (string): WARC record type, typically "conversion" for markdown output
+- %[3]swarc_record_id%[3]s (string): full WARC-Record-ID in the urn:uuid format
+- %[3]swarc_refers_to%[3]s (string): WARC-Record-ID of the original HTTP response record this was converted from
+- %[3]scontent_type%[3]s (string): content type of the converted record (text/markdown)
+- %[3]shtml_length%[3]s (int64): byte length of the original HTML body before conversion
+- %[3]smarkdown_length%[3]s (int64): byte length of the converted markdown body
+- %[3]swarc_headers_json%[3]s (string): all WARC headers serialized as a JSON object with sorted keys, preserving every header from the packed record for full provenance
+- %[3]smarkdown%[3]s (string): the cleaned markdown content extracted from the HTML page
+- %[3]ssource_warc_file%[3]s (string): filename of the packed .md.warc.gz shard this record came from
+- %[3]ssource_file_index%[3]s (int32): zero-based index of the source file in the crawl manifest
 
 ### Data Splits
 
-The default subset includes all available data across all crawl snapshots. You can also load a specific crawl by using its ID as the config name (e.g. `+"`%s`"+`).
+The default subset includes all available data across all crawl snapshots. You can also load a specific crawl by using its ID as the config name (e.g. %[3]s%[1]s%[3]s).
 
 ## Dataset Creation
 
@@ -525,7 +533,7 @@ The dataset is released under the **Open Data Commons Attribution License (ODC-B
 ### Contact
 
 Please open a discussion on the [Community tab](https://huggingface.co/datasets/open-index/draft/discussions) for questions, feedback, or issues.
-`, c, c, c, c, c, c, c, c, c)
+`, c, cb, bt)
 }
 
 func ccPublishLicense() string {
