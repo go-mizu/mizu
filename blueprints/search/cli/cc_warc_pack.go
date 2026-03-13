@@ -70,7 +70,7 @@ Pipeline architecture:
 
 func runCCWarcPack(ctx context.Context,
 	crawlID, fileIdx string, from, to, workers int, force, fastConvert, lightConvert bool,
-	statusCode int, mimeFilter string, maxBody int64) error {
+	statusCode int, mimeFilter string, maxBody int64, outName ...string) error {
 
 	if from >= 0 && to >= 0 {
 		fileIdx = fmt.Sprintf("%d-%d", from, to)
@@ -133,6 +133,11 @@ func runCCWarcPack(ctx context.Context,
 
 	for i, localPath := range inputFiles {
 		warcIdx := warcIndexFromPath(paths[selected[i]], selected[i])
+		// Allow caller to override output name (e.g., pipeline uses global index to avoid
+		// collisions between segments that have identical filename suffixes).
+		if len(outName) > 0 && outName[0] != "" && len(inputFiles) == 1 {
+			warcIdx = outName[0]
+		}
 		fname := filepath.Base(localPath)
 		outPath := filepath.Join(cfg.WARCMdDir(), warcIdx+".md.warc.gz")
 

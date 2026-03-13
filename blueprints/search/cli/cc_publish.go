@@ -280,7 +280,7 @@ func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, r
 				rawWARCExists := ccFindRawWARC(crawlID, idx) != ""
 				fmt.Printf("  [%s] packing...\n", labelStyle.Render(shard))
 				t0 := time.Now()
-				if packErr := runCCWarcPack(ctx, crawlID, strconv.Itoa(idx), -1, -1, 0, false, false, lightConvert, 200, "text/html", 512*1024); packErr != nil {
+				if packErr := runCCWarcPack(ctx, crawlID, strconv.Itoa(idx), -1, -1, 0, false, false, lightConvert, 200, "text/html", 512*1024, shard); packErr != nil {
 					return fmt.Errorf("pack %d: %w", idx, packErr)
 				}
 				elapsed := int64(time.Since(t0).Seconds())
