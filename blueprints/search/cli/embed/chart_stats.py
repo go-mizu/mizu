@@ -69,20 +69,20 @@ def load(path):
 # ── charts ───────────────────────────────────────────────────────────────────
 
 def chart_sizes(df, out):
-    """Grouped bar (linear MB) — Parquet bars are tiny next to HTML, showing compression."""
+    """Grouped bar (linear MB) — Markdown bars are small next to HTML, showing HTML stripping."""
     fig = go.Figure()
     fig.add_trace(go.Bar(
         x=df["shard"], y=df["html_bytes"] / 1e6, name="Raw HTML",
         marker_color=COLORS[0], marker_line_width=0,
     ))
     fig.add_trace(go.Bar(
-        x=df["shard"], y=df["parquet_bytes"] / 1e6, name="Final Parquet",
+        x=df["shard"], y=df["md_bytes"] / 1e6, name="Markdown",
         marker_color=COLORS[1], marker_line_width=0,
     ))
     fig.update_layout(
         **LAYOUT, barmode="group",
         height=450, width=max(900, len(df) * 26),
-        title_text="Size per Shard: HTML vs Parquet (MB)",
+        title_text="Size per Shard: HTML vs Markdown (MB)",
         yaxis_title="Size (MB)",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
                     font_size=10, bgcolor="rgba(255,255,255,0.9)"),
@@ -90,6 +90,44 @@ def chart_sizes(df, out):
     fig.update_xaxes(**XAXIS)
     fig.update_yaxes(**AXIS)
     p = Path(out) / "size_chart.png"
+    fig.write_image(str(p), scale=2)
+    print(f"  Wrote {p}")
+
+
+def chart_totals(df, out):
+    """Horizontal bar: total HTML, Markdown, Parquet with % reduction labels."""
+    total_html = df["html_bytes"].sum()
+    total_md = df["md_bytes"].sum()
+    total_pq = df["parquet_bytes"].sum()
+
+    pct_md = (1 - total_md / total_html) * 100 if total_html else 0
+    pct_pq = (1 - total_pq / total_html) * 100 if total_html else 0
+    pct_pq_from_md = (1 - total_pq / total_md) * 100 if total_md else 0
+
+    labels = ["Raw HTML", "Markdown", "Parquet"]
+    values = [total_html / 1e9, total_md / 1e9, total_pq / 1e9]
+    colors = [COLORS[0], COLORS[1], COLORS[2]]
+    texts = [
+        fmt_bytes(total_html),
+        f"{fmt_bytes(total_md)}  (-{pct_md:.1f}%)",
+        f"{fmt_bytes(total_pq)}  (-{pct_pq:.1f}% overall, -{pct_pq_from_md:.1f}% vs MD)",
+    ]
+
+    fig = go.Figure(go.Bar(
+        x=values, y=labels, orientation="h",
+        marker_color=colors, marker_line_width=0,
+        text=texts, textposition="outside",
+        textfont=dict(size=11, color="#374151"),
+    ))
+    layout = {**LAYOUT, "margin": dict(l=80, r=24, t=56, b=56)}
+    fig.update_layout(
+        **layout, height=300, width=820,
+        title_text=f"Total Size: HTML vs Markdown vs Parquet ({len(df)} shards)",
+        xaxis_title="Size (GB)",
+        xaxis=dict(**AXIS, range=[0, max(values) * 1.45]),
+        yaxis=dict(**AXIS, categoryorder="array", categoryarray=["Parquet", "Markdown", "Raw HTML"]),
+    )
+    p = Path(out) / "totals_chart.png"
     fig.write_image(str(p), scale=2)
     print(f"  Wrote {p}")
 
@@ -173,6 +211,7 @@ def main():
     print(f"Generating charts for {len(df)} shards -> {args.out}/")
 
     chart_sizes(df, args.out)
+    chart_totals(df, args.out)
     chart_timings(df, args.out)
     chart_compression(df, args.out)
 

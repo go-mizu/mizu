@@ -30,6 +30,7 @@ func newCCPublish() *cobra.Command {
 		pipeline     bool
 		cleanup      bool
 		lightConvert bool
+		commitBatch  int
 	)
 
 	cmd := &cobra.Command{
@@ -50,7 +51,7 @@ to save disk space.`,
   search cc publish --file 0 --republish
   search cc publish --file 11-90 --pipeline --cleanup`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCCPublish(cmd.Context(), crawlID, fileIdx, repoRoot, repoID, republish, private, pipeline, cleanup, lightConvert)
+			return runCCPublish(cmd.Context(), crawlID, fileIdx, repoRoot, repoID, republish, private, pipeline, cleanup, lightConvert, commitBatch)
 		},
 	}
 
@@ -63,10 +64,11 @@ to save disk space.`,
 	cmd.Flags().BoolVar(&pipeline, "pipeline", false, "Auto-download, pack, and export missing shards before publishing")
 	cmd.Flags().BoolVar(&cleanup, "cleanup", false, "Delete raw .warc.gz after packing (requires --pipeline)")
 	cmd.Flags().BoolVar(&lightConvert, "light", true, "Use lightweight HTML→Markdown converter (~10x faster than trafilatura, --no-light for trafilatura)")
+	cmd.Flags().IntVar(&commitBatch, "commit-batch", 1, "Batch N parquets per HF commit (default 1; use 10 for ~5x faster publish)")
 	return cmd
 }
 
-func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string, republish, private, pipeline, cleanup, lightConvert bool) error {
+func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string, republish, private, pipeline, cleanup, lightConvert bool, commitBatch int) error {
 	resolvedID, note, err := ccResolveCrawlID(ctx, crawlID)
 	if err != nil {
 		return fmt.Errorf("resolving crawl: %w", err)
@@ -82,7 +84,10 @@ func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string
 
 	// ── Pipeline mode: per-file pack → export → commit ───────────────────────
 	if pipeline {
-		return ccRunPipelineWithCommits(ctx, crawlID, fileIdx, repoRoot, repoID, republish, private, cleanup, lightConvert)
+		if commitBatch < 1 {
+			commitBatch = 1
+		}
+		return ccRunPipelineWithCommits(ctx, crawlID, fileIdx, repoRoot, repoID, republish, private, cleanup, lightConvert, commitBatch)
 	}
 
 	// ── Collect stats from all exported parquet files ───────────────────────
@@ -214,7 +219,7 @@ func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string
 // ccRunPipelineWithCommits processes each selected shard end-to-end:
 // download → pack → export → upsert stats → update README → HF commit.
 // Each shard is committed to HuggingFace individually so progress is saved after every file.
-func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string, republish, private, cleanup, lightConvert bool) error {
+func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string, republish, private, cleanup, lightConvert bool, commitBatch int) error {
 	indices, err := ccParseOpenFileSelector(fileIdx)
 	if err != nil {
 		return fmt.Errorf("--file: %w", err)
@@ -245,6 +250,14 @@ func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, r
 	if err := hf.createDatasetRepo(ctx, repoID, private); err != nil {
 		return fmt.Errorf("create repo: %w", err)
 	}
+
+	// Batch commit state: accumulate parquet ops until batch is full.
+	type pendingParquet struct {
+		localPath  string
+		remotePath string
+		shard      string
+	}
+	var batchQueue []pendingParquet
 
 	for i, idx := range indices {
 		if ctx.Err() != nil {
@@ -343,20 +356,7 @@ func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, r
 			return fmt.Errorf("upsert stats %d: %w", idx, upsertErr)
 		}
 
-		// Regenerate README with updated cumulative numbers.
-		if repoErr := ccEnsurePublishRepoFiles(repoRoot, crawlID, statsCSV); repoErr != nil {
-			return fmt.Errorf("write repo files %d: %w", idx, repoErr)
-		}
-
-		// Generate PNG charts only on the last shard (expensive; no need per-shard).
 		isLastShard := i == len(indices)-1
-		var chartRelPaths []string
-		if isLastShard {
-			chartRelPaths = ccRunCharts(statsCSV, repoRoot, crawlID)
-			if len(chartRelPaths) > 0 {
-				fmt.Printf("  [%s] charts   %s\n", labelStyle.Render(shard), infoStyle.Render(fmt.Sprintf("%d PNGs", len(chartRelPaths))))
-			}
-		}
 
 		// Decide whether to upload the parquet (--republish or not yet on HF).
 		parquetRemotePath := filepath.ToSlash(filepath.Join("data", crawlID, shard+".parquet"))
@@ -369,46 +369,99 @@ func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, r
 			uploadParquet = !existing[parquetRemotePath]
 		}
 
+		if uploadParquet {
+			batchQueue = append(batchQueue, pendingParquet{
+				localPath:  parquetPath,
+				remotePath: parquetRemotePath,
+				shard:      shard,
+			})
+		}
+
+		// Flush batch when full or on last shard.
+		shouldFlush := len(batchQueue) >= commitBatch || isLastShard
+		if !shouldFlush {
+			fmt.Printf("  [%s] %s  (batch %d/%d)\n", labelStyle.Render(shard), infoStyle.Render("buffered"), len(batchQueue), commitBatch)
+			fmt.Println()
+			continue
+		}
+		if len(batchQueue) == 0 {
+			// Nothing new to commit; still write metadata-only commit.
+			fmt.Printf("  [%s] %s\n", labelStyle.Render(shard), warningStyle.Render("metadata only"))
+			fmt.Println()
+			continue
+		}
+
+		// Build commit operations: always include README/LICENSE/stats.csv.
+		if repoErr := ccEnsurePublishRepoFiles(repoRoot, crawlID, statsCSV); repoErr != nil {
+			return fmt.Errorf("write repo files: %w", repoErr)
+		}
+		var chartRelPaths []string
+		if isLastShard {
+			chartRelPaths = ccRunCharts(statsCSV, repoRoot, crawlID)
+			if len(chartRelPaths) > 0 {
+				fmt.Printf("  charts   %s\n", infoStyle.Render(fmt.Sprintf("%d PNGs", len(chartRelPaths))))
+			}
+		}
+
 		ops := []hfOperation{
 			{LocalPath: filepath.Join(repoRoot, "README.md"), PathInRepo: "README.md"},
 			{LocalPath: filepath.Join(repoRoot, "LICENSE"), PathInRepo: "LICENSE"},
 			{LocalPath: statsCSV, PathInRepo: "stats.csv"},
 		}
 		for _, rel := range chartRelPaths {
-			ops = append(ops, hfOperation{
-				LocalPath:  filepath.Join(repoRoot, rel),
-				PathInRepo: filepath.ToSlash(rel),
-			})
+			ops = append(ops, hfOperation{LocalPath: filepath.Join(repoRoot, rel), PathInRepo: filepath.ToSlash(rel)})
 		}
-		if uploadParquet {
-			ops = append(ops, hfOperation{LocalPath: parquetPath, PathInRepo: parquetRemotePath})
+		shardLabels := make([]string, len(batchQueue))
+		for k, p := range batchQueue {
+			ops = append(ops, hfOperation{LocalPath: p.localPath, PathInRepo: p.remotePath})
+			shardLabels[k] = p.shard
 		}
 
-		commitMsg := fmt.Sprintf("Publish shard %s/%s", crawlID, shard)
+		var commitMsg string
+		if len(batchQueue) == 1 {
+			commitMsg = fmt.Sprintf("Publish shard %s/%s", crawlID, batchQueue[0].shard)
+		} else {
+			commitMsg = fmt.Sprintf("Publish shards %s/%s–%s (%d files)", crawlID, batchQueue[0].shard, batchQueue[len(batchQueue)-1].shard, len(batchQueue))
+		}
 		t0 := time.Now()
 		commitURL, commitErr := hf.createCommit(ctx, repoID, "main", commitMsg, ops)
 		if commitErr != nil {
-			return fmt.Errorf("commit %d: %w", idx, commitErr)
+			return fmt.Errorf("commit batch ending at %d: %w", idx, commitErr)
 		}
-		durPublishS = int64(time.Since(t0).Seconds())
+		batchPublishS := int64(time.Since(t0).Seconds())
+		// Amortize publish time across batch.
+		durPublishS = batchPublishS / int64(len(batchQueue))
 
-		// Back-fill publish duration into stats.csv.
-		_ = ccUpsertShardStats(statsCSV, ccShardStats{
-			CrawlID: crawlID, FileIdx: idx,
-			Rows: rows, HTMLBytes: htmlBytes, MDBytes: mdBytes, ParquetBytes: pqBytes,
-			CreatedAt: time.Now().UTC().Format(time.RFC3339),
-			DurDownloadS: durDownloadS, DurConvertS: durConvertS, DurExportS: durExportS, DurPublishS: durPublishS,
-		})
-
-		if uploadParquet {
-			fmt.Printf("  [%s] %s  %s\n", labelStyle.Render(shard), successStyle.Render("published"), labelStyle.Render(commitURL))
-			// Always delete local parquet after successful HF commit (recoverable via 'search cc pull').
-			if err := os.Remove(parquetPath); err == nil {
-				fmt.Printf("  [%s] deleted local parquet (uploaded to HF)\n", labelStyle.Render(shard))
+		// Back-fill publish duration for all shards in this batch.
+		for _, p := range batchQueue {
+			var s ccShardStats
+			// find existing stats for this shard to fill in all fields
+			if all, _ := ccReadStatsCSV(statsCSV); all != nil {
+				for _, ex := range all {
+					if ex.CrawlID == crawlID && fmt.Sprintf("%05d", ex.FileIdx) == p.shard {
+						s = ex
+						break
+					}
+				}
 			}
-		} else {
-			fmt.Printf("  [%s] %s  %s\n", labelStyle.Render(shard), warningStyle.Render("metadata only"), labelStyle.Render(commitURL))
+			s.DurPublishS = durPublishS
+			_ = ccUpsertShardStats(statsCSV, s)
 		}
+
+		fmt.Printf("  %s  %s  (%d shards in %s)\n",
+			successStyle.Render("published"),
+			labelStyle.Render(commitURL),
+			len(batchQueue),
+			ccFmtDuration(batchPublishS),
+		)
+
+		// Delete local parquets after successful commit.
+		for _, p := range batchQueue {
+			if err := os.Remove(p.localPath); err == nil {
+				fmt.Printf("  [%s] deleted local parquet\n", labelStyle.Render(p.shard))
+			}
+		}
+		batchQueue = batchQueue[:0]
 		fmt.Println()
 	}
 
@@ -705,8 +758,9 @@ func ccPublishREADME(crawlID string, totals *ccTotals) string {
 				ccTimingBar("Publish  (HuggingFace)    ", totals.DurPublishS, avgPublishS, maxDurS) +
 				"```\n" +
 				"\n### Dataset Charts\n\n" +
+				"![Total size: HTML vs Markdown vs Parquet](charts/totals_chart.png)\n\n" +
 				"![Compression breakdown](charts/compression_pie.png)\n\n" +
-				"![Size per shard: HTML vs Parquet](charts/size_chart.png)\n\n" +
+				"![Size per shard: HTML vs Markdown](charts/size_chart.png)\n\n" +
 				"![Pipeline time per shard](charts/timing_chart.png)\n"
 		}
 	}
