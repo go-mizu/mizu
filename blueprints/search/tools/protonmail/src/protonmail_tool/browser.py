@@ -766,3 +766,226 @@ def wait_for_link(
 
         finally:
             ctx.close()
+
+
+def wait_for_otp(
+    username: str,
+    password: str,
+    timeout: int = 120,
+    headless: bool = False,
+    verbose: bool = True,
+) -> str:
+    """Log in to Proton Mail web and poll inbox for a numeric OTP/verification code.
+
+    Amazon/Goodreads sends 6-digit OTP codes for account verification.
+    Returns the code string (e.g. "123456").
+    """
+    from patchright.sync_api import sync_playwright
+
+    _ensure_display()
+
+    def log(msg: str) -> None:
+        if verbose:
+            print(f"[{time.strftime('%H:%M:%S')}] [proton-otp] {msg}", flush=True)
+
+    user_data = tempfile.mkdtemp(prefix="pm_otp_")
+
+    with sync_playwright() as p:
+        ctx = _open_context(p, headless, user_data)
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+
+        try:
+            log("opening mail.proton.me/inbox ...")
+            page.goto("https://mail.proton.me/u/0/inbox", timeout=60000)
+            try:
+                page.wait_for_load_state("networkidle", timeout=20000)
+            except Exception:
+                pass
+            _wait(3, log)
+            log(f"url: {page.url}")
+
+            _body_txt = ""
+            try:
+                _body_txt = page.inner_text("body")[:300].lower()
+            except Exception:
+                pass
+            _needs_login = (
+                "login" in page.url
+                or "sign in" in _body_txt
+                or "email or username" in _body_txt
+                or ("mail.proton.me" not in page.url and "inbox" not in page.url)
+            )
+            if _needs_login:
+                log("not logged in — filling credentials ...")
+                _fill_first(page, ['input[id="username"]', 'input[name="username"]',
+                                   'input[type="text"]'], username, log)
+                _wait(0.5, log)
+                _click_first(page, ['button:has-text("Continue")', 'button[type="submit"]'], log)
+                _wait(1, log)
+                _fill_first(page, ['input[id="password"]', 'input[name="password"]',
+                                   'input[type="password"]'], password, log)
+                _wait(0.5, log)
+                _click_first(page, ['button:has-text("Sign in")', 'button[type="submit"]'], log)
+                try:
+                    page.wait_for_load_state("networkidle", timeout=20000)
+                except Exception:
+                    pass
+                _wait(3, log)
+                log(f"after login url: {page.url}")
+
+            _base = page.url.rstrip("/")
+            if "account.proton.me" in _base:
+                _base = "https://mail.proton.me/u/0/inbox"
+            elif not _base.endswith("/inbox"):
+                _base = "https://mail.proton.me/u/0/inbox"
+
+            ROW_SEL = (
+                '[data-shortcut-target="item-container"], '
+                '[data-element-id], '
+                '[data-testid="message-item"], '
+                '.message-list-item, '
+                '[role="row"]'
+            )
+
+            seen: set[str] = set()
+            deadline = time.time() + timeout
+            log(f"polling inbox for OTP (timeout={timeout}s)...")
+
+            def _dismiss_modals(pg) -> None:
+                for _ in range(8):
+                    try:
+                        modal = pg.locator('div.modal-two')
+                        if modal.count() == 0 or not modal.first.is_visible():
+                            break
+                    except Exception:
+                        break
+                    dismissed = False
+                    for sel in [
+                        'button[data-testid="modal-close-button"]',
+                        'button[aria-label="Close"]',
+                        'button:has-text("Skip")',
+                        'button:has-text("Maybe later")',
+                        'button:has-text("Got it")',
+                    ]:
+                        try:
+                            btn = pg.locator(sel)
+                            if btn.count() > 0 and btn.first.is_visible():
+                                btn.first.click()
+                                time.sleep(0.8)
+                                dismissed = True
+                                break
+                        except Exception:
+                            pass
+                    if not dismissed:
+                        try:
+                            pg.keyboard.press("Escape")
+                            time.sleep(0.5)
+                        except Exception:
+                            break
+
+            def _scan_folder_for_otp(folder_url: str) -> str:
+                """Scan folder and return first OTP code found, or empty string."""
+                try:
+                    page.goto(folder_url, timeout=20000)
+                    try:
+                        page.wait_for_load_state("networkidle", timeout=10000)
+                    except Exception:
+                        pass
+                    _wait(2, log)
+                except Exception as e:
+                    log(f"navigate warn: {e}")
+                    return ""
+
+                _dismiss_modals(page)
+
+                try:
+                    row_els = page.locator(ROW_SEL).all()
+                    log(f"  found {len(row_els)} rows in {page.url}")
+                    row_ids = []
+                    for el in row_els:
+                        try:
+                            rid = el.get_attribute("data-element-id", timeout=3000) or ""
+                            row_ids.append(rid)
+                        except Exception:
+                            row_ids.append("")
+                except Exception as e:
+                    log(f"  row snapshot warn: {e}")
+                    return ""
+
+                for i, rid in enumerate(row_ids):
+                    if rid and rid in seen:
+                        continue
+                    try:
+                        rows_now = page.locator(ROW_SEL).all()
+                        if i >= len(rows_now):
+                            break
+                        row = rows_now[i]
+                        try:
+                            text = row.inner_text(timeout=5000)
+                        except Exception:
+                            text = f"row[{i}]"
+                        log(f"  opening[{i}]: {text[:80]!r}")
+                        _dismiss_modals(page)
+                        try:
+                            row.click(timeout=8000)
+                        except Exception:
+                            row.click(force=True)
+                        _wait(5, log)
+                        _dismiss_modals(page)
+
+                        # Extract all text from the email (including iframe)
+                        full_text = ""
+                        for frame in page.frames:
+                            try:
+                                full_text += frame.inner_text("body") + "\n"
+                            except Exception:
+                                pass
+                        try:
+                            full_text += page.inner_text("body")
+                        except Exception:
+                            pass
+
+                        log(f"  email text snippet: {full_text[:200]!r}")
+
+                        # Look for OTP codes: 6-digit first, then 8, then 4
+                        for pattern in [r'\b(\d{6})\b', r'\b(\d{8})\b', r'\b(\d{4})\b']:
+                            m = re.search(pattern, full_text)
+                            if m:
+                                code = m.group(1)
+                                log(f"  OTP found: {code}")
+                                return code
+
+                        if rid:
+                            seen.add(rid)
+                        page.go_back()
+                        _wait(2, log)
+                        _dismiss_modals(page)
+                    except Exception as e:
+                        log(f"  row[{i}] warn: {e}")
+                        try:
+                            page.goto(folder_url, timeout=10000)
+                            _wait(2, log)
+                        except Exception:
+                            pass
+                return ""
+
+            FOLDERS = [
+                "https://mail.proton.me/u/0/inbox",
+                "https://mail.proton.me/u/0/spam",
+                "https://mail.proton.me/u/0/newsletters",
+                "https://mail.proton.me/u/0/all-mail",
+            ]
+
+            while time.time() < deadline:
+                for folder in FOLDERS:
+                    result = _scan_folder_for_otp(folder)
+                    if result:
+                        return result
+                    if time.time() >= deadline:
+                        break
+                _wait(10, log, "waiting for OTP email")
+
+            raise TimeoutError(f"No OTP received within {timeout}s")
+
+        finally:
+            ctx.close()

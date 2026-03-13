@@ -133,6 +133,57 @@ def wait_link(
 
 
 # ---------------------------------------------------------------------------
+# wait-otp  (poll Proton Mail inbox for numeric OTP code)
+# ---------------------------------------------------------------------------
+
+@app.command("wait-otp")
+def wait_otp(
+    email_or_username: Annotated[Optional[str], typer.Argument(help="Proton Mail email or username")] = None,
+    timeout: int = typer.Option(120, help="Seconds to wait for email"),
+    db: DB_OPT = DEFAULT_DB_PATH,
+    headless: bool = typer.Option(False),
+    verbose: bool = typer.Option(True, "--verbose/--no-verbose"),
+) -> None:
+    """Poll Proton Mail inbox and print the first numeric OTP code found.
+
+    Prints the bare code to stdout so it can be captured by other tools.
+    """
+    from .browser import wait_for_otp
+
+    store = _store(db)
+    if email_or_username:
+        acct = store.get(email_or_username)
+    else:
+        acct = store.get_first_active()
+    store.close()
+
+    if not acct:
+        err_console.print("No account found. Run [bold]protonmail-tool register[/bold] first.")
+        raise typer.Exit(1)
+
+    console.print(f"[bold]Waiting for OTP email[/bold] in {acct['email']}")
+    console.print(f"  Timeout: {timeout}s\n")
+
+    try:
+        code = wait_for_otp(
+            username=acct["username"],
+            password=acct["password"],
+            timeout=timeout,
+            headless=headless,
+            verbose=verbose,
+        )
+    except TimeoutError as e:
+        err_console.print(str(e))
+        raise typer.Exit(1)
+    except Exception as e:
+        err_console.print(f"Failed: {e}")
+        raise typer.Exit(1)
+
+    console.print(f"\n[green]✓ OTP found:[/green]")
+    print(code)   # bare print so it can be piped/captured
+
+
+# ---------------------------------------------------------------------------
 # account subcommands
 # ---------------------------------------------------------------------------
 
