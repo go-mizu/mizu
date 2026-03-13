@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,14 +13,25 @@ import (
 	"time"
 )
 
+// browserUAs are realistic browser User-Agents rotated per request to avoid bot detection.
+var browserUAs = []string{
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:133.0) Gecko/20100101 Firefox/133.0",
+}
+
 // Client is a Discord REST API v10 client with bucket-aware rate limiting.
 type Client struct {
-	http    *http.Client
-	token   string
-	delay   time.Duration
-	rl      *rateLimiter
-	mu      sync.Mutex
-	lastReq time.Time
+	http       *http.Client
+	token      string
+	delay      time.Duration
+	jitter     time.Duration
+	maxRetries int
+	rl         *rateLimiter
+	mu         sync.Mutex
+	lastReq    time.Time
 }
 
 // NewClient creates a new Discord API client.
@@ -30,14 +42,24 @@ func NewClient(cfg Config) *Client {
 		IdleConnTimeout:     90 * time.Second,
 		TLSHandshakeTimeout: 10 * time.Second,
 	}
+	maxRetries := cfg.MaxRetries
+	if maxRetries <= 0 {
+		maxRetries = DefaultMaxRetries
+	}
+	jitter := cfg.Jitter
+	if jitter <= 0 {
+		jitter = DefaultJitter
+	}
 	return &Client{
 		http: &http.Client{
 			Timeout:   cfg.Timeout,
 			Transport: transport,
 		},
-		token: cfg.Token,
-		delay: cfg.Delay,
-		rl:    newRateLimiter(),
+		token:      cfg.Token,
+		delay:      cfg.Delay,
+		jitter:     jitter,
+		maxRetries: maxRetries,
+		rl:         newRateLimiter(),
 	}
 }
 
@@ -136,9 +158,15 @@ func (c *Client) globalDelay() {
 	if c.delay <= 0 {
 		return
 	}
+	// Add random jitter: delay ± jitter/2 for human-like timing
+	wait := c.delay
+	if c.jitter > 0 {
+		half := c.jitter / 2
+		wait += time.Duration(rand.Int64N(int64(c.jitter))) - half
+	}
 	since := time.Since(c.lastReq)
-	if since < c.delay {
-		time.Sleep(c.delay - since)
+	if since < wait {
+		time.Sleep(wait - since)
 	}
 	c.lastReq = time.Now()
 }
@@ -160,7 +188,7 @@ func routeKey(method, path string) string {
 func (c *Client) do(ctx context.Context, method, path string) ([]byte, int, error) {
 	rKey := routeKey(method, path)
 
-	for attempt := 0; attempt < 5; attempt++ {
+	for attempt := 0; attempt < c.maxRetries; attempt++ {
 		if err := c.rl.waitGlobal(ctx); err != nil {
 			return nil, 0, err
 		}
@@ -175,8 +203,11 @@ func (c *Client) do(ctx context.Context, method, path string) ([]byte, int, erro
 			return nil, 0, err
 		}
 		req.Header.Set("Authorization", c.token)
-		req.Header.Set("User-Agent", "DiscordBot (https://github.com/go-mizu, 1.0)")
+		req.Header.Set("User-Agent", browserUAs[rand.IntN(len(browserUAs))])
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+		req.Header.Set("X-Super-Properties", "") // empty but present like real client
 
 		resp, err := c.http.Do(req)
 		if err != nil {
@@ -211,17 +242,24 @@ func (c *Client) do(ctx context.Context, method, path string) ([]byte, int, erro
 			if rlBody.Global {
 				c.rl.setGlobal(wait)
 			}
+			// Exponential backoff: multiply wait by 2^attempt (capped at 60s)
+			backoff := wait * float64(int(1) << attempt)
+			if backoff > 60 {
+				backoff = 60
+			}
+			// Add jitter to backoff
+			backoff += rand.Float64() * 0.5
 			select {
 			case <-ctx.Done():
 				return nil, resp.StatusCode, ctx.Err()
-			case <-time.After(time.Duration(wait * float64(time.Second))):
+			case <-time.After(time.Duration(backoff * float64(time.Second))):
 			}
 			continue
 		}
 
 		return body, resp.StatusCode, nil
 	}
-	return nil, 429, fmt.Errorf("rate limited after 5 attempts on %s %s", method, path)
+	return nil, 429, fmt.Errorf("rate limited after %d attempts on %s %s", c.maxRetries, method, path)
 }
 
 // -- API methods -----------------------------------------------------------
