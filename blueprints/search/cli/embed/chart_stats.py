@@ -10,10 +10,9 @@ Usage:
     python chart_stats.py stats.csv [--out charts/]
 
 Outputs PNG images suitable for embedding in README / HuggingFace model cards:
-  - size_chart.png        grouped bar: HTML vs Markdown bytes per shard
-  - totals_chart.png      horizontal bar: total HTML / Markdown / Parquet with reductions
-  - timing_chart.png      stacked bar: download / convert / export / publish per shard
-  - compression_pie.png   horizontal funnel bar: pipeline compression stages
+  - size_chart.png      grouped bar: HTML vs Markdown bytes per shard
+  - totals_chart.png    horizontal bar: total HTML / Markdown / Parquet with reductions
+  - timing_chart.png    stacked bar: download / convert / export / publish per shard
 """
 
 import argparse
@@ -167,54 +166,6 @@ def chart_timings(df, out):
     print(f"  Wrote {p}")
 
 
-def chart_compression(df, out):
-    """Horizontal funnel bar: pipeline compression stages with reduction labels."""
-    total_html = df["html_bytes"].sum()
-    total_md = df["md_bytes"].sum()
-    total_pq = df["parquet_bytes"].sum()
-
-    if total_html == 0:
-        print("  Skipping compression chart (no html_bytes data)")
-        return
-
-    # Estimate packed WARC as ~47% of uncompressed markdown
-    total_packed = int(total_md * 0.47)
-
-    pct_html_to_packed = (1 - total_packed / total_html) * 100
-    pct_packed_to_pq = (1 - total_pq / total_packed) * 100 if total_packed else 0
-    pct_end_to_end = (1 - total_pq / total_html) * 100
-
-    plot_df = pd.DataFrame({
-        "stage": ["HTML (uncompressed)", "Packed WARC (.md.warc.gz)", "Parquet (Zstd lv19)"],
-        "size_gb": [total_html / 1e9, total_packed / 1e9, total_pq / 1e9],
-        "label": [
-            fmt_bytes(total_html),
-            f"{fmt_bytes(total_packed)}  (−{pct_html_to_packed:.1f}% vs HTML)",
-            f"{fmt_bytes(total_pq)}  (−{pct_packed_to_pq:.1f}% vs packed, −{pct_end_to_end:.1f}% overall)",
-        ],
-    })
-    fig = px.bar(
-        plot_df, x="size_gb", y="stage", orientation="h", text="label",
-        color="stage", color_discrete_sequence=[COLORS[0], COLORS[1], COLORS[2]],
-        title=f"Compression Pipeline ({len(df)} shards)",
-        labels={"size_gb": "Size (GB)", "stage": ""},
-        category_orders={"stage": ["Parquet (Zstd lv19)", "Packed WARC (.md.warc.gz)", "HTML (uncompressed)"]},
-        height=320, width=900,
-    )
-    fig.update_layout(**LAYOUT,
-        margin=dict(l=180, r=24, t=60, b=56),
-        showlegend=False,
-        xaxis=dict(range=[0, plot_df["size_gb"].max() * 1.55],
-                   gridcolor="#f0f0f0", zeroline=False, linecolor="#e5e7eb"),
-        yaxis=dict(gridcolor="#f0f0f0", linecolor="#e5e7eb"),
-    )
-    fig.update_traces(marker_line_width=0, textposition="outside",
-                      textfont=dict(size=11, color="#374151"))
-    p = Path(out) / "compression_pie.png"
-    fig.write_image(str(p), scale=2)
-    print(f"  Wrote {p}")
-
-
 # ── main ─────────────────────────────────────────────────────────────────────
 
 def main():
@@ -236,7 +187,6 @@ def main():
     chart_sizes(df, args.out)
     chart_totals(df, args.out)
     chart_timings(df, args.out)
-    chart_compression(df, args.out)
 
     print("Done.")
 
