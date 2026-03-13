@@ -108,11 +108,14 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 	committed map[int]bool, lastChartTime *time.Time, chartsEvery time.Duration) error {
 
 	newFiles := ccFindUncommittedParquets(dataDir, crawlID, committed)
-	if len(newFiles) == 0 {
+	chartsStale := chartsEvery > 0 && time.Since(*lastChartTime) >= chartsEvery
+	if len(newFiles) == 0 && !chartsStale {
 		return nil
 	}
 
-	fmt.Printf("  [watcher] %d new parquet(s) — committing to HF...\n", len(newFiles))
+	if len(newFiles) > 0 {
+		fmt.Printf("  [watcher] %d new parquet(s) — committing to HF...\n", len(newFiles))
+	}
 
 	// Step 1: Write our stats rows first (local wins in later merge).
 	for _, f := range newFiles {
@@ -146,7 +149,7 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 		return fmt.Errorf("write repo files: %w", err)
 	}
 	var chartRelPaths []string
-	if chartsEvery > 0 && time.Since(*lastChartTime) >= chartsEvery {
+	if chartsStale {
 		chartRelPaths = ccRunCharts(statsCSV, repoRoot, crawlID)
 		if len(chartRelPaths) > 0 {
 			fmt.Printf("  [watcher] regenerated %d chart(s)\n", len(chartRelPaths))
@@ -159,9 +162,12 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 		shards[i] = f.shard
 	}
 	var commitMsg string
-	if len(newFiles) == 1 {
+	switch {
+	case len(newFiles) == 0:
+		commitMsg = fmt.Sprintf("Update charts/README for %s", crawlID)
+	case len(newFiles) == 1:
 		commitMsg = fmt.Sprintf("Publish shard %s/%s", crawlID, newFiles[0].shard)
-	} else {
+	default:
 		commitMsg = fmt.Sprintf("Publish %d shards %s/%s–%s", len(newFiles), crawlID, shards[0], shards[len(shards)-1])
 	}
 
