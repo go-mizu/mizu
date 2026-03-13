@@ -42,6 +42,7 @@ func ccRunWatcher(ctx context.Context, crawlID, repoRoot, repoID string, private
 
 	statsCSV := ccStatsCSVPath(repoRoot)
 	dataDir := filepath.Join(repoRoot, "data", crawlID)
+	warcMdDir := ccDefaultWARCMdConfig(crawlID)
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return err
 	}
@@ -68,6 +69,11 @@ func ccRunWatcher(ctx context.Context, crawlID, repoRoot, repoID string, private
 	ccMergeStatsFromHF(ctx, hf, repoID, statsCSV)
 	committed := ccLoadCommittedSet(statsCSV, crawlID)
 	fmt.Printf("  [watcher] %d shards already committed\n", len(committed))
+
+	// Purge local files that are already committed (leftover from old pipeline runs).
+	if n := ccPurgeCommittedLocals(crawlID, dataDir, warcMdDir, committed); n > 0 {
+		fmt.Printf("  [watcher] purged %d already-committed local file(s)\n", n)
+	}
 	fmt.Println()
 
 	var lastChartTime time.Time
@@ -285,6 +291,51 @@ func ccFindUncommittedParquets(dataDir, crawlID string, committed map[int]bool) 
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].fileIdx < result[j].fileIdx })
 	return result
+}
+
+// ccPurgeCommittedLocals deletes all intermediate files for already-committed shards:
+//   - {dataDir}/{shard}.parquet + .meta  (watcher output)
+//   - {warcMdDir}/{shard}.md.warc.gz     (pack output)
+//   - raw .warc.gz from ccFindRawWARC    (download output)
+//
+// Returns the total number of files deleted.
+func ccPurgeCommittedLocals(crawlID, dataDir, warcMdDir string, committed map[int]bool) int {
+	entries, err := os.ReadDir(dataDir)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".parquet") {
+			continue
+		}
+		shard := strings.TrimSuffix(name, ".parquet")
+		idx, err := strconv.Atoi(shard)
+		if err != nil {
+			continue
+		}
+		if !committed[idx] {
+			continue
+		}
+		// parquet + meta
+		if rmErr := os.Remove(filepath.Join(dataDir, name)); rmErr == nil {
+			n++
+		}
+		_ = os.Remove(filepath.Join(dataDir, shard+".meta"))
+		// md.warc.gz
+		mdWARC := filepath.Join(warcMdDir, shard+".md.warc.gz")
+		if rmErr := os.Remove(mdWARC); rmErr == nil {
+			n++
+		}
+		// raw .warc.gz
+		if rawPath := ccFindRawWARC(crawlID, idx); rawPath != "" {
+			if rmErr := os.Remove(rawPath); rmErr == nil {
+				n++
+			}
+		}
+	}
+	return n
 }
 
 // ccReadShardMeta reads the .meta sidecar file written by the pipeline for timing info.

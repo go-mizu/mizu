@@ -36,7 +36,7 @@ all 8 WARC headers needed to reconstruct the WARC conversion record.
 Output: $HOME/data/common-crawl/{crawl}/warc_md/{shard}.md.warc.gz`,
 		Example: `  search cc pull --file 0
   search cc pull --file 0 --delete-local
-  search cc pull --crawl CC-MAIN-2026-04 --repo open-index/cc-main --file 0`,
+  search cc pull --crawl CC-MAIN-2026-08 --repo open-index/cc-main --file 0`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			token := strings.TrimSpace(os.Getenv("HF_TOKEN"))
