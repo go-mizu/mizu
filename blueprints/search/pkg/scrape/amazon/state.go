@@ -77,13 +77,21 @@ func (s *State) initSchema() error {
 	return nil
 }
 
-// Enqueue adds a URL to the queue. Silently ignores duplicates.
-func (s *State) Enqueue(url, entityType string, priority int) error {
-	_, err := s.db.Exec(
+// Enqueue adds a URL to the queue.
+// Returns true when a new queue row was inserted.
+func (s *State) Enqueue(url, entityType string, priority int) (bool, error) {
+	res, err := s.db.Exec(
 		`INSERT OR IGNORE INTO queue (url, entity_type, priority) VALUES (?, ?, ?)`,
 		url, entityType, priority,
 	)
-	return err
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }
 
 // EnqueueBatch adds multiple URLs to the queue in a transaction.

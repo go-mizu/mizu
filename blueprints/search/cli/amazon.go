@@ -571,7 +571,11 @@ func newAmazonSeed() *cobra.Command {
 				} else {
 					enqURL = line
 				}
-				if err := stateDB.Enqueue(enqURL, entityType, priority); err == nil {
+				inserted, err := stateDB.Enqueue(enqURL, entityType, priority)
+				if err != nil {
+					return fmt.Errorf("enqueue %s: %w", enqURL, err)
+				}
+				if inserted {
 					total++
 				}
 			}
