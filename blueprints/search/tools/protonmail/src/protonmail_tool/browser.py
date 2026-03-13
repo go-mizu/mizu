@@ -93,6 +93,68 @@ def _body(page, max_chars: int = 500) -> str:
         return ""
 
 
+def _auto_solve_puzzle(page, log) -> bool:
+    """Attempt to auto-solve Proton's drag-puzzle captcha.
+
+    The captcha is rendered inside a cross-origin iframe so JS DOM queries can't
+    reach it.  We use mouse coordinates derived from visual analysis of screenshots:
+    - Viewport: 1280x900
+    - The 'Human Verification' dialog takes up the center of the page
+    - The puzzle piece thumbnail is at roughly (456, 286)
+    - The hole (target) is in the puzzle image below, y≈566
+    - Puzzle image x spans roughly 460–815
+    Strategy: drag piece from thumbnail position diagonally to each x position
+    along y=566 (the hole row) until the captcha accepts.
+    """
+    # Piece thumbnail start position
+    piece_x, piece_y = 456, 286
+    # Hole target row (below the piece thumbnail, in the puzzle image)
+    target_y = 566
+    # Puzzle image x range to scan
+    puzzle_left_x = 460
+    puzzle_right_x = 815
+
+    log(f"  auto-solve: dragging piece from ({piece_x},{piece_y}) to y={target_y}, scanning x={puzzle_left_x}..{puzzle_right_x}")
+
+    for target_x in range(puzzle_left_x, puzzle_right_x, 25):
+        log(f"  drag to ({target_x},{target_y})")
+        try:
+            page.mouse.move(piece_x, piece_y)
+            page.mouse.down()
+            time.sleep(0.2)
+            steps = 20
+            for i in range(1, steps + 1):
+                ix = piece_x + (target_x - piece_x) * i / steps
+                iy = piece_y + (target_y - piece_y) * i / steps
+                page.mouse.move(ix, iy)
+                time.sleep(0.03)
+            page.mouse.up()
+            time.sleep(1.5)
+        except Exception as e:
+            log(f"  drag warn: {e}")
+            return False
+
+        # Check if captcha was accepted (URL changed or dialog gone)
+        try:
+            url = page.url
+            if "signup" not in url:
+                log("  URL changed after drag — captcha likely accepted!")
+                return True
+        except Exception:
+            pass
+
+        try:
+            ss_path = f"/tmp/proton_drag_{int(time.time())}.png"
+            page.screenshot(path=ss_path)
+            log(f"  drag screenshot: {ss_path}")
+        except Exception:
+            pass
+
+        time.sleep(0.5)
+
+    return False
+
+
 def _open_context(p, headless: bool, user_data: str):
     import shutil
     channel = "chrome" if shutil.which("google-chrome") or shutil.which("google-chrome-stable") else None
@@ -154,7 +216,11 @@ def register_via_browser(
             ], log)
             _wait(3, log)
 
-            # ── Step 3: Wait for username field (may be in iframe) ────────
+            # ── Step 3: Wait for username field ──────────────────────────
+            # The main page has username+password+submit (React form, actual submission).
+            # The iframes are anti-bot challenge overlays — filling them directly with click+type
+            # triggers Proton's postMessage sync to the main page React state.
+            # Strategy: find the FIRST VISIBLE username field (main page or iframe), click+type.
             log(f"waiting for username field (up to 60s)...")
             username_frame = None
             username_sel = None
@@ -164,111 +230,233 @@ def register_via_browser(
             ]
             deadline_u = time.time() + 60
             while time.time() < deadline_u:
-                # Log all frames for debugging
                 frame_urls = [f.url for f in page.frames]
                 log(f"  frames ({len(frame_urls)}): {frame_urls}")
 
-                # Check iframes first (Proton puts username in iframe, main page has hidden duplicate)
-                for frame in page.frames:
-                    if frame == page.main_frame:
-                        continue
-                    for sel in _USERNAME_SELS:
-                        try:
-                            loc = frame.locator(sel)
-                            if loc.count() > 0 and loc.first.is_visible():
-                                username_frame = frame
-                                username_sel = sel
-                                break
-                        except Exception:
-                            pass
-                    if username_sel:
-                        break
+                # Check main page first (it has the React-controlled form that actually submits)
+                for sel in _USERNAME_SELS:
+                    try:
+                        loc = page.locator(sel)
+                        if loc.count() > 0 and loc.first.is_visible():
+                            username_frame = page
+                            username_sel = sel
+                            break
+                    except Exception:
+                        pass
 
-                # Fall back to main page only if visible
+                # Fall back to iframes if main page has no visible field
                 if not username_sel:
-                    for sel in _USERNAME_SELS:
-                        try:
-                            loc = page.locator(sel)
-                            if loc.count() > 0 and loc.first.is_visible():
-                                username_frame = page
-                                username_sel = sel
-                                break
-                        except Exception:
-                            pass
+                    for frame in page.frames:
+                        if frame == page.main_frame:
+                            continue
+                        for sel in _USERNAME_SELS:
+                            try:
+                                loc = frame.locator(sel)
+                                if loc.count() > 0 and loc.first.is_visible():
+                                    username_frame = frame
+                                    username_sel = sel
+                                    break
+                            except Exception:
+                                pass
+                        if username_sel:
+                            break
 
                 if username_sel:
                     break
                 time.sleep(3)
 
             if username_frame and username_sel:
-                log(f"  found username via {username_sel!r} in frame={username_frame.url[:60]}")
+                log(f"  found username via {username_sel!r} in frame={getattr(username_frame, 'url', 'main')[:60]}")
                 el = username_frame.locator(username_sel).first
                 el.click(); time.sleep(0.3)
                 el.fill("")
                 el.type(username, delay=55); time.sleep(0.5)
+                # Press Tab to trigger blur → challenge iframe sends token to main page via postMessage
+                el.press("Tab"); time.sleep(3)
+                # Verify value was set
+                try:
+                    actual_val = el.input_value()
+                    log(f"  username field value after type: {actual_val!r}")
+                except Exception:
+                    pass
             else:
                 log("  WARNING: username field not found — fill manually")
 
-            # ── Step 4: Fill password ─────────────────────────────────────
+            # Dump all visible inputs for debugging
+            try:
+                js_inputs = page.evaluate("""() => {
+                    const all = [];
+                    const inputs = document.querySelectorAll('input, button[type="submit"], button:not([type])');
+                    for (const el of inputs) {
+                        all.push({tag: el.tagName, type: el.type, id: el.id, name: el.name, placeholder: el.placeholder, value: el.value?.slice(0,20), visible: el.offsetParent !== null, text: el.textContent?.slice(0, 30)});
+                    }
+                    return all;
+                }""")
+                log(f"  main page inputs: {[x for x in js_inputs if x.get('visible')]}")
+            except Exception as e:
+                log(f"  input dump warn: {e}")
+
+            # ── Step 5: Fill password + confirm password ─────────────────────
             log("filling password...")
-            # Use the same frame as username (Proton embeds all fields in the same iframe)
             pwd_frame = username_frame if username_frame else page
             pwd_filled = False
             _PWD_SELS = ['input[id="password"]', 'input[name="password"]', 'input[type="password"]']
-            # Also try the other frames if not found in username_frame
-            frames_to_try = [pwd_frame] + [f for f in page.frames if f != pwd_frame and f != page.main_frame] + [page]
-            for frame in frames_to_try:
-                for sel in _PWD_SELS:
-                    try:
-                        inputs = [loc for loc in frame.locator(sel).all() if loc.is_visible()]
-                        if inputs:
-                            inputs[0].click(); time.sleep(0.2)
-                            inputs[0].fill(""); inputs[0].type(password, delay=55); time.sleep(0.3)
-                            log(f"  password[0] via {sel!r} in frame={frame.url[:60]}")
-                            if len(inputs) > 1:
-                                inputs[1].click(); time.sleep(0.2)
-                                inputs[1].fill(""); inputs[1].type(password, delay=55); time.sleep(0.3)
-                                log(f"  password[1] (confirm) via {sel!r}")
-                            pwd_filled = True
-                            break
-                    except Exception:
-                        pass
-                if pwd_filled:
-                    break
+            # Wait up to 10s for password to appear
+            pwd_deadline = time.time() + 10
+            while time.time() < pwd_deadline and not pwd_filled:
+                frames_to_try = ([pwd_frame] +
+                                 [f for f in page.frames if f != pwd_frame and f != page.main_frame] +
+                                 [page])
+                for frame in frames_to_try:
+                    for sel in _PWD_SELS:
+                        try:
+                            inputs = [loc for loc in frame.locator(sel).all() if loc.is_visible()]
+                            if inputs:
+                                inputs[0].click(); time.sleep(0.2)
+                                inputs[0].fill(""); inputs[0].type(password, delay=55); time.sleep(0.3)
+                                log(f"  password[0] via {sel!r} in frame={frame.url[:60]}")
+                                if len(inputs) > 1:
+                                    inputs[1].click(); time.sleep(0.2)
+                                    inputs[1].fill(""); inputs[1].type(password, delay=55); time.sleep(0.3)
+                                    log(f"  password[1] (confirm) via {sel!r}")
+                                pwd_filled = True
+                                break
+                        except Exception:
+                            pass
+                    if pwd_filled:
+                        break
+            # Always try to fill confirm password field (may have different selector)
+            _CONFIRM_SELS = [
+                'input[placeholder*="Confirm" i]',
+                'input[placeholder*="Repeat" i]',
+                'input[id*="confirm" i]',
+                'input[name*="confirm" i]',
+                'input[autocomplete="new-password"]:nth-of-type(2)',
+            ]
+            for sel in _CONFIRM_SELS:
+                try:
+                    els = [loc for loc in page.locator(sel).all() if loc.is_visible()]
+                    if els:
+                        els[0].click(); time.sleep(0.2)
+                        els[0].fill(""); els[0].type(password, delay=55); time.sleep(0.3)
+                        log(f"  confirm password via {sel!r}")
+                        break
+                except Exception:
+                    pass
+                if not pwd_filled:
+                    time.sleep(1)
             if not pwd_filled:
                 log("  WARNING: password field not found — fill manually")
             _wait(0.5, log)
 
+            # ── Step 5: Dismiss upsell modal if present ───────────────────
+            # Proton shows a "Mail Plus Special Offer" modal after filling the form.
+            # This modal's "Get limited-time offer" is a button[type="submit"] that
+            # would capture our submit click. Dismiss it first.
+            for _ in range(3):
+                dismissed = _click_first(page, [
+                    'button:has-text("No, thanks")',
+                    'button:has-text("Maybe later")',
+                    'button:has-text("Skip")',
+                    '[aria-label="Close"]',
+                    'button[data-testid="modal-close-button"]',
+                ], log)
+                if dismissed:
+                    _wait(1, log, "modal dismissed")
+                    break
+                time.sleep(0.5)
+
             # ── Step 5: Submit ────────────────────────────────────────────
             _click_first(page, [
+                'button:has-text("Start using")',
+                'button:has-text("Create account")',
                 'button[type="submit"]',
                 'button:has-text("Continue")',
-                'button:has-text("Create account")',
                 'button:has-text("Next")',
             ], log)
             _wait(3, log, "after submit")
             log(f"url after submit: {page.url}")
 
+            # ── Step 5b: Dismiss "Mail Plus" upsell modal if it appears ──
+            # Proton shows a promotional modal BEFORE the captcha, blocking it.
+            # Dismiss it immediately so the captcha becomes visible.
+            for _attempt in range(5):
+                dismissed = _click_first(page, [
+                    'button:has-text("No, thanks")',
+                    'button:has-text("Maybe later")',
+                    'button:has-text("No thanks")',
+                    '[data-testid="modal-close-button"]',
+                    'button[aria-label="Close"]',
+                ], log)
+                if dismissed:
+                    log(f"  dismissed modal attempt {_attempt+1}")
+                    _wait(1.5, log)
+                else:
+                    break
+
             # ── Step 6: Wait for captcha solve (up to 5 min) ─────────────
-            log("waiting for captcha / human verification (solve manually)...")
-            deadline = time.time() + 300
+            try:
+                page.bring_to_front()
+            except Exception:
+                pass
+            # Screenshot to show current state
+            try:
+                _ss_path = f"/tmp/proton_signup_{int(time.time())}.png"
+                page.screenshot(path=_ss_path)
+                log(f"  screenshot saved: {_ss_path}")
+            except Exception as e:
+                log(f"  screenshot warn: {e}")
+            # Capture baseline body text immediately after submit (before captcha overlay)
+            _baseline_body = _body(page, 2000)
+            log("=" * 60)
+            log("SOLVE CAPTCHA: switch to browser, drag puzzle piece to hole")
+            log("=" * 60)
+            # macOS notification to alert user
+            try:
+                import subprocess
+                subprocess.Popen(["osascript", "-e",
+                    'display notification "Drag puzzle piece to hole in browser" with title "Proton: SOLVE CAPTCHA NOW"'])
+            except Exception:
+                pass
+
+            deadline = time.time() + 600  # 10 minutes
+            _last_screenshot = 0
+            _last_puzzle_attempt = 0
             while time.time() < deadline:
                 url = page.url
-                body = _body(page, 300)
-                # Detect successful progression: URL changed away from signup
-                # or onboarding/inbox appeared
+                body = _body(page, 2000)
                 past_captcha = (
                     "account.proton.me/signup" not in url
                     or "congratulations" in body
                     or "recovery" in body
                     or "skip" in body
-                    or "set up" in body
+                    or "set up your" in body
                     or "mail.proton.me" in url
                     or "proton.me/u/" in url
+                    or "account.proton.me/mail" in url
+                    or "account.proton.me/setup" in url
+                    or ("password" not in body and len(body) > 100 and body != _baseline_body)
                 )
                 if past_captcha:
                     log(f"captcha passed — url: {url}")
                     break
+
+                # Try auto-solve puzzle every 30s if still on captcha
+                if time.time() - _last_puzzle_attempt > 30:
+                    _last_puzzle_attempt = time.time()
+                    try:
+                        _auto_solve_puzzle(page, log)
+                    except Exception as e:
+                        log(f"  auto-solve warn: {e}")
+
+                if time.time() - _last_screenshot > 15:
+                    try:
+                        _ss = f"/tmp/proton_captcha_{int(time.time())}.png"
+                        page.screenshot(path=_ss)
+                        log(f"  captcha screenshot: {_ss}")
+                        _last_screenshot = time.time()
+                    except Exception:
+                        pass
                 time.sleep(3)
 
             _wait(2, log)
@@ -343,7 +531,19 @@ def wait_for_link(
             log(f"url: {page.url}")
 
             # If redirected to login, fill credentials
-            if "login" in page.url or "account.proton.me" in page.url:
+            # Check both URL and page content (account.proton.me/mail can be the login page)
+            _body_txt = ""
+            try:
+                _body_txt = page.inner_text("body")[:300].lower()
+            except Exception:
+                pass
+            _needs_login = (
+                "login" in page.url
+                or "sign in" in _body_txt
+                or "email or username" in _body_txt
+                or "mail.proton.me" not in page.url and "inbox" not in page.url
+            )
+            if _needs_login:
                 log("not logged in — filling credentials ...")
                 _fill_first(page, ['input[id="username"]', 'input[name="username"]',
                                     'input[type="text"]'], username, log)
@@ -354,22 +554,31 @@ def wait_for_link(
                 _click_first(page, ['button[type="submit"]', 'button:has-text("Sign in")'], log)
                 _wait(6, log, "login")
                 log(f"url after login: {page.url}")
-                # Navigate to inbox after login
-                if "mail.proton.me" not in page.url:
-                    page.goto("https://mail.proton.me/u/0/inbox", timeout=30000)
-                    try:
-                        page.wait_for_load_state("networkidle", timeout=20000)
-                    except Exception:
-                        pass
-                    _wait(3, log)
-                    log(f"url after inbox nav: {page.url}")
 
-            # Wait for inbox to load
-            deadline = time.time() + 30
-            while time.time() < deadline:
-                if "mail.proton.me" in page.url or "inbox" in page.url.lower():
-                    break
+            # Wait for Proton to settle after login
+            _wait(5, log)
+            log(f"url after inbox nav: {page.url}")
+            # Detect which Proton UI version we're in
+            if "account.proton.me" in page.url:
+                _base = "https://account.proton.me/mail"
+            else:
+                _base = "https://mail.proton.me/u/0"
+            # Wait for Proton Mail app to finish loading (sign-in loading screen disappears)
+            log("waiting for Proton Mail app to load...")
+            _load_deadline = time.time() + 30
+            while time.time() < _load_deadline:
+                try:
+                    body_text = page.inner_text("body")[:200].lower()
+                    if "sign in" not in body_text and "loading" not in body_text:
+                        break
+                except Exception:
+                    pass
                 time.sleep(2)
+            try:
+                body_preview = page.inner_text("body")[:600]
+                log(f"  inbox page body: {body_preview[:300]!r}")
+            except Exception:
+                pass
 
             # Poll for new email containing keyword
             log(f"polling inbox for link (keyword={keyword!r}, timeout={timeout}s)...")
@@ -394,45 +603,70 @@ def wait_for_link(
                     except Exception:
                         pass
 
+            # Try multiple selectors for both old (mail.proton.me) and new (account.proton.me/mail) UI
+            ROW_SEL = (
+                '[data-shortcut-target="item-container"], '
+                '[data-element-id], '
+                '[data-testid="message-item"], '
+                '.message-list-item, '
+                '[role="row"]'
+            )
+
             def _scan_folder(folder_url: str) -> str:
-                """Scan a Proton Mail folder for a link. Returns URL or empty string."""
+                """Scan a Proton Mail folder. Returns found URL or empty string."""
                 try:
-                    if page.url != folder_url:
-                        page.goto(folder_url, timeout=20000)
-                        try:
-                            page.wait_for_load_state("networkidle", timeout=10000)
-                        except Exception:
-                            pass
-                        _wait(2, log)
-                except Exception:
-                    pass
+                    page.goto(folder_url, timeout=20000)
+                    try:
+                        page.wait_for_load_state("networkidle", timeout=10000)
+                    except Exception:
+                        pass
+                    _wait(2, log)
+                except Exception as e:
+                    log(f"navigate warn: {e}")
+                    return ""
 
                 _dismiss_modals(page)
 
+                # Snapshot row IDs before clicking anything
                 try:
-                    # Broad selector covering multiple Proton Mail UI versions
-                    row_sel = (
-                        '[data-shortcut-target="item-container"], '
-                        '.message-list-item, '
-                        '[data-element-id], '
-                        'li[role="option"], '
-                        'div[role="row"]'
-                    )
-                    rows = page.locator(row_sel).all()
-                    log(f"  found {len(rows)} email rows in {page.url}")
-                    for row in rows:
-                        rid = row.get_attribute("data-element-id") or row.inner_text()[:30]
-                        if rid in seen:
-                            continue
-                        text = row.inner_text()
-                        # Open ALL emails if no keyword match in row text (keyword may be in body)
-                        log(f"  email: {text[:80]!r}")
+                    row_els = page.locator(ROW_SEL).all()
+                    # Also check JS count for debugging
+                    try:
+                        js_count = page.evaluate(f"() => document.querySelectorAll({ROW_SEL.split(',')[0]!r}).length + document.querySelectorAll('[data-element-id]').length")
+                    except Exception:
+                        js_count = "?"
+                    log(f"  found {len(row_els)} rows (js_count={js_count}) in {page.url}")
+                    row_ids = []
+                    for el in row_els:
+                        try:
+                            rid = el.get_attribute("data-element-id", timeout=3000) or ""
+                            row_ids.append(rid)
+                        except Exception:
+                            row_ids.append("")
+                except Exception as e:
+                    log(f"  row snapshot warn: {e}")
+                    return ""
+
+                for i, rid in enumerate(row_ids):
+                    if rid and rid in seen:
+                        continue
+                    try:
+                        # Re-find the row after any navigation
+                        rows_now = page.locator(ROW_SEL).all()
+                        if i >= len(rows_now):
+                            break
+                        row = rows_now[i]
+                        try:
+                            text = row.inner_text(timeout=5000)
+                        except Exception:
+                            text = f"row[{i}]"
+                        log(f"  opening[{i}]: {text[:80]!r}")
                         _dismiss_modals(page)
                         try:
-                            row.click(timeout=5000)
+                            row.click(timeout=8000)
                         except Exception:
                             row.click(force=True)
-                        _wait(2, log)
+                        _wait(3, log)
                         body_html = page.inner_text("body")
                         urls = re.findall(r"https?://\S+", body_html)
                         for url in urls:
@@ -440,29 +674,44 @@ def wait_for_link(
                             if not keyword or keyword.lower() in url.lower():
                                 log(f"found link: {url[:80]}")
                                 return url
-                        seen.add(rid)
+                        if rid:
+                            seen.add(rid)
                         page.go_back()
-                        _wait(1, log)
-                except Exception as e:
-                    log(f"folder scan warn: {e}")
+                        _wait(2, log)
+                        _dismiss_modals(page)
+                    except Exception as e:
+                        log(f"  row[{i}] warn: {e}")
+                        try:
+                            page.goto(folder_url, timeout=10000)
+                            _wait(2, log)
+                        except Exception:
+                            pass
                 return ""
 
+            if "account.proton.me" in _base:
+                # New Proton web app — inbox and spam both accessible via
+                # mail.proton.me/u/0/{folder} which redirects correctly.
+                FOLDERS = [
+                    _base,                                  # inbox
+                    "https://mail.proton.me/u/0/spam",     # spam
+                    "https://mail.proton.me/u/0/all-mail", # all mail
+                    _base,                                  # inbox reload
+                ]
+            else:
+                FOLDERS = [
+                    f"{_base}/inbox",
+                    f"{_base}/spam",
+                    f"{_base}/all-mail",
+                ]
+
             while time.time() < deadline:
-                # Check inbox
-                result = _scan_folder("https://mail.proton.me/u/0/inbox")
-                if result:
-                    return result
-                # Check spam
-                result = _scan_folder("https://mail.proton.me/u/0/spam")
-                if result:
-                    return result
-                # Reload inbox and wait
+                for folder in FOLDERS:
+                    result = _scan_folder(folder)
+                    if result:
+                        return result
+                    if time.time() >= deadline:
+                        break
                 _wait(10, log, "waiting for email")
-                try:
-                    page.goto("https://mail.proton.me/u/0/inbox", timeout=15000)
-                    page.wait_for_load_state("networkidle", timeout=10000)
-                except Exception:
-                    pass
 
             raise TimeoutError(f"No email with link received within {timeout}s")
 

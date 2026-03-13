@@ -10,7 +10,7 @@ from dataclasses import dataclass
 class Identity:
     username: str      # Discord username (3-32 chars, no spaces)
     display_name: str  # Display name shown in UI
-    email_local: str   # Local part for mail.tm address
+    email_local: str   # Local part for proton.me address (e.g. username in username@proton.me)
     password: str
     birth_year: int
     birth_month: int
@@ -25,7 +25,7 @@ def generate() -> Identity:
     last = fake.last_name()
     display_name = f"{first} {last}"
 
-    suffix = "".join(random.choices(string.digits, k=4))
+    suffix = "".join(random.choices(string.digits, k=6))
     username = f"{first.lower()}{last.lower()}{suffix}"[:32]
     email_local = f"{first.lower()}{last.lower()}{suffix}"
 
