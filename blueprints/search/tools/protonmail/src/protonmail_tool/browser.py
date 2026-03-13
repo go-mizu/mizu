@@ -921,34 +921,75 @@ def wait_for_otp(
                             break
                         row = rows_now[i]
                         try:
-                            text = row.inner_text(timeout=5000)
+                            row_text = row.inner_text(timeout=5000)
                         except Exception:
-                            text = f"row[{i}]"
-                        log(f"  opening[{i}]: {text[:80]!r}")
+                            row_text = f"row[{i}]"
+                        log(f"  row[{i}]: {row_text[:120]!r}")
+
+                        # Check row preview text first (subject/preview may contain OTP)
+                        for pattern in [r'\b(\d{6})\b', r'\b(\d{8})\b']:
+                            m = re.search(pattern, row_text)
+                            if m:
+                                code = m.group(1)
+                                log(f"  OTP in row preview: {code}")
+                                return code
+
                         _dismiss_modals(page)
                         try:
                             row.click(timeout=8000)
                         except Exception:
                             row.click(force=True)
-                        _wait(5, log)
+                        _wait(8, log)  # longer wait for email content to decrypt+render
                         _dismiss_modals(page)
 
-                        # Extract all text from the email (including iframe)
+                        # Extract text from all frames and email content areas
                         full_text = ""
-                        for frame in page.frames:
+
+                        # Method 1: Proton Mail email content selectors (main frame)
+                        for sel in [
+                            '[data-testid="message-body-content"]',
+                            '[class*="messageBody"]',
+                            '[class*="message-body"]',
+                            '[class*="MessageBody"]',
+                            '.message',
+                            # Proton Mail uses an iframe for email body
+                            'iframe[title]',
+                            'iframe[class*="mail"]',
+                        ]:
                             try:
-                                full_text += frame.inner_text("body") + "\n"
+                                els = page.locator(sel).all()
+                                for el in els[:3]:
+                                    t = el.inner_text(timeout=3000)
+                                    if t and len(t) > 10:
+                                        full_text += t + "\n"
                             except Exception:
                                 pass
-                        try:
-                            full_text += page.inner_text("body")
-                        except Exception:
-                            pass
 
-                        log(f"  email text snippet: {full_text[:200]!r}")
+                        # Method 2: All child frames via JS evaluate
+                        for frame in page.frames:
+                            try:
+                                t = frame.evaluate(
+                                    "() => document.body ? document.body.innerText : ''"
+                                )
+                                # Skip the main Proton Mail app navigation (too long, starts with "Proton Mail")
+                                if t and not t.startswith("Proton Mail\n"):
+                                    full_text += t + "\n"
+                            except Exception:
+                                pass
 
-                        # Look for OTP codes: 6-digit first, then 8, then 4
-                        for pattern in [r'\b(\d{6})\b', r'\b(\d{8})\b', r'\b(\d{4})\b']:
+                        # Method 3: Page inner text (full, including navigation)
+                        # as last resort — search everything
+                        if not full_text.strip():
+                            try:
+                                full_text = page.inner_text("body")
+                            except Exception:
+                                pass
+
+                        log(f"  email full text [{len(full_text)} chars]: {full_text[:400]!r}")
+
+                        # Look for OTP codes: 6-digit first, then 8-digit
+                        # Exclude 4-digit patterns — too many false positives (years, etc.)
+                        for pattern in [r'\b(\d{6})\b', r'\b(\d{8})\b']:
                             m = re.search(pattern, full_text)
                             if m:
                                 code = m.group(1)
