@@ -2,13 +2,11 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -22,20 +20,15 @@ import (
 )
 
 type ccWARCExportRow struct {
-	DocID           string `parquet:"doc_id"`
-	URL             string `parquet:"url"`
-	Host            string `parquet:"host"`
-	CrawlDate       string `parquet:"crawl_date"`
-	WARCType        string `parquet:"warc_type"`
-	WARCRecordID    string `parquet:"warc_record_id"`
-	WARCRefersTo    string `parquet:"warc_refers_to"`
-	ContentType     string `parquet:"content_type"`
-	HTMLLength      int64  `parquet:"html_length"`
-	MarkdownLength  int64  `parquet:"markdown_length"`
-	WARCHeadersJSON string `parquet:"warc_headers_json"`
-	Markdown        string `parquet:"markdown"`
-	SourceWARCFile  string `parquet:"source_warc_file"`
-	SourceFileIndex int32  `parquet:"source_file_index"`
+	DocID          string `parquet:"doc_id"`
+	URL            string `parquet:"url"`
+	Host           string `parquet:"host"`
+	CrawlDate      string `parquet:"crawl_date"`
+	WARCRecordID   string `parquet:"warc_record_id"`
+	WARCRefersTo   string `parquet:"warc_refers_to"`
+	HTMLLength     int64  `parquet:"html_length"`
+	MarkdownLength int64  `parquet:"markdown_length"`
+	Markdown       string `parquet:"markdown"`
 }
 
 func newCCWarcExport() *cobra.Command {
@@ -118,7 +111,7 @@ func runCCWarcExport(ctx context.Context, crawlID, fileIdx string, force bool) e
 			continue
 		}
 
-		rows, htmlBytes, mdBytes, err := exportWARCMdShardToParquet(inPath, outPath, idx)
+		rows, htmlBytes, mdBytes, err := exportWARCMdShardToParquet(inPath, outPath)
 		if err != nil {
 			return fmt.Errorf("export shard %s: %w", shard, err)
 		}
@@ -162,7 +155,7 @@ func runCCWarcExport(ctx context.Context, crawlID, fileIdx string, force bool) e
 	return nil
 }
 
-func exportWARCMdShardToParquet(inPath, outPath string, fileIndex int) (rows int64, htmlBytes int64, mdBytes int64, err error) {
+func exportWARCMdShardToParquet(inPath, outPath string) (rows int64, htmlBytes int64, mdBytes int64, err error) {
 	fail := func(e error) (int64, int64, int64, error) { return 0, 0, 0, e }
 
 	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
@@ -217,12 +210,6 @@ func exportWARCMdShardToParquet(inPath, outPath string, fileIndex int) (rows int
 			return fail(fmt.Errorf("read record body: %w", err))
 		}
 
-		headersJSON, err := ccMarshalStableHeaderJSON(rec.Header)
-		if err != nil {
-			cleanup()
-			return fail(fmt.Errorf("marshal headers: %w", err))
-		}
-
 		targetURL := strings.TrimSpace(rec.Header.TargetURI())
 		crawlDate := ""
 		if ts := rec.Header.Date(); !ts.IsZero() {
@@ -232,20 +219,15 @@ func exportWARCMdShardToParquet(inPath, outPath string, fileIndex int) (rows int
 		totalHTML += htmlLen
 		totalMd += int64(len(body))
 		batch = append(batch, ccWARCExportRow{
-			DocID:           ccWARCRecordIDToDocID(rec.Header.RecordID()),
-			URL:             targetURL,
-			Host:            ccHostFromURL(targetURL),
-			CrawlDate:       crawlDate,
-			WARCType:        rec.Header.Type(),
-			WARCRecordID:    rec.Header.RecordID(),
-			WARCRefersTo:    rec.Header.RefersTo(),
-			ContentType:     rec.Header.Get("Content-Type"),
-			HTMLLength:      htmlLen,
-			MarkdownLength:  int64(len(body)),
-			WARCHeadersJSON: sanitizeUTF8(headersJSON),
-			Markdown:        sanitizeUTF8(string(body)),
-			SourceWARCFile:  filepath.Base(inPath),
-			SourceFileIndex: int32(fileIndex),
+			DocID:          ccWARCRecordIDToDocID(rec.Header.RecordID()),
+			URL:            targetURL,
+			Host:           ccHostFromURL(targetURL),
+			CrawlDate:      crawlDate,
+			WARCRecordID:   rec.Header.RecordID(),
+			WARCRefersTo:   rec.Header.RefersTo(),
+			HTMLLength:     htmlLen,
+			MarkdownLength: int64(len(body)),
+			Markdown:       sanitizeUTF8(string(body)),
 		})
 		rowsWritten++
 		if len(batch) >= 1000 {
@@ -277,23 +259,6 @@ func exportWARCMdShardToParquet(inPath, outPath string, fileIndex int) (rows int
 		return fail(fmt.Errorf("finalize parquet: %w", err))
 	}
 	return rowsWritten, totalHTML, totalMd, nil
-}
-
-func ccMarshalStableHeaderJSON(h warcpkg.Header) (string, error) {
-	keys := make([]string, 0, len(h))
-	for k := range h {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	ordered := make(map[string]string, len(keys))
-	for _, k := range keys {
-		ordered[k] = h[k]
-	}
-	b, err := json.Marshal(ordered)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
 }
 
 func ccWARCRecordIDToDocID(recordID string) string {
