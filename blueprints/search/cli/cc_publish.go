@@ -655,23 +655,13 @@ func ccPublishREADME(crawlID string, totals *ccTotals) string {
 				avgExportS = totals.DurExportS / int64(totals.Shards)
 				avgPublishS = totals.DurPublishS / int64(totals.Shards)
 			}
-			timingSection = fmt.Sprintf(`
-### Processing Times
-
-Pipeline timings summed across all %s shards of %s:
-
-| Stage | Total (%s shards) | Avg per shard |
-|---|---|---|
-| Download + Pack (HTML→Markdown) | %s | %s |
-| Export (Parquet) | %s | %s |
-| Publish (HuggingFace) | %s | %s |
-`,
-				shardsCountStr, crawlID,
-				shardsCountStr,
-				ccFmtDuration(totals.DurPackS), ccFmtDuration(avgPackS),
-				ccFmtDuration(totals.DurExportS), ccFmtDuration(avgExportS),
-				ccFmtDuration(totals.DurPublishS), ccFmtDuration(avgPublishS),
-			)
+			timingSection = "\n### Processing Times\n\nPipeline timings across " +
+				shardsCountStr + " shards of " + crawlID + ":\n\n" +
+				"```\n" +
+				ccTimingBar("Pack (download + HTML→MD)", totals.DurPackS, avgPackS, totals.DurPackS) +
+				ccTimingBar("Export (Parquet)         ", totals.DurExportS, avgExportS, totals.DurPackS) +
+				ccTimingBar("Publish (HuggingFace)    ", totals.DurPublishS, avgPublishS, totals.DurPackS) +
+				"```\n"
 		}
 	}
 

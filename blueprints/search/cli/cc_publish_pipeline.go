@@ -163,6 +163,32 @@ func ccComputeTotals(stats []ccShardStats, crawlID string) ccTotals {
 	return t
 }
 
+// ccTimingBar renders one row of the ASCII bar chart for the README timing section.
+// label must be padded to a fixed width by the caller.
+// maxS is the reference value (longest bar = full width).
+func ccTimingBar(label string, totalS, avgS, maxS int64) string {
+	const barWidth = 24
+	filled := 0
+	if maxS > 0 && totalS > 0 {
+		filled = int(float64(totalS) / float64(maxS) * barWidth)
+		if filled < 1 {
+			filled = 1
+		}
+		if filled > barWidth {
+			filled = barWidth
+		}
+	}
+	bar := ""
+	for i := 0; i < barWidth; i++ {
+		if i < filled {
+			bar += "█"
+		} else {
+			bar += "░"
+		}
+	}
+	return fmt.Sprintf("%s  %s  total %-12s  avg %s\n", label, bar, ccFmtDuration(totalS), ccFmtDuration(avgS))
+}
+
 // ccFmtDuration formats seconds as a human-readable duration string.
 func ccFmtDuration(secs int64) string {
 	if secs <= 0 {
