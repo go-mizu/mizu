@@ -97,6 +97,7 @@ Get started:
 	root.AddCommand(NewEbay())
 	root.AddCommand(NewFacebook())
 	root.AddCommand(NewKaggle())
+	root.AddCommand(NewDiscord())
 
 	if err := fang.Execute(ctx, root,
 		fang.WithVersion(Version),
