@@ -30,6 +30,8 @@ func OpenState(path string) (*State, error) {
 		db.Close()
 		return nil, err
 	}
+	// Recover orphaned in_progress items from prior crashed runs
+	s.recoverOrphans()
 	return s, nil
 }
 
@@ -71,6 +73,11 @@ func (s *State) initSchema() error {
 		}
 	}
 	return nil
+}
+
+// recoverOrphans resets in_progress items (from crashed runs) back to pending.
+func (s *State) recoverOrphans() {
+	s.db.Exec(`UPDATE queue SET status = 'pending' WHERE status = 'in_progress'`)
 }
 
 func (s *State) Enqueue(rawURL, entityType string, priority int) error {

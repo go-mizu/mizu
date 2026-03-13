@@ -2,6 +2,7 @@ package discord
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/core"
 )
@@ -68,8 +69,9 @@ func (t *MessagesTask) Run(ctx context.Context, emit func(*MessagesState)) (Mess
 		return m, nil
 	}
 
-	// Discover oldest message ID for next-page cursor
-	oldestID := ""
+	// Discover oldest message ID for next-page cursor (numeric comparison for snowflakes)
+	var oldestID string
+	var oldestNum uint64
 	seenUsers := make(map[string]struct{})
 
 	for _, raw := range msgs {
@@ -80,9 +82,12 @@ func (t *MessagesTask) Run(ctx context.Context, emit func(*MessagesState)) (Mess
 		_ = t.DB.UpsertMessage(msg)
 		m.Stored++
 
-		// Track oldest message for pagination cursor
-		if oldestID == "" || msg.MessageID < oldestID {
-			oldestID = msg.MessageID
+		// Track oldest message for pagination cursor — compare as uint64
+		if n, err := strconv.ParseUint(msg.MessageID, 10, 64); err == nil {
+			if oldestID == "" || n < oldestNum {
+				oldestID = msg.MessageID
+				oldestNum = n
+			}
 		}
 
 		// Enqueue author for user profile fetch (deduplicated within this page)

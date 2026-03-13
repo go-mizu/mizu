@@ -148,6 +148,21 @@ func (d *DB) UpsertUser(u User) error {
 	return err
 }
 
+// LatestMessageID returns the newest message_id in a channel (for incremental crawl).
+// Returns "" if no messages exist for this channel.
+func (d *DB) LatestMessageID(channelID string) string {
+	var id sql.NullString
+	d.db.QueryRow(`SELECT MAX(message_id) FROM messages WHERE channel_id = ?`, channelID).Scan(&id)
+	return id.String
+}
+
+// MessageCount returns the number of stored messages for a channel.
+func (d *DB) MessageCount(channelID string) int64 {
+	var n int64
+	d.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE channel_id = ?`, channelID).Scan(&n)
+	return n
+}
+
 func (d *DB) GetStats() (DBStats, error) {
 	var s DBStats
 	d.db.QueryRow(`SELECT COUNT(*) FROM guilds`).Scan(&s.Guilds)
