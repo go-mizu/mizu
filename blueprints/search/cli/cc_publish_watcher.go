@@ -239,6 +239,7 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 		_ = os.Remove(filepath.Join(dataDir, f.shard+".meta"))
 		// Also delete intermediate pipeline files to keep disk free.
 		_ = os.Remove(filepath.Join(warcMdDir, f.shard+".md.warc.gz"))
+		_ = os.Remove(filepath.Join(warcMdDir, f.shard+".meta.duckdb"))
 		if rawPath := ccFindRawWARC(crawlID, f.fileIdx); rawPath != "" {
 			_ = os.Remove(rawPath)
 		}
@@ -328,11 +329,12 @@ func ccPurgeCommittedLocals(crawlID, dataDir, warcMdDir string, committed map[in
 			n++
 		}
 		_ = os.Remove(filepath.Join(dataDir, shard+".meta"))
-		// md.warc.gz
+		// md.warc.gz + meta.duckdb
 		mdWARC := filepath.Join(warcMdDir, shard+".md.warc.gz")
 		if rmErr := os.Remove(mdWARC); rmErr == nil {
 			n++
 		}
+		_ = os.Remove(filepath.Join(warcMdDir, shard+".meta.duckdb"))
 		// raw .warc.gz
 		if rawPath := ccFindRawWARC(crawlID, idx); rawPath != "" {
 			if rmErr := os.Remove(rawPath); rmErr == nil {
