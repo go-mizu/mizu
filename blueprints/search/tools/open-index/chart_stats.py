@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["matplotlib", "pandas"]
+# dependencies = ["plotly", "kaleido", "pandas"]
 # ///
 """
 Generate charts from the Open Index stats.csv.
@@ -10,7 +10,7 @@ Usage:
     python chart_stats.py stats.csv [--out charts/]
 
 Outputs PNG images suitable for embedding in README / HuggingFace model cards:
-  - size_chart.png      grouped bar: HTML vs Markdown vs Parquet bytes per shard
+  - size_chart.png      subplot: HTML (GB) and Parquet (MB) per shard
   - rows_chart.png      bar chart: document count per shard
   - timing_chart.png    stacked bar: download / convert / export / publish per shard
   - compression_pie.png donut chart: cumulative size breakdown
@@ -20,49 +20,26 @@ import argparse
 import sys
 from pathlib import Path
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
 import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 
-# ── modern theme ─────────────────────────────────────────────────────────────
+# ── style ────────────────────────────────────────────────────────────────────
 
-# Tailwind-inspired palette: indigo, emerald, amber, cyan, violet, rose
-PALETTE = ["#6366f1", "#10b981", "#f59e0b", "#06b6d4", "#8b5cf6", "#f43f5e"]
+COLORS = ["#6366f1", "#10b981", "#f59e0b", "#06b6d4", "#8b5cf6", "#f43f5e"]
 
-def apply_theme():
-    plt.rcParams.update({
-        "figure.facecolor": "#ffffff",
-        "figure.dpi": 150,
-        "axes.facecolor": "#fafbfc",
-        "axes.edgecolor": "#e5e7eb",
-        "axes.linewidth": 0.8,
-        "axes.grid": True,
-        "axes.grid.axis": "y",
-        "axes.spines.top": False,
-        "axes.spines.right": False,
-        "axes.titlesize": 13,
-        "axes.titleweight": "bold",
-        "axes.titlepad": 16,
-        "axes.labelsize": 10,
-        "axes.labelpad": 8,
-        "grid.color": "#f0f0f0",
-        "grid.linewidth": 0.6,
-        "font.family": "sans-serif",
-        "font.sans-serif": ["Inter", "Segoe UI", "Helvetica Neue", "Arial"],
-        "font.size": 10,
-        "xtick.labelsize": 8,
-        "ytick.labelsize": 9,
-        "xtick.color": "#6b7280",
-        "ytick.color": "#6b7280",
-        "legend.frameon": True,
-        "legend.framealpha": 0.95,
-        "legend.edgecolor": "#e5e7eb",
-        "legend.fontsize": 9,
-        "legend.borderpad": 0.6,
-    })
+LAYOUT = dict(
+    font_family="Inter, system-ui, -apple-system, Segoe UI, sans-serif",
+    font_size=12,
+    font_color="#374151",
+    plot_bgcolor="#fafbfc",
+    paper_bgcolor="#ffffff",
+    margin=dict(l=56, r=24, t=56, b=72),
+)
+
+AXIS = dict(gridcolor="#f0f0f0", gridwidth=1, zeroline=False, linecolor="#e5e7eb")
+XAXIS = dict(**AXIS, tickangle=-45, tickfont_size=9)
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -73,6 +50,7 @@ def fmt_bytes(n):
             return f"{n:.1f} {unit}"
         n /= 1024
     return f"{n:.1f} PB"
+
 
 def load(path):
     df = pd.read_csv(path)
@@ -93,110 +71,108 @@ def load(path):
 # ── charts ───────────────────────────────────────────────────────────────────
 
 def chart_sizes(df, out):
-    fig, ax1 = plt.subplots(figsize=(max(10, len(df) * 0.55), 5.5))
-    x = range(len(df))
-    w = 0.3
-    ax1.bar([i - w / 2 for i in x], df["html_bytes"] / 1e9, width=w,
-            label="HTML (GB)", color=PALETTE[0], alpha=0.88, edgecolor="white", linewidth=0.5)
-    ax1.set_ylabel("HTML size (GB)", color=PALETTE[0])
-    ax1.tick_params(axis="y", labelcolor=PALETTE[0])
+    """Two-panel chart: HTML (GB) on top, Parquet (MB) on bottom — separate scales."""
+    fig = make_subplots(
+        rows=2, cols=1, vertical_spacing=0.14,
+        subplot_titles=("Raw HTML per Shard (GB)", "Final Parquet per Shard (MB)"),
+    )
+    fig.add_trace(go.Bar(
+        x=df["shard"], y=df["html_bytes"] / 1e9,
+        marker_color=COLORS[0], marker_line_width=0, showlegend=False,
+    ), row=1, col=1)
+    fig.add_trace(go.Bar(
+        x=df["shard"], y=df["parquet_bytes"] / 1e6,
+        marker_color=COLORS[1], marker_line_width=0, showlegend=False,
+    ), row=2, col=1)
+    fig.update_layout(
+        **LAYOUT, height=560, width=max(900, len(df) * 26),
+        title_text="Size per Shard",
+    )
+    fig.update_xaxes(**XAXIS)
+    fig.update_yaxes(title_text="GB", row=1, col=1, **AXIS)
+    fig.update_yaxes(title_text="MB", row=2, col=1, **AXIS)
+    p = Path(out) / "size_chart.png"
+    fig.write_image(str(p), scale=2)
+    print(f"  Wrote {p}")
 
-    ax2 = ax1.twinx()
-    ax2.bar([i + w / 2 for i in x], df["parquet_bytes"] / 1e6, width=w,
-            label="Parquet (MB)", color=PALETTE[1], alpha=0.88, edgecolor="white", linewidth=0.5)
-    ax2.set_ylabel("Parquet size (MB)", color=PALETTE[1])
-    ax2.tick_params(axis="y", labelcolor=PALETTE[1])
-    ax2.spines["right"].set_visible(True)
-    ax2.spines["right"].set_color("#e5e7eb")
-
-    ax1.set_xticks(list(x))
-    ax1.set_xticklabels(df["shard"].tolist(), rotation=45, ha="right")
-    ax1.set_title("Size per Shard: HTML vs Parquet")
-    lines1, labels1 = ax1.get_legend_handles_labels()
-    lines2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(lines1 + lines2, labels1 + labels2, loc="upper right")
-    fig.tight_layout()
-    fig.savefig(Path(out) / "size_chart.png")
-    plt.close(fig)
-    print(f"  Wrote {Path(out) / 'size_chart.png'}")
 
 def chart_rows(df, out):
-    fig, ax = plt.subplots(figsize=(max(10, len(df) * 0.55), 5))
-    x = range(len(df))
-    bars = ax.bar(x, df["rows"] / 1e3, color=PALETTE[0], alpha=0.88,
-                  edgecolor="white", linewidth=0.5)
-    peak = (df["rows"] / 1e3).max()
-    for bar in bars:
-        h = bar.get_height()
-        if h > 0:
-            ax.text(bar.get_x() + bar.get_width() / 2, h + peak * 0.012,
-                    f"{h:.0f}K", ha="center", va="bottom", fontsize=7, color="#9ca3af")
-    ax.set_xticks(list(x))
-    ax.set_xticklabels(df["shard"].tolist(), rotation=45, ha="right")
-    ax.set_ylabel("Documents (thousands)")
-    ax.set_title("Document Count per Shard")
-    fig.tight_layout()
-    fig.savefig(Path(out) / "rows_chart.png")
-    plt.close(fig)
-    print(f"  Wrote {Path(out) / 'rows_chart.png'}")
+    fig = go.Figure(go.Bar(
+        x=df["shard"], y=df["rows"] / 1e3,
+        marker_color=COLORS[0], marker_line_width=0,
+        text=[f"{v:.0f}K" for v in df["rows"] / 1e3],
+        textposition="outside", textfont_size=8, textfont_color="#9ca3af",
+    ))
+    fig.update_layout(
+        **LAYOUT, height=420, width=max(900, len(df) * 26),
+        title_text="Document Count per Shard",
+        yaxis_title="Documents (thousands)",
+    )
+    fig.update_xaxes(**XAXIS)
+    fig.update_yaxes(**AXIS)
+    p = Path(out) / "rows_chart.png"
+    fig.write_image(str(p), scale=2)
+    print(f"  Wrote {p}")
+
 
 def chart_timings(df, out):
     cols = ["dur_download_s", "dur_convert_s", "dur_export_s", "dur_publish_s"]
+    names = ["Download", "Convert (HTML to MD)", "Export Parquet", "Publish HF"]
     if sum(df[c].sum() for c in cols) == 0:
         print("  Skipping timing chart (no timing data)")
         return
-    fig, ax = plt.subplots(figsize=(max(10, len(df) * 0.55), 5))
-    x = range(len(df))
-    labels = ["Download", "Convert (HTML to MD)", "Export Parquet", "Publish HF"]
-    bottom = pd.Series([0.0] * len(df))
-    for i, (col, lbl) in enumerate(zip(cols, labels)):
-        vals = df[col] / 60
-        ax.bar(x, vals, bottom=bottom, label=lbl,
-               color=PALETTE[i], alpha=0.88, edgecolor="white", linewidth=0.5)
-        bottom = bottom + vals
-    ax.set_xticks(list(x))
-    ax.set_xticklabels(df["shard"].tolist(), rotation=45, ha="right")
-    ax.set_ylabel("Time (minutes)")
-    ax.set_title("Pipeline Time per Shard")
-    ax.legend(loc="upper right")
-    fig.tight_layout()
-    fig.savefig(Path(out) / "timing_chart.png")
-    plt.close(fig)
-    print(f"  Wrote {Path(out) / 'timing_chart.png'}")
+    fig = go.Figure()
+    for i, (col, name) in enumerate(zip(cols, names)):
+        fig.add_trace(go.Bar(
+            x=df["shard"], y=df[col] / 60, name=name,
+            marker_color=COLORS[i], marker_line_width=0,
+        ))
+    fig.update_layout(
+        **LAYOUT, barmode="stack",
+        height=450, width=max(900, len(df) * 26),
+        title_text="Pipeline Time per Shard",
+        yaxis_title="Time (minutes)",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                    font_size=10, bgcolor="rgba(255,255,255,0.9)"),
+    )
+    fig.update_xaxes(**XAXIS)
+    fig.update_yaxes(**AXIS)
+    p = Path(out) / "timing_chart.png"
+    fig.write_image(str(p), scale=2)
+    print(f"  Wrote {p}")
 
-def chart_compression_pie(df, out):
+
+def chart_compression(df, out):
     total_html = df["html_bytes"].sum()
     total_md = df["md_bytes"].sum()
     total_pq = df["parquet_bytes"].sum()
     stripped = total_html - total_md
     compressed = total_md - total_pq
-
     labels = [
-        f"Stripped (HTML to MD)  {fmt_bytes(stripped)}",
-        f"Compressed (Parquet)  {fmt_bytes(compressed)}",
-        f"Final Parquet  {fmt_bytes(total_pq)}",
+        f"Stripped (HTML to MD) - {fmt_bytes(stripped)}",
+        f"Compressed (Parquet) - {fmt_bytes(compressed)}",
+        f"Final Parquet - {fmt_bytes(total_pq)}",
     ]
-    sizes = [stripped, compressed, total_pq]
-
-    fig, ax = plt.subplots(figsize=(8, 5.5))
-    wedges, texts, autotexts = ax.pie(
-        sizes, colors=PALETTE[:3],
-        autopct="%1.1f%%", startangle=140, pctdistance=0.82,
-        wedgeprops={"linewidth": 2.5, "edgecolor": "white", "width": 0.45},
+    fig = go.Figure(go.Pie(
+        labels=labels, values=[stripped, compressed, total_pq],
+        hole=0.55, marker_colors=COLORS[:3],
+        marker_line=dict(color="white", width=2.5),
+        textinfo="percent", textfont_size=13, textfont_color="#374151",
+        sort=False,
+    ))
+    fig.update_layout(
+        **LAYOUT, height=480, width=720,
+        title_text="Compression Breakdown",
+        legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.02,
+                    font_size=11),
+        annotations=[dict(
+            text=f"{fmt_bytes(total_html)}<br>to {fmt_bytes(total_pq)}",
+            x=0.44, y=0.5, font_size=14, font_color="#374151", showarrow=False,
+        )],
     )
-    for t in autotexts:
-        t.set_fontsize(10)
-        t.set_fontweight("bold")
-        t.set_color("#374151")
-    ax.legend(wedges, labels, loc="center left", bbox_to_anchor=(0.85, 0.5),
-              fontsize=9, frameon=True, framealpha=0.95, edgecolor="#e5e7eb")
-    ax.text(0, 0, f"{fmt_bytes(total_html)}\nto {fmt_bytes(total_pq)}",
-            ha="center", va="center", fontsize=11, fontweight="bold", color="#374151")
-    ax.set_title("Compression Breakdown", pad=16)
-    fig.tight_layout()
-    fig.savefig(Path(out) / "compression_pie.png")
-    plt.close(fig)
-    print(f"  Wrote {Path(out) / 'compression_pie.png'}")
+    p = Path(out) / "compression_pie.png"
+    fig.write_image(str(p), scale=2)
+    print(f"  Wrote {p}")
 
 
 # ── main ─────────────────────────────────────────────────────────────────────
@@ -208,7 +184,6 @@ def main():
     ap.add_argument("--crawl", default="", help="Filter to a single crawl ID")
     args = ap.parse_args()
 
-    apply_theme()
     df = load(args.stats_csv)
     if args.crawl:
         df = df[df["crawl_id"] == args.crawl].reset_index(drop=True)
@@ -221,9 +196,10 @@ def main():
     chart_sizes(df, args.out)
     chart_rows(df, args.out)
     chart_timings(df, args.out)
-    chart_compression_pie(df, args.out)
+    chart_compression(df, args.out)
 
     print("Done.")
+
 
 if __name__ == "__main__":
     main()
