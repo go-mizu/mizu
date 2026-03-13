@@ -111,7 +111,7 @@ func runCCWarcExport(ctx context.Context, crawlID, fileIdx string, force bool) e
 			continue
 		}
 
-		rows, htmlBytes, mdBytes, err := exportWARCMdShardToParquet(inPath, outPath)
+		rows, htmlBytes, mdBytes, err := exportWARCMdShardToParquet(inPath, outPath, nil)
 		if err != nil {
 			return fmt.Errorf("export shard %s: %w", shard, err)
 		}
@@ -155,7 +155,10 @@ func runCCWarcExport(ctx context.Context, crawlID, fileIdx string, force bool) e
 	return nil
 }
 
-func exportWARCMdShardToParquet(inPath, outPath string) (rows int64, htmlBytes int64, mdBytes int64, err error) {
+// exportProgressFn is called periodically during export with current row count and elapsed time.
+type exportProgressFn func(rows int64, elapsed time.Duration)
+
+func exportWARCMdShardToParquet(inPath, outPath string, progressFn exportProgressFn) (rows int64, htmlBytes int64, mdBytes int64, err error) {
 	fail := func(e error) (int64, int64, int64, error) { return 0, 0, 0, e }
 
 	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
@@ -184,6 +187,25 @@ func exportWARCMdShardToParquet(inPath, outPath string) (rows int64, htmlBytes i
 	reader := warcpkg.NewReader(in)
 	batch := make([]ccWARCExportRow, 0, 1000)
 	var rowsWritten, totalHTML, totalMd int64
+	start := time.Now()
+
+	// Progress ticker goroutine
+	var stopTicker chan struct{}
+	if progressFn != nil {
+		stopTicker = make(chan struct{})
+		go func() {
+			tick := time.NewTicker(500 * time.Millisecond)
+			defer tick.Stop()
+			for {
+				select {
+				case <-tick.C:
+					progressFn(rowsWritten, time.Since(start))
+				case <-stopTicker:
+					return
+				}
+			}
+		}()
+	}
 
 	flush := func() error {
 		if len(batch) == 0 {
@@ -197,6 +219,9 @@ func exportWARCMdShardToParquet(inPath, outPath string) (rows int64, htmlBytes i
 	}
 
 	cleanup := func() {
+		if stopTicker != nil {
+			close(stopTicker)
+		}
 		pw.Close()
 		out.Close()
 		_ = os.Remove(tmpPath)
@@ -244,6 +269,10 @@ func exportWARCMdShardToParquet(inPath, outPath string) (rows int64, htmlBytes i
 	if err := flush(); err != nil {
 		cleanup()
 		return fail(fmt.Errorf("write parquet: %w", err))
+	}
+	if stopTicker != nil {
+		close(stopTicker)
+		stopTicker = nil
 	}
 	if err := pw.Close(); err != nil {
 		out.Close()
