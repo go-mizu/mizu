@@ -3,12 +3,16 @@ package cli
 import (
 	"bufio"
 	"compress/gzip"
+	"context"
 	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/scrape/goodread"
@@ -645,7 +649,11 @@ enqueued for later crawling.`,
 					if limit > 0 && total >= limit {
 						break
 					}
-					n, err := fetchAndEnqueueGzSitemap(gzURL, stateDB, limit-total)
+					remaining := 0
+					if limit > 0 {
+						remaining = limit - total
+					}
+					n, _, err := enqueueGzSitemapWithLimit(gzURL, stateDB, remaining)
 					if err != nil {
 						fmt.Printf("    Warning (%s): %v\n", gzURL, err)
 						continue
@@ -739,11 +747,12 @@ func fetchSitemapIndex(siteindexURL string) ([]string, error) {
 	return urls, nil
 }
 
-// fetchAndEnqueueGzSitemap downloads a gzipped sitemap, decompresses it, and enqueues URLs.
-func fetchAndEnqueueGzSitemap(gzURL string, stateDB *goodread.State, limit int) (int, error) {
+// enqueueGzSitemapWithLimit downloads, decompresses, and enqueues URLs up to a limit.
+// limit=0 means unlimited. Returns count enqueued.
+func enqueueGzSitemapWithLimit(gzURL string, stateDB *goodread.State, limit int) (int, int, error) {
 	resp, err := http.Get(gzURL)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	defer resp.Body.Close()
 
@@ -751,7 +760,7 @@ func fetchAndEnqueueGzSitemap(gzURL string, stateDB *goodread.State, limit int) 
 	if strings.HasSuffix(gzURL, ".gz") {
 		gz, err := gzip.NewReader(resp.Body)
 		if err != nil {
-			return 0, fmt.Errorf("gzip: %w", err)
+			return 0, 0, fmt.Errorf("gzip: %w", err)
 		}
 		defer gz.Close()
 		reader = gz
@@ -759,7 +768,7 @@ func fetchAndEnqueueGzSitemap(gzURL string, stateDB *goodread.State, limit int) 
 
 	body, err := io.ReadAll(reader)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
 	var urlSet struct {
@@ -768,20 +777,22 @@ func fetchAndEnqueueGzSitemap(gzURL string, stateDB *goodread.State, limit int) 
 		} `xml:"url"`
 	}
 	if err := xml.Unmarshal(body, &urlSet); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
-	n := 0
+	newN, skipN := 0, 0
 	for _, u := range urlSet.URLs {
-		if limit > 0 && n >= limit {
+		if limit > 0 && newN >= limit {
 			break
 		}
 		entityType := goodread.InferEntityType(u.Loc)
 		if stateDB.Enqueue(u.Loc, entityType, 1) == nil {
-			n++
+			newN++
+		} else {
+			skipN++
 		}
 	}
-	return n, nil
+	return newN, skipN, nil
 }
 
 // ── crawl ─────────────────────────────────────────────────────────────────────
@@ -789,13 +800,15 @@ func fetchAndEnqueueGzSitemap(gzURL string, stateDB *goodread.State, limit int) 
 func newGoodreadCrawl() *cobra.Command {
 	var dbPath, statePath string
 	var delay, workers, maxPages int
+	var seed, typeFilter string
 
 	cmd := &cobra.Command{
 		Use:   "crawl",
-		Short: "Bulk crawl from the queue (use sitemap or search to seed first)",
+		Short: "Bulk crawl from the queue; optionally seed from sitemaps first",
 		Args:  cobra.NoArgs,
-		Example: `  search goodread sitemap --limit 500 && search goodread crawl --workers 2
-  search goodread crawl --workers 1 --delay 3000`,
+		Example: `  search goodread crawl --seed sitemap --workers 4
+  search goodread crawl --seed sitemap --type book,author --workers 4
+  search goodread crawl --workers 2 --delay 1500`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := goodread.DefaultConfig()
 			cfg.DBPath = dbPath
@@ -816,18 +829,54 @@ func newGoodreadCrawl() *cobra.Command {
 			}
 			defer stateDB.Close()
 
-			client := goodread.NewClient(cfg)
+			// Reset any stuck in_progress items from a previous killed run.
+			stateDB.ResetInProgress()
 
+			// ── Phase 1: seed from sitemaps ──────────────────────────────
+			if seed == "sitemap" {
+				fmt.Println("── Seeding from Goodreads sitemaps ──")
+				newURLs, skipped, err := seedFromSitemaps(cmd.Context(), stateDB, typeFilter)
+				if err != nil {
+					fmt.Printf("Warning: sitemap seed error: %v\n", err)
+				}
+				fmt.Printf("\nSeed complete: %d new URLs, %d already queued\n\n", newURLs, skipped)
+			}
+
+			// ── Pre-run queue summary ────────────────────────────────────
 			pending, _, done, failed := stateDB.QueueStats()
-			fmt.Printf("Queue: pending=%d done=%d failed=%d\n", pending, done, failed)
+			fmt.Println("── Queue before crawl ──")
+			fmt.Printf("  Pending:  %d\n", pending)
+			fmt.Printf("  Done:     %d\n", done)
+			fmt.Printf("  Failed:   %d\n", failed)
+			fmt.Printf("  Total:    %d\n\n", pending+done+failed)
+
 			if pending == 0 {
-				fmt.Println("Queue is empty. Run 'search goodread sitemap' or 'search goodread search' first.")
+				fmt.Println("Queue is empty. Run with --seed sitemap, or use 'search goodread sitemap' first.")
 				return nil
 			}
 
-			fmt.Printf("Starting crawl with %d workers, delay=%s ...\n", workers, cfg.Delay)
+			fmt.Printf("Starting crawl: workers=%d  delay=%s  db=%s\n", workers, cfg.Delay, dbPath)
+
+			// ── Ctrl+C handler ───────────────────────────────────────────
+			ctx, cancel := context.WithCancel(cmd.Context())
+			defer cancel()
+
+			sigCh := make(chan os.Signal, 1)
+			signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+			defer signal.Stop(sigCh)
+
+			var interrupted bool
+			go func() {
+				<-sigCh
+				interrupted = true
+				fmt.Println("\nInterrupted — finishing in-flight requests...")
+				cancel()
+			}()
+
+			// ── Phase 2: crawl ───────────────────────────────────────────
 			stateDB.CreateJob("crawl-"+fmt.Sprintf("%d", time.Now().Unix()), "bulk-crawl", "crawl")
 
+			client := goodread.NewClient(cfg)
 			task := &goodread.CrawlTask{
 				Config:  cfg,
 				Client:  client,
@@ -835,16 +884,15 @@ func newGoodreadCrawl() *cobra.Command {
 				StateDB: stateDB,
 			}
 
-			m, err := task.Run(cmd.Context(), func(s *goodread.CrawlState) {
+			metric, err := task.Run(ctx, func(s *goodread.CrawlState) {
 				goodread.PrintCrawlProgress(s)
 			})
-			if err != nil {
-				return err
-			}
 
-			fmt.Printf("\nCrawl complete: done=%d failed=%d duration=%s\n",
-				m.Done, m.Failed, m.Duration.Round(time.Second))
-			return nil
+			// ── Post-run summary (always printed, even on Ctrl+C) ────────
+			_ = interrupted
+			goodread.PrintCrawlSummary(metric, stateDB)
+
+			return err
 		},
 	}
 
@@ -854,7 +902,130 @@ func newGoodreadCrawl() *cobra.Command {
 	cmd.Flags().IntVar(&workers, "workers", cfg.Workers, "Concurrent fetch workers")
 	cmd.Flags().IntVar(&delay, "delay", int(cfg.Delay/time.Millisecond), "Delay between requests in milliseconds")
 	cmd.Flags().IntVar(&maxPages, "max-pages", 0, "Max pages per entity (0 = unlimited)")
+	cmd.Flags().StringVar(&seed, "seed", "", "Seed strategy before crawling: sitemap")
+	cmd.Flags().StringVar(&typeFilter, "type", "", "Comma-separated entity types to seed/crawl: book,author,series,list,quote,user,genre (default: all)")
 	return cmd
+}
+
+// seedFromSitemaps discovers all Goodreads URLs from sitemaps and enqueues them.
+// Returns (newlyEnqueued, skipped, error).
+func seedFromSitemaps(ctx context.Context, stateDB *goodread.State, typeFilter string) (int, int, error) {
+	// Parse allowed types filter
+	allowedTypes := map[string]bool{}
+	if typeFilter != "" {
+		for _, t := range strings.Split(typeFilter, ",") {
+			allowedTypes[strings.TrimSpace(t)] = true
+		}
+	}
+
+	// Map from siteindex name fragment to Goodreads entity type
+	siteindexTypeMap := map[string]string{
+		"author": "author",
+		"book":   "book",
+		"list":   "list",
+		"quote":  "quote",
+		"user":   "user",
+		"work":   "book", // works are books
+		"series": "series",
+	}
+
+	siteindexes, err := parseSitemapsFromRobots(goodread.RobotsTxtURL)
+	if err != nil {
+		return 0, 0, fmt.Errorf("parse robots.txt: %w", err)
+	}
+	fmt.Printf("  Found %d siteindex files in robots.txt\n", len(siteindexes))
+
+	var totalNew, totalSkipped int
+
+	for _, si := range siteindexes {
+		if ctx.Err() != nil {
+			break
+		}
+
+		siType := inferSiteindexType(si)
+		entityType, known := siteindexTypeMap[siType]
+		if !known {
+			continue // skip topic, group, etc.
+		}
+		if len(allowedTypes) > 0 && !allowedTypes[entityType] {
+			continue
+		}
+
+		fmt.Printf("  [%s] fetching file list: %s\n", entityType, si)
+		gzURLs, err := fetchSitemapIndex(si)
+		if err != nil {
+			fmt.Printf("    Warning: %v\n", err)
+			continue
+		}
+
+		total := len(gzURLs)
+		for i, gzURL := range gzURLs {
+			if ctx.Err() != nil {
+				break
+			}
+
+			newN, skipN, err := enqueueGzSitemap(gzURL, stateDB, entityType)
+			if err != nil {
+				fmt.Printf("\n    Warning (%s): %v\n", gzURL, err)
+				continue
+			}
+			totalNew += newN
+			totalSkipped += skipN
+
+			fmt.Printf("\r  [%s] file %d/%d — %d new, %d total  ",
+				entityType, i+1, total, totalNew, totalNew+totalSkipped)
+		}
+		fmt.Println()
+	}
+
+	return totalNew, totalSkipped, nil
+}
+
+// enqueueGzSitemap downloads a gzipped sitemap, decompresses it, and enqueues URLs.
+// Returns (newly enqueued, skipped as duplicates).
+func enqueueGzSitemap(gzURL string, stateDB *goodread.State, entityType string) (int, int, error) {
+	resp, err := http.Get(gzURL)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer resp.Body.Close()
+
+	var reader io.Reader = resp.Body
+	if strings.HasSuffix(gzURL, ".gz") {
+		gz, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return 0, 0, fmt.Errorf("gzip: %w", err)
+		}
+		defer gz.Close()
+		reader = gz
+	}
+
+	body, err := io.ReadAll(reader)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	var urlSet struct {
+		URLs []struct {
+			Loc string `xml:"loc"`
+		} `xml:"url"`
+	}
+	if err := xml.Unmarshal(body, &urlSet); err != nil {
+		return 0, 0, err
+	}
+
+	newN, skipN := 0, 0
+	for _, u := range urlSet.URLs {
+		if u.Loc == "" {
+			continue
+		}
+		if err := stateDB.Enqueue(u.Loc, entityType, 1); err == nil {
+			newN++
+		} else {
+			skipN++
+		}
+	}
+	return newN, skipN, nil
 }
 
 // ── info ─────────────────────────────────────────────────────────────────────

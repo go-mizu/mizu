@@ -257,6 +257,13 @@ func (s *State) ListJobs(limit int) ([]JobRecord, error) {
 	return jobs, rows.Err()
 }
 
+// ResetInProgress resets any items stuck in 'in_progress' back to 'pending'.
+// Call this at startup to recover from a previously killed run.
+func (s *State) ResetInProgress() error {
+	_, err := s.db.Exec(`UPDATE queue SET status = 'pending' WHERE status = 'in_progress'`)
+	return err
+}
+
 // Close closes the state database.
 func (s *State) Close() error {
 	return s.db.Close()
