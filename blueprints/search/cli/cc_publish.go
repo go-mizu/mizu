@@ -667,13 +667,26 @@ func ccPublishREADME(crawlID string, totals *ccTotals) string {
 				avgExportS = totals.DurExportS / int64(totals.Shards)
 				avgPublishS = totals.DurPublishS / int64(totals.Shards)
 			}
+			// Use the largest stage as the bar-chart reference so bars are relative.
+			maxDurS := totals.DurPackS
+			if totals.DurExportS > maxDurS {
+				maxDurS = totals.DurExportS
+			}
+			if totals.DurPublishS > maxDurS {
+				maxDurS = totals.DurPublishS
+			}
 			timingSection = "\n### Processing Times\n\nPipeline timings across " +
 				shardsCountStr + " shards of " + crawlID + ":\n\n" +
 				"```\n" +
-				ccTimingBar("Pack (download + HTML→MD)", totals.DurPackS, avgPackS, totals.DurPackS) +
-				ccTimingBar("Export (Parquet)         ", totals.DurExportS, avgExportS, totals.DurPackS) +
-				ccTimingBar("Publish (HuggingFace)    ", totals.DurPublishS, avgPublishS, totals.DurPackS) +
-				"```\n"
+				ccTimingBar("Pack (download + HTML→MD)", totals.DurPackS, avgPackS, maxDurS) +
+				ccTimingBar("Export (Parquet)         ", totals.DurExportS, avgExportS, maxDurS) +
+				ccTimingBar("Publish (HuggingFace)    ", totals.DurPublishS, avgPublishS, maxDurS) +
+				"```\n" +
+				"\n### Dataset Charts\n\n" +
+				"![Compression breakdown](charts/compression_pie.png)\n\n" +
+				"![Size per shard: HTML vs Markdown vs Parquet](charts/size_chart.png)\n\n" +
+				"![Document count per shard](charts/rows_chart.png)\n\n" +
+				"![Pipeline time per shard](charts/timing_chart.png)\n"
 		}
 	}
 
