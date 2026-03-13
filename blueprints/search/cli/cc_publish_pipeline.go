@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/parquet-go/parquet-go"
@@ -205,6 +207,46 @@ func ccFmtDuration(secs int64) string {
 		return fmt.Sprintf("%dm %ds", m, s)
 	}
 	return fmt.Sprintf("%ds", s)
+}
+
+// ccRunCharts runs chart_stats.py (if available) to generate PNG charts from stats.csv.
+// Charts are written to repoRoot/charts/. Returns the list of generated PNG paths (relative to repoRoot).
+// Returns nil silently if the script or uv is not found.
+func ccRunCharts(statsCSV, repoRoot, crawlID string) []string {
+	// Locate the chart script: check well-known repo location.
+	home, _ := os.UserHomeDir()
+	scriptPath := filepath.Join(home, "github", "go-mizu", "mizu",
+		"blueprints", "search", "tools", "open-index", "chart_stats.py")
+	if _, err := os.Stat(scriptPath); err != nil {
+		return nil // script not found, skip silently
+	}
+
+	chartsDir := filepath.Join(repoRoot, "charts")
+	if err := os.MkdirAll(chartsDir, 0o755); err != nil {
+		return nil
+	}
+
+	// Run: uv run <script> <statsCSV> --out <chartsDir> --crawl <crawlID>
+	args := []string{"run", scriptPath, statsCSV, "--out", chartsDir}
+	if crawlID != "" {
+		args = append(args, "--crawl", crawlID)
+	}
+	cmd := exec.Command("uv", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Printf("  [charts] skipped: %v\n%s\n", err, string(out))
+		return nil
+	}
+
+	// Collect generated PNG files.
+	entries, _ := os.ReadDir(chartsDir)
+	var paths []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".png") {
+			paths = append(paths, filepath.Join("charts", e.Name()))
+		}
+	}
+	return paths
 }
 
 // ccParquetStatsRow is the minimal row struct for scanning parquet stats.
