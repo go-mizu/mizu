@@ -258,17 +258,26 @@ func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, r
 		fmt.Printf("  ── [%d/%d] %s ──\n", i+1, len(indices), labelStyle.Render(shard))
 
 		var rows, htmlBytes, mdBytes int64
-		var durPackS, durExportS, durPublishS int64
+		var durDownloadS, durConvertS, durExportS, durPublishS int64
 
 		if !fileExists(parquetPath) {
 			// Need to pack (and possibly download) before exporting.
 			if !fileExists(mdWARCPath) {
+				// Check if raw WARC already exists to separate download vs convert timing.
+				rawWARCExists := ccFindRawWARC(crawlID, idx) != ""
 				fmt.Printf("  [%s] packing...\n", labelStyle.Render(shard))
 				t0 := time.Now()
 				if packErr := runCCWarcPack(ctx, crawlID, strconv.Itoa(idx), -1, -1, 0, false, false, lightConvert, 200, "text/html", 512*1024); packErr != nil {
 					return fmt.Errorf("pack %d: %w", idx, packErr)
 				}
-				durPackS = int64(time.Since(t0).Seconds())
+				elapsed := int64(time.Since(t0).Seconds())
+				if rawWARCExists {
+					// Raw WARC was present: only conversion happened.
+					durConvertS = elapsed
+				} else {
+					// Raw WARC was absent: pack downloaded then converted.
+					durDownloadS = elapsed
+				}
 				if cleanup {
 					if rawPath := ccFindRawWARC(crawlID, idx); rawPath != "" {
 						_ = os.Remove(rawPath)
@@ -325,7 +334,7 @@ func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, r
 			CrawlID: crawlID, FileIdx: idx,
 			Rows: rows, HTMLBytes: htmlBytes, MDBytes: mdBytes, ParquetBytes: pqBytes,
 			CreatedAt: time.Now().UTC().Format(time.RFC3339),
-			DurPackS: durPackS, DurExportS: durExportS,
+			DurDownloadS: durDownloadS, DurConvertS: durConvertS, DurExportS: durExportS,
 		}); upsertErr != nil {
 			return fmt.Errorf("upsert stats %d: %w", idx, upsertErr)
 		}
@@ -380,7 +389,7 @@ func ccRunPipelineWithCommits(ctx context.Context, crawlID, fileIdx, repoRoot, r
 			CrawlID: crawlID, FileIdx: idx,
 			Rows: rows, HTMLBytes: htmlBytes, MDBytes: mdBytes, ParquetBytes: pqBytes,
 			CreatedAt: time.Now().UTC().Format(time.RFC3339),
-			DurPackS: durPackS, DurExportS: durExportS, DurPublishS: durPublishS,
+			DurDownloadS: durDownloadS, DurConvertS: durConvertS, DurExportS: durExportS, DurPublishS: durPublishS,
 		})
 
 		if uploadParquet {
@@ -660,27 +669,28 @@ func ccPublishREADME(crawlID string, totals *ccTotals) string {
 		}
 
 		// Timing section — only shown when at least one shard has timing data.
-		if totals.DurPackS+totals.DurExportS+totals.DurPublishS > 0 {
-			avgPackS, avgExportS, avgPublishS := int64(0), int64(0), int64(0)
+		if totals.DurDownloadS+totals.DurConvertS+totals.DurExportS+totals.DurPublishS > 0 {
+			avgDownloadS, avgConvertS, avgExportS, avgPublishS := int64(0), int64(0), int64(0), int64(0)
 			if totals.Shards > 0 {
-				avgPackS = totals.DurPackS / int64(totals.Shards)
+				avgDownloadS = totals.DurDownloadS / int64(totals.Shards)
+				avgConvertS = totals.DurConvertS / int64(totals.Shards)
 				avgExportS = totals.DurExportS / int64(totals.Shards)
 				avgPublishS = totals.DurPublishS / int64(totals.Shards)
 			}
 			// Use the largest stage as the bar-chart reference so bars are relative.
-			maxDurS := totals.DurPackS
-			if totals.DurExportS > maxDurS {
-				maxDurS = totals.DurExportS
-			}
-			if totals.DurPublishS > maxDurS {
-				maxDurS = totals.DurPublishS
+			maxDurS := totals.DurDownloadS
+			for _, v := range []int64{totals.DurConvertS, totals.DurExportS, totals.DurPublishS} {
+				if v > maxDurS {
+					maxDurS = v
+				}
 			}
 			timingSection = "\n### Processing Times\n\nPipeline timings across " +
 				shardsCountStr + " shards of " + crawlID + ":\n\n" +
 				"```\n" +
-				ccTimingBar("Pack (download + HTML→MD)", totals.DurPackS, avgPackS, maxDurS) +
-				ccTimingBar("Export (Parquet)         ", totals.DurExportS, avgExportS, maxDurS) +
-				ccTimingBar("Publish (HuggingFace)    ", totals.DurPublishS, avgPublishS, maxDurS) +
+				ccTimingBar("Download (raw WARC)      ", totals.DurDownloadS, avgDownloadS, maxDurS) +
+				ccTimingBar("Convert  (HTML → MD)     ", totals.DurConvertS, avgConvertS, maxDurS) +
+				ccTimingBar("Export   (Parquet)        ", totals.DurExportS, avgExportS, maxDurS) +
+				ccTimingBar("Publish  (HuggingFace)    ", totals.DurPublishS, avgPublishS, maxDurS) +
 				"```\n" +
 				"\n### Dataset Charts\n\n" +
 				"![Compression breakdown](charts/compression_pie.png)\n\n" +

@@ -28,22 +28,24 @@ type ccShardStats struct {
 	MDBytes      int64
 	ParquetBytes int64
 	// Timing and metadata (zero-valued for rows loaded from old CSV format)
-	CreatedAt    string // RFC3339
-	DurPackS     int64  // seconds: download + HTML→Markdown conversion
-	DurExportS   int64  // seconds: Parquet export
-	DurPublishS  int64  // seconds: HuggingFace commit
+	CreatedAt     string // RFC3339
+	DurDownloadS  int64  // seconds: raw WARC download from Common Crawl S3
+	DurConvertS   int64  // seconds: HTML→Markdown conversion (pack)
+	DurExportS    int64  // seconds: Parquet export
+	DurPublishS   int64  // seconds: HuggingFace commit
 }
 
 // ccTotals is the aggregate across all shards for a crawl.
 type ccTotals struct {
-	Shards       int
-	Rows         int64
-	HTMLBytes    int64
-	MDBytes      int64
-	ParquetBytes int64
-	DurPackS     int64
-	DurExportS   int64
-	DurPublishS  int64
+	Shards        int
+	Rows          int64
+	HTMLBytes     int64
+	MDBytes       int64
+	ParquetBytes  int64
+	DurDownloadS  int64
+	DurConvertS   int64
+	DurExportS    int64
+	DurPublishS   int64
 }
 
 func ccStatsCSVPath(repoRoot string) string {
@@ -52,7 +54,7 @@ func ccStatsCSVPath(repoRoot string) string {
 
 var ccStatsCSVHeader = []string{
 	"crawl_id", "file_idx", "rows", "html_bytes", "md_bytes", "parquet_bytes",
-	"created_at", "dur_pack_s", "dur_export_s", "dur_publish_s",
+	"created_at", "dur_download_s", "dur_convert_s", "dur_export_s", "dur_publish_s",
 }
 
 func ccReadStatsCSV(csvPath string) ([]ccShardStats, error) {
@@ -84,17 +86,22 @@ func ccReadStatsCSV(csvPath string) ([]ccShardStats, error) {
 			CrawlID: row[0], FileIdx: idx,
 			Rows: rows, HTMLBytes: htmlBytes, MDBytes: mdBytes, ParquetBytes: parquetBytes,
 		}
-		// New timing columns (backward compat: may be absent in old CSVs)
+		// Timing columns (backward compat: may be absent in old CSVs).
+		// New format (11 cols): created_at, dur_download_s, dur_convert_s, dur_export_s, dur_publish_s
+		// Old format (10 cols): created_at, dur_pack_s, dur_export_s, dur_publish_s
 		if len(row) > 6 {
 			s.CreatedAt = row[6]
 		}
-		if len(row) > 7 {
-			s.DurPackS, _ = strconv.ParseInt(row[7], 10, 64)
-		}
-		if len(row) > 8 {
+		if len(row) >= 11 {
+			// New 11-column format.
+			s.DurDownloadS, _ = strconv.ParseInt(row[7], 10, 64)
+			s.DurConvertS, _ = strconv.ParseInt(row[8], 10, 64)
+			s.DurExportS, _ = strconv.ParseInt(row[9], 10, 64)
+			s.DurPublishS, _ = strconv.ParseInt(row[10], 10, 64)
+		} else if len(row) >= 10 {
+			// Old 10-column format: dur_pack_s mapped to DurConvertS for display.
+			s.DurConvertS, _ = strconv.ParseInt(row[7], 10, 64)
 			s.DurExportS, _ = strconv.ParseInt(row[8], 10, 64)
-		}
-		if len(row) > 9 {
 			s.DurPublishS, _ = strconv.ParseInt(row[9], 10, 64)
 		}
 		stats = append(stats, s)
@@ -119,7 +126,8 @@ func ccWriteStatsCSV(csvPath string, allStats []ccShardStats) error {
 			strconv.FormatInt(s.MDBytes, 10),
 			strconv.FormatInt(s.ParquetBytes, 10),
 			s.CreatedAt,
-			strconv.FormatInt(s.DurPackS, 10),
+			strconv.FormatInt(s.DurDownloadS, 10),
+			strconv.FormatInt(s.DurConvertS, 10),
 			strconv.FormatInt(s.DurExportS, 10),
 			strconv.FormatInt(s.DurPublishS, 10),
 		})
@@ -162,7 +170,8 @@ func ccComputeTotals(stats []ccShardStats, crawlID string) ccTotals {
 		t.HTMLBytes += s.HTMLBytes
 		t.MDBytes += s.MDBytes
 		t.ParquetBytes += s.ParquetBytes
-		t.DurPackS += s.DurPackS
+		t.DurDownloadS += s.DurDownloadS
+		t.DurConvertS += s.DurConvertS
 		t.DurExportS += s.DurExportS
 		t.DurPublishS += s.DurPublishS
 	}

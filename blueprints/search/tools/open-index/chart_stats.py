@@ -45,9 +45,12 @@ def load(path):
     if missing:
         sys.exit(f"Missing columns: {missing}")
     # Timing columns are optional (added in later pipeline versions)
-    for col in ("dur_pack_s", "dur_export_s", "dur_publish_s"):
+    for col in ("dur_download_s", "dur_convert_s", "dur_export_s", "dur_publish_s"):
         if col not in df.columns:
             df[col] = 0
+    # Backward compat: map old dur_pack_s → dur_convert_s
+    if "dur_pack_s" in df.columns and df["dur_convert_s"].sum() == 0:
+        df["dur_convert_s"] = df["dur_pack_s"]
     df = df.sort_values(["crawl_id", "file_idx"]).reset_index(drop=True)
     df["shard"] = df["crawl_id"].str[-3:] + "/" + df["file_idx"].apply(lambda x: f"{x:05d}")
     return df
@@ -90,19 +93,23 @@ def chart_rows(df, out):
     print(f"  Wrote {p}")
 
 def chart_timings(df, out):
-    has_timing = (df["dur_pack_s"] + df["dur_export_s"] + df["dur_publish_s"]).sum() > 0
+    has_timing = (df["dur_download_s"] + df["dur_convert_s"] + df["dur_export_s"] + df["dur_publish_s"]).sum() > 0
     if not has_timing:
         print("  Skipping timing chart (no timing data in CSV)")
         return
     fig, ax = plt.subplots(figsize=(max(8, len(df) * 0.45), 4))
     x = range(len(df))
-    ax.bar(x, df["dur_pack_s"] / 60,    label="Pack (min)", color=PALETTE[0])
-    ax.bar(x, df["dur_export_s"] / 60,  bottom=df["dur_pack_s"] / 60, label="Export (min)", color=PALETTE[1])
-    ax.bar(x, df["dur_publish_s"] / 60, bottom=(df["dur_pack_s"] + df["dur_export_s"]) / 60, label="Publish (min)", color=PALETTE[2])
+    b0 = df["dur_download_s"] / 60
+    b1 = b0 + df["dur_convert_s"] / 60
+    b2 = b1 + df["dur_export_s"] / 60
+    ax.bar(x, df["dur_download_s"] / 60, label="Download (min)", color=PALETTE[0])
+    ax.bar(x, df["dur_convert_s"] / 60,  bottom=b0, label="Convert HTML→MD (min)", color=PALETTE[1])
+    ax.bar(x, df["dur_export_s"] / 60,   bottom=b1, label="Export Parquet (min)", color=PALETTE[2])
+    ax.bar(x, df["dur_publish_s"] / 60,  bottom=b2, label="Publish HF (min)", color=PALETTE[3])
     ax.set_xticks(list(x))
     ax.set_xticklabels(df["shard"].tolist(), rotation=45, ha="right", fontsize=8)
     ax.set_ylabel("Time (minutes)")
-    ax.set_title("Pipeline time per shard: Pack / Export / Publish")
+    ax.set_title("Pipeline time per shard: Download / Convert / Export / Publish")
     ax.legend()
     fig.tight_layout()
     p = Path(out) / "timing_chart.png"

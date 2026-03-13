@@ -1,10 +1,12 @@
 package cli
 
 // Pure-Go HuggingFace Hub client for dataset publishing.
-// Implements LFS basic/multipart upload and the ndjson commit API —
-// no Python dependency required.
+// Large files (parquet, PNGs) are uploaded via a Python helper (hf_commit.py)
+// run through uv, which uses huggingface_hub + hf-xet for native xet storage.
+// Falls back to Go LFS basic upload if uv is not available.
 
 import (
+	_ "embed"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -15,9 +17,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 )
+
+//go:embed embed/hf_commit.py
+var hfCommitPy []byte
 
 const hfHubURL = "https://huggingface.co"
 
@@ -292,8 +298,78 @@ type hfOperation struct {
 	PathInRepo string
 }
 
-// createCommit uploads all files (large via LFS, small inline) and creates a single commit.
+// hfCommitScriptPath returns the cached path of the embedded hf_commit.py helper,
+// writing it to ~/.cache/open-index/ if missing or outdated.
+func hfCommitScriptPath() (string, error) {
+	home, _ := os.UserHomeDir()
+	dir := home + "/.cache/open-index"
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	p := dir + "/hf_commit.py"
+	existing, _ := os.ReadFile(p)
+	if string(existing) != string(hfCommitPy) {
+		if err := os.WriteFile(p, hfCommitPy, 0o755); err != nil {
+			return "", err
+		}
+	}
+	return p, nil
+}
+
+// createCommitPython runs the embedded hf_commit.py via uv to upload files
+// using huggingface_hub (xet-aware). Returns "", nil if uv is not installed.
+func (c *hfClient) createCommitPython(ctx context.Context, repoID, message string, ops []hfOperation) (string, error) {
+	scriptPath, err := hfCommitScriptPath()
+	if err != nil {
+		return "", nil // silently skip
+	}
+
+	type opJSON struct {
+		LocalPath  string `json:"local_path"`
+		PathInRepo string `json:"path_in_repo"`
+	}
+	payload := map[string]interface{}{
+		"token":   c.token,
+		"repo_id": repoID,
+		"message": message,
+		"ops":     func() []opJSON {
+			out := make([]opJSON, len(ops))
+			for i, op := range ops {
+				out[i] = opJSON{LocalPath: op.LocalPath, PathInRepo: op.PathInRepo}
+			}
+			return out
+		}(),
+	}
+	stdin, _ := json.Marshal(payload)
+
+	cmd := exec.CommandContext(ctx, "uv", "run", scriptPath)
+	cmd.Stdin = bytes.NewReader(stdin)
+	out, err := cmd.Output()
+	if err != nil {
+		// uv not found or script error — caller will fall back to Go LFS
+		return "", fmt.Errorf("python commit: %w", err)
+	}
+	var result struct {
+		CommitURL string `json:"commit_url"`
+		Error     string `json:"error"`
+	}
+	if jsonErr := json.Unmarshal(out, &result); jsonErr != nil {
+		return "", fmt.Errorf("python commit parse: %w", jsonErr)
+	}
+	if result.Error != "" {
+		return "", fmt.Errorf("python commit: %s", result.Error)
+	}
+	return result.CommitURL, nil
+}
+
+// createCommit uploads all files and creates a single commit.
+// Tries the Python/xet path first (uv + huggingface_hub); falls back to Go LFS basic.
 func (c *hfClient) createCommit(ctx context.Context, repoID, branch, message string, ops []hfOperation) (string, error) {
+	// Try Python/xet upload first.
+	if url, err := c.createCommitPython(ctx, repoID, message, ops); err == nil {
+		return url, nil
+	}
+	// Fall back to Go LFS basic.
 	const smallThreshold = 5 * 1024 * 1024
 
 	type lfsEntry struct {
