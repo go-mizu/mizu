@@ -694,8 +694,7 @@ func ccPublishREADME(crawlID string, totals *ccTotals) string {
 				"```\n" +
 				"\n### Dataset Charts\n\n" +
 				"![Compression breakdown](charts/compression_pie.png)\n\n" +
-				"![Size per shard: HTML vs Markdown vs Parquet](charts/size_chart.png)\n\n" +
-				"![Document count per shard](charts/rows_chart.png)\n\n" +
+				"![Size per shard: HTML vs Parquet](charts/size_chart.png)\n\n" +
 				"![Pipeline time per shard](charts/timing_chart.png)\n"
 		}
 	}

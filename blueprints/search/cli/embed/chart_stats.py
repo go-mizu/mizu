@@ -10,8 +10,7 @@ Usage:
     python chart_stats.py stats.csv [--out charts/]
 
 Outputs PNG images suitable for embedding in README / HuggingFace model cards:
-  - size_chart.png      subplot: HTML (GB) and Parquet (MB) per shard
-  - rows_chart.png      bar chart: document count per shard
+  - size_chart.png      grouped bar (log): HTML vs Parquet bytes per shard
   - timing_chart.png    stacked bar: download / convert / export / publish per shard
   - compression_pie.png donut chart: cumulative size breakdown
 """
@@ -22,7 +21,6 @@ from pathlib import Path
 
 import pandas as pd
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 
 # ── style ────────────────────────────────────────────────────────────────────
@@ -71,46 +69,27 @@ def load(path):
 # ── charts ───────────────────────────────────────────────────────────────────
 
 def chart_sizes(df, out):
-    """Two-panel chart: HTML (GB) on top, Parquet (MB) on bottom — separate scales."""
-    fig = make_subplots(
-        rows=2, cols=1, vertical_spacing=0.14,
-        subplot_titles=("Raw HTML per Shard (GB)", "Final Parquet per Shard (MB)"),
-    )
+    """Grouped bar (linear MB) — Parquet bars are tiny next to HTML, showing compression."""
+    fig = go.Figure()
     fig.add_trace(go.Bar(
-        x=df["shard"], y=df["html_bytes"] / 1e9,
-        marker_color=COLORS[0], marker_line_width=0, showlegend=False,
-    ), row=1, col=1)
-    fig.add_trace(go.Bar(
-        x=df["shard"], y=df["parquet_bytes"] / 1e6,
-        marker_color=COLORS[1], marker_line_width=0, showlegend=False,
-    ), row=2, col=1)
-    fig.update_layout(
-        **LAYOUT, height=560, width=max(900, len(df) * 26),
-        title_text="Size per Shard",
-    )
-    fig.update_xaxes(**XAXIS)
-    fig.update_yaxes(title_text="GB", row=1, col=1, **AXIS)
-    fig.update_yaxes(title_text="MB", row=2, col=1, **AXIS)
-    p = Path(out) / "size_chart.png"
-    fig.write_image(str(p), scale=2)
-    print(f"  Wrote {p}")
-
-
-def chart_rows(df, out):
-    fig = go.Figure(go.Bar(
-        x=df["shard"], y=df["rows"] / 1e3,
+        x=df["shard"], y=df["html_bytes"] / 1e6, name="Raw HTML",
         marker_color=COLORS[0], marker_line_width=0,
-        text=[f"{v:.0f}K" for v in df["rows"] / 1e3],
-        textposition="outside", textfont_size=8, textfont_color="#9ca3af",
+    ))
+    fig.add_trace(go.Bar(
+        x=df["shard"], y=df["parquet_bytes"] / 1e6, name="Final Parquet",
+        marker_color=COLORS[1], marker_line_width=0,
     ))
     fig.update_layout(
-        **LAYOUT, height=420, width=max(900, len(df) * 26),
-        title_text="Document Count per Shard",
-        yaxis_title="Documents (thousands)",
+        **LAYOUT, barmode="group",
+        height=450, width=max(900, len(df) * 26),
+        title_text="Size per Shard: HTML vs Parquet (MB)",
+        yaxis_title="Size (MB)",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                    font_size=10, bgcolor="rgba(255,255,255,0.9)"),
     )
     fig.update_xaxes(**XAXIS)
     fig.update_yaxes(**AXIS)
-    p = Path(out) / "rows_chart.png"
+    p = Path(out) / "size_chart.png"
     fig.write_image(str(p), scale=2)
     print(f"  Wrote {p}")
 
@@ -194,7 +173,6 @@ def main():
     print(f"Generating charts for {len(df)} shards -> {args.out}/")
 
     chart_sizes(df, args.out)
-    chart_rows(df, args.out)
     chart_timings(df, args.out)
     chart_compression(df, args.out)
 
