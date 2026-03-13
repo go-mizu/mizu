@@ -64,6 +64,7 @@ Subcommands:
 	cmd.AddCommand(newCCWarcQuery())
 	cmd.AddCommand(newCCWarcMarkdown())
 	cmd.AddCommand(newCCWarcPack())
+	cmd.AddCommand(newCCWarcExport())
 	return cmd
 }
 
@@ -74,8 +75,8 @@ func newCCWarcGet() *cobra.Command {
 	var offset, length int64
 
 	cmd := &cobra.Command{
-		Use:   "get",
-		Short: "Fetch and display a single WARC record by byte range",
+		Use:     "get",
+		Short:   "Fetch and display a single WARC record by byte range",
 		Example: `  search cc warc get --file crawl-data/CC-MAIN-2026-08/.../CC-MAIN.warc.gz --offset 12345 --length 6789`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCCWarc(cmd.Context(), file, offset, length)
