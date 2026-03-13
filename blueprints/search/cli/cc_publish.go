@@ -468,32 +468,58 @@ func ccPublishREADME(crawlID string, totals *ccTotals) string {
 	cb := "```"
 	bt := "`"
 
-	// Compute display numbers from real stats (fall back to shard-0 measurements)
+	// Compression table strings — use actual sums across all files, not per-shard averages.
+	// Fall back to hardcoded shard-0 measurements when no stats are available.
 	var (
-		avgRows       float64 = 21184
-		avgHTMLGB     float64 = 2.7
-		avgMDMB       float64 = 79.2
-		avgParquetMB  float64 = 27.9
-		pctHTMLToMD   float64 = 97.2
-		pctWARCToPQ   float64 = 23.0
-		totalDocsStr          = "~21,000 per shard"
+		totalDocsStr    = "~21,000 per shard"
+		shardsCountStr  = "1"
+		totalDocsTable  = "~21,000"
+		rawWARCEstStr   = "~0.8 GB"
+		totalHTMLStr    = "2.7 GB"
+		packMDEstStr    = "~75 MB"
+		pctHTMLToMDStr  = "97.2"
+		totalParquetStr = "27.9 MB"
+		pctPackToPQStr  = "23.0"
+		totalMDStr      = "79.2 MB"
+		pctMDToPQStr    = "64.7"
+		endToEndPctStr  = "96.5"
 	)
 
 	if totals != nil && totals.Shards > 0 {
-		avgRows = float64(totals.Rows) / float64(totals.Shards)
-		avgHTMLGB = float64(totals.HTMLBytes) / float64(totals.Shards) / 1e9
-		avgMDMB = float64(totals.MDBytes) / float64(totals.Shards) / 1e6
-		avgParquetMB = float64(totals.ParquetBytes) / float64(totals.Shards) / 1e6
+		shardsCountStr = strconv.Itoa(totals.Shards)
+		totalDocsTable = ccFmtInt64(totals.Rows)
+		totalDocsStr = ccFmtInt64(totals.Rows) + " documents across " + strconv.Itoa(totals.Shards) + " shards"
+		totalHTMLStr = ccFmtBytes(totals.HTMLBytes)
+		totalMDStr = ccFmtBytes(totals.MDBytes)
+		totalParquetStr = ccFmtBytes(totals.ParquetBytes)
+
 		if totals.HTMLBytes > 0 {
-			pctHTMLToMD = float64(totals.HTMLBytes-totals.MDBytes) / float64(totals.HTMLBytes) * 100
+			pct := float64(totals.HTMLBytes-totals.MDBytes) / float64(totals.HTMLBytes) * 100
+			pctHTMLToMDStr = fmt.Sprintf("%.1f", pct)
 		}
 		if totals.MDBytes > 0 {
-			pctWARCToPQ = math.Max(0, float64(totals.MDBytes-totals.ParquetBytes)/float64(totals.MDBytes)*100)
+			pct := math.Max(0, float64(totals.MDBytes-totals.ParquetBytes)/float64(totals.MDBytes)*100)
+			pctMDToPQStr = fmt.Sprintf("%.1f", pct)
 		}
-		totalDocsStr = ccFmtInt64(totals.Rows) + " documents across " + strconv.Itoa(totals.Shards) + " shards"
-	}
 
-	_ = pctWARCToPQ // used in template
+		// Estimate raw WARC (~830 MB per shard compressed) and packed WARC (~47% of uncompressed MD)
+		rawWARCBytes := int64(totals.Shards) * 830 * 1024 * 1024
+		rawWARCEstStr = "~" + ccFmtBytes(rawWARCBytes)
+		packBytes := int64(float64(totals.MDBytes) * 0.47)
+		packMDEstStr = "~" + ccFmtBytes(packBytes)
+		if totals.HTMLBytes > 0 && packBytes > 0 {
+			pct := float64(totals.HTMLBytes-packBytes) / float64(totals.HTMLBytes) * 100
+			pctHTMLToMDStr = fmt.Sprintf("%.1f", pct)
+		}
+		if packBytes > totals.ParquetBytes {
+			pct := float64(packBytes-totals.ParquetBytes) / float64(packBytes) * 100
+			pctPackToPQStr = fmt.Sprintf("%.1f", pct)
+		}
+		if rawWARCBytes > totals.ParquetBytes {
+			pct := float64(rawWARCBytes-totals.ParquetBytes) / float64(rawWARCBytes) * 100
+			endToEndPctStr = fmt.Sprintf("%.1f", pct)
+		}
+	}
 
 	return fmt.Sprintf(`---
 license: odc-by
@@ -663,18 +689,18 @@ Empty conversions (pages where trafilatura could not extract meaningful content)
 
 ### Compression Ratios
 
-Numbers below are actual measurements across all 11 shards of CC-MAIN-2026-08 (232,408 pages total), projected to the full crawl of 100,000 WARC files.
+Numbers below are actual measurements summed across all %[8]s files of %[1]s (%[9]s pages total), projected to the full crawl of 100,000 WARC files.
 
-| Stage | 11 shards (measured) | 100,000 shards (projected) | Reduction |
+| Stage | %[8]s files (measured) | 100,000 files (projected) | Reduction |
 |---|---|---|---|
-| Raw WARC (.warc.gz, downloaded) | ~9.1 GB | ~83 TB | — |
-| HTML extracted (uncompressed) | 32.4 GB | ~295 TB | — |
-| Packed markdown WARC (.md.warc.gz) | 410 MB | ~3.7 TB | **-97.3%%** vs HTML |
-| Final Parquet (Zstd level 19) | 316 MB | ~2.9 TB | **-23%%** vs packed WARC |
+| Raw WARC (.warc.gz, downloaded) | %[10]s | ~83 TB | — |
+| HTML extracted (uncompressed) | %[11]s | ~295 TB | — |
+| Packed markdown WARC (.md.warc.gz) | %[12]s | ~3.7 TB | **-%[13]s%%** vs HTML |
+| Final Parquet (Zstd level 19) | %[14]s | ~2.9 TB | **-%[15]s%%** vs packed WARC |
 
-The big win is the HTML → Markdown step: trafilatura strips all tags, scripts, styles, navigation, and ads, keeping only the main content. This cuts 32.4 GB of uncompressed HTML down to 879 MB of markdown — a **97.3%% reduction** — before any file-level compression is applied. Parquet with Zstd level 19 then compresses the markdown a further 64%%.
+The big win is the HTML → Markdown step: trafilatura strips all tags, scripts, styles, navigation, and ads, keeping only the main content. This cuts %[11]s of uncompressed HTML down to %[16]s of markdown — a **%[13]s%% reduction** — before any file-level compression is applied. Parquet with Zstd level 19 then compresses the markdown a further %[17]s%%.
 
-End to end: ~9.1 GB of raw gzipped WARCs becomes **316 MB of Parquet** — a **96.5%% total reduction** — containing 232,408 clean markdown documents.
+End to end: %[10]s of raw gzipped WARCs becomes **%[14]s of Parquet** — a **%[18]s%% total reduction** — containing %[9]s clean markdown documents.
 
 ### Personal and Sensitive Information
 
@@ -704,29 +730,24 @@ The dataset is released under the **Open Data Commons Attribution License (ODC-B
 
 Please open a discussion on the [Community tab](https://huggingface.co/datasets/open-index/draft/discussions) for questions, feedback, or issues.
 `,
-		c,            // [1] crawlID
-		cb,           // [2] triple backtick
-		bt,           // [3] single backtick
-		"",           // [4] unused
-		"",           // [5] unused
-		"",           // [6] unused
-		totalDocsStr, // [7] total docs description
-		fmt.Sprintf("%d shards of %s", func() int { // [8] measurement basis
-			if totals != nil {
-				return totals.Shards
-			}
-			return 1
-		}(), c),
-		avgHTMLGB,                // %.1f GB HTML
-		avgMDMB,                  // %.1f MB MD
-		pctHTMLToMD,              // %.1f%% HTML→MD reduction
-		avgParquetMB,             // %.1f MB parquet
-		pctWARCToPQ,              // %.1f%% WARC→PQ reduction
-		avgHTMLGB,                // %.1f GB HTML (repeated in prose)
-		avgMDMB,                  // %.1f MB MD (repeated in prose)
-		pctHTMLToMD,              // %.1f%% (repeated)
-		avgParquetMB,             // %.1f MB (end-to-end)
-		avgRows,                  // %.0f rows
+		c,               // [1] crawlID
+		cb,              // [2] triple backtick
+		bt,              // [3] single backtick
+		"",              // [4] unused
+		"",              // [5] unused
+		"",              // [6] unused
+		totalDocsStr,    // [7] "X documents across N shards"
+		shardsCountStr,  // [8] number of files/shards
+		totalDocsTable,  // [9] total row count
+		rawWARCEstStr,   // [10] estimated raw WARC total
+		totalHTMLStr,    // [11] total uncompressed HTML
+		packMDEstStr,    // [12] estimated packed WARC total
+		pctHTMLToMDStr,  // [13] HTML → packed WARC reduction %
+		totalParquetStr, // [14] total parquet size
+		pctPackToPQStr,  // [15] packed WARC → parquet reduction %
+		totalMDStr,      // [16] total uncompressed markdown
+		pctMDToPQStr,    // [17] markdown → parquet compression %
+		endToEndPctStr,  // [18] raw WARC → parquet end-to-end %
 	)
 }
 
