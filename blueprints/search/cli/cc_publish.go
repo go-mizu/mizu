@@ -1,12 +1,10 @@
 package cli
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
+	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -15,97 +13,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const ccPublishPythonScript = `
-import json
-import os
-import sys
-
-try:
-    from huggingface_hub import CommitOperationAdd, HfApi
-except Exception as exc:
-    print(json.dumps({"error": f"missing huggingface_hub: {exc}"}))
-    sys.exit(2)
-
-payload = json.load(sys.stdin)
-token = os.environ.get("HF_TOKEN", "").strip()
-if not token:
-    print(json.dumps({"error": "HF_TOKEN is not set"}))
-    sys.exit(3)
-
-api = HfApi(token=token)
-api.create_repo(
-    repo_id=payload["repo_id"],
-    repo_type="dataset",
-    exist_ok=True,
-    private=payload.get("private", False),
-)
-
-paths = [item["path_in_repo"] for item in payload["files"]]
-existing = set()
-if paths:
-    for start in range(0, len(paths), 100):
-        chunk = paths[start:start+100]
-        infos = api.get_paths_info(
-            repo_id=payload["repo_id"],
-            paths=chunk,
-            repo_type="dataset",
-            token=token,
-        )
-        existing.update(getattr(info, "path", "") for info in infos)
-
-selected = []
-skipped = []
-republish = bool(payload.get("republish"))
-for item in payload["files"]:
-    if (not republish) and item["path_in_repo"] in existing:
-        skipped.append(item["path_in_repo"])
-        continue
-    selected.append(item)
-
-if not selected:
-    print(json.dumps({
-        "uploaded": [],
-        "skipped": skipped,
-        "commit_url": "",
-    }))
-    sys.exit(0)
-
-operations = [
-    CommitOperationAdd(path_in_repo=item["path_in_repo"], path_or_fileobj=item["local_path"])
-    for item in selected
-]
-commit = api.create_commit(
-    repo_id=payload["repo_id"],
-    repo_type="dataset",
-    operations=operations,
-    commit_message=payload["commit_message"],
-    token=token,
-)
-print(json.dumps({
-    "uploaded": [item["path_in_repo"] for item in selected],
-    "skipped": skipped,
-    "commit_url": getattr(commit, "commit_url", ""),
-}))
-`
-
 type ccPublishUploadFile struct {
-	LocalPath  string `json:"local_path"`
-	PathInRepo string `json:"path_in_repo"`
-}
-
-type ccPublishPayload struct {
-	RepoID        string                `json:"repo_id"`
-	Private       bool                  `json:"private"`
-	Republish     bool                  `json:"republish"`
-	CommitMessage string                `json:"commit_message"`
-	Files         []ccPublishUploadFile `json:"files"`
-}
-
-type ccPublishResult struct {
-	Error     string   `json:"error"`
-	Uploaded  []string `json:"uploaded"`
-	Skipped   []string `json:"skipped"`
-	CommitURL string   `json:"commit_url"`
+	LocalPath  string
+	PathInRepo string
 }
 
 func newCCPublish() *cobra.Command {
@@ -116,6 +26,8 @@ func newCCPublish() *cobra.Command {
 		repoID    string
 		republish bool
 		private   bool
+		pipeline  bool
+		cleanup   bool
 	)
 
 	cmd := &cobra.Command{
@@ -125,13 +37,18 @@ func newCCPublish() *cobra.Command {
 
 The command creates the dataset repo if needed, ensures README.md and LICENSE
 exist locally, uploads only missing parquet files by default, and supports
-targeting one shard with --file 0.`,
+targeting one shard with --file 0.
+
+With --pipeline, automatically downloads, packs and exports any missing shards
+before uploading. Use --cleanup to delete raw .warc.gz files after packing
+to save disk space.`,
 		Example: `  search cc publish
   search cc publish --file 0
   search cc publish --crawl CC-MAIN-2026-08 --repo open-index/draft
-  search cc publish --file 0 --republish`,
+  search cc publish --file 0 --republish
+  search cc publish --file 11-90 --pipeline --cleanup`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCCPublish(cmd.Context(), crawlID, fileIdx, repoRoot, repoID, republish, private)
+			return runCCPublish(cmd.Context(), crawlID, fileIdx, repoRoot, repoID, republish, private, pipeline, cleanup)
 		},
 	}
 
@@ -141,10 +58,12 @@ targeting one shard with --file 0.`,
 	cmd.Flags().StringVar(&repoID, "repo", "open-index/draft", "Hugging Face dataset repo ID")
 	cmd.Flags().BoolVar(&republish, "republish", false, "Upload even if the remote path already exists")
 	cmd.Flags().BoolVar(&private, "private", false, "Create the Hugging Face dataset repo as private")
+	cmd.Flags().BoolVar(&pipeline, "pipeline", false, "Auto-download, pack, and export missing shards before publishing")
+	cmd.Flags().BoolVar(&cleanup, "cleanup", false, "Delete raw .warc.gz after packing (requires --pipeline)")
 	return cmd
 }
 
-func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string, republish, private bool) error {
+func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string, republish, private, pipeline, cleanup bool) error {
 	resolvedID, note, err := ccResolveCrawlID(ctx, crawlID)
 	if err != nil {
 		return fmt.Errorf("resolving crawl: %w", err)
@@ -157,7 +76,22 @@ func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string
 	if repoRoot == "" {
 		repoRoot = ccDefaultExportRepoRoot(crawlID)
 	}
-	if err := ccEnsurePublishRepoFiles(repoRoot, crawlID); err != nil {
+
+	// ── Pipeline: auto-pack+export missing shards ───────────────────────────
+	if pipeline {
+		if err := ccRunPipeline(ctx, crawlID, fileIdx, repoRoot, cleanup); err != nil {
+			return err
+		}
+	}
+
+	// ── Collect stats from all exported parquet files ───────────────────────
+	statsCSV := ccStatsCSVPath(repoRoot)
+	if err := ccRefreshStats(crawlID, repoRoot, statsCSV); err != nil {
+		return fmt.Errorf("refresh stats: %w", err)
+	}
+
+	// ── Write README + LICENSE with real numbers ─────────────────────────────
+	if err := ccEnsurePublishRepoFiles(repoRoot, crawlID, statsCSV); err != nil {
 		return err
 	}
 
@@ -169,29 +103,12 @@ func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string
 		return fmt.Errorf("no local parquet files selected under %s", filepath.Join(repoRoot, "data"))
 	}
 
-	payload := ccPublishPayload{
-		RepoID:        repoID,
-		Private:       private,
-		Republish:     republish,
-		CommitMessage: ccPublishCommitMessage(fileIdx, files),
-		Files: append([]ccPublishUploadFile{
-			{LocalPath: filepath.Join(repoRoot, "README.md"), PathInRepo: "README.md"},
-			{LocalPath: filepath.Join(repoRoot, "LICENSE"), PathInRepo: "LICENSE"},
-		}, files...),
+	token := strings.TrimSpace(os.Getenv("HF_TOKEN"))
+	if token == "" {
+		return fmt.Errorf("HF_TOKEN environment variable is not set")
 	}
 
-	stdout, err := ccRunPublishPython(ctx, payload)
-	if err != nil {
-		return err
-	}
-
-	var result ccPublishResult
-	if err := json.Unmarshal(stdout, &result); err != nil {
-		return fmt.Errorf("decode publish response: %w\nstdout: %s", err, string(stdout))
-	}
-	if result.Error != "" {
-		return fmt.Errorf("publish failed: %s", result.Error)
-	}
+	hf := newHFClient(token)
 
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("Common Crawl Publish"))
@@ -199,12 +116,247 @@ func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string
 	fmt.Printf("  Crawl      %s\n", labelStyle.Render(crawlID))
 	fmt.Printf("  Repo root  %s\n", labelStyle.Render(repoRoot))
 	fmt.Printf("  HF repo    %s\n", infoStyle.Render(repoID))
-	fmt.Printf("  Uploaded   %s\n", infoStyle.Render(ccFmtInt64(int64(len(result.Uploaded)))))
-	fmt.Printf("  Skipped    %s\n", infoStyle.Render(ccFmtInt64(int64(len(result.Skipped)))))
-	if result.CommitURL != "" {
-		fmt.Printf("  Commit     %s\n", labelStyle.Render(result.CommitURL))
+	// Show processed shards from stats
+	if allStats, err := ccReadStatsCSV(statsCSV); err == nil {
+		t := ccComputeTotals(allStats, crawlID)
+		if t.Shards > 0 {
+			shardList := make([]string, 0, t.Shards)
+			for _, s := range allStats {
+				if s.CrawlID == crawlID {
+					shardList = append(shardList, fmt.Sprintf("%05d", s.FileIdx))
+				}
+			}
+			fmt.Printf("  Processed  %s shards: %s\n",
+				infoStyle.Render(ccFmtInt64(int64(t.Shards))),
+				labelStyle.Render(strings.Join(shardList, ", ")))
+		}
+	}
+	fmt.Println()
+
+	// Create repo if needed
+	if err := hf.createDatasetRepo(ctx, repoID, private); err != nil {
+		return fmt.Errorf("create repo: %w", err)
+	}
+
+	// Always upload README + LICENSE + stats.csv + selected parquet
+	allFiles := append([]ccPublishUploadFile{
+		{LocalPath: filepath.Join(repoRoot, "README.md"), PathInRepo: "README.md"},
+		{LocalPath: filepath.Join(repoRoot, "LICENSE"), PathInRepo: "LICENSE"},
+		{LocalPath: statsCSV, PathInRepo: "stats.csv"},
+	}, files...)
+
+	var ops []hfOperation
+	var skipped []string
+	if !republish {
+		paths := make([]string, len(allFiles))
+		for i, f := range allFiles {
+			paths[i] = f.PathInRepo
+		}
+		existing, err := hf.pathsExist(ctx, repoID, paths)
+		if err != nil {
+			return fmt.Errorf("checking existing files: %w", err)
+		}
+		for _, f := range allFiles {
+			if f.PathInRepo == "README.md" || f.PathInRepo == "LICENSE" || f.PathInRepo == "stats.csv" {
+				// Always re-upload metadata files to keep them current
+				ops = append(ops, hfOperation{LocalPath: f.LocalPath, PathInRepo: f.PathInRepo})
+			} else if existing[f.PathInRepo] {
+				skipped = append(skipped, f.PathInRepo)
+			} else {
+				ops = append(ops, hfOperation{LocalPath: f.LocalPath, PathInRepo: f.PathInRepo})
+			}
+		}
+	} else {
+		for _, f := range allFiles {
+			ops = append(ops, hfOperation{LocalPath: f.LocalPath, PathInRepo: f.PathInRepo})
+		}
+	}
+
+	if len(ops) == 0 {
+		fmt.Printf("  Uploaded   %s\n", infoStyle.Render("0"))
+		fmt.Printf("  Skipped    %s\n", warningStyle.Render(ccFmtInt64(int64(len(skipped)))))
+		return nil
+	}
+
+	commitMsg := ccPublishCommitMessage(fileIdx, files)
+	commitURL, err := hf.createCommit(ctx, repoID, "main", commitMsg, ops)
+	if err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+
+	fmt.Printf("  Uploaded   %s\n", successStyle.Render(ccFmtInt64(int64(len(ops)))))
+	if len(skipped) > 0 {
+		fmt.Printf("  Skipped    %s\n", warningStyle.Render(ccFmtInt64(int64(len(skipped)))))
+	}
+	if commitURL != "" {
+		fmt.Printf("  Commit     %s\n", labelStyle.Render(commitURL))
+	}
+
+	// Print cumulative stats
+	if allStats, err := ccReadStatsCSV(statsCSV); err == nil && len(allStats) > 0 {
+		t := ccComputeTotals(allStats, crawlID)
+		if t.Shards > 0 {
+			fmt.Println()
+			fmt.Printf("  ── Cumulative stats (%s) ──\n", crawlID)
+			fmt.Printf("  Shards     %s\n", infoStyle.Render(ccFmtInt64(int64(t.Shards))))
+			fmt.Printf("  Documents  %s\n", infoStyle.Render(ccFmtInt64(t.Rows)))
+			fmt.Printf("  HTML       %s\n", infoStyle.Render(ccFmtBytes(t.HTMLBytes)))
+			fmt.Printf("  Markdown   %s  (-%s%%)\n",
+				infoStyle.Render(ccFmtBytes(t.MDBytes)),
+				infoStyle.Render(ccPctReduction(t.HTMLBytes, t.MDBytes)))
+			fmt.Printf("  Parquet    %s\n", infoStyle.Render(ccFmtBytes(t.ParquetBytes)))
+		}
 	}
 	return nil
+}
+
+// ccRunPipeline downloads, packs, and exports any missing shards in the selected range.
+func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, cleanup bool) error {
+	indices, err := ccParseOpenFileSelector(fileIdx)
+	if err != nil {
+		return fmt.Errorf("--file: %w", err)
+	}
+
+	warcmdCfg := ccDefaultWARCMdConfig(crawlID)
+	dataDir := filepath.Join(repoRoot, "data", crawlID)
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		return err
+	}
+
+	fmt.Println(Banner())
+	fmt.Println(subtitleStyle.Render("CC Pipeline: download → pack → export"))
+	fmt.Println()
+
+	for _, idx := range indices {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		shard := fmt.Sprintf("%05d", idx)
+		mdWARCPath := filepath.Join(warcmdCfg, shard+".md.warc.gz")
+		parquetPath := filepath.Join(dataDir, shard+".parquet")
+
+		fmt.Printf("  [%s] ", labelStyle.Render(shard))
+
+		if fileExists(parquetPath) {
+			fmt.Printf("parquet exists, skipping\n")
+			continue
+		}
+
+		// Pack if md.warc.gz missing (pack auto-downloads the raw WARC)
+		if !fileExists(mdWARCPath) {
+			fmt.Printf("packing...\n")
+			if err := runCCWarcPack(ctx, crawlID, strconv.Itoa(idx), -1, -1, 0, false, false, false, 200, "text/html", 512*1024); err != nil {
+				return fmt.Errorf("pack %d: %w", idx, err)
+			}
+			// Cleanup raw WARC if requested
+			if cleanup {
+				if rawPath := ccFindRawWARC(crawlID, idx); rawPath != "" {
+					_ = os.Remove(rawPath)
+					fmt.Printf("  [%s] cleaned up %s\n", labelStyle.Render(shard), filepath.Base(rawPath))
+				}
+			}
+		} else {
+			fmt.Printf("md.warc.gz exists, skipping pack\n")
+		}
+
+		// Export
+		fmt.Printf("  [%s] exporting...\n", labelStyle.Render(shard))
+		if _, _, _, err := exportWARCMdShardToParquet(mdWARCPath, parquetPath); err != nil {
+			return fmt.Errorf("export %d: %w", idx, err)
+		}
+		fmt.Printf("  [%s] %s\n", labelStyle.Render(shard), successStyle.Render("done"))
+	}
+	fmt.Println()
+	return nil
+}
+
+// ccDefaultWARCMdConfig returns the warc_md directory path for a crawl.
+func ccDefaultWARCMdConfig(crawlID string) string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, "data", "common-crawl", crawlID, "warc_md")
+}
+
+// ccFindRawWARC finds the raw .warc.gz file for a given file index.
+func ccFindRawWARC(crawlID string, idx int) string {
+	home, _ := os.UserHomeDir()
+	warcDir := filepath.Join(home, "data", "common-crawl", crawlID, "warc")
+	pattern := filepath.Join(warcDir, fmt.Sprintf("*-%05d.warc.gz", idx))
+	matches, _ := filepath.Glob(pattern)
+	if len(matches) > 0 {
+		return matches[0]
+	}
+	return ""
+}
+
+// ccRefreshStats scans all exported parquet files and updates stats.csv.
+func ccRefreshStats(crawlID, repoRoot, statsCSV string) error {
+	dataDir := filepath.Join(repoRoot, "data", crawlID)
+	entries, err := os.ReadDir(dataDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	existing, err := ccReadStatsCSV(statsCSV)
+	if err != nil {
+		existing = nil
+	}
+	// Build index of already-known file stats
+	known := make(map[int]bool)
+	for _, s := range existing {
+		if s.CrawlID == crawlID {
+			known[s.FileIdx] = true
+		}
+	}
+
+	var newStats []ccShardStats
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".parquet") {
+			continue
+		}
+		idxStr := strings.TrimSuffix(e.Name(), ".parquet")
+		idx, err := strconv.Atoi(idxStr)
+		if err != nil {
+			continue
+		}
+		if known[idx] {
+			continue // already tracked
+		}
+		parquetPath := filepath.Join(dataDir, e.Name())
+		fi, err := os.Stat(parquetPath)
+		if err != nil {
+			continue
+		}
+		rows, htmlBytes, mdBytes, err := ccScanParquetStats(parquetPath)
+		if err != nil {
+			continue
+		}
+		newStats = append(newStats, ccShardStats{
+			CrawlID:      crawlID,
+			FileIdx:      idx,
+			Rows:         rows,
+			HTMLBytes:    htmlBytes,
+			MDBytes:      mdBytes,
+			ParquetBytes: fi.Size(),
+		})
+	}
+
+	if len(newStats) == 0 {
+		return nil // nothing new
+	}
+
+	// Merge with existing
+	updated := append(existing, newStats...)
+	sort.Slice(updated, func(i, j int) bool {
+		if updated[i].CrawlID != updated[j].CrawlID {
+			return updated[i].CrawlID < updated[j].CrawlID
+		}
+		return updated[i].FileIdx < updated[j].FileIdx
+	})
+	return ccWriteStatsCSV(statsCSV, updated)
 }
 
 func ccDefaultExportRepoRoot(crawlID string) string {
@@ -212,12 +364,17 @@ func ccDefaultExportRepoRoot(crawlID string) string {
 	return filepath.Join(home, "data", "common-crawl", crawlID, "export", "repo")
 }
 
-func ccEnsurePublishRepoFiles(repoRoot, crawlID string) error {
+func ccEnsurePublishRepoFiles(repoRoot, crawlID, statsCSV string) error {
 	if err := os.MkdirAll(filepath.Join(repoRoot, "data"), 0o755); err != nil {
 		return fmt.Errorf("create repo root: %w", err)
 	}
+
+	// Load stats for real numbers in README
+	allStats, _ := ccReadStatsCSV(statsCSV)
+	totals := ccComputeTotals(allStats, crawlID)
+
 	files := map[string]string{
-		filepath.Join(repoRoot, "README.md"): ccPublishREADME(crawlID),
+		filepath.Join(repoRoot, "README.md"): ccPublishREADME(crawlID, &totals),
 		filepath.Join(repoRoot, "LICENSE"):   ccPublishLicense(),
 	}
 	for path, content := range files {
@@ -232,7 +389,6 @@ func ccResolvePublishUploadFiles(repoRoot, crawlID, selector string) ([]ccPublis
 	dataDir := filepath.Join(repoRoot, "data")
 	crawlDataDir := filepath.Join(dataDir, crawlID)
 	if selector == "" || selector == "all" {
-		// Walk all crawl subdirs under data/
 		var files []ccPublishUploadFile
 		_ = filepath.WalkDir(dataDir, func(path string, d os.DirEntry, err error) error {
 			if err != nil || d.IsDir() {
@@ -306,34 +462,39 @@ func ccPublishCommitMessage(fileIdx string, files []ccPublishUploadFile) string 
 	return fmt.Sprintf("Publish %d Common Crawl parquet shards", len(files))
 }
 
-func ccRunPublishPython(ctx context.Context, payload ccPublishPayload) ([]byte, error) {
-	input, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("encode publish payload: %w", err)
-	}
-
-	cmd := exec.CommandContext(ctx, "python3", "-c", ccPublishPythonScript)
-	cmd.Stdin = bytes.NewReader(input)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = strings.TrimSpace(stdout.String())
-		}
-		if msg == "" {
-			msg = err.Error()
-		}
-		return nil, fmt.Errorf("python publish helper: %s", msg)
-	}
-	return bytes.TrimSpace(stdout.Bytes()), nil
-}
-
-func ccPublishREADME(crawlID string) string {
+// ccPublishREADME generates the dataset README with real numbers from stats.
+func ccPublishREADME(crawlID string, totals *ccTotals) string {
 	c := crawlID
-	cb := "```" // fenced code block delimiter
-	bt := "`"  // inline code delimiter
+	cb := "```"
+	bt := "`"
+
+	// Compute display numbers from real stats (fall back to shard-0 measurements)
+	var (
+		avgRows       float64 = 21184
+		avgHTMLGB     float64 = 2.7
+		avgMDMB       float64 = 79.2
+		avgParquetMB  float64 = 27.9
+		pctHTMLToMD   float64 = 97.2
+		pctWARCToPQ   float64 = 23.0
+		totalDocsStr          = "~21,000 per shard"
+	)
+
+	if totals != nil && totals.Shards > 0 {
+		avgRows = float64(totals.Rows) / float64(totals.Shards)
+		avgHTMLGB = float64(totals.HTMLBytes) / float64(totals.Shards) / 1e9
+		avgMDMB = float64(totals.MDBytes) / float64(totals.Shards) / 1e6
+		avgParquetMB = float64(totals.ParquetBytes) / float64(totals.Shards) / 1e6
+		if totals.HTMLBytes > 0 {
+			pctHTMLToMD = float64(totals.HTMLBytes-totals.MDBytes) / float64(totals.HTMLBytes) * 100
+		}
+		if totals.MDBytes > 0 {
+			pctWARCToPQ = math.Max(0, float64(totals.MDBytes-totals.ParquetBytes)/float64(totals.MDBytes)*100)
+		}
+		totalDocsStr = ccFmtInt64(totals.Rows) + " documents across " + strconv.Itoa(totals.Shards) + " shards"
+	}
+
+	_ = pctWARCToPQ // used in template
+
 	return fmt.Sprintf(`---
 license: odc-by
 task_categories:
@@ -368,7 +529,7 @@ configs:
 
 Open Index is a large-scale web text dataset built from [Common Crawl](https://commoncrawl.org). Every page goes through a pipeline that extracts the main content from raw HTML, converts it to clean Markdown using [trafilatura](https://github.com/adbar/trafilatura), and packages the result into Parquet files with full WARC metadata preserved.
 
-The dataset currently includes crawl **%[1]s**. We plan to add more snapshots over time.
+The dataset currently includes crawl **%[1]s** with **%[7]s**. We plan to add more snapshots over time.
 
 Open Index is released under the **Open Data Commons Attribution License (ODC-By) v1.0**, the same license used by Common Crawl.
 
@@ -450,35 +611,29 @@ The following is an example row from the dataset:
   "url": "https://example.com/article/interesting-topic",
   "host": "example.com",
   "crawl_date": "2026-02-06T18:14:58Z",
-  "warc_type": "conversion",
   "warc_record_id": "<urn:uuid:a1b2c3d4-e5f6-7890-abcd-ef1234567890>",
   "warc_refers_to": "<urn:uuid:f9e8d7c6-b5a4-3210-fedc-ba0987654321>",
-  "content_type": "text/markdown",
   "html_length": 48210,
   "markdown_length": 3847,
   "warc_headers_json": "{\"Content-Length\": \"3847\", ...}",
-  "markdown": "# Interesting Topic\n\nThis is the main content of the page...",
-  "source_warc_file": "00000.md.warc.gz",
-  "source_file_index": 0
+  "markdown": "# Interesting Topic\n\nThis is the main content of the page..."
 }
 %[2]s
 
 ### Data Fields
 
-- %[3]sdoc_id%[3]s (string): unique identifier derived from the WARC-Record-ID (UUID format)
-- %[3]surl%[3]s (string): original URL of the crawled page
-- %[3]shost%[3]s (string): lowercase hostname extracted from the URL
-- %[3]scrawl_date%[3]s (string): RFC 3339 timestamp from the WARC record
-- %[3]swarc_type%[3]s (string): WARC record type, typically "conversion" for markdown output
-- %[3]swarc_record_id%[3]s (string): full WARC-Record-ID in the urn:uuid format
-- %[3]swarc_refers_to%[3]s (string): WARC-Record-ID of the original HTTP response record this was converted from
-- %[3]scontent_type%[3]s (string): content type of the converted record (text/markdown)
-- %[3]shtml_length%[3]s (int64): byte length of the original HTML body before conversion
-- %[3]smarkdown_length%[3]s (int64): byte length of the converted markdown body
-- %[3]swarc_headers_json%[3]s (string): all WARC headers serialized as a JSON object with sorted keys, preserving every header from the packed record for full provenance
-- %[3]smarkdown%[3]s (string): the cleaned markdown content extracted from the HTML page
-- %[3]ssource_warc_file%[3]s (string): filename of the packed .md.warc.gz shard this record came from
-- %[3]ssource_file_index%[3]s (int32): zero-based index of the source file in the crawl manifest
+| Column | Type | Description |
+|---|---|---|
+| %[3]sdoc_id%[3]s | string | Unique identifier derived from the WARC-Record-ID (UUID) |
+| %[3]surl%[3]s | string | Original URL of the crawled page |
+| %[3]shost%[3]s | string | Lowercase hostname extracted from the URL |
+| %[3]scrawl_date%[3]s | string | RFC 3339 timestamp from the WARC record |
+| %[3]swarc_record_id%[3]s | string | Full WARC-Record-ID of the conversion record (%[3]s<urn:uuid:...>%[3]s) |
+| %[3]swarc_refers_to%[3]s | string | WARC-Record-ID of the original HTTP response this was converted from |
+| %[3]shtml_length%[3]s | int64 | Byte length of the original HTML body before conversion |
+| %[3]smarkdown_length%[3]s | int64 | Byte length of the converted markdown body |
+| %[3]swarc_headers_json%[3]s | string | All WARC headers as a sorted-key JSON object — full provenance in one column |
+| %[3]smarkdown%[3]s | string | Clean markdown content extracted from the page |
 
 ### Data Splits
 
@@ -505,6 +660,21 @@ The processing pipeline runs in five stages:
 5. **Export** each shard to Apache Parquet with Zstd compression, 100,000 rows per row group, and an 8 MB page buffer
 
 Empty conversions (pages where trafilatura could not extract meaningful content) are dropped.
+
+### Compression Ratios
+
+Numbers below are measured from %[8]s.
+
+| Stage | Per shard (avg) | Reduction |
+|---|---|---|
+| Raw WARC (.warc.gz, downloaded) | ~830 MB | — |
+| HTML extracted (uncompressed) | %.1f GB | — |
+| Packed markdown WARC (.md.warc.gz) | %.1f MB | **-%.1f%%** vs HTML |
+| Final Parquet (Zstd level 19) | %.1f MB | **-%.1f%%** vs packed WARC |
+
+The big win is the HTML → Markdown step: trafilatura strips all tags, scripts, styles, navigation, and ads, keeping only the main content. This cuts uncompressed HTML from %.1f GB to %.1f MB per shard — a **%.1f%% reduction** — before any file-level compression.
+
+End to end: one raw WARC shard of ~830 MB becomes a **%.1f MB Parquet file** containing ~%.0f clean markdown documents.
 
 ### Personal and Sensitive Information
 
@@ -533,7 +703,31 @@ The dataset is released under the **Open Data Commons Attribution License (ODC-B
 ### Contact
 
 Please open a discussion on the [Community tab](https://huggingface.co/datasets/open-index/draft/discussions) for questions, feedback, or issues.
-`, c, cb, bt)
+`,
+		c,            // [1] crawlID
+		cb,           // [2] triple backtick
+		bt,           // [3] single backtick
+		"",           // [4] unused
+		"",           // [5] unused
+		"",           // [6] unused
+		totalDocsStr, // [7] total docs description
+		fmt.Sprintf("%d shards of %s", func() int { // [8] measurement basis
+			if totals != nil {
+				return totals.Shards
+			}
+			return 1
+		}(), c),
+		avgHTMLGB,                // %.1f GB HTML
+		avgMDMB,                  // %.1f MB MD
+		pctHTMLToMD,              // %.1f%% HTML→MD reduction
+		avgParquetMB,             // %.1f MB parquet
+		pctWARCToPQ,              // %.1f%% WARC→PQ reduction
+		avgHTMLGB,                // %.1f GB HTML (repeated in prose)
+		avgMDMB,                  // %.1f MB MD (repeated in prose)
+		pctHTMLToMD,              // %.1f%% (repeated)
+		avgParquetMB,             // %.1f MB (end-to-end)
+		avgRows,                  // %.0f rows
+	)
 }
 
 func ccPublishLicense() string {
