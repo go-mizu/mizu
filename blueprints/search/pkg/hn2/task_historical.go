@@ -156,9 +156,11 @@ func (t *HistoricalTask) Run(ctx context.Context, emit func(*HistoricalState)) (
 		// Regenerate README from updated stats.csv (now includes newRow).
 		updatedRows, _ := ReadStatsCSV(cfg.StatsCSVPath())
 		todayRows, _ := ReadStatsTodayCSV(cfg.StatsTodayCSVPath())
-		readmeBytes, _ := GenerateREADME(t.opts.ReadmeTmpl, updatedRows, todayRows)
-		if readmeBytes != nil {
-			_ = os.WriteFile(cfg.READMEPath(), readmeBytes, 0o644)
+		readmeBytes, readmeErr := GenerateREADME(t.opts.ReadmeTmpl, updatedRows, todayRows)
+		if readmeErr != nil {
+			fmt.Fprintf(os.Stderr, "warn: generate README for %s: %v\n", monthStr, readmeErr)
+		} else if writeErr := os.WriteFile(cfg.READMEPath(), readmeBytes, 0o644); writeErr != nil {
+			fmt.Fprintf(os.Stderr, "warn: write README for %s: %v\n", monthStr, writeErr)
 		}
 
 		t0Commit := time.Now()
@@ -176,7 +178,9 @@ func (t *HistoricalTask) Run(ctx context.Context, emit func(*HistoricalState)) (
 		// Update commit duration in stats.csv.
 		newRow.DurCommitS = durCommitS
 		existingRows, _ = ReadStatsCSV(cfg.StatsCSVPath())
-		_ = WriteStatsCSV(cfg.StatsCSVPath(), existingRows, newRow, true)
+		if err := WriteStatsCSV(cfg.StatsCSVPath(), existingRows, newRow, true); err != nil {
+			fmt.Fprintf(os.Stderr, "warn: update stats.csv durCommit for %s: %v\n", monthStr, err)
+		}
 
 		bytesDone += result.Bytes
 		metric.MonthsWritten++
