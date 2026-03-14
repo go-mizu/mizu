@@ -10,6 +10,20 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// reuseLocalParquet checks if outPath already exists as a valid Parquet file.
+// Returns non-nil result only if the file exists and contains at least one row.
+func reuseLocalParquet(ctx context.Context, cfg Config, outPath string) *pendingFetch {
+	fi, err := os.Stat(outPath)
+	if err != nil || fi.Size() == 0 {
+		return nil
+	}
+	result, err := cfg.scanParquetResult(ctx, outPath, fi.Size(), 0)
+	if err != nil || result.Count == 0 {
+		return nil
+	}
+	return &pendingFetch{outPath: outPath, result: result}
+}
+
 // HistoricalState is emitted by HistoricalTask on each month processed.
 type HistoricalState struct {
 	Phase        string // "fetch" | "commit" | "skip"
@@ -135,6 +149,14 @@ func (t *HistoricalTask) Run(ctx context.Context, emit func(*HistoricalState)) (
 		eg.Go(func() error {
 			monthStr := fmt.Sprintf("%04d-%02d", m.Year, m.Month)
 			outPath := cfg.MonthPath(m.Year, m.Month)
+
+			// Re-use a valid local Parquet if it already exists (e.g. fetched but not committed).
+			if pf := reuseLocalParquet(egCtx, cfg, outPath); pf != nil {
+				pf.month = m
+				pf.durFetchS = 0
+				slot <- pf
+				return nil
+			}
 
 			if emit != nil {
 				emit(&HistoricalState{
@@ -280,8 +302,71 @@ func (t *HistoricalTask) Run(ctx context.Context, emit func(*HistoricalState)) (
 		}
 	}
 
+	// Fetch and commit the current partial month (data up to yesterday midnight).
+	// Not tracked in stats.csv since it is updated daily by the live pipeline.
+	if err := t.fetchCurrentPartialMonth(ctx, cfg, emit, &metric); err != nil {
+		fmt.Fprintf(os.Stderr, "warn: current partial month: %v\n", err)
+	}
+
 	metric.Elapsed = time.Since(started)
 	return metric, nil
+}
+
+// fetchCurrentPartialMonth fetches all current-month items up to yesterday midnight
+// and commits them to HF. It is not written to stats.csv (the live task owns it).
+func (t *HistoricalTask) fetchCurrentPartialMonth(
+	ctx context.Context,
+	cfg Config,
+	emit func(*HistoricalState),
+	metric *HistoricalMetric,
+) error {
+	now := time.Now().UTC()
+	todayMidnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	if now.Day() == 1 {
+		// First day of the month — no complete days in current month yet.
+		return nil
+	}
+	year, month := now.Year(), int(now.Month())
+	monthStr := fmt.Sprintf("%04d-%02d", year, month)
+	outPath := cfg.MonthPath(year, month)
+
+	if emit != nil {
+		emit(&HistoricalState{Phase: "fetch", Month: monthStr, MonthIndex: -1, MonthTotal: -1})
+	}
+
+	result, err := cfg.FetchMonthUntil(ctx, year, month, todayMidnight, outPath)
+	if err != nil {
+		return fmt.Errorf("fetch current partial month %s: %w", monthStr, err)
+	}
+	if result.Count == 0 {
+		return nil
+	}
+
+	if emit != nil {
+		emit(&HistoricalState{Phase: "commit", Month: monthStr, Rows: result.Count})
+	}
+
+	existingRows, _ := ReadStatsCSV(cfg.StatsCSVPath())
+	todayRows, _ := ReadStatsTodayCSV(cfg.StatsTodayCSVPath())
+	readmeBytes, readmeErr := GenerateREADME(t.opts.ReadmeTmpl, existingRows, todayRows, t.opts.Analytics)
+	if readmeErr == nil {
+		_ = os.WriteFile(cfg.READMEPath(), readmeBytes, 0o644)
+	}
+
+	ops := []HFOp{
+		{LocalPath: outPath, PathInRepo: fmt.Sprintf("data/%04d/%04d-%02d.parquet", year, year, month)},
+		{LocalPath: cfg.READMEPath(), PathInRepo: "README.md"},
+	}
+	yesterday := todayMidnight.AddDate(0, 0, -1)
+	commitMsg := fmt.Sprintf("Add %s til %s (%s items)", monthStr, yesterday.Format("2006-01-02"), fmtInt(result.Count))
+	if _, err := t.opts.HFCommit(ctx, ops, commitMsg); err != nil {
+		return fmt.Errorf("hf commit %s partial: %w", monthStr, err)
+	}
+
+	metric.MonthsWritten++
+	metric.RowsWritten += result.Count
+	metric.BytesWritten += result.Bytes
+	return nil
 }
 
 // verifyCommitted batch-checks all months in committed against HF and removes
