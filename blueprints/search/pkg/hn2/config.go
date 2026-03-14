@@ -115,9 +115,21 @@ func (c Config) MonthPath(year, month int) string {
 	return filepath.Join(c.MonthDir(year), fmt.Sprintf("%04d-%02d.parquet", year, month))
 }
 
-// TodayBlockPath returns the local path for a 5-minute live block parquet file.
+// TodayBlockPath returns the local absolute path for a live 5-min block parquet file.
+// Layout: {RepoRoot}/today/YYYY/MM/DD/HH/MM.parquet
+// date = "2026-03-14", hhmm = "15:04" (colon-separated)
 func (c Config) TodayBlockPath(date, hhmm string) string {
-	return filepath.Join(c.TodayDir(), blockFilename(date, hhmm))
+	parts := strings.SplitN(date, "-", 3) // ["2026", "03", "14"]
+	hh, mm := hhmm[:2], hhmm[3:5]
+	return filepath.Join(c.TodayDir(), parts[0], parts[1], parts[2], hh, mm+".parquet")
+}
+
+// TodayHFPath returns the Hugging Face repo-relative path for a live block.
+// e.g. "today/2026/03/14/15/04.parquet"
+func (c Config) TodayHFPath(date, hhmm string) string {
+	parts := strings.SplitN(date, "-", 3)
+	hh, mm := hhmm[:2], hhmm[3:5]
+	return "today/" + parts[0] + "/" + parts[1] + "/" + parts[2] + "/" + hh + "/" + mm + ".parquet"
 }
 
 // EnsureDirs creates the data and today directories if they do not exist.

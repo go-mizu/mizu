@@ -65,12 +65,12 @@ func (c Config) remoteInfo(ctx context.Context) (*RemoteInfo, error) {
 }
 
 // listMonths returns all calendar months with data in the remote source,
-// excluding the current (incomplete) month.
+// excluding the current (incomplete) month and pre-2006 rows (invalid timestamps).
 func (c Config) listMonths(ctx context.Context) ([]monthInfo, error) {
 	cfg := c.resolved()
 	q := fmt.Sprintf(
 		`SELECT toYear(time) AS y, toMonth(time) AS m, toInt64(count()) AS n `+
-			`FROM %s WHERE time IS NOT NULL GROUP BY y, m ORDER BY y, m FORMAT JSONEachRow`,
+			`FROM %s WHERE time IS NOT NULL AND toYear(time) >= 2006 GROUP BY y, m ORDER BY y, m FORMAT JSONEachRow`,
 		cfg.fqTable(),
 	)
 	body, err := cfg.query(ctx, q)
@@ -103,6 +103,28 @@ func (c Config) listMonths(ctx context.Context) ([]monthInfo, error) {
 		out = append(out, monthInfo{Year: int(y), Month: int(m), Count: n})
 	}
 	return out, nil
+}
+
+// maxIDBeforeDate queries the max item ID with time strictly before the given
+// date (YYYY-MM-DD, UTC midnight). Used by the live task to determine the correct
+// ID watermark for backfilling today's 5-minute blocks on cold start.
+func (c Config) maxIDBeforeDate(ctx context.Context, date string) (int64, error) {
+	cfg := c.resolved()
+	q := fmt.Sprintf(
+		`SELECT toInt64(max(id)) AS max_id FROM %s WHERE time < toDate('%s') AND toYear(time) >= 2006 FORMAT JSONEachRow`,
+		cfg.fqTable(), date,
+	)
+	body, err := cfg.query(ctx, q)
+	if err != nil {
+		return 0, err
+	}
+	var row struct {
+		MaxID any `json:"max_id"`
+	}
+	if err := json.Unmarshal(body, &row); err != nil {
+		return 0, fmt.Errorf("decode max_id: %w", err)
+	}
+	return parseIntAny(row.MaxID)
 }
 
 // query executes a SQL statement against the ClickHouse endpoint and returns

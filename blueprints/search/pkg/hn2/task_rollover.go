@@ -64,7 +64,10 @@ func (t *DayRolloverTask) Run(ctx context.Context, emit func(*RolloverState)) (R
 	monthPath := cfg.MonthPath(year, month)
 	metric.MonthPath = monthPath
 
-	todayFiles, _ := filepath.Glob(filepath.Join(cfg.TodayDir(), prevDate+"_*.parquet"))
+	// New layout: today/YYYY/MM/DD/HH/MM.parquet — two glob levels deep.
+	prevParts := strings.SplitN(prevDate, "-", 3) // ["2026", "03", "14"]
+	todayPattern := filepath.Join(cfg.TodayDir(), prevParts[0], prevParts[1], prevParts[2], "*", "*.parquet")
+	todayFiles, _ := filepath.Glob(todayPattern)
 
 	if emit != nil {
 		emit(&RolloverState{Phase: "merge", PrevDate: prevDate, FilesFound: len(todayFiles)})
@@ -121,8 +124,10 @@ func (t *DayRolloverTask) Run(ctx context.Context, emit func(*RolloverState)) (R
 
 	// Build HF commit: delete today/ blocks, upsert monthly parquet and metadata.
 	ops := make([]HFOp, 0, len(todayFiles)+4)
+	todayDirSlash := cfg.TodayDir() + string(filepath.Separator)
 	for _, f := range todayFiles {
-		ops = append(ops, HFOp{PathInRepo: "today/" + filepath.Base(f), Delete: true})
+		rel := strings.TrimPrefix(filepath.ToSlash(f), filepath.ToSlash(todayDirSlash))
+		ops = append(ops, HFOp{PathInRepo: "today/" + rel, Delete: true})
 	}
 	ops = append(ops,
 		HFOp{LocalPath: monthPath, PathInRepo: fmt.Sprintf("data/%04d/%04d-%02d.parquet", year, year, month)},
@@ -143,6 +148,9 @@ func (t *DayRolloverTask) Run(ctx context.Context, emit func(*RolloverState)) (R
 		if err := os.Remove(f); err == nil {
 			metric.FilesPruned++
 		}
+		// Remove empty parent directories (HH/ and DD/ levels).
+		_ = os.Remove(filepath.Dir(f))
+		_ = os.Remove(filepath.Dir(filepath.Dir(f)))
 	}
 	return metric, nil
 }

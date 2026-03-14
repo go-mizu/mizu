@@ -50,6 +50,31 @@ func (c Config) FetchMonth(ctx context.Context, year, month int, outPath string)
 	return cfg.scanParquetResult(ctx, outPath, n, time.Since(start))
 }
 
+// FetchMonthUntil downloads all items for the given year/month with time < until as a Parquet file.
+// Used to fetch a partial current month (data committed before today midnight).
+func (c Config) FetchMonthUntil(ctx context.Context, year, month int, until time.Time, outPath string) (FetchResult, error) {
+	cfg := c.resolved()
+	start := time.Now()
+	tm := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+	q := fmt.Sprintf(
+		`SELECT * FROM %s WHERE time >= toDateTime('%s') AND time < toDateTime('%s') ORDER BY id FORMAT Parquet`,
+		cfg.fqTable(),
+		tm.Format("2006-01-02 15:04:05"),
+		until.UTC().Format("2006-01-02 15:04:05"),
+	)
+	if err := ensureParentDir(outPath); err != nil {
+		return FetchResult{}, fmt.Errorf("create month dir: %w", err)
+	}
+	n, err := cfg.streamToFile(ctx, q, outPath)
+	if err != nil {
+		return FetchResult{}, fmt.Errorf("fetch month %04d-%02d until %s: %w", year, month, until.Format("2006-01-02"), err)
+	}
+	if n == 0 {
+		return FetchResult{Duration: time.Since(start)}, nil
+	}
+	return cfg.scanParquetResult(ctx, outPath, n, time.Since(start))
+}
+
 // FetchSince downloads all items with id > afterID and time < ceilTime as a Parquet file.
 // ceilTime bounds the query to prevent items from crossing midnight into the next day's block.
 func (c Config) FetchSince(ctx context.Context, afterID int64, ceilTime time.Time, outPath string) (FetchResult, error) {
@@ -101,8 +126,12 @@ func (c Config) streamToFile(ctx context.Context, q, outPath string) (int64, err
 			b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 			resp.Body.Close()
 			lastErr = fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+			// Non-retryable: client errors and quota exhaustion (retrying wastes quota units).
 			if resp.StatusCode < 500 && resp.StatusCode != http.StatusTooManyRequests {
-				return 0, lastErr // non-retryable
+				return 0, lastErr
+			}
+			if strings.Contains(string(b), "QUOTA_EXCEEDED") {
+				return 0, lastErr
 			}
 			continue
 		}

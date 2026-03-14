@@ -180,11 +180,16 @@ func (c *hfClient) createCommitPython(ctx context.Context, repoID, message strin
 	if uvBin == "" {
 		return "", fmt.Errorf("uv not found")
 	}
+	var stderrBuf bytes.Buffer
 	cmd := exec.CommandContext(ctx, uvBin, "run", scriptPath)
 	cmd.Stdin = bytes.NewReader(stdin)
+	cmd.Stderr = &stderrBuf
 	out, err := cmd.Output()
 	if err != nil {
-		// uv not found or script error — caller will fall back to Go LFS
+		se := strings.TrimSpace(stderrBuf.String())
+		if se != "" {
+			return "", fmt.Errorf("python commit: %w\n%s", err, se)
+		}
 		return "", fmt.Errorf("python commit: %w", err)
 	}
 	var result struct {
