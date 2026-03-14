@@ -93,6 +93,12 @@ func runHNPublish(ctx context.Context, repoRoot, repoID string, live bool, inter
 		return hf.createCommit(ctx, repoID, "main", message, hfOps)
 	}
 
+	// hfVerifyFn batch-checks all given paths against HF via the paths-info API.
+	// Called once at startup to detect stats.csv/HF mismatches (interrupted commits).
+	hfVerifyFn := func(ctx context.Context, pathsInRepo []string) (map[string]bool, error) {
+		return hf.pathsExist(ctx, repoID, pathsInRepo)
+	}
+
 	// Parse --from flag.
 	var fromYear, fromMonth int
 	if fromStr != "" {
@@ -139,6 +145,7 @@ func runHNPublish(ctx context.Context, repoRoot, repoID string, live bool, inter
 			FromYear:   fromYear,
 			FromMonth:  fromMonth,
 			HFCommit:   hfCommitFn,
+			HFVerify:   hfVerifyFn,
 			ReadmeTmpl: hnReadmeTmpl,
 			Analytics:  analytics,
 		})

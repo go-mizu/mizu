@@ -31,12 +31,18 @@ type HistoricalMetric struct {
 	Elapsed       time.Duration
 }
 
+// VerifyFn checks which of the given repo paths exist in the HF dataset.
+// Implementations may batch the queries however they like. Used by
+// HistoricalTask to detect stats.csv/HF mismatches on startup.
+type VerifyFn func(ctx context.Context, pathsInRepo []string) (map[string]bool, error)
+
 // HistoricalTaskOptions configures a historical backfill run.
 type HistoricalTaskOptions struct {
 	FromYear   int        // skip months before this year (0 = no limit)
 	FromMonth  int        // skip months before this month within FromYear (0 = no limit)
 	Workers    int        // concurrent fetch workers (0 → 4)
 	HFCommit   CommitFn   // required: commits files to Hugging Face
+	HFVerify   VerifyFn   // optional: if set, verifies each committed month exists on HF at startup
 	ReadmeTmpl []byte     // required: README.md Go template
 	Analytics  *Analytics // optional: enriches README with source-level stats
 }
@@ -81,6 +87,12 @@ func (t *HistoricalTask) Run(ctx context.Context, emit func(*HistoricalState)) (
 		return metric, fmt.Errorf("read stats.csv: %w", err)
 	}
 	committed := CommittedMonthSet(existingRows)
+
+	// Verify committed months against HF and remove any that are missing there.
+	// This fixes stats.csv/HF mismatches caused by interrupted commits.
+	if t.opts.HFVerify != nil {
+		committed = t.verifyCommitted(ctx, committed)
+	}
 
 	months, err := cfg.listMonths(ctx)
 	if err != nil {
@@ -270,6 +282,41 @@ func (t *HistoricalTask) Run(ctx context.Context, emit func(*HistoricalState)) (
 
 	metric.Elapsed = time.Since(started)
 	return metric, nil
+}
+
+// verifyCommitted batch-checks all months in committed against HF and removes
+// any that are missing. One VerifyFn call for all months (implementations batch
+// internally). On error, logs a warning and keeps all months as-is.
+func (t *HistoricalTask) verifyCommitted(ctx context.Context, committed map[[2]int]bool) map[[2]int]bool {
+	if len(committed) == 0 {
+		return committed
+	}
+	// Build path list preserving the month key mapping.
+	paths := make([]string, 0, len(committed))
+	pathToKey := make(map[string][2]int, len(committed))
+	for k := range committed {
+		year, month := k[0], k[1]
+		path := fmt.Sprintf("data/%04d/%04d-%02d.parquet", year, year, month)
+		paths = append(paths, path)
+		pathToKey[path] = k
+	}
+	existing, err := t.opts.HFVerify(ctx, paths)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warn: HF batch verify failed (%v) — skipping repair, all committed months treated as present\n", err)
+		return committed
+	}
+	var missing int
+	for path, k := range pathToKey {
+		if !existing[path] {
+			fmt.Fprintf(os.Stderr, "warn: %04d-%02d in stats.csv but missing on HF — will re-commit\n", k[0], k[1])
+			delete(committed, k)
+			missing++
+		}
+	}
+	if missing > 0 {
+		fmt.Fprintf(os.Stderr, "info: HF verify: %d months missing on HF, queued for re-commit\n", missing)
+	}
+	return committed
 }
 
 // filterMonths returns only the months at or after fromYear/fromMonth.
