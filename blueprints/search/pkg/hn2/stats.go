@@ -209,6 +209,35 @@ func MaxTodayHighestID(rows []TodayRow, date string) int64 {
 	return max
 }
 
+// writeStatsCSVExact atomically rewrites stats.csv with exactly the given rows (no merge/upsert).
+// Used to roll back a pre-commit write when an HF commit fails.
+func writeStatsCSVExact(path string, rows []MonthRow) error {
+	sorted := make([]MonthRow, len(rows))
+	copy(sorted, rows)
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].Year != sorted[j].Year {
+			return sorted[i].Year < sorted[j].Year
+		}
+		return sorted[i].Month < sorted[j].Month
+	})
+	return writeCSVAtomic(path, statsCSVHeader, func(w *csv.Writer) error {
+		for _, r := range sorted {
+			w.Write([]string{
+				strconv.Itoa(r.Year),
+				strconv.Itoa(r.Month),
+				strconv.FormatInt(r.LowestID, 10),
+				strconv.FormatInt(r.HighestID, 10),
+				strconv.FormatInt(r.Count, 10),
+				strconv.Itoa(r.DurFetchS),
+				strconv.Itoa(r.DurCommitS),
+				strconv.FormatInt(r.SizeBytes, 10),
+				r.CommittedAt.UTC().Format(time.RFC3339),
+			})
+		}
+		return nil
+	})
+}
+
 func writeCSVAtomic(path, header string, write func(*csv.Writer) error) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err

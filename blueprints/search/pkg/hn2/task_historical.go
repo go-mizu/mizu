@@ -141,22 +141,27 @@ func (t *HistoricalTask) Run(ctx context.Context, emit func(*HistoricalState)) (
 			emit(state)
 		}
 
-		// Write stats.csv first so README includes the new month's numbers.
+		// Snapshot current stats.csv state before the pre-commit write (for rollback on failure).
 		existingRows, _ = ReadStatsCSV(cfg.StatsCSVPath())
+		preCommitRows := make([]MonthRow, len(existingRows))
+		copy(preCommitRows, existingRows)
+
 		newRow := MonthRow{
 			Year: m.Year, Month: m.Month,
 			LowestID: result.LowestID, HighestID: result.HighestID,
 			Count: result.Count, DurFetchS: durFetchS,
 			SizeBytes: result.Bytes, CommittedAt: time.Now().UTC(),
 		}
+
+		// Generate README in-memory with the new row included (no disk round-trip needed).
+		readmeInputRows := append(append([]MonthRow{}, existingRows...), newRow)
+		todayRows, _ := ReadStatsTodayCSV(cfg.StatsTodayCSVPath())
+		readmeBytes, readmeErr := GenerateREADME(t.opts.ReadmeTmpl, readmeInputRows, todayRows)
+
+		// Write stats.csv to disk so it can be included in the HF commit.
 		if err := WriteStatsCSV(cfg.StatsCSVPath(), existingRows, newRow, false); err != nil {
 			return metric, fmt.Errorf("write stats.csv: %w", err)
 		}
-
-		// Regenerate README from updated stats.csv (now includes newRow).
-		updatedRows, _ := ReadStatsCSV(cfg.StatsCSVPath())
-		todayRows, _ := ReadStatsTodayCSV(cfg.StatsTodayCSVPath())
-		readmeBytes, readmeErr := GenerateREADME(t.opts.ReadmeTmpl, updatedRows, todayRows)
 		if readmeErr != nil {
 			fmt.Fprintf(os.Stderr, "warn: generate README for %s: %v\n", monthStr, readmeErr)
 		} else if writeErr := os.WriteFile(cfg.READMEPath(), readmeBytes, 0o644); writeErr != nil {
@@ -171,6 +176,10 @@ func (t *HistoricalTask) Run(ctx context.Context, emit func(*HistoricalState)) (
 		}
 		msg := fmt.Sprintf("Add %s (%s items)", monthStr, fmtInt(result.Count))
 		if _, err := t.opts.HFCommit(ctx, ops, msg); err != nil {
+			// Rollback stats.csv to pre-commit state so this month is retried next run.
+			if wErr := writeStatsCSVExact(cfg.StatsCSVPath(), preCommitRows); wErr != nil {
+				fmt.Fprintf(os.Stderr, "warn: rollback stats.csv after commit failure for %s: %v\n", monthStr, wErr)
+			}
 			return metric, fmt.Errorf("hf commit %s: %w", monthStr, err)
 		}
 		durCommitS := int(time.Since(t0Commit).Seconds())

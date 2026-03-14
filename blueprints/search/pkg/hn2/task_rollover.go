@@ -118,8 +118,11 @@ func (t *DayRolloverTask) Run(ctx context.Context, emit func(*RolloverState)) (R
 	}
 	var count, minID, maxID int64
 	scanQ := fmt.Sprintf(`SELECT COUNT(*)::BIGINT, MIN(id)::BIGINT, MAX(id)::BIGINT FROM read_parquet('%s')`, escapeSQLStr(monthPath))
-	_ = db2.QueryRowContext(ctx, scanQ).Scan(&count, &minID, &maxID)
+	scanErr := db2.QueryRowContext(ctx, scanQ).Scan(&count, &minID, &maxID)
 	db2.Close()
+	if scanErr != nil {
+		return metric, fmt.Errorf("scan merged parquet %s: %w", monthPath, scanErr)
+	}
 	metric.RowsMerged = count
 
 	state.RowsMerged = count

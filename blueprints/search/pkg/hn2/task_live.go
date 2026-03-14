@@ -80,6 +80,26 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 		totalCommitted += r.Count
 	}
 
+	// Detect and roll over orphaned today/ files from before today (e.g. after cross-midnight crash).
+	for _, row := range todayRows {
+		if row.Date < today {
+			// Found rows from a previous day — trigger rollover for that date.
+			orphanDate := row.Date
+			fmt.Fprintf(os.Stderr, "warn: found orphaned today/ entries for %s, rolling over\n", orphanDate)
+			rollover := NewDayRolloverTask(cfg, RolloverTaskOptions{
+				PrevDate:   orphanDate,
+				HFCommit:   t.opts.HFCommit,
+				ReadmeTmpl: t.opts.ReadmeTmpl,
+			})
+			if _, err := rollover.Run(ctx, nil); err != nil {
+				fmt.Fprintf(os.Stderr, "warn: orphan rollover for %s failed: %v\n", orphanDate, err)
+			}
+			// Re-read today rows after rollover.
+			todayRows, _ = ReadStatsTodayCSV(cfg.StatsTodayCSVPath())
+			break // only handle one orphan at a time; next cold-start handles more
+		}
+	}
+
 	for {
 		if ctx.Err() != nil {
 			metric.Elapsed = time.Since(started)
@@ -105,13 +125,14 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 			})
 			if _, err := rollover.Run(ctx, nil); err != nil {
 				fmt.Fprintf(os.Stderr, "warn: day rollover failed: %v\n", err)
+				// Do NOT advance lastDate — retry rollover on next loop iteration.
 			} else {
 				metric.Rollovers++
 				blocksToday = 0
 				totalCommitted = 0
 				todayRows = nil
+				lastDate = blockDate
 			}
-			lastDate = blockDate
 		}
 
 		outPath := cfg.TodayBlockPath(blockDate, blockHHMM)
