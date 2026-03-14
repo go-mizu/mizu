@@ -103,21 +103,7 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 	fmt.Fprintf(os.Stderr, "info: startup complete — %d today rows, %s total items committed\n",
 		len(todayRows), fmtInt(totalCommitted))
 
-	// Initialize HN ID watermark from the highest committed ID today.
-	// If none committed yet, bootstrap from the current HN max to avoid re-fetching history.
-	lastHNID := MaxTodayHighestID(todayRows, today)
-	if lastHNID == 0 {
-		if id, err := FetchHNMaxItem(ctx); err == nil {
-			lastHNID = id
-			fmt.Fprintf(os.Stderr, "info: bootstrapped HN watermark: id=%d\n", lastHNID)
-		} else {
-			fmt.Fprintf(os.Stderr, "warn: FetchHNMaxItem bootstrap failed: %v\n", err)
-		}
-	} else {
-		fmt.Fprintf(os.Stderr, "info: HN watermark from today's rows: id=%d\n", lastHNID)
-	}
-
-	// --- Main live polling loop (HN Firebase API) ---
+	// --- Main live polling loop (Algolia HN API) ---
 	for {
 		if ctx.Err() != nil {
 			metric.Elapsed = time.Since(started)
@@ -146,57 +132,37 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 				todayRows = nil
 				lastDate = blockDate
 				todayRows = t.backfillToday(ctx, cfg, blockDate, interval, todayRows, &metric, emit)
-				// Reset HN watermark for the new day.
-				lastHNID = MaxTodayHighestID(todayRows, blockDate)
-				if lastHNID == 0 {
-					if id, err := FetchHNMaxItem(ctx); err == nil {
-						lastHNID = id
-					}
-				}
 			}
 		}
 
-		// Poll the HN Firebase API for new items.
-		maxID, err := FetchHNMaxItem(ctx)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "warn: FetchHNMaxItem: %v; retrying in 30s\n", err)
-			sleepWithContext(ctx, 30*time.Second)
-			continue
+		// Determine time to fetch from: start of the oldest missing block.
+		// This lets us fill in gaps not covered by the ClickHouse backfill.
+		now = time.Now().UTC()
+		dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+		currentBlock := now.Truncate(interval)
+		oldestMissing, _ := oldestMissingBlock(todayRows, blockDate, dayStart, currentBlock, interval)
+		since := oldestMissing
+		if since.IsZero() {
+			// All blocks up to current interval are committed — fetch current block items.
+			since = currentBlock
+		}
+		// Cap lookback to 3 hours to avoid huge Algolia responses on first run.
+		if cap := now.Add(-3 * time.Hour); since.Before(cap) {
+			since = cap
 		}
 
-		if maxID <= lastHNID {
-			// No new items yet. Wait until next interval.
-			next := nextIntervalTime(now, interval)
-			fmt.Fprintf(os.Stderr, "info: no new HN items (maxID=%d watermark=%d), next poll in %s\n",
-				maxID, lastHNID, time.Until(next).Round(time.Second))
-			if emit != nil {
-				emit(&LiveState{
-					Phase:          "wait",
-					Block:          blockDate + " " + now.Truncate(interval).Format("15:04"),
-					NextFetchIn:    time.Until(next),
-					TotalCommitted: totalCommitted,
-				})
-			}
-			sleepUntilNext(ctx, interval)
-			continue
-		}
-
-		// Fetch items in [lastHNID+1, maxID].
-		n := maxID - lastHNID
-		fmt.Fprintf(os.Stderr, "info: fetching HN items %d–%d (%d items)\n", lastHNID+1, maxID, n)
+		fmt.Fprintf(os.Stderr, "info: fetching Algolia HN items since %s\n", since.Format("15:04:05"))
 		if emit != nil {
 			emit(&LiveState{Phase: "fetch", Block: blockDate, BlocksToday: len(todayRows), TotalCommitted: totalCommitted})
 		}
 		t0 := time.Now()
-		items, err := FetchHNItemRange(ctx, lastHNID+1, maxID)
+		items, err := FetchHNAlgoliaRecent(ctx, since)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "warn: FetchHNItemRange: %v; retrying in 30s\n", err)
+			fmt.Fprintf(os.Stderr, "warn: FetchHNAlgoliaRecent: %v; retrying in 30s\n", err)
 			sleepWithContext(ctx, 30*time.Second)
 			continue
 		}
-		// Advance watermark regardless of how many items were usable.
-		lastHNID = maxID
-		fmt.Fprintf(os.Stderr, "info: received %d items from HN API in %s\n",
+		fmt.Fprintf(os.Stderr, "info: received %d items from Algolia in %s\n",
 			len(items), time.Since(t0).Round(time.Millisecond))
 
 		if len(items) == 0 {
@@ -287,8 +253,18 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 			}
 		}
 
-		// Sleep until the next interval boundary.
+		// If there are still missing past blocks, loop immediately (no sleep) to
+		// continue catching up. Otherwise sleep until the next interval.
 		now = time.Now().UTC()
+		dayStart2 := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+		stillMissing, _ := oldestMissingBlock(todayRows, blockDate, dayStart2, now.Truncate(interval), interval)
+		if !stillMissing.IsZero() && stillMissing.Before(now.Truncate(interval)) {
+			// Still have missing past blocks — tight loop with a brief pause.
+			fmt.Fprintf(os.Stderr, "info: still missing blocks starting %s, continuing\n", stillMissing.Format("15:04"))
+			sleepWithContext(ctx, 10*time.Second)
+			continue
+		}
+
 		next := nextIntervalTime(now, interval)
 		fmt.Fprintf(os.Stderr, "info: next poll at %s (in %s)\n",
 			next.UTC().Format("15:04:05"), time.Until(next).Round(time.Second))

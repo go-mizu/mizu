@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -252,6 +253,11 @@ func WriteHNParquet(ctx context.Context, items []HNItem, outPath string) (FetchR
 		return FetchResult{Duration: time.Since(start)}, nil
 	}
 
+	// Ensure parent directory exists before creating temp files.
+	if err := ensureParentDir(outPath); err != nil {
+		return FetchResult{}, fmt.Errorf("create parquet dir: %w", err)
+	}
+
 	// Write NDJSON to temp file.
 	tmpf, err := os.CreateTemp(filepath.Dir(outPath), ".hn-api-*.ndjson")
 	if err != nil {
@@ -272,9 +278,6 @@ func WriteHNParquet(ctx context.Context, items []HNItem, outPath string) (FetchR
 	}
 
 	// Use DuckDB to convert NDJSON → Parquet.
-	if err := ensureParentDir(outPath); err != nil {
-		return FetchResult{}, err
-	}
 	tmpPq, err := os.CreateTemp(filepath.Dir(outPath), ".hn-pq-*.parquet")
 	if err != nil {
 		return FetchResult{}, fmt.Errorf("create parquet tmp: %w", err)
@@ -295,7 +298,7 @@ COPY (
         id::UINTEGER         AS id,
         deleted::UTINYINT    AS deleted,
         type::TINYINT        AS type,
-        by                   AS by,
+        "by"                 AS "by",
         to_timestamp(time_unix)::TIMESTAMP AS time,
         text                 AS text,
         dead::UTINYINT       AS dead,
@@ -322,4 +325,111 @@ COPY (
 	}
 
 	return Config{}.scanParquetResult(ctx, outPath, 0, time.Since(start))
+}
+
+// ---------------------------------------------------------------------------
+// Algolia HN Search API — used for live tail when Firebase API is unavailable.
+// ---------------------------------------------------------------------------
+
+const hnAlgoliaBase = "https://hn.algolia.com/api/v1"
+
+type algoliaResponse struct {
+	Hits        []algoliaHit `json:"hits"`
+	NbHits      int          `json:"nbHits"`
+	NbPages     int          `json:"nbPages"`
+	Page        int          `json:"page"`
+	HitsPerPage int          `json:"hitsPerPage"`
+}
+
+type algoliaHit struct {
+	ObjectID    string   `json:"objectID"`
+	CreatedAtI  int64    `json:"created_at_i"`
+	Author      string   `json:"author"`
+	Title       string   `json:"title"`
+	URL         string   `json:"url"`
+	Points      int32    `json:"points"`
+	NumComments int32    `json:"num_comments"`
+	CommentText string   `json:"comment_text"`
+	StoryText   string   `json:"story_text"`
+	Tags        []string `json:"_tags"`
+	ParentID    *int64   `json:"parent_id"`
+}
+
+// algoliaHitToHNItem converts an Algolia search hit to an HNItem.
+// Fields not available in the search index (kids, parts, poll, dead, deleted)
+// are left at their zero values; the midnight ClickHouse rollover reconciles them.
+func algoliaHitToHNItem(h algoliaHit) HNItem {
+	id, _ := strconv.ParseInt(h.ObjectID, 10, 64)
+	var typeStr string
+	for _, tag := range h.Tags {
+		switch tag {
+		case "story", "comment", "job", "poll", "pollopt":
+			typeStr = tag
+		}
+	}
+	text := h.CommentText
+	if text == "" {
+		text = h.StoryText
+	}
+	var parent int64
+	if h.ParentID != nil {
+		parent = *h.ParentID
+	}
+	return HNItem{
+		ID:          id,
+		Time:        h.CreatedAtI,
+		By:          h.Author,
+		Title:       h.Title,
+		URL:         h.URL,
+		Score:       h.Points,
+		Descendants: h.NumComments,
+		Text:        text,
+		Type:        typeStr,
+		Parent:      parent,
+		Kids:        []int64{},
+		Parts:       []int64{},
+	}
+}
+
+// FetchHNAlgoliaRecent fetches all HN items created after `since` from the
+// Algolia HN search API. Items are returned sorted by ID ascending.
+// Paginates automatically (max 1000 per page).
+func FetchHNAlgoliaRecent(ctx context.Context, since time.Time) ([]HNItem, error) {
+	const hitsPerPage = 1000
+	var allItems []HNItem
+	sinceUnix := since.Unix()
+
+	for page := 0; ; page++ {
+		url := fmt.Sprintf(
+			"%s/search_by_date?numericFilters=created_at_i%%3E%d&hitsPerPage=%d&page=%d",
+			hnAlgoliaBase, sinceUnix, hitsPerPage, page,
+		)
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("algolia page %d: %w", page, err)
+		}
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("algolia read page %d: %w", page, err)
+		}
+		var result algoliaResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return nil, fmt.Errorf("algolia decode page %d: %w", page, err)
+		}
+		for _, h := range result.Hits {
+			allItems = append(allItems, algoliaHitToHNItem(h))
+		}
+		if page >= result.NbPages-1 || len(result.Hits) == 0 {
+			break
+		}
+	}
+
+	// Sort by ID ascending.
+	sort.Slice(allItems, func(i, j int) bool { return allItems[i].ID < allItems[j].ID })
+	return allItems, nil
 }
