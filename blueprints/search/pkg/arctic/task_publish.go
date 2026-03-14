@@ -71,7 +71,7 @@ func (t *PublishTask) Run(ctx context.Context, emit func(*PublishState)) (Publis
 				return metric, err
 			}
 
-			key := ym.Key() + "/" + typ
+			key := ym.String() + "/" + typ
 
 			if committed[key] {
 				metric.Skipped++
@@ -170,7 +170,9 @@ func (t *PublishTask) processOne(ctx context.Context, ym ymKey, typ string,
 		DurProcessS:  durProc.Seconds(),
 		CommittedAt:  time.Now().UTC(),
 	}
-	allRows := append(existingRows, newRow)
+	allRows := make([]StatsRow, len(existingRows)+1)
+	copy(allRows, existingRows)
+	allRows[len(existingRows)] = newRow
 
 	readme, err := GenerateREADME(allRows)
 	if err != nil {
@@ -213,7 +215,9 @@ func (t *PublishTask) processOne(ctx context.Context, ym ymKey, typ string,
 	durComm := time.Since(t2)
 	newRow.DurCommitS = durComm.Seconds()
 	allRows[len(allRows)-1] = newRow
-	_ = WriteStatsCSV(cfg.StatsCSVPath(), allRows)
+	if err := WriteStatsCSV(cfg.StatsCSVPath(), allRows); err != nil {
+		fmt.Fprintf(os.Stderr, "arctic: warning: update stats.csv with commit duration: %v\n", err)
+	}
 
 	// Delete local shards after successful commit.
 	for _, sr := range procResult.Shards {
@@ -244,15 +248,21 @@ func (t *PublishTask) processOne(ctx context.Context, ym ymKey, typ string,
 func (t *PublishTask) cleanupWork() {
 	matches, _ := filepath.Glob(filepath.Join(t.cfg.WorkDir, "chunk_*.jsonl"))
 	for _, m := range matches {
-		os.Remove(m)
+		if err := os.Remove(m); err != nil {
+			fmt.Fprintf(os.Stderr, "arctic: cleanup: %v\n", err)
+		}
 	}
 	for _, typ := range []string{"comments", "submissions"} {
 		dir := filepath.Join(t.cfg.WorkDir, typ)
-		os.RemoveAll(dir)
+		if err := os.RemoveAll(dir); err != nil {
+			fmt.Fprintf(os.Stderr, "arctic: cleanup: %v\n", err)
+		}
 	}
 	matches, _ = filepath.Glob(filepath.Join(t.cfg.RawDir, "R[CS]_*.zst"))
 	for _, m := range matches {
-		os.Remove(m)
+		if err := os.Remove(m); err != nil {
+			fmt.Fprintf(os.Stderr, "arctic: cleanup: %v\n", err)
+		}
 	}
 }
 
@@ -263,7 +273,6 @@ type ymKey struct {
 }
 
 func (k ymKey) String() string { return fmt.Sprintf("%04d-%02d", k.Year, k.Month) }
-func (k ymKey) Key() string    { return k.String() }
 
 func (t *PublishTask) monthRange() []ymKey {
 	from := ymKey{Year: t.opts.FromYear, Month: t.opts.FromMonth}

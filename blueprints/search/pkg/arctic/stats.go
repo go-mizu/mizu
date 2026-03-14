@@ -106,10 +106,10 @@ func writeCSVAtomic(path string, rows []StatsRow) error {
 	}()
 
 	w := csv.NewWriter(tmp)
-	w.Write([]string{"year","month","type","shards","count","size_bytes",
+	_ = w.Write([]string{"year","month","type","shards","count","size_bytes",
 		"dur_download_s","dur_process_s","dur_commit_s","committed_at"})
 	for _, r := range rows {
-		w.Write([]string{
+		_ = w.Write([]string{
 			strconv.Itoa(r.Year),
 			strconv.Itoa(r.Month),
 			r.Type,

@@ -1,3 +1,6 @@
+// Package-level HuggingFace types. The actual HTTP implementation that calls
+// the HF API lives in the cli layer (cli/cc_publish_hf.go) to keep this
+// package free of HTTP dependencies.
 package arctic
 
 import "context"

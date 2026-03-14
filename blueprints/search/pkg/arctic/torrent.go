@@ -3,6 +3,7 @@ package arctic
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/torrent"
@@ -65,6 +66,15 @@ func DownloadZst(ctx context.Context, cfg Config, year, month int, typ string,
 		infoHash = h
 	}
 
+	// 2024-01 through 2025-12 are not covered by the bundle torrent
+	// and don't yet have individual hashes in the map.
+	// Return a clear error rather than silently downloading the wrong file.
+	if year >= 2024 && year <= 2025 {
+		if _, ok := monthlyInfoHashes[ym]; !ok {
+			return 0, fmt.Errorf("no torrent hash for %s: add it to monthlyInfoHashes in torrent.go (see download_links.md)", ym)
+		}
+	}
+
 	tcfg := torrent.Config{
 		DataDir:  cfg.RawDir,
 		InfoHash: infoHash,
@@ -81,7 +91,7 @@ func DownloadZst(ctx context.Context, cfg Config, year, month int, typ string,
 	dlCtx, dlCancel := context.WithCancel(ctx)
 	defer dlCancel()
 
-	var lastBytes int64
+	var lastBytes atomic.Int64
 	go func() {
 		t := time.NewTicker(5 * time.Second)
 		defer t.Stop()
@@ -91,7 +101,7 @@ func DownloadZst(ctx context.Context, cfg Config, year, month int, typ string,
 			case <-dlCtx.Done():
 				return
 			case <-t.C:
-				if lastBytes > 0 {
+				if lastBytes.Load() > 0 {
 					noProgress = time.Now()
 				} else if time.Since(noProgress) > 60*time.Second {
 					dlCancel()
@@ -102,7 +112,7 @@ func DownloadZst(ctx context.Context, cfg Config, year, month int, typ string,
 	}()
 
 	err = cl.Download(dlCtx, []string{fileInTorrent}, func(p torrent.Progress) {
-		lastBytes = p.BytesCompleted
+		lastBytes.Store(p.BytesCompleted)
 		if cb != nil {
 			cb(DownloadProgress{
 				Phase:      "downloading",
