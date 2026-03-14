@@ -184,15 +184,16 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 }
 
 // coldStartWatermark determines the highest committed item ID on startup.
-// Priority: today's stats_today.csv → monthly stats.csv → remote source query.
+// Priority: today's stats_today.csv → remote source query.
+//
+// Monthly stats.csv is intentionally NOT used: it tracks historical months and
+// may lag by years if the historical backfill is still running. Using it as a
+// live watermark would cause FetchSince to attempt fetching years of backlogged
+// items in a single 5-minute block, overloading the source and producing
+// enormous files. remoteInfo() always returns the live max ID.
 func (t *LiveTask) coldStartWatermark(ctx context.Context, cfg Config, today string, todayRows []TodayRow) (int64, error) {
 	if id := MaxTodayHighestID(todayRows, today); id > 0 {
 		return id, nil
-	}
-	if monthRows, _ := ReadStatsCSV(cfg.StatsCSVPath()); len(monthRows) > 0 {
-		if id := MaxHighestID(monthRows); id > 0 {
-			return id, nil
-		}
 	}
 	info, err := cfg.remoteInfo(ctx)
 	if err != nil {
