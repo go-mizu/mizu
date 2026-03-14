@@ -455,7 +455,7 @@ func (t *LiveTask) backfillToday(
 		}
 		firstBlock := batch[0].row.Block
 		lastBlock := batch[len(batch)-1].row.Block
-		msg := fmt.Sprintf("Live %s %s UTC (%s items)", today, firstBlock, fmtInt(batchRows))
+		msg := fmt.Sprintf("Live %s %s–%s UTC (%s items)", today, firstBlock, lastBlock, fmtInt(batchRows))
 		fmt.Fprintf(os.Stderr, "info: backfill: committing batch %s–%s (%d blocks, %s items)\n",
 			firstBlock, lastBlock, len(batch), fmtInt(batchRows))
 		if emit != nil {
