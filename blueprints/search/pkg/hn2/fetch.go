@@ -77,11 +77,11 @@ func (c Config) FetchSince(ctx context.Context, afterID int64, ceilTime time.Tim
 }
 
 // streamToFile executes the query and streams the response body to outPath atomically.
-// Returns bytes written. If the response is empty (0 bytes), removes the .tmp file and returns 0.
+// Returns bytes written. If the response is empty (0 bytes), returns 0.
+// Uses a unique per-call temp file so concurrent processes fetching the same month
+// (e.g. hn-publish and hn-publish-live running backfill simultaneously) do not race.
 func (c Config) streamToFile(ctx context.Context, q, outPath string) (int64, error) {
 	cfg := c.WithDefaults()
-	tmpPath := outPath + ".tmp"
-	_ = os.Remove(tmpPath)
 
 	var lastErr error
 	for attempt := 1; attempt <= 4; attempt++ {
@@ -105,11 +105,15 @@ func (c Config) streamToFile(ctx context.Context, q, outPath string) (int64, err
 			sleepWithContext(ctx, time.Duration(attempt)*500*time.Millisecond)
 			continue
 		}
-		f, err := os.Create(tmpPath)
+		// Use a unique temp file per attempt so concurrent processes fetching the
+		// same outPath (hn-publish + hn-publish-live backfill race) don't clobber
+		// each other's writes or leave stale .tmp files behind.
+		f, err := os.CreateTemp(filepath.Dir(outPath), ".hn-fetch-*.tmp")
 		if err != nil {
 			resp.Body.Close()
 			return 0, fmt.Errorf("create tmp file: %w", err)
 		}
+		tmpPath := f.Name()
 		n, copyErr := io.Copy(f, resp.Body)
 		bodyCloseErr := resp.Body.Close()
 		fileCloseErr := f.Close()
@@ -135,7 +139,6 @@ func (c Config) streamToFile(ctx context.Context, q, outPath string) (int64, err
 		}
 		return n, nil
 	}
-	_ = os.Remove(tmpPath)
 	return 0, lastErr
 }
 

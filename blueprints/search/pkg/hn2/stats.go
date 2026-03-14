@@ -173,6 +173,33 @@ func WriteStatsTodayCSV(path string, rows []TodayRow, newRow TodayRow) error {
 	})
 }
 
+// WriteStatsTodayCSVAll atomically rewrites stats_today.csv with exactly the given rows, sorted.
+func WriteStatsTodayCSVAll(path string, rows []TodayRow) error {
+	sorted := make([]TodayRow, len(rows))
+	copy(sorted, rows)
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].Date != sorted[j].Date {
+			return sorted[i].Date < sorted[j].Date
+		}
+		return sorted[i].Block < sorted[j].Block
+	})
+	return writeCSVAtomic(path, statsTodayCSVHeader, func(w *csv.Writer) error {
+		for _, r := range sorted {
+			w.Write([]string{
+				r.Date, r.Block,
+				strconv.FormatInt(r.LowestID, 10),
+				strconv.FormatInt(r.HighestID, 10),
+				strconv.FormatInt(r.Count, 10),
+				strconv.Itoa(r.DurFetchS),
+				strconv.Itoa(r.DurCommitS),
+				strconv.FormatInt(r.SizeBytes, 10),
+				r.CommittedAt.UTC().Format(time.RFC3339),
+			})
+		}
+		return nil
+	})
+}
+
 // ClearStatsTodayCSV writes a header-only stats_today.csv.
 func ClearStatsTodayCSV(path string) error {
 	return writeCSVAtomic(path, statsTodayCSVHeader, func(w *csv.Writer) error { return nil })

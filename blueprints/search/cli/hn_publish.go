@@ -131,40 +131,39 @@ func runHNPublish(ctx context.Context, repoRoot, repoID string, live bool, inter
 	}
 	fmt.Println()
 
-	// --- Historical backfill ---
-	histTask := hn2.NewHistoricalTask(cfg, hn2.HistoricalTaskOptions{
-		FromYear:   fromYear,
-		FromMonth:  fromMonth,
-		HFCommit:   hfCommitFn,
-		ReadmeTmpl: hnReadmeTmpl,
-		Analytics:  analytics,
-	})
-
-	metric, err := histTask.Run(ctx, func(s *hn2.HistoricalState) {
-		switch s.Phase {
-		case "skip":
-			fmt.Printf("  [%s] %s\n", labelStyle.Render(s.Month), labelStyle.Render("skipped (already committed)"))
-		case "fetch":
-			fmt.Printf("  [%s] %s  [%d/%d]\n",
-				labelStyle.Render(s.Month), infoStyle.Render("fetching…"), s.MonthIndex, s.MonthTotal)
-		case "commit":
-			fmt.Printf("  [%s] %s  %s rows\n",
-				labelStyle.Render(s.Month), successStyle.Render("committing"), ccFmtInt64(s.Rows))
-		}
-	})
-	if err != nil {
-		return fmt.Errorf("historical backfill: %w", err)
-	}
-
-	fmt.Println()
-	fmt.Printf("  Historical  %s months written, %s skipped\n",
-		infoStyle.Render(fmt.Sprintf("%d", metric.MonthsWritten)),
-		labelStyle.Render(fmt.Sprintf("%d", metric.MonthsSkipped)))
-	fmt.Printf("  Rows        %s\n", infoStyle.Render(ccFmtInt64(metric.RowsWritten)))
-	fmt.Printf("  Elapsed     %s\n", labelStyle.Render(metric.Elapsed.Round(time.Second).String()))
-	fmt.Println()
-
+	// --- Historical backfill (skipped in --live mode) ---
 	if !live {
+		histTask := hn2.NewHistoricalTask(cfg, hn2.HistoricalTaskOptions{
+			FromYear:   fromYear,
+			FromMonth:  fromMonth,
+			HFCommit:   hfCommitFn,
+			ReadmeTmpl: hnReadmeTmpl,
+			Analytics:  analytics,
+		})
+
+		metric, err := histTask.Run(ctx, func(s *hn2.HistoricalState) {
+			switch s.Phase {
+			case "skip":
+				fmt.Printf("  [%s] %s\n", labelStyle.Render(s.Month), labelStyle.Render("skipped (already committed)"))
+			case "fetch":
+				fmt.Printf("  [%s] %s  [%d/%d]\n",
+					labelStyle.Render(s.Month), infoStyle.Render("fetching…"), s.MonthIndex, s.MonthTotal)
+			case "commit":
+				fmt.Printf("  [%s] %s  %s rows\n",
+					labelStyle.Render(s.Month), successStyle.Render("committing"), ccFmtInt64(s.Rows))
+			}
+		})
+		if err != nil {
+			return fmt.Errorf("historical backfill: %w", err)
+		}
+
+		fmt.Println()
+		fmt.Printf("  Historical  %s months written, %s skipped\n",
+			infoStyle.Render(fmt.Sprintf("%d", metric.MonthsWritten)),
+			labelStyle.Render(fmt.Sprintf("%d", metric.MonthsSkipped)))
+		fmt.Printf("  Rows        %s\n", infoStyle.Render(ccFmtInt64(metric.RowsWritten)))
+		fmt.Printf("  Elapsed     %s\n", labelStyle.Render(metric.Elapsed.Round(time.Second).String()))
+		fmt.Println()
 		return nil
 	}
 
@@ -179,7 +178,7 @@ func runHNPublish(ctx context.Context, repoRoot, repoID string, live bool, inter
 		Analytics:  analytics,
 	})
 
-	_, err = liveTask.Run(ctx, func(s *hn2.LiveState) {
+	_, err := liveTask.Run(ctx, func(s *hn2.LiveState) {
 		switch s.Phase {
 		case "fetch":
 			fmt.Printf("  [%s] fetching since id=%d…\n",

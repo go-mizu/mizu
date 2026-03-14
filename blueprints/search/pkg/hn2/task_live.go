@@ -102,6 +102,119 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 		}
 	}
 
+	// --- Today backfill: fill missing 5-min blocks from 00:00 UTC to now ---
+	// Fetches each missing block sequentially (chaining the ID watermark), then
+	// commits all of them in a single HF commit to minimise round-trips.
+	{
+		dayStart, _ := time.Parse("2006-01-02", today)
+		committed := make(map[string]bool)
+		for _, r := range todayRows {
+			if r.Date == today {
+				committed[r.Block] = true
+				if r.HighestID > lastHighestID {
+					lastHighestID = r.HighestID
+				}
+			}
+		}
+
+		type backfillBlock struct {
+			outPath  string
+			repoPath string
+			row      TodayRow
+		}
+		var fetched []backfillBlock
+		var totalBackfillRows int64
+
+		nowTrunc := time.Now().UTC().Truncate(interval)
+		for bt := dayStart; bt.Before(nowTrunc); bt = bt.Add(interval) {
+			if ctx.Err() != nil {
+				break
+			}
+			blockHHMM := bt.Format("15:04")
+			if committed[blockHHMM] {
+				continue
+			}
+			blockDate := bt.Format("2006-01-02")
+			blockEnd := bt.Add(interval)
+			outPath := cfg.TodayBlockPath(blockDate, blockHHMM)
+			blockFilename := blockDate + "_" + strings.ReplaceAll(blockHHMM, ":", "_") + ".parquet"
+
+			if emit != nil {
+				emit(&LiveState{Phase: "fetch", Block: blockDate + " " + blockHHMM, HighestID: lastHighestID})
+			}
+			result, err := cfg.FetchSince(ctx, lastHighestID, blockEnd, outPath)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "warn: today backfill fetch %s: %v\n", blockHHMM, err)
+				continue
+			}
+			if result.Count == 0 {
+				continue
+			}
+			lastHighestID = result.HighestID
+			totalBackfillRows += result.Count
+			fetched = append(fetched, backfillBlock{
+				outPath:  outPath,
+				repoPath: "today/" + blockFilename,
+				row: TodayRow{
+					Date: blockDate, Block: blockHHMM,
+					LowestID: result.LowestID, HighestID: result.HighestID,
+					Count: result.Count, DurFetchS: int(result.Duration.Seconds()),
+					SizeBytes: result.Bytes, CommittedAt: time.Now().UTC(),
+				},
+			})
+		}
+
+		if len(fetched) > 0 && ctx.Err() == nil {
+			// Write all new rows to stats_today.csv.
+			allRows, _ := ReadStatsTodayCSV(cfg.StatsTodayCSVPath())
+			for _, b := range fetched {
+				allRows = append(allRows, b.row)
+				blocksToday++
+				totalCommitted += b.row.Count
+			}
+			_ = WriteStatsTodayCSVAll(cfg.StatsTodayCSVPath(), allRows)
+
+			// Regenerate README.
+			monthRows, _ := ReadStatsCSV(cfg.StatsCSVPath())
+			allTodayRows, _ := ReadStatsTodayCSV(cfg.StatsTodayCSVPath())
+			readmeBytes, _ := GenerateREADME(t.opts.ReadmeTmpl, monthRows, allTodayRows, t.opts.Analytics)
+			if readmeBytes != nil {
+				_ = os.WriteFile(cfg.READMEPath(), readmeBytes, 0o644)
+			}
+
+			// Single batched commit for all backfilled blocks.
+			ops := []HFOp{
+				{LocalPath: cfg.StatsTodayCSVPath(), PathInRepo: "stats_today.csv"},
+				{LocalPath: cfg.READMEPath(), PathInRepo: "README.md"},
+			}
+			for _, b := range fetched {
+				ops = append(ops, HFOp{LocalPath: b.outPath, PathInRepo: b.repoPath})
+			}
+			msg := fmt.Sprintf("Live %s today-backfill %d blocks (+%s items)", today, len(fetched), fmtInt(totalBackfillRows))
+			if emit != nil {
+				emit(&LiveState{Phase: "commit", Block: today + " backfill", NewItems: totalBackfillRows})
+			}
+			t0 := time.Now()
+			if _, err := t.opts.HFCommit(ctx, ops, msg); err != nil {
+				fmt.Fprintf(os.Stderr, "warn: today backfill commit: %v\n", err)
+			} else {
+				durS := int(time.Since(t0).Seconds())
+				// Update dur_commit_s for all backfilled rows.
+				allRows, _ = ReadStatsTodayCSV(cfg.StatsTodayCSVPath())
+				for i, r := range allRows {
+					for _, b := range fetched {
+						if r.Date == b.row.Date && r.Block == b.row.Block {
+							allRows[i].DurCommitS = durS
+						}
+					}
+				}
+				_ = WriteStatsTodayCSVAll(cfg.StatsTodayCSVPath(), allRows)
+				metric.BlocksWritten += len(fetched)
+				metric.RowsWritten += totalBackfillRows
+			}
+		}
+	}
+
 	for {
 		if ctx.Err() != nil {
 			metric.Elapsed = time.Since(started)
