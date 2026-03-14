@@ -36,7 +36,7 @@ type Config struct {
 	ForceRod  bool     // force rod for all fetches (default: only on HTTP failure)
 	// Worker proxy mode — route requests through browser.go-mizu.workers.dev
 	WorkerURL   string // default: browser.DefaultProxyURL
-	WorkerToken string // Bearer token; falls back to BROWSER_API_TOKEN env var
+	WorkerToken string // Bearer token; falls back to MIZU_TOKEN env var
 }
 
 // DefaultConfig returns sensible defaults.

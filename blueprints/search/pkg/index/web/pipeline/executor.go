@@ -469,7 +469,7 @@ func buildDCrawlerConfig(domain, dataDir string, params scrape.StartParams) craw
 		cfg.UseWorker = true
 		cfg.WorkerToken = params.WorkerToken
 		if cfg.WorkerToken == "" {
-			cfg.WorkerToken = os.Getenv("CRAWLER_WORKER_TOKEN")
+			cfg.WorkerToken = os.Getenv("MIZU_TOKEN")
 		}
 		if params.WorkerURL != "" {
 			cfg.WorkerURL = params.WorkerURL

@@ -825,8 +825,8 @@ func enqueueGzSitemapWithLimit(gzURL string, stateDB *goodread.State, limit int)
 
 func newGoodreadCrawl() *cobra.Command {
 	var dbPath, statePath, sitemapCache string
-	var delay, workers, maxPages int
-	var seed, typeFilter string
+	var delay, workers, maxPages, fetchBatchSize int
+	var seed, typeFilter, workerToken string
 
 	cmd := &cobra.Command{
 		Use:   "crawl",
@@ -842,6 +842,7 @@ func newGoodreadCrawl() *cobra.Command {
 			cfg.Workers = workers
 			cfg.Delay = time.Duration(delay) * time.Millisecond
 			cfg.MaxPages = maxPages
+			cfg.WorkerToken = workerToken
 
 			db, err := goodread.OpenDB(dbPath)
 			if err != nil {
@@ -916,13 +917,33 @@ func newGoodreadCrawl() *cobra.Command {
 			// ── Phase 2: fetch + import pipeline ────────────────────────
 			stateDB.CreateJob("crawl-"+fmt.Sprintf("%d", time.Now().Unix()), "bulk-crawl", "crawl")
 
-			client := goodread.NewClient(cfg)
+			// Use BatchClient (crawler worker) when MIZU_TOKEN is available,
+			// falling back to plain HTTP if not set.
+			var fetcher goodread.HTMLFetcher
+			if cfg.WorkerToken == "" {
+				cfg.WorkerToken = os.Getenv("MIZU_TOKEN")
+			}
+			if cfg.WorkerToken != "" {
+				bc, err := goodread.NewBatchClient(cfg)
+				if err != nil {
+					fmt.Printf("Warning: batch client init failed (%v) — using plain HTTP\n", err)
+					fetcher = goodread.NewClient(cfg)
+				} else {
+					fmt.Printf("Using batch CF worker: workers=%d  batch=%d  url=%s\n",
+						workers, fetchBatchSize, cfg.WorkerURL)
+					fetcher = bc
+				}
+			} else {
+				fetcher = goodread.NewClient(cfg)
+			}
+
 			fetchDone := make(chan struct{})
 
 			fetchTask := &goodread.FetchTask{
-				Config:  cfg,
-				Fetcher: client,
-				StateDB: stateDB,
+				Config:    cfg,
+				Fetcher:   fetcher,
+				StateDB:   stateDB,
+				BatchSize: fetchBatchSize,
 			}
 			importTask := &goodread.ImportTask{
 				Config:    cfg,
@@ -1008,9 +1029,11 @@ func newGoodreadCrawl() *cobra.Command {
 	cfg := goodread.DefaultConfig()
 	cmd.Flags().StringVar(&dbPath, "db", cfg.DBPath, "Path to goodread.duckdb")
 	cmd.Flags().StringVar(&statePath, "state", cfg.StatePath, "Path to state.duckdb")
-	cmd.Flags().IntVar(&workers, "workers", cfg.Workers, "Concurrent fetch workers")
-	cmd.Flags().IntVar(&delay, "delay", int(cfg.Delay/time.Millisecond), "Delay between requests in milliseconds")
+	cmd.Flags().IntVar(&workers, "workers", 20, "Concurrent fetch workers (batch-mode: concurrent batch calls)")
+	cmd.Flags().IntVar(&delay, "delay", 0, "Delay between requests in milliseconds (0 = no delay)")
 	cmd.Flags().IntVar(&maxPages, "max-pages", 0, "Max pages per entity (0 = unlimited)")
+	cmd.Flags().IntVar(&fetchBatchSize, "fetch-batch", 50, "URLs per batch when using CF worker (batch mode)")
+	cmd.Flags().StringVar(&workerToken, "worker-token", "", "CF crawler worker token (default $MIZU_TOKEN)")
 	cmd.Flags().StringVar(&seed, "seed", "", "Seed strategy before crawling: sitemap")
 	cmd.Flags().StringVar(&typeFilter, "type", "", "Comma-separated entity types to seed/crawl: book,author,series,list,quote,user,genre (default: all)")
 	cmd.Flags().StringVar(&sitemapCache, "sitemap-cache", "", "Directory to cache .gz sitemap files (default: <state-dir>/sitemaps)")
@@ -1533,7 +1556,7 @@ and write the cached HTML into DuckDB.`,
 	cmd.Flags().StringVar(&statePath, "state", cfg.StatePath, "Path to state.duckdb")
 	cmd.Flags().IntVar(&workers, "workers", cfg.Workers, "Concurrent HTTP workers")
 	cmd.Flags().IntVar(&delay, "delay", int(cfg.Delay/time.Millisecond), "Delay between requests in milliseconds")
-	cmd.Flags().StringVar(&workerToken, "worker-token", "", "Route through CF browser worker (or set BROWSER_API_TOKEN)")
+	cmd.Flags().StringVar(&workerToken, "worker-token", "", "Route through CF browser worker (or set MIZU_TOKEN)")
 	return cmd
 }
 
@@ -1664,7 +1687,7 @@ func newGoodreadBench() *cobra.Command {
 		Short: "Compare plain HTTP / rod / CF-worker fetch speed for Goodreads URLs",
 		Args:  cobra.MinimumNArgs(1),
 		Example: `  search goodread bench https://www.goodreads.com/book/show/2767052
-  BROWSER_API_TOKEN=xxx search goodread bench https://www.goodreads.com/book/show/2767052`,
+  MIZU_TOKEN=xxx search goodread bench https://www.goodreads.com/book/show/2767052`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			cfg := goodread.DefaultConfig()
@@ -1737,7 +1760,7 @@ func newGoodreadBench() *cobra.Command {
 
 	cmd.Flags().IntVar(&n, "n", 0, "Number of URLs to test (default: all)")
 	cmd.Flags().IntVar(&delay, "delay", 0, "Delay between requests in ms")
-	cmd.Flags().StringVar(&workerToken, "worker-token", "", "Bearer token for CF worker (or set BROWSER_API_TOKEN)")
+	cmd.Flags().StringVar(&workerToken, "worker-token", "", "Bearer token for CF worker (or set MIZU_TOKEN)")
 	cmd.Flags().BoolVar(&skipRod, "skip-rod", false, "Skip rod (headless Chrome) benchmark")
 	return cmd
 }

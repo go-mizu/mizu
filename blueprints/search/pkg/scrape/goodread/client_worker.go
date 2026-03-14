@@ -22,14 +22,14 @@ type WorkerClient struct {
 }
 
 // NewWorkerClient creates a client that proxies through the CF browser worker.
-// Token is read from BROWSER_API_TOKEN env var or cfg.WorkerToken.
+// Token is read from MIZU_TOKEN env var or cfg.WorkerToken.
 func NewWorkerClient(cfg Config) (*WorkerClient, error) {
 	token := cfg.WorkerToken
 	if token == "" {
-		token = os.Getenv("BROWSER_API_TOKEN")
+		token = os.Getenv("MIZU_TOKEN")
 	}
 	if token == "" {
-		return nil, fmt.Errorf("worker token required: set --worker-token or BROWSER_API_TOKEN env var")
+		return nil, fmt.Errorf("worker token required: set --worker-token or MIZU_TOKEN env var")
 	}
 
 	workerURL := cfg.WorkerURL

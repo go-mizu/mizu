@@ -56,12 +56,12 @@ type ProxyConfig struct {
 	Token string // AUTH_TOKEN secret
 }
 
-// LoadProxyConfig reads BROWSER_API_TOKEN from the environment and returns a
+// LoadProxyConfig reads MIZU_TOKEN from the environment and returns a
 // ProxyConfig using DefaultProxyURL. Set BROWSER_PROXY_URL to override the URL.
 func LoadProxyConfig() (ProxyConfig, error) {
-	token := os.Getenv("BROWSER_API_TOKEN")
+	token := os.Getenv("MIZU_TOKEN")
 	if token == "" {
-		return ProxyConfig{}, fmt.Errorf("BROWSER_API_TOKEN env var not set")
+		return ProxyConfig{}, fmt.Errorf("MIZU_TOKEN env var not set")
 	}
 	u := os.Getenv("BROWSER_PROXY_URL")
 	if u == "" {

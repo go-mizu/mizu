@@ -170,10 +170,10 @@ Browser mode (JS-rendered pages, bypasses Cloudflare):
 			cfg.WorkerBrowser = workerBrowser
 			cfg.WorkerToken = workerToken
 			if cfg.WorkerToken == "" {
-				cfg.WorkerToken = os.Getenv("CRAWLER_WORKER_TOKEN")
+				cfg.WorkerToken = os.Getenv("MIZU_TOKEN")
 			}
 			if cfg.UseWorker && cfg.WorkerToken == "" {
-				return fmt.Errorf("--worker requires --worker-token or CRAWLER_WORKER_TOKEN env var")
+				return fmt.Errorf("--worker requires --worker-token or MIZU_TOKEN env var")
 			}
 
 			return runCrawlDomain(cmd, cfg, downloadImages, useTUI)
@@ -213,7 +213,7 @@ Browser mode (JS-rendered pages, bypasses Cloudflare):
 	// Worker mode
 	cmd.Flags().BoolVar(&useWorker, "worker", false, "Proxy fetches through CF Worker (returns HTML + markdown)")
 	cmd.Flags().StringVar(&workerURL, "worker-url", "", "Worker endpoint (default https://crawler.go-mizu.workers.dev)")
-	cmd.Flags().StringVar(&workerToken, "worker-token", "", "Worker auth token (default $CRAWLER_WORKER_TOKEN)")
+	cmd.Flags().StringVar(&workerToken, "worker-token", "", "Worker auth token (default $MIZU_TOKEN)")
 	cmd.Flags().BoolVar(&workerBrowser, "worker-browser", false, "Enable CF Browser Rendering on worker side")
 	cmd.Flags().BoolVar(&useTUI, "tui", false, "Use full-screen TUI dashboard (requires terminal)")
 
