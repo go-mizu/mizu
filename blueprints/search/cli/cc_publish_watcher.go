@@ -309,47 +309,74 @@ func ccFindUncommittedParquets(dataDir, crawlID string, committed map[int]bool) 
 
 // ccPurgeCommittedLocals deletes all intermediate files for already-committed shards:
 //   - {dataDir}/{shard}.parquet + .meta  (watcher output)
-//   - {warcMdDir}/{shard}.md.warc.gz     (pack output)
+//   - {warcMdDir}/{shard}.md.warc.gz + .meta.duckdb  (pack output)
 //   - raw .warc.gz from ccFindRawWARC    (download output)
+//
+// It uses two passes so orphaned raw WARCs are caught even when the parquet was
+// already deleted by a previous watcher run:
+//
+//  1. Scan dataDir for leftover .parquet files and delete the full chain.
+//  2. Scan the raw warc/ directory for any *-XXXXX.warc.gz whose index is committed
+//     (catches files whose parquet + md.warc.gz were already cleaned).
 //
 // Returns the total number of files deleted.
 func ccPurgeCommittedLocals(crawlID, dataDir, warcMdDir string, committed map[int]bool) int {
-	entries, err := os.ReadDir(dataDir)
-	if err != nil {
-		return 0
-	}
 	n := 0
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".parquet") {
-			continue
+
+	// Pass 1: parquet-led sweep (same as before).
+	if entries, err := os.ReadDir(dataDir); err == nil {
+		for _, e := range entries {
+			name := e.Name()
+			if e.IsDir() || !strings.HasSuffix(name, ".parquet") {
+				continue
+			}
+			shard := strings.TrimSuffix(name, ".parquet")
+			idx, err := strconv.Atoi(shard)
+			if err != nil || !committed[idx] {
+				continue
+			}
+			if rmErr := os.Remove(filepath.Join(dataDir, name)); rmErr == nil {
+				n++
+			}
+			_ = os.Remove(filepath.Join(dataDir, shard+".meta"))
+			mdWARC := filepath.Join(warcMdDir, shard+".md.warc.gz")
+			if rmErr := os.Remove(mdWARC); rmErr == nil {
+				n++
+			}
+			_ = os.Remove(filepath.Join(warcMdDir, shard+".meta.duckdb"))
+			if rawPath := ccFindRawWARC(crawlID, idx); rawPath != "" {
+				if rmErr := os.Remove(rawPath); rmErr == nil {
+					n++
+				}
+			}
 		}
-		shard := strings.TrimSuffix(name, ".parquet")
-		idx, err := strconv.Atoi(shard)
-		if err != nil {
-			continue
-		}
-		if !committed[idx] {
-			continue
-		}
-		// parquet + meta
-		if rmErr := os.Remove(filepath.Join(dataDir, name)); rmErr == nil {
-			n++
-		}
-		_ = os.Remove(filepath.Join(dataDir, shard+".meta"))
-		// md.warc.gz + meta.duckdb
-		mdWARC := filepath.Join(warcMdDir, shard+".md.warc.gz")
-		if rmErr := os.Remove(mdWARC); rmErr == nil {
-			n++
-		}
-		_ = os.Remove(filepath.Join(warcMdDir, shard+".meta.duckdb"))
-		// raw .warc.gz
-		if rawPath := ccFindRawWARC(crawlID, idx); rawPath != "" {
-			if rmErr := os.Remove(rawPath); rmErr == nil {
+	}
+
+	// Pass 2: raw WARC sweep — catch orphaned WARCs whose parquet was already deleted.
+	home, _ := os.UserHomeDir()
+	warcDir := filepath.Join(home, "data", "common-crawl", crawlID, "warc")
+	if entries, err := os.ReadDir(warcDir); err == nil {
+		for _, e := range entries {
+			name := e.Name()
+			if e.IsDir() || !strings.HasSuffix(name, ".warc.gz") {
+				continue
+			}
+			// Filename ends with -XXXXX.warc.gz; extract the 5-digit index.
+			base := strings.TrimSuffix(name, ".warc.gz")
+			dash := strings.LastIndex(base, "-")
+			if dash < 0 {
+				continue
+			}
+			idx, err := strconv.Atoi(base[dash+1:])
+			if err != nil || !committed[idx] {
+				continue
+			}
+			if rmErr := os.Remove(filepath.Join(warcDir, name)); rmErr == nil {
 				n++
 			}
 		}
 	}
+
 	return n
 }
 
