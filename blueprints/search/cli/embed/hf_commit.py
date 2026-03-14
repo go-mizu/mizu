@@ -26,7 +26,7 @@ import json
 import sys
 import os
 
-from huggingface_hub import HfApi, CommitOperationAdd
+from huggingface_hub import HfApi, CommitOperationAdd, CommitOperationDelete
 
 
 def main() -> None:
@@ -40,6 +40,9 @@ def main() -> None:
 
     operations = []
     for op in ops_raw:
+        if op.get("delete", False):
+            operations.append(CommitOperationDelete(path_in_repo=op["path_in_repo"]))
+            continue
         local = op["local_path"]
         repo_path = op["path_in_repo"]
         if not os.path.isfile(local):

@@ -105,10 +105,12 @@ func (c *hfClient) pathsExist(ctx context.Context, repoID string, paths []string
 	return existing, nil
 }
 
-// hfOperation is a file to include in a commit.
+// hfOperation describes a file add or delete for a HuggingFace commit.
+// Set Delete=true for CommitOperationDelete (LocalPath is ignored).
 type hfOperation struct {
 	LocalPath  string
 	PathInRepo string
+	Delete     bool
 }
 
 // resolveUV returns the path to the uv binary, checking PATH then common install locations.
@@ -156,8 +158,9 @@ func (c *hfClient) createCommitPython(ctx context.Context, repoID, message strin
 	}
 
 	type opJSON struct {
-		LocalPath  string `json:"local_path"`
+		LocalPath  string `json:"local_path,omitempty"`
 		PathInRepo string `json:"path_in_repo"`
+		Delete     bool   `json:"delete,omitempty"`
 	}
 	payload := map[string]interface{}{
 		"token":   c.token,
@@ -166,7 +169,7 @@ func (c *hfClient) createCommitPython(ctx context.Context, repoID, message strin
 		"ops":     func() []opJSON {
 			out := make([]opJSON, len(ops))
 			for i, op := range ops {
-				out[i] = opJSON{LocalPath: op.LocalPath, PathInRepo: op.PathInRepo}
+				out[i] = opJSON{LocalPath: op.LocalPath, PathInRepo: op.PathInRepo, Delete: op.Delete}
 			}
 			return out
 		}(),
