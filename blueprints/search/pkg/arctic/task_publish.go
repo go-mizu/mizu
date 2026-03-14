@@ -258,8 +258,9 @@ func (t *PublishTask) cleanupWork() {
 			fmt.Fprintf(os.Stderr, "arctic: cleanup: %v\n", err)
 		}
 	}
+	// Torrent saves files under RawDir/reddit/{comments,submissions}/
 	for _, sub := range []string{"comments", "submissions"} {
-		subMatches, _ := filepath.Glob(filepath.Join(t.cfg.RawDir, sub, "R[CS]_*.zst"))
+		subMatches, _ := filepath.Glob(filepath.Join(t.cfg.RawDir, "reddit", sub, "R[CS]_*.zst"))
 		for _, m := range subMatches {
 			if err := os.Remove(m); err != nil {
 				fmt.Fprintf(os.Stderr, "arctic: cleanup: %v\n", err)

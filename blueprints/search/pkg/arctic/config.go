@@ -49,16 +49,16 @@ func (c Config) WithDefaults() Config {
 func (c Config) StatsCSVPath() string { return filepath.Join(c.RepoRoot, "stats.csv") }
 func (c Config) READMEPath() string   { return filepath.Join(c.RepoRoot, "README.md") }
 
-// ZstPath: typ is "comments" or "submissions", prefix is "RC" or "RS", ym is "YYYY-MM".
-// The torrent stores files under a subdirectory matching the type
-// (e.g. raw/comments/RC_2005-12.zst), so we include that here.
+// ZstPath returns the local path where the torrent client saves a .zst file.
+// The bundle torrent has a root folder "reddit/", so files land at:
+//   RawDir/reddit/comments/RC_YYYY-MM.zst
+//   RawDir/reddit/submissions/RS_YYYY-MM.zst
 func (c Config) ZstPath(prefix, ym string) string {
-	// Derive the type subdirectory from the prefix.
 	subdir := "comments"
 	if prefix == "RS" {
 		subdir = "submissions"
 	}
-	return filepath.Join(c.RawDir, subdir, fmt.Sprintf("%s_%s.zst", prefix, ym))
+	return filepath.Join(c.RawDir, "reddit", subdir, fmt.Sprintf("%s_%s.zst", prefix, ym))
 }
 
 // ChunkPath: temp JSONL chunk file
