@@ -3,6 +3,7 @@ package hn2
 import (
 	"encoding/csv"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -154,7 +155,12 @@ func ReadStatsTodayCSV(path string) ([]TodayRow, error) {
 		return nil, err
 	}
 	defer f.Close()
-	records, err := csv.NewReader(f).ReadAll()
+	return parseStatsTodayCSV(f)
+}
+
+// parseStatsTodayCSV parses stats_today.csv rows from any io.Reader.
+func parseStatsTodayCSV(r io.Reader) ([]TodayRow, error) {
+	records, err := csv.NewReader(r).ReadAll()
 	if err != nil {
 		return nil, fmt.Errorf("read stats_today.csv: %w", err)
 	}

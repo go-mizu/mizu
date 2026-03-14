@@ -183,6 +183,7 @@ func runHNPublish(ctx context.Context, repoRoot, repoID string, live bool, inter
 	liveTask := hn2.NewLiveTask(cfg, hn2.LiveTaskOptions{
 		Interval:   interval,
 		HFCommit:   hfCommitFn,
+		HFRepo:     repoID,
 		ReadmeTmpl: hnReadmeTmpl,
 		Analytics:  analytics,
 	})
