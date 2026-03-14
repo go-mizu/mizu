@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// MonthRow is one row in stats.csv (one committed historical month).
+// MonthRow is one row in stats.csv — one committed historical month.
 type MonthRow struct {
 	Year        int
 	Month       int
@@ -24,7 +24,7 @@ type MonthRow struct {
 	CommittedAt time.Time
 }
 
-// TodayRow is one row in stats_today.csv (one committed 5-min live block).
+// TodayRow is one row in stats_today.csv — one committed 5-minute live block.
 type TodayRow struct {
 	Date        string // YYYY-MM-DD
 	Block       string // HH:MM
@@ -37,10 +37,13 @@ type TodayRow struct {
 	CommittedAt time.Time
 }
 
-const statsCSVHeader = "year,month,lowest_id,highest_id,count,dur_fetch_s,dur_commit_s,size_bytes,committed_at"
-const statsTodayCSVHeader = "date,block,lowest_id,highest_id,count,dur_fetch_s,dur_commit_s,size_bytes,committed_at"
+const (
+	statsCSVHeader      = "year,month,lowest_id,highest_id,count,dur_fetch_s,dur_commit_s,size_bytes,committed_at"
+	statsTodayCSVHeader = "date,block,lowest_id,highest_id,count,dur_fetch_s,dur_commit_s,size_bytes,committed_at"
+)
 
-// ReadStatsCSV reads stats.csv. Returns empty slice if file does not exist.
+// ReadStatsCSV reads stats.csv and returns all rows.
+// Returns an empty slice if the file does not exist.
 func ReadStatsCSV(path string) ([]MonthRow, error) {
 	f, err := os.Open(path)
 	if os.IsNotExist(err) {
@@ -50,12 +53,11 @@ func ReadStatsCSV(path string) ([]MonthRow, error) {
 		return nil, err
 	}
 	defer f.Close()
-	r := csv.NewReader(f)
-	records, err := r.ReadAll()
+	records, err := csv.NewReader(f).ReadAll()
 	if err != nil {
-		return nil, fmt.Errorf("read stats csv: %w", err)
+		return nil, fmt.Errorf("read stats.csv: %w", err)
 	}
-	var out []MonthRow
+	out := make([]MonthRow, 0, len(records))
 	for i, rec := range records {
 		if i == 0 {
 			continue // skip header
@@ -63,28 +65,26 @@ func ReadStatsCSV(path string) ([]MonthRow, error) {
 		if len(rec) < 9 {
 			continue
 		}
-		row, err := parseMonthRow(rec)
-		if err != nil {
-			continue
+		if row, err := parseMonthRow(rec); err == nil {
+			out = append(out, row)
 		}
-		out = append(out, row)
 	}
 	return out, nil
 }
 
-// WriteStatsCSV atomically rewrites stats.csv sorted by (year, month).
-// If upsert is true and a row with the same (year, month) already exists, it is replaced.
+// WriteStatsCSV atomically rewrites stats.csv, sorted by (year, month).
+// newRow is merged into rows: if upsert is true an existing row with the same
+// (year, month) is replaced; otherwise it is a no-op if already present.
 func WriteStatsCSV(path string, rows []MonthRow, newRow MonthRow, upsert bool) error {
-	m := make(map[[2]int]MonthRow)
+	m := make(map[[2]int]MonthRow, len(rows)+1)
 	for _, r := range rows {
 		m[[2]int{r.Year, r.Month}] = r
 	}
+	key := [2]int{newRow.Year, newRow.Month}
 	if upsert {
-		m[[2]int{newRow.Year, newRow.Month}] = newRow
-	} else {
-		if _, exists := m[[2]int{newRow.Year, newRow.Month}]; !exists {
-			m[[2]int{newRow.Year, newRow.Month}] = newRow
-		}
+		m[key] = newRow
+	} else if _, exists := m[key]; !exists {
+		m[key] = newRow
 	}
 	merged := make([]MonthRow, 0, len(m))
 	for _, r := range m {
@@ -98,7 +98,7 @@ func WriteStatsCSV(path string, rows []MonthRow, newRow MonthRow, upsert bool) e
 	})
 	return writeCSVAtomic(path, statsCSVHeader, func(w *csv.Writer) error {
 		for _, r := range merged {
-			w.Write([]string{
+			_ = w.Write([]string{
 				strconv.Itoa(r.Year),
 				strconv.Itoa(r.Month),
 				strconv.FormatInt(r.LowestID, 10),
@@ -114,52 +114,22 @@ func WriteStatsCSV(path string, rows []MonthRow, newRow MonthRow, upsert bool) e
 	})
 }
 
-// ReadStatsTodayCSV reads stats_today.csv. Returns empty slice if file does not exist.
-func ReadStatsTodayCSV(path string) ([]TodayRow, error) {
-	f, err := os.Open(path)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	r := csv.NewReader(f)
-	records, err := r.ReadAll()
-	if err != nil {
-		return nil, fmt.Errorf("read stats_today csv: %w", err)
-	}
-	var out []TodayRow
-	for i, rec := range records {
-		if i == 0 {
-			continue
+// writeStatsCSVExact atomically rewrites stats.csv with exactly the given rows.
+// Used to roll back a pre-commit write when an HF commit fails.
+func writeStatsCSVExact(path string, rows []MonthRow) error {
+	sorted := make([]MonthRow, len(rows))
+	copy(sorted, rows)
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].Year != sorted[j].Year {
+			return sorted[i].Year < sorted[j].Year
 		}
-		if len(rec) < 9 {
-			continue
-		}
-		row, err := parseTodayRow(rec)
-		if err != nil {
-			continue
-		}
-		out = append(out, row)
-	}
-	return out, nil
-}
-
-// WriteStatsTodayCSV atomically rewrites stats_today.csv sorted by (date, block).
-func WriteStatsTodayCSV(path string, rows []TodayRow, newRow TodayRow) error {
-	rows = append(rows, newRow)
-	sort.Slice(rows, func(i, j int) bool {
-		if rows[i].Date != rows[j].Date {
-			return rows[i].Date < rows[j].Date
-		}
-		return rows[i].Block < rows[j].Block
+		return sorted[i].Month < sorted[j].Month
 	})
-	return writeCSVAtomic(path, statsTodayCSVHeader, func(w *csv.Writer) error {
-		for _, r := range rows {
-			w.Write([]string{
-				r.Date,
-				r.Block,
+	return writeCSVAtomic(path, statsCSVHeader, func(w *csv.Writer) error {
+		for _, r := range sorted {
+			_ = w.Write([]string{
+				strconv.Itoa(r.Year),
+				strconv.Itoa(r.Month),
 				strconv.FormatInt(r.LowestID, 10),
 				strconv.FormatInt(r.HighestID, 10),
 				strconv.FormatInt(r.Count, 10),
@@ -173,8 +143,40 @@ func WriteStatsTodayCSV(path string, rows []TodayRow, newRow TodayRow) error {
 	})
 }
 
-// WriteStatsTodayCSVAll atomically rewrites stats_today.csv with exactly the given rows, sorted.
-func WriteStatsTodayCSVAll(path string, rows []TodayRow) error {
+// ReadStatsTodayCSV reads stats_today.csv and returns all rows.
+// Returns an empty slice if the file does not exist.
+func ReadStatsTodayCSV(path string) ([]TodayRow, error) {
+	f, err := os.Open(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	records, err := csv.NewReader(f).ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("read stats_today.csv: %w", err)
+	}
+	out := make([]TodayRow, 0, len(records))
+	for i, rec := range records {
+		if i == 0 {
+			continue
+		}
+		if len(rec) < 9 {
+			continue
+		}
+		if row, err := parseTodayRow(rec); err == nil {
+			out = append(out, row)
+		}
+	}
+	return out, nil
+}
+
+// WriteStatsTodayCSV atomically rewrites stats_today.csv with the given rows,
+// sorted by (date, block). The caller is responsible for appending or modifying
+// rows before passing them in.
+func WriteStatsTodayCSV(path string, rows []TodayRow) error {
 	sorted := make([]TodayRow, len(rows))
 	copy(sorted, rows)
 	sort.Slice(sorted, func(i, j int) bool {
@@ -185,7 +187,7 @@ func WriteStatsTodayCSVAll(path string, rows []TodayRow) error {
 	})
 	return writeCSVAtomic(path, statsTodayCSVHeader, func(w *csv.Writer) error {
 		for _, r := range sorted {
-			w.Write([]string{
+			_ = w.Write([]string{
 				r.Date, r.Block,
 				strconv.FormatInt(r.LowestID, 10),
 				strconv.FormatInt(r.HighestID, 10),
@@ -200,12 +202,13 @@ func WriteStatsTodayCSVAll(path string, rows []TodayRow) error {
 	})
 }
 
-// ClearStatsTodayCSV writes a header-only stats_today.csv.
+// ClearStatsTodayCSV writes a header-only stats_today.csv, effectively resetting
+// the live block log after a day rollover.
 func ClearStatsTodayCSV(path string) error {
-	return writeCSVAtomic(path, statsTodayCSVHeader, func(w *csv.Writer) error { return nil })
+	return WriteStatsTodayCSV(path, nil)
 }
 
-// CommittedMonthSet returns the set of (year, month) pairs already in stats.csv.
+// CommittedMonthSet returns the set of (year, month) pairs present in rows.
 func CommittedMonthSet(rows []MonthRow) map[[2]int]bool {
 	s := make(map[[2]int]bool, len(rows))
 	for _, r := range rows {
@@ -236,44 +239,18 @@ func MaxTodayHighestID(rows []TodayRow, date string) int64 {
 	return max
 }
 
-// writeStatsCSVExact atomically rewrites stats.csv with exactly the given rows (no merge/upsert).
-// Used to roll back a pre-commit write when an HF commit fails.
-func writeStatsCSVExact(path string, rows []MonthRow) error {
-	sorted := make([]MonthRow, len(rows))
-	copy(sorted, rows)
-	sort.Slice(sorted, func(i, j int) bool {
-		if sorted[i].Year != sorted[j].Year {
-			return sorted[i].Year < sorted[j].Year
-		}
-		return sorted[i].Month < sorted[j].Month
-	})
-	return writeCSVAtomic(path, statsCSVHeader, func(w *csv.Writer) error {
-		for _, r := range sorted {
-			w.Write([]string{
-				strconv.Itoa(r.Year),
-				strconv.Itoa(r.Month),
-				strconv.FormatInt(r.LowestID, 10),
-				strconv.FormatInt(r.HighestID, 10),
-				strconv.FormatInt(r.Count, 10),
-				strconv.Itoa(r.DurFetchS),
-				strconv.Itoa(r.DurCommitS),
-				strconv.FormatInt(r.SizeBytes, 10),
-				r.CommittedAt.UTC().Format(time.RFC3339),
-			})
-		}
-		return nil
-	})
-}
-
+// writeCSVAtomic writes a CSV file atomically using a unique temp file and rename.
+// Using os.CreateTemp avoids the fixed-name ".tmp" race when multiple processes
+// write to the same path concurrently.
 func writeCSVAtomic(path, header string, write func(*csv.Writer) error) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	f, err := os.Create(tmp)
+	f, err := os.CreateTemp(filepath.Dir(path), ".csv-*.tmp")
 	if err != nil {
 		return err
 	}
+	tmp := f.Name()
 	w := csv.NewWriter(f)
 	if _, err := fmt.Fprintln(f, header); err != nil {
 		f.Close()

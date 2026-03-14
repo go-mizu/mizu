@@ -22,41 +22,61 @@ type ReadmeData struct {
 	TodayLastBlock       string
 	TodaySizeBytes       int64
 
-	// Computed combined
+	// Combined totals
 	TotalItems     int64
+	TotalItemsFmt  string // comma-formatted, e.g. "27,694,247"
 	TotalSizeBytes int64
 	TotalSizeMB    string
 	TodaySizeKB    string
+	TodayItemsFmt  string // comma-formatted today item count
 	LastUpdated    string
 
-	// Yearly growth (computed from stats.csv)
-	GrowthChart string // pre-rendered bar chart
+	// Yearly growth bar chart (pre-rendered)
+	GrowthChart string
 
-	// Full dataset expected totals (from ClickHouse source, optional)
-	HasAnalytics       bool
-	ExpectedTotalItems string // total items in source
-	TypeTable          string // pre-rendered type breakdown
-	ScoreSummary       string // pre-rendered score stats
-	TopAuthorsTable    string // pre-rendered top authors
-	TopDomainsTable    string // pre-rendered top domains
-	UniqueAuthors      string
-	StoriesWithURLPct  string
-	AvgDescendants     string
-	MaxDescendants     string
-	TotalStories       string
-	TotalComments      string
+	// Analytics (optional — from ClickHouse source)
+	HasAnalytics        bool
+	ExpectedTotalItems  string
+	TypeTable           string
+	ScoreSummary        string
+	TopAuthorsTable     string
+	TopDomainsTable     string
+	UniqueAuthors       string
+	StoriesWithURLPct   string
+	AvgDescendants      string
+	MaxDescendants      string
+	TotalStories        string
+	TotalComments       string
 }
 
-// BuildReadmeData aggregates stats from CSV files and optional analytics into ReadmeData.
-func BuildReadmeData(months []MonthRow, today []TodayRow, analytics *Analytics) ReadmeData {
+// GenerateREADME renders the embedded template with data derived from the
+// committed stats and optional ClickHouse analytics.
+func GenerateREADME(tmplBytes []byte, months []MonthRow, today []TodayRow, analytics *Analytics) ([]byte, error) {
+	t, err := template.New("readme").Parse(string(tmplBytes))
+	if err != nil {
+		return nil, fmt.Errorf("parse readme template: %w", err)
+	}
+	data := buildReadmeData(months, today, analytics)
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, data); err != nil {
+		return nil, fmt.Errorf("render readme template: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+// buildReadmeData aggregates stats from CSV rows and optional analytics into ReadmeData.
+func buildReadmeData(months []MonthRow, today []TodayRow, analytics *Analytics) ReadmeData {
 	d := ReadmeData{}
+
+	var latestCommit time.Time
+
 	for _, r := range months {
 		d.TotalHistoricalItems += r.Count
 		d.TotalMonths++
 		d.HistoricalSizeBytes += r.SizeBytes
-		ym := fmt.Sprintf("%04d-%02d", r.Year, r.Month)
-		// Skip 1970 (Unix epoch bucket) when computing first/last month display range.
+		// Skip year 1970 (Unix epoch bucket) when computing the displayed date range.
 		if r.Year != 1970 {
+			ym := fmt.Sprintf("%04d-%02d", r.Year, r.Month)
 			if d.FirstMonth == "" || ym < d.FirstMonth {
 				d.FirstMonth = ym
 			}
@@ -64,18 +84,16 @@ func BuildReadmeData(months []MonthRow, today []TodayRow, analytics *Analytics) 
 				d.LastMonth = ym
 			}
 		}
-	}
-	// Fallback if only 1970 data exists.
-	if d.FirstMonth == "" && d.TotalMonths > 0 {
-		d.FirstMonth = fmt.Sprintf("%04d-%02d", months[0].Year, months[0].Month)
-		d.LastMonth = fmt.Sprintf("%04d-%02d", months[len(months)-1].Year, months[len(months)-1].Month)
-	}
-	var latestCommit time.Time
-	for _, r := range months {
 		if r.CommittedAt.After(latestCommit) {
 			latestCommit = r.CommittedAt
 		}
 	}
+	// Fallback if only year-1970 data exists.
+	if d.FirstMonth == "" && d.TotalMonths > 0 {
+		d.FirstMonth = fmt.Sprintf("%04d-%02d", months[0].Year, months[0].Month)
+		d.LastMonth = fmt.Sprintf("%04d-%02d", months[len(months)-1].Year, months[len(months)-1].Month)
+	}
+
 	for _, r := range today {
 		d.TodayItems += r.Count
 		d.TodayBlocks++
@@ -90,24 +108,25 @@ func BuildReadmeData(months []MonthRow, today []TodayRow, analytics *Analytics) 
 			latestCommit = r.CommittedAt
 		}
 	}
+
 	d.TotalItems = d.TotalHistoricalItems + d.TodayItems
+	d.TotalItemsFmt = fmtInt(d.TotalItems)
 	d.TotalSizeBytes = d.HistoricalSizeBytes + d.TodaySizeBytes
 	d.TotalSizeMB = fmt.Sprintf("%.1f", float64(d.TotalSizeBytes)/1024/1024)
 	d.TodaySizeKB = fmt.Sprintf("%.1f", float64(d.TodaySizeBytes)/1024)
+	d.TodayItemsFmt = fmtInt(d.TodayItems)
 	if !latestCommit.IsZero() {
 		d.LastUpdated = latestCommit.UTC().Format("2006-01-02 15:04 UTC")
 	} else {
 		d.LastUpdated = "—"
 	}
 
-	// Build yearly growth chart from stats.csv data.
 	d.GrowthChart = buildGrowthChart(months)
 
-	// Integrate analytics if available.
 	if analytics != nil {
 		d.HasAnalytics = true
-		expectedTotal := analytics.Stories + analytics.Comments + analytics.Jobs + analytics.Polls + analytics.PollOpts
-		d.ExpectedTotalItems = fmtInt(expectedTotal)
+		total := analytics.Stories + analytics.Comments + analytics.Jobs + analytics.Polls + analytics.PollOpts
+		d.ExpectedTotalItems = fmtInt(total)
 		d.UniqueAuthors = fmtInt(analytics.UniqueAuthors)
 		d.TotalStories = fmtInt(analytics.Stories)
 		d.TotalComments = fmtInt(analytics.Comments)
@@ -123,23 +142,8 @@ func BuildReadmeData(months []MonthRow, today []TodayRow, analytics *Analytics) 
 	return d
 }
 
-// GenerateREADME renders the embedded template with data from CSV files and optional analytics.
-func GenerateREADME(tmplBytes []byte, months []MonthRow, today []TodayRow, analytics *Analytics) ([]byte, error) {
-	t, err := template.New("readme").Parse(string(tmplBytes))
-	if err != nil {
-		return nil, fmt.Errorf("parse readme template: %w", err)
-	}
-	data := BuildReadmeData(months, today, analytics)
-	var buf bytes.Buffer
-	if err := t.Execute(&buf, data); err != nil {
-		return nil, fmt.Errorf("render readme template: %w", err)
-	}
-	return buf.Bytes(), nil
-}
-
-// buildGrowthChart creates a text bar chart of items per year from stats.csv data.
+// buildGrowthChart renders a Unicode bar chart of items per year.
 func buildGrowthChart(months []MonthRow) string {
-	// Aggregate items per year.
 	yearly := make(map[int]int64)
 	for _, r := range months {
 		yearly[r.Year] += r.Count
@@ -147,8 +151,6 @@ func buildGrowthChart(months []MonthRow) string {
 	if len(yearly) == 0 {
 		return "  (no data yet)"
 	}
-
-	// Find year range and max count.
 	minYear, maxYear := 9999, 0
 	var maxCount int64
 	for y, c := range yearly {
@@ -162,21 +164,18 @@ func buildGrowthChart(months []MonthRow) string {
 			maxCount = c
 		}
 	}
-
-	// Skip 1970 (unix epoch bucket) in chart display.
 	const barWidth = 30
 	var sb strings.Builder
 	for y := minYear; y <= maxYear; y++ {
 		if y == 1970 {
-			continue
+			continue // skip Unix epoch bucket
 		}
 		c := yearly[y]
 		if c == 0 {
 			continue
 		}
-		// Compute proportional bar width.
 		width := int(float64(c) / float64(maxCount) * barWidth)
-		if width == 0 && c > 0 {
+		if width == 0 {
 			width = 1
 		}
 		bar := strings.Repeat("█", width) + strings.Repeat("░", barWidth-width)
@@ -185,7 +184,7 @@ func buildGrowthChart(months []MonthRow) string {
 	return strings.TrimRight(sb.String(), "\n")
 }
 
-// buildTypeTable creates a formatted type breakdown table.
+// buildTypeTable renders a Markdown table of item type counts and percentages.
 func buildTypeTable(a *Analytics) string {
 	total := a.Stories + a.Comments + a.Jobs + a.Polls + a.PollOpts
 	if total == 0 {
@@ -211,11 +210,11 @@ func buildTypeTable(a *Analytics) string {
 	return strings.TrimRight(sb.String(), "\n")
 }
 
-// buildScoreSummary creates a formatted score statistics summary.
+// buildScoreSummary renders a Markdown table of score statistics.
 func buildScoreSummary(a *Analytics) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("| Metric | Value |\n"))
-	sb.WriteString(fmt.Sprintf("|--------|------:|\n"))
+	sb.WriteString("| Metric | Value |\n")
+	sb.WriteString("|--------|------:|\n")
 	sb.WriteString(fmt.Sprintf("| Average score | %.1f |\n", a.AvgScore))
 	sb.WriteString(fmt.Sprintf("| Median score | %s |\n", fmtInt(a.MedianScore)))
 	sb.WriteString(fmt.Sprintf("| Highest score ever | %s |\n", fmtInt(a.MaxScore)))
@@ -224,7 +223,7 @@ func buildScoreSummary(a *Analytics) string {
 	return strings.TrimRight(sb.String(), "\n")
 }
 
-// buildTopAuthorsTable creates a formatted top authors table.
+// buildTopAuthorsTable renders a Markdown ranked table of top story submitters.
 func buildTopAuthorsTable(authors []NameCount) string {
 	if len(authors) == 0 {
 		return ""
@@ -238,7 +237,7 @@ func buildTopAuthorsTable(authors []NameCount) string {
 	return strings.TrimRight(sb.String(), "\n")
 }
 
-// buildTopDomainsTable creates a formatted top domains table.
+// buildTopDomainsTable renders a Markdown ranked table of most-linked domains.
 func buildTopDomainsTable(domains []NameCount) string {
 	if len(domains) == 0 {
 		return ""
@@ -250,16 +249,4 @@ func buildTopDomainsTable(domains []NameCount) string {
 		sb.WriteString(fmt.Sprintf("| %d | %s | %s |\n", i+1, d.Name, fmtInt(d.Count)))
 	}
 	return strings.TrimRight(sb.String(), "\n")
-}
-
-// fmtCount formats a count as a human-readable string (e.g. 1.2M, 320K).
-func fmtCount(n int64) string {
-	switch {
-	case n >= 1_000_000:
-		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
-	case n >= 1_000:
-		return fmt.Sprintf("%.1fK", float64(n)/1_000)
-	default:
-		return fmt.Sprintf("%d", n)
-	}
 }

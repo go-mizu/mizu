@@ -7,10 +7,10 @@ import (
 	"time"
 )
 
-// HistoricalState is emitted by HistoricalTask during execution.
+// HistoricalState is emitted by HistoricalTask on each month processed.
 type HistoricalState struct {
 	Phase        string // "fetch" | "commit" | "skip"
-	Month        string // "2006-10"
+	Month        string // "YYYY-MM"
 	MonthIndex   int
 	MonthTotal   int
 	Rows         int64
@@ -19,7 +19,7 @@ type HistoricalState struct {
 	SpeedBytesPS float64
 }
 
-// HistoricalMetric is the final result of HistoricalTask.
+// HistoricalMetric is the aggregate result returned when HistoricalTask.Run completes.
 type HistoricalMetric struct {
 	MonthsWritten int
 	MonthsSkipped int
@@ -28,66 +28,48 @@ type HistoricalMetric struct {
 	Elapsed       time.Duration
 }
 
-// HistoricalTaskOptions configures the historical backfill.
+// HistoricalTaskOptions configures a historical backfill run.
 type HistoricalTaskOptions struct {
-	FromYear   int // skip months before this year (0 = no limit)
-	FromMonth  int // skip months before this month (0 = no limit)
-	HFCommit   func(ctx context.Context, ops []HFOp, message string) (string, error)
-	ReadmeTmpl []byte
-	Analytics  *Analytics // optional; enriches README with source-level stats
+	FromYear   int       // skip months before this year (0 = no limit)
+	FromMonth  int       // skip months before this month within FromYear (0 = no limit)
+	HFCommit   CommitFn  // required: commits files to Hugging Face
+	ReadmeTmpl []byte    // required: README.md Go template
+	Analytics  *Analytics // optional: enriches README with source-level stats
 }
 
-// HFOp describes a single file operation for a Hugging Face commit.
-type HFOp struct {
-	LocalPath  string
-	PathInRepo string
-	Delete     bool
-}
-
-// HistoricalTask implements pkg/core.Task for backfilling all historical HN months.
+// HistoricalTask backfills all historical HN months from the remote source to
+// a Hugging Face dataset repository, skipping months already tracked in stats.csv.
 type HistoricalTask struct {
 	cfg  Config
 	opts HistoricalTaskOptions
 }
 
+// NewHistoricalTask constructs a HistoricalTask ready to run.
 func NewHistoricalTask(cfg Config, opts HistoricalTaskOptions) *HistoricalTask {
 	return &HistoricalTask{cfg: cfg, opts: opts}
 }
 
+// Run executes the historical backfill. It calls emit (if non-nil) on each state
+// transition and returns aggregate metrics when all months have been processed.
 func (t *HistoricalTask) Run(ctx context.Context, emit func(*HistoricalState)) (HistoricalMetric, error) {
-	cfg := t.cfg.WithDefaults()
+	cfg := t.cfg.resolved()
 	started := time.Now()
 	metric := HistoricalMetric{}
 
-	// Load already-committed months from stats.csv.
 	existingRows, err := ReadStatsCSV(cfg.StatsCSVPath())
 	if err != nil {
 		return metric, fmt.Errorf("read stats.csv: %w", err)
 	}
 	committed := CommittedMonthSet(existingRows)
 
-	// Query remote for all available months (current month excluded by ListMonths).
-	months, err := cfg.ListMonths(ctx)
+	months, err := cfg.listMonths(ctx)
 	if err != nil {
 		return metric, fmt.Errorf("list months: %w", err)
 	}
 
-	// Apply --from filter.
-	var filtered []MonthInfo
-	for _, m := range months {
-		if t.opts.FromYear > 0 {
-			if m.Year < t.opts.FromYear {
-				continue
-			}
-			if m.Year == t.opts.FromYear && t.opts.FromMonth > 0 && m.Month < t.opts.FromMonth {
-				continue
-			}
-		}
-		filtered = append(filtered, m)
-	}
-
+	filtered := filterMonths(months, t.opts.FromYear, t.opts.FromMonth)
 	total := len(filtered)
-	bytesDone := int64(0)
+	var bytesDone int64
 
 	for i, m := range filtered {
 		if ctx.Err() != nil {
@@ -101,7 +83,6 @@ func (t *HistoricalTask) Run(ctx context.Context, emit func(*HistoricalState)) (
 			ElapsedTotal: time.Since(started),
 		}
 
-		// Skip already committed.
 		if committed[[2]int{m.Year, m.Month}] {
 			state.Phase = "skip"
 			metric.MonthsSkipped++
@@ -125,8 +106,6 @@ func (t *HistoricalTask) Run(ctx context.Context, emit func(*HistoricalState)) (
 		durFetchS := int(time.Since(t0Fetch).Seconds())
 
 		if result.Count == 0 {
-			// Remove any orphaned .tmp file; skip this month.
-			_ = os.Remove(outPath + ".tmp")
 			state.Phase = "skip"
 			metric.MonthsSkipped++
 			if emit != nil {
@@ -142,7 +121,8 @@ func (t *HistoricalTask) Run(ctx context.Context, emit func(*HistoricalState)) (
 			emit(state)
 		}
 
-		// Snapshot current stats.csv state before the pre-commit write (for rollback on failure).
+		// Snapshot stats.csv before the pre-commit write so we can roll back
+		// if the HF commit fails and the month will be retried next run.
 		existingRows, _ = ReadStatsCSV(cfg.StatsCSVPath())
 		preCommitRows := make([]MonthRow, len(existingRows))
 		copy(preCommitRows, existingRows)
@@ -154,19 +134,18 @@ func (t *HistoricalTask) Run(ctx context.Context, emit func(*HistoricalState)) (
 			SizeBytes: result.Bytes, CommittedAt: time.Now().UTC(),
 		}
 
-		// Generate README in-memory with the new row included (no disk round-trip needed).
+		// Generate README with the new row included, without a disk round-trip.
 		readmeInputRows := append(append([]MonthRow{}, existingRows...), newRow)
 		todayRows, _ := ReadStatsTodayCSV(cfg.StatsTodayCSVPath())
 		readmeBytes, readmeErr := GenerateREADME(t.opts.ReadmeTmpl, readmeInputRows, todayRows, t.opts.Analytics)
 
-		// Write stats.csv to disk so it can be included in the HF commit.
 		if err := WriteStatsCSV(cfg.StatsCSVPath(), existingRows, newRow, false); err != nil {
 			return metric, fmt.Errorf("write stats.csv: %w", err)
 		}
 		if readmeErr != nil {
 			fmt.Fprintf(os.Stderr, "warn: generate README for %s: %v\n", monthStr, readmeErr)
-		} else if writeErr := os.WriteFile(cfg.READMEPath(), readmeBytes, 0o644); writeErr != nil {
-			fmt.Fprintf(os.Stderr, "warn: write README for %s: %v\n", monthStr, writeErr)
+		} else if err := os.WriteFile(cfg.READMEPath(), readmeBytes, 0o644); err != nil {
+			fmt.Fprintf(os.Stderr, "warn: write README for %s: %v\n", monthStr, err)
 		}
 
 		t0Commit := time.Now()
@@ -175,21 +154,18 @@ func (t *HistoricalTask) Run(ctx context.Context, emit func(*HistoricalState)) (
 			{LocalPath: cfg.StatsCSVPath(), PathInRepo: "stats.csv"},
 			{LocalPath: cfg.READMEPath(), PathInRepo: "README.md"},
 		}
-		msg := fmt.Sprintf("Add %s (%s items)", monthStr, fmtInt(result.Count))
-		if _, err := t.opts.HFCommit(ctx, ops, msg); err != nil {
-			// Rollback stats.csv to pre-commit state so this month is retried next run.
+		if _, err := t.opts.HFCommit(ctx, ops, fmt.Sprintf("Add %s (%s items)", monthStr, fmtInt(result.Count))); err != nil {
 			if wErr := writeStatsCSVExact(cfg.StatsCSVPath(), preCommitRows); wErr != nil {
-				fmt.Fprintf(os.Stderr, "warn: rollback stats.csv after commit failure for %s: %v\n", monthStr, wErr)
+				fmt.Fprintf(os.Stderr, "warn: rollback stats.csv for %s: %v\n", monthStr, wErr)
 			}
 			return metric, fmt.Errorf("hf commit %s: %w", monthStr, err)
 		}
-		durCommitS := int(time.Since(t0Commit).Seconds())
 
 		// Update commit duration in stats.csv.
-		newRow.DurCommitS = durCommitS
+		newRow.DurCommitS = int(time.Since(t0Commit).Seconds())
 		existingRows, _ = ReadStatsCSV(cfg.StatsCSVPath())
 		if err := WriteStatsCSV(cfg.StatsCSVPath(), existingRows, newRow, true); err != nil {
-			fmt.Fprintf(os.Stderr, "warn: update stats.csv durCommit for %s: %v\n", monthStr, err)
+			fmt.Fprintf(os.Stderr, "warn: update stats.csv dur_commit for %s: %v\n", monthStr, err)
 		}
 
 		bytesDone += result.Bytes
@@ -198,9 +174,8 @@ func (t *HistoricalTask) Run(ctx context.Context, emit func(*HistoricalState)) (
 		metric.BytesWritten += result.Bytes
 		committed[[2]int{m.Year, m.Month}] = true
 
-		state.Rows = result.Count
-		state.BytesDone = bytesDone
 		elapsed := time.Since(started)
+		state.BytesDone = bytesDone
 		state.ElapsedTotal = elapsed
 		if elapsed.Seconds() > 0 {
 			state.SpeedBytesPS = float64(bytesDone) / elapsed.Seconds()
@@ -214,18 +189,21 @@ func (t *HistoricalTask) Run(ctx context.Context, emit func(*HistoricalState)) (
 	return metric, nil
 }
 
-func fmtInt(n int64) string {
-	// Simple comma-formatted integer.
-	s := fmt.Sprintf("%d", n)
-	if len(s) <= 3 {
-		return s
+// filterMonths returns only the months at or after fromYear/fromMonth.
+// If fromYear is 0, all months are returned.
+func filterMonths(months []monthInfo, fromYear, fromMonth int) []monthInfo {
+	if fromYear == 0 {
+		return months
 	}
-	var out []byte
-	for i, c := range s {
-		if i > 0 && (len(s)-i)%3 == 0 {
-			out = append(out, ',')
+	out := months[:0:0]
+	for _, m := range months {
+		if m.Year < fromYear {
+			continue
 		}
-		out = append(out, byte(c))
+		if m.Year == fromYear && fromMonth > 0 && m.Month < fromMonth {
+			continue
+		}
+		out = append(out, m)
 	}
-	return string(out)
+	return out
 }

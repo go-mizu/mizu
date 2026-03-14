@@ -18,7 +18,8 @@ const (
 	defaultTable       = "hackernews"
 )
 
-// Config controls the remote data source and local repo root for HN publishing.
+// Config controls the remote data source and local repository root for HN publishing.
+// The zero value is not useful; use DefaultConfig or set at least RepoRoot.
 type Config struct {
 	RepoRoot    string
 	EndpointURL string
@@ -29,9 +30,11 @@ type Config struct {
 	HTTPClient  *http.Client
 }
 
+// DefaultConfig returns a Config populated with production defaults and
+// any overrides from MIZU_HN2_* environment variables.
 func DefaultConfig() Config {
 	home, _ := os.UserHomeDir()
-	return Config{
+	c := Config{
 		RepoRoot:    filepath.Join(home, "data", "hn", "repo"),
 		EndpointURL: defaultEndpointURL,
 		User:        defaultUser,
@@ -39,28 +42,37 @@ func DefaultConfig() Config {
 		Table:       defaultTable,
 		HTTPClient:  &http.Client{Timeout: 60 * time.Second},
 	}
-}
-
-func (c Config) WithDefaults() Config {
-	d := DefaultConfig()
 	if v := strings.TrimSpace(os.Getenv("MIZU_HN2_ENDPOINT")); v != "" {
-		d.EndpointURL = v
+		c.EndpointURL = v
 	}
 	if v := strings.TrimSpace(os.Getenv("MIZU_HN2_USER")); v != "" {
-		d.User = v
+		c.User = v
 	}
 	if v := strings.TrimSpace(os.Getenv("MIZU_HN2_DATABASE")); v != "" {
-		d.Database = v
+		c.Database = v
 	}
 	if v := strings.TrimSpace(os.Getenv("MIZU_HN2_TABLE")); v != "" {
-		d.Table = v
+		c.Table = v
 	}
 	if v := strings.TrimSpace(os.Getenv("MIZU_HN2_DNS_SERVER")); v != "" {
-		d.DNSServer = v
+		c.DNSServer = v
 	}
 	if v := strings.TrimSpace(os.Getenv("MIZU_HN2_REPO_ROOT")); v != "" {
-		d.RepoRoot = v
+		c.RepoRoot = v
 	}
+	return c
+}
+
+// WithDefaults returns a copy of c with any zero fields filled from DefaultConfig.
+// This is the public entry point used by CLI callers that construct a partial Config.
+func (c Config) WithDefaults() Config {
+	return c.resolved()
+}
+
+// resolved returns a Config with all fields filled. It is the single internal
+// resolver; every method that needs a complete Config calls c.resolved().
+func (c Config) resolved() Config {
+	d := DefaultConfig()
 	if strings.TrimSpace(c.RepoRoot) != "" {
 		d.RepoRoot = c.RepoRoot
 	}
@@ -85,13 +97,15 @@ func (c Config) WithDefaults() Config {
 	return d
 }
 
-func (c Config) DataDir() string {
-	return filepath.Join(c.WithDefaults().RepoRoot, "data")
-}
+// Path helpers — all return absolute paths derived from RepoRoot.
 
-func (c Config) TodayDir() string {
-	return filepath.Join(c.WithDefaults().RepoRoot, "today")
+func (c Config) DataDir() string        { return filepath.Join(c.resolved().RepoRoot, "data") }
+func (c Config) TodayDir() string       { return filepath.Join(c.resolved().RepoRoot, "today") }
+func (c Config) StatsCSVPath() string   { return filepath.Join(c.resolved().RepoRoot, "stats.csv") }
+func (c Config) StatsTodayCSVPath() string {
+	return filepath.Join(c.resolved().RepoRoot, "stats_today.csv")
 }
+func (c Config) READMEPath() string { return filepath.Join(c.resolved().RepoRoot, "README.md") }
 
 func (c Config) MonthDir(year int) string {
 	return filepath.Join(c.DataDir(), fmt.Sprintf("%04d", year))
@@ -101,25 +115,15 @@ func (c Config) MonthPath(year, month int) string {
 	return filepath.Join(c.MonthDir(year), fmt.Sprintf("%04d-%02d.parquet", year, month))
 }
 
-func (c Config) TodayBlockPath(date, blockHHMM string) string {
-	block := strings.ReplaceAll(blockHHMM, ":", "_")
-	return filepath.Join(c.TodayDir(), date+"_"+block+".parquet")
+// TodayBlockPath returns the local path for a 5-minute live block parquet file.
+func (c Config) TodayBlockPath(date, hhmm string) string {
+	return filepath.Join(c.TodayDir(), blockFilename(date, hhmm))
 }
 
-func (c Config) StatsCSVPath() string {
-	return filepath.Join(c.WithDefaults().RepoRoot, "stats.csv")
-}
-
-func (c Config) StatsTodayCSVPath() string {
-	return filepath.Join(c.WithDefaults().RepoRoot, "stats_today.csv")
-}
-
-func (c Config) READMEPath() string {
-	return filepath.Join(c.WithDefaults().RepoRoot, "README.md")
-}
-
+// EnsureDirs creates the data and today directories if they do not exist.
+// Per-year subdirectories are created on demand by FetchMonth.
 func (c Config) EnsureDirs() error {
-	cfg := c.WithDefaults()
+	cfg := c.resolved()
 	for _, d := range []string{cfg.DataDir(), cfg.TodayDir()} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return err
@@ -128,16 +132,18 @@ func (c Config) EnsureDirs() error {
 	return nil
 }
 
+// httpClient returns the configured HTTP client, falling back to a 60-second default.
 func (c Config) httpClient() *http.Client {
-	cfg := c.WithDefaults()
+	cfg := c.resolved()
 	if cfg.HTTPClient != nil {
 		return cfg.HTTPClient
 	}
 	return &http.Client{Timeout: 60 * time.Second}
 }
 
+// fqTable returns the fully-qualified ClickHouse table name (e.g. `hackernews`.`hackernews`).
 func (c Config) fqTable() string {
-	cfg := c.WithDefaults()
+	cfg := c.resolved()
 	return quoteIdent(cfg.Database) + "." + quoteIdent(cfg.Table)
 }
 

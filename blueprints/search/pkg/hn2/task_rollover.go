@@ -12,7 +12,7 @@ import (
 	_ "github.com/duckdb/duckdb-go/v2"
 )
 
-// RolloverState is emitted by DayRolloverTask.
+// RolloverState is emitted by DayRolloverTask during execution.
 type RolloverState struct {
 	Phase      string // "merge" | "commit"
 	PrevDate   string
@@ -20,7 +20,7 @@ type RolloverState struct {
 	RowsMerged int64
 }
 
-// RolloverMetric is the final result of DayRolloverTask.
+// RolloverMetric is the result returned when DayRolloverTask.Run completes.
 type RolloverMetric struct {
 	PrevDate    string
 	MonthPath   string
@@ -29,30 +29,33 @@ type RolloverMetric struct {
 	CommitURL   string
 }
 
-// RolloverTaskOptions configures the day rollover.
+// RolloverTaskOptions configures a day rollover run.
 type RolloverTaskOptions struct {
-	PrevDate   string // YYYY-MM-DD
-	HFCommit   func(ctx context.Context, ops []HFOp, message string) (string, error)
-	ReadmeTmpl []byte
-	Analytics  *Analytics // optional; enriches README with source-level stats
+	PrevDate   string     // YYYY-MM-DD: the day whose today/ blocks should be merged
+	HFCommit  CommitFn   // required: commits files to Hugging Face
+	ReadmeTmpl []byte    // required: README.md Go template
+	Analytics  *Analytics // optional: enriches README with source-level stats
 }
 
-// DayRolloverTask merges today's live blocks into the monthly parquet and commits to HF.
+// DayRolloverTask merges a day's live 5-minute blocks into the monthly Parquet
+// file and commits the result to Hugging Face, removing the individual blocks.
 type DayRolloverTask struct {
 	cfg  Config
 	opts RolloverTaskOptions
 }
 
+// NewDayRolloverTask constructs a DayRolloverTask ready to run.
 func NewDayRolloverTask(cfg Config, opts RolloverTaskOptions) *DayRolloverTask {
 	return &DayRolloverTask{cfg: cfg, opts: opts}
 }
 
+// Run executes the day rollover. It emits state transitions via emit (if non-nil)
+// and returns aggregate metrics on completion.
 func (t *DayRolloverTask) Run(ctx context.Context, emit func(*RolloverState)) (RolloverMetric, error) {
-	cfg := t.cfg.WithDefaults()
+	cfg := t.cfg.resolved()
 	prevDate := t.opts.PrevDate
 	metric := RolloverMetric{PrevDate: prevDate}
 
-	// Determine year/month from prevDate.
 	prevTime, err := time.Parse("2006-01-02", prevDate)
 	if err != nil {
 		return metric, fmt.Errorf("parse prev date: %w", err)
@@ -61,78 +64,40 @@ func (t *DayRolloverTask) Run(ctx context.Context, emit func(*RolloverState)) (R
 	monthPath := cfg.MonthPath(year, month)
 	metric.MonthPath = monthPath
 
-	// Collect today/ files for prevDate.
-	pattern := filepath.Join(cfg.TodayDir(), prevDate+"_*.parquet")
-	todayFiles, _ := filepath.Glob(pattern)
+	todayFiles, _ := filepath.Glob(filepath.Join(cfg.TodayDir(), prevDate+"_*.parquet"))
 
-	state := &RolloverState{Phase: "merge", PrevDate: prevDate, FilesFound: len(todayFiles)}
 	if emit != nil {
-		emit(state)
+		emit(&RolloverState{Phase: "merge", PrevDate: prevDate, FilesFound: len(todayFiles)})
 	}
 
-	// Early return: nothing to do if no today files and no month file yet.
-	if len(todayFiles) == 0 && !fileExistsNE(monthPath) {
-		return metric, nil
+	if len(todayFiles) == 0 && !fileExists(monthPath) {
+		return metric, nil // nothing to do
 	}
 
-	// Merge block: only if we have today files to merge in.
-	if len(todayFiles) > 0 {
-		// Build parquet source list: existing monthly (if any) + today files.
-		var sources []string
-		if fileExistsNE(monthPath) {
-			sources = append(sources, monthPath)
-		}
-		sources = append(sources, todayFiles...)
-
-		tmpPath := monthPath + ".tmp"
-		_ = os.Remove(tmpPath)
-		if err := os.MkdirAll(filepath.Dir(monthPath), 0o755); err != nil {
-			return metric, fmt.Errorf("create month dir: %w", err)
-		}
-
-		// Build DuckDB read_parquet list.
-		listSQL := buildParquetList(sources)
-		mergeQ := fmt.Sprintf(
-			`COPY (SELECT * FROM read_parquet(%s) ORDER BY id) TO '%s' (FORMAT PARQUET, COMPRESSION zstd, COMPRESSION_LEVEL 22)`,
-			listSQL, escapeSQLStr(tmpPath),
-		)
-		db, err := sql.Open("duckdb", "")
-		if err != nil {
-			return metric, fmt.Errorf("open duckdb for merge: %w", err)
-		}
-		_, mergeErr := db.ExecContext(ctx, mergeQ)
-		db.Close()
-		if mergeErr != nil {
-			_ = os.Remove(tmpPath)
-			return metric, fmt.Errorf("merge parquet: %w", mergeErr)
-		}
-		if err := os.Rename(tmpPath, monthPath); err != nil {
-			_ = os.Remove(tmpPath)
-			return metric, fmt.Errorf("rename merged parquet: %w", err)
-		}
-	}
-
-	// Scan merged file.
-	db2, err := sql.Open("duckdb", "")
+	// Open a single DuckDB connection for both merge and scan.
+	db, err := sql.Open("duckdb", "")
 	if err != nil {
-		return metric, fmt.Errorf("open duckdb for scan: %w", err)
+		return metric, fmt.Errorf("open duckdb: %w", err)
 	}
-	var count, minID, maxID int64
-	scanQ := fmt.Sprintf(`SELECT COUNT(*)::BIGINT, MIN(id)::BIGINT, MAX(id)::BIGINT FROM read_parquet('%s')`, escapeSQLStr(monthPath))
-	scanErr := db2.QueryRowContext(ctx, scanQ).Scan(&count, &minID, &maxID)
-	db2.Close()
-	if scanErr != nil {
-		return metric, fmt.Errorf("scan merged parquet %s: %w", monthPath, scanErr)
+	defer db.Close()
+
+	if len(todayFiles) > 0 {
+		if err := mergeParquetFiles(ctx, db, monthPath, todayFiles); err != nil {
+			return metric, err
+		}
+	}
+
+	count, minID, maxID, err := scanParquet(ctx, db, monthPath)
+	if err != nil {
+		return metric, fmt.Errorf("scan merged parquet: %w", err)
 	}
 	metric.RowsMerged = count
 
-	state.RowsMerged = count
-	state.Phase = "commit"
 	if emit != nil {
-		emit(state)
+		emit(&RolloverState{Phase: "commit", PrevDate: prevDate, FilesFound: len(todayFiles), RowsMerged: count})
 	}
 
-	// Upsert stats.csv with the merged month row.
+	// Update stats files.
 	fi, _ := os.Stat(monthPath)
 	var sizeBytes int64
 	if fi != nil {
@@ -145,23 +110,19 @@ func (t *DayRolloverTask) Run(ctx context.Context, emit func(*RolloverState)) (R
 		Count: count, SizeBytes: sizeBytes,
 		CommittedAt: time.Now().UTC(),
 	}
-	_ = WriteStatsCSV(cfg.StatsCSVPath(), existingRows, newMonthRow, true /* upsert */)
-
-	// Clear stats_today.csv.
+	_ = WriteStatsCSV(cfg.StatsCSVPath(), existingRows, newMonthRow, true)
 	_ = ClearStatsTodayCSV(cfg.StatsTodayCSVPath())
 
 	// Regenerate README.
 	updatedMonths, _ := ReadStatsCSV(cfg.StatsCSVPath())
-	readmeBytes, _ := GenerateREADME(t.opts.ReadmeTmpl, updatedMonths, nil, t.opts.Analytics)
-	if readmeBytes != nil {
+	if readmeBytes, err := GenerateREADME(t.opts.ReadmeTmpl, updatedMonths, nil, t.opts.Analytics); err == nil && readmeBytes != nil {
 		_ = os.WriteFile(cfg.READMEPath(), readmeBytes, 0o644)
 	}
 
-	// Build HF commit: delete today files + add monthly + metadata.
-	var ops []HFOp
+	// Build HF commit: delete today/ blocks, upsert monthly parquet and metadata.
+	ops := make([]HFOp, 0, len(todayFiles)+4)
 	for _, f := range todayFiles {
-		base := filepath.Base(f)
-		ops = append(ops, HFOp{PathInRepo: "today/" + base, Delete: true})
+		ops = append(ops, HFOp{PathInRepo: "today/" + filepath.Base(f), Delete: true})
 	}
 	ops = append(ops,
 		HFOp{LocalPath: monthPath, PathInRepo: fmt.Sprintf("data/%04d/%04d-%02d.parquet", year, year, month)},
@@ -176,37 +137,73 @@ func (t *DayRolloverTask) Run(ctx context.Context, emit func(*RolloverState)) (R
 	}
 	metric.CommitURL = commitURL
 
-	// Delete local today files after confirmed successful commit.
+	// Remove local today/ files after confirmed commit.
+	// If removal fails, the files are inert — the repo no longer references them.
 	for _, f := range todayFiles {
-		if err := os.Remove(f); err != nil && !os.IsNotExist(err) {
-			// Log but don't fail — files are inert at this point.
-			fmt.Fprintf(os.Stderr, "warn: remove local today file %s: %v\n", f, err)
-		} else {
+		if err := os.Remove(f); err == nil {
 			metric.FilesPruned++
 		}
 	}
 	return metric, nil
 }
 
-func buildParquetList(paths []string) string {
+// mergeParquetFiles merges existing monthly parquet (if any) with todayFiles
+// into monthPath, sorted by id, using Zstandard compression level 22.
+func mergeParquetFiles(ctx context.Context, db *sql.DB, monthPath string, todayFiles []string) error {
+	var sources []string
+	if fileExists(monthPath) {
+		sources = append(sources, monthPath)
+	}
+	sources = append(sources, todayFiles...)
+
+	if err := ensureParentDir(monthPath); err != nil {
+		return fmt.Errorf("create month dir: %w", err)
+	}
+	tmp := monthPath + ".merge.tmp"
+	defer os.Remove(tmp) // clean up on any error path
+
+	mergeQ := fmt.Sprintf(
+		`COPY (SELECT * FROM read_parquet(%s) ORDER BY id) TO '%s' (FORMAT PARQUET, COMPRESSION zstd, COMPRESSION_LEVEL 22)`,
+		parquetList(sources), escapeSQLStr(tmp),
+	)
+	if _, err := db.ExecContext(ctx, mergeQ); err != nil {
+		return fmt.Errorf("merge parquet: %w", err)
+	}
+	if err := os.Rename(tmp, monthPath); err != nil {
+		return fmt.Errorf("rename merged parquet: %w", err)
+	}
+	return nil
+}
+
+// scanParquet returns COUNT(*), MIN(id), MAX(id) for the given Parquet file.
+func scanParquet(ctx context.Context, db *sql.DB, path string) (count, minID, maxID int64, err error) {
+	q := fmt.Sprintf(`SELECT COUNT(*)::BIGINT, MIN(id)::BIGINT, MAX(id)::BIGINT FROM read_parquet('%s')`, escapeSQLStr(path))
+	err = db.QueryRowContext(ctx, q).Scan(&count, &minID, &maxID)
+	return
+}
+
+// parquetList formats a slice of file paths as a DuckDB read_parquet argument:
+// a single-quoted string for one file, or a bracket list for multiple.
+func parquetList(paths []string) string {
 	if len(paths) == 1 {
 		return "'" + escapeSQLStr(paths[0]) + "'"
 	}
 	var sb strings.Builder
-	sb.WriteString("[")
+	sb.WriteByte('[')
 	for i, p := range paths {
 		if i > 0 {
 			sb.WriteString(", ")
 		}
-		sb.WriteString("'")
+		sb.WriteByte('\'')
 		sb.WriteString(escapeSQLStr(p))
-		sb.WriteString("'")
+		sb.WriteByte('\'')
 	}
-	sb.WriteString("]")
+	sb.WriteByte(']')
 	return sb.String()
 }
 
-func fileExistsNE(path string) bool {
+// fileExists reports whether path exists, is a regular file, and is non-empty.
+func fileExists(path string) bool {
 	fi, err := os.Stat(path)
 	return err == nil && !fi.IsDir() && fi.Size() > 0
 }

@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -21,16 +20,18 @@ type RemoteInfo struct {
 	CheckedAt time.Time
 }
 
-// MonthInfo describes a month available in the remote source.
-type MonthInfo struct {
+// monthInfo describes a calendar month available in the remote source.
+// It is internal to the package; callers see only the aggregated results.
+type monthInfo struct {
 	Year  int
 	Month int
 	Count int64
 }
 
-// RemoteInfo queries the remote source for current item count and max ID.
-func (c Config) RemoteInfo(ctx context.Context) (*RemoteInfo, error) {
-	cfg := c.WithDefaults()
+// remoteInfo queries the remote source for the current item count and max ID.
+// Used by the live task as a cold-start watermark when no local state exists.
+func (c Config) remoteInfo(ctx context.Context) (*RemoteInfo, error) {
+	cfg := c.resolved()
 	q := fmt.Sprintf(
 		`SELECT toInt64(count()) AS c, toInt64(max(id)) AS max_id, toString(max(time)) AS max_time FROM %s FORMAT JSONEachRow`,
 		cfg.fqTable(),
@@ -63,12 +64,13 @@ func (c Config) RemoteInfo(ctx context.Context) (*RemoteInfo, error) {
 	}, nil
 }
 
-// ListMonths returns all months with data available in the remote source.
-// The current calendar month is excluded (it is incomplete).
-func (c Config) ListMonths(ctx context.Context) ([]MonthInfo, error) {
-	cfg := c.WithDefaults()
+// listMonths returns all calendar months with data in the remote source,
+// excluding the current (incomplete) month.
+func (c Config) listMonths(ctx context.Context) ([]monthInfo, error) {
+	cfg := c.resolved()
 	q := fmt.Sprintf(
-		`SELECT toYear(time) AS y, toMonth(time) AS m, toInt64(count()) AS n FROM %s WHERE time IS NOT NULL GROUP BY y, m ORDER BY y, m FORMAT JSONEachRow`,
+		`SELECT toYear(time) AS y, toMonth(time) AS m, toInt64(count()) AS n `+
+			`FROM %s WHERE time IS NOT NULL GROUP BY y, m ORDER BY y, m FORMAT JSONEachRow`,
 		cfg.fqTable(),
 	)
 	body, err := cfg.query(ctx, q)
@@ -78,7 +80,7 @@ func (c Config) ListMonths(ctx context.Context) ([]MonthInfo, error) {
 	now := time.Now().UTC()
 	curYear, curMonth := now.Year(), int(now.Month())
 	lines := strings.Split(strings.TrimSpace(string(body)), "\n")
-	out := make([]MonthInfo, 0, len(lines))
+	out := make([]monthInfo, 0, len(lines))
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -96,13 +98,16 @@ func (c Config) ListMonths(ctx context.Context) ([]MonthInfo, error) {
 		m, _ := parseIntAny(row.M)
 		n, _ := parseIntAny(row.N)
 		if int(y) == curYear && int(m) == curMonth {
-			continue
+			continue // current month is incomplete
 		}
-		out = append(out, MonthInfo{Year: int(y), Month: int(m), Count: n})
+		out = append(out, monthInfo{Year: int(y), Month: int(m), Count: n})
 	}
 	return out, nil
 }
 
+// query executes a SQL statement against the ClickHouse endpoint and returns
+// the response body. The limit is 16 MiB — enough for full JSONEachRow responses
+// (ListMonths returns ~232 rows, each ~50 bytes).
 func (c Config) query(ctx context.Context, q string) ([]byte, error) {
 	req, err := c.newRequest(ctx, q)
 	if err != nil {
@@ -113,7 +118,7 @@ func (c Config) query(ctx context.Context, q string) ([]byte, error) {
 		return nil, fmt.Errorf("remote query: %w", err)
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
 	if err != nil {
 		return nil, fmt.Errorf("read remote response: %w", err)
 	}
@@ -123,8 +128,9 @@ func (c Config) query(ctx context.Context, q string) ([]byte, error) {
 	return body, nil
 }
 
+// newRequest builds an authenticated HTTP POST request for the ClickHouse endpoint.
 func (c Config) newRequest(ctx context.Context, q string) (*http.Request, error) {
-	cfg := c.WithDefaults()
+	cfg := c.resolved()
 	u, err := url.Parse(cfg.EndpointURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse endpoint URL: %w", err)
@@ -148,9 +154,13 @@ func (c Config) newRequest(ctx context.Context, q string) (*http.Request, error)
 	return req, nil
 }
 
+// downloadHTTPClient returns a clone of the configured HTTP client with no
+// timeout, suitable for long-running Parquet downloads. Clones to avoid
+// mutating the shared client. Optionally configures a custom DNS resolver.
 func (c Config) downloadHTTPClient() *http.Client {
-	cfg := c.WithDefaults()
+	cfg := c.resolved()
 	base := cfg.httpClient()
+	// Clone to avoid mutating the shared client.
 	clone := *base
 	clone.Timeout = 0
 	if cfg.DNSServer == "" {
@@ -165,33 +175,14 @@ func (c Config) downloadHTTPClient() *http.Client {
 	resolver := &net.Resolver{
 		PreferGo: true,
 		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-			d := &net.Dialer{Timeout: 5 * time.Second}
-			return d.DialContext(ctx, "udp", cfg.DNSServer)
+			return (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "udp", cfg.DNSServer)
 		},
 	}
-	dialer := &net.Dialer{
+	tr.DialContext = (&net.Dialer{
 		Timeout:   30 * time.Second,
 		KeepAlive: 30 * time.Second,
 		Resolver:  resolver,
-	}
-	tr.DialContext = dialer.DialContext
+	}).DialContext
 	clone.Transport = tr
 	return &clone
-}
-
-func parseIntAny(v any) (int64, error) {
-	switch x := v.(type) {
-	case float64:
-		return int64(x), nil
-	case int64:
-		return x, nil
-	case int:
-		return int64(x), nil
-	case json.Number:
-		return x.Int64()
-	case string:
-		return strconv.ParseInt(strings.TrimSpace(x), 10, 64)
-	default:
-		return 0, fmt.Errorf("unsupported numeric type %T", v)
-	}
 }
