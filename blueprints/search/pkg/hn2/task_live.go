@@ -2,15 +2,10 @@ package hn2
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
-
-	_ "github.com/duckdb/duckdb-go/v2"
 )
 
 // LiveState is emitted by LiveTask on each poll cycle.
@@ -64,41 +59,50 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 	started := time.Now()
 	metric := LiveMetric{}
 
-	// --- Cold-start watermark ---
+	// --- Cold-start ---
 	today := time.Now().UTC().Format("2006-01-02")
 	lastDate := today
 
 	todayRows, _ := ReadStatsTodayCSV(cfg.StatsTodayCSVPath())
-	// Sync stats_today.csv from HF if HF has more entries for today (prevents stale local CSV corruption).
+	// Sync stats_today.csv from HF if HF has more entries for today.
 	if synced := t.syncStatsTodayFromHF(ctx, cfg, today, todayRows); synced != nil {
 		todayRows = synced
 	}
-	liveWatermark, err := t.coldStartWatermark(ctx, cfg, today, todayRows)
-	if err != nil {
-		return metric, err
+
+	// Count committed vs expected blocks and log startup state.
+	{
+		now := time.Now().UTC()
+		dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+		nowTrunc := now.Truncate(interval)
+		expected := int(nowTrunc.Sub(dayStart) / interval)
+		committed := 0
+		var maxCommittedID int64
+		for _, r := range todayRows {
+			if r.Date == today {
+				committed++
+				if r.HighestID > maxCommittedID {
+					maxCommittedID = r.HighestID
+				}
+			}
+		}
+		missing := expected - committed
+		fmt.Fprintf(os.Stderr, "info: startup today=%s interval=%s committed=%d expected=%d missing=%d maxID=%d\n",
+			today, interval, committed, expected, missing, maxCommittedID)
 	}
 
 	// Roll over any orphaned blocks from a previous day.
 	todayRows = t.rolloverOrphans(ctx, cfg, today, todayRows)
 
-	// Backfill any missing 5-min blocks for today using a single bulk ClickHouse
-	// query + DuckDB split (2 quota units regardless of how many blocks to backfill).
-	backfillWatermark := liveWatermark
-	if id, berr := cfg.maxIDBeforeDate(ctx, today); berr == nil && id > 0 {
-		backfillWatermark = id
-	} else if berr != nil {
-		fmt.Fprintf(os.Stderr, "warn: max id before today: %v — backfill starts from live watermark\n", berr)
-	}
-	lastHighestID := backfillWatermark
-	todayRows, lastHighestID = t.backfillToday(ctx, cfg, today, interval, backfillWatermark, todayRows, &metric, emit)
-	if lastHighestID < liveWatermark {
-		lastHighestID = liveWatermark
-	}
+	// Backfill missing 5-min blocks using per-block time-range queries.
+	// Time-based queries are idempotent and avoid ID watermark drift bugs.
+	todayRows = t.backfillToday(ctx, cfg, today, interval, todayRows, &metric, emit)
 
 	var totalCommitted int64
 	for _, r := range todayRows {
 		totalCommitted += r.Count
 	}
+	fmt.Fprintf(os.Stderr, "info: startup complete — %d today rows, %s total items committed\n",
+		len(todayRows), fmtInt(totalCommitted))
 
 	// --- Main live polling loop ---
 	for {
@@ -125,74 +129,85 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 			})
 			if _, err := rollover.Run(ctx, nil); err != nil {
 				fmt.Fprintf(os.Stderr, "warn: day rollover failed: %v\n", err)
-				// Do not advance lastDate — retry on next loop iteration.
 			} else {
 				metric.Rollovers++
 				totalCommitted = 0
 				todayRows = nil
 				lastDate = blockDate
-				// Recalculate backfill watermark for the new day.
-				if id, berr := cfg.maxIDBeforeDate(ctx, blockDate); berr == nil && id > 0 {
-					backfillWatermark = id
-				} else {
-					backfillWatermark = lastHighestID
-				}
-				todayRows, lastHighestID = t.backfillToday(ctx, cfg, blockDate, interval, backfillWatermark, todayRows, &metric, emit)
+				todayRows = t.backfillToday(ctx, cfg, blockDate, interval, todayRows, &metric, emit)
 			}
 		}
 
-		// Skip block if already committed.
-		if blockCommitted(todayRows, blockDate, blockHH) {
+		// Try to fill the oldest missing block (past or current) with a time-range query.
+		// Time-based queries are idempotent: each block fetches exactly its [start, end) window.
+		dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+		targetBlock, targetHHMM := oldestMissingBlock(todayRows, blockDate, dayStart, blockTime, interval)
+
+		if targetHHMM == "" {
+			// All blocks up to current are committed — wait for next interval.
+			next := nextIntervalTime(now, interval)
+			fmt.Fprintf(os.Stderr, "info: [%s %s] all blocks committed, next poll in %s\n",
+				blockDate, blockHH, time.Until(next).Round(time.Second))
+			if emit != nil {
+				emit(&LiveState{Phase: "wait", Block: blockDate + " " + blockHH, NextFetchIn: time.Until(next)})
+			}
 			sleepUntilNext(ctx, interval)
 			continue
 		}
 
-		outPath := cfg.TodayBlockPath(blockDate, blockHH)
-		hfPath := cfg.TodayHFPath(blockDate, blockHH)
+		blockEnd := targetBlock.Add(interval)
+		outPath := cfg.TodayBlockPath(blockDate, targetHHMM)
+		hfPath := cfg.TodayHFPath(blockDate, targetHHMM)
 
+		isPast := targetHHMM != blockHH
+		label := "live"
+		if isPast {
+			label = "catchup"
+		}
+		fmt.Fprintf(os.Stderr, "info: [%s %s] %s fetch: querying time %s–%s from source\n",
+			blockDate, targetHHMM, label, targetHHMM, blockEnd.Format("15:04"))
 		if emit != nil {
 			emit(&LiveState{
 				Phase:          "fetch",
-				Block:          blockDate + " " + blockHH,
-				HighestID:      lastHighestID,
+				Block:          blockDate + " " + targetHHMM,
 				BlocksToday:    len(todayRows),
 				TotalCommitted: totalCommitted,
 			})
 		}
 
 		t0 := time.Now()
-		result, err := cfg.FetchSince(ctx, lastHighestID, now, outPath)
+		result, err := cfg.FetchTimeRange(ctx, targetBlock, blockEnd, outPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "warn: fetch since id=%d: %v\n", lastHighestID, err)
+			fmt.Fprintf(os.Stderr, "warn: [%s %s] fetch time range: %v\n", blockDate, targetHHMM, err)
 			next := nextIntervalTime(now, interval)
 			if emit != nil {
-				emit(&LiveState{Phase: "wait", NextFetchIn: time.Until(next)})
+				emit(&LiveState{Phase: "wait", Block: blockDate + " " + blockHH, NextFetchIn: time.Until(next)})
 			}
 			sleepUntilNext(ctx, interval)
 			continue
 		}
 		if result.Count == 0 {
 			next := nextIntervalTime(now, interval)
-			fmt.Fprintf(os.Stderr, "info: [%s %s] 0 new items (source up to id=%d), next fetch in %s\n",
-				blockDate, blockHH, lastHighestID, time.Until(next).Round(time.Second))
+			fmt.Fprintf(os.Stderr, "info: [%s %s] 0 items in source (ClickHouse lag), next poll in %s\n",
+				blockDate, targetHHMM, time.Until(next).Round(time.Second))
 			if emit != nil {
-				emit(&LiveState{Phase: "wait", NextFetchIn: time.Until(next)})
+				emit(&LiveState{Phase: "wait", Block: blockDate + " " + blockHH, NextFetchIn: time.Until(next)})
 			}
 			sleepUntilNext(ctx, interval)
 			continue
 		}
 		durFetchS := int(time.Since(t0).Seconds())
-		lastHighestID = result.HighestID
 		totalCommitted += result.Count
+		fmt.Fprintf(os.Stderr, "info: [%s %s] fetched %s items (id %d–%d) in %ds\n",
+			blockDate, targetHHMM, fmtInt(result.Count), result.LowestID, result.HighestID, durFetchS)
 
 		fi, _ := os.Stat(outPath)
 		var sizeBytes int64
 		if fi != nil {
 			sizeBytes = fi.Size()
 		}
-
 		newRow := TodayRow{
-			Date: blockDate, Block: blockHH,
+			Date: blockDate, Block: targetHHMM,
 			LowestID: result.LowestID, HighestID: result.HighestID,
 			Count: result.Count, DurFetchS: durFetchS, SizeBytes: sizeBytes,
 			CommittedAt: time.Now().UTC(),
@@ -203,9 +218,9 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 			_ = os.WriteFile(cfg.READMEPath(), readmeBytes, 0o644)
 		}
 
-		msg := fmt.Sprintf("Live %s %s UTC (%s items)", blockDate, blockHH, fmtInt(result.Count))
+		msg := fmt.Sprintf("Live %s %s UTC (%s items)", blockDate, targetHHMM, fmtInt(result.Count))
 		if emit != nil {
-			emit(&LiveState{Phase: "commit", Block: blockDate + " " + blockHH, NewItems: result.Count})
+			emit(&LiveState{Phase: "commit", Block: blockDate + " " + targetHHMM, NewItems: result.Count})
 		}
 		ops := []HFOp{
 			{LocalPath: outPath, PathInRepo: hfPath},
@@ -214,20 +229,26 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 		}
 		t0Commit := time.Now()
 		if _, cerr := t.opts.HFCommit(ctx, ops, msg); cerr != nil {
-			fmt.Fprintf(os.Stderr, "warn: hf commit block %s %s: %v\n", blockDate, blockHH, cerr)
+			fmt.Fprintf(os.Stderr, "warn: [%s %s] hf commit: %v\n", blockDate, targetHHMM, cerr)
 		} else {
 			newRow.DurCommitS = int(time.Since(t0Commit).Seconds())
 			todayRows = updateTodayRow(todayRows, newRow)
 			_ = WriteStatsTodayCSV(cfg.StatsTodayCSVPath(), todayRows)
 			metric.BlocksWritten++
 			metric.RowsWritten += result.Count
+			fmt.Fprintf(os.Stderr, "info: [%s %s] committed to HF in %ds\n",
+				blockDate, targetHHMM, newRow.DurCommitS)
 		}
 
-		next := blockTime.Add(interval)
-		if emit != nil {
-			emit(&LiveState{Phase: "wait", Block: blockDate + " " + blockHH, NextFetchIn: time.Until(next)})
+		// If we just committed a past (catchup) block, loop immediately to try the next one.
+		// If it was the current block, sleep until the next interval.
+		if !isPast {
+			next := blockTime.Add(interval)
+			if emit != nil {
+				emit(&LiveState{Phase: "wait", Block: blockDate + " " + targetHHMM, NextFetchIn: time.Until(next)})
+			}
+			sleepUntilNext(ctx, interval)
 		}
-		sleepUntilNext(ctx, interval)
 	}
 }
 
@@ -323,27 +344,22 @@ func (t *LiveTask) rolloverOrphans(ctx context.Context, cfg Config, today string
 	return todayRows
 }
 
-// backfillToday fetches all today's missing 5-min blocks in ONE ClickHouse query,
-// then splits the result into per-block Parquet files using DuckDB.
-// Only blocks before the current wall-clock interval are backfilled.
+// backfillToday fetches all missing 5-min blocks for today using per-block time-range queries.
+// Time-based queries are idempotent — each block fetches exactly its [start, end) window
+// from the source, with no ID watermark dependency.
 func (t *LiveTask) backfillToday(
 	ctx context.Context,
 	cfg Config,
 	today string,
 	interval time.Duration,
-	lastHighestID int64,
 	todayRows []TodayRow,
 	metric *LiveMetric,
 	emit func(*LiveState),
-) ([]TodayRow, int64) {
-	// Build set of already-committed blocks.
+) []TodayRow {
 	committed := make(map[string]bool, len(todayRows))
 	for _, r := range todayRows {
 		if r.Date == today {
 			committed[r.Block] = true
-			if r.HighestID > lastHighestID {
-				lastHighestID = r.HighestID
-			}
 		}
 	}
 
@@ -351,81 +367,47 @@ func (t *LiveTask) backfillToday(
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	nowTrunc := now.Truncate(interval)
 
-	// Enumerate all expected 5-min blocks up to (but not including) current block.
 	var missing []time.Time
 	for t0 := dayStart; t0.Before(nowTrunc); t0 = t0.Add(interval) {
-		hhmm := t0.Format("15:04")
-		if !committed[hhmm] {
+		if !committed[t0.Format("15:04")] {
 			missing = append(missing, t0)
 		}
 	}
 	if len(missing) == 0 {
-		return todayRows, lastHighestID
+		fmt.Fprintf(os.Stderr, "info: backfill: no missing blocks for %s\n", today)
+		return todayRows
 	}
-
-	if emit != nil {
-		emit(&LiveState{Phase: "fetch", Block: today + " 00:00", HighestID: lastHighestID})
-	}
-
-	// ONE ClickHouse query: fetch all items from lastHighestID up to current block start.
-	tmpPath := filepath.Join(cfg.TodayDir(), ".today-backfill.tmp.parquet")
-	defer os.Remove(tmpPath)
-
-	result, err := cfg.FetchSince(ctx, lastHighestID, nowTrunc, tmpPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "warn: today backfill bulk fetch: %v\n", err)
-		return todayRows, lastHighestID
-	}
-	if result.Count == 0 {
-		return todayRows, lastHighestID
-	}
-
-	// Split bulk parquet into per-block files via DuckDB.
-	db, err := sql.Open("duckdb", "")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "warn: open duckdb for backfill split: %v\n", err)
-		return todayRows, lastHighestID
-	}
-	defer db.Close()
+	fmt.Fprintf(os.Stderr, "info: backfill: %d missing blocks for %s (first=%s last=%s)\n",
+		len(missing), today, missing[0].Format("15:04"), missing[len(missing)-1].Format("15:04"))
 
 	type blockFetched struct {
 		hfPath string
 		row    TodayRow
 	}
 	var blocks []blockFetched
-	var totalRows int64
 
 	for _, t0 := range missing {
 		if ctx.Err() != nil {
 			break
 		}
 		hhmm := t0.Format("15:04")
-		t1 := fmt.Sprintf("%s %s:00", today, hhmm)
-		t2end := t0.Add(interval)
-		t2 := fmt.Sprintf("%s %02d:%02d:00", today, t2end.Hour(), t2end.Minute())
-
+		blockEnd := t0.Add(interval)
 		outPath := cfg.TodayBlockPath(today, hhmm)
-		if err := ensureParentDir(outPath); err != nil {
-			continue
+
+		fmt.Fprintf(os.Stderr, "info: [%s %s] backfill: querying %s–%s from source\n",
+			today, hhmm, hhmm, blockEnd.Format("15:04"))
+		if emit != nil {
+			emit(&LiveState{Phase: "fetch", Block: today + " " + hhmm})
 		}
 
-		var count int64
-		var minID, maxID sql.NullInt64
-		statsQ := fmt.Sprintf(
-			`SELECT COUNT(*)::BIGINT, MIN(id)::BIGINT, MAX(id)::BIGINT FROM read_parquet('%s') WHERE time >= '%s' AND time < '%s'`,
-			escapeSQLStr(tmpPath), t1, t2,
-		)
-		if err := db.QueryRowContext(ctx, statsQ).Scan(&count, &minID, &maxID); err != nil || count == 0 {
-			continue
+		result, err := cfg.FetchTimeRange(ctx, t0, blockEnd, outPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warn: [%s %s] backfill fetch: %v\n", today, hhmm, err)
+			break // likely transient; stop backfill, main loop will retry
 		}
-
-		copyQ := fmt.Sprintf(
-			`COPY (SELECT * FROM read_parquet('%s') WHERE time >= '%s' AND time < '%s' ORDER BY id) TO '%s' (FORMAT Parquet)`,
-			escapeSQLStr(tmpPath), t1, t2, escapeSQLStr(outPath),
-		)
-		if _, err := db.ExecContext(ctx, copyQ); err != nil {
-			fmt.Fprintf(os.Stderr, "warn: backfill split %s %s: %v\n", today, hhmm, err)
-			continue
+		if result.Count == 0 {
+			fmt.Fprintf(os.Stderr, "info: [%s %s] backfill: 0 items in source (ClickHouse lag), stopping backfill — will retry in main loop\n", today, hhmm)
+			break // if this block has no data, later blocks won't either
 		}
 
 		fi, _ := os.Stat(outPath)
@@ -433,23 +415,21 @@ func (t *LiveTask) backfillToday(
 		if fi != nil {
 			sizeBytes = fi.Size()
 		}
-		if maxID.Int64 > lastHighestID {
-			lastHighestID = maxID.Int64
-		}
-		totalRows += count
+		fmt.Fprintf(os.Stderr, "info: [%s %s] backfill: got %s items (id %d–%d)\n",
+			today, hhmm, fmtInt(result.Count), result.LowestID, result.HighestID)
 		blocks = append(blocks, blockFetched{
 			hfPath: cfg.TodayHFPath(today, hhmm),
 			row: TodayRow{
 				Date: today, Block: hhmm,
-				LowestID: minID.Int64, HighestID: maxID.Int64,
-				Count: count, SizeBytes: sizeBytes,
+				LowestID: result.LowestID, HighestID: result.HighestID,
+				Count: result.Count, DurFetchS: int(result.Duration.Seconds()), SizeBytes: sizeBytes,
 				CommittedAt: time.Now().UTC(),
 			},
 		})
 	}
 
 	if len(blocks) == 0 || ctx.Err() != nil {
-		return todayRows, lastHighestID
+		return todayRows
 	}
 
 	for _, b := range blocks {
@@ -460,7 +440,7 @@ func (t *LiveTask) backfillToday(
 		_ = os.WriteFile(cfg.READMEPath(), readmeBytes, 0o644)
 	}
 
-	// Commit in batches of ≤50 parquet files to stay under the HF per-commit limit.
+	// Commit in batches of ≤50 parquet files.
 	const hfBatchSize = 50
 	for batchStart := 0; batchStart < len(blocks); batchStart += hfBatchSize {
 		batchEnd := batchStart + hfBatchSize
@@ -474,7 +454,10 @@ func (t *LiveTask) backfillToday(
 			batchRows += b.row.Count
 		}
 		firstBlock := batch[0].row.Block
+		lastBlock := batch[len(batch)-1].row.Block
 		msg := fmt.Sprintf("Live %s %s UTC (%s items)", today, firstBlock, fmtInt(batchRows))
+		fmt.Fprintf(os.Stderr, "info: backfill: committing batch %s–%s (%d blocks, %s items)\n",
+			firstBlock, lastBlock, len(batch), fmtInt(batchRows))
 		if emit != nil {
 			emit(&LiveState{Phase: "commit", Block: today + " " + firstBlock, NewItems: batchRows})
 		}
@@ -489,7 +472,7 @@ func (t *LiveTask) backfillToday(
 
 		t0Commit := time.Now()
 		if _, cerr := t.opts.HFCommit(ctx, ops, msg); cerr != nil {
-			fmt.Fprintf(os.Stderr, "warn: today backfill commit batch starting %s: %v\n", firstBlock, cerr)
+			fmt.Fprintf(os.Stderr, "warn: backfill commit batch %s: %v\n", firstBlock, cerr)
 		} else {
 			durS := int(time.Since(t0Commit).Seconds())
 			for i := range todayRows {
@@ -502,13 +485,14 @@ func (t *LiveTask) backfillToday(
 			_ = WriteStatsTodayCSV(cfg.StatsTodayCSVPath(), todayRows)
 			metric.BlocksWritten += len(batch)
 			metric.RowsWritten += batchRows
+			fmt.Fprintf(os.Stderr, "info: backfill: batch committed in %ds\n", durS)
 		}
 
 		if ctx.Err() != nil {
 			break
 		}
 	}
-	return todayRows, lastHighestID
+	return todayRows
 }
 
 // generateREADME renders the README template from current stats and analytics.
@@ -538,6 +522,24 @@ func blockCommitted(rows []TodayRow, date, hhmm string) bool {
 	return false
 }
 
+// oldestMissingBlock returns the earliest uncommitted block from dayStart through
+// currentBlock (inclusive). Returns zero time and "" if all blocks are committed.
+func oldestMissingBlock(rows []TodayRow, date string, dayStart, currentBlock time.Time, interval time.Duration) (time.Time, string) {
+	committed := make(map[string]bool, len(rows))
+	for _, r := range rows {
+		if r.Date == date {
+			committed[r.Block] = true
+		}
+	}
+	for t0 := dayStart; !t0.After(currentBlock); t0 = t0.Add(interval) {
+		hhmm := t0.Format("15:04")
+		if !committed[hhmm] {
+			return t0, hhmm
+		}
+	}
+	return time.Time{}, ""
+}
+
 // nextIntervalTime returns the next interval boundary after now.
 func nextIntervalTime(now time.Time, interval time.Duration) time.Time {
 	return now.Truncate(interval).Add(interval)
@@ -557,5 +559,3 @@ func sleepUntilNext(ctx context.Context, interval time.Duration) {
 	}
 }
 
-// Keep strings imported (used transitively via fmt in this file).
-var _ = strings.TrimSpace

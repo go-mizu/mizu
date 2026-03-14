@@ -75,6 +75,31 @@ func (c Config) FetchMonthUntil(ctx context.Context, year, month int, until time
 	return cfg.scanParquetResult(ctx, outPath, n, time.Since(start))
 }
 
+// FetchTimeRange downloads all items with time in [from, to) as a Parquet file, sorted by id.
+// Used by live backfill and per-block polling — time-based queries are idempotent and need
+// no ID watermark tracking.
+func (c Config) FetchTimeRange(ctx context.Context, from, to time.Time, outPath string) (FetchResult, error) {
+	cfg := c.resolved()
+	start := time.Now()
+	q := fmt.Sprintf(
+		`SELECT * FROM %s WHERE time >= toDateTime('%s') AND time < toDateTime('%s') ORDER BY id FORMAT Parquet`,
+		cfg.fqTable(),
+		from.UTC().Format("2006-01-02 15:04:05"),
+		to.UTC().Format("2006-01-02 15:04:05"),
+	)
+	if err := ensureParentDir(outPath); err != nil {
+		return FetchResult{}, fmt.Errorf("create dir: %w", err)
+	}
+	n, err := cfg.streamToFile(ctx, q, outPath)
+	if err != nil {
+		return FetchResult{}, fmt.Errorf("fetch %s–%s: %w", from.Format("15:04"), to.Format("15:04"), err)
+	}
+	if n == 0 {
+		return FetchResult{Duration: time.Since(start)}, nil
+	}
+	return cfg.scanParquetResult(ctx, outPath, n, time.Since(start))
+}
+
 // FetchSince downloads all items with id > afterID and time < ceilTime as a Parquet file.
 // ceilTime bounds the query to prevent items from crossing midnight into the next day's block.
 func (c Config) FetchSince(ctx context.Context, afterID int64, ceilTime time.Time, outPath string) (FetchResult, error) {
