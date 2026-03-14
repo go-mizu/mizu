@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
+	"time"
 )
 
 // Analytics holds rich dataset statistics queried from the ClickHouse source.
@@ -187,4 +189,59 @@ func (c Config) queryRows(ctx context.Context, q string, fn func([]byte) error) 
 		}
 	}
 	return nil
+}
+
+// analyticsCache is the on-disk representation of a cached Analytics result.
+type analyticsCache struct {
+	Analytics *Analytics `json:"analytics"`
+	CachedAt  time.Time  `json:"cached_at"`
+}
+
+// QueryAnalyticsCached returns analytics, using a local cache file to avoid
+// burning ClickHouse quota on every restart. The cache is valid for ttl;
+// if the live query fails but a stale cache exists, the stale data is
+// returned with a warning rather than failing the workflow.
+func (c Config) QueryAnalyticsCached(ctx context.Context, ttl time.Duration) (*Analytics, error) {
+	cfg := c.resolved()
+	cachePath := cfg.analyticsCachePath()
+
+	// Try to load cache.
+	if b, err := os.ReadFile(cachePath); err == nil {
+		var ac analyticsCache
+		if json.Unmarshal(b, &ac) == nil && ac.Analytics != nil {
+			age := time.Since(ac.CachedAt)
+			if age < ttl {
+				return ac.Analytics, nil // fresh cache hit
+			}
+			// Cache is stale; try to refresh but fall back to stale on error.
+			fresh, err := cfg.QueryAnalytics(ctx)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "warn: analytics refresh failed (%v), using cached data from %s ago\n", err, age.Round(time.Minute))
+				return ac.Analytics, nil
+			}
+			_ = cfg.saveAnalyticsCache(cachePath, fresh)
+			return fresh, nil
+		}
+	}
+
+	// No valid cache — query live.
+	a, err := cfg.QueryAnalytics(ctx)
+	if err != nil {
+		return nil, err
+	}
+	_ = cfg.saveAnalyticsCache(cachePath, a)
+	return a, nil
+}
+
+func (c Config) analyticsCachePath() string {
+	cfg := c.resolved()
+	return cfg.RepoRoot + "/analytics_cache.json"
+}
+
+func (c Config) saveAnalyticsCache(path string, a *Analytics) error {
+	b, err := json.Marshal(analyticsCache{Analytics: a, CachedAt: time.Now().UTC()})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, b, 0o644)
 }

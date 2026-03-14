@@ -191,15 +191,29 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 // live watermark would cause FetchSince to attempt fetching years of backlogged
 // items in a single 5-minute block, overloading the source and producing
 // enormous files. remoteInfo() always returns the live max ID.
+//
+// If the remote query fails (e.g. ClickHouse quota exceeded), this retries
+// with exponential backoff (1m, 2m, 4m, …) up to 30 minutes total.
 func (t *LiveTask) coldStartWatermark(ctx context.Context, cfg Config, today string, todayRows []TodayRow) (int64, error) {
 	if id := MaxTodayHighestID(todayRows, today); id > 0 {
 		return id, nil
 	}
-	info, err := cfg.remoteInfo(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("remote info for watermark: %w", err)
+	backoff := time.Minute
+	for {
+		info, err := cfg.remoteInfo(ctx)
+		if err == nil {
+			return info.MaxID, nil
+		}
+		if backoff > 30*time.Minute {
+			return 0, fmt.Errorf("remote info for watermark: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "warn: remote info failed (%v), retrying in %s\n", err, backoff)
+		sleepWithContext(ctx, backoff)
+		if ctx.Err() != nil {
+			return 0, ctx.Err()
+		}
+		backoff *= 2
 	}
-	return info.MaxID, nil
 }
 
 // rolloverOrphans rolls over any today/ entries dated before today, which can

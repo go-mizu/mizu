@@ -117,8 +117,10 @@ func runHNPublish(ctx context.Context, repoRoot, repoID string, live bool, inter
 	fmt.Println()
 
 	// Query rich analytics from source (best-effort; README still works without it).
+	// Uses a 24h disk cache at {repo-root}/analytics_cache.json to avoid burning
+	// the ClickHouse demo quota when both sessions restart simultaneously.
 	fmt.Printf("  %s\n", labelStyle.Render("Querying dataset analytics…"))
-	analytics, analyticsErr := cfg.QueryAnalytics(ctx)
+	analytics, analyticsErr := cfg.QueryAnalyticsCached(ctx, 24*time.Hour)
 	if analyticsErr != nil {
 		fmt.Printf("  %s %v\n", warningStyle.Render("analytics:"), analyticsErr)
 		analytics = nil
