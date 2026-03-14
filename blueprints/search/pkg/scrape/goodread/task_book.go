@@ -94,8 +94,10 @@ func (t *BookTask) Run(ctx context.Context, emit func(*BookState)) (BookMetric, 
 		return m, nil
 	}
 
-	// Store book
-	if err := t.DB.UpsertBook(*book); err != nil {
+
+	// Extract and store reviews — batched in one transaction with the book
+	reviews := ParseReviews(doc, bookID)
+	if err := t.DB.UpsertBookWithReviews(*book, reviews); err != nil {
 		m.Failed++
 		emit(&BookState{URL: t.URL, Status: "failed", Error: err.Error()})
 		if t.StateDB != nil {
@@ -104,16 +106,10 @@ func (t *BookTask) Run(ctx context.Context, emit func(*BookState)) (BookMetric, 
 		return m, nil
 	}
 
-	// Extract and store reviews
-	reviews := ParseReviews(doc, bookID)
-	for _, r := range reviews {
-		t.DB.UpsertReview(r)
-	}
-
-	// Enqueue discovered links
+	// Enqueue discovered links and mark done in one transaction
 	if t.StateDB != nil {
-		t.enqueueLinks(book)
-		t.StateDB.Done(t.URL, code, "book")
+		links := t.collectLinks(book)
+		t.StateDB.DoneAndEnqueue(t.URL, code, "book", links)
 	}
 
 	m.Fetched++
@@ -121,22 +117,27 @@ func (t *BookTask) Run(ctx context.Context, emit func(*BookState)) (BookMetric, 
 	return m, nil
 }
 
-func (t *BookTask) enqueueLinks(b *Book) {
+func (t *BookTask) collectLinks(b *Book) []QueueItem {
+	var links []QueueItem
 	// Author page
 	if b.AuthorID != "" {
-		url := BaseURL + "/author/show/" + b.AuthorID
-		t.StateDB.Enqueue(url, "author", 5)
+		links = append(links, QueueItem{
+			URL:        BaseURL + "/author/show/" + b.AuthorID,
+			EntityType: "author",
+			Priority:   5,
+		})
 	}
 	// Series page
 	if b.SeriesID != "" {
-		url := BaseURL + "/series/" + b.SeriesID
-		t.StateDB.Enqueue(url, "series", 3)
+		links = append(links, QueueItem{
+			URL:        BaseURL + "/series/" + b.SeriesID,
+			EntityType: "series",
+			Priority:   3,
+		})
 	}
-	// Similar books
-	for _, id := range b.SimilarBookIDs {
-		url := BaseURL + "/book/show/" + id
-		t.StateDB.Enqueue(url, "book", 2)
-	}
+	// Similar books removed — they cause unbounded queue growth.
+	// Books are already seeded from sitemaps.
+	return links
 }
 
 // FetchBook is a convenience wrapper for fetching a single book from the CLI.

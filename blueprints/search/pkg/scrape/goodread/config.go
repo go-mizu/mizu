@@ -25,15 +25,18 @@ var userAgents = []string{
 
 // Config holds all configuration for the Goodreads scraper.
 type Config struct {
-	DataDir string
-	DBPath  string
+	DataDir   string
+	DBPath    string
 	StatePath string
-	Workers int
-	Delay   time.Duration
-	Timeout time.Duration
-	MaxPages int
-	Entities []string // entity types to crawl: book, author, list, series, etc.
-	ForceRod bool     // force rod for all fetches (default: only on HTTP failure)
+	Workers   int
+	Delay     time.Duration
+	Timeout   time.Duration
+	MaxPages  int
+	Entities  []string // entity types to crawl: book, author, list, series, etc.
+	ForceRod  bool     // force rod for all fetches (default: only on HTTP failure)
+	// Worker proxy mode — route requests through browser.go-mizu.workers.dev
+	WorkerURL   string // default: browser.DefaultProxyURL
+	WorkerToken string // Bearer token; falls back to BROWSER_API_TOKEN env var
 }
 
 // DefaultConfig returns sensible defaults.

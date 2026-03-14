@@ -26,12 +26,18 @@ func PrintStats(db *DB, stateDB *State) error {
 	fmt.Printf("  DB path:  %s\n", db.Path())
 
 	if stateDB != nil {
-		pending, inProgress, done, failed := stateDB.QueueStats()
-		fmt.Println("── Queue ──")
-		fmt.Printf("  Pending:     %d\n", pending)
-		fmt.Printf("  In progress: %d\n", inProgress)
-		fmt.Printf("  Done:        %d\n", done)
-		fmt.Printf("  Failed:      %d\n", failed)
+		ms := stateDB.MemStats()
+		total := ms.Pending + ms.InProgress + ms.Fetched + ms.Done + ms.Failed
+		fmt.Println("── Queue (in-memory) ──")
+		fmt.Printf("  Pending:     %d\n", ms.Pending)
+		fmt.Printf("  In progress: %d\n", ms.InProgress)
+		fmt.Printf("  Fetched:     %d  (HTML on disk, awaiting import)\n", ms.Fetched)
+		fmt.Printf("  Done:        %d\n", ms.Done)
+		fmt.Printf("  Failed:      %d\n", ms.Failed)
+		fmt.Printf("  Total:       %d\n", total)
+		if ms.DirtyItems > 0 {
+			fmt.Printf("  Dirty:       %d  (pending checkpoint)\n", ms.DirtyItems)
+		}
 	}
 
 	// Show recent books
@@ -70,11 +76,13 @@ func PrintCrawlSummary(metric CrawlMetric, stateDB *State) {
 		fmt.Printf("  Throughput: %.1f req/s avg\n", rps)
 	}
 	if stateDB != nil {
-		pending, _, done, failed := stateDB.QueueStats()
+		ms := stateDB.MemStats()
 		fmt.Println("── Queue after ──")
-		fmt.Printf("  Pending:  %d\n", pending)
-		fmt.Printf("  Done:     %d\n", done)
-		fmt.Printf("  Failed:   %d\n", failed)
+		fmt.Printf("  Pending:     %d\n", ms.Pending)
+		fmt.Printf("  Fetched:     %d\n", ms.Fetched)
+		fmt.Printf("  Done:        %d\n", ms.Done)
+		fmt.Printf("  Failed:      %d\n", ms.Failed)
+		fmt.Printf("  Dirty items: %d  (will checkpoint shortly)\n", ms.DirtyItems)
 	}
 }
 

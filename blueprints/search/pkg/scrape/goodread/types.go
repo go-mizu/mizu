@@ -176,6 +176,7 @@ type QueueItem struct {
 	URL        string
 	EntityType string
 	Priority   int
+	HtmlPath   string // path to cached .html.gz; set when status='fetched'
 }
 
 // SearchResult is a single result from a search page.

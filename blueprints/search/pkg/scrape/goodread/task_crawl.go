@@ -65,7 +65,7 @@ func (t *CrawlTask) Run(ctx context.Context, emit func(*CrawlState)) (CrawlMetri
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				pending, _, _, f := t.StateDB.QueueStats()
+				ms := t.StateDB.MemStats()
 				mu.Lock()
 				urls := make([]string, 0, len(inFlight))
 				for _, u := range inFlight {
@@ -80,8 +80,8 @@ func (t *CrawlTask) Run(ctx context.Context, emit func(*CrawlState)) (CrawlMetri
 				}
 				emit(&CrawlState{
 					Done:     done.Load(),
-					Pending:  pending,
-					Failed:   f,
+					Pending:  ms.Pending,
+					Failed:   ms.Failed,
 					InFlight: urls,
 					RPS:      rps,
 				})
@@ -89,31 +89,29 @@ func (t *CrawlTask) Run(ctx context.Context, emit func(*CrawlState)) (CrawlMetri
 		}
 	}()
 
+	popBatch := workers * 4
+	if popBatch < 16 {
+		popBatch = 16
+	}
+
 	workerID := 0
 	for {
 		if ctx.Err() != nil {
 			break
 		}
 
-		// Check if there's work to do
-		pending, _, _, _ := t.StateDB.QueueStats()
-		if pending == 0 {
-			// Wait briefly for in-flight workers to enqueue new URLs
-			wg.Wait()
-			pending, _, _, _ = t.StateDB.QueueStats()
-			if pending == 0 {
-				break
-			}
-		}
-
-		items, err := t.StateDB.Pop(workers)
+		items, err := t.StateDB.Pop(popBatch)
 		if err != nil {
 			fmt.Printf("queue pop error: %v\n", err)
 			break
 		}
 		if len(items) == 0 {
-			time.Sleep(500 * time.Millisecond)
-			continue
+			// No pending work; wait for in-flight workers to enqueue new URLs
+			wg.Wait()
+			items, err = t.StateDB.Pop(popBatch)
+			if err != nil || len(items) == 0 {
+				break
+			}
 		}
 
 		for _, item := range items {

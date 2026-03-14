@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"golang.org/x/time/rate"
 )
 
 // Client handles HTTP requests to goodreads.com with rate limiting,
@@ -19,8 +20,18 @@ import (
 type Client struct {
 	http       *http.Client
 	userAgents []string
-	delay      time.Duration
-	lastReq    time.Time
+	limiter    *rate.Limiter
+}
+
+// newLimiter builds a token-bucket rate limiter from config.
+// Rate = workers/delay so all workers can run concurrently at the desired average pace.
+// Burst = workers so they can all fire immediately at startup.
+func newLimiter(cfg Config) *rate.Limiter {
+	if cfg.Delay <= 0 || cfg.Workers <= 0 {
+		return rate.NewLimiter(rate.Inf, 0)
+	}
+	r := rate.Limit(float64(cfg.Workers) / cfg.Delay.Seconds())
+	return rate.NewLimiter(r, cfg.Workers)
 }
 
 // NewClientWithCookies creates an authenticated Goodreads client pre-loaded with
@@ -34,8 +45,8 @@ func NewClientWithCookies(cfg Config, cookies []*http.Cookie) (*Client, error) {
 	jar.SetCookies(u, cookies)
 
 	transport := &http.Transport{
-		MaxIdleConns:        10,
-		MaxConnsPerHost:     cfg.Workers + 2,
+		MaxIdleConns:        cfg.Workers + 4,
+		MaxConnsPerHost:     cfg.Workers + 4,
 		IdleConnTimeout:     90 * time.Second,
 		TLSHandshakeTimeout: 10 * time.Second,
 		DisableCompression:  false,
@@ -47,15 +58,15 @@ func NewClientWithCookies(cfg Config, cookies []*http.Cookie) (*Client, error) {
 			Jar:       jar,
 		},
 		userAgents: userAgents,
-		delay:      cfg.Delay,
+		limiter:    newLimiter(cfg),
 	}, nil
 }
 
 // NewClient creates a new Goodreads HTTP client.
 func NewClient(cfg Config) *Client {
 	transport := &http.Transport{
-		MaxIdleConns:        10,
-		MaxConnsPerHost:     cfg.Workers + 2,
+		MaxIdleConns:        cfg.Workers + 4,
+		MaxConnsPerHost:     cfg.Workers + 4,
 		IdleConnTimeout:     90 * time.Second,
 		TLSHandshakeTimeout: 10 * time.Second,
 		DisableCompression:  false,
@@ -67,7 +78,7 @@ func NewClient(cfg Config) *Client {
 			Transport: transport,
 		},
 		userAgents: userAgents,
-		delay:      cfg.Delay,
+		limiter:    newLimiter(cfg),
 	}
 }
 
@@ -77,7 +88,9 @@ func (c *Client) Fetch(ctx context.Context, url string) ([]byte, int, error) {
 	const maxAttempts = 3
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		c.rateLimit()
+		if err := c.rateLimit(ctx); err != nil {
+			return nil, 0, err
+		}
 
 		body, code, err := c.doGet(ctx, url)
 		if err != nil {
@@ -134,6 +147,11 @@ func (c *Client) FetchHTML(ctx context.Context, url string) (*goquery.Document, 
 	}
 
 	return doc, code, nil
+}
+
+// FetchHTMLTimed is an alias for FetchHTML for use in benchmarks.
+func (c *Client) FetchHTMLTimed(ctx context.Context, url string) (*goquery.Document, int, error) {
+	return c.FetchHTML(ctx, url)
 }
 
 func (c *Client) doGet(ctx context.Context, url string) ([]byte, int, error) {
@@ -195,14 +213,10 @@ func extractHTMLRedirect(body string) string {
 	return body[start : start+end]
 }
 
-// rateLimit enforces the minimum delay between requests.
-func (c *Client) rateLimit() {
-	if c.delay <= 0 {
-		return
+// rateLimit waits for the next available token from the rate limiter.
+func (c *Client) rateLimit(ctx context.Context) error {
+	if c.limiter == nil {
+		return nil
 	}
-	since := time.Since(c.lastReq)
-	if since < c.delay {
-		time.Sleep(c.delay - since)
-	}
-	c.lastReq = time.Now()
+	return c.limiter.Wait(ctx)
 }

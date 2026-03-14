@@ -51,9 +51,12 @@ Examples:
 	cmd.AddCommand(newGoodreadSearch())
 	cmd.AddCommand(newGoodreadSitemap())
 	cmd.AddCommand(newGoodreadCrawl())
+	cmd.AddCommand(newGoodreadFetch())
+	cmd.AddCommand(newGoodreadImport())
 	cmd.AddCommand(newGoodreadInfo())
 	cmd.AddCommand(newGoodreadJobs())
 	cmd.AddCommand(newGoodreadQueue())
+	cmd.AddCommand(newGoodreadBench())
 
 	return cmd
 }
@@ -864,18 +867,29 @@ func newGoodreadCrawl() *cobra.Command {
 				if err != nil {
 					fmt.Printf("Warning: sitemap seed error: %v\n", err)
 				}
-				fmt.Printf("\nSeed complete: %d new URLs, %d already queued\n\n", newURLs, skipped)
+				fmt.Printf("\nSeed complete: %d new URLs, %d already queued\n", newURLs, skipped)
+				// Reload new bulk-seeded items into the in-memory queue.
+				if newURLs > 0 {
+					fmt.Print("Reloading new items into memory queue...")
+					if err := stateDB.LoadPendingFromDB(); err != nil {
+						fmt.Printf(" warning: %v\n", err)
+					} else {
+						fmt.Println(" done")
+					}
+				}
+				fmt.Println()
 			}
 
 			// ── Pre-run queue summary ────────────────────────────────────
-			pending, _, done, failed := stateDB.QueueStats()
+			ms := stateDB.MemStats()
 			fmt.Println("── Queue before crawl ──")
-			fmt.Printf("  Pending:  %d\n", pending)
-			fmt.Printf("  Done:     %d\n", done)
-			fmt.Printf("  Failed:   %d\n", failed)
-			fmt.Printf("  Total:    %d\n\n", pending+done+failed)
+			fmt.Printf("  Pending:  %d\n", ms.Pending)
+			fmt.Printf("  Fetched:  %d\n", ms.Fetched)
+			fmt.Printf("  Done:     %d\n", ms.Done)
+			fmt.Printf("  Failed:   %d\n", ms.Failed)
+			fmt.Printf("  Total:    %d\n\n", ms.Pending+ms.Fetched+ms.Done+ms.Failed)
 
-			if pending == 0 {
+			if ms.Pending == 0 {
 				fmt.Println("Queue is empty. Run with --seed sitemap, or use 'search goodread sitemap' first.")
 				return nil
 			}
@@ -1352,6 +1366,324 @@ func normalizeBookURL(s string) string {
 		return s
 	}
 	return goodread.BaseURL + "/book/show/" + s
+}
+
+// ── fetch (phase 1) ───────────────────────────────────────────────────────────
+
+func newGoodreadFetch() *cobra.Command {
+	var dbPath, statePath string
+	var delay, workers int
+	var workerToken string
+
+	cmd := &cobra.Command{
+		Use:   "fetch",
+		Short: "Phase 1: download HTML for pending queue items to disk (no DB writes)",
+		Long: `Phase 1 of the two-phase pipeline.
+
+Pops pending items from the queue, fetches their HTML via HTTP, and saves
+compressed HTML to ~/data/goodread/html/<type>/<id>.html.gz.
+
+Run 'goodread import' in another terminal or after this completes to parse
+and write the cached HTML into DuckDB.`,
+		Args: cobra.NoArgs,
+		Example: `  search goodread fetch --workers 4 --delay 2000
+  search goodread fetch --workers 8 --worker-token $TOKEN`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := goodread.DefaultConfig()
+			cfg.DBPath = dbPath
+			cfg.StatePath = statePath
+			cfg.Workers = workers
+			cfg.Delay = time.Duration(delay) * time.Millisecond
+			cfg.WorkerToken = workerToken
+
+			stateDB, err := goodread.OpenState(statePath)
+			if err != nil {
+				return fmt.Errorf("open state: %w", err)
+			}
+			defer stateDB.Close()
+
+			stateDB.ResetInProgress()
+
+			ms := stateDB.MemStats()
+			fmt.Println("── Queue ──")
+			fmt.Printf("  Pending:     %d\n", ms.Pending)
+			fmt.Printf("  Fetched:     %d  (awaiting import)\n", ms.Fetched)
+			fmt.Printf("  In-progress: %d\n", ms.InProgress)
+			fmt.Printf("  Done:        %d\n", ms.Done)
+			fmt.Printf("  Failed:      %d\n\n", ms.Failed)
+
+			if ms.Pending == 0 {
+				fmt.Println("No pending items. Use 'goodread sitemap' to seed first.")
+				return nil
+			}
+
+			var fetcher goodread.HTMLFetcher
+			if workerToken != "" {
+				wc, err := goodread.NewWorkerClient(cfg)
+				if err != nil {
+					return err
+				}
+				fetcher = wc
+			} else {
+				fetcher = goodread.NewClient(cfg)
+			}
+
+			fmt.Printf("Starting fetch: workers=%d  delay=%s\n", workers, cfg.Delay)
+
+			ctx, cancel := context.WithCancel(cmd.Context())
+			defer cancel()
+			sigCh := make(chan os.Signal, 1)
+			signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+			defer signal.Stop(sigCh)
+			go func() {
+				<-sigCh
+				fmt.Println("\nInterrupted — finishing in-flight requests...")
+				cancel()
+			}()
+
+			task := &goodread.FetchTask{
+				Config:  cfg,
+				Fetcher: fetcher,
+				StateDB: stateDB,
+			}
+			m, err := task.Run(ctx, func(s *goodread.FetchState) {
+				rps := fmt.Sprintf("%.1f", s.RPS)
+				fmt.Printf("\r  fetched=%d  failed=%d  rps=%s  in-flight=%d    ",
+					s.Fetched, s.Failed, rps, len(s.InFlight))
+			})
+			fmt.Println()
+			fmt.Printf("\nDone: fetched=%d  failed=%d  duration=%s\n",
+				m.Fetched, m.Failed, m.Duration.Round(time.Second))
+			return err
+		},
+	}
+
+	cfg := goodread.DefaultConfig()
+	cmd.Flags().StringVar(&dbPath, "db", cfg.DBPath, "Path to goodread.duckdb")
+	cmd.Flags().StringVar(&statePath, "state", cfg.StatePath, "Path to state.duckdb")
+	cmd.Flags().IntVar(&workers, "workers", cfg.Workers, "Concurrent HTTP workers")
+	cmd.Flags().IntVar(&delay, "delay", int(cfg.Delay/time.Millisecond), "Delay between requests in milliseconds")
+	cmd.Flags().StringVar(&workerToken, "worker-token", "", "Route through CF browser worker (or set BROWSER_API_TOKEN)")
+	return cmd
+}
+
+// ── import (phase 2) ──────────────────────────────────────────────────────────
+
+func newGoodreadImport() *cobra.Command {
+	var dbPath, statePath string
+	var workers, batchSize int
+
+	cmd := &cobra.Command{
+		Use:   "import",
+		Short: "Phase 2: parse cached HTML and bulk-import into DuckDB",
+		Long: `Phase 2 of the two-phase pipeline.
+
+Reads .html.gz files saved by 'goodread fetch', parses them in parallel,
+writes to DuckDB in batches, enqueues discovered links, then deletes the HTML.
+
+Can run concurrently with 'goodread fetch' in another terminal.`,
+		Args: cobra.NoArgs,
+		Example: `  search goodread import --workers 8 --batch 100
+  search goodread import --workers 16`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := goodread.DefaultConfig()
+			cfg.DBPath = dbPath
+			cfg.StatePath = statePath
+			cfg.Workers = workers
+
+			db, err := goodread.OpenDB(dbPath)
+			if err != nil {
+				return fmt.Errorf("open db: %w", err)
+			}
+			defer db.Close()
+
+			stateDB, err := goodread.OpenState(statePath)
+			if err != nil {
+				return fmt.Errorf("open state: %w", err)
+			}
+			defer stateDB.Close()
+
+			stateDB.ResetInProgress()
+
+			ms := stateDB.MemStats()
+			fmt.Println("── Queue ──")
+			fmt.Printf("  Fetched:     %d  (ready to import)\n", ms.Fetched)
+			fmt.Printf("  Pending:     %d\n", ms.Pending)
+			fmt.Printf("  In-progress: %d\n", ms.InProgress)
+			fmt.Printf("  Done:        %d\n", ms.Done)
+			fmt.Printf("  Failed:      %d\n\n", ms.Failed)
+
+			if ms.Fetched == 0 {
+				fmt.Println("No fetched items. Run 'goodread fetch' first.")
+				return nil
+			}
+
+			fmt.Printf("Starting import: workers=%d  batch=%d  db=%s\n", workers, batchSize, dbPath)
+
+			ctx, cancel := context.WithCancel(cmd.Context())
+			defer cancel()
+			sigCh := make(chan os.Signal, 1)
+			signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+			defer signal.Stop(sigCh)
+			go func() {
+				<-sigCh
+				fmt.Println("\nInterrupted — finishing current batch...")
+				cancel()
+			}()
+
+			task := &goodread.ImportTask{
+				Config:    cfg,
+				DB:        db,
+				StateDB:   stateDB,
+				BatchSize: batchSize,
+			}
+			m, err := task.Run(ctx, func(s *goodread.ImportState) {
+				rps := fmt.Sprintf("%.1f", s.RPS)
+				fmt.Printf("\r  imported=%d  failed=%d  rps=%s    ",
+					s.Imported, s.Failed, rps)
+			})
+			fmt.Println()
+			fmt.Printf("\nDone: imported=%d  failed=%d  duration=%s\n",
+				m.Imported, m.Failed, m.Duration.Round(time.Second))
+			return err
+		},
+	}
+
+	cfg := goodread.DefaultConfig()
+	cmd.Flags().StringVar(&dbPath, "db", cfg.DBPath, "Path to goodread.duckdb")
+	cmd.Flags().StringVar(&statePath, "state", cfg.StatePath, "Path to state.duckdb")
+	cmd.Flags().IntVar(&workers, "workers", 8, "Parallel parse workers")
+	cmd.Flags().IntVar(&batchSize, "batch", 100, "Items per DuckDB transaction")
+	return cmd
+}
+
+// ── bench ─────────────────────────────────────────────────────────────────────
+
+// newGoodreadBench compares plain HTTP vs rod (headless Chrome) fetch latency
+// for the same Goodreads URLs so we can confirm whether rod bypasses throttling.
+// benchFn is a fetch function signature used in benchmarks.
+type benchFn func(ctx context.Context, url string) (int, error)
+
+func runBenchSection(ctx context.Context, label string, fetch benchFn, urls []string) time.Duration {
+	fmt.Printf("── %s\n", label)
+	var total time.Duration
+	for _, u := range urls {
+		start := time.Now()
+		code, err := fetch(ctx, u)
+		elapsed := time.Since(start)
+		total += elapsed
+		if err != nil {
+			fmt.Printf("  %-65s  ERROR: %v\n", u, err)
+		} else {
+			fmt.Printf("  %-65s  HTTP %d  %s\n", u, code, elapsed.Round(time.Millisecond))
+		}
+	}
+	avg := total / time.Duration(len(urls))
+	fmt.Printf("  avg: %s\n\n", avg.Round(time.Millisecond))
+	return total
+}
+
+func newGoodreadBench() *cobra.Command {
+	var n int
+	var delay int
+	var workerToken string
+	var skipRod bool
+
+	cmd := &cobra.Command{
+		Use:   "bench <url> [url...]",
+		Short: "Compare plain HTTP / rod / CF-worker fetch speed for Goodreads URLs",
+		Args:  cobra.MinimumNArgs(1),
+		Example: `  search goodread bench https://www.goodreads.com/book/show/2767052
+  BROWSER_API_TOKEN=xxx search goodread bench https://www.goodreads.com/book/show/2767052`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			cfg := goodread.DefaultConfig()
+			cfg.Delay = time.Duration(delay) * time.Millisecond
+			cfg.Workers = 1
+			cfg.WorkerToken = workerToken
+
+			urls := args
+			if n > 0 && n < len(urls) {
+				urls = urls[:n]
+			}
+
+			fmt.Printf("Benchmarking %d URL(s)\n\n", len(urls))
+
+			// ── Plain HTTP ────────────────────────────────────────────────
+			httpClient := goodread.NewClient(cfg)
+			httpTotal := runBenchSection(ctx, "Plain HTTP ─────────────────────────────────────────────────",
+				func(ctx context.Context, u string) (int, error) {
+					_, code, err := httpClient.FetchHTMLTimed(ctx, u)
+					return code, err
+				}, urls)
+
+			// ── Rod ───────────────────────────────────────────────────────
+			var rodTotal time.Duration
+			if !skipRod {
+				rodClient, err := goodread.NewRodClient(cfg)
+				if err != nil {
+					fmt.Printf("── Rod (skipped: %v)\n\n", err)
+				} else {
+					defer rodClient.Close()
+					rodTotal = runBenchSection(ctx, "Rod (headless Chrome) ──────────────────────────────────────",
+						func(ctx context.Context, u string) (int, error) {
+							_, code, err := rodClient.FetchHTMLTimed(ctx, u)
+							return code, err
+						}, urls)
+				}
+			}
+
+			// ── CF Worker ─────────────────────────────────────────────────
+			var workerTotal time.Duration
+			workerClient, err := goodread.NewWorkerClient(cfg)
+			if err != nil {
+				fmt.Printf("── CF Worker (skipped: %v)\n\n", err)
+			} else {
+				workerTotal = runBenchSection(ctx, "CF Worker (browser.go-mizu.workers.dev) ────────────────────",
+					func(ctx context.Context, u string) (int, error) {
+						_, code, err := workerClient.FetchHTMLTimed(ctx, u)
+						return code, err
+					}, urls)
+			}
+
+			// ── Summary ───────────────────────────────────────────────────
+			fmt.Println("── Summary ─────────────────────────────────────────────────")
+			fmt.Printf("  plain HTTP:  %s avg\n", (httpTotal/time.Duration(len(urls))).Round(time.Millisecond))
+			if !skipRod && rodTotal > 0 {
+				fmt.Printf("  rod:         %s avg  (%.1fx %s)\n",
+					(rodTotal/time.Duration(len(urls))).Round(time.Millisecond),
+					abs64(float64(httpTotal)/float64(rodTotal)),
+					faster(httpTotal > rodTotal))
+			}
+			if workerTotal > 0 {
+				fmt.Printf("  CF worker:   %s avg  (%.1fx %s)\n",
+					(workerTotal/time.Duration(len(urls))).Round(time.Millisecond),
+					abs64(float64(httpTotal)/float64(workerTotal)),
+					faster(httpTotal > workerTotal))
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().IntVar(&n, "n", 0, "Number of URLs to test (default: all)")
+	cmd.Flags().IntVar(&delay, "delay", 0, "Delay between requests in ms")
+	cmd.Flags().StringVar(&workerToken, "worker-token", "", "Bearer token for CF worker (or set BROWSER_API_TOKEN)")
+	cmd.Flags().BoolVar(&skipRod, "skip-rod", false, "Skip rod (headless Chrome) benchmark")
+	return cmd
+}
+
+func faster(aFasterThanB bool) string {
+	if aFasterThanB {
+		return "slower"
+	}
+	return "faster"
+}
+
+func abs64(f float64) float64 {
+	if f < 1 {
+		return 1 / f
+	}
+	return f
 }
 
 func normalizeAuthorURL(s string) string {

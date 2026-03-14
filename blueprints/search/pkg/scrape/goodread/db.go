@@ -298,6 +298,49 @@ func (d *DB) InsertListBooks(books []ListBook) error {
 	return tx.Commit()
 }
 
+// UpsertBookWithReviews inserts a book and all its reviews in a single transaction.
+func (d *DB) UpsertBookWithReviews(b Book, reviews []Review) error {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`INSERT OR REPLACE INTO books (
+		book_id, title, title_without_series, description,
+		author_id, author_name, isbn, isbn13, asin,
+		avg_rating, ratings_count, reviews_count,
+		published_year, publisher, language, pages, format,
+		series_id, series_name, series_position,
+		genres, cover_url, url, similar_book_ids, fetched_at
+	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		b.BookID, nullStr(b.Title), nullStr(b.TitleWithoutSeries), nullStr(b.Description),
+		nullStr(b.AuthorID), nullStr(b.AuthorName), nullStr(b.ISBN), nullStr(b.ISBN13), nullStr(b.ASIN),
+		b.AvgRating, b.RatingsCount, b.ReviewsCount,
+		nullInt(b.PublishedYear), nullStr(b.Publisher), nullStr(b.Language), nullInt(b.Pages), nullStr(b.Format),
+		nullStr(b.SeriesID), nullStr(b.SeriesName), nullStr(b.SeriesPosition),
+		encodeStringSlice(b.Genres), nullStr(b.CoverURL), nullStr(b.URL),
+		encodeStringSlice(b.SimilarBookIDs), b.FetchedAt,
+	); err != nil {
+		return err
+	}
+
+	for _, r := range reviews {
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO reviews (
+			review_id, book_id, user_id, user_name, rating, text,
+			date_added, likes_count, is_spoiler, url, fetched_at
+		) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+			r.ReviewID, nullStr(r.BookID), nullStr(r.UserID), nullStr(r.UserName),
+			r.Rating, nullStr(r.Text), nullTime(r.DateAdded),
+			r.LikesCount, r.IsSpoiler, nullStr(r.URL), r.FetchedAt,
+		); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
 // UpsertReview inserts or replaces a review record.
 func (d *DB) UpsertReview(r Review) error {
 	_, err := d.db.Exec(`INSERT OR REPLACE INTO reviews (
@@ -447,6 +490,158 @@ func (d *DB) Close() error {
 // Path returns the database file path.
 func (d *DB) Path() string {
 	return d.path
+}
+
+// ── tx-based write helpers (used by ImportTask for batch transactions) ────────
+
+func insertBookWithReviewsTx(tx *sql.Tx, b Book, reviews []Review) error {
+	if _, err := tx.Exec(`INSERT OR REPLACE INTO books (
+		book_id, title, title_without_series, description,
+		author_id, author_name, isbn, isbn13, asin,
+		avg_rating, ratings_count, reviews_count,
+		published_year, publisher, language, pages, format,
+		series_id, series_name, series_position,
+		genres, cover_url, url, similar_book_ids, fetched_at
+	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		b.BookID, nullStr(b.Title), nullStr(b.TitleWithoutSeries), nullStr(b.Description),
+		nullStr(b.AuthorID), nullStr(b.AuthorName), nullStr(b.ISBN), nullStr(b.ISBN13), nullStr(b.ASIN),
+		b.AvgRating, b.RatingsCount, b.ReviewsCount,
+		nullInt(b.PublishedYear), nullStr(b.Publisher), nullStr(b.Language), nullInt(b.Pages), nullStr(b.Format),
+		nullStr(b.SeriesID), nullStr(b.SeriesName), nullStr(b.SeriesPosition),
+		encodeStringSlice(b.Genres), nullStr(b.CoverURL), nullStr(b.URL),
+		encodeStringSlice(b.SimilarBookIDs), b.FetchedAt,
+	); err != nil {
+		return err
+	}
+	for _, r := range reviews {
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO reviews (
+			review_id, book_id, user_id, user_name, rating, text,
+			date_added, likes_count, is_spoiler, url, fetched_at
+		) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+			r.ReviewID, nullStr(r.BookID), nullStr(r.UserID), nullStr(r.UserName),
+			r.Rating, nullStr(r.Text), nullTime(r.DateAdded),
+			r.LikesCount, r.IsSpoiler, nullStr(r.URL), r.FetchedAt,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func insertAuthorTx(tx *sql.Tx, a Author) error {
+	_, err := tx.Exec(`INSERT OR REPLACE INTO authors (
+		author_id, name, bio, photo_url, website,
+		born_date, died_date, hometown, influences, genres,
+		avg_rating, ratings_count, books_count, followers_count, url, fetched_at
+	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		a.AuthorID, nullStr(a.Name), nullStr(a.Bio), nullStr(a.PhotoURL), nullStr(a.Website),
+		nullStr(a.BornDate), nullStr(a.DiedDate), nullStr(a.Hometown),
+		encodeStringSlice(a.Influences), encodeStringSlice(a.Genres),
+		a.AvgRating, a.RatingsCount, a.BooksCount, a.FollowersCount,
+		nullStr(a.URL), a.FetchedAt,
+	)
+	return err
+}
+
+func insertSeriesTx(tx *sql.Tx, s Series, books []SeriesBook) error {
+	if _, err := tx.Exec(`INSERT OR REPLACE INTO series (
+		series_id, name, description, total_books, primary_work_count, url, fetched_at
+	) VALUES (?,?,?,?,?,?,?)`,
+		s.SeriesID, nullStr(s.Name), nullStr(s.Description),
+		s.TotalBooks, s.PrimaryWorkCount, nullStr(s.URL), s.FetchedAt,
+	); err != nil {
+		return err
+	}
+	for _, sb := range books {
+		if _, err := tx.Exec(
+			`INSERT OR REPLACE INTO series_books (series_id, book_id, position) VALUES (?,?,?)`,
+			sb.SeriesID, sb.BookID, sb.Position,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func insertListTx(tx *sql.Tx, l List, books []ListBook) error {
+	if _, err := tx.Exec(`INSERT OR REPLACE INTO lists (
+		list_id, name, description, books_count, voters_count, tags, created_by_user, url, fetched_at
+	) VALUES (?,?,?,?,?,?,?,?,?)`,
+		l.ListID, nullStr(l.Name), nullStr(l.Description),
+		l.BooksCount, l.VotersCount, encodeStringSlice(l.Tags),
+		nullStr(l.CreatedByUser), nullStr(l.URL), l.FetchedAt,
+	); err != nil {
+		return err
+	}
+	for _, lb := range books {
+		if _, err := tx.Exec(
+			`INSERT OR REPLACE INTO list_books (list_id, book_id, rank, votes) VALUES (?,?,?,?)`,
+			lb.ListID, lb.BookID, lb.Rank, lb.Votes,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func insertQuotesTx(tx *sql.Tx, quotes []Quote) error {
+	for _, q := range quotes {
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO quotes (
+			quote_id, text, author_id, author_name, book_id, book_title,
+			likes_count, tags, url, fetched_at
+		) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+			q.QuoteID, nullStr(q.Text), nullStr(q.AuthorID), nullStr(q.AuthorName),
+			nullStr(q.BookID), nullStr(q.BookTitle),
+			q.LikesCount, encodeStringSlice(q.Tags), nullStr(q.URL), q.FetchedAt,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func insertUserTx(tx *sql.Tx, u User) error {
+	_, err := tx.Exec(`INSERT OR REPLACE INTO users (
+		user_id, name, username, location, joined_date,
+		friends_count, books_read_count, ratings_count, reviews_count, avg_rating,
+		bio, website, avatar_url, favorite_book_ids, url, fetched_at
+	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		u.UserID, nullStr(u.Name), nullStr(u.Username), nullStr(u.Location), nullTime(u.JoinedDate),
+		u.FriendsCount, u.BooksReadCount, u.RatingsCount, u.ReviewsCount, u.AvgRating,
+		nullStr(u.Bio), nullStr(u.Website), nullStr(u.AvatarURL),
+		encodeStringSlice(u.FavoriteBookIDs), nullStr(u.URL), u.FetchedAt,
+	)
+	return err
+}
+
+func insertGenreTx(tx *sql.Tx, g Genre) error {
+	_, err := tx.Exec(`INSERT OR REPLACE INTO genres (
+		slug, name, description, books_count, url, fetched_at
+	) VALUES (?,?,?,?,?,?)`,
+		g.Slug, nullStr(g.Name), nullStr(g.Description),
+		g.BooksCount, nullStr(g.URL), g.FetchedAt,
+	)
+	return err
+}
+
+func insertShelfTx(tx *sql.Tx, s Shelf, books []ShelfBook) error {
+	if _, err := tx.Exec(`INSERT OR REPLACE INTO shelves (
+		shelf_id, user_id, name, books_count, url, fetched_at
+	) VALUES (?,?,?,?,?,?)`,
+		s.ShelfID, nullStr(s.UserID), nullStr(s.Name),
+		s.BooksCount, nullStr(s.URL), s.FetchedAt,
+	); err != nil {
+		return err
+	}
+	for _, sb := range books {
+		if _, err := tx.Exec(
+			`INSERT OR REPLACE INTO shelf_books (shelf_id, user_id, book_id, date_added, rating, date_read) VALUES (?,?,?,?,?,?)`,
+			sb.ShelfID, sb.UserID, sb.BookID, nullTime(sb.DateAdded), sb.Rating, nullTime(sb.DateRead),
+		); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
