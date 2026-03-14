@@ -116,12 +116,28 @@ func runHNPublish(ctx context.Context, repoRoot, repoID string, live bool, inter
 	}
 	fmt.Println()
 
+	// Query rich analytics from source (best-effort; README still works without it).
+	fmt.Printf("  %s\n", labelStyle.Render("Querying dataset analytics…"))
+	analytics, analyticsErr := cfg.QueryAnalytics(ctx)
+	if analyticsErr != nil {
+		fmt.Printf("  %s %v\n", warningStyle.Render("analytics:"), analyticsErr)
+		analytics = nil
+	} else {
+		fmt.Printf("  %s %s stories, %s comments, %s contributors\n",
+			successStyle.Render("analytics:"),
+			ccFmtInt64(analytics.Stories),
+			ccFmtInt64(analytics.Comments),
+			ccFmtInt64(analytics.UniqueAuthors))
+	}
+	fmt.Println()
+
 	// --- Historical backfill ---
 	histTask := hn2.NewHistoricalTask(cfg, hn2.HistoricalTaskOptions{
 		FromYear:   fromYear,
 		FromMonth:  fromMonth,
 		HFCommit:   hfCommitFn,
 		ReadmeTmpl: hnReadmeTmpl,
+		Analytics:  analytics,
 	})
 
 	metric, err := histTask.Run(ctx, func(s *hn2.HistoricalState) {
@@ -160,6 +176,7 @@ func runHNPublish(ctx context.Context, repoRoot, repoID string, live bool, inter
 		Interval:   interval,
 		HFCommit:   hfCommitFn,
 		ReadmeTmpl: hnReadmeTmpl,
+		Analytics:  analytics,
 	})
 
 	_, err = liveTask.Run(ctx, func(s *hn2.LiveState) {
