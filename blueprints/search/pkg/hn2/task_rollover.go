@@ -176,9 +176,12 @@ func mergeParquetFiles(ctx context.Context, db *sql.DB, monthPath string, todayF
 }
 
 // scanParquet returns COUNT(*), MIN(id), MAX(id) for the given Parquet file.
+// Uses NullInt64 for min/max because an empty Parquet file returns NULL for aggregates.
 func scanParquet(ctx context.Context, db *sql.DB, path string) (count, minID, maxID int64, err error) {
 	q := fmt.Sprintf(`SELECT COUNT(*)::BIGINT, MIN(id)::BIGINT, MAX(id)::BIGINT FROM read_parquet('%s')`, escapeSQLStr(path))
-	err = db.QueryRowContext(ctx, q).Scan(&count, &minID, &maxID)
+	var nMin, nMax sql.NullInt64
+	err = db.QueryRowContext(ctx, q).Scan(&count, &nMin, &nMax)
+	minID, maxID = nMin.Int64, nMax.Int64
 	return
 }
 

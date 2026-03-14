@@ -148,6 +148,8 @@ func writeResponseToFile(body io.Reader, outPath string) (int64, error) {
 }
 
 // scanParquetResult reads COUNT/MIN(id)/MAX(id) from a Parquet file via DuckDB.
+// MIN/MAX are nullable (NULL when COUNT=0 — ClickHouse emits a zero-row Parquet
+// file with just a schema header for empty result sets).
 func (c Config) scanParquetResult(ctx context.Context, path string, bytesWritten int64, dur time.Duration) (FetchResult, error) {
 	db, err := sql.Open("duckdb", "")
 	if err != nil {
@@ -156,13 +158,14 @@ func (c Config) scanParquetResult(ctx context.Context, path string, bytesWritten
 	defer db.Close()
 	q := fmt.Sprintf(`SELECT COUNT(*)::BIGINT, MIN(id)::BIGINT, MAX(id)::BIGINT FROM read_parquet('%s')`,
 		escapeSQLStr(path))
-	var count, minID, maxID int64
+	var count int64
+	var minID, maxID sql.NullInt64
 	if err := db.QueryRowContext(ctx, q).Scan(&count, &minID, &maxID); err != nil {
 		return FetchResult{}, fmt.Errorf("scan parquet: %w", err)
 	}
 	return FetchResult{
-		LowestID:  minID,
-		HighestID: maxID,
+		LowestID:  minID.Int64,
+		HighestID: maxID.Int64,
 		Count:     count,
 		Bytes:     bytesWritten,
 		Duration:  dur,
