@@ -62,7 +62,7 @@ We believe this is one of the most complete and regularly updated mirrors of Hac
 
 ## What is being released?
 
-The dataset is organized as one Parquet file per calendar month, plus 5-minute live files for today's activity. Every 5 minutes, new items are fetched from the source and committed directly as a single Parquet block. At midnight UTC, all of today's 5-minute blocks are merged into the monthly Parquet file and removed from the `today/` directory.
+The dataset is organized as one Parquet file per calendar month, plus 5-minute live files for today's activity. Every 5 minutes, new items are fetched from the source and committed directly as a single Parquet block. At midnight UTC, the entire current month is refetched from the source as a single authoritative Parquet file, and today's individual 5-minute blocks are removed from the `today/` directory.
 
 ```
 data/
@@ -307,7 +307,7 @@ The pipeline is built in Go and uses [DuckDB](https://duckdb.org) for Parquet co
 
 **Live polling.** Every 5 minutes, the pipeline queries the ClickHouse source for items newer than the last committed block. The result is written as a single Parquet file at `today/YYYY/MM/DD/HH/MM.parquet` and committed immediately.
 
-**Day rollover.** At midnight UTC, all of the day's 5-minute blocks are merged into the current monthly Parquet file using DuckDB, and the individual block files are removed from the repository in one atomic commit.
+**Day rollover.** At midnight UTC, the entire current month is refetched from the ClickHouse source in a single query and written as an authoritative Parquet file. Today's individual 5-minute blocks are deleted from the repository in the same atomic commit. Refetching instead of merging ensures the monthly file is always complete and deduplicated, regardless of any local state.
 
 ## Thanks
 
@@ -438,7 +438,7 @@ The pipeline runs in three modes:
 
 2. **Live polling.** After the historical backfill completes, the pipeline polls the source every 5 minutes for new items. Each batch is written directly as a `today/YYYY/MM/DD/HH/MM.parquet` file and committed to Hugging Face immediately as one atomic operation.
 
-3. **Day rollover.** At midnight UTC, all of today's 5-minute Parquet blocks are merged into the current monthly Parquet file using DuckDB, and the individual block files are deleted from the repository in a single atomic commit.
+3. **Day rollover.** At midnight UTC, the entire current month is refetched from the ClickHouse source in a single query and written as a fresh, authoritative Parquet file. Today's individual 5-minute blocks are deleted from the repository in the same atomic commit. This approach is more reliable than merging local blocks — the result is always complete and deduplicated, sourced directly from the origin.
 
 All Parquet files use **Zstandard compression at level 22** and are sorted by `id` for efficient range scans. No filtering, deduplication, or transformation is applied to the data beyond what the source provides.
 

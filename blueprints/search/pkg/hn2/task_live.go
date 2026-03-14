@@ -164,10 +164,20 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 		result, err := cfg.FetchSince(ctx, lastHighestID, now, outPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warn: fetch since id=%d: %v\n", lastHighestID, err)
+			next := nextIntervalTime(now, interval)
+			if emit != nil {
+				emit(&LiveState{Phase: "wait", NextFetchIn: time.Until(next)})
+			}
 			sleepUntilNext(ctx, interval)
 			continue
 		}
 		if result.Count == 0 {
+			next := nextIntervalTime(now, interval)
+			fmt.Fprintf(os.Stderr, "info: [%s %s] 0 new items (source up to id=%d), next fetch in %s\n",
+				blockDate, blockHH, lastHighestID, time.Until(next).Round(time.Second))
+			if emit != nil {
+				emit(&LiveState{Phase: "wait", NextFetchIn: time.Until(next)})
+			}
 			sleepUntilNext(ctx, interval)
 			continue
 		}
@@ -528,10 +538,15 @@ func blockCommitted(rows []TodayRow, date, hhmm string) bool {
 	return false
 }
 
+// nextIntervalTime returns the next interval boundary after now.
+func nextIntervalTime(now time.Time, interval time.Duration) time.Time {
+	return now.Truncate(interval).Add(interval)
+}
+
 // sleepUntilNext sleeps until the next interval boundary or ctx cancellation.
 func sleepUntilNext(ctx context.Context, interval time.Duration) {
 	now := time.Now().UTC()
-	next := now.Truncate(interval).Add(interval)
+	next := nextIntervalTime(now, interval)
 	d := time.Until(next)
 	if d < time.Second {
 		d = time.Second

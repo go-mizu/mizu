@@ -176,23 +176,28 @@ func (c Config) newRequest(ctx context.Context, q string) (*http.Request, error)
 	return req, nil
 }
 
-// downloadHTTPClient returns a clone of the configured HTTP client with no
-// timeout, suitable for long-running Parquet downloads. Clones to avoid
-// mutating the shared client. Optionally configures a custom DNS resolver.
+// downloadHTTPClient returns a clone of the configured HTTP client suitable
+// for long-running Parquet downloads. Uses no overall Timeout (downloads can
+// take minutes) but sets ResponseHeaderTimeout so a stalled server that never
+// sends headers will be detected within 2 minutes rather than hanging forever.
 func (c Config) downloadHTTPClient() *http.Client {
 	cfg := c.resolved()
 	base := cfg.httpClient()
 	// Clone to avoid mutating the shared client.
 	clone := *base
 	clone.Timeout = 0
-	if cfg.DNSServer == "" {
-		return &clone
-	}
 	var tr *http.Transport
 	if bt, ok := base.Transport.(*http.Transport); ok && bt != nil {
 		tr = bt.Clone()
 	} else {
 		tr = http.DefaultTransport.(*http.Transport).Clone()
+	}
+	// Detect stalled connections: if the server accepts the TCP connection but
+	// never sends response headers, give up after 2 minutes.
+	tr.ResponseHeaderTimeout = 2 * time.Minute
+	if cfg.DNSServer == "" {
+		clone.Transport = tr
+		return &clone
 	}
 	resolver := &net.Resolver{
 		PreferGo: true,
