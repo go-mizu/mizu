@@ -34,6 +34,7 @@ type RolloverTaskOptions struct {
 	PrevDate   string // YYYY-MM-DD
 	HFCommit   func(ctx context.Context, ops []HFOp, message string) (string, error)
 	ReadmeTmpl []byte
+	Analytics  *Analytics // optional; enriches README with source-level stats
 }
 
 // DayRolloverTask merges today's live blocks into the monthly parquet and commits to HF.
@@ -151,7 +152,7 @@ func (t *DayRolloverTask) Run(ctx context.Context, emit func(*RolloverState)) (R
 
 	// Regenerate README.
 	updatedMonths, _ := ReadStatsCSV(cfg.StatsCSVPath())
-	readmeBytes, _ := GenerateREADME(t.opts.ReadmeTmpl, updatedMonths, nil)
+	readmeBytes, _ := GenerateREADME(t.opts.ReadmeTmpl, updatedMonths, nil, t.opts.Analytics)
 	if readmeBytes != nil {
 		_ = os.WriteFile(cfg.READMEPath(), readmeBytes, 0o644)
 	}

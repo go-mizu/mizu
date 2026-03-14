@@ -30,10 +30,11 @@ type HistoricalMetric struct {
 
 // HistoricalTaskOptions configures the historical backfill.
 type HistoricalTaskOptions struct {
-	FromYear  int // skip months before this year (0 = no limit)
-	FromMonth int // skip months before this month (0 = no limit)
-	HFCommit  func(ctx context.Context, ops []HFOp, message string) (string, error)
+	FromYear   int // skip months before this year (0 = no limit)
+	FromMonth  int // skip months before this month (0 = no limit)
+	HFCommit   func(ctx context.Context, ops []HFOp, message string) (string, error)
 	ReadmeTmpl []byte
+	Analytics  *Analytics // optional; enriches README with source-level stats
 }
 
 // HFOp describes a single file operation for a Hugging Face commit.
@@ -156,7 +157,7 @@ func (t *HistoricalTask) Run(ctx context.Context, emit func(*HistoricalState)) (
 		// Generate README in-memory with the new row included (no disk round-trip needed).
 		readmeInputRows := append(append([]MonthRow{}, existingRows...), newRow)
 		todayRows, _ := ReadStatsTodayCSV(cfg.StatsTodayCSVPath())
-		readmeBytes, readmeErr := GenerateREADME(t.opts.ReadmeTmpl, readmeInputRows, todayRows)
+		readmeBytes, readmeErr := GenerateREADME(t.opts.ReadmeTmpl, readmeInputRows, todayRows, t.opts.Analytics)
 
 		// Write stats.csv to disk so it can be included in the HF commit.
 		if err := WriteStatsCSV(cfg.StatsCSVPath(), existingRows, newRow, false); err != nil {

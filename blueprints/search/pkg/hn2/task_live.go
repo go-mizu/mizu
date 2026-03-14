@@ -32,6 +32,7 @@ type LiveTaskOptions struct {
 	Interval   time.Duration // poll interval, default 5m
 	HFCommit   func(ctx context.Context, ops []HFOp, message string) (string, error)
 	ReadmeTmpl []byte
+	Analytics  *Analytics // optional; enriches README with source-level stats
 }
 
 // LiveTask implements pkg/core.Task for continuous 5-min live publishing.
@@ -90,6 +91,7 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 				PrevDate:   orphanDate,
 				HFCommit:   t.opts.HFCommit,
 				ReadmeTmpl: t.opts.ReadmeTmpl,
+				Analytics:  t.opts.Analytics,
 			})
 			if _, err := rollover.Run(ctx, nil); err != nil {
 				fmt.Fprintf(os.Stderr, "warn: orphan rollover for %s failed: %v\n", orphanDate, err)
@@ -122,6 +124,7 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 				PrevDate:   lastDate,
 				HFCommit:   t.opts.HFCommit,
 				ReadmeTmpl: t.opts.ReadmeTmpl,
+				Analytics:  t.opts.Analytics,
 			})
 			if _, err := rollover.Run(ctx, nil); err != nil {
 				fmt.Fprintf(os.Stderr, "warn: day rollover failed: %v\n", err)
@@ -182,7 +185,7 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 		// Regenerate README from both CSVs.
 		monthRows, _ := ReadStatsCSV(cfg.StatsCSVPath())
 		allTodayRows, _ := ReadStatsTodayCSV(cfg.StatsTodayCSVPath())
-		readmeBytes, _ := GenerateREADME(t.opts.ReadmeTmpl, monthRows, allTodayRows)
+		readmeBytes, _ := GenerateREADME(t.opts.ReadmeTmpl, monthRows, allTodayRows, t.opts.Analytics)
 		if readmeBytes != nil {
 			_ = os.WriteFile(cfg.READMEPath(), readmeBytes, 0o644)
 		}
