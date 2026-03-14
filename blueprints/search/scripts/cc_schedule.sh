@@ -13,9 +13,10 @@
 #   server2: screen -dmS g_sched bash -c "bash ~/scripts/cc_schedule.sh 5000 9999; exec bash"
 #
 # Environment:
-#   CRAWL      — crawl ID (default: CC-MAIN-2026-08)
-#   DONE_PCT   — % of shards committed before chunk is considered done (default: 95)
-#   SEARCH_BIN — path to search binary (default: auto-detected)
+#   CRAWL        — crawl ID (default: CC-MAIN-2026-08)
+#   DONE_PCT     — % of shards committed before chunk is considered done (default: 95)
+#   STALL_ROUNDS — rounds with no new commits before a running session is killed (default: 15 = 30 min)
+#   SEARCH_BIN   — path to search binary (default: auto-detected)
 
 set -uo pipefail
 
@@ -26,6 +27,7 @@ CHUNK=${4:-250}
 
 CRAWL=${CRAWL:-CC-MAIN-2026-08}
 DONE_PCT=${DONE_PCT:-95}
+STALL_ROUNDS=${STALL_ROUNDS:-15}   # 15 rounds × 120s = 30 min with no progress → restart
 
 STATS="$HOME/data/common-crawl/$CRAWL/export/repo/stats.csv"
 LOG_DIR="$HOME/log"
@@ -75,6 +77,12 @@ chunk_running() {
     pgrep -f "publish.*--file ${s}-${e}$" > /dev/null 2>&1
 }
 
+# Kill the pipeline process for a chunk (SIGKILL the search binary)
+kill_chunk() {
+    local s=$1 e=$2
+    pgrep -f "publish.*--file ${s}-${e}$" | xargs -r kill -9 2>/dev/null || true
+}
+
 # Start a new screen session for a chunk
 start_chunk() {
     local s=$1 e=$2
@@ -95,13 +103,18 @@ for ((s=START; s<=END; s+=CHUNK)); do
 done
 
 log "=== CC Schedule starting ==="
-log "  Crawl:    $CRAWL"
-log "  Range:    $START–$END"
-log "  Chunks:   ${#chunks[@]}  (size=$CHUNK)"
-log "  Sessions: $MAX_SESS max"
-log "  Done pct: $DONE_PCT%"
-log "  Binary:   $SEARCH"
+log "  Crawl:       $CRAWL"
+log "  Range:       $START–$END"
+log "  Chunks:      ${#chunks[@]}  (size=$CHUNK)"
+log "  Sessions:    $MAX_SESS max"
+log "  Done pct:    $DONE_PCT%"
+log "  Stall kill:  after $STALL_ROUNDS rounds (~$(( STALL_ROUNDS * 2 ))m) with no new commits"
+log "  Binary:      $SEARCH"
 log ""
+
+# Stall tracking — map from "s:e" → last committed count and stall round counter
+declare -A stall_last_comm=()
+declare -A stall_rounds=()
 
 ROUND=0
 while true; do
@@ -119,12 +132,38 @@ while true; do
         e=${chunk##*:}
         total=$(( e - s + 1 ))
         name="g${s}_${e}"
+        key="${s}:${e}"
 
         if chunk_running "$s" "$e"; then
-            (( n_running++ )) || true
             n_comm=$(committed_in_range "$s" "$e")
-            running_names+=("$name(${n_comm}/${total})")
+
+            # Stall detection: track rounds with no new commits for this chunk.
+            prev=${stall_last_comm[$key]:-0}
+            if (( n_comm > prev )); then
+                # Progress made — reset stall counter.
+                stall_last_comm[$key]=$n_comm
+                stall_rounds[$key]=0
+            else
+                stall_rounds[$key]=$(( ${stall_rounds[$key]:-0} + 1 ))
+            fi
+
+            sr=${stall_rounds[$key]:-0}
+            if (( sr >= STALL_ROUNDS )); then
+                log "  STALL: $name stuck at ${n_comm}/${total} for $sr rounds — killing and restarting"
+                kill_chunk "$s" "$e"
+                stall_rounds[$key]=0
+                # Move to todo so it gets restarted this round.
+                (( n_todo++ )) || true
+                todo_chunks+=("$chunk")
+            else
+                (( n_running++ )) || true
+                stall_label=""
+                (( sr > 0 )) && stall_label="stall=${sr}"
+                running_names+=("$name(${n_comm}/${total}${stall_label:+ $stall_label})")
+            fi
         else
+            # Reset stall state when not running.
+            stall_rounds[$key]=0
             n_comm=$(committed_in_range "$s" "$e")
             pct=$(( n_comm * 100 / total ))
             if (( pct >= DONE_PCT )); then
