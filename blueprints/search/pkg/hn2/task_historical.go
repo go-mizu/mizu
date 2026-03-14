@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // HistoricalState is emitted by HistoricalTask on each month processed.
@@ -30,10 +33,11 @@ type HistoricalMetric struct {
 
 // HistoricalTaskOptions configures a historical backfill run.
 type HistoricalTaskOptions struct {
-	FromYear   int       // skip months before this year (0 = no limit)
-	FromMonth  int       // skip months before this month within FromYear (0 = no limit)
-	HFCommit   CommitFn  // required: commits files to Hugging Face
-	ReadmeTmpl []byte    // required: README.md Go template
+	FromYear   int        // skip months before this year (0 = no limit)
+	FromMonth  int        // skip months before this month within FromYear (0 = no limit)
+	Workers    int        // concurrent fetch workers (0 → 4)
+	HFCommit   CommitFn   // required: commits files to Hugging Face
+	ReadmeTmpl []byte     // required: README.md Go template
 	Analytics  *Analytics // optional: enriches README with source-level stats
 }
 
@@ -49,12 +53,28 @@ func NewHistoricalTask(cfg Config, opts HistoricalTaskOptions) *HistoricalTask {
 	return &HistoricalTask{cfg: cfg, opts: opts}
 }
 
+// pendingFetch holds the result of a parallel month fetch, ready for commit.
+type pendingFetch struct {
+	month     monthInfo
+	outPath   string
+	result    FetchResult
+	durFetchS int
+}
+
 // Run executes the historical backfill. It calls emit (if non-nil) on each state
 // transition and returns aggregate metrics when all months have been processed.
+//
+// Fetches run in parallel (up to Workers goroutines; default 4) to saturate
+// network bandwidth. Commits are sequential to keep stats.csv consistent.
 func (t *HistoricalTask) Run(ctx context.Context, emit func(*HistoricalState)) (HistoricalMetric, error) {
 	cfg := t.cfg.resolved()
 	started := time.Now()
 	metric := HistoricalMetric{}
+
+	workers := t.opts.Workers
+	if workers <= 0 {
+		workers = 4
+	}
 
 	existingRows, err := ReadStatsCSV(cfg.StatsCSVPath())
 	if err != nil {
@@ -71,10 +91,78 @@ func (t *HistoricalTask) Run(ctx context.Context, emit func(*HistoricalState)) (
 	total := len(filtered)
 	var bytesDone int64
 
+	// pending is a buffered channel of completed fetches ordered by position.
+	// Each slot is either a *pendingFetch (success) or nil (skipped/empty).
+	pending := make(chan *pendingFetch, workers*2)
+
+	// fetchErrs receives the first fetch error from the errgroup.
+	var fetchErrMu sync.Mutex
+	var fetchErr error
+
+	// Producer: fetch months in parallel, preserving order via per-slot channels.
+	// Each month gets an independent slot channel so the consumer reads in order.
+	slots := make([]chan *pendingFetch, len(filtered))
+	for i := range slots {
+		slots[i] = make(chan *pendingFetch, 1)
+	}
+
+	eg, egCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(workers)
+	_ = pending // replaced by slots pattern
+
 	for i, m := range filtered {
-		if ctx.Err() != nil {
-			return metric, ctx.Err()
+		i, m := i, m
+		slot := slots[i]
+
+		if committed[[2]int{m.Year, m.Month}] {
+			// Already committed; skip without a goroutine.
+			slot <- nil
+			continue
 		}
+
+		eg.Go(func() error {
+			monthStr := fmt.Sprintf("%04d-%02d", m.Year, m.Month)
+			outPath := cfg.MonthPath(m.Year, m.Month)
+
+			if emit != nil {
+				emit(&HistoricalState{
+					Phase: "fetch", Month: monthStr,
+					MonthIndex: i + 1, MonthTotal: total,
+					ElapsedTotal: time.Since(started),
+				})
+			}
+
+			t0 := time.Now()
+			result, err := cfg.FetchMonth(egCtx, m.Year, m.Month, outPath)
+			if err != nil {
+				fetchErrMu.Lock()
+				if fetchErr == nil {
+					fetchErr = fmt.Errorf("fetch %s: %w", monthStr, err)
+				}
+				fetchErrMu.Unlock()
+				slot <- nil // unblock consumer; error surfaced after drain
+				return nil  // don't cancel other fetches via errgroup
+			}
+			if result.Count == 0 {
+				slot <- nil
+				return nil
+			}
+			slot <- &pendingFetch{
+				month:     m,
+				outPath:   outPath,
+				result:    result,
+				durFetchS: int(time.Since(t0).Seconds()),
+			}
+			return nil
+		})
+	}
+
+	// Close errgroup after all goroutines are submitted.
+	// Consumer below drains slots before we wait for producers.
+	go func() { eg.Wait() }() //nolint:errcheck — error captured in fetchErr
+
+	// Consumer: commit each slot in order.
+	for i, m := range filtered {
 		monthStr := fmt.Sprintf("%04d-%02d", m.Year, m.Month)
 		state := &HistoricalState{
 			Month:        monthStr,
@@ -89,23 +177,20 @@ func (t *HistoricalTask) Run(ctx context.Context, emit func(*HistoricalState)) (
 			if emit != nil {
 				emit(state)
 			}
+			<-slots[i] // drain the nil we sent above
 			continue
 		}
 
-		outPath := cfg.MonthPath(m.Year, m.Month)
-		state.Phase = "fetch"
-		if emit != nil {
-			emit(state)
-		}
+		pf := <-slots[i]
 
-		t0Fetch := time.Now()
-		result, err := cfg.FetchMonth(ctx, m.Year, m.Month, outPath)
-		if err != nil {
-			return metric, fmt.Errorf("fetch %s: %w", monthStr, err)
-		}
-		durFetchS := int(time.Since(t0Fetch).Seconds())
-
-		if result.Count == 0 {
+		if pf == nil {
+			// Fetch returned 0 rows, or failed (fetchErr set).
+			fetchErrMu.Lock()
+			ferr := fetchErr
+			fetchErrMu.Unlock()
+			if ferr != nil {
+				return metric, ferr
+			}
 			state.Phase = "skip"
 			metric.MonthsSkipped++
 			if emit != nil {
@@ -114,27 +199,25 @@ func (t *HistoricalTask) Run(ctx context.Context, emit func(*HistoricalState)) (
 			continue
 		}
 
-		state.Rows = result.Count
-		state.BytesDone = bytesDone + result.Bytes
+		state.Rows = pf.result.Count
+		state.BytesDone = bytesDone + pf.result.Bytes
 		state.Phase = "commit"
 		if emit != nil {
 			emit(state)
 		}
 
-		// Snapshot stats.csv before the pre-commit write so we can roll back
-		// if the HF commit fails and the month will be retried next run.
+		// Snapshot stats.csv before writing so we can roll back on HF commit failure.
 		existingRows, _ = ReadStatsCSV(cfg.StatsCSVPath())
 		preCommitRows := make([]MonthRow, len(existingRows))
 		copy(preCommitRows, existingRows)
 
 		newRow := MonthRow{
 			Year: m.Year, Month: m.Month,
-			LowestID: result.LowestID, HighestID: result.HighestID,
-			Count: result.Count, DurFetchS: durFetchS,
-			SizeBytes: result.Bytes, CommittedAt: time.Now().UTC(),
+			LowestID: pf.result.LowestID, HighestID: pf.result.HighestID,
+			Count: pf.result.Count, DurFetchS: pf.durFetchS,
+			SizeBytes: pf.result.Bytes, CommittedAt: time.Now().UTC(),
 		}
 
-		// Generate README with the new row included, without a disk round-trip.
 		readmeInputRows := append(append([]MonthRow{}, existingRows...), newRow)
 		todayRows, _ := ReadStatsTodayCSV(cfg.StatsTodayCSVPath())
 		readmeBytes, readmeErr := GenerateREADME(t.opts.ReadmeTmpl, readmeInputRows, todayRows, t.opts.Analytics)
@@ -150,11 +233,11 @@ func (t *HistoricalTask) Run(ctx context.Context, emit func(*HistoricalState)) (
 
 		t0Commit := time.Now()
 		ops := []HFOp{
-			{LocalPath: outPath, PathInRepo: fmt.Sprintf("data/%04d/%04d-%02d.parquet", m.Year, m.Year, m.Month)},
+			{LocalPath: pf.outPath, PathInRepo: fmt.Sprintf("data/%04d/%04d-%02d.parquet", m.Year, m.Year, m.Month)},
 			{LocalPath: cfg.StatsCSVPath(), PathInRepo: "stats.csv"},
 			{LocalPath: cfg.READMEPath(), PathInRepo: "README.md"},
 		}
-		if _, err := t.opts.HFCommit(ctx, ops, fmt.Sprintf("Add %s (%s items)", monthStr, fmtInt(result.Count))); err != nil {
+		if _, err := t.opts.HFCommit(ctx, ops, fmt.Sprintf("Add %s (%s items)", monthStr, fmtInt(pf.result.Count))); err != nil {
 			if wErr := writeStatsCSVExact(cfg.StatsCSVPath(), preCommitRows); wErr != nil {
 				fmt.Fprintf(os.Stderr, "warn: rollback stats.csv for %s: %v\n", monthStr, wErr)
 			}
@@ -168,10 +251,10 @@ func (t *HistoricalTask) Run(ctx context.Context, emit func(*HistoricalState)) (
 			fmt.Fprintf(os.Stderr, "warn: update stats.csv dur_commit for %s: %v\n", monthStr, err)
 		}
 
-		bytesDone += result.Bytes
+		bytesDone += pf.result.Bytes
 		metric.MonthsWritten++
-		metric.RowsWritten += result.Count
-		metric.BytesWritten += result.Bytes
+		metric.RowsWritten += pf.result.Count
+		metric.BytesWritten += pf.result.Bytes
 		committed[[2]int{m.Year, m.Month}] = true
 
 		elapsed := time.Since(started)

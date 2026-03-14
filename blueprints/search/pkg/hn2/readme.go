@@ -36,6 +36,7 @@ type ReadmeData struct {
 
 	// Analytics (optional — from ClickHouse source)
 	HasAnalytics        bool
+	SourceMaxTime       string // latest item time in the ClickHouse source, e.g. "2026-03-14 15:30:00 UTC"
 	ExpectedTotalItems  string
 	TypeTable           string
 	ScoreSummary        string
@@ -127,6 +128,9 @@ func buildReadmeData(months []MonthRow, today []TodayRow, analytics *Analytics) 
 		d.HasAnalytics = true
 		total := analytics.Stories + analytics.Comments + analytics.Jobs + analytics.Polls + analytics.PollOpts
 		d.ExpectedTotalItems = fmtInt(total)
+		if analytics.SourceMaxTime != "" {
+			d.SourceMaxTime = analytics.SourceMaxTime + " UTC"
+		}
 		d.UniqueAuthors = fmtInt(analytics.UniqueAuthors)
 		d.TotalStories = fmtInt(analytics.Stories)
 		d.TotalComments = fmtInt(analytics.Comments)

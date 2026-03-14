@@ -33,6 +33,9 @@ type Analytics struct {
 	// Content patterns
 	StoriesWithURLPct float64
 	TopDomains        []NameCount
+
+	// Source freshness
+	SourceMaxTime string // max(time) from the live ClickHouse table, e.g. "2026-03-14 15:30:00"
 }
 
 // NameCount is a name+count pair used for top-N ranked lists.
@@ -48,21 +51,23 @@ func (c Config) QueryAnalytics(ctx context.Context) (*Analytics, error) {
 	cfg := c.resolved()
 	a := &Analytics{}
 
-	// Query 1: type distribution + unique authors.
+	// Query 1: type distribution, unique authors, and latest item time.
 	q1 := fmt.Sprintf(
 		`SELECT countIf(type='story') AS stories, countIf(type='comment') AS comments,`+
 			` countIf(type='job') AS jobs, countIf(type='poll') AS polls,`+
-			` countIf(type='pollopt') AS pollopts, uniqExact(by) AS authors`+
+			` countIf(type='pollopt') AS pollopts, uniqExact(by) AS authors,`+
+			` toString(max(time)) AS max_time`+
 			` FROM %s FORMAT JSONEachRow`,
 		cfg.fqTable())
 	if err := cfg.querySingleRow(ctx, q1, func(body []byte) error {
 		var r struct {
-			Stories  any `json:"stories"`
-			Comments any `json:"comments"`
-			Jobs     any `json:"jobs"`
-			Polls    any `json:"polls"`
-			PollOpts any `json:"pollopts"`
-			Authors  any `json:"authors"`
+			Stories  any    `json:"stories"`
+			Comments any    `json:"comments"`
+			Jobs     any    `json:"jobs"`
+			Polls    any    `json:"polls"`
+			PollOpts any    `json:"pollopts"`
+			Authors  any    `json:"authors"`
+			MaxTime  string `json:"max_time"`
 		}
 		if err := json.Unmarshal(body, &r); err != nil {
 			return fmt.Errorf("decode: %w", err)
@@ -73,6 +78,7 @@ func (c Config) QueryAnalytics(ctx context.Context) (*Analytics, error) {
 		a.Polls, _ = parseIntAny(r.Polls)
 		a.PollOpts, _ = parseIntAny(r.PollOpts)
 		a.UniqueAuthors, _ = parseIntAny(r.Authors)
+		a.SourceMaxTime = r.MaxTime
 		return nil
 	}); err != nil {
 		return nil, fmt.Errorf("query type distribution: %w", err)
