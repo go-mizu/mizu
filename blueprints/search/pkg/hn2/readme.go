@@ -15,12 +15,21 @@ type ReadmeData struct {
 	TotalMonths          int
 	FirstMonth           string
 	LastMonth            string
+	LastMonthYear        string // year portion of LastMonth, e.g. "2026"
 	HistoricalSizeBytes  int64
 	TodayDate            string
 	TodayBlocks          int
+	TodayHours           int    // distinct hours with committed blocks today
 	TodayItems           int64
 	TodayLastBlock       string
+	TodayLastBlockPath   string // TodayLastBlock in HH/MM form for use in paths
+	TodayDatePath        string // TodayDate in YYYY/MM/DD form for use in paths, e.g. "2026/03/14"
 	TodaySizeBytes       int64
+
+	// Current partial month (ongoing, not yet complete)
+	CurrentMonth      string // e.g. "2026-03"
+	CurrentMonthYear  string // e.g. "2026"
+	CurrentMonthUntil string // last date with data, e.g. "2026-03-13"
 
 	// Combined totals
 	TotalItems     int64
@@ -33,6 +42,8 @@ type ReadmeData struct {
 
 	// Yearly growth bar chart (pre-rendered)
 	GrowthChart string
+	// Today's hourly bar chart (pre-rendered)
+	TodayChart string
 
 	// Analytics (optional — from ClickHouse source)
 	HasAnalytics        bool
@@ -95,6 +106,7 @@ func buildReadmeData(months []MonthRow, today []TodayRow, analytics *Analytics) 
 		d.LastMonth = fmt.Sprintf("%04d-%02d", months[len(months)-1].Year, months[len(months)-1].Month)
 	}
 
+	todayHoursSeen := make(map[int]bool)
 	for _, r := range today {
 		d.TodayItems += r.Count
 		d.TodayBlocks++
@@ -108,7 +120,15 @@ func buildReadmeData(months []MonthRow, today []TodayRow, analytics *Analytics) 
 		if r.CommittedAt.After(latestCommit) {
 			latestCommit = r.CommittedAt
 		}
+		if len(r.Block) >= 2 {
+			var h int
+			fmt.Sscanf(r.Block[:2], "%d", &h)
+			todayHoursSeen[h] = true
+		}
 	}
+	d.TodayHours = len(todayHoursSeen)
+	d.TodayLastBlockPath = strings.ReplaceAll(d.TodayLastBlock, ":", "/")
+	d.TodayDatePath = strings.ReplaceAll(d.TodayDate, "-", "/")
 
 	d.TotalItems = d.TotalHistoricalItems + d.TodayItems
 	d.TotalItemsFmt = fmtInt(d.TotalItems)
@@ -122,14 +142,35 @@ func buildReadmeData(months []MonthRow, today []TodayRow, analytics *Analytics) 
 		d.LastUpdated = "—"
 	}
 
+	if len(d.LastMonth) >= 4 {
+		d.LastMonthYear = d.LastMonth[:4]
+	}
+	if d.TodayDate != "" {
+		parts := strings.SplitN(d.TodayDate, "-", 3)
+		if len(parts) == 3 {
+			d.CurrentMonthYear = parts[0]
+			d.CurrentMonth = parts[0] + "-" + parts[1]
+			if t, err := time.Parse("2006-01-02", d.TodayDate); err == nil {
+				d.CurrentMonthUntil = t.AddDate(0, 0, -1).Format("2006-01-02")
+			}
+		}
+	}
 	d.GrowthChart = buildGrowthChart(months)
+	d.TodayChart = buildTodayChart(today)
 
 	if analytics != nil {
 		d.HasAnalytics = true
 		total := analytics.Stories + analytics.Comments + analytics.Jobs + analytics.Polls + analytics.PollOpts
 		d.ExpectedTotalItems = fmtInt(total)
 		if analytics.SourceMaxTime != "" {
-			d.SourceMaxTime = analytics.SourceMaxTime + " UTC"
+			// Format as "YYYY-MM-DD HH:MM UTC" (strip seconds)
+			parts := strings.Fields(analytics.SourceMaxTime) // ["2026-03-14", "17:10:00"]
+			if len(parts) >= 2 {
+				hhmm := strings.Join(strings.SplitN(parts[1], ":", 3)[:2], ":") // "17:10"
+				d.SourceMaxTime = parts[0] + " " + hhmm + " UTC"
+			} else {
+				d.SourceMaxTime = analytics.SourceMaxTime + " UTC"
+			}
 		}
 		d.UniqueAuthors = fmtInt(analytics.UniqueAuthors)
 		d.TotalStories = fmtInt(analytics.Stories)
@@ -237,6 +278,43 @@ func buildTopAuthorsTable(authors []NameCount) string {
 	sb.WriteString("|--:|------|--------:|\n")
 	for i, a := range authors {
 		sb.WriteString(fmt.Sprintf("| %d | %s | %s |\n", i+1, a.Name, fmtInt(a.Count)))
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
+
+// buildTodayChart renders a Unicode bar chart of items per committed hour today.
+func buildTodayChart(today []TodayRow) string {
+	if len(today) == 0 {
+		return "  (no data committed today yet)"
+	}
+	hourly := make(map[int]int64)
+	var maxCount int64
+	for _, r := range today {
+		h := 0
+		if len(r.Block) >= 2 {
+			fmt.Sscanf(r.Block[:2], "%d", &h)
+		}
+		hourly[h] += r.Count
+		if hourly[h] > maxCount {
+			maxCount = hourly[h]
+		}
+	}
+	if maxCount == 0 {
+		return "  (no data committed today yet)"
+	}
+	const barWidth = 30
+	var sb strings.Builder
+	for h := 0; h < 24; h++ {
+		c := hourly[h]
+		if c == 0 {
+			continue
+		}
+		width := int(float64(c) / float64(maxCount) * barWidth)
+		if width == 0 {
+			width = 1
+		}
+		bar := strings.Repeat("█", width) + strings.Repeat("░", barWidth-width)
+		sb.WriteString(fmt.Sprintf("  %02d:00  %s  %s\n", h, bar, fmtCount(c)))
 	}
 	return strings.TrimRight(sb.String(), "\n")
 }
