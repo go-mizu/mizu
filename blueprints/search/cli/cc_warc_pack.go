@@ -141,6 +141,10 @@ func runCCWarcPack(ctx context.Context,
 		fname := filepath.Base(localPath)
 		outPath := filepath.Join(cfg.WARCMdDir(), warcIdx+".md.warc.gz")
 
+		// Write sidecar so cleanup can find the raw WARC regardless of its CC filename.
+		sidecarPath := filepath.Join(cfg.WARCMdDir(), warcIdx+".warc.path")
+		_ = os.WriteFile(sidecarPath, []byte(localPath), 0o644)
+
 		fmt.Printf("%s\n", subtitleStyle.Render(
 			fmt.Sprintf("  [%d/%d]  %s  →  %s.md.warc.gz", i+1, len(inputFiles), fname, warcIdx)))
 

@@ -251,6 +251,8 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 		if rawPath := ccFindRawWARC(crawlID, f.fileIdx); rawPath != "" {
 			_ = os.Remove(rawPath)
 		}
+		// Delete sidecar regardless (cleanup is complete for this shard).
+		_ = os.Remove(filepath.Join(warcMdDir, f.shard+".warc.path"))
 		committed[f.fileIdx] = true
 		fmt.Printf("  [watcher] deleted local %s.parquet\n", f.shard)
 	}
@@ -259,6 +261,11 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 		successStyle.Render("published "+commitURL),
 		len(newFiles), elapsed.Round(time.Second),
 	)
+	// Run brute-force WARC cleanup after each commit to catch any orphaned raw WARCs
+	// from finished/crashed pipeline sessions (Pass 3 in ccPurgeCommittedLocals).
+	if n := ccPurgeCommittedLocals(crawlID, dataDir, warcMdDir, committed); n > 0 {
+		fmt.Printf("  [watcher] purged %d orphaned intermediate file(s)\n", n)
+	}
 	fmt.Println()
 	return nil
 }
@@ -352,32 +359,91 @@ func ccPurgeCommittedLocals(crawlID, dataDir, warcMdDir string, committed map[in
 		}
 	}
 
-	// Pass 2: raw WARC sweep — catch orphaned WARCs whose parquet was already deleted.
+	// Pass 2: sidecar sweep — catch orphaned raw WARCs via .warc.path sidecars written
+	// by runCCWarcPack. CC filenames (e.g. CC-MAIN-...-00044.warc.gz) do not contain
+	// the file index, so filename-based matching doesn't work. The sidecar records the
+	// actual path for each shard index, making cleanup reliable.
 	home, _ := os.UserHomeDir()
-	warcDir := filepath.Join(home, "data", "common-crawl", crawlID, "warc")
-	if entries, err := os.ReadDir(warcDir); err == nil {
+	if entries, err := os.ReadDir(warcMdDir); err == nil {
 		for _, e := range entries {
 			name := e.Name()
-			if e.IsDir() || !strings.HasSuffix(name, ".warc.gz") {
+			if e.IsDir() || !strings.HasSuffix(name, ".warc.path") {
 				continue
 			}
-			// Filename ends with -XXXXX.warc.gz; extract the 5-digit index.
-			base := strings.TrimSuffix(name, ".warc.gz")
-			dash := strings.LastIndex(base, "-")
-			if dash < 0 {
-				continue
-			}
-			idx, err := strconv.Atoi(base[dash+1:])
+			shard := strings.TrimSuffix(name, ".warc.path")
+			idx, err := strconv.Atoi(shard)
 			if err != nil || !committed[idx] {
 				continue
 			}
-			if rmErr := os.Remove(filepath.Join(warcDir, name)); rmErr == nil {
+			sidecarPath := filepath.Join(warcMdDir, name)
+			data, err := os.ReadFile(sidecarPath)
+			if err != nil {
+				continue
+			}
+			rawPath := strings.TrimSpace(string(data))
+			if rawPath != "" {
+				if rmErr := os.Remove(rawPath); rmErr == nil {
+					n++
+				}
+			}
+			_ = os.Remove(sidecarPath)
+		}
+	}
+
+	// Pass 3: brute-force raw WARC dir — delete any .warc.gz not currently open by
+	// any process and older than 10 minutes (safely orphaned from crashed pipelines).
+	warcDir := filepath.Join(home, "data", "common-crawl", crawlID, "warc")
+	openFiles := ccOpenFiles()
+	if entries, err := os.ReadDir(warcDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".warc.gz") {
+				continue
+			}
+			fullPath := filepath.Join(warcDir, e.Name())
+			if openFiles[fullPath] {
+				continue // currently in use by a pipeline
+			}
+			fi, err := e.Info()
+			if err != nil || time.Since(fi.ModTime()) < 10*time.Minute {
+				continue // too recent — may still be downloading
+			}
+			if rmErr := os.Remove(fullPath); rmErr == nil {
 				n++
 			}
 		}
 	}
 
 	return n
+}
+
+// ccOpenFiles returns a set of absolute file paths currently held open by any process.
+// Uses /proc/*/fd symlinks (Linux only); returns empty map on other platforms.
+func ccOpenFiles() map[string]bool {
+	open := make(map[string]bool)
+	procs, err := os.ReadDir("/proc")
+	if err != nil {
+		return open
+	}
+	for _, pe := range procs {
+		if !pe.IsDir() {
+			continue
+		}
+		if _, err := strconv.Atoi(pe.Name()); err != nil {
+			continue
+		}
+		fdDir := filepath.Join("/proc", pe.Name(), "fd")
+		fds, err := os.ReadDir(fdDir)
+		if err != nil {
+			continue
+		}
+		for _, fd := range fds {
+			target, err := os.Readlink(filepath.Join(fdDir, fd.Name()))
+			if err == nil && target != "" {
+				open[target] = true
+			}
+		}
+	}
+	return open
 }
 
 // ccNewestChartTime returns the mtime of the most recently modified PNG in repoRoot/charts/,

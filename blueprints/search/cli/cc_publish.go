@@ -458,8 +458,23 @@ func ccDefaultWARCMdConfig(crawlID string) string {
 }
 
 // ccFindRawWARC finds the raw .warc.gz file for a given file index.
+// It first checks for a .warc.path sidecar written by runCCWarcPack, which
+// records the actual CC filename (e.g. CC-MAIN-...-00044.warc.gz) that does
+// not contain the file index in its name.
 func ccFindRawWARC(crawlID string, idx int) string {
 	home, _ := os.UserHomeDir()
+	shard := fmt.Sprintf("%05d", idx)
+	warcMdDir := filepath.Join(home, "data", "common-crawl", crawlID, "warc_md")
+	sidecarPath := filepath.Join(warcMdDir, shard+".warc.path")
+	if data, err := os.ReadFile(sidecarPath); err == nil {
+		rawPath := strings.TrimSpace(string(data))
+		if rawPath != "" {
+			if _, err := os.Stat(rawPath); err == nil {
+				return rawPath
+			}
+		}
+	}
+	// Fallback: legacy glob pattern (pre-sidecar pipelines).
 	warcDir := filepath.Join(home, "data", "common-crawl", crawlID, "warc")
 	pattern := filepath.Join(warcDir, fmt.Sprintf("*-%05d.warc.gz", idx))
 	matches, _ := filepath.Glob(pattern)
