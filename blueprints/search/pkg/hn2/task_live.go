@@ -40,8 +40,33 @@ type LiveTaskOptions struct {
 // block directly to today/YYYY/MM/DD/HH/MM.parquet and committing to Hugging Face.
 // At midnight UTC it merges today's blocks into the monthly Parquet.
 type LiveTask struct {
-	cfg  Config
-	opts LiveTaskOptions
+	cfg     Config
+	opts    LiveTaskOptions
+	srcCeil time.Time // ClickHouse max committed time, truncated to interval
+}
+
+// querySourceCeil queries ClickHouse for MAX(time) and updates t.srcCeil.
+// ClickHouse is the single source of truth for what data is actually available.
+// Falls back to the cached value on any error.
+func (t *LiveTask) querySourceCeil(ctx context.Context, cfg Config, interval time.Duration) time.Time {
+	info, err := cfg.remoteInfo(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warn: source ceiling query failed: %v\n", err)
+		return t.srcCeil
+	}
+	// ClickHouse returns toString(max(time)) as "YYYY-MM-DD HH:MM:SS"
+	maxTime, err := time.ParseInLocation("2006-01-02 15:04:05", info.MaxTime, time.UTC)
+	if err != nil || maxTime.IsZero() {
+		fmt.Fprintf(os.Stderr, "warn: source ceiling: could not parse max time %q\n", info.MaxTime)
+		return t.srcCeil
+	}
+	ceil := maxTime.Truncate(interval)
+	if !ceil.Equal(t.srcCeil) {
+		fmt.Fprintf(os.Stderr, "info: ClickHouse max time: %s UTC (available through %s)\n",
+			info.MaxTime, ceil.Format("2006-01-02 15:04"))
+		t.srcCeil = ceil
+	}
+	return ceil
 }
 
 // NewLiveTask constructs a LiveTask ready to run.
@@ -69,33 +94,42 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 		todayRows = synced
 	}
 
-	// Count committed vs expected blocks and log startup state.
+	// Query ClickHouse for available data ceiling (single source of truth).
+	// This determines which blocks we actually expect to exist.
+	t.querySourceCeil(ctx, cfg, interval)
+
+	// Count committed vs available blocks and log startup state.
 	{
 		now := time.Now().UTC()
 		dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-		nowTrunc := now.Truncate(interval)
-		expected := int(nowTrunc.Sub(dayStart) / interval)
+		ceil := t.srcCeil
+		if ceil.IsZero() || now.Before(ceil) {
+			ceil = now.Truncate(interval)
+		}
+		var expected int
+		if ceil.After(dayStart) {
+			expected = int(ceil.Sub(dayStart)/interval) + 1
+		}
 		committed := 0
-		var maxCommittedID int64
 		for _, r := range todayRows {
 			if r.Date == today {
 				committed++
-				if r.HighestID > maxCommittedID {
-					maxCommittedID = r.HighestID
-				}
 			}
 		}
 		missing := expected - committed
-		fmt.Fprintf(os.Stderr, "info: startup today=%s interval=%s committed=%d expected=%d missing=%d maxID=%d\n",
-			today, interval, committed, expected, missing, maxCommittedID)
+		if missing < 0 {
+			missing = 0
+		}
+		fmt.Fprintf(os.Stderr, "info: startup today=%s interval=%s committed=%d source_ceil=%s missing=%d\n",
+			today, interval, committed, t.srcCeil.Format("2006-01-02 15:04"), missing)
 	}
 
 	// Roll over any orphaned blocks from a previous day.
 	todayRows = t.rolloverOrphans(ctx, cfg, today, todayRows)
 
-	// Backfill missing 5-min blocks using per-block time-range queries.
+	// Backfill missing 5-min blocks up to the ClickHouse source ceiling.
 	// Time-based queries are idempotent and avoid ID watermark drift bugs.
-	todayRows = t.backfillToday(ctx, cfg, today, interval, todayRows, &metric, emit)
+	todayRows = t.backfillToday(ctx, cfg, today, interval, t.srcCeil, todayRows, &metric, emit)
 
 	var totalCommitted int64
 	for _, r := range todayRows {
@@ -110,6 +144,10 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 			metric.Elapsed = time.Since(started)
 			return metric, nil
 		}
+
+		// Refresh ClickHouse ceiling each iteration — it's the source of truth for
+		// which blocks are available. We never fetch beyond what ClickHouse has.
+		srcCeil := t.querySourceCeil(ctx, cfg, interval)
 
 		now := time.Now().UTC()
 		blockTime := now.Truncate(interval)
@@ -134,20 +172,24 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 				totalCommitted = 0
 				todayRows = nil
 				lastDate = blockDate
-				todayRows = t.backfillToday(ctx, cfg, blockDate, interval, todayRows, &metric, emit)
+				todayRows = t.backfillToday(ctx, cfg, blockDate, interval, srcCeil, todayRows, &metric, emit)
 			}
 		}
 
-		// Try to fill the oldest missing block (past or current) with a time-range query.
-		// Time-based queries are idempotent: each block fetches exactly its [start, end) window.
+		// Try to fill the oldest missing block up to the ClickHouse source ceiling.
+		// Using srcCeil (not server clock) means we never query blocks ClickHouse doesn't have yet.
 		dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-		targetBlock, targetHHMM := oldestMissingBlock(todayRows, blockDate, dayStart, blockTime, interval)
+		ceiling := srcCeil
+		if blockTime.Before(ceiling) {
+			ceiling = blockTime // never fetch future blocks
+		}
+		targetBlock, targetHHMM := oldestMissingBlock(todayRows, blockDate, dayStart, ceiling, interval)
 
 		if targetHHMM == "" {
-			// All blocks up to current are committed — wait for next interval.
+			// All blocks up to ClickHouse ceiling are committed — wait for next interval.
 			next := nextIntervalTime(now, interval)
-			fmt.Fprintf(os.Stderr, "info: [%s %s] all blocks committed, next poll in %s\n",
-				blockDate, blockHH, time.Until(next).Round(time.Second))
+			fmt.Fprintf(os.Stderr, "info: [%s %s] up to date with source (ceil: %s), next poll in %s\n",
+				blockDate, blockHH, srcCeil.Format("15:04"), time.Until(next).Round(time.Second))
 			if emit != nil {
 				emit(&LiveState{Phase: "wait", Block: blockDate + " " + blockHH, NextFetchIn: time.Until(next)})
 			}
@@ -187,13 +229,10 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 			continue
 		}
 		if result.Count == 0 {
-			next := nextIntervalTime(now, interval)
-			fmt.Fprintf(os.Stderr, "info: [%s %s] 0 items in source (ClickHouse lag), next poll in %s\n",
-				blockDate, targetHHMM, time.Until(next).Round(time.Second))
-			if emit != nil {
-				emit(&LiveState{Phase: "wait", Block: blockDate + " " + blockHH, NextFetchIn: time.Until(next)})
-			}
-			sleepUntilNext(ctx, interval)
+			// Got 0 items even though srcCeil said data was available — ceiling was stale.
+			// Loop immediately; querySourceCeil at top of loop will refresh.
+			fmt.Fprintf(os.Stderr, "info: [%s %s] 0 items (source ceiling stale), refreshing\n",
+				blockDate, targetHHMM)
 			continue
 		}
 		durFetchS := int(time.Since(t0).Seconds())
@@ -344,14 +383,15 @@ func (t *LiveTask) rolloverOrphans(ctx context.Context, cfg Config, today string
 	return todayRows
 }
 
-// backfillToday fetches all missing 5-min blocks for today using per-block time-range queries.
-// Time-based queries are idempotent — each block fetches exactly its [start, end) window
-// from the source, with no ID watermark dependency.
+// backfillToday fetches all missing 5-min blocks for today up to srcCeil (ClickHouse max time).
+// srcCeil is the single source of truth for what data is actually available in ClickHouse.
+// Time-based queries are idempotent — each block fetches exactly its [start, end) window.
 func (t *LiveTask) backfillToday(
 	ctx context.Context,
 	cfg Config,
 	today string,
 	interval time.Duration,
+	srcCeil time.Time,
 	todayRows []TodayRow,
 	metric *LiveMetric,
 	emit func(*LiveState),
@@ -365,10 +405,16 @@ func (t *LiveTask) backfillToday(
 
 	now := time.Now().UTC()
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-	nowTrunc := now.Truncate(interval)
+	// Use ClickHouse ceiling as the upper bound — never backfill blocks beyond what's available.
+	ceiling := srcCeil
+	if ceiling.IsZero() {
+		ceiling = now.Truncate(interval) // fallback to server clock if ceiling unknown
+	} else if now.Before(ceiling) {
+		ceiling = now.Truncate(interval) // never fetch future blocks
+	}
 
 	var missing []time.Time
-	for t0 := dayStart; t0.Before(nowTrunc); t0 = t0.Add(interval) {
+	for t0 := dayStart; !t0.After(ceiling); t0 = t0.Add(interval) {
 		if !committed[t0.Format("15:04")] {
 			missing = append(missing, t0)
 		}
@@ -406,8 +452,10 @@ func (t *LiveTask) backfillToday(
 			break // likely transient; stop backfill, main loop will retry
 		}
 		if result.Count == 0 {
-			fmt.Fprintf(os.Stderr, "info: [%s %s] backfill: 0 items in source (ClickHouse lag), stopping backfill — will retry in main loop\n", today, hhmm)
-			break // if this block has no data, later blocks won't either
+			// srcCeil said data should be here but got 0 — ClickHouse ceiling may be stale.
+			// Skip this block and continue; main loop will retry with a refreshed ceiling.
+			fmt.Fprintf(os.Stderr, "info: [%s %s] backfill: 0 items (source ceiling may be stale), skipping\n", today, hhmm)
+			continue
 		}
 
 		fi, _ := os.Stat(outPath)
