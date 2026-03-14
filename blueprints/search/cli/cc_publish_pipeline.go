@@ -337,6 +337,19 @@ func ccRunCharts(statsCSV, repoRoot, crawlID string) []string {
 		return nil
 	}
 
+	// Snapshot mtime of existing PNGs before running so we can detect which were
+	// actually written (script may only generate a subset of historical chart files).
+	before := map[string]time.Time{}
+	if entries, err := os.ReadDir(chartsDir); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".png") {
+				if fi, err := e.Info(); err == nil {
+					before[e.Name()] = fi.ModTime()
+				}
+			}
+		}
+	}
+
 	// Run: uv run <script> <statsCSV> --out <chartsDir> [--crawl <crawlID>]
 	args := []string{"run", scriptPath, statsCSV, "--out", chartsDir}
 	if crawlID != "" {
@@ -345,15 +358,29 @@ func ccRunCharts(statsCSV, repoRoot, crawlID string) []string {
 	cmd := exec.Command(uvBin, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		fmt.Printf("  [charts] skipped: %v\n%s\n", err, string(out))
+		outStr := string(out)
+		// Kaleido requires browser deps (libnss3 etc.) that may be missing on servers.
+		if strings.Contains(outStr, "BrowserDepsError") || strings.Contains(outStr, "chromium") ||
+			strings.Contains(outStr, "kaleido") || strings.Contains(outStr, "libnss") {
+			fmt.Printf("  [charts] skipped: kaleido browser deps missing (install libnss3 libatk-bridge2.0-0 libcups2 libgbm1 etc.)\n")
+		} else {
+			fmt.Printf("  [charts] skipped: %v\n%s\n", err, outStr)
+		}
 		return nil
 	}
 
-	// Collect generated PNG files.
+	// Collect only PNGs that were written or updated in this run (mtime changed).
 	entries, _ := os.ReadDir(chartsDir)
 	var paths []string
 	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".png") {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".png") {
+			continue
+		}
+		fi, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if prev, existed := before[e.Name()]; !existed || fi.ModTime().After(prev) {
 			paths = append(paths, filepath.Join("charts", e.Name()))
 		}
 	}
