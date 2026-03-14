@@ -301,11 +301,11 @@ These are the users who have submitted the most stories over the lifetime of Hac
 
 ## How it works
 
-The pipeline is built in Go and uses [DuckDB](https://duckdb.org) for Parquet conversion and [ClickHouse](https://clickhouse.com) as the data source.
+The pipeline is built in Go and uses [DuckDB](https://duckdb.org) for Parquet conversion. Historical data is sourced from [ClickHouse](https://clickhouse.com); live data is fetched directly from the [HN Firebase API](https://hacker-news.firebaseio.com/v2).
 
 **Historical backfill.** The pipeline iterates through every month from October 2006 to the most recent complete month. For each month, it queries the ClickHouse source with a time-bounded SQL query, exports the result as a Parquet file sorted by `id` using DuckDB with Zstandard compression at level 22, and commits it to this repository along with an updated `stats.csv` and `README.md`. Months already tracked in `stats.csv` are skipped, making the process fully resumable.
 
-**Live polling.** Every 5 minutes, the pipeline queries the ClickHouse source for items newer than the last committed block. The result is written as a single Parquet file at `today/YYYY/MM/DD/HH/MM.parquet` and committed immediately.
+**Live polling.** Every 5 minutes, the pipeline calls the HN Firebase API to fetch new items by ID range. Items are grouped into their 5-minute time windows, written as individual Parquet files at `today/YYYY/MM/DD/HH/MM.parquet` using DuckDB, and committed to Hugging Face immediately. Using the HN API directly means live blocks reflect real-time data with no indexing lag.
 
 **Day rollover.** At midnight UTC, the entire current month is refetched from the ClickHouse source in a single query and written as an authoritative Parquet file. Today's individual 5-minute blocks are deleted from the repository in the same atomic commit. Refetching instead of merging ensures the monthly file is always complete and deduplicated, regardless of any local state.
 
@@ -436,7 +436,7 @@ The pipeline runs in three modes:
 
 1. **Historical backfill.** Iterates through every month from October 2006 to the most recent complete month. For each month, it runs a SQL query against the ClickHouse source, writes the result as a Parquet file sorted by `id`, and commits it to Hugging Face along with an updated `stats.csv` and `README.md`.
 
-2. **Live polling.** After the historical backfill completes, the pipeline polls the source every 5 minutes for new items. Each batch is written directly as a `today/YYYY/MM/DD/HH/MM.parquet` file and committed to Hugging Face immediately as one atomic operation.
+2. **Live polling.** After the historical backfill completes, the pipeline polls the [HN Firebase API](https://hacker-news.firebaseio.com/v2) every 5 minutes for new items. It fetches all items with IDs greater than the last committed watermark, groups them into 5-minute time windows by item timestamp, and writes each window as a `today/YYYY/MM/DD/HH/MM.parquet` file committed to Hugging Face immediately. The HN API provides real-time data with no indexing lag.
 
 3. **Day rollover.** At midnight UTC, the entire current month is refetched from the ClickHouse source in a single query and written as a fresh, authoritative Parquet file. Today's individual 5-minute blocks are deleted from the repository in the same atomic commit. This approach is more reliable than merging local blocks — the result is always complete and deduplicated, sourced directly from the origin.
 

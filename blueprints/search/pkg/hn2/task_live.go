@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
 	"time"
 )
 
@@ -36,37 +37,12 @@ type LiveTaskOptions struct {
 	Analytics  *Analytics    // optional: enriches README with source-level stats
 }
 
-// LiveTask continuously polls the HN source for new items, writing each 5-minute
+// LiveTask continuously polls the HN Firebase API for new items, writing each 5-minute
 // block directly to today/YYYY/MM/DD/HH/MM.parquet and committing to Hugging Face.
 // At midnight UTC it merges today's blocks into the monthly Parquet.
 type LiveTask struct {
-	cfg     Config
-	opts    LiveTaskOptions
-	srcCeil time.Time // ClickHouse max committed time, truncated to interval
-}
-
-// querySourceCeil queries ClickHouse for MAX(time) and updates t.srcCeil.
-// ClickHouse is the single source of truth for what data is actually available.
-// Falls back to the cached value on any error.
-func (t *LiveTask) querySourceCeil(ctx context.Context, cfg Config, interval time.Duration) time.Time {
-	info, err := cfg.remoteInfo(ctx)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "warn: source ceiling query failed: %v\n", err)
-		return t.srcCeil
-	}
-	// ClickHouse returns toString(max(time)) as "YYYY-MM-DD HH:MM:SS"
-	maxTime, err := time.ParseInLocation("2006-01-02 15:04:05", info.MaxTime, time.UTC)
-	if err != nil || maxTime.IsZero() {
-		fmt.Fprintf(os.Stderr, "warn: source ceiling: could not parse max time %q\n", info.MaxTime)
-		return t.srcCeil
-	}
-	ceil := maxTime.Truncate(interval)
-	if !ceil.Equal(t.srcCeil) {
-		fmt.Fprintf(os.Stderr, "info: ClickHouse max time: %s UTC (available through %s)\n",
-			info.MaxTime, ceil.Format("2006-01-02 15:04"))
-		t.srcCeil = ceil
-	}
-	return ceil
+	cfg  Config
+	opts LiveTaskOptions
 }
 
 // NewLiveTask constructs a LiveTask ready to run.
@@ -94,10 +70,6 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 		todayRows = synced
 	}
 
-	// Query ClickHouse for available data ceiling (single source of truth).
-	// This determines which blocks we actually expect to exist.
-	t.querySourceCeil(ctx, cfg, interval)
-
 	// Log startup state.
 	{
 		now := time.Now().UTC()
@@ -114,19 +86,14 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 		if missing < 0 {
 			missing = 0
 		}
-		srcCeilStr := "unknown"
-		if !t.srcCeil.IsZero() {
-			srcCeilStr = t.srcCeil.Format("2006-01-02 15:04")
-		}
-		fmt.Fprintf(os.Stderr, "info: startup today=%s interval=%s committed=%d expected=%d missing=%d source_ceil=%s\n",
-			today, interval, committed, expected, missing, srcCeilStr)
+		fmt.Fprintf(os.Stderr, "info: startup today=%s interval=%s committed=%d expected=%d missing=%d\n",
+			today, interval, committed, expected, missing)
 	}
 
 	// Roll over any orphaned blocks from a previous day.
 	todayRows = t.rolloverOrphans(ctx, cfg, today, todayRows)
 
-	// Backfill missing 5-min blocks up to the ClickHouse source ceiling.
-	// Time-based queries are idempotent and avoid ID watermark drift bugs.
+	// Backfill missing 5-min blocks using ClickHouse (reliable for historical data).
 	todayRows = t.backfillToday(ctx, cfg, today, interval, todayRows, &metric, emit)
 
 	var totalCommitted int64
@@ -136,7 +103,21 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 	fmt.Fprintf(os.Stderr, "info: startup complete — %d today rows, %s total items committed\n",
 		len(todayRows), fmtInt(totalCommitted))
 
-	// --- Main live polling loop ---
+	// Initialize HN ID watermark from the highest committed ID today.
+	// If none committed yet, bootstrap from the current HN max to avoid re-fetching history.
+	lastHNID := MaxTodayHighestID(todayRows, today)
+	if lastHNID == 0 {
+		if id, err := FetchHNMaxItem(ctx); err == nil {
+			lastHNID = id
+			fmt.Fprintf(os.Stderr, "info: bootstrapped HN watermark: id=%d\n", lastHNID)
+		} else {
+			fmt.Fprintf(os.Stderr, "warn: FetchHNMaxItem bootstrap failed: %v\n", err)
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "info: HN watermark from today's rows: id=%d\n", lastHNID)
+	}
+
+	// --- Main live polling loop (HN Firebase API) ---
 	for {
 		if ctx.Err() != nil {
 			metric.Elapsed = time.Since(started)
@@ -144,9 +125,7 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 		}
 
 		now := time.Now().UTC()
-		blockTime := now.Truncate(interval)
-		blockDate := blockTime.Format("2006-01-02")
-		blockHH := blockTime.Format("15:04")
+		blockDate := now.Truncate(interval).Format("2006-01-02")
 
 		// Day rollover at midnight UTC.
 		if blockDate != lastDate {
@@ -167,132 +146,159 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 				todayRows = nil
 				lastDate = blockDate
 				todayRows = t.backfillToday(ctx, cfg, blockDate, interval, todayRows, &metric, emit)
+				// Reset HN watermark for the new day.
+				lastHNID = MaxTodayHighestID(todayRows, blockDate)
+				if lastHNID == 0 {
+					if id, err := FetchHNMaxItem(ctx); err == nil {
+						lastHNID = id
+					}
+				}
 			}
 		}
 
-		// Find the oldest uncommitted block up to the current server-clock interval.
-		// We always attempt the same block until ClickHouse has data for it.
-		dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-		targetBlock, targetHHMM := oldestMissingBlock(todayRows, blockDate, dayStart, blockTime, interval)
-
-		if targetHHMM == "" {
-			// All blocks up to current interval are committed — wait for next one.
-			next := nextIntervalTime(now, interval)
-			fmt.Fprintf(os.Stderr, "info: [%s %s] all caught up, next poll in %s\n",
-				blockDate, blockHH, time.Until(next).Round(time.Second))
-			if emit != nil {
-				emit(&LiveState{Phase: "wait", Block: blockDate + " " + blockHH, NextFetchIn: time.Until(next)})
-			}
-			sleepUntilNext(ctx, interval)
-			continue
-		}
-
-		blockEnd := targetBlock.Add(interval)
-		outPath := cfg.TodayBlockPath(blockDate, targetHHMM)
-		hfPath := cfg.TodayHFPath(blockDate, targetHHMM)
-
-		isPast := targetHHMM != blockHH
-		label := "live"
-		if isPast {
-			label = "catchup"
-		}
-		fmt.Fprintf(os.Stderr, "info: [%s %s] %s fetch: querying time %s–%s from source\n",
-			blockDate, targetHHMM, label, targetHHMM, blockEnd.Format("15:04"))
-		if emit != nil {
-			emit(&LiveState{
-				Phase:          "fetch",
-				Block:          blockDate + " " + targetHHMM,
-				BlocksToday:    len(todayRows),
-				TotalCommitted: totalCommitted,
-			})
-		}
-
-		t0 := time.Now()
-		result, err := cfg.FetchTimeRange(ctx, targetBlock, blockEnd, outPath)
+		// Poll the HN Firebase API for new items.
+		maxID, err := FetchHNMaxItem(ctx)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "warn: [%s %s] fetch time range: %v\n", blockDate, targetHHMM, err)
+			fmt.Fprintf(os.Stderr, "warn: FetchHNMaxItem: %v; retrying in 30s\n", err)
+			sleepWithContext(ctx, 30*time.Second)
+			continue
+		}
+
+		if maxID <= lastHNID {
+			// No new items yet. Wait until next interval.
 			next := nextIntervalTime(now, interval)
+			fmt.Fprintf(os.Stderr, "info: no new HN items (maxID=%d watermark=%d), next poll in %s\n",
+				maxID, lastHNID, time.Until(next).Round(time.Second))
 			if emit != nil {
-				emit(&LiveState{Phase: "wait", Block: blockDate + " " + blockHH, NextFetchIn: time.Until(next)})
+				emit(&LiveState{
+					Phase:          "wait",
+					Block:          blockDate + " " + now.Truncate(interval).Format("15:04"),
+					NextFetchIn:    time.Until(next),
+					TotalCommitted: totalCommitted,
+				})
 			}
 			sleepUntilNext(ctx, interval)
 			continue
 		}
-		if result.Count == 0 {
-			// ClickHouse hasn't indexed this block yet — retry same block after a short wait.
-			// For past blocks retry every minute; for current block wait until next interval.
-			var retryIn time.Duration
-			if isPast {
-				retryIn = time.Minute
-			} else {
-				retryIn = time.Until(nextIntervalTime(now, interval))
-			}
-			fmt.Fprintf(os.Stderr, "info: [%s %s] 0 items (ClickHouse lag), retrying in %s\n",
-				blockDate, targetHHMM, retryIn.Round(time.Second))
-			if emit != nil {
-				emit(&LiveState{Phase: "wait", Block: blockDate + " " + blockHH, NextFetchIn: retryIn})
-			}
-			sleepWithContext(ctx, retryIn)
-			continue
-		}
-		durFetchS := int(time.Since(t0).Seconds())
-		totalCommitted += result.Count
-		fmt.Fprintf(os.Stderr, "info: [%s %s] fetched %s items (id %d–%d) in %ds\n",
-			blockDate, targetHHMM, fmtInt(result.Count), result.LowestID, result.HighestID, durFetchS)
 
-		fi, _ := os.Stat(outPath)
-		var sizeBytes int64
-		if fi != nil {
-			sizeBytes = fi.Size()
-		}
-		newRow := TodayRow{
-			Date: blockDate, Block: targetHHMM,
-			LowestID: result.LowestID, HighestID: result.HighestID,
-			Count: result.Count, DurFetchS: durFetchS, SizeBytes: sizeBytes,
-			CommittedAt: time.Now().UTC(),
-		}
-		todayRows = updateTodayRow(todayRows, newRow)
-		_ = WriteStatsTodayCSV(cfg.StatsTodayCSVPath(), todayRows)
-		if readmeBytes, err := t.generateREADME(cfg, todayRows); err == nil {
-			_ = os.WriteFile(cfg.READMEPath(), readmeBytes, 0o644)
-		}
-
-		msg := fmt.Sprintf("Live %s %s UTC (%s items)", blockDate, targetHHMM, fmtInt(result.Count))
+		// Fetch items in [lastHNID+1, maxID].
+		n := maxID - lastHNID
+		fmt.Fprintf(os.Stderr, "info: fetching HN items %d–%d (%d items)\n", lastHNID+1, maxID, n)
 		if emit != nil {
-			emit(&LiveState{Phase: "commit", Block: blockDate + " " + targetHHMM, NewItems: result.Count})
+			emit(&LiveState{Phase: "fetch", Block: blockDate, BlocksToday: len(todayRows), TotalCommitted: totalCommitted})
 		}
-		ops := []HFOp{
-			{LocalPath: outPath, PathInRepo: hfPath},
-			{LocalPath: cfg.StatsTodayCSVPath(), PathInRepo: "stats_today.csv"},
-			{LocalPath: cfg.READMEPath(), PathInRepo: "README.md"},
+		t0 := time.Now()
+		items, err := FetchHNItemRange(ctx, lastHNID+1, maxID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warn: FetchHNItemRange: %v; retrying in 30s\n", err)
+			sleepWithContext(ctx, 30*time.Second)
+			continue
 		}
-		t0Commit := time.Now()
-		if _, cerr := t.opts.HFCommit(ctx, ops, msg); cerr != nil {
-			fmt.Fprintf(os.Stderr, "warn: [%s %s] hf commit: %v\n", blockDate, targetHHMM, cerr)
-		} else {
-			newRow.DurCommitS = int(time.Since(t0Commit).Seconds())
-			todayRows = updateTodayRow(todayRows, newRow)
-			_ = WriteStatsTodayCSV(cfg.StatsTodayCSVPath(), todayRows)
-			metric.BlocksWritten++
-			metric.RowsWritten += result.Count
-			fmt.Fprintf(os.Stderr, "info: [%s %s] committed to HF in %ds\n",
-				blockDate, targetHHMM, newRow.DurCommitS)
+		// Advance watermark regardless of how many items were usable.
+		lastHNID = maxID
+		fmt.Fprintf(os.Stderr, "info: received %d items from HN API in %s\n",
+			len(items), time.Since(t0).Round(time.Millisecond))
+
+		if len(items) == 0 {
+			sleepUntilNext(ctx, interval)
+			continue
 		}
 
-		// If we just committed a past (catchup) block, loop immediately to try the next one.
-		// If it was the current block, sleep until the next interval.
-		if !isPast {
-			next := blockTime.Add(interval)
-			if emit != nil {
-				emit(&LiveState{Phase: "wait", Block: blockDate + " " + targetHHMM, NextFetchIn: time.Until(next)})
-			}
-			sleepUntilNext(ctx, interval)
+		// Group items into 5-min windows by each item's timestamp.
+		windows := GroupHNItemsByWindow(items, interval)
+
+		// Process windows in chronological order.
+		windowTimes := make([]time.Time, 0, len(windows))
+		for wt := range windows {
+			windowTimes = append(windowTimes, wt)
 		}
+		sort.Slice(windowTimes, func(i, j int) bool { return windowTimes[i].Before(windowTimes[j]) })
+
+		now = time.Now().UTC() // refresh after fetch
+		for _, wt := range windowTimes {
+			if ctx.Err() != nil {
+				break
+			}
+			wDate := wt.Format("2006-01-02")
+			wHHMM := wt.Format("15:04")
+
+			if blockCommitted(todayRows, wDate, wHHMM) {
+				fmt.Fprintf(os.Stderr, "info: [%s %s] already committed, skipping\n", wDate, wHHMM)
+				continue
+			}
+
+			windowItems := windows[wt]
+			outPath := cfg.TodayBlockPath(wDate, wHHMM)
+			hfPath := cfg.TodayHFPath(wDate, wHHMM)
+
+			fmt.Fprintf(os.Stderr, "info: [%s %s] writing %d HN items\n", wDate, wHHMM, len(windowItems))
+			if emit != nil {
+				emit(&LiveState{Phase: "fetch", Block: wDate + " " + wHHMM, NewItems: int64(len(windowItems))})
+			}
+
+			result, werr := WriteHNParquet(ctx, windowItems, outPath)
+			if werr != nil {
+				fmt.Fprintf(os.Stderr, "warn: [%s %s] WriteHNParquet: %v\n", wDate, wHHMM, werr)
+				continue
+			}
+
+			fi, _ := os.Stat(outPath)
+			var sizeBytes int64
+			if fi != nil {
+				sizeBytes = fi.Size()
+			}
+			newRow := TodayRow{
+				Date:        wDate,
+				Block:       wHHMM,
+				LowestID:    result.LowestID,
+				HighestID:   result.HighestID,
+				Count:       result.Count,
+				DurFetchS:   int(result.Duration.Seconds()),
+				SizeBytes:   sizeBytes,
+				CommittedAt: time.Now().UTC(),
+			}
+			todayRows = updateTodayRow(todayRows, newRow)
+			totalCommitted += result.Count
+			_ = WriteStatsTodayCSV(cfg.StatsTodayCSVPath(), todayRows)
+			if readmeBytes, err := t.generateREADME(cfg, todayRows); err == nil {
+				_ = os.WriteFile(cfg.READMEPath(), readmeBytes, 0o644)
+			}
+
+			msg := fmt.Sprintf("Live %s %s UTC (%s items)", wDate, wHHMM, fmtInt(result.Count))
+			if emit != nil {
+				emit(&LiveState{Phase: "commit", Block: wDate + " " + wHHMM, NewItems: result.Count})
+			}
+			ops := []HFOp{
+				{LocalPath: outPath, PathInRepo: hfPath},
+				{LocalPath: cfg.StatsTodayCSVPath(), PathInRepo: "stats_today.csv"},
+				{LocalPath: cfg.READMEPath(), PathInRepo: "README.md"},
+			}
+			t0Commit := time.Now()
+			if _, cerr := t.opts.HFCommit(ctx, ops, msg); cerr != nil {
+				fmt.Fprintf(os.Stderr, "warn: [%s %s] hf commit: %v\n", wDate, wHHMM, cerr)
+			} else {
+				newRow.DurCommitS = int(time.Since(t0Commit).Seconds())
+				todayRows = updateTodayRow(todayRows, newRow)
+				_ = WriteStatsTodayCSV(cfg.StatsTodayCSVPath(), todayRows)
+				metric.BlocksWritten++
+				metric.RowsWritten += result.Count
+				fmt.Fprintf(os.Stderr, "info: [%s %s] committed to HF in %ds\n",
+					wDate, wHHMM, newRow.DurCommitS)
+			}
+		}
+
+		// Sleep until the next interval boundary.
+		now = time.Now().UTC()
+		next := nextIntervalTime(now, interval)
+		fmt.Fprintf(os.Stderr, "info: next poll at %s (in %s)\n",
+			next.UTC().Format("15:04:05"), time.Until(next).Round(time.Second))
+		if emit != nil {
+			emit(&LiveState{Phase: "wait", Block: blockDate, NextFetchIn: time.Until(next), TotalCommitted: totalCommitted})
+		}
+		sleepUntilNext(ctx, interval)
 	}
 }
 
-// coldStartWatermark determines the highest committed item ID on startup.
-// Priority: today's stats_today.csv → remote source query.
 // syncStatsTodayFromHF downloads stats_today.csv from the public HF repo and returns
 // its rows if it contains more entries for today than the local version. This prevents
 // a stale local CSV (e.g. written by an old binary) from causing the backfill to start
@@ -338,28 +344,6 @@ func (t *LiveTask) syncStatsTodayFromHF(ctx context.Context, cfg Config, today s
 	return nil
 }
 
-func (t *LiveTask) coldStartWatermark(ctx context.Context, cfg Config, today string, todayRows []TodayRow) (int64, error) {
-	if id := MaxTodayHighestID(todayRows, today); id > 0 {
-		return id, nil
-	}
-	backoff := time.Minute
-	for {
-		info, err := cfg.remoteInfo(ctx)
-		if err == nil {
-			return info.MaxID, nil
-		}
-		if backoff > 30*time.Minute {
-			return 0, fmt.Errorf("remote info for watermark: %w", err)
-		}
-		fmt.Fprintf(os.Stderr, "warn: remote info failed (%v), retrying in %s\n", err, backoff)
-		sleepWithContext(ctx, backoff)
-		if ctx.Err() != nil {
-			return 0, ctx.Err()
-		}
-		backoff *= 2
-	}
-}
-
 // rolloverOrphans rolls over any today/ entries dated before today (cross-midnight crash).
 func (t *LiveTask) rolloverOrphans(ctx context.Context, cfg Config, today string, todayRows []TodayRow) []TodayRow {
 	for _, row := range todayRows {
@@ -386,7 +370,7 @@ func (t *LiveTask) rolloverOrphans(ctx context.Context, cfg Config, today string
 // backfillToday fetches all missing 5-min blocks for today using per-block time-range queries.
 // Iterates from day start up to the current interval, stopping at the first block with 0 items
 // (which marks the ClickHouse lag boundary — all later blocks will also be empty).
-// The main loop will retry those remaining blocks one at a time as ClickHouse catches up.
+// The main loop will pick up remaining blocks via the HN Firebase API.
 func (t *LiveTask) backfillToday(
 	ctx context.Context,
 	cfg Config,
@@ -443,11 +427,11 @@ func (t *LiveTask) backfillToday(
 		result, err := cfg.FetchTimeRange(ctx, t0, blockEnd, outPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warn: [%s %s] backfill fetch: %v\n", today, hhmm, err)
-			break // likely transient; stop backfill, main loop will retry
+			break // likely transient; stop backfill, HN API live tail will cover the rest
 		}
 		if result.Count == 0 {
-			// ClickHouse lag boundary — stop backfill here. The main loop will retry
-			// this and later blocks one at a time as ClickHouse catches up.
+			// ClickHouse lag boundary — stop backfill here. The HN API live tail
+			// will cover items from this point forward.
 			fmt.Fprintf(os.Stderr, "info: [%s %s] backfill: 0 items (ClickHouse lag boundary), stopping\n", today, hhmm)
 			break
 		}
@@ -600,4 +584,3 @@ func sleepUntilNext(ctx context.Context, interval time.Duration) {
 	case <-time.After(d):
 	}
 }
-
