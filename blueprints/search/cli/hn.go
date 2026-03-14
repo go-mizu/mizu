@@ -67,6 +67,7 @@ Other commands:
 	cmd.AddCommand(newHNSync())
 	cmd.AddCommand(newHNCompact())
 	cmd.AddCommand(newHNExport())
+	cmd.AddCommand(newHNPublish())
 	cmd.AddCommand(newHNDomains())
 	cmd.AddCommand(newHNRecrawl())
 	return cmd
