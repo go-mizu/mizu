@@ -53,7 +53,7 @@ func DownloadZst(ctx context.Context, cfg Config, year, month int, typ string,
 
 	ym := fmt.Sprintf("%04d-%02d", year, month)
 	prefix := zstPrefix(typ)
-	fileInTorrent := fmt.Sprintf("%s_%s.zst", prefix, ym)
+	fileInTorrent := fmt.Sprintf("%s/%s_%s.zst", typ, prefix, ym)
 
 	start := time.Now()
 

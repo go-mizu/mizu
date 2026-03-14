@@ -43,7 +43,7 @@ Requires HF_TOKEN environment variable to be set.`,
 
 	cmd.Flags().StringVar(&repoRoot, "repo-root", "", "Local root directory (default: $HOME/data/arctic/repo)")
 	cmd.Flags().StringVar(&repoID, "repo", "open-index/arctic", "Hugging Face dataset repo ID")
-	cmd.Flags().StringVar(&fromStr, "from", "2005-06", "Start month YYYY-MM (inclusive)")
+	cmd.Flags().StringVar(&fromStr, "from", "2005-12", "Start month YYYY-MM (inclusive)")
 	cmd.Flags().StringVar(&toStr, "to", "", "End month YYYY-MM inclusive (default: current month)")
 	cmd.Flags().IntVar(&minFreeGB, "min-free-gb", 30, "Minimum free disk GB required to continue")
 	cmd.Flags().IntVar(&chunkLines, "chunk-lines", 0, "Lines per JSONL chunk (0 = use package default)")

@@ -258,10 +258,12 @@ func (t *PublishTask) cleanupWork() {
 			fmt.Fprintf(os.Stderr, "arctic: cleanup: %v\n", err)
 		}
 	}
-	matches, _ = filepath.Glob(filepath.Join(t.cfg.RawDir, "R[CS]_*.zst"))
-	for _, m := range matches {
-		if err := os.Remove(m); err != nil {
-			fmt.Fprintf(os.Stderr, "arctic: cleanup: %v\n", err)
+	for _, sub := range []string{"comments", "submissions"} {
+		subMatches, _ := filepath.Glob(filepath.Join(t.cfg.RawDir, sub, "R[CS]_*.zst"))
+		for _, m := range subMatches {
+			if err := os.Remove(m); err != nil {
+				fmt.Fprintf(os.Stderr, "arctic: cleanup: %v\n", err)
+			}
 		}
 	}
 }
@@ -278,7 +280,7 @@ func (t *PublishTask) monthRange() []ymKey {
 	from := ymKey{Year: t.opts.FromYear, Month: t.opts.FromMonth}
 	to := ymKey{Year: t.opts.ToYear, Month: t.opts.ToMonth}
 	if from.Year == 0 {
-		from = ymKey{Year: 2005, Month: 6}
+		from = ymKey{Year: 2005, Month: 12} // earliest file in the bundle torrent
 	}
 	if to.Year == 0 {
 		now := time.Now().UTC()
