@@ -936,6 +936,10 @@ func newGoodreadCrawl() *cobra.Command {
 // seedFromSitemaps discovers all Goodreads URLs from sitemaps and enqueues them.
 // cacheDir is used to cache downloaded .gz files; pass "" to disable.
 // Returns (newlyEnqueued, skipped, error).
+//
+// Each file is imported immediately via EnqueueBulk which uses:
+//   DuckDB Appender → temp stage → LEFT JOIN hash anti-join INSERT
+// This is ~1,700× faster than INSERT OR IGNORE on large tables (benchmark D2 result).
 func seedFromSitemaps(ctx context.Context, stateDB *goodread.State, typeFilter, cacheDir string) (int, int, error) {
 	// Parse allowed types filter
 	allowedTypes := map[string]bool{}
@@ -1005,7 +1009,7 @@ func seedFromSitemaps(ctx context.Context, stateDB *goodread.State, typeFilter, 
 		}
 
 		var typeNew, typeSkipped int
-		total := len(gzURLs)
+		nFiles := len(gzURLs)
 		for i, gzURL := range gzURLs {
 			if ctx.Err() != nil {
 				break
@@ -1014,32 +1018,32 @@ func seedFromSitemaps(ctx context.Context, stateDB *goodread.State, typeFilter, 
 			fileIdx := i + 1
 			fname := shortURL(gzURL)
 			fileStart := time.Now()
-			fmt.Printf("  [%d/%d] %s — importing ...   ", fileIdx, total, fname)
+			fmt.Printf("  [%d/%d] %s — importing ...   ", fileIdx, nFiles, fname)
 
-			newN, skipped, err := enqueueGzSitemap(gzURL, stateDB, entityType, typeCache, fname, fileIdx, total, func(n int) {
-				fmt.Printf("\r  [%d/%d] %s — bulk-inserting %s URLs ...   ", fileIdx, total, fname, fmtInt(n))
+			newN, skipped, err := enqueueGzSitemap(gzURL, stateDB, entityType, typeCache, fname, fileIdx, nFiles, func(n int) {
+				fmt.Printf("\r  [%d/%d] %s — inserting %s URLs ...   ", fileIdx, nFiles, fname, fmtInt(n))
 			})
 			if err != nil {
-				fmt.Printf("\r  [%d/%d] %s — ERROR: %v\n", fileIdx, total, fname, err)
+				fmt.Printf("\r  [%d/%d] %s — ERROR: %v\n", fileIdx, nFiles, fname, err)
 				continue
 			}
 			elapsed := time.Since(fileStart).Round(time.Millisecond)
 			if skipped {
 				typeSkipped++
-				fmt.Printf("\r  [%d/%d] %s — [cached] skip\n", fileIdx, total, fname)
+				fmt.Printf("\r  [%d/%d] %s — [cached] skip\n", fileIdx, nFiles, fname)
 			} else {
 				typeNew += newN
 				fmt.Printf("\r  [%d/%d] %s — %s URLs  (%s)\n",
-					fileIdx, total, fname, fmtInt(newN), elapsed)
+					fileIdx, nFiles, fname, fmtInt(newN), elapsed)
 			}
 		}
 
 		typeDur := time.Since(typeStart).Round(time.Second)
 		totalNew += typeNew
 		totalSkipped += typeSkipped
-		summaries = append(summaries, typeSummary{entityType, total, typeNew, typeSkipped, typeDur})
+		summaries = append(summaries, typeSummary{entityType, nFiles, typeNew, typeSkipped, typeDur})
 		fmt.Printf("── [%s] done: %d files, %s URLs, %d cached  (%s)\n",
-			entityType, total, fmtInt(typeNew), typeSkipped, typeDur)
+			entityType, nFiles, fmtInt(typeNew), typeSkipped, typeDur)
 	}
 
 	// Overall summary
@@ -1070,11 +1074,11 @@ func fmtInt(n int) string {
 	return string(b)
 }
 
-// enqueueGzSitemap downloads (or loads from cache) a gzipped sitemap, streams XML parsing,
-// and batch-enqueues URLs in chunks of batchSize.
+// enqueueGzSitemap downloads (or loads from cache) a gzipped sitemap, parses it,
+// and bulk-inserts URLs via EnqueueBulk (Appender → temp stage → LEFT JOIN anti-join INSERT).
 // cacheDir: if non-empty, the .gz is saved to cacheDir/<filename>; a .done sentinel skips
 // already-imported files entirely.
-// Returns (newly enqueued, skipped-as-cached, error).
+// Returns (newly inserted, skipped-as-cached, error).
 func enqueueGzSitemap(gzURL string, stateDB *goodread.State, entityType, cacheDir, fname string, fileIdx, total int, progress func(n int)) (int, bool, error) {
 	// ── disk cache logic ─────────────────────────────────────────────────────
 	var localPath string
@@ -1170,12 +1174,13 @@ func enqueueGzSitemap(gzURL string, stateDB *goodread.State, entityType, cacheDi
 		progress(len(items))
 	}
 
-	// Bulk import via Appender+staging (~785× faster than batched INSERT OR IGNORE)
+	// Bulk import via Appender → temp stage → LEFT JOIN hash anti-join INSERT.
+	// ~1,700× faster than INSERT OR IGNORE on large tables (benchmark D2).
 	if err := stateDB.EnqueueBulk(items); err != nil {
 		return 0, false, err
 	}
 
-	// Mark as fully imported so next run skips this file entirely.
+	// Mark as staged so next run skips re-downloading this file.
 	if localPath != "" {
 		os.WriteFile(localPath+".done", []byte{}, 0o644) //nolint:errcheck
 	}

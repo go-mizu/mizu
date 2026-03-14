@@ -317,11 +317,84 @@ func (s *State) EnqueueBulk(items []QueueItem) error {
 		return fmt.Errorf("fill staging: %w", err)
 	}
 
+	// Use LEFT JOIN anti-join instead of INSERT OR IGNORE so DuckDB can do a
+	// single vectorized hash join (O(n+m)) rather than per-row ART index
+	// lookups (O(m × log n)) that degrade as the queue grows to millions of rows.
 	_, err = conn.ExecContext(ctx, `
-		INSERT OR IGNORE INTO queue (url, entity_type, priority)
-		SELECT url, entity_type, priority FROM _stage
+		INSERT INTO queue (url, entity_type, priority)
+		SELECT s.url, s.entity_type, s.priority
+		FROM _stage s
+		LEFT JOIN queue q ON s.url = q.url
+		WHERE q.url IS NULL
 	`)
 	return err
+}
+
+// ── Bulk-seed session ─────────────────────────────────────────────────────────
+// Usage: CreateSeedStage → N×AppendSeedBatch → FlushSeedToQueue.
+// All sitemap URLs accumulate in a persistent staging table; a single hash
+// anti-join INSERT touches the queue UNIQUE index only once, regardless of how
+// many batches were appended. This avoids rebuilding the hash table of existing
+// queue rows once per sitemap file.
+
+// CreateSeedStage drops any leftover staging table and creates a fresh one.
+func (s *State) CreateSeedStage() error {
+	_, err := s.db.Exec(`
+		DROP TABLE IF EXISTS _seed_stage;
+		CREATE TABLE _seed_stage (url VARCHAR, entity_type VARCHAR, priority INTEGER)
+	`)
+	return err
+}
+
+// AppendSeedBatch streams items into _seed_stage via DuckDB Appender (binary
+// row protocol — no SQL parser overhead, no index checks).
+func (s *State) AppendSeedBatch(items []QueueItem) error {
+	if len(items) == 0 {
+		return nil
+	}
+	ctx := context.Background()
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("db conn: %w", err)
+	}
+	defer conn.Close()
+
+	return conn.Raw(func(driverConn any) error {
+		dc, ok := driverConn.(driver.Conn)
+		if !ok {
+			return fmt.Errorf("unexpected driver type %T", driverConn)
+		}
+		app, err := duckdb.NewAppenderFromConn(dc, "", "_seed_stage")
+		if err != nil {
+			return fmt.Errorf("appender: %w", err)
+		}
+		for _, it := range items {
+			if err := app.AppendRow(it.URL, it.EntityType, int32(it.Priority)); err != nil {
+				app.Close()
+				return err
+			}
+		}
+		return app.Close()
+	})
+}
+
+// FlushSeedToQueue inserts all rows from _seed_stage that are not already in
+// the queue via a single hash anti-join (O(n+m)), then drops the stage table.
+// Returns the number of newly inserted rows.
+func (s *State) FlushSeedToQueue() (int64, error) {
+	res, err := s.db.Exec(`
+		INSERT INTO queue (url, entity_type, priority)
+		SELECT s.url, s.entity_type, s.priority
+		FROM _seed_stage s
+		LEFT JOIN queue q ON s.url = q.url
+		WHERE q.url IS NULL
+	`)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	s.db.Exec(`DROP TABLE IF EXISTS _seed_stage`) //nolint:errcheck
+	return n, nil
 }
 
 // JobRecord holds a job record for display.
