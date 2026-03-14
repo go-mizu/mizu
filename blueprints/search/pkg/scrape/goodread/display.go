@@ -53,6 +53,19 @@ func PrintStats(db *DB, stateDB *State) error {
 	return nil
 }
 
+// PrintFetchProgress prints a one-line fetch phase progress update.
+func PrintFetchProgress(state *FetchState) {
+	inflight := len(state.InFlight)
+	fmt.Printf("\r  [fetch] fetched=%-7d  failed=%-4d  in-flight=%-3d  rps=%.1f    ",
+		state.Fetched, state.Failed, inflight, state.RPS)
+}
+
+// PrintImportProgress prints a one-line import phase progress update.
+func PrintImportProgress(state *ImportState) {
+	fmt.Printf("\r  [import] imported=%-7d  failed=%-4d  rps=%.1f    ",
+		state.Imported, state.Failed, state.RPS)
+}
+
 // PrintCrawlProgress prints a one-line crawl progress update with ETA.
 func PrintCrawlProgress(state *CrawlState) {
 	inflight := len(state.InFlight)

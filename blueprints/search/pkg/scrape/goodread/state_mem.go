@@ -109,17 +109,24 @@ func newMemState() memState {
 
 // ── Load from DB ──────────────────────────────────────────────────────────────
 
-// loadMemQueue loads all live queue items (pending/in_progress/fetched) from DB
-// into the in-memory structures. Also loads done/failed counts for stats.
+// memQueueCap is the max number of items loaded into the in-memory heap at once.
+// With millions of queue items we can't load them all into RAM; refillFromDB
+// tops up the heap on demand when it runs low.
+const memQueueCap = 50_000
+
+// loadMemQueue loads a capped working set of live queue items into memory.
+// pendingN / doneN / failedN are seeded from DB COUNT so progress stats
+// reflect the full queue depth even when the heap holds only memQueueCap items.
 func (s *State) loadMemQueue() error {
-	// Load live items.
+	// Load a capped batch of live items (pending takes priority, then others).
 	rows, err := s.db.Query(`
 		SELECT id, url, entity_type, priority, status, attempts,
 		       COALESCE(html_path, ''), COALESCE(error, '')
 		FROM queue
 		WHERE status NOT IN ('done', 'failed')
 		ORDER BY priority DESC, id ASC
-	`)
+		LIMIT ?
+	`, memQueueCap)
 	if err != nil {
 		return fmt.Errorf("load mem queue: %w", err)
 	}
@@ -139,7 +146,7 @@ func (s *State) loadMemQueue() error {
 		switch it.status {
 		case "pending":
 			pending = append(pending, it)
-			s.mem.pendingN.Add(1)
+			// pendingN is seeded from DB count below; don't increment here.
 		case "in_progress":
 			s.mem.inProgressN.Add(1)
 		case "fetched":
@@ -160,38 +167,39 @@ func (s *State) loadMemQueue() error {
 		it.heapIdx = i
 	}
 
-	// Load terminal counts for stats display.
-	var done, failed int64
+	// Seed counters from DB so stats reflect full queue depth.
+	var dbPending, done, failed int64
+	s.db.QueryRow(`SELECT COUNT(*) FROM queue WHERE status='pending'`).Scan(&dbPending)
 	s.db.QueryRow(`SELECT COUNT(*) FROM queue WHERE status='done'`).Scan(&done)
 	s.db.QueryRow(`SELECT COUNT(*) FROM queue WHERE status='failed'`).Scan(&failed)
+	s.mem.pendingN.Store(dbPending)
 	s.mem.doneN.Store(done)
 	s.mem.failedN.Store(failed)
 
 	return nil
 }
 
-// LoadPendingFromDB reloads pending/fetched items from DB into memory.
+// LoadPendingFromDB reloads pending items from DB into the in-memory heap.
 // Call this after EnqueueBulk / FlushSeedToQueue to pick up bulk-seeded items.
+// Loads a capped batch (memQueueCap) and refreshes pendingN from DB count.
 func (s *State) LoadPendingFromDB() error {
 	s.mem.mu.Lock()
-
 	// Clear existing pending items from heap and map.
 	for _, it := range s.mem.pendingHeap {
 		delete(s.mem.items, it.url)
-		s.mem.pendingN.Add(-1)
 	}
 	s.mem.pendingHeap = s.mem.pendingHeap[:0]
-
 	s.mem.mu.Unlock()
 
-	// Re-load from DB without the lock (DB query can be slow for large tables).
+	// Re-load a capped batch from DB (query can be slow for large tables).
 	rows, err := s.db.Query(`
 		SELECT id, url, entity_type, priority, status, attempts,
 		       COALESCE(html_path, ''), COALESCE(error, '')
 		FROM queue
 		WHERE status = 'pending'
 		ORDER BY priority DESC, id ASC
-	`)
+		LIMIT ?
+	`, memQueueCap)
 	if err != nil {
 		return fmt.Errorf("reload pending: %w", err)
 	}
@@ -217,10 +225,9 @@ func (s *State) LoadPendingFromDB() error {
 	for _, it := range pending {
 		if _, exists := s.mem.items[it.url]; !exists {
 			s.mem.items[it.url] = it
-			s.mem.pendingN.Add(1)
 		}
 	}
-	// Build heap.
+	// Build heap from new pending items.
 	all := make([]*memItem, 0, len(pending))
 	for _, it := range pending {
 		if s.mem.items[it.url] == it {
@@ -232,6 +239,11 @@ func (s *State) LoadPendingFromDB() error {
 	for i, it := range s.mem.pendingHeap {
 		it.heapIdx = i
 	}
+
+	// Refresh pendingN from DB count (accounts for bulk-seeded items).
+	var dbPending int64
+	s.db.QueryRow(`SELECT COUNT(*) FROM queue WHERE status='pending'`).Scan(&dbPending)
+	s.mem.pendingN.Store(dbPending)
 
 	return nil
 }

@@ -69,8 +69,6 @@ func (s *State) initSchema() error {
 			created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_queue_status_priority ON queue(status, priority DESC, created_at)`,
-		// Migration: add html_path column if it doesn't exist yet.
-		`ALTER TABLE queue ADD COLUMN IF NOT EXISTS html_path VARCHAR`,
 		`CREATE TABLE IF NOT EXISTS jobs (
 			job_id       VARCHAR PRIMARY KEY,
 			name         VARCHAR,
@@ -94,6 +92,24 @@ func (s *State) initSchema() error {
 			return fmt.Errorf("init state schema: %w", err)
 		}
 	}
+
+	// Migration: add html_path column if it doesn't exist yet.
+	// Using a Go-side check to avoid writing ADD COLUMN IF NOT EXISTS to the WAL,
+	// which crashes during DuckDB WAL replay due to a known DuckDB bug with
+	// BindDefaultValues when replaying ALTER TABLE.
+	var cnt int
+	_ = s.db.QueryRow(`SELECT COUNT(*) FROM information_schema.columns WHERE table_name='queue' AND column_name='html_path'`).Scan(&cnt)
+	if cnt == 0 {
+		if _, err := s.db.Exec(`ALTER TABLE queue ADD COLUMN html_path VARCHAR`); err != nil {
+			return fmt.Errorf("migrate html_path: %w", err)
+		}
+		// Force checkpoint immediately so the WAL is flushed to the DB file.
+		// Without this, ALTER TABLE stays in the WAL and crashes on next open.
+		if _, err := s.db.Exec(`CHECKPOINT`); err != nil {
+			return fmt.Errorf("checkpoint after migration: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -195,7 +211,8 @@ func (s *State) refillFromDB(n int) error {
 		if _, exists := s.mem.items[it.url]; !exists {
 			s.mem.items[it.url] = it
 			heap.Push(&s.mem.pendingHeap, it)
-			s.mem.pendingN.Add(1)
+			// Do NOT increment pendingN — it was seeded from DB COUNT at startup
+			// and is decremented only when items are actually popped for processing.
 		}
 	}
 	return rows.Err()

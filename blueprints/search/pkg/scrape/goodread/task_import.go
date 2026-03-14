@@ -35,6 +35,11 @@ type ImportTask struct {
 	DB        *DB
 	StateDB   *State
 	BatchSize int // items per transaction (default 100)
+
+	// FetchDone is an optional channel that is closed when the fetch phase is
+	// complete. When set, ImportTask will poll for new fetched items instead of
+	// exiting immediately when the queue is momentarily empty.
+	FetchDone <-chan struct{}
 }
 
 var _ core.Task[ImportState, ImportMetric] = (*ImportTask)(nil)
@@ -98,7 +103,23 @@ func (t *ImportTask) Run(ctx context.Context, emit func(*ImportState)) (ImportMe
 			return ImportMetric{}, fmt.Errorf("pop fetched: %w", err)
 		}
 		if len(items) == 0 {
-			break
+			if t.FetchDone != nil {
+				// Fetch still running — wait for more items or fetch completion.
+				select {
+				case <-t.FetchDone:
+					// Fetch phase finished; do one final drain then exit.
+					items, _ = t.StateDB.PopFetched(batchSize)
+					if len(items) == 0 {
+						goto done
+					}
+				case <-ctx.Done():
+					goto done
+				case <-time.After(500 * time.Millisecond):
+					continue
+				}
+			} else {
+				break
+			}
 		}
 
 		// ── Phase A: parse concurrently ──────────────────────────────
@@ -170,7 +191,7 @@ func (t *ImportTask) Run(ctx context.Context, emit func(*ImportState)) (ImportMe
 			}
 		}
 	}
-
+done:
 	return ImportMetric{
 		Imported: imported.Load(),
 		Failed:   failed.Load(),

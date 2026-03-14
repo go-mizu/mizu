@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -912,26 +913,95 @@ func newGoodreadCrawl() *cobra.Command {
 				cancel()
 			}()
 
-			// ── Phase 2: crawl ───────────────────────────────────────────
+			// ── Phase 2: fetch + import pipeline ────────────────────────
 			stateDB.CreateJob("crawl-"+fmt.Sprintf("%d", time.Now().Unix()), "bulk-crawl", "crawl")
 
 			client := goodread.NewClient(cfg)
-			task := &goodread.CrawlTask{
+			fetchDone := make(chan struct{})
+
+			fetchTask := &goodread.FetchTask{
 				Config:  cfg,
-				Client:  client,
-				DB:      db,
+				Fetcher: client,
 				StateDB: stateDB,
 			}
+			importTask := &goodread.ImportTask{
+				Config:    cfg,
+				DB:        db,
+				StateDB:   stateDB,
+				BatchSize: 100,
+				FetchDone: fetchDone,
+			}
 
-			metric, err := task.Run(ctx, func(s *goodread.CrawlState) {
-				goodread.PrintCrawlProgress(s)
-			})
+			type fetchResult struct {
+				metric goodread.FetchMetric
+				err    error
+			}
+			type importResult struct {
+				metric goodread.ImportMetric
+				err    error
+			}
+			fetchCh := make(chan fetchResult, 1)
+			importCh := make(chan importResult, 1)
 
-			// ── Post-run summary (always printed, even on Ctrl+C) ────────
+			var fetchedAtomic, importedAtomic, fetchFailedAtomic, importFailedAtomic int64
+			var fetchInFlight int32
+
+			go func() {
+				m, err := fetchTask.Run(ctx, func(s *goodread.FetchState) {
+					atomic.StoreInt64(&fetchedAtomic, s.Fetched)
+					atomic.StoreInt64(&fetchFailedAtomic, s.Failed)
+					atomic.StoreInt32(&fetchInFlight, int32(len(s.InFlight)))
+				})
+				close(fetchDone)
+				fetchCh <- fetchResult{m, err}
+			}()
+
+			go func() {
+				m, err := importTask.Run(ctx, func(s *goodread.ImportState) {
+					atomic.StoreInt64(&importedAtomic, s.Imported)
+					atomic.StoreInt64(&importFailedAtomic, s.Failed)
+				})
+				importCh <- importResult{m, err}
+			}()
+
+			// Combined progress ticker.
+			progressTicker := time.NewTicker(2 * time.Second)
+			defer progressTicker.Stop()
+			go func() {
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-fetchDone:
+						return
+					case <-progressTicker.C:
+						ms := stateDB.MemStats()
+						fetched := atomic.LoadInt64(&fetchedAtomic)
+						imported := atomic.LoadInt64(&importedAtomic)
+						inflight := atomic.LoadInt32(&fetchInFlight)
+						fmt.Printf("\r  pending=%-8d  fetched/session=%-6d  imported=%-6d  in-flight=%-3d  fetchFail=%-3d  importFail=%-3d    ",
+							ms.Pending, fetched, imported, inflight,
+							atomic.LoadInt64(&fetchFailedAtomic),
+							atomic.LoadInt64(&importFailedAtomic))
+					}
+				}
+			}()
+
+			fr := <-fetchCh
+			ir := <-importCh
+
 			_ = interrupted
-			goodread.PrintCrawlSummary(metric, stateDB)
+			fmt.Println()
+			fmt.Println("── Crawl summary ──")
+			fmt.Printf("  Fetched:    %d\n", fr.metric.Fetched)
+			fmt.Printf("  Imported:   %d\n", ir.metric.Imported)
+			fmt.Printf("  Failed:     %d (fetch) + %d (import)\n", fr.metric.Failed, ir.metric.Failed)
+			goodread.PrintStats(db, stateDB)
 
-			return err
+			if fr.err != nil {
+				return fmt.Errorf("fetch: %w", fr.err)
+			}
+			return ir.err
 		},
 	}
 
