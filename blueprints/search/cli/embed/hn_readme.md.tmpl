@@ -1,0 +1,149 @@
+---
+license: odc-by
+task_categories:
+- text-generation
+- feature-extraction
+language:
+- en
+pretty_name: Hacker News Open Index
+size_categories:
+- 10M<n<100M
+tags:
+- hacker-news
+- forum
+- text
+- parquet
+configs:
+- config_name: default
+  data_files:
+  - split: train
+    path: data/*/*.parquet
+- config_name: today
+  data_files:
+  - split: train
+    path: today/*.parquet
+---
+
+# Hacker News Open Index
+
+> Every Hacker News item since 2006, updated every 5 minutes — ready for training and retrieval
+
+## What is it?
+
+This dataset contains the full Hacker News archive: **{{.TotalItems}} items** spanning {{.FirstMonth}} to {{.LastUpdated}}, published as monthly Parquet files with 5-minute live blocks for today.
+
+Data includes stories, comments, Ask HN, Show HN, jobs, polls, and poll options — all fields preserved exactly as posted.
+
+## Dataset Stats
+
+| Metric | Value |
+|--------|-------|
+| Total items | {{.TotalItems}} |
+| Historical months | {{.TotalMonths}} |
+| First month | {{.FirstMonth}} |
+| Last committed month | {{.LastMonth}} |
+| Total size | {{.TotalSizeMB}} MB |
+| Last updated | {{.LastUpdated}} |
+
+{{- if .TodayBlocks}}
+
+### Live Today ({{.TodayDate}})
+
+| Metric | Value |
+|--------|-------|
+| Blocks committed | {{.TodayBlocks}} |
+| Items today | {{.TodayItems}} |
+| Last block | {{.TodayLastBlock}} |
+| Today size | {{.TodaySizeKB}} KB |
+{{- end}}
+
+## File Layout
+
+```
+data/
+  2006/2006-10.parquet    ← first HN month
+  ...
+  2026/2026-02.parquet
+today/
+  2026-03-14_00_00.parquet   ← 5-min live blocks
+  2026-03-14_00_05.parquet
+  ...
+stats.csv                    ← one row per committed month
+stats_today.csv              ← one row per committed 5-min block
+```
+
+## How to Use
+
+### Python (datasets)
+
+```python
+from datasets import load_dataset
+
+# Stream the full history
+ds = load_dataset("open-index/hacker-news", split="train", streaming=True)
+for item in ds:
+    print(item["id"], item["type"], item["title"])
+
+# Load a single month
+ds = load_dataset(
+    "open-index/hacker-news",
+    data_files="data/2024/2024-01.parquet",
+    split="train",
+)
+```
+
+### DuckDB
+
+```sql
+-- All stories from 2024
+SELECT id, by, title, score, url
+FROM read_parquet('hf://datasets/open-index/hacker-news/data/2024/*.parquet')
+WHERE type = 'story'
+ORDER BY score DESC
+LIMIT 20;
+
+-- Live blocks for today
+SELECT id, by, title, time
+FROM read_parquet('hf://datasets/open-index/hacker-news/today/*.parquet')
+ORDER BY id DESC
+LIMIT 50;
+```
+
+### huggingface_hub
+
+```python
+from huggingface_hub import snapshot_download
+
+folder = snapshot_download(
+    "open-index/hacker-news",
+    repo_type="dataset",
+    local_dir="./hn/",
+    allow_patterns="data/2024/*",
+)
+```
+
+## Schema
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | int64 | Item ID (monotonically increasing) |
+| `deleted` | bool | Soft-deleted flag |
+| `type` | string | story, comment, ask, show, job, poll, pollopt |
+| `by` | string | Username of author |
+| `time` | DateTime | Post timestamp (UTC) |
+| `text` | string | HTML body (comments, Ask HN, jobs) |
+| `dead` | bool | Flagged/killed by moderators |
+| `parent` | int64 | Parent item ID (for comments) |
+| `poll` | int64 | Poll item ID (for pollopts) |
+| `kids` | Array(int64) | Direct child item IDs |
+| `url` | string | External URL (stories) |
+| `score` | int64 | Points |
+| `title` | string | Story/Ask/Show/Job title |
+| `parts` | Array(int64) | Poll option IDs |
+| `descendants` | int64 | Total descendant comment count |
+
+## License
+
+Released under the **Open Data Commons Attribution License (ODC-By) v1.0**.
+Original content is subject to the rights of its respective authors.
+Hacker News data is provided by Y Combinator.
