@@ -56,7 +56,7 @@ configs:
 
 This dataset contains the complete [Hacker News](https://news.ycombinator.com) archive: every story, comment, Ask HN, Show HN, job posting, and poll ever submitted to the site. Hacker News is one of the longest-running and most influential technology communities on the internet, operated by [Y Combinator](https://www.ycombinator.com) since 2007. It has become the de facto gathering place for founders, engineers, researchers, and technologists to share and discuss what matters in technology.
 
-The archive currently spans from **{{.FirstMonth}}** to **{{- if .HasAnalytics}} {{.SourceMaxTime}}{{else}} {{.LastMonth}}{{end}}**, with **{{.TotalItemsFmt}} items** committed. New items are fetched every 5 minutes and committed directly as individual Parquet files through an automated live pipeline, so the dataset stays current with the site itself.
+The archive currently spans from **{{.FirstMonth}}** to **{{.LatestTime}}**, with **{{.TotalItemsFmt}} items** committed. New items are fetched every 5 minutes and committed directly as individual Parquet files through an automated live pipeline, so the dataset stays current with the site itself.
 
 We believe this is one of the most complete and regularly updated mirrors of Hacker News data available on Hugging Face. The data is stored as monthly Parquet files sorted by item ID, making it straightforward to query with DuckDB, load with the `datasets` library, or process with any tool that reads Parquet.
 

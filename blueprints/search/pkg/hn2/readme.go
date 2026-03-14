@@ -40,6 +40,10 @@ type ReadmeData struct {
 	TodayItemsFmt  string // comma-formatted today item count
 	LastUpdated    string
 
+	// LatestTime is the most recent data point we have committed, used in "spans to".
+	// Derived from TodayDate+TodayLastBlock if available, else SourceMaxTime, else LastMonth.
+	LatestTime string
+
 	// Yearly growth bar chart (pre-rendered)
 	GrowthChart string
 	// Today's hourly bar chart (pre-rendered)
@@ -182,6 +186,16 @@ func buildReadmeData(months []MonthRow, today []TodayRow, analytics *Analytics) 
 		d.ScoreSummary = buildScoreSummary(analytics)
 		d.TopAuthorsTable = buildTopAuthorsTable(analytics.TopAuthors)
 		d.TopDomainsTable = buildTopDomainsTable(analytics.TopDomains)
+	}
+
+	// LatestTime: prefer actual committed data; fall back to analytics SourceMaxTime, then LastMonth.
+	// This ensures we never show a stale cached timestamp from the analytics query.
+	if d.TodayDate != "" && d.TodayLastBlock != "" {
+		d.LatestTime = d.TodayDate + " " + d.TodayLastBlock + " UTC"
+	} else if d.SourceMaxTime != "" {
+		d.LatestTime = d.SourceMaxTime
+	} else {
+		d.LatestTime = d.LastMonth
 	}
 
 	return d
