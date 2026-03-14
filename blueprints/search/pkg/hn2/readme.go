@@ -8,61 +8,46 @@ import (
 	"time"
 )
 
-// ReadmeData holds all template variables for the HN README.
+// ReadmeData holds template variables for the HN README.
+// Only fields referenced in the template are exported here;
+// intermediate computations stay as local variables in buildReadmeData.
 type ReadmeData struct {
-	// Core metrics (from stats.csv)
-	TotalHistoricalItems int64
-	TotalMonths          int
-	FirstMonth           string
-	LastMonth            string
-	LastMonthYear        string // year portion of LastMonth, e.g. "2026"
-	HistoricalSizeBytes  int64
-	TodayDate            string
-	TodayBlocks          int
-	TodayHours           int    // distinct hours with committed blocks today
-	TodayItems           int64
-	TodayLastBlock       string
-	TodayLastBlockPath   string // TodayLastBlock in HH/MM form for use in paths
-	TodayDatePath        string // TodayDate in YYYY/MM/DD form for use in paths, e.g. "2026/03/14"
-	TodaySizeBytes       int64
+	// Date range
+	FirstMonth    string
+	LastMonth     string
+	LastMonthYear string // year portion of LastMonth, e.g. "2026"
+	LastUpdated   string
+	LatestTime    string // most recent committed data point, used in "spans to"
 
-	// Current partial month (ongoing, not yet complete)
+	// Current partial month (ongoing)
 	CurrentMonth      string // e.g. "2026-03"
 	CurrentMonthYear  string // e.g. "2026"
 	CurrentMonthUntil string // last date with data, e.g. "2026-03-13"
 
-	// Combined totals
-	TotalItems     int64
-	TotalItemsFmt  string // comma-formatted, e.g. "27,694,247"
-	TotalSizeBytes int64
-	TotalSizeMB    string
-	TodaySizeKB    string
-	TodayItemsFmt  string // comma-formatted today item count
-	LastUpdated    string
+	// Totals
+	TotalItemsFmt string // comma-formatted total item count
 
-	// LatestTime is the most recent data point we have committed, used in "spans to".
-	// Derived from TodayDate+TodayLastBlock if available, else SourceMaxTime, else LastMonth.
-	LatestTime string
+	// Today
+	TodayDate          string
+	TodayDatePath      string // TodayDate in YYYY/MM/DD form for paths
+	TodayLastBlockPath string // last block HH:MM in HH/MM form for paths
+	TodayHours         int   // distinct hours with committed blocks today
+	TodayItemsFmt      string
 
-	// Yearly growth bar chart (pre-rendered)
+	// Charts (pre-rendered)
 	GrowthChart string
-	// Today's hourly bar chart (pre-rendered)
-	TodayChart string
+	TodayChart  string
 
 	// Analytics (optional — from ClickHouse source)
-	HasAnalytics        bool
-	SourceMaxTime       string // latest item time in the ClickHouse source, e.g. "2026-03-14 15:30:00 UTC"
-	ExpectedTotalItems  string
-	TypeTable           string
-	ScoreSummary        string
-	TopAuthorsTable     string
-	TopDomainsTable     string
-	UniqueAuthors       string
-	StoriesWithURLPct   string
-	AvgDescendants      string
-	MaxDescendants      string
-	TotalStories        string
-	TotalComments       string
+	HasAnalytics      bool
+	TypeTable         string
+	ScoreSummary      string
+	TopAuthorsTable   string
+	TopDomainsTable   string
+	StoriesWithURLPct string
+	AvgDescendants    string
+	MaxDescendants    string
+	TotalStories      string
 }
 
 // GenerateREADME renders the embedded template with data derived from the
@@ -84,12 +69,13 @@ func GenerateREADME(tmplBytes []byte, months []MonthRow, today []TodayRow, analy
 func buildReadmeData(months []MonthRow, today []TodayRow, analytics *Analytics) ReadmeData {
 	d := ReadmeData{}
 
+	var totalHistoricalItems int64
+	var historicalSizeBytes int64
 	var latestCommit time.Time
 
 	for _, r := range months {
-		d.TotalHistoricalItems += r.Count
-		d.TotalMonths++
-		d.HistoricalSizeBytes += r.SizeBytes
+		totalHistoricalItems += r.Count
+		historicalSizeBytes += r.SizeBytes
 		// Skip year 1970 (Unix epoch bucket) when computing the displayed date range.
 		if r.Year != 1970 {
 			ym := fmt.Sprintf("%04d-%02d", r.Year, r.Month)
@@ -105,21 +91,23 @@ func buildReadmeData(months []MonthRow, today []TodayRow, analytics *Analytics) 
 		}
 	}
 	// Fallback if only year-1970 data exists.
-	if d.FirstMonth == "" && d.TotalMonths > 0 {
+	if d.FirstMonth == "" && len(months) > 0 {
 		d.FirstMonth = fmt.Sprintf("%04d-%02d", months[0].Year, months[0].Month)
 		d.LastMonth = fmt.Sprintf("%04d-%02d", months[len(months)-1].Year, months[len(months)-1].Month)
 	}
 
+	var todayItems int64
+	var todaySizeBytes int64
+	var todayLastBlock string
 	todayHoursSeen := make(map[int]bool)
 	for _, r := range today {
-		d.TodayItems += r.Count
-		d.TodayBlocks++
-		d.TodaySizeBytes += r.SizeBytes
+		todayItems += r.Count
+		todaySizeBytes += r.SizeBytes
 		if d.TodayDate == "" {
 			d.TodayDate = r.Date
 		}
-		if r.Block > d.TodayLastBlock {
-			d.TodayLastBlock = r.Block
+		if r.Block > todayLastBlock {
+			todayLastBlock = r.Block
 		}
 		if r.CommittedAt.After(latestCommit) {
 			latestCommit = r.CommittedAt
@@ -131,15 +119,13 @@ func buildReadmeData(months []MonthRow, today []TodayRow, analytics *Analytics) 
 		}
 	}
 	d.TodayHours = len(todayHoursSeen)
-	d.TodayLastBlockPath = strings.ReplaceAll(d.TodayLastBlock, ":", "/")
+	d.TodayLastBlockPath = strings.ReplaceAll(todayLastBlock, ":", "/")
 	d.TodayDatePath = strings.ReplaceAll(d.TodayDate, "-", "/")
 
-	d.TotalItems = d.TotalHistoricalItems + d.TodayItems
-	d.TotalItemsFmt = fmtInt(d.TotalItems)
-	d.TotalSizeBytes = d.HistoricalSizeBytes + d.TodaySizeBytes
-	d.TotalSizeMB = fmt.Sprintf("%.1f", float64(d.TotalSizeBytes)/1024/1024)
-	d.TodaySizeKB = fmt.Sprintf("%.1f", float64(d.TodaySizeBytes)/1024)
-	d.TodayItemsFmt = fmtInt(d.TodayItems)
+	totalItems := totalHistoricalItems + todayItems
+	_ = historicalSizeBytes + todaySizeBytes // computed but not rendered
+	d.TotalItemsFmt = fmtInt(totalItems)
+	d.TodayItemsFmt = fmtInt(todayItems)
 	if !latestCommit.IsZero() {
 		d.LastUpdated = latestCommit.UTC().Format("2006-01-02 15:04 UTC")
 	} else {
@@ -162,23 +148,20 @@ func buildReadmeData(months []MonthRow, today []TodayRow, analytics *Analytics) 
 	d.GrowthChart = buildGrowthChart(months)
 	d.TodayChart = buildTodayChart(today)
 
+	var sourceMaxTime string
 	if analytics != nil {
 		d.HasAnalytics = true
-		total := analytics.Stories + analytics.Comments + analytics.Jobs + analytics.Polls + analytics.PollOpts
-		d.ExpectedTotalItems = fmtInt(total)
 		if analytics.SourceMaxTime != "" {
 			// Format as "YYYY-MM-DD HH:MM UTC" (strip seconds)
 			parts := strings.Fields(analytics.SourceMaxTime) // ["2026-03-14", "17:10:00"]
 			if len(parts) >= 2 {
 				hhmm := strings.Join(strings.SplitN(parts[1], ":", 3)[:2], ":") // "17:10"
-				d.SourceMaxTime = parts[0] + " " + hhmm + " UTC"
+				sourceMaxTime = parts[0] + " " + hhmm + " UTC"
 			} else {
-				d.SourceMaxTime = analytics.SourceMaxTime + " UTC"
+				sourceMaxTime = analytics.SourceMaxTime + " UTC"
 			}
 		}
-		d.UniqueAuthors = fmtInt(analytics.UniqueAuthors)
 		d.TotalStories = fmtInt(analytics.Stories)
-		d.TotalComments = fmtInt(analytics.Comments)
 		d.StoriesWithURLPct = fmt.Sprintf("%.1f", analytics.StoriesWithURLPct)
 		d.AvgDescendants = fmt.Sprintf("%.1f", analytics.AvgDescendants)
 		d.MaxDescendants = fmtInt(analytics.MaxDescendants)
@@ -190,10 +173,10 @@ func buildReadmeData(months []MonthRow, today []TodayRow, analytics *Analytics) 
 
 	// LatestTime: prefer actual committed data; fall back to analytics SourceMaxTime, then LastMonth.
 	// This ensures we never show a stale cached timestamp from the analytics query.
-	if d.TodayDate != "" && d.TodayLastBlock != "" {
-		d.LatestTime = d.TodayDate + " " + d.TodayLastBlock + " UTC"
-	} else if d.SourceMaxTime != "" {
-		d.LatestTime = d.SourceMaxTime
+	if d.TodayDate != "" && todayLastBlock != "" {
+		d.LatestTime = d.TodayDate + " " + todayLastBlock + " UTC"
+	} else if sourceMaxTime != "" {
+		d.LatestTime = sourceMaxTime
 	} else {
 		d.LatestTime = d.LastMonth
 	}
