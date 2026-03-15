@@ -5,13 +5,14 @@ import "fmt"
 // ResourceBudget defines concurrency limits for the pipeline, computed from
 // detected hardware capabilities.
 type ResourceBudget struct {
-	MaxDownloads   int `json:"max_downloads"`    // concurrent torrent downloads
-	MaxProcess     int `json:"max_process"`      // concurrent DuckDB processing jobs
-	MaxUploads     int `json:"max_uploads"`       // always 1 (HF serialized)
-	DownloadQueue  int `json:"download_queue"`    // buffered channel depth: download → process
-	ProcessQueue   int `json:"process_queue"`     // buffered channel depth: process → upload
-	DuckDBMemoryMB int `json:"duckdb_memory_mb"`  // per-instance DuckDB memory limit
-	Sequential     bool `json:"sequential"`       // true = fall back to sequential mode
+	MaxDownloads      int `json:"max_downloads"`       // concurrent torrent downloads
+	MaxProcess        int `json:"max_process"`         // concurrent DuckDB processing jobs
+	MaxUploads        int `json:"max_uploads"`          // always 1 (HF serialized)
+	MaxConvertWorkers int `json:"max_convert_workers"`  // concurrent DuckDB shard conversions per ProcessZst
+	DownloadQueue     int `json:"download_queue"`       // buffered channel depth: download → process
+	ProcessQueue      int `json:"process_queue"`        // buffered channel depth: process → upload
+	DuckDBMemoryMB    int `json:"duckdb_memory_mb"`     // per-instance DuckDB memory limit
+	Sequential        bool `json:"sequential"`          // true = fall back to sequential mode
 }
 
 // ComputeBudget derives a resource budget from a hardware profile.
@@ -20,8 +21,10 @@ type ResourceBudget struct {
 // worker — because stages overlap: while uploading month N (which can take
 // 5-10 minutes on HF), we download+process month N+1.
 //
-// On server2 (6 cores, 12 GB RAM, 128 GB disk), the budget is:
-//   downloads=1, process=1, DuckDB=512MB → pipeline mode (overlap stages)
+// On server2 (6 cores, 11 GB RAM, 128 GB disk), the budget is:
+//   downloads=1, process=2, DuckDB=512MB → pipeline mode (overlap stages)
+//   Note: a process-wide semaphore (zstdDecoderSem) ensures only one 2 GB
+//   zstd decoder is open at a time regardless of MaxProcess.
 //
 // On a beefier server (20 cores, 256 GB RAM, 2 TB disk):
 //   downloads=2, process=3, DuckDB=1024MB → full parallelism
@@ -37,6 +40,7 @@ func ComputeBudget(hw HardwareProfile, cfg Config) ResourceBudget {
 	if hw.RAMTotalGB < 2 || hw.DiskFreeGB < 30 {
 		b.MaxDownloads = 1
 		b.MaxProcess = 1
+		b.MaxConvertWorkers = 1
 		b.DownloadQueue = 1
 		b.ProcessQueue = 1
 		b.Sequential = true
@@ -53,16 +57,22 @@ func ComputeBudget(hw HardwareProfile, cfg Config) ResourceBudget {
 	}
 
 	// --- Processing ---
-	// Each ProcessZst needs: ~512 MB DuckDB + ~1 GB zstd decoder/scanner + overhead.
+	// Each ProcessZst needs: ~2 GB zstd decoder window + ~512 MB DuckDB + overhead.
+	// The zstd decoder alone allocates a 2 GB buffer (WithDecoderMaxWindow(1<<31))
+	// because the Reddit .zst archives use a 2 GB window size.
+	// A process-wide semaphore (zstdDecoderSem) limits concurrent decoders to 1,
+	// but each processing slot still needs headroom for DuckDB + scanner buffers.
 	// Use total RAM (not just available — the OS will reclaim page cache).
-	// Reserve 3 GB for OS + torrent client + upload.
-	usableRAM := hw.RAMTotalGB - 3
+	// Reserve 4 GB for OS + torrent client + upload + other processes.
+	usableRAM := hw.RAMTotalGB - 4
 	if usableRAM < 1.5 {
 		usableRAM = 1.5
 	}
 
-	// Each processing slot needs ~1.5 GB headroom.
-	b.MaxProcess = int(usableRAM / 1.5)
+	// Each processing slot needs ~3 GB headroom (2 GB decoder + 512 MB DuckDB + overhead).
+	// With the decoder semaphore, only one slot holds the 2 GB decoder at a time,
+	// but the budget still caps concurrency to prevent memory pressure.
+	b.MaxProcess = int(usableRAM / 3.0)
 
 	// Cap by CPU — each ProcessZst is ~1 core (DuckDB has some internal parallelism).
 	cpuLimit := hw.CPUCores / 2
@@ -78,6 +88,29 @@ func ComputeBudget(hw HardwareProfile, cfg Config) ResourceBudget {
 	}
 	if b.MaxProcess < 1 {
 		b.MaxProcess = 1
+	}
+
+	// --- Convert workers (async DuckDB within ProcessZst) ---
+	// Each convert worker runs an in-memory DuckDB instance (~512 MB + overhead).
+	// With the zstd decoder active, budget from remaining headroom above the
+	// 2.5 GB needed for the decoder + scanner.
+	convertRAM := usableRAM - 2.5
+	if convertRAM < 0.6 {
+		convertRAM = 0.6
+	}
+	b.MaxConvertWorkers = int(convertRAM / 0.6) // 512 MB DuckDB + ~100 MB overhead
+	convertCPU := hw.CPUCores / 2
+	if convertCPU < 1 {
+		convertCPU = 1
+	}
+	if b.MaxConvertWorkers > convertCPU {
+		b.MaxConvertWorkers = convertCPU
+	}
+	if b.MaxConvertWorkers > 4 {
+		b.MaxConvertWorkers = 4
+	}
+	if b.MaxConvertWorkers < 1 {
+		b.MaxConvertWorkers = 1
 	}
 
 	// --- DuckDB memory per instance ---
@@ -117,9 +150,13 @@ func ComputeBudget(hw HardwareProfile, cfg Config) ResourceBudget {
 	if v := envIntOr("MIZU_ARCTIC_DUCKDB_MB", 0); v > 0 {
 		b.DuckDBMemoryMB = v
 	}
+	if v := envIntOr("MIZU_ARCTIC_MAX_CONVERT", 0); v > 0 {
+		b.MaxConvertWorkers = v
+	}
 	if envOr("MIZU_ARCTIC_PIPELINE", "") == "0" {
 		b.MaxDownloads = 1
 		b.MaxProcess = 1
+		b.MaxConvertWorkers = 1
 		b.DownloadQueue = 1
 		b.ProcessQueue = 1
 		b.Sequential = true
@@ -133,6 +170,6 @@ func (b ResourceBudget) String() string {
 	if b.Sequential {
 		return "sequential mode (1 download, 1 process, 1 upload)"
 	}
-	return fmt.Sprintf("pipeline: %d download, %d process, %d upload, DuckDB %dMB/instance",
-		b.MaxDownloads, b.MaxProcess, b.MaxUploads, b.DuckDBMemoryMB)
+	return fmt.Sprintf("pipeline: %d download, %d process (%d convert workers), %d upload, DuckDB %dMB/instance",
+		b.MaxDownloads, b.MaxProcess, b.MaxConvertWorkers, b.MaxUploads, b.DuckDBMemoryMB)
 }

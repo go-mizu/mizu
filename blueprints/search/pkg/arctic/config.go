@@ -10,13 +10,14 @@ import (
 )
 
 type Config struct {
-	RepoRoot       string
-	HFRepo         string
-	RawDir         string
-	WorkDir        string
-	MinFreeGB      int
-	ChunkLines     int
-	DuckDBMemoryMB int // per-instance DuckDB memory limit; 0 = 512 MB
+	RepoRoot          string
+	HFRepo            string
+	RawDir            string
+	WorkDir           string
+	MinFreeGB         int
+	ChunkLines        int
+	DuckDBMemoryMB    int // per-instance DuckDB memory limit; 0 = 512 MB
+	MaxConvertWorkers int // concurrent DuckDB shard conversions; 0 = 1 (sequential)
 }
 
 func DefaultConfig() Config {
@@ -25,7 +26,7 @@ func DefaultConfig() Config {
 	raw  := envOr("MIZU_ARCTIC_RAW_DIR",   filepath.Join(home, "data", "arctic", "raw"))
 	work := envOr("MIZU_ARCTIC_WORK_DIR",  filepath.Join(home, "data", "arctic", "work"))
 	minFree := envIntOr("MIZU_ARCTIC_MIN_FREE_GB", 30)
-	chunkLines := envIntOr("MIZU_ARCTIC_CHUNK_LINES", 2_000_000)
+	chunkLines := envIntOr("MIZU_ARCTIC_CHUNK_LINES", 500_000)
 	return Config{
 		RepoRoot:   root,
 		HFRepo:     "open-index/arctic",

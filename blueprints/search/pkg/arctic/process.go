@@ -8,12 +8,26 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
+	"runtime/pprof"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/klauspost/compress/zstd"
 )
+
+// zstdDecoderSem limits concurrent zstd decoders to 1.  Each decoder with a
+// 2 GB window (WithDecoderMaxWindow(1<<31)) allocates ~2 GB in its internal
+// startStreamDecoder goroutine.  The pipeline may run multiple ProcessZst
+// workers concurrently; without this gate two decoders would coexist (4+ GB)
+// and OOM a server with ≤12 GB RAM.  The semaphore only guards the scan
+// phase — after scanning, the decoder is closed and another worker can start,
+// while the first worker continues with DuckDB shard conversion.
+var zstdDecoderSem sync.Mutex
 
 type ShardResult struct {
 	Index     int
@@ -110,7 +124,7 @@ func DeepValidateZst(path string) error {
 	}
 	defer f.Close()
 
-	dec, err := zstd.NewReader(f, zstd.WithDecoderMaxWindow(1<<31))
+	dec, err := zstd.NewReader(f, zstd.WithDecoderMaxWindow(1<<27))
 	if err != nil {
 		return fmt.Errorf("zstd reader: %w", err)
 	}
@@ -173,52 +187,160 @@ func ValidateParquet(path string) error {
 	return nil
 }
 
+// chunkJob describes a completed chunk file ready for DuckDB conversion.
+type chunkJob struct {
+	path      string
+	index     int
+	lineCount int
+}
+
+// convertResult pairs a shard result with its conversion error.
+type convertResult struct {
+	shard ShardResult
+	err   error
+}
+
 // ProcessZst streams the .zst file at zstPath, writing lines directly to
 // temporary JSONL chunk files on disk (never buffering all lines in memory),
-// then imports each chunk into a disk-backed, memory-limited DuckDB instance
-// and exports it as a parquet shard.  This keeps peak RSS bounded regardless
-// of the input file size.
+// then converts chunks to parquet shards via a pool of DuckDB workers.
+//
+// The decode and conversion phases are decoupled: the zstd decoder writes
+// chunks at full speed while a separate goroutine pool converts them to
+// parquet concurrently.  This keeps the 2 GB decoder busy and releases the
+// decoder semaphore much sooner, allowing the next file to start decoding.
+//
+// Concurrency is controlled by cfg.MaxConvertWorkers (default 1 = sequential).
 func ProcessZst(ctx context.Context, cfg Config, zstPath, typ, year, mm string,
 	cb ShardCallback) (ProcessResult, error) {
 
 	start := time.Now()
+	workers := cfg.MaxConvertWorkers
+	if workers <= 0 {
+		workers = 1
+	}
+
+	// Optional CPU profiling: set MIZU_ARCTIC_CPUPROF=path to write a profile.
+	if profPath := os.Getenv("MIZU_ARCTIC_CPUPROF"); profPath != "" {
+		pf, err := os.Create(profPath)
+		if err == nil {
+			if err := pprof.StartCPUProfile(pf); err == nil {
+				fmt.Fprintf(os.Stderr, "arctic: CPU profiling → %s\n", profPath)
+				defer func() {
+					pprof.StopCPUProfile()
+					pf.Close()
+					fmt.Fprintf(os.Stderr, "arctic: CPU profile written to %s\n", profPath)
+				}()
+			} else {
+				pf.Close()
+			}
+		}
+	}
+
+	// Optional memory profiling: set MIZU_ARCTIC_MEMPROF=path to write a heap profile on completion.
+	if memProfPath := os.Getenv("MIZU_ARCTIC_MEMPROF"); memProfPath != "" {
+		defer func() {
+			runtime.GC()
+			mf, err := os.Create(memProfPath)
+			if err == nil {
+				if err := pprof.WriteHeapProfile(mf); err == nil {
+					fmt.Fprintf(os.Stderr, "arctic: heap profile written to %s\n", memProfPath)
+				}
+				mf.Close()
+			}
+		}()
+	}
+
+	// Acquire the decoder semaphore BEFORE opening the file + decoder.
+	// This ensures at most one 2 GB zstd window exists process-wide.
+	fmt.Fprintf(os.Stderr, "arctic: [%s-%s] %s waiting for zstd decoder semaphore…\n", year, mm, typ)
+	zstdDecoderSem.Lock()
+	fmt.Fprintf(os.Stderr, "arctic: [%s-%s] %s acquired zstd decoder semaphore (%d convert workers)\n", year, mm, typ, workers)
 
 	f, err := os.Open(zstPath)
 	if err != nil {
+		zstdDecoderSem.Unlock()
 		return ProcessResult{}, fmt.Errorf("open zst: %w", err)
 	}
-	defer f.Close()
+	// Not deferred — f and dec are closed explicitly after scanning to allow
+	// immediate GC of the decoder's 2 GB window buffer before returning.
 
 	dec, err := zstd.NewReader(f, zstd.WithDecoderMaxWindow(1<<31))
 	if err != nil {
+		f.Close()
+		zstdDecoderSem.Unlock()
 		return ProcessResult{}, fmt.Errorf("zstd reader: %w", err)
 	}
-	defer dec.Close()
 
 	shardDir := cfg.ShardLocalDir(typ, year, mm)
 	if err := os.MkdirAll(shardDir, 0o755); err != nil {
+		dec.Close()
+		f.Close()
+		zstdDecoderSem.Unlock()
 		return ProcessResult{}, fmt.Errorf("mkdir shards: %w", err)
 	}
 
-	var result ProcessResult
+	// --- Convert worker pool ---
+	// chunkCh has capacity = workers so the decoder only blocks when all
+	// workers are busy (natural backpressure, bounded disk usage).
+	chunkCh := make(chan chunkJob, workers)
+	resultCh := make(chan convertResult, workers+1)
+	convertCtx, convertCancel := context.WithCancel(ctx)
+	defer convertCancel()
+
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for job := range chunkCh {
+				// Signal shard starting so the caller can show activity.
+				if cb != nil {
+					cb(ShardResult{Index: job.index, Rows: int64(job.lineCount), Starting: true})
+				}
+				shardStart := time.Now()
+				sr, err := convertChunkToShard(convertCtx, cfg, job.path, typ, year, mm, job.index)
+				if err != nil {
+					resultCh <- convertResult{err: fmt.Errorf("shard %d: %w", job.index, err)}
+					continue
+				}
+				sr.Duration = time.Since(shardStart)
+				if cb != nil {
+					cb(sr)
+				}
+				resultCh <- convertResult{shard: sr}
+			}
+		}()
+	}
+
+	// Close resultCh after all workers finish.
+	go func() {
+		wg.Wait()
+		close(resultCh)
+	}()
+
+	// --- Decode phase: scan JSONL, write chunks, dispatch to workers ---
 	scanner := bufio.NewScanner(dec)
 	scanner.Buffer(make([]byte, 16*1024*1024), 16*1024*1024)
 
 	chunkIdx := 0
 	lineCount := 0
+	totalChunks := 0
 
-	// Open the first chunk file for streaming writes.
 	chunkPath := cfg.ChunkPath(chunkIdx)
 	_ = os.MkdirAll(filepath.Dir(chunkPath), 0o755)
 	chunkFile, err := os.Create(chunkPath)
 	if err != nil {
+		dec.Close()
+		f.Close()
+		zstdDecoderSem.Unlock()
+		close(chunkCh)
 		return ProcessResult{}, fmt.Errorf("create chunk: %w", err)
 	}
 	chunkWriter := bufio.NewWriterSize(chunkFile, 8*1024*1024)
 
-	// closeAndConvert flushes the current chunk to disk, converts it to a
-	// parquet shard via DuckDB, then cleans up the chunk file.
-	closeAndConvert := func() error {
+	// dispatchChunk flushes the current chunk and sends it to the convert pool.
+	// Returns an error only for I/O failures; does NOT block on conversion.
+	dispatchChunk := func() error {
 		if lineCount == 0 {
 			chunkFile.Close()
 			os.Remove(chunkPath)
@@ -231,31 +353,18 @@ func ProcessZst(ctx context.Context, cfg Config, zstPath, typ, year, mm string,
 		}
 		chunkFile.Close()
 
-		// Signal shard starting so the caller can show activity while DuckDB works.
-		if cb != nil {
-			cb(ShardResult{Index: chunkIdx, Rows: int64(lineCount), Starting: true})
-		}
-
-		shardStart := time.Now()
-		sr, err := convertChunkToShard(ctx, cfg, chunkPath, typ, year, mm, chunkIdx)
-		os.Remove(chunkPath)
-		if err != nil {
-			return fmt.Errorf("shard %d: %w", chunkIdx, err)
-		}
-		sr.Duration = time.Since(shardStart)
-
-		result.Shards = append(result.Shards, sr)
-		result.TotalRows += sr.Rows
-		result.TotalSize += sr.SizeBytes
-		if cb != nil {
-			cb(sr)
+		select {
+		case chunkCh <- chunkJob{path: chunkPath, index: chunkIdx, lineCount: lineCount}:
+			totalChunks++
+		case <-ctx.Done():
+			os.Remove(chunkPath)
+			return ctx.Err()
 		}
 		chunkIdx++
 		lineCount = 0
 		return nil
 	}
 
-	// openNextChunk prepares a fresh chunk file for streaming.
 	openNextChunk := func() error {
 		chunkPath = cfg.ChunkPath(chunkIdx)
 		var err error
@@ -267,46 +376,106 @@ func ProcessZst(ctx context.Context, cfg Config, zstPath, typ, year, mm string,
 		return nil
 	}
 
+	var scanErr error
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
-			chunkFile.Close()
-			os.Remove(chunkPath)
-			return ProcessResult{}, ctx.Err()
+			scanErr = ctx.Err()
+			goto scanDone
 		default:
 		}
-		// Write directly to disk — no in-memory line accumulation.
 		chunkWriter.Write(scanner.Bytes())
 		chunkWriter.WriteByte('\n')
 		lineCount++
 		if lineCount >= cfg.ChunkLines {
-			if err := closeAndConvert(); err != nil {
-				return ProcessResult{}, err
+			if err := dispatchChunk(); err != nil {
+				scanErr = err
+				goto scanDone
 			}
 			if err := openNextChunk(); err != nil {
-				return ProcessResult{}, err
+				scanErr = err
+				goto scanDone
 			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
+		scanErr = fmt.Errorf("scan jsonl: %w", err)
+	}
+
+scanDone:
+	if scanErr != nil {
 		chunkFile.Close()
 		os.Remove(chunkPath)
-		return ProcessResult{}, fmt.Errorf("scan jsonl: %w", err)
+		dec.Close()
+		f.Close()
+		zstdDecoderSem.Unlock()
+		convertCancel()
+		close(chunkCh)
+		// Drain results to avoid goroutine leak.
+		for range resultCh {
+		}
+		return ProcessResult{}, scanErr
 	}
-	// Flush remaining lines.
-	if err := closeAndConvert(); err != nil {
+
+	// Dispatch final partial chunk.
+	fmt.Fprintf(os.Stderr, "arctic: [%s-%s] %s scan done, dispatching final chunk (%d lines)\n", year, mm, typ, lineCount)
+	if err := dispatchChunk(); err != nil {
+		dec.Close()
+		f.Close()
+		zstdDecoderSem.Unlock()
+		convertCancel()
+		close(chunkCh)
+		for range resultCh {
+		}
 		return ProcessResult{}, err
 	}
 
+	// Close decoder + file to free the 2 GB zstd window buffer.
+	dec.Close()
+	f.Close()
+	runtime.GC()
+	debug.FreeOSMemory()
+
+	// Release the semaphore — another ProcessZst can now start decoding.
+	// Convert workers continue running in the background.
+	fmt.Fprintf(os.Stderr, "arctic: [%s-%s] %s released zstd decoder semaphore (scan done, %d chunks dispatched)\n",
+		year, mm, typ, totalChunks)
+	zstdDecoderSem.Unlock()
+
+	// Signal no more chunks — workers will drain and finish.
+	close(chunkCh)
+
+	// Collect results from all convert workers.
+	var result ProcessResult
+	for cr := range resultCh {
+		if cr.err != nil {
+			convertCancel()
+			// Drain remaining results.
+			for range resultCh {
+			}
+			return ProcessResult{}, cr.err
+		}
+		result.Shards = append(result.Shards, cr.shard)
+		result.TotalRows += cr.shard.Rows
+		result.TotalSize += cr.shard.SizeBytes
+	}
+
+	// Sort shards by index — async workers may complete out of order.
+	sort.Slice(result.Shards, func(i, j int) bool {
+		return result.Shards[i].Index < result.Shards[j].Index
+	})
+
 	result.Duration = time.Since(start)
+	fmt.Fprintf(os.Stderr, "arctic: [%s-%s] %s processing complete: %d shards, %d rows in %s\n",
+		year, mm, typ, len(result.Shards), result.TotalRows, result.Duration.Round(time.Second))
 	return result, nil
 }
 
-// convertChunkToShard imports a JSONL chunk file into a disk-backed DuckDB
-// database (with a 512 MB memory limit) and exports it as a zstd-compressed
-// parquet shard.  DuckDB spills to disk when the limit is exceeded, preventing
-// OOM on large chunks.  The chunk file is deleted after import to free disk
-// space before the parquet export runs.
+// convertChunkToShard imports a JSONL chunk file into an in-memory DuckDB
+// instance and exports it as a zstd-compressed parquet shard.  With ChunkLines
+// reduced to 500K, each chunk is ~250 MB of text — within DuckDB's 512 MB
+// memory limit — so no disk spilling is needed.  In-memory avoids the mmap
+// overhead that disk-backed DuckDB adds to RSS.
 func convertChunkToShard(ctx context.Context, cfg Config, chunkPath,
 	typ, year, mm string, idx int) (ShardResult, error) {
 
@@ -317,22 +486,21 @@ func convertChunkToShard(ctx context.Context, cfg Config, chunkPath,
 
 	esc := func(s string) string { return strings.ReplaceAll(s, "'", "''") }
 
-	// Disk-backed DuckDB — spills to disk instead of OOM-ing.
-	dbPath := filepath.Join(cfg.WorkDir, fmt.Sprintf("duckdb_%04d.db", idx))
-	db, err := sql.Open("duckdb", dbPath)
+	// In-memory DuckDB — no file mmap, memory bounded by SET memory_limit.
+	db, err := sql.Open("duckdb", "")
 	if err != nil {
-		os.Remove(dbPath)
 		return ShardResult{}, fmt.Errorf("duckdb open: %w", err)
 	}
-	defer func() {
-		db.Close()
-		os.Remove(dbPath)
-		os.Remove(dbPath + ".wal")
-	}()
+	// mallocTrim must be deferred BEFORE db.Close() so it runs AFTER (LIFO order).
+	// After db.Close() releases DuckDB's C-side heap, glibc retains those pages
+	// as RSS. malloc_trim(0) forces glibc to return them to the OS, keeping RSS
+	// bounded across sequential chunk processing.
+	defer mallocTrim()
+	defer db.Close()
 
-	// Cap DuckDB memory so it spills to disk rather than consuming all RAM.
+	// Cap DuckDB memory to keep RSS within server limits (500K-line chunks
+	// decompress to ~250 MB, so 512 MB headroom is sufficient).
 	db.ExecContext(ctx, fmt.Sprintf("SET memory_limit='%s'", cfg.DuckDBMemory()))
-	db.ExecContext(ctx, fmt.Sprintf("SET temp_directory='%s'", esc(cfg.WorkDir)))
 
 	selectCols := commentsSelect
 	if typ == "submissions" {

@@ -502,6 +502,7 @@ func (t *PipelineTask) processJob(ctx context.Context, job *PipelineJob, emit fu
 	// Create per-job config with isolated work directory and budget-tuned DuckDB memory.
 	jobCfg := t.cfg.ForJob(job.YM.String(), job.Type)
 	jobCfg.DuckDBMemoryMB = t.budget.DuckDBMemoryMB
+	jobCfg.MaxConvertWorkers = t.budget.MaxConvertWorkers
 	if err := os.MkdirAll(jobCfg.WorkDir, 0o755); err != nil {
 		return fmt.Errorf("create job workdir: %w", err)
 	}
