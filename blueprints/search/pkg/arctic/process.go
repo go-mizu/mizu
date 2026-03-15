@@ -331,7 +331,7 @@ func convertChunkToShard(ctx context.Context, cfg Config, chunkPath,
 	}()
 
 	// Cap DuckDB memory so it spills to disk rather than consuming all RAM.
-	db.ExecContext(ctx, "SET memory_limit='512MB'")
+	db.ExecContext(ctx, fmt.Sprintf("SET memory_limit='%s'", cfg.DuckDBMemory()))
 	db.ExecContext(ctx, fmt.Sprintf("SET temp_directory='%s'", esc(cfg.WorkDir)))
 
 	selectCols := commentsSelect

@@ -10,12 +10,13 @@ import (
 )
 
 type Config struct {
-	RepoRoot   string
-	HFRepo     string
-	RawDir     string
-	WorkDir    string
-	MinFreeGB  int
-	ChunkLines int
+	RepoRoot       string
+	HFRepo         string
+	RawDir         string
+	WorkDir        string
+	MinFreeGB      int
+	ChunkLines     int
+	DuckDBMemoryMB int // per-instance DuckDB memory limit; 0 = 512 MB
 }
 
 func DefaultConfig() Config {
@@ -44,6 +45,15 @@ func (c Config) WithDefaults() Config {
 	if c.MinFreeGB  == 0  { c.MinFreeGB  = def.MinFreeGB }
 	if c.ChunkLines == 0  { c.ChunkLines = def.ChunkLines }
 	return c
+}
+
+// DuckDBMemory returns the DuckDB memory limit string (e.g. "512MB").
+func (c Config) DuckDBMemory() string {
+	mb := c.DuckDBMemoryMB
+	if mb <= 0 {
+		mb = 512
+	}
+	return fmt.Sprintf("%dMB", mb)
 }
 
 func (c Config) StatsCSVPath() string  { return filepath.Join(c.RepoRoot, "stats.csv") }

@@ -15,15 +15,26 @@ type ResourceBudget struct {
 }
 
 // ComputeBudget derives a resource budget from a hardware profile.
-// Environment overrides are applied via the Config.
+//
+// The pipeline always helps — even with 1 download + 1 process + 1 upload
+// worker — because stages overlap: while uploading month N (which can take
+// 5-10 minutes on HF), we download+process month N+1.
+//
+// On server2 (6 cores, 12 GB RAM, 128 GB disk), the budget is:
+//   downloads=1, process=1, DuckDB=512MB → pipeline mode (overlap stages)
+//
+// On a beefier server (20 cores, 256 GB RAM, 2 TB disk):
+//   downloads=2, process=3, DuckDB=1024MB → full parallelism
 func ComputeBudget(hw HardwareProfile, cfg Config) ResourceBudget {
 	b := ResourceBudget{
-		MaxUploads:     1,       // HF API is serialized via commitMu
-		DuckDBMemoryMB: 512,     // default per-instance
+		MaxUploads:     1,   // HF API is serialized via commitMu
+		DuckDBMemoryMB: 512, // default per-instance
 	}
 
-	// Safety floor: if resources are too constrained, fall back to sequential.
-	if hw.RAMAvailGB < 4 || hw.DiskFreeGB < 60 {
+	// Hard sequential fallback: only if truly starved.
+	// 2 GB RAM is the absolute minimum for zstd decoder + DuckDB.
+	// 30 GB disk needed for at least one .zst + work artifacts.
+	if hw.RAMTotalGB < 2 || hw.DiskFreeGB < 30 {
 		b.MaxDownloads = 1
 		b.MaxProcess = 1
 		b.DownloadQueue = 1
@@ -32,35 +43,36 @@ func ComputeBudget(hw HardwareProfile, cfg Config) ResourceBudget {
 		return b
 	}
 
-	// Downloads: each .zst can be up to 50 GB. Need disk headroom for
-	// the .zst + work artifacts (~10 GB overhead per concurrent job).
-	// Cap at 2 to avoid saturating network.
-	b.MaxDownloads = int(hw.DiskFreeGB / 80)
-	if b.MaxDownloads < 1 {
-		b.MaxDownloads = 1
-	}
-	if b.MaxDownloads > 2 {
+	// --- Downloads ---
+	// Each .zst ranges from tiny (early months) to ~50 GB (recent months).
+	// With 128 GB free we can safely have 1 downloading while 1 is processing.
+	// Only allow 2 concurrent downloads if we have plenty of disk.
+	b.MaxDownloads = 1
+	if hw.DiskFreeGB >= 200 {
 		b.MaxDownloads = 2
 	}
 
-	// Processing: each DuckDB instance uses ~512 MB + ~1 GB zstd/scanner overhead.
-	// Reserve 4 GB for the OS/torrent/other.
-	usableRAM := hw.RAMAvailGB - 4
+	// --- Processing ---
+	// Each ProcessZst needs: ~512 MB DuckDB + ~1 GB zstd decoder/scanner + overhead.
+	// Use total RAM (not just available — the OS will reclaim page cache).
+	// Reserve 3 GB for OS + torrent client + upload.
+	usableRAM := hw.RAMTotalGB - 3
 	if usableRAM < 1.5 {
 		usableRAM = 1.5
 	}
+
+	// Each processing slot needs ~1.5 GB headroom.
 	b.MaxProcess = int(usableRAM / 1.5)
 
-	// Also cap by CPU cores — each ProcessZst is mostly single-threaded
-	// (DuckDB uses some parallelism internally).
-	cpuLimit := hw.CPUCores / 4
+	// Cap by CPU — each ProcessZst is ~1 core (DuckDB has some internal parallelism).
+	cpuLimit := hw.CPUCores / 2
 	if cpuLimit < 1 {
 		cpuLimit = 1
 	}
 	if b.MaxProcess > cpuLimit {
 		b.MaxProcess = cpuLimit
 	}
-	// Hard cap at 4 to avoid thrashing.
+	// Hard cap at 4.
 	if b.MaxProcess > 4 {
 		b.MaxProcess = 4
 	}
@@ -68,35 +80,42 @@ func ComputeBudget(hw HardwareProfile, cfg Config) ResourceBudget {
 		b.MaxProcess = 1
 	}
 
-	// Tune DuckDB memory per instance if we have lots of RAM.
-	if hw.RAMAvailGB > 32 {
-		perInstance := int(usableRAM * 1024 / float64(b.MaxProcess) / 3)
-		if perInstance > 512 {
+	// --- DuckDB memory per instance ---
+	// Scale DuckDB memory with available RAM, but cap at 2 GB.
+	// On 12 GB server: (12 - 3) / 1 / 2 = 4.5 GB → cap at 512 MB (plenty)
+	// On 256 GB server: (256 - 3) / 3 / 2 = 42 GB → cap at 2048 MB
+	if hw.RAMTotalGB >= 24 {
+		perInstance := int(usableRAM / float64(b.MaxProcess) / 2 * 1024)
+		if perInstance > b.DuckDBMemoryMB {
 			b.DuckDBMemoryMB = perInstance
 		}
-		// Cap at 2 GB — diminishing returns beyond that.
 		if b.DuckDBMemoryMB > 2048 {
 			b.DuckDBMemoryMB = 2048
 		}
 	}
 
-	// Queue depths: keep stages fed without excessive buffering.
+	// --- Queue depths ---
+	// Download→process queue: enough to keep process workers fed.
 	b.DownloadQueue = b.MaxProcess + 1
+	if b.DownloadQueue < 2 {
+		b.DownloadQueue = 2
+	}
+	// Process→upload queue: small buffer so upload picks up fast.
 	b.ProcessQueue = 2
 
-	// If everything is 1, use sequential mode for simplicity.
-	if b.MaxDownloads == 1 && b.MaxProcess == 1 {
-		b.Sequential = true
-	}
+	// Pipeline mode is always enabled — even 1/1/1 benefits from stage overlap.
+	// The only exception is the hard fallback above (RAM < 2 GB or disk < 30 GB).
+	b.Sequential = false
 
 	// Apply environment overrides.
 	if v := envIntOr("MIZU_ARCTIC_MAX_DOWNLOADS", 0); v > 0 {
 		b.MaxDownloads = v
-		b.Sequential = false
 	}
 	if v := envIntOr("MIZU_ARCTIC_MAX_PROCESS", 0); v > 0 {
 		b.MaxProcess = v
-		b.Sequential = false
+	}
+	if v := envIntOr("MIZU_ARCTIC_DUCKDB_MB", 0); v > 0 {
+		b.DuckDBMemoryMB = v
 	}
 	if envOr("MIZU_ARCTIC_PIPELINE", "") == "0" {
 		b.MaxDownloads = 1
@@ -114,6 +133,6 @@ func (b ResourceBudget) String() string {
 	if b.Sequential {
 		return "sequential mode (1 download, 1 process, 1 upload)"
 	}
-	return fmt.Sprintf("pipeline: %d downloads, %d process, %d upload, DuckDB %d MB/instance",
+	return fmt.Sprintf("pipeline: %d download, %d process, %d upload, DuckDB %dMB/instance",
 		b.MaxDownloads, b.MaxProcess, b.MaxUploads, b.DuckDBMemoryMB)
 }

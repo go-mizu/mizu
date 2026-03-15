@@ -377,15 +377,13 @@ func (t *PipelineTask) processJob(ctx context.Context, job *PipelineJob, emit fu
 	year := fmt.Sprintf("%04d", job.YM.Year)
 	mm := fmt.Sprintf("%02d", job.YM.Month)
 
-	// Create per-job config with isolated work directory.
+	// Create per-job config with isolated work directory and budget-tuned DuckDB memory.
 	jobCfg := t.cfg.ForJob(job.YM.String(), job.Type)
+	jobCfg.DuckDBMemoryMB = t.budget.DuckDBMemoryMB
 	if err := os.MkdirAll(jobCfg.WorkDir, 0o755); err != nil {
 		return fmt.Errorf("create job workdir: %w", err)
 	}
 	job.WorkDir = jobCfg.WorkDir
-
-	// Set DuckDB memory limit from budget.
-	duckDBMem := fmt.Sprintf("%dMB", t.budget.DuckDBMemoryMB)
 
 	t.updatePipelineSlot("processing", job.YM.String(), job.Type, func(slot *PipelineSlot) {
 		slot.Phase = PhaseProcessing
@@ -451,8 +449,6 @@ func (t *PipelineTask) processJob(ctx context.Context, job *PipelineJob, emit fu
 		rps := float64(procResult.TotalRows) / job.DurProc.Seconds()
 		t.recordProcessSpeed(rps)
 	}
-
-	_ = duckDBMem // used by convertChunkToShard via config — already set in process.go
 
 	t.removePipelineSlot("processing", job.YM.String(), job.Type)
 	return nil
