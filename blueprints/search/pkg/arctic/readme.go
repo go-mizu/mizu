@@ -54,6 +54,9 @@ type ReadmeData struct {
 	CommentsChart    string
 	SubmissionsChart string
 
+	// Monthly breakdown table (markdown)
+	MonthlyTable string
+
 	// Metadata
 	GeneratedAt string
 
@@ -130,6 +133,7 @@ func buildReadmeData(rows []StatsRow) ReadmeData {
 
 	d.CommentsChart = buildTypeChart(yearRows, 0)
 	d.SubmissionsChart = buildTypeChart(yearRows, 1)
+	d.MonthlyTable = buildMonthlyTable(rows)
 	return d
 }
 
@@ -227,6 +231,75 @@ func buildLiveSection(snap *StateSnapshot) *LiveSection {
 	return ls
 }
 
+func buildMonthlyTable(rows []StatsRow) string {
+	if len(rows) == 0 {
+		return "(no data yet)"
+	}
+
+	// Sort by year, month, type (comments before submissions)
+	sorted := make([]StatsRow, len(rows))
+	copy(sorted, rows)
+	sort.Slice(sorted, func(i, j int) bool {
+		a, b := sorted[i], sorted[j]
+		if a.Year != b.Year {
+			return a.Year < b.Year
+		}
+		if a.Month != b.Month {
+			return a.Month < b.Month
+		}
+		return a.Type < b.Type
+	})
+
+	var sb strings.Builder
+	sb.WriteString("| Month | Type | Download | Process | Upload | Shards | Rows | Size |\n")
+	sb.WriteString("|-------|------|-------:|-------:|-------:|-------:|-------:|-------:|\n")
+	for _, r := range sorted {
+		ym := fmt.Sprintf("%04d-%02d", r.Year, r.Month)
+		sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %d | %s | %s |\n",
+			ym,
+			r.Type,
+			fmtDurSec(r.DurDownloadS),
+			fmtDurSec(r.DurProcessS),
+			fmtDurSec(r.DurCommitS),
+			r.Shards,
+			fmtIntComma(r.Count),
+			fmtBytes(r.SizeBytes),
+		))
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
+
+func fmtDurSec(s float64) string {
+	if s == 0 {
+		return "-"
+	}
+	if s < 60 {
+		return fmt.Sprintf("%.1fs", s)
+	}
+	m := int(s) / 60
+	sec := s - float64(m*60)
+	return fmt.Sprintf("%dm%02.0fs", m, sec)
+}
+
+func fmtIntComma(n int64) string {
+	s := fmt.Sprintf("%d", n)
+	if len(s) <= 3 {
+		return s
+	}
+	var sb strings.Builder
+	r := len(s) % 3
+	if r > 0 {
+		sb.WriteString(s[:r])
+	}
+	for i := r; i < len(s); i += 3 {
+		if sb.Len() > 0 {
+			sb.WriteByte(',')
+		}
+		sb.WriteString(s[i : i+3])
+	}
+	return sb.String()
+}
+
 func fmtElapsed(d time.Duration) string {
 	d = d.Round(time.Minute)
 	h := int(d.Hours())
@@ -258,6 +331,8 @@ func fmtBytes(n int64) string {
 		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
 	case n >= 1<<20:
 		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.1f KB", float64(n)/(1<<10))
 	default:
 		return fmt.Sprintf("%d B", n)
 	}
@@ -304,7 +379,8 @@ task_categories:
 - [What is being released?](#what-is-being-released)
 - [Breakdown by type and year](#breakdown-by-type-and-year)
 - [How to download and use this dataset](#how-to-download-and-use-this-dataset)
-- [Dataset statistics](#dataset-statistics){{if .Live}}
+- [Dataset statistics](#dataset-statistics)
+  - [Monthly breakdown](#monthly-breakdown){{if .Live}}
 - [Pipeline status](#pipeline-status){{end}}
 - [Dataset card](#dataset-card-for-arctic-shift-reddit-archive)
   - [Dataset summary](#dataset-summary)
@@ -470,6 +546,15 @@ huggingface-cli download open-index/arctic \
 | comments | {{.CommentMonths}} | {{.CommentRowsFmt}} | {{.CommentSizeFmt}} |
 | submissions | {{.SubmissionMonths}} | {{.SubmissionRowsFmt}} | {{.SubmissionSizeFmt}} |
 | **Total** | **{{.CommentMonths}}** | **{{.TotalRowsFmt}}** | **{{.TotalSizeFmt}}** |
+
+### Monthly breakdown
+
+<details>
+<summary>Click to expand full monthly table ({{.CommentMonths}} comment months + {{.SubmissionMonths}} submission months)</summary>
+
+{{.MonthlyTable}}
+
+</details>
 
 Query per-month stats directly:
 
