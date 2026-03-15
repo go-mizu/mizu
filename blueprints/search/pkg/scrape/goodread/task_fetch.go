@@ -262,6 +262,7 @@ func (t *FetchTask) runBatch(ctx context.Context, emit func(*FetchState), bf Bat
 				mu.Unlock()
 
 				if err != nil {
+					fmt.Printf("\n[batch error] %v\n", err)
 					for _, it := range batch {
 						t.StateDB.Fail(it.URL, err.Error())
 						failed.Add(1)
@@ -278,11 +279,13 @@ func (t *FetchTask) runBatch(ctx context.Context, emit func(*FetchState), bf Bat
 				for _, it := range batch {
 					r, ok := byURL[it.URL]
 					if !ok {
+						fmt.Printf("\n[batch miss] url=%s not in response (got %d)\n", it.URL, len(results))
 						t.StateDB.Fail(it.URL, "missing from batch response")
 						failed.Add(1)
 						continue
 					}
 					if err := t.saveBatchResult(it, r); err != nil {
+						fmt.Printf("\n[save error] url=%s err=%v\n", it.URL, err)
 						failed.Add(1)
 					} else {
 						fetched.Add(1)

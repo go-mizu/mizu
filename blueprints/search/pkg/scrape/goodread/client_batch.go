@@ -31,28 +31,30 @@ type BatchHTMLResult struct {
 	Err        error
 }
 
-// crawlerRequest is the JSON body sent to POST /crawl on crawler.go-mizu.workers.dev.
-type crawlerRequest struct {
+// fetcherRequest is the JSON body sent to POST /fetch on url-fetcher.go-mizu.workers.dev.
+type fetcherRequest struct {
 	URLs    []string `json:"urls"`
+	Mode    string   `json:"mode"`    // "full" returns body HTML
 	Timeout int      `json:"timeout,omitempty"`
 }
 
-// crawlerResult is one element of the JSON array response.
-type crawlerResult struct {
+// fetcherResult is one element of the JSON array response from url-fetcher.
+type fetcherResult struct {
 	URL    string  `json:"url"`
 	Status int     `json:"status"`
-	HTML   *string `json:"html"`
+	Body   *string `json:"body"`  // HTML content in "full" mode
 	Error  *string `json:"error"`
 }
 
-const defaultCrawlerURL = "https://crawler.go-mizu.workers.dev"
+const defaultFetcherURL = "https://url-fetcher.go-mizu.workers.dev"
 
-// BatchClient sends batch requests to crawler.go-mizu.workers.dev.
-// Each FetchHTMLBatch call fetches all requested URLs in parallel from CF edge.
+// BatchClient sends batch requests to url-fetcher.go-mizu.workers.dev.
+// Each FetchHTMLBatch call fetches all requested URLs in parallel from CF edge
+// via Promise.allSettled — call completes in time of the slowest single URL.
 //
-// With batchWorkers=20 and batchSize=50:
+// With batchWorkers=20 and batchSize=100:
 //
-//	20 concurrent batches × 50 parallel CF fetches / ~9s = ~111 rps
+//	20 concurrent batches × 100 parallel CF fetches / ~10s = ~200 rps
 type BatchClient struct {
 	url     string
 	token   string
@@ -74,7 +76,7 @@ func NewBatchClient(cfg Config) (*BatchClient, error) {
 
 	workerURL := cfg.WorkerURL
 	if workerURL == "" {
-		workerURL = defaultCrawlerURL
+		workerURL = defaultFetcherURL
 	}
 
 	perFetchTimeout := cfg.Timeout
@@ -108,9 +110,9 @@ func (c *BatchClient) FetchHTML(ctx context.Context, url string) (*goquery.Docum
 	return r.Doc, r.StatusCode, r.Err
 }
 
-// FetchHTMLBatch sends all URLs to the crawler worker in one POST request.
-// The worker fetches them all in parallel via Promise.allSettled, so the call
-// completes in roughly the time of the slowest single URL (~2–10s).
+// FetchHTMLBatch sends all URLs to url-fetcher worker in one POST /fetch request.
+// The worker fetches them all in parallel via Promise.allSettled, completing in
+// roughly the time of the slowest single URL (~2–10s).
 func (c *BatchClient) FetchHTMLBatch(ctx context.Context, urls []string) ([]BatchHTMLResult, error) {
 	if c.limiter != nil {
 		if err := c.limiter.Wait(ctx); err != nil {
@@ -118,8 +120,9 @@ func (c *BatchClient) FetchHTMLBatch(ctx context.Context, urls []string) ([]Batc
 		}
 	}
 
-	reqBody := crawlerRequest{
+	reqBody := fetcherRequest{
 		URLs:    urls,
+		Mode:    "full",
 		Timeout: int(c.timeout.Milliseconds()),
 	}
 	body, err := json.Marshal(reqBody)
@@ -127,7 +130,7 @@ func (c *BatchClient) FetchHTMLBatch(ctx context.Context, urls []string) ([]Batc
 		return nil, fmt.Errorf("marshal batch request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url+"/crawl", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url+"/fetch", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create batch request: %w", err)
 	}
@@ -149,7 +152,7 @@ func (c *BatchClient) FetchHTMLBatch(ctx context.Context, urls []string) ([]Batc
 		return nil, fmt.Errorf("batch worker HTTP %d: %s", resp.StatusCode, truncate(string(raw), 200))
 	}
 
-	var items []crawlerResult
+	var items []fetcherResult
 	if err := json.Unmarshal(raw, &items); err != nil {
 		return nil, fmt.Errorf("unmarshal batch response: %w", err)
 	}
@@ -163,12 +166,12 @@ func (c *BatchClient) FetchHTMLBatch(ctx context.Context, urls []string) ([]Batc
 			results[i].Err = fmt.Errorf("worker: %s", *item.Error)
 			continue
 		}
-		if item.HTML == nil || item.Status == 404 {
+		if item.Body == nil || item.Status == 404 {
 			results[i].StatusCode = item.Status
 			continue // 404 or empty — caller marks done
 		}
 
-		doc, err := goquery.NewDocumentFromReader(strings.NewReader(*item.HTML))
+		doc, err := goquery.NewDocumentFromReader(strings.NewReader(*item.Body))
 		if err != nil {
 			results[i].Err = fmt.Errorf("parse HTML: %w", err)
 			continue

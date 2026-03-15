@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -65,10 +66,11 @@ func (t *ImportTask) Run(ctx context.Context, emit func(*ImportState)) (ImportMe
 		batchSize = 100
 	}
 
-	// Parse workers — CPU-bound, no network, no rate limit.
-	parseWorkers := t.Config.Workers
-	if parseWorkers <= 0 {
-		parseWorkers = 8
+	// Parse workers — CPU-bound, cap at NumCPU to avoid over-subscribing cores
+	// when FetchTask is running concurrently with many goroutines.
+	parseWorkers := runtime.NumCPU()
+	if parseWorkers < 4 {
+		parseWorkers = 4
 	}
 
 	ticker := time.NewTicker(2 * time.Second)

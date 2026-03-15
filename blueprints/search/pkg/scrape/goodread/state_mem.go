@@ -395,7 +395,7 @@ func (s *State) markItemDone(it *memItem, statusCode int) {
 // ── Checkpoint interval (exported so CLI can override) ────────────────────────
 
 // DefaultCheckpointInterval is how often dirty state is flushed to DuckDB.
-const DefaultCheckpointInterval = 5 * time.Second
+const DefaultCheckpointInterval = 1 * time.Second
 
 // ── sql.NullString helper (already in db.go as nullStr but we need it here too)
 
