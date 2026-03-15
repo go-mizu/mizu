@@ -27,16 +27,25 @@ func main() {
 	cli.Commit = Commit
 	cli.BuildTime = BuildTime
 
-	// Create context with signal handling
+	// Create context with signal handling.
+	// First SIGTERM cancels the context (lets long-running commands like
+	// --schedule recover via their restart loops). Second signal or SIGINT
+	// forces immediate exit.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Handle signals
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	go func() {
-		<-sigCh
+		sig := <-sigCh
 		cancel()
+		if sig == os.Interrupt {
+			os.Exit(130) // immediate exit on Ctrl+C
+		}
+		// SIGTERM: cancel context but let restart loops recover.
+		// Second signal forces exit.
+		<-sigCh
+		os.Exit(143)
 	}()
 
 	// Run CLI

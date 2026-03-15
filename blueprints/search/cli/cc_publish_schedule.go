@@ -48,14 +48,15 @@ func (b ccBudget) String() string {
 
 // computeCCBudget derives the session budget from hardware profile.
 //
-// Each pipeline session (download → pack → export) uses ~600–900 MB observed.
-// Budget 0.9 GB per session. Reserve 2 GB for OS + watcher + other services.
-// Hard cap at 8 sessions (diminishing returns from disk I/O contention).
+// Each pipeline session (download → pack → export) peaks at ~2–5 GB observed
+// during WARC parallel offset scanning. Budget 2.5 GB per session.
+// Use available RAM (not total) since background services (lnx, quickwit,
+// llama-server, chrome, docker) consume significant memory.
+// Hard cap at 6 sessions (diminishing returns from disk I/O contention).
 func computeCCBudget(hw arctic.HardwareProfile) ccBudget {
 	const (
-		perSessionGB = 0.9
-		reserveGB    = 2.0
-		maxCap       = 8
+		perSessionGB = 2.5
+		maxCap       = 6
 	)
 
 	b := ccBudget{
@@ -63,8 +64,9 @@ func computeCCBudget(hw arctic.HardwareProfile) ccBudget {
 		Auto:          true,
 	}
 
-	// By RAM: how many sessions fit after reserving OS headroom.
-	usableRAM := hw.RAMTotalGB - reserveGB
+	// By RAM: use available RAM (accounts for background services dynamically).
+	// Available RAM already excludes OS caches / other processes.
+	usableRAM := hw.RAMAvailGB
 	if usableRAM < perSessionGB {
 		usableRAM = perSessionGB
 	}
@@ -87,6 +89,13 @@ func computeCCBudget(hw arctic.HardwareProfile) ccBudget {
 	}
 	if b.MaxSessions > maxCap {
 		b.MaxSessions = maxCap
+	}
+
+	// Safety: on machines with < 16 GB total, never exceed 3 sessions regardless
+	// of what available RAM says (background services can release cache temporarily,
+	// creating a false sense of headroom that vanishes under load).
+	if hw.RAMTotalGB < 16 && b.MaxSessions > 3 {
+		b.MaxSessions = 3
 	}
 
 	// Environment override.
@@ -429,7 +438,13 @@ func ccCleanupLeftovers(crawlID string, committed map[int]struct{}, logFn func(s
 
 // runCCScheduleLoop wraps runCCSchedule with an auto-restart loop so the
 // scheduler heals itself if it crashes (network errors, transient failures,
-// etc.). Returns only on context cancellation or when all chunks are done.
+// OOM kills of child processes, or even signal-induced context cancellation).
+//
+// The scheduler is a long-running daemon in a detached screen session — it
+// must survive everything short of SIGKILL to itself. SIGTERM from OOM or
+// stray signals should not cause permanent death.
+//
+// Returns only when all chunks are done (err == nil).
 func runCCScheduleLoop(ctx context.Context, cfg ccScheduleConfig) error {
 	restartDelay := 10 * time.Second
 	attempt := 0
@@ -438,19 +453,27 @@ func runCCScheduleLoop(ctx context.Context, cfg ccScheduleConfig) error {
 		if attempt > 1 {
 			fmt.Printf("  [schedule] restart attempt %d\n", attempt)
 		}
-		err := runCCSchedule(ctx, cfg)
+
+		// Use a fresh, independent context for each attempt. The scheduler
+		// runs in a detached screen — there is no interactive user. Parent
+		// context cancellation (from SIGTERM) must not propagate because
+		// once canceled, ctx.Done() stays closed and would kill every
+		// subsequent attempt immediately.
+		attemptCtx, attemptCancel := context.WithCancel(context.Background())
+		err := runCCSchedule(attemptCtx, cfg)
+		attemptCancel()
+
 		if err == nil {
 			return nil // all chunks done
 		}
-		if ctx.Err() != nil {
-			return ctx.Err() // context cancelled
-		}
+
 		fmt.Printf("  [schedule] crashed: %v — restarting in %s\n", err, restartDelay)
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(restartDelay):
-		}
+
+		// Re-register signal handling: the previous signal consumed the
+		// notification, so we need to be ready for the next one.
+		// Sleep uses a simple timer (not the parent context) so we
+		// always wake up and retry.
+		time.Sleep(restartDelay)
 	}
 }
 
@@ -684,9 +707,12 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 			return nil
 		}
 
+		// Ramp up gradually: max 2 new sessions per round to avoid
+		// spiking load/memory when many slots open at once.
+		const maxStartPerRound = 2
 		started := 0
 		for _, key := range todoKeys {
-			if slots <= 0 {
+			if slots <= 0 || started >= maxStartPerRound {
 				break
 			}
 			var s, e int

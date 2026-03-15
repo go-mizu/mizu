@@ -95,7 +95,7 @@ Run --watch and --schedule as separate processes; use multiple --pipeline worker
 	cmd.Flags().IntVar(&schedStart, "start", 0, "First file index in range (--schedule only)")
 	cmd.Flags().IntVar(&schedEnd, "end", 4999, "Last file index in range (--schedule only)")
 	cmd.Flags().IntVar(&schedMaxSess, "max-sessions", 0, "Max concurrent screen sessions (0=auto-detect from hardware; --schedule only)")
-	cmd.Flags().IntVar(&schedChunk, "chunk-size", 250, "Files per screen session chunk (--schedule only)")
+	cmd.Flags().IntVar(&schedChunk, "chunk-size", 50, "Files per screen session chunk (--schedule only; smaller = faster cycling, natural memory release)")
 	cmd.Flags().IntVar(&schedDonePct, "done-pct", 95, "% of shards committed before chunk is considered done (--schedule only)")
 	cmd.Flags().IntVar(&schedStall, "stall-rounds", 15, "Rounds with no new commits before killing a stalled session (--schedule only)")
 	return cmd

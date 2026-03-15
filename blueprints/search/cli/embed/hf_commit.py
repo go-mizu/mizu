@@ -36,14 +36,20 @@ import time
 from huggingface_hub import HfApi, CommitOperationAdd, CommitOperationDelete
 from huggingface_hub.errors import HfHubHTTPError
 
-# Enable verbose logging for upload progress visibility.
+# Suppress verbose httpx/urllib3 request logs — they flood stderr with
+# every HTTP call and make it hard to read the actual progress.
+# Keep huggingface_hub at WARNING so create_commit progress still shows.
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,
     format="[hf_commit.py] %(asctime)s %(levelname)s %(name)s: %(message)s",
     datefmt="%H:%M:%S",
     stream=sys.stderr,
 )
-logging.getLogger("huggingface_hub").setLevel(logging.INFO)
+for _logger_name in ("httpx", "urllib3", "huggingface_hub", "hf_xet"):
+    _lg = logging.getLogger(_logger_name)
+    _lg.setLevel(logging.WARNING)
+    _lg.handlers.clear()        # remove any pre-configured handlers
+    _lg.propagate = True        # fall through to root (which is WARNING)
 
 
 def main() -> None:
