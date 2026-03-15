@@ -176,17 +176,16 @@ func (c *hfClient) createCommitPython(ctx context.Context, repoID, message strin
 		PathInRepo string `json:"path_in_repo"`
 		Delete     bool   `json:"delete,omitempty"`
 	}
+	opsJSON := make([]opJSON, len(ops))
+	for i, op := range ops {
+		opsJSON[i] = opJSON{LocalPath: op.LocalPath, PathInRepo: op.PathInRepo, Delete: op.Delete}
+	}
 	payload := map[string]interface{}{
-		"token":   c.token,
-		"repo_id": repoID,
-		"message": message,
-		"ops":     func() []opJSON {
-			out := make([]opJSON, len(ops))
-			for i, op := range ops {
-				out[i] = opJSON{LocalPath: op.LocalPath, PathInRepo: op.PathInRepo, Delete: op.Delete}
-			}
-			return out
-		}(),
+		"token":       c.token,
+		"repo_id":     repoID,
+		"message":     message,
+		"num_threads": 10, // concurrent upload threads within a single commit
+		"ops":         opsJSON,
 	}
 	stdin, _ := json.Marshal(payload)
 
@@ -198,6 +197,8 @@ func (c *hfClient) createCommitPython(ctx context.Context, repoID, message strin
 	cmd := exec.CommandContext(ctx, uvBin, "run", scriptPath)
 	cmd.Stdin = bytes.NewReader(stdin)
 	cmd.Stderr = &stderrBuf
+	// Enable high-performance xet transfers (saturates network bandwidth).
+	cmd.Env = append(os.Environ(), "HF_XET_HIGH_PERFORMANCE=1")
 	out, err := cmd.Output()
 	if err != nil {
 		se := strings.TrimSpace(stderrBuf.String())

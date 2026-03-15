@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["huggingface_hub[hf_transfer]", "hf-xet"]
+# dependencies = ["huggingface_hub>=1.7.1", "hf-xet>=1.4.2"]
 # ///
 """
 Minimal HuggingFace commit helper used by the search CLI.
@@ -12,6 +12,7 @@ Input JSON (stdin):
   "token":    "hf_...",
   "repo_id":  "open-index/draft",
   "message":  "Publish shard ...",
+  "num_threads": 10,
   "ops": [
     {"local_path": "/abs/path/to/file.parquet", "path_in_repo": "data/CC-MAIN-2026-08/00000.parquet"},
     ...
@@ -26,6 +27,9 @@ import json
 import sys
 import os
 
+# Enable high-performance xet transfers (saturates network, uses all CPU cores).
+os.environ.setdefault("HF_XET_HIGH_PERFORMANCE", "1")
+
 from huggingface_hub import HfApi, CommitOperationAdd, CommitOperationDelete
 from huggingface_hub.errors import HfHubHTTPError
 
@@ -36,6 +40,7 @@ def main() -> None:
     repo_id  = payload["repo_id"]
     message  = payload["message"]
     ops_raw  = payload["ops"]
+    num_threads = payload.get("num_threads", 10)
 
     api = HfApi(token=token)
 
@@ -61,6 +66,7 @@ def main() -> None:
             repo_type="dataset",
             operations=operations,
             commit_message=message,
+            num_threads=num_threads,
         )
         print(json.dumps({"commit_url": commit_info.commit_url}))
     except HfHubHTTPError as e:
