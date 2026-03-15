@@ -78,6 +78,9 @@ func runArcticPublish(ctx context.Context, repoRoot, repoID, fromStr, toStr stri
 	// hfCommitFn bridges pkg/arctic.HFOp → cli.hfOperation.
 	// Automatically retries on 429 Too Many Requests, sleeping for the
 	// server-requested Retry-After duration before each retry.
+	// On "connection reset by peer" it waits 15s then verifies whether the
+	// commit actually landed on HF (by checking if the uploaded parquet shard
+	// files exist) before deciding to treat it as an error.
 	hfCommitFn := func(ctx context.Context, ops []arctic.HFOp, message string) (string, error) {
 		var hfOps []hfOperation
 		for _, op := range ops {
@@ -93,6 +96,27 @@ func runArcticPublish(ctx context.Context, repoRoot, repoID, fromStr, toStr stri
 			if err == nil {
 				return url, nil
 			}
+
+			// "Connection reset by peer" means the TCP connection dropped, but
+			// HuggingFace may have already processed the commit.  Wait briefly
+			// then check whether the uploaded files now exist in the repo.
+			if isConnectionReset(err) {
+				fmt.Fprintf(os.Stderr, "arctic: connection reset by peer during HF commit — waiting 15s to verify commit landed…\n")
+				select {
+				case <-ctx.Done():
+					return "", ctx.Err()
+				case <-time.After(15 * time.Second):
+				}
+				if verified, verifyErr := hfVerifyOpsExist(ctx, hf, repoID, hfOps); verifyErr == nil && verified {
+					fmt.Fprintf(os.Stderr, "arctic: connection reset: commit verified on HF — continuing\n")
+					return "", nil
+				} else if verifyErr != nil {
+					fmt.Fprintf(os.Stderr, "arctic: connection reset: verify check failed: %v — treating as commit error\n", verifyErr)
+				} else {
+					fmt.Fprintf(os.Stderr, "arctic: connection reset: commit not yet visible on HF — will retry\n")
+				}
+			}
+
 			var rlErr *HFRateLimitError
 			if !errors.As(err, &rlErr) || attempt == maxRateLimitRetries-1 {
 				return "", err
@@ -196,22 +220,33 @@ func runArcticPublish(ctx context.Context, repoRoot, repoID, fromStr, toStr stri
 				labelStyle.Render(s.Type),
 				infoStyle.Render("validating"),
 				s.Message)
+		case "process_start":
+			// Shard just started — DuckDB is working; overwrite line with activity.
+			fmt.Printf("\r  [%s] %s  %s  shard %d  %s rows so far  %-20s",
+				labelStyle.Render(s.YM),
+				labelStyle.Render(s.Type),
+				infoStyle.Render("processing"),
+				s.Shards,
+				ccFmtInt64(s.Rows),
+				"converting…")
 		case "process":
-			fmt.Println() // end the \r download progress line
-			if s.Shards > 0 {
-				fmt.Printf("  [%s] %s  processing  shard %d  %s rows\n",
-					labelStyle.Render(s.YM),
-					labelStyle.Render(s.Type),
-					s.Shards,
-					ccFmtInt64(s.Rows))
-			} else {
-				fmt.Printf("  [%s] %s  %s\n",
-					labelStyle.Render(s.YM),
-					labelStyle.Render(s.Type),
-					infoStyle.Render("processing…"))
+			// Shard completed — overwrite with speed info.
+			speed := ""
+			if s.RowsPerSec >= 1000 {
+				speed = fmt.Sprintf("  %.1fK rows/s", s.RowsPerSec/1000)
+			} else if s.RowsPerSec > 0 {
+				speed = fmt.Sprintf("  %.0f rows/s", s.RowsPerSec)
 			}
+			fmt.Printf("\r  [%s] %s  %s  shard %d  %s rows%s%-20s",
+				labelStyle.Render(s.YM),
+				labelStyle.Render(s.Type),
+				infoStyle.Render("processing"),
+				s.Shards,
+				ccFmtInt64(s.Rows),
+				speed,
+				"")
 		case "commit":
-			fmt.Printf("  [%s] %s  %s  %s rows  %d shards\n",
+			fmt.Printf("\n  [%s] %s  %s  %s rows  %d shards\n",
 				labelStyle.Render(s.YM),
 				labelStyle.Render(s.Type),
 				infoStyle.Render("committing"),
@@ -245,6 +280,46 @@ func runArcticPublish(ctx context.Context, repoRoot, repoID, fromStr, toStr stri
 	fmt.Printf("  Elapsed    %s\n", labelStyle.Render(metric.Elapsed.Round(time.Second).String()))
 	fmt.Println()
 	return nil
+}
+
+// isConnectionReset returns true if err contains "connection reset by peer".
+func isConnectionReset(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "connection reset by peer")
+}
+
+// hfVerifyOpsExist checks whether the non-delete, non-metadata ops in a batch
+// (i.e. the new parquet shard files) now exist in the remote HF repo.
+// Returns (true, nil)  — all shard files found: commit confirmed.
+// Returns (false, nil) — at least one shard missing: commit not confirmed.
+// Returns (false, err) — the existence check itself failed.
+// If ops contain no shard files (heartbeat-only batch) it returns (true, nil)
+// since such commits are idempotent and non-critical.
+func hfVerifyOpsExist(ctx context.Context, hf *hfClient, repoID string, ops []hfOperation) (bool, error) {
+	metaPaths := map[string]bool{
+		"stats.csv":   true,
+		"README.md":   true,
+		"states.json": true,
+	}
+	var checkPaths []string
+	for _, op := range ops {
+		if !op.Delete && !metaPaths[op.PathInRepo] {
+			checkPaths = append(checkPaths, op.PathInRepo)
+		}
+	}
+	if len(checkPaths) == 0 {
+		// Only metadata — cannot distinguish updated from pre-existing; assume ok.
+		return true, nil
+	}
+	existing, err := hf.pathsExist(ctx, repoID, checkPaths)
+	if err != nil {
+		return false, err
+	}
+	for _, p := range checkPaths {
+		if !existing[p] {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func fmtArcticDur(d time.Duration) string {
