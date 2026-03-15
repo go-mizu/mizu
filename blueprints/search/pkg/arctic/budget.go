@@ -91,16 +91,17 @@ func ComputeBudget(hw HardwareProfile, cfg Config) ResourceBudget {
 	}
 
 	// --- Convert workers (async parquet conversion within ProcessZst) ---
-	// Go engine: each worker needs ~200 MB (100K lines × ~1.5 KB + parquet buffers).
+	// Go engine: each worker needs ~400 MB (ZSTD SpeedBestCompression encoder
+	//   ~256 MB + parquet-go writer buffers + 100K in-memory lines).
 	// DuckDB engine: each worker needs ~600 MB (512 MB DuckDB + overhead).
 	// Budget from remaining headroom above the 2.5 GB needed for decoder + scanner.
 	convertRAM := usableRAM - 2.5
-	if convertRAM < 0.3 {
-		convertRAM = 0.3
+	if convertRAM < 0.5 {
+		convertRAM = 0.5
 	}
 	perWorkerGB := 0.6 // DuckDB default
 	if cfg.Engine != "duckdb" {
-		perWorkerGB = 0.2 // Go parquet writer: ~200 MB per worker
+		perWorkerGB = 0.4 // Go parquet writer: ZSTD encoder + parquet buffers + chunk
 	}
 	b.MaxConvertWorkers = int(convertRAM / perWorkerGB)
 	convertCPU := hw.CPUCores / 2
@@ -111,7 +112,7 @@ func ComputeBudget(hw HardwareProfile, cfg Config) ResourceBudget {
 		b.MaxConvertWorkers = convertCPU
 	}
 	if b.MaxConvertWorkers > 6 {
-		b.MaxConvertWorkers = 6 // Go engine can afford more workers
+		b.MaxConvertWorkers = 6
 	}
 	if b.MaxConvertWorkers < 1 {
 		b.MaxConvertWorkers = 1

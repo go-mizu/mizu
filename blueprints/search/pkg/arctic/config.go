@@ -47,7 +47,7 @@ func (c Config) WithDefaults() Config {
 	if c.WorkDir    == "" { c.WorkDir    = def.WorkDir }
 	if c.MinFreeGB  == 0  { c.MinFreeGB  = def.MinFreeGB }
 	if c.ChunkLines == 0  { c.ChunkLines = def.ChunkLines }
-	if c.Engine     == "" { c.Engine     = envOr("MIZU_ARCTIC_ENGINE", "go") }
+	if c.Engine     == "" { c.Engine     = envOr("MIZU_ARCTIC_ENGINE", "duckdb") }
 	return c
 }
 
