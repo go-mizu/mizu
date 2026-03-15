@@ -261,6 +261,13 @@ func (t *PublishTask) processOneWithRetry(ctx context.Context, ym ymKey, typ str
 		fmt.Fprintf(os.Stderr, "arctic: attempt %d/%d failed for [%s] %s: %v — cleaning up and retrying\n",
 			attempt, maxRetries, ym.String(), typ, lastErr)
 
+		// Wait a bit before retrying so torrent peers can reseed the file.
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(10 * time.Second):
+		}
+
 		// Clean up the bad .zst and any partial shards so the next attempt starts fresh.
 		zstPath := cfg.ZstPath(prefix, ym.String())
 		os.Remove(zstPath)
@@ -294,7 +301,11 @@ func (t *PublishTask) processOne(ctx context.Context, ym ymKey, typ string,
 	if emit != nil {
 		emit(&PublishState{Phase: "download", YM: ym.String(), Type: typ})
 	}
+	var expectedBytes int64
 	durDown, err := DownloadZst(ctx, cfg, ym.Year, ym.Month, typ, func(p DownloadProgress) {
+		if p.BytesTotal > 0 {
+			expectedBytes = p.BytesTotal
+		}
 		t.ls.Update(func(s *StateSnapshot) {
 			if s.Current != nil {
 				s.Current.BytesDone = p.BytesDone
@@ -308,6 +319,15 @@ func (t *PublishTask) processOne(ctx context.Context, ym ymKey, typ string,
 	})
 	if err != nil {
 		return fmt.Errorf("download: %w", err)
+	}
+
+	// Validate the downloaded file is complete before spending time processing it.
+	if fi, statErr := os.Stat(zstPath); statErr != nil {
+		return fmt.Errorf("validate zst: file missing after download")
+	} else if fi.Size() == 0 {
+		return fmt.Errorf("validate zst: file is empty")
+	} else if expectedBytes > 0 && fi.Size() < expectedBytes {
+		return fmt.Errorf("validate zst: truncated (%d of %d bytes)", fi.Size(), expectedBytes)
 	}
 
 	// --- Process ---

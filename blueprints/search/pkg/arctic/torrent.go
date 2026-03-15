@@ -113,7 +113,11 @@ func DownloadZst(ctx context.Context, cfg Config, year, month int, typ string,
 	if err != nil {
 		return 0, fmt.Errorf("torrent client: %w", err)
 	}
-	defer cl.Close()
+	// Do NOT defer cl.Close() here. We must call cl.Close() explicitly BEFORE
+	// renaming the .part file, because anacrolix/torrent uses memory-mapped
+	// storage: cl.Download() returns when pieces are verified but bytes may
+	// still be in OS page cache. cl.Close() triggers the mmap sync + fsync,
+	// ensuring all data is on disk before we read the file.
 
 	dlCtx, dlCancel := context.WithCancel(ctx)
 	defer dlCancel()
@@ -165,14 +169,21 @@ func DownloadZst(ctx context.Context, cfg Config, year, month int, typ string,
 		}
 	})
 	if err != nil {
+		cl.Close()
 		if dlCtx.Err() != nil && ctx.Err() == nil {
 			return 0, fmt.Errorf("torrent timeout: no progress for 3 minutes on %s", fileInTorrent)
 		}
 		return 0, fmt.Errorf("torrent download %s: %w", fileInTorrent, err)
 	}
 
-	// anacrolix/torrent may keep the file as <name>.part until the client is closed.
-	// Rename it to the expected path now, before Close() is deferred.
+	// Close the client BEFORE renaming. This flushes mmap-buffered data to
+	// disk (fsync) and triggers anacrolix/torrent's own internal rename.
+	// Without this, the .part file may be renamed while bytes are still in
+	// page cache, producing a truncated .zst on the next read.
+	cl.Close()
+
+	// If anacrolix/torrent renamed the file itself (via Close), we're done.
+	// Otherwise look for the .part file and rename it ourselves.
 	finalPath := cfg.ZstPath(prefix, ym)
 	if _, statErr := os.Stat(finalPath); os.IsNotExist(statErr) {
 		partPath := finalPath + ".part"
