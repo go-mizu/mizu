@@ -233,11 +233,18 @@ func (t *PublishTask) commitHeartbeat(ctx context.Context, force bool) {
 	t.lastHFCommit.Store(time.Now().UnixNano())
 }
 
-const maxRetries = 3
+const maxRetries = 5
 
-// processOneWithRetry wraps processOne with auto-heal: on failure it cleans up
-// the corrupted/partial files for this (month, type) and retries up to maxRetries
-// times. Context cancellation is not retried.
+// processOneWithRetry wraps processOne with auto-heal: on failure it classifies
+// the error and applies appropriate cleanup before retrying.
+//
+// Error classification:
+//   - Corruption errors (bad zstd, truncated, zero-filled): delete .zst and .part,
+//     force a clean re-download.
+//   - Transient errors (timeout, no peers, network): keep .part file so the torrent
+//     client can resume from existing pieces on the next attempt.
+//
+// Uses exponential backoff: 10s, 20s, 40s, 80s, 160s between retries.
 func (t *PublishTask) processOneWithRetry(ctx context.Context, ym ymKey, typ string,
 	existingRows []StatsRow, emit func(*PublishState)) error {
 
@@ -258,27 +265,55 @@ func (t *PublishTask) processOneWithRetry(ctx context.Context, ym ymKey, typ str
 		if ctx.Err() != nil {
 			return lastErr
 		}
-		fmt.Fprintf(os.Stderr, "arctic: attempt %d/%d failed for [%s] %s: %v — cleaning up and retrying\n",
-			attempt, maxRetries, ym.String(), typ, lastErr)
 
-		// Wait a bit before retrying so torrent peers can reseed the file.
+		corruption := IsCorruption(lastErr)
+		kind := "transient"
+		if corruption {
+			kind = "corruption"
+		}
+		fmt.Fprintf(os.Stderr, "arctic: attempt %d/%d failed [%s] for [%s] %s: %v — cleaning up and retrying\n",
+			attempt, maxRetries, kind, ym.String(), typ, lastErr)
+
+		// Update live state with retry info.
+		t.ls.Update(func(s *StateSnapshot) {
+			s.Phase = PhaseRetrying
+			s.Stats.Retries++
+			if s.Current != nil {
+				s.Current.Phase = PhaseRetrying
+			}
+		})
+
+		// Exponential backoff: 10s × 2^(attempt-1), capped at 5 min.
+		backoff := time.Duration(10<<(attempt-1)) * time.Second
+		if backoff > 5*time.Minute {
+			backoff = 5 * time.Minute
+		}
+		fmt.Fprintf(os.Stderr, "arctic: waiting %s before retry %d/%d\n", backoff, attempt+1, maxRetries)
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(10 * time.Second):
+		case <-time.After(backoff):
 		}
 
-		// Clean up the bad .zst and any partial shards so the next attempt starts fresh.
-		zstPath := cfg.ZstPath(prefix, ym.String())
-		os.Remove(zstPath)
-		os.Remove(zstPath + ".part")
+		// Always clean up work artifacts (shards, chunks).
 		shardDir := cfg.ShardLocalDir(typ, year, mm)
 		os.RemoveAll(shardDir)
-		// Remove chunk files.
 		if matches, _ := filepath.Glob(filepath.Join(cfg.WorkDir, "chunk_*.jsonl")); matches != nil {
 			for _, m := range matches {
 				os.Remove(m)
 			}
+		}
+
+		zstPath := cfg.ZstPath(prefix, ym.String())
+		if corruption {
+			// Corruption: delete everything, force clean re-download.
+			os.Remove(zstPath)
+			os.Remove(zstPath + ".part")
+		} else {
+			// Transient (timeout/network): keep .part for torrent resume.
+			// Only delete the final .zst if it exists (it shouldn't for a
+			// download timeout, but might for a processing error).
+			os.Remove(zstPath)
 		}
 	}
 	return fmt.Errorf("failed after %d attempts: %w", maxRetries, lastErr)
@@ -321,13 +356,31 @@ func (t *PublishTask) processOne(ctx context.Context, ym ymKey, typ string,
 		return fmt.Errorf("download: %w", err)
 	}
 
-	// Validate the downloaded file is complete before spending time processing it.
+	// Validate the downloaded file before spending time processing it.
 	if fi, statErr := os.Stat(zstPath); statErr != nil {
-		return fmt.Errorf("validate zst: file missing after download")
+		return &ErrCorruption{Msg: "validate zst: file missing after download"}
 	} else if fi.Size() == 0 {
-		return fmt.Errorf("validate zst: file is empty")
+		return &ErrCorruption{Msg: "validate zst: file is empty"}
 	} else if expectedBytes > 0 && fi.Size() < expectedBytes {
-		return fmt.Errorf("validate zst: truncated (%d of %d bytes)", fi.Size(), expectedBytes)
+		return &ErrCorruption{Msg: fmt.Sprintf("validate zst: truncated (%d of %d bytes)", fi.Size(), expectedBytes)}
+	}
+	if err := QuickValidateZst(zstPath); err != nil {
+		return &ErrCorruption{Msg: fmt.Sprintf("validate zst: %v", err)}
+	}
+
+	// Deep validation: fully decode the zstd stream to catch mid-file corruption.
+	// Costs ~1-3s/GB but prevents wasting much more time on a bad file.
+	t.ls.Update(func(s *StateSnapshot) {
+		s.Phase = PhaseValidating
+		if s.Current != nil {
+			s.Current.Phase = PhaseValidating
+		}
+	})
+	if emit != nil {
+		emit(&PublishState{Phase: "validate", YM: ym.String(), Type: typ, Message: "deep zstd validation…"})
+	}
+	if err := DeepValidateZst(zstPath); err != nil {
+		return &ErrCorruption{Msg: fmt.Sprintf("deep validate zst: %v", err)}
 	}
 
 	// --- Process ---
@@ -417,7 +470,9 @@ func (t *PublishTask) processOne(ctx context.Context, ym ymKey, typ string,
 	)
 
 	// Batch commits ≤50 ops per call; hold commitMu so heartbeat doesn't interleave.
+	// Each batch is retried up to 3 times with exponential backoff on failure.
 	const batchSize = 50
+	const hfMaxRetries = 3
 	t.commitMu.Lock()
 	for i := 0; i < len(ops); i += batchSize {
 		end := i + batchSize
@@ -427,9 +482,32 @@ func (t *PublishTask) processOne(ctx context.Context, ym ymKey, typ string,
 		msg := fmt.Sprintf("Add %s/%s (%d shards, %s rows)",
 			typ, ym.String(), len(procResult.Shards),
 			fmtCount(procResult.TotalRows))
-		if _, err := t.opts.HFCommit(ctx, ops[i:end], msg); err != nil {
+
+		var commitErr error
+		for retry := 0; retry < hfMaxRetries; retry++ {
+			if ctx.Err() != nil {
+				t.commitMu.Unlock()
+				return ctx.Err()
+			}
+			_, commitErr = t.opts.HFCommit(ctx, ops[i:end], msg)
+			if commitErr == nil {
+				break
+			}
+			if retry < hfMaxRetries-1 {
+				wait := time.Duration(5<<retry) * time.Second // 5s, 10s
+				fmt.Fprintf(os.Stderr, "arctic: hf commit batch %d failed (retry %d/%d in %s): %v\n",
+					i/batchSize, retry+1, hfMaxRetries, wait, commitErr)
+				select {
+				case <-ctx.Done():
+					t.commitMu.Unlock()
+					return ctx.Err()
+				case <-time.After(wait):
+				}
+			}
+		}
+		if commitErr != nil {
 			t.commitMu.Unlock()
-			return fmt.Errorf("hf commit batch %d: %w", i/batchSize, err)
+			return fmt.Errorf("hf commit batch %d (after %d retries): %w", i/batchSize, hfMaxRetries, commitErr)
 		}
 	}
 	t.lastHFCommit.Store(time.Now().UnixNano())

@@ -2,6 +2,7 @@ package arctic
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sync/atomic"
@@ -74,9 +75,31 @@ type DownloadProgress struct {
 
 type DownloadCallback func(DownloadProgress)
 
+// ErrCorruption is returned when a downloaded file fails integrity checks.
+// The caller should delete the file and retry from scratch.
+type ErrCorruption struct{ Msg string }
+
+func (e *ErrCorruption) Error() string { return e.Msg }
+
+// ErrTransient is returned for timeout/network errors where the existing
+// partial download can be safely resumed by the torrent client.
+type ErrTransient struct{ Msg string }
+
+func (e *ErrTransient) Error() string { return e.Msg }
+
+// IsCorruption returns true if err (or its chain) is a corruption error.
+func IsCorruption(err error) bool {
+	var ce *ErrCorruption
+	return errors.As(err, &ce)
+}
+
 // DownloadZst downloads RC_YYYY-MM.zst or RS_YYYY-MM.zst to cfg.RawDir.
 // Returns download duration. Uses bundle torrent for months <= 2023-12,
-// individual torrent otherwise. Cancels after 60s with no peer progress.
+// individual torrent otherwise. Cancels after 3 min with no peer progress.
+//
+// Returns *ErrCorruption for data integrity failures (caller should delete
+// and retry) or *ErrTransient for timeout/network failures (caller can keep
+// .part file for resume).
 func DownloadZst(ctx context.Context, cfg Config, year, month int, typ string,
 	cb DownloadCallback) (time.Duration, error) {
 
@@ -118,6 +141,24 @@ func DownloadZst(ctx context.Context, cfg Config, year, month int, typ string,
 	// storage: cl.Download() returns when pieces are verified but bytes may
 	// still be in OS page cache. cl.Close() triggers the mmap sync + fsync,
 	// ensuring all data is on disk before we read the file.
+
+	// Pre-check: query file size from torrent metadata and verify disk space.
+	fileSize, sizeErr := cl.FileSize(ctx, fileInTorrent)
+	if sizeErr == nil && fileSize > 0 {
+		freeGB, diskErr := cfg.FreeDiskGB()
+		if diskErr == nil {
+			needGB := float64(fileSize) / (1024 * 1024 * 1024) * 2.0 // 2x: .zst + parquet shards
+			if freeGB < needGB {
+				cl.Close()
+				return 0, fmt.Errorf("insufficient disk: need %.1f GB (file %.1f GB + processing), have %.1f GB free",
+					needGB, float64(fileSize)/(1024*1024*1024), freeGB)
+			}
+		}
+		if cb != nil {
+			cb(DownloadProgress{Phase: "metadata", BytesTotal: fileSize,
+				Message: fmt.Sprintf("file size: %.1f GB", float64(fileSize)/(1024*1024*1024))})
+		}
+	}
 
 	dlCtx, dlCancel := context.WithCancel(ctx)
 	defer dlCancel()
@@ -171,9 +212,9 @@ func DownloadZst(ctx context.Context, cfg Config, year, month int, typ string,
 	if err != nil {
 		cl.Close()
 		if dlCtx.Err() != nil && ctx.Err() == nil {
-			return 0, fmt.Errorf("torrent timeout: no progress for 3 minutes on %s", fileInTorrent)
+			return 0, &ErrTransient{Msg: fmt.Sprintf("torrent timeout: no progress for 3 minutes on %s", fileInTorrent)}
 		}
-		return 0, fmt.Errorf("torrent download %s: %w", fileInTorrent, err)
+		return 0, &ErrTransient{Msg: fmt.Sprintf("torrent download %s: %v", fileInTorrent, err)}
 	}
 
 	// Close the client BEFORE renaming. This flushes mmap-buffered data to
