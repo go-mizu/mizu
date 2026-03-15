@@ -25,6 +25,7 @@ interface FetchResult {
 const MAX_URLS = 500;
 const DEFAULT_TIMEOUT = 10_000;
 const DEFAULT_USER_AGENT = "mizu-crawler/1.0";
+const MAX_BODY_BYTES = 512_000; // truncate responses at 512 KB to stay within CF CPU limits
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -107,9 +108,11 @@ async function fetchOne(
     let body: string | null = null;
 
     if (mode === "full") {
-      const text = await resp.text();
-      contentLength = contentLength || text.length;
-      body = text;
+      const buf = await resp.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      const slice = bytes.length > MAX_BODY_BYTES ? bytes.slice(0, MAX_BODY_BYTES) : bytes;
+      body = new TextDecoder("utf-8", { fatal: false }).decode(slice);
+      contentLength = contentLength || bytes.length;
     }
 
     const redirectUrl = resp.url !== url ? resp.url : null;
