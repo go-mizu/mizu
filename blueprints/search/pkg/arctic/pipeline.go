@@ -490,6 +490,15 @@ func (t *PipelineTask) processJob(ctx context.Context, job *PipelineJob, emit fu
 	year := fmt.Sprintf("%04d", job.YM.Year)
 	mm := fmt.Sprintf("%02d", job.YM.Month)
 
+	// Pre-flight: verify the .zst file exists before committing to processing.
+	// The file may have been deleted by a previous successful process (line ~557)
+	// whose upload then failed, or by the corruption handler. Without this check,
+	// ProcessZst returns "open zst: no such file" which gets misclassified as
+	// transient, wasting all retry attempts on a guaranteed-to-fail operation.
+	if _, err := os.Stat(job.ZstPath); err != nil {
+		return &ErrCorruption{Msg: fmt.Sprintf("zst missing before process: %v", err)}
+	}
+
 	// Create per-job config with isolated work directory and budget-tuned DuckDB memory.
 	jobCfg := t.cfg.ForJob(job.YM.String(), job.Type)
 	jobCfg.DuckDBMemoryMB = t.budget.DuckDBMemoryMB
@@ -542,8 +551,11 @@ func (t *PipelineTask) processJob(ctx context.Context, job *PipelineJob, emit fu
 		os.RemoveAll(jobCfg.WorkDir)
 		// Classify error for caller.
 		errStr := err.Error()
-		if containsAny(errStr, "zstd", "scan jsonl") {
-			// Corruption — delete the .zst so a fresh download is forced on retry.
+		if containsAny(errStr, "zstd", "scan jsonl", "open zst", "no such file") {
+			// Corruption or missing file — delete the .zst so a fresh download
+			// is forced on retry. "open zst" / "no such file" means the .zst
+			// vanished between download and process (e.g. deleted after a prior
+			// successful process whose upload then failed).
 			os.Remove(job.ZstPath)
 			return &ErrCorruption{Msg: fmt.Sprintf("process: %v", err)}
 		}

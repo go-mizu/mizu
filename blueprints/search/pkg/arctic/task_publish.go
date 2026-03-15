@@ -424,10 +424,12 @@ func (t *PublishTask) processOne(ctx context.Context, ym ymKey, typ string,
 		}
 	})
 	if err != nil {
-		// Zstd decode errors during processing indicate file corruption
-		// (now that deep validation is skipped, this is the main catch).
+		// Classify processing errors. Corruption / missing file → force re-download.
+		// "open zst" / "no such file" = .zst vanished between download and process
+		// (e.g. previous successful process deleted it, then upload failed).
 		errStr := err.Error()
-		if strings.Contains(errStr, "zstd") || strings.Contains(errStr, "scan jsonl") {
+		if strings.Contains(errStr, "zstd") || strings.Contains(errStr, "scan jsonl") ||
+			strings.Contains(errStr, "open zst") || strings.Contains(errStr, "no such file") {
 			return &ErrCorruption{Msg: fmt.Sprintf("process: %v", err)}
 		}
 		return fmt.Errorf("process: %w", err)
