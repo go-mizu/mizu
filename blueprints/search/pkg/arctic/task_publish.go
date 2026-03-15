@@ -171,17 +171,17 @@ func (t *PublishTask) writeHeartbeatFiles() {
 	snap := t.ls.Snapshot()
 
 	if err := WriteStateJSON(t.cfg, snap); err != nil {
-		fmt.Fprintf(os.Stderr, "arctic: heartbeat: write states.json: %v\n", err)
+		logf("heartbeat: write states.json: %v", err)
 	}
 
 	rows, _ := ReadStatsCSV(t.cfg.StatsCSVPath())
 	readme, err := GenerateREADMEWithLive(rows, &snap)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "arctic: heartbeat: generate readme: %v\n", err)
+		logf("heartbeat: generate readme: %v", err)
 		return
 	}
 	if err := os.WriteFile(t.cfg.READMEPath(), readme, 0o644); err != nil {
-		fmt.Fprintf(os.Stderr, "arctic: heartbeat: write readme: %v\n", err)
+		logf("heartbeat: write readme: %v", err)
 	}
 }
 
@@ -229,7 +229,7 @@ func (t *PublishTask) commitHeartbeat(ctx context.Context, force bool) {
 	defer t.commitMu.Unlock()
 
 	if _, err := t.opts.HFCommit(ctx, ops, msg); err != nil {
-		fmt.Fprintf(os.Stderr, "arctic: heartbeat commit: %v\n", err)
+		logf("heartbeat commit: %v", err)
 		return
 	}
 	t.lastHFCommit.Store(time.Now().UnixNano())
@@ -273,7 +273,7 @@ func (t *PublishTask) processOneWithRetry(ctx context.Context, ym ymKey, typ str
 		if corruption {
 			kind = "corruption"
 		}
-		fmt.Fprintf(os.Stderr, "arctic: attempt %d/%d failed [%s] for [%s] %s: %v — cleaning up and retrying\n",
+		logf("attempt %d/%d failed [%s] for [%s] %s: %v — cleaning up and retrying",
 			attempt, maxRetries, kind, ym.String(), typ, lastErr)
 
 		// Update live state with retry info.
@@ -290,7 +290,7 @@ func (t *PublishTask) processOneWithRetry(ctx context.Context, ym ymKey, typ str
 		if backoff > 5*time.Minute {
 			backoff = 5 * time.Minute
 		}
-		fmt.Fprintf(os.Stderr, "arctic: waiting %s before retry %d/%d\n", backoff, attempt+1, maxRetries)
+		logf("waiting %s before retry %d/%d", backoff, attempt+1, maxRetries)
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -480,7 +480,7 @@ func (t *PublishTask) processOne(ctx context.Context, ym ymKey, typ string,
 		return fmt.Errorf("write stats: %w", err)
 	}
 	if err := WriteStateJSON(cfg, snap); err != nil {
-		fmt.Fprintf(os.Stderr, "arctic: write states.json before commit: %v\n", err)
+		logf("write states.json before commit: %v", err)
 	}
 
 	var ops []HFOp
@@ -523,7 +523,7 @@ func (t *PublishTask) processOne(ctx context.Context, ym ymKey, typ string,
 			}
 			if retry < hfMaxRetries-1 {
 				wait := time.Duration(5<<retry) * time.Second // 5s, 10s
-				fmt.Fprintf(os.Stderr, "arctic: hf commit batch %d failed (retry %d/%d in %s): %v\n",
+				logf("hf commit batch %d failed (retry %d/%d in %s): %v",
 					i/batchSize, retry+1, hfMaxRetries, wait, commitErr)
 				select {
 				case <-ctx.Done():
@@ -549,7 +549,7 @@ func (t *PublishTask) processOne(ctx context.Context, ym ymKey, typ string,
 	newRow.DurCommitS = durComm.Seconds()
 	allRows[len(allRows)-1] = newRow
 	if err := WriteStatsCSV(cfg.StatsCSVPath(), allRows); err != nil {
-		fmt.Fprintf(os.Stderr, "arctic: warning: update stats.csv with commit duration: %v\n", err)
+		logf("warning: update stats.csv with commit duration: %v", err)
 	}
 
 	// Delete local shards after successful commit.
@@ -591,13 +591,13 @@ func (t *PublishTask) cleanupWork() {
 	matches, _ := filepath.Glob(filepath.Join(t.cfg.WorkDir, "chunk_*.jsonl"))
 	for _, m := range matches {
 		if err := os.Remove(m); err != nil {
-			fmt.Fprintf(os.Stderr, "arctic: cleanup: %v\n", err)
+			logf("cleanup: %v", err)
 		}
 	}
 	for _, typ := range []string{"comments", "submissions"} {
 		dir := filepath.Join(t.cfg.WorkDir, typ)
 		if err := os.RemoveAll(dir); err != nil {
-			fmt.Fprintf(os.Stderr, "arctic: cleanup: %v\n", err)
+			logf("cleanup: %v", err)
 		}
 	}
 	// Torrent saves files under RawDir/reddit/{comments,submissions}/.
@@ -608,7 +608,7 @@ func (t *PublishTask) cleanupWork() {
 			subMatches, _ := filepath.Glob(filepath.Join(dir, glob))
 			for _, m := range subMatches {
 				if err := os.Remove(m); err != nil {
-					fmt.Fprintf(os.Stderr, "arctic: cleanup: %v\n", err)
+					logf("cleanup: %v", err)
 				}
 			}
 		}

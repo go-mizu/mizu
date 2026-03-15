@@ -145,9 +145,9 @@ func (t *PipelineTask) runPipeline(ctx context.Context, emit func(*PublishState)
 		pipeErrMu.Lock()
 		if pipeErr == nil {
 			pipeErr = err
-			fmt.Fprintf(os.Stderr, "arctic: pipeline: FATAL — %v\n", err)
+			logf("pipeline: FATAL — %v", err)
 		} else {
-			fmt.Fprintf(os.Stderr, "arctic: pipeline: (suppressed) %v\n", err)
+			logf("pipeline: (suppressed) %v", err)
 		}
 		pipeErrMu.Unlock()
 	}
@@ -218,7 +218,7 @@ func (t *PipelineTask) runPipeline(ctx context.Context, emit func(*PublishState)
 					if corruption {
 						kind = "corruption"
 					}
-					fmt.Fprintf(os.Stderr, "arctic: pipeline: process attempt %d/%d failed [%s] for [%s] %s: %v\n",
+					logf("pipeline: process attempt %d/%d failed [%s] for [%s] %s: %v",
 						attempt+1, maxRetries, kind, job.YM.String(), job.Type, lastErr)
 
 					t.ls.Update(func(s *StateSnapshot) { s.Stats.Retries++ })
@@ -230,7 +230,7 @@ func (t *PipelineTask) runPipeline(ctx context.Context, emit func(*PublishState)
 						if backoff > 5*time.Minute {
 							backoff = 5 * time.Minute
 						}
-						fmt.Fprintf(os.Stderr, "arctic: pipeline: re-downloading [%s] %s after corruption (in %s)\n",
+						logf("pipeline: re-downloading [%s] %s after corruption (in %s)",
 							job.YM.String(), job.Type, backoff)
 						select {
 						case <-pipeCtx.Done():
@@ -238,7 +238,7 @@ func (t *PipelineTask) runPipeline(ctx context.Context, emit func(*PublishState)
 						case <-time.After(backoff):
 						}
 						if err := t.downloadJob(pipeCtx, job, emit); err != nil {
-							fmt.Fprintf(os.Stderr, "arctic: pipeline: re-download failed: %v\n", err)
+							logf("pipeline: re-download failed: %v", err)
 							lastErr = err
 							continue
 						}
@@ -248,7 +248,7 @@ func (t *PipelineTask) runPipeline(ctx context.Context, emit func(*PublishState)
 						if backoff > 5*time.Minute {
 							backoff = 5 * time.Minute
 						}
-						fmt.Fprintf(os.Stderr, "arctic: pipeline: retrying process for [%s] %s in %s\n",
+						logf("pipeline: retrying process for [%s] %s in %s",
 							job.YM.String(), job.Type, backoff)
 						select {
 						case <-pipeCtx.Done():
@@ -298,7 +298,7 @@ func (t *PipelineTask) runPipeline(ctx context.Context, emit func(*PublishState)
 				if backoff > 10*time.Minute {
 					backoff = 10 * time.Minute
 				}
-				fmt.Fprintf(os.Stderr, "arctic: pipeline: upload attempt %d/%d failed for [%s] %s: %v — retrying in %s\n",
+				logf("pipeline: upload attempt %d/%d failed for [%s] %s: %v — retrying in %s",
 					attempt+1, maxRetries, job.YM.String(), job.Type, lastErr, backoff)
 				t.ls.Update(func(s *StateSnapshot) { s.Stats.Retries++ })
 				select {
@@ -371,7 +371,7 @@ func (t *PipelineTask) downloadJob(ctx context.Context, job *PipelineJob, emit f
 	// after processing). This avoids expensive re-downloads of multi-GB files.
 	if fi, err := os.Stat(zstPath); err == nil && fi.Size() > 0 {
 		if err := QuickValidateZst(zstPath); err == nil {
-			fmt.Fprintf(os.Stderr, "arctic: pipeline: [%s] %s reusing existing %s (%.1f MB)\n",
+			logf("pipeline: [%s] %s reusing existing %s (%.1f MB)",
 				job.YM.String(), job.Type, zstPath, float64(fi.Size())/(1024*1024))
 			job.DurDown = 0
 			return nil
@@ -463,7 +463,7 @@ func (t *PipelineTask) retryDownload(ctx context.Context, job *PipelineJob, emit
 		if backoff > 5*time.Minute {
 			backoff = 5 * time.Minute
 		}
-		fmt.Fprintf(os.Stderr, "arctic: pipeline: download retry %d/%d for [%s] %s in %s\n",
+		logf("pipeline: download retry %d/%d for [%s] %s in %s",
 			attempt+1, maxRetries, job.YM.String(), job.Type, backoff)
 
 		t.ls.Update(func(s *StateSnapshot) { s.Stats.Retries++ })
@@ -479,7 +479,7 @@ func (t *PipelineTask) retryDownload(ctx context.Context, job *PipelineJob, emit
 		if lastErr == nil {
 			return nil
 		}
-		fmt.Fprintf(os.Stderr, "arctic: pipeline: download attempt %d/%d failed for [%s] %s: %v\n",
+		logf("pipeline: download attempt %d/%d failed for [%s] %s: %v",
 			attempt+1, maxRetries, job.YM.String(), job.Type, lastErr)
 	}
 	return fmt.Errorf("download failed after %d attempts (last: %v)", maxRetries, lastErr)
@@ -654,7 +654,7 @@ func (t *PipelineTask) uploadJob(ctx context.Context, job *PipelineJob, emit fun
 	// Batch commit — hold commitMu.
 	const batchSize = 50
 	const hfMaxRetries = 3
-	fmt.Fprintf(os.Stderr, "arctic: pipeline: [%s] %s uploading %d ops (%d shards) to HF…\n",
+	logf("pipeline: [%s] %s uploading %d ops (%d shards) to HF…",
 		job.YM.String(), job.Type, len(ops), len(job.ProcResult.Shards))
 	t.commitMu.Lock()
 	for i := 0; i < len(ops); i += batchSize {
@@ -682,7 +682,7 @@ func (t *PipelineTask) uploadJob(ctx context.Context, job *PipelineJob, emit fun
 			}
 			if retry < hfMaxRetries-1 {
 				wait := time.Duration(5<<retry) * time.Second
-				fmt.Fprintf(os.Stderr, "arctic: pipeline: hf commit retry %d/%d in %s: %v\n",
+				logf("pipeline: hf commit retry %d/%d in %s: %v",
 					retry+1, hfMaxRetries, wait, commitErr)
 				select {
 				case <-ctx.Done():
@@ -706,6 +706,9 @@ func (t *PipelineTask) uploadJob(ctx context.Context, job *PipelineJob, emit fun
 	t.commitMu.Unlock()
 
 	durComm := time.Since(t2)
+	logf("pipeline: [%s] %s committed in %.1fs (%d shards, %s rows)",
+		job.YM.String(), job.Type, durComm.Seconds(),
+		len(job.ProcResult.Shards), fmtCount(job.ProcResult.TotalRows))
 	t.recordCommitSpeed(durComm.Seconds())
 
 	// Update stats.csv with commit duration.
@@ -759,7 +762,7 @@ func (t *PipelineTask) waitForDisk(ctx context.Context) {
 		if err != nil || free >= float64(t.cfg.MinFreeGB) {
 			return
 		}
-		fmt.Fprintf(os.Stderr, "arctic: pipeline: %.1f GB free (need %d GB) — waiting for uploads to free space\n",
+		logf("pipeline: %.1f GB free (need %d GB) — waiting for uploads to free space",
 			free, t.cfg.MinFreeGB)
 
 		// Wait with timeout so we don't block forever.
@@ -981,16 +984,16 @@ func (t *PipelineTask) runHeartbeat(ctx context.Context) {
 func (t *PipelineTask) writeHeartbeatFiles() {
 	snap := t.ls.Snapshot()
 	if err := WriteStateJSON(t.cfg, snap); err != nil {
-		fmt.Fprintf(os.Stderr, "arctic: pipeline heartbeat: write states.json: %v\n", err)
+		logf("pipeline heartbeat: write states.json: %v", err)
 	}
 	rows, _ := ReadStatsCSV(t.cfg.StatsCSVPath())
 	readme, err := GenerateREADMEWithLive(rows, &snap)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "arctic: pipeline heartbeat: generate readme: %v\n", err)
+		logf("pipeline heartbeat: generate readme: %v", err)
 		return
 	}
 	if err := os.WriteFile(t.cfg.READMEPath(), readme, 0o644); err != nil {
-		fmt.Fprintf(os.Stderr, "arctic: pipeline heartbeat: write readme: %v\n", err)
+		logf("pipeline heartbeat: write readme: %v", err)
 	}
 }
 
@@ -1023,7 +1026,7 @@ func (t *PipelineTask) commitHeartbeat(ctx context.Context, force bool) {
 	defer t.commitMu.Unlock()
 
 	if _, err := t.opts.HFCommit(ctx, ops, msg); err != nil {
-		fmt.Fprintf(os.Stderr, "arctic: pipeline heartbeat commit: %v\n", err)
+		logf("pipeline heartbeat commit: %v", err)
 		return
 	}
 	t.lastHFCommit.Store(time.Now().UnixNano())
