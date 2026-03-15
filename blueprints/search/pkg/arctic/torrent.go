@@ -163,10 +163,13 @@ func DownloadZst(ctx context.Context, cfg Config, year, month int, typ string,
 	dlCtx, dlCancel := context.WithCancel(ctx)
 	defer dlCancel()
 
-	// lastActivity tracks the last time any meaningful progress was observed.
-	// Updated on every callback with peers or bytes, and before Download starts.
+	// lastActivity tracks the last time actual byte progress was observed.
+	// Only reset when BytesCompleted increases — peer presence alone does NOT
+	// count, because the torrent can sit at 99% with peers connected but zero
+	// data flowing (mmap pages never written → zero-filled corruption).
 	var lastActivity atomic.Int64
 	lastActivity.Store(time.Now().UnixNano())
+	var lastBytes atomic.Int64 // tracks previous BytesCompleted to detect stalls
 
 	go func() {
 		t := time.NewTicker(10 * time.Second)
@@ -186,8 +189,10 @@ func DownloadZst(ctx context.Context, cfg Config, year, month int, typ string,
 	}()
 
 	err = cl.Download(dlCtx, []string{fileInTorrent}, func(p torrent.Progress) {
-		// Any peers or bytes counts as activity (alive, not stalled).
-		if p.Peers > 0 || p.BytesCompleted > 0 {
+		// Only count actual byte progress as activity — peer presence alone
+		// is not enough (download can stall with peers connected).
+		prev := lastBytes.Swap(p.BytesCompleted)
+		if p.BytesCompleted > prev {
 			lastActivity.Store(time.Now().UnixNano())
 		}
 		if cb != nil {
