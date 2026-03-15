@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"time"
 )
@@ -89,6 +90,9 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 		fmt.Fprintf(os.Stderr, "info: startup today=%s interval=%s committed=%d expected=%d missing=%d\n",
 			today, interval, committed, expected, missing)
 	}
+
+	// Remove stale today/ files that don't match the current YYYY/MM/DD/HH/MM format.
+	cleanOrphanTodayFiles(cfg)
 
 	// Roll over any orphaned blocks from a previous day.
 	todayRows = t.rolloverOrphans(ctx, cfg, today, todayRows)
@@ -250,6 +254,9 @@ func (t *LiveTask) Run(ctx context.Context, emit func(*LiveState)) (LiveMetric, 
 				metric.RowsWritten += result.Count
 				fmt.Fprintf(os.Stderr, "info: [%s %s] committed to HF in %ds\n",
 					wDate, wHHMM, newRow.DurCommitS)
+				// Remove local block file after confirmed HF commit.
+				// stats_today.csv retains the record; rollover uses that to delete from HF.
+				removeLocalBlock(outPath)
 			}
 		}
 
@@ -488,6 +495,10 @@ func (t *LiveTask) backfillToday(
 			metric.BlocksWritten += len(batch)
 			metric.RowsWritten += batchRows
 			fmt.Fprintf(os.Stderr, "info: backfill: batch committed in %ds\n", durS)
+			// Remove local block files after confirmed HF commit.
+			for _, b := range batch {
+				removeLocalBlock(cfg.TodayBlockPath(today, b.row.Block))
+			}
 		}
 
 		if ctx.Err() != nil {
@@ -545,6 +556,32 @@ func oldestMissingBlock(rows []TodayRow, date string, dayStart, currentBlock tim
 // nextIntervalTime returns the next interval boundary after now.
 func nextIntervalTime(now time.Time, interval time.Duration) time.Time {
 	return now.Truncate(interval).Add(interval)
+}
+
+// removeLocalBlock removes the local block parquet file and any empty parent
+// directories left behind. Called after a confirmed HF commit so the local
+// copy is no longer needed (stats_today.csv still records the block; rollover
+// uses that to issue HF delete ops at midnight).
+func removeLocalBlock(path string) {
+	if err := os.Remove(path); err != nil {
+		return // file may not exist; ignore
+	}
+	// Best-effort removal of empty HH/ and DD/ directories.
+	_ = os.Remove(filepath.Dir(path))
+	_ = os.Remove(filepath.Dir(filepath.Dir(path)))
+}
+
+// cleanOrphanTodayFiles removes any parquet files in the today/ root directory
+// that don't match the current YYYY/MM/DD/HH/MM.parquet layout (e.g. stale
+// flat-format files written by an older binary version).
+func cleanOrphanTodayFiles(cfg Config) {
+	pattern := filepath.Join(cfg.TodayDir(), "*.parquet")
+	matches, _ := filepath.Glob(pattern)
+	for _, f := range matches {
+		if err := os.Remove(f); err == nil {
+			fmt.Fprintf(os.Stderr, "info: removed orphan today/ file: %s\n", filepath.Base(f))
+		}
+	}
 }
 
 // sleepUntilNext sleeps until the next interval boundary or ctx cancellation.
