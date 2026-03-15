@@ -473,6 +473,33 @@ remote-cc-watch-kill: ## Kill g_watch screen session on remote server
 remote-cc-watch-log: ## Tail cc_watch log on remote server
 	@$(SSH) $(REMOTE_SSH) 'tail -f ~/log/cc_watch.log'
 
+# CC_SCHED_START / CC_SCHED_END define the file index range for the scheduler.
+# Defaults: server1=0–4999, server2=5000–9999.
+CC_SCHED_START ?= $(if $(filter 2,$(SERVER)),5000,0)
+CC_SCHED_END   ?= $(if $(filter 2,$(SERVER)),9999,4999)
+# HF rate limit: 128 commits/hour per token across ALL repos (cc, arctic, goodreads, etc.).
+# Default --commit-interval 180 → 20/hour per server, 40/hour total, 88 headroom for other repos.
+# Adjust via COMMIT_INTERVAL env var in cc_watch.sh or --commit-interval flag.
+
+.PHONY: deploy-cc-sched
+deploy-cc-sched: ## (Re)start g_sched using Go --schedule on remote server (SERVER=2 for server2)
+	@echo "==> Stopping existing g_sched on $(REMOTE_SSH)..."
+	-@$(SSH) $(REMOTE_SSH) 'screen -S g_sched -X quit 2>/dev/null; pkill -f "cc publish --schedule" 2>/dev/null; true'
+	@sleep 1
+	@echo "==> Starting g_sched on $(REMOTE_SSH) (range $(CC_SCHED_START)–$(CC_SCHED_END))..."
+	@$(SSH) $(REMOTE_SSH) 'screen -dmS g_sched bash -c "export PATH=$$HOME/bin:$$PATH; search cc publish --schedule --start $(CC_SCHED_START) --end $(CC_SCHED_END); exec bash"'
+	@sleep 2
+	@echo "==> Verifying g_sched is running on $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'screen -ls | grep g_sched && echo "g_sched started" || { echo "ERROR: g_sched not found"; exit 1; }'
+
+.PHONY: remote-cc-sched-log
+remote-cc-sched-log: ## Tail cc_schedule log on remote server
+	@$(SSH) $(REMOTE_SSH) 'tail -f ~/log/cc_schedule_$(CC_SCHED_START)_$(CC_SCHED_END).log'
+
+.PHONY: remote-cc-sched-attach
+remote-cc-sched-attach: ## Attach to g_sched screen session on remote server
+	@$(SSH) -t $(REMOTE_SSH) 'screen -r g_sched'
+
 .PHONY: deploy-linux-focal-browser
 deploy-linux-focal-browser: build-linux ## [LEGACY] Deploy Ubuntu 20.04 focal binary with Chrome wrapper (bundled libstdc++)
 	@test -f "$(DEPLOY_KEY)" || { echo "Deploy key not found: $(DEPLOY_KEY)"; exit 1; }
