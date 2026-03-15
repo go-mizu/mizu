@@ -6,8 +6,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/go-mizu/mizu/blueprints/search/pkg/arctic"
 )
 
 // ccScheduleConfig holds configuration for the CC pipeline scheduler.
@@ -16,7 +19,7 @@ type ccScheduleConfig struct {
 	RepoRoot    string
 	Start       int
 	End         int
-	MaxSessions int
+	MaxSessions int // 0 = auto-detect from hardware
 	ChunkSize   int
 	DonePct     int
 	StallRounds int
@@ -25,6 +28,403 @@ type ccScheduleConfig struct {
 
 type ccSchedChunk struct {
 	Start, End int
+}
+
+// ccBudget holds the computed resource budget for CC pipeline sessions.
+type ccBudget struct {
+	MaxSessions   int     // max concurrent screen sessions
+	RAMPerSession float64 // estimated GB per session (0.9)
+	ByRAM         int     // limit from RAM
+	ByCPU         int     // limit from CPU
+	Auto          bool    // true if computed from hardware
+}
+
+func (b ccBudget) String() string {
+	if !b.Auto {
+		return fmt.Sprintf("%d max (manual override)", b.MaxSessions)
+	}
+	return fmt.Sprintf("%d max (auto: ram=%d cpu=%d → %d)", b.MaxSessions, b.ByRAM, b.ByCPU, b.MaxSessions)
+}
+
+// computeCCBudget derives the session budget from hardware profile.
+//
+// Each pipeline session (download → pack → export) uses ~600–900 MB observed.
+// Budget 0.9 GB per session. Reserve 2 GB for OS + watcher + other services.
+// Hard cap at 8 sessions (diminishing returns from disk I/O contention).
+func computeCCBudget(hw arctic.HardwareProfile) ccBudget {
+	const (
+		perSessionGB = 0.9
+		reserveGB    = 2.0
+		maxCap       = 8
+	)
+
+	b := ccBudget{
+		RAMPerSession: perSessionGB,
+		Auto:          true,
+	}
+
+	// By RAM: how many sessions fit after reserving OS headroom.
+	usableRAM := hw.RAMTotalGB - reserveGB
+	if usableRAM < perSessionGB {
+		usableRAM = perSessionGB
+	}
+	b.ByRAM = int(usableRAM / perSessionGB)
+
+	// By CPU: each session is a mix of I/O-bound and CPU-bound work.
+	// Allow 1.5 sessions per core (pack is I/O heavy, export is CPU heavy).
+	b.ByCPU = int(float64(hw.CPUCores) * 1.5)
+	if b.ByCPU < 1 {
+		b.ByCPU = 1
+	}
+
+	// Take the minimum, clamp to [1, maxCap].
+	b.MaxSessions = b.ByRAM
+	if b.ByCPU < b.MaxSessions {
+		b.MaxSessions = b.ByCPU
+	}
+	if b.MaxSessions < 1 {
+		b.MaxSessions = 1
+	}
+	if b.MaxSessions > maxCap {
+		b.MaxSessions = maxCap
+	}
+
+	// Environment override.
+	if v := os.Getenv("MIZU_CC_MAX_SESSIONS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			b.MaxSessions = n
+			b.Auto = false
+		}
+	}
+
+	return b
+}
+
+// ccResourceTracker tracks resource usage and throughput across scheduler rounds
+// to identify bottlenecks and make smarter scaling decisions.
+type ccResourceTracker struct {
+	// Sliding window of (round, committedCount) for throughput detection.
+	history      []ccRoundSnapshot
+	maxHistory   int
+	prevDiskFree float64 // disk free GB from previous round (detect disk fill rate)
+}
+
+type ccRoundSnapshot struct {
+	round     int
+	committed int
+	running   int
+	ramAvail  float64
+	loadAvg   float64
+	diskFree  float64
+}
+
+// throughputPerSession returns the average commits per round per running session
+// over the last N rounds. Returns 0 if not enough data.
+func (t *ccResourceTracker) throughputPerSession() float64 {
+	if len(t.history) < 3 {
+		return 0
+	}
+	oldest := t.history[0]
+	newest := t.history[len(t.history)-1]
+	rounds := newest.round - oldest.round
+	if rounds < 2 {
+		return 0
+	}
+	totalCommits := float64(newest.committed - oldest.committed)
+	// Average running sessions over the window.
+	avgRunning := 0.0
+	for _, h := range t.history {
+		avgRunning += float64(h.running)
+	}
+	avgRunning /= float64(len(t.history))
+	if avgRunning < 0.5 {
+		return 0
+	}
+	return totalCommits / float64(rounds) / avgRunning
+}
+
+// isBottlenecked returns true if adding sessions isn't helping throughput.
+// Compares recent throughput-per-session to earlier throughput-per-session.
+func (t *ccResourceTracker) isBottlenecked() bool {
+	if len(t.history) < 10 {
+		return false
+	}
+	// Compare first half vs second half of history.
+	mid := len(t.history) / 2
+	firstHalf := t.history[:mid]
+	secondHalf := t.history[mid:]
+
+	// Throughput per session in each half.
+	tps := func(slice []ccRoundSnapshot) float64 {
+		if len(slice) < 2 {
+			return 0
+		}
+		commits := float64(slice[len(slice)-1].committed - slice[0].committed)
+		rounds := float64(slice[len(slice)-1].round - slice[0].round)
+		avgRun := 0.0
+		for _, s := range slice {
+			avgRun += float64(s.running)
+		}
+		avgRun /= float64(len(slice))
+		if rounds < 1 || avgRun < 0.5 {
+			return 0
+		}
+		return commits / rounds / avgRun
+	}
+
+	firstTPS := tps(firstHalf)
+	secondTPS := tps(secondHalf)
+
+	// If second half has more sessions but same/less throughput per session,
+	// we're bottlenecked (likely disk I/O or network).
+	avgRunFirst := 0.0
+	for _, s := range firstHalf {
+		avgRunFirst += float64(s.running)
+	}
+	avgRunFirst /= float64(len(firstHalf))
+	avgRunSecond := 0.0
+	for _, s := range secondHalf {
+		avgRunSecond += float64(s.running)
+	}
+	avgRunSecond /= float64(len(secondHalf))
+
+	// More sessions but throughput per session dropped > 30%.
+	if avgRunSecond > avgRunFirst+0.5 && firstTPS > 0 && secondTPS < firstTPS*0.7 {
+		return true
+	}
+	return false
+}
+
+// diskFillRate returns GB/round being consumed (positive = disk filling, negative = freeing).
+func (t *ccResourceTracker) diskFillRate() float64 {
+	if len(t.history) < 3 {
+		return 0
+	}
+	oldest := t.history[0]
+	newest := t.history[len(t.history)-1]
+	rounds := float64(newest.round - oldest.round)
+	if rounds < 1 {
+		return 0
+	}
+	return (oldest.diskFree - newest.diskFree) / rounds
+}
+
+func (t *ccResourceTracker) record(snap ccRoundSnapshot) {
+	t.history = append(t.history, snap)
+	if t.maxHistory == 0 {
+		t.maxHistory = 30 // ~1 hour of 2-min rounds
+	}
+	if len(t.history) > t.maxHistory {
+		t.history = t.history[len(t.history)-t.maxHistory:]
+	}
+}
+
+// dynamicMaxSessions adjusts the effective max sessions based on live resource usage.
+// It accounts for ALL processes on the system (not just CC pipeline sessions),
+// tracks throughput trends, and identifies bottlenecks.
+// Returns the effective max and a reason string for logging.
+func dynamicMaxSessions(hw arctic.HardwareProfile, initialMax, nRunning int, tracker *ccResourceTracker) (int, string) {
+	effective := initialMax
+	var reasons []string
+
+	// --- Critical: immediate danger ---
+
+	// RAM critically low: other processes (k8s, arctic, hn) may be competing.
+	if hw.RAMAvailGB < 0.3 {
+		// Emergency: try to get to nRunning-2 (kill at least 2 slots worth of headroom).
+		effective = nRunning - 2
+		if effective < 0 {
+			effective = 0
+		}
+		reasons = append(reasons, fmt.Sprintf("CRITICAL ram=%.0fMB: max→%d", hw.RAMAvailGB*1024, effective))
+		return effective, strings.Join(reasons, ", ")
+	}
+
+	// --- Pressure: approaching limits ---
+
+	// RAM under pressure (< 500 MB available).
+	if hw.RAMAvailGB < 0.5 {
+		effective = nRunning - 1
+		if effective < 1 {
+			effective = 1
+		}
+		reasons = append(reasons, fmt.Sprintf("ram_low=%.0fMB", hw.RAMAvailGB*1024))
+	}
+
+	// RAM moderately low (< 1 GB available). Don't grow.
+	if hw.RAMAvailGB < 1.0 && effective > nRunning {
+		effective = nRunning
+		reasons = append(reasons, fmt.Sprintf("ram_tight=%.1fGB: hold", hw.RAMAvailGB))
+	}
+
+	// Load average too high: other processes are contending.
+	loadAvg := readLoadAvg1()
+	if loadAvg > 0 {
+		overloadThreshold := float64(hw.CPUCores) * 3
+		highThreshold := float64(hw.CPUCores) * 2
+
+		if loadAvg > overloadThreshold {
+			// Severely overloaded — shed load proportionally.
+			reduction := int((loadAvg - overloadThreshold) / float64(hw.CPUCores))
+			if reduction < 1 {
+				reduction = 1
+			}
+			newMax := nRunning - reduction
+			if newMax < 1 {
+				newMax = 1
+			}
+			if newMax < effective {
+				effective = newMax
+			}
+			reasons = append(reasons, fmt.Sprintf("load=%.1f>%d×3: -%d", loadAvg, hw.CPUCores, reduction))
+		} else if loadAvg > highThreshold && effective > nRunning {
+			// High load — don't grow.
+			effective = nRunning
+			reasons = append(reasons, fmt.Sprintf("load=%.1f: hold", loadAvg))
+		}
+	}
+
+	// Disk critically low.
+	if hw.DiskFreeGB < 20 {
+		effective = 0
+		reasons = append(reasons, fmt.Sprintf("disk_critical=%.0fGB: pause", hw.DiskFreeGB))
+	} else if hw.DiskFreeGB < 50 {
+		if effective > nRunning-1 {
+			effective = nRunning - 1
+			if effective < 1 {
+				effective = 1
+			}
+		}
+		reasons = append(reasons, fmt.Sprintf("disk_low=%.0fGB", hw.DiskFreeGB))
+	}
+
+	// Disk filling fast: if we'll hit 20GB within 10 rounds (~20 min), throttle.
+	if fillRate := tracker.diskFillRate(); fillRate > 0 && hw.DiskFreeGB > 20 {
+		roundsUntilFull := (hw.DiskFreeGB - 20) / fillRate
+		if roundsUntilFull < 10 {
+			if effective > nRunning-1 {
+				effective = nRunning - 1
+				if effective < 1 {
+					effective = 1
+				}
+			}
+			reasons = append(reasons, fmt.Sprintf("disk_fill=%.1fGB/round: ~%.0f rounds to 20GB", fillRate, roundsUntilFull))
+		}
+	}
+
+	// --- Bottleneck detection: adding sessions doesn't help ---
+	if tracker.isBottlenecked() && effective > nRunning {
+		effective = nRunning
+		reasons = append(reasons, "bottleneck: more sessions not helping, hold")
+	}
+
+	// --- Relaxed: can grow ---
+	if len(reasons) == 0 && effective < initialMax {
+		// All clear but we were previously throttled — allow one step up.
+		effective = nRunning + 1
+		if effective > initialMax {
+			effective = initialMax
+		}
+		reasons = append(reasons, "relaxed: +1")
+	}
+
+	if len(reasons) == 0 {
+		return effective, "ok"
+	}
+	return effective, strings.Join(reasons, ", ")
+}
+
+// readLoadAvg1 reads the 1-minute load average from /proc/loadavg (Linux).
+// Returns 0 on non-Linux or any error.
+func readLoadAvg1() float64 {
+	data, err := os.ReadFile("/proc/loadavg")
+	if err != nil {
+		return 0
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) < 1 {
+		return 0
+	}
+	v, err := strconv.ParseFloat(fields[0], 64)
+	if err != nil {
+		return 0
+	}
+	return v
+}
+
+// ccCleanupLeftovers removes files that are no longer needed: committed WARCs,
+// orphaned .tmp files, and stale sidecars. Returns bytes freed and file count.
+func ccCleanupLeftovers(crawlID string, committed map[int]struct{}, logFn func(string)) (freed int64, count int) {
+	home, _ := os.UserHomeDir()
+	warcDir := filepath.Join(home, "data", "common-crawl", crawlID, "warc")
+	warcMdDir := filepath.Join(home, "data", "common-crawl", crawlID, "warc_md")
+	repoRoot := ccDefaultExportRepoRoot(crawlID)
+	dataDir := filepath.Join(repoRoot, "data", crawlID)
+
+	rm := func(path string) {
+		fi, err := os.Stat(path)
+		if err != nil {
+			return
+		}
+		sz := fi.Size()
+		if err := os.Remove(path); err != nil {
+			return
+		}
+		freed += sz
+		count++
+	}
+
+	// 1. Orphaned .tmp files — always safe to remove (crashed sessions).
+	if entries, err := os.ReadDir(warcMdDir); err == nil {
+		for _, e := range entries {
+			if strings.HasSuffix(e.Name(), ".tmp") {
+				rm(filepath.Join(warcMdDir, e.Name()))
+			}
+		}
+	}
+
+	// 2. For committed shards: remove raw WARC, packed WARC, sidecars.
+	for idx := range committed {
+		shard := fmt.Sprintf("%05d", idx)
+
+		// Raw WARC: might have various names, use the sidecar to find it.
+		sidecarPath := filepath.Join(warcMdDir, shard+".warc.path")
+		if data, err := os.ReadFile(sidecarPath); err == nil {
+			rawPath := strings.TrimSpace(string(data))
+			if rawPath != "" {
+				rm(rawPath)
+			}
+		}
+		// Also try legacy glob pattern.
+		pattern := filepath.Join(warcDir, fmt.Sprintf("*-%05d.warc.gz", idx))
+		if matches, _ := filepath.Glob(pattern); len(matches) > 0 {
+			for _, m := range matches {
+				rm(m)
+			}
+		}
+
+		// Packed md.warc.gz.
+		rm(filepath.Join(warcMdDir, shard+".md.warc.gz"))
+		// Sidecars.
+		rm(filepath.Join(warcMdDir, shard+".warc.path"))
+		// Meta files.
+		rm(filepath.Join(dataDir, shard+".meta"))
+
+		// Parquet files that are committed AND older than 10 minutes
+		// (safety: watcher may still be reading them for upload).
+		pqPath := filepath.Join(dataDir, shard+".parquet")
+		if fi, err := os.Stat(pqPath); err == nil {
+			if time.Since(fi.ModTime()) > 10*time.Minute {
+				rm(pqPath)
+			}
+		}
+	}
+
+	if count > 0 && logFn != nil {
+		logFn(fmt.Sprintf("  cleanup: freed %s (%d files)", ccFmtBytes(freed), count))
+	}
+
+	return freed, count
 }
 
 // runCCScheduleLoop wraps runCCSchedule with an auto-restart loop so the
@@ -57,13 +457,14 @@ func runCCScheduleLoop(ctx context.Context, cfg ccScheduleConfig) error {
 // runCCSchedule drives CC pipeline screen sessions to cover [start, end].
 // It reads stats.csv every 2 minutes, detects stalled sessions, restarts
 // them, and fills free slots with new sessions until all chunks are done.
+//
+// When MaxSessions == 0 (auto), hardware is detected at startup and the budget
+// is computed dynamically each round based on live RAM, CPU load, and disk usage.
 func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 	searchBin := cfg.resolveSearchBin()
-
-	// Build chunk list
 	chunks := cfg.buildChunks()
 
-	// Open append-only log file
+	// Open append-only log file.
 	home, _ := os.UserHomeDir()
 	logDir := filepath.Join(home, "log")
 	_ = os.MkdirAll(logDir, 0o755)
@@ -81,16 +482,39 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		}
 	}
 
+	// ── Hardware detection and budget ────────────────────────────────────────
+	autoMode := cfg.MaxSessions == 0
+	var budget ccBudget
+	var hw arctic.HardwareProfile
+
+	if autoMode {
+		hw = arctic.DetectHardware(cfg.RepoRoot)
+		budget = computeCCBudget(hw)
+		cfg.MaxSessions = budget.MaxSessions
+	} else {
+		budget = ccBudget{MaxSessions: cfg.MaxSessions, Auto: false}
+	}
+	initialMax := cfg.MaxSessions
+
 	statsCSV := ccStatsCSVPath(cfg.RepoRoot)
 
 	logLine("=== CC Schedule starting ===")
 	logLine(fmt.Sprintf("  Crawl:       %s", cfg.CrawlID))
 	logLine(fmt.Sprintf("  Range:       %d\u2013%d", cfg.Start, cfg.End))
 	logLine(fmt.Sprintf("  Chunks:      %d  (size=%d)", len(chunks), cfg.ChunkSize))
-	logLine(fmt.Sprintf("  Sessions:    %d max", cfg.MaxSessions))
+	if autoMode {
+		logLine(fmt.Sprintf("  Hardware:    %s", hw))
+		logLine(fmt.Sprintf("  Budget:      %s", budget))
+	} else {
+		logLine(fmt.Sprintf("  Sessions:    %d max (manual)", cfg.MaxSessions))
+	}
 	logLine(fmt.Sprintf("  Done pct:    %d%%", cfg.DonePct))
 	logLine(fmt.Sprintf("  Stall kill:  after %d rounds (~%dm) with no new commits", cfg.StallRounds, cfg.StallRounds*2))
 	logLine(fmt.Sprintf("  Binary:      %s", searchBin))
+
+	// ── Initial cleanup ──────────────────────────────────────────────────────
+	committed := ccSchedReadCommitted(statsCSV, cfg.CrawlID)
+	ccCleanupLeftovers(cfg.CrawlID, committed, logLine)
 	logLine("")
 
 	// Per-chunk stall tracking: last committed count + consecutive stall rounds.
@@ -103,6 +527,9 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		stall[c] = &stallState{}
 	}
 
+	// Resource tracker for adaptive throughput/bottleneck detection.
+	tracker := &ccResourceTracker{}
+
 	round := 0
 	for {
 		round++
@@ -113,10 +540,21 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		default:
 		}
 
-		// Read committed set (safe: returns empty map on any error)
-		committed := ccSchedReadCommitted(statsCSV, cfg.CrawlID)
+		// Re-detect hardware for dynamic scaling (available RAM, disk change over time).
+		if autoMode {
+			hw = arctic.DetectHardware(cfg.RepoRoot)
+		}
+
+		// Read committed set.
+		committed = ccSchedReadCommitted(statsCSV, cfg.CrawlID)
+
+		// Periodic cleanup (every 5 rounds = ~10 min).
+		if round%5 == 0 {
+			ccCleanupLeftovers(cfg.CrawlID, committed, logLine)
+		}
 
 		var runningNames, todoKeys []string
+		var runningChunks []ccSchedChunk
 		nRunning, nDone := 0, 0
 
 		for _, chunk := range chunks {
@@ -140,6 +578,7 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 					todoKeys = append(todoKeys, fmt.Sprintf("%d:%d", chunk.Start, chunk.End))
 				} else {
 					nRunning++
+					runningChunks = append(runningChunks, chunk)
 					label := fmt.Sprintf("g%d_%d(%d/%d", chunk.Start, chunk.End, nComm, total)
 					if ss.rounds > 0 {
 						label += fmt.Sprintf(" stall=%d", ss.rounds)
@@ -159,8 +598,42 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		}
 
 		totalCommitted := len(committed)
+
+		// Record snapshot for adaptive tracking.
+		loadAvg := readLoadAvg1()
+		tracker.record(ccRoundSnapshot{
+			round:     round,
+			committed: totalCommitted,
+			running:   nRunning,
+			ramAvail:  hw.RAMAvailGB,
+			loadAvg:   loadAvg,
+			diskFree:  hw.DiskFreeGB,
+		})
+
+		// Dynamic scaling: adjust effective max based on live resources + throughput trends.
+		effectiveMax := cfg.MaxSessions
+		reason := "ok"
+		if autoMode {
+			effectiveMax, reason = dynamicMaxSessions(hw, initialMax, nRunning, tracker)
+		}
+
 		nTodo := len(todoKeys)
-		slots := cfg.MaxSessions - nRunning
+		slots := effectiveMax - nRunning
+
+		// Log resource state with throughput metrics.
+		if autoMode {
+			tps := tracker.throughputPerSession()
+			fillRate := tracker.diskFillRate()
+			logLine(fmt.Sprintf("Round %d | hw: %.1fGB RAM (%.1f avail), %.0fGB disk (%.0f free), load %.1f/%d cores",
+				round, hw.RAMTotalGB, hw.RAMAvailGB, hw.DiskTotalGB, hw.DiskFreeGB, loadAvg, hw.CPUCores))
+			throughputInfo := fmt.Sprintf("tps=%.2f commits/round/sess", tps)
+			if fillRate > 0.01 {
+				throughputInfo += fmt.Sprintf(", disk_fill=%.1fGB/round", fillRate)
+			}
+			logLine(fmt.Sprintf("         | budget: %s, effective: %d (%s)",
+				budget, effectiveMax, reason))
+			logLine(fmt.Sprintf("         | %s", throughputInfo))
+		}
 
 		logLine(fmt.Sprintf("Round %d | committed=%d | done=%d/%d chunks | running=%d | todo=%d | slots=%d",
 			round, totalCommitted, nDone, len(chunks), nRunning, nTodo, slots))
@@ -168,11 +641,46 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 			logLine("  running: " + strings.Join(runningNames, " "))
 		}
 
+		// If we need to shed sessions (effective max < running), kill the most stalled.
+		if effectiveMax < nRunning && effectiveMax >= 0 {
+			toKill := nRunning - effectiveMax
+			// Sort running chunks by stall count descending — kill the most stalled first.
+			type stallEntry struct {
+				chunk ccSchedChunk
+				stall int
+			}
+			var candidates []stallEntry
+			for _, c := range runningChunks {
+				candidates = append(candidates, stallEntry{c, stall[c].rounds})
+			}
+			// Simple selection sort for small N.
+			for i := 0; i < len(candidates)-1; i++ {
+				for j := i + 1; j < len(candidates); j++ {
+					if candidates[j].stall > candidates[i].stall {
+						candidates[i], candidates[j] = candidates[j], candidates[i]
+					}
+				}
+			}
+			killed := 0
+			for _, c := range candidates {
+				if killed >= toKill {
+					break
+				}
+				logLine(fmt.Sprintf("  SHED: killing g%d_%d (stall=%d) to free resources",
+					c.chunk.Start, c.chunk.End, c.stall))
+				ccSchedKillChunk(c.chunk.Start, c.chunk.End)
+				stall[c.chunk].rounds = 0
+				killed++
+			}
+		}
+
 		if nRunning == 0 && nTodo == 0 {
 			logLine("")
 			logLine(fmt.Sprintf("=== All chunks complete for range %d\u2013%d ===", cfg.Start, cfg.End))
 			logLine(fmt.Sprintf("Total committed: %d", totalCommitted))
 			logLine(fmt.Sprintf("Run: search cc publish --list"))
+			// Final cleanup.
+			ccCleanupLeftovers(cfg.CrawlID, committed, logLine)
 			return nil
 		}
 
