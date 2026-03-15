@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -21,13 +22,14 @@ type PublishOptions struct {
 
 // PublishState is emitted on each significant event.
 type PublishState struct {
-	Phase      string // "skip"|"download"|"process"|"commit"|"committed"|"disk_check"|"done"
+	Phase      string // "skip"|"download"|"process_start"|"process"|"commit"|"committed"|"disk_check"|"done"
 	YM         string // "YYYY-MM"
 	Type       string // "comments"|"submissions"
 	Shards     int
 	Rows       int64
 	Bytes      int64
-	BytesTotal int64 // used during download phase
+	BytesTotal int64   // used during download phase
+	RowsPerSec float64 // rows/s for the last completed shard
 	DurDown    time.Duration
 	DurProc    time.Duration
 	DurComm    time.Duration
@@ -306,9 +308,13 @@ func (t *PublishTask) processOneWithRetry(ctx context.Context, ym ymKey, typ str
 
 		zstPath := cfg.ZstPath(prefix, ym.String())
 		if corruption {
-			// Corruption: delete everything, force clean re-download.
-			os.Remove(zstPath)
-			os.Remove(zstPath + ".part")
+			// Corruption (zero-filled mmap regions): rename .zst back to .part
+			// so the torrent client re-verifies piece SHA-1 hashes and only
+			// re-downloads the corrupt pieces instead of the entire file.
+			partPath := zstPath + ".part"
+			if _, statErr := os.Stat(zstPath); statErr == nil {
+				os.Rename(zstPath, partPath)
+			}
 		} else {
 			// Transient (timeout/network): keep .part for torrent resume.
 			// Only delete the final .zst if it exists (it shouldn't for a
@@ -368,20 +374,12 @@ func (t *PublishTask) processOne(ctx context.Context, ym ymKey, typ string,
 		return &ErrCorruption{Msg: fmt.Sprintf("validate zst: %v", err)}
 	}
 
-	// Deep validation: fully decode the zstd stream to catch mid-file corruption.
-	// Costs ~1-3s/GB but prevents wasting much more time on a bad file.
-	t.ls.Update(func(s *StateSnapshot) {
-		s.Phase = PhaseValidating
-		if s.Current != nil {
-			s.Current.Phase = PhaseValidating
-		}
-	})
-	if emit != nil {
-		emit(&PublishState{Phase: "validate", YM: ym.String(), Type: typ, Message: "deep zstd validation…"})
-	}
-	if err := DeepValidateZst(zstPath); err != nil {
-		return &ErrCorruption{Msg: fmt.Sprintf("deep validate zst: %v", err)}
-	}
+	// Skip deep validation — it re-reads the entire file to io.Discard which
+	// doesn't scale to 50+ GB archives and risks OOM from the zstd window
+	// allocation on memory-constrained servers.  QuickValidateZst catches
+	// mmap corruption (zero-filled regions), and ProcessZst will catch any
+	// remaining mid-stream corruption during the actual processing step,
+	// triggering the retry logic.
 
 	// --- Process ---
 	t.ls.Update(func(s *StateSnapshot) {
@@ -392,19 +390,46 @@ func (t *PublishTask) processOne(ctx context.Context, ym ymKey, typ string,
 		emit(&PublishState{Phase: "process", YM: ym.String(), Type: typ})
 	}
 	t1 := time.Now()
+	var procTotalRows int64
 	procResult, err := ProcessZst(ctx, cfg, zstPath, typ, year, mm, func(sr ShardResult) {
+		if sr.Starting {
+			// Shard just started — DuckDB is working; show activity.
+			t.ls.Update(func(s *StateSnapshot) {
+				if s.Current != nil {
+					s.Current.Shard = sr.Index + 1
+				}
+			})
+			if emit != nil {
+				emit(&PublishState{Phase: "process_start", YM: ym.String(), Type: typ,
+					Shards: sr.Index + 1, Rows: procTotalRows})
+			}
+			return
+		}
+		// Shard completed.
+		procTotalRows += sr.Rows
+		var rowsPerSec float64
+		if sr.Duration > 0 {
+			rowsPerSec = float64(sr.Rows) / sr.Duration.Seconds()
+		}
 		t.ls.Update(func(s *StateSnapshot) {
 			if s.Current != nil {
 				s.Current.Shard = sr.Index + 1
-				s.Current.Rows = sr.Rows
+				s.Current.Rows = procTotalRows
 			}
 		})
 		if emit != nil {
 			emit(&PublishState{Phase: "process", YM: ym.String(), Type: typ,
-				Shards: sr.Index + 1, Rows: sr.Rows, Bytes: sr.SizeBytes})
+				Shards: sr.Index + 1, Rows: procTotalRows, Bytes: sr.SizeBytes,
+				RowsPerSec: rowsPerSec})
 		}
 	})
 	if err != nil {
+		// Zstd decode errors during processing indicate file corruption
+		// (now that deep validation is skipped, this is the main catch).
+		errStr := err.Error()
+		if strings.Contains(errStr, "zstd") || strings.Contains(errStr, "scan jsonl") {
+			return &ErrCorruption{Msg: fmt.Sprintf("process: %v", err)}
+		}
 		return fmt.Errorf("process: %w", err)
 	}
 	durProc := time.Since(t1)
