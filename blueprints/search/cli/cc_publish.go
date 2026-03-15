@@ -59,7 +59,7 @@ Run --watch and --schedule as separate processes; use multiple --pipeline worker
 		Example: `  # Watch-only (one per server):
   search cc publish --watch
 
-  # Scheduler (replaces cc_schedule.sh, self-healing):
+  # Scheduler (self-healing, adaptive resource management):
   search cc publish --schedule --start 0    --end 4999   # server1
   search cc publish --schedule --start 5000 --end 9999   # server2
 
@@ -94,7 +94,7 @@ Run --watch and --schedule as separate processes; use multiple --pipeline worker
 	cmd.Flags().IntVar(&chartsEvery, "charts-every", 60, "Regenerate charts every N minutes (--watch only, 0=disable)")
 	cmd.Flags().IntVar(&schedStart, "start", 0, "First file index in range (--schedule only)")
 	cmd.Flags().IntVar(&schedEnd, "end", 4999, "Last file index in range (--schedule only)")
-	cmd.Flags().IntVar(&schedMaxSess, "max-sessions", 6, "Max concurrent screen sessions (--schedule only)")
+	cmd.Flags().IntVar(&schedMaxSess, "max-sessions", 0, "Max concurrent screen sessions (0=auto-detect from hardware; --schedule only)")
 	cmd.Flags().IntVar(&schedChunk, "chunk-size", 250, "Files per screen session chunk (--schedule only)")
 	cmd.Flags().IntVar(&schedDonePct, "done-pct", 95, "% of shards committed before chunk is considered done (--schedule only)")
 	cmd.Flags().IntVar(&schedStall, "stall-rounds", 15, "Rounds with no new commits before killing a stalled session (--schedule only)")
