@@ -17,9 +17,11 @@ import (
 
 type ShardResult struct {
 	Index     int
-	LocalPath string
-	Rows      int64
+	LocalPath string       // empty when Starting=true
+	Rows      int64        // line count (estimate) when Starting=true; actual when done
 	SizeBytes int64
+	Duration  time.Duration // wall time for this shard (set when Starting=false)
+	Starting  bool          // true = shard just started (DuckDB not yet done)
 }
 
 type ProcessResult struct {
@@ -171,10 +173,11 @@ func ValidateParquet(path string) error {
 	return nil
 }
 
-// ProcessZst streams the .zst file at zstPath, reads cfg.ChunkLines lines per chunk,
-// writes each chunk to a temp file, imports to DuckDB :memory:, exports parquet shard,
-// deletes the chunk file, and repeats. typ must be "comments" or "submissions".
-// year is "YYYY", mm is "MM" (zero-padded).
+// ProcessZst streams the .zst file at zstPath, writing lines directly to
+// temporary JSONL chunk files on disk (never buffering all lines in memory),
+// then imports each chunk into a disk-backed, memory-limited DuckDB instance
+// and exports it as a parquet shard.  This keeps peak RSS bounded regardless
+// of the input file size.
 func ProcessZst(ctx context.Context, cfg Config, zstPath, typ, year, mm string,
 	cb ShardCallback) (ProcessResult, error) {
 
@@ -202,44 +205,96 @@ func ProcessZst(ctx context.Context, cfg Config, zstPath, typ, year, mm string,
 	scanner.Buffer(make([]byte, 16*1024*1024), 16*1024*1024)
 
 	chunkIdx := 0
-	lines := make([]string, 0, cfg.ChunkLines)
+	lineCount := 0
 
-	flush := func() error {
-		if len(lines) == 0 {
+	// Open the first chunk file for streaming writes.
+	chunkPath := cfg.ChunkPath(chunkIdx)
+	_ = os.MkdirAll(filepath.Dir(chunkPath), 0o755)
+	chunkFile, err := os.Create(chunkPath)
+	if err != nil {
+		return ProcessResult{}, fmt.Errorf("create chunk: %w", err)
+	}
+	chunkWriter := bufio.NewWriterSize(chunkFile, 8*1024*1024)
+
+	// closeAndConvert flushes the current chunk to disk, converts it to a
+	// parquet shard via DuckDB, then cleans up the chunk file.
+	closeAndConvert := func() error {
+		if lineCount == 0 {
+			chunkFile.Close()
+			os.Remove(chunkPath)
 			return nil
 		}
-		sr, err := writeChunkToShard(ctx, cfg, lines, typ, year, mm, chunkIdx)
+		if err := chunkWriter.Flush(); err != nil {
+			chunkFile.Close()
+			os.Remove(chunkPath)
+			return fmt.Errorf("flush chunk: %w", err)
+		}
+		chunkFile.Close()
+
+		// Signal shard starting so the caller can show activity while DuckDB works.
+		if cb != nil {
+			cb(ShardResult{Index: chunkIdx, Rows: int64(lineCount), Starting: true})
+		}
+
+		shardStart := time.Now()
+		sr, err := convertChunkToShard(ctx, cfg, chunkPath, typ, year, mm, chunkIdx)
+		os.Remove(chunkPath)
 		if err != nil {
 			return fmt.Errorf("shard %d: %w", chunkIdx, err)
 		}
+		sr.Duration = time.Since(shardStart)
+
 		result.Shards = append(result.Shards, sr)
 		result.TotalRows += sr.Rows
 		result.TotalSize += sr.SizeBytes
 		if cb != nil {
 			cb(sr)
 		}
-		lines = lines[:0]
 		chunkIdx++
+		lineCount = 0
+		return nil
+	}
+
+	// openNextChunk prepares a fresh chunk file for streaming.
+	openNextChunk := func() error {
+		chunkPath = cfg.ChunkPath(chunkIdx)
+		var err error
+		chunkFile, err = os.Create(chunkPath)
+		if err != nil {
+			return fmt.Errorf("create chunk: %w", err)
+		}
+		chunkWriter = bufio.NewWriterSize(chunkFile, 8*1024*1024)
 		return nil
 	}
 
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
+			chunkFile.Close()
+			os.Remove(chunkPath)
 			return ProcessResult{}, ctx.Err()
 		default:
 		}
-		lines = append(lines, scanner.Text())
-		if len(lines) >= cfg.ChunkLines {
-			if err := flush(); err != nil {
+		// Write directly to disk — no in-memory line accumulation.
+		chunkWriter.Write(scanner.Bytes())
+		chunkWriter.WriteByte('\n')
+		lineCount++
+		if lineCount >= cfg.ChunkLines {
+			if err := closeAndConvert(); err != nil {
+				return ProcessResult{}, err
+			}
+			if err := openNextChunk(); err != nil {
 				return ProcessResult{}, err
 			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
+		chunkFile.Close()
+		os.Remove(chunkPath)
 		return ProcessResult{}, fmt.Errorf("scan jsonl: %w", err)
 	}
-	if err := flush(); err != nil {
+	// Flush remaining lines.
+	if err := closeAndConvert(); err != nil {
 		return ProcessResult{}, err
 	}
 
@@ -247,40 +302,37 @@ func ProcessZst(ctx context.Context, cfg Config, zstPath, typ, year, mm string,
 	return result, nil
 }
 
-func writeChunkToShard(ctx context.Context, cfg Config, lines []string,
+// convertChunkToShard imports a JSONL chunk file into a disk-backed DuckDB
+// database (with a 512 MB memory limit) and exports it as a zstd-compressed
+// parquet shard.  DuckDB spills to disk when the limit is exceeded, preventing
+// OOM on large chunks.  The chunk file is deleted after import to free disk
+// space before the parquet export runs.
+func convertChunkToShard(ctx context.Context, cfg Config, chunkPath,
 	typ, year, mm string, idx int) (ShardResult, error) {
 
-	chunkPath := cfg.ChunkPath(idx)
-	if err := os.MkdirAll(filepath.Dir(chunkPath), 0o755); err != nil {
+	shardPath := cfg.ShardLocalPath(typ, year, mm, idx)
+	if err := os.MkdirAll(filepath.Dir(shardPath), 0o755); err != nil {
 		return ShardResult{}, err
 	}
 
-	cf, err := os.Create(chunkPath)
-	if err != nil {
-		return ShardResult{}, fmt.Errorf("create chunk: %w", err)
-	}
-	w := bufio.NewWriterSize(cf, 8*1024*1024)
-	for _, l := range lines {
-		w.WriteString(l)
-		w.WriteByte('\n')
-	}
-	if err := w.Flush(); err != nil {
-		cf.Close()
-		os.Remove(chunkPath)
-		return ShardResult{}, fmt.Errorf("flush chunk: %w", err)
-	}
-	cf.Close()
-	defer os.Remove(chunkPath)
+	esc := func(s string) string { return strings.ReplaceAll(s, "'", "''") }
 
-	shardPath := cfg.ShardLocalPath(typ, year, mm, idx)
-
-	db, err := sql.Open("duckdb", "")
+	// Disk-backed DuckDB — spills to disk instead of OOM-ing.
+	dbPath := filepath.Join(cfg.WorkDir, fmt.Sprintf("duckdb_%04d.db", idx))
+	db, err := sql.Open("duckdb", dbPath)
 	if err != nil {
+		os.Remove(dbPath)
 		return ShardResult{}, fmt.Errorf("duckdb open: %w", err)
 	}
-	defer db.Close()
+	defer func() {
+		db.Close()
+		os.Remove(dbPath)
+		os.Remove(dbPath + ".wal")
+	}()
 
-	esc := func(s string) string { return strings.ReplaceAll(s, "'", "''") }
+	// Cap DuckDB memory so it spills to disk rather than consuming all RAM.
+	db.ExecContext(ctx, "SET memory_limit='512MB'")
+	db.ExecContext(ctx, fmt.Sprintf("SET temp_directory='%s'", esc(cfg.WorkDir)))
 
 	selectCols := commentsSelect
 	if typ == "submissions" {
@@ -300,12 +352,12 @@ FROM read_json_auto('%s',
 		return ShardResult{}, fmt.Errorf("duckdb import: %w", err)
 	}
 
+	// Delete chunk file immediately after import to free disk space.
+	os.Remove(chunkPath)
+
 	var rowCount int64
 	db.QueryRowContext(ctx, "SELECT COUNT(*) FROM data").Scan(&rowCount)
 
-	if err := os.MkdirAll(filepath.Dir(shardPath), 0o755); err != nil {
-		return ShardResult{}, err
-	}
 	exportSQL := fmt.Sprintf(
 		"COPY data TO '%s' (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 131072)",
 		esc(shardPath))
