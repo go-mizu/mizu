@@ -22,20 +22,28 @@ type ccPublishUploadFile struct {
 
 func newCCPublish() *cobra.Command {
 	var (
-		crawlID       string
-		fileIdx       string
-		repoRoot      string
-		repoID        string
-		republish     bool
-		private       bool
-		pipeline      bool
-		watch         bool
-		list          bool
-		cleanup       bool
-		lightConvert  bool
-		skipErrors    bool
-		watchInterval int
-		chartsEvery   int
+		crawlID        string
+		fileIdx        string
+		repoRoot       string
+		repoID         string
+		republish      bool
+		private        bool
+		pipeline       bool
+		watch          bool
+		schedule       bool
+		list           bool
+		cleanup        bool
+		lightConvert   bool
+		skipErrors     bool
+		watchInterval  int
+		commitInterval int
+		chartsEvery    int
+		schedStart     int
+		schedEnd       int
+		schedMaxSess   int
+		schedChunk     int
+		schedDonePct   int
+		schedStall     int
 	)
 
 	cmd := &cobra.Command{
@@ -43,15 +51,17 @@ func newCCPublish() *cobra.Command {
 		Short: "Publish exported Common Crawl parquet shards to Hugging Face",
 		Long: `Publish $HOME/data/common-crawl/{crawl}/export/repo to a Hugging Face dataset repo.
 
-With --pipeline: download, pack, export shards as .parquet files (no HF push).
-With --watch:    watch the parquet folder and push new files to HF in real-time.
-Run both modes as separate processes for decoupled, reliable publishing.
-
-The watcher flushes any leftover parquets from prior runs on startup,
-then polls for new files and commits them to HF one batch at a time.
-Local parquets are deleted after a successful HF push.`,
+With --pipeline:  download, pack, export shards as .parquet files (no HF push).
+With --watch:     watch the parquet folder and push new files to HF in real-time.
+With --schedule:  manage pipeline screen sessions across a file index range.
+                  Starts/restarts sessions, detects stalls, self-heals on crash.
+Run --watch and --schedule as separate processes; use multiple --pipeline workers.`,
 		Example: `  # Watch-only (one per server):
   search cc publish --watch
+
+  # Scheduler (replaces cc_schedule.sh, self-healing):
+  search cc publish --schedule --start 0    --end 4999   # server1
+  search cc publish --schedule --start 5000 --end 9999   # server2
 
   # Pipeline-only (multiple per server, no HF push):
   search cc publish --pipeline --file 68-300 --cleanup --skip-errors
@@ -60,8 +70,9 @@ Local parquets are deleted after a successful HF push.`,
   search cc publish --file 0 --republish`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCCPublish(cmd.Context(), crawlID, fileIdx, repoRoot, repoID,
-				republish, private, pipeline, watch, list, cleanup, lightConvert, skipErrors,
-				watchInterval, chartsEvery)
+				republish, private, pipeline, watch, schedule, list, cleanup, lightConvert, skipErrors,
+				watchInterval, commitInterval, chartsEvery,
+				schedStart, schedEnd, schedMaxSess, schedChunk, schedDonePct, schedStall)
 		},
 	}
 
@@ -73,18 +84,27 @@ Local parquets are deleted after a successful HF push.`,
 	cmd.Flags().BoolVar(&private, "private", false, "Create the Hugging Face dataset repo as private")
 	cmd.Flags().BoolVar(&pipeline, "pipeline", false, "Download, pack, export shards (writes parquets locally; use --watch to push)")
 	cmd.Flags().BoolVar(&watch, "watch", false, "Watch parquet folder and push new files to HuggingFace in real-time")
+	cmd.Flags().BoolVar(&schedule, "schedule", false, "Manage pipeline screen sessions across a file index range (self-healing scheduler)")
 	cmd.Flags().BoolVar(&list, "list", false, "List committed shards as ranges (from stats.csv / HF)")
 	cmd.Flags().BoolVar(&cleanup, "cleanup", false, "Delete raw .warc.gz after packing (--pipeline only)")
 	cmd.Flags().BoolVar(&lightConvert, "light", true, "Use lightweight HTML→Markdown converter (~10x faster, --no-light for trafilatura)")
 	cmd.Flags().BoolVar(&skipErrors, "skip-errors", false, "Skip shards that fail pack/export instead of aborting (--pipeline only)")
 	cmd.Flags().IntVar(&watchInterval, "watch-interval", 15, "Watcher poll interval in seconds (--watch only)")
-	cmd.Flags().IntVar(&chartsEvery, "charts-every", 15, "Regenerate charts every N minutes (--watch only, 0=disable)")
+	cmd.Flags().IntVar(&commitInterval, "commit-interval", 180, "Minimum seconds between HF commits (--watch only). HF allows 128 commits/hour shared across all repos/tokens; default 180s → ≤20/hour per server, 40 total, leaving 88 headroom for other repos")
+	cmd.Flags().IntVar(&chartsEvery, "charts-every", 60, "Regenerate charts every N minutes (--watch only, 0=disable)")
+	cmd.Flags().IntVar(&schedStart, "start", 0, "First file index in range (--schedule only)")
+	cmd.Flags().IntVar(&schedEnd, "end", 4999, "Last file index in range (--schedule only)")
+	cmd.Flags().IntVar(&schedMaxSess, "max-sessions", 6, "Max concurrent screen sessions (--schedule only)")
+	cmd.Flags().IntVar(&schedChunk, "chunk-size", 250, "Files per screen session chunk (--schedule only)")
+	cmd.Flags().IntVar(&schedDonePct, "done-pct", 95, "% of shards committed before chunk is considered done (--schedule only)")
+	cmd.Flags().IntVar(&schedStall, "stall-rounds", 15, "Rounds with no new commits before killing a stalled session (--schedule only)")
 	return cmd
 }
 
 func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string,
-	republish, private, pipeline, watch, list, cleanup, lightConvert, skipErrors bool,
-	watchInterval, chartsEvery int) error {
+	republish, private, pipeline, watch, schedule, list, cleanup, lightConvert, skipErrors bool,
+	watchInterval, commitInterval, chartsEvery int,
+	schedStart, schedEnd, schedMaxSess, schedChunk, schedDonePct, schedStall int) error {
 
 	resolvedID, note, err := ccResolveCrawlID(ctx, crawlID)
 	if err != nil {
@@ -109,10 +129,29 @@ func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string
 		if watchInterval < 1 {
 			watchInterval = 15
 		}
+		if commitInterval < 1 {
+			commitInterval = 90
+		}
 		return ccRunWatcher(ctx, crawlID, repoRoot, repoID, private,
 			time.Duration(watchInterval)*time.Second,
+			time.Duration(commitInterval)*time.Second,
 			time.Duration(chartsEvery)*time.Minute,
 		)
+	}
+
+	// ── Schedule mode: manage pipeline screen sessions (self-healing) ────────
+	if schedule {
+		cfg := ccScheduleConfig{
+			CrawlID:     crawlID,
+			RepoRoot:    repoRoot,
+			Start:       schedStart,
+			End:         schedEnd,
+			MaxSessions: schedMaxSess,
+			ChunkSize:   schedChunk,
+			DonePct:     schedDonePct,
+			StallRounds: schedStall,
+		}
+		return runCCScheduleLoop(ctx, cfg)
 	}
 
 	// ── Pipeline mode: download → pack → export (no HF push) ─────────────────
