@@ -62,6 +62,21 @@ func (c Config) ZstPath(prefix, ym string) string {
 	return filepath.Join(c.RawDir, "reddit", subdir, fmt.Sprintf("%s_%s.zst", prefix, ym))
 }
 
+// JobWorkDir returns an isolated work directory for a pipeline job.
+// Each (ym, typ) pair gets its own directory to avoid chunk/duckdb collisions
+// when multiple ProcessZst calls run concurrently.
+func (c Config) JobWorkDir(ym, typ string) string {
+	return filepath.Join(c.WorkDir, fmt.Sprintf("pipeline_%s_%s", ym, typ))
+}
+
+// ForJob returns a copy of Config with WorkDir set to a job-specific directory.
+// Use this to run ProcessZst concurrently without file collisions.
+func (c Config) ForJob(ym, typ string) Config {
+	cp := c
+	cp.WorkDir = c.JobWorkDir(ym, typ)
+	return cp
+}
+
 // ChunkPath: temp JSONL chunk file
 func (c Config) ChunkPath(n int) string {
 	return filepath.Join(c.WorkDir, fmt.Sprintf("chunk_%04d.jsonl", n))

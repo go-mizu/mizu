@@ -19,7 +19,7 @@ const (
 	PhaseDone        = "done"
 )
 
-// LiveCurrent describes what is actively being processed.
+// LiveCurrent describes what is actively being processed (single-job view).
 type LiveCurrent struct {
 	YM         string `json:"ym"`
 	Type       string `json:"type"`
@@ -28,6 +28,37 @@ type LiveCurrent struct {
 	Rows       int64  `json:"rows,omitempty"`
 	BytesDone  int64  `json:"bytes_done,omitempty"`
 	BytesTotal int64  `json:"bytes_total,omitempty"`
+}
+
+// PipelineSlot describes one active worker in the pipeline.
+type PipelineSlot struct {
+	YM         string  `json:"ym"`
+	Type       string  `json:"type"`
+	BytesDone  int64   `json:"bytes_done,omitempty"`
+	BytesTotal int64   `json:"bytes_total,omitempty"`
+	Peers      int     `json:"peers,omitempty"`
+	Shard      int     `json:"shard,omitempty"`
+	Rows       int64   `json:"rows,omitempty"`
+	RowsPerSec float64 `json:"rows_per_sec,omitempty"`
+	Shards     int     `json:"shards,omitempty"`
+	Phase      string  `json:"phase,omitempty"`
+}
+
+// PipelineState describes all active workers across pipeline stages.
+type PipelineState struct {
+	Downloading      []PipelineSlot `json:"downloading"`
+	Processing       []PipelineSlot `json:"processing"`
+	Uploading        []PipelineSlot `json:"uploading"`
+	QueuedForProcess int            `json:"queued_for_process"`
+	QueuedForUpload  int            `json:"queued_for_upload"`
+}
+
+// ThroughputStats tracks running averages for ETA estimation.
+type ThroughputStats struct {
+	AvgDownloadMbps       float64    `json:"avg_download_mbps"`
+	AvgProcessRowsPerSec  float64    `json:"avg_process_rows_per_sec"`
+	AvgUploadSecPerCommit float64    `json:"avg_upload_sec_per_commit"`
+	EstimatedCompletion   *time.Time `json:"estimated_completion,omitempty"`
 }
 
 // SessionStats holds aggregate counters for the running session.
@@ -42,12 +73,16 @@ type SessionStats struct {
 
 // StateSnapshot is the JSON-serializable point-in-time view of the session.
 type StateSnapshot struct {
-	SessionID string       `json:"session_id"`
-	StartedAt time.Time    `json:"started_at"`
-	UpdatedAt time.Time    `json:"updated_at"`
-	Phase     string       `json:"phase"`
-	Current   *LiveCurrent `json:"current,omitempty"`
-	Stats     SessionStats `json:"stats"`
+	SessionID  string           `json:"session_id"`
+	StartedAt  time.Time        `json:"started_at"`
+	UpdatedAt  time.Time        `json:"updated_at"`
+	Phase      string           `json:"phase"`
+	Current    *LiveCurrent     `json:"current,omitempty"`
+	Hardware   *HardwareProfile `json:"hardware,omitempty"`
+	Budget     *ResourceBudget  `json:"budget,omitempty"`
+	Pipeline   *PipelineState   `json:"pipeline,omitempty"`
+	Throughput *ThroughputStats `json:"throughput,omitempty"`
+	Stats      SessionStats     `json:"stats"`
 }
 
 // LiveState holds mutable session state, safe for concurrent use.
@@ -86,6 +121,28 @@ func (s *LiveState) Snapshot() StateSnapshot {
 	if s.snap.Current != nil {
 		cur := *s.snap.Current
 		cp.Current = &cur
+	}
+	if s.snap.Hardware != nil {
+		hw := *s.snap.Hardware
+		cp.Hardware = &hw
+	}
+	if s.snap.Budget != nil {
+		b := *s.snap.Budget
+		cp.Budget = &b
+	}
+	if s.snap.Pipeline != nil {
+		p := PipelineState{
+			QueuedForProcess: s.snap.Pipeline.QueuedForProcess,
+			QueuedForUpload:  s.snap.Pipeline.QueuedForUpload,
+		}
+		p.Downloading = append([]PipelineSlot(nil), s.snap.Pipeline.Downloading...)
+		p.Processing = append([]PipelineSlot(nil), s.snap.Pipeline.Processing...)
+		p.Uploading = append([]PipelineSlot(nil), s.snap.Pipeline.Uploading...)
+		cp.Pipeline = &p
+	}
+	if s.snap.Throughput != nil {
+		t := *s.snap.Throughput
+		cp.Throughput = &t
 	}
 	return cp
 }
