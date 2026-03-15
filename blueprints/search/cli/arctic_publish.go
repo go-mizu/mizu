@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -75,6 +76,8 @@ func runArcticPublish(ctx context.Context, repoRoot, repoID, fromStr, toStr stri
 	}
 
 	// hfCommitFn bridges pkg/arctic.HFOp → cli.hfOperation.
+	// Automatically retries on 429 Too Many Requests, sleeping for the
+	// server-requested Retry-After duration before each retry.
 	hfCommitFn := func(ctx context.Context, ops []arctic.HFOp, message string) (string, error) {
 		var hfOps []hfOperation
 		for _, op := range ops {
@@ -84,7 +87,29 @@ func runArcticPublish(ctx context.Context, repoRoot, repoID, fromStr, toStr stri
 				Delete:     op.Delete,
 			})
 		}
-		return hf.createCommit(ctx, repoID, "main", message, hfOps)
+		const maxRateLimitRetries = 3
+		for attempt := 0; attempt < maxRateLimitRetries; attempt++ {
+			url, err := hf.createCommit(ctx, repoID, "main", message, hfOps)
+			if err == nil {
+				return url, nil
+			}
+			var rlErr *HFRateLimitError
+			if !errors.As(err, &rlErr) || attempt == maxRateLimitRetries-1 {
+				return "", err
+			}
+			wait := rlErr.RetryAfter + 30*time.Second
+			if wait < time.Minute {
+				wait = time.Minute
+			}
+			fmt.Fprintf(os.Stderr, "arctic: 429 rate limited — sleeping %s before retry %d/%d\n",
+				wait.Round(time.Second), attempt+1, maxRateLimitRetries)
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(wait):
+			}
+		}
+		return "", fmt.Errorf("unreachable")
 	}
 
 	// Parse --from flag.
@@ -165,6 +190,12 @@ func runArcticPublish(ctx context.Context, repoRoot, repoID, fromStr, toStr stri
 					infoStyle.Render("downloading"),
 					msg)
 			}
+		case "validate":
+			fmt.Printf("\r  [%s] %s  %s  %-60s\n",
+				labelStyle.Render(s.YM),
+				labelStyle.Render(s.Type),
+				infoStyle.Render("validating"),
+				s.Message)
 		case "process":
 			fmt.Println() // end the \r download progress line
 			if s.Shards > 0 {

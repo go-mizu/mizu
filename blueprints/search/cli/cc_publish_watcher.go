@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,9 +31,11 @@ type ccUncommittedParquet struct {
 // ccRunWatcher polls the parquet data directory for new .parquet files and commits them to
 // HuggingFace. On startup it immediately flushes any leftover parquets from previous runs,
 // then polls every pollInterval. Only one HF commit happens at a time (serialized).
+// minCommitInterval enforces a floor between HF commits to stay under the 128 commits/hour
+// rate limit (with 2 servers, use ≥57s; default 90s → 40/hour per server, 80 total).
 // Charts + README are regenerated every chartsEvery duration and included in the next commit.
 func ccRunWatcher(ctx context.Context, crawlID, repoRoot, repoID string, private bool,
-	pollInterval, chartsEvery time.Duration) error {
+	pollInterval, minCommitInterval, chartsEvery time.Duration) error {
 
 	token := strings.TrimSpace(os.Getenv("HF_TOKEN"))
 	if token == "" {
@@ -53,7 +56,11 @@ func ccRunWatcher(ctx context.Context, crawlID, repoRoot, repoID string, private
 	fmt.Printf("  Crawl     %s\n", labelStyle.Render(crawlID))
 	fmt.Printf("  Watch dir %s\n", labelStyle.Render(dataDir))
 	fmt.Printf("  HF repo   %s\n", infoStyle.Render(repoID))
-	fmt.Printf("  Interval  %s\n", infoStyle.Render(pollInterval.String()))
+	fmt.Printf("  Poll      every %s\n", infoStyle.Render(pollInterval.String()))
+	fmt.Printf("  Commit    min interval %s (≤%d/hour; HF limit 128/hour across all servers)\n",
+		infoStyle.Render(minCommitInterval.String()),
+		int(time.Hour/minCommitInterval),
+	)
 	if chartsEvery > 0 {
 		fmt.Printf("  Charts    every %s\n", infoStyle.Render(chartsEvery.String()))
 	}
@@ -79,11 +86,14 @@ func ccRunWatcher(ctx context.Context, crawlID, repoRoot, repoID string, private
 	// Seed lastChartTime from the newest chart PNG on disk so a restart doesn't
 	// redundantly regenerate charts that were just produced by the previous run.
 	lastChartTime := ccNewestChartTime(repoRoot)
+	// lastCommitTime tracks when we last committed to HF so we can enforce minCommitInterval.
+	// Seed to zero so the very first flush (leftover parquets) is never blocked.
+	var lastCommitTime time.Time
 
 	// Flush immediately on startup (handles leftovers from previous runs), then tick.
 	flush := func() {
 		if err := ccWatcherFlush(ctx, hf, crawlID, repoRoot, repoID, statsCSV, dataDir, warcMdDir,
-			committed, &lastChartTime, chartsEvery); err != nil {
+			committed, &lastChartTime, chartsEvery, minCommitInterval, &lastCommitTime); err != nil {
 			fmt.Printf("  [watcher] flush: %v\n", err)
 		}
 	}
@@ -104,13 +114,27 @@ func ccRunWatcher(ctx context.Context, crawlID, repoRoot, repoID string, private
 // ccWatcherFlush finds uncommitted parquets, pushes them to HF, deletes local copies.
 // Retries up to 3 times on commit error, re-merging stats from HF each attempt
 // so that concurrent commits from two servers don't clobber each other's stats.csv rows.
+// minCommitInterval enforces a minimum gap between commits to stay under HF's 128/hour limit.
 func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID, statsCSV, dataDir, warcMdDir string,
-	committed map[int]bool, lastChartTime *time.Time, chartsEvery time.Duration) error {
+	committed map[int]bool, lastChartTime *time.Time, chartsEvery time.Duration,
+	minCommitInterval time.Duration, lastCommitTime *time.Time) error {
 
 	newFiles := ccFindUncommittedParquets(dataDir, crawlID, committed)
 	chartsStale := chartsEvery > 0 && time.Since(*lastChartTime) >= chartsEvery
 	if len(newFiles) == 0 && !chartsStale {
 		return nil
+	}
+
+	// Rate-limit: HF allows 128 commits/hour across all users of a token.
+	// With 2 servers each running a watcher, cap at minCommitInterval per server.
+	// Skip the commit this round — files accumulate and will be batched next time.
+	if len(newFiles) > 0 && minCommitInterval > 0 && !lastCommitTime.IsZero() {
+		if elapsed := time.Since(*lastCommitTime); elapsed < minCommitInterval {
+			waitFor := (minCommitInterval - elapsed).Round(time.Second)
+			fmt.Printf("  [watcher] rate-limit: next commit in %s (holding %d file(s) to batch)\n",
+				waitFor, len(newFiles))
+			return nil
+		}
 	}
 
 	if len(newFiles) > 0 {
@@ -190,8 +214,10 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 	}
 
 	// Step 4: Commit with retry — on failure re-merge stats so we don't lose
-	// the other server's rows, then retry (handles transient HF errors too).
-	const maxAttempts = 3
+	// the other server's rows, then retry (handles transient HF errors and 429s).
+	// On 429, sleep for the server-requested Retry-After duration (plus 30s buffer)
+	// instead of the normal exponential backoff, to avoid hammering the rate limit.
+	const maxAttempts = 5
 	var (
 		commitURL string
 		elapsed   time.Duration
@@ -199,12 +225,27 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 	)
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if attempt > 0 {
-			backoff := time.Duration(attempt*attempt) * 10 * time.Second
-			fmt.Printf("  [watcher] retrying in %s (attempt %d/%d)...\n", backoff, attempt+1, maxAttempts)
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(backoff):
+			var rlErr *HFRateLimitError
+			if errors.As(commitErr, &rlErr) {
+				wait := rlErr.RetryAfter + 30*time.Second
+				if wait < 30*time.Second {
+					wait = 30 * time.Second
+				}
+				fmt.Printf("  [watcher] 429 rate limited — sleeping %s before retry %d/%d\n",
+					wait.Round(time.Second), attempt+1, maxAttempts)
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(wait):
+				}
+			} else {
+				backoff := time.Duration(attempt*attempt) * 10 * time.Second
+				fmt.Printf("  [watcher] retrying in %s (attempt %d/%d)...\n", backoff, attempt+1, maxAttempts)
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(backoff):
+				}
 			}
 			// Re-merge from HF so we include any commits from the other server
 			// that happened while we were preparing our commit.
@@ -224,6 +265,7 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 	if commitErr != nil {
 		return fmt.Errorf("HF commit after %d attempts: %w", maxAttempts, commitErr)
 	}
+	*lastCommitTime = time.Now()
 	if len(chartRelPaths) > 0 {
 		*lastChartTime = time.Now()
 	}

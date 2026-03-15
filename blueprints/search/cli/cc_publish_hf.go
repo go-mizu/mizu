@@ -25,6 +25,20 @@ var hfCommitPy []byte
 
 const hfHubURL = "https://huggingface.co"
 
+// HFRateLimitError is returned when HuggingFace responds 429 Too Many Requests.
+// RetryAfter is the server-requested wait duration (0 if not provided).
+type HFRateLimitError struct {
+	RetryAfter time.Duration
+	Msg        string
+}
+
+func (e *HFRateLimitError) Error() string {
+	if e.RetryAfter > 0 {
+		return fmt.Sprintf("HF rate limited (retry after %s): %s", e.RetryAfter.Round(time.Second), e.Msg)
+	}
+	return fmt.Sprintf("HF rate limited: %s", e.Msg)
+}
+
 // hfClient is a minimal HuggingFace Hub API client.
 type hfClient struct {
 	token string
@@ -193,13 +207,20 @@ func (c *hfClient) createCommitPython(ctx context.Context, repoID, message strin
 		return "", fmt.Errorf("python commit: %w", err)
 	}
 	var result struct {
-		CommitURL string `json:"commit_url"`
-		Error     string `json:"error"`
+		CommitURL  string `json:"commit_url"`
+		Error      string `json:"error"`
+		RetryAfter int    `json:"retry_after"` // seconds; >0 when HF returned 429
 	}
 	if jsonErr := json.Unmarshal(out, &result); jsonErr != nil {
 		return "", fmt.Errorf("python commit parse: %w", jsonErr)
 	}
 	if result.Error != "" {
+		if result.RetryAfter > 0 {
+			return "", &HFRateLimitError{
+				RetryAfter: time.Duration(result.RetryAfter) * time.Second,
+				Msg:        result.Error,
+			}
+		}
 		return "", fmt.Errorf("python commit: %s", result.Error)
 	}
 	return result.CommitURL, nil

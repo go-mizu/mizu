@@ -27,6 +27,7 @@ import sys
 import os
 
 from huggingface_hub import HfApi, CommitOperationAdd, CommitOperationDelete
+from huggingface_hub.errors import HfHubHTTPError
 
 
 def main() -> None:
@@ -54,13 +55,27 @@ def main() -> None:
         print(json.dumps({"commit_url": "", "error": "no files to commit"}))
         sys.exit(1)
 
-    commit_info = api.create_commit(
-        repo_id=repo_id,
-        repo_type="dataset",
-        operations=operations,
-        commit_message=message,
-    )
-    print(json.dumps({"commit_url": commit_info.commit_url}))
+    try:
+        commit_info = api.create_commit(
+            repo_id=repo_id,
+            repo_type="dataset",
+            operations=operations,
+            commit_message=message,
+        )
+        print(json.dumps({"commit_url": commit_info.commit_url}))
+    except HfHubHTTPError as e:
+        retry_after = 0
+        if getattr(e, "response", None) is not None and e.response.status_code == 429:
+            ra = e.response.headers.get("Retry-After", "")
+            try:
+                retry_after = int(ra)
+            except (ValueError, TypeError):
+                pass
+        print(json.dumps({"error": str(e), "retry_after": retry_after}))
+        sys.exit(1)
+    except Exception as e:
+        print(json.dumps({"error": str(e)}))
+        sys.exit(1)
 
 
 if __name__ == "__main__":
