@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/archived/recrawler"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
 	crawl "github.com/go-mizu/mizu/blueprints/search/pkg/crawl"
 	"github.com/spf13/cobra"
 )
@@ -79,6 +79,8 @@ Subcommands:
 	cmd.AddCommand(newCCSite())
 	cmd.AddCommand(newCCMarkdown())
 	cmd.AddCommand(newCCFTS())
+	cmd.AddCommand(newCCPublish())
+	cmd.AddCommand(newCCPull())
 
 	return cmd
 }
@@ -871,19 +873,19 @@ func newCCRecrawl() *cobra.Command {
 		limit               int
 		batchSize           int
 		engine              string
-		domainTimeoutMs      int
-		domainFailThreshold  int
-		domainDeadProbe      int
-		domainStallRatio     int
-		domainTimeoutMaxMs   int
-		retryTimeoutMs       int
-		noRetry              bool
-		dbMemMB              int
-		dbShards             int
-		chunkMode            string
-		warcDir      string
-		noWarc       bool
-		warcCompress bool
+		domainTimeoutMs     int
+		domainFailThreshold int
+		domainDeadProbe     int
+		domainStallRatio    int
+		domainTimeoutMaxMs  int
+		retryTimeoutMs      int
+		noRetry             bool
+		dbMemMB             int
+		dbShards            int
+		chunkMode           string
+		warcDir             string
+		noWarc              bool
+		warcCompress        bool
 	)
 
 	cmd := &cobra.Command{
@@ -940,46 +942,46 @@ Examples:
 			}
 
 			return runCCRecrawl(cmd.Context(), ccRecrawlOpts{
-				crawlID:            crawlID,
-				sample:             sample,
-				last:               last,
-				file:               file,
-				importOnly:         importOnly,
-				filter:             filter,
-				workers:            workers,
-				workersExplicit:    cmd.Flags().Changed("workers"),
-				dnsWorkers:         dnsWorkers,
-				dnsTimeout:         dnsTimeout,
-				dnsWorkersExplicit: cmd.Flags().Changed("dns-workers"),
-				dnsTimeoutExplicit: cmd.Flags().Changed("dns-timeout"),
-				timeout:            timeout,
-				statusOnly:         statusOnly,
-				headOnly:           headOnly,
-				transportShards:    transportShards,
-				maxConnsPerDomain:  maxConnsPerDomain,
-				dnsPrefetch:        dnsPrefetch,
-				reloadDNSCache:     reloadDNSCache,
-				resume:             resume,
-				batchSize:          batchSize,
+				crawlID:             crawlID,
+				sample:              sample,
+				last:                last,
+				file:                file,
+				importOnly:          importOnly,
+				filter:              filter,
+				workers:             workers,
+				workersExplicit:     cmd.Flags().Changed("workers"),
+				dnsWorkers:          dnsWorkers,
+				dnsTimeout:          dnsTimeout,
+				dnsWorkersExplicit:  cmd.Flags().Changed("dns-workers"),
+				dnsTimeoutExplicit:  cmd.Flags().Changed("dns-timeout"),
+				timeout:             timeout,
+				statusOnly:          statusOnly,
+				headOnly:            headOnly,
+				transportShards:     transportShards,
+				maxConnsPerDomain:   maxConnsPerDomain,
+				dnsPrefetch:         dnsPrefetch,
+				reloadDNSCache:      reloadDNSCache,
+				resume:              resume,
+				batchSize:           batchSize,
 				engine:              engine,
-			domainTimeoutMs:     domainTimeoutMs,
-			domainFailThreshold: domainFailThreshold,
-			domainDeadProbe:     domainDeadProbe,
-			domainStallRatio:    domainStallRatio,
-			domainTimeoutMaxMs:  domainTimeoutMaxMs,
-			retryTimeoutMs:      retryTimeoutMs,
-			noRetry:             noRetry,
-			dbMemMB:             dbMemMB,
-			dbShards:            dbShards,
-			chunkMode:           chunkMode,
-			warcDir:             func() string {
-				if noWarc || statusOnly || headOnly {
-					return ""
-				}
-				return warcDir
-			}(),
-			warcCompress: warcCompress,
-		})
+				domainTimeoutMs:     domainTimeoutMs,
+				domainFailThreshold: domainFailThreshold,
+				domainDeadProbe:     domainDeadProbe,
+				domainStallRatio:    domainStallRatio,
+				domainTimeoutMaxMs:  domainTimeoutMaxMs,
+				retryTimeoutMs:      retryTimeoutMs,
+				noRetry:             noRetry,
+				dbMemMB:             dbMemMB,
+				dbShards:            dbShards,
+				chunkMode:           chunkMode,
+				warcDir: func() string {
+					if noWarc || statusOnly || headOnly {
+						return ""
+					}
+					return warcDir
+				}(),
+				warcCompress: warcCompress,
+			})
 		},
 	}
 
@@ -1049,18 +1051,18 @@ type ccRecrawlOpts struct {
 	engine              string
 	domainTimeoutMs     int
 	domainFailThreshold int
-	domainDeadProbe      int
-	domainStallRatio     int
-	domainTimeoutMaxMs   int
-	retryTimeoutMs       int
-	noRetry              bool
-	dbMemMB              int
-	dbShards             int
-	chunkMode            string
-	seedDBPath           string // set when seeds are pre-materialized for pipeline mode
-	totalSeeds           int64  // pre-extraction count for pipeline mode coverage display
-	warcDir              string // "" = disabled; else path to WARC store
-	warcCompress         bool   // write .warc.gz instead of .warc
+	domainDeadProbe     int
+	domainStallRatio    int
+	domainTimeoutMaxMs  int
+	retryTimeoutMs      int
+	noRetry             bool
+	dbMemMB             int
+	dbShards            int
+	chunkMode           string
+	seedDBPath          string // set when seeds are pre-materialized for pipeline mode
+	totalSeeds          int64  // pre-extraction count for pipeline mode coverage display
+	warcDir             string // "" = disabled; else path to WARC store
+	warcCompress        bool   // write .warc.gz instead of .warc
 }
 
 func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {

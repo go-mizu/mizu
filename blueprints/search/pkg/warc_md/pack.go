@@ -41,6 +41,7 @@ type packItem struct {
 	date      string
 	recordID  string
 	htmlBody  []byte
+	htmlLen   int // original HTML body byte length before conversion
 }
 
 // packResult is sent from converter workers to the writer.
@@ -50,6 +51,7 @@ type packResult struct {
 	refersTo   string // original WARC-Record-ID
 	markdown   string
 	hasContent bool
+	htmlLen    int // original HTML body byte length
 }
 
 // PackStats holds statistics for a completed pack run.
@@ -184,6 +186,7 @@ func RunPack(ctx context.Context, cfg PackConfig, progressFn ProgressFunc) (*Pac
 						refersTo:   it.recordID,
 						markdown:   res.Markdown,
 						hasContent: true,
+						htmlLen:    it.htmlLen,
 					}
 				} else {
 					atomic.AddInt64(&stats.Errors, 1)
@@ -286,6 +289,7 @@ func packReadFile(ctx context.Context, warcPath string, cfg PackConfig, stats *P
 			date:      rec.Header.Get("WARC-Date"),
 			recordID:  rec.Header.RecordID(),
 			htmlBody:  htmlBody,
+			htmlLen:   len(htmlBody),
 		}
 	}
 	return r.Err()
@@ -323,6 +327,7 @@ func packWriteFile(outputPath string, results <-chan packResult, stats *PackStat
 			"WARC-Refers-To":  res.refersTo,
 			"Content-Type":    "text/markdown",
 			"Content-Length":  contentLen,
+			"X-HTML-Length":   strconv.Itoa(res.htmlLen),
 		}
 
 		rec := &warcpkg.Record{

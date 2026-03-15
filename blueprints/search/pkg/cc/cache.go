@@ -23,7 +23,7 @@ type CacheData struct {
 	FetchedAt     time.Time `json:"fetched_at"`
 
 	// Semi-permanent — manifests don't change for a given crawl
-	Manifests map[string][]string `json:"manifests,omitempty"` // key: "CC-MAIN-2026-04:cc-index-table.paths.gz"
+	Manifests map[string][]string `json:"manifests,omitempty"` // key: "CC-MAIN-2026-08:cc-index-table.paths.gz"
 
 	// Semi-permanent — parquet object metadata + row counts per manifest remote path
 	ParquetMeta map[string]ParquetMeta `json:"parquet_meta,omitempty"` // key: remote parquet path

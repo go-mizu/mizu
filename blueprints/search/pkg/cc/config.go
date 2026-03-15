@@ -9,7 +9,7 @@ import (
 // Config holds configuration for Common Crawl operations.
 type Config struct {
 	DataDir         string        // Base data directory ($HOME/data/common-crawl)
-	CrawlID         string        // Crawl identifier (CC-MAIN-2026-04)
+	CrawlID         string        // Crawl identifier (CC-MAIN-2026-08)
 	BaseURL         string        // Base URL for data access (https://data.commoncrawl.org)
 	Workers         int           // Concurrent WARC fetch workers
 	IndexWorkers    int           // Concurrent index download workers
@@ -26,7 +26,7 @@ func DefaultConfig() Config {
 	home, _ := os.UserHomeDir()
 	return Config{
 		DataDir:         filepath.Join(home, "data", "common-crawl"),
-		CrawlID:         "CC-MAIN-2026-04",
+		CrawlID:         "CC-MAIN-2026-08",
 		BaseURL:         "https://data.commoncrawl.org",
 		Workers:         5000,
 		IndexWorkers:    10,

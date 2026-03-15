@@ -38,7 +38,7 @@ type SiteConfig struct {
 func DefaultSiteConfig(domain string) SiteConfig {
 	return SiteConfig{
 		Domain:          domain,
-		CrawlID:         "CC-MAIN-2026-04",
+		CrawlID:         "CC-MAIN-2026-08",
 		Mode:            SiteModeURLs,
 		Workers:         500,
 		Timeout:         30 * time.Second,

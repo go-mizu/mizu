@@ -288,38 +288,49 @@ build-crawler-server: ## Rsync + build Rust crawler on remote server → ~/bin/c
 	$(MAKE) -C $(CRAWLER_DIR) build-on-server SERVER=$(SERVER) DEPLOY_KEY=$(DEPLOY_KEY)
 
 # build-on-server: build the Go search binary natively on the remote server (no QEMU, fast).
-# Strategy: vendor all deps locally (captures the local replace ../.. for go-mizu/mizu),
-# rsync only Go source + vendor/ to server, build with -mod=vendor (no downloads on server).
+# Strategy: rsync source (+ parent mizu module for the replace ../.. directive) to server,
+# then build with -mod=mod so Go downloads transitive deps from GOPROXY on the server.
+# No local vendoring needed — vendor/ stays gitignored.
 # Installs Go $(LINUX_GO_VERSION) automatically if not present on the server.
 .PHONY: build-on-server
-build-on-server: ## Vendor deps + rsync + build natively on remote server (fast, no QEMU). SERVER=1|2
+build-on-server: ## Rsync source + build natively on remote server (fast, no QEMU). SERVER=1|2
 	@test -f "$(DEPLOY_KEY)" || { echo "Deploy key not found: $(DEPLOY_KEY)"; exit 1; }
 	@echo "==> Ensuring Go $(LINUX_GO_VERSION) on $(REMOTE_SSH)..."
 	@$(SSH) $(REMOTE_SSH) 'set -e; \
-		GOBIN=/usr/local/go/bin/go; \
-		if [ ! -x "$$GOBIN" ] || [ "$$($$GOBIN version 2>/dev/null | awk "{print \$$3}")" != "go$(LINUX_GO_VERSION)" ]; then \
-			echo "Installing Go $(LINUX_GO_VERSION)..."; \
-			curl -fsSL "https://dl.google.com/go/go$(LINUX_GO_VERSION).linux-amd64.tar.gz" -o /tmp/go.tgz; \
-			rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tgz && rm /tmp/go.tgz; \
-			echo "Installed: $$($$GOBIN version)"; \
+		for GOBIN in /usr/local/go/bin/go $$HOME/local/go/bin/go; do \
+			if [ -x "$$GOBIN" ] && [ "$$($$GOBIN version 2>/dev/null | awk "{print \$$3}")" = "go$(LINUX_GO_VERSION)" ]; then \
+				echo "Already installed: $$($$GOBIN version)"; exit 0; \
+			fi; \
+		done; \
+		echo "Installing Go $(LINUX_GO_VERSION)..."; \
+		curl -fsSL "https://dl.google.com/go/go$(LINUX_GO_VERSION).linux-amd64.tar.gz" -o /tmp/go.tgz; \
+		if tar -C /usr/local -xzf /tmp/go.tgz 2>/dev/null; then \
+			echo "Installed to /usr/local/go"; \
 		else \
-			echo "Already installed: $$($$GOBIN version)"; \
-		fi'
-	@echo "==> Vendoring dependencies locally (captures local replace directives)..."
-	@GOWORK=off go mod vendor
-	@echo "==> Syncing Go source + vendor to $(REMOTE_SSH):~/.search-build/blueprints/search/..."
+			mkdir -p $$HOME/local && tar -C $$HOME/local -xzf /tmp/go.tgz; \
+			echo "Installed to $$HOME/local/go (no root)"; \
+		fi; \
+		rm -f /tmp/go.tgz'
+	@echo "==> Syncing mizu root (for replace ../.. directive) to $(REMOTE_SSH):~/.search-build/..."
 	@$(SSH) $(REMOTE_SSH) "mkdir -p ~/.search-build/blueprints/search"
 	@rsync -az --delete -e "ssh -i $(DEPLOY_KEY) -o BatchMode=yes" \
+		--include='/go.mod' --include='/go.sum' --include='/*.go' \
+		--include='/pkg/' --include='/pkg/**' \
+		--exclude='*' \
+		../../ $(REMOTE_SSH):~/.search-build/
+	@echo "==> Syncing search source to $(REMOTE_SSH):~/.search-build/blueprints/search/..."
+	@rsync -az --delete -e "ssh -i $(DEPLOY_KEY) -o BatchMode=yes" \
 		--exclude='/.git' --exclude='*.duckdb' --exclude='/result/' \
-		--exclude='/tools/' --exclude='/app/' --exclude='/spec/' \
-		--exclude='/docs/' --exclude='/reports/' --exclude='/feature/' \
-		--exclude='/assets/' --exclude='/markdown.test/' \
+		--exclude='/vendor/' --exclude='/tools/' --exclude='/app/' \
+		--exclude='/spec/' --exclude='/docs/' --exclude='/reports/' \
+		--exclude='/feature/' --exclude='/assets/' --exclude='/markdown.test/' \
 		./ $(REMOTE_SSH):~/.search-build/blueprints/search/
-	@echo "==> Building on $(REMOTE_SSH) (native amd64, -mod=vendor)..."
+	@echo "==> Building on $(REMOTE_SSH) (native amd64, -mod=mod)..."
 	@$(SSH) $(REMOTE_SSH) 'bash -lc "set -e; \
-		export PATH=/usr/local/go/bin:$$PATH; \
+		export PATH=/usr/local/go/bin:$$HOME/local/go/bin:$$PATH; \
 		cd ~/.search-build/blueprints/search; \
-		GOWORK=off CGO_ENABLED=1 go build -mod=vendor -trimpath \
+		GOWORK=off GOPROXY=https://proxy.golang.org,direct CGO_ENABLED=1 \
+			go build -mod=mod -trimpath \
 			-ldflags \"$(GO_LDFLAGS)\" \
 			-o ~/bin/search-linux-noble ./cmd/search; \
 		chmod +x ~/bin/search-linux-noble; \
@@ -428,6 +439,39 @@ deploy-dashboard: deploy-linux-noble-browser ## Build, deploy, and (re)start FTS
 	@sleep 3
 	@echo "==> Verifying dashboard is responding..."
 	@$(SSH) $(REMOTE_SSH) 'curl -sf http://localhost:$(DASHBOARD_PORT)/api/scrape/list > /dev/null && echo "Dashboard running on port $(DASHBOARD_PORT)" || { echo "ERROR: dashboard not responding"; tail -20 /tmp/dashboard.log; exit 1; }'
+
+.PHONY: deploy-cc-watch
+deploy-cc-watch: ## Deploy cc_watch.sh and (re)start g_watch screen session (SERVER=2 for server2; HF_TOKEN=hf_... to write ~/.hf_token)
+	@echo "==> Deploying cc_watch.sh to $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'mkdir -p ~/scripts'
+	@$(SCP) scripts/cc_watch.sh $(REMOTE_SSH):~/scripts/cc_watch.sh
+	@$(SSH) $(REMOTE_SSH) 'chmod +x ~/scripts/cc_watch.sh'
+	@if [ -n "$(HF_TOKEN)" ]; then \
+		echo "==> Writing HF_TOKEN to $(REMOTE_SSH):~/.hf_token..."; \
+		$(SSH) $(REMOTE_SSH) "echo '$(HF_TOKEN)' > ~/.hf_token && chmod 600 ~/.hf_token"; \
+	fi
+	@echo "==> Stopping existing g_watch session on $(REMOTE_SSH)..."
+	-@$(SSH) $(REMOTE_SSH) 'screen -S g_watch -X quit 2>/dev/null; true'
+	-@$(SSH) $(REMOTE_SSH) 'pkill -f "cc publish --watch" 2>/dev/null; true'
+	@sleep 1
+	@echo "==> Starting g_watch on $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'screen -dmS g_watch bash -c "bash ~/scripts/cc_watch.sh; exec bash"'
+	@sleep 2
+	@echo "==> Verifying g_watch is running on $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'screen -ls | grep g_watch && echo "g_watch started" || { echo "ERROR: g_watch not found"; exit 1; }'
+
+.PHONY: remote-cc-watch-attach
+remote-cc-watch-attach: ## Attach to g_watch screen session on remote server
+	@$(SSH) -t $(REMOTE_SSH) 'screen -r g_watch'
+
+.PHONY: remote-cc-watch-kill
+remote-cc-watch-kill: ## Kill g_watch screen session on remote server
+	@$(SSH) $(REMOTE_SSH) 'screen -S g_watch -X quit 2>/dev/null && echo "Killed" || echo "No session found"'
+	-@$(SSH) $(REMOTE_SSH) 'pkill -f "cc publish --watch" 2>/dev/null; true'
+
+.PHONY: remote-cc-watch-log
+remote-cc-watch-log: ## Tail cc_watch log on remote server
+	@$(SSH) $(REMOTE_SSH) 'tail -f ~/log/cc_watch.log'
 
 .PHONY: deploy-linux-focal-browser
 deploy-linux-focal-browser: build-linux ## [LEGACY] Deploy Ubuntu 20.04 focal binary with Chrome wrapper (bundled libstdc++)

@@ -37,9 +37,7 @@ func openSegmentReader(dir string) (*segmentReader, error) {
 	// Open posting files
 	pr, err := openPostingsReader(
 		filepath.Join(dir, "segment.doc"),
-		filepath.Join(dir, "segment.freq"),
 		filepath.Join(dir, "segment.pos"),
-		meta.LastBlockN,
 	)
 	if err != nil {
 		td.close()
@@ -96,7 +94,7 @@ func (r *segmentReader) lookupTerm(term string) (*postingIterator, termInfo, boo
 	if !found {
 		return nil, termInfo{}, false
 	}
-	return r.postings.iterator(ti), ti, true
+	return r.postings.iterator(ti.postingsOff), ti, true
 }
 
 // getDoc retrieves a stored document by its local docID.

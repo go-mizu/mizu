@@ -87,6 +87,18 @@ Get started:
 	root.AddCommand(NewExport())
 	root.AddCommand(NewClickHouse())
 	root.AddCommand(NewMotherDuck())
+	root.AddCommand(NewGoodread())
+	root.AddCommand(NewHuggingFace())
+	root.AddCommand(NewAmazon())
+	root.AddCommand(NewPinterest())
+	root.AddCommand(NewSoundcloud())
+	root.AddCommand(NewYouTube())
+	root.AddCommand(NewSpotify())
+	root.AddCommand(NewEbay())
+	root.AddCommand(NewFacebook())
+	root.AddCommand(NewKaggle())
+	root.AddCommand(NewDiscord())
+	root.AddCommand(NewArctic())
 
 	if err := fang.Execute(ctx, root,
 		fang.WithVersion(Version),

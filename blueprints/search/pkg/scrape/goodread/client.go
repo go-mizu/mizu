@@ -1,0 +1,222 @@
+package goodread
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"math/rand"
+	"net/http"
+	"net/http/cookiejar"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/PuerkitoBio/goquery"
+	"golang.org/x/time/rate"
+)
+
+// Client handles HTTP requests to goodreads.com with rate limiting,
+// User-Agent rotation, and automatic retry.
+type Client struct {
+	http       *http.Client
+	userAgents []string
+	limiter    *rate.Limiter
+}
+
+// newLimiter builds a token-bucket rate limiter from config.
+// Rate = workers/delay so all workers can run concurrently at the desired average pace.
+// Burst = workers so they can all fire immediately at startup.
+func newLimiter(cfg Config) *rate.Limiter {
+	if cfg.Delay <= 0 || cfg.Workers <= 0 {
+		return rate.NewLimiter(rate.Inf, 0)
+	}
+	r := rate.Limit(float64(cfg.Workers) / cfg.Delay.Seconds())
+	return rate.NewLimiter(r, cfg.Workers)
+}
+
+// NewClientWithCookies creates an authenticated Goodreads client pre-loaded with
+// session cookies (typically exported by goodread-tool via LoadCookiesFromFile).
+func NewClientWithCookies(cfg Config, cookies []*http.Cookie) (*Client, error) {
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return nil, err
+	}
+	u, _ := url.Parse("https://www.goodreads.com")
+	jar.SetCookies(u, cookies)
+
+	transport := &http.Transport{
+		MaxIdleConns:        cfg.Workers + 4,
+		MaxConnsPerHost:     cfg.Workers + 4,
+		IdleConnTimeout:     90 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+		DisableCompression:  false,
+	}
+	return &Client{
+		http: &http.Client{
+			Timeout:   cfg.Timeout,
+			Transport: transport,
+			Jar:       jar,
+		},
+		userAgents: userAgents,
+		limiter:    newLimiter(cfg),
+	}, nil
+}
+
+// NewClient creates a new Goodreads HTTP client.
+func NewClient(cfg Config) *Client {
+	transport := &http.Transport{
+		MaxIdleConns:        cfg.Workers + 4,
+		MaxConnsPerHost:     cfg.Workers + 4,
+		IdleConnTimeout:     90 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+		DisableCompression:  false,
+	}
+
+	return &Client{
+		http: &http.Client{
+			Timeout:   cfg.Timeout,
+			Transport: transport,
+		},
+		userAgents: userAgents,
+		limiter:    newLimiter(cfg),
+	}
+}
+
+// Fetch fetches the raw bytes of a URL. Returns (body, statusCode, error).
+// Retries up to 3 times on transient errors. Backs off on 429.
+func (c *Client) Fetch(ctx context.Context, url string) ([]byte, int, error) {
+	const maxAttempts = 3
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if err := c.rateLimit(ctx); err != nil {
+			return nil, 0, err
+		}
+
+		body, code, err := c.doGet(ctx, url)
+		if err != nil {
+			if code == 401 || attempt == maxAttempts {
+				return nil, code, err
+			}
+			time.Sleep(time.Duration(attempt) * time.Second)
+			continue
+		}
+
+		if code == 429 {
+			backoff := time.Duration(attempt*attempt) * 10 * time.Second
+			if attempt == maxAttempts {
+				return nil, code, fmt.Errorf("rate limited (HTTP 429) after %d attempts", maxAttempts)
+			}
+			time.Sleep(backoff)
+			continue
+		}
+
+		if code == 404 {
+			return nil, code, nil // permanent failure, caller decides
+		}
+
+		if code >= 500 {
+			if attempt == maxAttempts {
+				return nil, code, fmt.Errorf("server error HTTP %d", code)
+			}
+			time.Sleep(time.Duration(attempt) * 2 * time.Second)
+			continue
+		}
+
+		return body, code, nil
+	}
+
+	return nil, 0, fmt.Errorf("all %d attempts failed", maxAttempts)
+}
+
+// FetchHTML fetches a URL and returns a parsed goquery document.
+func (c *Client) FetchHTML(ctx context.Context, url string) (*goquery.Document, int, error) {
+	body, code, err := c.Fetch(ctx, url)
+	if err != nil {
+		return nil, code, err
+	}
+	if code == 404 {
+		return nil, code, nil
+	}
+	if code != 200 {
+		return nil, code, fmt.Errorf("unexpected HTTP %d for %s", code, url)
+	}
+
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(body)))
+	if err != nil {
+		return nil, code, fmt.Errorf("parse HTML: %w", err)
+	}
+
+	return doc, code, nil
+}
+
+// FetchHTMLTimed is an alias for FetchHTML for use in benchmarks.
+func (c *Client) FetchHTMLTimed(ctx context.Context, url string) (*goquery.Document, int, error) {
+	return c.FetchHTML(ctx, url)
+}
+
+func (c *Client) doGet(ctx context.Context, url string) ([]byte, int, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	ua := c.userAgents[rand.Intn(len(c.userAgents))]
+	req.Header.Set("User-Agent", ua)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	// Do NOT set Accept-Encoding — let Go's transport handle transparent gzip decompression.
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+
+	// Detect login redirect: http.Client follows 302→/sign_in automatically,
+	// so check the final URL after redirect following.
+	finalURL := resp.Request.URL.String()
+	if strings.Contains(finalURL, "/sign_in") || strings.Contains(finalURL, "/user/login") {
+		return nil, 401, fmt.Errorf("login required: %s is access-restricted (redirected to %s)", url, finalURL)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, resp.StatusCode, err
+	}
+
+	// Follow Goodreads HTML soft-redirect: "You are being redirected"
+	if resp.StatusCode == 200 && strings.Contains(string(body), "You are being") {
+		if redirectURL := extractHTMLRedirect(string(body)); redirectURL != "" && redirectURL != url {
+			if strings.Contains(redirectURL, "/sign_in") || strings.Contains(redirectURL, "/login") {
+				return nil, 401, fmt.Errorf("login required: %s redirected to sign-in page", url)
+			}
+			time.Sleep(500 * time.Millisecond)
+			return c.doGet(ctx, redirectURL)
+		}
+	}
+
+	return body, resp.StatusCode, nil
+}
+
+// extractHTMLRedirect extracts the redirect URL from a Goodreads HTML redirect page.
+func extractHTMLRedirect(body string) string {
+	// Pattern: <a href="https://www.goodreads.com/...">redirected</a>
+	start := strings.Index(body, `href="`)
+	if start < 0 {
+		return ""
+	}
+	start += len(`href="`)
+	end := strings.Index(body[start:], `"`)
+	if end < 0 {
+		return ""
+	}
+	return body[start : start+end]
+}
+
+// rateLimit waits for the next available token from the rate limiter.
+func (c *Client) rateLimit(ctx context.Context) error {
+	if c.limiter == nil {
+		return nil
+	}
+	return c.limiter.Wait(ctx)
+}
