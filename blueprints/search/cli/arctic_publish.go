@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"strings"
 	"time"
@@ -53,6 +55,16 @@ Requires HF_TOKEN environment variable to be set.`,
 }
 
 func runArcticPublish(ctx context.Context, repoRoot, repoID, fromStr, toStr string, minFreeGB, chunkLines int, private bool) error {
+	// Start pprof HTTP server for live heap profiling on :6060.
+	go func() {
+		fmt.Fprintf(os.Stderr, "arctic: pprof listening on :6060 (http://localhost:6060/debug/pprof/)\n")
+		if err := http.ListenAndServe(":6060", nil); err != nil {
+			fmt.Fprintf(os.Stderr, "arctic: pprof server: %v\n", err)
+		}
+	}()
+
+	// Log memory stats every 30s to help diagnose OOM.
+
 	token := strings.TrimSpace(os.Getenv("HF_TOKEN"))
 	if token == "" {
 		return fmt.Errorf("HF_TOKEN environment variable is not set")
