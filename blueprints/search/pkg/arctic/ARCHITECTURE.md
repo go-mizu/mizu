@@ -11,7 +11,7 @@ month by month, resumable after interruption.
 ┌──────────────────────────────────────────────────────────────────┐
 │                     CLI (cli/arctic_publish.go)                  │
 │  Parses flags, creates HF client, bridges HFOp → hfOperation,  │
-│  starts pprof + memory logger, wires everything together.       │
+│  starts pprof, wires everything together.                       │
 └────────────────────────────┬─────────────────────────────────────┘
                              │
                      PipelineTask.Run()
@@ -39,7 +39,7 @@ Set `MIZU_ARCTIC_PIPELINE=0` to force sequential mode.
 
 | File                  | Purpose                                                        |
 |-----------------------|----------------------------------------------------------------|
-| `config.go`           | `Config` struct, path builders, env var defaults, disk checks  |
+| `config.go`           | `Config` struct, path builders, env var defaults, `logf()` helper, disk checks |
 | `budget.go`           | `ComputeBudget()` — derives concurrency limits from hardware   |
 | `hwdetect.go`         | `DetectHardware()` — probes CPU, RAM, disk via syscall         |
 | `pipeline.go`         | `PipelineTask` — concurrent download/process/upload pipeline   |
@@ -51,6 +51,21 @@ Set `MIZU_ARCTIC_PIPELINE=0` to force sequential mode.
 | `live_state.go`       | `LiveState`, `StateSnapshot` — real-time progress tracking     |
 | `readme.go`           | README.md generation with live progress sections               |
 | `malloc_trim_*.go`    | Platform-specific glibc `malloc_trim(0)` after DuckDB close    |
+
+## Logging
+
+All internal logging uses `logf()` (defined in `config.go`) which prefixes every
+line with an ISO timestamp for debuggability:
+
+```
+2026-03-16 14:05:02 arctic: pipeline: [2011-01] comments uploading 15 ops (12 shards) to HF…
+2026-03-16 14:13:14 arctic: pipeline: [2011-01] comments committed in 492.3s (12 shards, 7,234,561 rows)
+2026-03-16 14:13:14 arctic: [2011-01] submissions waiting for zstd decoder semaphore…
+```
+
+The HF upload helper (`cli/embed/hf_commit.py`) runs with httpx/urllib3 logs
+suppressed at WARNING level. Only the summary lines (`add:`, `committing`,
+`committed in Xs`) appear on stderr.
 
 ## Pipeline Data Flow
 
@@ -83,23 +98,29 @@ ProcessZst(zstPath)
   ├─ Open .zst + create zstd.NewReader(WithDecoderMaxWindow(1<<31))
   │   └─ The 2 GB window is required — Reddit archives use 2 GB zstd windows
   │
-  ├─ Scan lines → write to disk as chunk_N.jsonl files (ChunkLines per chunk)
+  ├─ SCAN phase: stream lines → write to chunk_N.jsonl (ChunkLines per chunk)
+  │   ├─ Each completed chunk dispatched to convert worker pool via chunkCh
+  │   ├─ Bounded channel (cap = MaxConvertWorkers) → backpressure if workers busy
   │   └─ No in-memory line accumulation — stream to disk
   │
-  ├─ For each completed chunk:
+  ├─ Close decoder + file → runtime.GC() + debug.FreeOSMemory()
+  ├─ RELEASE zstdDecoderSem (another worker can now decode)
+  │
+  ├─ Convert workers continue processing remaining chunks:
   │   └─ convertChunkToShard()
   │       ├─ In-memory DuckDB (no file mmap overhead)
   │       ├─ SET memory_limit (default 512MB)
   │       ├─ read_json_auto → COPY TO parquet (ZSTD compression)
+  │       ├─ Delete chunk file immediately after DuckDB import
   │       ├─ ValidateParquet() — PAR1 magic check
   │       └─ defer mallocTrim() — reclaim glibc C heap after DuckDB close
   │
-  ├─ Close decoder + file BEFORE remaining shard conversion
-  ├─ runtime.GC() + debug.FreeOSMemory() — reclaim 2 GB window
-  ├─ RELEASE zstdDecoderSem (another worker can now decode)
-  │
-  └─ Convert remaining chunk → shard (overlaps with next worker's decode)
+  └─ Collect results, sort by shard index
 ```
+
+Key insight: the zstd decoder semaphore is released **after scan completes**,
+not after all shards are converted. This allows the next file to start decoding
+while the current file's DuckDB conversions run in parallel.
 
 ### 3. Upload Stage (`uploadJob`)
 
@@ -111,10 +132,17 @@ uploadJob(job)
   ├─ Build HFOp list: parquet shards + stats.csv + README.md + states.json
   │
   ├─ Batch commit (≤50 ops per API call)
-  │   └─ Each batch retried 3× internally with 5s/10s backoff
+  │   ├─ Hold commitMu to serialize with heartbeat commits
+  │   ├─ Each batch retried 3× internally with 5s/10s backoff
+  │   └─ On failure: revert stats.csv to prevent false "committed" state
   │
+  ├─ Log: "committed in Xs (N shards, M rows)"
   └─ Cleanup: delete local shard files + job work directory
 ```
+
+The upload stage is always single-worker (`MaxUploads = 1`) because the HF API
+is serialized via `commitMu`. The upload worker runs the embedded `hf_commit.py`
+via `uv`, which uses `huggingface_hub` + `hf-xet` for native xet storage.
 
 ## Memory Architecture
 
@@ -177,6 +205,26 @@ Worker 2:       (blocked)         [== zstd decode 2GB ==][=== DuckDB ===]
 Peak: 2 GB (decoder) + 512 MB (DuckDB) = ~2.5 GB
 ```
 
+## Pipeline Overlap
+
+The three-stage pipeline (`download → process → upload`) overlaps across
+different months. While the upload worker pushes month N to HuggingFace
+(~8 min), the process workers decode + convert month N+1.
+
+```
+Timeline with pipeline overlap:
+
+Month N:    [download] [process ────────] [upload ────────────────]
+Month N+1:             [download] [process ────────] [upload ────]
+Month N+2:                        [download] [process ────]
+
+Upload worker idle between commits only if no processed job is ready.
+```
+
+The `uploadCh` channel (capacity = `ProcessQueue`, default 2) buffers completed
+jobs. Once `processJob` finishes all shards for a month, it sends the job to
+`uploadCh`. The upload worker picks it up immediately.
+
 ## Auto-Heal / Retry Logic
 
 ### Error Classification
@@ -204,6 +252,7 @@ processJob fails?
 uploadJob fails?
   └─ Upload worker retry loop: up to 5 attempts, backoff (30s, 60s, 120s...)
        └─ Internal: each HF commit batch already retried 3× (5s, 10s)
+       └─ On failure: revert stats.csv to prevent false committed state
 ```
 
 ### Resume After Crash
@@ -215,12 +264,31 @@ uploadJob fails?
 
 ## Heartbeat System
 
-The pipeline writes progress to HuggingFace every 5 minutes (or on each data
+The pipeline writes progress to HuggingFace every 10 minutes (or on each data
 commit, whichever comes first):
 
 - `states.json` — machine-readable `StateSnapshot` (phase, workers, throughput)
 - `README.md` — human-readable with live progress section
 - Heartbeat commits are serialized with data commits via `commitMu`
+
+## HF Upload Architecture
+
+The Go layer (`cli/arctic_publish.go`) bridges `arctic.HFOp` to the Python
+upload helper via stdin JSON:
+
+```
+Go (hfCommitFn)
+  │
+  ├─ Convert arctic.HFOp[] → JSON payload
+  ├─ Handle rate limits (429) with Retry-After + 30s
+  ├─ Handle "connection reset by peer" with verify-then-retry
+  │
+  └─ cli/embed/hf_commit.py (via uv)
+       ├─ huggingface_hub.create_commit() with hf-xet
+       ├─ Xet tuning: HF_XET_FIXED_UPLOAD_CONCURRENCY=8
+       ├─ 30-min hard timeout per upload
+       └─ Returns JSON: {commit_url: "..."} or {error: "...", retry_after: N}
+```
 
 ## Configuration
 
@@ -230,12 +298,13 @@ commit, whichever comes first):
 |-------------------------------|----------------------------|-------------------------------|
 | `HF_TOKEN`                    | (required)                 | HuggingFace API token         |
 | `MIZU_ARCTIC_REPO_ROOT`      | `$HOME/data/arctic/repo`   | Local repo root               |
-| `MIZU_ARCTIC_RAW_DIR`        | `{root}/raw`               | Torrent download directory    |
-| `MIZU_ARCTIC_WORK_DIR`       | `{root}/work`              | Temp chunks and DuckDB files  |
+| `MIZU_ARCTIC_RAW_DIR`        | `$HOME/data/arctic/raw`    | Torrent download directory    |
+| `MIZU_ARCTIC_WORK_DIR`       | `$HOME/data/arctic/work`   | Temp chunks and DuckDB files  |
 | `MIZU_ARCTIC_CHUNK_LINES`    | 500000                     | Lines per JSONL chunk         |
 | `MIZU_ARCTIC_MIN_FREE_GB`    | 30                         | Disk space gate               |
 | `MIZU_ARCTIC_MAX_DOWNLOADS`  | (auto)                     | Override download concurrency |
 | `MIZU_ARCTIC_MAX_PROCESS`    | (auto)                     | Override process concurrency  |
+| `MIZU_ARCTIC_MAX_CONVERT`    | (auto)                     | Override convert workers      |
 | `MIZU_ARCTIC_DUCKDB_MB`      | 512                        | Override DuckDB memory limit  |
 | `MIZU_ARCTIC_PIPELINE`       | 1                          | Set to 0 for sequential mode  |
 | `TORRENT_STORAGE_DEFAULT_FILE_IO` | (unset)               | Set to "classic" to avoid mmap|
@@ -255,3 +324,4 @@ commit, whichever comes first):
 - ZSTD-compressed Parquet output with 128K row groups
 - Comments: 12 columns (id, author, subreddit, body, score, created_utc, ...)
 - Submissions: 14 columns (id, author, subreddit, title, selftext, score, ...)
+- `mallocTrim()` after each DuckDB close to return glibc heap to OS
