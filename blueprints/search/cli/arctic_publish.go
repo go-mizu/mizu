@@ -166,15 +166,24 @@ func runArcticPublish(ctx context.Context, repoRoot, repoID, fromStr, toStr stri
 		fmt.Printf("  To         %s\n", labelStyle.Render(toStr))
 	}
 	fmt.Printf("  Min free   %s GB\n", labelStyle.Render(fmt.Sprintf("%d", minFreeGB)))
-	fmt.Println()
 
-	task := arctic.NewPublishTask(cfg, arctic.PublishOptions{
+	opts := arctic.PublishOptions{
 		FromYear:  fromYear,
 		FromMonth: fromMonth,
 		ToYear:    toYear,
 		ToMonth:   toMonth,
 		HFCommit:  hfCommitFn,
-	})
+	}
+
+	// Auto-detect hardware and compute resource budget.
+	task := arctic.NewPipelineTask(cfg, opts)
+	hw := task.Hardware()
+	budget := task.Budget()
+
+	fmt.Println()
+	fmt.Printf("  Hardware   %s\n", labelStyle.Render(hw.String()))
+	fmt.Printf("  Budget     %s\n", infoStyle.Render(budget.String()))
+	fmt.Println()
 
 	metric, err := task.Run(ctx, func(s *arctic.PublishState) {
 		switch s.Phase {

@@ -24,6 +24,16 @@ type LiveSection struct {
 	UpdatedAt   string
 	Done        bool
 	CompletedAt string
+
+	// Pipeline mode fields.
+	IsPipeline    bool
+	HardwareLine  string   // e.g. "server2 (20 cores, 256 GB RAM, 1.2 TB free)"
+	WorkerRows    []string // pre-formatted table rows for active workers
+	AvgDownload   string   // e.g. "420 Mbps"
+	AvgProcess    string   // e.g. "38.5K rows/s"
+	AvgUpload     string   // e.g. "12.3s per commit"
+	ETALine       string   // e.g. "2026-03-18 14:00 UTC"
+	Retries       int
 }
 
 // ReadmeData holds all template variables for the Arctic README.
@@ -226,6 +236,72 @@ func buildLiveSection(snap *StateSnapshot) *LiveSection {
 		bar := strings.Repeat("█", filled) + strings.Repeat("░", 30-filled)
 		pct := float64(done) / float64(total) * 100
 		ls.ProgressBar = fmt.Sprintf("`%s`  %d / %d (%.1f%%)", bar, done, total, pct)
+	}
+
+	ls.Retries = snap.Stats.Retries
+
+	// Pipeline-specific fields.
+	if snap.Pipeline != nil {
+		ls.IsPipeline = true
+
+		if snap.Hardware != nil {
+			hw := snap.Hardware
+			ls.HardwareLine = fmt.Sprintf("**%s** (%d cores, %.0f GB RAM, %.0f GB free)",
+				hw.Hostname, hw.CPUCores, hw.RAMTotalGB, hw.DiskFreeGB)
+		}
+
+		// Build worker table rows.
+		for _, slot := range snap.Pipeline.Downloading {
+			progress := "connecting..."
+			if slot.BytesTotal > 0 {
+				pct := int(100 * slot.BytesDone / slot.BytesTotal)
+				progress = fmt.Sprintf("%s / %s (%d%%)", fmtBytes(slot.BytesDone), fmtBytes(slot.BytesTotal), pct)
+				if slot.Peers > 0 {
+					progress += fmt.Sprintf(" · %d peers", slot.Peers)
+				}
+			}
+			ls.WorkerRows = append(ls.WorkerRows,
+				fmt.Sprintf("| Downloading | %s | %s | %s |", slot.YM, slot.Type, progress))
+		}
+		for _, slot := range snap.Pipeline.Processing {
+			progress := "starting..."
+			if slot.Shard > 0 {
+				progress = fmt.Sprintf("shard %d · %s rows", slot.Shard, fmtCount(slot.Rows))
+				if slot.RowsPerSec > 0 {
+					if slot.RowsPerSec >= 1000 {
+						progress += fmt.Sprintf(" · %.1fK rows/s", slot.RowsPerSec/1000)
+					} else {
+						progress += fmt.Sprintf(" · %.0f rows/s", slot.RowsPerSec)
+					}
+				}
+			}
+			ls.WorkerRows = append(ls.WorkerRows,
+				fmt.Sprintf("| Processing | %s | %s | %s |", slot.YM, slot.Type, progress))
+		}
+		for _, slot := range snap.Pipeline.Uploading {
+			progress := fmt.Sprintf("%d shards · %s rows · committing", slot.Shards, fmtCount(slot.Rows))
+			ls.WorkerRows = append(ls.WorkerRows,
+				fmt.Sprintf("| Uploading | %s | %s | %s |", slot.YM, slot.Type, progress))
+		}
+
+		// Throughput.
+		if snap.Throughput != nil {
+			tp := snap.Throughput
+			if tp.AvgDownloadMbps > 0 {
+				ls.AvgDownload = fmt.Sprintf("%.0f Mbps", tp.AvgDownloadMbps)
+			}
+			if tp.AvgProcessRowsPerSec >= 1000 {
+				ls.AvgProcess = fmt.Sprintf("%.1fK rows/s", tp.AvgProcessRowsPerSec/1000)
+			} else if tp.AvgProcessRowsPerSec > 0 {
+				ls.AvgProcess = fmt.Sprintf("%.0f rows/s", tp.AvgProcessRowsPerSec)
+			}
+			if tp.AvgUploadSecPerCommit > 0 {
+				ls.AvgUpload = fmt.Sprintf("%.1fs per commit", tp.AvgUploadSecPerCommit)
+			}
+			if tp.EstimatedCompletion != nil {
+				ls.ETALine = tp.EstimatedCompletion.UTC().Format("2006-01-02 15:04 UTC")
+			}
+		}
 	}
 
 	return ls
@@ -591,24 +667,45 @@ ORDER BY year, month, type;
 | Data committed | {{.Live.TotalBytes}} |
 {{else}}
 ## Pipeline Status
-
+{{if .Live.IsPipeline}}
+> Pipelined ingestion running on {{.Live.HardwareLine}}. Auto-updated every ~5 minutes.
+{{else}}
 > The ingestion pipeline is running. This section updates every ~5 minutes.
-
+{{end}}
 **Started:** {{.Live.StartedAt}} / **Elapsed:** {{.Live.ElapsedStr}} / **Committed this session:** {{.Live.Committed}}
-{{if .Live.MonthType}}
+{{if .Live.IsPipeline}}{{if .Live.WorkerRows}}
+### Active Workers
+
+| Stage | Month | Type | Progress |
+|-------|-------|------|----------|
+{{range .Live.WorkerRows}}{{.}}
+{{end}}
+{{end}}{{if or .Live.AvgDownload .Live.AvgProcess .Live.AvgUpload}}
+### Throughput
+
+| Metric | Value |
+|--------|------:|{{if .Live.AvgDownload}}
+| Download | {{.Live.AvgDownload}} avg |{{end}}{{if .Live.AvgProcess}}
+| Processing | {{.Live.AvgProcess}} avg |{{end}}{{if .Live.AvgUpload}}
+| Upload | {{.Live.AvgUpload}} avg |{{end}}{{if .Live.ETALine}}
+| ETA | {{.Live.ETALine}} |{{end}}
+{{end}}{{else}}{{if .Live.MonthType}}
 | | |
 |:---|:---|
 | Phase | {{.Live.Phase}} |
 | Month | {{.Live.MonthType}} |{{if .Live.ShardLine}}
 | Progress | {{.Live.ShardLine}} |{{end}}
-{{end}}
+{{end}}{{end}}
+### Progress
+
 {{.Live.ProgressBar}}
 
 | Metric | This Session |
 |--------|-------------:|
 | Months committed | {{.Live.Committed}} |
 | Rows processed | {{.Live.TotalRows}} |
-| Data committed | {{.Live.TotalBytes}} |
+| Data committed | {{.Live.TotalBytes}} |{{if gt .Live.Retries 0}}
+| Retries | {{.Live.Retries}} |{{end}}
 
 *Last update: {{.Live.UpdatedAt}}*
 {{end}}{{end}}
