@@ -141,10 +141,10 @@ func (t *PublishTask) Run(ctx context.Context, emit func(*PublishState)) (Publis
 	return metric, nil
 }
 
-// runHeartbeat runs in a goroutine: writes files every minute, commits every 5 minutes.
+// runHeartbeat runs in a goroutine: writes files every minute, commits every 10 minutes.
 func (t *PublishTask) runHeartbeat(ctx context.Context) {
 	writeTick := time.NewTicker(1 * time.Minute)
-	commitTick := time.NewTicker(5 * time.Minute)
+	commitTick := time.NewTicker(10 * time.Minute)
 	defer writeTick.Stop()
 	defer commitTick.Stop()
 
@@ -155,8 +155,8 @@ func (t *PublishTask) runHeartbeat(ctx context.Context) {
 		case <-writeTick.C:
 			t.writeHeartbeatFiles()
 		case <-commitTick.C:
-			// Skip if a data commit just happened within the last 5 minutes.
-			if time.Since(time.Unix(0, t.lastHFCommit.Load())) < 5*time.Minute {
+			// Skip if a data commit just happened within the last 10 minutes.
+			if time.Since(time.Unix(0, t.lastHFCommit.Load())) < 10*time.Minute {
 				continue
 			}
 			t.writeHeartbeatFiles()
@@ -189,7 +189,7 @@ func (t *PublishTask) writeHeartbeatFiles() {
 // force=true skips the cooldown check (used for the final done commit).
 func (t *PublishTask) commitHeartbeat(ctx context.Context, force bool) {
 	if !force {
-		if time.Since(time.Unix(0, t.lastHFCommit.Load())) < 5*time.Minute {
+		if time.Since(time.Unix(0, t.lastHFCommit.Load())) < 10*time.Minute {
 			return
 		}
 	}
@@ -512,6 +512,7 @@ func (t *PublishTask) processOne(ctx context.Context, ym ymKey, typ string,
 		for retry := 0; retry < hfMaxRetries; retry++ {
 			if ctx.Err() != nil {
 				t.commitMu.Unlock()
+				WriteStatsCSV(cfg.StatsCSVPath(), existingRows)
 				return ctx.Err()
 			}
 			_, commitErr = t.opts.HFCommit(ctx, ops[i:end], msg)
@@ -525,6 +526,7 @@ func (t *PublishTask) processOne(ctx context.Context, ym ymKey, typ string,
 				select {
 				case <-ctx.Done():
 					t.commitMu.Unlock()
+					WriteStatsCSV(cfg.StatsCSVPath(), existingRows)
 					return ctx.Err()
 				case <-time.After(wait):
 				}
@@ -532,6 +534,9 @@ func (t *PublishTask) processOne(ctx context.Context, ym ymKey, typ string,
 		}
 		if commitErr != nil {
 			t.commitMu.Unlock()
+			// Revert stats.csv — remove the row we just added so it
+			// doesn't falsely mark this month as committed on restart.
+			WriteStatsCSV(cfg.StatsCSVPath(), existingRows)
 			return fmt.Errorf("hf commit batch %d (after %d retries): %w", i/batchSize, hfMaxRetries, commitErr)
 		}
 	}

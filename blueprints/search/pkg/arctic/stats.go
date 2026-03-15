@@ -85,10 +85,16 @@ func WriteStatsCSV(path string, rows []StatsRow) error {
 	return writeCSVAtomic(path, merged)
 }
 
+// CommittedSet returns keys for months that were fully committed to HuggingFace.
+// A row with DurCommitS == 0 means the process was killed (SIGKILL) during or
+// before the HF upload — the commit may not have landed. Such rows are excluded
+// so the month is re-processed on restart rather than silently skipped.
 func CommittedSet(rows []StatsRow) map[string]bool {
 	m := make(map[string]bool, len(rows))
 	for _, r := range rows {
-		m[r.Key()] = true
+		if r.DurCommitS > 0 {
+			m[r.Key()] = true
+		}
 	}
 	return m
 }

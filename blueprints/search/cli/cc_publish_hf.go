@@ -180,11 +180,15 @@ func (c *hfClient) createCommitPython(ctx context.Context, repoID, message strin
 	for i, op := range ops {
 		opsJSON[i] = opJSON{LocalPath: op.LocalPath, PathInRepo: op.PathInRepo, Delete: op.Delete}
 	}
+	// num_threads controls file-level parallelism in create_commit() (NOT
+	// chunk-level — xet handles chunk concurrency via adaptive controller).
+	// With typically 5–10 parquet files per commit, 8 is a reasonable ceiling.
+	numThreads := 8
 	payload := map[string]interface{}{
 		"token":       c.token,
 		"repo_id":     repoID,
 		"message":     message,
-		"num_threads": 10, // concurrent upload threads within a single commit
+		"num_threads": numThreads,
 		"ops":         opsJSON,
 	}
 	stdin, _ := json.Marshal(payload)
@@ -193,18 +197,45 @@ func (c *hfClient) createCommitPython(ctx context.Context, repoID, message strin
 	if uvBin == "" {
 		return "", fmt.Errorf("uv not found")
 	}
-	var stderrBuf bytes.Buffer
-	cmd := exec.CommandContext(ctx, uvBin, "run", scriptPath)
+
+	// Per-upload timeout: 30 min. Xet handles its own per-chunk retries
+	// (up to 10 min retry window per request), so this is a hard ceiling
+	// for the entire commit. 30 min is generous for 500 MB of parquet.
+	uploadTimeout := 30 * time.Minute
+	uploadCtx, uploadCancel := context.WithTimeout(ctx, uploadTimeout)
+	defer uploadCancel()
+
+	cmd := exec.CommandContext(uploadCtx, uvBin, "run", scriptPath)
 	cmd.Stdin = bytes.NewReader(stdin)
-	cmd.Stderr = &stderrBuf
-	// Enable high-performance xet transfers (saturates network bandwidth).
-	cmd.Env = append(os.Environ(), "HF_XET_HIGH_PERFORMANCE=1")
+	cmd.Stderr = os.Stderr // pipe progress logs directly to terminal
+	// Xet upload tuning for memory-constrained servers (< 64 GB RAM).
+	// DO NOT use HF_XET_HIGH_PERFORMANCE — it requires 64+ GB RAM and
+	// causes upload stalls on smaller machines (sets concurrency to 124,
+	// buffers to 16 GB, thrashes memory).
+	cmd.Env = append(os.Environ(),
+		"HF_HUB_VERBOSITY=warning",
+		// Pin upload concurrency to a fixed value suited for ~11 GB servers.
+		// Adaptive concurrency defaults start at 1 and ramp slowly; pinning
+		// at 8 starts at full speed without oversaturating memory.
+		"HF_XET_FIXED_UPLOAD_CONCURRENCY=8",
+		// Increase per-request retry budget so transient failures recover.
+		"HF_XET_CLIENT_RETRY_MAX_ATTEMPTS=7",
+		"HF_XET_CLIENT_RETRY_MAX_DURATION=600s",
+		// Generous read timeout — large shard uploads can take a while.
+		"HF_XET_CLIENT_READ_TIMEOUT=300s",
+		"HF_XET_CLIENT_CONNECT_TIMEOUT=120s",
+		// Increase shard cache so re-uploads after a stall skip already-
+		// uploaded chunks (deduplication).
+		"HF_XET_SHARD_CACHE_SIZE_LIMIT=8000000000",
+		// Xet diagnostics — written to file so they don't pollute stderr.
+		"RUST_LOG=info",
+		"HF_XET_LOG_FILE=/tmp/xet_upload.log",
+	)
 	out, err := cmd.Output()
+	if uploadCtx.Err() == context.DeadlineExceeded {
+		return "", fmt.Errorf("python commit timed out after %s", uploadTimeout.Round(time.Minute))
+	}
 	if err != nil {
-		se := strings.TrimSpace(stderrBuf.String())
-		if se != "" {
-			return "", fmt.Errorf("python commit: %w\n%s", err, se)
-		}
 		return "", fmt.Errorf("python commit: %w", err)
 	}
 	var result struct {

@@ -145,10 +145,12 @@ func (t *PipelineTask) runPipeline(ctx context.Context, emit func(*PublishState)
 		pipeErrMu.Lock()
 		if pipeErr == nil {
 			pipeErr = err
+			fmt.Fprintf(os.Stderr, "arctic: pipeline: FATAL — %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "arctic: pipeline: (suppressed) %v\n", err)
 		}
 		pipeErrMu.Unlock()
 	}
-
 	// Pipeline context — cancel all stages on first fatal error.
 	pipeCtx, pipeCancel := context.WithCancel(ctx)
 	defer pipeCancel()
@@ -170,6 +172,11 @@ func (t *PipelineTask) runPipeline(ctx context.Context, emit func(*PublishState)
 					}
 					// Retry with backoff.
 					if retried := t.retryDownload(pipeCtx, job, emit); retried != nil {
+						if pipeCtx.Err() != nil {
+							// Pipeline was canceled by another goroutine while we
+							// were retrying — don't overwrite the real root cause.
+							continue
+						}
 						setPipeErr(fmt.Errorf("[%s] %s: download: %w", job.YM.String(), job.Type, retried))
 						pipeCancel()
 						continue
@@ -189,12 +196,73 @@ func (t *PipelineTask) runPipeline(ctx context.Context, emit func(*PublishState)
 				if pipeCtx.Err() != nil {
 					continue
 				}
-				if err := t.processJob(pipeCtx, job, emit); err != nil {
+				// Auto-heal: retry process failures with classification.
+				// - Corruption: delete .zst (force re-download on next run),
+				//   then re-download + re-process.
+				// - Transient: keep .zst, retry processing after backoff.
+				var lastErr error
+				for attempt := 0; attempt < maxRetries; attempt++ {
 					if pipeCtx.Err() != nil {
-						continue
+						break
 					}
-					setPipeErr(fmt.Errorf("[%s] %s: process: %w", job.YM.String(), job.Type, err))
-					pipeCancel()
+					lastErr = t.processJob(pipeCtx, job, emit)
+					if lastErr == nil {
+						break
+					}
+					if pipeCtx.Err() != nil {
+						break
+					}
+
+					corruption := IsCorruption(lastErr)
+					kind := "transient"
+					if corruption {
+						kind = "corruption"
+					}
+					fmt.Fprintf(os.Stderr, "arctic: pipeline: process attempt %d/%d failed [%s] for [%s] %s: %v\n",
+						attempt+1, maxRetries, kind, job.YM.String(), job.Type, lastErr)
+
+					t.ls.Update(func(s *StateSnapshot) { s.Stats.Retries++ })
+
+					if corruption {
+						// Corrupt .zst — delete and re-download.
+						os.Remove(job.ZstPath)
+						backoff := time.Duration(10<<attempt) * time.Second
+						if backoff > 5*time.Minute {
+							backoff = 5 * time.Minute
+						}
+						fmt.Fprintf(os.Stderr, "arctic: pipeline: re-downloading [%s] %s after corruption (in %s)\n",
+							job.YM.String(), job.Type, backoff)
+						select {
+						case <-pipeCtx.Done():
+							break
+						case <-time.After(backoff):
+						}
+						if err := t.downloadJob(pipeCtx, job, emit); err != nil {
+							fmt.Fprintf(os.Stderr, "arctic: pipeline: re-download failed: %v\n", err)
+							lastErr = err
+							continue
+						}
+					} else {
+						// Transient — backoff then retry with existing .zst.
+						backoff := time.Duration(10<<attempt) * time.Second
+						if backoff > 5*time.Minute {
+							backoff = 5 * time.Minute
+						}
+						fmt.Fprintf(os.Stderr, "arctic: pipeline: retrying process for [%s] %s in %s\n",
+							job.YM.String(), job.Type, backoff)
+						select {
+						case <-pipeCtx.Done():
+							break
+						case <-time.After(backoff):
+						}
+					}
+				}
+				if lastErr != nil {
+					if pipeCtx.Err() == nil {
+						setPipeErr(fmt.Errorf("[%s] %s: process (after %d retries): %w",
+							job.YM.String(), job.Type, maxRetries, lastErr))
+						pipeCancel()
+					}
 					continue
 				}
 				uploadCh <- job
@@ -211,12 +279,39 @@ func (t *PipelineTask) runPipeline(ctx context.Context, emit func(*PublishState)
 			if pipeCtx.Err() != nil {
 				continue
 			}
-			if err := t.uploadJob(pipeCtx, job, emit); err != nil {
+			// Auto-heal: retry upload failures with backoff.
+			// Upload errors are always transient (network/rate-limit) since
+			// the parquet shards are already validated locally.
+			var lastErr error
+			for attempt := 0; attempt < maxRetries; attempt++ {
 				if pipeCtx.Err() != nil {
-					continue
+					break
 				}
-				setPipeErr(fmt.Errorf("[%s] %s: upload: %w", job.YM.String(), job.Type, err))
-				pipeCancel()
+				lastErr = t.uploadJob(pipeCtx, job, emit)
+				if lastErr == nil {
+					break
+				}
+				if pipeCtx.Err() != nil {
+					break
+				}
+				backoff := time.Duration(30<<attempt) * time.Second // 30s, 60s, 120s, 240s
+				if backoff > 10*time.Minute {
+					backoff = 10 * time.Minute
+				}
+				fmt.Fprintf(os.Stderr, "arctic: pipeline: upload attempt %d/%d failed for [%s] %s: %v — retrying in %s\n",
+					attempt+1, maxRetries, job.YM.String(), job.Type, lastErr, backoff)
+				t.ls.Update(func(s *StateSnapshot) { s.Stats.Retries++ })
+				select {
+				case <-pipeCtx.Done():
+				case <-time.After(backoff):
+				}
+			}
+			if lastErr != nil {
+				if pipeCtx.Err() == nil {
+					setPipeErr(fmt.Errorf("[%s] %s: upload (after %d retries): %w",
+						job.YM.String(), job.Type, maxRetries, lastErr))
+					pipeCancel()
+				}
 				continue
 			}
 			atomic.AddInt64(&committed_count, 1)
@@ -270,6 +365,20 @@ func (t *PipelineTask) downloadJob(ctx context.Context, job *PipelineJob, emit f
 	prefix := zstPrefix(job.Type)
 	zstPath := cfg.ZstPath(prefix, job.YM.String())
 	job.ZstPath = zstPath
+
+	// Skip download if a valid .zst already exists (e.g. from a previous run
+	// that processed successfully but failed during HF upload, or was OOM-killed
+	// after processing). This avoids expensive re-downloads of multi-GB files.
+	if fi, err := os.Stat(zstPath); err == nil && fi.Size() > 0 {
+		if err := QuickValidateZst(zstPath); err == nil {
+			fmt.Fprintf(os.Stderr, "arctic: pipeline: [%s] %s reusing existing %s (%.1f MB)\n",
+				job.YM.String(), job.Type, zstPath, float64(fi.Size())/(1024*1024))
+			job.DurDown = 0
+			return nil
+		}
+		// Existing file is corrupt — remove and re-download.
+		os.Remove(zstPath)
+	}
 
 	// Update pipeline state.
 	t.updatePipelineSlot("downloading", job.YM.String(), job.Type, func(slot *PipelineSlot) {
@@ -334,6 +443,7 @@ func (t *PipelineTask) retryDownload(ctx context.Context, job *PipelineJob, emit
 	prefix := zstPrefix(job.Type)
 	zstPath := t.cfg.ZstPath(prefix, job.YM.String())
 
+	var lastErr error
 	for attempt := 1; attempt < maxRetries; attempt++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -365,11 +475,14 @@ func (t *PipelineTask) retryDownload(ctx context.Context, job *PipelineJob, emit
 		}
 
 		job.Attempt++
-		if err := t.downloadJob(ctx, job, emit); err == nil {
+		lastErr = t.downloadJob(ctx, job, emit)
+		if lastErr == nil {
 			return nil
 		}
+		fmt.Fprintf(os.Stderr, "arctic: pipeline: download attempt %d/%d failed for [%s] %s: %v\n",
+			attempt+1, maxRetries, job.YM.String(), job.Type, lastErr)
 	}
-	return fmt.Errorf("download failed after %d attempts", maxRetries)
+	return fmt.Errorf("download failed after %d attempts (last: %v)", maxRetries, lastErr)
 }
 
 // processJob handles the processing stage for a single job.
@@ -424,19 +537,24 @@ func (t *PipelineTask) processJob(ctx context.Context, job *PipelineJob, emit fu
 		}
 	})
 
-	// Delete .zst regardless of error.
-	os.Remove(job.ZstPath)
-
 	if err != nil {
 		t.removePipelineSlot("processing", job.YM.String(), job.Type)
 		os.RemoveAll(jobCfg.WorkDir)
 		// Classify error for caller.
 		errStr := err.Error()
 		if containsAny(errStr, "zstd", "scan jsonl") {
+			// Corruption — delete the .zst so a fresh download is forced on retry.
+			os.Remove(job.ZstPath)
 			return &ErrCorruption{Msg: fmt.Sprintf("process: %v", err)}
 		}
+		// Non-corruption error (e.g. ctx canceled, DuckDB failure) — keep the
+		// .zst so it doesn't need to be re-downloaded on retry.
 		return err
 	}
+
+	// Processing succeeded — delete the .zst now. The parquet shards in
+	// jobCfg.WorkDir contain everything needed for the HF upload.
+	os.Remove(job.ZstPath)
 
 	job.DurProc = time.Since(t0)
 	job.ProcResult = procResult
@@ -523,6 +641,8 @@ func (t *PipelineTask) uploadJob(ctx context.Context, job *PipelineJob, emit fun
 	// Batch commit — hold commitMu.
 	const batchSize = 50
 	const hfMaxRetries = 3
+	fmt.Fprintf(os.Stderr, "arctic: pipeline: [%s] %s uploading %d ops (%d shards) to HF…\n",
+		job.YM.String(), job.Type, len(ops), len(job.ProcResult.Shards))
 	t.commitMu.Lock()
 	for i := 0; i < len(ops); i += batchSize {
 		end := i + batchSize
@@ -537,6 +657,9 @@ func (t *PipelineTask) uploadJob(ctx context.Context, job *PipelineJob, emit fun
 		for retry := 0; retry < hfMaxRetries; retry++ {
 			if ctx.Err() != nil {
 				t.commitMu.Unlock()
+				// Revert stats.csv — remove the row we just added so it
+				// doesn't falsely mark this month as committed on restart.
+				WriteStatsCSV(cfg.StatsCSVPath(), existingRows)
 				t.removePipelineSlot("uploading", job.YM.String(), job.Type)
 				return ctx.Err()
 			}
@@ -551,6 +674,7 @@ func (t *PipelineTask) uploadJob(ctx context.Context, job *PipelineJob, emit fun
 				select {
 				case <-ctx.Done():
 					t.commitMu.Unlock()
+					WriteStatsCSV(cfg.StatsCSVPath(), existingRows)
 					t.removePipelineSlot("uploading", job.YM.String(), job.Type)
 					return ctx.Err()
 				case <-time.After(wait):
@@ -559,6 +683,8 @@ func (t *PipelineTask) uploadJob(ctx context.Context, job *PipelineJob, emit fun
 		}
 		if commitErr != nil {
 			t.commitMu.Unlock()
+			// Revert stats.csv — this month was NOT committed.
+			WriteStatsCSV(cfg.StatsCSVPath(), existingRows)
 			t.removePipelineSlot("uploading", job.YM.String(), job.Type)
 			return fmt.Errorf("hf commit (after %d retries): %w", hfMaxRetries, commitErr)
 		}
@@ -819,7 +945,7 @@ func containsAny(s string, subs ...string) bool {
 
 func (t *PipelineTask) runHeartbeat(ctx context.Context) {
 	writeTick := time.NewTicker(1 * time.Minute)
-	commitTick := time.NewTicker(5 * time.Minute)
+	commitTick := time.NewTicker(10 * time.Minute)
 	defer writeTick.Stop()
 	defer commitTick.Stop()
 
@@ -830,7 +956,7 @@ func (t *PipelineTask) runHeartbeat(ctx context.Context) {
 		case <-writeTick.C:
 			t.writeHeartbeatFiles()
 		case <-commitTick.C:
-			if time.Since(time.Unix(0, t.lastHFCommit.Load())) < 5*time.Minute {
+			if time.Since(time.Unix(0, t.lastHFCommit.Load())) < 10*time.Minute {
 				continue
 			}
 			t.writeHeartbeatFiles()
@@ -857,7 +983,7 @@ func (t *PipelineTask) writeHeartbeatFiles() {
 
 func (t *PipelineTask) commitHeartbeat(ctx context.Context, force bool) {
 	if !force {
-		if time.Since(time.Unix(0, t.lastHFCommit.Load())) < 5*time.Minute {
+		if time.Since(time.Unix(0, t.lastHFCommit.Load())) < 10*time.Minute {
 			return
 		}
 	}
@@ -920,10 +1046,12 @@ func (t *PipelineTask) cleanupWork() {
 		dir := filepath.Join(t.cfg.WorkDir, typ)
 		os.RemoveAll(dir)
 	}
-	// Clean raw torrent files.
+	// Clean incomplete .part downloads but keep completed .zst files — they
+	// will be reused by downloadJob if they pass QuickValidateZst, avoiding
+	// expensive re-downloads after OOM kills or upload failures.
 	for _, sub := range []string{"comments", "submissions"} {
 		dir := filepath.Join(t.cfg.RawDir, "reddit", sub)
-		for _, glob := range []string{"R[CS]_*.zst", "R[CS]_*.zst.part"} {
+		for _, glob := range []string{"R[CS]_*.zst.part"} {
 			subMatches, _ := filepath.Glob(filepath.Join(dir, glob))
 			for _, m := range subMatches {
 				os.Remove(m)
