@@ -3,6 +3,7 @@ package arctic
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync/atomic"
 	"time"
 
@@ -22,6 +23,33 @@ var arcticTrackers = []string{
 
 // monthlyInfoHashes maps "YYYY-MM" to infohash for individual monthly torrents (2024+).
 var monthlyInfoHashes = map[string]string{
+	// 2024
+	"2024-01": "ac88546145ca3227e2b90e51ab477c4527dd8b90",
+	"2024-02": "5969ae3e21bb481fea63bf649ec933c222c1f824",
+	"2024-03": "deef710de36929e0aa77200fddda73c86142372c",
+	"2024-04": "ad4617a3e9c1f52405197fc088b28a8018e12a7a",
+	"2024-05": "4f60634d96d35158842cd58b495dc3b444d78b0d",
+	"2024-06": "dcdecc93ca9a9d758c045345112771cef5b4989a",
+	"2024-07": "6e5300446bd9b328d0b812cdb3022891e086d9ec",
+	"2024-08": "8c2d4b00ce8ff9d45e335bed106fe9046c60adb0",
+	"2024-09": "43a6e113d6ecacf38e58ecc6caa28d68892dd8af",
+	"2024-10": "507dfcda29de9936dd77ed4f34c6442dc675c98f",
+	"2024-11": "a1b490117808d9541ab9e3e67a3447e2f4f48f01",
+	"2024-12": "eb2017da9f63a49460dde21a4ebe3b7c517f3ad9",
+	// 2025
+	"2025-01": "4fd14d4c3d792e0b1c5cf6b1d9516c48ba6c4a24",
+	"2025-02": "2f873e0b15da5ee29b63e586c0ab1dedd3508870",
+	"2025-03": "69d5e046e15c02182430879f50d62b18fe1404fb",
+	"2025-04": "552f34df5b830d18f98b69541e7e84f2658346b9",
+	"2025-05": "186a0f85a52ff4f1b08677cd312423ace9b34976",
+	"2025-06": "bec5590bd3bc6c0f2d868f36ec92bec1aff4480e",
+	"2025-07": "b6a7ccf72368a7d39c018c423e01bc15aa551122",
+	"2025-08": "c71a97c1f7f676c56963c4e15a81f20afb0109be",
+	"2025-09": "a92ce24b4180e4aa9295353f4d26f050031e3058",
+	"2025-10": "cb4fa22ea76ea0a2bb38885b27323c94a5d9d16c",
+	"2025-11": "2d056b22743718ac81915f25b094b6226668663f",
+	"2025-12": "481bf2eac43172ae724fd6c75dbcb8e27de77734",
+	// 2026
 	"2026-01": "8412b89151101d88c915334c45d9c223169a1a60",
 	"2026-02": "c5ba00048236b60f819dbf010e9034d24fc291fb",
 }
@@ -41,6 +69,7 @@ type DownloadProgress struct {
 	SpeedBps   float64
 	Peers      int
 	Elapsed    time.Duration
+	Message    string // formatted progress line, e.g. "12.3 MB/s  5 peers  ETA 2m30s"
 }
 
 type DownloadCallback func(DownloadProgress)
@@ -66,10 +95,8 @@ func DownloadZst(ctx context.Context, cfg Config, year, month int, typ string,
 		infoHash = h
 	}
 
-	// 2024-01 through 2025-12 are not covered by the bundle torrent
-	// and don't yet have individual hashes in the map.
-	// Return a clear error rather than silently downloading the wrong file.
-	if year >= 2024 && year <= 2025 {
+	// For any year ≥ 2024 not covered by the bundle torrent, require a monthly hash.
+	if year >= 2024 {
 		if _, ok := monthlyInfoHashes[ym]; !ok {
 			return 0, fmt.Errorf("no torrent hash for %s: add it to monthlyInfoHashes in torrent.go (see download_links.md)", ym)
 		}
@@ -91,19 +118,21 @@ func DownloadZst(ctx context.Context, cfg Config, year, month int, typ string,
 	dlCtx, dlCancel := context.WithCancel(ctx)
 	defer dlCancel()
 
-	var lastBytes atomic.Int64
+	// lastActivity tracks the last time any meaningful progress was observed.
+	// Updated on every callback with peers or bytes, and before Download starts.
+	var lastActivity atomic.Int64
+	lastActivity.Store(time.Now().UnixNano())
+
 	go func() {
-		t := time.NewTicker(5 * time.Second)
+		t := time.NewTicker(10 * time.Second)
 		defer t.Stop()
-		noProgress := time.Now()
 		for {
 			select {
 			case <-dlCtx.Done():
 				return
 			case <-t.C:
-				if lastBytes.Load() > 0 {
-					noProgress = time.Now()
-				} else if time.Since(noProgress) > 60*time.Second {
+				idle := time.Since(time.Unix(0, lastActivity.Load()))
+				if idle > 3*time.Minute {
 					dlCancel()
 					return
 				}
@@ -112,8 +141,18 @@ func DownloadZst(ctx context.Context, cfg Config, year, month int, typ string,
 	}()
 
 	err = cl.Download(dlCtx, []string{fileInTorrent}, func(p torrent.Progress) {
-		lastBytes.Store(p.BytesCompleted)
+		// Any peers or bytes counts as activity (alive, not stalled).
+		if p.Peers > 0 || p.BytesCompleted > 0 {
+			lastActivity.Store(time.Now().UnixNano())
+		}
 		if cb != nil {
+			msg := fmt.Sprintf("%d peers  connecting…", p.Peers)
+			if p.Speed > 0 {
+				msg = fmt.Sprintf("%.1f MB/s  %d peers", p.Speed/1e6, p.Peers)
+				if p.ETA > 0 && p.BytesTotal > 0 {
+					msg += fmt.Sprintf("  ETA %s", p.ETA.Round(time.Second))
+				}
+			}
 			cb(DownloadProgress{
 				Phase:      "downloading",
 				BytesDone:  p.BytesCompleted,
@@ -121,14 +160,27 @@ func DownloadZst(ctx context.Context, cfg Config, year, month int, typ string,
 				SpeedBps:   p.Speed,
 				Peers:      p.Peers,
 				Elapsed:    p.Elapsed,
+				Message:    msg,
 			})
 		}
 	})
 	if err != nil {
 		if dlCtx.Err() != nil && ctx.Err() == nil {
-			return 0, fmt.Errorf("torrent timeout: no peers found after 60s for %s", fileInTorrent)
+			return 0, fmt.Errorf("torrent timeout: no progress for 3 minutes on %s", fileInTorrent)
 		}
 		return 0, fmt.Errorf("torrent download %s: %w", fileInTorrent, err)
+	}
+
+	// anacrolix/torrent may keep the file as <name>.part until the client is closed.
+	// Rename it to the expected path now, before Close() is deferred.
+	finalPath := cfg.ZstPath(prefix, ym)
+	if _, statErr := os.Stat(finalPath); os.IsNotExist(statErr) {
+		partPath := finalPath + ".part"
+		if _, perr := os.Stat(partPath); perr == nil {
+			if rerr := os.Rename(partPath, finalPath); rerr != nil {
+				return 0, fmt.Errorf("rename .part to .zst: %w", rerr)
+			}
+		}
 	}
 
 	dur := time.Since(start)

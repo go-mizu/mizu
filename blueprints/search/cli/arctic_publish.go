@@ -135,23 +135,38 @@ func runArcticPublish(ctx context.Context, repoRoot, repoID, fromStr, toStr stri
 				labelStyle.Render(s.Type),
 				labelStyle.Render("skipped (already committed)"))
 		case "download":
-			msg := "downloading…"
-			if s.Message != "" {
-				msg = s.Message
-			}
-			if s.Bytes > 0 {
-				fmt.Printf("  [%s] %s  %s  %s\n",
+			if s.Bytes > 0 && s.BytesTotal > 0 {
+				pct := int(100 * s.Bytes / s.BytesTotal)
+				line := fmt.Sprintf("%s / %s  %d%%",
+					fmtArcticSize(s.Bytes), fmtArcticSize(s.BytesTotal), pct)
+				if s.Message != "" {
+					line += "  " + s.Message
+				}
+				fmt.Printf("\r  [%s] %s  %s  %-60s",
 					labelStyle.Render(s.YM),
 					labelStyle.Render(s.Type),
-					infoStyle.Render(msg),
-					labelStyle.Render(fmtArcticSize(s.Bytes)))
+					infoStyle.Render("downloading"),
+					line)
+			} else if s.Bytes > 0 {
+				fmt.Printf("\r  [%s] %s  %s  %s  %-40s",
+					labelStyle.Render(s.YM),
+					labelStyle.Render(s.Type),
+					infoStyle.Render("downloading"),
+					labelStyle.Render(fmtArcticSize(s.Bytes)),
+					s.Message)
 			} else {
-				fmt.Printf("  [%s] %s  %s\n",
+				msg := "connecting…"
+				if s.Message != "" {
+					msg = s.Message
+				}
+				fmt.Printf("\r  [%s] %s  %s  %-60s",
 					labelStyle.Render(s.YM),
 					labelStyle.Render(s.Type),
-					infoStyle.Render(msg))
+					infoStyle.Render("downloading"),
+					msg)
 			}
 		case "process":
+			fmt.Println() // end the \r download progress line
 			if s.Shards > 0 {
 				fmt.Printf("  [%s] %s  processing  shard %d  %s rows\n",
 					labelStyle.Render(s.YM),

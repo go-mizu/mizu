@@ -440,6 +440,39 @@ deploy-dashboard: deploy-linux-noble-browser ## Build, deploy, and (re)start FTS
 	@echo "==> Verifying dashboard is responding..."
 	@$(SSH) $(REMOTE_SSH) 'curl -sf http://localhost:$(DASHBOARD_PORT)/api/scrape/list > /dev/null && echo "Dashboard running on port $(DASHBOARD_PORT)" || { echo "ERROR: dashboard not responding"; tail -20 /tmp/dashboard.log; exit 1; }'
 
+.PHONY: deploy-cc-watch
+deploy-cc-watch: ## Deploy cc_watch.sh and (re)start g_watch screen session (SERVER=2 for server2; HF_TOKEN=hf_... to write ~/.hf_token)
+	@echo "==> Deploying cc_watch.sh to $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'mkdir -p ~/scripts'
+	@$(SCP) scripts/cc_watch.sh $(REMOTE_SSH):~/scripts/cc_watch.sh
+	@$(SSH) $(REMOTE_SSH) 'chmod +x ~/scripts/cc_watch.sh'
+	@if [ -n "$(HF_TOKEN)" ]; then \
+		echo "==> Writing HF_TOKEN to $(REMOTE_SSH):~/.hf_token..."; \
+		$(SSH) $(REMOTE_SSH) "echo '$(HF_TOKEN)' > ~/.hf_token && chmod 600 ~/.hf_token"; \
+	fi
+	@echo "==> Stopping existing g_watch session on $(REMOTE_SSH)..."
+	-@$(SSH) $(REMOTE_SSH) 'screen -S g_watch -X quit 2>/dev/null; true'
+	-@$(SSH) $(REMOTE_SSH) 'pkill -f "cc publish --watch" 2>/dev/null; true'
+	@sleep 1
+	@echo "==> Starting g_watch on $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'screen -dmS g_watch bash -c "bash ~/scripts/cc_watch.sh; exec bash"'
+	@sleep 2
+	@echo "==> Verifying g_watch is running on $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'screen -ls | grep g_watch && echo "g_watch started" || { echo "ERROR: g_watch not found"; exit 1; }'
+
+.PHONY: remote-cc-watch-attach
+remote-cc-watch-attach: ## Attach to g_watch screen session on remote server
+	@$(SSH) -t $(REMOTE_SSH) 'screen -r g_watch'
+
+.PHONY: remote-cc-watch-kill
+remote-cc-watch-kill: ## Kill g_watch screen session on remote server
+	@$(SSH) $(REMOTE_SSH) 'screen -S g_watch -X quit 2>/dev/null && echo "Killed" || echo "No session found"'
+	-@$(SSH) $(REMOTE_SSH) 'pkill -f "cc publish --watch" 2>/dev/null; true'
+
+.PHONY: remote-cc-watch-log
+remote-cc-watch-log: ## Tail cc_watch log on remote server
+	@$(SSH) $(REMOTE_SSH) 'tail -f ~/log/cc_watch.log'
+
 .PHONY: deploy-linux-focal-browser
 deploy-linux-focal-browser: build-linux ## [LEGACY] Deploy Ubuntu 20.04 focal binary with Chrome wrapper (bundled libstdc++)
 	@test -f "$(DEPLOY_KEY)" || { echo "Deploy key not found: $(DEPLOY_KEY)"; exit 1; }

@@ -46,8 +46,9 @@ func (c Config) WithDefaults() Config {
 	return c
 }
 
-func (c Config) StatsCSVPath() string { return filepath.Join(c.RepoRoot, "stats.csv") }
-func (c Config) READMEPath() string   { return filepath.Join(c.RepoRoot, "README.md") }
+func (c Config) StatsCSVPath() string  { return filepath.Join(c.RepoRoot, "stats.csv") }
+func (c Config) READMEPath() string    { return filepath.Join(c.RepoRoot, "README.md") }
+func (c Config) StatesJSONPath() string { return filepath.Join(c.RepoRoot, "states.json") }
 
 // ZstPath returns the local path where the torrent client saves a .zst file.
 // The bundle torrent has a root folder "reddit/", so files land at:
