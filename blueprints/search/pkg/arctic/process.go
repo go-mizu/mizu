@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +30,146 @@ type ProcessResult struct {
 }
 
 type ShardCallback func(ShardResult)
+
+// QuickValidateZst performs a fast sanity check on a .zst file:
+//   - Verifies the zstd magic bytes at the start.
+//   - Checks the last 16 bytes are not all zeros (catches mmap boundary-piece
+//     corruption where anacrolix/torrent left the tail of the file unwritten).
+//   - Samples 4 KB at 25%, 50%, 75% offsets — catches zero-filled mid-sections
+//     left by incomplete mmap pages.
+//
+// This runs in microseconds and saves wasting time streaming a bad file.
+func QuickValidateZst(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open: %w", err)
+	}
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("stat: %w", err)
+	}
+	size := fi.Size()
+
+	// zstd regular-frame magic: 0xFD2FB528 little-endian = [0x28 0xB5 0x2F 0xFD]
+	var magic [4]byte
+	if _, err := io.ReadFull(f, magic[:]); err != nil {
+		return fmt.Errorf("read magic: %w", err)
+	}
+	if magic[0] != 0x28 || magic[1] != 0xb5 || magic[2] != 0x2f || magic[3] != 0xfd {
+		return fmt.Errorf("invalid zstd magic: %02x%02x%02x%02x", magic[0], magic[1], magic[2], magic[3])
+	}
+
+	// Check last 16 bytes are not all zeros.
+	// A valid zstd stream always ends with non-zero data (checksum / frame header).
+	// All-zero tail = mmap was pre-allocated but the boundary piece was never written.
+	if _, err := f.Seek(-16, io.SeekEnd); err == nil {
+		var tail [16]byte
+		if _, err := io.ReadFull(f, tail[:]); err == nil {
+			if isAllZero(tail[:]) {
+				return fmt.Errorf("zero-padded tail: boundary piece was not downloaded (mmap incomplete)")
+			}
+		}
+	}
+
+	// Sample 4 KB at 25%, 50%, 75% — catches large zero-filled holes from
+	// incomplete mmap pages or missed torrent pieces in the middle of the file.
+	const sampleSize = 4096
+	if size > sampleSize*4 {
+		var sample [sampleSize]byte
+		for _, pct := range []int64{25, 50, 75} {
+			offset := size * pct / 100
+			if _, err := f.Seek(offset, io.SeekStart); err != nil {
+				continue
+			}
+			n, err := io.ReadFull(f, sample[:])
+			if err != nil || n < sampleSize {
+				continue
+			}
+			if isAllZero(sample[:]) {
+				return fmt.Errorf("zero-filled region at %d%% offset (%d): likely incomplete download", pct, offset)
+			}
+		}
+	}
+
+	return nil
+}
+
+// DeepValidateZst performs a full streaming decode of the .zst file into
+// io.Discard. This catches mid-file corruption that QuickValidateZst misses
+// (bit flips, truncated zstd frames, etc.). It costs ~1-3s per GB on modern
+// hardware but guarantees the entire stream is decodable before we spend
+// time processing it.
+func DeepValidateZst(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open: %w", err)
+	}
+	defer f.Close()
+
+	dec, err := zstd.NewReader(f, zstd.WithDecoderMaxWindow(1<<31))
+	if err != nil {
+		return fmt.Errorf("zstd reader: %w", err)
+	}
+	defer dec.Close()
+
+	n, err := io.Copy(io.Discard, dec)
+	if err != nil {
+		return fmt.Errorf("zstd decode failed after %d bytes: %w", n, err)
+	}
+	return nil
+}
+
+func isAllZero(b []byte) bool {
+	for _, v := range b {
+		if v != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// ValidateParquet performs a basic sanity check on a parquet shard:
+// verifies the file is non-empty and has the PAR1 magic at the start and end.
+func ValidateParquet(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open: %w", err)
+	}
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("stat: %w", err)
+	}
+	if fi.Size() < 12 { // min parquet: 4 (magic) + 4 (footer len) + 4 (magic)
+		return fmt.Errorf("file too small (%d bytes)", fi.Size())
+	}
+
+	// Check leading PAR1 magic
+	var head [4]byte
+	if _, err := io.ReadFull(f, head[:]); err != nil {
+		return fmt.Errorf("read header: %w", err)
+	}
+	if string(head[:]) != "PAR1" {
+		return fmt.Errorf("invalid header magic: %q", head)
+	}
+
+	// Check trailing PAR1 magic
+	if _, err := f.Seek(-4, io.SeekEnd); err != nil {
+		return fmt.Errorf("seek tail: %w", err)
+	}
+	var tail [4]byte
+	if _, err := io.ReadFull(f, tail[:]); err != nil {
+		return fmt.Errorf("read tail: %w", err)
+	}
+	if string(tail[:]) != "PAR1" {
+		return fmt.Errorf("invalid tail magic: %q (truncated?)", tail)
+	}
+
+	return nil
+}
 
 // ProcessZst streams the .zst file at zstPath, reads cfg.ChunkLines lines per chunk,
 // writes each chunk to a temp file, imports to DuckDB :memory:, exports parquet shard,
@@ -176,6 +317,11 @@ FROM read_json_auto('%s',
 	fi, err := os.Stat(shardPath)
 	if err != nil {
 		return ShardResult{}, fmt.Errorf("stat shard: %w", err)
+	}
+
+	if err := ValidateParquet(shardPath); err != nil {
+		os.Remove(shardPath)
+		return ShardResult{}, fmt.Errorf("validate shard %d: %w", idx, err)
 	}
 
 	return ShardResult{

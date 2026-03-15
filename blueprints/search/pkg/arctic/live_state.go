@@ -12,8 +12,10 @@ import (
 const (
 	PhaseIdle        = "idle"
 	PhaseDownloading = "downloading"
+	PhaseValidating  = "validating"
 	PhaseProcessing  = "processing"
 	PhaseCommitting  = "committing"
+	PhaseRetrying    = "retrying"
 	PhaseDone        = "done"
 )
 
@@ -30,11 +32,12 @@ type LiveCurrent struct {
 
 // SessionStats holds aggregate counters for the running session.
 type SessionStats struct {
-	Committed   int   `json:"committed"`
-	Skipped     int   `json:"skipped"`
-	TotalRows   int64 `json:"total_rows"`
-	TotalBytes  int64 `json:"total_bytes"`
-	TotalMonths int   `json:"total_months"`
+	Committed    int   `json:"committed"`
+	Skipped      int   `json:"skipped"`
+	Retries      int   `json:"retries"`
+	TotalRows    int64 `json:"total_rows"`
+	TotalBytes   int64 `json:"total_bytes"`
+	TotalMonths  int   `json:"total_months"`
 }
 
 // StateSnapshot is the JSON-serializable point-in-time view of the session.
