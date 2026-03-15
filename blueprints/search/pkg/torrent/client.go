@@ -22,7 +22,7 @@ type Config struct {
 	Trackers    []string // Tracker URLs
 	NoUpload    bool     // Disable seeding (default true)
 	MaxConns    int      // Max connections per torrent (default 80)
-	TorrentFile string   // Path to .torrent file (faster than magnet, skip if empty)
+	TorrentFile string // Path to .torrent file (faster than magnet, skip if empty)
 }
 
 // File represents a file in the torrent.

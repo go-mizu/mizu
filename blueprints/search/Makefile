@@ -334,7 +334,7 @@ build-on-server: ## Rsync source + build natively on remote server (fast, no QEM
 			-ldflags \"$(GO_LDFLAGS)\" \
 			-o ~/bin/search-linux-noble ./cmd/search; \
 		chmod +x ~/bin/search-linux-noble; \
-		printf '"'"'#!/usr/bin/env bash\nulimit -Hn 131072 2>/dev/null; ulimit -n 131072 2>/dev/null || ulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=2000000000\nexport GODEBUG=netdns=go\nexec \"$$HOME/bin/search-linux-noble\" \"\$$@\"\n'"'"' > ~/bin/search; \
+		printf '"'"'#!/usr/bin/env bash\nulimit -Hn 131072 2>/dev/null; ulimit -n 131072 2>/dev/null || ulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=$${GOMEMLIMIT:-2000000000}\nexport GODEBUG=netdns=go\nexport TORRENT_STORAGE_DEFAULT_FILE_IO=classic\nexec \"$$HOME/bin/search-linux-noble\" \"\$$@\"\n'"'"' > ~/bin/search; \
 		chmod +x ~/bin/search; \
 		echo \"Done: $$HOME/bin/search-linux-noble\""'
 	@echo "Built and installed on $(REMOTE_SSH):~/bin/search"
@@ -351,7 +351,7 @@ deploy-linux-noble: build-linux-noble ## Deploy Ubuntu 24.04 binary to remote $$
 	@$(SSH) $(REMOTE_SSH) 'bash -lc "set -e; \
 		install -m 0755 $$HOME/.search-upload.tmp $$HOME/bin/search-linux-noble; \
 		rm -f $$HOME/.search-upload.tmp; \
-		printf '"'"'#!/usr/bin/env bash\nulimit -Hn 131072 2>/dev/null; ulimit -n 131072 2>/dev/null || ulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=2000000000\nexport GODEBUG=netdns=go\nexec \"$$HOME/bin/search-linux-noble\" \"\$$@\"\n'"'"' > $$HOME/bin/search; \
+		printf '"'"'#!/usr/bin/env bash\nulimit -Hn 131072 2>/dev/null; ulimit -n 131072 2>/dev/null || ulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=$${GOMEMLIMIT:-2000000000}\nexport GODEBUG=netdns=go\nexport TORRENT_STORAGE_DEFAULT_FILE_IO=classic\nexec \"$$HOME/bin/search-linux-noble\" \"\$$@\"\n'"'"' > $$HOME/bin/search; \
 		chmod +x $$HOME/bin/search"'
 	@echo "Deployed Noble: $(REMOTE_SSH):~/bin/search"
 
@@ -400,7 +400,7 @@ deploy-linux-noble-browser: build-linux-noble ## Deploy Ubuntu 24.04 binary with
 	@$(SSH) $(REMOTE_SSH) 'bash -lc "set -e; \
 		install -m 0755 $$HOME/.search-upload.tmp $$HOME/bin/search-linux-noble; \
 		rm -f $$HOME/.search-upload.tmp; \
-		printf '"'"'#!/usr/bin/env bash\nulimit -Hn 131072 2>/dev/null; ulimit -n 131072 2>/dev/null || ulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=2000000000\nexport GODEBUG=netdns=go\nif [ -d $$HOME/bin/chrome-libs ]; then export LD_LIBRARY_PATH=\"$$HOME/bin/chrome-libs\"; fi\nif [ -f /usr/bin/chromium ]; then export CHROME_BIN=/usr/bin/chromium; elif [ -f $$HOME/bin/chromium ]; then export CHROME_BIN=$$HOME/bin/chromium; fi\nexec \"$$HOME/bin/search-linux-noble\" \"\$$@\"\n'"'"' > $$HOME/bin/search; \
+		printf '"'"'#!/usr/bin/env bash\nulimit -Hn 131072 2>/dev/null; ulimit -n 131072 2>/dev/null || ulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=$${GOMEMLIMIT:-2000000000}\nexport GODEBUG=netdns=go\nexport TORRENT_STORAGE_DEFAULT_FILE_IO=classic\nif [ -d $$HOME/bin/chrome-libs ]; then export LD_LIBRARY_PATH=\"$$HOME/bin/chrome-libs\"; fi\nif [ -f /usr/bin/chromium ]; then export CHROME_BIN=/usr/bin/chromium; elif [ -f $$HOME/bin/chromium ]; then export CHROME_BIN=$$HOME/bin/chromium; fi\nexec \"$$HOME/bin/search-linux-noble\" \"\$$@\"\n'"'"' > $$HOME/bin/search; \
 		chmod +x $$HOME/bin/search"'
 	@echo "Deployed Noble+Chrome: $(REMOTE_SSH):~/bin/search"
 	@echo "NOTE: Run 'make download-chrome SERVER=$(SERVER)' (no sudo) or 'make install-chrome SERVER=$(SERVER)' (needs sudo) to install Chrome first"
@@ -419,7 +419,7 @@ deploy-linux-focal: build-linux ## [LEGACY] Deploy Ubuntu 20.04 focal binary wit
 		install -m 0755 $$HOME/.search-upload.tmp $$HOME/bin/search-linux; \
 		install -m 0644 $$HOME/.libstdc++.so.6.tmp $$HOME/bin/search-libs/libstdc++.so.6; \
 		rm -f $$HOME/.search-upload.tmp $$HOME/.libstdc++.so.6.tmp; \
-		printf '"'"'#!/usr/bin/env bash\nulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=2000000000\nexport GODEBUG=netdns=go\nexport LD_LIBRARY_PATH=\"$$HOME/bin/search-libs\$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}\"\nexec \"$$HOME/bin/search-linux\" \"\$$@\"\n'"'"' > $$HOME/bin/search; \
+		printf '"'"'#!/usr/bin/env bash\nulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=$${GOMEMLIMIT:-2000000000}\nexport GODEBUG=netdns=go\nexport LD_LIBRARY_PATH=\"$$HOME/bin/search-libs\$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}\"\nexec \"$$HOME/bin/search-linux\" \"\$$@\"\n'"'"' > $$HOME/bin/search; \
 		chmod +x $$HOME/bin/search"'
 	@echo "Deployed (focal): $(REMOTE_SSH):~/bin/search"
 
@@ -511,7 +511,7 @@ deploy-linux-focal-browser: build-linux ## [LEGACY] Deploy Ubuntu 20.04 focal bi
 		install -m 0755 $$HOME/.search-upload.tmp $$HOME/bin/search-linux; \
 		install -m 0644 $$HOME/.libstdc++.so.6.tmp $$HOME/bin/search-libs/libstdc++.so.6; \
 		rm -f $$HOME/.search-upload.tmp $$HOME/.libstdc++.so.6.tmp; \
-		printf '"'"'#!/usr/bin/env bash\nulimit -Hn 131072 2>/dev/null; ulimit -n 131072 2>/dev/null || ulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=2000000000\nexport GODEBUG=netdns=go\nexport LD_LIBRARY_PATH=\"$$HOME/bin/search-libs\$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}\"\nif [ -d $$HOME/bin/chrome-libs ]; then export LD_LIBRARY_PATH=\"$$HOME/bin/chrome-libs:\$${LD_LIBRARY_PATH}\"; fi\nif [ -f /usr/bin/chromium ]; then export CHROME_BIN=/usr/bin/chromium; elif [ -f $$HOME/bin/chromium ]; then export CHROME_BIN=$$HOME/bin/chromium; fi\nexec \"$$HOME/bin/search-linux\" \"\$$@\"\n'"'"' > $$HOME/bin/search; \
+		printf '"'"'#!/usr/bin/env bash\nulimit -Hn 131072 2>/dev/null; ulimit -n 131072 2>/dev/null || ulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=$${GOMEMLIMIT:-2000000000}\nexport GODEBUG=netdns=go\nexport LD_LIBRARY_PATH=\"$$HOME/bin/search-libs\$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}\"\nif [ -d $$HOME/bin/chrome-libs ]; then export LD_LIBRARY_PATH=\"$$HOME/bin/chrome-libs:\$${LD_LIBRARY_PATH}\"; fi\nif [ -f /usr/bin/chromium ]; then export CHROME_BIN=/usr/bin/chromium; elif [ -f $$HOME/bin/chromium ]; then export CHROME_BIN=$$HOME/bin/chromium; fi\nexec \"$$HOME/bin/search-linux\" \"\$$@\"\n'"'"' > $$HOME/bin/search; \
 		chmod +x $$HOME/bin/search"'
 	@echo "Deployed Focal+Chrome: $(REMOTE_SSH):~/bin/search"
 	@echo "NOTE: Run 'make download-chrome SERVER=$(SERVER)' to install Chrome first"
