@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+	"time"
 )
 
 type Config struct {
@@ -16,8 +17,9 @@ type Config struct {
 	WorkDir           string
 	MinFreeGB         int
 	ChunkLines        int
-	DuckDBMemoryMB    int // per-instance DuckDB memory limit; 0 = 512 MB
-	MaxConvertWorkers int // concurrent DuckDB shard conversions; 0 = 1 (sequential)
+	DuckDBMemoryMB    int    // per-instance DuckDB memory limit; 0 = 512 MB
+	MaxConvertWorkers int    // concurrent DuckDB shard conversions; 0 = 1 (sequential)
+	Engine            string // "go" (default) or "duckdb"; controls chunk→parquet converter
 }
 
 func DefaultConfig() Config {
@@ -26,7 +28,7 @@ func DefaultConfig() Config {
 	raw  := envOr("MIZU_ARCTIC_RAW_DIR",   filepath.Join(home, "data", "arctic", "raw"))
 	work := envOr("MIZU_ARCTIC_WORK_DIR",  filepath.Join(home, "data", "arctic", "work"))
 	minFree := envIntOr("MIZU_ARCTIC_MIN_FREE_GB", 30)
-	chunkLines := envIntOr("MIZU_ARCTIC_CHUNK_LINES", 500_000)
+	chunkLines := envIntOr("MIZU_ARCTIC_CHUNK_LINES", 100_000)
 	return Config{
 		RepoRoot:   root,
 		HFRepo:     "open-index/arctic",
@@ -45,7 +47,14 @@ func (c Config) WithDefaults() Config {
 	if c.WorkDir    == "" { c.WorkDir    = def.WorkDir }
 	if c.MinFreeGB  == 0  { c.MinFreeGB  = def.MinFreeGB }
 	if c.ChunkLines == 0  { c.ChunkLines = def.ChunkLines }
+	if c.Engine     == "" { c.Engine     = envOr("MIZU_ARCTIC_ENGINE", "go") }
 	return c
+}
+
+// UseGoParquet returns true when the Go parquet writer should be used
+// instead of DuckDB for chunk→parquet conversion.
+func (c Config) UseGoParquet() bool {
+	return c.Engine != "duckdb"
 }
 
 // DuckDBMemory returns the DuckDB memory limit string (e.g. "512MB").
@@ -129,6 +138,14 @@ func (c Config) FreeDiskGB() (float64, error) {
 	}
 	freeBytes := st.Bavail * uint64(st.Bsize)
 	return float64(freeBytes) / (1024 * 1024 * 1024), nil
+}
+
+// logf writes a timestamped log line to stderr.
+// Format: "2026-03-16 14:05:02 arctic: <message>"
+func logf(format string, args ...interface{}) {
+	ts := time.Now().Format("2006-01-02 15:04:05")
+	msg := fmt.Sprintf(format, args...)
+	fmt.Fprintf(os.Stderr, "%s arctic: %s\n", ts, msg)
 }
 
 func envOr(key, def string) string {
