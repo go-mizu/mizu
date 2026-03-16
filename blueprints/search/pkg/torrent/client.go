@@ -22,7 +22,8 @@ type Config struct {
 	Trackers    []string // Tracker URLs
 	NoUpload    bool     // Disable seeding (default true)
 	MaxConns    int      // Max connections per torrent (default 80)
-	TorrentFile string // Path to .torrent file (faster than magnet, skip if empty)
+	TorrentFile string   // Path to .torrent file (faster than magnet, skip if empty)
+	ListenPort  int      // TCP/UDP listen port; 0 = random ephemeral port
 }
 
 // File represents a file in the torrent.
@@ -78,6 +79,7 @@ func New(cfg Config) (*Client, error) {
 	tcfg.NoUpload = cfg.NoUpload
 	tcfg.Seed = false
 	tcfg.EstablishedConnsPerTorrent = cfg.MaxConns
+	tcfg.ListenPort = cfg.ListenPort // 0 = random ephemeral port
 
 	cl, err := torrent.NewClient(tcfg)
 	if err != nil {

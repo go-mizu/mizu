@@ -106,10 +106,11 @@ func FetchZstSizes(ctx context.Context, cfg Config, path string) (ZstSizes, erro
 	// ── Bundle torrent (2005-12 → 2023-12) ──────────────────────────────────
 	logf("catalog: connecting to bundle torrent for file sizes…")
 	bundleCL, err := torrent.New(torrent.Config{
-		DataDir:  cfg.RawDir,
-		InfoHash: bundleInfoHash,
-		Trackers: arcticTrackers,
-		NoUpload: true,
+		DataDir:    cfg.RawDir,
+		InfoHash:   bundleInfoHash,
+		Trackers:   arcticTrackers,
+		NoUpload:   true,
+		ListenPort: 0, // ephemeral port — avoids conflict with running pipeline
 	})
 	if err != nil {
 		return nil, fmt.Errorf("bundle torrent client: %w", err)
@@ -140,10 +141,11 @@ func FetchZstSizes(ctx context.Context, cfg Config, path string) (ZstSizes, erro
 			continue
 		}
 		cl, err := torrent.New(torrent.Config{
-			DataDir:  cfg.RawDir,
-			InfoHash: infoHash,
-			Trackers: arcticTrackers,
-			NoUpload: true,
+			DataDir:    cfg.RawDir,
+			InfoHash:   infoHash,
+			Trackers:   arcticTrackers,
+			NoUpload:   true,
+			ListenPort: 0, // ephemeral port — avoids conflict with running pipeline
 		})
 		if err != nil {
 			logf("catalog: monthly %s: client error: %v", ym, err)
