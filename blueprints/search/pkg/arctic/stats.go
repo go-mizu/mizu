@@ -17,7 +17,8 @@ type StatsRow struct {
 	Type         string
 	Shards       int
 	Count        int64
-	SizeBytes    int64
+	SizeBytes    int64  // total Parquet size across all shards
+	ZstBytes     int64  // original .zst source file size (0 = not recorded)
 	DurDownloadS float64
 	DurProcessS  float64
 	DurCommitS   float64
@@ -58,10 +59,19 @@ func ReadStatsCSV(path string) ([]StatsRow, error) {
 		row.Shards, _       = strconv.Atoi(rec[3])
 		row.Count, _        = strconv.ParseInt(rec[4], 10, 64)
 		row.SizeBytes, _    = strconv.ParseInt(rec[5], 10, 64)
-		row.DurDownloadS, _ = strconv.ParseFloat(rec[6], 64)
-		row.DurProcessS, _  = strconv.ParseFloat(rec[7], 64)
-		row.DurCommitS, _   = strconv.ParseFloat(rec[8], 64)
-		row.CommittedAt, _  = time.Parse(time.RFC3339, rec[9])
+		// rec[6] is zst_bytes (added in v2); older files have dur_download_s here
+		if len(rec) >= 11 {
+			row.ZstBytes, _     = strconv.ParseInt(rec[6], 10, 64)
+			row.DurDownloadS, _ = strconv.ParseFloat(rec[7], 64)
+			row.DurProcessS, _  = strconv.ParseFloat(rec[8], 64)
+			row.DurCommitS, _   = strconv.ParseFloat(rec[9], 64)
+			row.CommittedAt, _  = time.Parse(time.RFC3339, rec[10])
+		} else {
+			row.DurDownloadS, _ = strconv.ParseFloat(rec[6], 64)
+			row.DurProcessS, _  = strconv.ParseFloat(rec[7], 64)
+			row.DurCommitS, _   = strconv.ParseFloat(rec[8], 64)
+			row.CommittedAt, _  = time.Parse(time.RFC3339, rec[9])
+		}
 		rows = append(rows, row)
 	}
 	return rows, nil
@@ -112,7 +122,7 @@ func writeCSVAtomic(path string, rows []StatsRow) error {
 	}()
 
 	w := csv.NewWriter(tmp)
-	_ = w.Write([]string{"year","month","type","shards","count","size_bytes",
+	_ = w.Write([]string{"year","month","type","shards","count","size_bytes","zst_bytes",
 		"dur_download_s","dur_process_s","dur_commit_s","committed_at"})
 	for _, r := range rows {
 		_ = w.Write([]string{
@@ -122,6 +132,7 @@ func writeCSVAtomic(path string, rows []StatsRow) error {
 			strconv.Itoa(r.Shards),
 			strconv.FormatInt(r.Count, 10),
 			strconv.FormatInt(r.SizeBytes, 10),
+			strconv.FormatInt(r.ZstBytes, 10),
 			strconv.FormatFloat(r.DurDownloadS, 'f', 2, 64),
 			strconv.FormatFloat(r.DurProcessS, 'f', 2, 64),
 			strconv.FormatFloat(r.DurCommitS, 'f', 2, 64),

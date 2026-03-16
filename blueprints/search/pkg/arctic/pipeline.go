@@ -44,6 +44,9 @@ type PipelineTask struct {
 	// disk space coordination
 	diskMu   sync.Mutex
 	diskCond *sync.Cond
+
+	// zst size catalog loaded from zst_sizes.json (torrent metadata)
+	zstSizes ZstSizes
 }
 
 // NewPipelineTask constructs a PipelineTask with auto-detected hardware.
@@ -52,10 +55,11 @@ func NewPipelineTask(cfg Config, opts PublishOptions) *PipelineTask {
 	budget := ComputeBudget(hw, cfg)
 
 	t := &PipelineTask{
-		cfg:    cfg,
-		opts:   opts,
-		budget: budget,
-		hw:     hw,
+		cfg:      cfg,
+		opts:     opts,
+		budget:   budget,
+		hw:       hw,
+		zstSizes: LoadZstSizesCached(cfg.ZstSizesPath()),
 	}
 	t.diskCond = sync.NewCond(&t.diskMu)
 	return t
@@ -614,6 +618,7 @@ func (t *PipelineTask) uploadJob(ctx context.Context, job *PipelineJob, emit fun
 		Shards:       len(job.ProcResult.Shards),
 		Count:        job.ProcResult.TotalRows,
 		SizeBytes:    job.ProcResult.TotalSize,
+		ZstBytes:     t.zstSizes.Get(job.Type, job.YM.String()),
 		DurDownloadS: job.DurDown.Seconds(),
 		DurProcessS:  job.DurProc.Seconds(),
 		CommittedAt:  time.Now().UTC(),
@@ -622,7 +627,7 @@ func (t *PipelineTask) uploadJob(ctx context.Context, job *PipelineJob, emit fun
 
 	// Write local files before commit.
 	snap := t.ls.Snapshot()
-	readme, err := GenerateREADMEWithLive(allRows, &snap)
+	readme, err := GenerateREADMEFull(allRows, &snap, t.zstSizes)
 	if err != nil {
 		t.removePipelineSlot("uploading", job.YM.String(), job.Type)
 		return fmt.Errorf("readme: %w", err)
@@ -646,8 +651,9 @@ func (t *PipelineTask) uploadJob(ctx context.Context, job *PipelineJob, emit fun
 		})
 	}
 	ops = append(ops,
-		HFOp{LocalPath: cfg.StatsCSVPath(), PathInRepo: "stats.csv"},
-		HFOp{LocalPath: cfg.READMEPath(), PathInRepo: "README.md"},
+		HFOp{LocalPath: cfg.StatsCSVPath(),  PathInRepo: "stats.csv"},
+		HFOp{LocalPath: cfg.ZstSizesPath(),  PathInRepo: "zst_sizes.json"},
+		HFOp{LocalPath: cfg.READMEPath(),    PathInRepo: "README.md"},
 		HFOp{LocalPath: cfg.StatesJSONPath(), PathInRepo: "states.json"},
 	)
 
@@ -987,7 +993,7 @@ func (t *PipelineTask) writeHeartbeatFiles() {
 		logf("pipeline heartbeat: write states.json: %v", err)
 	}
 	rows, _ := ReadStatsCSV(t.cfg.StatsCSVPath())
-	readme, err := GenerateREADMEWithLive(rows, &snap)
+	readme, err := GenerateREADMEFull(rows, &snap, t.zstSizes)
 	if err != nil {
 		logf("pipeline heartbeat: generate readme: %v", err)
 		return

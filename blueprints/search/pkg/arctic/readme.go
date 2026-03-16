@@ -67,6 +67,17 @@ type ReadmeData struct {
 	// Monthly breakdown table (markdown)
 	MonthlyTable string
 
+	// Coverage / remaining (populated when ZstSizes catalog is available)
+	HasCoverage     bool
+	CoverageEnd     string // "2026-02"
+	TotalPairs      int    // total (month, type) pairs in catalog range
+	CommittedPairs  int    // committed pairs
+	RemainingPairs  int    // remaining pairs
+	TotalZstFmt     string // total .zst archive size (from catalog)
+	ProcessedZstFmt string // .zst size of committed months
+	RemainingZstFmt string // .zst size remaining
+	RemainingTable  string // markdown table of remaining months
+
 	// Metadata
 	GeneratedAt string
 
@@ -76,12 +87,18 @@ type ReadmeData struct {
 
 // GenerateREADME generates the README without a live session section.
 func GenerateREADME(rows []StatsRow) ([]byte, error) {
-	return GenerateREADMEWithLive(rows, nil)
+	return GenerateREADMEFull(rows, nil, nil)
 }
 
 // GenerateREADMEWithLive generates the README, optionally embedding a live progress section.
 func GenerateREADMEWithLive(rows []StatsRow, snap *StateSnapshot) ([]byte, error) {
-	data := buildReadmeData(rows)
+	return GenerateREADMEFull(rows, snap, nil)
+}
+
+// GenerateREADMEFull generates the README with optional live section and optional ZstSizes catalog.
+// When zstSizes is non-nil, the README includes a coverage section showing remaining months/sizes.
+func GenerateREADMEFull(rows []StatsRow, snap *StateSnapshot, zstSizes ZstSizes) ([]byte, error) {
+	data := buildReadmeData(rows, zstSizes)
 	if snap != nil {
 		data.Live = buildLiveSection(snap)
 	}
@@ -96,7 +113,7 @@ func GenerateREADMEWithLive(rows []StatsRow, snap *StateSnapshot) ([]byte, error
 	return buf.Bytes(), nil
 }
 
-func buildReadmeData(rows []StatsRow) ReadmeData {
+func buildReadmeData(rows []StatsRow, zstSizes ZstSizes) ReadmeData {
 	d := ReadmeData{}
 	d.GeneratedAt = time.Now().UTC().Format("2006-01-02 15:04 UTC")
 
@@ -143,8 +160,85 @@ func buildReadmeData(rows []StatsRow) ReadmeData {
 
 	d.CommentsChart = buildTypeChart(yearRows, 0)
 	d.SubmissionsChart = buildTypeChart(yearRows, 1)
-	d.MonthlyTable = buildMonthlyTable(rows)
+	d.MonthlyTable = buildMonthlyTable(rows, zstSizes)
+
+	if zstSizes != nil && zstSizes.Len() > 0 {
+		buildCoverageData(&d, rows, zstSizes)
+	}
 	return d
+}
+
+// catalogStart / catalogEnd define the fixed range of the .zst size catalog.
+const catalogStart = "2005-12"
+const catalogEnd   = "2026-02"
+
+// ymTypePair is a (month, type) pair used in coverage computation.
+type ymTypePair struct{ ym, typ string }
+
+// buildCoverageData populates the coverage/remaining fields in ReadmeData.
+func buildCoverageData(d *ReadmeData, rows []StatsRow, zstSizes ZstSizes) {
+	committed := CommittedSet(rows)
+
+	// Enumerate every (month, type) pair in the catalog range.
+	var allPairs []ymTypePair
+	for ym := catalogStart; ym <= catalogEnd; ym = nextYM(ym) {
+		allPairs = append(allPairs, ymTypePair{ym, "comments"})
+		allPairs = append(allPairs, ymTypePair{ym, "submissions"})
+	}
+
+	var totalZst, processedZst, remainingZst int64
+	var remaining []ymTypePair
+	for _, p := range allPairs {
+		sz := zstSizes.Get(p.typ, p.ym)
+		totalZst += sz
+		key := p.ym + "/" + p.typ
+		if committed[key] {
+			processedZst += sz
+		} else {
+			remainingZst += sz
+			remaining = append(remaining, p)
+		}
+	}
+
+	d.HasCoverage = true
+	d.CoverageEnd = catalogEnd
+	d.TotalPairs = len(allPairs)
+	d.CommittedPairs = len(allPairs) - len(remaining)
+	d.RemainingPairs = len(remaining)
+	d.TotalZstFmt = fmtBytes(totalZst)
+	d.ProcessedZstFmt = fmtBytes(processedZst)
+	d.RemainingZstFmt = fmtBytes(remainingZst)
+	d.RemainingTable = buildRemainingTable(remaining, zstSizes)
+}
+
+// nextYM advances "YYYY-MM" by one month.
+func nextYM(ym string) string {
+	var y, m int
+	fmt.Sscanf(ym, "%d-%d", &y, &m)
+	m++
+	if m > 12 {
+		m = 1
+		y++
+	}
+	return fmt.Sprintf("%04d-%02d", y, m)
+}
+
+func buildRemainingTable(remaining []ymTypePair, zstSizes ZstSizes) string {
+	if len(remaining) == 0 {
+		return "(all months committed)"
+	}
+	var sb strings.Builder
+	sb.WriteString("| Month | Type | .zst Size |\n")
+	sb.WriteString("|-------|------|----------:|\n")
+	for _, p := range remaining {
+		sz := zstSizes.Get(p.typ, p.ym)
+		szStr := "-"
+		if sz > 0 {
+			szStr = fmtBytes(sz)
+		}
+		sb.WriteString(fmt.Sprintf("| %s | %s | %s |\n", p.ym, p.typ, szStr))
+	}
+	return strings.TrimRight(sb.String(), "\n")
 }
 
 func buildTypeChart(yearRows map[int][2]int64, idx int) string {
@@ -307,7 +401,7 @@ func buildLiveSection(snap *StateSnapshot) *LiveSection {
 	return ls
 }
 
-func buildMonthlyTable(rows []StatsRow) string {
+func buildMonthlyTable(rows []StatsRow, zstSizes ZstSizes) string {
 	if len(rows) == 0 {
 		return "(no data yet)"
 	}
@@ -327,20 +421,36 @@ func buildMonthlyTable(rows []StatsRow) string {
 	})
 
 	var sb strings.Builder
-	sb.WriteString("| Month | Type | Download | Process | Upload | Shards | Rows | Size |\n")
-	sb.WriteString("|-------|------|-------:|-------:|-------:|-------:|-------:|-------:|\n")
+	if zstSizes != nil {
+		sb.WriteString("| Month | Type | .zst Size | Download | Process | Upload | Shards | Rows | Parquet |\n")
+		sb.WriteString("|-------|------|----------:|-------:|-------:|-------:|-------:|-------:|-------:|\n")
+	} else {
+		sb.WriteString("| Month | Type | Download | Process | Upload | Shards | Rows | Parquet |\n")
+		sb.WriteString("|-------|------|-------:|-------:|-------:|-------:|-------:|-------:|\n")
+	}
 	for _, r := range sorted {
 		ym := fmt.Sprintf("%04d-%02d", r.Year, r.Month)
-		sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %d | %s | %s |\n",
-			ym,
-			r.Type,
-			fmtDurSec(r.DurDownloadS),
-			fmtDurSec(r.DurProcessS),
-			fmtDurSec(r.DurCommitS),
-			r.Shards,
-			fmtIntComma(r.Count),
-			fmtBytes(r.SizeBytes),
-		))
+		if zstSizes != nil {
+			sz := r.ZstBytes
+			if sz == 0 {
+				sz = zstSizes.Get(r.Type, ym)
+			}
+			szStr := "-"
+			if sz > 0 {
+				szStr = fmtBytes(sz)
+			}
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %d | %s | %s |\n",
+				ym, r.Type, szStr,
+				fmtDurSec(r.DurDownloadS), fmtDurSec(r.DurProcessS), fmtDurSec(r.DurCommitS),
+				r.Shards, fmtIntComma(r.Count), fmtBytes(r.SizeBytes),
+			))
+		} else {
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %d | %s | %s |\n",
+				ym, r.Type,
+				fmtDurSec(r.DurDownloadS), fmtDurSec(r.DurProcessS), fmtDurSec(r.DurCommitS),
+				r.Shards, fmtIntComma(r.Count), fmtBytes(r.SizeBytes),
+			))
+		}
 	}
 	return strings.TrimRight(sb.String(), "\n")
 }
@@ -491,10 +601,11 @@ data/
     2006/01/000.parquet
     ...
 stats.csv                     one row per committed (month, type) pair
+zst_sizes.json                .zst file sizes for all months (from torrent metadata)
 states.json                   live pipeline state (updated every ~5 min)
 ` + "```" + `
 
-` + "`stats.csv`" + ` tracks every committed (month, type) pair with row count, shard count, file size, processing time, and commit timestamp.
+` + "`stats.csv`" + ` tracks every committed (month, type) pair with row count, shard count, Parquet size, original .zst size, processing time, and commit timestamp. ` + "`zst_sizes.json`" + ` maps every (type, month) pair to its .zst archive size — useful for estimating remaining work.
 
 ## Breakdown by type and year
 
@@ -622,7 +733,26 @@ huggingface-cli download open-index/arctic \
 | comments | {{.CommentMonths}} | {{.CommentRowsFmt}} | {{.CommentSizeFmt}} |
 | submissions | {{.SubmissionMonths}} | {{.SubmissionRowsFmt}} | {{.SubmissionSizeFmt}} |
 | **Total** | **{{.CommentMonths}}** | **{{.TotalRowsFmt}}** | **{{.TotalSizeFmt}}** |
+{{if .HasCoverage}}
+### Coverage
 
+Processing **{{.CommittedPairs}}** of **{{.TotalPairs}}** (month, type) pairs from **2005-12** through **{{.CoverageEnd}}**.
+
+| Metric | Size |
+|--------|-----:|
+| Total .zst archive | {{.TotalZstFmt}} |
+| Processed (.zst) | {{.ProcessedZstFmt}} |
+| Remaining (.zst) | {{.RemainingZstFmt}} |
+
+### Remaining months ({{.RemainingPairs}} pairs)
+
+<details>
+<summary>Click to expand remaining months table</summary>
+
+{{.RemainingTable}}
+
+</details>
+{{end}}
 ### Monthly breakdown
 
 <details>
@@ -649,6 +779,7 @@ ORDER BY year, month, type;
 | ` + "`shards`" + ` | Number of Parquet files for this (month, type) |
 | ` + "`count`" + ` | Total rows across all shards |
 | ` + "`size_bytes`" + ` | Total Parquet size across all shards |
+| ` + "`zst_bytes`" + ` | Original .zst source file size (from torrent metadata) |
 | ` + "`dur_download_s`" + ` | Seconds to download the .zst source |
 | ` + "`dur_process_s`" + ` | Seconds to decompress and convert to Parquet |
 | ` + "`dur_commit_s`" + ` | Seconds to commit to Hugging Face |

@@ -66,9 +66,10 @@ func (c Config) DuckDBMemory() string {
 	return fmt.Sprintf("%dMB", mb)
 }
 
-func (c Config) StatsCSVPath() string  { return filepath.Join(c.RepoRoot, "stats.csv") }
-func (c Config) READMEPath() string    { return filepath.Join(c.RepoRoot, "README.md") }
+func (c Config) StatsCSVPath() string   { return filepath.Join(c.RepoRoot, "stats.csv") }
+func (c Config) READMEPath() string     { return filepath.Join(c.RepoRoot, "README.md") }
 func (c Config) StatesJSONPath() string { return filepath.Join(c.RepoRoot, "states.json") }
+func (c Config) ZstSizesPath() string   { return filepath.Join(c.RepoRoot, "zst_sizes.json") }
 
 // ZstPath returns the local path where the torrent client saves a .zst file.
 // The bundle torrent has a root folder "reddit/", so files land at:

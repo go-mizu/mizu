@@ -317,9 +317,10 @@ func isConnectionReset(err error) bool {
 // since such commits are idempotent and non-critical.
 func hfVerifyOpsExist(ctx context.Context, hf *hfClient, repoID string, ops []hfOperation) (bool, error) {
 	metaPaths := map[string]bool{
-		"stats.csv":   true,
-		"README.md":   true,
-		"states.json": true,
+		"stats.csv":      true,
+		"README.md":      true,
+		"states.json":    true,
+		"zst_sizes.json": true,
 	}
 	var checkPaths []string
 	for _, op := range ops {
