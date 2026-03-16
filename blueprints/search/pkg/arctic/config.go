@@ -20,6 +20,12 @@ type Config struct {
 	DuckDBMemoryMB    int    // per-instance DuckDB memory limit; 0 = 512 MB
 	MaxConvertWorkers int    // concurrent DuckDB shard conversions; 0 = 1 (sequential)
 	Engine            string // "go" (default) or "duckdb"; controls chunk→parquet converter
+
+	// MaxCommitStall is the maximum duration without a successful HF data
+	// commit before the pipeline exits with ErrCommitStall. This lets an
+	// external restart loop re-launch the process with fresh torrent/HF
+	// client state. 0 disables the check (default: 45 min).
+	MaxCommitStall time.Duration
 }
 
 func DefaultConfig() Config {
@@ -48,6 +54,7 @@ func (c Config) WithDefaults() Config {
 	if c.MinFreeGB  == 0  { c.MinFreeGB  = def.MinFreeGB }
 	if c.ChunkLines == 0  { c.ChunkLines = def.ChunkLines }
 	if c.Engine     == "" { c.Engine     = envOr("MIZU_ARCTIC_ENGINE", "duckdb") }
+	if c.MaxCommitStall == 0 { c.MaxCommitStall = 45 * time.Minute }
 	return c
 }
 

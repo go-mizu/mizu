@@ -1,3 +1,5 @@
+//go:build !windows
+
 package arctic
 
 import (
@@ -5,11 +7,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 )
+
+// ErrCommitStall is returned when the pipeline has not made a successful HF
+// data commit within Config.MaxCommitStall. The process should be restarted
+// (it will resume from the last committed month via stats.csv).
+var ErrCommitStall = fmt.Errorf("arctic: commit stall — no HF commit within max-commit-stall window")
+
+const maxRetries = 5
+
+// --- Types ---
 
 // PublishOptions configures the publish run.
 type PublishOptions struct {
@@ -22,7 +32,7 @@ type PublishOptions struct {
 
 // PublishState is emitted on each significant event.
 type PublishState struct {
-	Phase      string // "skip"|"download"|"process_start"|"process"|"commit"|"committed"|"disk_check"|"done"
+	Phase      string // "skip"|"download"|"validate"|"process_start"|"process"|"commit"|"committed"|"disk_check"|"done"
 	YM         string // "YYYY-MM"
 	Type       string // "comments"|"submissions"
 	Shards     int
@@ -43,576 +53,17 @@ type PublishMetric struct {
 	Elapsed   time.Duration
 }
 
-// PublishTask orchestrates the full arctic publish pipeline.
-type PublishTask struct {
-	cfg  Config
-	opts PublishOptions
-
-	// heartbeat state — initialised in Run()
-	ls           *LiveState
-	commitMu     sync.Mutex   // serialises all HF API calls (data + heartbeat)
-	lastHFCommit atomic.Int64 // unix nanos of last successful HF commit
-}
-
-// NewPublishTask constructs a PublishTask.
-func NewPublishTask(cfg Config, opts PublishOptions) *PublishTask {
-	return &PublishTask{cfg: cfg, opts: opts}
-}
-
-// Run executes the publish loop. Calls emit on state changes.
-// Iterates months oldest-first, processes comments then submissions per month.
-func (t *PublishTask) Run(ctx context.Context, emit func(*PublishState)) (PublishMetric, error) {
-	start := time.Now()
-	metric := PublishMetric{}
-
-	t.cleanupWork()
-
-	rows, err := ReadStatsCSV(t.cfg.StatsCSVPath())
-	if err != nil {
-		return metric, fmt.Errorf("read stats: %w", err)
-	}
-	committed := CommittedSet(rows)
-
-	months := t.monthRange()
-
-	// Initialise live state with total work count (months × 2 types).
-	t.ls = NewLiveState(len(months) * 2)
-	t.lastHFCommit.Store(time.Now().UnixNano())
-
-	// Write initial states.json immediately.
-	t.writeHeartbeatFiles()
-
-	// Start background heartbeat goroutine.
-	hbCtx, hbStop := context.WithCancel(ctx)
-	defer hbStop()
-	go t.runHeartbeat(hbCtx)
-
-	for _, ym := range months {
-		for _, typ := range []string{"comments", "submissions"} {
-			if err := ctx.Err(); err != nil {
-				return metric, err
-			}
-
-			key := ym.String() + "/" + typ
-
-			if committed[key] {
-				metric.Skipped++
-				t.ls.Update(func(s *StateSnapshot) { s.Stats.Skipped++ })
-				if emit != nil {
-					emit(&PublishState{Phase: "skip", YM: ym.String(), Type: typ})
-				}
-				continue
-			}
-
-			free, err := t.cfg.FreeDiskGB()
-			if err != nil {
-				return metric, fmt.Errorf("disk check: %w", err)
-			}
-			if free < float64(t.cfg.MinFreeGB) {
-				msg := fmt.Sprintf("only %.1f GB free, need %d GB — stopping", free, t.cfg.MinFreeGB)
-				if emit != nil {
-					emit(&PublishState{Phase: "disk_check", YM: ym.String(), Type: typ, Message: msg})
-				}
-				return metric, fmt.Errorf("disk full: %s", msg)
-			}
-
-			if err := t.processOneWithRetry(ctx, ym, typ, rows, emit); err != nil {
-				return metric, fmt.Errorf("[%s] %s: %w", ym.String(), typ, err)
-			}
-
-			rows, _ = ReadStatsCSV(t.cfg.StatsCSVPath())
-			committed = CommittedSet(rows)
-			metric.Committed++
-		}
-	}
-
-	// Mark done and do a final heartbeat commit.
-	t.ls.Update(func(s *StateSnapshot) {
-		s.Phase = PhaseDone
-		s.Current = nil
-	})
-	t.writeHeartbeatFiles()
-	t.commitHeartbeat(ctx, true /* force */)
-
-	metric.Elapsed = time.Since(start)
-	if emit != nil {
-		emit(&PublishState{Phase: "done"})
-	}
-	return metric, nil
-}
-
-// runHeartbeat runs in a goroutine: writes files every minute, commits every 10 minutes.
-func (t *PublishTask) runHeartbeat(ctx context.Context) {
-	writeTick := time.NewTicker(1 * time.Minute)
-	commitTick := time.NewTicker(10 * time.Minute)
-	defer writeTick.Stop()
-	defer commitTick.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-writeTick.C:
-			t.writeHeartbeatFiles()
-		case <-commitTick.C:
-			// Skip if a data commit just happened within the last 10 minutes.
-			if time.Since(time.Unix(0, t.lastHFCommit.Load())) < 10*time.Minute {
-				continue
-			}
-			t.writeHeartbeatFiles()
-			t.commitHeartbeat(ctx, false)
-		}
-	}
-}
-
-// writeHeartbeatFiles writes states.json and README.md to local disk.
-// Errors are logged but never fatal.
-func (t *PublishTask) writeHeartbeatFiles() {
-	snap := t.ls.Snapshot()
-
-	if err := WriteStateJSON(t.cfg, snap); err != nil {
-		logf("heartbeat: write states.json: %v", err)
-	}
-
-	rows, _ := ReadStatsCSV(t.cfg.StatsCSVPath())
-	readme, err := GenerateREADMEWithLive(rows, &snap)
-	if err != nil {
-		logf("heartbeat: generate readme: %v", err)
-		return
-	}
-	if err := os.WriteFile(t.cfg.READMEPath(), readme, 0o644); err != nil {
-		logf("heartbeat: write readme: %v", err)
-	}
-}
-
-// commitHeartbeat commits states.json + README.md to HuggingFace.
-// force=true skips the cooldown check (used for the final done commit).
-func (t *PublishTask) commitHeartbeat(ctx context.Context, force bool) {
-	if !force {
-		if time.Since(time.Unix(0, t.lastHFCommit.Load())) < 10*time.Minute {
-			return
-		}
-	}
-
-	snap := t.ls.Snapshot()
-	var msg string
-	switch snap.Phase {
-	case PhaseDone:
-		msg = fmt.Sprintf("Progress: done (%d committed)", snap.Stats.Committed)
-	case PhaseIdle:
-		msg = fmt.Sprintf("Progress: idle (%d committed)", snap.Stats.Committed)
-	default:
-		if snap.Current != nil {
-			if snap.Current.Shard > 0 {
-				msg = fmt.Sprintf("Progress: %s %s/%s shard %d",
-					snap.Phase, snap.Current.YM, snap.Current.Type, snap.Current.Shard)
-			} else {
-				msg = fmt.Sprintf("Progress: %s %s/%s",
-					snap.Phase, snap.Current.YM, snap.Current.Type)
-			}
-		} else {
-			msg = fmt.Sprintf("Progress: %s", snap.Phase)
-		}
-	}
-
-	ops := []HFOp{
-		{LocalPath: t.cfg.StatesJSONPath(), PathInRepo: "states.json"},
-		{LocalPath: t.cfg.READMEPath(), PathInRepo: "README.md"},
-	}
-
-	// states.json may not exist yet on first heartbeat if writeHeartbeatFiles failed.
-	if _, err := os.Stat(t.cfg.StatesJSONPath()); err != nil {
-		return
-	}
-
-	t.commitMu.Lock()
-	defer t.commitMu.Unlock()
-
-	if _, err := t.opts.HFCommit(ctx, ops, msg); err != nil {
-		logf("heartbeat commit: %v", err)
-		return
-	}
-	t.lastHFCommit.Store(time.Now().UnixNano())
-}
-
-const maxRetries = 5
-
-// processOneWithRetry wraps processOne with auto-heal: on failure it classifies
-// the error and applies appropriate cleanup before retrying.
-//
-// Error classification:
-//   - Corruption errors (bad zstd, truncated, zero-filled): delete .zst and .part,
-//     force a clean re-download.
-//   - Transient errors (timeout, no peers, network): keep .part file so the torrent
-//     client can resume from existing pieces on the next attempt.
-//
-// Uses exponential backoff: 10s, 20s, 40s, 80s, 160s between retries.
-func (t *PublishTask) processOneWithRetry(ctx context.Context, ym ymKey, typ string,
-	existingRows []StatsRow, emit func(*PublishState)) error {
-
-	cfg := t.cfg
-	prefix := zstPrefix(typ)
-	year := fmt.Sprintf("%04d", ym.Year)
-	mm := fmt.Sprintf("%02d", ym.Month)
-
-	var lastErr error
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		lastErr = t.processOne(ctx, ym, typ, existingRows, emit)
-		if lastErr == nil {
-			return nil
-		}
-		if ctx.Err() != nil {
-			return lastErr
-		}
-
-		corruption := IsCorruption(lastErr)
-		kind := "transient"
-		if corruption {
-			kind = "corruption"
-		}
-		logf("attempt %d/%d failed [%s] for [%s] %s: %v — cleaning up and retrying",
-			attempt, maxRetries, kind, ym.String(), typ, lastErr)
-
-		// Update live state with retry info.
-		t.ls.Update(func(s *StateSnapshot) {
-			s.Phase = PhaseRetrying
-			s.Stats.Retries++
-			if s.Current != nil {
-				s.Current.Phase = PhaseRetrying
-			}
-		})
-
-		// Exponential backoff: 10s × 2^(attempt-1), capped at 5 min.
-		backoff := time.Duration(10<<(attempt-1)) * time.Second
-		if backoff > 5*time.Minute {
-			backoff = 5 * time.Minute
-		}
-		logf("waiting %s before retry %d/%d", backoff, attempt+1, maxRetries)
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(backoff):
-		}
-
-		// Always clean up work artifacts (shards, chunks).
-		shardDir := cfg.ShardLocalDir(typ, year, mm)
-		os.RemoveAll(shardDir)
-		if matches, _ := filepath.Glob(filepath.Join(cfg.WorkDir, "chunk_*.jsonl")); matches != nil {
-			for _, m := range matches {
-				os.Remove(m)
-			}
-		}
-
-		zstPath := cfg.ZstPath(prefix, ym.String())
-		if corruption {
-			// Corruption (zero-filled mmap regions): rename .zst back to .part
-			// so the torrent client re-verifies piece SHA-1 hashes and only
-			// re-downloads the corrupt pieces instead of the entire file.
-			partPath := zstPath + ".part"
-			if _, statErr := os.Stat(zstPath); statErr == nil {
-				os.Rename(zstPath, partPath)
-			}
-		} else {
-			// Transient (timeout/network): keep .part for torrent resume.
-			// Only delete the final .zst if it exists (it shouldn't for a
-			// download timeout, but might for a processing error).
-			os.Remove(zstPath)
-		}
-	}
-	return fmt.Errorf("failed after %d attempts: %w", maxRetries, lastErr)
-}
-
-func (t *PublishTask) processOne(ctx context.Context, ym ymKey, typ string,
-	existingRows []StatsRow, emit func(*PublishState)) error {
-
-	cfg := t.cfg
-	prefix := zstPrefix(typ)
-	zstPath := cfg.ZstPath(prefix, ym.String())
-	year := fmt.Sprintf("%04d", ym.Year)
-	mm := fmt.Sprintf("%02d", ym.Month)
-
-	// --- Download ---
-	t.ls.Update(func(s *StateSnapshot) {
-		s.Phase = PhaseDownloading
-		s.Current = &LiveCurrent{YM: ym.String(), Type: typ, Phase: PhaseDownloading}
-	})
-	if emit != nil {
-		emit(&PublishState{Phase: "download", YM: ym.String(), Type: typ})
-	}
-	var expectedBytes int64
-	durDown, err := DownloadZst(ctx, cfg, ym.Year, ym.Month, typ, func(p DownloadProgress) {
-		if p.BytesTotal > 0 {
-			expectedBytes = p.BytesTotal
-		}
-		t.ls.Update(func(s *StateSnapshot) {
-			if s.Current != nil {
-				s.Current.BytesDone = p.BytesDone
-				s.Current.BytesTotal = p.BytesTotal
-			}
-		})
-		if emit != nil {
-			emit(&PublishState{Phase: "download", YM: ym.String(), Type: typ,
-				Bytes: p.BytesDone, BytesTotal: p.BytesTotal, Message: p.Message})
-		}
-	})
-	if err != nil {
-		return fmt.Errorf("download: %w", err)
-	}
-
-	// Validate the downloaded file before spending time processing it.
-	if fi, statErr := os.Stat(zstPath); statErr != nil {
-		return &ErrCorruption{Msg: "validate zst: file missing after download"}
-	} else if fi.Size() == 0 {
-		return &ErrCorruption{Msg: "validate zst: file is empty"}
-	} else if expectedBytes > 0 && fi.Size() < expectedBytes {
-		return &ErrCorruption{Msg: fmt.Sprintf("validate zst: truncated (%d of %d bytes)", fi.Size(), expectedBytes)}
-	}
-	if err := QuickValidateZst(zstPath); err != nil {
-		return &ErrCorruption{Msg: fmt.Sprintf("validate zst: %v", err)}
-	}
-
-	// Skip deep validation — it re-reads the entire file to io.Discard which
-	// doesn't scale to 50+ GB archives and risks OOM from the zstd window
-	// allocation on memory-constrained servers.  QuickValidateZst catches
-	// mmap corruption (zero-filled regions), and ProcessZst will catch any
-	// remaining mid-stream corruption during the actual processing step,
-	// triggering the retry logic.
-
-	// --- Process ---
-	t.ls.Update(func(s *StateSnapshot) {
-		s.Phase = PhaseProcessing
-		s.Current = &LiveCurrent{YM: ym.String(), Type: typ, Phase: PhaseProcessing}
-	})
-	if emit != nil {
-		emit(&PublishState{Phase: "process", YM: ym.String(), Type: typ})
-	}
-	t1 := time.Now()
-	var procTotalRows int64
-	procResult, err := ProcessZst(ctx, cfg, zstPath, typ, year, mm, func(sr ShardResult) {
-		if sr.Starting {
-			// Shard just started — DuckDB is working; show activity.
-			t.ls.Update(func(s *StateSnapshot) {
-				if s.Current != nil {
-					s.Current.Shard = sr.Index + 1
-				}
-			})
-			if emit != nil {
-				emit(&PublishState{Phase: "process_start", YM: ym.String(), Type: typ,
-					Shards: sr.Index + 1, Rows: procTotalRows})
-			}
-			return
-		}
-		// Shard completed.
-		procTotalRows += sr.Rows
-		var rowsPerSec float64
-		if sr.Duration > 0 {
-			rowsPerSec = float64(sr.Rows) / sr.Duration.Seconds()
-		}
-		t.ls.Update(func(s *StateSnapshot) {
-			if s.Current != nil {
-				s.Current.Shard = sr.Index + 1
-				s.Current.Rows = procTotalRows
-			}
-		})
-		if emit != nil {
-			emit(&PublishState{Phase: "process", YM: ym.String(), Type: typ,
-				Shards: sr.Index + 1, Rows: procTotalRows, Bytes: sr.SizeBytes,
-				RowsPerSec: rowsPerSec})
-		}
-	})
-	if err != nil {
-		// Classify processing errors. Corruption / missing file → force re-download.
-		// "open zst" / "no such file" = .zst vanished between download and process
-		// (e.g. previous successful process deleted it, then upload failed).
-		errStr := err.Error()
-		if strings.Contains(errStr, "zstd") || strings.Contains(errStr, "scan jsonl") ||
-			strings.Contains(errStr, "open zst") || strings.Contains(errStr, "no such file") {
-			return &ErrCorruption{Msg: fmt.Sprintf("process: %v", err)}
-		}
-		return fmt.Errorf("process: %w", err)
-	}
-	durProc := time.Since(t1)
-
-	// Delete .zst now that stream is exhausted.
-	os.Remove(zstPath)
-
-	// --- HF Commit ---
-	t.ls.Update(func(s *StateSnapshot) {
-		s.Phase = PhaseCommitting
-		if s.Current != nil {
-			s.Current.Phase = PhaseCommitting
-		}
-	})
-	if emit != nil {
-		emit(&PublishState{Phase: "commit", YM: ym.String(), Type: typ,
-			Shards: len(procResult.Shards), Rows: procResult.TotalRows, Bytes: procResult.TotalSize})
-	}
-	t2 := time.Now()
-
-	newRow := StatsRow{
-		Year:         ym.Year,
-		Month:        ym.Month,
-		Type:         typ,
-		Shards:       len(procResult.Shards),
-		Count:        procResult.TotalRows,
-		SizeBytes:    procResult.TotalSize,
-		DurDownloadS: durDown.Seconds(),
-		DurProcessS:  durProc.Seconds(),
-		CommittedAt:  time.Now().UTC(),
-	}
-	allRows := make([]StatsRow, len(existingRows)+1)
-	copy(allRows, existingRows)
-	allRows[len(existingRows)] = newRow
-
-	// Write README with live state (committing phase) before committing.
-	snap := t.ls.Snapshot()
-	readme, err := GenerateREADMEWithLive(allRows, &snap)
-	if err != nil {
-		return fmt.Errorf("readme: %w", err)
-	}
-	if err := os.WriteFile(cfg.READMEPath(), readme, 0o644); err != nil {
-		return fmt.Errorf("write readme: %w", err)
-	}
-	if err := WriteStatsCSV(cfg.StatsCSVPath(), allRows); err != nil {
-		return fmt.Errorf("write stats: %w", err)
-	}
-	if err := WriteStateJSON(cfg, snap); err != nil {
-		logf("write states.json before commit: %v", err)
-	}
-
-	var ops []HFOp
-	for _, sr := range procResult.Shards {
-		ops = append(ops, HFOp{
-			LocalPath:  sr.LocalPath,
-			PathInRepo: cfg.ShardHFPath(typ, year, mm, sr.Index),
-		})
-	}
-	ops = append(ops,
-		HFOp{LocalPath: cfg.StatsCSVPath(), PathInRepo: "stats.csv"},
-		HFOp{LocalPath: cfg.READMEPath(), PathInRepo: "README.md"},
-		HFOp{LocalPath: cfg.StatesJSONPath(), PathInRepo: "states.json"},
-	)
-
-	// Batch commits ≤50 ops per call; hold commitMu so heartbeat doesn't interleave.
-	// Each batch is retried up to 3 times with exponential backoff on failure.
-	const batchSize = 50
-	const hfMaxRetries = 3
-	t.commitMu.Lock()
-	for i := 0; i < len(ops); i += batchSize {
-		end := i + batchSize
-		if end > len(ops) {
-			end = len(ops)
-		}
-		msg := fmt.Sprintf("Add %s/%s (%d shards, %s rows)",
-			typ, ym.String(), len(procResult.Shards),
-			fmtCount(procResult.TotalRows))
-
-		var commitErr error
-		for retry := 0; retry < hfMaxRetries; retry++ {
-			if ctx.Err() != nil {
-				t.commitMu.Unlock()
-				WriteStatsCSV(cfg.StatsCSVPath(), existingRows)
-				return ctx.Err()
-			}
-			_, commitErr = t.opts.HFCommit(ctx, ops[i:end], msg)
-			if commitErr == nil {
-				break
-			}
-			if retry < hfMaxRetries-1 {
-				wait := time.Duration(5<<retry) * time.Second // 5s, 10s
-				logf("hf commit batch %d failed (retry %d/%d in %s): %v",
-					i/batchSize, retry+1, hfMaxRetries, wait, commitErr)
-				select {
-				case <-ctx.Done():
-					t.commitMu.Unlock()
-					WriteStatsCSV(cfg.StatsCSVPath(), existingRows)
-					return ctx.Err()
-				case <-time.After(wait):
-				}
-			}
-		}
-		if commitErr != nil {
-			t.commitMu.Unlock()
-			// Revert stats.csv — remove the row we just added so it
-			// doesn't falsely mark this month as committed on restart.
-			WriteStatsCSV(cfg.StatsCSVPath(), existingRows)
-			return fmt.Errorf("hf commit batch %d (after %d retries): %w", i/batchSize, hfMaxRetries, commitErr)
-		}
-	}
-	t.lastHFCommit.Store(time.Now().UnixNano())
-	t.commitMu.Unlock()
-
-	durComm := time.Since(t2)
-	newRow.DurCommitS = durComm.Seconds()
-	allRows[len(allRows)-1] = newRow
-	if err := WriteStatsCSV(cfg.StatsCSVPath(), allRows); err != nil {
-		logf("warning: update stats.csv with commit duration: %v", err)
-	}
-
-	// Delete local shards after successful commit.
-	for _, sr := range procResult.Shards {
-		os.Remove(sr.LocalPath)
-	}
-	shardDir := cfg.ShardLocalDir(typ, year, mm)
-	os.Remove(shardDir)
-	os.Remove(filepath.Dir(shardDir)) // year dir — ignore error if not empty
-
-	// Update live state: pair complete.
-	t.ls.Update(func(s *StateSnapshot) {
-		s.Phase = PhaseIdle
-		s.Current = nil
-		s.Stats.Committed++
-		s.Stats.TotalRows += procResult.TotalRows
-		s.Stats.TotalBytes += procResult.TotalSize
-	})
-
-	if emit != nil {
-		emit(&PublishState{
-			Phase:   "committed",
-			YM:      ym.String(),
-			Type:    typ,
-			Shards:  len(procResult.Shards),
-			Rows:    procResult.TotalRows,
-			Bytes:   procResult.TotalSize,
-			DurDown: durDown,
-			DurProc: durProc,
-			DurComm: durComm,
-		})
-	}
-
-	return nil
-}
-
-// cleanupWork removes leftover work files from an interrupted previous run.
-func (t *PublishTask) cleanupWork() {
-	matches, _ := filepath.Glob(filepath.Join(t.cfg.WorkDir, "chunk_*.jsonl"))
-	for _, m := range matches {
-		if err := os.Remove(m); err != nil {
-			logf("cleanup: %v", err)
-		}
-	}
-	for _, typ := range []string{"comments", "submissions"} {
-		dir := filepath.Join(t.cfg.WorkDir, typ)
-		if err := os.RemoveAll(dir); err != nil {
-			logf("cleanup: %v", err)
-		}
-	}
-	// Torrent saves files under RawDir/reddit/{comments,submissions}/.
-	// Clean both the final .zst and any in-progress .part files.
-	for _, sub := range []string{"comments", "submissions"} {
-		dir := filepath.Join(t.cfg.RawDir, "reddit", sub)
-		for _, glob := range []string{"R[CS]_*.zst", "R[CS]_*.zst.part"} {
-			subMatches, _ := filepath.Glob(filepath.Join(dir, glob))
-			for _, m := range subMatches {
-				if err := os.Remove(m); err != nil {
-					logf("cleanup: %v", err)
-				}
-			}
-		}
-	}
+// PipelineJob represents a single (month, type) pair flowing through the pipeline.
+type PipelineJob struct {
+	YM         ymKey
+	Type       string // "comments" | "submissions"
+	ZstPath    string // populated after download
+	WorkDir    string // per-job isolated work directory
+	ProcResult ProcessResult
+	DurDown    time.Duration
+	DurProc    time.Duration
+	DurComm    time.Duration
+	Attempt    int // retry counter
 }
 
 // ymKey is a (Year, Month) pair.
@@ -623,11 +74,612 @@ type ymKey struct {
 
 func (k ymKey) String() string { return fmt.Sprintf("%04d-%02d", k.Year, k.Month) }
 
-func (t *PublishTask) monthRange() []ymKey {
-	from := ymKey{Year: t.opts.FromYear, Month: t.opts.FromMonth}
-	to := ymKey{Year: t.opts.ToYear, Month: t.opts.ToMonth}
+func ymAfter(a, b ymKey) bool {
+	if a.Year != b.Year {
+		return a.Year > b.Year
+	}
+	return a.Month > b.Month
+}
+
+// --- PipelineTask ---
+
+// PipelineTask orchestrates the pipelined arctic publish pipeline.
+type PipelineTask struct {
+	cfg    Config
+	opts   PublishOptions
+	budget ResourceBudget
+	hw     HardwareProfile
+
+	ls           *LiveState
+	commitMu     sync.Mutex
+	lastHFCommit atomic.Int64
+
+	// throughput tracking (sliding window of last 20 completed jobs)
+	tpMu          sync.Mutex
+	downloadSpeeds []float64
+	processSpeeds  []float64
+	commitSpeeds   []float64
+
+	// disk space coordination
+	diskMu   sync.Mutex
+	diskCond *sync.Cond
+
+	// zst size catalog
+	zstSizes ZstSizes
+
+	// stall detection
+	commitStalled atomic.Bool
+	pipeCancelMu  sync.Mutex
+	pipeCancelFn  context.CancelFunc
+}
+
+// NewPipelineTask constructs a PipelineTask with auto-detected hardware.
+func NewPipelineTask(cfg Config, opts PublishOptions) *PipelineTask {
+	hw := DetectHardware(cfg.WorkDir)
+	budget := ComputeBudget(hw, cfg)
+	t := &PipelineTask{
+		cfg:      cfg,
+		opts:     opts,
+		budget:   budget,
+		hw:       hw,
+		zstSizes: LoadZstSizesCached(cfg.ZstSizesPath()),
+	}
+	t.diskCond = sync.NewCond(&t.diskMu)
+	return t
+}
+
+// Budget returns the computed resource budget.
+func (t *PipelineTask) Budget() ResourceBudget { return t.budget }
+
+// Hardware returns the detected hardware profile.
+func (t *PipelineTask) Hardware() HardwareProfile { return t.hw }
+
+// Run executes the pipelined publish.
+func (t *PipelineTask) Run(ctx context.Context, emit func(*PublishState)) (PublishMetric, error) {
+	return t.runPipeline(ctx, emit)
+}
+
+// --- Pipeline orchestration ---
+
+func (t *PipelineTask) runPipeline(ctx context.Context, emit func(*PublishState)) (PublishMetric, error) {
+	start := time.Now()
+	metric := PublishMetric{}
+
+	cleanupWork(t.cfg)
+
+	rows, err := ReadStatsCSV(t.cfg.StatsCSVPath())
+	if err != nil {
+		return metric, fmt.Errorf("read stats: %w", err)
+	}
+	committed := CommittedSet(rows)
+
+	// Build job list — skip already committed.
+	months := monthRange(t.opts)
+	var jobs []*PipelineJob
+	skipped := 0
+	for _, ym := range months {
+		for _, typ := range []string{"comments", "submissions"} {
+			key := ym.String() + "/" + typ
+			if committed[key] {
+				skipped++
+				if emit != nil {
+					emit(&PublishState{Phase: "skip", YM: ym.String(), Type: typ})
+				}
+				continue
+			}
+			jobs = append(jobs, &PipelineJob{YM: ym, Type: typ})
+		}
+	}
+
+	totalPairs := len(months) * 2
+	t.ls = NewLiveState(totalPairs)
+	t.ls.Update(func(s *StateSnapshot) {
+		s.Hardware = &t.hw
+		s.Budget = &t.budget
+		s.Pipeline = &PipelineState{}
+		s.Throughput = &ThroughputStats{}
+		s.Stats.Skipped = skipped
+	})
+	t.lastHFCommit.Store(time.Now().UnixNano())
+
+	writeHeartbeatFiles(t.cfg, t.ls, t.zstSizes)
+
+	// Start heartbeat.
+	hbCtx, hbStop := context.WithCancel(ctx)
+	defer hbStop()
+	go t.runHeartbeat(hbCtx)
+
+	if len(jobs) == 0 {
+		metric.Skipped = skipped
+		t.finalize(ctx, emit)
+		metric.Elapsed = time.Since(start)
+		return metric, nil
+	}
+
+	// Pipeline channels.
+	downloadCh := make(chan *PipelineJob, t.budget.DownloadQueue)
+	processCh := make(chan *PipelineJob, t.budget.DownloadQueue)
+	uploadCh := make(chan *PipelineJob, t.budget.ProcessQueue)
+
+	// Error collection — only for truly fatal errors (upload failures).
+	var pipeErr error
+	var pipeErrMu sync.Mutex
+	setPipeErr := func(err error) {
+		pipeErrMu.Lock()
+		if pipeErr == nil {
+			pipeErr = err
+			logf("pipeline: FATAL — %v", err)
+		} else {
+			logf("pipeline: (suppressed) %v", err)
+		}
+		pipeErrMu.Unlock()
+	}
+
+	pipeCtx, pipeCancel := context.WithCancel(ctx)
+	defer pipeCancel()
+	t.pipeCancelMu.Lock()
+	t.pipeCancelFn = pipeCancel
+	t.pipeCancelMu.Unlock()
+
+	var wgDown, wgProc, wgUpload sync.WaitGroup
+
+	// --- Download workers ---
+	wgDown.Add(t.budget.MaxDownloads)
+	for i := 0; i < t.budget.MaxDownloads; i++ {
+		go func() {
+			defer wgDown.Done()
+			for job := range downloadCh {
+				if pipeCtx.Err() != nil {
+					continue
+				}
+
+				t.updatePipelineSlot("downloading", job.YM.String(), job.Type, func(slot *PipelineSlot) {
+					slot.Phase = PhaseDownloading
+				})
+
+				progressFn := func(ps *PublishState) {
+					t.updatePipelineSlot("downloading", job.YM.String(), job.Type, func(slot *PipelineSlot) {
+						slot.BytesDone = ps.Bytes
+						slot.BytesTotal = ps.BytesTotal
+					})
+					if emit != nil {
+						emit(ps)
+					}
+				}
+
+				err := downloadWithRetry(pipeCtx, t.cfg, t.zstSizes, job, progressFn)
+				t.removePipelineSlot("downloading", job.YM.String(), job.Type)
+
+				if err != nil {
+					if pipeCtx.Err() != nil {
+						continue
+					}
+					// NON-FATAL: skip this month, log, continue pipeline.
+					logf("pipeline: SKIP [%s] %s — download failed: %v", job.YM.String(), job.Type, err)
+					t.ls.Update(func(s *StateSnapshot) { s.Stats.Skipped++ })
+					continue
+				}
+
+				// Record download speed.
+				if mbps := downloadSpeed(job.ZstPath, job.DurDown); mbps > 0 {
+					t.recordDownloadSpeed(mbps)
+				}
+
+				processCh <- job
+			}
+		}()
+	}
+
+	// --- Process workers ---
+	wgProc.Add(t.budget.MaxProcess)
+	for i := 0; i < t.budget.MaxProcess; i++ {
+		go func() {
+			defer wgProc.Done()
+			for job := range processCh {
+				if pipeCtx.Err() != nil {
+					continue
+				}
+
+				t.updatePipelineSlot("processing", job.YM.String(), job.Type, func(slot *PipelineSlot) {
+					slot.Phase = PhaseProcessing
+				})
+
+				var procTotalRows int64
+				shardFn := func(sr ShardResult) {
+					if sr.Starting {
+						t.updatePipelineSlot("processing", job.YM.String(), job.Type, func(slot *PipelineSlot) {
+							slot.Shard = sr.Index + 1
+							slot.Rows = procTotalRows
+						})
+						if emit != nil {
+							emit(&PublishState{Phase: "process_start", YM: job.YM.String(), Type: job.Type,
+								Shards: sr.Index + 1, Rows: procTotalRows})
+						}
+						return
+					}
+					procTotalRows += sr.Rows
+					var rowsPerSec float64
+					if sr.Duration > 0 {
+						rowsPerSec = float64(sr.Rows) / sr.Duration.Seconds()
+					}
+					t.updatePipelineSlot("processing", job.YM.String(), job.Type, func(slot *PipelineSlot) {
+						slot.Shard = sr.Index + 1
+						slot.Rows = procTotalRows
+						slot.RowsPerSec = rowsPerSec
+					})
+					if emit != nil {
+						emit(&PublishState{Phase: "process", YM: job.YM.String(), Type: job.Type,
+							Shards: sr.Index + 1, Rows: procTotalRows, Bytes: sr.SizeBytes,
+							RowsPerSec: rowsPerSec})
+					}
+				}
+
+				// Re-download function for corruption recovery.
+				redownload := func() error {
+					return downloadOne(pipeCtx, t.cfg, t.zstSizes, job, func(ps *PublishState) {
+						if emit != nil {
+							emit(ps)
+						}
+					})
+				}
+
+				err := processWithRetry(pipeCtx, t.cfg, t.budget, t.zstSizes, job, shardFn, redownload)
+				t.removePipelineSlot("processing", job.YM.String(), job.Type)
+
+				if err != nil {
+					if pipeCtx.Err() != nil {
+						continue
+					}
+					// NON-FATAL: skip this month, log, continue pipeline.
+					logf("pipeline: SKIP [%s] %s — process failed: %v", job.YM.String(), job.Type, err)
+					t.ls.Update(func(s *StateSnapshot) { s.Stats.Skipped++ })
+					continue
+				}
+
+				// Record process speed.
+				if rps := processSpeed(job.ProcResult.TotalRows, job.DurProc); rps > 0 {
+					t.recordProcessSpeed(rps)
+				}
+
+				uploadCh <- job
+			}
+		}()
+	}
+
+	// --- Upload worker (always 1) ---
+	var committedCount int64
+	wgUpload.Add(1)
+	go func() {
+		defer wgUpload.Done()
+		for job := range uploadCh {
+			if pipeCtx.Err() != nil {
+				continue
+			}
+
+			t.updatePipelineSlot("uploading", job.YM.String(), job.Type, func(slot *PipelineSlot) {
+				slot.Phase = PhaseCommitting
+				slot.Shards = len(job.ProcResult.Shards)
+				slot.Rows = job.ProcResult.TotalRows
+			})
+
+			if emit != nil {
+				emit(&PublishState{Phase: "commit", YM: job.YM.String(), Type: job.Type,
+					Shards: len(job.ProcResult.Shards), Rows: job.ProcResult.TotalRows,
+					Bytes: job.ProcResult.TotalSize})
+			}
+
+			// Upload errors are fatal — they indicate HF API problems that
+			// affect all months, so retrying other months won't help.
+			var lastErr error
+			for attempt := 0; attempt < maxRetries; attempt++ {
+				if pipeCtx.Err() != nil {
+					break
+				}
+				lastErr = commitToHF(pipeCtx, t.cfg, t.opts.HFCommit, job,
+					t.ls, t.zstSizes, &t.commitMu, &t.lastHFCommit)
+				if lastErr == nil {
+					break
+				}
+				if pipeCtx.Err() != nil {
+					break
+				}
+				backoff := time.Duration(30<<attempt) * time.Second
+				if backoff > 10*time.Minute {
+					backoff = 10 * time.Minute
+				}
+				logf("pipeline: upload attempt %d/%d failed for [%s] %s: %v — retrying in %s",
+					attempt+1, maxRetries, job.YM.String(), job.Type, lastErr, backoff)
+				t.ls.Update(func(s *StateSnapshot) { s.Stats.Retries++ })
+				select {
+				case <-pipeCtx.Done():
+				case <-time.After(backoff):
+				}
+			}
+
+			t.removePipelineSlot("uploading", job.YM.String(), job.Type)
+
+			if lastErr != nil {
+				if pipeCtx.Err() == nil {
+					setPipeErr(fmt.Errorf("[%s] %s: upload (after %d retries): %w",
+						job.YM.String(), job.Type, maxRetries, lastErr))
+					pipeCancel()
+				}
+				continue
+			}
+
+			cleanupAfterCommit(job)
+			atomic.AddInt64(&committedCount, 1)
+			t.recordCommitSpeed(job.DurComm.Seconds())
+
+			// Update live state.
+			t.ls.Update(func(s *StateSnapshot) {
+				s.Stats.Committed++
+				s.Stats.TotalRows += job.ProcResult.TotalRows
+				s.Stats.TotalBytes += job.ProcResult.TotalSize
+			})
+
+			if emit != nil {
+				emit(&PublishState{
+					Phase:   "committed",
+					YM:      job.YM.String(),
+					Type:    job.Type,
+					Shards:  len(job.ProcResult.Shards),
+					Rows:    job.ProcResult.TotalRows,
+					Bytes:   job.ProcResult.TotalSize,
+					DurDown: job.DurDown,
+					DurProc: job.DurProc,
+					DurComm: job.DurComm,
+				})
+			}
+
+			// Signal disk space may have freed up.
+			t.diskCond.Broadcast()
+		}
+	}()
+
+	// Feed jobs into download stage.
+	go func() {
+		for _, job := range jobs {
+			waitForDisk(pipeCtx, t.cfg, t.diskCond)
+			if pipeCtx.Err() != nil {
+				break
+			}
+			downloadCh <- job
+		}
+		close(downloadCh)
+	}()
+
+	// Cascade channel closes through pipeline stages.
+	go func() {
+		wgDown.Wait()
+		close(processCh)
+	}()
+	go func() {
+		wgProc.Wait()
+		close(uploadCh)
+	}()
+
+	// Wait for everything.
+	wgUpload.Wait()
+
+	metric.Committed = int(atomic.LoadInt64(&committedCount))
+	metric.Skipped = skipped
+
+	if t.commitStalled.Load() {
+		return metric, ErrCommitStall
+	}
+	if pipeErr != nil {
+		return metric, pipeErr
+	}
+
+	t.finalize(ctx, emit)
+	metric.Elapsed = time.Since(start)
+	return metric, nil
+}
+
+// --- Heartbeat ---
+
+func (t *PipelineTask) runHeartbeat(ctx context.Context) {
+	writeTick := time.NewTicker(1 * time.Minute)
+	commitTick := time.NewTicker(10 * time.Minute)
+	stallTick := time.NewTicker(2 * time.Minute)
+	defer writeTick.Stop()
+	defer commitTick.Stop()
+	defer stallTick.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-writeTick.C:
+			writeHeartbeatFiles(t.cfg, t.ls, t.zstSizes)
+		case <-commitTick.C:
+			if time.Since(time.Unix(0, t.lastHFCommit.Load())) < 10*time.Minute {
+				continue
+			}
+			writeHeartbeatFiles(t.cfg, t.ls, t.zstSizes)
+			commitHeartbeatToHF(ctx, t.cfg, t.opts.HFCommit, t.ls, &t.commitMu, &t.lastHFCommit, false)
+		case <-stallTick.C:
+			t.checkCommitStall()
+		}
+	}
+}
+
+func (t *PipelineTask) checkCommitStall() {
+	maxStall := t.cfg.MaxCommitStall
+	if maxStall <= 0 {
+		return
+	}
+	idle := time.Since(time.Unix(0, t.lastHFCommit.Load()))
+	if idle <= maxStall {
+		return
+	}
+	logf("pipeline: STALL DETECTED — no HF data commit for %s (limit: %s). Triggering restart.",
+		idle.Round(time.Second), maxStall.Round(time.Second))
+	t.commitStalled.Store(true)
+	t.pipeCancelMu.Lock()
+	if t.pipeCancelFn != nil {
+		t.pipeCancelFn()
+	}
+	t.pipeCancelMu.Unlock()
+}
+
+func (t *PipelineTask) finalize(ctx context.Context, emit func(*PublishState)) {
+	t.ls.Update(func(s *StateSnapshot) {
+		s.Phase = PhaseDone
+		s.Current = nil
+		s.Pipeline = nil
+	})
+	writeHeartbeatFiles(t.cfg, t.ls, t.zstSizes)
+	commitHeartbeatToHF(ctx, t.cfg, t.opts.HFCommit, t.ls, &t.commitMu, &t.lastHFCommit, true)
+	if emit != nil {
+		emit(&PublishState{Phase: "done"})
+	}
+}
+
+// --- Pipeline slot management ---
+
+func (t *PipelineTask) updatePipelineSlot(stage, ym, typ string, fn func(*PipelineSlot)) {
+	t.ls.Update(func(s *StateSnapshot) {
+		s.Phase = "running"
+		if s.Pipeline == nil {
+			s.Pipeline = &PipelineState{}
+		}
+
+		var slots *[]PipelineSlot
+		switch stage {
+		case "downloading":
+			slots = &s.Pipeline.Downloading
+		case "processing":
+			slots = &s.Pipeline.Processing
+		case "uploading":
+			slots = &s.Pipeline.Uploading
+		default:
+			return
+		}
+
+		for i := range *slots {
+			if (*slots)[i].YM == ym && (*slots)[i].Type == typ {
+				fn(&(*slots)[i])
+				return
+			}
+		}
+		slot := PipelineSlot{YM: ym, Type: typ}
+		fn(&slot)
+		*slots = append(*slots, slot)
+
+		updateCurrent(s)
+	})
+}
+
+func (t *PipelineTask) removePipelineSlot(stage, ym, typ string) {
+	t.ls.Update(func(s *StateSnapshot) {
+		if s.Pipeline == nil {
+			return
+		}
+
+		var slots *[]PipelineSlot
+		switch stage {
+		case "downloading":
+			slots = &s.Pipeline.Downloading
+		case "processing":
+			slots = &s.Pipeline.Processing
+		case "uploading":
+			slots = &s.Pipeline.Uploading
+		default:
+			return
+		}
+
+		for i := range *slots {
+			if (*slots)[i].YM == ym && (*slots)[i].Type == typ {
+				*slots = append((*slots)[:i], (*slots)[i+1:]...)
+				break
+			}
+		}
+
+		updateCurrent(s)
+	})
+}
+
+// updateCurrent sets the Current field to the "most active" pipeline slot.
+func updateCurrent(s *StateSnapshot) {
+	if s.Pipeline == nil {
+		s.Current = nil
+		return
+	}
+	if len(s.Pipeline.Uploading) > 0 {
+		slot := s.Pipeline.Uploading[0]
+		s.Current = &LiveCurrent{YM: slot.YM, Type: slot.Type, Phase: PhaseCommitting}
+		return
+	}
+	if len(s.Pipeline.Processing) > 0 {
+		slot := s.Pipeline.Processing[0]
+		s.Current = &LiveCurrent{
+			YM: slot.YM, Type: slot.Type, Phase: PhaseProcessing,
+			Shard: slot.Shard, Rows: slot.Rows,
+		}
+		return
+	}
+	if len(s.Pipeline.Downloading) > 0 {
+		slot := s.Pipeline.Downloading[0]
+		s.Current = &LiveCurrent{
+			YM: slot.YM, Type: slot.Type, Phase: PhaseDownloading,
+			BytesDone: slot.BytesDone, BytesTotal: slot.BytesTotal,
+		}
+		return
+	}
+	s.Current = nil
+}
+
+// --- Throughput tracking ---
+
+func (t *PipelineTask) recordDownloadSpeed(mbps float64) {
+	t.tpMu.Lock()
+	defer t.tpMu.Unlock()
+	t.downloadSpeeds = appendWindow(t.downloadSpeeds, mbps, 20)
+	t.updateThroughput()
+}
+
+func (t *PipelineTask) recordProcessSpeed(rowsPerSec float64) {
+	t.tpMu.Lock()
+	defer t.tpMu.Unlock()
+	t.processSpeeds = appendWindow(t.processSpeeds, rowsPerSec, 20)
+	t.updateThroughput()
+}
+
+func (t *PipelineTask) recordCommitSpeed(secs float64) {
+	t.tpMu.Lock()
+	defer t.tpMu.Unlock()
+	t.commitSpeeds = appendWindow(t.commitSpeeds, secs, 20)
+	t.updateThroughput()
+}
+
+func (t *PipelineTask) updateThroughput() {
+	t.ls.Update(func(s *StateSnapshot) {
+		if s.Throughput == nil {
+			s.Throughput = &ThroughputStats{}
+		}
+		s.Throughput.AvgDownloadMbps = avg(t.downloadSpeeds)
+		s.Throughput.AvgProcessRowsPerSec = avg(t.processSpeeds)
+		s.Throughput.AvgUploadSecPerCommit = avg(t.commitSpeeds)
+
+		remaining := s.Stats.TotalMonths - s.Stats.Committed - s.Stats.Skipped
+		if remaining > 0 && s.Stats.Committed > 0 {
+			elapsed := time.Since(s.StartedAt)
+			perPair := elapsed / time.Duration(s.Stats.Committed)
+			eta := time.Now().Add(perPair * time.Duration(remaining))
+			s.Throughput.EstimatedCompletion = &eta
+		}
+	})
+}
+
+// --- Helpers ---
+
+func monthRange(opts PublishOptions) []ymKey {
+	from := ymKey{Year: opts.FromYear, Month: opts.FromMonth}
+	to := ymKey{Year: opts.ToYear, Month: opts.ToMonth}
 	if from.Year == 0 {
-		from = ymKey{Year: 2005, Month: 12} // earliest file in the bundle torrent
+		from = ymKey{Year: 2005, Month: 12}
 	}
 	if to.Year == 0 {
 		now := time.Now().UTC()
@@ -646,9 +698,91 @@ func (t *PublishTask) monthRange() []ymKey {
 	return keys
 }
 
-func ymAfter(a, b ymKey) bool {
-	if a.Year != b.Year {
-		return a.Year > b.Year
+// cleanupWork removes leftover work files from an interrupted previous run.
+func cleanupWork(cfg Config) {
+	// Clean pipeline job directories.
+	matches, _ := filepath.Glob(filepath.Join(cfg.WorkDir, "pipeline_*"))
+	for _, m := range matches {
+		os.RemoveAll(m)
 	}
-	return a.Month > b.Month
+	// Clean legacy chunk files.
+	chunks, _ := filepath.Glob(filepath.Join(cfg.WorkDir, "chunk_*.jsonl"))
+	for _, m := range chunks {
+		os.Remove(m)
+	}
+	for _, typ := range []string{"comments", "submissions"} {
+		dir := filepath.Join(cfg.WorkDir, typ)
+		os.RemoveAll(dir)
+	}
+	// Clean incomplete .part downloads but keep completed .zst files.
+	for _, sub := range []string{"comments", "submissions"} {
+		dir := filepath.Join(cfg.RawDir, "reddit", sub)
+		partMatches, _ := filepath.Glob(filepath.Join(dir, "R[CS]_*.zst.part"))
+		for _, m := range partMatches {
+			os.Remove(m)
+		}
+	}
+}
+
+// waitForDisk blocks until disk space is above MinFreeGB.
+func waitForDisk(ctx context.Context, cfg Config, diskCond *sync.Cond) {
+	diskCond.L.Lock()
+	defer diskCond.L.Unlock()
+
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		free, err := cfg.FreeDiskGB()
+		if err != nil || free >= float64(cfg.MinFreeGB) {
+			return
+		}
+		logf("pipeline: %.1f GB free (need %d GB) — waiting for uploads to free space",
+			free, cfg.MinFreeGB)
+
+		done := make(chan struct{})
+		go func() {
+			diskCond.Wait()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-ctx.Done():
+			diskCond.Broadcast()
+			return
+		case <-time.After(30 * time.Second):
+		}
+	}
+}
+
+func appendWindow(buf []float64, v float64, maxLen int) []float64 {
+	buf = append(buf, v)
+	if len(buf) > maxLen {
+		buf = buf[len(buf)-maxLen:]
+	}
+	return buf
+}
+
+func avg(vals []float64) float64 {
+	if len(vals) == 0 {
+		return 0
+	}
+	var sum float64
+	for _, v := range vals {
+		sum += v
+	}
+	return sum / float64(len(vals))
+}
+
+func containsAny(s string, subs ...string) bool {
+	for _, sub := range subs {
+		if len(sub) > 0 && len(s) >= len(sub) {
+			for i := 0; i <= len(s)-len(sub); i++ {
+				if s[i:i+len(sub)] == sub {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }

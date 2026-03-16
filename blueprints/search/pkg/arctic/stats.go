@@ -96,13 +96,16 @@ func WriteStatsCSV(path string, rows []StatsRow) error {
 }
 
 // CommittedSet returns keys for months that were fully committed to HuggingFace.
-// A row with DurCommitS == 0 means the process was killed (SIGKILL) during or
-// before the HF upload — the commit may not have landed. Such rows are excluded
-// so the month is re-processed on restart rather than silently skipped.
+// A row is considered committed if it has a valid CommittedAt timestamp. This
+// is safe because uploadJob reverts stats.csv (removes the row) on HF commit
+// failure — so if the row exists, the commit landed. The previous check for
+// DurCommitS > 0 was too conservative: DurCommitS is updated AFTER the commit
+// succeeds, so a SIGKILL between commit success and the local update leaves
+// DurCommitS=0, causing expensive unnecessary re-processing on restart.
 func CommittedSet(rows []StatsRow) map[string]bool {
 	m := make(map[string]bool, len(rows))
 	for _, r := range rows {
-		if r.DurCommitS > 0 {
+		if !r.CommittedAt.IsZero() {
 			m[r.Key()] = true
 		}
 	}
