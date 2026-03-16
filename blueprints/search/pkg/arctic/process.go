@@ -477,11 +477,10 @@ scanDone:
 	return result, nil
 }
 
-// convertChunkToShard imports a JSONL chunk file into an in-memory DuckDB
-// instance and exports it as a zstd-compressed parquet shard.  With ChunkLines
-// reduced to 500K, each chunk is ~250 MB of text — within DuckDB's 512 MB
-// memory limit — so no disk spilling is needed.  In-memory avoids the mmap
-// overhead that disk-backed DuckDB adds to RSS.
+// convertChunkToShard streams a JSONL chunk through DuckDB directly to a
+// zstd-compressed parquet shard in a single pass (no intermediate table).
+// DuckDB threads are pinned to avoid CPU oversubscription when multiple
+// workers run concurrently.
 func convertChunkToShard(ctx context.Context, cfg Config, chunkPath,
 	typ, year, mm string, idx int) (ShardResult, error) {
 
@@ -504,8 +503,20 @@ func convertChunkToShard(ctx context.Context, cfg Config, chunkPath,
 	defer mallocTrim()
 	defer db.Close()
 
-	// Cap DuckDB memory to keep RSS within server limits (500K-line chunks
-	// decompress to ~250 MB, so 512 MB headroom is sufficient).
+	// Pin DuckDB threads to avoid CPU oversubscription. With N concurrent
+	// workers each defaulting to NumCPU threads, the total thread count
+	// far exceeds core count (e.g. 3 workers × 6 = 18 threads on 6 cores).
+	// Setting threads = max(1, NumCPU/workers) gives each worker its fair
+	// share of cores with zero oversubscription.
+	workers := cfg.MaxConvertWorkers
+	if workers <= 0 {
+		workers = 1
+	}
+	threadsPerWorker := runtime.NumCPU() / workers
+	if threadsPerWorker < 1 {
+		threadsPerWorker = 1
+	}
+	db.ExecContext(ctx, fmt.Sprintf("SET threads = %d", threadsPerWorker))
 	db.ExecContext(ctx, fmt.Sprintf("SET memory_limit='%s'", cfg.DuckDBMemory()))
 
 	selectCols := commentsSelect
@@ -515,32 +526,27 @@ func convertChunkToShard(ctx context.Context, cfg Config, chunkPath,
 		readCols = submissionsReadColumns
 	}
 
-	importSQL := fmt.Sprintf(`CREATE TABLE data AS
+	// Streaming COPY: read JSON → transform → write parquet in a single pass.
+	// No intermediate CREATE TABLE — avoids materializing the full dataset in
+	// RAM and eliminates the triple-pass overhead (import → count → export).
+	copySQL := fmt.Sprintf(`COPY (
 SELECT %s
 FROM read_json('%s',
     format='newline_delimited',
     columns=%s,
-    maximum_object_size=10485760,
+    maximum_object_size=2097152,
     ignore_errors=true
-)`, selectCols, esc(chunkPath), readCols)
+)
+) TO '%s' (FORMAT PARQUET, COMPRESSION ZSTD, COMPRESSION_LEVEL 3, ROW_GROUP_SIZE 131072)`,
+		selectCols, esc(chunkPath), readCols, esc(shardPath))
 
-	if _, err := db.ExecContext(ctx, importSQL); err != nil {
-		return ShardResult{}, fmt.Errorf("duckdb import: %w", err)
-	}
-
-	// Delete chunk file immediately after import to free disk space.
-	os.Remove(chunkPath)
-
-	var rowCount int64
-	db.QueryRowContext(ctx, "SELECT COUNT(*) FROM data").Scan(&rowCount)
-
-	exportSQL := fmt.Sprintf(
-		"COPY data TO '%s' (FORMAT PARQUET, COMPRESSION ZSTD, COMPRESSION_LEVEL 3, ROW_GROUP_SIZE 131072)",
-		esc(shardPath))
-	if _, err := db.ExecContext(ctx, exportSQL); err != nil {
+	if _, err := db.ExecContext(ctx, copySQL); err != nil {
 		os.Remove(shardPath)
-		return ShardResult{}, fmt.Errorf("duckdb export: %w", err)
+		return ShardResult{}, fmt.Errorf("duckdb streaming copy: %w", err)
 	}
+
+	// Delete chunk file immediately after export to free disk space.
+	os.Remove(chunkPath)
 
 	fi, err := os.Stat(shardPath)
 	if err != nil {
@@ -551,6 +557,11 @@ FROM read_json('%s',
 		os.Remove(shardPath)
 		return ShardResult{}, fmt.Errorf("validate shard %d: %w", idx, err)
 	}
+
+	// Read row count from parquet metadata — much cheaper than a full table scan.
+	var rowCount int64
+	db.QueryRowContext(ctx, fmt.Sprintf(
+		"SELECT COUNT(*) FROM read_parquet('%s')", esc(shardPath))).Scan(&rowCount)
 
 	return ShardResult{
 		Index:     idx,

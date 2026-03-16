@@ -12,5 +12,6 @@ func NewArctic() *cobra.Command {
 	}
 	cmd.AddCommand(newArcticPublish())
 	cmd.AddCommand(newArcticCatalogSizes())
+	cmd.AddCommand(newArcticBench())
 	return cmd
 }
