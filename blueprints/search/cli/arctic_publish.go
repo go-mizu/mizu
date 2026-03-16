@@ -16,13 +16,14 @@ import (
 
 func newArcticPublish() *cobra.Command {
 	var (
-		repoRoot   string
-		repoID     string
-		fromStr    string
-		toStr      string
-		minFreeGB  int
-		chunkLines int
-		private    bool
+		repoRoot       string
+		repoID         string
+		fromStr        string
+		toStr          string
+		minFreeGB      int
+		chunkLines     int
+		private        bool
+		maxCommitStall time.Duration
 	)
 
 	cmd := &cobra.Command{
@@ -40,7 +41,7 @@ Requires HF_TOKEN environment variable to be set.`,
   search arctic publish --repo my-org/arctic-reddit --private
   search arctic publish --from 2023-01 --to 2023-12`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runArcticPublish(cmd.Context(), repoRoot, repoID, fromStr, toStr, minFreeGB, chunkLines, private)
+			return runArcticPublish(cmd.Context(), repoRoot, repoID, fromStr, toStr, minFreeGB, chunkLines, private, maxCommitStall)
 		},
 	}
 
@@ -51,10 +52,12 @@ Requires HF_TOKEN environment variable to be set.`,
 	cmd.Flags().IntVar(&minFreeGB, "min-free-gb", 30, "Minimum free disk GB required to continue")
 	cmd.Flags().IntVar(&chunkLines, "chunk-lines", 0, "Lines per JSONL chunk (0 = use package default)")
 	cmd.Flags().BoolVar(&private, "private", false, "Create HF repo as private if it does not exist")
+	cmd.Flags().DurationVar(&maxCommitStall, "max-commit-stall", 45*time.Minute,
+		"Exit if no HF data commit within this duration (0 to disable; enables restart-loop auto-heal)")
 	return cmd
 }
 
-func runArcticPublish(ctx context.Context, repoRoot, repoID, fromStr, toStr string, minFreeGB, chunkLines int, private bool) error {
+func runArcticPublish(ctx context.Context, repoRoot, repoID, fromStr, toStr string, minFreeGB, chunkLines int, private bool, maxCommitStall time.Duration) error {
 	// Start pprof HTTP server for live heap profiling on :6060.
 	go func() {
 		fmt.Fprintf(os.Stderr, "arctic: pprof listening on :6060 (http://localhost:6060/debug/pprof/)\n")
@@ -71,10 +74,11 @@ func runArcticPublish(ctx context.Context, repoRoot, repoID, fromStr, toStr stri
 	}
 
 	cfg := arctic.Config{
-		RepoRoot:   repoRoot,
-		HFRepo:     repoID,
-		MinFreeGB:  minFreeGB,
-		ChunkLines: chunkLines,
+		RepoRoot:       repoRoot,
+		HFRepo:         repoID,
+		MinFreeGB:      minFreeGB,
+		ChunkLines:     chunkLines,
+		MaxCommitStall: maxCommitStall,
 	}
 	cfg = cfg.WithDefaults()
 
@@ -291,6 +295,13 @@ func runArcticPublish(ctx context.Context, repoRoot, repoID, fromStr, toStr stri
 			fmt.Println(successStyle.Render("  Done!"))
 		}
 	})
+	if errors.Is(err, arctic.ErrCommitStall) {
+		fmt.Println()
+		fmt.Println(warningStyle.Render("  Commit stall detected — exiting for restart"))
+		fmt.Printf("  Committed  %s months before stall\n", infoStyle.Render(fmt.Sprintf("%d", metric.Committed)))
+		// Exit code 75 (EX_TEMPFAIL) signals the restart wrapper to re-launch.
+		os.Exit(75)
+	}
 	if err != nil {
 		return fmt.Errorf("arctic publish: %w", err)
 	}

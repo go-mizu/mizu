@@ -640,6 +640,54 @@ seed-copy: ## Copy HN hn_domains.duckdb from server1 → server2 via local pipe 
 remote-hn-tail: ## Tail hn swarm recrawl log on remote
 	@$(SSH) $(REMOTE_SSH) 'tail -f ~/hn-swarm.log'
 
+# ---------------------------------------------------------------------------
+# Arctic publish (with auto-restart on stall / crash)
+# ---------------------------------------------------------------------------
+ARCTIC_FROM ?= 2005-12
+ARCTIC_STALL ?= 45m
+
+.PHONY: deploy-arctic
+deploy-arctic: deploy-linux-noble ## Build, deploy, and (re)start arctic_run with auto-restart loop (SERVER=2 for server2)
+	@echo "==> Stopping existing arctic_run on $(REMOTE_SSH)..."
+	-@$(SSH) $(REMOTE_SSH) 'screen -S arctic_run -X quit 2>/dev/null; pkill -f "arctic publish" 2>/dev/null; true'
+	@sleep 2
+	@echo "==> Starting arctic_run with restart loop on $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'screen -dmS arctic_run bash -c "\
+		export PATH=$$HOME/bin:\$$PATH; \
+		n=0; \
+		while true; do \
+			n=\$$((n+1)); \
+			LOG=$$HOME/log/arctic_run_\$${n}.log; \
+			echo \"[\$$(date)] arctic_run attempt \$$n starting\" >> $$HOME/log/arctic_restart.log; \
+			GOMEMLIMIT=8GiB HF_TOKEN=\$$(cat $$HOME/.hf_token) \
+				search arctic publish --from $(ARCTIC_FROM) --max-commit-stall $(ARCTIC_STALL) 2>&1 | tee \$$LOG; \
+			rc=\$$?; \
+			echo \"[\$$(date)] arctic_run exited \$$rc (attempt \$$n)\" >> $$HOME/log/arctic_restart.log; \
+			if [ \$$rc -eq 0 ]; then echo \"[\$$(date)] arctic done — exiting loop\" >> $$HOME/log/arctic_restart.log; break; fi; \
+			echo \"[\$$(date)] restarting in 30s...\" >> $$HOME/log/arctic_restart.log; \
+			sleep 30; \
+		done; \
+		exec bash"'
+	@sleep 2
+	@$(SSH) $(REMOTE_SSH) 'screen -ls | grep arctic_run && echo "arctic_run started (restart loop)" || { echo "ERROR: arctic_run not found"; exit 1; }'
+
+.PHONY: remote-arctic-attach
+remote-arctic-attach: ## Attach to arctic_run screen session on remote server
+	@$(SSH) -t $(REMOTE_SSH) 'screen -r arctic_run'
+
+.PHONY: remote-arctic-kill
+remote-arctic-kill: ## Kill arctic_run screen session on remote server
+	@$(SSH) $(REMOTE_SSH) 'screen -S arctic_run -X quit 2>/dev/null && echo "Killed" || echo "No session found"'
+	-@$(SSH) $(REMOTE_SSH) 'pkill -f "arctic publish" 2>/dev/null; true'
+
+.PHONY: remote-arctic-tail
+remote-arctic-tail: ## Tail the most recent arctic log on remote
+	@$(SSH) $(REMOTE_SSH) 'tail -f $$(ls -t $$HOME/log/arctic_run_*.log 2>/dev/null | head -1)'
+
+.PHONY: remote-arctic-status
+remote-arctic-status: ## Show arctic process status and restart history
+	@$(SSH) $(REMOTE_SSH) 'echo "=== Process ==="; ps aux | grep "arctic publish" | grep -v grep; echo ""; echo "=== Restart log ==="; tail -20 $$HOME/log/arctic_restart.log 2>/dev/null || echo "(no restart log)"'
+
 .PHONY: install
 install: build ## Install search binary to $$HOME/bin/search (alias for build)
 

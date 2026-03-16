@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -198,16 +199,25 @@ func (c *hfClient) createCommitPython(ctx context.Context, repoID, message strin
 		return "", fmt.Errorf("uv not found")
 	}
 
-	// Per-upload timeout: 30 min. Xet handles its own per-chunk retries
-	// (up to 10 min retry window per request), so this is a hard ceiling
-	// for the entire commit. 30 min is generous for 500 MB of parquet.
-	uploadTimeout := 30 * time.Minute
+	// Per-upload timeout: 40 min. Python's SIGALRM can't interrupt Rust FFI
+	// (xet), so this Go-side timeout with process-group SIGKILL is the primary
+	// recovery mechanism. Batch cap (10 files, ~650 MB raw) — cold xet cache
+	// at 216 kB/s needs ~25 min; warm cache is much faster. 40 min gives
+	// comfortable headroom while still catching genuine hangs.
+	uploadTimeout := 40 * time.Minute
 	uploadCtx, uploadCancel := context.WithTimeout(ctx, uploadTimeout)
 	defer uploadCancel()
 
 	cmd := exec.CommandContext(uploadCtx, uvBin, "run", scriptPath)
 	cmd.Stdin = bytes.NewReader(stdin)
 	cmd.Stderr = os.Stderr // pipe progress logs directly to terminal
+	// Kill the entire process group on timeout so orphaned Python children
+	// don't linger after uv exits. Without this, the 30-min Go timeout kills
+	// uv but Python survives with PPID=1 in CLOSE-WAIT state.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
 	// Xet upload tuning for memory-constrained servers (< 64 GB RAM).
 	// DO NOT use HF_XET_HIGH_PERFORMANCE — it requires 64+ GB RAM and
 	// causes upload stalls on smaller machines (sets concurrency to 124,

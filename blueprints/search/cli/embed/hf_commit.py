@@ -27,7 +27,27 @@ import json
 import sys
 import os
 import logging
+import signal
 import time
+
+# Self-destruct timeout: if create_commit() hangs (xet finalization, CLOSE-WAIT
+# on HF server connection), kill ourselves so the Go caller can retry.
+# This is a hard ceiling — Go has a 30-min timeout but only kills the direct
+# child (uv), leaving the Python process orphaned with no parent to reap it.
+_COMMIT_TIMEOUT_S = 45 * 60  # 45 minutes — Go kills at 40 min; this is the last-resort backstop
+
+
+def _timeout_handler(signum, frame):
+    print(
+        f"[hf_commit.py] TIMEOUT: create_commit did not return within {_COMMIT_TIMEOUT_S}s — self-terminating",
+        file=sys.stderr,
+    )
+    print(json.dumps({"error": f"commit timed out after {_COMMIT_TIMEOUT_S}s"}))
+    sys.stdout.flush()
+    os._exit(1)  # hard exit — threads may be stuck
+
+
+signal.signal(signal.SIGALRM, _timeout_handler)
 
 # DO NOT set HF_XET_HIGH_PERFORMANCE here — it requires 64+ GB RAM and causes
 # upload stalls on smaller machines. Xet env vars are set by the Go caller
@@ -94,6 +114,7 @@ def main() -> None:
     t0 = time.monotonic()
 
     uploaded = sum(1 for o in operations if isinstance(o, CommitOperationAdd))
+    signal.alarm(_COMMIT_TIMEOUT_S)
     try:
         commit_info = api.create_commit(
             repo_id=repo_id,

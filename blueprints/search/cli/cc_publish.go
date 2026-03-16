@@ -33,6 +33,7 @@ func newCCPublish() *cobra.Command {
 		watch          bool
 		schedule       bool
 		list           bool
+		gaps           bool
 		cleanup        bool
 		lightConvert   bool
 		skipErrors     bool
@@ -71,14 +72,14 @@ Run --watch and --schedule as separate processes; use multiple --pipeline worker
   search cc publish --file 0 --republish`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCCPublish(cmd.Context(), crawlID, fileIdx, repoRoot, repoID,
-				republish, private, pipeline, watch, schedule, list, cleanup, lightConvert, skipErrors,
+				republish, private, pipeline, watch, schedule, list, gaps, cleanup, lightConvert, skipErrors,
 				watchInterval, commitInterval, chartsEvery,
 				schedStart, schedEnd, schedMaxSess, schedChunk, schedDonePct, schedStall)
 		},
 	}
 
 	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest)")
-	cmd.Flags().StringVar(&fileIdx, "file", "all", "File index, range (0-9), or all (pipeline mode)")
+	cmd.Flags().StringVar(&fileIdx, "file", "all", "File index, range (0-9), comma-separated list, or all (pipeline mode)")
 	cmd.Flags().StringVar(&repoRoot, "repo-root", "", "Local export repo root (default: $HOME/data/common-crawl/{crawl}/export/repo)")
 	cmd.Flags().StringVar(&repoID, "repo", "open-index/draft", "Hugging Face dataset repo ID")
 	cmd.Flags().BoolVar(&republish, "republish", false, "Upload even if the remote path already exists (manual mode only)")
@@ -87,23 +88,24 @@ Run --watch and --schedule as separate processes; use multiple --pipeline worker
 	cmd.Flags().BoolVar(&watch, "watch", false, "Watch parquet folder and push new files to HuggingFace in real-time")
 	cmd.Flags().BoolVar(&schedule, "schedule", false, "Manage pipeline screen sessions across a file index range (self-healing scheduler)")
 	cmd.Flags().BoolVar(&list, "list", false, "List committed shards as ranges (from stats.csv / HF)")
+	cmd.Flags().BoolVar(&gaps, "gaps", false, "Detect and display gap shards; with --schedule: backfill gaps via scheduler; with --pipeline: process gaps directly")
 	cmd.Flags().BoolVar(&cleanup, "cleanup", false, "Delete raw .warc.gz after packing (--pipeline only)")
 	cmd.Flags().BoolVar(&lightConvert, "light", true, "Use lightweight HTML→Markdown converter (~10x faster, --no-light for trafilatura)")
 	cmd.Flags().BoolVar(&skipErrors, "skip-errors", false, "Skip shards that fail pack/export instead of aborting (--pipeline only)")
 	cmd.Flags().IntVar(&watchInterval, "watch-interval", 15, "Watcher poll interval in seconds (--watch only)")
 	cmd.Flags().IntVar(&commitInterval, "commit-interval", 180, "Minimum seconds between HF commits (--watch only). HF allows 128 commits/hour shared across all repos/tokens; default 180s → ≤20/hour per server, 40 total, leaving 88 headroom for other repos")
 	cmd.Flags().IntVar(&chartsEvery, "charts-every", 60, "Regenerate charts every N minutes (--watch only, 0=disable)")
-	cmd.Flags().IntVar(&schedStart, "start", 0, "First file index in range (--schedule only)")
-	cmd.Flags().IntVar(&schedEnd, "end", 4999, "Last file index in range (--schedule only)")
+	cmd.Flags().IntVar(&schedStart, "start", 0, "First file index in range (--schedule/--gaps)")
+	cmd.Flags().IntVar(&schedEnd, "end", 9999, "Last file index in range (--schedule/--gaps)")
 	cmd.Flags().IntVar(&schedMaxSess, "max-sessions", 0, "Max concurrent screen sessions (0=auto-detect from hardware; --schedule only)")
-	cmd.Flags().IntVar(&schedChunk, "chunk-size", 50, "Files per screen session chunk (--schedule only; smaller = faster cycling, natural memory release)")
-	cmd.Flags().IntVar(&schedDonePct, "done-pct", 95, "% of shards committed before chunk is considered done (--schedule only)")
+	cmd.Flags().IntVar(&schedChunk, "chunk-size", 50, "Gap indices per screen session chunk (--schedule/--gaps; smaller = faster cycling, natural memory release)")
+	cmd.Flags().IntVar(&schedDonePct, "done-pct", 95, "% of shards committed before chunk is considered done (--schedule/--gaps)")
 	cmd.Flags().IntVar(&schedStall, "stall-rounds", 15, "Rounds with no new commits before killing a stalled session (--schedule only)")
 	return cmd
 }
 
 func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string,
-	republish, private, pipeline, watch, schedule, list, cleanup, lightConvert, skipErrors bool,
+	republish, private, pipeline, watch, schedule, list, gaps, cleanup, lightConvert, skipErrors bool,
 	watchInterval, commitInterval, chartsEvery int,
 	schedStart, schedEnd, schedMaxSess, schedChunk, schedDonePct, schedStall int) error {
 
@@ -123,6 +125,57 @@ func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string
 	// ── List mode: show committed shards as ranges ────────────────────────────
 	if list {
 		return ccListCommittedShards(ctx, crawlID, repoRoot, repoID)
+	}
+
+	// ── Gap mode: detect/display/backfill uncommitted shards ──────────────────
+	if gaps {
+		statsCSV := ccStatsCSVPath(repoRoot)
+		token := strings.TrimSpace(os.Getenv("HF_TOKEN"))
+		if token != "" {
+			hf := newHFClient(token)
+			ccMergeStatsFromHF(ctx, hf, repoID, statsCSV)
+		}
+		gapIndices := ccComputeGapIndices(statsCSV, crawlID, schedStart, schedEnd)
+
+		if schedule {
+			// Route large gap sets through the scheduler using gap-specific chunks.
+			if len(gapIndices) == 0 {
+				fmt.Printf("  No gaps found in %d–%d for %s\n", schedStart, schedEnd, crawlID)
+				return nil
+			}
+			fmt.Printf("  Gap backfill: %d uncommitted shards in %d–%d → scheduler\n",
+				len(gapIndices), schedStart, schedEnd)
+			cfg := ccScheduleConfig{
+				CrawlID:     crawlID,
+				RepoRoot:    repoRoot,
+				Start:       schedStart,
+				End:         schedEnd,
+				MaxSessions: schedMaxSess,
+				ChunkSize:   schedChunk,
+				DonePct:     schedDonePct,
+				StallRounds: schedStall,
+				GapIndices:  gapIndices,
+			}
+			return runCCScheduleLoop(ctx, cfg)
+		}
+
+		if pipeline {
+			// Build comma-separated file selector from gap indices and run pipeline.
+			if len(gapIndices) == 0 {
+				fmt.Printf("  No gaps found in %d–%d for %s\n", schedStart, schedEnd, crawlID)
+				return nil
+			}
+			parts := make([]string, len(gapIndices))
+			for i, g := range gapIndices {
+				parts[i] = strconv.Itoa(g)
+			}
+			fmt.Printf("  Gap pipeline: %d uncommitted shards in %d–%d\n",
+				len(gapIndices), schedStart, schedEnd)
+			return ccRunPipeline(ctx, crawlID, strings.Join(parts, ","), repoRoot, cleanup, lightConvert, skipErrors)
+		}
+
+		// Default: print gap analysis only.
+		return ccPrintGaps(crawlID, statsCSV, schedStart, schedEnd, gapIndices)
 	}
 
 	// ── Watch mode: poll parquet folder → push to HF ─────────────────────────
@@ -443,6 +496,71 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 	return nil
 }
 
+// ccComputeGapIndices returns a sorted list of uncommitted shard indices in [start, end].
+func ccComputeGapIndices(statsCSV, crawlID string, start, end int) []int {
+	committed := ccLoadCommittedSet(statsCSV, crawlID)
+	var gaps []int
+	for i := start; i <= end; i++ {
+		if !committed[i] {
+			gaps = append(gaps, i)
+		}
+	}
+	return gaps
+}
+
+// ccPrintGaps prints a gap analysis report and suggests the next action.
+func ccPrintGaps(crawlID, statsCSV string, start, end int, gapIndices []int) error {
+	total := end - start + 1
+	committed := total - len(gapIndices)
+
+	fmt.Printf("  Crawl    %s\n", labelStyle.Render(crawlID))
+	fmt.Printf("  Range    %d–%d (%d shards)\n", start, end, total)
+	fmt.Printf("  Done     %s / %d  (%.1f%%)\n",
+		infoStyle.Render(strconv.Itoa(committed)), total, float64(committed)*100/float64(total))
+
+	if len(gapIndices) == 0 {
+		fmt.Printf("  Gaps     %s\n", successStyle.Render("none — all shards committed"))
+		return nil
+	}
+
+	fmt.Printf("  Gaps     %s\n", warningStyle.Render(strconv.Itoa(len(gapIndices))))
+	fmt.Println()
+
+	// Collapse into ranges for display.
+	type rng struct{ lo, hi int }
+	var ranges []rng
+	lo, hi := gapIndices[0], gapIndices[0]
+	for _, n := range gapIndices[1:] {
+		if n == hi+1 {
+			hi = n
+		} else {
+			ranges = append(ranges, rng{lo, hi})
+			lo, hi = n, n
+		}
+	}
+	ranges = append(ranges, rng{lo, hi})
+
+	for _, r := range ranges {
+		if r.lo == r.hi {
+			fmt.Printf("    %5d\n", r.lo)
+		} else {
+			fmt.Printf("    %5d – %5d  (%d)\n", r.lo, r.hi, r.hi-r.lo+1)
+		}
+	}
+	fmt.Println()
+
+	if len(gapIndices) <= 200 {
+		parts := make([]string, len(gapIndices))
+		for i, g := range gapIndices {
+			parts[i] = strconv.Itoa(g)
+		}
+		fmt.Printf("  Suggest  search cc publish --gaps --pipeline --start %d --end %d\n", start, end)
+	} else {
+		fmt.Printf("  Suggest  search cc publish --gaps --schedule --start %d --end %d\n", start, end)
+	}
+	return nil
+}
+
 // ccListCommittedShards prints committed shards as compact ranges from stats.csv (synced from HF).
 func ccListCommittedShards(ctx context.Context, crawlID, repoRoot, repoID string) error {
 	statsCSV := ccStatsCSVPath(repoRoot)
@@ -698,6 +816,29 @@ func ccParseOpenFileSelector(s string) ([]int, error) {
 	s = strings.TrimSpace(s)
 	if s == "" || s == "all" {
 		return nil, nil
+	}
+	// Comma-separated list: "1,2,5-10,42"
+	if strings.Contains(s, ",") {
+		seen := make(map[int]bool)
+		var out []int
+		for _, part := range strings.Split(s, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			sub, err := ccParseOpenFileSelector(part)
+			if err != nil {
+				return nil, err
+			}
+			for _, n := range sub {
+				if !seen[n] {
+					seen[n] = true
+					out = append(out, n)
+				}
+			}
+		}
+		sort.Ints(out)
+		return out, nil
 	}
 	if strings.Contains(s, "-") {
 		parts := strings.SplitN(s, "-", 2)

@@ -137,18 +137,36 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 		}
 	}
 
-	// Filter: only include parquets that still exist on disk.
+	// Cap batch size: each parquet is ~30 MB, so 5 files ≈ 150 MB.
+	// Upload speed is ~500 kB/s, so 150 MB takes ~5 min, leaving 7 min
+	// of the 12-min Go timeout for xet finalization (which can hang).
+	const maxBatchSize = 5
+	if len(newFiles) > maxBatchSize {
+		fmt.Printf("  [watcher] capping batch to %d of %d pending parquet(s)\n", maxBatchSize, len(newFiles))
+		newFiles = newFiles[:maxBatchSize]
+	}
+
+	// Filter: only include parquets that still exist on disk AND are valid.
 	// Between finding them and committing, the scheduler cleanup or a crashed
 	// session may have deleted the local file. Committing a phantom shard
 	// (stats row without data on HF) causes data integrity issues.
+	// Also skip tiny/corrupt files (<1 MB) — these are truncated exports from
+	// crashed pipelines; the pipeline will regenerate them on next run.
 	{
+		const minParquetBytes = 1 << 20 // 1 MB
 		var existing []ccUncommittedParquet
 		for _, f := range newFiles {
-			if fileExists(f.localPath) {
-				existing = append(existing, f)
-			} else {
+			fi, err := os.Stat(f.localPath)
+			if err != nil {
 				fmt.Printf("  [watcher] skipping %s (file disappeared before upload)\n", f.shard)
+				continue
 			}
+			if fi.Size() < minParquetBytes {
+				fmt.Printf("  [watcher] skipping %s (truncated: %d bytes, expected ~30 MB) — deleting so pipeline retries\n", f.shard, fi.Size())
+				_ = os.Remove(f.localPath) // delete so pipeline regenerates on next run
+				continue
+			}
+			existing = append(existing, f)
 		}
 		newFiles = existing
 	}

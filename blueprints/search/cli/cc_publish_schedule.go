@@ -24,6 +24,10 @@ type ccScheduleConfig struct {
 	DonePct     int
 	StallRounds int
 	SearchBin   string
+	// GapIndices, when non-nil, enables gap mode: only these specific shard
+	// indices are targeted. Chunks are built from clusters of gap indices and
+	// done-pct is evaluated against gap targets only (not the full range).
+	GapIndices []int
 }
 
 type ccSchedChunk struct {
@@ -521,9 +525,23 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 
 	statsCSV := ccStatsCSVPath(cfg.RepoRoot)
 
+	// Build gap set for gap-aware progress tracking.
+	var gapSet map[int]bool
+	if len(cfg.GapIndices) > 0 {
+		gapSet = make(map[int]bool, len(cfg.GapIndices))
+		for _, idx := range cfg.GapIndices {
+			gapSet[idx] = true
+		}
+	}
+
 	logLine("=== CC Schedule starting ===")
 	logLine(fmt.Sprintf("  Crawl:       %s", cfg.CrawlID))
-	logLine(fmt.Sprintf("  Range:       %d\u2013%d", cfg.Start, cfg.End))
+	if gapSet != nil {
+		logLine(fmt.Sprintf("  Mode:        gap backfill (%d uncommitted shards in %d\u2013%d)",
+			len(cfg.GapIndices), cfg.Start, cfg.End))
+	} else {
+		logLine(fmt.Sprintf("  Range:       %d\u2013%d", cfg.Start, cfg.End))
+	}
 	logLine(fmt.Sprintf("  Chunks:      %d  (size=%d)", len(chunks), cfg.ChunkSize))
 	if autoMode {
 		logLine(fmt.Sprintf("  Hardware:    %s", hw))
@@ -581,8 +599,7 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		nRunning, nDone := 0, 0
 
 		for _, chunk := range chunks {
-			total := chunk.End - chunk.Start + 1
-			nComm := ccSchedCountRange(committed, chunk.Start, chunk.End)
+			nComm, total := ccSchedChunkProgress(committed, gapSet, chunk.Start, chunk.End)
 			running := ccSchedChunkRunning(chunk.Start, chunk.End)
 
 			if running {
@@ -699,7 +716,12 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 
 		if nRunning == 0 && nTodo == 0 {
 			logLine("")
-			logLine(fmt.Sprintf("=== All chunks complete for range %d\u2013%d ===", cfg.Start, cfg.End))
+			if gapSet != nil {
+				logLine(fmt.Sprintf("=== Gap backfill complete: %d shards filled in %d\u2013%d ===",
+					len(cfg.GapIndices), cfg.Start, cfg.End))
+			} else {
+				logLine(fmt.Sprintf("=== All chunks complete for range %d\u2013%d ===", cfg.Start, cfg.End))
+			}
 			logLine(fmt.Sprintf("Total committed: %d", totalCommitted))
 			logLine(fmt.Sprintf("Run: search cc publish --list"))
 			// Final cleanup.
@@ -754,6 +776,9 @@ func (cfg ccScheduleConfig) resolveSearchBin() string {
 }
 
 func (cfg ccScheduleConfig) buildChunks() []ccSchedChunk {
+	if len(cfg.GapIndices) > 0 {
+		return ccBuildGapChunks(cfg.GapIndices, cfg.ChunkSize)
+	}
 	var chunks []ccSchedChunk
 	for s := cfg.Start; s <= cfg.End; s += cfg.ChunkSize {
 		e := s + cfg.ChunkSize - 1
@@ -763,6 +788,44 @@ func (cfg ccScheduleConfig) buildChunks() []ccSchedChunk {
 		chunks = append(chunks, ccSchedChunk{s, e})
 	}
 	return chunks
+}
+
+// ccBuildGapChunks groups sparse gap indices into [lo, hi] range chunks.
+// Each chunk covers at most chunkSize gap indices; the range spans [first_gap, last_gap].
+// Pipelines running over these ranges will skip committed shards naturally.
+func ccBuildGapChunks(gaps []int, chunkSize int) []ccSchedChunk {
+	if len(gaps) == 0 {
+		return nil
+	}
+	var chunks []ccSchedChunk
+	for i := 0; i < len(gaps); i += chunkSize {
+		end := i + chunkSize - 1
+		if end >= len(gaps) {
+			end = len(gaps) - 1
+		}
+		chunks = append(chunks, ccSchedChunk{Start: gaps[i], End: gaps[end]})
+	}
+	return chunks
+}
+
+// ccSchedChunkProgress returns (nCommitted, nTotal) for done/stall tracking.
+// In gap mode (gapSet non-nil), counts only gap-target indices in [start, end].
+// In normal mode, counts all indices in the range.
+func ccSchedChunkProgress(committed map[int]struct{}, gapSet map[int]bool, start, end int) (nComm, total int) {
+	if gapSet != nil {
+		for i := start; i <= end; i++ {
+			if gapSet[i] {
+				total++
+				if _, ok := committed[i]; ok {
+					nComm++
+				}
+			}
+		}
+		return
+	}
+	total = end - start + 1
+	nComm = ccSchedCountRange(committed, start, end)
+	return
 }
 
 // ccSchedReadCommitted returns a set of committed file indices for the crawl.
