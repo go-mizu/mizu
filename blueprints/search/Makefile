@@ -334,6 +334,7 @@ build-on-server: ## Rsync source + build natively on remote server (fast, no QEM
 			-ldflags \"$(GO_LDFLAGS)\" \
 			-o ~/bin/search-linux-noble ./cmd/search; \
 		chmod +x ~/bin/search-linux-noble; \
+		rm -f ~/bin/search; \
 		printf '"'"'#!/usr/bin/env bash\nulimit -Hn 131072 2>/dev/null; ulimit -n 131072 2>/dev/null || ulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=$${GOMEMLIMIT:-2000000000}\nexport GODEBUG=netdns=go\nexport TORRENT_STORAGE_DEFAULT_FILE_IO=classic\nexec \"$$HOME/bin/search-linux-noble\" \"\$$@\"\n'"'"' > ~/bin/search; \
 		chmod +x ~/bin/search; \
 		echo \"Done: $$HOME/bin/search-linux-noble\""'
@@ -351,6 +352,7 @@ deploy-linux-noble: build-linux-noble ## Deploy Ubuntu 24.04 binary to remote $$
 	@$(SSH) $(REMOTE_SSH) 'bash -lc "set -e; \
 		install -m 0755 $$HOME/.search-upload.tmp $$HOME/bin/search-linux-noble; \
 		rm -f $$HOME/.search-upload.tmp; \
+		rm -f $$HOME/bin/search; \
 		printf '"'"'#!/usr/bin/env bash\nulimit -Hn 131072 2>/dev/null; ulimit -n 131072 2>/dev/null || ulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=$${GOMEMLIMIT:-2000000000}\nexport GODEBUG=netdns=go\nexport TORRENT_STORAGE_DEFAULT_FILE_IO=classic\nexec \"$$HOME/bin/search-linux-noble\" \"\$$@\"\n'"'"' > $$HOME/bin/search; \
 		chmod +x $$HOME/bin/search"'
 	@echo "Deployed Noble: $(REMOTE_SSH):~/bin/search"

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -301,6 +302,7 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 		return err
 	}
 	statsCSV := ccStatsCSVPath(repoRoot)
+	skippedCSV := ccSkippedCSVPath(repoRoot)
 
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("CC Pipeline: download → pack → export"))
@@ -354,6 +356,7 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 			if packErr := runCCWarcPack(ctx, crawlID, strconv.Itoa(idx), -1, -1, 0, false, false, lightConvert, 200, "text/html", 512*1024, shard); packErr != nil {
 				if skipErrors {
 					fmt.Printf("  [%s] %s pack error (skipping): %v\n", labelStyle.Render(shard), warningStyle.Render("⚠"), packErr)
+					ccRecordSkip(skippedCSV, crawlID, idx, "pack", packErr)
 					fmt.Println()
 					continue
 				}
@@ -396,6 +399,7 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 			fmt.Println()
 			if skipErrors {
 				fmt.Printf("  [%s] %s export error (skipping): %v\n", labelStyle.Render(shard), warningStyle.Render("⚠"), exportErr)
+				ccRecordSkip(skippedCSV, crawlID, idx, "export", exportErr)
 				fmt.Println()
 				continue
 			}
@@ -408,6 +412,7 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 			_ = os.Remove(tmpPath)
 			if skipErrors {
 				fmt.Printf("  [%s] %s rename error (skipping): %v\n", labelStyle.Render(shard), warningStyle.Render("⚠"), renameErr)
+				ccRecordSkip(skippedCSV, crawlID, idx, "rename", renameErr)
 				fmt.Println()
 				continue
 			}
@@ -460,6 +465,34 @@ func ccListCommittedShards(ctx context.Context, crawlID, repoRoot, repoID string
 
 	fmt.Printf("  Crawl    %s\n", labelStyle.Render(crawlID))
 	fmt.Printf("  Shards   %s committed\n", infoStyle.Render(strconv.Itoa(len(indices))))
+
+	// Show skipped shards from skipped.csv if present.
+	skippedCSV := ccSkippedCSVPath(repoRoot)
+	if sf, err := os.Open(skippedCSV); err == nil {
+		defer sf.Close()
+		r := csv.NewReader(sf)
+		r.Read() // skip header
+		type skipRow struct{ idx int; stage, errMsg, ts string }
+		var skips []skipRow
+		for {
+			row, err := r.Read()
+			if err != nil {
+				break
+			}
+			if len(row) < 5 || row[0] != crawlID {
+				continue
+			}
+			idx, _ := strconv.Atoi(row[1])
+			skips = append(skips, skipRow{idx, row[2], row[3], row[4]})
+		}
+		if len(skips) > 0 {
+			fmt.Printf("  Skipped  %s (see %s)\n", warningStyle.Render(strconv.Itoa(len(skips))), skippedCSV)
+			for _, s := range skips {
+				fmt.Printf("    %05d  [%s]  %s\n", s.idx, s.stage, s.errMsg)
+			}
+		}
+	}
+
 	if len(indices) == 0 {
 		return nil
 	}

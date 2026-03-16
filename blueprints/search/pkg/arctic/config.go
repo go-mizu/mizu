@@ -28,7 +28,7 @@ func DefaultConfig() Config {
 	raw  := envOr("MIZU_ARCTIC_RAW_DIR",   filepath.Join(home, "data", "arctic", "raw"))
 	work := envOr("MIZU_ARCTIC_WORK_DIR",  filepath.Join(home, "data", "arctic", "work"))
 	minFree := envIntOr("MIZU_ARCTIC_MIN_FREE_GB", 30)
-	chunkLines := envIntOr("MIZU_ARCTIC_CHUNK_LINES", 100_000)
+	chunkLines := envIntOr("MIZU_ARCTIC_CHUNK_LINES", 500_000)
 	return Config{
 		RepoRoot:   root,
 		HFRepo:     "open-index/arctic",

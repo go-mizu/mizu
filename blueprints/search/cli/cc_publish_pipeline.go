@@ -18,6 +18,9 @@ import (
 	"github.com/parquet-go/parquet-go"
 )
 
+// chartTimeout is the maximum duration for chart generation (prevents kaleido/uv hangs).
+const chartTimeout = 5 * time.Minute
+
 //go:embed embed/chart_stats.py
 var chartStatsPy []byte
 
@@ -52,6 +55,43 @@ type ccTotals struct {
 
 func ccStatsCSVPath(repoRoot string) string {
 	return filepath.Join(repoRoot, "stats.csv")
+}
+
+func ccSkippedCSVPath(repoRoot string) string {
+	return filepath.Join(repoRoot, "skipped.csv")
+}
+
+// ccRecordSkip appends a skip entry to skipped.csv so permanently-failed shards
+// are visible without needing to search ephemeral screen session output.
+// Fields: crawl_id, file_idx, stage (pack/export/rename), error, skipped_at.
+// Appends rather than rewrites to avoid read-modify-write races between sessions.
+func ccRecordSkip(csvPath, crawlID string, fileIdx int, stage string, err error) {
+	needHeader := !fileExists(csvPath)
+	f, openErr := os.OpenFile(csvPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if openErr != nil {
+		return
+	}
+	defer f.Close()
+	w := csv.NewWriter(f)
+	if needHeader {
+		_ = w.Write([]string{"crawl_id", "file_idx", "stage", "error", "skipped_at"})
+	}
+	errStr := ""
+	if err != nil {
+		// Truncate very long errors (stack traces etc.) to keep CSV readable.
+		errStr = err.Error()
+		if len(errStr) > 300 {
+			errStr = errStr[:300] + "…"
+		}
+	}
+	_ = w.Write([]string{
+		crawlID,
+		strconv.Itoa(fileIdx),
+		stage,
+		errStr,
+		time.Now().UTC().Format(time.RFC3339),
+	})
+	w.Flush()
 }
 
 var ccStatsCSVHeader = []string{
@@ -164,9 +204,13 @@ func ccUpsertShardStats(csvPath string, stat ccShardStats) error {
 // file, with local rows winning on conflict (same crawl_id+file_idx). This
 // makes HF the single source of truth: all servers contribute their rows and
 // every session sees the global view before each commit.
+// Uses a 2-minute timeout to prevent blocking the watcher on slow HF responses.
 func ccMergeStatsFromHF(ctx context.Context, hf *hfClient, repoID, statsCSV string) {
+	mergeCtx, mergeCancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer mergeCancel()
+
 	url := "https://huggingface.co/datasets/" + repoID + "/resolve/main/stats.csv"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(mergeCtx, http.MethodGet, url, nil)
 	if err != nil {
 		return
 	}
@@ -310,7 +354,7 @@ func ccFmtDuration(secs int64) string {
 
 // ccRunCharts runs the embedded chart_stats.py via uv to generate PNG charts from stats.csv.
 // Charts are written to repoRoot/charts/. Returns the paths of generated PNGs (relative to repoRoot).
-// Returns nil silently if uv is not installed or chart generation fails.
+// Returns nil silently if uv is not installed, chart generation fails, or the 5-minute timeout expires.
 func ccRunCharts(statsCSV, repoRoot, crawlID string) []string {
 	chartsDir := filepath.Join(repoRoot, "charts")
 	if err := os.MkdirAll(chartsDir, 0o755); err != nil {
@@ -351,12 +395,19 @@ func ccRunCharts(statsCSV, repoRoot, crawlID string) []string {
 	}
 
 	// Run: uv run <script> <statsCSV> --out <chartsDir> [--crawl <crawlID>]
+	// 5-minute timeout prevents kaleido/uv hangs from blocking the watcher indefinitely.
 	args := []string{"run", scriptPath, statsCSV, "--out", chartsDir}
 	if crawlID != "" {
 		args = append(args, "--crawl", crawlID)
 	}
-	cmd := exec.Command(uvBin, args...)
+	chartCtx, chartCancel := context.WithTimeout(context.Background(), chartTimeout)
+	defer chartCancel()
+	cmd := exec.CommandContext(chartCtx, uvBin, args...)
 	out, err := cmd.CombinedOutput()
+	if chartCtx.Err() == context.DeadlineExceeded {
+		fmt.Printf("  [charts] skipped: timed out after %s\n", chartTimeout)
+		return nil
+	}
 	if err != nil {
 		outStr := string(out)
 		// Kaleido requires browser deps (libnss3 etc.) that may be missing on servers.

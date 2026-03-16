@@ -64,6 +64,7 @@ def main() -> None:
 
     operations = []
     total_size = 0
+    skipped = 0
     for op in ops_raw:
         if op.get("delete", False):
             operations.append(CommitOperationDelete(path_in_repo=op["path_in_repo"]))
@@ -72,19 +73,27 @@ def main() -> None:
         repo_path = op["path_in_repo"]
         if not os.path.isfile(local):
             print(f"[hf_commit.py] WARNING: file not found: {local}", file=sys.stderr)
+            skipped += 1
             continue
         fsize = os.path.getsize(local)
         total_size += fsize
         print(f"[hf_commit.py] add: {repo_path} ({fsize / 1024 / 1024:.1f} MB)", file=sys.stderr)
         operations.append(CommitOperationAdd(path_in_repo=repo_path, path_or_fileobj=local))
 
+    if skipped > 0:
+        print(f"[hf_commit.py] WARNING: {skipped} file(s) missing", file=sys.stderr)
+        data_ops = [o for o in operations if isinstance(o, CommitOperationAdd) and o.path_in_repo.endswith(".parquet")]
+        if len(data_ops) == 0:
+            message = f"Update charts/README (no data — {skipped} parquet(s) missing locally)"
+
     if not operations:
-        print(json.dumps({"commit_url": "", "error": "no files to commit"}))
+        print(json.dumps({"commit_url": "", "error": "no files to commit", "uploaded": 0}))
         sys.exit(1)
 
     print(f"[hf_commit.py] committing {len(operations)} ops ({total_size / 1024 / 1024:.1f} MB total) to {repo_id}", file=sys.stderr)
     t0 = time.monotonic()
 
+    uploaded = sum(1 for o in operations if isinstance(o, CommitOperationAdd))
     try:
         commit_info = api.create_commit(
             repo_id=repo_id,
@@ -95,7 +104,7 @@ def main() -> None:
         )
         elapsed = time.monotonic() - t0
         print(f"[hf_commit.py] committed in {elapsed:.1f}s: {commit_info.commit_url}", file=sys.stderr)
-        print(json.dumps({"commit_url": commit_info.commit_url}))
+        print(json.dumps({"commit_url": commit_info.commit_url, "uploaded": uploaded}))
     except HfHubHTTPError as e:
         elapsed = time.monotonic() - t0
         retry_after = 0

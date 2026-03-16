@@ -137,6 +137,25 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 		}
 	}
 
+	// Filter: only include parquets that still exist on disk.
+	// Between finding them and committing, the scheduler cleanup or a crashed
+	// session may have deleted the local file. Committing a phantom shard
+	// (stats row without data on HF) causes data integrity issues.
+	{
+		var existing []ccUncommittedParquet
+		for _, f := range newFiles {
+			if fileExists(f.localPath) {
+				existing = append(existing, f)
+			} else {
+				fmt.Printf("  [watcher] skipping %s (file disappeared before upload)\n", f.shard)
+			}
+		}
+		newFiles = existing
+	}
+	if len(newFiles) == 0 && !chartsStale {
+		return nil
+	}
+
 	if len(newFiles) > 0 {
 		fmt.Printf("  [watcher] %d new parquet(s) — committing to HF...\n", len(newFiles))
 	}
@@ -195,7 +214,10 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 		commitMsg = fmt.Sprintf("Publish %d shards %s/%s–%s", len(newFiles), crawlID, shards[0], shards[len(shards)-1])
 	}
 
-	buildOps := func() []hfOperation {
+	// buildOps re-checks file existence every call (including retries) so
+	// files cleaned up by the scheduler between attempts are never sent to
+	// Python, avoiding phantom commits.
+	buildOps := func() ([]hfOperation, []ccUncommittedParquet) {
 		ops := []hfOperation{
 			{LocalPath: filepath.Join(repoRoot, "README.md"), PathInRepo: "README.md"},
 			{LocalPath: filepath.Join(repoRoot, "LICENSE"), PathInRepo: "LICENSE"},
@@ -207,10 +229,16 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 				PathInRepo: filepath.ToSlash(rel),
 			})
 		}
+		var alive []ccUncommittedParquet
 		for _, f := range newFiles {
-			ops = append(ops, hfOperation{LocalPath: f.localPath, PathInRepo: f.remotePath})
+			if fileExists(f.localPath) {
+				ops = append(ops, hfOperation{LocalPath: f.localPath, PathInRepo: f.remotePath})
+				alive = append(alive, f)
+			} else {
+				fmt.Printf("  [watcher] buildOps: skipping %s (vanished before upload)\n", f.shard)
+			}
 		}
-		return ops
+		return ops, alive
 	}
 
 	// Step 4: Commit with retry — on failure re-merge stats so we don't lose
@@ -219,9 +247,10 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 	// instead of the normal exponential backoff, to avoid hammering the rate limit.
 	const maxAttempts = 5
 	var (
-		commitURL string
-		elapsed   time.Duration
-		commitErr error
+		commitURL    string
+		elapsed      time.Duration
+		commitErr    error
+		uploadedFiles []ccUncommittedParquet // files that were actually sent to HF
 	)
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if attempt > 0 {
@@ -254,10 +283,16 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 				fmt.Printf("  [watcher] retry repo files: %v\n", err)
 			}
 		}
+		ops, alive := buildOps()
+		if len(ops) == 0 {
+			fmt.Printf("  [watcher] no ops remain (all files vanished) — skipping commit\n")
+			return nil
+		}
 		t0 := time.Now()
-		commitURL, commitErr = hf.createCommit(ctx, repoID, "main", commitMsg, buildOps())
+		commitURL, commitErr = hf.createCommit(ctx, repoID, "main", commitMsg, ops)
 		elapsed = time.Since(t0)
 		if commitErr == nil {
+			uploadedFiles = alive
 			break
 		}
 		fmt.Printf("  [watcher] commit error (attempt %d): %v\n", attempt+1, commitErr)
@@ -271,11 +306,13 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 	}
 
 	// Step 5: Update publish timing, delete all local intermediates, mark committed.
+	// Only process files that buildOps confirmed still existed at commit time;
+	// vanished files are NOT marked committed so the scheduler can retry them.
 	durPublishS := int64(elapsed.Seconds())
-	if len(newFiles) > 1 {
-		durPublishS = int64(elapsed.Seconds()) / int64(len(newFiles))
+	if len(uploadedFiles) > 1 {
+		durPublishS = int64(elapsed.Seconds()) / int64(len(uploadedFiles))
 	}
-	for _, f := range newFiles {
+	for _, f := range uploadedFiles {
 		if all, _ := ccReadStatsCSV(statsCSV); all != nil {
 			for _, s := range all {
 				if s.CrawlID == crawlID && s.FileIdx == f.fileIdx {
@@ -301,7 +338,7 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 
 	fmt.Printf("  [watcher] %s  (%d shards, %s)\n",
 		successStyle.Render("published "+commitURL),
-		len(newFiles), elapsed.Round(time.Second),
+		len(uploadedFiles), elapsed.Round(time.Second),
 	)
 	// Run brute-force WARC cleanup after each commit to catch any orphaned raw WARCs
 	// from finished/crashed pipeline sessions (Pass 3 in ccPurgeCommittedLocals).

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 	"time"
 
@@ -122,6 +123,22 @@ func DownloadZst(ctx context.Context, cfg Config, year, month int, typ string,
 	if year >= 2024 {
 		if _, ok := monthlyInfoHashes[ym]; !ok {
 			return 0, fmt.Errorf("no torrent hash for %s: add it to monthlyInfoHashes in torrent.go (see download_links.md)", ym)
+		}
+	}
+
+	// Ensure any completed .zst files already in the raw directory are writable
+	// before creating the torrent client. anacrolix/torrent uses memory-mapped
+	// storage and needs O_RDWR access to every file it maps during initialization,
+	// even files with PiecePriorityNone. Files written by a previous torrent
+	// session are left with 0444 (read-only) permissions; if a new session can't
+	// open them for write it deletes and re-creates them as .part files, silently
+	// destroying completed downloads that other pipeline stages depend on.
+	for _, sub := range []string{"comments", "submissions"} {
+		glob := filepath.Join(cfg.RawDir, "reddit", sub, "R[CS]_*.zst")
+		if matches, err := filepath.Glob(glob); err == nil {
+			for _, m := range matches {
+				_ = os.Chmod(m, 0644)
+			}
 		}
 	}
 

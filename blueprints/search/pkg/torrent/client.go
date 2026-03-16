@@ -204,11 +204,20 @@ func (c *Client) Download(ctx context.Context, paths []string, cb ProgressCallba
 		if selectedIdx[i] {
 			f.Download()
 			selected = append(selected, f)
-			// Enable the next file at low priority so the last piece of our
-			// selected file (which overlaps into the next file) can be verified.
+			// Enable the next file at readahead priority so the shared last
+			// piece of the selected file (which overlaps into the next file)
+			// can be fully downloaded and hash-verified.
+			// Exception: if the boundary file is already fully downloaded its
+			// pieces are already verified, AND anacrolix needs O_RDWR access
+			// to mmap it — if it was completed by a prior session it may be
+			// 0444 (read-only). Skipping SetPriority avoids anacrolix deleting
+			// and re-downloading an already-complete neighbour file.
 			if i+1 < len(allFiles) && !selectedIdx[i+1] {
-				allFiles[i+1].SetPriority(torrent.PiecePriorityReadahead)
-				boundaryFiles = append(boundaryFiles, allFiles[i+1])
+				bf := allFiles[i+1]
+				if bf.BytesCompleted() < bf.Length() {
+					bf.SetPriority(torrent.PiecePriorityReadahead)
+					boundaryFiles = append(boundaryFiles, bf)
+				}
 			}
 		} else {
 			// Leave boundary files at their already-set priority.

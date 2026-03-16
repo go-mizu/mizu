@@ -802,6 +802,8 @@ func ccSchedKillChunk(start, end int) {
 }
 
 // ccSchedStartChunk launches a new screen session for a pipeline chunk.
+// Logs to stderr if screen fails to start (common when screen is not installed
+// or the session name conflicts).
 func ccSchedStartChunk(start, end int, searchBin string) {
 	name := fmt.Sprintf("g%d_%d", start, end)
 	home, _ := os.UserHomeDir()
@@ -812,6 +814,8 @@ func ccSchedStartChunk(start, end int, searchBin string) {
 	)
 	// Kill any lingering session with same name before creating a new one.
 	_ = exec.Command("screen", "-S", name, "-X", "quit").Run()
-	time.Sleep(200 * time.Millisecond)
-	_ = exec.Command("screen", "-dmS", name, "bash", "-c", cmdStr+"; exec bash").Run()
+	time.Sleep(500 * time.Millisecond)
+	if err := exec.Command("screen", "-dmS", name, "bash", "-c", cmdStr+"; exec bash").Run(); err != nil {
+		fmt.Printf("  [schedule] ERROR: failed to start screen session %s: %v\n", name, err)
+	}
 }
