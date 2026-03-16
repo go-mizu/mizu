@@ -374,13 +374,23 @@ func (t *PipelineTask) downloadJob(ctx context.Context, job *PipelineJob, emit f
 	// that processed successfully but failed during HF upload, or was OOM-killed
 	// after processing). This avoids expensive re-downloads of multi-GB files.
 	if fi, err := os.Stat(zstPath); err == nil && fi.Size() > 0 {
-		if err := QuickValidateZst(zstPath); err == nil {
+		corrupt := false
+		if err := QuickValidateZst(zstPath); err != nil {
+			corrupt = true
+		} else if expected := t.zstSizes.Get(job.Type, job.YM.String()); expected > 0 && fi.Size() < expected {
+			// File is smaller than the catalog size — it's a partial download.
+			logf("pipeline: [%s] %s partial file detected (%.1f MB of %.1f MB) — re-downloading",
+				job.YM.String(), job.Type,
+				float64(fi.Size())/(1024*1024), float64(expected)/(1024*1024))
+			corrupt = true
+		}
+		if !corrupt {
 			logf("pipeline: [%s] %s reusing existing %s (%.1f MB)",
 				job.YM.String(), job.Type, zstPath, float64(fi.Size())/(1024*1024))
 			job.DurDown = 0
 			return nil
 		}
-		// Existing file is corrupt — remove and re-download.
+		// Existing file is corrupt or partial — remove and re-download.
 		os.Remove(zstPath)
 	}
 
