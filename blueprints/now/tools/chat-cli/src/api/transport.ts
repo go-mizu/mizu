@@ -48,8 +48,11 @@ export class PollingTransport implements Transport {
 
     const poll = async () => {
       try {
-        const rooms = await this.client.listChats();
-        const dms = await this.client.listDms();
+        // Fetch independently — one failing shouldn't block the other
+        const [rooms, dms] = await Promise.all([
+          this.client.listChats().catch(() => [] as Chat[]),
+          this.client.listDms().catch(() => [] as Chat[]),
+        ]);
         const all = [...rooms, ...dms];
         // Only notify if rooms actually changed
         const fingerprint = all.map((r) => r.id).join(",");

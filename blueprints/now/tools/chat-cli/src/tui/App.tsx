@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useRef, useState, useSyncExternalStore } from "react";
+import React, { useEffect, useCallback, useRef, useMemo, useState, useSyncExternalStore } from "react";
 import { render, Box, useApp, useInput, useStdout } from "ink";
 import TextInput from "ink-text-input";
 import type { Config } from "../auth/config.js";
@@ -42,9 +42,17 @@ function App({ config, serverOverride }: AppProps) {
   const activeRoomId = useStore(store, (s) => s.activeRoomId);
   const connected = useStore(store, (s) => s.connected);
   const error = useStore(store, (s) => s.error);
-  const allMessages = useStore(store, (s) => s.messages);
 
-  const activeMessages = activeRoomId ? allMessages[activeRoomId] || [] : [];
+  // Select only the active room's messages — avoids re-render when other rooms update
+  const EMPTY: never[] = useMemo(() => [], []);
+  const activeMessages = useSyncExternalStore(
+    store.subscribe,
+    () => {
+      const s = store.getState();
+      return s.activeRoomId ? s.messages[s.activeRoomId] || EMPTY : EMPTY;
+    },
+  );
+
   const activeRoom = rooms.find((r) => r.id === activeRoomId);
 
   const [overlay, setOverlay] = useState<OverlayMode>(null);
