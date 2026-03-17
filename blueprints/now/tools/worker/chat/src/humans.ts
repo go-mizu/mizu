@@ -1,40 +1,85 @@
 import type { Context } from "hono";
 import type { Env, Variables } from "./types";
 import { humanAvatar } from "./avatar";
-import { directoryPage, formatDate } from "./layout";
+import { switcherPage, formatDate } from "./layout";
+import { getSessionActor } from "./session";
 
 export async function humansPage(c: Context<{ Bindings: Env; Variables: Variables }>) {
+  const actor = await getSessionActor(c);
+
   const { results } = await c.env.DB.prepare(
     "SELECT actor, created_at FROM actors WHERE actor LIKE 'u/%' ORDER BY created_at DESC LIMIT 100"
   ).all<{ actor: string; created_at: number }>();
 
   const actors = results || [];
 
-  let cards = "";
+  // --- Human view ---
+  let list = "";
   if (actors.length === 0) {
-    cards = `<div class="empty">No humans registered yet. Be the first — <a href="/docs#registration" style="color:#000;text-decoration:underline">register now</a>.</div>`;
+    list = `<div class="empty">No one here yet. <a href="/">Be the first to join</a>.</div>`;
   } else {
-    cards = `<div class="grid">`;
+    list = `<div class="directory">`;
     for (const a of actors) {
-      const name = a.actor.slice(2); // remove "u/"
-      cards += `
-<div class="card">
-  <div class="card-avatar">${humanAvatar(a.actor)}</div>
-  <div class="card-name">${escapeHtml(name)}</div>
-  <div class="card-meta">Joined ${formatDate(a.created_at)}</div>
-</div>`;
+      const name = a.actor.slice(2);
+      list += `
+<a href="/u/${encodeURIComponent(name)}" class="entry">
+  <div class="entry-avatar">${humanAvatar(a.actor, 40)}</div>
+  <div class="entry-info">
+    <div class="entry-name">${esc(name)}</div>
+    <div class="entry-meta">Joined ${formatDate(a.created_at)}</div>
+  </div>
+  <span class="entry-arrow">&rarr;</span>
+</a>`;
     }
-    cards += `</div>`;
+    list += `</div>`;
   }
 
-  const content = `
-<h1 class="page-title">Humans</h1>
-<p class="page-desc">${actors.length} human${actors.length !== 1 ? "s" : ""} registered on chat.now</p>
-${cards}`;
+  const humanContent = `
+<div class="page-header">
+  <h1 class="page-title">People</h1>
+  <p class="page-desc">Everyone on chat.now. Click someone's name to see their profile and send them a message.</p>
+</div>
+<div class="page-count"><span>${actors.length}</span> registered</div>
+${list}`;
 
-  return c.html(directoryPage("Humans", "/humans", content));
+  // --- Machine view ---
+  const machineContent = `<span class="h1"># Humans</span>
+
+People registered on chat.now.
+
+<span class="h2">## Browse</span>
+
+Browse humans at <span class="link">/humans</span>
+View a profile at <span class="link">/u/:name</span>
+
+<span class="h2">## Send a direct message</span>
+
+POST /messages
+Authorization: Bearer &lt;token&gt;
+
+{"to": "u/alice", "text": "hello!"}
+
+<span class="dim">&rarr; {"chat":{"id":"c_..."},"message":{"id":"m_..."}}</span>
+
+Auto-creates a DM conversation if one doesn't exist.
+
+<span class="h2">## Create a room with someone</span>
+
+POST /chats
+Authorization: Bearer &lt;token&gt;
+{"kind": "room", "title": "project-x"}
+
+POST /chats/:id/members
+Authorization: Bearer &lt;token&gt;
+{"actor": "u/alice"}
+
+<span class="h2">## All registered (${actors.length})</span>
+
+${actors.map(a => a.actor).join("\n")}`;
+
+  return c.html(switcherPage("People", "/humans", humanContent, machineContent, actor));
 }
 
-function escapeHtml(s: string): string {
+function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }

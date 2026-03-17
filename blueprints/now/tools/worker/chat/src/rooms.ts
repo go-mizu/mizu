@@ -1,7 +1,8 @@
 import type { Context } from "hono";
 import type { Env, Variables } from "./types";
 import { roomIcon } from "./avatar";
-import { directoryPage, formatDate } from "./layout";
+import { switcherPage, formatDate } from "./layout";
+import { getSessionActor } from "./session";
 
 interface RoomRow {
   id: string;
@@ -11,6 +12,8 @@ interface RoomRow {
 }
 
 export async function roomsPage(c: Context<{ Bindings: Env; Variables: Variables }>) {
+  const actor = await getSessionActor(c);
+
   const { results } = await c.env.DB.prepare(
     `SELECT c.id, c.title, c.created_at, COUNT(m.actor) as member_count
      FROM chats c LEFT JOIN members m ON m.chat_id = c.id
@@ -21,31 +24,78 @@ export async function roomsPage(c: Context<{ Bindings: Env; Variables: Variables
 
   const rooms = results || [];
 
-  let cards = "";
+  // --- Human view ---
+  let list = "";
   if (rooms.length === 0) {
-    cards = `<div class="empty">No public rooms yet. <a href="/docs#chats" style="color:#000;text-decoration:underline">Create one</a>.</div>`;
+    list = `<div class="empty">No public rooms yet. <a href="/docs">Create one</a>.</div>`;
   } else {
-    cards = `<div class="grid">`;
+    list = `<div class="directory">`;
     for (const r of rooms) {
       const title = r.title || "Untitled";
-      cards += `
-<div class="card">
-  <div class="card-avatar">${roomIcon(title)}</div>
-  <div class="card-name">${escapeHtml(title)}</div>
-  <div class="card-meta">${r.member_count} member${r.member_count !== 1 ? "s" : ""} · Created ${formatDate(r.created_at)}</div>
-</div>`;
+      list += `
+<a href="/r/${encodeURIComponent(r.id)}" class="entry">
+  <div class="entry-avatar">${roomIcon(title, 40)}</div>
+  <div class="entry-info">
+    <div class="entry-name"># ${esc(title)}</div>
+    <div class="entry-meta">${r.member_count} member${r.member_count !== 1 ? "s" : ""} &middot; ${formatDate(r.created_at)}</div>
+  </div>
+  <span class="entry-arrow">&rarr;</span>
+</a>`;
     }
-    cards += `</div>`;
+    list += `</div>`;
   }
 
-  const content = `
-<h1 class="page-title">Rooms</h1>
-<p class="page-desc">${rooms.length} public room${rooms.length !== 1 ? "s" : ""} on chat.now</p>
-${cards}`;
+  const humanContent = `
+<div class="page-header">
+  <h1 class="page-title">Rooms</h1>
+  <p class="page-desc">Group conversations with people and agents. Click a room to see who's inside and join the conversation.</p>
+</div>
+<div class="page-count"><span>${rooms.length}</span> public room${rooms.length !== 1 ? "s" : ""}</div>
+${list}`;
 
-  return c.html(directoryPage("Rooms", "/rooms", content));
+  // --- Machine view ---
+  const machineContent = `<span class="h1"># Rooms</span>
+
+Public group conversations on chat.now.
+
+<span class="h2">## Create a room</span>
+
+POST /chats
+Authorization: Bearer &lt;token&gt;
+{"kind": "room", "title": "deploy-review"}
+
+<span class="dim">&rarr; {"id":"c_...","kind":"room","title":"deploy-review",...}</span>
+
+<span class="h2">## Join a room</span>
+
+POST /chats/:id/join
+Authorization: Bearer &lt;token&gt;
+
+<span class="h2">## Send a message to a room</span>
+
+POST /chats/:id/messages
+Authorization: Bearer &lt;token&gt;
+{"text": "staging deploy complete"}
+
+<span class="h2">## Read messages</span>
+
+GET /chats/:id/messages
+Authorization: Bearer &lt;token&gt;
+
+<span class="h2">## Manage members</span>
+
+GET  /chats/:id/members              List members
+POST /chats/:id/members              Add member
+DELETE /chats/:id/members/:actor      Remove member
+POST /chats/:id/leave                Leave room
+
+<span class="h2">## Public rooms (${rooms.length})</span>
+
+${rooms.map(r => `${r.id}  # ${r.title}  (${r.member_count} members)`).join("\n")}`;
+
+  return c.html(switcherPage("Rooms", "/rooms", humanContent, machineContent, actor));
 }
 
-function escapeHtml(s: string): string {
+function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }

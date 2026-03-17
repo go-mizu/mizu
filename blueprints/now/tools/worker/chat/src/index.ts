@@ -1,67 +1,94 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { signatureAuth } from "./auth";
+import { bearerAuth, createChallenge, verifyChallenge } from "./auth";
+import { requestMagicLink, verifyMagicLink, logout } from "./magic";
+import { getSessionActor } from "./session";
 import { registerActor } from "./register";
-import { rotateKey, rotateRecovery, deleteActor } from "./keys";
-import { createChat, getChat, listChats, joinChat } from "./chat";
-import { startOrResumeDm, listDms } from "./dm";
-import { sendMessage, listMessages } from "./message";
+import { createChat, getChat, listChats } from "./chat";
+import { sendMessageUnified, sendMessageExplicit, listMessages } from "./message";
+import { listMembers, addMember, removeMember, joinChat, leaveChat } from "./member";
 import { landingPage } from "./landing";
 import { docsPage } from "./docs";
 import { humansPage } from "./humans";
 import { agentsPage } from "./agents";
 import { roomsPage } from "./rooms";
+import { humanProfile, agentProfile } from "./profile";
+import { roomDetailPage } from "./room";
 import type { Env, Variables } from "./types";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 app.use("*", cors());
 
-// Pages (no auth)
-app.get("/", (c) => c.html(landingPage()));
+// Pages (no auth — session read optionally for signed-in state)
+app.get("/", async (c) => {
+  const actor = await getSessionActor(c);
+  return c.html(landingPage(actor));
+});
 app.get("/docs", (c) => c.html(docsPage()));
 app.get("/humans", humansPage);
 app.get("/agents", agentsPage);
 app.get("/rooms", roomsPage);
+app.get("/u/:id", humanProfile);
+app.get("/a/:id", agentProfile);
+app.get("/r/:room_id", roomDetailPage);
 
 // Body size limit for API routes
 const MAX_BODY_SIZE = 65_536;
-app.use("/api/*", async (c, next) => {
+const bodySizeLimit = async (c: any, next: any) => {
   const cl = c.req.header("Content-Length");
   if (cl && parseInt(cl, 10) > MAX_BODY_SIZE) {
-    return c.json({ error: "Request body too large" }, 413);
+    return c.json({ error: { code: "invalid_request", message: "Request body too large" } }, 413);
   }
   await next();
-});
+};
 
-// Registration (no auth, rate limited internally)
-app.post("/api/register", registerActor);
+app.use("/actors", bodySizeLimit);
+app.use("/auth/*", bodySizeLimit);
+app.use("/chats", bodySizeLimit);
+app.use("/chats/*", bodySizeLimit);
+app.use("/messages", bodySizeLimit);
 
-// Key management (no signature auth, uses recovery code)
-app.post("/api/keys/rotate", rotateKey);
-app.post("/api/keys/rotate-recovery", rotateRecovery);
-app.post("/api/actors/delete", deleteActor);
+// Registration (no auth)
+app.post("/actors", registerActor);
 
-// Chat & message routes (Ed25519 signature auth)
-app.use("/api/chat/*", signatureAuth);
-app.use("/api/chat", signatureAuth);
+// Auth (no auth required)
+app.post("/auth/challenge", createChallenge);
+app.post("/auth/verify", verifyChallenge);
+app.post("/auth/magic-link", requestMagicLink);
+app.get("/auth/magic/:token", verifyMagicLink);
+app.post("/auth/logout", logout);
+app.get("/auth/logout", logout);
 
-app.post("/api/chat/dm", startOrResumeDm);
-app.get("/api/chat/dm", listDms);
-app.post("/api/chat", createChat);
-app.get("/api/chat", listChats);
-app.get("/api/chat/:id", getChat);
-app.post("/api/chat/:id/join", joinChat);
-app.post("/api/chat/:id/messages", sendMessage);
-app.get("/api/chat/:id/messages", listMessages);
+// Protected routes (Bearer token)
+app.use("/chats", bearerAuth);
+app.use("/chats/*", bearerAuth);
+app.use("/messages", bearerAuth);
+
+// Chats
+app.post("/chats", createChat);
+app.get("/chats", listChats);
+app.get("/chats/:chat_id", getChat);
+
+// Messages
+app.post("/messages", sendMessageUnified);
+app.post("/chats/:chat_id/messages", sendMessageExplicit);
+app.get("/chats/:chat_id/messages", listMessages);
+
+// Members
+app.get("/chats/:chat_id/members", listMembers);
+app.post("/chats/:chat_id/members", addMember);
+app.delete("/chats/:chat_id/members/:actor", removeMember);
+app.post("/chats/:chat_id/join", joinChat);
+app.post("/chats/:chat_id/leave", leaveChat);
 
 // 404 fallback
-app.notFound((c) => c.json({ error: "Not found" }, 404));
+app.notFound((c) => c.json({ error: { code: "not_found", message: "Not found" } }, 404));
 
 // Error handler
 app.onError((err, c) => {
   console.error("[chat-worker] unhandled error:", err);
-  return c.json({ error: "Internal server error" }, 500);
+  return c.json({ error: { code: "internal", message: "Internal server error" } }, 500);
 });
 
 export default {
