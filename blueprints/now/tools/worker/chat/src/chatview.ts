@@ -65,15 +65,16 @@ export async function chatViewPage(c: AppContext) {
   const messages = (msgRows || []).reverse();
 
   // Build initial message HTML
+  // data-md holds the raw text; client JS renders it via marked.parse()
   const msgHtml = messages.map(m => {
-    const t = new Date(m.created_at).toISOString(); // client JS will format
+    const t = new Date(m.created_at).toISOString();
     const isMe = m.actor === actor;
     const name = esc(m.actor.slice(2));
-    const text = esc(m.text);
-    return `<div class="msg-row${isMe ? " mine" : ""}" data-ts="${t}">
+    const isBot = m.actor.startsWith("a/");
+    return `<div class="msg-row${isMe ? " mine" : ""}${isBot ? " bot" : ""}" data-ts="${t}">
   <span class="msg-time"></span>
   <span class="msg-author">${name}</span>
-  <span class="msg-text">${text.replace(/\n/g, "<br>")}</span>
+  <div class="msg-text" data-md="${esc(m.text)}"></div>
 </div>`;
   }).join("\n");
 
@@ -98,77 +99,8 @@ export async function chatViewPage(c: AppContext) {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#FAFAF9;--surface:#FFF;--text:#111;--text-2:#666;--text-3:#999;--border:#DDD;--ink:#111;--err:#B91C1C}
-html.dark{--bg:#0C0C0C;--surface:#161616;--text:#E5E5E5;--text-2:#888;--text-3:#555;--border:#2A2A2A;--ink:#E5E5E5;--err:#FCA5A5}
-body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);background:var(--bg);
-  -webkit-font-smoothing:antialiased;transition:background .3s,color .3s;
-  display:flex;flex-direction:column;height:100dvh;overflow:hidden}
-a{color:inherit;text-decoration:none}
-
-/* Nav */
-nav{padding:0 24px;height:52px;display:flex;align-items:center;justify-content:space-between;
-  flex-shrink:0;border-bottom:1px solid var(--border);
-  background:color-mix(in srgb,var(--bg) 95%,transparent);
-  backdrop-filter:blur(12px);z-index:100}
-.nav-left{display:flex;align-items:center;gap:12px}
-.back-btn{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-3);
-  display:flex;align-items:center;gap:6px;transition:color .15s}
-.back-btn:hover{color:var(--text)}
-.chat-name{font-weight:700;font-size:15px;letter-spacing:-0.3px}
-.nav-right{display:flex;align-items:center;gap:10px}
-.nav-user{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3)}
-.theme-toggle{background:none;border:1px solid var(--border);padding:5px 9px;
-  cursor:pointer;color:var(--text-3);display:flex;align-items:center;transition:all .15s}
-.theme-toggle:hover{color:var(--text);border-color:var(--text-3)}
-.theme-toggle .icon-sun{display:none}.theme-toggle .icon-moon{display:block}
-html.dark .theme-toggle .icon-sun{display:block}html.dark .theme-toggle .icon-moon{display:none}
-
-/* Thread */
-#thread{flex:1;overflow-y:auto;padding:16px 0;display:flex;flex-direction:column;gap:0}
-.msg-row{display:grid;grid-template-columns:52px 120px 1fr;align-items:baseline;
-  padding:2px 24px;min-height:24px;transition:background .1s}
-.msg-row:hover{background:color-mix(in srgb,var(--text) 3%,transparent)}
-.msg-time{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
-  flex-shrink:0;user-select:none}
-.msg-author{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-3);
-  font-weight:500;padding-right:12px;word-break:break-word}
-.msg-row.mine .msg-author{color:var(--text);font-weight:700}
-.msg-text{font-size:14px;line-height:1.6;color:var(--text);word-break:break-word;white-space:pre-wrap}
-
-/* Day separator */
-.day-sep{text-align:center;font-family:'JetBrains Mono',monospace;font-size:11px;
-  color:var(--text-3);padding:12px 24px;display:flex;align-items:center;gap:12px}
-.day-sep::before,.day-sep::after{content:'';flex:1;height:1px;background:var(--border)}
-
-/* Send area */
-.send-area{flex-shrink:0;border-top:1px solid var(--border);padding:12px 24px;display:flex;gap:10px;align-items:flex-end}
-#msg-input{flex:1;font-family:'DM Sans',system-ui,sans-serif;font-size:14px;
-  padding:10px 14px;border:1px solid var(--border);background:var(--bg);
-  color:var(--text);outline:none;resize:none;min-height:44px;max-height:120px;
-  line-height:1.5;transition:border-color .15s}
-#msg-input:focus{border-color:var(--text-3)}
-#msg-input::placeholder{color:var(--text-3)}
-#send-btn{font-family:'JetBrains Mono',monospace;font-size:12px;
-  padding:10px 20px;border:1px solid var(--ink);background:var(--ink);
-  color:var(--bg);cursor:pointer;transition:opacity .15s;white-space:nowrap;flex-shrink:0;height:44px}
-#send-btn:hover:not(:disabled){opacity:.8}
-#send-btn:disabled{opacity:.35;cursor:not-allowed}
-.send-error{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--err);
-  padding:4px 24px 0;min-height:16px}
-
-/* SSE status dot */
-.sse-dot{width:6px;height:6px;border-radius:50%;background:var(--border);flex-shrink:0;transition:background .5s}
-.sse-dot.live{background:#22c55e}
-.sse-dot.error{background:var(--err)}
-
-@media(max-width:640px){
-  .msg-row{grid-template-columns:46px 88px 1fr;padding:2px 12px}
-  .send-area{padding:8px 12px}
-  .nav-user{display:none}
-}
-</style>
+<link rel="stylesheet" href="/chat.css">
+<script src="https://cdn.jsdelivr.net/npm/marked@17.0.4/lib/marked.umd.js"></script>
 </head>
 <body>
 
@@ -228,6 +160,17 @@ document.querySelectorAll('.msg-row[data-ts]').forEach(row=>{
   row.querySelector('.msg-time').textContent=fmtTime(row.dataset.ts);
 });
 
+// Parse markdown and wrap any bare tables in a scrollable div
+function renderMd(text){
+  const html=marked.parse(text||'');
+  return html.split('<table').join('<div class="table-wrap"><table').split('</table>').join('</table></div>');
+}
+
+// Render markdown on server-rendered messages
+document.querySelectorAll('.msg-text[data-md]').forEach(el=>{
+  el.innerHTML=renderMd(el.dataset.md);
+});
+
 // Scroll to bottom initially
 thread.scrollTop=thread.scrollHeight;
 
@@ -249,9 +192,9 @@ function appendMsg(msg){
   a.className='msg-author';
   a.textContent=msg.actor.slice(2);
 
-  const tx=document.createElement('span');
+  const tx=document.createElement('div');
   tx.className='msg-text';
-  tx.textContent=msg.text;
+  tx.innerHTML=renderMd(msg.text);
 
   row.appendChild(t);row.appendChild(a);row.appendChild(tx);
   thread.appendChild(row);

@@ -25,9 +25,8 @@ describe("formatStandings", () => {
   it("includes competition name in heading", () => {
     expect(formatStandings("PL", standings)).toContain("Premier League");
   });
-  it("renders markdown table header", () => {
+  it("renders markdown table with Pts column", () => {
     const out = formatStandings("PL", standings);
-    expect(out).toContain("| # |");
     expect(out).toContain("| Pts |");
   });
   it("includes team name and points", () => {
@@ -35,10 +34,17 @@ describe("formatStandings", () => {
     expect(out).toContain("Liverpool");
     expect(out).toContain("68");
   });
-  it("bolds the top team", () => {
+  it("bolds top-3 teams", () => {
     const out = formatStandings("PL", standings);
     expect(out).toContain("**Liverpool**");
-    expect(out).toContain("**68**");
+    expect(out).toContain("**Arsenal**");
+    expect(out).toContain("**Chelsea**");
+  });
+  it("shows medal badge for rank 1", () => {
+    expect(formatStandings("PL", standings)).toContain("🥇");
+  });
+  it("shows zone legend for domestic leagues", () => {
+    expect(formatStandings("PL", standings)).toContain("Champions League");
   });
 });
 

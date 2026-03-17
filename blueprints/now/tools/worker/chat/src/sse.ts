@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import { streamSSE } from "hono/streaming";
 import type { Env, Variables, MessageRow } from "./types";
 import { isMember } from "./actor";
 
@@ -31,30 +32,10 @@ export async function sseMessages(c: AppContext) {
 
   let lastSeen = latest?.created_at ?? (Date.now() - 1000);
 
-  // Create a streaming response
-  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
-  const writer = writable.getWriter();
-  const enc = new TextEncoder();
-
-  let closed = false;
-
-  const write = async (chunk: string): Promise<boolean> => {
-    try {
-      await writer.write(enc.encode(chunk));
-      return true;
-    } catch {
-      closed = true;
-      return false;
-    }
-  };
-
-  // Send initial connected comment immediately
-  await write(`: connected\n\n`);
-
-  // Background poll loop
-  const poll = async () => {
+  return streamSSE(c, async (stream) => {
     let pingCount = 0;
-    while (!closed) {
+
+    while (!stream.closed) {
       try {
         const { results } = await c.env.DB.prepare(
           `SELECT id, chat_id, actor, text, created_at
@@ -63,43 +44,30 @@ export async function sseMessages(c: AppContext) {
         ).bind(chatId, lastSeen).all<MessageRow>();
 
         for (const row of results || []) {
-          const ok = await write(
-            `data: ${JSON.stringify({
+          if (stream.closed) break;
+          await stream.writeSSE({
+            data: JSON.stringify({
               id: row.id,
               chat_id: row.chat_id,
               actor: row.actor,
               text: row.text,
               created_at: new Date(row.created_at).toISOString(),
-            })}\n\n`
-          );
-          if (!ok) break;
+            }),
+          });
           lastSeen = row.created_at;
         }
 
         // Periodic ping to keep connection alive through proxies
         pingCount++;
         if (pingCount % PING_EVERY === 0) {
-          await write(": ping\n\n");
+          await stream.writeSSE({ data: "", comment: "ping" });
         }
       } catch {
         break;
       }
 
-      if (closed) break;
-      await new Promise<void>((r) => setTimeout(r, POLL_INTERVAL_MS));
+      if (stream.closed) break;
+      await stream.sleep(POLL_INTERVAL_MS);
     }
-
-    try { await writer.close(); } catch { /* already closed */ }
-  };
-
-  poll(); // fire and forget — runs while client is connected
-
-  return new Response(readable as unknown as BodyInit, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-store",
-      "X-Accel-Buffering": "no",
-      "Connection": "keep-alive",
-    },
   });
 }

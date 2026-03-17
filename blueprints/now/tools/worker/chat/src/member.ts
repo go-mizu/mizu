@@ -103,6 +103,10 @@ export async function joinChat(c: Context<{ Bindings: Env; Variables: Variables 
     return errorResponse(c, "forbidden", "Cannot join direct chat");
   }
 
+  if (chat.visibility === "private" && !(await isMember(c.env.DB, chatId, actor))) {
+    return errorResponse(c, "not_found", "Chat not found");
+  }
+
   await c.env.DB.prepare(
     "INSERT OR IGNORE INTO members (chat_id, actor, role, joined_at) VALUES (?, ?, ?, ?)"
   ).bind(chatId, actor, "member", Date.now()).run();

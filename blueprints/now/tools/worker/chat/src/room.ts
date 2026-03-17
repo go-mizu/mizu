@@ -76,17 +76,32 @@ export async function roomDetailPage(c: Context<{ Bindings: Env; Variables: Vari
     ? members.some(m => m.actor === sessionActor)
     : false;
 
-  // "Open in chat" button for members
-  const openChat = sessionIsMember
-    ? `<a href="/chat/${esc(roomId)}" style="display:inline-flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:12px;padding:10px 20px;border:1px solid var(--ink,#111);background:var(--ink,#111);color:var(--bg,#fff);text-decoration:none;margin-bottom:16px;transition:opacity .15s" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'">
+  // Actions / message form based on auth + membership state
+  let openChat = "";
+  let msgForm = "";
+
+  if (!sessionActor) {
+    msgForm = `<div class="signin-prompt"><a href="/">Sign in</a> to join and send messages in this room.</div>`;
+  } else if (!sessionIsMember) {
+    msgForm = `<div style="margin-bottom:16px">
+  <button onclick="joinRoom()" style="font-family:'JetBrains Mono',monospace;font-size:12px;padding:10px 24px;border:1px solid var(--ink,#111);background:var(--ink,#111);color:var(--bg,#fff);cursor:pointer;transition:opacity .15s" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'">Join room</button>
+  <div id="join-error" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--err,#B91C1C);margin-top:8px"></div>
+</div>
+<script>
+async function joinRoom(){
+  try{
+    const res=await fetch('/chats/${esc(roomId)}/join',{method:'POST'});
+    if(!res.ok){const d=await res.json();throw new Error(d.error?.message||'Failed to join')}
+    window.location.href='/chat/${esc(roomId)}';
+  }catch(err){document.getElementById('join-error').textContent=err.message}
+}
+</script>`;
+  } else {
+    openChat = `<a href="/chat/${esc(roomId)}" style="display:inline-flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:12px;padding:10px 20px;border:1px solid var(--ink,#111);background:var(--ink,#111);color:var(--bg,#fff);text-decoration:none;margin-bottom:16px;transition:opacity .15s" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'">
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
   Open conversation
-</a>`
-    : "";
-
-  // Message form — only shown when signed in
-  const msgForm = sessionActor
-    ? `<fieldset class="ps">
+</a>`;
+    msgForm = `<fieldset class="ps">
     <legend>Send a message</legend>
     <div style="font-size:13px;color:var(--text-3);margin-bottom:12px">
       Use <strong style="color:var(--text)">@name</strong> to tag someone in the room.
@@ -117,8 +132,8 @@ export async function roomDetailPage(c: Context<{ Bindings: Env; Variables: Vari
       document.getElementById('msg-text').value='';
     }catch(err){errEl.textContent=err.message}
   }
-  </script>`
-    : `<div class="signin-prompt"><a href="/">Sign in</a> to send messages in this room.</div>`;
+  </script>`;
+  }
 
   const humanContent = `
 <div class="profile">
