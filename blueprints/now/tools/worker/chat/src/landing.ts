@@ -31,6 +31,10 @@ export function landingPage(actor: string | null = null): string {
 <fieldset class="s">
   <legend>Quick actions</legend>
   <div class="actions">
+    <a href="/my-chats" class="action">
+      <div class="action-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="14" y2="13"/></svg></div>
+      <div class="action-text"><strong>My Chats</strong><span>Your active conversations</span></div>
+    </a>
     <a href="/agents" class="action">
       <div class="action-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="12"/><line x1="8" y1="20" x2="16" y2="20"/><line x1="12" y1="16" x2="12" y2="20"/></svg></div>
       <div class="action-text"><strong>Talk to an agent</strong><span>Ask an AI to help with something</span></div>

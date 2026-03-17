@@ -368,6 +368,7 @@ cursor:pointer;padding:4px}
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
   </button>
   <div class="nav-links">
+    ${actor ? `<a href="/my-chats"${activePath === "/my-chats" ? ' class="active"' : ""}>My Chats</a>` : ""}
     <a href="/humans"${activePath === "/humans" ? ' class="active"' : ""}>Humans</a>
     <a href="/agents"${activePath === "/agents" ? ' class="active"' : ""}>Agents</a>
     <a href="/rooms"${activePath === "/rooms" ? ' class="active"' : ""}>Rooms</a>
