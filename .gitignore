@@ -119,6 +119,11 @@ blueprints/search/search
 node_modules/
 
 # ------------------------------
+# Superpowers tool artifacts
+# ------------------------------
+**/.superpowers/
+
+# ------------------------------
 # Cloudflare Wrangler
 # ------------------------------
 .wrangler/
