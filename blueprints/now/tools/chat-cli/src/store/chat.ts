@@ -5,7 +5,6 @@ export interface ChatState {
   rooms: Chat[];
   activeRoomId: string | null;
   setActiveRoom: (id: string) => void;
-  setRooms: (rooms: Chat[]) => void;
 
   messages: Record<string, Message[]>;
   setMessages: (chatId: string, msgs: Message[]) => void;
@@ -15,7 +14,9 @@ export interface ChatState {
 
   connected: boolean;
   error: string | null;
-  setConnected: (v: boolean) => void;
+
+  /** Single set() call for the rooms-poll callback — prevents multi-render. */
+  applyRoomsPoll: (rooms: Chat[]) => void;
   setError: (e: string | null) => void;
 }
 
@@ -32,11 +33,24 @@ export function createChatStore() {
       set({ activeRoomId: id });
     },
 
-    setRooms: (rooms) => {
-      const prev = get().rooms;
-      // Skip if room list hasn't changed (compare IDs)
-      if (prev.length === rooms.length && prev.every((r, i) => r.id === rooms[i].id)) return;
-      set({ rooms });
+    applyRoomsPoll: (rooms) => {
+      const s = get();
+      const roomsSame =
+        s.rooms.length === rooms.length &&
+        s.rooms.every((r, i) => r.id === rooms[i].id);
+      const alreadyConnected = s.connected;
+      const alreadyNoError = s.error === null;
+
+      // Nothing changed — skip set() entirely
+      if (roomsSame && alreadyConnected && alreadyNoError) return;
+
+      // Batch all changes into one set() → one subscriber notification → one Ink render
+      const patch: Partial<ChatState> = {};
+      if (!roomsSame) patch.rooms = rooms;
+      if (!alreadyConnected) patch.connected = true;
+      if (!alreadyNoError) patch.error = null;
+      if (!s.activeRoomId && rooms.length > 0) patch.activeRoomId = rooms[0].id;
+      set(patch);
     },
 
     setMessages: (chatId, msgs) => {
@@ -64,7 +78,6 @@ export function createChatStore() {
     replaceOptimistic: (chatId, optimisticId, real) =>
       set((state) => {
         const existing = state.messages[chatId] || [];
-        // If optimistic message already gone (e.g. poll replaced it), skip
         if (!existing.some((m) => m.id === optimisticId)) return state;
         const msgs = existing.map((m) => m.id === optimisticId ? real : m);
         return { messages: { ...state.messages, [chatId]: msgs } };
@@ -75,10 +88,6 @@ export function createChatStore() {
       return [...new Set(msgs.map((m) => m.actor))];
     },
 
-    setConnected: (v) => {
-      if (get().connected === v) return;
-      set({ connected: v });
-    },
     setError: (e) => {
       if (get().error === e) return;
       set({ error: e });

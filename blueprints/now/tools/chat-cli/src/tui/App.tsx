@@ -76,17 +76,14 @@ function App({ config, serverOverride }: AppProps) {
     const client = new ChatClient(cfg, signer);
     clientRef.current = client;
 
-    const transport = new PollingTransport(client);
+    const transport = new PollingTransport(client, 3000, 30000, {
+      onError: (e) => store.getState().setError(e.message),
+    });
     transportRef.current = transport;
 
-    // First poll always fires; subsequent polls only fire if data changed
+    // Batched update — single set() per poll, single Ink render
     const unsubRooms = transport.subscribeRooms((newRooms) => {
-      store.getState().setRooms(newRooms);
-      store.getState().setConnected(true);
-      store.getState().setError(null);
-      if (!store.getState().activeRoomId && newRooms.length > 0) {
-        store.getState().setActiveRoom(newRooms[0].id);
-      }
+      store.getState().applyRoomsPoll(newRooms);
     });
 
     return () => {
@@ -156,10 +153,8 @@ function App({ config, serverOverride }: AppProps) {
       // Replace optimistic with real message
       store.getState().replaceOptimistic(chatId, optimistic.id, msg);
 
-      // Reset transport fingerprint so next poll doesn't flicker
-      if (transportRef.current) {
-        transportRef.current.resetFingerprint(chatId);
-      }
+      // No resetFingerprint needed — setMessages deduplicates,
+      // so the next poll is a no-op when it finds the same messages.
     } catch (e: unknown) {
       store.getState().setError(e instanceof Error ? e.message : String(e));
     }

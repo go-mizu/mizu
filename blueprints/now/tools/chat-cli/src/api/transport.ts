@@ -8,16 +8,23 @@ export interface Transport {
   subscribeRooms(onRooms: (rooms: Chat[]) => void): Unsubscribe;
 }
 
+// Sentinel — can never equal any real fingerprint string
+const UNSET = Symbol("unset");
+
 export class PollingTransport implements Transport {
   private timers = new Map<string, ReturnType<typeof setInterval>>();
   private lastMessageIds = new Map<string, string>();
-  private lastRoomIds = "";
+  private lastRoomFingerprint: string | typeof UNSET = UNSET;
+  private onError?: (e: Error) => void;
 
   constructor(
     private client: ChatClient,
     private messageInterval = 3000,
     private roomInterval = 30000,
-  ) {}
+    opts?: { onError?: (e: Error) => void },
+  ) {
+    this.onError = opts?.onError;
+  }
 
   subscribeMessages(chatId: string, onMessages: (msgs: Message[]) => void): Unsubscribe {
     const key = `msg:${chatId}`;
@@ -26,14 +33,13 @@ export class PollingTransport implements Transport {
     const poll = async () => {
       try {
         const msgs = await this.client.listMessages(chatId, { limit: 50 });
-        // Only notify if messages actually changed
         const fingerprint = msgs.map((m) => m.id).join(",");
         if (fingerprint !== this.lastMessageIds.get(chatId)) {
           this.lastMessageIds.set(chatId, fingerprint);
           onMessages(msgs);
         }
-      } catch {
-        // Swallow — TUI handles via status bar
+      } catch (e) {
+        this.onError?.(e instanceof Error ? e : new Error(String(e)));
       }
     };
 
@@ -54,14 +60,14 @@ export class PollingTransport implements Transport {
           this.client.listDms().catch(() => [] as Chat[]),
         ]);
         const all = [...rooms, ...dms];
-        // Only notify if rooms actually changed
         const fingerprint = all.map((r) => r.id).join(",");
-        if (fingerprint !== this.lastRoomIds) {
-          this.lastRoomIds = fingerprint;
+        // UNSET sentinel ensures first poll always fires callback
+        if (fingerprint !== this.lastRoomFingerprint) {
+          this.lastRoomFingerprint = fingerprint;
           onRooms(all);
         }
-      } catch {
-        // Swallow
+      } catch (e) {
+        this.onError?.(e instanceof Error ? e : new Error(String(e)));
       }
     };
 
@@ -76,10 +82,6 @@ export class PollingTransport implements Transport {
       clearInterval(existing);
       this.timers.delete(key);
     }
-  }
-
-  resetFingerprint(chatId: string) {
-    this.lastMessageIds.delete(chatId);
   }
 
   destroy() {

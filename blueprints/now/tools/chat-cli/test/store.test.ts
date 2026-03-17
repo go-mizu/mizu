@@ -43,11 +43,14 @@ describe("ChatStore", () => {
     assert.deepEqual(members.sort(), ["u/alice", "u/bob"]);
   });
 
-  it("sets rooms", () => {
+  it("sets rooms via applyRoomsPoll", () => {
     const store = createChatStore();
-    store.getState().setRooms([
+    store.getState().applyRoomsPoll([
       { id: "chat_1", kind: "room", title: "general", creator: "u/alice", created_at: "2026-03-17T00:00:00Z" },
     ]);
     assert.equal(store.getState().rooms.length, 1);
+    assert.equal(store.getState().connected, true);
+    assert.equal(store.getState().error, null);
+    assert.equal(store.getState().activeRoomId, "chat_1");
   });
 });
