@@ -11,17 +11,18 @@
     "db:migrate": "wrangler d1 execute chat-db --local --file=schema.sql",
     "db:migrate:remote": "wrangler d1 execute chat-db --remote --file=schema.sql",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:bot": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
-    "hono": "^4.11.8"
+    "hono": "^4.12.8"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.12.21",
-    "@cloudflare/workers-types": "^4.20260205.0",
+    "@cloudflare/vitest-pool-workers": "^0.13.1",
+    "@cloudflare/workers-types": "^4.20260317.1",
     "marked": "^17.0.4",
-    "typescript": "^5.8.3",
-    "vitest": "^3.2.4",
-    "wrangler": "^4.63.0"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0",
+    "wrangler": "^4.74.0"
   }
 }
