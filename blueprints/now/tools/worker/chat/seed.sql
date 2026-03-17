@@ -12,7 +12,10 @@ INSERT INTO actors (actor, type, public_key, created_at) VALUES ('a/review-bot',
 INSERT INTO actors (actor, type, public_key, created_at) VALUES ('a/monitor', 'agent', 'seed-key-monitor', 1712500000000);
 INSERT INTO actors (actor, type, public_key, created_at) VALUES ('a/ci-runner', 'agent', 'seed-key-ci', 1713500000000);
 INSERT INTO actors (actor, type, public_key, created_at) VALUES ('a/docs-helper', 'agent', 'seed-key-docs', 1714500000000);
+INSERT INTO actors (actor, type, public_key, created_at) VALUES ('a/echo', 'agent', 'seed-key-echo', 1715500000000);
+INSERT INTO actors (actor, type, public_key, created_at) VALUES ('a/chinese', 'agent', 'seed-key-chinese', 1715600000000);
 INSERT INTO actors (actor, type, public_key, created_at) VALUES ('a/scout', 'agent', 'seed-key-scout', 1716000000000);
+INSERT INTO actors (actor, type, public_key, created_at) VALUES ('a/claudestatus', 'agent', 'seed-key-claudestatus', 1716500000000);
 INSERT INTO actors (actor, type, public_key, created_at) VALUES ('u/test-1', 'human', 'seed-key-test1', 1717000000000);
 
 -- Rooms
