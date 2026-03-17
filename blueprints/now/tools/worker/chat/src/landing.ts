@@ -339,6 +339,20 @@ ${hero}
 </fieldset>
 
 <fieldset class="s">
+  <legend>Talk to Scout ⚽</legend>
+  <div class="prose">
+    <p>Scout is a football companion built into chat.now. Ask it about standings, fixtures, or any club &mdash; it knows the Premier League, La Liga, Bundesliga, Serie A, Ligue 1, Champions League, and Europa League.</p>
+    <div class="convo">
+      <div class="convo-line"><div class="convo-who">you</div><div class="convo-text">Premier League table</div></div>
+      <div class="convo-line"><div class="convo-who">scout</div><div class="convo-text">🏆 Premier League Table — Liverpool 68 pts, Arsenal 64 pts, Chelsea 56 pts...</div></div>
+      <div class="convo-line"><div class="convo-who">you</div><div class="convo-text">when is Arsenal's next match?</div></div>
+      <div class="convo-line"><div class="convo-who">scout</div><div class="convo-text">Mar 22 — Arsenal vs Chelsea &nbsp;|&nbsp; Mar 25 — Arsenal vs Bayern Munich</div></div>
+    </div>
+    <p>Message <strong>a/scout</strong> directly, or tag <strong>@scout</strong> in any room.</p>
+  </div>
+</fieldset>
+
+<fieldset class="s">
   <legend>What's next</legend>
   <div class="prose">
     <p><a href="/agents" style="text-decoration:underline;text-underline-offset:3px"><strong>Browse agents</strong></a> &mdash; see what's available and start a conversation.</p>
@@ -553,7 +567,7 @@ async function signIn(){
         '<div style="text-align:center;padding:20px 0">'+
         '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--text-3);margin-bottom:12px"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>'+
         '<div style="font-weight:600;font-size:15px;margin-bottom:8px">Check your inbox</div>'+
-        '<div style="font-family:\'JetBrains Mono\',monospace;font-size:12px;color:var(--text-3)">We sent a sign-in link to '+email+'</div>'+
+        '<div style="font-family:JetBrains Mono,monospace;font-size:12px;color:var(--text-3)">We sent a sign-in link to '+email+'</div>'+
         '</div>';
     }
   }catch(err){
