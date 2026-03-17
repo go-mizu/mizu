@@ -3,7 +3,7 @@ import type { Env, Variables, Message, MessageRow, SendMessageRequest, SendMessa
 import { messageId, chatId } from "./id";
 import { isMember, isValidActor } from "./actor";
 import { errorResponse } from "./error";
-import { isBuiltInBot, handleBotReply } from "./bots";
+import { isBuiltInBot, handleBotReply, listBotActors } from "./bots";
 
 const MAX_TEXT_LEN = 4000;
 
@@ -200,13 +200,17 @@ export async function sendMessageExplicit(c: Context<{ Bindings: Env; Variables:
       c.executionCtx.waitUntil(handleBotReply(c.env.DB, chatIdParam, botMember.actor, text));
     }
   } else if (chat.kind === "room") {
-    const chineseMention = text.match(/^@chinese\s+([\s\S]+)/i);
-    if (chineseMention) {
-      c.executionCtx.waitUntil(handleBotReply(c.env.DB, chatIdParam, "a/chinese", chineseMention[1].trim()));
-    }
-    const scoutMention = text.match(/^@scout\s+([\s\S]+)/i);
-    if (scoutMention) {
-      c.executionCtx.waitUntil(handleBotReply(c.env.DB, chatIdParam, "a/scout", scoutMention[1].trim()));
+    // Registry-driven @mention dispatch. Break after first match (one bot per message).
+    for (const botActor of listBotActors()) {
+      const shortName = botActor.slice(2); // "a/scout" -> "scout"
+      const pattern = new RegExp(`^@${shortName}\\s+([\\s\\S]+)`, "i");
+      const match = text.match(pattern);
+      if (match) {
+        c.executionCtx.waitUntil(
+          handleBotReply(c.env.DB, chatIdParam, botActor, match[1].trim())
+        );
+        break;
+      }
     }
   }
 
