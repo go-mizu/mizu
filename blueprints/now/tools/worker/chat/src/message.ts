@@ -201,9 +201,11 @@ export async function sendMessageExplicit(c: Context<{ Bindings: Env; Variables:
     }
   } else if (chat.kind === "room") {
     // Registry-driven @mention dispatch. Break after first match (one bot per message).
+    // Patterns are compiled once per call; bot count is small (O(1) in practice).
     for (const botActor of listBotActors()) {
-      const shortName = botActor.slice(2); // "a/scout" -> "scout"
-      const pattern = new RegExp(`^@${shortName}\\s+([\\s\\S]+)`, "i");
+      const shortName = botActor.split("/")[1] ?? botActor;
+      const escaped = shortName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const pattern = new RegExp(`^@${escaped}\\s+([\\s\\S]+)`, "i");
       const match = text.match(pattern);
       if (match) {
         c.executionCtx.waitUntil(

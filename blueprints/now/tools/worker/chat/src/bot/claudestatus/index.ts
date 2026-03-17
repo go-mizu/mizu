@@ -47,5 +47,5 @@ registerBot({
       "What's the uptime?",
     ],
   },
-  reply: (msg, db) => claudestatusReply(msg, db),
+  reply: claudestatusReply,
 });

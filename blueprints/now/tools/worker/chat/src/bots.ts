@@ -15,7 +15,10 @@ export async function handleBotReply(
   botActor: string,
   userMessage: string
 ): Promise<void> {
-  const replyText = await dispatchReply(botActor, userMessage, db);
+  const replyText = await dispatchReply(botActor, userMessage, db).catch((err) => {
+    console.error(`[bot] ${botActor} dispatch error:`, err);
+    return null;
+  });
   if (replyText === null) return;
 
   const id = messageId();
