@@ -28,6 +28,9 @@ type PublishOptions struct {
 	ToYear    int
 	ToMonth   int
 	HFCommit  CommitFn
+	// Types filters which data types to process. If empty, both
+	// "comments" and "submissions" are processed (default behaviour).
+	Types []string
 }
 
 // PublishState is emitted on each significant event.
@@ -157,8 +160,12 @@ func (t *PipelineTask) runPipeline(ctx context.Context, emit func(*PublishState)
 	months := monthRange(t.opts)
 	var jobs []*PipelineJob
 	skipped := 0
+	activeTypes := t.opts.Types
+	if len(activeTypes) == 0 {
+		activeTypes = []string{"comments", "submissions"}
+	}
 	for _, ym := range months {
-		for _, typ := range []string{"comments", "submissions"} {
+		for _, typ := range activeTypes {
 			key := ym.String() + "/" + typ
 			if committed[key] {
 				skipped++
@@ -316,7 +323,7 @@ func (t *PipelineTask) runPipeline(ctx context.Context, emit func(*PublishState)
 
 				// Re-download function for corruption recovery.
 				redownload := func() error {
-					return downloadOne(pipeCtx, t.cfg, t.zstSizes, job, func(ps *PublishState) {
+					return downloadOne(pipeCtx, t.cfg, t.zstSizes, job, 0, func(ps *PublishState) {
 						if emit != nil {
 							emit(ps)
 						}

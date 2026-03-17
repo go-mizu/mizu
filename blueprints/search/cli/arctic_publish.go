@@ -20,6 +20,7 @@ func newArcticPublish() *cobra.Command {
 		repoID         string
 		fromStr        string
 		toStr          string
+		typesStr       string
 		minFreeGB      int
 		chunkLines     int
 		private        bool
@@ -38,10 +39,11 @@ resume after interruption.
 Requires HF_TOKEN environment variable to be set.`,
 		Example: `  search arctic publish
   search arctic publish --from 2020-01
-  search arctic publish --repo my-org/arctic-reddit --private
-  search arctic publish --from 2023-01 --to 2023-12`,
+  search arctic publish --from 2023-01 --to 2023-12
+  search arctic publish --from 2026-02 --type submissions
+  search arctic publish --repo my-org/arctic-reddit --private`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runArcticPublish(cmd.Context(), repoRoot, repoID, fromStr, toStr, minFreeGB, chunkLines, private, maxCommitStall)
+			return runArcticPublish(cmd.Context(), repoRoot, repoID, fromStr, toStr, typesStr, minFreeGB, chunkLines, private, maxCommitStall)
 		},
 	}
 
@@ -49,6 +51,7 @@ Requires HF_TOKEN environment variable to be set.`,
 	cmd.Flags().StringVar(&repoID, "repo", "open-index/arctic", "Hugging Face dataset repo ID")
 	cmd.Flags().StringVar(&fromStr, "from", "2005-12", "Start month YYYY-MM (inclusive)")
 	cmd.Flags().StringVar(&toStr, "to", "", "End month YYYY-MM inclusive (default: current month)")
+	cmd.Flags().StringVar(&typesStr, "type", "", `Comma-separated data types to process: "comments", "submissions" (default: both)`)
 	cmd.Flags().IntVar(&minFreeGB, "min-free-gb", 30, "Minimum free disk GB required to continue")
 	cmd.Flags().IntVar(&chunkLines, "chunk-lines", 0, "Lines per JSONL chunk (0 = use package default)")
 	cmd.Flags().BoolVar(&private, "private", false, "Create HF repo as private if it does not exist")
@@ -57,7 +60,7 @@ Requires HF_TOKEN environment variable to be set.`,
 	return cmd
 }
 
-func runArcticPublish(ctx context.Context, repoRoot, repoID, fromStr, toStr string, minFreeGB, chunkLines int, private bool, maxCommitStall time.Duration) error {
+func runArcticPublish(ctx context.Context, repoRoot, repoID, fromStr, toStr, typesStr string, minFreeGB, chunkLines int, private bool, maxCommitStall time.Duration) error {
 	// Start pprof HTTP server for live heap profiling on :6060.
 	go func() {
 		fmt.Fprintf(os.Stderr, "arctic: pprof listening on :6060 (http://localhost:6060/debug/pprof/)\n")
@@ -172,6 +175,18 @@ func runArcticPublish(ctx context.Context, repoRoot, repoID, fromStr, toStr stri
 		toYear, toMonth = t.Year(), int(t.Month())
 	}
 
+	// Parse --type flag.
+	var activeTypes []string
+	if typesStr != "" {
+		for _, t := range strings.Split(typesStr, ",") {
+			t = strings.TrimSpace(t)
+			if t != "comments" && t != "submissions" {
+				return fmt.Errorf("--type: expected \"comments\" or \"submissions\", got %q", t)
+			}
+			activeTypes = append(activeTypes, t)
+		}
+	}
+
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("Arctic Publish → " + repoID))
 	fmt.Println()
@@ -189,6 +204,7 @@ func runArcticPublish(ctx context.Context, repoRoot, repoID, fromStr, toStr stri
 		ToYear:    toYear,
 		ToMonth:   toMonth,
 		HFCommit:  hfCommitFn,
+		Types:     activeTypes,
 	}
 
 	// Auto-detect hardware and compute resource budget.
