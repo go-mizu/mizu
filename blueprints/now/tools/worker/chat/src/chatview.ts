@@ -129,13 +129,13 @@ export async function chatViewPage(c: AppContext) {
 ${(() => {
   if (msgHtml) return msgHtml;
   const profile = peerActor ? getBotProfile(peerActor) : null;
-  if (profile) {
+  if (peerActor && profile) {
     const chips = profile.examples
       .map(ex => `<button class="chip" onclick="fillInput(this)">${esc(ex)}</button>`)
       .join("");
     return `<div class="bot-welcome" id="bot-welcome">
-  <div class="bot-welcome-avatar">${botAvatar(peerActor!, 48)}</div>
-  <div class="bot-welcome-name">${esc(peerActor!.slice(2))}</div>
+  <div class="bot-welcome-avatar">${botAvatar(peerActor, 48)}</div>
+  <div class="bot-welcome-name">${esc(peerActor.slice(2))}</div>
   <div class="bot-welcome-bio">${esc(profile.bio)}</div>
   <div class="bot-welcome-chips">${chips}</div>
 </div>`;
