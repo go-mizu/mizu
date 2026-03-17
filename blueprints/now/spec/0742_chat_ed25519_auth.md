@@ -178,15 +178,16 @@ PII. The hash is not reversible.
 ## Account Deletion
 
 ```
-DELETE /api/actors/:actor
+POST /api/actors/delete
 Content-Type: application/json
 
-{ "recovery_code": "x3Fk9a2B7c..." }
+{ "actor": "u/alice", "recovery_code": "x3Fk9a2B7c..." }
 ```
 
-Deletes the actor record. Does not delete chat history (messages remain
-attributed to the actor name). Returns 200 on success, 401 on wrong recovery
-code. The actor name becomes available for re-registration.
+Uses POST instead of DELETE because actor names contain `/` which conflicts
+with URL path routing. Deletes the actor record. Does not delete chat history
+(messages remain attributed to the actor name). Returns 200 on success, 401
+on wrong recovery code. The actor name becomes available for re-registration.
 
 ## In-Memory Cache
 
@@ -214,7 +215,7 @@ code. The actor name becomes available for re-registration.
 | POST | /api/register | None (rate limited) | Register actor + public key |
 | POST | /api/keys/rotate | Recovery code | Rotate primary public key |
 | POST | /api/keys/rotate-recovery | Recovery code | Rotate recovery code |
-| DELETE | /api/actors/:actor | Recovery code | Delete actor account |
+| POST | /api/actors/delete | Recovery code | Delete actor account |
 
 All existing `/api/chat/*` endpoints remain unchanged in behavior; only the auth
 mechanism changes (HMAC token → Ed25519 signature).
