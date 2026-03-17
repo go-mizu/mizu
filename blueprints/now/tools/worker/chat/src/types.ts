@@ -14,7 +14,12 @@ export interface Chat {
   kind: string;
   title: string;
   creator: string;
-  created_at: string; // ISO 8601
+  peer?: string;       // only for kind: "direct" — the other actor
+  created_at: string;  // ISO 8601
+}
+
+export interface DmRequest {
+  peer: string;
 }
 
 export interface Message {

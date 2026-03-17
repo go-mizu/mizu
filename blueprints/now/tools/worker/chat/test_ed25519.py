@@ -197,6 +197,67 @@ priv_id = resp.get("id", "")
 code, resp = signed_api(key2, actor2, "GET", f"/api/chat/{priv_id}/messages")
 run_test("Non-member can't read private → 404", code == 404, f"got {code}")
 
+print("\n=== Direct Messages ===")
+# Start DM from actor1 to actor2
+code, resp = signed_api(key1, actor1, "POST", "/api/chat/dm", {"peer": actor2})
+run_test("Start DM", code == 201, f"got {code}: {resp}")
+dm_id = resp.get("id", "")
+run_test("DM has peer field", resp.get("peer") == actor2, f"peer={resp.get('peer')}")
+run_test("DM is direct kind", resp.get("kind") == "direct")
+
+# Idempotent — same DM returned
+code2, resp2 = signed_api(key1, actor1, "POST", "/api/chat/dm", {"peer": actor2})
+run_test("DM idempotent (200)", code2 == 200, f"got {code2}")
+run_test("DM same id returned", resp2.get("id") == dm_id, f"got {resp2.get('id')} vs {dm_id}")
+
+# Peer can also resume
+code3, resp3 = signed_api(key2, actor2, "POST", "/api/chat/dm", {"peer": actor1})
+run_test("Peer resume DM (200)", code3 == 200, f"got {code3}")
+run_test("Peer sees same DM id", resp3.get("id") == dm_id)
+run_test("Peer field shows other actor", resp3.get("peer") == actor1, f"peer={resp3.get('peer')}")
+
+# Both can send messages in DM
+code, resp = signed_api(key1, actor1, "POST", f"/api/chat/{dm_id}/messages", {"text": "Hey from alice!"})
+run_test("Actor1 send DM message", code == 201, f"got {code}")
+
+code, resp = signed_api(key2, actor2, "POST", f"/api/chat/{dm_id}/messages", {"text": "Hey back!"})
+run_test("Actor2 send DM message", code == 201, f"got {code}")
+
+# Both can read
+code, resp = signed_api(key1, actor1, "GET", f"/api/chat/{dm_id}/messages")
+run_test("Read DM messages", code == 200 and len(resp.get("items", [])) == 2, f"got {code}, items={len(resp.get('items', []))}")
+
+# Non-member can't read DM (it's private)
+key_eve = Ed25519PrivateKey.generate()
+pub_eve = key_eve.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+actor_eve = f"u/eve_{ts_suffix}"
+api("POST", "/api/register", {"actor": actor_eve, "public_key": b64url(pub_eve)})
+code, resp = signed_api(key_eve, actor_eve, "GET", f"/api/chat/{dm_id}/messages")
+run_test("Non-member can't read DM → 404", code == 404, f"got {code}")
+
+# List DMs
+code, resp = signed_api(key1, actor1, "GET", "/api/chat/dm")
+run_test("List DMs", code == 200, f"got {code}")
+dm_ids = [d["id"] for d in resp.get("items", [])]
+run_test("DM in list", dm_id in dm_ids)
+
+# DM self → 400
+code, resp = signed_api(key1, actor1, "POST", "/api/chat/dm", {"peer": actor1})
+run_test("DM self → 400", code == 400, f"got {code}")
+
+# DM non-existent actor → 404
+code, resp = signed_api(key1, actor1, "POST", "/api/chat/dm", {"peer": "u/nonexistent_xyz"})
+run_test("DM non-existent → 404", code == 404, f"got {code}")
+
+# POST /api/chat with kind: "direct" → 400
+code, resp = signed_api(key1, actor1, "POST", "/api/chat", {"kind": "direct", "title": "nope"})
+run_test("Create direct via /api/chat → 400", code == 400, f"got {code}")
+run_test("Error mentions /api/chat/dm", "dm" in resp.get("error", "").lower(), f"error={resp.get('error')}")
+
+# Join DM → 403
+code, resp = signed_api(key_eve, actor_eve, "POST", f"/api/chat/{dm_id}/join")
+run_test("Join DM → 403", code == 403, f"got {code}")
+
 print("\n=== Key Rotation ===")
 key3 = Ed25519PrivateKey.generate()
 pub3 = key3.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)

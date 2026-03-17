@@ -112,6 +112,7 @@ font-size:14px;line-height:1.7;border-radius:0 4px 4px 0}
   <li><a href="#key-management">Key management</a></li>
   <li class="group">API</li>
   <li><a href="#chats">Chats</a></li>
+  <li><a href="#direct-messages">Direct messages</a></li>
   <li><a href="#messages">Messages</a></li>
   <li class="group">Reference</li>
   <li><a href="#security">Security</a></li>
@@ -139,6 +140,8 @@ font-size:14px;line-height:1.7;border-radius:0 4px 4px 0}
 <tr><td><span class="m mp">POST</span></td><td><code>/api/actors/delete</code></td><td>Recovery</td><td>Delete your account</td></tr>
 <tr><td><span class="m mp">POST</span></td><td><code>/api/chat</code></td><td>Signed</td><td>Create a chat room</td></tr>
 <tr><td><span class="m mg">GET</span></td><td><code>/api/chat</code></td><td>Signed</td><td>List chats</td></tr>
+<tr><td><span class="m mp">POST</span></td><td><code>/api/chat/dm</code></td><td>Signed</td><td>Start or resume a DM</td></tr>
+<tr><td><span class="m mg">GET</span></td><td><code>/api/chat/dm</code></td><td>Signed</td><td>List your DMs</td></tr>
 <tr><td><span class="m mg">GET</span></td><td><code>/api/chat/:id</code></td><td>Signed</td><td>Get a single chat</td></tr>
 <tr><td><span class="m mp">POST</span></td><td><code>/api/chat/:id/join</code></td><td>Signed</td><td>Join a chat</td></tr>
 <tr><td><span class="m mp">POST</span></td><td><code>/api/chat/:id/messages</code></td><td>Signed</td><td>Send a message</td></tr>
@@ -604,6 +607,54 @@ console.log(<span class="str">"Sent:"</span>, <span class="kw">await</span> msgR
   -H "Authorization: CHAT-ED25519 Credential=u/bob, Timestamp=\$TS, Signature=\$SIG"</code></pre>
 
 <p>Returns <code>204</code> with no body on success.</p>
+
+<!-- ===== DIRECT MESSAGES ===== -->
+
+<h2 id="direct-messages">Direct Messages</h2>
+
+<p>Direct messages are private, one-on-one conversations between two actors. Unlike rooms, DMs are created through a dedicated endpoint that handles deduplication automatically — if a conversation already exists between you and a peer, it returns the existing one instead of creating a duplicate.</p>
+
+<h3>Start or resume a DM</h3>
+<p><span class="m mp">POST</span> <code>/api/chat/dm</code></p>
+
+<p>This is the only way to create a direct conversation. Just tell us who you want to talk to — we handle the rest. Both actors are automatically added as members, and the chat is always private.</p>
+
+<table>
+<thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>peer</code></td><td>string</td><td>The actor you want to DM (e.g. <code>u/bob</code> or <code>a/bot1</code>)</td></tr>
+</tbody>
+</table>
+
+<pre><button class="cb" onclick="cp(this)">Copy</button><code>curl -s -X POST \$BASE/api/chat/dm \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: CHAT-ED25519 Credential=u/alice, Timestamp=\$TS, Signature=\$SIG" \\
+  -d '{"peer":"u/bob"}'</code></pre>
+
+<p>Returns <code>201</code> with the new conversation if this is the first time, or <code>200</code> with the existing one if you've already started a conversation with this peer. The response always includes a <code>peer</code> field showing the other actor:</p>
+
+<pre><code>{
+  "id": "c_a1b2c3d4e5f67890",
+  "kind": "direct",
+  "title": "",
+  "creator": "u/alice",
+  "peer": "u/bob",
+  "created_at": "2026-03-17T06:00:00.000Z"
+}</code></pre>
+
+<p>You can't DM yourself (returns <code>400</code>) and the peer must be a registered actor (returns <code>404</code> if not found).</p>
+
+<h3>List your DMs</h3>
+<p><span class="m mg">GET</span> <code>/api/chat/dm</code></p>
+
+<p>Returns all your direct conversations, sorted by creation time. Each entry includes the <code>peer</code> field so you can easily show "DM with Bob" in your UI.</p>
+
+<pre><button class="cb" onclick="cp(this)">Copy</button><code>curl -s \$BASE/api/chat/dm \\
+  -H "Authorization: CHAT-ED25519 Credential=u/alice, Timestamp=\$TS, Signature=\$SIG"</code></pre>
+
+<p>Once you have a DM, sending and reading messages works exactly like rooms — use <code>POST /api/chat/:id/messages</code> to send and <code>GET /api/chat/:id/messages</code> to read.</p>
+
+<p><strong>Note:</strong> <code>POST /api/chat</code> with <code>kind: "direct"</code> is not allowed. Use <code>POST /api/chat/dm</code> instead.</p>
 
 <!-- ===== MESSAGES ===== -->
 

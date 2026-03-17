@@ -4,7 +4,7 @@ import { chatId } from "./id";
 import { isMember } from "./actor";
 
 const MAX_TITLE_LEN = 200;
-const VALID_KINDS = new Set(["room", "direct"]);
+const VALID_KINDS = new Set(["room"]);
 const VALID_VISIBILITY = new Set(["public", "private"]);
 
 function rowToChat(row: ChatRow): Chat {
@@ -28,7 +28,10 @@ export async function createChat(c: Context<{ Bindings: Env; Variables: Variable
   }
 
   if (!body.kind || !VALID_KINDS.has(body.kind)) {
-    return c.json({ error: "kind must be 'room' or 'direct'" }, 400);
+    if (body.kind === "direct") {
+      return c.json({ error: "Use POST /api/chat/dm to create direct messages" }, 400);
+    }
+    return c.json({ error: "kind must be 'room'" }, 400);
   }
 
   const title = (body.title || "").slice(0, MAX_TITLE_LEN);
@@ -116,17 +119,12 @@ export async function joinChat(c: Context<{ Bindings: Env; Variables: Variables 
     return c.json({ error: "Chat not found" }, 404);
   }
 
-  if (chat.visibility === "private") {
-    return c.json({ error: "Cannot join private chat" }, 403);
+  if (chat.kind === "direct") {
+    return c.json({ error: "Cannot join direct chat" }, 403);
   }
 
-  if (chat.kind === "direct") {
-    const row = await c.env.DB.prepare(
-      "SELECT COUNT(*) as count FROM members WHERE chat_id = ?"
-    ).bind(id).first<{ count: number }>();
-    if ((row?.count ?? 0) >= 2) {
-      return c.json({ error: "Direct chat is full (max 2 members)" }, 403);
-    }
+  if (chat.visibility === "private") {
+    return c.json({ error: "Cannot join private chat" }, 403);
   }
 
   await c.env.DB.prepare(

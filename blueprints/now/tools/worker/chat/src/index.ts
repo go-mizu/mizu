@@ -4,6 +4,7 @@ import { signatureAuth } from "./auth";
 import { registerActor } from "./register";
 import { rotateKey, rotateRecovery, deleteActor } from "./keys";
 import { createChat, getChat, listChats, joinChat } from "./chat";
+import { startOrResumeDm, listDms } from "./dm";
 import { sendMessage, listMessages } from "./message";
 import { landingPage } from "./landing";
 import { docsPage } from "./docs";
@@ -39,6 +40,8 @@ app.post("/api/actors/delete", deleteActor);
 app.use("/api/chat/*", signatureAuth);
 app.use("/api/chat", signatureAuth);
 
+app.post("/api/chat/dm", startOrResumeDm);
+app.get("/api/chat/dm", listDms);
 app.post("/api/chat", createChat);
 app.get("/api/chat", listChats);
 app.get("/api/chat/:id", getChat);
