@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
-import TextInput from "ink-text-input";
+import { TextInput } from "./TextInput.js";
 import type { Chat } from "../api/types.js";
 import { roomLabel } from "../utils/format.js";
 import { Overlay } from "./Overlay.js";
@@ -51,7 +51,6 @@ export function RoomSwitcher({ rooms, activeId, onSelect, onCancel }: Props) {
           onChange={(v) => { setQuery(v); setCursor(0); }}
           onSubmit={handleSubmit}
           placeholder="filter..."
-          showCursor
         />
       </Box>
       <Box flexDirection="column">

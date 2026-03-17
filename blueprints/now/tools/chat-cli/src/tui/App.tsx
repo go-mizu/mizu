@@ -1,6 +1,6 @@
 import React, { useEffect, useCallback, useRef, useMemo, useState, useSyncExternalStore } from "react";
 import { render, Box, useApp, useInput, useStdout } from "ink";
-import TextInput from "ink-text-input";
+import { TextInput } from "./TextInput.js";
 import type { Config } from "../auth/config.js";
 import { signRequest, base64urlDecode } from "../auth/signer.js";
 import { ChatClient } from "../api/client.js";
@@ -226,7 +226,6 @@ function App({ config, serverOverride }: AppProps) {
                 onChange={setOverlayInput}
                 onSubmit={handleCreateRoom}
                 placeholder="room title..."
-                showCursor
               />
             </Box>
           </Overlay>
@@ -242,7 +241,6 @@ function App({ config, serverOverride }: AppProps) {
                 onChange={setOverlayInput}
                 onSubmit={handleJoinRoom}
                 placeholder="chat_..."
-                showCursor
               />
             </Box>
           </Overlay>
@@ -255,7 +253,7 @@ function App({ config, serverOverride }: AppProps) {
 export async function launchTui(config: Config, serverOverride?: string) {
   const { waitUntilExit } = render(
     <App config={config} serverOverride={serverOverride} />,
-    { exitOnCtrlC: false },
+    { exitOnCtrlC: false, patchConsole: false },
   );
   await waitUntilExit();
 }

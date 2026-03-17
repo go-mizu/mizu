@@ -1,7 +1,5 @@
 import React from "react";
 import { Box, Text } from "ink";
-import Gradient from "ink-gradient";
-import Spinner from "ink-spinner";
 
 interface Props {
   room: string | null;
@@ -19,14 +17,8 @@ export const Header = React.memo(function Header({ room, actor, connected, error
       justifyContent="space-between"
     >
       <Box gap={1}>
-        <Gradient name="vice">
-          {"✦ chat-now"}
-        </Gradient>
-        {!connected && !error && (
-          <Text color="yellow">
-            <Spinner type="dots" />
-          </Text>
-        )}
+        <Text color="magenta" bold>{"✦ chat-now"}</Text>
+        {!connected && !error && <Text color="yellow">•••</Text>}
       </Box>
       <Box gap={2}>
         {room && <Text bold color="white">{room}</Text>}
