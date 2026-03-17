@@ -132,9 +132,9 @@ export async function sendMessageUnified(c: Context<{ Bindings: Env; Variables: 
   const chatRow = await c.env.DB.prepare("SELECT id, kind, title, created_at FROM chats WHERE id = ?")
     .bind(targetChatId).first<{ id: string; kind: string; title: string; created_at: number }>();
 
-  // Trigger built-in bot response for DMs to bot actors
+  // Trigger built-in bot response for DMs to bot actors (fire and forget)
   if (body.to && isBuiltInBot(body.to)) {
-    await handleBotReply(c.env.DB, targetChatId, body.to, text);
+    c.executionCtx.waitUntil(handleBotReply(c.env.DB, targetChatId, body.to, text));
   }
 
   const msg: Message = { id, chat_id: targetChatId, actor, text, created_at: new Date(now).toISOString() };
@@ -149,8 +149,8 @@ export async function sendMessageExplicit(c: Context<{ Bindings: Env; Variables:
   const actor = c.get("actor");
   const chatIdParam = c.req.param("chat_id")!;
 
-  const chat = await c.env.DB.prepare("SELECT id FROM chats WHERE id = ?")
-    .bind(chatIdParam).first();
+  const chat = await c.env.DB.prepare("SELECT id, kind FROM chats WHERE id = ?")
+    .bind(chatIdParam).first<{ id: string; kind: string }>();
   if (!chat) {
     return errorResponse(c, "not_found", "Chat not found");
   }
@@ -188,11 +188,8 @@ export async function sendMessageExplicit(c: Context<{ Bindings: Env; Variables:
     "INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES (?, ?, ?, ?, ?, ?)"
   ).bind(id, chatIdParam, actor, text, body.client_id || null, now).run();
 
-  // Trigger built-in bot response if this is a DM with a bot
-  const dmCheck = await c.env.DB.prepare(
-    "SELECT kind FROM chats WHERE id = ?"
-  ).bind(chatIdParam).first<{ kind: string }>();
-  if (dmCheck?.kind === "direct") {
+  // Trigger built-in bot response: DM with a bot, or @mention in a room
+  if (chat.kind === "direct") {
     const members = await c.env.DB.prepare(
       "SELECT actor FROM members WHERE chat_id = ?"
     ).bind(chatIdParam).all<{ actor: string }>();
@@ -200,7 +197,16 @@ export async function sendMessageExplicit(c: Context<{ Bindings: Env; Variables:
       (m) => m.actor !== actor && isBuiltInBot(m.actor)
     );
     if (botMember) {
-      await handleBotReply(c.env.DB, chatIdParam, botMember.actor, text);
+      c.executionCtx.waitUntil(handleBotReply(c.env.DB, chatIdParam, botMember.actor, text));
+    }
+  } else if (chat.kind === "room") {
+    const chineseMention = text.match(/^@chinese\s+([\s\S]+)/i);
+    if (chineseMention) {
+      c.executionCtx.waitUntil(handleBotReply(c.env.DB, chatIdParam, "a/chinese", chineseMention[1].trim()));
+    }
+    const scoutMention = text.match(/^@scout\s+([\s\S]+)/i);
+    if (scoutMention) {
+      c.executionCtx.waitUntil(handleBotReply(c.env.DB, chatIdParam, "a/scout", scoutMention[1].trim()));
     }
   }
 

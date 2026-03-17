@@ -1,6 +1,7 @@
 import { messageId } from "./id";
+import { scoutReply } from "./bot/scout";
 
-const BUILT_IN_BOTS = new Set(["a/echo", "a/chinese"]);
+const BUILT_IN_BOTS = new Set(["a/echo", "a/chinese", "a/scout"]);
 
 export function isBuiltInBot(actor: string): boolean {
   return BUILT_IN_BOTS.has(actor);
@@ -15,10 +16,8 @@ export async function handleBotReply(
   let replyText: string;
 
   if (botActor === "a/echo") {
-    const now = new Date().toUTCString();
-    replyText = `Echo: ${userMessage}\n\nTime: ${now}`;
+    replyText = `Echo: ${userMessage}`;
   } else if (botActor === "a/chinese") {
-    const now = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
     let translated = userMessage;
     try {
       const res = await fetch(
@@ -32,7 +31,9 @@ export async function handleBotReply(
         }
       }
     } catch { /* keep original if translation fails */ }
-    replyText = `回声：${translated}\n\n时间：${now}`;
+    replyText = `回声：${translated}`;
+  } else if (botActor === "a/scout") {
+    replyText = scoutReply(userMessage);
   } else {
     return;
   }
