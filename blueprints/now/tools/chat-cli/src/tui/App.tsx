@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useRef, useState } from "react";
+import React, { useEffect, useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { render, Box, useApp, useInput, useStdout } from "ink";
 import TextInput from "ink-text-input";
 import type { Config } from "../auth/config.js";
@@ -20,18 +20,35 @@ interface AppProps {
   serverOverride?: string;
 }
 
+// Selector hook — only re-renders when selected value changes
+function useStore<T>(
+  store: ReturnType<typeof createChatStore>,
+  selector: (s: ChatState) => T,
+): T {
+  return useSyncExternalStore(
+    store.subscribe,
+    () => selector(store.getState()),
+  );
+}
+
 function App({ config, serverOverride }: AppProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const storeRef = useRef(createChatStore());
   const store = storeRef.current;
-  const [state, setState] = useState<ChatState>(store.getState());
+
+  // Granular subscriptions — each only re-renders when its value changes
+  const rooms = useStore(store, (s) => s.rooms);
+  const activeRoomId = useStore(store, (s) => s.activeRoomId);
+  const connected = useStore(store, (s) => s.connected);
+  const error = useStore(store, (s) => s.error);
+  const allMessages = useStore(store, (s) => s.messages);
+
+  const activeMessages = activeRoomId ? allMessages[activeRoomId] || [] : [];
+  const activeRoom = rooms.find((r) => r.id === activeRoomId);
+
   const [overlay, setOverlay] = useState<OverlayMode>(null);
   const [overlayInput, setOverlayInput] = useState("");
-
-  useEffect(() => {
-    return store.subscribe(setState);
-  }, [store]);
 
   // Client + transport setup
   const clientRef = useRef<ChatClient | null>(null);
@@ -54,12 +71,13 @@ function App({ config, serverOverride }: AppProps) {
     const transport = new PollingTransport(client);
     transportRef.current = transport;
 
-    const unsubRooms = transport.subscribeRooms((rooms) => {
-      store.getState().setRooms(rooms);
+    // First poll always fires; subsequent polls only fire if data changed
+    const unsubRooms = transport.subscribeRooms((newRooms) => {
+      store.getState().setRooms(newRooms);
       store.getState().setConnected(true);
       store.getState().setError(null);
-      if (!store.getState().activeRoomId && rooms.length > 0) {
-        store.getState().setActiveRoom(rooms[0].id);
+      if (!store.getState().activeRoomId && newRooms.length > 0) {
+        store.getState().setActiveRoom(newRooms[0].id);
       }
     });
 
@@ -73,9 +91,9 @@ function App({ config, serverOverride }: AppProps) {
   const unsubMsgRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     if (unsubMsgRef.current) unsubMsgRef.current();
-    if (!state.activeRoomId || !transportRef.current) return;
+    if (!activeRoomId || !transportRef.current) return;
 
-    const chatId = state.activeRoomId;
+    const chatId = activeRoomId;
     unsubMsgRef.current = transportRef.current.subscribeMessages(chatId, (msgs) => {
       store.getState().setMessages(chatId, msgs);
     });
@@ -83,65 +101,38 @@ function App({ config, serverOverride }: AppProps) {
     return () => {
       if (unsubMsgRef.current) unsubMsgRef.current();
     };
-  }, [state.activeRoomId]);
+  }, [activeRoomId]);
 
   // Room cycling helper
   const cycleRoom = useCallback((direction: number) => {
-    const { rooms, activeRoomId } = store.getState();
-    if (rooms.length === 0) return;
-    const idx = rooms.findIndex((r) => r.id === activeRoomId);
-    const next = (idx + direction + rooms.length) % rooms.length;
-    store.getState().setActiveRoom(rooms[next].id);
+    const { rooms: r, activeRoomId: id } = store.getState();
+    if (r.length === 0) return;
+    const idx = r.findIndex((room) => room.id === id);
+    const next = (idx + direction + r.length) % r.length;
+    store.getState().setActiveRoom(r[next].id);
   }, []);
 
   // Global keybindings
   useInput((input, key) => {
-    if (overlay) return; // Overlays handle their own input
+    if (overlay) return;
 
     if (key.ctrl && input === "q") { exit(); return; }
     if (key.ctrl && input === "c") { exit(); return; }
     if (key.ctrl && input === "k") { setOverlay("switcher"); return; }
     if (key.ctrl && input === "n") { setOverlay("create"); setOverlayInput(""); return; }
     if (key.ctrl && input === "j") { setOverlay("join"); setOverlayInput(""); return; }
-    if (key.ctrl && input === "r") {
-      // Force refresh
-      if (transportRef.current) {
-        transportRef.current.destroy();
-        const cfg = serverOverride ? { ...config, server: serverOverride } : config;
-        const signer = (m: string, p: string, q: string, b: string) =>
-          signRequest({ actor: cfg.actor, privateKey: base64urlDecode(cfg.private_key), method: m, path: p, query: q, body: b });
-        const client = new ChatClient(cfg, signer);
-        clientRef.current = client;
-        const transport = new PollingTransport(client);
-        transportRef.current = transport;
-        transport.subscribeRooms((rooms) => {
-          store.getState().setRooms(rooms);
-          store.getState().setConnected(true);
-        });
-        if (state.activeRoomId) {
-          transport.subscribeMessages(state.activeRoomId, (msgs) => {
-            store.getState().setMessages(state.activeRoomId!, msgs);
-          });
-        }
-      }
-      return;
-    }
-    // Ctrl+Left / Ctrl+Right to cycle rooms
     if (key.ctrl && key.leftArrow) { cycleRoom(-1); return; }
     if (key.ctrl && key.rightArrow) { cycleRoom(1); return; }
   });
 
-  const activeRoom = state.rooms.find((r) => r.id === state.activeRoomId);
-  const activeMessages = state.activeRoomId ? state.messages[state.activeRoomId] || [] : [];
-
   const handleSend = useCallback(async (text: string) => {
-    if (!clientRef.current || !state.activeRoomId) return;
+    if (!clientRef.current || !activeRoomId) return;
     try {
-      await clientRef.current.sendMessage(state.activeRoomId, text);
+      await clientRef.current.sendMessage(activeRoomId, text);
     } catch (e: unknown) {
       store.getState().setError(e instanceof Error ? e.message : String(e));
     }
-  }, [state.activeRoomId]);
+  }, [activeRoomId]);
 
   const handleSelectRoom = useCallback((id: string) => {
     store.getState().setActiveRoom(id);
@@ -174,30 +165,26 @@ function App({ config, serverOverride }: AppProps) {
 
   return (
     <Box flexDirection="column" height={height}>
-      {/* Header */}
       <Header
         room={activeRoom ? roomLabel(activeRoom) : null}
         actor={config.actor}
-        connected={state.connected}
-        error={state.error}
+        connected={connected}
+        error={error}
       />
 
-      {/* Message stream */}
       <MessageStream
         messages={activeMessages}
         currentActor={config.actor}
         active={!overlay}
       />
 
-      {/* Composer */}
       <Composer active={!overlay} onSubmit={handleSend} />
 
-      {/* Overlays */}
       {overlay === "switcher" && (
         <Box position="absolute" marginTop={3} marginLeft={4}>
           <RoomSwitcher
-            rooms={state.rooms}
-            activeId={state.activeRoomId}
+            rooms={rooms}
+            activeId={activeRoomId}
             onSelect={handleSelectRoom}
             onCancel={() => setOverlay(null)}
           />

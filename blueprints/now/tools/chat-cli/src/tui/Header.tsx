@@ -10,7 +10,7 @@ interface Props {
   error: string | null;
 }
 
-export function Header({ room, actor, connected, error }: Props) {
+export const Header = React.memo(function Header({ room, actor, connected, error }: Props) {
   return (
     <Box
       borderStyle="round"
@@ -40,4 +40,4 @@ export function Header({ room, actor, connected, error }: Props) {
       </Box>
     </Box>
   );
-}
+});

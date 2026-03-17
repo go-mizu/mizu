@@ -10,6 +10,8 @@ export interface Transport {
 
 export class PollingTransport implements Transport {
   private timers = new Map<string, ReturnType<typeof setInterval>>();
+  private lastMessageIds = new Map<string, string>();
+  private lastRoomIds = "";
 
   constructor(
     private client: ChatClient,
@@ -24,7 +26,12 @@ export class PollingTransport implements Transport {
     const poll = async () => {
       try {
         const msgs = await this.client.listMessages(chatId, { limit: 50 });
-        onMessages(msgs);
+        // Only notify if messages actually changed
+        const fingerprint = msgs.map((m) => m.id).join(",");
+        if (fingerprint !== this.lastMessageIds.get(chatId)) {
+          this.lastMessageIds.set(chatId, fingerprint);
+          onMessages(msgs);
+        }
       } catch {
         // Swallow — TUI handles via status bar
       }
@@ -43,7 +50,13 @@ export class PollingTransport implements Transport {
       try {
         const rooms = await this.client.listChats();
         const dms = await this.client.listDms();
-        onRooms([...rooms, ...dms]);
+        const all = [...rooms, ...dms];
+        // Only notify if rooms actually changed
+        const fingerprint = all.map((r) => r.id).join(",");
+        if (fingerprint !== this.lastRoomIds) {
+          this.lastRoomIds = fingerprint;
+          onRooms(all);
+        }
       } catch {
         // Swallow
       }
