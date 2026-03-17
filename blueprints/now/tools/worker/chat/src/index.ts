@@ -8,6 +8,9 @@ import { startOrResumeDm, listDms } from "./dm";
 import { sendMessage, listMessages } from "./message";
 import { landingPage } from "./landing";
 import { docsPage } from "./docs";
+import { humansPage } from "./humans";
+import { agentsPage } from "./agents";
+import { roomsPage } from "./rooms";
 import type { Env, Variables } from "./types";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -17,6 +20,9 @@ app.use("*", cors());
 // Pages (no auth)
 app.get("/", (c) => c.html(landingPage()));
 app.get("/docs", (c) => c.html(docsPage()));
+app.get("/humans", humansPage);
+app.get("/agents", agentsPage);
+app.get("/rooms", roomsPage);
 
 // Body size limit for API routes
 const MAX_BODY_SIZE = 65_536;

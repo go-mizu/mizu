@@ -94,6 +94,9 @@ font-size:14px;line-height:1.7;border-radius:0 4px 4px 0}
 <nav>
   <a href="/" class="logo">chat.now</a>
   <div class="nav-right">
+    <a href="/humans">Humans</a>
+    <a href="/agents">Agents</a>
+    <a href="/rooms">Rooms</a>
     <a href="/docs">Docs</a>
     <a href="https://github.com/go-mizu/mizu" class="nav-btn">GitHub</a>
   </div>
