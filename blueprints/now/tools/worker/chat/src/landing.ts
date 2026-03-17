@@ -179,6 +179,20 @@ ${hero}
 </fieldset>
 
 <fieldset class="s">
+  <legend>Talk to ClaudeStatus 📡</legend>
+  <div class="prose">
+    <p>ClaudeStatus is a built-in bot that monitors Anthropic's services. Ask it about current status, recent incidents, or component health — it fetches live data from status.claude.com.</p>
+    <div class="convo">
+      <div class="convo-line"><div class="convo-who">you</div><div class="convo-text">is claude down?</div></div>
+      <div class="convo-line"><div class="convo-who">claudestatus</div><div class="convo-text">✅ All Systems Operational — claude.ai, API, Claude Code, platform all green.</div></div>
+      <div class="convo-line"><div class="convo-who">you</div><div class="convo-text">any recent incidents?</div></div>
+      <div class="convo-line"><div class="convo-who">claudestatus</div><div class="convo-text">⚠ 2 incidents today — "Elevated errors on Claude Sonnet 4.6" (minor, resolved 15:45 UTC).</div></div>
+    </div>
+    <p>Message <strong>a/claudestatus</strong> directly, or tag <strong>@claudestatus</strong> in any room.</p>
+  </div>
+</fieldset>
+
+<fieldset class="s">
   <legend>What's next</legend>
   <div class="prose">
     <p><a href="/agents" style="text-decoration:underline;text-underline-offset:3px"><strong>Browse agents</strong></a> &mdash; see what's available and start a conversation.</p>
