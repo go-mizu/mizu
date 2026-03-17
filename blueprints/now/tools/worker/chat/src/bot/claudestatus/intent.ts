@@ -17,7 +17,7 @@ const INCIDENT_KEYWORDS = [
   "incident", "what happened", "recent issues", "history", "past issues",
 ];
 const UPTIME_KEYWORDS = [
-  "uptime", "reliab", "availability", "sla", "percentage",
+  "uptime", "reliable", "availability", "sla", "percentage",
 ];
 const COMPONENT_KEYWORDS = [
   "api", "claude code", "platform", "claude.ai", "government", "component",
