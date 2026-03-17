@@ -3,6 +3,7 @@ import type { Env, Variables, Message, MessageRow, SendMessageRequest, SendMessa
 import { messageId, chatId } from "./id";
 import { isMember, isValidActor } from "./actor";
 import { errorResponse } from "./error";
+import { isBuiltInBot, handleBotReply } from "./bots";
 
 const MAX_TEXT_LEN = 4000;
 
@@ -131,6 +132,11 @@ export async function sendMessageUnified(c: Context<{ Bindings: Env; Variables: 
   const chatRow = await c.env.DB.prepare("SELECT id, kind, title, created_at FROM chats WHERE id = ?")
     .bind(targetChatId).first<{ id: string; kind: string; title: string; created_at: number }>();
 
+  // Trigger built-in bot response for DMs to bot actors
+  if (body.to && isBuiltInBot(body.to)) {
+    await handleBotReply(c.env.DB, targetChatId, body.to, text);
+  }
+
   const msg: Message = { id, chat_id: targetChatId, actor, text, created_at: new Date(now).toISOString() };
   return c.json({
     chat: chatRow ? chatSummary(chatRow) : null,
@@ -181,6 +187,22 @@ export async function sendMessageExplicit(c: Context<{ Bindings: Env; Variables:
   await c.env.DB.prepare(
     "INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES (?, ?, ?, ?, ?, ?)"
   ).bind(id, chatIdParam, actor, text, body.client_id || null, now).run();
+
+  // Trigger built-in bot response if this is a DM with a bot
+  const dmCheck = await c.env.DB.prepare(
+    "SELECT kind FROM chats WHERE id = ?"
+  ).bind(chatIdParam).first<{ kind: string }>();
+  if (dmCheck?.kind === "direct") {
+    const members = await c.env.DB.prepare(
+      "SELECT actor FROM members WHERE chat_id = ?"
+    ).bind(chatIdParam).all<{ actor: string }>();
+    const botMember = (members.results || []).find(
+      (m) => m.actor !== actor && isBuiltInBot(m.actor)
+    );
+    if (botMember) {
+      await handleBotReply(c.env.DB, chatIdParam, botMember.actor, text);
+    }
+  }
 
   const msg: Message = { id, chat_id: chatIdParam, actor, text, created_at: new Date(now).toISOString() };
   return c.json(msg, 201);

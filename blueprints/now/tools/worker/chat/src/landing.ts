@@ -540,8 +540,18 @@ async function signIn(){
     const data=await res.json();
     if(!res.ok) throw new Error(data.error?.message||'Something went wrong');
 
-    // Redirect to magic link (auto sign-in)
-    window.location.href=data.magic_link;
+    if(data.magic_link){
+      // Dev fallback: auto sign-in
+      window.location.href=data.magic_link;
+    } else {
+      // Email sent: show "check your inbox"
+      document.getElementById('signin-form').innerHTML=
+        '<div style="text-align:center;padding:20px 0">'+
+        '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--text-3);margin-bottom:12px"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>'+
+        '<div style="font-weight:600;font-size:15px;margin-bottom:8px">Check your inbox</div>'+
+        '<div style="font-family:\'JetBrains Mono\',monospace;font-size:12px;color:var(--text-3)">We sent a sign-in link to '+email+'</div>'+
+        '</div>';
+    }
   }catch(err){
     errEl.textContent=err.message;
     btn.disabled=false;

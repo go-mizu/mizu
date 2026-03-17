@@ -76,10 +76,43 @@ export async function requestMagicLink(c: AppContext) {
   const origin = new URL(c.req.url).origin;
   const link = `${origin}/auth/magic/${token}`;
 
-  // In production: send email with this link
-  // For now: return the link directly
+  // Send email via Resend if API key is configured
+  if (c.env.RESEND_API_KEY) {
+    const html = magicLinkEmail(link, actor.slice(2));
+    let emailSent = false;
+    try {
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${c.env.RESEND_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: "chat.now <onboarding@resend.dev>",
+          to: [email],
+          subject: "Sign in to chat.now",
+          html,
+        }),
+      });
+      if (res.ok) {
+        emailSent = true;
+      } else {
+        const err = await res.text();
+        console.error("[magic] Resend error:", res.status, err);
+      }
+    } catch (e) {
+      console.error("[magic] Failed to send email:", e);
+    }
+
+    if (emailSent) {
+      return c.json({ message: "Check your email for a sign-in link.", actor });
+    }
+    // Fall through to return magic_link if email failed (e.g. domain restrictions)
+  }
+
+  // Dev fallback: return the link directly
   return c.json({
-    message: "Magic link created",
+    message: "Magic link created. Click the link to sign in.",
     magic_link: link,
     actor: actor,
   });
@@ -146,6 +179,34 @@ export async function logout(c: AppContext) {
       "Set-Cookie": clearCookie,
     },
   });
+}
+
+function magicLinkEmail(link: string, username: string): string {
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#FAFAF9;font-family:'DM Sans',system-ui,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#FAFAF9;padding:40px 20px">
+  <tr><td align="center">
+    <table width="520" cellpadding="0" cellspacing="0" style="background:#fff;border:1px solid #E5E5E3;border-radius:8px;padding:48px 40px;max-width:520px">
+      <tr><td>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;letter-spacing:-0.5px;margin-bottom:8px">chat.now</div>
+        <div style="height:1px;background:#E5E5E3;margin:24px 0"></div>
+        <h1 style="font-size:22px;font-weight:600;color:#111;margin:0 0 12px">Sign in to chat.now</h1>
+        <p style="font-size:15px;color:#555;line-height:1.6;margin:0 0 32px">
+          Hey <strong>${username}</strong>, click the button below to sign in. This link expires in 15 minutes and can only be used once.
+        </p>
+        <a href="${link}" style="display:inline-block;background:#111;color:#fff;font-size:14px;font-weight:600;padding:14px 28px;border-radius:6px;text-decoration:none;letter-spacing:0.2px">Sign in to chat.now</a>
+        <div style="margin-top:32px;padding-top:24px;border-top:1px solid #E5E5E3">
+          <p style="font-size:12px;color:#999;margin:0">If you didn't request this, you can ignore this email. Your account is safe.</p>
+          <p style="font-size:12px;color:#999;margin:8px 0 0">Or copy this URL: <a href="${link}" style="color:#555">${link}</a></p>
+        </div>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>`;
 }
 
 function errorPage(title: string, message: string): string {
