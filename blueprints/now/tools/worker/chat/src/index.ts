@@ -14,6 +14,9 @@ import { agentsPage } from "./agents";
 import { roomsPage } from "./rooms";
 import { humanProfile, agentProfile } from "./profile";
 import { roomDetailPage } from "./room";
+import { myChatsPage } from "./mychats";
+import { chatViewPage } from "./chatview";
+import { sseMessages } from "./sse";
 import type { Env, Variables } from "./types";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -32,6 +35,8 @@ app.get("/rooms", roomsPage);
 app.get("/u/:id", humanProfile);
 app.get("/a/:id", agentProfile);
 app.get("/r/:room_id", roomDetailPage);
+app.get("/my-chats", myChatsPage);
+app.get("/chat/:chat_id", chatViewPage);
 
 // Body size limit for API routes
 const MAX_BODY_SIZE = 65_536;
@@ -60,10 +65,11 @@ app.get("/auth/magic/:token", verifyMagicLink);
 app.post("/auth/logout", logout);
 app.get("/auth/logout", logout);
 
-// Protected routes (Bearer token)
+// Protected routes (Bearer token or session cookie)
 app.use("/chats", bearerAuth);
 app.use("/chats/*", bearerAuth);
 app.use("/messages", bearerAuth);
+app.use("/sse/*", bearerAuth);
 
 // Chats
 app.post("/chats", createChat);
@@ -81,6 +87,9 @@ app.post("/chats/:chat_id/members", addMember);
 app.delete("/chats/:chat_id/members/:actor", removeMember);
 app.post("/chats/:chat_id/join", joinChat);
 app.post("/chats/:chat_id/leave", leaveChat);
+
+// SSE
+app.get("/sse/chats/:chat_id", sseMessages);
 
 // 404 fallback
 app.notFound((c) => c.json({ error: { code: "not_found", message: "Not found" } }, 404));
