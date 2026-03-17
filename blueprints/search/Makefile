@@ -288,42 +288,54 @@ build-crawler-server: ## Rsync + build Rust crawler on remote server → ~/bin/c
 	$(MAKE) -C $(CRAWLER_DIR) build-on-server SERVER=$(SERVER) DEPLOY_KEY=$(DEPLOY_KEY)
 
 # build-on-server: build the Go search binary natively on the remote server (no QEMU, fast).
-# Strategy: vendor all deps locally (captures the local replace ../.. for go-mizu/mizu),
-# rsync only Go source + vendor/ to server, build with -mod=vendor (no downloads on server).
+# Strategy: rsync source (+ parent mizu module for the replace ../.. directive) to server,
+# then build with -mod=mod so Go downloads transitive deps from GOPROXY on the server.
+# No local vendoring needed — vendor/ stays gitignored.
 # Installs Go $(LINUX_GO_VERSION) automatically if not present on the server.
 .PHONY: build-on-server
-build-on-server: ## Vendor deps + rsync + build natively on remote server (fast, no QEMU). SERVER=1|2
+build-on-server: ## Rsync source + build natively on remote server (fast, no QEMU). SERVER=1|2
 	@test -f "$(DEPLOY_KEY)" || { echo "Deploy key not found: $(DEPLOY_KEY)"; exit 1; }
 	@echo "==> Ensuring Go $(LINUX_GO_VERSION) on $(REMOTE_SSH)..."
 	@$(SSH) $(REMOTE_SSH) 'set -e; \
-		GOBIN=/usr/local/go/bin/go; \
-		if [ ! -x "$$GOBIN" ] || [ "$$($$GOBIN version 2>/dev/null | awk "{print \$$3}")" != "go$(LINUX_GO_VERSION)" ]; then \
-			echo "Installing Go $(LINUX_GO_VERSION)..."; \
-			curl -fsSL "https://dl.google.com/go/go$(LINUX_GO_VERSION).linux-amd64.tar.gz" -o /tmp/go.tgz; \
-			rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tgz && rm /tmp/go.tgz; \
-			echo "Installed: $$($$GOBIN version)"; \
+		for GOBIN in /usr/local/go/bin/go $$HOME/local/go/bin/go; do \
+			if [ -x "$$GOBIN" ] && [ "$$($$GOBIN version 2>/dev/null | awk "{print \$$3}")" = "go$(LINUX_GO_VERSION)" ]; then \
+				echo "Already installed: $$($$GOBIN version)"; exit 0; \
+			fi; \
+		done; \
+		echo "Installing Go $(LINUX_GO_VERSION)..."; \
+		curl -fsSL "https://dl.google.com/go/go$(LINUX_GO_VERSION).linux-amd64.tar.gz" -o /tmp/go.tgz; \
+		if tar -C /usr/local -xzf /tmp/go.tgz 2>/dev/null; then \
+			echo "Installed to /usr/local/go"; \
 		else \
-			echo "Already installed: $$($$GOBIN version)"; \
-		fi'
-	@echo "==> Vendoring dependencies locally (captures local replace directives)..."
-	@GOWORK=off go mod vendor
-	@echo "==> Syncing Go source + vendor to $(REMOTE_SSH):~/.search-build/blueprints/search/..."
+			mkdir -p $$HOME/local && tar -C $$HOME/local -xzf /tmp/go.tgz; \
+			echo "Installed to $$HOME/local/go (no root)"; \
+		fi; \
+		rm -f /tmp/go.tgz'
+	@echo "==> Syncing mizu root (for replace ../.. directive) to $(REMOTE_SSH):~/.search-build/..."
 	@$(SSH) $(REMOTE_SSH) "mkdir -p ~/.search-build/blueprints/search"
 	@rsync -az --delete -e "ssh -i $(DEPLOY_KEY) -o BatchMode=yes" \
+		--include='/go.mod' --include='/go.sum' --include='/*.go' \
+		--include='/pkg/' --include='/pkg/**' \
+		--exclude='*' \
+		../../ $(REMOTE_SSH):~/.search-build/
+	@echo "==> Syncing search source to $(REMOTE_SSH):~/.search-build/blueprints/search/..."
+	@rsync -az --delete -e "ssh -i $(DEPLOY_KEY) -o BatchMode=yes" \
 		--exclude='/.git' --exclude='*.duckdb' --exclude='/result/' \
-		--exclude='/tools/' --exclude='/app/' --exclude='/spec/' \
-		--exclude='/docs/' --exclude='/reports/' --exclude='/feature/' \
-		--exclude='/assets/' --exclude='/markdown.test/' \
+		--exclude='/vendor/' --exclude='/tools/' --exclude='/app/' \
+		--exclude='/spec/' --exclude='/docs/' --exclude='/reports/' \
+		--exclude='/feature/' --exclude='/assets/' --exclude='/markdown.test/' \
 		./ $(REMOTE_SSH):~/.search-build/blueprints/search/
-	@echo "==> Building on $(REMOTE_SSH) (native amd64, -mod=vendor)..."
+	@echo "==> Building on $(REMOTE_SSH) (native amd64, -mod=mod)..."
 	@$(SSH) $(REMOTE_SSH) 'bash -lc "set -e; \
-		export PATH=/usr/local/go/bin:$$PATH; \
+		export PATH=/usr/local/go/bin:$$HOME/local/go/bin:$$PATH; \
 		cd ~/.search-build/blueprints/search; \
-		GOWORK=off CGO_ENABLED=1 go build -mod=vendor -trimpath \
+		GOWORK=off GOPROXY=https://proxy.golang.org,direct CGO_ENABLED=1 \
+			go build -mod=mod -trimpath \
 			-ldflags \"$(GO_LDFLAGS)\" \
 			-o ~/bin/search-linux-noble ./cmd/search; \
 		chmod +x ~/bin/search-linux-noble; \
-		printf '"'"'#!/usr/bin/env bash\nulimit -Hn 131072 2>/dev/null; ulimit -n 131072 2>/dev/null || ulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=2000000000\nexport GODEBUG=netdns=go\nexec \"$$HOME/bin/search-linux-noble\" \"\$$@\"\n'"'"' > ~/bin/search; \
+		rm -f ~/bin/search; \
+		printf '"'"'#!/usr/bin/env bash\nulimit -Hn 131072 2>/dev/null; ulimit -n 131072 2>/dev/null || ulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=$${GOMEMLIMIT:-2000000000}\nexport GODEBUG=netdns=go\nexport TORRENT_STORAGE_DEFAULT_FILE_IO=classic\nexec \"$$HOME/bin/search-linux-noble\" \"\$$@\"\n'"'"' > ~/bin/search; \
 		chmod +x ~/bin/search; \
 		echo \"Done: $$HOME/bin/search-linux-noble\""'
 	@echo "Built and installed on $(REMOTE_SSH):~/bin/search"
@@ -340,7 +352,8 @@ deploy-linux-noble: build-linux-noble ## Deploy Ubuntu 24.04 binary to remote $$
 	@$(SSH) $(REMOTE_SSH) 'bash -lc "set -e; \
 		install -m 0755 $$HOME/.search-upload.tmp $$HOME/bin/search-linux-noble; \
 		rm -f $$HOME/.search-upload.tmp; \
-		printf '"'"'#!/usr/bin/env bash\nulimit -Hn 131072 2>/dev/null; ulimit -n 131072 2>/dev/null || ulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=2000000000\nexport GODEBUG=netdns=go\nexec \"$$HOME/bin/search-linux-noble\" \"\$$@\"\n'"'"' > $$HOME/bin/search; \
+		rm -f $$HOME/bin/search; \
+		printf '"'"'#!/usr/bin/env bash\nulimit -Hn 131072 2>/dev/null; ulimit -n 131072 2>/dev/null || ulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=$${GOMEMLIMIT:-2000000000}\nexport GODEBUG=netdns=go\nexport TORRENT_STORAGE_DEFAULT_FILE_IO=classic\nexec \"$$HOME/bin/search-linux-noble\" \"\$$@\"\n'"'"' > $$HOME/bin/search; \
 		chmod +x $$HOME/bin/search"'
 	@echo "Deployed Noble: $(REMOTE_SSH):~/bin/search"
 
@@ -389,7 +402,7 @@ deploy-linux-noble-browser: build-linux-noble ## Deploy Ubuntu 24.04 binary with
 	@$(SSH) $(REMOTE_SSH) 'bash -lc "set -e; \
 		install -m 0755 $$HOME/.search-upload.tmp $$HOME/bin/search-linux-noble; \
 		rm -f $$HOME/.search-upload.tmp; \
-		printf '"'"'#!/usr/bin/env bash\nulimit -Hn 131072 2>/dev/null; ulimit -n 131072 2>/dev/null || ulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=2000000000\nexport GODEBUG=netdns=go\nif [ -d $$HOME/bin/chrome-libs ]; then export LD_LIBRARY_PATH=\"$$HOME/bin/chrome-libs\"; fi\nif [ -f /usr/bin/chromium ]; then export CHROME_BIN=/usr/bin/chromium; elif [ -f $$HOME/bin/chromium ]; then export CHROME_BIN=$$HOME/bin/chromium; fi\nexec \"$$HOME/bin/search-linux-noble\" \"\$$@\"\n'"'"' > $$HOME/bin/search; \
+		printf '"'"'#!/usr/bin/env bash\nulimit -Hn 131072 2>/dev/null; ulimit -n 131072 2>/dev/null || ulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=$${GOMEMLIMIT:-2000000000}\nexport GODEBUG=netdns=go\nexport TORRENT_STORAGE_DEFAULT_FILE_IO=classic\nif [ -d $$HOME/bin/chrome-libs ]; then export LD_LIBRARY_PATH=\"$$HOME/bin/chrome-libs\"; fi\nif [ -f /usr/bin/chromium ]; then export CHROME_BIN=/usr/bin/chromium; elif [ -f $$HOME/bin/chromium ]; then export CHROME_BIN=$$HOME/bin/chromium; fi\nexec \"$$HOME/bin/search-linux-noble\" \"\$$@\"\n'"'"' > $$HOME/bin/search; \
 		chmod +x $$HOME/bin/search"'
 	@echo "Deployed Noble+Chrome: $(REMOTE_SSH):~/bin/search"
 	@echo "NOTE: Run 'make download-chrome SERVER=$(SERVER)' (no sudo) or 'make install-chrome SERVER=$(SERVER)' (needs sudo) to install Chrome first"
@@ -408,7 +421,7 @@ deploy-linux-focal: build-linux ## [LEGACY] Deploy Ubuntu 20.04 focal binary wit
 		install -m 0755 $$HOME/.search-upload.tmp $$HOME/bin/search-linux; \
 		install -m 0644 $$HOME/.libstdc++.so.6.tmp $$HOME/bin/search-libs/libstdc++.so.6; \
 		rm -f $$HOME/.search-upload.tmp $$HOME/.libstdc++.so.6.tmp; \
-		printf '"'"'#!/usr/bin/env bash\nulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=2000000000\nexport GODEBUG=netdns=go\nexport LD_LIBRARY_PATH=\"$$HOME/bin/search-libs\$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}\"\nexec \"$$HOME/bin/search-linux\" \"\$$@\"\n'"'"' > $$HOME/bin/search; \
+		printf '"'"'#!/usr/bin/env bash\nulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=$${GOMEMLIMIT:-2000000000}\nexport GODEBUG=netdns=go\nexport LD_LIBRARY_PATH=\"$$HOME/bin/search-libs\$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}\"\nexec \"$$HOME/bin/search-linux\" \"\$$@\"\n'"'"' > $$HOME/bin/search; \
 		chmod +x $$HOME/bin/search"'
 	@echo "Deployed (focal): $(REMOTE_SSH):~/bin/search"
 
@@ -429,6 +442,66 @@ deploy-dashboard: deploy-linux-noble-browser ## Build, deploy, and (re)start FTS
 	@echo "==> Verifying dashboard is responding..."
 	@$(SSH) $(REMOTE_SSH) 'curl -sf http://localhost:$(DASHBOARD_PORT)/api/scrape/list > /dev/null && echo "Dashboard running on port $(DASHBOARD_PORT)" || { echo "ERROR: dashboard not responding"; tail -20 /tmp/dashboard.log; exit 1; }'
 
+.PHONY: deploy-cc-watch
+deploy-cc-watch: ## Deploy cc_watch.sh and (re)start g_watch screen session (SERVER=2 for server2; HF_TOKEN=hf_... to write ~/.hf_token)
+	@echo "==> Deploying cc_watch.sh to $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'mkdir -p ~/scripts'
+	@$(SCP) scripts/cc_watch.sh $(REMOTE_SSH):~/scripts/cc_watch.sh
+	@$(SSH) $(REMOTE_SSH) 'chmod +x ~/scripts/cc_watch.sh'
+	@if [ -n "$(HF_TOKEN)" ]; then \
+		echo "==> Writing HF_TOKEN to $(REMOTE_SSH):~/.hf_token..."; \
+		$(SSH) $(REMOTE_SSH) "echo '$(HF_TOKEN)' > ~/.hf_token && chmod 600 ~/.hf_token"; \
+	fi
+	@echo "==> Stopping existing g_watch session on $(REMOTE_SSH)..."
+	-@$(SSH) $(REMOTE_SSH) 'screen -S g_watch -X quit 2>/dev/null; true'
+	-@$(SSH) $(REMOTE_SSH) 'pkill -f "cc publish --watch" 2>/dev/null; true'
+	@sleep 1
+	@echo "==> Starting g_watch on $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'screen -dmS g_watch bash -c "bash ~/scripts/cc_watch.sh; exec bash"'
+	@sleep 2
+	@echo "==> Verifying g_watch is running on $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'screen -ls | grep g_watch && echo "g_watch started" || { echo "ERROR: g_watch not found"; exit 1; }'
+
+.PHONY: remote-cc-watch-attach
+remote-cc-watch-attach: ## Attach to g_watch screen session on remote server
+	@$(SSH) -t $(REMOTE_SSH) 'screen -r g_watch'
+
+.PHONY: remote-cc-watch-kill
+remote-cc-watch-kill: ## Kill g_watch screen session on remote server
+	@$(SSH) $(REMOTE_SSH) 'screen -S g_watch -X quit 2>/dev/null && echo "Killed" || echo "No session found"'
+	-@$(SSH) $(REMOTE_SSH) 'pkill -f "cc publish --watch" 2>/dev/null; true'
+
+.PHONY: remote-cc-watch-log
+remote-cc-watch-log: ## Tail cc_watch log on remote server
+	@$(SSH) $(REMOTE_SSH) 'tail -f ~/log/cc_watch.log'
+
+# CC_SCHED_START / CC_SCHED_END define the file index range for the scheduler.
+# Defaults: server1=0–4999, server2=5000–9999.
+CC_SCHED_START ?= $(if $(filter 2,$(SERVER)),5000,0)
+CC_SCHED_END   ?= $(if $(filter 2,$(SERVER)),9999,4999)
+# HF rate limit: 128 commits/hour per token across ALL repos (cc, arctic, goodreads, etc.).
+# Default --commit-interval 180 → 20/hour per server, 40/hour total, 88 headroom for other repos.
+# Adjust via COMMIT_INTERVAL env var in cc_watch.sh or --commit-interval flag.
+
+.PHONY: deploy-cc-sched
+deploy-cc-sched: ## (Re)start g_sched using Go --schedule on remote server (SERVER=2 for server2)
+	@echo "==> Stopping existing g_sched on $(REMOTE_SSH)..."
+	-@$(SSH) $(REMOTE_SSH) 'screen -S g_sched -X quit 2>/dev/null; pkill -f "cc publish --schedule" 2>/dev/null; true'
+	@sleep 1
+	@echo "==> Starting g_sched on $(REMOTE_SSH) (range $(CC_SCHED_START)–$(CC_SCHED_END))..."
+	@$(SSH) $(REMOTE_SSH) 'screen -dmS g_sched bash -c "export PATH=$$HOME/bin:$$PATH; search cc publish --schedule --start $(CC_SCHED_START) --end $(CC_SCHED_END); exec bash"'
+	@sleep 2
+	@echo "==> Verifying g_sched is running on $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'screen -ls | grep g_sched && echo "g_sched started" || { echo "ERROR: g_sched not found"; exit 1; }'
+
+.PHONY: remote-cc-sched-log
+remote-cc-sched-log: ## Tail cc_schedule log on remote server
+	@$(SSH) $(REMOTE_SSH) 'tail -f ~/log/cc_schedule_$(CC_SCHED_START)_$(CC_SCHED_END).log'
+
+.PHONY: remote-cc-sched-attach
+remote-cc-sched-attach: ## Attach to g_sched screen session on remote server
+	@$(SSH) -t $(REMOTE_SSH) 'screen -r g_sched'
+
 .PHONY: deploy-linux-focal-browser
 deploy-linux-focal-browser: build-linux ## [LEGACY] Deploy Ubuntu 20.04 focal binary with Chrome wrapper (bundled libstdc++)
 	@test -f "$(DEPLOY_KEY)" || { echo "Deploy key not found: $(DEPLOY_KEY)"; exit 1; }
@@ -440,7 +513,7 @@ deploy-linux-focal-browser: build-linux ## [LEGACY] Deploy Ubuntu 20.04 focal bi
 		install -m 0755 $$HOME/.search-upload.tmp $$HOME/bin/search-linux; \
 		install -m 0644 $$HOME/.libstdc++.so.6.tmp $$HOME/bin/search-libs/libstdc++.so.6; \
 		rm -f $$HOME/.search-upload.tmp $$HOME/.libstdc++.so.6.tmp; \
-		printf '"'"'#!/usr/bin/env bash\nulimit -Hn 131072 2>/dev/null; ulimit -n 131072 2>/dev/null || ulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=2000000000\nexport GODEBUG=netdns=go\nexport LD_LIBRARY_PATH=\"$$HOME/bin/search-libs\$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}\"\nif [ -d $$HOME/bin/chrome-libs ]; then export LD_LIBRARY_PATH=\"$$HOME/bin/chrome-libs:\$${LD_LIBRARY_PATH}\"; fi\nif [ -f /usr/bin/chromium ]; then export CHROME_BIN=/usr/bin/chromium; elif [ -f $$HOME/bin/chromium ]; then export CHROME_BIN=$$HOME/bin/chromium; fi\nexec \"$$HOME/bin/search-linux\" \"\$$@\"\n'"'"' > $$HOME/bin/search; \
+		printf '"'"'#!/usr/bin/env bash\nulimit -Hn 131072 2>/dev/null; ulimit -n 131072 2>/dev/null || ulimit -n 65536 2>/dev/null || true\nexport GOMEMLIMIT=$${GOMEMLIMIT:-2000000000}\nexport GODEBUG=netdns=go\nexport LD_LIBRARY_PATH=\"$$HOME/bin/search-libs\$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}\"\nif [ -d $$HOME/bin/chrome-libs ]; then export LD_LIBRARY_PATH=\"$$HOME/bin/chrome-libs:\$${LD_LIBRARY_PATH}\"; fi\nif [ -f /usr/bin/chromium ]; then export CHROME_BIN=/usr/bin/chromium; elif [ -f $$HOME/bin/chromium ]; then export CHROME_BIN=$$HOME/bin/chromium; fi\nexec \"$$HOME/bin/search-linux\" \"\$$@\"\n'"'"' > $$HOME/bin/search; \
 		chmod +x $$HOME/bin/search"'
 	@echo "Deployed Focal+Chrome: $(REMOTE_SSH):~/bin/search"
 	@echo "NOTE: Run 'make download-chrome SERVER=$(SERVER)' to install Chrome first"
@@ -566,6 +639,54 @@ seed-copy: ## Copy HN hn_domains.duckdb from server1 → server2 via local pipe 
 .PHONY: remote-hn-tail
 remote-hn-tail: ## Tail hn swarm recrawl log on remote
 	@$(SSH) $(REMOTE_SSH) 'tail -f ~/hn-swarm.log'
+
+# ---------------------------------------------------------------------------
+# Arctic publish (with auto-restart on stall / crash)
+# ---------------------------------------------------------------------------
+ARCTIC_FROM ?= 2005-12
+ARCTIC_STALL ?= 45m
+
+.PHONY: deploy-arctic
+deploy-arctic: deploy-linux-noble ## Build, deploy, and (re)start arctic_run with auto-restart loop (SERVER=2 for server2)
+	@echo "==> Stopping existing arctic_run on $(REMOTE_SSH)..."
+	-@$(SSH) $(REMOTE_SSH) 'screen -S arctic_run -X quit 2>/dev/null; pkill -f "arctic publish" 2>/dev/null; true'
+	@sleep 2
+	@echo "==> Starting arctic_run with restart loop on $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'screen -dmS arctic_run bash -c "\
+		export PATH=$$HOME/bin:\$$PATH; \
+		n=0; \
+		while true; do \
+			n=\$$((n+1)); \
+			LOG=$$HOME/log/arctic_run_\$${n}.log; \
+			echo \"[\$$(date)] arctic_run attempt \$$n starting\" >> $$HOME/log/arctic_restart.log; \
+			GOMEMLIMIT=8GiB HF_TOKEN=\$$(cat $$HOME/.hf_token) \
+				search arctic publish --from $(ARCTIC_FROM) --max-commit-stall $(ARCTIC_STALL) 2>&1 | tee \$$LOG; \
+			rc=\$$?; \
+			echo \"[\$$(date)] arctic_run exited \$$rc (attempt \$$n)\" >> $$HOME/log/arctic_restart.log; \
+			if [ \$$rc -eq 0 ]; then echo \"[\$$(date)] arctic done — exiting loop\" >> $$HOME/log/arctic_restart.log; break; fi; \
+			echo \"[\$$(date)] restarting in 30s...\" >> $$HOME/log/arctic_restart.log; \
+			sleep 30; \
+		done; \
+		exec bash"'
+	@sleep 2
+	@$(SSH) $(REMOTE_SSH) 'screen -ls | grep arctic_run && echo "arctic_run started (restart loop)" || { echo "ERROR: arctic_run not found"; exit 1; }'
+
+.PHONY: remote-arctic-attach
+remote-arctic-attach: ## Attach to arctic_run screen session on remote server
+	@$(SSH) -t $(REMOTE_SSH) 'screen -r arctic_run'
+
+.PHONY: remote-arctic-kill
+remote-arctic-kill: ## Kill arctic_run screen session on remote server
+	@$(SSH) $(REMOTE_SSH) 'screen -S arctic_run -X quit 2>/dev/null && echo "Killed" || echo "No session found"'
+	-@$(SSH) $(REMOTE_SSH) 'pkill -f "arctic publish" 2>/dev/null; true'
+
+.PHONY: remote-arctic-tail
+remote-arctic-tail: ## Tail the most recent arctic log on remote
+	@$(SSH) $(REMOTE_SSH) 'tail -f $$(ls -t $$HOME/log/arctic_run_*.log 2>/dev/null | head -1)'
+
+.PHONY: remote-arctic-status
+remote-arctic-status: ## Show arctic process status and restart history
+	@$(SSH) $(REMOTE_SSH) 'echo "=== Process ==="; ps aux | grep "arctic publish" | grep -v grep; echo ""; echo "=== Restart log ==="; tail -20 $$HOME/log/arctic_restart.log 2>/dev/null || echo "(no restart log)"'
 
 .PHONY: install
 install: build ## Install search binary to $$HOME/bin/search (alias for build)

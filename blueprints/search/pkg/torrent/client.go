@@ -23,12 +23,27 @@ type Config struct {
 	NoUpload    bool     // Disable seeding (default true)
 	MaxConns    int      // Max connections per torrent (default 80)
 	TorrentFile string   // Path to .torrent file (faster than magnet, skip if empty)
+	ListenPort  int      // TCP/UDP listen port; 0 = random ephemeral port
 }
 
 // File represents a file in the torrent.
 type File struct {
 	Path   string // e.g. "comments/RC_2005-12.zst"
 	Length int64  // Size in bytes
+}
+
+// FileSize returns the size of the named file in the torrent without downloading it.
+// Blocks until torrent metadata is available.
+func (c *Client) FileSize(ctx context.Context, path string) (int64, error) {
+	if err := c.addTorrent(ctx); err != nil {
+		return 0, err
+	}
+	for _, f := range c.t.Files() {
+		if f.DisplayPath() == path {
+			return f.Length(), nil
+		}
+	}
+	return 0, fmt.Errorf("file %q not found in torrent", path)
 }
 
 // Progress reports download progress.
@@ -64,6 +79,7 @@ func New(cfg Config) (*Client, error) {
 	tcfg.NoUpload = cfg.NoUpload
 	tcfg.Seed = false
 	tcfg.EstablishedConnsPerTorrent = cfg.MaxConns
+	tcfg.ListenPort = cfg.ListenPort // 0 = random ephemeral port
 
 	cl, err := torrent.NewClient(tcfg)
 	if err != nil {
@@ -165,14 +181,58 @@ func (c *Client) Download(ctx context.Context, paths []string, cb ProgressCallba
 		want[p] = true
 	}
 
-	// Select files for download
-	var selected []*torrent.File
-	for _, f := range c.t.Files() {
+	// Select files for download.
+	// Important: torrent pieces can span file boundaries. The last piece of a
+	// selected file may overlap into the next file in the torrent. If that next
+	// file has PiecePriorityNone, the overlapping piece is never fully downloaded
+	// and its portion in the mmap stays as zeros — corrupting the end of the
+	// selected file's data. To prevent this, we also enable the file immediately
+	// following each selected file (the "boundary neighbour"), so the shared last
+	// piece can be fully downloaded and hash-verified.
+	allFiles := c.t.Files()
+
+	selectedIdx := make(map[int]bool, len(paths))
+	for i, f := range allFiles {
 		if want[f.DisplayPath()] {
+			selectedIdx[i] = true
+		}
+	}
+
+	// Files that are enabled only to cover the boundary piece of the selected file.
+	var boundaryFiles []*torrent.File
+
+	var selected []*torrent.File
+	for i, f := range allFiles {
+		if selectedIdx[i] {
 			f.Download()
 			selected = append(selected, f)
+			// Enable the next file at readahead priority so the shared last
+			// piece of the selected file (which overlaps into the next file)
+			// can be fully downloaded and hash-verified.
+			// Exception: if the boundary file is already fully downloaded its
+			// pieces are already verified, AND anacrolix needs O_RDWR access
+			// to mmap it — if it was completed by a prior session it may be
+			// 0444 (read-only). Skipping SetPriority avoids anacrolix deleting
+			// and re-downloading an already-complete neighbour file.
+			if i+1 < len(allFiles) && !selectedIdx[i+1] {
+				bf := allFiles[i+1]
+				if bf.BytesCompleted() < bf.Length() {
+					bf.SetPriority(torrent.PiecePriorityReadahead)
+					boundaryFiles = append(boundaryFiles, bf)
+				}
+			}
 		} else {
-			f.SetPriority(torrent.PiecePriorityNone)
+			// Leave boundary files at their already-set priority.
+			isBoundary := false
+			for _, bf := range boundaryFiles {
+				if bf.DisplayPath() == f.DisplayPath() {
+					isBoundary = true
+					break
+				}
+			}
+			if !isBoundary {
+				f.SetPriority(torrent.PiecePriorityNone)
+			}
 		}
 	}
 
@@ -265,6 +325,11 @@ func (c *Client) Download(ctx context.Context, paths []string, cb ProgressCallba
 			}
 
 			if allDone {
+				// Cancel boundary-neighbour file downloads — we only needed
+				// them to complete the last boundary piece.
+				for _, bf := range boundaryFiles {
+					bf.SetPriority(torrent.PiecePriorityNone)
+				}
 				return nil
 			}
 		}

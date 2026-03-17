@@ -27,6 +27,11 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
     restart: unless-stopped
     deploy:
       resources:

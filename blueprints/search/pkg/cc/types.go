@@ -7,7 +7,7 @@ import "time"
 
 // Crawl represents a Common Crawl dataset.
 type Crawl struct {
-	ID      string    `json:"id"`      // CC-MAIN-2026-04
+	ID      string    `json:"id"`      // CC-MAIN-2026-08
 	Name    string    `json:"name"`    // January 2026 Index
 	From    time.Time `json:"from"`    // Start of crawl window
 	To      time.Time `json:"to"`      // End of crawl window

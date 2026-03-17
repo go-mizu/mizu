@@ -1,0 +1,222 @@
+#!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["plotly", "kaleido", "pandas"]
+# ///
+"""
+Generate charts from the Open Index stats.csv.
+
+Usage:
+    python chart_stats.py stats.csv [--out charts/]
+
+Outputs PNG images suitable for embedding in README / HuggingFace model cards:
+  - size_chart.png      grouped bar (log): HTML vs Parquet bytes per shard
+  - timing_chart.png    stacked bar: download / convert / export / publish per shard
+  - compression_pie.png donut chart: cumulative size breakdown
+"""
+
+import argparse
+import sys
+from pathlib import Path
+
+import pandas as pd
+import plotly.graph_objects as go
+
+
+# ── style ────────────────────────────────────────────────────────────────────
+
+COLORS = ["#6366f1", "#10b981", "#f59e0b", "#06b6d4", "#8b5cf6", "#f43f5e"]
+
+LAYOUT = dict(
+    font_family="Inter, system-ui, -apple-system, Segoe UI, sans-serif",
+    font_size=12,
+    font_color="#374151",
+    plot_bgcolor="#fafbfc",
+    paper_bgcolor="#ffffff",
+    margin=dict(l=56, r=24, t=56, b=72),
+)
+
+AXIS = dict(gridcolor="#f0f0f0", gridwidth=1, zeroline=False, linecolor="#e5e7eb")
+XAXIS = dict(**AXIS, tickangle=-45, tickfont_size=9)
+
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+def fmt_bytes(n):
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if abs(n) < 1024:
+            return f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} PB"
+
+
+def load(path):
+    df = pd.read_csv(path)
+    required = {"crawl_id", "file_idx", "rows", "html_bytes", "md_bytes", "parquet_bytes"}
+    missing = required - set(df.columns)
+    if missing:
+        sys.exit(f"Missing columns: {missing}")
+    for col in ("dur_download_s", "dur_convert_s", "dur_export_s", "dur_publish_s"):
+        if col not in df.columns:
+            df[col] = 0
+    if "dur_pack_s" in df.columns and df["dur_convert_s"].sum() == 0:
+        df["dur_convert_s"] = df["dur_pack_s"]
+    df = df.sort_values(["crawl_id", "file_idx"]).reset_index(drop=True)
+    df["shard"] = df["crawl_id"].str[-3:] + "/" + df["file_idx"].apply(lambda x: f"{x:05d}")
+    return df
+
+
+# ── charts ───────────────────────────────────────────────────────────────────
+
+def chart_sizes(df, out):
+    """Grouped bar (linear MB) — Markdown bars are small next to HTML, showing HTML stripping."""
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=df["shard"], y=df["html_bytes"] / 1e6, name="Raw HTML",
+        marker_color=COLORS[0], marker_line_width=0,
+    ))
+    fig.add_trace(go.Bar(
+        x=df["shard"], y=df["md_bytes"] / 1e6, name="Markdown",
+        marker_color=COLORS[1], marker_line_width=0,
+    ))
+    fig.update_layout(
+        **LAYOUT, barmode="group",
+        height=450, width=max(900, len(df) * 26),
+        title_text="Size per Shard: HTML vs Markdown (MB)",
+        yaxis_title="Size (MB)",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                    font_size=10, bgcolor="rgba(255,255,255,0.9)"),
+    )
+    fig.update_xaxes(**XAXIS)
+    fig.update_yaxes(**AXIS)
+    p = Path(out) / "size_chart.png"
+    fig.write_image(str(p), scale=2)
+    print(f"  Wrote {p}")
+
+
+def chart_totals(df, out):
+    """Horizontal bar: total HTML, Markdown, Parquet with % reduction labels."""
+    total_html = df["html_bytes"].sum()
+    total_md = df["md_bytes"].sum()
+    total_pq = df["parquet_bytes"].sum()
+
+    pct_md = (1 - total_md / total_html) * 100 if total_html else 0
+    pct_pq = (1 - total_pq / total_html) * 100 if total_html else 0
+    pct_pq_from_md = (1 - total_pq / total_md) * 100 if total_md else 0
+
+    labels = ["Raw HTML", "Markdown", "Parquet"]
+    values = [total_html / 1e9, total_md / 1e9, total_pq / 1e9]
+    colors = [COLORS[0], COLORS[1], COLORS[2]]
+    texts = [
+        fmt_bytes(total_html),
+        f"{fmt_bytes(total_md)}  (-{pct_md:.1f}%)",
+        f"{fmt_bytes(total_pq)}  (-{pct_pq:.1f}% overall, -{pct_pq_from_md:.1f}% vs MD)",
+    ]
+
+    fig = go.Figure(go.Bar(
+        x=values, y=labels, orientation="h",
+        marker_color=colors, marker_line_width=0,
+        text=texts, textposition="outside",
+        textfont=dict(size=11, color="#374151"),
+    ))
+    layout = {**LAYOUT, "margin": dict(l=80, r=24, t=56, b=56)}
+    fig.update_layout(
+        **layout, height=300, width=820,
+        title_text=f"Total Size: HTML vs Markdown vs Parquet ({len(df)} shards)",
+        xaxis_title="Size (GB)",
+        xaxis=dict(**AXIS, range=[0, max(values) * 1.45]),
+        yaxis=dict(**AXIS, categoryorder="array", categoryarray=["Parquet", "Markdown", "Raw HTML"]),
+    )
+    p = Path(out) / "totals_chart.png"
+    fig.write_image(str(p), scale=2)
+    print(f"  Wrote {p}")
+
+
+def chart_timings(df, out):
+    cols = ["dur_download_s", "dur_convert_s", "dur_export_s", "dur_publish_s"]
+    names = ["Download", "Convert (HTML to MD)", "Export Parquet", "Publish HF"]
+    if sum(df[c].sum() for c in cols) == 0:
+        print("  Skipping timing chart (no timing data)")
+        return
+    fig = go.Figure()
+    for i, (col, name) in enumerate(zip(cols, names)):
+        fig.add_trace(go.Bar(
+            x=df["shard"], y=df[col] / 60, name=name,
+            marker_color=COLORS[i], marker_line_width=0,
+        ))
+    fig.update_layout(
+        **LAYOUT, barmode="stack",
+        height=450, width=max(900, len(df) * 26),
+        title_text="Pipeline Time per Shard",
+        yaxis_title="Time (minutes)",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                    font_size=10, bgcolor="rgba(255,255,255,0.9)"),
+    )
+    fig.update_xaxes(**XAXIS)
+    fig.update_yaxes(**AXIS)
+    p = Path(out) / "timing_chart.png"
+    fig.write_image(str(p), scale=2)
+    print(f"  Wrote {p}")
+
+
+def chart_compression(df, out):
+    total_html = df["html_bytes"].sum()
+    total_md = df["md_bytes"].sum()
+    total_pq = df["parquet_bytes"].sum()
+    stripped = total_html - total_md
+    compressed = total_md - total_pq
+    labels = [
+        f"Stripped (HTML to MD) - {fmt_bytes(stripped)}",
+        f"Compressed (Parquet) - {fmt_bytes(compressed)}",
+        f"Final Parquet - {fmt_bytes(total_pq)}",
+    ]
+    fig = go.Figure(go.Pie(
+        labels=labels, values=[stripped, compressed, total_pq],
+        hole=0.55, marker_colors=COLORS[:3],
+        marker_line=dict(color="white", width=2.5),
+        textinfo="percent", textfont_size=13, textfont_color="#374151",
+        sort=False,
+    ))
+    fig.update_layout(
+        **LAYOUT, height=480, width=720,
+        title_text="Compression Breakdown",
+        legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.02,
+                    font_size=11),
+        annotations=[dict(
+            text=f"{fmt_bytes(total_html)}<br>to {fmt_bytes(total_pq)}",
+            x=0.44, y=0.5, font_size=14, font_color="#374151", showarrow=False,
+        )],
+    )
+    p = Path(out) / "compression_pie.png"
+    fig.write_image(str(p), scale=2)
+    print(f"  Wrote {p}")
+
+
+# ── main ─────────────────────────────────────────────────────────────────────
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("stats_csv", help="Path to stats.csv")
+    ap.add_argument("--out", default="charts", help="Output directory (default: charts/)")
+    ap.add_argument("--crawl", default="", help="Filter to a single crawl ID")
+    args = ap.parse_args()
+
+    df = load(args.stats_csv)
+    if args.crawl:
+        df = df[df["crawl_id"] == args.crawl].reset_index(drop=True)
+        if df.empty:
+            sys.exit(f"No rows for crawl {args.crawl!r}")
+
+    Path(args.out).mkdir(parents=True, exist_ok=True)
+    print(f"Generating charts for {len(df)} shards -> {args.out}/")
+
+    chart_sizes(df, args.out)
+    chart_totals(df, args.out)
+    chart_timings(df, args.out)
+    chart_compression(df, args.out)
+
+    print("Done.")
+
+
+if __name__ == "__main__":
+    main()

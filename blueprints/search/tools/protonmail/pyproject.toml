@@ -1,0 +1,27 @@
+[project]
+name = "protonmail-tool"
+version = "0.1.0"
+description = "Auto-register Proton Mail accounts for use with Discord registration"
+requires-python = ">=3.11"
+dependencies = [
+    "typer>=0.12",
+    "rich>=13.0",
+    "patchright>=1.50",
+    "duckdb>=1.2,<1.5",
+    "faker>=33.0",
+]
+
+[project.scripts]
+protonmail-tool = "protonmail_tool.cli:app_entry"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/protonmail_tool"]
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.0",
+]

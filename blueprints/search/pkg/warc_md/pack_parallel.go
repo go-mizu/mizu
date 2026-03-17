@@ -315,6 +315,7 @@ func processOneOffset(warcPath string, off GzipMemberOffset, cfg PackConfig, con
 		refersTo:   rec.Header.RecordID(),
 		markdown:   res.Markdown,
 		hasContent: true,
+		htmlLen:    len(htmlBody),
 	}, nil
 }
 
