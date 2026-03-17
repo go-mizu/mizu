@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scoutReply } from "./scout";
+import { scoutReply } from "./index";
 
 describe("scoutReply", () => {
   it("returns standings table for PL query", () => {
