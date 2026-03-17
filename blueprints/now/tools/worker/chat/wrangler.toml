@@ -1,0 +1,12 @@
+name = "chat"
+main = "src/index.ts"
+compatibility_date = "2026-03-11"
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "chat-db"
+database_id = "5ec766e9-f41e-4f2a-8639-2722cc6fdcff"
