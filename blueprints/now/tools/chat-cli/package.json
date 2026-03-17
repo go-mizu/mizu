@@ -23,18 +23,22 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@inkjs/ui": "^2.0.0",
-    "@noble/ed25519": "^2.2.0",
-    "@noble/hashes": "^1.7.0",
-    "commander": "^13.0.0",
-    "ink": "^5.2.0",
-    "react": "^18.3.0",
-    "zustand": "^5.0.0"
+    "@noble/ed25519": "^3.0.0",
+    "@noble/hashes": "^2.0.1",
+    "commander": "^14.0.3",
+    "ink": "^6.8.0",
+    "ink-gradient": "^4.0.0",
+    "ink-spinner": "^5.0.0",
+    "ink-text-input": "^6.0.0",
+    "lowlight": "^3.3.0",
+    "marked": "^17.0.4",
+    "react": "^19.2.4",
+    "zustand": "^5.0.12"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
-    "@types/react": "^18.3.0",
-    "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "@types/react": "^19.2.14",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
   }
 }
