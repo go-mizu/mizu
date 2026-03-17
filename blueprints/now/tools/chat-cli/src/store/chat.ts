@@ -1,9 +1,6 @@
 import { createStore } from "zustand/vanilla";
 import type { Chat, Message } from "../api/types.js";
 
-export type Panel = "rooms" | "messages" | "members" | "input";
-const PANELS: Panel[] = ["input", "rooms", "messages", "members"];
-
 export interface ChatState {
   rooms: Chat[];
   activeRoomId: string | null;
@@ -14,10 +11,6 @@ export interface ChatState {
   setMessages: (chatId: string, msgs: Message[]) => void;
 
   membersFor: (chatId: string) => string[];
-
-  focusedPanel: Panel;
-  cycleFocus: () => void;
-  setFocus: (panel: Panel) => void;
 
   connected: boolean;
   error: string | null;
@@ -30,7 +23,6 @@ export function createChatStore() {
     rooms: [],
     activeRoomId: null,
     messages: {},
-    focusedPanel: "input" as Panel,
     connected: false,
     error: null,
 
@@ -58,13 +50,6 @@ export function createChatStore() {
       return [...new Set(msgs.map((m) => m.actor))];
     },
 
-    cycleFocus: () =>
-      set((state) => {
-        const idx = PANELS.indexOf(state.focusedPanel);
-        return { focusedPanel: PANELS[(idx + 1) % PANELS.length] };
-      }),
-
-    setFocus: (panel) => set({ focusedPanel: panel }),
     setConnected: (v) => set({ connected: v }),
     setError: (e) => set({ error: e }),
   }));

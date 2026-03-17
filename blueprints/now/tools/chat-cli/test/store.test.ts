@@ -9,19 +9,6 @@ describe("ChatStore", () => {
     assert.equal(store.getState().activeRoomId, "chat_1");
   });
 
-  it("cycles focus", () => {
-    const store = createChatStore();
-    assert.equal(store.getState().focusedPanel, "input");
-    store.getState().cycleFocus();
-    assert.equal(store.getState().focusedPanel, "rooms");
-    store.getState().cycleFocus();
-    assert.equal(store.getState().focusedPanel, "messages");
-    store.getState().cycleFocus();
-    assert.equal(store.getState().focusedPanel, "members");
-    store.getState().cycleFocus();
-    assert.equal(store.getState().focusedPanel, "input");
-  });
-
   it("adds messages deduplicating by ID", () => {
     const store = createChatStore();
     store.getState().setMessages("chat_1", [

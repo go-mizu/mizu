@@ -1,9 +1,9 @@
 export const KEYBINDINGS = {
   quit: { key: "q", ctrl: true },
-  cycleFocus: { key: "tab" },
-  cycleFocusReverse: { key: "tab", shift: true },
+  roomSwitcher: { key: "k", ctrl: true },
   createRoom: { key: "n", ctrl: true },
   joinRoom: { key: "j", ctrl: true },
-  quickSwitch: { key: "k", ctrl: true },
   refresh: { key: "r", ctrl: true },
+  prevRoom: { key: "left", ctrl: true },
+  nextRoom: { key: "right", ctrl: true },
 } as const;
