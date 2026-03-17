@@ -1,112 +1,161 @@
 import type { Context, Next } from "hono";
-import type { Env, Variables } from "./types";
-import {
-  base64urlDecode,
-  sha256hex,
-  importEd25519PublicKey,
-  buildCanonicalRequest,
-  buildStringToSign,
-  sortedQueryString,
-  verifyEd25519,
-} from "./crypto";
+import type { Env, Variables, ChallengeRequest, VerifyRequest, SessionRow } from "./types";
+import { challengeId, nonce as generateNonce, sessionToken } from "./id";
+import { base64urlDecode, importEd25519PublicKey, verifyEd25519 } from "./crypto";
+import { errorResponse } from "./error";
 
 type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
 
-// Per-isolate public key cache with 5-minute TTL
-const KEY_CACHE = new Map<string, { key: CryptoKey; cachedAt: number }>();
-const CACHE_TTL_MS = 5 * 60 * 1000;
+// Challenge expires in 5 minutes
+const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+// Session expires in 2 hours
+const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 
-async function getPublicKey(db: D1Database, actor: string): Promise<CryptoKey | null> {
-  const cached = KEY_CACHE.get(actor);
-  if (cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) {
-    return cached.key;
-  }
-
-  const row = await db.prepare("SELECT public_key FROM actors WHERE actor = ?")
-    .bind(actor)
-    .first<{ public_key: string }>();
-  if (!row) return null;
-
+// --- POST /auth/challenge ---
+export async function createChallenge(c: AppContext) {
+  let body: ChallengeRequest;
   try {
-    const key = await importEd25519PublicKey(row.public_key);
-    KEY_CACHE.set(actor, { key, cachedAt: Date.now() });
-    return key;
+    body = await c.req.json<ChallengeRequest>();
   } catch {
-    return null;
-  }
-}
-
-export function invalidateKeyCache(actor: string): void {
-  KEY_CACHE.delete(actor);
-}
-
-interface ParsedAuth {
-  actor: string;
-  timestamp: string;
-  signature: Uint8Array;
-}
-
-function parseAuthHeader(header: string): ParsedAuth | null {
-  if (!header.startsWith("CHAT-ED25519 ")) return null;
-  const rest = header.slice("CHAT-ED25519 ".length);
-
-  let actor = "";
-  let timestamp = "";
-  let sigB64 = "";
-
-  for (const part of rest.split(", ")) {
-    const eq = part.indexOf("=");
-    if (eq === -1) continue;
-    const key = part.slice(0, eq);
-    const val = part.slice(eq + 1);
-    if (key === "Credential") actor = val;
-    else if (key === "Timestamp") timestamp = val;
-    else if (key === "Signature") sigB64 = val;
+    return errorResponse(c, "invalid_request", "Invalid JSON body");
   }
 
-  if (!actor || !timestamp || !sigB64) return null;
+  if (!body.actor || typeof body.actor !== "string") {
+    return errorResponse(c, "invalid_request", "actor is required");
+  }
 
+  // Check actor exists
+  const actor = await c.env.DB.prepare("SELECT 1 FROM actors WHERE actor = ?")
+    .bind(body.actor).first();
+  if (!actor) {
+    return errorResponse(c, "not_found", "Actor not found");
+  }
+
+  const id = challengeId();
+  const nonceVal = generateNonce();
+  const now = Date.now();
+  const expiresAt = now + CHALLENGE_TTL_MS;
+
+  await c.env.DB.prepare(
+    "INSERT INTO challenges (id, actor, nonce, expires_at) VALUES (?, ?, ?, ?)"
+  ).bind(id, body.actor, nonceVal, expiresAt).run();
+
+  return c.json({
+    challenge_id: id,
+    nonce: nonceVal,
+    expires_at: new Date(expiresAt).toISOString(),
+  });
+}
+
+// --- POST /auth/verify ---
+export async function verifyChallenge(c: AppContext) {
+  let body: VerifyRequest;
   try {
-    return { actor, timestamp, signature: base64urlDecode(sigB64) };
+    body = await c.req.json<VerifyRequest>();
   } catch {
-    return null;
+    return errorResponse(c, "invalid_request", "Invalid JSON body");
   }
+
+  if (!body.challenge_id || !body.actor || !body.signature) {
+    return errorResponse(c, "invalid_request", "challenge_id, actor, and signature are required");
+  }
+
+  // Look up challenge
+  const challenge = await c.env.DB.prepare(
+    "SELECT * FROM challenges WHERE id = ? AND actor = ?"
+  ).bind(body.challenge_id, body.actor).first<{ id: string; actor: string; nonce: string; expires_at: number }>();
+
+  if (!challenge) {
+    return errorResponse(c, "not_found", "Challenge not found");
+  }
+
+  // Check expiry
+  if (Date.now() > challenge.expires_at) {
+    await c.env.DB.prepare("DELETE FROM challenges WHERE id = ?").bind(body.challenge_id).run();
+    return errorResponse(c, "unauthorized", "Challenge expired");
+  }
+
+  // Look up actor's public key
+  const actorRow = await c.env.DB.prepare("SELECT public_key FROM actors WHERE actor = ?")
+    .bind(body.actor).first<{ public_key: string }>();
+  if (!actorRow) {
+    return errorResponse(c, "not_found", "Actor not found");
+  }
+
+  // Verify signature over the nonce
+  let publicKey: CryptoKey;
+  try {
+    publicKey = await importEd25519PublicKey(actorRow.public_key);
+  } catch {
+    return errorResponse(c, "unauthorized", "Invalid public key");
+  }
+
+  let sigBytes: Uint8Array;
+  try {
+    sigBytes = base64urlDecode(body.signature);
+  } catch {
+    return errorResponse(c, "invalid_request", "Invalid signature encoding");
+  }
+
+  const valid = await verifyEd25519(publicKey, sigBytes, challenge.nonce);
+  if (!valid) {
+    return errorResponse(c, "unauthorized", "Invalid signature");
+  }
+
+  // Delete used challenge (single use)
+  await c.env.DB.prepare("DELETE FROM challenges WHERE id = ?").bind(body.challenge_id).run();
+
+  // Create session
+  const token = sessionToken();
+  const now = Date.now();
+  const expiresAt = now + SESSION_TTL_MS;
+
+  await c.env.DB.prepare(
+    "INSERT INTO sessions (token, actor, expires_at) VALUES (?, ?, ?)"
+  ).bind(token, body.actor, expiresAt).run();
+
+  return c.json({
+    access_token: token,
+    expires_at: new Date(expiresAt).toISOString(),
+  });
 }
 
-const TIMESTAMP_WINDOW_S = 5 * 60;
+// --- Bearer token / cookie middleware ---
+export async function bearerAuth(c: AppContext, next: Next) {
+  let token: string | undefined;
 
-export async function signatureAuth(c: AppContext, next: Next) {
+  // Try Authorization header first
   const authHeader = c.req.header("Authorization");
-  if (!authHeader) return c.json({ error: "Unauthorized" }, 401);
-
-  const parsed = parseAuthHeader(authHeader);
-  if (!parsed) return c.json({ error: "Invalid authorization format" }, 401);
-
-  // Timestamp check
-  const ts = parseInt(parsed.timestamp, 10);
-  if (isNaN(ts)) return c.json({ error: "Invalid timestamp" }, 401);
-  const now = Math.floor(Date.now() / 1000);
-  if (Math.abs(now - ts) > TIMESTAMP_WINDOW_S) {
-    return c.json({ error: "Timestamp out of range" }, 401);
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    token = authHeader.slice("Bearer ".length).trim();
   }
 
-  // Look up public key
-  const publicKey = await getPublicKey(c.env.DB, parsed.actor);
-  if (!publicKey) return c.json({ error: "Unknown actor" }, 401);
+  // Fallback: session cookie (for browser users)
+  if (!token) {
+    const cookie = c.req.header("Cookie");
+    if (cookie) {
+      const match = cookie.match(/(?:^|;\s*)session=([^;]+)/);
+      if (match) token = match[1];
+    }
+  }
 
-  // Reconstruct canonical request
-  const url = new URL(c.req.url);
-  const body = await c.req.raw.clone().text();
-  const bodyHash = await sha256hex(body);
-  const query = sortedQueryString(url);
-  const canonical = buildCanonicalRequest(c.req.method, url.pathname, query, bodyHash);
-  const canonicalHash = await sha256hex(canonical);
-  const stringToSign = buildStringToSign(parsed.timestamp, parsed.actor, canonicalHash);
+  if (!token) {
+    return errorResponse(c, "unauthorized", "Missing authorization");
+  }
 
-  // Verify signature
-  const valid = await verifyEd25519(publicKey, parsed.signature, stringToSign);
-  if (!valid) return c.json({ error: "Invalid signature" }, 401);
+  const session = await c.env.DB.prepare(
+    "SELECT actor, expires_at FROM sessions WHERE token = ?"
+  ).bind(token).first<SessionRow>();
 
-  c.set("actor", parsed.actor);
+  if (!session) {
+    return errorResponse(c, "unauthorized", "Invalid token");
+  }
+
+  if (Date.now() > session.expires_at) {
+    await c.env.DB.prepare("DELETE FROM sessions WHERE token = ?").bind(token).run();
+    return errorResponse(c, "unauthorized", "Token expired");
+  }
+
+  c.set("actor", session.actor);
   await next();
 }

@@ -2,8 +2,11 @@
   "name": "chat-worker",
   "private": true,
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "build:docs": "node scripts/build-docs.mjs",
+    "build:avatars": "node scripts/build-avatars.mjs",
+    "build": "npm run build:docs && npm run build:avatars",
+    "dev": "npm run build && wrangler dev",
+    "deploy": "npm run build && wrangler deploy",
     "db:create": "wrangler d1 create chat-db",
     "db:migrate": "wrangler d1 execute chat-db --local --file=schema.sql",
     "db:migrate:remote": "wrangler d1 execute chat-db --remote --file=schema.sql",
@@ -16,6 +19,7 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.12.21",
     "@cloudflare/workers-types": "^4.20260205.0",
+    "marked": "^17.0.4",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4",
     "wrangler": "^4.63.0"

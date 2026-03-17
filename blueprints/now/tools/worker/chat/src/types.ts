@@ -9,40 +9,62 @@ export type Variables = {
 
 // --- Domain types ---
 
-export interface Chat {
-  id: string;
-  kind: string;
-  title: string;
-  creator: string;
-  peer?: string;       // only for kind: "direct" — the other actor
-  created_at: string;  // ISO 8601
+export interface Actor {
+  actor: string;
+  type: "human" | "agent";
+  created_at: string;
 }
 
-export interface DmRequest {
-  peer: string;
+export interface Chat {
+  id: string;
+  kind: "direct" | "room";
+  title: string;
+  created_at: string;
+  last_message?: MessageSummary;
+  unread_count?: number;
+}
+
+export interface MessageSummary {
+  id: string;
+  text: string;
+  actor: string;
+  created_at: string;
 }
 
 export interface Message {
   id: string;
-  chat: string;
+  chat_id: string;
   actor: string;
   text: string;
-  created_at: string; // ISO 8601
+  created_at: string;
 }
 
-// --- Request types ---
-
-export interface CreateChatRequest {
-  kind: string;
-  title?: string;
-  visibility?: string;
-}
-
-export interface SendMessageRequest {
-  text: string;
+export interface Member {
+  actor: string;
+  role: string;
 }
 
 // --- DB row types ---
+
+export interface ActorRow {
+  actor: string;
+  type: string;
+  public_key: string;
+  created_at: number;
+}
+
+export interface ChallengeRow {
+  id: string;
+  actor: string;
+  nonce: string;
+  expires_at: number;
+}
+
+export interface SessionRow {
+  token: string;
+  actor: string;
+  expires_at: number;
+}
 
 export interface ChatRow {
   id: string;
@@ -56,6 +78,7 @@ export interface ChatRow {
 export interface MemberRow {
   chat_id: string;
   actor: string;
+  role: string;
   joined_at: number;
 }
 
@@ -64,28 +87,57 @@ export interface MessageRow {
   chat_id: string;
   actor: string;
   text: string;
+  client_id: string | null;
   created_at: number;
 }
 
-// --- Registration & key management ---
+// --- Request types ---
 
-export interface RegisterRequest {
+export interface RegisterActorRequest {
   actor: string;
   public_key: string;
+  type: "human" | "agent";
 }
 
-export interface RotateKeyRequest {
+export interface ChallengeRequest {
   actor: string;
-  recovery_code: string;
-  new_public_key: string;
 }
 
-export interface RotateRecoveryRequest {
+export interface VerifyRequest {
+  challenge_id: string;
   actor: string;
-  recovery_code: string;
+  signature: string;
 }
 
-export interface DeleteActorRequest {
+export interface CreateChatRequest {
+  kind: "direct" | "room";
+  title?: string;
+  peer?: string;
+}
+
+export interface SendMessageRequest {
+  to?: string;
+  chat_id?: string;
+  text: string;
+  client_id?: string;
+}
+
+export interface SendMessageExplicitRequest {
+  text: string;
+  client_id?: string;
+}
+
+export interface AddMemberRequest {
   actor: string;
-  recovery_code: string;
+}
+
+export interface MagicLinkRequest {
+  email: string;
+}
+
+export interface MagicTokenRow {
+  token: string;
+  email: string;
+  actor: string | null;
+  expires_at: number;
 }
