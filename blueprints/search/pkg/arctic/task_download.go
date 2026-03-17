@@ -39,8 +39,9 @@ func reuseExistingZst(cfg Config, zstSizes ZstSizes, job *PipelineJob) bool {
 
 // downloadOne downloads a single .zst file via BitTorrent. On success,
 // job.ZstPath and job.DurDown are populated. The progressFn callback
-// receives download progress updates for the UI.
-func downloadOne(ctx context.Context, cfg Config, zstSizes ZstSizes, job *PipelineJob, progressFn func(*PublishState)) error {
+// receives download progress updates for the UI. stallTimeout controls
+// how long to wait without byte progress before aborting (0 = 3 min default).
+func downloadOne(ctx context.Context, cfg Config, zstSizes ZstSizes, job *PipelineJob, stallTimeout time.Duration, progressFn func(*PublishState)) error {
 	prefix := zstPrefix(job.Type)
 	zstPath := cfg.ZstPath(prefix, job.YM.String())
 	job.ZstPath = zstPath
@@ -57,7 +58,7 @@ func downloadOne(ctx context.Context, cfg Config, zstSizes ZstSizes, job *Pipeli
 	}
 
 	var expectedBytes int64
-	durDown, err := DownloadZst(ctx, cfg, job.YM.Year, job.YM.Month, job.Type, func(p DownloadProgress) {
+	durDown, err := DownloadZst(ctx, cfg, job.YM.Year, job.YM.Month, job.Type, stallTimeout, func(p DownloadProgress) {
 		if p.BytesTotal > 0 {
 			expectedBytes = p.BytesTotal
 		}
@@ -95,58 +96,110 @@ func validateZst(path string, expectedBytes int64) error {
 	return nil
 }
 
-// downloadWithRetry attempts to download a .zst file, retrying on failure with
-// exponential backoff. On corruption, it renames the file to .part so the
-// torrent client can resume from verified pieces. Returns nil on success.
-func downloadWithRetry(ctx context.Context, cfg Config, zstSizes ZstSizes, job *PipelineJob, progressFn func(*PublishState)) error {
-	// First attempt.
-	err := downloadOne(ctx, cfg, zstSizes, job, progressFn)
-	if err == nil {
-		return nil
-	}
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
+// stallTimeouts defines the per-attempt stall patience. Later attempts wait
+// longer, giving slow seeders more time to respond before giving up.
+var stallTimeouts = []time.Duration{
+	3 * time.Minute,  // attempt 1: quick probe
+	3 * time.Minute,  // attempt 2: confirm stall position
+	5 * time.Minute,  // attempt 3: more patience
+	8 * time.Minute,  // attempt 4: generous
+	10 * time.Minute, // attempt 5: last resort
+}
 
+// downloadWithRetry attempts to download a .zst file, retrying on failure with
+// exponential backoff and progressive stall timeouts. Detects structural stalls
+// (swarm lacks data beyond a fixed byte position) and fails fast after 2
+// consecutive same-position stalls instead of wasting all retry attempts.
+func downloadWithRetry(ctx context.Context, cfg Config, zstSizes ZstSizes, job *PipelineJob, progressFn func(*PublishState)) error {
 	prefix := zstPrefix(job.Type)
 	zstPath := cfg.ZstPath(prefix, job.YM.String())
 
-	var lastErr error = err
-	for attempt := 1; attempt < maxRetries; attempt++ {
+	var lastStallBytes int64
+	var sameStallCount int
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 
-		// Clean up before retry — delete both the partial .zst and any
-		// .part file left by the previous torrent session. Keeping the .part
-		// causes the new torrent client to resume from the same stuck
-		// position with the same unresponsive peers; a clean start lets it
-		// announce fresh and pick up different peers.
-		os.Remove(zstPath)
-		os.Remove(zstPath + ".part")
+		// Clean up before each attempt (including first) — delete both
+		// the partial .zst and any .part file from previous sessions.
+		if attempt > 0 {
+			os.Remove(zstPath)
+			os.Remove(zstPath + ".part")
 
-		backoff := time.Duration(10<<attempt) * time.Second
-		if backoff > 5*time.Minute {
-			backoff = 5 * time.Minute
+			backoff := time.Duration(10<<attempt) * time.Second
+			if backoff > 5*time.Minute {
+				backoff = 5 * time.Minute
+			}
+			logf("download retry %d/%d for [%s] %s in %s (stall timeout %s)",
+				attempt+1, maxRetries, job.YM.String(), job.Type, backoff,
+				stallTimeoutFor(attempt))
+
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(backoff):
+			}
 		}
-		logf("download retry %d/%d for [%s] %s in %s",
-			attempt+1, maxRetries, job.YM.String(), job.Type, backoff)
 
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(backoff):
+		// Track peak bytes received during this attempt.
+		var peakBytes int64
+		wrappedProgress := func(ps *PublishState) {
+			if ps.Bytes > peakBytes {
+				peakBytes = ps.Bytes
+			}
+			if progressFn != nil {
+				progressFn(ps)
+			}
 		}
 
-		job.Attempt++
-		lastErr = downloadOne(ctx, cfg, zstSizes, job, progressFn)
-		if lastErr == nil {
+		job.Attempt = attempt
+		err := downloadOne(ctx, cfg, zstSizes, job, stallTimeoutFor(attempt), wrappedProgress)
+		if err == nil {
 			return nil
 		}
-		logf("download attempt %d/%d failed for [%s] %s: %v",
-			attempt+1, maxRetries, job.YM.String(), job.Type, lastErr)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		logf("download attempt %d/%d failed for [%s] %s at %.1f MB: %v",
+			attempt+1, maxRetries, job.YM.String(), job.Type,
+			float64(peakBytes)/(1024*1024), err)
+
+		// Detect structural stall: if 2 consecutive attempts stall at the
+		// same byte position (within 1 MB), the swarm doesn't have data
+		// beyond this point. More retries won't help.
+		if peakBytes > 0 && lastStallBytes > 0 {
+			diff := peakBytes - lastStallBytes
+			if diff < 0 {
+				diff = -diff
+			}
+			if diff < 1024*1024 { // within 1 MB
+				sameStallCount++
+				if sameStallCount >= 2 {
+					logf("download: structural stall at %.1f MB for [%s] %s — "+
+						"swarm lacks data beyond this point (%d consecutive same-position stalls), giving up",
+						float64(peakBytes)/(1024*1024), job.YM.String(), job.Type, sameStallCount+1)
+					return fmt.Errorf("structural stall at %.1f MB after %d attempts — "+
+						"torrent swarm does not have data beyond this point",
+						float64(peakBytes)/(1024*1024), attempt+1)
+				}
+			} else {
+				sameStallCount = 0 // progress was made, reset
+			}
+		}
+		lastStallBytes = peakBytes
 	}
-	return fmt.Errorf("download failed after %d attempts (last: %v)", maxRetries, lastErr)
+	return fmt.Errorf("download failed after %d attempts", maxRetries)
+}
+
+// stallTimeoutFor returns the stall timeout for the given attempt index.
+func stallTimeoutFor(attempt int) time.Duration {
+	if attempt < len(stallTimeouts) {
+		return stallTimeouts[attempt]
+	}
+	return stallTimeouts[len(stallTimeouts)-1]
 }
 
 // downloadSpeed computes download throughput in Mbps from file size and duration.

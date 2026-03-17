@@ -96,13 +96,18 @@ func IsCorruption(err error) bool {
 
 // DownloadZst downloads RC_YYYY-MM.zst or RS_YYYY-MM.zst to cfg.RawDir.
 // Returns download duration. Uses bundle torrent for months <= 2023-12,
-// individual torrent otherwise. Cancels after 3 min with no peer progress.
+// individual torrent otherwise. Cancels after stallTimeout with no peer
+// progress (0 defaults to 3 min).
 //
 // Returns *ErrCorruption for data integrity failures (caller should delete
 // and retry) or *ErrTransient for timeout/network failures (caller can keep
 // .part file for resume).
 func DownloadZst(ctx context.Context, cfg Config, year, month int, typ string,
-	cb DownloadCallback) (time.Duration, error) {
+	stallTimeout time.Duration, cb DownloadCallback) (time.Duration, error) {
+
+	if stallTimeout <= 0 {
+		stallTimeout = 3 * time.Minute
+	}
 
 	ym := fmt.Sprintf("%04d-%02d", year, month)
 	prefix := zstPrefix(typ)
@@ -197,7 +202,7 @@ func DownloadZst(ctx context.Context, cfg Config, year, month int, typ string,
 				return
 			case <-t.C:
 				idle := time.Since(time.Unix(0, lastActivity.Load()))
-				if idle > 3*time.Minute {
+				if idle > stallTimeout {
 					dlCancel()
 					return
 				}
@@ -234,7 +239,7 @@ func DownloadZst(ctx context.Context, cfg Config, year, month int, typ string,
 	if err != nil {
 		cl.Close()
 		if dlCtx.Err() != nil && ctx.Err() == nil {
-			return 0, &ErrTransient{Msg: fmt.Sprintf("torrent timeout: no progress for 3 minutes on %s", fileInTorrent)}
+			return 0, &ErrTransient{Msg: fmt.Sprintf("torrent timeout: no progress for %s on %s", stallTimeout.Round(time.Second), fileInTorrent)}
 		}
 		return 0, &ErrTransient{Msg: fmt.Sprintf("torrent download %s: %v", fileInTorrent, err)}
 	}
