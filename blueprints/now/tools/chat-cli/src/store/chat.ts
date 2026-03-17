@@ -9,6 +9,7 @@ export interface ChatState {
 
   messages: Record<string, Message[]>;
   setMessages: (chatId: string, msgs: Message[]) => void;
+  replaceOptimistic: (chatId: string, optimisticId: string, real: Message) => void;
 
   membersFor: (chatId: string) => string[];
 
@@ -43,6 +44,14 @@ export function createChatStore() {
         }
         merged.sort((a, b) => a.created_at.localeCompare(b.created_at));
         return { messages: { ...state.messages, [chatId]: merged } };
+      }),
+
+    replaceOptimistic: (chatId, optimisticId, real) =>
+      set((state) => {
+        const msgs = (state.messages[chatId] || []).map((m) =>
+          m.id === optimisticId ? real : m,
+        );
+        return { messages: { ...state.messages, [chatId]: msgs } };
       }),
 
     membersFor: (chatId) => {

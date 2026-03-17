@@ -127,12 +127,35 @@ function App({ config, serverOverride }: AppProps) {
 
   const handleSend = useCallback(async (text: string) => {
     if (!clientRef.current || !activeRoomId) return;
+    const chatId = activeRoomId;
     try {
-      await clientRef.current.sendMessage(activeRoomId, text);
+      // Auto-join first (idempotent if already member)
+      try { await clientRef.current.joinChat(chatId); } catch { /* ignore */ }
+
+      // Optimistic insert — show message immediately
+      const optimistic = {
+        id: `opt_${Date.now()}`,
+        chat: chatId,
+        actor: config.actor,
+        text,
+        created_at: new Date().toISOString(),
+      };
+      store.getState().setMessages(chatId, [optimistic]);
+
+      // Actually send
+      const msg = await clientRef.current.sendMessage(chatId, text);
+
+      // Replace optimistic with real message
+      store.getState().replaceOptimistic(chatId, optimistic.id, msg);
+
+      // Reset transport fingerprint so next poll doesn't flicker
+      if (transportRef.current) {
+        transportRef.current.resetFingerprint(chatId);
+      }
     } catch (e: unknown) {
       store.getState().setError(e instanceof Error ? e.message : String(e));
     }
-  }, [activeRoomId]);
+  }, [activeRoomId, config.actor]);
 
   const handleSelectRoom = useCallback((id: string) => {
     store.getState().setActiveRoom(id);
@@ -164,7 +187,7 @@ function App({ config, serverOverride }: AppProps) {
   const height = stdout?.rows || 24;
 
   return (
-    <Box flexDirection="column" height={height}>
+    <Box flexDirection="column" height={height} width="100%">
       <Header
         room={activeRoom ? roomLabel(activeRoom) : null}
         actor={config.actor}

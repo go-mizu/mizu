@@ -75,6 +75,10 @@ export class PollingTransport implements Transport {
     }
   }
 
+  resetFingerprint(chatId: string) {
+    this.lastMessageIds.delete(chatId);
+  }
+
   destroy() {
     for (const key of this.timers.keys()) this.clearTimer(key);
   }
