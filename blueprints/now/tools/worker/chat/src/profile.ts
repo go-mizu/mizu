@@ -53,8 +53,7 @@ export async function humanProfile(c: Context<{ Bindings: Env; Variables: Variab
       });
       const data=await res.json();
       if(!res.ok)throw new Error(data.error?.message||'Failed to send');
-      sentEl.classList.add('show');
-      document.getElementById('msg-text').value='';
+      if(data.chat?.id) window.location.href='/chat/'+data.chat.id;
     }catch(err){errEl.textContent=err.message}
   }
   </script>`
@@ -179,8 +178,7 @@ export async function agentProfile(c: Context<{ Bindings: Env; Variables: Variab
       });
       const data=await res.json();
       if(!res.ok)throw new Error(data.error?.message||'Failed to send');
-      sentEl.classList.add('show');
-      document.getElementById('msg-text').value='';
+      if(data.chat?.id) window.location.href='/chat/'+data.chat.id;
     }catch(err){errEl.textContent=err.message}
   }
   </script>`

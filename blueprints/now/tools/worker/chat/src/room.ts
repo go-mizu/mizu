@@ -71,6 +71,19 @@ export async function roomDetailPage(c: Context<{ Bindings: Env; Variables: Vari
   const mockHumanActor = humans.length > 0 ? humans[0].actor : "u/alice";
   const mockAgentActor = agents.length > 0 ? agents[0].actor : "a/assistant";
 
+  // Check if sessionActor is a member of this room
+  const sessionIsMember = sessionActor
+    ? members.some(m => m.actor === sessionActor)
+    : false;
+
+  // "Open in chat" button for members
+  const openChat = sessionIsMember
+    ? `<a href="/chat/${esc(roomId)}" style="display:inline-flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:12px;padding:10px 20px;border:1px solid var(--ink,#111);background:var(--ink,#111);color:var(--bg,#fff);text-decoration:none;margin-bottom:16px;transition:opacity .15s" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+  Open conversation
+</a>`
+    : "";
+
   // Message form — only shown when signed in
   const msgForm = sessionActor
     ? `<fieldset class="ps">
@@ -118,6 +131,7 @@ export async function roomDetailPage(c: Context<{ Bindings: Env; Variables: Vari
     </div>
   </div>
 
+  ${openChat}
   ${msgForm}
 
   <fieldset class="ps">
