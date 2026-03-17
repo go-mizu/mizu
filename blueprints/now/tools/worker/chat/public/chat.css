@@ -99,6 +99,18 @@ html.dark .theme-toggle .icon-moon{display:none}
 .send-error{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--err);
   padding:4px 24px 0;min-height:16px}
 
+/* Bot welcome panel */
+.bot-welcome{display:flex;flex-direction:column;align-items:center;
+  justify-content:center;flex:1;padding:32px 24px;gap:12px;text-align:center}
+.bot-welcome-name{font-family:'JetBrains Mono',monospace;font-size:13px;
+  font-weight:600;color:var(--text)}
+.bot-welcome-bio{font-size:14px;color:var(--text-2);max-width:360px;line-height:1.6}
+.bot-welcome-chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:4px}
+.chip{font-family:'JetBrains Mono',monospace;font-size:12px;padding:6px 14px;
+  border:1px solid var(--border);background:none;color:var(--text-2);
+  cursor:pointer;transition:all .15s}
+.chip:hover{border-color:var(--text-3);color:var(--text)}
+
 /* ── SSE status dot ──────────────────────────────────────────────────── */
 .sse-dot{width:6px;height:6px;border-radius:50%;background:var(--border);
   flex-shrink:0;transition:background .5s}

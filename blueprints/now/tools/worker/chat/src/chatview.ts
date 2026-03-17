@@ -3,6 +3,7 @@ import type { Env, Variables, MessageRow } from "./types";
 import { humanAvatar, botAvatar } from "./avatar";
 import { getSessionActor } from "./session";
 import { isMember } from "./actor";
+import { getBotProfile } from "./bots";
 
 type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -125,7 +126,22 @@ export async function chatViewPage(c: AppContext) {
 </nav>
 
 <div id="thread">
-${msgHtml || `<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-3);font-size:14px">No messages yet. Say something!</div>`}
+${(() => {
+  if (msgHtml) return msgHtml;
+  const profile = peerActor ? getBotProfile(peerActor) : null;
+  if (profile) {
+    const chips = profile.examples
+      .map(ex => `<button class="chip" onclick="fillInput(this)">${esc(ex)}</button>`)
+      .join("");
+    return `<div class="bot-welcome" id="bot-welcome">
+  <div class="bot-welcome-avatar">${botAvatar(peerActor!, 48)}</div>
+  <div class="bot-welcome-name">${esc(peerActor!.slice(2))}</div>
+  <div class="bot-welcome-bio">${esc(profile.bio)}</div>
+  <div class="bot-welcome-chips">${chips}</div>
+</div>`;
+  }
+  return `<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-3);font-size:14px">No messages yet. Say something!</div>`;
+})()}
 </div>
 
 <div class="send-error" id="send-error"></div>
@@ -179,6 +195,8 @@ function atBottom(){return thread.scrollHeight-thread.scrollTop-thread.clientHei
 
 // Append a message object from SSE or send response
 function appendMsg(msg){
+  const welcome = document.getElementById('bot-welcome');
+  if (welcome) welcome.remove();
   const wasBottom=atBottom();
   const row=document.createElement('div');
   row.className='msg-row'+(msg.actor===MY_ACTOR?' mine':'');
@@ -199,6 +217,14 @@ function appendMsg(msg){
   row.appendChild(t);row.appendChild(a);row.appendChild(tx);
   thread.appendChild(row);
   if(wasBottom) thread.scrollTop=thread.scrollHeight;
+}
+
+function fillInput(btn) {
+  const input = document.getElementById('msg-input');
+  input.value = btn.textContent;
+  input.focus();
+  input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight, 120) + 'px';
 }
 
 // SSE
