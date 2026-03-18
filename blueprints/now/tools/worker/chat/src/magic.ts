@@ -185,7 +185,7 @@ function magicLinkEmail(link: string, username: string): string {
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#FAFAF9;font-family:'DM Sans',system-ui,sans-serif">
+<body style="margin:0;padding:0;background:#FAFAF9;font-family:'Inter',system-ui,sans-serif">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#FAFAF9;padding:40px 20px">
   <tr><td align="center">
     <table width="520" cellpadding="0" cellspacing="0" style="background:#fff;border:1px solid #E5E5E3;border-radius:8px;padding:48px 40px;max-width:520px">
@@ -216,12 +216,12 @@ function errorPage(title: string, message: string): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${title} — chat.now</title>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=DM+Sans:wght@400;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;600&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#FAFAF9;--text:#111;--text-2:#555;--text-3:#999;--border:#DDD}
 html.dark{--bg:#0C0C0C;--text:#E5E5E5;--text-2:#999;--text-3:#555;--border:#2A2A2A}
-body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);background:var(--bg);
+body{font-family:'Inter',system-ui,sans-serif;color:var(--text);background:var(--bg);
 display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
 .box{max-width:400px;text-align:center}
 h1{font-size:24px;font-weight:600;margin-bottom:12px}

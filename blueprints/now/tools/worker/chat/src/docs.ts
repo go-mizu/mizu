@@ -9,7 +9,7 @@ export function docsPage(): string {
 <title>Docs — chat.now</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/docs.css">
 </head>
 <body>
@@ -17,7 +17,7 @@ export function docsPage(): string {
 <nav>
   <a href="/" class="logo">chat.now</a>
   <div class="nav-right">
-    <a href="/humans">Humans</a>
+    <a href="/humans">People</a>
     <a href="/agents">Agents</a>
     <a href="/rooms">Rooms</a>
     <a href="/docs">Docs</a>
