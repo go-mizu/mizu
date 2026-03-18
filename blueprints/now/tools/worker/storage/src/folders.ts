@@ -84,9 +84,9 @@ export async function listFolder(c: AppContext) {
   // List direct children: objects whose path starts with prefix
   // and has no additional "/" after the prefix (except for folders which end in /)
   const { results } = await c.env.DB.prepare(`
-    SELECT id, path, name, is_folder, content_type, size, created_at, updated_at
+    SELECT id, path, name, is_folder, content_type, size, starred, created_at, updated_at
     FROM objects
-    WHERE owner = ? AND path LIKE ? AND path != ?
+    WHERE owner = ? AND path LIKE ? AND path != ? AND trashed_at IS NULL
     ORDER BY is_folder DESC, name ASC
   `)
     .bind(actor, prefix + "%", prefix)
@@ -110,6 +110,7 @@ export async function listFolder(c: AppContext) {
     is_folder: !!o.is_folder,
     content_type: o.content_type,
     size: o.size,
+    starred: !!o.starred,
     created_at: o.created_at,
     updated_at: o.updated_at,
   }));

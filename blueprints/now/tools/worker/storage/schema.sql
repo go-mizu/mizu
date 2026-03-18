@@ -43,6 +43,10 @@ CREATE TABLE IF NOT EXISTS objects (
   content_type TEXT DEFAULT '',
   size         INTEGER DEFAULT 0,
   r2_key       TEXT DEFAULT '',
+  starred      INTEGER DEFAULT 0,
+  trashed_at   INTEGER DEFAULT NULL,
+  accessed_at  INTEGER DEFAULT NULL,
+  description  TEXT DEFAULT '',
   created_at   INTEGER NOT NULL,
   updated_at   INTEGER NOT NULL
 );

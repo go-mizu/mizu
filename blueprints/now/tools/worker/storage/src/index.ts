@@ -8,6 +8,11 @@ import { uploadFile, downloadFile, deleteFile, headFile } from "./files";
 import { createFolder, listFolder, deleteFolder } from "./folders";
 import { createShare, listShares, deleteShare, listSharedWithMe, downloadSharedFile } from "./shares";
 import { presignUpload, presignDownload, presignComplete } from "./presign";
+import {
+  toggleStar, renameItem, moveItems, copyFile,
+  trashItems, restoreItems, emptyTrash, listTrash,
+  listRecent, listStarred, searchFiles, driveStats, updateDescription,
+} from "./drive";
 import { landingPage } from "./landing";
 import { docsPage } from "./docs";
 import { pricingPage } from "./pricing";
@@ -45,6 +50,7 @@ app.use("/folders/*", bodySizeLimit);
 app.use("/shares", bodySizeLimit);
 app.use("/shares/*", bodySizeLimit);
 app.use("/presign/*", bodySizeLimit);
+app.use("/drive/*", bodySizeLimit);
 
 // Registration (no auth)
 app.post("/actors", registerActor);
@@ -65,6 +71,22 @@ app.use("/shares", bearerAuth);
 app.use("/shares/*", bearerAuth);
 app.use("/shared", bearerAuth);
 app.use("/shared/*", bearerAuth);
+
+// Drive features
+app.use("/drive/*", bearerAuth);
+app.patch("/drive/star", toggleStar);
+app.post("/drive/rename", renameItem);
+app.post("/drive/move", moveItems);
+app.post("/drive/copy", copyFile);
+app.post("/drive/trash", trashItems);
+app.post("/drive/restore", restoreItems);
+app.delete("/drive/trash", emptyTrash);
+app.get("/drive/trash", listTrash);
+app.get("/drive/recent", listRecent);
+app.get("/drive/starred", listStarred);
+app.get("/drive/search", searchFiles);
+app.get("/drive/stats", driveStats);
+app.patch("/drive/description", updateDescription);
 
 // Presigned URLs (direct-to-storage)
 app.use("/presign/*", bearerAuth);

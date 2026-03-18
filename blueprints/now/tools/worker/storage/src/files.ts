@@ -113,7 +113,7 @@ export async function downloadFile(c: AppContext) {
   }
 
   const obj = await c.env.DB.prepare(
-    "SELECT * FROM objects WHERE owner = ? AND path = ? AND is_folder = 0",
+    "SELECT * FROM objects WHERE owner = ? AND path = ? AND is_folder = 0 AND trashed_at IS NULL",
   )
     .bind(actor, filePath)
     .first<ObjectRow>();
@@ -121,6 +121,10 @@ export async function downloadFile(c: AppContext) {
   if (!obj) {
     return errorResponse(c, "not_found", "File not found");
   }
+
+  // Track last access
+  await c.env.DB.prepare("UPDATE objects SET accessed_at = ? WHERE id = ?")
+    .bind(Date.now(), obj.id).run();
 
   const r2Obj = await c.env.BUCKET.get(obj.r2_key);
   if (!r2Obj) {
@@ -152,7 +156,7 @@ export async function deleteFile(c: AppContext) {
   }
 
   const obj = await c.env.DB.prepare(
-    "SELECT id, r2_key FROM objects WHERE owner = ? AND path = ? AND is_folder = 0",
+    "SELECT id, r2_key FROM objects WHERE owner = ? AND path = ? AND is_folder = 0 AND trashed_at IS NULL",
   )
     .bind(actor, filePath)
     .first<{ id: string; r2_key: string }>();
@@ -179,7 +183,7 @@ export async function headFile(c: AppContext) {
   const filePath = wildcardPath(c, "/files/");
 
   const obj = await c.env.DB.prepare(
-    "SELECT * FROM objects WHERE owner = ? AND path = ? AND is_folder = 0",
+    "SELECT * FROM objects WHERE owner = ? AND path = ? AND is_folder = 0 AND trashed_at IS NULL",
   )
     .bind(actor, filePath)
     .first<ObjectRow>();

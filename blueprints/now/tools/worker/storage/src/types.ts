@@ -36,6 +36,10 @@ export interface ObjectRow {
   content_type: string;
   size: number;
   r2_key: string;
+  starred: number;
+  trashed_at: number | null;
+  accessed_at: number | null;
+  description: string;
   created_at: number;
   updated_at: number;
 }
