@@ -34,12 +34,11 @@ export async function chatViewPage(c: AppContext) {
     "SELECT id, kind, title, creator, visibility, created_at FROM chats WHERE id = ?"
   ).bind(chatId).first<ChatMeta>();
 
-  if (!chat) return c.redirect("/chats");
+  if (!chat) return c.redirect("/inbox");
 
   const member = await isMember(c.env.DB, chatId, actor);
   if (!member) {
-    // For public rooms, allow view but not send; for private, redirect
-    if (chat.visibility === "private") return c.redirect("/chats");
+    if (chat.visibility === "private") return c.redirect("/inbox");
   }
 
   // Load members
@@ -65,28 +64,63 @@ export async function chatViewPage(c: AppContext) {
   ).bind(chatId).all<MessageRow>();
   const messages = (msgRows || []).reverse();
 
-  // Build initial message HTML
-  // data-md holds the raw text; client JS renders it via marked.parse()
-  const msgHtml = messages.map(m => {
-    const t = new Date(m.created_at).toISOString();
-    const isMe = m.actor === actor;
-    const name = esc(m.actor.slice(2));
-    const isBot = m.actor.startsWith("a/");
-    return `<div class="msg-row${isMe ? " mine" : ""}${isBot ? " bot" : ""}" data-ts="${t}">
-  <span class="msg-time"></span>
-  <span class="msg-author">${name}</span>
-  <div class="msg-text" data-md="${esc(m.text)}"></div>
-</div>`;
-  }).join("\n");
+  // Build grouped message HTML (Discord/Slack-style)
+  let msgHtml = "";
+  if (messages.length > 0) {
+    let prevActor = "";
+    let prevTime = 0;
+    let prevDateKey = "";
 
-  // Header badge / back button
+    for (const m of messages) {
+      const d = new Date(m.created_at);
+      const dateKey = d.toISOString().slice(0, 10);
+      const isoTs = d.toISOString();
+      const name = esc(m.actor.slice(2));
+      const isMe = m.actor === actor;
+      const isBot = m.actor.startsWith("a/");
+      const cls = (isMe ? " mine" : "") + (isBot ? " bot" : "");
+
+      // Day separator
+      if (dateKey !== prevDateKey) {
+        const label = d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+        msgHtml += `\n<div class="msg-day" data-date="${dateKey}">${label}</div>`;
+        prevDateKey = dateKey;
+        prevActor = "";
+      }
+
+      const sameAuthor = m.actor === prevActor;
+      const withinWindow = (m.created_at - prevTime) < 300_000;
+      const isCont = sameAuthor && withinWindow;
+
+      if (isCont) {
+        msgHtml += `\n<div class="msg msg-cont${cls}" data-ts="${isoTs}" data-actor="${esc(m.actor)}">
+  <div class="msg-gutter"><span class="msg-hover-ts"></span></div>
+  <div class="msg-content"><div class="msg-body" data-md="${esc(m.text)}"></div></div>
+</div>`;
+      } else {
+        const av = isBot ? botAvatar(m.actor, 36) : humanAvatar(m.actor, 36);
+        msgHtml += `\n<div class="msg${cls}" data-ts="${isoTs}" data-actor="${esc(m.actor)}">
+  <div class="msg-gutter"><div class="msg-av">${av}</div></div>
+  <div class="msg-content">
+    <div class="msg-meta"><span class="msg-name">${name}</span><span class="msg-ts" data-ts="${isoTs}"></span></div>
+    <div class="msg-body" data-md="${esc(m.text)}"></div>
+  </div>
+</div>`;
+      }
+
+      prevActor = m.actor;
+      prevTime = m.created_at;
+    }
+  }
+
+  // Header badge
   const memberCount = members.length;
   const isRoom = chat.kind === "room";
   const headerBadge = isRoom
-    ? `<span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);border:1px solid var(--border);padding:2px 8px">${memberCount} members</span>`
+    ? `<span class="cv-badge">${memberCount} members</span>`
     : peerActor?.startsWith("a/")
-      ? `<span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);border:1px solid var(--border);padding:2px 8px">agent</span>`
-      : `<span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);border:1px solid var(--border);padding:2px 8px">human</span>`;
+      ? `<span class="cv-badge">agent</span>`
+      : `<span class="cv-badge">human</span>`;
 
   const myName = esc(actor.slice(2));
   const sendDisabled = !member ? `disabled title="Join to send messages"` : "";
@@ -99,7 +133,7 @@ export async function chatViewPage(c: AppContext) {
 <title>${esc(displayName)} — chat.now</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/chat.css">
 <script src="https://cdn.jsdelivr.net/npm/marked@17.0.4/lib/marked.umd.js"></script>
 </head>
@@ -107,9 +141,9 @@ export async function chatViewPage(c: AppContext) {
 
 <nav>
   <div class="nav-left">
-    <a href="/my-chats" class="back-btn">
+    <a href="/inbox" class="back-btn">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-      chats
+      inbox
     </a>
     <span style="color:var(--border)">|</span>
     <span class="chat-name">${isRoom ? "# " : ""}${esc(displayName)}</span>
@@ -151,131 +185,149 @@ ${(() => {
 </div>
 
 <script>
-const CHAT_ID = ${JSON.stringify(chatId)};
-const MY_ACTOR = ${JSON.stringify(actor)};
-const thread = document.getElementById('thread');
-const sseDot = document.getElementById('sse-dot');
+var CHAT_ID=${JSON.stringify(chatId)};
+var MY_ACTOR=${JSON.stringify(actor)};
+var thread=document.getElementById('thread');
+var sseDot=document.getElementById('sse-dot');
 
 // Theme
 function toggleTheme(){
-  const d=document.documentElement.classList.toggle('dark');
+  var d=document.documentElement.classList.toggle('dark');
   localStorage.setItem('theme',d?'dark':'light');
 }
 (function(){
-  const s=localStorage.getItem('theme');
+  var s=localStorage.getItem('theme');
   if(s==='dark'||(!s&&window.matchMedia('(prefers-color-scheme:dark)').matches))
     document.documentElement.classList.add('dark');
 })();
 
-// Format timestamps on existing messages
+// Time formatting
 function fmtTime(iso){
-  const d=new Date(iso);
-  return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  var d=new Date(iso);
+  return d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
 }
-document.querySelectorAll('.msg-row[data-ts]').forEach(row=>{
-  row.querySelector('.msg-time').textContent=fmtTime(row.dataset.ts);
+function fmtDayLabel(dateStr){
+  var d=new Date(dateStr+'T12:00:00');
+  var now=new Date();now.setHours(0,0,0,0);
+  var t=new Date(d);t.setHours(0,0,0,0);
+  var diff=now-t;
+  if(diff>=0&&diff<86400000)return'Today';
+  if(diff>=86400000&&diff<172800000)return'Yesterday';
+  return d.toLocaleDateString([],{month:'long',day:'numeric',year:'numeric'});
+}
+
+// Fill timestamps
+document.querySelectorAll('.msg-ts[data-ts]').forEach(function(el){
+  el.textContent=fmtTime(el.dataset.ts);
+});
+document.querySelectorAll('.msg-cont[data-ts]').forEach(function(el){
+  var h=el.querySelector('.msg-hover-ts');
+  if(h)h.textContent=fmtTime(el.dataset.ts);
+});
+document.querySelectorAll('.msg-day[data-date]').forEach(function(el){
+  el.textContent=fmtDayLabel(el.dataset.date);
 });
 
-// Parse markdown and wrap any bare tables in a scrollable div
+// Markdown
 function renderMd(text){
-  const html=marked.parse(text||'');
+  var html=marked.parse(text||'');
   return html.split('<table').join('<div class="table-wrap"><table').split('</table>').join('</table></div>');
 }
-
-// Render markdown on server-rendered messages
-document.querySelectorAll('.msg-text[data-md]').forEach(el=>{
+document.querySelectorAll('.msg-body[data-md]').forEach(function(el){
   el.innerHTML=renderMd(el.dataset.md);
 });
 
-// Scroll to bottom initially
+// Scroll
 thread.scrollTop=thread.scrollHeight;
-
-// Check if near bottom
 function atBottom(){return thread.scrollHeight-thread.scrollTop-thread.clientHeight<120}
 
-// Append a message object from SSE or send response
+// Track last message for SSE grouping
+var lastActor='',lastTime=0;
+(function(){
+  var msgs=document.querySelectorAll('.msg[data-actor]');
+  if(msgs.length){
+    var last=msgs[msgs.length-1];
+    lastActor=last.dataset.actor;
+    lastTime=new Date(last.dataset.ts).getTime();
+  }
+})();
+
+// Append SSE message with grouping
 function appendMsg(msg){
-  const welcome = document.getElementById('bot-welcome');
-  if (welcome) welcome.remove();
-  const wasBottom=atBottom();
-  const row=document.createElement('div');
-  row.className='msg-row'+(msg.actor===MY_ACTOR?' mine':'');
-  row.dataset.ts=msg.created_at;
+  var welcome=document.getElementById('bot-welcome');
+  if(welcome)welcome.remove();
+  var wasBottom=atBottom();
+  var ts=msg.created_at;
+  var time=new Date(ts).getTime();
+  var isMe=msg.actor===MY_ACTOR;
+  var isBot=msg.actor.startsWith('a/');
+  var name=msg.actor.slice(2);
+  var letter=name.charAt(0).toUpperCase();
+  var cls='msg'+(isMe?' mine':'')+(isBot?' bot':'');
+  var sameAuthor=msg.actor===lastActor;
+  var withinWindow=(time-lastTime)<300000;
+  var isCont=sameAuthor&&withinWindow;
 
-  const t=document.createElement('span');
-  t.className='msg-time';
-  t.textContent=fmtTime(msg.created_at);
-
-  const a=document.createElement('span');
-  a.className='msg-author';
-  a.textContent=msg.actor.slice(2);
-
-  const tx=document.createElement('div');
-  tx.className='msg-text';
-  tx.innerHTML=renderMd(msg.text);
-
-  row.appendChild(t);row.appendChild(a);row.appendChild(tx);
+  var row=document.createElement('div');
+  if(isCont){
+    row.className=cls+' msg-cont';
+    row.dataset.ts=ts;row.dataset.actor=msg.actor;
+    row.innerHTML='<div class="msg-gutter"><span class="msg-hover-ts">'+fmtTime(ts)+'</span></div>'+
+      '<div class="msg-content"><div class="msg-body"></div></div>';
+  }else{
+    row.className=cls;
+    row.dataset.ts=ts;row.dataset.actor=msg.actor;
+    row.innerHTML='<div class="msg-gutter"><div class="msg-av"><div class="msg-av-letter'+(isBot?' bot':'')+'">'+letter+'</div></div></div>'+
+      '<div class="msg-content"><div class="msg-meta"><span class="msg-name">'+name+'</span><span class="msg-ts">'+fmtTime(ts)+'</span></div>'+
+      '<div class="msg-body"></div></div>';
+  }
+  row.querySelector('.msg-body').innerHTML=renderMd(msg.text);
   thread.appendChild(row);
-  if(wasBottom) thread.scrollTop=thread.scrollHeight;
+  if(wasBottom)thread.scrollTop=thread.scrollHeight;
+  lastActor=msg.actor;lastTime=time;
 }
 
-function fillInput(btn) {
-  const input = document.getElementById('msg-input');
-  input.value = btn.textContent;
-  input.focus();
-  input.style.height = 'auto';
-  input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+function fillInput(btn){
+  var input=document.getElementById('msg-input');
+  input.value=btn.textContent;input.focus();
+  input.style.height='auto';input.style.height=Math.min(input.scrollHeight,120)+'px';
 }
 
 // SSE
-let sse;
+var sse;
 function connectSSE(){
   sse=new EventSource('/sse/chats/'+CHAT_ID);
-  sse.onopen=()=>{sseDot.className='sse-dot live';sseDot.title='Live'};
-  sse.onmessage=(e)=>{
-    try{appendMsg(JSON.parse(e.data))}catch{}
-  };
-  sse.onerror=()=>{
-    sseDot.className='sse-dot error';sseDot.title='Reconnecting…';
-  };
+  sse.onopen=function(){sseDot.className='sse-dot live';sseDot.title='Live'};
+  sse.onmessage=function(e){try{appendMsg(JSON.parse(e.data))}catch(x){}};
+  sse.onerror=function(){sseDot.className='sse-dot error';sseDot.title='Reconnecting...'};
 }
 connectSSE();
 
 // Send
 async function sendMsg(){
-  const input=document.getElementById('msg-input');
-  const errEl=document.getElementById('send-error');
-  const btn=document.getElementById('send-btn');
-  const text=input.value.trim();
+  var input=document.getElementById('msg-input');
+  var errEl=document.getElementById('send-error');
+  var btn=document.getElementById('send-btn');
+  var text=input.value.trim();
   if(!text)return;
-
-  btn.disabled=true;
-  errEl.textContent='';
+  btn.disabled=true;errEl.textContent='';
   try{
-    const res=await fetch('/chats/'+CHAT_ID+'/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({text})
+    var res=await fetch('/chats/'+CHAT_ID+'/messages',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({text:text})
     });
-    if(!res.ok){const d=await res.json();throw new Error(d.error?.message||'Failed')}
-    input.value='';
-    input.style.height='auto';
+    if(!res.ok){var d=await res.json();throw new Error(d.error?.message||'Failed')}
+    input.value='';input.style.height='auto';
   }catch(e){
     errEl.textContent=e.message;
-    setTimeout(()=>{errEl.textContent=''},4000);
-  }finally{
-    btn.disabled=false;
-    input.focus();
-  }
+    setTimeout(function(){errEl.textContent=''},4000);
+  }finally{btn.disabled=false;input.focus()}
 }
 
 // Auto-grow textarea
 document.getElementById('msg-input').addEventListener('input',function(){
-  this.style.height='auto';
-  this.style.height=Math.min(this.scrollHeight,120)+'px';
+  this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px';
 });
-
-// Enter to send
 document.getElementById('msg-input').addEventListener('keydown',function(e){
   if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg()}
 });
