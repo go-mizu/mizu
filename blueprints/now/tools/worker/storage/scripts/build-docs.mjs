@@ -37,8 +37,21 @@ const marked = new Marked({
       return `<pre><button class="cb" onclick="cp(this)">Copy</button><code>${escaped}</code></pre>\n`;
     },
 
-    table({ header, body }) {
-      return `<table class="ref-table">\n${header}${body}</table>\n`;
+    table(token) {
+      let out = `<table class="ref-table">\n<thead><tr>`;
+      for (const cell of token.header) {
+        out += `<th>${this.parser.parseInline(cell.tokens)}</th>`;
+      }
+      out += `</tr></thead>\n<tbody>\n`;
+      for (const row of token.rows) {
+        out += `<tr>`;
+        for (const cell of row) {
+          out += `<td>${this.parser.parseInline(cell.tokens)}</td>`;
+        }
+        out += `</tr>\n`;
+      }
+      out += `</tbody></table>\n`;
+      return out;
     },
   },
 });
