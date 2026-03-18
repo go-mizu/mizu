@@ -1,0 +1,22 @@
+name = "storage"
+main = "src/index.ts"
+compatibility_date = "2026-03-11"
+compatibility_flags = ["nodejs_compat"]
+
+[build]
+command = "node scripts/build-docs.mjs"
+
+[assets]
+directory = "./public"
+
+[observability]
+enabled = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "storage-db"
+database_id = "10bc584b-8b6e-4695-95de-7d6c25a79b60"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "storage-files"
