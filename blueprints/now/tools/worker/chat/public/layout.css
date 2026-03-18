@@ -1,24 +1,28 @@
-/* ── Reset & Variables ───────────────────────────────────────────────── */
+/* ── Reset & Design Tokens ──────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#FAFAF9;--surface:#FFF;--surface-hover:#F5F5F5;
-  --text:#111;--text-2:#666;--text-3:#999;
-  --border:#DDD;--code-bg:#F5F5F5;--ink:#111;--err:#B91C1C;--ok:#15803D;
+  --bg:#FAFAF9;--surface:#FFF;--surface-alt:#F4F4F5;
+  --text:#09090B;--text-2:#52525B;--text-3:#A1A1AA;
+  --border:#E4E4E7;--ink:#09090B;--err:#EF4444;--ok:#10B981;
+  --glass-bg:rgba(255,255,255,0.7);--glass-border:var(--border);
+  --shadow:0 1px 3px rgba(0,0,0,0.04),0 1px 2px rgba(0,0,0,0.06);
 }
 html.dark{
-  --bg:#0C0C0C;--surface:#161616;--surface-hover:#1E1E1E;
-  --text:#E5E5E5;--text-2:#888;--text-3:#555;
-  --border:#2A2A2A;--code-bg:#1A1A1A;--ink:#E5E5E5;--err:#FCA5A5;--ok:#86EFAC;
+  --bg:#09090B;--surface:#18181B;--surface-alt:#27272A;
+  --text:#FAFAF9;--text-2:#A1A1AA;--text-3:#52525B;
+  --border:#27272A;--ink:#FAFAF9;--err:#FCA5A5;--ok:#6EE7B7;
+  --glass-bg:rgba(255,255,255,0.04);--glass-border:rgba(255,255,255,0.08);
+  --shadow:0 1px 3px rgba(0,0,0,0.3);
 }
-body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);background:var(--bg);
+body{font-family:'Inter',system-ui,sans-serif;color:var(--text);background:var(--bg);
   -webkit-font-smoothing:antialiased;transition:background .3s,color .3s;padding-bottom:80px}
 a{color:inherit;text-decoration:none}
 
-/* ── Nav ─────────────────────────────────────────────────────────────── */
+/* ── Nav (full — used by my-chats etc) ─────────────────────────────── */
 nav{padding:20px 48px;display:flex;align-items:center;justify-content:space-between;
   position:sticky;top:0;background:color-mix(in srgb,var(--bg) 92%,transparent);
   backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);z-index:100}
-.logo{font-family:'JetBrains Mono',monospace;font-weight:500;font-size:14px}
+.logo{font-family:'JetBrains Mono',monospace;font-weight:600;font-size:14px;letter-spacing:-0.5px}
 .nav-links{display:flex;align-items:center;gap:32px}
 .nav-links a{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-3);
   transition:color .15s;letter-spacing:0.5px}
@@ -34,24 +38,107 @@ nav{padding:20px 48px;display:flex;align-items:center;justify-content:space-betw
 html.dark .theme-toggle .icon-sun{display:block}
 html.dark .theme-toggle .icon-moon{display:none}
 
+/* ── Immersive header (minimal — used by people/agents/rooms) ──────── */
+.imm-header{max-width:900px;margin:0 auto;padding:24px 48px 0;
+  display:flex;align-items:center;justify-content:space-between}
+.imm-right{display:flex;align-items:center;gap:12px}
+.imm-user{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-3)}
+.imm-signout{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
+  border:1px solid var(--border);padding:4px 10px;transition:all .15s}
+.imm-signout:hover{color:var(--text);border-color:var(--text-3)}
+
+/* ── Section tabs ───────────────────────────────────────────────────── */
+.section-tabs{display:flex;gap:0;margin-bottom:40px;border-bottom:1px solid var(--border)}
+.section-tab{font-family:'JetBrains Mono',monospace;font-size:12px;
+  color:var(--text-3);text-decoration:none;padding:12px 20px;
+  border-bottom:2px solid transparent;transition:all .15s;letter-spacing:0.5px}
+.section-tab:hover{color:var(--text)}
+.section-tab.active{color:var(--text);border-bottom-color:var(--text)}
+
 /* ── Layout ──────────────────────────────────────────────────────────── */
-.container{max-width:800px;margin:0 auto;padding:48px 48px 100px}
-.page-header{margin-bottom:40px}
-.page-title{font-size:32px;font-weight:700;letter-spacing:-1px;margin-bottom:8px}
-.page-desc{font-size:14px;color:var(--text-2);line-height:1.7;margin-bottom:12px}
-.page-guide{font-family:'JetBrains Mono',monospace;font-size:12px;
-  color:var(--text-3);line-height:1.8}
-.page-guide strong{color:var(--text-2);font-weight:500}
+.container{max-width:900px;margin:0 auto;padding:32px 48px 100px}
+.page-header{margin-bottom:32px}
+.page-title{font-size:36px;font-weight:800;letter-spacing:-1.5px;margin-bottom:8px}
+.page-desc{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text-3)}
 .page-count{font-family:'JetBrains Mono',monospace;font-size:12px;
-  color:var(--text-3);margin-bottom:16px}
+  color:var(--text-3);margin-bottom:20px}
 .page-count span{color:var(--text)}
 
-/* ── Directory list ──────────────────────────────────────────────────── */
+/* ── Search bar ─────────────────────────────────────────────────────── */
+.search-bar{display:flex;align-items:center;gap:12px;
+  border:1px solid var(--border);padding:12px 16px;margin-bottom:32px;
+  transition:border-color .15s}
+.search-bar:focus-within{border-color:var(--text-3)}
+.search-bar svg{color:var(--text-3);flex-shrink:0}
+.search-bar input{flex:1;font-family:'Inter',system-ui,sans-serif;font-size:14px;
+  border:none;background:none;color:var(--text);outline:none}
+.search-bar input::placeholder{color:var(--text-3)}
+
+/* ── People / Agent card grid ────────────────────────────────────────── */
+.people-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
+  background:var(--border);border:1px solid var(--border)}
+.person-card{background:var(--bg);padding:28px;text-decoration:none;
+  display:flex;flex-direction:column;gap:10px;transition:background .15s}
+.person-card:hover{background:var(--surface-alt)}
+.person-avatar{width:48px;height:48px;flex-shrink:0;overflow:hidden}
+.person-avatar svg{display:block;width:48px;height:48px;filter:grayscale(1) contrast(1.1)}
+html.dark .person-avatar svg{filter:grayscale(1) brightness(1.3)}
+.person-info{flex:1;min-width:0}
+.person-name{font-size:16px;font-weight:700;letter-spacing:-0.3px;margin-bottom:2px}
+.person-bio{font-size:13px;color:var(--text-2);line-height:1.5;margin:4px 0}
+.person-status{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
+  display:flex;align-items:center;gap:6px}
+.person-meta{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
+  margin-top:4px}
+.person-arrow{font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--text-3);
+  transition:transform .15s;align-self:flex-end;margin-top:auto}
+.person-card:hover .person-arrow{transform:translateX(3px);color:var(--text-2)}
+
+/* ── Status dot ─────────────────────────────────────────────────────── */
+.status-dot{display:inline-block;width:6px;height:6px;
+  border:1px solid var(--text-3);flex-shrink:0}
+.status-dot.on{background:var(--ok);border-color:var(--ok)}
+
+/* ── Room card grid ──────────────────────────────────────────────────── */
+.rooms-grid{display:flex;flex-direction:column;gap:1px;
+  background:var(--border);border:1px solid var(--border)}
+.room-card{background:var(--bg);padding:24px 28px;text-decoration:none;
+  display:flex;flex-direction:column;gap:8px;transition:background .15s}
+.room-card:hover{background:var(--surface-alt)}
+.room-card-header{display:flex;align-items:baseline;justify-content:space-between;gap:16px}
+.room-card-title{font-size:16px;font-weight:700;letter-spacing:-0.3px}
+.room-card-time{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);flex-shrink:0}
+.room-card-meta{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3)}
+.room-card-preview{font-size:13px;color:var(--text-2);line-height:1.5;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.room-card-who{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
+  margin-right:6px}
+
+/* ── Directory card grid (legacy — still used by some pages) ─────────── */
+.directory-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
+  background:var(--border);border:1px solid var(--border)}
+.dir-card{background:var(--bg);padding:24px;text-decoration:none;
+  display:flex;flex-direction:column;gap:12px;transition:background .15s}
+.dir-card:hover{background:var(--surface-alt)}
+.dir-card-avatar{width:40px;height:40px;flex-shrink:0;overflow:hidden}
+.dir-card-avatar svg{display:block;width:40px;height:40px;filter:grayscale(1) contrast(1.1)}
+html.dark .dir-card-avatar svg{filter:grayscale(1) brightness(1.3)}
+.dir-card-info{flex:1;min-width:0}
+.dir-card-name{font-size:15px;font-weight:700;letter-spacing:-0.3px;margin-bottom:2px}
+.dir-card-meta{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3)}
+.dir-card-arrow{font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--text-3);
+  transition:transform .15s;align-self:flex-end}
+.dir-card:hover .dir-card-arrow{transform:translateX(3px);color:var(--text-2)}
+.dir-badge{display:inline-block;font-family:'JetBrains Mono',monospace;
+  font-size:10px;font-weight:500;padding:2px 8px;border:1px solid var(--border);
+  color:var(--text-3);margin-left:6px;vertical-align:middle}
+
+/* ── Directory list (for my-chats) ───────────────────────────────────── */
 .directory{display:flex;flex-direction:column}
-.entry{display:flex;align-items:center;gap:16px;padding:14px 0;
-  border-bottom:1px solid var(--border);transition:background .15s}
+.entry{display:flex;align-items:center;gap:16px;padding:16px 0;
+  border-bottom:1px solid var(--border);transition:background .15s;text-decoration:none}
 .entry:first-child{border-top:1px solid var(--border)}
-.entry:hover{background:var(--surface-hover);margin:0 -16px;padding:14px 16px}
+.entry:hover{background:var(--surface-alt);margin:0 -16px;padding:16px}
 .entry-avatar{width:40px;height:40px;flex-shrink:0;overflow:hidden}
 .entry-avatar svg{display:block;width:40px;height:40px;filter:grayscale(1) contrast(1.1)}
 html.dark .entry-avatar svg{filter:grayscale(1) brightness(1.3)}
@@ -59,49 +146,120 @@ html.dark .entry-avatar svg{filter:grayscale(1) brightness(1.3)}
 .entry-name{font-size:14px;font-weight:600;letter-spacing:-0.2px}
 .entry-meta{font-family:'JetBrains Mono',monospace;font-size:11px;
   color:var(--text-3);margin-top:3px}
-.entry-arrow{color:var(--text-3);font-size:16px;flex-shrink:0;
-  transition:transform .15s;font-family:'JetBrains Mono',monospace}
-.entry:hover .entry-arrow{transform:translateX(3px);color:var(--text-2)}
+.entry-ts{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);flex-shrink:0}
 .empty{text-align:center;padding:80px 20px;color:var(--text-3);font-size:14px}
 .empty a{color:var(--text);text-decoration:underline;text-underline-offset:3px}
 
-/* ── Profile ─────────────────────────────────────────────────────────── */
+/* ── Back link ──────────────────────────────────────────────────────── */
+.back-link{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-3);
+  text-decoration:none;display:inline-flex;align-items:center;gap:6px;
+  transition:color .15s;margin-bottom:40px}
+.back-link:hover{color:var(--text)}
+
+/* ── Profile hero (centered) ────────────────────────────────────────── */
+.pf-hero{text-align:center;margin-bottom:40px;padding-bottom:40px;
+  border-bottom:1px solid var(--border)}
+.pf-avatar{width:80px;height:80px;margin:0 auto 20px;overflow:hidden}
+.pf-avatar svg{display:block;width:80px;height:80px;filter:grayscale(1) contrast(1.1)}
+html.dark .pf-avatar svg{filter:grayscale(1) brightness(1.3)}
+.pf-name{font-size:32px;font-weight:800;letter-spacing:-1px;margin-bottom:8px}
+.pf-status{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-3);
+  display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:4px}
+.pf-joined{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3)}
+.pf-bio{font-size:14px;color:var(--text-2);line-height:1.7;margin-bottom:16px}
+
+/* ── Profile stats bar ──────────────────────────────────────────────── */
+.pf-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
+  background:var(--border);border:1px solid var(--border);margin-bottom:40px}
+.pf-stat{background:var(--bg);padding:20px;text-align:center}
+.pf-stat-val{font-size:24px;font-weight:800;letter-spacing:-0.5px;margin-bottom:2px}
+.pf-stat-label{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3)}
+
+/* ── Profile sections ───────────────────────────────────────────────── */
+.pf-section{margin-bottom:32px}
+.pf-section-label{font-family:'JetBrains Mono',monospace;font-size:11px;
+  color:var(--text-3);letter-spacing:1.5px;margin-bottom:16px;
+  padding-bottom:8px;border-bottom:1px solid var(--border)}
+
+/* ── Profile rooms ──────────────────────────────────────────────────── */
+.pf-rooms{display:flex;flex-wrap:wrap;gap:8px}
+.pf-room-tag{display:inline-flex;align-items:baseline;gap:8px;
+  font-size:14px;font-weight:600;letter-spacing:-0.2px;
+  padding:10px 16px;border:1px solid var(--border);
+  transition:all .15s;text-decoration:none}
+.pf-room-tag:hover{border-color:var(--text-3);background:var(--surface-alt)}
+.pf-room-tag span{font-family:'JetBrains Mono',monospace;font-size:11px;
+  color:var(--text-3);font-weight:400}
+
+/* ── Profile mutual rooms ───────────────────────────────────────────── */
+.pf-mutual{font-size:14px;color:var(--text-2);line-height:1.7}
+.pf-mutual a{font-weight:600;text-decoration:underline;text-underline-offset:3px;
+  transition:color .15s}
+.pf-mutual a:hover{color:var(--text)}
+
+/* ── Profile existing DM link ───────────────────────────────────────── */
+.pf-existing-dm{display:inline-block;font-family:'JetBrains Mono',monospace;
+  font-size:12px;color:var(--text-3);text-decoration:none;margin-top:12px;
+  transition:color .15s}
+.pf-existing-dm:hover{color:var(--text)}
+
+/* ── Profile chips (agent examples) ─────────────────────────────────── */
+.profile-chips{display:flex;flex-wrap:wrap;gap:8px}
+.profile-chip{font-family:'JetBrains Mono',monospace;font-size:12px;padding:6px 14px;
+  border:1px solid var(--border);background:none;color:var(--text-2);
+  cursor:pointer;transition:all .15s;text-decoration:none}
+.profile-chip:hover{border-color:var(--text-3);color:var(--text)}
+.profile-badge{display:inline-block;font-family:'JetBrains Mono',monospace;
+  font-size:11px;font-weight:500;padding:2px 8px;border:1px solid var(--border);
+  color:var(--text-3);margin-left:8px;vertical-align:middle}
+
+/* ── Old profile (still used by agent profiles in switcherPage) ─────── */
 .profile{max-width:640px}
 .profile-header{display:flex;align-items:center;gap:20px;margin-bottom:40px}
 .profile-avatar{width:64px;height:64px;flex-shrink:0;overflow:hidden}
 .profile-avatar svg{display:block;width:64px;height:64px;filter:grayscale(1) contrast(1.1)}
 html.dark .profile-avatar svg{filter:grayscale(1) brightness(1.3)}
-.profile-name{font-size:22px;font-weight:700;letter-spacing:-0.5px;margin-bottom:2px}
+.profile-name{font-size:24px;font-weight:800;letter-spacing:-0.5px;margin-bottom:2px}
 .profile-meta{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-3)}
-.profile-badge{display:inline-block;font-family:'JetBrains Mono',monospace;
-  font-size:11px;font-weight:500;padding:2px 8px;border:1px solid var(--border);
-  color:var(--text-3);margin-left:8px;vertical-align:middle}
+.profile-bio{font-size:14px;color:var(--text-2);line-height:1.7;margin-bottom:24px}
+
+/* ── Room detail ────────────────────────────────────────────────────── */
+.room-thread{border:1px solid var(--border)}
+.room-msg{display:flex;gap:0;padding:10px 24px;border-bottom:1px solid var(--border);
+  font-size:14px;line-height:1.6}
+.room-msg:last-child{border-bottom:none}
+.room-msg-who{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
+  width:120px;flex-shrink:0;padding-top:2px}
+.room-msg-text{color:var(--text-2);min-width:0}
+.room-members{display:flex;flex-direction:column}
+.room-member{display:flex;align-items:center;gap:10px;padding:10px 0;
+  border-bottom:1px solid var(--border);text-decoration:none;color:inherit;transition:opacity .15s}
+.room-member:last-child{border-bottom:none}
+.room-member:hover{opacity:0.7}
+.room-member-avatar{width:28px;height:28px;flex-shrink:0;overflow:hidden}
+.room-member-avatar svg{display:block;width:28px;height:28px;filter:grayscale(1) contrast(1.1)}
+html.dark .room-member-avatar svg{filter:grayscale(1) brightness(1.3)}
+.room-member-name{font-size:14px;font-weight:600}
+.room-role{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-3);
+  font-style:italic;margin-left:4px}
+.room-join-btn{font-family:'JetBrains Mono',monospace;font-size:12px;
+  padding:12px 24px;border:1px solid var(--ink);background:var(--ink);color:var(--bg);
+  cursor:pointer;transition:opacity .15s}
+.room-join-btn:hover{opacity:0.85}
+.room-open-btn{display:inline-flex;align-items:center;gap:8px;
+  font-family:'JetBrains Mono',monospace;font-size:12px;
+  padding:12px 20px;border:1px solid var(--ink);background:var(--ink);color:var(--bg);
+  text-decoration:none;transition:opacity .15s}
+.room-open-btn:hover{opacity:0.85}
 
 /* ── Fieldset sections ───────────────────────────────────────────────── */
 fieldset.ps{border:1px solid var(--border);padding:28px 32px;margin-bottom:32px;background:none}
 fieldset.ps legend{font-family:'JetBrains Mono',monospace;font-size:11px;
   padding:0 10px;color:var(--text-3);letter-spacing:1px}
 
-/* ── Chat bubbles ────────────────────────────────────────────────────── */
-.chat{display:flex;flex-direction:column;gap:12px}
-.chat-msg{display:flex;gap:10px;max-width:85%}
-.chat-msg.right{align-self:flex-end;flex-direction:row-reverse}
-.chat-av{width:28px;height:28px;flex-shrink:0;overflow:hidden}
-.chat-av svg{display:block;width:28px;height:28px;filter:grayscale(1) contrast(1.1)}
-html.dark .chat-av svg{filter:grayscale(1) brightness(1.3)}
-.chat-av-letter{width:28px;height:28px;background:var(--surface);border:1px solid var(--border);
-  display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;
-  font-size:11px;font-weight:600;color:var(--text-3)}
-.chat-bubble{padding:10px 14px;font-size:14px;line-height:1.5}
-.chat-msg.right .chat-bubble{background:var(--ink);color:var(--bg)}
-.chat-msg.left .chat-bubble{background:var(--surface);border:1px solid var(--border);color:var(--text)}
-.chat-meta{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-3);
-  margin-top:4px;padding:0 2px}
-.chat-msg.right .chat-meta{text-align:right}
-
 /* ── Message form ────────────────────────────────────────────────────── */
-.msg-form{display:flex;gap:0;margin-top:16px}
-.msg-form textarea{flex:1;font-family:'DM Sans',system-ui,sans-serif;font-size:14px;
+.msg-form{display:flex;gap:0}
+.msg-form textarea{flex:1;font-family:'Inter',system-ui,sans-serif;font-size:14px;
   padding:12px 14px;border:1px solid var(--border);background:var(--bg);
   color:var(--text);resize:none;height:44px;outline:none;transition:border-color .15s;line-height:1.4}
 .msg-form textarea:focus{border-color:var(--text-3)}
@@ -116,8 +274,7 @@ html.dark .chat-av svg{filter:grayscale(1) brightness(1.3)}
 .msg-sent.show{display:block}
 .msg-error{font-family:'JetBrains Mono',monospace;font-size:11px;
   color:var(--err);margin-top:8px;min-height:16px}
-.signin-prompt{font-size:13px;color:var(--text-3);margin-top:16px;
-  padding:14px 0;border-top:1px solid var(--border)}
+.signin-prompt{font-size:13px;color:var(--text-3);padding:14px 0}
 .signin-prompt a{text-decoration:underline;text-underline-offset:3px;color:var(--text)}
 
 /* ── Machine view / mode switch ──────────────────────────────────────── */
@@ -131,6 +288,7 @@ html.dark .chat-av svg{filter:grayscale(1) brightness(1.3)}
 .md .h2{color:var(--text);font-weight:600;font-size:14px}
 .md .h3{color:var(--text-3);font-weight:500}
 .md .dim{color:var(--text-3)}
+.md .link{text-decoration:underline;text-underline-offset:3px}
 .md-copy{position:absolute;top:12px;right:12px;
   font-family:'JetBrains Mono',monospace;font-size:11px;
   padding:4px 12px;border:1px solid var(--border);background:var(--bg);
@@ -150,7 +308,130 @@ html.dark .mode-switch{box-shadow:0 4px 24px rgba(0,0,0,0.4)}
 .mode-switch button.active .dot{background:var(--text);border-color:var(--text)}
 .mobile-toggle{display:none;background:none;border:none;color:var(--text-3);cursor:pointer;padding:4px}
 
+/* ── Agent listing cards ────────────────────────────────────────────── */
+.agents-grid{display:flex;flex-direction:column;gap:0;
+  border:1px solid var(--border)}
+.agent-card{display:flex;align-items:center;gap:16px;padding:20px 24px;
+  text-decoration:none;border-bottom:1px solid var(--border);transition:background .15s}
+.agent-card:last-child{border-bottom:none}
+.agent-card:hover{background:var(--surface-alt)}
+.agent-card-left{flex-shrink:0}
+.agent-card-avatar{width:40px;height:40px;overflow:hidden;
+  border:1px solid var(--border);display:flex;align-items:center;justify-content:center}
+.agent-card-avatar svg{display:block;width:40px;height:40px}
+.agent-card-body{flex:1;min-width:0}
+.agent-card-top{display:flex;align-items:center;gap:8px;margin-bottom:2px}
+.agent-card-name{font-size:15px;font-weight:700;letter-spacing:-0.3px}
+.agent-card-badge{font-family:'JetBrains Mono',monospace;font-size:10px;
+  padding:1px 6px;border:1px solid var(--border);color:var(--text-3);letter-spacing:0.5px}
+.agent-card-bio{font-size:13px;color:var(--text-2);line-height:1.5;margin-bottom:4px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.agent-card-footer{display:flex;align-items:center;gap:16px}
+.agent-card-status{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
+  display:flex;align-items:center;gap:6px}
+.agent-card-stats{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3)}
+.agent-card-arrow{font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--text-3);
+  transition:transform .15s;flex-shrink:0}
+.agent-card:hover .agent-card-arrow{transform:translateX(3px);color:var(--text-2)}
+.agent-led{display:inline-block;width:6px;height:6px;border:1px solid var(--text-3);flex-shrink:0}
+.agent-led.on{background:var(--ok);border-color:var(--ok)}
+
+/* ── Agent system panel ────────────────────────────────────────────── */
+.ap{max-width:560px;margin:0 auto 40px;background:#09090B;color:#E4E4E7;
+  border:1px solid #27272A;font-family:'JetBrains Mono',monospace;overflow:hidden}
+html.dark .ap{background:rgba(255,255,255,0.03);border-color:rgba(255,255,255,0.1)}
+.ap-bar{display:flex;align-items:center;justify-content:space-between;
+  padding:12px 24px;border-bottom:1px solid #27272A;font-size:11px}
+html.dark .ap-bar{border-color:rgba(255,255,255,0.08)}
+.ap-status{display:flex;align-items:center;gap:8px;letter-spacing:1px;color:#71717A}
+.ap-led{display:inline-block;width:7px;height:7px;border:1px solid #52525B}
+.ap .ap-led.on{background:#10B981;border-color:#10B981;
+  box-shadow:0 0 6px rgba(16,185,129,0.4)}
+.ap-actor{color:#52525B;font-size:11px}
+.ap-identity{padding:28px 24px 20px;text-align:center}
+.ap-avatar{width:56px;height:56px;margin:0 auto 14px;overflow:hidden;
+  border:1px solid #27272A}
+html.dark .ap-avatar{border-color:rgba(255,255,255,0.08)}
+.ap-avatar svg{display:block;width:56px;height:56px;filter:brightness(1.3)}
+.ap-name{font-size:22px;font-weight:700;letter-spacing:-0.5px;color:#FAFAF9;margin-bottom:6px;
+  font-family:'Inter',system-ui,sans-serif}
+.ap-since{font-size:11px;color:#52525B;line-height:1.6}
+.ap-bio{padding:0 24px 20px;font-size:13px;color:#A1A1AA;line-height:1.7;
+  font-family:'Inter',system-ui,sans-serif;text-align:center}
+.ap-divider{height:1px;background:#27272A;margin:0}
+html.dark .ap-divider{background:rgba(255,255,255,0.06)}
+.ap-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:0}
+.ap-metric{padding:20px 16px;text-align:center;border-right:1px solid #27272A}
+html.dark .ap-metric{border-color:rgba(255,255,255,0.06)}
+.ap-metric:last-child{border-right:none}
+.ap-val{font-size:22px;font-weight:700;color:#FAFAF9;margin-bottom:2px;
+  font-family:'Inter',system-ui,sans-serif}
+.ap-mlabel{font-size:10px;color:#52525B;letter-spacing:1px;text-transform:uppercase}
+.ap-section{padding:16px 24px}
+.ap-label{font-size:10px;color:#52525B;letter-spacing:1.5px;
+  text-transform:uppercase;margin-bottom:12px}
+.ap-cmds{display:flex;flex-direction:column;gap:0}
+.ap-cmd{display:block;width:100%;text-align:left;padding:8px 12px;
+  font-family:'JetBrains Mono',monospace;font-size:12px;color:#A1A1AA;
+  background:rgba(255,255,255,0.03);border:1px solid #27272A;border-top:none;
+  cursor:pointer;transition:all .15s}
+.ap-cmd:first-child{border-top:1px solid #27272A}
+.ap-cmd:hover{color:#FAFAF9;background:rgba(255,255,255,0.06)}
+html.dark .ap-cmd{border-color:rgba(255,255,255,0.06)}
+html.dark .ap-cmd:first-child{border-top-color:rgba(255,255,255,0.06)}
+.ap-prompt{color:#52525B}
+.ap-channels{display:flex;flex-wrap:wrap;gap:8px}
+.ap-channel{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;
+  font-size:12px;color:#A1A1AA;border:1px solid #27272A;text-decoration:none;
+  transition:all .15s}
+.ap-channel:hover{color:#FAFAF9;border-color:#52525B}
+html.dark .ap-channel{border-color:rgba(255,255,255,0.08)}
+.ap-channel span{color:#52525B;font-size:10px}
+.ap-code{font-size:12px;color:#71717A;line-height:1.8;
+  white-space:pre-wrap;word-break:break-word;
+  padding:12px;background:rgba(255,255,255,0.02);border:1px solid #27272A}
+html.dark .ap-code{border-color:rgba(255,255,255,0.06)}
+
+/* ── Wide mode (people listing etc) ─────────────────────────────────── */
+body.wide .imm-header{max-width:1100px}
+body.wide .container{max-width:1100px}
+
+/* ── Namecard ──────────────────────────────────────────────────────── */
+.namecard{max-width:520px;margin:0 auto;border:1px solid var(--border);
+  padding:40px 36px 28px;position:relative;background:var(--surface)}
+html.dark .namecard{background:var(--glass-bg);border-color:var(--glass-border);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.namecard-brand{font-family:'JetBrains Mono',monospace;font-size:10px;
+  color:var(--text-3);letter-spacing:2px;text-transform:uppercase;margin-bottom:28px}
+.namecard-avatar{width:64px;height:64px;margin-bottom:16px;overflow:hidden}
+.namecard-avatar svg{display:block;width:64px;height:64px;filter:grayscale(1) contrast(1.1)}
+html.dark .namecard-avatar svg{filter:grayscale(1) brightness(1.3)}
+.namecard-name{font-size:28px;font-weight:800;letter-spacing:-1px;margin-bottom:6px}
+.namecard-bio{font-size:14px;color:var(--text-2);line-height:1.6;margin-bottom:4px}
+.namecard-divider{height:1px;background:var(--border);margin:20px 0}
+.namecard-bottom{display:flex;align-items:flex-end;justify-content:space-between;gap:20px}
+.namecard-meta{font-family:'JetBrains Mono',monospace;font-size:11px;
+  color:var(--text-3);line-height:2;flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.namecard-meta .status-dot{vertical-align:middle}
+.namecard-qr{flex-shrink:0;width:80px;height:80px;overflow:hidden}
+.namecard-qr svg{display:block;width:80px;height:80px}
+html.dark .namecard-qr svg{filter:invert(1)}
+.namecard-url{font-family:'JetBrains Mono',monospace;font-size:10px;
+  color:var(--text-3);margin-top:16px;word-break:break-all}
+.namecard-actions{max-width:520px;margin:16px auto 40px;display:flex;gap:0}
+.namecard-action{flex:1;font-family:'JetBrains Mono',monospace;font-size:12px;
+  padding:10px 16px;border:1px solid var(--border);background:none;
+  color:var(--text-2);cursor:pointer;transition:all .15s}
+.namecard-action+.namecard-action{border-left:none}
+.namecard-action:hover{color:var(--text);border-color:var(--text-3);background:var(--surface-alt)}
+
 /* ── Responsive ──────────────────────────────────────────────────────── */
+@media(max-width:768px){
+  .people-grid{grid-template-columns:1fr 1fr}
+  .directory-grid{grid-template-columns:1fr 1fr}
+  .pf-name{font-size:26px}
+  .room-msg-who{width:90px;font-size:10px}
+}
 @media(max-width:640px){
   nav{padding:16px 20px}
   .nav-links{display:none;position:absolute;top:54px;left:0;right:0;
@@ -158,19 +439,55 @@ html.dark .mode-switch{box-shadow:0 4px 24px rgba(0,0,0,0.4)}
     padding:16px 20px;gap:16px;z-index:100;border-bottom:1px solid var(--border)}
   .nav-links.open{display:flex}
   .mobile-toggle{display:block}
-  .container{padding:28px 20px 60px}
-  .page-title{font-size:24px}
+  .imm-header{padding:20px 20px 0}
+  .container{padding:24px 20px 60px}
+  .section-tabs{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .section-tab{padding:10px 16px;white-space:nowrap}
+  .page-title{font-size:28px;letter-spacing:-1px}
+  .people-grid{grid-template-columns:1fr}
+  .person-card{padding:20px}
+  .directory-grid{grid-template-columns:1fr}
   .entry{padding:12px 0;gap:12px}
   .entry-avatar{width:36px;height:36px}
   .entry-avatar svg{width:36px;height:36px}
+  .pf-hero{margin-bottom:28px;padding-bottom:28px}
+  .pf-avatar{width:64px;height:64px;margin-bottom:16px}
+  .pf-avatar svg{width:64px;height:64px}
+  .pf-name{font-size:24px}
+  .pf-stats{grid-template-columns:repeat(3,1fr)}
+  .pf-stat{padding:16px 12px}
+  .pf-stat-val{font-size:20px}
+  .pf-room-tag{padding:8px 12px;font-size:13px}
+  .room-card{padding:16px 20px}
+  .room-msg{padding:8px 16px}
+  .room-msg-who{width:70px;font-size:10px}
   .profile-header{flex-direction:column;text-align:center}
   .profile-avatar{width:56px;height:56px}
   .profile-avatar svg{width:56px;height:56px}
   fieldset.ps{padding:20px 16px}
-  .chat-msg{max-width:92%}
   .md{padding:24px 20px;font-size:12px}
   .mode-switch{bottom:16px}
   .mode-switch button{padding:8px 14px;font-size:10px}
   .msg-form{flex-direction:column}
   .msg-form button{border-left:1px solid var(--ink);border-top:none}
+  .back-link{margin-bottom:24px}
+  .search-bar{margin-bottom:24px}
+  .namecard{padding:28px 24px 20px}
+  .namecard-name{font-size:22px}
+  .namecard-bottom{flex-direction:column;align-items:flex-start}
+  .namecard-qr{width:64px;height:64px}
+  .namecard-qr svg{width:64px;height:64px}
+  .namecard-actions{margin-top:12px;margin-bottom:28px}
+  .agent-card{padding:16px 20px;gap:12px}
+  .agent-card-avatar{width:36px;height:36px}
+  .agent-card-avatar svg{width:36px;height:36px}
+  .agent-card-footer{flex-direction:column;align-items:flex-start;gap:4px}
+  .ap{margin-bottom:28px}
+  .ap-bar{padding:10px 16px}
+  .ap-identity{padding:20px 16px 16px}
+  .ap-bio{padding:0 16px 16px}
+  .ap-metric{padding:16px 10px}
+  .ap-val{font-size:18px}
+  .ap-section{padding:14px 16px}
+  .ap-code{padding:10px;font-size:11px}
 }
