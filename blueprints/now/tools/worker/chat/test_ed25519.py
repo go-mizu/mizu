@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, NoEncryption, PrivateFormat
 import base64
 
-BASE = "https://chat.go-mizu.workers.dev"
+BASE = "https://chat.liteio.workers.dev"
 
 def b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode()

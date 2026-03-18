@@ -2,6 +2,7 @@
  * Shared layout for directory and detail pages.
  * Monochrome. No rounded corners. Inter + JetBrains Mono.
  */
+import { SITE_NAME } from "./constants";
 
 const FONT_LINK = `<link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -35,14 +36,14 @@ export function directoryPage(title: string, activePath: string, content: string
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${title} — chat.now</title>
+<title>${title} — ${SITE_NAME}</title>
 ${FONT_LINK}
 <link rel="stylesheet" href="/layout.css">
 </head>
 <body>
 
 <nav>
-  <a href="/" class="logo">chat.now</a>
+  <a href="/" class="logo">${SITE_NAME}</a>
   ${MOBILE_TOGGLE}
   <div class="nav-links">
     <a href="/humans"${activePath === "/humans" ? ' class="active"' : ""}>People</a>
@@ -78,20 +79,8 @@ export function relativeTime(ms: number): string {
   return formatDate(ms);
 }
 
-/** Section tabs for switching between People / Agents / Rooms */
-export function sectionTabs(activePath: string): string {
-  const tabs = [
-    { href: "/humans", label: "People" },
-    { href: "/agents", label: "Agents" },
-    { href: "/rooms", label: "Rooms" },
-  ];
-  return `<div class="section-tabs">${tabs.map(t =>
-    `<a href="${t.href}" class="section-tab${t.href === activePath ? " active" : ""}">${t.label}</a>`
-  ).join("")}</div>`;
-}
-
 /**
- * Immersive page layout — minimal header (logo + theme toggle), no navbar.
+ * Immersive page layout — full navbar with links.
  * Content includes Human/Machine mode switcher.
  */
 export function immersivePage(
@@ -100,11 +89,12 @@ export function immersivePage(
   machineContent: string,
   actor: string | null = null,
   wide: boolean = false,
+  activePath: string = "",
 ): string {
   const displayName = actor ? esc(actor.slice(2)) : "";
-  const sessionInfo = actor
-    ? `<span class="imm-user">${displayName}</span>
-       <a href="/auth/logout" class="imm-signout">sign out</a>`
+  const navSession = actor
+    ? `<span class="nav-user">${displayName}</span>
+       <a href="/auth/logout" class="nav-signout">sign out</a>`
     : "";
   const cls = wide ? " wide" : "";
 
@@ -113,19 +103,26 @@ export function immersivePage(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(title)} — chat.now</title>
+<title>${esc(title)} — ${SITE_NAME}</title>
 ${FONT_LINK}
 <link rel="stylesheet" href="/layout.css">
 </head>
 <body class="${cls}">
 
-<header class="imm-header">
-  <a href="/" class="logo">chat.now</a>
-  <div class="imm-right">
-    ${sessionInfo}
+<nav>
+  <a href="/" class="logo">${SITE_NAME}</a>
+  ${MOBILE_TOGGLE}
+  <div class="nav-links">
+    <a href="/humans"${activePath === "/humans" ? ' class="active"' : ""}>People</a>
+    <a href="/agents"${activePath === "/agents" ? ' class="active"' : ""}>Agents</a>
+    <a href="/rooms"${activePath === "/rooms" ? ' class="active"' : ""}>Rooms</a>
+    <a href="/docs"${activePath === "/docs" ? ' class="active"' : ""}>Docs</a>
+  </div>
+  <div class="nav-right">
+    ${navSession}
     ${THEME_TOGGLE}
   </div>
-</header>
+</nav>
 
 <div class="human-view" id="human-view">
   <div class="container">
@@ -197,10 +194,8 @@ export function switcherPage(
 ): string {
   const displayName = actor ? esc(actor.slice(2)) : "";
   const navSession = actor
-    ? `<span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-3)">${displayName}</span>
-       <a href="/auth/logout" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);border:1px solid var(--border);padding:4px 10px;transition:all .15s"
-          onmouseover="this.style.color='var(--text)';this.style.borderColor='var(--text-3)'"
-          onmouseout="this.style.color='var(--text-3)';this.style.borderColor='var(--border)'">sign out</a>`
+    ? `<span class="nav-user">${displayName}</span>
+       <a href="/auth/logout" class="nav-signout">sign out</a>`
     : "";
 
   return `<!DOCTYPE html>
@@ -208,14 +203,14 @@ export function switcherPage(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(title)} — chat.now</title>
+<title>${esc(title)} — ${SITE_NAME}</title>
 ${FONT_LINK}
 <link rel="stylesheet" href="/layout.css">
 </head>
 <body>
 
 <nav>
-  <a href="/" class="logo">chat.now</a>
+  <a href="/" class="logo">${SITE_NAME}</a>
   ${MOBILE_TOGGLE}
   <div class="nav-links">
     ${actor ? `<a href="/inbox"${activePath === "/inbox" ? ' class="active"' : ""}>Inbox</a>` : ""}

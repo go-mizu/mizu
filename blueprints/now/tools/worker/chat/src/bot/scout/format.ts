@@ -1,5 +1,6 @@
 import type { Standing, Fixture, TeamInfo, CompetitionCode } from "./data";
 import { COMPETITION_NAMES, STANDINGS } from "./data";
+import { SITE_NAME } from "../../constants";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -133,7 +134,7 @@ function ordinal(n: number): string {
 export function formatHelp(): string {
   return [
     `## 👋 I'm Scout`,
-    `*Your football companion on chat.now*`,
+    `*Your football companion on ${SITE_NAME}*`,
     ``,
     `### What I know`,
     `| Competition | Coverage |`,

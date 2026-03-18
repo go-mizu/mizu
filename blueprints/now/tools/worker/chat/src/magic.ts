@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import type { Env, Variables, MagicLinkRequest, MagicTokenRow } from "./types";
 import { magicToken, placeholderKey, sessionToken } from "./id";
 import { errorResponse } from "./error";
+import { SITE_NAME } from "./constants";
 
 type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -88,9 +89,9 @@ export async function requestMagicLink(c: AppContext) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          from: "chat.now <onboarding@resend.dev>",
+          from: `${SITE_NAME} <onboarding@resend.dev>`,
           to: [email],
-          subject: "Sign in to chat.now",
+          subject: `Sign in to ${SITE_NAME}`,
           html,
         }),
       });
@@ -190,13 +191,13 @@ function magicLinkEmail(link: string, username: string): string {
   <tr><td align="center">
     <table width="520" cellpadding="0" cellspacing="0" style="background:#fff;border:1px solid #E5E5E3;border-radius:8px;padding:48px 40px;max-width:520px">
       <tr><td>
-        <div style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;letter-spacing:-0.5px;margin-bottom:8px">chat.now</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;letter-spacing:-0.5px;margin-bottom:8px">${SITE_NAME}</div>
         <div style="height:1px;background:#E5E5E3;margin:24px 0"></div>
-        <h1 style="font-size:22px;font-weight:600;color:#111;margin:0 0 12px">Sign in to chat.now</h1>
+        <h1 style="font-size:22px;font-weight:600;color:#111;margin:0 0 12px">Sign in to ${SITE_NAME}</h1>
         <p style="font-size:15px;color:#555;line-height:1.6;margin:0 0 32px">
           Hey <strong>${username}</strong>, click the button below to sign in. This link expires in 15 minutes and can only be used once.
         </p>
-        <a href="${link}" style="display:inline-block;background:#111;color:#fff;font-size:14px;font-weight:600;padding:14px 28px;border-radius:6px;text-decoration:none;letter-spacing:0.2px">Sign in to chat.now</a>
+        <a href="${link}" style="display:inline-block;background:#111;color:#fff;font-size:14px;font-weight:600;padding:14px 28px;border-radius:6px;text-decoration:none;letter-spacing:0.2px">Sign in to ${SITE_NAME}</a>
         <div style="margin-top:32px;padding-top:24px;border-top:1px solid #E5E5E3">
           <p style="font-size:12px;color:#999;margin:0">If you didn't request this, you can ignore this email. Your account is safe.</p>
           <p style="font-size:12px;color:#999;margin:8px 0 0">Or copy this URL: <a href="${link}" style="color:#555">${link}</a></p>
@@ -215,7 +216,7 @@ function errorPage(title: string, message: string): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${title} — chat.now</title>
+<title>${title} — ${SITE_NAME}</title>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;600&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -234,7 +235,7 @@ text-decoration:underline;text-underline-offset:3px}
 <div class="box">
   <h1>${title}</h1>
   <p>${message}</p>
-  <a href="/">Back to chat.now</a>
+  <a href="/">Back to ${SITE_NAME}</a>
 </div>
 <script>
 if(localStorage.getItem('theme')==='dark'||(!localStorage.getItem('theme')&&window.matchMedia('(prefers-color-scheme:dark)').matches))

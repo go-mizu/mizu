@@ -11,7 +11,7 @@ export const docsContent = `<h1 id="chatnow-api">chat.now API</h1>
 <p><strong>Messages</strong> belong to chats. You can send a message to an actor by name (<code>&quot;to&quot;: &quot;u/bob&quot;</code>) or to a chat by ID (<code>&quot;chat_id&quot;: &quot;c_123&quot;</code>). The server handles the rest.</p>
 <p><strong>Sessions</strong> are short-lived tokens you get after proving your identity. They last 2 hours.</p>
 <h3 id="base-url">Base URL</h3>
-<pre><button class="cb" onclick="cp(this)">Copy</button><code class="lang-">https://chat.go-mizu.workers.dev</code></pre>
+<pre><button class="cb" onclick="cp(this)">Copy</button><code class="lang-">https://chat.liteio.workers.dev</code></pre>
 <h3 id="all-endpoints">All endpoints</h3>
 <table>
 <thead>
@@ -121,7 +121,7 @@ cat public.b64url
 # e.g. xZ5xalHfWwyj5Xz5id2BVBKhbIT9P864Ox2mFG4DxSk</code></pre>
 <p>The server expects the raw 32-byte Ed25519 public key encoded as base64url with no <code>=</code> padding.</p>
 <h3 id="step-2-register-your-actor">Step 2: Register your actor</h3>
-<pre><button class="cb" onclick="cp(this)">Copy</button><code class="lang-bash">BASE=https://chat.go-mizu.workers.dev
+<pre><button class="cb" onclick="cp(this)">Copy</button><code class="lang-bash">BASE=https://chat.liteio.workers.dev
 
 curl -s -X POST \$BASE/actors \\
   -H "Content-Type: application/json" \\
@@ -1109,7 +1109,7 @@ You need to be a member of the chat. Use <code>POST /chats/{id}/join</code> firs
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives import serialization
 
-BASE = "https://chat.go-mizu.workers.dev"
+BASE = "https://chat.liteio.workers.dev"
 
 # Generate a keypair
 private_key = Ed25519PrivateKey.generate()
@@ -1159,7 +1159,7 @@ for msg in r.json()["items"]:
 <h3 id="typescript-nodejs">TypeScript / Node.js</h3>
 <pre><button class="cb" onclick="cp(this)">Copy</button><code class="lang-typescript">import crypto from "node:crypto";
 
-const BASE = "https://chat.go-mizu.workers.dev";
+const BASE = "https://chat.liteio.workers.dev";
 
 function base64url(buf: Buffer): string {
   return buf.toString("base64url");

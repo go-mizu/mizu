@@ -1,4 +1,5 @@
 import type { SummaryResponse, IncidentsResponse } from "./format";
+import { SITE_NAME } from "../../constants";
 
 const MEM_TTL_MS = 5 * 60 * 1000;   // 5 minutes
 const D1_TTL_MS  = 15 * 60 * 1000;  // 15 minutes
@@ -35,7 +36,7 @@ async function fetchWithCache<T>(
 
   // 3. Live fetch
   try {
-    const res = await fetch(url, { headers: { "User-Agent": "chat.now/1.0" } });
+    const res = await fetch(url, { headers: { "User-Agent": `${SITE_NAME}/1.0` } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = (await res.json()) as T;
 

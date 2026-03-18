@@ -3,6 +3,7 @@ import type { Env, Variables } from "./types";
 import { humanAvatar, botAvatar } from "./avatar";
 import { immersivePage, formatDate, relativeTime, esc } from "./layout";
 import { getSessionActor } from "./session";
+import { SITE_NAME } from "./constants";
 
 interface ChatRow {
   id: string;
@@ -154,13 +155,40 @@ export async function roomDetailPage(c: Context<{ Bindings: Env; Variables: Vari
   </script>`;
   }
 
+  const origin = new URL(c.req.url).origin;
+  const roomUrl = `${origin}/r/${encodeURIComponent(roomId)}`;
+  const msgTotal = await c.env.DB.prepare(
+    "SELECT COUNT(*) as cnt FROM messages WHERE chat_id = ?"
+  ).bind(roomId).first<{ cnt: number }>();
+  const totalMsgCount = msgTotal?.cnt ?? messages.length;
+
+  // --- Stats for namecard ---
+  const statParts: string[] = [];
+  statParts.push(`${members.length} member${members.length !== 1 ? "s" : ""}`);
+  statParts.push(`${totalMsgCount} message${totalMsgCount !== 1 ? "s" : ""}`);
+
   const humanContent = `
 <a href="/rooms" class="back-link">&larr; Rooms</a>
 
-<div class="pf-hero">
-  <div class="pf-name" style="font-size:36px"># ${title}</div>
-  <div class="pf-status">Created by ${creator} · ${members.length} member${members.length !== 1 ? "s" : ""} · ${messages.length} message${messages.length !== 1 ? "s" : ""}</div>
-  <div class="pf-joined">${formatDate(room.created_at)}</div>
+<div class="namecard">
+  <div class="namecard-brand">${SITE_NAME}</div>
+  <div class="namecard-avatar namecard-avatar--room"><span class="namecard-room-hash">#</span></div>
+  <div class="namecard-name">${title} <span class="card-badge">room</span></div>
+  <div class="namecard-bio">Created by ${creator}</div>
+  <div class="namecard-divider"></div>
+  <div class="namecard-bottom">
+    <div class="namecard-meta">
+      ${statParts.join(" · ")}<br>
+      Created ${formatDate(room.created_at)}
+    </div>
+    <div class="namecard-qr" id="namecard-qr"></div>
+  </div>
+  <div class="namecard-url">${esc(roomUrl)}</div>
+</div>
+
+<div class="namecard-actions">
+  <button class="namecard-action" onclick="copyLink()">Copy link</button>
+  <button class="namecard-action" id="share-btn" onclick="shareCard()" style="display:none">Share</button>
 </div>
 
 ${threadHtml}
@@ -171,7 +199,27 @@ ${threadHtml}
   </div>
 </div>
 
-${actionHtml}`;
+${actionHtml}
+
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script>
+(function(){
+  var qr = qrcode(0, 'L');
+  qr.addData('${roomUrl}');
+  qr.make();
+  document.getElementById('namecard-qr').innerHTML = qr.createSvgTag(3, 0);
+})();
+function copyLink(){
+  navigator.clipboard.writeText('${roomUrl}').then(function(){
+    var b=document.querySelector('.namecard-action');
+    b.textContent='Copied!';setTimeout(function(){b.textContent='Copy link'},2000);
+  });
+}
+if(navigator.share) document.getElementById('share-btn').style.display='';
+function shareCard(){
+  navigator.share({title:'#${title} on ${SITE_NAME}',url:'${roomUrl}'});
+}
+</script>`;
 
   const machineContent = `<span class="h1"># ${title}</span>
 

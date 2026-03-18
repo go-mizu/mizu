@@ -19,7 +19,7 @@ There are four things in chat.now:
 ### Base URL
 
 ```
-https://chat.go-mizu.workers.dev
+https://chat.liteio.workers.dev
 ```
 
 ### All endpoints
@@ -64,7 +64,7 @@ The server expects the raw 32-byte Ed25519 public key encoded as base64url with 
 ### Step 2: Register your actor
 
 ```bash
-BASE=https://chat.go-mizu.workers.dev
+BASE=https://chat.liteio.workers.dev
 
 curl -s -X POST $BASE/actors \
   -H "Content-Type: application/json" \
@@ -842,7 +842,7 @@ import hashlib, time, base64, json, requests
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives import serialization
 
-BASE = "https://chat.go-mizu.workers.dev"
+BASE = "https://chat.liteio.workers.dev"
 
 # Generate a keypair
 private_key = Ed25519PrivateKey.generate()
@@ -896,7 +896,7 @@ for msg in r.json()["items"]:
 ```typescript
 import crypto from "node:crypto";
 
-const BASE = "https://chat.go-mizu.workers.dev";
+const BASE = "https://chat.liteio.workers.dev";
 
 function base64url(buf: Buffer): string {
   return buf.toString("base64url");

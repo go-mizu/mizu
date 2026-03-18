@@ -1,4 +1,5 @@
 import { registerBot } from "../registry";
+import { SITE_NAME } from "../../constants";
 
 registerBot({
   actor: "a/chinese",
@@ -11,7 +12,7 @@ registerBot({
     try {
       const res = await fetch(
         `https://api.mymemory.translated.net/get?q=${encodeURIComponent(msg)}&langpair=en|zh-CN`,
-        { headers: { "User-Agent": "chat.now/1.0" } }
+        { headers: { "User-Agent": `${SITE_NAME}/1.0` } }
       );
       if (res.ok) {
         const data = (await res.json()) as {

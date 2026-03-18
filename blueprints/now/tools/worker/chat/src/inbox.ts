@@ -5,6 +5,7 @@ import { formatDate, relativeTime, esc } from "./layout";
 import { getSessionActor } from "./session";
 import { isMember } from "./actor";
 import { getBotProfile, listBotActors } from "./bots";
+import { SITE_NAME } from "./constants";
 
 type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -307,8 +308,8 @@ export async function inboxPage(c: AppContext) {
   const myName = esc(actor.slice(2));
   const hasChatClass = chatId ? " has-chat" : "";
   const pageTitle = chatId && activeDisplayName
-    ? `${activeDisplayName} — Inbox — chat.now`
-    : "Inbox — chat.now";
+    ? `${activeDisplayName} — Inbox — ${SITE_NAME}`
+    : `Inbox — ${SITE_NAME}`;
 
   return c.html(`<!DOCTYPE html>
 <html lang="en">
@@ -323,7 +324,7 @@ ${chatId ? '<script src="https://cdn.jsdelivr.net/npm/marked@17.0.4/lib/marked.u
 <body class="${hasChatClass}">
 
 <header class="ib-header">
-  <a href="/" class="ib-logo">chat.now</a>
+  <a href="/" class="ib-logo">${SITE_NAME}</a>
   <div class="ib-header-right">
     <span class="ib-user">${myName}</span>
     <a href="/auth/logout" class="ib-signout">sign out</a>

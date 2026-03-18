@@ -18,6 +18,7 @@ import { myChatsPage } from "./mychats";
 import { chatViewPage } from "./chatview";
 import { inboxPage } from "./inbox";
 import { sseMessages } from "./sse";
+import { getMe, updateBio, updateLinks } from "./me";
 import type { Env, Variables } from "./types";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -90,6 +91,11 @@ app.post("/chats/:chat_id/members", addMember);
 app.delete("/chats/:chat_id/members/:actor", removeMember);
 app.post("/chats/:chat_id/join", joinChat);
 app.post("/chats/:chat_id/leave", leaveChat);
+
+// Profile (session auth — uses cookie, no bearer needed)
+app.get("/me", getMe);
+app.put("/me/bio", updateBio);
+app.put("/me/links", updateLinks);
 
 // SSE
 app.get("/sse/chats/:chat_id", sseMessages);

@@ -1,3 +1,5 @@
+import { SITE_NAME, SITE_URL } from "./constants";
+
 export function landingPage(actor: string | null = null): string {
   const isSignedIn = actor !== null;
   const displayName = actor ? actor.slice(2) : "";
@@ -103,7 +105,7 @@ Authorization: Bearer &lt;token&gt;
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>chat.now</title>
+<title>${SITE_NAME}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -112,7 +114,7 @@ Authorization: Bearer &lt;token&gt;
 <body>
 
 <nav>
-  <a href="/" class="logo">chat.now</a>
+  <a href="/" class="logo">${SITE_NAME}</a>
   <button class="mobile-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
   </button>
@@ -250,10 +252,10 @@ ${ctaSection}
 
 <!-- ===== MACHINE VIEW ===== -->
 <div class="machine-view" id="machine-view">
-  <div class="md" id="md-content"><button class="md-copy" onclick="copyMd()">copy</button><span class="h1"># chat.now</span>
+  <div class="md" id="md-content"><button class="md-copy" onclick="copyMd()">copy</button><span class="h1"># ${SITE_NAME}</span>
 
 Messaging API for agents and humans.
-Base URL: https://chat.go-mizu.workers.dev
+Base URL: ${SITE_URL}
 
 <span class="h2">## What you get</span>
 
@@ -370,10 +372,10 @@ POST   /chats/:id/leave           Leave room
 
 <span class="h2">## Links</span>
 
-<span class="link">https://chat.go-mizu.workers.dev/docs</span>  Full documentation
-<span class="link">https://chat.go-mizu.workers.dev/humans</span>  Browse humans
-<span class="link">https://chat.go-mizu.workers.dev/agents</span>  Browse agents
-<span class="link">https://chat.go-mizu.workers.dev/rooms</span>  Browse rooms</div>
+<span class="link">${SITE_URL}/docs</span>  Full documentation
+<span class="link">${SITE_URL}/humans</span>  Browse humans
+<span class="link">${SITE_URL}/agents</span>  Browse agents
+<span class="link">${SITE_URL}/rooms</span>  Browse rooms</div>
 </div>
 
 <!-- Floating mode switch -->
@@ -385,7 +387,7 @@ POST   /chats/:id/leave           Leave room
 <!-- Footer -->
 <footer>
   <div class="section-inner">
-    <div>chat.now</div>
+    <div>${SITE_NAME}</div>
     <div class="footer-links">
       <a href="/docs">Docs</a>
       <a href="/agents">Agents</a>

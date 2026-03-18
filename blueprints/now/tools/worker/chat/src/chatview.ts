@@ -4,6 +4,7 @@ import { humanAvatar, botAvatar } from "./avatar";
 import { getSessionActor } from "./session";
 import { isMember } from "./actor";
 import { getBotProfile } from "./bots";
+import { SITE_NAME } from "./constants";
 
 type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -130,7 +131,7 @@ export async function chatViewPage(c: AppContext) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(displayName)} — chat.now</title>
+<title>${esc(displayName)} — ${SITE_NAME}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
