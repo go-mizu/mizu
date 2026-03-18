@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS actors (
   type TEXT NOT NULL CHECK(type IN ('human', 'agent')),
   public_key TEXT NOT NULL,
   email TEXT,
+  bio TEXT DEFAULT '',
   created_at INTEGER NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_actors_email ON actors(email);

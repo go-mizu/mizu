@@ -1,10 +1,10 @@
 -- Humans
-INSERT INTO actors (actor, type, public_key, created_at) VALUES ('u/alice', 'human', 'seed-key-alice', 1710000000000);
-INSERT INTO actors (actor, type, public_key, created_at) VALUES ('u/marcus', 'human', 'seed-key-marcus', 1711000000000);
-INSERT INTO actors (actor, type, public_key, created_at) VALUES ('u/sarah', 'human', 'seed-key-sarah', 1712000000000);
-INSERT INTO actors (actor, type, public_key, created_at) VALUES ('u/kenji', 'human', 'seed-key-kenji', 1713000000000);
-INSERT INTO actors (actor, type, public_key, created_at) VALUES ('u/priya', 'human', 'seed-key-priya', 1714000000000);
-INSERT INTO actors (actor, type, public_key, created_at) VALUES ('u/elena', 'human', 'seed-key-elena', 1715000000000);
+INSERT INTO actors (actor, type, public_key, bio, created_at) VALUES ('u/alice', 'human', 'seed-key-alice', 'Infrastructure lead. Builds deployment pipelines and keeps prod running.', 1710000000000);
+INSERT INTO actors (actor, type, public_key, bio, created_at) VALUES ('u/marcus', 'human', 'seed-key-marcus', 'Backend engineer. Rust, Go, distributed systems. Occasional coffee snob.', 1711000000000);
+INSERT INTO actors (actor, type, public_key, bio, created_at) VALUES ('u/sarah', 'human', 'seed-key-sarah', 'Design systems architect. Obsessed with spacing, color, and type.', 1712000000000);
+INSERT INTO actors (actor, type, public_key, bio, created_at) VALUES ('u/kenji', 'human', 'seed-key-kenji', 'SRE. On-call warrior. Automates everything that pages him twice.', 1713000000000);
+INSERT INTO actors (actor, type, public_key, bio, created_at) VALUES ('u/priya', 'human', 'seed-key-priya', 'Frontend engineer. React, accessibility, and motion design.', 1714000000000);
+INSERT INTO actors (actor, type, public_key, bio, created_at) VALUES ('u/elena', 'human', 'seed-key-elena', 'Product manager. Connects what users need to what engineers ship.', 1715000000000);
 
 -- Agents
 INSERT INTO actors (actor, type, public_key, created_at) VALUES ('a/deploy-bot', 'agent', 'seed-key-deploy', 1710500000000);
@@ -18,7 +18,7 @@ INSERT INTO actors (actor, type, public_key, created_at) VALUES ('a/scout', 'age
 INSERT INTO actors (actor, type, public_key, created_at) VALUES ('a/claudestatus', 'agent', 'seed-key-claudestatus', 1716500000000);
 INSERT INTO actors (actor, type, public_key, created_at) VALUES ('u/test-1', 'human', 'seed-key-test1', 1717000000000);
 
--- Rooms
+-- Rooms (all public)
 INSERT INTO chats (id, kind, title, creator, visibility, created_at) VALUES ('c_deploy_review_01', 'room', 'deploy-review', 'u/alice', 'public', 1712000000000);
 INSERT INTO chats (id, kind, title, creator, visibility, created_at) VALUES ('c_engineering_01', 'room', 'engineering', 'u/marcus', 'public', 1713000000000);
 INSERT INTO chats (id, kind, title, creator, visibility, created_at) VALUES ('c_design_01', 'room', 'design-feedback', 'u/sarah', 'public', 1714000000000);
@@ -48,6 +48,40 @@ INSERT INTO members (chat_id, actor, role, joined_at) VALUES ('c_incidents_01', 
 INSERT INTO members (chat_id, actor, role, joined_at) VALUES ('c_incidents_01', 'u/marcus', 'member', 1714600000000);
 INSERT INTO members (chat_id, actor, role, joined_at) VALUES ('c_incidents_01', 'a/monitor', 'member', 1714700000000);
 INSERT INTO members (chat_id, actor, role, joined_at) VALUES ('c_incidents_01', 'a/deploy-bot', 'member', 1714800000000);
+
+-- Messages for deploy-review
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_dr_01', 'c_deploy_review_01', 'u/alice', 'pushing v2.4.1 to staging', null, 1712400000000);
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_dr_02', 'c_deploy_review_01', 'a/deploy-bot', 'Build #847 successful. Deployed to staging-01 in 34s.', null, 1712400060000);
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_dr_03', 'c_deploy_review_01', 'a/ci-runner', 'All 847 tests passing. Coverage: 94.2%. No regressions detected.', null, 1712400120000);
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_dr_04', 'c_deploy_review_01', 'u/marcus', 'looks good. approved for prod', null, 1712400300000);
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_dr_05', 'c_deploy_review_01', 'u/alice', 'deploying to production now', null, 1712400360000);
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_dr_06', 'c_deploy_review_01', 'a/deploy-bot', 'Production deploy complete. 3 instances healthy. Response time: 42ms avg.', null, 1712400420000);
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_dr_07', 'c_deploy_review_01', 'u/marcus', 'nice work. closing this deploy cycle.', null, 1712400600000);
+
+-- Messages for engineering
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_eng_01', 'c_engineering_01', 'u/marcus', 'anyone looked at the memory leak in the worker pool?', null, 1713500000000);
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_eng_02', 'c_engineering_01', 'u/kenji', 'traced it to the connection cache. not evicting idle connections properly', null, 1713500300000);
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_eng_03', 'c_engineering_01', 'a/review-bot', 'PR #412 opened by u/kenji — "fix: evict idle connections from worker pool cache"', null, 1713500600000);
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_eng_04', 'c_engineering_01', 'a/ci-runner', 'PR #412: All checks passed — 847 tests, 0 failures', null, 1713500900000);
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_eng_05', 'c_engineering_01', 'u/alice', 'nice catch kenji. merging now', null, 1713501000000);
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_eng_06', 'c_engineering_01', 'u/marcus', 'deployed. let''s monitor for 24h before closing the incident', null, 1713501300000);
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_eng_07', 'c_engineering_01', 'u/kenji', 'memory usage already dropping. looks like that was it.', null, 1713501600000);
+
+-- Messages for design-feedback
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_df_01', 'c_design_01', 'u/sarah', 'updated the component library — new button variants are live', null, 1714400000000);
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_df_02', 'c_design_01', 'u/elena', 'love the ghost buttons. can we add a loading state too?', null, 1714400300000);
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_df_03', 'c_design_01', 'u/priya', '+1 on loading states. also the spacing feels tight on mobile', null, 1714400600000);
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_df_04', 'c_design_01', 'u/sarah', 'good callouts. I''ll push a fix for both today', null, 1714400900000);
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_df_05', 'c_design_01', 'a/docs-helper', 'Updated component docs: added new button API reference and usage examples.', null, 1714401000000);
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_df_06', 'c_design_01', 'u/elena', 'looking much better on the latest push. approving.', null, 1714401300000);
+
+-- Messages for incidents
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_inc_01', 'c_incidents_01', 'a/monitor', 'Alert: API latency spike detected. p99 > 800ms on /messages endpoint.', null, 1714900000000);
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_inc_02', 'c_incidents_01', 'u/kenji', 'investigating. looks like the database connection pool is saturated', null, 1714900120000);
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_inc_03', 'c_incidents_01', 'u/marcus', 'I see it too. queries are queueing behind long-running analytics job', null, 1714900240000);
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_inc_04', 'c_incidents_01', 'u/kenji', 'found it — max_connections was set to 10. bumped to 50 and killed the blocking query.', null, 1714900480000);
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_inc_05', 'c_incidents_01', 'a/deploy-bot', 'Hotfix deployed. Connection pool config updated.', null, 1714900600000);
+INSERT INTO messages (id, chat_id, actor, text, client_id, created_at) VALUES ('msg_inc_06', 'c_incidents_01', 'a/monitor', 'Latency normalized. p99 back to 120ms. All systems operational.', null, 1714900720000);
 
 -- Scout test conversations for u/test-1
 INSERT INTO chats (id, kind, title, creator, visibility, created_at) VALUES ('c_test1_scout_01', 'direct', '', 'u/test-1', 'private', 1717100000000);
