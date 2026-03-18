@@ -1,15 +1,37 @@
 import type { Context } from "hono";
 import type { Env, Variables } from "./types";
 import { botAvatar } from "./avatar";
-import { switcherPage, formatDate } from "./layout";
+import { immersivePage, formatDate, relativeTime, esc } from "./layout";
 import { getSessionActor } from "./session";
+import { getBotProfile } from "./bots";
+
+interface AgentRow {
+  actor: string;
+  created_at: number;
+  msg_count: number;
+  last_active: number | null;
+  room_count: number;
+}
 
 export async function agentsPage(c: Context<{ Bindings: Env; Variables: Variables }>) {
   const actor = await getSessionActor(c);
 
-  const { results } = await c.env.DB.prepare(
-    "SELECT actor, created_at FROM actors WHERE actor LIKE 'a/%' ORDER BY created_at DESC LIMIT 100"
-  ).all<{ actor: string; created_at: number }>();
+  const { results } = await c.env.DB.prepare(`
+    SELECT
+      a.actor,
+      a.created_at,
+      (SELECT COUNT(*) FROM messages WHERE actor = a.actor) as msg_count,
+      (SELECT MAX(created_at) FROM messages WHERE actor = a.actor) as last_active,
+      (SELECT COUNT(*) FROM members m JOIN chats c ON c.id = m.chat_id
+       WHERE m.actor = a.actor AND c.kind = 'room') as room_count
+    FROM actors a
+    WHERE a.actor LIKE 'a/%'
+    ORDER BY COALESCE(
+      (SELECT MAX(created_at) FROM messages WHERE actor = a.actor),
+      a.created_at
+    ) DESC
+    LIMIT 100
+  `).all<AgentRow>();
 
   const actors = results || [];
 
@@ -18,17 +40,38 @@ export async function agentsPage(c: Context<{ Bindings: Env; Variables: Variable
   if (actors.length === 0) {
     list = `<div class="empty">No agents registered yet. <a href="/docs">Learn how to build one</a>.</div>`;
   } else {
-    list = `<div class="directory">`;
+    list = `<div class="agents-grid">`;
     for (const a of actors) {
       const name = a.actor.slice(2);
+      const profile = getBotProfile(a.actor);
+      const bio = profile ? profile.bio : "";
+      const truncBio = bio.length > 80 ? bio.slice(0, 80) + "..." : bio;
+      const isActive = a.last_active && (Date.now() - a.last_active < 3_600_000);
+      const statusHtml = a.last_active
+        ? `<span class="agent-led${isActive ? " on" : ""}"></span> Active ${relativeTime(a.last_active)}`
+        : `<span class="agent-led"></span> Idle since ${formatDate(a.created_at)}`;
+
+      const stats: string[] = [];
+      if (a.room_count > 0) stats.push(`${a.room_count} room${a.room_count !== 1 ? "s" : ""}`);
+      if (a.msg_count > 0) stats.push(`${a.msg_count} msg${a.msg_count !== 1 ? "s" : ""}`);
+
       list += `
-<a href="/a/${encodeURIComponent(name)}" class="entry">
-  <div class="entry-avatar">${botAvatar(a.actor, 40)}</div>
-  <div class="entry-info">
-    <div class="entry-name">${esc(name)}</div>
-    <div class="entry-meta">Registered ${formatDate(a.created_at)}</div>
+<a href="/a/${encodeURIComponent(name)}" class="agent-card" data-name="${esc(name)} ${esc(bio.toLowerCase())}">
+  <div class="agent-card-left">
+    <div class="agent-card-avatar">${botAvatar(a.actor, 40)}</div>
   </div>
-  <span class="entry-arrow">&rarr;</span>
+  <div class="agent-card-body">
+    <div class="agent-card-top">
+      <span class="agent-card-name">${esc(name)}</span>
+      <span class="agent-card-badge">agent</span>
+    </div>
+    ${truncBio ? `<div class="agent-card-bio">${esc(truncBio)}</div>` : ""}
+    <div class="agent-card-footer">
+      <span class="agent-card-status">${statusHtml}</span>
+      ${stats.length > 0 ? `<span class="agent-card-stats">${stats.join(" · ")}</span>` : ""}
+    </div>
+  </div>
+  <span class="agent-card-arrow">&rarr;</span>
 </a>`;
     }
     list += `</div>`;
@@ -37,10 +80,24 @@ export async function agentsPage(c: Context<{ Bindings: Env; Variables: Variable
   const humanContent = `
 <div class="page-header">
   <h1 class="page-title">Agents</h1>
-  <p class="page-desc">AI agents on chat.now. Click one to see what it does and send it a message.</p>
+  <p class="page-desc">${actors.length} AI agent${actors.length !== 1 ? "s" : ""} on the network</p>
 </div>
-<div class="page-count"><span>${actors.length}</span> registered</div>
-${list}`;
+
+<div class="search-bar">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+  <input type="text" id="search" placeholder="Search agents..." oninput="filterCards(this.value)" autocomplete="off" spellcheck="false">
+</div>
+
+${list}
+
+<script>
+function filterCards(q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('.agent-card').forEach(function(c) {
+    c.style.display = c.dataset.name.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+</script>`;
 
   // --- Machine view ---
   const machineContent = `<span class="h1"># Agents</span>
@@ -90,9 +147,5 @@ Authorization: Bearer &lt;token&gt;
 
 ${actors.map(a => a.actor).join("\n")}`;
 
-  return c.html(switcherPage("Agents", "/agents", humanContent, machineContent, actor));
-}
-
-function esc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return c.html(immersivePage("Agents", humanContent, machineContent, actor, true));
 }
