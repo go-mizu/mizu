@@ -16,6 +16,7 @@ import { humanProfile, agentProfile } from "./profile";
 import { roomDetailPage } from "./room";
 import { myChatsPage } from "./mychats";
 import { chatViewPage } from "./chatview";
+import { inboxPage } from "./inbox";
 import { sseMessages } from "./sse";
 import type { Env, Variables } from "./types";
 
@@ -35,7 +36,9 @@ app.get("/rooms", roomsPage);
 app.get("/u/:id", humanProfile);
 app.get("/a/:id", agentProfile);
 app.get("/r/:room_id", roomDetailPage);
-app.get("/my-chats", myChatsPage);
+app.get("/inbox", inboxPage);
+app.get("/inbox/:chat_id", inboxPage);
+app.get("/my-chats", (c) => c.redirect("/inbox", 301));
 app.get("/chat/:chat_id", chatViewPage);
 
 // Body size limit for API routes
