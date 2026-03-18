@@ -1,0 +1,116 @@
+/* ══════════════════════════════════════════════════════════════════════
+   storage.now — File Browser
+   Matches landing design system.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── Reset & Design Tokens ──────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#FAFAF9;--surface:#FFF;--surface-alt:#F5F5F4;
+  --text:#09090B;--text-2:#52525B;--text-3:#A1A1AA;
+  --border:#E4E4E7;--ink:#09090B;--err:#EF4444;--ok:#10B981;
+  --accent:#10B981;
+}
+html.dark{
+  --bg:#09090B;--surface:#0F0F11;--surface-alt:#131316;
+  --text:#EDEDED;--text-2:#888;--text-3:#444;
+  --border:#1A1A1E;--ink:#EDEDED;--err:#FCA5A5;--ok:#6EE7B7;
+  --accent:#34D399;
+}
+body{font-family:'Inter',system-ui,sans-serif;color:var(--text);background:var(--bg);
+  -webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+@keyframes glow-pulse{0%,100%{opacity:.6}50%{opacity:1}}
+
+/* ── Nav ─────────────────────────────────────────────────────────────── */
+nav{position:relative;z-index:10;width:100%;padding:16px 48px;display:flex;align-items:center;
+  justify-content:space-between;max-width:1200px;margin:0 auto;
+  border-bottom:1px solid var(--border)}
+.logo{font-family:'JetBrains Mono',monospace;font-weight:600;font-size:14px;
+  text-decoration:none;letter-spacing:-0.5px;display:flex;align-items:center;gap:8px}
+.logo-dot{width:7px;height:7px;background:var(--accent);display:inline-block;
+  border-radius:50%;box-shadow:0 0 10px var(--accent);animation:glow-pulse 3s ease-in-out infinite}
+.nav-links{display:flex;gap:28px}
+.nav-links a{font-size:13px;color:var(--text-3);text-decoration:none;transition:color .2s;font-weight:500}
+.nav-links a:hover,.nav-links a.active{color:var(--text)}
+.nav-right{display:flex;align-items:center;gap:12px}
+.nav-user{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-2)}
+.nav-signout{font-size:12px;color:var(--text-3);border:1px solid var(--border);
+  padding:5px 12px;border-radius:6px;transition:all .2s;font-weight:500;text-decoration:none}
+.nav-signout:hover{color:var(--text);border-color:var(--text-2)}
+.theme-toggle{background:none;border:1px solid var(--border);border-radius:6px;
+  padding:6px 10px;cursor:pointer;color:var(--text-3);display:flex;align-items:center;
+  transition:all .2s}
+.theme-toggle:hover{color:var(--text);border-color:var(--text-2)}
+.theme-toggle .icon-sun{display:none}
+.theme-toggle .icon-moon{display:block}
+html.dark .theme-toggle .icon-sun{display:block}
+html.dark .theme-toggle .icon-moon{display:none}
+.mobile-toggle{display:none;background:none;border:none;color:var(--text-3);cursor:pointer;padding:4px}
+
+/* ── Browse layout ───────────────────────────────────────────────────── */
+.browse-container{max-width:960px;margin:0 auto;padding:0 48px 80px}
+
+.browse-header{display:flex;align-items:center;justify-content:space-between;
+  padding:16px 0;border-bottom:1px solid var(--border)}
+.breadcrumb{font-family:'JetBrains Mono',monospace;font-size:14px;display:flex;
+  align-items:center;gap:6px;flex-wrap:wrap}
+.crumb{color:var(--text-2);text-decoration:none;transition:color .15s}
+.crumb:hover{color:var(--text)}
+.crumb-sep{color:var(--text-3);font-size:12px}
+.browse-stats{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3)}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────── */
+.browse-toolbar{display:flex;gap:8px;padding:16px 0;border-bottom:1px solid var(--border)}
+.tool-btn{font-family:'JetBrains Mono',monospace;font-size:12px;
+  padding:8px 16px;border:1px solid var(--border);background:none;border-radius:6px;
+  color:var(--text-2);cursor:pointer;display:flex;align-items:center;gap:8px;
+  transition:all .2s}
+.tool-btn:hover{color:var(--text);border-color:var(--text-2)}
+
+/* ── Drop zone ───────────────────────────────────────────────────────── */
+.drop-zone{display:none;border:2px dashed var(--border);padding:40px;border-radius:10px;
+  text-align:center;margin:16px 0;transition:all .2s}
+.drop-zone.active{display:block;border-color:var(--accent);background:var(--surface-alt)}
+.drop-label{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text-3)}
+
+/* ── File list ───────────────────────────────────────────────────────── */
+.file-list{border:1px solid var(--border);margin-top:16px;border-radius:10px;overflow:hidden}
+.file-row{display:flex;align-items:center;gap:12px;padding:12px 20px;
+  border-bottom:1px solid var(--border);transition:background .1s;
+  text-decoration:none;color:var(--text)}
+.file-row:last-child{border-bottom:none}
+.file-row:hover{background:var(--surface-alt)}
+.file-row--folder{cursor:pointer}
+.file-row--folder .file-name{font-weight:600}
+.file-icon{width:20px;flex-shrink:0;color:var(--text-3);display:flex;align-items:center}
+.file-name{font-family:'JetBrains Mono',monospace;font-size:13px;flex:1;
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-size{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
+  min-width:60px;text-align:right}
+.file-time{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
+  min-width:60px;text-align:right}
+.file-actions{display:flex;gap:8px;min-width:50px;justify-content:flex-end}
+.file-actions a{color:var(--text-3);transition:color .15s;display:flex;align-items:center}
+.file-actions a:hover{color:var(--text)}
+
+/* ── Empty state ─────────────────────────────────────────────────────── */
+.empty-state{display:flex;flex-direction:column;align-items:center;gap:16px;
+  padding:64px 20px;color:var(--text-3)}
+.empty-state svg{opacity:0.3}
+.empty-state div{font-family:'JetBrains Mono',monospace;font-size:13px}
+
+/* ── Responsive ──────────────────────────────────────────────────────── */
+@media(max-width:640px){
+  nav{padding:14px 20px}
+  .nav-links{display:none;position:absolute;top:50px;left:0;right:0;
+    flex-direction:column;background:var(--bg);padding:16px 20px;gap:16px;
+    z-index:100;border-bottom:1px solid var(--border)}
+  .nav-links.open{display:flex}
+  .mobile-toggle{display:block}
+  .browse-container{padding:0 20px 60px}
+  .browse-header{flex-direction:column;align-items:flex-start;gap:8px}
+  .file-row{padding:10px 12px;gap:8px}
+  .file-size,.file-time{display:none}
+  .file-actions{min-width:30px}
+}
