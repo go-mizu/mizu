@@ -1,0 +1,195 @@
+/* ══════════════════════════════════════════════════════════════════════
+   storage.now — Pricing
+   Modern, value-focused. Matches landing design system.
+   ══════════════════════════════════════════════════════════════════════ */
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --bg:#FAFAF9;--surface:#FFF;--surface-alt:#F5F5F4;
+  --text:#09090B;--text-2:#52525B;--text-3:#A1A1AA;
+  --border:#E4E4E7;--ink:#09090B;
+  --accent:#10B981;--accent-2:#38BDF8;
+  --glow:rgba(16,185,129,0.06);
+  --glow-strong:rgba(16,185,129,0.12);
+  --gradient:linear-gradient(135deg,#10B981,#38BDF8);
+  --gradient-subtle:linear-gradient(135deg,rgba(16,185,129,0.1),rgba(56,189,248,0.1));
+}
+html.dark{
+  --bg:#09090B;--surface:#0F0F11;--surface-alt:#131316;
+  --text:#EDEDED;--text-2:#888;--text-3:#444;
+  --border:#1A1A1E;--ink:#EDEDED;
+  --accent:#34D399;--accent-2:#38BDF8;
+  --glow:rgba(52,211,153,0.04);
+  --glow-strong:rgba(52,211,153,0.1);
+  --gradient:linear-gradient(135deg,#34D399,#38BDF8);
+  --gradient-subtle:linear-gradient(135deg,rgba(52,211,153,0.08),rgba(56,189,248,0.08));
+}
+
+body{font-family:'Inter',system-ui,sans-serif;color:var(--text);background:var(--bg);
+  -webkit-font-smoothing:antialiased;overflow-x:hidden;position:relative}
+a{color:inherit;text-decoration:none}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+@keyframes glow-pulse{0%,100%{opacity:.6}50%{opacity:1}}
+
+/* ── Gradient text ──────────────────────────────────────────────────── */
+.grad{background:var(--gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text}
+
+/* ── Dot grid background ────────────────────────────────────────────── */
+.grid-bg{position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:radial-gradient(circle,var(--border) 1px,transparent 1px);
+  background-size:24px 24px;opacity:.4}
+html.dark .grid-bg{opacity:.2}
+
+/* ── Nav ─────────────────────────────────────────────────────────────── */
+nav{position:relative;z-index:10;width:100%;padding:16px 48px;display:flex;align-items:center;
+  justify-content:space-between;max-width:1200px;margin:0 auto;
+  border-bottom:1px solid var(--border)}
+.logo{font-family:'JetBrains Mono',monospace;font-weight:600;font-size:14px;
+  letter-spacing:-0.5px;display:flex;align-items:center;gap:8px}
+.logo-dot{width:7px;height:7px;background:var(--accent);display:inline-block;
+  border-radius:50%;box-shadow:0 0 10px var(--accent);animation:glow-pulse 3s ease-in-out infinite}
+.nav-links{display:flex;gap:28px}
+.nav-links a{font-size:13px;color:var(--text-3);transition:color .2s;font-weight:500}
+.nav-links a:hover,.nav-links a.active{color:var(--text)}
+.nav-right{display:flex;align-items:center;gap:12px}
+.theme-toggle{background:none;border:1px solid var(--border);border-radius:6px;
+  padding:6px 10px;cursor:pointer;color:var(--text-3);display:flex;align-items:center;
+  transition:all .2s}
+.theme-toggle:hover{color:var(--text);border-color:var(--text-2)}
+.theme-toggle .icon-sun{display:none}
+.theme-toggle .icon-moon{display:block}
+html.dark .theme-toggle .icon-sun{display:block}
+html.dark .theme-toggle .icon-moon{display:none}
+.mobile-toggle{display:none;background:none;border:none;color:var(--text-3);cursor:pointer;padding:4px}
+
+/* ── Layout ──────────────────────────────────────────────────────────── */
+.section{position:relative;z-index:1;width:100%}
+.section-inner{max-width:1100px;margin:0 auto;padding:0 48px}
+.section-inner--center{text-align:center;display:flex;flex-direction:column;align-items:center}
+
+/* ── Hero ────────────────────────────────────────────────────────────── */
+.hero{position:relative;z-index:1;padding:80px 0 20px;text-align:center;overflow:hidden}
+.hero::before{content:'';position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);
+  width:600px;height:400px;
+  background:radial-gradient(ellipse,rgba(52,211,153,0.06) 0%,rgba(56,189,248,0.03) 40%,transparent 70%);
+  pointer-events:none}
+html:not(.dark) .hero::before{
+  background:radial-gradient(ellipse,rgba(16,185,129,0.05) 0%,rgba(56,189,248,0.02) 40%,transparent 70%)}
+.hero .section-inner{display:flex;flex-direction:column;align-items:center;position:relative}
+.hero-title{font-size:44px;font-weight:800;line-height:1.15;letter-spacing:-2px;
+  margin-bottom:20px}
+.hero-sub{font-size:17px;color:var(--text-2);line-height:1.7;max-width:480px;margin:0 auto}
+
+/* ── Tier cards ──────────────────────────────────────────────────────── */
+.section--tiers{padding:60px 0 80px}
+.tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:0;
+  border:1px solid var(--border);border-radius:12px;overflow:hidden}
+
+.tier{padding:40px 36px;display:flex;flex-direction:column;
+  border-right:1px solid var(--border);position:relative;background:var(--bg)}
+.tier:last-child{border-right:none}
+
+.tier--pro{background:var(--surface-alt)}
+
+.tier-popular{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1.5px;
+  text-transform:uppercase;color:var(--accent);margin-bottom:20px;font-weight:600}
+
+/* Head: name, price, period */
+.tier-head{margin-bottom:20px}
+.tier-name{font-size:20px;font-weight:700;letter-spacing:-0.5px;margin-bottom:12px}
+.tier-price{font-size:48px;font-weight:800;letter-spacing:-2px;line-height:1}
+.tier-price-unit{font-size:16px;font-weight:500;color:var(--text-2);letter-spacing:0}
+.tier-period{font-size:13px;color:var(--text-3);margin-top:6px}
+
+/* Description */
+.tier-desc{font-size:14px;color:var(--text-2);line-height:1.7;margin-bottom:28px;min-height:48px}
+
+/* CTA */
+.tier-cta{font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:0.3px;
+  text-align:center;padding:14px 24px;border:1px solid var(--border);border-radius:8px;
+  color:var(--text-2);transition:all .2s;display:block}
+.tier-cta:hover{border-color:var(--accent);color:var(--text)}
+.tier-cta--primary{background:var(--accent);border-color:var(--accent);color:#000;font-weight:600}
+.tier-cta--primary:hover{opacity:0.9;color:#000}
+
+/* "Everything in X, plus:" */
+.tier-includes{font-size:13px;color:var(--text-3);margin-top:32px;margin-bottom:8px;
+  padding-bottom:8px;border-bottom:1px solid var(--border);
+  font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.3px}
+
+/* Feature list */
+.tier-list{margin-top:16px;display:flex;flex-direction:column;gap:0}
+.tier-item{font-size:14px;color:var(--text-2);padding:9px 0;
+  border-bottom:1px solid var(--border);line-height:1.5}
+.tier-item:last-child{border-bottom:none}
+.tier-item--key{color:var(--text);font-weight:500}
+
+/* ── Every plan includes ─────────────────────────────────────────────── */
+.section--included{padding:80px 0;border-top:1px solid var(--border)}
+.inc-title{font-size:28px;font-weight:800;letter-spacing:-1px;margin-bottom:48px;
+  text-align:center}
+.inc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
+  border:1px solid var(--border);background:var(--border);border-radius:12px;overflow:hidden}
+.inc{background:var(--bg);padding:32px}
+.inc-icon{color:var(--accent);margin-bottom:16px}
+.inc-name{font-size:15px;font-weight:600;margin-bottom:8px;letter-spacing:-0.3px}
+.inc-desc{font-size:13px;color:var(--text-2);line-height:1.7}
+
+/* ── FAQ ─────────────────────────────────────────────────────────────── */
+.section--faq{padding:80px 0;border-top:1px solid var(--border)}
+.faq-title{font-size:28px;font-weight:800;letter-spacing:-1px;margin-bottom:48px;
+  text-align:center}
+.faq-list{max-width:680px;margin:0 auto;display:flex;flex-direction:column}
+.faq{padding:24px 0;border-bottom:1px solid var(--border)}
+.faq:first-child{border-top:1px solid var(--border)}
+.faq-q{font-size:15px;font-weight:600;margin-bottom:8px;letter-spacing:-0.3px}
+.faq-a{font-size:14px;color:var(--text-2);line-height:1.7}
+
+/* ── Bottom CTA ──────────────────────────────────────────────────────── */
+.section--cta{padding:80px 0;border-top:1px solid var(--border)}
+.cta-title{font-size:32px;font-weight:800;letter-spacing:-1.5px;margin-bottom:12px}
+.cta-sub{font-size:15px;color:var(--text-2);margin-bottom:32px}
+.cta-main{width:auto;display:inline-block}
+
+/* ── Footer ──────────────────────────────────────────────────────────── */
+footer{position:relative;z-index:1;width:100%;border-top:1px solid var(--border);padding:40px 0}
+footer .section-inner{display:flex;align-items:center;justify-content:space-between;
+  font-size:12px;color:var(--text-3)}
+footer a{color:var(--text-3);transition:color .2s}
+footer a:hover{color:var(--text)}
+.footer-brand{display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;
+  font-weight:600;font-size:13px}
+.footer-links{display:flex;gap:24px}
+
+/* ── Responsive ──────────────────────────────────────────────────────── */
+@media(max-width:900px){
+  .tiers{grid-template-columns:1fr}
+  .tier{border-right:none;border-bottom:1px solid var(--border)}
+  .tier:last-child{border-bottom:none}
+  .tier--pro{order:-1}
+  .inc-grid{grid-template-columns:1fr 1fr}
+}
+@media(max-width:640px){
+  nav{padding:14px 20px}
+  .nav-links{display:none;position:absolute;top:50px;left:0;right:0;
+    flex-direction:column;background:var(--bg);padding:16px 20px;gap:16px;
+    z-index:100;border-bottom:1px solid var(--border)}
+  .nav-links.open{display:flex}
+  .mobile-toggle{display:block}
+  .section-inner{padding:0 20px}
+  .hero{padding:48px 0 16px}
+  .hero-title{font-size:32px;letter-spacing:-1.5px}
+  .hero-sub{font-size:15px}
+  .section--tiers{padding:40px 0 60px}
+  .tier{padding:32px 24px}
+  .tier-price{font-size:40px}
+  .tier-desc{min-height:auto}
+  .inc-grid{grid-template-columns:1fr}
+  .inc-title{font-size:24px}
+  .faq-title{font-size:24px}
+  .cta-title{font-size:26px}
+  footer{padding:32px 0}
+  footer .section-inner{flex-direction:column;gap:16px;text-align:center}
+}
