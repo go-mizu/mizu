@@ -23,6 +23,7 @@ import { landingPage } from "./landing";
 import { docsPage } from "./docs";
 import { pricingPage } from "./pricing";
 import { browsePage } from "./browse";
+import { mcpHandler, mcpInfo } from "./mcp";
 import {
   authRateLimit, magicLinkRateLimit, registerRateLimit,
   uploadRateLimit, shareRateLimit, linkRateLimit, publicAccessRateLimit,
@@ -82,6 +83,12 @@ app.post("/auth/magic-link", requestMagicLink);
 app.get("/auth/magic/:token", verifyMagicLink);
 app.post("/auth/logout", logout);
 app.get("/auth/logout", logout);
+
+// MCP endpoint (JSON-RPC 2.0)
+app.get("/mcp", mcpInfo);
+app.use("/mcp", bearerAuth);
+app.use("/mcp", bodySizeLimit);
+app.post("/mcp", mcpHandler);
 
 // Public links (no auth required, rate limited)
 app.use("/p/*", publicAccessRateLimit);
