@@ -6,6 +6,7 @@ import { errorResponse } from "../lib/error";
 import { wildcardPath, validatePath } from "../lib/path";
 import { requireScope, checkPathPrefix, sanitizeFilename } from "../middleware/authorize";
 import { audit } from "../lib/audit";
+import { ensureDefaultBucket } from "./buckets";
 
 type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -15,9 +16,11 @@ const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
  * Ensure all parent folders exist in D1 for a given path.
  * e.g. for "docs/reports/q1.pdf" → creates "docs/" and "docs/reports/"
  */
-export async function ensureParentFolders(db: D1Database, owner: string, filePath: string) {
+export async function ensureParentFolders(db: D1Database, owner: string, filePath: string, defaultBucketId?: string) {
   const parts = filePath.split("/");
   parts.pop();
+
+  const bkId = defaultBucketId || await ensureDefaultBucket(db, owner);
 
   let current = "";
   for (const part of parts) {
@@ -33,9 +36,9 @@ export async function ensureParentFolders(db: D1Database, owner: string, filePat
       const now = Date.now();
       await db
         .prepare(
-          "INSERT OR IGNORE INTO objects (id, owner, path, name, is_folder, content_type, size, r2_key, created_at, updated_at) VALUES (?, ?, ?, ?, 1, '', 0, '', ?, ?)",
+          "INSERT OR IGNORE INTO objects (id, owner, bucket_id, path, name, is_folder, content_type, size, r2_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, '', 0, '', ?, ?)",
         )
-        .bind(objectId(), owner, folderPath, part, now, now)
+        .bind(objectId(), owner, bkId, folderPath, part, now, now)
         .run();
     }
   }
@@ -77,7 +80,8 @@ export async function uploadFile(c: AppContext) {
     httpMetadata: { contentType },
   });
 
-  await ensureParentFolders(c.env.DB, actor, filePath);
+  const bkId = await ensureDefaultBucket(c.env.DB, actor);
+  await ensureParentFolders(c.env.DB, actor, filePath, bkId);
 
   const now = Date.now();
   const existing = await c.env.DB.prepare(
@@ -97,9 +101,9 @@ export async function uploadFile(c: AppContext) {
   } else {
     id = objectId();
     await c.env.DB.prepare(
-      "INSERT INTO objects (id, owner, path, name, is_folder, content_type, size, r2_key, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?)",
+      "INSERT INTO objects (id, owner, bucket_id, path, name, is_folder, content_type, size, r2_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)",
     )
-      .bind(id, actor, filePath, name, contentType, body.byteLength, r2Key, now, now)
+      .bind(id, actor, bkId, filePath, name, contentType, body.byteLength, r2Key, now, now)
       .run();
   }
 

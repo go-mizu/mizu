@@ -4,6 +4,7 @@ import { objectId } from "../lib/id";
 import { errorResponse } from "../lib/error";
 import { wildcardPath, validatePath } from "../lib/path";
 import { requireScope } from "../middleware/authorize";
+import { ensureDefaultBucket } from "./buckets";
 
 type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -43,6 +44,8 @@ export async function createFolder(c: AppContext) {
     return c.json({ path: folderPath, name, created: false });
   }
 
+  const bkId = await ensureDefaultBucket(c.env.DB, actor);
+
   const parts = folderPath.replace(/\/$/, "").split("/");
   parts.pop();
   let current = "";
@@ -57,9 +60,9 @@ export async function createFolder(c: AppContext) {
     if (!parentExists) {
       const now = Date.now();
       await c.env.DB.prepare(
-        "INSERT OR IGNORE INTO objects (id, owner, path, name, is_folder, content_type, size, r2_key, created_at, updated_at) VALUES (?, ?, ?, ?, 1, '', 0, '', ?, ?)",
+        "INSERT OR IGNORE INTO objects (id, owner, bucket_id, path, name, is_folder, content_type, size, r2_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, '', 0, '', ?, ?)",
       )
-        .bind(objectId(), actor, parentPath, part, now, now)
+        .bind(objectId(), actor, bkId, parentPath, part, now, now)
         .run();
     }
   }
@@ -67,9 +70,9 @@ export async function createFolder(c: AppContext) {
   const now = Date.now();
   const id = objectId();
   await c.env.DB.prepare(
-    "INSERT INTO objects (id, owner, path, name, is_folder, content_type, size, r2_key, created_at, updated_at) VALUES (?, ?, ?, ?, 1, '', 0, '', ?, ?)",
+    "INSERT INTO objects (id, owner, bucket_id, path, name, is_folder, content_type, size, r2_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, '', 0, '', ?, ?)",
   )
-    .bind(id, actor, folderPath, name, now, now)
+    .bind(id, actor, bkId, folderPath, name, now, now)
     .run();
 
   return c.json({ id, path: folderPath, name, created: true }, 201);
