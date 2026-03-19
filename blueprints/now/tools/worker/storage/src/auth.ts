@@ -160,6 +160,7 @@ export async function bearerAuth(c: AppContext, next: Next) {
       await c.env.DB.prepare("DELETE FROM sessions WHERE token = ?").bind(token).run();
       return errorResponse(c, "unauthorized", "Token expired");
     }
+    console.log(`[auth] session → actor=${session.actor} token=${token.slice(0, 8)}...`);
     c.set("actor", session.actor);
     c.set("scopes", "*");
     c.set("pathPrefix", "");
@@ -178,6 +179,7 @@ export async function bearerAuth(c: AppContext, next: Next) {
     if (apiKey.expires_at && Date.now() > apiKey.expires_at) {
       return errorResponse(c, "unauthorized", "API key expired");
     }
+    console.log(`[auth] apikey → actor=${apiKey.actor} id=${apiKey.id} name=${apiKey.name} hash=${hash.slice(0, 8)}...`);
     c.set("actor", apiKey.actor);
     c.set("scopes", apiKey.scopes);
     c.set("pathPrefix", apiKey.path_prefix || "");

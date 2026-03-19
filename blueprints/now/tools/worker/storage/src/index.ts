@@ -23,7 +23,13 @@ import { landingPage } from "./landing";
 import { docsPage } from "./docs";
 import { pricingPage } from "./pricing";
 import { browsePage } from "./browse";
+import { aiPage } from "./ai";
 import { mcpHandler, mcpInfo } from "./mcp";
+import {
+  protectedResourceMetadata, authorizationServerMetadata,
+  registerClient, authorizeEndpoint, authorizeSubmit,
+  oauthMagicCallback, tokenEndpoint,
+} from "./oauth";
 import {
   authRateLimit, magicLinkRateLimit, registerRateLimit,
   uploadRateLimit, shareRateLimit, linkRateLimit, publicAccessRateLimit,
@@ -41,6 +47,7 @@ app.get("/", async (c) => {
 });
 app.get("/docs", (c) => c.html(docsPage()));
 app.get("/pricing", (c) => c.html(pricingPage()));
+app.get("/ai", (c) => c.html(aiPage()));
 app.get("/browse", browsePage);
 app.get("/browse/*", browsePage);
 
@@ -84,8 +91,35 @@ app.get("/auth/magic/:token", verifyMagicLink);
 app.post("/auth/logout", logout);
 app.get("/auth/logout", logout);
 
+// OAuth well-known metadata (no auth)
+app.get("/.well-known/oauth-protected-resource", protectedResourceMetadata);
+app.get("/.well-known/oauth-authorization-server", authorizationServerMetadata);
+
+// OAuth endpoints (no auth, rate limited)
+app.use("/oauth/*", bodySizeLimit);
+app.post("/oauth/register", registerClient);
+app.get("/oauth/authorize", authorizeEndpoint);
+app.post("/oauth/authorize", authorizeSubmit);
+app.get("/oauth/callback/:token", oauthMagicCallback);
+app.post("/oauth/token", tokenEndpoint);
+
 // MCP endpoint (JSON-RPC 2.0)
 app.get("/mcp", mcpInfo);
+// Add WWW-Authenticate header on 401 for OAuth discovery (RFC 9728)
+app.use("/mcp", async (c, next) => {
+  await next();
+  if (c.res.status === 401) {
+    const origin = new URL(c.req.url).origin;
+    const body = await c.res.text();
+    c.res = new Response(body, {
+      status: 401,
+      headers: {
+        ...Object.fromEntries(c.res.headers.entries()),
+        "WWW-Authenticate": `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"`,
+      },
+    });
+  }
+});
 app.use("/mcp", bearerAuth);
 app.use("/mcp", bodySizeLimit);
 app.post("/mcp", mcpHandler);
