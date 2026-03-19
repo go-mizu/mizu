@@ -23,7 +23,6 @@ export function pricingPage(): string {
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     </button>
     <div class="nav-links">
-      <a href="/browse">browse</a>
       <a href="/developers">developers</a>
       <a href="/api">api</a>
       <a href="/pricing" class="active">pricing</a>
@@ -206,18 +205,6 @@ export function pricingPage(): string {
     <a href="/" class="tier-cta tier-cta--primary cta-main">Get started free</a>
   </div>
 </div>
-
-<!-- Footer -->
-<footer>
-  <div class="section-inner">
-    <div class="footer-brand"><span class="logo-dot"></span> storage.now</div>
-    <div class="footer-links">
-      <a href="/api">api</a>
-      <a href="/pricing">pricing</a>
-      <a href="/browse">browse</a>
-    </div>
-  </div>
-</footer>
 
 <script>
 function toggleTheme(){

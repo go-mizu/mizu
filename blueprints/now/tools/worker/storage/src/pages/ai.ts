@@ -20,15 +20,11 @@ export function aiPage(): string {
   --bg:#FAFAF9;--surface:#FFF;--surface-alt:#F4F4F5;
   --text:#09090B;--text-2:#52525B;--text-3:#A1A1AA;
   --border:#E4E4E7;--ink:#09090B;
-  --shadow:0 1px 3px rgba(0,0,0,0.04),0 1px 2px rgba(0,0,0,0.06);
-  --glow:rgba(9,9,11,0.03);
 }
 html.dark{
   --bg:#09090B;--surface:#18181B;--surface-alt:#18181B;
   --text:#FAFAF9;--text-2:#A1A1AA;--text-3:#52525B;
   --border:#27272A;--ink:#FAFAF9;
-  --shadow:0 1px 3px rgba(0,0,0,0.3);
-  --glow:rgba(250,250,249,0.02);
 }
 body{font-family:'Inter',system-ui,sans-serif;color:var(--text);background:var(--bg);
   -webkit-font-smoothing:antialiased;overflow-x:hidden}
@@ -54,20 +50,20 @@ html.dark .grid-bg{opacity:.12}
 
 /* ── Nav ── */
 nav{position:sticky;top:0;z-index:100;width:100%;
-  background:color-mix(in srgb,var(--bg) 80%,transparent);
+  background:color-mix(in srgb,var(--bg) 85%,transparent);
   backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
-.nav-inner{max-width:1400px;margin:0 auto;padding:0 60px;height:56px;
+.nav-inner{width:100%;padding:0 48px;height:64px;
   display:flex;align-items:center;justify-content:space-between}
-.logo{font-family:'JetBrains Mono',monospace;font-weight:500;font-size:14px;
+.logo{font-family:'Inter',system-ui,sans-serif;font-weight:700;font-size:15px;
   letter-spacing:-0.3px;display:flex;align-items:center;gap:8px}
 .logo-dot{width:6px;height:6px;background:var(--text);display:inline-block}
-.nav-links{display:flex;gap:28px}
-.nav-links a{font-size:13px;color:var(--text-3);transition:color .15s;font-weight:500}
+.nav-links{display:flex;gap:32px}
+.nav-links a{font-size:14px;color:var(--text-3);transition:color .15s;font-weight:500}
 .nav-links a:hover,.nav-links a.active{color:var(--text)}
-.nav-right{display:flex;align-items:center;gap:12px}
-.theme-toggle{background:none;border:1px solid var(--border);padding:6px 10px;cursor:pointer;
-  color:var(--text-3);display:flex;align-items:center;transition:all .15s}
-.theme-toggle:hover{color:var(--text);border-color:var(--text-3)}
+.nav-right{display:flex;align-items:center;gap:16px}
+.theme-toggle{background:none;border:none;padding:8px;cursor:pointer;
+  color:var(--text-3);display:flex;align-items:center;transition:color .15s}
+.theme-toggle:hover{color:var(--text)}
 .theme-toggle .icon-sun{display:none}
 .theme-toggle .icon-moon{display:block}
 html.dark .theme-toggle .icon-sun{display:block}
@@ -94,9 +90,9 @@ html.dark .theme-toggle .icon-moon{display:none}
 .hd-node{display:flex;flex-direction:column;align-items:center;gap:14px;position:relative;z-index:2}
 .hd-icon{width:80px;height:80px;border:1px solid var(--border);background:var(--surface);
   display:flex;align-items:center;justify-content:center;
-  transition:all .3s ease;box-shadow:var(--shadow)}
+  transition:all .3s ease;box-shadow:none}
 .hd-icon:hover{border-color:var(--text-3);transform:translateY(-4px);
-  box-shadow:0 8px 30px var(--glow)}
+  box-shadow:none}
 .hd-icon svg{width:36px;height:36px;fill:var(--text)}
 .hd-name{font-size:13px;font-weight:500;letter-spacing:-0.2px}
 .hd-connector{display:flex;align-items:center;width:100px;position:relative;z-index:1}
@@ -141,8 +137,8 @@ html.dark .hd-connector line{stroke:var(--text-3)}
 .sc-title{font-size:28px;font-weight:500;letter-spacing:-0.5px;line-height:1.2;margin-bottom:16px}
 .sc-sub{font-size:15px;color:var(--text-2);line-height:1.7}
 .flow{border:1px solid var(--border);background:var(--surface);overflow:hidden;
-  box-shadow:var(--shadow)}
-html.dark .flow{box-shadow:0 8px 32px rgba(0,0,0,0.3)}
+  box-shadow:none}
+html.dark .flow{box-shadow:none}
 .flow-bar{padding:12px 20px;border-bottom:1px solid var(--border);background:var(--surface-alt);
   display:flex;align-items:center;gap:8px}
 .flow-bar-dots{display:flex;gap:5px}
@@ -167,8 +163,8 @@ html.dark .flow-bar-dots span{background:var(--text-3)}
 /* ── Cross-platform diagram ── */
 .xp-diagram{display:flex;align-items:stretch;justify-content:center;gap:0;
   border:1px solid var(--border);background:var(--surface);overflow:hidden;margin-top:40px;
-  box-shadow:var(--shadow)}
-html.dark .xp-diagram{box-shadow:0 8px 32px rgba(0,0,0,0.3)}
+  box-shadow:none}
+html.dark .xp-diagram{box-shadow:none}
 .xp-side{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
   padding:48px 24px;gap:16px;transition:background .2s}
 .xp-side:hover{background:var(--surface-alt)}
@@ -192,16 +188,6 @@ html.dark .xp-diagram{box-shadow:0 8px 32px rgba(0,0,0,0.3)}
   display:inline-flex;align-items:center;gap:8px;transition:all .15s;color:var(--text-2);
   cursor:pointer;text-decoration:none}
 .btn:hover{border-color:var(--text-3);color:var(--text)}
-
-/* ── Footer ── */
-footer{position:relative;z-index:1;border-top:1px solid var(--border);padding:40px 0}
-footer .s-inner{display:flex;align-items:center;justify-content:space-between;
-  font-size:12px;color:var(--text-3)}
-footer a{color:var(--text-3);transition:color .15s}
-footer a:hover{color:var(--text)}
-.footer-brand{display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;
-  font-weight:500;font-size:13px}
-.footer-links{display:flex;gap:24px}
 
 /* ── Responsive ── */
 @media(max-width:1024px){
@@ -238,7 +224,6 @@ footer a:hover{color:var(--text)}
   .cc{padding:28px 20px}
   .cs{font-size:13px}
   .fs{padding:16px 20px;font-size:13px}
-  footer .s-inner{flex-direction:column;gap:16px;text-align:center}
 }
 </style>
 </head>
@@ -253,9 +238,7 @@ footer a:hover{color:var(--text)}
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     </button>
     <div class="nav-links">
-      <a href="/browse">browse</a>
       <a href="/developers">developers</a>
-      <a href="/ai" class="active">ai</a>
       <a href="/api">api</a>
       <a href="/pricing">pricing</a>
     </div>
@@ -440,19 +423,6 @@ footer a:hover{color:var(--text)}
     </div>
   </div>
 </div>
-
-<!-- ═══ FOOTER ═══ -->
-<footer>
-  <div class="s-inner">
-    <div class="footer-brand"><span class="logo-dot"></span> storage.now</div>
-    <div class="footer-links">
-      <a href="/api">api</a>
-      <a href="/pricing">pricing</a>
-      <a href="/ai">ai</a>
-      <a href="/browse">browse</a>
-    </div>
-  </div>
-</footer>
 
 <script>
 function toggleTheme(){

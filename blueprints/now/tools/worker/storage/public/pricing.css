@@ -9,13 +9,11 @@
   --bg:#FAFAF9;--surface:#FFF;--surface-alt:#F4F4F5;
   --text:#09090B;--text-2:#52525B;--text-3:#A1A1AA;
   --border:#E4E4E7;--ink:#09090B;
-  --shadow:0 1px 3px rgba(0,0,0,0.04),0 1px 2px rgba(0,0,0,0.06);
 }
 html.dark{
   --bg:#09090B;--surface:#18181B;--surface-alt:#18181B;
   --text:#FAFAF9;--text-2:#A1A1AA;--text-3:#52525B;
   --border:#27272A;--ink:#FAFAF9;
-  --shadow:0 1px 3px rgba(0,0,0,0.3);
 }
 
 body{font-family:'Inter',system-ui,sans-serif;color:var(--text);background:var(--bg);
@@ -30,21 +28,20 @@ html.dark .grid-bg{opacity:.2}
 
 /* ── Nav ─────────────────────────────────────────────────────────────── */
 nav{position:sticky;top:0;z-index:100;width:100%;
-  background:color-mix(in srgb,var(--bg) 80%,transparent);
+  background:color-mix(in srgb,var(--bg) 85%,transparent);
   backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
-.nav-inner{max-width:1400px;margin:0 auto;padding:0 60px;height:56px;
+.nav-inner{width:100%;padding:0 48px;height:64px;
   display:flex;align-items:center;justify-content:space-between}
-.logo{font-family:'JetBrains Mono',monospace;font-weight:500;font-size:14px;
+.logo{font-family:'Inter',system-ui,sans-serif;font-weight:700;font-size:15px;
   letter-spacing:-0.3px;display:flex;align-items:center;gap:8px}
 .logo-dot{width:6px;height:6px;background:var(--text);display:inline-block}
-.nav-links{display:flex;gap:28px}
-.nav-links a{font-size:13px;color:var(--text-3);transition:color .15s;font-weight:500}
+.nav-links{display:flex;gap:32px}
+.nav-links a{font-size:14px;color:var(--text-3);transition:color .15s;font-weight:500}
 .nav-links a:hover,.nav-links a.active{color:var(--text)}
-.nav-right{display:flex;align-items:center;gap:12px}
-.theme-toggle{background:none;border:1px solid var(--border);
-  padding:6px 10px;cursor:pointer;color:var(--text-3);display:flex;align-items:center;
-  transition:all .15s}
-.theme-toggle:hover{color:var(--text);border-color:var(--text-3)}
+.nav-right{display:flex;align-items:center;gap:16px}
+.theme-toggle{background:none;border:none;padding:8px;cursor:pointer;
+  color:var(--text-3);display:flex;align-items:center;transition:color .15s}
+.theme-toggle:hover{color:var(--text)}
 .theme-toggle .icon-sun{display:none}
 .theme-toggle .icon-moon{display:block}
 html.dark .theme-toggle .icon-sun{display:block}
@@ -134,16 +131,6 @@ html.dark .theme-toggle .icon-moon{display:none}
 .cta-sub{font-size:15px;color:var(--text-2);margin-bottom:32px}
 .cta-main{width:auto;display:inline-block}
 
-/* ── Footer ──────────────────────────────────────────────────────────── */
-footer{position:relative;z-index:1;width:100%;border-top:1px solid var(--border);padding:40px 0}
-footer .section-inner{display:flex;align-items:center;justify-content:space-between;
-  font-size:12px;color:var(--text-3)}
-footer a{color:var(--text-3);transition:color .15s}
-footer a:hover{color:var(--text)}
-.footer-brand{display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;
-  font-weight:500;font-size:13px}
-.footer-links{display:flex;gap:24px}
-
 /* ── Machine view ────────────────────────────────────────────────────── */
 .machine-view{display:none;position:relative;z-index:1;
   max-width:1100px;margin:0 auto;padding:48px 48px 120px}
@@ -162,9 +149,7 @@ footer a:hover{color:var(--text)}
   color:var(--text-3);cursor:pointer;transition:all .15s}
 .md-copy:hover{color:var(--text);border-color:var(--text-3)}
 .mode-switch{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:200;
-  display:flex;background:var(--bg);border:1px solid var(--border);
-  box-shadow:0 4px 24px rgba(0,0,0,0.08)}
-html.dark .mode-switch{box-shadow:0 4px 24px rgba(0,0,0,0.4)}
+  display:flex;background:var(--bg);border:1px solid var(--border)}
 .mode-switch button{font-family:'JetBrains Mono',monospace;font-size:11px;
   letter-spacing:1px;padding:10px 20px;border:none;background:none;
   color:var(--text-3);cursor:pointer;display:flex;align-items:center;gap:8px;
@@ -203,8 +188,6 @@ html.dark .mode-switch{box-shadow:0 4px 24px rgba(0,0,0,0.4)}
   .inc-title{font-size:24px}
   .faq-title{font-size:24px}
   .cta-title{font-size:26px}
-  footer{padding:32px 0}
-  footer .section-inner{flex-direction:column;gap:16px;text-align:center}
   .machine-view{padding:32px 20px 80px}
   .md{padding:24px 20px;font-size:12px}
   .mode-switch{bottom:16px}
