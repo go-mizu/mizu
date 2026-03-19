@@ -21,7 +21,7 @@ export function developersPage(actor: string | null = null): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Developers — storage.now</title>
-<meta name="description" content="Build on storage.now — Buckets, Objects, Signed URLs. Three concepts, zero complexity.">
+<meta name="description" content="Developer-first file storage. Upload objects into buckets, share them with signed URLs. One base URL, zero complexity.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -40,6 +40,7 @@ export function developersPage(actor: string | null = null): string {
     <div class="nav-links">
       <a href="/developers" class="active">developers</a>
       <a href="/api">api</a>
+      <a href="/cli">cli</a>
       <a href="/pricing">pricing</a>
     </div>
     <div class="nav-right">
@@ -59,8 +60,8 @@ export function developersPage(actor: string | null = null): string {
   <div class="glow-spot glow-spot--hero"></div>
   <div class="hero-content">
     <div class="hero-badge">DEVELOPER PLATFORM</div>
-    <h1 class="hero-title">Buckets. Objects.<br><span class="grad">Signed URLs.</span></h1>
-    <p class="hero-sub">Three concepts. One base URL. That's the entire API.<br>Inspired by Supabase Storage, built for the edge.</p>
+    <h1 class="hero-title">Ship files,<br><span class="grad">not infrastructure.</span></h1>
+    <p class="hero-sub">A REST API for storing, organizing, and sharing files. Upload objects into buckets, share them with signed URLs. Works with any language, any framework, any platform.</p>
     <div class="hero-ctas">${heroCta}</div>
   </div>
   <div class="hero-terminal">
@@ -83,7 +84,7 @@ export function developersPage(actor: string | null = null): string {
 
 <span class="t-res">201 {"path":"report.pdf","size":524288}</span>
 
-<span class="t-comment"># share it with a signed URL</span>
+<span class="t-comment"># share with a signed URL</span>
 <span class="t-prompt">$</span> <span class="t-cmd">curl</span> <span class="t-flag">-X POST</span> storage.now/object/sign/docs \\
     <span class="t-flag">-H</span> <span class="t-str">"Authorization: Bearer $TOKEN"</span> \\
     <span class="t-flag">-d</span> <span class="t-str">'{"path":"report.pdf","expires_in":3600}'</span>
@@ -93,12 +94,50 @@ export function developersPage(actor: string | null = null): string {
   </div>
 </section>
 
+<!-- Why -->
+<section class="section" id="why">
+  <div class="section-pad">
+    <div class="section-label">WHY STORAGE.NOW</div>
+    <div class="section-heading">Built for how you actually work.</div>
+  </div>
+  <div class="features">
+    <div class="feature">
+      <div class="feature-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+      </div>
+      <div class="feature-name">REST-native</div>
+      <p>JSON in, JSON out. Predictable URLs, standard HTTP methods, consistent error shapes. Works with <code>curl</code>, <code>fetch</code>, or any HTTP client in any language. No proprietary SDK required.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+      </div>
+      <div class="feature-name">Edge-first</div>
+      <p>Requests resolve at the nearest edge from 300+ locations worldwide. Metadata queries complete in under 50ms. File bytes stream directly between your users and the object store.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+      </div>
+      <div class="feature-name">Secure by default</div>
+      <p>Ed25519 challenge-response for machines. Magic links for humans. Scoped API keys for long-running jobs. Signed URLs for sharing. Credentials never touch the client.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+      </div>
+      <div class="feature-name">Zero config</div>
+      <p>No infrastructure to provision, no storage classes to choose, no regions to configure. Create a bucket and start uploading. Replication, caching, and global delivery are handled automatically.</p>
+    </div>
+  </div>
+</section>
+
 <!-- Three Concepts -->
 <section class="section" id="concepts">
   <div class="section-pad">
     <div class="section-label">THE MODEL</div>
-    <div class="section-heading">Three concepts. That's it.</div>
-    <p class="section-desc">Every storage API needs containers, files, and access control. We give each one name and a clean REST interface.</p>
+    <div class="section-heading">Three primitives. That's the whole API.</div>
+    <p class="section-desc">Every storage system needs containers, files, and access control. Each gets a name and a clean REST interface.</p>
   </div>
   <div class="concepts">
     <div class="concept">
@@ -107,7 +146,7 @@ export function developersPage(actor: string | null = null): string {
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4.03 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/></svg>
       </div>
       <div class="concept-name">Buckets</div>
-      <p>Top-level containers with their own access rules. Public buckets serve files without auth. Private buckets require a token or signed URL.</p>
+      <p>Top-level containers with their own visibility and upload constraints. Public buckets serve files without auth. Private buckets require a token or signed URL for every operation.</p>
       <div class="concept-code">
         <div class="concept-method"><span class="m-post">POST</span> /bucket</div>
         <div class="concept-method"><span class="m-get">GET</span> /bucket</div>
@@ -122,7 +161,7 @@ export function developersPage(actor: string | null = null): string {
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
       </div>
       <div class="concept-name">Objects</div>
-      <p>Files stored in buckets, addressed by path. Upload, download, list, move, copy, delete. Folders are implicit from path prefixes.</p>
+      <p>Files stored in buckets, addressed by path. Upload, download, list, move, copy, delete. Folders are implicit from path separators, so <code>reports/q1.pdf</code> just works.</p>
       <div class="concept-code">
         <div class="concept-method"><span class="m-put">PUT</span> /object/:bucket/*path</div>
         <div class="concept-method"><span class="m-get">GET</span> /object/:bucket/*path</div>
@@ -137,7 +176,7 @@ export function developersPage(actor: string | null = null): string {
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
       </div>
       <div class="concept-name">Signed URLs</div>
-      <p>Time-limited URLs for sharing and direct uploads. One primitive replaces public links, presigned URLs, and sharing permissions.</p>
+      <p>Time-limited tokens for sharing and direct uploads. Share private files with anyone, accept uploads from browsers without a server proxy, grant temporary access that expires automatically.</p>
       <div class="concept-code">
         <div class="concept-method"><span class="m-post">POST</span> /object/sign/:bucket</div>
         <div class="concept-method"><span class="m-post">POST</span> /object/upload/sign/:bucket/*</div>
@@ -152,15 +191,16 @@ export function developersPage(actor: string | null = null): string {
 <section class="section" id="examples">
   <div class="section-pad">
     <div class="section-label">EXAMPLES</div>
-    <div class="section-heading">Everything in curl.</div>
+    <div class="section-heading">Copy, paste, ship.</div>
   </div>
   <div class="examples">
     <div class="example">
       <div class="example-header">
-        <div class="example-label">Create a public bucket</div>
+        <div class="example-label">Serve static assets</div>
         <div class="example-badge">Buckets</div>
       </div>
-      <pre class="example-code"><span class="t-cmd">curl</span> <span class="t-flag">-X POST</span> storage.now/bucket \\
+      <pre class="example-code"><span class="t-comment"># public bucket for images</span>
+<span class="t-cmd">curl</span> <span class="t-flag">-X POST</span> storage.now/bucket \\
   <span class="t-flag">-H</span> <span class="t-str">"Authorization: Bearer $TOKEN"</span> \\
   <span class="t-flag">-H</span> <span class="t-str">"Content-Type: application/json"</span> \\
   <span class="t-flag">-d</span> <span class="t-str">'{
@@ -180,7 +220,7 @@ export function developersPage(actor: string | null = null): string {
     </div>
     <div class="example">
       <div class="example-header">
-        <div class="example-label">Upload an object</div>
+        <div class="example-label">Upload user content</div>
         <div class="example-badge">Objects</div>
       </div>
       <pre class="example-code"><span class="t-comment"># PUT creates or replaces</span>
@@ -199,20 +239,23 @@ export function developersPage(actor: string | null = null): string {
     </div>
     <div class="example">
       <div class="example-header">
-        <div class="example-label">Public download (no auth)</div>
+        <div class="example-label">Deliver without auth</div>
         <div class="example-badge">Objects</div>
       </div>
-      <pre class="example-code"><span class="t-comment"># public bucket &rarr; no token needed</span>
+      <pre class="example-code"><span class="t-comment"># public bucket, no token needed</span>
 <span class="t-cmd">curl</span> storage.now/object/public/avatars/alice.png \\
   <span class="t-flag">-o</span> alice.png
 
 <span class="t-res">&rarr; 200  &lt;binary&gt;
 Content-Type: image/png
-Cache-Control: public, max-age=3600</span></pre>
+Cache-Control: public, max-age=3600</span>
+
+<span class="t-comment"># use directly in HTML</span>
+<span class="t-str">&lt;img src="https://storage.now/object/public/avatars/alice.png"&gt;</span></pre>
     </div>
     <div class="example">
       <div class="example-header">
-        <div class="example-label">List with prefix &amp; search</div>
+        <div class="example-label">Search &amp; browse files</div>
         <div class="example-badge">Objects</div>
       </div>
       <pre class="example-code"><span class="t-cmd">curl</span> <span class="t-flag">-X POST</span> storage.now/object/list/docs \\
@@ -232,7 +275,7 @@ Cache-Control: public, max-age=3600</span></pre>
     </div>
     <div class="example">
       <div class="example-header">
-        <div class="example-label">Create a signed download URL</div>
+        <div class="example-label">Share with expiring links</div>
         <div class="example-badge">Signed URLs</div>
       </div>
       <pre class="example-code"><span class="t-cmd">curl</span> <span class="t-flag">-X POST</span> storage.now/object/sign/docs \\
@@ -246,12 +289,12 @@ Cache-Control: public, max-age=3600</span></pre>
   "expires_at": 1710896400000
 }</span>
 
-<span class="t-comment"># anyone can now download — no auth needed</span>
+<span class="t-comment"># anyone can download, no auth required</span>
 <span class="t-cmd">curl</span> storage.now/sign/tok_abc123 <span class="t-flag">-o</span> report.pdf</pre>
     </div>
     <div class="example">
       <div class="example-header">
-        <div class="example-label">Signed upload (client-direct)</div>
+        <div class="example-label">Client-direct uploads</div>
         <div class="example-badge">Signed URLs</div>
       </div>
       <pre class="example-code"><span class="t-comment"># 1. Server creates upload URL</span>
@@ -260,7 +303,7 @@ Cache-Control: public, max-age=3600</span></pre>
 
 <span class="t-res">&rarr; {"signed_url":"/upload/sign/tok_xyz"}</span>
 
-<span class="t-comment"># 2. Client uploads directly — no auth, no proxy</span>
+<span class="t-comment"># 2. Client uploads directly, no proxy needed</span>
 <span class="t-cmd">curl</span> <span class="t-flag">-X PUT</span> storage.now/upload/sign/tok_xyz \\
   <span class="t-flag">-H</span> <span class="t-str">"Content-Type: application/pdf"</span> \\
   <span class="t-flag">-T</span> file.pdf
@@ -325,7 +368,7 @@ Cache-Control: public, max-age=3600</span></pre>
 <section class="section" id="arch">
   <div class="section-pad">
     <div class="section-label">ARCHITECTURE</div>
-    <div class="section-heading">Edge-first. Zero hops.</div>
+    <div class="section-heading">Edge-first. Global by default.</div>
     <p class="section-desc">Every request hits the nearest edge location. Metadata resolves in under 50ms. File bytes flow directly between client and object storage.</p>
   </div>
   <div class="arch">
@@ -345,7 +388,7 @@ Cache-Control: public, max-age=3600</span></pre>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
       </div>
       <div class="arch-name">Edge (300+)</div>
-      <div class="arch-desc">Auth &middot; buckets &middot; metadata</div>
+      <div class="arch-desc">Auth &middot; routing &middot; metadata</div>
     </div>
     <div class="arch-arrow">
       <svg width="48" height="16" viewBox="0 0 48 16"><line x1="0" y1="8" x2="40" y2="8" stroke="var(--border)" stroke-width="1" stroke-dasharray="4 3"/><polyline points="38,4 46,8 38,12" fill="none" stroke="var(--text-3)" stroke-width="1"/></svg>
@@ -366,7 +409,7 @@ Cache-Control: public, max-age=3600</span></pre>
   <div class="section-pad">
     <div class="section-label">THE API</div>
     <div class="section-heading">Six resource groups. Thirty endpoints.</div>
-    <p class="section-desc">Inspired by Supabase Storage. Buckets for containers, objects for files, signed URLs for access control.</p>
+    <p class="section-desc">A predictable REST interface covering storage, authentication, and access control.</p>
     <table class="resource-table">
       <thead><tr><th>Resource</th><th>Endpoints</th><th>Purpose</th></tr></thead>
       <tbody>
@@ -375,51 +418,10 @@ Cache-Control: public, max-age=3600</span></pre>
         <tr><td>/sign &middot; /upload/sign</td><td>4</td><td>Time-limited URLs for sharing &amp; direct upload</td></tr>
         <tr><td>/auth</td><td>6</td><td>Ed25519 challenge, magic link, sessions</td></tr>
         <tr><td>/keys</td><td>3</td><td>Scoped API keys for programmatic access</td></tr>
-        <tr><td>/mcp &middot; /oauth</td><td>9</td><td>AI agent integration via MCP + OAuth 2.0</td></tr>
+        <tr><td>/audit</td><td>1</td><td>Full audit trail of every operation</td></tr>
       </tbody>
     </table>
     <a href="/api" class="api-link">Full API reference &rarr;</a>
-  </div>
-</section>
-
-<!-- Comparison -->
-<section class="section" id="compare">
-  <div class="section-pad">
-    <div class="section-label">BEFORE &amp; AFTER</div>
-    <div class="section-heading">Complexity, deleted.</div>
-  </div>
-  <div class="compare">
-    <div class="compare-col compare-col--before">
-      <div class="compare-label">Before</div>
-      <div class="compare-list">
-        <div class="compare-item compare-item--removed">/files/* <span>4 endpoints</span></div>
-        <div class="compare-item compare-item--removed">/folders/* <span>3 endpoints</span></div>
-        <div class="compare-item compare-item--removed">/shares/* <span>8 endpoints</span></div>
-        <div class="compare-item compare-item--removed">/drive/* <span>13 endpoints</span></div>
-        <div class="compare-item compare-item--removed">/links/* <span>3 endpoints</span></div>
-        <div class="compare-item compare-item--removed">/presign/* <span>3 endpoints</span></div>
-        <div class="compare-item compare-item--removed">/spaces/* <span>11 endpoints</span></div>
-        <div class="compare-item">/auth/* <span>6 endpoints</span></div>
-        <div class="compare-item">/api-keys <span>3 endpoints</span></div>
-        <div class="compare-item">/mcp + /oauth <span>9 endpoints</span></div>
-        <div class="compare-total">63 endpoints &middot; 10 resource groups</div>
-      </div>
-    </div>
-    <div class="compare-arrow">
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-    </div>
-    <div class="compare-col compare-col--after">
-      <div class="compare-label">After</div>
-      <div class="compare-list">
-        <div class="compare-item compare-item--new">/bucket <span>6 endpoints</span></div>
-        <div class="compare-item compare-item--new">/object/* <span>10 endpoints</span></div>
-        <div class="compare-item compare-item--new">/sign + /upload/sign <span>4 endpoints</span></div>
-        <div class="compare-item">/auth/* <span>6 endpoints</span></div>
-        <div class="compare-item">/keys <span>3 endpoints</span></div>
-        <div class="compare-item">/mcp + /oauth <span>9 endpoints</span></div>
-        <div class="compare-total compare-total--after">30 endpoints &middot; 6 resource groups</div>
-      </div>
-    </div>
   </div>
 </section>
 
@@ -451,7 +453,7 @@ Cache-Control: public, max-age=3600</span></pre>
   <div class="section-pad">
     <div class="cta-label"><span class="cta-caret">&gt;</span> ready?</div>
     <div class="cta-title">Start building today</div>
-    <p class="cta-desc">Create a bucket, upload your first object, and generate a signed URL in under 5 minutes.</p>
+    <p class="cta-desc">One base URL, thirty endpoints, five minutes to your first upload.</p>
     <div class="cta-actions">
       <a href="/api" class="btn btn--primary btn--lg">API Reference</a>
       ${isSignedIn ? "" : `<a href="/" class="btn btn--ghost btn--lg">Create free account</a>`}
