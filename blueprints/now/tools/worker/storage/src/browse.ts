@@ -329,29 +329,28 @@ function highlightCode(code,lang){
   const lines=code.split('\\n');
   return lines.map(raw=>{
     let ln=h(raw);
-    // Strings (double and single quoted)
-    ln=ln.replace(/(&quot;(?:[^&]|&(?!quot;))*?&quot;)/g,'<span class="tok-str">$1</span>');
-    ln=ln.replace(/(&#x27;(?:[^&]|&(?!#x27;))*?&#x27;)/g,'<span class="tok-str">$1</span>');
-    ln=ln.replace(/(\\x60[^\\x60]*\\x60)/g,'<span class="tok-str">$1</span>');
+    // Strings — use placeholders
+    ln=ln.replace(/(&quot;(?:[^&]|&(?!quot;))*?&quot;)/g,'\\x01str\\x02$1\\x03');
+    ln=ln.replace(/(&#x27;(?:[^&]|&(?!#x27;))*?&#x27;)/g,'\\x01str\\x02$1\\x03');
+    ln=ln.replace(/(\\x60[^\\x60]*\\x60)/g,'\\x01str\\x02$1\\x03');
     // Comments
     if(['go','js','java','c','cpp','rs','css'].includes(lang)){
-      ln=ln.replace(/(^|\\s)(\\/{2}.*)$/,'$1<span class="tok-cm">$2</span>');
+      ln=ln.replace(/(^|\\s)(\\/{2}.*)$/,'$1\\x01cm\\x02$2\\x03');
     }
     if(['py','yaml','toml','sh','dockerfile'].includes(lang)){
-      ln=ln.replace(/(^|\\s)(#.*)$/,'$1<span class="tok-cm">$2</span>');
+      ln=ln.replace(/(^|\\s)(#.*)$/,'$1\\x01cm\\x02$2\\x03');
     }
     if(lang==='html'){
-      ln=ln.replace(/(&lt;!--.*?--&gt;)/g,'<span class="tok-cm">$1</span>');
+      ln=ln.replace(/(&lt;!--.*?--&gt;)/g,'\\x01cm\\x02$1\\x03');
     }
-    // Numbers
-    ln=ln.replace(/\\b(\\d+\\.?\\d*)\\b/g,'<span class="tok-num">$1</span>');
-    // Keywords per language
+    // Numbers (only outside placeholders)
+    ln=ln.replace(/\\b(\\d+\\.?\\d*)\\b/g,'\\x01num\\x02$1\\x03');
+    // Keywords
     const kw={
       go:'package|import|func|var|const|type|struct|interface|return|if|else|for|range|switch|case|default|defer|go|chan|select|map|make|new|nil|true|false|break|continue|error|string|int|bool|byte|fmt',
       py:'import|from|def|class|return|if|elif|else|for|while|in|not|and|or|is|None|True|False|with|as|try|except|finally|raise|pass|break|continue|lambda|yield|async|await|self|print',
       js:'import|export|from|const|let|var|function|return|if|else|for|while|do|switch|case|default|break|continue|new|this|class|extends|async|await|try|catch|finally|throw|typeof|instanceof|null|undefined|true|false|of|in|console|require|module',
-      css:'@media|@keyframes|@import|@font-face|@layer|@supports|@property|:root|:hover|:focus|:active|:visited|!important|inherit|initial|unset',
-      html:'DOCTYPE|html|head|body|meta|link|title|script|style|div|span|a|p|h1|h2|h3|h4|img|ul|ol|li|table|tr|td|th|form|input|button|nav|main|aside|section|article|header|footer',
+      html:'DOCTYPE',
       sh:'if|then|else|fi|for|do|done|while|case|esac|function|return|exit|echo|export|source|cd|mkdir|rm|cp|mv|chmod|chown|grep|awk|sed|cat|FROM|RUN|CMD|COPY|WORKDIR|EXPOSE|ENV|ARG|ENTRYPOINT',
       sql:'SELECT|FROM|WHERE|AND|OR|NOT|INSERT|INTO|VALUES|UPDATE|SET|DELETE|CREATE|TABLE|DROP|ALTER|INDEX|JOIN|LEFT|RIGHT|INNER|OUTER|ON|GROUP|BY|ORDER|ASC|DESC|LIMIT|OFFSET|IF|EXISTS|PRIMARY|KEY|UNIQUE|NOT|NULL|DEFAULT|INTEGER|TEXT|REAL|BLOB',
       yaml:'true|false|null|yes|no',
@@ -359,8 +358,22 @@ function highlightCode(code,lang){
     };
     const kwList=kw[lang];
     if(kwList){
-      ln=ln.replace(new RegExp('\\\\b('+kwList+')\\\\b','g'),'<span class="tok-kw">$1</span>');
+      ln=ln.replace(new RegExp('\\\\b('+kwList+')\\\\b','g'),'\\x01kw\\x02$1\\x03');
     }
+    // CSS special: match @keywords and :pseudo with non-\\b patterns
+    if(lang==='css'){
+      ln=ln.replace(/(@(?:media|keyframes|import|font-face|layer|supports|property))/g,'\\x01kw\\x02$1\\x03');
+      ln=ln.replace(/(:(?:root|hover|focus|active|visited))/g,'\\x01kw\\x02$1\\x03');
+      ln=ln.replace(/(\\!important|inherit|initial|unset)/g,'\\x01kw\\x02$1\\x03');
+    }
+    // HTML tags: highlight tag names in angle brackets
+    if(lang==='html'){
+      ln=ln.replace(/(&lt;\\/?)([a-zA-Z][a-zA-Z0-9]*)/g,'$1\\x01kw\\x02$2\\x03');
+      ln=ln.replace(/([a-zA-Z-]+)(=)/g,'\\x01num\\x02$1\\x03$2');
+    }
+    // Convert placeholders to real spans
+    ln=ln.replace(/\\x01(str|cm|num|kw)\\x02/g,function(m,t){return '<span class="tok-'+t+'">'});
+    ln=ln.replace(/\\x03/g,'</span>');
     return '<span class="line">'+ln+'</span>';
   }).join('\\n');
 }
@@ -368,10 +381,20 @@ function highlightCode(code,lang){
 /* ── Markdown renderer (basic) ─────────────────────────────────── */
 function renderMarkdown(md){
   let html=h(md);
-  // Code blocks
-  html=html.replace(/\\x60\\x60\\x60(\\w*)\\n([\\s\\S]*?)\\x60\\x60\\x60/g,(m,lang,code)=>'<pre><code>'+code+'</code></pre>');
+  // Code blocks with syntax highlighting
+  html=html.replace(/\\x60\\x60\\x60(\\w*)\\n([\\s\\S]*?)\\x60\\x60\\x60/g,function(m,lang,code){
+    return '<pre class="md-code-block"><code>'+(lang?highlightCode(code,lang):code)+'</code></pre>';
+  });
   // Inline code
   html=html.replace(/\\x60([^\\x60]+)\\x60/g,'<code>$1</code>');
+  // Tables (pipe syntax)
+  html=html.replace(/(\\|.+\\|\\n)(\\|[\\s:|-]+\\|\\n)((\\|.+\\|\\n?)+)/g,function(m,header,sep,body){
+    const hCells=header.trim().split('|').filter(Boolean).map(c=>'<th>'+c.trim()+'</th>').join('');
+    const rows=body.trim().split('\\n').map(function(r){
+      return '<tr>'+r.trim().split('|').filter(Boolean).map(c=>'<td>'+c.trim()+'</td>').join('')+'</tr>';
+    }).join('');
+    return '<table class="md-table"><thead><tr>'+hCells+'</tr></thead><tbody>'+rows+'</tbody></table>';
+  });
   // Headers
   html=html.replace(/^#### (.+)$/gm,'<h4>$1</h4>');
   html=html.replace(/^### (.+)$/gm,'<h3>$1</h3>');
@@ -381,17 +404,20 @@ function renderMarkdown(md){
   html=html.replace(/\\*\\*(.+?)\\*\\*/g,'<strong>$1</strong>');
   html=html.replace(/\\*(.+?)\\*/g,'<em>$1</em>');
   // Links
-  html=html.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g,'<a href="$2">$1</a>');
+  html=html.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
   // Horizontal rule
   html=html.replace(/^---$/gm,'<hr>');
+  // Task lists
+  html=html.replace(/^[\\-\\*] \\[x\\] (.+)$/gm,'<li class="task-done"><input type="checkbox" checked disabled> $1</li>');
+  html=html.replace(/^[\\-\\*] \\[ \\] (.+)$/gm,'<li class="task"><input type="checkbox" disabled> $1</li>');
   // Unordered list items
   html=html.replace(/^[\\-\\*] (.+)$/gm,'<li>$1</li>');
   // Blockquotes
   html=html.replace(/^&gt; (.+)$/gm,'<blockquote>$1</blockquote>');
-  // Paragraphs (wrap loose lines)
-  html=html.replace(/^(?!<[hluobpc]|<\\/|<hr|<li|<block|<pre|<code)(.+)$/gm,'<p>$1</p>');
+  // Paragraphs
+  html=html.replace(/^(?!<[hluobpc]|<\\/|<hr|<li|<block|<pre|<code|<table|<t)(.+)$/gm,'<p>$1</p>');
   // Wrap consecutive li in ul
-  html=html.replace(/(<li>.*?<\\/li>\\n?)+/g,'<ul>$&</ul>');
+  html=html.replace(/(<li[^>]*>.*?<\\/li>\\n?)+/g,'<ul>$&</ul>');
   return html;
 }
 
@@ -883,7 +909,25 @@ function renderPreview(){
 
   const navL=hasPrev?'<button class="preview-nav preview-nav--prev" onclick="B.previewNav(-1)"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></button>':'';
   const navR=hasNext?'<button class="preview-nav preview-nav--next" onclick="B.previewNav(1)"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></button>':'';
-  el.innerHTML='<div class="preview-header"><div class="preview-filename">'+fileIconHtml(item)+'<span>'+h(item.name)+'</span></div><div class="preview-info"><span>'+fmtSize(item.size)+'</span><span>'+fmtTime(item.updated_at)+'</span></div><div class="preview-actions"><button class="preview-btn" onclick="requireSignup(\\'download files\\')">'+I.download+'</button><button class="preview-btn" onclick="B.closePreview()">'+I.x+'</button></div></div><div class="preview-body">'+body+'</div>'+navL+navR;
+  const pathParts=item.path.split('/');
+  const fileName=pathParts.pop();
+  const parentPath=pathParts.join('/');
+  const breadcrumb=parentPath?parentPath.split('/').map(function(p,i,arr){
+    const fullPath=arr.slice(0,i+1).join('/')+'/';
+    return '<span class="pv-bc-segment" onclick="B.closePreview();B.nav(\\''+h(fullPath)+'\\')">'+h(p)+'</span>';
+  }).join('<span class="pv-bc-sep">/</span>')+'<span class="pv-bc-sep">/</span>':'';
+
+  el.innerHTML='<div class="preview-header">'
+    +'<div class="preview-header-left">'
+    +'<button class="pv-back" onclick="B.closePreview()" title="Back"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></button>'
+    +'<div class="pv-path">'+breadcrumb+'<span class="pv-filename">'+fileIconHtml(item)+h(item.name)+'</span></div>'
+    +'</div>'
+    +'<div class="preview-header-right">'
+    +'<span class="pv-meta">'+fmtSize(item.size)+'</span>'
+    +'<button class="pv-action" onclick="B.copyPreviewLink()" title="Copy link">'+I.link+'</button>'
+    +'<button class="pv-action" onclick="requireSignup(\\'download files\\')" title="Download">'+I.download+'</button>'
+    +'<button class="pv-action pv-close" onclick="B.closePreview()" title="Close">'+I.x+'</button>'
+    +'</div></div><div class="preview-body">'+body+'</div>'+navL+navR;
   if(t==='audio')setupDemoMedia('audio',item);
   else if(t==='video')setupDemoMedia('video',item);
 }
@@ -960,12 +1004,18 @@ const B=window.B={
     const item=S.items.find(i=>i.path===path);
     if(!item||item.is_folder)return;
     S.previewItem=item;
+    history.pushState({preview:path},'','/browse/'+h(path));
     renderPreview();
   },
   closePreview(){
     if(S._mediaCleanup){S._mediaCleanup();S._mediaCleanup=null}
     S.previewItem=null;
+    history.pushState(null,'','/browse/'+(S.path||''));
     renderPreview();
+  },
+  copyPreviewLink(){
+    navigator.clipboard.writeText(window.location.href);
+    toast('Link copied to clipboard','success');
   },
   previewNav(dir){
     const files=S.items.filter(i=>!i.is_folder);
@@ -1069,13 +1119,35 @@ $('theme-btn').addEventListener('click',()=>{
 /* ── History ─────────────────────────────────────────────────────── */
 window.addEventListener('popstate',()=>{
   const p=decodeURIComponent(location.pathname.replace('/browse/','').replace('/browse',''));
-  S.path=p;S.section='files';S.searchMode=false;loadItems();
+  // Check if path points to a file (not ending in / and matches a DEMO_FS entry)
+  const fileItem=DEMO_FS.find(f=>!f.is_folder&&!f.trashed_at&&f.path===p);
+  if(fileItem){
+    // Load the parent folder items first
+    const parts=p.split('/');parts.pop();
+    S.path=parts.length?parts.join('/')+'/':'';
+    S.section='files';S.searchMode=false;
+    loadItems();
+    S.previewItem=fileItem;
+    renderPreview();
+  } else {
+    S.path=p;S.section='files';S.searchMode=false;
+    S.previewItem=null;renderPreview();
+    loadItems();
+  }
 });
 
 /* ── Init ────────────────────────────────────────────────────────── */
 const initPath=decodeURIComponent(location.pathname.replace('/browse/','').replace('/browse',''));
-S.path=initPath==='browse'?'':initPath;
-loadItems();
+const initFile=DEMO_FS.find(f=>!f.is_folder&&!f.trashed_at&&f.path===initPath);
+if(initFile){
+  const parts=initPath.split('/');parts.pop();
+  S.path=parts.length?parts.join('/')+'/':'';
+  loadItems();
+  setTimeout(function(){S.previewItem=initFile;renderPreview()},0);
+} else {
+  S.path=initPath==='browse'?'':initPath;
+  loadItems();
+}
 
 })();
 </script>
@@ -1234,25 +1306,28 @@ function highlightCode(code,lang){
   const lines=code.split('\\n');
   return lines.map(raw=>{
     let ln=h(raw);
-    ln=ln.replace(/(&quot;(?:[^&]|&(?!quot;))*?&quot;)/g,'<span class="tok-str">$1</span>');
-    ln=ln.replace(/(&#x27;(?:[^&]|&(?!#x27;))*?&#x27;)/g,'<span class="tok-str">$1</span>');
-    ln=ln.replace(/(\\x60[^\\x60]*\\x60)/g,'<span class="tok-str">$1</span>');
+    // Strings — use placeholders
+    ln=ln.replace(/(&quot;(?:[^&]|&(?!quot;))*?&quot;)/g,'\\x01str\\x02$1\\x03');
+    ln=ln.replace(/(&#x27;(?:[^&]|&(?!#x27;))*?&#x27;)/g,'\\x01str\\x02$1\\x03');
+    ln=ln.replace(/(\\x60[^\\x60]*\\x60)/g,'\\x01str\\x02$1\\x03');
+    // Comments
     if(['go','js','java','c','cpp','rs','css'].includes(lang)){
-      ln=ln.replace(/(^|\\s)(\\/{2}.*)$/,'$1<span class="tok-cm">$2</span>');
+      ln=ln.replace(/(^|\\s)(\\/{2}.*)$/,'$1\\x01cm\\x02$2\\x03');
     }
     if(['py','yaml','toml','sh','dockerfile'].includes(lang)){
-      ln=ln.replace(/(^|\\s)(#.*)$/,'$1<span class="tok-cm">$2</span>');
+      ln=ln.replace(/(^|\\s)(#.*)$/,'$1\\x01cm\\x02$2\\x03');
     }
     if(lang==='html'){
-      ln=ln.replace(/(&lt;!--.*?--&gt;)/g,'<span class="tok-cm">$1</span>');
+      ln=ln.replace(/(&lt;!--.*?--&gt;)/g,'\\x01cm\\x02$1\\x03');
     }
-    ln=ln.replace(/\\b(\\d+\\.?\\d*)\\b/g,'<span class="tok-num">$1</span>');
+    // Numbers (only outside placeholders)
+    ln=ln.replace(/\\b(\\d+\\.?\\d*)\\b/g,'\\x01num\\x02$1\\x03');
+    // Keywords
     const kw={
       go:'package|import|func|var|const|type|struct|interface|return|if|else|for|range|switch|case|default|defer|go|chan|select|map|make|new|nil|true|false|break|continue|error|string|int|bool|byte|fmt',
       py:'import|from|def|class|return|if|elif|else|for|while|in|not|and|or|is|None|True|False|with|as|try|except|finally|raise|pass|break|continue|lambda|yield|async|await|self|print',
       js:'import|export|from|const|let|var|function|return|if|else|for|while|do|switch|case|default|break|continue|new|this|class|extends|async|await|try|catch|finally|throw|typeof|instanceof|null|undefined|true|false|of|in|console|require|module',
-      css:'@media|@keyframes|@import|@font-face|@layer|@supports|@property|:root|:hover|:focus|:active|:visited|!important|inherit|initial|unset',
-      html:'DOCTYPE|html|head|body|meta|link|title|script|style|div|span|a|p|h1|h2|h3|h4|img|ul|ol|li|table|tr|td|th|form|input|button|nav|main|aside|section|article|header|footer',
+      html:'DOCTYPE',
       sh:'if|then|else|fi|for|do|done|while|case|esac|function|return|exit|echo|export|source|cd|mkdir|rm|cp|mv|chmod|chown|grep|awk|sed|cat|FROM|RUN|CMD|COPY|WORKDIR|EXPOSE|ENV|ARG|ENTRYPOINT',
       sql:'SELECT|FROM|WHERE|AND|OR|NOT|INSERT|INTO|VALUES|UPDATE|SET|DELETE|CREATE|TABLE|DROP|ALTER|INDEX|JOIN|LEFT|RIGHT|INNER|OUTER|ON|GROUP|BY|ORDER|ASC|DESC|LIMIT|OFFSET|IF|EXISTS|PRIMARY|KEY|UNIQUE|NOT|NULL|DEFAULT|INTEGER|TEXT|REAL|BLOB',
       yaml:'true|false|null|yes|no',
@@ -1260,8 +1335,22 @@ function highlightCode(code,lang){
     };
     const kwList=kw[lang];
     if(kwList){
-      ln=ln.replace(new RegExp('\\\\b('+kwList+')\\\\b','g'),'<span class="tok-kw">$1</span>');
+      ln=ln.replace(new RegExp('\\\\b('+kwList+')\\\\b','g'),'\\x01kw\\x02$1\\x03');
     }
+    // CSS special: match @keywords and :pseudo with non-\\b patterns
+    if(lang==='css'){
+      ln=ln.replace(/(@(?:media|keyframes|import|font-face|layer|supports|property))/g,'\\x01kw\\x02$1\\x03');
+      ln=ln.replace(/(:(?:root|hover|focus|active|visited))/g,'\\x01kw\\x02$1\\x03');
+      ln=ln.replace(/(\\!important|inherit|initial|unset)/g,'\\x01kw\\x02$1\\x03');
+    }
+    // HTML tags: highlight tag names in angle brackets
+    if(lang==='html'){
+      ln=ln.replace(/(&lt;\\/?)([a-zA-Z][a-zA-Z0-9]*)/g,'$1\\x01kw\\x02$2\\x03');
+      ln=ln.replace(/([a-zA-Z-]+)(=)/g,'\\x01num\\x02$1\\x03$2');
+    }
+    // Convert placeholders to real spans
+    ln=ln.replace(/\\x01(str|cm|num|kw)\\x02/g,function(m,t){return '<span class="tok-'+t+'">'});
+    ln=ln.replace(/\\x03/g,'</span>');
     return '<span class="line">'+ln+'</span>';
   }).join('\\n');
 }
@@ -1269,20 +1358,43 @@ function highlightCode(code,lang){
 /* ── Markdown renderer (basic) ─────────────────────────────────── */
 function renderMarkdown(md){
   let html=h(md);
-  html=html.replace(/\\x60\\x60\\x60(\\w*)\\n([\\s\\S]*?)\\x60\\x60\\x60/g,(m,lang,code)=>'<pre><code>'+code+'</code></pre>');
+  // Code blocks with syntax highlighting
+  html=html.replace(/\\x60\\x60\\x60(\\w*)\\n([\\s\\S]*?)\\x60\\x60\\x60/g,function(m,lang,code){
+    return '<pre class="md-code-block"><code>'+(lang?highlightCode(code,lang):code)+'</code></pre>';
+  });
+  // Inline code
   html=html.replace(/\\x60([^\\x60]+)\\x60/g,'<code>$1</code>');
+  // Tables (pipe syntax)
+  html=html.replace(/(\\|.+\\|\\n)(\\|[\\s:|-]+\\|\\n)((\\|.+\\|\\n?)+)/g,function(m,header,sep,body){
+    const hCells=header.trim().split('|').filter(Boolean).map(c=>'<th>'+c.trim()+'</th>').join('');
+    const rows=body.trim().split('\\n').map(function(r){
+      return '<tr>'+r.trim().split('|').filter(Boolean).map(c=>'<td>'+c.trim()+'</td>').join('')+'</tr>';
+    }).join('');
+    return '<table class="md-table"><thead><tr>'+hCells+'</tr></thead><tbody>'+rows+'</tbody></table>';
+  });
+  // Headers
   html=html.replace(/^#### (.+)$/gm,'<h4>$1</h4>');
   html=html.replace(/^### (.+)$/gm,'<h3>$1</h3>');
   html=html.replace(/^## (.+)$/gm,'<h2>$1</h2>');
   html=html.replace(/^# (.+)$/gm,'<h1>$1</h1>');
+  // Bold and italic
   html=html.replace(/\\*\\*(.+?)\\*\\*/g,'<strong>$1</strong>');
   html=html.replace(/\\*(.+?)\\*/g,'<em>$1</em>');
-  html=html.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g,'<a href="$2">$1</a>');
+  // Links
+  html=html.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // Horizontal rule
   html=html.replace(/^---$/gm,'<hr>');
+  // Task lists
+  html=html.replace(/^[\\-\\*] \\[x\\] (.+)$/gm,'<li class="task-done"><input type="checkbox" checked disabled> $1</li>');
+  html=html.replace(/^[\\-\\*] \\[ \\] (.+)$/gm,'<li class="task"><input type="checkbox" disabled> $1</li>');
+  // Unordered list items
   html=html.replace(/^[\\-\\*] (.+)$/gm,'<li>$1</li>');
+  // Blockquotes
   html=html.replace(/^&gt; (.+)$/gm,'<blockquote>$1</blockquote>');
-  html=html.replace(/^(?!<[hluobpc]|<\\/|<hr|<li|<block|<pre|<code)(.+)$/gm,'<p>$1</p>');
-  html=html.replace(/(<li>.*?<\\/li>\\n?)+/g,'<ul>$&</ul>');
+  // Paragraphs
+  html=html.replace(/^(?!<[hluobpc]|<\\/|<hr|<li|<block|<pre|<code|<table|<t)(.+)$/gm,'<p>$1</p>');
+  // Wrap consecutive li in ul
+  html=html.replace(/(<li[^>]*>.*?<\\/li>\\n?)+/g,'<ul>$&</ul>');
   return html;
 }
 
@@ -1694,7 +1806,25 @@ function renderPreview(){
 
   const navL=hasPrev?'<button class="preview-nav preview-nav--prev" onclick="B.previewNav(-1)"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></button>':'';
   const navR=hasNext?'<button class="preview-nav preview-nav--next" onclick="B.previewNav(1)"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></button>':'';
-  el.innerHTML='<div class="preview-header"><div class="preview-filename">'+fileIconHtml(item)+'<span>'+h(item.name)+'</span></div><div class="preview-info"><span>'+fmtSize(item.size)+'</span><span>'+fmtTime(item.updated_at)+'</span></div><div class="preview-actions"><button class="preview-btn" onclick="B.downloadFile(S.previewItem)">'+I.download+'</button><button class="preview-btn" onclick="B.closePreview()">'+I.x+'</button></div></div><div class="preview-body">'+body+'</div>'+navL+navR;
+  const pathParts=item.path.split('/');
+  const fileName=pathParts.pop();
+  const parentPath=pathParts.join('/');
+  const breadcrumb=parentPath?parentPath.split('/').map(function(p,i,arr){
+    const fullPath=arr.slice(0,i+1).join('/')+'/';
+    return '<span class="pv-bc-segment" onclick="B.closePreview();B.nav(\\''+h(fullPath)+'\\')">'+h(p)+'</span>';
+  }).join('<span class="pv-bc-sep">/</span>')+'<span class="pv-bc-sep">/</span>':'';
+
+  el.innerHTML='<div class="preview-header">'
+    +'<div class="preview-header-left">'
+    +'<button class="pv-back" onclick="B.closePreview()" title="Back"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></button>'
+    +'<div class="pv-path">'+breadcrumb+'<span class="pv-filename">'+fileIconHtml(item)+h(item.name)+'</span></div>'
+    +'</div>'
+    +'<div class="preview-header-right">'
+    +'<span class="pv-meta">'+fmtSize(item.size)+'</span>'
+    +'<button class="pv-action" onclick="B.copyPreviewLink()" title="Copy link">'+I.link+'</button>'
+    +'<button class="pv-action" onclick="B.downloadFile(S.previewItem)" title="Download">'+I.download+'</button>'
+    +'<button class="pv-action pv-close" onclick="B.closePreview()" title="Close">'+I.x+'</button>'
+    +'</div></div><div class="preview-body">'+body+'</div>'+navL+navR;
   if(t==='audio')setupRealMedia('audio',item);
   else if(t==='video')setupRealMedia('video',item);
 }
@@ -1954,6 +2084,7 @@ const B=window.B={
     const item=S.items.find(i=>i.path===path);
     if(!item||item.is_folder)return;
     S.previewItem=item;S.previewContent=null;S.previewLoading=true;
+    history.pushState({preview:path},'','/browse/'+h(path));
     renderPreview();
     const t=fileType(item);
     if(['code','text','sheet'].includes(t)||item.name.endsWith('.md')||item.content_type==='text/markdown'||(item.content_type||'').startsWith('text/')){
@@ -1965,7 +2096,12 @@ const B=window.B={
   closePreview(){
     if(S._mediaCleanup){S._mediaCleanup();S._mediaCleanup=null}
     S.previewItem=null;S.previewContent=null;S.previewLoading=false;
+    history.pushState(null,'','/browse/'+(S.path||''));
     renderPreview();
+  },
+  copyPreviewLink(){
+    navigator.clipboard.writeText(window.location.href);
+    toast('Link copied to clipboard','success');
   },
   previewNav(dir){
     const files=S.items.filter(i=>!i.is_folder);
@@ -2178,13 +2314,36 @@ $('theme-btn').addEventListener('click',()=>{
 /* ── History ──────────────────────────────────────────────────────── */
 window.addEventListener('popstate',()=>{
   const p=decodeURIComponent(location.pathname.replace('/browse/','').replace('/browse',''));
-  S.path=p;S.section='files';S.searchMode=false;loadItems();
+  // Check if this is a file preview URL (path doesn't end with / and doesn't look like a folder)
+  if(p&&!p.endsWith('/')&&p.includes('.')){
+    const parts=p.split('/');parts.pop();
+    S.path=parts.length?parts.join('/')+'/':'';
+    S.section='files';S.searchMode=false;
+    loadItems().then(function(){
+      const fileItem=S.items.find(i=>!i.is_folder&&i.path===p);
+      if(fileItem){S.previewItem=fileItem;renderPreview()}
+    });
+  } else {
+    S.path=p;S.section='files';S.searchMode=false;
+    S.previewItem=null;renderPreview();
+    loadItems();
+  }
 });
 
 /* ── Init ─────────────────────────────────────────────────────────── */
 const initPath=decodeURIComponent(location.pathname.replace('/browse/','').replace('/browse',''));
-S.path=initPath==='browse'?'':initPath;
-loadItems();loadStats();
+if(initPath&&!initPath.endsWith('/')&&initPath.includes('.')){
+  const parts=initPath.split('/');parts.pop();
+  S.path=parts.length?parts.join('/')+'/':'';
+  loadItems().then(function(){
+    const fileItem=S.items.find(i=>!i.is_folder&&i.path===initPath);
+    if(fileItem){B.openPreview(initPath)}
+  });
+} else {
+  S.path=initPath==='browse'?'':initPath;
+  loadItems();
+}
+loadStats();
 
 })();
 </script>

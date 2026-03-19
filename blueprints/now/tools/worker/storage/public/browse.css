@@ -695,30 +695,55 @@ html.dark .modal{box-shadow:0 16px 64px rgba(0,0,0,0.5)}
 /* ════════════════════════════════════════════════════════════════════════
    FILE PREVIEW OVERLAY
    ════════════════════════════════════════════════════════════════════════ */
+/* ── Light mode: white preview background ─────────────────────── */
+:root #preview-overlay{background:rgba(255,255,255,.97)}
+html.dark #preview-overlay{background:rgba(9,9,11,.97)}
+
+/* Preview code white background in light mode */
+:root .preview-code{background:#FAFAF9;color:#09090B}
+html.dark .preview-code{background:#111113;color:#FAFAF9}
+
+:root .preview-markdown{background:#FFF;color:#09090B}
+html.dark .preview-markdown{background:#111113;color:#FAFAF9}
+
+:root .preview-text{background:#FFF;color:#09090B}
+html.dark .preview-text{background:#111113;color:#FAFAF9}
+
 #preview-overlay{
   display:none;position:fixed;inset:0;z-index:600;
-  background:var(--bg);flex-direction:column;
+  flex-direction:column;
 }
 #preview-overlay.visible{display:flex}
 .preview-header{
-  height:56px;min-height:56px;border-bottom:1px solid var(--border);
   display:flex;align-items:center;justify-content:space-between;
-  padding:0 20px;gap:12px;background:var(--surface);
+  padding:0 16px;height:56px;min-height:56px;
+  border-bottom:1px solid var(--border);
+  background:var(--surface);
+  gap:12px;
 }
-.preview-filename{
-  display:flex;align-items:center;gap:10px;
-  font-size:14px;font-weight:600;min-width:0;
+.preview-header-left{display:flex;align-items:center;gap:8px;min-width:0;flex:1}
+.preview-header-right{display:flex;align-items:center;gap:4px;flex-shrink:0}
+.pv-back{
+  display:flex;align-items:center;justify-content:center;
+  width:32px;height:32px;border:none;background:transparent;
+  color:var(--text-2);cursor:pointer;border-radius:6px;flex-shrink:0;
 }
-.preview-filename .file-icon{width:20px;height:20px;flex-shrink:0}
-.preview-filename span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.preview-actions{display:flex;gap:6px;flex-shrink:0}
-.preview-btn{
-  background:none;border:1px solid var(--border);color:var(--text);
-  width:36px;height:36px;display:flex;align-items:center;justify-content:center;
-  cursor:pointer;transition:all .15s;
+.pv-back:hover{background:var(--surface-alt);color:var(--text)}
+.pv-path{display:flex;align-items:center;gap:4px;min-width:0;font-size:13px;color:var(--text-2);overflow:hidden}
+.pv-bc-segment{cursor:pointer;white-space:nowrap}
+.pv-bc-segment:hover{color:var(--text);text-decoration:underline}
+.pv-bc-sep{color:var(--text-3);margin:0 2px}
+.pv-filename{display:flex;align-items:center;gap:6px;font-weight:600;color:var(--text);white-space:nowrap}
+.pv-filename .file-icon{width:18px;height:18px;flex-shrink:0}
+.pv-meta{font-size:12px;color:var(--text-3);white-space:nowrap;font-family:'JetBrains Mono',monospace}
+.pv-action{
+  display:flex;align-items:center;justify-content:center;
+  width:32px;height:32px;border:none;background:transparent;
+  color:var(--text-2);cursor:pointer;border-radius:6px;
 }
-.preview-btn:hover{background:var(--surface-alt);border-color:var(--text-3)}
-.preview-btn svg{width:16px;height:16px}
+.pv-action:hover{background:var(--surface-alt);color:var(--text)}
+.pv-action svg{width:16px;height:16px}
+.pv-close svg{width:18px;height:18px}
 .preview-body{
   flex:1;overflow:auto;display:flex;align-items:flex-start;
   justify-content:center;padding:32px 64px;
@@ -934,34 +959,40 @@ html.dark .tok-attr{color:#a78bfa}
 .preview-table tr:hover td{background:var(--border)}
 
 /* Markdown preview */
-.preview-markdown{
-  width:100%;max-width:800px;line-height:1.75;font-size:15px;color:var(--text);
-}
-.preview-markdown h1{font-size:28px;font-weight:800;margin:0 0 16px;padding-bottom:8px;border-bottom:1px solid var(--border)}
-.preview-markdown h2{font-size:22px;font-weight:700;margin:24px 0 12px}
-.preview-markdown h3{font-size:17px;font-weight:600;margin:20px 0 8px}
-.preview-markdown p{margin:0 0 12px}
-.preview-markdown code{
-  font-family:'JetBrains Mono',monospace;font-size:13px;
-  background:var(--surface-alt);padding:2px 6px;border-radius:3px;
-}
-.preview-markdown pre{
-  background:var(--surface-alt);border:1px solid var(--border);
-  padding:16px 20px;margin:12px 0;overflow-x:auto;
-  font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;
-}
+.preview-markdown{padding:40px;max-width:800px;margin:0 auto;line-height:1.7;width:100%;font-size:15px}
+.preview-markdown h1{font-size:28px;font-weight:700;margin:24px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.preview-markdown h2{font-size:22px;font-weight:600;margin:20px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.preview-markdown h3{font-size:18px;font-weight:600;margin:16px 0 8px}
+.preview-markdown h4{font-size:15px;font-weight:600;margin:12px 0 6px}
+.preview-markdown p{margin:8px 0}
+.preview-markdown code{font-family:'JetBrains Mono',monospace;background:var(--surface-alt);padding:2px 6px;border-radius:4px;font-size:0.9em}
 .preview-markdown pre code{background:none;padding:0}
-.preview-markdown ul,.preview-markdown ol{margin:0 0 12px;padding-left:24px}
-.preview-markdown li{margin:4px 0}
-.preview-markdown blockquote{
-  margin:12px 0;padding:8px 16px;
-  border-left:3px solid var(--border);color:var(--text-2);
-}
-.preview-markdown a{color:#3b82f6;text-decoration:underline;text-underline-offset:2px}
+.preview-markdown blockquote{border-left:3px solid var(--text-3);padding:4px 16px;margin:12px 0;color:var(--text-2);background:var(--surface-alt);border-radius:0 6px 6px 0}
 .preview-markdown hr{border:none;border-top:1px solid var(--border);margin:20px 0}
-.preview-markdown strong{font-weight:700}
+.preview-markdown ul{padding-left:24px;margin:8px 0}
+.preview-markdown li{margin:4px 0}
+.preview-markdown a{color:#667eea;text-decoration:underline}
+.preview-markdown table{width:100%;border-collapse:collapse;margin:16px 0}
+.preview-markdown th,.preview-markdown td{padding:8px 12px;border:1px solid var(--border)}
+.preview-markdown th{background:var(--surface-alt);font-weight:600;text-align:left}
+.preview-markdown strong{font-weight:600}
 .preview-markdown em{font-style:italic}
 .preview-markdown img{max-width:100%;border-radius:4px}
+
+/* Markdown tables */
+.md-table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+.md-table th,.md-table td{padding:8px 12px;border:1px solid var(--border);text-align:left}
+.md-table th{background:var(--surface-alt);font-weight:600}
+.md-table tr:hover td{background:var(--surface-alt)}
+
+/* Markdown code blocks */
+.md-code-block{background:var(--surface-alt);border:1px solid var(--border);border-radius:6px;padding:12px 16px;overflow-x:auto;margin:16px 0;font-size:13px}
+.md-code-block code{font-family:'JetBrains Mono',monospace;background:none;padding:0}
+
+/* Task list styling */
+.preview-markdown li.task,.preview-markdown li.task-done{list-style:none;margin-left:-20px}
+.preview-markdown li.task input,.preview-markdown li.task-done input{margin-right:6px}
+.preview-markdown li.task-done{opacity:.7;text-decoration:line-through}
 
 /* Document placeholder */
 .preview-doc{
@@ -989,12 +1020,28 @@ html.dark .tok-attr{color:#a78bfa}
 .preview-generic-name{font-size:20px;font-weight:600}
 .preview-generic-meta{font-size:13px;color:var(--text-2)}
 
-/* File info bar in preview */
+/* File info bar in preview (legacy) */
 .preview-info{
   display:flex;gap:16px;font-size:12px;color:var(--text-3);
   padding:0 20px 0 0;align-items:center;
 }
 .preview-info span{white-space:nowrap}
+
+/* Legacy preview-filename/actions kept for compat */
+.preview-filename{
+  display:flex;align-items:center;gap:10px;
+  font-size:14px;font-weight:600;min-width:0;
+}
+.preview-filename .file-icon{width:20px;height:20px;flex-shrink:0}
+.preview-filename span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.preview-actions{display:flex;gap:6px;flex-shrink:0}
+.preview-btn{
+  background:none;border:1px solid var(--border);color:var(--text);
+  width:36px;height:36px;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;transition:all .15s;
+}
+.preview-btn:hover{background:var(--surface-alt);border-color:var(--text-3)}
+.preview-btn svg{width:16px;height:16px}
 
 @media(max-width:768px){
   .preview-body{padding:16px}
