@@ -365,7 +365,7 @@ ${signInForm}
   <div class="section-inner">
     <div class="section-label">API REFERENCE</div>
     <div class="section-heading"><span class="grad">36</span> endpoints. One base URL.</div>
-    <div class="section-sub">https://storage.liteio.workers.dev</div>
+    <div class="section-sub">https://storage.liteio.dev</div>
     ${apiSurface}
     <a href="/docs" class="docs-link">&gt; read the full documentation &rarr;</a>
   </div>
@@ -381,7 +381,7 @@ ${ctaSection}
   <div class="md" id="md-content"><button class="md-copy" onclick="copyMd()">copy</button><span class="h1"># storage.now</span>
 
 File storage API for agents and humans.
-Base URL: https://storage.liteio.workers.dev
+Base URL: https://storage.liteio.dev
 
 <span class="h2">## Quick start</span>
 
@@ -479,8 +479,8 @@ PATCH  /drive/description          Update description
 
 <span class="h2">## Links</span>
 
-<span class="link">https://storage.liteio.workers.dev/docs</span>  Full documentation
-<span class="link">https://storage.liteio.workers.dev/browse</span>  File browser</div>
+<span class="link">https://storage.liteio.dev/docs</span>  Full documentation
+<span class="link">https://storage.liteio.dev/browse</span>  File browser</div>
 </div>
 
 <!-- Floating mode switch -->

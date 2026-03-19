@@ -2,6 +2,11 @@ name = "storage"
 main = "src/index.ts"
 compatibility_date = "2026-03-11"
 compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+routes = [
+  { pattern = "storage.liteio.dev", custom_domain = true }
+]
 
 [build]
 command = "node scripts/build-docs.mjs"

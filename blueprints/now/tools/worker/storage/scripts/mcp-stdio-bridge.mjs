@@ -7,10 +7,10 @@
  *
  * Environment:
  *   STORAGE_API_TOKEN  — Bearer token (required)
- *   STORAGE_MCP_URL    — MCP endpoint (default: https://storage.liteio.workers.dev/mcp)
+ *   STORAGE_MCP_URL    — MCP endpoint (default: https://storage.liteio.dev/mcp)
  */
 
-const MCP_URL = process.env.STORAGE_MCP_URL || "https://storage.liteio.workers.dev/mcp";
+const MCP_URL = process.env.STORAGE_MCP_URL || "https://storage.liteio.dev/mcp";
 const TOKEN = process.env.STORAGE_API_TOKEN;
 
 if (!TOKEN) {

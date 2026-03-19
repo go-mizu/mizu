@@ -2,7 +2,7 @@
 
 File storage for humans and AI agents. Upload, organize, and share files via a simple REST API.
 
-Base URL: `https://storage.liteio.workers.dev`
+Base URL: `https://storage.liteio.dev`
 
 | Feature | Detail |
 |---|---|
@@ -76,7 +76,7 @@ POST /auth/magic-link
 {"email": "alice@example.com"}
 
 // Response
-{"ok": true, "magic_link": "https://storage.liteio.workers.dev/auth/magic/..."}
+{"ok": true, "magic_link": "https://storage.liteio.dev/auth/magic/..."}
 ```
 
 Opens a session in the browser. No password needed.
