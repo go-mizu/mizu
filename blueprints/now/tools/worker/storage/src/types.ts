@@ -10,6 +10,8 @@ export interface Env {
 
 export interface Variables {
   actor: string;
+  scopes: string;
+  pathPrefix: string;
 }
 
 export interface ActorRow {
@@ -61,4 +63,29 @@ export interface VerifyRequest {
   challenge_id: string;
   actor: string;
   signature: string;
+}
+
+export interface PublicLinkRow {
+  id: string;
+  object_id: string;
+  owner: string;
+  token: string;
+  permission: string;
+  password_hash: string | null;
+  expires_at: number | null;
+  max_downloads: number | null;
+  download_count: number;
+  created_at: number;
+}
+
+export interface ApiKeyRow {
+  id: string;
+  actor: string;
+  token_hash: string;
+  name: string;
+  scopes: string;
+  path_prefix: string;
+  expires_at: number | null;
+  last_used_at: number | null;
+  created_at: number;
 }

@@ -4,6 +4,8 @@ import type { Env, Variables, ObjectRow } from "./types";
 import { objectId } from "./id";
 import { mimeFromName } from "./mime";
 import { errorResponse } from "./error";
+import { requireScope, checkPathPrefix } from "./authorize";
+import { audit } from "./audit";
 
 type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -55,6 +57,9 @@ async function ensureParentFolders(db: D1Database, owner: string, filePath: stri
 
 // POST /presign/upload
 export async function presignUpload(c: AppContext) {
+  const scopeErr = requireScope(c, "files:write");
+  if (scopeErr) return scopeErr;
+
   const r2 = getR2Client(c);
   if (!r2) {
     return errorResponse(c, "not_configured", "Presigned URLs are not configured. Use PUT /files/* instead.");
@@ -100,6 +105,9 @@ export async function presignUpload(c: AppContext) {
 
 // POST /presign/download
 export async function presignDownload(c: AppContext) {
+  const scopeErr = requireScope(c, "files:read");
+  if (scopeErr) return scopeErr;
+
   const r2 = getR2Client(c);
   if (!r2) {
     return errorResponse(c, "not_configured", "Presigned URLs are not configured. Use GET /files/* instead.");
@@ -151,6 +159,9 @@ export async function presignDownload(c: AppContext) {
 
 // POST /presign/complete
 export async function presignComplete(c: AppContext) {
+  const scopeErr = requireScope(c, "files:write");
+  if (scopeErr) return scopeErr;
+
   let body: { path?: string };
   try {
     body = await c.req.json();

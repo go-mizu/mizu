@@ -6,17 +6,27 @@ import { getSessionActor } from "./session";
 import { registerActor } from "./register";
 import { uploadFile, downloadFile, deleteFile, headFile } from "./files";
 import { createFolder, listFolder, deleteFolder } from "./folders";
-import { createShare, listShares, deleteShare, listSharedWithMe, downloadSharedFile } from "./shares";
+import {
+  createShare, listShares, updateShare, deleteShare,
+  listSharedWithMe, downloadSharedFile, uploadSharedFile, deleteSharedFile,
+} from "./shares";
 import { presignUpload, presignDownload, presignComplete } from "./presign";
 import {
   toggleStar, renameItem, moveItems, copyFile,
   trashItems, restoreItems, emptyTrash, listTrash,
   listRecent, listStarred, searchFiles, driveStats, updateDescription,
 } from "./drive";
+import { createLink, listLinks, deleteLink, accessPublicLink, accessPublicLinkFile } from "./links";
+import { createApiKey, listApiKeys, deleteApiKey } from "./api-keys";
+import { getAuditLog } from "./audit";
 import { landingPage } from "./landing";
 import { docsPage } from "./docs";
 import { pricingPage } from "./pricing";
 import { browsePage } from "./browse";
+import {
+  authRateLimit, magicLinkRateLimit, registerRateLimit,
+  uploadRateLimit, shareRateLimit, linkRateLimit, publicAccessRateLimit,
+} from "./rate-limit";
 import type { Env, Variables } from "./types";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -51,6 +61,16 @@ app.use("/shares", bodySizeLimit);
 app.use("/shares/*", bodySizeLimit);
 app.use("/presign/*", bodySizeLimit);
 app.use("/drive/*", bodySizeLimit);
+app.use("/links", bodySizeLimit);
+app.use("/links/*", bodySizeLimit);
+app.use("/api-keys", bodySizeLimit);
+app.use("/api-keys/*", bodySizeLimit);
+
+// Rate limiting on unauthenticated endpoints
+app.use("/actors", registerRateLimit);
+app.use("/auth/challenge", authRateLimit);
+app.use("/auth/verify", authRateLimit);
+app.use("/auth/magic-link", magicLinkRateLimit);
 
 // Registration (no auth)
 app.post("/actors", registerActor);
@@ -63,7 +83,12 @@ app.get("/auth/magic/:token", verifyMagicLink);
 app.post("/auth/logout", logout);
 app.get("/auth/logout", logout);
 
-// Protected routes (Bearer token or session cookie)
+// Public links (no auth required, rate limited)
+app.use("/p/*", publicAccessRateLimit);
+app.get("/p/:token", accessPublicLink);
+app.get("/p/:token/*", accessPublicLinkFile);
+
+// Protected routes (Bearer token or session cookie or API key)
 app.use("/files/*", bearerAuth);
 app.use("/folders", bearerAuth);
 app.use("/folders/*", bearerAuth);
@@ -71,9 +96,20 @@ app.use("/shares", bearerAuth);
 app.use("/shares/*", bearerAuth);
 app.use("/shared", bearerAuth);
 app.use("/shared/*", bearerAuth);
+app.use("/drive/*", bearerAuth);
+app.use("/presign/*", bearerAuth);
+app.use("/links", bearerAuth);
+app.use("/links/*", bearerAuth);
+app.use("/api-keys", bearerAuth);
+app.use("/api-keys/*", bearerAuth);
+app.use("/audit", bearerAuth);
+
+// Rate limiting on authenticated write endpoints
+app.use("/files/*", uploadRateLimit);
+app.use("/shares", shareRateLimit);
+app.use("/links", linkRateLimit);
 
 // Drive features
-app.use("/drive/*", bearerAuth);
 app.patch("/drive/star", toggleStar);
 app.post("/drive/rename", renameItem);
 app.post("/drive/move", moveItems);
@@ -89,7 +125,6 @@ app.get("/drive/stats", driveStats);
 app.patch("/drive/description", updateDescription);
 
 // Presigned URLs (direct-to-storage)
-app.use("/presign/*", bearerAuth);
 app.post("/presign/upload", presignUpload);
 app.post("/presign/download", presignDownload);
 app.post("/presign/complete", presignComplete);
@@ -109,11 +144,27 @@ app.delete("/folders/*", deleteFolder);
 // Shares
 app.post("/shares", createShare);
 app.get("/shares", listShares);
+app.patch("/shares/:id", updateShare);
 app.delete("/shares/:id", deleteShare);
 
-// Shared files
+// Shared files (download, upload, delete)
 app.get("/shared", listSharedWithMe);
 app.get("/shared/:owner/*", downloadSharedFile);
+app.put("/shared/:owner/*", uploadSharedFile);
+app.delete("/shared/:owner/*", deleteSharedFile);
+
+// Public links management
+app.post("/links", createLink);
+app.get("/links", listLinks);
+app.delete("/links/:id", deleteLink);
+
+// API keys management
+app.post("/api-keys", createApiKey);
+app.get("/api-keys", listApiKeys);
+app.delete("/api-keys/:id", deleteApiKey);
+
+// Audit log
+app.get("/audit", getAuditLog);
 
 // 404 fallback
 app.notFound((c) => c.json({ error: { code: "not_found", message: "Not found" } }, 404));

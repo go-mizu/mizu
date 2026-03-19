@@ -2,11 +2,14 @@ import type { Context } from "hono";
 import type { Env, Variables, ObjectRow } from "./types";
 import { objectId } from "./id";
 import { errorResponse } from "./error";
+import { requireScope } from "./authorize";
 
 type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
 
 // ── PATCH /drive/star — toggle star ──────────────────────────────────
 export async function toggleStar(c: AppContext) {
+  const scopeErr = requireScope(c, "drive:write");
+  if (scopeErr) return scopeErr;
   const actor = c.get("actor");
   const { path, starred } = await c.req.json<{ path: string; starred: number }>();
   if (!path) return errorResponse(c, "invalid_request", "path required");
@@ -23,6 +26,8 @@ export async function toggleStar(c: AppContext) {
 
 // ── POST /drive/rename ───────────────────────────────────────────────
 export async function renameItem(c: AppContext) {
+  const scopeErr = requireScope(c, "drive:write");
+  if (scopeErr) return scopeErr;
   const actor = c.get("actor");
   const { path, new_name } = await c.req.json<{ path: string; new_name: string }>();
   if (!path || !new_name) return errorResponse(c, "invalid_request", "path and new_name required");
@@ -87,6 +92,8 @@ export async function renameItem(c: AppContext) {
 
 // ── POST /drive/move ─────────────────────────────────────────────────
 export async function moveItems(c: AppContext) {
+  const scopeErr = requireScope(c, "drive:write");
+  if (scopeErr) return scopeErr;
   const actor = c.get("actor");
   const { paths, destination } = await c.req.json<{ paths: string[]; destination: string }>();
   if (!paths?.length) return errorResponse(c, "invalid_request", "paths required");
@@ -143,6 +150,8 @@ export async function moveItems(c: AppContext) {
 
 // ── POST /drive/copy ─────────────────────────────────────────────────
 export async function copyFile(c: AppContext) {
+  const scopeErr = requireScope(c, "drive:write");
+  if (scopeErr) return scopeErr;
   const actor = c.get("actor");
   const { path, destination } = await c.req.json<{ path: string; destination?: string }>();
   if (!path) return errorResponse(c, "invalid_request", "path required");
@@ -188,6 +197,8 @@ export async function copyFile(c: AppContext) {
 
 // ── POST /drive/trash ────────────────────────────────────────────────
 export async function trashItems(c: AppContext) {
+  const scopeErr = requireScope(c, "drive:write");
+  if (scopeErr) return scopeErr;
   const actor = c.get("actor");
   const { paths } = await c.req.json<{ paths: string[] }>();
   if (!paths?.length) return errorResponse(c, "invalid_request", "paths required");
@@ -218,6 +229,8 @@ export async function trashItems(c: AppContext) {
 
 // ── POST /drive/restore ──────────────────────────────────────────────
 export async function restoreItems(c: AppContext) {
+  const scopeErr = requireScope(c, "drive:write");
+  if (scopeErr) return scopeErr;
   const actor = c.get("actor");
   const { paths } = await c.req.json<{ paths: string[] }>();
   if (!paths?.length) return errorResponse(c, "invalid_request", "paths required");
@@ -244,6 +257,8 @@ export async function restoreItems(c: AppContext) {
 
 // ── DELETE /drive/trash — empty trash ────────────────────────────────
 export async function emptyTrash(c: AppContext) {
+  const scopeErr = requireScope(c, "drive:write");
+  if (scopeErr) return scopeErr;
   const actor = c.get("actor");
 
   // Get all trashed files to delete from R2
@@ -273,6 +288,8 @@ export async function emptyTrash(c: AppContext) {
 
 // ── GET /drive/trash — list trashed items ────────────────────────────
 export async function listTrash(c: AppContext) {
+  const scopeErr = requireScope(c, "drive:read");
+  if (scopeErr) return scopeErr;
   const actor = c.get("actor");
   const { results } = await c.env.DB.prepare(
     `SELECT id, path, name, is_folder, content_type, size, starred, trashed_at, created_at, updated_at
@@ -285,6 +302,8 @@ export async function listTrash(c: AppContext) {
 
 // ── GET /drive/recent ────────────────────────────────────────────────
 export async function listRecent(c: AppContext) {
+  const scopeErr = requireScope(c, "drive:read");
+  if (scopeErr) return scopeErr;
   const actor = c.get("actor");
   const { results } = await c.env.DB.prepare(
     `SELECT id, path, name, is_folder, content_type, size, starred, accessed_at, created_at, updated_at
@@ -297,6 +316,8 @@ export async function listRecent(c: AppContext) {
 
 // ── GET /drive/starred ───────────────────────────────────────────────
 export async function listStarred(c: AppContext) {
+  const scopeErr = requireScope(c, "drive:read");
+  if (scopeErr) return scopeErr;
   const actor = c.get("actor");
   const { results } = await c.env.DB.prepare(
     `SELECT id, path, name, is_folder, content_type, size, starred, created_at, updated_at
@@ -309,6 +330,8 @@ export async function listStarred(c: AppContext) {
 
 // ── GET /drive/search?q=&type=&starred= ──────────────────────────────
 export async function searchFiles(c: AppContext) {
+  const scopeErr = requireScope(c, "drive:read");
+  if (scopeErr) return scopeErr;
   const actor = c.get("actor");
   const q = c.req.query("q") || "";
   const type = c.req.query("type") || "";
@@ -339,6 +362,8 @@ export async function searchFiles(c: AppContext) {
 
 // ── GET /drive/stats — storage statistics ────────────────────────────
 export async function driveStats(c: AppContext) {
+  const scopeErr = requireScope(c, "drive:read");
+  if (scopeErr) return scopeErr;
   const actor = c.get("actor");
 
   const stats = await c.env.DB.prepare(
@@ -365,6 +390,8 @@ export async function driveStats(c: AppContext) {
 
 // ── PATCH /drive/description ─────────────────────────────────────────
 export async function updateDescription(c: AppContext) {
+  const scopeErr = requireScope(c, "drive:write");
+  if (scopeErr) return scopeErr;
   const actor = c.get("actor");
   const { path, description } = await c.req.json<{ path: string; description: string }>();
   if (!path) return errorResponse(c, "invalid_request", "path required");

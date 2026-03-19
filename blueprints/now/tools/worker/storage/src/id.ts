@@ -27,3 +27,19 @@ export function nonce(): string {
 export function magicToken(): string {
   return rand(32);
 }
+
+export function publicLinkId(): string {
+  return `pl_${rand(12)}`;
+}
+
+export function publicLinkToken(): string {
+  return rand(24);
+}
+
+export function apiKeyId(): string {
+  return `ak_${rand(12)}`;
+}
+
+export function apiKeyToken(): string {
+  return `sk_${rand(32)}`;
+}

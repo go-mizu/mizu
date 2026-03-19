@@ -4,6 +4,8 @@ import { objectId } from "./id";
 import { mimeFromName, isInlineType } from "./mime";
 import { errorResponse } from "./error";
 import { wildcardPath } from "./path";
+import { requireScope, checkPathPrefix, sanitizeFilename } from "./authorize";
+import { audit } from "./audit";
 
 type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -13,7 +15,7 @@ const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
  * Ensure all parent folders exist in D1 for a given path.
  * e.g. for "docs/reports/q1.pdf" → creates "docs/" and "docs/reports/"
  */
-async function ensureParentFolders(db: D1Database, owner: string, filePath: string) {
+export async function ensureParentFolders(db: D1Database, owner: string, filePath: string) {
   const parts = filePath.split("/");
   // Remove the filename (last part)
   parts.pop();
@@ -42,12 +44,18 @@ async function ensureParentFolders(db: D1Database, owner: string, filePath: stri
 
 // PUT /files/*path
 export async function uploadFile(c: AppContext) {
+  const scopeErr = requireScope(c, "files:write");
+  if (scopeErr) return scopeErr;
+
   const actor = c.get("actor");
   const filePath = wildcardPath(c, "/files/");
 
   if (!filePath || filePath.endsWith("/")) {
     return errorResponse(c, "invalid_request", "File path is required (not a folder)");
   }
+
+  const prefixErr = checkPathPrefix(c, filePath);
+  if (prefixErr) return prefixErr;
 
   // Check Content-Length
   const cl = c.req.header("Content-Length");
@@ -97,6 +105,8 @@ export async function uploadFile(c: AppContext) {
       .run();
   }
 
+  audit(c, "file.upload", filePath);
+
   return c.json(
     { id, path: filePath, name, content_type: contentType, size: body.byteLength, created_at: now },
     existing ? 200 : 201,
@@ -105,12 +115,18 @@ export async function uploadFile(c: AppContext) {
 
 // GET /files/*path
 export async function downloadFile(c: AppContext) {
+  const scopeErr = requireScope(c, "files:read");
+  if (scopeErr) return scopeErr;
+
   const actor = c.get("actor");
   const filePath = wildcardPath(c, "/files/");
 
   if (!filePath) {
     return errorResponse(c, "invalid_request", "File path is required");
   }
+
+  const prefixErr = checkPathPrefix(c, filePath);
+  if (prefixErr) return prefixErr;
 
   const obj = await c.env.DB.prepare(
     "SELECT * FROM objects WHERE owner = ? AND path = ? AND is_folder = 0 AND trashed_at IS NULL",
@@ -131,16 +147,19 @@ export async function downloadFile(c: AppContext) {
     return errorResponse(c, "not_found", "File data not found");
   }
 
+  audit(c, "file.download", filePath);
+
   const headers = new Headers();
   headers.set("Content-Type", obj.content_type || "application/octet-stream");
   headers.set("Content-Length", obj.size.toString());
   headers.set("ETag", r2Obj.etag);
   headers.set("Last-Modified", new Date(obj.updated_at).toUTCString());
 
+  const safeName = sanitizeFilename(obj.name);
   if (isInlineType(obj.content_type)) {
-    headers.set("Content-Disposition", "inline");
+    headers.set("Content-Disposition", `inline; filename="${safeName}"`);
   } else {
-    headers.set("Content-Disposition", `attachment; filename="${obj.name}"`);
+    headers.set("Content-Disposition", `attachment; filename="${safeName}"`);
   }
 
   return new Response(r2Obj.body, { headers });
@@ -148,12 +167,18 @@ export async function downloadFile(c: AppContext) {
 
 // DELETE /files/*path
 export async function deleteFile(c: AppContext) {
+  const scopeErr = requireScope(c, "files:write");
+  if (scopeErr) return scopeErr;
+
   const actor = c.get("actor");
   const filePath = wildcardPath(c, "/files/");
 
   if (!filePath) {
     return errorResponse(c, "invalid_request", "File path is required");
   }
+
+  const prefixErr = checkPathPrefix(c, filePath);
+  if (prefixErr) return prefixErr;
 
   const obj = await c.env.DB.prepare(
     "SELECT id, r2_key FROM objects WHERE owner = ? AND path = ? AND is_folder = 0 AND trashed_at IS NULL",
@@ -174,11 +199,16 @@ export async function deleteFile(c: AppContext) {
   // Delete metadata
   await c.env.DB.prepare("DELETE FROM objects WHERE id = ?").bind(obj.id).run();
 
+  audit(c, "file.delete", filePath);
+
   return c.json({ deleted: true });
 }
 
 // HEAD /files/*path
 export async function headFile(c: AppContext) {
+  const scopeErr = requireScope(c, "files:read");
+  if (scopeErr) return scopeErr;
+
   const actor = c.get("actor");
   const filePath = wildcardPath(c, "/files/");
 

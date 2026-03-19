@@ -3,11 +3,14 @@ import type { Env, Variables, ObjectRow } from "./types";
 import { objectId } from "./id";
 import { errorResponse } from "./error";
 import { wildcardPath } from "./path";
+import { requireScope } from "./authorize";
 
 type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
 
 // POST /folders  { "path": "docs/reports" }
 export async function createFolder(c: AppContext) {
+  const scopeErr = requireScope(c, "folders:write");
+  if (scopeErr) return scopeErr;
   const actor = c.get("actor");
 
   let body: { path?: string };
@@ -75,6 +78,8 @@ export async function createFolder(c: AppContext) {
 
 // GET /folders  or  GET /folders/*path
 export async function listFolder(c: AppContext) {
+  const scopeErr = requireScope(c, "folders:read");
+  if (scopeErr) return scopeErr;
   const actor = c.get("actor");
   let prefix = wildcardPath(c, "/folders/");
 
@@ -120,6 +125,8 @@ export async function listFolder(c: AppContext) {
 
 // DELETE /folders/*path
 export async function deleteFolder(c: AppContext) {
+  const scopeErr = requireScope(c, "folders:write");
+  if (scopeErr) return scopeErr;
   const actor = c.get("actor");
   let folderPath = wildcardPath(c, "/folders/");
 
