@@ -1,6 +1,6 @@
 # API Reference {#overview}
 
-Complete reference for the storage.now API. Organize files into buckets, upload and download objects, and generate time-limited signed URLs for secure sharing — all through a consistent REST interface inspired by Supabase Storage.
+Complete reference for the storage.now API. Organize files into buckets, upload and download objects, and generate time-limited signed URLs for secure sharing, all through a consistent REST interface inspired by Supabase Storage.
 
 Base URL: `https://storage.now`
 
@@ -70,7 +70,7 @@ The API enforces per-IP sliding window rate limits. When a limit is exceeded, th
 
 # Buckets {#buckets}
 
-Buckets are top-level containers that organize your objects into logical groups — similar to S3 buckets or filesystem mount points. Each bucket belongs to a single owner and has its own visibility setting, file size limit, and MIME type allowlist.
+Buckets are top-level containers that organize your objects into logical groups, similar to S3 buckets or filesystem mount points. Each bucket belongs to a single owner and has its own visibility setting, file size limit, and MIME type allowlist.
 
 Public buckets expose their objects for unauthenticated read access at `/object/public/:bucket/*path`, making them ideal for serving avatars, static assets, or any content that should be freely accessible. Private buckets require a valid Bearer token or signed URL for every operation.
 
@@ -148,7 +148,9 @@ const bucket = await res.json();
 
 Returns a list of all buckets owned by the authenticated actor. Each bucket in the response includes its name, visibility, and creation timestamp. Use this to discover available buckets before listing their contents.
 
-**Response** — Array of bucket objects.
+**Response**
+
+Array of bucket objects.
 
 ```bash
 curl storage.now/bucket \
@@ -223,7 +225,7 @@ const bucket = await res.json();
 
 ## PATCH /bucket/:id {#bucket-update}
 
-Updates the configuration of an existing bucket. Only the fields you include in the request body are modified — all other settings remain unchanged. This is useful for toggling visibility, adjusting upload constraints, or relaxing MIME type restrictions without recreating the bucket.
+Updates the configuration of an existing bucket. Only the fields you include in the request body are modified; all other settings remain unchanged. This is useful for toggling visibility, adjusting upload constraints, or relaxing MIME type restrictions without recreating the bucket.
 
 Changing a bucket from private to public immediately exposes all existing objects at `/object/public/:bucket/*path`. Changing from public to private immediately revokes unauthenticated access.
 
@@ -233,7 +235,9 @@ Changing a bucket from private to public immediately exposes all existing object
 |---|---|---|
 | id | string | The bucket ID to update. |
 
-**Request body** — All fields are optional. Only provided fields are updated.
+**Request body**
+
+All fields are optional. Only provided fields are updated.
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -241,7 +245,9 @@ Changing a bucket from private to public immediately exposes all existing object
 | file_size_limit | integer\|null | Change the maximum allowed file size. Set to `null` to remove the limit entirely. Existing objects that exceed the new limit are not affected. |
 | allowed_mime_types | string[]\|null | Change the set of permitted MIME types. Set to `null` to allow any content type. Existing objects of disallowed types are not removed. |
 
-**Response** — Returns the updated bucket object.
+**Response**
+
+Returns the updated bucket object.
 
 ```bash
 curl -X PATCH storage.now/bucket/bk_a1b2c3 \
@@ -272,7 +278,7 @@ const res = await fetch("https://storage.now/bucket/bk_a1b2c3", {
 
 ## DELETE /bucket/:id {#bucket-delete}
 
-Deletes a bucket permanently. The bucket must be empty before it can be deleted — if the bucket still contains objects, the request fails with `409 Conflict`. Use `POST /bucket/:id/empty` to remove all objects first, then delete the bucket.
+Deletes a bucket permanently. The bucket must be empty before it can be deleted. If the bucket still contains objects, the request fails with `409 Conflict`. Use `POST /bucket/:id/empty` to remove all objects first, then delete the bucket.
 
 Returns `{"deleted": true}` on success.
 
@@ -294,7 +300,7 @@ const res = await fetch("https://storage.now/bucket/bk_a1b2c3", {
 
 ## POST /bucket/:id/empty {#bucket-empty}
 
-Removes all objects from a bucket without deleting the bucket itself. This is a bulk operation — every object in the bucket is permanently deleted from both the database and the underlying object store. The bucket configuration (name, visibility, limits) remains intact.
+Removes all objects from a bucket without deleting the bucket itself. This is a bulk operation. Every object in the bucket is permanently deleted from both the database and the underlying object store. The bucket configuration (name, visibility, limits) remains intact.
 
 This operation cannot be undone. Consider creating signed download URLs for any objects you need to preserve before emptying the bucket.
 
@@ -318,7 +324,7 @@ const res = await fetch("https://storage.now/bucket/bk_a1b2c3/empty", {
 
 # Objects {#objects}
 
-Objects are the files stored within your buckets. Each object has a path that acts as its unique identifier within the bucket — paths use `/` as a conventional separator, and folders are implicit rather than explicit entities. For example, uploading to `reports/q1.pdf` does not require creating a `reports/` folder first.
+Objects are the files stored within your buckets. Each object has a path that acts as its unique identifier within the bucket. Paths use `/` as a conventional separator, and folders are implicit rather than explicit entities. For example, uploading to `reports/q1.pdf` does not require creating a `reports/` folder first.
 
 Content types are auto-detected from the file extension at upload time. You can override this by providing an explicit `Content-Type` header. Objects can be up to 100 MB per request; for larger files, use signed upload URLs which stream bytes directly to the object store.
 
@@ -326,7 +332,7 @@ Content types are auto-detected from the file extension at upload time. You can 
 
 Uploads a file to the specified path in a bucket. If an object already exists at that path, it is replaced with the new content and the `updated_at` timestamp is refreshed. If no object exists, a new one is created.
 
-The request body should contain the raw file bytes, not JSON. The server validates the upload against the bucket's `file_size_limit` and `allowed_mime_types` constraints — if either check fails, the request is rejected with `413 Too Large` or `415 Unsupported Media Type`.
+The request body should contain the raw file bytes, not JSON. The server validates the upload against the bucket's `file_size_limit` and `allowed_mime_types` constraints. If either check fails, the request is rejected with `413 Too Large` or `415 Unsupported Media Type`.
 
 Returns the object metadata with `201 Created` for new objects or `200 OK` for replacements.
 
@@ -341,7 +347,7 @@ Returns the object metadata with `201 Created` for new objects or `200 OK` for r
 
 | Header | Required | Description |
 |---|---|---|
-| Content-Type | No | MIME type of the uploaded file. If omitted, the server infers the type from the file extension — `.pdf` becomes `application/pdf`, `.png` becomes `image/png`, and so on. Provide this header when the extension is ambiguous or missing. |
+| Content-Type | No | MIME type of the uploaded file. If omitted, the server infers the type from the file extension. For example, `.pdf` becomes `application/pdf`, `.png` becomes `image/png`, and so on. Provide this header when the extension is ambiguous or missing. |
 | Content-Length | No | File size in bytes. Including this header allows the server to reject oversized uploads before reading the full body. |
 
 **Response**
@@ -351,7 +357,7 @@ Returns the object metadata with `201 Created` for new objects or `200 OK` for r
 | id | string | Unique object identifier, prefixed with `o_`. Example: `"o_x7y8z9"`. |
 | bucket | string | Name of the bucket containing the object. |
 | path | string | Full object path within the bucket. |
-| name | string | The filename — the last segment of the path. For `"reports/q1.pdf"` this is `"q1.pdf"`. |
+| name | string | The filename, which is the last segment of the path. For `"reports/q1.pdf"` this is `"q1.pdf"`. |
 | content_type | string | The resolved MIME type of the object. |
 | size | integer | File size in bytes. |
 | created_at | integer | Creation timestamp in milliseconds. |
@@ -395,7 +401,7 @@ Accepts the same path parameters, headers, and request body as `PUT /object/:buc
 
 ## GET /object/:bucket/*path {#object-download}
 
-Downloads an object as raw bytes. The response includes `Content-Type`, `Content-Length`, `ETag`, and `Last-Modified` headers for cache integration. Supports HTTP `Range` headers for partial downloads — useful for resumable transfers or streaming media.
+Downloads an object as raw bytes. The response includes `Content-Type`, `Content-Length`, `ETag`, and `Last-Modified` headers for cache integration. Supports HTTP `Range` headers for partial downloads, which is useful for resumable transfers or streaming media.
 
 Add `?download` to the URL to force the browser to download the file instead of displaying it inline. You can optionally specify a custom filename: `?download=report-final.pdf`.
 
@@ -412,7 +418,9 @@ Add `?download` to the URL to force the browser to download the file instead of 
 |---|---|---|
 | download | string | When present, the response includes a `Content-Disposition: attachment` header. Optionally provide a value to set the download filename, like `?download=my-report.pdf`. |
 
-**Response** — Raw file bytes with appropriate HTTP headers. No JSON body.
+**Response**
+
+Raw file bytes with appropriate HTTP headers. No JSON body.
 
 ```bash
 # Download a file
@@ -435,7 +443,7 @@ const blob = await res.blob();
 
 ## GET /object/public/:bucket/*path {#object-download-public}
 
-Downloads an object from a public bucket. No authentication is required — this endpoint is designed for serving static assets, avatars, and any publicly accessible content directly to browsers or CDNs.
+Downloads an object from a public bucket. No authentication is required. This endpoint is designed for serving static assets, avatars, and any publicly accessible content directly to browsers or CDNs.
 
 If the bucket does not exist or is not marked as public, the request returns `404 Not Found`. Responses include a `Cache-Control: public, max-age=3600` header to encourage caching.
 
@@ -451,7 +459,7 @@ img.src = "https://storage.now/object/public/avatars/alice.png";
 
 ## HEAD /object/:bucket/*path {#object-head}
 
-Returns file metadata as HTTP response headers without transferring the file body. This is the most efficient way to check whether an object exists and inspect its size and type — no bytes are downloaded.
+Returns file metadata as HTTP response headers without transferring the file body. This is the most efficient way to check whether an object exists and inspect its size and type without downloading any bytes.
 
 **Response headers**
 
@@ -525,7 +533,7 @@ const info = await res.json();
 
 Lists objects within a bucket, with support for prefix filtering, text search, pagination, and custom sort order. This is the primary way to browse bucket contents, build file managers, or enumerate objects for batch processing.
 
-The `prefix` parameter acts like a directory filter — setting it to `"reports/"` returns only objects whose paths start with that prefix. Combine it with `search` to find objects by filename within a specific directory.
+The `prefix` parameter acts like a directory filter. Setting it to `"reports/"` returns only objects whose paths start with that prefix. Combine it with `search` to find objects by filename within a specific directory.
 
 Results are paginated with `limit` and `offset`. The default sort is ascending by name, but you can sort by `size`, `created_at`, or `updated_at` in either direction.
 
@@ -535,7 +543,9 @@ Results are paginated with `limit` and `offset`. The default sort is ascending b
 |---|---|---|
 | bucket | string | The name of the bucket to list. |
 
-**Request body** — All fields are optional.
+**Request body**
+
+All fields are optional.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
@@ -547,7 +557,9 @@ Results are paginated with `limit` and `offset`. The default sort is ascending b
 | sort_by.column | string | `"name"` | Which field to sort by. One of: `name`, `size`, `created_at`, `updated_at`. |
 | sort_by.order | string | `"asc"` | Sort direction. Either `"asc"` for ascending or `"desc"` for descending. |
 
-**Response** — Array of object metadata.
+**Response**
+
+Array of object metadata.
 
 | Field | Type | Description |
 |---|---|---|
@@ -597,9 +609,9 @@ const objects = await res.json();
 
 ## DELETE /object/:bucket {#object-delete}
 
-Deletes one or more objects from a bucket in a single request. Provide an array of paths to remove — up to 100 per request. Objects are permanently deleted from both the database and the underlying object store.
+Deletes one or more objects from a bucket in a single request. Provide an array of paths to remove, up to 100 per request. Objects are permanently deleted from both the database and the underlying object store.
 
-Paths that do not match any existing object are silently ignored and included in the `deleted` response array. This makes the operation idempotent — calling it twice with the same paths produces the same result.
+Paths that do not match any existing object are silently ignored and included in the `deleted` response array. This makes the operation idempotent. Calling it twice with the same paths produces the same result.
 
 **Path parameters**
 
@@ -646,7 +658,7 @@ const result = await res.json();
 
 ## POST /object/move {#object-move}
 
-Moves or renames an object within a bucket. The object's content is preserved — only the path changes. If an object already exists at the destination path, the request fails with `409 Conflict`.
+Moves or renames an object within a bucket. The object's content is preserved and only the path changes. If an object already exists at the destination path, the request fails with `409 Conflict`.
 
 This is a metadata-only operation and does not copy the underlying file data, so it completes instantly regardless of file size.
 
@@ -746,13 +758,13 @@ const res = await fetch("https://storage.now/object/copy", {
 
 # Signed URLs {#signed-urls}
 
-Signed URLs provide time-limited access to private objects without requiring the recipient to authenticate. They are the universal sharing primitive — one mechanism that covers three common scenarios:
+Signed URLs provide time-limited access to private objects without requiring the recipient to authenticate. They are the universal sharing primitive, a single mechanism that covers three common scenarios:
 
-1. **Sharing a private file** — Generate a signed download URL and send it to anyone. They can download the file until the URL expires.
-2. **Accepting uploads without exposing credentials** — Generate a signed upload URL and give it to a client. They can upload exactly one file to the specified path.
-3. **Temporary public access** — Signed URLs work like pre-authenticated links with an automatic expiration, so you never need to toggle a bucket's visibility.
+1. **Sharing a private file.** Generate a signed download URL and send it to anyone. They can download the file until the URL expires.
+2. **Accepting uploads without exposing credentials.** Generate a signed upload URL and give it to a client. They can upload exactly one file to the specified path.
+3. **Temporary public access.** Signed URLs work like pre-authenticated links with an automatic expiration, so you never need to toggle a bucket's visibility.
 
-Signed download URLs are reusable — the same URL can be accessed multiple times until it expires. Signed upload URLs are single-use — once a file is uploaded through the URL, it is consumed and cannot be used again.
+Signed download URLs are reusable. The same URL can be accessed multiple times until it expires. Signed upload URLs are single-use. Once a file is uploaded through the URL, it is consumed and cannot be used again.
 
 ## POST /object/sign/:bucket {#sign-create}
 
@@ -766,21 +778,21 @@ The default expiration is 1 hour (3600 seconds). You can set a custom expiration
 |---|---|---|
 | bucket | string | Name of the bucket containing the objects. |
 
-**Request body — single path**
+**Request body (single path)**
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| path | string | Yes* | Object path to sign. Provide either `path` for a single URL or `paths` for a batch — not both. |
+| path | string | Yes* | Object path to sign. Provide either `path` for a single URL or `paths` for a batch, not both. |
 | expires_in | integer | No | How long the URL remains valid, in seconds. Defaults to `3600` (1 hour). Maximum `604800` (7 days). |
 
-**Request body — batch**
+**Request body (batch)**
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | paths | string[] | Yes* | Array of object paths to sign. Up to 100 paths per request. |
 | expires_in | integer | No | Expiry duration in seconds, applied to all URLs in the batch. |
 
-**Response — single**
+**Response (single)**
 
 | Field | Type | Description |
 |---|---|---|
@@ -789,7 +801,9 @@ The default expiration is 1 hour (3600 seconds). You can set a custom expiration
 | path | string | The object path that was signed. |
 | expires_at | integer | Expiration timestamp in milliseconds. |
 
-**Response — batch** — Array of signed URL objects, one per path.
+**Response (batch)**
+
+Array of signed URL objects, one per path.
 
 ```bash
 # Sign a single path
@@ -840,7 +854,7 @@ curl -X POST storage.now/object/sign/documents \
 
 ## POST /object/upload/sign/:bucket/*path {#sign-upload-create}
 
-Creates a signed upload URL that allows anyone to upload a single file to the specified path without authentication. This is ideal for accepting file uploads from untrusted clients — for example, letting users upload profile pictures directly from a browser without exposing your API key.
+Creates a signed upload URL that allows anyone to upload a single file to the specified path without authentication. This is ideal for accepting file uploads from untrusted clients. For example, you can let users upload profile pictures directly from a browser without exposing your API key.
 
 The signed upload URL expires after 1 hour by default. Once a file is uploaded through the URL, the URL is consumed and cannot be reused.
 
@@ -887,7 +901,7 @@ const { signed_url, token } = await res.json();
 
 ## GET /sign/:token {#sign-download}
 
-Downloads an object using a signed URL. No authentication required — the token embedded in the URL serves as the access credential. This is the endpoint your users visit when they click a shared link.
+Downloads an object using a signed URL. No authentication required. The token embedded in the URL serves as the access credential. This is the endpoint your users visit when they click a shared link.
 
 If the signed URL has expired, the response is `403 Forbidden` with an error message indicating the expiration. If the token does not exist, the response is `404 Not Found`.
 
@@ -897,7 +911,9 @@ If the signed URL has expired, the response is `403 Forbidden` with an error mes
 |---|---|---|
 | download | string | When present, adds `Content-Disposition: attachment` to the response, prompting the browser to download the file. Provide a value to suggest a filename, like `?download=report.pdf`. |
 
-**Response** — Raw file bytes with `Content-Type`, `Content-Length`, and `ETag` headers.
+**Response**
+
+Raw file bytes with `Content-Type`, `Content-Length`, and `ETag` headers.
 
 ```bash
 curl storage.now/sign/tok_abc123 -o report.pdf
@@ -914,7 +930,7 @@ const url = URL.createObjectURL(blob);
 
 ## PUT /upload/sign/:token {#sign-upload}
 
-Uploads a file using a signed upload URL. No authentication required — the token in the URL authorizes the upload. The file is stored at the path that was specified when the signed URL was created.
+Uploads a file using a signed upload URL. No authentication required. The token in the URL authorizes the upload. The file is stored at the path that was specified when the signed URL was created.
 
 The signed URL is consumed after a successful upload and cannot be reused. If the URL has expired, the response is `403 Forbidden`. If the token does not exist or has already been used, the response is `404 Not Found`.
 
@@ -924,7 +940,9 @@ The signed URL is consumed after a successful upload and cannot be reused. If th
 |---|---|---|
 | Content-Type | No | MIME type of the uploaded file. If omitted, the type is inferred from the target path extension. |
 
-**Response** — `201 Created` with the newly created object metadata.
+**Response**
+
+`201 Created` with the newly created object metadata.
 
 ```bash
 curl -X PUT storage.now/upload/sign/tok_xyz \
@@ -956,11 +974,11 @@ const obj = await res.json();
 
 Identity and session management. The auth system supports two methods: Ed25519 challenge-response for machines and magic links for humans. Both methods produce Bearer tokens that grant access to all authenticated API endpoints.
 
-Agent identities use the `a/name` format and authenticate with Ed25519 key pairs — ideal for bots, scripts, and CI/CD pipelines. Human identities use the `u/email` format and authenticate via email-based magic links — no passwords needed.
+Agent identities use the `a/name` format and authenticate with Ed25519 key pairs, making them ideal for bots, scripts, and CI/CD pipelines. Human identities use the `u/email` format and authenticate via email-based magic links with no passwords needed.
 
 ## POST /auth/register {#auth-register}
 
-Creates a new actor identity. Every interaction with the API is associated with an actor — this is how you establish one. Agents must provide an Ed25519 public key at registration time; humans must provide an email address.
+Creates a new actor identity. Every interaction with the API is associated with an actor, and this endpoint is how you establish one. Agents must provide an Ed25519 public key at registration time; humans must provide an email address.
 
 If an actor with the same identifier already exists, the request fails with `409 Conflict`. Actor identifiers are permanent and cannot be changed after creation.
 
@@ -1101,7 +1119,9 @@ Rate limited to 5 requests per minute per IP to prevent email abuse.
 |---|---|---|---|
 | email | string | Yes | Email address of the human actor. Must match a registered `u/email` actor. |
 
-**Response** — `202 Accepted`.
+**Response**
+
+`202 Accepted`.
 
 ```bash
 curl -X POST storage.now/auth/magic-link \
@@ -1115,7 +1135,7 @@ curl -X POST storage.now/auth/magic-link \
 
 ## GET /auth/magic/:token {#auth-magic-verify}
 
-Verifies a magic link token from an email click. On success, sets a `session` cookie with `HttpOnly` and `Secure` flags, then redirects to `/browse`. This endpoint is not typically called directly — it is the target of the link sent by `POST /auth/magic-link`.
+Verifies a magic link token from an email click. On success, sets a `session` cookie with `HttpOnly` and `Secure` flags, then redirects to `/browse`. This endpoint is not typically called directly. It is the target of the link sent by `POST /auth/magic-link`.
 
 If the token is invalid or expired, the response is `401 Unauthorized`.
 
@@ -1155,7 +1175,7 @@ Each key can be scoped to specific operations (`bucket:read`, `object:write`, et
 
 ## POST /keys {#key-create}
 
-Creates a new API key. The key token is returned exactly once in the response — store it securely, because it cannot be retrieved again. If you lose the token, you must revoke the key and create a new one.
+Creates a new API key. The key token is returned exactly once in the response. Store it securely, because it cannot be retrieved again. If you lose the token, you must revoke the key and create a new one.
 
 **Request body**
 
@@ -1172,7 +1192,7 @@ Creates a new API key. The key token is returned exactly once in the response �
 |---|---|---|
 | id | string | Unique key identifier, prefixed with `ak_`. |
 | name | string | The key name as provided. |
-| token | string | The API key token, prefixed with `sk_`. **Shown once — store it securely.** |
+| token | string | The API key token, prefixed with `sk_`. **Shown once. Store it securely.** |
 | scopes | string | The granted scopes. |
 | created_at | integer | Creation timestamp in milliseconds. |
 
@@ -1196,7 +1216,7 @@ const res = await fetch("https://storage.now/keys", {
   }),
 });
 const { token } = await res.json();
-// Store token securely — it cannot be retrieved again
+// Store token securely, it cannot be retrieved again
 ```
 
 ```json
@@ -1213,9 +1233,11 @@ Use the token as: `Authorization: Bearer sk_live_a1b2c3d4e5f6...`
 
 ## GET /keys {#key-list}
 
-Returns a list of all API keys belonging to the authenticated actor. For security, key tokens are never included in the response — only metadata such as the key name, scopes, and creation date. Use this to audit your active keys or find the ID of a key you want to revoke.
+Returns a list of all API keys belonging to the authenticated actor. For security, key tokens are never included in the response. Only metadata such as the key name, scopes, and creation date is returned. Use this to audit your active keys or find the ID of a key you want to revoke.
 
-**Response** — Array of key objects (without tokens).
+**Response**
+
+Array of key objects (without tokens).
 
 ```bash
 curl storage.now/keys \
@@ -1238,7 +1260,7 @@ const keys = await res.json();
 
 ## DELETE /keys/:id {#key-revoke}
 
-Revokes an API key immediately. Any requests using the revoked key's token will receive `401 Unauthorized` from the moment of revocation. This operation is permanent — a revoked key cannot be restored.
+Revokes an API key immediately. Any requests using the revoked key's token will receive `401 Unauthorized` from the moment of revocation. This operation is permanent and a revoked key cannot be restored.
 
 **Path parameters**
 
@@ -1268,7 +1290,7 @@ Complete audit trail of every operation performed through the API. Every bucket 
 
 ## GET /audit {#audit-read}
 
-Queries the audit log with optional filtering by action type and cursor-based pagination. Events are returned in reverse chronological order — most recent events first.
+Queries the audit log with optional filtering by action type and cursor-based pagination. Events are returned in reverse chronological order, with the most recent events first.
 
 Use the `before` parameter for pagination: take the `ts` value of the last event in the current page and pass it as `before` in the next request to fetch older events.
 
@@ -1276,9 +1298,9 @@ Use the `before` parameter for pagination: take the `ts` value of the last event
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| action | string | — | Filter events by action type. For example, `"object.upload"` returns only upload events, `"bucket.create"` returns only bucket creation events. Omit to return all event types. |
+| action | string | - | Filter events by action type. For example, `"object.upload"` returns only upload events, `"bucket.create"` returns only bucket creation events. Omit to return all event types. |
 | limit | integer | `50` | Maximum number of events to return per page. Must be between 1 and 200. |
-| before | integer | — | Return only events with a timestamp strictly less than this value (Unix milliseconds). Use for pagination by passing the `ts` of the last event from the previous page. |
+| before | integer | - | Return only events with a timestamp strictly less than this value (Unix milliseconds). Use for pagination by passing the `ts` of the last event from the previous page. |
 
 **Response**
 

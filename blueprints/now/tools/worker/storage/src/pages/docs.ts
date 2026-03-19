@@ -7,7 +7,7 @@ export function docsPage(): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>API Reference — storage.now</title>
-<meta name="description" content="Complete API reference for storage.now — 18 operations across 8 resources.">
+<meta name="description" content="Complete API reference for storage.now — 30 endpoints across 6 resource groups.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -63,9 +63,16 @@ function toggleTheme(){
     document.documentElement.classList.remove('dark');
   }
 })();
-function cp(b){const c=b.parentElement.querySelector('code');
+function cp(b){const c=b.closest('pre')?.querySelector('code')||b.parentElement.querySelector('code');
 navigator.clipboard.writeText(c.textContent).then(()=>{b.textContent='Copied!';setTimeout(()=>b.textContent='Copy',2e3);});}
-const lk=document.querySelectorAll('.sidebar a'),sc=[];
+function switchTab(btn){const g=btn.closest('.code-group');if(!g)return;
+g.querySelectorAll('.code-tab').forEach(t=>t.classList.remove('active'));
+g.querySelectorAll('.code-panel').forEach(p=>p.classList.remove('active'));
+btn.classList.add('active');
+const idx=[...g.querySelectorAll('.code-tab')].indexOf(btn);
+const panels=g.querySelectorAll('.code-panel');
+if(panels[idx])panels[idx].classList.add('active');}
+const lk=document.querySelectorAll('.sidebar a:not(.sg)'),sc=[];
 lk.forEach(a=>{const id=a.getAttribute('href')?.slice(1);if(id){const el=document.getElementById(id);if(el)sc.push({id,el,a})}});
 window.addEventListener('scroll',()=>{let c='';for(const s of sc){if(s.el.getBoundingClientRect().top<=100)c=s.id}
 lk.forEach(a=>a.classList.toggle('active',a.getAttribute('href')==='#'+c))},{passive:true});
