@@ -10,6 +10,7 @@ export interface Env {
 
 export interface Variables {
   actor: string;
+  authType: "session" | "apikey";
   scopes: string;
   pathPrefix: string;
 }

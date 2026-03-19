@@ -1,40 +1,45 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { bearerAuth, createChallenge, verifyChallenge } from "./auth";
-import { requestMagicLink, verifyMagicLink, logout } from "./magic";
-import { getSessionActor } from "./session";
-import { registerActor } from "./register";
-import { uploadFile, downloadFile, deleteFile, headFile } from "./files";
-import { createFolder, listFolder, deleteFolder } from "./folders";
+import { bearerAuth } from "./middleware/auth";
+import { createChallenge, verifyChallenge, requestMagicLink, verifyMagicLink, logout, registerActor } from "./routes/auth";
+import { getSessionActor } from "./pages/session";
+import { uploadFile, downloadFile, deleteFile, headFile } from "./routes/files";
+import { createFolder, listFolder, deleteFolder } from "./routes/folders";
 import {
   createShare, listShares, updateShare, deleteShare,
   listSharedWithMe, downloadSharedFile, uploadSharedFile, deleteSharedFile,
-} from "./shares";
-import { presignUpload, presignDownload, presignComplete } from "./presign";
+} from "./routes/shares";
+import { presignUpload, presignDownload, presignComplete } from "./routes/presign";
 import {
   toggleStar, renameItem, moveItems, copyFile,
   trashItems, restoreItems, emptyTrash, listTrash,
   listRecent, listStarred, searchFiles, driveStats, updateDescription,
-} from "./drive";
-import { createLink, listLinks, deleteLink, accessPublicLink, accessPublicLinkFile } from "./links";
-import { createApiKey, listApiKeys, deleteApiKey } from "./api-keys";
-import { getAuditLog } from "./audit";
-import { homePage } from "./home";
-import { developersPage } from "./developers";
-import { docsPage } from "./docs";
-import { pricingPage } from "./pricing";
-import { browsePage } from "./browse";
-import { aiPage } from "./ai";
-import { mcpHandler, mcpInfo } from "./mcp";
+} from "./routes/drive";
+import { createLink, listLinks, deleteLink, accessPublicLink, accessPublicLinkFile } from "./routes/links";
+import { createApiKey, listApiKeys, deleteApiKey } from "./routes/api-keys";
+import { getAuditLog } from "./lib/audit";
+import { homePage } from "./pages/home";
+import { developersPage } from "./pages/developers";
+import { docsPage } from "./pages/docs";
+import { pricingPage } from "./pages/pricing";
+import { browsePage } from "./pages/browse";
+import { aiPage } from "./pages/ai";
+import { spacesPage } from "./pages/spaces";
+import { spaceDetailPage } from "./pages/space-detail";
+import {
+  listSpaces, createSpace, getSpace, updateSpace, deleteSpace,
+  addSection, addItem, addMember, listMembers, listActivity, spacesFeed,
+} from "./routes/spaces";
+import { mcpHandler, mcpInfo } from "./routes/mcp";
 import {
   protectedResourceMetadata, authorizationServerMetadata,
   registerClient, authorizeEndpoint, authorizeSubmit,
   oauthMagicCallback, tokenEndpoint,
-} from "./oauth";
+} from "./routes/oauth";
 import {
   authRateLimit, magicLinkRateLimit, registerRateLimit,
   uploadRateLimit, shareRateLimit, linkRateLimit, publicAccessRateLimit,
-} from "./rate-limit";
+} from "./middleware/rate-limit";
 import type { Env, Variables } from "./types";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -50,9 +55,17 @@ app.get("/developers", async (c) => {
   const actor = await getSessionActor(c);
   return c.html(developersPage(actor));
 });
-app.get("/docs", (c) => c.html(docsPage()));
+app.get("/api", (c) => c.html(docsPage()));
 app.get("/pricing", (c) => c.html(pricingPage()));
 app.get("/ai", (c) => c.html(aiPage()));
+app.get("/spaces", async (c) => {
+  const actor = await getSessionActor(c);
+  return c.html(await spacesPage(actor, c.env.DB));
+});
+app.get("/space/:id", async (c) => {
+  const actor = await getSessionActor(c);
+  return c.html(spaceDetailPage(actor, c.req.param("id")!));
+});
 app.get("/browse", browsePage);
 app.get("/browse/*", browsePage);
 
@@ -149,6 +162,9 @@ app.use("/links/*", bearerAuth);
 app.use("/api-keys", bearerAuth);
 app.use("/api-keys/*", bearerAuth);
 app.use("/audit", bearerAuth);
+app.use("/spaces/feed", bearerAuth);
+app.use("/spaces/:id", bearerAuth);
+app.use("/spaces/:id/*", bearerAuth);
 
 // Rate limiting on authenticated write endpoints
 app.use("/files/*", uploadRateLimit);
@@ -211,6 +227,20 @@ app.delete("/api-keys/:id", deleteApiKey);
 
 // Audit log
 app.get("/audit", getAuditLog);
+
+// Spaces API (auth via bearerAuth above for /spaces/:id and /spaces/feed)
+// POST /spaces needs explicit auth since GET /spaces is the page route
+app.post("/spaces", bearerAuth, bodySizeLimit, createSpace);
+app.get("/spaces/feed", spacesFeed);
+app.get("/spaces/list", bearerAuth, listSpaces);
+app.get("/spaces/:id", getSpace);
+app.patch("/spaces/:id", bodySizeLimit, updateSpace);
+app.delete("/spaces/:id", deleteSpace);
+app.post("/spaces/:id/sections", bodySizeLimit, addSection);
+app.post("/spaces/:id/items", bodySizeLimit, addItem);
+app.post("/spaces/:id/members", bodySizeLimit, addMember);
+app.get("/spaces/:id/members", listMembers);
+app.get("/spaces/:id/activity", listActivity);
 
 // 404 fallback
 app.notFound((c) => c.json({ error: { code: "not_found", message: "Not found" } }, 404));

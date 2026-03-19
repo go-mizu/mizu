@@ -4,6 +4,7 @@ import { Marked } from "marked";
 const md = readFileSync("src/docs.md", "utf8");
 
 const sidebarEntries = [];
+const HTTP_METHODS = ["GET", "POST", "PUT", "DELETE", "HEAD", "PATCH"];
 
 const marked = new Marked({
   renderer: {
@@ -17,12 +18,27 @@ const marked = new Marked({
             .toLowerCase()
             .replace(/[^\w]+/g, "-")
             .replace(/^-|-$/g, "");
-      const cleanText = idMatch
+      let cleanText = idMatch
         ? text.replace(/\s*\{#[\w-]+\}\s*$/, "")
         : text;
 
+      // Detect HTTP method at start of h2 headings → wrap in colored badge
+      let sidebarText = cleanText;
+      if (depth === 2) {
+        for (const m of HTTP_METHODS) {
+          if (cleanText.startsWith(m + " ")) {
+            const cls = `method method--${m.toLowerCase()}`;
+            cleanText = `<span class="${cls}">${m}</span> ${cleanText.slice(m.length + 1)}`;
+            // Sidebar gets a smaller badge
+            const smCls = `sm sm-${m.toLowerCase()}`;
+            sidebarText = `<span class="${smCls}">${m}</span>${sidebarText.slice(m.length + 1)}`;
+            break;
+          }
+        }
+      }
+
       if (depth <= 2) {
-        sidebarEntries.push({ id, text: cleanText, level: depth });
+        sidebarEntries.push({ id, text: sidebarText, level: depth });
       }
 
       return `<h${depth} id="${id}">${cleanText}</h${depth}>\n`;
@@ -59,7 +75,9 @@ const marked = new Marked({
 const contentHtml = marked.parse(md);
 
 const sidebarHtml = sidebarEntries
-  .map((e) => `  <a href="#${e.id}">${e.text}</a>`)
+  .map((e) => e.level === 2
+    ? `  <a href="#${e.id}" class="sub">${e.text}</a>`
+    : `  <a href="#${e.id}">${e.text}</a>`)
   .join("\n");
 
 const output = `// Auto-generated from docs.md — do not edit
@@ -67,5 +85,5 @@ export const docsContentHtml = ${JSON.stringify(contentHtml)};
 export const docsSidebarHtml = ${JSON.stringify(sidebarHtml)};
 `;
 
-writeFileSync("src/docs-content.ts", output);
-console.log("✓ Built src/docs-content.ts from src/docs.md");
+writeFileSync("src/pages/docs-content.ts", output);
+console.log("✓ Built src/pages/docs-content.ts from src/docs.md");
