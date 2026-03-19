@@ -1805,3 +1805,208 @@ html.dark .perm-badge--owner{background:rgba(139,92,246,.2);color:#c4b5fd}
   .docx-page{padding:32px 36px}
   .pdf-page-title{font-size:22px}
 }
+
+
+/* ════════════════════════════════════════════════════════════════════════
+   TOUCH DEVICE OVERRIDES
+   Show checkboxes/stars always on touch, enlarge touch targets to ≥44px
+   ════════════════════════════════════════════════════════════════════════ */
+@media(pointer:coarse){
+  /* Always show checkboxes on touch */
+  .file-row .row-check,
+  .list-header .row-check,
+  .grid-check{opacity:1}
+
+  /* Always show stars on touch */
+  .file-star,
+  .grid-star{opacity:1}
+
+  /* Enlarge row checkbox touch target */
+  .row-check{
+    width:20px;height:20px;
+    min-width:44px;min-height:44px;
+    padding:12px;
+    background-clip:content-box;
+    border-width:1.5px;
+  }
+  /* col-check needs space for the larger target */
+  .col--check{width:44px}
+
+  /* Star button touch target */
+  .file-star{padding:10px;min-width:44px;min-height:44px;justify-content:center}
+  .file-star svg{width:18px;height:18px}
+
+  /* Grid card checkbox/star touch targets */
+  .grid-check .row-check{min-width:40px;min-height:40px;padding:10px}
+  .grid-star{padding:10px;min-width:40px;min-height:40px}
+  .grid-star svg{width:18px;height:18px}
+
+  /* Toolbar buttons */
+  .tool-btn{min-width:44px;min-height:44px}
+
+  /* Nav buttons */
+  .mobile-toggle{min-width:44px;min-height:44px}
+  .theme-toggle{min-width:44px;min-height:44px}
+  .nav-signout{min-height:44px;display:flex;align-items:center}
+
+  /* Sidebar items */
+  .sidebar-item{min-height:44px;padding:10px 16px}
+
+  /* Bulk bar buttons */
+  .bulk-btn{min-height:44px;padding:8px 14px}
+
+  /* Context menu items */
+  .ctx-item{min-height:48px;padding:14px 20px;font-size:15px}
+
+  /* Detail panel close and tabs */
+  .detail-close{min-width:44px;min-height:44px}
+  .detail-tab{min-height:44px;padding:0 16px}
+
+  /* Modal buttons */
+  .modal-btn{min-height:44px;padding:10px 20px}
+  .modal-close{min-width:44px;min-height:44px}
+
+  /* Preview buttons */
+  .pv-back{min-width:44px;min-height:44px;width:44px;height:44px}
+  .pv-action{min-width:44px;min-height:44px;width:44px;height:44px}
+  .preview-nav{width:48px;height:48px}
+  .preview-btn{min-width:44px;min-height:44px;width:44px;height:44px}
+
+  /* Breadcrumb segments */
+  .breadcrumb-segment{min-height:36px;display:inline-flex;align-items:center;padding:4px 2px}
+  .breadcrumb-home{min-width:36px;min-height:36px;display:inline-flex;align-items:center;justify-content:center}
+
+  /* File rows taller for touch */
+  .file-row{min-height:52px;padding:8px 16px}
+  .list-header{min-height:44px}
+
+  /* Upload close */
+  .upload-close{min-width:44px;min-height:44px;font-size:22px}
+
+  /* Share dialog buttons */
+  .copy-link-btn{min-height:44px}
+
+  /* Demo banner close */
+  .demo-banner-close{min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center}
+
+  /* Disable hover effects that cause stickiness on touch */
+  .file-row:hover{background:transparent}
+  .file-row:active{background:var(--surface-alt)}
+  .file-row.selected{background:color-mix(in srgb,var(--text) 4%,transparent)}
+  .grid-card:hover{border-color:var(--border)}
+  .grid-card:active{border-color:var(--text-3)}
+  .grid-card.selected{border-color:var(--text)}
+  .ctx-item:hover{background:transparent}
+  .ctx-item:active{background:var(--surface-alt)}
+  .sidebar-item:hover{background:transparent}
+  .sidebar-item:active,.sidebar-item.active{background:var(--surface-alt)}
+
+  /* Larger sort dropdown items */
+  .sort-option{min-height:44px;padding:10px 16px}
+
+  /* Media player controls */
+  .mp-progress-thumb{opacity:1}
+  .mp-progress{height:8px}
+  .mp-play-btn{width:40px;height:40px}
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   SAFE AREA INSETS — notched phones (iPhone X+)
+   ════════════════════════════════════════════════════════════════════════ */
+@supports(padding:env(safe-area-inset-bottom)){
+  nav{
+    padding-left:max(24px,env(safe-area-inset-left));
+    padding-right:max(24px,env(safe-area-inset-right));
+  }
+  #sidebar{
+    padding-bottom:env(safe-area-inset-bottom);
+    padding-left:env(safe-area-inset-left);
+  }
+  #toolbar{
+    padding-left:max(24px,env(safe-area-inset-left));
+    padding-right:max(24px,env(safe-area-inset-right));
+  }
+  .file-row{
+    padding-left:max(24px,env(safe-area-inset-left));
+    padding-right:max(24px,env(safe-area-inset-right));
+  }
+  #bulk-bar{
+    padding-left:max(12px,env(safe-area-inset-left));
+    padding-right:max(12px,env(safe-area-inset-right));
+  }
+  /* Context menu bottom sheet */
+  @media(max-width:640px){
+    #ctx-menu{
+      padding-bottom:env(safe-area-inset-bottom);
+    }
+  }
+  /* Toast container */
+  .toast-container{
+    bottom:max(24px,env(safe-area-inset-bottom));
+  }
+  /* Upload panel */
+  .upload-panel{
+    bottom:max(24px,env(safe-area-inset-bottom));
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   MOBILE BOTTOM SHEET CONTEXT MENU (enhanced)
+   ════════════════════════════════════════════════════════════════════════ */
+@media(max-width:640px) and (pointer:coarse){
+  #ctx-menu{
+    border-top:1px solid var(--border);
+    border-left:none;border-right:none;border-bottom:none;
+    max-height:60vh;overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+  }
+  /* Drag handle visual at top */
+  #ctx-menu::before{
+    content:'';display:block;width:36px;height:4px;
+    background:var(--text-3);margin:8px auto 4px;
+    border-radius:2px;opacity:.5;
+  }
+  .ctx-divider{margin:4px 0}
+  .ctx-item svg{width:18px;height:18px}
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   MOBILE PREVIEW OVERLAY (enhanced)
+   ════════════════════════════════════════════════════════════════════════ */
+@media(max-width:640px){
+  .preview-body{padding:12px 8px}
+  .preview-header{padding:0 8px;height:48px;min-height:48px;gap:6px}
+  .pv-meta{display:none}
+  .pv-path{display:none}
+  .pv-filename{font-size:13px}
+  .preview-nav{display:none}
+  .preview-code{padding:16px;font-size:11px;border:none;max-width:100%}
+  .preview-text{padding:16px;font-size:13px;border:none;max-width:100%}
+  .preview-markdown{padding:20px 16px;font-size:14px;max-width:100%}
+  .preview-table{max-width:100%}
+  .preview-table table{font-size:11px}
+  .preview-table th,.preview-table td{padding:6px 8px}
+  .preview-pdf{padding:8px}
+  .pdf-page{padding:20px 16px;min-height:200px}
+  .pdf-page-title{font-size:18px;margin:20px 0 6px}
+  .docx-page{padding:24px 16px;min-height:200px}
+  .docx-ruler{display:none}
+  .preview-xlsx{font-size:11px}
+  .xlsx-grid th,.xlsx-grid td{padding:4px 8px}
+  .preview-pptx{flex-direction:column}
+  .pptx-thumbs{
+    width:100%;min-width:0;flex-direction:row;
+    overflow-x:auto;overflow-y:hidden;
+    border-right:none;border-bottom:1px solid var(--border);
+    padding:6px;gap:4px;
+  }
+  .pptx-thumb{min-width:60px;flex-shrink:0}
+  .pptx-stage{padding:12px}
+  .pptx-slide{padding:16px 20px}
+  .pptx-slide-title{font-size:18px}
+
+  /* Media player on mobile */
+  .mp--video .mp-controls{flex-wrap:wrap;gap:4px}
+  .mp-time{font-size:10px}
+  .mp-vol-wrap{display:none}
+}
