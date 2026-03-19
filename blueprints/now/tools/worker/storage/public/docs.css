@@ -21,11 +21,13 @@ body{font-family:'Inter',system-ui,sans-serif;color:var(--text);background:var(-
 a{color:inherit}
 
 /* ── Nav ─────────────────────────────────────────────────────────────── */
-nav{position:relative;z-index:10;width:100%;padding:16px 48px;display:flex;align-items:center;
-  justify-content:space-between;max-width:1200px;margin:0 auto;
-  border-bottom:1px solid var(--border)}
-.logo{font-family:'JetBrains Mono',monospace;font-weight:600;font-size:14px;
-  text-decoration:none;letter-spacing:-0.5px;display:flex;align-items:center;gap:8px}
+nav{position:sticky;top:0;z-index:100;width:100%;
+  background:color-mix(in srgb,var(--bg) 80%,transparent);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+.nav-inner{max-width:1400px;margin:0 auto;padding:0 60px;height:56px;
+  display:flex;align-items:center;justify-content:space-between}
+.logo{font-family:'JetBrains Mono',monospace;font-weight:500;font-size:14px;
+  text-decoration:none;letter-spacing:-0.3px;display:flex;align-items:center;gap:8px}
 .logo-dot{width:6px;height:6px;background:var(--text);display:inline-block}
 .nav-links{display:flex;gap:28px}
 .nav-links a{font-size:13px;color:var(--text-3);text-decoration:none;transition:color .15s;font-weight:500}
@@ -56,10 +58,10 @@ html.dark .theme-toggle .icon-moon{display:none}
 
 /* ── Content ─────────────────────────────────────────────────────────── */
 .content{flex:1;min-width:0;padding:16px 0 80px}
-.content h1{font-size:28px;font-weight:800;letter-spacing:-1px;margin:48px 0 16px;
+.content h1{font-size:24px;font-weight:500;letter-spacing:-0.5px;margin:48px 0 16px;
   padding-top:24px;border-top:1px solid var(--border)}
 .content h1:first-child{margin-top:0;border-top:none;padding-top:0}
-.content h2{font-size:18px;font-weight:700;letter-spacing:-0.5px;margin:36px 0 12px}
+.content h2{font-size:17px;font-weight:500;letter-spacing:-0.3px;margin:36px 0 12px}
 .content p{font-size:14px;color:var(--text-2);line-height:1.7;margin-bottom:16px}
 .content code{font-family:'JetBrains Mono',monospace;font-size:12px;
   background:var(--surface-alt);padding:2px 6px;border:1px solid var(--border)}
@@ -93,10 +95,12 @@ html.dark .theme-toggle .icon-moon{display:none}
   .content h2{font-size:16px}
 }
 @media(max-width:640px){
-  nav{padding:14px 20px}
-  .nav-links{display:none;position:absolute;top:50px;left:0;right:0;
-    flex-direction:column;background:var(--bg);padding:16px 20px;gap:16px;
-    z-index:100;border-bottom:1px solid var(--border)}
+  .nav-inner{padding:0 20px;height:52px}
+  .nav-links{display:none;position:absolute;top:52px;left:0;right:0;
+    flex-direction:column;padding:16px 20px;gap:16px;
+    z-index:100;border-bottom:1px solid var(--border);
+    background:color-mix(in srgb,var(--bg) 95%,transparent);
+    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
   .nav-links.open{display:flex}
   .mobile-toggle{display:block}
 }

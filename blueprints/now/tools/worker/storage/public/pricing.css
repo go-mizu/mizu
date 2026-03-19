@@ -29,11 +29,13 @@ a{color:inherit;text-decoration:none}
 html.dark .grid-bg{opacity:.2}
 
 /* ── Nav ─────────────────────────────────────────────────────────────── */
-nav{position:relative;z-index:10;width:100%;padding:16px 48px;display:flex;align-items:center;
-  justify-content:space-between;max-width:1200px;margin:0 auto;
-  border-bottom:1px solid var(--border)}
-.logo{font-family:'JetBrains Mono',monospace;font-weight:600;font-size:14px;
-  letter-spacing:-0.5px;display:flex;align-items:center;gap:8px}
+nav{position:sticky;top:0;z-index:100;width:100%;
+  background:color-mix(in srgb,var(--bg) 80%,transparent);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+.nav-inner{max-width:1400px;margin:0 auto;padding:0 60px;height:56px;
+  display:flex;align-items:center;justify-content:space-between}
+.logo{font-family:'JetBrains Mono',monospace;font-weight:500;font-size:14px;
+  letter-spacing:-0.3px;display:flex;align-items:center;gap:8px}
 .logo-dot{width:6px;height:6px;background:var(--text);display:inline-block}
 .nav-links{display:flex;gap:28px}
 .nav-links a{font-size:13px;color:var(--text-3);transition:color .15s;font-weight:500}
@@ -57,9 +59,9 @@ html.dark .theme-toggle .icon-moon{display:none}
 /* ── Hero ────────────────────────────────────────────────────────────── */
 .hero{position:relative;z-index:1;padding:80px 0 20px;text-align:center;overflow:hidden}
 .hero .section-inner{display:flex;flex-direction:column;align-items:center;position:relative}
-.hero-title{font-size:44px;font-weight:800;line-height:1.15;letter-spacing:-2px;
-  margin-bottom:20px}
-.hero-sub{font-size:17px;color:var(--text-2);line-height:1.7;max-width:480px;margin:0 auto}
+.hero-title{font-size:36px;font-weight:500;line-height:1.2;letter-spacing:-0.5px;
+  margin-bottom:16px}
+.hero-sub{font-size:16px;color:var(--text-2);line-height:1.7;max-width:480px;margin:0 auto}
 
 /* ── Tier cards ──────────────────────────────────────────────────────── */
 .section--tiers{padding:60px 0 80px}
@@ -73,12 +75,12 @@ html.dark .theme-toggle .icon-moon{display:none}
 .tier--pro{background:var(--surface-alt)}
 
 .tier-popular{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1.5px;
-  text-transform:uppercase;color:var(--text);margin-bottom:20px;font-weight:600}
+  text-transform:uppercase;color:var(--text);margin-bottom:20px;font-weight:500}
 
 /* Head: name, price, period */
 .tier-head{margin-bottom:20px}
-.tier-name{font-size:20px;font-weight:700;letter-spacing:-0.5px;margin-bottom:12px}
-.tier-price{font-size:48px;font-weight:800;letter-spacing:-2px;line-height:1}
+.tier-name{font-size:20px;font-weight:500;letter-spacing:-0.3px;margin-bottom:12px}
+.tier-price{font-size:40px;font-weight:600;letter-spacing:-1px;line-height:1}
 .tier-price-unit{font-size:16px;font-weight:500;color:var(--text-2);letter-spacing:0}
 .tier-period{font-size:13px;color:var(--text-3);margin-top:6px}
 
@@ -90,7 +92,7 @@ html.dark .theme-toggle .icon-moon{display:none}
   text-align:center;padding:14px 24px;border:1px solid var(--border);
   color:var(--text-2);transition:all .15s;display:block}
 .tier-cta:hover{border-color:var(--text-3);color:var(--text)}
-.tier-cta--primary{background:var(--ink);border-color:var(--ink);color:var(--bg);font-weight:600}
+.tier-cta--primary{background:var(--ink);border-color:var(--ink);color:var(--bg);font-weight:500}
 .tier-cta--primary:hover{opacity:0.85;color:var(--bg)}
 
 /* "Everything in X, plus:" */
@@ -107,28 +109,28 @@ html.dark .theme-toggle .icon-moon{display:none}
 
 /* ── Every plan includes ─────────────────────────────────────────────── */
 .section--included{padding:80px 0;border-top:1px solid var(--border)}
-.inc-title{font-size:28px;font-weight:800;letter-spacing:-1px;margin-bottom:48px;
+.inc-title{font-size:24px;font-weight:500;letter-spacing:-0.5px;margin-bottom:48px;
   text-align:center}
 .inc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
   border:1px solid var(--border);background:var(--border);overflow:hidden}
 .inc{background:var(--bg);padding:32px}
 .inc-icon{color:var(--text-3);margin-bottom:16px}
-.inc-name{font-size:15px;font-weight:600;margin-bottom:8px;letter-spacing:-0.3px}
+.inc-name{font-size:15px;font-weight:500;margin-bottom:8px;letter-spacing:-0.2px}
 .inc-desc{font-size:13px;color:var(--text-2);line-height:1.7}
 
 /* ── FAQ ─────────────────────────────────────────────────────────────── */
 .section--faq{padding:80px 0;border-top:1px solid var(--border)}
-.faq-title{font-size:28px;font-weight:800;letter-spacing:-1px;margin-bottom:48px;
+.faq-title{font-size:24px;font-weight:500;letter-spacing:-0.5px;margin-bottom:48px;
   text-align:center}
 .faq-list{max-width:680px;margin:0 auto;display:flex;flex-direction:column}
 .faq{padding:24px 0;border-bottom:1px solid var(--border)}
 .faq:first-child{border-top:1px solid var(--border)}
-.faq-q{font-size:15px;font-weight:600;margin-bottom:8px;letter-spacing:-0.3px}
+.faq-q{font-size:15px;font-weight:500;margin-bottom:8px;letter-spacing:-0.2px}
 .faq-a{font-size:14px;color:var(--text-2);line-height:1.7}
 
 /* ── Bottom CTA ──────────────────────────────────────────────────────── */
 .section--cta{padding:80px 0;border-top:1px solid var(--border)}
-.cta-title{font-size:32px;font-weight:800;letter-spacing:-1.5px;margin-bottom:12px}
+.cta-title{font-size:28px;font-weight:500;letter-spacing:-0.5px;margin-bottom:12px}
 .cta-sub{font-size:15px;color:var(--text-2);margin-bottom:32px}
 .cta-main{width:auto;display:inline-block}
 
@@ -139,7 +141,7 @@ footer .section-inner{display:flex;align-items:center;justify-content:space-betw
 footer a{color:var(--text-3);transition:color .15s}
 footer a:hover{color:var(--text)}
 .footer-brand{display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;
-  font-weight:600;font-size:13px}
+  font-weight:500;font-size:13px}
 .footer-links{display:flex;gap:24px}
 
 /* ── Machine view ────────────────────────────────────────────────────── */
@@ -181,10 +183,12 @@ html.dark .mode-switch{box-shadow:0 4px 24px rgba(0,0,0,0.4)}
   .inc-grid{grid-template-columns:1fr 1fr}
 }
 @media(max-width:640px){
-  nav{padding:14px 20px}
-  .nav-links{display:none;position:absolute;top:50px;left:0;right:0;
-    flex-direction:column;background:var(--bg);padding:16px 20px;gap:16px;
-    z-index:100;border-bottom:1px solid var(--border)}
+  .nav-inner{padding:0 20px;height:52px}
+  .nav-links{display:none;position:absolute;top:52px;left:0;right:0;
+    flex-direction:column;padding:16px 20px;gap:16px;
+    z-index:100;border-bottom:1px solid var(--border);
+    background:color-mix(in srgb,var(--bg) 95%,transparent);
+    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
   .nav-links.open{display:flex}
   .mobile-toggle{display:block}
   .section-inner{padding:0 20px}

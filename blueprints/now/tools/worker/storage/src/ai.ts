@@ -53,13 +53,13 @@ code{font-family:'JetBrains Mono',monospace;font-size:12px;padding:2px 8px;
 html.dark .grid-bg{opacity:.12}
 
 /* ── Nav ── */
-nav{position:sticky;top:0;z-index:100;width:100%;padding:0 48px;display:flex;align-items:center;
-  justify-content:space-between;max-width:1200px;margin:0 auto;height:60px;
-  border-bottom:1px solid var(--border);
+nav{position:sticky;top:0;z-index:100;width:100%;
   background:color-mix(in srgb,var(--bg) 80%,transparent);
-  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
-.logo{font-family:'JetBrains Mono',monospace;font-weight:600;font-size:14px;
-  letter-spacing:-0.5px;display:flex;align-items:center;gap:8px}
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+.nav-inner{max-width:1400px;margin:0 auto;padding:0 60px;height:56px;
+  display:flex;align-items:center;justify-content:space-between}
+.logo{font-family:'JetBrains Mono',monospace;font-weight:500;font-size:14px;
+  letter-spacing:-0.3px;display:flex;align-items:center;gap:8px}
 .logo-dot{width:6px;height:6px;background:var(--text);display:inline-block}
 .nav-links{display:flex;gap:28px}
 .nav-links a{font-size:13px;color:var(--text-3);transition:color .15s;font-weight:500}
@@ -85,8 +85,8 @@ html.dark .theme-toggle .icon-moon{display:none}
 /* ── Hero ── */
 .hero{padding:120px 0 40px;text-align:center;animation:fadeUp .8s ease both}
 .hero .s-inner{display:flex;flex-direction:column;align-items:center;max-width:1100px}
-.hero h1{font-size:68px;font-weight:900;line-height:1.05;letter-spacing:-4px;margin-bottom:24px}
-.hero p{font-size:18px;color:var(--text-2);line-height:1.7;max-width:480px;margin:0 auto}
+.hero h1{font-size:48px;font-weight:500;line-height:1.1;letter-spacing:-1.5px;margin-bottom:20px}
+.hero p{font-size:16px;color:var(--text-2);line-height:1.7;max-width:480px;margin:0 auto}
 
 /* ── Hero diagram ── */
 .hero-diagram{display:flex;align-items:center;justify-content:center;gap:0;
@@ -98,7 +98,7 @@ html.dark .theme-toggle .icon-moon{display:none}
 .hd-icon:hover{border-color:var(--text-3);transform:translateY(-4px);
   box-shadow:0 8px 30px var(--glow)}
 .hd-icon svg{width:36px;height:36px;fill:var(--text)}
-.hd-name{font-size:13px;font-weight:600;letter-spacing:-0.3px}
+.hd-name{font-size:13px;font-weight:500;letter-spacing:-0.2px}
 .hd-connector{display:flex;align-items:center;width:100px;position:relative;z-index:1}
 .hd-connector svg{width:100%;height:24px}
 .hd-connector line{stroke:var(--border);stroke-width:1;stroke-dasharray:6 4}
@@ -106,7 +106,7 @@ html.dark .hd-connector line{stroke:var(--text-3)}
 .hd-center{position:relative}
 .hd-center .hd-icon{width:96px;height:96px;border-width:2px;background:var(--ink)}
 .hd-center .hd-icon svg{fill:var(--bg)}
-.hd-center .hd-name{font-weight:700}
+.hd-center .hd-name{font-weight:500}
 .hd-glow{position:absolute;inset:-40px;background:radial-gradient(circle,var(--glow),transparent 70%);
   pointer-events:none;z-index:0}
 
@@ -121,13 +121,13 @@ html.dark .hd-connector line{stroke:var(--text-3)}
   border-bottom:1px solid var(--border)}
 .cc-logo{width:40px;height:40px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .cc-logo svg{width:28px;height:28px;fill:var(--text)}
-.cc-name{font-size:18px;font-weight:700;letter-spacing:-0.5px}
+.cc-name{font-size:17px;font-weight:500;letter-spacing:-0.3px}
 .cc-steps{display:flex;flex-direction:column;gap:14px;flex:1}
 .cs{display:flex;gap:12px;align-items:flex-start;font-size:14px;line-height:1.65;color:var(--text-2)}
-.cs-n{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;
+.cs-n{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;
   color:var(--text-3);width:24px;height:24px;border:1px solid var(--border);
   display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
-.cs strong{color:var(--text);font-weight:600}
+.cs strong{color:var(--text);font-weight:500}
 .cs-url{font-family:'JetBrains Mono',monospace;font-size:11px;padding:8px 12px;
   border:1px solid var(--border);background:var(--surface-alt);display:block;
   margin-top:6px;color:var(--text);user-select:all;cursor:pointer;word-break:break-all;
@@ -138,7 +138,7 @@ html.dark .hd-connector line{stroke:var(--text-3)}
 .scenario{padding:80px 0;border-top:1px solid var(--border)}
 .sc-layout{display:grid;grid-template-columns:1fr 1.2fr;gap:48px;align-items:start;margin-top:40px}
 .sc-text{}
-.sc-title{font-size:36px;font-weight:800;letter-spacing:-2px;line-height:1.15;margin-bottom:16px}
+.sc-title{font-size:28px;font-weight:500;letter-spacing:-0.5px;line-height:1.2;margin-bottom:16px}
 .sc-sub{font-size:15px;color:var(--text-2);line-height:1.7}
 .flow{border:1px solid var(--border);background:var(--surface);overflow:hidden;
   box-shadow:var(--shadow)}
@@ -157,11 +157,11 @@ html.dark .flow-bar-dots span{background:var(--text-3)}
 .fs:hover{background:var(--surface-alt)}
 .fs-avatar{width:32px;height:32px;border:1px solid var(--border);
   display:flex;align-items:center;justify-content:center;flex-shrink:0;
-  font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;
+  font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:500;
   color:var(--text-3);letter-spacing:0.5px}
 .fs-avatar.you{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .fs-body{color:var(--text-2);flex:1}
-.fs-body strong{color:var(--text);font-weight:600}
+.fs-body strong{color:var(--text);font-weight:500}
 .fs-body em{color:var(--text-3);font-style:normal;font-family:'JetBrains Mono',monospace;font-size:11px}
 
 /* ── Cross-platform diagram ── */
@@ -173,18 +173,18 @@ html.dark .xp-diagram{box-shadow:0 8px 32px rgba(0,0,0,0.3)}
   padding:48px 24px;gap:16px;transition:background .2s}
 .xp-side:hover{background:var(--surface-alt)}
 .xp-side svg{width:40px;height:40px;fill:var(--text)}
-.xp-side-name{font-size:15px;font-weight:700;letter-spacing:-0.3px}
+.xp-side-name{font-size:15px;font-weight:500;letter-spacing:-0.2px}
 .xp-mid{width:1px;background:var(--border);position:relative;display:flex;
   align-items:center;justify-content:center}
 .xp-mid-badge{position:absolute;background:var(--ink);color:var(--bg);
-  font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;
+  font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:500;
   letter-spacing:1px;padding:6px 12px;white-space:nowrap;z-index:2}
 .xp-center{flex:1.2;display:flex;flex-direction:column;align-items:center;justify-content:center;
   padding:48px 24px;gap:16px;background:var(--surface-alt);position:relative}
 .xp-center-icon{width:56px;height:56px;background:var(--ink);
   display:flex;align-items:center;justify-content:center}
 .xp-center-icon svg{width:24px;height:24px;fill:var(--bg)}
-.xp-center-name{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700}
+.xp-center-name{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:500}
 .xp-center-tag{font-size:12px;color:var(--text-3)}
 
 /* ── Buttons ── */
@@ -200,7 +200,7 @@ footer .s-inner{display:flex;align-items:center;justify-content:space-between;
 footer a{color:var(--text-3);transition:color .15s}
 footer a:hover{color:var(--text)}
 .footer-brand{display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;
-  font-weight:600;font-size:13px}
+  font-weight:500;font-size:13px}
 .footer-links{display:flex;gap:24px}
 
 /* ── Responsive ── */
@@ -210,13 +210,13 @@ footer a:hover{color:var(--text)}
 }
 @media(max-width:768px){
   .hero{padding:80px 0 32px}
-  .hero h1{font-size:44px;letter-spacing:-2.5px}
+  .hero h1{font-size:36px;letter-spacing:-1px}
   .hero-diagram{flex-direction:column;gap:12px;margin-top:40px;padding:32px 0}
   .hd-connector{width:24px;height:40px;transform:rotate(90deg)}
   .hd-icon{width:64px;height:64px}
   .hd-center .hd-icon{width:72px;height:72px}
   .hd-icon svg{width:28px;height:28px}
-  .sc-title{font-size:28px;letter-spacing:-1.5px}
+  .sc-title{font-size:24px;letter-spacing:-0.3px}
   .xp-diagram{flex-direction:column}
   .xp-mid{width:100%;height:1px}
   .xp-side,.xp-center{padding:32px 24px}
@@ -232,7 +232,7 @@ footer a:hover{color:var(--text)}
   .mobile-toggle{display:block}
   .s-inner{padding:0 20px}
   .hero{padding:56px 0 24px}
-  .hero h1{font-size:36px;letter-spacing:-1.5px}
+  .hero h1{font-size:28px;letter-spacing:-0.5px}
   .hero p{font-size:16px}
   .connect,.scenario{padding:56px 0}
   .cc{padding:28px 20px}
@@ -247,21 +247,24 @@ footer a:hover{color:var(--text)}
 <div class="grid-bg"></div>
 
 <nav>
-  <a href="/" class="logo"><span class="logo-dot"></span> storage.now</a>
-  <button class="mobile-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-  </button>
-  <div class="nav-links">
-    <a href="/browse">browse</a>
-    <a href="/ai" class="active">ai</a>
-    <a href="/docs">docs</a>
-    <a href="/pricing">pricing</a>
-  </div>
-  <div class="nav-right">
-    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
-      <svg class="icon-moon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
-      <svg class="icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+  <div class="nav-inner">
+    <a href="/" class="logo"><span class="logo-dot"></span> storage.now</a>
+    <button class="mobile-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     </button>
+    <div class="nav-links">
+      <a href="/browse">browse</a>
+      <a href="/developers">developers</a>
+      <a href="/ai" class="active">ai</a>
+      <a href="/docs">docs</a>
+      <a href="/pricing">pricing</a>
+    </div>
+    <div class="nav-right">
+      <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+        <svg class="icon-moon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+        <svg class="icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      </button>
+    </div>
   </div>
 </nav>
 
@@ -322,7 +325,7 @@ footer a:hover{color:var(--text)}
         <div class="cc-steps">
           <div class="cs"><span class="cs-n">1</span> <span><strong>Settings &rarr; Integrations</strong></span></div>
           <div class="cs"><span class="cs-n">2</span> <span>Click <strong>Add custom integration</strong></span></div>
-          <div class="cs"><span class="cs-n">3</span> <span>Paste URL:<span class="cs-url">https://storage.liteio.workers.dev/mcp</span></span></div>
+          <div class="cs"><span class="cs-n">3</span> <span>Paste URL:<span class="cs-url">https://storage.liteio.dev/mcp</span></span></div>
           <div class="cs"><span class="cs-n">4</span> <span>Sign in with email &mdash; <strong>done</strong></span></div>
         </div>
       </div>
@@ -337,7 +340,7 @@ footer a:hover{color:var(--text)}
         <div class="cc-steps">
           <div class="cs"><span class="cs-n">1</span> <span><strong>Settings &rarr; Connected apps</strong></span></div>
           <div class="cs"><span class="cs-n">2</span> <span>Click <strong>Add app &rarr; Add by URL</strong></span></div>
-          <div class="cs"><span class="cs-n">3</span> <span>Paste URL:<span class="cs-url">https://storage.liteio.workers.dev/mcp</span></span></div>
+          <div class="cs"><span class="cs-n">3</span> <span>Paste URL:<span class="cs-url">https://storage.liteio.dev/mcp</span></span></div>
           <div class="cs"><span class="cs-n">4</span> <span>Sign in with email &mdash; <strong>done</strong></span></div>
         </div>
       </div>
@@ -351,7 +354,7 @@ footer a:hover{color:var(--text)}
         </div>
         <div class="cc-steps">
           <div class="cs"><span class="cs-n">1</span> <span><strong>Settings &rarr; Developer &rarr; Edit Config</strong></span></div>
-          <div class="cs"><span class="cs-n">2</span> <span>Add to <code>mcpServers</code>:<span class="cs-url">{ "storage": { "command": "npx", "args": ["-y", "mcp-remote", "https://storage.liteio.workers.dev/mcp"] } }</span></span></div>
+          <div class="cs"><span class="cs-n">2</span> <span>Add to <code>mcpServers</code>:<span class="cs-url">{ "storage": { "command": "npx", "args": ["-y", "mcp-remote", "https://storage.liteio.dev/mcp"] } }</span></span></div>
           <div class="cs"><span class="cs-n">3</span> <span>Restart Claude Desktop &mdash; <strong>done</strong></span></div>
         </div>
       </div>
