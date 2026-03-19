@@ -310,6 +310,7 @@ Content-Type: application/json
     <a href="/browse">browse</a>
     <a href="/docs">docs</a>
     <a href="/pricing">pricing</a>
+    <a href="/ai">ai</a>
   </div>
   <div class="nav-right">
     ${navSession}
@@ -495,6 +496,7 @@ PATCH  /drive/description          Update description
     <div class="footer-links">
       <a href="/docs">docs</a>
       <a href="/pricing">pricing</a>
+      <a href="/ai">ai</a>
       <a href="/browse">browse</a>
     </div>
   </div>
