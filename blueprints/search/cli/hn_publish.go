@@ -99,6 +99,13 @@ func runHNPublish(ctx context.Context, repoRoot, repoID string, live bool, inter
 		return hf.pathsExist(ctx, repoID, pathsInRepo)
 	}
 
+	// hfListDirFn lists all file paths recursively under an HF path prefix.
+	// Used by rolloverOrphans to detect and clean up stale today/ blocks on HF
+	// that have no local counterpart (committed but never rolled over).
+	hfListDirFn := func(ctx context.Context, pathPrefix string) ([]string, error) {
+		return hf.listDir(ctx, repoID, pathPrefix)
+	}
+
 	// Parse --from flag.
 	var fromYear, fromMonth int
 	if fromStr != "" {
@@ -184,6 +191,7 @@ func runHNPublish(ctx context.Context, repoRoot, repoID string, live bool, inter
 		Interval:   interval,
 		HFCommit:   hfCommitFn,
 		HFRepo:     repoID,
+		HFListDir:  hfListDirFn,
 		ReadmeTmpl: hnReadmeTmpl,
 		Analytics:  analytics,
 	})

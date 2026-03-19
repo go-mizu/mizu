@@ -268,6 +268,39 @@ func (c *hfClient) createCommitPython(ctx context.Context, repoID, message strin
 	return result.CommitURL, nil
 }
 
+// listDir returns all file paths recursively under pathPrefix in the repo at "main".
+// Uses the HF tree API: GET /api/datasets/{repo}/tree/main/{path}?recursive=true
+// Returns nil (no error) if the path does not exist on HF.
+func (c *hfClient) listDir(ctx context.Context, repoID, pathPrefix string) ([]string, error) {
+	url := fmt.Sprintf("%s/api/datasets/%s/tree/main/%s?recursive=true", hfHubURL, repoID, pathPrefix)
+	resp, err := c.req(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("listDir %s: %w", pathPrefix, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 404 {
+		return nil, nil // path doesn't exist; not an error
+	}
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("listDir %s HTTP %d: %s", pathPrefix, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var entries []struct {
+		Type string `json:"type"` // "file" or "directory"
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+		return nil, fmt.Errorf("listDir %s decode: %w", pathPrefix, err)
+	}
+	var files []string
+	for _, e := range entries {
+		if e.Type == "file" {
+			files = append(files, e.Path)
+		}
+	}
+	return files, nil
+}
+
 // createCommit uploads all files and creates a single commit via Python/xet (uv + huggingface_hub).
 func (c *hfClient) createCommit(ctx context.Context, repoID, branch, message string, ops []hfOperation) (string, error) {
 	return c.createCommitPython(ctx, repoID, message, ops)

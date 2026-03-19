@@ -144,6 +144,12 @@ func buildReadmeData(months []MonthRow, today []TodayRow, analytics *Analytics) 
 				d.CurrentMonthUntil = t.AddDate(0, 0, -1).Format("2006-01-02")
 			}
 		}
+	} else {
+		// No today blocks (e.g. during rollover): derive current month from wall clock.
+		now := time.Now().UTC()
+		d.CurrentMonthYear = fmt.Sprintf("%04d", now.Year())
+		d.CurrentMonth = now.Format("2006-01")
+		d.CurrentMonthUntil = now.AddDate(0, 0, -1).Format("2006-01-02")
 	}
 	d.GrowthChart = buildGrowthChart(months)
 	d.TodayChart = buildTodayChart(today)
@@ -171,10 +177,14 @@ func buildReadmeData(months []MonthRow, today []TodayRow, analytics *Analytics) 
 		d.TopDomainsTable = buildTopDomainsTable(analytics.TopDomains)
 	}
 
-	// LatestTime: prefer actual committed data; fall back to analytics SourceMaxTime, then LastMonth.
-	// This ensures we never show a stale cached timestamp from the analytics query.
+	// LatestTime: prefer actual committed data; fall back to the latest commit timestamp
+	// (fresh from stats.csv, never stale), then analytics SourceMaxTime, then LastMonth.
+	// Using latestCommit as the primary fallback avoids showing a stale 24h-cached analytics
+	// time during and after rollover (when today rows are nil).
 	if d.TodayDate != "" && todayLastBlock != "" {
 		d.LatestTime = d.TodayDate + " " + todayLastBlock + " UTC"
+	} else if !latestCommit.IsZero() {
+		d.LatestTime = latestCommit.UTC().Format("2006-01-02 15:04 UTC")
 	} else if sourceMaxTime != "" {
 		d.LatestTime = sourceMaxTime
 	} else {
