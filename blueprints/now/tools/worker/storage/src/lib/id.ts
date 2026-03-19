@@ -44,6 +44,18 @@ export function apiKeyToken(): string {
   return `sk_${rand(32)}`;
 }
 
+export function bucketId(): string {
+  return `bk_${rand(12)}`;
+}
+
+export function signedUrlId(): string {
+  return `su_${rand(12)}`;
+}
+
+export function signedUrlToken(): string {
+  return rand(32);
+}
+
 export function spaceId(): string {
   return `sp_${rand(12)}`;
 }

@@ -30,52 +30,40 @@ export interface SessionRow {
   expires_at: number;
 }
 
-export interface ObjectRow {
+export interface BucketRow {
   id: string;
   owner: string;
-  path: string;
   name: string;
-  is_folder: number;
-  content_type: string;
-  size: number;
-  r2_key: string;
-  starred: number;
-  trashed_at: number | null;
-  accessed_at: number | null;
-  description: string;
+  public: number;
+  file_size_limit: number | null;
+  allowed_mime_types: string | null;
   created_at: number;
   updated_at: number;
 }
 
-export interface ShareRow {
+export interface ObjectRow {
   id: string;
-  object_id: string;
   owner: string;
-  grantee: string;
-  permission: string;
+  bucket_id: string;
+  path: string;
+  name: string;
+  content_type: string;
+  size: number;
+  r2_key: string;
+  metadata: string;
+  accessed_at: number | null;
   created_at: number;
+  updated_at: number;
 }
 
-export interface ChallengeRequest {
-  actor: string;
-}
-
-export interface VerifyRequest {
-  challenge_id: string;
-  actor: string;
-  signature: string;
-}
-
-export interface PublicLinkRow {
+export interface SignedUrlRow {
   id: string;
-  object_id: string;
   owner: string;
+  bucket_id: string;
+  path: string;
   token: string;
-  permission: string;
-  password_hash: string | null;
-  expires_at: number | null;
-  max_downloads: number | null;
-  download_count: number;
+  type: "download" | "upload";
+  expires_at: number;
   created_at: number;
 }
 
@@ -89,4 +77,14 @@ export interface ApiKeyRow {
   expires_at: number | null;
   last_used_at: number | null;
   created_at: number;
+}
+
+export interface ChallengeRequest {
+  actor: string;
+}
+
+export interface VerifyRequest {
+  challenge_id: string;
+  actor: string;
+  signature: string;
 }

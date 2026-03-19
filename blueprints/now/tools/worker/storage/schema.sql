@@ -33,52 +33,51 @@ CREATE TABLE IF NOT EXISTS magic_tokens (
   expires_at INTEGER NOT NULL
 );
 
--- File/folder metadata
+-- Buckets (top-level containers)
+CREATE TABLE IF NOT EXISTS buckets (
+  id                 TEXT PRIMARY KEY,
+  owner              TEXT NOT NULL,
+  name               TEXT NOT NULL,
+  public             INTEGER NOT NULL DEFAULT 0,
+  file_size_limit    INTEGER DEFAULT NULL,
+  allowed_mime_types TEXT DEFAULT NULL,
+  created_at         INTEGER NOT NULL,
+  updated_at         INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_buckets_owner_name ON buckets(owner, name);
+
+-- Objects (files within buckets)
 CREATE TABLE IF NOT EXISTS objects (
   id           TEXT PRIMARY KEY,
   owner        TEXT NOT NULL,
+  bucket_id    TEXT NOT NULL,
   path         TEXT NOT NULL,
   name         TEXT NOT NULL,
-  is_folder    INTEGER NOT NULL DEFAULT 0,
   content_type TEXT DEFAULT '',
   size         INTEGER DEFAULT 0,
   r2_key       TEXT DEFAULT '',
-  starred      INTEGER DEFAULT 0,
-  trashed_at   INTEGER DEFAULT NULL,
+  metadata     TEXT DEFAULT '{}',
   accessed_at  INTEGER DEFAULT NULL,
-  description  TEXT DEFAULT '',
   created_at   INTEGER NOT NULL,
   updated_at   INTEGER NOT NULL
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_objects_bucket_path ON objects(bucket_id, path);
+CREATE INDEX IF NOT EXISTS idx_objects_owner ON objects(owner);
+CREATE INDEX IF NOT EXISTS idx_objects_bucket ON objects(bucket_id);
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_objects_owner_path ON objects(owner, path);
-
--- Shares (viewer, editor, uploader roles)
-CREATE TABLE IF NOT EXISTS shares (
+-- Signed URLs (time-limited access tokens)
+CREATE TABLE IF NOT EXISTS signed_urls (
   id         TEXT PRIMARY KEY,
-  object_id  TEXT NOT NULL,
   owner      TEXT NOT NULL,
-  grantee    TEXT NOT NULL,
-  permission TEXT NOT NULL CHECK(permission IN ('viewer','editor','uploader')),
+  bucket_id  TEXT NOT NULL REFERENCES buckets(id),
+  path       TEXT NOT NULL,
+  token      TEXT NOT NULL UNIQUE,
+  type       TEXT NOT NULL CHECK(type IN ('download','upload')),
+  expires_at INTEGER NOT NULL,
   created_at INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_shares_grantee ON shares(grantee);
-CREATE INDEX IF NOT EXISTS idx_shares_object ON shares(object_id);
-
--- Public links (token-based unauthenticated access)
-CREATE TABLE IF NOT EXISTS public_links (
-  id             TEXT PRIMARY KEY,
-  object_id      TEXT NOT NULL,
-  owner          TEXT NOT NULL,
-  token          TEXT NOT NULL UNIQUE,
-  permission     TEXT NOT NULL DEFAULT 'viewer' CHECK(permission IN ('viewer','editor')),
-  password_hash  TEXT,
-  expires_at     INTEGER,
-  max_downloads  INTEGER,
-  download_count INTEGER DEFAULT 0,
-  created_at     INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_public_links_token ON public_links(token);
+CREATE INDEX IF NOT EXISTS idx_signed_urls_token ON signed_urls(token);
+CREATE INDEX IF NOT EXISTS idx_signed_urls_expires ON signed_urls(expires_at);
 
 -- Scoped API keys (SHA-256 hashed tokens)
 CREATE TABLE IF NOT EXISTS api_keys (
@@ -106,7 +105,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_log(actor, ts);
 
--- OAuth: dynamically registered clients (ChatGPT MCP connector)
+-- OAuth: dynamically registered clients
 CREATE TABLE IF NOT EXISTS oauth_clients (
   client_id TEXT PRIMARY KEY,
   redirect_uris TEXT NOT NULL,
