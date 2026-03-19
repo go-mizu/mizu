@@ -197,6 +197,13 @@ const DEMO_CONTENT={
 'shared/api-spec.yaml':'openapi: 3.0.3\\ninfo:\\n  title: Acme Storage API\\n  version: 2.0.0\\n  description: File storage and sharing API\\n\\nservers:\\n  - url: https://api.acme.dev/v2\\n\\npaths:\\n  /files/{path}:\\n    get:\\n      summary: Download a file\\n      parameters:\\n        - name: path\\n          in: path\\n          required: true\\n          schema:\\n            type: string\\n      responses:\\n        200:\\n          description: File content\\n    put:\\n      summary: Upload a file\\n      requestBody:\\n        content:\\n          application/octet-stream:\\n            schema:\\n              type: string\\n              format: binary\\n      responses:\\n        201:\\n          description: File created\\n\\n  /folders/{path}:\\n    get:\\n      summary: List folder contents\\n      responses:\\n        200:\\n          description: Folder listing\\n          content:\\n            application/json:\\n              schema:\\n                type: object\\n                properties:\\n                  items:\\n                    type: array',
 };
 
+const DEMO_MEDIA={
+  'media/podcast-episode.mp3':'https://samplelib.com/lib/preview/mp3/sample-15s.mp3',
+  'media/notification.wav':'https://interactive-examples.mdn.mozilla.net/media/cc0-audio/t-rex-roar.mp3',
+  'media/product-demo.mp4':'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+  'media/team-standup.webm':'https://www.w3schools.com/html/mov_bbb.mp4',
+};
+
 const DEMO_DOCS={
   'documents/proposal.pdf':{type:'pdf',pages:[
     '<div class="pdf-page-title">Project Proposal</div><div class="pdf-page-subtitle">Cloud Storage Platform</div><div class="pdf-page-meta">Acme Corp \\u2014 Q1 2026</div><div class="pdf-page-meta">Prepared by Engineering Team</div>',
@@ -465,183 +472,93 @@ function setupDemoMedia(type,item){
 }
 
 function setupDemoAudio(item){
-  const dur=Math.round(item.size/16000);
-  let playing=false,currentTime=0,audioCtx=null,osc=null,gainNode=null,animId=null;
-  const playBtn=$('mp-play'),timeEl=$('mp-time'),fillEl=$('mp-fill'),thumbEl=$('mp-thumb'),
+  const audio=$('mp-audio');if(!audio)return;
+  const playBtn=$('mp-play'),timeEl=$('mp-time'),durEl=$('mp-dur'),
+        fillEl=$('mp-fill'),bufEl=$('mp-buf'),thumbEl=$('mp-thumb'),
         progressEl=$('mp-progress'),volEl=$('mp-vol'),waveEl=$('mp-wave'),artEl=$('mp-art');
-
-  // Generate waveform bars
+  let animId=null;
   let bars=[];
   if(waveEl){
-    let bhtml='';
-    for(let i=0;i<50;i++){bhtml+='<div class="mp-bar"></div>'}
-    waveEl.innerHTML=bhtml;
-    bars=[...waveEl.querySelectorAll('.mp-bar')];
+    let bhtml='';for(let i=0;i<50;i++){bhtml+='<div class="mp-bar"></div>'}
+    waveEl.innerHTML=bhtml;bars=[...waveEl.querySelectorAll('.mp-bar')];
   }
-
-  function fmtT(s){return Math.floor(s/60)+':'+String(Math.floor(s)%60).padStart(2,'0')}
-
-  function startAudio(){
-    if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();
-    if(audioCtx.state==='suspended')audioCtx.resume();
-    osc=audioCtx.createOscillator();
-    const osc2=audioCtx.createOscillator();
-    const osc3=audioCtx.createOscillator();
-    gainNode=audioCtx.createGain();
-    const filter=audioCtx.createBiquadFilter();
-    filter.type='lowpass';filter.frequency.value=800;
-    osc.type='sine';osc.frequency.value=220;
-    osc2.type='sine';osc2.frequency.value=277.18;
-    osc3.type='triangle';osc3.frequency.value=329.63;
-    const g2=audioCtx.createGain();g2.gain.value=0.15;
-    const g3=audioCtx.createGain();g3.gain.value=0.08;
-    gainNode.gain.value=(volEl?.value||70)/100*0.25;
-    osc.connect(gainNode);osc2.connect(g2);g2.connect(gainNode);osc3.connect(g3);g3.connect(gainNode);
-    gainNode.connect(filter);filter.connect(audioCtx.destination);
-    osc.start();osc2.start();osc3.start();
-    const lfo=audioCtx.createOscillator();lfo.frequency.value=0.5;
-    const lfoGain=audioCtx.createGain();lfoGain.gain.value=3;
-    lfo.connect(lfoGain);lfoGain.connect(osc.frequency);lfo.start();
-  }
-
-  function stopAudio(){
-    try{osc?.stop();gainNode?.disconnect()}catch(e){}
-    osc=null;gainNode=null;
-  }
-
-  function tick(){
-    if(!playing)return;
-    currentTime+=0.05;
-    if(currentTime>=dur){currentTime=0;togglePlay();return}
-    updateUI();
-    animId=requestAnimationFrame(tick);
-  }
-
+  function fmtT(s){if(isNaN(s))return '0:00';return Math.floor(s/60)+':'+String(Math.floor(s)%60).padStart(2,'0')}
   function updateUI(){
-    const pct=dur?currentTime/dur*100:0;
+    const d=audio.duration||0,c=audio.currentTime||0;
+    const pct=d?(c/d)*100:0;
     if(fillEl)fillEl.style.width=pct+'%';
     if(thumbEl)thumbEl.style.left=pct+'%';
-    if(timeEl)timeEl.textContent=fmtT(currentTime);
-    bars.forEach((b,i)=>{
-      const bh=playing?(12+Math.sin(currentTime*4+i*0.5)*16+Math.random()*8):10;
+    if(timeEl)timeEl.textContent=fmtT(c);
+    if(durEl)durEl.textContent=fmtT(d);
+    if(bufEl&&audio.buffered.length){
+      bufEl.style.width=(audio.buffered.end(audio.buffered.length-1)/d*100)+'%';
+    }
+    const isPlaying=!audio.paused;
+    bars.forEach(function(b,i){
+      const bh=isPlaying?(12+Math.sin(c*4+i*0.5)*16+Math.random()*8):10;
       b.style.height=bh+'px';
     });
-    if(artEl)artEl.classList.toggle('spinning',playing);
+    if(artEl)artEl.classList.toggle('spinning',isPlaying);
+    if(isPlaying)animId=requestAnimationFrame(updateUI);
   }
-
   function togglePlay(){
-    playing=!playing;
-    if(playing){startAudio();animId=requestAnimationFrame(tick)}
-    else{stopAudio();cancelAnimationFrame(animId)}
-    playBtn.innerHTML=playing?'<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>':'<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"/></svg>';
-    updateUI();
+    if(audio.paused){audio.play();animId=requestAnimationFrame(updateUI)}else{audio.pause();cancelAnimationFrame(animId)}
+    playBtn.innerHTML=audio.paused?'<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"/></svg>':'<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
   }
-
   playBtn?.addEventListener('click',togglePlay);
+  audio.addEventListener('ended',function(){cancelAnimationFrame(animId);playBtn.innerHTML='<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"/></svg>';updateUI()});
+  audio.addEventListener('loadedmetadata',updateUI);
   progressEl?.addEventListener('click',function(e){
     const rect=progressEl.getBoundingClientRect();
-    currentTime=((e.clientX-rect.left)/rect.width)*dur;
-    updateUI();
+    if(audio.duration)audio.currentTime=((e.clientX-rect.left)/rect.width)*audio.duration;
   });
-  volEl?.addEventListener('input',function(){
-    if(gainNode)gainNode.gain.value=(volEl.value/100)*0.25;
-  });
+  volEl?.addEventListener('input',function(){audio.volume=volEl.value/100});
   updateUI();
-
-  S._mediaCleanup=function(){stopAudio();cancelAnimationFrame(animId);playing=false};
+  S._mediaCleanup=function(){audio.pause();cancelAnimationFrame(animId)};
 }
 
 function setupDemoVideo(item){
-  const dur=Math.round(item.size/100000);
-  let playing=false,currentTime=0,animId=null;
-  const canvas=$('mp-canvas'),playBtn=$('mp-play'),playBig=$('mp-play-big'),
-        timeEl=$('mp-time'),fillEl=$('mp-fill'),thumbEl=$('mp-thumb'),
+  const video=$('mp-video');if(!video)return;
+  const playBtn=$('mp-play'),playBig=$('mp-play-big'),timeEl=$('mp-time'),durEl=$('mp-dur'),
+        fillEl=$('mp-fill'),bufEl=$('mp-buf'),thumbEl=$('mp-thumb'),
         progressEl=$('mp-progress'),volEl=$('mp-vol'),fsBtn=$('mp-fs'),
         viewport=$('mp-viewport');
-  if(!canvas)return;
-  const ctx=canvas.getContext('2d');
-  canvas.width=854;canvas.height=480;
-
-  const particles=[];
-  for(let i=0;i<40;i++){
-    particles.push({
-      x:Math.random()*854,y:Math.random()*480,
-      vx:(Math.random()-0.5)*2,vy:(Math.random()-0.5)*2,
-      r:Math.random()*20+5,
-      hue:Math.random()*360
-    });
-  }
-
-  function drawFrame(t){
-    ctx.fillStyle='#0f172a';
-    ctx.fillRect(0,0,854,480);
-    const grad=ctx.createLinearGradient(0,0,854,480);
-    grad.addColorStop(0,'hsl('+(t*20%360)+',70%,15%)');
-    grad.addColorStop(1,'hsl('+((t*20+120)%360)+',70%,10%)');
-    ctx.fillStyle=grad;ctx.fillRect(0,0,854,480);
-    particles.forEach(function(p){
-      p.x+=p.vx;p.y+=p.vy;
-      if(p.x<0||p.x>854)p.vx*=-1;
-      if(p.y<0||p.y>480)p.vy*=-1;
-      p.hue=(p.hue+0.5)%360;
-      ctx.beginPath();
-      ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
-      ctx.fillStyle='hsla('+p.hue+',70%,60%,0.3)';
-      ctx.fill();
-    });
-    ctx.beginPath();ctx.strokeStyle='rgba(255,255,255,0.3)';ctx.lineWidth=2;
-    for(let x=0;x<854;x+=4){
-      const y=240+Math.sin(x*0.02+t*2)*30+Math.sin(x*0.01+t*3)*20;
-      x===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
-    }
-    ctx.stroke();
-  }
-
-  drawFrame(0);
-
-  function fmtT(s){return Math.floor(s/60)+':'+String(Math.floor(s)%60).padStart(2,'0')}
-
-  function tick(){
-    if(!playing)return;
-    currentTime+=1/30;
-    if(currentTime>=dur){currentTime=0;togglePlay();return}
-    drawFrame(currentTime);
-    updateUI();
-    animId=requestAnimationFrame(tick);
-  }
-
+  let animId=null;
+  function fmtT(s){if(isNaN(s))return '0:00';return Math.floor(s/60)+':'+String(Math.floor(s)%60).padStart(2,'0')}
   function updateUI(){
-    const pct=dur?currentTime/dur*100:0;
+    const d=video.duration||0,c=video.currentTime||0;
+    const pct=d?(c/d)*100:0;
     if(fillEl)fillEl.style.width=pct+'%';
     if(thumbEl)thumbEl.style.left=pct+'%';
-    if(timeEl)timeEl.textContent=fmtT(currentTime);
-    if(playBig)playBig.style.display=playing?'none':'flex';
+    if(timeEl)timeEl.textContent=fmtT(c);
+    if(durEl)durEl.textContent=fmtT(d);
+    if(bufEl&&video.buffered.length){
+      bufEl.style.width=(video.buffered.end(video.buffered.length-1)/d*100)+'%';
+    }
+    if(playBig)playBig.style.display=video.paused?'flex':'none';
+    if(!video.paused)animId=requestAnimationFrame(updateUI);
   }
-
   function togglePlay(){
-    playing=!playing;
-    if(playing){animId=requestAnimationFrame(tick)}
-    else{cancelAnimationFrame(animId)}
-    playBtn.innerHTML=playing?'<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>':'<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"/></svg>';
+    if(video.paused){video.play();animId=requestAnimationFrame(updateUI)}else{video.pause();cancelAnimationFrame(animId)}
+    playBtn.innerHTML=video.paused?'<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"/></svg>':'<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
     updateUI();
   }
-
   playBtn?.addEventListener('click',togglePlay);
   playBig?.addEventListener('click',togglePlay);
-  canvas?.addEventListener('click',togglePlay);
+  video.addEventListener('click',togglePlay);
+  video.addEventListener('ended',function(){cancelAnimationFrame(animId);playBtn.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"/></svg>';updateUI()});
+  video.addEventListener('loadedmetadata',updateUI);
   progressEl?.addEventListener('click',function(e){
     const rect=progressEl.getBoundingClientRect();
-    currentTime=((e.clientX-rect.left)/rect.width)*dur;
-    if(!playing)drawFrame(currentTime);
-    updateUI();
+    if(video.duration)video.currentTime=((e.clientX-rect.left)/rect.width)*video.duration;
   });
+  volEl?.addEventListener('input',function(){video.volume=volEl.value/100});
   fsBtn?.addEventListener('click',function(){
     if(viewport?.requestFullscreen)viewport.requestFullscreen();
     else if(viewport?.webkitRequestFullscreen)viewport.webkitRequestFullscreen();
   });
   updateUI();
-
-  S._mediaCleanup=function(){cancelAnimationFrame(animId);playing=false};
+  S._mediaCleanup=function(){video.pause();cancelAnimationFrame(animId)};
 }
 
 /* ── Toast ────────────────────────────────────────────────────────── */
@@ -919,8 +836,7 @@ function renderPreview(){
     const svg='<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="'+c.split(',')[0]+'"/><stop offset="100%" stop-color="'+c.split(',')[1]+'"/></linearGradient></defs><rect width="800" height="500" fill="url(#g)"/><text x="400" y="240" text-anchor="middle" fill="rgba(255,255,255,.85)" font-family="Inter,sans-serif" font-size="24" font-weight="600">'+h(item.name)+'</text><text x="400" y="275" text-anchor="middle" fill="rgba(255,255,255,.5)" font-family="Inter,sans-serif" font-size="14">'+fmtSize(item.size)+' \\u2014 '+h(item.content_type)+'</text></svg>';
     body='<div class="preview-image"><img src="data:image/svg+xml,'+encodeURIComponent(svg)+'" alt="'+h(item.name)+'"></div>';
   } else if(t==='audio'){
-    const dur=Math.round(item.size/16000);
-    const mm=Math.floor(dur/60);const ss=String(dur%60).padStart(2,'0');
+    const src=DEMO_MEDIA[item.path]||'';
     const colors=['#667eea,#764ba2','#f093fb,#f5576c','#4facfe,#00f2fe','#43e97b,#38f9d7','#fa709a,#fee140'];
     const c=colors[Math.abs(item.name.length)%colors.length].split(',');
     body='<div class="mp mp--audio">'
@@ -933,22 +849,21 @@ function renderPreview(){
       +'<button class="mp-play-btn" id="mp-play"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"/></svg></button>'
       +'<span class="mp-time" id="mp-time">0:00</span>'
       +'<div class="mp-progress" id="mp-progress"><div class="mp-progress-buf" id="mp-buf"></div><div class="mp-progress-fill" id="mp-fill"></div><div class="mp-progress-thumb" id="mp-thumb"></div></div>'
-      +'<span class="mp-time" id="mp-dur">'+mm+':'+ss+'</span>'
+      +'<span class="mp-time" id="mp-dur">0:00</span>'
       +'<div class="mp-vol-wrap"><svg class="mp-vol-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19"/><path d="M19.07 4.93a10 10 0 010 14.14"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg><input type="range" class="mp-vol" id="mp-vol" min="0" max="100" value="70"></div>'
-      +'</div></div>';
+      +'</div><audio id="mp-audio" src="'+h(src)+'" preload="metadata" crossorigin="anonymous"></audio></div>';
   } else if(t==='video'){
-    const dur=Math.round(item.size/100000);
-    const mm=Math.floor(dur/60);const ss=String(dur%60).padStart(2,'0');
+    const src=DEMO_MEDIA[item.path]||'';
     body='<div class="mp mp--video">'
       +'<div class="mp-viewport" id="mp-viewport">'
-      +'<canvas id="mp-canvas"></canvas>'
+      +'<video id="mp-video" src="'+h(src)+'" preload="metadata" crossorigin="anonymous"></video>'
       +'<div class="mp-play-overlay" id="mp-play-big"><svg width="48" height="48" viewBox="0 0 24 24" fill="white"><polygon points="6,3 20,12 6,21"/></svg></div>'
       +'</div>'
       +'<div class="mp-controls">'
       +'<button class="mp-play-btn" id="mp-play"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"/></svg></button>'
       +'<span class="mp-time" id="mp-time">0:00</span>'
-      +'<div class="mp-progress" id="mp-progress"><div class="mp-progress-fill" id="mp-fill"></div><div class="mp-progress-thumb" id="mp-thumb"></div></div>'
-      +'<span class="mp-time" id="mp-dur">'+mm+':'+ss+'</span>'
+      +'<div class="mp-progress" id="mp-progress"><div class="mp-progress-buf" id="mp-buf"></div><div class="mp-progress-fill" id="mp-fill"></div><div class="mp-progress-thumb" id="mp-thumb"></div></div>'
+      +'<span class="mp-time" id="mp-dur">0:00</span>'
       +'<div class="mp-vol-wrap"><svg class="mp-vol-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19"/><path d="M19.07 4.93a10 10 0 010 14.14"/></svg><input type="range" class="mp-vol" id="mp-vol" min="0" max="100" value="70"></div>'
       +'<button class="mp-fs-btn" id="mp-fs"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>'
       +'</div></div>';
