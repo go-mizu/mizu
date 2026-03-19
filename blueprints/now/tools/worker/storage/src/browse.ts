@@ -201,7 +201,7 @@ const DEMO_MEDIA={
   'media/podcast-episode.mp3':'https://samplelib.com/lib/preview/mp3/sample-15s.mp3',
   'media/notification.wav':'https://interactive-examples.mdn.mozilla.net/media/cc0-audio/t-rex-roar.mp3',
   'media/product-demo.mp4':'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-  'media/team-standup.webm':'https://www.w3schools.com/html/mov_bbb.mp4',
+  'media/team-standup.webm':'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4',
 };
 
 const DEMO_DOCS={
@@ -851,12 +851,12 @@ function renderPreview(){
       +'<div class="mp-progress" id="mp-progress"><div class="mp-progress-buf" id="mp-buf"></div><div class="mp-progress-fill" id="mp-fill"></div><div class="mp-progress-thumb" id="mp-thumb"></div></div>'
       +'<span class="mp-time" id="mp-dur">0:00</span>'
       +'<div class="mp-vol-wrap"><svg class="mp-vol-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19"/><path d="M19.07 4.93a10 10 0 010 14.14"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg><input type="range" class="mp-vol" id="mp-vol" min="0" max="100" value="70"></div>'
-      +'</div><audio id="mp-audio" src="'+h(src)+'" preload="metadata" crossorigin="anonymous"></audio></div>';
+      +'</div><audio id="mp-audio" src="'+h(src)+'" preload="metadata"></audio></div>';
   } else if(t==='video'){
     const src=DEMO_MEDIA[item.path]||'';
     body='<div class="mp mp--video">'
       +'<div class="mp-viewport" id="mp-viewport">'
-      +'<video id="mp-video" src="'+h(src)+'" preload="metadata" crossorigin="anonymous"></video>'
+      +'<video id="mp-video" src="'+h(src)+'" preload="metadata"></video>'
       +'<div class="mp-play-overlay" id="mp-play-big"><svg width="48" height="48" viewBox="0 0 24 24" fill="white"><polygon points="6,3 20,12 6,21"/></svg></div>'
       +'</div>'
       +'<div class="mp-controls">'
