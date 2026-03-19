@@ -120,7 +120,7 @@ function isImage(ct){return(ct||'').startsWith('image/')}
 
 function initials(name){
   var clean=(name||'').replace(/^[ua]\//, '');
-  var parts=clean.split(/[\s@._-]+/).filter(Boolean);
+  var parts=clean.split(/[\\s@._-]+/).filter(Boolean);
   if(parts.length>=2)return(parts[0][0]+parts[1][0]).toUpperCase();
   return clean.slice(0,2).toUpperCase();
 }
@@ -143,16 +143,16 @@ function renderMd(src){
     }
     if(inCode){codeBuf+=(codeBuf?'\n':'')+line;continue}
     if(!line.trim()){cl();continue}
-    var hm=line.match(/^(#{1,4})\s+(.+)/);
+    var hm=line.match(/^(#{1,4})\\s+(.+)/);
     if(hm){cl();var n=hm[1].length+1;html+='<h'+n+'>'+inl(hm[2])+'</h'+n+'>';continue}
-    if(line.match(/^[-*]\s/)){
+    if(line.match(/^[-*]\\s/)){
       if(!inUl){cl();html+='<ul>';inUl=true}
       var c=line.slice(2);c=chk(c);
       html+='<li>'+inl(c)+'</li>';continue
     }
-    if(line.match(/^\d+\.\s/)){
+    if(line.match(/^\\d+\\.\\s/)){
       if(!inOl){cl();html+='<ol>';inOl=true}
-      var c=line.replace(/^\d+\.\s/,'');c=chk(c);
+      var c=line.replace(/^\\d+\\.\\s/,'');c=chk(c);
       html+='<li>'+inl(c)+'</li>';continue
     }
     cl();html+='<p>'+inl(line)+'</p>';
@@ -168,8 +168,8 @@ function chk(s){
 }
 function inl(s){
   return esc(s)
-    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g,'<em>$1</em>')
+    .replace(/\\*\\*(.+?)\\*\\*/g,'<strong>$1</strong>')
+    .replace(/\\*(.+?)\\*/g,'<em>$1</em>')
     .replace(/\`([^\`]+)\`/g,'<code>$1</code>');
 }
 
@@ -222,7 +222,7 @@ function fmtAction(a){
     text='updated <strong>'+esc(target)+'</strong>';
   } else if(action==='shared'){
     icon=IC.people;
-    var who=target.replace(/^with\s+/,'');
+    var who=target.replace(/^with\\s+/,'');
     text='added <strong>'+esc(stripActor(who))+'</strong> as a member';
   } else if(action==='added_section'){
     icon=IC.plus;

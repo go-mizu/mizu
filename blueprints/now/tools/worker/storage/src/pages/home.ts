@@ -284,7 +284,7 @@ async function signIn(){
   if(!input||!btn||!errEl) return;
   const email=input.value.trim();
   if(!email){errEl.textContent='Please enter your email';return}
-  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){errEl.textContent='That doesn\'t look like an email address';return}
+  if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)){errEl.textContent="That doesn't look like an email address";return}
   errEl.textContent='';
   btn.disabled=true;input.disabled=true;
   document.getElementById('signin-text').style.display='none';
