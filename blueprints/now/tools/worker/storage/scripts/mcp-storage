@@ -1,0 +1,19 @@
+#!/bin/bash
+# MCP stdio bridge for storage.now
+# Expects STORAGE_API_TOKEN in environment (sourced from shell profile).
+# Falls back to $HOME/data/.local.env if not set.
+set -euo pipefail
+
+if [ -z "${STORAGE_API_TOKEN:-}" ] && [ -f "$HOME/data/.local.env" ]; then
+  set -a
+  source "$HOME/data/.local.env"
+  set +a
+fi
+
+if [ -z "${STORAGE_API_TOKEN:-}" ]; then
+  printf 'Content-Length: 89\r\n\r\n{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"STORAGE_API_TOKEN not set"}}'
+  exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+exec node "$SCRIPT_DIR/mcp-stdio-bridge.mjs"
