@@ -1,100 +1,174 @@
-# storage.now API {#overview}
+# API Reference {#overview}
 
-File storage for humans and AI agents. Upload, organize, and share files via a simple REST API.
+Complete reference for the storage.now API. 18 operations. 8 resources. Unix philosophy.
 
 Base URL: `https://storage.liteio.dev`
 
-| Feature | Detail |
-|---|---|
-| Max file size | 100 MB (single PUT), unlimited via presigned URLs |
-| Auth | Ed25519 challenge-response or magic link |
-| Storage | S3-compatible object storage (R2) |
-| Metadata | SQLite at edge (D1) |
-| Soft delete | Files go to trash first, permanent delete on empty |
+All requests use JSON for request and response bodies (except file uploads/downloads which use raw bytes). All responses include appropriate `Content-Type` headers.
 
-# Authentication {#auth}
+## Quick Start {#quickstart}
 
-All API routes (except registration, auth, and public pages) require a Bearer token or session cookie.
-
-## Register an Actor {#register}
+Get up and running in three commands:
 
 ```
-POST /actors
+# 1. Register an agent identity
+POST /auth/register
+{"actor": "a/my-app", "public_key": "<base64url-ed25519-pubkey>"}
+
+# 2. Authenticate (challenge-response)
+POST /auth/token
+{"method": "ed25519", "step": "challenge", "actor": "a/my-app"}
+# → sign the nonce, then:
+POST /auth/token
+{"method": "ed25519", "step": "verify", "challenge_id": "ch_...", "actor": "a/my-app", "signature": "<base64url>"}
+# → {"access_token": "..."}
+
+# 3. Upload a file
+PUT /files/hello.txt
+Authorization: Bearer <access_token>
+Content-Type: text/plain
+
+Hello, world!
+```
+
+## Authentication {#authentication}
+
+All routes except `/auth/*` and `/p/*` require a Bearer token:
+
+```
+Authorization: Bearer <token>
+```
+
+Three ways to get a token:
+
+| Method | For | How |
+|---|---|---|
+| Ed25519 | Machines / scripts | Register public key, sign challenges |
+| Magic link | Humans | Enter email, click link in inbox |
+| API key | Services | Generate via `POST /keys`, use `sk_...` as Bearer token |
+
+## Rate Limits {#rate-limits}
+
+| Endpoint | Limit | Window |
+|---|---|---|
+| POST /auth/register | 10 | 1 minute |
+| POST /auth/token | 20 | 1 minute |
+| POST /auth/magic-link | 5 | 1 minute |
+| PUT /files/* | 100 | 1 minute |
+| POST /shares | 50 | 1 minute |
+| POST /links | 50 | 1 minute |
+| GET /p/* | 200 | 1 minute |
+
+Rate-limited responses return `429 Too Many Requests` with `Retry-After` header.
+
+| Resource | Ops | Unix analog |
+|---|---|---|
+| /auth | 4 | login/logout |
+| /files | 4 | read/write/rm/stat |
+| /tree | 1 | ls |
+| /shares | 3 | chmod/ln |
+| /p | 1 | readlink |
+| /presign | 1 | pipe |
+| /keys | 3 | ssh-keygen |
+| /log | 1 | /var/log |
+
+# Auth — 4 ops {#auth}
+
+Identity and session management. Two methods: Ed25519 challenge-response (machines) and magic link (humans).
+
+## POST /auth/register {#register}
+
+Create an identity. Like `useradd`.
+
+```
+POST /auth/register
 Content-Type: application/json
 
-{
-  "actor": "a/my-agent",
-  "public_key": "<base64url-ed25519-public-key>",
-  "type": "agent"
-}
+{"actor": "a/my-agent", "public_key": "<base64url-ed25519>"}
 
-// Response
-{
-  "actor": "a/my-agent",
-  "created": true
-}
+→ 201 Created
+{"actor": "a/my-agent", "created": true}
 ```
 
-Humans use `u/name`, agents use `a/name`. Agents must provide an Ed25519 public key.
+Actors: `a/name` (agent, Ed25519) or `u/email` (human, magic link).
 
-## Challenge-Response Auth {#challenge}
+## POST /auth/token {#auth-token}
 
-```
-// Step 1: Get a challenge nonce
-POST /auth/challenge
-{"actor": "a/my-agent"}
+Authenticate. Multiplexed by `method` field.
 
-// Response
-{
-  "challenge_id": "ch_...",
-  "nonce": "abc123...",
-  "expires_at": "2026-03-18T..."
-}
-
-// Step 2: Sign the nonce with your Ed25519 private key, then verify
-POST /auth/verify
-{
-  "challenge_id": "ch_...",
-  "actor": "a/my-agent",
-  "signature": "<base64url-signature-of-nonce>"
-}
-
-// Response
-{
-  "access_token": "...",
-  "expires_at": "2026-03-18T..."
-}
-
-// Step 3: Use the token
-Authorization: Bearer <access_token>
-```
-
-## Magic Link Auth (Humans) {#magic-link}
+**Ed25519 — step 1: challenge**
 
 ```
-POST /auth/magic-link
-{"email": "alice@example.com"}
+POST /auth/token
+Content-Type: application/json
 
-// Response
-{"ok": true, "magic_link": "https://storage.liteio.dev/auth/magic/..."}
+{"method": "ed25519", "step": "challenge", "actor": "a/my-agent"}
+
+→ 200 OK
+{"challenge_id": "ch_...", "nonce": "abc123...", "expires_at": "..."}
 ```
 
-Opens a session in the browser. No password needed.
-
-## Logout {#logout}
+**Ed25519 — step 2: verify**
 
 ```
-POST /auth/logout
-GET /auth/logout
+POST /auth/token
+Content-Type: application/json
+
+{"method": "ed25519", "step": "verify", "challenge_id": "ch_...", "actor": "a/my-agent", "signature": "<base64url>"}
+
+→ 200 OK
+{"access_token": "...", "expires_at": "..."}
 ```
 
-Ends the current session. Accepts both POST and GET (for link-based logout).
+Sign the nonce with your Ed25519 private key. The signature must be base64url-encoded.
 
-# Files {#files}
+**Magic link**
 
-Upload, download, and delete files using their path.
+```
+POST /auth/token
+Content-Type: application/json
 
-## Upload a File {#upload}
+{"method": "magic", "email": "user@example.com"}
+
+→ 202 Accepted
+{"sent": true}
+```
+
+Use the token: `Authorization: Bearer <access_token>`
+
+## GET /auth/callback/:token {#auth-callback}
+
+Verify a magic link. Sets session cookie and redirects.
+
+```
+GET /auth/callback/mtk_abc123
+
+→ 302 Found
+Set-Cookie: session=...; Path=/; HttpOnly; Secure
+Location: /browse
+```
+
+## DELETE /auth/token {#auth-logout}
+
+End the current session. Like `logout`.
+
+```
+DELETE /auth/token
+Authorization: Bearer <token>
+
+→ 200 OK
+{"ok": true}
+```
+
+# Files — 4 ops {#files}
+
+Core file I/O. Like `read(2)`, `write(2)`, `unlink(2)`, `stat(2)`.
+
+Paths are virtual. Parent directories are created implicitly on write. Content-Type is auto-detected from extension.
+
+## PUT /files/{path} {#file-write}
+
+Write a file. Like `write(fd, buf)`.
 
 ```
 PUT /files/docs/readme.md
@@ -103,494 +177,300 @@ Content-Type: text/markdown
 
 <file bytes>
 
-// Response (201 Created or 200 Updated)
-{
-  "id": "o_...",
-  "path": "docs/readme.md",
-  "name": "readme.md",
-  "content_type": "text/markdown",
-  "size": 1234,
-  "created_at": 1710700000000
-}
+→ 201 Created
+{"id": "o_...", "path": "docs/readme.md", "size": 1234}
 ```
 
-Parent folders are auto-created. Content-Type is auto-detected from extension if not provided. Max 100 MB.
+Max 100 MB per request. Use `/presign` for larger files.
 
-## Download a File {#download}
+## GET /files/{path} {#file-read}
+
+Read a file. Like `read(fd, buf)`. Returns raw bytes with appropriate Content-Type.
 
 ```
 GET /files/docs/readme.md
 Authorization: Bearer <token>
 
-// Response: file bytes
-// Headers: Content-Type, Content-Length, ETag, Last-Modified, Content-Disposition
+→ 200 OK
+Content-Type: text/markdown
+Content-Length: 1234
+
+<file bytes>
 ```
 
-Trashed files are not downloadable. Sets `accessed_at` on the file.
+Supports `Range` headers for partial reads.
 
-## Delete a File {#delete-file}
+## DELETE /files/{path} {#file-delete}
+
+Remove a file. Like `unlink(path)`.
 
 ```
 DELETE /files/docs/readme.md
 Authorization: Bearer <token>
 
-// Response
-{"deleted": true}
+→ 200 OK
+{"deleted": true, "path": "docs/readme.md"}
 ```
 
-Permanently deletes the file and its R2 object. To soft-delete, use `POST /drive/trash` instead.
+## HEAD /files/{path} {#file-stat}
 
-## File Metadata (HEAD) {#head-file}
+Stat a file. Returns metadata headers, no body. Like `stat(path)`.
 
 ```
 HEAD /files/docs/readme.md
 Authorization: Bearer <token>
 
-// Response headers: Content-Type, Content-Length, Last-Modified
+→ 200 OK
+Content-Type: text/markdown
+Content-Length: 1234
+ETag: "abc123"
+Last-Modified: Wed, 18 Mar 2026 12:00:00 GMT
 ```
 
-# Folders {#folders}
+# Tree — 1 op {#tree}
 
-Folders are virtual metadata entries. Created automatically when uploading files, or explicitly.
+Directory listing. Like `readdir(3)` or `ls`.
 
-## Create a Folder {#create-folder}
+## GET /tree/{path?} {#tree-list}
 
-```
-POST /folders
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{"path": "docs/reports"}
-
-// Response (201)
-{
-  "id": "o_...",
-  "path": "docs/reports/",
-  "name": "reports",
-  "created": true
-}
-```
-
-Parent folders are auto-created. Returns `created: false` if already exists.
-
-## List Folder Contents {#list-folder}
+List directory contents. Omit path for root.
 
 ```
-// List root
-GET /folders
+GET /tree/docs
 Authorization: Bearer <token>
 
-// List subfolder
-GET /folders/docs
-Authorization: Bearer <token>
-
-// Response
+→ 200 OK
 {
   "path": "docs/",
   "items": [
-    {"name": "reports", "path": "docs/reports/", "is_folder": true, "starred": false, ...},
-    {"name": "readme.md", "path": "docs/readme.md", "is_folder": false, "size": 1234, "starred": false, ...}
+    {"name": "readme.md", "size": 1234, "modified": "2026-03-18T12:00:00Z"},
+    {"name": "images", "is_folder": true}
   ]
 }
 ```
 
-Items are sorted: folders first, then files alphabetically. Trashed items are excluded.
+Root: `GET /tree` → `{"path": "/", "items": [...]}`
 
-## Delete a Folder {#delete-folder}
+Each item includes: `name`, `size` (files only), `modified` (ISO 8601), `is_folder` (directories only), `content_type` (files only).
 
-```
-DELETE /folders/docs/reports
-Authorization: Bearer <token>
+# Shares — 3 ops {#shares}
 
-// Response
-{"deleted": true}
-```
+Access control. Like `chmod`, `chown`, `ln -s`.
 
-Folder must be empty. Delete or move files inside first.
+A share grants another actor access to a path. Set `grantee` to `"public"` for anonymous access.
 
-# Shares {#shares}
+Permission levels: `viewer` (read), `editor` (read/write), `uploader` (write-only).
 
-Share files with other actors. Grant read or write access.
+## POST /shares {#share-create}
 
-## Create a Share {#create-share}
+Grant access.
 
 ```
 POST /shares
 Authorization: Bearer <token>
 Content-Type: application/json
 
-{
-  "path": "docs/readme.md",
-  "grantee": "u/bob",
-  "permission": "read"
-}
+{"path": "docs/readme.md", "grantee": "a/bot", "permission": "viewer"}
 
-// Response (201)
-{
-  "id": "sh_...",
-  "path": "docs/readme.md",
-  "grantee": "u/bob",
-  "permission": "read",
-  "created_at": 1710700000000
-}
+→ 201 Created
+{"id": "sh_...", "token": "tok_abc", "permission": "viewer"}
 ```
 
-## List Shares {#list-shares}
+Public share:
+
+```
+{"path": "docs/readme.md", "grantee": "public", "permission": "viewer"}
+
+→ 201 Created
+{"id": "sh_...", "token": "tok_xyz", "url": "/p/tok_xyz"}
+```
+
+## GET /shares {#share-list}
+
+List shares you've granted.
 
 ```
 GET /shares
 Authorization: Bearer <token>
 
-// Response
-{
-  "given": [...],    // shares you created
-  "received": [...]  // shares granted to you
-}
+→ 200 OK
+{"shares": [{"id": "sh_...", "path": "docs/readme.md", "grantee": "a/bot", "permission": "viewer"}]}
 ```
 
-## Revoke a Share {#revoke-share}
+## DELETE /shares/{id} {#share-revoke}
+
+Revoke a share.
 
 ```
 DELETE /shares/sh_abc123
 Authorization: Bearer <token>
 
-// Response
+→ 200 OK
 {"deleted": true}
 ```
 
-## Shared Files {#shared-files}
+# Public Access — 1 op {#public}
+
+Anonymous file access via share token. Like following a symlink.
+
+## GET /p/{token} {#public-access}
+
+Access a shared resource. No auth required for public shares.
 
 ```
-// List files shared with you
-GET /shared
-Authorization: Bearer <token>
+GET /p/tok_xyz
 
-// Download a shared file
-GET /shared/u%2Falice/docs/readme.md
-Authorization: Bearer <token>
+→ 200 OK
+Content-Type: text/markdown
+
+<file bytes>
 ```
 
-# Presigned URLs {#presign}
+Private shares require the grantee's Bearer token.
 
-For large files or high-throughput scenarios, use presigned URLs to upload/download directly to object storage — bypassing the worker entirely. No file bytes pass through the API server.
+# Presign — 1 op {#presign}
 
-**Flow:** Request a signed URL → PUT/GET directly to storage → Confirm upload (for writes).
+Direct-to-storage transfer. Like Unix pipes — data flows directly between client and object store, bypassing the API server.
 
-## Get Upload URL {#presign-upload}
+## POST /presign {#presign-url}
 
-```
-POST /presign/upload
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "path": "models/v3.bin",
-  "content_type": "application/octet-stream",
-  "expires": 3600
-}
-
-// Response
-{
-  "upload_url": "https://...signed-url...",
-  "path": "models/v3.bin",
-  "content_type": "application/octet-stream",
-  "expires_in": 3600,
-  "method": "PUT",
-  "headers": {"Content-Type": "application/octet-stream"}
-}
-```
-
-The signed URL is valid for `expires` seconds (default 1 hour, max 24 hours). After uploading, call `/presign/complete` to sync metadata.
-
-## Get Download URL {#presign-download}
+Get a presigned URL for direct upload or download.
 
 ```
-POST /presign/download
+POST /presign
 Authorization: Bearer <token>
 Content-Type: application/json
 
-{"path": "models/v3.bin", "expires": 3600}
+{"path": "models/v3.bin", "method": "PUT", "content_type": "application/octet-stream"}
 
-// Response
-{
-  "download_url": "https://...signed-url...",
-  "path": "models/v3.bin",
-  "name": "v3.bin",
-  "content_type": "application/octet-stream",
-  "size": 47185920,
-  "expires_in": 3600
-}
+→ 200 OK
+{"url": "https://...signed...", "method": "PUT", "expires_in": 3600}
 ```
 
-No confirmation needed for downloads. The file must exist (verified against metadata before signing).
+For download: `{"path": "models/v3.bin", "method": "GET"}`
 
-## Confirm Upload {#presign-complete}
+Upload the file directly to the presigned URL — the data never passes through the API server. URLs expire after 1 hour.
+
+# Keys — 3 ops {#keys}
+
+API key management. Like `ssh-keygen` and `~/.ssh/authorized_keys`.
+
+API keys are long-lived Bearer tokens for programmatic access. Use them in CI/CD, scripts, and integrations.
+
+## POST /keys {#key-create}
+
+Create an API key. Token shown once.
 
 ```
-POST /presign/complete
+POST /keys
 Authorization: Bearer <token>
 Content-Type: application/json
 
-{"path": "models/v3.bin"}
+{"name": "ci-deploy"}
 
-// Response
+→ 201 Created
+{"id": "key_...", "name": "ci-deploy", "token": "sk_..."}
+```
+
+Use as: `Authorization: Bearer sk_...`
+
+## GET /keys {#key-list}
+
+List API keys. Tokens not included.
+
+```
+GET /keys
+Authorization: Bearer <token>
+
+→ 200 OK
+{"keys": [{"id": "key_...", "name": "ci-deploy", "created": "2026-03-18T12:00:00Z"}]}
+```
+
+## DELETE /keys/{id} {#key-revoke}
+
+Revoke an API key. Takes effect immediately.
+
+```
+DELETE /keys/key_abc123
+Authorization: Bearer <token>
+
+→ 200 OK
+{"deleted": true}
+```
+
+# Log — 1 op {#log}
+
+Audit trail. Like `tail /var/log/auth.log`.
+
+Every file write, share creation, key rotation, and authentication event is logged.
+
+## GET /log {#log-read}
+
+Read audit events. Supports `?limit=N` and `?cursor=` for pagination.
+
+```
+GET /log?limit=10
+Authorization: Bearer <token>
+
+→ 200 OK
 {
-  "id": "o_...",
-  "path": "models/v3.bin",
-  "name": "v3.bin",
-  "content_type": "application/octet-stream",
-  "size": 47185920,
-  "created_at": 1710700000000
+  "events": [
+    {"ts": "2026-03-18T12:00:00Z", "action": "file.write", "path": "docs/readme.md"},
+    {"ts": "2026-03-18T11:59:00Z", "action": "share.create", "path": "docs/readme.md"}
+  ],
+  "cursor": "cur_..."
 }
 ```
 
-Call after a presigned upload succeeds. Verifies the file exists in storage, reads its actual size/type, and creates or updates the metadata record. Parent folders are auto-created.
+Event actions: `file.write`, `file.read`, `file.delete`, `share.create`, `share.revoke`, `key.create`, `key.revoke`, `auth.login`, `auth.logout`.
 
-# Drive {#drive}
+# All 18 Operations {#endpoints}
 
-Drive endpoints provide Google Drive-class file management features: star, rename, move, copy, trash, restore, search, and more. All require authentication.
+| # | Method | Path | Resource | Unix analog |
+|---|---|---|---|---|
+| 1 | POST | /auth/register | Auth | useradd |
+| 2 | POST | /auth/token | Auth | login |
+| 3 | GET | /auth/callback/:token | Auth | login (verify) |
+| 4 | DELETE | /auth/token | Auth | logout |
+| 5 | PUT | /files/{path} | Files | write(fd, buf) |
+| 6 | GET | /files/{path} | Files | read(fd, buf) |
+| 7 | DELETE | /files/{path} | Files | unlink(path) |
+| 8 | HEAD | /files/{path} | Files | stat(path) |
+| 9 | GET | /tree/{path?} | Tree | readdir(path) |
+| 10 | POST | /shares | Shares | chmod |
+| 11 | GET | /shares | Shares | getfacl |
+| 12 | DELETE | /shares/{id} | Shares | setfacl -x |
+| 13 | GET | /p/{token} | Public | readlink |
+| 14 | POST | /presign | Presign | pipe |
+| 15 | POST | /keys | Keys | ssh-keygen |
+| 16 | GET | /keys | Keys | ls ~/.ssh |
+| 17 | DELETE | /keys/{id} | Keys | rm key |
+| 18 | GET | /log | Log | tail /var/log |
 
-## Star / Unstar {#star}
+# Error Codes {#errors}
 
-```
-PATCH /drive/star
-Authorization: Bearer <token>
-Content-Type: application/json
+All errors return JSON: `{"error": {"code": "...", "message": "..."}}`
 
-{"path": "docs/readme.md", "starred": 1}
+| Code | HTTP | Meaning |
+|---|---|---|
+| invalid_request | 400 | Malformed request body or missing required field |
+| unauthorized | 401 | Missing, expired, or invalid Bearer token |
+| forbidden | 403 | Valid token but insufficient permission for this resource |
+| not_found | 404 | File, share, or resource does not exist |
+| conflict | 409 | Resource already exists (e.g., duplicate actor registration) |
+| too_large | 413 | Request body exceeds the 100 MB limit |
+| rate_limited | 429 | Too many requests — check `Retry-After` header |
+| internal | 500 | Unexpected server error |
 
-// Response
-{"path": "docs/readme.md", "starred": 1}
-```
+# Extensions {#extensions}
 
-Set `starred` to `1` to star, `0` to unstar.
+Extensions are not part of the core protocol. Implementations MAY support them.
 
-## Rename {#rename}
+| Extension | Endpoints | Purpose |
+|---|---|---|
+| Drive | 13 | Convenience coreutils (star, trash, search, rename, move, copy) |
+| OAuth 2.0 | 7 | Third-party authorization (RFC 6749 + PKCE) |
+| MCP | 2 | Model Context Protocol for AI agents |
+| Spaces | 11 | Collaborative workspaces |
 
-```
-POST /drive/rename
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{"path": "docs/old-name.md", "new_name": "new-name.md"}
-
-// Response
-{
-  "old_path": "docs/old-name.md",
-  "new_path": "docs/new-name.md",
-  "name": "new-name.md"
-}
-```
-
-Renaming a folder cascades the path change to all children. R2 objects are copied to the new key and the old key is deleted.
-
-## Move {#move}
-
-```
-POST /drive/move
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{"paths": ["docs/readme.md", "images/logo.svg"], "destination": "archive/"}
-
-// Response
-{"moved": 2}
-```
-
-Moves files and folders to a new parent directory. Destination must end with `/` or be empty string for root. Folder moves cascade to all children.
-
-## Copy {#copy}
-
-```
-POST /drive/copy
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{"path": "docs/readme.md"}
-
-// Response
-{
-  "id": "o_...",
-  "path": "docs/readme (copy).md",
-  "name": "readme (copy).md"
-}
-```
-
-Creates a duplicate file. Appends `(copy)` to the name, incrementing if needed. Folder copy is not supported.
-
-## Trash {#trash}
-
-```
-POST /drive/trash
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{"paths": ["docs/readme.md", "images/"]}
-
-// Response
-{"trashed": 2}
-```
-
-Soft-deletes items by setting `trashed_at`. Folder trash cascades to all children. Trashed items are excluded from folder listings and search.
-
-## Restore {#restore}
-
-```
-POST /drive/restore
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{"paths": ["docs/readme.md", "images/"]}
-
-// Response
-{"restored": 2}
-```
-
-Restores items from trash by clearing `trashed_at`. Folder restore cascades to all children.
-
-## Empty Trash {#empty-trash}
-
-```
-DELETE /drive/trash
-Authorization: Bearer <token>
-
-// Response
-{"deleted": 5}
-```
-
-Permanently deletes all trashed items. Removes R2 objects and D1 metadata. Shares on deleted objects are also removed. This action is irreversible.
-
-## List Trash {#list-trash}
-
-```
-GET /drive/trash
-Authorization: Bearer <token>
-
-// Response
-{
-  "items": [
-    {"id": "o_...", "name": "readme.md", "path": "docs/readme.md", "trashed_at": 1710700000000, ...}
-  ]
-}
-```
-
-## Recent Files {#recent}
-
-```
-GET /drive/recent
-Authorization: Bearer <token>
-
-// Response
-{
-  "items": [...]
-}
-```
-
-Returns the 50 most recently accessed files (by `accessed_at`), excluding folders and trashed items.
-
-## Starred Items {#starred}
-
-```
-GET /drive/starred
-Authorization: Bearer <token>
-
-// Response
-{
-  "items": [...]
-}
-```
-
-Returns all starred, non-trashed items (files and folders).
-
-## Search {#search}
-
-```
-GET /drive/search?q=readme&type=text&starred=1
-Authorization: Bearer <token>
-
-// Response
-{
-  "query": "readme",
-  "items": [...]
-}
-```
-
-Search files by name. Optional filters:
-
-| Param | Description |
-|---|---|
-| q | Search term (matched against name with LIKE) |
-| type | Filter by content_type prefix (e.g. `image`, `text`, `application/pdf`) |
-| starred | Set to `1` to only return starred items |
-
-## Drive Stats {#stats}
-
-```
-GET /drive/stats
-Authorization: Bearer <token>
-
-// Response
-{
-  "file_count": 24,
-  "folder_count": 14,
-  "total_size": 163405923,
-  "trash_count": 2,
-  "quota": 5368709120
-}
-```
-
-Returns storage usage summary. Quota is 5 GB.
-
-## Update Description {#description}
-
-```
-PATCH /drive/description
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{"path": "docs/readme.md", "description": "Project overview"}
-
-// Response
-{"path": "docs/readme.md", "description": "Project overview"}
-```
-
-# All Endpoints {#endpoints}
-
-| Method | Path | Description | Auth |
-|---|---|---|---|
-| POST | /actors | Register actor | No |
-| POST | /auth/challenge | Get challenge nonce | No |
-| POST | /auth/verify | Verify signature, get token | No |
-| POST | /auth/magic-link | Request magic link | No |
-| GET | /auth/magic/:token | Verify magic link | No |
-| POST | /auth/logout | End session | No |
-| GET | /auth/logout | End session (link) | No |
-| PUT | /files/*path | Upload file | Yes |
-| GET | /files/*path | Download file | Yes |
-| DELETE | /files/*path | Delete file | Yes |
-| HEAD | /files/*path | File metadata | Yes |
-| POST | /presign/upload | Get presigned upload URL | Yes |
-| POST | /presign/download | Get presigned download URL | Yes |
-| POST | /presign/complete | Confirm presigned upload | Yes |
-| POST | /folders | Create folder | Yes |
-| GET | /folders | List root | Yes |
-| GET | /folders/*path | List folder contents | Yes |
-| DELETE | /folders/*path | Delete empty folder | Yes |
-| POST | /shares | Create share | Yes |
-| GET | /shares | List shares | Yes |
-| DELETE | /shares/:id | Revoke share | Yes |
-| GET | /shared | Files shared with me | Yes |
-| GET | /shared/:owner/*path | Download shared file | Yes |
-| PATCH | /drive/star | Star or unstar item | Yes |
-| POST | /drive/rename | Rename file or folder | Yes |
-| POST | /drive/move | Move items to new folder | Yes |
-| POST | /drive/copy | Duplicate a file | Yes |
-| POST | /drive/trash | Trash items (soft delete) | Yes |
-| POST | /drive/restore | Restore items from trash | Yes |
-| DELETE | /drive/trash | Empty trash (permanent) | Yes |
-| GET | /drive/trash | List trashed items | Yes |
-| GET | /drive/recent | Recently accessed files | Yes |
-| GET | /drive/starred | Starred items | Yes |
-| GET | /drive/search | Search files by name | Yes |
-| GET | /drive/stats | Storage usage stats | Yes |
-| PATCH | /drive/description | Update file description | Yes |
+The reference implementation at `storage.liteio.dev` supports all extensions.

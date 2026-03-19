@@ -1,6 +1,6 @@
 /* ══════════════════════════════════════════════════════════════════════
-   storage.now — Docs Page
-   Console aesthetic: monochrome, sharp edges, JetBrains Mono.
+   storage.now — API Reference
+   World-class API docs. Console aesthetic. Colored method badges.
    ══════════════════════════════════════════════════════════════════════ */
 
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -9,12 +9,24 @@
   --text:#09090B;--text-2:#52525B;--text-3:#A1A1AA;
   --border:#E4E4E7;--ink:#09090B;
   --shadow:0 1px 3px rgba(0,0,0,0.04),0 1px 2px rgba(0,0,0,0.06);
+  --m-get:rgb(16,185,129);--m-get-bg:rgba(16,185,129,0.08);--m-get-border:rgba(16,185,129,0.25);
+  --m-post:rgb(59,130,246);--m-post-bg:rgba(59,130,246,0.08);--m-post-border:rgba(59,130,246,0.25);
+  --m-put:rgb(245,158,11);--m-put-bg:rgba(245,158,11,0.08);--m-put-border:rgba(245,158,11,0.25);
+  --m-delete:rgb(239,68,68);--m-delete-bg:rgba(239,68,68,0.08);--m-delete-border:rgba(239,68,68,0.25);
+  --m-head:rgb(139,92,246);--m-head-bg:rgba(139,92,246,0.08);--m-head-border:rgba(139,92,246,0.25);
+  --m-patch:rgb(236,72,153);--m-patch-bg:rgba(236,72,153,0.08);--m-patch-border:rgba(236,72,153,0.25);
 }
 html.dark{
   --bg:#09090B;--surface:#18181B;--surface-alt:#18181B;
   --text:#FAFAF9;--text-2:#A1A1AA;--text-3:#52525B;
   --border:#27272A;--ink:#FAFAF9;
   --shadow:0 1px 3px rgba(0,0,0,0.3);
+  --m-get:rgb(52,211,153);--m-get-bg:rgba(16,185,129,0.12);--m-get-border:rgba(16,185,129,0.3);
+  --m-post:rgb(96,165,250);--m-post-bg:rgba(59,130,246,0.12);--m-post-border:rgba(59,130,246,0.3);
+  --m-put:rgb(251,191,36);--m-put-bg:rgba(245,158,11,0.12);--m-put-border:rgba(245,158,11,0.3);
+  --m-delete:rgb(248,113,113);--m-delete-bg:rgba(239,68,68,0.12);--m-delete-border:rgba(239,68,68,0.3);
+  --m-head:rgb(167,139,250);--m-head-bg:rgba(139,92,246,0.12);--m-head-border:rgba(139,92,246,0.3);
+  --m-patch:rgb(244,114,182);--m-patch-bg:rgba(236,72,153,0.12);--m-patch-border:rgba(236,72,153,0.3);
 }
 body{font-family:'Inter',system-ui,sans-serif;color:var(--text);background:var(--bg);
   -webkit-font-smoothing:antialiased}
@@ -47,29 +59,62 @@ html.dark .theme-toggle .icon-moon{display:none}
 .page{display:flex;max-width:1200px;margin:0 auto;padding:0 48px;gap:48px}
 
 /* ── Sidebar ─────────────────────────────────────────────────────────── */
-.sidebar{width:200px;flex-shrink:0;position:sticky;top:20px;align-self:flex-start;
-  max-height:calc(100vh - 40px);overflow-y:auto;padding:16px 0;
-  display:flex;flex-direction:column;gap:2px}
-.sidebar a{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
-  text-decoration:none;padding:6px 12px;transition:all .15s;display:block;
+.sidebar{width:220px;flex-shrink:0;position:sticky;top:72px;align-self:flex-start;
+  max-height:calc(100vh - 88px);overflow-y:auto;padding:16px 0;
+  display:flex;flex-direction:column;gap:1px}
+.sidebar a{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--text-3);
+  text-decoration:none;padding:7px 14px;transition:all .15s;display:block;
   border-left:2px solid transparent}
 .sidebar a:hover{color:var(--text)}
 .sidebar a.active{color:var(--text);border-left-color:var(--text)}
-.sidebar a.sub{padding-left:24px;font-size:10.5px}
+.sidebar a.sub{padding-left:28px;font-size:10.5px}
+
+/* Sidebar method badges */
+.sidebar .sm{display:inline-block;font-size:8px;font-weight:600;letter-spacing:0.3px;
+  padding:1px 4px;margin-right:4px;vertical-align:1px}
+.sidebar .sm-get{color:var(--m-get);border:1px solid var(--m-get-border);background:var(--m-get-bg)}
+.sidebar .sm-post{color:var(--m-post);border:1px solid var(--m-post-border);background:var(--m-post-bg)}
+.sidebar .sm-put{color:var(--m-put);border:1px solid var(--m-put-border);background:var(--m-put-bg)}
+.sidebar .sm-delete{color:var(--m-delete);border:1px solid var(--m-delete-border);background:var(--m-delete-bg)}
+.sidebar .sm-head{color:var(--m-head);border:1px solid var(--m-head-border);background:var(--m-head-bg)}
+.sidebar .sm-patch{color:var(--m-patch);border:1px solid var(--m-patch-border);background:var(--m-patch-bg)}
 
 /* ── Content ─────────────────────────────────────────────────────────── */
 .content{flex:1;min-width:0;padding:16px 0 80px}
-.content h1{font-size:24px;font-weight:500;letter-spacing:-0.5px;margin:48px 0 16px;
+.content h1{font-size:24px;font-weight:500;letter-spacing:-0.5px;margin:56px 0 16px;
   padding-top:24px;border-top:1px solid var(--border)}
 .content h1:first-child{margin-top:0;border-top:none;padding-top:0}
-.content h2{font-size:17px;font-weight:500;letter-spacing:-0.3px;margin:36px 0 12px}
+.content h2{font-size:17px;font-weight:500;letter-spacing:-0.3px;margin:40px 0 12px;
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .content p{font-size:14px;color:var(--text-2);line-height:1.7;margin-bottom:16px}
 .content code{font-family:'JetBrains Mono',monospace;font-size:12px;
   background:var(--surface-alt);padding:2px 6px;border:1px solid var(--border)}
+.content strong{font-weight:600;color:var(--text)}
+
+/* Code blocks */
 .content pre{position:relative;background:var(--surface);border:1px solid var(--border);
   padding:20px 24px;margin:16px 0;overflow-x:auto}
 .content pre code{background:none;border:none;padding:0;font-size:12px;line-height:1.8;
   color:var(--text-2);display:block;white-space:pre}
+
+/* HTTP method badges in headings */
+.method{display:inline-flex;align-items:center;justify-content:center;
+  font-family:'JetBrains Mono',monospace;font-size:11px;
+  font-weight:600;letter-spacing:0.5px;padding:4px 10px;min-width:56px;text-align:center}
+.method--get{color:var(--m-get);border:1px solid var(--m-get-border);background:var(--m-get-bg)}
+.method--post{color:var(--m-post);border:1px solid var(--m-post-border);background:var(--m-post-bg)}
+.method--put{color:var(--m-put);border:1px solid var(--m-put-border);background:var(--m-put-bg)}
+.method--delete{color:var(--m-delete);border:1px solid var(--m-delete-border);background:var(--m-delete-bg)}
+.method--head{color:var(--m-head);border:1px solid var(--m-head-border);background:var(--m-head-bg)}
+.method--patch{color:var(--m-patch);border:1px solid var(--m-patch-border);background:var(--m-patch-bg)}
+
+/* ── Base URL banner ─────────────────────────────────────────────────── */
+.base-url{font-family:'JetBrains Mono',monospace;font-size:12px;
+  padding:12px 16px;border:1px solid var(--border);background:var(--surface-alt);
+  margin:16px 0;display:flex;align-items:center;gap:8px}
+.base-url-label{font-size:10px;letter-spacing:1px;text-transform:uppercase;
+  color:var(--text-3);font-weight:500}
+.base-url-val{color:var(--text);font-weight:500}
 
 /* ── Copy button ─────────────────────────────────────────────────────── */
 .cb{position:absolute;top:8px;right:8px;font-family:'JetBrains Mono',monospace;
@@ -86,12 +131,36 @@ html.dark .theme-toggle .icon-moon{display:none}
   font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-2)}
 .ref-table tr:last-child td{border-bottom:none}
 
+/* Method column in endpoint table */
+.ref-table td:nth-child(2){font-weight:600;font-size:11px;letter-spacing:0.3px}
+
+/* ── Params table ────────────────────────────────────────────────────── */
+.params{width:100%;border-collapse:collapse;margin:12px 0 20px;font-size:13px}
+.params th{text-align:left;font-family:'JetBrains Mono',monospace;font-size:10px;
+  color:var(--text-3);padding:8px 12px;border-bottom:2px solid var(--border);
+  letter-spacing:0.5px;text-transform:uppercase}
+.params td{padding:8px 12px;border-bottom:1px solid var(--border);font-size:13px;
+  color:var(--text-2);vertical-align:top}
+.params td:first-child{font-family:'JetBrains Mono',monospace;font-size:12px;
+  color:var(--text);font-weight:500;white-space:nowrap}
+.params .required{color:var(--m-delete);font-size:10px;font-weight:500;margin-left:4px}
+.params .optional{color:var(--text-3);font-size:10px;font-weight:500;margin-left:4px}
+.params .type{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3)}
+
+/* ── Callout boxes ───────────────────────────────────────────────────── */
+.callout{border-left:3px solid var(--border);padding:12px 16px;margin:16px 0;
+  font-size:13px;color:var(--text-2);background:var(--surface-alt)}
+.callout-title{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;
+  letter-spacing:0.5px;text-transform:uppercase;margin-bottom:4px;color:var(--text)}
+
 /* ── Responsive ──────────────────────────────────────────────────────── */
 @media(max-width:768px){
   .page{flex-direction:column;padding:0 20px;gap:0}
   .sidebar{width:100%;position:static;max-height:none;flex-direction:row;
     flex-wrap:wrap;gap:0;padding:12px 0;border-bottom:1px solid var(--border)}
   .sidebar a{border-left:none;padding:4px 8px;font-size:10px}
+  .sidebar a.sub{padding-left:8px}
+  .sidebar .sm{display:none}
   .content h1{font-size:22px;margin:32px 0 12px}
   .content h2{font-size:16px}
 }
