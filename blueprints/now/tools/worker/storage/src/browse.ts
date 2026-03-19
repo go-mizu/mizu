@@ -114,6 +114,7 @@ const DEMO_FS=[
   // documents/templates/
   {path:'documents/templates/invoice.docx',name:'invoice.docx',is_folder:false,content_type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',size:45056,starred:false,description:'Invoice template',created_at:now-18*d1,updated_at:now-18*d1},
   {path:'documents/templates/letterhead.docx',name:'letterhead.docx',is_folder:false,content_type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',size:32768,starred:false,description:'Company letterhead',created_at:now-18*d1,updated_at:now-12*d1},
+  {path:'documents/analytics.xlsx',name:'analytics.xlsx',is_folder:false,content_type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',size:245760,starred:false,description:'Monthly analytics data',created_at:now-9*d1,updated_at:now-2*d1},
 
   // images/
   {path:'images/hero-banner.png',name:'hero-banner.png',is_folder:false,content_type:'image/png',size:3145728,starred:false,description:'Website hero image',created_at:now-10*d1,updated_at:now-1*d1},
@@ -177,7 +178,7 @@ const DEMO_SHARED=[
   {owner:'u/alice',path:'wireframes/',name:'wireframes',is_folder:true,content_type:'',size:0,permission:'viewer',updated_at:now-2*d1},
 ];
 
-const DEMO_STATS={total_size:192923648,file_count:36,folder_count:13,trash_count:2,quota:5368709120};
+const DEMO_STATS={total_size:192923648,file_count:37,folder_count:13,trash_count:2,quota:5368709120};
 
 const DEMO_CONTENT={
 'README.md':'# Storage Platform\\n\\nA modern file storage and sharing platform built for teams.\\n\\n## Features\\n\\n- **Fast uploads** with resumable chunked transfer\\n- **Real-time collaboration** with shared folders\\n- **Version history** for all file types\\n- **Full-text search** across documents\\n\\n## Getting Started\\n\\nInstall and run:\\n  npm install\\n  npm run dev\\n\\nVisit http://localhost:3000 to open the dashboard.\\n\\n## Architecture\\n\\n- Frontend: TypeScript + Hono\\n- Storage: R2 object storage\\n- Auth: Session-based with OAuth\\n\\n## API\\n\\n| Endpoint | Method | Description |\\n|----------|--------|-------------|\\n| /files/* | GET | Download file |\\n| /files/* | PUT | Upload file |\\n| /folders/* | GET | List folder |\\n| /drive/search | GET | Search files |\\n\\n> **Note**: All endpoints require authentication except /browse.\\n\\n---\\n\\n*Built with Mizu framework.*',
@@ -194,6 +195,55 @@ const DEMO_CONTENT={
 'projects/ml-pipeline/train.py':'import torch\\nimport torch.nn as nn\\nfrom torch.utils.data import DataLoader\\nfrom pathlib import Path\\nimport json\\nimport time\\n\\n# Hyperparameters\\nBATCH_SIZE = 64\\nLEARNING_RATE = 3e-4\\nEPOCHS = 50\\nHIDDEN_DIM = 256\\n\\nclass SimpleModel(nn.Module):\\n    def __init__(self, input_dim, hidden_dim, output_dim):\\n        super().__init__()\\n        self.net = nn.Sequential(\\n            nn.Linear(input_dim, hidden_dim),\\n            nn.ReLU(),\\n            nn.Dropout(0.2),\\n            nn.Linear(hidden_dim, hidden_dim),\\n            nn.ReLU(),\\n            nn.Linear(hidden_dim, output_dim),\\n        )\\n\\n    def forward(self, x):\\n        return self.net(x)\\n\\ndef train():\\n    device = torch.device(\\"cuda\\" if torch.cuda.is_available() else \\"cpu\\")\\n    print(\\"Training on \\"+str(device))\\n\\n    model = SimpleModel(768, HIDDEN_DIM, 10).to(device)\\n    optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE)\\n    criterion = nn.CrossEntropyLoss()\\n\\n    for epoch in range(EPOCHS):\\n        model.train()\\n        total_loss = 0.0\\n        # Training loop placeholder\\n        print(\\"Epoch %d/%d  loss=%.4f\\" % (epoch+1, EPOCHS, total_loss))\\n\\n    # Save model\\n    Path(\\"checkpoints\\").mkdir(exist_ok=True)\\n    torch.save(model.state_dict(), \\"checkpoints/model-v3.bin\\")\\n    print(\\"Model saved.\\")\\n\\nif __name__ == \\"__main__\\":\\n    train()',
 'projects/ml-pipeline/requirements.txt':'torch>=2.2.0\\nnumpy>=1.26.0\\nscikit-learn>=1.4.0\\npandas>=2.2.0\\nmatplotlib>=3.8.0\\ntqdm>=4.66.0\\nwandb>=0.16.0',
 'shared/api-spec.yaml':'openapi: 3.0.3\\ninfo:\\n  title: Acme Storage API\\n  version: 2.0.0\\n  description: File storage and sharing API\\n\\nservers:\\n  - url: https://api.acme.dev/v2\\n\\npaths:\\n  /files/{path}:\\n    get:\\n      summary: Download a file\\n      parameters:\\n        - name: path\\n          in: path\\n          required: true\\n          schema:\\n            type: string\\n      responses:\\n        200:\\n          description: File content\\n    put:\\n      summary: Upload a file\\n      requestBody:\\n        content:\\n          application/octet-stream:\\n            schema:\\n              type: string\\n              format: binary\\n      responses:\\n        201:\\n          description: File created\\n\\n  /folders/{path}:\\n    get:\\n      summary: List folder contents\\n      responses:\\n        200:\\n          description: Folder listing\\n          content:\\n            application/json:\\n              schema:\\n                type: object\\n                properties:\\n                  items:\\n                    type: array',
+};
+
+const DEMO_DOCS={
+  'documents/proposal.pdf':{type:'pdf',pages:[
+    '<div class="pdf-page-title">Project Proposal</div><div class="pdf-page-subtitle">Cloud Storage Platform</div><div class="pdf-page-meta">Acme Corp \\u2014 Q1 2026</div><div class="pdf-page-meta">Prepared by Engineering Team</div>',
+    '<h2>Executive Summary</h2><p>This proposal outlines the architecture and implementation plan for a next-generation cloud storage platform. The system will provide secure, scalable file storage with real-time collaboration features.</p><h3>Objectives</h3><ul><li>99.99% uptime SLA</li><li>Sub-100ms API latency globally</li><li>End-to-end encryption at rest and in transit</li><li>Support for 10M+ concurrent users</li></ul><h3>Key Technologies</h3><p>The platform leverages Cloudflare Workers for edge computing, R2 for object storage, and D1 for metadata. This architecture eliminates cold starts and ensures data locality.</p>',
+    '<h2>Timeline &amp; Budget</h2><table><thead><tr><th>Phase</th><th>Duration</th><th>Cost</th></tr></thead><tbody><tr><td>Discovery &amp; Design</td><td>4 weeks</td><td>$48,000</td></tr><tr><td>Core Development</td><td>12 weeks</td><td>$180,000</td></tr><tr><td>Testing &amp; QA</td><td>4 weeks</td><td>$52,000</td></tr><tr><td>Deployment</td><td>2 weeks</td><td>$24,000</td></tr></tbody></table><h3>Total: $304,000</h3><p>Payment schedule: 30% upfront, 40% at midpoint, 30% on delivery.</p>'
+  ]},
+  'documents/contracts/nda-acme.pdf':{type:'pdf',pages:[
+    '<h2>Non-Disclosure Agreement</h2><div class="pdf-page-meta" style="text-align:left">Agreement No. NDA-2026-0042</div><p>This Non-Disclosure Agreement ("Agreement") is entered into as of January 15, 2026, by and between <strong>Acme Corporation</strong> ("Disclosing Party") and <strong>Storage Platform Inc.</strong> ("Receiving Party").</p><h3>1. Definition of Confidential Information</h3><p>For purposes of this Agreement, "Confidential Information" means any data or information that is proprietary to the Disclosing Party, including but not limited to trade secrets, technical data, product plans, customer lists, and financial information.</p><h3>2. Obligations of Receiving Party</h3><p>The Receiving Party agrees to hold and maintain the Confidential Information in strict confidence for the sole benefit of the Disclosing Party. The Receiving Party shall not, without prior written approval, disclose any Confidential Information to third parties.</p>',
+    '<h3>3. Time Period</h3><p>This Agreement and the obligations herein shall be effective for a period of two (2) years from the date of execution.</p><h3>4. Return of Materials</h3><p>Upon termination of this Agreement, or upon request by the Disclosing Party, the Receiving Party shall promptly return all documents, notes, and other materials containing Confidential Information.</p><h3>5. Governing Law</h3><p>This Agreement shall be governed by and construed in accordance with the laws of the State of Delaware.</p><div style="margin-top:40px"><table><tbody><tr><td style="width:50%;border:none;padding:24px"><p><strong>Disclosing Party</strong></p><p style="border-bottom:1px solid #ccc;height:40px"></p><p>Acme Corporation</p><p>Date: _______________</p></td><td style="width:50%;border:none;padding:24px"><p><strong>Receiving Party</strong></p><p style="border-bottom:1px solid #ccc;height:40px"></p><p>Storage Platform Inc.</p><p>Date: _______________</p></td></tr></tbody></table></div>'
+  ]},
+  'documents/contracts/sow-2026.pdf':{type:'pdf',pages:[
+    '<h2>Statement of Work</h2><div class="pdf-page-meta" style="text-align:left">SOW-2026-0018 \\u2014 Cloud Storage Platform Build</div><p>This Statement of Work ("SOW") defines the project scope, deliverables, and timeline for the Cloud Storage Platform project between Acme Corp and Storage Platform Inc.</p><h3>1. Project Scope</h3><p>The project encompasses the design, development, testing, and deployment of a cloud-native file storage platform with the following capabilities:</p><ul><li>Multi-tenant file storage with configurable quotas</li><li>Real-time file synchronization across devices</li><li>Role-based access control and sharing permissions</li><li>Full-text search indexing of document contents</li><li>RESTful API with comprehensive documentation</li></ul>',
+    '<h3>2. Deliverables</h3><table><thead><tr><th>Deliverable</th><th>Description</th><th>Due Date</th></tr></thead><tbody><tr><td>Architecture Document</td><td>System design and data flow diagrams</td><td>Feb 14, 2026</td></tr><tr><td>API Specification</td><td>OpenAPI 3.0 spec with examples</td><td>Feb 28, 2026</td></tr><tr><td>MVP Release</td><td>Core upload/download/share features</td><td>Apr 30, 2026</td></tr><tr><td>Beta Release</td><td>Full feature set with integrations</td><td>Jun 15, 2026</td></tr><tr><td>Production Release</td><td>Hardened, load-tested final build</td><td>Jul 31, 2026</td></tr></tbody></table><h3>3. Acceptance Criteria</h3><p>Each deliverable will be reviewed within 5 business days. Acceptance requires sign-off from both the Project Manager and Technical Lead.</p>'
+  ]},
+  'shared/quarterly-review.pdf':{type:'pdf',pages:[
+    '<div class="pdf-page-title">Quarterly Business Review</div><div class="pdf-page-subtitle">Q4 2025 Performance Summary</div><div class="pdf-page-meta">Prepared by a/reports-bot \\u2014 January 2026</div><h3>Key Metrics</h3><table><thead><tr><th>Metric</th><th>Q3 2025</th><th>Q4 2025</th><th>Change</th></tr></thead><tbody><tr><td>Monthly Active Users</td><td>284,000</td><td>342,000</td><td>+20.4%</td></tr><tr><td>Files Stored</td><td>18.2M</td><td>23.7M</td><td>+30.2%</td></tr><tr><td>API Requests/day</td><td>4.1M</td><td>5.8M</td><td>+41.5%</td></tr><tr><td>P99 Latency</td><td>142ms</td><td>89ms</td><td>-37.3%</td></tr></tbody></table>',
+    '<h2>Key Findings</h2><h3>Growth Drivers</h3><ul><li>Enterprise plan adoption increased 45% after launching team workspaces</li><li>Developer API usage grew 3x following SDK releases for Python and Go</li><li>Mobile upload volume doubled with the new background sync feature</li></ul><h3>Areas for Improvement</h3><ul><li>Search latency exceeds 500ms for queries spanning 10M+ documents</li><li>Onboarding completion rate dropped to 62% \\u2014 needs UX review</li><li>Support ticket volume increased 28%, primarily around sharing permissions</li></ul><h3>Q1 2026 Priorities</h3><p>Focus on search performance optimization, onboarding flow redesign, and launching the Cloudflare R2 migration to reduce storage costs by an estimated 40%.</p>'
+  ]},
+  'documents/report-final.docx':{type:'docx',body:'<h1>Annual Report 2025</h1><div class="docx-header">Storage Platform Inc. \\u2014 Confidential</div><h2>1. Company Overview</h2><p>Storage Platform Inc. provides cloud-native file storage and collaboration tools for businesses of all sizes. Founded in 2023, the company has grown to serve over 12,000 organizations worldwide.</p><h2>2. Financial Highlights</h2><p>The fiscal year 2025 marked a significant milestone with the company achieving profitability in Q3. Key financial metrics demonstrate strong year-over-year growth across all segments.</p><table><thead><tr><th>Category</th><th>FY 2024</th><th>FY 2025</th><th>Growth</th></tr></thead><tbody><tr><td>Revenue</td><td>$8.2M</td><td>$14.6M</td><td>+78%</td></tr><tr><td>Gross Margin</td><td>68%</td><td>74%</td><td>+6pp</td></tr><tr><td>Net Income</td><td>-$1.2M</td><td>$0.8M</td><td>N/A</td></tr><tr><td>Customers</td><td>7,200</td><td>12,400</td><td>+72%</td></tr></tbody></table><h2>3. Product Development</h2><p>Major product milestones achieved during the year include:</p><ul><li>Launched real-time collaboration with conflict resolution</li><li>Released mobile apps for iOS and Android</li><li>Introduced team workspaces with granular permissions</li><li>Deployed edge caching across 200+ global PoPs</li><li>Achieved SOC 2 Type II compliance</li></ul><h2>4. Outlook</h2><p>The company is well-positioned for continued growth in 2026, with a strong product roadmap focused on AI-powered search, enhanced developer APIs, and expansion into the Asia-Pacific market.</p><div class="docx-footer">Page 1 of 1 \\u2014 Annual Report 2025</div>'},
+  'documents/templates/invoice.docx':{type:'docx',body:'<div class="docx-header" style="text-align:left"><strong style="font-size:20px">INVOICE</strong><br>Storage Platform Inc.<br>123 Cloud Avenue, Suite 400<br>San Francisco, CA 94105<br>billing@storageplatform.io</div><table><tbody><tr><td style="border:none;width:50%"><strong>Bill To:</strong><br>Acme Corporation<br>456 Enterprise Blvd<br>New York, NY 10001<br>accounts@acme.dev</td><td style="border:none;text-align:right"><strong>Invoice #:</strong> INV-2026-0089<br><strong>Date:</strong> March 1, 2026<br><strong>Due Date:</strong> March 31, 2026<br><strong>Terms:</strong> Net 30</td></tr></tbody></table><table><thead><tr><th>Description</th><th style="text-align:right">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amount</th></tr></thead><tbody><tr><td>Enterprise Plan \\u2014 Annual License</td><td style="text-align:right">1</td><td style="text-align:right">$24,000.00</td><td style="text-align:right">$24,000.00</td></tr><tr><td>Additional Storage (500 GB)</td><td style="text-align:right">2</td><td style="text-align:right">$1,200.00</td><td style="text-align:right">$2,400.00</td></tr><tr><td>Priority Support Add-on</td><td style="text-align:right">1</td><td style="text-align:right">$3,600.00</td><td style="text-align:right">$3,600.00</td></tr><tr><td>API Rate Limit Increase</td><td style="text-align:right">1</td><td style="text-align:right">$1,800.00</td><td style="text-align:right">$1,800.00</td></tr></tbody></table><table><tbody><tr><td style="border:none;width:60%"></td><td style="text-align:right"><strong>Subtotal:</strong></td><td style="text-align:right">$31,800.00</td></tr><tr><td style="border:none"></td><td style="text-align:right"><strong>Tax (8.5%):</strong></td><td style="text-align:right">$2,703.00</td></tr><tr><td style="border:none"></td><td style="text-align:right;border-top:2px solid #111"><strong>Total Due:</strong></td><td style="text-align:right;border-top:2px solid #111"><strong>$34,503.00</strong></td></tr></tbody></table><div class="docx-footer">Thank you for your business. \\u2014 Storage Platform Inc.</div>'},
+  'documents/templates/letterhead.docx':{type:'docx',body:'<div class="docx-header" style="text-align:left"><strong style="font-size:18px">Storage Platform Inc.</strong><br>123 Cloud Avenue, Suite 400 \\u2014 San Francisco, CA 94105<br>Tel: (415) 555-0192 \\u2014 hello@storageplatform.io \\u2014 storageplatform.io</div><p style="margin-top:32px">March 15, 2026</p><p>Dear Valued Partner,</p><p>We are writing to inform you of exciting updates to our platform that will be rolling out over the coming quarter. Our engineering team has been working diligently to deliver features that our customers have requested most frequently.</p><p>The upcoming release includes significant improvements to our file sharing infrastructure, including real-time collaborative editing, enhanced access controls, and a completely redesigned search experience powered by vector embeddings.</p><p>We believe these enhancements will substantially improve your team\\u2019s productivity and make Storage Platform an even more integral part of your daily workflow.</p><p>Please do not hesitate to reach out if you have any questions or would like a preview demonstration of the new features.</p><p>Best regards,</p><p><strong>Jane Chen</strong><br>VP of Product<br>Storage Platform Inc.</p><div class="docx-footer">Storage Platform Inc. \\u2014 Confidential</div>'},
+  'documents/analytics.xlsx':{type:'xlsx',sheets:[
+    {name:'Monthly Traffic',headers:['Date','Visitors','Pageviews','Bounce Rate','Avg. Session'],rows:[
+      ['2026-01-01','142,300','489,200','34.2%','4m 12s'],
+      ['2026-01-08','156,800','534,100','32.8%','4m 38s'],
+      ['2026-01-15','148,900','501,400','33.5%','4m 21s'],
+      ['2026-01-22','163,200','562,800','31.9%','4m 45s'],
+      ['2026-02-01','171,400','598,300','30.1%','5m 02s'],
+      ['2026-02-08','168,900','584,600','30.8%','4m 55s'],
+      ['2026-02-15','179,300','621,400','29.4%','5m 11s'],
+      ['2026-02-22','185,100','645,800','28.7%','5m 22s'],
+      ['2026-03-01','192,600','672,100','27.9%','5m 34s'],
+      ['2026-03-08','201,400','708,900','26.5%','5m 48s']
+    ]},
+    {name:'Revenue',headers:['Month','MRR','ARR','Churn Rate'],rows:[
+      ['Jan 2026','$1,218,000','$14,616,000','1.8%'],
+      ['Feb 2026','$1,284,000','$15,408,000','1.6%'],
+      ['Mar 2026','$1,342,000','$16,104,000','1.5%']
+    ]}
+  ]},
+  'documents/slides-keynote.pptx':{type:'pptx',slides:[
+    {title:'Cloud Storage Platform',body:'<p style="font-size:18px;color:#666">Annual Technology Conference 2026</p><p style="margin-top:24px;color:#888">Storage Platform Inc. \\u2014 Engineering Division</p>'},
+    {title:'Agenda',body:'<ul><li>Platform overview &amp; key metrics</li><li>Architecture deep-dive</li><li>Performance benchmarks</li><li>Roadmap &amp; upcoming features</li><li>Q&amp;A</li></ul>'},
+    {title:'Key Metrics',body:'<div style="display:flex;gap:32px;flex-wrap:wrap;justify-content:center;margin:16px 0"><div class="metric"><span class="metric-value">342K</span><span class="metric-label">Monthly Active Users</span></div><div class="metric"><span class="metric-value">23.7M</span><span class="metric-label">Files Stored</span></div><div class="metric"><span class="metric-value">89ms</span><span class="metric-label">P99 Latency</span></div><div class="metric"><span class="metric-value">99.99%</span><span class="metric-label">Uptime SLA</span></div></div>'},
+    {title:'Architecture Overview',body:'<p>The platform is built on a globally distributed edge architecture:</p><ul><li><strong>Edge Layer</strong> \\u2014 Cloudflare Workers handle routing, auth, and caching at 300+ PoPs</li><li><strong>Storage Layer</strong> \\u2014 R2 object storage with automatic replication and versioning</li><li><strong>Metadata Layer</strong> \\u2014 D1 SQLite databases for fast, consistent metadata queries</li><li><strong>Search Layer</strong> \\u2014 Vectorize indexes for semantic and full-text search</li></ul><p style="margin-top:12px;color:#888;font-size:13px">All components are serverless with zero cold starts and automatic scaling.</p>'},
+    {title:'Thank You',body:'<p style="font-size:18px;color:#666;text-align:center">Questions &amp; Discussion</p><p style="text-align:center;margin-top:20px;color:#888">engineering@storageplatform.io</p>'}
+  ]}
 };
 
 /* ── Icons (same as authenticated app) ───────────────────────────── */
@@ -346,6 +396,54 @@ function csvToTable(csv){
     t+='<tr>'+rows[i].map(c=>'<td>'+h(c)+'</td>').join('')+'</tr>';
   }
   return t+'</tbody></table>';
+}
+
+/* ── Document preview renderers ────────────────────────────────── */
+function renderPdfPages(doc,item){
+  let html='<div class="preview-pdf">';
+  doc.pages.forEach((pg,i)=>{
+    html+='<div class="pdf-page"><div class="pdf-page-content">'+pg+'</div><div class="pdf-page-num">Page '+(i+1)+' of '+doc.pages.length+'</div></div>';
+  });
+  html+='</div>';
+  return html;
+}
+
+function renderDocxPage(doc,item){
+  return '<div class="preview-docx"><div class="docx-ruler"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span></div><div class="docx-page">'+doc.body+'</div></div>';
+}
+
+function renderXlsxSheet(doc,item){
+  const sheet=doc.sheets[0];
+  const colLetters='ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let html='<div class="preview-xlsx">';
+  html+='<div class="xlsx-tabs">';
+  doc.sheets.forEach((s,i)=>{html+='<div class="xlsx-tab'+(i===0?' active':'')+'">'+h(s.name)+'</div>'});
+  html+='</div>';
+  html+='<div class="xlsx-grid"><table><thead><tr><th class="xlsx-row-num"></th>';
+  for(let c=0;c<sheet.headers.length;c++){html+='<th>'+colLetters[c]+'</th>'}
+  html+='</tr><tr class="xlsx-header-row"><th class="xlsx-row-num">1</th>';
+  sheet.headers.forEach(hdr=>{html+='<td class="xlsx-header-cell">'+h(hdr)+'</td>'});
+  html+='</tr></thead><tbody>';
+  sheet.rows.forEach((row,r)=>{
+    html+='<tr><th class="xlsx-row-num">'+(r+2)+'</th>';
+    row.forEach(cell=>{html+='<td>'+h(String(cell))+'</td>'});
+    html+='</tr>';
+  });
+  html+='</tbody></table></div></div>';
+  return html;
+}
+
+function renderPptxSlides(doc,item){
+  let html='<div class="preview-pptx">';
+  html+='<div class="pptx-thumbs">';
+  doc.slides.forEach((s,i)=>{html+='<div class="pptx-thumb'+(i===0?' active':'')+'" onclick="B.showSlide('+i+')"><div class="pptx-thumb-num">'+(i+1)+'</div><div class="pptx-thumb-title">'+h(s.title)+'</div></div>'});
+  html+='</div>';
+  html+='<div class="pptx-stage" id="pptx-stage">';
+  doc.slides.forEach((s,i)=>{
+    html+='<div class="pptx-slide'+(i===0?' active':'')+'" data-slide="'+i+'"><div class="pptx-slide-title">'+h(s.title)+'</div><div class="pptx-slide-body">'+s.body+'</div></div>';
+  });
+  html+='</div></div>';
+  return html;
 }
 
 /* ── Generate waveform bars HTML ───────────────────────────────── */
@@ -636,6 +734,12 @@ function renderPreview(){
   } else if(t==='video'){
     const svg='<svg xmlns="http://www.w3.org/2000/svg" width="854" height="480"><rect width="854" height="480" fill="#0f172a"/><circle cx="427" cy="240" r="36" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="2"/><polygon points="420,222 420,258 446,240" fill="rgba(255,255,255,.5)"/><text x="427" y="310" text-anchor="middle" fill="rgba(255,255,255,.4)" font-family="Inter,sans-serif" font-size="14">'+h(item.name)+' \\u2014 '+fmtSize(item.size)+'</text></svg>';
     body='<div class="preview-video"><div class="preview-video-poster"><img src="data:image/svg+xml,'+encodeURIComponent(svg)+'" alt="'+h(item.name)+'" style="width:100%;border-radius:4px"></div></div>';
+  } else if(DEMO_DOCS[item.path]){
+    const doc=DEMO_DOCS[item.path];
+    if(doc.type==='pdf')body=renderPdfPages(doc,item);
+    else if(doc.type==='docx')body=renderDocxPage(doc,item);
+    else if(doc.type==='xlsx')body=renderXlsxSheet(doc,item);
+    else if(doc.type==='pptx')body=renderPptxSlides(doc,item);
   } else if(t==='doc'){
     body='<div class="preview-doc"><div class="preview-doc-icon">'+I.doc+'</div><div class="preview-doc-name">'+h(item.name)+'</div><div class="preview-doc-meta">'+h(item.content_type)+'</div><div class="preview-doc-meta">'+fmtSize(item.size)+'</div><div class="preview-doc-desc">'+(item.description?h(item.description):'Document preview')+'</div></div>';
   } else if(t==='archive'){
@@ -733,6 +837,10 @@ const B=window.B={
     if(idx===-1)return;
     const next=files[idx+dir];
     if(next)B.openPreview(next.path);
+  },
+  showSlide(idx){
+    document.querySelectorAll('.pptx-slide').forEach((s,i)=>s.classList.toggle('active',i===idx));
+    document.querySelectorAll('.pptx-thumb').forEach((t,i)=>t.classList.toggle('active',i===idx));
   },
 
   search(q){
@@ -1313,7 +1421,12 @@ function renderPreview(){
   } else if(t==='doc'&&item.content_type==='application/pdf'){
     body='<iframe class="preview-iframe" src="/files/'+h(item.path)+'"></iframe>';
   } else if(t==='doc'){
-    body='<div class="preview-doc"><div class="preview-doc-icon">'+I.doc+'</div><div class="preview-doc-name">'+h(item.name)+'</div><div class="preview-doc-meta">'+h(item.content_type)+'</div><div class="preview-doc-meta">'+fmtSize(item.size)+'</div><div class="preview-doc-desc">'+(item.description?h(item.description):'Document preview')+'</div></div>';
+    const ext=(item.name||'').split('.').pop()?.toLowerCase()||'';
+    const labels={docx:'Word Document',xlsx:'Excel Spreadsheet',pptx:'PowerPoint Presentation',doc:'Word Document (Legacy)',xls:'Excel Spreadsheet (Legacy)',ppt:'PowerPoint (Legacy)'};
+    const icons={docx:'<svg viewBox="0 0 24 24" fill="none" stroke="#4285F4" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>',xlsx:'<svg viewBox="0 0 24 24" fill="none" stroke="#34A853" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>',pptx:'<svg viewBox="0 0 24 24" fill="none" stroke="#EA4335" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>'};
+    const typeLabel=labels[ext]||'Document';
+    const typeIcon=icons[ext]||I.doc;
+    body='<div class="preview-office"><div class="preview-office-icon">'+typeIcon+'</div><div class="preview-office-name">'+h(item.name)+'</div><div class="preview-office-type">'+typeLabel+'</div><div class="preview-office-size">'+fmtSize(item.size)+'</div><div class="preview-office-desc">'+(item.description?h(item.description):'')+'</div><button class="preview-office-dl" onclick="B.downloadFile(S.previewItem)">'+I.download+' Download to view</button></div>';
   } else if(t==='archive'){
     body='<div class="preview-doc"><div class="preview-doc-icon">'+I.archive+'</div><div class="preview-doc-name">'+h(item.name)+'</div><div class="preview-doc-meta">'+h(item.content_type)+'</div><div class="preview-doc-meta">'+fmtSize(item.size)+'</div></div>';
   } else {
