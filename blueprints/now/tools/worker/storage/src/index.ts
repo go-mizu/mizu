@@ -31,6 +31,7 @@ import { docsPage } from "./pages/docs";
 import { pricingPage } from "./pages/pricing";
 import { browsePage } from "./pages/browse";
 import { aiPage } from "./pages/ai";
+import { cliPage } from "./pages/cli";
 import { mcpHandler, mcpInfo } from "./routes/mcp";
 import {
   protectedResourceMetadata, authorizationServerMetadata,
@@ -59,6 +60,10 @@ app.get("/developers", async (c) => {
 app.get("/api", (c) => c.html(docsPage()));
 app.get("/pricing", (c) => c.html(pricingPage()));
 app.get("/ai", (c) => c.html(aiPage()));
+app.get("/cli", async (c) => {
+  const actor = await getSessionActor(c);
+  return c.html(cliPage(actor));
+});
 app.get("/browse", browsePage);
 app.get("/browse/*", browsePage);
 

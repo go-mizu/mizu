@@ -240,6 +240,7 @@ html.dark .xp-diagram{box-shadow:none}
     <div class="nav-links">
       <a href="/developers">developers</a>
       <a href="/api">api</a>
+      <a href="/cli">cli</a>
       <a href="/pricing">pricing</a>
     </div>
     <div class="nav-right">

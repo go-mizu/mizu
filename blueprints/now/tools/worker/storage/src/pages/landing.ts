@@ -309,6 +309,7 @@ Content-Type: application/json
   <div class="nav-links">
     <a href="/browse">browse</a>
     <a href="/api">api</a>
+    <a href="/cli">cli</a>
     <a href="/pricing">pricing</a>
     <a href="/ai">ai</a>
   </div>
