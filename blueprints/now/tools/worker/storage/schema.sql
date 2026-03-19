@@ -106,6 +106,27 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_log(actor, ts);
 
+-- OAuth: dynamically registered clients (ChatGPT MCP connector)
+CREATE TABLE IF NOT EXISTS oauth_clients (
+  client_id TEXT PRIMARY KEY,
+  redirect_uris TEXT NOT NULL,
+  client_name TEXT DEFAULT '',
+  token_endpoint_auth_method TEXT DEFAULT 'none',
+  created_at INTEGER NOT NULL
+);
+
+-- OAuth: authorization codes (short-lived, single-use)
+CREATE TABLE IF NOT EXISTS oauth_codes (
+  code TEXT PRIMARY KEY,
+  actor TEXT NOT NULL,
+  client_id TEXT NOT NULL,
+  redirect_uri TEXT NOT NULL,
+  scope TEXT DEFAULT '*',
+  code_challenge TEXT NOT NULL,
+  code_challenge_method TEXT DEFAULT 'S256',
+  expires_at INTEGER NOT NULL
+);
+
 -- Rate limiting (sliding window counters)
 CREATE TABLE IF NOT EXISTS rate_limits (
   key    TEXT PRIMARY KEY,
