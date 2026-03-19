@@ -19,7 +19,8 @@ import {
 import { createLink, listLinks, deleteLink, accessPublicLink, accessPublicLinkFile } from "./links";
 import { createApiKey, listApiKeys, deleteApiKey } from "./api-keys";
 import { getAuditLog } from "./audit";
-import { landingPage } from "./landing";
+import { homePage } from "./home";
+import { developersPage } from "./developers";
 import { docsPage } from "./docs";
 import { pricingPage } from "./pricing";
 import { browsePage } from "./browse";
@@ -43,7 +44,11 @@ app.use("*", cors());
 // Pages (no auth — session read optionally for signed-in state)
 app.get("/", async (c) => {
   const actor = await getSessionActor(c);
-  return c.html(landingPage(actor));
+  return c.html(homePage(actor));
+});
+app.get("/developers", async (c) => {
+  const actor = await getSessionActor(c);
+  return c.html(developersPage(actor));
 });
 app.get("/docs", (c) => c.html(docsPage()));
 app.get("/pricing", (c) => c.html(pricingPage()));

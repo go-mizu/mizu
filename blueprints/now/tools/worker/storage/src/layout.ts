@@ -34,7 +34,10 @@ function navLinks(activePath: string, actor: string | null): string {
     ? `<a href="/browse"${activePath === "/browse" ? ' class="active"' : ""}>Browse</a>`
     : "";
   return `${browseLink}
-    <a href="/docs"${activePath === "/docs" ? ' class="active"' : ""}>Docs</a>`;
+    <a href="/developers"${activePath === "/developers" ? ' class="active"' : ""}>Developers</a>
+    <a href="/docs"${activePath === "/docs" ? ' class="active"' : ""}>Docs</a>
+    <a href="/pricing"${activePath === "/pricing" ? ' class="active"' : ""}>Pricing</a>
+    <a href="/ai"${activePath === "/ai" ? ' class="active"' : ""}>AI</a>`;
 }
 
 export function directoryPage(
@@ -61,14 +64,16 @@ ${FONT_LINK}
 <body>
 
 <nav>
-  <a href="/" class="logo">storage.now</a>
-  ${MOBILE_TOGGLE}
-  <div class="nav-links">
-    ${navLinks(activePath, actor)}
-  </div>
-  <div class="nav-right">
-    ${navSession}
-    ${THEME_TOGGLE}
+  <div class="nav-inner">
+    <a href="/" class="logo"><span class="logo-dot"></span> storage.now</a>
+    ${MOBILE_TOGGLE}
+    <div class="nav-links">
+      ${navLinks(activePath, actor)}
+    </div>
+    <div class="nav-right">
+      ${navSession}
+      ${THEME_TOGGLE}
+    </div>
   </div>
 </nav>
 
@@ -106,14 +111,16 @@ ${FONT_LINK}
 <body>
 
 <nav>
-  <a href="/" class="logo">storage.now</a>
-  ${MOBILE_TOGGLE}
-  <div class="nav-links">
-    ${navLinks(activePath, actor)}
-  </div>
-  <div class="nav-right">
-    ${navSession}
-    ${THEME_TOGGLE}
+  <div class="nav-inner">
+    <a href="/" class="logo"><span class="logo-dot"></span> storage.now</a>
+    ${MOBILE_TOGGLE}
+    <div class="nav-links">
+      ${navLinks(activePath, actor)}
+    </div>
+    <div class="nav-right">
+      ${navSession}
+      ${THEME_TOGGLE}
+    </div>
   </div>
 </nav>
 
