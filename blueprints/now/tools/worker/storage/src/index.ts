@@ -12,7 +12,7 @@ import { getSessionActor } from "./pages/session";
 import { homePage } from "./pages/home";
 import { developersPage } from "./pages/developers";
 import { pricingPage } from "./pages/pricing";
-import { aiPage } from "./pages/ai";
+// AI page removed — covered by home page
 import { cliPage } from "./pages/cli";
 import { browsePage } from "./pages/browse";
 import { privacyPage } from "./pages/privacy";
@@ -32,7 +32,7 @@ app.get("/developers", async (c) => {
   return c.html(developersPage(actor));
 });
 app.get("/pricing", (c) => c.html(pricingPage()));
-app.get("/ai", (c) => c.html(aiPage()));
+app.get("/ai", (c) => c.redirect("/", 302));
 app.get("/privacy", (c) => c.html(privacyPage()));
 app.get("/cli", async (c) => {
   const actor = await getSessionActor(c);
@@ -361,7 +361,7 @@ function specToMarkdown(spec: any, origin: string): string {
   return md.join("\n");
 }
 
-const COPY_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+const COPY_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="0"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
 
 function renderApiReference(spec: any, origin: string): string {
   const resolved = resolveRefs(spec, spec);
@@ -380,111 +380,60 @@ function renderApiReference(spec: any, origin: string): string {
   const tagOrder = TAG_ORDER.filter((t) => byTag.has(t));
   for (const t of byTag.keys()) if (!tagOrder.includes(t)) tagOrder.push(t);
 
-  // Sidebar
-  let sidebar = `<nav class="sidebar" id="sidebar">
-<div class="sidebar-header">
-  <a href="/" class="sidebar-logo">Storage API</a>
-  <div class="sidebar-actions">
-    <button class="theme-toggle" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
-      <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-      <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-    </button>
-    <button class="sidebar-close" onclick="document.getElementById('sidebar').classList.remove('open')" aria-label="Close">&times;</button>
-  </div>
-</div>
-<ul class="sidebar-nav">
-  <li class="sidebar-group">
-    <span class="sidebar-group-label-static">API Reference</span>
-    <ul>
-      <li><a href="#introduction" class="sidebar-link">Introduction</a></li>
-      <li><a href="#authentication" class="sidebar-link">Authentication</a></li>
-      <li><a href="#content-types" class="sidebar-link">Content types</a></li>
-      <li><a href="#errors" class="sidebar-link">Errors</a></li>
-    </ul>
-  </li>`;
-
+  // Section tabs
+  let sectionTabs = `<a href="#introduction" class="sec-tab active">Overview</a>`;
   for (const tag of tagOrder) {
-    const routes = byTag.get(tag)!;
     const label = TAG_LABELS[tag] || tag.charAt(0).toUpperCase() + tag.slice(1);
-    sidebar += `\n  <li class="sidebar-group">
-    <details class="sidebar-details" open>
-      <summary class="sidebar-group-label">${esc(label)}<svg class="chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></summary>
-      <ul>`;
-    for (const { method, path, op } of routes) {
-      const id = slug(method, path);
-      const [color] = METHOD_COLORS[method] || ["#888", "#f5f5f5"];
-      sidebar += `\n        <li><a href="#${id}" class="sidebar-link"><span class="sb-badge" style="color:${color}">${method}</span>${esc(op.summary || `${method} ${path}`)}</a></li>`;
-    }
-    sidebar += `\n      </ul>
-    </details>
-  </li>`;
+    sectionTabs += `<a href="#tag-${esc(tag)}" class="sec-tab">${esc(label)}</a>`;
   }
-  sidebar += `\n</ul></nav>`;
 
   // Prose sections
-  const prose = `<main class="content" id="content">
-<button class="menu-btn" onclick="document.getElementById('sidebar').classList.toggle('open')" aria-label="Menu">&#9776; API Reference</button>
-
-<div class="top-actions">
-  <div class="md-dropdown" id="md-dropdown">
-    <button class="md-btn" onclick="document.getElementById('md-dropdown').classList.toggle('open')">
-      ${COPY_ICON} Copy Markdown
-      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-    </button>
-    <div class="md-menu">
-      <button onclick="copyMarkdown()">
-        ${COPY_ICON} Copy Markdown
-      </button>
-      <button onclick="viewMarkdown()">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> View as Markdown
-      </button>
-    </div>
+  const prose = `
+<div class="page-header">
+  <div class="page-header-inner">
+    <div class="sec-label">API REFERENCE</div>
+    <h1 class="page-title">Storage API</h1>
+    <p class="page-sub">Base URL: <code>${esc(origin)}</code></p>
   </div>
 </div>
 
-<article class="prose-section" id="introduction">
-  <h1>API Overview</h1>
+<div class="sec-tabs" id="sec-tabs">${sectionTabs}</div>
 
+<main class="api-main">
+
+<article class="prose" id="introduction">
   <h2>Introduction</h2>
-  <p>This API reference describes the REST APIs you can use to interact with the Storage platform. REST APIs are usable via HTTP in any environment that supports HTTP requests. The <a href="/cli">CLI</a> and MCP tools are also available for programmatic access.</p>
-  <p>The base URL for all API requests is:</p>
-  <div class="code-block"><pre><code>${esc(origin)}</code></pre><button class="copy-btn" onclick="copyCode(this)" title="Copy">${COPY_ICON}</button></div>
-</article>
-
-<article class="prose-section" id="authentication">
-  <h2>Authentication</h2>
-  <p>The Storage API uses API keys for authentication. Create, manage, and revoke API keys via <a href="#POST-auth-keys"><code>POST /auth/keys</code></a> or through the <a href="/browse">dashboard</a>.</p>
-  <p><strong>Remember that your API key is a secret!</strong> Do not share it with others or expose it in any client-side code (browsers, apps). API keys should be securely loaded from an environment variable or key management service on the server.</p>
-  <p>API keys should be provided via HTTP Bearer authentication.</p>
-  <div class="code-block"><pre><code>Authorization: Bearer STORAGE_API_KEY</code></pre><button class="copy-btn" onclick="copyCode(this)" title="Copy">${COPY_ICON}</button></div>
-  <p>All authenticated requests should include this header:</p>
+  <p>REST APIs usable via HTTP in any environment. The <a href="/cli">CLI</a> is also available.</p>
   <div class="code-block"><pre><code>${highlightCurl(`curl ${origin}/files \\\n  -H "Authorization: Bearer $STORAGE_API_KEY"`)}</code></pre><button class="copy-btn" onclick="copyCode(this)" title="Copy">${COPY_ICON}</button></div>
-  <p>API keys can be scoped to a path prefix (e.g. <code>docs/</code>) and set to expire after a specified duration. This lets you create restricted keys for specific use cases like CI/CD pipelines or shared access.</p>
 </article>
 
-<article class="prose-section" id="content-types">
+<article class="prose" id="authentication">
+  <h2>Authentication</h2>
+  <p>Create API keys via <a href="#POST-auth-keys"><code>POST /auth/keys</code></a> or the <a href="/browse">dashboard</a>. Provide them as Bearer tokens.</p>
+  <div class="code-block"><pre><code>Authorization: Bearer STORAGE_API_KEY</code></pre><button class="copy-btn" onclick="copyCode(this)" title="Copy">${COPY_ICON}</button></div>
+  <p>Keys can be scoped to a path prefix (e.g. <code>docs/</code>) and set to expire. <strong>Keep keys secret.</strong> Never expose in client-side code.</p>
+</article>
+
+<article class="prose" id="content-types">
   <h2>Content types</h2>
-  <p>Request bodies should be sent as JSON with <code>Content-Type: application/json</code>.</p>
-  <p>File downloads support content negotiation via the <code>Accept</code> header. By default, <code>GET /files/{path}</code> returns a <code>302</code> redirect to a presigned R2 URL &mdash; browsers and curl follow this redirect to download the file directly.</p>
-  <p>Programmatic clients (CLIs, SDKs) can request JSON metadata instead by setting:</p>
-  <div class="code-block"><pre><code>Accept: application/json</code></pre><button class="copy-btn" onclick="copyCode(this)" title="Copy">${COPY_ICON}</button></div>
-  <p>This returns a JSON response with the presigned URL, file size, content type, and ETag &mdash; useful when you need the URL as a string value or want to add custom headers like <code>Range</code>.</p>
+  <p>Send request bodies as JSON with <code>Content-Type: application/json</code>.</p>
+  <p><code>GET /files/{path}</code> returns a <code>302</code> redirect to a presigned URL by default. Set <code>Accept: application/json</code> to get metadata instead.</p>
 </article>
 
-<article class="prose-section" id="errors">
+<article class="prose" id="errors">
   <h2>Errors</h2>
-  <p>The API returns errors as JSON with a consistent shape. HTTP status codes follow standard conventions.</p>
+  <p>Errors return JSON with a consistent shape:</p>
   <div class="code-block"><pre><code>${highlightJson(`{\n  "error": "not_found",\n  "message": "File not found"\n}`)}</code></pre><button class="copy-btn" onclick="copyCode(this)" title="Copy">${COPY_ICON}</button></div>
-  <table class="error-table">
+  <table class="err-tbl">
     <thead><tr><th>Code</th><th>Error</th><th>Meaning</th></tr></thead>
     <tbody>
-      <tr><td><span class="response-code code-4">400</span></td><td><code>bad_request</code></td><td>Invalid parameters or request body</td></tr>
-      <tr><td><span class="response-code code-4">401</span></td><td><code>unauthorized</code></td><td>Missing or invalid authentication</td></tr>
-      <tr><td><span class="response-code code-4">403</span></td><td><code>forbidden</code></td><td>Path not allowed for this token</td></tr>
-      <tr><td><span class="response-code code-4">404</span></td><td><code>not_found</code></td><td>File or resource not found</td></tr>
-      <tr><td><span class="response-code code-4">409</span></td><td><code>conflict</code></td><td>Resource already exists</td></tr>
-      <tr><td><span class="response-code code-4">429</span></td><td><code>rate_limited</code></td><td>Too many requests</td></tr>
-      <tr><td><span class="response-code code-5">500</span></td><td><code>internal</code></td><td>Internal server error</td></tr>
+      <tr><td><span class="rc rc-4">400</span></td><td><code>bad_request</code></td><td>Invalid parameters or body</td></tr>
+      <tr><td><span class="rc rc-4">401</span></td><td><code>unauthorized</code></td><td>Missing or invalid auth</td></tr>
+      <tr><td><span class="rc rc-4">403</span></td><td><code>forbidden</code></td><td>Path not allowed</td></tr>
+      <tr><td><span class="rc rc-4">404</span></td><td><code>not_found</code></td><td>Resource not found</td></tr>
+      <tr><td><span class="rc rc-4">409</span></td><td><code>conflict</code></td><td>Already exists</td></tr>
+      <tr><td><span class="rc rc-4">429</span></td><td><code>rate_limited</code></td><td>Too many requests</td></tr>
+      <tr><td><span class="rc rc-5">500</span></td><td><code>internal</code></td><td>Server error</td></tr>
     </tbody>
   </table>
 </article>`;
@@ -498,7 +447,6 @@ function renderApiReference(spec: any, origin: string): string {
 
     for (const { method, path, op } of routes) {
       const id = slug(method, path);
-      const [mColor, mBg] = METHOD_COLORS[method] || ["#888", "#f5f5f5"];
       const needsAuth = op.security?.length > 0;
       const summary = op.summary || `${method} ${path}`;
       const desc = DESCRIPTIONS[summary] || "";
@@ -528,240 +476,222 @@ function renderApiReference(spec: any, origin: string): string {
       }
 
       endpoints += `
-<section id="${id}" class="endpoint-section">
-<div class="desc-col">
-  <h3 class="endpoint-title">${esc(summary)}</h3>
-  <div class="method-path">
-    <span class="method-badge" style="color:${mColor};background:${mBg};border-color:${mColor}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 17L17 7M17 7H7M17 7v10"/></svg> ${method}</span>
-    <code class="endpoint-path">${esc(path)}</code>
+<section id="${id}" class="endpoint">
+<div class="ep-desc">
+  <h3 class="ep-title">${esc(summary)}</h3>
+  <div class="ep-method">
+    <span class="ep-badge ep-${method.toLowerCase()}">${method}</span>
+    <code class="ep-path">${esc(path)}</code>
   </div>
-  ${desc ? `<p class="endpoint-desc">${desc}</p>` : ""}
+  ${desc ? `<p class="ep-text">${desc}</p>` : ""}
   ${renderParams(pathP, "Path Parameters")}
   ${renderParams(queryP, "Query Parameters")}
   ${renderBodyParams(bodySchema)}
   ${renderReturns(op.responses)}
 </div>
-<div class="example-col">
-  <div class="example-block">
-    <div class="example-header">
-      <span class="example-title">${esc(summary)}</span>
-      <button class="copy-btn" onclick="copyCode(this)" title="Copy">${COPY_ICON}</button>
-    </div>
+<div class="ep-ex">
+  <div class="ex-block">
+    <div class="ex-hdr"><span class="ex-title">${esc(summary)}</span><button class="copy-btn" onclick="copyCode(this)" title="Copy">${COPY_ICON}</button></div>
     <pre><code>${withLineNumbers(highlightCurl(curlRaw))}</code></pre>
   </div>
-  ${responseRaw ? `<div class="example-block">
-    <pre><code>${withLineNumbers(highlightJson(responseRaw))}</code></pre>
-  </div>` : ""}
+  ${responseRaw ? `<div class="ex-block"><pre><code>${withLineNumbers(highlightJson(responseRaw))}</code></pre></div>` : ""}
 </div>
 </section>`;
     }
   }
 
   // Generate markdown data for copy/view
-  const markdownData = specToMarkdown(resolved, origin).replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$/g, "\\$");
-
-  return `<!doctype html><html lang="en"><head>
+  return `<!doctype html><html lang="en" class="dark"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>API Reference &mdash; Storage</title>
+<title>API Reference — Storage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/base.css">
 <style>
-:root{
-  --bg:#fff;--bg2:#f9fafb;--bg3:#f3f4f6;--fg:#111;--fg2:#4b5563;--fg3:#9ca3af;
-  --border:#e5e7eb;--code-bg:#f8f9fa;--code-fg:#24292e;
-  --ex-bg:#fafafa;--ex-fg:#24292e;--ex-border:#e5e7eb;--ex-header:#f6f8fa;
-  --link:#0969da;
-}
-html.dark{
-  --bg:#0d1117;--bg2:#161b22;--bg3:#21262d;--fg:#e6edf3;--fg2:#8b949e;--fg3:#6e7681;
-  --border:#30363d;--code-bg:#161b22;--code-fg:#e6edf3;
-  --ex-bg:#0d1117;--ex-fg:#e6edf3;--ex-border:#30363d;--ex-header:#161b22;
-  --link:#58a6ff;
-}
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Noto Sans,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--fg);line-height:1.6;font-size:15px}
-code,pre{font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;font-size:13px}
-a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
+/* ── API-reference tokens (extends base.css) ─────────────── */
+:root{--sf3:#E4E4E7;--purple:#8B5CF6}
+html.dark{--sf3:#27272A;--purple:#A78BFA}
+body{font-size:14px;line-height:1.6}
+code,pre{font-family:'JetBrains Mono',monospace}
+a{color:var(--text-2);text-decoration:underline;text-underline-offset:2px;transition:color .12s}
+a:hover{color:var(--text)}
 
-/* Auto-hide scrollbar */
-*{scrollbar-width:thin;scrollbar-color:transparent transparent}
-*:hover{scrollbar-color:var(--border) transparent}
-::-webkit-scrollbar{width:6px;height:6px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:transparent;border-radius:3px}
-*:hover::-webkit-scrollbar-thumb{background:var(--border)}
+/* ── Page header ─────────────────────────────────────────── */
+.page-header{position:relative;z-index:1;border-bottom:1px solid var(--border);padding:48px 0 36px;background:var(--bg)}
+.page-header-inner{max-width:1104px;margin:0 auto;padding:0 48px}
+.sec-label{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;color:var(--text-3);margin-bottom:12px;font-weight:500;text-transform:uppercase}
+.page-title{font-size:32px;font-weight:800;letter-spacing:-.8px;margin-bottom:8px}
+.page-sub{font-size:13px;color:var(--text-2);margin-bottom:16px}
+.page-sub code{font-size:12px;background:var(--surface-alt);padding:3px 8px;border:1px solid var(--border)}
 
-/* Sidebar */
-.sidebar{position:fixed;top:0;left:0;width:250px;height:100vh;background:var(--bg);border-right:1px solid var(--border);overflow-y:auto;z-index:100;padding:0 0 40px}
-.sidebar-header{padding:20px 16px 16px;display:flex;align-items:center;justify-content:space-between}
-.sidebar-logo{font-weight:700;font-size:15px;color:var(--fg);text-decoration:none}
-.sidebar-actions{display:flex;align-items:center;gap:8px}
-.sidebar-close{display:none;background:none;border:none;font-size:20px;color:var(--fg3);cursor:pointer}
-.theme-toggle{background:none;border:none;color:var(--fg3);cursor:pointer;padding:4px;border-radius:6px;display:flex;align-items:center}
-.theme-toggle:hover{color:var(--fg);background:var(--bg3)}
-html:not(.dark) .icon-moon{display:none}
-html.dark .icon-sun{display:none}
-.sidebar-nav{list-style:none;padding:0 8px}
-.sidebar-nav>li{margin:0}
-.sidebar-group{margin-top:4px}
-.sidebar-group-label-static,.sidebar-group-label{display:flex;align-items:center;justify-content:space-between;padding:10px 8px 4px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--fg3);list-style:none;user-select:none}
-.sidebar-group-label{cursor:pointer}
-.sidebar-group-label::-webkit-details-marker{display:none}
-.sidebar-details{border:none}
-.sidebar-details .chevron{transition:transform .15s;flex-shrink:0;opacity:.5}
-.sidebar-details:not([open]) .chevron{transform:rotate(-90deg)}
-.sidebar-link{display:flex;align-items:center;gap:7px;padding:5px 8px;color:var(--fg2);font-size:13px;border-radius:6px;text-decoration:none;line-height:1.4}
-.sidebar-link:hover{background:var(--bg3);color:var(--fg);text-decoration:none}
-.sidebar-link.active{background:var(--bg3);color:var(--fg);font-weight:500}
-.sidebar-group ul{list-style:none;padding:0}
-.sb-badge{font-size:10px;font-weight:600;flex-shrink:0;min-width:40px;font-family:ui-monospace,SFMono-Regular,monospace}
+/* ── Section tabs ────────────────────────────────────────── */
+.sec-tabs{position:sticky;top:56px;z-index:90;
+  max-width:1104px;margin:0 auto;padding:0 48px;
+  display:flex;gap:0;overflow-x:auto;
+  background:color-mix(in srgb,var(--bg) 90%,transparent);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border)}
+.sec-tab{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;
+  padding:14px 16px;color:var(--text-3);text-decoration:none;white-space:nowrap;
+  border-bottom:2px solid transparent;transition:all .12s}
+.sec-tab:hover{color:var(--text-2);text-decoration:none}
+.sec-tab.active{color:var(--text);border-bottom-color:var(--text)}
 
-/* Content */
-.content{margin-left:250px}
-.menu-btn{display:none;position:sticky;top:0;z-index:50;width:100%;padding:10px 16px;background:var(--bg);border:none;border-bottom:1px solid var(--border);color:var(--fg);font-size:14px;text-align:left;cursor:pointer}
+/* ── Main content ────────────────────────────────────────── */
+.api-main{position:relative;z-index:1;max-width:1104px;margin:0 auto;padding:0 48px;background:var(--bg)}
 
-/* Top actions bar */
-.top-actions{position:sticky;top:0;z-index:40;display:flex;justify-content:flex-end;padding:8px 24px;background:var(--bg);border-bottom:1px solid var(--border)}
-.md-dropdown{position:relative}
-.md-btn{display:flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--fg);font-size:13px;cursor:pointer;font-family:inherit}
-.md-btn:hover{background:var(--bg3)}
-.md-menu{display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--bg);border:1px solid var(--border);border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,.1);min-width:200px;padding:4px;z-index:50}
-.md-dropdown.open .md-menu{display:block}
-.md-menu button{display:flex;align-items:center;gap:8px;width:100%;padding:8px 12px;border:none;background:none;color:var(--fg);font-size:13px;cursor:pointer;border-radius:6px;font-family:inherit;text-align:left}
-.md-menu button:hover{background:var(--bg3)}
+/* ── Prose ────────────────────────────────────────────────── */
+.prose{padding:32px 0;border-bottom:1px solid var(--border)}
+.prose h2{font-size:20px;font-weight:700;letter-spacing:-.4px;margin-bottom:12px}
+.prose p{color:var(--text-2);margin-bottom:12px;font-size:13px;line-height:1.7}
+.prose p:last-child{margin-bottom:0}
+.prose strong{color:var(--text);font-weight:600}
+.prose code{font-size:11.5px;background:var(--surface-alt);padding:2px 6px;border:1px solid var(--border)}
+.code-block{position:relative;background:var(--surface);border:1px solid var(--border);margin:12px 0;overflow:hidden}
+.code-block pre{margin:0;padding:14px 16px;overflow-x:auto;font-size:11.5px;line-height:1.7}
+.code-block code{background:none;padding:0;border:none;color:var(--text-2)}
+.copy-btn{position:absolute;top:6px;right:6px;background:var(--surface-alt);border:1px solid var(--border);
+  color:var(--text-3);cursor:pointer;padding:3px 5px;opacity:0;transition:opacity .12s;display:flex;align-items:center}
+.code-block:hover .copy-btn,.ex-block:hover .copy-btn{opacity:.7}
+.copy-btn:hover{opacity:1 !important;color:var(--text)}
 
-/* Prose sections */
-.prose-section{max-width:820px;padding:40px 48px;border-bottom:1px solid var(--border)}
-.prose-section h1{font-size:32px;font-weight:700;margin-bottom:28px;letter-spacing:-.5px}
-.prose-section h2{font-size:22px;font-weight:600;margin:36px 0 12px;letter-spacing:-.3px}
-.prose-section h2:first-child{margin-top:0}
-.prose-section p{color:var(--fg2);margin-bottom:16px;font-size:15px;line-height:1.7}
-.prose-section strong{color:var(--fg);font-weight:600}
-.prose-section code{background:var(--code-bg);color:var(--code-fg);padding:2px 6px;border-radius:4px;font-size:13px}
-.code-block{position:relative;background:var(--code-bg);border:1px solid var(--border);border-radius:8px;margin:16px 0;overflow:hidden}
-.code-block pre{margin:0;padding:16px;overflow-x:auto;font-size:13px;line-height:1.7}
-.code-block code{background:none;padding:0;color:var(--code-fg)}
-.code-block .copy-btn{position:absolute;top:8px;right:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--fg3);cursor:pointer;padding:4px 6px;opacity:.4;display:flex;align-items:center}
-.code-block:hover .copy-btn{opacity:.8}
-.code-block .copy-btn:hover{opacity:1}
+/* ── Error table ──────────────────────────────────────────── */
+.err-tbl{width:100%;border-collapse:collapse;margin:12px 0;font-size:12px;border:1px solid var(--border)}
+.err-tbl th{text-align:left;padding:8px 12px;font-size:10px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.05em;color:var(--text-3);border-bottom:1px solid var(--border);background:var(--surface-alt)}
+.err-tbl td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2)}
+.err-tbl code{font-size:11px;background:var(--surface-alt);padding:1px 5px;border:1px solid var(--border)}
+.rc{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;padding:2px 6px;border:1px solid var(--border)}
+.rc-2{color:var(--green);background:color-mix(in srgb,var(--green) 8%,var(--surface))}
+.rc-3{color:var(--blue);background:color-mix(in srgb,var(--blue) 8%,var(--surface))}
+.rc-4{color:var(--red);background:color-mix(in srgb,var(--red) 8%,var(--surface))}
+.rc-5{color:var(--amber);background:color-mix(in srgb,var(--amber) 8%,var(--surface))}
 
-/* Error table */
-.error-table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
-.error-table th{text-align:left;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--fg3);border-bottom:2px solid var(--border)}
-.error-table td{padding:10px 12px;border-bottom:1px solid var(--border);color:var(--fg2)}
-.error-table code{background:var(--code-bg);padding:2px 6px;border-radius:4px;font-size:12px}
+/* ── Tag headings ─────────────────────────────────────────── */
+.tag-heading{padding:48px 0 12px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;
+  text-transform:uppercase;letter-spacing:2px;color:var(--text-3);border-bottom:1px solid var(--border)}
 
-/* Tag headings */
-.tag-heading{padding:36px 48px 12px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--fg3);border-bottom:1px solid var(--border)}
+/* ── Endpoint sections ────────────────────────────────────── */
+.endpoint{display:grid;grid-template-columns:1fr 1fr;gap:0;border-bottom:1px solid var(--border)}
+.ep-desc{padding:28px 32px 28px 0}
+.ep-ex{padding:28px 0 28px 32px;border-left:1px solid var(--border)}
 
-/* Endpoint sections */
-.endpoint-section{display:grid;grid-template-columns:1fr 1fr;gap:0;border-bottom:1px solid var(--border)}
-.desc-col{padding:36px 40px 36px 48px}
-.example-col{padding:36px 32px;background:var(--ex-bg);border-left:1px solid var(--ex-border)}
+.ep-title{font-size:18px;font-weight:700;letter-spacing:-.3px;margin-bottom:8px}
+.ep-method{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.ep-badge{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;padding:2px 8px;
+  border:1px solid var(--border);letter-spacing:.3px}
+.ep-get{color:var(--green);border-color:color-mix(in srgb,var(--green) 30%,var(--border))}
+.ep-post{color:var(--blue);border-color:color-mix(in srgb,var(--blue) 30%,var(--border))}
+.ep-put{color:var(--amber);border-color:color-mix(in srgb,var(--amber) 30%,var(--border))}
+.ep-patch{color:var(--amber);border-color:color-mix(in srgb,var(--amber) 30%,var(--border))}
+.ep-delete{color:var(--red);border-color:color-mix(in srgb,var(--red) 30%,var(--border))}
+.ep-head{color:var(--purple);border-color:color-mix(in srgb,var(--purple) 30%,var(--border))}
+.ep-path{font-size:12px;color:var(--text-2);background:none;padding:0;border:none}
+.ep-text{color:var(--text-2);margin-bottom:16px;font-size:13px;line-height:1.7}
+.ep-text code{font-size:11px;background:var(--surface-alt);padding:1px 4px;border:1px solid var(--border)}
+.ep-desc h4{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:1px;
+  text-transform:uppercase;color:var(--text-3);margin:24px 0 6px}
+.ep-desc p{color:var(--text-2);margin-bottom:8px;font-size:13px}
+.ep-desc code{font-size:11px;background:var(--surface-alt);padding:1px 5px;border:1px solid var(--border)}
 
-.endpoint-title{font-size:22px;font-weight:600;margin-bottom:10px;letter-spacing:-.3px}
-.endpoint-desc{color:var(--fg2);margin-bottom:20px;font-size:14px;line-height:1.7}
-.endpoint-desc code{background:var(--code-bg);padding:2px 5px;border-radius:3px;font-size:12px}
-.desc-col h4{font-size:12px;font-weight:600;letter-spacing:.03em;color:var(--fg3);margin:28px 0 8px}
-.desc-col p{color:var(--fg2);margin-bottom:12px;font-size:14px}
-.desc-col code{background:var(--code-bg);color:var(--code-fg);padding:2px 6px;border-radius:4px;font-size:12px}
-
-.method-path{display:flex;align-items:center;gap:10px;margin-bottom:16px}
-.method-badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;border:1.5px solid;display:inline-flex;align-items:center;gap:4px;letter-spacing:.01em}
-.method-badge svg{opacity:.7}
-.endpoint-path{font-size:14px;color:var(--fg2);background:none;padding:0}
-
-/* Parameters */
-.param-list{margin-bottom:8px}
-.param-item{padding:12px 0;border-top:1px solid var(--border)}
+/* ── Parameters ───────────────────────────────────────────── */
+.param-list{margin-bottom:4px}
+.param-item{padding:10px 0;border-top:1px solid var(--border)}
 .param-item:first-child{border-top:none}
 .param-header{display:flex;align-items:baseline;gap:4px;flex-wrap:wrap}
-.param-name{font-weight:600;font-size:14px;color:var(--fg)}
-.param-type{font-size:13px;color:var(--fg3)}
-.param-type code{font-size:12px;padding:1px 4px}
-.param-optional{font-size:12px;color:var(--fg3);font-style:italic;margin-right:2px}
-.param-desc{font-size:14px;color:var(--fg2);margin:4px 0 0;line-height:1.6}
-.param-desc code{background:var(--code-bg);padding:1px 4px;border-radius:3px;font-size:12px}
-.response-line{font-size:13px;color:var(--fg2);margin:6px 0}
-.response-code{font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px}
-.code-2{background:#dafbe1;color:#116329}
-.code-3{background:#ddf4ff;color:#0550ae}
-.code-4{background:#ffebe9;color:#82071e}
-.code-5{background:#fff8c5;color:#6a5505}
-html.dark .code-2{background:#0f291c;color:#3fb950}
-html.dark .code-3{background:#0c2d6b;color:#58a6ff}
-html.dark .code-4{background:#2d0d14;color:#f85149}
-html.dark .code-5{background:#2d1d00;color:#d29922}
+.param-name{font-family:'JetBrains Mono',monospace;font-weight:600;font-size:12px;color:var(--text)}
+.param-type{font-size:12px;color:var(--text-3)}
+.param-type code{font-size:11px;padding:1px 3px;border:1px solid var(--border);background:var(--surface-alt)}
+.param-optional{font-size:11px;color:var(--text-3);font-style:italic;margin-right:2px}
+.param-desc{font-size:12px;color:var(--text-2);margin:3px 0 0;line-height:1.5}
+.param-desc code{font-size:11px;background:var(--surface-alt);padding:1px 3px;border:1px solid var(--border)}
+.response-line{font-size:12px;color:var(--text-2);margin:4px 0}
+.response-code{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;padding:2px 6px;border:1px solid var(--border)}
+.code-2{color:var(--green);background:color-mix(in srgb,var(--green) 8%,var(--surface))}
+.code-3{color:var(--blue);background:color-mix(in srgb,var(--blue) 8%,var(--surface))}
+.code-4{color:var(--red);background:color-mix(in srgb,var(--red) 8%,var(--surface))}
+.code-5{color:var(--amber);background:color-mix(in srgb,var(--amber) 8%,var(--surface))}
 
-/* Example blocks */
-.example-block{margin-bottom:16px;border:1px solid var(--ex-border);border-radius:10px;overflow:hidden}
-.example-header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--ex-header);border-bottom:1px solid var(--ex-border)}
-.example-title{font-size:13px;font-weight:500;color:var(--fg)}
-.example-block pre{margin:0;padding:16px;overflow-x:auto;font-size:13px;line-height:1.7;background:transparent;color:var(--ex-fg);counter-reset:line}
-.example-block code{background:none;padding:0;font-size:inherit;color:inherit}
-.example-header .copy-btn{background:none;border:1px solid var(--ex-border);border-radius:6px;color:var(--fg3);opacity:.4;cursor:pointer;padding:3px 6px;display:flex;align-items:center}
-.example-block:hover .copy-btn{opacity:.8}
-.example-header .copy-btn:hover{opacity:1}
+/* ── Example blocks ───────────────────────────────────────── */
+.ex-block{position:relative;margin-bottom:12px;border:1px solid var(--border);background:var(--surface);overflow:hidden}
+.ex-hdr{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;
+  background:var(--surface-alt);border-bottom:1px solid var(--border)}
+.ex-title{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;color:var(--text-2)}
+.ex-hdr .copy-btn{position:static;opacity:0}
+.ex-block:hover .ex-hdr .copy-btn{opacity:.7}
+.ex-block pre{margin:0;padding:14px 16px;overflow-x:auto;font-size:11.5px;line-height:1.7;color:var(--text-2)}
+.ex-block code{background:none;padding:0;border:none;font-size:inherit;color:inherit}
 
-/* Line numbers */
-.ln{display:inline-block;width:28px;text-align:right;margin-right:16px;color:var(--fg3);opacity:.5;user-select:none;font-size:12px}
+/* ── Line numbers ─────────────────────────────────────────── */
+.ln{display:inline-block;width:24px;text-align:right;margin-right:14px;color:var(--text-3);opacity:.4;user-select:none;font-size:11px}
 
-/* Syntax highlighting */
-.sh-cmd{color:#cf222e;font-weight:600}
-.sh-flag{color:#8250df}
-.sh-str{color:#0a3069}
-.sh-var{color:#953800}
-.js-key{color:#0550ae}
-.js-str{color:#0a3069}
-.js-num{color:#0550ae}
-.js-bool{color:#cf222e}
-html.dark .sh-cmd{color:#ff7b72;font-weight:600}
-html.dark .sh-flag{color:#d2a8ff}
-html.dark .sh-str{color:#a5d6ff}
-html.dark .sh-var{color:#ffa657}
-html.dark .js-key{color:#79c0ff}
-html.dark .js-str{color:#a5d6ff}
-html.dark .js-num{color:#79c0ff}
-html.dark .js-bool{color:#ff7b72}
+/* ── Syntax highlighting ──────────────────────────────────── */
+.sh-cmd{color:var(--text);font-weight:600}
+.sh-flag{color:var(--purple)}
+.sh-str{color:var(--text-2);opacity:.85}
+.sh-var{color:var(--amber)}
+.js-key{color:var(--text)}
+.js-str{color:var(--text-2);opacity:.85}
+.js-num{color:var(--blue)}
+.js-bool{color:var(--red)}
 
-/* Responsive */
-@media(max-width:1100px){
-  .sidebar{transform:translateX(-100%);transition:transform .2s}
-  .sidebar.open{transform:translateX(0);box-shadow:4px 0 24px rgba(0,0,0,.12)}
-  .sidebar-close{display:block}
-  .content{margin-left:0}
-  .menu-btn{display:block}
-  .endpoint-section{grid-template-columns:1fr}
-  .example-col{border-left:none;border-top:1px solid var(--ex-border)}
-  .desc-col,.example-col{padding:24px 20px}
-  .prose-section{padding:24px 20px}
-  .tag-heading{padding:24px 20px 12px}
+/* ── Responsive ───────────────────────────────────────────── */
+@media(max-width:1024px){
+  .endpoint{grid-template-columns:1fr}
+  .ep-ex{border-left:none;border-top:1px solid var(--border);padding:20px 0}
+  .ep-desc{padding:20px 0}
 }
-@media print{.sidebar,.menu-btn,.top-actions{display:none}.content{margin-left:0}.endpoint-section{grid-template-columns:1fr}}
+@media(max-width:640px){
+  .page-header{padding:32px 0 24px}
+  .page-header-inner{padding:0 20px}
+  .page-title{font-size:24px}
+  .sec-tabs{padding:0 20px;top:48px}
+  .sec-tab{padding:10px 14px;font-size:10px}
+  .api-main{padding:0 20px}
+  .prose{padding:24px 0}
+  .tag-heading{padding:32px 0 10px}
+  .ep-desc,.ep-ex{padding:16px 0}
+}
+@media print{nav,.sec-tabs,.grid-bg,.copy-btn{display:none}.page-header{padding:20px 0}.endpoint{grid-template-columns:1fr}}
 </style>
 </head><body>
-${sidebar}
+
+<div class="grid-bg"></div>
+
+<nav>
+  <div class="nav-inner">
+    <a href="/" class="logo"><span class="logo-dot"></span> Storage</a>
+    <button class="mobile-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <div class="nav-links">
+      <a href="/developers">developers</a>
+      <a href="/api" class="active">api</a>
+      <a href="/cli">cli</a>
+      <a href="/pricing">pricing</a>
+    </div>
+    <div class="nav-right">
+      <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+        <svg class="icon-moon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+        <svg class="icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      </button>
+    </div>
+  </div>
+</nav>
+
 ${prose}
 ${endpoints}
 </main>
+
 <script>
-// Theme
+function toggleTheme(){var d=document.documentElement.classList.toggle('dark');localStorage.setItem('theme',d?'dark':'light')}
+(function(){var s=localStorage.getItem('theme');if(s==='light')document.documentElement.classList.remove('dark');else if(!s&&!window.matchMedia('(prefers-color-scheme:dark)').matches)document.documentElement.classList.remove('dark')})();
+function copyCode(btn){var p=btn.closest('.code-block,.ex-block').querySelector('pre');navigator.clipboard.writeText(p.textContent.replace(/^\\s*\\d+\\s*/gm,'').trim()).then(function(){var o=btn.innerHTML;btn.textContent='Copied!';setTimeout(function(){btn.innerHTML=o},1200)})}
 (function(){
-  var h=document.documentElement,s=localStorage.getItem('api-theme');
-  if(s==='dark')h.classList.add('dark');
-  else if(!s&&window.matchMedia('(prefers-color-scheme:dark)').matches)h.classList.add('dark');
-  document.getElementById('theme-toggle').onclick=function(){h.classList.toggle('dark');localStorage.setItem('api-theme',h.classList.contains('dark')?'dark':'light')};
-})();
-// Copy
-function copyCode(btn){var p=btn.closest('.code-block,.example-block').querySelector('pre');navigator.clipboard.writeText(p.textContent.replace(/^\\s*\\d+\\s*/gm,'').trim()).then(function(){var o=btn.innerHTML;btn.textContent='Copied!';setTimeout(function(){btn.innerHTML=o},1200)})}
-// Markdown
-var MD=\`${markdownData}\`;
-function copyMarkdown(){navigator.clipboard.writeText(MD).then(function(){var b=document.querySelector('.md-btn');b.textContent='Copied!';setTimeout(function(){b.innerHTML='${COPY_ICON} Copy Markdown <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>'},1200)});document.getElementById('md-dropdown').classList.remove('open')}
-function viewMarkdown(){var w=window.open('','_blank');w.document.write('<pre style="white-space:pre-wrap;font-family:monospace;padding:20px;max-width:900px;margin:0 auto">'+MD.replace(/</g,'&lt;')+'</pre>');w.document.close();document.getElementById('md-dropdown').classList.remove('open')}
-document.addEventListener('click',function(e){if(!e.target.closest('.md-dropdown'))document.getElementById('md-dropdown').classList.remove('open')});
-// Scroll highlight
-(function(){
-  var links=document.querySelectorAll('.sidebar-link[href^="#"]'),secs=[];
-  links.forEach(function(a){var t=document.getElementById(a.getAttribute('href').slice(1));if(t)secs.push({el:t,link:a})});
-  function u(){var y=window.scrollY+120,c=null;for(var i=secs.length-1;i>=0;i--){if(secs[i].el.offsetTop<=y){c=secs[i];break}}links.forEach(function(l){l.classList.remove('active')});if(c)c.link.classList.add('active')}
+  var tabs=document.querySelectorAll('.sec-tab'),anchors=[];
+  tabs.forEach(function(a){var id=a.getAttribute('href');if(id){var el=document.getElementById(id.slice(1));if(el)anchors.push({el:el,tab:a})}});
+  function u(){var y=window.scrollY+140,c=null;for(var i=anchors.length-1;i>=0;i--){if(anchors[i].el.offsetTop<=y){c=anchors[i];break}}tabs.forEach(function(t){t.classList.remove('active')});if(c)c.tab.classList.add('active')}
   window.addEventListener('scroll',u,{passive:true});u();
 })();
 </script>
