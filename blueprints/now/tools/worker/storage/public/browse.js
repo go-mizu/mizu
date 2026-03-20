@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════════════════
-   storage.now — Browse JS (Minimal Redesign)
+   Storage — Browse JS (Minimal Redesign)
    No sidebar. No navbar. No checkboxes. Just files.
    Handles both demo (unauthenticated) and auth (logged-in) modes.
    Config injected via window.__BROWSE_CONFIG from the HTML template.
@@ -77,7 +77,7 @@ var DEMO_CONTENT=DEMO?{
 'projects/api-server/main.go':'package main\n\nimport (\n\t"context"\n\t"log"\n\t"net/http"\n\t"os"\n\t"os/signal"\n\t"time"\n\n\t"github.com/example/storage/internal/api"\n\t"github.com/example/storage/internal/config"\n\t"github.com/example/storage/internal/storage"\n)\n\nfunc main() {\n\tcfg := config.Load()\n\n\tstore, err := storage.New(cfg.StorageBackend, cfg.StorageBucket)\n\tif err != nil {\n\t\tlog.Fatalf("storage init: %v", err)\n\t}\n\tdefer store.Close()\n\n\trouter := api.NewRouter(store, cfg)\n\n\tsrv := &http.Server{\n\t\tAddr:         cfg.ListenAddr,\n\t\tHandler:      router,\n\t\tReadTimeout:  30 * time.Second,\n\t\tWriteTimeout: 60 * time.Second,\n\t\tIdleTimeout:  120 * time.Second,\n\t}\n\n\tgo func() {\n\t\tlog.Printf("listening on %s", cfg.ListenAddr)\n\t\tif err := srv.ListenAndServe(); err != http.ErrServerClosed {\n\t\t\tlog.Fatalf("server error: %v", err)\n\t\t}\n\t}()\n\n\tquit := make(chan os.Signal, 1)\n\tsignal.Notify(quit, os.Interrupt)\n\t<-quit\n\n\tctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)\n\tdefer cancel()\n\tsrv.Shutdown(ctx)\n\tlog.Println("server stopped")\n}',
 'projects/api-server/Dockerfile':'FROM golang:1.22-alpine AS builder\n\nWORKDIR /app\nCOPY go.mod go.sum ./\nRUN go mod download\nCOPY . .\nRUN CGO_ENABLED=0 GOOS=linux go build -o /bin/server ./cmd/server\n\nFROM alpine:3.19\nRUN apk --no-cache add ca-certificates\nCOPY --from=builder /bin/server /bin/server\nEXPOSE 8080\nCMD ["/bin/server"]',
 'projects/api-server/config.yaml':'server:\n  listen: ":8080"\n  read_timeout: 30s\n  write_timeout: 60s\n\nstorage:\n  backend: r2\n  bucket: storage-files\n  max_upload_size: 104857600\n  presign_expiry: 3600\n\nauth:\n  session_secret: "${SESSION_SECRET}"\n  oauth_provider: github\n  allowed_origins:\n    - "https://storage.example.com"\n    - "http://localhost:3000"\n\ndatabase:\n  driver: d1\n  name: storage-db\n\nlogging:\n  level: info\n  format: json',
-'projects/landing-page/index.html':'<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n  <meta name="viewport" content="width=device-width,initial-scale=1">\n  <title>Storage Platform</title>\n  <link rel="stylesheet" href="/style.css">\n</head>\n<body>\n  <nav class="nav">\n    <a href="/" class="logo">storage.now</a>\n    <a href="/docs">Docs</a>\n    <a href="/pricing">Pricing</a>\n    <a href="/login" class="btn">Sign In</a>\n  </nav>\n\n  <main class="hero">\n    <h1>File storage for developers</h1>\n    <p>Upload, organize, and share files with a simple API.</p>\n    <a href="/signup" class="btn btn--primary">Get Started Free</a>\n  </main>\n</body>\n</html>',
+'projects/landing-page/index.html':'<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n  <meta name="viewport" content="width=device-width,initial-scale=1">\n  <title>Storage Platform</title>\n  <link rel="stylesheet" href="/style.css">\n</head>\n<body>\n  <nav class="nav">\n    <a href="/" class="logo">Storage</a>\n    <a href="/docs">Docs</a>\n    <a href="/pricing">Pricing</a>\n    <a href="/login" class="btn">Sign In</a>\n  </nav>\n\n  <main class="hero">\n    <h1>File storage for developers</h1>\n    <p>Upload, organize, and share files with a simple API.</p>\n    <a href="/signup" class="btn btn--primary">Get Started</a>\n  </main>\n</body>\n</html>',
 'projects/landing-page/style.css':'* { box-sizing: border-box; margin: 0; padding: 0; }\n\nbody {\n  font-family: system-ui, sans-serif;\n  color: #18181B;\n  background: #FAFAF9;\n}\n\n.nav {\n  display: flex;\n  align-items: center;\n  gap: 24px;\n  padding: 16px 32px;\n  border-bottom: 1px solid #E4E4E7;\n}\n\n.logo {\n  font-weight: 700;\n  font-size: 18px;\n  margin-right: auto;\n}\n\n.hero {\n  text-align: center;\n  padding: 120px 32px;\n}\n\n.hero h1 {\n  font-size: 48px;\n  font-weight: 800;\n  letter-spacing: -0.02em;\n}\n\n.hero p {\n  font-size: 18px;\n  color: #52525B;\n  margin: 16px 0 32px;\n}\n\n.btn {\n  padding: 10px 24px;\n  border: 1px solid #E4E4E7;\n  background: none;\n  font-size: 14px;\n  cursor: pointer;\n}\n\n.btn--primary {\n  background: #18181B;\n  color: #FAFAF9;\n  border-color: #18181B;\n}',
 'projects/ml-pipeline/train.py':'import torch\nimport torch.nn as nn\nfrom torch.utils.data import DataLoader\nfrom pathlib import Path\nimport logging\n\nlogging.basicConfig(level=logging.INFO)\nlogger = logging.getLogger(__name__)\n\nclass StorageModel(nn.Module):\n    def __init__(self, input_dim=512, hidden_dim=256, output_dim=128):\n        super().__init__()\n        self.encoder = nn.Sequential(\n            nn.Linear(input_dim, hidden_dim),\n            nn.ReLU(),\n            nn.Dropout(0.2),\n            nn.Linear(hidden_dim, hidden_dim),\n            nn.ReLU(),\n            nn.Linear(hidden_dim, output_dim),\n        )\n\n    def forward(self, x):\n        return self.encoder(x)\n\ndef train_epoch(model, loader, optimizer, criterion, device):\n    model.train()\n    total_loss = 0\n    for batch_idx, (data, target) in enumerate(loader):\n        data, target = data.to(device), target.to(device)\n        optimizer.zero_grad()\n        output = model(data)\n        loss = criterion(output, target)\n        loss.backward()\n        optimizer.step()\n        total_loss += loss.item()\n    return total_loss / len(loader)\n\ndef main():\n    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")\n    logger.info(f"Using device: {device}")\n\n    model = StorageModel().to(device)\n    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)\n    criterion = nn.MSELoss()\n\n    for epoch in range(100):\n        loss = train_epoch(model, train_loader, optimizer, criterion, device)\n        if epoch % 10 == 0:\n            logger.info(f"Epoch {epoch}: loss={loss:.4f}")\n\n    torch.save(model.state_dict(), "model-v3.bin")\n    logger.info("Model saved")\n\nif __name__ == "__main__":\n    main()',
 }:null;
@@ -406,9 +406,9 @@ function setupMedia(type,item){
 }
 
 function setupAudio(item){
-  var src=DEMO?(DEMO_MEDIA[item.path]||''):'/f/'+encodePath(item.path);
   var el=$('mp-audio');if(!el)return;
-  var audio=new Audio(src);
+  var audio=new Audio();
+  (DEMO?Promise.resolve(DEMO_MEDIA[item.path]||''):resolveFileUrl(item.path)).then(function(src){audio.src=src});
   var play=$('mp-play'),time=$('mp-time'),dur=$('mp-dur'),prog=$('mp-progress'),fill=$('mp-fill'),thumb=$('mp-thumb'),wave=$('mp-wave');
   var bars=wave?wave.children:[];
   function fmtT(s){if(isNaN(s))return'0:00';var m=Math.floor(s/60),ss=Math.floor(s%60);return m+':'+(ss<10?'0':'')+ss}
@@ -435,10 +435,10 @@ function setupAudio(item){
 }
 
 function setupVideo(item){
-  var src=DEMO?(DEMO_MEDIA[item.path]||''):'/f/'+encodePath(item.path);
   var el=$('mp-video');if(!el)return;
   var viewport=$('mp-viewport');
-  var video=document.createElement('video');video.src=src;video.preload='metadata';
+  var video=document.createElement('video');video.preload='metadata';
+  (DEMO?Promise.resolve(DEMO_MEDIA[item.path]||''):resolveFileUrl(item.path)).then(function(src){video.src=src});
   if(viewport){var first=viewport.firstChild;if(first)viewport.insertBefore(video,first);else viewport.appendChild(video)}
   var play=$('mp-play'),playBig=$('mp-play-big'),time=$('mp-time'),dur=$('mp-dur'),prog=$('mp-progress'),fill=$('mp-fill'),fs=$('mp-fs');
   function fmtT(s){if(isNaN(s))return'0:00';var m=Math.floor(s/60),ss=Math.floor(s%60);return m+':'+(ss<10?'0':'')+ss}
@@ -464,6 +464,16 @@ var api=DEMO?null:{
   patch:function(u,b){return fetch(u,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(function(r){return r.json()})},
   del:function(u){return fetch(u,{method:'DELETE'}).then(function(r){return r.json()})},
 };
+
+/* ── File URL resolver (presigned R2 URL) ─────────────────────────── */
+function resolveFileUrl(path){
+  if(DEMO)return Promise.resolve('');
+  return api.get('/presign/read/'+encodePath(path))
+    .then(function(d){
+      if(d&&d.url)return d.url;
+      throw new Error(d&&d.message||'No presigned URL');
+    });
+}
 
 /* ── Toast ────────────────────────────────────────────────────────── */
 function toast(msg,type){
@@ -494,7 +504,7 @@ function encodePath(p){return p.split('/').map(encodeURIComponent).join('/')}
 
 function mapEntry(e,prefix){
   var isDir=e.type==='directory';
-  var p=prefix+(isDir?e.name+'/':e.name);
+  var p=prefix+(isDir?(e.name.endsWith('/')?e.name:e.name+'/'):e.name);
   return{path:p,name:e.name,is_folder:isDir,content_type:isDir?'':e.type,size:e.size||0,updated_at:e.updated_at?new Date(e.updated_at).getTime():0};
 }
 function loadApiItems(){
@@ -504,7 +514,7 @@ function loadApiItems(){
     api.get(url).then(function(d){S.items=(d.entries||[]).map(function(e){return mapEntry(e,'')});sortItems();render()}).catch(function(){toast('Failed to load','err');S.items=[];render()});
   }else{
     url=S.path?'/ls/'+encodePath(S.path):'/ls/';
-    api.get(url).then(function(d){var prefix=d.prefix||S.path||'';S.items=(d.entries||[]).map(function(e){return mapEntry(e,prefix)});sortItems();render()}).catch(function(){toast('Failed to load','err');S.items=[];render()});
+    api.get(url).then(function(d){var prefix=d.prefix&&d.prefix!=='/'?d.prefix:(S.path||'');S.items=(d.entries||[]).map(function(e){return mapEntry(e,prefix)});sortItems();render()}).catch(function(){toast('Failed to load','err');S.items=[];render()});
   }
 }
 
@@ -518,7 +528,15 @@ function sortItems(){
 /* ══════════════════════════════════════════════════════════════════════
    RENDERING
    ══════════════════════════════════════════════════════════════════════ */
-function render(){renderMain()}
+function render(){renderMain();resolveMediaSrcs()}
+function resolveMediaSrcs(){
+  if(DEMO)return;
+  document.querySelectorAll('[data-file-path]').forEach(function(el){
+    var path=el.getAttribute('data-file-path');
+    if(!path||el.getAttribute('src'))return;
+    resolveFileUrl(path).then(function(url){el.src=url});
+  });
+}
 
 function renderBar(){
   var bc='<nav class="crumb"><span class="crumb-dot" onclick="B.nav('+Q+''+Q+')"></span>';
@@ -556,7 +574,7 @@ function renderMain(){
   var out=renderBar();
   if(!S.items.length){
     var msg='No files here',sub='';
-    if(!S.path&&!S.searchMode){msg=DEMO?'Welcome to storage.now':'Your drive is empty';sub=DEMO?'Browse the demo files below':'Drag files here or click Upload'}
+    if(!S.path&&!S.searchMode){msg=DEMO?'Welcome to Storage':'Your drive is empty';sub=DEMO?'Browse the demo files below':'Drag files here or click Upload'}
     else if(S.searchMode){msg='No results';sub='Nothing matching \u201c'+h(S.searchQ)+'\u201d'}
     out+='<div class="file-list"><div class="empty"><div class="empty-icon">'+I.file+'</div><div class="empty-title">'+msg+'</div>'+(sub?'<div class="empty-sub">'+sub+'</div>':'')+'</div></div>';
   }else{
@@ -642,14 +660,14 @@ function buildPreviewPage(){
       else if(ft==='sheet'){body=csvToTable(c)}
       else{body='<pre class="preview-text">'+h(c)+'</pre>'}
     }else if(ft==='image'){
-      body='<img class="preview-img" src="/f/'+encodePath(item.path)+'" alt="'+name+'">';
+      body='<img class="preview-img" data-file-path="'+h(item.path)+'" src="" alt="'+name+'">';
     }else if(ft==='audio'){
       var bars='';for(var i=0;i<50;i++){bars+='<div class="mp-wave-bar" style="height:'+(10+Math.random()*28)+'px"></div>'}
       body='<div class="mp mp--audio" id="mp-audio"><div class="mp-art">'+I.audio+'</div><div class="mp-title">'+name+'</div><div class="mp-wave" id="mp-wave">'+bars+'</div><div class="mp-controls"><button class="mp-play-btn" id="mp-play"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button><span class="mp-time" id="mp-time">0:00</span><div class="mp-progress" id="mp-progress"><div class="mp-progress-fill" id="mp-fill" style="width:0"><div class="mp-progress-thumb" id="mp-thumb"></div></div></div><span class="mp-time" id="mp-dur">0:00</span><div class="mp-vol-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14"/></svg><div class="mp-vol" id="mp-vol"><div class="mp-vol-fill" style="width:100%"></div></div></div></div></div>';
     }else if(ft==='video'){
       body='<div class="mp mp--video" id="mp-video"><div class="mp-viewport" id="mp-viewport"><div class="mp-play-overlay" id="mp-play-big"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></div></div><div class="mp-controls"><button class="mp-play-btn" id="mp-play"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button><span class="mp-time" id="mp-time">0:00</span><div class="mp-progress" id="mp-progress"><div class="mp-progress-fill" id="mp-fill" style="width:0"><div class="mp-progress-thumb" id="mp-thumb"></div></div></div><span class="mp-time" id="mp-dur">0:00</span><button class="mp-fs-btn" id="mp-fs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="14" height="14"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button></div></div>';
     }else if(/\.pdf$/i.test(item.name)){
-      body='<iframe class="preview-pdf" src="/f/'+encodePath(item.path)+'" title="'+name+'"></iframe>';
+      body='<iframe class="preview-pdf" data-file-path="'+h(item.path)+'" src="" title="'+name+'"></iframe>';
     }else if(/\.(docx?|xlsx?|pptx?)$/i.test(item.name)){
       body='<div class="preview-office"><div class="preview-office-icon">'+I.doc+'</div><div class="preview-office-name">'+name+'</div><div class="preview-office-type">'+h(item.content_type)+'</div><div class="preview-office-size">'+fmtSize(item.size)+'</div><button class="preview-office-dl" onclick="B.downloadCurrent()">'+I.download+' Download</button></div>';
     }else{
@@ -826,7 +844,7 @@ var B=window.B={
       var ft=fileType(item);
       if(ft==='code'||ft==='text'||ft==='sheet'||ft==='markdown'){
         S.previewLoading=true;renderMain();
-        fetch('/f/'+encodePath(path)).then(function(r){return r.text()}).then(function(t){
+        resolveFileUrl(path).then(function(url){return fetch(url)}).then(function(r){return r.text()}).then(function(t){
           S.previewContent=t;S.previewLoading=false;renderMain();
         }).catch(function(){S.previewLoading=false;renderMain()});
         return;
@@ -860,7 +878,9 @@ var B=window.B={
 
   downloadFile:function(item){
     if(DEMO){requireSignup();return}
-    var a=document.createElement('a');a.href='/f/'+encodePath(item.path);a.download=item.name;document.body.appendChild(a);a.click();a.remove();
+    resolveFileUrl(item.path).then(function(url){
+      var a=document.createElement('a');a.href=url;a.download=item.name;document.body.appendChild(a);a.click();a.remove();
+    });
   },
   newFolder:function(){
     if(DEMO){requireSignup();return}
@@ -885,7 +905,7 @@ var B=window.B={
       var tree=$('move-tree');if(!tree)return;
       var prefix=d.prefix||'';
       (d.entries||[]).filter(function(e){return e.type==='directory'}).forEach(function(e){
-        var fp=prefix+e.name+'/';
+        var fp=prefix+(e.name.endsWith('/')?e.name:e.name+'/');
         tree.innerHTML+='<div class="tree-node" onclick="B.selectMoveTarget(this,'+Q+''+qe(fp)+''+Q+')"><div class="tree-icon">'+I.folder+'</div> '+h(e.name)+'</div>';
       });
     });
@@ -923,7 +943,7 @@ var B=window.B={
     var panel=$('upload-panel');if(panel)panel.classList.add('open');
     var arr=Array.from(files);
     arr.forEach(function(file){
-      S.uploading.push({name:file.name,size:file.size,progress:0,loaded:0,status:'pending',id:Math.random().toString(36).slice(2),file:file,tusId:null,retries:0});
+      S.uploading.push({name:file.name,size:file.size,progress:0,loaded:0,status:'pending',id:Math.random().toString(36).slice(2),file:file,retries:0});
     });
     renderUploadList();
     function processQueue(){
@@ -932,7 +952,7 @@ var B=window.B={
         var next=S.uploading.find(function(u){return u.status==='pending'});
         if(!next)break;
         next.status='uploading';active++;
-        tusUpload(next);
+        putUpload(next);
       }
       renderUploadList();
     }
@@ -947,71 +967,37 @@ var B=window.B={
         loadItems();
       }else{processQueue()}
     }
-    function tusUpload(u){
+    function putUpload(u){
       var file=u.file;
       var path=S.path+(file._relativePath||file.name);
-      var CHUNK=5*1024*1024;
-      var meta='bucketName '+btoa('default')+',objectName '+btoa(path);
-      if(file.type)meta+=',contentType '+btoa(file.type);
-      var resumeOrCreate=u.tusId
-        ?fetch('/upload/resumable/'+u.tusId,{method:'HEAD',headers:{'Tus-Resumable':'1.0.0'}})
-          .then(function(r){
-            if(!r.ok)throw new Error('resume-failed');
-            u.loaded=parseInt(r.headers.get('Upload-Offset')||'0',10);
-            u.progress=u.size?Math.round(u.loaded/u.size*100):0;
-            renderUploadList();
-            return u.tusId;
-          })
-        :fetch('/upload/resumable',{
-            method:'POST',
-            headers:{
-              'Tus-Resumable':'1.0.0',
-              'Upload-Length':String(file.size),
-              'Upload-Metadata':meta,
-              'X-Upsert':'true',
+      // Get presigned URL for direct R2 upload (no worker proxy)
+      api.post('/presign/upload',{path:path,content_type:file.type||''})
+        .then(function(d){
+          if(!d.url){onDone(u,false);return}
+          var xhr=new XMLHttpRequest();
+          xhr.open('PUT',d.url);
+          if(d.content_type)xhr.setRequestHeader('Content-Type',d.content_type);
+          xhr.upload.onprogress=function(e){
+            if(e.lengthComputable){
+              u.loaded=e.loaded;
+              u.progress=Math.round(e.loaded/e.total*100);
+              renderUploadList();
             }
-          }).then(function(r){
-            if(!r.ok)throw new Error('create-failed');
-            var loc=r.headers.get('Location')||'';
-            var id=loc.split('/').pop();
-            u.tusId=id;u.loaded=0;
-            return id;
-          });
-      resumeOrCreate.then(function(tusId){
-        function sendChunk(){
-          if(u.loaded>=file.size){onDone(u,true);return}
-          var end=Math.min(u.loaded+CHUNK,file.size);
-          var blob=file.slice(u.loaded,end);
-          fetch('/upload/resumable/'+tusId,{
-            method:'PATCH',
-            headers:{
-              'Tus-Resumable':'1.0.0',
-              'Upload-Offset':String(u.loaded),
-              'Content-Type':'application/offset+octet-stream',
-            },
-            body:blob,
-          }).then(function(r){
-            if(!r.ok)throw new Error('patch-'+r.status);
-            var newOffset=parseInt(r.headers.get('Upload-Offset')||String(end),10);
-            u.loaded=newOffset;
-            u.progress=u.size?Math.round(u.loaded/u.size*100):0;
-            renderUploadList();
-            sendChunk();
-          }).catch(function(){
+          };
+          xhr.onload=function(){
+            if(xhr.status>=200&&xhr.status<300){
+              api.post('/presign/complete',{path:path}).then(function(){onDone(u,true)}).catch(function(){onDone(u,true)});
+            }else{onDone(u,false)}
+          };
+          xhr.onerror=function(){
             if(u.retries<3){
               u.retries++;u.status='retrying';renderUploadList();
-              setTimeout(function(){
-                fetch('/upload/resumable/'+tusId,{method:'HEAD',headers:{'Tus-Resumable':'1.0.0'}})
-                  .then(function(r){
-                    if(r.ok)u.loaded=parseInt(r.headers.get('Upload-Offset')||String(u.loaded),10);
-                    u.status='uploading';sendChunk();
-                  }).catch(function(){u.status='uploading';sendChunk()});
-              },1000*u.retries);
+              setTimeout(function(){u.status='uploading';putUpload(u)},1000*u.retries);
             }else{onDone(u,false)}
-          });
-        }
-        sendChunk();
-      }).catch(function(){onDone(u,false)});
+          };
+          xhr.send(file);
+        })
+        .catch(function(){onDone(u,false)});
     }
     B._retryUpload=function(id){
       var u=S.uploading.find(function(x){return x.id===id});
@@ -1047,7 +1033,7 @@ function renderUploadList(){
     }else if(u.status==='error'){
       bar='<div class="upload-item-bar"><div class="upload-item-fill fill--err" style="width:'+u.progress+'%"></div></div>';
     }
-    var sizeStr=u.size?fmtSize(u.loaded||0)+' / '+fmtSize(u.size):'';
+    var sizeStr=u.size?(u.loaded>0?fmtSize(u.loaded):'0 B')+' / '+fmtSize(u.size):'';
     return'<div class="upload-item"><div class="upload-item-top"><span class="upload-item-name">'+h(u.name)+'</span>'+icon+extra+'</div>'+bar+'<div class="upload-item-meta">'+sizeStr+'</div></div>';
   }).join('');
 }
