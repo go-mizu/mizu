@@ -381,11 +381,18 @@ function checkPrefix(c: C, path: string): string | null {
   return null;
 }
 
+/** Strip leading slashes — LLMs often send /path instead of path */
+function cleanPath(p: string): string {
+  return p.replace(/^\/+/, "");
+}
+
 // ── Tool implementations ──────────────────────────────────────────────
 
 async function toolList(c: C, args: Record<string, any>) {
   const actor = c.get("actor");
-  const prefix = (args.prefix as string) || "";
+  // Accept prefix, path, or folder — LLMs often use "path" instead of "prefix"
+  const rawPrefix = (args.prefix as string) || (args.path as string) || (args.folder as string) || "";
+  const prefix = rawPrefix.replace(/^\/+/, ""); // strip leading slashes
   const pfxErr = checkPrefix(c, prefix);
   if (pfxErr) return toolError(pfxErr);
 
@@ -417,7 +424,7 @@ async function toolList(c: C, args: Record<string, any>) {
 }
 
 async function toolRead(c: C, args: Record<string, any>) {
-  const filePath = args.path as string;
+  const filePath = cleanPath((args.path as string) || "");
   if (!filePath) return toolError("path is required");
   const pfxErr = checkPrefix(c, filePath);
   if (pfxErr) return toolError(pfxErr);
@@ -446,7 +453,7 @@ async function toolRead(c: C, args: Record<string, any>) {
 
 async function toolWrite(c: C, args: Record<string, any>) {
   const actor = c.get("actor");
-  const filePath = args.path as string;
+  const filePath = cleanPath((args.path as string) || "");
   const content = args.content as string | undefined;
   const url = args.url as string | undefined;
   const encoding = (args.encoding as string) || "utf-8";
@@ -502,13 +509,14 @@ async function toolWrite(c: C, args: Record<string, any>) {
 }
 
 async function toolDelete(c: C, args: Record<string, any>) {
-  const paths = args.paths as string[];
-  if (!paths || !paths.length) return toolError("paths is required");
+  const rawPaths = (args.paths as string[]) || (args.path ? [args.path as string] : []);
+  if (!rawPaths.length) return toolError("paths is required");
 
   const actor = c.get("actor");
   const deleted: string[] = [];
 
-  for (const path of paths) {
+  for (const rawPath of rawPaths) {
+    const path = cleanPath(rawPath);
     const pfxErr = checkPrefix(c, path);
     if (pfxErr) continue;
 
@@ -538,7 +546,7 @@ async function toolDelete(c: C, args: Record<string, any>) {
 }
 
 async function toolSearch(c: C, args: Record<string, any>) {
-  const q = (args.query as string) || "";
+  const q = (args.query as string) || (args.q as string) || "";
   if (!q) return toolError("query is required");
 
   const actor = c.get("actor");
@@ -567,8 +575,8 @@ async function toolSearch(c: C, args: Record<string, any>) {
 
 async function toolMove(c: C, args: Record<string, any>) {
   const actor = c.get("actor");
-  const from = args.from as string;
-  const to = args.to as string;
+  const from = cleanPath((args.from as string) || (args.source as string) || "");
+  const to = cleanPath((args.to as string) || (args.destination as string) || (args.dest as string) || "");
 
   if (!from || !to) return toolError("from and to are required");
   const fromErr = checkPrefix(c, from);
@@ -602,7 +610,7 @@ async function toolMove(c: C, args: Record<string, any>) {
 
 async function toolShare(c: C, args: Record<string, any>) {
   const actor = c.get("actor");
-  const filePath = args.path as string;
+  const filePath = cleanPath((args.path as string) || "");
   if (!filePath) return toolError("path is required");
   const pfxErr = checkPrefix(c, filePath);
   if (pfxErr) return toolError(pfxErr);

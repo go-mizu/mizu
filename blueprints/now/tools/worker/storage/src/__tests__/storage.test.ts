@@ -506,6 +506,64 @@ describe("Storage API", () => {
       expect(text).toContain("file_count");
     });
 
+    it("POST /mcp storage_list with 'path' param (LLM alias for prefix)", async () => {
+      const res = await api("/mcp", {
+        method: "POST",
+        token,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 10,
+          method: "tools/call",
+          params: { name: "storage_list", arguments: { path: "taocp/" } },
+        }),
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.result.isError).toBeFalsy();
+      const data = JSON.parse(body.result.content[0].text);
+      expect(data.prefix).toBe("taocp/");
+      expect(data.entries.some((e: any) => e.name === "vol_1/")).toBe(true);
+    });
+
+    it("POST /mcp storage_list with leading slash prefix", async () => {
+      const res = await api("/mcp", {
+        method: "POST",
+        token,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 11,
+          method: "tools/call",
+          params: { name: "storage_list", arguments: { prefix: "/taocp/" } },
+        }),
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.result.isError).toBeFalsy();
+      const data = JSON.parse(body.result.content[0].text);
+      expect(data.prefix).toBe("taocp/");
+      expect(data.entries.some((e: any) => e.name === "vol_1/")).toBe(true);
+    });
+
+    it("POST /mcp storage_read with leading slash path", async () => {
+      const res = await api("/mcp", {
+        method: "POST",
+        token,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 12,
+          method: "tools/call",
+          params: { name: "storage_read", arguments: { path: "/taocp/vol_1/1.2/1.md" } },
+        }),
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.result.isError).toBeFalsy();
+      expect(body.result.content[0].text).toContain("TAOCP Volume 1");
+    });
+
     it("POST /mcp returns error for unknown method", async () => {
       const res = await api("/mcp", {
         method: "POST",
