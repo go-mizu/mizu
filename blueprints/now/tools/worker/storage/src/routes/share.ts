@@ -1,6 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import type { App } from "../types";
-import { presignUrl } from "../lib/presign";
 import { errRes } from "../schema";
 
 // ── GET /s/:token ───────────────────────────────────────────────────
@@ -35,25 +34,14 @@ export function register(app: App) {
       return c.json({ error: "unauthorized", message: "Invalid or expired share link" }, 401);
     }
 
-    const key = `${row.actor}/${row.path}`;
+    const engine = c.get("engine");
+    const ttl = Math.max(1, Math.floor((row.expires_at - Date.now()) / 1000));
+    const url = await engine.presignRead(row.actor, row.path, Math.min(ttl, 3600));
 
-    const endpoint = c.env.R2_ENDPOINT;
-    const accessKeyId = c.env.R2_ACCESS_KEY_ID;
-    const secretAccessKey = c.env.R2_SECRET_ACCESS_KEY;
-    if (!endpoint || !accessKeyId || !secretAccessKey) {
+    if (!url) {
       return c.json({ error: "not_configured", message: "Storage not configured" }, 500);
     }
 
-    const ttl = Math.max(1, Math.floor((row.expires_at - Date.now()) / 1000));
-    const url = await presignUrl({
-      method: "GET",
-      key,
-      bucket: c.env.R2_BUCKET_NAME || "storage-files",
-      endpoint,
-      accessKeyId,
-      secretAccessKey,
-      expiresIn: Math.min(ttl, 3600),
-    });
     return c.redirect(url, 302) as any;
   });
 }

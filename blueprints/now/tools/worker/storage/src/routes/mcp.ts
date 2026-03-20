@@ -1,9 +1,9 @@
 import type { Context } from "hono";
 import type { App, Env, Variables } from "../types";
+import type { StorageEngine } from "../storage/engine";
 import { auth } from "../middleware/auth";
-import { mimeFromName, isInlineType } from "../lib/mime";
+import { mimeFromName } from "../lib/mime";
 import { shareToken } from "../lib/id";
-import { presignUrl } from "../lib/presign";
 import { invalidateCache } from "./find";
 import { validatePath } from "../lib/path";
 
@@ -44,11 +44,10 @@ interface ToolDef {
 
 const PROTOCOL_VERSION = "2025-06-18";
 const SERVER_NAME = "Storage";
-const SERVER_VERSION = "3.0.0";
+const SERVER_VERSION = "4.0.0";
 
-// Simple in-memory session tracking (maps session ID → actor)
 const mcpSessions = new Map<string, { actor: string; created: number }>();
-const SESSION_TTL_MS = 3_600_000; // 1 hour
+const SESSION_TTL_MS = 3_600_000;
 
 // ── Tool definitions ──────────────────────────────────────────────────
 
@@ -100,7 +99,8 @@ const TOOLS: ToolDef[] = [
       "• Text mode — pass 'content' with the file body. Good for saving text, code, markdown, JSON, CSV, etc.\n" +
       "• URL mode — pass 'url' and the server downloads it for you. Good for saving images, PDFs, or any file from the web. " +
       "You do NOT need to fetch the URL yourself; just provide it.\n" +
-      "The file path determines the folder structure automatically (e.g. 'reports/q1.pdf' puts the file in the 'reports' folder).",
+      "The file path determines the folder structure automatically (e.g. 'reports/q1.pdf' puts the file in the 'reports' folder). " +
+      "You can optionally provide a 'message' describing what changed (like a commit message).",
     inputSchema: {
       type: "object",
       properties: {
@@ -132,6 +132,10 @@ const TOOLS: ToolDef[] = [
           type: "string",
           description: "MIME type (e.g. 'text/markdown', 'image/png'). Auto-detected from file extension if omitted.",
         },
+        message: {
+          type: "string",
+          description: "A short message describing the change (like a commit message). Auto-generated if omitted.",
+        },
       },
       required: ["path"],
     },
@@ -143,7 +147,8 @@ const TOOLS: ToolDef[] = [
       "Delete files or folders from the user's cloud storage (Storage). " +
       "Pass exact file paths to delete individual files. " +
       "To delete an entire folder and everything inside it, add a trailing slash (e.g. 'old-project/'). " +
-      "This action is permanent and cannot be undone — confirm with the user before deleting.",
+      "This action is permanent and cannot be undone — confirm with the user before deleting. " +
+      "You can optionally provide a 'message' describing why.",
     inputSchema: {
       type: "object",
       properties: {
@@ -153,6 +158,10 @@ const TOOLS: ToolDef[] = [
           description:
             "List of paths to delete. " +
             "Examples: ['notes/draft.md'] deletes one file; ['temp/'] deletes the entire temp folder recursively.",
+        },
+        message: {
+          type: "string",
+          description: "A short message describing why (like a commit message). Auto-generated if omitted.",
         },
       },
       required: ["paths"],
@@ -184,12 +193,17 @@ const TOOLS: ToolDef[] = [
     description:
       "Move or rename a file in the user's cloud storage (Storage). " +
       "Use this to rename a file (same folder, different name), move it to a different folder, or both. " +
-      "The source file must exist. If the destination already exists, it will be overwritten.",
+      "The source file must exist. If the destination already exists, it will be overwritten. " +
+      "You can optionally provide a 'message' describing why.",
     inputSchema: {
       type: "object",
       properties: {
         from: { type: "string", description: "Current file path. Example: 'drafts/post.md'." },
         to: { type: "string", description: "New file path. Example: 'published/post.md' or 'drafts/post-v2.md'." },
+        message: {
+          type: "string",
+          description: "A short message describing why (like a commit message). Auto-generated if omitted.",
+        },
       },
       required: ["from", "to"],
     },
@@ -231,17 +245,14 @@ const TOOLS: ToolDef[] = [
   },
 ];
 
-// ── GET /mcp — SSE endpoint for server-initiated notifications ───────
+// ── GET /mcp — SSE endpoint ───────────────────────────────────────────
 
 async function mcpGet(c: C) {
-  // Per MCP Streamable HTTP spec: GET opens an SSE stream.
-  // Minimal implementation — just keeps connection alive for clients that need it.
   const accept = c.req.header("Accept") || "";
   if (accept.includes("text/event-stream")) {
     const { readable, writable } = new TransformStream();
     const writer = writable.getWriter();
     const enc = new TextEncoder();
-    // Send a comment to keep connection alive then close
     writer.write(enc.encode(": ok\n\n"));
     writer.close();
     return new Response(readable, {
@@ -252,7 +263,6 @@ async function mcpGet(c: C) {
       },
     });
   }
-  // Fallback: return JSON info
   return c.json({
     jsonrpc: "2.0",
     transport: "streamable-http",
@@ -282,10 +292,8 @@ async function mcpHandler(c: C) {
 
   switch (req.method) {
     case "initialize": {
-      // Create MCP session and return ID in header per Streamable HTTP spec
       const sessionId = crypto.randomUUID();
       mcpSessions.set(sessionId, { actor, created: Date.now() });
-      // Cleanup old sessions
       const cutoff = Date.now() - SESSION_TTL_MS;
       for (const [k, v] of mcpSessions) { if (v.created < cutoff) mcpSessions.delete(k); }
 
@@ -317,6 +325,8 @@ async function mcpHandler(c: C) {
             "Path format: no leading slash, forward slashes for folders. Example: 'docs/notes.md'.",
             "If storage_list returns a folder, you can list its contents by calling storage_list again with that folder as prefix (e.g. prefix: 'taocp/').",
             "To explore nested folders, call storage_list repeatedly, drilling into each subfolder.",
+            "",
+            "Every write, move, and delete operation produces a transaction (tx) number. You can provide an optional 'message' parameter to describe the change.",
           ].join("\n"),
         },
       });
@@ -380,6 +390,10 @@ async function callTool(c: C, name: string, args: Record<string, any>): Promise<
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
+function getEngine(c: C): StorageEngine {
+  return c.get("engine");
+}
+
 function toolResult(text: string): any {
   return { content: [{ type: "text", text }], isError: false };
 }
@@ -406,7 +420,6 @@ function checkPrefix(c: C, path: string): string | null {
   return null;
 }
 
-/** Strip leading slashes — LLMs often send /path instead of path */
 function cleanPath(p: string): string {
   return p.replace(/^\/+/, "");
 }
@@ -415,42 +428,22 @@ function cleanPath(p: string): string {
 
 async function toolList(c: C, args: Record<string, any>) {
   const actor = c.get("actor");
-  // Accept prefix, path, or folder — LLMs often use "path" instead of "prefix"
   const rawPrefix = (args.prefix as string) || (args.path as string) || (args.folder as string) || "";
-  const prefix = rawPrefix.replace(/^\/+/, ""); // strip leading slashes
+  const prefix = rawPrefix.replace(/^\/+/, "");
   const pfxErr = checkPrefix(c, prefix);
   if (pfxErr) return toolError(pfxErr);
 
   const limit = Math.min((args.limit as number) || 200, 1000);
 
-  const { results } = await c.env.DB.prepare(
-    "SELECT path, name, size, type, updated_at FROM files WHERE owner = ? AND path LIKE ? ORDER BY path LIMIT ?",
-  ).bind(actor, `${prefix}%`, limit).all();
-
-  const rows = results || [];
-  const entries: { name: string; type: string; size?: number; updated_at?: number }[] = [];
-  const dirs = new Set<string>();
-
-  for (const row of rows) {
-    const relative = (row.path as string).slice(prefix.length);
-    const slash = relative.indexOf("/");
-    if (slash === -1) {
-      entries.push({ name: relative, type: row.type as string, size: row.size as number, updated_at: row.updated_at as number });
-    } else {
-      const dir = relative.slice(0, slash + 1);
-      if (!dirs.has(dir)) {
-        dirs.add(dir);
-        entries.push({ name: dir, type: "directory" });
-      }
-    }
-  }
+  const result = await getEngine(c).list(actor, { prefix, limit });
 
   const lines: string[] = [];
-  for (const e of entries) {
+  for (const e of result.entries) {
     if (e.type === "directory") {
       lines.push(`${e.name}  (folder)`);
     } else {
-      lines.push(`${e.name}  ${humanSize(e.size || 0)}  ${e.type}`);
+      const txInfo = e.tx ? `  tx:${e.tx}` : "";
+      lines.push(`${e.name}  ${humanSize(e.size || 0)}  ${e.type}${txInfo}`);
     }
   }
   return toolResult(lines.join("\n") || "(empty)");
@@ -463,42 +456,35 @@ async function toolRead(c: C, args: Record<string, any>) {
   if (pfxErr) return toolError(pfxErr);
 
   const actor = c.get("actor");
-  const r2Obj = await c.env.BUCKET.get(`${actor}/${filePath}`);
-  if (!r2Obj) return toolError("File not found: " + filePath);
+  const result = await getEngine(c).read(actor, filePath);
+  if (!result) return toolError("File not found: " + filePath);
 
-  const ct = r2Obj.httpMetadata?.contentType || "application/octet-stream";
+  const ct = result.meta.type || "application/octet-stream";
   const isText = ct.startsWith("text/") ||
     ct === "application/json" ||
     ct === "application/xml" ||
     ct === "application/javascript";
 
-  const meta = `path: ${filePath}\nsize: ${r2Obj.size} bytes\ncontent_type: ${ct}`;
+  const txInfo = result.meta.tx ? `\ntx: ${result.meta.tx}` : "";
+  const meta = `path: ${filePath}\nsize: ${result.meta.size} bytes\ncontent_type: ${ct}${txInfo}`;
 
   if (isText) {
-    const text = await r2Obj.text();
+    const buf = result.body instanceof ArrayBuffer
+      ? result.body
+      : await streamToBuffer(result.body);
+    const text = new TextDecoder().decode(buf);
     const truncated = text.length > 102400;
     const content = truncated ? text.slice(0, 102400) + "\n... (truncated, " + text.length + " bytes total)" : text;
     return toolResult(meta + "\n---\n" + content);
   }
 
-  // For binary files, return a presigned download URL if credentials are available
-  const endpoint = c.env.R2_ENDPOINT;
-  const accessKeyId = c.env.R2_ACCESS_KEY_ID;
-  const secretAccessKey = c.env.R2_SECRET_ACCESS_KEY;
-  if (endpoint && accessKeyId && secretAccessKey) {
-    const dlUrl = await presignUrl({
-      method: "GET",
-      key: `${actor}/${filePath}`,
-      bucket: c.env.R2_BUCKET_NAME || "storage-files",
-      endpoint,
-      accessKeyId,
-      secretAccessKey,
-      expiresIn: 3600,
-    });
+  // Binary file — try presigned URL
+  const dlUrl = await getEngine(c).presignRead(actor, filePath);
+  if (dlUrl) {
     return toolResult(meta + "\n---\n[Binary file — direct download link (expires in 1 hour):\n" + dlUrl + "]");
   }
 
-  return toolResult(meta + "\n---\n[Binary file, " + r2Obj.size + " bytes. Use storage_share to generate a download link.]");
+  return toolResult(meta + "\n---\n[Binary file, " + result.meta.size + " bytes. Use storage_share to generate a download link.]");
 }
 
 async function toolWrite(c: C, args: Record<string, any>) {
@@ -507,6 +493,7 @@ async function toolWrite(c: C, args: Record<string, any>) {
   const content = args.content as string | undefined;
   const url = args.url as string | undefined;
   const encoding = (args.encoding as string) || "utf-8";
+  const message = args.message as string | undefined;
 
   if (!filePath) return toolError("path is required");
   const pathErr = validatePath(filePath);
@@ -543,54 +530,34 @@ async function toolWrite(c: C, args: Record<string, any>) {
 
   const name = filePath.split("/").pop() || filePath;
   const contentType = (args.content_type as string) || detectedContentType || mimeFromName(name);
-  const now = Date.now();
 
-  await c.env.BUCKET.put(`${actor}/${filePath}`, body, { httpMetadata: { contentType } });
-  await c.env.DB.prepare(
-    "INSERT INTO files (owner, path, name, size, type, updated_at) VALUES (?, ?, ?, ?, ?, ?) " +
-      "ON CONFLICT (owner, path) DO UPDATE SET size = excluded.size, type = excluded.type, updated_at = excluded.updated_at",
-  ).bind(actor, filePath, name, body.byteLength, contentType, now).run();
-
+  const result = await getEngine(c).write(actor, filePath, body, contentType, message);
   invalidateCache(actor);
 
-  return toolResult(`Saved ${filePath} (${humanSize(body.byteLength)}, ${contentType})`);
+  return toolResult(`Saved ${filePath} (${humanSize(result.size)}, ${contentType}) tx:${result.tx}`);
 }
 
 async function toolDelete(c: C, args: Record<string, any>) {
   const rawPaths = (args.paths as string[]) || (args.path ? [args.path as string] : []);
   if (!rawPaths.length) return toolError("paths is required");
+  const message = args.message as string | undefined;
 
   const actor = c.get("actor");
-  const deleted: string[] = [];
+  const cleanPaths: string[] = [];
 
   for (const rawPath of rawPaths) {
     const path = cleanPath(rawPath);
     const pfxErr = checkPrefix(c, path);
     if (pfxErr) continue;
-
-    if (path.endsWith("/")) {
-      const prefix = `${actor}/${path}`;
-      let cursor: string | undefined;
-      do {
-        const list = await c.env.BUCKET.list({ prefix, cursor, limit: 1000 });
-        if (list.objects.length) {
-          await c.env.BUCKET.delete(list.objects.map((o) => o.key));
-        }
-        cursor = list.truncated ? list.cursor : undefined;
-      } while (cursor);
-      await c.env.DB.prepare("DELETE FROM files WHERE owner = ? AND path LIKE ?")
-        .bind(actor, `${path}%`).run();
-      deleted.push(path);
-    } else {
-      await c.env.BUCKET.delete(`${actor}/${path}`);
-      await c.env.DB.prepare("DELETE FROM files WHERE owner = ? AND path = ?")
-        .bind(actor, path).run();
-      deleted.push(path);
-    }
+    cleanPaths.push(path);
   }
 
+  if (!cleanPaths.length) return toolError("No valid paths to delete");
+
+  const result = await getEngine(c).delete(actor, cleanPaths, message);
   invalidateCache(actor);
-  return toolResult("Deleted: " + deleted.join(", "));
+
+  return toolResult(`Deleted: ${cleanPaths.join(", ")} (tx:${result.tx})`);
 }
 
 async function toolSearch(c: C, args: Record<string, any>) {
@@ -599,34 +566,20 @@ async function toolSearch(c: C, args: Record<string, any>) {
 
   const actor = c.get("actor");
   const limit = Math.min((args.limit as number) || 50, 200);
-  const pfx = c.get("prefix") || "";
+  const prefix = c.get("prefix") || "";
 
-  let sql = "SELECT path, name, size, type, updated_at FROM files WHERE owner = ? AND (name LIKE ? OR path LIKE ?)";
-  const binds: any[] = [actor, `%${q}%`, `%${q}%`];
+  const results = await getEngine(c).search(actor, q, { limit, prefix });
 
-  if (pfx) {
-    sql += " AND path LIKE ?";
-    binds.push(`${pfx}%`);
-  }
-
-  sql += " ORDER BY updated_at DESC LIMIT ?";
-  binds.push(limit);
-
-  const { results } = await c.env.DB.prepare(sql).bind(...binds).all();
-
-  const items = (results || []).map((o: any) => ({
-    name: o.name, path: o.path, type: o.type, size: o.size, updated_at: o.updated_at,
-  }));
-
-  if (!items.length) return toolResult("No files found matching: " + q);
-  const lines = items.map((i: any) => `${i.path}  ${humanSize(i.size)}  ${i.type}`);
-  return toolResult(`Found ${items.length} result(s) for "${q}":\n` + lines.join("\n"));
+  if (!results.length) return toolResult("No files found matching: " + q);
+  const lines = results.map((i) => `${i.path}  ${humanSize(i.size)}  ${i.type}`);
+  return toolResult(`Found ${results.length} result(s) for "${q}":\n` + lines.join("\n"));
 }
 
 async function toolMove(c: C, args: Record<string, any>) {
   const actor = c.get("actor");
   const from = cleanPath((args.from as string) || (args.source as string) || "");
   const to = cleanPath((args.to as string) || (args.destination as string) || (args.dest as string) || "");
+  const message = args.message as string | undefined;
 
   if (!from || !to) return toolError("from and to are required");
   const fromErr = checkPrefix(c, from);
@@ -636,26 +589,10 @@ async function toolMove(c: C, args: Record<string, any>) {
   const pathErr = validatePath(to);
   if (pathErr) return toolError(pathErr);
 
-  const r2Obj = await c.env.BUCKET.get(`${actor}/${from}`);
-  if (!r2Obj) return toolError("File not found: " + from);
-
-  await c.env.BUCKET.put(`${actor}/${to}`, r2Obj.body, {
-    httpMetadata: r2Obj.httpMetadata,
-  });
-  await c.env.BUCKET.delete(`${actor}/${from}`);
-
-  const newName = to.split("/").pop() || to;
-  const now = Date.now();
-  await c.env.DB.batch([
-    c.env.DB.prepare("DELETE FROM files WHERE owner = ? AND path = ?").bind(actor, from),
-    c.env.DB.prepare(
-      "INSERT INTO files (owner, path, name, size, type, updated_at) VALUES (?, ?, ?, ?, ?, ?) " +
-        "ON CONFLICT (owner, path) DO UPDATE SET name = excluded.name, size = excluded.size, type = excluded.type, updated_at = excluded.updated_at",
-    ).bind(actor, to, newName, r2Obj.size, r2Obj.httpMetadata?.contentType || "application/octet-stream", now),
-  ]);
-
+  const result = await getEngine(c).move(actor, from, to, message);
   invalidateCache(actor);
-  return toolResult(`Moved ${from} → ${to}`);
+
+  return toolResult(`Moved ${from} → ${to} (tx:${result.tx})`);
 }
 
 async function toolShare(c: C, args: Record<string, any>) {
@@ -665,9 +602,8 @@ async function toolShare(c: C, args: Record<string, any>) {
   const pfxErr = checkPrefix(c, filePath);
   if (pfxErr) return toolError(pfxErr);
 
-  // Verify file exists
-  const obj = await c.env.BUCKET.head(`${actor}/${filePath}`);
-  if (!obj) return toolError("File not found: " + filePath);
+  const meta = await getEngine(c).head(actor, filePath);
+  if (!meta) return toolError("File not found: " + filePath);
 
   const expiresIn = Math.min(Math.max((args.expires_in as number) || 3600, 60), 7 * 24 * 3600);
   const now = Date.now();
@@ -686,15 +622,28 @@ async function toolShare(c: C, args: Record<string, any>) {
 
 async function toolStats(c: C) {
   const actor = c.get("actor");
+  const stats = await getEngine(c).stats(actor);
+  return toolResult(`${stats.files} file(s), ${humanSize(stats.bytes)} total`);
+}
 
-  const stats = await c.env.DB
-    .prepare("SELECT COUNT(*) as file_count, COALESCE(SUM(size),0) as total_size FROM files WHERE owner = ?")
-    .bind(actor)
-    .first<{ file_count: number; total_size: number }>();
-
-  const fc = stats?.file_count || 0;
-  const ts = stats?.total_size || 0;
-  return toolResult(`${fc} file(s), ${humanSize(ts)} total`);
+/** Consume a ReadableStream into ArrayBuffer */
+async function streamToBuffer(stream: ReadableStream): Promise<ArrayBuffer> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    total += value.byteLength;
+  }
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return result.buffer as ArrayBuffer;
 }
 
 // ── Registration ──────────────────────────────────────────────────────

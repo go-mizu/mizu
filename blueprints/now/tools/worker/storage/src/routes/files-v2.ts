@@ -1,11 +1,11 @@
 import { z } from "@hono/zod-openapi";
 import type { Context } from "hono";
 import type { App, Env, Variables } from "../types";
+import type { StorageEngine } from "../storage/engine";
 import { auth } from "../middleware/auth";
 import { err } from "../lib/error";
 import { wildcardPath, validatePath } from "../lib/path";
 import { mimeFromName } from "../lib/mime";
-import { presignUrl } from "../lib/presign";
 import { audit } from "../lib/audit";
 import { shareToken } from "../lib/id";
 import { invalidateCache, getCachedNames } from "./find";
@@ -18,16 +18,11 @@ function checkPrefix(c: C, path: string): Response | null {
   return null;
 }
 
-function r2Config(c: C) {
-  const endpoint = c.env.R2_ENDPOINT;
-  const accessKeyId = c.env.R2_ACCESS_KEY_ID;
-  const secretAccessKey = c.env.R2_SECRET_ACCESS_KEY;
-  if (!endpoint || !accessKeyId || !secretAccessKey) return null;
-  return { endpoint, accessKeyId, secretAccessKey, bucket: c.env.R2_BUCKET_NAME || "storage-files" };
+function engine(c: C): StorageEngine {
+  return c.get("engine");
 }
 
 // ── GET /files ──────────────────────────────────────────────────────
-// List files and folders. Query params: ?prefix=docs/&limit=200&offset=0
 async function listFiles(c: C) {
   const actor = c.get("actor");
   const prefix = c.req.query("prefix") || "";
@@ -38,39 +33,9 @@ async function listFiles(c: C) {
   const limit = Math.min(parseInt(c.req.query("limit") || "200", 10), 1000);
   const offset = parseInt(c.req.query("offset") || "0", 10);
 
-  const { results } = await c.env.DB.prepare(
-    "SELECT path, name, size, type, updated_at FROM files WHERE owner = ? AND path LIKE ? ORDER BY path LIMIT ? OFFSET ?",
-  )
-    .bind(actor, `${prefix}%`, limit + 1, offset)
-    .all();
+  const result = await engine(c).list(actor, { prefix, limit, offset });
 
-  const rows = results || [];
-  const truncated = rows.length > limit;
-  if (truncated) rows.pop();
-
-  const entries: { name: string; type: string; size?: number; updated_at?: number }[] = [];
-  const dirs = new Set<string>();
-
-  for (const row of rows) {
-    const relative = (row.path as string).slice(prefix.length);
-    const slash = relative.indexOf("/");
-    if (slash === -1) {
-      entries.push({
-        name: relative,
-        type: row.type as string,
-        size: row.size as number,
-        updated_at: row.updated_at as number,
-      });
-    } else {
-      const dir = relative.slice(0, slash + 1);
-      if (!dirs.has(dir)) {
-        dirs.add(dir);
-        entries.push({ name: dir, type: "directory" });
-      }
-    }
-  }
-
-  return c.json({ prefix: prefix || "/", entries, truncated });
+  return c.json({ prefix: prefix || "/", entries: result.entries, truncated: result.truncated });
 }
 
 // ── GET /files/search ───────────────────────────────────────────────
@@ -113,18 +78,13 @@ async function searchFiles(c: C) {
 // ── GET /files/stats ────────────────────────────────────────────────
 async function statsHandler(c: C) {
   const actor = c.get("actor");
-  const row = await c.env.DB.prepare(
-    "SELECT COUNT(*) as files, COALESCE(SUM(size), 0) as bytes FROM files WHERE owner = ?",
-  )
-    .bind(actor)
-    .first<{ files: number; bytes: number }>();
-
-  return c.json({ files: row?.files || 0, bytes: row?.bytes || 0 });
+  const stats = await engine(c).stats(actor);
+  return c.json(stats);
 }
 
 // ── POST /files/move ────────────────────────────────────────────────
 async function moveFile(c: C) {
-  const body = await c.req.json<{ from?: string; to?: string }>();
+  const body = await c.req.json<{ from?: string; to?: string; message?: string }>();
   const from = body.from || "";
   const to = body.to || "";
 
@@ -140,31 +100,11 @@ async function moveFile(c: C) {
     return err(c, "forbidden", "Path not allowed");
   }
 
-  const fromKey = `${actor}/${from}`;
-  const obj = await c.env.BUCKET.get(fromKey);
-  if (!obj) return err(c, "not_found", "Source not found");
-
-  await c.env.BUCKET.put(`${actor}/${to}`, obj.body, {
-    httpMetadata: obj.httpMetadata,
-    customMetadata: obj.customMetadata,
-  });
-  await c.env.BUCKET.delete(fromKey);
-
-  const name = to.split("/").pop()!;
-  const type = obj.httpMetadata?.contentType || mimeFromName(name);
-  const now = Date.now();
-
-  await c.env.DB.batch([
-    c.env.DB.prepare("DELETE FROM files WHERE owner = ? AND path = ?").bind(actor, from),
-    c.env.DB.prepare(
-      "INSERT INTO files (owner, path, name, size, type, updated_at) VALUES (?, ?, ?, ?, ?, ?) " +
-        "ON CONFLICT (owner, path) DO UPDATE SET name = excluded.name, size = excluded.size, type = excluded.type, updated_at = excluded.updated_at",
-    ).bind(actor, to, name, obj.size, type, now),
-  ]);
+  const result = await engine(c).move(actor, from, to, body.message);
 
   invalidateCache(actor);
   audit(c, "mv", `${from} → ${to}`);
-  return c.json({ from, to });
+  return c.json({ from, to, tx: result.tx, time: result.time });
 }
 
 // ── POST /files/share ───────────────────────────────────────────────
@@ -182,8 +122,8 @@ async function shareFile(c: C) {
   if (pfxErr) return pfxErr;
 
   const actor = c.get("actor");
-  const head = await c.env.BUCKET.head(`${actor}/${path}`);
-  if (!head) return err(c, "not_found", "File not found");
+  const meta = await engine(c).head(actor, path);
+  if (!meta) return err(c, "not_found", "File not found");
 
   const ttl = Math.min(Math.max(body.ttl || body.expires_in || DEFAULT_TTL, 60), MAX_TTL);
   const now = Date.now();
@@ -203,7 +143,6 @@ async function shareFile(c: C) {
 }
 
 // ── POST /files/mkdir ───────────────────────────────────────────────
-// Creates a folder marker (zero-byte object in R2).
 async function mkdirHandler(c: C) {
   const body = await c.req.json<{ path?: string }>();
   const path = (body.path || "").replace(/^\/+/, "");
@@ -214,19 +153,16 @@ async function mkdirHandler(c: C) {
   if (pfxErr) return pfxErr;
 
   const actor = c.get("actor");
-  await c.env.BUCKET.put(`${actor}/${path}`, new Uint8Array(0));
+  // Mkdir: write a zero-byte blob
+  await engine(c).write(actor, path, new ArrayBuffer(0), "application/x-directory", `mkdir ${path}`);
 
   return c.json({ path, created: true });
 }
 
 // ── POST /files/uploads ─────────────────────────────────────────────
-// Initiate a presigned upload — returns a signed PUT URL for direct R2 upload.
 const UPLOAD_EXPIRES = 3600;
 
 async function initiateUpload(c: C) {
-  const cfg = r2Config(c);
-  if (!cfg) return err(c, "not_configured", "Presigned URLs not configured");
-
   const body = await c.req.json<{ path?: string; content_type?: string }>();
   const path = (body.path || "").replace(/^\/+/, "");
   if (!path || path.endsWith("/")) return err(c, "bad_request", "File path required");
@@ -238,25 +174,15 @@ async function initiateUpload(c: C) {
   const actor = c.get("actor");
   const name = path.split("/").pop()!;
   const contentType = body.content_type || mimeFromName(name);
-  const key = `${actor}/${path}`;
 
-  const url = await presignUrl({
-    method: "PUT",
-    key,
-    bucket: cfg.bucket,
-    endpoint: cfg.endpoint,
-    accessKeyId: cfg.accessKeyId,
-    secretAccessKey: cfg.secretAccessKey,
-    expiresIn: UPLOAD_EXPIRES,
-    contentType,
-  });
+  const url = await engine(c).presignUpload(actor, path, contentType, UPLOAD_EXPIRES);
 
   return c.json({ url, content_type: contentType, expires_in: UPLOAD_EXPIRES });
 }
 
 // ── POST /files/uploads/complete ────────────────────────────────────
 async function completeUpload(c: C) {
-  const body = await c.req.json<{ path?: string }>();
+  const body = await c.req.json<{ path?: string; message?: string }>();
   const path = (body.path || "").replace(/^\/+/, "");
   if (!path) return err(c, "bad_request", "path is required");
   const pathErr = validatePath(path);
@@ -265,33 +191,17 @@ async function completeUpload(c: C) {
   if (pfxErr) return pfxErr;
 
   const actor = c.get("actor");
-  const key = `${actor}/${path}`;
-
-  const head = await c.env.BUCKET.head(key);
-  if (!head) return err(c, "not_found", "Upload not found in storage — did the upload complete?");
+  const result = await engine(c).confirmUpload(actor, path, body.message);
 
   const name = path.split("/").pop()!;
-  const contentType = head.httpMetadata?.contentType || mimeFromName(name);
-  const now = Date.now();
-
-  await c.env.DB.prepare(
-    "INSERT INTO files (owner, path, name, size, type, updated_at) VALUES (?, ?, ?, ?, ?, ?) " +
-      "ON CONFLICT (owner, path) DO UPDATE SET size = excluded.size, type = excluded.type, updated_at = excluded.updated_at",
-  )
-    .bind(actor, path, name, head.size, contentType, now)
-    .run();
-
   invalidateCache(actor);
   audit(c, "write", path);
 
-  return c.json({ path, name, size: head.size, type: contentType, updated_at: now });
+  return c.json({ path, name, size: result.size, tx: result.tx, time: result.time });
 }
 
 // ── POST /files/uploads/multipart ───────────────────────────────────
 async function initiateMultipart(c: C) {
-  const cfg = r2Config(c);
-  if (!cfg) return err(c, "not_configured", "Presigned URLs not configured");
-
   const body = await c.req.json<{ path?: string; content_type?: string; part_count?: number }>();
   const path = (body.path || "").replace(/^\/+/, "");
   if (!path || path.endsWith("/")) return err(c, "bad_request", "File path required");
@@ -303,34 +213,16 @@ async function initiateMultipart(c: C) {
   const actor = c.get("actor");
   const name = path.split("/").pop()!;
   const contentType = body.content_type || mimeFromName(name);
-  const key = `${actor}/${path}`;
-
-  const mpu = await c.env.BUCKET.createMultipartUpload(key, {
-    httpMetadata: { contentType },
-  });
-
   const partCount = Math.min(body.part_count || 1, 10000);
-  const partUrls: string[] = [];
-  for (let i = 1; i <= partCount; i++) {
-    const url = await presignUrl({
-      method: "PUT",
-      key,
-      bucket: cfg.bucket,
-      endpoint: cfg.endpoint,
-      accessKeyId: cfg.accessKeyId,
-      secretAccessKey: cfg.secretAccessKey,
-      expiresIn: 86400,
-      queryParams: { partNumber: String(i), uploadId: mpu.uploadId },
-    });
-    partUrls.push(url);
-  }
+
+  const result = await engine(c).initiateMultipart(actor, path, contentType, partCount);
 
   return c.json({
-    upload_id: mpu.uploadId,
+    upload_id: result.upload_id,
     key: path,
     content_type: contentType,
-    part_urls: partUrls,
-    expires_in: 86400,
+    part_urls: result.part_urls,
+    expires_in: result.expires_in,
   });
 }
 
@@ -340,6 +232,7 @@ async function completeMultipart(c: C) {
     path?: string;
     upload_id?: string;
     parts?: { part_number: number; etag: string }[];
+    message?: string;
   }>();
   const path = (body.path || "").replace(/^\/+/, "");
   if (!path) return err(c, "bad_request", "path is required");
@@ -351,34 +244,13 @@ async function completeMultipart(c: C) {
   if (pfxErr) return pfxErr;
 
   const actor = c.get("actor");
-  const key = `${actor}/${path}`;
-
-  const mpu = c.env.BUCKET.resumeMultipartUpload(key, body.upload_id);
-  const uploaded = await mpu.complete(
-    body.parts.map((p) => ({
-      partNumber: p.part_number,
-      etag: p.etag,
-    })),
-  );
+  const result = await engine(c).completeMultipart(actor, path, body.upload_id, body.parts, body.message);
 
   const name = path.split("/").pop()!;
-  const contentType = uploaded.httpMetadata?.contentType || mimeFromName(name);
-  const now = Date.now();
-
-  const head = await c.env.BUCKET.head(key);
-  const size = head?.size ?? 0;
-
-  await c.env.DB.prepare(
-    "INSERT INTO files (owner, path, name, size, type, updated_at) VALUES (?, ?, ?, ?, ?, ?) " +
-      "ON CONFLICT (owner, path) DO UPDATE SET size = excluded.size, type = excluded.type, updated_at = excluded.updated_at",
-  )
-    .bind(actor, path, name, size, contentType, now)
-    .run();
-
   invalidateCache(actor);
   audit(c, "write", path);
 
-  return c.json({ path, name, size, type: contentType, updated_at: now });
+  return c.json({ path, name, size: result.size, tx: result.tx, time: result.time });
 }
 
 // ── POST /files/uploads/multipart/abort ─────────────────────────────
@@ -391,21 +263,13 @@ async function abortMultipart(c: C) {
   if (pfxErr) return pfxErr;
 
   const actor = c.get("actor");
-  const key = `${actor}/${path}`;
-
-  const mpu = c.env.BUCKET.resumeMultipartUpload(key, body.upload_id);
-  await mpu.abort();
+  await engine(c).abortMultipart(actor, path, body.upload_id);
 
   return c.json({ aborted: true });
 }
 
 // ── GET /files/{path} — download ────────────────────────────────────
-// Accept: application/json → returns JSON with presigned URL + metadata.
-// Otherwise → 302 redirect to presigned R2 URL (browsers, curl).
 async function downloadFile(c: C) {
-  const cfg = r2Config(c);
-  if (!cfg) return err(c, "not_configured", "Presigned URLs not configured");
-
   const path = wildcardPath(c, "/files/");
   if (!path) return err(c, "bad_request", "File path required");
   const pathErr = validatePath(path);
@@ -414,36 +278,26 @@ async function downloadFile(c: C) {
   if (pfxErr) return pfxErr;
 
   const actor = c.get("actor");
-  const key = `${actor}/${path}`;
+  const meta = await engine(c).head(actor, path);
+  if (!meta) return err(c, "not_found", "File not found");
 
-  const head = await c.env.BUCKET.head(key);
-  if (!head) return err(c, "not_found", "File not found");
-
-  const url = await presignUrl({
-    method: "GET",
-    key,
-    bucket: cfg.bucket,
-    endpoint: cfg.endpoint,
-    accessKeyId: cfg.accessKeyId,
-    secretAccessKey: cfg.secretAccessKey,
-    expiresIn: 3600,
-  });
+  const url = await engine(c).presignRead(actor, path);
+  if (!url) return err(c, "not_configured", "Presigned URLs not configured");
 
   audit(c, "read", path);
 
-  // Programmatic clients (CLI, SDKs) get JSON with the URL
   const accept = c.req.header("Accept") || "";
   if (accept.includes("application/json")) {
     return c.json({
       url,
-      size: head.size,
-      type: head.httpMetadata?.contentType || "application/octet-stream",
-      etag: head.etag,
+      size: meta.size,
+      type: meta.type,
+      tx: meta.tx,
+      time: meta.tx_time,
       expires_in: 3600,
     });
   }
 
-  // Browsers, curl — redirect directly
   return c.redirect(url, 302) as any;
 }
 
@@ -457,13 +311,13 @@ async function headFile(c: C) {
   if (pfxErr) return pfxErr;
 
   const actor = c.get("actor");
-  const obj = await c.env.BUCKET.head(`${actor}/${path}`);
-  if (!obj) return c.body(null, 404);
+  const meta = await engine(c).head(actor, path);
+  if (!meta) return c.body(null, 404);
 
   return c.body(null, 200, {
-    "Content-Type": obj.httpMetadata?.contentType || "application/octet-stream",
-    "Content-Length": obj.size.toString(),
-    "ETag": obj.etag,
+    "Content-Type": meta.type || "application/octet-stream",
+    "Content-Length": meta.size.toString(),
+    "X-Tx": String(meta.tx),
   });
 }
 
@@ -477,38 +331,25 @@ async function deleteHandler(c: C) {
   if (pfxErr) return pfxErr;
 
   const actor = c.get("actor");
+  const result = await engine(c).delete(actor, [path]);
 
-  if (path.endsWith("/")) {
-    const prefix = `${actor}/${path}`;
-    let cursor: string | undefined;
-    let deleted = 0;
-    do {
-      const list = await c.env.BUCKET.list({ prefix, cursor, limit: 1000 });
-      if (list.objects.length) {
-        await c.env.BUCKET.delete(list.objects.map((o) => o.key));
-        deleted += list.objects.length;
-      }
-      cursor = list.truncated ? list.cursor : undefined;
-    } while (cursor);
-
-    await c.env.DB.prepare("DELETE FROM files WHERE owner = ? AND path LIKE ?")
-      .bind(actor, `${path}%`).run();
-    invalidateCache(actor);
-    audit(c, "rm", path);
-    return c.json({ deleted });
-  }
-
-  await c.env.BUCKET.delete(`${actor}/${path}`);
-  await c.env.DB.prepare("DELETE FROM files WHERE owner = ? AND path = ?")
-    .bind(actor, path).run();
   invalidateCache(actor);
   audit(c, "rm", path);
-  return c.json({ deleted: 1 });
+  return c.json({ deleted: result.deleted, tx: result.tx, time: result.time });
+}
+
+// ── GET /files/log ──────────────────────────────────────────────────
+async function logHandler(c: C) {
+  const actor = c.get("actor");
+  const path = c.req.query("path");
+  const since_tx = c.req.query("since_tx") ? parseInt(c.req.query("since_tx")!, 10) : undefined;
+  const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 500);
+
+  const events = await engine(c).log(actor, { path, since_tx, limit });
+  return c.json({ events });
 }
 
 // ── Wildcard dispatcher for /files/* ────────────────────────────────
-// Routes /files/search, /files/stats, /files/uploads etc. are registered
-// before this catch-all, so they take priority in Hono's router.
 async function filesWildcard(c: C) {
   const method = c.req.method;
   if (method === "GET") return downloadFile(c);
@@ -519,36 +360,18 @@ async function filesWildcard(c: C) {
 
 // ── Registration ────────────────────────────────────────────────────
 export function register(app: App) {
-  // Specific routes MUST be registered before the wildcard catch-all
-
-  // List
   app.get("/files", auth, listFiles);
-
-  // Search
   app.get("/files/search", auth, searchFiles);
-
-  // Stats
   app.get("/files/stats", auth, statsHandler);
-
-  // Move
+  app.get("/files/log", auth, logHandler);
   app.post("/files/move", auth, moveFile);
-
-  // Mkdir
   app.post("/files/mkdir", auth, mkdirHandler);
-
-  // Share
   app.post("/files/share", auth, shareFile);
-
-  // Uploads (single)
   app.post("/files/uploads", auth, initiateUpload);
   app.post("/files/uploads/complete", auth, completeUpload);
-
-  // Uploads (multipart)
   app.post("/files/uploads/multipart", auth, initiateMultipart);
   app.post("/files/uploads/multipart/complete", auth, completeMultipart);
   app.post("/files/uploads/multipart/abort", auth, abortMultipart);
-
-  // Wildcard catch-all: GET (download redirect), HEAD (metadata), DELETE
   app.all("/files/*", auth, filesWildcard);
 
   // ── OpenAPI docs ──────────────────────────────────────────────────
@@ -581,6 +404,8 @@ export function register(app: App) {
                 type: z.string().openapi({ description: "MIME type or 'directory'" }),
                 size: z.number().int().optional(),
                 updated_at: z.number().int().optional(),
+                tx: z.number().int().optional().openapi({ description: "Last-write transaction number" }),
+                tx_time: z.number().int().optional().openapi({ description: "Timestamp of last-write tx" }),
               })),
               truncated: z.boolean(),
             }),
@@ -639,16 +464,67 @@ export function register(app: App) {
   });
 
   app.openAPIRegistry.registerPath({
+    method: "get",
+    path: "/files/log",
+    summary: "View event log",
+    tags: filesTags,
+    security: sec,
+    request: {
+      query: z.object({
+        path: z.string().optional().openapi({ description: "Filter events by file path" }),
+        since_tx: z.coerce.number().int().optional().openapi({ description: "Return events after this tx number" }),
+        limit: z.coerce.number().int().default(50).optional(),
+      }),
+    },
+    responses: {
+      200: {
+        description: "Event log",
+        content: {
+          "application/json": {
+            schema: z.object({
+              events: z.array(z.object({
+                tx: z.number().int(),
+                action: z.string(),
+                path: z.string(),
+                size: z.number().int(),
+                msg: z.string().nullable(),
+                ts: z.number().int(),
+              })),
+            }),
+          },
+        },
+      },
+    },
+  });
+
+  app.openAPIRegistry.registerPath({
     method: "post",
     path: "/files/move",
     summary: "Move a file",
     tags: filesTags,
     security: sec,
     request: {
-      body: { content: { "application/json": { schema: z.object({ from: z.string(), to: z.string() }) } } },
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({
+              from: z.string(),
+              to: z.string(),
+              message: z.string().optional().openapi({ description: "Commit message for the move" }),
+            }),
+          },
+        },
+      },
     },
     responses: {
-      200: { description: "Moved", content: { "application/json": { schema: z.object({ from: z.string(), to: z.string() }) } } },
+      200: {
+        description: "Moved",
+        content: {
+          "application/json": {
+            schema: z.object({ from: z.string(), to: z.string(), tx: z.number().int(), time: z.number().int() }),
+          },
+        },
+      },
     },
   });
 
@@ -690,7 +566,7 @@ export function register(app: App) {
     security: sec,
     request: { params: pathParam },
     responses: {
-      302: { description: "Redirect to presigned R2 URL" },
+      302: { description: "Redirect to presigned URL" },
       404: { description: "File not found" },
     },
   });
@@ -716,7 +592,18 @@ export function register(app: App) {
     security: sec,
     request: { params: pathParam },
     responses: {
-      200: { description: "Delete count", content: { "application/json": { schema: z.object({ deleted: z.number().int() }) } } },
+      200: {
+        description: "Delete result",
+        content: {
+          "application/json": {
+            schema: z.object({
+              deleted: z.number().int(),
+              tx: z.number().int(),
+              time: z.number().int(),
+            }),
+          },
+        },
+      },
     },
   });
 
@@ -782,14 +669,29 @@ export function register(app: App) {
     tags: ["uploads"],
     security: sec,
     request: {
-      body: { content: { "application/json": { schema: z.object({ path: z.string() }) } } },
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({
+              path: z.string(),
+              message: z.string().optional().openapi({ description: "Commit message" }),
+            }),
+          },
+        },
+      },
     },
     responses: {
       200: {
         description: "File metadata",
         content: {
           "application/json": {
-            schema: z.object({ path: z.string(), name: z.string(), size: z.number().int(), type: z.string(), updated_at: z.number().int() }),
+            schema: z.object({
+              path: z.string(),
+              name: z.string(),
+              size: z.number().int(),
+              tx: z.number().int(),
+              time: z.number().int(),
+            }),
           },
         },
       },
@@ -847,6 +749,7 @@ export function register(app: App) {
               path: z.string(),
               upload_id: z.string(),
               parts: z.array(z.object({ part_number: z.number().int(), etag: z.string() })),
+              message: z.string().optional().openapi({ description: "Commit message" }),
             }),
           },
         },
@@ -857,7 +760,13 @@ export function register(app: App) {
         description: "Upload completed",
         content: {
           "application/json": {
-            schema: z.object({ path: z.string(), name: z.string(), size: z.number().int(), type: z.string(), updated_at: z.number().int() }),
+            schema: z.object({
+              path: z.string(),
+              name: z.string(),
+              size: z.number().int(),
+              tx: z.number().int(),
+              time: z.number().int(),
+            }),
           },
         },
       },
