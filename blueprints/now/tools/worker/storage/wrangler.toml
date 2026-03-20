@@ -18,6 +18,7 @@ enabled = true
 binding = "DB"
 database_name = "storage-db"
 database_id = "10bc584b-8b6e-4695-95de-7d6c25a79b60"
+migrations_dir = "migrations"
 
 [[r2_buckets]]
 binding = "BUCKET"
