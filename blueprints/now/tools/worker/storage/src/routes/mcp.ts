@@ -6,7 +6,6 @@ import { shareToken } from "../lib/id";
 import { presignUrl } from "../lib/presign";
 import { invalidateCache } from "./find";
 import { validatePath } from "../lib/path";
-import { getWidgetHtml, WIDGET_RESOURCES, WIDGET_RESOURCE_META, TOOL_WIDGET_MAP } from "../mcp-widgets";
 
 type C = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -39,7 +38,6 @@ interface ToolDef {
   description: string;
   inputSchema: Record<string, any>;
   annotations?: ToolAnnotations;
-  _meta?: Record<string, any>;
 }
 
 // ── Protocol constants ────────────────────────────────────────────────
@@ -75,13 +73,6 @@ const TOOLS: ToolDef[] = [
       },
     },
     annotations: { title: "List files", readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
-    _meta: {
-      ui: { resourceUri: TOOL_WIDGET_MAP.storage_list.uri },
-      "openai/outputTemplate": TOOL_WIDGET_MAP.storage_list.uri,
-      "openai/toolInvocation/invoking": TOOL_WIDGET_MAP.storage_list.invoking,
-      "openai/toolInvocation/invoked": TOOL_WIDGET_MAP.storage_list.invoked,
-      "openai/widgetDescription": TOOL_WIDGET_MAP.storage_list.widgetDescription,
-    },
   },
   {
     name: "storage_read",
@@ -101,13 +92,6 @@ const TOOLS: ToolDef[] = [
       required: ["path"],
     },
     annotations: { title: "Read file", readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
-    _meta: {
-      ui: { resourceUri: TOOL_WIDGET_MAP.storage_read.uri },
-      "openai/outputTemplate": TOOL_WIDGET_MAP.storage_read.uri,
-      "openai/toolInvocation/invoking": TOOL_WIDGET_MAP.storage_read.invoking,
-      "openai/toolInvocation/invoked": TOOL_WIDGET_MAP.storage_read.invoked,
-      "openai/widgetDescription": TOOL_WIDGET_MAP.storage_read.widgetDescription,
-    },
   },
   {
     name: "storage_write",
@@ -152,13 +136,6 @@ const TOOLS: ToolDef[] = [
       required: ["path"],
     },
     annotations: { title: "Save file", readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
-    _meta: {
-      ui: { resourceUri: TOOL_WIDGET_MAP.storage_write.uri },
-      "openai/outputTemplate": TOOL_WIDGET_MAP.storage_write.uri,
-      "openai/toolInvocation/invoking": TOOL_WIDGET_MAP.storage_write.invoking,
-      "openai/toolInvocation/invoked": TOOL_WIDGET_MAP.storage_write.invoked,
-      "openai/widgetDescription": TOOL_WIDGET_MAP.storage_write.widgetDescription,
-    },
   },
   {
     name: "storage_delete",
@@ -181,13 +158,6 @@ const TOOLS: ToolDef[] = [
       required: ["paths"],
     },
     annotations: { title: "Delete files", readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true },
-    _meta: {
-      ui: { resourceUri: TOOL_WIDGET_MAP.storage_delete.uri },
-      "openai/outputTemplate": TOOL_WIDGET_MAP.storage_delete.uri,
-      "openai/toolInvocation/invoking": TOOL_WIDGET_MAP.storage_delete.invoking,
-      "openai/toolInvocation/invoked": TOOL_WIDGET_MAP.storage_delete.invoked,
-      "openai/widgetDescription": TOOL_WIDGET_MAP.storage_delete.widgetDescription,
-    },
   },
   {
     name: "storage_search",
@@ -208,13 +178,6 @@ const TOOLS: ToolDef[] = [
       required: ["query"],
     },
     annotations: { title: "Search files", readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
-    _meta: {
-      ui: { resourceUri: TOOL_WIDGET_MAP.storage_search.uri },
-      "openai/outputTemplate": TOOL_WIDGET_MAP.storage_search.uri,
-      "openai/toolInvocation/invoking": TOOL_WIDGET_MAP.storage_search.invoking,
-      "openai/toolInvocation/invoked": TOOL_WIDGET_MAP.storage_search.invoked,
-      "openai/widgetDescription": TOOL_WIDGET_MAP.storage_search.widgetDescription,
-    },
   },
   {
     name: "storage_move",
@@ -231,13 +194,6 @@ const TOOLS: ToolDef[] = [
       required: ["from", "to"],
     },
     annotations: { title: "Move file", readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
-    _meta: {
-      ui: { resourceUri: TOOL_WIDGET_MAP.storage_move.uri },
-      "openai/outputTemplate": TOOL_WIDGET_MAP.storage_move.uri,
-      "openai/toolInvocation/invoking": TOOL_WIDGET_MAP.storage_move.invoking,
-      "openai/toolInvocation/invoked": TOOL_WIDGET_MAP.storage_move.invoked,
-      "openai/widgetDescription": TOOL_WIDGET_MAP.storage_move.widgetDescription,
-    },
   },
   {
     name: "storage_share",
@@ -261,13 +217,6 @@ const TOOLS: ToolDef[] = [
       required: ["path"],
     },
     annotations: { title: "Share file", readOnlyHint: false, destructiveHint: false, openWorldHint: true, idempotentHint: false },
-    _meta: {
-      ui: { resourceUri: TOOL_WIDGET_MAP.storage_share.uri },
-      "openai/outputTemplate": TOOL_WIDGET_MAP.storage_share.uri,
-      "openai/toolInvocation/invoking": TOOL_WIDGET_MAP.storage_share.invoking,
-      "openai/toolInvocation/invoked": TOOL_WIDGET_MAP.storage_share.invoked,
-      "openai/widgetDescription": TOOL_WIDGET_MAP.storage_share.widgetDescription,
-    },
   },
   {
     name: "storage_stats",
@@ -279,13 +228,6 @@ const TOOLS: ToolDef[] = [
       properties: {},
     },
     annotations: { title: "Storage usage", readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
-    _meta: {
-      ui: { resourceUri: TOOL_WIDGET_MAP.storage_stats.uri },
-      "openai/outputTemplate": TOOL_WIDGET_MAP.storage_stats.uri,
-      "openai/toolInvocation/invoking": TOOL_WIDGET_MAP.storage_stats.invoking,
-      "openai/toolInvocation/invoked": TOOL_WIDGET_MAP.storage_stats.invoked,
-      "openai/widgetDescription": TOOL_WIDGET_MAP.storage_stats.widgetDescription,
-    },
   },
 ];
 
@@ -355,7 +297,6 @@ async function mcpHandler(c: C) {
           serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
           capabilities: {
             tools: { listChanged: false },
-            resources: { listChanged: false },
           },
           instructions: [
             "You are ALREADY connected to the user's cloud file storage (Storage). The connection is live and working — you do NOT need to ask the user to connect, upload, or link anything. Just call the tools directly.",
@@ -402,44 +343,6 @@ async function mcpHandler(c: C) {
       return rpcResponse(c, { jsonrpc: "2.0", id: req.id, result });
     }
 
-    // ── Resource methods (ChatGPT widget HTML) ──────────────────────
-    case "resources/list":
-      return rpcResponse(c, {
-        jsonrpc: "2.0",
-        id: req.id,
-        result: {
-          resources: WIDGET_RESOURCES.map((r) => ({
-            uri: r.uri,
-            name: r.name,
-            description: r.description,
-            mimeType: r.mimeType,
-          })),
-        },
-      });
-
-    case "resources/read": {
-      const uri = (req.params as any)?.uri as string;
-      if (!uri) {
-        return rpcResponse(c, { jsonrpc: "2.0", id: req.id, error: { code: -32602, message: "Invalid params: missing uri" } });
-      }
-      const html = getWidgetHtml(uri);
-      if (!html) {
-        return rpcResponse(c, { jsonrpc: "2.0", id: req.id, error: { code: -32602, message: "Resource not found: " + uri } });
-      }
-      return rpcResponse(c, {
-        jsonrpc: "2.0",
-        id: req.id,
-        result: {
-          contents: [{
-            uri,
-            mimeType: "text/html;profile=mcp-app",
-            text: html,
-            _meta: WIDGET_RESOURCE_META,
-          }],
-        },
-      });
-    }
-
     default:
       if (req.id == null) return c.body(null, 204);
       return rpcResponse(c, { jsonrpc: "2.0", id: req.id, error: { code: -32601, message: "Method not found: " + req.method } });
@@ -479,13 +382,6 @@ async function callTool(c: C, name: string, args: Record<string, any>): Promise<
 
 function toolResult(text: string): any {
   return { content: [{ type: "text", text }], isError: false };
-}
-
-/** Return both text (for standard MCP clients) and structured content (for ChatGPT widgets). */
-function richResult(text: string, structured: any, privateMeta?: any): any {
-  const result: any = { content: [{ type: "text", text }], isError: false, structuredContent: structured };
-  if (privateMeta) result._meta = privateMeta;
-  return result;
 }
 
 function toolError(message: string): any {
@@ -549,8 +445,15 @@ async function toolList(c: C, args: Record<string, any>) {
     }
   }
 
-  const structured = { prefix: prefix || "/", entries };
-  return richResult(JSON.stringify(structured, null, 2), structured);
+  const lines: string[] = [];
+  for (const e of entries) {
+    if (e.type === "directory") {
+      lines.push(`${e.name}  (folder)`);
+    } else {
+      lines.push(`${e.name}  ${humanSize(e.size || 0)}  ${e.type}`);
+    }
+  }
+  return toolResult(lines.join("\n") || "(empty)");
 }
 
 async function toolRead(c: C, args: Record<string, any>) {
@@ -571,13 +474,11 @@ async function toolRead(c: C, args: Record<string, any>) {
 
   const meta = `path: ${filePath}\nsize: ${r2Obj.size} bytes\ncontent_type: ${ct}`;
 
-  const structured: any = { path: filePath, size: r2Obj.size, content_type: ct, is_text: isText };
-
   if (isText) {
     const text = await r2Obj.text();
     const truncated = text.length > 102400;
     const content = truncated ? text.slice(0, 102400) + "\n... (truncated, " + text.length + " bytes total)" : text;
-    return richResult(meta + "\n---\n" + content, structured, { fileContent: content });
+    return toolResult(meta + "\n---\n" + content);
   }
 
   // For binary files, return a presigned download URL if credentials are available
@@ -594,11 +495,10 @@ async function toolRead(c: C, args: Record<string, any>) {
       secretAccessKey,
       expiresIn: 3600,
     });
-    structured.download_url = dlUrl;
-    return richResult(meta + "\n---\n[Binary file — direct download link (expires in 1 hour):\n" + dlUrl + "]", structured, { downloadUrl: dlUrl });
+    return toolResult(meta + "\n---\n[Binary file — direct download link (expires in 1 hour):\n" + dlUrl + "]");
   }
 
-  return richResult(meta + "\n---\n[Binary file, " + r2Obj.size + " bytes. Use storage_share to generate a download link.]", structured);
+  return toolResult(meta + "\n---\n[Binary file, " + r2Obj.size + " bytes. Use storage_share to generate a download link.]");
 }
 
 async function toolWrite(c: C, args: Record<string, any>) {
@@ -653,8 +553,7 @@ async function toolWrite(c: C, args: Record<string, any>) {
 
   invalidateCache(actor);
 
-  const structured = { path: filePath, name, content_type: contentType, size: body.byteLength, updated_at: now };
-  return richResult(JSON.stringify(structured), structured);
+  return toolResult(`Saved ${filePath} (${humanSize(body.byteLength)}, ${contentType})`);
 }
 
 async function toolDelete(c: C, args: Record<string, any>) {
@@ -691,8 +590,7 @@ async function toolDelete(c: C, args: Record<string, any>) {
   }
 
   invalidateCache(actor);
-  const structured = { deleted };
-  return richResult(JSON.stringify(structured), structured);
+  return toolResult("Deleted: " + deleted.join(", "));
 }
 
 async function toolSearch(c: C, args: Record<string, any>) {
@@ -720,8 +618,9 @@ async function toolSearch(c: C, args: Record<string, any>) {
     name: o.name, path: o.path, type: o.type, size: o.size, updated_at: o.updated_at,
   }));
 
-  const structured = { query: q, count: items.length, items };
-  return richResult(JSON.stringify(structured, null, 2), structured);
+  if (!items.length) return toolResult("No files found matching: " + q);
+  const lines = items.map((i: any) => `${i.path}  ${humanSize(i.size)}  ${i.type}`);
+  return toolResult(`Found ${items.length} result(s) for "${q}":\n` + lines.join("\n"));
 }
 
 async function toolMove(c: C, args: Record<string, any>) {
@@ -756,8 +655,7 @@ async function toolMove(c: C, args: Record<string, any>) {
   ]);
 
   invalidateCache(actor);
-  const structured = { old_path: from, new_path: to };
-  return richResult(JSON.stringify(structured), structured);
+  return toolResult(`Moved ${from} → ${to}`);
 }
 
 async function toolShare(c: C, args: Record<string, any>) {
@@ -783,8 +681,7 @@ async function toolShare(c: C, args: Record<string, any>) {
   const origin = new URL(c.req.url).origin;
   const url = `${origin}/s/${token}`;
 
-  const structured = { url, token, path: filePath, expires_at: new Date(expiresAt).toISOString() };
-  return richResult(JSON.stringify(structured, null, 2), structured);
+  return toolResult(`Share link for ${filePath}:\n${url}\n\nExpires: ${new Date(expiresAt).toISOString()}`);
 }
 
 async function toolStats(c: C) {
@@ -795,12 +692,9 @@ async function toolStats(c: C) {
     .bind(actor)
     .first<{ file_count: number; total_size: number }>();
 
-  const structured = {
-    file_count: stats?.file_count || 0,
-    total_size: stats?.total_size || 0,
-    total_size_human: humanSize(stats?.total_size || 0),
-  };
-  return richResult(JSON.stringify(structured, null, 2), structured);
+  const fc = stats?.file_count || 0;
+  const ts = stats?.total_size || 0;
+  return toolResult(`${fc} file(s), ${humanSize(ts)} total`);
 }
 
 // ── Registration ──────────────────────────────────────────────────────

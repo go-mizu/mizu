@@ -503,7 +503,7 @@ describe("Storage API", () => {
       const body = await res.json() as any;
       expect(body.result.isError).toBeFalsy();
       const text = body.result.content[0].text;
-      expect(text).toContain("file_count");
+      expect(text).toContain("file(s)");
     });
 
     it("POST /mcp storage_list with 'path' param (LLM alias for prefix)", async () => {
@@ -516,9 +516,8 @@ describe("Storage API", () => {
       expect(res.status).toBe(200);
       const body = await res.json() as any;
       expect(body.result.isError).toBeFalsy();
-      const data = JSON.parse(body.result.content[0].text);
-      expect(data.prefix).toBe("taocp/");
-      expect(data.entries.some((e: any) => e.name === "vol_1/")).toBe(true);
+      const text = body.result.content[0].text;
+      expect(text).toContain("vol_1/");
     });
 
     it("POST /mcp storage_list with leading slash prefix", async () => {
@@ -531,9 +530,8 @@ describe("Storage API", () => {
       expect(res.status).toBe(200);
       const body = await res.json() as any;
       expect(body.result.isError).toBeFalsy();
-      const data = JSON.parse(body.result.content[0].text);
-      expect(data.prefix).toBe("taocp/");
-      expect(data.entries.some((e: any) => e.name === "vol_1/")).toBe(true);
+      const text = body.result.content[0].text;
+      expect(text).toContain("vol_1/");
     });
 
     it("POST /mcp storage_read with leading slash path", async () => {
