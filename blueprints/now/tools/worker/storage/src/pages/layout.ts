@@ -38,7 +38,8 @@ function navLinks(activePath: string, actor: string | null): string {
     <a href="/developers"${activePath === "/developers" ? ' class="active"' : ""}>Developers</a>
     <a href="/api"${activePath === "/api" ? ' class="active"' : ""}>API</a>
     <a href="/pricing"${activePath === "/pricing" ? ' class="active"' : ""}>Pricing</a>
-    <a href="/ai"${activePath === "/ai" ? ' class="active"' : ""}>AI</a>`;
+    <a href="/ai"${activePath === "/ai" ? ' class="active"' : ""}>AI</a>
+    <a href="/cli"${activePath === "/cli" ? ' class="active"' : ""}>CLI</a>`;
 }
 
 export function directoryPage(

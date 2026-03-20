@@ -99,6 +99,7 @@ export function homePage(actor: string | null = null): string {
     <div class="nav-links">
       <a href="/developers">developers</a>
       <a href="/api">api</a>
+      <a href="/cli">cli</a>
       <a href="/pricing">pricing</a>
     </div>
     <div class="nav-right">
