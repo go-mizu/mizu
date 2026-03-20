@@ -5,6 +5,7 @@ export interface Env {
   BUCKET: R2Bucket;
   SIGNING_KEY: string;
   CLI_UPLOAD_KEY?: string;
+  RESEND_API_KEY?: string;
 }
 
 export interface Variables {

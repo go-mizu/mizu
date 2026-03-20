@@ -11,6 +11,7 @@ import { register as registerKeys } from "./routes/keys";
 import { register as registerMcp } from "./routes/mcp";
 import { register as registerOAuth } from "./routes/oauth";
 import { register as registerCli } from "./routes/cli";
+import { register as registerMagic } from "./routes/magic";
 import { getSessionActor } from "./pages/session";
 import { homePage } from "./pages/home";
 import { developersPage } from "./pages/developers";
@@ -54,6 +55,7 @@ registerKeys(app);
 registerMcp(app);
 registerOAuth(app);
 registerCli(app);
+registerMagic(app);
 
 // ── OpenAPI spec (auto-generated from route definitions) ────────────
 app.doc("/openapi.json", {

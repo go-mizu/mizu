@@ -32,9 +32,9 @@ export function homePage(actor: string | null = null): string {
 
   const heroSignedOut = `
 <h1 class="hero-title">A home for<br><span class="shimmer">your files.</span></h1>
-<p class="hero-sub">Store files. Use them in Claude and ChatGPT. Share with anyone. Free to start.</p>
+<p class="hero-sub">Store files. Use them in Claude and ChatGPT. Share with anyone.</p>
 <div class="hero-ctas">
-  <a href="#" class="btn btn--primary btn--lg" onclick="openRegister();return false">Try it free</a>
+  <a href="#" class="btn btn--primary btn--lg" onclick="openRegister();return false">Get started</a>
 </div>`;
 
   /* ── Register modal ─────────────────────────────────────────────── */
@@ -45,7 +45,7 @@ export function homePage(actor: string | null = null): string {
   <div class="register-modal-bg" onclick="closeRegister()"></div>
   <div class="register-modal-box">
     <button class="register-modal-close" onclick="closeRegister()">&times;</button>
-    <div class="register-modal-title">Get started for free</div>
+    <div class="register-modal-title">Get started</div>
     <p class="register-modal-sub">Enter your email. We'll send you a sign-in link.</p>
     <div class="prompt-form" id="signin-form">
       <input type="email" id="email-input" placeholder="you@email.com" autocomplete="email" spellcheck="false">
@@ -55,7 +55,7 @@ export function homePage(actor: string | null = null): string {
       </button>
     </div>
     <div class="prompt-error" id="signin-error"></div>
-    <div class="register-modal-note">No password &middot; No credit card &middot; 5 GB free</div>
+    <div class="register-modal-note">No password &middot; No credit card</div>
   </div>
 </div>`;
 
@@ -65,7 +65,7 @@ export function homePage(actor: string | null = null): string {
     : `
 <div class="bottom-cta" id="bottom-cta">
   <div class="bottom-cta-title">Ready to try?</div>
-  <p class="bottom-cta-sub">Free account. 5 GB. No credit card.</p>
+  <p class="bottom-cta-sub">No credit card needed.</p>
   <div class="prompt-form" id="bottom-form">
     <input type="email" placeholder="you@email.com" autocomplete="email" spellcheck="false" id="bottom-email">
     <button onclick="signInBottom()">Go</button>
@@ -79,8 +79,8 @@ export function homePage(actor: string | null = null): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>storage.now — A home for your files</title>
-<meta name="description" content="Store files, use them in Claude and ChatGPT, share with anyone. Free to start.">
+<title>Storage — A home for your files</title>
+<meta name="description" content="Store files, use them in Claude and ChatGPT, share with anyone.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -92,7 +92,7 @@ export function homePage(actor: string | null = null): string {
 
 <nav>
   <div class="nav-inner">
-    <a href="/" class="logo"><span class="logo-dot"></span> storage.now</a>
+    <a href="/" class="logo"><span class="logo-dot"></span> Storage</a>
     <button class="mobile-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     </button>
@@ -104,7 +104,7 @@ export function homePage(actor: string | null = null): string {
     </div>
     <div class="nav-right">
       ${navSession}
-      ${!isSignedIn ? '<button class="nav-register" onclick="openRegister()">Register</button>' : ''}
+      ${!isSignedIn ? '<button class="nav-register" onclick="openRegister()">Sign in</button>' : ''}
       <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
         <svg class="icon-moon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
         <svg class="icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
@@ -140,12 +140,12 @@ export function homePage(actor: string | null = null): string {
     ${MOCKUP_CHROME('storage.now')}
     <div class="mockup-body">
       <div class="mock-signup">
-        <div class="mock-signup-title">Get started for free</div>
+        <div class="mock-signup-title">Get started</div>
         <div class="mock-input">
           <div class="mock-input-field">you@email.com</div>
           <div class="mock-input-btn">Go</div>
         </div>
-        <div class="mock-note">No password &middot; No credit card &middot; 5 GB free</div>
+        <div class="mock-note">No password &middot; No credit card</div>
       </div>
     </div>
   </div>
@@ -232,7 +232,7 @@ export function homePage(actor: string | null = null): string {
   <div class="journey-text">
     <div class="journey-num">04</div>
     <div class="journey-title">Connect to Claude</div>
-    <div class="journey-desc">Open Claude, go to Settings, click Integrations, search for storage.now. One click to connect.</div>
+    <div class="journey-desc">Open Claude, go to Settings, click Integrations, search for Storage. One click to connect.</div>
   </div>
   <div class="journey-mockup">
     ${MOCKUP_CHROME('claude.ai/settings')}
@@ -245,7 +245,7 @@ export function homePage(actor: string | null = null): string {
         <div class="mock-settings-section">Integrations</div>
         <div class="mock-settings-row mock-settings-row--active">
           <div class="mock-settings-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="20"/><line x1="7" y1="2" x2="7" y2="22"/></svg></div>
-          <div class="mock-settings-row-text"><strong>storage.now</strong> &middot; File storage</div>
+          <div class="mock-settings-row-text"><strong>Storage</strong> &middot; File storage</div>
         </div>
         <div class="mock-url-input">
           <div class="mock-url-field">https://storage.liteio.dev/mcp</div>
@@ -296,7 +296,7 @@ export function homePage(actor: string | null = null): string {
   <div class="journey-text">
     <div class="journey-num">06</div>
     <div class="journey-title">Connect to ChatGPT</div>
-    <div class="journey-desc">Same thing. Open ChatGPT, go to Settings, click Connected apps, search for storage.now.</div>
+    <div class="journey-desc">Same thing. Open ChatGPT, go to Settings, click Connected apps, search for Storage.</div>
   </div>
   <div class="journey-mockup">
     ${MOCKUP_CHROME('chatgpt.com/settings')}
@@ -309,7 +309,7 @@ export function homePage(actor: string | null = null): string {
         <div class="mock-settings-section">Connected apps</div>
         <div class="mock-settings-row mock-settings-row--active">
           <div class="mock-settings-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="20"/><line x1="7" y1="2" x2="7" y2="22"/></svg></div>
-          <div class="mock-settings-row-text"><strong>storage.now</strong> &middot; File storage</div>
+          <div class="mock-settings-row-text"><strong>Storage</strong> &middot; File storage</div>
         </div>
         <div class="mock-url-input">
           <div class="mock-url-field">https://storage.liteio.dev/mcp</div>
@@ -402,7 +402,7 @@ export function homePage(actor: string | null = null): string {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Download
         </div>
-        <div class="mock-preview-note">Shared via storage.now &middot; No account needed</div>
+        <div class="mock-preview-note">Shared via Storage &middot; No account needed</div>
       </div>
     </div>
   </div>
@@ -419,7 +419,7 @@ ${registerModal}
 
 <!-- ===== MACHINE VIEW ===== -->
 <div class="machine-view" id="machine-view">
-  <div class="md" id="md-content"><button class="md-copy" onclick="copyMd()">copy</button><span class="h1"># storage.now</span>
+  <div class="md" id="md-content"><button class="md-copy" onclick="copyMd()">copy</button><span class="h1"># Storage</span>
 
 A home for your files. Store, organize, share. Works with Claude and ChatGPT.
 
@@ -435,8 +435,8 @@ Drag and drop into your browser, or ask your AI to save them.
 Create folders, move files, rename things. Just like your computer.
 
 <span class="h3">### 4. Connect your AI</span>
-Claude: Settings > Integrations > search "storage.now"
-ChatGPT: Settings > Connected apps > search "storage.now"
+Claude: Settings > Integrations > search "Storage"
+ChatGPT: Settings > Connected apps > search "Storage"
 
 <span class="h3">### 5. Chat with your AI</span>
 Ask it to save, find, list, move, or share files. It just works.
@@ -447,7 +447,6 @@ They click it and download. No sign-up needed.
 
 <span class="h2">## Quick facts</span>
 
-Free plan:     5 GB, free forever
 Downloads:     Always free, no limits
 Speed:         Servers in 300+ locations
 Sign-in:       Email link (no password)
@@ -532,9 +531,8 @@ async function signIn(){
   try{
     const res=await fetch('/auth/magic-link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
     const data=await res.json();
-    if(!res.ok) throw new Error(data.error?.message||'Something went wrong. Please try again.');
-    if(data.magic_link){window.location.href=data.magic_link}
-    else{document.getElementById('signin-form').innerHTML='<div class="prompt-success">Check your inbox! We sent you a sign-in link.</div>'}
+    if(!res.ok) throw new Error(data.message||'Something went wrong. Please try again.');
+    document.getElementById('signin-form').innerHTML='<div class="prompt-success">Check your inbox! We sent you a sign-in link.</div>'
   }catch(err){
     errEl.textContent=err.message;btn.disabled=false;input.disabled=false;
     document.getElementById('signin-text').style.display='inline';
@@ -556,9 +554,8 @@ async function signInBottom(){
   try{
     const res=await fetch('/auth/magic-link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
     const data=await res.json();
-    if(!res.ok) throw new Error(data.error?.message||'Something went wrong.');
-    if(data.magic_link){window.location.href=data.magic_link}
-    else{document.getElementById('bottom-form').innerHTML='<div class="prompt-success">Check your inbox!</div>'}
+    if(!res.ok) throw new Error(data.message||'Something went wrong.');
+    document.getElementById('bottom-form').innerHTML='<div class="prompt-success">Check your inbox!</div>'
   }catch(err){
     errEl.textContent=err.message;input.disabled=false;
   }

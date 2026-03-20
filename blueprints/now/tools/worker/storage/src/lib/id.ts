@@ -18,3 +18,4 @@ export const nonce        = () => rand(32);
 export const apiKeyId     = () => `ak_${rand(12)}`;
 export const apiKeyToken  = () => `sk_${rand(32)}`;
 export const shareToken   = () => randBase62(22);
+export const magicToken   = () => `mg_${rand(32)}`;
