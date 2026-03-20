@@ -4,6 +4,7 @@ export interface Env {
   DB: D1Database;
   BUCKET: R2Bucket;
   SIGNING_KEY: string;
+  CLI_UPLOAD_KEY?: string;
 }
 
 export interface Variables {
