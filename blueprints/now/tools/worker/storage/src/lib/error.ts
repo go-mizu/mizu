@@ -6,6 +6,7 @@ const STATUS: Record<string, number> = {
   forbidden: 403,
   not_found: 404,
   conflict: 409,
+  gone: 410,
   too_large: 413,
   internal: 500,
 };

@@ -3,9 +3,9 @@ import type { Context } from "hono";
 import type { App, Env, Variables } from "../types";
 import { auth } from "../middleware/auth";
 import { validatePath } from "../lib/path";
-import { isInlineType } from "../lib/mime";
 import { audit } from "../lib/audit";
 import { shareToken } from "../lib/id";
+import { presignUrl } from "../lib/presign";
 import { errRes } from "../schema";
 
 type C = Context<{ Bindings: Env; Variables: Variables }>;
@@ -123,23 +123,26 @@ export function register(app: App) {
       return c.json({ error: "unauthorized", message: "Invalid or expired share link" }, 401);
     }
 
-    const obj = await c.env.BUCKET.get(`${row.actor}/${row.path}`);
-    if (!obj) return c.json({ error: "not_found", message: "File not found" }, 404);
+    const key = `${row.actor}/${row.path}`;
 
-    const name = row.path.split("/").pop()!;
-    const ct = obj.httpMetadata?.contentType || "application/octet-stream";
-    const safe = name.replace(/["\\\r\n]/g, "_").replace(/[^\x20-\x7E]/g, "_");
+    // Redirect directly to R2 via presigned URL (no proxy)
+    const endpoint = c.env.R2_ENDPOINT;
+    const accessKeyId = c.env.R2_ACCESS_KEY_ID;
+    const secretAccessKey = c.env.R2_SECRET_ACCESS_KEY;
+    if (!endpoint || !accessKeyId || !secretAccessKey) {
+      return c.json({ error: "not_configured", message: "Storage not configured" }, 500);
+    }
 
-    const headers = new Headers();
-    headers.set("Content-Type", ct);
-    headers.set("Content-Length", obj.size.toString());
-    headers.set("ETag", obj.etag);
-    headers.set(
-      "Content-Disposition",
-      `${isInlineType(ct) ? "inline" : "attachment"}; filename="${safe}"`,
-    );
-    headers.set("Cache-Control", "private, max-age=3600");
-
-    return new Response(obj.body, { headers }) as any;
+    const ttl = Math.max(1, Math.floor((row.expires_at - Date.now()) / 1000));
+    const url = await presignUrl({
+      method: "GET",
+      key,
+      bucket: c.env.R2_BUCKET_NAME || "storage-files",
+      endpoint,
+      accessKeyId,
+      secretAccessKey,
+      expiresIn: Math.min(ttl, 3600),
+    });
+    return c.redirect(url, 302) as any;
   });
 }
