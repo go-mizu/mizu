@@ -1,5 +1,12 @@
 # Liteio Storage CLI installer for Windows
 # Usage: irm https://storage.liteio.dev/cli/install.ps1 | iex
+#
+# Downloads the storage CLI binary from R2 (via signed redirect)
+# and installs it to %LOCALAPPDATA%\Programs\storage, adding it to PATH.
+#
+# Environment variables:
+#   STORAGE_VERSION   Pin to a specific version (default: latest)
+#   INSTALL_DIR       Override install directory
 
 $ErrorActionPreference = "Stop"
 
@@ -20,7 +27,7 @@ function Install-Storage {
     $filename = "storage-windows-${arch}.exe"
     $downloadUrl = "${BaseUrl}/${Version}/${filename}"
 
-    # Install to user's local AppData
+    # Install to user's local AppData (no admin needed)
     $installDir = if ($env:INSTALL_DIR) {
         $env:INSTALL_DIR
     } else {
@@ -39,21 +46,37 @@ function Install-Storage {
     Write-Host "  OS: windows, Arch: $arch" -ForegroundColor DarkGray
     Write-Host ""
 
-    # Download
+    # Download (follows redirects to signed R2 URL)
     Write-Host "  Downloading $downloadUrl" -ForegroundColor Green
     $tmpFile = Join-Path $env:TEMP "storage-$(Get-Random).exe"
 
     try {
-        Invoke-WebRequest -Uri $downloadUrl -OutFile $tmpFile -UseBasicParsing
+        # MaximumRedirection ensures we follow the signed URL redirect
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $tmpFile -UseBasicParsing -MaximumRedirection 5
     } catch {
-        Write-Host "  error: Download failed. $_" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "  error: Download failed." -ForegroundColor Red
+        Write-Host "  $_" -ForegroundColor DarkGray
+        Write-Host "  Visit https://storage.liteio.dev/cli for help." -ForegroundColor DarkGray
         exit 1
+    }
+
+    # Verify download is a real binary (not an error page)
+    $fileSize = (Get-Item $tmpFile).Length
+    if ($fileSize -lt 1000) {
+        $content = Get-Content $tmpFile -Raw -ErrorAction SilentlyContinue
+        if ($content -match "not_found|error") {
+            Remove-Item $tmpFile -ErrorAction SilentlyContinue
+            Write-Host "  error: Binary not available for windows/$arch" -ForegroundColor Red
+            Write-Host "  Visit https://storage.liteio.dev/cli for alternatives." -ForegroundColor DarkGray
+            exit 1
+        }
     }
 
     # Install
     Move-Item -Path $tmpFile -Destination $installPath -Force
 
-    # Add to PATH if not already there
+    # Add to user PATH if not already there
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
     if ($userPath -notlike "*$installDir*") {
         [Environment]::SetEnvironmentVariable("Path", "$installDir;$userPath", "User")
