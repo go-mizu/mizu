@@ -17,21 +17,25 @@ var globalFlags struct {
 }
 
 // New returns the root storage command.
-func New(version string) *cobra.Command {
+func New() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "storage",
-		Short: "CLI for storage.now",
-		Long: `storage — CLI for storage.now
+		Short: "CLI for Liteio Storage API",
+		Long: `storage — CLI for Liteio Storage API
 https://storage.liteio.dev
 
 Upload, download, and share files from your terminal.
-One binary, zero configuration, pipe-friendly.`,
+Zero dependencies, pipe-friendly, works everywhere.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		Version:       version,
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			// Intercept errors after execution to print them nicely.
-		},
+		Example: `  storage login
+  storage put report.pdf docs/
+  storage ls docs/
+  storage get docs/report.pdf
+  storage share docs/report.pdf --expires 7d
+  echo "hello" | storage put - notes/hello.txt
+  storage cat docs/data.json | jq '.items'
+  storage find quarterly --json`,
 	}
 
 	// Global flags
@@ -41,9 +45,6 @@ One binary, zero configuration, pipe-friendly.`,
 	pf.BoolVar(&globalFlags.noColor, "no-color", false, "disable colors")
 	pf.StringVarP(&globalFlags.token, "token", "t", "", "bearer token or API key")
 	pf.StringVarP(&globalFlags.endpoint, "endpoint", "e", "", "API base URL")
-
-	// Override version template
-	cmd.SetVersionTemplate("storage {{.Version}}\n")
 
 	// Register commands
 	cmd.AddCommand(
@@ -56,23 +57,11 @@ One binary, zero configuration, pipe-friendly.`,
 		newCatCmd(),
 		newRmCmd(),
 		newMvCmd(),
-		newCpCmd(),
 		newShareCmd(),
-		newInfoCmd(),
-		newSearchCmd(),
-		newStatsCmd(),
-		newBucketCmd(),
+		newFindCmd(),
+		newStatCmd(),
 		newKeyCmd(),
 	)
-
-	// Custom error handling
-	originalRun := cmd.PersistentPostRunE
-	cmd.PersistentPostRunE = func(cmd *cobra.Command, args []string) error {
-		if originalRun != nil {
-			return originalRun(cmd, args)
-		}
-		return nil
-	}
 
 	return cmd
 }
@@ -103,7 +92,7 @@ func handleError(cmd *cobra.Command, err error) {
 		case 401:
 			out.PrintError("authentication failed", apiErr.Message, "Run 'storage login' to re-authenticate")
 		case 403:
-			out.PrintError("permission denied", apiErr.Message, "Check your API key scopes")
+			out.PrintError("permission denied", apiErr.Message, "Check your API key prefix restrictions")
 		case 404:
 			out.PrintError("not found", apiErr.Message, "")
 		case 409:

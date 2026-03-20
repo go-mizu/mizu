@@ -1,8 +1,7 @@
 import type { Context } from "hono";
 
-const STATUS_MAP: Record<string, number> = {
-  invalid_request: 400,
-  not_configured: 400,
+const STATUS: Record<string, number> = {
+  bad_request: 400,
   unauthorized: 401,
   forbidden: 403,
   not_found: 404,
@@ -11,7 +10,6 @@ const STATUS_MAP: Record<string, number> = {
   internal: 500,
 };
 
-export function errorResponse(c: Context, code: string, message: string) {
-  const status = STATUS_MAP[code] || 500;
-  return c.json({ error: { code, message } }, status as any);
+export function err(c: Context, code: string, message: string) {
+  return c.json({ error: code, message }, (STATUS[code] || 500) as any);
 }

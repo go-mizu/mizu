@@ -21,7 +21,7 @@ export function developersPage(actor: string | null = null): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Developers — storage.now</title>
-<meta name="description" content="Developer-first file storage. Upload objects into buckets, share them with signed URLs. One base URL, zero complexity.">
+<meta name="description" content="Developer-first file storage. Upload files, organize directories, share with signed URLs. One base URL, zero complexity.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -61,7 +61,7 @@ export function developersPage(actor: string | null = null): string {
   <div class="hero-content">
     <div class="hero-badge">DEVELOPER PLATFORM</div>
     <h1 class="hero-title">Ship files,<br><span class="grad">not infrastructure.</span></h1>
-    <p class="hero-sub">A REST API for storing, organizing, and sharing files. Upload objects into buckets, share them with signed URLs. Works with any language, any framework, any platform.</p>
+    <p class="hero-sub">A REST API for storing, organizing, and sharing files. Write to a path, read from a path, share with a link. Works with any language, any framework, any platform.</p>
     <div class="hero-ctas">${heroCta}</div>
   </div>
   <div class="hero-terminal">
@@ -70,26 +70,26 @@ export function developersPage(actor: string | null = null): string {
         <div class="terminal-dots"><span></span><span></span><span></span></div>
         <div class="terminal-title">terminal</div>
       </div>
-      <div class="terminal-body"><span class="t-comment"># create a bucket</span>
-<span class="t-prompt">$</span> <span class="t-cmd">curl</span> <span class="t-flag">-X POST</span> storage.now/bucket \\
-    <span class="t-flag">-H</span> <span class="t-str">"Authorization: Bearer $TOKEN"</span> \\
-    <span class="t-flag">-d</span> <span class="t-str">'{"name":"docs","public":false}'</span>
-
-<span class="t-res">201 {"id":"bk_a1b2","name":"docs"}</span>
-
-<span class="t-comment"># upload an object</span>
-<span class="t-prompt">$</span> <span class="t-cmd">curl</span> <span class="t-flag">-X PUT</span> storage.now/object/docs/report.pdf \\
+      <div class="terminal-body"><span class="t-comment"># upload a file</span>
+<span class="t-prompt">$</span> <span class="t-cmd">curl</span> <span class="t-flag">-X PUT</span> storage.now/f/docs/report.pdf \\
     <span class="t-flag">-H</span> <span class="t-str">"Authorization: Bearer $TOKEN"</span> \\
     <span class="t-flag">-T</span> report.pdf
 
-<span class="t-res">201 {"path":"report.pdf","size":524288}</span>
+<span class="t-res">201 {"path":"docs/report.pdf","size":524288}</span>
 
-<span class="t-comment"># share with a signed URL</span>
-<span class="t-prompt">$</span> <span class="t-cmd">curl</span> <span class="t-flag">-X POST</span> storage.now/object/sign/docs \\
+<span class="t-comment"># download a file</span>
+<span class="t-prompt">$</span> <span class="t-cmd">curl</span> storage.now/f/docs/report.pdf \\
     <span class="t-flag">-H</span> <span class="t-str">"Authorization: Bearer $TOKEN"</span> \\
-    <span class="t-flag">-d</span> <span class="t-str">'{"path":"report.pdf","expires_in":3600}'</span>
+    <span class="t-flag">-o</span> report.pdf
 
-<span class="t-res">200 {"signed_url":"<a href='/sign/tok_abc' class='t-link'>/sign/tok_abc</a>","expires_at":...}</span></div>
+<span class="t-res">200  &lt;binary&gt;  Content-Type: application/pdf</span>
+
+<span class="t-comment"># share with an expiring link</span>
+<span class="t-prompt">$</span> <span class="t-cmd">curl</span> <span class="t-flag">-X POST</span> storage.now/share \\
+    <span class="t-flag">-H</span> <span class="t-str">"Authorization: Bearer $TOKEN"</span> \\
+    <span class="t-flag">-d</span> <span class="t-str">'{"path":"docs/report.pdf","ttl":3600}'</span>
+
+<span class="t-res">200 {"url":"<a href='/s/tok_abc' class='t-link'>/s/tok_abc</a>","expires_at":...}</span></div>
     </div>
   </div>
 </section>
@@ -120,14 +120,14 @@ export function developersPage(actor: string | null = null): string {
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
       </div>
       <div class="feature-name">Secure by default</div>
-      <p>Ed25519 challenge-response for machines. Magic links for humans. Scoped API keys for long-running jobs. Signed URLs for sharing. Credentials never touch the client.</p>
+      <p>Ed25519 challenge-response for machines. Magic links for humans. Scoped API keys for long-running jobs. Signed share links for collaboration. Credentials never touch the client.</p>
     </div>
     <div class="feature">
       <div class="feature-icon">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
       </div>
       <div class="feature-name">Zero config</div>
-      <p>No infrastructure to provision, no storage classes to choose, no regions to configure. Create a bucket and start uploading. Replication, caching, and global delivery are handled automatically.</p>
+      <p>No infrastructure to provision, no storage classes to choose, no regions to configure. Write a file and it exists. Replication, caching, and global delivery are handled automatically.</p>
     </div>
   </div>
 </section>
@@ -137,37 +137,36 @@ export function developersPage(actor: string | null = null): string {
   <div class="section-pad">
     <div class="section-label">THE MODEL</div>
     <div class="section-heading">Three primitives. That's the whole API.</div>
-    <p class="section-desc">Every storage system needs containers, files, and access control. Each gets a name and a clean REST interface.</p>
+    <p class="section-desc">Files addressed by path, directories from path structure, and sharing via signed links. No containers to create, no IDs to track.</p>
   </div>
   <div class="concepts">
     <div class="concept">
       <div class="concept-num">01</div>
       <div class="concept-icon">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4.03 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/></svg>
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
       </div>
-      <div class="concept-name">Buckets</div>
-      <p>Top-level containers with their own visibility and upload constraints. Public buckets serve files without auth. Private buckets require a token or signed URL for every operation.</p>
+      <div class="concept-name">Files</div>
+      <p>Read and write files by path. Upload any content type, download with streaming. Use HEAD to stat without fetching bytes. Paths are your namespace.</p>
       <div class="concept-code">
-        <div class="concept-method"><span class="m-post">POST</span> /bucket</div>
-        <div class="concept-method"><span class="m-get">GET</span> /bucket</div>
-        <div class="concept-method"><span class="m-get">GET</span> /bucket/:id</div>
-        <div class="concept-method"><span class="m-patch">PATCH</span> /bucket/:id</div>
-        <div class="concept-method"><span class="m-delete">DEL</span> /bucket/:id</div>
+        <div class="concept-method"><span class="m-put">PUT</span> /f/*path</div>
+        <div class="concept-method"><span class="m-get">GET</span> /f/*path</div>
+        <div class="concept-method"><span class="m-delete">DEL</span> /f/*path</div>
+        <div class="concept-method"><span class="m-get">HEAD</span> /f/*path</div>
+        <div class="concept-method"><span class="m-post">POST</span> /mv</div>
       </div>
     </div>
     <div class="concept">
       <div class="concept-num">02</div>
       <div class="concept-icon">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
       </div>
-      <div class="concept-name">Objects</div>
-      <p>Files stored in buckets, addressed by path. Upload, download, list, move, copy, delete. Folders are implicit from path separators, so <code>reports/q1.pdf</code> just works.</p>
+      <div class="concept-name">Directories</div>
+      <p>Directories are implicit from path separators. List contents by prefix, search by filename, delete entire trees with a trailing slash. No special creation step.</p>
       <div class="concept-code">
-        <div class="concept-method"><span class="m-put">PUT</span> /object/:bucket/*path</div>
-        <div class="concept-method"><span class="m-get">GET</span> /object/:bucket/*path</div>
-        <div class="concept-method"><span class="m-get">GET</span> /object/public/:bucket/*path</div>
-        <div class="concept-method"><span class="m-post">POST</span> /object/list/:bucket</div>
-        <div class="concept-method"><span class="m-delete">DEL</span> /object/:bucket</div>
+        <div class="concept-method"><span class="m-get">GET</span> /ls/*prefix</div>
+        <div class="concept-method"><span class="m-get">GET</span> /find?q=query</div>
+        <div class="concept-method"><span class="m-delete">DEL</span> /f/dir/</div>
+        <div class="concept-method"><span class="m-get">GET</span> /stat</div>
       </div>
     </div>
     <div class="concept">
@@ -175,13 +174,11 @@ export function developersPage(actor: string | null = null): string {
       <div class="concept-icon">
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
       </div>
-      <div class="concept-name">Signed URLs</div>
-      <p>Time-limited tokens for sharing and direct uploads. Share private files with anyone, accept uploads from browsers without a server proxy, grant temporary access that expires automatically.</p>
+      <div class="concept-name">Sharing</div>
+      <p>Generate time-limited signed URLs for any file. Share private files with anyone. Recipients access via a short token URL. No auth required for recipients.</p>
       <div class="concept-code">
-        <div class="concept-method"><span class="m-post">POST</span> /object/sign/:bucket</div>
-        <div class="concept-method"><span class="m-post">POST</span> /object/upload/sign/:bucket/*</div>
-        <div class="concept-method"><span class="m-get">GET</span> /sign/:token</div>
-        <div class="concept-method"><span class="m-put">PUT</span> /upload/sign/:token</div>
+        <div class="concept-method"><span class="m-post">POST</span> /share</div>
+        <div class="concept-method"><span class="m-get">GET</span> /s/:token</div>
       </div>
     </div>
   </div>
@@ -196,76 +193,52 @@ export function developersPage(actor: string | null = null): string {
   <div class="examples">
     <div class="example">
       <div class="example-header">
-        <div class="example-label">Serve static assets</div>
-        <div class="example-badge">Buckets</div>
-      </div>
-      <pre class="example-code"><span class="t-comment"># public bucket for images</span>
-<span class="t-cmd">curl</span> <span class="t-flag">-X POST</span> storage.now/bucket \\
-  <span class="t-flag">-H</span> <span class="t-str">"Authorization: Bearer $TOKEN"</span> \\
-  <span class="t-flag">-H</span> <span class="t-str">"Content-Type: application/json"</span> \\
-  <span class="t-flag">-d</span> <span class="t-str">'{
-    "name": "avatars",
-    "public": true,
-    "file_size_limit": 5242880,
-    "allowed_mime_types": ["image/png", "image/jpeg"]
-  }'</span>
-
-<span class="t-res">&rarr; 201
-{
-  "id": "bk_a1b2c3",
-  "name": "avatars",
-  "public": true,
-  "file_size_limit": 5242880
-}</span></pre>
-    </div>
-    <div class="example">
-      <div class="example-header">
-        <div class="example-label">Upload user content</div>
-        <div class="example-badge">Objects</div>
+        <div class="example-label">Upload a file</div>
+        <div class="example-badge">Files</div>
       </div>
       <pre class="example-code"><span class="t-comment"># PUT creates or replaces</span>
-<span class="t-cmd">curl</span> <span class="t-flag">-X PUT</span> storage.now/object/avatars/alice.png \\
+<span class="t-cmd">curl</span> <span class="t-flag">-X PUT</span> storage.now/f/avatars/alice.png \\
   <span class="t-flag">-H</span> <span class="t-str">"Authorization: Bearer $TOKEN"</span> \\
   <span class="t-flag">-H</span> <span class="t-str">"Content-Type: image/png"</span> \\
   <span class="t-flag">-T</span> alice.png
 
 <span class="t-res">&rarr; 201
 {
-  "id": "o_x7y8z9",
-  "bucket": "avatars",
-  "path": "alice.png",
+  "path": "avatars/alice.png",
   "size": 48576
 }</span></pre>
     </div>
     <div class="example">
       <div class="example-header">
-        <div class="example-label">Deliver without auth</div>
-        <div class="example-badge">Objects</div>
+        <div class="example-label">Download a file</div>
+        <div class="example-badge">Files</div>
       </div>
-      <pre class="example-code"><span class="t-comment"># public bucket, no token needed</span>
-<span class="t-cmd">curl</span> storage.now/object/public/avatars/alice.png \\
+      <pre class="example-code"><span class="t-cmd">curl</span> storage.now/f/avatars/alice.png \\
+  <span class="t-flag">-H</span> <span class="t-str">"Authorization: Bearer $TOKEN"</span> \\
   <span class="t-flag">-o</span> alice.png
 
 <span class="t-res">&rarr; 200  &lt;binary&gt;
 Content-Type: image/png
-Cache-Control: public, max-age=3600</span>
-
-<span class="t-comment"># use directly in HTML</span>
-<span class="t-str">&lt;img src="https://storage.now/object/public/avatars/alice.png"&gt;</span></pre>
+Content-Length: 48576</span></pre>
     </div>
     <div class="example">
       <div class="example-header">
-        <div class="example-label">Search &amp; browse files</div>
-        <div class="example-badge">Objects</div>
+        <div class="example-label">List &amp; search files</div>
+        <div class="example-badge">Directories</div>
       </div>
-      <pre class="example-code"><span class="t-cmd">curl</span> <span class="t-flag">-X POST</span> storage.now/object/list/docs \\
-  <span class="t-flag">-H</span> <span class="t-str">"Authorization: Bearer $TOKEN"</span> \\
-  <span class="t-flag">-d</span> <span class="t-str">'{
-    "prefix": "reports/",
-    "search": "q1",
-    "sort_by": {"column": "name", "order": "asc"},
-    "limit": 50
-  }'</span>
+      <pre class="example-code"><span class="t-comment"># list a directory</span>
+<span class="t-cmd">curl</span> storage.now/ls/reports/ \\
+  <span class="t-flag">-H</span> <span class="t-str">"Authorization: Bearer $TOKEN"</span>
+
+<span class="t-res">&rarr; 200
+[
+  {"name":"q1.pdf","path":"reports/q1.pdf","size":524288},
+  {"name":"q1-summary.md","path":"reports/q1-summary.md","size":2048}
+]</span>
+
+<span class="t-comment"># search by filename</span>
+<span class="t-cmd">curl</span> <span class="t-str">"storage.now/find?q=q1"</span> \\
+  <span class="t-flag">-H</span> <span class="t-str">"Authorization: Bearer $TOKEN"</span>
 
 <span class="t-res">&rarr; 200
 [
@@ -276,39 +249,59 @@ Cache-Control: public, max-age=3600</span>
     <div class="example">
       <div class="example-header">
         <div class="example-label">Share with expiring links</div>
-        <div class="example-badge">Signed URLs</div>
+        <div class="example-badge">Sharing</div>
       </div>
-      <pre class="example-code"><span class="t-cmd">curl</span> <span class="t-flag">-X POST</span> storage.now/object/sign/docs \\
+      <pre class="example-code"><span class="t-cmd">curl</span> <span class="t-flag">-X POST</span> storage.now/share \\
   <span class="t-flag">-H</span> <span class="t-str">"Authorization: Bearer $TOKEN"</span> \\
-  <span class="t-flag">-d</span> <span class="t-str">'{"path":"report.pdf","expires_in":3600}'</span>
+  <span class="t-flag">-H</span> <span class="t-str">"Content-Type: application/json"</span> \\
+  <span class="t-flag">-d</span> <span class="t-str">'{"path":"docs/report.pdf","ttl":3600}'</span>
 
 <span class="t-res">&rarr; 200
 {
-  "signed_url": "/sign/tok_abc123",
+  "url": "/s/tok_abc123",
   "token": "tok_abc123",
   "expires_at": 1710896400000
 }</span>
 
 <span class="t-comment"># anyone can download, no auth required</span>
-<span class="t-cmd">curl</span> storage.now/sign/tok_abc123 <span class="t-flag">-o</span> report.pdf</pre>
+<span class="t-cmd">curl</span> storage.now/s/tok_abc123 <span class="t-flag">-o</span> report.pdf</pre>
     </div>
     <div class="example">
       <div class="example-header">
-        <div class="example-label">Client-direct uploads</div>
-        <div class="example-badge">Signed URLs</div>
+        <div class="example-label">Move &amp; rename files</div>
+        <div class="example-badge">Files</div>
       </div>
-      <pre class="example-code"><span class="t-comment"># 1. Server creates upload URL</span>
-<span class="t-cmd">curl</span> <span class="t-flag">-X POST</span> storage.now/object/upload/sign/docs/inbox/file.pdf \\
+      <pre class="example-code"><span class="t-cmd">curl</span> <span class="t-flag">-X POST</span> storage.now/mv \\
+  <span class="t-flag">-H</span> <span class="t-str">"Authorization: Bearer $TOKEN"</span> \\
+  <span class="t-flag">-H</span> <span class="t-str">"Content-Type: application/json"</span> \\
+  <span class="t-flag">-d</span> <span class="t-str">'{"from":"drafts/report.pdf","to":"final/report.pdf"}'</span>
+
+<span class="t-res">&rarr; 200
+{
+  "from": "drafts/report.pdf",
+  "to": "final/report.pdf"
+}</span></pre>
+    </div>
+    <div class="example">
+      <div class="example-header">
+        <div class="example-label">Check file metadata</div>
+        <div class="example-badge">Files</div>
+      </div>
+      <pre class="example-code"><span class="t-comment"># HEAD returns metadata without body</span>
+<span class="t-cmd">curl</span> <span class="t-flag">-I</span> storage.now/f/docs/report.pdf \\
   <span class="t-flag">-H</span> <span class="t-str">"Authorization: Bearer $TOKEN"</span>
 
-<span class="t-res">&rarr; {"signed_url":"/upload/sign/tok_xyz"}</span>
+<span class="t-res">&rarr; 200
+Content-Type: application/pdf
+Content-Length: 524288
+Last-Modified: Thu, 20 Mar 2026 12:00:00 GMT</span>
 
-<span class="t-comment"># 2. Client uploads directly, no proxy needed</span>
-<span class="t-cmd">curl</span> <span class="t-flag">-X PUT</span> storage.now/upload/sign/tok_xyz \\
-  <span class="t-flag">-H</span> <span class="t-str">"Content-Type: application/pdf"</span> \\
-  <span class="t-flag">-T</span> file.pdf
+<span class="t-comment"># storage usage stats</span>
+<span class="t-cmd">curl</span> storage.now/stat \\
+  <span class="t-flag">-H</span> <span class="t-str">"Authorization: Bearer $TOKEN"</span>
 
-<span class="t-res">&rarr; 201 {"path":"inbox/file.pdf","size":1048576}</span></pre>
+<span class="t-res">&rarr; 200
+{"files":142,"bytes":67108864}</span></pre>
     </div>
   </div>
 </section>
@@ -337,29 +330,28 @@ Cache-Control: public, max-age=3600</span>
     </div>
     <div class="step">
       <div class="step-num">02</div>
-      <div class="step-name">Create a bucket</div>
-      <p>Buckets hold your objects. Set visibility, file size limits, and allowed MIME types per bucket.</p>
-      <pre class="step-code"><span class="t-cmd">POST</span> /bucket
-<span class="t-str">Authorization: Bearer sk_...</span>
-
-<span class="t-str">{"name":"my-files","public":false}</span>
-
-<span class="t-res">&rarr; 201 {"id":"bk_...","name":"my-files"}</span></pre>
-    </div>
-    <div class="step">
-      <div class="step-num">03</div>
-      <div class="step-name">Upload &amp; share</div>
-      <p>PUT files into your bucket. Generate signed URLs to share them. Build your product on three primitives.</p>
-      <pre class="step-code"><span class="t-cmd">PUT</span> /object/my-files/hello.txt
+      <div class="step-name">Upload a file</div>
+      <p>Write files by path. No setup, no containers. Just PUT to the path where you want the file to live.</p>
+      <pre class="step-code"><span class="t-cmd">PUT</span> /f/my-files/hello.txt
 <span class="t-str">Authorization: Bearer sk_...</span>
 <span class="t-str">Content-Type: text/plain</span>
 
-<span class="t-res">&rarr; 201 {"path":"hello.txt"}</span>
+<span class="t-res">&rarr; 201 {"path":"my-files/hello.txt"}</span></pre>
+    </div>
+    <div class="step">
+      <div class="step-num">03</div>
+      <div class="step-name">Share it</div>
+      <p>Generate a signed link to share any file. Recipients access it without authentication. Links expire automatically.</p>
+      <pre class="step-code"><span class="t-cmd">POST</span> /share
+<span class="t-str">Authorization: Bearer sk_...</span>
 
-<span class="t-cmd">POST</span> /object/sign/my-files
-<span class="t-str">{"path":"hello.txt","expires_in":86400}</span>
+<span class="t-str">{"path":"my-files/hello.txt","ttl":86400}</span>
 
-<span class="t-res">&rarr; {"signed_url":"/sign/tok_..."}</span></pre>
+<span class="t-res">&rarr; {"url":"/s/tok_..."}</span>
+
+<span class="t-comment"># anyone can access:</span>
+<span class="t-cmd">GET</span> /s/tok_...
+<span class="t-res">&rarr; 200  Hello, world!</span></pre>
     </div>
   </div>
 </section>
@@ -408,17 +400,15 @@ Cache-Control: public, max-age=3600</span>
 <section class="section" id="protocol">
   <div class="section-pad">
     <div class="section-label">THE API</div>
-    <div class="section-heading">Six resource groups. Thirty endpoints.</div>
-    <p class="section-desc">A predictable REST interface covering storage, authentication, and access control.</p>
+    <div class="section-heading">Four resource groups. Seventeen endpoints.</div>
+    <p class="section-desc">A flat REST interface covering files, discovery, sharing, and authentication.</p>
     <table class="resource-table">
       <thead><tr><th>Resource</th><th>Endpoints</th><th>Purpose</th></tr></thead>
       <tbody>
-        <tr><td>/bucket</td><td>6</td><td>Create, list, update, delete containers</td></tr>
-        <tr><td>/object</td><td>10</td><td>Upload, download, list, move, copy, delete files</td></tr>
-        <tr><td>/sign &middot; /upload/sign</td><td>4</td><td>Time-limited URLs for sharing &amp; direct upload</td></tr>
-        <tr><td>/auth</td><td>6</td><td>Ed25519 challenge, magic link, sessions</td></tr>
-        <tr><td>/keys</td><td>3</td><td>Scoped API keys for programmatic access</td></tr>
-        <tr><td>/audit</td><td>1</td><td>Full audit trail of every operation</td></tr>
+        <tr><td>/f/*path</td><td>4</td><td>Read, write, delete, stat files</td></tr>
+        <tr><td>/ls &middot; /find &middot; /mv &middot; /stat</td><td>4</td><td>List directories, search, move, usage stats</td></tr>
+        <tr><td>/share &middot; /s/:token</td><td>2</td><td>Create and access signed share links</td></tr>
+        <tr><td>/auth &middot; /auth/keys</td><td>7</td><td>Register, challenge, verify, logout, API keys</td></tr>
       </tbody>
     </table>
     <a href="/api" class="api-link">Full API reference &rarr;</a>
@@ -429,12 +419,12 @@ Cache-Control: public, max-age=3600</span>
 <section class="section" id="numbers">
   <div class="stats">
     <div class="stat">
-      <div class="stat-num">30</div>
+      <div class="stat-num">17</div>
       <div class="stat-label">Endpoints</div>
     </div>
     <div class="stat">
-      <div class="stat-num">6</div>
-      <div class="stat-label">Resources</div>
+      <div class="stat-num">4</div>
+      <div class="stat-label">Resource groups</div>
     </div>
     <div class="stat">
       <div class="stat-num">300+</div>
@@ -453,7 +443,7 @@ Cache-Control: public, max-age=3600</span>
   <div class="section-pad">
     <div class="cta-label"><span class="cta-caret">&gt;</span> ready?</div>
     <div class="cta-title">Start building today</div>
-    <p class="cta-desc">One base URL, thirty endpoints, five minutes to your first upload.</p>
+    <p class="cta-desc">One base URL, seventeen endpoints, five minutes to your first upload.</p>
     <div class="cta-actions">
       <a href="/api" class="btn btn--primary btn--lg">API Reference</a>
       ${isSignedIn ? "" : `<a href="/" class="btn btn--ghost btn--lg">Create free account</a>`}

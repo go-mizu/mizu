@@ -8,9 +8,6 @@ routes = [
   { pattern = "storage.liteio.dev", custom_domain = true }
 ]
 
-[build]
-command = "node scripts/build-docs.mjs"
-
 [assets]
 directory = "./public"
 

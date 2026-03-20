@@ -1,14 +1,16 @@
--- Actors
+-- Storage API Protocol v1 — minimal schema
+-- R2 is source of truth for file bytes. D1 stores auth state + search index.
+
+-- Users / agents
 CREATE TABLE IF NOT EXISTS actors (
   actor      TEXT PRIMARY KEY,
-  type       TEXT NOT NULL CHECK(type IN ('human','agent')),
+  type       TEXT NOT NULL DEFAULT 'human' CHECK(type IN ('human','agent')),
   public_key TEXT,
   email      TEXT UNIQUE,
-  bio        TEXT DEFAULT '',
   created_at INTEGER NOT NULL
 );
 
--- Auth: challenges
+-- Ed25519 challenge/response auth
 CREATE TABLE IF NOT EXISTS challenges (
   id         TEXT PRIMARY KEY,
   actor      TEXT NOT NULL,
@@ -17,7 +19,7 @@ CREATE TABLE IF NOT EXISTS challenges (
 );
 CREATE INDEX IF NOT EXISTS idx_challenges_expires ON challenges(expires_at);
 
--- Auth: sessions
+-- Session tokens (from /auth/verify)
 CREATE TABLE IF NOT EXISTS sessions (
   token      TEXT PRIMARY KEY,
   actor      TEXT NOT NULL,
@@ -25,128 +27,71 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_actor ON sessions(actor, expires_at);
 
--- Auth: magic tokens
-CREATE TABLE IF NOT EXISTS magic_tokens (
-  token      TEXT PRIMARY KEY,
-  email      TEXT NOT NULL,
-  actor      TEXT NOT NULL,
-  expires_at INTEGER NOT NULL
-);
-
--- Buckets (top-level containers)
-CREATE TABLE IF NOT EXISTS buckets (
-  id                 TEXT PRIMARY KEY,
-  owner              TEXT NOT NULL,
-  name               TEXT NOT NULL,
-  public             INTEGER NOT NULL DEFAULT 0,
-  file_size_limit    INTEGER DEFAULT NULL,
-  allowed_mime_types TEXT DEFAULT NULL,
-  created_at         INTEGER NOT NULL,
-  updated_at         INTEGER NOT NULL
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_buckets_owner_name ON buckets(owner, name);
-
--- Objects (files within buckets)
-CREATE TABLE IF NOT EXISTS objects (
-  id           TEXT PRIMARY KEY,
-  owner        TEXT NOT NULL,
-  bucket_id    TEXT NOT NULL,
-  path         TEXT NOT NULL,
-  name         TEXT NOT NULL,
-  content_type TEXT DEFAULT '',
-  size         INTEGER DEFAULT 0,
-  r2_key       TEXT DEFAULT '',
-  metadata     TEXT DEFAULT '{}',
-  accessed_at  INTEGER DEFAULT NULL,
-  created_at   INTEGER NOT NULL,
-  updated_at   INTEGER NOT NULL
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_objects_bucket_path ON objects(bucket_id, path);
-CREATE INDEX IF NOT EXISTS idx_objects_owner ON objects(owner);
-CREATE INDEX IF NOT EXISTS idx_objects_bucket ON objects(bucket_id);
-
--- Signed URLs (time-limited access tokens)
-CREATE TABLE IF NOT EXISTS signed_urls (
-  id         TEXT PRIMARY KEY,
-  owner      TEXT NOT NULL,
-  bucket_id  TEXT NOT NULL REFERENCES buckets(id),
-  path       TEXT NOT NULL,
-  token      TEXT NOT NULL UNIQUE,
-  type       TEXT NOT NULL CHECK(type IN ('download','upload')),
-  expires_at INTEGER NOT NULL,
-  created_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_signed_urls_token ON signed_urls(token);
-CREATE INDEX IF NOT EXISTS idx_signed_urls_expires ON signed_urls(expires_at);
-
--- Scoped API keys (SHA-256 hashed tokens)
+-- API keys (SHA-256 hashed, optional path prefix restriction)
 CREATE TABLE IF NOT EXISTS api_keys (
-  id           TEXT PRIMARY KEY,
-  actor        TEXT NOT NULL,
-  token_hash   TEXT NOT NULL UNIQUE,
-  name         TEXT NOT NULL,
-  scopes       TEXT NOT NULL DEFAULT '*',
-  path_prefix  TEXT DEFAULT '',
-  expires_at   INTEGER,
-  last_used_at INTEGER,
-  created_at   INTEGER NOT NULL
+  id         TEXT PRIMARY KEY,
+  actor      TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  name       TEXT NOT NULL DEFAULT '',
+  prefix     TEXT NOT NULL DEFAULT '',
+  expires_at INTEGER,
+  created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_api_keys_actor ON api_keys(actor);
 
+-- File search index (kept in sync with R2 on write/delete)
+-- NOT the source of truth — R2 is. Used for fast listing and fuzzy search.
+CREATE TABLE IF NOT EXISTS files (
+  owner      TEXT NOT NULL,
+  path       TEXT NOT NULL,
+  name       TEXT NOT NULL,
+  size       INTEGER NOT NULL DEFAULT 0,
+  type       TEXT NOT NULL DEFAULT 'application/octet-stream',
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (owner, path)
+);
+CREATE INDEX IF NOT EXISTS idx_files_name ON files(owner, name COLLATE NOCASE);
+
 -- Audit log
 CREATE TABLE IF NOT EXISTS audit_log (
-  id       INTEGER PRIMARY KEY AUTOINCREMENT,
-  actor    TEXT,
-  action   TEXT NOT NULL,
-  resource TEXT,
-  detail   TEXT,
-  ip       TEXT,
-  ts       INTEGER NOT NULL
+  id     INTEGER PRIMARY KEY AUTOINCREMENT,
+  actor  TEXT,
+  action TEXT NOT NULL,
+  path   TEXT,
+  ip     TEXT,
+  ts     INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_log(actor, ts);
+CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(actor, ts);
 
--- OAuth: dynamically registered clients
-CREATE TABLE IF NOT EXISTS oauth_clients (
-  client_id TEXT PRIMARY KEY,
-  redirect_uris TEXT NOT NULL,
-  client_name TEXT DEFAULT '',
-  token_endpoint_auth_method TEXT DEFAULT 'none',
+-- Share links (opaque, revocable)
+CREATE TABLE IF NOT EXISTS share_links (
+  token      TEXT PRIMARY KEY,
+  actor      TEXT NOT NULL,
+  path       TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
   created_at INTEGER NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_share_links_actor ON share_links(actor, created_at);
+CREATE INDEX IF NOT EXISTS idx_share_links_expires ON share_links(expires_at);
 
--- OAuth: authorization codes (short-lived, single-use)
+-- OAuth clients (dynamic registration)
+CREATE TABLE IF NOT EXISTS oauth_clients (
+  client_id                    TEXT PRIMARY KEY,
+  redirect_uris                TEXT NOT NULL DEFAULT '[]',
+  client_name                  TEXT NOT NULL DEFAULT '',
+  token_endpoint_auth_method   TEXT NOT NULL DEFAULT 'none',
+  created_at                   INTEGER NOT NULL
+);
+
+-- OAuth authorization codes (single-use, short-lived)
 CREATE TABLE IF NOT EXISTS oauth_codes (
-  code TEXT PRIMARY KEY,
-  actor TEXT NOT NULL,
-  client_id TEXT NOT NULL,
-  redirect_uri TEXT NOT NULL,
-  scope TEXT DEFAULT '*',
-  code_challenge TEXT NOT NULL,
-  code_challenge_method TEXT DEFAULT 'S256',
-  expires_at INTEGER NOT NULL
+  code                   TEXT PRIMARY KEY,
+  actor                  TEXT NOT NULL,
+  client_id              TEXT NOT NULL,
+  redirect_uri           TEXT NOT NULL,
+  scope                  TEXT NOT NULL DEFAULT '*',
+  code_challenge         TEXT NOT NULL,
+  code_challenge_method  TEXT NOT NULL DEFAULT 'S256',
+  expires_at             INTEGER NOT NULL
 );
-
--- TUS resumable uploads (in-progress chunked uploads)
-CREATE TABLE IF NOT EXISTS tus_uploads (
-  id            TEXT PRIMARY KEY,
-  owner         TEXT NOT NULL,
-  bucket_id     TEXT NOT NULL,
-  path          TEXT NOT NULL,
-  upload_length INTEGER NOT NULL,
-  upload_offset INTEGER NOT NULL DEFAULT 0,
-  part_count    INTEGER NOT NULL DEFAULT 0,
-  content_type  TEXT DEFAULT '',
-  metadata      TEXT DEFAULT '{}',
-  upsert        INTEGER NOT NULL DEFAULT 0,
-  expires_at    INTEGER NOT NULL,
-  created_at    INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_tus_uploads_owner ON tus_uploads(owner);
-CREATE INDEX IF NOT EXISTS idx_tus_uploads_expires ON tus_uploads(expires_at);
-
--- Rate limiting (sliding window counters)
-CREATE TABLE IF NOT EXISTS rate_limits (
-  key    TEXT PRIMARY KEY,
-  count  INTEGER NOT NULL DEFAULT 1,
-  window INTEGER NOT NULL
-);
+CREATE INDEX IF NOT EXISTS idx_oauth_codes_expires ON oauth_codes(expires_at);

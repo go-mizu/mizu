@@ -11,15 +11,18 @@ import (
 )
 
 func newRmCmd() *cobra.Command {
-	var recursive bool
+	var (
+		recursive bool
+		force     bool
+	)
 
 	cmd := &cobra.Command{
-		Use:     "rm <bucket/path...>",
-		Short:   "Delete objects",
+		Use:     "rm <path...>",
+		Short:   "Delete files or directories",
 		Aliases: []string{"delete", "del"},
 		Example: `  storage rm docs/old-report.pdf
-  storage rm docs/draft1.md docs/draft2.md
-  storage rm docs/drafts/ --recursive`,
+  storage rm logs/ --recursive
+  storage rm logs/ --recursive --force`,
 		Args: cobra.MinimumNArgs(1),
 		Run: wrapRun(func(cmd *cobra.Command, args []string) error {
 			d := deps()
@@ -27,87 +30,54 @@ func newRmCmd() *cobra.Command {
 				return err
 			}
 
-			// All paths must be in the same bucket
-			var bucket string
-			var paths []string
+			for _, path := range args {
+				path = strings.TrimPrefix(path, "/")
 
-			for _, p := range args {
-				if !strings.Contains(p, "/") {
-					return &CLIError{Code: ExitUsage, Msg: "invalid path", Hint: "Use bucket/path format: storage rm docs/file.txt"}
-				}
-				b, objPath, _ := strings.Cut(p, "/")
-				if bucket == "" {
-					bucket = b
-				} else if bucket != b {
-					return &CLIError{Code: ExitUsage, Msg: "mixed buckets", Hint: "All paths must be in the same bucket for batch delete"}
-				}
-				paths = append(paths, objPath)
-			}
-
-			// Recursive delete
-			if recursive && len(paths) == 1 {
-				prefix := paths[0]
-
-				listBody := map[string]any{
-					"prefix": prefix,
-					"limit":  1000,
-				}
-				data, err := d.Client.DoJSON("POST", "/object/list/"+bucket, listBody)
-				if err != nil {
-					return err
+				// If recursive and path doesn't end with /, add it
+				if recursive && !strings.HasSuffix(path, "/") {
+					path += "/"
 				}
 
-				var objects []objectInfo
-				if err := json.Unmarshal(data, &objects); err != nil {
-					return err
-				}
+				isDir := strings.HasSuffix(path, "/")
 
-				if len(objects) == 0 {
-					d.Out.Info("Nothing", "to delete")
-					return nil
-				}
-
-				// Confirm on TTY
-				if d.Out.IsTTY && !globalFlags.quiet {
-					fmt.Fprintf(os.Stderr, "This will delete %d objects. Continue? [y/N] ", len(objects))
+				// Confirm directory deletion on TTY
+				if isDir && d.Out.IsTTY && !globalFlags.quiet && !force {
+					fmt.Fprintf(os.Stderr, "Delete everything under %s? [y/N] ", path)
 					scanner := bufio.NewScanner(os.Stdin)
 					if scanner.Scan() {
 						answer := strings.TrimSpace(scanner.Text())
 						if !strings.HasPrefix(strings.ToLower(answer), "y") {
-							return nil
+							continue
 						}
 					}
 				}
 
-				delPaths := make([]string, len(objects))
-				for i, o := range objects {
-					delPaths[i] = o.Path
-				}
-
-				delBody := map[string]any{"paths": delPaths}
-				if _, err := d.Client.DoJSON("DELETE", "/object/"+bucket, delBody); err != nil {
+				data, err := d.Client.Delete("/f/" + path)
+				if err != nil {
 					return err
 				}
 
-				d.Out.Info("Deleted", fmt.Sprintf("%d objects from %s", len(objects), bucket))
-				return nil
-			}
+				if globalFlags.json {
+					printJSON(data)
+					continue
+				}
 
-			// Batch delete
-			delBody := map[string]any{"paths": paths}
-			if _, err := d.Client.DoJSON("DELETE", "/object/"+bucket, delBody); err != nil {
-				return err
-			}
+				var resp struct {
+					Deleted int `json:"deleted"`
+				}
+				json.Unmarshal(data, &resp)
 
-			if len(paths) == 1 {
-				d.Out.Info("Deleted", bucket+"/"+paths[0])
-			} else {
-				d.Out.Info("Deleted", fmt.Sprintf("%d objects from %s", len(paths), bucket))
+				if isDir {
+					d.Out.Info("Deleted", fmt.Sprintf("%s (%d files)", path, resp.Deleted))
+				} else {
+					d.Out.Info("Deleted", path)
+				}
 			}
 			return nil
 		}),
 	}
 
-	cmd.Flags().BoolVarP(&recursive, "recursive", "r", false, "delete all objects with prefix")
+	cmd.Flags().BoolVarP(&recursive, "recursive", "r", false, "delete directory and contents")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "skip confirmation prompt")
 	return cmd
 }

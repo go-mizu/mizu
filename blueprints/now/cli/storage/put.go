@@ -2,7 +2,6 @@ package storage
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,19 +10,15 @@ import (
 )
 
 func newPutCmd() *cobra.Command {
-	var (
-		contentType string
-		bucketFlag  string
-	)
+	var contentType string
 
 	cmd := &cobra.Command{
-		Use:     "put <file> [bucket[/path]]",
+		Use:     "put <file> [path]",
 		Short:   "Upload a file (or stdin with -)",
 		Aliases: []string{"upload", "push"},
-		Example: `  storage put report.pdf docs
-  storage put photo.jpg pics/vacation/
-  echo "hello" | storage put - docs/hello.txt
-  storage put image.png avatars --type image/png`,
+		Example: `  storage put report.pdf docs/
+  storage put photo.jpg images/photo.jpg
+  echo "hello" | storage put - notes/hello.txt`,
 		Args: cobra.RangeArgs(1, 2),
 		Run: wrapRun(func(cmd *cobra.Command, args []string) error {
 			d := deps()
@@ -37,40 +32,27 @@ func newPutCmd() *cobra.Command {
 				dest = args[1]
 			}
 
-			// Resolve bucket and path
-			bucket := bucketFlag
-			objPath := ""
+			// Resolve destination path
+			dest = strings.TrimPrefix(dest, "/")
 
-			if dest != "" {
-				if strings.Contains(dest, "/") {
-					parts := strings.SplitN(dest, "/", 2)
-					if bucket == "" {
-						bucket = parts[0]
-					}
-					objPath = parts[1]
-				} else {
-					if bucket == "" {
-						bucket = dest
-					}
-				}
-			}
-
-			if bucket == "" {
-				bucket = d.Config.Bucket
-			}
-			if bucket == "" {
-				bucket = "default"
-			}
-
-			if objPath == "" {
+			if dest == "" {
 				if file == "-" {
 					return &CLIError{
 						Code: ExitUsage,
-						Msg:  "path required",
-						Hint: "When reading from stdin, specify a destination path\nUsage: echo data | storage put - bucket/filename.txt",
+						Msg:  "path required when reading from stdin",
+						Hint: "Usage: echo data | storage put - path/filename.txt",
 					}
 				}
-				objPath = filepath.Base(file)
+				dest = filepath.Base(file)
+			} else if strings.HasSuffix(dest, "/") {
+				if file == "-" {
+					return &CLIError{
+						Code: ExitUsage,
+						Msg:  "cannot use trailing slash with stdin",
+						Hint: "Provide a full path: storage put - path/filename.txt",
+					}
+				}
+				dest += filepath.Base(file)
 			}
 
 			// Determine content type
@@ -82,7 +64,7 @@ func newPutCmd() *cobra.Command {
 				ct = "application/octet-stream"
 			}
 
-			// Open file or stdin
+			// Open source
 			var r *os.File
 			if file == "-" {
 				r = os.Stdin
@@ -91,29 +73,25 @@ func newPutCmd() *cobra.Command {
 				r, err = os.Open(file)
 				if err != nil {
 					if os.IsNotExist(err) {
-						return &CLIError{Code: ExitNotFound, Msg: "file not found", Hint: file + " does not exist"}
+						return &CLIError{Code: ExitNotFound, Msg: "file not found: " + file}
 					}
 					return err
 				}
 				defer r.Close()
 			}
 
-			apiPath := fmt.Sprintf("/object/%s/%s", bucket, objPath)
-			data, err := d.Client.Upload("PUT", apiPath, r, ct)
+			data, err := d.Client.Upload("/f/"+dest, r, ct)
 			if err != nil {
 				return err
 			}
 
 			if globalFlags.json {
-				var raw json.RawMessage
-				json.Unmarshal(data, &raw)
-				enc := json.NewEncoder(os.Stdout)
-				enc.SetIndent("", "  ")
-				return enc.Encode(raw)
+				return printJSON(data)
 			}
 
 			var resp struct {
-				Size int64 `json:"size"`
+				Path string `json:"path"`
+				Size int64  `json:"size"`
 			}
 			json.Unmarshal(data, &resp)
 
@@ -121,12 +99,15 @@ func newPutCmd() *cobra.Command {
 			if resp.Size > 0 {
 				sizeStr = " (" + HumanSize(resp.Size) + ")"
 			}
-			d.Out.Info("Uploaded", objPath+sizeStr+" to "+bucket)
+			displayPath := resp.Path
+			if displayPath == "" {
+				displayPath = dest
+			}
+			d.Out.Info("Uploaded", displayPath+sizeStr)
 			return nil
 		}),
 	}
 
 	cmd.Flags().StringVarP(&contentType, "type", "T", "", "content type (auto-detected)")
-	cmd.Flags().StringVarP(&bucketFlag, "bucket", "b", "", "target bucket")
 	return cmd
 }

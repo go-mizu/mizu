@@ -19,24 +19,24 @@ func newKeyCmd() *cobra.Command {
 	cmd.AddCommand(
 		newKeyCreateCmd(),
 		newKeyListCmd(),
-		newKeyRevokeCmd(),
+		newKeyRmCmd(),
 	)
 	return cmd
 }
 
 func newKeyCreateCmd() *cobra.Command {
 	var (
-		scope  string
-		prefix string
+		prefix  string
+		expires string
 	)
 
 	cmd := &cobra.Command{
 		Use:     "create <name>",
 		Short:   "Create an API key",
 		Aliases: []string{"new"},
-		Example: `  storage key create ci-deploy
-  storage key create ci --scope "object:read,object:write"
-  storage key create readonly --scope "object:read" --prefix docs/`,
+		Example: `  storage key create deploy
+  storage key create ci --prefix deploy/
+  storage key create bot --expires 30d`,
 		Args: cobra.ExactArgs(1),
 		Run: wrapRun(func(cmd *cobra.Command, args []string) error {
 			d := deps()
@@ -47,46 +47,39 @@ func newKeyCreateCmd() *cobra.Command {
 			name := args[0]
 			body := map[string]any{"name": name}
 
-			if scope != "" {
-				scopes := strings.Split(scope, ",")
-				for i, s := range scopes {
-					scopes[i] = strings.TrimSpace(s)
-				}
-				body["scopes"] = scopes
-			}
 			if prefix != "" {
-				body["path_prefix"] = prefix
+				body["prefix"] = prefix
+			}
+			if expires != "" {
+				body["expires_in"] = parseDuration(expires)
 			}
 
-			data, err := d.Client.DoJSON("POST", "/keys", body)
+			data, err := d.Client.DoJSON("POST", "/auth/keys", body)
 			if err != nil {
 				return err
 			}
 
 			if globalFlags.json {
-				var raw json.RawMessage
-				json.Unmarshal(data, &raw)
-				enc := json.NewEncoder(os.Stdout)
-				enc.SetIndent("", "  ")
-				return enc.Encode(raw)
+				return printJSON(data)
 			}
 
 			var resp struct {
-				Key string `json:"key"`
+				Token string `json:"token"`
+				ID    string `json:"id"`
 			}
 			json.Unmarshal(data, &resp)
 
 			fmt.Println()
-			fmt.Printf("%s %s\n", d.Out.bold("API Key:"), resp.Key)
+			fmt.Printf("%s %s\n", d.Out.bold("API Key:"), resp.Token)
 			fmt.Println()
-			fmt.Println(d.Out.dim("Save this key — it won't be shown again."))
-			fmt.Printf("Use it with: %s\n", d.Out.cyan("export STORAGE_TOKEN="+resp.Key))
+			fmt.Println(d.Out.dim("Save this key. It won't be shown again."))
+			fmt.Printf("Use it with: %s\n", d.Out.cyan("STORAGE_TOKEN="+resp.Token+" storage ls"))
 			return nil
 		}),
 	}
 
-	cmd.Flags().StringVarP(&scope, "scope", "s", "", "scopes (comma-separated)")
 	cmd.Flags().StringVarP(&prefix, "prefix", "p", "", "path prefix restriction")
+	cmd.Flags().StringVarP(&expires, "expires", "x", "", "expiration (7d, 30d, 90d)")
 	return cmd
 }
 
@@ -101,55 +94,50 @@ func newKeyListCmd() *cobra.Command {
 				return err
 			}
 
-			data, err := d.Client.Get("/keys")
+			data, err := d.Client.Get("/auth/keys")
 			if err != nil {
 				return err
 			}
 
 			if globalFlags.json {
-				var raw json.RawMessage
-				json.Unmarshal(data, &raw)
-				enc := json.NewEncoder(os.Stdout)
-				enc.SetIndent("", "  ")
-				return enc.Encode(raw)
+				return printJSON(data)
 			}
 
 			var resp struct {
-				Items []struct {
-					ID        string   `json:"id"`
-					Name      string   `json:"name"`
-					Scopes    []string `json:"scopes"`
-					CreatedAt int64    `json:"created_at"`
-				} `json:"items"`
+				Keys []struct {
+					ID        string `json:"id"`
+					Name      string `json:"name"`
+					Prefix    string `json:"prefix"`
+					CreatedAt int64  `json:"created_at"`
+				} `json:"keys"`
 			}
 			if err := json.Unmarshal(data, &resp); err != nil {
 				return err
 			}
-			keys := resp.Items
 
-			if len(keys) == 0 {
+			if len(resp.Keys) == 0 {
 				d.Out.Info("No API keys", "Create one with: storage key create <name>")
 				return nil
 			}
 
-			fmt.Printf("%-8s %-20s %-20s  %s\n", "ID", "NAME", "SCOPES", "CREATED")
-			for _, k := range keys {
-				scopes := "*"
-				if len(k.Scopes) > 0 {
-					scopes = strings.Join(k.Scopes, ",")
+			fmt.Printf("%-24s  %-20s  %-16s  %s\n", "ID", "NAME", "PREFIX", "CREATED")
+			for _, k := range resp.Keys {
+				prefix := "*"
+				if k.Prefix != "" {
+					prefix = k.Prefix
 				}
-				fmt.Printf("%-8s %-20s %-20s  %s\n", k.ID, k.Name, scopes, RelativeTime(k.CreatedAt))
+				fmt.Printf("%-24s  %-20s  %-16s  %s\n", k.ID, k.Name, prefix, RelativeTime(k.CreatedAt))
 			}
 			return nil
 		}),
 	}
 }
 
-func newKeyRevokeCmd() *cobra.Command {
+func newKeyRmCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "revoke <id>",
+		Use:     "rm <id>",
 		Short:   "Revoke an API key",
-		Aliases: []string{"rm", "delete"},
+		Aliases: []string{"revoke", "delete"},
 		Args:    cobra.ExactArgs(1),
 		Run: wrapRun(func(cmd *cobra.Command, args []string) error {
 			d := deps()
@@ -157,12 +145,13 @@ func newKeyRevokeCmd() *cobra.Command {
 				return err
 			}
 
-			id := args[0]
-			if _, err := d.Client.Delete("/keys/" + id); err != nil {
+			id := strings.TrimSpace(args[0])
+			if _, err := d.Client.Delete("/auth/keys/" + id); err != nil {
 				return err
 			}
 
 			d.Out.Info("Revoked", "API key "+id)
+			fmt.Fprintln(os.Stderr)
 			return nil
 		}),
 	}

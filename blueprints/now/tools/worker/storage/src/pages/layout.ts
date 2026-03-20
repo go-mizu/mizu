@@ -34,12 +34,11 @@ function navLinks(activePath: string, actor: string | null): string {
     ? `<a href="/browse"${activePath === "/browse" ? ' class="active"' : ""}>Browse</a>`
     : "";
   return `${browseLink}
-    <a href="/spaces"${activePath === "/spaces" ? ' class="active"' : ""}>Spaces</a>
     <a href="/developers"${activePath === "/developers" ? ' class="active"' : ""}>Developers</a>
     <a href="/api"${activePath === "/api" ? ' class="active"' : ""}>API</a>
-    <a href="/pricing"${activePath === "/pricing" ? ' class="active"' : ""}>Pricing</a>
+    <a href="/cli"${activePath === "/cli" ? ' class="active"' : ""}>CLI</a>
     <a href="/ai"${activePath === "/ai" ? ' class="active"' : ""}>AI</a>
-    <a href="/cli"${activePath === "/cli" ? ' class="active"' : ""}>CLI</a>`;
+    <a href="/pricing"${activePath === "/pricing" ? ' class="active"' : ""}>Pricing</a>`;
 }
 
 export function directoryPage(

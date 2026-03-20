@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { Env, Variables, SessionRow } from "../types";
+import type { Env, Variables } from "../types";
 
 export async function getSessionActor(
   c: Context<{ Bindings: Env; Variables: Variables }>,
@@ -14,7 +14,7 @@ export async function getSessionActor(
     "SELECT actor, expires_at FROM sessions WHERE token = ?",
   )
     .bind(token)
-    .first<SessionRow>();
+    .first<{ actor: string; expires_at: number }>();
 
   if (!session) return null;
   if (Date.now() > session.expires_at) return null;

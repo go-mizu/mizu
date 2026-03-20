@@ -1,25 +1,19 @@
 import type { Context } from "hono";
-import type { Env, Variables } from "../types";
-import { apiKeyId, apiKeyToken, magicToken, sessionToken } from "../lib/id";
+import type { App, Env, Variables } from "../types";
+import { apiKeyId, apiKeyToken, sessionToken } from "../lib/id";
+import { sha256 } from "../middleware/auth";
 import { esc } from "../pages/layout";
 
-type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
+type C = Context<{ Bindings: Env; Variables: Variables }>;
 
 const CODE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const API_KEY_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
-const MAGIC_TTL_MS = 15 * 60 * 1000;
 
 function rand(n: number): string {
   const bytes = new Uint8Array(n);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function sha256(data: string): Promise<string> {
-  const encoded = new TextEncoder().encode(data);
-  const hash = await crypto.subtle.digest("SHA-256", encoded);
-  return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 function base64urlEncode(buf: ArrayBuffer): string {
@@ -31,7 +25,7 @@ function base64urlEncode(buf: ArrayBuffer): string {
 
 // ── Well-known endpoints ──────────────────────────────────────────────
 
-export function protectedResourceMetadata(c: AppContext) {
+function protectedResourceMetadata(c: C) {
   const origin = new URL(c.req.url).origin;
   return c.json({
     resource: `${origin}/mcp`,
@@ -41,7 +35,7 @@ export function protectedResourceMetadata(c: AppContext) {
   });
 }
 
-export function authorizationServerMetadata(c: AppContext) {
+function authorizationServerMetadata(c: C) {
   const origin = new URL(c.req.url).origin;
   return c.json({
     issuer: origin,
@@ -58,7 +52,7 @@ export function authorizationServerMetadata(c: AppContext) {
 
 // ── Dynamic Client Registration (RFC 7591) ────────────────────────────
 
-export async function registerClient(c: AppContext) {
+async function registerClient(c: C) {
   let body: any;
   try {
     body = await c.req.json();
@@ -71,17 +65,13 @@ export async function registerClient(c: AppContext) {
     return c.json({ error: "invalid_client_metadata", error_description: "redirect_uris required" }, 400);
   }
 
-  // Accept user-provided client_id or generate one
   const clientId = body.client_id || `oc_${rand(16)}`;
   const clientName = body.client_name || "";
   const authMethod = body.token_endpoint_auth_method || "none";
 
-  // Upsert: if client_id already exists, update redirect_uris
   await c.env.DB.prepare(
     "INSERT OR REPLACE INTO oauth_clients (client_id, redirect_uris, client_name, token_endpoint_auth_method, created_at) VALUES (?, ?, ?, ?, ?)",
-  )
-    .bind(clientId, JSON.stringify(redirectUris), clientName, authMethod, Date.now())
-    .run();
+  ).bind(clientId, JSON.stringify(redirectUris), clientName, authMethod, Date.now()).run();
 
   return c.json({
     client_id: clientId,
@@ -95,31 +85,24 @@ export async function registerClient(c: AppContext) {
 
 // ── Authorization endpoint ────────────────────────────────────────────
 
-export async function authorizeEndpoint(c: AppContext) {
+async function authorizeEndpoint(c: C) {
   const url = new URL(c.req.url);
   const clientId = url.searchParams.get("client_id") || "";
   const redirectUri = url.searchParams.get("redirect_uri") || "";
-  const state = url.searchParams.get("state") || "";
   const responseType = url.searchParams.get("response_type") || "";
   const codeChallenge = url.searchParams.get("code_challenge") || "";
   const codeChallengeMethod = url.searchParams.get("code_challenge_method") || "";
   const scope = url.searchParams.get("scope") || "";
 
-  // Validate required params
   if (responseType !== "code") {
     return c.html(errorPage("Invalid request", "response_type must be 'code'"), 400);
   }
-  if (!clientId) {
-    return c.html(errorPage("Invalid request", "client_id is required"), 400);
-  }
-  if (!redirectUri) {
-    return c.html(errorPage("Invalid request", "redirect_uri is required"), 400);
-  }
+  if (!clientId) return c.html(errorPage("Invalid request", "client_id is required"), 400);
+  if (!redirectUri) return c.html(errorPage("Invalid request", "redirect_uri is required"), 400);
   if (!codeChallenge || codeChallengeMethod !== "S256") {
     return c.html(errorPage("Invalid request", "PKCE with S256 is required"), 400);
   }
 
-  // Validate client (if registered)
   const client = await c.env.DB.prepare(
     "SELECT redirect_uris FROM oauth_clients WHERE client_id = ?",
   ).bind(clientId).first<{ redirect_uris: string }>();
@@ -130,36 +113,27 @@ export async function authorizeEndpoint(c: AppContext) {
       return c.html(errorPage("Invalid request", "redirect_uri does not match registered URIs"), 400);
     }
   }
-  // If client not registered, we still allow it (for user-defined clients in ChatGPT)
 
-  // Check if user has a session
   const actor = await getSessionFromCookie(c);
-  const oauthParams = url.search; // preserve all OAuth params
+  const oauthParams = url.search;
 
   if (actor) {
-    // Show consent page
     return c.html(consentPage(actor, clientId, scope, oauthParams));
   }
-
-  // No session — show login page
   return c.html(loginPage(clientId, oauthParams));
 }
 
 // POST /oauth/authorize — handle consent or login
-export async function authorizeSubmit(c: AppContext) {
+async function authorizeSubmit(c: C) {
   const form = await c.req.formData();
   const action = form.get("action") as string;
 
-  if (action === "login") {
-    return handleLoginSubmit(c, form);
-  }
-  if (action === "authorize") {
-    return handleConsentSubmit(c, form);
-  }
+  if (action === "login") return handleLoginSubmit(c, form);
+  if (action === "authorize") return handleConsentSubmit(c, form);
   return c.html(errorPage("Invalid request", "Unknown action"), 400);
 }
 
-async function handleLoginSubmit(c: AppContext, form: FormData) {
+async function handleLoginSubmit(c: C, form: FormData) {
   const email = (form.get("email") as string || "").trim().toLowerCase();
   const oauthParams = form.get("oauth_params") as string || "";
 
@@ -167,7 +141,6 @@ async function handleLoginSubmit(c: AppContext, form: FormData) {
     return c.html(errorPage("Invalid email", "Please enter a valid email address"), 400);
   }
 
-  // Find or create actor
   let actorName: string;
   const existing = await c.env.DB.prepare("SELECT actor FROM actors WHERE email = ?")
     .bind(email).first<{ actor: string }>();
@@ -183,68 +156,33 @@ async function handleLoginSubmit(c: AppContext, form: FormData) {
       actorName = `u/${local}.${Date.now().toString(36).slice(-4)}`;
     }
     await c.env.DB.prepare(
-      "INSERT INTO actors (actor, type, email, bio, created_at) VALUES (?, 'human', ?, '', ?)",
+      "INSERT INTO actors (actor, type, email, created_at) VALUES (?, 'human', ?, ?)",
     ).bind(actorName, email, Date.now()).run();
   }
 
-  // Create magic link that redirects back to /oauth/authorize with params
-  const token = magicToken();
-  const expiresAt = Date.now() + MAGIC_TTL_MS;
-  await c.env.DB.prepare(
-    "INSERT INTO magic_tokens (token, email, actor, expires_at) VALUES (?, ?, ?, ?)",
-  ).bind(token, email, actorName, expiresAt).run();
-
-  const origin = new URL(c.req.url).origin;
-  const magicLink = `${origin}/oauth/callback/${token}${oauthParams}`;
-
-  // OAuth flow: redirect directly — user is already in the browser.
-  // No email round-trip needed (unlike regular magic link auth).
-  return Response.redirect(magicLink, 302);
-}
-
-// GET /oauth/callback/:token — magic link lands here, sets session, redirects to authorize
-export async function oauthMagicCallback(c: AppContext) {
-  const token = c.req.param("token");
-  const row = await c.env.DB.prepare(
-    "SELECT email, actor, expires_at FROM magic_tokens WHERE token = ?",
-  ).bind(token).first<{ email: string; actor: string; expires_at: number }>();
-
-  if (!row || Date.now() > row.expires_at) {
-    return c.html(errorPage("Invalid link", "This link has expired or is invalid"), 400);
-  }
-
-  await c.env.DB.prepare("DELETE FROM magic_tokens WHERE token = ?").bind(token).run();
-
-  // Create session
+  // Create session directly (skip magic link round-trip for OAuth flow)
   const sessToken = sessionToken();
   const expiresAt = Date.now() + SESSION_TTL_MS;
   await c.env.DB.prepare(
     "INSERT INTO sessions (token, actor, expires_at) VALUES (?, ?, ?)",
-  ).bind(sessToken, row.actor, expiresAt).run();
+  ).bind(sessToken, actorName, expiresAt).run();
 
-  // Redirect back to /oauth/authorize with original OAuth params
-  const url = new URL(c.req.url);
-  const oauthSearch = url.search; // everything after ?
-  const origin = url.origin;
-
+  const origin = new URL(c.req.url).origin;
   return new Response(null, {
     status: 302,
     headers: {
-      Location: `${origin}/oauth/authorize${oauthSearch}`,
+      Location: `${origin}/oauth/authorize${oauthParams}`,
       "Set-Cookie": `session=${sessToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=7200`,
     },
   });
 }
 
-async function handleConsentSubmit(c: AppContext, form: FormData) {
+async function handleConsentSubmit(c: C, form: FormData) {
   const oauthParams = form.get("oauth_params") as string || "";
   const actor = await getSessionFromCookie(c);
 
-  if (!actor) {
-    return c.html(errorPage("Session expired", "Please try again"), 401);
-  }
+  if (!actor) return c.html(errorPage("Session expired", "Please try again"), 401);
 
-  // Parse OAuth params
   const params = new URLSearchParams(oauthParams.startsWith("?") ? oauthParams.slice(1) : oauthParams);
   const clientId = params.get("client_id") || "";
   const redirectUri = params.get("redirect_uri") || "";
@@ -256,7 +194,6 @@ async function handleConsentSubmit(c: AppContext, form: FormData) {
     return c.html(errorPage("Invalid request", "Missing OAuth parameters"), 400);
   }
 
-  // Generate authorization code
   const code = rand(32);
   const expiresAt = Date.now() + CODE_TTL_MS;
 
@@ -264,7 +201,6 @@ async function handleConsentSubmit(c: AppContext, form: FormData) {
     "INSERT INTO oauth_codes (code, actor, client_id, redirect_uri, scope, code_challenge, code_challenge_method, expires_at) VALUES (?, ?, ?, ?, ?, ?, 'S256', ?)",
   ).bind(code, actor, clientId, redirectUri, scope, codeChallenge, expiresAt).run();
 
-  // Redirect to callback
   const callbackUrl = new URL(redirectUri);
   callbackUrl.searchParams.set("code", code);
   if (state) callbackUrl.searchParams.set("state", state);
@@ -274,13 +210,10 @@ async function handleConsentSubmit(c: AppContext, form: FormData) {
 
 // ── Token endpoint ────────────────────────────────────────────────────
 
-export async function tokenEndpoint(c: AppContext) {
+async function tokenEndpoint(c: C) {
   let params: URLSearchParams;
   const ct = c.req.header("Content-Type") || "";
-  if (ct.includes("application/x-www-form-urlencoded")) {
-    const text = await c.req.text();
-    params = new URLSearchParams(text);
-  } else if (ct.includes("application/json")) {
+  if (ct.includes("application/json")) {
     const body = await c.req.json();
     params = new URLSearchParams();
     for (const [k, v] of Object.entries(body as Record<string, string>)) {
@@ -305,37 +238,27 @@ export async function tokenEndpoint(c: AppContext) {
     return c.json({ error: "invalid_request", error_description: "code and code_verifier required" }, 400);
   }
 
-  // Look up auth code
   const authCode = await c.env.DB.prepare(
-    "SELECT * FROM oauth_codes WHERE code = ?",
+    "SELECT code, actor, client_id, redirect_uri, scope, code_challenge, expires_at FROM oauth_codes WHERE code = ?",
   ).bind(code).first<{
     code: string; actor: string; client_id: string; redirect_uri: string;
-    scope: string; code_challenge: string; code_challenge_method: string; expires_at: number;
+    scope: string; code_challenge: string; expires_at: number;
   }>();
 
-  if (!authCode) {
-    return c.json({ error: "invalid_grant", error_description: "Invalid authorization code" }, 400);
-  }
+  if (!authCode) return c.json({ error: "invalid_grant", error_description: "Invalid authorization code" }, 400);
 
-  // Delete immediately (single-use)
   await c.env.DB.prepare("DELETE FROM oauth_codes WHERE code = ?").bind(code).run();
 
-  // Validate expiry
   if (Date.now() > authCode.expires_at) {
     return c.json({ error: "invalid_grant", error_description: "Authorization code expired" }, 400);
   }
-
-  // Validate client_id
   if (clientId && authCode.client_id !== clientId) {
     return c.json({ error: "invalid_grant", error_description: "client_id mismatch" }, 400);
   }
-
-  // Validate redirect_uri
   if (redirectUri && authCode.redirect_uri !== redirectUri) {
     return c.json({ error: "invalid_grant", error_description: "redirect_uri mismatch" }, 400);
   }
 
-  // Validate PKCE: SHA256(code_verifier) must match code_challenge
   const verifierHash = base64urlEncode(
     await crypto.subtle.digest("SHA-256", new TextEncoder().encode(codeVerifier)),
   );
@@ -343,19 +266,25 @@ export async function tokenEndpoint(c: AppContext) {
     return c.json({ error: "invalid_grant", error_description: "PKCE verification failed" }, 400);
   }
 
-  // Create an API key as the access token
-  const token = apiKeyToken();
-  const tokenHash = await sha256(token);
-  const id = apiKeyId();
-  const now = Date.now();
-  const expiresAt = now + API_KEY_TTL_MS;
+  let token: string;
+  try {
+    token = apiKeyToken();
+    const tokenHash = await sha256(token);
+    const id = apiKeyId();
+    const now = Date.now();
+    const expiresAt = now + API_KEY_TTL_MS;
 
-  // Map OAuth scopes to storage scopes
-  const storageScopes = mapOAuthScopes(authCode.scope);
-
-  await c.env.DB.prepare(
-    "INSERT INTO api_keys (id, actor, token_hash, name, scopes, path_prefix, expires_at, created_at) VALUES (?, ?, ?, ?, ?, '', ?, ?)",
-  ).bind(id, authCode.actor, tokenHash, `oauth:${authCode.client_id}`, storageScopes, expiresAt, now).run();
+    await c.env.DB.prepare(
+      "INSERT INTO api_keys (id, actor, token_hash, name, prefix, expires_at, created_at) VALUES (?, ?, ?, ?, '', ?, ?)",
+    ).bind(id, authCode.actor, tokenHash, `oauth:${authCode.client_id}`, expiresAt, now).run();
+  } catch (e: any) {
+    console.error(JSON.stringify({
+      level: "error", component: "oauth", step: "token_create",
+      actor: authCode.actor, client_id: authCode.client_id,
+      error: e?.message, stack: e?.stack, ts: Date.now(),
+    }));
+    return c.json({ error: "server_error", error_description: "Failed to create access token" }, 500);
+  }
 
   return c.json({
     access_token: token,
@@ -365,29 +294,9 @@ export async function tokenEndpoint(c: AppContext) {
   });
 }
 
-function mapOAuthScopes(scope: string): string {
-  if (!scope || scope === "*") return "*";
-  const parts = scope.split(/[\s,]+/);
-  const mapped: string[] = [];
-  for (const p of parts) {
-    switch (p) {
-      case "storage:read":
-        mapped.push("files:read", "folders:read", "drive:read", "bucket:read", "object:read");
-        break;
-      case "storage:write":
-        mapped.push("files:write", "folders:write", "drive:write", "bucket:write", "object:write");
-        break;
-      case "storage:admin":
-        mapped.push("shares:read", "shares:write", "links:manage");
-        break;
-    }
-  }
-  return mapped.length > 0 ? mapped.join(",") : "*";
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────
 
-async function getSessionFromCookie(c: AppContext): Promise<string | null> {
+async function getSessionFromCookie(c: C): Promise<string | null> {
   const cookie = c.req.header("Cookie");
   if (!cookie) return null;
   const match = cookie.match(/(?:^|;\s*)session=([^;]+)/);
@@ -461,15 +370,15 @@ function loginPage(clientId: string, oauthParams: string): string {
 
 function consentPage(actor: string, clientId: string, scope: string, oauthParams: string): string {
   const scopes = (!scope || scope === "*")
-    ? ["Read files and folders", "Write and delete files", "Manage shares and links"]
+    ? ["Read files stored on storage.now", "Upload, edit, and delete files on storage.now", "Create share links for your stored files"]
     : scope.split(/[\s,]+/).map((s) => {
-        if (s === "storage:read") return "Read files and folders";
-        if (s === "storage:write") return "Write and delete files";
-        if (s === "storage:admin") return "Manage shares and links";
+        if (s === "storage:read") return "Read files stored on storage.now";
+        if (s === "storage:write") return "Upload, edit, and delete files on storage.now";
+        if (s === "storage:admin") return "Create share links and manage API keys";
         return s;
       });
 
-  const scopeItems = scopes.map((s) => `<div class="scope-item"><span class="scope-icon">✓</span> ${esc(s)}</div>`).join("");
+  const scopeItems = scopes.map((s) => `<div class="scope-item"><span class="scope-icon">&check;</span> ${esc(s)}</div>`).join("");
 
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -477,7 +386,7 @@ function consentPage(actor: string, clientId: string, scope: string, oauthParams
 <div class="card">
   <div class="brand">storage.now</div>
   <h1>Authorize access</h1>
-  <p><strong>${esc(clientId)}</strong> wants to access your storage.</p>
+  <p><strong>${esc(clientId)}</strong> wants to access your <strong>storage.now</strong> cloud files. This does not access any files on your device.</p>
   <div class="actor-badge">${esc(actor)}</div>
   <div class="scope-list">${scopeItems}</div>
   <form method="POST" action="/oauth/authorize">
@@ -498,4 +407,15 @@ function errorPage(title: string, message: string): string {
   <h1>${esc(title)}</h1>
   <p>${esc(message)}</p>
 </div></body></html>`;
+}
+
+// ── Registration ──────────────────────────────────────────────────────
+
+export function register(app: App) {
+  app.get("/.well-known/oauth-protected-resource", protectedResourceMetadata);
+  app.get("/.well-known/oauth-authorization-server", authorizationServerMetadata);
+  app.post("/oauth/register", registerClient);
+  app.get("/oauth/authorize", authorizeEndpoint);
+  app.post("/oauth/authorize", authorizeSubmit);
+  app.post("/oauth/token", tokenEndpoint);
 }

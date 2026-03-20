@@ -3,7 +3,6 @@ package storage
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
@@ -14,12 +13,11 @@ func newShareCmd() *cobra.Command {
 	var expires string
 
 	cmd := &cobra.Command{
-		Use:     "share <bucket/path>",
-		Short:   "Create a signed download URL",
-		Aliases: []string{"sign"},
+		Use:   "share <path>",
+		Short: "Create a temporary share link",
 		Example: `  storage share docs/report.pdf
   storage share docs/report.pdf --expires 7d
-  storage share docs/report.pdf | pbcopy`,
+  storage share pic.jpg --json`,
 		Args: cobra.ExactArgs(1),
 		Run: wrapRun(func(cmd *cobra.Command, args []string) error {
 			d := deps()
@@ -27,48 +25,40 @@ func newShareCmd() *cobra.Command {
 				return err
 			}
 
-			src := args[0]
-			if !strings.Contains(src, "/") {
-				return &CLIError{Code: ExitUsage, Msg: "invalid path", Hint: "Use bucket/path format: storage share docs/file.txt"}
-			}
-
-			bucket, objPath, _ := strings.Cut(src, "/")
-			expiresSec := parseDuration(expires)
+			path := strings.TrimPrefix(args[0], "/")
+			ttl := parseDuration(expires)
 
 			body := map[string]any{
-				"path":       objPath,
-				"expires_in": expiresSec,
+				"path": path,
+				"ttl":  ttl,
 			}
 
-			data, err := d.Client.DoJSON("POST", "/object/sign/"+bucket, body)
+			data, err := d.Client.DoJSON("POST", "/share", body)
 			if err != nil {
 				return err
 			}
 
 			if globalFlags.json {
-				var raw json.RawMessage
-				json.Unmarshal(data, &raw)
-				enc := json.NewEncoder(os.Stdout)
-				enc.SetIndent("", "  ")
-				return enc.Encode(raw)
+				return printJSON(data)
 			}
 
 			var resp struct {
-				SignedURL string `json:"signed_url"`
+				URL       string `json:"url"`
+				ExpiresAt int64  `json:"expires_at"`
 			}
 			json.Unmarshal(data, &resp)
 
-			fmt.Println(d.Config.Endpoint + resp.SignedURL)
+			fmt.Println(resp.URL)
 			d.Out.Info("Expires", "in "+expires)
 			return nil
 		}),
 	}
 
-	cmd.Flags().StringVarP(&expires, "expires", "x", "1h", "expiration duration (30m, 1h, 1d, 7d)")
+	cmd.Flags().StringVarP(&expires, "expires", "x", "1h", "expiration (30m, 1h, 7d)")
 	return cmd
 }
 
-// parseDuration converts a duration string like "30m", "1h", "7d" to seconds.
+// parseDuration converts "30m", "1h", "7d" to seconds.
 func parseDuration(s string) int {
 	if s == "" {
 		return 3600
@@ -76,7 +66,10 @@ func parseDuration(s string) int {
 
 	n := len(s)
 	if n < 2 {
-		v, _ := strconv.Atoi(s)
+		v, err := strconv.Atoi(s)
+		if err != nil {
+			return 3600
+		}
 		return v
 	}
 
@@ -84,7 +77,12 @@ func parseDuration(s string) int {
 	unit := s[n-1]
 	num, err := strconv.Atoi(numStr)
 	if err != nil {
-		return 3600
+		// Try parsing the whole string as seconds
+		v, err2 := strconv.Atoi(s)
+		if err2 != nil {
+			return 3600
+		}
+		return v
 	}
 
 	switch unit {

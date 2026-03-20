@@ -1,54 +1,73 @@
-# @anthropic/storage
+# @liteio/storage-cli
 
-CLI for [storage.now](https://storage.liteio.dev) — upload, download, and share files from your terminal.
+The official CLI for [Liteio Storage API](https://storage.liteio.dev) — upload, download, organize, and share files from your terminal.
 
 Zero dependencies. Single file. Works with Node 18+, Bun, and Deno.
 
+```bash
+npx @liteio/storage-cli --help
 ```
-npx @anthropic/storage
-```
+
+## Why?
+
+- **No SDK needed** — one command to upload, download, or share any file
+- **Pipe-friendly** — reads stdin, writes stdout, uses proper exit codes
+- **Works everywhere** — Node.js, Bun, Deno, CI/CD, Docker, cron
+- **Zero dependencies** — single `.mjs` file, nothing to install or audit
+- **Secure by default** — OAuth PKCE login, scoped API keys, `0600` token permissions
 
 ## Install
 
 ```bash
-# Run without installing
-npx @anthropic/storage
-bunx @anthropic/storage
+# Run without installing (recommended for trying it out)
+npx @liteio/storage-cli
+bunx @liteio/storage-cli
 
-# Install globally
-npm install -g @anthropic/storage
+# Install globally for everyday use
+npm install -g @liteio/storage-cli
 ```
 
 After installing globally, the `storage` command is available everywhere:
 
 ```bash
 storage login
-storage put photo.jpg images
+storage put photo.jpg images/
 storage share images/photo.jpg --expires 7d
+```
+
+### Running with Deno
+
+```bash
+deno run --allow-all npm:@liteio/storage-cli --help
+deno run --allow-all npm:@liteio/storage-cli ls
+```
+
+You can also create a shell alias for convenience:
+
+```bash
+alias storage="deno run --allow-all npm:@liteio/storage-cli"
 ```
 
 ## Quick start
 
 ```bash
-# Authenticate (opens browser, OAuth 2.0 PKCE)
+# 1. Authenticate (opens browser, OAuth 2.0 PKCE — takes 5 seconds)
 storage login
 
-# Upload a file
-storage put report.pdf docs
+# 2. Upload a file
+storage put report.pdf docs/report.pdf
 
-# List your buckets
-storage ls
+# 3. List your files
+storage ls docs/
 
-# List objects in a bucket
-storage ls docs
+# 4. Share it with anyone (link expires in 1 hour by default)
+storage share docs/report.pdf
+# → https://storage.liteio.dev/s/Xk9mP2nQ4rWz8AbCdEf3g
 
-# Download a file
+# 5. Download it back
 storage get docs/report.pdf
 
-# Share with a signed URL (expires in 1 hour by default)
-storage share docs/report.pdf
-
-# Print file to stdout (pipe to other tools)
+# 6. Print a file to stdout (great for piping)
 storage cat docs/data.json | jq '.items'
 ```
 
@@ -60,164 +79,145 @@ storage cat docs/data.json | jq '.items'
 |---------|-------------|
 | `storage login` | Authenticate via browser (OAuth 2.0 with PKCE) |
 | `storage logout` | Remove saved credentials |
-| `storage token` | Show current token source |
-| `storage token <token>` | Save a token directly (for CI/headless) |
+| `storage token` | Show current token source and prefix |
+| `storage token <token>` | Save a token directly (useful for CI or headless servers) |
 
 ### File operations
 
 | Command | Description |
 |---------|-------------|
-| `storage ls` | List all buckets |
-| `storage ls <bucket> [prefix]` | List objects in a bucket |
-| `storage put <file> [bucket/path]` | Upload a file |
-| `storage get <bucket/path> [dest]` | Download a file |
-| `storage cat <bucket/path>` | Print file contents to stdout |
-| `storage rm <bucket/path...>` | Delete one or more objects |
-| `storage mv <from> <to>` | Move or rename an object |
-| `storage cp <from> <to>` | Copy an object (supports cross-bucket) |
+| `storage ls [path]` | List files and directories. No args = root. |
+| `storage put <file> [path]` | Upload a file. Use `-` to read from stdin. |
+| `storage get <path> [dest]` | Download a file. Use `-` to write to stdout. |
+| `storage cat <path>` | Print file contents to stdout (alias for `get <path> -`) |
+| `storage rm <path...>` | Delete one or more files |
+| `storage mv <from> <to>` | Move or rename a file (server-side, instant) |
 
 ### Sharing & discovery
 
 | Command | Description |
 |---------|-------------|
-| `storage share <bucket/path>` | Create a signed download URL |
-| `storage info <bucket/path>` | Show object metadata |
-| `storage search <query>` | Search for objects by name |
-| `storage stats` | Show storage usage and quota |
+| `storage share <path>` | Create a signed share URL (default: 1 hour) |
+| `storage find <query>` | Search files by name |
+| `storage stat` | Show total files and storage usage |
 
-### Buckets & API keys
+### API keys
 
 | Command | Description |
 |---------|-------------|
-| `storage bucket create <name>` | Create a new bucket |
-| `storage bucket rm <name>` | Delete a bucket |
-| `storage key create <name>` | Create an API key |
-| `storage key list` | List API keys |
-| `storage key revoke <id>` | Revoke an API key |
+| `storage key create <name>` | Create an API key (shown once — save it!) |
+| `storage key list` | List all API keys |
+| `storage key rm <id>` | Revoke an API key |
 
-## Usage
+## Usage examples
 
 ### Upload
 
 ```bash
-# Upload to default bucket
+# Upload a file (destination = same filename at root)
 storage put photo.jpg
 
-# Upload to a specific bucket and path
+# Upload to a specific path
 storage put photo.jpg images/vacation/photo.jpg
 
-# Upload with explicit content type
-storage put data.bin assets/data.bin --type application/octet-stream
+# Upload to a directory (trailing slash appends the filename)
+storage put photo.jpg images/
 
-# Upload from stdin
+# Upload from stdin — great for piping
 echo '{"key": "value"}' | storage put - config/settings.json
 
-# Pipe a command's output
+# Pipe command output directly to storage
 curl -s https://example.com/data.csv | storage put - reports/latest.csv
 ```
 
 ### Download
 
 ```bash
-# Download to current directory
+# Download to current directory (keeps original filename)
 storage get docs/report.pdf
 
 # Download to a specific path
 storage get docs/report.pdf ~/Downloads/report.pdf
 
-# Download to stdout
-storage get docs/report.pdf -
-
-# Download and pipe to another command
+# Download to stdout (use - as destination)
 storage cat docs/data.json | jq '.items[] | .name'
-
-# Download a public file (no auth required)
-storage get images/logo.png --public
 ```
 
 ### Share
 
+Share links are short, opaque, and expire automatically. They reveal nothing about your account or file paths.
+
 ```bash
-# Signed URL (default: 1 hour)
+# Create a share link (default: expires in 1 hour)
 storage share docs/report.pdf
+# → https://storage.liteio.dev/s/Xk9mP2nQ4rWz8AbCdEf3g
 
 # Custom expiration
 storage share docs/report.pdf --expires 30m
 storage share docs/report.pdf --expires 7d
-storage share docs/report.pdf --expires 3600    # seconds
+
+# Get the URL as JSON (useful for scripting)
+storage share docs/report.pdf --json | jq -r '.url'
 ```
 
-Duration format: `30s`, `15m`, `2h`, `7d`, or plain seconds.
+Duration format: `30s`, `15m`, `2h`, `7d`, or plain seconds (`3600`).
 
 ### Delete
 
 ```bash
-# Delete a single object
+# Delete a single file
 storage rm docs/old-report.pdf
 
-# Delete multiple objects (same bucket)
-storage rm docs/file1.txt docs/file2.txt docs/file3.txt
+# Delete a directory recursively (prompts for confirmation)
+storage rm logs/ --recursive
 
-# Delete recursively by prefix
-storage rm docs/archive/ --recursive
+# Skip confirmation prompt
+storage rm logs/ --recursive --force
 ```
 
 ### Search
 
 ```bash
-# Search across all buckets
-storage search quarterly
+# Search by filename
+storage find quarterly
 
-# Search in a specific bucket
-storage search report --bucket docs
-
-# Filter by MIME type
-storage search --type image/png --bucket assets
+# Get results as JSON for scripting
+storage find "*.pdf" --json | jq '.results[].path'
 ```
 
-### Buckets
+### Move / rename
 
 ```bash
-# Create a private bucket
-storage bucket create documents
+# Rename a file
+storage mv drafts/post.md published/post.md
 
-# Create a public bucket
-storage bucket create cdn --public
-
-# Create with file size limit and allowed types
-storage bucket create uploads --size-limit 10MB --types "image/png,image/jpeg"
-
-# Delete a bucket (must be empty)
-storage bucket rm old-bucket
-
-# Delete a bucket and all its contents
-storage bucket rm old-bucket --force
+# Move to another directory
+storage mv old/report.pdf archive/report.pdf
 ```
 
 ### API keys
 
+Use API keys for CI/CD, scripts, and automation — they don't expire (unless you set one) and can be restricted to specific path prefixes.
+
 ```bash
-# Create a key with full access
+# Create a key (full access)
 storage key create deploy-bot
 
-# Create a scoped key
-storage key create readonly --scope "files:read,bucket:read"
-
 # Create a key restricted to a path prefix
-storage key create uploads-only --prefix "uploads/"
+storage key create uploads-only --prefix uploads/
 
 # List all keys
 storage key list
 
-# Revoke a key
-storage key revoke <id>
+# Revoke a key by ID
+storage key rm ak_abc123def456
 ```
 
 ## Global flags
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `--json` | `-j` | Output as JSON |
+| `--json` | `-j` | Output as JSON (machine-readable) |
 | `--quiet` | `-q` | Suppress non-essential output |
 | `--token <token>` | `-t` | Override authentication token |
 | `--endpoint <url>` | `-e` | Override API base URL |
@@ -227,113 +227,108 @@ storage key revoke <id>
 
 ## Configuration
 
-Configuration is resolved in order of priority:
+The CLI resolves configuration in this order (first match wins):
 
-1. **CLI flags** (`--token`, `--endpoint`) — highest priority
-2. **Environment variables** (`STORAGE_TOKEN`, `STORAGE_ENDPOINT`, `STORAGE_BUCKET`)
+1. **CLI flags** (`--token`, `--endpoint`)
+2. **Environment variables** (`STORAGE_TOKEN`, `STORAGE_ENDPOINT`)
 3. **Token file** (`~/.config/storage/token`) — written by `storage login`
 4. **Config file** (`~/.config/storage/config`)
 
 ### Environment variables
 
 ```bash
-# Set token for CI/CD pipelines
+# Use an API key for CI/CD pipelines
 export STORAGE_TOKEN=sk_your_api_key_here
 
-# Custom endpoint
-export STORAGE_ENDPOINT=https://storage.example.com
-
-# Default bucket (used when no bucket is specified)
-export STORAGE_BUCKET=my-default-bucket
+# Point to a different endpoint (e.g. staging)
+export STORAGE_ENDPOINT=https://storage.liteio.dev
 ```
 
 ### Config file
 
-`~/.config/storage/config` (or `$XDG_CONFIG_HOME/storage/config`):
+Located at `~/.config/storage/config` (or `$XDG_CONFIG_HOME/storage/config`):
 
 ```ini
 endpoint=https://storage.liteio.dev
-bucket=default
 ```
 
 ## JSON output
 
-Every command supports `--json` for machine-readable output:
+Every command supports `--json` for machine-readable output — perfect for scripting:
 
 ```bash
-# List buckets as JSON
-storage ls --json
+# List files as JSON
+storage ls docs/ --json
 
-# List objects as JSON
-storage ls docs --json
+# Extract file names with jq
+storage ls docs/ --json | jq '.entries[].name'
 
-# Pipe to jq
-storage ls docs --json | jq '.[].path'
-
-# Use in scripts
-TOTAL=$(storage stats --json | jq '.total_size')
+# Get storage usage as a number
+storage stat --json | jq '.bytes'
 ```
 
 ## Pipes & scripting
 
-The CLI is designed to compose with Unix pipes:
+The CLI is designed as a well-behaved Unix tool: it reads stdin, writes stdout, sends status messages to stderr, and uses meaningful exit codes.
 
 ```bash
-# Upload from a pipe
-tar czf - ./src | storage put - backups/src.tar.gz
+# Pipe a database dump directly to storage (no temp files)
+pg_dump mydb | gzip | storage put - backups/db/$(date +%F).sql.gz
 
-# Process downloaded data
+# Process downloaded JSON
 storage cat docs/users.json | jq '.[] | select(.active)' > active.json
 
-# Batch upload
-find ./images -name '*.png' -exec sh -c 'storage put "$1" assets/"$(basename "$1")"' _ {} \;
-
-# Mirror a directory
-for f in ./dist/*; do
-  storage put "$f" cdn/"$(basename "$f")"
-done
+# Batch upload all PNGs in a directory
+find ./images -name '*.png' -exec sh -c \
+  'storage put "$1" images/"$(basename "$1")"' _ {} \;
 ```
 
 ## CI/CD
 
 ```yaml
-# GitHub Actions
-- name: Deploy to storage
+# GitHub Actions example
+- name: Upload build artifacts
   env:
     STORAGE_TOKEN: ${{ secrets.STORAGE_TOKEN }}
   run: |
-    npx @anthropic/storage put ./dist/bundle.js cdn/bundle.js
-    npx @anthropic/storage put ./dist/style.css cdn/style.css
-```
-
-```bash
-# Direct token usage (no login required)
-storage token sk_your_api_key_here
-storage put ./build/app.js cdn/app.js
+    npx @liteio/storage-cli put ./dist/bundle.js cdn/bundle.js
+    npx @liteio/storage-cli put ./dist/style.css cdn/style.css
 ```
 
 ## Exit codes
 
-| Code | Meaning |
-|------|---------|
-| 0 | Success |
-| 1 | General error |
-| 2 | Usage error (bad arguments) |
-| 3 | Authentication error |
-| 4 | Not found |
-| 5 | Conflict |
-| 6 | Permission denied |
-| 7 | Network error |
+Scripts can react to specific error types:
+
+| Code | Name | When |
+|------|------|------|
+| 0 | Success | Operation completed normally |
+| 1 | Error | Unspecified runtime error |
+| 2 | Usage | Bad arguments or flags |
+| 3 | Auth | Missing or invalid token |
+| 4 | Not found | File does not exist |
+| 5 | Conflict | Name collision |
+| 6 | Permission | Token lacks access to this path |
+| 7 | Network | Connection failed or timed out |
+
+```bash
+storage get backups/latest.sql.gz .
+case $? in
+  0) echo "restored ok" ;;
+  4) echo "no backup found" ;;
+  3) echo "auth failed — run: storage login" ;;
+  7) echo "network error — retry later" ;;
+esac
+```
 
 ## Runtime compatibility
 
-| Runtime | Version | Status |
-|---------|---------|--------|
-| Node.js | 18+ | Supported |
-| Bun | 1.0+ | Supported |
-| Deno | 1.35+ | Supported |
+| Runtime | Version | Install |
+|---------|---------|---------|
+| Node.js | 18+ | `npx @liteio/storage-cli` |
+| Bun | 1.0+ | `bunx @liteio/storage-cli` |
+| Deno | 1.35+ | `deno run --allow-all npm:@liteio/storage-cli` |
 
-The CLI uses only Node.js built-in modules (`node:crypto`, `node:fs`, `node:http`, `node:os`, `node:path`, `node:child_process`, `node:stream/promises`) — no dependencies to install or audit.
+The CLI uses only Node.js built-in modules (`node:crypto`, `node:fs`, `node:http`, `node:os`, `node:path`, `node:child_process`, `node:buffer`, `node:process`) — zero external dependencies.
 
 ## License
 

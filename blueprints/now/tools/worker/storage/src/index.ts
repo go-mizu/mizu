@@ -1,71 +1,29 @@
-import { Hono } from "hono";
+import { OpenAPIHono } from "@hono/zod-openapi";
 import { cors } from "hono/cors";
-import { bearerAuth } from "./middleware/auth";
-import { createChallenge, verifyChallenge, requestMagicLink, verifyMagicLink, logout, registerActor } from "./routes/auth";
+import { register as registerFiles } from "./routes/files";
+import { register as registerLs } from "./routes/ls";
+import { register as registerFind } from "./routes/find";
+import { register as registerMv } from "./routes/mv";
+import { register as registerStat } from "./routes/stat";
+import { register as registerShare } from "./routes/share";
+import { register as registerAuth } from "./routes/auth";
+import { register as registerKeys } from "./routes/keys";
+import { register as registerMcp } from "./routes/mcp";
+import { register as registerOAuth } from "./routes/oauth";
 import { getSessionActor } from "./pages/session";
-import {
-  createBucket, listBuckets, getBucket, updateBucket, deleteBucket, emptyBucket,
-} from "./routes/buckets";
-import {
-  createObject, upsertObject, downloadObject, downloadPublicObject,
-  headObject, objectInfo, deleteObjects, listObjects,
-  moveObject, copyObject,
-} from "./routes/objects";
-import {
-  createSignedUrl, createSignedUploadUrl, accessSignedUrl, uploadViaSignedUrl,
-} from "./routes/signed";
-import { objectUploadToken, objectCommit } from "./routes/nohop";
-import { createApiKey, listApiKeys, deleteApiKey } from "./routes/api-keys";
-import { getAuditLog } from "./lib/audit";
-import { uploadFile, downloadFile, deleteFile, headFile } from "./routes/files";
-import { createFolder, listFolder, deleteFolder } from "./routes/folders";
-import {
-  toggleStar, renameItem, moveItems, copyFile,
-  trashItems, restoreItems, emptyTrash, listTrash,
-  listRecent, listStarred, searchFiles, driveStats, updateDescription,
-} from "./routes/drive";
-import { createShare, listShares, listSharedWithMe } from "./routes/shares";
-import { createLink, listLinks, deleteLink, accessPublicLink, accessPublicLinkFile } from "./routes/links";
 import { homePage } from "./pages/home";
 import { developersPage } from "./pages/developers";
-import { docsPage } from "./pages/docs";
 import { pricingPage } from "./pages/pricing";
-import { browsePage } from "./pages/browse";
 import { aiPage } from "./pages/ai";
 import { cliPage } from "./pages/cli";
-import { mcpHandler, mcpInfo } from "./routes/mcp";
-import {
-  protectedResourceMetadata, authorizationServerMetadata,
-  registerClient, authorizeEndpoint, authorizeSubmit,
-  oauthMagicCallback, tokenEndpoint,
-} from "./routes/oauth";
-import {
-  tusOptions, tusCreate, tusHead, tusPatch, tusDelete,
-} from "./routes/tus";
-import {
-  authRateLimit, magicLinkRateLimit, registerRateLimit,
-  uploadRateLimit, publicAccessRateLimit,
-} from "./middleware/rate-limit";
+import { browsePage } from "./pages/browse";
 import type { Env, Variables } from "./types";
 
-const app = new Hono<{ Bindings: Env; Variables: Variables }>();
-
-// TUS OPTIONS must run before CORS to return protocol-specific headers
-// Registered at both /upload/resumable and /storage/v1/upload/resumable (Supabase-compatible path)
-for (const tusBase of ["/upload/resumable", "/storage/v1/upload/resumable"]) {
-  app.use(tusBase, async (c, next) => {
-    if (c.req.method === "OPTIONS") return tusOptions(c);
-    await next();
-  });
-  app.use(`${tusBase}/*`, async (c, next) => {
-    if (c.req.method === "OPTIONS") return tusOptions(c);
-    await next();
-  });
-}
+const app = new OpenAPIHono<{ Bindings: Env; Variables: Variables }>();
 
 app.use("*", cors());
 
-// ── Pages (no auth — session read optionally for signed-in state) ─────
+// ── Pages (no auth — session read optionally for signed-in state) ───
 app.get("/", async (c) => {
   const actor = await getSessionActor(c);
   return c.html(homePage(actor));
@@ -74,204 +32,163 @@ app.get("/developers", async (c) => {
   const actor = await getSessionActor(c);
   return c.html(developersPage(actor));
 });
-app.get("/api", (c) => c.html(docsPage()));
 app.get("/pricing", (c) => c.html(pricingPage()));
 app.get("/ai", (c) => c.html(aiPage()));
 app.get("/cli", async (c) => {
   const actor = await getSessionActor(c);
   return c.html(cliPage(actor));
 });
-app.get("/browse", browsePage);
-app.get("/browse/*", browsePage);
+app.get("/browse", browsePage as any);
+app.get("/browse/*", browsePage as any);
 
-// ── Body size limit for small API routes ──────────────────────────────
-const MAX_BODY_SIZE = 65_536;
-const bodySizeLimit = async (c: any, next: any) => {
-  const cl = c.req.header("Content-Length");
-  if (cl && parseInt(cl, 10) > MAX_BODY_SIZE) {
-    return c.json({ error: { code: "invalid_request", message: "Request body too large" } }, 413);
-  }
-  await next();
-};
+// ── Storage API routes ──────────────────────────────────────────────
+registerFiles(app);
+registerLs(app);
+registerFind(app);
+registerMv(app);
+registerStat(app);
+registerShare(app);
+registerAuth(app);
+registerKeys(app);
+registerMcp(app);
+registerOAuth(app);
 
-// ── Rate limiting on unauthenticated endpoints ────────────────────────
-app.use("/auth/register", registerRateLimit);
-app.use("/auth/challenge", authRateLimit);
-app.use("/auth/verify", authRateLimit);
-app.use("/auth/magic-link", magicLinkRateLimit);
-
-// ── Auth (no auth required) ───────────────────────────────────────────
-app.use("/auth/*", bodySizeLimit);
-app.post("/auth/register", registerActor);
-app.post("/auth/challenge", createChallenge);
-app.post("/auth/verify", verifyChallenge);
-app.post("/auth/magic-link", requestMagicLink);
-app.get("/auth/magic/:token", verifyMagicLink);
-app.post("/auth/logout", logout);
-app.get("/auth/logout", logout);
-
-// ── OAuth (no auth) ──────────────────────────────────────────────────
-app.get("/.well-known/oauth-protected-resource", protectedResourceMetadata);
-app.get("/.well-known/oauth-authorization-server", authorizationServerMetadata);
-app.use("/oauth/*", bodySizeLimit);
-app.post("/oauth/register", registerClient);
-app.get("/oauth/authorize", authorizeEndpoint);
-app.post("/oauth/authorize", authorizeSubmit);
-app.get("/oauth/callback/:token", oauthMagicCallback);
-app.post("/oauth/token", tokenEndpoint);
-
-// ── MCP (JSON-RPC 2.0 with OAuth) ───────────────────────────────────
-app.get("/mcp", mcpInfo);
-app.use("/mcp", async (c, next) => {
-  await next();
-  if (c.res.status === 401) {
-    const origin = new URL(c.req.url).origin;
-    const body = await c.res.text();
-    c.res = new Response(body, {
-      status: 401,
-      headers: {
-        ...Object.fromEntries(c.res.headers.entries()),
-        "WWW-Authenticate": `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"`,
-      },
-    });
-  }
+// ── OpenAPI spec (auto-generated from route definitions) ────────────
+app.doc("/openapi.json", {
+  openapi: "3.1.0",
+  info: {
+    title: "Storage API",
+    version: "1.0.0",
+    description: "Unix-philosophy file storage. Files are paths.",
+  },
 });
-app.use("/mcp", bearerAuth);
-app.use("/mcp", bodySizeLimit);
-app.post("/mcp", mcpHandler);
 
-// ── Signed URL access (no auth) ─────────────────────────────────────
-app.use("/sign/*", publicAccessRateLimit);
-app.get("/sign/:token", accessSignedUrl);
-app.use("/upload/sign/*", publicAccessRateLimit);
-app.put("/upload/sign/:token", uploadViaSignedUrl);
+// ── Swagger UI ──────────────────────────────────────────────────────
+app.get("/docs", (c) => {
+  const origin = new URL(c.req.url).origin;
+  return c.html(`<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Storage API</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+</head><body>
+<div id="swagger-ui"></div>
+<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script>SwaggerUIBundle({url:"${origin}/openapi.json",dom_id:"#swagger-ui",deepLinking:true})</script>
+</body></html>`);
+});
 
-// ── TUS resumable uploads ───────────────────────────────────────────
-// Both /upload/resumable and /storage/v1/upload/resumable (Supabase-compatible)
-for (const tusBase of ["/upload/resumable", "/storage/v1/upload/resumable"]) {
-  app.use(tusBase, bearerAuth);
-  app.use(`${tusBase}/*`, bearerAuth);
-  app.post(tusBase, tusCreate);
-  app.get(`${tusBase}/:id`, tusHead);
-  app.patch(`${tusBase}/:id`, tusPatch);
-  app.delete(`${tusBase}/:id`, tusDelete);
-}
+// ── Markdown API docs (auto-generated from OpenAPI spec) ────────────
+app.get("/api", (c) => {
+  const spec = app.getOpenAPIDocument({
+    openapi: "3.1.0",
+    info: { title: "Storage API", version: "1.0.0", description: "" },
+  });
+  return c.html(renderMarkdownDocs(spec));
+});
 
-// ── Public object access (no auth) ──────────────────────────────────
-app.use("/object/public/*", publicAccessRateLimit);
-app.get("/object/public/*", downloadPublicObject);
+// ── Fallbacks ───────────────────────────────────────────────────────
+app.notFound((c) => c.json({ error: "not_found", message: "Not found" }, 404));
 
-// ── Public links (no auth) ──────────────────────────────────────────
-app.use("/p/*", publicAccessRateLimit);
-app.get("/p/:token", accessPublicLink);
-app.get("/p/:token/*", accessPublicLinkFile);
-
-// ── Protected routes (Bearer token, session cookie, or API key) ─────
-app.use("/files", bearerAuth);
-app.use("/files/*", bearerAuth);
-app.use("/folders", bearerAuth);
-app.use("/folders/*", bearerAuth);
-app.use("/drive/*", bearerAuth);
-app.use("/shares", bearerAuth);
-app.use("/shares/*", bearerAuth);
-app.use("/shared", bearerAuth);
-app.use("/bucket", bearerAuth);
-app.use("/bucket/*", bearerAuth);
-app.use("/object/*", bearerAuth);
-app.use("/keys", bearerAuth);
-app.use("/keys/*", bearerAuth);
-app.use("/audit", bearerAuth);
-
-// ── Drive (browse page API) ────────────────────────────────────────
-app.get("/drive/search", searchFiles);
-app.get("/drive/recent", listRecent);
-app.get("/drive/starred", listStarred);
-app.get("/drive/trash", listTrash);
-app.get("/drive/stats", driveStats);
-app.post("/drive/rename", bodySizeLimit, renameItem);
-app.post("/drive/move", bodySizeLimit, moveItems);
-app.post("/drive/copy", bodySizeLimit, copyFile);
-app.post("/drive/trash", bodySizeLimit, trashItems);
-app.post("/drive/restore", bodySizeLimit, restoreItems);
-app.delete("/drive/trash", emptyTrash);
-app.patch("/drive/star", bodySizeLimit, toggleStar);
-app.patch("/drive/description", bodySizeLimit, updateDescription);
-
-// ── Files (browse page upload/download) ─────────────────────────────
-app.put("/files/*", uploadFile);
-app.get("/files/*", downloadFile);
-app.delete("/files/*", deleteFile);
-app.on("HEAD", "/files/*", headFile);
-
-// ── Folders ─────────────────────────────────────────────────────────
-app.post("/folders", bodySizeLimit, createFolder);
-app.get("/folders/*", listFolder);
-app.get("/folders", listFolder);
-app.delete("/folders/*", deleteFolder);
-
-// ── Shares ─────────────────────────────────────────────────────────
-app.post("/shares", bodySizeLimit, createShare);
-app.get("/shares", listShares);
-app.get("/shared", listSharedWithMe);
-
-// ── Public links (management — auth required) ─────────────────────
-app.use("/links", bearerAuth);
-app.use("/links/*", bearerAuth);
-app.post("/links", bodySizeLimit, createLink);
-app.get("/links", listLinks);
-app.delete("/links/:id", deleteLink);
-
-// ── Rate limiting on writes ─────────────────────────────────────────
-app.use("/object/*", uploadRateLimit);
-
-// ── No-hop upload/commit ────────────────────────────────────────────
-app.use("/object/upload/token", bearerAuth);
-app.use("/object/commit", bearerAuth);
-app.post("/object/upload/token", bodySizeLimit, objectUploadToken);
-app.post("/object/commit", bodySizeLimit, objectCommit);
-
-// ── Buckets ─────────────────────────────────────────────────────────
-app.use("/bucket", bodySizeLimit);
-app.use("/bucket/*", bodySizeLimit);
-app.post("/bucket", createBucket);
-app.get("/bucket", listBuckets);
-app.get("/bucket/:id", getBucket);
-app.patch("/bucket/:id", updateBucket);
-app.delete("/bucket/:id", deleteBucket);
-app.post("/bucket/:id/empty", emptyBucket);
-
-// ── Objects ─────────────────────────────────────────────────────────
-app.post("/object/list/:bucket", bodySizeLimit, listObjects);
-app.post("/object/move", bodySizeLimit, moveObject);
-app.post("/object/copy", bodySizeLimit, copyObject);
-app.post("/object/sign/:bucket", bodySizeLimit, createSignedUrl);
-app.post("/object/upload/sign/*", bodySizeLimit, createSignedUploadUrl);
-app.get("/object/info/*", objectInfo);
-app.post("/object/*", createObject);
-app.put("/object/*", upsertObject);
-app.get("/object/*", downloadObject);
-app.on("HEAD", "/object/*", headObject);
-app.delete("/object/:bucket", bodySizeLimit, deleteObjects);
-
-// ── Keys ────────────────────────────────────────────────────────────
-app.use("/keys", bodySizeLimit);
-app.use("/keys/*", bodySizeLimit);
-app.post("/keys", createApiKey);
-app.get("/keys", listApiKeys);
-app.delete("/keys/:id", deleteApiKey);
-
-// ── Audit ───────────────────────────────────────────────────────────
-app.get("/audit", getAuditLog);
-
-// ── 404 fallback ────────────────────────────────────────────────────
-app.notFound((c) => c.json({ error: { code: "not_found", message: "Not found" } }, 404));
-
-// ── Error handler ───────────────────────────────────────────────────
-app.onError((err, c) => {
-  console.error("[storage-worker] unhandled error:", err);
-  return c.json({ error: { code: "internal", message: "Internal server error" } }, 500);
+app.onError((e, c) => {
+  const method = c.req.method;
+  const url = c.req.url;
+  const actor = (() => { try { return c.get("actor"); } catch { return "anon"; } })();
+  console.error(JSON.stringify({
+    level: "error",
+    method,
+    url,
+    actor,
+    error: e?.message || String(e),
+    stack: e?.stack,
+    ts: Date.now(),
+  }));
+  return c.json({ error: "internal", message: "Internal server error" }, 500);
 });
 
 export default {
   fetch: app.fetch,
 } satisfies ExportedHandler<Env>;
+
+// ── Markdown docs generator ─────────────────────────────────────────
+
+function renderMarkdownDocs(spec: any): string {
+  const md: string[] = [];
+  md.push(`# ${spec.info?.title || "API"}\n`);
+  if (spec.info?.description) md.push(`${spec.info.description}\n`);
+
+  // Group paths by tag
+  const byTag = new Map<string, { method: string; path: string; op: any }[]>();
+  for (const [path, methods] of Object.entries(spec.paths || {})) {
+    for (const [method, rawOp] of Object.entries(methods as any)) {
+      if (typeof rawOp !== "object" || !rawOp) continue;
+      const op = rawOp as any;
+      const tag = op.tags?.[0] || "other";
+      if (!byTag.has(tag)) byTag.set(tag, []);
+      byTag.get(tag)!.push({ method: method.toUpperCase(), path, op });
+    }
+  }
+
+  for (const [tag, routes] of byTag) {
+    md.push(`## ${tag.charAt(0).toUpperCase() + tag.slice(1)}\n`);
+    for (const { method, path, op } of routes) {
+      md.push(`### \`${method} ${path}\`\n`);
+      if (op.summary) md.push(`${op.summary}\n`);
+      if (op.security?.length) md.push(`**Auth required**\n`);
+
+      // Request body
+      const bodySchema = op.requestBody?.content?.["application/json"]?.schema;
+      if (bodySchema) {
+        md.push(`**Request body**\n\`\`\`json\n${schemaToExample(bodySchema)}\n\`\`\`\n`);
+      }
+
+      // Parameters
+      if (op.parameters?.length) {
+        md.push("**Parameters**\n");
+        for (const p of op.parameters) {
+          md.push(`- \`${p.name}\` (${p.in}) — ${p.description || p.schema?.type || ""}`);
+        }
+        md.push("");
+      }
+
+      // Responses
+      for (const [code, resp] of Object.entries(op.responses || {})) {
+        const r = resp as any;
+        const schema = r.content?.["application/json"]?.schema;
+        if (schema) {
+          md.push(`**Response ${code}**\n\`\`\`json\n${schemaToExample(schema)}\n\`\`\`\n`);
+        } else if (r.description) {
+          md.push(`**Response ${code}** — ${r.description}\n`);
+        }
+      }
+      md.push("---\n");
+    }
+  }
+
+  // Wrap in simple HTML
+  const escaped = md.join("\n").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return `<!doctype html><html><head><meta charset="utf-8"><title>API Reference</title>
+<style>body{max-width:800px;margin:40px auto;padding:0 20px;font-family:system-ui;line-height:1.6;color:#333}
+pre{background:#f5f5f5;padding:12px;border-radius:6px;overflow-x:auto}code{background:#f0f0f0;padding:2px 6px;border-radius:3px}
+h2{margin-top:2em;border-bottom:1px solid #ddd;padding-bottom:4px}h3{margin-top:1.5em}hr{border:none;border-top:1px solid #eee;margin:1.5em 0}</style>
+</head><body><pre style="white-space:pre-wrap">${escaped}</pre></body></html>`;
+}
+
+function schemaToExample(schema: any): string {
+  if (!schema || typeof schema !== "object") return "{}";
+  if (schema.$ref) return `{ "$ref": "${schema.$ref}" }`;
+  if (schema.type === "array") return `[${schemaToExample(schema.items)}]`;
+  if (schema.type !== "object" || !schema.properties) {
+    return JSON.stringify(schema.example ?? schema.type ?? "?");
+  }
+  const obj: Record<string, any> = {};
+  for (const [key, prop] of Object.entries(schema.properties)) {
+    const p = prop as any;
+    if (p.example !== undefined) obj[key] = p.example;
+    else if (p.type === "string") obj[key] = "";
+    else if (p.type === "number" || p.type === "integer") obj[key] = 0;
+    else if (p.type === "boolean") obj[key] = false;
+    else if (p.type === "array") obj[key] = [];
+    else obj[key] = null;
+  }
+  return JSON.stringify(obj, null, 2);
+}

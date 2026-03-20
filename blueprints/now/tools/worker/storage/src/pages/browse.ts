@@ -2,13 +2,13 @@ import type { Context } from "hono";
 import type { Env, Variables } from "../types";
 import { getSessionActor } from "./session";
 
-type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
+type C = Context<{ Bindings: Env; Variables: Variables }>;
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-export async function browsePage(c: AppContext) {
+export async function browsePage(c: C) {
   const actor = await getSessionActor(c);
   if (!actor) return c.html(browseLanding());
   return c.html(browseApp(actor));

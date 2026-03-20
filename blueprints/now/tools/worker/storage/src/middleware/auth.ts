@@ -1,92 +1,65 @@
 import type { Context, Next } from "hono";
-import type { Env, Variables, SessionRow, ApiKeyRow } from "../types";
-import { errorResponse } from "../lib/error";
+import type { Env, Variables } from "../types";
+import { err } from "../lib/error";
 
-type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
+type C = Context<{ Bindings: Env; Variables: Variables }>;
 
-/**
- * Bearer auth middleware.
- *
- * Resolves token from:
- *   1. Authorization: Bearer <token> header
- *   2. session=<token> cookie
- *
- * Checks (in order):
- *   1. Session tokens → actor with '*' scopes
- *   2. Scoped API keys → actor with limited scopes + optional path_prefix
- */
-export async function bearerAuth(c: AppContext, next: Next) {
+export async function auth(c: C, next: Next) {
   let token: string | undefined;
 
-  const authHeader = c.req.header("Authorization");
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    token = authHeader.slice("Bearer ".length).trim();
-  }
+  const h = c.req.header("Authorization");
+  if (h?.startsWith("Bearer ")) token = h.slice(7).trim();
 
   if (!token) {
     const cookie = c.req.header("Cookie");
     if (cookie) {
-      const match = cookie.match(/(?:^|;\s*)session=([^;]+)/);
-      if (match) token = match[1];
+      const m = cookie.match(/(?:^|;\s*)session=([^;]+)/);
+      if (m) token = m[1];
     }
   }
 
-  if (!token) {
-    return errorResponse(c, "unauthorized", "Missing authorization");
-  }
+  if (!token) return err(c, "unauthorized", "Missing authorization");
 
-  // Try session token first
+  // Try session token
   const session = await c.env.DB.prepare(
     "SELECT actor, expires_at FROM sessions WHERE token = ?",
   )
     .bind(token)
-    .first<SessionRow>();
+    .first<{ actor: string; expires_at: number }>();
 
   if (session) {
     if (Date.now() > session.expires_at) {
-      await c.env.DB.prepare("DELETE FROM sessions WHERE token = ?").bind(token).run();
-      return errorResponse(c, "unauthorized", "Token expired");
+      c.executionCtx.waitUntil(
+        c.env.DB.prepare("DELETE FROM sessions WHERE token = ?").bind(token).run(),
+      );
+      return err(c, "unauthorized", "Token expired");
     }
-    console.log(`[auth] session → actor=${session.actor} token=${token.slice(0, 8)}...`);
     c.set("actor", session.actor);
-    c.set("authType", "session");
-    c.set("scopes", "*");
-    c.set("pathPrefix", "");
+    c.set("prefix", "");
     return next();
   }
 
-  // Try API key (hash the token, look up)
+  // Try API key (hash-based lookup)
   const hash = await sha256(token);
-  const apiKey = await c.env.DB.prepare(
-    "SELECT * FROM api_keys WHERE token_hash = ?",
+  const key = await c.env.DB.prepare(
+    "SELECT actor, prefix, expires_at FROM api_keys WHERE token_hash = ?",
   )
     .bind(hash)
-    .first<ApiKeyRow>();
+    .first<{ actor: string; prefix: string; expires_at: number | null }>();
 
-  if (apiKey) {
-    if (apiKey.expires_at && Date.now() > apiKey.expires_at) {
-      return errorResponse(c, "unauthorized", "API key expired");
+  if (key) {
+    if (key.expires_at && Date.now() > key.expires_at) {
+      return err(c, "unauthorized", "API key expired");
     }
-    console.log(`[auth] apikey → actor=${apiKey.actor} id=${apiKey.id} name=${apiKey.name} hash=${hash.slice(0, 8)}...`);
-    c.set("actor", apiKey.actor);
-    c.set("authType", "apikey");
-    c.set("scopes", apiKey.scopes);
-    c.set("pathPrefix", apiKey.path_prefix || "");
-
-    // Update last_used_at asynchronously
-    c.executionCtx.waitUntil(
-      c.env.DB.prepare("UPDATE api_keys SET last_used_at = ? WHERE id = ?")
-        .bind(Date.now(), apiKey.id)
-        .run(),
-    );
+    c.set("actor", key.actor);
+    c.set("prefix", key.prefix || "");
     return next();
   }
 
-  return errorResponse(c, "unauthorized", "Invalid token");
+  return err(c, "unauthorized", "Invalid token");
 }
 
 export async function sha256(data: string): Promise<string> {
-  const encoded = new TextEncoder().encode(data);
-  const hash = await crypto.subtle.digest("SHA-256", encoded);
-  return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, "0")).join("");
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(data));
+  return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0")).join("");
 }

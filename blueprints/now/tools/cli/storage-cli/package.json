@@ -1,15 +1,31 @@
 {
-  "name": "@anthropic/storage",
-  "version": "1.0.0",
-  "description": "CLI for storage.now — upload, download, and share files from your terminal",
+  "name": "@liteio/storage-cli",
+  "version": "1.0.3",
+  "description": "CLI for Liteio Storage API — upload, download, and share files from your terminal",
   "type": "module",
   "bin": {
-    "storage": "./bin/storage.mjs"
+    "storage": "bin/storage.mjs"
   },
-  "keywords": ["storage", "cli", "s3", "upload", "file-sharing"],
+  "keywords": [
+    "storage",
+    "cli",
+    "file-sharing",
+    "upload",
+    "download",
+    "cloud-storage",
+    "s3-alternative"
+  ],
   "license": "MIT",
   "engines": {
     "node": ">=18"
   },
-  "files": ["bin/"]
+  "files": [
+    "bin/",
+    "LICENSE",
+    "README.md"
+  ],
+  "homepage": "https://storage.liteio.dev/cli",
+  "publishConfig": {
+    "access": "public"
+  }
 }

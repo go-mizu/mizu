@@ -1,8 +1,6 @@
 package storage
 
 import (
-	"encoding/json"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -10,11 +8,11 @@ import (
 
 func newMvCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "mv <bucket/from> <bucket/to>",
-		Short:   "Move or rename an object",
+		Use:     "mv <from> <to>",
+		Short:   "Move or rename a file",
 		Aliases: []string{"move", "rename"},
-		Example: `  storage mv docs/old-name.pdf docs/new-name.pdf
-  storage mv docs/report.pdf docs/archive/report.pdf`,
+		Example: `  storage mv draft.md published/post.md
+  storage mv old/report.pdf archive/report.pdf`,
 		Args: cobra.ExactArgs(2),
 		Run: wrapRun(func(cmd *cobra.Command, args []string) error {
 			d := deps()
@@ -22,43 +20,24 @@ func newMvCmd() *cobra.Command {
 				return err
 			}
 
-			from, to := args[0], args[1]
-
-			if !strings.Contains(from, "/") || !strings.Contains(to, "/") {
-				return &CLIError{Code: ExitUsage, Msg: "invalid path", Hint: "Use bucket/path format: storage mv docs/old.md docs/new.md"}
-			}
-
-			bucketFrom, pathFrom, _ := strings.Cut(from, "/")
-			bucketTo, pathTo, _ := strings.Cut(to, "/")
-
-			if bucketFrom != bucketTo {
-				return &CLIError{
-					Code: ExitUsage,
-					Msg:  "cross-bucket move",
-					Hint: "Both paths must be in the same bucket\nUse 'storage cp' + 'storage rm' for cross-bucket moves",
-				}
-			}
+			from := strings.TrimPrefix(args[0], "/")
+			to := strings.TrimPrefix(args[1], "/")
 
 			body := map[string]string{
-				"bucket": bucketFrom,
-				"from":   pathFrom,
-				"to":     pathTo,
+				"from": from,
+				"to":   to,
 			}
 
-			data, err := d.Client.DoJSON("POST", "/object/move", body)
+			data, err := d.Client.DoJSON("POST", "/mv", body)
 			if err != nil {
 				return err
 			}
 
 			if globalFlags.json {
-				var raw json.RawMessage
-				json.Unmarshal(data, &raw)
-				enc := json.NewEncoder(os.Stdout)
-				enc.SetIndent("", "  ")
-				return enc.Encode(raw)
+				return printJSON(data)
 			}
 
-			d.Out.Info("Moved", pathFrom+" -> "+pathTo)
+			d.Out.Info("Moved", from+" -> "+to)
 			return nil
 		}),
 	}

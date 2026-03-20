@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net"
 	"net/http"
 	"net/url"
@@ -28,38 +29,32 @@ const (
 )
 
 func newLoginCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "login",
 		Short: "Authenticate via browser (OAuth)",
-		Long: `Opens your browser to authenticate with storage.now.
-Uses OAuth 2.0 with PKCE — your credentials never touch the CLI.
-
+		Long: `Opens your browser to authenticate with Liteio Storage.
+Uses OAuth 2.0 with PKCE. Your credentials never touch the CLI.
 The token is saved locally and expires after 90 days.`,
-		Example: `  storage login
-  storage login --endpoint https://custom.example.com`,
+		Example: "  storage login",
 		Run: wrapRun(func(cmd *cobra.Command, args []string) error {
 			d := deps()
 			return loginOAuth(d)
 		}),
 	}
-	return cmd
 }
 
 func loginOAuth(d *Deps) error {
-	// 1. Generate PKCE code verifier and challenge
 	codeVerifier, err := generateCodeVerifier()
 	if err != nil {
 		return &CLIError{Code: ExitError, Msg: "failed to generate PKCE verifier"}
 	}
 	codeChallenge := computeCodeChallenge(codeVerifier)
 
-	// 2. Generate state for CSRF protection
 	state, err := generateState()
 	if err != nil {
 		return &CLIError{Code: ExitError, Msg: "failed to generate state"}
 	}
 
-	// 3. Start local HTTP server on a random port
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return &CLIError{Code: ExitError, Msg: "failed to start local server", Hint: err.Error()}
@@ -67,7 +62,6 @@ func loginOAuth(d *Deps) error {
 	port := listener.Addr().(*net.TCPAddr).Port
 	redirectURI := fmt.Sprintf("http://localhost:%d%s", port, callbackPath)
 
-	// 4. Build authorize URL
 	authURL := fmt.Sprintf("%s/oauth/authorize?%s",
 		d.Config.Endpoint,
 		url.Values{
@@ -81,7 +75,6 @@ func loginOAuth(d *Deps) error {
 		}.Encode(),
 	)
 
-	// 5. Set up callback handler
 	type callbackResult struct {
 		code string
 		err  error
@@ -92,7 +85,6 @@ func loginOAuth(d *Deps) error {
 	mux.HandleFunc(callbackPath, func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 
-		// Validate state
 		if q.Get("state") != state {
 			w.WriteHeader(400)
 			fmt.Fprint(w, errorHTML("State mismatch", "This request may have been tampered with. Please try again."))
@@ -100,7 +92,6 @@ func loginOAuth(d *Deps) error {
 			return
 		}
 
-		// Check for error
 		if errCode := q.Get("error"); errCode != "" {
 			desc := q.Get("error_description")
 			if desc == "" {
@@ -128,11 +119,9 @@ func loginOAuth(d *Deps) error {
 	server := &http.Server{Handler: mux}
 	go server.Serve(listener)
 
-	// 6. Open browser
 	d.Out.Info("Opening", "browser for authentication...")
 
 	if !openBrowser(authURL) {
-		// Can't open browser — print URL for manual visit
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintf(os.Stderr, "  Open this URL in your browser:\n\n")
 		fmt.Fprintf(os.Stderr, "  %s\n\n", authURL)
@@ -141,7 +130,6 @@ func loginOAuth(d *Deps) error {
 		fmt.Fprintln(os.Stderr, d.Out.dim("  Waiting for authentication..."))
 	}
 
-	// 7. Wait for callback (with timeout)
 	ctx, cancel := context.WithTimeout(context.Background(), authTimeout)
 	defer cancel()
 
@@ -153,20 +141,17 @@ func loginOAuth(d *Deps) error {
 		return &CLIError{Code: ExitError, Msg: "authentication timed out", Hint: "Try again with: storage login"}
 	}
 
-	// Shut down the server
 	server.Shutdown(context.Background())
 
 	if result.err != nil {
 		return &CLIError{Code: ExitAuth, Msg: "authentication failed", Hint: result.err.Error()}
 	}
 
-	// 8. Exchange authorization code for access token
 	tokenResp, err := exchangeCode(d, result.code, redirectURI, codeVerifier)
 	if err != nil {
 		return err
 	}
 
-	// 9. Save token
 	if err := SaveToken(tokenResp.AccessToken); err != nil {
 		return err
 	}
@@ -217,13 +202,11 @@ func exchangeCode(d *Deps, code, redirectURI, codeVerifier string) (*tokenRespon
 	}
 
 	if tokenResp.AccessToken == "" {
-		return nil, &CLIError{Code: ExitAuth, Msg: "no access token in response", Hint: "The server did not return an access token"}
+		return nil, &CLIError{Code: ExitAuth, Msg: "no access token in response"}
 	}
 
 	return &tokenResp, nil
 }
-
-// PKCE helpers
 
 func generateCodeVerifier() (string, error) {
 	b := make([]byte, 32)
@@ -246,8 +229,6 @@ func generateState() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// Browser opener
-
 func openBrowser(url string) bool {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
@@ -256,22 +237,20 @@ func openBrowser(url string) bool {
 	case "linux":
 		cmd = exec.Command("xdg-open", url)
 	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+		cmd = exec.Command("cmd", "/c", "start", "", url)
 	default:
 		return false
 	}
 	return cmd.Start() == nil
 }
 
-// Callback HTML pages
-
 func successHTML() string {
 	return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Authenticated — storage.now</title>
+<title>Authenticated</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Inter',system-ui,sans-serif;background:#fafafa;color:#111;
+body{font-family:system-ui,sans-serif;background:#fafafa;color:#111;
 display:flex;align-items:center;justify-content:center;min-height:100vh}
 @media(prefers-color-scheme:dark){body{background:#111;color:#eee}.card{background:#1a1a1a;border-color:#333}.sub{color:#999}}
 .card{background:#fff;border:1px solid #ddd;padding:2.5rem;width:100%;max-width:420px;text-align:center}
@@ -281,7 +260,7 @@ h1{font-size:1.1rem;font-weight:600;margin-bottom:0.5rem}
 .brand{font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;color:#999;margin-bottom:1rem}
 </style></head><body>
 <div class="card">
-<div class="brand">storage.now</div>
+<div class="brand">Liteio Storage</div>
 <div class="check">&#10003;</div>
 <h1>Authentication successful</h1>
 <p class="sub">You can close this tab and return to your terminal.</p>
@@ -291,12 +270,12 @@ h1{font-size:1.1rem;font-weight:600;margin-bottom:0.5rem}
 }
 
 func errorHTML(title, message string) string {
-	const tpl = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+	return fmt.Sprintf(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{{TITLE}} — storage.now</title>
+<title>%s</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Inter',system-ui,sans-serif;background:#fafafa;color:#111;
+body{font-family:system-ui,sans-serif;background:#fafafa;color:#111;
 display:flex;align-items:center;justify-content:center;min-height:100vh}
 @media(prefers-color-scheme:dark){body{background:#111;color:#eee}.card{background:#1a1a1a;border-color:#333}.sub{color:#999}}
 .card{background:#fff;border:1px solid #ddd;padding:2.5rem;width:100%;max-width:420px;text-align:center}
@@ -305,13 +284,11 @@ h1{font-size:1.1rem;font-weight:600;margin-bottom:0.5rem}
 .brand{font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;color:#999;margin-bottom:1rem}
 </style></head><body>
 <div class="card">
-<div class="brand">storage.now</div>
-<h1>{{TITLE}}</h1>
-<p class="sub">{{MESSAGE}}</p>
+<div class="brand">Liteio Storage</div>
+<h1>%s</h1>
+<p class="sub">%s</p>
 </div>
-</body></html>`
-	r := strings.NewReplacer("{{TITLE}}", title, "{{MESSAGE}}", message)
-	return r.Replace(tpl)
+</body></html>`, html.EscapeString(title), html.EscapeString(title), html.EscapeString(message))
 }
 
 func newLogoutCmd() *cobra.Command {
@@ -327,7 +304,7 @@ func newLogoutCmd() *cobra.Command {
 				}
 				return err
 			}
-			d.Out.Info("Logged out", "Token removed from "+TokenFile())
+			d.Out.Info("Logged out", "token removed from "+TokenFile())
 			return nil
 		}),
 	}
@@ -339,22 +316,20 @@ func newTokenCmd() *cobra.Command {
 		Short: "Show or set authentication token",
 		Long: `Show the current token source, or save a token directly.
 
-Use this to set an API key for CI/headless environments:
-  storage token sk_your_api_key_here
-
-Or export as an environment variable:
-  export STORAGE_TOKEN=sk_your_api_key_here`,
-		Example: `  storage token
-  storage token sk_abc123`,
+Useful for CI/headless environments:
+  storage token sk_your_api_key_here`,
 		Args: cobra.MaximumNArgs(1),
 		Run: wrapRun(func(cmd *cobra.Command, args []string) error {
 			d := deps()
 
 			if len(args) == 0 {
-				// Show current token
-				cfg := LoadConfig(globalFlags.token, globalFlags.endpoint)
+				cfg := d.Config
 				if cfg.Token == "" {
-					return &CLIError{Code: ExitAuth, Msg: "no token configured", Hint: "Run 'storage login' to authenticate\nOr set directly: storage token sk_your_api_key"}
+					return &CLIError{
+						Code: ExitAuth,
+						Msg:  "no token configured",
+						Hint: "Run 'storage login' to authenticate\nOr set directly: storage token <token>",
+					}
 				}
 
 				source := "unknown"
@@ -375,11 +350,10 @@ Or export as an environment variable:
 				return nil
 			}
 
-			// Save token
 			if err := SaveToken(args[0]); err != nil {
 				return err
 			}
-			d.Out.Info("Saved", "Token stored in "+TokenFile())
+			d.Out.Info("Saved", "token stored in "+TokenFile())
 			return nil
 		}),
 	}

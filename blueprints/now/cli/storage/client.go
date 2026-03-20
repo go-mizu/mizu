@@ -20,8 +20,7 @@ type Client struct {
 // APIError represents a structured API error.
 type APIError struct {
 	StatusCode int
-	Code       string `json:"code"`
-	Message    string `json:"message"`
+	Message    string
 }
 
 func (e *APIError) Error() string {
@@ -65,7 +64,11 @@ func (c *Client) do(method, path string, body io.Reader, headers map[string]stri
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return nil, &CLIError{Code: ExitNetwork, Msg: "network error", Hint: "Could not reach " + c.Endpoint + "\nCheck your internet connection and try again"}
+		return nil, &CLIError{
+			Code: ExitNetwork,
+			Msg:  "network error",
+			Hint: "Could not reach " + c.Endpoint + "\nCheck your internet connection and try again",
+		}
 	}
 	defer resp.Body.Close()
 
@@ -78,13 +81,18 @@ func (c *Client) do(method, path string, body io.Reader, headers map[string]stri
 		return data, nil
 	}
 
-	// Parse error
-	var errBody struct {
-		Error APIError `json:"error"`
-	}
-	if json.Unmarshal(data, &errBody) == nil && errBody.Error.Message != "" {
-		errBody.Error.StatusCode = resp.StatusCode
-		return nil, &errBody.Error
+	// Parse error: try {message} or {error} fields
+	var errBody map[string]any
+	if json.Unmarshal(data, &errBody) == nil {
+		msg := ""
+		if m, ok := errBody["message"].(string); ok && m != "" {
+			msg = m
+		} else if e, ok := errBody["error"].(string); ok && e != "" {
+			msg = e
+		}
+		if msg != "" {
+			return nil, &APIError{StatusCode: resp.StatusCode, Message: msg}
+		}
 	}
 
 	return nil, &APIError{StatusCode: resp.StatusCode, Message: fmt.Sprintf("HTTP %d", resp.StatusCode)}
@@ -116,8 +124,8 @@ func (c *Client) Delete(path string) ([]byte, error) {
 }
 
 // Upload streams a file to the API.
-func (c *Client) Upload(method, path string, r io.Reader, contentType string) ([]byte, error) {
-	return c.do(method, path, r, map[string]string{
+func (c *Client) Upload(path string, r io.Reader, contentType string) ([]byte, error) {
+	return c.do("PUT", path, r, map[string]string{
 		"Content-Type": contentType,
 	})
 }
@@ -143,12 +151,17 @@ func (c *Client) Download(path string, w io.Writer) error {
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(resp.Body)
-		var errBody struct {
-			Error APIError `json:"error"`
-		}
-		if json.Unmarshal(data, &errBody) == nil && errBody.Error.Message != "" {
-			errBody.Error.StatusCode = resp.StatusCode
-			return &errBody.Error
+		var errBody map[string]any
+		if json.Unmarshal(data, &errBody) == nil {
+			msg := ""
+			if m, ok := errBody["message"].(string); ok && m != "" {
+				msg = m
+			} else if e, ok := errBody["error"].(string); ok && e != "" {
+				msg = e
+			}
+			if msg != "" {
+				return &APIError{StatusCode: resp.StatusCode, Message: msg}
+			}
 		}
 		return &APIError{StatusCode: resp.StatusCode, Message: fmt.Sprintf("HTTP %d", resp.StatusCode)}
 	}
@@ -161,42 +174,80 @@ func (c *Client) Download(path string, w io.Writer) error {
 func DetectContentType(path string) string {
 	f, err := os.Open(path)
 	if err != nil {
-		return "application/octet-stream"
+		return guessFromExtension(path)
 	}
 	defer f.Close()
 
 	buf := make([]byte, 512)
 	n, _ := f.Read(buf)
 	if n == 0 {
-		return "application/octet-stream"
+		return guessFromExtension(path)
 	}
 
 	ct := http.DetectContentType(buf[:n])
-
-	// Improve detection for common text types based on extension
 	if ct == "application/octet-stream" || ct == "text/plain; charset=utf-8" {
-		lower := strings.ToLower(path)
-		switch {
-		case strings.HasSuffix(lower, ".json"):
-			return "application/json"
-		case strings.HasSuffix(lower, ".md"):
-			return "text/markdown"
-		case strings.HasSuffix(lower, ".html"), strings.HasSuffix(lower, ".htm"):
-			return "text/html"
-		case strings.HasSuffix(lower, ".css"):
-			return "text/css"
-		case strings.HasSuffix(lower, ".js"):
-			return "application/javascript"
-		case strings.HasSuffix(lower, ".xml"):
-			return "application/xml"
-		case strings.HasSuffix(lower, ".csv"):
-			return "text/csv"
-		case strings.HasSuffix(lower, ".yaml"), strings.HasSuffix(lower, ".yml"):
-			return "application/yaml"
-		case strings.HasSuffix(lower, ".pdf"):
-			return "application/pdf"
+		if ext := guessFromExtension(path); ext != "" {
+			return ext
 		}
 	}
 
 	return ct
+}
+
+func guessFromExtension(path string) string {
+	lower := strings.ToLower(path)
+	switch {
+	case strings.HasSuffix(lower, ".json"):
+		return "application/json"
+	case strings.HasSuffix(lower, ".md"):
+		return "text/markdown"
+	case strings.HasSuffix(lower, ".html"), strings.HasSuffix(lower, ".htm"):
+		return "text/html"
+	case strings.HasSuffix(lower, ".css"):
+		return "text/css"
+	case strings.HasSuffix(lower, ".js"):
+		return "application/javascript"
+	case strings.HasSuffix(lower, ".xml"):
+		return "application/xml"
+	case strings.HasSuffix(lower, ".csv"):
+		return "text/csv"
+	case strings.HasSuffix(lower, ".yaml"), strings.HasSuffix(lower, ".yml"):
+		return "application/yaml"
+	case strings.HasSuffix(lower, ".pdf"):
+		return "application/pdf"
+	case strings.HasSuffix(lower, ".png"):
+		return "image/png"
+	case strings.HasSuffix(lower, ".jpg"), strings.HasSuffix(lower, ".jpeg"):
+		return "image/jpeg"
+	case strings.HasSuffix(lower, ".gif"):
+		return "image/gif"
+	case strings.HasSuffix(lower, ".svg"):
+		return "image/svg+xml"
+	case strings.HasSuffix(lower, ".webp"):
+		return "image/webp"
+	case strings.HasSuffix(lower, ".mp4"):
+		return "video/mp4"
+	case strings.HasSuffix(lower, ".mp3"):
+		return "audio/mpeg"
+	case strings.HasSuffix(lower, ".zip"):
+		return "application/zip"
+	case strings.HasSuffix(lower, ".gz"):
+		return "application/gzip"
+	case strings.HasSuffix(lower, ".tar"):
+		return "application/x-tar"
+	case strings.HasSuffix(lower, ".txt"):
+		return "text/plain"
+	case strings.HasSuffix(lower, ".go"):
+		return "text/x-go"
+	case strings.HasSuffix(lower, ".ts"), strings.HasSuffix(lower, ".tsx"):
+		return "text/typescript"
+	case strings.HasSuffix(lower, ".py"):
+		return "text/x-python"
+	case strings.HasSuffix(lower, ".rs"):
+		return "text/x-rust"
+	case strings.HasSuffix(lower, ".sh"):
+		return "text/x-shellscript"
+	default:
+		return "application/octet-stream"
+	}
 }

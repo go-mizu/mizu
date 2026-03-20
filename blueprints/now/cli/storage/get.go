@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,47 +9,40 @@ import (
 )
 
 func newGetCmd() *cobra.Command {
-	var public bool
-
 	cmd := &cobra.Command{
-		Use:     "get <bucket/path> [local-path]",
+		Use:     "get <path> [dest]",
 		Short:   "Download a file (or stdout with -)",
 		Aliases: []string{"download", "pull"},
 		Example: `  storage get docs/report.pdf
-  storage get docs/report.pdf ~/Desktop/report.pdf
-  storage get docs/data.csv - | wc -c
-  storage get --public avatars/logo.png`,
+  storage get docs/report.pdf ~/Downloads/
+  storage get docs/data.csv -`,
 		Args: cobra.RangeArgs(1, 2),
 		Run: wrapRun(func(cmd *cobra.Command, args []string) error {
 			d := deps()
-			if !public {
-				if err := RequireToken(d.Config); err != nil {
-					return err
-				}
+			if err := RequireToken(d.Config); err != nil {
+				return err
 			}
 
-			src := args[0]
-			if !strings.Contains(src, "/") {
-				return &CLIError{Code: ExitUsage, Msg: "invalid path", Hint: "Use bucket/path format: storage get docs/file.txt"}
-			}
-
-			bucket, objPath, _ := strings.Cut(src, "/")
+			src := strings.TrimPrefix(args[0], "/")
 
 			dest := ""
 			if len(args) > 1 {
 				dest = args[1]
 			}
 			if dest == "" {
-				dest = filepath.Base(objPath)
+				dest = filepath.Base(src)
 			}
 
-			urlPath := fmt.Sprintf("/object/%s/%s", bucket, objPath)
-			if public {
-				urlPath = fmt.Sprintf("/object/public/%s/%s", bucket, objPath)
-			}
+			apiPath := "/f/" + src
 
+			// Write to stdout
 			if dest == "-" {
-				return d.Client.Download(urlPath, os.Stdout)
+				return d.Client.Download(apiPath, os.Stdout)
+			}
+
+			// If dest is an existing directory, append filename
+			if info, err := os.Stat(dest); err == nil && info.IsDir() {
+				dest = filepath.Join(dest, filepath.Base(src))
 			}
 
 			// Ensure parent dir exists
@@ -65,34 +57,29 @@ func newGetCmd() *cobra.Command {
 			}
 			defer f.Close()
 
-			if err := d.Client.Download(urlPath, f); err != nil {
+			if err := d.Client.Download(apiPath, f); err != nil {
 				os.Remove(dest)
 				return err
 			}
 
-			if !globalFlags.quiet {
-				fi, _ := f.Stat()
-				sizeStr := ""
-				if fi != nil {
-					sizeStr = " (" + HumanSize(fi.Size()) + ")"
-				}
-				d.Out.Info("Downloaded", filepath.Base(objPath)+sizeStr)
+			fi, _ := f.Stat()
+			sizeStr := ""
+			if fi != nil {
+				sizeStr = " (" + HumanSize(fi.Size()) + ")"
 			}
+			d.Out.Info("Downloaded", filepath.Base(src)+sizeStr)
 			return nil
 		}),
 	}
-
-	cmd.Flags().BoolVarP(&public, "public", "p", false, "download from public bucket (no auth)")
 	return cmd
 }
 
 func newCatCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "cat <bucket/path>",
-		Short:   "Print file contents to stdout",
-		Aliases: []string{},
-		Example: `  storage cat docs/readme.md
-  storage cat docs/config.json | jq .database`,
+		Use:   "cat <path>",
+		Short: "Print file contents to stdout",
+		Example: `  storage cat docs/config.json
+  storage cat docs/data.json | jq .`,
 		Args: cobra.ExactArgs(1),
 		Run: wrapRun(func(cmd *cobra.Command, args []string) error {
 			d := deps()
@@ -100,14 +87,8 @@ func newCatCmd() *cobra.Command {
 				return err
 			}
 
-			src := args[0]
-			if !strings.Contains(src, "/") {
-				return &CLIError{Code: ExitUsage, Msg: "invalid path", Hint: "Use bucket/path format: storage cat docs/file.txt"}
-			}
-
-			bucket, objPath, _ := strings.Cut(src, "/")
-			urlPath := fmt.Sprintf("/object/%s/%s", bucket, objPath)
-			return d.Client.Download(urlPath, os.Stdout)
+			src := strings.TrimPrefix(args[0], "/")
+			return d.Client.Download("/f/"+src, os.Stdout)
 		}),
 	}
 }

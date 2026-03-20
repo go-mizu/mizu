@@ -3,20 +3,32 @@ package main
 import (
 	"context"
 	"os"
+	"os/signal"
+
+	"github.com/charmbracelet/fang"
 
 	"now/cli/storage"
 )
 
 var (
-	Version   = "1.0.0"
-	Commit    = "unknown"
-	BuildTime = ""
+	Version = "dev"
+	Commit  = ""
 )
 
 func main() {
-	ctx := context.Background()
-	cmd := storage.New(Version)
-	if err := cmd.ExecuteContext(ctx); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	cmd := storage.New()
+
+	opts := []fang.Option{
+		fang.WithVersion(Version),
+	}
+	if Commit != "" {
+		opts = append(opts, fang.WithCommit(Commit))
+	}
+
+	if err := fang.Execute(ctx, cmd, opts...); err != nil {
 		os.Exit(1)
 	}
 }

@@ -1,243 +1,172 @@
+import { z } from "@hono/zod-openapi";
 import type { Context } from "hono";
-import type { Env, Variables, ObjectRow } from "../types";
-import { objectId } from "../lib/id";
+import type { App, Env, Variables } from "../types";
+import { auth } from "../middleware/auth";
 import { mimeFromName, isInlineType } from "../lib/mime";
-import { errorResponse } from "../lib/error";
+import { err } from "../lib/error";
 import { wildcardPath, validatePath } from "../lib/path";
-import { requireScope, checkPathPrefix, sanitizeFilename } from "../middleware/authorize";
 import { audit } from "../lib/audit";
-import { ensureDefaultBucket } from "./buckets";
-import { presignGet } from "../lib/r2";
+import { invalidateCache } from "./find";
+import { ErrorSchema, errRes } from "../schema";
 
-type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
+type C = Context<{ Bindings: Env; Variables: Variables }>;
 
-const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+const MAX_SIZE = 100 * 1024 * 1024;
 
-/**
- * Ensure all parent folders exist in D1 for a given path.
- * e.g. for "docs/reports/q1.pdf" → creates "docs/" and "docs/reports/"
- */
-export async function ensureParentFolders(db: D1Database, owner: string, filePath: string, defaultBucketId?: string) {
-  const parts = filePath.split("/");
-  parts.pop();
-
-  const bkId = defaultBucketId || await ensureDefaultBucket(db, owner);
-
-  let current = "";
-  for (const part of parts) {
-    current = current ? `${current}/${part}` : part;
-    const folderPath = current + "/";
-
-    const existing = await db
-      .prepare("SELECT 1 FROM objects WHERE owner = ? AND path = ?")
-      .bind(owner, folderPath)
-      .first();
-
-    if (!existing) {
-      const now = Date.now();
-      await db
-        .prepare(
-          "INSERT OR IGNORE INTO objects (id, owner, bucket_id, path, name, is_folder, content_type, size, r2_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, '', 0, '', ?, ?)",
-        )
-        .bind(objectId(), owner, bkId, folderPath, part, now, now)
-        .run();
-    }
-  }
+function checkPrefix(c: C, path: string): Response | null {
+  const pfx = c.get("prefix");
+  if (pfx && !path.startsWith(pfx)) return err(c, "forbidden", "Path not allowed for this token");
+  return null;
 }
 
-// PUT /files/*path
-export async function uploadFile(c: AppContext) {
-  const scopeErr = requireScope(c, "files:write");
-  if (scopeErr) return scopeErr;
+function safeName(name: string): string {
+  return name.replace(/["\\\r\n]/g, "_").replace(/[^\x20-\x7E]/g, "_");
+}
 
-  const actor = c.get("actor");
-  const filePath = wildcardPath(c, "/files/");
+// ── Handlers ────────────────────────────────────────────────────────
 
-  if (!filePath || filePath.endsWith("/")) {
-    return errorResponse(c, "invalid_request", "File path is required (not a folder)");
-  }
-
-  const pathErr = validatePath(filePath);
-  if (pathErr) return errorResponse(c, "invalid_request", pathErr);
-
-  const prefixErr = checkPathPrefix(c, filePath);
+async function writeFile(c: C) {
+  const path = wildcardPath(c, "/f/");
+  if (!path || path.endsWith("/")) return err(c, "bad_request", "File path required");
+  const pathErr = validatePath(path);
+  if (pathErr) return err(c, "bad_request", pathErr);
+  const prefixErr = checkPrefix(c, path);
   if (prefixErr) return prefixErr;
 
   const cl = c.req.header("Content-Length");
-  if (cl && parseInt(cl, 10) > MAX_FILE_SIZE) {
-    return errorResponse(c, "too_large", "File exceeds 100MB limit");
-  }
-
+  if (cl && parseInt(cl, 10) > MAX_SIZE) return err(c, "too_large", "File exceeds 100 MB");
   const body = await c.req.arrayBuffer();
-  if (body.byteLength > MAX_FILE_SIZE) {
-    return errorResponse(c, "too_large", "File exceeds 100MB limit");
-  }
+  if (body.byteLength > MAX_SIZE) return err(c, "too_large", "File exceeds 100 MB");
 
-  const name = filePath.split("/").pop() || filePath;
-  const contentType = c.req.header("Content-Type") || mimeFromName(name);
-  const r2Key = `${actor}/${filePath}`;
-
-  await c.env.BUCKET.put(r2Key, body, {
-    httpMetadata: { contentType },
-  });
-
-  const bkId = await ensureDefaultBucket(c.env.DB, actor);
-  await ensureParentFolders(c.env.DB, actor, filePath, bkId);
-
+  const actor = c.get("actor");
+  const name = path.split("/").pop()!;
+  const type = c.req.header("Content-Type") || mimeFromName(name);
   const now = Date.now();
-  const existing = await c.env.DB.prepare(
-    "SELECT id FROM objects WHERE owner = ? AND path = ?",
+
+  await c.env.BUCKET.put(`${actor}/${path}`, body, { httpMetadata: { contentType: type } });
+  await c.env.DB.prepare(
+    "INSERT INTO files (owner, path, name, size, type, updated_at) VALUES (?, ?, ?, ?, ?, ?) " +
+      "ON CONFLICT (owner, path) DO UPDATE SET size = excluded.size, type = excluded.type, updated_at = excluded.updated_at",
   )
-    .bind(actor, filePath)
-    .first<{ id: string }>();
+    .bind(actor, path, name, body.byteLength, type, now)
+    .run();
 
-  let id: string;
-  if (existing) {
-    id = existing.id;
-    await c.env.DB.prepare(
-      "UPDATE objects SET content_type = ?, size = ?, r2_key = ?, updated_at = ? WHERE id = ?",
-    )
-      .bind(contentType, body.byteLength, r2Key, now, id)
-      .run();
-  } else {
-    id = objectId();
-    await c.env.DB.prepare(
-      "INSERT INTO objects (id, owner, bucket_id, path, name, is_folder, content_type, size, r2_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)",
-    )
-      .bind(id, actor, bkId, filePath, name, contentType, body.byteLength, r2Key, now, now)
-      .run();
-  }
-
-  audit(c, "file.upload", filePath);
-
-  return c.json(
-    { id, path: filePath, name, content_type: contentType, size: body.byteLength, created_at: now },
-    existing ? 200 : 201,
-  );
+  invalidateCache(actor);
+  audit(c, "write", path);
+  return c.json({ path, name, size: body.byteLength, type, updated_at: now });
 }
 
-// GET /files/*path
-export async function downloadFile(c: AppContext) {
-  const scopeErr = requireScope(c, "files:read");
-  if (scopeErr) return scopeErr;
-
-  const actor = c.get("actor");
-  const filePath = wildcardPath(c, "/files/");
-
-  if (!filePath) {
-    return errorResponse(c, "invalid_request", "File path is required");
-  }
-
-  const pathErr = validatePath(filePath);
-  if (pathErr) return errorResponse(c, "invalid_request", pathErr);
-
-  const prefixErr = checkPathPrefix(c, filePath);
+async function readFile(c: C) {
+  const path = wildcardPath(c, "/f/");
+  if (!path) return err(c, "bad_request", "File path required");
+  const pathErr = validatePath(path);
+  if (pathErr) return err(c, "bad_request", pathErr);
+  const prefixErr = checkPrefix(c, path);
   if (prefixErr) return prefixErr;
 
-  const obj = await c.env.DB.prepare(
-    "SELECT * FROM objects WHERE owner = ? AND path = ? AND is_folder = 0 AND trashed_at IS NULL",
-  )
-    .bind(actor, filePath)
-    .first<ObjectRow>();
+  const actor = c.get("actor");
+  const obj = await c.env.BUCKET.get(`${actor}/${path}`);
+  if (!obj) return err(c, "not_found", "File not found");
 
-  if (!obj) {
-    return errorResponse(c, "not_found", "File not found");
-  }
-
-  await c.env.DB.prepare("UPDATE objects SET accessed_at = ? WHERE id = ?")
-    .bind(Date.now(), obj.id).run();
-
-  // ?redirect=1 — redirect to presigned R2 URL (0-hop download)
-  if (c.req.query("redirect") !== undefined) {
-    const presignedUrl = await presignGet(c, obj.r2_key, 300);
-    if (presignedUrl) return c.redirect(presignedUrl, 302);
-    // Fall through to streaming if presigning not configured
-  }
-
-  const r2Obj = await c.env.BUCKET.get(obj.r2_key);
-  if (!r2Obj) {
-    return errorResponse(c, "not_found", "File data not found");
-  }
-
-  audit(c, "file.download", filePath);
-
+  audit(c, "read", path);
+  const ct = obj.httpMetadata?.contentType || "application/octet-stream";
+  const name = path.split("/").pop()!;
   const headers = new Headers();
-  headers.set("Content-Type", obj.content_type || "application/octet-stream");
+  headers.set("Content-Type", ct);
   headers.set("Content-Length", obj.size.toString());
-  headers.set("ETag", r2Obj.etag);
-  headers.set("Last-Modified", new Date(obj.updated_at).toUTCString());
-
-  const safeName = sanitizeFilename(obj.name);
-  if (isInlineType(obj.content_type)) {
-    headers.set("Content-Disposition", `inline; filename="${safeName}"`);
-  } else {
-    headers.set("Content-Disposition", `attachment; filename="${safeName}"`);
-  }
-
-  return new Response(r2Obj.body, { headers });
+  headers.set("ETag", obj.etag);
+  headers.set("Content-Disposition", `${isInlineType(ct) ? "inline" : "attachment"}; filename="${safeName(name)}"`);
+  return new Response(obj.body, { headers });
 }
 
-// DELETE /files/*path
-export async function deleteFile(c: AppContext) {
-  const scopeErr = requireScope(c, "files:write");
-  if (scopeErr) return scopeErr;
-
-  const actor = c.get("actor");
-  const filePath = wildcardPath(c, "/files/");
-
-  if (!filePath) {
-    return errorResponse(c, "invalid_request", "File path is required");
-  }
-
-  const pathErr = validatePath(filePath);
-  if (pathErr) return errorResponse(c, "invalid_request", pathErr);
-
-  const prefixErr = checkPathPrefix(c, filePath);
+async function deleteFile(c: C) {
+  const path = wildcardPath(c, "/f/");
+  if (!path) return err(c, "bad_request", "Path required");
+  const pathErr = validatePath(path);
+  if (pathErr) return err(c, "bad_request", pathErr);
+  const prefixErr = checkPrefix(c, path);
   if (prefixErr) return prefixErr;
 
-  const obj = await c.env.DB.prepare(
-    "SELECT id, r2_key FROM objects WHERE owner = ? AND path = ? AND is_folder = 0 AND trashed_at IS NULL",
-  )
-    .bind(actor, filePath)
-    .first<{ id: string; r2_key: string }>();
+  const actor = c.get("actor");
 
-  if (!obj) {
-    return errorResponse(c, "not_found", "File not found");
+  if (path.endsWith("/")) {
+    const prefix = `${actor}/${path}`;
+    let cursor: string | undefined;
+    let deleted = 0;
+    do {
+      const list = await c.env.BUCKET.list({ prefix, cursor, limit: 1000 });
+      if (list.objects.length) {
+        await c.env.BUCKET.delete(list.objects.map((o) => o.key));
+        deleted += list.objects.length;
+      }
+      cursor = list.truncated ? list.cursor : undefined;
+    } while (cursor);
+
+    await c.env.DB.prepare("DELETE FROM files WHERE owner = ? AND path LIKE ?")
+      .bind(actor, `${path}%`).run();
+    invalidateCache(actor);
+    audit(c, "rm", path);
+    return c.json({ deleted });
   }
 
-  await c.env.BUCKET.delete(obj.r2_key);
-  await c.env.DB.prepare("DELETE FROM shares WHERE object_id = ?").bind(obj.id).run();
-  await c.env.DB.prepare("DELETE FROM objects WHERE id = ?").bind(obj.id).run();
-
-  audit(c, "file.delete", filePath);
-
-  return c.json({ deleted: true });
+  await c.env.BUCKET.delete(`${actor}/${path}`);
+  await c.env.DB.prepare("DELETE FROM files WHERE owner = ? AND path = ?")
+    .bind(actor, path).run();
+  invalidateCache(actor);
+  audit(c, "rm", path);
+  return c.json({ deleted: 1 });
 }
 
-// HEAD /files/*path
-export async function headFile(c: AppContext) {
-  const scopeErr = requireScope(c, "files:read");
-  if (scopeErr) return scopeErr;
+async function statFile(c: C) {
+  const path = wildcardPath(c, "/f/");
+  if (!path) return c.body(null, 400);
+  const pathErr = validatePath(path);
+  if (pathErr) return c.body(null, 400);
+  const prefixErr = checkPrefix(c, path);
+  if (prefixErr) return prefixErr;
 
   const actor = c.get("actor");
-  const filePath = wildcardPath(c, "/files/");
-
-  const pathErr = validatePath(filePath);
-  if (pathErr) return c.body(null, 400);
-
-  const obj = await c.env.DB.prepare(
-    "SELECT * FROM objects WHERE owner = ? AND path = ? AND is_folder = 0 AND trashed_at IS NULL",
-  )
-    .bind(actor, filePath)
-    .first<ObjectRow>();
-
-  if (!obj) {
-    return c.body(null, 404);
-  }
+  const obj = await c.env.BUCKET.head(`${actor}/${path}`);
+  if (!obj) return c.body(null, 404);
 
   return c.body(null, 200, {
-    "Content-Type": obj.content_type || "application/octet-stream",
+    "Content-Type": obj.httpMetadata?.contentType || "application/octet-stream",
     "Content-Length": obj.size.toString(),
-    "Last-Modified": new Date(obj.updated_at).toUTCString(),
+    "ETag": obj.etag,
   });
+}
+
+// ── Registration (routes + OpenAPI metadata) ────────────────────────
+
+const FileInfo = z.object({
+  path: z.string(),
+  name: z.string(),
+  size: z.number().int(),
+  type: z.string(),
+  updated_at: z.number().int(),
+}).openapi("FileInfo");
+
+export function register(app: App) {
+  // Plain Hono routes (wildcard paths — can't use createRoute)
+  app.put("/f/*", auth, writeFile);
+  app.get("/f/*", auth, readFile);
+  app.delete("/f/*", auth, deleteFile);
+  app.on("HEAD", "/f/*", auth, statFile);
+
+  // Manual OpenAPI registration for wildcard routes
+  const pathParam = {
+    name: "path" as const,
+    in: "path" as const,
+    required: true,
+    schema: { type: "string" as const },
+    description: "File path (e.g. docs/readme.md)",
+  };
+
+  const params = z.object({ path: z.string() });
+  const base = { path: "/f/{path}" as const, tags: ["files"], security: [{ bearer: [] as string[] }], request: { params } };
+
+  app.openAPIRegistry.registerPath({ ...base, method: "put", summary: "Write a file (create or overwrite)", responses: { 200: { description: "File metadata" }, 400: { description: "Bad request" }, 413: { description: "Too large" } } });
+  app.openAPIRegistry.registerPath({ ...base, method: "get", summary: "Read a file", responses: { 200: { description: "File content (binary stream)" }, 404: { description: "Not found" } } });
+  app.openAPIRegistry.registerPath({ ...base, method: "delete", summary: "Delete file or directory (trailing /)", responses: { 200: { description: "Delete count" } } });
+  app.openAPIRegistry.registerPath({ ...base, method: "head", summary: "Stat file (metadata in headers)", responses: { 200: { description: "Headers: Content-Type, Content-Length, ETag" }, 404: { description: "Not found" } } });
 }

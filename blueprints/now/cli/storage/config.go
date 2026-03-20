@@ -15,7 +15,6 @@ const DefaultEndpoint = "https://storage.liteio.dev"
 type Config struct {
 	Endpoint string
 	Token    string
-	Bucket   string
 }
 
 // Deps holds shared dependencies for all commands.
@@ -40,6 +39,7 @@ func TokenFile() string {
 }
 
 // LoadConfig loads configuration from file, env, and flags.
+// Resolution order: config file < env vars < token file < flags.
 func LoadConfig(flagToken, flagEndpoint string) *Config {
 	cfg := &Config{
 		Endpoint: DefaultEndpoint,
@@ -60,11 +60,8 @@ func LoadConfig(flagToken, flagEndpoint string) *Config {
 			}
 			k = strings.TrimSpace(k)
 			v = strings.TrimSpace(v)
-			switch k {
-			case "endpoint":
+			if k == "endpoint" {
 				cfg.Endpoint = v
-			case "bucket":
-				cfg.Bucket = v
 			}
 		}
 		f.Close()
@@ -73,9 +70,6 @@ func LoadConfig(flagToken, flagEndpoint string) *Config {
 	// 2. Environment variables
 	if v := os.Getenv("STORAGE_ENDPOINT"); v != "" {
 		cfg.Endpoint = v
-	}
-	if v := os.Getenv("STORAGE_BUCKET"); v != "" {
-		cfg.Bucket = v
 	}
 	if v := os.Getenv("STORAGE_TOKEN"); v != "" {
 		cfg.Token = v
@@ -130,7 +124,7 @@ func RequireToken(cfg *Config) error {
 		return &CLIError{
 			Code: ExitAuth,
 			Msg:  "not authenticated",
-			Hint:  "No token found in --token flag, $STORAGE_TOKEN, or " + TokenFile() + "\nRun 'storage login' to authenticate",
+			Hint: "Run 'storage login' to authenticate\nOr set STORAGE_TOKEN environment variable",
 		}
 	}
 	return nil

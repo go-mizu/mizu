@@ -406,7 +406,7 @@ function setupMedia(type,item){
 }
 
 function setupAudio(item){
-  var src=DEMO?(DEMO_MEDIA[item.path]||''):'/files/'+encodePath(item.path);
+  var src=DEMO?(DEMO_MEDIA[item.path]||''):'/f/'+encodePath(item.path);
   var el=$('mp-audio');if(!el)return;
   var audio=new Audio(src);
   var play=$('mp-play'),time=$('mp-time'),dur=$('mp-dur'),prog=$('mp-progress'),fill=$('mp-fill'),thumb=$('mp-thumb'),wave=$('mp-wave');
@@ -435,7 +435,7 @@ function setupAudio(item){
 }
 
 function setupVideo(item){
-  var src=DEMO?(DEMO_MEDIA[item.path]||''):'/files/'+encodePath(item.path);
+  var src=DEMO?(DEMO_MEDIA[item.path]||''):'/f/'+encodePath(item.path);
   var el=$('mp-video');if(!el)return;
   var viewport=$('mp-viewport');
   var video=document.createElement('video');video.src=src;video.preload='metadata';
@@ -492,11 +492,20 @@ function loadDemoItems(){
 
 function encodePath(p){return p.split('/').map(encodeURIComponent).join('/')}
 
+function mapEntry(e,prefix){
+  var isDir=e.type==='directory';
+  var p=prefix+(isDir?e.name+'/':e.name);
+  return{path:p,name:e.name,is_folder:isDir,content_type:isDir?'':e.type,size:e.size||0,updated_at:e.updated_at?new Date(e.updated_at).getTime():0};
+}
 function loadApiItems(){
   var url;
-  if(S.searchMode)url='/drive/search?q='+encodeURIComponent(S.searchQ);
-  else url=S.path?'/folders/'+encodePath(S.path):'/folders/';
-  api.get(url).then(function(d){S.items=d.items||d.files||[];sortItems();render()}).catch(function(){toast('Failed to load','err');S.items=[];render()});
+  if(S.searchMode){
+    url='/find?q='+encodeURIComponent(S.searchQ)+'&limit=50';
+    api.get(url).then(function(d){S.items=(d.entries||[]).map(function(e){return mapEntry(e,'')});sortItems();render()}).catch(function(){toast('Failed to load','err');S.items=[];render()});
+  }else{
+    url=S.path?'/ls/'+encodePath(S.path):'/ls/';
+    api.get(url).then(function(d){var prefix=d.prefix||S.path||'';S.items=(d.entries||[]).map(function(e){return mapEntry(e,prefix)});sortItems();render()}).catch(function(){toast('Failed to load','err');S.items=[];render()});
+  }
 }
 
 function sortItems(){
@@ -633,14 +642,14 @@ function buildPreviewPage(){
       else if(ft==='sheet'){body=csvToTable(c)}
       else{body='<pre class="preview-text">'+h(c)+'</pre>'}
     }else if(ft==='image'){
-      body='<img class="preview-img" src="/files/'+encodeURIComponent(item.path)+'" alt="'+name+'">';
+      body='<img class="preview-img" src="/f/'+encodePath(item.path)+'" alt="'+name+'">';
     }else if(ft==='audio'){
       var bars='';for(var i=0;i<50;i++){bars+='<div class="mp-wave-bar" style="height:'+(10+Math.random()*28)+'px"></div>'}
       body='<div class="mp mp--audio" id="mp-audio"><div class="mp-art">'+I.audio+'</div><div class="mp-title">'+name+'</div><div class="mp-wave" id="mp-wave">'+bars+'</div><div class="mp-controls"><button class="mp-play-btn" id="mp-play"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button><span class="mp-time" id="mp-time">0:00</span><div class="mp-progress" id="mp-progress"><div class="mp-progress-fill" id="mp-fill" style="width:0"><div class="mp-progress-thumb" id="mp-thumb"></div></div></div><span class="mp-time" id="mp-dur">0:00</span><div class="mp-vol-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14"/></svg><div class="mp-vol" id="mp-vol"><div class="mp-vol-fill" style="width:100%"></div></div></div></div></div>';
     }else if(ft==='video'){
       body='<div class="mp mp--video" id="mp-video"><div class="mp-viewport" id="mp-viewport"><div class="mp-play-overlay" id="mp-play-big"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></div></div><div class="mp-controls"><button class="mp-play-btn" id="mp-play"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button><span class="mp-time" id="mp-time">0:00</span><div class="mp-progress" id="mp-progress"><div class="mp-progress-fill" id="mp-fill" style="width:0"><div class="mp-progress-thumb" id="mp-thumb"></div></div></div><span class="mp-time" id="mp-dur">0:00</span><button class="mp-fs-btn" id="mp-fs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="14" height="14"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button></div></div>';
     }else if(/\.pdf$/i.test(item.name)){
-      body='<iframe class="preview-pdf" src="/files/'+encodePath(item.path)+'" title="'+name+'"></iframe>';
+      body='<iframe class="preview-pdf" src="/f/'+encodePath(item.path)+'" title="'+name+'"></iframe>';
     }else if(/\.(docx?|xlsx?|pptx?)$/i.test(item.name)){
       body='<div class="preview-office"><div class="preview-office-icon">'+I.doc+'</div><div class="preview-office-name">'+name+'</div><div class="preview-office-type">'+h(item.content_type)+'</div><div class="preview-office-size">'+fmtSize(item.size)+'</div><button class="preview-office-dl" onclick="B.downloadCurrent()">'+I.download+' Download</button></div>';
     }else{
@@ -763,7 +772,7 @@ function updateCmdResults(q){
     var r=DEMO_FS.filter(function(f){return!f.trashed_at&&f.name.toLowerCase().includes(q.toLowerCase())}).slice(0,10);
     renderCmdItems(r);
   }else{
-    api.get('/drive/search?q='+encodeURIComponent(q)).then(function(d){renderCmdItems(d.items||[])}).catch(function(){});
+    api.get('/find?q='+encodeURIComponent(q)+'&limit=10').then(function(d){renderCmdItems((d.entries||[]).map(function(e){return mapEntry(e,'')}))}).catch(function(){});
   }
 }
 function renderCmdItems(items){
@@ -817,7 +826,7 @@ var B=window.B={
       var ft=fileType(item);
       if(ft==='code'||ft==='text'||ft==='sheet'||ft==='markdown'){
         S.previewLoading=true;renderMain();
-        fetch('/files/'+encodePath(path)).then(function(r){return r.text()}).then(function(t){
+        fetch('/f/'+encodePath(path)).then(function(r){return r.text()}).then(function(t){
           S.previewContent=t;S.previewLoading=false;renderMain();
         }).catch(function(){S.previewLoading=false;renderMain()});
         return;
@@ -851,29 +860,33 @@ var B=window.B={
 
   downloadFile:function(item){
     if(DEMO){requireSignup();return}
-    var a=document.createElement('a');a.href='/files/'+encodePath(item.path);a.download=item.name;document.body.appendChild(a);a.click();a.remove();
+    var a=document.createElement('a');a.href='/f/'+encodePath(item.path);a.download=item.name;document.body.appendChild(a);a.click();a.remove();
   },
   newFolder:function(){
     if(DEMO){requireSignup();return}
     var name=prompt('Folder name');if(!name)return;
-    api.post('/folders',{path:S.path+name}).then(function(){toast('Folder created','ok');loadItems()}).catch(function(){toast('Failed','err')});
+    fetch('/f/'+encodePath(S.path+name+'/'),{method:'PUT',body:''}).then(function(r){if(!r.ok)throw new Error(r.status);toast('Folder created','ok');loadItems()}).catch(function(){toast('Failed','err')});
   },
   startRename:function(path){
     var item=S.items.find(function(f){return f.path===path});if(!item)return;
     var newName=prompt('Rename',item.name);if(!newName||newName===item.name)return;
-    api.post('/drive/rename',{path:path,new_name:newName}).then(function(){toast('Renamed','ok');loadItems()}).catch(function(){toast('Failed','err')});
+    var parent=path.replace(/[^/]+\/?$/,'');
+    var to=parent+newName+(item.is_folder?'/':'');
+    api.post('/mv',{from:path,to:to}).then(function(){toast('Renamed','ok');loadItems()}).catch(function(){toast('Failed','err')});
   },
   trashItems:function(paths){
-    api.post('/drive/trash',{paths:paths}).then(function(){toast(paths.length+' deleted','ok');loadItems()}).catch(function(){toast('Failed','err')});
+    Promise.all(paths.map(function(p){return fetch('/f/'+encodePath(p),{method:'DELETE'})})).then(function(){toast(paths.length+' deleted','ok');loadItems()}).catch(function(){toast('Failed','err')});
   },
   showMoveModal:function(paths){
     B._movePaths=paths;B._moveDest='';
     var body='<div class="folder-tree" id="move-tree"><div class="tree-node" onclick="B.selectMoveTarget(this,'+Q+''+Q+')"><div class="tree-icon">'+I.home+'</div> / (root)</div></div>';
     showModal('Move to',body,'<button class="btn" onclick="hideModal()">Cancel</button><button class="btn btn--primary" onclick="B.doMove()">Move</button>');
-    api.get('/folders/').then(function(d){
+    api.get('/ls/').then(function(d){
       var tree=$('move-tree');if(!tree)return;
-      (d.items||[]).filter(function(f){return f.is_folder}).forEach(function(f){
-        tree.innerHTML+='<div class="tree-node" onclick="B.selectMoveTarget(this,'+Q+''+qe(f.path)+''+Q+')"><div class="tree-icon">'+I.folder+'</div> '+h(f.name)+'</div>';
+      var prefix=d.prefix||'';
+      (d.entries||[]).filter(function(e){return e.type==='directory'}).forEach(function(e){
+        var fp=prefix+e.name+'/';
+        tree.innerHTML+='<div class="tree-node" onclick="B.selectMoveTarget(this,'+Q+''+qe(fp)+''+Q+')"><div class="tree-icon">'+I.folder+'</div> '+h(e.name)+'</div>';
       });
     });
   },
@@ -883,43 +896,26 @@ var B=window.B={
     el.classList.add('selected');
   },
   doMove:function(){
-    api.post('/drive/move',{paths:B._movePaths,destination:B._moveDest}).then(function(){hideModal();toast('Moved','ok');loadItems()}).catch(function(){toast('Failed','err')});
+    var dest=B._moveDest;
+    Promise.all(B._movePaths.map(function(p){var name=p.replace(/\/$/,'').split('/').pop();return api.post('/mv',{from:p,to:dest+name+(p.endsWith('/')?'/':'')})})).then(function(){hideModal();toast('Moved','ok');loadItems()}).catch(function(){toast('Failed','err')});
   },
   showShareModal:function(path){
-    var body='<div class="share-section"><div class="share-label">Public link</div><div class="share-create"><button class="btn btn--primary" id="share-create-btn" onclick="B.createPublicLink('+Q+''+qe(path)+''+Q+')">'+I.link+' Create public link</button></div><div id="share-links"></div></div>';
-    body+='<div class="share-section" style="margin-top:16px"><div class="share-label">Share with user</div><div class="share-row"><input type="text" id="share-actor" placeholder="Actor (e.g. u/alice)"><select id="share-perm"><option value="viewer">Viewer</option><option value="editor">Editor</option></select><button class="btn" onclick="B.doShare('+Q+''+qe(path)+''+Q+')">Share</button></div><div id="share-list"></div></div>';
+    var body='<div class="share-section"><div class="share-label">Create a temporary public link</div>';
+    body+='<div class="share-row"><select id="share-ttl"><option value="3600">1 hour</option><option value="86400" selected>1 day</option><option value="604800">7 days</option><option value="2592000">30 days</option></select>';
+    body+='<button class="btn btn--primary" id="share-create-btn" onclick="B.createPublicLink('+Q+''+qe(path)+''+Q+')">'+I.link+' Create link</button></div>';
+    body+='<div id="share-links"></div></div>';
     showModal('Share',body);
-    // Load existing public links
-    api.get('/links').then(function(d){
-      var sl=$('share-links');if(!sl)return;
-      var links=(d.items||[]).filter(function(l){return l.path===path});
-      if(!links.length){sl.innerHTML='<div class="share-empty">No public links yet</div>';return}
-      sl.innerHTML=links.map(function(l){
-        return'<div class="share-link-row"><div class="share-link-url">'+h(l.url)+'</div><div class="share-link-meta">'+(l.password_protected?'<span class="share-badge">password</span>':'')+(l.expires_at?'<span class="share-badge">expires</span>':'')+'<span class="share-badge">'+l.download_count+' views</span></div><div class="share-link-actions"><button class="btn btn--icon" onclick="navigator.clipboard.writeText('+Q+''+qe(l.url)+''+Q+');toast('+Q+'Copied'+Q+','+Q+'ok'+Q+')" title="Copy">'+I.link+'</button><button class="btn btn--icon btn--danger" onclick="B.deletePublicLink('+Q+''+qe(l.id)+''+Q+','+Q+''+qe(path)+''+Q+')" title="Revoke">'+I.trash+'</button></div></div>';
-      }).join('');
-    }).catch(function(){});
-    // Load existing shares
-    api.get('/shares').then(function(d){
-      var sl=$('share-list');if(!sl)return;
-      var shares=(d.shares||[]).filter(function(s){return s.path===path});
-      if(!shares.length)return;
-      sl.innerHTML=shares.map(function(s){return'<div class="share-actor-row"><span>'+h(s.grantee)+'</span><span class="share-badge">'+s.permission+'</span></div>'}).join('');
-    }).catch(function(){});
   },
   createPublicLink:function(path){
     var btn=$('share-create-btn');if(btn)btn.disabled=true;
-    api.post('/links',{path:path,permission:'viewer'}).then(function(d){
-      navigator.clipboard.writeText(d.url).then(function(){toast('Link copied','ok')}).catch(function(){});
-      B.showShareModal(path);
+    var ttlEl=$('share-ttl');var ttl=ttlEl?parseInt(ttlEl.value,10):86400;
+    api.post('/share',{path:path,ttl:ttl}).then(function(d){
+      var url=d.url||d.signed_url||'';
+      navigator.clipboard.writeText(url).then(function(){toast('Link copied','ok')}).catch(function(){});
+      var sl=$('share-links');
+      if(sl)sl.innerHTML='<div class="share-link-row"><div class="share-link-url">'+h(url)+'</div><div class="share-link-actions"><button class="btn btn--icon" onclick="navigator.clipboard.writeText('+Q+''+qe(url)+''+Q+');toast('+Q+'Copied'+Q+','+Q+'ok'+Q+')" title="Copy">'+I.link+'</button></div></div>';
+      if(btn)btn.disabled=false;
     }).catch(function(e){toast('Failed to create link','err');if(btn)btn.disabled=false});
-  },
-  deletePublicLink:function(id,path){
-    api.del('/links/'+id).then(function(){toast('Link revoked','ok');B.showShareModal(path)}).catch(function(){toast('Failed','err')});
-  },
-  doShare:function(path){
-    var actor=$('share-actor').value.trim(),perm=$('share-perm').value;
-    if(!actor){toast('Enter an actor','err');return}
-    api.post('/shares',{path:path,grantee:actor,permission:perm}).then(function(){toast('Shared with '+actor,'ok');B.showShareModal(path)}).catch(function(){toast('Failed','err')});
   },
 
   uploadFiles:function(files){
