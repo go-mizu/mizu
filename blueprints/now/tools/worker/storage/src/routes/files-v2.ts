@@ -559,7 +559,7 @@ export function register(app: App) {
   app.openAPIRegistry.registerPath({
     method: "get",
     path: "/files",
-    summary: "List files and folders",
+    summary: "List files",
     tags: filesTags,
     security: sec,
     request: {
@@ -593,7 +593,7 @@ export function register(app: App) {
   app.openAPIRegistry.registerPath({
     method: "get",
     path: "/files/search",
-    summary: "Search files by name",
+    summary: "Search files",
     tags: filesTags,
     security: sec,
     request: {
@@ -620,7 +620,7 @@ export function register(app: App) {
   app.openAPIRegistry.registerPath({
     method: "get",
     path: "/files/stats",
-    summary: "Storage usage stats",
+    summary: "Retrieve storage stats",
     tags: filesTags,
     security: sec,
     responses: {
@@ -641,7 +641,7 @@ export function register(app: App) {
   app.openAPIRegistry.registerPath({
     method: "post",
     path: "/files/move",
-    summary: "Move or rename a file",
+    summary: "Move a file",
     tags: filesTags,
     security: sec,
     request: {
@@ -655,7 +655,7 @@ export function register(app: App) {
   app.openAPIRegistry.registerPath({
     method: "post",
     path: "/files/share",
-    summary: "Create a share link",
+    summary: "Share a file",
     tags: filesTags,
     security: sec,
     request: {
@@ -685,7 +685,7 @@ export function register(app: App) {
   app.openAPIRegistry.registerPath({
     method: "get",
     path: "/files/{path}",
-    summary: "Download file (302 redirect to R2)",
+    summary: "Retrieve a file",
     tags: filesTags,
     security: sec,
     request: { params: pathParam },
@@ -698,7 +698,7 @@ export function register(app: App) {
   app.openAPIRegistry.registerPath({
     method: "head",
     path: "/files/{path}",
-    summary: "File metadata (Content-Type, Content-Length, ETag)",
+    summary: "Retrieve file metadata",
     tags: filesTags,
     security: sec,
     request: { params: pathParam },
@@ -711,7 +711,7 @@ export function register(app: App) {
   app.openAPIRegistry.registerPath({
     method: "delete",
     path: "/files/{path}",
-    summary: "Delete file or folder (trailing / for recursive)",
+    summary: "Delete a file",
     tags: filesTags,
     security: sec,
     request: { params: pathParam },
@@ -748,7 +748,7 @@ export function register(app: App) {
   app.openAPIRegistry.registerPath({
     method: "post",
     path: "/files/uploads",
-    summary: "Initiate upload — returns presigned PUT URL",
+    summary: "Create an upload",
     tags: ["uploads"],
     security: sec,
     request: {
@@ -778,7 +778,7 @@ export function register(app: App) {
   app.openAPIRegistry.registerPath({
     method: "post",
     path: "/files/uploads/complete",
-    summary: "Confirm upload — verifies object in R2, indexes in D1",
+    summary: "Complete an upload",
     tags: ["uploads"],
     security: sec,
     request: {
@@ -799,7 +799,7 @@ export function register(app: App) {
   app.openAPIRegistry.registerPath({
     method: "post",
     path: "/files/uploads/multipart",
-    summary: "Initiate multipart upload",
+    summary: "Create a multipart upload",
     tags: ["uploads"],
     security: sec,
     request: {
@@ -836,7 +836,7 @@ export function register(app: App) {
   app.openAPIRegistry.registerPath({
     method: "post",
     path: "/files/uploads/multipart/complete",
-    summary: "Complete multipart upload",
+    summary: "Complete a multipart upload",
     tags: ["uploads"],
     security: sec,
     request: {
@@ -867,7 +867,7 @@ export function register(app: App) {
   app.openAPIRegistry.registerPath({
     method: "post",
     path: "/files/uploads/multipart/abort",
-    summary: "Abort multipart upload",
+    summary: "Abort a multipart upload",
     tags: ["uploads"],
     security: sec,
     request: {

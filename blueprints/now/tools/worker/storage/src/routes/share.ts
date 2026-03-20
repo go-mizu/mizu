@@ -8,6 +8,7 @@ import { errRes } from "../schema";
 const accessRoute = createRoute({
   method: "get",
   path: "/s/{token}",
+  summary: "Access a shared file",
   tags: ["sharing"],
   request: {
     params: z.object({

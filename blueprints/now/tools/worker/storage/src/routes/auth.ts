@@ -9,6 +9,7 @@ import { errRes } from "../schema";
 const registerRoute = createRoute({
   method: "post",
   path: "/auth/register",
+  summary: "Register an account",
   tags: ["auth"],
   request: {
     body: {
@@ -48,6 +49,7 @@ const registerRoute = createRoute({
 const challengeRoute = createRoute({
   method: "post",
   path: "/auth/challenge",
+  summary: "Create a challenge",
   tags: ["auth"],
   request: {
     body: {
@@ -81,6 +83,7 @@ const challengeRoute = createRoute({
 const verifyRoute = createRoute({
   method: "post",
   path: "/auth/verify",
+  summary: "Verify a signature",
   tags: ["auth"],
   request: {
     body: {
@@ -119,6 +122,7 @@ const verifyRoute = createRoute({
 const logoutRoute = createRoute({
   method: "post",
   path: "/auth/logout",
+  summary: "Log out",
   tags: ["auth"],
   responses: {
     200: {

@@ -9,6 +9,7 @@ import { errRes } from "../schema";
 const createKeyRoute = createRoute({
   method: "post",
   path: "/auth/keys",
+  summary: "Create an API key",
   tags: ["keys"],
   security: [{ bearer: [] }],
   request: {
@@ -54,6 +55,7 @@ const createKeyRoute = createRoute({
 const listKeysRoute = createRoute({
   method: "get",
   path: "/auth/keys",
+  summary: "List API keys",
   tags: ["keys"],
   security: [{ bearer: [] }],
   responses: {
@@ -81,6 +83,7 @@ const listKeysRoute = createRoute({
 const deleteKeyRoute = createRoute({
   method: "delete",
   path: "/auth/keys/{id}",
+  summary: "Delete an API key",
   tags: ["keys"],
   security: [{ bearer: [] }],
   request: {

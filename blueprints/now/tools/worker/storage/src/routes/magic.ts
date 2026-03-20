@@ -14,6 +14,7 @@ const errSchema = z.object({ error: z.string(), message: z.string() });
 const requestMagicLinkRoute = createRoute({
   method: "post",
   path: "/auth/magic-link",
+  summary: "Request a magic link",
   tags: ["auth"],
   request: {
     body: {
