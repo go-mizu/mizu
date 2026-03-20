@@ -553,8 +553,8 @@ async function toolSearch(c: C, args: Record<string, any>) {
   const limit = Math.min((args.limit as number) || 50, 200);
   const pfx = c.get("prefix") || "";
 
-  let sql = "SELECT path, name, size, type, updated_at FROM files WHERE owner = ? AND name LIKE ?";
-  const binds: any[] = [actor, `%${q}%`];
+  let sql = "SELECT path, name, size, type, updated_at FROM files WHERE owner = ? AND (name LIKE ? OR path LIKE ?)";
+  const binds: any[] = [actor, `%${q}%`, `%${q}%`];
 
   if (pfx) {
     sql += " AND path LIKE ?";
