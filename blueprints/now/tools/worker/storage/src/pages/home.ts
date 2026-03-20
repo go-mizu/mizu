@@ -7,12 +7,11 @@ const CLAUDE_ICON = (s: number) =>
 const GPT_ICON = (s: number) =>
   `<svg viewBox="0 0 24 24" width="${s}" height="${s}"><path fill="currentColor" d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/></svg>`;
 
-const MOCKUP_CHROME = (url: string) =>
-  `<div class="mockup-chrome"><div class="mockup-dots"><span></span><span></span><span></span></div><div class="mockup-url">${url}</div></div>`;
-
-/* ── Folder icon (16px) ───────────────────────────────────────────── */
 const ICON_FOLDER = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>`;
 const ICON_FILE = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`;
+
+const MOCKUP_CHROME = (url: string) =>
+  `<div class="mockup-chrome"><div class="mockup-dots"><span></span><span></span><span></span></div><div class="mockup-url">${url}</div></div>`;
 
 export function homePage(actor: string | null = null): string {
   const isSignedIn = actor !== null;
@@ -31,11 +30,13 @@ export function homePage(actor: string | null = null): string {
 </div>`;
 
   const heroSignedOut = `
-<h1 class="hero-title">A home for<br><span class="shimmer">your files.</span></h1>
-<p class="hero-sub">Store files. Use them in Claude and ChatGPT. Share with anyone.</p>
+<h1 class="hero-title">Your team's files.<br><span class="shimmer">Always within reach.</span></h1>
+<p class="hero-sub">Store, share, and find files across your team. Connected to Claude and ChatGPT so your AI can work with your files too.</p>
 <div class="hero-ctas">
   <a href="#" class="btn btn--primary btn--lg" onclick="openRegister();return false">Get started</a>
-</div>`;
+  <a href="/developers" class="btn btn--ghost btn--lg">See how it works</a>
+</div>
+`;
 
   /* ── Register modal ─────────────────────────────────────────────── */
   const registerModal = isSignedIn
@@ -55,23 +56,8 @@ export function homePage(actor: string | null = null): string {
       </button>
     </div>
     <div class="prompt-error" id="signin-error"></div>
-    <div class="register-modal-note">No password &middot; No credit card</div>
+    <div class="register-modal-note">No password needed</div>
   </div>
-</div>`;
-
-  /* ── Bottom CTA (signed-out only) ───────────────────────────────── */
-  const bottomCta = isSignedIn
-    ? ""
-    : `
-<div class="bottom-cta" id="bottom-cta">
-  <div class="bottom-cta-title">Ready to try?</div>
-  <p class="bottom-cta-sub">No credit card needed.</p>
-  <div class="prompt-form" id="bottom-form">
-    <input type="email" placeholder="you@email.com" autocomplete="email" spellcheck="false" id="bottom-email">
-    <button onclick="signInBottom()">Go</button>
-  </div>
-  <div class="prompt-error" id="bottom-error"></div>
-  <div class="bottom-cta-note">No password &middot; We email you a link</div>
 </div>`;
 
   return `<!DOCTYPE html>
@@ -79,11 +65,12 @@ export function homePage(actor: string | null = null): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Storage — A home for your files</title>
-<meta name="description" content="Store files, use them in Claude and ChatGPT, share with anyone.">
+<title>Storage — Your team's files, always within reach</title>
+<meta name="description" content="Store, share, and find files across your team. Connected to Claude and ChatGPT.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/base.css">
 <link rel="stylesheet" href="/home.css">
 </head>
 <body>
@@ -116,303 +103,276 @@ export function homePage(actor: string | null = null): string {
 <!-- ===== HUMAN VIEW ===== -->
 <div class="human-view" id="human-view">
 
-<!-- HERO -->
+<!-- ═══════════════════════════════════════════════════════════════════
+     HERO
+     ═══════════════════════════════════════════════════════════════════ -->
 <section class="hero">
   <div class="hero-glow"></div>
-  <div class="section-inner">
+  <div class="inner">
     ${isSignedIn ? heroSignedIn : heroSignedOut}
   </div>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════════════
-     JOURNEY — each section is one action with one screenshot
+     VALUE PILLARS — 3-column overview
      ═══════════════════════════════════════════════════════════════════ -->
-<div class="journey">
-
-<!-- STEP 1: Create an account -->
-<div class="journey-step">
-  <div class="journey-text">
-    <div class="journey-num">01</div>
-    <div class="journey-title">Create an account</div>
-    <div class="journey-desc">Enter your email. We send you a link. Click it and you're in. No password needed.</div>
-  </div>
-  <div class="journey-mockup">
-    ${MOCKUP_CHROME('storage.now')}
-    <div class="mockup-body">
-      <div class="mock-signup">
-        <div class="mock-signup-title">Get started</div>
-        <div class="mock-input">
-          <div class="mock-input-field">you@email.com</div>
-          <div class="mock-input-btn">Go</div>
-        </div>
-        <div class="mock-note">No password &middot; No credit card</div>
+<section class="sec" id="pillars">
+  <div class="inner">
+    <div class="pillars">
+      <div class="pillar">
+        <div class="pillar-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
+        <h3 class="pillar-title">Store</h3>
+        <p class="pillar-desc">Upload any file from your browser, CLI, or API. Organize with folders and search. Your files live in one place.</p>
+      </div>
+      <div class="pillar">
+        <div class="pillar-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></div>
+        <h3 class="pillar-title">Share</h3>
+        <p class="pillar-desc">Generate a link. Send it to anyone. They open it and download. No account required. Links auto-expire when you want.</p>
+      </div>
+      <div class="pillar">
+        <div class="pillar-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
+        <h3 class="pillar-title">AI-connected</h3>
+        <p class="pillar-desc">Claude and ChatGPT can read, write, and share your files directly. Connect once, then just ask.</p>
       </div>
     </div>
   </div>
-</div>
+</section>
 
-<!-- STEP 2: Upload a file -->
-<div class="journey-step">
-  <div class="journey-text">
-    <div class="journey-num">02</div>
-    <div class="journey-title">Upload a file</div>
-    <div class="journey-desc">Drag a file into your browser and drop it. Or click upload. Done.</div>
-  </div>
-  <div class="journey-mockup">
-    ${MOCKUP_CHROME('storage.now/browse')}
-    <div class="mockup-body">
-      <div class="mock-browser">
-        <div class="mock-toolbar">
-          <div class="mock-breadcrumb">files /</div>
-          <div class="mock-toolbar-btn">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg>
-            Upload
-          </div>
+<!-- ═══════════════════════════════════════════════════════════════════
+     FEATURE 1 — File management
+     ═══════════════════════════════════════════════════════════════════ -->
+<section class="sec" id="organize">
+  <div class="inner">
+    <div class="feature">
+      <div class="feature-text">
+        <div class="sec-label">ORGANIZE</div>
+        <h2 class="sec-h">Everything in one place.</h2>
+        <p class="feature-desc">Upload files from your browser or drag and drop. Create folders, move files, rename them. Search across everything. It works the way you expect a filesystem to work.</p>
+        <div class="feature-facts">
+          <div class="feature-fact"><strong>Drag and drop</strong> upload from any browser</div>
+          <div class="feature-fact"><strong>Folders</strong> that nest as deep as you need</div>
+          <div class="feature-fact"><strong>Search</strong> by file name across all your storage</div>
         </div>
-        <div class="mock-file-list">
-          <div class="mock-file mock-file--highlight">
-            ${ICON_FILE}
-            <div class="mock-file-name">quarterly-report.pdf</div>
-            <div class="mock-file-meta">2.4 MB &middot; just now</div>
-          </div>
-          <div class="mock-file">
-            ${ICON_FILE}
-            <div class="mock-file-name">vacation-photos.zip</div>
-            <div class="mock-file-meta">48 MB &middot; 2d ago</div>
-          </div>
-        </div>
-        <div class="mock-file--drop">drop files here to upload</div>
       </div>
-    </div>
-  </div>
-</div>
-
-<!-- STEP 3: Organize into folders -->
-<div class="journey-step">
-  <div class="journey-text">
-    <div class="journey-num">03</div>
-    <div class="journey-title">Organize into folders</div>
-    <div class="journey-desc">Make folders, move things around, rename stuff. It works just like your computer.</div>
-  </div>
-  <div class="journey-mockup">
-    ${MOCKUP_CHROME('storage.now/browse/work')}
-    <div class="mockup-body">
-      <div class="mock-browser">
-        <div class="mock-toolbar">
-          <div class="mock-breadcrumb">files / <strong>work</strong> /</div>
-          <div class="mock-toolbar-btn">
-            ${ICON_FOLDER}
-            New folder
-          </div>
-        </div>
-        <div class="mock-file-list">
-          <div class="mock-file">
-            ${ICON_FOLDER}
-            <div class="mock-file-name mock-file-name--folder">invoices</div>
-            <div class="mock-file-meta">3 files</div>
-          </div>
-          <div class="mock-file">
-            ${ICON_FILE}
-            <div class="mock-file-name">quarterly-report.pdf</div>
-            <div class="mock-file-meta">2.4 MB</div>
-          </div>
-          <div class="mock-file">
-            ${ICON_FILE}
-            <div class="mock-file-name">meeting-notes.docx</div>
-            <div class="mock-file-meta">340 KB</div>
+      <div class="feature-visual">
+        <div class="term">
+          ${MOCKUP_CHROME('storage.liteio.dev/browse/work')}
+          <div class="mockup-body">
+            <div class="mock-browser">
+              <div class="mock-toolbar">
+                <div class="mock-breadcrumb">files / <strong>work</strong> /</div>
+                <div class="mock-toolbar-btn">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg>
+                  Upload
+                </div>
+              </div>
+              <div class="mock-file-list">
+                <div class="mock-file">
+                  ${ICON_FOLDER}
+                  <div class="mock-file-name mock-file-name--folder">invoices</div>
+                  <div class="mock-file-meta">3 files</div>
+                </div>
+                <div class="mock-file">
+                  ${ICON_FOLDER}
+                  <div class="mock-file-name mock-file-name--folder">presentations</div>
+                  <div class="mock-file-meta">7 files</div>
+                </div>
+                <div class="mock-file mock-file--highlight">
+                  ${ICON_FILE}
+                  <div class="mock-file-name">Q1-report.pdf</div>
+                  <div class="mock-file-meta">2.4 MB &middot; just now</div>
+                </div>
+                <div class="mock-file">
+                  ${ICON_FILE}
+                  <div class="mock-file-name">team-budget.xlsx</div>
+                  <div class="mock-file-meta">890 KB &middot; 2d ago</div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
     </div>
   </div>
-</div>
+</section>
 
-<!-- STEP 4: Connect to Claude -->
-<div class="journey-step">
-  <div class="journey-text">
-    <div class="journey-num">04</div>
-    <div class="journey-title">Connect to Claude</div>
-    <div class="journey-desc">Open Claude, go to Settings &rarr; Integrations &rarr; Add. Paste the URL and click Add.</div>
-  </div>
-  <div class="journey-mockup">
-    ${MOCKUP_CHROME('claude.ai/settings')}
-    <div class="mockup-body">
-      <div class="mock-connector">
-        <div class="mock-connector-header">
-          <span class="mock-connector-title">Add custom connector</span>
-          <span class="mock-connector-badge">BETA</span>
+<!-- ═══════════════════════════════════════════════════════════════════
+     FEATURE 2 — Sharing
+     ═══════════════════════════════════════════════════════════════════ -->
+<section class="sec" id="share">
+  <div class="inner">
+    <div class="feature feature--reverse">
+      <div class="feature-text">
+        <div class="sec-label">SHARE</div>
+        <h2 class="sec-h">One link. No sign-up needed.</h2>
+        <p class="feature-desc">Share any file with a single link. Your recipient clicks it and downloads. No account, no app install, no friction. Set expiry from one hour to seven days.</p>
+        <div class="feature-facts">
+          <div class="feature-fact"><strong>Time-limited links</strong> that auto-expire</div>
+          <div class="feature-fact"><strong>No recipient sign-up</strong> required to download</div>
+          <div class="feature-fact"><strong>Ask your AI</strong> to share files for you</div>
         </div>
-        <div class="mock-connector-sub">Connect Claude to your data and tools.</div>
-        <div class="mock-connector-field">
-          <div class="mock-connector-value">Storage</div>
-        </div>
-        <div class="mock-connector-field">
-          <div class="mock-connector-value mock-connector-value--url">https://storage.liteio.dev/mcp</div>
-        </div>
-        <div class="mock-connector-actions">
-          <div class="mock-connector-cancel">Cancel</div>
-          <div class="mock-connector-add">Add</div>
+      </div>
+      <div class="feature-visual">
+        <div class="share-flow">
+          <div class="share-step">
+            <div class="share-step-label">You share</div>
+            <div class="term term--compact">
+              <div class="mockup-body">
+                <div class="mock-chat" style="gap:12px">
+                  <div class="mock-chat-msg mock-chat-msg--user">
+                    <div class="mock-chat-pill">Share Q1-report.pdf with my team</div>
+                  </div>
+                  <div class="mock-chat-msg mock-chat-msg--bot">
+                    <div class="mock-chat-avatar">${CLAUDE_ICON(14)}</div>
+                    <div class="mock-chat-text">Here's your link:<br><code>storage.liteio.dev/s/k7f2m</code><br>Expires in 24 hours.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="share-arrow"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
+          <div class="share-step">
+            <div class="share-step-label">They download</div>
+            <div class="term term--compact">
+              <div class="mockup-body">
+                <div class="mock-preview">
+                  <div class="mock-preview-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  </div>
+                  <div class="mock-preview-name">Q1-report.pdf</div>
+                  <div class="mock-preview-size">2.4 MB</div>
+                  <div class="mock-preview-btn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Download
+                  </div>
+                  <div class="mock-preview-note">No account needed</div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   </div>
-</div>
+</section>
 
-<!-- STEP 5: Chat with Claude -->
-<div class="journey-step">
-  <div class="journey-text">
-    <div class="journey-num">05</div>
-    <div class="journey-title">Chat with Claude</div>
-    <div class="journey-desc">Just ask Claude about your files. It can save, find, list, and share them for you.</div>
-  </div>
-  <div class="journey-mockup">
-    ${MOCKUP_CHROME('claude.ai')}
-    <div class="mockup-body">
-      <div class="mock-chat">
-        <div class="mock-chat-msg mock-chat-msg--user">
-          <div class="mock-chat-pill">What files do I have?</div>
+<!-- ═══════════════════════════════════════════════════════════════════
+     FEATURE 3 — AI integration
+     ═══════════════════════════════════════════════════════════════════ -->
+<section class="sec" id="ai">
+  <div class="inner">
+    <div class="feature">
+      <div class="feature-text">
+        <div class="sec-label">AI INTEGRATION</div>
+        <h2 class="sec-h">Your AI knows your files.</h2>
+        <p class="feature-desc">Connect Storage to Claude or ChatGPT in under a minute. Then ask your AI to save files, find documents, organize folders, or share links with your team.</p>
+        <div class="feature-facts">
+          <div class="feature-fact"><strong>Claude</strong> via Settings &rarr; Integrations</div>
+          <div class="feature-fact"><strong>ChatGPT</strong> via Settings &rarr; Connected apps</div>
+          <div class="feature-fact"><strong>8 tools</strong> for read, write, search, share, and more</div>
         </div>
-        <div class="mock-chat-msg mock-chat-msg--bot">
-          <div class="mock-chat-avatar">${CLAUDE_ICON(14)}</div>
-          <div class="mock-chat-text">Here are your files:<br>&bull; <strong>quarterly-report.pdf</strong> <em>2.4 MB</em><br>&bull; <strong>vacation-photos.zip</strong> <em>48 MB</em><br>&bull; <strong>meeting-notes.docx</strong> <em>340 KB</em></div>
-        </div>
-        <div class="mock-chat-msg mock-chat-msg--user">
-          <div class="mock-chat-pill">Move the report into my work folder</div>
-        </div>
-        <div class="mock-chat-msg mock-chat-msg--bot">
-          <div class="mock-chat-avatar">${CLAUDE_ICON(14)}</div>
-          <div class="mock-chat-text">Done! Moved <strong>quarterly-report.pdf</strong> to <code>/work</code>.</div>
-        </div>
-        <div class="mock-chat-bar">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          <span>Message Claude...</span>
+        <a href="/developers#ai" class="btn btn--ghost" style="margin-top:24px">Learn more &rarr;</a>
+      </div>
+      <div class="feature-visual">
+        <div class="ai-demos">
+          <div class="term">
+            <div class="term-bar"><span class="term-dots"><i></i><i></i><i></i></span><span class="term-title">claude.ai</span></div>
+            <div class="mockup-body">
+              <div class="mock-chat">
+                <div class="mock-chat-msg mock-chat-msg--user">
+                  <div class="mock-chat-pill">What files do I have in /work?</div>
+                </div>
+                <div class="mock-chat-msg mock-chat-msg--bot">
+                  <div class="mock-chat-avatar">${CLAUDE_ICON(14)}</div>
+                  <div class="mock-chat-text">Your <strong>/work</strong> folder has 4 files:<br>&bull; invoices/ <em>3 files</em><br>&bull; Q1-report.pdf <em>2.4 MB</em><br>&bull; team-budget.xlsx <em>890 KB</em></div>
+                </div>
+                <div class="mock-chat-msg mock-chat-msg--user">
+                  <div class="mock-chat-pill">Save this meeting summary as notes/standup-march-21.md</div>
+                </div>
+                <div class="mock-chat-msg mock-chat-msg--bot">
+                  <div class="mock-chat-avatar">${CLAUDE_ICON(14)}</div>
+                  <div class="mock-chat-text">Saved <strong>notes/standup-march-21.md</strong> (1.2 KB)</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="term">
+            <div class="term-bar"><span class="term-dots"><i></i><i></i><i></i></span><span class="term-title">chatgpt.com</span></div>
+            <div class="mockup-body">
+              <div class="mock-chat">
+                <div class="mock-chat-msg mock-chat-msg--user">
+                  <div class="mock-chat-pill">Find all PDF files in my storage</div>
+                </div>
+                <div class="mock-chat-msg mock-chat-msg--bot">
+                  <div class="mock-chat-avatar">${GPT_ICON(14)}</div>
+                  <div class="mock-chat-text">Found 3 PDFs:<br>&bull; work/Q1-report.pdf <em>2.4 MB</em><br>&bull; work/invoices/inv-001.pdf <em>45 KB</em><br>&bull; work/invoices/inv-002.pdf <em>52 KB</em></div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   </div>
-</div>
+</section>
 
-<!-- STEP 6: Connect to ChatGPT -->
-<div class="journey-step">
-  <div class="journey-text">
-    <div class="journey-num">06</div>
-    <div class="journey-title">Connect to ChatGPT</div>
-    <div class="journey-desc">Same thing. Open ChatGPT, go to Settings, click Connected apps, search for Storage.</div>
+<!-- ═══════════════════════════════════════════════════════════════════
+     SECURITY — trust strip
+     ═══════════════════════════════════════════════════════════════════ -->
+<section class="sec" id="security">
+  <div class="inner">
+    <div class="sec-label">SECURITY</div>
+    <h2 class="sec-h">Secure by default.</h2>
   </div>
-  <div class="journey-mockup">
-    ${MOCKUP_CHROME('chatgpt.com/settings')}
-    <div class="mockup-body">
-      <div class="mock-settings">
-        <div class="mock-settings-header">
-          <div class="mock-settings-icon">${GPT_ICON(22)}</div>
-          <div class="mock-settings-name">Settings</div>
+  <div class="inner">
+    <div class="trust-grid">
+      <div class="trust-item">
+        <div class="trust-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
+        <div>
+          <strong>No passwords</strong>
+          <p>Sign in with email magic links or Ed25519 keys. Nothing to leak.</p>
         </div>
-        <div class="mock-settings-section">Connected apps</div>
-        <div class="mock-settings-row mock-settings-row--active">
-          <div class="mock-settings-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="20"/><line x1="7" y1="2" x2="7" y2="22"/></svg></div>
-          <div class="mock-settings-row-text"><strong>Storage</strong> &middot; File storage</div>
-        </div>
-        <div class="mock-url-input">
-          <div class="mock-url-field">https://storage.liteio.dev/mcp</div>
-          <div class="mock-url-btn">Connect</div>
-        </div>
-        <div class="mock-status mock-status--ok"><span class="mock-status-dot"></span> Connected</div>
       </div>
-    </div>
-  </div>
-</div>
-
-<!-- STEP 7: Chat with ChatGPT -->
-<div class="journey-step">
-  <div class="journey-text">
-    <div class="journey-num">07</div>
-    <div class="journey-title">Chat with ChatGPT</div>
-    <div class="journey-desc">Same thing works in ChatGPT. Save files, ask questions, it all just works.</div>
-  </div>
-  <div class="journey-mockup">
-    ${MOCKUP_CHROME('chatgpt.com')}
-    <div class="mockup-body">
-      <div class="mock-chat">
-        <div class="mock-chat-msg mock-chat-msg--user">
-          <div class="mock-chat-pill">Save this as budget-2025.xlsx</div>
+      <div class="trust-item">
+        <div class="trust-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+        <div>
+          <strong>Encrypted at rest</strong>
+          <p>Every file stored in encrypted object storage. TLS in transit.</p>
         </div>
-        <div class="mock-chat-msg mock-chat-msg--bot">
-          <div class="mock-chat-avatar">${GPT_ICON(14)}</div>
-          <div class="mock-chat-text">Done! Saved <strong>budget-2025.xlsx</strong> to your storage.</div>
+      </div>
+      <div class="trust-item">
+        <div class="trust-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+        <div>
+          <strong>Auto-expiring links</strong>
+          <p>Shared links expire on your schedule. 1 hour to 7 days.</p>
         </div>
-        <div class="mock-chat-msg mock-chat-msg--user">
-          <div class="mock-chat-pill">What's in my work folder?</div>
-        </div>
-        <div class="mock-chat-msg mock-chat-msg--bot">
-          <div class="mock-chat-avatar">${GPT_ICON(14)}</div>
-          <div class="mock-chat-text">Your <code>/work</code> folder has:<br>&bull; <strong>quarterly-report.pdf</strong><br>&bull; <strong>meeting-notes.docx</strong><br>&bull; <strong>budget-2025.xlsx</strong></div>
-        </div>
-        <div class="mock-chat-bar">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-          <span>Message ChatGPT...</span>
+      </div>
+      <div class="trust-item">
+        <div class="trust-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
+        <div>
+          <strong>Audit logging</strong>
+          <p>Every action logged with actor, resource, and timestamp.</p>
         </div>
       </div>
     </div>
   </div>
-</div>
+</section>
 
-<!-- STEP 8: Share a file -->
-<div class="journey-step">
-  <div class="journey-text">
-    <div class="journey-num">08</div>
-    <div class="journey-title">Share a file</div>
-    <div class="journey-desc">Ask your AI to share a file. It gives you a link you can send to anyone.</div>
-  </div>
-  <div class="journey-mockup">
-    ${MOCKUP_CHROME('claude.ai')}
-    <div class="mockup-body">
-      <div class="mock-chat">
-        <div class="mock-chat-msg mock-chat-msg--user">
-          <div class="mock-chat-pill">Share quarterly-report.pdf with my team</div>
-        </div>
-        <div class="mock-chat-msg mock-chat-msg--bot">
-          <div class="mock-chat-avatar">${CLAUDE_ICON(14)}</div>
-          <div class="mock-chat-text">Here's your sharing link:<br><br><code>storage.now/p/k7f2m</code><br><br>Anyone with this link can view and download the file.</div>
-        </div>
-        <div class="mock-chat-bar">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          <span>Message Claude...</span>
-        </div>
-      </div>
+<!-- ═══════════════════════════════════════════════════════════════════
+     CTA
+     ═══════════════════════════════════════════════════════════════════ -->
+<section class="sec sec--cta">
+  <div class="inner cta-inner">
+    <h2 class="cta-h">Start storing.</h2>
+    <p class="cta-sub">Set up in 30 seconds.</p>
+    <div class="cta-actions">
+      ${isSignedIn
+        ? '<a href="/browse" class="btn btn--primary">Go to my files</a>'
+        : '<a href="#" class="btn btn--primary btn--lg" onclick="openRegister();return false">Get started</a>'}
+      <a href="/pricing" class="btn btn--ghost">See pricing</a>
     </div>
   </div>
-</div>
-
-<!-- STEP 9: Your friend opens it -->
-<div class="journey-step">
-  <div class="journey-text">
-    <div class="journey-num">09</div>
-    <div class="journey-title">Your friend opens it</div>
-    <div class="journey-desc">They click the link. They see the file. They can download it. No sign-up needed.</div>
-  </div>
-  <div class="journey-mockup">
-    ${MOCKUP_CHROME('storage.now/p/k7f2m')}
-    <div class="mockup-body">
-      <div class="mock-preview">
-        <div class="mock-preview-icon">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-        </div>
-        <div class="mock-preview-name">quarterly-report.pdf</div>
-        <div class="mock-preview-size">2.4 MB</div>
-        <div class="mock-preview-btn">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Download
-        </div>
-        <div class="mock-preview-note">Shared via Storage &middot; No account needed</div>
-      </div>
-    </div>
-  </div>
-</div>
-
-</div><!-- /journey -->
-
-<!-- BOTTOM CTA -->
-${bottomCta}
+</section>
 
 </div><!-- /human-view -->
 
@@ -422,43 +382,42 @@ ${registerModal}
 <div class="machine-view" id="machine-view">
   <div class="md" id="md-content"><button class="md-copy" onclick="copyMd()">copy</button><span class="h1"># Storage</span>
 
-A home for your files. Store, organize, share. Works with Claude and ChatGPT.
+Your team's files. Always within reach.
 
-<span class="h2">## How it works</span>
+<span class="h2">## What it does</span>
 
-<span class="h3">### 1. Create an account</span>
-Enter your email, click the link we send. No password.
+Store, share, and find files across your team.
+Connected to Claude and ChatGPT via MCP.
 
-<span class="h3">### 2. Upload files</span>
-Drag and drop into your browser, or ask your AI to save them.
+<span class="h2">## Features</span>
 
-<span class="h3">### 3. Organize</span>
-Create folders, move files, rename things. Just like your computer.
+<span class="h3">### Store</span>
+Upload files from browser, CLI, or API.
+Organize with folders. Search by name.
 
-<span class="h3">### 4. Connect your AI</span>
-Claude: Settings > Integrations > Add custom connector > paste https://storage.liteio.dev/mcp
-ChatGPT: Settings > Connected apps > Add by URL > paste https://storage.liteio.dev/mcp
+<span class="h3">### Share</span>
+Generate a link. Send to anyone.
+No account needed to download.
+Links auto-expire (1 hour to 7 days).
 
-<span class="h3">### 5. Chat with your AI</span>
-Ask it to save, find, list, move, or share files. It just works.
+<span class="h3">### AI</span>
+Claude and ChatGPT can read, write, search, and share your files.
+Connect once via MCP, then just ask.
+8 tools: storage_read, storage_write, storage_list, storage_search,
+         storage_share, storage_move, storage_delete, storage_stats.
 
-<span class="h3">### 6. Share files</span>
-Ask your AI or click share. Get a link. Send it to anyone.
-They click it and download. No sign-up needed.
+<span class="h2">## Security</span>
 
-<span class="h2">## Quick facts</span>
-
-Downloads:     Always free, no limits
-Speed:         Servers in 300+ locations
-Sign-in:       Email link (no password)
-Works on:      Any device with a browser
-AI:            Claude, ChatGPT
+No passwords stored (email magic links + Ed25519)
+Encrypted at rest, TLS in transit
+Auto-expiring share links
+Full audit logging
 
 <span class="h2">## Links</span>
 
-<span class="link">https://storage.liteio.dev/ai</span>        Set up AI
-<span class="link">https://storage.liteio.dev/pricing</span>   Pricing
-<span class="link">https://storage.liteio.dev/browse</span>    Your files</div>
+<span class="link">https://storage.liteio.dev/developers</span>  Developer docs
+<span class="link">https://storage.liteio.dev/pricing</span>     Pricing
+<span class="link">https://storage.liteio.dev/api</span>         API reference</div>
 </div>
 
 <!-- Floating mode switch -->
@@ -516,7 +475,7 @@ function closeRegister(){
 }
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeRegister()});
 
-/* Sign in (modal) */
+/* Sign in */
 async function signIn(){
   const input=document.getElementById('email-input');
   const btn=document.getElementById('signin-btn');
@@ -542,36 +501,15 @@ async function signIn(){
 }
 document.getElementById('email-input')?.addEventListener('keydown',e=>{if(e.key==='Enter')signIn()});
 
-/* Sign in (bottom CTA) */
-async function signInBottom(){
-  const input=document.getElementById('bottom-email');
-  const errEl=document.getElementById('bottom-error');
-  if(!input||!errEl) return;
-  const email=input.value.trim();
-  if(!email){errEl.textContent='Please enter your email address';return}
-  if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)){errEl.textContent='That doesn\\'t look like an email address';return}
-  errEl.textContent='';
-  input.disabled=true;
-  try{
-    const res=await fetch('/auth/magic-link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
-    const data=await res.json();
-    if(!res.ok) throw new Error(data.message||'Something went wrong.');
-    document.getElementById('bottom-form').innerHTML='<div class="prompt-success">Check your inbox!</div>'
-  }catch(err){
-    errEl.textContent=err.message;input.disabled=false;
-  }
-}
-document.getElementById('bottom-email')?.addEventListener('keydown',e=>{if(e.key==='Enter')signInBottom()});
-
 /* Scroll reveal */
 (function(){
-  const els=document.querySelectorAll('.journey-step,.bottom-cta');
+  const els=document.querySelectorAll('.sec');
   if(!els.length) return;
   const obs=new IntersectionObserver((entries)=>{
     entries.forEach(e=>{
       if(e.isIntersecting){e.target.classList.add('visible');obs.unobserve(e.target)}
     });
-  },{threshold:0.08,rootMargin:'0px 0px -40px 0px'});
+  },{threshold:0.06,rootMargin:'0px 0px -40px 0px'});
   els.forEach(s=>obs.observe(s));
 })();
 </script>
