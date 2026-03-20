@@ -459,16 +459,16 @@ function setupVideo(item){
 
 /* ── API ──────────────────────────────────────────────────────────── */
 var api=DEMO?null:{
-  get:function(u){return fetch(u).then(function(r){return r.json()})},
-  post:function(u,b){return fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(function(r){return r.json()})},
-  patch:function(u,b){return fetch(u,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(function(r){return r.json()})},
-  del:function(u){return fetch(u,{method:'DELETE'}).then(function(r){return r.json()})},
+  get:function(u){return fetch(u,{headers:{'Accept':'application/json'}}).then(function(r){return r.json()})},
+  post:function(u,b){return fetch(u,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(b)}).then(function(r){return r.json()})},
+  patch:function(u,b){return fetch(u,{method:'PATCH',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(b)}).then(function(r){return r.json()})},
+  del:function(u){return fetch(u,{method:'DELETE',headers:{'Accept':'application/json'}}).then(function(r){return r.json()})},
 };
 
 /* ── File URL resolver (presigned R2 URL) ─────────────────────────── */
 function resolveFileUrl(path){
   if(DEMO)return Promise.resolve('');
-  return api.get('/presign/read/'+encodePath(path))
+  return api.get('/files/'+encodePath(path))
     .then(function(d){
       if(d&&d.url)return d.url;
       throw new Error(d&&d.message||'No presigned URL');
@@ -510,10 +510,10 @@ function mapEntry(e,prefix){
 function loadApiItems(){
   var url;
   if(S.searchMode){
-    url='/find?q='+encodeURIComponent(S.searchQ)+'&limit=50';
+    url='/files/search?q='+encodeURIComponent(S.searchQ)+'&limit=50';
     api.get(url).then(function(d){S.items=(d.entries||[]).map(function(e){return mapEntry(e,'')});sortItems();render()}).catch(function(){toast('Failed to load','err');S.items=[];render()});
   }else{
-    url=S.path?'/ls/'+encodePath(S.path):'/ls/';
+    url='/files'+(S.path?'?prefix='+encodeURIComponent(S.path):'');
     api.get(url).then(function(d){var prefix=d.prefix&&d.prefix!=='/'?d.prefix:(S.path||'');S.items=(d.entries||[]).map(function(e){return mapEntry(e,prefix)});sortItems();render()}).catch(function(){toast('Failed to load','err');S.items=[];render()});
   }
 }
@@ -790,7 +790,7 @@ function updateCmdResults(q){
     var r=DEMO_FS.filter(function(f){return!f.trashed_at&&f.name.toLowerCase().includes(q.toLowerCase())}).slice(0,10);
     renderCmdItems(r);
   }else{
-    api.get('/find?q='+encodeURIComponent(q)+'&limit=10').then(function(d){renderCmdItems((d.entries||[]).map(function(e){return mapEntry(e,'')}))}).catch(function(){});
+    api.get('/files/search?q='+encodeURIComponent(q)+'&limit=10').then(function(d){renderCmdItems((d.entries||[]).map(function(e){return mapEntry(e,'')}))}).catch(function(){});
   }
 }
 function renderCmdItems(items){
@@ -885,23 +885,23 @@ var B=window.B={
   newFolder:function(){
     if(DEMO){requireSignup();return}
     var name=prompt('Folder name');if(!name)return;
-    fetch('/f/'+encodePath(S.path+name+'/'),{method:'PUT',body:''}).then(function(r){if(!r.ok)throw new Error(r.status);toast('Folder created','ok');loadItems()}).catch(function(){toast('Failed','err')});
+    api.post('/files/mkdir',{path:S.path+name+'/'}).then(function(){toast('Folder created','ok');loadItems()}).catch(function(){toast('Failed','err')});
   },
   startRename:function(path){
     var item=S.items.find(function(f){return f.path===path});if(!item)return;
     var newName=prompt('Rename',item.name);if(!newName||newName===item.name)return;
     var parent=path.replace(/[^/]+\/?$/,'');
     var to=parent+newName+(item.is_folder?'/':'');
-    api.post('/mv',{from:path,to:to}).then(function(){toast('Renamed','ok');loadItems()}).catch(function(){toast('Failed','err')});
+    api.post('/files/move',{from:path,to:to}).then(function(){toast('Renamed','ok');loadItems()}).catch(function(){toast('Failed','err')});
   },
   trashItems:function(paths){
-    Promise.all(paths.map(function(p){return fetch('/f/'+encodePath(p),{method:'DELETE'})})).then(function(){toast(paths.length+' deleted','ok');loadItems()}).catch(function(){toast('Failed','err')});
+    Promise.all(paths.map(function(p){return api.del('/files/'+encodePath(p))})).then(function(){toast(paths.length+' deleted','ok');loadItems()}).catch(function(){toast('Failed','err')});
   },
   showMoveModal:function(paths){
     B._movePaths=paths;B._moveDest='';
     var body='<div class="folder-tree" id="move-tree"><div class="tree-node" onclick="B.selectMoveTarget(this,'+Q+''+Q+')"><div class="tree-icon">'+I.home+'</div> / (root)</div></div>';
     showModal('Move to',body,'<button class="btn" onclick="hideModal()">Cancel</button><button class="btn btn--primary" onclick="B.doMove()">Move</button>');
-    api.get('/ls/').then(function(d){
+    api.get('/files').then(function(d){
       var tree=$('move-tree');if(!tree)return;
       var prefix=d.prefix||'';
       (d.entries||[]).filter(function(e){return e.type==='directory'}).forEach(function(e){
@@ -917,7 +917,7 @@ var B=window.B={
   },
   doMove:function(){
     var dest=B._moveDest;
-    Promise.all(B._movePaths.map(function(p){var name=p.replace(/\/$/,'').split('/').pop();return api.post('/mv',{from:p,to:dest+name+(p.endsWith('/')?'/':'')})})).then(function(){hideModal();toast('Moved','ok');loadItems()}).catch(function(){toast('Failed','err')});
+    Promise.all(B._movePaths.map(function(p){var name=p.replace(/\/$/,'').split('/').pop();return api.post('/files/move',{from:p,to:dest+name+(p.endsWith('/')?'/':'')})})).then(function(){hideModal();toast('Moved','ok');loadItems()}).catch(function(){toast('Failed','err')});
   },
   showShareModal:function(path){
     var body='<div class="share-section"><div class="share-label">Create a temporary public link</div>';
@@ -929,7 +929,7 @@ var B=window.B={
   createPublicLink:function(path){
     var btn=$('share-create-btn');if(btn)btn.disabled=true;
     var ttlEl=$('share-ttl');var ttl=ttlEl?parseInt(ttlEl.value,10):86400;
-    api.post('/share',{path:path,ttl:ttl}).then(function(d){
+    api.post('/files/share',{path:path,ttl:ttl}).then(function(d){
       var url=d.url||d.signed_url||'';
       navigator.clipboard.writeText(url).then(function(){toast('Link copied','ok')}).catch(function(){});
       var sl=$('share-links');
@@ -971,7 +971,7 @@ var B=window.B={
       var file=u.file;
       var path=S.path+(file._relativePath||file.name);
       // Get presigned URL for direct R2 upload (no worker proxy)
-      api.post('/presign/upload',{path:path,content_type:file.type||''})
+      api.post('/files/uploads',{path:path,content_type:file.type||''})
         .then(function(d){
           if(!d.url){onDone(u,false);return}
           var xhr=new XMLHttpRequest();
@@ -986,7 +986,7 @@ var B=window.B={
           };
           xhr.onload=function(){
             if(xhr.status>=200&&xhr.status<300){
-              api.post('/presign/complete',{path:path}).then(function(){onDone(u,true)}).catch(function(){onDone(u,true)});
+              api.post('/files/uploads/complete',{path:path}).then(function(){onDone(u,true)}).catch(function(){onDone(u,true)});
             }else{onDone(u,false)}
           };
           xhr.onerror=function(){

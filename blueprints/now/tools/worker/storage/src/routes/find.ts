@@ -14,7 +14,7 @@ export function invalidateCache(owner: string) {
   cache.delete(owner);
 }
 
-async function getCachedNames(
+export async function getCachedNames(
   db: D1Database,
   owner: string,
 ): Promise<{ path: string; name: string }[]> {

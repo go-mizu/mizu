@@ -17,7 +17,7 @@ import process from "node:process";
 
 // ── Constants ──────────────────────────────────────────────────────────
 
-const VERSION = "1.1.0";
+const VERSION = "2.0.0";
 const DEFAULT_ENDPOINT = "https://storage.liteio.dev";
 const OAUTH_CLIENT_ID = "storage-cli";
 const OAUTH_SCOPE = "storage:read storage:write storage:admin";
@@ -164,7 +164,7 @@ class CLIError extends Error {
 
 async function request(cfg, method, path, opts = {}) {
   const url = cfg.endpoint + path;
-  const headers = { ...opts.headers };
+  const headers = { Accept: "application/json", ...opts.headers };
   if (cfg.token) headers["Authorization"] = `Bearer ${cfg.token}`;
 
   const fetchOpts = { method, headers };
@@ -208,7 +208,7 @@ async function request(cfg, method, path, opts = {}) {
 
 async function download(cfg, filePath, writable, range) {
   // Get presigned URL then stream directly from R2
-  const data = await request(cfg, "GET", `/presign/read/${filePath}`);
+  const data = await request(cfg, "GET", `/files/${filePath}`);
   if (!data.url) throw new CLIError("presigned URL not available", "Server did not return a presigned URL", EXIT_ERROR);
 
   const fetchOpts = {};
@@ -453,11 +453,12 @@ async function cmdLs(cfg, args, flags) {
   requireToken(cfg);
   const prefix = args[0] || "";
   const params = new URLSearchParams();
+  if (prefix) params.set("prefix", prefix);
   if (flags.limit) params.set("limit", flags.limit);
   if (flags.offset) params.set("offset", flags.offset);
   const qs = params.toString();
 
-  const data = await request(cfg, "GET", `/ls/${prefix}${qs ? "?" + qs : ""}`);
+  const data = await request(cfg, "GET", `/files${qs ? "?" + qs : ""}`);
   if (jsonOutput) return printJSON(data);
 
   const entries = data.entries || [];
@@ -483,7 +484,7 @@ async function multipartUpload(cfg, destPath, body, contentType) {
   const partCount = Math.ceil(body.length / PART_SIZE);
 
   // 1. Initiate multipart upload
-  const init = await request(cfg, "POST", "/presign/multipart/create", {
+  const init = await request(cfg, "POST", "/files/uploads/multipart", {
     body: { path: destPath, content_type: contentType, part_count: partCount },
   });
   if (!init.upload_id) throw new CLIError("multipart init failed", "Server did not return an upload ID", EXIT_ERROR);
@@ -521,7 +522,7 @@ async function multipartUpload(cfg, destPath, body, contentType) {
 
   // 3. Complete multipart upload
   parts.sort((a, b) => a.part_number - b.part_number);
-  const data = await request(cfg, "POST", "/presign/multipart/complete", {
+  const data = await request(cfg, "POST", "/files/uploads/multipart/complete", {
     body: { path: destPath, upload_id: init.upload_id, parts },
   });
 
@@ -577,7 +578,7 @@ async function cmdPut(cfg, args, flags) {
   }
 
   // 1. Get presigned URL
-  const presign = await request(cfg, "POST", "/presign/upload", {
+  const presign = await request(cfg, "POST", "/files/uploads", {
     body: { path: destPath, content_type: ct },
   });
   if (!presign.url) throw new CLIError("presigned URL not available", "Server did not return a presigned URL", EXIT_ERROR);
@@ -596,7 +597,7 @@ async function cmdPut(cfg, args, flags) {
   if (!r2Res.ok) throw new APIError(r2Res.status, r2Res.status, `R2 upload failed: HTTP ${r2Res.status}`);
 
   // 3. Confirm upload (updates DB index)
-  const data = await request(cfg, "POST", "/presign/complete", {
+  const data = await request(cfg, "POST", "/files/uploads/complete", {
     body: { path: destPath },
   });
 
@@ -672,7 +673,7 @@ async function cmdRm(cfg, args, flags) {
       }
     }
 
-    const data = await request(cfg, "DELETE", `/f/${path}`);
+    const data = await request(cfg, "DELETE", `/files/${path}`);
     if (jsonOutput) { printJSON(data); continue; }
 
     if (path.endsWith("/")) {
@@ -692,7 +693,7 @@ async function cmdMv(cfg, args) {
   if (from.startsWith("/")) from = from.slice(1);
   if (to.startsWith("/")) to = to.slice(1);
 
-  const data = await request(cfg, "POST", "/mv", { body: { from, to } });
+  const data = await request(cfg, "POST", "/files/move", { body: { from, to } });
   if (jsonOutput) return printJSON(data);
   info("Moved", `${from} → ${to}`);
 }
@@ -706,7 +707,7 @@ async function cmdShare(cfg, args, flags) {
   if (filePath.startsWith("/")) filePath = filePath.slice(1);
 
   const ttl = parseDuration(flags.expires || "1h");
-  const data = await request(cfg, "POST", "/share", { body: { path: filePath, ttl } });
+  const data = await request(cfg, "POST", "/files/share", { body: { path: filePath, ttl } });
   if (jsonOutput) return printJSON(data);
   console.log(data.url);
   info("Expires", `in ${flags.expires || "1h"}`);
@@ -722,7 +723,7 @@ async function cmdFind(cfg, args, flags) {
   const params = new URLSearchParams({ q: query });
   if (flags.limit) params.set("limit", flags.limit);
 
-  const data = await request(cfg, "GET", `/find?${params}`);
+  const data = await request(cfg, "GET", `/files/search?${params}`);
   if (jsonOutput) return printJSON(data);
 
   const results = data.results || [];
@@ -737,7 +738,7 @@ async function cmdFind(cfg, args, flags) {
 
 async function cmdStat(cfg) {
   requireToken(cfg);
-  const data = await request(cfg, "GET", "/stat");
+  const data = await request(cfg, "GET", "/files/stats");
   if (jsonOutput) return printJSON(data);
 
   const w = (label, value) => console.log(`${fmt.dim(label.padEnd(14))} ${value}`);

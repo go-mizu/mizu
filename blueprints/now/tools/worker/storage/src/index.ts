@@ -1,18 +1,13 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { cors } from "hono/cors";
-import { register as registerFiles } from "./routes/files";
-import { register as registerLs } from "./routes/ls";
-import { register as registerFind } from "./routes/find";
-import { register as registerMv } from "./routes/mv";
-import { register as registerStat } from "./routes/stat";
-import { register as registerShare } from "./routes/share";
+import { register as registerFiles } from "./routes/files-v2";
 import { register as registerAuth } from "./routes/auth";
 import { register as registerKeys } from "./routes/keys";
 import { register as registerMcp } from "./routes/mcp";
 import { register as registerOAuth } from "./routes/oauth";
 import { register as registerCli } from "./routes/cli";
 import { register as registerMagic } from "./routes/magic";
-import { register as registerPresign } from "./routes/presign";
+import { register as registerShare } from "./routes/share";
 import { getSessionActor } from "./pages/session";
 import { homePage } from "./pages/home";
 import { developersPage } from "./pages/developers";
@@ -20,6 +15,7 @@ import { pricingPage } from "./pages/pricing";
 import { aiPage } from "./pages/ai";
 import { cliPage } from "./pages/cli";
 import { browsePage } from "./pages/browse";
+import { privacyPage } from "./pages/privacy";
 import type { Env, Variables } from "./types";
 
 const app = new OpenAPIHono<{ Bindings: Env; Variables: Variables }>();
@@ -37,6 +33,7 @@ app.get("/developers", async (c) => {
 });
 app.get("/pricing", (c) => c.html(pricingPage()));
 app.get("/ai", (c) => c.html(aiPage()));
+app.get("/privacy", (c) => c.html(privacyPage()));
 app.get("/cli", async (c) => {
   const actor = await getSessionActor(c);
   return c.html(cliPage(actor));
@@ -44,20 +41,19 @@ app.get("/cli", async (c) => {
 app.get("/browse", browsePage as any);
 app.get("/browse/*", browsePage as any);
 
-// ── Storage API routes ──────────────────────────────────────────────
+// ── Storage API routes (/files/*) ────────────────────────────────────
 registerFiles(app);
-registerLs(app);
-registerFind(app);
-registerMv(app);
-registerStat(app);
+
+// ── Share access (public, no auth) ──────────────────────────────────
 registerShare(app);
+
+// ── Auth / MCP / OAuth / CLI ────────────────────────────────────────
 registerAuth(app);
 registerKeys(app);
 registerMcp(app);
 registerOAuth(app);
 registerCli(app);
 registerMagic(app);
-registerPresign(app);
 
 // ── OpenAPI spec (auto-generated from route definitions) ────────────
 app.doc("/openapi.json", {
@@ -65,7 +61,7 @@ app.doc("/openapi.json", {
   info: {
     title: "Storage API",
     version: "1.0.0",
-    description: "Unix-philosophy file storage. Files are paths.",
+    description: "File storage on the edge. Upload via presigned URLs, download via redirect.",
   },
 });
 
