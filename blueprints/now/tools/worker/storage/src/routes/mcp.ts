@@ -46,9 +46,10 @@ const TOOLS: ToolDef[] = [
   {
     name: "storage_list",
     description:
-      "List the user's files and folders in their cloud storage (storage.now). " +
-      "Returns immediate children at the given path — each entry has a name, MIME type (or 'directory'), size in bytes, and last-modified timestamp. " +
-      "Use this first to see what files the user has. Call with no prefix to list the root, or pass a folder path (e.g. 'photos/') to list that folder.",
+      "List files and folders in the user's cloud storage. You MUST call this tool whenever the user asks what files they have, what's in a folder, or wants to browse their storage. " +
+      "Call with no prefix to list the root. Pass a folder prefix (e.g. 'photos/') to list that folder's contents. " +
+      "Returns immediate children — each entry has a name, MIME type (or 'directory'), size, and last-modified timestamp. " +
+      "If an entry has type 'directory', you can call storage_list again with that folder as prefix to drill in.",
     inputSchema: {
       type: "object",
       properties: {
@@ -65,10 +66,10 @@ const TOOLS: ToolDef[] = [
   {
     name: "storage_read",
     description:
-      "Read a file from the user's cloud storage (storage.now) and return its contents. " +
+      "Read a file from the user's cloud storage and return its contents. Call this when the user asks to see, view, open, or read a file. " +
       "For text files (plain text, markdown, JSON, code, etc.) the full content is returned inline so you can read and discuss it. " +
       "For binary files (images, PDFs, zips, etc.) only metadata is returned — suggest using storage_share to generate a download link instead. " +
-      "Always call storage_list first if you are not sure of the exact file path.",
+      "If you are not sure of the exact path, call storage_list or storage_search first.",
     inputSchema: {
       type: "object",
       properties: {
@@ -147,8 +148,8 @@ const TOOLS: ToolDef[] = [
   {
     name: "storage_search",
     description:
-      "Search the user's cloud storage (storage.now) by filename. " +
-      "Performs a partial, case-insensitive match against file names — useful when you don't know the exact path. " +
+      "Search the user's cloud storage by file name or folder name. Call this whenever the user mentions a specific file or folder name and you need to find it. " +
+      "Performs a partial, case-insensitive match against both file names AND full paths — so searching 'taocp' finds all files inside a 'taocp/' folder. " +
       "For example, searching 'report' finds 'reports/q1-report.pdf', 'report.md', etc. " +
       "Returns matching file paths, names, sizes, and types, sorted by most recently modified.",
     inputSchema: {
@@ -203,8 +204,8 @@ const TOOLS: ToolDef[] = [
   {
     name: "storage_stats",
     description:
-      "Show the user's storage usage on storage.now — total number of files and total size. " +
-      "Use this when the user asks about their storage, how much space they are using, or how many files they have.",
+      "Show the user's storage usage — total number of files and total size in bytes. " +
+      "Call this when the user asks how much storage they're using, how many files they have, or about their quota.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -278,20 +279,24 @@ async function mcpHandler(c: C) {
           serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
           capabilities: { tools: { listChanged: false } },
           instructions: [
-            "You have access to the user's cloud file storage on storage.now (not their local device).",
-            "These tools let you browse, read, write, organize, search, and share the user's cloud files.",
+            "You are ALREADY connected to the user's cloud file storage (storage.now). The connection is live and working — you do NOT need to ask the user to connect, upload, or link anything. Just call the tools directly.",
             "",
-            "Common workflows:",
-            "• To see what files exist: call storage_list (empty prefix = root).",
-            "• To read a file: call storage_read with the path. Text files return content inline.",
-            "• To save content (text, code, notes): call storage_write with path + content.",
-            "• To save a file from a URL (image, PDF, webpage): call storage_write with path + url. The server downloads it — you do NOT need to fetch it yourself.",
-            "• To find a file when you don't know the exact path: call storage_search.",
-            "• To share a file: call storage_share, then ALWAYS show the returned URL to the user.",
-            "• To check usage: call storage_stats.",
+            "IMPORTANT: Whenever the user mentions files, folders, documents, storage, \"my files\", \"my storage\", \"cloud storage\", or asks about any file or folder by name — ALWAYS call a storage tool first. Never say you don't have access. You DO have access right now through these tools.",
             "",
-            "Path format: no leading slash, use forward slashes for folders. Example: 'docs/notes.md', 'images/logo.png'.",
-            "Deleting is permanent — always confirm with the user before calling storage_delete.",
+            "When to use each tool:",
+            "• User asks \"what's in my storage\" or \"list files\" or \"what files do I have\" → call storage_list",
+            "• User asks \"what's in [folder]\" or \"show me [folder]\" → call storage_list with that folder as prefix",
+            "• User mentions a file/folder name and you need to find it → call storage_search with the name",
+            "• User wants to read/view/show file contents → call storage_read",
+            "• User wants to save/write/create a file → call storage_write",
+            "• User wants to share a file or get a link → call storage_share, then ALWAYS show the returned URL",
+            "• User asks about storage usage or space → call storage_stats",
+            "• User wants to rename or move a file → call storage_move",
+            "• User wants to delete a file → confirm first, then call storage_delete",
+            "",
+            "Path format: no leading slash, forward slashes for folders. Example: 'docs/notes.md'.",
+            "If storage_list returns a folder, you can list its contents by calling storage_list again with that folder as prefix (e.g. prefix: 'taocp/').",
+            "To explore nested folders, call storage_list repeatedly, drilling into each subfolder.",
           ].join("\n"),
         },
       });
