@@ -1,105 +1,18 @@
 /* ══════════════════════════════════════════════════════════════════════
-   storage.now — Shared Layout Styles
-   Used by directory and immersive page layouts.
+   storage.now — Layout Overrides
+   Used by directory and immersive page layouts (via layout.ts).
+   base.css handles all shared styles; this file adds layout-specific rules.
    ══════════════════════════════════════════════════════════════════════ */
 
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#FAFAF9;--surface:#FFF;--surface-alt:#F4F4F5;
-  --text:#09090B;--text-2:#52525B;--text-3:#A1A1AA;
-  --border:#E4E4E7;--ink:#09090B;
-  --shadow:0 1px 3px rgba(0,0,0,0.04),0 1px 2px rgba(0,0,0,0.06);
-}
-html.dark{
-  --bg:#09090B;--surface:#18181B;--surface-alt:#18181B;
-  --text:#FAFAF9;--text-2:#A1A1AA;--text-3:#52525B;
-  --border:#27272A;--ink:#FAFAF9;
-  --shadow:0 1px 3px rgba(0,0,0,0.3);
-}
-body{font-family:'Inter',system-ui,sans-serif;color:var(--text);background:var(--bg);
-  -webkit-font-smoothing:antialiased;transition:background .3s,color .3s}
-a{color:inherit}
-
-/* ── Nav ─────────────────────────────────────────────────────────────── */
-nav{position:sticky;top:0;z-index:100;width:100%;
-  background:color-mix(in srgb,var(--bg) 80%,transparent);
-  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
-.nav-inner{max-width:1400px;margin:0 auto;padding:0 60px;height:56px;
-  display:flex;align-items:center;justify-content:space-between}
-.logo{font-family:'JetBrains Mono',monospace;font-weight:500;font-size:14px;
-  text-decoration:none;letter-spacing:-0.3px;display:flex;align-items:center;gap:8px}
-.logo-dot{width:6px;height:6px;background:var(--text);display:inline-block}
-.nav-links{display:flex;gap:28px}
-.nav-links a{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-3);
-  text-decoration:none;transition:color .15s;letter-spacing:0.5px}
-.nav-links a:hover,.nav-links a.active{color:var(--text)}
-.nav-right{display:flex;align-items:center;gap:12px}
-.nav-user{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-3)}
-.nav-signout{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
-  text-decoration:none;border:1px solid var(--border);padding:5px 12px;transition:all .15s}
-.nav-signout:hover{color:var(--text);border-color:var(--text-3)}
-.theme-toggle{background:none;border:1px solid var(--border);
-  padding:6px 10px;cursor:pointer;color:var(--text-3);display:flex;align-items:center;
-  transition:all .15s}
-.theme-toggle:hover{color:var(--text);border-color:var(--text-3)}
-.theme-toggle .icon-sun{display:none}
-.theme-toggle .icon-moon{display:block}
-html.dark .theme-toggle .icon-sun{display:block}
-html.dark .theme-toggle .icon-moon{display:none}
-.mobile-toggle{display:none;background:none;border:none;color:var(--text-3);cursor:pointer;padding:4px}
-
 /* ── Container ───────────────────────────────────────────────────────── */
-.container{max-width:1100px;margin:0 auto;padding:24px 48px 80px}
+.container{max-width:1104px;margin:0 auto;padding:24px 48px 96px}
 
 /* ── Page headers ────────────────────────────────────────────────────── */
 .page-header{margin-bottom:32px}
 .page-title{font-size:24px;font-weight:500;letter-spacing:-0.5px;margin-bottom:8px}
 .page-desc{font-size:14px;color:var(--text-2)}
 
-/* ── Human/Machine views ─────────────────────────────────────────────── */
-.machine-view{display:none;max-width:1100px;margin:0 auto;padding:48px 48px 120px}
-.machine-view.active{display:block}
-.human-view.hidden{display:none}
-.md{background:var(--surface);padding:40px 48px;border:1px solid var(--border);
-  font-family:'JetBrains Mono',monospace;font-size:13px;line-height:2;
-  color:var(--text-2);white-space:pre-wrap;word-break:break-word;position:relative}
-.md .h1{color:var(--text);font-weight:500;font-size:16px}
-.md .h2{color:var(--text);font-weight:500;font-size:14px}
-.md .h3{color:var(--text-3);font-weight:500}
-.md .dim{color:var(--text-3)}
-.md .link{text-decoration:underline;text-underline-offset:3px}
-.md-copy{position:absolute;top:16px;right:16px;font-family:'JetBrains Mono',monospace;
-  font-size:11px;padding:6px 14px;border:1px solid var(--border);background:var(--bg);
-  color:var(--text-3);cursor:pointer;transition:all .15s}
-.md-copy:hover{color:var(--text);border-color:var(--text-3)}
-
-/* ── Mode switch ─────────────────────────────────────────────────────── */
-.mode-switch{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
-  display:flex;background:var(--bg);border:1px solid var(--border);z-index:200;
-  box-shadow:0 4px 24px rgba(0,0,0,0.08)}
-html.dark .mode-switch{box-shadow:0 4px 24px rgba(0,0,0,0.4)}
-.mode-switch button{font-family:'JetBrains Mono',monospace;font-size:11px;
-  letter-spacing:1px;padding:10px 20px;border:none;background:none;
-  color:var(--text-3);cursor:pointer;display:flex;align-items:center;gap:8px;
-  transition:color .15s}
-.mode-switch button.active{color:var(--text)}
-.mode-switch button+button{border-left:1px solid var(--border)}
-.dot{width:6px;height:6px;border:1px solid var(--text-3);display:inline-block}
-.mode-switch button.active .dot{background:var(--text);border-color:var(--text)}
-
 /* ── Responsive ──────────────────────────────────────────────────────── */
 @media(max-width:640px){
-  .nav-inner{padding:0 20px;height:52px}
-  .nav-links{display:none;position:absolute;top:52px;left:0;right:0;
-    flex-direction:column;padding:16px 20px;gap:16px;
-    z-index:100;border-bottom:1px solid var(--border);
-    background:color-mix(in srgb,var(--bg) 95%,transparent);
-    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
-  .nav-links.open{display:flex}
-  .mobile-toggle{display:block}
   .container{padding:16px 20px 60px}
-  .machine-view{padding:32px 20px 80px}
-  .md{padding:24px 20px;font-size:12px}
-  .mode-switch{bottom:16px}
-  .mode-switch button{padding:8px 14px;font-size:10px}
 }

@@ -19,6 +19,7 @@ const HEAD = `<meta charset="utf-8"><meta name="viewport" content="width=device-
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css">
+<link rel="stylesheet" href="/base.css">
 <link rel="stylesheet" href="/browse.css">`;
 
 function browseLanding(): string {
@@ -29,7 +30,7 @@ ${HEAD}
 <title>Browse — Storage</title>
 </head>
 <body>
-<div class="dot-bg"></div>
+<div class="grid-bg"></div>
 <main id="main"></main>
 <div id="ctx-menu"></div>
 <div id="cmd-palette"></div>
@@ -50,7 +51,7 @@ ${HEAD}
 <title>Browse — Storage</title>
 </head>
 <body>
-<div class="dot-bg"></div>
+<div class="grid-bg"></div>
 <main id="main"></main>
 <div id="ctx-menu"></div>
 <div id="cmd-palette"></div>

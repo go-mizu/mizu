@@ -3,45 +3,26 @@
    No navbar. No sidebar. No checkboxes. Just files.
    ══════════════════════════════════════════════════════════════════════ */
 
-/* ── Reset & Tokens ───────────────────────────────────────────────── */
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-
+/* ── Browse-specific tokens (extends base.css) ──────────────────── */
 :root{
-  --bg:#FAFAF9;--surface:#FFF;--surface-2:#F4F4F5;
-  --text:#18181B;--text-2:#52525B;--text-3:#A1A1AA;
-  --border:#E4E4E7;--accent:#18181B;
+  --surface-2:#F4F4F5;
+  --accent:#18181B;
   --err:#EF4444;--ok:#22C55E;
 }
 html.dark{
-  --bg:#09090B;--surface:#18181B;--surface-2:#27272A;
-  --text:#FAFAF9;--text-2:#A1A1AA;--text-3:#52525B;
-  --border:#27272A;--accent:#FAFAF9;
+  --surface-2:#27272A;
+  --accent:#FAFAF9;
   --err:#FCA5A5;--ok:#86EFAC;
 }
 
-body{
-  font-family:'Inter',system-ui,sans-serif;
-  color:var(--text);background:var(--bg);
-  -webkit-font-smoothing:antialiased;
-  overflow-x:hidden;
-}
-a{color:inherit;text-decoration:none}
 button{font-family:inherit;cursor:pointer}
 input,textarea,select{font-family:inherit}
 
-/* ── Animations ───────────────────────────────────────────────────── */
+/* ── Animations (browse-specific; spin is in base.css) ────────────── */
 @keyframes fade-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 @keyframes slide-up{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 @keyframes ctx-pop{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
-@keyframes spin{to{transform:rotate(360deg)}}
 @keyframes bar-pulse{0%,100%{opacity:.6}50%{opacity:1}}
-
-/* ── Dot grid background ─────────────────────────────────────────── */
-.dot-bg{
-  position:fixed;inset:0;z-index:-1;pointer-events:none;
-  background-image:radial-gradient(circle,var(--text-3) 1px,transparent 1px);
-  background-size:32px 32px;opacity:.08;
-}
 
 /* ════════════════════════════════════════════════════════════════════════
    BAR — breadcrumb + actions (the only chrome)
@@ -86,15 +67,8 @@ input,textarea,select{font-family:inherit}
 
 .bar-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
 
-/* Buttons */
-.btn{
-  display:inline-flex;align-items:center;gap:6px;
-  padding:6px 12px;font-size:12px;font-weight:500;
-  border:1px solid var(--border);background:none;color:var(--text-2);
-  cursor:pointer;transition:all .15s;white-space:nowrap;
-  font-family:'JetBrains Mono',monospace;
-}
-.btn:hover{border-color:var(--text-3);color:var(--text)}
+/* Buttons (overrides base.css .btn for compact browse toolbar) */
+.btn{padding:6px 12px;font-size:12px;font-family:'JetBrains Mono',monospace;white-space:nowrap;background:none}
 .btn svg{width:12px;height:12px}
 .btn--primary{background:var(--accent);color:var(--bg);border-color:var(--accent)}
 .btn--primary:hover{opacity:.85}
@@ -399,14 +373,14 @@ html.dark .preview-md mark{background:#CA8A04;color:#FAFAF9}
 .mp-wave-bar{width:4px;background:var(--text-3);transform-origin:bottom;transition:transform .15s}
 .mp-wave-bar.active{background:var(--accent)}
 .mp-controls{display:flex;align-items:center;gap:12px;width:100%}
-.mp-play-btn{width:32px;height:32px;border:2px solid var(--accent);background:none;color:var(--accent);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;border-radius:50%;transition:transform .15s}
+.mp-play-btn{width:32px;height:32px;border:2px solid var(--accent);background:none;color:var(--accent);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;transition:transform .15s}
 .mp-play-btn:hover{transform:scale(1.05)}
 .mp-play-btn svg{width:14px;height:14px}
 .mp-time{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-3);white-space:nowrap}
 .mp-progress{flex:1;height:4px;background:var(--surface-2);cursor:pointer;position:relative;transition:height .15s}
 .mp-progress:hover{height:6px}
 .mp-progress-fill{height:100%;background:var(--accent);pointer-events:none;position:relative}
-.mp-progress-thumb{position:absolute;right:-5px;top:50%;transform:translateY(-50%);width:10px;height:10px;background:var(--accent);border-radius:50%;opacity:0;transition:opacity .15s}
+.mp-progress-thumb{position:absolute;right:-5px;top:50%;transform:translateY(-50%);width:10px;height:10px;background:var(--accent);opacity:0;transition:opacity .15s}
 .mp-progress:hover .mp-progress-thumb{opacity:1}
 .mp-vol-wrap{display:flex;align-items:center;gap:6px}
 .mp-vol-wrap svg{width:12px;height:12px;color:var(--text-3)}
@@ -642,7 +616,7 @@ html.dark .perm--editor{background:rgba(16,185,129,.2);color:#6EE7B7}
    ════════════════════════════════════════════════════════════════════════ */
 ::selection{background:color-mix(in srgb,var(--text) 12%,transparent)}
 :focus-visible{outline:2px solid var(--text-3);outline-offset:2px}
-.spinner{width:12px;height:12px;border:2px solid var(--text-3);border-top-color:var(--text);border-radius:50%;animation:spin .6s linear infinite;display:inline-block}
+.spinner{width:12px;height:12px;border:2px solid var(--text-3);border-top-color:var(--text);animation:spin .6s linear infinite;display:inline-block}
 
 #main::-webkit-scrollbar,.upload-list::-webkit-scrollbar,.folder-tree::-webkit-scrollbar,.cmd-results::-webkit-scrollbar{width:6px}
 #main::-webkit-scrollbar-track,.upload-list::-webkit-scrollbar-track,.folder-tree::-webkit-scrollbar-track,.cmd-results::-webkit-scrollbar-track{background:transparent}
@@ -664,7 +638,7 @@ html.dark .perm--editor{background:rgba(16,185,129,.2);color:#6EE7B7}
   .pv-body{padding:16px}
   .pv-sibling{padding:10px 16px}
   #ctx-menu.open{position:fixed;bottom:0;left:0;right:0;top:auto;width:100%;max-width:none;min-width:auto;animation:slide-up .2s ease}
-  #ctx-menu::before{content:'';display:block;width:36px;height:4px;background:var(--text-3);margin:8px auto 4px;opacity:.5;border-radius:2px}
+  #ctx-menu::before{content:'';display:block;width:36px;height:4px;background:var(--text-3);margin:8px auto 4px;opacity:.5}
   .ctx-item{padding:12px 20px;font-size:14px}
   .upload-panel{width:calc(100% - 24px);left:12px;right:12px;bottom:12px}
   .toast-wrap{left:12px;right:12px;transform:none;width:auto}

@@ -1,60 +1,16 @@
 /* ══════════════════════════════════════════════════════════════════════
    storage.now — Pricing
    Console aesthetic: monochrome, sharp edges.
+   Requires base.css loaded first.
    ══════════════════════════════════════════════════════════════════════ */
 
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-
-:root{
-  --bg:#FAFAF9;--surface:#FFF;--surface-alt:#F4F4F5;
-  --text:#09090B;--text-2:#52525B;--text-3:#A1A1AA;
-  --border:#E4E4E7;--ink:#09090B;
-}
-html.dark{
-  --bg:#09090B;--surface:#18181B;--surface-alt:#18181B;
-  --text:#FAFAF9;--text-2:#A1A1AA;--text-3:#52525B;
-  --border:#27272A;--ink:#FAFAF9;
-}
-
-body{font-family:'Inter',system-ui,sans-serif;color:var(--text);background:var(--bg);
-  -webkit-font-smoothing:antialiased;overflow-x:hidden;position:relative}
-a{color:inherit;text-decoration:none}
-
-/* ── Dot grid background ────────────────────────────────────────────── */
-.grid-bg{position:fixed;inset:0;pointer-events:none;z-index:0;
-  background-image:radial-gradient(circle,var(--border) 1px,transparent 1px);
-  background-size:24px 24px;opacity:.4}
-html.dark .grid-bg{opacity:.2}
-
-/* ── Nav ─────────────────────────────────────────────────────────────── */
-nav{position:sticky;top:0;z-index:100;width:100%;
-  background:color-mix(in srgb,var(--bg) 85%,transparent);
-  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
-.nav-inner{width:100%;padding:0 48px;height:64px;
-  display:flex;align-items:center;justify-content:space-between}
-.logo{font-family:'Inter',system-ui,sans-serif;font-weight:700;font-size:15px;
-  letter-spacing:-0.3px;display:flex;align-items:center;gap:8px}
-.logo-dot{width:6px;height:6px;background:var(--text);display:inline-block}
-.nav-links{display:flex;gap:32px}
-.nav-links a{font-size:14px;color:var(--text-3);transition:color .15s;font-weight:500}
-.nav-links a:hover,.nav-links a.active{color:var(--text)}
-.nav-right{display:flex;align-items:center;gap:16px}
-.theme-toggle{background:none;border:none;padding:8px;cursor:pointer;
-  color:var(--text-3);display:flex;align-items:center;transition:color .15s}
-.theme-toggle:hover{color:var(--text)}
-.theme-toggle .icon-sun{display:none}
-.theme-toggle .icon-moon{display:block}
-html.dark .theme-toggle .icon-sun{display:block}
-html.dark .theme-toggle .icon-moon{display:none}
-.mobile-toggle{display:none;background:none;border:none;color:var(--text-3);cursor:pointer;padding:4px}
-
 /* ── Layout ──────────────────────────────────────────────────────────── */
-.section{position:relative;z-index:1;width:100%}
-.section-inner{max-width:1100px;margin:0 auto;padding:0 48px}
+.section{position:relative;z-index:1;width:100%;background:var(--bg)}
+.section-inner{max-width:1104px;margin:0 auto;padding:0 48px}
 .section-inner--center{text-align:center;display:flex;flex-direction:column;align-items:center}
 
 /* ── Hero ────────────────────────────────────────────────────────────── */
-.hero{position:relative;z-index:1;padding:80px 0 20px;text-align:center;overflow:hidden}
+.hero{position:relative;z-index:1;padding:80px 0 20px;text-align:center;overflow:hidden;background:var(--bg)}
 .hero .section-inner{display:flex;flex-direction:column;align-items:center;position:relative}
 .hero-title{font-size:36px;font-weight:500;line-height:1.2;letter-spacing:-0.5px;
   margin-bottom:16px}
@@ -105,7 +61,7 @@ html.dark .theme-toggle .icon-moon{display:none}
 .tier-item--key{color:var(--text);font-weight:500}
 
 /* ── Every plan includes ─────────────────────────────────────────────── */
-.section--included{padding:80px 0;border-top:1px solid var(--border)}
+.section--included{padding:80px 0;margin-top:1px}
 .inc-title{font-size:24px;font-weight:500;letter-spacing:-0.5px;margin-bottom:48px;
   text-align:center}
 .inc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
@@ -116,7 +72,7 @@ html.dark .theme-toggle .icon-moon{display:none}
 .inc-desc{font-size:13px;color:var(--text-2);line-height:1.7}
 
 /* ── FAQ ─────────────────────────────────────────────────────────────── */
-.section--faq{padding:80px 0;border-top:1px solid var(--border)}
+.section--faq{padding:80px 0;margin-top:1px}
 .faq-title{font-size:24px;font-weight:500;letter-spacing:-0.5px;margin-bottom:48px;
   text-align:center}
 .faq-list{max-width:680px;margin:0 auto;display:flex;flex-direction:column}
@@ -126,38 +82,10 @@ html.dark .theme-toggle .icon-moon{display:none}
 .faq-a{font-size:14px;color:var(--text-2);line-height:1.7}
 
 /* ── Bottom CTA ──────────────────────────────────────────────────────── */
-.section--cta{padding:80px 0;border-top:1px solid var(--border)}
+.section--cta{padding:80px 0;margin-top:1px}
 .cta-title{font-size:28px;font-weight:500;letter-spacing:-0.5px;margin-bottom:12px}
 .cta-sub{font-size:15px;color:var(--text-2);margin-bottom:32px}
 .cta-main{width:auto;display:inline-block}
-
-/* ── Machine view ────────────────────────────────────────────────────── */
-.machine-view{display:none;position:relative;z-index:1;
-  max-width:1100px;margin:0 auto;padding:48px 48px 120px}
-.machine-view.active{display:block}
-.human-view.hidden{display:none}
-.md{background:var(--surface);padding:40px 48px;border:1px solid var(--border);
-  font-family:'JetBrains Mono',monospace;font-size:13px;line-height:2;
-  color:var(--text-2);white-space:pre-wrap;word-break:break-word;position:relative}
-.md .h1{color:var(--text);font-weight:700;font-size:16px}
-.md .h2{color:var(--text);font-weight:600;font-size:14px}
-.md .h3{color:var(--text-3);font-weight:500}
-.md .dim{color:var(--text-3)}
-.md .link{text-decoration:underline;text-underline-offset:3px}
-.md-copy{position:absolute;top:16px;right:16px;font-family:'JetBrains Mono',monospace;
-  font-size:11px;padding:6px 14px;border:1px solid var(--border);background:var(--bg);
-  color:var(--text-3);cursor:pointer;transition:all .15s}
-.md-copy:hover{color:var(--text);border-color:var(--text-3)}
-.mode-switch{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:200;
-  display:flex;background:var(--bg);border:1px solid var(--border)}
-.mode-switch button{font-family:'JetBrains Mono',monospace;font-size:11px;
-  letter-spacing:1px;padding:10px 20px;border:none;background:none;
-  color:var(--text-3);cursor:pointer;display:flex;align-items:center;gap:8px;
-  transition:color .15s}
-.mode-switch button.active{color:var(--text)}
-.mode-switch button+button{border-left:1px solid var(--border)}
-.dot{width:6px;height:6px;border:1px solid var(--text-3);display:inline-block}
-.mode-switch button.active .dot{background:var(--text);border-color:var(--text)}
 
 /* ── Responsive ──────────────────────────────────────────────────────── */
 @media(max-width:900px){
@@ -168,14 +96,6 @@ html.dark .theme-toggle .icon-moon{display:none}
   .inc-grid{grid-template-columns:1fr 1fr}
 }
 @media(max-width:640px){
-  .nav-inner{padding:0 20px;height:52px}
-  .nav-links{display:none;position:absolute;top:52px;left:0;right:0;
-    flex-direction:column;padding:16px 20px;gap:16px;
-    z-index:100;border-bottom:1px solid var(--border);
-    background:color-mix(in srgb,var(--bg) 95%,transparent);
-    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
-  .nav-links.open{display:flex}
-  .mobile-toggle{display:block}
   .section-inner{padding:0 20px}
   .hero{padding:48px 0 16px}
   .hero-title{font-size:32px;letter-spacing:-1.5px}
@@ -188,8 +108,4 @@ html.dark .theme-toggle .icon-moon{display:none}
   .inc-title{font-size:24px}
   .faq-title{font-size:24px}
   .cta-title{font-size:26px}
-  .machine-view{padding:32px 20px 80px}
-  .md{padding:24px 20px;font-size:12px}
-  .mode-switch{bottom:16px}
-  .mode-switch button{padding:8px 14px;font-size:10px}
 }
