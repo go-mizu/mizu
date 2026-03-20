@@ -29,6 +29,7 @@ export function developersPage(actor: string | null = null): string {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/base.css">
 <link rel="stylesheet" href="/developers.css">
 </head>
 <body>
@@ -45,7 +46,6 @@ export function developersPage(actor: string | null = null): string {
       <a href="/developers" class="active">developers</a>
       <a href="/api">api</a>
       <a href="/cli">cli</a>
-      <a href="/ai">ai</a>
       <a href="/pricing">pricing</a>
     </div>
     <div class="nav-right">
@@ -60,6 +60,8 @@ export function developersPage(actor: string | null = null): string {
 
 <main>
 
+<div class="human-view" id="human-view">
+
 <!-- ═══════════════════════════════════════════════════════════════════
      HERO — split: left text, right terminal
      ═══════════════════════════════════════════════════════════════════ -->
@@ -69,7 +71,7 @@ export function developersPage(actor: string | null = null): string {
     <div class="hero-text">
       <div class="hero-badge">FOR DEVELOPERS</div>
       <h1 class="hero-title">One request to upload.<br><span class="grad">Zero to serve.</span></h1>
-      <p class="hero-sub">A flat REST API for files. No SDK, no buckets, no egress fees. Serve from 300+ edge locations. Connect to Claude and ChatGPT via MCP.</p>
+      <p class="hero-sub">REST API for files. No SDK, no buckets, no egress fees. Globally distributed. Claude and ChatGPT connected over MCP.</p>
       <div class="hero-ctas">${heroCta}</div>
     </div>
     <div class="hero-code">
@@ -102,7 +104,7 @@ export function developersPage(actor: string | null = null): string {
       <div class="qs-num">1</div>
       <div class="qs-body">
         <div class="qs-title">Get a token</div>
-        <div class="qs-desc">Register with your Ed25519 key or email &mdash; get a bearer token.</div>
+        <div class="qs-desc">Register with your Ed25519 key or email. Returns a bearer token.</div>
         <code class="qs-ep">POST /auth/challenge &rarr; POST /auth/verify</code>
       </div>
     </div>
@@ -124,40 +126,6 @@ export function developersPage(actor: string | null = null): string {
         <code class="qs-ep">POST /files/share &rarr; GET /s/:token</code>
       </div>
     </div>
-  </div>
-</section>
-
-<!-- ═══════════════════════════════════════════════════════════════════
-     COMPARISON TABLE — the conversion section
-     ═══════════════════════════════════════════════════════════════════ -->
-<section class="sec" id="compare">
-  <div class="inner">
-    <div class="sec-label">WHY STORAGE</div>
-    <h2 class="sec-h">Why not just use S3?</h2>
-    <p class="sec-sub">Because you'll spend more time on IAM policies than on your product.</p>
-  </div>
-  <div class="tbl-wrap">
-    <table class="cmp">
-      <thead>
-        <tr>
-          <th scope="col"></th>
-          <th scope="col">AWS S3</th>
-          <th scope="col">Supabase Storage</th>
-          <th scope="col">Vercel Blob</th>
-          <th scope="col" class="cmp-hl">Storage</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr><th scope="row">Egress cost</th><td>$90 / TB</td><td>Metered</td><td>Limited</td><td class="cmp-hl"><strong>$0</strong></td></tr>
-        <tr><th scope="row">Time to first upload</th><td>Hours</td><td>~10 min</td><td>~5 min</td><td class="cmp-hl"><strong>30 sec</strong></td></tr>
-        <tr><th scope="row">SDK required</th><td>aws-sdk</td><td>@supabase/storage-js</td><td>@vercel/blob</td><td class="cmp-hl"><strong>No</strong></td></tr>
-        <tr><th scope="row">Auth options</th><td>IAM</td><td>Supabase Auth</td><td>Vercel token</td><td class="cmp-hl"><strong>4 methods</strong></td></tr>
-        <tr><th scope="row">AI / MCP</th><td class="cmp-no">&times;</td><td class="cmp-no">&times;</td><td class="cmp-no">&times;</td><td class="cmp-hl cmp-yes">&check; Built-in</td></tr>
-        <tr><th scope="row">Buckets to manage</th><td>Required</td><td>Required</td><td>Hidden</td><td class="cmp-hl"><strong>None</strong></td></tr>
-        <tr><th scope="row">Region config</th><td>Pick one</td><td>Pick one</td><td>Auto</td><td class="cmp-hl"><strong>Global</strong></td></tr>
-        <tr><th scope="row">File addressing</th><td>s3://bucket/key</td><td>/object/{bucket}/{path}</td><td>Blob URL</td><td class="cmp-hl"><strong>/files/{path}</strong></td></tr>
-      </tbody>
-    </table>
   </div>
 </section>
 
@@ -223,7 +191,7 @@ export function developersPage(actor: string | null = null): string {
   -H <span class="c-str">"Authorization: Bearer $TOKEN"</span> \\
   -d <span class="c-str">'{"path":"data/config.json","content_type":"application/json"}'</span>
 
-<span class="c-dim"># download (follows 302 redirect to R2)</span>
+<span class="c-dim"># download (follows 302 redirect)</span>
 <span class="c-bold">curl</span> -L https://storage.liteio.dev/files/data/config.json \\
   -H <span class="c-str">"Authorization: Bearer $TOKEN"</span></pre>
     <pre class="lang-panel" id="lang-js" role="tabpanel"><span class="c-dim">// initiate upload, then PUT to the presigned URL</span>
@@ -263,9 +231,9 @@ resp, _ := http.DefaultClient.Do(req)
      ═══════════════════════════════════════════════════════════════════ -->
 <section class="sec sec--flush" id="ai">
   <div class="inner">
-    <div class="sec-label">AI-NATIVE</div>
-    <h2 class="sec-h">Your files, inside Claude and ChatGPT.</h2>
-    <p class="sec-sub">MCP protocol built in. 8 tools. Connect once, then manage files with natural language.</p>
+    <div class="sec-label">MCP PROTOCOL</div>
+    <h2 class="sec-h">Your files in Claude and ChatGPT.</h2>
+    <p class="sec-sub">8 MCP tools built in. Connect once, then read, write, search, and share files from any MCP client.</p>
   </div>
   <div class="ai-wrap">
     <div class="ai-left">
@@ -287,7 +255,7 @@ resp, _ := http.DefaultClient.Do(req)
           <div class="chat-user">Save the meeting notes as notes/2025-03-20.md</div>
           <div class="chat-bot"><span class="chat-av">${CLAUDE_ICON}</span><span>Done! Saved <strong>notes/2025-03-20.md</strong> (4.2 KB)</span></div>
           <div class="chat-user">What files do I have in notes/?</div>
-          <div class="chat-bot"><span class="chat-av">${CLAUDE_ICON}</span><span>Your <strong>notes/</strong> folder has 3 files:<br>&bull; 2025-03-20.md &mdash; 4.2 KB<br>&bull; 2025-03-18.md &mdash; 2.1 KB<br>&bull; ideas.txt &mdash; 890 B</span></div>
+          <div class="chat-bot"><span class="chat-av">${CLAUDE_ICON}</span><span>Your <strong>notes/</strong> folder has 3 files:<br>&bull; 2025-03-20.md &middot; 4.2 KB<br>&bull; 2025-03-18.md &middot; 2.1 KB<br>&bull; ideas.txt &middot; 890 B</span></div>
           <div class="chat-user">Share the latest one</div>
           <div class="chat-bot"><span class="chat-av">${CLAUDE_ICON}</span><span>Here&rsquo;s your link:<br><code>storage.liteio.dev/s/m9x2k</code><br>Expires in 24 hours.</span></div>
         </div>
@@ -302,20 +270,20 @@ resp, _ := http.DefaultClient.Do(req)
 <section class="sec" id="arch">
   <div class="inner">
     <div class="sec-label">ARCHITECTURE</div>
-    <h2 class="sec-h">Edge-first. Zero proxy.</h2>
-    <p class="sec-sub">File bytes never touch our servers. Auth at the edge, data direct to the object store.</p>
+    <h2 class="sec-h">Direct transfer. No proxy.</h2>
+    <p class="sec-sub">File bytes never touch our servers. Auth is inline, data goes direct to the object store.</p>
   </div>
   <div class="arch">
     <div class="arch-node"><div class="arch-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div><div class="arch-nm">Your App</div><div class="arch-d">curl &middot; fetch &middot; CLI</div></div>
     <div class="arch-arr"><span class="arch-lbl">HTTPS</span></div>
-    <div class="arch-node arch-node--hl"><div class="arch-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg></div><div class="arch-nm">Edge Worker</div><div class="arch-d">300+ &middot; &lt;50ms &middot; Auth + Sign</div></div>
+    <div class="arch-node arch-node--hl"><div class="arch-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg></div><div class="arch-nm">API Server</div><div class="arch-d">Auth + presign &middot; &lt;50ms</div></div>
     <div class="arch-arr"><span class="arch-lbl">Presigned</span></div>
-    <div class="arch-node"><div class="arch-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4.03 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/></svg></div><div class="arch-nm">R2 Store</div><div class="arch-d">Durable &middot; $0 egress</div></div>
+    <div class="arch-node"><div class="arch-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4.03 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/></svg></div><div class="arch-nm">Object Store</div><div class="arch-d">Durable &middot; zero egress cost</div></div>
   </div>
   <div class="arch-row">
-    <div class="arch-fact"><strong>Auth at the edge</strong> Token verification at the nearest of 300+ locations. Sub-millisecond.</div>
-    <div class="arch-fact"><strong>Zero-proxy transfers</strong> Clients upload and download directly via presigned URLs. No Worker bandwidth.</div>
-    <div class="arch-fact"><strong>Metadata in D1</strong> File index, sessions, and shares in edge SQLite. Fast reads, strong consistency.</div>
+    <div class="arch-fact"><strong>Inline auth</strong> Token verification before presigning. Sub-millisecond overhead.</div>
+    <div class="arch-fact"><strong>Direct transfers</strong> Clients upload and download directly via presigned URLs. No proxy bandwidth.</div>
+    <div class="arch-fact"><strong>Metadata layer</strong> File index, sessions, and shares in SQLite. Fast reads, strong consistency.</div>
   </div>
 </section>
 
@@ -331,7 +299,7 @@ resp, _ := http.DefaultClient.Do(req)
     <div class="use-card">
       <div class="use-badge">FRONTEND</div>
       <h3>App file uploads</h3>
-      <p>Get a presigned URL from the API, upload directly from the browser to R2. No server proxy. Works with any framework &mdash; React, Vue, Svelte, vanilla JS.</p>
+      <p>Get a presigned URL from the API, upload from the browser to the object store. No server proxy. Works with React, Vue, Svelte, vanilla JS.</p>
     </div>
     <div class="use-card">
       <div class="use-badge">DEVOPS</div>
@@ -371,10 +339,123 @@ resp, _ := http.DefaultClient.Do(req)
   <div class="glow-spot glow-spot--cta"></div>
   <div class="inner cta-inner">
     <h2 class="cta-h">Start building.</h2>
-    <p class="cta-sub">One request to upload. Zero egress to serve. Connect AI in a minute.</p>
+    <p class="cta-sub">One request to upload. Zero egress to serve. MCP connection in a minute.</p>
     <div class="cta-actions">${heroCta}${bottomCta2}</div>
   </div>
 </section>
+
+</div><!-- /human-view -->
+
+<!-- ===== MACHINE VIEW ===== -->
+<div class="machine-view" id="machine-view">
+  <div class="md" id="md-content"><button class="md-copy" onclick="copyMd()">copy</button><span class="h1"># Storage Developer Guide</span>
+
+Your files. One API. No SDK required.
+
+<span class="h2">## Quickstart</span>
+
+Three steps to your first upload.
+
+<span class="h3">### 1. Get a token</span>
+Register with your Ed25519 key or email.
+Returns a bearer token.
+<span class="dim">POST /auth/challenge then POST /auth/verify</span>
+
+<span class="h3">### 2. Upload a file</span>
+Initiate the upload, PUT to the presigned URL, confirm.
+<span class="dim">POST /files/uploads then PUT signed-url then POST /files/uploads/complete</span>
+
+<span class="h3">### 3. Share it</span>
+Generate a time-limited link. Anyone can access it.
+<span class="dim">POST /files/share then GET /s/:token</span>
+
+<span class="h2">## The API</span>
+
+Everything lives under /files. Standard HTTP methods. Paths are your filesystem.
+
+<span class="h3">### Store</span>
+POST /files/uploads        Initiate upload
+GET  /files/{path}         Download file
+HEAD /files/{path}         File metadata
+DEL  /files/{path}         Delete file
+
+<span class="h3">### Organize</span>
+GET  /files?prefix=        List files in folder
+GET  /files/search?q=      Search by name
+POST /files/move            Rename or move
+GET  /files/stats           Storage usage
+
+<span class="h3">### Share</span>
+POST /files/share           Create share link
+GET  /s/:token              Access shared file
+
+<span class="h2">## Any Language</span>
+
+No SDK needed. The API is plain HTTP with JSON bodies.
+Works from curl, JavaScript fetch, Python requests, Go net/http, or anything that speaks HTTP.
+
+<span class="h2">## MCP Protocol</span>
+
+8 tools built in. Connect once, then manage files from any MCP client.
+
+Tools: storage_read, storage_write, storage_list, storage_search,
+       storage_share, storage_move, storage_delete, storage_stats
+
+<span class="h3">### Connect Claude</span>
+Settings, Integrations, Add
+<span class="link">https://storage.liteio.dev/mcp</span>
+
+<span class="h3">### Connect ChatGPT</span>
+Settings, Connected apps
+<span class="link">https://storage.liteio.dev/mcp</span>
+
+<span class="h2">## Architecture</span>
+
+File bytes never touch the API server.
+Your app sends an authenticated request to the API.
+The API returns a presigned URL (under 50ms).
+Your app uploads or downloads directly to the object store.
+Zero proxy bandwidth. Zero egress cost.
+
+Metadata (file index, sessions, shares) stored in SQLite.
+Fast reads, strong consistency.
+
+<span class="h2">## Use Cases</span>
+
+<span class="h3">### Frontend uploads</span>
+Get a presigned URL from the API. Upload from the browser directly to the object store.
+No server proxy. Works with React, Vue, Svelte, vanilla JS.
+
+<span class="h3">### CI/CD artifacts</span>
+Push build outputs, deploy bundles, test reports from GitHub Actions or any CI.
+One curl per artifact. Scoped API keys per pipeline.
+
+<span class="h3">### AI workflows</span>
+Let Claude or ChatGPT save research, code, and generated files to your storage.
+Search and share them by asking.
+
+<span class="h2">## Security</span>
+
+Ed25519 auth: public key challenge-response, no shared secrets
+Scoped API keys: path-prefix restrictions, sk_* format, 90-day TTL
+Signed share links: time-limited URLs, 60s to 7 days, auto-expire
+OAuth 2.0 + PKCE: standard flow for third-party apps
+Rate limiting: per-endpoint sliding window (auth 10/min, uploads 100/min)
+Audit logging: every action logged with actor, resource, timestamp
+
+<span class="h2">## Links</span>
+
+<span class="link">https://storage.liteio.dev/api</span>         API reference
+<span class="link">https://storage.liteio.dev/cli</span>         CLI
+<span class="link">https://storage.liteio.dev/pricing</span>     Pricing
+<span class="link">https://storage.liteio.dev/developers</span>  This page (human view)</div>
+</div>
+
+<!-- Floating mode switch -->
+<div class="mode-switch">
+  <button class="active" onclick="setMode('human')"><span class="dot"></span> HUMAN</button>
+  <button onclick="setMode('machine')"><span class="dot"></span> MACHINE</button>
+</div>
 
 </main>
 
@@ -383,6 +464,28 @@ function toggleTheme(){var d=document.documentElement.classList.toggle('dark');l
 (function(){var s=localStorage.getItem('theme');if(s==='light')document.documentElement.classList.remove('dark');else if(!s&&!window.matchMedia('(prefers-color-scheme:dark)').matches)document.documentElement.classList.remove('dark')})();
 (function(){var els=document.querySelectorAll('.sec');if(!els.length)return;var obs=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('visible');obs.unobserve(e.target)}})},{threshold:0.06,rootMargin:'0px 0px -40px 0px'});els.forEach(function(s){obs.observe(s)})})();
 function switchLang(l){document.querySelectorAll('.lang-tab').forEach(function(t){t.classList.remove('active');t.setAttribute('aria-selected','false')});document.querySelectorAll('.lang-panel').forEach(function(p){p.classList.remove('active')});var tab=document.querySelector('.lang-tab[data-lang="'+l+'"]');if(tab){tab.classList.add('active');tab.setAttribute('aria-selected','true')}var p=document.getElementById('lang-'+l);if(p)p.classList.add('active')}
+function setMode(mode){
+  var btns=document.querySelectorAll('.mode-switch button');
+  btns.forEach(function(b){b.classList.remove('active')});
+  if(mode==='human'){
+    btns[0].classList.add('active');
+    document.getElementById('human-view').classList.remove('hidden');
+    document.getElementById('machine-view').classList.remove('active');
+  } else {
+    btns[1].classList.add('active');
+    document.getElementById('human-view').classList.add('hidden');
+    document.getElementById('machine-view').classList.add('active');
+  }
+}
+function copyMd(){
+  var el=document.getElementById('md-content');
+  var text=el.innerText.replace(/^copy\\n/,'');
+  navigator.clipboard.writeText(text).then(function(){
+    var btn=el.querySelector('.md-copy');
+    btn.textContent='copied';
+    setTimeout(function(){btn.textContent='copy'},2000);
+  });
+}
 </script>
 </body>
 </html>`;

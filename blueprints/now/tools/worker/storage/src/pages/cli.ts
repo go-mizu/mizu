@@ -15,260 +15,12 @@ export function cliPage(actor: string | null = null): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CLI — Storage</title>
-<meta name="description" content="The Storage CLI. Upload, download, and share files from your terminal. Zero dependencies. Works with Node.js, Bun, and Deno.">
+<meta name="description" content="The Storage CLI. Upload, download, and share files from your terminal. Zero dependencies. Works on macOS, Linux, and Windows.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#FAFAF9;--surface:#FFF;--surface-alt:#F4F4F5;--surface-2:#E4E4E7;
-  --text:#09090B;--text-2:#52525B;--text-3:#A1A1AA;
-  --border:#E4E4E7;--ink:#09090B;
-  --green:#16A34A;--blue:#2563EB;--amber:#D97706;--red:#DC2626;--purple:#7C3AED;
-  --green-dim:#DCFCE7;--blue-dim:#DBEAFE;
-}
-html.dark{
-  --bg:#09090B;--surface:#111113;--surface-alt:#18181B;--surface-2:#27272A;
-  --text:#FAFAF9;--text-2:#A1A1AA;--text-3:#52525B;
-  --border:#1E1E21;--ink:#FAFAF9;
-  --green:#4ADE80;--blue:#60A5FA;--amber:#FBBF24;--red:#F87171;--purple:#C084FC;
-  --green-dim:rgba(74,222,128,.08);--blue-dim:rgba(96,165,250,.08);
-}
-html{scroll-behavior:smooth}
-body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);background:var(--bg);
-  -webkit-font-smoothing:antialiased;overflow-x:hidden}
-a{color:inherit;text-decoration:none}
-code{font-family:'JetBrains Mono',monospace;font-size:.85em;
-  background:var(--surface-alt);padding:2px 6px;border:1px solid var(--border)}
-
-/* Grid bg */
-.grid-bg{position:fixed;inset:0;pointer-events:none;z-index:0;
-  background-image:
-    linear-gradient(var(--border) 1px,transparent 1px),
-    linear-gradient(90deg,var(--border) 1px,transparent 1px);
-  background-size:80px 80px;opacity:.25}
-html.dark .grid-bg{opacity:.06}
-
-/* Nav */
-nav{position:sticky;top:0;z-index:100;width:100%;
-  background:color-mix(in srgb,var(--bg) 85%,transparent);
-  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
-  border-bottom:1px solid var(--border)}
-.nav-inner{width:100%;padding:0 48px;height:56px;
-  display:flex;align-items:center;justify-content:space-between}
-.logo{font-weight:700;font-size:15px;letter-spacing:-.3px;
-  display:flex;align-items:center;gap:8px}
-.logo-dot{width:6px;height:6px;background:var(--text);display:inline-block}
-.nav-links{display:flex;gap:32px}
-.nav-links a{font-size:13px;color:var(--text-3);transition:color .15s;font-weight:500;letter-spacing:.01em}
-.nav-links a:hover,.nav-links a.active{color:var(--text)}
-.nav-right{display:flex;align-items:center;gap:16px}
-.nav-user{font-size:13px;color:var(--text-2);font-weight:500}
-.nav-signout{font-size:12px;color:var(--text-3);border:1px solid var(--border);
-  padding:5px 14px;transition:all .15s;font-weight:500}
-.nav-signout:hover{color:var(--text);border-color:var(--text-3)}
-.theme-toggle{background:none;border:none;padding:8px;cursor:pointer;
-  color:var(--text-3);display:flex;align-items:center;transition:all .15s}
-.theme-toggle:hover{color:var(--text)}
-html.dark .icon-sun{display:block}html.dark .icon-moon{display:none}
-html:not(.dark) .icon-sun{display:none}html:not(.dark) .icon-moon{display:block}
-.mobile-toggle{display:none;background:none;border:none;color:var(--text-3);cursor:pointer;padding:4px}
-
-/* Layout */
-.wrap{position:relative;z-index:1;max-width:1120px;margin:0 auto;padding:0 48px}
-.label{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2.5px;
-  color:var(--text-3);font-weight:500;text-transform:uppercase;margin-bottom:16px}
-.h2{font-size:32px;font-weight:800;letter-spacing:-1px;line-height:1.2;margin-bottom:14px}
-.sub{font-size:15px;color:var(--text-2);line-height:1.7;max-width:560px}
-.grad{background:linear-gradient(135deg,var(--text) 0%,var(--text-3) 100%);
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;font-weight:800}
-
-/* Section */
-.section{padding:96px 0;opacity:0;transform:translateY(28px);transition:opacity .7s ease,transform .7s ease}
-.section.visible{opacity:1;transform:none}
-
-/* Hero */
-.hero{position:relative;z-index:1;padding:80px 0 72px;
-  border-bottom:1px solid var(--border)}
-.hero-inner{max-width:1120px;margin:0 auto;padding:0 48px}
-.hero-eyebrow{display:inline-flex;align-items:center;gap:10px;
-  font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:2px;
-  color:var(--text-3);border:1px solid var(--border);padding:7px 16px;
-  margin-bottom:36px;font-weight:500;text-transform:uppercase}
-.hero-eyebrow-dot{width:5px;height:5px;background:var(--green);display:inline-block}
-.hero-title{font-size:56px;font-weight:900;letter-spacing:-2.5px;line-height:1.08;
-  margin-bottom:20px;max-width:700px}
-.hero-title em{font-style:normal;color:var(--text-3)}
-.hero-sub{font-size:17px;color:var(--text-2);line-height:1.7;max-width:520px;margin-bottom:48px}
-
-.hero-install{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:56px}
-.install-box{display:flex;align-items:center;gap:0;border:1px solid var(--border);
-  background:var(--surface);overflow:hidden;max-width:560px}
-.install-box .prompt{font-family:'JetBrains Mono',monospace;font-size:13px;
-  color:var(--text-3);padding:12px 16px;border-right:1px solid var(--border);
-  background:var(--surface-alt);user-select:none;flex-shrink:0}
-.install-box .cmd{font-family:'JetBrains Mono',monospace;font-size:13px;
-  color:var(--text);padding:12px 18px;flex:1;user-select:all;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.copy-btn{font-family:'JetBrains Mono',monospace;font-size:11px;
-  background:none;border:none;border-left:1px solid var(--border);
-  color:var(--text-3);padding:12px 16px;cursor:pointer;transition:all .15s;
-  white-space:nowrap;flex-shrink:0}
-.copy-btn:hover{color:var(--text);background:var(--surface-alt)}
-.install-tabs{display:flex;gap:0;border:1px solid var(--border);overflow:hidden}
-.install-tab{font-family:'JetBrains Mono',monospace;font-size:11px;
-  background:none;border:none;border-right:1px solid var(--border);
-  color:var(--text-3);padding:8px 16px;cursor:pointer;transition:all .15s;font-weight:500}
-.install-tab:last-child{border-right:none}
-.install-tab.active{background:var(--ink);color:var(--bg)}
-.install-tab:not(.active):hover{color:var(--text);background:var(--surface-alt)}
-/* Install blocks */
-.install-block{margin-bottom:36px;max-width:620px}
-.install-block-label{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;
-  color:var(--text-3);font-weight:500;text-transform:uppercase;margin-bottom:10px}
-
-/* Download buttons */
-.dl-grid{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-.dl-btn{display:inline-flex;align-items:center;gap:10px;padding:10px 18px;
-  border:1px solid var(--border);background:var(--surface);transition:all .15s;
-  text-decoration:none;color:var(--text)}
-.dl-btn:hover{border-color:var(--text-3);background:var(--surface-alt)}
-.dl-icon{color:var(--text-3);display:flex;align-items:center}
-.dl-info{display:flex;flex-direction:column;gap:1px}
-.dl-name{font-size:13px;font-weight:600}
-.dl-meta{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-3)}
-
-/* Terminal */
-.term{border:1px solid var(--border);background:var(--surface);overflow:hidden}
-.term-bar{display:flex;align-items:center;padding:12px 18px;
-  border-bottom:1px solid var(--border);gap:10px;background:var(--surface-alt)}
-.term-dots{display:flex;gap:5px}
-.term-dots span{width:9px;height:9px;background:var(--border)}
-html.dark .term-dots span{background:var(--text-3)}
-.term-title{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-3);
-  flex:1;text-align:center;letter-spacing:1px}
-.term-body{padding:20px 24px;font-family:'JetBrains Mono',monospace;font-size:12.5px;
-  line-height:1.9;overflow-x:auto}
-.t-prompt{color:var(--text-3);user-select:none}
-.t-cmd{color:var(--text);font-weight:600}
-.t-flag{color:var(--text-2)}
-.t-str{color:var(--text-2);opacity:.75}
-.t-comment{color:var(--text-3);font-style:italic}
-.t-ok{color:var(--green);font-weight:600}
-.t-url{color:var(--blue);text-decoration:underline;text-underline-offset:2px}
-.t-dim{color:var(--text-3)}
-.t-num{color:var(--amber)}
-.t-blank{display:block;height:6px}
-
-/* Steps */
-.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
-  background:var(--border);border:1px solid var(--border);overflow:hidden}
-.step{background:var(--bg);padding:32px 28px}
-.step-num{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
-  font-weight:600;margin-bottom:14px;letter-spacing:1px}
-.step-title{font-size:16px;font-weight:700;letter-spacing:-.3px;margin-bottom:8px}
-.step-desc{font-size:13px;color:var(--text-2);line-height:1.6;margin-bottom:16px}
-.step .term{border:none;border-top:1px solid var(--border)}
-.step .term-body{padding:14px 16px;font-size:11.5px;line-height:1.8}
-
-/* Command grid */
-.cmd-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
-  background:var(--border);border:1px solid var(--border);overflow:hidden}
-.cmd-card{background:var(--bg);padding:24px;transition:background .15s}
-.cmd-card:hover{background:var(--surface-alt)}
-.cmd-name{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;
-  margin-bottom:6px;color:var(--text)}
-.cmd-desc{font-size:13px;color:var(--text-2);line-height:1.5}
-.cmd-example{font-family:'JetBrains Mono',monospace;font-size:11px;
-  color:var(--text-2);padding:8px 12px;background:var(--surface-alt);
-  border:1px solid var(--border);white-space:pre;overflow-x:auto;
-  line-height:1.7;margin-top:12px}
-
-/* Use case cards */
-.uc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
-  background:var(--border);border:1px solid var(--border);overflow:hidden}
-.uc{background:var(--bg);padding:0}
-.uc-head{padding:28px 28px 20px;border-bottom:1px solid var(--border)}
-.uc-tag{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:2px;
-  text-transform:uppercase;color:var(--text-3);font-weight:500;margin-bottom:10px}
-.uc-title{font-size:16px;font-weight:700;letter-spacing:-.3px;margin-bottom:6px}
-.uc-desc{font-size:13px;color:var(--text-2);line-height:1.6}
-.uc-term{padding:16px 20px}
-.uc-term .term-body{padding:12px 14px;font-size:11px;line-height:1.8}
-
-/* Auth */
-.auth-box{border:1px solid var(--border);overflow:hidden}
-.auth-method{padding:28px;border-bottom:1px solid var(--border)}
-.auth-method:last-child{border-bottom:none}
-.auth-method-title{font-size:15px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:8px}
-.auth-method-badge{font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 8px;
-  border:1px solid var(--border);color:var(--text-3);font-weight:500;letter-spacing:.5px}
-.auth-method-desc{font-size:13px;color:var(--text-2);line-height:1.6;margin-bottom:12px}
-.auth-method-code{font-family:'JetBrains Mono',monospace;font-size:11px;
-  color:var(--text-2);padding:10px 14px;background:var(--surface-alt);
-  border:1px solid var(--border);white-space:pre;overflow-x:auto;line-height:1.7}
-
-/* Buttons */
-.btn{font-size:14px;font-weight:500;padding:11px 24px;border:1px solid var(--border);
-  display:inline-flex;align-items:center;gap:8px;transition:all .15s;color:var(--text-2);
-  cursor:pointer;text-decoration:none}
-.btn:hover{border-color:var(--text-3);color:var(--text)}
-.btn--primary{background:var(--ink);border-color:var(--ink);color:var(--bg);font-weight:600}
-.btn--primary:hover{opacity:.85;color:var(--bg)}
-.btn--lg{padding:14px 32px;font-size:15px}
-
-/* CTA */
-.section--cta{padding:120px 0 80px;border-top:1px solid var(--border)}
-.section--cta .wrap{display:flex;flex-direction:column;align-items:center;text-align:center}
-.cta-title{font-size:40px;font-weight:900;letter-spacing:-1.5px;margin-bottom:14px}
-.cta-sub{font-size:16px;color:var(--text-2);line-height:1.7;margin-bottom:40px;max-width:440px}
-.cta-actions{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
-
-/* Divider */
-.section-divider{border:none;border-top:1px solid var(--border);margin:0}
-
-/* Responsive */
-@media(max-width:1024px){
-  .steps{grid-template-columns:1fr}
-  .cmd-grid{grid-template-columns:1fr 1fr}
-  .uc-grid{grid-template-columns:1fr}
-}
-@media(max-width:768px){
-  .hero-title{font-size:40px;letter-spacing:-1.5px}
-  .h2{font-size:28px}
-  .cmd-grid{grid-template-columns:1fr}
-  .section{padding:64px 0}
-}
-@media(max-width:640px){
-  .nav-inner{padding:0 20px;height:48px}
-  .nav-links{display:none;position:absolute;top:48px;left:0;right:0;
-    flex-direction:column;padding:12px 20px;gap:16px;z-index:100;
-    border-bottom:1px solid var(--border);
-    background:color-mix(in srgb,var(--bg) 96%,transparent);
-    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
-  .nav-links.open{display:flex}
-  .mobile-toggle{display:block}
-  .hero-inner,.wrap{padding:0 20px}
-  .hero{padding:56px 0 48px}
-  .hero-title{font-size:32px;letter-spacing:-1px}
-  .hero-sub{font-size:15px}
-  .hero-install{flex-direction:column;align-items:stretch}
-  .install-block{max-width:100%}
-  .install-box .cmd{font-size:11px}
-  .install-tabs{flex-wrap:wrap}
-  .dl-grid{flex-direction:column}
-  .dl-btn{flex:1}
-  .term-body{padding:14px 16px;font-size:11px}
-  .section--cta{padding:72px 0 56px}
-  .cta-title{font-size:28px}
-  .cta-actions{flex-direction:column;width:100%;max-width:300px}
-  .btn--lg,.btn{justify-content:center}
-  .uc-head,.uc-term{padding-left:16px;padding-right:16px}
-  .cmd-card{padding:20px}
-  .steps{gap:0}
-  .step{padding:24px 20px}
-}
-</style>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/base.css">
+<link rel="stylesheet" href="/cli.css">
 </head>
 <body>
 
@@ -296,109 +48,95 @@ html.dark .term-dots span{background:var(--text-3)}
   </div>
 </nav>
 
+<div class="human-view" id="human-view">
 <main>
 
-<!-- HERO -->
+<!-- HERO: two-column layout — left: headline + install, right: terminal demo -->
 <section class="hero">
   <div class="hero-inner">
-    <div class="hero-eyebrow">
-      <span class="hero-eyebrow-dot"></span>
-      @liteio/storage-cli
-    </div>
-
-    <h1 class="hero-title">Files from<br>your <em>terminal.</em></h1>
-    <p class="hero-sub">Upload, download, and share files with one command. Available as a single binary or npm package.</p>
-
-    <!-- Block 1: Native binary install per platform -->
-    <div class="install-block">
-      <div class="install-block-label">Install binary</div>
-      <div class="install-tabs" id="binary-tabs">
-        <button class="install-tab active" data-platform="macos">macOS</button>
-        <button class="install-tab" data-platform="linux">Linux</button>
-        <button class="install-tab" data-platform="windows">Windows</button>
+    <div class="hero-left">
+      <div class="hero-eyebrow">
+        <span class="hero-eyebrow-dot"></span>
+        @liteio/storage-cli
       </div>
-      <div class="install-box">
-        <span class="prompt" id="binary-prompt">$</span>
-        <span class="cmd" id="binary-cmd">curl -fsSL https://storage.liteio.dev/cli/install.sh | sh</span>
-        <button class="copy-btn" onclick="copyEl('binary-cmd',this)">copy</button>
-      </div>
-      <div class="dl-grid" id="dl-grid">
-        <a href="/cli/releases/latest/storage-darwin-arm64" class="dl-btn" data-platform="macos">
-          <span class="dl-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
-          <span class="dl-info"><span class="dl-name">Apple Silicon</span><span class="dl-meta">arm64</span></span>
-        </a>
-        <a href="/cli/releases/latest/storage-darwin-amd64" class="dl-btn" data-platform="macos">
-          <span class="dl-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
-          <span class="dl-info"><span class="dl-name">Intel</span><span class="dl-meta">amd64</span></span>
-        </a>
-        <a href="/cli/releases/latest/storage-linux-amd64" class="dl-btn" data-platform="linux">
-          <span class="dl-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
-          <span class="dl-info"><span class="dl-name">x64</span><span class="dl-meta">amd64</span></span>
-        </a>
-        <a href="/cli/releases/latest/storage-linux-arm64" class="dl-btn" data-platform="linux">
-          <span class="dl-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
-          <span class="dl-info"><span class="dl-name">ARM</span><span class="dl-meta">arm64</span></span>
-        </a>
-        <a href="/cli/releases/latest/storage-windows-amd64.exe" class="dl-btn" data-platform="windows">
-          <span class="dl-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
-          <span class="dl-info"><span class="dl-name">x64</span><span class="dl-meta">amd64</span></span>
-        </a>
-        <a href="/cli/releases/latest/storage-windows-arm64.exe" class="dl-btn" data-platform="windows">
-          <span class="dl-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
-          <span class="dl-info"><span class="dl-name">ARM</span><span class="dl-meta">arm64</span></span>
-        </a>
+      <h1 class="hero-title">Files from<br>your <em>terminal.</em></h1>
+      <p class="hero-sub">Upload, download, and share files with one command. Single binary. No dependencies.</p>
+
+      <div class="install-section">
+        <div class="install-label">Install</div>
+        <div class="install-tabs" id="install-tabs">
+          <button class="install-tab active" data-method="curl">macOS / Linux</button>
+          <button class="install-tab" data-method="windows">Windows</button>
+          <button class="install-tab" data-method="npm">npm</button>
+          <button class="install-tab" data-method="bun">Bun</button>
+          <button class="install-tab" data-method="deno">Deno</button>
+        </div>
+        <div class="install-box">
+          <span class="prompt" id="install-prompt">$</span>
+          <span class="cmd" id="install-cmd">curl -fsSL https://storage.liteio.dev/cli/install.sh | sh</span>
+          <button class="copy-btn" onclick="copyInstall(this)">copy</button>
+        </div>
+        <div class="dl-grid" id="dl-grid"></div>
       </div>
     </div>
 
-    <!-- Block 2: Package manager install -->
-    <div class="install-block">
-      <div class="install-block-label">Or install via package manager</div>
-      <div class="install-tabs" id="pkg-tabs">
-        <button class="install-tab active" data-cmd="npm i -g @liteio/storage-cli" data-prompt="$">npm</button>
-        <button class="install-tab" data-cmd="bun i -g @liteio/storage-cli" data-prompt="$">Bun</button>
-        <button class="install-tab" data-cmd="deno install -g npm:@liteio/storage-cli" data-prompt="$">Deno</button>
-      </div>
-      <div class="install-box">
-        <span class="prompt" id="pkg-prompt">$</span>
-        <span class="cmd" id="pkg-cmd">npm i -g @liteio/storage-cli</span>
-        <button class="copy-btn" onclick="copyEl('pkg-cmd',this)">copy</button>
+    <div class="hero-right">
+      <div class="hero-term">
+        <div class="term-bar">
+          <div class="term-dots"><span></span><span></span><span></span></div>
+          <span class="term-title">storage</span>
+          <div style="width:27px"></div>
+        </div>
+        <div class="term-body">
+<span class="t-prompt">$</span> <span class="t-cmd">storage put</span> <span class="t-flag">demo.pdf docs/</span>
+<br><span class="t-ok">PUT</span> <span class="t-dim">docs/demo.pdf</span> <span class="t-num">2.4 MB</span>
+<span class="t-blank"></span>
+<br><span class="t-prompt">$</span> <span class="t-cmd">storage ls</span> <span class="t-flag">docs/</span>
+<br><span class="t-dim">demo.pdf</span>       <span class="t-num">2.4 MB</span>  <span class="t-dim">just now</span>
+<br><span class="t-dim">readme.md</span>      <span class="t-num">1.2 KB</span>  <span class="t-dim">2h ago</span>
+<span class="t-blank"></span>
+<br><span class="t-prompt">$</span> <span class="t-cmd">storage share</span> <span class="t-flag">docs/demo.pdf</span>
+<br><span class="t-url">https://storage.liteio.dev/s/k7x9m2</span>
+<br><span class="t-dim">expires in 24h</span>
+        </div>
       </div>
     </div>
   </div>
 </section>
 
 <!-- HOW IT WORKS -->
-<section class="section" id="quickstart" style="padding-top:96px">
+<section class="section" id="quickstart">
   <div class="wrap">
     <div class="label">How it works</div>
-    <div class="h2">Three steps to <span class="grad">your first upload.</span></div>
-    <p class="sub" style="margin-bottom:40px">Log in, upload a file, share it. That's the whole workflow.</p>
-  </div>
+    <div class="h2">Three commands. That's it.</div>
+    <p class="sub" style="margin-bottom:36px">Log in, upload a file, share it.</p>
 
-  <div class="wrap">
     <div class="steps">
       <div class="step">
         <div class="step-num">01</div>
         <div class="step-title">Log in</div>
         <div class="step-desc">Opens your browser. Token saved locally.</div>
-        <div class="term">
-          <div class="term-body"><span class="t-prompt">$</span> <span class="t-cmd">storage login</span></div>
+        <div class="step-cmd">
+          <span class="step-cmd-text"><span class="t-prompt">$</span> storage login</span>
+          <button class="step-copy" onclick="copyText('storage login',this)">copy</button>
         </div>
       </div>
       <div class="step">
         <div class="step-num">02</div>
         <div class="step-title">Upload</div>
-        <div class="step-desc">Put any file into storage.</div>
-        <div class="term">
-          <div class="term-body"><span class="t-prompt">$</span> <span class="t-cmd">storage put</span> <span class="t-flag">report.pdf docs/</span></div>
+        <div class="step-desc">Put any file into your storage.</div>
+        <div class="step-cmd">
+          <span class="step-cmd-text"><span class="t-prompt">$</span> storage put report.pdf docs/</span>
+          <button class="step-copy" onclick="copyText('storage put report.pdf docs/',this)">copy</button>
         </div>
       </div>
       <div class="step">
         <div class="step-num">03</div>
         <div class="step-title">Share</div>
         <div class="step-desc">Get a link. It expires automatically.</div>
-        <div class="term">
-          <div class="term-body"><span class="t-prompt">$</span> <span class="t-cmd">storage share</span> <span class="t-flag">docs/report.pdf</span></div>
+        <div class="step-cmd">
+          <span class="step-cmd-text"><span class="t-prompt">$</span> storage share docs/report.pdf</span>
+          <button class="step-copy" onclick="copyText('storage share docs/report.pdf',this)">copy</button>
         </div>
       </div>
     </div>
@@ -411,70 +149,106 @@ html.dark .term-dots span{background:var(--text-3)}
 <section class="section" id="commands">
   <div class="wrap">
     <div class="label">Commands</div>
-    <div class="h2">Everything the <span class="grad">CLI can do.</span></div>
-    <p class="sub" style="margin-bottom:40px">Every command supports <code>--json</code> for scripting and <code>--quiet</code> for silence.</p>
-  </div>
+    <div class="h2">Everything the CLI can do.</div>
+    <p class="sub" style="margin-bottom:36px">Every command supports <code>--json</code> for scripting and <code>--quiet</code> for silence.</p>
 
-  <div class="cmd-grid" style="border-left:none;border-right:none">
-    <div class="cmd-card">
-      <div class="cmd-name">put</div>
-      <div class="cmd-desc">Upload a file or stdin.</div>
-      <div class="cmd-example">$ storage put photo.jpg images/</div>
-    </div>
-    <div class="cmd-card">
-      <div class="cmd-name">get</div>
-      <div class="cmd-desc">Download a file.</div>
-      <div class="cmd-example">$ storage get images/photo.jpg</div>
-    </div>
-    <div class="cmd-card">
-      <div class="cmd-name">cat</div>
-      <div class="cmd-desc">Print file to stdout.</div>
-      <div class="cmd-example">$ storage cat config.json</div>
-    </div>
-    <div class="cmd-card">
-      <div class="cmd-name">ls</div>
-      <div class="cmd-desc">List files at a path.</div>
-      <div class="cmd-example">$ storage ls docs/</div>
-    </div>
-    <div class="cmd-card">
-      <div class="cmd-name">share</div>
-      <div class="cmd-desc">Create a temporary link.</div>
-      <div class="cmd-example">$ storage share report.pdf</div>
-    </div>
-    <div class="cmd-card">
-      <div class="cmd-name">rm</div>
-      <div class="cmd-desc">Delete one or more files.</div>
-      <div class="cmd-example">$ storage rm old-draft.md</div>
-    </div>
-    <div class="cmd-card">
-      <div class="cmd-name">mv</div>
-      <div class="cmd-desc">Move or rename a file.</div>
-      <div class="cmd-example">$ storage mv draft.md final.md</div>
-    </div>
-    <div class="cmd-card">
-      <div class="cmd-name">find</div>
-      <div class="cmd-desc">Search files by name.</div>
-      <div class="cmd-example">$ storage find "report"</div>
-    </div>
-    <div class="cmd-card">
-      <div class="cmd-name">stat</div>
-      <div class="cmd-desc">Show storage usage.</div>
-      <div class="cmd-example">$ storage stat</div>
-    </div>
-    <div class="cmd-card">
-      <div class="cmd-name">login / logout</div>
-      <div class="cmd-desc">Sign in or sign out.</div>
-      <div class="cmd-example">$ storage login</div>
-    </div>
-    <div class="cmd-card">
-      <div class="cmd-name">token</div>
-      <div class="cmd-desc">Show or set your token.</div>
-      <div class="cmd-example">$ storage token</div>
-    </div>
-    <div class="cmd-card">
-      <div class="cmd-name">key</div>
-      <div class="cmd-desc">Manage API keys.</div>
-      <div class="cmd-example">$ storage key create deploy</div>
+    <div class="cmd-grid">
+      <div class="cmd-card">
+        <div class="cmd-name">put</div>
+        <div class="cmd-desc">Upload a file or stdin.</div>
+        <div class="cmd-example">
+          <span class="cmd-example-text">$ storage put photo.jpg images/</span>
+          <button class="cmd-copy" onclick="copyText('storage put photo.jpg images/',this)">copy</button>
+        </div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-name">get</div>
+        <div class="cmd-desc">Download a file to disk.</div>
+        <div class="cmd-example">
+          <span class="cmd-example-text">$ storage get images/photo.jpg</span>
+          <button class="cmd-copy" onclick="copyText('storage get images/photo.jpg',this)">copy</button>
+        </div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-name">cat</div>
+        <div class="cmd-desc">Print file contents to stdout.</div>
+        <div class="cmd-example">
+          <span class="cmd-example-text">$ storage cat config.json</span>
+          <button class="cmd-copy" onclick="copyText('storage cat config.json',this)">copy</button>
+        </div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-name">ls</div>
+        <div class="cmd-desc">List files at a path.</div>
+        <div class="cmd-example">
+          <span class="cmd-example-text">$ storage ls docs/</span>
+          <button class="cmd-copy" onclick="copyText('storage ls docs/',this)">copy</button>
+        </div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-name">share</div>
+        <div class="cmd-desc">Create a temporary public link.</div>
+        <div class="cmd-example">
+          <span class="cmd-example-text">$ storage share report.pdf</span>
+          <button class="cmd-copy" onclick="copyText('storage share report.pdf',this)">copy</button>
+        </div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-name">rm</div>
+        <div class="cmd-desc">Delete one or more files.</div>
+        <div class="cmd-example">
+          <span class="cmd-example-text">$ storage rm old-draft.md</span>
+          <button class="cmd-copy" onclick="copyText('storage rm old-draft.md',this)">copy</button>
+        </div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-name">mv</div>
+        <div class="cmd-desc">Move or rename a file.</div>
+        <div class="cmd-example">
+          <span class="cmd-example-text">$ storage mv draft.md final.md</span>
+          <button class="cmd-copy" onclick="copyText('storage mv draft.md final.md',this)">copy</button>
+        </div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-name">find</div>
+        <div class="cmd-desc">Search files by name.</div>
+        <div class="cmd-example">
+          <span class="cmd-example-text">$ storage find "report"</span>
+          <button class="cmd-copy" onclick="copyText('storage find &quot;report&quot;',this)">copy</button>
+        </div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-name">stat</div>
+        <div class="cmd-desc">Show storage usage.</div>
+        <div class="cmd-example">
+          <span class="cmd-example-text">$ storage stat</span>
+          <button class="cmd-copy" onclick="copyText('storage stat',this)">copy</button>
+        </div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-name">login</div>
+        <div class="cmd-desc">Authenticate via browser.</div>
+        <div class="cmd-example">
+          <span class="cmd-example-text">$ storage login</span>
+          <button class="cmd-copy" onclick="copyText('storage login',this)">copy</button>
+        </div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-name">token</div>
+        <div class="cmd-desc">Show or set your token.</div>
+        <div class="cmd-example">
+          <span class="cmd-example-text">$ storage token</span>
+          <button class="cmd-copy" onclick="copyText('storage token',this)">copy</button>
+        </div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-name">key</div>
+        <div class="cmd-desc">Manage API keys.</div>
+        <div class="cmd-example">
+          <span class="cmd-example-text">$ storage key create deploy</span>
+          <button class="cmd-copy" onclick="copyText('storage key create deploy',this)">copy</button>
+        </div>
+      </div>
     </div>
   </div>
 </section>
@@ -485,46 +259,41 @@ html.dark .term-dots span{background:var(--text-3)}
 <section class="section" id="use-cases">
   <div class="wrap">
     <div class="label">Use cases</div>
-    <div class="h2">Built for <span class="grad">real workflows.</span></div>
-    <p class="sub" style="margin-bottom:40px">The CLI fits anywhere you have a terminal.</p>
-  </div>
+    <div class="h2">Built for real workflows.</div>
+    <p class="sub" style="margin-bottom:36px">The CLI fits anywhere you have a terminal.</p>
 
-  <div class="wrap">
     <div class="uc-grid">
       <div class="uc">
         <div class="uc-head">
           <div class="uc-tag">CI / CD</div>
           <div class="uc-title">Deploy from any pipeline</div>
-          <div class="uc-desc">Set <code>STORAGE_TOKEN</code> as a secret and upload.</div>
+          <div class="uc-desc">Set <code>STORAGE_TOKEN</code> as a secret and upload build artifacts.</div>
         </div>
-        <div class="uc-term">
-          <div class="term" style="border:none">
-            <div class="term-body"><span class="t-prompt">$</span> <span class="t-cmd">storage put</span> <span class="t-flag">dist/app.js cdn/</span></div>
-          </div>
+        <div class="uc-cmd">
+          <span class="uc-cmd-text"><span class="t-prompt">$ </span>storage put dist/app.js cdn/</span>
+          <button class="uc-copy" onclick="copyText('storage put dist/app.js cdn/',this)">copy</button>
         </div>
       </div>
       <div class="uc">
         <div class="uc-head">
           <div class="uc-tag">Backups</div>
           <div class="uc-title">Pipe straight to storage</div>
-          <div class="uc-desc">No temp files. Stream from any command.</div>
+          <div class="uc-desc">No temp files needed. Stream from any command.</div>
         </div>
-        <div class="uc-term">
-          <div class="term" style="border:none">
-            <div class="term-body"><span class="t-prompt">$</span> <span class="t-cmd">pg_dump</span> <span class="t-flag">mydb | storage put - backup.sql</span></div>
-          </div>
+        <div class="uc-cmd">
+          <span class="uc-cmd-text"><span class="t-prompt">$ </span>pg_dump mydb | storage put - backup.sql</span>
+          <button class="uc-copy" onclick="copyText('pg_dump mydb | storage put - backup.sql',this)">copy</button>
         </div>
       </div>
       <div class="uc">
         <div class="uc-head">
           <div class="uc-tag">Scripting</div>
           <div class="uc-title">JSON output on every command</div>
-          <div class="uc-desc">Pipe <code>--json</code> output into any tool.</div>
+          <div class="uc-desc">Pipe <code>--json</code> output into jq or any tool.</div>
         </div>
-        <div class="uc-term">
-          <div class="term" style="border:none">
-            <div class="term-body"><span class="t-prompt">$</span> <span class="t-cmd">storage ls</span> <span class="t-flag">--json | jq '.'</span></div>
-          </div>
+        <div class="uc-cmd">
+          <span class="uc-cmd-text"><span class="t-prompt">$ </span>storage ls --json | jq '.'</span>
+          <button class="uc-copy" onclick="copyText('storage ls --json | jq \\'.\\'',this)">copy</button>
         </div>
       </div>
     </div>
@@ -537,54 +306,179 @@ html.dark .term-dots span{background:var(--text-3)}
 <section class="section" id="auth">
   <div class="wrap">
     <div class="label">Authentication</div>
-    <div class="h2">Two ways to <span class="grad">authenticate.</span></div>
-    <p class="sub" style="margin-bottom:40px">Browser login for your laptop. API keys for your scripts.</p>
+    <div class="h2">Two ways to authenticate.</div>
+    <p class="sub" style="margin-bottom:36px">Browser login for your laptop. API keys for your scripts.</p>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;max-width:860px">
-      <div class="auth-box">
-        <div class="auth-method">
-          <div class="auth-method-title">Browser login <span class="auth-method-badge">INTERACTIVE</span></div>
-          <div class="auth-method-desc">Opens your browser. No password needed.</div>
-          <div class="auth-method-code">$ storage login</div>
+    <div class="auth-grid">
+      <div class="auth-card">
+        <div class="auth-badge">Interactive</div>
+        <div class="auth-title">Browser login</div>
+        <div class="auth-desc">Opens your browser. No password needed.</div>
+        <div class="auth-cmd">
+          <span class="auth-cmd-text">$ storage login</span>
+          <button class="auth-copy" onclick="copyText('storage login',this)">copy</button>
         </div>
       </div>
-      <div class="auth-box">
-        <div class="auth-method">
-          <div class="auth-method-title">API keys <span class="auth-method-badge">AUTOMATION</span></div>
-          <div class="auth-method-desc">For CI and scripts. Set <code>STORAGE_TOKEN</code> env var.</div>
-          <div class="auth-method-code">$ storage key create deploy</div>
+      <div class="auth-card">
+        <div class="auth-badge">Automation</div>
+        <div class="auth-title">API keys</div>
+        <div class="auth-desc">For CI and scripts. Set <code>STORAGE_TOKEN</code> env var.</div>
+        <div class="auth-cmd">
+          <span class="auth-cmd-text">$ storage key create deploy</span>
+          <button class="auth-copy" onclick="copyText('storage key create deploy',this)">copy</button>
         </div>
       </div>
     </div>
 
-    <p style="font-size:13px;color:var(--text-3);margin-top:20px;max-width:860px">
-      Token resolution: <code>--token</code> flag, then <code>STORAGE_TOKEN</code> env var, then <code>~/.config/storage/token</code> file.
-    </p>
+    <div class="token-note">
+      Token resolution: <code>--token</code> flag &rarr; <code>STORAGE_TOKEN</code> env &rarr; <code>~/.config/storage/token</code>
+    </div>
   </div>
 </section>
 
 <!-- CTA -->
 <section class="section section--cta">
   <div class="wrap">
-    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text-3);margin-bottom:16px">&gt; ready?</div>
+    <div class="cta-prompt">&gt; ready?</div>
     <div class="cta-title">Try it now.</div>
     <p class="cta-sub">One command to install. Works on macOS, Linux, and Windows.</p>
 
-    <div class="install-box" style="max-width:560px;margin-bottom:32px">
+    <div class="install-box" style="max-width:520px;margin-bottom:32px">
       <span class="prompt">$</span>
       <span class="cmd" id="cta-cmd">curl -fsSL https://storage.liteio.dev/cli/install.sh | sh</span>
-      <button class="copy-btn" onclick="copyCta()">copy</button>
+      <button class="copy-btn" onclick="copyInstallCta(this)">copy</button>
     </div>
 
     <div class="cta-actions">
-      <a href="/api" class="btn btn--primary btn--lg">API Reference</a>
-      <a href="/developers" class="btn btn--lg">Developer Guide</a>
-      <a href="/pricing" class="btn btn--lg">Pricing</a>
+      <a href="/api">API Reference</a>
+      <a href="/developers">Developer Guide</a>
+      <a href="/pricing">Pricing</a>
     </div>
   </div>
 </section>
 
 </main>
+</div>
+
+<div class="machine-view" id="machine-view">
+  <div class="md" id="md-content">
+<span class="h1"># Storage CLI</span>
+
+Upload, download, and share files from your terminal.
+Single binary. Zero dependencies. macOS, Linux, Windows.
+
+<span class="h2">## Installation</span>
+
+macOS / Linux
+curl -fsSL https://storage.liteio.dev/cli/install.sh | sh
+
+Windows
+irm https://storage.liteio.dev/cli/install.ps1 | iex
+
+npm
+npm i -g @liteio/storage-cli
+
+Bun
+bun i -g @liteio/storage-cli
+
+Deno
+deno install -g npm:@liteio/storage-cli
+
+<span class="h2">## Commands</span>
+
+<span class="h3">### upload</span>
+storage put &lt;file&gt; &lt;destination&gt;
+Upload a local file or stdin to storage.
+<span class="dim">Supports --json and --quiet flags.</span>
+
+<span class="h3">### download</span>
+storage get &lt;path&gt;
+Download a file from storage to disk.
+
+storage cat &lt;path&gt;
+Print file contents to stdout.
+
+<span class="h3">### list</span>
+storage ls [path]
+List files and folders at a given path.
+<span class="dim">Use --json for machine-readable output.</span>
+
+<span class="h3">### share</span>
+storage share &lt;path&gt;
+Create a temporary public link to a file.
+<span class="dim">Link expires automatically after 24h.</span>
+
+<span class="h3">### search</span>
+storage find &lt;query&gt;
+Search files by name.
+
+<span class="h3">### move</span>
+storage mv &lt;source&gt; &lt;destination&gt;
+Move or rename a file.
+
+<span class="h3">### delete</span>
+storage rm &lt;path&gt;
+Delete one or more files.
+
+<span class="h3">### stats</span>
+storage stat
+Show storage usage and quota.
+
+<span class="h3">### auth</span>
+storage login
+Authenticate via browser. Opens your default browser and saves the token locally.
+
+storage token
+Show or set your current auth token.
+
+storage key create &lt;name&gt;
+Create a named API key for automation.
+
+<span class="h2">## Authentication</span>
+
+Two methods are supported:
+
+1. Browser login (interactive)
+   Run storage login. Opens your browser. No password needed.
+
+2. API keys (automation)
+   Run storage key create &lt;name&gt; to generate a key.
+   Set STORAGE_TOKEN env var in CI or scripts.
+
+Token resolution order:
+--token flag, then STORAGE_TOKEN env, then ~/.config/storage/token
+
+<span class="h2">## Usage Examples</span>
+
+Upload a file
+storage put photo.jpg images/
+
+Download a file
+storage get images/photo.jpg
+
+List directory contents
+storage ls docs/
+
+Share a file
+storage share docs/report.pdf
+
+Pipe from another command
+pg_dump mydb | storage put - backup.sql
+
+JSON output for scripting
+storage ls --json | jq '.'
+
+Create an API key for CI
+storage key create deploy
+
+<span class="dim">All commands support --json for structured output and --quiet to suppress non-essential output.</span>
+  </div>
+</div>
+
+<div class="mode-switch">
+  <button class="active" onclick="setMode('human')"><span class="dot"></span> HUMAN</button>
+  <button onclick="setMode('machine')"><span class="dot"></span> MACHINE</button>
+</div>
 
 <script>
 function toggleTheme(){
@@ -609,69 +503,89 @@ function toggleTheme(){
   els.forEach(s=>obs.observe(s));
 })();
 
-/* Binary tabs */
+/* Install tabs */
 (function(){
-  const tabs=document.querySelectorAll('#binary-tabs .install-tab');
-  const cmd=document.getElementById('binary-cmd');
-  const prompt=document.getElementById('binary-prompt');
-  const dlBtns=document.querySelectorAll('#dl-grid .dl-btn');
+  const tabs=document.querySelectorAll('#install-tabs .install-tab');
+  const cmd=document.getElementById('install-cmd');
+  const prompt=document.getElementById('install-prompt');
+  const dlGrid=document.getElementById('dl-grid');
   if(!tabs.length||!cmd) return;
 
-  const cmds={
-    macos:'curl -fsSL https://storage.liteio.dev/cli/install.sh | sh',
-    linux:'curl -fsSL https://storage.liteio.dev/cli/install.sh | sh',
-    windows:'irm https://storage.liteio.dev/cli/install.ps1 | iex',
+  const methods={
+    curl:{cmd:'curl -fsSL https://storage.liteio.dev/cli/install.sh | sh',prompt:'$',
+      dl:[
+        {href:'/cli/releases/latest/storage-darwin-arm64',name:'Apple Silicon',meta:'arm64'},
+        {href:'/cli/releases/latest/storage-darwin-amd64',name:'Intel Mac',meta:'amd64'},
+        {href:'/cli/releases/latest/storage-linux-amd64',name:'Linux x64',meta:'amd64'},
+        {href:'/cli/releases/latest/storage-linux-arm64',name:'Linux ARM',meta:'arm64'},
+      ]},
+    windows:{cmd:'irm https://storage.liteio.dev/cli/install.ps1 | iex',prompt:'>',
+      dl:[
+        {href:'/cli/releases/latest/storage-windows-amd64.exe',name:'Windows x64',meta:'amd64'},
+        {href:'/cli/releases/latest/storage-windows-arm64.exe',name:'Windows ARM',meta:'arm64'},
+      ]},
+    npm:{cmd:'npm i -g @liteio/storage-cli',prompt:'$',dl:[]},
+    bun:{cmd:'bun i -g @liteio/storage-cli',prompt:'$',dl:[]},
+    deno:{cmd:'deno install -g npm:@liteio/storage-cli',prompt:'$',dl:[]},
   };
-  const prompts={macos:'$',linux:'$',windows:'>'};
 
-  function activate(p){
-    cmd.textContent=cmds[p];
-    prompt.textContent=prompts[p];
-    dlBtns.forEach(b=>b.style.display=b.dataset.platform===p?'':'none');
+  const dlIcon='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+
+  function activate(method){
+    const m=methods[method];
+    cmd.textContent=m.cmd;
+    prompt.textContent=m.prompt;
+    if(m.dl.length){
+      dlGrid.innerHTML=m.dl.map(d=>
+        '<a href="'+d.href+'" class="dl-btn"><span class="dl-icon">'+dlIcon+'</span><span class="dl-info"><span class="dl-name">'+d.name+'</span><span class="dl-meta">'+d.meta+'</span></span></a>'
+      ).join('');
+      dlGrid.style.display='flex';
+    } else {
+      dlGrid.innerHTML='';
+      dlGrid.style.display='none';
+    }
   }
 
   tabs.forEach(tab=>{
     tab.addEventListener('click',()=>{
       tabs.forEach(t=>t.classList.remove('active'));
       tab.classList.add('active');
-      activate(tab.dataset.platform);
+      activate(tab.dataset.method);
     });
   });
-  activate('macos');
+  activate('curl');
 })();
 
-/* Package manager tabs */
-(function(){
-  const tabs=document.querySelectorAll('#pkg-tabs .install-tab');
-  const cmd=document.getElementById('pkg-cmd');
-  const prompt=document.getElementById('pkg-prompt');
-  if(!tabs.length||!cmd) return;
-  tabs.forEach(tab=>{
-    tab.addEventListener('click',()=>{
-      tabs.forEach(t=>t.classList.remove('active'));
-      tab.classList.add('active');
-      cmd.textContent=tab.dataset.cmd;
-      if(prompt) prompt.textContent=tab.dataset.prompt||'$';
-    });
-  });
-})();
-
-function copyEl(id,btn){
-  const el=document.getElementById(id);
-  if(!el) return;
-  navigator.clipboard.writeText(el.textContent).then(()=>{
-    btn.textContent='copied!';
-    setTimeout(()=>{btn.textContent='copy'},2000);
+/* Copy helpers */
+function copyText(text,btn){
+  navigator.clipboard.writeText(text).then(()=>{
+    btn.textContent='copied';
+    setTimeout(()=>{btn.textContent='copy'},1500);
   });
 }
 
-function copyCta(){
+function copyInstall(btn){
+  const el=document.getElementById('install-cmd');
+  if(el) copyText(el.textContent,btn);
+}
+
+function copyInstallCta(btn){
   const el=document.getElementById('cta-cmd');
-  const text=el?el.textContent:'curl -fsSL https://storage.liteio.dev/cli/install.sh | sh';
-  navigator.clipboard.writeText(text).then(()=>{
-    const btns=document.querySelectorAll('.section--cta .copy-btn');
-    btns.forEach(b=>{b.textContent='copied!';setTimeout(()=>{b.textContent='copy'},2000)});
-  });
+  if(el) copyText(el.textContent,btn);
+}
+
+function setMode(mode){
+  var btns=document.querySelectorAll('.mode-switch button');
+  btns.forEach(function(b){b.classList.remove('active')});
+  if(mode==='human'){
+    btns[0].classList.add('active');
+    document.getElementById('human-view').classList.remove('hidden');
+    document.getElementById('machine-view').classList.remove('active');
+  } else {
+    btns[1].classList.add('active');
+    document.getElementById('human-view').classList.add('hidden');
+    document.getElementById('machine-view').classList.add('active');
+  }
 }
 </script>
 </body>

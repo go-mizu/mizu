@@ -8,6 +8,7 @@ export function pricingPage(): string {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/base.css">
 <link rel="stylesheet" href="/pricing.css">
 </head>
 <body>
@@ -25,6 +26,7 @@ export function pricingPage(): string {
     <div class="nav-links">
       <a href="/developers">developers</a>
       <a href="/api">api</a>
+      <a href="/cli">cli</a>
       <a href="/pricing" class="active">pricing</a>
     </div>
     <div class="nav-right">
@@ -36,11 +38,14 @@ export function pricingPage(): string {
   </div>
 </nav>
 
+<!-- ===== HUMAN VIEW ===== -->
+<div class="human-view" id="human-view">
+
 <!-- ===== HERO ===== -->
 <div class="hero">
   <div class="section-inner section-inner--center">
     <h1 class="hero-title">Simple, <span class="grad">predictable</span> pricing</h1>
-    <p class="hero-sub">Scale when you're ready.<br>Every plan includes unlimited downloads &mdash; zero bandwidth fees.</p>
+    <p class="hero-sub">Scale when you're ready.<br>Every plan includes unlimited downloads. Zero bandwidth fees.</p>
   </div>
 </div>
 
@@ -82,7 +87,7 @@ export function pricingPage(): string {
         <div class="tier-list">
           <div class="tier-item tier-item--key">5x more storage</div>
           <div class="tier-item tier-item--key">Unlimited API requests</div>
-          <div class="tier-item tier-item--key">Direct uploads &mdash; bypass the API</div>
+          <div class="tier-item tier-item--key">Direct uploads, bypass the API</div>
           <div class="tier-item">Unlimited actors</div>
           <div class="tier-item">Larger file uploads</div>
           <div class="tier-item">Email support</div>
@@ -206,7 +211,94 @@ export function pricingPage(): string {
   </div>
 </div>
 
+</div><!-- /human-view -->
+
+<!-- ===== MACHINE VIEW ===== -->
+<div class="machine-view" id="machine-view">
+  <div class="md" id="md-content"><button class="md-copy" onclick="copyMd()">copy</button><span class="h1"># Pricing</span>
+
+Simple, predictable pricing. Scale when you're ready.
+Zero bandwidth fees. Zero egress charges. Every plan includes unlimited downloads.
+
+<span class="h2">## Free</span>
+
+  Price: $0 forever
+  Storage: included
+  API requests: included
+  Actors: included
+
+  Includes:
+    Upload and organize files
+    Share files with other actors
+    Web file browser
+    Full REST API access
+    Ed25519 agent authentication
+    Magic link sign-in for humans
+
+<span class="h2">## Pro</span>
+
+  Price: $20/mo per account
+  <span class="dim">Most popular plan</span>
+
+  Everything in Free, plus:
+    5x more storage
+    Unlimited API requests
+    Direct uploads, bypass the API
+    Unlimited actors
+    Larger file uploads
+    Email support
+
+<span class="h2">## Max</span>
+
+  Price: $100/mo per account
+
+  Everything in Pro, plus:
+    2x more storage than Pro
+    Team sharing and permissions
+    Priority support
+    Even larger file uploads
+    Advanced usage analytics
+    Early access to new features
+
+<span class="h2">## Every plan includes</span>
+
+  Zero bandwidth fees
+    <span class="dim">Download as much as you want. No egress charges. No metering.</span>
+  Global edge delivery
+    <span class="dim">Files served from 300+ locations. Sub-50ms metadata lookups.</span>
+  Cryptographic auth
+    <span class="dim">Ed25519 challenge-response for agents. Magic links for humans.</span>
+  Pure REST API
+    <span class="dim">Works with curl, fetch, any HTTP client. No SDK required.</span>
+  Humans and agents equal
+    <span class="dim">Same API, same permissions. Share files between humans and AI agents.</span>
+  Web file browser
+    <span class="dim">Upload, browse, and manage files from any browser.</span>
+
+<span class="h2">## FAQ</span>
+
+  How is bandwidth really free?
+    <span class="dim">Zero egress fees built into the infrastructure. Not a promotion.</span>
+  What happens when I hit a limit?
+    <span class="dim">Clear error response. Existing files stay accessible. Upgrade or free up space.</span>
+  Can AI agents use the free plan?
+    <span class="dim">Yes. Register with an Ed25519 key and start storing files immediately.</span>
+  Is there a per-seat charge?
+    <span class="dim">No. Pricing is per account, not per user or per agent.</span>
+  Can I switch plans anytime?
+    <span class="dim">Yes. Upgrade or downgrade at any time. No contracts, cancel anytime.</span>
+  Need more than Max?
+    <span class="dim">Contact us for custom plans with larger storage, SLAs, and dedicated support.</span></div>
+</div>
+
+<!-- Floating mode switch -->
+<div class="mode-switch">
+  <button class="active" onclick="setMode('human')"><span class="dot"></span> HUMAN</button>
+  <button onclick="setMode('machine')"><span class="dot"></span> MACHINE</button>
+</div>
+
 <script>
+/* Theme */
 function toggleTheme(){
   const isDark=document.documentElement.classList.toggle('dark');
   localStorage.setItem('theme',isDark?'dark':'light');
@@ -219,6 +311,32 @@ function toggleTheme(){
     document.documentElement.classList.remove('dark');
   }
 })();
+
+/* Mode switch */
+function setMode(mode){
+  var btns=document.querySelectorAll('.mode-switch button');
+  btns.forEach(function(b){b.classList.remove('active')});
+  if(mode==='human'){
+    btns[0].classList.add('active');
+    document.getElementById('human-view').classList.remove('hidden');
+    document.getElementById('machine-view').classList.remove('active');
+  } else {
+    btns[1].classList.add('active');
+    document.getElementById('human-view').classList.add('hidden');
+    document.getElementById('machine-view').classList.add('active');
+  }
+}
+
+/* Machine view copy */
+function copyMd(){
+  var el=document.getElementById('md-content');
+  var text=el.innerText.replace(/^copy\\n/,'');
+  navigator.clipboard.writeText(text).then(function(){
+    var btn=el.querySelector('.md-copy');
+    btn.textContent='copied';
+    setTimeout(function(){btn.textContent='copy'},2000);
+  });
+}
 </script>
 </body>
 </html>`;
