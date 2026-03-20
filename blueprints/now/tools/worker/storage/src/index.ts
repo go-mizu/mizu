@@ -25,7 +25,7 @@ import {
   listRecent, listStarred, searchFiles, driveStats, updateDescription,
 } from "./routes/drive";
 import { createShare, listShares, listSharedWithMe } from "./routes/shares";
-import { accessPublicLink, accessPublicLinkFile } from "./routes/links";
+import { createLink, listLinks, deleteLink, accessPublicLink, accessPublicLinkFile } from "./routes/links";
 import { homePage } from "./pages/home";
 import { developersPage } from "./pages/developers";
 import { docsPage } from "./pages/docs";
@@ -213,6 +213,13 @@ app.delete("/folders/*", deleteFolder);
 app.post("/shares", bodySizeLimit, createShare);
 app.get("/shares", listShares);
 app.get("/shared", listSharedWithMe);
+
+// ── Public links (management — auth required) ─────────────────────
+app.use("/links", bearerAuth);
+app.use("/links/*", bearerAuth);
+app.post("/links", bodySizeLimit, createLink);
+app.get("/links", listLinks);
+app.delete("/links/:id", deleteLink);
 
 // ── Rate limiting on writes ─────────────────────────────────────────
 app.use("/object/*", uploadRateLimit);
