@@ -5,7 +5,8 @@
    ══════════════════════════════════════════════════════════════════════ */
 
 /* ── Container ───────────────────────────────────────────────────────── */
-.container{max-width:1104px;margin:0 auto;padding:24px 48px 96px}
+.container{max-width:1104px;margin:0 auto;padding:48px 48px 96px;
+  position:relative;z-index:1;background:var(--bg)}
 
 /* ── Page headers ────────────────────────────────────────────────────── */
 .page-header{margin-bottom:32px}

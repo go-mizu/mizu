@@ -27,7 +27,7 @@ input,textarea,select{font-family:inherit}
 /* ════════════════════════════════════════════════════════════════════════
    BAR — breadcrumb + actions (the only chrome)
    ════════════════════════════════════════════════════════════════════════ */
-#main{min-height:100vh;height:100vh;display:flex;flex-direction:column;position:relative;overflow:hidden}
+#main{min-height:100vh;height:100vh;display:flex;flex-direction:column;position:relative;z-index:1;overflow:hidden;background:var(--bg)}
 
 .bar{
   display:flex;align-items:center;gap:8px;

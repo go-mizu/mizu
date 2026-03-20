@@ -25,7 +25,7 @@ html.dark .hero-glow{
 .hero-greeting{font-size:28px;font-weight:700;margin-bottom:36px;letter-spacing:-1px}
 .hero-ctas,.hero-actions{display:flex;gap:12px;justify-content:center}
 .hero-note{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-3);
-  margin-top:20px;letter-spacing:0.3px}
+  margin-top:24px;letter-spacing:0.3px}
 
 /* ── Button extras ─────────────────────────────────────────────────── */
 .btn--lg{padding:14px 36px;font-size:15px}
@@ -36,7 +36,7 @@ html.dark .hero-glow{
    ══════════════════════════════════════════════════════════════════════ */
 .pillars{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
   background:var(--border);border:1px solid var(--border)}
-.pillar{background:var(--bg);padding:48px 36px;transition:background .15s}
+.pillar{background:var(--bg);padding:48px;transition:background .15s}
 .pillar:hover{background:var(--surface-alt)}
 .pillar-icon{color:var(--text-3);margin-bottom:20px}
 .pillar-title{font-size:18px;font-weight:700;letter-spacing:-0.5px;margin-bottom:10px}
@@ -45,12 +45,12 @@ html.dark .hero-glow{
 /* ══════════════════════════════════════════════════════════════════════
    FEATURE SECTIONS — alternating left/right
    ══════════════════════════════════════════════════════════════════════ */
-.feature{display:grid;grid-template-columns:1fr 1.2fr;gap:72px;align-items:center}
+.feature{display:grid;grid-template-columns:1fr 1.2fr;gap:48px;align-items:center}
 .feature--reverse{grid-template-columns:1.2fr 1fr}
 .feature--reverse .feature-text{order:2}
 .feature--reverse .feature-visual{order:1}
 .feature-text{}
-.feature-desc{font-size:15px;color:var(--text-2);line-height:1.7;margin-bottom:32px;
+.feature-desc{font-size:15px;color:var(--text-2);line-height:1.7;margin-bottom:24px;
   max-width:420px}
 .feature-facts{display:flex;flex-direction:column;gap:12px}
 .feature-fact{font-size:13px;color:var(--text-2);line-height:1.6;
@@ -65,7 +65,7 @@ html.dark .hero-glow{
 html.dark .mockup-dots span{background:var(--text-3)}
 .mockup-url{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
   flex:1;text-align:center;letter-spacing:0.3px}
-.mockup-body{padding:20px}
+.mockup-body{padding:24px}
 
 /* ── Mockup: file browser ──────────────────────────────────────────── */
 .mock-browser{}
@@ -133,7 +133,7 @@ html.dark .mockup-dots span{background:var(--text-3)}
    ══════════════════════════════════════════════════════════════════════ */
 .trust-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;
   background:var(--border);border:1px solid var(--border)}
-.trust-item{display:flex;gap:16px;padding:32px;background:var(--bg);
+.trust-item{display:flex;gap:16px;padding:24px;background:var(--bg);
   transition:background .15s}
 .trust-item:hover{background:var(--surface-alt)}
 .trust-icon{flex-shrink:0;color:var(--text-3);padding-top:2px}
@@ -191,7 +191,7 @@ html.dark .prompt-error{color:#FCA5A5}
    RESPONSIVE
    ══════════════════════════════════════════════════════════════════════ */
 @media(max-width:900px){
-  .feature,.feature--reverse{grid-template-columns:1fr;gap:48px}
+  .feature,.feature--reverse{grid-template-columns:1fr;gap:24px}
   .feature--reverse .feature-text{order:1}
   .feature--reverse .feature-visual{order:2}
   .feature-desc{max-width:none}
@@ -199,9 +199,9 @@ html.dark .prompt-error{color:#FCA5A5}
   .share-arrow{transform:rotate(90deg)}
 }
 @media(max-width:768px){
-  .hero{padding:96px 0 72px}
+  .hero{padding:96px 0 48px}
   .hero-title{font-size:44px;letter-spacing:-2px}
-  .hero-sub{font-size:16px;margin-bottom:36px}
+  .hero-sub{font-size:16px;margin-bottom:24px}
   .pillars{grid-template-columns:1fr}
   .trust-grid{grid-template-columns:1fr}
 }
@@ -212,7 +212,7 @@ html.dark .prompt-error{color:#FCA5A5}
   .hero-sub{font-size:15px}
   .hero-ctas,.hero-actions{flex-direction:column;width:100%;max-width:320px}
   .btn--lg,.btn{justify-content:center}
-  .pillar{padding:32px 24px}
+  .pillar{padding:24px}
   .mockup-body{padding:16px}
   .mock-chat-pill{font-size:12px;padding:8px 12px}
   .mock-chat-text{font-size:12px}

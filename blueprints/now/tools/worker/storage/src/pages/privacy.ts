@@ -12,7 +12,7 @@ export function privacyPage(): string {
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/base.css">
 <style>
-.privacy-body{max-width:720px;margin:0 auto;padding:48px 48px 120px;position:relative;z-index:1}
+.privacy-body{max-width:720px;margin:0 auto;padding:48px 48px 96px;position:relative;z-index:1;background:var(--bg)}
 .privacy-body a{text-decoration:underline;text-underline-offset:2px}
 .privacy-body a:hover{color:var(--text-2)}
 .privacy-body h1{font-size:32px;font-weight:800;letter-spacing:-1px;margin-bottom:8px}
