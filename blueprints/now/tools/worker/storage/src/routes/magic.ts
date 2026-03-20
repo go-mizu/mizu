@@ -147,7 +147,7 @@ export function register(app: App) {
         body: JSON.stringify({
           from: `${SITE_NAME} <noreply@liteio.dev>`,
           to: [email],
-          subject: `Your sign-in link for ${SITE_NAME}`,
+          subject: `Your sign-in link for Storage`,
           html,
         }),
       });
@@ -175,7 +175,7 @@ export function register(app: App) {
 
     // Validate token format before DB query
     if (!token || !/^mg_[a-f0-9]{64}$/.test(token)) {
-      return c.html(errorPage("Invalid link", "This link is not valid."), 400);
+      return c.html(errorPage("Invalid link", "That link doesn't look right. Try signing in again from the homepage."), 400);
     }
 
     const row = await c.env.DB.prepare(
@@ -183,12 +183,12 @@ export function register(app: App) {
     ).bind(token).first<{ token: string; email: string; actor: string; expires_at: number }>();
 
     if (!row || !row.actor) {
-      return c.html(errorPage("Link not found", "This magic link is invalid or has already been used."), 404);
+      return c.html(errorPage("Link not found", "This link has already been used or doesn't exist. Request a fresh one from the homepage."), 404);
     }
 
     if (Date.now() > row.expires_at) {
       await c.env.DB.prepare("DELETE FROM magic_tokens WHERE token = ?").bind(token).run();
-      return c.html(errorPage("Link expired", "This magic link has expired. Please request a new one."), 410);
+      return c.html(errorPage("Link expired", "This link has expired — they only last 15 minutes. Head back and request a new one."), 410);
     }
 
     // Delete magic token (single use)
@@ -284,11 +284,11 @@ function magicLinkEmail(link: string, username: string, origin: string): string 
     <td align="center" style="padding:40px 16px">
 
       <!-- Main card -->
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08)">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;background-color:#ffffff;overflow:hidden">
 
         <!-- Header accent bar -->
         <tr>
-          <td style="height:4px;background:linear-gradient(90deg,#111 0%,#333 100%);font-size:0;line-height:0">&nbsp;</td>
+          <td style="height:4px;background-color:#18181b;font-size:0;line-height:0">&nbsp;</td>
         </tr>
 
         <!-- Logo -->
@@ -296,8 +296,8 @@ function magicLinkEmail(link: string, username: string, origin: string): string 
           <td style="padding:32px 40px 0">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0">
               <tr>
-                <td style="width:10px;height:10px;background-color:#111;border-radius:50%"></td>
-                <td style="padding-left:10px;font-size:16px;font-weight:600;color:#111;letter-spacing:-0.3px">storage.now</td>
+                <td style="width:10px;height:10px;background-color:#111"></td>
+                <td style="padding-left:10px;font-size:16px;font-weight:600;color:#111;letter-spacing:-0.3px">Storage</td>
               </tr>
             </table>
           </td>
@@ -306,9 +306,9 @@ function magicLinkEmail(link: string, username: string, origin: string): string 
         <!-- Content -->
         <tr>
           <td style="padding:28px 40px 0">
-            <h1 style="margin:0 0 8px;font-size:20px;font-weight:600;color:#111;line-height:1.3">Sign in to your account</h1>
+            <h1 style="margin:0 0 8px;font-size:20px;font-weight:600;color:#111;line-height:1.3">Hey ${username}, welcome back</h1>
             <p style="margin:0 0 28px;font-size:14px;color:#71717a;line-height:1.6">
-              Hi <strong style="color:#3f3f46">${username}</strong>, tap the button below to sign in. This link is single-use and expires in 15 minutes.
+              Tap the button below to sign in. This link is just for you and expires in 15 minutes.
             </p>
           </td>
         </tr>
@@ -318,9 +318,9 @@ function magicLinkEmail(link: string, username: string, origin: string): string 
           <td style="padding:0 40px">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0">
               <tr>
-                <td style="border-radius:8px;background-color:#18181b">
+                <td style="background-color:#18181b">
                   <a href="${link}" target="_blank" style="display:inline-block;padding:14px 32px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;letter-spacing:0.2px">
-                    Sign in to ${SITE_NAME} &rarr;
+                    Sign in &rarr;
                   </a>
                 </td>
               </tr>
@@ -352,10 +352,9 @@ function magicLinkEmail(link: string, username: string, origin: string): string 
           <td style="padding:20px 40px 32px">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0">
               <tr>
-                <td style="vertical-align:top;padding-right:10px;font-size:16px">&#128274;</td>
                 <td>
                   <p style="margin:0;font-size:12px;color:#a1a1aa;line-height:1.6">
-                    This link can only be used once. If you didn't request this email, you can safely ignore it — your account is secure.
+                    This link can only be used once. If you didn't request this, no worries — just ignore it.
                   </p>
                 </td>
               </tr>
@@ -371,7 +370,7 @@ function magicLinkEmail(link: string, username: string, origin: string): string 
         <tr>
           <td style="padding:24px 40px;text-align:center">
             <p style="margin:0;font-size:11px;color:#a1a1aa;line-height:1.6">
-              ${SITE_NAME} &middot; A home for your files
+              Storage &middot; A home for your files
             </p>
             <p style="margin:4px 0 0;font-size:11px;color:#d4d4d8">
               <a href="${origin}" style="color:#a1a1aa;text-decoration:underline">storage.liteio.dev</a>
@@ -413,7 +412,7 @@ text-decoration:underline;text-underline-offset:3px}
 <div class="box">
   <h1>${title}</h1>
   <p>${message}</p>
-  <a href="/">Back to ${SITE_NAME}</a>
+  <a href="/">Back to Storage</a>
 </div>
 <script>
 if(localStorage.getItem('theme')==='dark'||(!localStorage.getItem('theme')&&window.matchMedia('(prefers-color-scheme:dark)').matches))

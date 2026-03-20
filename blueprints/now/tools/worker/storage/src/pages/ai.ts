@@ -155,7 +155,7 @@ export function aiPage(): string {
         </div>
         <div class="fs">
           <div class="fs-avatar">AI</div>
-          <div class="fs-body">Here&rsquo;s your link: <strong>storage.now/p/a8f3c7&hellip;</strong><br>Anyone can view and download it.</div>
+          <div class="fs-body">Here&rsquo;s your link: <strong>storage.liteio.dev/p/a8f3c7&hellip;</strong><br>Anyone can view and download it.</div>
         </div>
         <div class="fs">
           <div class="fs-avatar">FRI</div>

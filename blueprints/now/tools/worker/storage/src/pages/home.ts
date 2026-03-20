@@ -46,17 +46,17 @@ export function homePage(actor: string | null = null): string {
   <div class="register-modal-bg" onclick="closeRegister()"></div>
   <div class="register-modal-box">
     <button class="register-modal-close" onclick="closeRegister()">&times;</button>
-    <div class="register-modal-title">Get started</div>
-    <p class="register-modal-sub">Enter your email. We'll send you a sign-in link.</p>
+    <div class="register-modal-title">Welcome to Storage</div>
+    <p class="register-modal-sub">Enter your email and we'll send you a link to sign in. No password, no fuss.</p>
     <div class="prompt-form" id="signin-form">
-      <input type="email" id="email-input" placeholder="you@email.com" autocomplete="email" spellcheck="false">
+      <input type="email" id="email-input" placeholder="you@company.com" autocomplete="email" spellcheck="false">
       <button id="signin-btn" onclick="signIn()">
-        <span id="signin-text">Go</span>
+        <span id="signin-text">Send link</span>
         <span id="signin-loading" style="display:none"><span class="spinner"></span></span>
       </button>
     </div>
     <div class="prompt-error" id="signin-error"></div>
-    <div class="register-modal-note">No password needed</div>
+    <div class="register-modal-note">We'll email you a magic link. It expires in 15 minutes.</div>
   </div>
 </div>`;
 
