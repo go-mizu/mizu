@@ -10,14 +10,14 @@ export function audit(c: C, action: string, path?: string) {
 
   c.executionCtx.waitUntil(
     c.env.DB.prepare(
-      "INSERT INTO audit_log (actor, action, path, ip, ts) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO audit (actor, action, path, ip, ts) VALUES (?, ?, ?, ?, ?)",
     )
       .bind(actor, action, path || null, ip, ts)
       .run()
       .then(() => {
         // Probabilistic cleanup: ~1% chance, remove entries > 90 days old
         if (Math.random() < 0.01) {
-          return c.env.DB.prepare("DELETE FROM audit_log WHERE ts < ?")
+          return c.env.DB.prepare("DELETE FROM audit WHERE ts < ?")
             .bind(ts - 90 * 86400000)
             .run();
         }

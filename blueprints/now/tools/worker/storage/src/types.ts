@@ -1,4 +1,5 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
+import type { StorageEngine } from "./storage/engine";
 
 export interface Env {
   DB: D1Database;
@@ -15,6 +16,7 @@ export interface Env {
 export interface Variables {
   actor: string;
   prefix: string;
+  engine: StorageEngine;
 }
 
 export type App = OpenAPIHono<{ Bindings: Env; Variables: Variables }>;

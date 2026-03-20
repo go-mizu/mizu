@@ -16,11 +16,26 @@ import { pricingPage } from "./pages/pricing";
 import { cliPage } from "./pages/cli";
 import { browsePage } from "./pages/browse";
 import { privacyPage } from "./pages/privacy";
+import { CloudflareEngine } from "./storage/cloudflare";
 import type { Env, Variables } from "./types";
 
 const app = new OpenAPIHono<{ Bindings: Env; Variables: Variables }>();
 
 app.use("*", cors());
+
+// ── Inject storage engine into request context ──────────────────────
+app.use("*", async (c, next) => {
+  const engine = new CloudflareEngine({
+    db: c.env.DB,
+    bucket: c.env.BUCKET,
+    r2Endpoint: c.env.R2_ENDPOINT,
+    r2AccessKeyId: c.env.R2_ACCESS_KEY_ID,
+    r2SecretAccessKey: c.env.R2_SECRET_ACCESS_KEY,
+    r2BucketName: c.env.R2_BUCKET_NAME,
+  });
+  c.set("engine", engine);
+  await next();
+});
 
 // ── Pages (no auth — session read optionally for signed-in state) ───
 app.get("/", async (c) => {
@@ -518,7 +533,7 @@ a{color:var(--text-2);text-decoration:underline;text-underline-offset:2px;transi
 a:hover{color:var(--text)}
 
 /* ── Page header ─────────────────────────────────────────── */
-.page-header{position:relative;z-index:1;border-bottom:1px solid var(--border);padding:48px 0 36px;background:var(--bg)}
+.page-header{position:relative;z-index:1;border-bottom:1px solid var(--border);padding:48px 0;background:var(--bg)}
 .page-header-inner{max-width:1104px;margin:0 auto;padding:0 48px}
 .sec-label{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;color:var(--text-3);margin-bottom:12px;font-weight:500;text-transform:uppercase}
 .page-title{font-size:32px;font-weight:800;letter-spacing:-.8px;margin-bottom:8px}
@@ -526,7 +541,7 @@ a:hover{color:var(--text)}
 .page-sub code{font-size:12px;background:var(--surface-alt);padding:3px 8px;border:1px solid var(--border)}
 
 /* ── Section tabs ────────────────────────────────────────── */
-.sec-tabs{position:sticky;top:56px;z-index:90;
+.sec-tabs{position:sticky;top:48px;z-index:90;
   max-width:1104px;margin:0 auto;padding:0 48px;
   display:flex;gap:0;overflow-x:auto;
   background:color-mix(in srgb,var(--bg) 90%,transparent);
