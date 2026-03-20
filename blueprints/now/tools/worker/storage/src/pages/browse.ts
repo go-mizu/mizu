@@ -26,7 +26,7 @@ function browseLanding(): string {
 <html lang="en" class="dark">
 <head>
 ${HEAD}
-<title>Browse — storage.now</title>
+<title>Browse — Storage</title>
 </head>
 <body>
 <div class="dot-bg"></div>
@@ -47,7 +47,7 @@ function browseApp(actor: string): string {
 <html lang="en" class="dark">
 <head>
 ${HEAD}
-<title>Browse — storage.now</title>
+<title>Browse — Storage</title>
 </head>
 <body>
 <div class="dot-bg"></div>

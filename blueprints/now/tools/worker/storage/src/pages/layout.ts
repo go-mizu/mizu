@@ -1,5 +1,5 @@
 /**
- * Shared layout for storage.now pages.
+ * Shared layout for Storage pages.
  * Monochrome. No rounded corners. Inter + JetBrains Mono.
  */
 
@@ -58,7 +58,7 @@ export function directoryPage(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(title)} — storage.now</title>
+<title>${esc(title)} — Storage</title>
 ${FONT_LINK}
 <link rel="stylesheet" href="/layout.css">
 </head>
@@ -66,7 +66,7 @@ ${FONT_LINK}
 
 <nav>
   <div class="nav-inner">
-    <a href="/" class="logo"><span class="logo-dot"></span> storage.now</a>
+    <a href="/" class="logo"><span class="logo-dot"></span> Storage</a>
     ${MOBILE_TOGGLE}
     <div class="nav-links">
       ${navLinks(activePath, actor)}
@@ -105,7 +105,7 @@ export function immersivePage(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(title)} — storage.now</title>
+<title>${esc(title)} — Storage</title>
 ${FONT_LINK}
 <link rel="stylesheet" href="/layout.css">
 </head>
@@ -113,7 +113,7 @@ ${FONT_LINK}
 
 <nav>
   <div class="nav-inner">
-    <a href="/" class="logo"><span class="logo-dot"></span> storage.now</a>
+    <a href="/" class="logo"><span class="logo-dot"></span> Storage</a>
     ${MOBILE_TOGGLE}
     <div class="nav-links">
       ${navLinks(activePath, actor)}

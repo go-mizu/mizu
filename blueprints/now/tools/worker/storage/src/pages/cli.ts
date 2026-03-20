@@ -14,8 +14,8 @@ export function cliPage(actor: string | null = null): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CLI - Liteio Storage</title>
-<meta name="description" content="The Liteio Storage CLI. Upload, download, and share files from your terminal. Zero dependencies. Works with Node.js, Bun, and Deno.">
+<title>CLI — Storage</title>
+<meta name="description" content="The Storage CLI. Upload, download, and share files from your terminal. Zero dependencies. Works with Node.js, Bun, and Deno.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -122,11 +122,21 @@ html:not(.dark) .icon-sun{display:none}html:not(.dark) .icon-moon{display:block}
 .install-tab:last-child{border-right:none}
 .install-tab.active{background:var(--ink);color:var(--bg)}
 .install-tab:not(.active):hover{color:var(--text);background:var(--surface-alt)}
-.hero-stats{display:flex;gap:40px;flex-wrap:wrap}
-.hero-stat{display:flex;flex-direction:column;gap:2px}
-.hero-stat-val{font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:700;
-  letter-spacing:-1px}
-.hero-stat-label{font-size:12px;color:var(--text-3)}
+/* Install blocks */
+.install-block{margin-bottom:36px;max-width:620px}
+.install-block-label{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;
+  color:var(--text-3);font-weight:500;text-transform:uppercase;margin-bottom:10px}
+
+/* Download buttons */
+.dl-grid{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.dl-btn{display:inline-flex;align-items:center;gap:10px;padding:10px 18px;
+  border:1px solid var(--border);background:var(--surface);transition:all .15s;
+  text-decoration:none;color:var(--text)}
+.dl-btn:hover{border-color:var(--text-3);background:var(--surface-alt)}
+.dl-icon{color:var(--text-3);display:flex;align-items:center}
+.dl-info{display:flex;flex-direction:column;gap:1px}
+.dl-name{font-size:13px;font-weight:600}
+.dl-meta{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-3)}
 
 /* Terminal */
 .term{border:1px solid var(--border);background:var(--surface);overflow:hidden}
@@ -243,13 +253,16 @@ html.dark .term-dots span{background:var(--text-3)}
   .hero-title{font-size:32px;letter-spacing:-1px}
   .hero-sub{font-size:15px}
   .hero-install{flex-direction:column;align-items:stretch}
+  .install-block{max-width:100%}
   .install-box .cmd{font-size:11px}
+  .install-tabs{flex-wrap:wrap}
+  .dl-grid{flex-direction:column}
+  .dl-btn{flex:1}
   .term-body{padding:14px 16px;font-size:11px}
   .section--cta{padding:72px 0 56px}
   .cta-title{font-size:28px}
   .cta-actions{flex-direction:column;width:100%;max-width:300px}
   .btn--lg,.btn{justify-content:center}
-  .hero-stats{gap:24px}
   .uc-head,.uc-term{padding-left:16px;padding-right:16px}
   .cmd-card{padding:20px}
   .steps{gap:0}
@@ -263,7 +276,7 @@ html.dark .term-dots span{background:var(--text-3)}
 
 <nav>
   <div class="nav-inner">
-    <a href="/" class="logo"><span class="logo-dot"></span> Liteio Storage</a>
+    <a href="/" class="logo"><span class="logo-dot"></span> Storage</a>
     <button class="mobile-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     </button>
@@ -296,39 +309,59 @@ html.dark .term-dots span{background:var(--text-3)}
     <h1 class="hero-title">Files from<br>your <em>terminal.</em></h1>
     <p class="hero-sub">Upload, download, and share files with one command. Available as a single binary or npm package.</p>
 
-    <div class="hero-install">
-      <div style="display:flex;flex-direction:column;gap:8px;flex:1;max-width:620px">
-        <div class="install-tabs" id="install-tabs">
-          <button class="install-tab active" data-cmd="curl -fsSL https://storage.liteio.dev/cli/install.sh | sh" data-label="macOS / Linux">macOS / Linux</button>
-          <button class="install-tab" data-cmd="irm https://storage.liteio.dev/cli/install.ps1 | iex" data-label="Windows">Windows</button>
-          <button class="install-tab" data-cmd="npx @liteio/storage-cli" data-label="npm">npm</button>
-          <button class="install-tab" data-cmd="bunx @liteio/storage-cli" data-label="Bun">Bun</button>
-          <button class="install-tab" data-cmd="deno run --allow-all npm:@liteio/storage-cli" data-label="Deno">Deno</button>
-        </div>
-        <div class="install-box">
-          <span class="prompt">$</span>
-          <span class="cmd" id="install-cmd">curl -fsSL https://storage.liteio.dev/cli/install.sh | sh</span>
-          <button class="copy-btn" id="copy-install-btn" onclick="copyInstall()">copy</button>
-        </div>
+    <!-- Block 1: Native binary install per platform -->
+    <div class="install-block">
+      <div class="install-block-label">Install binary</div>
+      <div class="install-tabs" id="binary-tabs">
+        <button class="install-tab active" data-platform="macos">macOS</button>
+        <button class="install-tab" data-platform="linux">Linux</button>
+        <button class="install-tab" data-platform="windows">Windows</button>
+      </div>
+      <div class="install-box">
+        <span class="prompt" id="binary-prompt">$</span>
+        <span class="cmd" id="binary-cmd">curl -fsSL https://storage.liteio.dev/cli/install.sh | sh</span>
+        <button class="copy-btn" onclick="copyEl('binary-cmd',this)">copy</button>
+      </div>
+      <div class="dl-grid" id="dl-grid">
+        <a href="/cli/releases/latest/storage-darwin-arm64" class="dl-btn" data-platform="macos">
+          <span class="dl-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
+          <span class="dl-info"><span class="dl-name">Apple Silicon</span><span class="dl-meta">arm64</span></span>
+        </a>
+        <a href="/cli/releases/latest/storage-darwin-amd64" class="dl-btn" data-platform="macos">
+          <span class="dl-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
+          <span class="dl-info"><span class="dl-name">Intel</span><span class="dl-meta">amd64</span></span>
+        </a>
+        <a href="/cli/releases/latest/storage-linux-amd64" class="dl-btn" data-platform="linux">
+          <span class="dl-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
+          <span class="dl-info"><span class="dl-name">x64</span><span class="dl-meta">amd64</span></span>
+        </a>
+        <a href="/cli/releases/latest/storage-linux-arm64" class="dl-btn" data-platform="linux">
+          <span class="dl-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
+          <span class="dl-info"><span class="dl-name">ARM</span><span class="dl-meta">arm64</span></span>
+        </a>
+        <a href="/cli/releases/latest/storage-windows-amd64.exe" class="dl-btn" data-platform="windows">
+          <span class="dl-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
+          <span class="dl-info"><span class="dl-name">x64</span><span class="dl-meta">amd64</span></span>
+        </a>
+        <a href="/cli/releases/latest/storage-windows-arm64.exe" class="dl-btn" data-platform="windows">
+          <span class="dl-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
+          <span class="dl-info"><span class="dl-name">ARM</span><span class="dl-meta">arm64</span></span>
+        </a>
       </div>
     </div>
 
-    <div class="hero-stats">
-      <div class="hero-stat">
-        <div class="hero-stat-val">0</div>
-        <div class="hero-stat-label">dependencies</div>
+    <!-- Block 2: Package manager install -->
+    <div class="install-block">
+      <div class="install-block-label">Or install via package manager</div>
+      <div class="install-tabs" id="pkg-tabs">
+        <button class="install-tab active" data-cmd="npm i -g @liteio/storage-cli" data-prompt="$">npm</button>
+        <button class="install-tab" data-cmd="bun i -g @liteio/storage-cli" data-prompt="$">Bun</button>
+        <button class="install-tab" data-cmd="deno install -g npm:@liteio/storage-cli" data-prompt="$">Deno</button>
       </div>
-      <div class="hero-stat">
-        <div class="hero-stat-val">12</div>
-        <div class="hero-stat-label">commands</div>
-      </div>
-      <div class="hero-stat">
-        <div class="hero-stat-val">3</div>
-        <div class="hero-stat-label">runtimes</div>
-      </div>
-      <div class="hero-stat">
-        <div class="hero-stat-val">~8 MB</div>
-        <div class="hero-stat-label">single binary</div>
+      <div class="install-box">
+        <span class="prompt" id="pkg-prompt">$</span>
+        <span class="cmd" id="pkg-cmd">npm i -g @liteio/storage-cli</span>
+        <button class="copy-btn" onclick="copyEl('pkg-cmd',this)">copy</button>
       </div>
     </div>
   </div>
@@ -535,11 +568,11 @@ html.dark .term-dots span{background:var(--text-3)}
   <div class="wrap">
     <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text-3);margin-bottom:16px">&gt; ready?</div>
     <div class="cta-title">Try it now.</div>
-    <p class="cta-sub">One command to start. Nothing to install permanently.</p>
+    <p class="cta-sub">One command to install. Works on macOS, Linux, and Windows.</p>
 
     <div class="install-box" style="max-width:560px;margin-bottom:32px">
       <span class="prompt">$</span>
-      <span class="cmd">curl -fsSL https://storage.liteio.dev/cli/install.sh | sh</span>
+      <span class="cmd" id="cta-cmd">curl -fsSL https://storage.liteio.dev/cli/install.sh | sh</span>
       <button class="copy-btn" onclick="copyCta()">copy</button>
     </div>
 
@@ -576,33 +609,66 @@ function toggleTheme(){
   els.forEach(s=>obs.observe(s));
 })();
 
-/* Install tabs */
+/* Binary tabs */
 (function(){
-  const tabs=document.querySelectorAll('#install-tabs .install-tab');
-  const cmd=document.getElementById('install-cmd');
+  const tabs=document.querySelectorAll('#binary-tabs .install-tab');
+  const cmd=document.getElementById('binary-cmd');
+  const prompt=document.getElementById('binary-prompt');
+  const dlBtns=document.querySelectorAll('#dl-grid .dl-btn');
+  if(!tabs.length||!cmd) return;
+
+  const cmds={
+    macos:'curl -fsSL https://storage.liteio.dev/cli/install.sh | sh',
+    linux:'curl -fsSL https://storage.liteio.dev/cli/install.sh | sh',
+    windows:'irm https://storage.liteio.dev/cli/install.ps1 | iex',
+  };
+  const prompts={macos:'$',linux:'$',windows:'>'};
+
+  function activate(p){
+    cmd.textContent=cmds[p];
+    prompt.textContent=prompts[p];
+    dlBtns.forEach(b=>b.style.display=b.dataset.platform===p?'':'none');
+  }
+
+  tabs.forEach(tab=>{
+    tab.addEventListener('click',()=>{
+      tabs.forEach(t=>t.classList.remove('active'));
+      tab.classList.add('active');
+      activate(tab.dataset.platform);
+    });
+  });
+  activate('macos');
+})();
+
+/* Package manager tabs */
+(function(){
+  const tabs=document.querySelectorAll('#pkg-tabs .install-tab');
+  const cmd=document.getElementById('pkg-cmd');
+  const prompt=document.getElementById('pkg-prompt');
   if(!tabs.length||!cmd) return;
   tabs.forEach(tab=>{
     tab.addEventListener('click',()=>{
       tabs.forEach(t=>t.classList.remove('active'));
       tab.classList.add('active');
       cmd.textContent=tab.dataset.cmd;
+      if(prompt) prompt.textContent=tab.dataset.prompt||'$';
     });
   });
 })();
 
-function copyInstall(){
-  const cmd=document.getElementById('install-cmd');
-  if(!cmd) return;
-  navigator.clipboard.writeText(cmd.textContent).then(()=>{
-    const btn=document.getElementById('copy-install-btn');
-    if(!btn) return;
+function copyEl(id,btn){
+  const el=document.getElementById(id);
+  if(!el) return;
+  navigator.clipboard.writeText(el.textContent).then(()=>{
     btn.textContent='copied!';
     setTimeout(()=>{btn.textContent='copy'},2000);
   });
 }
 
 function copyCta(){
-  navigator.clipboard.writeText('curl -fsSL https://storage.liteio.dev/cli/install.sh | sh').then(()=>{
+  const el=document.getElementById('cta-cmd');
+  const text=el?el.textContent:'curl -fsSL https://storage.liteio.dev/cli/install.sh | sh';
+  navigator.clipboard.writeText(text).then(()=>{
     const btns=document.querySelectorAll('.section--cta .copy-btn');
     btns.forEach(b=>{b.textContent='copied!';setTimeout(()=>{b.textContent='copy'},2000)});
   });

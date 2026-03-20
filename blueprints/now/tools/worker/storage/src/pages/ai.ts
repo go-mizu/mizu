@@ -1,5 +1,5 @@
 /**
- * storage.now — AI page
+ * Storage — AI page
  * Practical guide with real logos and polished layout.
  */
 
@@ -9,7 +9,7 @@ export function aiPage(): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI &mdash; storage.now</title>
+<title>AI &mdash; Storage</title>
 <meta name="description" content="Connect Claude and ChatGPT to your files. Share between AIs and with friends.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -233,7 +233,7 @@ html.dark .xp-diagram{box-shadow:none}
 
 <nav>
   <div class="nav-inner">
-    <a href="/" class="logo"><span class="logo-dot"></span> storage.now</a>
+    <a href="/" class="logo"><span class="logo-dot"></span> Storage</a>
     <button class="mobile-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     </button>
@@ -275,7 +275,7 @@ html.dark .xp-diagram{box-shadow:none}
         <div class="hd-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="13" y2="13"/></svg>
         </div>
-        <div class="hd-name">storage.now</div>
+        <div class="hd-name">Storage</div>
       </div>
 
       <div class="hd-connector">
@@ -308,9 +308,9 @@ html.dark .xp-diagram{box-shadow:none}
         </div>
         <div class="cc-steps">
           <div class="cs"><span class="cs-n">1</span> <span><strong>Settings &rarr; Integrations</strong></span></div>
-          <div class="cs"><span class="cs-n">2</span> <span>Click <strong>Add custom integration</strong></span></div>
+          <div class="cs"><span class="cs-n">2</span> <span>Click <strong>Add custom connector</strong></span></div>
           <div class="cs"><span class="cs-n">3</span> <span>Paste URL:<span class="cs-url">https://storage.liteio.dev/mcp</span></span></div>
-          <div class="cs"><span class="cs-n">4</span> <span>Sign in with email &mdash; <strong>done</strong></span></div>
+          <div class="cs"><span class="cs-n">4</span> <span>Click Add, verify your email &mdash; <strong>done</strong></span></div>
         </div>
       </div>
 
@@ -395,7 +395,7 @@ html.dark .xp-diagram{box-shadow:none}
             <div class="xp-center-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="13" y2="13"/></svg>
             </div>
-            <div class="xp-center-name">storage.now</div>
+            <div class="xp-center-name">Storage</div>
             <div class="xp-center-tag">Your files live here</div>
           </div>
           <div class="xp-mid"><div class="xp-mid-badge">SYNC</div></div>

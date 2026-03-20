@@ -232,26 +232,27 @@ export function homePage(actor: string | null = null): string {
   <div class="journey-text">
     <div class="journey-num">04</div>
     <div class="journey-title">Connect to Claude</div>
-    <div class="journey-desc">Open Claude, go to Settings, click Integrations, search for Storage. One click to connect.</div>
+    <div class="journey-desc">Open Claude, go to Settings &rarr; Integrations &rarr; Add. Paste the URL and click Add.</div>
   </div>
   <div class="journey-mockup">
     ${MOCKUP_CHROME('claude.ai/settings')}
     <div class="mockup-body">
-      <div class="mock-settings">
-        <div class="mock-settings-header">
-          <div class="mock-settings-icon">${CLAUDE_ICON(22)}</div>
-          <div class="mock-settings-name">Settings</div>
+      <div class="mock-connector">
+        <div class="mock-connector-header">
+          <span class="mock-connector-title">Add custom connector</span>
+          <span class="mock-connector-badge">BETA</span>
         </div>
-        <div class="mock-settings-section">Integrations</div>
-        <div class="mock-settings-row mock-settings-row--active">
-          <div class="mock-settings-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="20"/><line x1="7" y1="2" x2="7" y2="22"/></svg></div>
-          <div class="mock-settings-row-text"><strong>Storage</strong> &middot; File storage</div>
+        <div class="mock-connector-sub">Connect Claude to your data and tools.</div>
+        <div class="mock-connector-field">
+          <div class="mock-connector-value">Storage</div>
         </div>
-        <div class="mock-url-input">
-          <div class="mock-url-field">https://storage.liteio.dev/mcp</div>
-          <div class="mock-url-btn">Connect</div>
+        <div class="mock-connector-field">
+          <div class="mock-connector-value mock-connector-value--url">https://storage.liteio.dev/mcp</div>
         </div>
-        <div class="mock-status mock-status--ok"><span class="mock-status-dot"></span> Connected</div>
+        <div class="mock-connector-actions">
+          <div class="mock-connector-cancel">Cancel</div>
+          <div class="mock-connector-add">Add</div>
+        </div>
       </div>
     </div>
   </div>
@@ -435,8 +436,8 @@ Drag and drop into your browser, or ask your AI to save them.
 Create folders, move files, rename things. Just like your computer.
 
 <span class="h3">### 4. Connect your AI</span>
-Claude: Settings > Integrations > search "Storage"
-ChatGPT: Settings > Connected apps > search "Storage"
+Claude: Settings > Integrations > Add custom connector > paste https://storage.liteio.dev/mcp
+ChatGPT: Settings > Connected apps > Add by URL > paste https://storage.liteio.dev/mcp
 
 <span class="h3">### 5. Chat with your AI</span>
 Ask it to save, find, list, move, or share files. It just works.

@@ -1,5 +1,5 @@
 -- Seed realistic test data for storage.now file browser
--- Owner: u/test (test@example.com)
+-- Owner: u/test (test@liteio.dev)
 -- Also creates agents a/inference and actors u/alice, u/bob for shares
 
 -- Ensure share target actors exist

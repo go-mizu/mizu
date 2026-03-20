@@ -1,4 +1,4 @@
--- Seed Spaces for test@localhost.com (actor: u/test.2ks9) on remote
+-- Seed Spaces for test@liteio.dev (actor: u/test.2ks9) on remote
 -- 3 spaces per spec/0756: storage.now, API Reference, Sprint 12
 -- Uses real object IDs from deployed database. No emoji.
 

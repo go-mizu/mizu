@@ -20,7 +20,7 @@ export function developersPage(actor: string | null = null): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Developers — storage.now</title>
+<title>Developers — Storage</title>
 <meta name="description" content="Developer-first file storage. Upload files, organize directories, share with signed URLs. One base URL, zero complexity.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -33,7 +33,7 @@ export function developersPage(actor: string | null = null): string {
 
 <nav>
   <div class="nav-inner">
-    <a href="/" class="logo"><span class="logo-dot"></span> storage.now</a>
+    <a href="/" class="logo"><span class="logo-dot"></span> Storage</a>
     <button class="mobile-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     </button>
@@ -97,7 +97,7 @@ export function developersPage(actor: string | null = null): string {
 <!-- Why -->
 <section class="section" id="why">
   <div class="section-pad">
-    <div class="section-label">WHY STORAGE.NOW</div>
+    <div class="section-label">WHY STORAGE</div>
     <div class="section-heading">Built for how you actually work.</div>
   </div>
   <div class="features">
@@ -446,7 +446,7 @@ Last-Modified: Thu, 20 Mar 2026 12:00:00 GMT</span>
     <p class="cta-desc">One base URL, seventeen endpoints, five minutes to your first upload.</p>
     <div class="cta-actions">
       <a href="/api" class="btn btn--primary btn--lg">API Reference</a>
-      ${isSignedIn ? "" : `<a href="/" class="btn btn--ghost btn--lg">Create free account</a>`}
+      ${isSignedIn ? "" : `<a href="/" class="btn btn--ghost btn--lg">Create account</a>`}
     </div>
   </div>
 </section>

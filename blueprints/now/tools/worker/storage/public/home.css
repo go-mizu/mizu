@@ -192,6 +192,25 @@ html.dark .mockup-dots span{background:var(--text-3)}
   font-family:'Inter',system-ui,sans-serif;white-space:nowrap}
 .mock-status{font-size:11px;color:var(--text-3);margin-top:10px;display:flex;
   align-items:center;gap:6px;font-family:'JetBrains Mono',monospace}
+
+/* ── Connector dialog mockup (Claude "Add custom connector") ───────── */
+.mock-connector{padding:4px 0}
+.mock-connector-header{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.mock-connector-title{font-size:16px;font-weight:600;letter-spacing:-0.3px}
+.mock-connector-badge{font-size:9px;font-weight:600;letter-spacing:0.5px;
+  padding:2px 6px;border:1px solid var(--border);color:var(--text-3);
+  font-family:'JetBrains Mono',monospace}
+.mock-connector-sub{font-size:12px;color:var(--text-3);margin-bottom:18px;line-height:1.5}
+.mock-connector-field{border:1px solid var(--border);margin-bottom:10px;
+  border-radius:8px;overflow:hidden}
+.mock-connector-value{padding:11px 14px;font-size:13px;color:var(--text)}
+.mock-connector-value--url{font-family:'JetBrains Mono',monospace;font-size:11px;
+  color:var(--text-2)}
+.mock-connector-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+.mock-connector-cancel{padding:8px 20px;font-size:12px;font-weight:500;
+  border:1px solid var(--border);color:var(--text-2);border-radius:8px}
+.mock-connector-add{padding:8px 24px;font-size:12px;font-weight:600;
+  background:var(--ink);color:var(--bg);border-radius:8px}
 .mock-status-dot{width:6px;height:6px;background:var(--text-3);display:inline-block}
 .mock-status--ok .mock-status-dot{background:#22C55E}
 html.dark .mock-status--ok .mock-status-dot{background:#4ADE80}

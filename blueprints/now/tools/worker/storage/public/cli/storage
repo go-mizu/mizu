@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# storage — CLI for storage.now
+# storage — CLI for Storage
 # https://storage.liteio.dev/cli
 #
 # Usage: storage <command> [options] [args]
@@ -1201,7 +1201,7 @@ cmd_key_revoke() {
 
 cmd_help() {
   cat <<HELP
-${_bold}storage${_reset} — CLI for storage.now
+${_bold}storage${_reset} — CLI for Storage
 ${_dim}https://storage.liteio.dev${_reset}
 
 ${_bold}USAGE${_reset}

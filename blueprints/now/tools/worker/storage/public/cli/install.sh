@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Liteio Storage CLI installer
+# Storage CLI installer
 # Usage: curl -fsSL https://storage.liteio.dev/cli/install.sh | sh
 #
 # Detects OS and architecture, downloads the correct binary from R2
@@ -117,7 +117,7 @@ main() {
   VERSION="${STORAGE_VERSION:-latest}"
 
   printf "\n"
-  printf "  Liteio Storage CLI installer\n"
+  printf "  Storage CLI installer\n"
   printf "\n"
   dim "OS: $OS, Arch: $ARCH"
   printf "\n"

@@ -1,4 +1,4 @@
--- Seed sample Spaces data for test@localhost.com (actor: u/test)
+-- Seed sample Spaces data for test@liteio.dev (actor: u/test)
 -- References files from the main seed.sql
 
 -- Ensure extra actors exist for collaboration demo

@@ -1,4 +1,4 @@
-# Liteio Storage CLI installer for Windows
+# Storage CLI installer for Windows
 # Usage: irm https://storage.liteio.dev/cli/install.ps1 | iex
 #
 # Downloads the storage CLI binary from R2 (via signed redirect)
@@ -41,7 +41,7 @@ function Install-Storage {
     $installPath = Join-Path $installDir "storage.exe"
 
     Write-Host ""
-    Write-Host "  Liteio Storage CLI installer" -ForegroundColor White
+    Write-Host "  Storage CLI installer" -ForegroundColor White
     Write-Host ""
     Write-Host "  OS: windows, Arch: $arch" -ForegroundColor DarkGray
     Write-Host ""

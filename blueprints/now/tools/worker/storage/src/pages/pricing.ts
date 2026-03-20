@@ -4,7 +4,7 @@ export function pricingPage(): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pricing — storage.now</title>
+<title>Pricing — Storage</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -17,7 +17,7 @@ export function pricingPage(): string {
 <nav>
   <div class="nav-inner">
     <a href="/" class="logo">
-      <span class="logo-dot"></span> storage.now
+      <span class="logo-dot"></span> Storage
     </a>
     <button class="mobile-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
@@ -40,7 +40,7 @@ export function pricingPage(): string {
 <div class="hero">
   <div class="section-inner section-inner--center">
     <h1 class="hero-title">Simple, <span class="grad">predictable</span> pricing</h1>
-    <p class="hero-sub">Free to start. Scale when you're ready.<br>Every plan includes unlimited downloads &mdash; zero bandwidth fees.</p>
+    <p class="hero-sub">Scale when you're ready.<br>Every plan includes unlimited downloads &mdash; zero bandwidth fees.</p>
   </div>
 </div>
 
@@ -201,8 +201,8 @@ export function pricingPage(): string {
 <div class="section section--cta">
   <div class="section-inner section-inner--center">
     <h2 class="cta-title">Start building today</h2>
-    <p class="cta-sub">Free to start. No credit card required.</p>
-    <a href="/" class="tier-cta tier-cta--primary cta-main">Get started free</a>
+    <p class="cta-sub">No credit card required.</p>
+    <a href="/" class="tier-cta tier-cta--primary cta-main">Get started</a>
   </div>
 </div>
 
