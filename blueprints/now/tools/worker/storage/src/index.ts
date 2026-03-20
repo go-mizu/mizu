@@ -376,6 +376,18 @@ function specToMarkdown(spec: any, origin: string): string {
   return md.join("\n");
 }
 
+// Convert markdown text to machine-view HTML with styled headings
+function markdownToMachineView(md: string): string {
+  return md
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/^# (.+)$/gm, '<span class="h1"># $1</span>')
+    .replace(/^## (.+)$/gm, '<span class="h2">## $1</span>')
+    .replace(/^### (.+)$/gm, '<span class="h3">### $1</span>')
+    .replace(/^```(\w*)$/gm, '<span class="dim">```$1</span>')
+    .replace(/^---$/gm, '<span class="dim">---</span>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+}
+
 const COPY_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="0"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
 
 function renderApiReference(spec: any, origin: string): string {
@@ -695,9 +707,20 @@ a:hover{color:var(--text)}
   </div>
 </nav>
 
+<div class="human-view" id="human-view">
 ${prose}
 ${endpoints}
 </main>
+</div>
+
+<div class="machine-view" id="machine-view">
+  <div class="md" id="md-content"><button class="md-copy" onclick="copyMd()">copy</button>${markdownToMachineView(specToMarkdown(resolved, origin))}</div>
+</div>
+
+<div class="mode-switch">
+  <button class="active" onclick="setMode('human')"><span class="dot"></span> HUMAN</button>
+  <button onclick="setMode('machine')"><span class="dot"></span> MACHINE</button>
+</div>
 
 <script>
 function toggleTheme(){var d=document.documentElement.classList.toggle('dark');localStorage.setItem('theme',d?'dark':'light')}
@@ -709,6 +732,28 @@ function copyCode(btn){var p=btn.closest('.code-block,.ex-block').querySelector(
   function u(){var y=window.scrollY+140,c=null;for(var i=anchors.length-1;i>=0;i--){if(anchors[i].el.offsetTop<=y){c=anchors[i];break}}tabs.forEach(function(t){t.classList.remove('active')});if(c)c.tab.classList.add('active')}
   window.addEventListener('scroll',u,{passive:true});u();
 })();
+function copyMd(){
+  var el=document.getElementById('md-content');
+  if(el){
+    navigator.clipboard.writeText(el.innerText).then(function(){
+      var btn=el.querySelector('.md-copy');
+      if(btn){btn.textContent='copied';setTimeout(function(){btn.textContent='copy'},1500)}
+    });
+  }
+}
+function setMode(mode){
+  var btns=document.querySelectorAll('.mode-switch button');
+  btns.forEach(function(b){b.classList.remove('active')});
+  if(mode==='human'){
+    btns[0].classList.add('active');
+    document.getElementById('human-view').classList.remove('hidden');
+    document.getElementById('machine-view').classList.remove('active');
+  } else {
+    btns[1].classList.add('active');
+    document.getElementById('human-view').classList.add('hidden');
+    document.getElementById('machine-view').classList.add('active');
+  }
+}
 </script>
 </body></html>`;
 }
