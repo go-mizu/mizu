@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import type { App, Env, Variables } from "../types";
-import { apiKeyId, apiKeyToken, sessionToken } from "../lib/id";
+import { apiKeyId, apiKeyToken, magicToken, sessionToken } from "../lib/id";
 import { sha256 } from "../middleware/auth";
 import { esc } from "../pages/layout";
 
@@ -9,6 +9,7 @@ type C = Context<{ Bindings: Env; Variables: Variables }>;
 const CODE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const API_KEY_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
+const MAGIC_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
 function rand(n: number): string {
   const bytes = new Uint8Array(n);
@@ -31,7 +32,7 @@ function protectedResourceMetadata(c: C) {
     resource: `${origin}/mcp`,
     authorization_servers: [origin],
     scopes_supported: ["storage:read", "storage:write", "storage:admin"],
-    resource_name: "storage.now",
+    resource_name: "Storage",
   });
 }
 
@@ -104,8 +105,8 @@ async function authorizeEndpoint(c: C) {
   }
 
   const client = await c.env.DB.prepare(
-    "SELECT redirect_uris FROM oauth_clients WHERE client_id = ?",
-  ).bind(clientId).first<{ redirect_uris: string }>();
+    "SELECT redirect_uris, client_name FROM oauth_clients WHERE client_id = ?",
+  ).bind(clientId).first<{ redirect_uris: string; client_name: string }>();
 
   if (client) {
     const uris = JSON.parse(client.redirect_uris) as string[];
@@ -114,13 +115,16 @@ async function authorizeEndpoint(c: C) {
     }
   }
 
+  // Use client_name for display (falls back to a friendly label if raw oc_ ID)
+  const displayName = client?.client_name || friendlyClientName(clientId);
+
   const actor = await getSessionFromCookie(c);
   const oauthParams = url.search;
 
   if (actor) {
-    return c.html(consentPage(actor, clientId, scope, oauthParams));
+    return c.html(consentPage(actor, displayName, scope, oauthParams));
   }
-  return c.html(loginPage(clientId, oauthParams));
+  return c.html(loginPage(displayName, oauthParams));
 }
 
 // POST /oauth/authorize — handle consent or login
@@ -141,6 +145,12 @@ async function handleLoginSubmit(c: C, form: FormData) {
     return c.html(errorPage("Invalid email", "Please enter a valid email address"), 400);
   }
 
+  if (!c.env.RESEND_API_KEY) {
+    console.error("[oauth] RESEND_API_KEY not configured");
+    return c.html(errorPage("Service unavailable", "Email service not configured"), 500);
+  }
+
+  // Find or create actor
   let actorName: string;
   const existing = await c.env.DB.prepare("SELECT actor FROM actors WHERE email = ?")
     .bind(email).first<{ actor: string }>();
@@ -160,21 +170,47 @@ async function handleLoginSubmit(c: C, form: FormData) {
     ).bind(actorName, email, Date.now()).run();
   }
 
-  // Create session directly (skip magic link round-trip for OAuth flow)
-  const sessToken = sessionToken();
-  const expiresAt = Date.now() + SESSION_TTL_MS;
+  // Create magic link token (email verification required — no direct session)
+  const token = magicToken();
+  const expiresAt = Date.now() + MAGIC_TTL_MS;
   await c.env.DB.prepare(
-    "INSERT INTO sessions (token, actor, expires_at) VALUES (?, ?, ?)",
-  ).bind(sessToken, actorName, expiresAt).run();
+    "INSERT INTO magic_tokens (token, email, actor, expires_at) VALUES (?, ?, ?, ?)",
+  ).bind(token, email, actorName, expiresAt).run();
 
+  // Build magic link that returns to the OAuth flow after verification
   const origin = new URL(c.req.url).origin;
-  return new Response(null, {
-    status: 302,
-    headers: {
-      Location: `${origin}/oauth/authorize${oauthParams}`,
-      "Set-Cookie": `session=${sessToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=7200`,
-    },
-  });
+  const returnTo = `/oauth/authorize${oauthParams}`;
+  const link = `${origin}/auth/magic/${token}?return_to=${encodeURIComponent(returnTo)}`;
+
+  // Send email via Resend
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${c.env.RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: "Storage <noreply@liteio.dev>",
+        to: [email],
+        subject: "Your sign-in link for Storage",
+        html: oauthMagicLinkEmail(link, actorName.slice(2), origin),
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      console.error("[oauth] Resend error:", res.status, err);
+      await c.env.DB.prepare("DELETE FROM magic_tokens WHERE token = ?").bind(token).run();
+      return c.html(errorPage("Email failed", "Could not send email. Please try again."), 500);
+    }
+  } catch (e) {
+    console.error("[oauth] Failed to send email:", e);
+    await c.env.DB.prepare("DELETE FROM magic_tokens WHERE token = ?").bind(token).run();
+    return c.html(errorPage("Email failed", "Could not send email. Please try again."), 500);
+  }
+
+  return c.html(checkEmailPage(email));
 }
 
 async function handleConsentSubmit(c: C, form: FormData) {
@@ -309,6 +345,19 @@ async function getSessionFromCookie(c: C): Promise<string | null> {
   return session.actor;
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────
+
+/** Turn a raw client_id like "oc_74bfcc..." into a readable name */
+function friendlyClientName(clientId: string): string {
+  // Known clients
+  const id = clientId.toLowerCase();
+  if (id.includes("claude") || id.includes("anthropic")) return "Claude";
+  if (id.includes("chatgpt") || id.includes("openai")) return "ChatGPT";
+  // Auto-generated IDs (oc_ prefix) — show generic label
+  if (clientId.startsWith("oc_")) return "An application";
+  return clientId;
+}
+
 // ── HTML Pages ────────────────────────────────────────────────────────
 
 const PAGE_STYLE = `
@@ -350,60 +399,107 @@ if(localStorage.getItem('theme')==='dark'||(!localStorage.getItem('theme')&&wind
 }
 </script>`;
 
-function loginPage(clientId: string, oauthParams: string): string {
+function loginPage(clientName: string, oauthParams: string): string {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sign in — storage.now</title>${PAGE_STYLE}</head><body>
+<title>Sign in — Storage</title>${PAGE_STYLE}</head><body>
 <div class="card">
-  <div class="brand">storage.now</div>
-  <h1>Sign in to authorize</h1>
-  <p><strong>${esc(clientId)}</strong> wants to access your storage. Enter your email to continue.</p>
+  <div class="brand">Storage</div>
+  <h1>Sign in to continue</h1>
+  <p><strong>${esc(clientName)}</strong> wants to connect to your Storage files. Enter your email to sign in.</p>
   <form method="POST" action="/oauth/authorize">
     <input type="hidden" name="action" value="login">
     <input type="hidden" name="oauth_params" value="${esc(oauthParams)}">
     <label for="email">Email</label>
-    <input type="email" id="email" name="email" placeholder="you@example.com" required autofocus>
+    <input type="email" id="email" name="email" placeholder="you@email.com" required autofocus>
     <button type="submit">Continue with email</button>
   </form>
 </div></body></html>`;
 }
 
-function consentPage(actor: string, clientId: string, scope: string, oauthParams: string): string {
+function consentPage(actor: string, clientName: string, scope: string, oauthParams: string): string {
   const scopes = (!scope || scope === "*")
-    ? ["Read files stored on storage.now", "Upload, edit, and delete files on storage.now", "Create share links for your stored files"]
+    ? ["Read your stored files", "Upload, edit, and delete files", "Create share links for your files"]
     : scope.split(/[\s,]+/).map((s) => {
-        if (s === "storage:read") return "Read files stored on storage.now";
-        if (s === "storage:write") return "Upload, edit, and delete files on storage.now";
+        if (s === "storage:read") return "Read your stored files";
+        if (s === "storage:write") return "Upload, edit, and delete files";
         if (s === "storage:admin") return "Create share links and manage API keys";
         return s;
       });
 
   const scopeItems = scopes.map((s) => `<div class="scope-item"><span class="scope-icon">&check;</span> ${esc(s)}</div>`).join("");
+  const displayName = actor.startsWith("u/") ? actor.slice(2) : actor;
 
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Authorize — storage.now</title>${PAGE_STYLE}</head><body>
+<title>Authorize — Storage</title>${PAGE_STYLE}</head><body>
 <div class="card">
-  <div class="brand">storage.now</div>
-  <h1>Authorize access</h1>
-  <p><strong>${esc(clientId)}</strong> wants to access your <strong>storage.now</strong> cloud files. This does not access any files on your device.</p>
-  <div class="actor-badge">${esc(actor)}</div>
+  <div class="brand">Storage</div>
+  <h1>Allow access?</h1>
+  <p><strong>${esc(clientName)}</strong> wants to access your cloud files. This only applies to files on Storage, not your device.</p>
+  <div class="actor-badge">${esc(displayName)}</div>
   <div class="scope-list">${scopeItems}</div>
   <form method="POST" action="/oauth/authorize">
     <input type="hidden" name="action" value="authorize">
     <input type="hidden" name="oauth_params" value="${esc(oauthParams)}">
-    <button type="submit">Authorize</button>
-    <button type="button" class="secondary" onclick="window.close()">Cancel</button>
+    <button type="submit">Allow</button>
+    <button type="button" class="secondary" onclick="window.close()">Deny</button>
   </form>
 </div></body></html>`;
+}
+
+function checkEmailPage(email: string): string {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Check your email — Storage</title>${PAGE_STYLE}</head><body>
+<div class="card">
+  <div class="brand">Storage</div>
+  <h1>Check your email</h1>
+  <p>We sent a sign-in link to <strong>${esc(email)}</strong>. Click the link in the email to continue.</p>
+  <p style="font-size:0.8rem;color:#999">The link expires in 15 minutes. Check your spam folder if you don't see it.</p>
+</div></body></html>`;
+}
+
+function oauthMagicLinkEmail(link: string, username: string, origin: string): string {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sign in to Storage</title></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f4f5">
+  <tr><td align="center" style="padding:40px 16px">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;background:#fff;border-radius:12px;overflow:hidden">
+      <tr><td style="height:4px;background:#111;font-size:0">&nbsp;</td></tr>
+      <tr><td style="padding:32px 40px 0;font-size:16px;font-weight:600;color:#111">Storage</td></tr>
+      <tr><td style="padding:24px 40px 0">
+        <h1 style="margin:0 0 8px;font-size:18px;font-weight:600;color:#111">Sign in to continue</h1>
+        <p style="margin:0 0 24px;font-size:14px;color:#71717a;line-height:1.6">
+          Hi <strong style="color:#3f3f46">${username}</strong>, click the button to sign in and authorize access to your files.
+        </p>
+      </td></tr>
+      <tr><td style="padding:0 40px">
+        <a href="${link}" target="_blank" style="display:inline-block;padding:12px 28px;font-size:14px;font-weight:600;color:#fff;background:#111;text-decoration:none;border-radius:6px">
+          Sign in to Storage
+        </a>
+      </td></tr>
+      <tr><td style="padding:20px 40px">
+        <p style="margin:0;font-size:12px;color:#a1a1aa">This link expires in 15 minutes and can only be used once.</p>
+      </td></tr>
+      <tr><td style="padding:0 40px"><div style="height:1px;background:#e4e4e7"></div></td></tr>
+      <tr><td style="padding:16px 40px 32px">
+        <p style="margin:0;font-size:11px;color:#a1a1aa">If you didn't request this, you can ignore this email.</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
 }
 
 function errorPage(title: string, message: string): string {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(title)} — storage.now</title>${PAGE_STYLE}</head><body>
+<title>${esc(title)} — Storage</title>${PAGE_STYLE}</head><body>
 <div class="card">
-  <div class="brand">storage.now</div>
+  <div class="brand">Storage</div>
   <h1>${esc(title)}</h1>
   <p>${esc(message)}</p>
 </div></body></html>`;

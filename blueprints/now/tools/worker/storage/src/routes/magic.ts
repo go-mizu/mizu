@@ -201,14 +201,22 @@ export function register(app: App) {
       "INSERT INTO sessions (token, actor, expires_at) VALUES (?, ?, ?)",
     ).bind(sessTok, row.actor, expiresAt).run();
 
-    // Set cookie and redirect to home
+    // Set cookie and redirect
     const isSecure = new URL(c.req.url).protocol === "https:";
     const cookie = `session=${sessTok}; HttpOnly; SameSite=Lax; Path=/; Max-Age=7200${isSecure ? "; Secure" : ""}`;
+
+    // Support return_to for OAuth flow (only allow same-origin paths)
+    const url = new URL(c.req.url);
+    let redirectTo = "/";
+    const returnTo = url.searchParams.get("return_to");
+    if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//")) {
+      redirectTo = returnTo;
+    }
 
     return new Response(null, {
       status: 302,
       headers: {
-        Location: "/",
+        Location: redirectTo,
         "Set-Cookie": cookie,
       },
     });
