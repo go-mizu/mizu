@@ -532,7 +532,7 @@ export function register(app: App) {
     method: "post",
     path: "/files/share",
     summary: "Share a file",
-    tags: filesTags,
+    tags: ["sharing"],
     security: sec,
     request: {
       body: {

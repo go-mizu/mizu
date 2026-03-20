@@ -207,6 +207,25 @@ const TAG_LABELS: Record<string, string> = {
 
 const TAG_ORDER = ["files", "uploads", "sharing", "auth", "keys"];
 
+// Explicit ordering within each tag (by summary). Unlisted summaries appear at the end.
+const ENDPOINT_ORDER: Record<string, string[]> = {
+  files: [
+    "Retrieve a file", "Retrieve file metadata", "List files", "Search files",
+    "Create a folder", "Move a file", "Delete a file",
+    "Retrieve storage stats", "View event log",
+  ],
+  uploads: [
+    "Create an upload", "Complete an upload",
+    "Create a multipart upload", "Complete a multipart upload", "Abort a multipart upload",
+  ],
+  sharing: ["Share a file", "Access a shared file"],
+  auth: [
+    "Request a magic link", "Register an account",
+    "Create a challenge", "Verify a signature", "Log out",
+  ],
+  keys: ["Create an API key", "List API keys", "Delete an API key"],
+};
+
 const METHOD_COLORS: Record<string, [string, string]> = {
   GET: ["#10b981", "#ecfdf5"],
   POST: ["#3b82f6", "#eff6ff"],
@@ -339,6 +358,17 @@ function specToMarkdown(spec: any, origin: string): string {
       byTag.get(tag)!.push({ method: method.toUpperCase(), path, op });
     }
   }
+  // Sort endpoints within each tag
+  for (const [tag, routes] of byTag) {
+    const order = ENDPOINT_ORDER[tag];
+    if (order) {
+      routes.sort((a, b) => {
+        const ai = order.indexOf(a.op.summary || "");
+        const bi = order.indexOf(b.op.summary || "");
+        return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+      });
+    }
+  }
   for (const tag of TAG_ORDER) {
     const routes = byTag.get(tag);
     if (!routes) continue;
@@ -406,6 +436,18 @@ function renderApiReference(spec: any, origin: string): string {
   }
   const tagOrder = TAG_ORDER.filter((t) => byTag.has(t));
   for (const t of byTag.keys()) if (!tagOrder.includes(t)) tagOrder.push(t);
+
+  // Sort endpoints within each tag by ENDPOINT_ORDER
+  for (const [tag, routes] of byTag) {
+    const order = ENDPOINT_ORDER[tag];
+    if (order) {
+      routes.sort((a, b) => {
+        const ai = order.indexOf(a.op.summary || "");
+        const bi = order.indexOf(b.op.summary || "");
+        return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+      });
+    }
+  }
 
   // Section tabs
   let sectionTabs = `<a href="#introduction" class="sec-tab active">Overview</a>`;
