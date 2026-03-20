@@ -29,16 +29,11 @@ function toggleTheme(){
 })();
 </script>`;
 
-function navLinks(activePath: string, actor: string | null): string {
-  const browseLink = actor
-    ? `<a href="/browse"${activePath === "/browse" ? ' class="active"' : ""}>Browse</a>`
-    : "";
-  return `${browseLink}
-    <a href="/developers"${activePath === "/developers" ? ' class="active"' : ""}>Developers</a>
-    <a href="/api"${activePath === "/api" ? ' class="active"' : ""}>API</a>
-    <a href="/cli"${activePath === "/cli" ? ' class="active"' : ""}>CLI</a>
-    <a href="/ai"${activePath === "/ai" ? ' class="active"' : ""}>AI</a>
-    <a href="/pricing"${activePath === "/pricing" ? ' class="active"' : ""}>Pricing</a>`;
+function navLinks(activePath: string): string {
+  return `<a href="/developers"${activePath === "/developers" ? ' class="active"' : ""}>developers</a>
+      <a href="/api"${activePath === "/api" ? ' class="active"' : ""}>api</a>
+      <a href="/cli"${activePath === "/cli" ? ' class="active"' : ""}>cli</a>
+      <a href="/pricing"${activePath === "/pricing" ? ' class="active"' : ""}>pricing</a>`;
 }
 
 export function directoryPage(
@@ -60,16 +55,19 @@ export function directoryPage(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)} — Storage</title>
 ${FONT_LINK}
+<link rel="stylesheet" href="/base.css">
 <link rel="stylesheet" href="/layout.css">
 </head>
 <body>
+
+<div class="grid-bg"></div>
 
 <nav>
   <div class="nav-inner">
     <a href="/" class="logo"><span class="logo-dot"></span> Storage</a>
     ${MOBILE_TOGGLE}
     <div class="nav-links">
-      ${navLinks(activePath, actor)}
+      ${navLinks(activePath)}
     </div>
     <div class="nav-right">
       ${navSession}
@@ -107,16 +105,19 @@ export function immersivePage(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)} — Storage</title>
 ${FONT_LINK}
+<link rel="stylesheet" href="/base.css">
 <link rel="stylesheet" href="/layout.css">
 </head>
 <body>
+
+<div class="grid-bg"></div>
 
 <nav>
   <div class="nav-inner">
     <a href="/" class="logo"><span class="logo-dot"></span> Storage</a>
     ${MOBILE_TOGGLE}
     <div class="nav-links">
-      ${navLinks(activePath, actor)}
+      ${navLinks(activePath)}
     </div>
     <div class="nav-right">
       ${navSession}

@@ -9,223 +9,13 @@ export function aiPage(): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI &mdash; Storage</title>
+<title>AI — Storage</title>
 <meta name="description" content="Connect Claude and ChatGPT to your files. Share between AIs and with friends.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#FAFAF9;--surface:#FFF;--surface-alt:#F4F4F5;
-  --text:#09090B;--text-2:#52525B;--text-3:#A1A1AA;
-  --border:#E4E4E7;--ink:#09090B;
-}
-html.dark{
-  --bg:#09090B;--surface:#18181B;--surface-alt:#18181B;
-  --text:#FAFAF9;--text-2:#A1A1AA;--text-3:#52525B;
-  --border:#27272A;--ink:#FAFAF9;
-}
-body{font-family:'Inter',system-ui,sans-serif;color:var(--text);background:var(--bg);
-  -webkit-font-smoothing:antialiased;overflow-x:hidden}
-a{color:inherit;text-decoration:none}
-code{font-family:'JetBrains Mono',monospace;font-size:12px;padding:2px 8px;
-  border:1px solid var(--border);background:var(--surface-alt)}
-
-@keyframes fadeUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:none}}
-@keyframes shimmer{0%{background-position:200% center}100%{background-position:-200% center}}
-@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
-@keyframes dash{to{stroke-dashoffset:0}}
-@keyframes popIn{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
-
-.shimmer{background:linear-gradient(90deg,var(--text) 20%,var(--text-3) 40%,var(--text-3) 60%,var(--text) 80%);
-  background-size:200% auto;-webkit-background-clip:text;-webkit-text-fill-color:transparent;
-  background-clip:text;animation:shimmer 4s ease-in-out infinite}
-
-/* ── Grid bg ── */
-.grid-bg{position:fixed;inset:0;pointer-events:none;z-index:0;
-  background-image:radial-gradient(circle,var(--border) 1px,transparent 1px);
-  background-size:24px 24px;opacity:.35}
-html.dark .grid-bg{opacity:.12}
-
-/* ── Nav ── */
-nav{position:sticky;top:0;z-index:100;width:100%;
-  background:color-mix(in srgb,var(--bg) 85%,transparent);
-  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
-.nav-inner{width:100%;padding:0 48px;height:64px;
-  display:flex;align-items:center;justify-content:space-between}
-.logo{font-family:'Inter',system-ui,sans-serif;font-weight:700;font-size:15px;
-  letter-spacing:-0.3px;display:flex;align-items:center;gap:8px}
-.logo-dot{width:6px;height:6px;background:var(--text);display:inline-block}
-.nav-links{display:flex;gap:32px}
-.nav-links a{font-size:14px;color:var(--text-3);transition:color .15s;font-weight:500}
-.nav-links a:hover,.nav-links a.active{color:var(--text)}
-.nav-right{display:flex;align-items:center;gap:16px}
-.theme-toggle{background:none;border:none;padding:8px;cursor:pointer;
-  color:var(--text-3);display:flex;align-items:center;transition:color .15s}
-.theme-toggle:hover{color:var(--text)}
-.theme-toggle .icon-sun{display:none}
-.theme-toggle .icon-moon{display:block}
-html.dark .theme-toggle .icon-sun{display:block}
-html.dark .theme-toggle .icon-moon{display:none}
-.mobile-toggle{display:none;background:none;border:none;color:var(--text-3);cursor:pointer;padding:4px}
-
-/* ── Sections ── */
-.s{position:relative;z-index:1;width:100%;opacity:0;transform:translateY(24px);
-  transition:opacity .7s cubic-bezier(.16,1,.3,1),transform .7s cubic-bezier(.16,1,.3,1)}
-.s.visible{opacity:1;transform:none}
-.s-inner{max-width:1100px;margin:0 auto;padding:0 48px}
-.s-label{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:2.5px;
-  color:var(--text-3);margin-bottom:16px;font-weight:500;text-transform:uppercase}
-
-/* ── Hero ── */
-.hero{padding:120px 0 40px;text-align:center;animation:fadeUp .8s ease both}
-.hero .s-inner{display:flex;flex-direction:column;align-items:center;max-width:1100px}
-.hero h1{font-size:48px;font-weight:500;line-height:1.1;letter-spacing:-1.5px;margin-bottom:20px}
-.hero p{font-size:16px;color:var(--text-2);line-height:1.7;max-width:480px;margin:0 auto}
-
-/* ── Hero diagram ── */
-.hero-diagram{display:flex;align-items:center;justify-content:center;gap:0;
-  margin-top:64px;padding:48px 0;width:100%;position:relative}
-.hd-node{display:flex;flex-direction:column;align-items:center;gap:14px;position:relative;z-index:2}
-.hd-icon{width:80px;height:80px;border:1px solid var(--border);background:var(--surface);
-  display:flex;align-items:center;justify-content:center;
-  transition:all .3s ease;box-shadow:none}
-.hd-icon:hover{border-color:var(--text-3);transform:translateY(-4px);
-  box-shadow:none}
-.hd-icon svg{width:36px;height:36px;fill:var(--text)}
-.hd-name{font-size:13px;font-weight:500;letter-spacing:-0.2px}
-.hd-connector{display:flex;align-items:center;width:100px;position:relative;z-index:1}
-.hd-connector svg{width:100%;height:24px}
-.hd-connector line{stroke:var(--border);stroke-width:1;stroke-dasharray:6 4}
-html.dark .hd-connector line{stroke:var(--text-3)}
-.hd-center{position:relative}
-.hd-center .hd-icon{width:96px;height:96px;border-width:2px;background:var(--ink)}
-.hd-center .hd-icon svg{fill:var(--bg)}
-.hd-center .hd-name{font-weight:500}
-.hd-glow{position:absolute;inset:-40px;background:radial-gradient(circle,var(--glow),transparent 70%);
-  pointer-events:none;z-index:0}
-
-/* ── Connect cards ── */
-.connect{padding:80px 0;border-top:1px solid var(--border)}
-.connect-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
-  background:var(--border);border:1px solid var(--border);margin-top:40px}
-.cc{background:var(--bg);padding:40px 32px;display:flex;flex-direction:column;
-  transition:background .2s}
-.cc:hover{background:var(--surface)}
-.cc-header{display:flex;align-items:center;gap:14px;margin-bottom:28px;padding-bottom:20px;
-  border-bottom:1px solid var(--border)}
-.cc-logo{width:40px;height:40px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.cc-logo svg{width:28px;height:28px;fill:var(--text)}
-.cc-name{font-size:17px;font-weight:500;letter-spacing:-0.3px}
-.cc-steps{display:flex;flex-direction:column;gap:14px;flex:1}
-.cs{display:flex;gap:12px;align-items:flex-start;font-size:14px;line-height:1.65;color:var(--text-2)}
-.cs-n{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;
-  color:var(--text-3);width:24px;height:24px;border:1px solid var(--border);
-  display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
-.cs strong{color:var(--text);font-weight:500}
-.cs-url{font-family:'JetBrains Mono',monospace;font-size:11px;padding:8px 12px;
-  border:1px solid var(--border);background:var(--surface-alt);display:block;
-  margin-top:6px;color:var(--text);user-select:all;cursor:pointer;word-break:break-all;
-  transition:border-color .15s}
-.cs-url:hover{border-color:var(--text-3)}
-
-/* ── Scenario sections ── */
-.scenario{padding:80px 0;border-top:1px solid var(--border)}
-.sc-layout{display:grid;grid-template-columns:1fr 1.2fr;gap:48px;align-items:start;margin-top:40px}
-.sc-text{}
-.sc-title{font-size:28px;font-weight:500;letter-spacing:-0.5px;line-height:1.2;margin-bottom:16px}
-.sc-sub{font-size:15px;color:var(--text-2);line-height:1.7}
-.flow{border:1px solid var(--border);background:var(--surface);overflow:hidden;
-  box-shadow:none}
-html.dark .flow{box-shadow:none}
-.flow-bar{padding:12px 20px;border-bottom:1px solid var(--border);background:var(--surface-alt);
-  display:flex;align-items:center;gap:8px}
-.flow-bar-dots{display:flex;gap:5px}
-.flow-bar-dots span{width:8px;height:8px;background:var(--border)}
-html.dark .flow-bar-dots span{background:var(--text-3)}
-.flow-bar-title{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
-  flex:1;text-align:center}
-.fs{padding:20px 24px;display:flex;align-items:flex-start;gap:14px;
-  border-bottom:1px solid var(--border);font-size:14px;line-height:1.7;
-  transition:background .15s}
-.fs:last-child{border-bottom:none}
-.fs:hover{background:var(--surface-alt)}
-.fs-avatar{width:32px;height:32px;border:1px solid var(--border);
-  display:flex;align-items:center;justify-content:center;flex-shrink:0;
-  font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:500;
-  color:var(--text-3);letter-spacing:0.5px}
-.fs-avatar.you{background:var(--ink);color:var(--bg);border-color:var(--ink)}
-.fs-body{color:var(--text-2);flex:1}
-.fs-body strong{color:var(--text);font-weight:500}
-.fs-body em{color:var(--text-3);font-style:normal;font-family:'JetBrains Mono',monospace;font-size:11px}
-
-/* ── Cross-platform diagram ── */
-.xp-diagram{display:flex;align-items:stretch;justify-content:center;gap:0;
-  border:1px solid var(--border);background:var(--surface);overflow:hidden;margin-top:40px;
-  box-shadow:none}
-html.dark .xp-diagram{box-shadow:none}
-.xp-side{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  padding:48px 24px;gap:16px;transition:background .2s}
-.xp-side:hover{background:var(--surface-alt)}
-.xp-side svg{width:40px;height:40px;fill:var(--text)}
-.xp-side-name{font-size:15px;font-weight:500;letter-spacing:-0.2px}
-.xp-mid{width:1px;background:var(--border);position:relative;display:flex;
-  align-items:center;justify-content:center}
-.xp-mid-badge{position:absolute;background:var(--ink);color:var(--bg);
-  font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:500;
-  letter-spacing:1px;padding:6px 12px;white-space:nowrap;z-index:2}
-.xp-center{flex:1.2;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  padding:48px 24px;gap:16px;background:var(--surface-alt);position:relative}
-.xp-center-icon{width:56px;height:56px;background:var(--ink);
-  display:flex;align-items:center;justify-content:center}
-.xp-center-icon svg{width:24px;height:24px;fill:var(--bg)}
-.xp-center-name{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:500}
-.xp-center-tag{font-size:12px;color:var(--text-3)}
-
-/* ── Buttons ── */
-.btn{font-size:14px;font-weight:500;padding:14px 32px;border:1px solid var(--border);
-  display:inline-flex;align-items:center;gap:8px;transition:all .15s;color:var(--text-2);
-  cursor:pointer;text-decoration:none}
-.btn:hover{border-color:var(--text-3);color:var(--text)}
-
-/* ── Responsive ── */
-@media(max-width:1024px){
-  .connect-grid{grid-template-columns:1fr}
-  .sc-layout{grid-template-columns:1fr;gap:32px}
-}
-@media(max-width:768px){
-  .hero{padding:80px 0 32px}
-  .hero h1{font-size:36px;letter-spacing:-1px}
-  .hero-diagram{flex-direction:column;gap:12px;margin-top:40px;padding:32px 0}
-  .hd-connector{width:24px;height:40px;transform:rotate(90deg)}
-  .hd-icon{width:64px;height:64px}
-  .hd-center .hd-icon{width:72px;height:72px}
-  .hd-icon svg{width:28px;height:28px}
-  .sc-title{font-size:24px;letter-spacing:-0.3px}
-  .xp-diagram{flex-direction:column}
-  .xp-mid{width:100%;height:1px}
-  .xp-side,.xp-center{padding:32px 24px}
-}
-@media(max-width:640px){
-  nav{padding:0 20px;height:52px}
-  .nav-links{display:none;position:absolute;top:52px;left:0;right:0;
-    flex-direction:column;padding:16px 20px;gap:16px;z-index:100;
-    border-bottom:1px solid var(--border);
-    background:color-mix(in srgb,var(--bg) 95%,transparent);
-    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
-  .nav-links.open{display:flex}
-  .mobile-toggle{display:block}
-  .s-inner{padding:0 20px}
-  .hero{padding:56px 0 24px}
-  .hero h1{font-size:28px;letter-spacing:-0.5px}
-  .hero p{font-size:16px}
-  .connect,.scenario{padding:56px 0}
-  .cc{padding:28px 20px}
-  .cs{font-size:13px}
-  .fs{padding:16px 20px;font-size:13px}
-}
-</style>
+<link rel="stylesheet" href="/base.css">
+<link rel="stylesheet" href="/ai.css">
 </head>
 <body>
 
@@ -241,6 +31,7 @@ html.dark .xp-diagram{box-shadow:none}
       <a href="/developers">developers</a>
       <a href="/api">api</a>
       <a href="/cli">cli</a>
+      <a href="/ai" class="active">ai</a>
       <a href="/pricing">pricing</a>
     </div>
     <div class="nav-right">
@@ -310,7 +101,7 @@ html.dark .xp-diagram{box-shadow:none}
           <div class="cs"><span class="cs-n">1</span> <span><strong>Settings &rarr; Integrations</strong></span></div>
           <div class="cs"><span class="cs-n">2</span> <span>Click <strong>Add custom connector</strong></span></div>
           <div class="cs"><span class="cs-n">3</span> <span>Paste URL:<span class="cs-url">https://storage.liteio.dev/mcp</span></span></div>
-          <div class="cs"><span class="cs-n">4</span> <span>Click Add, verify your email &mdash; <strong>done</strong></span></div>
+          <div class="cs"><span class="cs-n">4</span> <span>Click Add, verify your email. <strong>Done</strong></span></div>
         </div>
       </div>
 
@@ -325,7 +116,7 @@ html.dark .xp-diagram{box-shadow:none}
           <div class="cs"><span class="cs-n">1</span> <span><strong>Settings &rarr; Connected apps</strong></span></div>
           <div class="cs"><span class="cs-n">2</span> <span>Click <strong>Add app &rarr; Add by URL</strong></span></div>
           <div class="cs"><span class="cs-n">3</span> <span>Paste URL:<span class="cs-url">https://storage.liteio.dev/mcp</span></span></div>
-          <div class="cs"><span class="cs-n">4</span> <span>Sign in with email &mdash; <strong>done</strong></span></div>
+          <div class="cs"><span class="cs-n">4</span> <span>Sign in with email. <strong>Done</strong></span></div>
         </div>
       </div>
 
@@ -339,7 +130,7 @@ html.dark .xp-diagram{box-shadow:none}
         <div class="cc-steps">
           <div class="cs"><span class="cs-n">1</span> <span><strong>Settings &rarr; Developer &rarr; Edit Config</strong></span></div>
           <div class="cs"><span class="cs-n">2</span> <span>Add to <code>mcpServers</code>:<span class="cs-url">{ "storage": { "command": "npx", "args": ["-y", "mcp-remote", "https://storage.liteio.dev/mcp"] } }</span></span></div>
-          <div class="cs"><span class="cs-n">3</span> <span>Restart Claude Desktop &mdash; <strong>done</strong></span></div>
+          <div class="cs"><span class="cs-n">3</span> <span>Restart Claude Desktop. <strong>Done</strong></span></div>
         </div>
       </div>
 
@@ -354,7 +145,7 @@ html.dark .xp-diagram{box-shadow:none}
     <div class="sc-layout">
       <div class="sc-text">
         <div class="sc-title">Send any file<br>with one sentence.</div>
-        <div class="sc-sub">Ask your AI to share a file. You get a link. Send it to anyone &mdash; they open it in their browser. No sign-up needed.</div>
+        <div class="sc-sub">Ask your AI to share a file. You get a link. Send it to anyone. They open it in their browser. No sign-up needed.</div>
       </div>
       <div class="flow">
         <div class="flow-bar"><div class="flow-bar-dots"><span></span><span></span><span></span></div><div class="flow-bar-title">conversation</div></div>
@@ -382,7 +173,7 @@ html.dark .xp-diagram{box-shadow:none}
     <div class="sc-layout">
       <div class="sc-text">
         <div class="sc-title">ChatGPT and Claude,<br>same files.</div>
-        <div class="sc-sub">Save a file from ChatGPT, find it in Claude. Both AIs share the same storage &mdash; your files follow you across platforms.</div>
+        <div class="sc-sub">Save a file from ChatGPT, find it in Claude. Both AIs share the same storage. Your files follow you across platforms.</div>
       </div>
       <div>
         <div class="xp-diagram">
@@ -413,7 +204,7 @@ html.dark .xp-diagram{box-shadow:none}
           </div>
           <div class="fs">
             <div class="fs-avatar you">CLA</div>
-            <div class="fs-body"><strong>&ldquo;What files do I have?&rdquo;</strong><br>Shows Q1-results.pdf &mdash; same file from ChatGPT.</div>
+            <div class="fs-body"><strong>&ldquo;What files do I have?&rdquo;</strong><br>Shows Q1-results.pdf, same file from ChatGPT.</div>
           </div>
           <div class="fs">
             <div class="fs-avatar you">CLA</div>
