@@ -25,10 +25,19 @@ interface RPCResponse {
   error?: { code: number; message: string };
 }
 
+interface ToolAnnotations {
+  title?: string;
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  openWorldHint?: boolean;
+  idempotentHint?: boolean;
+}
+
 interface ToolDef {
   name: string;
   description: string;
   inputSchema: Record<string, any>;
+  annotations?: ToolAnnotations;
 }
 
 // ── Protocol constants ────────────────────────────────────────────────
@@ -63,6 +72,7 @@ const TOOLS: ToolDef[] = [
         limit: { type: "number", description: "Maximum entries to return. Default 200, max 1000." },
       },
     },
+    annotations: { title: "List files", readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
   },
   {
     name: "storage_read",
@@ -81,6 +91,7 @@ const TOOLS: ToolDef[] = [
       },
       required: ["path"],
     },
+    annotations: { title: "Read file", readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
   },
   {
     name: "storage_write",
@@ -124,6 +135,7 @@ const TOOLS: ToolDef[] = [
       },
       required: ["path"],
     },
+    annotations: { title: "Save file", readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
   },
   {
     name: "storage_delete",
@@ -145,6 +157,7 @@ const TOOLS: ToolDef[] = [
       },
       required: ["paths"],
     },
+    annotations: { title: "Delete files", readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true },
   },
   {
     name: "storage_search",
@@ -164,6 +177,7 @@ const TOOLS: ToolDef[] = [
       },
       required: ["query"],
     },
+    annotations: { title: "Search files", readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
   },
   {
     name: "storage_move",
@@ -179,6 +193,7 @@ const TOOLS: ToolDef[] = [
       },
       required: ["from", "to"],
     },
+    annotations: { title: "Move file", readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
   },
   {
     name: "storage_share",
@@ -201,6 +216,7 @@ const TOOLS: ToolDef[] = [
       },
       required: ["path"],
     },
+    annotations: { title: "Share file", readOnlyHint: false, destructiveHint: false, openWorldHint: true, idempotentHint: false },
   },
   {
     name: "storage_stats",
@@ -211,6 +227,7 @@ const TOOLS: ToolDef[] = [
       type: "object",
       properties: {},
     },
+    annotations: { title: "Storage usage", readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
   },
 ];
 
@@ -445,7 +462,7 @@ async function toolRead(c: C, args: Record<string, any>) {
     ct === "application/xml" ||
     ct === "application/javascript";
 
-  const meta = `path: ${filePath}\nsize: ${r2Obj.size} bytes\ncontent_type: ${ct}\netag: ${r2Obj.etag}`;
+  const meta = `path: ${filePath}\nsize: ${r2Obj.size} bytes\ncontent_type: ${ct}`;
 
   if (isText) {
     const text = await r2Obj.text();
@@ -671,7 +688,6 @@ async function toolStats(c: C) {
     .first<{ file_count: number; total_size: number }>();
 
   return toolResult(JSON.stringify({
-    actor,
     file_count: stats?.file_count || 0,
     total_size: stats?.total_size || 0,
     total_size_human: humanSize(stats?.total_size || 0),
