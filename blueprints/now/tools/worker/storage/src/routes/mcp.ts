@@ -3,6 +3,7 @@ import type { App, Env, Variables } from "../types";
 import { auth } from "../middleware/auth";
 import { mimeFromName, isInlineType } from "../lib/mime";
 import { shareToken } from "../lib/id";
+import { presignUrl } from "../lib/presign";
 import { invalidateCache } from "./find";
 import { validatePath } from "../lib/path";
 
@@ -33,7 +34,7 @@ interface ToolDef {
 // ── Protocol constants ────────────────────────────────────────────────
 
 const PROTOCOL_VERSION = "2025-06-18";
-const SERVER_NAME = "storage.now";
+const SERVER_NAME = "Storage";
 const SERVER_VERSION = "3.0.0";
 
 // Simple in-memory session tracking (maps session ID → actor)
@@ -84,7 +85,7 @@ const TOOLS: ToolDef[] = [
   {
     name: "storage_write",
     description:
-      "Save a file to the user's cloud storage (storage.now). Creates or overwrites. Two modes:\n" +
+      "Save a file to the user's cloud storage (Storage). Creates or overwrites. Two modes:\n" +
       "• Text mode — pass 'content' with the file body. Good for saving text, code, markdown, JSON, CSV, etc.\n" +
       "• URL mode — pass 'url' and the server downloads it for you. Good for saving images, PDFs, or any file from the web. " +
       "You do NOT need to fetch the URL yourself; just provide it.\n" +
@@ -127,7 +128,7 @@ const TOOLS: ToolDef[] = [
   {
     name: "storage_delete",
     description:
-      "Delete files or folders from the user's cloud storage (storage.now). " +
+      "Delete files or folders from the user's cloud storage (Storage). " +
       "Pass exact file paths to delete individual files. " +
       "To delete an entire folder and everything inside it, add a trailing slash (e.g. 'old-project/'). " +
       "This action is permanent and cannot be undone — confirm with the user before deleting.",
@@ -167,7 +168,7 @@ const TOOLS: ToolDef[] = [
   {
     name: "storage_move",
     description:
-      "Move or rename a file in the user's cloud storage (storage.now). " +
+      "Move or rename a file in the user's cloud storage (Storage). " +
       "Use this to rename a file (same folder, different name), move it to a different folder, or both. " +
       "The source file must exist. If the destination already exists, it will be overwritten.",
     inputSchema: {
@@ -182,7 +183,7 @@ const TOOLS: ToolDef[] = [
   {
     name: "storage_share",
     description:
-      "Generate a public share link for a file in the user's cloud storage (storage.now). " +
+      "Generate a public share link for a file in the user's cloud storage (Storage). " +
       "The returned URL can be opened by anyone — no login required. " +
       "IMPORTANT: Always show the full URL to the user so they can copy or share it. " +
       "Links expire after the specified duration (default 1 hour, max 7 days). " +
@@ -279,7 +280,7 @@ async function mcpHandler(c: C) {
           serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
           capabilities: { tools: { listChanged: false } },
           instructions: [
-            "You are ALREADY connected to the user's cloud file storage (storage.now). The connection is live and working — you do NOT need to ask the user to connect, upload, or link anything. Just call the tools directly.",
+            "You are ALREADY connected to the user's cloud file storage (Storage). The connection is live and working — you do NOT need to ask the user to connect, upload, or link anything. Just call the tools directly.",
             "",
             "IMPORTANT: Whenever the user mentions files, folders, documents, storage, \"my files\", \"my storage\", \"cloud storage\", or asks about any file or folder by name — ALWAYS call a storage tool first. Never say you don't have access. You DO have access right now through these tools.",
             "",
@@ -453,7 +454,24 @@ async function toolRead(c: C, args: Record<string, any>) {
     return toolResult(meta + "\n---\n" + content);
   }
 
-  return toolResult(meta + "\n---\n[Binary file, " + r2Obj.size + " bytes. Use the storage REST API to download.]");
+  // For binary files, return a presigned download URL if credentials are available
+  const endpoint = c.env.R2_ENDPOINT;
+  const accessKeyId = c.env.R2_ACCESS_KEY_ID;
+  const secretAccessKey = c.env.R2_SECRET_ACCESS_KEY;
+  if (endpoint && accessKeyId && secretAccessKey) {
+    const dlUrl = await presignUrl({
+      method: "GET",
+      key: `${actor}/${filePath}`,
+      bucket: c.env.R2_BUCKET_NAME || "storage-files",
+      endpoint,
+      accessKeyId,
+      secretAccessKey,
+      expiresIn: 3600,
+    });
+    return toolResult(meta + "\n---\n[Binary file — direct download link (expires in 1 hour):\n" + dlUrl + "]");
+  }
+
+  return toolResult(meta + "\n---\n[Binary file, " + r2Obj.size + " bytes. Use storage_share to generate a download link.]");
 }
 
 async function toolWrite(c: C, args: Record<string, any>) {
