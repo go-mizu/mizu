@@ -14,6 +14,7 @@ import {
 import {
   createSignedUrl, createSignedUploadUrl, accessSignedUrl, uploadViaSignedUrl,
 } from "./routes/signed";
+import { objectUploadToken, objectCommit } from "./routes/nohop";
 import { createApiKey, listApiKeys, deleteApiKey } from "./routes/api-keys";
 import { getAuditLog } from "./lib/audit";
 import { uploadFile, downloadFile, deleteFile, headFile } from "./routes/files";
@@ -39,12 +40,28 @@ import {
   oauthMagicCallback, tokenEndpoint,
 } from "./routes/oauth";
 import {
+  tusOptions, tusCreate, tusHead, tusPatch, tusDelete,
+} from "./routes/tus";
+import {
   authRateLimit, magicLinkRateLimit, registerRateLimit,
   uploadRateLimit, publicAccessRateLimit,
 } from "./middleware/rate-limit";
 import type { Env, Variables } from "./types";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+// TUS OPTIONS must run before CORS to return protocol-specific headers
+// Registered at both /upload/resumable and /storage/v1/upload/resumable (Supabase-compatible path)
+for (const tusBase of ["/upload/resumable", "/storage/v1/upload/resumable"]) {
+  app.use(tusBase, async (c, next) => {
+    if (c.req.method === "OPTIONS") return tusOptions(c);
+    await next();
+  });
+  app.use(`${tusBase}/*`, async (c, next) => {
+    if (c.req.method === "OPTIONS") return tusOptions(c);
+    await next();
+  });
+}
 
 app.use("*", cors());
 
@@ -129,6 +146,17 @@ app.get("/sign/:token", accessSignedUrl);
 app.use("/upload/sign/*", publicAccessRateLimit);
 app.put("/upload/sign/:token", uploadViaSignedUrl);
 
+// ── TUS resumable uploads ───────────────────────────────────────────
+// Both /upload/resumable and /storage/v1/upload/resumable (Supabase-compatible)
+for (const tusBase of ["/upload/resumable", "/storage/v1/upload/resumable"]) {
+  app.use(tusBase, bearerAuth);
+  app.use(`${tusBase}/*`, bearerAuth);
+  app.post(tusBase, tusCreate);
+  app.get(`${tusBase}/:id`, tusHead);
+  app.patch(`${tusBase}/:id`, tusPatch);
+  app.delete(`${tusBase}/:id`, tusDelete);
+}
+
 // ── Public object access (no auth) ──────────────────────────────────
 app.use("/object/public/*", publicAccessRateLimit);
 app.get("/object/public/*", downloadPublicObject);
@@ -188,6 +216,12 @@ app.get("/shared", listSharedWithMe);
 
 // ── Rate limiting on writes ─────────────────────────────────────────
 app.use("/object/*", uploadRateLimit);
+
+// ── No-hop upload/commit ────────────────────────────────────────────
+app.use("/object/upload/token", bearerAuth);
+app.use("/object/commit", bearerAuth);
+app.post("/object/upload/token", bodySizeLimit, objectUploadToken);
+app.post("/object/commit", bodySizeLimit, objectCommit);
 
 // ── Buckets ─────────────────────────────────────────────────────────
 app.use("/bucket", bodySizeLimit);

@@ -7,6 +7,7 @@ import { validatePath } from "../lib/path";
 import { requireScope, sanitizeFilename } from "../middleware/authorize";
 import { audit } from "../lib/audit";
 import { resolveBucket } from "./buckets";
+import { presignGet } from "../lib/r2";
 
 type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -199,6 +200,13 @@ async function serveObject(c: AppContext, bucket: BucketRow, filePath: string) {
   c.executionCtx.waitUntil(
     c.env.DB.prepare("UPDATE objects SET accessed_at = ? WHERE id = ?").bind(Date.now(), obj.id).run(),
   );
+
+  // ?redirect=1 — redirect to presigned R2 URL (0-hop download)
+  if (c.req.query("redirect") !== undefined) {
+    const presignedUrl = await presignGet(c, obj.r2_key, 300);
+    if (presignedUrl) return c.redirect(presignedUrl, 302);
+    // Fall through to streaming if presigning not configured
+  }
 
   const r2Obj = await c.env.BUCKET.get(obj.r2_key);
   if (!r2Obj) return errorResponse(c, "not_found", "Object data not found in storage");

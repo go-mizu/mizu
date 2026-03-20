@@ -7,6 +7,7 @@ import { validatePath } from "../lib/path";
 import { requireScope, sanitizeFilename } from "../middleware/authorize";
 import { audit } from "../lib/audit";
 import { resolveBucket, resolveBucketById } from "./buckets";
+import { presignGet } from "../lib/r2";
 
 type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -29,6 +30,7 @@ export async function createSignedUrl(c: AppContext) {
     path?: string;
     paths?: string[];
     expires_in?: number;
+    presign?: boolean;
   }>();
 
   const expiresIn = Math.min(body.expires_in || DEFAULT_EXPIRES, MAX_EXPIRES);
@@ -41,11 +43,21 @@ export async function createSignedUrl(c: AppContext) {
     if (pathErr) return errorResponse(c, "invalid_request", pathErr);
 
     const obj = await c.env.DB
-      .prepare("SELECT 1 FROM objects WHERE bucket_id = ? AND path = ?")
+      .prepare("SELECT r2_key FROM objects WHERE bucket_id = ? AND path = ?")
       .bind(bucket.id, body.path)
-      .first();
+      .first<{ r2_key: string }>();
 
     if (!obj) return errorResponse(c, "not_found", `Object not found: ${body.path}`);
+
+    // presign: true — return direct R2 presigned URL (0-hop download)
+    if (body.presign) {
+      const presignedUrl = await presignGet(c, obj.r2_key, expiresIn);
+      if (!presignedUrl) {
+        return errorResponse(c, "not_configured", "Presigned URLs require R2 credentials (R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY)");
+      }
+      audit(c, "signed_url.presign", `${bucketName}/${body.path}`);
+      return c.json({ signed_url: presignedUrl, path: body.path, expires_at: expiresAt });
+    }
 
     const id = signedUrlId();
     const token = signedUrlToken();
@@ -180,6 +192,13 @@ export async function accessSignedUrl(c: AppContext) {
     .first<ObjectRow>();
 
   if (!obj) return errorResponse(c, "not_found", "Object not found");
+
+  // ?redirect=1 — redirect to presigned R2 URL (0-hop download)
+  if (c.req.query("redirect") !== undefined) {
+    const presignedUrl = await presignGet(c, obj.r2_key, 300);
+    if (presignedUrl) return c.redirect(presignedUrl, 302);
+    // Fall through to streaming if presigning not configured
+  }
 
   const r2Obj = await c.env.BUCKET.get(obj.r2_key);
   if (!r2Obj) return errorResponse(c, "not_found", "Object data not found");

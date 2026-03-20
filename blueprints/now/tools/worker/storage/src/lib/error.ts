@@ -2,6 +2,7 @@ import type { Context } from "hono";
 
 const STATUS_MAP: Record<string, number> = {
   invalid_request: 400,
+  not_configured: 400,
   unauthorized: 401,
   forbidden: 403,
   not_found: 404,

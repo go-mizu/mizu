@@ -372,10 +372,10 @@ function mapOAuthScopes(scope: string): string {
   for (const p of parts) {
     switch (p) {
       case "storage:read":
-        mapped.push("files:read", "folders:read", "drive:read");
+        mapped.push("files:read", "folders:read", "drive:read", "bucket:read", "object:read");
         break;
       case "storage:write":
-        mapped.push("files:write", "folders:write", "drive:write");
+        mapped.push("files:write", "folders:write", "drive:write", "bucket:write", "object:write");
         break;
       case "storage:admin":
         mapped.push("shares:read", "shares:write", "links:manage");

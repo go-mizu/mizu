@@ -7,6 +7,7 @@ import { wildcardPath, validatePath } from "../lib/path";
 import { requireScope, checkPathPrefix, sanitizeFilename } from "../middleware/authorize";
 import { audit } from "../lib/audit";
 import { ensureDefaultBucket } from "./buckets";
+import { presignGet } from "../lib/r2";
 
 type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -145,6 +146,13 @@ export async function downloadFile(c: AppContext) {
 
   await c.env.DB.prepare("UPDATE objects SET accessed_at = ? WHERE id = ?")
     .bind(Date.now(), obj.id).run();
+
+  // ?redirect=1 — redirect to presigned R2 URL (0-hop download)
+  if (c.req.query("redirect") !== undefined) {
+    const presignedUrl = await presignGet(c, obj.r2_key, 300);
+    if (presignedUrl) return c.redirect(presignedUrl, 302);
+    // Fall through to streaming if presigning not configured
+  }
 
   const r2Obj = await c.env.BUCKET.get(obj.r2_key);
   if (!r2Obj) {

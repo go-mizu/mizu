@@ -9,6 +9,10 @@ type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
 
 const VALID_SCOPES = new Set([
   "*",
+  "bucket:read",
+  "bucket:write",
+  "object:read",
+  "object:write",
   "files:read",
   "files:write",
   "folders:read",

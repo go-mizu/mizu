@@ -1,4 +1,3 @@
-import { AwsClient } from "aws4fetch";
 import type { Context } from "hono";
 import type { Env, Variables, ObjectRow } from "../types";
 import { objectId } from "../lib/id";
@@ -6,28 +5,12 @@ import { mimeFromName } from "../lib/mime";
 import { errorResponse } from "../lib/error";
 import { requireScope } from "../middleware/authorize";
 import { audit } from "../lib/audit";
+import { getR2Client, getS3Url } from "../lib/r2";
 
 type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
 
 const DEFAULT_EXPIRES = 3600; // 1 hour
 const MAX_EXPIRES = 86400; // 24 hours
-
-function getR2Client(c: AppContext): AwsClient | null {
-  const { R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY } = c.env;
-  if (!R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) return null;
-  return new AwsClient({
-    accessKeyId: R2_ACCESS_KEY_ID,
-    secretAccessKey: R2_SECRET_ACCESS_KEY,
-    service: "s3",
-    region: "auto",
-  });
-}
-
-function getS3Url(c: AppContext, key: string): string {
-  const accountId = c.env.CF_ACCOUNT_ID;
-  const bucket = c.env.R2_BUCKET_NAME || "storage-files";
-  return `https://${accountId}.r2.cloudflarestorage.com/${bucket}/${key}`;
-}
 
 async function ensureParentFolders(db: D1Database, owner: string, filePath: string) {
   const parts = filePath.split("/");
