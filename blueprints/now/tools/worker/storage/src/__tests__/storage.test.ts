@@ -1,8 +1,9 @@
 /**
  * Storage API v3 — integration tests
  *
- * Tests the new flat file model endpoints:
- *   /f/*   (files: PUT/GET/DELETE/HEAD)
+ * Tests the flat file model endpoints:
+ *   /f/*   (files: DELETE/HEAD — no data proxying)
+ *   /presign/* (presigned upload/download via R2)
  *   /ls/*  (directory listing)
  *   /find  (search)
  *   /mv    (move/rename)
@@ -21,6 +22,19 @@ function api(path: string, opts: RequestInit & { token?: string } = {}) {
   const headers = new Headers(opts.headers);
   if (opts.token) headers.set("Authorization", `Bearer ${opts.token}`);
   return SELF.fetch(`http://localhost${path}`, { ...opts, headers });
+}
+
+// Helper to seed files directly into R2 + D1 (no Worker data proxy)
+async function seedFile(actor: string, path: string, content: string, contentType = "text/plain") {
+  const { env } = await import("cloudflare:test");
+  const key = `${actor}/${path}`;
+  const data = new TextEncoder().encode(content);
+  await env.BUCKET.put(key, data, { httpMetadata: { contentType } });
+  const name = path.split("/").pop()!;
+  await env.DB.prepare(
+    "INSERT INTO files (owner, path, name, size, type, updated_at) VALUES (?, ?, ?, ?, ?, ?) " +
+      "ON CONFLICT (owner, path) DO UPDATE SET size = excluded.size, type = excluded.type, updated_at = excluded.updated_at",
+  ).bind(actor, path, name, data.byteLength, contentType, Date.now()).run();
 }
 
 describe("Storage API", () => {
@@ -118,30 +132,15 @@ describe("Storage API", () => {
     ).bind("test-session-token", "testuser", Date.now() + 86400000).run();
 
     token = "test-session-token";
+
+    // Seed test files directly into R2 + D1
+    await seedFile("testuser", "hello.txt", "Hello, world!", "text/plain");
+    await seedFile("testuser", "docs/readme.md", "# README", "text/markdown");
+    await seedFile("testuser", "taocp/vol_1/1.2/1.md", "# TAOCP Volume 1, Section 1.2, Problem 1", "text/markdown");
   });
 
-  // ── Files ──────────────────────────────────────────────────────────
+  // ── Files (DELETE + HEAD only — no data proxy) ────────────────────
   describe("Files", () => {
-    it("PUT /f/* writes a file", async () => {
-      const res = await api("/f/hello.txt", {
-        method: "PUT",
-        token,
-        headers: { "Content-Type": "text/plain" },
-        body: "Hello, world!",
-      });
-      expect(res.status).toBe(200);
-      const body = await res.json() as any;
-      expect(body.path).toBe("hello.txt");
-      expect(body.size).toBe(13);
-    });
-
-    it("GET /f/* reads a file", async () => {
-      const res = await api("/f/hello.txt", { token });
-      expect(res.status).toBe(200);
-      expect(await res.text()).toBe("Hello, world!");
-      expect(res.headers.get("Content-Type")).toContain("text/plain");
-    });
-
     it("HEAD /f/* returns metadata headers", async () => {
       const res = await api("/f/hello.txt", { method: "HEAD", token });
       expect(res.status).toBe(200);
@@ -149,51 +148,9 @@ describe("Storage API", () => {
       expect(res.headers.get("ETag")).toBeDefined();
     });
 
-    it("GET /f/* returns 404 for missing file", async () => {
-      const res = await api("/f/nonexistent.txt", { token });
+    it("HEAD /f/* returns 404 for missing file", async () => {
+      const res = await api("/f/nonexistent.txt", { method: "HEAD", token });
       expect(res.status).toBe(404);
-    });
-
-    it("PUT /f/* rejects path traversal", async () => {
-      // URL normalization resolves /f/../etc/passwd → /etc/passwd (no route match → 404)
-      const res = await api("/f/../etc/passwd", {
-        method: "PUT",
-        token,
-        body: "evil",
-      });
-      expect(res.status).toBe(404);
-    });
-
-    it("PUT /f/* handles nested paths", async () => {
-      const res = await api("/f/docs/readme.md", {
-        method: "PUT",
-        token,
-        headers: { "Content-Type": "text/markdown" },
-        body: "# README",
-      });
-      expect(res.status).toBe(200);
-      const body = await res.json() as any;
-      expect(body.path).toBe("docs/readme.md");
-      expect(body.name).toBe("readme.md");
-    });
-
-    it("PUT /f/* handles deeply nested paths (4+ levels)", async () => {
-      const res = await api("/f/taocp/vol_1/1.2/1.md", {
-        method: "PUT",
-        token,
-        headers: { "Content-Type": "text/markdown" },
-        body: "# TAOCP Volume 1, Section 1.2, Problem 1",
-      });
-      expect(res.status).toBe(200);
-      const body = await res.json() as any;
-      expect(body.path).toBe("taocp/vol_1/1.2/1.md");
-      expect(body.name).toBe("1.md");
-    });
-
-    it("GET /f/* reads deeply nested file", async () => {
-      const res = await api("/f/taocp/vol_1/1.2/1.md", { token });
-      expect(res.status).toBe(200);
-      expect(await res.text()).toBe("# TAOCP Volume 1, Section 1.2, Problem 1");
     });
 
     it("ls at each level of deeply nested path works", async () => {
@@ -219,25 +176,21 @@ describe("Storage API", () => {
     });
 
     it("DELETE /f/* deletes a single file", async () => {
-      await api("/f/to-delete.txt", {
-        method: "PUT",
-        token,
-        body: "delete me",
-      });
+      await seedFile("testuser", "to-delete.txt", "delete me");
 
       const res = await api("/f/to-delete.txt", { method: "DELETE", token });
       expect(res.status).toBe(200);
       const body = await res.json() as any;
       expect(body.deleted).toBe(1);
 
-      // Verify it's gone
-      const check = await api("/f/to-delete.txt", { token });
+      // Verify it's gone via HEAD
+      const check = await api("/f/to-delete.txt", { method: "HEAD", token });
       expect(check.status).toBe(404);
     });
 
     it("DELETE /f/*/ deletes directory recursively", async () => {
-      await api("/f/tmp/a.txt", { method: "PUT", token, body: "a" });
-      await api("/f/tmp/b.txt", { method: "PUT", token, body: "b" });
+      await seedFile("testuser", "tmp/a.txt", "a");
+      await seedFile("testuser", "tmp/b.txt", "b");
 
       const res = await api("/f/tmp/", { method: "DELETE", token });
       expect(res.status).toBe(200);
@@ -246,8 +199,81 @@ describe("Storage API", () => {
     });
 
     it("rejects requests without auth", async () => {
-      const res = await api("/f/hello.txt");
+      const res = await api("/f/hello.txt", { method: "HEAD" });
       expect(res.status).toBe(401);
+    });
+  });
+
+  // ── Presign ───────────────────────────────────────────────────────
+  describe("Presign", () => {
+    it("POST /presign/upload returns a presigned PUT URL", async () => {
+      const res = await api("/presign/upload", {
+        method: "POST",
+        token,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: "presign-test.txt", content_type: "text/plain" }),
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.url).toContain("r2.cloudflarestorage.com");
+      expect(body.url).toContain("X-Amz-Signature");
+      expect(body.content_type).toBe("text/plain");
+      expect(body.expires_in).toBe(3600);
+    });
+
+    it("POST /presign/complete verifies upload in R2", async () => {
+      // Seed a file directly to R2 (simulating a completed presigned upload)
+      const { env } = await import("cloudflare:test");
+      await env.BUCKET.put("testuser/presign-complete-test.txt", "hello presign", {
+        httpMetadata: { contentType: "text/plain" },
+      });
+
+      const res = await api("/presign/complete", {
+        method: "POST",
+        token,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: "presign-complete-test.txt" }),
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.path).toBe("presign-complete-test.txt");
+      expect(body.name).toBe("presign-complete-test.txt");
+      expect(body.size).toBe(13);
+      expect(body.type).toBe("text/plain");
+    });
+
+    it("GET /presign/read/* returns a presigned GET URL", async () => {
+      const res = await api("/presign/read/hello.txt", { token });
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.url).toContain("r2.cloudflarestorage.com");
+      expect(body.url).toContain("X-Amz-Signature");
+      expect(body.size).toBe(13);
+      expect(body.type).toBe("text/plain");
+    });
+
+    it("GET /presign/read/* returns 404 for missing file", async () => {
+      const res = await api("/presign/read/nonexistent.txt", { token });
+      expect(res.status).toBe(404);
+    });
+
+    it("POST /presign/upload rejects without auth", async () => {
+      const res = await api("/presign/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: "test.txt" }),
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it("POST /presign/complete returns 404 for missing upload", async () => {
+      const res = await api("/presign/complete", {
+        method: "POST",
+        token,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: "never-uploaded.txt" }),
+      });
+      expect(res.status).toBe(404);
     });
   });
 
@@ -303,7 +329,7 @@ describe("Storage API", () => {
   // ── Move ───────────────────────────────────────────────────────────
   describe("Move", () => {
     it("POST /mv moves a file", async () => {
-      await api("/f/moveme.txt", { method: "PUT", token, body: "move me" });
+      await seedFile("testuser", "moveme.txt", "move me");
 
       const res = await api("/mv", {
         method: "POST",
@@ -313,14 +339,13 @@ describe("Storage API", () => {
       });
       expect(res.status).toBe(200);
 
-      // Old path should be gone
-      const old = await api("/f/moveme.txt", { token });
+      // Old path should be gone (HEAD)
+      const old = await api("/f/moveme.txt", { method: "HEAD", token });
       expect(old.status).toBe(404);
 
-      // New path should exist
-      const newFile = await api("/f/moved.txt", { token });
+      // New path should exist (HEAD)
+      const newFile = await api("/f/moved.txt", { method: "HEAD", token });
       expect(newFile.status).toBe(200);
-      expect(await newFile.text()).toBe("move me");
     });
 
     it("POST /mv returns 404 for nonexistent source", async () => {
@@ -361,7 +386,7 @@ describe("Storage API", () => {
       expect(body.expires_at).toBeGreaterThan(Date.now());
     });
 
-    it("GET /s/:token serves the shared file", async () => {
+    it("GET /s/:token redirects to presigned R2 URL", async () => {
       const shareRes = await api("/share", {
         method: "POST",
         token,
@@ -370,9 +395,12 @@ describe("Storage API", () => {
       });
       const { token: shareToken } = await shareRes.json() as any;
 
-      const res = await api(`/s/${shareToken}`);
-      expect(res.status).toBe(200);
-      expect(await res.text()).toBe("Hello, world!");
+      const res = await api(`/s/${shareToken}`, { redirect: "manual" });
+      expect(res.status).toBe(302);
+      const location = res.headers.get("Location")!;
+      expect(location).toContain("r2.cloudflarestorage.com");
+      expect(location).toContain("hello.txt");
+      expect(location).toContain("X-Amz-Signature");
     });
 
     it("POST /share returns 404 for nonexistent file", async () => {
@@ -406,8 +434,8 @@ describe("Storage API", () => {
       keyId = body.id;
     });
 
-    it("API key can access files", async () => {
-      const res = await api("/f/hello.txt", { token: keyToken });
+    it("API key can access files via HEAD", async () => {
+      const res = await api("/f/hello.txt", { method: "HEAD", token: keyToken });
       expect(res.status).toBe(200);
     });
 
@@ -423,7 +451,7 @@ describe("Storage API", () => {
       expect(res.status).toBe(200);
 
       // Key should no longer work
-      const check = await api("/f/hello.txt", { token: keyToken });
+      const check = await api("/f/hello.txt", { method: "HEAD", token: keyToken });
       expect(check.status).toBe(401);
     });
   });
@@ -434,7 +462,7 @@ describe("Storage API", () => {
       const res = await api("/mcp", { token });
       expect(res.status).toBe(200);
       const body = await res.json() as any;
-      expect(body.server).toBe("storage.now");
+      expect(body.server).toBe("Storage");
     });
 
     it("POST /mcp initialize returns capabilities", async () => {
@@ -450,7 +478,7 @@ describe("Storage API", () => {
       });
       expect(res.status).toBe(200);
       const body = await res.json() as any;
-      expect(body.result.serverInfo.name).toBe("storage.now");
+      expect(body.result.serverInfo.name).toBe("Storage");
       expect(body.result.capabilities.tools).toBeDefined();
     });
 
@@ -583,20 +611,29 @@ describe("Storage API", () => {
 
   // ── Path validation ────────────────────────────────────────────────
   describe("Path validation", () => {
-    it("rejects paths with .. (URL-normalized to valid path)", async () => {
-      // /f/a/../b.txt normalizes to /f/b.txt — URL parser resolves traversal
-      const res = await api("/f/a/../b.txt", { method: "PUT", token, body: "x" });
-      expect(res.status).toBe(200); // writes b.txt (safe, no actual traversal)
-    });
-
-    it("rejects absolute paths", async () => {
-      const res = await api("/f//etc/passwd", { method: "PUT", token, body: "x" });
+    it("rejects paths with null bytes via presign", async () => {
+      const res = await api("/presign/upload", {
+        method: "POST",
+        token,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: "a\x00b.txt" }),
+      });
       expect(res.status).toBe(400);
     });
 
-    it("rejects paths with null bytes", async () => {
-      const res = await api("/f/a%00b.txt", { method: "PUT", token, body: "x" });
+    it("rejects absolute paths via delete", async () => {
+      const res = await api("/f//etc/passwd", { method: "DELETE", token });
       expect(res.status).toBe(400);
+    });
+
+    it("PUT /f/* returns 410 gone", async () => {
+      const res = await api("/f/test.txt", { method: "PUT", token, body: "test" });
+      expect(res.status).toBe(410);
+    });
+
+    it("GET /f/* returns 410 gone", async () => {
+      const res = await api("/f/test.txt", { token });
+      expect(res.status).toBe(410);
     });
   });
 
@@ -615,8 +652,8 @@ describe("Storage API", () => {
       otherToken = "other-session-token";
     });
 
-    it("user cannot read another user's files", async () => {
-      const res = await api("/f/hello.txt", { token: otherToken });
+    it("user cannot read another user's files via presign", async () => {
+      const res = await api("/presign/read/hello.txt", { token: otherToken });
       expect(res.status).toBe(404);
     });
 
@@ -636,7 +673,7 @@ describe("Storage API", () => {
       expect(body.deleted).toBe(1); // The R2 delete succeeds but deletes nothing
 
       // Original file should still exist
-      const check = await api("/f/hello.txt", { token });
+      const check = await api("/f/hello.txt", { method: "HEAD", token });
       expect(check.status).toBe(200);
     });
   });
@@ -672,7 +709,7 @@ describe("Storage API", () => {
       const res = await api("/");
       expect(res.status).toBe(200);
       const html = await res.text();
-      expect(html).toContain("storage.now");
+      expect(html).toContain("Storage");
     });
 
     it("GET /developers returns developers page", async () => {
