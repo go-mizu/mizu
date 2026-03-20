@@ -722,6 +722,31 @@ export function register(app: App) {
 
   app.openAPIRegistry.registerPath({
     method: "post",
+    path: "/files/mkdir",
+    summary: "Create a folder",
+    tags: filesTags,
+    security: sec,
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({
+              path: z.string().openapi({ example: "docs/drafts/", description: "Folder path (must end with /)" }),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Folder created",
+        content: { "application/json": { schema: z.object({ path: z.string(), created: z.boolean() }) } },
+      },
+    },
+  });
+
+  app.openAPIRegistry.registerPath({
+    method: "post",
     path: "/files/uploads",
     summary: "Initiate upload — returns presigned PUT URL",
     tags: ["uploads"],
