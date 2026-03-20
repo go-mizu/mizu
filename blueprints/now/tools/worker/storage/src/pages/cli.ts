@@ -15,7 +15,7 @@ export function cliPage(actor: string | null = null): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CLI — Storage</title>
-<meta name="description" content="The Storage CLI. Upload, download, and share files from your terminal. Zero dependencies. Works on macOS, Linux, and Windows.">
+<meta name="description" content="The Storage CLI. Upload, download, share, search, and manage files from your terminal. Single binary, zero dependencies.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -51,7 +51,9 @@ export function cliPage(actor: string | null = null): string {
 <div class="human-view" id="human-view">
 <main>
 
-<!-- HERO: two-column layout — left: headline + install, right: terminal demo -->
+<!-- ═══════════════════════════════════════════════════════════════════
+     HERO
+     ═══════════════════════════════════════════════════════════════════ -->
 <section class="hero">
   <div class="hero-inner">
     <div class="hero-left">
@@ -104,39 +106,41 @@ export function cliPage(actor: string | null = null): string {
   </div>
 </section>
 
-<!-- HOW IT WORKS -->
+<!-- ═══════════════════════════════════════════════════════════════════
+     TUTORIAL: Get started in 60 seconds
+     ═══════════════════════════════════════════════════════════════════ -->
 <section class="section" id="quickstart">
   <div class="wrap">
-    <div class="label">How it works</div>
-    <div class="h2">Three commands. That's it.</div>
-    <p class="sub" style="margin-bottom:36px">Log in, upload a file, share it.</p>
+    <div class="label">Tutorial</div>
+    <div class="h2">Up and running in 60 seconds.</div>
+    <p class="sub" style="margin-bottom:36px">Install, authenticate, upload your first file.</p>
 
     <div class="steps">
       <div class="step">
         <div class="step-num">01</div>
-        <div class="step-title">Log in</div>
-        <div class="step-desc">Opens your browser. Token saved locally.</div>
+        <div class="step-title">Install the CLI</div>
+        <div class="step-desc">A single binary, no runtime needed. Works immediately after install.</div>
+        <div class="step-cmd">
+          <span class="step-cmd-text"><span class="t-prompt">$</span> curl -fsSL https://storage.liteio.dev/cli/install.sh | sh</span>
+          <button class="step-copy" onclick="copyText('curl -fsSL https://storage.liteio.dev/cli/install.sh | sh',this)">copy</button>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">02</div>
+        <div class="step-title">Sign in</div>
+        <div class="step-desc">Opens your browser, confirms your identity, saves the token locally.</div>
         <div class="step-cmd">
           <span class="step-cmd-text"><span class="t-prompt">$</span> storage login</span>
           <button class="step-copy" onclick="copyText('storage login',this)">copy</button>
         </div>
       </div>
       <div class="step">
-        <div class="step-num">02</div>
-        <div class="step-title">Upload</div>
-        <div class="step-desc">Put any file into your storage.</div>
+        <div class="step-num">03</div>
+        <div class="step-title">Upload something</div>
+        <div class="step-desc">Any file, any size. It's in your storage in seconds.</div>
         <div class="step-cmd">
           <span class="step-cmd-text"><span class="t-prompt">$</span> storage put report.pdf docs/</span>
           <button class="step-copy" onclick="copyText('storage put report.pdf docs/',this)">copy</button>
-        </div>
-      </div>
-      <div class="step">
-        <div class="step-num">03</div>
-        <div class="step-title">Share</div>
-        <div class="step-desc">Get a link. It expires automatically.</div>
-        <div class="step-cmd">
-          <span class="step-cmd-text"><span class="t-prompt">$</span> storage share docs/report.pdf</span>
-          <button class="step-copy" onclick="copyText('storage share docs/report.pdf',this)">copy</button>
         </div>
       </div>
     </div>
@@ -145,17 +149,22 @@ export function cliPage(actor: string | null = null): string {
 
 <hr class="section-divider">
 
-<!-- COMMANDS -->
+<!-- ═══════════════════════════════════════════════════════════════════
+     COMMAND REFERENCE
+     ═══════════════════════════════════════════════════════════════════ -->
 <section class="section" id="commands">
   <div class="wrap">
-    <div class="label">Commands</div>
+    <div class="label">Command reference</div>
     <div class="h2">Everything the CLI can do.</div>
     <p class="sub" style="margin-bottom:36px">Every command supports <code>--json</code> for scripting and <code>--quiet</code> for silence.</p>
 
+    <!-- File operations -->
+    <div class="cmd-section-label">File operations</div>
     <div class="cmd-grid">
       <div class="cmd-card">
         <div class="cmd-name">put</div>
-        <div class="cmd-desc">Upload a file or stdin.</div>
+        <div class="cmd-aliases">aliases: upload, push</div>
+        <div class="cmd-desc">Upload a file or pipe from stdin. Streams directly to the edge — no temp files.</div>
         <div class="cmd-example">
           <span class="cmd-example-text">$ storage put photo.jpg images/</span>
           <button class="cmd-copy" onclick="copyText('storage put photo.jpg images/',this)">copy</button>
@@ -163,7 +172,8 @@ export function cliPage(actor: string | null = null): string {
       </div>
       <div class="cmd-card">
         <div class="cmd-name">get</div>
-        <div class="cmd-desc">Download a file to disk.</div>
+        <div class="cmd-aliases">aliases: download, pull</div>
+        <div class="cmd-desc">Download a file to the current directory, or specify a destination path.</div>
         <div class="cmd-example">
           <span class="cmd-example-text">$ storage get images/photo.jpg</span>
           <button class="cmd-copy" onclick="copyText('storage get images/photo.jpg',this)">copy</button>
@@ -171,63 +181,80 @@ export function cliPage(actor: string | null = null): string {
       </div>
       <div class="cmd-card">
         <div class="cmd-name">cat</div>
-        <div class="cmd-desc">Print file contents to stdout.</div>
+        <div class="cmd-aliases">aliases: read</div>
+        <div class="cmd-desc">Print file contents to stdout. Perfect for piping into other tools.</div>
         <div class="cmd-example">
-          <span class="cmd-example-text">$ storage cat config.json</span>
-          <button class="cmd-copy" onclick="copyText('storage cat config.json',this)">copy</button>
+          <span class="cmd-example-text">$ storage cat config.json | jq '.'</span>
+          <button class="cmd-copy" onclick="copyText('storage cat config.json | jq \\'.\\'',this)">copy</button>
         </div>
       </div>
       <div class="cmd-card">
         <div class="cmd-name">ls</div>
-        <div class="cmd-desc">List files at a path.</div>
+        <div class="cmd-aliases">aliases: list</div>
+        <div class="cmd-desc">List files and folders at a path. Shows name, size, and modified time.</div>
         <div class="cmd-example">
           <span class="cmd-example-text">$ storage ls docs/</span>
           <button class="cmd-copy" onclick="copyText('storage ls docs/',this)">copy</button>
         </div>
       </div>
       <div class="cmd-card">
-        <div class="cmd-name">share</div>
-        <div class="cmd-desc">Create a temporary public link.</div>
-        <div class="cmd-example">
-          <span class="cmd-example-text">$ storage share report.pdf</span>
-          <button class="cmd-copy" onclick="copyText('storage share report.pdf',this)">copy</button>
-        </div>
-      </div>
-      <div class="cmd-card">
-        <div class="cmd-name">rm</div>
-        <div class="cmd-desc">Delete one or more files.</div>
-        <div class="cmd-example">
-          <span class="cmd-example-text">$ storage rm old-draft.md</span>
-          <button class="cmd-copy" onclick="copyText('storage rm old-draft.md',this)">copy</button>
-        </div>
-      </div>
-      <div class="cmd-card">
         <div class="cmd-name">mv</div>
-        <div class="cmd-desc">Move or rename a file.</div>
+        <div class="cmd-aliases">aliases: move, rename</div>
+        <div class="cmd-desc">Move or rename a file. Works across folders.</div>
         <div class="cmd-example">
           <span class="cmd-example-text">$ storage mv draft.md final.md</span>
           <button class="cmd-copy" onclick="copyText('storage mv draft.md final.md',this)">copy</button>
         </div>
       </div>
       <div class="cmd-card">
-        <div class="cmd-name">find</div>
-        <div class="cmd-desc">Search files by name.</div>
+        <div class="cmd-name">rm</div>
+        <div class="cmd-aliases">aliases: delete, del</div>
+        <div class="cmd-desc">Delete one or more files. Folders too, with everything inside.</div>
         <div class="cmd-example">
-          <span class="cmd-example-text">$ storage find "report"</span>
-          <button class="cmd-copy" onclick="copyText('storage find &quot;report&quot;',this)">copy</button>
+          <span class="cmd-example-text">$ storage rm old-draft.md</span>
+          <button class="cmd-copy" onclick="copyText('storage rm old-draft.md',this)">copy</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Discovery -->
+    <div class="cmd-section-label" style="margin-top:48px">Discovery</div>
+    <div class="cmd-grid">
+      <div class="cmd-card">
+        <div class="cmd-name">find</div>
+        <div class="cmd-aliases">aliases: search</div>
+        <div class="cmd-desc">Search files by name across your entire storage. Multi-word queries with relevance scoring.</div>
+        <div class="cmd-example">
+          <span class="cmd-example-text">$ storage find "quarterly report"</span>
+          <button class="cmd-copy" onclick="copyText('storage find &quot;quarterly report&quot;',this)">copy</button>
         </div>
       </div>
       <div class="cmd-card">
         <div class="cmd-name">stat</div>
-        <div class="cmd-desc">Show storage usage.</div>
+        <div class="cmd-aliases">aliases: stats</div>
+        <div class="cmd-desc">See how much storage you're using. Shows file count and total bytes.</div>
         <div class="cmd-example">
           <span class="cmd-example-text">$ storage stat</span>
           <button class="cmd-copy" onclick="copyText('storage stat',this)">copy</button>
         </div>
       </div>
       <div class="cmd-card">
+        <div class="cmd-name">share</div>
+        <div class="cmd-aliases">aliases: sign</div>
+        <div class="cmd-desc">Create a temporary public link. Set a custom TTL or use the default (1 hour, max 7 days).</div>
+        <div class="cmd-example">
+          <span class="cmd-example-text">$ storage share report.pdf --ttl 86400</span>
+          <button class="cmd-copy" onclick="copyText('storage share report.pdf --ttl 86400',this)">copy</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Auth & keys -->
+    <div class="cmd-section-label" style="margin-top:48px">Authentication</div>
+    <div class="cmd-grid">
+      <div class="cmd-card">
         <div class="cmd-name">login</div>
-        <div class="cmd-desc">Authenticate via browser.</div>
+        <div class="cmd-desc">Authenticate via your browser. Opens a browser tab, verifies your identity, saves the token to <code>~/.config/storage/token</code>.</div>
         <div class="cmd-example">
           <span class="cmd-example-text">$ storage login</span>
           <button class="cmd-copy" onclick="copyText('storage login',this)">copy</button>
@@ -235,7 +262,7 @@ export function cliPage(actor: string | null = null): string {
       </div>
       <div class="cmd-card">
         <div class="cmd-name">token</div>
-        <div class="cmd-desc">Show or set your token.</div>
+        <div class="cmd-desc">Show your current token and where it came from (flag, env, or file). Or set a new one.</div>
         <div class="cmd-example">
           <span class="cmd-example-text">$ storage token</span>
           <button class="cmd-copy" onclick="copyText('storage token',this)">copy</button>
@@ -243,10 +270,11 @@ export function cliPage(actor: string | null = null): string {
       </div>
       <div class="cmd-card">
         <div class="cmd-name">key</div>
-        <div class="cmd-desc">Manage API keys.</div>
+        <div class="cmd-aliases">aliases: keys</div>
+        <div class="cmd-desc">Create, list, or revoke API keys. Keys can be scoped to a path prefix for security.</div>
         <div class="cmd-example">
-          <span class="cmd-example-text">$ storage key create deploy</span>
-          <button class="cmd-copy" onclick="copyText('storage key create deploy',this)">copy</button>
+          <span class="cmd-example-text">$ storage key create deploy --prefix cdn/</span>
+          <button class="cmd-copy" onclick="copyText('storage key create deploy --prefix cdn/',this)">copy</button>
         </div>
       </div>
     </div>
@@ -255,45 +283,127 @@ export function cliPage(actor: string | null = null): string {
 
 <hr class="section-divider">
 
-<!-- USE CASES -->
-<section class="section" id="use-cases">
+<!-- ═══════════════════════════════════════════════════════════════════
+     GLOBAL FLAGS
+     ═══════════════════════════════════════════════════════════════════ -->
+<section class="section" id="flags">
   <div class="wrap">
-    <div class="label">Use cases</div>
-    <div class="h2">Built for real workflows.</div>
-    <p class="sub" style="margin-bottom:36px">The CLI fits anywhere you have a terminal.</p>
+    <div class="label">Global flags</div>
+    <div class="h2">Works on every command.</div>
+    <p class="sub" style="margin-bottom:36px">Pass these to any command to control output and auth.</p>
+
+    <div class="flag-table">
+      <div class="flag-row flag-header">
+        <div class="flag-col-name">Flag</div>
+        <div class="flag-col-short">Short</div>
+        <div class="flag-col-desc">What it does</div>
+      </div>
+      <div class="flag-row">
+        <div class="flag-col-name"><code>--json</code></div>
+        <div class="flag-col-short"><code>-j</code></div>
+        <div class="flag-col-desc">Output as JSON — pipe into <code>jq</code> or any tool</div>
+      </div>
+      <div class="flag-row">
+        <div class="flag-col-name"><code>--quiet</code></div>
+        <div class="flag-col-short"><code>-q</code></div>
+        <div class="flag-col-desc">Suppress non-essential output</div>
+      </div>
+      <div class="flag-row">
+        <div class="flag-col-name"><code>--token</code></div>
+        <div class="flag-col-short"><code>-t</code></div>
+        <div class="flag-col-desc">Use a specific token (overrides env and config file)</div>
+      </div>
+      <div class="flag-row">
+        <div class="flag-col-name"><code>--endpoint</code></div>
+        <div class="flag-col-short"></div>
+        <div class="flag-col-desc">Override the API base URL</div>
+      </div>
+      <div class="flag-row">
+        <div class="flag-col-name"><code>--no-color</code></div>
+        <div class="flag-col-short"></div>
+        <div class="flag-col-desc">Disable colored output (also: <code>NO_COLOR=1</code>)</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="section-divider">
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     RECIPES: Real-world workflows
+     ═══════════════════════════════════════════════════════════════════ -->
+<section class="section" id="recipes">
+  <div class="wrap">
+    <div class="label">Recipes</div>
+    <div class="h2">Real-world workflows.</div>
+    <p class="sub" style="margin-bottom:36px">Copy-paste these into your terminal, CI config, or scripts.</p>
 
     <div class="uc-grid">
       <div class="uc">
         <div class="uc-head">
           <div class="uc-tag">CI / CD</div>
-          <div class="uc-title">Deploy from any pipeline</div>
-          <div class="uc-desc">Set <code>STORAGE_TOKEN</code> as a secret and upload build artifacts.</div>
+          <div class="uc-title">Upload build artifacts</div>
+          <div class="uc-desc">Set <code>STORAGE_TOKEN</code> as a secret in your CI. Upload happens in one step.</div>
         </div>
         <div class="uc-cmd">
-          <span class="uc-cmd-text"><span class="t-prompt">$ </span>storage put dist/app.js cdn/</span>
-          <button class="uc-copy" onclick="copyText('storage put dist/app.js cdn/',this)">copy</button>
+          <span class="uc-cmd-text"><span class="t-prompt">$ </span>storage put dist/app.js cdn/v1.2.0/</span>
+          <button class="uc-copy" onclick="copyText('storage put dist/app.js cdn/v1.2.0/',this)">copy</button>
         </div>
       </div>
       <div class="uc">
         <div class="uc-head">
           <div class="uc-tag">Backups</div>
-          <div class="uc-title">Pipe straight to storage</div>
-          <div class="uc-desc">No temp files needed. Stream from any command.</div>
+          <div class="uc-title">Stream from any command</div>
+          <div class="uc-desc">Pipe directly into storage. No temp files, no disk space needed.</div>
         </div>
         <div class="uc-cmd">
-          <span class="uc-cmd-text"><span class="t-prompt">$ </span>pg_dump mydb | storage put - backup.sql</span>
-          <button class="uc-copy" onclick="copyText('pg_dump mydb | storage put - backup.sql',this)">copy</button>
+          <span class="uc-cmd-text"><span class="t-prompt">$ </span>pg_dump mydb | storage put - backups/db.sql</span>
+          <button class="uc-copy" onclick="copyText('pg_dump mydb | storage put - backups/db.sql',this)">copy</button>
         </div>
       </div>
       <div class="uc">
         <div class="uc-head">
           <div class="uc-tag">Scripting</div>
-          <div class="uc-title">JSON output on every command</div>
-          <div class="uc-desc">Pipe <code>--json</code> output into jq or any tool.</div>
+          <div class="uc-title">JSON output for automation</div>
+          <div class="uc-desc">Every command supports <code>--json</code>. Pipe into <code>jq</code>, <code>fx</code>, or your own scripts.</div>
         </div>
         <div class="uc-cmd">
-          <span class="uc-cmd-text"><span class="t-prompt">$ </span>storage ls --json | jq '.'</span>
-          <button class="uc-copy" onclick="copyText('storage ls --json | jq \\'.\\'',this)">copy</button>
+          <span class="uc-cmd-text"><span class="t-prompt">$ </span>storage ls --json | jq '.[].name'</span>
+          <button class="uc-copy" onclick="copyText('storage ls --json | jq \\'.[].name\\'',this)">copy</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- More recipes as terminal demos -->
+    <div class="recipe-grid" style="margin-top:48px">
+      <div class="recipe">
+        <div class="recipe-label">Scoped API key for a deploy pipeline</div>
+        <div class="hero-term">
+          <div class="term-bar"><div class="term-dots"><span></span><span></span><span></span></div><span class="term-title">storage</span><div style="width:27px"></div></div>
+          <div class="term-body">
+<span class="t-prompt">$</span> <span class="t-cmd">storage key create</span> <span class="t-flag">github-deploy --prefix cdn/</span>
+<br><span class="t-ok">CREATED</span> <span class="t-dim">github-deploy</span>
+<br><span class="t-dim">prefix:</span> cdn/
+<br><span class="t-dim">token:</span>  <span class="t-url">sk_a8f3c7e2d1b9...4k2m</span>
+<span class="t-blank"></span>
+<br><span class="t-dim">Add to your CI secrets:</span>
+<br><span class="t-dim">STORAGE_TOKEN=sk_a8f3c7e2d1b9...4k2m</span>
+          </div>
+        </div>
+      </div>
+      <div class="recipe">
+        <div class="recipe-label">Share a file with a 24-hour link</div>
+        <div class="hero-term">
+          <div class="term-bar"><div class="term-dots"><span></span><span></span><span></span></div><span class="term-title">storage</span><div style="width:27px"></div></div>
+          <div class="term-body">
+<span class="t-prompt">$</span> <span class="t-cmd">storage share</span> <span class="t-flag">docs/report.pdf --ttl 86400</span>
+<br><span class="t-url">https://storage.liteio.dev/s/k7x9m2</span>
+<br><span class="t-dim">expires in 24h</span>
+<span class="t-blank"></span>
+<br><span class="t-prompt">$</span> <span class="t-cmd">storage share</span> <span class="t-flag">photos/team.jpg</span>
+<br><span class="t-url">https://storage.liteio.dev/s/m2n8p4</span>
+<br><span class="t-dim">expires in 1h</span>
+          </div>
         </div>
       </div>
     </div>
@@ -302,7 +412,9 @@ export function cliPage(actor: string | null = null): string {
 
 <hr class="section-divider">
 
-<!-- AUTH -->
+<!-- ═══════════════════════════════════════════════════════════════════
+     AUTHENTICATION
+     ═══════════════════════════════════════════════════════════════════ -->
 <section class="section" id="auth">
   <div class="wrap">
     <div class="label">Authentication</div>
@@ -313,7 +425,7 @@ export function cliPage(actor: string | null = null): string {
       <div class="auth-card">
         <div class="auth-badge">Interactive</div>
         <div class="auth-title">Browser login</div>
-        <div class="auth-desc">Opens your browser. No password needed.</div>
+        <div class="auth-desc">Opens your browser. No password needed. Token saved to <code>~/.config/storage/token</code>.</div>
         <div class="auth-cmd">
           <span class="auth-cmd-text">$ storage login</span>
           <button class="auth-copy" onclick="copyText('storage login',this)">copy</button>
@@ -322,16 +434,16 @@ export function cliPage(actor: string | null = null): string {
       <div class="auth-card">
         <div class="auth-badge">Automation</div>
         <div class="auth-title">API keys</div>
-        <div class="auth-desc">For CI and scripts. Set <code>STORAGE_TOKEN</code> env var.</div>
+        <div class="auth-desc">For CI and scripts. Scope keys to a prefix for security. Set <code>STORAGE_TOKEN</code> env var.</div>
         <div class="auth-cmd">
-          <span class="auth-cmd-text">$ storage key create deploy</span>
-          <button class="auth-copy" onclick="copyText('storage key create deploy',this)">copy</button>
+          <span class="auth-cmd-text">$ storage key create deploy --prefix cdn/</span>
+          <button class="auth-copy" onclick="copyText('storage key create deploy --prefix cdn/',this)">copy</button>
         </div>
       </div>
     </div>
 
     <div class="token-note">
-      Token resolution: <code>--token</code> flag &rarr; <code>STORAGE_TOKEN</code> env &rarr; <code>~/.config/storage/token</code>
+      Token resolution order: <code>--token</code> flag &rarr; <code>STORAGE_TOKEN</code> env &rarr; <code>~/.config/storage/token</code>
     </div>
   </div>
 </section>
@@ -360,121 +472,198 @@ export function cliPage(actor: string | null = null): string {
 </main>
 </div>
 
+<!-- ═══════════════════════════════════════════════════════════════════
+     MACHINE VIEW
+     ═══════════════════════════════════════════════════════════════════ -->
 <div class="machine-view" id="machine-view">
-  <div class="md" id="md-content">
-<span class="h1"># Storage CLI</span>
+  <div class="md" id="md-content"><button class="md-copy" onclick="copyMd()">copy</button><span class="h1"># Storage CLI</span>
 
-Upload, download, and share files from your terminal.
+Upload, download, share, and manage files from your terminal.
 Single binary. Zero dependencies. macOS, Linux, Windows.
 
 <span class="h2">## Installation</span>
 
-macOS / Linux
+<span class="h3">### macOS / Linux</span>
+<span class="dim">curl -fsSL https://storage.liteio.dev/cli/install.sh | sh</span>
+
+<span class="h3">### Windows (PowerShell)</span>
+<span class="dim">irm https://storage.liteio.dev/cli/install.ps1 | iex</span>
+
+<span class="h3">### npm / Bun / Deno</span>
+<span class="dim">npm i -g @liteio/storage-cli</span>
+<span class="dim">bun i -g @liteio/storage-cli</span>
+<span class="dim">deno install -g npm:@liteio/storage-cli</span>
+
+<span class="h3">### Direct download</span>
+Apple Silicon  <span class="link">https://storage.liteio.dev/cli/releases/latest/storage-darwin-arm64</span>
+Intel Mac      <span class="link">https://storage.liteio.dev/cli/releases/latest/storage-darwin-amd64</span>
+Linux x64      <span class="link">https://storage.liteio.dev/cli/releases/latest/storage-linux-amd64</span>
+Linux ARM      <span class="link">https://storage.liteio.dev/cli/releases/latest/storage-linux-arm64</span>
+Windows x64    <span class="link">https://storage.liteio.dev/cli/releases/latest/storage-windows-amd64.exe</span>
+Windows ARM    <span class="link">https://storage.liteio.dev/cli/releases/latest/storage-windows-arm64.exe</span>
+
+<span class="h2">## Quick Start</span>
+
+<span class="dim">Step 1: Install</span>
 curl -fsSL https://storage.liteio.dev/cli/install.sh | sh
 
-Windows
-irm https://storage.liteio.dev/cli/install.ps1 | iex
+<span class="dim">Step 2: Sign in</span>
+storage login
 
-npm
-npm i -g @liteio/storage-cli
+<span class="dim">Step 3: Upload a file</span>
+storage put report.pdf docs/
 
-Bun
-bun i -g @liteio/storage-cli
-
-Deno
-deno install -g npm:@liteio/storage-cli
+<span class="dim">Step 4: Share it</span>
+storage share docs/report.pdf
 
 <span class="h2">## Commands</span>
 
-<span class="h3">### upload</span>
-storage put &lt;file&gt; &lt;destination&gt;
-Upload a local file or stdin to storage.
-<span class="dim">Supports --json and --quiet flags.</span>
+<span class="h3">### File Operations</span>
 
-<span class="h3">### download</span>
-storage get &lt;path&gt;
+<span class="dim">storage put &lt;file&gt; [destination]</span>
+Upload a file or stdin to storage.
+Aliases: upload, push
+Use - as file to read from stdin: pg_dump mydb | storage put - backup.sql
+
+<span class="dim">storage get &lt;path&gt; [destination]</span>
 Download a file from storage to disk.
+Aliases: download, pull
 
-storage cat &lt;path&gt;
+<span class="dim">storage cat &lt;path&gt;</span>
 Print file contents to stdout.
+Aliases: read
 
-<span class="h3">### list</span>
-storage ls [path]
+<span class="dim">storage ls [path]</span>
 List files and folders at a given path.
-<span class="dim">Use --json for machine-readable output.</span>
+Aliases: list
+Shows name, size, content type, and last modified time.
 
-<span class="h3">### share</span>
-storage share &lt;path&gt;
-Create a temporary public link to a file.
-<span class="dim">Link expires automatically after 24h.</span>
-
-<span class="h3">### search</span>
-storage find &lt;query&gt;
-Search files by name.
-
-<span class="h3">### move</span>
-storage mv &lt;source&gt; &lt;destination&gt;
+<span class="dim">storage mv &lt;source&gt; &lt;destination&gt;</span>
 Move or rename a file.
+Aliases: move, rename
 
-<span class="h3">### delete</span>
-storage rm &lt;path&gt;
-Delete one or more files.
+<span class="dim">storage rm &lt;path...&gt;</span>
+Delete one or more files. Folders too (recursive).
+Aliases: delete, del
 
-<span class="h3">### stats</span>
-storage stat
-Show storage usage and quota.
+<span class="h3">### Discovery</span>
 
-<span class="h3">### auth</span>
-storage login
-Authenticate via browser. Opens your default browser and saves the token locally.
+<span class="dim">storage find &lt;query&gt;</span>
+Search files by name across your entire storage.
+Aliases: search
+Multi-word queries with relevance scoring.
 
-storage token
-Show or set your current auth token.
+<span class="dim">storage stat</span>
+Show storage usage: total files and bytes used.
+Aliases: stats
 
-storage key create &lt;name&gt;
-Create a named API key for automation.
+<span class="h3">### Sharing</span>
+
+<span class="dim">storage share &lt;path&gt; [--ttl &lt;seconds&gt;]</span>
+Create a temporary public link.
+Aliases: sign
+Default TTL: 1 hour. Maximum: 7 days (604800 seconds).
+Flags: --ttl, --expires, -x
+
+<span class="h3">### Authentication</span>
+
+<span class="dim">storage login [name]</span>
+Authenticate via browser. Opens your default browser and saves the token.
+Optional: pass a name to register a new account.
+
+<span class="dim">storage logout</span>
+Remove saved credentials and invalidate session.
+
+<span class="dim">storage token [&lt;token&gt;]</span>
+Show current auth token and its source, or set a new one.
+
+<span class="dim">storage key create &lt;name&gt; [--prefix &lt;path&gt;]</span>
+Create a named API key. Optionally scope to a path prefix.
+Aliases for key: keys
+
+<span class="dim">storage key list</span>
+List all API keys with metadata.
+Aliases: ls
+
+<span class="dim">storage key revoke &lt;id&gt;</span>
+Revoke an API key by ID.
+Aliases: delete, rm
+
+<span class="h2">## Global Flags</span>
+
+--json, -j       Output as JSON (for scripting)
+--quiet, -q      Suppress non-essential output
+--token, -t      Use a specific token
+--endpoint       Override API base URL
+--no-color       Disable colored output (also: NO_COLOR=1)
+--help, -h       Show help
+--version, -V    Print version
 
 <span class="h2">## Authentication</span>
 
 Two methods are supported:
 
-1. Browser login (interactive)
-   Run storage login. Opens your browser. No password needed.
+<span class="h3">### Browser login (interactive)</span>
+storage login
+Opens your browser. Saves token to ~/.config/storage/token.
 
-2. API keys (automation)
-   Run storage key create &lt;name&gt; to generate a key.
-   Set STORAGE_TOKEN env var in CI or scripts.
+<span class="h3">### API keys (automation)</span>
+storage key create &lt;name&gt; --prefix &lt;path&gt;
+Creates a scoped API key. Set STORAGE_TOKEN in your CI or scripts.
 
 Token resolution order:
---token flag, then STORAGE_TOKEN env, then ~/.config/storage/token
+1. --token flag (highest priority)
+2. STORAGE_TOKEN environment variable
+3. ~/.config/storage/token file
 
-<span class="h2">## Usage Examples</span>
+<span class="h2">## Environment Variables</span>
 
-Upload a file
-storage put photo.jpg images/
+STORAGE_TOKEN       API key or session token
+STORAGE_ENDPOINT    API base URL (default: https://storage.liteio.dev)
+NO_COLOR            Disable colored output
+XDG_CONFIG_HOME     Config directory base (default: ~/.config)
 
-Download a file
-storage get images/photo.jpg
+<span class="h2">## Recipes</span>
 
-List directory contents
-storage ls docs/
+<span class="h3">### Upload build artifacts from CI</span>
+export STORAGE_TOKEN=$SECRET_TOKEN
+storage put dist/app.js cdn/v1.2.0/
+storage put dist/app.css cdn/v1.2.0/
 
-Share a file
-storage share docs/report.pdf
+<span class="h3">### Stream a database backup</span>
+pg_dump mydb | storage put - backups/$(date +%Y-%m-%d).sql
 
-Pipe from another command
-pg_dump mydb | storage put - backup.sql
+<span class="h3">### Share a file for 24 hours</span>
+storage share docs/report.pdf --ttl 86400
 
-JSON output for scripting
-storage ls --json | jq '.'
+<span class="h3">### List files as JSON and filter with jq</span>
+storage ls docs/ --json | jq '.[].name'
 
-Create an API key for CI
-storage key create deploy
+<span class="h3">### Create a scoped deploy key</span>
+storage key create github-deploy --prefix cdn/
 
-<span class="dim">All commands support --json for structured output and --quiet to suppress non-essential output.</span>
+<span class="h3">### Download and pipe to another tool</span>
+storage cat config.json | jq '.database'
+
+<span class="h3">### Move files between folders</span>
+storage mv drafts/post.md published/post.md
+
+<span class="h3">### Bulk delete old files</span>
+storage ls archive/ --json | jq -r '.[].path' | xargs -I{} storage rm {}
+
+<span class="h3">### Check storage usage</span>
+storage stat --json | jq '{files: .count, mb: (.bytes / 1048576 | floor)}'
+
+<span class="h2">## Links</span>
+
+<span class="link">https://storage.liteio.dev/api</span>         API reference
+<span class="link">https://storage.liteio.dev/developers</span>  Developer guide
+<span class="link">https://storage.liteio.dev/pricing</span>     Pricing
+<span class="link">https://storage.liteio.dev/cli</span>         This page (human view)
   </div>
 </div>
 
+<!-- Floating mode switch -->
 <div class="mode-switch">
   <button class="active" onclick="setMode('human')"><span class="dot"></span> HUMAN</button>
   <button onclick="setMode('machine')"><span class="dot"></span> MACHINE</button>
@@ -572,6 +761,16 @@ function copyInstall(btn){
 function copyInstallCta(btn){
   const el=document.getElementById('cta-cmd');
   if(el) copyText(el.textContent,btn);
+}
+
+function copyMd(){
+  const el=document.getElementById('md-content');
+  if(el){
+    navigator.clipboard.writeText(el.innerText).then(()=>{
+      const btn=el.querySelector('.md-copy');
+      if(btn){btn.textContent='copied';setTimeout(()=>{btn.textContent='copy'},1500)}
+    });
+  }
 }
 
 function setMode(mode){

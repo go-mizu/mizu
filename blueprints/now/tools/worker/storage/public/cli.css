@@ -179,6 +179,32 @@
 .token-note{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
   margin-top:16px;max-width:720px;line-height:1.7}
 
+/* ── Command section labels ───────────────────────────────────────── */
+.cmd-section-label{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;
+  text-transform:uppercase;color:var(--text-3);font-weight:500;margin-bottom:12px}
+
+/* ── Command aliases ──────────────────────────────────────────────── */
+.cmd-aliases{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-3);
+  margin-bottom:6px;letter-spacing:.3px}
+
+/* ── Flag table ───────────────────────────────────────────────────── */
+.flag-table{border:1px solid var(--border);overflow:hidden}
+.flag-row{display:grid;grid-template-columns:140px 80px 1fr;border-bottom:1px solid var(--border)}
+.flag-row:last-child{border-bottom:none}
+.flag-header{background:var(--surface-alt);font-family:'JetBrains Mono',monospace;
+  font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--text-3)}
+.flag-header .flag-col-name,.flag-header .flag-col-short,.flag-header .flag-col-desc{padding:10px 16px}
+.flag-col-name{padding:10px 16px;font-size:13px;border-right:1px solid var(--border)}
+.flag-col-short{padding:10px 16px;font-size:13px;color:var(--text-3);border-right:1px solid var(--border)}
+.flag-col-desc{padding:10px 16px;font-size:13px;color:var(--text-2)}
+.flag-col-name code,.flag-col-short code,.flag-col-desc code{font-size:12px;background:var(--surface-alt);
+  padding:1px 5px;border:1px solid var(--border)}
+
+/* ── Recipe grid ──────────────────────────────────────────────────── */
+.recipe-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.recipe-label{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
+  margin-bottom:10px;font-weight:500}
+
 /* ── Responsive ────────────────────────────────────────────────────── */
 @media(max-width:1024px){
   .hero-inner{grid-template-columns:1fr;gap:40px}
@@ -193,6 +219,8 @@
   .uc:last-child{border-bottom:none}
   .auth-grid{grid-template-columns:1fr}
   .auth-card:first-child{border-right:none;border-bottom:1px solid var(--border)}
+  .recipe-grid{grid-template-columns:1fr}
+  .flag-row{grid-template-columns:120px 60px 1fr}
 }
 @media(max-width:768px){
   .hero-title{font-size:36px;letter-spacing:-1.5px}
@@ -219,4 +247,8 @@
   .uc-head{padding:20px}
   .cmd-card{padding:16px}
   .step{padding:20px}
+  .flag-row{grid-template-columns:1fr}
+  .flag-col-name,.flag-col-short{border-right:none;border-bottom:1px solid var(--border)}
+  .flag-col-short:empty{display:none}
+  .flag-header{display:none}
 }
