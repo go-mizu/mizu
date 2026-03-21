@@ -12,6 +12,7 @@
 #   START           — first file index (default: 0)
 #   END             — last file index (default: 9999)
 #   MAX_SESSIONS    — max concurrent screen sessions (default: 0 = auto)
+#   RAM_PER_SESSION — GB of RAM budgeted per session (default: 0 = use binary default)
 
 set -uo pipefail
 
@@ -20,6 +21,7 @@ RESTART_DELAY=${RESTART_DELAY:-15}
 START=${START:-0}
 END=${END:-9999}
 MAX_SESSIONS=${MAX_SESSIONS:-0}
+RAM_PER_SESSION=${RAM_PER_SESSION:-0}
 LOG_DIR="$HOME/log"
 LOG="$LOG_DIR/cc_sched.log"
 mkdir -p "$LOG_DIR"
@@ -55,9 +57,12 @@ log() {
     echo "$msg" >> "$LOG"
 }
 
-SESS_FLAGS=""
+SCHED_FLAGS=""
 if [[ "$MAX_SESSIONS" -gt 0 ]]; then
-    SESS_FLAGS="--max-sessions $MAX_SESSIONS"
+    SCHED_FLAGS="--max-sessions $MAX_SESSIONS"
+fi
+if [[ "$(echo "$RAM_PER_SESSION > 0" | bc -l 2>/dev/null)" == "1" ]]; then
+    SCHED_FLAGS="$SCHED_FLAGS --ram-per-session $RAM_PER_SESSION"
 fi
 
 log "=== CC Scheduler starting ==="
@@ -76,7 +81,7 @@ while true; do
     "$SEARCH" cc publish --schedule \
         --crawl "$CRAWL" \
         --start "$START" --end "$END" \
-        $SESS_FLAGS \
+        $SCHED_FLAGS \
         2>&1 | tee -a "$LOG"
     EXIT_CODE=${PIPESTATUS[0]}
 

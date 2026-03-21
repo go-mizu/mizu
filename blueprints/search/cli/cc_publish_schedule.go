@@ -15,15 +15,16 @@ import (
 
 // ccScheduleConfig holds configuration for the CC pipeline scheduler.
 type ccScheduleConfig struct {
-	CrawlID     string
-	RepoRoot    string
-	Start       int
-	End         int
-	MaxSessions int // 0 = auto-detect from hardware
-	ChunkSize   int
-	DonePct     int
-	StallRounds int
-	SearchBin   string
+	CrawlID       string
+	RepoRoot      string
+	Start         int
+	End           int
+	MaxSessions   int     // 0 = auto-detect from hardware
+	RAMPerSession float64 // GB per session for auto-detection (0 = default 1.2)
+	ChunkSize     int
+	DonePct       int
+	StallRounds   int
+	SearchBin     string
 	// GapIndices, when non-nil, enables gap mode: only these specific shard
 	// indices are targeted. Chunks are built from clusters of gap indices and
 	// done-pct is evaluated against gap targets only (not the full range).
@@ -57,24 +58,29 @@ func (b ccBudget) String() string {
 // Use available RAM (not total) since background services consume memory.
 // Hard cap at 12 sessions — with 1.8 GB/session, 12 sessions need ~22 GB,
 // achievable on 32+ GB servers. On 12 GB servers, RAM cap limits to ~4-5 sessions.
-func computeCCBudget(hw arctic.HardwareProfile) ccBudget {
-	const (
-		perSessionGB = 1.8
-		maxCap       = 12
-	)
+func computeCCBudget(hw arctic.HardwareProfile, ramPerSession float64, maxSessions int) ccBudget {
+	const maxCap = 12
+
+	if ramPerSession <= 0 {
+		ramPerSession = 1.2 // default: 1.2 GB per session
+	}
+
+	// Manual override: --max-sessions N bypasses auto-detection.
+	if maxSessions > 0 {
+		return ccBudget{MaxSessions: maxSessions, RAMPerSession: ramPerSession, Auto: false}
+	}
 
 	b := ccBudget{
-		RAMPerSession: perSessionGB,
+		RAMPerSession: ramPerSession,
 		Auto:          true,
 	}
 
 	// By RAM: use available RAM (accounts for background services dynamically).
-	// Available RAM already excludes OS caches / other processes.
 	usableRAM := hw.RAMAvailGB
-	if usableRAM < perSessionGB {
-		usableRAM = perSessionGB
+	if usableRAM < ramPerSession {
+		usableRAM = ramPerSession
 	}
-	b.ByRAM = int(usableRAM / perSessionGB)
+	b.ByRAM = int(usableRAM / ramPerSession)
 
 	// By CPU: each session is a mix of I/O-bound and CPU-bound work.
 	// Allow 1.5 sessions per core (pack is I/O heavy, export is CPU heavy).
@@ -100,14 +106,6 @@ func computeCCBudget(hw arctic.HardwareProfile) ccBudget {
 	// creating a false sense of headroom that vanishes under load).
 	if hw.RAMTotalGB < 16 && b.MaxSessions > 4 {
 		b.MaxSessions = 4
-	}
-
-	// Environment override.
-	if v := os.Getenv("MIZU_CC_MAX_SESSIONS"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			b.MaxSessions = n
-			b.Auto = false
-		}
 	}
 
 	return b
@@ -510,17 +508,13 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 	}
 
 	// ── Hardware detection and budget ────────────────────────────────────────
-	autoMode := cfg.MaxSessions == 0
 	var budget ccBudget
 	var hw arctic.HardwareProfile
 
-	if autoMode {
-		hw = arctic.DetectHardware(cfg.RepoRoot)
-		budget = computeCCBudget(hw)
-		cfg.MaxSessions = budget.MaxSessions
-	} else {
-		budget = ccBudget{MaxSessions: cfg.MaxSessions, Auto: false}
-	}
+	hw = arctic.DetectHardware(cfg.RepoRoot)
+	budget = computeCCBudget(hw, cfg.RAMPerSession, cfg.MaxSessions)
+	cfg.MaxSessions = budget.MaxSessions
+	autoMode := budget.Auto
 	initialMax := cfg.MaxSessions
 
 	statsCSV := ccStatsCSVPath(cfg.RepoRoot)
@@ -594,7 +588,7 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		// Recompute budget ceiling so it can scale UP when resources free up.
 		if autoMode {
 			hw = arctic.DetectHardware(cfg.RepoRoot)
-			budget = computeCCBudget(hw)
+			budget = computeCCBudget(hw, cfg.RAMPerSession, 0)
 			initialMax = budget.MaxSessions
 		}
 

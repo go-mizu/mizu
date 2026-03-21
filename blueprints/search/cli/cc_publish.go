@@ -37,15 +37,16 @@ func newCCPublish() *cobra.Command {
 		cleanup        bool
 		lightConvert   bool
 		skipErrors     bool
-		watchInterval  int
-		commitInterval int
-		chartsEvery    int
-		schedStart     int
-		schedEnd       int
-		schedMaxSess   int
-		schedChunk     int
-		schedDonePct   int
-		schedStall     int
+		watchInterval   int
+		commitInterval  int
+		chartsEvery     int
+		schedStart      int
+		schedEnd        int
+		schedMaxSess    int
+		schedChunk      int
+		schedDonePct    int
+		schedStall      int
+		ramPerSession   float64
 	)
 
 	cmd := &cobra.Command{
@@ -74,7 +75,7 @@ Run --watch and --schedule as separate processes; use multiple --pipeline worker
 			return runCCPublish(cmd.Context(), crawlID, fileIdx, repoRoot, repoID,
 				republish, private, pipeline, watch, schedule, list, gaps, cleanup, lightConvert, skipErrors,
 				watchInterval, commitInterval, chartsEvery,
-				schedStart, schedEnd, schedMaxSess, schedChunk, schedDonePct, schedStall)
+				schedStart, schedEnd, schedMaxSess, schedChunk, schedDonePct, schedStall, ramPerSession)
 		},
 	}
 
@@ -101,13 +102,14 @@ Run --watch and --schedule as separate processes; use multiple --pipeline worker
 	cmd.Flags().IntVar(&schedChunk, "chunk-size", 50, "Gap indices per screen session chunk (--schedule/--gaps; smaller = faster cycling, natural memory release)")
 	cmd.Flags().IntVar(&schedDonePct, "done-pct", 95, "% of shards committed before chunk is considered done (--schedule/--gaps)")
 	cmd.Flags().IntVar(&schedStall, "stall-rounds", 40, "Rounds with no new commits before killing a stalled session (--schedule only; ~30 min at 45s/round)")
+	cmd.Flags().Float64Var(&ramPerSession, "ram-per-session", 0, "GB of RAM budgeted per pipeline session (0=default 1.2; --schedule only)")
 	return cmd
 }
 
 func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string,
 	republish, private, pipeline, watch, schedule, list, gaps, cleanup, lightConvert, skipErrors bool,
 	watchInterval, commitInterval, chartsEvery int,
-	schedStart, schedEnd, schedMaxSess, schedChunk, schedDonePct, schedStall int) error {
+	schedStart, schedEnd, schedMaxSess, schedChunk, schedDonePct, schedStall int, ramPerSession float64) error {
 
 	resolvedID, note, err := ccResolveCrawlID(ctx, crawlID)
 	if err != nil {
@@ -146,15 +148,16 @@ func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string
 			fmt.Printf("  Gap backfill: %d uncommitted shards in %d–%d → scheduler\n",
 				len(gapIndices), schedStart, schedEnd)
 			cfg := ccScheduleConfig{
-				CrawlID:     crawlID,
-				RepoRoot:    repoRoot,
-				Start:       schedStart,
-				End:         schedEnd,
-				MaxSessions: schedMaxSess,
-				ChunkSize:   schedChunk,
-				DonePct:     schedDonePct,
-				StallRounds: schedStall,
-				GapIndices:  gapIndices,
+				CrawlID:       crawlID,
+				RepoRoot:      repoRoot,
+				Start:         schedStart,
+				End:           schedEnd,
+				MaxSessions:   schedMaxSess,
+				RAMPerSession: ramPerSession,
+				ChunkSize:     schedChunk,
+				DonePct:       schedDonePct,
+				StallRounds:   schedStall,
+				GapIndices:    gapIndices,
 			}
 			return runCCScheduleLoop(ctx, cfg)
 		}
@@ -196,14 +199,15 @@ func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string
 	// ── Schedule mode: manage pipeline screen sessions (self-healing) ────────
 	if schedule {
 		cfg := ccScheduleConfig{
-			CrawlID:     crawlID,
-			RepoRoot:    repoRoot,
-			Start:       schedStart,
-			End:         schedEnd,
-			MaxSessions: schedMaxSess,
-			ChunkSize:   schedChunk,
-			DonePct:     schedDonePct,
-			StallRounds: schedStall,
+			CrawlID:       crawlID,
+			RepoRoot:      repoRoot,
+			Start:         schedStart,
+			End:           schedEnd,
+			MaxSessions:   schedMaxSess,
+			RAMPerSession: ramPerSession,
+			ChunkSize:     schedChunk,
+			DonePct:       schedDonePct,
+			StallRounds:   schedStall,
 		}
 		return runCCScheduleLoop(ctx, cfg)
 	}
