@@ -23,3 +23,17 @@ migrations_dir = "migrations"
 [[r2_buckets]]
 binding = "BUCKET"
 bucket_name = "storage-files"
+
+# ── Hyperdrive (PostgreSQL connection pool, opt-in via STORAGE_DRIVER=hyperdrive) ──
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "91035394dca3474bb2d2a27a661eda4a"
+
+# ── Durable Objects (per-actor SQLite, opt-in via STORAGE_DRIVER=do) ──
+[[durable_objects.bindings]]
+name = "STORAGE_DO"
+class_name = "StorageDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["StorageDO"]

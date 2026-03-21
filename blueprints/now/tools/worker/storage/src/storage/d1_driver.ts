@@ -1,8 +1,14 @@
-// ── Cloudflare D1 + R2 implementation of StorageEngine ───────────────
+// ── D1 + R2 driver for StorageEngine ─────────────────────────────────
 //
-// Blobs:  R2 at  blobs/{actor}/{hash[0:2]}/{hash[2:4]}/{hash}
-// Events: D1 `events` table — append-only mutation log
-// Files:  D1 `files` table  — materialized projection for fast reads
+// Per-actor table sharding:
+//   f_{shard}  — files projection (replaces shared `files` table)
+//   e_{shard}  — events log (replaces shared `events` table)
+//   b_{shard}  — blob ref tracking (replaces shared `blobs` table)
+//
+// Shard = sha256(actor).slice(0, 16) — deterministic, no lookup needed.
+// Registry: `shards` table maps actor → shard + next_tx.
+//
+// Blobs in R2:  blobs/{actor}/{hash[0:2]}/{hash[2:4]}/{hash}
 
 import type {
   StorageEngine,
@@ -64,13 +70,16 @@ async function streamToBuffer(stream: ReadableStream): Promise<ArrayBuffer> {
 
 // ── Implementation ───────────────────────────────────────────────────
 
-export class CloudflareEngine implements StorageEngine {
+export class D1Engine implements StorageEngine {
   private db: D1Database;
   private bucket: R2Bucket;
   private r2Endpoint?: string;
   private r2AccessKeyId?: string;
   private r2SecretAccessKey?: string;
   private r2BucketName: string;
+
+  /** Per-request cache: actor → shard hex string */
+  private shardCache = new Map<string, string>();
 
   constructor(config: CloudflareConfig) {
     this.db = config.db;
@@ -81,20 +90,152 @@ export class CloudflareEngine implements StorageEngine {
     this.r2BucketName = config.r2BucketName || "storage-files";
   }
 
+  // ── shard management ──────────────────────────────────────────────
+
+  /** Compute deterministic shard from actor name (no DB lookup). */
+  private async actorShard(actor: string): Promise<string> {
+    const data = new TextEncoder().encode(actor);
+    const hash = await crypto.subtle.digest("SHA-256", data);
+    return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, "0"))
+      .join("")
+      .slice(0, 16);
+  }
+
+  /**
+   * Ensure per-actor tables exist. On first access for an actor:
+   * 1. Register in `shards` table
+   * 2. CREATE TABLE IF NOT EXISTS for f_{shard}, e_{shard}, b_{shard}
+   * 3. Migrate any existing data from legacy shared tables
+   */
+  private async ensureShard(actor: string): Promise<string> {
+    const cached = this.shardCache.get(actor);
+    if (cached) return cached;
+
+    // Check registry
+    const row = await this.db
+      .prepare("SELECT shard FROM shards WHERE actor = ?")
+      .bind(actor)
+      .first<{ shard: string }>();
+
+    if (row) {
+      this.shardCache.set(actor, row.shard);
+      return row.shard;
+    }
+
+    // New actor — compute shard, register, create tables
+    const shard = await this.actorShard(actor);
+    const now = Date.now();
+
+    // Copy next_tx from legacy tx_counter if it exists
+    const legacyTx = await this.db
+      .prepare("SELECT next_tx FROM tx_counter WHERE actor = ?")
+      .bind(actor)
+      .first<{ next_tx: number }>();
+
+    // Register shard (handle race: another request may have created it)
+    try {
+      await this.db
+        .prepare("INSERT INTO shards (actor, shard, next_tx, created_at) VALUES (?, ?, ?, ?)")
+        .bind(actor, shard, legacyTx?.next_tx || 1, now)
+        .run();
+    } catch {
+      // Race condition: another request already created this shard
+      const existing = await this.db
+        .prepare("SELECT shard FROM shards WHERE actor = ?")
+        .bind(actor)
+        .first<{ shard: string }>();
+      if (existing) {
+        this.shardCache.set(actor, existing.shard);
+        return existing.shard;
+      }
+      throw new Error("Failed to create shard for actor: " + actor);
+    }
+
+    // Create per-actor tables + indexes
+    await this.db.batch([
+      this.db.prepare(
+        `CREATE TABLE IF NOT EXISTS f_${shard} (` +
+          `path TEXT PRIMARY KEY,` +
+          `name TEXT NOT NULL,` +
+          `size INTEGER NOT NULL DEFAULT 0,` +
+          `type TEXT NOT NULL DEFAULT 'application/octet-stream',` +
+          `addr TEXT,` +
+          `tx INTEGER,` +
+          `tx_time INTEGER,` +
+          `updated_at INTEGER NOT NULL` +
+          `)`,
+      ),
+      this.db.prepare(
+        `CREATE TABLE IF NOT EXISTS e_${shard} (` +
+          `id INTEGER PRIMARY KEY AUTOINCREMENT,` +
+          `tx INTEGER NOT NULL,` +
+          `action TEXT NOT NULL CHECK(action IN ('write','move','delete')),` +
+          `path TEXT NOT NULL,` +
+          `addr TEXT,` +
+          `size INTEGER NOT NULL DEFAULT 0,` +
+          `type TEXT,` +
+          `meta TEXT,` +
+          `msg TEXT,` +
+          `ts INTEGER NOT NULL` +
+          `)`,
+      ),
+      this.db.prepare(
+        `CREATE TABLE IF NOT EXISTS b_${shard} (` +
+          `addr TEXT PRIMARY KEY,` +
+          `size INTEGER NOT NULL,` +
+          `ref_count INTEGER NOT NULL DEFAULT 1,` +
+          `created_at INTEGER NOT NULL` +
+          `)`,
+      ),
+      this.db.prepare(`CREATE INDEX IF NOT EXISTS idx_e_${shard}_tx ON e_${shard}(tx)`),
+      this.db.prepare(`CREATE INDEX IF NOT EXISTS idx_e_${shard}_path ON e_${shard}(path, tx)`),
+      this.db.prepare(`CREATE INDEX IF NOT EXISTS idx_f_${shard}_name ON f_${shard}(name COLLATE NOCASE)`),
+    ]);
+
+    // Migrate existing data from legacy shared tables (if any)
+    const hasLegacy = await this.db
+      .prepare("SELECT 1 FROM files WHERE owner = ? LIMIT 1")
+      .bind(actor)
+      .first();
+
+    if (hasLegacy) {
+      await this.db.batch([
+        this.db
+          .prepare(
+            `INSERT OR IGNORE INTO f_${shard} (path, name, size, type, addr, tx, tx_time, updated_at) ` +
+              `SELECT path, name, size, type, addr, tx, tx_time, updated_at FROM files WHERE owner = ?`,
+          )
+          .bind(actor),
+        this.db
+          .prepare(
+            `INSERT OR IGNORE INTO e_${shard} (tx, action, path, addr, size, type, meta, msg, ts) ` +
+              `SELECT tx, action, path, addr, size, type, meta, msg, ts FROM events WHERE actor = ?`,
+          )
+          .bind(actor),
+        this.db
+          .prepare(
+            `INSERT OR IGNORE INTO b_${shard} (addr, size, ref_count, created_at) ` +
+              `SELECT addr, size, ref_count, created_at FROM blobs WHERE actor = ?`,
+          )
+          .bind(actor),
+      ]);
+    }
+
+    this.shardCache.set(actor, shard);
+    return shard;
+  }
+
   // ── tx allocation ────────────────────────────────────────────────
 
   private async nextTx(actor: string): Promise<number> {
-    // Atomic increment: upsert then read
+    // Atomic increment on shards table (replaces tx_counter)
     await this.db
-      .prepare(
-        "INSERT INTO tx_counter (actor, next_tx) VALUES (?, 1) " +
-          "ON CONFLICT (actor) DO UPDATE SET next_tx = next_tx + 1",
-      )
+      .prepare("UPDATE shards SET next_tx = next_tx + 1 WHERE actor = ?")
       .bind(actor)
       .run();
 
     const row = await this.db
-      .prepare("SELECT next_tx FROM tx_counter WHERE actor = ?")
+      .prepare("SELECT next_tx FROM shards WHERE actor = ?")
       .bind(actor)
       .first<{ next_tx: number }>();
 
@@ -136,6 +277,7 @@ export class CloudflareEngine implements StorageEngine {
     contentType: string,
     msg?: string,
   ): Promise<WriteResult> {
+    const s = await this.ensureShard(actor);
     const buf = body instanceof ArrayBuffer ? body : await streamToBuffer(body);
     const addr = await sha256(buf);
     const size = buf.byteLength;
@@ -151,8 +293,8 @@ export class CloudflareEngine implements StorageEngine {
 
     // Read old addr for ref_count decrement (if overwriting)
     const oldFile = await this.db
-      .prepare("SELECT addr FROM files WHERE owner = ? AND path = ?")
-      .bind(actor, path)
+      .prepare(`SELECT addr FROM f_${s} WHERE path = ?`)
+      .bind(path)
       .first<{ addr: string | null }>();
 
     const tx = await this.nextTx(actor);
@@ -161,44 +303,40 @@ export class CloudflareEngine implements StorageEngine {
       // Event
       this.db
         .prepare(
-          "INSERT INTO events (tx, actor, action, path, addr, size, type, msg, ts) VALUES (?, ?, 'write', ?, ?, ?, ?, ?, ?)",
+          `INSERT INTO e_${s} (tx, action, path, addr, size, type, msg, ts) VALUES (?, 'write', ?, ?, ?, ?, ?, ?)`,
         )
-        .bind(tx, actor, path, addr, size, contentType, msg || `write ${path}`, now),
+        .bind(tx, path, addr, size, contentType, msg || `write ${path}`, now),
       // Files projection
       this.db
         .prepare(
-          "INSERT INTO files (owner, path, name, size, type, addr, tx, tx_time, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) " +
-            "ON CONFLICT (owner, path) DO UPDATE SET name=excluded.name, size=excluded.size, type=excluded.type, addr=excluded.addr, tx=excluded.tx, tx_time=excluded.tx_time, updated_at=excluded.updated_at",
+          `INSERT INTO f_${s} (path, name, size, type, addr, tx, tx_time, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ` +
+            `ON CONFLICT (path) DO UPDATE SET name=excluded.name, size=excluded.size, type=excluded.type, addr=excluded.addr, tx=excluded.tx, tx_time=excluded.tx_time, updated_at=excluded.updated_at`,
         )
-        .bind(actor, path, name, size, contentType, addr, tx, now, now),
+        .bind(path, name, size, contentType, addr, tx, now, now),
       // Blob tracking — upsert ref_count
       this.db
         .prepare(
-          "INSERT INTO blobs (addr, actor, size, ref_count, created_at) VALUES (?, ?, ?, 1, ?) " +
-            "ON CONFLICT (addr, actor) DO UPDATE SET ref_count = ref_count + 1",
+          `INSERT INTO b_${s} (addr, size, ref_count, created_at) VALUES (?, ?, 1, ?) ` +
+            `ON CONFLICT (addr) DO UPDATE SET ref_count = ref_count + 1`,
         )
-        .bind(addr, actor, size, now),
+        .bind(addr, size, now),
     ];
 
     // Decrement old blob ref_count if overwriting with different content
     if (oldFile?.addr && oldFile.addr !== addr) {
       stmts.push(
         this.db
-          .prepare("UPDATE blobs SET ref_count = MAX(ref_count - 1, 0) WHERE addr = ? AND actor = ?")
-          .bind(oldFile.addr, actor),
+          .prepare(`UPDATE b_${s} SET ref_count = MAX(ref_count - 1, 0) WHERE addr = ?`)
+          .bind(oldFile.addr),
       );
     }
-    // If same addr, the upsert above already incremented, but we should not
-    // double-count — the file was already pointing at this addr. Correct the
-    // ref_count by not incrementing (we only need one ref per file row).
-    // Actually: upsert increments, but the old file entry already held a ref.
-    // So for same-addr overwrite, net change is 0. We incremented above, so
-    // decrement the extra.
+    // Same-addr overwrite: upsert incremented, but old file already held a ref.
+    // Net change should be 0 — decrement the extra.
     if (oldFile?.addr && oldFile.addr === addr) {
       stmts.push(
         this.db
-          .prepare("UPDATE blobs SET ref_count = MAX(ref_count - 1, 0) WHERE addr = ? AND actor = ?")
-          .bind(addr, actor),
+          .prepare(`UPDATE b_${s} SET ref_count = MAX(ref_count - 1, 0) WHERE addr = ?`)
+          .bind(addr),
       );
     }
 
@@ -215,9 +353,11 @@ export class CloudflareEngine implements StorageEngine {
     to: string,
     msg?: string,
   ): Promise<MutationResult> {
+    const s = await this.ensureShard(actor);
+
     const file = await this.db
-      .prepare("SELECT addr, size, type FROM files WHERE owner = ? AND path = ?")
-      .bind(actor, from)
+      .prepare(`SELECT addr, size, type FROM f_${s} WHERE path = ?`)
+      .bind(from)
       .first<{ addr: string | null; size: number; type: string }>();
 
     if (!file) throw new Error("Source not found: " + from);
@@ -231,21 +371,19 @@ export class CloudflareEngine implements StorageEngine {
       // Event
       this.db
         .prepare(
-          "INSERT INTO events (tx, actor, action, path, addr, size, type, meta, msg, ts) VALUES (?, ?, 'move', ?, ?, ?, ?, ?, ?, ?)",
+          `INSERT INTO e_${s} (tx, action, path, addr, size, type, meta, msg, ts) VALUES (?, 'move', ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .bind(tx, actor, to, file.addr, file.size, file.type, meta, msg || `move ${from} → ${to}`, now),
+        .bind(tx, to, file.addr, file.size, file.type, meta, msg || `move ${from} → ${to}`, now),
       // Remove old file entry
-      this.db.prepare("DELETE FROM files WHERE owner = ? AND path = ?").bind(actor, from),
+      this.db.prepare(`DELETE FROM f_${s} WHERE path = ?`).bind(from),
       // Insert new file entry (same addr — no blob copy!)
       this.db
         .prepare(
-          "INSERT INTO files (owner, path, name, size, type, addr, tx, tx_time, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) " +
-            "ON CONFLICT (owner, path) DO UPDATE SET name=excluded.name, size=excluded.size, type=excluded.type, addr=excluded.addr, tx=excluded.tx, tx_time=excluded.tx_time, updated_at=excluded.updated_at",
+          `INSERT INTO f_${s} (path, name, size, type, addr, tx, tx_time, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ` +
+            `ON CONFLICT (path) DO UPDATE SET name=excluded.name, size=excluded.size, type=excluded.type, addr=excluded.addr, tx=excluded.tx, tx_time=excluded.tx_time, updated_at=excluded.updated_at`,
         )
-        .bind(actor, to, newName, file.size, file.type, file.addr, tx, now, now),
+        .bind(to, newName, file.size, file.type, file.addr, tx, now, now),
     ]);
-
-    // No R2 operations needed — blob hasn't changed
 
     return { tx, time: now };
   }
@@ -257,6 +395,7 @@ export class CloudflareEngine implements StorageEngine {
     paths: string[],
     msg?: string,
   ): Promise<DeleteResult> {
+    const s = await this.ensureShard(actor);
     const now = Date.now();
     const tx = await this.nextTx(actor);
     let deleted = 0;
@@ -267,56 +406,56 @@ export class CloudflareEngine implements StorageEngine {
       if (path.endsWith("/")) {
         // Recursive folder delete
         const { results } = await this.db
-          .prepare("SELECT path, addr FROM files WHERE owner = ? AND path LIKE ?")
-          .bind(actor, `${path}%`)
+          .prepare(`SELECT path, addr FROM f_${s} WHERE path LIKE ?`)
+          .bind(`${path}%`)
           .all();
 
         for (const row of results || []) {
           stmts.push(
             this.db
               .prepare(
-                "INSERT INTO events (tx, actor, action, path, addr, size, type, msg, ts) VALUES (?, ?, 'delete', ?, NULL, 0, NULL, ?, ?)",
+                `INSERT INTO e_${s} (tx, action, path, addr, size, type, msg, ts) VALUES (?, 'delete', ?, NULL, 0, NULL, ?, ?)`,
               )
-              .bind(tx, actor, row.path as string, msg || `delete ${path}*`, now),
+              .bind(tx, row.path as string, msg || `delete ${path}*`, now),
           );
           if (row.addr) {
             stmts.push(
               this.db
-                .prepare("UPDATE blobs SET ref_count = MAX(ref_count - 1, 0) WHERE addr = ? AND actor = ?")
-                .bind(row.addr as string, actor),
+                .prepare(`UPDATE b_${s} SET ref_count = MAX(ref_count - 1, 0) WHERE addr = ?`)
+                .bind(row.addr as string),
             );
           }
           deleted++;
         }
 
         stmts.push(
-          this.db.prepare("DELETE FROM files WHERE owner = ? AND path LIKE ?").bind(actor, `${path}%`),
+          this.db.prepare(`DELETE FROM f_${s} WHERE path LIKE ?`).bind(`${path}%`),
         );
       } else {
         // Single file delete
         const file = await this.db
-          .prepare("SELECT addr FROM files WHERE owner = ? AND path = ?")
-          .bind(actor, path)
+          .prepare(`SELECT addr FROM f_${s} WHERE path = ?`)
+          .bind(path)
           .first<{ addr: string | null }>();
 
         stmts.push(
           this.db
             .prepare(
-              "INSERT INTO events (tx, actor, action, path, addr, size, type, msg, ts) VALUES (?, ?, 'delete', ?, NULL, 0, NULL, ?, ?)",
+              `INSERT INTO e_${s} (tx, action, path, addr, size, type, msg, ts) VALUES (?, 'delete', ?, NULL, 0, NULL, ?, ?)`,
             )
-            .bind(tx, actor, path, msg || `delete ${path}`, now),
+            .bind(tx, path, msg || `delete ${path}`, now),
         );
 
         if (file?.addr) {
           stmts.push(
             this.db
-              .prepare("UPDATE blobs SET ref_count = MAX(ref_count - 1, 0) WHERE addr = ? AND actor = ?")
-              .bind(file.addr, actor),
+              .prepare(`UPDATE b_${s} SET ref_count = MAX(ref_count - 1, 0) WHERE addr = ?`)
+              .bind(file.addr),
           );
         }
 
         stmts.push(
-          this.db.prepare("DELETE FROM files WHERE owner = ? AND path = ?").bind(actor, path),
+          this.db.prepare(`DELETE FROM f_${s} WHERE path = ?`).bind(path),
         );
         deleted++;
       }
@@ -324,17 +463,17 @@ export class CloudflareEngine implements StorageEngine {
 
     if (stmts.length) await this.db.batch(stmts);
 
-    // R2 blobs NOT deleted here — GC handles cleanup of ref_count=0 blobs
-
     return { tx, time: now, deleted };
   }
 
   // ── read ─────────────────────────────────────────────────────────
 
   async read(actor: string, path: string): Promise<ReadResult | null> {
+    const s = await this.ensureShard(actor);
+
     const file = await this.db
-      .prepare("SELECT path, name, size, type, addr, tx, tx_time FROM files WHERE owner = ? AND path = ?")
-      .bind(actor, path)
+      .prepare(`SELECT path, name, size, type, addr, tx, tx_time FROM f_${s} WHERE path = ?`)
+      .bind(path)
       .first<{ path: string; name: string; size: number; type: string; addr: string | null; tx: number; tx_time: number }>();
 
     if (!file) return null;
@@ -373,9 +512,11 @@ export class CloudflareEngine implements StorageEngine {
   // ── head ─────────────────────────────────────────────────────────
 
   async head(actor: string, path: string): Promise<FileMeta | null> {
+    const s = await this.ensureShard(actor);
+
     const file = await this.db
-      .prepare("SELECT path, name, size, type, tx, tx_time FROM files WHERE owner = ? AND path = ?")
-      .bind(actor, path)
+      .prepare(`SELECT path, name, size, type, tx, tx_time FROM f_${s} WHERE path = ?`)
+      .bind(path)
       .first<{ path: string; name: string; size: number; type: string; tx: number; tx_time: number }>();
 
     if (!file) return null;
@@ -388,15 +529,16 @@ export class CloudflareEngine implements StorageEngine {
     actor: string,
     opts?: ListOptions,
   ): Promise<{ entries: FileEntry[]; truncated: boolean }> {
+    const s = await this.ensureShard(actor);
     const prefix = opts?.prefix || "";
     const limit = Math.min(opts?.limit || 200, 1000);
     const offset = opts?.offset || 0;
 
     const { results } = await this.db
       .prepare(
-        "SELECT path, name, size, type, updated_at, tx, tx_time FROM files WHERE owner = ? AND path LIKE ? ORDER BY path LIMIT ? OFFSET ?",
+        `SELECT path, name, size, type, updated_at, tx, tx_time FROM f_${s} WHERE path LIKE ? ORDER BY path LIMIT ? OFFSET ?`,
       )
-      .bind(actor, `${prefix}%`, limit + 1, offset)
+      .bind(`${prefix}%`, limit + 1, offset)
       .all();
 
     const rows = results || [];
@@ -437,12 +579,12 @@ export class CloudflareEngine implements StorageEngine {
     query: string,
     opts?: { limit?: number; prefix?: string },
   ): Promise<SearchResult[]> {
+    const s = await this.ensureShard(actor);
     const limit = Math.min(opts?.limit || 50, 200);
     const pfx = opts?.prefix || "";
 
-    let sql =
-      "SELECT path, name, size, type, tx FROM files WHERE owner = ? AND (name LIKE ? OR path LIKE ?)";
-    const binds: any[] = [actor, `%${query}%`, `%${query}%`];
+    let sql = `SELECT path, name, size, type, tx FROM f_${s} WHERE (name LIKE ? OR path LIKE ?)`;
+    const binds: any[] = [`%${query}%`, `%${query}%`];
 
     if (pfx) {
       sql += " AND path LIKE ?";
@@ -466,20 +608,36 @@ export class CloudflareEngine implements StorageEngine {
   // ── stats ────────────────────────────────────────────────────────
 
   async stats(actor: string): Promise<{ files: number; bytes: number }> {
+    const s = await this.ensureShard(actor);
+
     const row = await this.db
-      .prepare("SELECT COUNT(*) as files, COALESCE(SUM(size), 0) as bytes FROM files WHERE owner = ?")
-      .bind(actor)
+      .prepare(`SELECT COUNT(*) as files, COALESCE(SUM(size), 0) as bytes FROM f_${s}`)
       .first<{ files: number; bytes: number }>();
 
     return { files: row?.files || 0, bytes: row?.bytes || 0 };
   }
 
+  // ── allNames ─────────────────────────────────────────────────────
+
+  async allNames(actor: string): Promise<{ path: string; name: string }[]> {
+    const s = await this.ensureShard(actor);
+
+    const { results } = await this.db.prepare(`SELECT path, name FROM f_${s}`).all();
+
+    return (results || []).map((r) => ({
+      path: r.path as string,
+      name: r.name as string,
+    }));
+  }
+
   // ── log ──────────────────────────────────────────────────────────
 
   async log(actor: string, opts?: LogOptions): Promise<StorageEvent[]> {
+    const s = await this.ensureShard(actor);
     const limit = Math.min(opts?.limit || 50, 500);
-    let sql = "SELECT tx, action, path, size, msg, meta, ts FROM events WHERE actor = ?";
-    const binds: any[] = [actor];
+
+    let sql = `SELECT tx, action, path, size, msg, meta, ts FROM e_${s} WHERE 1=1`;
+    const binds: any[] = [];
 
     if (opts?.path) {
       sql += " AND path = ?";
@@ -515,9 +673,11 @@ export class CloudflareEngine implements StorageEngine {
   ): Promise<string | null> {
     if (!this.presignConfigured) return null;
 
+    const s = await this.ensureShard(actor);
+
     const file = await this.db
-      .prepare("SELECT addr FROM files WHERE owner = ? AND path = ?")
-      .bind(actor, path)
+      .prepare(`SELECT addr FROM f_${s} WHERE path = ?`)
+      .bind(path)
       .first<{ addr: string | null }>();
 
     if (!file) return null;
@@ -535,6 +695,9 @@ export class CloudflareEngine implements StorageEngine {
     contentType: string,
     expiresIn = 3600,
   ): Promise<string> {
+    // Ensure shard exists (creates tables if needed for new actor)
+    await this.ensureShard(actor);
+
     // Presigned uploads still go to legacy path — confirmUpload will
     // content-address them.
     const key = `${actor}/${path}`;
@@ -573,6 +736,9 @@ export class CloudflareEngine implements StorageEngine {
     partCount: number,
   ): Promise<{ upload_id: string; part_urls: string[]; expires_in: number }> {
     if (!this.presignConfigured) throw new Error("Presigned URLs not configured");
+
+    // Ensure shard exists
+    await this.ensureShard(actor);
 
     // Multipart uploads use legacy key — completeMultipart will content-address
     const key = `${actor}/${path}`;
@@ -627,3 +793,6 @@ export class CloudflareEngine implements StorageEngine {
     await mpu.abort();
   }
 }
+
+/** @deprecated Use D1Engine instead */
+export const CloudflareEngine = D1Engine;

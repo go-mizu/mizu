@@ -1,6 +1,7 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import type { Context } from "hono";
 import type { App, Env, Variables } from "../types";
+import type { StorageEngine } from "../storage/engine";
 import { auth } from "../middleware/auth";
 import { errRes } from "../schema";
 
@@ -15,21 +16,14 @@ export function invalidateCache(owner: string) {
 }
 
 export async function getCachedNames(
-  db: D1Database,
-  owner: string,
+  engine: StorageEngine,
+  actor: string,
 ): Promise<{ path: string; name: string }[]> {
-  const hit = cache.get(owner);
+  const hit = cache.get(actor);
   if (hit && Date.now() - hit.ts < TTL) return hit.rows;
 
-  const { results } = await db
-    .prepare("SELECT path, name FROM files WHERE owner = ?")
-    .bind(owner)
-    .all();
-  const rows = (results || []).map((r) => ({
-    path: r.path as string,
-    name: r.name as string,
-  }));
-  cache.set(owner, { rows, ts: Date.now() });
+  const rows = await engine.allNames(actor);
+  cache.set(actor, { rows, ts: Date.now() });
   return rows;
 }
 
@@ -79,7 +73,7 @@ export function register(app: App) {
     const actor = c.get("actor");
     const prefix = c.get("prefix");
 
-    const names = await getCachedNames(c.env.DB, actor);
+    const names = await getCachedNames(c.get("engine"), actor);
     const tokens = query.split(/\s+/);
 
     const hits: { path: string; name: string; score: number }[] = [];

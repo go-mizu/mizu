@@ -121,6 +121,9 @@ export interface StorageEngine {
   /** Aggregate storage stats. */
   stats(actor: string): Promise<{ files: number; bytes: number }>;
 
+  /** Get all file path/name pairs (for search indexing). */
+  allNames(actor: string): Promise<{ path: string; name: string }[]>;
+
   /** Get event log for an actor. */
   log(actor: string, opts?: LogOptions): Promise<StorageEvent[]>;
 
