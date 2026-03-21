@@ -22,6 +22,7 @@ export async function dashboardPage(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dashboard — Storage</title>
 ${FONT_LINK}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css">
 <link rel="stylesheet" href="/base.css">
 <link rel="stylesheet" href="/dashboard.css">
 </head>
@@ -102,6 +103,8 @@ function toggleTheme(){
   }
 })();
 </script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/auto-render.min.js"></script>
 <script src="/dashboard.js"></script>
 </body>
 </html>`);
