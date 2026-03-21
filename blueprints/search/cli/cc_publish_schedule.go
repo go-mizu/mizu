@@ -612,22 +612,23 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 	totalPacked := func() int { return len(committed) + countPendingParquets() }
 
 	// Rate tracking via sliding window of per-round deltas.
-	// This avoids inflated rates from backlog flushing at startup.
-	// The committed field tracks ONLY watcher_status.json TotalCommitted
-	// (actual HF pushes), not stats.csv count (which changes on merge).
+	// Tracks shards committed to HF during THIS scheduler session only.
+	// We watch watcher_status.json CommitNumber changes — each new commit
+	// adds ShardsInCommit to our running total. This prevents inflated rates
+	// from historical TotalCommitted values.
 	type rateSnapshot struct {
-		packed      int
-		hfCommitted int // from watcher_status.json only (actual HF pushes)
-		time        time.Time
+		packed          int
+		sessionCommits  int // shards committed to HF since scheduler start
+		time            time.Time
 	}
 	var rateHistory []rateSnapshot
-	// Seed with current watcher status if available.
-	initHFCommitted := 0
+	lastSeenHFCommit := 0 // watcher CommitNumber last seen
+	sessionCommitted := 0 // shards pushed to HF during this session
 	if ws, ok := ccReadWatcherStatus(cfg.RepoRoot); ok {
-		initHFCommitted = ws.TotalCommitted
+		lastSeenHFCommit = ws.CommitNumber // baseline: don't count old commits
 	}
 	rateHistory = append(rateHistory, rateSnapshot{
-		packed: totalPacked(), hfCommitted: initHFCommitted, time: time.Now(),
+		packed: totalPacked(), sessionCommits: 0, time: time.Now(),
 	})
 
 	round := 0
@@ -737,15 +738,15 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		curPacked := totalPacked()
 		pending := countPendingParquets()
 
-		// Record this round's snapshot for sliding-window rate calculation.
-		// Use watcher's TotalCommitted (actual HF pushes) for commit rate,
-		// not stats.csv count (which can jump from merge without real commits).
-		curHFCommitted := 0
-		if hasWatcherStatus {
-			curHFCommitted = watcherStatus.TotalCommitted
+		// Detect new HF commits: if CommitNumber increased, add ShardsInCommit.
+		if hasWatcherStatus && watcherStatus.CommitNumber > lastSeenHFCommit {
+			sessionCommitted += watcherStatus.ShardsInCommit
+			lastSeenHFCommit = watcherStatus.CommitNumber
 		}
+
+		// Record this round's snapshot for sliding-window rate calculation.
 		rateHistory = append(rateHistory, rateSnapshot{
-			packed: curPacked, hfCommitted: curHFCommitted, time: time.Now(),
+			packed: curPacked, sessionCommits: sessionCommitted, time: time.Now(),
 		})
 		// Keep last 20 rounds (~15 min at 45s/round) for stable window.
 		if len(rateHistory) > 20 {
@@ -767,12 +768,10 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 			}
 			packRate = float64(newPacked) / windowDur.Hours()
 
-			// Commit rate from actual HF pushes only (watcher_status.json).
-			// This is zero until the watcher completes its first HF commit,
-			// which is correct — no data has been pushed yet.
-			newHFCommitted := windowEnd.hfCommitted - windowStart.hfCommitted
-			if newHFCommitted > 0 {
-				commitRate = float64(newHFCommitted) / windowDur.Hours()
+			// Commit rate from actual HF pushes during this session only.
+			newSessionCommits := windowEnd.sessionCommits - windowStart.sessionCommits
+			if newSessionCommits > 0 {
+				commitRate = float64(newSessionCommits) / windowDur.Hours()
 				rateSource = "hf"
 			}
 		}
@@ -784,7 +783,7 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		if len(rateHistory) >= 2 {
 			prev := rateHistory[len(rateHistory)-2]
 			lastRoundPacked = windowEnd.packed - prev.packed
-			lastRoundCommitted = windowEnd.hfCommitted - prev.hfCommitted
+			lastRoundCommitted = windowEnd.sessionCommits - prev.sessionCommits
 			if lastRoundPacked < 0 {
 				lastRoundPacked = 0
 			}
