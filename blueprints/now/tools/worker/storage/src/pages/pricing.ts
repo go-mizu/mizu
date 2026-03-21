@@ -1,3 +1,6 @@
+import pricingMd from "../machine/pricing.md";
+import { markdownToHtml } from "../machine/render";
+
 export function pricingPage(): string {
   return `<!DOCTYPE html>
 <html lang="en" class="dark">
@@ -45,7 +48,7 @@ export function pricingPage(): string {
 <div class="hero">
   <div class="section-inner section-inner--center">
     <h1 class="hero-title">Simple, <span class="grad">predictable</span> pricing</h1>
-    <p class="hero-sub">Scale when you're ready.<br>Every plan includes unlimited downloads. Zero bandwidth fees.</p>
+    <p class="hero-sub">Start free, scale when you're ready.<br>No egress fees. No bandwidth metering.</p>
   </div>
 </div>
 
@@ -59,17 +62,17 @@ export function pricingPage(): string {
         <div class="tier-head">
           <div class="tier-name">Free</div>
           <div class="tier-price">$0</div>
-          <div class="tier-period">forever</div>
+          <div class="tier-period">no credit card</div>
         </div>
-        <p class="tier-desc">For personal projects, experiments, and getting started with the API.</p>
+        <p class="tier-desc">Try the API, build a prototype, or let your agents store files.</p>
         <a href="/" class="tier-cta">Get started</a>
         <div class="tier-list">
-          <div class="tier-item">Upload and organize files</div>
-          <div class="tier-item">Share files with other actors</div>
+          <div class="tier-item tier-item--key">Storage for personal projects</div>
+          <div class="tier-item tier-item--key">Full REST API access</div>
           <div class="tier-item">Web file browser</div>
-          <div class="tier-item">Full REST API access</div>
-          <div class="tier-item">Ed25519 agent authentication</div>
-          <div class="tier-item">Magic link sign-in for humans</div>
+          <div class="tier-item">A few actors (human + agents)</div>
+          <div class="tier-item">Ed25519 &amp; magic link auth</div>
+          <div class="tier-item">Standard rate limits</div>
         </div>
       </div>
 
@@ -81,15 +84,15 @@ export function pricingPage(): string {
           <div class="tier-price">$20<span class="tier-price-unit">/mo</span></div>
           <div class="tier-period">per account</div>
         </div>
-        <p class="tier-desc">For production apps, multi-agent systems, and serious workloads.</p>
-        <a href="/" class="tier-cta tier-cta--primary">Get started</a>
+        <p class="tier-desc">For production apps, multi-agent workflows, and growing teams.</p>
+        <a href="/" class="tier-cta tier-cta--primary">Start free trial</a>
         <div class="tier-includes">Everything in Free, plus:</div>
         <div class="tier-list">
-          <div class="tier-item tier-item--key">5x more storage</div>
-          <div class="tier-item tier-item--key">Unlimited API requests</div>
-          <div class="tier-item tier-item--key">Direct uploads, bypass the API</div>
-          <div class="tier-item">Unlimited actors</div>
-          <div class="tier-item">Larger file uploads</div>
+          <div class="tier-item tier-item--key">More storage</div>
+          <div class="tier-item tier-item--key">Larger file uploads</div>
+          <div class="tier-item tier-item--key">Presigned direct uploads</div>
+          <div class="tier-item">More actors for your team</div>
+          <div class="tier-item">Higher rate limits</div>
           <div class="tier-item">Email support</div>
         </div>
       </div>
@@ -101,16 +104,16 @@ export function pricingPage(): string {
           <div class="tier-price">$100<span class="tier-price-unit">/mo</span></div>
           <div class="tier-period">per account</div>
         </div>
-        <p class="tier-desc">For teams and organizations that need more storage, more control, and dedicated support.</p>
+        <p class="tier-desc">For teams that need more capacity, fine-grained sharing, and priority support.</p>
         <a href="/" class="tier-cta">Get started</a>
         <div class="tier-includes">Everything in Pro, plus:</div>
         <div class="tier-list">
-          <div class="tier-item tier-item--key">2x more storage than Pro</div>
+          <div class="tier-item tier-item--key">Even more storage</div>
+          <div class="tier-item tier-item--key">Large file uploads (multipart)</div>
           <div class="tier-item tier-item--key">Team sharing &amp; permissions</div>
-          <div class="tier-item tier-item--key">Priority support</div>
-          <div class="tier-item">Even larger file uploads</div>
-          <div class="tier-item">Advanced usage analytics</div>
-          <div class="tier-item">Early access to new features</div>
+          <div class="tier-item">More actors</div>
+          <div class="tier-item">Higher rate limits</div>
+          <div class="tier-item">Priority support &amp; usage analytics</div>
         </div>
       </div>
 
@@ -127,43 +130,43 @@ export function pricingPage(): string {
         <div class="inc-icon">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         </div>
-        <div class="inc-name">Zero bandwidth fees</div>
-        <div class="inc-desc">Download your files as much as you want. No egress charges. No metering. No surprises.</div>
+        <div class="inc-name">No egress fees</div>
+        <div class="inc-desc">Read and download your files without bandwidth charges. Built into the infrastructure, not a promotional offer.</div>
       </div>
       <div class="inc">
         <div class="inc-icon">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
         </div>
-        <div class="inc-name">Global edge delivery</div>
-        <div class="inc-desc">Files served from 300+ locations worldwide. Sub-50ms metadata lookups.</div>
+        <div class="inc-name">Global edge network</div>
+        <div class="inc-desc">Files served from 300+ edge locations. Sub-50ms metadata lookups worldwide.</div>
       </div>
       <div class="inc">
         <div class="inc-icon">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
         </div>
-        <div class="inc-name">Cryptographic auth</div>
-        <div class="inc-desc">Ed25519 challenge-response for agents. Magic links for humans. No passwords.</div>
+        <div class="inc-name">Passwordless auth</div>
+        <div class="inc-desc">Ed25519 challenge-response for agents. Magic links for humans. No passwords to manage or leak.</div>
       </div>
       <div class="inc">
         <div class="inc-icon">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
         </div>
-        <div class="inc-name">Pure REST API</div>
-        <div class="inc-desc">Works with curl, fetch, any HTTP client. No SDK required. Agent-first design.</div>
+        <div class="inc-name">Plain REST API</div>
+        <div class="inc-desc">Works with curl, fetch, or any HTTP client. No proprietary SDK. Standard HTTP verbs and JSON.</div>
       </div>
       <div class="inc">
         <div class="inc-icon">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
         </div>
-        <div class="inc-name">Humans &amp; agents equal</div>
-        <div class="inc-desc">Same API, same permissions model. Share files between humans and AI agents seamlessly.</div>
+        <div class="inc-name">Humans &amp; agents</div>
+        <div class="inc-desc">Same API for both. Share files between people and AI agents with one permissions model.</div>
       </div>
       <div class="inc">
         <div class="inc-icon">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
         </div>
         <div class="inc-name">Web file browser</div>
-        <div class="inc-desc">Upload, browse, and manage files from any browser. Drag-and-drop support.</div>
+        <div class="inc-desc">Upload, browse, preview, and manage files from any browser. Drag-and-drop included.</div>
       </div>
     </div>
   </div>
@@ -175,28 +178,28 @@ export function pricingPage(): string {
     <h2 class="faq-title">Frequently asked questions</h2>
     <div class="faq-list">
       <div class="faq">
-        <div class="faq-q">How is bandwidth really free?</div>
-        <div class="faq-a">It's the architecture, not a promotion. Our storage backend has zero egress fees built into the infrastructure. This isn't going away.</div>
+        <div class="faq-q">Why are there no egress fees?</div>
+        <div class="faq-a">Our storage backend (Cloudflare R2) doesn't charge for egress. We pass that through. This is structural, not a promotion that will expire.</div>
       </div>
       <div class="faq">
-        <div class="faq-q">What happens when I hit a limit?</div>
-        <div class="faq-a">You'll get a clear error response. Your existing files stay accessible. Upgrade or free up space to continue uploading.</div>
+        <div class="faq-q">What counts as an "actor"?</div>
+        <div class="faq-a">Each human user or AI agent identity on your account is one actor. Higher plans support more actors for larger teams and agent fleets.</div>
+      </div>
+      <div class="faq">
+        <div class="faq-q">What happens when I hit a storage or rate limit?</div>
+        <div class="faq-a">You'll get a clear error with the specific limit. Existing files stay accessible. Upgrade or free up space to resume uploads.</div>
       </div>
       <div class="faq">
         <div class="faq-q">Can AI agents use the free plan?</div>
-        <div class="faq-a">Absolutely. Register with an Ed25519 key and start storing files immediately. The free plan is designed for agents too.</div>
-      </div>
-      <div class="faq">
-        <div class="faq-q">Is there a per-seat charge?</div>
-        <div class="faq-a">No. Pricing is per account, not per user or per agent. Add as many actors as your plan allows.</div>
+        <div class="faq-a">Yes. Register with an Ed25519 key and start storing files immediately. Agents are first-class citizens on every plan.</div>
       </div>
       <div class="faq">
         <div class="faq-q">Can I switch plans anytime?</div>
-        <div class="faq-a">Yes. Upgrade or downgrade at any time. Changes take effect immediately. No contracts, cancel anytime.</div>
+        <div class="faq-a">Yes. Upgrade or downgrade at any time. Changes take effect immediately. No long-term contracts.</div>
       </div>
       <div class="faq">
-        <div class="faq-q">Need more than Max?</div>
-        <div class="faq-a">Get in touch. We offer custom plans for organizations with larger storage needs, SLAs, and dedicated support.</div>
+        <div class="faq-q">What if I need more than what Max offers?</div>
+        <div class="faq-a">Contact us. We offer custom arrangements for organizations with larger capacity, SLA requirements, or dedicated support needs.</div>
       </div>
     </div>
   </div>
@@ -206,7 +209,7 @@ export function pricingPage(): string {
 <div class="section section--cta">
   <div class="section-inner section-inner--center">
     <h2 class="cta-title">Start building today</h2>
-    <p class="cta-sub">No credit card required.</p>
+    <p class="cta-sub">Free plan. No credit card required.</p>
     <a href="/" class="tier-cta tier-cta--primary cta-main">Get started</a>
   </div>
 </div>
@@ -215,80 +218,7 @@ export function pricingPage(): string {
 
 <!-- ===== MACHINE VIEW ===== -->
 <div class="machine-view" id="machine-view">
-  <div class="md" id="md-content"><button class="md-copy" onclick="copyMd()">copy</button><span class="h1"># Pricing</span>
-
-Simple, predictable pricing. Scale when you're ready.
-Zero bandwidth fees. Zero egress charges. Every plan includes unlimited downloads.
-
-<span class="h2">## Free</span>
-
-  Price: $0 forever
-  Storage: included
-  API requests: included
-  Actors: included
-
-  Includes:
-    Upload and organize files
-    Share files with other actors
-    Web file browser
-    Full REST API access
-    Ed25519 agent authentication
-    Magic link sign-in for humans
-
-<span class="h2">## Pro</span>
-
-  Price: $20/mo per account
-  <span class="dim">Most popular plan</span>
-
-  Everything in Free, plus:
-    5x more storage
-    Unlimited API requests
-    Direct uploads, bypass the API
-    Unlimited actors
-    Larger file uploads
-    Email support
-
-<span class="h2">## Max</span>
-
-  Price: $100/mo per account
-
-  Everything in Pro, plus:
-    2x more storage than Pro
-    Team sharing and permissions
-    Priority support
-    Even larger file uploads
-    Advanced usage analytics
-    Early access to new features
-
-<span class="h2">## Every plan includes</span>
-
-  Zero bandwidth fees
-    <span class="dim">Download as much as you want. No egress charges. No metering.</span>
-  Global edge delivery
-    <span class="dim">Files served from 300+ locations. Sub-50ms metadata lookups.</span>
-  Cryptographic auth
-    <span class="dim">Ed25519 challenge-response for agents. Magic links for humans.</span>
-  Pure REST API
-    <span class="dim">Works with curl, fetch, any HTTP client. No SDK required.</span>
-  Humans and agents equal
-    <span class="dim">Same API, same permissions. Share files between humans and AI agents.</span>
-  Web file browser
-    <span class="dim">Upload, browse, and manage files from any browser.</span>
-
-<span class="h2">## FAQ</span>
-
-  How is bandwidth really free?
-    <span class="dim">Zero egress fees built into the infrastructure. Not a promotion.</span>
-  What happens when I hit a limit?
-    <span class="dim">Clear error response. Existing files stay accessible. Upgrade or free up space.</span>
-  Can AI agents use the free plan?
-    <span class="dim">Yes. Register with an Ed25519 key and start storing files immediately.</span>
-  Is there a per-seat charge?
-    <span class="dim">No. Pricing is per account, not per user or per agent.</span>
-  Can I switch plans anytime?
-    <span class="dim">Yes. Upgrade or downgrade at any time. No contracts, cancel anytime.</span>
-  Need more than Max?
-    <span class="dim">Contact us for custom plans with larger storage, SLAs, and dedicated support.</span></div>
+  <div class="md" id="md-content"><button class="md-copy" onclick="copyMd()">copy</button>${markdownToHtml(pricingMd)}</div>
 </div>
 
 <!-- Floating mode switch -->

@@ -1,4 +1,6 @@
 import { esc } from "./layout";
+import homeMd from "../machine/home.md";
+import { markdownToHtml } from "../machine/render";
 
 /* ── Reusable SVG icons ───────────────────────────────────────────── */
 const CLAUDE_ICON = (s: number) =>
@@ -382,44 +384,7 @@ ${registerModal}
 
 <!-- ===== MACHINE VIEW ===== -->
 <div class="machine-view" id="machine-view">
-  <div class="md" id="md-content"><button class="md-copy" onclick="copyMd()">copy</button><span class="h1"># Storage</span>
-
-Your team's files. Always within reach.
-
-<span class="h2">## What it does</span>
-
-Store, share, and find files across your team.
-Connected to Claude and ChatGPT via MCP.
-
-<span class="h2">## Features</span>
-
-<span class="h3">### Store</span>
-Upload files from browser, CLI, or API.
-Organize with folders. Search by name.
-
-<span class="h3">### Share</span>
-Generate a link. Send to anyone.
-No account needed to download.
-Links auto-expire (1 hour to 7 days).
-
-<span class="h3">### AI</span>
-Claude and ChatGPT can read, write, search, and share your files.
-Connect once via MCP, then just ask.
-8 tools: storage_read, storage_write, storage_list, storage_search,
-         storage_share, storage_move, storage_delete, storage_stats.
-
-<span class="h2">## Security</span>
-
-No passwords stored (email magic links + Ed25519)
-Encrypted at rest, TLS in transit
-Auto-expiring share links
-Full audit logging
-
-<span class="h2">## Links</span>
-
-<span class="link">https://storage.liteio.dev/developers</span>  Developer docs
-<span class="link">https://storage.liteio.dev/pricing</span>     Pricing
-<span class="link">https://storage.liteio.dev/api</span>         API reference</div>
+  <div class="md" id="md-content"><button class="md-copy" onclick="copyMd()">copy</button>${markdownToHtml(homeMd)}</div>
 </div>
 
 <!-- Floating mode switch -->

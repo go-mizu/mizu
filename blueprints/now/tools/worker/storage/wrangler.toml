@@ -4,6 +4,11 @@ compatibility_date = "2026-03-11"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
+[[rules]]
+type = "Text"
+globs = ["**/*.md"]
+fallthrough = true
+
 routes = [
   { pattern = "storage.liteio.dev", custom_domain = true }
 ]

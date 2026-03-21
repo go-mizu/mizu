@@ -3,6 +3,9 @@
  * Practical guide with real logos and polished layout.
  */
 
+import aiMd from "../machine/ai.md";
+import { markdownToHtml } from "../machine/render";
+
 export function aiPage(): string {
   return `<!DOCTYPE html>
 <html lang="en" class="dark">
@@ -42,6 +45,8 @@ export function aiPage(): string {
     </div>
   </div>
 </nav>
+
+<div class="human-view" id="human-view">
 
 <!-- ═══ HERO ═══ -->
 <div class="hero">
@@ -215,6 +220,16 @@ export function aiPage(): string {
     </div>
   </div>
 </div>
+</div><!-- /human-view -->
+
+<div class="machine-view" id="machine-view">
+  <div class="md" id="md-content"><button class="md-copy" onclick="copyMd()">copy</button>${markdownToHtml(aiMd)}</div>
+</div>
+
+<div class="mode-switch">
+  <button class="active" onclick="setMode('human')"><span class="dot"></span> HUMAN</button>
+  <button onclick="setMode('machine')"><span class="dot"></span> MACHINE</button>
+</div>
 
 <script>
 function toggleTheme(){
@@ -236,6 +251,28 @@ function toggleTheme(){
   },{threshold:0.06,rootMargin:'0px 0px -40px 0px'});
   els.forEach(s=>obs.observe(s));
 })();
+function setMode(mode){
+  var btns=document.querySelectorAll('.mode-switch button');
+  btns.forEach(function(b){b.classList.remove('active')});
+  if(mode==='human'){
+    btns[0].classList.add('active');
+    document.getElementById('human-view').classList.remove('hidden');
+    document.getElementById('machine-view').classList.remove('active');
+  } else {
+    btns[1].classList.add('active');
+    document.getElementById('human-view').classList.add('hidden');
+    document.getElementById('machine-view').classList.add('active');
+  }
+}
+function copyMd(){
+  var el=document.getElementById('md-content');
+  if(el){
+    navigator.clipboard.writeText(el.innerText.replace(/^copy\\n/,'')).then(function(){
+      var btn=el.querySelector('.md-copy');
+      if(btn){btn.textContent='copied';setTimeout(function(){btn.textContent='copy'},1500)}
+    });
+  }
+}
 </script>
 </body>
 </html>`;

@@ -14,11 +14,15 @@ import { getSessionActor } from "./pages/session";
 import { homePage } from "./pages/home";
 import { developersPage } from "./pages/developers";
 import { pricingPage } from "./pages/pricing";
-// AI page removed — covered by home page
 import { cliPage } from "./pages/cli";
 import { browsePage } from "./pages/browse";
 import { privacyPage } from "./pages/privacy";
 import { dashboardPage } from "./pages/dashboard";
+import homeMd from "./machine/home.md";
+import developersMd from "./machine/developers.md";
+import cliMd from "./machine/cli.md";
+import aiMd from "./machine/ai.md";
+import pricingMd from "./machine/pricing.md";
 import { D1Engine } from "./storage/d1_driver";
 import { DOEngine, StorageDO } from "./storage/do_driver";
 import { D1V2Engine } from "./storage/d1_v2_driver";
@@ -59,20 +63,38 @@ app.use("*", async (c, next) => {
   await next();
 });
 
+// ── Content negotiation helper ────────────────────────────────────────
+function wantsMd(c: any): boolean {
+  const accept = c.req.header("accept") || "";
+  return accept.includes("text/markdown");
+}
+function md(c: any, text: string) {
+  return c.text(text, 200, { "Content-Type": "text/markdown; charset=utf-8" });
+}
+
 // ── Pages (no auth — session read optionally for signed-in state) ───
 app.get("/", async (c) => {
+  if (wantsMd(c)) return md(c, homeMd);
   const actor = await getSessionActor(c);
   if (actor) return c.redirect("/dashboard", 302);
   return c.html(homePage(null, c.env.TURNSTILE_SITE_KEY));
 });
 app.get("/developers", async (c) => {
+  if (wantsMd(c)) return md(c, developersMd);
   const actor = await getSessionActor(c);
   return c.html(developersPage(actor));
 });
-app.get("/pricing", (c) => c.html(pricingPage()));
-app.get("/ai", (c) => c.redirect("/", 302));
+app.get("/pricing", (c) => {
+  if (wantsMd(c)) return md(c, pricingMd);
+  return c.html(pricingPage());
+});
+app.get("/ai", (c) => {
+  if (wantsMd(c)) return md(c, aiMd);
+  return c.redirect("/", 302);
+});
 app.get("/privacy", (c) => c.html(privacyPage()));
 app.get("/cli", async (c) => {
+  if (wantsMd(c)) return md(c, cliMd);
   const actor = await getSessionActor(c);
   return c.html(cliPage(actor));
 });
@@ -123,6 +145,14 @@ app.get("/docs", (c) => {
 // ── API Reference (auto-generated from OpenAPI spec) ─────────────────
 app.get("/api", (c) => {
   const origin = new URL(c.req.url).origin;
+  if (wantsMd(c)) {
+    const spec = app.getOpenAPIDocument({
+      openapi: "3.1.0",
+      info: { title: "Storage API", version: "1.0.0", description: "File storage on the edge." },
+    });
+    const resolved = resolveRefs(spec, spec);
+    return md(c, specToMarkdown(resolved, origin));
+  }
   const spec = app.getOpenAPIDocument({
     openapi: "3.1.0",
     info: { title: "Storage API", version: "1.0.0", description: "File storage on the edge." },
@@ -426,23 +456,12 @@ function specToMarkdown(spec: any, origin: string): string {
       md.push("```bash\n" + curl + "\n```\n");
       const sr = (op.responses?.["200"] || op.responses?.["201"]) as any;
       if (sr?.content?.["application/json"]?.schema) { const ex = exampleFromSchema(sr.content["application/json"].schema); if (ex) md.push("```json\n" + JSON.stringify(ex, null, 2) + "\n```\n"); }
-      md.push("---\n");
     }
   }
   return md.join("\n");
 }
 
-// Convert markdown text to machine-view HTML with styled headings
-function markdownToMachineView(md: string): string {
-  return md
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/^# (.+)$/gm, '<span class="h1"># $1</span>')
-    .replace(/^## (.+)$/gm, '<span class="h2">## $1</span>')
-    .replace(/^### (.+)$/gm, '<span class="h3">### $1</span>')
-    .replace(/^```(\w*)$/gm, '<span class="dim">```$1</span>')
-    .replace(/^---$/gm, '<span class="dim">---</span>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>');
-}
+import { markdownToHtml as markdownToMachineView } from "./machine/render";
 
 const COPY_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="0"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
 
