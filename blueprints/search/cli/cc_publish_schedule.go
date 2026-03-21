@@ -709,66 +709,75 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		nTodo := len(todoKeys)
 		slots := effectiveMax - nRunning
 
-		// Log resource state with throughput metrics.
-		if autoMode {
-			tps := tracker.throughputPerSession()
-			fillRate := tracker.diskFillRate()
-			logLine(fmt.Sprintf("Round %d | hw: %.1fGB RAM (%.1f avail), %.0fGB disk (%.0f free), load %.1f/%d cores",
-				round, hw.RAMTotalGB, hw.RAMAvailGB, hw.DiskTotalGB, hw.DiskFreeGB, loadAvg, hw.CPUCores))
-			throughputInfo := fmt.Sprintf("tps=%.2f commits/round/sess", tps)
-			if fillRate > 0.01 {
-				throughputInfo += fmt.Sprintf(", disk_fill=%.1fGB/round", fillRate)
-			}
-			logLine(fmt.Sprintf("         | budget: %s, effective: %d (%s)",
-				budget, effectiveMax, reason))
-			logLine(fmt.Sprintf("         | %s", throughputInfo))
-		}
-
-		// Shards/hour and ETA to 100k.
+		// ── Round summary ────────────────────────────────────────────────────
 		const totalTarget = 100_000
 		elapsed := time.Since(schedStart)
-		newShards := totalCommitted - startCommitted
+		newCommitted := totalCommitted - startCommitted
 
-		// Compute live rate from this scheduler session.
-		// Once we have live commits, use live rate — it reflects current conditions
-		// (hardware, concurrency, network) better than historical CSV data.
-		// CSV rate is only a fallback before the first live commit arrives.
-		var shardsPerHour float64
+		// Pack rate: total packed (committed + pending parquets on disk).
+		curPacked := totalPacked()
+		newPacked := curPacked - startPacked
+		pending := countPendingParquets()
+		var packRate float64
+		if newPacked < 0 {
+			newPacked = 0 // cleanup can reduce pending count
+		}
+		if elapsed.Seconds() > 60 && newPacked > 0 {
+			packRate = float64(newPacked) / elapsed.Hours()
+		}
+
+		// Commit rate: shards pushed to HF per hour.
+		var commitRate float64
 		rateSource := ""
-		if elapsed.Seconds() > 60 && newShards > 0 {
-			shardsPerHour = float64(newShards) / elapsed.Hours()
+		if elapsed.Seconds() > 60 && newCommitted > 0 {
+			commitRate = float64(newCommitted) / elapsed.Hours()
 			rateSource = "live"
 		} else if csvShardsPerHour > 0 {
-			shardsPerHour = csvShardsPerHour
+			commitRate = csvShardsPerHour
 			rateSource = "csv"
 		}
 
-		if shardsPerHour > 0 {
-			remaining := totalTarget - totalCommitted
-			if remaining > 0 {
-				etaHours := float64(remaining) / shardsPerHour
-				etaDone := time.Now().Add(time.Duration(etaHours * float64(time.Hour)))
-				etaDays := etaHours / 24
-				logLine(fmt.Sprintf("         | throughput: %.1f shards/hour [%s] (%d new in %s) | %d/%d (%.2f%%)",
-					shardsPerHour, rateSource, newShards, elapsed.Round(time.Second), totalCommitted, totalTarget,
-					float64(totalCommitted)/float64(totalTarget)*100))
-				if etaDays >= 1 {
-					logLine(fmt.Sprintf("         | ETA: %.1f days — finish ~%s",
-						etaDays, etaDone.Format("Mon, 02 Jan 2006 15:04")))
-				} else {
-					logLine(fmt.Sprintf("         | ETA: %.1f hours — finish ~%s",
-						etaHours, etaDone.Format("Mon, 02 Jan 2006 15:04")))
-				}
-			} else {
-				logLine(fmt.Sprintf("         | throughput: %.1f shards/hour | %d/%d — COMPLETE",
-					shardsPerHour, totalCommitted, totalTarget))
-			}
+		remaining := totalTarget - totalCommitted
+
+		// Line 1: round header with session counts.
+		scalingNote := ""
+		if reason != "ok" {
+			scalingNote = fmt.Sprintf(" [%s]", reason)
+		}
+		logLine(fmt.Sprintf("Round %d | sessions: %d/%d running, %d queued%s | load %.1f/%d cores | RAM %.1f/%.1fGB",
+			round, nRunning, effectiveMax, nTodo, scalingNote, loadAvg, hw.CPUCores, hw.RAMAvailGB, hw.RAMTotalGB))
+
+		// Line 2: throughput rates.
+		if packRate > 0 || commitRate > 0 {
+			logLine(fmt.Sprintf("  rate   | pack: %.0f shards/hr (+%d) | commit: %.0f shards/hr [%s] (+%d)",
+				packRate, newPacked, commitRate, rateSource, newCommitted))
 		}
 
-		logLine(fmt.Sprintf("Round %d | committed=%d | done=%d/%d chunks | running=%d | todo=%d | slots=%d",
-			round, totalCommitted, nDone, len(chunks), nRunning, nTodo, slots))
+		// Line 3: progress counters.
+		logLine(fmt.Sprintf("  done   | %d committed + %d pending = %d packed | %d remaining of %d (%.1f%%)",
+			totalCommitted, pending, curPacked, remaining, totalTarget,
+			float64(totalCommitted)/float64(totalTarget)*100))
+
+		// Line 4: ETA based on commit rate.
+		etaRate := commitRate
+		if etaRate <= 0 {
+			etaRate = packRate
+		}
+		if etaRate > 0 && remaining > 0 {
+			etaHours := float64(remaining) / etaRate
+			etaDone := time.Now().Add(time.Duration(etaHours * float64(time.Hour)))
+			if etaHours >= 24 {
+				logLine(fmt.Sprintf("  ETA    | %.1f days — ~%s", etaHours/24, etaDone.Format("Mon, 02 Jan 2006 15:04")))
+			} else {
+				logLine(fmt.Sprintf("  ETA    | %.1f hours — ~%s", etaHours, etaDone.Format("Mon, 02 Jan 2006 15:04")))
+			}
+		} else if remaining <= 0 {
+			logLine(fmt.Sprintf("  DONE   | %d/%d shards committed", totalCommitted, totalTarget))
+		}
+
+		// Line 5: running sessions detail.
 		if len(runningNames) > 0 {
-			logLine("  running: " + strings.Join(runningNames, " "))
+			logLine("  active | " + strings.Join(runningNames, " "))
 		}
 
 		// If we need to shed sessions (effective max < running), kill the most stalled.
