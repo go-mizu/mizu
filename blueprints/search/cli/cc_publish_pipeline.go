@@ -51,6 +51,10 @@ type ccTotals struct {
 	DurConvertS   int64
 	DurExportS    int64
 	DurPublishS   int64
+	// Throughput (computed from CreatedAt timestamps in stats.csv)
+	ShardsPerHour float64   // shards/hour over last 24h window
+	FirstShard    time.Time // earliest CreatedAt
+	LastShard     time.Time // latest CreatedAt
 }
 
 func ccStatsCSVPath(repoRoot string) string {
@@ -304,6 +308,25 @@ func ccComputeTotals(stats []ccShardStats, crawlID string) ccTotals {
 		t.DurConvertS += s.DurConvertS
 		t.DurExportS += s.DurExportS
 		t.DurPublishS += s.DurPublishS
+
+		if s.CreatedAt != "" {
+			if ts, err := time.Parse(time.RFC3339, s.CreatedAt); err == nil {
+				if t.FirstShard.IsZero() || ts.Before(t.FirstShard) {
+					t.FirstShard = ts
+				}
+				if ts.After(t.LastShard) {
+					t.LastShard = ts
+				}
+			}
+		}
+	}
+
+	// Compute shards/hour from the time span between first and last shard.
+	if t.Shards >= 2 && !t.FirstShard.IsZero() && !t.LastShard.IsZero() {
+		span := t.LastShard.Sub(t.FirstShard)
+		if span.Hours() > 0.1 {
+			t.ShardsPerHour = float64(t.Shards) / span.Hours()
+		}
 	}
 	return t
 }
