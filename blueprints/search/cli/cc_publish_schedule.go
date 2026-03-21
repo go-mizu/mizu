@@ -579,18 +579,15 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 	// Resource tracker for adaptive throughput/bottleneck detection.
 	tracker := &ccResourceTracker{}
 
-	// Throughput tracking for shards/hour and ETA.
-	// Bootstrap from stats.csv timestamps, then blend with live session data.
-	allStats, _ := ccReadStatsCSV(statsCSV)
-	csvTotals := ccComputeTotals(allStats, cfg.CrawlID)
-	csvShardsPerHour := csvTotals.ShardsPerHour // initial rate from historical data
-
 	// If stats.csv has real RSS measurements, use them to refine the budget.
-	if csvTotals.AvgRSSMB > 0 {
-		realGB := float64(csvTotals.MaxRSSMB) / 1024.0
-		if realGB > 0.1 && realGB < cfg.RAMPerSession {
-			logLine(fmt.Sprintf("  RSS data:    avg=%d MB, max=%d MB — real usage %.2f GB < budget %.2f GB",
-				csvTotals.AvgRSSMB, csvTotals.MaxRSSMB, realGB, cfg.RAMPerSession))
+	if allStats, _ := ccReadStatsCSV(statsCSV); len(allStats) > 0 {
+		csvTotals := ccComputeTotals(allStats, cfg.CrawlID)
+		if csvTotals.AvgRSSMB > 0 {
+			realGB := float64(csvTotals.MaxRSSMB) / 1024.0
+			if realGB > 0.1 && realGB < cfg.RAMPerSession {
+				logLine(fmt.Sprintf("  RSS data:    avg=%d MB, max=%d MB — real usage %.2f GB < budget %.2f GB",
+					csvTotals.AvgRSSMB, csvTotals.MaxRSSMB, realGB, cfg.RAMPerSession))
+			}
 		}
 	}
 
@@ -778,10 +775,8 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 				rateSource = "hf"
 			}
 		}
-		if commitRate <= 0 && csvShardsPerHour > 0 {
-			commitRate = csvShardsPerHour
-			rateSource = "csv"
-		}
+		// No csv fallback — commit rate is only from actual HF pushes.
+		// Before the first HF commit, rate is 0 and ETA uses pack rate.
 
 		// Delta since last round (for display).
 		var lastRoundPacked, lastRoundCommitted int
