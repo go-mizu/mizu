@@ -62,7 +62,7 @@ func computeCCBudget(hw arctic.HardwareProfile, ramPerSession float64, maxSessio
 	const maxCap = 12
 
 	if ramPerSession <= 0 {
-		ramPerSession = 1.2 // default: 1.2 GB per session
+		ramPerSession = 0.8 // default: 0.8 GB per session (measured avg ~390 MB + headroom)
 	}
 
 	// Manual override: --max-sessions N bypasses auto-detection.
@@ -75,16 +75,21 @@ func computeCCBudget(hw arctic.HardwareProfile, ramPerSession float64, maxSessio
 		Auto:          true,
 	}
 
-	// By RAM: use available RAM (accounts for background services dynamically).
-	usableRAM := hw.RAMAvailGB
+	// By RAM: use total RAM minus a fixed reserve for OS + background services.
+	// Available RAM fluctuates heavily during download bursts (page cache) and
+	// causes unnecessary session shedding. With GOMEMLIMIT set per session,
+	// Go can't grow beyond its limit, so total-based budgeting is safe.
+	const ramReserveGB = 2.5 // OS + arctic + postgres + watcher
+	usableRAM := hw.RAMTotalGB - ramReserveGB
 	if usableRAM < ramPerSession {
 		usableRAM = ramPerSession
 	}
 	b.ByRAM = int(usableRAM / ramPerSession)
 
-	// By CPU: each session is a mix of I/O-bound and CPU-bound work.
-	// Allow 1.5 sessions per core (pack is I/O heavy, export is CPU heavy).
-	b.ByCPU = int(float64(hw.CPUCores) * 1.5)
+	// By CPU: the direct pipeline (.warc.gz → parquet) is CPU-intensive.
+	// Each session uses ~1 core during packing (gzip + tokenizer + zstd).
+	// Allow 1 session per core to avoid oversubscription.
+	b.ByCPU = hw.CPUCores
 	if b.ByCPU < 1 {
 		b.ByCPU = 1
 	}
@@ -158,8 +163,8 @@ func (t *ccResourceTracker) throughputPerSession() float64 {
 // isBottlenecked returns true if adding sessions isn't helping throughput.
 // Compares recent throughput-per-session to earlier throughput-per-session.
 func (t *ccResourceTracker) isBottlenecked() bool {
-	if len(t.history) < 10 {
-		return false
+	if len(t.history) < 20 {
+		return false // need ~15 min of data before judging
 	}
 	// Compare first half vs second half of history.
 	mid := len(t.history) / 2
@@ -241,9 +246,11 @@ func dynamicMaxSessions(hw arctic.HardwareProfile, initialMax, nRunning int, tra
 
 	// --- Critical: immediate danger ---
 
-	// RAM critically low: other processes (k8s, arctic, hn) may be competing.
-	if hw.RAMAvailGB < 0.3 {
-		// Emergency: try to get to nRunning-2 (kill at least 2 slots worth of headroom).
+	// RAM critically low: only react to true emergency. With GOMEMLIMIT set
+	// per session (600 MiB), Go can't grow unbounded. Low available RAM during
+	// download bursts is normal (page cache reclamation). Only shed sessions
+	// when genuinely out of memory.
+	if hw.RAMAvailGB < 0.15 {
 		effective = nRunning - 2
 		if effective < 0 {
 			effective = 0
@@ -254,8 +261,8 @@ func dynamicMaxSessions(hw arctic.HardwareProfile, initialMax, nRunning int, tra
 
 	// --- Pressure: approaching limits ---
 
-	// RAM under pressure (< 500 MB available).
-	if hw.RAMAvailGB < 0.5 {
+	// RAM under pressure (< 300 MB available).
+	if hw.RAMAvailGB < 0.3 {
 		effective = nRunning - 1
 		if effective < 1 {
 			effective = 1
@@ -263,8 +270,8 @@ func dynamicMaxSessions(hw arctic.HardwareProfile, initialMax, nRunning int, tra
 		reasons = append(reasons, fmt.Sprintf("ram_low=%.0fMB", hw.RAMAvailGB*1024))
 	}
 
-	// RAM moderately low (< 1 GB available). Don't grow.
-	if hw.RAMAvailGB < 1.0 && effective > nRunning {
+	// RAM moderately low (< 500 MB available). Don't grow.
+	if hw.RAMAvailGB < 0.5 && effective > nRunning {
 		effective = nRunning
 		reasons = append(reasons, fmt.Sprintf("ram_tight=%.1fGB: hold", hw.RAMAvailGB))
 	}
@@ -274,8 +281,12 @@ func dynamicMaxSessions(hw arctic.HardwareProfile, initialMax, nRunning int, tra
 	// thresholds to avoid shedding sessions that are just doing network I/O.
 	loadAvg := readLoadAvg1()
 	if loadAvg > 0 {
-		overloadThreshold := float64(hw.CPUCores) * 8
-		highThreshold := float64(hw.CPUCores) * 5
+		// Pipeline sessions are heavily I/O-bound (network downloads, gzip
+		// decompression from disk). I/O waits inflate load average without
+		// consuming CPU. With 9 sessions doing parallel gzip scanning, load
+		// averages of 30-50 on 6 cores are normal and not a problem.
+		overloadThreshold := float64(hw.CPUCores) * 15 // 90 on 6 cores
+		highThreshold := float64(hw.CPUCores) * 10     // 60 on 6 cores
 
 		if loadAvg > overloadThreshold {
 			// Severely overloaded — shed load proportionally.
@@ -585,6 +596,26 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 
 	schedStart := time.Now()
 	startCommitted := len(committed)
+
+	// Pack rate tracking: total packed = committed + pending parquets on disk.
+	// Parquets are deleted after HF commit, so we can't just count files — we
+	// need committed (from stats.csv) + pending (files not yet committed).
+	dataDir := filepath.Join(cfg.RepoRoot, "data", cfg.CrawlID)
+	countPendingParquets := func() int {
+		entries, err := os.ReadDir(dataDir)
+		if err != nil {
+			return 0
+		}
+		n := 0
+		for _, e := range entries {
+			if strings.HasSuffix(e.Name(), ".parquet") {
+				n++
+			}
+		}
+		return n
+	}
+	totalPacked := func() int { return len(committed) + countPendingParquets() }
+	startPacked := totalPacked()
 
 	round := 0
 	for {
